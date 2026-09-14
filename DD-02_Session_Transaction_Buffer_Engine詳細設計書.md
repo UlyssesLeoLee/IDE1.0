@@ -1966,3 +1966,122 @@ SD-001 §3.2 に基づき、Buffer Engine 内でも以下を実装：
 | INT-T-007 | Multi-Session Workspace | 10 Session 同時、Resource Budget 遵守 |
 | INT-T-008 | Large Buffer Save | 1 GB 編集後 Save → 原子書込成功 |
 
+---
+
+## 13. トレーサビリティ・マトリクス（DD-02 ↔ BD ↔ REQ ↔ 実装対象 ↔ テスト観点）
+
+本表は DD-02 で定義した全 Module / Class / 主要メソッドを、AD-001 / REQ-001 / NFR-001 / 想定実装ファイル / テスト観点 ID へ相互に紐付ける。DD-05（Cross-Review）における整合性審査の基準表として用いる。
+
+### 13.1 Session Manager 系（MOD-SM-001〜007）
+
+| DD ID | BD ID | REQ ID | NFR ID | 実装対象（Crate / File） | テスト観点 ID |
+|-------|-------|--------|--------|--------------------------|----------------|
+| MOD-SM-001 | AD-001 §2.5 | FR-001-04, FR-005-01, FR-022 | NFR-C-020, NFR-S-001 | kernel-session/src/manager.rs (CLS-SM-001) | SM-T-001〜003, INT-T-003, INT-T-007 |
+| MOD-SM-002 | AD-001 §2.5 | FR-005-02, FR-005-03 | NFR-S-003 | kernel-session/src/permissions.rs (CLS-SM-003) | SM-T-005, SM-T-006, SM-T-007 |
+| MOD-SM-003 | AD-001 §2.5 | FR-005-04 | NFR-R-032 | kernel-session/src/resource_budget.rs | INT-T-007 |
+| MOD-SM-004 | AD-001 §2.5 | FR-005-01 | NFR-S-001 | kernel-session/src/worktree.rs | SM-T-001 |
+| MOD-SM-005 | AD-001 §2.5 | FR-022 | NFR-C-020 | kernel-session/src/quota.rs | SM-T-003 |
+| MOD-SM-006 | AD-001 §2.5 | FR-001-04 | NFR-R-032 | kernel-session/src/recovery.rs | SM-T-010, SM-T-011, INT-T-005 |
+| MOD-SM-007 | AD-001 §2.5 | FR-005-03 | NFR-S-003 | kernel-session/src/audit.rs (MOD-SM-007) | INT-T-002 |
+| SM-M-001 | AD-001 §2.5 | FR-005-01 | NFR-C-020 | kernel-session/src/manager.rs::create() | SM-T-001, SM-T-002 |
+| SM-M-002 | AD-001 §2.5 | FR-005-01 | NFR-R-032 | kernel-session/src/manager.rs::get() | SM-T-001 |
+| SM-M-004 | AD-001 §2.5 | FR-022 | — | kernel-session/src/manager.rs::suspend() | SM-T-009 |
+| SM-M-005 | AD-001 §2.5 | FR-022 | — | kernel-session/src/manager.rs::resume() | SM-T-009 |
+| SM-M-006 | AD-001 §2.5 | FR-022 | — | kernel-session/src/manager.rs::terminate() | SM-T-004, SM-T-011 |
+| SM-M-008 | AD-001 §2.5 | FR-005-02 | NFR-S-003 | kernel-session/src/permissions.rs::check() | SM-T-005 |
+| SM-M-009 | AD-001 §2.5 | FR-005-03 | NFR-S-003 | kernel-session/src/permissions.rs::check_path() | SM-T-006, SM-T-007 |
+| SM-M-012 | AD-001 §2.5 | FR-006-01 | — | kernel-session/src/manager.rs::set_active_transaction() | SM-T-012 |
+
+### 13.2 Transaction Manager 系（MOD-TM-001〜008）
+
+| DD ID | BD ID | REQ ID | NFR ID | 実装対象（Crate / File） | テスト観点 ID |
+|-------|-------|--------|--------|--------------------------|----------------|
+| MOD-TM-001 | AD-001 §2.6 | FR-006-01〜04, FR-022 | NFR-R-032, NFR-D-002 | kernel-transaction/src/manager.rs (CLS-TM-001) | TM-T-001, INT-T-006 |
+| MOD-TM-002 | AD-001 §2.6 | FR-006-03 | NFR-D-002 | kernel-transaction/src/patch.rs (CLS-TM-003) | TM-T-002, TM-T-003, TM-T-004 |
+| MOD-TM-003 | AD-001 §2.6 | FR-006-04 | NFR-R-032, NFR-D-002 | kernel-transaction/src/journal.rs (CLS-TM-004) | TM-T-005, TM-T-009, INT-T-005 |
+| MOD-TM-004 | AD-001 §2.6 | FR-006-02 | — | kernel-transaction/src/savepoint.rs (CLS-TM-005) | TM-T-008 |
+| MOD-TM-005 | AD-001 §2.6 | FR-006-03 | NFR-D-002 | kernel-transaction/src/conflict.rs | TM-T-003, TM-T-004 |
+| MOD-TM-006 | AD-001 §2.6 | FR-006-01 | NFR-R-032 | kernel-transaction/src/saga.rs | TM-T-006, INT-T-006 |
+| MOD-TM-007 | AD-001 §2.6 | FR-006-04 | NFR-D-002 | kernel-transaction/src/outbox.rs | TM-T-011 |
+| MOD-TM-008 | AD-001 §2.6 | FR-006-04 | NFR-R-032 | kernel-transaction/src/recovery.rs | TM-T-009, TM-T-010, INT-T-005 |
+| TM-M-001 | AD-001 §2.6 | FR-006-01 | — | kernel-transaction/src/manager.rs::begin() | TM-T-001 |
+| TM-M-002 | AD-001 §2.6 | FR-006-03 | — | kernel-transaction/src/manager.rs::apply_patch() | TM-T-002, TM-T-003, TM-T-004 |
+| TM-M-003 | AD-001 §2.6 | FR-006-01 | NFR-D-002 | kernel-transaction/src/manager.rs::commit() | TM-T-005, TM-T-006 |
+| TM-M-004 | AD-001 §2.6 | FR-006-01 | — | kernel-transaction/src/manager.rs::rollback() | TM-T-007, TM-T-012 |
+| TM-M-005 | AD-001 §2.6 | FR-006-02 | — | kernel-transaction/src/savepoint.rs::create() | TM-T-008 |
+| TM-M-006 | AD-001 §2.6 | FR-006-02 | — | kernel-transaction/src/savepoint.rs::rollback_to() | TM-T-008 |
+| ERR-TXN-001 | AD-001 §2.6 | FR-006-01 | — | kernel-transaction/src/transaction.rs::Status | TM-T-001 |
+| ERR-TXN-002 | AD-001 §2.6 | FR-006-03 | — | kernel-transaction/src/conflict.rs | TM-T-003 |
+| ERR-TXN-003 | AD-001 §2.6 | FR-006-03 | — | kernel-transaction/src/conflict.rs | TM-T-004 |
+
+### 13.3 Buffer Engine 系（MOD-BE-001〜011）
+
+| DD ID | BD ID | REQ ID | NFR ID | 実装対象（Crate / File） | テスト観点 ID |
+|-------|-------|--------|--------|--------------------------|----------------|
+| MOD-BE-001 | AD-001 §2.7 | FR-002-01〜06, FR-018 | NFR-P-001, NFR-M-031 | kernel-buffer/src/engine.rs (CLS-BE-001) | BE-T-001〜005, INT-T-001 |
+| MOD-BE-002 | AD-001 §2.7 | FR-002-02, FR-018 | NFR-M-031 | kernel-buffer/src/piece_table.rs (CLS-BE-003) | BE-T-007, BE-T-009, BE-T-010 |
+| MOD-BE-003 | AD-001 §2.7 | FR-002-05 | NFR-M-031 | kernel-buffer/src/chunked.rs (CLS-BE-004) | BE-T-014, BE-T-015, INT-T-008 |
+| MOD-BE-004 | AD-001 §2.7 | FR-002-05 | NFR-M-031 | kernel-buffer/src/mmap.rs | BE-T-014 |
+| MOD-BE-005 | AD-001 §2.7 | FR-002-01 | — | kernel-buffer/src/codec.rs | BE-T-002, BE-T-003, BE-T-004 |
+| MOD-BE-006 | AD-001 §2.7 | FR-002-03 | — | kernel-buffer/src/line_ending.rs | BE-T-017 |
+| MOD-BE-007 | AD-001 §2.7 | FR-018-01 | NFR-M-031 | kernel-buffer/src/undo_stack.rs (CLS-BE-005) | BE-T-010, BE-T-011, BE-T-020 |
+| MOD-BE-008 | AD-001 §2.7 | FR-018-02 | — | kernel-buffer/src/savepoint.rs | BE-T-018 |
+| MOD-BE-009 | AD-001 §2.7 | FR-002-06 | NFR-D-002 | kernel-buffer/src/persistence.rs | BE-T-012, BE-T-013, INT-T-001 |
+| MOD-BE-010 | AD-001 §2.7 | FR-006-03 | — | kernel-buffer/src/patch_apply.rs | BE-T-007, BE-T-008, BE-T-009, BE-T-016 |
+| MOD-BE-011 | AD-001 §2.7 | FR-002-05 | NFR-M-031 | kernel-buffer/src/memory_budget.rs | INT-T-007, INT-T-008 |
+| BE-M-001 | AD-001 §2.7 | FR-002-01 | — | kernel-buffer/src/engine.rs::open() | BE-T-001〜005 |
+| BE-M-002 | AD-001 §2.7 | FR-002-02 | — | kernel-buffer/src/buffer.rs::read_range() | BE-T-006 |
+| BE-M-003 | AD-001 §2.7 | FR-018-01 | — | kernel-buffer/src/undo_stack.rs::undo() | BE-T-010 |
+| BE-M-004 | AD-001 §2.7 | FR-018-01 | — | kernel-buffer/src/undo_stack.rs::redo() | BE-T-011 |
+| BE-M-005 | AD-001 §2.7 | FR-002-06 | — | kernel-buffer/src/persistence.rs::save() | BE-T-012, BE-T-013 |
+| BE-M-006 | AD-001 §2.7 | FR-018-02 | — | kernel-buffer/src/savepoint.rs::create() | BE-T-018 |
+| BE-M-007 | AD-001 §2.7 | FR-006-03 | — | kernel-buffer/src/patch_apply.rs::apply() | BE-T-007, BE-T-008, BE-T-009, BE-T-016 |
+| ERR-BE-003 | AD-001 §2.7 | FR-002-01 | — | kernel-buffer/src/codec.rs | BE-T-005 |
+| ERR-BE-007 | AD-001 §2.7 | FR-006-03 | — | kernel-buffer/src/patch_apply.rs | BE-T-016 |
+
+### 13.4 横断关切・テスト観点
+
+| DD ID | BD ID | REQ ID | NFR ID | 実装対象 | テスト観点 ID |
+|-------|-------|--------|--------|----------|----------------|
+| §9.1 Logging / Trace | AD-001 §3.5 | FR-022 | NFR-O-001 | kernel-obs/src/trace.rs (DD-04) | 全 Module の Smoke |
+| §9.2 Audit | AD-001 §3.5 | FR-022 | NFR-S-003 | kernel-obs/src/audit.rs | SM-T-005, INT-T-002 |
+| §9.3 Idempotency | AD-001 §3.4 | FR-006-04 | NFR-R-032 | kernel-transaction/src/journal.rs + kernel-session/src/manager.rs | SM-T-002, TM-T-009 |
+| §9.4 Timeout / Retry | AD-001 §3.4 | FR-022 | NFR-R-032 | kernel-obs/src/policy.rs (DD-04) | TM-T-009 |
+| §9.5 可観測性 | AD-001 §3.5 | FR-022 | NFR-O-001 | kernel-obs/src/metrics.rs | INT-T-007 |
+| §10.1 Session 隔離 | AD-001 §3.6, SD-001 §3 | FR-005-02 | NFR-S-001 | kernel-session/src/{manager,permissions}.rs | INT-T-003 |
+| §10.2 データ脱敏 | SD-001 §7 | FR-018-04 | NFR-S-005 | kernel-buffer/src/codec.rs + DD-04 secret.rs | BE-T-005 拡張 |
+| §11 性能設計 | AD-001 §4 | FR-022 | NFR-P-001〜006 | 各 Module 実装 + benchmark suite | INT-T-007, INT-T-008, BE-T-014, BE-T-015, BE-T-020 |
+
+### 13.5 整合性チェックリスト（DD-05 Cross-Review 用）
+
+| 観点 | 確認内容 | 担当 DD |
+|------|----------|---------|
+| 上位 IF 整合 | IF-SES-001 / IF-TXN-001 / IF-BUF-001 と本 DD の Method シグネチャ一致 | DD-02, IFD-001 |
+| 状態機械完備性 | 全 Session / Transaction State の遷移が許可遷移表に網羅されている | DD-02 §6.5, §7.4 |
+| 永続化整合 | WAL フォーマット（JSON Lines）と Snapshot 形式が他 DD と整合 | DD-02 §6.8, §7.8, DD-04 §3.2 |
+| 横断規則整合 | Error 体系 / Trace ID 形式 / 監査ログ書式が DD-04 と一致 | DD-02 §6.10/7.10/8.9, DD-04 |
+| Traceability 完備 | 全 Module に REQ ID が付与されている | 本表 §13.1〜13.4 |
+| TBD 解消方針 | §13.6 に残 TBD を集約 | DD-05 |
+
+### 13.6 残 TBD 一覧（DD-05 までに解消）
+
+| 項目 | 影響範囲 | 解消方針 |
+|------|----------|----------|
+| UUID v7 生成器選定 | SM-M-001, ログ Trace | `uuid` crate の v7 feature を採用、性能測定後確定 |
+| WAL フォーマット（JSON Lines vs bincode） | 6.8, 7.8, DD-04 §3.2 | bincode を第一候補、互換性検証後に確定 |
+| Snapshot 閾値 | 6.8, 7.8 | NFR-D-002 RPO=0 と IO 性能のバランスで実装時に決定 |
+| PathPattern 評価アルゴリズム | SM-M-009 | glob ベースで第一版実装、性能測定で線形→Trie 移行検討 |
+| Savepoint 自動マーカー | TM-M-002 | v1.0 は明示 Savepoint のみ、自動は v1.1 で再評価 |
+| Active Buffer 数 / Session | MOD-SM-005 | 64 を既定値として実装、性能測定で再調整 |
+| max_undo_depth | BE-M-003/004 | 1,000 を既定値として実装、NFR-M-031 と整合 |
+| Session TTL 既定値 | 6.5 | 24h 既定、設定で上書き可 |
+| Quarantine 待ち行列採用可否 | MOD-SM-005 | v1.0 は即時拒否のみ、Quarantine は v1.1 で再評価 |
+
+---
+
+## 14. 変更履歴
+
+| 版 | 日付 | 担当 | 変更内容 |
+|----|------|------|----------|
+| 1.0 | 2026-09-14 | MinimaxM3 | 初版作成（REQ-001, NFR-001, AD-001, IFD-001, SD-001 に基づく詳細設計）。Module 26 個、Class 11 個、主要メソッド約 50、Sequence Diagram 9 個、State Diagram 2 個、Traceability マトリクス追加（§13） |
+
