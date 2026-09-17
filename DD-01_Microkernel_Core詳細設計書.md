@@ -218,7 +218,7 @@ flowchart LR
 |----|----------|-----------|
 | P-CB-001 | **受信・逆シリアライズ**: Transport 層 (DD-04) から JSON-RPC / REST / In-Process のいずれかで Command を受信し、`Command` 構造体にデシリアライズする。デシリアライズ失敗時は即時 ERR-CB-006 を返却。 | ERR-CB-006 (malformed) |
 | P-CB-002 | **Trace Context 構築**: 受信時に Trace ID を付与 (無い場合は生成)。`tracing::Span` で `command.name`, `session.id`, `cmd.id` を attribute として設定。 | — |
-| P-CB-003 | **Schema 検証**: `CommandSchema.input_schema` に対し JSON Schema 検証 (format, required, type, range)。NFR-031 準拠。 | ERR-CB-007 (validation failed) |
+| P-CB-003 | **Schema 検証**: `CommandSchema.input_schema` に対し JSON Schema 検証 (format, required, type, range)。NFR-S-060 準拠。 | ERR-CB-007 (validation failed) |
 | P-CB-004 | **Idempotency Key 検査**: `idempotency_key` があれば IdempotencyStore で検索。HIT なら保存済み結果を返却 (M-CB-004 参照)。 | — |
 | P-CB-005 | **Session 解決**: `SessionManager.get(session_id)` を実行。存在しなければ ERR-CB-002。 | ERR-CB-002 |
 | P-CB-006 | **Permission 検証 (Authz)**: SD-001 §2.3 の `check_permission` を呼び、Session.permissions ⊇ Command 必要 permissions を判定。Network アクセスを含む Command は追加で SD-001 §5 の `check_network_access`。 | ERR-CB-003 (permission denied) |
@@ -262,7 +262,7 @@ ELSE:
 `tokio_util::sync::CancellationToken` を採用。Provider 実装側は `select! { _ = ct.cancelled() => cleanup(), result = provider.run() => ... }` パターンを必須とする (Plugin SDK ガイドで明示)。
 
 - **Hard Cancel** (5 秒タイムアウト後): `JoinHandle::abort()` を実行。
-- **Cleanup 失敗時**: Provider に対し ERR-CB-012 記録、Kernel は継続 (Plugin Crash 隔離、NFR-020 準拠)。
+- **Cleanup 失敗時**: Provider に対し ERR-CB-012 記録、Kernel は継続 (Plugin Crash 隔離、NFR-R-001 準拠)。
 
 #### 3.6.2 Timeout
 
@@ -288,7 +288,7 @@ ELSE:
 #### 3.6.4 故障回復
 
 - **Provider Panic**: `catch_unwind` で捕捉 → ERR-CB-005 (PROVIDER_PANIC)、Audit 記録、Kernel 継続。
-- **EventBus emit 失敗**: WARN ログ + メトリクス `event_emit_failure_total` 増加。業務結果は返却する。理由: Event Bus 障害で Command 自体を失敗させない (Kernel 可用性優先、NFR-023)。
+- **EventBus emit 失敗**: WARN ログ + メトリクス `event_emit_failure_total` 増加。業務結果は返却する。理由: Event Bus 障害で Command 自体を失敗させない (Kernel 可用性優先、NFR-R-001)。
 - **Capability Registry 不整合**: Provider が `is_available() == false` を返したら次候補へ。すべて不可なら ERR-CB-009。
 
 ### 3.7 内部 API 詳細 (REST/JSON-RPC/Internal)
@@ -371,7 +371,7 @@ P-CB-012: Provider 実行              (業務ロジック)
 - **Transaction**: CommandBus 自体は Transaction を持たない。Provider が `transaction.begin/patch/commit` を発行する場合のみ DD-02 (MOD-TM-001) の Transaction Manager を使用。**Provider 実行中に外部 API 呼び出しが含まれる場合の Transaction 境界は Provider 責任** (基本設計 §2.6 整合)。
 - **排他制御**:
   - inflight 登録は `DashMap` の sharded lock で並行実行を許容。
-  - 同一 Session 内では、Provider が内部で Workspace Mutex を取るかは Provider 責務。Kernel 側は Session 単位の直列化を強制しない (NFR-012 の 10 Session 同時実行を満たすため)。
+  - 同一 Session 内では、Provider が内部で Workspace Mutex を取るかは Provider 責務。Kernel 側は Session 単位の直列化を強制しない (NFR-C-020 の 10 Session 同時実行を満たすため)。
   - Capability 登録 / 解除の競合は Registry 内部 RwLock で吸収。
 - **Idempotency**:
   - `idempotency_key` 指定時、`IdempotencyStore` (in-memory LRU + Disk WAL) に保存。HIT 時は保存済み結果返却 (24h TTL)。
@@ -421,9 +421,9 @@ Span: command_bus.execute
 
 | 指標 | 目標 | 出典 |
 |------|------|------|
-| 単一 Command 起動〜結果返却オーバーヘッド (Provider 実行時間除く) | P95 < 5 ms | NFR-003 / NFR-004 |
+| 単一 Command 起動〜結果返却オーバーヘッド (Provider 実行時間除く) | P95 < 5 ms | NFR-P-010 |
 | Capability 解決時間 | P95 < 1 ms | (本設計目標) |
-| 同時 inflight 数 | ≥ 10 / Session | NFR-012 |
+| 同時 inflight 数 | ≥ 10 / Session | NFR-C-020 |
 
 【性能検証必要】:
 - inflight map の DashMap シャード数決定 (推奨: `available_parallelism * 4`、検証で確定)
@@ -701,10 +701,10 @@ Validation 失敗は **Event 単位で完結** し、後続 Event には影響�
 
 | 指標 | 目標 | 出典 |
 |------|------|------|
-| Event emit オーバーヘッド (Transient) | P95 < 1 ms | NFR-003 |
+| Event emit オーバーヘッド (Transient) | P95 < 1 ms | NFR-P-010 |
 | Event emit オーバーヘッド (Durable) | P95 < 10 ms | (本設計目標) |
 | 同時 Subscriber 数 | ≥ 100 | (本設計目標) |
-| Durable Log Append スループット | ≥ 10,000 events/s | NFR-005 文脈 |
+| Durable Log Append スループット | ≥ 10,000 events/s | (NFR-P-060 参照) |
 
 【性能検証必要】:
 - Durable Log の fsync 戦略 (毎イベント vs batch)
@@ -964,7 +964,7 @@ ELSE:
 | 指標 | 目標 | 出典 |
 |------|------|------|
 | route() レイテンシ | P95 < 1 ms | CommandBus §3.13 と整合 |
-| 登録 Capability 数 | ≥ 200 (Plugin 50 個 × 平均 4 cap) | NFR-013 |
+| 登録 Capability 数 | ≥ 200 (Plugin 50 個 × 平均 4 cap) | NFR-C-030 |
 | list() レイテンシ (filter 適用後) | P95 < 5 ms | Agent discovery |
 
 【性能検証必要】:
@@ -1121,7 +1121,7 @@ sequenceDiagram
     CB->>EB: emit(CommandFailed{code:ERR-CB-005, kind=PROVIDER_PANIC})
     CB->>CB: Audit (provider_panic)
     CB-->>Caller: Err(ERR-CB-005)
-    Note over CB: Kernel は継続 (NFR-020 Plugin Crash 隔離)
+    Note over CB: Kernel は継続 (NFR-R-001 Plugin Crash 隔離)
 ```
 
 ### 6.8 Transaction Commit 時の Event 連鎖 (Buffer/Transaction は DD-02、本 DD では Event 連鎖のみ記述)
@@ -1298,14 +1298,14 @@ default_priority = 50
 
 | 障害 | 検出 | 影響範囲 | 復旧戦略 |
 |------|------|----------|---------|
-| Provider panic | catch_unwind | 当該 Command のみ | ERR-CB-005 返却 + Audit、Kernel 継続 (NFR-020) |
+| Provider panic | catch_unwind | 当該 Command のみ | ERR-CB-005 返却 + Audit、Kernel 継続 (NFR-R-001) |
 | Provider hang (no response) | timeout | 当該 Command | Cancellation 通知 → 5s 後 abort |
 | EventBus DL 障害 | append error | 新規 Durable Event 喪失可能性 | ERR-EB-003 で Caller 通知、WARN 継続。DL 復旧後 seq 連番保証は【TBD】 |
 | Subscriber channel 満杯 | try_send 失敗 | 当該 Subscriber のみ | drop カウンタ + WARN、Producer 継続 |
 | Subscriber 切断 | sink closed | 当該 Subscription | 自動 unsubscribe + Event 発行 (将来) |
 | Registry 不整合 | is_available=false 連続 | 該当 Capability のみ | Fallback Strategy で次候補、なければ ERR-CR-006 |
 | Schema cache miss | Schema not found | 当該 Command | Cold ロード (50ms 以内)、失敗時 ERR-CB-007 |
-| Inflight map メモリ増加 | gauge 監視 | Kernel 全体 | NFR-013 に基づく上限設定、超過時 ERR-CB-008 |
+| Inflight map メモリ増加 | gauge 監視 | Kernel 全体 | NFR-C-030 に基づく上限設定、超過時 ERR-CB-008 |
 | Kernel 全体 Crash | OS 監視 | 全 State 消失 | Durable Log + Audit Log + Journal から次回起動時 replay (DD-02/04 と統合) |
 
 ---
@@ -1354,7 +1354,7 @@ Command Bus / Event Bus / Capability Registry はそれぞれ SD-001 の以下�
 | T-CB-011 | Cancellation (即時) | status=cancelled, cleanup 完了 |
 | T-CB-012 | Provider panic | ERR-CB-005 (PROVIDER_PANIC), Kernel 継続 |
 | T-CB-013 | EventBus emit 失敗 | WARN 継続, 業務結果返却 |
-| T-CB-014 | 100 同時 inflight | 全完了 or 全 error、メモリリークなし (NFR-012) |
+| T-CB-014 | 100 同時 inflight | 全完了 or 全 error、メモリリークなし (NFR-C-020) |
 | T-CB-015 | 巨大 arguments (1MB) | ERR-CB-007 または schema 拒否 |
 | T-CB-016 | discovery (filter 適用) | Session.permissions ⊇ required のみ返却 |
 | T-CB-017 | Path traversal 引数 | ERR-CB-007 (SD-001 §3) |
@@ -1421,15 +1421,15 @@ Command Bus / Event Bus / Capability Registry はそれぞれ SD-001 の以下�
 | DD ID | 名称 | BD ID | REQ ID | 実装オブジェクト | Test 観点 |
 |-------|------|-------|--------|------------------|----------|
 | MOD-CB-001 | Command Bus | AD-001 §2.2 | FR-001-01, FR-003, FR-022 | kernel_core::command::CommandBus | T-CB-* |
-| M-CB-001 execute | execute | AD-001 §2.2 | FR-003, NFR-031 | CommandBus::execute | T-CB-001/002/003/004/005 |
+| M-CB-001 execute | execute | AD-001 §2.2 | FR-003, NFR-S-060 | CommandBus::execute | T-CB-001/002/003/004/005 |
 | M-CB-002 cancel | cancel | AD-001 §2.2 | FR-003-05 | CommandBus::cancel | T-CB-011 |
 | M-CB-003 discover | discover | IF-CMD-002 | FR-003-02 | CommandBus::discover | T-CB-016 |
-| ERR-CB-001 〜 016 | Error system | AD-001 §2.2 (責務) | NFR-031, NFR-020 | thiserror enum | T-CB-019 |
+| ERR-CB-001 〜 016 | Error system | AD-001 §2.2 (責務) | NFR-S-060, NFR-R-001 | thiserror enum | T-CB-019 |
 | MOD-EB-001 | Event Bus | AD-001 §2.3 | FR-001-02, FR-008, FR-022 | kernel_core::event::EventBus | T-EB-* |
 | M-EB-001 emit | emit | AD-001 §2.3 | FR-008-01..03 | EventBus::emit | T-EB-001/002/003/004 |
-| M-EB-002 subscribe | subscribe | IF-EVT-001 | FR-008, NFR-040 | EventBus::subscribe | T-EB-008/009 |
+| M-EB-002 subscribe | subscribe | IF-EVT-001 | FR-008, NFR-M-001 | EventBus::subscribe | T-EB-008/009 |
 | M-EB-003 replay | replay | IF-EVT-002 | FR-022 | EventBus::replay | T-EB-010/011 |
-| ERR-EB-001 〜 008 | Error system | AD-001 §2.3 | NFR-023 | thiserror enum | T-INT-004 |
+| ERR-EB-001 〜 008 | Error system | AD-001 §2.3 | NFR-R-001 | thiserror enum | T-INT-004 |
 | MOD-CR-001 | Capability Registry | AD-001 §2.4 | FR-001-03, FR-004, FR-017 | kernel_core::capability::CapabilityRegistry | T-CR-* |
 | M-CR-001 register | register | AD-001 §2.4, IF-CAP-001 | FR-004-01 | CapabilityRegistry::register | T-CR-001/002/011 |
 | M-CR-002 route | route | AD-001 §2.4, IF-CAP-002 | FR-004-02 | CapabilityRegistry::route | T-CR-001..006 |
@@ -1437,7 +1437,7 @@ Command Bus / Event Bus / Capability Registry はそれぞれ SD-001 の以下�
 | M-CR-004 list | list | IF-CAP-001 (補助) | FR-004-01 | CapabilityRegistry::list | T-CR-012/013 |
 | ERR-CR-001 〜 010 | Error system | AD-001 §2.4 | FR-017 | thiserror enum | T-CR-010/014 |
 | §6 Sequence | 統合 | AD-001 §2.2-2.4 | FR-001 全体 | 全モジュール協調 | T-INT-* |
-| §10 故障回復 | fault recovery | AD-001 §7 | NFR-020, NFR-022, NFR-023 | 全体 | T-INT-002/005 |
+| §10 故障回復 | fault recovery | AD-001 §7 | NFR-R-001, NFR-R-020, NFR-R-021 | 全体 | T-INT-002/005 |
 
 ### 13.2 REQ → DD (Reverse Trace)
 
@@ -1453,14 +1453,14 @@ Command Bus / Event Bus / Capability Registry はそれぞれ SD-001 の以下�
 | FR-008-01..03 | Event 統一 envelope, 分類, 標準集合 | CLS-EB-002, §4.8 |
 | FR-017 | Zero Trust Plugin Security | P-CR-002, §5.9, §11 |
 | FR-022 | Audit ログ | §3.12, §4.11, §11 |
-| NFR-003 | 入力応答 P99 < 16ms | §3.13, §4.12 |
-| NFR-012 | 10 Session 同時 | §3.13, T-INT-003 |
-| NFR-013 | Plugin 50 同時 | §5.12 |
-| NFR-020 | Plugin Crash 隔離 | §6.7, §10 |
-| NFR-022 | Crash Recovery | §4.10, §10 |
-| NFR-031 | Input Validation | §3.10, §4.9, §5.9 |
-| NFR-040 | 構造化ログ | §3.12, §4.11, §5.11 |
-| NFR-046 | テストカバレッジ | §12 (各 DD 観点網羅) |
+| NFR-P-010 | 入力応答 P99 < 16ms | §3.13, §4.12 |
+| NFR-C-020 | 10 Session 同時 | §3.13, T-INT-003 |
+| NFR-C-030 | Plugin 50 同時 | §5.12 |
+| NFR-R-001 | Plugin Crash 隔離 | §6.7, §10 |
+| NFR-R-020 | Crash Recovery | §4.10, §10 |
+| NFR-S-060 | Input Validation | §3.10, §4.9, §5.9 |
+| NFR-M-001 | 構造化ログ | §3.12, §4.11, §5.11 |
+| NFR-M-060 | テストカバレッジ | §12 (各 DD 観点網羅) |
 
 ---
 
@@ -1490,7 +1490,7 @@ Command Bus / Event Bus / Capability Registry はそれぞれ SD-001 の以下�
 | QA-DD01-001 | AD-001 §2.2 では `CapabilityRegistry.route(&command.name, &command.session_id)` と抽象化されているが、本 DD は `&Session` 全体を受け取り permission 判定を内部で行う。本 DD の解釈は Permission 判定の責任分界を Registry 側に持つものだが、SD-001 §2.3 では Command Bus 入口で Permission チェックを行う方針。整合確認要。 | Permission チェックを (a) Command Bus 入口のみ、(b) Registry route 内の両方 のいずれに統一するか |
 | QA-DD01-002 | AD-001 §2.3 Event Bus の責務に "Event Stream (SSE/WebSocket)" を含むが、本 DD は in-process 配信 + Durable Log までとし、Transport は DD-04 Adapter 層に委譲。整合しているか確認要。 | DD-04 での Transport 実装方針と整合 |
 | QA-DD01-003 | IFD-001 IF-EVT-002 の "Audit 用途" replay に対し、本 DD は M-EB-003 で replay を提供。容量制限 (limit) は設けたが、長期間 (e.g. 90日) 全量 replay は想定外。 | Audit 期間中の DL 容量見積もり + ローテーション方針 |
-| QA-DD01-004 | REQ-001 FR-005-04 "Session リソース隔離" に対し、Command Bus の inflight は Session 単位の分離を行わず (NFR-012 の 10 Session 同時実行のため)。上限値の最終決定は Performance Test で確定。 | NFR-012 と整合 |
+| QA-DD01-004 | REQ-001 FR-005-04 "Session リソース隔離" に対し、Command Bus の inflight は Session 単位の分離を行わず (NFR-C-020 の 10 Session 同時実行のため)。上限値の最終決定は Performance Test で確定。 | NFR-C-020 と整合 |
 
 ---
 
