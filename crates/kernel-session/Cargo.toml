@@ -1,0 +1,26 @@
+[package]
+name = "kernel-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Tier 2: Session ライフサイクル・権限管理 (DD-02 §6)"
+repository.workspace = true
+
+[dependencies]
+kernel-error = { workspace = true }
+kernel-eventbus = { workspace = true }
+kernel-tracing = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+tracing = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

@@ -1,0 +1,29 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Tier 7: CLI エントリポイント (DD-10 §1.2.6)"
+repository.workspace = true
+
+[[bin]]
+name = "kernel-cli"
+path = "src/main.rs"
+
+[dependencies]
+kernel-error = { workspace = true }
+kernel-eventbus = { workspace = true }
+kernel-session = { workspace = true }
+kernel-capability-registry = { workspace = true }
+kernel-cmd-bus = { workspace = true }
+kernel-core = { workspace = true }
+kernel-config = { workspace = true }
+kernel-tracing = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = "1.0"
+uuid = { workspace = true }

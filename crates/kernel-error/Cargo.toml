@@ -1,0 +1,15 @@
+[package]
+name = "kernel-error"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Tier 0: 統一エラー型・コード体系 (DD-01 §3.1 / INC-07)"
+repository.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

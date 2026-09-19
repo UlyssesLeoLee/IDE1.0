@@ -1,0 +1,24 @@
+[package]
+name = "kernel-capability-registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Tier 3: Capability 登録・解決・ルーティング (DD-01 §MOD-CR)"
+repository.workspace = true
+
+[dependencies]
+kernel-error = { workspace = true }
+kernel-eventbus = { workspace = true }
+kernel-tracing = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+tracing = { workspace = true }
+
+[lib]
+path = "src/lib.rs"

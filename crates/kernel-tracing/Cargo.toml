@@ -1,0 +1,20 @@
+[package]
+name = "kernel-tracing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Tier 1: 構造化ログ・Trace Context (DD-04b §MOD-LOGGING, §MOD-TRACE)"
+repository.workspace = true
+
+[dependencies]
+kernel-error = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
