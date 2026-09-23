@@ -1,0 +1,186 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ============================================================
+  # Job 1: Rust 标准套 (fmt + check + clippy + test + doc)
+  # IDE1.0 仅 ubuntu-latest (per brief §1.2 #3, 节省 CI 分钟)
+  # ============================================================
+  rust:
+    name: Rust (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      - name: cargo fmt --check
+        working-directory: .
+        run: cargo fmt --all -- --check
+
+      - name: cargo check
+        working-directory: .
+        run: cargo check --workspace --all-targets
+
+      - name: cargo clippy
+        working-directory: .
+        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
+
+      - name: cargo test
+        working-directory: .
+        run: cargo test --workspace --all-targets --no-fail-fast
+
+      - name: cargo doc
+        working-directory: .
+        run: cargo doc --workspace --no-deps --all-features
+
+  # ============================================================
+  # Job 2: Linux 集成 smoke (含 cli_smoke.sh 系统测)
+  # ============================================================
+  integration:
+    name: Integration (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+      - name: Run integration tests
+        working-directory: .
+        run: cargo test --workspace --tests --no-fail-fast
+      - name: Run cli_smoke.sh
+        working-directory: .
+        run: bash tests/st/cli_smoke.sh
+
+  # ============================================================
+  # Job 3: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
+  # 跨 Rust ↔ Python emitter 字段 1:1 验证 (Stage 1 Python emitter + Stage 3 Rust emitter)
+  # 依赖:
+  #   - Star 仓 _lib_aci_emit.py (submodule 或临时 git clone)
+  #   - Python 3.10+ + setuptools
+  # ============================================================
+  cross-language-parity:
+    name: Cross-language parity (Rust ↔ Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      # Star 仓 Python emitter (per ULYS-191 Stage 1 PR #93 已 ship main + dev)
+      # 临时 clone + checkout PR #93 commit (cebba99c0b1d1237dd4df0ad9091502f4548689c)
+      - name: Clone Star repo at PR #93 commit
+        run: |
+          git clone --depth 1 https://github.com/UlyssesLeoLee/Star.git /tmp/star-checkout
+          cd /tmp/star-checkout
+          git fetch --depth 1 origin cebba99c0b1d1237dd4df0ad9091502f4548689c
+          git checkout cebba99c0b1d1237dd4df0ad9091502f4548689c
+
+      - name: Run cross-language parity check
+        working-directory: .
+        env:
+          STAR_FLASH_MOCK_PATH: /tmp/star-checkout/tools/star-flash-mock
+        run: |
+          echo "=== IDE1.0 × Star Python emitter parity (per ULYS-191 §4.2.2 brief v0.1) ==="
+          python3 tests/parity/cross_language_parity.py
+
+  # ============================================================
+  # Job 4: Markdown lint (README + architecture + regression report)
+  # IDE1.0 中文 docs, 禁用 MD013/014/042 (line-length/HR/no-empty-links)
+  # ============================================================
+  markdown-lint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: |
+            *.md
+            docs/**/*.md
+            !DD-*.md
+            !DD-*_*.md
+            !*需求规格书*.md
+            !*設計書*.md
+
+  # ============================================================
+  # Job 5: Rust bench (placeholder, 待 Stage 3 后续 brief 加 benchmark)
+  # ============================================================
+  rust-bench:
+    name: Rust bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+      - name: cargo bench
+        working-directory: .
+        run: |
+          echo "(无 benchmark 定义, 仅占位 Stage 3 后续 brief 添加)"
+          cargo bench --workspace --no-run || true
+
+  # ============================================================
+  # Job 6: Cross-project smoke (守门 #11 验证 git dep aci-emitter 可达)
+  # ============================================================
+  cross-project-smoke:
+    name: Cross-project smoke (aci-emitter git dep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+      - name: Build & test as workspace member with aci-emitter git dep
+        working-directory: .
+        run: |
+          # 验证 IDE1.0 可作为 aci-emitter consumer 编译 + 测试
+          cargo build --workspace --all-features
+          cargo test --workspace --doc --no-fail-fast
+
+  # ============================================================
+  # (跳过, IDE1.0 不需要)
+  # - cross-platform × 3 (ubuntu + macos + windows) — per brief §1.2 #3
+  # ============================================================

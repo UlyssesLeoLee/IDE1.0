@@ -1,0 +1,26 @@
+[package]
+name = "ide-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IDE1.0 CLI (placeholder per ULYS-191 §4.2.2 brief v0.1 — 完整 CLI 待 DD-02)"
+
+[[bin]]
+name = "ide-cli"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Workspace 共享 deps
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+aci-emitter.workspace = true
+
+# CLI 参数解析 (本笔占位, 后续 brief 可换成 clap derive)
