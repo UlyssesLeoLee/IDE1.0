@@ -1,0 +1,4 @@
+[toolchain]
+# Stable + 1.77 MSRV (与 aci-emitter 一致, 守门 R-2)
+channel = "stable"
+components = ["rustfmt", "clippy"]

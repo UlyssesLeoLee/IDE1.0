@@ -1,0 +1,19 @@
+# Rust / Cargo
+/target/
+**/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE1.0 临时 ACI 输出
+/.aci.tmp.json
+**/.aci.tmp.json
+
+# 编辑器 / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+/target-ulys-*/
+/.tmp/
