@@ -1,6 +1,7 @@
 {
   "$schema": "https://ulysses-star.local/schemas/aci/v0.1.0-draft.json",
   "aci_version": "0.1.0-draft",
+  "aci_compat_version": "0.1.0-draft",
   "project": "ide1.0",
   "description": "IDE1.0 ACI 契约 v0.1 — 提示词型断言 (LLM-可读). 1:1 对标 Star `.aci.json` per ULYS-191 §4.2.2.",
   "homepage": "https://github.com/UlyssesLeoLee/IDE1.0",
@@ -128,5 +129,19 @@
     "docs/architecture/aci-integration.md (ULYS-191 §4.2.2 IDE1.0 × ACI emitter 集成设计)",
     "https://github.com/UlyssesLeoLee/Star/blob/main/tools/star-flash-mock/.aci.json (1:1 schema source)",
     "https://github.com/UlyssesLeoLee/aci-emitter (Rust emitter 上游)"
-  ]
+  ],
+  "plugins": {
+    "ide-cli": {
+      "plugin_id": "ide-cli",
+      "enabled": true,
+      "default_mode": "offline",
+      "modules": {}
+    },
+    "ide-kernel-core": {
+      "plugin_id": "ide-kernel-core",
+      "enabled": true,
+      "default_mode": "offline",
+      "modules": {}
+    }
+  }
 }
