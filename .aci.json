@@ -135,13 +135,26 @@
       "plugin_id": "ide-cli",
       "enabled": true,
       "default_mode": "offline",
-      "modules": {}
+      "modules": {
+        "emit": {"module_id": "emit", "enabled": true, "mode": "offline"},
+        "version": {"module_id": "version", "enabled": true, "mode": "offline"},
+        "help": {"module_id": "help", "enabled": true, "mode": "offline"},
+        "shell": {"module_id": "shell", "enabled": true, "mode": "offline"}
+      }
     },
     "ide-kernel-core": {
       "plugin_id": "ide-kernel-core",
       "enabled": true,
       "default_mode": "offline",
-      "modules": {}
+      "modules": {
+        "version": {"module_id": "version", "enabled": true, "mode": "offline"},
+        "kernel_status": {"module_id": "kernel_status", "enabled": true, "mode": "offline"},
+        "aci_emit": {"module_id": "aci_emit", "enabled": true, "mode": "offline"},
+        "init": {"module_id": "init", "enabled": true, "mode": "offline"}
+      }
     }
-  }
+  },
+  "module_count_total": 8,
+  "module_count_enabled": 8,
+  "module_switch_stage": "stage1 (§4.4 per ULYS-190 cross-project pattern G-MS-04)"
 }

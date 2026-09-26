@@ -10,7 +10,11 @@
   "aci_compat_version": "0.1.0-draft",
   "supported_layers": ["ut", "it", "st", "e2e"],
   "tags_taxonomy": ["perf", "kernel", "cli", "aci-emitter"],
-  "mock_switch_trace_format": "cluster.enabled={cluster.enabled}, cluster.mode={cluster.mode}, plugins=[ide-cli,ide-kernel-core], modules=per_plugin (TBD)",
+  "mock_switch_trace_format": "cluster.enabled={cluster.enabled},mode={cluster.mode},plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 modules",
+  "module_count_total": 8,
+  "module_count_enabled": 8,
+  "module_switch_stage": "stage1 (§4.4 ULYS-190 G-MS-04 cross-project pattern, mirror IM1.0 PR #24 + CATs PR #18 + Star PR #151 + RGS PR #51 commit 4193207613)",
+  "updated_at": "2026-09-26T12:30:00Z",
   "created_at": "2026-09-23T23:25:00Z",
   "schema_ref": {
     "design_analysis": "https://github.com/UlyssesLeoLee/Star/blob/agent/minimaxm3/ulys-190/docs/architecture/2026-09-22-mock-switches/00-design-analysis.md",

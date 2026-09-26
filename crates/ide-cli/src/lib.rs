@@ -14,6 +14,36 @@
 //!
 //! - DD-02: `ide-cli session <sub>` / `ide-cli txn <sub>` / `ide-cli config <sub>`
 //! - DD-04: `ide-cli plugin <sub>`
+//!
+//! ## module_switch 接入 (per ULYS-190 §4.4 stage5, 2026-09-26 12:30 JST)
+//!
+//! IDE1.0 mock_switch L1+L2 已 ship via PR #3 (commit c4b62bb on main).
+//! 本 stage5 commit 补 L3 module_switch:
+//!
+//! 2 plugin x 8 module:
+//!   - ide-cli          : emit / version / help / shell
+//!   - ide-kernel-core  : version / kernel_status / aci_emit / init
+//!
+//! 跨项目範式对齐 (per G-MS-04):
+//!   - IM1.0 PR #24: 5 plugin x 28 module
+//!   - CATs PR #18: 4 plugin x 13 module
+//!   - Star PR #151: 7 plugin x 7 module
+//!   - RGS PR #51 (commit 4193207613 on dev, just merged): 5 plugin x 12 module
+//!   - IDE1.0 stage5 (本 commit): 2 plugin x 8 module
+//!
+//! 跨语言 dispatch 用法 (per G-MS-BRIEF-S44-01 IDE1.0 推广):
+//!
+//! ```python
+//! import subprocess, json
+//! subprocess.run([
+//!     "python3", "scripts/_lib_mock_switch_ide1.py",
+//!     "--aci-config", ".aci.json",
+//!     "read-plugins",
+//! ], check=True)
+//! ```
+//!
+//! 8 module 默认全 enabled, mode=offline. IDE1.0 是 docs-only placeholder,
+//! module 名映射占位 = 后续 brief 实际 subcommand 实现时一一对应.
 
 use std::process::ExitCode;
 
