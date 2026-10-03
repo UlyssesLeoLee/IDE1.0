@@ -50,7 +50,8 @@
 | **NEW** (本 commit 真拼接) | `cluster.enabled={cluster.enabled},mode={cluster.mode},plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 modules` |
 
 **实测输出**:
-```
+
+```text
 cluster.enabled=true,mode=offline,plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 modules
 ```
 
@@ -59,13 +60,15 @@ cluster.enabled=true,mode=offline,plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 
 ## §5 _lib_mock_switch_ide1.py 扩展 (mirror RGS / Star / IM1.0 範式)
 
 ### MockSwitchReader class
+
 - `__init__(aci_config_path, cluster_config_path)` 读两 JSON
 - `is_enabled()` / `get_mode()`: cluster 基础
 - `validate_compat()`: 校验 cluster.aci_compat_version == aci.aci_compat_version
 - `build_trace()`: 用 `str.replace()` 手动 substitute `{cluster.enabled}` 和 `{cluster.mode}` placeholder (per RGS 範式 fix, 因为 str.format() 不支持 dotted kwargs)
-- `read_plugins()`: 读 plugins.<id>.modules.<id> 树
+- `read_plugins()`: 读 plugins.\<id\>.modules.\<id\> 树
 
 ### CLI subcommands (5 个)
+
 - `is-enabled` (exit 0=enabled, 1=disabled)
 - `get-mode` (print CLUSTER_MODE=...)
 - `trace` (print 真拼接 trace)
@@ -79,9 +82,9 @@ cluster.enabled=true,mode=offline,plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 
 ✅ #1 code can be tested (Python unittest) - 15 tests ALL PASS
 ✅ #5 secrets 0 泄露 (IDE1.0 无 secret)
 ✅ #6 mock 项目存在 (`.aci.json` + `.mock-cluster.json` 在 IDE1.0 root)
-✅ #7 mock 不改真实 schema (并存扩展: 仅在 PR #3 v0.1 base 之上加 plugins.<id>.modules.<id> 子字段, 0 改既有 schema_required_fields / emitter_compatibility / backward_compat 等 v0.1 字段)
+✅ #7 mock 不改真实 schema (并存扩展: 仅在 PR #3 v0.1 base 之上加 plugins.\<id\>.modules.\<id\> 子字段, 0 改既有 schema_required_fields / emitter_compatibility / backward_compat 等 v0.1 字段)
 ✅ #9 commit message 完整 + author=Ulysses (per 守門 #10)
-✅ #10 author=Ulysses ulysses@mavis.local
+✅ #10 author=Ulysses <ulysses@mavis.local>
 ✅ #11 透明披露 (本报告 §7)
 ✅ #12 docs 同步 (本 regression report 7-8 段 per AGENTS.md §3)
 ✅ #13 W/T/M (Write: lib.rs doc comment; Test: 15 unit tests; Maintain: regression report)
@@ -96,18 +99,23 @@ cluster.enabled=true,mode=offline,plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 
 ## §7 已知缺口 (5 项, per 守門 #11 透明披露)
 
 ### G-MS-BRIEF-S44-01-ide1
+
 **Python helper, Rust native 跨 session** — 当前 `_lib_mock_switch_ide1.py` 是 Python subprocess 形式. Rust native 跨项目 batch 推广 跨 session per G-MS-BRIEF-S44-01.
 
 ### G-MS-BRIEF-S44-02-ide1
+
 **trace_format ~92 字 vs G-MS-08 ~80 字, 跨 session 截断** — 本 stage output `cluster.enabled=true,mode=offline,plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 modules` 超 12 字 (跨项目: IM1.0 ~120 + CATs ~92 + Star ~139 + RGS ~94 + **IDE1.0 ~92 字** 都超阈值). 跨项目 batch 截断 跨 session.
 
 ### G-MS-BRIEF-S44-04-ide1
+
 **不支持 hot reload** — 当前 `.aci.json` change 后必须 restart 进程或 reload per Python helper invocation. v0.2 hot reload 跨 session 评估.
 
 ### G-MS-BRIEF-S44-05-ide1
+
 **8 module 命名跨项目一致性, 待 GitGit stage6 验证** — IDE1.0 8 module 命名基于 subcommand 占位意图, 跟 IM1.0/CATs/RGS pub fn 命名粒度不完全可比. 跨项目 naming convention 跨 session 评估.
 
 ### G-MS-IDE1-SPECIFIC-01
+
 **IDE1.0 实际跨项目 validate-by-toml 5 plugin profile (per ULYS-191 §4.2.2)** — IDE1.0 docs-only placeholder, 但 mock_switch schema 1:1 对齐 Star. 后续 brief DD-01/02/03/04 实装后, 实际 subcommand 跟 module 名 1-1 对应需 reviewer 验证.
 
 ## §8 跨 session 续做入口 (per 守門 #24)
