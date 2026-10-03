@@ -321,3 +321,90 @@ IDE_SHELL_WEB_BIN=../../target/debug/ide-shell-web npx playwright test
 ```
 
 CI: `uat-playwright` job (ubuntu-latest, Node 20, chromium + browser cache).
+
+## §10 Tauri Desktop 打包 (ULYS-191 §4)
+
+> per 「我需要的是打包安装文件的桌面版」(2026-10-03).
+
+把 IDE Shell 从 web (HTTP server) 升级为 **Tauri 2 桌面应用** — 用户双击 `.msi` 安装,启动后弹原生窗口。同 `ide-shell` core,双 frontend (web + desktop) 共享后端状态机。
+
+### 10.1 架构
+
+```text
+                chromium (Playwright UAT)                    Tauri 2 webview (Windows/macOS/Linux)
+                        │                                              │
+                   fetch /api/*                                  invoke('frame' / 'key' / ...)
+                        │                                              │
+                        ▼                                              ▼
+                ide-shell-web server                      ide-shell-desktop.exe (Tauri managed state)
+                        │                                              │
+                        └──────────┬───────────────────────────┘
+                                   │
+                                   ▼  共用同一 `ide-shell::App` 状态机 (38 UT)
+                            crates/ide-shell
+                                   │
+                                   ▼
+                            crates/ide-kernel-core
+```
+
+- **Tauri 2 已知限制** (per [issue #9362](https://github.com/tauri-apps/tauri/issues/9362)):
+  `#[tauri::command]` 在 `lib.rs` root + 同 crate 有 `main.rs` 时 macro 重复定义。本笔绕法: commands 放 `lib.rs` root 但**不用 `pub`**(`__cmd__xxx` macro 是 private 不能跨 module),`invoke_handler!` 在同 module 引用。
+
+- **前端代码复用**: `crates/ide-shell-web/src/index.html` 拷到 `crates/ide-shell-desktop/dist/index.html`,JS 加 ~10 行 adapter 检测 `window.__TAURI_INTERNALS__` 走 `invoke` vs `fetch`。`tests/uat/` Playwright 仍可跑 (走 fetch 分支) — 桌面/Tauri 与 web UAT 一份前端代码。
+
+### 10.2 模块结构
+
+```text
+crates/ide-shell-desktop/
+├── Cargo.toml              # 依赖 tauri 2.x + ide-shell + crossterm (for KeyEvent 类型)
+├── build.rs                # tauri_build::build()
+├── tauri.conf.json         # app 配置 (windows.bundle + identifier)
+├── capabilities/default.json   # Tauri 2 必需
+├── icons/                  # 占位 PNG/ICO (品牌待设计)
+│   ├── 32x32.png  128x128.png  128x128@2x.png  icon.ico  Square30x30Logo.png
+├── src/
+│   ├── main.rs             # entry — ide_shell_desktop::run()
+│   └── lib.rs              # ShellState + 6 commands + 5 UT
+├── dist/index.html         # 复用 ide-shell-web 的 index.html + tauri adapter
+└── tests/integration.rs   # 3 IT (state 并发 / KeyResponse shape / quit 信号)
+```
+
+### 10.3 6 个 Tauri commands
+
+| Command | 签名 | 用途 |
+|---|---|---|
+| `frame` | `() -> WebFrame` | 拉当前 frame JSON |
+| `reset` | `() -> WebFrame` | 重置 app |
+| `key` | `(code, modifiers) -> KeyResponse` | 派发键盘事件 |
+| `mouse` | `(button) -> WebFrame` | 派发鼠标点击 |
+| `kernel_banner` | `() -> String` | 复用 ide-kernel-core |
+| `get_mode` | `() -> String` | 取当前 mode (避开 Rust 关键字 `mode`) |
+
+### 10.4 打包跑法
+
+```bash
+# 1. 装 Tauri CLI (一次性)
+cd tools && npm install  # @tauri-apps/cli 2.12
+
+# 2. 出 Windows .msi
+cargo build --release -p ide-shell-desktop
+cd crates/ide-shell-desktop && ../../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json
+# 产物: target/release/bundle/msi/IDE1.0 IDE Shell_0.1.0_x64_en-US.msi (~2.7 MB)
+
+# 3. macOS / Linux 同理 (换 target)
+npx tauri build --bundles appimage --config ./tauri.conf.json  # Linux
+npx tauri build --bundles dmg --config ./tauri.conf.json        # macOS
+```
+
+### 10.5 验证 (本机 rustc 1.98.1 + Node 26)
+
+| 步骤 | 结果 |
+|---|---|
+| `cargo test --workspace --all-targets` | ✅ **69 测试** (61 + 8 ide-shell-desktop) |
+| `cargo build --release -p ide-shell-desktop` | ✅ 8.1 MB `ide-shell-desktop.exe` |
+| `npx tauri build --bundles msi` | ✅ **2.7 MB MSI** (`IDE1.0 IDE Shell_0.1.0_x64_en-US.msi`) |
+| `cargo clippy -D warnings` | ✅ 0 warning |
+| `cargo fmt --check` | ✅ |
+| `markdownlint` (CI 同款) | ✅ 0 issues |
+
+CI 增量: 新增 `tauri-build-linux` job (ubuntu-latest, 出 `.deb` + `.AppImage`)。Windows MSI + macOS DMG 留给后续 brief (需要 Windows runner + Apple Developer ID)。
