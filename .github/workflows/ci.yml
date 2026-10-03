@@ -322,7 +322,7 @@ jobs:
 
       - name: Build Linux .deb + .AppImage
         working-directory: crates/ide-shell-desktop
-        run: ../../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
+        run: ../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
