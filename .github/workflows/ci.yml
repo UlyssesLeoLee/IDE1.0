@@ -106,7 +106,71 @@ jobs:
           python3 tests/test_ide1_mock_switch_edge.py -v
 
   # ============================================================
-  # Job 4: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
+  # Job 4: UAT (Playwright e2e) — ide-shell-web + 40 browser cases
+  # per ULYS-191 §3: UT/IT/ST/UAT 四层测试矩阵补齐
+  # 依赖: Rust (ide-shell-web binary) + Node 20 + Playwright chromium
+  # ============================================================
+  uat-playwright:
+    name: UAT (Playwright e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      - name: Build ide-shell-web binary
+        working-directory: .
+        run: cargo build -p ide-shell-web --bin ide-shell-web
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-v1
+
+      - name: Install Playwright deps + chromium
+        working-directory: tests/uat
+        run: |
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright e2e (40 cases)
+        working-directory: tests/uat
+        env:
+          IDE_SHELL_WEB_BIN: ../../target/debug/ide-shell-web
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/uat/playwright-report/
+          retention-days: 7
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: tests/uat/test-results/
+          retention-days: 7
+
+  # ============================================================
+  # Job 5: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
   # 跨 Rust ↔ Python emitter 字段 1:1 验证 (Stage 1 Python emitter + Stage 3 Rust emitter)
   # 依赖:
   #   - Star 仓 _lib_aci_emit.py (submodule 或临时 git clone)

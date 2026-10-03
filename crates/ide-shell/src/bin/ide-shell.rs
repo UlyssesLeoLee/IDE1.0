@@ -41,16 +41,20 @@ fn run(stdout: &mut Stdout) -> io::Result<()> {
     let mut app = App::new(AppConfig::default());
 
     loop {
-        terminal.draw(|f| ide_shell::render::render(f, &app))?;
+        terminal.draw(|f| ide_shell::render::ratatui_render::render(f, &app))?;
 
         if event::poll(Duration::from_millis(100))? {
             let evt = event::read()?;
-            let keep_going = match evt {
-                Event::Key(k) => app.on_key(k),
-                Event::Mouse(m) => app.on_mouse(m),
-                _ => true,
-            };
-            if !keep_going {
+            match evt {
+                Event::Key(k) => {
+                    app.on_key(k);
+                }
+                Event::Mouse(m) => {
+                    app.on_mouse(m);
+                }
+                _ => {}
+            }
+            if app.should_quit() {
                 return Ok(());
             }
         } else {

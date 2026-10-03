@@ -4,6 +4,7 @@ members = [
   "crates/ide-kernel-core",
   "crates/ide-cli",
   "crates/ide-shell",
+  "crates/ide-shell-web",
 ]
 
 [workspace.package]

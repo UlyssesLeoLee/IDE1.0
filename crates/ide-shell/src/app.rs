@@ -29,12 +29,18 @@ impl Default for AppConfig {
 pub struct App {
     config: AppConfig,
     mode: Mode,
-    /// 编辑 buffer(Insert / Command 模式共用)
+    /// 编辑 buffer(Insert / Normal 模式)— 用户正在构造的命令文本
     buffer: InputBuffer,
+    /// 命令 buffer(Command 模式专用)— `:` 后输入的内部命令名,
+    /// 与编辑 buffer 分离,保证 `:ai` 能对编辑 buffer 补全而不被清掉。
+    cmd_buffer: InputBuffer,
     /// 历史 (已执行的命令输出)
     history: Vec<String>,
     /// AI 桥
     ai: Box<dyn AiBackend>,
+    /// `:q` / `quit` 置位 — caller (TUI binary / web server) 决定如何响应.
+    /// TUI: 退出进程; web server: 返回 keep_going=false 给 Playwright, 不杀 server.
+    quit_requested: bool,
 }
 
 impl App {
@@ -43,8 +49,10 @@ impl App {
             config,
             mode: Mode::Normal,
             buffer: InputBuffer::new(),
+            cmd_buffer: InputBuffer::new(),
             history: Vec::new(),
             ai: Box::new(PlaceholderAi),
+            quit_requested: false,
         }
     }
 
@@ -56,6 +64,26 @@ impl App {
         &self.buffer
     }
 
+    /// Command mode 专用 cmd buffer 内容。
+    pub fn cmd_buffer(&self) -> &InputBuffer {
+        &self.cmd_buffer
+    }
+
+    /// 当前 mode 的活动 buffer — Command mode 返回 cmd_buffer,其余返回编辑 buffer。
+    pub fn active_buffer(&self) -> &InputBuffer {
+        match self.mode {
+            Mode::Command => &self.cmd_buffer,
+            _ => &self.buffer,
+        }
+    }
+
+    fn active_buffer_mut(&mut self) -> &mut InputBuffer {
+        match self.mode {
+            Mode::Command => &mut self.cmd_buffer,
+            _ => &mut self.buffer,
+        }
+    }
+
     pub fn history(&self) -> &[String] {
         &self.history
     }
@@ -64,12 +92,22 @@ impl App {
         &self.config.kernel_banner
     }
 
+    /// 用户是否请求退出 (`:q` / `quit` / Normal mode `q` 键)。
+    pub fn should_quit(&self) -> bool {
+        self.quit_requested
+    }
+
+    /// 重置 quit 标志 (web server 收到后可选 reset 或保持)。
+    pub fn clear_quit(&mut self) {
+        self.quit_requested = false;
+    }
+
     /// 处理键盘事件 — 返回 true 表示 app 应该继续,false 表示退出。
     pub fn on_key(&mut self, event: KeyEvent) -> bool {
-        // Command mode 下 Enter 把 buffer 当命令执行
+        // Command mode 下 Enter 把 cmd_buffer 当内部命令执行 (编辑 buffer 不动)
         if self.mode == Mode::Command && event.code == crossterm::event::KeyCode::Enter {
-            let cmd = self.buffer.as_str().clone();
-            self.buffer.clear();
+            let cmd = self.cmd_buffer.as_str().clone();
+            self.cmd_buffer.clear();
             self.mode = Mode::Normal;
             self.execute_command(&cmd);
             return true;
@@ -107,7 +145,10 @@ impl App {
 
     fn apply(&mut self, action: Action) -> bool {
         match action {
-            Action::Quit => return false,
+            Action::Quit => {
+                self.quit_requested = true;
+                return false;
+            }
             Action::EnterInsert => {
                 self.mode = Mode::Insert;
             }
@@ -116,18 +157,21 @@ impl App {
             }
             Action::EnterCommand => {
                 self.mode = Mode::Command;
-                self.buffer.clear();
+                self.cmd_buffer.clear();
             }
-            Action::MoveLeft => self.buffer.move_left(),
-            Action::MoveRight => self.buffer.move_right(),
-            Action::MoveHome => self.buffer.set_cursor(0),
-            Action::MoveEnd => self.buffer.set_cursor(self.buffer.len()),
-            Action::Insert(c) => self.buffer.insert_char(c),
+            Action::MoveLeft => self.active_buffer_mut().move_left(),
+            Action::MoveRight => self.active_buffer_mut().move_right(),
+            Action::MoveHome => self.active_buffer_mut().set_cursor(0),
+            Action::MoveEnd => {
+                let len = self.active_buffer().len();
+                self.active_buffer_mut().set_cursor(len);
+            }
+            Action::Insert(c) => self.active_buffer_mut().insert_char(c),
             Action::Backspace => {
-                self.buffer.backspace();
+                self.active_buffer_mut().backspace();
             }
             Action::Delete => {
-                self.buffer.delete();
+                self.active_buffer_mut().delete();
             }
             Action::Execute => {
                 // Insert 模式回车 = 执行 buffer 作为命令
@@ -145,29 +189,34 @@ impl App {
     }
 
     fn execute_command(&mut self, raw: &str) {
-        let cmd = raw.trim();
-        if cmd.is_empty() {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
             self.history.push("<empty>".into());
             return;
         }
+        // 归一化: Command mode 进入时 ':' 键只切 mode 不入 buffer,
+        // 所以用户输 ":q" 实际 buffer = "q"; Insert mode 直接输 "quit" 也合法。
+        // 统一去掉可选 ':' 前缀后匹配裸命令名。
+        let cmd = trimmed.strip_prefix(':').unwrap_or(trimmed);
         // 内部命令 (演示 AI native + IDE1.0 kernel 复用)
         match cmd {
-            ":q" | "quit" => {
+            "q" | "quit" => {
                 self.history.push("<quit signal>".into());
-                std::process::exit(0);
+                self.quit_requested = true;
+                return;
             }
-            ":help" | "help" => {
+            "help" => {
                 self.history.push(self.help_text());
                 return;
             }
-            ":version" | "version" => {
+            "version" => {
                 self.history.push(format!(
                     "{} | IDE1.0 ide-shell demo",
                     self.config.kernel_banner
                 ));
                 return;
             }
-            ":ai" | "ai" => {
+            "ai" => {
                 let sug = self.ai_suggestion();
                 self.history.push(if sug.is_empty() {
                     "<no ai suggestion>".into()
@@ -176,7 +225,7 @@ impl App {
                 });
                 return;
             }
-            ":clear" | "clear" => {
+            "clear" => {
                 self.history.clear();
                 return;
             }
@@ -270,6 +319,22 @@ mod tests {
     fn test_quit_returns_false() {
         let mut app = App::new(AppConfig::default());
         assert!(!app.on_key(k('q')));
+        assert!(app.should_quit(), "q should set quit_requested flag");
+    }
+
+    #[test]
+    fn test_quit_command_sets_flag_not_exit() {
+        let mut app = App::new(AppConfig::default());
+        // : → Command, 输 q, Enter → 执行 ":q" 走 quit 分支
+        assert!(app.on_key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE)));
+        assert!(app.on_key(k('q')));
+        app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            app.should_quit(),
+            ":q should set quit_requested, not exit process"
+        );
+        app.clear_quit();
+        assert!(!app.should_quit(), "clear_quit should reset flag");
     }
 
     #[test]
@@ -315,18 +380,33 @@ mod tests {
     #[test]
     fn test_command_mode_enter_executes() {
         let mut app = App::new(AppConfig::default());
+        // 先填一个编辑 buffer (Insert mode), 验证 Command 不动它
+        app.on_key(k('i'));
+        for c in "draft".chars() {
+            app.on_key(k(c));
+        }
+        app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.buffer().as_str(), "draft");
+
         // 切到 Command
         assert!(app.on_key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE)));
         assert_eq!(app.mode(), Mode::Command);
-        // 输入 "version"
+        // 输入 "version" → 进 cmd_buffer, 编辑 buffer 不动
         for c in "version".chars() {
             assert!(app.on_key(k(c)));
         }
-        assert_eq!(app.buffer().as_str(), "version");
+        assert_eq!(app.cmd_buffer().as_str(), "version");
+        assert_eq!(
+            app.buffer().as_str(),
+            "draft",
+            "编辑 buffer 不应被 Command mode 污染"
+        );
         // Enter 执行
         assert!(app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        // 执行后回 Normal 且 history 至少有一条
+        // 执行后回 Normal, cmd_buffer 清空, 编辑 buffer 保留, history 至少一条
         assert_eq!(app.mode(), Mode::Normal);
+        assert_eq!(app.cmd_buffer().as_str(), "");
+        assert_eq!(app.buffer().as_str(), "draft");
         assert!(!app.history().is_empty());
     }
 

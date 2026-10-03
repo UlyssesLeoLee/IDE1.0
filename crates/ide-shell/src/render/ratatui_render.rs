@@ -1,4 +1,4 @@
-//! ratatui 渲染 — 三段布局: 顶部 status (mode + AI hint) / 中部 history / 底部 prompt。
+//! ratatui 渲染 — TTY 终端 backend (与 web backend 并存, 共享 &App 数据)。
 
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -69,26 +69,9 @@ fn render_prompt(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         Mode::Insert => "> ",
         Mode::Command => ":",
     };
-    let buffer = app.buffer().as_str();
+    let buffer = app.active_buffer().as_str();
     let prompt_text = format!("{}{}", prefix, buffer);
     let p =
         Paragraph::new(prompt_text).block(Block::default().borders(Borders::ALL).title(" prompt "));
     f.render_widget(p, area);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_render_status_smoke() {
-        // 渲染函数需要 Frame,没法直接测。我们只验证 module path 可达 + prefix 选择。
-        // prefix 选择逻辑间接在 render_prompt,这里 mirror 一份保证不 regression。
-        let p_normal = match Mode::Normal {
-            Mode::Normal => "▌ ",
-            Mode::Insert => "> ",
-            Mode::Command => ":",
-        };
-        assert_eq!(p_normal, "▌ ");
-    }
 }

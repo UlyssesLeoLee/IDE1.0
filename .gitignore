@@ -17,3 +17,10 @@ Cargo.lock.bak
 Thumbs.db
 /target-ulys-*/
 /.tmp/
+
+# Playwright UAT (tests/uat)
+tests/uat/node_modules/
+tests/uat/test-results/
+tests/uat/playwright-report/
+tests/uat/blob-report/
+tests/uat/playwright/.cache/
