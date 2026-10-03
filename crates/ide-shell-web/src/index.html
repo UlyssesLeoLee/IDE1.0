@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>IDE1.0 IDE Shell — web UAT</title>
+  <style>
+    :root {
+      --fg: #d4d4d4;
+      --bg: #1e1e1e;
+      --border: #3c3c3c;
+      --blue: #569cd6;
+      --green: #4ec9b0;
+      --yellow: #dcdcaa;
+      --gray: #808080;
+      --dark-gray: #5a5a5a;
+      --black: #000000;
+    }
+    body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--bg); color: var(--fg); margin: 24px; }
+    #shell {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px;
+      max-width: 880px;
+    }
+    .section { margin-bottom: 8px; }
+    .row { white-space: pre; font-size: 14px; line-height: 1.2; }
+    .badge { padding: 0 6px; font-weight: bold; }
+    .badge[data-mode="NORMAL"]   { background: var(--blue);   color: var(--black); }
+    .badge[data-mode="INSERT"]   { background: var(--green);  color: var(--black); }
+    .badge[data-mode="COMMAND"]  { background: var(--yellow); color: var(--black); }
+    .fg-dark-gray { color: var(--dark-gray); }
+    .fg-gray      { color: var(--gray); }
+    .fg-blue      { color: var(--blue); }
+    .fg-green     { color: var(--green); }
+    .fg-yellow    { color: var(--yellow); }
+    .footer { margin-top: 12px; font-size: 12px; color: var(--dark-gray); }
+    kbd { background: #333; color: #fff; padding: 1px 5px; border-radius: 3px; font-size: 12px; border: 1px solid #555; }
+  </style>
+</head>
+<body>
+  <h2>IDE1.0 IDE Shell — web UAT</h2>
+  <p>Playwright e2e target. Same Rust core as <code>cargo run -p ide-shell --bin ide-shell</code> (ratatui TUI), different render backend.</p>
+  <div id="shell" data-testid="shell" data-mode="" data-buffer="" data-cursor="0">
+    <div class="section" data-testid="status" id="status"></div>
+    <div class="section" data-testid="history" id="history"></div>
+    <div class="section" data-testid="prompt" id="prompt"></div>
+  </div>
+  <div class="footer">
+    Shortcuts:
+    <kbd>i</kbd> insert ·
+    <kbd>:</kbd> command ·
+    <kbd>Esc</kbd> normal ·
+    <kbd>hjkl</kbd> move ·
+    <kbd>Enter</kbd> execute ·
+    <kbd>:q</kbd> quit (visual only)
+  </div>
+
+  <script>
+    const COLOR_CLASS = {
+      "blue": "fg-blue",
+      "green": "fg-green",
+      "yellow": "fg-yellow",
+      "gray": "fg-gray",
+      "dark_gray": "fg-dark-gray",
+    };
+    const BG_CLASS = {}; // 背景色由 .badge CSS 集中控制
+
+    function renderRows(rows) {
+      return rows.map(row => {
+        let html = "";
+        for (const cell of row) {
+          let s = cell.style || {};
+          let classes = [];
+          if (s.fg && COLOR_CLASS[s.fg]) classes.push(COLOR_CLASS[s.fg]);
+          if (s.weight === "bold") classes.push("badge");
+          // HTML escape
+          let ch = cell.ch === "<" ? "&lt;" : cell.ch === ">" ? "&gt;" : cell.ch === "&" ? "&amp;" : cell.ch;
+          html += `<span class="${classes.join(" ")}">${ch}</span>`;
+        }
+        return `<div class="row">${html}</div>`;
+      }).join("");
+    }
+
+    function findBadgeRow(rows) {
+      // mode badge 是 content 行 (status[1]), 含 "NORMAL"/"INSERT"/"COMMAND"
+      for (const row of rows) {
+        const text = row.map(c => c.ch).join("").trim();
+        if (["NORMAL", "INSERT", "COMMAND"].includes(text.replace(/\s+/g, ""))) {
+          return row;
+        }
+      }
+      return null;
+    }
+
+    function findBufferRow(rows) {
+      for (const row of rows) {
+        const text = row.map(c => c.ch).join("");
+        if (text.includes("> ") || text.includes("▌ ") || text.includes(":")) {
+          return row;
+        }
+      }
+      return null;
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch("/api/frame");
+        const frame = await res.json();
+        const shell = document.getElementById("shell");
+        shell.dataset.mode = frame.mode;
+        shell.dataset.buffer = frame.buffer || "";
+        shell.dataset.cursor = String(frame.cursor || 0);
+
+        document.getElementById("status").innerHTML = renderRows(frame.status);
+        document.getElementById("history").innerHTML = renderRows(frame.history);
+        document.getElementById("prompt").innerHTML = renderRows(frame.prompt);
+
+        // 给 badge 加 data-mode 属性供 e2e 用
+        const badgeRow = findBadgeRow(frame.status);
+        if (badgeRow) {
+          const text = badgeRow.map(c => c.ch).join("").trim();
+          const badgeEl = document.querySelector("#status .row:nth-child(2) .badge");
+          if (badgeEl) badgeEl.dataset.mode = text;
+        }
+      } catch (e) {
+        console.error("refresh failed:", e);
+      }
+    }
+
+    async function sendEvent(payload) {
+      const res = await fetch("/api/event", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data && data.frame) {
+        const shell = document.getElementById("shell");
+        shell.dataset.mode = data.frame.mode;
+        shell.dataset.buffer = data.frame.buffer || "";
+        shell.dataset.cursor = String(data.frame.cursor || 0);
+        document.getElementById("status").innerHTML = renderRows(data.frame.status);
+        document.getElementById("history").innerHTML = renderRows(data.frame.history);
+        document.getElementById("prompt").innerHTML = renderRows(data.frame.prompt);
+        const badgeEl = document.querySelector("#status .row:nth-child(2) .badge");
+        if (badgeEl) badgeEl.dataset.mode = data.frame.mode;
+      }
+      return data;
+    }
+
+    // 键盘事件:捕获 document keydown, 转成 server payload
+    document.addEventListener("keydown", async (ev) => {
+      let code;
+      if (ev.key === "Enter") code = "Enter";
+      else if (ev.key === "Escape") code = "Esc";
+      else if (ev.key === "Backspace") code = "Backspace";
+      else if (ev.key === "Tab") code = "Tab";
+      else if (ev.key === "ArrowUp") code = "Up";
+      else if (ev.key === "ArrowDown") code = "Down";
+      else if (ev.key === "ArrowLeft") code = "Left";
+      else if (ev.key === "ArrowRight") code = "Right";
+      else if (ev.key === "Home") code = "Home";
+      else if (ev.key === "End") code = "End";
+      else if (ev.key.length === 1) code = `Char:${ev.key}`;
+      else return;
+
+      let mods = [];
+      if (ev.ctrlKey) mods.push("CONTROL");
+      if (ev.altKey) mods.push("ALT");
+      if (ev.shiftKey) mods.push("SHIFT");
+
+      ev.preventDefault();
+      await sendEvent({ kind: "key", code, modifiers: mods });
+    });
+
+    // 鼠标:左键 → /api/event {kind:"mouse", button:"Left"} ; 右键 → "Right"
+    document.getElementById("shell").addEventListener("mousedown", async (ev) => {
+      ev.preventDefault();
+      const button = ev.button === 2 ? "Right" : "Left";
+      await sendEvent({ kind: "mouse", button });
+    });
+    document.addEventListener("contextmenu", ev => ev.preventDefault());
+
+    // 初始拉一次
+    refresh();
+    // 兜底: 每 200ms 拉一次 (防止漏 keydown)
+    setInterval(refresh, 200);
+  </script>
+</body>
+</html>

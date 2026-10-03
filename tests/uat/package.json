@@ -1,0 +1,18 @@
+{
+  "name": "ide1.0-uat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IDE1.0 IDE Shell — Playwright e2e UAT (per ULYS-191 §3 四层测试矩阵)",
+  "scripts": {
+    "test": "playwright test",
+    "test:list": "playwright test --list",
+    "test:headed": "playwright test --headed"
+  },
+  "keywords": ["ide", "shell", "uat", "playwright", "e2e"],
+  "author": "Ulysses",
+  "license": "MIT OR Apache-2.0",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

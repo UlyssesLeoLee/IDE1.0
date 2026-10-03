@@ -17,14 +17,16 @@
 | **§4.4 stage6** | mock_switch 11 边界/失败用例 (Python `unittest`) + CI `mock-switch-validate` job | PR #5 (15beb40) | ✅ MERGED |
 | **IDE Shell** | `crates/ide-shell` 骨架 — TUI (ratatui) + AI bridge (PlaceholderAi) + Vim normal/insert/command + 鼠标 (crossterm EnableMouseCapture) — 30 UT | PR #6 (f0753ab) | ✅ MERGED |
 | **Lint 全清** | `.markdownlint.json` 关 MD060 (版本漂移噪音 141) + 修 16 真错 → 0 issues | PR #7 (42212f4) | ✅ MERGED |
+| **四层测试矩阵** | UT (61 Rust) + IT (跨 crate 10) + ST (cli_smoke + 26 Python mock) + **UAT (Playwright e2e 40 case, `crates/ide-shell-web` web 渲染)** | PR #9 (本笔) | 🟡 OPEN |
 
 测试矩阵 (本机 rustc 1.98.1 全绿):
 
-- Rust: `cargo test --workspace --all-targets` → **38 测试** (3 ide-cli + 3 integration + 2 ide-kernel-core + **30 ide-shell**)
+- Rust: `cargo test --workspace --all-targets` → **61 测试** (3 ide-cli + 3 ide-cli IT + 2 ide-kernel-core + 38 ide-shell + 8 ide-shell-web UT + 7 ide-shell-web IT)
 - Python mock: `test_ide1_mock_switch.py` → **15** + `test_ide1_mock_switch_edge.py` → **11** = **26**
 - System: `cli_smoke.sh` → **4/4 PASS**
+- UAT (Playwright): `npx playwright test` → **40/40 PASS** (chromium, 6 spec 文件)
 - Markdown lint: **0 issues / exit 0**
-- CI: **8 jobs** (Rust + Integration + Mock-switch-validate + Cross-language parity + Markdown lint + Rust bench + Cross-project smoke + CodeRabbit) — 全部 ✅
+- CI: **9 jobs** (Rust + Integration + Mock-switch-validate + UAT-Playwright + Cross-language parity + Markdown lint + Rust bench + Cross-project smoke + CodeRabbit)
 
 ## §1 简介
 
@@ -35,16 +37,18 @@ Stage 2 (Rust `aci-emitter v0.1.0`) 已 ship ([ULYS-224](https://github.com/Ulys
 本仓 (IDE1.0) 当前提供:
 
 - **底层 kernel (Stage 3.0 最小骨架)**:
-  - 最小 Cargo workspace (3 crates: `ide-kernel-core` + `ide-cli` + **`ide-shell`**)
+  - 最小 Cargo workspace (4 crates: `ide-kernel-core` + `ide-cli` + **`ide-shell`** + **`ide-shell-web`**)
   - 3 个 placeholder integration tests (`tests/integration.rs`)
   - Bash smoke (`tests/st/cli_smoke.sh`)
-  - 8 jobs GitHub Actions CI
+  - 9 jobs GitHub Actions CI (含 UAT Playwright job)
   - `.aci.json` schema v0.1 (1:1 拷贝自 Star)
   - 集成设计文档 (`docs/architecture/aci-integration.md`)
 
 - **IDE Shell 骨架 (ULYS-191 §3, 同产品双外观)**:
   - `crates/ide-shell` — TUI + AI + Vim + 鼠标 (PowerShell 替代/增强内核共用)
-  - 见 [§8 IDE Shell 骨架](#8-ide-shell-骨架-ulys-191-3)
+  - `crates/ide-shell-web` — 同内核 web 渲染 + HTTP server (Playwright UAT target)
+  - `tests/uat/` — Playwright e2e 40 case (UT/IT/ST/UAT 四层矩阵补齐)
+  - 见 [§8 IDE Shell 骨架](#8-ide-shell-骨架-ulys-191-3) + [§9 四层测试矩阵](#9-四层测试矩阵-utitstuat)
 
 ⚠️ **本笔仅最小骨架**. 完整内核实装待后续 brief (Stage 3 方案 B).
 
@@ -210,17 +214,32 @@ crates/ide-shell/
 ├── Cargo.toml                  # workspace 共享 deps, 锁 ratatui 0.28 + crossterm 0.28
 └── src/
     ├── lib.rs                  # 模块声明 + App / Mode re-export
-    ├── mode.rs                 # Vim 三态枚举 (Normal / Insert / Command)        + 2 UT
+    ├── mode.rs                 # Vim 三态枚举 (serde Serialize/Deserialize)      + 2 UT
     ├── input.rs                # 编辑缓冲 (Vec<char> + cursor + 移动/删除)       + 7 UT
     ├── keymap.rs               # KeyEvent + Mode → Action 映射                   + 11 UT
     ├── ai.rs                   # AiBackend trait + PlaceholderAi                 + 2 UT
-    ├── render.rs               # ratatui 三段布局 (status / history / prompt)    + 1 UT
-    ├── app.rs                  # App 顶层状态 + 事件循环 + 执行 (含 ACI bridge)   + 7 UT
+    ├── render/
+    │   ├── mod.rs              # backend 声明 (ratatui_render + web)
+    │   ├── ratatui_render.rs   # TTY backend — 三段布局 ratatui widgets
+    │   └── web.rs              # Web backend — WebFrame 结构化数据 (JSON)        + 8 UT
+    ├── app.rs                  # App 状态机 + 事件循环 + 双 buffer 执行           + 9 UT
     └── bin/
-        └── ide-shell.rs        # binary entry — 终端初始化 + 主循环
+        └── ide-shell.rs        # TUI binary entry — 终端初始化 + 主循环
+
+crates/ide-shell-web/
+├── Cargo.toml                  # 复用 ide-shell core, 0 web framework dep (std TcpListener)
+├── src/
+│   ├── lib.rs                  # HTTP server (/ + /api/frame + /api/event + /api/reset) + 8 UT
+│   ├── index.html              # DOM 渲染 (data-mode/data-buffer/data-cursor 属性供 e2e selector)
+│   └── bin/
+│       └── ide-shell-web.rs    # web server binary entry (默认 127.0.0.1:8123)
+└── tests/
+    └── integration.rs          # HTTP server 级 IT — 真 TCP 请求验证端点行为     + 7 IT
 ```
 
-总计 **30 单测**,全部 `cargo test -p ide-shell` 通过。
+总计 **38 ide-shell 单测 + 8 ide-shell-web UT + 7 ide-shell-web IT**,全部 `cargo test --workspace` 通过。
+
+两个 render backend 共享同一份 `&App` 状态 → TUI 与 Web 视觉/行为 parity (双外观内核相通)。
 
 ### 8.3 键位速查
 
@@ -261,3 +280,44 @@ crates/ide-shell/
 - 多行 buffer (现仅单行)
 - PowerShell 真实解析(现仅 shell 兜底)
 - PSReadLine 插件形态 entry
+
+## §9 四层测试矩阵 (UT/IT/ST/UAT)
+
+> per 「UT,IT,ST,基于 playwright 的 UAT 都要做到位」(2026-10-03).
+
+| 层 | 位置 | 数量 | 工具 | 覆盖 |
+|---|---|---|---|---|
+| **UT** (单元) | 各 crate `src/` `#[cfg(test)]` | **61** Rust + **26** Python | `cargo test` / `unittest` | mode 状态机 / input buffer / keymap / AI bridge / web render / HTTP server / mock_switch 数据形状 + 11 边界用例 |
+| **IT** (集成) | `crates/ide-cli/tests/integration.rs` + `crates/ide-shell-web/tests/integration.rs` | **3 + 7** | `cargo test --all-targets` | ACI schema roundtrip / emitter 兼容性 / HTTP 端点真 TCP 行为 (frame/event/reset/404/quit 信号) |
+| **ST** (系统) | `tests/st/cli_smoke.sh` | **4 step** | bash + cargo run | ide-cli 端到端 emit → 10 必填字段 → schema version |
+| **UAT** (验收) | `tests/uat/specs/*.spec.ts` | **40** case / 6 spec | **Playwright 1.63 (chromium)** | 浏览器驱动完整用户流: 页面加载 / mode 切换 / Vim 键位 / 鼠标 / AI 建议 / 内置命令 / DOM 属性追踪 / 端到端工作流 |
+
+### 9.1 UAT 架构
+
+```text
+Playwright (chromium)
+    │  HTTP (fetch /api/event)          DOM (keydown / mousedown)
+    ▼                                    ▼
+ide-shell-web server ◄────────── index.html (data-mode/data-buffer 属性)
+    │
+    ▼
+ide-shell core (App 状态机 — 与 TUI binary 100% 同源)
+```
+
+- Web backend 渲染 `WebFrame` JSON(与 ratatui backend 共享同一 `&App`),Playwright 双通道验证:API 层 (frame JSON) + DOM 层 (`data-*` 属性 / 键盘鼠标事件)。
+- `webServer` 由 `playwright.config.ts` 自动启停(`reuseExistingServer` 本地开发复用)。
+
+### 9.2 UAT 跑法
+
+```bash
+# 1. build web server binary
+cargo build -p ide-shell-web --bin ide-shell-web
+
+# 2. 装 deps (首次)
+cd tests/uat && npm install && npx playwright install chromium
+
+# 3. 跑 40 case (webServer 自动启停)
+IDE_SHELL_WEB_BIN=../../target/debug/ide-shell-web npx playwright test
+```
+
+CI: `uat-playwright` job (ubuntu-latest, Node 20, chromium + browser cache).
