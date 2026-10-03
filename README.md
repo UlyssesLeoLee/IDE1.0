@@ -4,6 +4,28 @@
 > 完整 microkernel / session / transaction buffer / search / plugin loader / TUI / txn
 > 实装待后续 brief (per DD-01~04 详细设计书).
 
+## §0 三阶段累计交付 (per 2026-10-03 dev 收尾)
+
+| 阶段 | 内容 | 交付 commit / PR | 状态 |
+|---|---|---|---|
+| **Stage 1** | `.aci.json` schema v0.1 (跨项目 1:1) | Star PR #93 → 已 ship main + dev | ✅ |
+| **Stage 2** | Rust `aci-emitter v0.1.0` (10 必填字段 + 4 layer + 5 severity + 4 status + 17 expect_value_types) | [ULYS-224](https://github.com/UlyssesLeoLee/aci-emitter) rev=df28c56 | ✅ |
+| **Stage 3.0** | 最小 Cargo skeleton + `ide-kernel-core` + `ide-cli` + `aci-emitter` 集成 | PR #2 (5af5e7c) | ✅ MERGED |
+| **§4.4 L1+L2** | mock `cluster_switch` + `plugin_switch` (2 plugin) | PR #3 (c4b62bb) | ✅ MERGED |
+| **§4.4 L3** | mock `module_switch` Stage 1 (8 module: ide-cli×4 + ide-kernel-core×4) | PR #4 (54aacf0) | ✅ MERGED |
+| **§4.4 L3 收尾** | regression report 标 IDE1.0 ✅ MERGED,跨项目 5/7 累计 | 48425a2 | ✅ MERGED (含 PR #5 squash) |
+| **§4.4 stage6** | mock_switch 11 边界/失败用例 (Python `unittest`) + CI `mock-switch-validate` job | PR #5 (15beb40) | ✅ MERGED |
+| **IDE Shell** | `crates/ide-shell` 骨架 — TUI (ratatui) + AI bridge (PlaceholderAi) + Vim normal/insert/command + 鼠标 (crossterm EnableMouseCapture) — 30 UT | PR #6 (f0753ab) | ✅ MERGED |
+| **Lint 全清** | `.markdownlint.json` 关 MD060 (版本漂移噪音 141) + 修 16 真错 → 0 issues | PR #7 (42212f4) | ✅ MERGED |
+
+测试矩阵 (本机 rustc 1.98.1 全绿):
+
+- Rust: `cargo test --workspace --all-targets` → **38 测试** (3 ide-cli + 3 integration + 2 ide-kernel-core + **30 ide-shell**)
+- Python mock: `test_ide1_mock_switch.py` → **15** + `test_ide1_mock_switch_edge.py` → **11** = **26**
+- System: `cli_smoke.sh` → **4/4 PASS**
+- Markdown lint: **0 issues / exit 0**
+- CI: **8 jobs** (Rust + Integration + Mock-switch-validate + Cross-language parity + Markdown lint + Rust bench + Cross-project smoke + CodeRabbit) — 全部 ✅
+
 ## §1 简介
 
 **IDE1.0** = 纯 Rust AI Native CLI Development Kernel (per 需求规格书).
