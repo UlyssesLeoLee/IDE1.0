@@ -73,7 +73,36 @@ jobs:
         run: bash tests/st/cli_smoke.sh
 
   # ============================================================
-  # Job 3: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
+  # Job 3: Mock switch 验证 (per ULYS-190 §4.4 stage6 — mock edge/failure)
+  # Python mock_switch reader (cluster/plugin/module 三层) + 边界/失败路径
+  # IDE1.0 stage1 8 module + stage6 11 edge 用例 (总计 26 用例)
+  # 守门 #13 W/T/M (Python 系统测;Rust 系统测在 Job 2 cli_smoke)
+  # ============================================================
+  mock-switch-validate:
+    name: Mock switch validate (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run mock_switch reader tests (stage1, 15 用例)
+        working-directory: .
+        run: |
+          echo "=== stage1: 15 用例 (数据形状 + 5 helper 子命令) ==="
+          python3 tests/test_ide1_mock_switch.py -v
+
+      - name: Run mock_switch edge tests (stage6, 11 用例)
+        working-directory: .
+        run: |
+          echo "=== stage6: 11 用例 (disabled / mode 边界 / compat failure / ACI 缺字段) ==="
+          python3 tests/test_ide1_mock_switch_edge.py -v
+
+  # ============================================================
+  # Job 4: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
   # 跨 Rust ↔ Python emitter 字段 1:1 验证 (Stage 1 Python emitter + Stage 3 Rust emitter)
   # 依赖:
   #   - Star 仓 _lib_aci_emit.py (submodule 或临时 git clone)
