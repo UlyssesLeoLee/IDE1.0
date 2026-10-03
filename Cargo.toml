@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/ide-kernel-core", "crates/ide-cli"]
+members = [
+  "crates/ide-kernel-core",
+  "crates/ide-cli",
+  "crates/ide-shell",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -29,7 +33,10 @@ serde_json = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 thiserror = "1.0"
 anyhow = "1.0"
-# 守门 #11 — 显式 git dep, 锁 rev = ULYS-191.1 (ULYS-224) main HEAD
+# TUI 层 (ULYS-191 §3 IDE Shell 选型 ratatui + crossterm, Windows 友好)
+ratatui = { version = "0.28", default-features = false, features = ["crossterm"] }
+crossterm = "0.28"
+# 守门 #11 缺标比错标 git dep, 锁 rev = ULYS-191.1 (ULYS-224) main HEAD
 # §4.5 跨项目 CI 落地后改 crates.io publish 或 path 依赖
 aci-emitter = { git = "https://github.com/UlyssesLeoLee/aci-emitter", rev = "df28c56" }
 
