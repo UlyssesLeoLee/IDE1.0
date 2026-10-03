@@ -1259,7 +1259,7 @@ REQ-001 §14 / AD-001 §2.7 を実装するにあたり、Buffer 内部データ
 | 依存 | PieceTable, ChunkedStore, MmapStorage, Codec, LineEnding, UndoStack, Persistence |
 | 状態 | per-Buffer: Loaded → Dirty → Saving → Saved、Closed（解放） |
 | Transaction | Buffer 自体は Transaction 非依存。Transaction は Buffer の Patch を acquire して記録 |
-| Error | ERR-BE-001 〜 ERR-BE-099 |
+| Error | ERR-BIZ-XXX / ERR-VAL-XXX / ERR-AUTHZ-XXX / ERR-DB-XXX |
 | 並行性 | per-DocumentId RwLock、Session 間では同時 Patch 時に ConflictDetector 経由の Version 競合 |
 | Logging | BufferOpened, BufferRead, BufferPatched, BufferUndo, BufferRedo, BufferSaved, BufferClosed, BufferEncodingDetected, BufferSavepointCreated |
 
@@ -1418,7 +1418,7 @@ pub struct DetectionResult {
 1. BOM 検出（UTF-8 BOM, UTF-16 LE/BE BOM）
 2. 統計的判定（chardet / encoding_rs）【TBD：chardetng crate 採用】
 3. 拡張子ヒント（.txt, .md → UTF-8 既定）
-4. 判定不能 → ERR-BE-002 EncodingDetectionFailed（バイナリなら ERR-BE-003 BinaryFile）
+4. 判定不能 → ERR-VAL-006 EncodingDetectionFailed（バイナリなら ERR-VAL-006 BinaryFile）
 
 
 ### 8.5 核心メソッド詳細
@@ -1442,7 +1442,7 @@ P-004: ファイル読込
        c. サイズ > chunked_threshold → ChunkedStorage 利用
        d. その他 → InMemory
 P-005: Encoding 検出（CodecRegistry.detect）
-       - 失敗 → ERR-BE-002
+       - 失敗 → ERR-VAL-006
 P-006: Decode → PieceTable 構築
 P-007: LineEnding 検出（LF / CRLF / CR の先頭サンプル検査）
 P-008: BOM 保持フラグ設定
@@ -1573,7 +1573,7 @@ Optimistic Concurrency + ConflictDetector で制御（MOD-TM-005 経由）：
 1. Session A が Buffer を読込、version=V、hash=H
 2. Session B が Patch 適用 → Buffer version=V+1、hash=H'
 3. Session A が Patch 適用を試行（before_hash=H, expected_version=V）
-4. ConflictDetector が H != H' を検出 → ERR-BE-007 VersionConflict
+4. ConflictDetector が H != H' を検出 → ERR-BIZ-009 VersionConflict
 5. Session A は Re-Read → 最新 version/hash を取得 → 再生成 Patch で再試行
 
 #### 8.6.3 排他粒度の候補
@@ -1608,7 +1608,7 @@ Optimistic Concurrency + ConflictDetector で制御（MOD-TM-005 経由）：
 
 **メモリ上限超過時**：
 
-- `MemoryBudgetExceeded`（ERR-BE-008）で Patch 拒否
+- `MemoryBudgetExceeded`（ERR-BIZ-006）で Patch 拒否
 - 推奨：Chunked 化 / 一部 Close / Savepoint で古い Version を Drop
 
 ### 8.8 Buffer Sequence Diagrams
@@ -1697,25 +1697,25 @@ sequenceDiagram
     BE-->>User: Ok
 ```
 
-### 8.9 Buffer Error 体系（ERR-BE-XXX）
+### 8.9 Buffer Error 体系（ERR-BIZ / ERR-VAL / ERR-AUTHZ / ERR-DB）
 
 | Error Code | 発生条件 | HTTP 相当 | Retry | ログ Level | Recovery |
 |-----------|---------|----------|------|-----------|----------|
-| ERR-BE-001 | FileNotFound | 404 | No | WARN | パス確認 |
-| ERR-BE-002 | EncodingDetectionFailed | 422 | No | WARN | Encoding 明示指定 |
-| ERR-BE-003 | BinaryFile | 422 | No | WARN | Hex Editor 等別手段 |
-| ERR-BE-004 | PathBlocked | 403 | No | WARN | Path 修正 |
-| ERR-BE-005 | BufferNotOpen | 409 | No | INFO | Open |
-| ERR-BE-006 | PatchOutOfRange | 422 | No | WARN | Patch 修正 |
-| ERR-BE-007 | VersionConflict | 409 | Yes | WARN | Re-Read 後再生成 |
-| ERR-BE-008 | MemoryBudgetExceeded | 507 | Yes | ERROR | Chunked 化 / Close |
-| ERR-BE-009 | UndoStackEmpty | 409 | No | INFO | 無視 |
-| ERR-BE-010 | RedoStackEmpty | 409 | No | INFO | 無視 |
-| ERR-BE-011 | SavepointNotFound | 404 | No | WARN | 別 Savepoint 利用 |
-| ERR-BE-012 | SaveIOError | 500 | Yes | ERROR | 再試行 / 縮退 |
-| ERR-BE-013 | AtomicRenameFailed | 500 | Yes | ERROR | 再試行 |
-| ERR-BE-014 | PermissionDenied | 403 | No | WARN | 権限修正 |
-| ERR-BE-015 | BufferClosed | 410 | No | INFO | 再 Open |
+| ERR-BIZ-001 | FileNotFound | 404 | No | WARN | パス確認 |
+| ERR-VAL-006 | EncodingDetectionFailed | 422 | No | WARN | Encoding 明示指定 |
+| ERR-VAL-006 | BinaryFile | 422 | No | WARN | Hex Editor 等別手段 |
+| ERR-AUTHZ-003 | PathBlocked | 403 | No | WARN | Path 修正 |
+| ERR-BIZ-001 | BufferNotOpen | 409 | No | INFO | Open |
+| ERR-VAL-004 | PatchOutOfRange | 422 | No | WARN | Patch 修正 |
+| ERR-BIZ-009 | VersionConflict | 409 | Yes | WARN | Re-Read 後再生成 |
+| ERR-BIZ-006 | MemoryBudgetExceeded | 507 | Yes | ERROR | Chunked 化 / Close |
+| ERR-BIZ-001 | UndoStackEmpty | 409 | No | INFO | 無視 |
+| ERR-BIZ-001 | RedoStackEmpty | 409 | No | INFO | 無視 |
+| ERR-BIZ-001 | SavepointNotFound | 404 | No | WARN | 別 Savepoint 利用 |
+| ERR-DB-001 | SaveIOError | 500 | Yes | ERROR | 再試行 / 縮退 |
+| ERR-DB-001 | AtomicRenameFailed | 500 | Yes | ERROR | 再試行 |
+| ERR-AUTHZ-001 | PermissionDenied | 403 | No | WARN | 権限修正 |
+| ERR-BIZ-001 | BufferClosed | 410 | No | INFO | 再 Open |
 
 
 ---
@@ -1936,7 +1936,7 @@ SD-001 §3.2 に基づき、Buffer Engine 内でも以下を実装：
 | BE-T-002 | Open UTF-8 BOM | BOM 付きファイル | has_bom=true、UTF-8 |
 | BE-T-003 | Open UTF-16 LE BOM | UTF-16 LE BOM | UTF-16 LE 検出 |
 | BE-T-004 | Open Shift-JIS | .txt 日本語 | Shift-JIS 検出 |
-| BE-T-005 | Open Binary | バイナリファイル | ERR-BE-003 BinaryFile |
+| BE-T-005 | Open Binary | バイナリファイル | ERR-VAL-006 BinaryFile |
 | BE-T-006 | Read range | 部分範囲指定 | 指定範囲のテキスト |
 | BE-T-007 | Patch Insert 正常 | offset + text | Piece Table 更新、Undo Push |
 | BE-T-008 | Patch Delete 正常 | range 指定 | Piece Table 更新 |
@@ -1947,7 +1947,7 @@ SD-001 §3.2 に基づき、Buffer Engine 内でも以下を実装：
 | BE-T-013 | Save 失敗 → atomic | Save 中 IO エラー | path は旧版のまま |
 | BE-T-014 | Large file 1GB | 1 GB ログファイル | Open < 1s、RSS ≤ 100 MiB |
 | BE-T-015 | 100M lines | 100M 行ファイル | Buffer 動作 |
-| BE-T-016 | Concurrent Patch 競合 | 2 Session 同時 Patch | 一方が ERR-BE-007 |
+| BE-T-016 | Concurrent Patch 競合 | 2 Session 同時 Patch | 一方が ERR-BIZ-009 |
 | BE-T-017 | LineEnding 保持 | CRLF ファイル編集 → Save | CRLF 維持 |
 | BE-T-018 | Savepoint 作成・復帰 | 中間マーカー | 状態復元 |
 | BE-T-019 | Close | Close → 再 Open | 内容保持 |
@@ -2036,8 +2036,8 @@ SD-001 §3.2 に基づき、Buffer Engine 内でも以下を実装：
 | BE-M-005 | AD-001 §2.7 | FR-002-06 | — | kernel-buffer/src/persistence.rs::save() | BE-T-012, BE-T-013 |
 | BE-M-006 | AD-001 §2.7 | FR-018-02 | — | kernel-buffer/src/savepoint.rs::create() | BE-T-018 |
 | BE-M-007 | AD-001 §2.7 | FR-006-03 | — | kernel-buffer/src/patch_apply.rs::apply() | BE-T-007, BE-T-008, BE-T-009, BE-T-016 |
-| ERR-BE-003 | AD-001 §2.7 | FR-002-01 | — | kernel-buffer/src/codec.rs | BE-T-005 |
-| ERR-BE-007 | AD-001 §2.7 | FR-006-03 | — | kernel-buffer/src/patch_apply.rs | BE-T-016 |
+| ERR-VAL-006 | AD-001 §2.7 | FR-002-01 | — | kernel-buffer/src/codec.rs | BE-T-005 |
+| ERR-BIZ-009 | AD-001 §2.7 | FR-006-03 | — | kernel-buffer/src/patch_apply.rs | BE-T-016 |
 
 ### 13.4 横断关切・テスト観点
 
