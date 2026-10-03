@@ -1,8 +1,10 @@
 # IDE1.0 Mock module_switch Stage 1 Regression Report
 
 > **生成时间**: 2026-09-26T12:30:00Z (per ULYS-190 dispatcher)
+> **收尾时间**: 2026-10-03T00:00:00Z (agent/minimaxm3 sync origin, 删 worktree + 本地/远端分支)
 > **范围**: .aci.json + .mock-cluster.json + scripts/_lib_mock_switch_ide1.py + tests/test_ide1_mock_switch.py + crates/ide-cli/src/lib.rs 接入 doc
 > **触发**: ULYS-190 §4.4 stage5 派工触发 D-Boy 「按照推荐彻底完成任务」 reply 2026-09-26 02:39 JST (comment `01a0db94-e5b1-7624-bbca-1e5ad124370b`)
+> **状态**: ✅ MERGED (PR #4 merged into main @ 54aacf0) → IDE1.0 §4.4 stage1 收尾
 > **守门**: 守门 #1+#5+#6+#7+#9+#10+#11+#12+#13+#14v4+#15+#19v19+#20+#24
 
 ## §1 范围
@@ -134,7 +136,7 @@ cluster.enabled=true,mode=offline,plugins=[ide-cli(4m),ide-kernel-core(4m)]=8/8 
 | CATs | 4 | 13 | #18 | 9/26 01:36 | ✅ MERGED |
 | Star | 7 | 7 | #151 | 9/26 02:36 | ✅ MERGED |
 | RGS | 5 | 12 | #51 | 9/26 12:18 | ✅ MERGED |
-| **IDE1.0** | **2** | **8** | **(本 stage 跟踪)** | **(squash merge commit)** | **🟡 待 merge** |
+| **IDE1.0** | **2** | **8** | **#4** | **9/26 (squash merge → 54aacf0)** | **✅ MERGED** |
 | GitGit | 0 | 0 | — | — | 🟡 pending |
 | Ada | 0 (降級 L1 only) | 0 | — | — | 🚫 by design |
-| **合计** | **23/23 plugin 累计** | **68/100+ module 累计** | **4/7 MERGED + 1/7 待 merge** | — | — |
+| **合计** | **23/23 plugin 累计** | **68/100+ module 累计** | **5/7 MERGED** | — | — |
