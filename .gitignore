@@ -24,3 +24,10 @@ tests/uat/test-results/
 tests/uat/playwright-report/
 tests/uat/blob-report/
 tests/uat/playwright/.cache/
+
+# Tauri CLI 安装缓存 (tools/node_modules)
+tools/node_modules/
+
+# Tauri build 产物 (构建时生成, 不入库; 已复制到 dist/ 供下载)
+crates/ide-shell-desktop/target/
+crates/ide-shell-desktop/gen/
