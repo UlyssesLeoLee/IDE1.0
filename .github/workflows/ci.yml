@@ -51,6 +51,10 @@ jobs:
         working-directory: .
         run: cargo doc --workspace --no-deps --all-features
 
+      - name: cargo build ide-shell demo binary
+        working-directory: .
+        run: cargo build -p ide-shell --bin ide-shell
+
   # ============================================================
   # Job 2: Linux 集成 smoke (含 cli_smoke.sh 系统测)
   # ============================================================
