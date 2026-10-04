@@ -27,6 +27,8 @@
 //! - IT 在 tests/e2e_commands.rs (纯函数 pub(crate 路径解析 + 沙箱 + 文件读写)
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
+pub mod wiki;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -411,7 +413,7 @@ fn help_wiki() -> String {
     APP_WIKI.to_string()
 }
 
-pub const APP_WIKI: &str = include_str!("wiki.rs");
+pub const APP_WIKI: &str = wiki::APP_WIKI;
 
 /// CLI/应用内共用的 wiki 文本访问器.
 pub fn help_wiki_text() -> &'static str {
