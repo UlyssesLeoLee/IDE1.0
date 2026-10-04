@@ -48,8 +48,21 @@ impl Default for ShellState {
 }
 
 /// 当前项目根目录 (文件树 + 文件读写的沙箱边界). `None` = 尚未打开项目.
-#[derive(Default)]
 pub struct ProjectRoot(pub Arc<Mutex<Option<PathBuf>>>);
+
+impl Default for ProjectRoot {
+    /// 默认读 IDE_SHELL_DESKTOP_TEST_ROOT 环境变量 (演示/调试场景), 失败则 None.
+    /// 不在 Default 里设默认 cwd, 因为用户期望 "首次启动是空 welcome, 显式 import 项目".
+    fn default() -> Self {
+        let root = std::env::var("IDE_SHELL_DESKTOP_TEST_ROOT")
+            .ok()
+            .map(PathBuf::from)
+            .and_then(|p| p.canonicalize().ok())
+            .filter(|p| p.is_dir());
+        eprintln!("[ProjectRoot::default] test_root = {:?}", root);
+        Self(Arc::new(Mutex::new(root)))
+    }
+}
 
 impl ProjectRoot {
     pub fn get(&self) -> Option<PathBuf> {
@@ -289,15 +302,17 @@ fn get_mode(state: tauri::State<'_, ShellState>) -> Result<String, String> {
 /// 原生文件夹选择器 → 设为项目根, 返回绝对路径 (取消 = None).
 #[tauri::command]
 async fn pick_folder(state: tauri::State<'_, ProjectRoot>) -> Result<Option<String>, String> {
+    eprintln!("[pick_folder] invoked, current root = {:?}", state.get());
     let root_arc = Arc::clone(&state.0);
-    let picked = tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new()
-            .set_title("导入项目 — 选择文件夹")
-            .pick_folder()
-    })
-    .await
-    .map_err(|e| format!("文件夹选择器失败: {e}"))?;
-
+    // 直接同步调 rfd (rfd 0.15 内部已用 COM + 自己的 message pump, 不阻塞 runtime).
+    // 不再 spawn_blocking — Tauri 2 的 blocking pool 在 webview2 消息循环里可能挂起 dialog.
+    let picked = rfd::FileDialog::new()
+        .set_title("导入项目 — 选择文件夹")
+        .pick_folder();
+    eprintln!(
+        "[pick_folder] rfd returned: {:?}",
+        picked.as_ref().map(|p| p.display().to_string())
+    );
     let Some(picked) = picked else {
         return Ok(None);
     };
