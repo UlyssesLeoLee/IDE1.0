@@ -26,7 +26,7 @@ pub mod wiki_data;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use ide_shell::render::web::{render as render_web, WebFrame};
 use ide_shell::{App, AppConfig};

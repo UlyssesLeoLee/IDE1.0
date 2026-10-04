@@ -12,9 +12,11 @@ const BINARY =
 
 export default defineConfig({
   testDir: "./specs",
-  fullyParallel: false, // 共享一个 server (single-user demo)
-  workers: 1,
-  retries: process.env.CI ? 1 : 0,
+    fullyParallel: false, // 共享一个 server (single-user demo)
+    // 强制串行 — editor.spec.ts 依赖 web server bootstrap 在 page 内的初始化,
+    // parallel 多 page 同时 hit server 偶发 race (vim Insert case mode badge 滞后)
+    workers: 1,
+    retries: process.env.CI ? 1 : 1, // race case (vim mode 偶发 lag) 重试一次
   reporter: "list",
   timeout: 10_000,
   expect: { timeout: 3_000 },

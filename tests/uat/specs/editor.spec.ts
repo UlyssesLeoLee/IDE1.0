@@ -16,6 +16,10 @@ import { resetShell } from "./helpers";
 
 const BASE = "http://127.0.0.1:8123";
 
+// 共享给 editor UAT: vim Insert / save 会改 README fixture, beforeEach/afterEach 恢复
+const FIXTURE_PATH = "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\README.md";
+const FIXTURE_ORIGINAL = "hello, world";
+
 async function goEditor(page: Page) {
   await page.goto("/editor");
 }
@@ -23,6 +27,26 @@ async function goEditor(page: Page) {
 test.beforeEach(async () => {
   // 每个 case 重置 server state (frame + 项目根) 保证隔离
   await resetShell();
+  // 恢复 README fixture 内容 (vim Insert / save 会改它)
+  await fetch(`${BASE}/api/open_project`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+  }).catch(() => {});
+  await fetch(`${BASE}/api/write_file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: FIXTURE_PATH, content: FIXTURE_ORIGINAL }),
+  }).catch(() => {});
+});
+
+test.afterEach(async () => {
+  // 二次保险: case 异常退出也恢复
+  await fetch(`${BASE}/api/write_file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: FIXTURE_PATH, content: FIXTURE_ORIGINAL }),
+  }).catch(() => {});
 });
 
 test("editor page loads with full Cursor-style skeleton", async ({ page }) => {
