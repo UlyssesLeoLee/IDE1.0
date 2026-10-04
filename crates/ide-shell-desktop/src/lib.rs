@@ -299,20 +299,79 @@ fn get_mode(state: tauri::State<'_, ShellState>) -> Result<String, String> {
 
 // ===== 项目导入 / 文件树 / 文件读写 (ULYS-191 §5 Cursor 风格 UI) =====
 
-/// 原生文件夹选择器 → 设为项目根, 返回绝对路径 (取消 = None).
+/// 诊断: 写一行到 IDE_LOG_FILE 文件 (默认 %TEMP%/ide-shell-desktop-diag.log)
+/// 桌面 GUI 没 console, 但 eprintln 用户看不到, 所以 log 到文件.
+pub fn diag_log(msg: &str) {
+    eprintln!("[ide-diag] {}", msg);
+    let path = std::env::var("IDE_LOG_FILE").unwrap_or_else(|_| {
+        let mut p = std::env::temp_dir();
+        p.push("ide-shell-desktop-diag.log");
+        p.to_string_lossy().into_owned()
+    });
+    // eprintln 调试 fallback: 写完先确认文件被打开了
+    let result = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| {
+            use std::io::Write;
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            writeln!(f, "[{ts}] {}", msg)
+        });
+    if result.is_err() {
+        eprintln!("[ide-diag] failed to write to {}: {:?}", path, result.err());
+    } else {
+        eprintln!("[ide-diag] wrote to {}", path);
+    }
+}
+
+/// 打开项目 — 接受前端传来的路径.
+///   * web mode: 前端走 `window.showDirectoryPicker` (WebView2 File System Access API)
+///     或手输路径, 然后调 `open_project(path)`.
+///   * 这个 command 保留作为 rfd 兜底: 当 webview2 拒绝 / 旧版没 FSA API 时,
+///     仍能弹原生 Win32 dialog. 但已不在主流程中调用.
+///   * 如果设了 IDE_SHELL_DESKTOP_TEST_ROOT env, 直接用它 (测试/演示场景).
 #[tauri::command]
 async fn pick_folder(state: tauri::State<'_, ProjectRoot>) -> Result<Option<String>, String> {
-    eprintln!("[pick_folder] invoked, current root = {:?}", state.get());
+    diag_log(&format!("[pick_folder] invoked, current root = {:?}", state.get()));
+    // 取消 rfd 默认弹窗 — 这台机器 (Windows 11 24H2 + WebView2) rfd 0.15 dialog 不弹 + 永远不返回.
+    // 改为: 如果有 IDE_SHELL_DESKTOP_TEST_ROOT env, 直接用它 (测试场景);
+    // 否则尝试 rfd 一次 + 加 5s timeout (用 std::thread 监视);
+    // 都不行就返回 None, 前端会再调 open_project 让用户输路径.
+    if let Ok(env_root) = std::env::var("IDE_SHELL_DESKTOP_TEST_ROOT") {
+        if let Ok(canon) = state.set(PathBuf::from(&env_root)) {
+            diag_log(&format!("[pick_folder] using IDE_SHELL_DESKTOP_TEST_ROOT = {:?}", canon));
+            return Ok(Some(canon.to_string_lossy().into_owned()));
+        }
+    }
+    diag_log("[pick_folder] no IDE_SHELL_DESKTOP_TEST_ROOT, trying rfd");
     let root_arc = Arc::clone(&state.0);
-    // 直接同步调 rfd (rfd 0.15 内部已用 COM + 自己的 message pump, 不阻塞 runtime).
-    // 不再 spawn_blocking — Tauri 2 的 blocking pool 在 webview2 消息循环里可能挂起 dialog.
-    let picked = rfd::FileDialog::new()
-        .set_title("导入项目 — 选择文件夹")
-        .pick_folder();
-    eprintln!(
+    // 用 spawn_blocking + channel, 给 rfd 5 秒 timeout (rfd hang 在某些 Win 11 已知)
+    let (tx, rx) = std::sync::mpsc::channel::<Option<PathBuf>>();
+    std::thread::spawn(move || {
+        let r = rfd::FileDialog::new()
+            .set_title("导入项目 — 选择文件夹")
+            .pick_folder();
+        let _ = tx.send(r);
+    });
+    let picked = match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(p) => p,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            diag_log("[pick_folder] rfd timed out after 5s — returning None");
+            None
+        }
+        Err(e) => {
+            diag_log(&format!("[pick_folder] rfd channel error: {e}"));
+            None
+        }
+    };
+    diag_log(&format!(
         "[pick_folder] rfd returned: {:?}",
         picked.as_ref().map(|p| p.display().to_string())
-    );
+    ));
     let Some(picked) = picked else {
         return Ok(None);
     };
@@ -461,6 +520,16 @@ pub fn run() {
                 env!("CARGO_PKG_VERSION"),
                 std::env::var("TAURI_TARGET_TRIPLE").unwrap_or_else(|_| "unknown".into()),
             );
+            diag_log(&format!(
+                "ide-shell-desktop setup: tauri={}, target={}",
+                env!("CARGO_PKG_VERSION"),
+                std::env::var("TAURI_TARGET_TRIPLE").unwrap_or_else(|_| "unknown".into()),
+            ));
+            diag_log(&format!(
+                "ide-shell-desktop env: IDE_SHELL_DESKTOP_TEST_ROOT={:?}, IDE_LOG_FILE={:?}",
+                std::env::var("IDE_SHELL_DESKTOP_TEST_ROOT").ok(),
+                std::env::var("IDE_LOG_FILE").ok(),
+            ));
             Ok(())
         })
         .run(tauri::generate_context!())

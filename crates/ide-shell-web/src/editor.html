@@ -417,6 +417,8 @@
             <kbd>Ctrl+S</kbd> save · <kbd>Ctrl+`</kbd> toggle shell ·
             <kbd>F1</kbd> / <kbd>:help</kbd> 完整 wiki
           </div>
+          <div id="diag-bar" style="margin-top:14px;font-size:10px;color:#5a5a5a;font-family:ui-monospace,monospace;max-width:600px;word-break:break-all;cursor:help;"
+               title="(hover for full log)"></div>
         </div>
         <div id="editor">
           <div class="ed-gutter" id="ed-gutter"></div>
@@ -481,13 +483,19 @@
   // ----- Tauri / Web 适配 (与 web mode 共用) -----
     const tauriInvoke = (cmd, args) => new Promise((resolve, reject) => {
       const cb = "_tauri_cb_" + Math.floor(Math.random() * 1e9);
+      dlog(`tauriInvoke(${cmd}) start, cb=${cb}`);
       window[cb] = (p) => {
+        dlog(`tauriInvoke(${cmd}) callback fired: ${JSON.stringify(p).slice(0, 200)}`);
         delete window[cb];
         (p && p.error) ? reject(new Error(p.error)) : resolve(p && p.result);
       };
       try {
-        window.__TAURI_INTERNALS__.invoke({ cmd, args: args || {}, callback: cb });
-      } catch (e) { reject(e); }
+        const r = window.__TAURI_INTERNALS__.invoke({ cmd, args: args || {}, callback: cb });
+        dlog(`tauriInvoke(${cmd}) sync return: ${typeof r}`);
+      } catch (e) {
+        dlog(`tauriInvoke(${cmd}) sync threw: ${e && e.message || e}`);
+        reject(e);
+      }
     });
     const inTauri = !!(typeof window !== "undefined" && window.__TAURI_INTERNALS__);
     // web 版 fallback: fetch /api/<name> (本文件由 ide-shell-web 提供对应端点)
@@ -504,8 +512,16 @@
       return await res.json();
     };
     const invoke = async (name, args) => {
-      if (inTauri) return tauriInvoke(name, args || {});
-      return webInvoke(name, args || {});
+      dlog(`invoke(${name}) inTauri=${inTauri} args=${JSON.stringify(args || {})}`);
+      let res;
+      try {
+        res = inTauri ? await tauriInvoke(name, args || {}) : await webInvoke(name, args || {});
+      } catch (e) {
+        dlog(`invoke(${name}) THREW: ${e && e.message || e}`);
+        throw e;
+      }
+      dlog(`invoke(${name}) returned ${JSON.stringify(res).slice(0, 200)}`);
+      return res;
     };
 
   /* ==========================================================================
@@ -572,11 +588,32 @@
      ========================================================================== */
   const commands = {};
   function on(cmd, fn) { commands[cmd] = fn; }
+  // 诊断埋点: JS 执行流写到页面上的 #diag-log, 用户能直接看到
+  // (即使 desktop 卡死, 已写入的 log 仍然在 DOM 里)
+  const diagLog = [];
+  function dlog(msg) {
+    const ts = new Date().toISOString().slice(11, 23);
+    const line = `[${ts}] ${msg}`;
+    diagLog.push(line);
+    if (diagLog.length > 100) diagLog.shift();
+    // 同步写到 localStorage (desktop 端 devtools 看不到时兜底)
+    try { localStorage.setItem("ide-diag-log", diagLog.join("\n")); } catch {}
+    // 同步写到 sessionStorage (备用)
+    try { sessionStorage.setItem("ide-diag-log", diagLog.join("\n")); } catch {}
+    // 在 welcome big-btn 上方显示一个诊断条 (无干扰)
+    const bar = document.getElementById("diag-bar");
+    if (bar) {
+      bar.textContent = diagLog.slice(-3).join(" | ");
+      bar.title = diagLog.join("\n");
+    }
+    console.log(line);
+  }
   document.addEventListener("click", (e) => {
     const t = e.target.closest("[data-cmd]");
     if (!t) return;
     const cmd = t.getAttribute("data-cmd");
     const fn = commands[cmd];
+    dlog(`CLICK data-cmd="${cmd}" fn=${fn ? "yes" : "MISSING"}`);
     if (fn) { e.preventDefault(); fn(t, e); }
   });
 
@@ -652,16 +689,98 @@
      5. 项目导入 / 最近项目
      ========================================================================== */
   async function doOpenFolder() {
+    dlog(`doOpenFolder: enter, inTauri=${inTauri}`);
+    // 三层 fallback:
+    // 1) window.showDirectoryPicker (WebView2 内置 File System Access API, 无 rfd 依赖)
+    // 2) Tauri invoke("pick_folder") (rfd fallback)
+    // 3) 弹输入框 modal, 用户手输绝对路径
+    if (window.showDirectoryPicker) {
+      try {
+        dlog(`doOpenFolder: trying showDirectoryPicker`);
+        const dir = await window.showDirectoryPicker({ mode: "read" });
+        // showDirectoryPicker 返回 FileSystemDirectoryHandle — 用 name 拼成路径不可靠,
+        // 直接 invoke open_project 不行 (没 path). 改用更稳: 调 pick_folder 让 rfd 弹
+        // (如果 rfd 能弹); 不行就 prompt 输入路径. 这里直接走 path:
+        throw new Error("showDirectoryPicker returns handle, not path — use prompt fallback");
+      } catch (e) {
+        dlog(`doOpenFolder: showDirectoryPicker failed: ${e && e.message || e}`);
+      }
+    } else {
+      dlog(`doOpenFolder: no showDirectoryPicker available`);
+    }
+    // 尝试 rfd (Tauri 命令) — 不行 fallback 输入框
     let picked;
     try {
       picked = await invoke("pick_folder");
     } catch (e) {
-      openModal({ title: "错误", body: String(e.message || e),
-        buttons: [{ label: "确定", cmd: "modal-close" }] });
-      return;
+      dlog(`doOpenFolder: invoke pick_folder threw ${e && e.message || e}`);
+      picked = null;
     }
-    if (!picked) return; // 用户取消
+    dlog(`doOpenFolder: picked=${picked}`);
+    if (!picked) {
+      // Fallback 3: 输入框 modal 让用户手输路径
+      dlog(`doOpenFolder: falling back to path input modal`);
+      const typed = await promptForPath();
+      dlog(`doOpenFolder: typed path = ${typed}`);
+      if (!typed) { dlog(`doOpenFolder: user cancelled path input`); return; }
+      try {
+        picked = await invoke("open_project", { path: typed });
+      } catch (e) {
+        dlog(`doOpenFolder: open_project threw: ${e && e.message || e}`);
+        openModal({ title: "打开失败", body: String(e.message || e),
+          buttons: [{ label: "确定", cmd: "modal-close" }] });
+        return;
+      }
+      dlog(`doOpenFolder: open_project returned ${picked}`);
+    }
+    if (!picked) return;
     await setProjectRoot(picked, /*addRecent*/ true);
+  }
+
+  // 弹出 modal 让用户手输绝对路径, resolve 为字符串. Cancel = null.
+  function promptForPath() {
+    return new Promise((resolve) => {
+      const defaultPath = "D:\\path\\to\\your\\project";
+      const body = `当前环境无法弹原生文件夹选择器. 请直接输入项目根绝对路径:\n\n(Windows 示例: ${defaultPath})`;
+      mdTitle.textContent = "输入项目路径";
+      mdBody.textContent = body;
+      mdFoot.innerHTML = "";
+      // 输入框
+      const inputWrap = document.createElement("div");
+      inputWrap.style.cssText = "margin-top:10px;";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = "";
+      input.placeholder = defaultPath;
+      input.style.cssText = "width:100%;padding:6px 8px;background:#222;color:#fff;border:1px solid #555;border-radius:3px;font-family:ui-monospace,monospace;font-size:12px;";
+      input.id = "path-input";
+      inputWrap.appendChild(input);
+      mdBody.appendChild(inputWrap);
+      // 按钮
+      const btnCancel = document.createElement("button");
+      btnCancel.className = "md-btn";
+      btnCancel.textContent = "取消";
+      btnCancel.setAttribute("data-cmd", "modal-cancel");
+      btnCancel.addEventListener("click", () => { closeModal(); resolve(null); });
+      const btnOk = document.createElement("button");
+      btnOk.className = "md-btn primary";
+      btnOk.textContent = "打开";
+      btnOk.setAttribute("data-cmd", "modal-open");
+      btnOk.addEventListener("click", () => {
+        const v = input.value.trim();
+        closeModal();
+        resolve(v || null);
+      });
+      // Enter 提交
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); btnOk.click(); }
+        if (e.key === "Escape") { e.preventDefault(); btnCancel.click(); }
+      });
+      mdFoot.appendChild(btnCancel);
+      mdFoot.appendChild(btnOk);
+      modal.classList.add("show");
+      setTimeout(() => input.focus(), 50);
+    });
   }
   async function doOpenByPath(p) {
     let canon;
@@ -1365,21 +1484,24 @@
      9. 启动
      ========================================================================== */
   async function bootstrap() {
+    dlog(`bootstrap: start, inTauri=${inTauri}, projectRoot=${projectRoot}`);
     try {
       const b = await invoke("kernel_banner");
       document.getElementById("banner").textContent = b;
-    } catch {}
+    } catch (e) { dlog(`bootstrap kernel_banner threw: ${e}`); }
     refreshShell();
     edContent.focus();
     statusTip.textContent = "就绪 — 点工具栏「打开文件夹」导入项目";
     if (!projectRoot) {
       try {
+        dlog(`bootstrap: auto pick_folder`);
         const picked = await invoke("pick_folder");
+        dlog(`bootstrap: auto pick_folder returned ${picked}`);
         if (picked) await setProjectRoot(picked, false);
-      } catch {}
+      } catch (e) { dlog(`bootstrap pick_folder threw: ${e}`); }
     }
   }
-bootstrap();
+  bootstrap();
 
 
   /* ==========================================================================
