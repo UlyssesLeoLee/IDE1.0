@@ -1,0 +1,4 @@
+===
+# 临时测试文件 (UAT roundtrip / 大文件拒绝) 不入库
+BIG.bin
+UAT_ROUNDTRIP.txt

@@ -22,6 +22,8 @@ ide-shell = { path = "../ide-shell" }
 ide-kernel-core = { path = "../ide-kernel-core" }
 # crossterm 仅用作 KeyEvent/KeyModifiers/MouseButton 类型 (与 ide-shell::App::on_key/on_mouse 对接)
 crossterm = { workspace = true }
+# 原生文件夹选择器 (打开项目) — Windows/macOS 用系统 dialog, Linux 用 GTK
+rfd = "0.15"
 # Tauri 2 runtime
 tauri = { version = "2", features = [] }
 

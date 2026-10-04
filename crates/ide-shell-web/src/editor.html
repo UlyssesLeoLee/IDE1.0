@@ -478,22 +478,35 @@
      ========================================================================== */
   "use strict";
 
-  // ----- Tauri 适配 (与 web mode 共用, 通过 __TAURI_INTERNALS__ 检测) -----
-  const tauriInvoke = (cmd, args) => new Promise((resolve, reject) => {
-    const cb = "_tauri_cb_" + Math.floor(Math.random() * 1e9);
-    window[cb] = (p) => {
-      delete window[cb];
-      (p && p.error) ? reject(new Error(p.error)) : resolve(p && p.result);
+  // ----- Tauri / Web 适配 (与 web mode 共用) -----
+    const tauriInvoke = (cmd, args) => new Promise((resolve, reject) => {
+      const cb = "_tauri_cb_" + Math.floor(Math.random() * 1e9);
+      window[cb] = (p) => {
+        delete window[cb];
+        (p && p.error) ? reject(new Error(p.error)) : resolve(p && p.result);
+      };
+      try {
+        window.__TAURI_INTERNALS__.invoke({ cmd, args: args || {}, callback: cb });
+      } catch (e) { reject(e); }
+    });
+    const inTauri = !!(typeof window !== "undefined" && window.__TAURI_INTERNALS__);
+    // web 版 fallback: fetch /api/<name> (本文件由 ide-shell-web 提供对应端点)
+    const GET_NAMES = new Set(["frame", "kernel_banner", "help_wiki", "pick_folder"]);
+    const webInvoke = async (name, args) => {
+      const method = GET_NAMES.has(name) ? "GET" : "POST";
+      const opts = { method, headers: { "Content-Type": "application/json" } };
+      if (method === "POST") opts.body = JSON.stringify(args || {});
+      const res = await fetch("/api/" + name, opts);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      return await res.json();
     };
-    try {
-      window.__TAURI_INTERNALS__.invoke({ cmd, args: args || {}, callback: cb });
-    } catch (e) { reject(e); }
-  });
-  const inTauri = !!(typeof window !== "undefined" && window.__TAURI_INTERNALS__);
-  const invoke = async (name, args) => {
-    if (inTauri) return tauriInvoke(name, args || {});
-    throw new Error("仅桌面模式可用: " + name);
-  };
+    const invoke = async (name, args) => {
+      if (inTauri) return tauriInvoke(name, args || {});
+      return webInvoke(name, args || {});
+    };
 
   /* ==========================================================================
      1. 工具提示 (data-tip 全局)
@@ -892,22 +905,18 @@
   /* ----- Vim 键位 (NORMAL / INSERT / VISUAL / COMMAND) ----- */
   let lastG = false;   // gg 检测
   let cmdBuffer = "";
-  edContent.addEventListener("keydown", (e) => {
+    edContent.addEventListener("keydown", (e) => {
     const t = activeTab(); if (!t) return;
-    // Ctrl 组合
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
       if (e.key === "s") { e.preventDefault(); saveActive(); return; }
       if (e.key === "z") { e.preventDefault(); doUndo(); return; }
       if (e.key === "`") { e.preventDefault(); toggleShellPanel(); shellFocus(); return; }
     }
-    if (t.mode === "normal") {
-      handleNormal(e, t);
-    } else if (t.mode === "insert") {
-      handleInsert(e, t);
-    } else if (t.mode === "visual") {
-      handleVisual(e, t);
-    }
-    if (t.mode !== "insert") renderVim(t);  // INSERT 自己渲染
+    const modeBefore = t.mode;
+    if (t.mode === "normal") handleNormal(e, t);
+    else if (t.mode === "insert") handleInsert(e, t);
+    else if (t.mode === "visual") handleVisual(e, t);
+    if (t.mode !== modeBefore || t.mode !== "insert") { renderTabs(); renderVim(t); }
   });
   edContent.addEventListener("focus", () => editorEl.classList.add("focused"));
   edContent.addEventListener("blur",  () => editorEl.classList.remove("focused"));
@@ -1356,7 +1365,6 @@
      9. 启动
      ========================================================================== */
   async function bootstrap() {
-    // kernel banner
     try {
       const b = await invoke("kernel_banner");
       document.getElementById("banner").textContent = b;
@@ -1364,8 +1372,15 @@
     refreshShell();
     edContent.focus();
     statusTip.textContent = "就绪 — 点工具栏「打开文件夹」导入项目";
+    if (!projectRoot) {
+      try {
+        const picked = await invoke("pick_folder");
+        if (picked) await setProjectRoot(picked, false);
+      } catch {}
+    }
   }
-  bootstrap();
+bootstrap();
+
 
   /* ==========================================================================
      10. 工具
