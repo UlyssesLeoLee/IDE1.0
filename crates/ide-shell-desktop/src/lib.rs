@@ -32,8 +32,6 @@ pub mod wiki;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use tauri::Manager;
-
 use ide_shell::render::web::{render as render_web, WebFrame};
 use ide_shell::{App, AppConfig, Mode};
 
@@ -499,6 +497,10 @@ pub fn help_wiki_text() -> &'static str {
 /// Tauri app entry — 注册 state + commands + 启动.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 强制 tauri::generate_context! 重展开 — cargo proc-macro 按 lib.rs 改时重生成 token stream.
+    // 注意: 这只重 build 这一条函数. assets embed 走 build script (tauri-build) — 那条链通过
+    // conf + dist mtime 触发. build script 走 frontendDist + cargo:rerun-if-changed.
+    let _ = std::env::current_dir();
     tauri::Builder::default()
         .manage(ShellState::default())
         .manage(ProjectRoot::default())

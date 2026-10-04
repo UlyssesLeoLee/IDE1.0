@@ -1,1 +1,1 @@
-XYZhello, world
+hello, world

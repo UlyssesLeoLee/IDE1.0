@@ -677,56 +677,47 @@
      5. 项目导入 / 最近项目
      ========================================================================== */
   async function doOpenFolder() {
-    dlog(`doOpenFolder: enter, inTauri=${inTauri}, projectRoot=${projectRoot}`);
-    // UX 原则 (参考 Cursor / VSCode): 用户点 toolbar 立即看到响应.
-    // 走法: 同时启动 (1) Tauri rfd 真原生 dialog 和 (2) JS 模态 fallback.
-    // 谁先返回用谁. 用户不会被卡.
-    let picked = null;
-    let pickPromise = null;
-    try {
-      pickPromise = invoke("pick_folder");
-    } catch (e) {
-      dlog(`doOpenFolder: invoke sync threw ${e && e.message || e}`);
-    }
-    // 立即弹 JS 模态 (不等 rfd)
-    const typedPromise = promptForPath();
-    if (pickPromise) {
-      let resolved = false;
-      pickPromise.then(p => { resolved = true; picked = p; dlog(`doOpenFolder: pick_folder resolved=${p}`); })
-                     .catch(e => dlog(`doOpenFolder: pick_folder rejected ${e && e.message || e}`));
-      // 给 rfd 3500ms — 如果它真弹了, 用户 cancel/ok 后 promise 会 resolve;
-      // 3500ms 内 resolved=true 就走 Tauri 路径, 否则用用户输入的路径.
-      await new Promise(r => setTimeout(r, 3500));
-      if (resolved) {
-        // rfd 真返回 (用户选了). 关掉 JS 模态
-        closeModal();
-        if (!picked) { dlog(`doOpenFolder: rfd returned None, user cancelled`); return; }
-      } else {
-        dlog(`doOpenFolder: rfd silent > 3.5s, using typed path`);
-        const typed = await typedPromise;
+    dlog(`doOpenFolder: enter, projectRoot=${projectRoot}`);
+    // UX: cursor 风格 — 优先 rfd 弹原生 dialog, 不立即弹 JS modal (会挡 rfd).
+    // rfd dialog 是 OS 模态, 永远在 IDE 主窗口前面.
+    //
+    // 关键: rfd 0.15 在某些 Windows 11 配置下可能 hang (dialog 弹了但 promise 不返回).
+    // 4s 后若 promise 还没 settle, 主动 fallback 到 JS modal (不挡 rfd, 用户可输路径).
+    // 真实情况: 之前 rfd_test 单独跑 hang 5s+, 但在 tauri webview2 进程内 rfd 能弹.
+    // 保险起见 4s 后开 modal.
+    let picked;
+    let settled = false;
+    const pickPromise = invoke("pick_folder")
+      .then(p => { settled = true; picked = p; dlog(`doOpenFolder: pick_folder resolved=${p}`); return p; })
+      .catch(e => { settled = true; dlog(`doOpenFolder: pick_folder rejected ${e && e.message || e}`); throw e; });
+    // 4s 后若还没 settle, 弹 fallback modal
+    const fallbackTimeout = setTimeout(() => {
+      if (settled) return;
+      dlog(`doOpenFolder: rfd silent > 4s, showing fallback modal`);
+      promptForPath().then(typed => {
         dlog(`doOpenFolder: typed=${typed}`);
-        if (!typed) { dlog(`doOpenFolder: modal cancelled`); return; }
-        try {
-          picked = await invoke("open_project", { path: typed });
-        } catch (e) {
-          dlog(`doOpenFolder: open_project threw: ${e && e.message || e}`);
-          openModal({ title: "打开失败", body: String(e.message || e),
-            buttons: [{ label: "确定", cmd: "modal-close" }] });
-          return;
+        if (typed) {
+          invoke("open_project", { path: typed }).then(canon => {
+            dlog(`doOpenFolder: open_project returned=${canon}`);
+            setProjectRoot(canon, true);
+          }).catch(e => dlog(`doOpenFolder: open_project threw ${e}`));
+        } else {
+          dlog(`doOpenFolder: fallback modal cancelled, still waiting for rfd`);
         }
-      }
-    } else {
-      const typed = await typedPromise;
-      if (!typed) return;
-      try { picked = await invoke("open_project", { path: typed }); }
-      catch (e) {
-        openModal({ title: "打开失败", body: String(e.message || e),
-          buttons: [{ label: "确定", cmd: "modal-close" }] });
-        return;
-      }
+      });
+    }, 4000);
+    try {
+      picked = await pickPromise;
+      clearTimeout(fallbackTimeout);
+      // rfd 返回了 — 关掉 fallback modal (若已开)
+      closeModal();
+    } catch (e) {
+      dlog(`doOpenFolder: invoke threw ${e && e.message || e}`);
+      clearTimeout(fallbackTimeout);
+      return;
     }
-    if (!picked) return;
-    await setProjectRoot(picked, /*addRecent*/ true);
+    if (!picked) { dlog(`doOpenFolder: user cancelled rfd`); return; }
+    await setProjectRoot(picked, true);
     dlog(`doOpenFolder: setProjectRoot done`);
   }
     // 弹出 modal 让用户手输绝对路径, resolve 为字符串. Cancel = null.
