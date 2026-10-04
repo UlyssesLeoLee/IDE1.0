@@ -1,0 +1,397 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ============================================================
+  # Job 1: Rust 标准套 (fmt + check + clippy + test + doc)
+  # IDE1.0 仅 ubuntu-latest (per brief §1.2 #3, 节省 CI 分钟)
+  # ============================================================
+  rust:
+    name: Rust (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      - name: cargo fmt --check
+        working-directory: .
+        run: cargo fmt --all -- --check
+
+      - name: cargo check
+        working-directory: .
+        run: cargo check --workspace --all-targets
+
+      - name: cargo clippy
+        working-directory: .
+        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
+
+      - name: cargo test
+        working-directory: .
+        run: cargo test --workspace --all-targets --no-fail-fast
+
+      - name: cargo doc
+        working-directory: .
+        run: cargo doc --workspace --no-deps --all-features
+
+      - name: cargo build ide-shell demo binary
+        working-directory: .
+        run: cargo build -p ide-shell --bin ide-shell
+
+  # ============================================================
+  # Job 2: Linux 集成 smoke (含 cli_smoke.sh 系统测)
+  # ============================================================
+  integration:
+    name: Integration (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+      - name: Run integration tests
+        working-directory: .
+        run: cargo test --workspace --tests --no-fail-fast
+      - name: Run cli_smoke.sh
+        working-directory: .
+        run: bash tests/st/cli_smoke.sh
+
+  # ============================================================
+  # Job 3: Mock switch 验证 (per ULYS-190 §4.4 stage6 — mock edge/failure)
+  # Python mock_switch reader (cluster/plugin/module 三层) + 边界/失败路径
+  # IDE1.0 stage1 8 module + stage6 11 edge 用例 (总计 26 用例)
+  # 守门 #13 W/T/M (Python 系统测;Rust 系统测在 Job 2 cli_smoke)
+  # ============================================================
+  mock-switch-validate:
+    name: Mock switch validate (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run mock_switch reader tests (stage1, 15 用例)
+        working-directory: .
+        run: |
+          echo "=== stage1: 15 用例 (数据形状 + 5 helper 子命令) ==="
+          python3 tests/test_ide1_mock_switch.py -v
+
+      - name: Run mock_switch edge tests (stage6, 11 用例)
+        working-directory: .
+        run: |
+          echo "=== stage6: 11 用例 (disabled / mode 边界 / compat failure / ACI 缺字段) ==="
+          python3 tests/test_ide1_mock_switch_edge.py -v
+
+  # ============================================================
+  # Job 4: UAT (Playwright e2e) — ide-shell-web + 40 browser cases
+  # per ULYS-191 §3: UT/IT/ST/UAT 四层测试矩阵补齐
+  # 依赖: Rust (ide-shell-web binary) + Node 20 + Playwright chromium
+  # ============================================================
+  uat-playwright:
+    name: UAT (Playwright e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      - name: Build ide-shell-web binary
+        working-directory: .
+        run: cargo build -p ide-shell-web --bin ide-shell-web
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-v1
+
+      - name: Install Playwright deps + chromium
+        working-directory: tests/uat
+        run: |
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright e2e (40 cases)
+        working-directory: tests/uat
+        env:
+          IDE_SHELL_WEB_BIN: ../../target/debug/ide-shell-web
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/uat/playwright-report/
+          retention-days: 7
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: tests/uat/test-results/
+          retention-days: 7
+
+  # ============================================================
+  # Job 5: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
+  # 跨 Rust ↔ Python emitter 字段 1:1 验证 (Stage 1 Python emitter + Stage 3 Rust emitter)
+  # 依赖:
+  #   - Star 仓 _lib_aci_emit.py (submodule 或临时 git clone)
+  #   - Python 3.10+ + setuptools
+  # ============================================================
+  cross-language-parity:
+    name: Cross-language parity (Rust ↔ Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      # Star 仓 Python emitter (per ULYS-191 Stage 1 PR #93 已 ship main + dev)
+      # 临时 clone + checkout PR #93 commit (cebba99c0b1d1237dd4df0ad9091502f4548689c)
+      - name: Clone Star repo at PR #93 commit
+        run: |
+          git clone --depth 1 https://github.com/UlyssesLeoLee/Star.git /tmp/star-checkout
+          cd /tmp/star-checkout
+          git fetch --depth 1 origin cebba99c0b1d1237dd4df0ad9091502f4548689c
+          git checkout cebba99c0b1d1237dd4df0ad9091502f4548689c
+
+      - name: Run cross-language parity check
+        working-directory: .
+        env:
+          STAR_FLASH_MOCK_PATH: /tmp/star-checkout/tools/star-flash-mock
+        run: |
+          echo "=== IDE1.0 × Star Python emitter parity (per ULYS-191 §4.2.2 brief v0.1) ==="
+          python3 tests/parity/cross_language_parity.py
+
+  # ============================================================
+  # Job 4: Markdown lint (README + architecture + regression report)
+  # IDE1.0 中文 docs, 禁用 MD013/014/042 (line-length/HR/no-empty-links)
+  # ============================================================
+  markdown-lint:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: |
+            *.md
+            docs/**/*.md
+            !DD-*.md
+            !DD-*_*.md
+            !*需求规格书*.md
+            !*設計書*.md
+
+  # ============================================================
+  # Job 5: Tauri Desktop build (Linux) — 出 .deb + .AppImage
+  # per ULYS-191 §4: 跨平台桌面打包. Windows .msi / macOS .dmg 需各自 runner
+  # (本机本笔已产出 IDE1.0_*.msi 在 dist/, CI 跑 Linux bundle 验证跨平台.
+  # ============================================================
+  tauri-build-linux:
+    name: Tauri Desktop (Linux .deb + .AppImage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+
+      - name: Install system deps for Tauri Linux build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            patchelf \
+            wget
+
+      - name: Build ide-shell-desktop (cargo check)
+        working-directory: .
+        run: cargo check -p ide-shell-desktop --all-targets
+
+      - name: Run ide-shell-desktop tests
+        working-directory: .
+        run: cargo test -p ide-shell-desktop
+
+      - name: Setup Node 20 + install @tauri-apps/cli
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Tauri CLI
+        working-directory: tools
+        run: npm install --no-audit --no-fund
+
+      - name: Build Linux .deb + .AppImage
+        working-directory: crates/ide-shell-desktop
+        run: ../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-shell-desktop-deb
+          path: crates/ide-shell-desktop/target/release/bundle/deb/*.deb
+          retention-days: 30
+
+      - name: Upload .AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-shell-desktop-appimage
+          path: crates/ide-shell-desktop/target/release/bundle/appimage/*.AppImage
+          retention-days: 30
+
+  # ============================================================
+  # Job 6: Rust bench (placeholder, 待 Stage 3 后续 brief 加 benchmark)
+  # ============================================================
+  rust-bench:
+    name: Rust bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+      - name: cargo bench
+        working-directory: .
+        run: |
+          echo "(无 benchmark 定义, 仅占位 Stage 3 后续 brief 添加)"
+          cargo bench --workspace --no-run || true
+
+  # ============================================================
+  # Job 6: Cross-project smoke (守门 #11 验证 git dep aci-emitter 可达)
+  # ============================================================
+  cross-project-smoke:
+    name: Cross-project smoke (aci-emitter git dep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            -> target
+      - name: Build & test as workspace member with aci-emitter git dep
+        working-directory: .
+        run: |
+          # 验证 IDE1.0 可作为 aci-emitter consumer 编译 + 测试
+          cargo build --workspace --all-features
+          cargo test --workspace --doc --no-fail-fast
+
+  # ============================================================
+  # (跳过, IDE1.0 不需要)
+  # - cross-platform × 3 (ubuntu + macos + windows) — per brief §1.2 #3
+  # ============================================================

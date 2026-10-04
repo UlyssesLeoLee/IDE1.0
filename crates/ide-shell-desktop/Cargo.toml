@@ -1,0 +1,29 @@
+[package]
+name = "ide-shell-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "IDE1.0 IDE Shell — Tauri 2 桌面应用 (per ULYS-191 §4 Tauri Desktop 打包)"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Workspace 共享 deps
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+# 复用 ide-shell core (mode/input/keymap/app) — 38 UT 共享
+ide-shell = { path = "../ide-shell" }
+ide-kernel-core = { path = "../ide-kernel-core" }
+# crossterm 仅用作 KeyEvent/KeyModifiers/MouseButton 类型 (与 ide-shell::App::on_key/on_mouse 对接)
+crossterm = { workspace = true }
+# Tauri 2 runtime
+tauri = { version = "2", features = [] }
+
+[lints]
+workspace = true

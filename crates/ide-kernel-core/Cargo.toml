@@ -1,0 +1,18 @@
+[package]
+name = "ide-kernel-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IDE1.0 microkernel core (placeholder per ULYS-191 §4.2.2 brief v0.1 — 完整实现待 DD-01)"
+
+[lints]
+workspace = true
+
+[dependencies]
+# 完整内核实现需引入 (待 DD-01 brief):
+# - tokio (异步 runtime)
+# - rusqlite (transaction buffer storage)
+# - serde + serde_json (session state serialization)
+# 本笔为 placeholder, 仅 0 运行时依赖

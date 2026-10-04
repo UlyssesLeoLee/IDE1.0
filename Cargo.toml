@@ -1,56 +1,50 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/kernel-error",
-    "crates/kernel-config",
-    "crates/kernel-tracing",
-    "crates/kernel-eventbus",
-    "crates/kernel-session",
-    "crates/kernel-capability-registry",
-    "crates/kernel-cmd-bus",
-    "crates/kernel-core",
-    "crates/cli",
+  "crates/ide-kernel-core",
+  "crates/ide-cli",
+  "crates/ide-shell",
+  "crates/ide-shell-web",
+  "crates/ide-shell-desktop",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.77"
 license = "MIT OR Apache-2.0"
+authors = ["Ulysses（一人公司 12 角色 per DEC-008）— Mavis 接手 (per 守门 #10 + 8/27 19:39 JST 授权)"]
 repository = "https://github.com/UlyssesLeoLee/IDE1.0"
+homepage = "https://github.com/UlyssesLeoLee/IDE1.0/blob/agent/minimaxm3/ulys-191-2/README.md"
+documentation = "https://github.com/UlyssesLeoLee/IDE1.0"
+readme = "README.md"
+description = "IDE1.0 — 纯 Rust AI Native CLI Development Kernel (Stage 3.0 最小骨架 per ULYS-191 §4.2.2)"
+keywords = ["ide", "kernel", "cli", "rust", "multica"]
+categories = ["development-tools", "command-line-utilities"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"  # 守门 #7
+missing_docs = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
-# Workspace-local crates
-kernel-error = { path = "crates/kernel-error" }
-kernel-config = { path = "crates/kernel-config" }
-kernel-tracing = { path = "crates/kernel-tracing" }
-kernel-eventbus = { path = "crates/kernel-eventbus" }
-kernel-session = { path = "crates/kernel-session" }
-kernel-capability-registry = { path = "crates/kernel-capability-registry" }
-kernel-cmd-bus = { path = "crates/kernel-cmd-bus" }
-kernel-core = { path = "crates/kernel-core" }
-
-# Third-party — pinned to versions aligned with AD-001 v1.1 §6.x
-tokio = { version = "1.40", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "fs", "io-util"] }
-async-trait = "0.1"
-thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-uuid = { version = "1.10", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
-parking_lot = "0.12"
-dashmap = "6.1"
-futures = "0.3"
-clap = { version = "4.5", features = ["derive"] }
-jsonschema = { version = "0.18", default-features = false }
-figment = { version = "0.10", features = ["toml", "env"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+# TUI 层 (ULYS-191 §3 IDE Shell 选型 ratatui + crossterm, Windows 友好)
+ratatui = { version = "0.28", default-features = false, features = ["crossterm"] }
+crossterm = "0.28"
+# 守门 #11 缺标比错标 git dep, 锁 rev = ULYS-191.1 (ULYS-224) main HEAD
+# §4.5 跨项目 CI 落地后改 crates.io publish 或 path 依赖
+aci-emitter = { git = "https://github.com/UlyssesLeoLee/aci-emitter", rev = "df28c56" }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
-strip = true
 
 [profile.dev]
 opt-level = 0

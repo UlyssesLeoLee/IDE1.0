@@ -1,7 +1,33 @@
-/target
-**/target
+# Rust / Cargo
+/target/
+**/target/
 **/*.rs.bk
-.DS_Store
+Cargo.lock.bak
+
+# IDE1.0 临时 ACI 输出
+/.aci.tmp.json
+**/.aci.tmp.json
+
+# 编辑器 / OS
 .idea/
 .vscode/
 *.swp
+*.swo
+.DS_Store
+Thumbs.db
+/target-ulys-*/
+/.tmp/
+
+# Playwright UAT (tests/uat)
+tests/uat/node_modules/
+tests/uat/test-results/
+tests/uat/playwright-report/
+tests/uat/blob-report/
+tests/uat/playwright/.cache/
+
+# Tauri CLI 安装缓存 (tools/node_modules)
+tools/node_modules/
+
+# Tauri build 产物 (构建时生成, 不入库; 已复制到 dist/ 供下载)
+crates/ide-shell-desktop/target/
+crates/ide-shell-desktop/gen/

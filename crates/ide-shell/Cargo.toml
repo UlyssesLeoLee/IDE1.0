@@ -1,0 +1,25 @@
+[package]
+name = "ide-shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "IDE1.0 IDE Shell — TUI + AI + Vim + 鼠标 (per ULYS-191 §3 双外观设计)"
+
+[dependencies]
+# Workspace 共享 deps (守门 #11 缺标比错标)
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+# ACI bridge (Stage 2 aci-emitter v0.1, 守门 #11 git dep 锁 rev)
+aci-emitter = { workspace = true }
+# IDE1.0 现有 kernel (复用 ide-kernel-core 的 kernel_status / version / init)
+ide-kernel-core = { path = "../ide-kernel-core" }
+
+[lints]
+workspace = true
