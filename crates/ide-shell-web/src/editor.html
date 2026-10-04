@@ -677,55 +677,59 @@
      5. 项目导入 / 最近项目
      ========================================================================== */
   async function doOpenFolder() {
-    dlog(`doOpenFolder: enter, inTauri=${inTauri}`);
-    // 三层 fallback:
-    // 1) window.showDirectoryPicker (WebView2 内置 File System Access API, 无 rfd 依赖)
-    // 2) Tauri invoke("pick_folder") (rfd fallback)
-    // 3) 弹输入框 modal, 用户手输绝对路径
-    if (window.showDirectoryPicker) {
-      try {
-        dlog(`doOpenFolder: trying showDirectoryPicker`);
-        const dir = await window.showDirectoryPicker({ mode: "read" });
-        // showDirectoryPicker 返回 FileSystemDirectoryHandle — 用 name 拼成路径不可靠,
-        // 直接 invoke open_project 不行 (没 path). 改用更稳: 调 pick_folder 让 rfd 弹
-        // (如果 rfd 能弹); 不行就 prompt 输入路径. 这里直接走 path:
-        throw new Error("showDirectoryPicker returns handle, not path — use prompt fallback");
-      } catch (e) {
-        dlog(`doOpenFolder: showDirectoryPicker failed: ${e && e.message || e}`);
+    dlog(`doOpenFolder: enter, inTauri=${inTauri}, projectRoot=${projectRoot}`);
+    // UX 原则 (参考 Cursor / VSCode): 用户点 toolbar 立即看到响应.
+    // 走法: 同时启动 (1) Tauri rfd 真原生 dialog 和 (2) JS 模态 fallback.
+    // 谁先返回用谁. 用户不会被卡.
+    let picked = null;
+    let pickPromise = null;
+    try {
+      pickPromise = invoke("pick_folder");
+    } catch (e) {
+      dlog(`doOpenFolder: invoke sync threw ${e && e.message || e}`);
+    }
+    // 立即弹 JS 模态 (不等 rfd)
+    const typedPromise = promptForPath();
+    if (pickPromise) {
+      let resolved = false;
+      pickPromise.then(p => { resolved = true; picked = p; dlog(`doOpenFolder: pick_folder resolved=${p}`); })
+                     .catch(e => dlog(`doOpenFolder: pick_folder rejected ${e && e.message || e}`));
+      // 给 rfd 3500ms — 如果它真弹了, 用户 cancel/ok 后 promise 会 resolve;
+      // 3500ms 内 resolved=true 就走 Tauri 路径, 否则用用户输入的路径.
+      await new Promise(r => setTimeout(r, 3500));
+      if (resolved) {
+        // rfd 真返回 (用户选了). 关掉 JS 模态
+        closeModal();
+        if (!picked) { dlog(`doOpenFolder: rfd returned None, user cancelled`); return; }
+      } else {
+        dlog(`doOpenFolder: rfd silent > 3.5s, using typed path`);
+        const typed = await typedPromise;
+        dlog(`doOpenFolder: typed=${typed}`);
+        if (!typed) { dlog(`doOpenFolder: modal cancelled`); return; }
+        try {
+          picked = await invoke("open_project", { path: typed });
+        } catch (e) {
+          dlog(`doOpenFolder: open_project threw: ${e && e.message || e}`);
+          openModal({ title: "打开失败", body: String(e.message || e),
+            buttons: [{ label: "确定", cmd: "modal-close" }] });
+          return;
+        }
       }
     } else {
-      dlog(`doOpenFolder: no showDirectoryPicker available`);
-    }
-    // 尝试 rfd (Tauri 命令) — 不行 fallback 输入框
-    let picked;
-    try {
-      picked = await invoke("pick_folder");
-    } catch (e) {
-      dlog(`doOpenFolder: invoke pick_folder threw ${e && e.message || e}`);
-      picked = null;
-    }
-    dlog(`doOpenFolder: picked=${picked}`);
-    if (!picked) {
-      // Fallback 3: 输入框 modal 让用户手输路径
-      dlog(`doOpenFolder: falling back to path input modal`);
-      const typed = await promptForPath();
-      dlog(`doOpenFolder: typed path = ${typed}`);
-      if (!typed) { dlog(`doOpenFolder: user cancelled path input`); return; }
-      try {
-        picked = await invoke("open_project", { path: typed });
-      } catch (e) {
-        dlog(`doOpenFolder: open_project threw: ${e && e.message || e}`);
+      const typed = await typedPromise;
+      if (!typed) return;
+      try { picked = await invoke("open_project", { path: typed }); }
+      catch (e) {
         openModal({ title: "打开失败", body: String(e.message || e),
           buttons: [{ label: "确定", cmd: "modal-close" }] });
         return;
       }
-      dlog(`doOpenFolder: open_project returned ${picked}`);
     }
     if (!picked) return;
     await setProjectRoot(picked, /*addRecent*/ true);
+    dlog(`doOpenFolder: setProjectRoot done`);
   }
-
-  // 弹出 modal 让用户手输绝对路径, resolve 为字符串. Cancel = null.
+    // 弹出 modal 让用户手输绝对路径, resolve 为字符串. Cancel = null.
   function promptForPath() {
     return new Promise((resolve) => {
       const defaultPath = "D:\\path\\to\\your\\project";
@@ -733,7 +737,6 @@
       mdTitle.textContent = "输入项目路径";
       mdBody.textContent = body;
       mdFoot.innerHTML = "";
-      // 输入框
       const inputWrap = document.createElement("div");
       inputWrap.style.cssText = "margin-top:10px;";
       const input = document.createElement("input");
@@ -744,7 +747,6 @@
       input.id = "path-input";
       inputWrap.appendChild(input);
       mdBody.appendChild(inputWrap);
-      // 按钮
       const btnCancel = document.createElement("button");
       btnCancel.className = "md-btn";
       btnCancel.textContent = "取消";
@@ -759,7 +761,6 @@
         closeModal();
         resolve(v || null);
       });
-      // Enter 提交
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); btnOk.click(); }
         if (e.key === "Escape") { e.preventDefault(); btnCancel.click(); }

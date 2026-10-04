@@ -359,7 +359,7 @@ async fn pick_folder(state: tauri::State<'_, ProjectRoot>) -> Result<Option<Stri
             .pick_folder();
         let _ = tx.send(r);
     });
-    let picked = match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+    let picked = match rx.recv_timeout(std::time::Duration::from_secs(3)) {
         Ok(p) => p,
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
             diag_log("[pick_folder] rfd timed out after 5s — returning None");
