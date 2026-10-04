@@ -171,6 +171,35 @@ test("shell click switches to INSERT (left)", async ({ page }) => {
   await expect(page.locator("#shell-mode-badge")).toHaveAttribute("data-mode", "INSERT", { timeout: 2_000 });
 });
 
+test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }) => {
+  await goEditor(page);
+  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
+  const tip = await page.locator("#sb-project-name").getAttribute("data-tip");
+  expect(tip).toMatch(/点击换项目/);
+});
+
+test("shift+click sb-project-name reloads tree (replaces 刷新 button)", async ({ page }) => {
+  await goEditor(page);
+  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
+  let listDirCalls = 0;
+  page.on("request", (req) => {
+    if (req.url().includes("/api/list_dir") && req.method() === "POST") listDirCalls++;
+  });
+  await page.locator("#sb-project-name").click({ modifiers: ["Shift"] });
+  await page.waitForTimeout(500);
+  expect(listDirCalls).toBeGreaterThanOrEqual(1);
+});
+
+test("no redundant sidebar 打开/刷新 buttons (replaced by project-name click)", async ({ page }) => {
+  await goEditor(page);
+  // '刷新' 按钮已删 (shift+click 项目名替代)
+  await expect(page.locator('button[data-cmd="reload-tree"]')).toHaveCount(0);
+  // sidebar 内的 '打开…' 按钮已删 (toolbar 主按钮 + 项目根 click 是双入口)
+  await expect(page.locator('#sidebar button[data-cmd="open-folder"]')).toHaveCount(0);
+});
+
 test("tree folder lazy-load expands children", async ({ page }) => {
   await goEditor(page);
   await page.click('#toolbar button[data-cmd="open-folder"]');

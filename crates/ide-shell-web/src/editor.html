@@ -97,9 +97,10 @@
     #sb-project-name {
       padding: 6px 12px; font-size: 12px; color: var(--fg);
       border-bottom: 1px solid var(--border);
-      word-break: break-all;
+      word-break: break-all; cursor: pointer;
     }
-    #sb-project-name.empty { color: var(--fg-muted); font-style: italic; }
+    #sb-project-name:hover { background: var(--bg-tree-hover); }
+    #sb-project-name.empty { cursor: default; color: var(--fg-muted); font-style: italic; }
     #tree {
       flex: 1; overflow: auto; padding: 4px 0;
     }
@@ -123,11 +124,10 @@
       border-top: 1px solid var(--border);
       max-height: 160px; overflow: auto;
     }
-    #recent-list:empty + .sb-foot { display: none; }
-    .sb-foot {
-      padding: 6px 12px; font-size: 11px; color: var(--fg-muted);
-      border-top: 1px solid var(--border);
-      background: rgba(0,0,0,0.2);
+    .sb-section-head {
+      padding: 6px 12px; font-size: 11px; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--fg-muted); border-top: 1px solid var(--border);
     }
     .recent-item {
       padding: 3px 12px; cursor: pointer; font-size: 12px;
@@ -381,26 +381,14 @@
   <!-- ============== 主区 ============== -->
   <div id="main">
 
-    <!-- 侧栏: 文件树 / 最近项目 -->
+    <!-- 侧栏: 项目根 + 文件树 + 最近项目 (无冗余按钮; 刷新 = 重打开文件夹) -->
     <div id="sidebar">
-      <div class="sb-head">
-        <span>资源管理器</span>
-        <span class="sb-act">
-          <button class="sb-act-btn"
-                  data-cmd="open-folder"
-                  data-tip="打开另一个项目 (会替换当前项目根)">打开…</button>
-          <button class="sb-act-btn"
-                  data-cmd="reload-tree"
-                  data-tip="刷新文件树">刷新</button>
-        </span>
-      </div>
-      <div id="sb-project-name" class="empty">尚未打开项目</div>
+      <div id="sb-project-name" class="empty" data-tip="项目根 — 鼠标悬停查看完整路径" tabindex="0">尚未打开项目</div>
       <div id="tree">
-        <div class="empty-hint">点工具栏「打开文件夹」导入项目</div>
+        <div class="empty-hint">点工具栏「📁 打开文件夹」导入项目</div>
       </div>
-      <div class="sb-head"><span>最近项目</span><span class="sb-act"></span></div>
+      <div class="sb-section-head"><span>最近项目</span></div>
       <div id="recent-list"></div>
-      <div class="sb-foot">右键文件树节点可关闭其上层目录</div>
     </div>
 
     <!-- 编辑器区: 标签栏 + 编辑器 + Shell -->
@@ -797,10 +785,15 @@
     projectRoot = path;
     sbProjectName.classList.remove("empty");
     sbProjectName.textContent = path;
-    sbProjectName.setAttribute("data-tip", path);
+    sbProjectName.setAttribute("data-tip", path + "  (点击换项目 / Shift+点击重新加载)");
     reloadTree();
     if (addRecent) addRecentProject(path);
   }
+  // 点击项目根 → 换项目 (或 Shift+点击 → 重新加载当前项目, 取代 '刷新' 按钮)
+  sbProjectName.addEventListener("click", (e) => {
+    if (e.shiftKey && projectRoot) { reloadTree(); return; }
+    doOpenFolder();
+  });
   on("open-folder", doOpenFolder);
 
   const RECENT_KEY = "ide-shell-desktop:recent-projects";
@@ -1502,6 +1495,12 @@
     }
   }
   bootstrap();
+  // 诊断: 启动 5s 后写一条 log, 让用户能验证 log 路径有效 (不是 webview2 卡死)
+  setTimeout(() => {
+    dlog(`[idle-5s] app still alive, inTauri=${inTauri}, projectRoot=${projectRoot}`);
+    const el = document.getElementById("sb-project-name");
+    if (el) dlog(`[idle-5s] sb-project-name class="${el.className}" text="${el.textContent.slice(0, 60)}"`);
+  }, 5000);
 
 
   /* ==========================================================================

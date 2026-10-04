@@ -32,6 +32,8 @@ pub mod wiki;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use tauri::Manager;
+
 use ide_shell::render::web::{render as render_web, WebFrame};
 use ide_shell::{App, AppConfig, Mode};
 
