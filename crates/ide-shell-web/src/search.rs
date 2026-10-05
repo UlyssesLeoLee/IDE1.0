@@ -25,34 +25,34 @@ pub struct SearchOptions {
 }
 
 pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
-    let mut args = vec!["--line-number", "--no-heading", "--color", "never"];
+    let mut args: Vec<String> = vec!["--line-number".into(), "--no-heading".into(), "--color".into(), "never".into()];
     if !opts.case_sensitive.unwrap_or(false) {
-        args.push("--ignore-case");
+        args.push("--ignore-case".into());
     }
     if !opts.regex.unwrap_or(false) {
-        args.push("--fixed-strings");
+        args.push("--fixed-strings".into());
     }
     if let Some(max) = opts.max_results {
-        args.push("--max-count");
-        args.push(&max.to_string());
+        args.push("--max-count".into());
+        args.push(max.to_string());
     }
     if let Some(inc) = &opts.include_globs {
         for g in inc {
-            args.push("--glob");
-            args.push(g);
+            args.push("--glob".into());
+            args.push(g.clone());
         }
     }
     if let Some(exc) = &opts.exclude_globs {
         for g in exc {
-            args.push("--glob");
-            args.push(g);
-            args.push("--invert-match");
+            args.push("--glob".into());
+            args.push(g.clone());
+            args.push("--invert-match".into());
         }
     }
-    args.push(&opts.pattern);
+    args.push(opts.pattern.clone());
 
     let output = Command::new("rg")
-        .args(&args)
+        .args(args)
         .current_dir(cwd)
         .output()
         .map_err(|e| format!("rg not found: {} (use fallback)", e))?;
