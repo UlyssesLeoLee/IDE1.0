@@ -680,6 +680,64 @@
     .outline-item .oi-icon[data-kind="trait"] { color: var(--green); }
     .outline-item .oi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .outline-item .oi-line { color: var(--fg-dim); font-size: 10px; }
+
+    /* ===== Multi-cursor 视觉层 (前端 v1 — 纯视觉) ===== */
+    .cursor-layer {
+      position: absolute; left: 50px; top: 0; bottom: 0; right: 0;
+      pointer-events: none; z-index: 5;
+    }
+    .cursor-layer .cur-extra {
+      position: absolute; width: 2px; height: 18px;
+      background: var(--cur); opacity: 0.7;
+      animation: term-blink 1s step-end infinite;
+    }
+    .cursor-layer .cur-extra.primary { opacity: 1; background: var(--blue); }
+    .mc-status {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 6px; margin-left: 6px; border-radius: 2px;
+      background: var(--blue); color: black;
+      font-size: 10px; font-weight: bold;
+    }
+
+    /* ===== MiniMap (右侧代码缩略图) ===== */
+    #minimap {
+      position: absolute; right: 0; top: 0; width: 80px;
+      height: 100%; background: #1e1e1e; border-left: 1px solid var(--border);
+      overflow: hidden; font-family: ui-monospace, monospace;
+      font-size: 2px; line-height: 2px;
+      z-index: 2;
+    }
+    #minimap-viewport {
+      position: absolute; left: 0; right: 0;
+      background: rgba(110, 110, 110, 0.2);
+      border-top: 1px solid rgba(110, 110, 110, 0.5);
+      border-bottom: 1px solid rgba(110, 110, 110, 0.5);
+      pointer-events: none;
+    }
+    .mm-cursor {
+      position: absolute; left: 0; width: 6px;
+      background: var(--blue); pointer-events: none;
+    }
+    .mm-line {
+      display: block; height: 2px; background: #999;
+      margin: 1px 4px; border-radius: 1px; opacity: 0.55;
+    }
+
+    /* ===== Breadcrumb (顶部路径) ===== */
+    #breadcrumb {
+      height: 22px; padding: 0 12px;
+      background: #1a1a1a; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 2px;
+      font-size: 12px; font-family: ui-monospace, monospace;
+      overflow: hidden; flex-shrink: 0;
+    }
+    .crumb {
+      padding: 1px 6px; border-radius: 2px;
+      color: var(--fg-muted); cursor: pointer;
+    }
+    .crumb:hover { background: #2a2a2a; color: var(--fg); }
+    .crumb.current { color: var(--fg); }
+    .crumb-sep { color: var(--fg-dim); }
 </style>
 </head>
 <body>
@@ -3532,6 +3590,207 @@ SELECT * FROM hello;
 
     document.querySelector('[data-cmd="outline-refresh"]')?.addEventListener("click", () => Outline.refresh());
     document.querySelector('.act-btn[data-pane="outline"]')?.addEventListener("click", () => Outline.refresh());
+
+    // ============================================================
+    // Multi-cursor (视觉 v1, 真实编辑仍单光标)
+    // ============================================================
+    const MultiCursor = {
+      // 额外光标 (LogicPos[row, col]) — 主光标仍是 server 的 caret
+      extra: [],
+
+      clear() {
+        this.extra = [];
+        this.render();
+        this.updateStatus();
+      },
+
+      add(row, col) {
+        // 去重
+        const exists = this.extra.some(c => c.row === row && c.col === col);
+        if (!exists) this.extra.push({ row, col });
+        this.render();
+        this.updateStatus();
+      },
+
+      render() {
+        let layer = document.getElementById("cursor-layer");
+        if (!layer) {
+          layer = document.createElement("div");
+          layer.id = "cursor-layer";
+          layer.className = "cursor-layer";
+          const ed = document.getElementById("editor");
+          if (ed) ed.appendChild(layer);
+        }
+        layer.innerHTML = "";
+        // 每个 extra cursor 画一个细条 (固定高, 真实位置需要 char 几何计算 — 这里近似)
+        for (let i = 0; i < this.extra.length; i++) {
+          const c = this.extra[i];
+          const span = document.createElement("div");
+          span.className = "cur-extra" + (i === 0 ? " primary" : "");
+          // 近似位置 — line height ~18px, char width ~7px
+          const top = (c.row * 18) + 8;
+          const left = 50 + 8 + (c.col * 7);
+          span.style.top = top + "px";
+          span.style.left = left + "px";
+          span.title = `Alt+Click @ Ln ${c.row + 1}, Col ${c.col + 1}`;
+          layer.appendChild(span);
+        }
+      },
+
+      updateStatus() {
+        const statusMode = document.getElementById("s-mode");
+        if (!statusMode) return;
+        // 不破坏原有 mode 文字, 加 .mc-status 元素
+        const old = statusMode.parentElement.querySelector(".mc-status");
+        if (old) old.remove();
+        if (this.extra.length > 0) {
+          const tag = document.createElement("span");
+          tag.className = "mc-status";
+          tag.textContent = `${this.extra.length + 1} cursors`;
+          statusMode.parentElement.appendChild(tag);
+        }
+      },
+    };
+
+    // Esc 清空 multi-cursor
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && MultiCursor.extra.length > 0) {
+        e.preventDefault();
+        MultiCursor.clear();
+      }
+    });
+
+    // Alt+Click → 加 extra cursor (基于当前 server caret 位置)
+    document.getElementById("editor")?.addEventListener("mouseup", async (ev) => {
+      if (ev.altKey && !ev.ctrlKey && !ev.shiftKey && ev.button === 0) {
+        // 简化: 用 server 当前 caret 行 + 估算 col
+        try {
+          const frame = await fetch("/api/frame").then(r => r.json());
+          MultiCursor.add(frame.cursor.row, frame.cursor.col);
+        } catch (e) { /* ignore */ }
+      }
+    });
+
+    // ============================================================
+    // MiniMap (右侧代码缩略图)
+    // ============================================================
+    const MiniMap = {
+      init() {
+        let mm = document.getElementById("minimap");
+        if (!mm) {
+          mm = document.createElement("div");
+          mm.id = "minimap";
+          const ed = document.getElementById("editor");
+          if (ed) ed.appendChild(mm);
+        }
+        return mm;
+      },
+
+      render() {
+        const mm = this.init();
+        mm.innerHTML = "";
+        const lines = (window.__IDE_BUFFER__ || "").split("\n");
+        const ed = document.getElementById("ed-content");
+        const editorHeight = ed ? ed.offsetHeight : 400;
+        const lineHeight = editorHeight / Math.max(lines.length, 1);
+        // Render mini-lines (≤ visible lines)
+        const visibleLines = Math.ceil(editorHeight / 18);
+        const step = Math.max(1, Math.floor(lines.length / visibleLines));
+        for (let i = 0; i < lines.length; i += step) {
+          const text = lines[i].trim();
+          if (text.length === 0) continue;
+          const len = Math.min(text.length / 20, 0.95);
+          const line = document.createElement("span");
+          line.className = "mm-line";
+          line.style.width = (len * 100) + "%";
+          mm.appendChild(line);
+        }
+        // Cursor indicator
+        const caretRow = (window.__IDE_CURSOR__ || { line: 0 }).line;
+        const cursor = document.createElement("div");
+        cursor.className = "mm-cursor";
+        cursor.style.top = (cursorRow * lineHeight) + "px";
+        cursor.style.height = lineHeight + "px";
+        mm.appendChild(cursor);
+      },
+
+      track() {
+        // Hook into buffer updates
+        const origRefresh = window.refreshShell;
+        if (origRefresh && !window.__mmPatched) {
+          window.refreshShell = function() {
+            origRefresh.apply(this, arguments);
+            try {
+              const f = arguments[0] || {};
+              window.__IDE_BUFFER__ = (f.prompt || []).map(r => r.map(c => c.ch).join("")).join("\n") + "\n" + (f.buffer || "");
+              window.__IDE_CURSOR__ = f.cursor || { line: 0 };
+              MiniMap.render();
+            } catch (e) { /* ignore */ }
+          };
+          window.__mmPatched = true;
+        }
+      },
+    };
+
+    // Init MiniMap when editor loads
+    setTimeout(() => { MiniMap.track(); MiniMap.render(); }, 500);
+
+    // ============================================================
+    // Breadcrumb (顶部 path 显示)
+    // ============================================================
+    const Breadcrumb = {
+      path: "",
+
+      render() {
+        let el = document.getElementById("breadcrumb");
+        if (!el) {
+          el = document.createElement("div");
+          el.id = "breadcrumb";
+          const tabs = document.getElementById("tabs");
+          if (tabs && tabs.parentElement) tabs.parentElement.insertBefore(el, tabs.nextSibling);
+          else document.body.prepend(el);
+        }
+        el.innerHTML = "";
+        if (!this.path) {
+          const hint = document.createElement("span");
+          hint.className = "crumb";
+          hint.textContent = "(no file opened)";
+          el.appendChild(hint);
+          return;
+        }
+        const parts = this.path.split(/[\\\/]/).filter(Boolean);
+        // Skip drive "C:"
+        if (parts[0] && parts[0].endsWith(":")) parts.shift();
+        parts.forEach((p, i) => {
+          if (i > 0) {
+            const sep = document.createElement("span");
+            sep.className = "crumb-sep";
+            sep.textContent = "›";
+            el.appendChild(sep);
+          }
+          const c = document.createElement("span");
+          c.className = "crumb" + (i === parts.length - 1 ? " current" : "");
+          c.textContent = p;
+          c.title = parts.slice(0, i + 1).join("/");
+          el.appendChild(c);
+        });
+      },
+
+      set(path) {
+        this.path = path || "";
+        this.render();
+      },
+    };
+
+    // Hatched from openFileAt
+    const _origOpenFileAt2 = openFileAt;
+    openFileAt = function(path, line) {
+      _origOpenFileAt2(path, line);
+      Breadcrumb.set(path);
+      Outline.currentPath = path;
+      Outline.refresh();
+    };
+    Breadcrumb.render();
 </script>
 </body>
 </html>
