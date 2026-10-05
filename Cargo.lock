@@ -2075,6 +2075,7 @@ dependencies = [
  "crossterm",
  "ide-kernel-core",
  "ide-shell",
+ "once_cell",
  "serde",
  "serde_json",
 ]
