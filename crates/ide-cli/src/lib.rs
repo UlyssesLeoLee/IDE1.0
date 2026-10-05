@@ -150,9 +150,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_run_with_no_args_returns_2() {
-        // 模拟 `ide-cli` 无参数: 直接调 run() 时 env::args() 包含 test harness 的 argv[0]
-        // 这里仅验证 print_help 不 panic
+    fn test_print_help_does_not_panic() {
         print_help();
     }
 
@@ -165,6 +163,12 @@ mod tests {
     #[test]
     fn test_run_aci_emit_custom_id() {
         let code = run_aci_emit(Some("ide1.0:test:custom".into()));
+        assert_eq!(code, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn test_run_aci_emit_unicode_id() {
+        let code = run_aci_emit(Some("ide1.0:test:中文".into()));
         assert_eq!(code, ExitCode::SUCCESS);
     }
 }
