@@ -266,7 +266,6 @@ mod tests {
 
 use tauri::State;
 use std::sync::Arc;
-use std::path::PathBuf;
 
 /// Internal: resolve project root, find git root (walk up).
 fn resolve_repo(state: &State<'_, crate::ProjectRoot>) -> Result<PathBuf, String> {
