@@ -390,7 +390,110 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; }
     ::-webkit-scrollbar-thumb:hover { background: #5e5e5e; }
-  </style>
+  
+    /* ===== Bottom Panel (Terminal / Output / Problems) ===== */
+    #bottom-panel {
+      height: 220px; min-height: 28px; max-height: 60vh;
+      background: var(--bg-shell); border-top: 1px solid var(--border-strong);
+      display: flex; flex-direction: column; flex-shrink: 0;
+      transition: height 0.15s;
+    }
+    #bottom-panel[data-collapsed="true"] { height: 28px; }
+    #bottom-head {
+      height: 28px; display: flex; align-items: center;
+      padding: 0 8px; background: #1a1a1a;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0; gap: 4px;
+    }
+    .bottom-tabs { display: flex; gap: 0; height: 100%; }
+    .bottom-tab {
+      background: none; border: none; color: var(--fg-muted);
+      padding: 0 12px; height: 100%; cursor: pointer;
+      font-family: inherit; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.5px; border-right: 1px solid var(--border);
+      border-bottom: 2px solid transparent;
+    }
+    .bottom-tab:hover { color: var(--fg); background: #2a2a2a; }
+    .bottom-tab.active {
+      color: var(--fg); background: var(--bg-shell);
+      border-bottom-color: var(--blue);
+    }
+    .bottom-spacer { flex: 1; }
+    .bottom-toggle {
+      background: none; border: 1px solid transparent; color: var(--fg-muted);
+      padding: 1px 8px; border-radius: 3px; cursor: pointer;
+      font-family: inherit; font-size: 11px;
+    }
+    .bottom-toggle:hover { background: #444; color: var(--fg); border-color: #555; }
+
+    #bottom-body { flex: 1; overflow: hidden; position: relative; }
+    .bottom-pane {
+      position: absolute; inset: 0; display: none;
+      flex-direction: column;
+    }
+    .bottom-pane.active { display: flex; }
+    .bottom-pane-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--fg-dim); font-size: 12px;
+    }
+
+    /* ===== Terminal ===== */
+    #terminal-tabs {
+      height: 28px; display: flex; background: #1a1a1a;
+      border-bottom: 1px solid var(--border); overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .terminal-tab {
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 10px; height: 100%;
+      background: #2a2a2a; color: var(--fg-muted);
+      border-right: 1px solid var(--border);
+      font-size: 11px; cursor: pointer;
+      white-space: nowrap;
+    }
+    .terminal-tab.active { background: var(--bg-shell); color: var(--fg); }
+    .terminal-tab:hover:not(.active) { background: #333; color: var(--fg); }
+    .terminal-tab .close-x {
+      font-size: 13px; line-height: 1; padding: 0 3px;
+      border-radius: 2px; color: var(--fg-dim);
+    }
+    .terminal-tab .close-x:hover { background: #555; color: var(--fg); }
+    #terminal-body {
+      flex: 1; overflow: auto; padding: 6px 10px;
+      font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+      font-size: 13px; line-height: 1.4;
+      background: var(--bg-shell); color: var(--fg);
+      cursor: text; outline: none;
+    }
+    #terminal-body .term-line { white-space: pre-wrap; word-break: break-all; min-height: 1.4em; }
+    #terminal-body .term-prompt { color: var(--blue); font-weight: bold; }
+    #terminal-body .term-stderr { color: var(--red); }
+    #terminal-body .term-system { color: var(--fg-dim); font-style: italic; }
+    #terminal-body .term-cursor {
+      display: inline-block; width: 7px; height: 1em;
+      background: var(--fg); vertical-align: text-bottom;
+      animation: term-blink 1s step-end infinite;
+    }
+    @keyframes term-blink { 50% { opacity: 0; } }
+    /* ANSI 基础 16 色 — 对标 VSCode terminal 默认主题 */
+    .ansi-30 { color: #1e1e1e; } .ansi-31 { color: #e74c3c; } .ansi-32 { color: #2ecc71; }
+    .ansi-33 { color: #f1c40f; } .ansi-34 { color: #3498db; } .ansi-35 { color: #9b59b6; }
+    .ansi-36 { color: #1abc9c; } .ansi-37 { color: #ecf0f1; }
+    .ansi-90 { color: #7f8c8d; } .ansi-91 { color: #ff6b6b; } .ansi-92 { color: #5ff05f; }
+    .ansi-93 { color: #ffe066; } .ansi-94 { color: #74b9ff; } .ansi-95 { color: #d693ff; }
+    .ansi-96 { color: #5fd7d7; } .ansi-97 { color: #ffffff; }
+    .ansi-bold { font-weight: bold; }
+    .terminal-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--fg-dim);
+    }
+    .terminal-empty-title { font-size: 14px; margin-bottom: 6px; color: var(--fg-muted); }
+    .terminal-empty-hint { font-size: 11px; }
+    .terminal-empty-hint kbd {
+      background: #333; border: 1px solid #555;
+      padding: 1px 5px; border-radius: 3px; font-family: inherit; font-size: 10px;
+    }
+</style>
 </head>
 <body>
 
@@ -470,6 +573,39 @@
                   data-tip="折叠/展开 Shell 面板">折叠</button>
         </div>
         <div id="shell-body" tabindex="0"></div>
+      </div>
+
+      <!-- ============== Bottom Panel Tabs (Terminal / Output / Problems) ============== -->
+      <div id="bottom-panel" data-collapsed="false">
+        <div id="bottom-head">
+          <div class="bottom-tabs">
+            <button class="bottom-tab active" data-pane="terminal-pane" data-tip="集成 PowerShell / bash 等真实终端 (对标 Cursor / VSCode)">Terminal</button>
+            <button class="bottom-tab" data-pane="output-pane" data-tip="构建/测试输出 (TODO)">Output</button>
+            <button class="bottom-tab" data-pane="problems-pane" data-tip="错误/警告 (TODO)">Problems</button>
+          </div>
+          <span class="bottom-spacer"></span>
+          <button class="bottom-toggle"
+                  data-cmd="terminal-new"
+                  data-tip="新建 Terminal session (默认 PowerShell)">+ New Terminal</button>
+          <button class="bottom-toggle"
+                  data-cmd="bottom-toggle"
+                  data-tip="折叠/展开 底部面板">折叠</button>
+        </div>
+        <div id="bottom-body">
+          <div class="bottom-pane active" id="terminal-pane">
+            <div id="terminal-tabs"></div>
+            <div id="terminal-body">
+              <div id="terminal-empty" class="terminal-empty">
+                <div class="terminal-empty-text">
+                  <div class="terminal-empty-title">No terminal session</div>
+                  <div class="terminal-empty-hint">点击右上「+ New Terminal」或按 <kbd>Ctrl</kbd>+<kbd>`</kbd> 打开 PowerShell</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bottom-pane" id="output-pane"><div class="bottom-pane-empty">Output channel — TODO</div></div>
+          <div class="bottom-pane" id="problems-pane"><div class="bottom-pane-empty">Problems panel — TODO</div></div>
+        </div>
       </div>
     </div>
 
@@ -2313,6 +2449,235 @@ SELECT * FROM hello;
     }
     return html || "&nbsp;";
   }
-  </script>
+  
+    // ============================================================
+    // Terminal panel (PowerShell / bash) — 对标 Cursor / VSCode
+    // ============================================================
+    const Terminal = {
+      sessions: new Map(),     // id -> { info, buffer, lineEl }
+      activeId: null,
+      el: {
+        pane: document.getElementById("terminal-pane"),
+        tabs: document.getElementById("terminal-tabs"),
+        body: document.getElementById("terminal-body"),
+        empty: document.getElementById("terminal-empty"),
+      },
+
+      async create(opts = {}) {
+        const shell = opts.shell || null;
+        const cwd = opts.cwd || null;
+        const title = opts.title || null;
+        let info;
+        try {
+          info = await invoke("terminal_create", { shell, cwd, title });
+        } catch (e) {
+          console.error("terminal_create failed:", e);
+          return null;
+        }
+        this.sessions.set(info.id, { info, lines: [] });
+        this.renderTabs();
+        this.activate(info.id);
+        this.listen(info.id);
+        return info;
+      },
+
+      async close(id) {
+        try {
+          await invoke("terminal_close", { id });
+        } catch (e) {
+          console.warn("terminal_close:", e);
+        }
+        this.sessions.delete(id);
+        if (this.activeId === id) {
+          const remaining = [...this.sessions.keys()];
+          this.activeId = remaining[remaining.length - 1] || null;
+        }
+        this.renderTabs();
+        this.renderBody();
+      },
+
+      activate(id) {
+        this.activeId = id;
+        this.renderTabs();
+        this.renderBody();
+      },
+
+      async send(data) {
+        if (!this.activeId) return;
+        try {
+          await invoke("terminal_input", { id: this.activeId, data });
+        } catch (e) {
+          console.error("terminal_input failed:", e);
+        }
+      },
+
+      renderTabs() {
+        const tabsEl = this.el.tabs;
+        tabsEl.innerHTML = "";
+        for (const [id, session] of this.sessions) {
+          const tab = document.createElement("div");
+          tab.className = "terminal-tab" + (id === this.activeId ? " active" : "");
+          tab.dataset.id = id;
+          tab.title = `${session.info.shell}\n${session.info.cwd}`;
+          const label = document.createElement("span");
+          label.textContent = session.info.title;
+          const closeBtn = document.createElement("span");
+          closeBtn.className = "close-x";
+          closeBtn.textContent = "×";
+          closeBtn.title = "关闭 Terminal";
+          closeBtn.onclick = (e) => { e.stopPropagation(); this.close(id); };
+          tab.appendChild(label);
+          tab.appendChild(closeBtn);
+          tab.onclick = () => this.activate(id);
+          tabsEl.appendChild(tab);
+        }
+      },
+
+      renderBody() {
+        const body = this.el.body;
+        body.innerHTML = "";
+        const session = this.activeId ? this.sessions.get(this.activeId) : null;
+        if (!session) {
+          this.el.empty.style.display = "flex";
+          return;
+        }
+        this.el.empty.style.display = "none";
+        for (const line of session.lines) {
+          body.appendChild(this.lineToEl(line));
+        }
+        body.scrollTop = body.scrollHeight;
+      },
+
+      lineToEl(line) {
+        const div = document.createElement("div");
+        div.className = "term-line";
+        if (line.kind === "stderr") div.classList.add("term-stderr");
+        else if (line.kind === "system") div.classList.add("term-system");
+        if (line.spans) {
+          for (const span of line.spans) {
+            const sp = document.createElement("span");
+            if (span.cls) sp.className = span.cls;
+            sp.textContent = span.text;
+            div.appendChild(sp);
+          }
+        } else {
+          div.textContent = line.text || "";
+        }
+        return div;
+      },
+
+      appendChunk(id, stream, raw) {
+        const session = this.sessions.get(id);
+        if (!session) return;
+        // 简单行分割 (chunked, 按 \n 切, 可能不完整)
+        if (!session.pending) session.pending = "";
+        session.pending += raw;
+        const parts = session.pending.split(/\r?\n/);
+        session.pending = parts.pop(); // 最后一段可能未完整
+        for (const text of parts) {
+          const line = { kind: stream === "stderr" ? "stderr" : "stdout", text: this.stripAnsi(text) };
+          session.lines.push(line);
+          if (this.activeId === id) {
+            this.el.body.appendChild(this.lineToEl(line));
+          }
+        }
+        // 滚动到底
+        if (this.activeId === id) {
+          this.el.body.scrollTop = this.el.body.scrollHeight;
+        }
+      },
+
+      stripAnsi(text) {
+        // 简化: 直接返回 text (后续加 ANSI 解析 → spans).
+        // ESC \[[0-9;]*m 替换成空
+        return text.replace(/\x1b\[[0-9;]*m/g, "");
+      },
+
+      onClosed(id) {
+        const session = this.sessions.get(id);
+        if (session) {
+          session.lines.push({ kind: "system", text: `[Process completed]` });
+          if (this.activeId === id) {
+            this.renderBody();
+          }
+        }
+      },
+
+      listen(id) {
+        const handler = (event) => {
+          const payload = event.payload;
+          if (payload && payload.id === id) {
+            this.appendChunk(id, payload.stream, payload.data);
+          }
+        };
+        // Tauri event listener (统一总线 __TAURI__.event.listen)
+        if (window.__TAURI__ && __TAURI__.event) {
+          __TAURI__.event.listen("terminal://output", handler);
+          __TAURI__.event.listen("terminal://closed", (e) => {
+            if (e.payload && e.payload.id === id) {
+              this.onClosed(id);
+            }
+          });
+        }
+      },
+    };
+
+    // ----- Bottom Panel Tab 切换 -----
+    document.querySelectorAll(".bottom-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const paneId = btn.dataset.pane;
+        document.querySelectorAll(".bottom-tab").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".bottom-pane").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        const pane = document.getElementById(paneId);
+        if (pane) pane.classList.add("active");
+      });
+    });
+
+    // ----- Bottom Panel 折叠 -----
+    document.querySelector('[data-cmd="bottom-toggle"]')?.addEventListener("click", () => {
+      const p = document.getElementById("bottom-panel");
+      const collapsed = p.dataset.collapsed === "true";
+      p.dataset.collapsed = collapsed ? "false" : "true";
+    });
+
+    // ----- + New Terminal 按钮 -----
+    document.querySelector('[data-cmd="terminal-new"]')?.addEventListener("click", () => {
+      // 默认 PowerShell (Windows), cwd = project root (如果有)
+      const cwd = (window.__IDE_PROJECT_ROOT__ || null);
+      Terminal.create({ cwd });
+    });
+
+    // ----- Ctrl+` 全局快捷键: 聚焦/新建 Terminal -----
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "`") {
+        e.preventDefault();
+        const bp = document.getElementById("bottom-panel");
+        if (bp.dataset.collapsed === "true") bp.dataset.collapsed = "false";
+        // 切到 Terminal tab
+        document.querySelector('.bottom-tab[data-pane="terminal-pane"]')?.click();
+        if (!Terminal.activeId) {
+          const cwd = (window.__IDE_PROJECT_ROOT__ || null);
+          Terminal.create({ cwd });
+        } else {
+          document.getElementById("terminal-body")?.focus();
+        }
+      }
+    });
+
+    // ----- Terminal body 键盘输入 -----
+    document.getElementById("terminal-body")?.addEventListener("keydown", (e) => {
+      if (!Terminal.activeId) return;
+      // 让 enter / 上下方向键 / Ctrl+C 都直接发 stdin
+      let data = "";
+      if (e.key === "Enter") data = "\r\n";
+      else if (e.key === "Backspace") data = "\b \b"; // backspace
+      else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) data = e.key;
+      else if (e.ctrlKey && e.key.toLowerCase() === "c") { data = "\x03"; e.preventDefault(); } // SIGINT
+      else return;
+      e.preventDefault();
+      Terminal.send(data);
+    });
+</script>
 </body>
 </html>

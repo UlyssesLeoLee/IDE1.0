@@ -27,6 +27,7 @@
 //! - IT 在 tests/e2e_commands.rs (纯函数 pub(crate 路径解析 + 沙箱 + 文件读写)
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
+pub mod terminal;
 pub mod wiki;
 
 use std::path::{Path, PathBuf};
@@ -505,6 +506,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ShellState::default())
         .manage(ProjectRoot::default())
+        .manage(terminal::TerminalState::new())
         .invoke_handler(tauri::generate_handler![
             frame,
             reset,
@@ -518,6 +520,10 @@ pub fn run() {
             read_file,
             write_file,
             help_wiki,
+            terminal::terminal_create,
+            terminal::terminal_input,
+            terminal::terminal_close,
+            terminal::terminal_list,
         ])
         .setup(|_app| {
             eprintln!(
