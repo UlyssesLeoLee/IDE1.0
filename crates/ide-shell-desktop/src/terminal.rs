@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::process::{Child, ChildStderr, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ pub fn terminal_create(
         );
     }
 
-    spawn_reader(app.clone(), id.clone(), "stdout", stdout);
+    spawn_reader(app.clone(), id.clone(), "stdout", Box::new(stdout));
     spawn_reader(app.clone(), id.clone(), "stderr", Box::new(stderr));
 
     Ok(TerminalInfo {
@@ -266,12 +266,6 @@ fn spawn_reader(
     });
 }
 
-// Helper: 把 ChildStderr 装成 Box<dyn Read>
-impl From<ChildStderr> for Box<dyn Read + Send> {
-    fn from(s: ChildStderr) -> Self {
-        Box::new(s)
-    }
-}
 
 #[derive(Serialize, Clone)]
 struct TerminalOutputEvent {
