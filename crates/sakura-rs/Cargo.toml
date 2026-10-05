@@ -1,0 +1,16 @@
+[package]
+name = "sakura-rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Zlib"  # 沿用上游协议
+authors.workspace = true
+repository.workspace = true
+description = "sakura-rs — 轻量高性能的文本编辑器内核, 对标 sakura editor (zlib) 架构, Rust 重写, 0 重型依赖, 适合嵌入 AI agent / IDE / CLI / Web 工具."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = "1.0"
+
+[lints]
+workspace = true
