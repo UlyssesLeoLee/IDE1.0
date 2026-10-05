@@ -21,10 +21,11 @@
 //! 设计: server 内持有单一 App 状态 (单用户 demo). 端口默认 8123 (CI 与本地都用).
 
 pub mod path_safety;
-mod scm;
-mod search;
-mod terminal;
 pub mod wiki_data;
+
+mod scm;
+mod terminal;
+mod search;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -103,147 +104,7 @@ impl ShellState {
                 "CONTROL" | "ctrl" => mods |= KeyModifiers::CONTROL,
                 "ALT" | "alt" => mods |= KeyModifiers::ALT,
                 "SHIFT" | "shift" => mods |= KeyModifiers::SHIFT,
-        
-        // ============================================================
-        // Terminal panel endpoints (对标 Cursor / VSCode)
-        // ============================================================
-        ("POST", "/api/terminal_create") => {
-            // Web 版简化: 直接 spawn PowerShell (Windows) / bash, 通过 channel 缓冲输出.
-            // 不支持 PTY, 但能跑 cargo build / npm test / python 等命令.
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let shell = body.get("shell").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let cwd = body.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let id = terminal::create(shell, cwd);
-            match id {
-                Some(id) => {
-                    // 启动后台 reader (读 stdout + stderr → 写到 per-id queue)
-                    terminal::spawn_reader(id.clone());
-                    let info = serde_json::json!({
-                        "id": id,
-                        "title": format!("{} #{}", terminal::shell_display(id), terminal::counter(&id)),
-                        "shell": terminal::shell_cmd(&id),
-                        "cwd": terminal::cwd(&id),
-                        "alive": true,
-                    });
-                    respond_json(stream, 200, &info)
-                }
-                None => respond_text(stream, 500, "spawn failed"),
-            }
-        }
-        ("POST", "/api/terminal_input") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let data = body.get("data").and_then(|v| v.as_str()).unwrap_or("");
-            match terminal::input(id, data) {
-                Ok(()) => respond_text(stream, 200, "ok"),
-                Err(e) => respond_text(stream, 404, &e),
-            }
-        }
-        ("POST", "/api/terminal_close") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            terminal::close(id);
-            respond_text(stream, 200, "ok")
-        }
-        ("GET", "/api/terminal_output/{id}") => {
-            // SSE-like long polling: 客户端 GET 一次 → 返回自上次以来 buffer 的所有 chunk.
-            // 简化: 返回当前 buffer 所有内容 (单次 GET), 客户端轮询.
-            // 真正 SSE 需要多线程 + async — 后续升级.
-            let id = req.path.strip_prefix("/api/terminal_output/").unwrap_or("");
-            let buf = terminal::drain_output(id);
-            let body = serde_json::json!({
-                "id": id,
-                "chunks": buf,
-            });
-            respond_json(stream, 200, &body)
-        }
-        ("GET", "/api/terminal_list") => {
-            let list = terminal::list();
-            respond_json(stream, 200, &list)
-        }
-
-
-        ("POST", "/api/scm_status") => {
-            match scm::status() {
-                Ok((files, branch)) => respond_json(stream, 200, &serde_json::json!({
-                    "branch": branch, "files": files,
-                })),
-                Err(e) => respond_json(stream, 200, &serde_json::json!({
-                    "branch": "", "files": [], "error": e,
-                })),
-            }
-        }
-        ("POST", "/api/scm_stage") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let paths: Vec<String> = body.get("paths").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-                .unwrap_or_default();
-            match scm::stage(&paths) {
-                Ok(()) => respond_text(stream, 200, "ok"),
-                Err(e) => respond_text(stream, 500, &e),
-            }
-        }
-        ("POST", "/api/scm_unstage") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let paths: Vec<String> = body.get("paths").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-                .unwrap_or_default();
-            match scm::unstage(&paths) {
-                Ok(()) => respond_text(stream, 200, "ok"),
-                Err(e) => respond_text(stream, 500, &e),
-            }
-        }
-        ("POST", "/api/scm_diff") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let staged = body.get("staged").and_then(|v| v.as_bool()).unwrap_or(false);
-            match scm::diff(path, staged) {
-                Ok(diff) => respond_json(stream, 200, &serde_json::json!({ "diff": diff })),
-                Err(e) => respond_text(stream, 500, &e),
-            }
-        }
-        ("POST", "/api/scm_commit") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            let message = body.get("message").and_then(|v| v.as_str()).unwrap_or("");
-            match scm::commit(message) {
-                Ok(_) => respond_text(stream, 200, "ok"),
-                Err(e) => respond_text(stream, 500, &e),
-            }
-        }
-        ("POST", "/api/scm_log") => {
-            match scm::log(10) {
-                Ok(commits) => respond_json(stream, 200, &serde_json::json!({ "commits": commits })),
-                Err(e) => respond_json(stream, 200, &serde_json::json!({ "commits": [], "error": e })),
-            }
-        }
-
-
-        ("POST", "/api/search") => {
-            let body = read_json_body(&mut stream).unwrap_or_default();
-            // Parse from JSON map
-            let pattern = body.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let case_sensitive = body.get("case_sensitive").and_then(|v| v.as_bool());
-            let regex = body.get("regex").and_then(|v| v.as_bool());
-            let max_results = body.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize);
-            let include_globs = body.get("include_globs").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>()
-            });
-            let opts = search::SearchOptions {
-                pattern, case_sensitive, regex, include_globs,
-                exclude_globs: None, max_results,
-            };
-            // Resolve cwd
-            let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-            let result = search::search(&cwd, &opts).or_else(|_| search::search_fallback(&cwd, &opts));
-            match result {
-                Ok(results) => respond_json(stream, 200, &serde_json::json!({ "results": results })),
-                Err(e) => respond_json(stream, 200, &serde_json::json!({ "results": [], "error": e })),
-            }
-        }
-
-        _ => {}
+                _ => {}
             }
         }
         let event = KeyEvent::new(kc, mods);
@@ -363,6 +224,153 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
+        ("POST", "/api/terminal_create") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let shell = req.get("shell").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let cwd = req.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            match terminal::create(shell, cwd) {
+                Some(id) => {
+                    let info = serde_json::json!({
+                        "id": id,
+                        "title": format!("{} #{}", terminal::shell_display(&id), terminal::counter(&id)),
+                        "shell": terminal::shell_cmd(&id),
+                        "cwd": terminal::cwd(&id),
+                        "alive": true,
+                    });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&info).unwrap_or_default());
+                }
+                None => send_response(stream, "500 Internal Server Error", "text/plain", b"spawn failed"),
+            }
+        }
+        ("POST", "/api/terminal_input") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = req.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let data = req.get("data").and_then(|v| v.as_str()).unwrap_or("");
+match terminal::input(id, data) {
+                Ok(()) => send_response(stream, "200 OK", "text/plain", b"ok"),
+                Err(e) => send_response(stream, "404 Not Found", "text/plain", e.as_bytes()),
+            }
+        }
+        ("POST", "/api/terminal_close") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = req.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            terminal::close(id);
+            send_response(stream, "200 OK", "text/plain", b"ok");
+        }
+        ("GET", "/api/terminal_output") => {
+            // Query: ?id=term-N
+            let id = path.split("?id=").nth(1).unwrap_or("").split("&").next().unwrap_or("");
+            let buf = terminal::drain_output(id);
+            let resp = serde_json::json!({ "id": id, "chunks": buf });
+            send_response(stream, "200 OK", "application/json",
+                &serde_json::to_vec(&resp).unwrap_or_default());
+        }
+        ("GET", "/api/terminal_list") => {
+            let list = terminal::list();
+            send_response(stream, "200 OK", "application/json",
+                &serde_json::to_vec(&list).unwrap_or_default());
+        }
+        ("POST", "/api/scm_status") => {
+            match scm::status() {
+                Ok((files, branch)) => {
+                    let resp = serde_json::json!({ "branch": branch, "files": files });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+                Err(e) => {
+                    let resp = serde_json::json!({ "branch": "", "files": [], "error": e });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+            }
+        }
+        ("POST", "/api/scm_stage") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let paths: Vec<String> = req.get("paths").and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            match scm::stage(&paths) {
+                Ok(()) => send_response(stream, "200 OK", "text/plain", b"ok"),
+                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+            }
+        }
+        ("POST", "/api/scm_unstage") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let paths: Vec<String> = req.get("paths").and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            match scm::unstage(&paths) {
+                Ok(()) => send_response(stream, "200 OK", "text/plain", b"ok"),
+                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+            }
+        }
+        ("POST", "/api/scm_diff") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let staged = req.get("staged").and_then(|v| v.as_bool()).unwrap_or(false);
+            match scm::diff(path, staged) {
+                Ok(diff) => {
+                    let resp = serde_json::json!({ "diff": diff });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+            }
+        }
+        ("POST", "/api/scm_commit") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let message = req.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            match scm::commit(message) {
+                Ok(_) => send_response(stream, "200 OK", "text/plain", b"ok"),
+                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+            }
+        }
+        ("POST", "/api/scm_log") => {
+            match scm::log(10) {
+                Ok(commits) => {
+                    let resp = serde_json::json!({ "commits": commits });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+                Err(e) => {
+                    let resp = serde_json::json!({ "commits": [], "error": e });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+            }
+        }
+        ("POST", "/api/search") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pattern = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let case_sensitive = req.get("case_sensitive").and_then(|v| v.as_bool());
+            let regex = req.get("regex").and_then(|v| v.as_bool());
+            let max_results = req.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize);
+            let include_globs = req.get("include_globs").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>()
+            });
+            let opts = search::SearchOptions {
+                pattern, case_sensitive, regex, include_globs,
+                exclude_globs: None, max_results,
+            };
+            let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+            let result = search::search(&cwd, &opts).or_else(|_| search::search_fallback(&cwd, &opts));
+            match result {
+                Ok(results) => {
+                    let resp = serde_json::json!({ "results": results });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+                Err(e) => {
+                    let resp = serde_json::json!({ "results": [], "error": e });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+            }
+        }
+
         ("GET", "/") | ("GET", "/index.html") => {
             let html = include_str!("index.html");
             send_response(

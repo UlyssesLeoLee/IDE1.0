@@ -2877,7 +2877,7 @@ SELECT * FROM hello;
           // Web polling fallback (100ms)
           const poll = async () => {
             try {
-              const r = await fetch("/api/terminal_output/" + id);
+              const r = await fetch("/api/terminal_output?id=" + id);
               if (!r.ok) return;
               const j = await r.json();
               if (j.chunks && j.chunks.length > 0) {
