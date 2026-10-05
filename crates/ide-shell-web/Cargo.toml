@@ -21,6 +21,8 @@ ide-kernel-core = { path = "../ide-kernel-core" }
 aci-emitter = { workspace = true }
 # crossterm 仅用作 KeyEvent/KeyModifiers/MouseButton 类型 (与 ide-shell::App::on_key/on_mouse 对接)
 crossterm = { workspace = true }
+# sakura-rs — outline parser
+sakura-rs = { path = "../sakura-rs" }
 
 [lints]
 workspace = true

@@ -648,6 +648,38 @@
     .problem .body { flex: 1; }
     .problem .msg { color: var(--fg); }
     .problem .location { color: var(--fg-dim); font-family: ui-monospace, monospace; font-size: 10px; }
+
+    /* ===== Outline panel ===== */
+    #outline-current {
+      padding: 4px 10px; font-size: 11px; color: var(--blue);
+      background: #252526; border-bottom: 1px solid var(--border);
+      font-family: ui-monospace, monospace; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .outline-body { overflow-y: auto; flex: 1; }
+    .outline-empty {
+      padding: 12px; color: var(--fg-dim); font-style: italic; font-size: 11px;
+      text-align: center;
+    }
+    .outline-section {
+      padding: 4px 10px 2px; font-size: 10px; font-weight: bold;
+      color: var(--fg-muted); text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .outline-item {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 10px 2px 20px; font-size: 12px; cursor: pointer;
+      font-family: ui-monospace, monospace; overflow: hidden;
+    }
+    .outline-item:hover { background: #2a2a2a; }
+    .outline-item .oi-icon { width: 14px; flex-shrink: 0; text-align: center; }
+    .outline-item .oi-icon[data-kind="function"] { color: var(--blue); }
+    .outline-item .oi-icon[data-kind="struct"] { color: var(--yellow); }
+    .outline-item .oi-icon[data-kind="class"] { color: var(--yellow); }
+    .outline-item .oi-icon[data-kind="impl"] { color: var(--purple); }
+    .outline-item .oi-icon[data-kind="trait"] { color: var(--green); }
+    .outline-item .oi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .outline-item .oi-line { color: var(--fg-dim); font-size: 10px; }
 </style>
 </head>
 <body>
@@ -688,6 +720,7 @@
         <button class="act-btn active" data-pane="explorer" data-tip="资源管理器 (Explorer) — 文件树" title="Explorer">📁</button>
         <button class="act-btn" data-pane="search" data-tip="搜索 — TODO" title="Search">🔍</button>
         <button class="act-btn" data-pane="scm" data-tip="源代码管理 (Source Control) — Git 状态" title="Source Control">⎇</button>
+        <button class="act-btn" data-pane="outline" data-tip="大纲 — 函数/类结构" title="Outline">≡</button>
         <button class="act-btn" data-pane="extensions" data-tip="扩展 — TODO" title="Extensions">⊟</button>
       </div>
       <div id="side-content">
@@ -3391,6 +3424,114 @@ SELECT * FROM hello;
         }
       } catch (e) { /* swallow */ }
     };
+
+    // ============================================================
+    // Outline panel — 用 sakura-rs 解析当前打开的文件
+    // ============================================================
+    const Outline = {
+      currentPath: null,
+      currentLang: "JavaScript",
+      entries: [],
+
+      async function refresh(path) {
+        if (path) this.currentPath = path;
+        if (!this.currentPath) {
+          this.render();
+          return;
+        }
+        try {
+          let data;
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            data = await invoke("outline", { path: this.currentPath });
+          } else {
+            const r = await fetch("/api/outline", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ path: this.currentPath }),
+            });
+            if (!r.ok) { data = null; } else { data = await r.json(); }
+          }
+          if (data && data.error) {
+            this.entries = [];
+            this.currentLang = "Error";
+          } else if (data) {
+            this.entries = data.entries || [];
+            this.currentLang = data.language || "Unknown";
+          }
+        } catch (e) {
+          console.warn("outline fetch failed:", e);
+          this.entries = [];
+          this.currentLang = "Error";
+        }
+        this.render();
+      },
+
+      render() {
+        const currentEl = document.getElementById("outline-current");
+        const bodyEl = document.getElementById("outline-body");
+        if (currentEl) {
+          currentEl.textContent = this.currentPath
+            ? (this.currentPath.split(/[\\\/]/).pop() + "  [" + this.currentLang + "]")
+            : "无打开文件";
+        }
+        if (!bodyEl) return;
+        bodyEl.innerHTML = "";
+        if (!this.currentPath) {
+          bodyEl.innerHTML = '<div class="outline-empty">打开一个文件查看大纲</div>';
+          return;
+        }
+        if (this.entries.length === 0) {
+          bodyEl.innerHTML = '<div class="outline-empty">无大纲 (' + this.currentLang + ')</div>';
+          return;
+        }
+        // Group by kind
+        const groups = { function: [], struct: [], class: [], impl: [], trait: [], other: [] };
+        for (const e of this.entries) {
+          const k = e.kind in groups ? e.kind : "other";
+          groups[k].push(e);
+        }
+        const order = ["function", "class", "struct", "trait", "impl", "other"];
+        const iconMap = { function: "ƒ", class: "C", struct: "S", trait: "T", impl: "I", other: "•" };
+        for (const k of order) {
+          if (groups[k].length === 0) continue;
+          const head = document.createElement("div");
+          head.className = "outline-section";
+          head.textContent = `${k} (${groups[k].length})`;
+          bodyEl.appendChild(head);
+          for (const e of groups[k]) {
+            const item = document.createElement("div");
+            item.className = "outline-item";
+            item.title = `${e.kind} ${e.name} (line ${e.line + 1})`;
+            const icon = document.createElement("span");
+            icon.className = "oi-icon";
+            icon.dataset.kind = e.kind;
+            icon.textContent = iconMap[e.kind] || "•";
+            const name = document.createElement("span");
+            name.className = "oi-name";
+            name.textContent = e.name;
+            const line = document.createElement("span");
+            line.className = "oi-line";
+            line.textContent = `:${e.line + 1}`;
+            item.appendChild(icon);
+            item.appendChild(name);
+            item.appendChild(line);
+            item.onclick = () => openFileAt(this.currentPath, e.line + 1);
+            bodyEl.appendChild(item);
+          }
+        }
+      },
+    };
+
+    // Override openFileAt to track current file
+    const _origOpenFileAt = openFileAt;
+    openFileAt = function(path, line) {
+      _origOpenFileAt(path, line);
+      Outline.currentPath = path;
+      Outline.refresh();
+    };
+
+    document.querySelector('[data-cmd="outline-refresh"]')?.addEventListener("click", () => Outline.refresh());
+    document.querySelector('.act-btn[data-pane="outline"]')?.addEventListener("click", () => Outline.refresh());
 </script>
 </body>
 </html>

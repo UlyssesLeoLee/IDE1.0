@@ -30,6 +30,7 @@
 pub mod terminal;
 pub mod scm;
 pub mod search;
+pub mod outline;
 pub mod wiki;
 
 use std::path::{Path, PathBuf};
@@ -533,6 +534,7 @@ pub fn run() {
             scm::scm_commit,
             scm::scm_log,
             search::search_cmd,
+            outline::outline,
         ])
         .setup(|_app| {
             eprintln!(

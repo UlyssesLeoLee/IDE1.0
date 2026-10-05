@@ -23,6 +23,7 @@
 pub mod path_safety;
 pub mod wiki_data;
 
+mod outline;
 mod scm;
 mod terminal;
 mod search;
@@ -224,6 +225,39 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
+        ("POST", "/api/outline") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug
+            let root = state.project_root_get();
+            let root_path = match root {
+                Some(r) => r,
+                None => {
+                    let resp = serde_json::json!({ "path": file_path, "error": "project root not set" });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                    return;
+                }
+            };
+            let full = if std::path::Path::new(file_path).is_absolute() {
+                std::path::PathBuf::from(file_path)
+            } else {
+                root_path.join(file_path)
+            };
+            match std::fs::read_to_string(&full) {
+                Ok(content_str) => {
+                    let result = outline::outline_file(&full.to_string_lossy(), &content_str);
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&result).unwrap_or_default());
+                }
+                Err(e) => {
+                    let resp = serde_json::json!({ "path": file_path, "error": e.to_string() });
+                    send_response(stream, "200 OK", "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default());
+                }
+            }
+        }
+
         ("POST", "/api/terminal_create") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let shell = req.get("shell").and_then(|v| v.as_str()).map(|s| s.to_string());

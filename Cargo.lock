@@ -2041,6 +2041,7 @@ dependencies = [
  "ide-kernel-core",
  "ide-shell",
  "rfd",
+ "sakura-rs",
  "serde",
  "serde_json",
  "tauri",
@@ -2076,6 +2077,7 @@ dependencies = [
  "ide-kernel-core",
  "ide-shell",
  "once_cell",
+ "sakura-rs",
  "serde",
  "serde_json",
 ]
