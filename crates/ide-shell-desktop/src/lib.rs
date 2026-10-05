@@ -28,6 +28,7 @@
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
 pub mod terminal;
+pub mod scm;
 pub mod wiki;
 
 use std::path::{Path, PathBuf};
@@ -524,6 +525,12 @@ pub fn run() {
             terminal::terminal_input,
             terminal::terminal_close,
             terminal::terminal_list,
+            scm::scm_status,
+            scm::scm_stage,
+            scm::scm_unstage,
+            scm::scm_diff,
+            scm::scm_commit,
+            scm::scm_log,
         ])
         .setup(|_app| {
             eprintln!(
