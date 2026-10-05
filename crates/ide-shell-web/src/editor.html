@@ -756,9 +756,11 @@
       blockComment: null,
       strings: [{ open: '"', close: '"', escape: "\\" }],
       keywords: new Set(["true","false","null"]),
+      // keyPattern 优先于 strings — 让 `"key":` 识别为 key 而不是 string.
+      keyPattern: String.raw`"(?:\\.|[^"\\])*"(?=\s*:)`,
+      keyCls: "key",
       extraRules: [
         { pattern: RE_NUMBER, cls: "num" },
-        { pattern: String.raw`"(?:\\.|[^"\\])*"(?=\s*:)`, cls: "key" }, // JSON key
       ],
     },
 
@@ -843,6 +845,17 @@
           const endIdx = end < 0 ? len : end + bcClose.length;
           result.push({ text: text.slice(i, endIdx), cls: "comment" });
           i = endIdx;
+          continue;
+        }
+      }
+      // 3. JSON-style key detection: 先于 generic strings,
+      //   让 "..." (followed by :) 作为 key 而不是 string.
+      if (lexer.keyPattern) {
+        const re = new RegExp("^(?:" + lexer.keyPattern + ")");
+        const m = text.slice(i).match(re);
+        if (m) {
+          result.push({ text: m[0], cls: lexer.keyCls || "key" });
+          i += m[0].length;
           continue;
         }
       }

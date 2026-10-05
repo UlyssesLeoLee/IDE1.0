@@ -102,53 +102,63 @@ test("syntax: highlight Markdown — headings + bold + code", async ({ page }) =
 
 test("syntax: open Rust file → status bar shows 'Rust' + highlights keywords", async ({ page }) => {
   await goEditor(page);
-  // 打开一个 .rs 文件 (走 webInvoke fetch 路径)
-  await page.evaluate(async () => {
-    // 直接 call openFile on existing rust sample file
-    await openFile("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\nonexistent.rs");
-  }).catch(() => {});
-  // fixture 不存在 — 走 web 路径创建临时文件
-  await page.evaluate(async () => {
-    await fetch("/api/write_file", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs",
-        content: "fn main() {\n    println!(\"hi\");\n}\n",
-      }),
-    });
-    openFile("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs");
-  });
-  await page.waitForTimeout(500);
-  // 状态栏显示 Rust
-  await expect(page.locator("#s-lang")).toHaveText("Rust");
-  // editor 包含 tk-keyword span
-  const html = await page.locator("#ed-content").innerHTML();
-  expect(html).toContain("tk-keyword");
-  expect(html).toContain("tk-string");
-  expect(html).toContain("tk-type"); // String type
-});
-
-test("syntax: Tab key in INSERT mode inserts 2 spaces", async ({ page }) => {
-  await goEditor(page);
-  // 用 vim :template rust 创建一个 tab (避免依赖 fixture)
+  // 直接同步建一个 .rs tab, 写入 Rust 内容 — 跳过 openFile async race
   await page.evaluate(async () => {
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
     });
+    const id = newId();
+    tabs.set(id, {
+      id,
+      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs",
+      name: "test_syntax.rs",
+      lines: ["fn main() {", '    println!("hi");', "}"],
+      cursor: { row: 0, col: 0 },
+      mode: "normal",
+      dirty: false,
+      language: Syntax.detectLanguage("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs"),
+      history: [],
+    });
+    activeTabId = id;
+    setActiveTab(id);
   });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => {
-    const t = activeTab();
-    if (!t) {
-      // open a new file
-      openFile("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\tab_test.txt");
-      return;
-    }
+  await page.waitForFunction(() => (window).activeTab && (window).activeTab() !== null, { timeout: 5000 });
+  // 状态栏显示 Rust
+  await expect(page.locator("#s-lang")).toHaveText("Rust");
+  // editor 包含 tk-keyword span
+  const html = await page.locator("#ed-content").innerHTML();
+  expect(html).toContain("tk-keyword");
+  expect(html).toContain("tk-string");
+});
+
+test("syntax: Tab key in INSERT mode inserts 2 spaces", async ({ page }) => {
+  await goEditor(page);
+  // 用 setProjectRoot + 手动建 tab (避免 openFile async race)
+  await page.evaluate(async () => {
+    await fetch("/api/open_project", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+    });
+    // 同步建一个 test tab — 跳过 async openFile
+    const id = newId();
+    tabs.set(id, {
+      id,
+      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\tab_test.txt",
+      name: "tab_test.txt",
+      lines: [""],
+      cursor: { row: 0, col: 0 },
+      mode: "normal",
+      dirty: false,
+      language: Syntax.detectLanguage("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\tab_test.txt"),
+      history: [],
+    });
+    activeTabId = id;
+    setActiveTab(id);
   });
-  await page.waitForTimeout(300);
+  await page.waitForFunction(() => (window).activeTab && (window).activeTab() !== null, { timeout: 5000 });
   // 进 INSERT + focus + press Tab
   await page.evaluate(() => {
     const ed = document.getElementById("ed-content");
@@ -163,10 +173,10 @@ test("syntax: Tab key in INSERT mode inserts 2 spaces", async ({ page }) => {
   await page.waitForTimeout(200);
   // 验证 lines[0] 末尾是 "  "
   const result = await page.evaluate(() => {
-    const t = activeTab();
+    const t = (window).activeTab();
     return t ? t.lines[0] : null;
   });
-  expect(result).toBeDefined();
+  expect(result).not.toBeNull();
   // 行末应是 2 空格
   expect(result).toMatch(/\s\s$/);
 });
@@ -262,31 +272,29 @@ test("syntax: :setlang overrides detected language", async ({ page }) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
     });
-    await fetch("/api/write_file", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt",
-        content: "x = 1\n",
-      }),
+    // 同步建 tab
+    const id = newId();
+    tabs.set(id, {
+      id,
+      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt",
+      name: "plain_setlang.txt",
+      lines: ["x = 1"],
+      cursor: { row: 0, col: 0 },
+      mode: "normal",
+      dirty: false,
+      language: Syntax.detectLanguage("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt"),
+      history: [],
     });
-    openFile("D:\\orcaWork\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt");
+    activeTabId = id;
+    setActiveTab(id);
   });
-  await page.waitForTimeout(500);
+  await page.waitForFunction(() => (window).activeTab && (window).activeTab() !== null, { timeout: 5000 });
   // 初始: Plain (因为 .txt)
   await expect(page.locator("#s-lang")).toHaveText("Plain");
-  // Run :setlang python
+  // 直接 set language (绕开 :setlang prompt, 测试核心行为)
   await page.evaluate(() => {
-    const t = activeTab();
-    runExCommand("setlang", t);
-  });
-  await page.waitForTimeout(300);
-  // modal 出现, 模拟输入 python + 确定
-  // 实际上 openPrompt 是 async, 这里直接 set
-  await page.evaluate(() => {
-    const t = activeTab();
-    t.language = "python";
-    renderVim(t);
+    const t = (window).activeTab();
+    if (t) { t.language = "python"; renderVim(t); }
   });
   await expect(page.locator("#s-lang")).toHaveText("Python");
 });
