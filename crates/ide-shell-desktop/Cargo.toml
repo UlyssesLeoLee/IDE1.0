@@ -26,6 +26,8 @@ crossterm = { workspace = true }
 rfd = "0.15"
 # Tauri 2 runtime
 tauri = { version = "2", features = [] }
+# sakura-rs — outline parser + buffer/undo (对标 sakura editor)
+sakura-rs = { path = "../sakura-rs" }
 
 [lints]
 workspace = true
