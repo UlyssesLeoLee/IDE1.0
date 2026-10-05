@@ -1175,14 +1175,33 @@
      ========================================================================== */
   async function doOpenFolder() {
     dlog(`doOpenFolder: enter, projectRoot=${projectRoot}`);
-    // UX 简化: 不再用 rfd (Windows 11 + WebView2 下 rfd 0.15 hang 已知).
-    // 直接弹 JS modal 让用户输绝对路径. input 自动 focus, Enter / 点「打开」提交.
-    // 取消 = null, 返回.
-    const typed = await promptForPath();
-    dlog(`doOpenFolder: typed=${typed}`);
-    if (!typed) { dlog(`doOpenFolder: cancelled`); return; }
+    // 优先弹原生 Windows 选文件夹 dialog (rfd). 在 Tauri webview2 里 rfd 0.15 是工作的;
+    // 用户最自然的体验就是点 toolbar → 弹原生 Explorer 选文件夹窗口.
+    // 若用户取消或 rfd 不响应, 才弹 JS modal 让用户手输路径.
+    let rfdResolved = false;
+    let picked = null;
+    let lastErr = null;
     try {
-      const canon = await invoke("open_project", { path: typed });
+      // Race: rfd 直接返回, 不阻塞. await 上限 30s (Native Windows dialog 等待用户操作).
+      const rfdPromise = invoke("pick_folder").then(
+        p => { rfdResolved = true; picked = p; dlog(`doOpenFolder: rfd picked=${p}`); return p; },
+        e => { rfdResolved = true; lastErr = e; throw e; }
+      );
+      const timeout = new Promise(r => setTimeout(() => { if (!rfdResolved) r("__timeout__"); }, 30000));
+      picked = await Promise.race([rfdPromise, timeout]);
+      if (picked === "__timeout__") {
+        // rfd 没返回 — 用户没操作 rfd dialog, 或 dialog 没弹出来. 弹 prompt 让用户手输.
+        dlog("doOpenFolder: rfd timeout, showing fallback prompt");
+        picked = await promptForPath();
+      }
+    } catch (e) {
+      dlog(`doOpenFolder: rfd threw ${e && e.message || e}`);
+      // rfd 抛错 (用户取消 / OS 拒绝) — 弹 prompt 让用户手输
+      picked = await promptForPath();
+    }
+    if (!picked) { dlog(`doOpenFolder: cancelled`); return; }
+    try {
+      const canon = await invoke("open_project", { path: picked });
       dlog(`doOpenFolder: open_project returned=${canon}`);
       await setProjectRoot(canon, true);
       dlog(`doOpenFolder: setProjectRoot done`);
