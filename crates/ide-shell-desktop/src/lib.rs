@@ -337,19 +337,20 @@ pub fn diag_log(msg: &str) {
 #[tauri::command]
 async fn pick_folder(state: tauri::State<'_, ProjectRoot>) -> Result<Option<String>, String> {
     diag_log(&format!("[pick_folder] invoked, current root = {:?}", state.get()));
-    // 取消 rfd 默认弹窗 — 这台机器 (Windows 11 24H2 + WebView2) rfd 0.15 dialog 不弹 + 永远不返回.
-    // 改为: 如果有 IDE_SHELL_DESKTOP_TEST_ROOT env, 直接用它 (测试场景);
-    // 否则尝试 rfd 一次 + 加 5s timeout (用 std::thread 监视);
-    // 都不行就返回 None, 前端会再调 open_project 让用户输路径.
+    // 弹原生 Windows 文件夹选择对话框 (rfd 0.15). 这是用户最自然的体验 —
+    // 点 toolbar「打开文件夹」按钮 → 弹 OS modal Explorer-style dialog 选文件夹.
+    // rfd dialog 是 OS modal, 阻塞直到用户选完或取消. 不需要前端超时 (前端 30s race 是兜底).
+    // 如果设了 IDE_SHELL_DESKTOP_TEST_ROOT env, 直接用它 (测试/演示场景, 不弹 dialog).
     if let Ok(env_root) = std::env::var("IDE_SHELL_DESKTOP_TEST_ROOT") {
         if let Ok(canon) = state.set(PathBuf::from(&env_root)) {
             diag_log(&format!("[pick_folder] using IDE_SHELL_DESKTOP_TEST_ROOT = {:?}", canon));
             return Ok(Some(canon.to_string_lossy().into_owned()));
         }
     }
-    diag_log("[pick_folder] no IDE_SHELL_DESKTOP_TEST_ROOT, trying rfd");
+    diag_log("[pick_folder] calling rfd native dialog");
     let root_arc = Arc::clone(&state.0);
-    // 用 spawn_blocking + channel, 给 rfd 5 秒 timeout (rfd hang 在某些 Win 11 已知)
+    // rfd dialog 是 OS modal — 用户操作完 (选文件夹 / 取消) 才返回.
+    // 用 spawn_blocking + 60 分钟上限 (实际由用户操作决定, 这只是保底防 hang).
     let (tx, rx) = std::sync::mpsc::channel::<Option<PathBuf>>();
     std::thread::spawn(move || {
         let r = rfd::FileDialog::new()
@@ -357,10 +358,10 @@ async fn pick_folder(state: tauri::State<'_, ProjectRoot>) -> Result<Option<Stri
             .pick_folder();
         let _ = tx.send(r);
     });
-    let picked = match rx.recv_timeout(std::time::Duration::from_secs(3)) {
+    let picked = match rx.recv_timeout(std::time::Duration::from_secs(3600)) {
         Ok(p) => p,
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            diag_log("[pick_folder] rfd timed out after 5s — returning None");
+            diag_log("[pick_folder] rfd timed out after 1h — returning None");
             None
         }
         Err(e) => {

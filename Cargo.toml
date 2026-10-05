@@ -6,6 +6,7 @@ members = [
   "crates/ide-shell",
   "crates/ide-shell-web",
   "crates/ide-shell-desktop",
+  "crates/ide-shell-protocol",
 ]
 
 [workspace.package]
@@ -41,6 +42,13 @@ crossterm = "0.28"
 # 守门 #11 缺标比错标 git dep, 锁 rev = ULYS-191.1 (ULYS-224) main HEAD
 # §4.5 跨项目 CI 落地后改 crates.io publish 或 path 依赖
 aci-emitter = { git = "https://github.com/UlyssesLeoLee/aci-emitter", rev = "df28c56" }
+# ide-shell-protocol: HTTP/WS/stdio server (ULYS-191 §3 双外观 + AI 集成面)
+tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "sync", "io-util", "time", "net", "signal"] }
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tokio-tungstenite = "0.24"
+async-trait = "0.1"
 
 [profile.release]
 lto = "thin"
