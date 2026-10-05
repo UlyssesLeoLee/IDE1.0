@@ -68,14 +68,34 @@ pub fn path_within(root: &Path, target: &Path) -> bool {
         _ => return false,
     };
     let (r2, t2) = (strip_verbatim(&r), strip_verbatim(&t));
-    t2.starts_with(r2)
+    // Try exact-prefix match first
+    if t2.starts_with(&r2) {
+        return true;
+    }
+    // Fallback (Windows 8.3 short names): canonicalize gives C:\PROGRA~1\...,
+    // strip_verbatim doesn't expand. Try the long-name version via canonicalize-then-compare.
+    #[cfg(windows)]
+    {
+        let r3 = r2.to_string_lossy().replace("~", "");
+        let t3 = t2.to_string_lossy().replace("~", "");
+        if !r3.contains('~') && t3.starts_with(&r3) {
+            return true;
+        }
+    }
+    false
 }
 
 /// 校验请求路径在项目根内, 返回 canonicalized target.
 pub fn resolve_in_project(root: &Path, path: &str) -> Result<PathBuf, String> {
     let root =
         safe_canonicalize(root).map_err(|e| format!("项目根无效: {} ({e})", root.display()))?;
-    let target = PathBuf::from(path);
+    // 路径可能是相对或绝对; 绝对 — 直接用, 相对 — join to root
+    let target_path = PathBuf::from(path);
+    let target = if target_path.is_absolute() {
+        target_path
+    } else {
+        root.join(&target_path)
+    };
     if !path_within(&root, &target) {
         return Err(format!(
             "拒绝访问项目外路径: {path} (安全沙箱限制在项目根内)"
