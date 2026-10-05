@@ -206,7 +206,7 @@ pub fn find_git_root(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    // (no fs placeholder needed)
 
     fn git_available() -> bool {
         Command::new("git").arg("--version").output().is_ok()
@@ -255,7 +255,7 @@ mod tests {
                 assert!(is_git_repo(&p));
             }
         }
-        let _ = fs::create_dir; // suppress unused
+        // suppress unused (placeholder reference)
     }
 }
 

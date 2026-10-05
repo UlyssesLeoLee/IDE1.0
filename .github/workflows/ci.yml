@@ -352,11 +352,16 @@ jobs:
           workspaces: |
             .
             -> target
-      - name: cargo bench
+      - name: cargo build sakura-rs bench example
+        working-directory: .
+        run: cargo build -p sakura-rs --example bench
+
+      - name: Run sakura-rs bench (perf sanity)
         working-directory: .
         run: |
-          echo "(无 benchmark 定义, 仅占位 Stage 3 后续 brief 添加)"
-          cargo bench --workspace --no-run || true
+          echo "=== sakura-rs core ops throughput ==="
+          cargo run -p sakura-rs --example bench --release 2>&1 | tail -10
+          echo "=== benchmark target ≥ 50k ops/s (insert_str single line) ==="
 
   # ============================================================
   # Job 6: Cross-project smoke (守门 #11 验证 git dep aci-emitter 可达)
