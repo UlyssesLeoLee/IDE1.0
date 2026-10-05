@@ -12,6 +12,7 @@ description = "IDE1.0 IDE Shell — web 渲染 + HTTP server (per ULYS-191 §3 �
 # Workspace 共享 deps
 serde = { workspace = true }
 serde_json = { workspace = true }
+once_cell = "1"
 # 复用 ide-shell core (mode/input/keymap/app) + web render backend
 ide-shell = { path = "../ide-shell" }
 # 复用 ide-kernel-core 提供 banner
