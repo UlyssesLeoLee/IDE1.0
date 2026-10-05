@@ -587,6 +587,67 @@
     }
     #scm-commit-btn:hover { opacity: 0.85; }
     #scm-commit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ===== Search panel ===== */
+    #search-input {
+      width: 100%; box-sizing: border-box;
+      padding: 6px 10px; background: #0e0e0e; color: var(--fg);
+      border: none; border-bottom: 1px solid var(--border);
+      font-family: inherit; font-size: 12px; outline: none;
+    }
+    #search-input:focus { background: #1a1a1a; }
+    .search-options {
+      display: flex; gap: 8px; padding: 4px 10px;
+      font-size: 11px; color: var(--fg-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .search-options label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+    .search-options input[type="text"] {
+      flex: 1; min-width: 0;
+      background: #0e0e0e; color: var(--fg); border: 1px solid var(--border);
+      padding: 2px 4px; font-size: 11px; font-family: ui-monospace, monospace;
+    }
+    .search-results { overflow-y: auto; flex: 1; }
+    .search-empty { padding: 12px; color: var(--fg-dim); font-style: italic; font-size: 11px; }
+    .search-file {
+      padding: 4px 10px; font-size: 11px; color: var(--blue);
+      background: #252526; font-family: ui-monospace, monospace;
+      cursor: pointer; border-bottom: 1px solid #1a1a1a;
+    }
+    .search-file:hover { background: #2a2a2a; }
+    .search-line {
+      display: flex; padding: 1px 10px 1px 20px; font-size: 11px;
+      cursor: pointer; font-family: ui-monospace, monospace;
+    }
+    .search-line:hover { background: #2a2a2a; }
+    .search-line .line-num { color: var(--fg-dim); min-width: 30px; }
+    .search-line .line-text { flex: 1; color: var(--fg); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+    .search-line mark { background: var(--yellow); color: black; padding: 0 2px; }
+
+    /* ===== Output / Problems panels ===== */
+    .output-channel {
+      background: #2a2a2a; color: var(--fg); border: 1px solid var(--border);
+      padding: 1px 4px; font-size: 11px; font-family: inherit;
+      border-radius: 2px;
+    }
+    .output-body { flex: 1; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 11px; padding: 4px 8px; }
+    .output-empty { color: var(--fg-dim); font-style: italic; padding: 12px; text-align: center; }
+    .output-line { padding: 1px 4px; white-space: pre-wrap; word-break: break-all; }
+    .output-line[data-channel="git"] { color: var(--blue); }
+    .output-line[data-channel="ide"] { color: var(--fg); }
+    .output-line[data-channel="terminal"] { color: var(--green); }
+    .output-line.stderr { color: var(--red); }
+    .output-line .output-time { color: var(--fg-dim); margin-right: 6px; }
+
+    .problem { padding: 4px 8px; border-bottom: 1px solid #2a2a2a; cursor: pointer; display: flex; gap: 6px; }
+    .problem:hover { background: #2a2a2a; }
+    .problem .sev { font-weight: bold; padding: 0 4px; border-radius: 2px; font-size: 10px; flex-shrink: 0; align-self: center; }
+    .problem[data-severity="error"] .sev { background: var(--red); color: black; }
+    .problem[data-severity="warning"] .sev { background: var(--yellow); color: black; }
+    .problem[data-severity="info"] .sev { background: var(--blue); color: black; }
+    .problem .body { flex: 1; }
+    .problem .msg { color: var(--fg); }
+    .problem .location { color: var(--fg-dim); font-family: ui-monospace, monospace; font-size: 10px; }
 </style>
 </head>
 <body>
@@ -639,7 +700,16 @@
           <div id="recent-list"></div>
         </div>
         <div class="side-pane" id="search-pane">
-          <div class="side-empty">🔍 搜索 — TODO</div>
+          <div class="sb-head"><span>搜索</span><button class="sb-act-btn" data-cmd="search-run" data-tip="搜索 (Enter)">搜索</button></div>
+          <input id="search-input" type="text" placeholder="搜索..." data-tip="输入关键字 (Enter 搜索, Ctrl+Shift+F 打开)" />
+          <div class="search-options">
+            <label><input type="checkbox" id="search-case" /> Aa</label>
+            <label><input type="checkbox" id="search-regex" /> .*</label>
+            <input type="text" id="search-include" placeholder="include: *.rs" />
+          </div>
+          <div id="search-results" class="search-results">
+            <div class="search-empty">输入关键字开始搜索</div>
+          </div>
         </div>
         <div class="side-pane" id="scm-pane">
           <div class="sb-head">
@@ -733,8 +803,36 @@
               </div>
             </div>
           </div>
-          <div class="bottom-pane" id="output-pane"><div class="bottom-pane-empty">Output channel — TODO</div></div>
-          <div class="bottom-pane" id="problems-pane"><div class="bottom-pane-empty">Problems panel — TODO</div></div>
+          <div class="bottom-pane" id="output-pane">
+            <div class="sb-head">
+              <span>Output</span>
+              <select id="output-channel" class="output-channel">
+                <option value="all">All</option>
+                <option value="ide">IDE</option>
+                <option value="git">Git</option>
+                <option value="terminal">Terminal</option>
+              </select>
+              <button class="sb-act-btn" data-cmd="output-clear" data-tip="清空">清空</button>
+            </div>
+            <div id="output-body" class="output-body">
+              <div class="output-empty">无输出 — 后端 println! 或 Output.log() 会显示在这里</div>
+            </div>
+          </div>
+          <div class="bottom-pane" id="problems-pane">
+            <div class="sb-head">
+              <span>Problems</span>
+              <select id="problems-filter" class="output-channel">
+                <option value="all">All</option>
+                <option value="errors">Errors</option>
+                <option value="warnings">Warnings</option>
+                <option value="info">Info</option>
+              </select>
+              <button class="sb-act-btn" data-cmd="problems-clear" data-tip="清空">清空</button>
+            </div>
+            <div id="problems-body" class="output-body">
+              <div class="output-empty">无问题 — git/build/lint 错误会显示在这里</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3079,6 +3177,220 @@ SELECT * FROM hello;
         document.getElementById("scm-commit-btn")?.click();
       }
     });
+
+    // ============================================================
+    // Search panel (ripgrep-style)
+    // ============================================================
+    const Search = {
+      async run() {
+        const input = document.getElementById("search-input");
+        if (!input) return;
+        const pattern = input.value.trim();
+        if (!pattern) return;
+        const caseSens = document.getElementById("search-case")?.checked || false;
+        const regex = document.getElementById("search-regex")?.checked || false;
+        const includeRaw = document.getElementById("search-include")?.value.trim() || "";
+        const include = includeRaw ? includeRaw.split(/[,\s]+/).filter(Boolean) : null;
+
+        const opts = {
+          pattern,
+          case_sensitive: caseSens,
+          regex,
+          include_globs: include,
+          max_results: 500,
+        };
+
+        const resultsEl = document.getElementById("search-results");
+        resultsEl.innerHTML = "<div class="search-empty">搜索中...</div>";
+
+        try {
+          let results;
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            results = await invoke("search_cmd", { options: opts });
+          } else {
+            const r = await fetch("/api/search", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(opts),
+            });
+            if (!r.ok) { resultsEl.innerHTML = "<div class="search-empty">搜索失败</div>"; return; }
+            const j = await r.json();
+            results = j.results || [];
+          }
+          this.render(results, pattern);
+        } catch (e) {
+          resultsEl.innerHTML = "<div class="search-empty">搜索失败: " + e + "</div>";
+        }
+      },
+
+      render(results, pattern) {
+        const resultsEl = document.getElementById("search-results");
+        resultsEl.innerHTML = "";
+        if (results.length === 0) {
+          resultsEl.innerHTML = "<div class="search-empty">无结果</div>";
+          return;
+        }
+        // Group by file
+        const grouped = new Map();
+        for (const r of results) {
+          if (!grouped.has(r.path)) grouped.set(r.path, []);
+          grouped.get(r.path).push(r);
+        }
+        for (const [path, lines] of grouped) {
+          const fileHeader = document.createElement("div");
+          fileHeader.className = "search-file";
+          fileHeader.textContent = path + " (" + lines.length + ")";
+          resultsEl.appendChild(fileHeader);
+          for (const line of lines) {
+            const row = document.createElement("div");
+            row.className = "search-line";
+            const num = document.createElement("span");
+            num.className = "line-num";
+            num.textContent = ":" + line.line;
+            const text = document.createElement("span");
+            text.className = "line-text";
+            // Highlight pattern (case-insensitive)
+            const regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\]/g, "\$&"), "i");
+            text.innerHTML = line.text.replace(regex, (m) => "<mark>" + m + "</mark>");
+            row.appendChild(num);
+            row.appendChild(text);
+            row.onclick = () => openFileAt(path, line.line);
+            resultsEl.appendChild(row);
+          }
+        }
+      },
+    };
+
+    function openFileAt(path, line) {
+      // TODO: integrate with editor — for now just alert
+      alert("Open " + path + ":" + line);
+    }
+
+    // Search input + Enter
+    document.getElementById("search-input")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") Search.run();
+    });
+    document.querySelector('[data-cmd="search-run"]')?.addEventListener("click", () => Search.run());
+    document.querySelector('[data-pane="search"]')?.addEventListener("click", () => {
+      setTimeout(() => document.getElementById("search-input")?.focus(), 100);
+    });
+
+    // Ctrl+Shift+F global → focus search
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        document.querySelector('.act-btn[data-pane="search"]')?.click();
+        setTimeout(() => document.getElementById("search-input")?.focus(), 100);
+      }
+    });
+
+    // ============================================================
+    // Output + Problems panels
+    // ============================================================
+    const Output = {
+      lines: [],
+      maxLines: 1000,
+
+      add(channel, text, isStderr) {
+        const now = new Date();
+        const ts = now.toTimeString().slice(0, 8);
+        this.lines.push({ ts, channel, text, isStderr: isStderr || false });
+        if (this.lines.length > this.maxLines) this.lines.shift();
+        this.render();
+      },
+
+      clear() { this.lines = []; this.render(); },
+
+      render() {
+        const body = document.getElementById("output-body");
+        if (!body) return;
+        const channelFilter = document.getElementById("output-channel")?.value || "all";
+        body.innerHTML = "";
+        const filtered = channelFilter === "all" ? this.lines : this.lines.filter(l => l.channel === channelFilter);
+        if (filtered.length === 0) {
+          body.innerHTML = "<div class="output-empty">无输出 — 后端 println! 或 Output.log() 会显示在这里</div>";
+          return;
+        }
+        for (const line of filtered) {
+          const div = document.createElement("div");
+          div.className = "output-line" + (line.isStderr ? " stderr" : "");
+          div.dataset.channel = line.channel;
+          const ts = document.createElement("span");
+          ts.className = "output-time";
+          ts.textContent = line.ts;
+          div.appendChild(ts);
+          div.appendChild(document.createTextNode(line.text));
+          body.appendChild(div);
+        }
+        body.scrollTop = body.scrollHeight;
+      },
+    };
+
+    const Problems = {
+      problems: [],
+
+      add(severity, message, file, line) {
+        this.problems.push({ severity, message, file, line });
+        this.render();
+      },
+
+      clear() { this.problems = []; this.render(); },
+
+      render() {
+        const body = document.getElementById("problems-body");
+        if (!body) return;
+        const filter = document.getElementById("problems-filter")?.value || "all";
+        body.innerHTML = "";
+        const filtered = filter === "all" ? this.problems : this.problems.filter(p => p.severity === filter.replace("s", "")));
+        if (filtered.length === 0) {
+          body.innerHTML = "<div class="output-empty">无问题 — git/build/lint 错误会显示在这里</div>";
+          return;
+        }
+        for (const p of filtered) {
+          const div = document.createElement("div");
+          div.className = "problem";
+          div.dataset.severity = p.severity;
+          const sev = document.createElement("span");
+          sev.className = "sev";
+          sev.textContent = p.severity.toUpperCase();
+          const bd = document.createElement("div");
+          bd.className = "body";
+          const msg = document.createElement("div");
+          msg.className = "msg";
+          msg.textContent = p.message;
+          const loc = document.createElement("div");
+          loc.className = "location";
+          loc.textContent = p.file + ":" + p.line;
+          bd.appendChild(msg);
+          bd.appendChild(loc);
+          div.appendChild(sev);
+          div.appendChild(bd);
+          div.onclick = () => openFileAt(p.file, p.line);
+          body.appendChild(div);
+        }
+      },
+    };
+
+    document.querySelector('[data-cmd="output-clear"]')?.addEventListener("click", () => Output.clear());
+    document.querySelector('[data-cmd="problems-clear"]')?.addEventListener("click", () => Problems.clear());
+    document.getElementById("output-channel")?.addEventListener("change", () => Output.render());
+    document.getElementById("problems-filter")?.addEventListener("change", () => Problems.render());
+
+    // Hook git errors → Problems (after Scm.refresh success)
+    const _origScmRefresh = Scm.refresh.bind(Scm);
+    Scm.refresh = async function() {
+      try {
+        await _origScmRefresh();
+        // If files have untracked error-level (e.g., missing), log them
+        if (this.files && this.files.length > 0) {
+          for (const f of this.files) {
+            if (f.status === "deleted") {
+              Problems.add("error", "File missing on disk", f.path, 0);
+            }
+          }
+        }
+      } catch (e) { /* swallow */ }
+    };
 </script>
 </body>
 </html>
