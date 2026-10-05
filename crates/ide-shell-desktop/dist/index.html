@@ -738,6 +738,47 @@
     .crumb:hover { background: #2a2a2a; color: var(--fg); }
     .crumb.current { color: var(--fg); }
     .crumb-sep { color: var(--fg-dim); }
+
+    /* ===== Code Folding gutter ===== */
+    #fold-gutter {
+      position: absolute; left: 28px; top: 0; bottom: 0; width: 16px;
+      pointer-events: auto; z-index: 1;
+    }
+    .fold-marker-btn {
+      position: absolute; left: 0; width: 14px; height: 18px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--fg-muted); cursor: pointer; font-size: 9px;
+      user-select: none;
+    }
+    .fold-marker-btn:hover { color: var(--fg); background: #2a2a2a; border-radius: 2px; }
+    .fold-region {
+      background: rgba(110, 110, 110, 0.08);
+      border-radius: 0 0 3px 3px;
+    }
+
+    /* ===== Light theme ===== */
+    body.theme-light {
+      --bg: #f8f8f8; --bg-2: #fff; --fg: #1e1e1e; --fg-muted: #6e6e6e;
+      --fg-dim: #aaa; --border: #e0e0e0; --blue: #0066cc;
+      --accent: #005fb8; --hover: #e8e8e8; --cur: #1e1e1e;
+    }
+    body.theme-light .editor-pane { background: var(--bg-2); }
+    body.theme-light #tabs { background: var(--bg); }
+    body.theme-light .tab { background: var(--bg-2); border-color: var(--border); }
+    body.theme-light .tab.active { background: var(--bg-2); border-bottom-color: var(--bg-2); }
+    body.theme-light #sidebar { background: var(--bg); }
+    body.theme-light #breadcrumb { background: var(--bg); }
+    body.theme-light #status-bar { background: var(--blue); }
+    body.theme-light .icont { color: var(--fg-muted); }
+    body.theme-light .icont.active { color: var(--fg); }
+    body.theme-light .act-btn.active { color: var(--blue); border-color: var(--blue); }
+
+    /* ===== Settings (font-size / tab-size) ===== */
+    .ed-content { font-size: var(--font-size, 13px); }
+    .editor-pane { tab-size: var(--tab-size, 4); }
+    body.theme-light .settings-bar {
+      background: var(--bg); border-bottom: 1px solid var(--border);
+    }
 </style>
 </head>
 <body>
@@ -3791,6 +3832,174 @@ SELECT * FROM hello;
       Outline.refresh();
     };
     Breadcrumb.render();
+
+    // ============================================================
+    // Code Folding UI (gutter ▼/▶ markers)
+    // ============================================================
+    const Folding = {
+      // 简单检测: 缩进级别 + 起始行 token (function/class/struct/enum)
+      detectFolds(buffer) {
+        const lines = buffer.split("\n");
+        const folds = [];  // {start: lineIdx, indent: N, hint: '...'}
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const trimmed = line.trimStart();
+          if (/^(fn|def|class|struct|enum|impl|trait|if|for|while|match) /.test(trimmed)) {
+            const indent = line.length - trimmed.length;
+            // 找匹配关闭 — 简单方法: 下一行 indent <= 当前 (粗略, 对 demo 足够)
+            folds.push({ start: i, indent, hint: trimmed.slice(0, 30) });
+          }
+        }
+        return folds;
+      },
+
+      render() {
+        let gutter = document.getElementById("fold-gutter");
+        if (!gutter) {
+          gutter = document.createElement("div");
+          gutter.id = "fold-gutter";
+          const ed = document.getElementById("editor");
+          if (ed) ed.appendChild(gutter);
+        }
+        gutter.innerHTML = "";
+        const folds = this.folds;
+        const ed = document.getElementById("ed-content");
+        if (!ed) return;
+        const lineHeight = 18;
+        for (const f of folds) {
+          const btn = document.createElement("div");
+          btn.className = "fold-marker-btn";
+          btn.textContent = f.folded ? "▶" : "▼";
+          btn.style.top = (f.start * lineHeight) + "px";
+          btn.title = `Fold ${f.hint}`;
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            f.folded = !f.folded;
+            this.render();
+          };
+          gutter.appendChild(btn);
+        }
+        // Apply fold highlight (CSS class on ed-content lines)
+        ed.classList.remove("has-folds");
+        if (folds.some(f => f.folded)) ed.classList.add("has-folds");
+      },
+
+      folds: [],
+      update(buffer) {
+        this.folds = this.detectFolds(buffer);
+        this.render();
+      },
+    };
+
+    // Hook into refreshShell
+    const _origRefreshShell3 = window.refreshShell;
+    if (_origRefreshShell3 && !window.__foldPatched) {
+      window.refreshShell = function() {
+        _origRefreshShell3.apply(this, arguments);
+        try {
+          const f = arguments[0] || {};
+          const buf = (f.prompt || []).map(r => r.map(c => c.ch).join("")).join("\n") + "\n" + (f.buffer || "");
+          Folding.update(buf);
+        } catch (e) { /* ignore */ }
+      };
+      window.__foldPatched = true;
+    }
+
+    setTimeout(() => Folding.update(""), 600);
+
+    // ============================================================
+    // Theme Toggle (Dark/Light)
+    // ============================================================
+    const Theme = {
+      current: localStorage.getItem("ide-theme") || "dark",
+      toggle() {
+        this.current = this.current === "dark" ? "light" : "dark";
+        localStorage.setItem("ide-theme", this.current);
+        this.apply();
+      },
+      apply() {
+        document.body.classList.toggle("theme-light", this.current === "light");
+        const btn = document.getElementById("theme-btn");
+        if (btn) btn.textContent = this.current === "dark" ? "🌙" : "☀️";
+      },
+    };
+
+    // Theme toggle button in status bar
+    document.addEventListener("DOMContentLoaded", () => {
+      const statusBar = document.getElementById("status-bar");
+      if (statusBar) {
+        const btn = document.createElement("span");
+        btn.id = "theme-btn";
+        btn.style.cssText = "cursor:pointer; padding:0 4px;";
+        btn.onclick = () => Theme.toggle();
+        statusBar.appendChild(btn);
+      }
+      Theme.apply();
+    });
+    // Apply on load (before DOMContentLoaded for FOUC prevention)
+    document.body.classList.toggle("theme-light", Theme.current === "light");
+
+    // ============================================================
+    // Settings Persistence (localStorage)
+    // ============================================================
+    const Settings = {
+      defaults: { fontSize: 13, tabSize: 4, wordWrap: false },
+      current: null,
+
+      read() {
+        try {
+          const saved = JSON.parse(localStorage.getItem("ide-settings") || "{}");
+          this.current = { ...this.defaults, ...saved };
+        } catch {
+          this.current = { ...this.defaults };
+        }
+        return this.current;
+      },
+
+      save() {
+        localStorage.setItem("ide-settings", JSON.stringify(this.current));
+        this.apply();
+      },
+
+      apply() {
+        const root = document.documentElement;
+        if (!root) return;
+        root.style.setProperty("--font-size", this.current.fontSize + "px");
+        root.style.setProperty("--tab-size", this.current.tabSize);
+        const ed = document.getElementById("ed-content");
+        if (ed) ed.style.tabSize = this.current.tabSize;
+      },
+
+      cycle(key, values) {
+        const i = values.indexOf(this.current[key]);
+        const next = values[(i + 1) % values.length];
+        this.current[key] = next;
+        this.save();
+      },
+    };
+
+    // Init
+    Settings.read();
+    document.addEventListener("DOMContentLoaded", () => Settings.apply());
+    setTimeout(() => Settings.apply(), 100);
+
+    // Keyboard shortcuts
+    // Ctrl+= increase font, Ctrl+- decrease
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        Settings.current.fontSize = Math.min(Settings.current.fontSize + 1, 24);
+        Settings.save();
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "-") {
+        e.preventDefault();
+        Settings.current.fontSize = Math.max(Settings.current.fontSize - 1, 9);
+        Settings.save();
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "0") {
+        e.preventDefault();
+        Settings.current.fontSize = 13;
+        Settings.save();
+      }
+    });
 </script>
 </body>
 </html>
