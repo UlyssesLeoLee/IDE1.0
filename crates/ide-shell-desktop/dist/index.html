@@ -469,22 +469,23 @@
   "use strict";
 
   // ----- Tauri / Web 适配 (与 web mode 共用) -----
-    const tauriInvoke = (cmd, args) => new Promise((resolve, reject) => {
-      const cb = "_tauri_cb_" + Math.floor(Math.random() * 1e9);
-      dlog(`tauriInvoke(${cmd}) start, cb=${cb}`);
-      window[cb] = (p) => {
-        dlog(`tauriInvoke(${cmd}) callback fired: ${JSON.stringify(p).slice(0, 200)}`);
-        delete window[cb];
-        (p && p.error) ? reject(new Error(p.error)) : resolve(p && p.result);
-      };
+    // Tauri 2 的 __TAURI_INTERNALS__.invoke 签名: invoke<T>(cmd, args?, options?) -> Promise<T>
+    // callback 选项已废弃 (Tauri 1 风格). 直接 await Promise.
+    const tauriInvoke = (cmd, args) => {
+      dlog(`tauriInvoke(${cmd}) start`);
       try {
-        const r = window.__TAURI_INTERNALS__.invoke({ cmd, args: args || {}, callback: cb });
-        dlog(`tauriInvoke(${cmd}) sync return: ${typeof r}`);
+        const p = window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+        // Tauri 2 返回 Promise — log 类型 for diag
+        Promise.resolve(p).then(
+          v => dlog(`tauriInvoke(${cmd}) resolved: ${typeof v === "string" ? v.slice(0,80) : typeof v}`),
+          e => dlog(`tauriInvoke(${cmd}) rejected: ${e && e.message || e}`)
+        );
+        return p;
       } catch (e) {
         dlog(`tauriInvoke(${cmd}) sync threw: ${e && e.message || e}`);
-        reject(e);
+        return Promise.reject(e);
       }
-    });
+    };
     const inTauri = !!(typeof window !== "undefined" && window.__TAURI_INTERNALS__);
     // web 版 fallback: fetch /api/<name> (本文件由 ide-shell-web 提供对应端点)
     const GET_NAMES = new Set(["frame", "kernel_banner", "help_wiki", "pick_folder"]);
@@ -678,50 +679,26 @@
      ========================================================================== */
   async function doOpenFolder() {
     dlog(`doOpenFolder: enter, projectRoot=${projectRoot}`);
-    // UX: cursor 风格 — 优先 rfd 弹原生 dialog, 不立即弹 JS modal (会挡 rfd).
-    // rfd dialog 是 OS 模态, 永远在 IDE 主窗口前面.
-    //
-    // 关键: rfd 0.15 在某些 Windows 11 配置下可能 hang (dialog 弹了但 promise 不返回).
-    // 4s 后若 promise 还没 settle, 主动 fallback 到 JS modal (不挡 rfd, 用户可输路径).
-    // 真实情况: 之前 rfd_test 单独跑 hang 5s+, 但在 tauri webview2 进程内 rfd 能弹.
-    // 保险起见 4s 后开 modal.
-    let picked;
-    let settled = false;
-    const pickPromise = invoke("pick_folder")
-      .then(p => { settled = true; picked = p; dlog(`doOpenFolder: pick_folder resolved=${p}`); return p; })
-      .catch(e => { settled = true; dlog(`doOpenFolder: pick_folder rejected ${e && e.message || e}`); throw e; });
-    // 4s 后若还没 settle, 弹 fallback modal
-    const fallbackTimeout = setTimeout(() => {
-      if (settled) return;
-      dlog(`doOpenFolder: rfd silent > 4s, showing fallback modal`);
-      promptForPath().then(typed => {
-        dlog(`doOpenFolder: typed=${typed}`);
-        if (typed) {
-          invoke("open_project", { path: typed }).then(canon => {
-            dlog(`doOpenFolder: open_project returned=${canon}`);
-            setProjectRoot(canon, true);
-          }).catch(e => dlog(`doOpenFolder: open_project threw ${e}`));
-        } else {
-          dlog(`doOpenFolder: fallback modal cancelled, still waiting for rfd`);
-        }
-      });
-    }, 4000);
+    // UX 简化: 不再用 rfd (Windows 11 + WebView2 下 rfd 0.15 hang 已知).
+    // 直接弹 JS modal 让用户输绝对路径. input 自动 focus, Enter / 点「打开」提交.
+    // 取消 = null, 返回.
+    const typed = await promptForPath();
+    dlog(`doOpenFolder: typed=${typed}`);
+    if (!typed) { dlog(`doOpenFolder: cancelled`); return; }
     try {
-      picked = await pickPromise;
-      clearTimeout(fallbackTimeout);
-      // rfd 返回了 — 关掉 fallback modal (若已开)
-      closeModal();
+      const canon = await invoke("open_project", { path: typed });
+      dlog(`doOpenFolder: open_project returned=${canon}`);
+      await setProjectRoot(canon, true);
+      dlog(`doOpenFolder: setProjectRoot done`);
     } catch (e) {
-      dlog(`doOpenFolder: invoke threw ${e && e.message || e}`);
-      clearTimeout(fallbackTimeout);
-      return;
+      dlog(`doOpenFolder: open_project threw ${e}`);
+      openModal({ title: "打开失败", body: String(e.message || e),
+        buttons: [{ label: "确定", cmd: "modal-close" }] });
     }
-    if (!picked) { dlog(`doOpenFolder: user cancelled rfd`); return; }
-    await setProjectRoot(picked, true);
-    dlog(`doOpenFolder: setProjectRoot done`);
   }
-    // 弹出 modal 让用户手输绝对路径, resolve 为字符串. Cancel = null.
-  function promptForPath() {
+  // 弹出 modal 让用户手输绝对路径, resolve 为字符串. Cancel = null.
+  // resolve 时调 onAfter 来 dismiss 任何挂起的 rfd dialog.
+  function promptForPath(onAfter) {
     return new Promise((resolve) => {
       const defaultPath = "D:\\path\\to\\your\\project";
       const body = `当前环境无法弹原生文件夹选择器. 请直接输入项目根绝对路径:\n\n(Windows 示例: ${defaultPath})`;
@@ -742,7 +719,12 @@
       btnCancel.className = "md-btn";
       btnCancel.textContent = "取消";
       btnCancel.setAttribute("data-cmd", "modal-cancel");
-      btnCancel.addEventListener("click", () => { closeModal(); resolve(null); });
+      btnCancel.addEventListener("click", () => {
+        closeModal();
+        // 取消也告诉 onAfter: 取消 modal 后让 rfd 自己 settle
+        if (onAfter) onAfter();
+        resolve(null);
+      });
       const btnOk = document.createElement("button");
       btnOk.className = "md-btn primary";
       btnOk.textContent = "打开";
@@ -750,6 +732,10 @@
       btnOk.addEventListener("click", () => {
         const v = input.value.trim();
         closeModal();
+        // 用户通过 modal 选了路径 → 调 onAfter (cancel Rust 端挂起的 rfd) 再 resolve
+        if (onAfter) {
+          try { onAfter(); } catch (e) { dlog(`promptForPath onAfter threw ${e}`); }
+        }
         resolve(v || null);
       });
       input.addEventListener("keydown", (e) => {
@@ -774,10 +760,12 @@
     await setProjectRoot(canon, true);
   }
   async function setProjectRoot(path, addRecent) {
+    // Rust canonicalize 返回的 path 可能带 Windows verbatim prefix (\\?\), UI 显示需要剥除.
+    const display = String(path).replace(/^\\\\\?\\/, '');
     projectRoot = path;
     sbProjectName.classList.remove("empty");
-    sbProjectName.textContent = path;
-    sbProjectName.setAttribute("data-tip", path + "  (点击换项目 / Shift+点击重新加载)");
+    sbProjectName.textContent = display;
+    sbProjectName.setAttribute("data-tip", display + "  (点击换项目 / Shift+点击重新加载)");
     reloadTree();
     if (addRecent) addRecentProject(path);
   }
@@ -794,9 +782,13 @@
     catch { return []; }
   }
   function saveRecent(arr) { localStorage.setItem(RECENT_KEY, JSON.stringify(arr.slice(0, 8))); }
+  function stripVerbatim(p) {
+    return String(p || "").replace(/^\\\\\?\\/, '');
+  }
   function addRecentProject(p) {
-    let arr = loadRecent().filter(x => x !== p);
-    arr.unshift(p);
+    const stripped = stripVerbatim(p);
+    let arr = loadRecent().filter(x => stripVerbatim(x) !== stripped);
+    arr.unshift(stripped);
     saveRecent(arr);
     renderRecent();
   }
