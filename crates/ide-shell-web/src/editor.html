@@ -755,6 +755,30 @@
       background: rgba(110, 110, 110, 0.08);
       border-radius: 0 0 3px 3px;
     }
+
+    /* ===== Light theme ===== */
+    body.theme-light {
+      --bg: #f8f8f8; --bg-2: #fff; --fg: #1e1e1e; --fg-muted: #6e6e6e;
+      --fg-dim: #aaa; --border: #e0e0e0; --blue: #0066cc;
+      --accent: #005fb8; --hover: #e8e8e8; --cur: #1e1e1e;
+    }
+    body.theme-light .editor-pane { background: var(--bg-2); }
+    body.theme-light #tabs { background: var(--bg); }
+    body.theme-light .tab { background: var(--bg-2); border-color: var(--border); }
+    body.theme-light .tab.active { background: var(--bg-2); border-bottom-color: var(--bg-2); }
+    body.theme-light #sidebar { background: var(--bg); }
+    body.theme-light #breadcrumb { background: var(--bg); }
+    body.theme-light #status-bar { background: var(--blue); }
+    body.theme-light .icont { color: var(--fg-muted); }
+    body.theme-light .icont.active { color: var(--fg); }
+    body.theme-light .act-btn.active { color: var(--blue); border-color: var(--blue); }
+
+    /* ===== Settings (font-size / tab-size) ===== */
+    .ed-content { font-size: var(--font-size, 13px); }
+    .editor-pane { tab-size: var(--tab-size, 4); }
+    body.theme-light .settings-bar {
+      background: var(--bg); border-bottom: 1px solid var(--border);
+    }
 </style>
 </head>
 <body>
@@ -3882,6 +3906,166 @@ SELECT * FROM hello;
     }
 
     setTimeout(() => Folding.update(""), 600);
+
+    // ============================================================
+    // Theme Toggle (Dark/Light)
+    // ============================================================
+    const Theme = {
+      current: localStorage.getItem("ide-theme") || "dark",
+      toggle() {
+        this.current = this.current === "dark" ? "light" : "dark";
+        localStorage.setItem("ide-theme", this.current);
+        this.apply();
+      },
+      apply() {
+        document.body.classList.toggle("theme-light", this.current === "light");
+        const btn = document.getElementById("theme-btn");
+        if (btn) btn.textContent = this.current === "dark" ? "🌙" : "☀️";
+      },
+    };
+
+    // Theme toggle button in status bar
+    document.addEventListener("DOMContentLoaded", () => {
+      const statusBar = document.getElementById("status-bar");
+      if (statusBar) {
+        const btn = document.createElement("span");
+        btn.id = "theme-btn";
+        btn.style.cssText = "cursor:pointer; padding:0 4px;";
+        btn.onclick = () => Theme.toggle();
+        statusBar.appendChild(btn);
+      }
+      Theme.apply();
+    });
+    // Apply on load (before DOMContentLoaded for FOUC prevention)
+    document.body.classList.toggle("theme-light", Theme.current === "light");
+
+    // ============================================================
+    // Settings Persistence (localStorage)
+    // ============================================================
+    const Settings = {
+      defaults: { fontSize: 13, tabSize: 4, wordWrap: false },
+      current: null,
+
+      read() {
+        try {
+          const saved = JSON.parse(localStorage.getItem("ide-settings") || "{}");
+          this.current = { ...this.defaults, ...saved };
+        } catch {
+          this.current = { ...this.defaults };
+        }
+        return this.current;
+      },
+
+      save() {
+        localStorage.setItem("ide-settings", JSON.stringify(this.current));
+        this.apply();
+      },
+
+      apply() {
+        const root = document.documentElement;
+        if (!root) return;
+        root.style.setProperty("--font-size", this.current.fontSize + "px");
+        root.style.setProperty("--tab-size", this.current.tabSize);
+        const ed = document.getElementById("ed-content");
+        if (ed) ed.style.tabSize = this.current.tabSize;
+      },
+
+      cycle(key, values) {
+        const i = values.indexOf(this.current[key]);
+        const next = values[(i + 1) % values.length];
+        this.current[key] = next;
+        this.save();
+      },
+    };
+
+    // Init
+    Settings.read();
+    document.addEventListener("DOMContentLoaded", () => Settings.apply());
+    setTimeout(() => Settings.apply(), 100);
+
+    // Keyboard shortcuts
+    // Ctrl+= increase font, Ctrl+- decrease
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        Settings.current.fontSize = Math.min(Settings.current.fontSize + 1, 24);
+        Settings.save();
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "-") {
+        e.preventDefault();
+        Settings.current.fontSize = Math.max(Settings.current.fontSize - 1, 9);
+        Settings.save();
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === "0") {
+        e.preventDefault();
+        Settings.current.fontSize = 13;
+        Settings.save();
+      }
+    });
+
+    // ============================================================
+    // i18n (English / 中文)
+    // ============================================================
+    const I18n = {
+      current: localStorage.getItem("ide-lang") || (navigator.language.startsWith("zh") ? "zh" : "en"),
+      dict: {
+        en: {
+          "welcome.title": "IDE1.0 IDE Shell",
+          "welcome.subtitle": "Lightweight AI-native code editor · Cursor-style + Vim tri-state · Pure Rust core",
+          "tab.welcome": "Welcome",
+          "status.normal": "NORMAL",
+          "status.insert": "INSERT",
+          "status.visual": "VISUAL",
+          "sidebar.explorer": "Explorer",
+          "sidebar.search": "Search",
+          "sidebar.outline": "Outline",
+          "sidebar.scm": "Source Control",
+          "sidebar.extensions": "Extensions",
+          "panel.terminal": "TERMINAL",
+          "panel.output": "OUTPUT",
+          "panel.problems": "PROBLEMS",
+          "panel.new": "+ New Terminal",
+          "panel.fold": "Fold",
+        },
+        zh: {
+          "welcome.title": "IDE1.0 IDE Shell",
+          "welcome.subtitle": "轻量 AI 原生桌面代码编辑器 · Cursor 风格界面 + Vim 三态键位 · 纯 Rust 核心",
+          "tab.welcome": "欢迎",
+          "status.normal": "普通",
+          "status.insert": "插入",
+          "status.visual": "可视",
+          "sidebar.explorer": "资源管理器",
+          "sidebar.search": "搜索",
+          "sidebar.outline": "大纲",
+          "sidebar.scm": "源代码管理",
+          "sidebar.extensions": "扩展",
+          "panel.terminal": "终端",
+          "panel.output": "输出",
+          "panel.problems": "问题",
+          "panel.new": "+ 新建终端",
+          "panel.fold": "折叠",
+        },
+      },
+
+      t(key) {
+        const dict = this.dict[this.current] || this.dict.en;
+        return dict[key] || key;
+      },
+
+      apply() {
+        // Apply data-i18n attributes (we'll inject these via JS)
+        document.querySelectorAll("[data-i18n]").forEach(el => {
+          el.textContent = this.t(el.dataset.i18n);
+        });
+      },
+
+      toggle() {
+        this.current = this.current === "en" ? "zh" : "en";
+        localStorage.setItem("ide-lang", this.current);
+        this.apply();
+      },
+    };
+
+    // Init i18n for known elements (will be applied once DOM settles)
+    setTimeout(() => I18n.apply(), 200);
 </script>
 </body>
 </html>
