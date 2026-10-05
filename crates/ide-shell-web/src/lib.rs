@@ -21,6 +21,7 @@
 //! 设计: server 内持有单一 App 状态 (单用户 demo). 端口默认 8123 (CI 与本地都用).
 
 pub mod path_safety;
+mod scm;
 mod terminal;
 pub mod wiki_data;
 
@@ -158,6 +159,61 @@ impl ShellState {
         ("GET", "/api/terminal_list") => {
             let list = terminal::list();
             respond_json(stream, 200, &list)
+        }
+
+
+        ("POST", "/api/scm_status") => {
+            match scm::status() {
+                Ok((files, branch)) => respond_json(stream, 200, &serde_json::json!({
+                    "branch": branch, "files": files,
+                })),
+                Err(e) => respond_json(stream, 200, &serde_json::json!({
+                    "branch": "", "files": [], "error": e,
+                })),
+            }
+        }
+        ("POST", "/api/scm_stage") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let paths: Vec<String> = body.get("paths").and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            match scm::stage(&paths) {
+                Ok(()) => respond_text(stream, 200, "ok"),
+                Err(e) => respond_text(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/scm_unstage") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let paths: Vec<String> = body.get("paths").and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            match scm::unstage(&paths) {
+                Ok(()) => respond_text(stream, 200, "ok"),
+                Err(e) => respond_text(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/scm_diff") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let path = body.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let staged = body.get("staged").and_then(|v| v.as_bool()).unwrap_or(false);
+            match scm::diff(path, staged) {
+                Ok(diff) => respond_json(stream, 200, &serde_json::json!({ "diff": diff })),
+                Err(e) => respond_text(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/scm_commit") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let message = body.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            match scm::commit(message) {
+                Ok(_) => respond_text(stream, 200, "ok"),
+                Err(e) => respond_text(stream, 500, &e),
+            }
+        }
+        ("POST", "/api/scm_log") => {
+            match scm::log(10) {
+                Ok(commits) => respond_json(stream, 200, &serde_json::json!({ "commits": commits })),
+                Err(e) => respond_json(stream, 200, &serde_json::json!({ "commits": [], "error": e })),
+            }
         }
 
         _ => {}

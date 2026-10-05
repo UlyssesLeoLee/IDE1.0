@@ -493,6 +493,100 @@
       background: #333; border: 1px solid #555;
       padding: 1px 5px; border-radius: 3px; font-family: inherit; font-size: 10px;
     }
+
+    /* ===== Activity Bar (Side Bar 图标选择) — VSCode 风格 ===== */
+    #sidebar { flex-direction: row; }
+    #activity-bar {
+      width: 44px; display: flex; flex-direction: column;
+      background: #333; border-right: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .act-btn {
+      background: none; border: none; color: var(--fg-dim);
+      width: 44px; height: 44px; cursor: pointer;
+      font-size: 18px; border-left: 2px solid transparent;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .act-btn:hover { color: var(--fg); background: #3c3c3c; }
+    .act-btn.active {
+      color: var(--fg); border-left-color: var(--blue);
+      background: #2a2a2a;
+    }
+    #side-content {
+      flex: 1; display: flex; flex-direction: column; min-width: 0;
+    }
+    .side-pane { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    .side-pane.active { display: flex; }
+    .side-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--fg-dim); font-size: 12px;
+    }
+
+    /* ===== SCM (Source Control) ===== */
+    .scm-branch {
+      padding: 4px 12px; font-size: 11px; color: var(--fg-muted);
+      border-bottom: 1px solid var(--border); font-family: ui-monospace, monospace;
+    }
+    .scm-changes, .scm-commits {
+      flex: 0 0 auto; overflow-y: auto; max-height: 200px;
+    }
+    .scm-changes {
+      border-bottom: 1px solid var(--border);
+    }
+    .scm-empty {
+      padding: 8px 12px; color: var(--fg-dim); font-size: 11px;
+      font-style: italic;
+    }
+    .scm-file {
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 12px; font-size: 12px; cursor: pointer;
+      font-family: ui-monospace, monospace;
+    }
+    .scm-file:hover { background: #2a2a2a; }
+    .scm-file .scm-status {
+      width: 16px; text-align: center; font-weight: bold; flex-shrink: 0;
+    }
+    .scm-file .scm-status[data-status="modified"] { color: var(--yellow); }
+    .scm-file .scm-status[data-status="added"] { color: var(--green); }
+    .scm-file .scm-status[data-status="deleted"] { color: var(--red); }
+    .scm-file .scm-status[data-status="untracked"] { color: var(--blue); }
+    .scm-file .scm-status[data-status="renamed"] { color: var(--purple); }
+    .scm-file .scm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .scm-file .scm-act {
+      background: none; border: none; color: var(--fg-muted);
+      cursor: pointer; padding: 0 4px; border-radius: 2px;
+      font-size: 13px;
+    }
+    .scm-file .scm-act:hover { background: #444; color: var(--fg); }
+    .scm-file.staged { opacity: 0.7; }
+    .scm-file.staged .scm-name { text-decoration: line-through; }
+
+    .scm-commit {
+      padding: 4px 12px; font-size: 11px; color: var(--fg);
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .scm-commit .scm-hash { color: var(--blue); font-family: ui-monospace, monospace; }
+    .scm-commit .scm-msg { color: var(--fg); }
+    .scm-commit .scm-meta { color: var(--fg-dim); font-size: 10px; margin-top: 2px; }
+
+    #scm-commit-box {
+      padding: 8px; border-top: 1px solid var(--border);
+      background: #1a1a1a;
+    }
+    #scm-commit-msg {
+      width: 100%; box-sizing: border-box;
+      background: #0e0e0e; color: var(--fg); border: 1px solid var(--border);
+      font-family: inherit; font-size: 12px; padding: 4px 6px;
+      border-radius: 2px; resize: vertical;
+    }
+    #scm-commit-btn {
+      margin-top: 6px; width: 100%;
+      background: var(--green); color: #000; border: none;
+      padding: 4px 0; font-family: inherit; font-size: 11px;
+      font-weight: bold; cursor: pointer; border-radius: 2px;
+    }
+    #scm-commit-btn:hover { opacity: 0.85; }
+    #scm-commit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -528,12 +622,48 @@
 
     <!-- 侧栏: 项目根 + 文件树 + 最近项目 (无冗余按钮; 刷新 = 重打开文件夹) -->
     <div id="sidebar">
-      <div id="sb-project-name" class="empty" data-tip="项目根 — 鼠标悬停查看完整路径" tabindex="0">尚未打开项目</div>
-      <div id="tree">
-        <div class="empty-hint">点工具栏「📁 打开文件夹」导入项目</div>
+      <!-- Activity Bar (图标选择 Side Bar 内容) — 对标 VSCode / Cursor -->
+      <div id="activity-bar">
+        <button class="act-btn active" data-pane="explorer" data-tip="资源管理器 (Explorer) — 文件树" title="Explorer">📁</button>
+        <button class="act-btn" data-pane="search" data-tip="搜索 — TODO" title="Search">🔍</button>
+        <button class="act-btn" data-pane="scm" data-tip="源代码管理 (Source Control) — Git 状态" title="Source Control">⎇</button>
+        <button class="act-btn" data-pane="extensions" data-tip="扩展 — TODO" title="Extensions">⊟</button>
       </div>
-      <div class="sb-section-head"><span>最近项目</span></div>
-      <div id="recent-list"></div>
+      <div id="side-content">
+        <div class="side-pane active" id="explorer-pane">
+          <div id="sb-project-name" class="empty" data-tip="项目根 — 鼠标悬停查看完整路径" tabindex="0">尚未打开项目</div>
+          <div id="tree">
+            <div class="empty-hint">点工具栏「📁 打开文件夹」导入项目</div>
+          </div>
+          <div class="sb-section-head"><span>最近项目</span></div>
+          <div id="recent-list"></div>
+        </div>
+        <div class="side-pane" id="search-pane">
+          <div class="side-empty">🔍 搜索 — TODO</div>
+        </div>
+        <div class="side-pane" id="scm-pane">
+          <div class="sb-head">
+            <span>源代码管理</span>
+            <button class="sb-act-btn" data-cmd="scm-refresh" data-tip="刷新 Git 状态">⟳</button>
+          </div>
+          <div id="scm-branch" class="scm-branch"></div>
+          <div class="sb-section-head">
+            <span>改动 (<span id="scm-changes-count">0</span>)</span>
+          </div>
+          <div id="scm-changes" class="scm-changes">
+            <div class="scm-empty">无 git 仓库 / 加载中…</div>
+          </div>
+          <div class="sb-section-head"><span>提交 (<span id="scm-commits-count">0</span>)</span></div>
+          <div id="scm-commits" class="scm-commits"></div>
+          <div id="scm-commit-box">
+            <textarea id="scm-commit-msg" placeholder="提交信息 (Ctrl+Enter 提交)" rows="3"></textarea>
+            <button id="scm-commit-btn" data-tip="git commit">✓ Commit</button>
+          </div>
+        </div>
+        <div class="side-pane" id="extensions-pane">
+          <div class="side-empty">⊟ 扩展 — TODO (后续接 marketplace API)</div>
+        </div>
+      </div>
     </div>
 
     <!-- 编辑器区: 标签栏 + 编辑器 + Shell -->
@@ -2719,6 +2849,235 @@ SELECT * FROM hello;
       else return;
       e.preventDefault();
       Terminal.send(data);
+    });
+
+    // ============================================================
+    // Side Bar Activity Bar + Source Control panel (对标 VSCode / Cursor)
+    // ============================================================
+    const Scm = {
+      branch: "",
+      files: [],
+      commits: [],
+
+      async refresh() {
+        try {
+          let result;
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            result = await invoke("scm_status");
+          } else {
+            const r = await fetch("/api/scm_status", { method: "POST" });
+            if (!r.ok) {
+              this.renderEmpty("无 git 仓库 / 加载失败");
+              return;
+            }
+            result = await r.json();
+          }
+          this.branch = result.branch || "";
+          this.files = result.files || [];
+          this.render();
+          this.refreshLog();
+        } catch (e) {
+          console.warn("scm refresh:", e);
+          this.renderEmpty("无 git 仓库 (不是 git 项目或 git 未安装)");
+        }
+      },
+
+      async refreshLog() {
+        try {
+          let entries;
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            entries = await invoke("scm_log", { n: 10 });
+          } else {
+            const r = await fetch("/api/scm_log", { method: "POST" });
+            if (!r.ok) { this.commits = []; this.render(); return; }
+            const j = await r.json();
+            entries = j.commits || [];
+          }
+          this.commits = entries;
+          this.render();
+        } catch (e) {
+          this.commits = [];
+        }
+      },
+
+      async stage(path) { await this._stageOp("scm_stage", path); },
+      async unstage(path) { await this._stageOp("scm_unstage", path); },
+      async _stageOp(cmd, path) {
+        try {
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            await invoke(cmd, { paths: [path] });
+          } else {
+            await fetch("/api/" + cmd, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ paths: [path] }),
+            });
+          }
+          await this.refresh();
+        } catch (e) { console.error(cmd, e); }
+      },
+
+      async commit(message) {
+        try {
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            await invoke("scm_commit", { message });
+          } else {
+            await fetch("/api/scm_commit", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ message }),
+            });
+          }
+          await this.refresh();
+        } catch (e) { console.error("commit:", e); }
+      },
+
+      async diff(path) {
+        try {
+          let text;
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            text = await invoke("scm_diff", { path, staged: false });
+          } else {
+            const r = await fetch("/api/scm_diff", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ path, staged: false }),
+            });
+            if (!r.ok) return;
+            const j = await r.json();
+            text = j.diff || "";
+          }
+          alert(text || "(no diff)");
+        } catch (e) { console.error("diff:", e); }
+      },
+
+      render() {
+        const branchEl = document.getElementById("scm-branch");
+        const changesEl = document.getElementById("scm-changes");
+        const countEl = document.getElementById("scm-changes-count");
+        const commitsEl = document.getElementById("scm-commits");
+        const commitsCountEl = document.getElementById("scm-commits-count");
+
+        if (branchEl) branchEl.textContent = this.branch ? "⎇ " + this.branch : "(no branch)";
+        if (countEl) countEl.textContent = this.files.length;
+        if (commitsCountEl) commitsCountEl.textContent = this.commits.length;
+
+        if (changesEl) {
+          changesEl.innerHTML = "";
+          if (this.files.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "scm-empty";
+            empty.textContent = "工作区干净 ✓";
+            changesEl.appendChild(empty);
+          } else {
+            for (const f of this.files) {
+              const row = document.createElement("div");
+              row.className = "scm-file" + (f.staged ? " staged" : "");
+              row.title = f.path;
+              const status = document.createElement("span");
+              status.className = "scm-status";
+              status.dataset.status = f.status;
+              status.textContent = statusGlyph(f.status);
+              const name = document.createElement("span");
+              name.className = "scm-name";
+              name.textContent = f.path;
+              row.appendChild(status);
+              row.appendChild(name);
+              // Action button
+              const act = document.createElement("button");
+              act.className = "scm-act";
+              if (f.staged) {
+                act.textContent = "−";
+                act.title = "Unstage";
+                act.onclick = (e) => { e.stopPropagation(); this.unstage(f.path); };
+              } else {
+                act.textContent = "+";
+                act.title = "Stage";
+                act.onclick = (e) => { e.stopPropagation(); this.stage(f.path); };
+              }
+              row.appendChild(act);
+              row.onclick = () => this.diff(f.path);
+              changesEl.appendChild(row);
+            }
+          }
+        }
+
+        if (commitsEl) {
+          commitsEl.innerHTML = "";
+          for (const c of this.commits) {
+            const row = document.createElement("div");
+            row.className = "scm-commit";
+            const msg = document.createElement("div");
+            msg.className = "scm-msg";
+            const hash = document.createElement("span");
+            hash.className = "scm-hash";
+            hash.textContent = c.short + " ";
+            msg.appendChild(hash);
+            msg.appendChild(document.createTextNode(c.message));
+            const meta = document.createElement("div");
+            meta.className = "scm-meta";
+            meta.textContent = `${c.author} · ${c.time}`;
+            row.appendChild(msg);
+            row.appendChild(meta);
+            commitsEl.appendChild(row);
+          }
+        }
+      },
+
+      renderEmpty(msg) {
+        const changesEl = document.getElementById("scm-changes");
+        if (changesEl) {
+          changesEl.innerHTML = "";
+          const empty = document.createElement("div");
+          empty.className = "scm-empty";
+          empty.textContent = msg;
+          changesEl.appendChild(empty);
+        }
+      },
+    };
+
+    function statusGlyph(s) {
+      switch (s) {
+        case "modified": return "M";
+        case "added": return "A";
+        case "deleted": return "D";
+        case "untracked": return "U";
+        case "renamed": return "R";
+        default: return "?";
+      }
+    }
+
+    // ----- Activity Bar tab 切换 -----
+    document.querySelectorAll(".act-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pane = btn.dataset.pane;
+        document.querySelectorAll(".act-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".side-pane").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        const target = document.getElementById(pane + "-pane");
+        if (target) target.classList.add("active");
+        // refresh SCM on activate
+        if (pane === "scm") Scm.refresh();
+      });
+    });
+
+    // ----- SCM refresh 按钮 -----
+    document.querySelector('[data-cmd="scm-refresh"]')?.addEventListener("click", () => Scm.refresh());
+
+    // ----- SCM commit -----
+    document.getElementById("scm-commit-btn")?.addEventListener("click", () => {
+      const msg = document.getElementById("scm-commit-msg").value.trim();
+      if (!msg) return;
+      Scm.commit(msg).then(() => {
+        document.getElementById("scm-commit-msg").value = "";
+      });
+    });
+
+    // Ctrl+Enter in commit msg box
+    document.getElementById("scm-commit-msg")?.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "Enter") {
+        document.getElementById("scm-commit-btn")?.click();
+      }
     });
 </script>
 </body>
