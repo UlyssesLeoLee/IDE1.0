@@ -218,6 +218,8 @@
     }
     .ed-content.mode-insert .cur { background: #7cdcfe; }
     .ed-content .sel { background: #264f78; color: white; }
+    .ed-content .fold-marker { color: #6a9955; font-style: italic; font-size: 0.85em; background: #2a2a2a; padding: 0 4px; border-radius: 2px; cursor: pointer; }
+    .ed-content .fold-marker:hover { background: #3a3a3a; color: #fff; }
     @keyframes blink { 50% { opacity: 0; } }
 
     /* ----- 语法高亮 token 配色 ----- */
@@ -1029,6 +1031,43 @@
   }
   function closeModal() { modal.classList.remove("show"); }
 
+  // 通用 prompt 弹框 — 让用户输入值, callback 接收 string
+  function openPrompt(title, body, hint, onDone) {
+    mdTitle.textContent = title || "输入";
+    mdBody.textContent = body || "";
+    mdFoot.innerHTML = "";
+    const inputWrap = document.createElement("div");
+    inputWrap.style.cssText = "margin-top:10px;";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = hint || "";
+    input.style.cssText = "width:100%;padding:6px 8px;background:#222;color:#fff;border:1px solid #555;border-radius:3px;font-family:ui-monospace,monospace;font-size:12px;";
+    inputWrap.appendChild(input);
+    mdBody.appendChild(inputWrap);
+    const btnCancel = document.createElement("button");
+    btnCancel.className = "md-btn";
+    btnCancel.textContent = "取消";
+    btnCancel.setAttribute("data-cmd", "modal-cancel");
+    btnCancel.addEventListener("click", () => { closeModal(); onDone && onDone(null); });
+    const btnOk = document.createElement("button");
+    btnOk.className = "md-btn primary";
+    btnOk.textContent = "确定";
+    btnOk.setAttribute("data-cmd", "modal-ok");
+    btnOk.addEventListener("click", () => {
+      const v = input.value.trim();
+      closeModal();
+      onDone && onDone(v);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); btnOk.click(); }
+      if (e.key === "Escape") { e.preventDefault(); btnCancel.click(); }
+    });
+    mdFoot.appendChild(btnCancel);
+    mdFoot.appendChild(btnOk);
+    modal.classList.add("show");
+    setTimeout(() => input.focus(), 50);
+  }
+
   /* ==========================================================================
      3. 全局命令分发 (toolbar / sidebar / modal 按钮统一 data-cmd)
      ========================================================================== */
@@ -1388,7 +1427,48 @@
     // 内容 — 把每行当 HTML, 选中/光标单独处理
     // 为简化: 全量 innerHTML (万行级别不卡)
     let html = "";
+    let hiddenCount = 0;
+    let foldEndRow = -1;
     for (let i = 0; i < t.lines.length; i++) {
+      // 折叠隐藏: 如果上一行 fold, 且本行在 fold 范围内
+      if (i <= foldEndRow) { hiddenCount++; continue; }
+      // 检查本行是否是 fold start, 计算 fold 范围
+      if (t.folds && t.folds.has(i)) {
+        const startIndent = (t.lines[i].match(/^\s*/) || [""])[0].length;
+        let endR = i;
+        if (t.lines[i].trim().endsWith("{")) {
+          // brace-based fold — 计算 }
+          let depth = 1;
+          for (let r = i + 1; r < t.lines.length; r++) {
+            for (const c of t.lines[r]) {
+              if (c === "{") depth++;
+              else if (c === "}") depth--;
+              if (depth === 0) { endR = r; break; }
+            }
+            if (depth === 0) break;
+          }
+        } else {
+          // indent-based
+          for (let r = i + 1; r < t.lines.length; r++) {
+            const s = t.lines[r];
+            if (s.trim() === "") continue;
+            const ni = (s.match(/^\s*/) || [""])[0].length;
+            if (ni <= startIndent) break;
+            endR = r;
+          }
+        }
+        // 渲染 fold start 行 + "...{N lines hidden}"
+        const line = t.lines[i];
+        let esc = highlightToHtml(line, t.language || "plain");
+        const before = esc.slice(0, t.cursor.col * 6);
+        const after = esc.slice(t.cursor.col * 6);
+        esc = before + `<span class="cur"></span>` + after;
+        esc += ` <span class="fold-marker">▼ ${endR - i} 行已折叠</span>`;
+        html += esc + "\n";
+        hiddenCount += (endR - i);
+        foldEndRow = endR;
+        continue;
+      }
       const line = t.lines[i];
       // 语法高亮: 先按 token 切片, 再对每段 escape + 加 span class
       let esc = highlightToHtml(line, t.language || "plain");
@@ -1577,6 +1657,25 @@
       }
       t.dirty = true; e.preventDefault(); return;
     }
+    // ----- 折叠 (zc / zo / zM / zR) -----
+    if (k === "z") {
+      const c = e.shiftKey ? "zM" : (e.key === "Z" ? "zR" : "zc"); // plain 'z' + next key
+      // 简化: 用 lastZ 实现双键序列
+      if (lastZ === t.id) {
+        if (c === "zM" || e.key === "M") { t.folds = []; lastZ = null; e.preventDefault(); renderVim(t); return; }
+        if (c === "zR" || e.key === "R") { t.folds = []; lastZ = null; e.preventDefault(); renderVim(t); return; }
+        if (c === "zc") { foldAtCursor(t); lastZ = null; e.preventDefault(); renderVim(t); return; }
+        if (c === "zo") { unfoldAtCursor(t); lastZ = null; e.preventDefault(); renderVim(t); return; }
+      }
+      lastZ = t.id; setTimeout(() => lastZ = null, 500);
+      e.preventDefault(); return;
+    }
+    if (lastZ === t.id && (k === "c" || k === "o" || k === "M" || k === "R")) {
+      if (k === "c") foldAtCursor(t);
+      else if (k === "o") unfoldAtCursor(t);
+      else t.folds = []; // M/R 全展开
+      lastZ = null; e.preventDefault(); renderVim(t); return;
+    }
     // 半页
     if (e.ctrlKey && (k === "d" || k === "u")) {
       const d = (k === "d") ? 12 : -12;
@@ -1764,12 +1863,182 @@
     if (cmd.startsWith("e ")) {
       const rel = cmd.slice(2).trim();
       const abs = (projectRoot ? projectRoot + "/" : "") + rel;
-      openFile(abs.replace(/^.\//, ""), rel);
+      openFile(abs.replace(/^\.\//, ""), rel);
       return;
     }
-    openModal({ title: "未知命令", body: `:${cmd}\n\n试试: :w  :q  :wq  :e <相对路径>  :help`,
+    if (cmd === "setlang") {
+      const cur = activeTab();
+      if (!cur) return;
+      const langs = Syntax.LANGUAGES.join(", ");
+      openPrompt("设置当前文件语言", Syntax.languageLabel(cur.language), "plain,rust,python,javascript,typescript,go,c,cpp,java,csharp,ruby,bash,html,css,json,markdown,yaml,toml,sql",
+        (v) => {
+          if (Syntax.LANGUAGES.includes(v)) { cur.language = v; renderVim(cur); }
+          else openModal({ title: "未知语言", body: "支持: " + langs, buttons: [{ label: "确定", cmd: "modal-close" }] });
+        });
+      return;
+    }
+    if (cmd.startsWith("template ") || cmd.startsWith("!template ") || cmd.startsWith("tpl ")) {
+      const lang = cmd.replace(/^(?:!)?template\s+/, "").replace(/^tpl\s+/, "").trim();
+      const text = getTemplate(lang);
+      if (!text) {
+        openModal({ title: "未知语言模板", body: `:${cmd}\n\n支持: rust, python, javascript, typescript, go, c, cpp, java, csharp, ruby, bash, html, css, json, markdown, yaml, toml, sql\n用法: :template rust`, buttons: [{ label: "确定", cmd: "modal-close" }] });
+        return;
+      }
+      // 在当前 tab 末尾插入模板 (切到 INSERT 模式)
+      pushUndo(t.id);
+      t.lines.push(...text.split("\n"));
+      t.dirty = true;
+      t.cursor.row = t.lines.length - 1;
+      t.cursor.col = 0;
+      renderVim(t);
+      return;
+    }
+    openModal({ title: "未知命令", body: `:${cmd}\n\n试试: :w  :q  :wq  :e <路径>  :help  :template <lang>  :setlang`,
       buttons: [{ label: "确定", cmd: "modal-close" }] });
   }
+
+  // 模板 — 每种语言一份 hello-world + 注释
+  const TEMPLATES = {
+    rust: `// Rust hello world
+fn main() {
+    println!("Hello, world!");
+}
+`,
+    python: `#!/usr/bin/env python3
+"""Python hello world."""
+
+
+def main() -> None:
+    print("Hello, world!")
+
+
+if __name__ == "__main__":
+    main()
+`,
+    javascript: `// JavaScript hello world
+function hello(name) {
+  return \`Hello, \${name}!\`;
+}
+
+console.log(hello("world"));
+`,
+    typescript: `// TypeScript hello world
+function hello(name: string): string {
+  return \`Hello, \${name}!\`;
+}
+
+console.log(hello("world"));
+`,
+    go: `// Go hello world
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, world!")
+}
+`,
+    c: `// C hello world
+#include <stdio.h>
+
+int main(void) {
+    printf("Hello, world!\\n");
+    return 0;
+}
+`,
+    cpp: `// C++ hello world
+#include <iostream>
+
+int main() {
+    std::cout << "Hello, world!" << std::endl;
+    return 0;
+}
+`,
+    java: `// Java hello world
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, world!");
+    }
+}
+`,
+    csharp: `// C# hello world
+class Program {
+    static void Main() {
+        System.Console.WriteLine("Hello, world!");
+    }
+}
+`,
+    ruby: `# Ruby hello world
+def hello(name)
+  "Hello, #{name}!"
+end
+
+puts hello("world")
+`,
+    bash: `#!/usr/bin/env bash
+# Bash hello world
+echo "Hello, world!"
+`,
+    html: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hello</title>
+</head>
+<body>
+  <h1>Hello, world!</h1>
+</body>
+</html>
+`,
+    css: `/* CSS hello world */
+body {
+    margin: 0;
+    font-family: sans-serif;
+}
+
+h1 {
+    color: #333;
+}
+`,
+    json: `{
+  "hello": "world",
+  "items": [1, 2, 3]
+}
+`,
+    markdown: `# Hello, world!
+
+**bold** and *italic*.
+
+- item one
+- item two
+
+[link](https://example.com)
+`,
+    yaml: `# YAML hello world
+name: hello
+items:
+  - one
+  - two
+greeting: "Hello, world!"
+`,
+    toml: `# TOML hello world
+[package]
+name = "hello"
+version = "0.1.0"
+
+[dependencies]
+`,
+    sql: `-- SQL hello world
+CREATE TABLE hello (
+    id INTEGER PRIMARY KEY,
+    message TEXT NOT NULL
+);
+
+INSERT INTO hello (message) VALUES ('Hello, world!');
+SELECT * FROM hello;
+`,
+  };
+  function getTemplate(lang) { return TEMPLATES[lang] || ""; }
 
   on("close-tab", () => { if (activeTabId) closeTab(activeTabId); });
 
@@ -1979,7 +2248,42 @@
     ));
   }
 
-function highlightToHtml(line, language) {
+  // 代码折叠 — 找当前光标行所在 block (基于 indent level 或花括号配对)
+  let lastZ = null;
+  function foldAtCursor(t) {
+    if (!t.folds) t.folds = new Set();
+    const row = t.cursor.row;
+    const line = t.lines[row];
+    if (line.trim().endsWith("{")) {
+      // 找匹配的 }
+      let depth = 1;
+      for (let r = row + 1; r < t.lines.length; r++) {
+        for (const c of t.lines[r]) {
+          if (c === "{") depth++;
+          else if (c === "}") depth--;
+          if (depth === 0) { t.folds.add(row); return; }
+        }
+      }
+    } else {
+      // indent-based: 找下一行 indent ≤ 当前行
+      const indent = line.match(/^\s*/)[0].length;
+      let endRow = row;
+      for (let r = row + 1; r < t.lines.length; r++) {
+        const s = t.lines[r];
+        if (s.trim() === "") continue;
+        const nextIndent = s.match(/^\s*/)[0].length;
+        if (nextIndent <= indent) break;
+        endRow = r;
+      }
+      if (endRow > row) t.folds.add(row);
+    }
+  }
+  function unfoldAtCursor(t) {
+    if (!t.folds) return;
+    t.folds.delete(t.cursor.row);
+  }
+
+  function highlightToHtml(line, language) {
     if (!line) return "&nbsp;";
     const tokens = Syntax.highlightLine(line, language);
     let html = "";

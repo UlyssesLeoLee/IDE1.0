@@ -79,7 +79,29 @@ COMMAND 模式 (底部 : 命令行):
   :wq              保存并关闭
   :e <路径>        打开项目内文件 (相对项目根或绝对路径)
   :help            打开本 wiki 浮层
+  :setlang         手动设置当前文件语言 (覆盖扩展名识别)
+  :template <lang> 在当前标签末尾插入该语言的 hello-world 模板
+  :tpl <lang>      同 :template (简写)
   Esc              取消命令行
+
+[5.5] 语法高亮 / Tab / 缩进 / 折叠
+------------------------------------
+按扩展名 + 文件名自动识别 19 种语言, 关键字 / 类型 / 字符串 / 数字 / 注释 /
+属性 / 装饰器 / 操作符 各自配色 (VSCode Dark+ 风格):
+
+  Rust / Python / JavaScript / TypeScript / Go / C / C++ / Java / C# /
+  Ruby / Bash / HTML / CSS / JSON / Markdown / YAML / TOML / SQL / Plain
+
+INSERT 模式:
+  Tab             转 2 空格 (替换为缩进)
+  Enter           自动缩进: 复制前一行 leading whitespace, 行尾 { [ ( 多缩一级
+
+Normal 模式:
+  zc              折叠当前行所在 block ({...} 或 indent block)
+  zo              展开当前行
+  zM / zR         全部折叠 / 全部展开
+
+状态栏新增「语言」字段 (例: 「Rust」), 按 :setlang 可手动覆盖.
 
 [6] Shell 面板 (底部)
 ---------------------
