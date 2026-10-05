@@ -29,6 +29,7 @@
 
 pub mod terminal;
 pub mod scm;
+pub mod search;
 pub mod wiki;
 
 use std::path::{Path, PathBuf};
@@ -531,6 +532,7 @@ pub fn run() {
             scm::scm_diff,
             scm::scm_commit,
             scm::scm_log,
+            search::search_cmd,
         ])
         .setup(|_app| {
             eprintln!(

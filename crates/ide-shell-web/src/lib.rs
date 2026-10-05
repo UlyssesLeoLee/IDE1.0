@@ -22,6 +22,7 @@
 
 pub mod path_safety;
 mod scm;
+mod search;
 mod terminal;
 pub mod wiki_data;
 
@@ -213,6 +214,32 @@ impl ShellState {
             match scm::log(10) {
                 Ok(commits) => respond_json(stream, 200, &serde_json::json!({ "commits": commits })),
                 Err(e) => respond_json(stream, 200, &serde_json::json!({ "commits": [], "error": e })),
+            }
+        }
+
+
+        ("POST", "/api/search") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            // Parse from JSON map
+            let pattern = body.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let case_sensitive = body.get("case_sensitive").and_then(|v| v.as_bool());
+            let regex = body.get("regex").and_then(|v| v.as_bool());
+            let max_results = body.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize);
+            let include_globs = body.get("include_globs").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>()
+            });
+            let opts = search::SearchOptions {
+                pattern, case_sensitive, regex, include_globs,
+                exclude_globs: None, max_results,
+            };
+            // Resolve cwd
+            let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+            let result = search::search(&cwd, &opts).or_else(|_| search::search_fallback(&cwd, &opts));
+            match result {
+                Ok(results) => respond_json(stream, 200, &serde_json::json!({ "results": results })),
+                Err(e) => respond_json(stream, 200, &serde_json::json!({ "results": [], "error": e })),
             }
         }
 
