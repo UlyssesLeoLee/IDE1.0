@@ -21,6 +21,7 @@
 //! 设计: server 内持有单一 App 状态 (单用户 demo). 端口默认 8123 (CI 与本地都用).
 
 pub mod path_safety;
+mod terminal;
 pub mod wiki_data;
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -100,7 +101,66 @@ impl ShellState {
                 "CONTROL" | "ctrl" => mods |= KeyModifiers::CONTROL,
                 "ALT" | "alt" => mods |= KeyModifiers::ALT,
                 "SHIFT" | "shift" => mods |= KeyModifiers::SHIFT,
-                _ => {}
+        
+        // ============================================================
+        // Terminal panel endpoints (对标 Cursor / VSCode)
+        // ============================================================
+        ("POST", "/api/terminal_create") => {
+            // Web 版简化: 直接 spawn PowerShell (Windows) / bash, 通过 channel 缓冲输出.
+            // 不支持 PTY, 但能跑 cargo build / npm test / python 等命令.
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let shell = body.get("shell").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let cwd = body.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let id = terminal::create(shell, cwd);
+            match id {
+                Some(id) => {
+                    // 启动后台 reader (读 stdout + stderr → 写到 per-id queue)
+                    terminal::spawn_reader(id.clone());
+                    let info = serde_json::json!({
+                        "id": id,
+                        "title": format!("{} #{}", terminal::shell_display(id), terminal::counter(&id)),
+                        "shell": terminal::shell_cmd(&id),
+                        "cwd": terminal::cwd(&id),
+                        "alive": true,
+                    });
+                    respond_json(stream, 200, &info)
+                }
+                None => respond_text(stream, 500, "spawn failed"),
+            }
+        }
+        ("POST", "/api/terminal_input") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let data = body.get("data").and_then(|v| v.as_str()).unwrap_or("");
+            match terminal::input(id, data) {
+                Ok(()) => respond_text(stream, 200, "ok"),
+                Err(e) => respond_text(stream, 404, &e),
+            }
+        }
+        ("POST", "/api/terminal_close") => {
+            let body = read_json_body(&mut stream).unwrap_or_default();
+            let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            terminal::close(id);
+            respond_text(stream, 200, "ok")
+        }
+        ("GET", "/api/terminal_output/{id}") => {
+            // SSE-like long polling: 客户端 GET 一次 → 返回自上次以来 buffer 的所有 chunk.
+            // 简化: 返回当前 buffer 所有内容 (单次 GET), 客户端轮询.
+            // 真正 SSE 需要多线程 + async — 后续升级.
+            let id = req.path.strip_prefix("/api/terminal_output/").unwrap_or("");
+            let buf = terminal::drain_output(id);
+            let body = serde_json::json!({
+                "id": id,
+                "chunks": buf,
+            });
+            respond_json(stream, 200, &body)
+        }
+        ("GET", "/api/terminal_list") => {
+            let list = terminal::list();
+            respond_json(stream, 200, &list)
+        }
+
+        _ => {}
             }
         }
         let event = KeyEvent::new(kc, mods);

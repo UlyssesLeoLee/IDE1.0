@@ -2469,7 +2469,18 @@ SELECT * FROM hello;
         const title = opts.title || null;
         let info;
         try {
-          info = await invoke("terminal_create", { shell, cwd, title });
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            info = await invoke("terminal_create", { shell, cwd, title });
+          } else {
+            // Web fallback — 走 /api/terminal_create
+            const r = await fetch("/api/terminal_create", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ shell, cwd, title }),
+            });
+            if (!r.ok) { console.error("terminal_create failed"); return null; }
+            info = await r.json();
+          }
         } catch (e) {
           console.error("terminal_create failed:", e);
           return null;
@@ -2483,7 +2494,15 @@ SELECT * FROM hello;
 
       async close(id) {
         try {
-          await invoke("terminal_close", { id });
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            await invoke("terminal_close", { id });
+          } else {
+            await fetch("/api/terminal_close", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ id }),
+            });
+          }
         } catch (e) {
           console.warn("terminal_close:", e);
         }
@@ -2505,7 +2524,15 @@ SELECT * FROM hello;
       async send(data) {
         if (!this.activeId) return;
         try {
-          await invoke("terminal_input", { id: this.activeId, data });
+          if (window.__TAURI__ && window.__TAURI__.invoke) {
+            await invoke("terminal_input", { id: this.activeId, data });
+          } else {
+            await fetch("/api/terminal_input", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ id: this.activeId, data }),
+            });
+          }
         } catch (e) {
           console.error("terminal_input failed:", e);
         }
@@ -2604,20 +2631,35 @@ SELECT * FROM hello;
       },
 
       listen(id) {
-        const handler = (event) => {
-          const payload = event.payload;
-          if (payload && payload.id === id) {
-            this.appendChunk(id, payload.stream, payload.data);
-          }
-        };
-        // Tauri event listener (统一总线 __TAURI__.event.listen)
-        if (window.__TAURI__ && __TAURI__.event) {
+        if (window.__TAURI__ && window.__TAURI__.event) {
+          // Tauri event push
+          const handler = (event) => {
+            const payload = event.payload;
+            if (payload && payload.id === id) {
+              this.appendChunk(id, payload.stream, payload.data);
+            }
+          };
           __TAURI__.event.listen("terminal://output", handler);
           __TAURI__.event.listen("terminal://closed", (e) => {
             if (e.payload && e.payload.id === id) {
               this.onClosed(id);
             }
           });
+        } else {
+          // Web polling fallback (100ms)
+          const poll = async () => {
+            try {
+              const r = await fetch("/api/terminal_output/" + id);
+              if (!r.ok) return;
+              const j = await r.json();
+              if (j.chunks && j.chunks.length > 0) {
+                for (const chunk of j.chunks) {
+                  this.appendChunk(id, "stdout", chunk);
+                }
+              }
+            } catch (e) { /* ignore */ }
+          };
+          setInterval(poll, 100);
         }
       },
     };
