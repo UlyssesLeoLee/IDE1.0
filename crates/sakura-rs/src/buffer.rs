@@ -248,22 +248,26 @@ impl DocLineMgr {
         s
     }
 
-    /// Backspace — 在 at 位置删除 1 char (含跨行).
+    /// Backspace — 在 at 位置删除 1 char (含跨行). 任何 backspace 调用都 alloc 新 seq (test 用例).
     pub fn backspace(&mut self, at: LogicPos) -> LogicPos {
         self.set_caret(at);
+        // 任何 backspace 操作都 alloc 新 seq — 区分"用户输入"与"初始化"
+        let new_seq = self.alloc_seq();
         if self.caret.col > 0 {
             // 同行删除一个 char
             let r = LogicRange { start: LogicPos::new(self.caret.row, self.caret.col - 1), end: self.caret };
-            self.remove_range(r)
+            let result = self.remove_range(r);
+            self.lines[result.row as usize].seq = new_seq;
+            result
         } else if self.caret.row > 0 {
             // 行首 Backspace — 合并到上一行末尾
             let prev = LogicPos::new(self.caret.row - 1, self.lines()[self.caret.row as usize - 1].char_len());
-            // 为合并后的行 alloc 新 seq
-            let new_seq = self.alloc_seq();
             let result = self.remove_range(LogicRange { start: prev, end: self.caret });
             self.lines[result.row as usize].seq = new_seq;
             result
         } else {
+            // 已是 buffer 起点 — noop 但仍消费 seq (用户行为)
+            let _ = new_seq;
             self.caret
         }
     }
