@@ -680,6 +680,24 @@
     .outline-item .oi-icon[data-kind="trait"] { color: var(--green); }
     .outline-item .oi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .outline-item .oi-line { color: var(--fg-dim); font-size: 10px; }
+
+    /* ===== Multi-cursor 视觉层 (前端 v1 — 纯视觉) ===== */
+    .cursor-layer {
+      position: absolute; left: 50px; top: 0; bottom: 0; right: 0;
+      pointer-events: none; z-index: 5;
+    }
+    .cursor-layer .cur-extra {
+      position: absolute; width: 2px; height: 18px;
+      background: var(--cur); opacity: 0.7;
+      animation: term-blink 1s step-end infinite;
+    }
+    .cursor-layer .cur-extra.primary { opacity: 1; background: var(--blue); }
+    .mc-status {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 6px; margin-left: 6px; border-radius: 2px;
+      background: var(--blue); color: black;
+      font-size: 10px; font-weight: bold;
+    }
 </style>
 </head>
 <body>
@@ -3532,6 +3550,86 @@ SELECT * FROM hello;
 
     document.querySelector('[data-cmd="outline-refresh"]')?.addEventListener("click", () => Outline.refresh());
     document.querySelector('.act-btn[data-pane="outline"]')?.addEventListener("click", () => Outline.refresh());
+
+    // ============================================================
+    // Multi-cursor (视觉 v1, 真实编辑仍单光标)
+    // ============================================================
+    const MultiCursor = {
+      // 额外光标 (LogicPos[row, col]) — 主光标仍是 server 的 caret
+      extra: [],
+
+      clear() {
+        this.extra = [];
+        this.render();
+        this.updateStatus();
+      },
+
+      add(row, col) {
+        // 去重
+        const exists = this.extra.some(c => c.row === row && c.col === col);
+        if (!exists) this.extra.push({ row, col });
+        this.render();
+        this.updateStatus();
+      },
+
+      render() {
+        let layer = document.getElementById("cursor-layer");
+        if (!layer) {
+          layer = document.createElement("div");
+          layer.id = "cursor-layer";
+          layer.className = "cursor-layer";
+          const ed = document.getElementById("editor");
+          if (ed) ed.appendChild(layer);
+        }
+        layer.innerHTML = "";
+        // 每个 extra cursor 画一个细条 (固定高, 真实位置需要 char 几何计算 — 这里近似)
+        for (let i = 0; i < this.extra.length; i++) {
+          const c = this.extra[i];
+          const span = document.createElement("div");
+          span.className = "cur-extra" + (i === 0 ? " primary" : "");
+          // 近似位置 — line height ~18px, char width ~7px
+          const top = (c.row * 18) + 8;
+          const left = 50 + 8 + (c.col * 7);
+          span.style.top = top + "px";
+          span.style.left = left + "px";
+          span.title = `Alt+Click @ Ln ${c.row + 1}, Col ${c.col + 1}`;
+          layer.appendChild(span);
+        }
+      },
+
+      updateStatus() {
+        const statusMode = document.getElementById("s-mode");
+        if (!statusMode) return;
+        // 不破坏原有 mode 文字, 加 .mc-status 元素
+        const old = statusMode.parentElement.querySelector(".mc-status");
+        if (old) old.remove();
+        if (this.extra.length > 0) {
+          const tag = document.createElement("span");
+          tag.className = "mc-status";
+          tag.textContent = `${this.extra.length + 1} cursors`;
+          statusMode.parentElement.appendChild(tag);
+        }
+      },
+    };
+
+    // Esc 清空 multi-cursor
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && MultiCursor.extra.length > 0) {
+        e.preventDefault();
+        MultiCursor.clear();
+      }
+    });
+
+    // Alt+Click → 加 extra cursor (基于当前 server caret 位置)
+    document.getElementById("editor")?.addEventListener("mouseup", async (ev) => {
+      if (ev.altKey && !ev.ctrlKey && !ev.shiftKey && ev.button === 0) {
+        // 简化: 用 server 当前 caret 行 + 估算 col
+        try {
+          const frame = await fetch("/api/frame").then(r => r.json());
+          MultiCursor.add(frame.cursor.row, frame.cursor.col);
+        } catch (e) { /* ignore */ }
+      }
+    });
 </script>
 </body>
 </html>
