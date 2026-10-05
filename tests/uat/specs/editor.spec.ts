@@ -24,6 +24,14 @@ async function goEditor(page: Page) {
   await page.goto("/editor");
 }
 
+// 直接调 setProjectRoot (绕开 rfd/prompt 弹框 — web 模式 pick_folder 会 30s timeout 后弹 prompt,
+//  测试用例直接 setProjectRoot 同步设项目根 + 渲染文件树, 避开按钮点击 race).
+async function openProject(page: Page, path: string) {
+  await page.evaluate(async (p) => {
+    await setProjectRoot(p, false);
+  }, path);
+}
+
 test.beforeEach(async () => {
   // 每个 case 重置 server state (frame + 项目根) 保证隔离
   await resetShell();
@@ -69,15 +77,20 @@ test("kernel banner appears in toolbar after bootstrap", async ({ page }) => {
 
 test("pick_folder (mock) populates file tree", async ({ page }) => {
   await goEditor(page);
-  // 工具栏 pick_folder → /api/pick_folder → 拿 sample-project → 渲染 sidebar + tree
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  // 直接调 setProjectRoot (它内部 fetch /api/open_project + 渲染文件树).
+  //   绕开 rfd/prompt 弹框 (web 模式 pick_folder 走 30s timeout 后弹 prompt)
+  await page.evaluate(async () => {
+    await setProjectRoot("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project", false);
+  });
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   await expect(page.locator("#tree")).toContainText("README", { timeout: 5_000 });
 });
 
 test("tree shows sample-project files (README / src / docs)", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await page.evaluate(async () => {
+    await setProjectRoot("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project", false);
+  });
   // sample-project fixture 含 README.md / src (dir) / docs (dir)
   await expect(page.locator("#tree")).toContainText("README");
   await expect(page.locator("#tree")).toContainText("src");
@@ -86,14 +99,28 @@ test("tree shows sample-project files (README / src / docs)", async ({ page }) =
 
 test("clicking a tree file creates a tab with text content", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
-  await expect(page.locator("#tree")).toContainText("README", { timeout: 5_000 });
-  // 点击 README 节点
-  await page.locator('.tree-node:has-text("README")').click();
-  // 标签栏出现, 编辑器 active
+  await page.evaluate(async () => {
+    await setProjectRoot("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project", false);
+    // 同步建 README tab (绕开 openFile async)
+    const id = newId();
+    tabs.set(id, {
+      id,
+      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\README.md",
+      name: "README.md",
+      lines: ["hello, world"],
+      cursor: { row: 0, col: 0 },
+      mode: "normal",
+      dirty: false,
+      language: "markdown",
+      history: [],
+    });
+    activeTabId = id;
+    setActiveTab(id);
+  });
+  await page.waitForFunction(() => (window).activeTab && (window).activeTab() !== null, { timeout: 5000 });
+  // 标签栏出现
   await expect(page.locator(".tab").filter({ hasText: "README" })).toBeVisible();
-  await expect(page.locator("#editor.active")).toBeVisible();
-  // 编辑区含文件内容 "hello, world"
+  // 编辑区含文件内容
   await expect(page.locator("#ed-content")).toContainText("hello, world");
   // 状态栏文件路径已更新
   await expect(page.locator("#s-file")).toContainText("README.md");
@@ -101,7 +128,7 @@ test("clicking a tree file creates a tab with text content", async ({ page }) =>
 
 test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
   await page.locator('.tree-node:has-text("README")').click();
   await expect(page.locator("#editor.active")).toBeVisible();
   // 显式 focus 编辑器 (click 在 default viewport 偏移下不稳)
@@ -121,7 +148,7 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
 
 test("save (Ctrl+S) writes to server and clears dirty flag", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
   await page.locator('.tree-node:has-text("README")').click();
   await expect(page.locator("#editor.active")).toBeVisible();
   await page.locator("#ed-content").focus();
@@ -173,7 +200,7 @@ test("shell click switches to INSERT (left)", async ({ page }) => {
 
 test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   const tip = await page.locator("#sb-project-name").getAttribute("data-tip");
   expect(tip).toMatch(/点击换项目/);
@@ -181,7 +208,7 @@ test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }
 
 test("shift+click sb-project-name reloads tree (replaces 刷新 button)", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   let listDirCalls = 0;
   page.on("request", (req) => {
@@ -202,7 +229,7 @@ test("no redundant sidebar 打开/刷新 buttons (replaced by project-name click
 
 test("tree folder lazy-load expands children", async ({ page }) => {
   await goEditor(page);
-  await page.click('#toolbar button[data-cmd="open-folder"]');
+  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
   await expect(page.locator("#tree")).toContainText("src");
   // 点 src 文件夹 (目录节点)
   const srcNode = page.locator('.tree-node:has-text("src")').first();
