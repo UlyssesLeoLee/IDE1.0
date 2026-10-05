@@ -698,6 +698,63 @@
       background: var(--blue); color: black;
       font-size: 10px; font-weight: bold;
     }
+
+    /* ===== MiniMap (右侧代码缩略图) ===== */
+    #minimap {
+      position: absolute; right: 0; top: 0; width: 80px;
+      height: 100%; background: #1e1e1e; border-left: 1px solid var(--border);
+      overflow: hidden; font-family: ui-monospace, monospace;
+      font-size: 2px; line-height: 2px;
+      z-index: 2;
+    }
+    #minimap-viewport {
+      position: absolute; left: 0; right: 0;
+      background: rgba(110, 110, 110, 0.2);
+      border-top: 1px solid rgba(110, 110, 110, 0.5);
+      border-bottom: 1px solid rgba(110, 110, 110, 0.5);
+      pointer-events: none;
+    }
+    .mm-cursor {
+      position: absolute; left: 0; width: 6px;
+      background: var(--blue); pointer-events: none;
+    }
+    .mm-line {
+      display: block; height: 2px; background: #999;
+      margin: 1px 4px; border-radius: 1px; opacity: 0.55;
+    }
+
+    /* ===== Breadcrumb (顶部路径) ===== */
+    #breadcrumb {
+      height: 22px; padding: 0 12px;
+      background: #1a1a1a; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 2px;
+      font-size: 12px; font-family: ui-monospace, monospace;
+      overflow: hidden; flex-shrink: 0;
+    }
+    .crumb {
+      padding: 1px 6px; border-radius: 2px;
+      color: var(--fg-muted); cursor: pointer;
+    }
+    .crumb:hover { background: #2a2a2a; color: var(--fg); }
+    .crumb.current { color: var(--fg); }
+    .crumb-sep { color: var(--fg-dim); }
+
+    /* ===== Code Folding gutter ===== */
+    #fold-gutter {
+      position: absolute; left: 28px; top: 0; bottom: 0; width: 16px;
+      pointer-events: auto; z-index: 1;
+    }
+    .fold-marker-btn {
+      position: absolute; left: 0; width: 14px; height: 18px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--fg-muted); cursor: pointer; font-size: 9px;
+      user-select: none;
+    }
+    .fold-marker-btn:hover { color: var(--fg); background: #2a2a2a; border-radius: 2px; }
+    .fold-region {
+      background: rgba(110, 110, 110, 0.08);
+      border-radius: 0 0 3px 3px;
+    }
 </style>
 </head>
 <body>
@@ -3630,6 +3687,201 @@ SELECT * FROM hello;
         } catch (e) { /* ignore */ }
       }
     });
+
+    // ============================================================
+    // MiniMap (右侧代码缩略图)
+    // ============================================================
+    const MiniMap = {
+      init() {
+        let mm = document.getElementById("minimap");
+        if (!mm) {
+          mm = document.createElement("div");
+          mm.id = "minimap";
+          const ed = document.getElementById("editor");
+          if (ed) ed.appendChild(mm);
+        }
+        return mm;
+      },
+
+      render() {
+        const mm = this.init();
+        mm.innerHTML = "";
+        const lines = (window.__IDE_BUFFER__ || "").split("\n");
+        const ed = document.getElementById("ed-content");
+        const editorHeight = ed ? ed.offsetHeight : 400;
+        const lineHeight = editorHeight / Math.max(lines.length, 1);
+        // Render mini-lines (≤ visible lines)
+        const visibleLines = Math.ceil(editorHeight / 18);
+        const step = Math.max(1, Math.floor(lines.length / visibleLines));
+        for (let i = 0; i < lines.length; i += step) {
+          const text = lines[i].trim();
+          if (text.length === 0) continue;
+          const len = Math.min(text.length / 20, 0.95);
+          const line = document.createElement("span");
+          line.className = "mm-line";
+          line.style.width = (len * 100) + "%";
+          mm.appendChild(line);
+        }
+        // Cursor indicator
+        const caretRow = (window.__IDE_CURSOR__ || { line: 0 }).line;
+        const cursor = document.createElement("div");
+        cursor.className = "mm-cursor";
+        cursor.style.top = (cursorRow * lineHeight) + "px";
+        cursor.style.height = lineHeight + "px";
+        mm.appendChild(cursor);
+      },
+
+      track() {
+        // Hook into buffer updates
+        const origRefresh = window.refreshShell;
+        if (origRefresh && !window.__mmPatched) {
+          window.refreshShell = function() {
+            origRefresh.apply(this, arguments);
+            try {
+              const f = arguments[0] || {};
+              window.__IDE_BUFFER__ = (f.prompt || []).map(r => r.map(c => c.ch).join("")).join("\n") + "\n" + (f.buffer || "");
+              window.__IDE_CURSOR__ = f.cursor || { line: 0 };
+              MiniMap.render();
+            } catch (e) { /* ignore */ }
+          };
+          window.__mmPatched = true;
+        }
+      },
+    };
+
+    // Init MiniMap when editor loads
+    setTimeout(() => { MiniMap.track(); MiniMap.render(); }, 500);
+
+    // ============================================================
+    // Breadcrumb (顶部 path 显示)
+    // ============================================================
+    const Breadcrumb = {
+      path: "",
+
+      render() {
+        let el = document.getElementById("breadcrumb");
+        if (!el) {
+          el = document.createElement("div");
+          el.id = "breadcrumb";
+          const tabs = document.getElementById("tabs");
+          if (tabs && tabs.parentElement) tabs.parentElement.insertBefore(el, tabs.nextSibling);
+          else document.body.prepend(el);
+        }
+        el.innerHTML = "";
+        if (!this.path) {
+          const hint = document.createElement("span");
+          hint.className = "crumb";
+          hint.textContent = "(no file opened)";
+          el.appendChild(hint);
+          return;
+        }
+        const parts = this.path.split(/[\\\/]/).filter(Boolean);
+        // Skip drive "C:"
+        if (parts[0] && parts[0].endsWith(":")) parts.shift();
+        parts.forEach((p, i) => {
+          if (i > 0) {
+            const sep = document.createElement("span");
+            sep.className = "crumb-sep";
+            sep.textContent = "›";
+            el.appendChild(sep);
+          }
+          const c = document.createElement("span");
+          c.className = "crumb" + (i === parts.length - 1 ? " current" : "");
+          c.textContent = p;
+          c.title = parts.slice(0, i + 1).join("/");
+          el.appendChild(c);
+        });
+      },
+
+      set(path) {
+        this.path = path || "";
+        this.render();
+      },
+    };
+
+    // Hatched from openFileAt
+    const _origOpenFileAt2 = openFileAt;
+    openFileAt = function(path, line) {
+      _origOpenFileAt2(path, line);
+      Breadcrumb.set(path);
+      Outline.currentPath = path;
+      Outline.refresh();
+    };
+    Breadcrumb.render();
+
+    // ============================================================
+    // Code Folding UI (gutter ▼/▶ markers)
+    // ============================================================
+    const Folding = {
+      // 简单检测: 缩进级别 + 起始行 token (function/class/struct/enum)
+      detectFolds(buffer) {
+        const lines = buffer.split("\n");
+        const folds = [];  // {start: lineIdx, indent: N, hint: '...'}
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const trimmed = line.trimStart();
+          if (/^(fn|def|class|struct|enum|impl|trait|if|for|while|match) /.test(trimmed)) {
+            const indent = line.length - trimmed.length;
+            // 找匹配关闭 — 简单方法: 下一行 indent <= 当前 (粗略, 对 demo 足够)
+            folds.push({ start: i, indent, hint: trimmed.slice(0, 30) });
+          }
+        }
+        return folds;
+      },
+
+      render() {
+        let gutter = document.getElementById("fold-gutter");
+        if (!gutter) {
+          gutter = document.createElement("div");
+          gutter.id = "fold-gutter";
+          const ed = document.getElementById("editor");
+          if (ed) ed.appendChild(gutter);
+        }
+        gutter.innerHTML = "";
+        const folds = this.folds;
+        const ed = document.getElementById("ed-content");
+        if (!ed) return;
+        const lineHeight = 18;
+        for (const f of folds) {
+          const btn = document.createElement("div");
+          btn.className = "fold-marker-btn";
+          btn.textContent = f.folded ? "▶" : "▼";
+          btn.style.top = (f.start * lineHeight) + "px";
+          btn.title = `Fold ${f.hint}`;
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            f.folded = !f.folded;
+            this.render();
+          };
+          gutter.appendChild(btn);
+        }
+        // Apply fold highlight (CSS class on ed-content lines)
+        ed.classList.remove("has-folds");
+        if (folds.some(f => f.folded)) ed.classList.add("has-folds");
+      },
+
+      folds: [],
+      update(buffer) {
+        this.folds = this.detectFolds(buffer);
+        this.render();
+      },
+    };
+
+    // Hook into refreshShell
+    const _origRefreshShell3 = window.refreshShell;
+    if (_origRefreshShell3 && !window.__foldPatched) {
+      window.refreshShell = function() {
+        _origRefreshShell3.apply(this, arguments);
+        try {
+          const f = arguments[0] || {};
+          const buf = (f.prompt || []).map(r => r.map(c => c.ch).join("")).join("\n") + "\n" + (f.buffer || "");
+          Folding.update(buf);
+        } catch (e) { /* ignore */ }
+      };
+      window.__foldPatched = true;
+    }
+
+    setTimeout(() => Folding.update(""), 600);
 </script>
 </body>
 </html>
