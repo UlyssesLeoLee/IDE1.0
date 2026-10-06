@@ -26,7 +26,10 @@ pub struct DocLine {
 
 impl DocLine {
     pub fn new(text: impl Into<String>, seq: u64) -> Self {
-        Self { text: text.into(), seq }
+        Self {
+            text: text.into(),
+            seq,
+        }
     }
 
     /// char 数量 (UTF-8 按 char).
@@ -48,7 +51,12 @@ impl DocLine {
     /// 返回插入后 cursor 应在的位置 (col + text.chars().count()).
     pub fn insert_str(&mut self, col: i32, s: &str) -> i32 {
         let char_col = col.max(0) as usize;
-        let idx = self.text.char_indices().nth(char_col).map(|(b, _)| b).unwrap_or(self.text.len());
+        let idx = self
+            .text
+            .char_indices()
+            .nth(char_col)
+            .map(|(b, _)| b)
+            .unwrap_or(self.text.len());
         self.text.insert_str(idx, s);
         col + s.chars().count() as i32
     }
@@ -57,8 +65,18 @@ impl DocLine {
     pub fn remove_range_chars(&mut self, col: i32, n: i32) -> String {
         let char_col = col.max(0) as usize;
         let char_end = char_col + n.max(0) as usize;
-        let start_byte = self.text.char_indices().nth(char_col).map(|(b, _)| b).unwrap_or(self.text.len());
-        let end_byte = self.text.char_indices().nth(char_end).map(|(b, _)| b).unwrap_or(self.text.len());
+        let start_byte = self
+            .text
+            .char_indices()
+            .nth(char_col)
+            .map(|(b, _)| b)
+            .unwrap_or(self.text.len());
+        let end_byte = self
+            .text
+            .char_indices()
+            .nth(char_end)
+            .map(|(b, _)| b)
+            .unwrap_or(self.text.len());
         self.text.drain(start_byte..end_byte).collect()
     }
 
@@ -124,7 +142,11 @@ impl DocLineMgr {
     pub fn set_caret(&mut self, p: LogicPos) {
         let max_row = self.lines.len() as i32 - 1;
         self.caret.row = p.row.max(0).min(max_row.max(0));
-        let max_col = self.lines.get(self.caret.row as usize).map(|l| l.char_len()).unwrap_or(0);
+        let max_col = self
+            .lines
+            .get(self.caret.row as usize)
+            .map(|l| l.char_len())
+            .unwrap_or(0);
         self.caret.col = p.col.max(0).min(max_col);
     }
 
@@ -142,7 +164,8 @@ impl DocLineMgr {
 
     /// 整个文档文本 — `\n` 拼接.
     pub fn text(&self) -> String {
-        let mut s = String::with_capacity(self.lines.iter().map(|l| l.byte_len() + 1).sum::<usize>());
+        let mut s =
+            String::with_capacity(self.lines.iter().map(|l| l.byte_len() + 1).sum::<usize>());
         for (i, line) in self.lines.iter().enumerate() {
             if i > 0 {
                 s.push('\n');
@@ -210,7 +233,11 @@ impl DocLineMgr {
         let col = at.col.max(0) as i32;
         let old = self.lines[row].text.clone();
         let char_col = col as usize;
-        let split_byte = old.char_indices().nth(char_col).map(|(b, _)| b).unwrap_or(old.len());
+        let split_byte = old
+            .char_indices()
+            .nth(char_col)
+            .map(|(b, _)| b)
+            .unwrap_or(old.len());
         let left = old[..split_byte].to_string();
         let right = old[split_byte..].to_string();
         self.lines[row].text = left;
@@ -234,10 +261,19 @@ impl DocLineMgr {
             // 先把 start.row 右侧保留 + end.row 左侧保留 → start.row
             let end_line_text = self.lines[r.end.row as usize].text.clone();
             let end_line_col = r.end.col.max(0) as usize;
-            let end_byte = end_line_text.char_indices().nth(end_line_col).map(|(b, _)| b).unwrap_or(end_line_text.len());
+            let end_byte = end_line_text
+                .char_indices()
+                .nth(end_line_col)
+                .map(|(b, _)| b)
+                .unwrap_or(end_line_text.len());
             let tail = end_line_text[end_byte..].to_string();
             let start_line = &mut self.lines[s.row as usize];
-            let head_byte = start_line.text.char_indices().nth(s.col.max(0) as usize).map(|(b, _)| b).unwrap_or(start_line.text.len());
+            let head_byte = start_line
+                .text
+                .char_indices()
+                .nth(s.col.max(0) as usize)
+                .map(|(b, _)| b)
+                .unwrap_or(start_line.text.len());
             start_line.text.truncate(head_byte);
             start_line.text.push_str(&tail);
             // 删除中间行 (start.row+1..=end.row)
@@ -255,14 +291,23 @@ impl DocLineMgr {
         let new_seq = self.alloc_seq();
         if self.caret.col > 0 {
             // 同行删除一个 char
-            let r = LogicRange { start: LogicPos::new(self.caret.row, self.caret.col - 1), end: self.caret };
+            let r = LogicRange {
+                start: LogicPos::new(self.caret.row, self.caret.col - 1),
+                end: self.caret,
+            };
             let result = self.remove_range(r);
             self.lines[result.row as usize].seq = new_seq;
             result
         } else if self.caret.row > 0 {
             // 行首 Backspace — 合并到上一行末尾
-            let prev = LogicPos::new(self.caret.row - 1, self.lines()[self.caret.row as usize - 1].char_len());
-            let result = self.remove_range(LogicRange { start: prev, end: self.caret });
+            let prev = LogicPos::new(
+                self.caret.row - 1,
+                self.lines()[self.caret.row as usize - 1].char_len(),
+            );
+            let result = self.remove_range(LogicRange {
+                start: prev,
+                end: self.caret,
+            });
             self.lines[result.row as usize].seq = new_seq;
             result
         } else {
@@ -276,12 +321,18 @@ impl DocLineMgr {
     pub fn delete(&mut self, at: LogicPos) -> LogicPos {
         self.set_caret(at);
         if self.caret.col < self.lines()[self.caret.row as usize].char_len() {
-            let r = LogicRange { start: self.caret, end: LogicPos::new(self.caret.row, self.caret.col + 1) };
+            let r = LogicRange {
+                start: self.caret,
+                end: LogicPos::new(self.caret.row, self.caret.col + 1),
+            };
             self.remove_range(r)
         } else if (self.caret.row as usize) + 1 < self.lines.len() {
             // 行尾 Delete — 合并下一行
             let next = LogicPos::new(self.caret.row + 1, 0);
-            self.remove_range(LogicRange { start: self.caret, end: next })
+            self.remove_range(LogicRange {
+                start: self.caret,
+                end: next,
+            })
         } else {
             self.caret
         }
@@ -299,7 +350,10 @@ impl DocLineMgr {
             self.lines[r.start.row as usize].slice_chars(r.start.col, r.end.col)
         } else {
             let mut s = String::new();
-            s.push_str(&self.lines[r.start.row as usize].slice_chars(r.start.col, self.lines[r.start.row as usize].char_len()));
+            s.push_str(
+                &self.lines[r.start.row as usize]
+                    .slice_chars(r.start.col, self.lines[r.start.row as usize].char_len()),
+            );
             for row in r.start.row + 1..r.end.row {
                 s.push('\n');
                 s.push_str(&self.lines[row as usize].text);

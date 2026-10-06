@@ -73,7 +73,9 @@ impl TempProject {
         // canonicalize 一遍: Windows 上 std::env::temp_dir() 可能返回 8.3 短路径
         // (E:\Temp\...), 而 list_dir/read_file/write_file 内部会再 canonicalize
         // 一次展开成 C:\Users\...\Temp\..., 两边 starts_with 失败.
-        self.root.canonicalize().unwrap_or_else(|_| self.root.clone())
+        self.root
+            .canonicalize()
+            .unwrap_or_else(|_| self.root.clone())
     }
 }
 
@@ -117,7 +119,10 @@ fn list_dir_root_shows_dirs_first() {
     // 不区分大小写排序: a-dir < Z-dir
     let pos_a = names.iter().position(|n| *n == "a-dir").unwrap();
     let pos_z = names.iter().position(|n| *n == "Z-dir").unwrap();
-    assert!(pos_a < pos_z, "a-dir 应在 Z-dir 前 (case-insensitive): {names:?}");
+    assert!(
+        pos_a < pos_z,
+        "a-dir 应在 Z-dir 前 (case-insensitive): {names:?}"
+    );
     // 文件: alpha < zeta
     let pos_alpha = names.iter().position(|n| *n == "alpha.txt").unwrap();
     let pos_zeta = names.iter().position(|n| *n == "zeta.txt").unwrap();
@@ -255,10 +260,21 @@ fn resolve_in_project_target_in_subdir() {
 fn help_wiki_text_covers_required() {
     let w = help_wiki_text();
     assert!(w.len() > 2000);
-    for section in ["简介", "安装与启动", "界面布局", "项目导入", "Vim 键位表", "Shell 面板", "鼠标悬停说明", "FAQ"] {
+    for section in [
+        "简介",
+        "安装与启动",
+        "界面布局",
+        "项目导入",
+        "Vim 键位表",
+        "Shell 面板",
+        "鼠标悬停说明",
+        "FAQ",
+    ] {
         assert!(w.contains(section), "缺段: {section}");
     }
-    for cmd in [":w", ":q", ":wq", ":e", ":help", "Ctrl+S", "Ctrl+`", "--help"] {
+    for cmd in [
+        ":w", ":q", ":wq", ":e", ":help", "Ctrl+S", "Ctrl+`", "--help",
+    ] {
         assert!(w.contains(cmd), "缺命令: {cmd}");
     }
     // 新加的 vim 命令也要在

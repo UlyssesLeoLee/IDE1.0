@@ -59,7 +59,10 @@ impl LogicRange {
         if self.start.cmp(&self.end).is_le() {
             *self
         } else {
-            Self { start: self.end, end: self.start }
+            Self {
+                start: self.end,
+                end: self.start,
+            }
         }
     }
 

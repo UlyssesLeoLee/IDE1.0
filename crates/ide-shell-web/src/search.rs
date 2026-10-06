@@ -25,7 +25,12 @@ pub struct SearchOptions {
 }
 
 pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
-    let mut args: Vec<String> = vec!["--line-number".into(), "--no-heading".into(), "--color".into(), "never".into()];
+    let mut args: Vec<String> = vec![
+        "--line-number".into(),
+        "--no-heading".into(),
+        "--color".into(),
+        "never".into(),
+    ];
     if !opts.case_sensitive.unwrap_or(false) {
         args.push("--ignore-case".into());
     }
@@ -57,8 +62,10 @@ pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, Str
         .output()
         .map_err(|e| format!("rg not found: {} (use fallback)", e))?;
     if !output.status.success() && output.status.code() != Some(1) {
-        return Err(format!("rg failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()));
+        return Err(format!(
+            "rg failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut results = Vec::new();
@@ -86,15 +93,28 @@ pub fn search_fallback(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchRes
     let cs = opts.case_sensitive.unwrap_or(false);
     let max = opts.max_results.unwrap_or(500);
 
-    fn walk(cwd: &Path, results: &mut Vec<SearchResult>, pattern: &str, pattern_lc: &str, cs: bool, max: usize) -> std::io::Result<()> {
-        if results.len() >= max { return Ok(()); }
+    fn walk(
+        cwd: &Path,
+        results: &mut Vec<SearchResult>,
+        pattern: &str,
+        pattern_lc: &str,
+        cs: bool,
+        max: usize,
+    ) -> std::io::Result<()> {
+        if results.len() >= max {
+            return Ok(());
+        }
         for entry in fs::read_dir(cwd)? {
             let entry = entry?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') { continue; }
+            if name.starts_with('.') {
+                continue;
+            }
             if entry.file_type()?.is_dir() {
-                if matches!(name.as_str(), "node_modules" | "target" | ".git" | "dist") { continue; }
+                if matches!(name.as_str(), "node_modules" | "target" | ".git" | "dist") {
+                    continue;
+                }
                 walk(&path, results, pattern, pattern_lc, cs, max)?;
             } else if entry.file_type()?.is_file() {
                 if let Ok(f) = fs::File::open(&path) {
@@ -112,7 +132,9 @@ pub fn search_fallback(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchRes
                                     line: (i + 1) as u64,
                                     text: line,
                                 });
-                                if results.len() >= max { return Ok(()); }
+                                if results.len() >= max {
+                                    return Ok(());
+                                }
                             }
                         }
                     }

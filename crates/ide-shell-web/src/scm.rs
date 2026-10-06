@@ -65,12 +65,21 @@ pub fn status() -> Result<(Vec<FileStatus>, String), String> {
     let raw = run_git(&cwd, &["status", "--porcelain"])?;
     let mut files = Vec::new();
     for line in raw.lines() {
-        if line.len() < 3 { continue; }
+        if line.len() < 3 {
+            continue;
+        }
         let code = &line[0..2];
         let path = line[3..].trim().trim_matches('"').to_string();
-        let (x, y) = (code.chars().nth(0).unwrap_or(' '), code.chars().nth(1).unwrap_or(' '));
+        let (x, y) = (
+            code.chars().nth(0).unwrap_or(' '),
+            code.chars().nth(1).unwrap_or(' '),
+        );
         if x == '?' && y == '?' {
-            files.push(FileStatus { path, status: "untracked".into(), staged: false });
+            files.push(FileStatus {
+                path,
+                status: "untracked".into(),
+                staged: false,
+            });
             continue;
         }
         let status_str = match (x, y) {
@@ -82,7 +91,11 @@ pub fn status() -> Result<(Vec<FileStatus>, String), String> {
             _ => "unknown",
         };
         let staged = x != ' ' && x != '?';
-        files.push(FileStatus { path, status: status_str.into(), staged });
+        files.push(FileStatus {
+            path,
+            status: status_str.into(),
+            staged,
+        });
     }
     let branch = run_git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
     Ok((files, branch.trim().to_string()))
@@ -91,7 +104,9 @@ pub fn status() -> Result<(Vec<FileStatus>, String), String> {
 pub fn stage(paths: &[String]) -> Result<(), String> {
     let cwd = resolve_repo()?;
     let mut args = vec!["add", "--"];
-    for p in paths { args.push(p); }
+    for p in paths {
+        args.push(p);
+    }
     run_git(&cwd, &args)?;
     Ok(())
 }
@@ -99,7 +114,9 @@ pub fn stage(paths: &[String]) -> Result<(), String> {
 pub fn unstage(paths: &[String]) -> Result<(), String> {
     let cwd = resolve_repo()?;
     let mut args = vec!["reset", "HEAD", "--"];
-    for p in paths { args.push(p); }
+    for p in paths {
+        args.push(p);
+    }
     run_git(&cwd, &args)?;
     Ok(())
 }
@@ -122,7 +139,10 @@ pub fn commit(message: &str) -> Result<String, String> {
 pub fn log(n: usize) -> Result<Vec<CommitEntry>, String> {
     let cwd = resolve_repo()?;
     let fmt = "%H%x00%h%x00%an%x00%ai%x00%s";
-    let raw = run_git(&cwd, &["log", &format!("-{}", n), &format!("--format={}", fmt)])?;
+    let raw = run_git(
+        &cwd,
+        &["log", &format!("-{}", n), &format!("--format={}", fmt)],
+    )?;
     let mut entries = Vec::new();
     for line in raw.lines() {
         let parts: Vec<&str> = line.split('\0').collect();

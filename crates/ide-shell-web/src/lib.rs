@@ -25,8 +25,8 @@ pub mod wiki_data;
 
 mod outline;
 mod scm;
-mod terminal;
 mod search;
+mod terminal;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -233,9 +233,14 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let root_path = match root {
                 Some(r) => r,
                 None => {
-                    let resp = serde_json::json!({ "path": file_path, "error": "project root not set" });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
+                    let resp =
+                        serde_json::json!({ "path": file_path, "error": "project root not set" });
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default(),
+                    );
                     return;
                 }
             };
@@ -247,21 +252,35 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             match std::fs::read_to_string(&full) {
                 Ok(content_str) => {
                     let result = outline::outline_file(&full.to_string_lossy(), &content_str);
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&result).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&result).unwrap_or_default(),
+                    );
                 }
                 Err(e) => {
                     let resp = serde_json::json!({ "path": file_path, "error": e.to_string() });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default(),
+                    );
                 }
             }
         }
 
         ("POST", "/api/terminal_create") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let shell = req.get("shell").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let cwd = req.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let shell = req
+                .get("shell")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let cwd = req
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             match terminal::create(shell, cwd) {
                 Some(id) => {
                     let info = serde_json::json!({
@@ -271,17 +290,26 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         "cwd": terminal::cwd(&id),
                         "alive": true,
                     });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&info).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&info).unwrap_or_default(),
+                    );
                 }
-                None => send_response(stream, "500 Internal Server Error", "text/plain", b"spawn failed"),
+                None => send_response(
+                    stream,
+                    "500 Internal Server Error",
+                    "text/plain",
+                    b"spawn failed",
+                ),
             }
         }
         ("POST", "/api/terminal_input") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let id = req.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let data = req.get("data").and_then(|v| v.as_str()).unwrap_or("");
-match terminal::input(id, data) {
+            match terminal::input(id, data) {
                 Ok(()) => send_response(stream, "200 OK", "text/plain", b"ok"),
                 Err(e) => send_response(stream, "404 Not Found", "text/plain", e.as_bytes()),
             }
@@ -294,49 +322,91 @@ match terminal::input(id, data) {
         }
         ("GET", "/api/terminal_output") => {
             // Query: ?id=term-N
-            let id = path.split("?id=").nth(1).unwrap_or("").split("&").next().unwrap_or("");
+            let id = path
+                .split("?id=")
+                .nth(1)
+                .unwrap_or("")
+                .split("&")
+                .next()
+                .unwrap_or("");
             let buf = terminal::drain_output(id);
             let resp = serde_json::json!({ "id": id, "chunks": buf });
-            send_response(stream, "200 OK", "application/json",
-                &serde_json::to_vec(&resp).unwrap_or_default());
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&resp).unwrap_or_default(),
+            );
         }
         ("GET", "/api/terminal_list") => {
             let list = terminal::list();
-            send_response(stream, "200 OK", "application/json",
-                &serde_json::to_vec(&list).unwrap_or_default());
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&list).unwrap_or_default(),
+            );
         }
-        ("POST", "/api/scm_status") => {
-            match scm::status() {
-                Ok((files, branch)) => {
-                    let resp = serde_json::json!({ "branch": branch, "files": files });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
-                }
-                Err(e) => {
-                    let resp = serde_json::json!({ "branch": "", "files": [], "error": e });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
-                }
+        ("POST", "/api/scm_status") => match scm::status() {
+            Ok((files, branch)) => {
+                let resp = serde_json::json!({ "branch": branch, "files": files });
+                send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&resp).unwrap_or_default(),
+                );
             }
-        }
+            Err(e) => {
+                let resp = serde_json::json!({ "branch": "", "files": [], "error": e });
+                send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&resp).unwrap_or_default(),
+                );
+            }
+        },
         ("POST", "/api/scm_stage") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let paths: Vec<String> = req.get("paths").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            let paths: Vec<String> = req
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             match scm::stage(&paths) {
                 Ok(()) => send_response(stream, "200 OK", "text/plain", b"ok"),
-                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+                Err(e) => send_response(
+                    stream,
+                    "500 Internal Server Error",
+                    "text/plain",
+                    e.as_bytes(),
+                ),
             }
         }
         ("POST", "/api/scm_unstage") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let paths: Vec<String> = req.get("paths").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            let paths: Vec<String> = req
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             match scm::unstage(&paths) {
                 Ok(()) => send_response(stream, "200 OK", "text/plain", b"ok"),
-                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+                Err(e) => send_response(
+                    stream,
+                    "500 Internal Server Error",
+                    "text/plain",
+                    e.as_bytes(),
+                ),
             }
         }
         ("POST", "/api/scm_diff") => {
@@ -346,10 +416,19 @@ match terminal::input(id, data) {
             match scm::diff(path, staged) {
                 Ok(diff) => {
                     let resp = serde_json::json!({ "diff": diff });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default(),
+                    );
                 }
-                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+                Err(e) => send_response(
+                    stream,
+                    "500 Internal Server Error",
+                    "text/plain",
+                    e.as_bytes(),
+                ),
             }
         }
         ("POST", "/api/scm_commit") => {
@@ -357,50 +436,86 @@ match terminal::input(id, data) {
             let message = req.get("message").and_then(|v| v.as_str()).unwrap_or("");
             match scm::commit(message) {
                 Ok(_) => send_response(stream, "200 OK", "text/plain", b"ok"),
-                Err(e) => send_response(stream, "500 Internal Server Error", "text/plain", e.as_bytes()),
+                Err(e) => send_response(
+                    stream,
+                    "500 Internal Server Error",
+                    "text/plain",
+                    e.as_bytes(),
+                ),
             }
         }
-        ("POST", "/api/scm_log") => {
-            match scm::log(10) {
-                Ok(commits) => {
-                    let resp = serde_json::json!({ "commits": commits });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
-                }
-                Err(e) => {
-                    let resp = serde_json::json!({ "commits": [], "error": e });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
-                }
+        ("POST", "/api/scm_log") => match scm::log(10) {
+            Ok(commits) => {
+                let resp = serde_json::json!({ "commits": commits });
+                send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&resp).unwrap_or_default(),
+                );
             }
-        }
+            Err(e) => {
+                let resp = serde_json::json!({ "commits": [], "error": e });
+                send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&resp).unwrap_or_default(),
+                );
+            }
+        },
         ("POST", "/api/search") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let pattern = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let pattern = req
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let case_sensitive = req.get("case_sensitive").and_then(|v| v.as_bool());
             let regex = req.get("regex").and_then(|v| v.as_bool());
-            let max_results = req.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize);
-            let include_globs = req.get("include_globs").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>()
-            });
+            let max_results = req
+                .get("max_results")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            let include_globs = req
+                .get("include_globs")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect::<Vec<_>>()
+                });
             let opts = search::SearchOptions {
-                pattern, case_sensitive, regex, include_globs,
-                exclude_globs: None, max_results,
+                pattern,
+                case_sensitive,
+                regex,
+                include_globs,
+                exclude_globs: None,
+                max_results,
             };
             let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-            let result = search::search(&cwd, &opts).or_else(|_| search::search_fallback(&cwd, &opts));
+            let result =
+                search::search(&cwd, &opts).or_else(|_| search::search_fallback(&cwd, &opts));
             match result {
                 Ok(results) => {
                     let resp = serde_json::json!({ "results": results });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default(),
+                    );
                 }
                 Err(e) => {
                     let resp = serde_json::json!({ "results": [], "error": e });
-                    send_response(stream, "200 OK", "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&resp).unwrap_or_default(),
+                    );
                 }
             }
         }

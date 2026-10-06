@@ -27,10 +27,10 @@
 //! - IT 在 tests/e2e_commands.rs (纯函数 pub(crate 路径解析 + 沙箱 + 文件读写)
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
-pub mod terminal;
+pub mod outline;
 pub mod scm;
 pub mod search;
-pub mod outline;
+pub mod terminal;
 pub mod wiki;
 
 use std::path::{Path, PathBuf};
@@ -97,7 +97,9 @@ fn strip_verbatim(p: &Path) -> std::path::PathBuf {
     }
 }
 #[cfg(not(windows))]
-fn strip_verbatim(p: &Path) -> std::path::PathBuf { p.to_path_buf() }
+fn strip_verbatim(p: &Path) -> std::path::PathBuf {
+    p.to_path_buf()
+}
 
 /// canonicalize 一个路径; 若路径不存在 (write_file 写入新文件场景),
 /// 退到 canonicalize 父目录, 再 join 原 basename.
@@ -147,26 +149,25 @@ pub fn path_within(root: &Path, target: &Path) -> bool {
 
 /// 校验请求路径在项目根内, 返回 canonicalized target. **纯函数**, IT/UT 可直接调.
 pub fn resolve_in_project_pub(root: &Path, path: &str) -> Result<PathBuf, String> {
-    let root = safe_canonicalize(root)
-        .map_err(|e| format!("项目根无效: {} ({e})", root.display()))?;
+    let root =
+        safe_canonicalize(root).map_err(|e| format!("项目根无效: {} ({e})", root.display()))?;
     let target = PathBuf::from(path);
     if !path_within_pub(&root, &target) {
         return Err(format!(
             "拒绝访问项目外路径: {path} (安全沙箱限制在项目根内)"
         ));
     }
-    safe_canonicalize(&target)
-        .map_err(|e| format!("路径无效 {path}: {e}"))
+    safe_canonicalize(&target).map_err(|e| format!("路径无效 {path}: {e}"))
 }
 
 /// root 已 canonicalized 后的快查 — IT 用.
 pub fn path_within_pub(canon_root: &Path, target: &Path) -> bool {
-    let Ok(t) = safe_canonicalize(target) else { return false; };
+    let Ok(t) = safe_canonicalize(target) else {
+        return false;
+    };
     let (r2, t2) = (strip_verbatim(canon_root), strip_verbatim(&t));
     t2.starts_with(r2)
 }
-
-
 
 #[derive(Debug, serde::Serialize)]
 pub struct KeyResponse {
@@ -340,14 +341,20 @@ pub fn diag_log(msg: &str) {
 ///   * 如果设了 IDE_SHELL_DESKTOP_TEST_ROOT env, 直接用它 (测试/演示场景).
 #[tauri::command]
 async fn pick_folder(state: tauri::State<'_, ProjectRoot>) -> Result<Option<String>, String> {
-    diag_log(&format!("[pick_folder] invoked, current root = {:?}", state.get()));
+    diag_log(&format!(
+        "[pick_folder] invoked, current root = {:?}",
+        state.get()
+    ));
     // 弹原生 Windows 文件夹选择对话框 (rfd 0.15). 这是用户最自然的体验 —
     // 点 toolbar「打开文件夹」按钮 → 弹 OS modal Explorer-style dialog 选文件夹.
     // rfd dialog 是 OS modal, 阻塞直到用户选完或取消. 不需要前端超时 (前端 30s race 是兜底).
     // 如果设了 IDE_SHELL_DESKTOP_TEST_ROOT env, 直接用它 (测试/演示场景, 不弹 dialog).
     if let Ok(env_root) = std::env::var("IDE_SHELL_DESKTOP_TEST_ROOT") {
         if let Ok(canon) = state.set(PathBuf::from(&env_root)) {
-            diag_log(&format!("[pick_folder] using IDE_SHELL_DESKTOP_TEST_ROOT = {:?}", canon));
+            diag_log(&format!(
+                "[pick_folder] using IDE_SHELL_DESKTOP_TEST_ROOT = {:?}",
+                canon
+            ));
             return Ok(Some(canon.to_string_lossy().into_owned()));
         }
     }
@@ -469,8 +476,7 @@ fn read_file(state: tauri::State<'_, ProjectRoot>, path: String) -> Result<FileC
 /// **纯函数** — 不依赖 tauri::State, IT/UT 可直接调.
 pub fn write_file_pub(root: &Path, path: &str, content: &str) -> Result<usize, String> {
     let target = resolve_in_project_pub(root, path)?;
-    std::fs::write(&target, content.as_bytes())
-        .map_err(|e| format!("写入失败 {path}: {e}"))?;
+    std::fs::write(&target, content.as_bytes()).map_err(|e| format!("写入失败 {path}: {e}"))?;
     Ok(content.len())
 }
 
@@ -630,18 +636,18 @@ mod tests {
     }
 
     #[test]
-        fn test_path_within_rejects_outside() {
-            let root = std::env::temp_dir().join("ide-shell-desktop-root-x");
-            std::fs::create_dir_all(&root).unwrap();
-            let outside = std::env::temp_dir().join("ide-shell-desktop-outside-y.txt");
-            std::fs::write(&outside, "x").unwrap();
-            assert!(!path_within(&root, &outside));
-            // 不存在的路径但父目录在 root 内 → canonicalize 退到父目录后仍属于 root
-            let in_existing_parent = root.join("no/such/file");
-            assert!(path_within(&root, &in_existing_parent));
-            std::fs::remove_file(&outside).ok();
-            std::fs::remove_dir_all(&root).ok();
-        }
+    fn test_path_within_rejects_outside() {
+        let root = std::env::temp_dir().join("ide-shell-desktop-root-x");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = std::env::temp_dir().join("ide-shell-desktop-outside-y.txt");
+        std::fs::write(&outside, "x").unwrap();
+        assert!(!path_within(&root, &outside));
+        // 不存在的路径但父目录在 root 内 → canonicalize 退到父目录后仍属于 root
+        let in_existing_parent = root.join("no/such/file");
+        assert!(path_within(&root, &in_existing_parent));
+        std::fs::remove_file(&outside).ok();
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     #[test]
     fn test_project_root_default_empty() {
@@ -683,7 +689,9 @@ mod tests {
             assert!(w.contains(key), "wiki 缺 section: {key}");
         }
         // 关键命令都要在 wiki 里可查
-        for cmd in [":w", ":q", ":wq", ":e", ":help", "--help", "Ctrl+S", "Ctrl+`"] {
+        for cmd in [
+            ":w", ":q", ":wq", ":e", ":help", "--help", "Ctrl+S", "Ctrl+`",
+        ] {
             assert!(w.contains(cmd), "wiki 缺命令说明: {cmd}");
         }
     }

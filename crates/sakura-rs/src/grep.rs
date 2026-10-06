@@ -31,7 +31,9 @@ pub fn walk_dir(root: &Path, follow_symlinks: bool) -> Vec<FileEntry> {
 }
 
 fn walk_dir_inner(root: &Path, follow_symlinks: bool, out: &mut Vec<FileEntry>) {
-    let Ok(meta) = fs::symlink_metadata(root) else { return };
+    let Ok(meta) = fs::symlink_metadata(root) else {
+        return;
+    };
     let file_type = meta.file_type();
     let is_dir = file_type.is_dir();
     out.push(FileEntry {
@@ -42,7 +44,9 @@ fn walk_dir_inner(root: &Path, follow_symlinks: bool, out: &mut Vec<FileEntry>) 
     if !is_dir {
         return;
     }
-    let Ok(entries) = fs::read_dir(root) else { return };
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
@@ -50,7 +54,9 @@ fn walk_dir_inner(root: &Path, follow_symlinks: bool, out: &mut Vec<FileEntry>) 
             continue;
         }
         if !follow_symlinks {
-            let Ok(m) = fs::symlink_metadata(&path) else { continue };
+            let Ok(m) = fs::symlink_metadata(&path) else {
+                continue;
+            };
             if m.file_type().is_symlink() {
                 continue;
             }
@@ -62,10 +68,12 @@ fn walk_dir_inner(root: &Path, follow_symlinks: bool, out: &mut Vec<FileEntry>) 
 /// 按扩展名过滤.
 pub fn filter_by_ext(entries: &[FileEntry], exts: &[&str]) -> Vec<FileEntry> {
     let ext_set: HashSet<String> = exts.iter().map(|s| s.to_lowercase()).collect();
-    entries.iter()
+    entries
+        .iter()
         .filter(|e| !e.is_dir)
         .filter(|e| {
-            e.path.extension()
+            e.path
+                .extension()
                 .and_then(|x| x.to_str())
                 .map(|x| ext_set.contains(&x.to_lowercase()))
                 .unwrap_or(false)
@@ -91,7 +99,11 @@ pub fn grep_in_file(path: &Path, needle: &str) -> Result<Vec<Match>, std::io::Er
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
         if line.contains(needle) {
-            out.push(Match { path: path.to_path_buf(), line: i as u64 + 1, text: line });
+            out.push(Match {
+                path: path.to_path_buf(),
+                line: i as u64 + 1,
+                text: line,
+            });
         }
     }
     Ok(out)
@@ -101,7 +113,9 @@ pub fn grep_in_file(path: &Path, needle: &str) -> Result<Vec<Match>, std::io::Er
 pub fn grep_in_files(files: &[FileEntry], needle: &str) -> Vec<Match> {
     let mut out = Vec::new();
     for entry in files {
-        if entry.is_dir { continue; }
+        if entry.is_dir {
+            continue;
+        }
         if let Ok(matches) = grep_in_file(&entry.path, needle) {
             out.extend(matches);
         }
@@ -118,7 +132,11 @@ pub fn grep_in_file_ci(path: &Path, needle: &str) -> Result<Vec<Match>, std::io:
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
         if line.to_lowercase().contains(&needle_lc) {
-            out.push(Match { path: path.to_path_buf(), line: i as u64 + 1, text: line });
+            out.push(Match {
+                path: path.to_path_buf(),
+                line: i as u64 + 1,
+                text: line,
+            });
         }
     }
     Ok(out)
@@ -146,13 +164,18 @@ mod tests {
         pub struct TempDir(PathBuf);
         impl TempDir {
             pub fn new(prefix: &str) -> Self {
-                let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+                let nanos = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
                 let mut p = std::env::temp_dir();
                 p.push(format!("{}-{}-{}", prefix, std::process::id(), nanos));
                 std::fs::create_dir_all(&p).unwrap();
                 Self(p)
             }
-            pub fn path(&self) -> &std::path::Path { &self.0 }
+            pub fn path(&self) -> &std::path::Path {
+                &self.0
+            }
         }
         impl Drop for TempDir {
             fn drop(&mut self) {
@@ -165,7 +188,8 @@ mod tests {
     fn walk_dir_finds_all_non_hidden() {
         let dir = make_tree();
         let entries = walk_dir(dir.path(), false);
-        let names: Vec<_> = entries.iter()
+        let names: Vec<_> = entries
+            .iter()
             .map(|e| e.path.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
         assert!(names.contains(&"a.txt".to_string()));

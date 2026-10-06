@@ -28,17 +28,24 @@ async fn test_stdio_echo() {
     stdin.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"open_buffer\",\"params\":{\"name\":\"stdio-test\"}}\n").await.unwrap();
     stdin.flush().await.unwrap();
     let line = tokio::time::timeout(Duration::from_secs(5), reader.next_line())
-        .await.expect("timeout")
+        .await
+        .expect("timeout")
         .expect("no line")
         .unwrap();
     let v: serde_json::Value = serde_json::from_str(&line).unwrap();
     assert_eq!(v["result"]["id"], 1);
 
     // 发 get_buffer
-    stdin.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"get_buffer\",\"params\":{\"id\":1}}\n").await.unwrap();
+    stdin
+        .write_all(
+            b"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"get_buffer\",\"params\":{\"id\":1}}\n",
+        )
+        .await
+        .unwrap();
     stdin.flush().await.unwrap();
     let line = tokio::time::timeout(Duration::from_secs(5), reader.next_line())
-        .await.expect("timeout")
+        .await
+        .expect("timeout")
         .expect("no line")
         .unwrap();
     let v: serde_json::Value = serde_json::from_str(&line).unwrap();
@@ -74,12 +81,17 @@ async fn test_stdio_chat_provider() {
     stdin.write_all(b"\n").await.unwrap();
     stdin.flush().await.unwrap();
     let line = tokio::time::timeout(Duration::from_secs(5), reader.next_line())
-        .await.expect("timeout")
+        .await
+        .expect("timeout")
         .expect("no line")
         .unwrap();
     let v: serde_json::Value = serde_json::from_str(&line).unwrap();
     assert_eq!(v["result"]["message"]["role"], "assistant");
-    assert!(v["result"]["message"]["content"].as_str().unwrap().to_lowercase().contains("mock"));
+    assert!(v["result"]["message"]["content"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("mock"));
 
     child.kill().await.ok();
 }
@@ -101,9 +113,17 @@ async fn test_event_subscription_emit_order() {
 async fn test_register_provider_via_rpc_returns_error() {
     // Provider 实例必须 in-process, RPC 端 register_provider 应返回明确错误
     let k = Kernel::new();
-    let resp = k.handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"register_provider","params":{"name":"x"}}"#).await.unwrap();
+    let resp = k
+        .handle_rpc(
+            r#"{"jsonrpc":"2.0","id":1,"method":"register_provider","params":{"name":"x"}}"#,
+        )
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v["error"]["message"].as_str().unwrap().contains("in-process"));
+    assert!(v["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("in-process"));
 }
 
 #[tokio::test]
@@ -131,16 +151,31 @@ async fn test_rpc_concurrent_requests() {
 #[tokio::test]
 async fn test_execute_command_lifecycle() {
     let k = Kernel::new();
-    let r1 = k.handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"execute_command","params":{"cmd":"buffers"}}"#).await.unwrap();
+    let r1 = k
+        .handle_rpc(
+            r#"{"jsonrpc":"2.0","id":1,"method":"execute_command","params":{"cmd":"buffers"}}"#,
+        )
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_str(&r1).unwrap();
     assert!(v["result"]["buffers"].is_array());
 
-    let r2 = k.handle_rpc(r#"{"jsonrpc":"2.0","id":2,"method":"execute_command","params":{"cmd":"e new.rs"}}"#).await.unwrap();
+    let r2 = k
+        .handle_rpc(
+            r#"{"jsonrpc":"2.0","id":2,"method":"execute_command","params":{"cmd":"e new.rs"}}"#,
+        )
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_str(&r2).unwrap();
     let id = v["result"]["opened"].as_u64().unwrap();
     assert!(id > 0);
 
-    let r3 = k.handle_rpc(&format!(r#"{{"jsonrpc":"2.0","id":3,"method":"execute_command","params":{{"cmd":"q {id}"}}}}"#)).await.unwrap();
+    let r3 = k
+        .handle_rpc(&format!(
+            r#"{{"jsonrpc":"2.0","id":3,"method":"execute_command","params":{{"cmd":"q {id}"}}}}"#
+        ))
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_str(&r3).unwrap();
     assert!(v["result"]["closed"].as_u64().is_some());
 }

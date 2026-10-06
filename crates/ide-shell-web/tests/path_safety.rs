@@ -78,7 +78,9 @@ fn test_safe_canonicalize_nonexistent_walk_back() {
     assert!(!new_file.exists());
     let canon = safe_canonicalize(&new_file).unwrap();
     assert!(canon.to_string_lossy().ends_with("not_yet_created.txt"));
-    assert!(canon.to_string_lossy().contains(dir.file_name().unwrap().to_str().unwrap()));
+    assert!(canon
+        .to_string_lossy()
+        .contains(dir.file_name().unwrap().to_str().unwrap()));
 }
 
 #[test]
@@ -162,7 +164,11 @@ fn test_list_dir_returns_dirs_first() {
     let first_file_idx = entries.iter().position(|e| !e.is_dir).unwrap();
     assert!(first_dir_idx < first_file_idx);
     // 大小写不敏感排序
-    let files: Vec<&str> = entries.iter().filter(|e| !e.is_dir).map(|e| e.name.as_str()).collect();
+    let files: Vec<&str> = entries
+        .iter()
+        .filter(|e| !e.is_dir)
+        .map(|e| e.name.as_str())
+        .collect();
     let a_pos = files.iter().position(|n| *n == "a.txt").unwrap();
     let z_pos = files.iter().position(|n| *n == "z.txt").unwrap();
     assert!(a_pos < z_pos, "a.txt should come before z.txt");
@@ -277,7 +283,10 @@ fn test_write_file_success() {
     let dir = setup("write_ok");
     let n = write_file(&dir, "new.txt", "content body").unwrap();
     assert_eq!(n, "content body".len());
-    assert_eq!(fs::read_to_string(dir.join("new.txt")).unwrap(), "content body");
+    assert_eq!(
+        fs::read_to_string(dir.join("new.txt")).unwrap(),
+        "content body"
+    );
 }
 
 #[test]

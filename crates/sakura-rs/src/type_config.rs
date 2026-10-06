@@ -53,7 +53,11 @@ pub struct OutlineEntry {
 
 impl OutlineEntry {
     pub fn new(name: impl Into<String>, kind: impl Into<String>, line: i32) -> Self {
-        Self { name: name.into(), kind: kind.into(), line }
+        Self {
+            name: name.into(),
+            kind: kind.into(),
+            line,
+        }
     }
 }
 
@@ -70,11 +74,21 @@ pub struct StringDelim {
 
 impl StringDelim {
     pub fn new(open: impl Into<String>, close: impl Into<String>, line_only: bool) -> Self {
-        Self { open: open.into(), close: close.into(), line_only, escape: Some("\\".into()) }
+        Self {
+            open: open.into(),
+            close: close.into(),
+            line_only,
+            escape: Some("\\".into()),
+        }
     }
 
     pub fn raw(open: impl Into<String>, close: impl Into<String>) -> Self {
-        Self { open: open.into(), close: close.into(), line_only: true, escape: None }
+        Self {
+            open: open.into(),
+            close: close.into(),
+            line_only: true,
+            escape: None,
+        }
     }
 }
 
@@ -215,7 +229,9 @@ impl TypeConfig {
                     let mut end = after_open;
                     while end < chars.len() {
                         if let Some(ref esc) = delim.escape {
-                            if end < chars.len() - 1 && chars[end] == esc.chars().next().unwrap_or('\\') {
+                            if end < chars.len() - 1
+                                && chars[end] == esc.chars().next().unwrap_or('\\')
+                            {
                                 end += 2;
                                 continue;
                             }
@@ -242,7 +258,11 @@ impl TypeConfig {
             // 4. 数字
             if c.is_ascii_digit() {
                 let mut end = i;
-                while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_' || chars[end] == '.') {
+                while end < chars.len()
+                    && (chars[end].is_ascii_alphanumeric()
+                        || chars[end] == '_'
+                        || chars[end] == '.')
+                {
                     end += 1;
                 }
                 out.push((col, end as i32, TokenKind::Number));
@@ -363,14 +383,20 @@ mod tests {
     #[test]
     fn detect_dockerfile_by_name() {
         let r = TypeRegistry::default();
-        assert_eq!(r.detect("Dockerfile").map(|t| t.name.as_str()), Some("Dockerfile"));
+        assert_eq!(
+            r.detect("Dockerfile").map(|t| t.name.as_str()),
+            Some("Dockerfile")
+        );
     }
 
     #[test]
     fn detect_unknown() {
         let r = TypeRegistry::default();
         // 未知扩展名: 默认返回 Plain (作为 fallback)
-        assert_eq!(r.detect("foo.unknown").map(|t| t.name.as_str()), Some("Plain"));
+        assert_eq!(
+            r.detect("foo.unknown").map(|t| t.name.as_str()),
+            Some("Plain")
+        );
     }
 
     #[test]
