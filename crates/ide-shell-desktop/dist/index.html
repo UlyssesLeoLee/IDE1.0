@@ -1770,7 +1770,7 @@
     }
     await setProjectRoot(canon, true);
   }
-  async function setProjectRoot(path, addRecent) {
+  window.setProjectRoot = async function setProjectRoot(path, addRecent) {
     // Rust canonicalize 返回的 path 可能带 Windows verbatim prefix (\\?\), UI 显示需要剥除.
     const display = String(path).replace(/^\\\\\?\\/, '');
     projectRoot = path;
@@ -4000,6 +4000,72 @@ SELECT * FROM hello;
         Settings.save();
       }
     });
+
+    // ============================================================
+    // i18n (English / 中文)
+    // ============================================================
+    const I18n = {
+      current: localStorage.getItem("ide-lang") || (navigator.language.startsWith("zh") ? "zh" : "en"),
+      dict: {
+        en: {
+          "welcome.title": "IDE1.0 IDE Shell",
+          "welcome.subtitle": "Lightweight AI-native code editor · Cursor-style + Vim tri-state · Pure Rust core",
+          "tab.welcome": "Welcome",
+          "status.normal": "NORMAL",
+          "status.insert": "INSERT",
+          "status.visual": "VISUAL",
+          "sidebar.explorer": "Explorer",
+          "sidebar.search": "Search",
+          "sidebar.outline": "Outline",
+          "sidebar.scm": "Source Control",
+          "sidebar.extensions": "Extensions",
+          "panel.terminal": "TERMINAL",
+          "panel.output": "OUTPUT",
+          "panel.problems": "PROBLEMS",
+          "panel.new": "+ New Terminal",
+          "panel.fold": "Fold",
+        },
+        zh: {
+          "welcome.title": "IDE1.0 IDE Shell",
+          "welcome.subtitle": "轻量 AI 原生桌面代码编辑器 · Cursor 风格界面 + Vim 三态键位 · 纯 Rust 核心",
+          "tab.welcome": "欢迎",
+          "status.normal": "普通",
+          "status.insert": "插入",
+          "status.visual": "可视",
+          "sidebar.explorer": "资源管理器",
+          "sidebar.search": "搜索",
+          "sidebar.outline": "大纲",
+          "sidebar.scm": "源代码管理",
+          "sidebar.extensions": "扩展",
+          "panel.terminal": "终端",
+          "panel.output": "输出",
+          "panel.problems": "问题",
+          "panel.new": "+ 新建终端",
+          "panel.fold": "折叠",
+        },
+      },
+
+      t(key) {
+        const dict = this.dict[this.current] || this.dict.en;
+        return dict[key] || key;
+      },
+
+      apply() {
+        // Apply data-i18n attributes (we'll inject these via JS)
+        document.querySelectorAll("[data-i18n]").forEach(el => {
+          el.textContent = this.t(el.dataset.i18n);
+        });
+      },
+
+      toggle() {
+        this.current = this.current === "en" ? "zh" : "en";
+        localStorage.setItem("ide-lang", this.current);
+        this.apply();
+      },
+    };
+
+    // Init i18n for known elements (will be applied once DOM settles)
+    setTimeout(() => I18n.apply(), 200);
 </script>
 </body>
 </html>

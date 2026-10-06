@@ -1770,7 +1770,7 @@
     }
     await setProjectRoot(canon, true);
   }
-  async function setProjectRoot(path, addRecent) {
+  window.setProjectRoot = async function setProjectRoot(path, addRecent) {
     // Rust canonicalize 返回的 path 可能带 Windows verbatim prefix (\\?\), UI 显示需要剥除.
     const display = String(path).replace(/^\\\\\?\\/, '');
     projectRoot = path;

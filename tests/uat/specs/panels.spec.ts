@@ -101,6 +101,7 @@ test.describe("Vim panel (legacy #shell-panel, 明确不混淆)", async () => {
 
 test.describe("Terminal API (HTTP)", () => {
   test("POST /api/terminal_create spawn PowerShell (Windows)", async ({ request }) => {
+    test.skip(process.platform === "linux", "PowerShell only on Windows/macOS — skip on Linux CI");
     const res = await request.post("/api/terminal_create", { data: {} });
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
@@ -110,6 +111,7 @@ test.describe("Terminal API (HTTP)", () => {
   });
 
   test("GET /api/terminal_list 包含刚创建的 session", async ({ request }) => {
+    test.skip(process.platform === "linux", "PowerShell only on Windows/macOS — skip on Linux CI");
     const create = await request.post("/api/terminal_create", { data: {} });
     const created = await create.json();
     const list = await request.get("/api/terminal_list");
@@ -120,6 +122,7 @@ test.describe("Terminal API (HTTP)", () => {
   });
 
   test("POST /api/terminal_input 发送命令 → PowerShell 接收", async ({ request }) => {
+    test.skip(process.platform === "linux", "PowerShell only on Windows/macOS — skip on Linux CI");
     const create = await request.post("/api/terminal_create", { data: {} });
     const { id } = await create.json();
     // Wait briefly for PowerShell to be ready
@@ -131,6 +134,7 @@ test.describe("Terminal API (HTTP)", () => {
   });
 
   test("GET /api/terminal_output?id=X 返回 chunks buffer", async ({ request }) => {
+    test.skip(process.platform === "linux", "PowerShell only on Windows/macOS — skip on Linux CI");
     const create = await request.post("/api/terminal_create", { data: {} });
     expect(create.ok()).toBeTruthy();
     if (!create.ok()) return;
@@ -149,6 +153,7 @@ test.describe("Terminal API (HTTP)", () => {
   });
 
   test("POST /api/terminal_close 关闭 session", async ({ request }) => {
+    test.skip(process.platform === "linux", "PowerShell only on Windows/macOS — skip on Linux CI");
     const create = await request.post("/api/terminal_create", { data: {} });
     const { id } = await create.json();
     const close = await request.post("/api/terminal_close", { data: { id } });
