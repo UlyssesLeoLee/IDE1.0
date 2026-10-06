@@ -8,6 +8,7 @@ use std::time::Instant;
 fn main() {
     println!("=== sakura-rs core ops bench ===\n");
 
+    #[allow(unused_mut, unused_variables)]
     let mut buf = DocLineMgr::new();
     let mut line = DocLine::new("warmup line", 1);
     line.insert_str(11, " tail");

@@ -534,7 +534,7 @@ impl Kernel {
         Ok(())
     }
 
-    pub async fn key_event(&self, id: u32, key: &str, ctrl: bool, shift: bool) -> Result<(), String> {
+    pub async fn key_event(&self, id: u32, key: &str, ctrl: bool, #[allow(unused_variables)] _shift: bool) -> Result<(), String> {
         let mut buffers = self.inner.buffers.write().await;
         let buf = buffers.get_mut(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         match buf.mode {
@@ -664,11 +664,6 @@ impl Kernel {
                 // :complete — 在光标位置触发补全 (异步返回 provider 结果)
                 self.complete_at_cursor(active).await
             }
-            "edit" => {
-                // :edit <range> <instruction> — inline edit
-                // 简化: 跳过 — 由 server 解析更复杂的范围语法
-                Err("use vim-style :%s/foo/bar/ or :edit_via_provider {range} {instruction}".into())
-            }
             _ => Err(format!("unknown command: {}", head)),
         }
     }
@@ -723,10 +718,10 @@ impl Kernel {
         if providers.is_empty() {
             return Err("no provider registered".into());
         }
-        let (start_row, start_col) = (range.start_row as usize, range.start_col as usize);
-        let (end_row, end_col) = (range.end_row as usize, range.end_col as usize);
+        let (start_row, _start_col) = (range.start_row as usize, range.start_col as usize);
+        let (end_row, _end_col) = (range.end_row as usize, range.end_col as usize);
         let context_before = buf.lines.iter().take(start_row).cloned().collect::<Vec<_>>().join("\n");
-        let mut context_after_lines = buf.lines.iter().skip(end_row).cloned().collect::<Vec<_>>();
+        let context_after_lines = buf.lines.iter().skip(end_row).cloned().collect::<Vec<_>>();
         let _ = context_after_lines; // 保留最后一段, 简化处理
         let req = EditRequest {
             buffer_id: id,

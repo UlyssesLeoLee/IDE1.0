@@ -101,6 +101,7 @@ pub struct TypeConfig {
     pub type_keywords: Vec<String>,
 }
 
+#[allow(dead_code)]
 fn default_outline_fn(_text: &str) -> Vec<OutlineEntry> {
     Vec::new()
 }
@@ -212,7 +213,6 @@ impl TypeConfig {
                 if line[i..].starts_with(&delim.open) {
                     let after_open = i + delim.open.len();
                     let mut end = after_open;
-                    let mut found_close = false;
                     while end < chars.len() {
                         if let Some(ref esc) = delim.escape {
                             if end < chars.len() - 1 && chars[end] == esc.chars().next().unwrap_or('\\') {
@@ -222,7 +222,6 @@ impl TypeConfig {
                         }
                         if line[end..].starts_with(&delim.close) {
                             end += delim.close.len();
-                            found_close = true;
                             break;
                         }
                         if delim.line_only && chars[end] == '\n' {

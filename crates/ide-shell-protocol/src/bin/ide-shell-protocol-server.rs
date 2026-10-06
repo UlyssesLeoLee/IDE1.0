@@ -22,7 +22,7 @@
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
-use std::time::Duration;
+
 
 use axum::{
     extract::ws::WebSocketUpgrade,
@@ -33,7 +33,7 @@ use axum::{
     Router,
 };
 use clap::{Parser, Subcommand};
-use ide_shell_protocol::{Kernel, RpcRequest, RpcResponse};
+use ide_shell_protocol::Kernel;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Parser)]
@@ -166,6 +166,7 @@ async fn ws_handler(
 
 async fn handle_ws(socket: axum::extract::ws::WebSocket, kernel: Arc<Kernel>) {
     let mut rx = kernel.subscribe().await;
+
     use futures::{SinkExt, StreamExt};
     let (mut sender, mut receiver) = socket.split();
 
@@ -189,7 +190,7 @@ async fn handle_ws(socket: axum::extract::ws::WebSocket, kernel: Arc<Kernel>) {
         tokio::spawn(async move {
             while let Some(Ok(msg)) = receiver.next().await {
                 if let axum::extract::ws::Message::Text(text) = msg {
-                    if let Some(resp) = k.handle_rpc(&text).await {
+                    if let Some(_resp) = k.handle_rpc(&text).await {
                         // 简化: 不回 — 单向 RPC. 完整双向用 /rpcws
                     }
                 }
@@ -212,7 +213,7 @@ async fn rpc_ws_handler(
 }
 
 async fn handle_rpc_ws(mut socket: axum::extract::ws::WebSocket, kernel: Arc<Kernel>) {
-    use futures::{SinkExt, StreamExt};
+
     let mut event_rx = kernel.subscribe().await;
 
     loop {

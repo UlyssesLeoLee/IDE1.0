@@ -90,7 +90,7 @@ async fn test_event_subscription_emit_order() {
     let mut rx1 = k.subscribe().await;
     let mut rx2 = k.subscribe().await;
     // 两个 subscriber 都应收到
-    let id = k.open_buffer("event-test").await;
+    let _id = k.open_buffer("event-test").await;
     let e1 = rx1.recv().await.unwrap();
     let e2 = rx2.recv().await.unwrap();
     matches!(e1, Event::BufferOpened { .. });

@@ -224,7 +224,7 @@ impl DocLineMgr {
     pub fn remove_range(&mut self, range: LogicRange) -> LogicPos {
         let r = range.normalize();
         self.set_caret(r.start);
-        let mut s = self.caret;
+        let s = self.caret;
         if r.start.row == r.end.row {
             // 单行删除
             let line = &mut self.lines[s.row as usize];

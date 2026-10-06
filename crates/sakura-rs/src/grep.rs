@@ -127,7 +127,6 @@ pub fn grep_in_file_ci(path: &Path, needle: &str) -> Result<Vec<Match>, std::io:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn make_tree() -> tempfile_lite::TempDir {
         let dir = tempfile_lite::TempDir::new("sakura-rs-grep-test");
