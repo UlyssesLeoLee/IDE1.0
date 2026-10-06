@@ -931,26 +931,22 @@ impl Kernel {
         let req: RpcRequest = match serde_json::from_str(raw) {
             Ok(r) => r,
             Err(e) => {
-                return Some(
-                    serde_json::to_string(&RpcResponse::err(
-                        serde_json::Value::Null,
-                        codes::PARSE_ERROR,
-                        format!("parse error: {e}"),
-                    ))
-                    .ok()?,
-                );
+                return serde_json::to_string(&RpcResponse::err(
+                    serde_json::Value::Null,
+                    codes::PARSE_ERROR,
+                    format!("parse error: {e}"),
+                ))
+                .ok();
             }
         };
         let id = req.id.clone().unwrap_or(serde_json::Value::Null);
         if req.jsonrpc != "2.0" {
-            return Some(
-                serde_json::to_string(&RpcResponse::err(
-                    id,
-                    codes::INVALID_REQUEST,
-                    format!("jsonrpc must be 2.0, got {}", req.jsonrpc),
-                ))
-                .ok()?,
-            );
+            return serde_json::to_string(&RpcResponse::err(
+                id,
+                codes::INVALID_REQUEST,
+                format!("jsonrpc must be 2.0, got {}", req.jsonrpc),
+            ))
+            .ok();
         }
         // notification (id == null) → 不回 response
         let is_notification = req.id.is_none();

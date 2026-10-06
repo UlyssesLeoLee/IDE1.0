@@ -187,7 +187,6 @@ impl DocLineMgr {
     }
 
     /// 触发 dirty 的最近 seq (任何 insert/delete/split 都更新) — 已在 struct 中定义 (line 104).
-
     /// 分配下一个 seq.
     pub fn alloc_seq(&mut self) -> u64 {
         let s = self.next_seq;
@@ -230,7 +229,7 @@ impl DocLineMgr {
     /// 在 row 行 col 位置切行 — 光标左侧留在 row, 右侧移到新 row+1.
     fn split_line_at(&mut self, at: LogicPos) {
         let row = at.row.max(0) as usize;
-        let col = at.col.max(0) as i32;
+        let col = at.col.max(0);
         let old = self.lines[row].text.clone();
         let char_col = col as usize;
         let split_byte = old

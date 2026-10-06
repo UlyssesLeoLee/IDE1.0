@@ -31,7 +31,7 @@ impl LogicPos {
     }
 
     /// 顺序比较: 先 row 后 col.
-    pub fn cmp(&self, other: &LogicPos) -> std::cmp::Ordering {
+    pub fn compare(&self, other: &LogicPos) -> std::cmp::Ordering {
         self.row.cmp(&other.row).then(self.col.cmp(&other.col))
     }
 }
@@ -56,7 +56,7 @@ impl LogicRange {
 
     /// normalize: start <= end
     pub fn normalize(&self) -> Self {
-        if self.start.cmp(&self.end).is_le() {
+        if self.start.compare(&self.end).is_le() {
             *self
         } else {
             Self {

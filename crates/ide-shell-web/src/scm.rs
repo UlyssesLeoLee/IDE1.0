@@ -71,7 +71,7 @@ pub fn status() -> Result<(Vec<FileStatus>, String), String> {
         let code = &line[0..2];
         let path = line[3..].trim().trim_matches('"').to_string();
         let (x, y) = (
-            code.chars().nth(0).unwrap_or(' '),
+            code.chars().next().unwrap_or(' '),
             code.chars().nth(1).unwrap_or(' '),
         );
         if x == '?' && y == '?' {

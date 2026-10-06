@@ -101,7 +101,7 @@ pub fn status(cwd: &Path) -> Result<(Vec<FileStatus>, String), ScmError> {
         let code = &line[0..2];
         let path = line[3..].trim().trim_matches('"').to_string();
         let (x, y) = (
-            code.chars().nth(0).unwrap_or(' '),
+            code.chars().next().unwrap_or(' '),
             code.chars().nth(1).unwrap_or(' '),
         );
         // Untracked (??)
@@ -251,7 +251,7 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         // Find dev-3 root
         let dev3 = cwd.components().find(|c| c.as_os_str() == "dev-3");
-        if let Some(_) = dev3 {
+        if dev3.is_some() {
             // walk up to dev-3
             let mut p = cwd.clone();
             while !p.join(".git").exists() {
