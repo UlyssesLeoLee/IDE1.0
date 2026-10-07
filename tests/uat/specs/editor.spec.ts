@@ -17,11 +17,18 @@ import { resetShell } from "./helpers";
 const BASE = "http://127.0.0.1:8123";
 
 // 共享给 editor UAT: vim Insert / save 会改 README fixture, beforeEach/afterEach 恢复
-const FIXTURE_PATH = "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\README.md";
+// 跨平台 fixture 路径 — 从 IDE_SHELL_WEB_TEST_ROOT 环境变量取 (web server 启动时设的)
+const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? "/tmp/sample-project";
+const FIXTURE_PATH = `${FIXTURE_ROOT}/README.md`;
 const FIXTURE_ORIGINAL = "hello, world";
 
 async function goEditor(page: Page) {
   await page.goto("/editor");
+  // 等 bootstrap 完成 (banner 由 /api/kernel_banner 异步设入)
+  await page.waitForFunction(() => {
+    const b = document.getElementById("banner");
+    return b && /ide-kernel-core|ide-shell-web/.test(b.textContent || "");
+  }, { timeout: 5_000 }).catch(() => {});
 }
 
 // 直接调 setProjectRoot (绕开 rfd/prompt 弹框 — web 模式 pick_folder 会 30s timeout 后弹 prompt,
@@ -39,7 +46,7 @@ test.beforeEach(async () => {
   await fetch(`${BASE}/api/open_project`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+    body: JSON.stringify({ path: FIXTURE_ROOT }),
   }).catch(() => {});
   await fetch(`${BASE}/api/write_file`, {
     method: "POST",
@@ -80,7 +87,7 @@ test("pick_folder (mock) populates file tree", async ({ page }) => {
   // 直接调 setProjectRoot (它内部 fetch /api/open_project + 渲染文件树).
   //   绕开 rfd/prompt 弹框 (web 模式 pick_folder 走 30s timeout 后弹 prompt)
   await page.evaluate(async () => {
-    await setProjectRoot("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project", false);
+    await setProjectRoot(FIXTURE_ROOT, false);
   });
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   await expect(page.locator("#tree")).toContainText("README", { timeout: 5_000 });
@@ -89,7 +96,7 @@ test("pick_folder (mock) populates file tree", async ({ page }) => {
 test("tree shows sample-project files (README / src / docs)", async ({ page }) => {
   await goEditor(page);
   await page.evaluate(async () => {
-    await setProjectRoot("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project", false);
+    await setProjectRoot(FIXTURE_ROOT, false);
   });
   // sample-project fixture 含 README.md / src (dir) / docs (dir)
   await expect(page.locator("#tree")).toContainText("README");
@@ -100,7 +107,7 @@ test("tree shows sample-project files (README / src / docs)", async ({ page }) =
 test("clicking a tree file creates a tab with text content", async ({ page }) => {
   await goEditor(page);
   await page.evaluate(async () => {
-    await setProjectRoot("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project", false);
+    await setProjectRoot(FIXTURE_ROOT, false);
     // 同步建 README tab (绕开 openFile async)
     const id = newId();
     tabs.set(id, {
@@ -128,7 +135,7 @@ test("clicking a tree file creates a tab with text content", async ({ page }) =>
 
 test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   await goEditor(page);
-  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
+  await openProject(page, FIXTURE_ROOT);
   await page.locator('.tree-node:has-text("README")').click();
   await expect(page.locator("#editor.active")).toBeVisible();
   // 显式 focus 编辑器 (click 在 default viewport 偏移下不稳)
@@ -148,7 +155,7 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
 
 test("save (Ctrl+S) writes to server and clears dirty flag", async ({ page }) => {
   await goEditor(page);
-  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
+  await openProject(page, FIXTURE_ROOT);
   await page.locator('.tree-node:has-text("README")').click();
   await expect(page.locator("#editor.active")).toBeVisible();
   await page.locator("#ed-content").focus();
@@ -200,7 +207,7 @@ test("shell click switches to INSERT (left)", async ({ page }) => {
 
 test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }) => {
   await goEditor(page);
-  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
+  await openProject(page, FIXTURE_ROOT);
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   const tip = await page.locator("#sb-project-name").getAttribute("data-tip");
   expect(tip).toMatch(/点击换项目/);
@@ -208,7 +215,7 @@ test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }
 
 test("shift+click sb-project-name reloads tree (replaces 刷新 button)", async ({ page }) => {
   await goEditor(page);
-  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
+  await openProject(page, FIXTURE_ROOT);
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   let listDirCalls = 0;
   page.on("request", (req) => {
@@ -229,7 +236,7 @@ test("no redundant sidebar 打开/刷新 buttons (replaced by project-name click
 
 test("tree folder lazy-load expands children", async ({ page }) => {
   await goEditor(page);
-  await openProject(page, "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project");
+  await openProject(page, FIXTURE_ROOT);
   await expect(page.locator("#tree")).toContainText("src");
   // 点 src 文件夹 (目录节点)
   const srcNode = page.locator('.tree-node:has-text("src")').first();
@@ -241,7 +248,7 @@ test("tree folder lazy-load expands children", async ({ page }) => {
 test("sandbox rejects out-of-project read (direct API)", async ({ request }) => {
   // 准备: 先设置项目根
   await request.post(`${BASE}/api/open_project`, {
-    data: { path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" },
+    data: { path: FIXTURE_ROOT },
   });
   // 越界读: Windows system file
   const res = await request.post(`${BASE}/api/read_file`, {
@@ -254,7 +261,7 @@ test("sandbox rejects out-of-project read (direct API)", async ({ request }) => 
 
 test("sandbox rejects write outside project root", async ({ request }) => {
   await request.post(`${BASE}/api/open_project`, {
-    data: { path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" },
+    data: { path: FIXTURE_ROOT },
   });
   const res = await request.post(`${BASE}/api/write_file`, {
     data: { path: "C:\\Windows\\Temp\\pwn.txt", content: "hacked" },
@@ -266,10 +273,10 @@ test("sandbox rejects write outside project root", async ({ request }) => {
 
 test("list_dir returns sorted entries (dirs first)", async ({ request }) => {
   await request.post(`${BASE}/api/open_project`, {
-    data: { path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" },
+    data: { path: FIXTURE_ROOT },
   });
   const res = await request.post(`${BASE}/api/list_dir`, {
-    data: { path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" },
+    data: { path: FIXTURE_ROOT },
   });
   expect(res.status()).toBe(200);
   const entries = await res.json();
@@ -298,7 +305,7 @@ test("help_wiki API contains all required sections", async ({ request }) => {
 
 test("write_file roundtrip: write, then read back", async ({ request }) => {
   await request.post(`${BASE}/api/open_project`, {
-    data: { path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" },
+    data: { path: FIXTURE_ROOT },
   });
   const path = "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\UAT_ROUNDTRIP.txt";
   // 写
@@ -325,7 +332,7 @@ test("write_file roundtrip: write, then read back", async ({ request }) => {
 
 test("read_file rejects huge files (>4MB)", async ({ request }) => {
   await request.post(`${BASE}/api/open_project`, {
-    data: { path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" },
+    data: { path: FIXTURE_ROOT },
   });
   // 先写一个 5MB 文件
   const big = "x".repeat(5 * 1024 * 1024);
