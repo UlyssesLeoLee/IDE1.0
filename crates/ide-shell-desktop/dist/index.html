@@ -1836,7 +1836,7 @@
   let undoStack = [];   // [{tabId, lines, cursor, sel}] 各 tab 独立 undo
   let undoLimit = 200;
 
-  function newId() { return "t" + Math.random().toString(36).slice(2, 10); }
+  window.newId = function newId() { return "t" + Math.random().toString(36).slice(2, 10); }
 
   function openFile(path, displayName) {
     // 已打开 → 切焦点

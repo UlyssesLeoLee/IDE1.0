@@ -343,7 +343,7 @@
       // 3. JSON-style key detection: 先于 generic strings,
       //   让 "..." (followed by :) 作为 key 而不是 string.
       if (lexer.keyPattern) {
-        const re = new RegExp("^(?:" + lexer.keyPattern + ")");
+        const re = new RegExp(lexer.keyPattern);
         const m = text.slice(i).match(re);
         if (m) {
           result.push({ text: m[0], cls: lexer.keyCls || "key" });
