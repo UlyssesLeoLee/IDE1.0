@@ -2599,9 +2599,13 @@ SELECT * FROM hello;
     shellBody.classList.remove("focused");
   });
   // Shell 内点击也获得焦点
-  shellBody.addEventListener("mousedown", (e) => {
+                shellBody.addEventListener("mousedown", (e) => {
     if (e.button === 2) return;  // 右键单独处理
     shellFocus();
+    // 左键点击切到 INSERT (per cursor ide-shell onMouse Left → Mode::Insert)
+    if (e.button === 0) {
+      setStatusMode("INSERT");
+    }
     // 阻止默认选择
     e.preventDefault();
   });
