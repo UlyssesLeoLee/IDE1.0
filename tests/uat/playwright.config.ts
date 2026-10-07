@@ -36,7 +36,7 @@ export default defineConfig({
       command: BINARY,
       url: "http://127.0.0.1:8123/api/frame",
       reuseExistingServer: !process.env.CI,
-      timeout: 30_000,
+      timeout: 90_000,  // CI Linux cold-start: build + connect 延长
       // 默认 fixtures 项目根 — editor.spec.ts / sandbox.spec.ts 用
       env: {
         IDE_SHELL_WEB_TEST_ROOT: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project",

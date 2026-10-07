@@ -12,7 +12,7 @@
 //   - help wiki 浮层
 //   - 沙箱拒绝越界 (走 fetch 直接打 API)
 import { test, expect, type Page } from "@playwright/test";
-import { resetShell } from "./helpers";
+import { resetShell, waitForBootstrap } from "./helpers";
 
 const BASE = "http://127.0.0.1:8123";
 
@@ -24,19 +24,25 @@ const FIXTURE_ORIGINAL = "hello, world";
 
 async function goEditor(page: Page) {
   await page.goto("/editor");
-  // 等 bootstrap 完成 (banner 由 /api/kernel_banner 异步设入)
-  await page.waitForFunction(() => {
-    const b = document.getElementById("banner");
-    return b && /ide-kernel-core|ide-shell-web/.test(b.textContent || "");
-  }, { timeout: 5_000 }).catch(() => {});
+  await waitForBootstrap(page, 8_000);
 }
 
 // 直接调 setProjectRoot (绕开 rfd/prompt 弹框 — web 模式 pick_folder 会 30s timeout 后弹 prompt,
 //  测试用例直接 setProjectRoot 同步设项目根 + 渲染文件树, 避开按钮点击 race).
+// 注意: server 的 path_safety::safe_canonicalize 返回带 Windows verbatim prefix (\\?\C:\...),
+// 我们需要先调 /api/open_project 拿 canonical path, 再传给 setProjectRoot.
 async function openProject(page: Page, path: string) {
-  await page.evaluate(async (p) => {
-    await setProjectRoot(p, false);
-  }, path);
+  // 1. 先调 open_project 拿 canonical (Rust 端剥除 verbatim + walk_back for nonexistent)
+  const canonRes = await fetch(`${BASE}/api/open_project`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  const canon = (await canonRes.json()).replace(/^\\\?\\/, "");
+  // 2. 用 canonical path 调 setProjectRoot (frontend 函数,设 projectRoot + 渲染文件树)
+  await page.evaluate(async (cp) => {
+    await window.setProjectRoot(cp, false);
+  }, canon);
 }
 
 test.beforeEach(async () => {
@@ -86,18 +92,14 @@ test("pick_folder (mock) populates file tree", async ({ page }) => {
   await goEditor(page);
   // 直接调 setProjectRoot (它内部 fetch /api/open_project + 渲染文件树).
   //   绕开 rfd/prompt 弹框 (web 模式 pick_folder 走 30s timeout 后弹 prompt)
-  await page.evaluate(async () => {
-    await setProjectRoot(FIXTURE_ROOT, false);
-  });
+  await openProject(page, FIXTURE_ROOT);
   await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
   await expect(page.locator("#tree")).toContainText("README", { timeout: 5_000 });
 });
 
 test("tree shows sample-project files (README / src / docs)", async ({ page }) => {
   await goEditor(page);
-  await page.evaluate(async () => {
-    await setProjectRoot(FIXTURE_ROOT, false);
-  });
+  await openProject(page, FIXTURE_ROOT);
   // sample-project fixture 含 README.md / src (dir) / docs (dir)
   await expect(page.locator("#tree")).toContainText("README");
   await expect(page.locator("#tree")).toContainText("src");
@@ -106,10 +108,10 @@ test("tree shows sample-project files (README / src / docs)", async ({ page }) =
 
 test("clicking a tree file creates a tab with text content", async ({ page }) => {
   await goEditor(page);
+  await openProject(page, FIXTURE_ROOT);
   await page.evaluate(async () => {
-    await setProjectRoot(FIXTURE_ROOT, false);
-    // 同步建 README tab (绕开 openFile async)
-    const id = newId();
+    // 同步建 README tab (绕开 openFile async) — canonical path from server
+    const id = window.window.newId();
     tabs.set(id, {
       id,
       path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\README.md",

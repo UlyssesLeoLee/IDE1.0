@@ -26,6 +26,7 @@ test.beforeEach(async () => {
 
 test("syntax: detectLanguage via extension", async ({ page }) => {
   await page.goto(`${BASE}/editor`);
+  await waitForBootstrap(page, 8_000);
   const det = await page.evaluate(() => ({
     rs: Syntax.detectLanguage("foo.rs"),
     py: Syntax.detectLanguage("foo.py"),
@@ -48,6 +49,7 @@ test("syntax: detectLanguage via extension", async ({ page }) => {
 
 test("syntax: highlight Rust line — keywords + types + comments", async ({ page }) => {
   await page.goto(`${BASE}/editor`);
+  await waitForBootstrap(page, 8_000);
   const result = await page.evaluate(() => {
     const line = "fn main() { let x: i32 = 42; // hello";
     const tokens = Syntax.highlightLine(line, "rust");
@@ -67,6 +69,7 @@ test("syntax: highlight Rust line — keywords + types + comments", async ({ pag
 
 test("syntax: highlight Python — def + str type", async ({ page }) => {
   await page.goto(`${BASE}/editor`);
+  await waitForBootstrap(page, 8_000);
   const result = await page.evaluate(() => {
     const tokens = Syntax.highlightLine("def hello(name: str):", "python");
     return tokens.map(t => ({ text: t.text, cls: t.cls }));
@@ -77,6 +80,7 @@ test("syntax: highlight Python — def + str type", async ({ page }) => {
 
 test("syntax: highlight JSON — keys + numbers + booleans", async ({ page }) => {
   await page.goto(`${BASE}/editor`);
+  await waitForBootstrap(page, 8_000);
   const result = await page.evaluate(() => {
     const tokens = Syntax.highlightLine('{"name": "test", "v": 42, "ok": true}', "json");
     return tokens.map(t => ({ text: t.text, cls: t.cls }));
@@ -91,6 +95,7 @@ test("syntax: highlight JSON — keys + numbers + booleans", async ({ page }) =>
 
 test("syntax: highlight Markdown — headings + bold + code", async ({ page }) => {
   await page.goto(`${BASE}/editor`);
+  await waitForBootstrap(page, 8_000);
   const result = await page.evaluate(() => {
     const tokens = Syntax.highlightLine("## **bold** and `code`", "markdown");
     return tokens.map(t => ({ text: t.text, cls: t.cls }));
@@ -109,7 +114,7 @@ test("syntax: open Rust file → status bar shows 'Rust' + highlights keywords",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
     });
-    const id = newId();
+    const id = window.newId();
     tabs.set(id, {
       id,
       path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs",
@@ -143,7 +148,7 @@ test("syntax: Tab key in INSERT mode inserts 2 spaces", async ({ page }) => {
       body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
     });
     // 同步建一个 test tab — 跳过 async openFile
-    const id = newId();
+    const id = window.newId();
     tabs.set(id, {
       id,
       path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\tab_test.txt",
@@ -273,7 +278,7 @@ test("syntax: :setlang overrides detected language", async ({ page }) => {
       body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
     });
     // 同步建 tab
-    const id = newId();
+    const id = window.newId();
     tabs.set(id, {
       id,
       path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt",

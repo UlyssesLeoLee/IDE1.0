@@ -105,3 +105,20 @@ export async function waitForMode(
     { timeout: 3_000 },
   );
 }
+
+/**
+ * 等页面 bootstrap 完成 — banner 由 /api/kernel_banner 异步设入,
+ * 调用 `setProjectRoot` / `newId` 之前必须等 bootstrap ready.
+ */
+export async function waitForBootstrap(page: Page, timeoutMs = 5_000): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const b = document.getElementById("banner");
+      // banner 含 "ide-kernel-core" 或 "ide-shell-web" 都算 bootstrap 完成
+      return b && /ide-kernel-core|ide-shell-web/.test(b.textContent || "");
+    },
+    { timeout: timeoutMs }
+  ).catch(() => {
+    // swallow — 测试用例有自己的后续断言
+  });
+}
