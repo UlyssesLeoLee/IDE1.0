@@ -115,7 +115,7 @@ fn test_parity_2_6_word_boundary() {
         col -= 1;
     }
     if col > 0 {
-        col -= 1;
+        col = col.saturating_sub(1);
     }
     assert_eq!(col, 15, "expected to land before 'fox'");
 }
