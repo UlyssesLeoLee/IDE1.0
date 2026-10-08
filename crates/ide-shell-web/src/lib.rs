@@ -203,7 +203,9 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
     }
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("");
-    let path = parts.next().unwrap_or("");
+    let path_full = parts.next().unwrap_or("");
+    // 分离 path 与 query string: /api/terminal_output?id=term-0 → /api/terminal_output
+    let path = path_full.split('?').next().unwrap_or(path_full);
 
     // 读 header 完
     let mut content_length = 0usize;
@@ -321,8 +323,8 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             send_response(stream, "200 OK", "text/plain", b"ok");
         }
         ("GET", "/api/terminal_output") => {
-            // Query: ?id=term-N
-            let id = path
+            // Query: ?id=term-N (path_full 包含 query, path 已剥除)
+            let id = path_full
                 .split("?id=")
                 .nth(1)
                 .unwrap_or("")

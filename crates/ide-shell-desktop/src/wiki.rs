@@ -12,7 +12,7 @@ pub const APP_WIKI: &str = r#"IDE1.0 IDE Shell — 桌面版完整手册 (wiki)
 [1] 简介
 --------
 IDE1.0 IDE Shell 是一个轻量的 AI Native 桌面代码编辑器:
-  * 界面参考 Cursor (工具栏 / 文件树 / 标签页 / 状态栏) + Vim (键位三态)
+  * 三态键位模式 (NORMAL / INSERT / VISUAL)
   * 纯 Rust 核心 (ide-shell crate) + Tauri 2 webview, vanilla JS 前端, 0 前端框架
   * 安装包 ~3MB, 内存占用低, 启动即开即用
 所有可交互控件都带鼠标悬停说明 (tooltip + 状态栏提示区).
@@ -27,11 +27,11 @@ Linux   : .deb (dpkg -i) 或 .AppImage (chmod +x 后直接运行), 由 CI 产出
     ide-shell-desktop.exe --help > help.txt
   应用内随时按 :help 或点工具栏「? 帮助」查看同一份 wiki.
 
-[3] 界面布局 (参考 Cursor)
+[3] 界面布局
 --------------------------
 工具栏: 打开文件夹 | 保存 | 还原 | 关闭标签 | ? 帮助 | Shell
 侧栏: 资源管理器 (文件树, 懒加载, 可拖宽) | 最近项目
-主区: 标签栏 + Vim 编辑器 (行号 + 光标块 + 虚拟滚动) + Shell 面板
+主区: 标签栏 + 编辑器 (行号 + 光标块 + 虚拟滚动) + Shell 面板
 状态栏: 模式 | Ln/Col | 文件路径 | 悬停提示 | kernel banner
 
 [4] 项目导入
@@ -43,7 +43,7 @@ Linux   : .deb (dpkg -i) 或 .AppImage (chmod +x 后直接运行), 由 CI 产出
 安全: 文件读写被沙箱限制在当前项目根内, 越界路径一律拒绝.
 限制: 仅 UTF-8 文本文件, 单文件 ≤ 4MB (保持轻量.)
 
-[5] Vim 键位表 (编辑器焦点时)
+[5] 键位表 (编辑器焦点时)
 -----------------------------
 NORMAL 模式 (默认):
   h j k l / ←↓↑→   左 下 上 右移动
@@ -88,7 +88,7 @@ COMMAND 模式 (底部 : 命令行):
 [5.5] 语法高亮 / Tab / 缩进 / 折叠
 ------------------------------------
 按扩展名 + 文件名自动识别 19 种语言, 关键字 / 类型 / 字符串 / 数字 / 注释 /
-属性 / 装饰器 / 操作符 各自配色 (VSCode Dark+ 风格):
+属性 / 装饰器 / 操作符 各自配色 (深色风格):
 
   Rust / Python / JavaScript / TypeScript / Go / C / C++ / Java / C# /
   Ruby / Bash / HTML / CSS / JSON / Markdown / YAML / TOML / SQL / Plain
@@ -147,7 +147,7 @@ A: 未保存内容在内存中, 常按 Ctrl+S; :w 亦可. 撤销栈 200 步.
 
 [10] 版本
 ---------
-版本: 0.2.0 (ULYS-191 §5 Cursor 风格 UI + 项目导入 + wiki help)
+版本: 0.3.0 (UI 重构 + 终端真实可用 + 完整工具链)
 上一版: 0.1.0 (ULYS-191 §4 Tauri 桌面 PoC, 单行 buffer UAT 壳)
 许可: MIT OR Apache-2.0 — https://github.com/UlyssesLeoLee/IDE1.0
 "#;
