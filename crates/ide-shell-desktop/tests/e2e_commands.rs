@@ -265,7 +265,7 @@ fn help_wiki_text_covers_required() {
         "安装与启动",
         "界面布局",
         "项目导入",
-        "Vim 键位表",
+        "键位表",
         "Shell 面板",
         "鼠标悬停说明",
         "FAQ",

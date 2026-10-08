@@ -166,10 +166,7 @@ fn test_parity_4_1_grep_find() {
     // sakura: Ctrl+F (検索) — grep_in_file crate
     use sakura_rs::grep;
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let result = grep::grep_in_file(
-        manifest_dir.join("Cargo.toml").as_path(),
-        "sakura",
-    );
+    let result = grep::grep_in_file(manifest_dir.join("Cargo.toml").as_path(), "sakura");
     assert!(result.is_ok());
     let matches = result.unwrap();
     assert!(!matches.is_empty());
@@ -228,7 +225,10 @@ fn test_parity_5_1_grep_files() {
     use sakura_rs::grep;
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let entries = grep::walk_dir(manifest_dir, false);
-    assert!(!entries.is_empty(), "expected at least one file in sakura-rs tree");
+    assert!(
+        !entries.is_empty(),
+        "expected at least one file in sakura-rs tree"
+    );
 }
 
 #[test]
@@ -239,12 +239,9 @@ fn test_parity_5_2_filter_by_extension() {
     let entries = grep::walk_dir(manifest_dir, false);
     let rs_files = grep::filter_by_ext(&entries, &["rs"]);
     assert!(!rs_files.is_empty());
-    assert!(rs_files.iter().all(|e| {
-        e.path
-            .extension()
-            .map(|x| x == "rs")
-            .unwrap_or(false)
-    }));
+    assert!(rs_files
+        .iter()
+        .all(|e| { e.path.extension().map(|x| x == "rs").unwrap_or(false) }));
 }
 
 #[test]
@@ -392,17 +389,17 @@ fn test_parity_summary() {
     use sakura_rs::undo::OpeBuf;
 
     let mut mgr = DocLineMgr::new();
-        let mut undo = OpeBuf::new(100);
-        // 插入文本
-        mgr.insert_str(LogicPos::new(0, 0), "sakura-rs parity test");
-        assert_eq!(mgr.text(), "sakura-rs parity test");
-        assert_eq!(mgr.line_count(), 1);
+    let mut undo = OpeBuf::new(100);
+    // 插入文本
+    mgr.insert_str(LogicPos::new(0, 0), "sakura-rs parity test");
+    assert_eq!(mgr.text(), "sakura-rs parity test");
+    assert_eq!(mgr.line_count(), 1);
 
-        // 模拟 Ctrl+I (行の二重化)
-        mgr.insert_str(LogicPos::new(0, 19), "\nsakura-rs parity test");
-        assert_eq!(mgr.line_count(), 2);
+    // 模拟 Ctrl+I (行の二重化)
+    mgr.insert_str(LogicPos::new(0, 19), "\nsakura-rs parity test");
+    assert_eq!(mgr.line_count(), 2);
 
-        // Undo API 存在
-        undo.mark_saved();
-        assert!(!undo.is_modified());
-    }
+    // Undo API 存在
+    undo.mark_saved();
+    assert!(!undo.is_modified());
+}
