@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "IDE1.0 IDE Shell",
+  "productName": "IDE1.0",
   "version": "0.1.9",
   "identifier": "dev.ide1.0.shell",
   "build": {
@@ -9,7 +9,7 @@
   "app": {
     "windows": [
       {
-        "title": "IDE1.0 IDE Shell",
+        "title": "IDE1.0",
         "width": 960,
         "height": 600,
         "minWidth": 640,

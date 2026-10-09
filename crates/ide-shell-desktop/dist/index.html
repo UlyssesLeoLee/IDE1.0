@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>IDE1.0 IDE Shell</title>
+  <title>IDE1.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     /* ============================================================
-       IDE1.0 IDE Shell — Cursor 风格桌面编辑器 + Vim 键位
+       IDE1.0 IDE Shell — 桌面代码编辑器
        极简: vanilla JS + 单文件 CSS, 0 前端框架, 适配 Tauri 2 webview
        ============================================================ */
     :root {
@@ -438,11 +438,6 @@
     }
 
     /* ===== Terminal ===== */
-    #terminal-tabs {
-      height: 28px; display: flex; background: #1a1a1a;
-      border-bottom: 1px solid var(--border); overflow-x: auto;
-      flex-shrink: 0;
-    }
     .terminal-tab {
       display: flex; align-items: center; gap: 6px;
       padding: 0 10px; height: 100%;
@@ -804,7 +799,7 @@
     <span class="tb-sep"></span>
     <button class="tb-btn"
             data-cmd="help"
-            data-tip="打开完整内置 wiki (:help / F1) — 包含 vim 键位 / shell 命令 / FAQ">? 帮助</button>
+            data-tip="打开完整内置 wiki (:help / F1) — 包含键位 / shell 命令 / FAQ">? 帮助</button>
     <span class="tb-spacer"></span>
     <span class="tb-banner" id="banner">ide-shell-desktop</span>
   </div>
@@ -814,7 +809,7 @@
 
     <!-- 侧栏: 项目根 + 文件树 + 最近项目 (无冗余按钮; 刷新 = 重打开文件夹) -->
     <div id="sidebar">
-      <!-- Activity Bar (图标选择 Side Bar 内容) — 对标 VSCode / Cursor -->
+      <!-- Activity Bar (图标选择 Side Bar 内容) -->
       <div id="activity-bar">
         <button class="act-btn active" data-pane="explorer" data-tip="资源管理器 (Explorer) — 文件树" title="Explorer">📁</button>
         <button class="act-btn" data-pane="search" data-tip="搜索 — TODO" title="Search">🔍</button>
@@ -873,8 +868,7 @@
       <div id="tabs"></div>
       <div id="editor-host">
         <div id="welcome">
-          <h1>IDE1.0 IDE Shell</h1>
-          <p>轻量 AI Native 桌面代码编辑器 · Cursor 风格界面 + Vim 三态键位 · 纯 Rust 核心, 0 前端框架</p>
+          <h1 style="font-size: 56px; font-weight: bold; margin: 24px 0;">IDE1.0</h1>
           <button class="big-btn" data-cmd="open-folder"
                   data-tip="导入项目 — 选择项目根目录, 文件树与文件读写都在该目录内进行">📁 打开文件夹开始</button>
           <div class="shortcuts">
@@ -894,7 +888,7 @@
       </div>
       <div id="shell-panel" data-collapsed="false">
         <div id="shell-head">
-          <span class="shell-title">Vim (命令行模式 — 非 PowerShell)</span>
+          <span class="shell-title">命令行模式</span>
           <span class="shell-mode" id="shell-mode-badge" data-mode="NORMAL">NORMAL</span>
           <span class="shell-spacer"></span>
           <button class="shell-toggle"
@@ -911,7 +905,7 @@
       <div id="bottom-panel" data-collapsed="false">
         <div id="bottom-head">
           <div class="bottom-tabs">
-            <button class="bottom-tab active" data-pane="terminal-pane" data-tip="集成 PowerShell / bash 等真实终端 (对标 Cursor / VSCode)">Terminal</button>
+            <button class="bottom-tab active" data-pane="terminal-pane" data-tip="集成 PowerShell / bash 等真实终端">Terminal</button>
             <button class="bottom-tab" data-pane="output-pane" data-tip="构建/测试输出 (TODO)">Output</button>
             <button class="bottom-tab" data-pane="problems-pane" data-tip="错误/警告 (TODO)">Problems</button>
           </div>
@@ -925,7 +919,6 @@
         </div>
         <div id="bottom-body">
           <div class="bottom-pane active" id="terminal-pane">
-            <div id="terminal-tabs"></div>
             <div id="terminal-body">
               <div id="terminal-empty" class="terminal-empty">
                 <div class="terminal-empty-text">
@@ -1819,7 +1812,7 @@
   renderRecent();
 
   /* ==========================================================================
-     6. 编辑器 — 多文件标签 + Vim 三态 + 虚拟滚动 (轻量)
+     6. 编辑器 — 多文件标签 + 三态键位 + 虚拟滚动 (轻量)
      ========================================================================== */
   const tabsEl = document.getElementById("tabs");
   const editorEl = document.getElementById("editor");
@@ -1929,7 +1922,7 @@
     renderVim(t);
   }
 
-  /* ----- Vim 渲染 (轻量, 不引入 CodeMirror; 万行文件靠虚拟滚动) ----- */
+  /* ----- 键位模式渲染 (轻量, 不引入 CodeMirror; 万行文件靠虚拟滚动) ----- */
   const LINE_H = 18;       // 与 CSS .ed-content line-height 一致
   const VISIBLE = 50;      // 视口渲染多少行 (含缓冲)
   function renderVim(t) {
@@ -2052,7 +2045,7 @@
     }
   }
 
-  /* ----- Vim 键位 (NORMAL / INSERT / VISUAL / COMMAND) ----- */
+  /* ----- 三态键位 (NORMAL / INSERT / VISUAL / COMMAND) ----- */
   let lastG = false;   // gg 检测
   let cmdBuffer = "";
     edContent.addEventListener("keydown", (e) => {
@@ -2815,19 +2808,23 @@ SELECT * FROM hello;
   }
   
     // ============================================================
-    // Terminal panel (PowerShell / bash) — 对标 Cursor / VSCode
+    // Terminal panel (PowerShell / bash)
     // ============================================================
     const Terminal = {
       sessions: new Map(),     // id -> { info, buffer, lineEl }
       activeId: null,
       el: {
         pane: document.getElementById("terminal-pane"),
-        tabs: document.getElementById("terminal-tabs"),
+
         body: document.getElementById("terminal-body"),
         empty: document.getElementById("terminal-empty"),
       },
 
       async create(opts = {}) {
+        // 单会话 — 已创建就返回现有
+        if (this.activeId && this.sessions.has(this.activeId)) {
+          return this.sessions.get(this.activeId).info;
+        }
         const shell = opts.shell || null;
         const cwd = opts.cwd || null;
         const title = opts.title || null;
@@ -2872,16 +2869,13 @@ SELECT * FROM hello;
         }
         this.sessions.delete(id);
         if (this.activeId === id) {
-          const remaining = [...this.sessions.keys()];
-          this.activeId = remaining[remaining.length - 1] || null;
+          this.activeId = null;  // 单会话: 关闭后允许重建
         }
-        this.renderTabs();
         this.renderBody();
       },
 
       activate(id) {
         this.activeId = id;
-        this.renderTabs();
         this.renderBody();
       },
 
@@ -2902,26 +2896,9 @@ SELECT * FROM hello;
         }
       },
 
+      // 单会话 — 无 inner tabbar. 这是 no-op, 保留供 close() 等调用.
       renderTabs() {
-        const tabsEl = this.el.tabs;
-        tabsEl.innerHTML = "";
-        for (const [id, session] of this.sessions) {
-          const tab = document.createElement("div");
-          tab.className = "terminal-tab" + (id === this.activeId ? " active" : "");
-          tab.dataset.id = id;
-          tab.title = `${session.info.shell}\n${session.info.cwd}`;
-          const label = document.createElement("span");
-          label.textContent = session.info.title;
-          const closeBtn = document.createElement("span");
-          closeBtn.className = "close-x";
-          closeBtn.textContent = "×";
-          closeBtn.title = "关闭 Terminal";
-          closeBtn.onclick = (e) => { e.stopPropagation(); this.close(id); };
-          tab.appendChild(label);
-          tab.appendChild(closeBtn);
-          tab.onclick = () => this.activate(id);
-          tabsEl.appendChild(tab);
-        }
+        if (this.el.tabs) this.el.tabs.innerHTML = "";
       },
 
       renderBody() {
@@ -3037,6 +3014,11 @@ SELECT * FROM hello;
         btn.classList.add("active");
         const pane = document.getElementById(paneId);
         if (pane) pane.classList.add("active");
+        // 切换到 Terminal pane 时自动 spawn PowerShell (单会话)
+        if (paneId === "terminal-pane" && !Terminal.activeId) {
+          const cwd = (window.__IDE_PROJECT_ROOT__ || null);
+          Terminal.create({ cwd });
+        }
       });
     });
 
@@ -3086,7 +3068,7 @@ SELECT * FROM hello;
     });
 
     // ============================================================
-    // Side Bar Activity Bar + Source Control panel (对标 VSCode / Cursor)
+    // Side Bar Activity Bar + Source Control panel
     // ============================================================
     const Scm = {
       branch: "",
@@ -3337,7 +3319,7 @@ SELECT * FROM hello;
         };
 
         const resultsEl = document.getElementById("search-results");
-        resultsEl.innerHTML = "<div class="search-empty">搜索中...</div>";
+        resultsEl.innerHTML = '<div class="search-empty">搜索中...</div>';
 
         try {
           let results;
@@ -3349,13 +3331,13 @@ SELECT * FROM hello;
               headers: { "content-type": "application/json" },
               body: JSON.stringify(opts),
             });
-            if (!r.ok) { resultsEl.innerHTML = "<div class="search-empty">搜索失败</div>"; return; }
+            if (!r.ok) { resultsEl.innerHTML = '<div class="search-empty">搜索失败</div>'; return; }
             const j = await r.json();
             results = j.results || [];
           }
           this.render(results, pattern);
         } catch (e) {
-          resultsEl.innerHTML = "<div class="search-empty">搜索失败: " + e + "</div>";
+          resultsEl.innerHTML = '<div class="search-empty">搜索失败: ' + e + '</div>';
         }
       },
 
@@ -3363,7 +3345,7 @@ SELECT * FROM hello;
         const resultsEl = document.getElementById("search-results");
         resultsEl.innerHTML = "";
         if (results.length === 0) {
-          resultsEl.innerHTML = "<div class="search-empty">无结果</div>";
+          resultsEl.innerHTML = '<div class="search-empty">无结果</div>';
           return;
         }
         // Group by file
@@ -3386,7 +3368,7 @@ SELECT * FROM hello;
             const text = document.createElement("span");
             text.className = "line-text";
             // Highlight pattern (case-insensitive)
-            const regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\]/g, "\$&"), "i");
+            const regex = new RegExp(pattern.replace(/[-/\^$*+?.()|[\]{}]/g, "\$&"), "i");
             text.innerHTML = line.text.replace(regex, (m) => "<mark>" + m + "</mark>");
             row.appendChild(num);
             row.appendChild(text);
@@ -3444,7 +3426,7 @@ SELECT * FROM hello;
         body.innerHTML = "";
         const filtered = channelFilter === "all" ? this.lines : this.lines.filter(l => l.channel === channelFilter);
         if (filtered.length === 0) {
-          body.innerHTML = "<div class="output-empty">无输出 — 后端 println! 或 Output.log() 会显示在这里</div>";
+          body.innerHTML = '<div class="output-empty">无输出 — 后端 println! 或 Output.log() 会显示在这里</div>';
           return;
         }
         for (const line of filtered) {
@@ -3479,7 +3461,7 @@ SELECT * FROM hello;
         body.innerHTML = "";
         const filtered = filter === "all" ? this.problems : this.problems.filter(p => p.severity === filter.replace("s", "")));
         if (filtered.length === 0) {
-          body.innerHTML = "<div class="output-empty">无问题 — git/build/lint 错误会显示在这里</div>";
+          body.innerHTML = '<div class="output-empty">无问题 — git/build/lint 错误会显示在这里</div>';
           return;
         }
         for (const p of filtered) {
@@ -4013,7 +3995,7 @@ SELECT * FROM hello;
       dict: {
         en: {
           "welcome.title": "IDE1.0 IDE Shell",
-          "welcome.subtitle": "Lightweight AI-native code editor · Cursor-style + Vim tri-state · Pure Rust core",
+          "welcome.subtitle": "Lightweight AI-native code editor · tri-state keymap · Pure Rust core",
           "tab.welcome": "Welcome",
           "status.normal": "NORMAL",
           "status.insert": "INSERT",
@@ -4031,7 +4013,7 @@ SELECT * FROM hello;
         },
         zh: {
           "welcome.title": "IDE1.0 IDE Shell",
-          "welcome.subtitle": "轻量 AI 原生桌面代码编辑器 · Cursor 风格界面 + Vim 三态键位 · 纯 Rust 核心",
+          "welcome.subtitle": "轻量 AI 原生桌面代码编辑器 · 三态键位模式 · 纯 Rust 核心",
           "tab.welcome": "欢迎",
           "status.normal": "普通",
           "status.insert": "插入",
