@@ -56,6 +56,7 @@ pub mod file_lock;
 pub mod migemo;
 pub mod keyword_set;
 pub mod outline_extended;
+pub mod search_highlight;
 
 // Phase 3: 表示 + 強調 2 件 (ulys-191-38)
 pub mod ruler;
