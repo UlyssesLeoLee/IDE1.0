@@ -40,7 +40,7 @@
 | 規模 | crate 数 | 9 | 7+ | ✅ |
 | 規模 | コミット数 | 100+ | - | ulys-191-N |
 | 規模 | 言語サポート | 19 | 15+ | ✅ |
-| 規模 | sakura 機能カバー | 76% | 75% | ✅ |
+| 規模 | sakura 機能カバー | 100% | 75% | ✅ |
 
 ### DOC-18.A.2 品質指標
 
@@ -85,7 +85,7 @@
 
 **強み:**
 - コード品質 (warnings=0, coverage ≥ 60%)
-- 機能豊富 (sakura 76%, 19 言語, 22 RPC)
+- 機能豊富 (sakura 100%, 19 言語, 22 RPC)
 - 軽量 (MSI 2.88 MB)
 
 **弱み:**
@@ -120,6 +120,62 @@
 - ステークホルダー: DOC-13 進捗管理にて週次報告
 - CI 結果: GitHub Actions ログ
 - ベンチマーク: docs/architecture/bench-results/
+
+
+
+### DOC-18.A.5 sakura 機能カバレッジ (最新 2026-10-09)
+
+| フェーズ | 完了時覆盖率 | 件数 (新規) | コミット |
+|---|---|---|---|
+| 開始 | 76.9% (80/104) | - | - |
+| Phase 1 | 83.7% (87/104) | +7 (高優先) | `1d1e338` |
+| Phase 2 | 90.4% (94/104) | +7 (IO + Migemo) | `ce0b9d8` |
+| Phase 3-6 | **100.0% (104/104)** ✨ | +10 (表示/ウィンドウ/マクロ/プラグイン) | `9ee2c4a` |
+
+**sakura editor 全 104 機能 完全カバレッジ達成** 🎉
+
+### DOC-18.A.6 sakura-rs モジュール構成 (Phase 1-6 後)
+
+| ファイル | 行数 (約) | テスト数 | 状態 |
+|---|---|---|---|
+| `lib.rs` | 90 | 2 | ✅ |
+| `buffer.rs` | 400 | 8 | 既存 |
+| `cursor.rs` | 250 | 4 | 既存 |
+| `undo.rs` | 200 | 4 | 既存 |
+| `type_config.rs` | 450 | - | 拡張 |
+| `types/` | 300 | - | 既存 |
+| `grep.rs` | 350 | 5 | 既存 |
+| `auto_backup.rs` | 200 | 4 | Phase 1 |
+| `control_code.rs` | 90 | 7 | Phase 1 |
+| `cursor_persistence.rs` | 150 | 4 | Phase 1 |
+| `incremental_search.rs` | 150 | 9 | Phase 1 |
+| `matching_paren.rs` | 130 | 6 | Phase 1 |
+| `syntax_styling.rs` | 170 | 5 | Phase 1 |
+| `zenkaku_hankaku.rs` | 200 | 7 | Phase 1 |
+| `encoding_io.rs` | 250 | 9 | Phase 2 |
+| `file_lock.rs` | 220 | 4 | Phase 2 |
+| `keyword_set.rs` | 200 | 7 | Phase 2 |
+| `migemo.rs` | 220 | 7 | Phase 2 |
+| `outline_extended.rs` | 230 | 6 | Phase 2 |
+| `search_highlight.rs` | 150 | 7 | Phase 2 |
+| `ruler.rs` | 90 | 3 | Phase 3 |
+| `font_manager.rs` | 110 | 5 | Phase 3 |
+| `sdi.rs` | 130 | 5 | Phase 4 |
+| `split_quad.rs` | 130 | 6 | Phase 4 |
+| `tag_jump.rs` | 180 | 6 | Phase 4 |
+| `key_macro.rs` | 150 | 5 | Phase 5 |
+| `ppa_macro.rs` | 110 | 5 | Phase 5 |
+| `js_macro.rs` | 220 | 10 | Phase 5 |
+| `daemon.rs` | 110 | 5 | Phase 6 |
+| `plugin.rs` | 150 | 5 | Phase 6 |
+| **合計** | **~5,200 (新)** | **159** | **100%** |
+
+### DOC-18.A.7 追加クレート依存
+
+| クレート | バージョン | サイズ | 用途 |
+|---|---|---|---|
+| `encoding_rs` | 0.8 | ~500 KB | 多言語エンコード |
+| `wasmtime` | 26 | ~10 MB | WASM プラグイン |
 
 ## 5. 注記
 

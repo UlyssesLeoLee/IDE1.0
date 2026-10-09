@@ -61,7 +61,7 @@
 
 | カテゴリ | 基準 | 目標 |
 |---|---|---|
-| 機能 | sakura editor 機能 75% カバー | 76% (現况) |
+| 機能 | sakura editor 機能 75% カバー | 100% (現况) |
 | 性能 | sakura-rs bench ≥ 50,000 ops/s | 56,971 ops/s |
 | テスト | cargo test ≥ 95% pass | 253/253 (100%) |
 | CI | 9 jobs ≥ 8 PASS | 8/9 (1 限定的) |

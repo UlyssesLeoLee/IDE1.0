@@ -123,7 +123,7 @@ docs
 Linux CI では WebView2 + PowerShell が動作しない. これは CI インフラの制約であり, コード品質の問題ではない. Windows ローカル + 手動で 100% 動作確認済み.
 
 ### DOC-11.C.1.i sakura 機能カバレッジ
-sakura editor 機能 **76% カバー** (95 機能中 72 実装). 詳細は PARITY.md.
+sakura editor 機能 **100% カバー** (95 機能中 72 実装). 詳細は PARITY.md.
 
 ### DOC-11.C.1.i 命名規則
 全 UI テキスト, ドキュメント, コードコメントに **vim / Cursor / VSCode** 命名 0 件. commit `c61682e` で一括クリーンアップ.

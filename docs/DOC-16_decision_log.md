@@ -43,6 +43,7 @@
 | ADR-008 | PowerShell Terminal 実装 | Accepted | 2026-10-05 |
 | ADR-009 | PR #13 --merge 戦略 | Accepted | 2026-10-07 |
 | ADR-010 | editor.html 完全重写 | Accepted | 2026-10-09 |
+| ADR-011 | sakura 機能 100% カバレッジ | Accepted | 2026-10-09 |
 
 ### DOC-16.B.1 ADR 詳細
 
@@ -124,6 +125,22 @@
 - **戦略:** wiki base64 埋め込み, template literal escape 回避
 - **結果:** 全機能動作, 1348 行 (旧 7952)
 
+#### ADR-011: sakura 機能 100% カバレッジ
+
+- **背景:** ユーザー要求「sakura editor 全機能を実装」 (ulys-191-36/37/38 計画)
+- **選択肢:**
+  - A. 76.9% で停止 (当初の計画)
+  - B. 90% で停止 (Phase 2 完了時点)
+  - C. 100% 達成 (Phase 3-6 含む全実装) ← 採用
+- **決定:** C (100% 達成)
+- **理由:** ユーザー明示要求, 機能カバレッジ最大の価値提供
+- **コスト:** 重型依存追加 (encoding_rs ~500KB, wasmtime ~10MB), js_macro は mini interpreter で代替 (rquickjs/boa 依存回避)
+- **結果:** 76.9% → 83.7% (Phase 1) → 90.4% (Phase 2) → **100.0% (Phase 3-6)** 🎉
+- **内訳:**
+  - Phase 1: 7 件 (高優先) — `1d1e338`
+  - Phase 2: 7 件 (IO + Migemo) — `ce0b9d8`
+  - Phase 3-6: 10 件 (表示/ウィンドウ/マクロ/プラグイン) — `9ee2c4a`
+
 ## 5. 注記
 
 ### DOC-16.A.1.i ADR 命名規則
@@ -142,6 +159,9 @@
 - `c61682e` ulys-191-34 — editor.html 重写
 - `e3adc9c` ulys-191-30 — UI リファクタ + 命名規則
 - `5334142` PR #13 --merge
+- `1d1e338` ulys-191-36 — Phase 1 sakura 補完
+- `ce0b9d8` ulys-191-37 — Phase 2 sakura 補完
+- `9ee2c4a` ulys-191-38 — Phase 3-6 sakura 補完 (100% 達成)
 
 ## 7. 改訂履歴
 
