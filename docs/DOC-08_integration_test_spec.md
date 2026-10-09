@@ -1,6 +1,14 @@
 # [DOC-08] 結合テスト仕様書 (SIT)
 
-> **メタ情報:** DOC-08 / v0.1.0 / 2026-10-09 / システム結合 (CF2013 §7) / Draft
+> **メタ情報:**
+> - **ドキュメント ID:** DOC-08
+> - **ドキュメント名:** 結合テスト仕様書 (SIT)
+> - **バージョン:** v0.1.0
+> - **作成日:** 2026-10-09
+> - **最終更新:** 2026-10-09
+> - **担当プロセス:** システム結合 (CF2013 §7)
+> - **準拠標準:** IPA 共通フレーム2013 §3 / §5 / §6 / §7
+> - **ステータス:** Draft
 
 ## 1. 概要
 
@@ -76,8 +84,8 @@
 # Rust 結合テスト
 cargo test --workspace --tests
 
-# Python クライアント
-python crates/ide-shell-protocol/examples/python_client_demo.py
+# Python クライアント (将来実装)
+# python crates/ide-shell-protocol/client_demo.py  # 注: ファイル未着手
 
 # 手動 UI 結合テスト
 ide-shell-desktop.exe  # → 手動操作
@@ -99,7 +107,8 @@ Web ブラウザ (chromium) 経由のため, Linux 環境でも基本動作. た
 - [DOC-11 UAT](DOC-11_uat_report.md) — 受け入れテスト
 
 **関連実装:**
-- `crates/ide-shell/tests/integration.rs` (14 tests)
+- `crates/ide-shell/tests/app_integration.rs` (実ファイル名, 14 tests)
+- `crates/ide-shell/tests/keymap.rs`
 - `crates/ide-shell-web/tests/path_safety.rs` (12 tests)
 
 ## 7. 改訂履歴

@@ -1,6 +1,14 @@
 # [DOC-06] ソフトウェア詳細設計書 (DDD)
 
-> **メタ情報:** DOC-06 / v0.1.0 / 2026-10-09 / ソフトウェア詳細設計 (CF2013 §7) / Draft
+> **メタ情報:**
+> - **ドキュメント ID:** DOC-06
+> - **ドキュメント名:** ソフトウェア詳細設計書 (DDD)
+> - **バージョン:** v0.1.0
+> - **作成日:** 2026-10-09
+> - **最終更新:** 2026-10-09
+> - **担当プロセス:** ソフトウェア詳細設計 (CF2013 §7)
+> - **準拠標準:** IPA 共通フレーム2013 §3 / §5 / §6 / §7
+> - **ステータス:** Draft
 
 ## 1. 概要
 
@@ -246,7 +254,7 @@ sakura-rs は外部 crate を 1 つも持たない.
 - [PARITY.md](../crates/sakura-rs/PARITY.md) — 機能対比
 
 **関連実装:**
-- `crates/sakura-rs/src/*.rs` (全ソース)
+- `crates/sakura-rs/src/` (lib/buffer/cursor/undo/grep/type_config)
 - `crates/ide-shell-web/src/editor.html` (state machine)
 - `crates/ide-shell-web/src/syntax.js` (言語 lexer)
 

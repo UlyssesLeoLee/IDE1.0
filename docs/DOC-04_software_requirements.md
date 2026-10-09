@@ -1,6 +1,14 @@
 # [DOC-04] ソフトウェア要件仕様書 (Software SRS)
 
-> **メタ情報:** DOC-04 / v0.1.0 / 2026-10-09 / ソフトウェア要件分析 (CF2013 §7) / Draft
+> **メタ情報:**
+> - **ドキュメント ID:** DOC-04
+> - **ドキュメント名:** ソフトウェア要件仕様書
+> - **バージョン:** v0.1.0
+> - **作成日:** 2026-10-09
+> - **最終更新:** 2026-10-09
+> - **担当プロセス:** ソフトウェア要件分析 (CF2013 §7)
+> - **準拠標準:** IPA 共通フレーム2013 §3 / §5 / §6 / §7
+> - **ステータス:** Draft
 
 ## 1. 概要
 
@@ -100,7 +108,8 @@ SRS (DOC-02) を **ソフトウェアレベル** で詳細化. モジュール�
 ## 5. 注記
 
 ### DOC-04.A.2.i ide-shell-protocol Python デモ
-`crates/ide-shell-protocol/examples/python_client_demo.py` で AI agent 統合例を実装.
+`crates/ide-shell-protocol/` 直下に Python クライアント実装を予定 (未着手).
+完成後は `python crates/ide-shell-protocol/client_demo.py` で AI agent 統合例を動作確認.
 
 ## 6. 関連ドキュメント
 
