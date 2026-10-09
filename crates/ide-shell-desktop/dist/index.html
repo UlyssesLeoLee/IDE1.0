@@ -5,35 +5,472 @@
   <title>IDE1.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    /* ===== Base ===== */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg-bar: #252526;
-      --bg-side: #1e1e1e;
-      --bg-status: #007acc;
-      --bg-edit: #1e1e1e;
-      --border: #333;
-      --fg: #d4d4d4;
-      --fg-muted: #858585;
-      --fg-dim: #6a6a6a;
-      --blue: #569cd6;
-      --green: #4ec9b0;
-      --yellow: #dcdcaa;
-      --red: #f48771;
-      --orange: #ce9178;
+    /* ============================================================
+       Light Mode: Translucent White Frosted Glass (Low Cognitive Load)
+       ============================================================ */
+    :root, [data-theme="light"] {
+      --theme-name: "light";
+      --fg: #0f172a;
+      --fg-muted: #64748b;
+      --fg-dim: #94a3b8;
+      --bg: #f8fafc;
+      --body-bg:
+        radial-gradient(1200px 800px at 12% 10%, rgba(219, 234, 254, 0.75), transparent 60%),
+        radial-gradient(1000px 700px at 88% 18%, rgba(243, 232, 255, 0.7), transparent 55%),
+        radial-gradient(1100px 900px at 50% 92%, rgba(220, 252, 231, 0.55), transparent 60%),
+        linear-gradient(145deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+
+      --bg-bar: rgba(255, 255, 255, 0.65);
+      --bg-side: rgba(255, 255, 255, 0.52);
+      --bg-status: rgba(255, 255, 255, 0.75);
+      --bg-edit: rgba(255, 255, 255, 0.46);
+      --bg-panel: rgba(255, 255, 255, 0.52);
+      --bg-input: rgba(255, 255, 255, 0.75);
+
+      --border: rgba(255, 255, 255, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.65);
+      --glass-shadow: 0 20px 48px -12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+      --glass-specular: inset 0 1px 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.35);
+      --glass-inset-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.03);
+
+      --blue: #1d4ed8;
+      --green: #047857;
+      --yellow: #b45309;
+      --red: #b91c1c;
+      --orange: #c2410c;
+
+      --kbd-bg: rgba(255, 255, 255, 0.85);
+      --kbd-border: rgba(255, 255, 255, 0.95);
+      --scroll-thumb: rgba(148, 163, 184, 0.4);
+      --scroll-thumb-hover: rgba(100, 116, 139, 0.65);
     }
-    html, body { height: 100%; overflow: hidden; background: var(--bg-edit); color: var(--fg); font: 13px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; }
+
+    /* ============================================================
+       Dark Mode: Obsidian (黑曜石) Style
+       ============================================================ */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --theme-name: "dark";
+        --fg: #f1f5f9;
+        --fg-muted: #94a3b8;
+        --fg-dim: #64748b;
+        --bg: #090a0f;
+        --body-bg:
+          radial-gradient(1200px 800px at 15% 10%, rgba(30, 41, 59, 0.5), transparent 60%),
+          radial-gradient(1000px 700px at 85% 20%, rgba(49, 46, 129, 0.4), transparent 55%),
+          radial-gradient(1100px 900px at 50% 90%, rgba(15, 23, 42, 0.7), transparent 60%),
+          linear-gradient(145deg, #07080c 0%, #0c0e14 45%, #10141e 100%);
+
+        --bg-bar: rgba(15, 18, 26, 0.75);
+        --bg-side: rgba(20, 25, 36, 0.62);
+        --bg-status: rgba(15, 18, 26, 0.85);
+        --bg-edit: rgba(12, 15, 22, 0.65);
+        --bg-panel: rgba(20, 25, 36, 0.62);
+        --bg-input: rgba(24, 30, 42, 0.85);
+
+        --border: rgba(255, 255, 255, 0.14);
+        --border-subtle: rgba(255, 255, 255, 0.09);
+        --glass-shadow: 0 24px 56px -12px rgba(0, 0, 0, 0.75), 0 2px 4px rgba(0, 0, 0, 0.5);
+        --glass-specular: inset 0 1px 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.6);
+        --glass-inset-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.65);
+
+        --blue: #38bdf8;
+        --green: #34d399;
+        --yellow: #fbbf24;
+        --red: #f87171;
+        --orange: #fb923c;
+
+        --kbd-bg: rgba(26, 32, 46, 0.85);
+        --kbd-border: rgba(255, 255, 255, 0.15);
+        --scroll-thumb: rgba(100, 116, 139, 0.4);
+        --scroll-thumb-hover: rgba(148, 163, 184, 0.6);
+      }
+    }
+
+    [data-theme="dark"] {
+      --theme-name: "dark";
+      --fg: #f1f5f9;
+      --fg-muted: #94a3b8;
+      --fg-dim: #64748b;
+      --bg: #090a0f;
+      --body-bg:
+        radial-gradient(1200px 800px at 15% 10%, rgba(30, 41, 59, 0.5), transparent 60%),
+        radial-gradient(1000px 700px at 85% 20%, rgba(49, 46, 129, 0.4), transparent 55%),
+        radial-gradient(1100px 900px at 50% 90%, rgba(15, 23, 42, 0.7), transparent 60%),
+        linear-gradient(145deg, #07080c 0%, #0c0e14 45%, #10141e 100%);
+
+      --bg-bar: rgba(15, 18, 26, 0.75);
+      --bg-side: rgba(20, 25, 36, 0.62);
+      --bg-status: rgba(15, 18, 26, 0.85);
+      --bg-edit: rgba(12, 15, 22, 0.65);
+      --bg-panel: rgba(20, 25, 36, 0.62);
+      --bg-input: rgba(24, 30, 42, 0.85);
+
+      --border: rgba(255, 255, 255, 0.14);
+      --border-subtle: rgba(255, 255, 255, 0.09);
+      --glass-shadow: 0 24px 56px -12px rgba(0, 0, 0, 0.75), 0 2px 4px rgba(0, 0, 0, 0.5);
+      --glass-specular: inset 0 1px 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.6);
+      --glass-inset-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.65);
+
+      --blue: #38bdf8;
+      --green: #34d399;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --orange: #fb923c;
+
+      --kbd-bg: rgba(26, 32, 46, 0.85);
+      --kbd-border: rgba(255, 255, 255, 0.15);
+      --scroll-thumb: rgba(100, 116, 139, 0.4);
+      --scroll-thumb-hover: rgba(148, 163, 184, 0.6);
+    }
+
+    /* ============================================================
+       Crystal Clear Mode: Ultra Transparent Glass (透视后方内容 + 反色文字)
+       ============================================================ */
+    [data-theme="clear"] {
+      --theme-name: "clear";
+      --fg: #ffffff;
+      --fg-muted: rgba(255, 255, 255, 0.82);
+      --fg-dim: rgba(255, 255, 255, 0.65);
+      --bg: transparent;
+      --body-bg: transparent;
+
+      --bg-bar: rgba(255, 255, 255, 0.06);
+      --bg-side: rgba(255, 255, 255, 0.04);
+      --bg-status: rgba(255, 255, 255, 0.08);
+      --bg-edit: transparent;
+      --bg-panel: rgba(255, 255, 255, 0.05);
+      --bg-input: rgba(255, 255, 255, 0.12);
+
+      --border: rgba(255, 255, 255, 0.28);
+      --border-subtle: rgba(255, 255, 255, 0.16);
+      --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+      --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2);
+      --glass-inset-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+
+      --blue: #38bdf8;
+      --green: #4ade80;
+      --yellow: #fde047;
+      --red: #f87171;
+      --orange: #fb923c;
+
+      --kbd-bg: rgba(255, 255, 255, 0.16);
+      --kbd-border: rgba(255, 255, 255, 0.35);
+      --scroll-thumb: rgba(255, 255, 255, 0.3);
+      --scroll-thumb-hover: rgba(255, 255, 255, 0.55);
+    }
+
+    [data-theme="clear"] body {
+      background: transparent;
+    }
+
+    /* 在透明玻璃模式下，主界面与文本应用智能高对比/反色融合 */
+    [data-theme="clear"] #app {
+      background: rgba(255, 255, 255, 0.02);
+      backdrop-filter: blur(8px) saturate(140%);
+      -webkit-backdrop-filter: blur(8px) saturate(140%);
+    }
+
+    /* ============================================================
+       全透明水晶质感按钮 (Crystal Glass Buttons & Controls)
+       具有水晶高折射高光、双层倒角折射光晕、微棱镜渐变与毛玻璃通透
+       ============================================================ */
+    [data-theme="clear"] .tb-btn,
+    [data-theme="clear"] .theme-toggle-btn,
+    [data-theme="clear"] .bottom-toggle,
+    [data-theme="clear"] #welcome .open-btn,
+    [data-theme="clear"] .md-btn {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.22) 100%) !important;
+      backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.55) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.30) !important;
+      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.15),
+                  0 1px 4px rgba(255, 255, 255, 0.2),
+                  inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25),
+                  inset 1px 0 1px rgba(255, 255, 255, 0.35),
+                  inset -1px 0 1px rgba(255, 255, 255, 0.35) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+      mix-blend-mode: normal;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    [data-theme="clear"] .tb-btn:hover,
+    [data-theme="clear"] .theme-toggle-btn:hover,
+    [data-theme="clear"] .bottom-toggle:hover,
+    [data-theme="clear"] #welcome .open-btn:hover,
+    [data-theme="clear"] .md-btn:hover {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.48) 0%, rgba(255, 255, 255, 0.20) 45%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.38) 100%) !important;
+      border-color: rgba(255, 255, 255, 0.85) !important;
+      border-top-color: #ffffff !important;
+      box-shadow: 0 6px 24px -2px rgba(56, 189, 248, 0.3),
+                  0 0 12px rgba(255, 255, 255, 0.4),
+                  inset 0 2px 2px 0 #ffffff,
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.4) !important;
+      transform: translateY(-1px);
+    }
+
+    [data-theme="clear"] .tb-btn:active,
+    [data-theme="clear"] .theme-toggle-btn:active,
+    [data-theme="clear"] .bottom-toggle:active,
+    [data-theme="clear"] #welcome .open-btn:active {
+      transform: translateY(0.5px) scale(0.98);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+    }
+
+    /* 水晶质感 Menubar 顶栏按钮 (sakura 风格 8 主菜单) */
+    [data-theme="clear"] .mb-btn {
+      color: rgba(255, 255, 255, 0.9) !important;
+      border-radius: 5px;
+      margin: 2px 1px;
+      transition: all 0.2s ease;
+    }
+    [data-theme="clear"] .mb-btn:hover,
+    [data-theme="clear"] .menu-item.open > .mb-btn {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(16px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.5) !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 水晶质感 下拉菜单浮层 (Dropdown Panels) */
+    [data-theme="clear"] .menu-dropdown,
+    [data-theme="clear"] .submenu-dropdown {
+      background: rgba(18, 22, 32, 0.72) !important;
+      backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      -webkit-backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.65) !important;
+      border-radius: 8px;
+      box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.45),
+                  0 2px 8px rgba(0, 0, 0, 0.2),
+                  inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15) !important;
+      padding: 5px 0;
+    }
+    [data-theme="clear"] .menu-row {
+      color: rgba(255, 255, 255, 0.92) !important;
+      border-radius: 4px;
+      margin: 1px 4px;
+      transition: background 0.15s ease;
+    }
+    [data-theme="clear"] .menu-row:hover {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.15) 100%) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      color: #ffffff !important;
+    }
+    [data-theme="clear"] .menu-sep {
+      background: rgba(255, 255, 255, 0.18) !important;
+      margin: 4px 6px;
+    }
+
+    /* 水晶质感 Activity Bar 图标按钮 */
+    [data-theme="clear"] .act-btn {
+      color: rgba(255, 255, 255, 0.75);
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+    [data-theme="clear"] .act-btn:hover {
+      background: rgba(255, 255, 255, 0.18) !important;
+      color: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.35) !important;
+    }
+    [data-theme="clear"] .act-btn.active {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(18px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(18px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.6) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), inset 0 1.5px 1px #fff !important;
+      color: #38bdf8 !important;
+    }
+
+    /* 水晶质感 侧栏与底栏 Tab 切换按钮 */
+    [data-theme="clear"] .side-tab.active,
+    [data-theme="clear"] .bottom-tab.active,
+    [data-theme="clear"] .tab.active {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
+      backdrop-filter: blur(14px) saturate(180%) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+    [data-theme="clear"] .side-tab:hover,
+    [data-theme="clear"] .bottom-tab:hover,
+    [data-theme="clear"] .tab:hover {
+      background: rgba(255, 255, 255, 0.14) !important;
+      color: #ffffff !important;
+    }
+
+    /* 自动和透明背景内容反色显示的文字区域 (mix-blend-mode: difference / isolation) */
+    [data-theme="clear"] #ed-content,
+    [data-theme="clear"] #gutter,
+    [data-theme="clear"] #terminal-body,
+    [data-theme="clear"] .shortcuts,
+    [data-theme="clear"] .tree-node,
+    [data-theme="clear"] #welcome h1 {
+      color: #ffffff;
+      mix-blend-mode: difference;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--body-bg);
+      background-attachment: fixed;
+      color: var(--fg);
+      font: 13px/1.4 ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
 
     /* ===== App Layout ===== */
-    #app { display: grid; grid-template-rows: 30px 28px 1fr 22px; grid-template-columns: 44px 240px 1fr; height: 100vh; }
-    #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 6px; gap: 4px; }
-    #activity-bar { grid-row: 2 / 4; grid-column: 1; background: #333; display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
-    #side-bar { grid-row: 2 / 4; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    #editor-area { grid-row: 2 / 4; grid-column: 3; display: flex; flex-direction: column; min-height: 0; }
-    #bottom-panel { grid-row: 4; grid-column: 1 / -1; background: #007acc; color: white; display: flex; align-items: center; padding: 0 8px; height: 22px; }
-    #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: white; display: flex; align-items: center; padding: 0 8px; height: 22px; display: none; }
-    .status-active #status { display: flex; }
-    .status-active #bottom-panel { display: none; }
+    #app {
+      display: grid;
+      grid-template-rows: 30px 1fr auto 24px;
+      grid-template-columns: 46px 240px 1fr;
+      height: 100vh;
+      backdrop-filter: blur(20px) saturate(160%);
+      -webkit-backdrop-filter: blur(20px) saturate(160%);
+    }
+
+    #toolbar {
+      grid-row: 1;
+      grid-column: 1 / -1;
+      background: var(--bg-bar);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03), var(--glass-specular);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 6px;
+      z-index: 10;
+    }
+
+    #activity-bar {
+      grid-row: 2 / 4;
+      grid-column: 1;
+      background: var(--bg-bar);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6px 0;
+      gap: 6px;
+      z-index: 5;
+    }
+
+    #side-bar {
+      grid-row: 2 / 4;
+      grid-column: 2;
+      background: var(--bg-side);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--glass-specular);
+    }
+
+    #editor-area {
+      grid-row: 2;
+      grid-column: 3;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--bg-edit);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    #bottom-panel {
+      grid-row: 3;
+      grid-column: 3;
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #bottom-panel[data-collapsed="true"] #bottom-body {
+      display: none;
+    }
+
+    #status {
+      grid-row: 4;
+      grid-column: 1 / -1;
+      background: var(--bg-status);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      height: 24px;
+      box-shadow: var(--glass-specular);
+    }
+
+    /* ===== Toolbar Buttons ===== */
+    .tb-btn {
+      background: var(--kbd-bg);
+      border: 1px solid var(--border-subtle);
+      color: var(--fg);
+      padding: 3px 10px;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-family: inherit;
+      font-weight: 500;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), var(--glass-specular);
+      transition: all 0.2s ease;
+    }
+    .tb-btn:hover {
+      border-color: var(--blue);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), var(--glass-specular);
+    }
+    .tb-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* Theme Toggle Button in Toolbar */
+    .theme-toggle-btn {
+      background: var(--kbd-bg);
+      border: 1px solid var(--border-subtle);
+      color: var(--fg);
+      padding: 3px 10px;
+      cursor: pointer;
+      border-radius: 9999px;
+      font-size: 11.5px;
+      font-family: inherit;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), var(--glass-specular);
+      transition: all 0.2s ease;
+    }
+    .theme-toggle-btn:hover {
+      border-color: var(--blue);
+    }
 
     /* ===== Menubar (sakura 风格 顶端功能按钮) ===== */
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: 30px; position: relative; z-index: 100; }
@@ -61,97 +498,427 @@
     .tb-btn:hover { background: #444; }
 
     /* ===== Activity Bar ===== */
-    .act-btn { width: 36px; height: 36px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 4px; font-size: 18px; }
-    .act-btn:hover { background: #444; color: var(--fg); }
-    .act-btn.active { color: var(--fg); border-left: 2px solid var(--blue); }
+    .act-btn {
+      width: 34px;
+      height: 34px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--fg-muted);
+      cursor: pointer;
+      border-radius: 8px;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+    .act-btn:hover {
+      background: var(--kbd-bg);
+      color: var(--fg);
+      border-color: var(--border-subtle);
+    }
+    .act-btn.active {
+      color: var(--blue);
+      background: var(--kbd-bg);
+      border-color: var(--border);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), var(--glass-specular);
+    }
 
     /* ===== Side Bar ===== */
-    #side-tabs { display: flex; background: #2a2a2a; border-bottom: 1px solid var(--border); height: 28px; }
-    .side-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
-    .side-tab.active { color: var(--fg); border-bottom-color: var(--blue); }
-    #side-body { flex: 1; overflow: auto; padding: 4px; font-size: 12px; }
-    .sb-section { padding: 4px 6px; color: var(--fg-muted); text-transform: uppercase; font-size: 10px; font-weight: bold; }
-    .tree-node { padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap; }
-    .tree-node:hover { background: #2a2a2a; }
-    .tree-folder { font-weight: 500; }
+    #side-tabs {
+      display: flex;
+      background: var(--bg-bar);
+      border-bottom: 1px solid var(--border-subtle);
+      height: 28px;
+      overflow-x: auto;
+    }
+    .side-tab {
+      padding: 4px 8px;
+      background: transparent;
+      border: none;
+      color: var(--fg-muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .side-tab.active {
+      color: var(--fg);
+      border-bottom-color: var(--blue);
+      background: var(--bg-side);
+    }
+    #side-body {
+      flex: 1;
+      overflow: auto;
+      padding: 6px;
+      font-size: 12px;
+    }
+    .sb-section {
+      padding: 6px 6px 4px 6px;
+      color: var(--fg-dim);
+      text-transform: uppercase;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .tree-node {
+      padding: 3px 6px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      border-radius: 4px;
+      transition: background 0.15s ease;
+    }
+    .tree-node:hover {
+      background: var(--kbd-bg);
+    }
+    .tree-folder { font-weight: 600; color: var(--fg); }
     .tree-icon { display: inline-block; width: 14px; color: var(--fg-muted); }
-    .empty-hint { padding: 12px 8px; color: var(--fg-dim); font-size: 12px; line-height: 1.5; }
+    .empty-hint { padding: 16px 10px; color: var(--fg-dim); font-size: 12px; line-height: 1.6; }
 
     /* ===== Editor Area ===== */
-    #tabs { display: flex; background: #2a2a2a; border-bottom: 1px solid var(--border); height: 28px; overflow-x: auto; }
-    .tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-right: 1px solid var(--border); display: inline-flex; align-items: center; gap: 6px; }
-    .tab.active { background: var(--bg-edit); color: var(--fg); }
-    .tab .tab-close { color: var(--fg-muted); padding: 0 4px; }
-    .tab .tab-close:hover { color: var(--fg); background: #444; }
+    #tabs {
+      display: flex;
+      background: var(--bg-bar);
+      border-bottom: 1px solid var(--border-subtle);
+      height: 28px;
+      overflow-x: auto;
+    }
+    .tab {
+      padding: 4px 12px;
+      background: transparent;
+      border: none;
+      color: var(--fg-muted);
+      cursor: pointer;
+      font-size: 11px;
+      border-right: 1px solid var(--border-subtle);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .tab.active {
+      background: var(--bg-edit);
+      color: var(--fg);
+      font-weight: 600;
+      box-shadow: inset 0 2px 0 var(--blue);
+    }
+    .tab .tab-close {
+      color: var(--fg-muted);
+      padding: 0 4px;
+      border-radius: 4px;
+    }
+    .tab .tab-close:hover {
+      color: var(--fg);
+      background: var(--border-subtle);
+    }
     .tab-dirty::before { content: "● "; color: var(--yellow); }
 
-    #breadcrumb { background: #252526; border-bottom: 1px solid var(--border); padding: 2px 8px; font-size: 11px; color: var(--fg-muted); height: 22px; display: flex; align-items: center; }
+    #breadcrumb {
+      background: var(--bg-bar);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 2px 10px;
+      font-size: 11px;
+      color: var(--fg-muted);
+      height: 22px;
+      display: flex;
+      align-items: center;
+    }
     .crumb { padding: 0 4px; }
-    .crumb.current { color: var(--fg); }
-    .crumb-sep { padding: 0 2px; }
+    .crumb.current { color: var(--fg); font-weight: 600; }
+    .crumb-sep { padding: 0 2px; color: var(--fg-dim); }
 
-    #editor { flex: 1; display: flex; min-height: 0; }
-    #gutter { background: var(--bg-side); color: var(--fg-muted); padding: 4px 8px; text-align: right; user-select: none; min-width: 40px; overflow: hidden; font-size: 12px; line-height: 18px; }
-    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: 2; font-size: 13px; line-height: 18px; outline: none; }
+    #editor {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      box-shadow: var(--glass-inset-shadow);
+    }
+    #gutter {
+      background: var(--bg-side);
+      color: var(--fg-dim);
+      padding: 6px 10px;
+      text-align: right;
+      user-select: none;
+      min-width: 44px;
+      overflow: hidden;
+      font-size: 12px;
+      line-height: 19px;
+      border-right: 1px solid var(--border-subtle);
+    }
+    #ed-content {
+      flex: 1;
+      padding: 6px 12px;
+      overflow: auto;
+      background: transparent;
+      white-space: pre;
+      tab-size: 2;
+      font-size: 13px;
+      line-height: 19px;
+      outline: none;
+      color: var(--fg);
+    }
     #ed-content:focus { outline: none; }
 
-    /* ===== Bottom Panel (single layer) ===== */
-    #bottom-head { display: flex; align-items: center; height: 28px; background: #252526; border-top: 1px solid var(--border); }
+    /* ===== Bottom Panel ===== */
+    #bottom-head {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      background: var(--bg-bar);
+      border-top: 1px solid var(--border);
+    }
     .bottom-tabs { display: flex; }
-    .bottom-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
-    .bottom-tab.active { color: var(--fg); border-bottom-color: var(--blue); background: var(--bg-edit); }
+    .bottom-tab {
+      padding: 4px 12px;
+      background: transparent;
+      border: none;
+      color: var(--fg-muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+    }
+    .bottom-tab.active {
+      color: var(--fg);
+      border-bottom-color: var(--blue);
+      background: var(--bg-edit);
+    }
     .bottom-spacer { flex: 1; }
-    .bottom-toggle { background: transparent; border: none; color: var(--fg-muted); cursor: pointer; padding: 4px 8px; font-size: 11px; }
-    .bottom-toggle:hover { color: var(--fg); }
+    .bottom-toggle {
+      background: transparent;
+      border: none;
+      color: var(--fg-muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+    }
+    .bottom-toggle:hover {
+      color: var(--fg);
+      background: var(--kbd-bg);
+    }
 
-    #bottom-body { background: var(--bg-edit); height: 240px; overflow: hidden; display: flex; flex-direction: column; }
+    #bottom-body {
+      background: var(--bg-panel);
+      height: 240px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--glass-inset-shadow);
+    }
     .bottom-pane { display: none; flex: 1; overflow: auto; }
     .bottom-pane.active { display: flex; flex-direction: column; }
-    #terminal-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: 12px; line-height: 1.4; white-space: pre-wrap; }
-    #terminal-body:focus { outline: 1px solid var(--blue); }
+    #terminal-body {
+      flex: 1;
+      padding: 8px 12px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      color: var(--fg);
+    }
+    #terminal-body:focus {
+      outline: 1px solid var(--blue);
+    }
     .term-line { padding: 1px 0; }
     .term-prompt { color: var(--blue); font-weight: bold; }
     .term-stderr { color: var(--red); }
-    .terminal-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); flex-direction: column; gap: 8px; }
-    .terminal-empty-hint kbd { background: #444; padding: 1px 6px; border-radius: 3px; font-family: inherit; font-size: 10px; }
+    .terminal-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      color: var(--fg-dim);
+      flex-direction: column;
+      gap: 8px;
+    }
+    .terminal-empty-hint kbd {
+      background: var(--kbd-bg);
+      border: 1px solid var(--border-subtle);
+      color: var(--fg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 10.5px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
 
-    #output-body, #problems-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: 12px; }
+    #output-body, #problems-body {
+      flex: 1;
+      padding: 8px 12px;
+      overflow: auto;
+      font-size: 12px;
+      color: var(--fg);
+    }
     .output-line { padding: 1px 0; }
-    .output-time { color: var(--fg-muted); margin-right: 8px; }
+    .output-time { color: var(--fg-dim); margin-right: 8px; }
     .output-line.stderr { color: var(--red); }
-    .output-empty { padding: 20px; text-align: center; color: var(--fg-dim); }
+    .output-empty { padding: 24px; text-align: center; color: var(--fg-dim); }
 
     /* ===== Status Bar ===== */
-    #status { font-size: 11px; }
-    .s-item { padding: 0 8px; border-right: 1px solid rgba(255,255,255,0.2); }
-    .s-mode { font-weight: bold; }
-    .s-mode[data-mode="NORMAL"] { background: var(--blue); padding: 0 8px; }
-    .s-mode[data-mode="INSERT"] { background: var(--green); padding: 0 8px; }
-    .s-mode[data-mode="VISUAL"] { background: var(--orange); padding: 0 8px; }
-    .s-tip { flex: 1; }
+    #status {
+      font-size: 11.5px;
+    }
+    .s-item {
+      padding: 0 8px;
+      border-right: 1px solid var(--border-subtle);
+    }
+    .s-mode {
+      font-weight: 700;
+      border-radius: 4px;
+      padding: 1px 8px !important;
+    }
+    .s-mode[data-mode="NORMAL"] {
+      background: rgba(37, 99, 235, 0.16);
+      color: var(--blue);
+    }
+    .s-mode[data-mode="INSERT"] {
+      background: rgba(5, 150, 105, 0.16);
+      color: var(--green);
+    }
+    .s-mode[data-mode="VISUAL"] {
+      background: rgba(217, 119, 6, 0.16);
+      color: var(--yellow);
+    }
+    .s-tip { flex: 1; color: var(--fg-muted); }
 
     /* ===== Tooltip ===== */
-    #tip { position: fixed; background: #333; color: white; padding: 4px 8px; border-radius: 3px; font-size: 11px; pointer-events: none; z-index: 1000; display: none; max-width: 400px; }
+    #tip {
+      position: fixed;
+      background: var(--bg-bar);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+      max-width: 400px;
+      box-shadow: var(--glass-shadow);
+    }
 
     /* ===== Modal ===== */
-    #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 500; }
+    #modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+    }
     #modal.show { display: flex; }
-    .md-box { background: #2d2d2d; border-radius: 4px; width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
-    .md-head { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
-    .md-title { font-weight: bold; }
+    .md-box {
+      background: var(--bg-bar);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 600px;
+      max-width: 85vw;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--glass-shadow), var(--glass-specular);
+      color: var(--fg);
+    }
+    .md-head {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+    }
+    .md-title { font-weight: 700; color: var(--fg); }
     .md-spacer { flex: 1; }
-    .md-btn { background: transparent; border: none; color: var(--fg); cursor: pointer; padding: 4px 8px; }
-    .md-btn:hover { background: #444; }
-    .md-body { padding: 12px; overflow: auto; flex: 1; white-space: pre-wrap; font-family: inherit; font-size: 12px; line-height: 1.5; }
-    .md-foot { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+    .md-btn {
+      background: transparent;
+      border: none;
+      color: var(--fg-muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+    .md-btn:hover { background: var(--kbd-bg); color: var(--fg); }
+    .md-body {
+      padding: 14px;
+      overflow: auto;
+      flex: 1;
+      white-space: pre-wrap;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--fg);
+    }
+    .md-foot {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
 
     /* ===== Welcome ===== */
-    #welcome { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; padding: 40px; }
-    #welcome h1 { font-size: 56px; font-weight: bold; }
-    #welcome .open-btn { background: var(--blue); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-    #welcome .open-btn:hover { background: #1f8ad2; }
-    .shortcuts { font-size: 11px; color: var(--fg-muted); }
-    .shortcuts kbd { background: #444; padding: 1px 6px; border-radius: 3px; margin: 0 2px; }
+    #welcome {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 18px;
+      padding: 40px;
+    }
+    #welcome h1 {
+      font-size: 52px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--fg);
+    }
+    #welcome .open-btn {
+      background: var(--blue);
+      color: #ffffff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13.5px;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+      transition: all 0.2s ease;
+    }
+    #welcome .open-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+    }
+    .shortcuts {
+      font-size: 11.5px;
+      color: var(--fg-muted);
+      line-height: 1.8;
+    }
+    .shortcuts kbd {
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      color: var(--fg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin: 0 2px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
   </style>
 </head>
 <body>
@@ -278,9 +1045,9 @@
           <div class="menu-row menu-submenu" data-submenu="theme">
             <span>主题</span><span class="mr-shortcut">▶</span>
             <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="theme-dark"><span>深色</span></div>
-              <div class="menu-row" data-cmd="theme-light"><span>浅色</span></div>
-              <div class="menu-row" data-cmd="theme-high-contrast"><span>高对比度</span></div>
+              <div class="menu-row" data-cmd="theme-light"><span>☀️ 浅色毛玻璃 (Light Glass)</span></div>
+              <div class="menu-row" data-cmd="theme-dark"><span>🌙 黑曜石深色 (Obsidian)</span></div>
+              <div class="menu-row" data-cmd="theme-clear"><span>🪟 高透视水晶玻璃 (Crystal Clear)</span></div>
             </div>
           </div>
         </div>
@@ -370,6 +1137,10 @@
       </div>
 
       <span style="flex:1"></span>
+      <button id="theme-toggle" class="theme-toggle-btn" title="点击切换主题 (浅色毛玻璃 / 黑曜石 / 全透视水晶)">
+        <span id="theme-icon">🌙</span>
+        <span id="theme-label">Obsidian</span>
+      </button>
       <button class="tb-btn" data-cmd="new-terminal" data-tip="新建终端 (Ctrl+`)">▶ 终端</button>
     </div>
 
@@ -397,7 +1168,7 @@
     </div>
 
     <!-- Bottom Panel (single layer) -->
-    <div id="bottom-panel" data-collapsed="true">
+    <div id="bottom-panel" data-collapsed="false">
       <div id="bottom-head">
         <div class="bottom-tabs">
           <button class="bottom-tab active" data-pane="terminal-pane">TERMINAL</button>
@@ -492,10 +1263,17 @@ async function fetchApi(path, opts) {
     init.headers = { "content-type": "application/json" };
     init.body = typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body);
   }
-  const r = await fetch(path, init);
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  const ct = r.headers.get("content-type") || "";
-  return ct.includes("json") ? r.json() : r.text();
+  try {
+    const r = await fetch(path, init);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const ct = r.headers.get("content-type") || "";
+    if (ct.includes("json")) return r.json();
+    const t = await r.text();
+    if (t.trim().startsWith("<")) throw new Error("API not supported on static server");
+    return t;
+  } catch (err) {
+    throw err;
+  }
 }
 
 async function invoke(name, args) {
@@ -626,6 +1404,412 @@ async function sendTerminal(data) {
   await fetchApi("/api/terminal_input", { body: { id: terminalId, data } });
 }
 
+if (terminalBody) terminalBody.addEventListener("keydown", async (e) => {
+  if (!terminalId) return;
+  let data = null;
+  if (e.key === "Enter") data = "\r\n";
+  else if (e.key === "Backspace") data = "\b \b";
+  else if (e.ctrlKey && e.key.toLowerCase() === "c") { data = "\x03"; e.preventDefault(); }
+  else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) data = e.key;
+  else return;
+  e.preventDefault();
+  await sendTerminal(data);
+});
+
+terminalBody.addEventListener("focus", () => terminalBody.focus());
+
+// ===== Editor =====
+const TABS = tabs;
+let maxTabId = 0;
+
+function getActiveTab() { return TABS.get(activeTabId); }
+
+function renderTabs() {
+  tabsEl.innerHTML = "";
+  for (const [id, t] of TABS) {
+    const tab = document.createElement("button");
+    tab.className = "tab" + (id === activeTabId ? " active" : "") + (t.dirty ? " tab-dirty" : "");
+    tab.dataset.tabId = id;
+    tab.innerHTML = escapeHtml(t.name) + '<span class="tab-close" data-tab-close="' + id + '" title="关闭">×</span>';
+    tabsEl.appendChild(tab);
+  }
+}
+
+function renderBreadcrumb() {
+  breadcrumb.innerHTML = "";
+  const at = TABS.get(activeTabId);
+  if (!at) return;
+  const parts = at.path.split(/[\\\/]/).filter(Boolean);
+  if (parts[0] && parts[0].endsWith(":")) parts.shift();
+  parts.forEach((p, i) => {
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep";
+      sep.textContent = "›";
+      breadcrumb.appendChild(sep);
+    }
+    const c = document.createElement("span");
+    c.className = "crumb" + (i === parts.length - 1 ? " current" : "");
+    c.textContent = p;
+    breadcrumb.appendChild(c);
+  });
+}
+
+function setActiveTab(id) {
+  activeTabId = id;
+  renderTabs();
+  renderBreadcrumb();
+  const t = TABS.get(id);
+  if (t) {
+    edContent.textContent = t.lines.join("\n");
+    gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
+    setFile(t.path);
+    setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+    setMode("NORMAL");
+  }
+  edContent.focus();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (ch) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch];
+  });
+}
+
+async function openFile(path) {
+  try {
+    const lines = await invoke("read_file", { path });
+    const id = "t" + (++maxTabId);
+    TABS.set(id, { id, path, cursor: { row: 0, col: 0 }, dirty: false, lines: typeof lines === "string" ? lines.split("\n") : lines });
+    setActiveTab(id);
+    setTip("已打开: " + path);
+  } catch (e) {
+    setTip("打开失败: " + e.message);
+  }
+}
+
+async function saveActive() {
+  const t = getActiveTab();
+  if (!t) return false;
+  try {
+    await invoke("write_file", { path: t.path, content: t.lines.join("\n") });
+    t.dirty = false;
+    renderTabs();
+    setTip("已保存");
+    return true;
+  } catch (e) {
+    openModal({ title: "保存失败", body: e.message });
+    return false;
+  }
+}
+
+function closeTab(id) {
+  TABS.delete(id);
+  if (activeTabId === id) activeTabId = null;
+  if (TABS.size === 0) {
+    edContent.textContent = "";
+    gutter.textContent = "";
+    setFile("无活动");
+    setPos("Ln 1, Col 1");
+  } else {
+    setActiveTab([...TABS.keys()][0]);
+  }
+  renderTabs();
+  renderBreadcrumb();
+}
+
+if (tabsEl) tabsEl.addEventListener("click", (e) => {
+  const closeBtn = e.target.closest("[data-tab-close]");
+  if (closeBtn) {
+    e.stopPropagation();
+    closeTab(closeBtn.dataset.tabClose);
+    return;
+  }
+  const tab = e.target.closest(".tab");
+  if (tab) setActiveTab(tab.dataset.tabId);
+});
+
+if (edContent) edContent.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { setMode("NORMAL"); return; }
+  if (e.key === "i" || e.key === "a" || e.key === "o" || e.key === "I" || e.key === "A" || e.key === "O") {
+    setMode("INSERT");
+  }
+  if (e.key === "v") setMode("VISUAL");
+  if (e.ctrlKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveActive();
+  }
+});
+
+// ===== Side bar =====
+let currentSidePane = "explorer";
+
+function showSidePane(name) {
+  currentSidePane = name;
+  document.querySelectorAll(".act-btn").forEach((b) => b.classList.toggle("active", b.dataset.pane === name));
+  renderSideBar();
+}
+
+function renderSideBar() {
+  const tabs = [
+    { pane: "explorer", title: "资源管理器" },
+    { pane: "search", title: "搜索" },
+    { pane: "scm", title: "源代码管理" },
+    { pane: "outline", title: "大纲" },
+  ];
+  sideTabsEl.innerHTML = tabs.map(t =>
+    '<button class="side-tab ' + (t.pane === currentSidePane ? "active" : "") + '" data-side-tab="' + t.pane + '">' + t.title + "</button>"
+  ).join("");
+  // Render body based on pane
+  if (currentSidePane === "explorer") renderExplorer();
+  else if (currentSidePane === "search") renderSearch();
+  else if (currentSidePane === "scm") renderScm();
+  else if (currentSidePane === "outline") renderOutline();
+}
+
+if (sideTabsEl) sideTabsEl.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-side-tab]");
+  if (b) showSidePane(b.dataset.sideTab);
+});
+
+document.querySelectorAll(".act-btn").forEach((btn) => {
+  btn.addEventListener("click", () => showSidePane(btn.dataset.pane));
+});
+
+async function renderExplorer() {
+  if (!projectRoot) {
+    sideBody.innerHTML = '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
+    return;
+  }
+  sideBody.innerHTML = '<div class="sb-section">' + escapeHtml(projectRoot) + "</div>";
+  try {
+    const entries = await invoke("list_dir", { path: projectRoot });
+    for (const e of entries) {
+      const node = document.createElement("div");
+      node.className = "tree-node tree-folder" + (e.is_dir ? "" : " tree-file");
+      node.innerHTML = '<span class="tree-icon">' + (e.is_dir ? "📁" : "📄") + "</span>" + escapeHtml(e.name);
+      if (!e.is_dir) {
+        node.addEventListener("click", () => openFile(e.path));
+      }
+      sideBody.appendChild(node);
+    }
+  } catch (e) {
+    sideBody.innerHTML += '<div class="empty-hint">读取失败: ' + escapeHtml(e.message) + "</div>";
+  }
+}
+
+function renderSearch() {
+  sideBody.innerHTML = '<input id="search-input" placeholder="搜索文件..." style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;border-radius:3px;font:inherit;" />' +
+    '<div id="search-results" style="margin-top:8px;"></div>';
+  const input = document.getElementById("search-input");
+  input.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      const q = input.value.trim();
+      if (!q) return;
+      try {
+        const matches = await invoke("search", { query: q });
+        const r = document.getElementById("search-results");
+        r.innerHTML = "";
+        for (const m of matches) {
+          const row = document.createElement("div");
+          row.className = "tree-node";
+          row.textContent = m.path + ":" + (m.line + 1);
+          row.addEventListener("click", () => openFile(m.path));
+          r.appendChild(row);
+        }
+        if (matches.length === 0) r.innerHTML = '<div class="empty-hint">无匹配</div>';
+      } catch (e) { /* ignore */ }
+    }
+  });
+  input.focus();
+}
+
+async function renderScm() {
+  sideBody.innerHTML = '<div class="sb-section">源代码管理</div><div id="scm-status">加载中...</div>';
+  try {
+    const j = await invoke("scm_status");
+    const statusEl = document.getElementById("scm-status");
+    statusEl.innerHTML = '<div class="empty-hint">当前分支: <b>' + escapeHtml(j.branch || "(no branch)") + "</b></div>";
+    if (j.files) {
+      for (const f of j.files) {
+        const row = document.createElement("div");
+        row.className = "tree-node";
+        row.textContent = "  " + (f.status || "?") + " " + f.path;
+        statusEl.appendChild(row);
+      }
+    }
+  } catch (e) {
+    document.getElementById("scm-status").innerHTML = '<div class="empty-hint">未初始化 git 仓库</div>';
+  }
+}
+
+async function renderOutline() {
+  const at = getActiveTab();
+  if (!at) {
+    sideBody.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
+    return;
+  }
+  sideBody.innerHTML = '<div class="sb-section">' + escapeHtml(at.path.split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
+  try {
+    const data = await invoke("outline", { path: at.path });
+    const list = document.getElementById("outline-list");
+    list.innerHTML = "";
+    if (data && data.entries) {
+      for (const e of data.entries) {
+        const row = document.createElement("div");
+        row.className = "tree-node";
+        row.textContent = (e.kind === "function" ? "ƒ" : e.kind === "class" ? "C" : "•") + " " + e.name;
+        row.addEventListener("click", () => setTip("跳到 " + (e.line + 1) + " 行"));
+        list.appendChild(row);
+      }
+      if (data.entries.length === 0) list.innerHTML = '<div class="empty-hint">无大纲 (' + (data.language || "?") + ")</div>";
+    }
+  } catch (e) {
+    document.getElementById("outline-list").innerHTML = '<div class="empty-hint">解析失败</div>';
+  }
+}
+
+// ===== Open folder =====
+async function openFolder() {
+  let path;
+  try {
+    path = await invoke("pick_folder");
+  } catch (e) {
+    path = null;
+  }
+  if (!path) {
+    const def = projectRoot || "D:/work";
+    path = prompt("输入项目根绝对路径:", def);
+  }
+  if (!path) return;
+  try {
+    await invoke("open_project", { path });
+    projectRoot = path;
+    setFile(path);
+    setTip("已打开项目: " + path);
+    showSidePane("explorer");
+  } catch (e) {
+    setTip("打开失败: " + e.message);
+  }
+}
+
+// ===== Help =====
+function showHelp() {
+  try {
+    const txt = atob(WIKI_B64);
+    openModal({ title: "IDE1.0 — 完整 wiki", body: txt, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  } catch (e) {
+    openModal({ title: "帮助", body: String(e) });
+  }
+}
+
+// ===== Command router =====
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-cmd]");
+  if (!btn) return;
+  const cmd = btn.dataset.cmd;
+  if (cmd === "open-folder") openFolder();
+  else if (cmd === "save") saveActive();
+  else if (cmd === "close-tab" && activeTabId) closeTab(activeTabId);
+  else if (cmd === "new-terminal") createTerminal();
+  else if (cmd === "toggle-bottom") document.querySelector("[data-cmd='toggle-bottom']").click();
+  else if (cmd === "help") showHelp();
+  else if (cmd === "modal-close") closeModal();
+});
+
+// ===== Global keyboard =====
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
+  if (e.key === "F1") { e.preventDefault(); showHelp(); }
+  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
+  if (e.ctrlKey && e.key === "`") {
+    e.preventDefault();
+    const bp = document.getElementById("bottom-panel");
+    if (bp.getAttribute("data-collapsed") === "true") bp.setAttribute("data-collapsed", "false");
+    else bp.setAttribute("data-collapsed", "true");
+  }
+  if (e.key === "Escape") edContent.focus();
+});
+
+// ===== Welcome page =====
+function showWelcome() {
+  const ed = document.getElementById('ed-content');
+  if (!ed) return;
+  ed.innerHTML = '<div id="welcome"><h1>IDE1.0</h1><button class="open-btn" data-cmd="open-folder">打开文件夹</button><div class="shortcuts"><kbd>i</kbd>/<kbd>a</kbd> INSERT · <kbd>v</kbd> VISUAL · <kbd>Esc</kbd> NORMAL · <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存 · <kbd>Ctrl</kbd>+<kbd>`</kbd> 终端 · <kbd>F1</kbd> 帮助</div></div>';
+}
+showWelcome();
+
+// ===== Theme Support (Light Glass / Obsidian / Crystal Clear) =====
+const THEME_CYCLE = ["light", "dark", "clear"];
+
+function initTheme() {
+  const savedTheme = localStorage.getItem("ide10_theme");
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
+  applyTheme(initialTheme);
+
+  const toggleBtn = document.getElementById("theme-toggle");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const current = document.documentElement.dataset.theme || "light";
+      const idx = THEME_CYCLE.indexOf(current);
+      const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
+      try { localStorage.setItem("ide10_theme", next); } catch (_) {}
+      applyTheme(next);
+    });
+  }
+
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+      if (!localStorage.getItem("ide10_theme")) {
+        applyTheme(e.matches ? "dark" : "light");
+      }
+    });
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const label = document.getElementById("theme-label");
+  const icon = document.getElementById("theme-icon");
+  const toggleBtn = document.getElementById("theme-toggle");
+  if (label && icon) {
+    if (theme === "clear") {
+      icon.textContent = "🪟";
+      label.textContent = "Transparent";
+    } else if (theme === "dark") {
+      icon.textContent = "🌙";
+      label.textContent = "Obsidian";
+    } else {
+      icon.textContent = "☀️";
+      label.textContent = "Light Glass";
+    }
+  }
+  if (toggleBtn) {
+    const nextIdx = (THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length;
+    const nextName = THEME_CYCLE[nextIdx] === "clear" ? "全透视玻璃" : THEME_CYCLE[nextIdx] === "dark" ? "黑曜石" : "浅色毛玻璃";
+    toggleBtn.title = `当前: ${theme}，点击切换到 ${nextName}`;
+  }
+}
+
+// ===== Bootstrap =====
+window.addEventListener("DOMContentLoaded", async function () {
+(async function bootstrap() {
+  initTheme();
+  try {
+    const b = await invoke("kernel_banner");
+    setTip("就绪 — " + b);
+  } catch (e) { /* ignore */ }
+  showSidePane("explorer");
+  // Default mode NORMAL
+  setMode("NORMAL");
+  setPos("Ln 1, Col 1");
+  setFile("无活动");
+  setLang("Plain");
+  edContent.focus();
+})();
+});
+
 // ===== sakura 风格 菜单 交互 =====
 (function() {
   // Open/close top-level menus
@@ -744,9 +1928,10 @@ function dispatchCommand(cmd) {
     case "toggle-minimap":   execCmd("toggleMinimap"); break;
     case "font-bigger":      fontBigger(); break;
     case "font-smaller":     fontSmaller(); break;
-    case "theme-dark":       setTheme("dark"); break;
-    case "theme-light":      setTheme("light"); break;
-    case "theme-high-contrast": setTheme("hc"); break;
+    case "theme-dark":       applyTheme("dark"); break;
+    case "theme-light":      applyTheme("light"); break;
+    case "theme-high-contrast": applyTheme("clear"); break;
+    case "theme-clear":      applyTheme("clear"); break;
     // 工具
     case "outline":          showOutline(); break;
     case "syntax":           toggleSyntaxHighlight(); break;
@@ -765,7 +1950,7 @@ function dispatchCommand(cmd) {
     case "settings":         openSettings(); break;
     case "keymap":           openKeymap(); break;
     case "font":             openFontPicker(); break;
-    case "theme-select":     openThemePicker(); break;
+    case "theme-select":     { const t=document.documentElement.dataset.theme||"light"; applyTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(t)+1)%THEME_CYCLE.length]); } break;
     case "language":         openLanguagePicker(); break;
     case "import-config":    importConfig(); break;
     case "export-config":    exportConfig(); break;
@@ -1125,285 +2310,6 @@ function showWelcome() {
   ed.innerHTML = '<div id="welcome"><h1>IDE1.0</h1><button class="open-btn" data-cmd="open-folder">打开文件夹</button><div class="shortcuts"><kbd>i</kbd>/<kbd>a</kbd> INSERT · <kbd>v</kbd> VISUAL · <kbd>Esc</kbd> NORMAL · <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存 · <kbd>Ctrl</kbd>+<kbd>`</kbd> 终端 · <kbd>F1</kbd> 帮助</div></div>';
 }
 showWelcome();
-
-// ===== Bootstrap =====
-window.addEventListener("DOMContentLoaded", async function () {
-(async function bootstrap() {
-  try {
-    const b = await invoke("kernel_banner");
-    setTip("就绪 — " + b);
-  } catch (e) { /* ignore */ }
-  showSidePane("explorer");
-  // Default mode NORMAL
-  setMode("NORMAL");
-  setPos("Ln 1, Col 1");
-  setFile("无活动");
-  setLang("Plain");
-  edContent.focus();
-})();
-});
-
-// ===== sakura 风格 菜单 コマンド 実装 =====
-
-// --- ファイル メニュー ---
-function createNewFile() {
-  const name = prompt("新建文件名:");
-  if (!name) return;
-  const id = newId();
-  newIdCounter++;
-  setTip("新建: " + name);
-  setProjectRoot("C:/" + name);  // placeholder
-}
-
-function saveActive() {
-  setTip("保存: 触发 Ctrl+S");
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true }));
-}
-
-function saveActiveAs() {
-  setTip("另存为 (UI 未实装)");
-}
-
-function saveAll() {
-  setTip("全部保存 (UI 未实装)");
-}
-
-function closeActiveTab() {
-  const closeBtn = document.querySelector(".tab.active .tab-close");
-  if (closeBtn) closeBtn.click();
-  else setTip("无活动标签");
-}
-
-function closeAllTabs() {
-  document.querySelectorAll(".tab .tab-close").forEach(btn => btn.click());
-  setTip("关闭全部标签");
-}
-
-function reloadActive() {
-  setTip("重新载入 (UI 未实装)");
-}
-
-// --- エディタ メニュー ---
-function execCmd(cmd) {
-  // Exec via the 3-state keymap if present
-  setTip("执行: " + cmd);
-  if (typeof window.execKeyCmd === "function") {
-    window.execKeyCmd(cmd);
-  }
-}
-
-// --- 検索 メニュー ---
-function openFind() {
-  // delegate to keymap
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true }));
-}
-
-function findNext() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "F3", bubbles: true }));
-}
-
-function findPrev() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "F3", shiftKey: true, bubbles: true }));
-}
-
-function openIncSearch() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "i", ctrlKey: true, bubbles: true }));
-}
-
-function openReplace() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", ctrlKey: true, bubbles: true }));
-}
-
-function openGrep() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true }));
-}
-
-function openGrepReplace() {
-  setTip("Grep 替换 (UI 未实装)");
-}
-
-function openGotoLine() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", ctrlKey: true, bubbles: true }));
-}
-
-function toggleBookmark() {
-  setTip("书签 (UI 未实装)");
-}
-
-function bookmarkNext() {
-  setTip("下一个书签 (UI 未实装)");
-}
-
-function bookmarkPrev() {
-  setTip("上一个书签 (UI 未实装)");
-}
-
-// --- 视图 メニュー ---
-function switchSidePane(pane) {
-  const btn = document.querySelector(`.act-btn[data-pane="${pane}"]`);
-  if (btn) btn.click();
-  else setTip("未找到面板: " + pane);
-}
-
-function switchBottomPane(paneId) {
-  const tab = document.querySelector(`.bottom-tab[data-pane="${paneId.replace("-body","")}"]`);
-  if (tab) tab.click();
-  else setTip("未找到底端面板: " + paneId);
-}
-
-function toggleStatusBar() {
-  setTip("状态栏 (UI 未实装)");
-}
-
-function fontBigger() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true }));
-}
-
-function fontSmaller() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "-", ctrlKey: true, bubbles: true }));
-}
-
-function setTheme(name) {
-  document.body.setAttribute("data-theme", name);
-  setTip("主题: " + name);
-  // 将来: サーバに 永続化
-  try { localStorage.setItem("ide1.theme", name); } catch(e) {}
-}
-
-// --- ツール メニュー ---
-function showOutline() {
-  switchSidePane("outline");
-}
-
-function toggleSyntaxHighlight() {
-  setTip("语法高亮 (toggle)");
-}
-
-function openTypeConfig() {
-  setTip("类型配置 (UI 未实装)");
-}
-
-function triggerAutoBackup() {
-  setTip("立即备份 (UI 未实装, 需 server 連携)");
-}
-
-function toggleFileLock() {
-  setTip("文件锁定 (UI 未实装)");
-}
-
-function macroStart() {
-  setTip("宏录制 开始 (UI 未实装)");
-}
-
-function macroStop() {
-  setTip("宏录制 停止 (UI 未实装)");
-}
-
-function macroPlay() {
-  setTip("宏 播放 (UI 未实装)");
-}
-
-function runJsMacro() {
-  setTip("JS マクロ 実行 (UI 未实装)");
-}
-
-function runPpaMacro() {
-  setTip("PPA マクロ 実行 (UI 未实装)");
-}
-
-function loadPlugin() {
-  setTip("插件 読み込み (UI 未实装)");
-}
-
-function managePlugins() {
-  setTip("插件 管理 (UI 未实装)");
-}
-
-function openCustomizeKeys() {
-  setTip("自定义键 (UI 未实装)");
-}
-
-// --- 設定 メニュー ---
-function openSettings() {
-  setTip("首选项 (UI 未实装)");
-}
-
-function openKeymap() {
-  setTip("键映射 (UI 未实装)");
-}
-
-function openFontPicker() {
-  setTip("字体 選択 (UI 未实装)");
-}
-
-function openThemePicker() {
-  setTip("テーマ 選択 (UI 未实装)");
-}
-
-function openLanguagePicker() {
-  setTip("言語 選択 (UI 未实装)");
-}
-
-function importConfig() {
-  setTip("設定 インポート (UI 未实装)");
-}
-
-function exportConfig() {
-  setTip("設定 エクスポート (UI 未实装)");
-}
-
-function resetSettings() {
-  if (confirm("恢复默认设置? (将丢失所有自定义)")) {
-    setTip("已恢复默认设置");
-  }
-}
-
-// --- ウィンドウ メニュー ---
-function openNewWindow() {
-  window.open(window.location.href, "_blank");
-}
-
-function splitView(mode) {
-  setTip("分割: " + mode + " (UI 未实装)");
-}
-
-function tileWindows(mode) {
-  setTip("タイル: " + mode + " (UI 未实装)");
-}
-
-function switchTab(dir) {
-  const tabs = Array.from(document.querySelectorAll(".tab"));
-  if (tabs.length === 0) return;
-  const active = document.querySelector(".tab.active");
-  let idx = tabs.indexOf(active);
-  if (idx < 0) idx = 0;
-  else idx = (idx + dir + tabs.length) % tabs.length;
-  tabs[idx].click();
-}
-
-function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen();
-}
-
-// --- ヘルプ メニュー ---
-function showWiki() {
-  // Click the existing help button
-  const helpBtn = document.querySelector("[data-cmd='help']");
-  if (helpBtn) helpBtn.click();
-  else setTip("wiki 帮助 (UI 未实装)");
-}
-
-function showShortcuts() {
-  const sc = document.getElementById("shortcuts-modal");
-  if (sc) sc.style.display = "flex";
-  else setTip("快捷键 (UI 未实装)");
-}
-
-function showAbout() {
-  setTip("关于 IDE1.0 v0.1.9 - sakura-rs 100% 完成");
-}
-
 </script>
 
 </body>
