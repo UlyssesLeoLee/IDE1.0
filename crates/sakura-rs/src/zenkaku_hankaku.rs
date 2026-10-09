@@ -24,7 +24,7 @@ pub fn categorize(c: char) -> CharCategory {
         CharCategory::FullWidthAscii
     } else if ('\u{30A1}'..='\u{30F6}').contains(&c) || c == '\u{30FC}' {
         CharCategory::Katakana
-    } else if ('\u{FF65}'..='\u{FF9F}').contains(&c) {
+    } else if ('\u{FF61}'..='\u{FF9F}').contains(&c) {
         CharCategory::HalfWidthKatakana
     } else {
         CharCategory::Other
@@ -60,6 +60,7 @@ fn katakana_to_half(c: char) -> Option<char> {
     // 主要な対応表 (完全実装は将来)
     let table: &[(char, char)] = &[
         ('ァ', 'ｧ'), ('ィ', 'ｨ'), ('ゥ', 'ｩ'), ('ェ', 'ｪ'), ('ォ', 'ｫ'),
+        ('ア', 'ｱ'), ('イ', 'ｲ'), ('ウ', 'ｳ'), ('エ', 'ｴ'), ('オ', 'ｵ'),
         ('カ', 'ｶ'), ('キ', 'ｷ'), ('ク', 'ｸ'), ('ケ', 'ｹ'), ('コ', 'ｺ'),
         ('サ', 'ｻ'), ('シ', 'ｼ'), ('ス', 'ｽ'), ('セ', 'ｾ'), ('ソ', 'ｿ'),
         ('タ', 'ﾀ'), ('チ', 'ﾁ'), ('ツ', 'ﾂ'), ('テ', 'ﾃ'), ('ト', 'ﾄ'),
