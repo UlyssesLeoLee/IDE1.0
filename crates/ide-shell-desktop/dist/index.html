@@ -130,22 +130,22 @@
     [data-theme="clear"] {
       --theme-name: "clear";
       --fg: #ffffff;
-      --fg-muted: rgba(255, 255, 255, 0.8);
-      --fg-dim: rgba(255, 255, 255, 0.6);
+      --fg-muted: rgba(255, 255, 255, 0.82);
+      --fg-dim: rgba(255, 255, 255, 0.65);
       --bg: transparent;
       --body-bg: transparent;
 
-      --bg-bar: rgba(255, 255, 255, 0.08);
-      --bg-side: rgba(255, 255, 255, 0.05);
-      --bg-status: rgba(255, 255, 255, 0.10);
+      --bg-bar: rgba(255, 255, 255, 0.06);
+      --bg-side: rgba(255, 255, 255, 0.04);
+      --bg-status: rgba(255, 255, 255, 0.08);
       --bg-edit: transparent;
-      --bg-panel: rgba(255, 255, 255, 0.06);
+      --bg-panel: rgba(255, 255, 255, 0.05);
       --bg-input: rgba(255, 255, 255, 0.12);
 
       --border: rgba(255, 255, 255, 0.28);
-      --border-subtle: rgba(255, 255, 255, 0.18);
+      --border-subtle: rgba(255, 255, 255, 0.16);
       --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-      --glass-specular: inset 0 1px 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15);
+      --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2);
       --glass-inset-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 
       --blue: #38bdf8;
@@ -166,31 +166,149 @@
 
     /* 在透明玻璃模式下，主界面与文本应用智能高对比/反色融合 */
     [data-theme="clear"] #app {
-      background: rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.02);
       backdrop-filter: blur(8px) saturate(140%);
       -webkit-backdrop-filter: blur(8px) saturate(140%);
     }
 
-    /* 毛玻璃质感按钮与高通透交互控件 */
+    /* ============================================================
+       全透明水晶质感按钮 (Crystal Glass Buttons & Controls)
+       具有水晶高折射高光、双层倒角折射光晕、微棱镜渐变与毛玻璃通透
+       ============================================================ */
     [data-theme="clear"] .tb-btn,
     [data-theme="clear"] .theme-toggle-btn,
-    [data-theme="clear"] .act-btn.active,
-    [data-theme="clear"] .bottom-toggle {
-      background: rgba(255, 255, 255, 0.15) !important;
-      backdrop-filter: blur(14px) saturate(180%) !important;
-      -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
-      border: 1px solid rgba(255, 255, 255, 0.38) !important;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
+    [data-theme="clear"] .bottom-toggle,
+    [data-theme="clear"] #welcome .open-btn,
+    [data-theme="clear"] .md-btn {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.22) 100%) !important;
+      backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.55) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.30) !important;
+      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.15),
+                  0 1px 4px rgba(255, 255, 255, 0.2),
+                  inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25),
+                  inset 1px 0 1px rgba(255, 255, 255, 0.35),
+                  inset -1px 0 1px rgba(255, 255, 255, 0.35) !important;
       color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
       mix-blend-mode: normal;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     [data-theme="clear"] .tb-btn:hover,
     [data-theme="clear"] .theme-toggle-btn:hover,
-    [data-theme="clear"] .bottom-toggle:hover {
-      background: rgba(255, 255, 255, 0.25) !important;
-      border-color: rgba(255, 255, 255, 0.6) !important;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15), inset 0 1px 1px #fff !important;
+    [data-theme="clear"] .bottom-toggle:hover,
+    [data-theme="clear"] #welcome .open-btn:hover,
+    [data-theme="clear"] .md-btn:hover {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.48) 0%, rgba(255, 255, 255, 0.20) 45%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.38) 100%) !important;
+      border-color: rgba(255, 255, 255, 0.85) !important;
+      border-top-color: #ffffff !important;
+      box-shadow: 0 6px 24px -2px rgba(56, 189, 248, 0.3),
+                  0 0 12px rgba(255, 255, 255, 0.4),
+                  inset 0 2px 2px 0 #ffffff,
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.4) !important;
+      transform: translateY(-1px);
+    }
+
+    [data-theme="clear"] .tb-btn:active,
+    [data-theme="clear"] .theme-toggle-btn:active,
+    [data-theme="clear"] .bottom-toggle:active,
+    [data-theme="clear"] #welcome .open-btn:active {
+      transform: translateY(0.5px) scale(0.98);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+    }
+
+    /* 水晶质感 Menubar 顶栏按钮 (sakura 风格 8 主菜单) */
+    [data-theme="clear"] .mb-btn {
+      color: rgba(255, 255, 255, 0.9) !important;
+      border-radius: 5px;
+      margin: 2px 1px;
+      transition: all 0.2s ease;
+    }
+    [data-theme="clear"] .mb-btn:hover,
+    [data-theme="clear"] .menu-item.open > .mb-btn {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(16px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.5) !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 水晶质感 下拉菜单浮层 (Dropdown Panels) */
+    [data-theme="clear"] .menu-dropdown,
+    [data-theme="clear"] .submenu-dropdown {
+      background: rgba(18, 22, 32, 0.72) !important;
+      backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      -webkit-backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.65) !important;
+      border-radius: 8px;
+      box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.45),
+                  0 2px 8px rgba(0, 0, 0, 0.2),
+                  inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15) !important;
+      padding: 5px 0;
+    }
+    [data-theme="clear"] .menu-row {
+      color: rgba(255, 255, 255, 0.92) !important;
+      border-radius: 4px;
+      margin: 1px 4px;
+      transition: background 0.15s ease;
+    }
+    [data-theme="clear"] .menu-row:hover {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.15) 100%) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      color: #ffffff !important;
+    }
+    [data-theme="clear"] .menu-sep {
+      background: rgba(255, 255, 255, 0.18) !important;
+      margin: 4px 6px;
+    }
+
+    /* 水晶质感 Activity Bar 图标按钮 */
+    [data-theme="clear"] .act-btn {
+      color: rgba(255, 255, 255, 0.75);
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+    [data-theme="clear"] .act-btn:hover {
+      background: rgba(255, 255, 255, 0.18) !important;
+      color: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.35) !important;
+    }
+    [data-theme="clear"] .act-btn.active {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(18px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(18px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.6) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), inset 0 1.5px 1px #fff !important;
+      color: #38bdf8 !important;
+    }
+
+    /* 水晶质感 侧栏与底栏 Tab 切换按钮 */
+    [data-theme="clear"] .side-tab.active,
+    [data-theme="clear"] .bottom-tab.active,
+    [data-theme="clear"] .tab.active {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
+      backdrop-filter: blur(14px) saturate(180%) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+    [data-theme="clear"] .side-tab:hover,
+    [data-theme="clear"] .bottom-tab:hover,
+    [data-theme="clear"] .tab:hover {
+      background: rgba(255, 255, 255, 0.14) !important;
+      color: #ffffff !important;
     }
 
     /* 自动和透明背景内容反色显示的文字区域 (mix-blend-mode: difference / isolation) */
@@ -202,15 +320,6 @@
     [data-theme="clear"] #welcome h1 {
       color: #ffffff;
       mix-blend-mode: difference;
-    }
-
-    [data-theme="clear"] #welcome .open-btn {
-      background: rgba(255, 255, 255, 0.2) !important;
-      backdrop-filter: blur(16px) saturate(200%) !important;
-      -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
-      border: 1px solid rgba(255, 255, 255, 0.5) !important;
-      color: #ffffff !important;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 2px #fff !important;
     }
 
     html, body {
@@ -229,7 +338,7 @@
     /* ===== App Layout ===== */
     #app {
       display: grid;
-      grid-template-rows: 32px 1fr auto 24px;
+      grid-template-rows: 30px 1fr auto 24px;
       grid-template-columns: 46px 240px 1fr;
       height: 100vh;
       backdrop-filter: blur(20px) saturate(160%);
@@ -362,6 +471,31 @@
     .theme-toggle-btn:hover {
       border-color: var(--blue);
     }
+
+    /* ===== Menubar (sakura 风格 顶端功能按钮) ===== */
+    #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: 30px; position: relative; z-index: 100; }
+    .menu-item { position: relative; }
+    .mb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; height: 30px; line-height: 22px; }
+    .mb-btn:hover, .menu-item.open > .mb-btn { background: #2d2d2d; color: white; }
+    .mb-btn:active { background: #3d3d3d; }
+    .mn-key { color: var(--fg-muted); margin-left: 6px; font-size: 10px; text-decoration: underline; }
+    .menu-dropdown, .submenu-dropdown { display: none; position: absolute; background: #252526; border: 1px solid #454545; box-shadow: 0 2px 8px rgba(0,0,0,0.5); min-width: 240px; padding: 4px 0; z-index: 200; }
+    .menu-item.open > .menu-dropdown { display: block; }
+    .menu-dropdown { top: 100%; left: 0; }
+    .menu-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 14px; cursor: pointer; color: var(--fg); font-size: 12px; user-select: none; }
+    .menu-row:hover { background: #094771; color: white; }
+    .menu-row .mr-shortcut { color: var(--fg-muted); font-size: 11px; margin-left: 24px; }
+    .menu-row:hover .mr-shortcut { color: #ccc; }
+    .menu-row.menu-submenu { position: relative; }
+    .menu-row.menu-submenu .submenu-dropdown { top: 0; left: 100%; }
+    .menu-row.menu-submenu:hover > .submenu-dropdown { display: block; }
+    .menu-sep { height: 1px; background: #454545; margin: 4px 0; }
+    .menu-empty { padding: 8px 14px; color: var(--fg-dim); font-size: 11px; font-style: italic; }
+    .menu-row.disabled { color: var(--fg-dim); cursor: default; pointer-events: none; }
+    .menu-row.disabled .mr-shortcut { color: var(--fg-dim); }
+    /* Legacy 兼容: 旧 .tb-btn (顶右 按钮) */
+    .tb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: 12px; height: 30px; line-height: 22px; }
+    .tb-btn:hover { background: #444; }
 
     /* ===== Activity Bar ===== */
     .act-btn {
@@ -789,17 +923,225 @@
 </head>
 <body>
   <div id="app" class="status-active">
-    <!-- Toolbar -->
-    <div id="toolbar">
-      <button class="tb-btn" data-cmd="open-folder" data-tip="打开文件夹 (Ctrl+K O)">打开文件夹</button>
-      <button class="tb-btn" data-cmd="save" data-tip="保存 (Ctrl+S)">保存</button>
-      <button class="tb-btn" data-cmd="close-tab" data-tip="关闭标签 (Ctrl+W)">×</button>
+    <!-- sakura-style 顶端功能按钮 (8 个主菜单) -->
+    <div id="menubar">
+      <div class="menu-item" data-menu="file">
+        <button class="mb-btn" data-tip="文件操作 (Alt+F)">文件<span class="mn-key">F</span></button>
+        <div class="menu-dropdown" data-dropdown="file">
+          <div class="menu-row" data-cmd="new-file" data-shortcut="Ctrl+N"><span>新建</span><span class="mr-shortcut">Ctrl+N</span></div>
+          <div class="menu-row" data-cmd="open-folder" data-shortcut="Ctrl+K O"><span>打开文件夹</span><span class="mr-shortcut">Ctrl+K O</span></div>
+          <div class="menu-row" data-cmd="open-file" data-shortcut="Ctrl+O"><span>打开文件...</span><span class="mr-shortcut">Ctrl+O</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="save" data-shortcut="Ctrl+S"><span>保存</span><span class="mr-shortcut">Ctrl+S</span></div>
+          <div class="menu-row" data-cmd="save-as" data-shortcut="Ctrl+Shift+S"><span>另存为...</span><span class="mr-shortcut">Ctrl+Shift+S</span></div>
+          <div class="menu-row" data-cmd="save-all" data-shortcut="Ctrl+Alt+S"><span>全部保存</span><span class="mr-shortcut">Ctrl+Alt+S</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="close-tab" data-shortcut="Ctrl+W"><span>关闭标签</span><span class="mr-shortcut">Ctrl+W</span></div>
+          <div class="menu-row" data-cmd="close-all" data-shortcut="Ctrl+Shift+W"><span>关闭全部</span><span class="mr-shortcut">Ctrl+Shift+W</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="reload" data-shortcut="Ctrl+R"><span>重新载入</span><span class="mr-shortcut">Ctrl+R</span></div>
+          <div class="menu-row menu-submenu" data-submenu="recent">
+            <span>最近使用</span>
+            <span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="recent-clear"><span>清除历史</span></div>
+              <div class="menu-sep"></div>
+              <div class="menu-empty">无最近文件</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="edit">
+        <button class="mb-btn" data-tip="编辑操作 (Alt+E)">编辑<span class="mn-key">E</span></button>
+        <div class="menu-dropdown" data-dropdown="edit">
+          <div class="menu-row" data-cmd="undo" data-shortcut="Ctrl+Z"><span>撤销</span><span class="mr-shortcut">Ctrl+Z</span></div>
+          <div class="menu-row" data-cmd="redo" data-shortcut="Ctrl+Y"><span>重做</span><span class="mr-shortcut">Ctrl+Y</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="cut" data-shortcut="Ctrl+X"><span>剪切</span><span class="mr-shortcut">Ctrl+X</span></div>
+          <div class="menu-row" data-cmd="copy" data-shortcut="Ctrl+C"><span>复制</span><span class="mr-shortcut">Ctrl+C</span></div>
+          <div class="menu-row" data-cmd="paste" data-shortcut="Ctrl+V"><span>粘贴</span><span class="mr-shortcut">Ctrl+V</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="select-all" data-shortcut="Ctrl+A"><span>全选</span><span class="mr-shortcut">Ctrl+A</span></div>
+          <div class="menu-row" data-cmd="delete-line" data-shortcut="Ctrl+D"><span>删除行</span><span class="mr-shortcut">Ctrl+D</span></div>
+          <div class="menu-row" data-cmd="duplicate-line" data-shortcut="Ctrl+Shift+D"><span>行复制</span><span class="mr-shortcut">Ctrl+Shift+D</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row menu-submenu" data-submenu="convert">
+            <span>转换</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="to-upper"><span>大写</span></div>
+              <div class="menu-row" data-cmd="to-lower"><span>小写</span></div>
+              <div class="menu-sep"></div>
+              <div class="menu-row" data-cmd="to-fullwidth"><span>全角</span></div>
+              <div class="menu-row" data-cmd="to-halfwidth"><span>半角</span></div>
+              <div class="menu-sep"></div>
+              <div class="menu-row" data-cmd="to-zenkaku"><span>全角片假名</span></div>
+              <div class="menu-row" data-cmd="to-zenhira"><span>全角平假名</span></div>
+              <div class="menu-row" data-cmd="to-hankata"><span>半角片假名</span></div>
+            </div>
+          </div>
+          <div class="menu-row menu-submenu" data-submenu="insert">
+            <span>插入</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="insert-date"><span>当前日期/时间</span></div>
+              <div class="menu-row" data-cmd="insert-template"><span>模板</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="search">
+        <button class="mb-btn" data-tip="搜索 (Alt+S)">搜索<span class="mn-key">S</span></button>
+        <div class="menu-dropdown" data-dropdown="search">
+          <div class="menu-row" data-cmd="find" data-shortcut="Ctrl+F"><span>查找</span><span class="mr-shortcut">Ctrl+F</span></div>
+          <div class="menu-row" data-cmd="find-next" data-shortcut="F3"><span>查找下一个</span><span class="mr-shortcut">F3</span></div>
+          <div class="menu-row" data-cmd="find-prev" data-shortcut="Shift+F3"><span>查找上一个</span><span class="mr-shortcut">Shift+F3</span></div>
+          <div class="menu-row" data-cmd="find-incremental" data-shortcut="Ctrl+I"><span>增量查找</span><span class="mr-shortcut">Ctrl+I</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="replace" data-shortcut="Ctrl+R"><span>替换</span><span class="mr-shortcut">Ctrl+R</span></div>
+          <div class="menu-row" data-cmd="replace-all" data-shortcut="Ctrl+Alt+R"><span>全部替换</span><span class="mr-shortcut">Ctrl+Alt+R</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="grep" data-shortcut="Ctrl+G"><span>Grep 搜索</span><span class="mr-shortcut">Ctrl+G</span></div>
+          <div class="menu-row" data-cmd="grep-replace" data-shortcut="Ctrl+Alt+G"><span>Grep 替换</span><span class="mr-shortcut">Ctrl+Alt+G</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="goto-line" data-shortcut="Ctrl+J"><span>跳转到行</span><span class="mr-shortcut">Ctrl+J</span></div>
+          <div class="menu-row" data-cmd="tag-jump" data-shortcut="F12"><span>跳转到标签</span><span class="mr-shortcut">F12</span></div>
+          <div class="menu-row" data-cmd="bookmark-toggle" data-shortcut="Ctrl+F2"><span>切换书签</span><span class="mr-shortcut">Ctrl+F2</span></div>
+          <div class="menu-row" data-cmd="bookmark-next" data-shortcut="F2"><span>下一个书签</span><span class="mr-shortcut">F2</span></div>
+          <div class="menu-row" data-cmd="bookmark-prev" data-shortcut="Shift+F2"><span>上一个书签</span><span class="mr-shortcut">Shift+F2</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="view">
+        <button class="mb-btn" data-tip="视图 (Alt+V)">视图<span class="mn-key">V</span></button>
+        <div class="menu-dropdown" data-dropdown="view">
+          <div class="menu-row menu-submenu" data-submenu="sidebar">
+            <span>侧边栏</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="show-explorer"><span>资源管理器</span></div>
+              <div class="menu-row" data-cmd="show-search"><span>搜索</span></div>
+              <div class="menu-row" data-cmd="show-scm"><span>源代码管理</span></div>
+              <div class="menu-row" data-cmd="show-outline"><span>大纲</span></div>
+            </div>
+          </div>
+          <div class="menu-row menu-submenu" data-submenu="panel">
+            <span>底端面板</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="show-terminal"><span>终端</span></div>
+              <div class="menu-row" data-cmd="show-output"><span>输出</span></div>
+              <div class="menu-row" data-cmd="show-problems"><span>问题</span></div>
+              <div class="menu-sep"></div>
+              <div class="menu-row" data-cmd="toggle-bottom" data-shortcut="Ctrl+J"><span>显示/隐藏</span><span class="mr-shortcut">Ctrl+J</span></div>
+            </div>
+          </div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="toggle-status" data-shortcut="Ctrl+`"><span>状态栏</span><span class="mr-shortcut">Ctrl+`</span></div>
+          <div class="menu-row" data-cmd="toggle-word-wrap"><span>自动换行</span></div>
+          <div class="menu-row" data-cmd="toggle-line-num" data-shortcut="Ctrl+Shift+L"><span>行号</span><span class="mr-shortcut">Ctrl+Shift+L</span></div>
+          <div class="menu-row" data-cmd="toggle-minimap"><span>缩略图</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="font-bigger" data-shortcut="Ctrl+="><span>字体放大</span><span class="mr-shortcut">Ctrl+=</span></div>
+          <div class="menu-row" data-cmd="font-smaller" data-shortcut="Ctrl+-"><span>字体缩小</span><span class="mr-shortcut">Ctrl+-</span></div>
+          <div class="menu-row menu-submenu" data-submenu="theme">
+            <span>主题</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="theme-light"><span>☀️ 浅色毛玻璃 (Light Glass)</span></div>
+              <div class="menu-row" data-cmd="theme-dark"><span>🌙 黑曜石深色 (Obsidian)</span></div>
+              <div class="menu-row" data-cmd="theme-clear"><span>🪟 高透视水晶玻璃 (Crystal Clear)</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="tool">
+        <button class="mb-btn" data-tip="工具 (Alt+T)">工具<span class="mn-key">T</span></button>
+        <div class="menu-dropdown" data-dropdown="tool">
+          <div class="menu-row" data-cmd="outline" data-shortcut="Ctrl+Shift+O"><span>大纲</span><span class="mr-shortcut">Ctrl+Shift+O</span></div>
+          <div class="menu-row" data-cmd="syntax" data-shortcut="Alt+S"><span>语法高亮</span><span class="mr-shortcut">Alt+S</span></div>
+          <div class="menu-row" data-cmd="type-config"><span>类型配置</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="auto-backup" data-shortcut="Ctrl+Alt+B"><span>立即备份</span><span class="mr-shortcut">Ctrl+Alt+B</span></div>
+          <div class="menu-row" data-cmd="file-lock" data-shortcut="Ctrl+Alt+L"><span>文件锁定</span><span class="mr-shortcut">Ctrl+Alt+L</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row menu-submenu" data-submenu="macro">
+            <span>宏</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="macro-start" data-shortcut="Ctrl+Shift+R"><span>开始录制</span><span class="mr-shortcut">Ctrl+Shift+R</span></div>
+              <div class="menu-row" data-cmd="macro-stop" data-shortcut="Ctrl+Shift+R"><span>停止录制</span><span class="mr-shortcut">Ctrl+Shift+R</span></div>
+              <div class="menu-row" data-cmd="macro-play" data-shortcut="Ctrl+Shift+P"><span>播放宏</span><span class="mr-shortcut">Ctrl+Shift+P</span></div>
+              <div class="menu-sep"></div>
+              <div class="menu-row" data-cmd="js-macro"><span>运行 JS 宏</span></div>
+              <div class="menu-row" data-cmd="ppa-macro"><span>运行 PPA 宏</span></div>
+            </div>
+          </div>
+          <div class="menu-row menu-submenu" data-submenu="plugin">
+            <span>插件</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="plugin-load"><span>加载插件</span></div>
+              <div class="menu-row" data-cmd="plugin-manage"><span>管理</span></div>
+            </div>
+          </div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="customize-keys" data-shortcut="Ctrl+Alt+K"><span>自定义键</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="setting">
+        <button class="mb-btn" data-tip="设置 (Alt+C)">设置<span class="mn-key">C</span></button>
+        <div class="menu-dropdown" data-dropdown="setting">
+          <div class="menu-row" data-cmd="settings" data-shortcut="Ctrl+,"><span>首选项</span><span class="mr-shortcut">Ctrl+,</span></div>
+          <div class="menu-row" data-cmd="keymap" data-shortcut="Ctrl+Alt+K"><span>键映射</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
+          <div class="menu-row" data-cmd="font" data-shortcut="Alt+F"><span>字体</span><span class="mr-shortcut">Alt+F</span></div>
+          <div class="menu-row" data-cmd="theme-select"><span>主题</span></div>
+          <div class="menu-row" data-cmd="language" data-shortcut="Alt+L"><span>语言</span><span class="mr-shortcut">Alt+L</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="import-config"><span>导入配置</span></div>
+          <div class="menu-row" data-cmd="export-config"><span>导出配置</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="reset-settings"><span>恢复默认</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="window">
+        <button class="mb-btn" data-tip="窗口 (Alt+W)">窗口<span class="mn-key">W</span></button>
+        <div class="menu-dropdown" data-dropdown="window">
+          <div class="menu-row" data-cmd="new-window" data-shortcut="Ctrl+Shift+N"><span>新窗口</span><span class="mr-shortcut">Ctrl+Shift+N</span></div>
+          <div class="menu-row" data-cmd="split-h" data-shortcut="Ctrl+Shift+H"><span>上下分割</span><span class="mr-shortcut">Ctrl+Shift+H</span></div>
+          <div class="menu-row" data-cmd="split-v" data-shortcut="Ctrl+Shift+V"><span>左右分割</span><span class="mr-shortcut">Ctrl+Shift+V</span></div>
+          <div class="menu-row" data-cmd="split-quad" data-shortcut="Ctrl+Shift+Q"><span>四方分割</span><span class="mr-shortcut">Ctrl+Shift+Q</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="cascade"><span>层叠</span></div>
+          <div class="menu-row" data-cmd="tile-h"><span>水平平铺</span></div>
+          <div class="menu-row" data-cmd="tile-v"><span>垂直平铺</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row menu-submenu" data-submenu="tabs">
+            <span>标签</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="next-tab" data-shortcut="Ctrl+Tab"><span>下一个标签</span><span class="mr-shortcut">Ctrl+Tab</span></div>
+              <div class="menu-row" data-cmd="prev-tab" data-shortcut="Ctrl+Shift+Tab"><span>上一个标签</span><span class="mr-shortcut">Ctrl+Shift+Tab</span></div>
+            </div>
+          </div>
+          <div class="menu-row" data-cmd="fullscreen" data-shortcut="F11"><span>全屏</span><span class="mr-shortcut">F11</span></div>
+        </div>
+      </div>
+
+      <div class="menu-item" data-menu="help">
+        <button class="mb-btn" data-tip="帮助 (Alt+H)">帮助<span class="mn-key">H</span></button>
+        <div class="menu-dropdown" data-dropdown="help">
+          <div class="menu-row" data-cmd="wiki" data-shortcut="F1"><span>wiki 帮助</span><span class="mr-shortcut">F1</span></div>
+          <div class="menu-row" data-cmd="shortcuts" data-shortcut="Ctrl+/"><span>快捷键</span><span class="mr-shortcut">Ctrl+/</span></div>
+          <div class="menu-row" data-cmd="about"><span>关于 IDE1.0</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="help" data-tip="内置 wiki 帮助"><span>内置 wiki</span></div>
+        </div>
+      </div>
+
       <span style="flex:1"></span>
-      <button id="theme-toggle" class="theme-toggle-btn" title="切换浅色玻璃 / 黑曜石主题">
+      <button id="theme-toggle" class="theme-toggle-btn" title="点击切换主题 (浅色毛玻璃 / 黑曜石 / 全透视水晶)">
         <span id="theme-icon">🌙</span>
         <span id="theme-label">Obsidian</span>
       </button>
-      <button class="tb-btn" data-cmd="help" data-tip="打开内置 wiki 帮助">? 帮助</button>
+      <button class="tb-btn" data-cmd="new-terminal" data-tip="新建终端 (Ctrl+`)">▶ 终端</button>
     </div>
 
     <!-- Activity Bar -->
@@ -1467,6 +1809,507 @@ window.addEventListener("DOMContentLoaded", async function () {
   edContent.focus();
 })();
 });
+
+// ===== sakura 风格 菜单 交互 =====
+(function() {
+  // Open/close top-level menus
+  function closeAllMenus() {
+    document.querySelectorAll(".menu-item.open").forEach(el => el.classList.remove("open"));
+  }
+  document.querySelectorAll(".menu-item > .mb-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const item = btn.parentElement;
+      const wasOpen = item.classList.contains("open");
+      closeAllMenus();
+      if (!wasOpen) item.classList.add("open");
+    });
+  });
+  // Click outside closes menus
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".menu-item")) closeAllMenus();
+  });
+  // ESC closes menus
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAllMenus();
+  });
+  // Alt+letter opens menu (sakura-style menu mnemonics)
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key.length === 1) {
+      const key = e.key.toLowerCase();
+      const map = { f: "file", e: "edit", s: "search", v: "view", t: "tool", c: "setting", w: "window", h: "help" };
+      const menuName = map[key];
+      if (menuName) {
+        e.preventDefault();
+        const item = document.querySelector(`.menu-item[data-menu="${menuName}"]`);
+        if (item) {
+          closeAllMenus();
+          item.classList.add("open");
+          const first = item.querySelector(".menu-row");
+          if (first) setTimeout(() => first.focus(), 50);
+        }
+      }
+    }
+  });
+  // Handle menu-row clicks (sakura-style command dispatch)
+  document.querySelectorAll(".menu-row[data-cmd]").forEach(row => {
+    row.addEventListener("click", (e) => {
+      // If submenu parent, don't fire
+      if (row.classList.contains("menu-submenu")) {
+        // submenu already shows on hover; clicking does nothing extra
+        return;
+      }
+      e.stopPropagation();
+      const cmd = row.dataset.cmd;
+      closeAllMenus();
+      dispatchCommand(cmd);
+    });
+  });
+})();
+
+// ===== Command Dispatcher (sakura menu items) =====
+function dispatchCommand(cmd) {
+  if (!cmd) return;
+  setTip("命令: " + cmd);
+  switch (cmd) {
+    // 文件
+    case "new-file":         createNewFile(); break;
+    case "open-folder":      doOpenFolder(); break;
+    case "open-file":        doOpenFile(); break;
+    case "save":             saveActive(); break;
+    case "save-as":          saveActiveAs(); break;
+    case "save-all":         saveAll(); break;
+    case "close-tab":        closeActiveTab(); break;
+    case "close-all":        closeAllTabs(); break;
+    case "reload":           reloadActive(); break;
+    // 编辑
+    case "undo":             execCmd("undo"); break;
+    case "redo":             execCmd("redo"); break;
+    case "cut":              execCmd("cut"); break;
+    case "copy":             execCmd("copy"); break;
+    case "paste":            execCmd("paste"); break;
+    case "select-all":       execCmd("selectAll"); break;
+    case "delete-line":      execCmd("deleteLine"); break;
+    case "duplicate-line":   execCmd("duplicateLine"); break;
+    case "to-upper":         execCmd("toUpper"); break;
+    case "to-lower":         execCmd("toLower"); break;
+    case "to-fullwidth":     execCmd("toFullwidth"); break;
+    case "to-halfwidth":     execCmd("toHalfwidth"); break;
+    case "to-zenkaku":       execCmd("toZenkaku"); break;
+    case "to-zenhira":       execCmd("toZenhira"); break;
+    case "to-hankata":       execCmd("toHankata"); break;
+    case "insert-date":      execCmd("insertDate"); break;
+    case "insert-template":  execCmd("insertTemplate"); break;
+    // 搜索
+    case "find":             openFind(); break;
+    case "find-next":        findNext(); break;
+    case "find-prev":        findPrev(); break;
+    case "find-incremental": openIncSearch(); break;
+    case "replace":          openReplace(); break;
+    case "replace-all":      execCmd("replaceAll"); break;
+    case "grep":             openGrep(); break;
+    case "grep-replace":     openGrepReplace(); break;
+    case "goto-line":        openGotoLine(); break;
+    case "tag-jump":         execCmd("tagJump"); break;
+    case "bookmark-toggle":  toggleBookmark(); break;
+    case "bookmark-next":    bookmarkNext(); break;
+    case "bookmark-prev":    bookmarkPrev(); break;
+    // 视图
+    case "show-explorer":    switchSidePane("explorer"); break;
+    case "show-search":      switchSidePane("search"); break;
+    case "show-scm":         switchSidePane("scm"); break;
+    case "show-outline":     switchSidePane("outline"); break;
+    case "show-terminal":    switchBottomPane("terminal-body"); break;
+    case "show-output":      switchBottomPane("output-body"); break;
+    case "show-problems":    switchBottomPane("problems-body"); break;
+    case "toggle-status":    toggleStatusBar(); break;
+    case "toggle-word-wrap": execCmd("toggleWordWrap"); break;
+    case "toggle-line-num":  execCmd("toggleLineNumbers"); break;
+    case "toggle-minimap":   execCmd("toggleMinimap"); break;
+    case "font-bigger":      fontBigger(); break;
+    case "font-smaller":     fontSmaller(); break;
+    case "theme-dark":       applyTheme("dark"); break;
+    case "theme-light":      applyTheme("light"); break;
+    case "theme-high-contrast": applyTheme("clear"); break;
+    case "theme-clear":      applyTheme("clear"); break;
+    // 工具
+    case "outline":          showOutline(); break;
+    case "syntax":           toggleSyntaxHighlight(); break;
+    case "type-config":      openTypeConfig(); break;
+    case "auto-backup":      triggerAutoBackup(); break;
+    case "file-lock":        toggleFileLock(); break;
+    case "macro-start":      macroStart(); break;
+    case "macro-stop":       macroStop(); break;
+    case "macro-play":       macroPlay(); break;
+    case "js-macro":         runJsMacro(); break;
+    case "ppa-macro":        runPpaMacro(); break;
+    case "plugin-load":      loadPlugin(); break;
+    case "plugin-manage":    managePlugins(); break;
+    case "customize-keys":   openCustomizeKeys(); break;
+    // 设置
+    case "settings":         openSettings(); break;
+    case "keymap":           openKeymap(); break;
+    case "font":             openFontPicker(); break;
+    case "theme-select":     { const t=document.documentElement.dataset.theme||"light"; applyTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(t)+1)%THEME_CYCLE.length]); } break;
+    case "language":         openLanguagePicker(); break;
+    case "import-config":    importConfig(); break;
+    case "export-config":    exportConfig(); break;
+    case "reset-settings":   resetSettings(); break;
+    // 窗口
+    case "new-window":       openNewWindow(); break;
+    case "split-h":          splitView("h"); break;
+    case "split-v":          splitView("v"); break;
+    case "split-quad":       splitView("quad"); break;
+    case "cascade":          tileWindows("cascade"); break;
+    case "tile-h":           tileWindows("h"); break;
+    case "tile-v":           tileWindows("v"); break;
+    case "next-tab":         switchTab(1); break;
+    case "prev-tab":         switchTab(-1); break;
+    case "fullscreen":       toggleFullscreen(); break;
+    // 帮助
+    case "wiki":             showWiki(); break;
+    case "shortcuts":        showShortcuts(); break;
+    case "about":            showAbout(); break;
+    case "help":             showWiki(); break;
+    // 兼容 旧 tb-btn
+    case "new-terminal":     createTerminal(); break;
+  }
+}
+
+if (terminalBody) terminalBody.addEventListener("keydown", async (e) => {
+  if (!terminalId) return;
+  let data = null;
+  if (e.key === "Enter") data = "\r\n";
+  else if (e.key === "Backspace") data = "\b \b";
+  else if (e.ctrlKey && e.key.toLowerCase() === "c") { data = "\x03"; e.preventDefault(); }
+  else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) data = e.key;
+  else return;
+  e.preventDefault();
+  await sendTerminal(data);
+});
+
+terminalBody.addEventListener("focus", () => terminalBody.focus());
+
+// ===== Editor =====
+const TABS = tabs;
+let maxTabId = 0;
+
+function getActiveTab() { return TABS.get(activeTabId); }
+
+function renderTabs() {
+  tabsEl.innerHTML = "";
+  for (const [id, t] of TABS) {
+    const tab = document.createElement("button");
+    tab.className = "tab" + (id === activeTabId ? " active" : "") + (t.dirty ? " tab-dirty" : "");
+    tab.dataset.tabId = id;
+    tab.innerHTML = escapeHtml(t.name) + '<span class="tab-close" data-tab-close="' + id + '" title="关闭">×</span>';
+    tabsEl.appendChild(tab);
+  }
+}
+
+function renderBreadcrumb() {
+  breadcrumb.innerHTML = "";
+  const at = TABS.get(activeTabId);
+  if (!at) return;
+  const parts = at.path.split(/[\\\/]/).filter(Boolean);
+  if (parts[0] && parts[0].endsWith(":")) parts.shift();
+  parts.forEach((p, i) => {
+    if (i > 0) {
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep";
+      sep.textContent = "›";
+      breadcrumb.appendChild(sep);
+    }
+    const c = document.createElement("span");
+    c.className = "crumb" + (i === parts.length - 1 ? " current" : "");
+    c.textContent = p;
+    breadcrumb.appendChild(c);
+  });
+}
+
+function setActiveTab(id) {
+  activeTabId = id;
+  renderTabs();
+  renderBreadcrumb();
+  const t = TABS.get(id);
+  if (t) {
+    edContent.textContent = t.lines.join("\n");
+    gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
+    setFile(t.path);
+    setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+    setMode("NORMAL");
+  }
+  edContent.focus();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (ch) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch];
+  });
+}
+
+async function openFile(path) {
+  try {
+    const lines = await invoke("read_file", { path });
+    const id = "t" + (++maxTabId);
+    TABS.set(id, { id, path, cursor: { row: 0, col: 0 }, dirty: false, lines: typeof lines === "string" ? lines.split("\n") : lines });
+    setActiveTab(id);
+    setTip("已打开: " + path);
+  } catch (e) {
+    setTip("打开失败: " + e.message);
+  }
+}
+
+async function saveActive() {
+  const t = getActiveTab();
+  if (!t) return false;
+  try {
+    await invoke("write_file", { path: t.path, content: t.lines.join("\n") });
+    t.dirty = false;
+    renderTabs();
+    setTip("已保存");
+    return true;
+  } catch (e) {
+    openModal({ title: "保存失败", body: e.message });
+    return false;
+  }
+}
+
+function closeTab(id) {
+  TABS.delete(id);
+  if (activeTabId === id) activeTabId = null;
+  if (TABS.size === 0) {
+    edContent.textContent = "";
+    gutter.textContent = "";
+    setFile("无活动");
+    setPos("Ln 1, Col 1");
+  } else {
+    setActiveTab([...TABS.keys()][0]);
+  }
+  renderTabs();
+  renderBreadcrumb();
+}
+
+if (tabsEl) tabsEl.addEventListener("click", (e) => {
+  const closeBtn = e.target.closest("[data-tab-close]");
+  if (closeBtn) {
+    e.stopPropagation();
+    closeTab(closeBtn.dataset.tabClose);
+    return;
+  }
+  const tab = e.target.closest(".tab");
+  if (tab) setActiveTab(tab.dataset.tabId);
+});
+
+if (edContent) edContent.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { setMode("NORMAL"); return; }
+  if (e.key === "i" || e.key === "a" || e.key === "o" || e.key === "I" || e.key === "A" || e.key === "O") {
+    setMode("INSERT");
+  }
+  if (e.key === "v") setMode("VISUAL");
+  if (e.ctrlKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveActive();
+  }
+});
+
+// ===== Side bar =====
+let currentSidePane = "explorer";
+
+function showSidePane(name) {
+  currentSidePane = name;
+  document.querySelectorAll(".act-btn").forEach((b) => b.classList.toggle("active", b.dataset.pane === name));
+  renderSideBar();
+}
+
+function renderSideBar() {
+  const tabs = [
+    { pane: "explorer", title: "资源管理器" },
+    { pane: "search", title: "搜索" },
+    { pane: "scm", title: "源代码管理" },
+    { pane: "outline", title: "大纲" },
+  ];
+  sideTabsEl.innerHTML = tabs.map(t =>
+    '<button class="side-tab ' + (t.pane === currentSidePane ? "active" : "") + '" data-side-tab="' + t.pane + '">' + t.title + "</button>"
+  ).join("");
+  // Render body based on pane
+  if (currentSidePane === "explorer") renderExplorer();
+  else if (currentSidePane === "search") renderSearch();
+  else if (currentSidePane === "scm") renderScm();
+  else if (currentSidePane === "outline") renderOutline();
+}
+
+if (sideTabsEl) sideTabsEl.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-side-tab]");
+  if (b) showSidePane(b.dataset.sideTab);
+});
+
+document.querySelectorAll(".act-btn").forEach((btn) => {
+  btn.addEventListener("click", () => showSidePane(btn.dataset.pane));
+});
+
+async function renderExplorer() {
+  if (!projectRoot) {
+    sideBody.innerHTML = '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
+    return;
+  }
+  sideBody.innerHTML = '<div class="sb-section">' + escapeHtml(projectRoot) + "</div>";
+  try {
+    const entries = await invoke("list_dir", { path: projectRoot });
+    for (const e of entries) {
+      const node = document.createElement("div");
+      node.className = "tree-node tree-folder" + (e.is_dir ? "" : " tree-file");
+      node.innerHTML = '<span class="tree-icon">' + (e.is_dir ? "📁" : "📄") + "</span>" + escapeHtml(e.name);
+      if (!e.is_dir) {
+        node.addEventListener("click", () => openFile(e.path));
+      }
+      sideBody.appendChild(node);
+    }
+  } catch (e) {
+    sideBody.innerHTML += '<div class="empty-hint">读取失败: ' + escapeHtml(e.message) + "</div>";
+  }
+}
+
+function renderSearch() {
+  sideBody.innerHTML = '<input id="search-input" placeholder="搜索文件..." style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;border-radius:3px;font:inherit;" />' +
+    '<div id="search-results" style="margin-top:8px;"></div>';
+  const input = document.getElementById("search-input");
+  input.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      const q = input.value.trim();
+      if (!q) return;
+      try {
+        const matches = await invoke("search", { query: q });
+        const r = document.getElementById("search-results");
+        r.innerHTML = "";
+        for (const m of matches) {
+          const row = document.createElement("div");
+          row.className = "tree-node";
+          row.textContent = m.path + ":" + (m.line + 1);
+          row.addEventListener("click", () => openFile(m.path));
+          r.appendChild(row);
+        }
+        if (matches.length === 0) r.innerHTML = '<div class="empty-hint">无匹配</div>';
+      } catch (e) { /* ignore */ }
+    }
+  });
+  input.focus();
+}
+
+async function renderScm() {
+  sideBody.innerHTML = '<div class="sb-section">源代码管理</div><div id="scm-status">加载中...</div>';
+  try {
+    const j = await invoke("scm_status");
+    const statusEl = document.getElementById("scm-status");
+    statusEl.innerHTML = '<div class="empty-hint">当前分支: <b>' + escapeHtml(j.branch || "(no branch)") + "</b></div>";
+    if (j.files) {
+      for (const f of j.files) {
+        const row = document.createElement("div");
+        row.className = "tree-node";
+        row.textContent = "  " + (f.status || "?") + " " + f.path;
+        statusEl.appendChild(row);
+      }
+    }
+  } catch (e) {
+    document.getElementById("scm-status").innerHTML = '<div class="empty-hint">未初始化 git 仓库</div>';
+  }
+}
+
+async function renderOutline() {
+  const at = getActiveTab();
+  if (!at) {
+    sideBody.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
+    return;
+  }
+  sideBody.innerHTML = '<div class="sb-section">' + escapeHtml(at.path.split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
+  try {
+    const data = await invoke("outline", { path: at.path });
+    const list = document.getElementById("outline-list");
+    list.innerHTML = "";
+    if (data && data.entries) {
+      for (const e of data.entries) {
+        const row = document.createElement("div");
+        row.className = "tree-node";
+        row.textContent = (e.kind === "function" ? "ƒ" : e.kind === "class" ? "C" : "•") + " " + e.name;
+        row.addEventListener("click", () => setTip("跳到 " + (e.line + 1) + " 行"));
+        list.appendChild(row);
+      }
+      if (data.entries.length === 0) list.innerHTML = '<div class="empty-hint">无大纲 (' + (data.language || "?") + ")</div>";
+    }
+  } catch (e) {
+    document.getElementById("outline-list").innerHTML = '<div class="empty-hint">解析失败</div>';
+  }
+}
+
+// ===== Open folder =====
+async function openFolder() {
+  let path;
+  try {
+    path = await invoke("pick_folder");
+  } catch (e) {
+    path = null;
+  }
+  if (!path) {
+    const def = projectRoot || "D:/work";
+    path = prompt("输入项目根绝对路径:", def);
+  }
+  if (!path) return;
+  try {
+    await invoke("open_project", { path });
+    projectRoot = path;
+    setFile(path);
+    setTip("已打开项目: " + path);
+    showSidePane("explorer");
+  } catch (e) {
+    setTip("打开失败: " + e.message);
+  }
+}
+
+// ===== Help =====
+function showHelp() {
+  try {
+    const txt = atob(WIKI_B64);
+    openModal({ title: "IDE1.0 — 完整 wiki", body: txt, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  } catch (e) {
+    openModal({ title: "帮助", body: String(e) });
+  }
+}
+
+// ===== Command router =====
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-cmd]");
+  if (!btn) return;
+  const cmd = btn.dataset.cmd;
+  if (cmd === "open-folder") openFolder();
+  else if (cmd === "save") saveActive();
+  else if (cmd === "close-tab" && activeTabId) closeTab(activeTabId);
+  else if (cmd === "new-terminal") createTerminal();
+  else if (cmd === "toggle-bottom") document.querySelector("[data-cmd='toggle-bottom']").click();
+  else if (cmd === "help") showHelp();
+  else if (cmd === "modal-close") closeModal();
+});
+
+// ===== Global keyboard =====
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
+  if (e.key === "F1") { e.preventDefault(); showHelp(); }
+  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
+  if (e.ctrlKey && e.key === "`") {
+    e.preventDefault();
+    const bp = document.getElementById("bottom-panel");
+    if (bp.getAttribute("data-collapsed") === "true") bp.setAttribute("data-collapsed", "false");
+    else bp.setAttribute("data-collapsed", "true");
+  }
+  if (e.key === "Escape") edContent.focus();
+});
+
+// ===== Welcome page =====
+function showWelcome() {
+  const ed = document.getElementById('ed-content');
+  if (!ed) return;
+  ed.innerHTML = '<div id="welcome"><h1>IDE1.0</h1><button class="open-btn" data-cmd="open-folder">打开文件夹</button><div class="shortcuts"><kbd>i</kbd>/<kbd>a</kbd> INSERT · <kbd>v</kbd> VISUAL · <kbd>Esc</kbd> NORMAL · <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存 · <kbd>Ctrl</kbd>+<kbd>`</kbd> 终端 · <kbd>F1</kbd> 帮助</div></div>';
+}
+showWelcome();
 </script>
 
 </body>
