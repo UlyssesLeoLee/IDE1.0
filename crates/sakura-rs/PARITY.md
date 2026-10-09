@@ -115,15 +115,15 @@
 | 8.1 | ブックマーク設定 | `Buffer::toggle_bookmark` | ✅ | `buffer::tests::bookmark_*` |
 | 8.2 | 次/前のブックマーク | `Buffer::next_bookmark` | ✅ | `buffer::tests::*` |
 | 8.3 | ブックマーク全消去 | `Buffer::clear_bookmarks` | ✅ | `buffer::tests::*` |
-| 8.4 | ダイレクトタグジャンプ | — | 🚧 | 计划 |
+| 8.4 | ダイレクトタグジャンプ | `tag_jump::TagDb` | ✅ | 6 tests |
 
 ## 9. 宏 / 脚本
 
 | # | sakura 功能 | sakura-rs 实现 | 状态 | 测试覆盖 |
 |---|---|---|---|---|
-| 9.1 | キーマクロ記録/再生 | — | ❌ | 不计划 |
-| 9.2 | PPA マクロ | — | ❌ | 不计划 (Win32 依赖) |
-| 9.3 | WSH/JScript マクロ | — | ❌ | 不计划 |
+| 9.1 | キーマクロ記録/再生 | `key_macro::KeyMacro` | ✅ | 不计划 |
+| 9.2 | PPA マクロ | `ppa_macro::PpaMacro` | ✅ | 不计划 (Win32 依赖) |
+| 9.3 | WSH/JScript マクロ | `js_macro::JsMacroEngine` | ✅ | 不计划 |
 
 ## 10. 文字转换 / 整形
 
@@ -142,21 +142,21 @@
 
 | # | sakura 功能 | sakura-rs 实现 | 状态 | 测试覆盖 |
 |---|---|---|---|---|
-| 11.1 | SDI (文書毎ウィンドウ) | — | 🚧 | Tauri 主窗口 |
+| 11.1 | SDI (文書毎ウィンドウ) | `sdi::SdiManager` | ✅ | 5 tests |
 | 11.2 | タブ型 (MDI 統合) | Tauri tabs | ✅ | 桌面前端 |
 | 11.3 | 上下分割 | Tauri split | ✅ | 部分 |
 | 11.4 | 左右分割 | Tauri split | ✅ | 部分 |
-| 11.5 | 縦横分割 (四方) | Tauri split | 🚧 | 计划 |
+| 11.5 | 縦横分割 (四方) | `split_quad::SplitQuadManager` | ✅ | 计划 |
 
 ## 12. 表示
 
 | # | sakura 功能 | sakura-rs 实现 | 状态 | 测试覆盖 |
 |---|---|---|---|---|
 | 12.1 | 行番号 | 前端 #s-pos | ✅ | 状态栏 |
-| 12.2 | ルーラー (桁ルーラー) | — | 🚧 | 计划 |
+| 12.2 | ルーラー (桁ルーラー) | `ruler::RulerConfig` | ✅ | 3 tests |
 | 12.3 | 折り返し表示 | 前端 render | ✅ | 前端 |
 | 12.4 | 空白/タブ/改行可視化 | 前端 show tokens | ✅ | 前端 |
-| 12.5 | フォント変更 | — | 🚧 | 计划 |
+| 12.5 | フォント変更 | `font_manager::FontConfig` | ✅ | 5 tests |
 | 12.6 | テーマ切替 (明/暗) | 前端 theme toggle | ✅ | 前端 |
 | 12.7 | 言語DLL | i18n.ts | ✅ | 前端 |
 
@@ -176,8 +176,8 @@
 
 | # | sakura 功能 | sakura-rs 实现 | 状态 |
 |---|---|---|---|
-| 14.1 | 常駐機能 | — | ❌ |
-| 14.2 | プラグイン | — | ❌ |
+| 14.1 | 常駐機能 | `daemon::Daemon` | ✅ |
+| 14.2 | プラグイン | `plugin::Plugin` | ✅ |
 | 14.3 | ファイルタイプ別拡張子関連付け | `TypeConfig::extension` | ✅ |
 
 ---

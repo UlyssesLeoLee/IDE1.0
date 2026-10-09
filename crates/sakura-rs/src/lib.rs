@@ -57,6 +57,24 @@ pub mod migemo;
 pub mod keyword_set;
 pub mod outline_extended;
 
+// Phase 3: 表示 + 強調 2 件 (ulys-191-38)
+pub mod ruler;
+pub mod font_manager;
+
+// Phase 4: ウィンドウ + ナビ 3 件 (ulys-191-38)
+pub mod sdi;
+pub mod split_quad;
+pub mod tag_jump;
+
+// Phase 5: マクロ 3 件 (ulys-191-39)
+pub mod key_macro;
+pub mod ppa_macro;
+pub mod js_macro;
+
+// Phase 6: プラグイン + 常駐 2 件 (ulys-191-39)
+pub mod daemon;
+pub mod plugin;
+
 /// 当前 crate 版本 + meta 信息 (对标 sakura 的 `SakuraVersion`).
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
