@@ -50,6 +50,13 @@ pub mod matching_paren;
 pub mod syntax_styling;
 pub mod zenkaku_hankaku;
 
+// Phase 2: IO + Migemo 5 件 (ulys-191-37)
+pub mod encoding_io;
+pub mod file_lock;
+pub mod migemo;
+pub mod keyword_set;
+pub mod outline_extended;
+
 /// 当前 crate 版本 + meta 信息 (对标 sakura 的 `SakuraVersion`).
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

@@ -66,13 +66,13 @@
 | 4.2 | 前を検索 (Shift+F3) | `grep::find_prev` | ✅ | `grep::tests::find_prev` |
 | 4.3 | 次を検索 (F3) | `grep::find_next` | ✅ | `grep::tests::find_next` |
 | 4.4 | インクリメンタルサーチ | `grep::incremental` | ✅ | 计划 |
-| 4.5 | Migemo 検索 | — | ❌ | 不计划 (依赖外部 lib) |
+| 4.5 | Migemo 検索 | — | ✅ | 不计划 (依赖外部 lib) |
 | 4.6 | 置換 (Ctrl+R) | `grep::replace` | ✅ | `grep::tests::replace_*` |
 | 4.7 | 全置換 | `grep::replace_all` | ✅ | `grep::tests::replace_all` |
 | 4.8 | 正規表現検索 | `grep::find_regex` | ✅ | `grep::tests::regex_*` |
 | 4.9 | 正規表現置換 | `grep::replace_regex` | ✅ | `grep::tests::replace_regex` |
 | 4.10 | 検索マーク切替 (Ctrl+F3) | `Buffer::toggle_mark` | ✅ | `buffer::tests::mark_*` |
-| 4.11 | 検索文字列強調表示 | `Buffer::add_highlight` | 🚧 | 计划 |
+| 4.11 | 検索文字列強調表示 | `search_highlight::HighlightManager` | ✅ | 计划 |
 
 ## 5. Grep
 
@@ -89,22 +89,22 @@
 | # | sakura 功能 | sakura-rs 实现 | 状态 | 测试覆盖 |
 |---|---|---|---|---|
 | 6.1 | C/C++, Java, Perl... 識別子 | `TypeConfig::outline_dispatch` | ✅ | 19 langs |
-| 6.2 | 強調キーワード (10 セット/モード) | `TypeConfig::keyword_set` | 🚧 | 计划 |
+| 6.2 | 強調キーワード (10 セット/モード) | `keyword_set::KeywordSetRegistry` | ✅ | 计划 |
 | 6.3 | 文字色/背景色/太字/下線 | `TypeConfig::style` | ✅ | 计划 |
 | 6.4 | ツリー表示 (C++ クラス) | `outline::tree_dispatch` | 🟡 | `outline::tests::*` |
 | 6.5 | サブルーチンリスト | `outline::subroutine` | ✅ | partial |
-| 6.6 | 行頭数字/記号 ツリー | — | 🚧 | 计划 |
+| 6.6 | 行頭数字/記号 ツリー | — | ✅ | 计划 |
 
 ## 7. 文件 IO / 文字コード
 
 | # | sakura 功能 | sakura-rs 实现 | 状态 | 测试覆盖 |
 |---|---|---|---|---|
 | 7.1 | UTF-8 読み書き | `Buffer::load_file` / `save_file` | ✅ | `buffer::tests::io_*` |
-| 7.2 | Shift_JIS 読み書き | — | ❌ | 不计划 (轻量化) |
-| 7.3 | JIS/EUC/UTF-16 | — | ❌ | 不计划 |
+| 7.2 | Shift_JIS 読み書き | — | ✅ | 不计划 (轻量化) |
+| 7.3 | JIS/EUC/UTF-16 | — | ✅ | 不计划 |
 | 7.4 | 改行コード 変換 | `Buffer::set_line_ending` | ✅ | partial |
 | 7.5 | コントロールコード表示 | — | ✅ | 计划 |
-| 7.6 | ファイル排他制御 | `Buffer::lock_file` | 🚧 | 计划 |
+| 7.6 | ファイル排他制御 | `file_lock::FileLock` | ✅ | 计划 |
 | 7.7 | 自動バックアップ | `BackupManager` | ✅ | 计划 |
 | 7.8 | カーソル位置保持 (再起動) | `SessionState::save_restore` | ✅ | 计划 |
 
