@@ -16,9 +16,10 @@ use serde::{Deserialize, Serialize};
 use crate::types;
 
 /// 一行 token 颜色/分类 (sakura `COLORIDX_*` 简化版).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TokenKind {
     Default,
+    Plain,
     Keyword,
     Type,
     String,
@@ -26,12 +27,15 @@ pub enum TokenKind {
     Comment,
     Function,
     Operator,
+    Punct,
+    Variable,
 }
 
 impl TokenKind {
     pub fn css_class(&self) -> &'static str {
         match self {
             TokenKind::Default => "tok-default",
+            TokenKind::Plain => "tok-plain",
             TokenKind::Keyword => "tok-keyword",
             TokenKind::Type => "tok-type",
             TokenKind::String => "tok-string",
@@ -39,6 +43,8 @@ impl TokenKind {
             TokenKind::Comment => "tok-comment",
             TokenKind::Function => "tok-function",
             TokenKind::Operator => "tok-operator",
+            TokenKind::Punct => "tok-punct",
+            TokenKind::Variable => "tok-variable",
         }
     }
 }

@@ -43,7 +43,7 @@
 | 2.8 | ページ上 (PageUp) | `Cursor::page_up` | ✅ | `cursor::tests::*` |
 | 2.9 | ページ下 (PageDown) | `Cursor::page_down` | ✅ | `cursor::tests::*` |
 | 2.10 | 指定行へジャンプ (Ctrl+J) | `Cursor::goto_line` | ✅ | `cursor::tests::goto_line` |
-| 2.11 | 对应括弧へジャンプ | `Cursor::jump_to_matching_paren` | 🚧 | 计划 |
+| 2.11 | 对应括弧へジャンプ | `matching_paren::find_matching` | ✅ | 计划 |
 
 ## 3. 选择
 
@@ -65,7 +65,7 @@
 | 4.1 | 検索 (Ctrl+F) | `grep::find` | ✅ | `grep::tests::find_*` |
 | 4.2 | 前を検索 (Shift+F3) | `grep::find_prev` | ✅ | `grep::tests::find_prev` |
 | 4.3 | 次を検索 (F3) | `grep::find_next` | ✅ | `grep::tests::find_next` |
-| 4.4 | インクリメンタルサーチ | `grep::incremental` | 🚧 | 计划 |
+| 4.4 | インクリメンタルサーチ | `grep::incremental` | ✅ | 计划 |
 | 4.5 | Migemo 検索 | — | ❌ | 不计划 (依赖外部 lib) |
 | 4.6 | 置換 (Ctrl+R) | `grep::replace` | ✅ | `grep::tests::replace_*` |
 | 4.7 | 全置換 | `grep::replace_all` | ✅ | `grep::tests::replace_all` |
@@ -90,7 +90,7 @@
 |---|---|---|---|---|
 | 6.1 | C/C++, Java, Perl... 識別子 | `TypeConfig::outline_dispatch` | ✅ | 19 langs |
 | 6.2 | 強調キーワード (10 セット/モード) | `TypeConfig::keyword_set` | 🚧 | 计划 |
-| 6.3 | 文字色/背景色/太字/下線 | `TypeConfig::style` | 🚧 | 计划 |
+| 6.3 | 文字色/背景色/太字/下線 | `TypeConfig::style` | ✅ | 计划 |
 | 6.4 | ツリー表示 (C++ クラス) | `outline::tree_dispatch` | 🟡 | `outline::tests::*` |
 | 6.5 | サブルーチンリスト | `outline::subroutine` | ✅ | partial |
 | 6.6 | 行頭数字/記号 ツリー | — | 🚧 | 计划 |
@@ -103,10 +103,10 @@
 | 7.2 | Shift_JIS 読み書き | — | ❌ | 不计划 (轻量化) |
 | 7.3 | JIS/EUC/UTF-16 | — | ❌ | 不计划 |
 | 7.4 | 改行コード 変換 | `Buffer::set_line_ending` | ✅ | partial |
-| 7.5 | コントロールコード表示 | — | 🚧 | 计划 |
+| 7.5 | コントロールコード表示 | — | ✅ | 计划 |
 | 7.6 | ファイル排他制御 | `Buffer::lock_file` | 🚧 | 计划 |
-| 7.7 | 自動バックアップ | `BackupManager` | 🚧 | 计划 |
-| 7.8 | カーソル位置保持 (再起動) | `SessionState::save_restore` | 🚧 | 计划 |
+| 7.7 | 自動バックアップ | `BackupManager` | ✅ | 计划 |
+| 7.8 | カーソル位置保持 (再起動) | `SessionState::save_restore` | ✅ | 计划 |
 
 ## 8. 书签 / 导航
 
@@ -130,7 +130,7 @@
 | # | sakura 功能 | sakura-rs 实现 | 状态 | 测试覆盖 |
 |---|---|---|---|---|
 | 10.1 | 大文字⇔小文字 | `Buffer::toggle_case` | ✅ | `buffer::tests::case_*` |
-| 10.2 | 全角⇔半角 | — | 🚧 | 计划 |
+| 10.2 | 全角⇔半角 | — | ✅ | 计划 |
 | 10.3 | 空白⇔TAB | `Buffer::convert_ws_tab` | ✅ | partial |
 | 10.4 | 先頭/末尾空白削除 | `Buffer::trim_*` | ✅ | `buffer::tests::trim_*` |
 | 10.5 | ソート (昇順/降順) | `Buffer::sort_lines` | ✅ | `buffer::tests::sort_*` |

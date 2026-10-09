@@ -41,6 +41,15 @@ pub mod type_config;
 pub mod types;
 pub mod undo;
 
+// Phase 1: 高優先 7 件 (ulys-191-36)
+pub mod auto_backup;
+pub mod control_code;
+pub mod cursor_persistence;
+pub mod incremental_search;
+pub mod matching_paren;
+pub mod syntax_styling;
+pub mod zenkaku_hankaku;
+
 /// 当前 crate 版本 + meta 信息 (对标 sakura 的 `SakuraVersion`).
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
