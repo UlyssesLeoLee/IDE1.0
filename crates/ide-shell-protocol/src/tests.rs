@@ -16,9 +16,7 @@ async fn test_open_buffer_returns_id() {
 async fn test_set_buffer_lines_changes_content() {
     let k = Kernel::new();
     let id = k.open_buffer("test").await;
-    k.set_buffer_lines(id, vec!["hello".into(), "world".into()])
-        .await
-        .unwrap();
+    k.set_buffer_lines(id, vec!["hello".into(), "world".into()]).await.unwrap();
     let buf = k.get_buffer(id).await.unwrap();
     assert_eq!(buf.lines, vec!["hello", "world"]);
     assert!(buf.dirty);
@@ -43,9 +41,7 @@ async fn test_key_event_insert_mode_typing() {
 async fn test_enter_newline_indent_after_brace() {
     let k = Kernel::new();
     let id = k.open_buffer("rust").await;
-    k.set_buffer_lines(id, vec!["fn main() {".into()])
-        .await
-        .unwrap();
+    k.set_buffer_lines(id, vec!["fn main() {".into()]).await.unwrap();
     // 用 set_cursor 把 cursor 设到行末
     k.set_cursor(id, 0, 11).await.unwrap();
     // 进 INSERT, 按 Enter
@@ -53,11 +49,7 @@ async fn test_enter_newline_indent_after_brace() {
     k.key_event(id, "Enter", false, false).await.unwrap();
     let buf = k.get_buffer(id).await.unwrap();
     assert_eq!(buf.lines.len(), 2, "expected 2 lines, got {:?}", buf.lines);
-    assert_eq!(
-        buf.lines[1], "  ",
-        "expected indent, got {:?}",
-        buf.lines[1]
-    );
+    assert_eq!(buf.lines[1], "  ", "expected indent, got {:?}", buf.lines[1]);
     assert_eq!(buf.cursor.row, 1);
     assert_eq!(buf.cursor.col, 2);
 }
@@ -75,10 +67,7 @@ async fn test_rpc_open_buffer() {
 async fn test_rpc_insert_and_get_buffer() {
     let k = Kernel::new();
     // open buffer via RPC
-    let resp = k
-        .handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"open_buffer","params":{"name":"x"}}"#)
-        .await
-        .unwrap();
+    let resp = k.handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"open_buffer","params":{"name":"x"}}"#).await.unwrap();
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     let id = v["result"]["id"].as_u64().unwrap();
 
@@ -90,12 +79,9 @@ async fn test_rpc_insert_and_get_buffer() {
     assert_eq!(v["result"]["ok"], true);
 
     // get_buffer
-    let resp = k
-        .handle_rpc(&format!(
-            r#"{{"jsonrpc":"2.0","id":3,"method":"get_buffer","params":{{"id":{id}}}}}"#
-        ))
-        .await
-        .unwrap();
+    let resp = k.handle_rpc(&format!(
+        r#"{{"jsonrpc":"2.0","id":3,"method":"get_buffer","params":{{"id":{id}}}}}"#
+    )).await.unwrap();
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     assert_eq!(v["result"]["lines"][0], "hello");
 }
@@ -103,35 +89,24 @@ async fn test_rpc_insert_and_get_buffer() {
 #[tokio::test]
 async fn test_rpc_method_not_found() {
     let k = Kernel::new();
-    let resp = k
-        .handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"bogus","params":{}}"#)
-        .await
-        .unwrap();
+    let resp = k.handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"bogus","params":{}}"#).await.unwrap();
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     assert!(v["error"].is_object());
-    assert!(v["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("unknown method"));
+    assert!(v["error"]["message"].as_str().unwrap().contains("unknown method"));
 }
 
 #[tokio::test]
 async fn test_rpc_notification_returns_none() {
     let k = Kernel::new();
     // id is null = notification
-    let resp = k
-        .handle_rpc(r#"{"jsonrpc":"2.0","id":null,"method":"open_buffer","params":{"name":"n"}}"#)
-        .await;
+    let resp = k.handle_rpc(r#"{"jsonrpc":"2.0","id":null,"method":"open_buffer","params":{"name":"n"}}"#).await;
     assert!(resp.is_none());
 }
 
 #[tokio::test]
 async fn test_kernel_info() {
     let k = Kernel::new();
-    let resp = k
-        .handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"kernel_info","params":{}}"#)
-        .await
-        .unwrap();
+    let resp = k.handle_rpc(r#"{"jsonrpc":"2.0","id":1,"method":"kernel_info","params":{}}"#).await.unwrap();
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     assert_eq!(v["result"]["name"], "ide-shell-protocol");
     assert!(v["result"]["api"].as_array().unwrap().len() >= 15);
@@ -155,9 +130,7 @@ struct MockProvider {
 
 #[async_trait::async_trait]
 impl AiProvider for MockProvider {
-    fn name(&self) -> &str {
-        &self.name
-    }
+    fn name(&self) -> &str { &self.name }
     async fn complete(&self, req: CompletionRequest) -> Result<Vec<CompletionItem>, String> {
         Ok(vec![CompletionItem {
             label: req.prefix.clone(),
@@ -168,19 +141,11 @@ impl AiProvider for MockProvider {
         }])
     }
     async fn edit(&self, _req: EditRequest) -> Result<EditResponse, String> {
-        Ok(EditResponse {
-            new_text: "// mocked edit".into(),
-            explanation: Some("mock".into()),
-        })
+        Ok(EditResponse { new_text: "// mocked edit".into(), explanation: Some("mock".into()) })
     }
     async fn chat(&self, _req: ChatRequest) -> Result<ChatResponse, String> {
         Ok(ChatResponse {
-            message: ChatMessage {
-                role: "assistant".into(),
-                content: "mocked reply".into(),
-                name: None,
-                tool_call_id: None,
-            },
+            message: ChatMessage { role: "assistant".into(), content: "mocked reply".into(), name: None, tool_call_id: None },
             tool_calls: vec![],
             finish_reason: Some("stop".into()),
         })
@@ -190,13 +155,7 @@ impl AiProvider for MockProvider {
 #[tokio::test]
 async fn test_provider_register_and_complete() {
     let k = Kernel::new();
-    k.register_provider(
-        "mock",
-        std::sync::Arc::new(MockProvider {
-            name: "mock".into(),
-        }),
-    )
-    .await;
+    k.register_provider("mock", std::sync::Arc::new(MockProvider { name: "mock".into() })).await;
     let id = k.open_buffer("test.rs").await;
     k.set_buffer_lines(id, vec!["hel".into()]).await.unwrap();
     // Move cursor to end of "hel"
@@ -213,26 +172,12 @@ async fn test_provider_register_and_complete() {
 #[tokio::test]
 async fn test_provider_chat() {
     let k = Kernel::new();
-    k.register_provider(
-        "mock",
-        std::sync::Arc::new(MockProvider {
-            name: "mock".into(),
-        }),
-    )
-    .await;
-    let resp = k
-        .chat(ChatRequest {
-            buffer_id: None,
-            messages: vec![ChatMessage {
-                role: "user".into(),
-                content: "hi".into(),
-                name: None,
-                tool_call_id: None,
-            }],
-            tools: vec![],
-        })
-        .await
-        .unwrap();
+    k.register_provider("mock", std::sync::Arc::new(MockProvider { name: "mock".into() })).await;
+    let resp = k.chat(ChatRequest {
+        buffer_id: None,
+        messages: vec![ChatMessage { role: "user".into(), content: "hi".into(), name: None, tool_call_id: None }],
+        tools: vec![],
+    }).await.unwrap();
     assert_eq!(resp.message.content, "mocked reply");
     assert_eq!(resp.finish_reason.unwrap(), "stop");
 }
@@ -252,13 +197,7 @@ async fn test_event_subscription() {
 #[tokio::test]
 async fn test_provider_unregister() {
     let k = Kernel::new();
-    k.register_provider(
-        "mock",
-        std::sync::Arc::new(MockProvider {
-            name: "mock".into(),
-        }),
-    )
-    .await;
+    k.register_provider("mock", std::sync::Arc::new(MockProvider { name: "mock".into() })).await;
     assert_eq!(k.list_providers().await, vec!["mock"]);
     k.unregister_provider("mock").await;
     assert_eq!(k.list_providers().await, vec![] as Vec<String>);

@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::ws::WebSocketUpgrade,
@@ -32,15 +33,11 @@ use axum::{
     Router,
 };
 use clap::{Parser, Subcommand};
-use ide_shell_protocol::Kernel;
+use ide_shell_protocol::{Kernel, RpcRequest, RpcResponse};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Parser)]
-#[command(
-    name = "ide-shell-protocol-server",
-    version,
-    about = "Headless IDE kernel server (HTTP/WS/stdio)"
-)]
+#[command(name = "ide-shell-protocol-server", version, about = "Headless IDE kernel server (HTTP/WS/stdio)")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -148,7 +145,10 @@ async fn info(State(kernel): State<Arc<Kernel>>) -> Json<serde_json::Value> {
 }
 
 /// 单条 JSON-RPC over HTTP.
-async fn http_rpc(State(kernel): State<Arc<Kernel>>, body: String) -> impl IntoResponse {
+async fn http_rpc(
+    State(kernel): State<Arc<Kernel>>,
+    body: String,
+) -> impl IntoResponse {
     match kernel.handle_rpc(&body).await {
         Some(resp) => (StatusCode::OK, resp).into_response(),
         None => (StatusCode::ACCEPTED, "").into_response(),
@@ -157,13 +157,15 @@ async fn http_rpc(State(kernel): State<Arc<Kernel>>, body: String) -> impl IntoR
 
 /// WebSocket — 接收客户端发来的 request, 同时 push kernel 事件给客户端.
 /// client 主动 close socket 即退订.
-async fn ws_handler(ws: WebSocketUpgrade, State(kernel): State<Arc<Kernel>>) -> impl IntoResponse {
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(kernel): State<Arc<Kernel>>,
+) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, kernel))
 }
 
 async fn handle_ws(socket: axum::extract::ws::WebSocket, kernel: Arc<Kernel>) {
     let mut rx = kernel.subscribe().await;
-
     use futures::{SinkExt, StreamExt};
     let (mut sender, mut receiver) = socket.split();
 
@@ -187,7 +189,7 @@ async fn handle_ws(socket: axum::extract::ws::WebSocket, kernel: Arc<Kernel>) {
         tokio::spawn(async move {
             while let Some(Ok(msg)) = receiver.next().await {
                 if let axum::extract::ws::Message::Text(text) = msg {
-                    if let Some(_resp) = k.handle_rpc(&text).await {
+                    if let Some(resp) = k.handle_rpc(&text).await {
                         // 简化: 不回 — 单向 RPC. 完整双向用 /rpcws
                     }
                 }
@@ -210,6 +212,7 @@ async fn rpc_ws_handler(
 }
 
 async fn handle_rpc_ws(mut socket: axum::extract::ws::WebSocket, kernel: Arc<Kernel>) {
+    use futures::{SinkExt, StreamExt};
     let mut event_rx = kernel.subscribe().await;
 
     loop {
@@ -248,39 +251,29 @@ struct MockProvider;
 
 #[async_trait::async_trait]
 impl ide_shell_protocol::AiProvider for MockProvider {
-    fn name(&self) -> &str {
-        "mock"
+    fn name(&self) -> &str { "mock" }
+    async fn complete(&self, req: ide_shell_protocol::CompletionRequest) -> Result<Vec<ide_shell_protocol::CompletionItem>, String> {
+        Ok(vec![
+            ide_shell_protocol::CompletionItem {
+                label: req.prefix.clone(),
+                insert_text: format!("{}_completed", req.prefix),
+                kind: "function".into(),
+                detail: Some("mock provider".into()),
+                documentation: None,
+            }
+        ])
     }
-    async fn complete(
-        &self,
-        req: ide_shell_protocol::CompletionRequest,
-    ) -> Result<Vec<ide_shell_protocol::CompletionItem>, String> {
-        Ok(vec![ide_shell_protocol::CompletionItem {
-            label: req.prefix.clone(),
-            insert_text: format!("{}_completed", req.prefix),
-            kind: "function".into(),
-            detail: Some("mock provider".into()),
-            documentation: None,
-        }])
-    }
-    async fn edit(
-        &self,
-        _req: ide_shell_protocol::EditRequest,
-    ) -> Result<ide_shell_protocol::EditResponse, String> {
+    async fn edit(&self, _req: ide_shell_protocol::EditRequest) -> Result<ide_shell_protocol::EditResponse, String> {
         Ok(ide_shell_protocol::EditResponse {
             new_text: "// mocked edit response\n".into(),
             explanation: Some("This is a mock edit from the demo provider.".into()),
         })
     }
-    async fn chat(
-        &self,
-        _req: ide_shell_protocol::ChatRequest,
-    ) -> Result<ide_shell_protocol::ChatResponse, String> {
+    async fn chat(&self, _req: ide_shell_protocol::ChatRequest) -> Result<ide_shell_protocol::ChatResponse, String> {
         Ok(ide_shell_protocol::ChatResponse {
             message: ide_shell_protocol::ChatMessage {
                 role: "assistant".into(),
-                content: "Mock reply from the demo provider. Use a real provider for production."
-                    .into(),
+                content: "Mock reply from the demo provider. Use a real provider for production.".into(),
                 name: None,
                 tool_call_id: None,
             },

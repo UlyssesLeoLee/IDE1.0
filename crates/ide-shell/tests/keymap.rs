@@ -142,7 +142,10 @@ fn test_command_mode_chars() {
 
 #[test]
 fn test_command_mode_enter() {
-    assert_eq!(map_key(key(KeyCode::Enter), Mode::Command), Action::Execute);
+    assert_eq!(
+        map_key(key(KeyCode::Enter), Mode::Command),
+        Action::Execute
+    );
 }
 
 #[test]

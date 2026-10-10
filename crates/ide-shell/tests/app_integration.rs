@@ -95,11 +95,7 @@ fn test_app_insert_char_appends() {
     // buffer 至少包含 'hello'
     let buf = app.buffer();
     let text = buf.as_str();
-    assert!(
-        text.contains("hello"),
-        "expected buffer to contain 'hello', got: {:?}",
-        text
-    );
+    assert!(text.contains("hello"), "expected buffer to contain 'hello', got: {:?}", text);
 }
 
 #[test]
@@ -112,11 +108,7 @@ fn test_app_insert_backspace_removes() {
     let buf = app.buffer();
     let text = buf.as_str();
     assert!(text.contains('a'));
-    assert!(
-        !text.contains("ab"),
-        "expected 'ab' removed, got: {:?}",
-        text
-    );
+    assert!(!text.contains("ab"), "expected 'ab' removed, got: {:?}", text);
 }
 
 #[test]
@@ -127,7 +119,7 @@ fn test_app_normal_mode_h_moves_left() {
     app.on_key(key('b'));
     app.on_key(key_code(KeyCode::Esc)); // → Normal
     app.on_key(key('h')); // 移动左
-                          // 没 panic 即过
+    // 没 panic 即过
     assert_eq!(app.mode(), Mode::Normal);
 }
 
@@ -160,11 +152,7 @@ fn test_app_command_mode_typed() {
     app.on_key(key('p'));
     let cmd = app.cmd_buffer();
     let text = cmd.as_str();
-    assert!(
-        text.contains("help"),
-        "expected cmd buffer 'help', got: {:?}",
-        text
-    );
+    assert!(text.contains("help"), "expected cmd buffer 'help', got: {:?}", text);
 }
 
 #[test]
@@ -257,10 +245,10 @@ fn test_app_ai_suggestion_non_empty() {
 fn test_app_normal_mode_unknown_keys_no_panic() {
     let mut app = default_app();
     // q triggers Quit, i/a trigger EnterInsert — skip them
-    for c in "bcdefghjklmnop".chars() {
-        app.on_key(key(c));
-    }
-    assert_eq!(app.mode(), Mode::Normal);
+        for c in "bcdefghjklmnop".chars() {
+            app.on_key(key(c));
+        }
+        assert_eq!(app.mode(), Mode::Normal);
 }
 
 #[test]
