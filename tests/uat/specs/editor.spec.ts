@@ -72,7 +72,7 @@ test.afterEach(async () => {
 
 test("editor page loads with full Cursor-style skeleton", async ({ page }) => {
   await goEditor(page);
-  await expect(page.locator("#toolbar")).toBeVisible();
+  await expect(page.locator("#menubar")).toBeVisible();
   await expect(page.locator("#sidebar")).toBeVisible();
   await expect(page.locator("#tree")).toBeVisible();
   await expect(page.locator("#welcome")).toBeVisible();
