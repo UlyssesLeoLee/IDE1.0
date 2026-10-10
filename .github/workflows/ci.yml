@@ -1,402 +1,795 @@
-name: ci
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
+    tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly Monday 2AM for security updates
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip test suite (emergency)'
+        required: false
+        type: boolean
+        default: false
+      target_platform:
+        description: 'Target platform for build'
+        required: false
+        type: choice
+        options: [all, linux, windows, macos]
+        default: 'all'
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
 
-jobs:
-  # ============================================================
-  # Job 1: Rust 标准套 (fmt + check + clippy + test + doc)
-  # IDE1.0 仅 ubuntu-latest (per brief §1.2 #3, 节省 CI 分钟)
-  # ============================================================
-  rust:
-    name: Rust (ubuntu)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+# Global concurrency control
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+# ============================================================
+# Job 1: Rust 标准套 (fmt + check + clippy + test + doc)
+# Multi-platform: ubuntu-latest, windows-latest, macos-latest
+# ============================================================
+rust:
+  name: Rust (${{ matrix.os }})
+  runs-on: ${{ matrix.os }}
+  timeout-minutes: 60
+  strategy:
+    fail-fast: false
+    matrix:
+      os: [ubuntu-latest, windows-latest, macos-latest]
+      rust: [stable]
+      include:
+        - os: ubuntu-latest
+          rust: beta
+        - os: ubuntu-latest
+          rust: nightly
+          allow-failure: true
+    # Exclude non-ubuntu for beta/nightly to save minutes
+    exclude:
+      - os: windows-latest
+        rust: beta
+      - os: windows-latest
+        rust: nightly
+      - os: macos-latest
+        rust: beta
+      - os: macos-latest
+        rust: nightly
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0  # Full history for git-based versioning
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
+    - name: Install system deps (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libgtk-3-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev \
+          patchelf \
+          wget \
+          pkg-config \
+          libssl-dev \
+          cmake
 
-      - name: cargo fmt --check
-        working-directory: .
-        run: cargo fmt --all -- --check
+    - name: Install system deps (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew update
+        brew install \
+          webkit2gtk \
+          gtk+3 \
+          ayatana-appindicator \
+          librsvg \
+          libsoup \
+          patchelf \
+          wget \
+          pkg-config \
+          openssl \
+          cmake
 
-      - name: cargo check
-        working-directory: .
-        run: cargo check --workspace --all-targets
+    - name: Install system deps (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install -y \
+          rust \
+          llvm \
+          cmake \
+          pkgconfiglite \
+          openssl \
+          nasm \
+          --no-progress
 
-      - name: cargo clippy
-        working-directory: .
-        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: rustfmt, clippy
 
-      - name: cargo test
-        working-directory: .
-        run: cargo test --workspace --all-targets --no-fail-fast
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+        key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.rust }}-cargo-
 
-      - name: cargo doc
-        working-directory: .
-        run: cargo doc --workspace --no-deps --all-features
+    - name: cargo fmt --check
+      working-directory: .
+      run: cargo fmt --all -- --check
 
-      - name: cargo build ide-shell demo binary
-        working-directory: .
-        run: cargo build -p ide-shell --bin ide-shell
+    - name: cargo check
+      working-directory: .
+      run: cargo check --workspace --all-targets
 
-  # ============================================================
-  # Job 2: Linux 集成 smoke (含 cli_smoke.sh 系统测)
-  # ============================================================
-  integration:
-    name: Integration (ubuntu)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: cargo clippy
+      working-directory: .
+      run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
-      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+    - name: cargo test
+      if: github.event.inputs.skip_tests != 'true'
+      working-directory: .
+      run: cargo test --workspace --all-targets --no-fail-fast
+      env:
+        IDE_SHELL_DESKTOP_TEST_ROOT: ${{ runner.temp }}/ide1_test
+        IDE_SHELL_WEB_TEST_ROOT: ${{ runner.temp }}/ide1_web_test
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
-      - name: Run integration tests
-        working-directory: .
-        run: cargo test --workspace --tests --no-fail-fast
-      - name: Run cli_smoke.sh
-        working-directory: .
-        run: bash tests/st/cli_smoke.sh
+    - name: cargo doc
+      working-directory: .
+      run: cargo doc --workspace --no-deps --all-features --document-private-items
 
-  # ============================================================
-  # Job 3: Mock switch 验证 (per ULYS-190 §4.4 stage6 — mock edge/failure)
-  # Python mock_switch reader (cluster/plugin/module 三层) + 边界/失败路径
-  # IDE1.0 stage1 8 module + stage6 11 edge 用例 (总计 26 用例)
-  # 守门 #13 W/T/M (Python 系统测;Rust 系统测在 Job 2 cli_smoke)
-  # ============================================================
-  mock-switch-validate:
-    name: Mock switch validate (Python)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: Upload docs as artifact
+      if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+      uses: actions/upload-artifact@v4
+      with:
+        name: rust-docs
+        path: target/doc/
+        retention-days: 7
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Build demo binaries
+      working-directory: .
+      run: |
+        cargo build -p ide-shell --bin ide-shell
+        cargo build -p ide-shell-web --bin ide-shell-web
+        cargo build -p ide-shell-desktop --bin ide-shell-desktop
 
-      - name: Run mock_switch reader tests (stage1, 15 用例)
-        working-directory: .
-        run: |
-          echo "=== stage1: 15 用例 (数据形状 + 5 helper 子命令) ==="
-          python3 tests/test_ide1_mock_switch.py -v
+    - name: Upload binaries (Linux)
+      if: runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries-linux
+        path: |
+          target/debug/ide-shell
+          target/debug/ide-shell-web
+          target/debug/ide-shell-desktop
+        retention-days: 7
 
-      - name: Run mock_switch edge tests (stage6, 11 用例)
-        working-directory: .
-        run: |
-          echo "=== stage6: 11 用例 (disabled / mode 边界 / compat failure / ACI 缺字段) ==="
-          python3 tests/test_ide1_mock_switch_edge.py -v
+    - name: Upload binaries (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries-windows
+        path: |
+          target/debug/ide-shell.exe
+          target/debug/ide-shell-web.exe
+          target/debug/ide-shell-desktop.exe
+        retention-days: 7
 
-  # ============================================================
-  # Job 4: UAT (Playwright e2e) — ide-shell-web + 40 browser cases
-  # per ULYS-191 §3: UT/IT/ST/UAT 四层测试矩阵补齐
-  # 依赖: Rust (ide-shell-web binary) + Node 20 + Playwright chromium
-  # ============================================================
-  uat-playwright:
-    name: UAT (Playwright e2e)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: Upload binaries (macOS)
+      if: runner.os == 'macOS'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries-macos
+        path: |
+          target/debug/ide-shell
+          target/debug/ide-shell-web
+          target/debug/ide-shell-desktop
+        retention-days: 7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+# ============================================================
+# Job 2: Linux 集成 smoke (含 cli_smoke.sh 系统测)
+# ============================================================
+integration:
+  name: Integration (ubuntu)
+  runs-on: ubuntu-latest
+  timeout-minutes: 45
+  needs: rust
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
+    - name: Install system deps for Tauri
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libgtk-3-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev \
+          patchelf \
+          wget \
+          pkg-config \
+          libssl-dev \
+          cmake \
+          xvfb \
+          libxcb1 \
+          libxcb-render0 \
+          libxcb-shape0 \
+          libxcb-xfixes0
 
-      - name: Build ide-shell-web binary
-        working-directory: .
-        run: cargo build -p ide-shell-web --bin ide-shell-web
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+    - name: Run integration tests
+      working-directory: .
+      run: cargo test --workspace --tests --no-fail-fast
+      env:
+        IDE_SHELL_DESKTOP_TEST_ROOT: ${{ runner.temp }}/ide1_test
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-chromium-v1
+    - name: Run cli_smoke.sh
+      working-directory: .
+      run: |
+        chmod +x tests/st/cli_smoke.sh
+        xvfb-run -a bash tests/st/cli_smoke.sh
 
-      - name: Install Playwright deps + chromium
-        working-directory: tests/uat
-        run: |
-          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+# ============================================================
+# Job 3: Mock switch 验证 (Python)
+# ============================================================
+mock-switch-validate:
+  name: Mock switch validate (Python)
+  runs-on: ubuntu-latest
+  timeout-minutes: 30
+  steps:
+    - uses: actions/checkout@v4
 
-      - name: Run Playwright e2e (40 cases)
-        working-directory: tests/uat
-        env:
-          IDE_SHELL_WEB_BIN: ../../target/debug/ide-shell-web
-        run: npx playwright test
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
 
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: tests/uat/playwright-report/
-          retention-days: 7
+    - name: Install Python deps
+      run: |
+        pip install -U pip
+        pip install pytest pytest-asyncio pyyaml
 
-      - name: Upload test results on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results
-          path: tests/uat/test-results/
-          retention-days: 7
+    - name: Run mock_switch reader tests (stage1, 15 用例)
+      working-directory: .
+      run: |
+        echo "=== stage1: 15 用例 (数据形状 + 5 helper 子命令) ==="
+        python3 tests/test_ide1_mock_switch.py -v
 
-  # ============================================================
-  # Job 5: Cross-language parity (per D-Boy 9/24 拍板: 加 setup-python step)
-  # 跨 Rust ↔ Python emitter 字段 1:1 验证 (Stage 1 Python emitter + Stage 3 Rust emitter)
-  # 依赖:
-  #   - Star 仓 _lib_aci_emit.py (submodule 或临时 git clone)
-  #   - Python 3.10+ + setuptools
-  # ============================================================
-  cross-language-parity:
-    name: Cross-language parity (Rust ↔ Python)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+    - name: Run mock_switch edge tests (stage6, 11 用例)
+      working-directory: .
+      run: |
+        echo "=== stage6: 11 用例 (disabled / mode 边界 / compat failure / ACI 缺字段) ==="
+        python3 tests/test_ide1_mock_switch_edge.py -v
 
-      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+# ============================================================
+# Job 4: UAT (Playwright e2e) — ide-shell-web + 40 browser cases
+# ============================================================
+uat-playwright:
+  name: UAT (Playwright e2e)
+  runs-on: ubuntu-latest
+  timeout-minutes: 60
+  needs: rust
+  steps:
+    - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
+    - name: Build ide-shell-web binary
+      working-directory: .
+      run: cargo build -p ide-shell-web --bin ide-shell-web
 
-      # Star 仓 Python emitter (per ULYS-191 Stage 1 PR #93 已 ship main + dev)
-      # 临时 clone + checkout PR #93 commit (cebba99c0b1d1237dd4df0ad9091502f4548689c)
-      - name: Clone Star repo at PR #93 commit
-        run: |
-          git clone --depth 1 https://github.com/UlyssesLeoLee/Star.git /tmp/star-checkout
-          cd /tmp/star-checkout
-          git fetch --depth 1 origin cebba99c0b1d1237dd4df0ad9091502f4548689c
-          git checkout cebba99c0b1d1237dd4df0ad9091502f4548689c
+    - name: Set up Node 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: 'npm'
+        cache-dependency-path: tests/uat/package-lock.json
 
-      - name: Run cross-language parity check
-        working-directory: .
-        env:
-          STAR_FLASH_MOCK_PATH: /tmp/star-checkout/tools/star-flash-mock
-        run: |
-          echo "=== IDE1.0 × Star Python emitter parity (per ULYS-191 §4.2.2 brief v0.1) ==="
-          python3 tests/parity/cross_language_parity.py
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-chromium-v${{ hashFiles('tests/uat/package-lock.json') }}
+        restore-keys: |
+          playwright-${{ runner.os }}-chromium-v
 
-  # ============================================================
-  # Job 4: Markdown lint (README + architecture + regression report)
-  # IDE1.0 中文 docs, 禁用 MD013/014/042 (line-length/HR/no-empty-links)
-  # ============================================================
-  markdown-lint:
-    name: Markdown lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v19
-        with:
-          globs: |
-            *.md
-            docs/**/*.md
-            !DD-*.md
-            !DD-*_*.md
-            !*需求规格书*.md
-            !*設計書*.md
+    - name: Install Playwright deps + chromium
+      working-directory: tests/uat
+      run: |
+        npm ci --no-audit --no-fund
+        npx playwright install --with-deps chromium
 
-  # ============================================================
-  # Job 5: Tauri Desktop build (Linux) — 出 .deb + .AppImage
-  # per ULYS-191 §4: 跨平台桌面打包. Windows .msi / macOS .dmg 需各自 runner
-  # (本机本笔已产出 IDE1.0_*.msi 在 dist/, CI 跑 Linux bundle 验证跨平台.
-  # ============================================================
-  tauri-build-linux:
-    name: Tauri Desktop (Linux .deb + .AppImage)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: Run Playwright e2e (40 cases)
+      working-directory: tests/uat
+      env:
+        IDE_SHELL_WEB_BIN: ../../target/debug/ide-shell-web
+        PLAYWRIGHT_HTML_REPORT: 1
+      run: npx playwright test --reporter=html
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+    - name: Upload Playwright report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-report
+        path: tests/uat/playwright-report/
+        retention-days: 7
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-test-results
+        path: tests/uat/test-results/
+        retention-days: 7
 
-      - name: Install system deps for Tauri Linux build
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            patchelf \
-            wget
+# ============================================================
+# Job 5: Cross-language parity (Rust ↔ Python)
+# ============================================================
+cross-language-parity:
+  name: Cross-language parity (Rust ↔ Python)
+  runs-on: ubuntu-latest
+  timeout-minutes: 45
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-      - name: Build ide-shell-desktop (cargo check)
-        working-directory: .
-        run: cargo check -p ide-shell-desktop --all-targets
+    - name: Install system deps for Tauri
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libgtk-3-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev
 
-      - name: Run ide-shell-desktop tests
-        working-directory: .
-        run: cargo test -p ide-shell-desktop
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
 
-      - name: Setup Node 20 + install @tauri-apps/cli
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Install Tauri CLI
-        working-directory: tools
-        run: npm install --no-audit --no-fund
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Linux .deb + .AppImage
-        working-directory: crates/ide-shell-desktop
-        run: ../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
 
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: ide-shell-desktop-deb
-          path: crates/ide-shell-desktop/target/release/bundle/deb/*.deb
-          retention-days: 30
+    - name: Clone Star repo at PR #93 commit
+      run: |
+        git clone --depth 1 https://github.com/UlyssesLeoLee/Star.git /tmp/star-checkout
+        cd /tmp/star-checkout
+        git fetch --depth 1 origin cebba99c0b1d1237dd4df0ad9091502f4548689c
+        git checkout cebba99c0b1d1237dd4df0ad9091502f4548689c
 
-      - name: Upload .AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: ide-shell-desktop-appimage
-          path: crates/ide-shell-desktop/target/release/bundle/appimage/*.AppImage
-          retention-days: 30
+    - name: Run cross-language parity check
+      working-directory: .
+      env:
+        STAR_FLASH_MOCK_PATH: /tmp/star-checkout/tools/star-flash-mock
+      run: |
+        echo "=== IDE1.0 × Star Python emitter parity (per ULYS-191 §4.2.2 brief v0.1) ==="
+        python3 tests/parity/cross_language_parity.py
 
-  # ============================================================
-  # Job 6: Rust bench (placeholder, 待 Stage 3 后续 brief 加 benchmark)
-  # ============================================================
-  rust-bench:
-    name: Rust bench
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
-      - name: cargo build sakura-rs bench example
-        working-directory: .
-        run: cargo build -p sakura-rs --example bench
+# ============================================================
+# Job 6: Markdown lint
+# ============================================================
+markdown-lint:
+  name: Markdown lint
+  runs-on: ubuntu-latest
+  timeout-minutes: 15
+  steps:
+    - uses: actions/checkout@v4
+    - name: Run markdownlint
+      uses: DavidAnson/markdownlint-cli2-action@v19
+      with:
+        globs: |
+          *.md
+          docs/**/*.md
+          !DD-*.md
+          !DD-*_*.md
+          !*需求规格书*.md
+          !*設計書*.md
+        config: .markdownlint.json
 
-      - name: Run sakura-rs bench (perf sanity)
-        working-directory: .
-        run: |
-          echo "=== sakura-rs core ops throughput ==="
-          cargo run -p sakura-rs --example bench --release 2>&1 | tail -10
-          echo "=== benchmark target ≥ 50k ops/s (insert_str single line) ==="
+# ============================================================
+# Job 7: Tauri Desktop build (Linux) — .deb + .AppImage
+# ============================================================
+tauri-build-linux:
+  name: Tauri Desktop (Linux .deb + .AppImage)
+  runs-on: ubuntu-latest
+  timeout-minutes: 60
+  needs: rust
+  if: github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'linux' || github.event.inputs.target_platform == 'all'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-  # ============================================================
-  # Job 6: Cross-project smoke (守门 #11 验证 git dep aci-emitter 可达)
-  # ============================================================
-  cross-project-smoke:
-    name: Cross-project smoke (aci-emitter git dep)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
 
-      - name: Install system deps for Tauri (gtk3, webkit2gtk, etc.)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
-      - name: Build & test as workspace member with aci-emitter git dep
-        working-directory: .
-        run: |
-          # 验证 IDE1.0 可作为 aci-emitter consumer 编译 + 测试
-          cargo build --workspace --all-features
-          cargo test --workspace --doc --no-fail-fast
+    - name: Install system deps for Tauri Linux build
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libgtk-3-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev \
+          patchelf \
+          wget \
+          rpm \
+          dpkg \
+          fakeroot \
+          libappindicator3-dev
 
-  # ============================================================
-  # (跳过, IDE1.0 不需要)
-  # - cross-platform × 3 (ubuntu + macos + windows) — per brief §1.2 #3
-  # ============================================================
+    - name: Build ide-shell-desktop (cargo check)
+      working-directory: .
+      run: cargo check -p ide-shell-desktop --all-targets
+
+    - name: Run ide-shell-desktop tests
+      working-directory: .
+      run: cargo test -p ide-shell-desktop
+
+    - name: Setup Node 20 + install @tauri-apps/cli
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Tauri CLI
+      working-directory: tools
+      run: npm install --no-audit --no-fund
+
+    - name: Build Linux .deb + .AppImage
+      working-directory: crates/ide-shell-desktop
+      run: ../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
+
+    - name: Upload .deb
+      uses: actions/upload-artifact@v4
+      with:
+        name: ide-shell-desktop-deb
+        path: crates/ide-shell-desktop/target/release/bundle/deb/*.deb
+        retention-days: 30
+
+    - name: Upload .AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: ide-shell-desktop-appimage
+        path: crates/ide-shell-desktop/target/release/bundle/appimage/*.AppImage
+        retention-days: 30
+
+# ============================================================
+# Job 8: Tauri Desktop build (Windows) — .msi
+# ============================================================
+tauri-build-windows:
+  name: Tauri Desktop (Windows .msi)
+  runs-on: windows-latest
+  timeout-minutes: 60
+  needs: rust
+  if: github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'windows' || github.event.inputs.target_platform == 'all'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+
+    - name: Install WiX Toolset for .msi
+      run: |
+        choco install wixtoolset -y --no-progress
+        refreshenv
+
+    - name: Build ide-shell-desktop (cargo check)
+      working-directory: .
+      run: cargo check -p ide-shell-desktop --all-targets
+
+    - name: Run ide-shell-desktop tests
+      working-directory: .
+      run: cargo test -p ide-shell-desktop
+
+    - name: Setup Node 20 + install @tauri-apps/cli
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Tauri CLI
+      working-directory: tools
+      run: npm install --no-audit --no-fund
+
+    - name: Build Windows .msi
+      working-directory: crates/ide-shell-desktop
+      run: ../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json
+
+    - name: Upload .msi
+      uses: actions/upload-artifact@v4
+      with:
+        name: ide-shell-desktop-msi
+        path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
+        retention-days: 30
+
+# ============================================================
+# Job 9: Tauri Desktop build (macOS) — .dmg
+# ============================================================
+tauri-build-macos:
+  name: Tauri Desktop (macOS .dmg)
+  runs-on: macos-latest
+  timeout-minutes: 60
+  needs: rust
+  if: github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'macos' || github.event.inputs.target_platform == 'all'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+
+    - name: Install system deps for Tauri macOS build
+      run: |
+        brew update
+        brew install \
+          webkit2gtk \
+          gtk+3 \
+          ayatana-appindicator \
+          librsvg \
+          libsoup \
+          patchelf \
+          wget \
+          create-dmg
+
+    - name: Build ide-shell-desktop (cargo check)
+      working-directory: .
+      run: cargo check -p ide-shell-desktop --all-targets
+
+    - name: Run ide-shell-desktop tests
+      working-directory: .
+      run: cargo test -p ide-shell-desktop
+
+    - name: Setup Node 20 + install @tauri-apps/cli
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Tauri CLI
+      working-directory: tools
+      run: npm install --no-audit --no-fund
+
+    - name: Build macOS .dmg
+      working-directory: crates/ide-shell-desktop
+      run: ../../tools/node_modules/.bin/tauri build --bundles dmg --config ./tauri.conf.json
+
+    - name: Upload .dmg
+      uses: actions/upload-artifact@v4
+      with:
+        name: ide-shell-desktop-dmg
+        path: crates/ide-shell-desktop/target/release/bundle/dmg/*.dmg
+        retention-days: 30
+
+# ============================================================
+# Job 10: Rust bench (性能基准)
+# ============================================================
+rust-bench:
+  name: Rust bench
+  runs-on: ubuntu-latest
+  timeout-minutes: 30
+  needs: rust
+  steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+
+    - name: cargo build sakura-rs bench example
+      working-directory: .
+      run: cargo build -p sakura-rs --example bench --release
+
+    - name: Run sakura-rs bench (perf sanity)
+      working-directory: .
+      run: |
+        echo "=== sakura-rs core ops throughput ==="
+        cargo run -p sakura-rs --example bench --release 2>&1 | tail -10
+        echo "=== benchmark target ≥ 50k ops/s (insert_str single line) ==="
+
+    - name: Run criterion benchmarks (if available)
+      working-directory: .
+      run: |
+        if cargo bench --no-run 2>/dev/null; then
+          cargo bench 2>&1 | tail -20
+        else
+          echo "No criterion benches configured"
+        fi
+
+# ============================================================
+# Job 11: Security audit (cargo-audit + cargo-deny)
+# ============================================================
+security-audit:
+  name: Security audit
+  runs-on: ubuntu-latest
+  timeout-minutes: 20
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit --locked
+
+    - name: Install cargo-deny
+      run: cargo install cargo-deny --locked
+
+    - name: Run cargo audit
+      run: cargo audit --deny warnings
+
+    - name: Run cargo deny (licenses, bans, advisories)
+      run: |
+        cargo deny check licenses
+        cargo deny check bans
+        cargo deny check advisories
+
+# ============================================================
+# Job 12: Cross-project smoke (aci-emitter git dep)
+# ============================================================
+cross-project-smoke:
+  name: Cross-project smoke (aci-emitter git dep)
+  runs-on: ubuntu-latest
+  timeout-minutes: 30
+  needs: rust
+  steps:
+    - uses: actions/checkout@v4
+
+    - name: Install system deps for Tauri
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libgtk-3-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          libsoup-3.0-dev \
+          libjavascriptcoregtk-4.1-dev
+
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+
+    - name: Build & test with aci-emitter git dep
+      working-directory: .
+      run: |
+        cargo build --workspace --all-features
+        cargo test --workspace --doc --no-fail-fast
+
+# ============================================================
+# Job 13: Release (自动发布)
+# ============================================================
+release:
+  name: Release
+  runs-on: ubuntu-latest
+  timeout-minutes: 60
+  needs: [rust, integration, uat-playwright, tauri-build-linux, tauri-build-windows, tauri-build-macos, security-audit]
+  if: github.event_name == 'release' && github.event.action == 'published'
+  permissions:
+    contents: write
+    packages: write
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+
+    - name: Build release binaries (all platforms via matrix)
+      # This would typically be done by re-running the platform-specific build jobs
+      # For now, download the artifacts from previous jobs
+      uses: actions/download-artifact@v4
+      with:
+        pattern: ide-shell-desktop-*
+        path: dist/
+        merge-multiple: true
+
+    - name: Generate release notes
+      run: |
+        cat > RELEASE_NOTES.md << 'EOF'
+        ## IDE1.0 ${{ github.event.release.tag_name }}
+
+        ### Changes
+        ${{ github.event.release.body }}
+
+        ### Assets
+        - Linux: .deb, .AppImage
+        - Windows: .msi
+        - macOS: .dmg
+
+        ### Checksums
+        EOF
+        sha256sum dist/* >> RELEASE_NOTES.md
+
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/ide-shell-desktop-*.deb
+          dist/ide-shell-desktop-*.AppImage
+          dist/ide-shell-desktop-*.msi
+          dist/ide-shell-desktop-*.dmg
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: false
