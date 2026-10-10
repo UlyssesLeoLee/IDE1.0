@@ -12,7 +12,7 @@
 //   - zc / zo 折叠
 
 import { test, expect, type Page } from "@playwright/test";
-import { resetShell } from "./helpers";
+import { resetShell, waitForBootstrap } from "./helpers";
 
 const BASE = "http://127.0.0.1:8123";
 

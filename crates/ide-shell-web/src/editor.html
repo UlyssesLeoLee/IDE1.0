@@ -35,6 +35,24 @@
     .status-active #status { display: flex; }
     .status-active #bottom-panel { display: none; }
 
+        /* ===== Kernel Banner ===== */
+    .banner {
+      height: 24px;
+      background: var(--bg-bar);
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+      font-size: 12px;
+      color: var(--fg-muted);
+      line-height: 24px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .banner:empty::before {
+      content: "IDE1.0 — 就绪";
+      color: var(--fg-dim);
+    }
+
     /* ===== Menubar (sakura 风格 顶端功能按钮) ===== */
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: 30px; position: relative; z-index: 100; }
     .menu-item { position: relative; }
@@ -371,7 +389,9 @@
 
       <span style="flex:1"></span>
       <button class="tb-btn" data-cmd="new-terminal" data-tip="新建终端 (Ctrl+`)">▶ 终端</button>
-    </div>
+
+    <!-- Kernel Banner -->
+    <div id="banner" class="banner"></div>
 
     <!-- Activity Bar -->
     <div id="activity-bar">
@@ -469,6 +489,8 @@ const TIPS = {
 const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 let projectRoot = null;
 let activeTabId = null;
+let newIdCounter = 0;
+window.activeTab = { get id() { return activeTabId; }, getTab: getActiveTab };
 const tabs = new Map();
 let terminalId = null;
 
@@ -809,6 +831,11 @@ terminalBody.addEventListener("focus", () => terminalBody.focus());
 const TABS = tabs;
 let maxTabId = 0;
 
+function newId() {
+  return "t" + (++maxTabId);
+}
+window.newId = newId;
+
 function getActiveTab() { return TABS.get(activeTabId); }
 
 function renderTabs() {
@@ -1080,6 +1107,20 @@ async function openFolder() {
   }
 }
 
+// Expose setProjectRoot for tests (and general use)
+window.setProjectRoot = async function(path, showExplorer = true) {
+  try {
+    await invoke("open_project", { path });
+    projectRoot = path;
+    setFile(path);
+    setTip("已打开项目: " + path);
+    if (showExplorer) showSidePane("explorer");
+  } catch (e) {
+    setTip("打开失败: " + e.message);
+  }
+};
+
+
 // ===== Help =====
 function showHelp() {
   try {
@@ -1132,6 +1173,9 @@ window.addEventListener("DOMContentLoaded", async function () {
   try {
     const b = await invoke("kernel_banner");
     setTip("就绪 — " + b);
+    // Also update banner element for waitForBootstrap test
+    const bannerEl = document.getElementById("banner");
+    if (bannerEl) bannerEl.textContent = b;
   } catch (e) { /* ignore */ }
   showSidePane("explorer");
   // Default mode NORMAL
@@ -1404,6 +1448,9 @@ function showAbout() {
   setTip("关于 IDE1.0 v0.1.9 - sakura-rs 100% 完成");
 }
 
+
+// Bootstrap the editor on load
+bootstrap();
 </script>
 
 </body>
