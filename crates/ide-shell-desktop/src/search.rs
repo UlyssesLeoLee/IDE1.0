@@ -29,12 +29,7 @@ pub struct SearchOptions {
 
 /// 用 rg 跑 search. 返回结果列表.
 pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
-    let mut args: Vec<String> = vec![
-        "--line-number".into(),
-        "--no-heading".into(),
-        "--color".into(),
-        "never".into(),
-    ];
+    let mut args: Vec<String> = vec!["--line-number".into(), "--no-heading".into(), "--color".into(), "never".into()];
     if !opts.case_sensitive.unwrap_or(false) {
         args.push("--ignore-case".into());
     }
@@ -64,12 +59,7 @@ pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, Str
         .args(args)
         .current_dir(cwd)
         .output()
-        .map_err(|e| {
-            format!(
-                "rg not found: {} (please install ripgrep or use fallback)",
-                e
-            )
-        })?;
+        .map_err(|e| format!("rg not found: {} (please install ripgrep or use fallback)", e))?;
 
     // rg exit 0/1 (found/not found) are both ok; other codes = error
     if !output.status.success() && output.status.code() != Some(1) {
@@ -89,11 +79,7 @@ pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, Str
             let path = parts[0].to_string();
             let line_num: u64 = parts[1].parse().unwrap_or(0);
             let text = parts[2].to_string();
-            results.push(SearchResult {
-                path,
-                line: line_num,
-                text,
-            });
+            results.push(SearchResult { path, line: line_num, text });
         }
     }
     Ok(results)
@@ -109,28 +95,15 @@ pub fn search_fallback(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchRes
     let cs = opts.case_sensitive.unwrap_or(false);
     let max = opts.max_results.unwrap_or(500);
 
-    fn walk(
-        cwd: &Path,
-        results: &mut Vec<SearchResult>,
-        pattern: &str,
-        pattern_lc: &str,
-        cs: bool,
-        max: usize,
-    ) -> std::io::Result<()> {
-        if results.len() >= max {
-            return Ok(());
-        }
+    fn walk(cwd: &Path, results: &mut Vec<SearchResult>, pattern: &str, pattern_lc: &str, cs: bool, max: usize) -> std::io::Result<()> {
+        if results.len() >= max { return Ok(()); }
         for entry in fs::read_dir(cwd)? {
             let entry = entry?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
-                continue;
-            }
+            if name.starts_with('.') { continue; }
             if entry.file_type()?.is_dir() {
-                if name == "node_modules" || name == "target" || name == ".git" || name == "dist" {
-                    continue;
-                }
+                if name == "node_modules" || name == "target" || name == ".git" || name == "dist" { continue; }
                 walk(&path, results, pattern, pattern_lc, cs, max)?;
             } else if entry.file_type()?.is_file() {
                 if let Ok(f) = fs::File::open(&path) {
@@ -149,9 +122,7 @@ pub fn search_fallback(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchRes
                                     line: (i + 1) as u64,
                                     text: line,
                                 });
-                                if results.len() >= max {
-                                    return Ok(());
-                                }
+                                if results.len() >= max { return Ok(()); }
                             }
                         }
                     }
@@ -165,6 +136,7 @@ pub fn search_fallback(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchRes
         .map_err(|e| format!("search failed: {}", e))?;
     Ok(results)
 }
+
 
 // ============================================================
 // Tauri command wrapper

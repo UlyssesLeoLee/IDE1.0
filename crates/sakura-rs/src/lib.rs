@@ -34,47 +34,35 @@
 
 #![forbid(unsafe_code)]
 
+pub mod auto_backup;
 pub mod buffer;
+pub mod control_code;
 pub mod cursor;
+pub mod cursor_persistence;
+pub mod daemon;
+pub mod encoding_io;
+pub mod file_lock;
+pub mod font_manager;
 pub mod grep;
+pub mod incremental_search;
+pub mod js_macro;
+pub mod key_macro;
+pub mod keyword_set;
+pub mod matching_paren;
+pub mod migemo;
+pub mod outline_extended;
+pub mod plugin;
+pub mod ppa_macro;
+pub mod ruler;
+pub mod sdi;
+pub mod search_highlight;
+pub mod split_quad;
+pub mod syntax_styling;
+pub mod tag_jump;
 pub mod type_config;
 pub mod types;
 pub mod undo;
-
-// Phase 1: 高優先 7 件 (ulys-191-36)
-pub mod auto_backup;
-pub mod control_code;
-pub mod cursor_persistence;
-pub mod incremental_search;
-pub mod matching_paren;
-pub mod syntax_styling;
 pub mod zenkaku_hankaku;
-
-// Phase 2: IO + Migemo 5 件 (ulys-191-37)
-pub mod encoding_io;
-pub mod file_lock;
-pub mod migemo;
-pub mod keyword_set;
-pub mod outline_extended;
-pub mod search_highlight;
-
-// Phase 3: 表示 + 強調 2 件 (ulys-191-38)
-pub mod ruler;
-pub mod font_manager;
-
-// Phase 4: ウィンドウ + ナビ 3 件 (ulys-191-38)
-pub mod sdi;
-pub mod split_quad;
-pub mod tag_jump;
-
-// Phase 5: マクロ 3 件 (ulys-191-39)
-pub mod key_macro;
-pub mod ppa_macro;
-pub mod js_macro;
-
-// Phase 6: プラグイン + 常駐 2 件 (ulys-191-39)
-pub mod daemon;
-pub mod plugin;
 
 /// 当前 crate 版本 + meta 信息 (对标 sakura 的 `SakuraVersion`).
 pub fn version() -> &'static str {

@@ -2,6 +2,18 @@
   "default": true,
   "MD013": false,
   "MD014": false,
+  "MD024": false,
+  "MD033": false,
+  "MD041": false,
   "MD042": false,
+  "MD046": false,
+  "MD051": false,
+  "MD052": false,
+  "MD053": false,
+  "MD054": false,
+  "MD055": false,
+  "MD056": false,
+  "MD058": false,
+  "MD059": false,
   "MD060": false
 }

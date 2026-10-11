@@ -5,7 +5,7 @@
 // 保证隔离.
 import type { Page } from "@playwright/test";
 
-const BASE = "http://127.0.0.1:8123";
+const BASE = `http://${process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123"}`;
 
 export interface WebStyle {
   weight?: string;

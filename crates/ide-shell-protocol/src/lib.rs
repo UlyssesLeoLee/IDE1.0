@@ -154,17 +154,12 @@ impl Buffer {
             .collect::<String>();
         let trimmed = left.trim_end();
         let extra = if trimmed.ends_with('{') || trimmed.ends_with('[') || trimmed.ends_with('(') {
-            if indent.contains('\t') {
-                "\t".to_string()
-            } else {
-                "  ".to_string()
-            }
+            if indent.contains('\t') { "\t".to_string() } else { "  ".to_string() }
         } else {
             String::new()
         };
         self.lines[line_idx] = left;
-        self.lines
-            .insert(line_idx + 1, format!("{}{}", indent, extra) + &right);
+        self.lines.insert(line_idx + 1, format!("{}{}", indent, extra) + &right);
         self.cursor.row = (line_idx + 1) as u32;
         self.cursor.col = (indent.len() + extra.len()) as u32;
         self.dirty = true;
@@ -174,11 +169,7 @@ impl Buffer {
     pub fn move_cursor(&mut self, d_row: i32, d_col: i32) {
         let max_row = self.lines.len().saturating_sub(1) as i32;
         let new_row = (self.cursor.row as i32 + d_row).clamp(0, max_row) as u32;
-        let max_col = self
-            .lines
-            .get(new_row as usize)
-            .map(|l| l.len())
-            .unwrap_or(0) as i32;
+        let max_col = self.lines.get(new_row as usize).map(|l| l.len()).unwrap_or(0) as i32;
         let new_col = (self.cursor.col as i32 + d_col).clamp(0, max_col) as u32;
         self.cursor.row = new_row;
         self.cursor.col = new_col;
@@ -238,8 +229,8 @@ impl Buffer {
 /// RPC 请求 — JSON-RPC 2.0 风格 (用于 stdio + HTTP/WS 共用).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcRequest {
-    pub jsonrpc: String,               // 总是 "2.0"
-    pub id: Option<serde_json::Value>, // null = notification (no reply)
+    pub jsonrpc: String,  // 总是 "2.0"
+    pub id: Option<serde_json::Value>,  // null = notification (no reply)
     pub method: String,
     #[serde(default)]
     pub params: serde_json::Value,
@@ -278,11 +269,7 @@ impl RpcResponse {
             jsonrpc: "2.0".into(),
             id,
             result: None,
-            error: Some(RpcError {
-                code,
-                message: message.into(),
-                data: None,
-            }),
+            error: Some(RpcError { code, message: message.into(), data: None }),
         }
     }
 }
@@ -323,14 +310,14 @@ pub struct CompletionRequest {
     pub line_text: String,
     pub cursor: Cursor,
     pub language: String,
-    pub limit: u32, // 默认 10
+    pub limit: u32,  // 默认 10
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionItem {
     pub label: String,
     pub insert_text: String,
-    pub kind: String, // function / variable / class / keyword / snippet
+    pub kind: String,  // function / variable / class / keyword / snippet
     pub detail: Option<String>,
     pub documentation: Option<String>,
 }
@@ -339,7 +326,7 @@ pub struct CompletionItem {
 pub struct EditRequest {
     pub buffer_id: u32,
     pub range: Range,
-    pub instruction: String, // 自然语言指令, e.g. "add error handling"
+    pub instruction: String,  // 自然语言指令, e.g. "add error handling"
     pub context_before: Option<String>,
     pub context_after: Option<String>,
 }
@@ -367,7 +354,7 @@ pub struct ChatRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
-    pub role: String, // system / user / assistant / tool
+    pub role: String,  // system / user / assistant / tool
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -379,7 +366,7 @@ pub struct ChatMessage {
 pub struct Tool {
     pub name: String,
     pub description: String,
-    pub parameters: serde_json::Value, // JSON Schema
+    pub parameters: serde_json::Value,  // JSON Schema
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -388,7 +375,7 @@ pub struct ChatResponse {
     #[serde(default)]
     pub tool_calls: Vec<ToolCall>,
     #[serde(default)]
-    pub finish_reason: Option<String>, // stop / tool_calls / length
+    pub finish_reason: Option<String>,  // stop / tool_calls / length
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -421,31 +408,13 @@ struct KernelInner {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Event {
-    BufferOpened {
-        id: u32,
-        name: String,
-    },
-    BufferChanged {
-        id: u32,
-        lines: Vec<String>,
-        cursor: Cursor,
-    },
-    BufferClosed {
-        id: u32,
-    },
-    ModeChanged {
-        id: u32,
-        mode: Mode,
-    },
-    ActiveBufferChanged {
-        id: u32,
-    },
-    ProviderRegistered {
-        name: String,
-    },
-    ProviderUnregistered {
-        name: String,
-    },
+    BufferOpened { id: u32, name: String },
+    BufferChanged { id: u32, lines: Vec<String>, cursor: Cursor },
+    BufferClosed { id: u32 },
+    ModeChanged { id: u32, mode: Mode },
+    ActiveBufferChanged { id: u32 },
+    ProviderRegistered { name: String },
+    ProviderUnregistered { name: String },
 }
 
 impl Kernel {
@@ -485,19 +454,7 @@ impl Kernel {
         let buf = Buffer::new(id, name);
         self.inner.buffers.write().await.insert(id, buf);
         *self.inner.active.write().await = id;
-        self.emit(Event::BufferOpened {
-            id,
-            name: self
-                .inner
-                .buffers
-                .read()
-                .await
-                .get(&id)
-                .unwrap()
-                .name
-                .clone(),
-        })
-        .await;
+        self.emit(Event::BufferOpened { id, name: self.inner.buffers.read().await.get(&id).unwrap().name.clone() }).await;
         self.emit(Event::ActiveBufferChanged { id }).await;
         id
     }
@@ -546,9 +503,7 @@ impl Kernel {
 
     pub async fn set_buffer_lines(&self, id: u32, lines: Vec<String>) -> Result<(), String> {
         let mut buffers = self.inner.buffers.write().await;
-        let buf = buffers
-            .get_mut(&id)
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = buffers.get_mut(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         buf.lines = lines;
         buf.cursor = Cursor { row: 0, col: 0 };
         buf.dirty = true;
@@ -556,16 +511,13 @@ impl Kernel {
             id,
             lines: buf.lines.clone(),
             cursor: buf.cursor.clone(),
-        })
-        .await;
+        }).await;
         Ok(())
     }
 
     pub async fn insert_at_cursor(&self, id: u32, text: &str) -> Result<(), String> {
         let mut buffers = self.inner.buffers.write().await;
-        let buf = buffers
-            .get_mut(&id)
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = buffers.get_mut(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         // 在 cursor 位置插入 text (支持多行)
         for c in text.chars() {
             if c == '\n' {
@@ -578,22 +530,13 @@ impl Kernel {
             id,
             lines: buf.lines.clone(),
             cursor: buf.cursor.clone(),
-        })
-        .await;
+        }).await;
         Ok(())
     }
 
-    pub async fn key_event(
-        &self,
-        id: u32,
-        key: &str,
-        ctrl: bool,
-        #[allow(unused_variables)] _shift: bool,
-    ) -> Result<(), String> {
+    pub async fn key_event(&self, id: u32, key: &str, ctrl: bool, shift: bool) -> Result<(), String> {
         let mut buffers = self.inner.buffers.write().await;
-        let buf = buffers
-            .get_mut(&id)
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = buffers.get_mut(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         match buf.mode {
             Mode::Insert => {
                 if ctrl {
@@ -614,11 +557,7 @@ impl Kernel {
                         "ArrowUp" => buf.move_cursor(-1, 0),
                         "ArrowDown" => buf.move_cursor(1, 0),
                         "End" => {
-                            let max_col = buf
-                                .lines
-                                .get(buf.cursor.row as usize)
-                                .map(|l| l.len())
-                                .unwrap_or(0) as u32;
+                            let max_col = buf.lines.get(buf.cursor.row as usize).map(|l| l.len()).unwrap_or(0) as u32;
                             buf.cursor.col = max_col;
                         }
                         "Home" => buf.cursor.col = 0,
@@ -631,30 +570,24 @@ impl Kernel {
                     }
                 }
             }
-            Mode::Normal => match key {
-                "i" => buf.set_mode(Mode::Insert),
-                "Escape" => {}
-                "h" | "ArrowLeft" => buf.move_cursor(0, -1),
-                "j" | "ArrowDown" => buf.move_cursor(1, 0),
-                "k" | "ArrowUp" => buf.move_cursor(-1, 0),
-                "l" | "ArrowRight" => buf.move_cursor(0, 1),
-                "0" => buf.cursor.col = 0,
-                "$" | "End" => {
-                    let max_col = buf
-                        .lines
-                        .get(buf.cursor.row as usize)
-                        .map(|l| l.len())
-                        .unwrap_or(0) as u32;
-                    buf.cursor.col = max_col;
+            Mode::Normal => {
+                match key {
+                    "i" => buf.set_mode(Mode::Insert),
+                    "Escape" => {}
+                    "h" | "ArrowLeft" => buf.move_cursor(0, -1),
+                    "j" | "ArrowDown" => buf.move_cursor(1, 0),
+                    "k" | "ArrowUp" => buf.move_cursor(-1, 0),
+                    "l" | "ArrowRight" => buf.move_cursor(0, 1),
+                    "0" => buf.cursor.col = 0,
+                    "$" | "End" => {
+                        let max_col = buf.lines.get(buf.cursor.row as usize).map(|l| l.len()).unwrap_or(0) as u32;
+                        buf.cursor.col = max_col;
+                    }
+                    "u" if ctrl => { buf.undo(); }
+                    "r" if ctrl => { buf.redo(); }
+                    _ => {}
                 }
-                "u" if ctrl => {
-                    buf.undo();
-                }
-                "r" if ctrl => {
-                    buf.redo();
-                }
-                _ => {}
-            },
+            }
             Mode::Command => {
                 // 命令行通过 cmd_text 累积, Enter 触发 execute_command
                 if key == "Enter" {
@@ -680,31 +613,19 @@ impl Kernel {
             id: id_emit,
             lines: lines_emit,
             cursor: cursor_emit,
-        })
-        .await;
-        self.emit(Event::ModeChanged {
-            id: id_emit,
-            mode: mode_emit,
-        })
-        .await;
+        }).await;
+        self.emit(Event::ModeChanged { id: id_emit, mode: mode_emit }).await;
         Ok(())
     }
 
     pub async fn set_cursor(&self, id: u32, row: u32, col: u32) -> Result<(), String> {
         let mut buffers = self.inner.buffers.write().await;
-        let buf = buffers
-            .get_mut(&id)
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = buffers.get_mut(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         buf.set_cursor(row, col);
         let lines_emit = buf.lines.clone();
         let cursor_emit = buf.cursor.clone();
         drop(buffers);
-        self.emit(Event::BufferChanged {
-            id,
-            lines: lines_emit,
-            cursor: cursor_emit,
-        })
-        .await;
+        self.emit(Event::BufferChanged { id, lines: lines_emit, cursor: cursor_emit }).await;
         Ok(())
     }
 
@@ -743,33 +664,31 @@ impl Kernel {
                 // :complete — 在光标位置触发补全 (异步返回 provider 结果)
                 self.complete_at_cursor(active).await
             }
+            "edit" => {
+                // :edit <range> <instruction> — inline edit
+                // 简化: 跳过 — 由 server 解析更复杂的范围语法
+                Err("use vim-style :%s/foo/bar/ or :edit_via_provider {range} {instruction}".into())
+            }
             _ => Err(format!("unknown command: {}", head)),
         }
     }
 
     pub async fn set_cmd_text(&self, id: u32, text: &str) -> Result<(), String> {
         let mut buffers = self.inner.buffers.write().await;
-        let buf = buffers
-            .get_mut(&id)
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = buffers.get_mut(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         buf.cmd_text = text.to_string();
         Ok(())
     }
 
     pub async fn get_cmd_text(&self, id: u32) -> Result<String, String> {
         let buffers = self.inner.buffers.read().await;
-        let buf = buffers
-            .get(&id)
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = buffers.get(&id).ok_or_else(|| format!("buffer {} not found", id))?;
         Ok(buf.cmd_text.clone())
     }
 
     /// 触发补全 — 调用当前 active buffer 的 prefix + 第一个注册 provider.
     pub async fn complete_at_cursor(&self, id: u32) -> Result<serde_json::Value, String> {
-        let buf = self
-            .get_buffer(id)
-            .await
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = self.get_buffer(id).await.ok_or_else(|| format!("buffer {} not found", id))?;
         let providers = self.inner.providers.read().await;
         if providers.is_empty() {
             return Ok(serde_json::json!({"items": [], "note": "no provider registered"}));
@@ -799,24 +718,15 @@ impl Kernel {
         range: Range,
         instruction: &str,
     ) -> Result<EditResponse, String> {
-        let buf = self
-            .get_buffer(id)
-            .await
-            .ok_or_else(|| format!("buffer {} not found", id))?;
+        let buf = self.get_buffer(id).await.ok_or_else(|| format!("buffer {} not found", id))?;
         let providers = self.inner.providers.read().await;
         if providers.is_empty() {
             return Err("no provider registered".into());
         }
-        let (start_row, _start_col) = (range.start_row as usize, range.start_col as usize);
-        let (end_row, _end_col) = (range.end_row as usize, range.end_col as usize);
-        let context_before = buf
-            .lines
-            .iter()
-            .take(start_row)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
-        let context_after_lines = buf.lines.iter().skip(end_row).cloned().collect::<Vec<_>>();
+        let (start_row, start_col) = (range.start_row as usize, range.start_col as usize);
+        let (end_row, end_col) = (range.end_row as usize, range.end_col as usize);
+        let context_before = buf.lines.iter().take(start_row).cloned().collect::<Vec<_>>().join("\n");
+        let mut context_after_lines = buf.lines.iter().skip(end_row).cloned().collect::<Vec<_>>();
         let _ = context_after_lines; // 保留最后一段, 简化处理
         let req = EditRequest {
             buffer_id: id,
@@ -858,8 +768,7 @@ impl Kernel {
         let mut providers = self.inner.providers.write().await;
         providers.remove(name);
         drop(providers);
-        self.emit(Event::ProviderUnregistered { name: name.into() })
-            .await;
+        self.emit(Event::ProviderUnregistered { name: name.into() }).await;
     }
 
     pub async fn list_providers(&self) -> Vec<String> {
@@ -889,27 +798,12 @@ impl KernelInfo {
             version: env!("CARGO_PKG_VERSION"),
             mode: "headless vim-like RPC",
             api: vec![
-                "open_buffer",
-                "close_buffer",
-                "list_buffers",
-                "set_active_buffer",
-                "active_buffer_id",
-                "get_buffer",
-                "set_buffer_lines",
-                "insert_at_cursor",
-                "set_cursor",
-                "key_event",
-                "execute_command",
-                "set_cmd_text",
-                "get_cmd_text",
-                "complete_at_cursor",
-                "edit_via_provider",
-                "chat",
-                "register_provider",
-                "unregister_provider",
-                "list_providers",
-                "subscribe",
-                "kernel_info",
+                "open_buffer", "close_buffer", "list_buffers", "set_active_buffer",
+                "active_buffer_id", "get_buffer", "set_buffer_lines", "insert_at_cursor",
+                "set_cursor", "key_event", "execute_command", "set_cmd_text", "get_cmd_text",
+                "complete_at_cursor", "edit_via_provider", "chat",
+                "register_provider", "unregister_provider", "list_providers",
+                "subscribe", "kernel_info",
             ],
         }
     }
@@ -931,22 +825,20 @@ impl Kernel {
         let req: RpcRequest = match serde_json::from_str(raw) {
             Ok(r) => r,
             Err(e) => {
-                return serde_json::to_string(&RpcResponse::err(
+                return Some(serde_json::to_string(&RpcResponse::err(
                     serde_json::Value::Null,
                     codes::PARSE_ERROR,
                     format!("parse error: {e}"),
-                ))
-                .ok();
+                )).ok()?);
             }
         };
         let id = req.id.clone().unwrap_or(serde_json::Value::Null);
         if req.jsonrpc != "2.0" {
-            return serde_json::to_string(&RpcResponse::err(
+            return Some(serde_json::to_string(&RpcResponse::err(
                 id,
                 codes::INVALID_REQUEST,
                 format!("jsonrpc must be 2.0, got {}", req.jsonrpc),
-            ))
-            .ok();
+            )).ok()?);
         }
         // notification (id == null) → 不回 response
         let is_notification = req.id.is_none();
@@ -969,156 +861,86 @@ impl Kernel {
         }
     }
 
-    async fn dispatch(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    async fn dispatch(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
         match method {
             "kernel_info" => Ok(serde_json::to_value(KernelInfo::current()).unwrap()),
             "open_buffer" => {
-                let name = params
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("[unnamed]");
+                let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("[unnamed]");
                 let id = self.open_buffer(name).await;
                 Ok(serde_json::json!({"id": id}))
             }
             "close_buffer" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
                 self.close_buffer(id).await?;
                 Ok(serde_json::json!({"closed": id}))
             }
-            "list_buffers" => Ok(serde_json::json!({"buffers": self.list_buffers().await})),
+            "list_buffers" => {
+                Ok(serde_json::json!({"buffers": self.list_buffers().await}))
+            }
             "set_active_buffer" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
                 self.set_active_buffer(id).await?;
                 Ok(serde_json::json!({"active": id}))
             }
-            "active_buffer_id" => Ok(serde_json::json!({"id": self.active_buffer_id().await})),
+            "active_buffer_id" => {
+                Ok(serde_json::json!({"id": self.active_buffer_id().await}))
+            }
             "get_buffer" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
                 let buf = self.get_buffer(id).await.ok_or("buffer not found")?;
                 Ok(serde_json::to_value(buf).unwrap())
             }
             "set_buffer_lines" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
-                let lines_v = params
-                    .get("lines")
-                    .and_then(|v| v.as_array())
-                    .ok_or("missing lines")?;
-                let lines: Vec<String> = lines_v
-                    .iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect();
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
+                let lines_v = params.get("lines").and_then(|v| v.as_array()).ok_or("missing lines")?;
+                let lines: Vec<String> = lines_v.iter().filter_map(|v| v.as_str().map(String::from)).collect();
                 self.set_buffer_lines(id, lines).await?;
                 Ok(serde_json::json!({"ok": true}))
             }
             "insert_at_cursor" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
-                let text = params
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .ok_or("missing text")?;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
+                let text = params.get("text").and_then(|v| v.as_str()).ok_or("missing text")?;
                 self.insert_at_cursor(id, text).await?;
                 Ok(serde_json::json!({"ok": true}))
             }
             "key_event" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
-                let key = params
-                    .get("key")
-                    .and_then(|v| v.as_str())
-                    .ok_or("missing key")?;
-                let ctrl = params
-                    .get("ctrl")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let shift = params
-                    .get("shift")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
+                let key = params.get("key").and_then(|v| v.as_str()).ok_or("missing key")?;
+                let ctrl = params.get("ctrl").and_then(|v| v.as_bool()).unwrap_or(false);
+                let shift = params.get("shift").and_then(|v| v.as_bool()).unwrap_or(false);
                 self.key_event(id, key, ctrl, shift).await?;
                 Ok(serde_json::json!({"ok": true}))
             }
             "set_cursor" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
-                let row = params
-                    .get("row")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing row")? as u32;
-                let col = params
-                    .get("col")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing col")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
+                let row = params.get("row").and_then(|v| v.as_u64()).ok_or("missing row")? as u32;
+                let col = params.get("col").and_then(|v| v.as_u64()).ok_or("missing col")? as u32;
                 self.set_cursor(id, row, col).await?;
                 Ok(serde_json::json!({"ok": true}))
             }
             "execute_command" => {
-                let cmd = params
-                    .get("cmd")
-                    .and_then(|v| v.as_str())
-                    .ok_or("missing cmd")?;
+                let cmd = params.get("cmd").and_then(|v| v.as_str()).ok_or("missing cmd")?;
                 self.execute_command(cmd).await
             }
             "set_cmd_text" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
-                let text = params
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .ok_or("missing text")?;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
+                let text = params.get("text").and_then(|v| v.as_str()).ok_or("missing text")?;
                 self.set_cmd_text(id, text).await?;
                 Ok(serde_json::json!({"ok": true}))
             }
             "get_cmd_text" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
                 Ok(serde_json::json!({"text": self.get_cmd_text(id).await?}))
             }
             "complete_at_cursor" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
                 self.complete_at_cursor(id).await
             }
             "edit_via_provider" => {
-                let id = params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("missing id")? as u32;
+                let id = params.get("id").and_then(|v| v.as_u64()).ok_or("missing id")? as u32;
                 let range_v = params.get("range").ok_or("missing range")?;
-                let range: Range =
-                    serde_json::from_value(range_v.clone()).map_err(|e| e.to_string())?;
-                let instruction = params
-                    .get("instruction")
-                    .and_then(|v| v.as_str())
-                    .ok_or("missing instruction")?;
+                let range: Range = serde_json::from_value(range_v.clone()).map_err(|e| e.to_string())?;
+                let instruction = params.get("instruction").and_then(|v| v.as_str()).ok_or("missing instruction")?;
                 let resp = self.edit_via_provider(id, range, instruction).await?;
                 Ok(serde_json::to_value(resp).unwrap())
             }
@@ -1133,14 +955,13 @@ impl Kernel {
                 Err("register_provider is in-process only. Use setup() to bind a provider at startup.".into())
             }
             "unregister_provider" => {
-                let name = params
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .ok_or("missing name")?;
+                let name = params.get("name").and_then(|v| v.as_str()).ok_or("missing name")?;
                 self.unregister_provider(name).await;
                 Ok(serde_json::json!({"ok": true}))
             }
-            "list_providers" => Ok(serde_json::json!({"providers": self.list_providers().await})),
+            "list_providers" => {
+                Ok(serde_json::json!({"providers": self.list_providers().await}))
+            }
             _ => Err(format!("unknown method: {method}")),
         }
     }
@@ -1148,11 +969,7 @@ impl Kernel {
 
 /// 在 Buffer 上加 cmd_text 字段 — 命令行累积输入.
 impl Buffer {
-    pub fn new_with_cmd_text(
-        id: u32,
-        name: impl Into<String>,
-        cmd_text: impl Into<String>,
-    ) -> Self {
+    pub fn new_with_cmd_text(id: u32, name: impl Into<String>, cmd_text: impl Into<String>) -> Self {
         Self {
             cmd_text: cmd_text.into(),
             ..Self::new(id, name)
@@ -1163,11 +980,7 @@ impl Buffer {
     pub fn set_cursor(&mut self, row: u32, col: u32) {
         let max_row = self.lines.len().saturating_sub(1) as u32;
         self.cursor.row = row.min(max_row);
-        let max_col = self
-            .lines
-            .get(self.cursor.row as usize)
-            .map(|l| l.len())
-            .unwrap_or(0) as u32;
+        let max_col = self.lines.get(self.cursor.row as usize).map(|l| l.len()).unwrap_or(0) as u32;
         self.cursor.col = col.min(max_col);
     }
 }
