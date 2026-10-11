@@ -14,7 +14,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { resetShell, waitForBootstrap } from "./helpers";
 
-const BASE = "http://127.0.0.1:8123";
+const BASE = `http://${process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123"}`;
 
 // 共享给 editor UAT: vim Insert / save 会改 README fixture, beforeEach/afterEach 恢复
 // 跨平台 fixture 路径 — 从 IDE_SHELL_WEB_TEST_ROOT 环境变量取 (web server 启动时设的)

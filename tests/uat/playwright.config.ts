@@ -4,6 +4,7 @@
 // webServer 自动启动 cargo build 的 ide-shell-web binary (port 8123),
 // 所有 case 跑完后 Playwright 自动关闭 server.
 import { defineConfig, devices } from "@playwright/test";
+import * as path from "path";
 
 // server binary 路径 (tests/uat → repo root target/debug; 本机用 CARGO_TARGET_DIR 时设 IDE_SHELL_WEB_BIN)
 // MSYS bash 路径转换问题: 总是要求 IDE_SHELL_WEB_BIN 设置为绝对路径
@@ -14,6 +15,8 @@ if (!process.env.IDE_SHELL_WEB_BIN) {
   );
 }
 const BINARY = process.env.IDE_SHELL_WEB_BIN;
+// 监听地址: 与 server 同一 env (IDE_SHELL_WEB_ADDR), 多个工作区并行跑 UAT 时可错开端口
+const ADDR = process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123";
 
 export default defineConfig({
   testDir: "./specs",
@@ -26,7 +29,7 @@ export default defineConfig({
   timeout: 10_000,
   expect: { timeout: 3_000 },
   use: {
-      baseURL: "http://127.0.0.1:8123",
+      baseURL: `http://${ADDR}`,
     headless: true,
     viewport: { width: 960, height: 600 },
     trace: "on-first-retry",
@@ -34,12 +37,14 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
       command: BINARY,
-      url: "http://127.0.0.1:8123/api/frame",
+      url: `http://${ADDR}/api/frame`,
       reuseExistingServer: !process.env.CI,
       timeout: 90_000,  // CI Linux cold-start: build + connect 延长
       // 默认 fixtures 项目根 — editor.spec.ts / sandbox.spec.ts 用
       env: {
-        IDE_SHELL_WEB_TEST_ROOT: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project",
+        IDE_SHELL_WEB_ADDR: ADDR,
+        // 相对本仓库解析 (原先写死 D:\orcaWork\... 绝对路径, 换机器/CI 即失效)
+        IDE_SHELL_WEB_TEST_ROOT: path.resolve(__dirname, "fixtures", "sample-project"),
       },
       stdout: "ignore",
       stderr: "pipe",
