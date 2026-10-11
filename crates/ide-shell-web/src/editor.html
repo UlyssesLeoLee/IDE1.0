@@ -261,7 +261,187 @@
     #welcome .open-btn:hover { background: #1f8ad2; }
     .shortcuts { font-size: 11px; color: var(--fg-muted); }
     .shortcuts kbd { background: #444; padding: 1px 6px; border-radius: 3px; margin: 0 2px; }
-  </style>
+  
+/* ============================================================
+   透明玻璃主题 (clear) — 全透明水晶质感 + backdrop-filter
+   迁移自 main 分支 d7ad19c / 4b7c6d5 / f44479f, 原先只存在于
+   desktop/dist/index.html, 现随共享前端同步到 web 与桌面两端.
+   ============================================================ */
+[data-theme="clear"] {
+      --theme-name: "clear";
+      --fg: #ffffff;
+      --fg-muted: rgba(255, 255, 255, 0.82);
+      --fg-dim: rgba(255, 255, 255, 0.65);
+      --bg: transparent;
+      --body-bg: transparent;
+
+      --bg-bar: rgba(255, 255, 255, 0.06);
+      --bg-side: rgba(255, 255, 255, 0.04);
+      --bg-status: rgba(255, 255, 255, 0.08);
+      --bg-edit: transparent;
+      --bg-panel: rgba(255, 255, 255, 0.05);
+      --bg-input: rgba(255, 255, 255, 0.12);
+
+      --border: rgba(255, 255, 255, 0.28);
+      --border-subtle: rgba(255, 255, 255, 0.16);
+      --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+      --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2);
+      --glass-inset-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+
+      --blue: #38bdf8;
+      --green: #4ade80;
+      --yellow: #fde047;
+      --red: #f87171;
+      --orange: #fb923c;
+
+      --kbd-bg: rgba(255, 255, 255, 0.16);
+      --kbd-border: rgba(255, 255, 255, 0.35);
+      --scroll-thumb: rgba(255, 255, 255, 0.3);
+      --scroll-thumb-hover: rgba(255, 255, 255, 0.55);
+    }
+[data-theme="clear"] body {
+      background: transparent;
+    }
+[data-theme="clear"] #app {
+      background: rgba(255, 255, 255, 0.02);
+      backdrop-filter: blur(8px) saturate(140%);
+      -webkit-backdrop-filter: blur(8px) saturate(140%);
+    }
+[data-theme="clear"] .tb-btn,
+    [data-theme="clear"] .theme-toggle-btn,
+    [data-theme="clear"] .bottom-toggle,
+    [data-theme="clear"] #welcome .open-btn,
+    [data-theme="clear"] .md-btn {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.22) 100%) !important;
+      backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.55) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.30) !important;
+      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.15),
+                  0 1px 4px rgba(255, 255, 255, 0.2),
+                  inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25),
+                  inset 1px 0 1px rgba(255, 255, 255, 0.35),
+                  inset -1px 0 1px rgba(255, 255, 255, 0.35) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+      mix-blend-mode: normal;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+[data-theme="clear"] .tb-btn:hover,
+    [data-theme="clear"] .theme-toggle-btn:hover,
+    [data-theme="clear"] .bottom-toggle:hover,
+    [data-theme="clear"] #welcome .open-btn:hover,
+    [data-theme="clear"] .md-btn:hover {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.48) 0%, rgba(255, 255, 255, 0.20) 45%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.38) 100%) !important;
+      border-color: rgba(255, 255, 255, 0.85) !important;
+      border-top-color: #ffffff !important;
+      box-shadow: 0 6px 24px -2px rgba(56, 189, 248, 0.3),
+                  0 0 12px rgba(255, 255, 255, 0.4),
+                  inset 0 2px 2px 0 #ffffff,
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.4) !important;
+      transform: translateY(-1px);
+    }
+[data-theme="clear"] .tb-btn:active,
+    [data-theme="clear"] .theme-toggle-btn:active,
+    [data-theme="clear"] .bottom-toggle:active,
+    [data-theme="clear"] #welcome .open-btn:active {
+      transform: translateY(0.5px) scale(0.98);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+    }
+[data-theme="clear"] .mb-btn {
+      color: rgba(255, 255, 255, 0.9) !important;
+      border-radius: 5px;
+      margin: 2px 1px;
+      transition: all 0.2s ease;
+    }
+[data-theme="clear"] .mb-btn:hover,
+    [data-theme="clear"] .menu-item.open > .mb-btn {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(16px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.5) !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+[data-theme="clear"] .menu-dropdown,
+    [data-theme="clear"] .submenu-dropdown {
+      background: rgba(18, 22, 32, 0.72) !important;
+      backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      -webkit-backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.65) !important;
+      border-radius: 8px;
+      box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.45),
+                  0 2px 8px rgba(0, 0, 0, 0.2),
+                  inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15) !important;
+      padding: 5px 0;
+    }
+[data-theme="clear"] .menu-row {
+      color: rgba(255, 255, 255, 0.92) !important;
+      border-radius: 4px;
+      margin: 1px 4px;
+      transition: background 0.15s ease;
+    }
+[data-theme="clear"] .menu-row:hover {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.15) 100%) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      color: #ffffff !important;
+    }
+[data-theme="clear"] .menu-sep {
+      background: rgba(255, 255, 255, 0.18) !important;
+      margin: 4px 6px;
+    }
+[data-theme="clear"] .act-btn {
+      color: rgba(255, 255, 255, 0.75);
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+[data-theme="clear"] .act-btn:hover {
+      background: rgba(255, 255, 255, 0.18) !important;
+      color: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.35) !important;
+    }
+[data-theme="clear"] .act-btn.active {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(18px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(18px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.6) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), inset 0 1.5px 1px #fff !important;
+      color: #38bdf8 !important;
+    }
+[data-theme="clear"] .side-tab.active,
+    [data-theme="clear"] .bottom-tab.active,
+    [data-theme="clear"] .tab.active {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
+      backdrop-filter: blur(14px) saturate(180%) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
+      color: #ffffff !important;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    }
+[data-theme="clear"] .side-tab:hover,
+    [data-theme="clear"] .bottom-tab:hover,
+    [data-theme="clear"] .tab:hover {
+      background: rgba(255, 255, 255, 0.14) !important;
+      color: #ffffff !important;
+    }
+[data-theme="clear"] #ed-content,
+    [data-theme="clear"] #gutter,
+    [data-theme="clear"] #terminal-body,
+    [data-theme="clear"] .shortcuts,
+    [data-theme="clear"] .tree-node,
+    [data-theme="clear"] #welcome h1 {
+      color: #ffffff;
+      mix-blend-mode: difference;
+    }
+</style>
 </head>
 <body>
   <div id="app" class="status-active">
@@ -407,7 +587,8 @@
           <div class="menu-row menu-submenu" data-submenu="theme">
             <span>主题</span><span class="mr-shortcut">▶</span>
             <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="theme-dark"><span>深色</span></div>
+              <div class="menu-row" data-cmd="theme-clear"><span>透明玻璃</span></div>
+<div class="menu-row" data-cmd="theme-dark"><span>深色</span></div>
               <div class="menu-row" data-cmd="theme-light"><span>浅色</span></div>
               <div class="menu-row" data-cmd="theme-high-contrast"><span>高对比度</span></div>
             </div>
@@ -663,7 +844,8 @@ const SETTINGS = {
   theme: {
     title: "主题",
     items: () => [
-      { label: "深色", cmd: "theme-dark" },
+      { label: "透明玻璃", cmd: "theme-clear" },
+    { label: "深色", cmd: "theme-dark" },
       { label: "浅色", cmd: "theme-light" },
       { label: "高对比度", cmd: "theme-high-contrast" },
     ],
@@ -1199,6 +1381,7 @@ function dispatchCommand(cmd) {
     case "toggle-minimap":   execCmd("toggleMinimap"); break;
     case "font-bigger":      fontBigger(); break;
     case "font-smaller":     fontSmaller(); break;
+    case "theme-clear":      setTheme("clear"); break;
     case "theme-dark":       setTheme("dark"); break;
     case "theme-light":      setTheme("light"); break;
     case "theme-high-contrast": setTheme("hc"); break;
@@ -2601,6 +2784,16 @@ function showShortcuts() { openOptionList("shortcuts"); }
 
 // 主题 / 字体 实际生效
 const THEMES = {
+  // 透明玻璃主题: 视觉全部由 [data-theme="clear"] CSS 规则负责
+  // (半透明 + backdrop-filter, 无法用 JS 注入表达).
+  // 这里的值只用于 setTheme 清理 inline 后的状态栏/正文兜底.
+  clear: {
+    "--bg-bar": "rgba(255,255,255,0.06)", "--bg-side": "rgba(255,255,255,0.04)",
+    "--bg-edit": "transparent",
+    "--border": "rgba(255,255,255,0.28)", "--fg": "#ffffff",
+    "--fg-muted": "rgba(255,255,255,0.82)", "--fg-dim": "rgba(255,255,255,0.65)",
+    "--blue": "#8ab4f8", "--green": "#7ee2b8", "--bg-status": "rgba(255,255,255,0.10)",
+  },
   dark: {
     "--bg-bar": "#252526", "--bg-side": "#1e1e1e", "--bg-edit": "#1e1e1e",
     "--border": "#333", "--fg": "#d4d4d4", "--fg-muted": "#858585", "--fg-dim": "#6a6a6a",
@@ -2618,15 +2811,39 @@ const THEMES = {
   },
 };
 
+const THEME_LABELS = { clear: "透明玻璃", dark: "深色", light: "浅色", hc: "高对比度" };
+
 function setTheme(mode) {
   const t = THEMES[mode] || THEMES.dark;
   const root = document.documentElement;
-  Object.keys(t).forEach((k) => root.style.setProperty(k, t[k]));
-  // 直接给用 var() 的容器兜底 (部分规则写了字面量)
-  document.body.style.color = t["--fg"];
-  document.body.style.background = t["--bg-edit"];
+  const prev = root.getAttribute("data-theme");
+  // 非 clear 主题靠 JS 注入 CSS 变量, 必须先清掉上一主题留下的 inline,
+  // 否则 inline style 会压过 [data-theme="clear"] 的 CSS 规则.
+  if (prev && prev !== mode) {
+    Object.keys(THEMES[prev] || {}).forEach((k) => root.style.removeProperty(k));
+  }
+  // data-theme 属性让 CSS 选择器接管; clear 主题完全靠它.
+  // dark/light 也设上, 与透明主题 CSS 里的 [data-theme="dark"] 定义协同.
+  if (mode === "clear") {
+    root.removeAttribute("style");
+    root.style.color = t["--fg"];
+    root.style.background = "transparent";
+    document.body.style.background = "transparent";
+    document.body.style.color = t["--fg"];
+    root.setAttribute("data-theme", "clear");
+  } else {
+    Object.keys(t).forEach((k) => root.style.setProperty(k, t[k]));
+    document.body.style.color = t["--fg"];
+    document.body.style.background = t["--bg-edit"];
+    root.setAttribute("data-theme", mode === "hc" ? "dark" : mode);
+    if (mode === "hc") {
+      // 高对比度只覆盖变量, 与 dark 同选择器
+      root.style.setProperty("--border", "#ffffff");
+    }
+  }
   VIEW_STATE.theme = mode;
-  setTip("主题: " + mode);
+  localStorage.setItem("ide10.theme", mode);
+  setTip("主题: " + (THEME_LABELS[mode] || mode));
   renderVim(getActiveTab());
 }
 
@@ -3962,6 +4179,12 @@ window.addEventListener("DOMContentLoaded", async function () {
   }
   showSidePane("explorer");
   try { initZoomWheel(); } catch (_) { /* ignore */ }
+  // 恢复上次主题 (含透明玻璃 clear). setTheme 会写回 localStorage,
+  // 所以只在有已保存值时调用, 避免每次启动都写一次.
+  try {
+    const saved = localStorage.getItem("ide10.theme");
+    if (saved && THEMES[saved]) setTheme(saved);
+  } catch (_) { /* private mode: 忽略 */ }
   // Default mode NORMAL
   setMode("NORMAL");
   setPos("Ln 1, Col 1");

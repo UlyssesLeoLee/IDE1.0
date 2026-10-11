@@ -340,6 +340,18 @@ uat-playwright:
         cargo build -p ide-shell-desktop --bin ide-shell-desktop
         node tests/uat/audit-desktop-parity.mjs
 
+    - name: Theme UAT (4 themes incl. transparent glass)
+      working-directory: tests/uat
+      env:
+        IDE_WEB_URL: http://127.0.0.1:8123
+      run: |
+        (../../target/debug/ide-shell-web &>/tmp/web.log &)
+        for i in $(seq 1 30); do
+          curl -sf http://127.0.0.1:8123/api/frame >/dev/null && break
+          sleep 1
+        done
+        node theme.spec.mjs
+
     - name: Run Playwright e2e
       working-directory: tests/uat
       env:
