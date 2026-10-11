@@ -229,7 +229,32 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
-        ("POST", "/api/outline") => {
+                ("POST", "/api/plugin_load") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let input = req.get("input").and_then(|v| v.as_str()).unwrap_or("");
+            match sakura_rs::plugin::load_and_run(std::path::Path::new(path), input) {
+                Ok(out) => {
+                    let j = serde_json::json!({ "ok": true, "output": out });
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&j).unwrap_or_default(),
+                    );
+                }
+                Err(e) => {
+                    let j = serde_json::json!({ "ok": false, "error": e.to_string() });
+                    send_response(
+                        stream,
+                        "400 Bad Request",
+                        "application/json",
+                        &serde_json::to_vec(&j).unwrap_or_default(),
+                    );
+                }
+            }
+        }
+("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug

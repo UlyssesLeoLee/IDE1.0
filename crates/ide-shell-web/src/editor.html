@@ -36,7 +36,9 @@
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 6px; gap: 4px; }
     #activity-bar { grid-row: 2; grid-column: 1; background: #333; display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
     #side-bar { grid-row: 2; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    #editor-area { grid-row: 2; grid-column: 3; display: flex; flex-direction: column; min-height: 0; }
+    #editor-area { grid-row: 2; grid-column: 3; display: flex; flex-direction: row; min-height: 0; }
+    #editor-area > #tabs, #editor-area > #breadcrumb { flex: 1 1 auto; }
+    #editor-area > #editor { flex: 1 1 auto; }
     #bottom-panel { grid-row: 3; grid-column: 1 / -1; display: flex; flex-direction: column; background: #252526; color: white; padding: 0; }
     #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: white;
          display: flex; align-items: center; padding: 0 8px; height: 22px; }
@@ -141,6 +143,27 @@
     .side-tab.active { color: var(--fg); border-bottom-color: var(--blue); }
     #side-body { flex: 1; overflow: auto; padding: 4px; font-size: 12px; }
     .side-pane { min-height: 100%; }
+    #editor-area.split-h, #editor-area.split-v, #editor-area.split-quad {
+      display: grid; gap: 1px; background: var(--border);
+      grid-template-columns: 1fr; grid-template-rows: 1fr 1fr;
+    }
+    #editor-area.split-v { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+    #editor-area.split-quad { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .split-view { overflow: auto; background: var(--bg-edit); padding: 2px 6px;
+      font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.4; }
+    .split-label { color: var(--fg-muted); font-size: 10px; padding: 2px 0;
+      border-bottom: 1px solid var(--border); }
+    #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
+      border-left: 1px solid var(--border); background: #1a1a1a; }
+    #minimap .mm-row { display: flex; gap: 0; height: 3px; overflow: hidden; cursor: pointer; }
+    #minimap .mm-row:hover { background: #2a2d2e; }
+    #minimap .mm-row i { display: block; height: 2px; background: #555; flex: 0 0 auto; }
+    #ed-content .sel-active { background: #264f78; }
+    #ed-content .sel-prefix { background: #3a3d41; }
+    .opt-row { padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+    .opt-row:hover { background: #2a2d2e; }
+    .opt-row[data-opt] { color: var(--fg); }
+    .md-body .opt-row + .opt-row { margin-top: 2px; }
     .sb-section { padding: 4px 6px; color: var(--fg-muted); text-transform: uppercase; font-size: 10px; font-weight: bold; }
     .tree-node { padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap; }
     .tree-node:hover { background: #2a2a2a; }
@@ -539,6 +562,107 @@ let __ready = false;
 window.__ideReady = function() { return __ready; };
 
 // ===== Globals =====
+
+/* 提前声明: 下面的 const/let 会被命令表在初始化时引用,
+   放在 Globals 之后避免 TDZ (Cannot access X before initialization). */
+// --- FIND_STATE ---
+let FIND_STATE = { needle: "", matchCase: false, useRegex: false, hits: [], idx: -1 };
+// --- SETTINGS ---
+// 每项的 label 支持函数形式, 在渲染时才求值 —— 否则会引用到尚未初始化的
+// VIEW_STATE / Syntax (它们声明在本对象之后).
+const SETTINGS = {
+  settings: {
+    title: "首选项",
+    items: () => [
+      { label: "自动换行: " + (VIEW_STATE.wordWrap ? "开" : "关"), cmd: "toggle-word-wrap" },
+      { label: "行号: " + (VIEW_STATE.lineNumbers ? "开" : "关"), cmd: "toggle-line-num" },
+      { label: "缩略图: " + (VIEW_STATE.minimap ? "开" : "关"), cmd: "toggle-minimap" },
+      { label: "语法高亮: " + (VIEW_STATE.syntax === false ? "关" : "开"), cmd: "syntax" },
+      { label: "主题: " + (VIEW_STATE.theme || "dark"), cmd: "theme-select" },
+      { label: "字号: " + (VIEW_STATE.fontSize || 14) + " px", cmd: "font" },
+    ],
+  },
+  theme: {
+    title: "主题",
+    items: () => [
+      { label: "深色", cmd: "theme-dark" },
+      { label: "浅色", cmd: "theme-light" },
+      { label: "高对比度", cmd: "theme-high-contrast" },
+    ],
+  },
+  font: {
+    title: "字体",
+    items: () => [12, 13, 14, 15, 16, 18, 20].map((n) => ({ label: n + " px", cmd: "font-set:" + n })),
+  },
+  language: {
+    title: "当前文件语言",
+    items: () => (window.Syntax ? Syntax.LANGUAGES : []).map((l) => ({ label: Syntax.languageLabel(l), cmd: "setlang:" + l })),
+  },
+  keymap: {
+    title: "键映射 (编辑器三态)",
+    items: () => [
+      { label: "NORMAL 进入 INSERT: i / a / o / I / A / O", cmd: null },
+      { label: "VISUAL: v  (Esc 退出)", cmd: null },
+      { label: "INSERT 存盘: Ctrl+S", cmd: null },
+      { label: "撤销: u (NORMAL) / Ctrl+Z", cmd: null },
+      { label: "重做: Ctrl+Y", cmd: null },
+      { label: "跳到文件尾: G · 行首: 0 · 行尾: $", cmd: null },
+      { label: "删除字符: x (NORMAL)", cmd: null },
+      { label: "折叠: zc / 展开: zo / 全折: zM / 全展: zR", cmd: null },
+      { label: "缩进: Tab (INSERT) 2 空格", cmd: null },
+      { label: "查找: Ctrl+F / 替换: Ctrl+H / Grep: Ctrl+G", cmd: null },
+      { label: "跳行: Ctrl+J · 开终端: Ctrl+` · 搜索面板: Ctrl+Shift+F", cmd: null },
+    ],
+  },
+  typeConfig: {
+    title: "类型配置 (已识别语言的词表规模)",
+    items: () => (window.Syntax ? Syntax.LANGUAGES : []).map((l) => ({
+      label: Syntax.languageLabel(l) + " — 关键字 " + (Syntax.KEYWORDS[l] ? Syntax.KEYWORDS[l].length : 0) +
+            " / 类型 " + (Syntax.TYPES[l] ? Syntax.TYPES[l].length : 0),
+      cmd: null,
+    })),
+  },
+  shortcuts: {
+    title: "快捷键速查",
+    items: () => [
+      { label: "Ctrl+S  保存当前文件", cmd: null },
+      { label: "Ctrl+Z / Ctrl+Y  撤销 / 重做", cmd: null },
+      { label: "Ctrl+C / X / V / A  复制 / 剪切 / 粘贴 / 全选", cmd: null },
+      { label: "Ctrl+W  关闭标签", cmd: null },
+      { label: "Ctrl+,  首选项", cmd: null },
+      { label: "Ctrl+`  打开终端", cmd: null },
+      { label: "Ctrl+Shift+F  搜索面板", cmd: null },
+      { label: "F3 / Shift+F3  查找下一个 / 上一个", cmd: null },
+      { label: "i/a/o  NORMAL→INSERT", cmd: null },
+      { label: "v  NORMAL→VISUAL", cmd: null },
+      { label: "Esc  → NORMAL", cmd: null },
+      { label: "u / x / 0 / $ / G  撤销 / 删字符 / 行首 / 行尾 / 文尾", cmd: null },
+      { label: "zc / zo / zM / zR  折叠 / 展开 / 全折 / 全展", cmd: null },
+    ],
+  },
+};
+// --- MACRO ---
+const MACRO = { recording: false, keys: [], playing: false };
+// --- PLUGINS ---
+const PLUGINS = [];
+// --- SPLIT ---
+const SPLIT = { mode: "none" };
+// --- CONFIG_KEY ---
+const CONFIG_KEY = "ide1.0.config.v1";
+// --- VIEW_STATE ---
+const VIEW_STATE = { wordWrap: false, lineNumbers: true, minimap: false };
+// --- CLIPBOARD ---
+let CLIPBOARD = "";
+// --- editorApi ---
+const editorApi = {
+  get lines() { const t = getActiveTab(); return t ? t.lines.slice() : []; },
+  set lines(v) { const t = getActiveTab(); if (t) { t.lines = v.slice(); t.dirty = true; renderVim(t); } },
+  note(text) { setTip("[macro] " + text); },
+  insert: insertChar,
+  render: () => renderVim(getActiveTab()),
+  save: saveActive,
+};
+
 const WIKI_B64 = "SURFMS4wIElERSBTaGVsbCDigJQg5qGM6Z2i54mI5a6M5pW05omL5YaMICh3aWtpKQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQoKWzFdIOeugOS7iwotLS0tLS0tLQpJREUxLjAgSURFIFNoZWxsIOaYr+S4gOS4qui9u+mHj+eahCBBSSBOYXRpdmUg5qGM6Z2i5Luj56CB57yW6L6R5ZmoOgogICog5LiJ5oCB6ZSu5L2N5qih5byPIChOT1JNQUwgLyBJTlNFUlQgLyBWSVNVQUwpCiAgKiDnuq8gUnVzdCDmoLjlv4MgKGlkZS1zaGVsbCBjcmF0ZSkgKyBUYXVyaSAyIHdlYnZpZXcsIHZhbmlsbGEgSlMg5YmN56uvLCAwIOWJjeerr+ahhuaetgogICog5a6J6KOF5YyFIH4zTUIsIOWGheWtmOWNoOeUqOS9jiwg5ZCv5Yqo5Y2z5byA5Y2z55SoCuaJgOacieWPr+S6pOS6kuaOp+S7tumDveW4pum8oOagh+aCrOWBnOivtOaYjiAodG9vbHRpcCArIOeKtuaAgeagj+aPkOekuuWMuikuCgpbMl0g5a6J6KOF5LiO5ZCv5YqoCi0tLS0tLS0tLS0tLS0tCldpbmRvd3MgOiDlj4zlh7sgZGlzdC8qLm1zaSDihpIgTmV4dCDihpIgSW5zdGFsbCDihpIg5byA5aeL6I+c5Y2VICJJREUxLjAgSURFIFNoZWxsIgpMaW51eCAgIDogLmRlYiAoZHBrZyAtaSkg5oiWIC5BcHBJbWFnZSAoY2htb2QgK3gg5ZCO55u05o6l6L+Q6KGMKSwg55SxIENJIOS6p+WHugrlkb3ku6TooYwgIDogaWRlLXNoZWxsLWRlc2t0b3AuZXhlIFstLWhlbHB8LWhdIFstLXZlcnNpb258LVZdCiAg5rOo5oSPOiBXaW5kb3dzIHJlbGVhc2Ug54mI5pivIEdVSSDlrZDns7vnu58sIC0taGVscCDovpPlh7rpnIDmjqXnrqHpgZMv6YeN5a6a5ZCR5omN5Y+v6KeBOgogICAgaWRlLXNoZWxsLWRlc2t0b3AuZXhlIC0taGVscCB8IG1vcmUKICAgIGlkZS1zaGVsbC1kZXNrdG9wLmV4ZSAtLWhlbHAgPiBoZWxwLnR4dAogIOW6lOeUqOWGhemaj+aXtuaMiSA6aGVscCDmiJbngrnlt6XlhbfmoI/jgIw/IOW4ruWKqeOAjeafpeeci+WQjOS4gOS7vSB3aWtpLgoKWzNdIOeVjOmdouW4g+WxgAotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQrlt6XlhbfmoI86IOaJk+W8gOaWh+S7tuWkuSB8IOS/neWtmCB8IOi/mOWOnyB8IOWFs+mXreagh+etviB8ID8g5biu5YqpIHwgU2hlbGwK5L6n5qCPOiDotYTmupDnrqHnkIblmaggKOaWh+S7tuagkSwg5oeS5Yqg6L29LCDlj6/mi5blrr0pIHwg5pyA6L+R6aG555uuCuS4u+WMujog5qCH562+5qCPICsg57yW6L6R5ZmoICjooYzlj7cgKyDlhYnmoIflnZcgKyDomZrmi5/mu5rliqgpICsgU2hlbGwg6Z2i5p2/CueKtuaAgeagjzog5qih5byPIHwgTG4vQ29sIHwg5paH5Lu26Lev5b6EIHwg5oKs5YGc5o+Q56S6IHwga2VybmVsIGJhbm5lcgoKWzRdIOmhueebruWvvOWFpQotLS0tLS0tLS0tLS0KMS4g54K55bel5YW35qCP44CM8J+TgSDmiZPlvIDmlofku7blpLnjgI0o5oiW5qyi6L+O6aG15aSn5oyJ6ZKuKSDihpIg5Y6f55Sf5paH5Lu25aS56YCJ5oup5ZmoIOKGkiDnoa7lrpoKMi4g5bem5L6n5paH5Lu25qCR5pi+56S66aG555uu5qC5LCDngrnmlofku7blpLnlsZXlvIAgKOaHkuWKoOi9vSksIOeCueaWh+S7tuaJk+W8gOi/m+agh+etvumhtQozLiDmiZPlvIDov4fnmoTpobnnm67orrDlhaXjgIzmnIDov5Hpobnnm67jgI0obG9jYWxTdG9yYWdlKSwg5qyi6L+O6aG15LiA6ZSu6YeN5byACjQuIOWRveS7pOihjCA6ZSA855u45a+56Lev5b6EPiDkuZ/lj6/miZPlvIDpobnnm67lhoXmlofku7YK5a6J5YWoOiDmlofku7bor7vlhpnooqvmspnnrrHpmZDliLblnKjlvZPliY3pobnnm67moLnlhoUsIOi2iueVjOi3r+W+hOS4gOW+i+aLkue7nS4K6ZmQ5Yi2OiDku4UgVVRGLTgg5paH5pys5paH5Lu2LCDljZXmlofku7Yg4omkIDRNQiAo5L+d5oyB6L276YePLikKCls1XSDplK7kvY3ooaggKOe8lui+keWZqOeEpueCueaXtikKLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KTk9STUFMIOaooeW8jyAo6buY6K6kKToKICBoIGogayBsIC8g4oaQ4oaT4oaR4oaSICAg5bemIOS4iyDkuIog5Y+z56e75YqoCiAgdyAvIGIgLyBlICAgICAgICDkuIvkuIDor43pppYgLyDkuIrkuIDor43pppYgLyDor43lsL4KICAwIC8gXiAvICQgICAgICAgIOihjOmmliAvIOmmluS4qumdnuepuueZvSAvIOihjOWwvgogIGdnIC8gRyAgICAgICAgICAg5paH5Lu25aS0IC8g5paH5Lu25bC+CiAgQ3RybCtEIC8gQ3RybCtVICDkuIvnv7vljYrpobUgLyDkuIrnv7vljYrpobUKICBpIC8gYSAgICAgICAgICAgIOWFieagh+WJjSAvIOWQjui/m+WFpSBJTlNFUlQKICBJIC8gQSAgICAgICAgICAgIOihjOmmliAvIOihjOWwvui/m+WFpSBJTlNFUlQKICBvIC8gTyAgICAgICAgICAgIOS4i+aWuSAvIOS4iuaWueaWsOihjOi/m+WFpSBJTlNFUlQKICB4ICAgICAgICAgICAgICAgIOWIoOmZpOWFieagh+WkhOWtl+espgogIGQgKyDliqjkvZwgICAgICAgICDliKDpmaQgKGRkIOaVtOihjCwgZHcg6K+NLCBkJCDliLDooYzlsL4sIGQwIOWIsOihjOmmliwgZGovZGsg6Leo6KGMKQogIGMgKyDliqjkvZwgICAgICAgICDliKDpmaTlubbov5vlhaUgSU5TRVJUIChjYyAvIGN3IC8gYyQg5ZCM5LiKKQogIHkgKyDliqjkvZwgICAgICAgICDlpI3liLbliLDlr4TlrZjlmaggKHl5IOaVtOihjCwgeXcg6K+NLCB5JCDliLDooYzlsL4pCiAgcCAgICAgICAgICAgICAgICDnspjotLQgKOaVtOihjOeymOi0tOWcqOS4i+aWuSwg5a2X56ym57KY6LS05Zyo5YWJ5qCH5ZCOKQogIHUgICAgICAgICAgICAgICAg5pKk6ZSAICjlv6vnhaflvI8sIOacgOWkmiAyMDAg5q2lKQogIHYgICAgICAgICAgICAgICAg6L+b5YWlIFZJU1VBTCDlrZfnrKbpgInmi6ksIOWGjeaMiSBkL3kvYyDlr7npgInljLrmk43kvZwKICA6ICAgICAgICAgICAgICAgIOi/m+WFpSBDT01NQU5EIOaooeW8jyAo5bqV6YOo5ZG95Luk6KGMKQogIEN0cmwrUyAgICAgICAgICAg5L+d5a2Y5b2T5YmN5paH5Lu2ICjku7vmhI/mqKHlvI/lj6/nlKgpCgpJTlNFUlQg5qih5byPOgogIOWPr+aJk+WNsOWtl+espiAgICAgICAg55u05o6l5o+S5YWlCiAgRW50ZXIgICAgICAgICAgICDmjaLooYwKICBCYWNrc3BhY2UvRGVsZXRlIOWIoOmZpAogIOKGkOKGk+KGkeKGkiAvIEhvbWUvRW5kICDnp7vliqgKICBFc2MgICAgICAgICAgICAgIOWbniBOT1JNQUwKClZJU1VBTCDmqKHlvI86CiAg56e75Yqo6ZSu5omp5bGV6YCJ5Yy6OyBkIOWJquWIhyAvIHkg5aSN5Yi2IC8gYyDliarliIflubbmj5LlhaU7IEVzYyDlj5bmtojpgInljLoKCkNPTU1BTkQg5qih5byPICjlupXpg6ggOiDlkb3ku6TooYwpOgogIDp3ICAgICAgICAgICAgICAg5L+d5a2YCiAgOnEgICAgICAgICAgICAgICDlhbPpl63lvZPliY3moIfnrb4gKOacquS/neWtmOS8muW8ueehruiupCkKICA6d3EgICAgICAgICAgICAgIOS/neWtmOW5tuWFs+mXrQogIDplIDzot6/lvoQ+ICAgICAgICDmiZPlvIDpobnnm67lhoXmlofku7YgKOebuOWvuemhueebruagueaIlue7neWvuei3r+W+hCkKICA6aGVscCAgICAgICAgICAgIOaJk+W8gOacrCB3aWtpIOa1ruWxggogIDpzZXRsYW5nICAgICAgICAg5omL5Yqo6K6+572u5b2T5YmN5paH5Lu26K+t6KiAICjopobnm5bmianlsZXlkI3or4bliKspCiAgOnRlbXBsYXRlIDxsYW5nPiDlnKjlvZPliY3moIfnrb7mnKvlsL7mj5LlhaXor6Xor63oqIDnmoQgaGVsbG8td29ybGQg5qih5p2/CiAgOnRwbCA8bGFuZz4gICAgICDlkIwgOnRlbXBsYXRlICjnroDlhpkpCiAgRXNjICAgICAgICAgICAgICDlj5bmtojlkb3ku6TooYwKCls1LjVdIOivreazlemrmOS6riAvIFRhYiAvIOe8qei/myAvIOaKmOWPoAotLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0K5oyJ5omp5bGV5ZCNICsg5paH5Lu25ZCN6Ieq5Yqo6K+G5YirIDE5IOenjeivreiogCwg5YWz6ZSu5a2XIC8g57G75Z6LIC8g5a2X56ym5LiyIC8g5pWw5a2XIC8g5rOo6YeKIC8K5bGe5oCnIC8g6KOF6aWw5ZmoIC8g5pON5L2c56ymIOWQhOiHqumFjeiJsiAo5rex6Imy6aOO5qC8KToKCiAgUnVzdCAvIFB5dGhvbiAvIEphdmFTY3JpcHQgLyBUeXBlU2NyaXB0IC8gR28gLyBDIC8gQysrIC8gSmF2YSAvIEMjIC8KICBSdWJ5IC8gQmFzaCAvIEhUTUwgLyBDU1MgLyBKU09OIC8gTWFya2Rvd24gLyBZQU1MIC8gVE9NTCAvIFNRTCAvIFBsYWluCgpJTlNFUlQg5qih5byPOgogIFRhYiAgICAgICAgICAgICDovawgMiDnqbrmoLwgKOabv+aNouS4uue8qei/mykKICBFbnRlciAgICAgICAgICAg6Ieq5Yqo57yp6L+bOiDlpI3liLbliY3kuIDooYwgbGVhZGluZyB3aGl0ZXNwYWNlLCDooYzlsL4geyBbICgg5aSa57yp5LiA57qnCgpOb3JtYWwg5qih5byPOgogIHpjICAgICAgICAgICAgICDmipjlj6DlvZPliY3ooYzmiYDlnKggYmxvY2sgKHsuLi59IOaIliBpbmRlbnQgYmxvY2spCiAgem8gICAgICAgICAgICAgIOWxleW8gOW9k+WJjeihjAogIHpNIC8gelIgICAgICAgICDlhajpg6jmipjlj6AgLyDlhajpg6jlsZXlvIAKCueKtuaAgeagj+aWsOWinuOAjOivreiogOOAjeWtl+autSAo5L6LOiDjgIxSdXN044CNKSwg5oyJIDpzZXRsYW5nIOWPr+aJi+WKqOimhuebli4KCls2XSBTaGVsbCDpnaLmnb8gKOW6lemDqCkKLS0tLS0tLS0tLS0tLS0tLS0tLS0tCuWkjeeUqCBpZGUtc2hlbGwgY29yZSDnmoTmvJTnpLogc2hlbGwgKOS4jiB3ZWIgVUFUIOWQjOS4gCBSdXN0IOeKtuaAgeacuik6CiAgKiDngrnpnaLmnb/lhoXpg6jmiJYgQ3RybCtgIOaKiumUruebmOeEpueCueS6pOe7mSBTaGVsbCAo6L655qGG6auY5LquKSwg5YaN5oyJ5LiA5qyh5Zue57yW6L6R5ZmoCiAgKiDkuInmgIE6IE5PUk1BTCAo5bem6ZSuPUlOU0VSVCwg5Y+z6ZSuPU5PUk1BTCkgLyBJTlNFUlQgKOaJk+WtlywgRW50ZXIg5omn6KGMKSAvCiAgICBDT01NQU5EICg6IOWJjee8gOWRveS7pCkKICAqIOWGhee9ruWRveS7pDogOmhlbHAgOnZlcnNpb24gOmFpIDpjbGVhciA6cQogICog6Z2e5YaF572u5ZG95Luk5Zue6JC955yf5a2Q6L+b56iL5omn6KGMIChXaW5kb3dzPWNtZCAvQywgVW5peD1zaCAtYykg4oCUIOWPr+i3kQogICAgZ2l0IHN0YXR1cyAvIGNhcmdvIGJ1aWxkIOetiSwg6L6T5Ye66L+bIGhpc3RvcnkKICAqIOatpOmdouadv+eahCA6cSDlj6rmmK8gc2hlbGwg6YCA5Ye65L+h5Y+3LCDkuI3lhbPlupTnlKg7IOWFs+W6lOeUqOeUqOeql+WPoyBYCgpbN10g6byg5qCH5oKs5YGc6K+05piOCi0tLS0tLS0tLS0tLS0tLS0KKiDmiYDmnInmjInpkq4gLyDmoIfnrb4gLyDmlofku7bmoJHoioLngrkgLyDnirbmgIHmoI/pobnpg73luKYgZGF0YS10aXA6CiAg5oKs5YGcIOKGkiDmta7liqggdG9vbHRpcCArIOeKtuaAgeagj+aPkOekuuWMuuWQjOatpeaYvuekuuivtOaYjgoqIOaWh+S7tuagkeiKgueCueaCrOWBnOaYvuekuuWujOaVtOi3r+W+hDsg5qCH562+6aG15oKs5YGc5pi+56S65paH5Lu26Lev5b6E5LiO5L+d5a2Y54q25oCBCgpbOF0g5p625p6E5LiO5rqQ56CB5a+86KeICi0tLS0tLS0tLS0tLS0tLS0tLQpjcmF0ZXMvaWRlLXNoZWxsICAgICAgICAgIOaguOW/g+eKtuaAgeacuiAobW9kZS9pbnB1dC9rZXltYXAvYXBwL3JlbmRlciksIDM4IFVUCmNyYXRlcy9pZGUtc2hlbGwtZGVza3RvcCAg5pysIFRhdXJpIDIg5bqU55SoICgxMSBjb21tYW5kcywg5paH5Lu25rKZ566xLCB3aWtpKQpjcmF0ZXMvaWRlLXNoZWxsLXdlYiAgICAgIEhUVFAgc2VydmVyIOeJiCAoUGxheXdyaWdodCA0MCBlMmUgY2FzZSDnm67moIcsIOeLrOeriyBVSSkKY3JhdGVzL2lkZS1rZXJuZWwtY29yZSAgICBrZXJuZWwgYmFubmVyIC8gdmVyc2lvbgrliY3nq686IGNyYXRlcy9pZGUtc2hlbGwtZGVza3RvcC9kaXN0L2luZGV4Lmh0bWwg4oCUIOWNleaWh+S7tiB2YW5pbGxhIEpTICh+MTAwMCDooYwpLAogIOe8lui+keWZqOS4uuiHque7mOiZmuaLn+a7muWKqCAo6KGM6auY5Zu65a6aKSwg5pSv5oyB5LiH6KGM5paH5Lu25LiN5Y2h6aG/LgpUYXVyaSBjb21tYW5kczogZnJhbWUvcmVzZXQva2V5L21vdXNlL2tlcm5lbF9iYW5uZXIvZ2V0X21vZGUgKHNoZWxsKQogICsgcGlja19mb2xkZXIvb3Blbl9wcm9qZWN0L2xpc3RfZGlyL3JlYWRfZmlsZS93cml0ZV9maWxlL2hlbHBfd2lraSAo57yW6L6R5ZmoKQoKWzldIOW4uOingemXrumimCAoRkFRKQotLS0tLS0tLS0tLS0tLS0tLS0KUTog56qX5Y+j55m95bGPPwpBOiBXaW5kb3dzIOmcgOimgSBXZWJWaWV3MiBSdW50aW1lIChXaW4xMC8xMSDkuIDoiKzoh6rluKY7IOe8uuWImeijhSBFdmVyZ3JlZW4gQm9vdHN0cmFwcGVyKS4KUTogcmVsZWFzZSDniYggLS1oZWxwIOayoei+k+WHuj8KQTogR1VJIOWtkOezu+e7n+aXoOaOp+WItuWPsCwg55SoIGAtLWhlbHAgfCBtb3JlYCDmiJYgYC0taGVscCA+IGhlbHAudHh0YCAo6KeBIFsyXSkuClE6IOaJk+W8gOaWh+S7tuaKpeOAjOS7heaUr+aMgSBVVEYtOOOAjT8KQTog5LqM6L+b5Yi2L0dCSyDmlofku7bkuI3lnKjovbvph4/nvJbovpHlmajojIPlm7TlhoUsIOivt+eUqCBTaGVsbCDpnaLmnb/ot5HlpJbpg6jlkb3ku6TlpITnkIYuClE6IOaWh+S7tuagkeeCueS4jeWKqD8KQTog5YWI44CM5omT5byA5paH5Lu25aS544CN5a+85YWl6aG555uuOyDmspnnrrHlj6rlhYHorrjorr/pl67pobnnm67moLnlhoXot6/lvoQuClE6IOe8lui+keWIsOS4gOWNiuW0qea6gz8KQTog5pyq5L+d5a2Y5YaF5a655Zyo5YaF5a2Y5LitLCDluLjmjIkgQ3RybCtTOyA6dyDkuqblj68uIOaSpOmUgOagiCAyMDAg5q2lLgoKWzEwXSDniYjmnKwKLS0tLS0tLS0tCueJiOacrDogMC4zLjAgKFVJIOmHjeaehCArIOe7iOerr+ecn+WunuWPr+eUqCArIOWujOaVtOW3peWFt+mTvikK5LiK5LiA54mIOiAwLjEuMCAoVUxZUy0xOTEgwqc0IFRhdXJpIOahjOmdoiBQb0MsIOWNleihjCBidWZmZXIgVUFUIOWjsykK6K645Y+vOiBNSVQgT1IgQXBhY2hlLTIuMCDigJQgaHR0cHM6Ly9naXRodWIuY29tL1VseXNzZXNMZW9MZWUvSURFMS4wCg==";
 const TIPS = {
   "open-folder": "打开文件夹 (Ctrl+K O)",
@@ -613,20 +737,53 @@ const mdTitle = document.getElementById("md-title");
 const mdBody = document.getElementById("md-body");
 const mdFoot = document.getElementById("md-foot");
 function openModal(opts) {
-  mdTitle.textContent = opts.title || "提示";
-  mdBody.textContent = opts.body || "";
-  mdFoot.innerHTML = "";
-  (opts.buttons || [{ label: "关闭", cmd: "modal-close" }]).forEach((b) => {
-    const btn = document.createElement("button");
-    btn.className = "md-btn";
-    btn.textContent = b.label;
-    btn.dataset.cmd = b.cmd;
-    if (b.tip) btn.dataset.tip = b.tip;
-    mdFoot.appendChild(btn);
-  });
-  modal.classList.add("show");
+  showModal(opts);
 }
 function closeModal() { modal.classList.remove("show"); }
+
+// 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
+function promptOpenFile() {
+  if (!projectRoot) { setTip("请先打开项目"); return; }
+  const rel = prompt("打开文件 (项目根内相对路径):");
+  if (!rel) return;
+  openFile(stripVerbatim(projectRoot) + "\\" + rel);
+}
+
+// ===== 书签 (会话内, 按路径记录行号) =====
+const BOOKMARKS = new Map();   // path -> [{row, col, label}]
+
+function toggleBookmark() {
+  const t = getActiveTab();
+  if (!t) return;
+  if (!BOOKMARKS.has(t.path)) BOOKMARKS.set(t.path, []);
+  const list = BOOKMARKS.get(t.path);
+  const at = list.findIndex((b) => b.row === t.cursor.row && b.col === t.cursor.col);
+  if (at >= 0) { list.splice(at, 1); setTip("已移除书签"); }
+  else { list.push({ row: t.cursor.row, col: t.cursor.col }); setTip("已加书签 (" + list.length + ")"); }
+}
+
+function bookmarkNav(delta) {
+  const t = getActiveTab();
+  if (!t) return;
+  const list = (BOOKMARKS.get(t.path) || []).slice().sort((a, b) => a.row - b.row || a.col - b.col);
+  if (list.length === 0) { setTip("无书签"); return; }
+  // 光标正好停在书签上 → 取相邻的那个; 否则 → 取"之后第一个"(next) / "之前最后一个"(prev)
+  const onBookmark = list.findIndex((b) => b.row === t.cursor.row && b.col === t.cursor.col);
+  let idx;
+  if (onBookmark >= 0) {
+    idx = (onBookmark + delta + list.length) % list.length;
+  } else {
+    let after = list.findIndex((b) => b.row > t.cursor.row ||
+      (b.row === t.cursor.row && b.col > t.cursor.col));
+    if (after < 0) after = 0;
+    idx = delta > 0 ? after : (after - 1 + list.length) % list.length;
+  }
+  t.cursor = { row: list[idx].row, col: list[idx].col };
+  renderVim(t);
+  setTip("书签 " + (idx + 1) + "/" + list.length + " @ Ln " + (list[idx].row + 1));
+}
+function bookmarkNext() { bookmarkNav(1); }
+function bookmarkPrev() { bookmarkNav(-1); }
 
 // ===== Status bar =====
 function setMode(m) {
@@ -799,8 +956,8 @@ function dispatchCommand(cmd) {
   switch (cmd) {
     // 文件
     case "new-file":         createNewFile(); break;
-    case "open-folder":      doOpenFolder(); break;
-    case "open-file":        doOpenFile(); break;
+    case "open-folder":      openFolder(); break;
+    case "open-file":        promptOpenFile(); break;
     case "save":             saveActive(); break;
     case "save-as":          saveActiveAs(); break;
     case "save-all":         saveAll(); break;
@@ -835,7 +992,7 @@ function dispatchCommand(cmd) {
     case "grep":             openGrep(); break;
     case "grep-replace":     openGrepReplace(); break;
     case "goto-line":        openGotoLine(); break;
-    case "tag-jump":         execCmd("tagJump"); break;
+    case "tag-jump":         tagJump(); break;
     case "bookmark-toggle":  toggleBookmark(); break;
     case "bookmark-next":    bookmarkNext(); break;
     case "bookmark-prev":    bookmarkPrev(); break;
@@ -1326,7 +1483,13 @@ terminalBody.addEventListener("focus", () => terminalBody.focus());
   }
 
   // ===== 暴露 API =====
-  var Syntax = { detectLanguage, languageLabel, highlightLine, LANGUAGES: Object.keys(LANGS) };
+  var Syntax = {
+    detectLanguage, languageLabel, highlightLine,
+    LANGUAGES: Object.keys(LANGS),
+    KEYWORDS: Object.fromEntries(Object.entries(LANGS).map(([k, v]) => [k, [...(v.keywords || [])]])),
+    TYPES: Object.fromEntries(Object.entries(LANGS).map(([k, v]) => [k, [...(v.types || [])]])),
+    LEXERS: LANGS,
+  };
   if (typeof window !== "undefined") window.Syntax = Syntax;
 
 /* ===== renderVim: 高亮 + 折叠 渲染 =====
@@ -1346,14 +1509,27 @@ function renderVim(t) {
       continue;
     }
     const toks = Syntax.highlightLine(t.lines[r], lang);
+    const sel = t.sel;
+    const inSel = sel && r >= sel.r0 && r <= sel.r1;
+    const cs = inSel ? Math.min(sel.c0, sel.c1 === Infinity ? (t.lines[r] || "").length : sel.c1) : -1;
+    const ce = inSel ? (sel.c1 === Infinity ? (t.lines[r] || "").length : Math.max(sel.c1, 0)) : -1;
+    const rendered = toks.map((tk) => {
+      const cls = tk.cls ? "tk-" + tk.cls : "";
+      return cls ? '<span class="' + cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text);
+    }).join("");
     html.push('<div class="hl-row">' +
-      toks.map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("") +
+      (inSel
+        ? '<span class="sel-prefix">' + escapeHtml(t.lines[r].slice(0, cs)) + "</span>" +
+          '<span class="sel-active">' + escapeHtml(t.lines[r].slice(cs, ce)) + "</span>" +
+          '<span>' + escapeHtml(t.lines[r].slice(ce)) + "</span>"
+        : rendered) +
       "</div>");
   }
   edContent.replaceChildren();
   edContent.innerHTML = html.join("");
   gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
   setLang(Syntax.languageLabel(lang));
+  if (VIEW_STATE.minimap) buildMinimap();
   if (hadFocus) edContent.focus();
 }
 
@@ -1506,6 +1682,7 @@ function runExCommand(cmdStr, t) {
 const TABS = tabs;
 let maxTabId = 0;
 let pendingZ = false;   // z 前缀 (zc/zo/zM/zR)
+    // 内部剪贴板 (浏览器剪贴板 API 需要用户手势, 不可靠)
 
 function newId() {
   return "t" + (++maxTabId);
@@ -1787,6 +1964,7 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
 // 真实键盘处理: NORMAL 只吃单键动作, INSERT 走字符输入.
 // edContent 不是 contenteditable, 所以所有变更由 t.lines + paintActive 驱动.
 if (edContent) edContent.addEventListener("keydown", (e) => {
+  try { recordKey(e); } catch (_) { /* 录制不影响主流程 */ }
   const t = getActiveTab();
   const mode = (document.getElementById("s-mode").dataset.mode || "NORMAL");
   if (t && !t.undo) { t.undo = []; t.redo = []; }
@@ -1802,6 +1980,8 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   }
 
   if (e.key === "Escape") {
+    const tv = getActiveTab();
+    if (tv && tv.sel) { tv.sel = null; renderVim(tv); }
     setMode("NORMAL");
     e.preventDefault();
     return;
@@ -1830,7 +2010,14 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       e.preventDefault();
       t.cursor.row += nav[e.key][0];
       t.cursor.col += nav[e.key][1];
-      paintActive();
+      // VISUAL: 移动即扩展选区
+      if (mode === "VISUAL" && t.sel) {
+        t.sel.r1 = t.cursor.row;
+        t.sel.c1 = t.cursor.col + (nav[e.key][1] < 0 ? 0 : 1);
+        renderVim(t);
+      } else {
+        paintActive();
+      }
       return;
     }
     if (e.key === "0") { e.preventDefault(); t.cursor.col = 0; paintActive(); return; }
@@ -1855,7 +2042,12 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     e.preventDefault();
     return;
   }
-  if (e.key === "v") { setMode("VISUAL"); e.preventDefault(); }
+  if (e.key === "v") {
+    setMode("VISUAL");
+    if (t) t.sel = { r0: t.cursor.row, c0: t.cursor.col, r1: t.cursor.row, c1: t.cursor.col + 1 };
+    e.preventDefault();
+    return;
+  }
 });
 
 // 目录懒加载: 首次点击拉子项并插入到该节点之后
@@ -2110,6 +2302,565 @@ window.setProjectRoot = async function(path, showExplorer = true) {
 };
 
 
+/* ===== 设置类命令 (设置/键映射/字体/主题/语言/配置导入导出) =====
+   这些命令需要一个通用的「选项列表」对话框. */
+
+
+function openOptionList(key) {
+  const cfg = SETTINGS[key];
+  if (!cfg) { setTip("无此设置面板"); return; }
+  const items = typeof cfg.items === "function" ? cfg.items() : cfg.items;
+  const rows = items.map((it) =>
+    '<div class="opt-row"' + (it.cmd ? ' data-opt="' + escapeHtml(it.cmd) + '"' : "") +
+    ' title="' + escapeHtml(it.cmd ? "点击执行" : "说明") + '">' + escapeHtml(it.label) + "</div>").join("");
+  openModal({ title: cfg.title, bodyHTML: rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+}
+
+// openModal 增加 bodyHTML 支持 (原实现只写 textContent).
+// 注意: 不能用 `const _raw = openModal` 的包装写法 —— 那会读到包装函数自身,
+// 造成自引用; 改为给原实现加一个 _bodyHTML 字段分支.
+function showModal(opts) {
+  mdTitle.textContent = opts.title || "提示";
+  if (opts.bodyHTML != null) mdBody.innerHTML = opts.bodyHTML;
+  else mdBody.textContent = opts.body || "";
+  mdFoot.innerHTML = "";
+  (opts.buttons || [{ label: "关闭", cmd: "modal-close" }]).forEach((b) => {
+    const btn = document.createElement("button");
+    btn.className = "md-btn";
+    btn.textContent = b.label;
+    btn.dataset.cmd = b.cmd;
+    if (b.tip) btn.dataset.tip = b.tip;
+    mdFoot.appendChild(btn);
+  });
+  modal.classList.add("show");
+}
+
+function openSettings() { openOptionList("settings"); }
+function openKeymap() { openOptionList("keymap"); }
+function openFontPicker() { openOptionList("font"); }
+function openThemePicker() { openOptionList("theme"); }
+function openLanguagePicker() { openOptionList("language"); }
+function openTypeConfig() { openOptionList("typeConfig"); }
+function openCustomizeKeys() { openOptionList("keymap"); }
+function showShortcuts() { openOptionList("shortcuts"); }
+
+// 主题 / 字体 实际生效
+const THEMES = {
+  dark: {
+    "--bg-bar": "#252526", "--bg-side": "#1e1e1e", "--bg-edit": "#1e1e1e",
+    "--border": "#333", "--fg": "#d4d4d4", "--fg-muted": "#858585", "--fg-dim": "#6a6a6a",
+    "--blue": "#569cd6", "--green": "#4ec9b0", "--bg-status": "#007acc",
+  },
+  light: {
+    "--bg-bar": "#f3f3f3", "--bg-side": "#ffffff", "--bg-edit": "#ffffff",
+    "--border": "#d4d4d4", "--fg": "#1e1e1e", "--fg-muted": "#616161", "--fg-dim": "#8a8a8a",
+    "--blue": "#0b5fa5", "--green": "#107c41", "--bg-status": "#007acc",
+  },
+  hc: {
+    "--bg-bar": "#000000", "--bg-side": "#000000", "--bg-edit": "#000000",
+    "--border": "#ffffff", "--fg": "#ffffff", "--fg-muted": "#e0e0e0", "--fg-dim": "#c0c0c0",
+    "--blue": "#00ffff", "--green": "#00ff00", "--bg-status": "#0000aa",
+  },
+};
+
+function setTheme(mode) {
+  const t = THEMES[mode] || THEMES.dark;
+  const root = document.documentElement;
+  Object.keys(t).forEach((k) => root.style.setProperty(k, t[k]));
+  // 直接给用 var() 的容器兜底 (部分规则写了字面量)
+  document.body.style.color = t["--fg"];
+  document.body.style.background = t["--bg-edit"];
+  VIEW_STATE.theme = mode;
+  setTip("主题: " + mode);
+  renderVim(getActiveTab());
+}
+
+function setFontSize(px) {
+  VIEW_STATE.fontSize = px;
+  edContent.style.fontSize = px + "px";
+  gutter.style.fontSize = px + "px";
+  setTip("字号: " + px + "px");
+}
+
+function fontBigger() { setFontSize((VIEW_STATE.fontSize || 14) + 1); }
+function fontSmaller() { setFontSize(Math.max(9, (VIEW_STATE.fontSize || 14) - 1)); }
+
+// 配置导入导出 (localStorage)
+
+function exportConfig() {
+  const cfg = { view: VIEW_STATE, bookmarks: [...BOOKMARKS.entries()] };
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg, null, 2));
+  setTip("配置已导出到本地存储");
+}
+function importConfig() {
+  const raw = localStorage.getItem(CONFIG_KEY);
+  if (!raw) { setTip("无已保存的配置"); return; }
+  try {
+    const cfg = JSON.parse(raw);
+    Object.assign(VIEW_STATE, cfg.view || {});
+    BOOKMARKS.clear();
+    (cfg.bookmarks || []).forEach(([k, v]) => BOOKMARKS.set(k, v));
+    setTip("配置已导入");
+  } catch (e) { openModal({ title: "配置导入失败", body: e.message }); }
+}
+function resetSettings() {
+  localStorage.removeItem(CONFIG_KEY);
+  VIEW_STATE.wordWrap = false;
+  VIEW_STATE.lineNumbers = true;
+  VIEW_STATE.minimap = false;
+  VIEW_STATE.syntax = true;
+  edContent.style.whiteSpace = "pre";
+  gutter.style.display = "";
+  setTheme("dark");
+  setFontSize(14);
+  setTip("已恢复默认设置");
+}
+
+// 语法高亮开关 (真实生效)
+function toggleSyntaxHighlight() {
+  VIEW_STATE.syntax = !VIEW_STATE.syntax;
+  edContent.classList.toggle("no-syntax", !VIEW_STATE.syntax);
+  setTip("语法高亮: " + (VIEW_STATE.syntax ? "开" : "关"));
+  renderVim(getActiveTab());
+}
+
+// 状态栏开关
+function toggleStatusBar() {
+  const el = document.getElementById("status");
+  const hidden = el.style.display === "none";
+  el.style.display = hidden ? "" : "none";
+  document.getElementById("app").classList.toggle("status-active", !hidden);
+  setTip("状态栏: " + (hidden ? "显示" : "隐藏"));
+}
+
+// 类型配置: 窗口 / 大纲
+function toggleFileLock() {
+  const t = getActiveTab();
+  if (!t) return;
+  t.locked = !t.locked;
+  if (t.locked) document.getElementById("editor").classList.add("locked");
+  else document.getElementById("editor").classList.remove("locked");
+  setTip("文件锁定: " + (t.locked ? "开 (只读)" : "关"));
+}
+
+// 备份: 在项目根写 .ide-backup/<name>.<ts>
+async function triggerAutoBackup() {
+  const t = getActiveTab();
+  if (!t || !projectRoot) { setTip("请先打开项目并激活文件"); return; }
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dest = stripVerbatim(projectRoot) + "\\.ide-backup\\" + t.name + "." + stamp;
+  try {
+    await invoke("write_file", { path: dest, content: t.lines.join("\n") });
+    setTip("已备份到 .ide-backup/" + t.name + "." + stamp);
+  } catch (e) { openModal({ title: "备份失败", body: e.message }); }
+}
+
+/* ===== 查找 / 替换 / Grep / 跳转 (真实实现) =====
+   后端 /api/search 支持 pattern / case_sensitive / regex / include_globs,
+   之前前端只 dispatch 合成按键而没有接收方, 等于空壳. */
+
+
+// 当前 tab 内查找 (返回 [{row, col, len}])
+function findInTab(t, needle, opts) {
+  if (!t || !needle) return [];
+  const ci = !opts.matchCase;
+  const out = [];
+  for (let r = 0; r < t.lines.length; r++) {
+    const line = ci ? t.lines[r].toLowerCase() : t.lines[r];
+    const pat = ci ? needle.toLowerCase() : needle;
+    let from = 0, at;
+    while ((at = line.indexOf(pat, from)) >= 0) {
+      out.push({ row: r, col: at, len: needle.length });
+      from = at + Math.max(1, pat.length);
+      if (out.length > 5000) return out;
+    }
+  }
+  return out;
+}
+
+function gotoHit(hit) {
+  const t = getActiveTab();
+  if (!t || !hit) return;
+  t.cursor = { row: hit.row, col: hit.col };
+  t.sel = { r0: hit.row, c0: hit.col, r1: hit.row, c1: hit.col + hit.len };
+  renderVim(t);
+  setPos("Ln " + (hit.row + 1) + ", Col " + (hit.col + 1));
+}
+
+function findNext() {
+  const t = getActiveTab();
+  if (!t) return;
+  if (!FIND_STATE.needle) { openFind(); return; }
+  const hits = findInTab(t, FIND_STATE.needle, FIND_STATE);
+  if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); return; }
+  // 从当前光标之后找, 循环
+  let idx = hits.findIndex((h) => h.row > t.cursor.row ||
+    (h.row === t.cursor.row && h.col > t.cursor.col));
+  if (idx < 0) idx = 0;
+  FIND_STATE.hits = hits;
+  FIND_STATE.idx = idx;
+  gotoHit(hits[idx]);
+  setTip("找到 " + (idx + 1) + "/" + hits.length);
+}
+
+function findPrev() {
+  const t = getActiveTab();
+  if (!t) return;
+  if (!FIND_STATE.needle) { openFind(); return; }
+  const hits = findInTab(t, FIND_STATE.needle, FIND_STATE);
+  if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); return; }
+  let idx = -1;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    if (hits[i].row < t.cursor.row || (hits[i].row === t.cursor.row && hits[i].col < t.cursor.col)) { idx = i; break; }
+  }
+  if (idx < 0) idx = hits.length - 1;
+  FIND_STATE.hits = hits;
+  FIND_STATE.idx = idx;
+  gotoHit(hits[idx]);
+  setTip("找到 " + (idx + 1) + "/" + hits.length);
+}
+
+// 查找/替换 面板
+function openFindDialog(withReplace) {
+  const t = getActiveTab();
+  const cur = t ? selectionText(t) : "";
+  const html =
+    '<div class="opt-row"><input id="find-input" placeholder="查找" value="' + escapeHtml(cur || FIND_STATE.needle) +
+    '" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
+    '<div class="opt-row"><label><input type="checkbox" id="find-case" ' +
+    (FIND_STATE.matchCase ? "checked" : "") + ' /> 区分大小写</label>' +
+    '<label style="margin-left:12px"><input type="checkbox" id="find-regex" ' +
+    (FIND_STATE.useRegex ? "checked" : "") + ' /> 正则</label></div>' +
+    (withReplace
+      ? '<div class="opt-row"><input id="repl-input" placeholder="替换为" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>'
+      : "") +
+    '<div id="find-status" class="empty-hint"></div>';
+  openModal({
+    title: withReplace ? "查找和替换" : "查找",
+    bodyHTML: html,
+    buttons: [
+      { label: "查找下一个", cmd: "find-next" },
+      ...(withReplace ? [{ label: "全部替换", cmd: "replace-all" }] : []),
+      { label: "关闭", cmd: "modal-close" },
+    ],
+  });
+  const inp = document.getElementById("find-input");
+  if (inp) { inp.focus(); inp.select(); inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { FIND_STATE.needle = inp.value; findNext(); }
+  }); }
+  const cs = document.getElementById("find-case");
+  if (cs) cs.addEventListener("change", () => { FIND_STATE.matchCase = cs.checked; });
+  const rg = document.getElementById("find-regex");
+  if (rg) rg.addEventListener("change", () => { FIND_STATE.useRegex = rg.checked; });
+  const rp = document.getElementById("repl-input");
+  if (rp) rp.focus();
+}
+
+function openFind() { openFindDialog(false); }
+function openReplace() { openFindDialog(true); }
+function openIncSearch() { openFindDialog(false); }
+
+// 当前 tab 内全部替换
+function replaceAll() {
+  const t = getActiveTab();
+  const rp = document.getElementById("repl-input");
+  const needle = FIND_STATE.needle;
+  if (!t) return;
+  if (!needle) { setTip("先输入查找内容"); return; }
+  const withText = rp ? rp.value : "";
+  const ci = !FIND_STATE.matchCase;
+  let count = 0;
+  snapshot(t);
+  for (let r = 0; r < t.lines.length; r++) {
+    const line = t.lines[r];
+    const hay = ci ? line.toLowerCase() : line;
+    const pat = ci ? needle.toLowerCase() : needle;
+    if (!hay.includes(pat)) continue;
+    if (FIND_STATE.useRegex) {
+      try {
+        const re = new RegExp(needle, ci ? "gi" : "g");
+        count += (line.match(re) || []).length;
+        t.lines[r] = line.replace(re, withText);
+      } catch (e) { /* 非法正则, 跳过 */ }
+    } else {
+      let from = 0, at, out = "";
+      while ((at = hay.indexOf(pat, from)) >= 0) {
+        out += line.slice(from, at) + withText;
+        from = at + pat.length;
+        count++;
+      }
+      t.lines[r] = out + line.slice(from);
+    }
+  }
+  if (count > 0) { t.dirty = true; renderVim(t); }
+  closeModal();
+  setTip("替换 " + count + " 处");
+}
+
+// 项目级 Grep
+async function openGrepDialog(withReplace) {
+  if (!projectRoot) { setTip("请先打开项目"); return; }
+  const html =
+    '<div class="opt-row"><input id="grep-input" placeholder="在项目中查找" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
+    '<div class="opt-row"><label><input type="checkbox" id="grep-case" /> 区分大小写</label>' +
+    '<label style="margin-left:12px"><input type="checkbox" id="grep-regex" /> 正则</label></div>' +
+    (withReplace ? '<div class="opt-row"><input id="grep-repl" placeholder="替换为" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' : "") +
+    '<div id="grep-status" class="empty-hint">输入后回车</div>';
+  openModal({ title: withReplace ? "Grep 替换" : "Grep 搜索", bodyHTML: html,
+    buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  const inp = document.getElementById("grep-input");
+  inp.focus();
+  inp.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const q = inp.value.trim();
+    if (!q) return;
+    const status = document.getElementById("grep-status");
+    status.textContent = "搜索中...";
+    try {
+      const rows = await invoke("search", {
+        pattern: q,
+        case_sensitive: document.getElementById("grep-case").checked,
+        regex: document.getElementById("grep-regex").checked,
+      });
+      FIND_STATE.needle = q;
+      status.textContent = "命中 " + rows.length + " 处";
+      const box = document.createElement("div");
+      box.id = "grep-results";
+      rows.slice(0, 200).forEach((m) => {
+        const row = document.createElement("div");
+        row.className = "opt-row";
+        row.style.cursor = "pointer";
+        row.textContent = m.path + ":" + (m.line + 1) + ": " + String(m.text || m.line_text || "").trim().slice(0, 100);
+        row.addEventListener("click", () => { closeModal(); openFile(stripVerbatim(m.path)); });
+        box.appendChild(row);
+      });
+      mdBody.appendChild(box);
+      setTip("Grep 命中 " + rows.length + " 处");
+    } catch (err) {
+      status.textContent = "搜索失败: " + err.message;
+    }
+  });
+}
+function openGrep() { openGrepDialog(false); }
+function openGrepReplace() { openGrepDialog(true); }
+
+// 跳转到行
+function openGotoLine() {
+  const t = getActiveTab();
+  if (!t) return;
+  const n = prompt("跳转到行 (1-" + t.lines.length + "):");
+  if (!n) return;
+  const row = parseInt(n, 10);
+  if (isNaN(row) || row < 1 || row > t.lines.length) { setTip("行号超出范围"); return; }
+  t.cursor = { row: row - 1, col: 0 };
+  renderVim(t);
+  setPos("Ln " + row + ", Col 1");
+}
+
+// 选项面板点击委托: data-opt 里可直接执行命令
+if (mdBody) mdBody.addEventListener("click", (e) => {
+  const row = e.target.closest("[data-opt]");
+  if (!row) return;
+  const opt = row.dataset.opt;
+  const m = /^font-set:(\d+)$/.exec(opt);
+  if (m) { closeModal(); setFontSize(parseInt(m[1], 10)); return; }
+  const sl = /^setlang:(.+)$/.exec(opt);
+  if (sl) { closeModal(); setTabLanguage(sl[1]); return; }
+  closeModal();
+  dispatchCommand(opt);
+});
+
+/* ===== 分屏 / 平铺 ===== */
+   // none | h | v | quad
+function applySplit() {
+  const area = document.getElementById("editor-area");
+  const ed = document.getElementById("editor");
+  area.classList.remove("split-h", "split-v", "split-quad");
+  if (SPLIT.mode !== "none") area.classList.add("split-" + SPLIT.mode);
+  // 分屏时同一 tab 内容按行区间分段显示到多个 .split-view
+  const t = getActiveTab();
+  const panes = area.querySelectorAll(".split-view");
+  panes.forEach((p) => p.remove());
+  if (SPLIT.mode === "none" || !t) return;
+  const n = SPLIT.mode === "quad" ? 4 : 2;
+  const per = Math.ceil(t.lines.length / n);
+  for (let i = 0; i < n; i++) {
+    const view = document.createElement("div");
+    view.className = "split-view";
+    view.innerHTML = '<div class="split-label">视图 ' + (i + 1) + " · Ln " + (i * per + 1) +
+      "-" + Math.min(t.lines.length, (i + 1) * per) + "</div>";
+    t.lines.slice(i * per, (i + 1) * per).forEach((line) => {
+      const row = document.createElement("div");
+      row.className = "hl-row";
+      row.innerHTML = Syntax.highlightLine(line, t.language || Syntax.detectLanguage(t.path || ""))
+        .map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("");
+      view.appendChild(row);
+    });
+    ed.style.display = "none";
+    area.appendChild(view);
+  }
+  setTip("分割: " + SPLIT.mode);
+}
+
+function splitView(mode) {
+  SPLIT.mode = SPLIT.mode === mode ? "none" : mode;
+  applySplit();
+}
+function tileWindows(mode) {
+  // 单窗口应用没有多窗口可平铺, 用「全屏 + 恢复」表达 cascade/tile 的意图
+  if (mode === "cascade") openNewWindow();
+  else if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen();
+  setTip("平铺 " + mode + " (单窗口模式: " +
+    (document.fullscreenElement ? "已全屏" : "已退出全屏") + ")");
+}
+
+/* ===== 宏录制 / 播放 (按键序列, 会话内) ===== */
+
+
+function macroStart() {
+  if (MACRO.recording) { setTip("已在录制中"); return; }
+  MACRO.recording = true;
+  MACRO.keys = [];
+  setTip("● 宏录制中 — 按 Ctrl+Shift+R 停止");
+}
+function macroStop() {
+  if (!MACRO.recording) { setTip("未在录制"); return; }
+  MACRO.recording = false;
+  setTip("■ 宏已停止 (" + MACRO.keys.length + " 键) — 工具>宏>播放宏 回放");
+}
+function macroPlay() {
+  if (MACRO.keys.length === 0) { setTip("无已录制宏"); return; }
+  if (MACRO.playing) { MACRO.playing = false; setTip("宏回放已中断"); return; }
+  MACRO.playing = true;
+  setTip("▶ 回放 " + MACRO.keys.length + " 键 (再按一次中断)");
+  let i = 0;
+  const step = () => {
+    if (!MACRO.playing || i >= MACRO.keys.length) {
+      MACRO.playing = false;
+      setTip("宏回放结束");
+      return;
+    }
+    const rec = MACRO.keys[i++];
+    edContent.dispatchEvent(new KeyboardEvent("keydown", {
+      key: rec.key, ctrlKey: rec.ctrl, shiftKey: rec.shift, altKey: rec.alt, bubbles: true, cancelable: true,
+    }));
+    setTimeout(step, 60);
+  };
+  step();
+}
+
+// 录制钩子: 在 editor keydown 里挂
+function recordKey(e) {
+  if (!MACRO.recording || e.key === "F9") return;
+  if (MACRO.keys.length < 1000) {
+    MACRO.keys.push({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
+  }
+}
+
+/* ===== JS 宏: 在编辑器上下文里执行一段 JS ===== */
+function runJsMacro() {
+  const code = prompt("输入 JS 宏 (可直接访问 editor.* / tabs / CLIPBOARD):",
+    "// 示例: editor.note('hello');\n");
+  if (!code) return;
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("editor", "tabs", "CLIPBOARD", "Syntax", code);
+    fn(editorApi, tabs, CLIPBOARD, Syntax);
+    setTip("JS 宏执行完成");
+  } catch (e) {
+    openModal({ title: "JS 宏错误", body: e.message });
+  }
+}
+function runPpaMacro() {
+  const code = prompt("PPA 宏 (每行一个动作: KEY <键> / TYPE <文本> / CMD <命令>):",
+    "KEY i\nTYPE hello\nKEY Escape\n");
+  if (!code) return;
+  for (const raw of code.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = /^(KEY|TYPE|CMD)\s+(.*)$/.exec(line);
+    if (!m) continue;
+    const [, act, arg] = m;
+    if (act === "KEY") edContent.dispatchEvent(new KeyboardEvent("keydown", { key: arg, bubbles: true, cancelable: true }));
+    else if (act === "TYPE") for (const ch of arg) insertChar(ch);
+    else dispatchCommand(arg);
+  }
+  setTip("PPA 宏执行完成");
+}
+
+/* ===== 插件 (sakura-rs 已有 wasm 加载骨架, 这里做前端注册表) ===== */
+
+async function loadPlugin() {
+  const path = prompt("加载插件 (.wasm, 需导出 process(text: &str) -> String):");
+  if (!path) return;
+  const t = getActiveTab();
+  const input = t ? t.lines.join("\n") : "";
+  try {
+    const r = await invoke("plugin_load", { path, input });
+    const at = PLUGINS.findIndex((pl) => pl.path === path);
+    const entry = { path, loaded: true, lastOutput: (r && r.output) || "" };
+    if (at >= 0) PLUGINS[at] = entry; else PLUGINS.push(entry);
+    if (entry.lastOutput) openModal({ title: "插件输出: " + path, body: entry.lastOutput });
+    setTip("插件已加载: " + path);
+  } catch (e) {
+    // 未启用 wasm feature 或模块无效时后端返回明确错误, 如实呈现
+    PLUGINS.push({ path, loaded: false, lastError: e.message });
+    openModal({ title: "插件加载失败", body: path + "\n\n" + e.message +
+      "\n\n提示: sakura-rs 的 wasm 运行时需开启 Cargo feature \"wasm\"." });
+  }
+}
+function managePlugins() {
+  const rows = PLUGINS.length
+    ? PLUGINS.map((pl) => '<div class="opt-row">' + escapeHtml(pl.path) +
+        (pl.loaded ? " <span class='tk-keyword'>已加载</span>" : " <span class='empty-hint'>已登记未加载</span>") + "</div>").join("")
+    : '<div class="empty-hint">尚无插件</div>';
+  openModal({ title: "插件管理", bodyHTML: rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+}
+
+// 供 JS 宏使用的受限 API
+
+
+// 跳转到下一个标签定义 (fn/struct/impl/class/def/func 等)
+function tagJump() {
+  const t = getActiveTab();
+  if (!t) return;
+  const lang = t.language || Syntax.detectLanguage(t.path || "");
+  const re = /^[ \t]*(?:pub\s+)?(?:async\s+)?(?:export\s+)?(fn|struct|enum|impl|trait|type|func|class|def|function|interface|module|const)\s+([A-Za-z_][A-Za-z0-9_]*)/;
+  let idx = -1;
+  for (let r = t.cursor.row + 1; r < t.lines.length; r++) {
+    if (re.test(t.lines[r])) { idx = r; break; }
+  }
+  if (idx < 0) {
+    for (let r = 0; r < t.cursor.row; r++) if (re.test(t.lines[r])) { idx = r; break; }
+  }
+  if (idx < 0) { setTip("本文件内未找到标签 (" + Syntax.languageLabel(lang) + ")"); return; }
+  t.cursor = { row: idx, col: 0 };
+  renderVim(t);
+  const m = re.exec(t.lines[idx]);
+  setTip("标签 " + (m ? m[1] + " " + m[2] : "") + " @ Ln " + (idx + 1));
+}
+
+// ===== 测试/JS 宏 API 暴露 =====
+// UAT 与 JS 宏需要调用这些命令; 全部挂在 window 上, 便于脚本化验证.
+window.dispatchCommand = dispatchCommand;
+window.renderVim = renderVim;
+window.closeModal = closeModal;
+window.setFontSize = setFontSize;
+window.findInTab = findInTab;
+window.replaceAll = replaceAll;
+window.toggleLineNumbers = toggleLineNumbers;
+window.toggleBookmark = toggleBookmark;
+window.bookmarkNext = bookmarkNext;
+window.splitView = splitView;
+window.macroPlay = macroPlay;
+Object.defineProperty(window, "FIND_STATE", { get: () => FIND_STATE });
+Object.defineProperty(window, "MACRO", { get: () => MACRO });
+Object.defineProperty(window, "VIEW_STATE", { get: () => VIEW_STATE });
+Object.defineProperty(window, "SETTINGS", { get: () => SETTINGS });
+Object.defineProperty(window, "PLUGINS", { get: () => PLUGINS });
+Object.defineProperty(window, "EDIT_CMDS", { get: () => EDIT_CMDS });
+
 // ===== Help =====
 function showHelp() {
   try {
@@ -2143,11 +2894,30 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
   if (e.key === "F1") { e.preventDefault(); showHelp(); }
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
-    e.preventDefault();
-    showSidePane("search");
-    return;
+  if (e.ctrlKey && e.shiftKey) {
+    const k = e.key.toLowerCase();
+    if (k === "f") { e.preventDefault(); showSidePane("search"); return; }
+    if (k === "r") { e.preventDefault(); macroStop(); return; }   // 与菜单一致: 开始/停止切换
+    if (k === "o") { e.preventDefault(); openFolder(); return; }
   }
+  if (e.ctrlKey && !e.shiftKey) {
+    const k = e.key.toLowerCase();
+    if (k === "f") { e.preventDefault(); openFind(); return; }
+    if (k === "h") { e.preventDefault(); openReplace(); return; }
+    if (k === "g") { e.preventDefault(); openGrep(); return; }
+    if (k === "j") { e.preventDefault(); openGotoLine(); return; }
+    if (k === "a") { e.preventDefault(); selectAllText(); return; }
+    if (k === "c") { e.preventDefault(); copySelection(); return; }
+    if (k === "x") { e.preventDefault(); cutSelection(); return; }
+    if (k === "v") { e.preventDefault(); pasteClipboard(); return; }
+    if (k === "w") { e.preventDefault(); if (activeTabId) closeTab(activeTabId); return; }
+    if (k === ",") { e.preventDefault(); openSettings(); return; }
+  }
+  if (e.shiftKey && !e.ctrlKey && !e.altKey) {
+    if (e.key === "F3") { e.preventDefault(); findPrev(); return; }
+    if (e.key === "F4") { e.preventDefault(); findNext(); return; }
+  }
+  if (e.key === "F3") { e.preventDefault(); findNext(); return; }
   if (e.ctrlKey && e.key === "`") {
     // Ctrl+` = 终端开关: 折叠时展开并切到 Terminal; 已展开时也切回 Terminal.
     // 不做「再次按下即折叠」—— 折叠交给面板上的「折叠」按钮 (data-cmd=bottom-toggle).
@@ -2198,11 +2968,26 @@ function createNewFile() {
 }
 
 function saveActiveAs() {
-  setTip("另存为 (UI 未实装)");
+  const t = getActiveTab();
+  if (!t) return;
+  const name = prompt("另存为 (项目根内相对路径):", t.path.split(/[\\\/]/).pop());
+  if (!name) return;
+  const path = stripVerbatim(projectRoot || "") + "\\" + name;
+  invoke("write_file", { path, content: t.lines.join("\n") }).then(() => {
+    setTip("已另存为: " + name);
+  }).catch((e) => openModal({ title: "另存失败", body: e.message }));
 }
 
-function saveAll() {
-  setTip("全部保存 (UI 未实装)");
+async function saveAll() {
+  const dirty = [...TABS.values()].filter((t) => t.dirty);
+  if (dirty.length === 0) { setTip("无未保存修改"); return; }
+  let ok = 0, fail = 0;
+  for (const t of dirty) {
+    try { await invoke("write_file", { path: t.path, content: t.lines.join("\n") }); t.dirty = false; ok++; }
+    catch (e) { fail++; setTip("保存失败 " + t.path + ": " + e.message); }
+  }
+  renderTabs();
+  setTip("已保存 " + ok + " 个文件" + (fail ? ", 失败 " + fail : ""));
 }
 
 function closeActiveTab() {
@@ -2216,64 +3001,237 @@ function closeAllTabs() {
   setTip("关闭全部标签");
 }
 
-function reloadActive() {
-  setTip("重新载入 (UI 未实装)");
+async function reloadActive() {
+  const t = getActiveTab();
+  if (!t) { setTip("无活动标签"); return; }
+  if (t.dirty && !confirm(t.path + " 有未保存修改, 重新载入会丢失. 继续?"))
+    return;
+  const lines = await invoke("read_file", { path: stripVerbatim(t.path) });
+  t.lines = String(lines.content ?? lines).split("\n");
+  t.dirty = false;
+  t.sel = null;
+  t.undo = [];
+  t.redo = [];
+  renderVim(t);
+  setTip("已重新载入: " + t.path);
 }
 
-// --- エディタ メニュー ---
-function execCmd(cmd) {
-  // Exec via the 3-state keymap if present
-  setTip("执行: " + cmd);
-  if (typeof window.execKeyCmd === "function") {
-    window.execKeyCmd(cmd);
+// --- エディタ 菜单 ---
+// 真实的编辑器命令表. 之前这里只有 setTip, 导致 剪切/复制/粘贴/全选/
+// 大小写转换/全角半角 等全部编辑命令都是空壳.
+const EDIT_CMDS = {
+  undo: doUndo,
+  redo: doRedo,
+  cut: cutSelection,
+  copy: copySelection,
+  paste: pasteClipboard,
+  selectAll: selectAllText,
+  deleteLine: deleteLine,
+  duplicateLine: duplicateLine,
+  toUpper: (t) => mapLines(t, (s) => s.toUpperCase()),
+  toLower: (t) => mapLines(t, (s) => s.toLowerCase()),
+  toFullwidth: (t) => mapLines(t, toFullwidth),
+  toHalfwidth: (t) => mapLines(t, toHalfwidth),
+  toZenkaku: (t) => mapLines(t, (s) => s.replace(/[ぁ-ん]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))),
+  toZenhira: (t) => mapLines(t, (s) => s.replace(/[ァ-ン]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))),
+  toHankata: (t) => mapLines(t, (s) => s.replace(/[ハ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))),
+  insertDate: insertCurrentDate,
+  insertTemplate: insertCurrentLangTemplate,
+  toggleWordWrap: toggleWordWrap,
+  toggleLineNumbers: toggleLineNumbers,
+  toggleMinimap: toggleMinimap,
+  replaceAll: () => replaceAll(),
+  tagJump: tagJump,
+};
+
+// 全角/半角 (ASCII 可见字符)
+function toFullwidth(s) {
+  return s.replace(/[\x21-\x7e]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).replace(/ /g, "\u3000");
+}
+function toHalfwidth(s) {
+  return s.replace(/[\uff01-\uff5e]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+          .replace(/\u3000/g, " ");
+}
+
+// 逐行映射 (默认作用于全文; 有选区时只作用于选区)
+function mapLines(t, fn) {
+  if (!t) return;
+  snapshot(t);
+  const hasSel = t.sel && t.sel.r1 !== t.sel.r0;
+  if (hasSel) {
+    for (let r = t.sel.r0; r <= t.sel.r1; r++) t.lines[r] = fn(t.lines[r]);
+  } else {
+    t.lines = t.lines.map(fn);
   }
+  t.dirty = true;
+  renderVim(t);
+}
+
+function selectAllText() {
+  const t = getActiveTab();
+  if (!t) return;
+  t.sel = { r0: 0, c0: 0, r1: t.lines.length - 1, c1: Infinity };
+  setTip("已全选 (" + t.lines.length + " 行)");
+  renderVim(t);
+}
+
+// 选区文本 (VISUAL 模式由 renderVim 记录, 无选区时退化为当前行)
+function selectionText(t) {
+  if (t.sel && (t.sel.r1 !== t.sel.r0 || t.sel.c1 !== t.sel.c0)) {
+    if (t.sel.r1 === t.sel.r0) {
+      const line = t.lines[t.sel.r0];
+      return line.slice(Math.min(t.sel.c0, t.sel.c1), Math.max(t.sel.c0, t.sel.c1));
+    }
+    const out = [t.lines[t.sel.r0].slice(Math.min(t.sel.c0, t.sel.c1 === Infinity ? t.lines[t.sel.r0].length : t.sel.c1))];
+    for (let r = t.sel.r0 + 1; r < t.sel.r1; r++) out.push(t.lines[r]);
+    const last = t.lines[t.sel.r1];
+    out.push(last.slice(0, t.sel.c1 === Infinity ? last.length : Math.max(t.sel.c1, 0)));
+    return out.join("\n");
+  }
+  return t.lines[t.cursor.row] || "";
+}
+
+function deleteSelection(t) {
+  if (!t.sel || (t.sel.r1 === t.sel.r0 && t.sel.c1 === t.sel.c0)) return false;
+  snapshot(t);
+  if (t.sel.r1 === t.sel.r0) {
+    const line = t.lines[t.sel.r0];
+    const a = Math.min(t.sel.c0, t.sel.c1), b = Math.max(t.sel.c0, t.sel.c1);
+    t.lines[t.sel.r0] = line.slice(0, a) + line.slice(b);
+    t.cursor = { row: t.sel.r0, col: a };
+  } else {
+    const first = t.lines[t.sel.r0];
+    const a = Math.min(t.sel.c0, t.sel.c1 === Infinity ? first.length : t.sel.c1);
+    const last = t.lines[t.sel.r1];
+    const b = t.sel.c1 === Infinity ? last.length : Math.max(t.sel.c1, 0);
+    t.lines.splice(t.sel.r0, t.sel.r1 - t.sel.r0 + 1, first.slice(0, a) + last.slice(b));
+    t.cursor = { row: t.sel.r0, col: a };
+  }
+  t.sel = null;
+  t.dirty = true;
+  renderVim(t);
+  return true;
+}
+
+function copySelection() {
+  const t = getActiveTab();
+  if (!t) return;
+  const text = selectionText(t);
+  CLIPBOARD = text;
+  setTip("已复制 " + text.length + " 字符");
+}
+
+function cutSelection() {
+  const t = getActiveTab();
+  if (!t) return;
+  CLIPBOARD = selectionText(t);
+  if (deleteSelection(t)) setTip("已剪切");
+  else setTip("无选区, 按 v 进入 VISUAL 后再剪切");
+}
+
+function pasteClipboard() {
+  const t = getActiveTab();
+  if (!t || !CLIPBOARD) { setTip("剪贴板为空"); return; }
+  snapshot(t);
+  const parts = CLIPBOARD.split("\n");
+    const line = curLine(t);
+    const head = line.slice(0, t.cursor.col), tail = line.slice(t.cursor.col);
+    // 在光标处插入 CLIPBOARD; 原来光标后的 tail 保持在最后一行末尾.
+    const last = parts.length - 1;
+    t.lines[t.cursor.row] = head + parts[0];
+    t.lines.splice(t.cursor.row + 1, parts.length - 1,
+      ...parts.slice(1).map((p, i) => (i === last ? p + tail : p)));
+    t.cursor.col = head.length + parts[0].length;
+  t.dirty = true;
+  renderVim(t);
+  setTip("已粘贴 " + CLIPBOARD.length + " 字符");
+}
+
+function duplicateLine() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  t.lines.splice(t.cursor.row + 1, 0, t.lines[t.cursor.row]);
+  t.cursor.row += 1;
+  t.dirty = true;
+  renderVim(t);
+}
+
+function insertCurrentDate() {
+  const t = getActiveTab();
+  if (!t) return;
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  insertChar(d.getFullYear() + "/" + pad(d.getMonth() + 1) + "/" + pad(d.getDate()) +
+             " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()));
+}
+
+function insertCurrentLangTemplate() {
+  const t = getActiveTab();
+  if (!t) return;
+  const lang = t.language || Syntax.detectLanguage(t.path || "");
+  insertTemplate(lang, t);
+}
+
+// 视图开关 (持久化到内存即可, 会话内生效)
+
+function toggleWordWrap() {
+  VIEW_STATE.wordWrap = !VIEW_STATE.wordWrap;
+  edContent.style.whiteSpace = VIEW_STATE.wordWrap ? "pre-wrap" : "pre";
+  setTip("自动换行: " + (VIEW_STATE.wordWrap ? "开" : "关"));
+}
+function toggleLineNumbers() {
+  VIEW_STATE.lineNumbers = !VIEW_STATE.lineNumbers;
+  gutter.style.display = VIEW_STATE.lineNumbers ? "" : "none";
+  setTip("行号: " + (VIEW_STATE.lineNumbers ? "开" : "关"));
+}
+// 缩略图: 编辑区右侧的整文件条形预览, 真实渲染 (行高按缩放比例)
+function buildMinimap() {
+  const t = getActiveTab();
+  const old = document.getElementById("minimap");
+  if (!VIEW_STATE.minimap) { if (old) old.remove(); return; }
+  const mm = old || document.createElement("div");
+  mm.id = "minimap";
+  const lang = t ? (t.language || Syntax.detectLanguage(t.path || "")) : "plain";
+  const rows = t ? t.lines : [];
+  mm.innerHTML = rows.map((line, i) => {
+    const toks = Syntax.highlightLine(line, lang);
+    // 每行只保留 token 的相对宽度, 纯色块, 不显示字符
+    const bars = toks.map((tk) =>
+      `<i style="width:${Math.max(1, Math.min(28, tk.text.length))}px"${tk.cls ? ' class="tk-' + tk.cls + '"' : ""}></i>`).join("");
+    return '<div class="mm-row" data-row="' + i + '">' + bars + "</div>";
+  }).join("");
+  if (!old) document.getElementById("editor-area").appendChild(mm);
+  // 点击行号跳转
+  mm.querySelectorAll(".mm-row").forEach((r) => r.addEventListener("click", () => {
+    const tv = getActiveTab();
+    if (!tv) return;
+    tv.cursor = { row: parseInt(r.dataset.row, 10), col: 0 };
+    renderVim(tv);
+  }));
+}
+
+function toggleMinimap() {
+  VIEW_STATE.minimap = !VIEW_STATE.minimap;
+  buildMinimap();
+  setTip("缩略图: " + (VIEW_STATE.minimap ? "开" : "关"));
+  renderVim(getActiveTab());
+}
+
+function execCmd(cmd) {
+  const t = getActiveTab();
+  const fn = EDIT_CMDS[cmd];
+  if (fn) { fn(t); return true; }
+  setTip("命令未实装: " + cmd);
+  return false;
 }
 
 // --- 検索 メニュー ---
-function openFind() {
-  // delegate to keymap
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true }));
-}
 
-function findNext() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "F3", bubbles: true }));
-}
 
-function findPrev() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "F3", shiftKey: true, bubbles: true }));
-}
 
-function openIncSearch() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "i", ctrlKey: true, bubbles: true }));
-}
 
-function openReplace() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", ctrlKey: true, bubbles: true }));
-}
 
-function openGrep() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true }));
-}
-
-function openGrepReplace() {
-  setTip("Grep 替换 (UI 未实装)");
-}
-
-function openGotoLine() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", ctrlKey: true, bubbles: true }));
-}
-
-function toggleBookmark() {
-  setTip("书签 (UI 未实装)");
-}
-
-function bookmarkNext() {
-  setTip("下一个书签 (UI 未实装)");
-}
-
-function bookmarkPrev() {
-  setTip("上一个书签 (UI 未实装)");
-}
 
 // --- 视图 メニュー ---
 function switchSidePane(pane) {
@@ -2282,124 +3240,24 @@ function switchSidePane(pane) {
   else setTip("未找到面板: " + pane);
 }
 
-function toggleStatusBar() {
-  setTip("状态栏 (UI 未实装)");
-}
-
-function fontBigger() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "=", ctrlKey: true, bubbles: true }));
-}
-
-function fontSmaller() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "-", ctrlKey: true, bubbles: true }));
-}
-
-function setTheme(name) {
-  document.body.setAttribute("data-theme", name);
-  setTip("主题: " + name);
-  // 将来: サーバに 永続化
-  try { localStorage.setItem("ide1.theme", name); } catch(e) {}
-}
-
 // --- ツール メニュー ---
 function showOutline() {
   switchSidePane("outline");
 }
 
-function toggleSyntaxHighlight() {
-  setTip("语法高亮 (toggle)");
-}
-
-function openTypeConfig() {
-  setTip("类型配置 (UI 未实装)");
-}
-
-function triggerAutoBackup() {
-  setTip("立即备份 (UI 未实装, 需 server 連携)");
-}
-
-function toggleFileLock() {
-  setTip("文件锁定 (UI 未实装)");
-}
-
-function macroStart() {
-  setTip("宏录制 开始 (UI 未实装)");
-}
-
-function macroStop() {
-  setTip("宏录制 停止 (UI 未实装)");
-}
-
-function macroPlay() {
-  setTip("宏 播放 (UI 未实装)");
-}
-
-function runJsMacro() {
-  setTip("JS マクロ 実行 (UI 未实装)");
-}
-
-function runPpaMacro() {
-  setTip("PPA マクロ 実行 (UI 未实装)");
-}
-
-function loadPlugin() {
-  setTip("插件 読み込み (UI 未实装)");
-}
-
-function managePlugins() {
-  setTip("插件 管理 (UI 未实装)");
-}
-
-function openCustomizeKeys() {
-  setTip("自定义键 (UI 未实装)");
-}
-
 // --- 設定 メニュー ---
-function openSettings() {
-  setTip("首选项 (UI 未实装)");
-}
 
-function openKeymap() {
-  setTip("键映射 (UI 未实装)");
-}
-
-function openFontPicker() {
-  setTip("字体 選択 (UI 未实装)");
-}
-
-function openThemePicker() {
-  setTip("テーマ 選択 (UI 未实装)");
-}
-
-function openLanguagePicker() {
-  setTip("言語 選択 (UI 未实装)");
-}
-
-function importConfig() {
-  setTip("設定 インポート (UI 未实装)");
-}
-
-function exportConfig() {
-  setTip("設定 エクスポート (UI 未实装)");
-}
-
-function resetSettings() {
-  if (confirm("恢复默认设置? (将丢失所有自定义)")) {
-    setTip("已恢复默认设置");
-  }
-}
 
 // --- ウィンドウ メニュー ---
+// 新窗口会被浏览器拦截 (无用户手势); 如实降级而不是抛 pageerror
 function openNewWindow() {
-  window.open(window.location.href, "_blank");
-}
-
-function splitView(mode) {
-  setTip("分割: " + mode + " (UI 未实装)");
-}
-
-function tileWindows(mode) {
-  setTip("タイル: " + mode + " (UI 未实装)");
+  try {
+    const w = window.open(window.location.href, "_blank");
+    if (!w) setTip("新窗口被浏览器拦截, 请允许弹出窗口或手动打开");
+    else setTip("已打开新窗口");
+  } catch (e) {
+    setTip("新窗口不可用: " + e.message);
+  }
 }
 
 function switchTab(dir) {
@@ -2412,9 +3270,24 @@ function switchTab(dir) {
   tabEls[idx].click();
 }
 
+// 全屏需要用户手势, 在无手势的脚本调用里会被浏览器拒绝; 如实降级而不是抛错
 function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen();
+  try {
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      setTip("已退出全屏");
+    } else if (document.documentElement.requestFullscreen) {
+      const p = document.documentElement.requestFullscreen();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => setTip("全屏被浏览器拒绝 (需要用户手势, 请手动按 F11)"));
+      }
+      setTip("已进入全屏");
+    } else {
+      setTip("此环境不支持全屏, 请用 F11");
+    }
+  } catch (e) {
+    setTip("全屏不可用: " + e.message);
+  }
 }
 
 // --- ヘルプ メニュー ---
@@ -2422,12 +3295,6 @@ function showWiki() {
   // 直接开 wiki 浮层. 旧实现是 click([data-cmd='help']) — 那个元素就是派发 help
   // 命令的菜单行本身, 会无限递归把页面卡死 (所有后续 UAT 3min 超时的根因).
   showHelp();
-}
-
-function showShortcuts() {
-  const sc = document.getElementById("shortcuts-modal");
-  if (sc) sc.style.display = "flex";
-  else setTip("快捷键 (UI 未实装)");
 }
 
 function showAbout() {

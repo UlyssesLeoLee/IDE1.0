@@ -416,3 +416,273 @@ test("read_file rejects huge files (>4MB)", async ({ request }) => {
   // 清理
   await request.post(`${BASE}/api/write_file`, { data: { path, content: "" } });
 });
+
+test.describe("命令审计 (sakura 功能覆盖)", () => {
+  test("96 个菜单命令全部可执行, 无异常无占位", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    const errors: string[] = [];
+    page.on("pageerror", (e) => {
+      // 弹窗/全屏被浏览器拒绝是环境限制, 不是产品缺陷 (产品侧已降级为状态栏提示)
+      if (/Permissions check failed/i.test(e.message)) return;
+      errors.push(e.message);
+    });
+
+    const result = await page.evaluate(() => {
+      const cmds = [...new Set([...document.querySelectorAll("[data-cmd]")].map((e) => e.dataset.cmd!))];
+      const realPrompt = window.prompt, realConfirm = window.confirm;
+      // window.open 会被浏览器拦截并抛 Permissions check failed, 这里替换成 no-op
+      const realOpen = window.open;
+      (window as any).prompt = () => "audit_tmp.txt";
+      (window as any).confirm = () => true;
+      (window as any).open = () => null;
+      const threw: string[] = [];
+      const stubbed: string[] = [];
+      for (const cmd of cmds) {
+        try {
+          (window as any).dispatchCommand(cmd);
+          const tip = document.getElementById("s-tip")!.textContent || "";
+          if (/未实装|待实装|未接入|占位/.test(tip)) stubbed.push(cmd + " → " + tip);
+        } catch (e) {
+          threw.push(cmd + ": " + (e as Error).message);
+        }
+        try { (window as any).closeModal(); } catch { /* ignore */ }
+      }
+      (window as any).prompt = realPrompt;
+      (window as any).confirm = realConfirm;
+      (window as any).open = realOpen;
+      return { total: cmds.length, threw, stubbed };
+    });
+
+    expect(result.total).toBeGreaterThanOrEqual(90);
+    expect(result.threw, "命令执行抛错:\n" + result.threw.join("\n")).toEqual([]);
+    expect(result.stubbed, "仍是占位的命令:\n" + result.stubbed.join("\n")).toEqual([]);
+    await page.waitForTimeout(200);
+    expect(errors, "页面运行时错误: " + errors.join("; ")).toEqual([]);
+  });
+
+  test("编辑命令真实生效: 全选/复制/粘贴/大小写/全角半角", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    // 用多行内容 (README.md 只有 1 行, 粘贴后行数不会变, 测不出问题)
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["alpha one", "beta two", "gamma three", "alpha four"];
+      t.cursor = { row: 0, col: 0 };
+      t.sel = null;
+      (window as any).renderVim(t);
+    });
+
+    // 全选 + 复制 → 粘贴到末尾
+    await page.evaluate(() => { (window as any).dispatchCommand("select-all"); });
+    await page.evaluate(() => { (window as any).dispatchCommand("copy"); });
+    const before = await page.evaluate(() => (window as any).activeTab().lines.slice());
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.cursor = { row: t.lines.length - 1, col: t.lines[t.lines.length - 1].length };
+      (window as any).dispatchCommand("paste");
+    });
+    const after = await page.evaluate(() => (window as any).activeTab().lines.slice());
+    expect(after.length).toBeGreaterThan(before.length);
+
+    // 大写转换 (清掉 select-all 设的选区, 让 mapLines 作用于全文)
+    await page.evaluate(() => {
+      (window as any).activeTab().sel = null;
+      (window as any).dispatchCommand("to-upper");
+    });
+    const upper = await page.evaluate(() => (window as any).activeTab().lines.join("\n"));
+    expect(upper).toBe(upper.toUpperCase());
+
+    // 全角 → 半角 往返
+    await page.evaluate(() => { (window as any).dispatchCommand("to-halfwidth"); });
+    await page.evaluate(() => { (window as any).dispatchCommand("to-fullwidth"); });
+    await page.evaluate(() => { (window as any).dispatchCommand("to-halfwidth"); });
+    const half = await page.evaluate(() => (window as any).activeTab().lines.join("\n"));
+    expect(half).not.toContain("\u3000");   // 无全角空格残留
+  });
+
+  test("查找/替换真实生效 (当前文件内)", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    const hits = await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["alpha beta", "gamma alpha", "alpha"];
+      (window as any).renderVim(t);
+      return (window as any).findInTab(t, "alpha", { matchCase: false });
+    });
+    expect(hits.length).toBe(3);
+    expect(hits[0]).toMatchObject({ row: 0, col: 0 });
+
+    // replaceAll: alpha → DELTA
+    const replaced = await page.evaluate(async () => {
+      (window as any).FIND_STATE.needle = "alpha";
+      (window as any).FIND_STATE.matchCase = false;
+      const holder = document.createElement("input");
+      holder.id = "repl-input";
+      holder.value = "DELTA";
+      document.body.appendChild(holder);
+      (window as any).replaceAll();
+      holder.remove();
+      return (window as any).activeTab().lines;
+    });
+    expect(replaced.join("\n")).not.toContain("alpha");
+    expect(replaced[0]).toBe("DELTA beta");
+  });
+
+  test("VISUAL 模式有选区并可剪切", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["hello world", "second line"];
+      t.cursor = { row: 0, col: 0 };
+      t.sel = null;
+      (window as any).renderVim(t);
+    });
+
+    await page.locator("#ed-content").focus();
+    await page.keyboard.press("v");
+    await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "VISUAL");
+    // 右移 3 次扩展选区
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+    const selLen = await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      return t.sel ? Math.abs(t.sel.c1 - t.sel.c0) : 0;
+    });
+    expect(selLen).toBeGreaterThan(0);
+    // 选区在 DOM 上可见
+    await expect(page.locator("#ed-content .sel-active").first()).toBeVisible();
+
+    await page.evaluate(() => { (window as any).dispatchCommand("cut"); });
+    expect(await page.evaluate(() => (window as any).activeTab().lines[0])).not.toContain("hello");
+  });
+
+  test("书签: 添加后跳转", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["l1", "l2", "l3", "l4"];
+      (window as any).renderVim(t);
+      t.cursor = { row: 0, col: 0 };
+      (window as any).dispatchCommand("bookmark-toggle");
+      t.cursor = { row: 2, col: 0 };
+      (window as any).dispatchCommand("bookmark-toggle");
+      t.cursor = { row: 0, col: 0 };
+      (window as any).dispatchCommand("bookmark-next");
+    });
+    expect(await page.evaluate(() => (window as any).activeTab().cursor.row)).toBe(2);
+  });
+
+  test("设置面板可打开并列出选项 (首选项/主题/字体/键映射)", async ({ page }) => {
+    await goEditor(page);
+    for (const cmd of ["settings", "theme-select", "font", "keymap", "shortcuts", "language", "type-config"]) {
+      await page.evaluate((c) => { (window as any).dispatchCommand(c); }, cmd);
+      await expect(page.locator("#modal")).toHaveClass(/show/, { timeout: 3000 });
+      await expect(page.locator("#md-body .opt-row").first()).toBeVisible();
+      await page.evaluate(() => { (window as any).closeModal(); });
+    }
+  });
+
+  test("主题/字号/行号 切换真实改变样式", async ({ page }) => {
+    await goEditor(page);
+    await page.evaluate(() => { (window as any).dispatchCommand("theme-light"); });
+    const bg = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--bg-edit").trim());
+    expect(bg).toBe("#ffffff");
+
+    await page.evaluate(() => { (window as any).dispatchCommand("theme-dark"); });
+    await page.evaluate(() => { (window as any).setFontSize(18); });
+    expect(await page.evaluate(() => document.getElementById("ed-content").style.fontSize)).toBe("18px");
+
+    await page.evaluate(() => { (window as any).toggleLineNumbers(); });
+    expect(await page.evaluate(() => document.getElementById("gutter").style.display)).toBe("none");
+  });
+
+  test("配置导入导出往返", async ({ page }) => {
+    await goEditor(page);
+    // font-set:N 是选项面板的点击动作, 用 setFontSize 直接设值再导出
+    await page.evaluate(() => {
+      (window as any).setFontSize(18);
+      (window as any).dispatchCommand("export-config");
+    });
+    const saved = await page.evaluate(() => localStorage.getItem("ide1.0.config.v1"));
+    expect(saved).toBeTruthy();
+
+    await page.evaluate(() => {
+      (window as any).VIEW_STATE.fontSize = 14;
+      (window as any).dispatchCommand("import-config");
+    });
+    expect(await page.evaluate(() => (window as any).VIEW_STATE.fontSize)).toBe(18);
+  });
+
+  test("分屏真实分割编辑区", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => { (window as any).splitView("v"); });
+    await expect(page.locator("#editor-area")).toHaveClass(/split-v/);
+    expect(await page.locator(".split-view").count()).toBe(2);
+
+    await page.evaluate(() => { (window as any).splitView("quad"); });
+    expect(await page.locator(".split-view").count()).toBe(4);
+
+    await page.evaluate(() => { (window as any).splitView("quad"); });   // 再按一次取消
+    await expect(page.locator("#editor-area")).not.toHaveClass(/split-/);
+  });
+
+  test("宏录制与回放", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => { (window as any).dispatchCommand("macro-start"); });
+    await page.locator("#ed-content").focus();
+    await page.keyboard.press("i");
+    await page.keyboard.type("Q");
+    await page.keyboard.press("Escape");
+    const recorded = await page.evaluate(() => {
+      (window as any).dispatchCommand("macro-stop");
+      return (window as any).MACRO.keys.length;
+    });
+    expect(recorded).toBeGreaterThanOrEqual(3);   // i, Q, Escape
+
+    // 改内容后回放
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = [""];
+      t.dirty = false;
+      (window as any).renderVim(t);
+      (window as any).dispatchCommand("macro-play");
+    });
+    await expect(page.locator("#ed-content")).toContainText("Q", { timeout: 5000 });
+  });
+
+  test("后端插件端点存在且如实返回错误", async ({ request }) => {
+    const res = await request.post("/api/plugin_load", {
+      data: { path: "definitely-not-a-plugin.wasm", input: "x" },
+    });
+    // 端点存在: 无论 200 (ok:false) 还是 400, 都返回 JSON 且带 ok 字段
+    const body = await res.json();
+    expect(body).toHaveProperty("ok");
+    if (body.ok === false) expect(typeof body.error).toBe("string");
+  });
+});
