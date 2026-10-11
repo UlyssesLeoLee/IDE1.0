@@ -31,3 +31,6 @@ tools/node_modules/
 # Tauri build 产物 (构建时生成, 不入库; 已复制到 dist/ 供下载)
 crates/ide-shell-desktop/target/
 crates/ide-shell-desktop/gen/
+
+# Tauri CLI (crates/ide-shell-desktop) — 本地 npm install 产物
+crates/ide-shell-desktop/node_modules/

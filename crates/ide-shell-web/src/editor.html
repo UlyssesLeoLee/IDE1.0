@@ -805,38 +805,71 @@ async function invoke(name, args) {
 // - web 版: 轮询 GET /api/terminal_output?id=X (后端缓冲 chunk)
 // - Tauri 版: 后端 spawn_reader 通过 app.emit 主动推 "terminal://output" 事件,
 //             没有轮询端点. 这里用 listen() 订阅, 避免轮询空转.
+// 终端事件订阅状态:
+//   "event"  — Tauri 事件通道可用 (后端 app.emit 推送)
+//   "poll"   — 退回轮询 (web 版, 或 Tauri 但事件 API 不可用)
+//   null     — 尚未初始化
+let TERM_CHANNEL = null;
 let TAURI_TERMINAL_LISTEN = null;
+
+// 探测 Tauri 的 event.listen 到底挂在哪.
+// Tauri 2: withGlobalTauri=true 时是 window.__TAURI__.event.listen;
+// 否则 __TAURI_INTERNALS__ 上只有 invoke/transformCallback/plugins, 没有 event.
+function findTauriListen() {
+  const cands = [
+    window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen,
+    window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.event &&
+      window.__TAURI_INTERNALS__.event.listen,
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ &&
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__.listen,
+  ];
+  return cands.find((f) => typeof f === "function") || null;
+}
 
 async function setupTerminalChannel() {
   if (!inTauri || !window.__TAURI_INTERNALS__) return;
-  if (TAURI_TERMINAL_LISTEN) return;                 // 只订阅一次
-  const ev = window.__TAURI_INTERNALS__.event;
-  // Tauri 2: import('@tauri-apps/api/event') 或 window.__TAURI_INTERNALS__.event.listen
-  const listen = ev && (ev.listen || (ev.__TAURI_INTERNAL__ && ev.__TAURI_INTERNAL__.listen));
-  if (typeof listen !== "function") {
-    setTip("Tauri 事件通道不可用, 终端输出将不可见");
+  if (TERM_CHANNEL) return;                          // 只初始化一次
+  const listen = findTauriListen();
+  if (!listen) {
+    // 没有事件 API: 如实降级为轮询 (后端 terminal_output command 可用时)
+    TERM_CHANNEL = "poll";
+    setTip("Tauri 事件 API 不可用, 终端输出改用轮询");
+    setTimeout(pollTerminalOutput, 100);
     return;
   }
   try {
     await listen("terminal://output", (e) => {
-      const p = e.payload || {};
+      const p = (e && e.payload) || {};
       if (!p.id || (terminalId && p.id !== terminalId)) return;
       if (p.data) appendTerminal(p.data);
       terminalBody.scrollTop = terminalBody.scrollHeight;
     });
     await listen("terminal://closed", (e) => {
-      const p = e.payload || {};
+      const p = (e && e.payload) || {};
       if (terminalId && p.id === terminalId) appendTerminal("\n[会话已结束]");
     });
     TAURI_TERMINAL_LISTEN = true;
+    TERM_CHANNEL = "event";
   } catch (e) {
-    setTip("终端事件订阅失败: " + e.message);
+    TERM_CHANNEL = "poll";
+    setTip("终端事件订阅失败 (" + e.message + "), 改用轮询");
+    setTimeout(pollTerminalOutput, 100);
   }
 }
 
-// web 版轮询入口 (Tauri 走事件, 不需要)
+// 终端输出拉取: event 通道时不需要
 async function fetchTerminalOutput(id) {
-  if (inTauri && window.__TAURI_INTERNALS__.invoke) return null;
+  if (TERM_CHANNEL === "event") return null;
+  if (inTauri && window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+    // Tauri 无 terminal_output command, 事件也拿不到 -> 如实返回 null
+    if (TERM_CHANNEL === "poll" && TAURI_TERMINAL_LISTEN === null &&
+        typeof window.__TAURI_INTERNALS__.invoke === "function") {
+      try {
+        return await window.__TAURI_INTERNALS__.invoke("terminal_output", { id });
+      } catch (_) { return null; }
+    }
+    return null;
+  }
   const res = await fetch("/api/terminal_output?id=" + encodeURIComponent(id));
   return res.ok ? res.json() : null;
 }
@@ -988,7 +1021,7 @@ async function createTerminal() {
 
 async function pollTerminalOutput() {
   if (!terminalId) return;
-  if (inTauri) return;               // Tauri 走事件推送, 不轮询
+  if (TERM_CHANNEL === "event") return;   // 事件通道已在推, 不轮询
   try {
     const j = await fetchTerminalOutput(terminalId);
     if (!j) { setTimeout(pollTerminalOutput, 200); return; }
@@ -1013,6 +1046,16 @@ function appendTerminal(raw) {
 
 async function sendTerminal(data) {
   if (!terminalId) return;
+  // web 走 HTTP 端点, Tauri 走 IPC command (原来硬编码 HTTP, 在桌面端静默失败)
+  if (inTauri && window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+    try {
+      await window.__TAURI_INTERNALS__.invoke("terminal_input", { id: terminalId, data });
+      return;
+    } catch (e) {
+      setTip("终端输入失败: " + e.message);
+      return;
+    }
+  }
   await fetchApi("/api/terminal_input", { body: { id: terminalId, data } });
 }
 
@@ -3098,6 +3141,10 @@ window.completionCandidates = completionCandidates;
 window.showCompletion = showCompletion;
 window.applyCompletion = applyCompletion;
 window.showClipHistory = showClipHistory;
+window.findTauriListen = findTauriListen;
+window.createTerminal = createTerminal;
+window.sendTerminal = sendTerminal;
+Object.defineProperty(window, "TERM_CHANNEL", { get: () => TERM_CHANNEL });
 Object.defineProperty(window, "PLUGINS", { get: () => PLUGINS });
 Object.defineProperty(window, "EDIT_CMDS", { get: () => EDIT_CMDS });
 
@@ -3906,7 +3953,13 @@ window.addEventListener("DOMContentLoaded", async function () {
     // Also update banner element for waitForBootstrap test
     const bannerEl = document.getElementById("banner");
     if (bannerEl) bannerEl.textContent = b;
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // 后端不可达 (如前端被单独打开): 如实说明, 不要静默留空
+    const why = inTauri ? "内核命令失败: " + e.message : "后端未连接 (仅前端模式)";
+    setTip(why);
+    const bannerEl = document.getElementById("banner");
+    if (bannerEl) bannerEl.textContent = why;
+  }
   showSidePane("explorer");
   try { initZoomWheel(); } catch (_) { /* ignore */ }
   // Default mode NORMAL

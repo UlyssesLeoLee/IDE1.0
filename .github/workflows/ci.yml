@@ -584,6 +584,95 @@ tauri-build-windows:
         retention-days: 30
 
 # ============================================================
+# Job 8b: Tauri desktop live verification (WebView2 CDP)
+# The only job that proves Tauri-side logic actually works:
+# IPC round-trips / terminal://output event channel / withGlobalTauri
+# / a real PowerShell session.
+# The static audit (audit-desktop-parity.mjs) only proves the two HTML
+# files are identical - not that they run inside a real WebView2.
+# ============================================================
+desktop-uat:
+  name: Tauri Desktop UAT (CDP)
+  runs-on: windows-latest
+  timeout-minutes: 45
+  needs: rust
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          -> target
+
+    - name: Setup Node 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install Tauri CLI
+      working-directory: tools
+      run: npm install --no-audit --no-fund
+
+    - name: Desktop/web frontend parity audit
+      run: |
+        cargo build -p ide-shell-desktop
+        node tests/uat/audit-desktop-parity.mjs
+
+    # UAT conf: withGlobalTauri=true + additionalBrowserArgs opens CDP,
+    # bundle.active=false (no installer produced)
+    - name: Build desktop app for UAT
+      working-directory: crates/ide-shell-desktop
+      run: ../../tools/node_modules/.bin/tauri build --config ./tauri.uat.conf.json
+
+    - name: Install Playwright (CDP client)
+      working-directory: tests/uat
+      run: npm install --no-audit --no-fund
+
+    - name: Launch app and wait for WebView2 CDP
+      shell: pwsh
+      run: |
+        $exe = "crates/ide-shell-desktop/target/release/ide-shell-desktop.exe"
+        if (-not (Test-Path $exe)) {
+          $exe = "$env:GITHUB_WORKSPACE/target/release/ide-shell-desktop.exe"
+        }
+        Write-Host "Launching $exe"
+        Start-Process -FilePath $exe | Out-Null
+        $ready = $false
+        for ($i = 0; $i -lt 90; $i++) {
+          Start-Sleep -Seconds 1
+          try {
+            $r = Invoke-RestMethod "http://127.0.0.1:9222/json/list" -TimeoutSec 2
+            if ($r -and @($r).Count -gt 0) { $ready = $true; break }
+          } catch { }
+        }
+        if (-not $ready) {
+          Write-Error "WebView2 CDP did not come up within 90s (port 9222)"
+          exit 1
+        }
+        Write-Host "CDP ready: $($r[0].title) $($r[0].url)"
+
+    - name: Run desktop verification (18 checks)
+      working-directory: tests/uat
+      run: node verify-desktop.mjs
+
+    - name: Upload desktop diagnostics
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: desktop-uat-diagnostics
+        path: |
+          ${{ runner.temp }}/ide-shell-desktop-diag.log
+          ${{ runner.temp }}/ide-*.log
+        if-no-files-found: ignore
+
+# ============================================================
 # Job 9: Tauri Desktop build (macOS) — .dmg
 # ============================================================
 tauri-build-macos:

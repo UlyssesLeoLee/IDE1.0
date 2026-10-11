@@ -87,9 +87,17 @@ else {
   const aliasBlock = web.match(/const TAURI_CMD_ALIAS = \{([^}]*)\}/s);
   const aliases = new Set(aliasBlock
     ? [...aliasBlock[1].matchAll(/(\w+):/g)].map((m) => m[1]) : []);
+  // Tauri 侧"可选"命令: 前端有 try/catch 降级, 缺了也不致命.
+  // terminal_output 只在事件通道不可用时才调 (TERM_CHANNEL !== 'event'),
+  // 正常路径走 terminal://output 事件, 所以未注册可以接受.
+  const OPTIONAL = new Set(['terminal_output']);
   for (const name of invoked) {
-    if (aliases.has(name) || registered.has(name)) ok(name);
-    else fail(`${name} — web 前端 invoke 了, 但 Tauri 未注册`);
+    if (aliases.has(name) || registered.has(name)) { ok(name); continue; }
+    if (OPTIONAL.has(name)) {
+      console.log(`  ~ ${name} (可选, 事件通道可用时不调用)`);
+      continue;
+    }
+    fail(`${name} — web 前端 invoke 了, 但 Tauri 未注册`);
   }
 }
 
