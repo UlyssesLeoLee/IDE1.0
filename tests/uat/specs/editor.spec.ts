@@ -31,6 +31,13 @@ async function goEditor(page: Page) {
 //  测试用例直接 setProjectRoot 同步设项目根 + 渲染文件树, 避开按钮点击 race).
 // 注意: server 的 path_safety::safe_canonicalize 返回带 Windows verbatim prefix (\\?\C:\...),
 // 我们需要先调 /api/open_project 拿 canonical path, 再传给 setProjectRoot.
+// openFile 是 async: 点完树节点必须等 tab 真正建好, 否则后续按键落在欢迎页上.
+// (之前两个测试首跑必失败、retry 才过, 就是漏了这个等待)
+async function waitForTab(page: Page) {
+  await page.waitForFunction(() => (window as any).activeTab && (window as any).activeTab.id !== null, { timeout: 5_000 });
+  await page.locator(".tab").first().waitFor({ timeout: 5_000 });
+}
+
 async function openProject(page: Page, path: string) {
   // 1. 先调 open_project 拿 canonical (Rust 端剥除 verbatim + walk_back for nonexistent)
   const canonRes = await fetch(`${BASE}/api/open_project`, {
@@ -70,6 +77,25 @@ test.afterEach(async () => {
   }).catch(() => {});
 });
 
+// 会写盘的两个测试 (Insert / save) 需要 fixture 隔离, 否则首跑写脏 README.md,
+// 污染后续测试导致 retry 才过. 这里用 test.beforeEach/afterEach 统一备份还原.
+import { readFileSync, writeFileSync } from "node:fs";
+
+const README = FIXTURE_ROOT + "/README.md";
+let README_BACKUP: string | null = null;
+
+// 只在测试真正用到这个 tab 时才备份 (纯只读测试不必碰磁盘)
+async function snapshotFixture() {
+  if (README_BACKUP === null) README_BACKUP = readFileSync(README, "utf8");
+}
+
+test.afterEach(() => {
+  if (README_BACKUP !== null) {
+    writeFileSync(README, README_BACKUP, "utf8");
+    README_BACKUP = null;
+  }
+});
+
 test("editor page loads with full Cursor-style skeleton", async ({ page }) => {
   await goEditor(page);
   await expect(page.locator("#menubar")).toBeVisible();
@@ -100,7 +126,7 @@ test("pick_folder (mock) populates file tree", async ({ page }) => {
   await openProject(page, FIXTURE_ROOT);
   // Check side-body has content (project path + tree nodes)
   await expect(page.locator("#side-body")).toBeVisible();
-  await expect(page.locator("#side-body .sb-section")).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator("#sb-project-name")).toBeVisible({ timeout: 5_000 });
   await expect(page.locator("#side-body")).toContainText("README", { timeout: 5_000 });
 });
 
@@ -146,6 +172,8 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   await goEditor(page);
   await openProject(page, FIXTURE_ROOT);
   await page.locator('.tree-node:has-text("README")').click();
+  await waitForTab(page);
+  await snapshotFixture();
   await expect(page.locator("#ed-content")).toBeVisible();
   // 显式 focus 编辑器 (click 在 default viewport 偏移下不稳)
   await page.locator("#ed-content").focus();
@@ -166,6 +194,8 @@ test("save (Ctrl+S) writes to server and clears dirty flag", async ({ page }) =>
   await goEditor(page);
   await openProject(page, FIXTURE_ROOT);
   await page.locator('.tree-node:has-text("README")').click();
+  await waitForTab(page);
+  await snapshotFixture();
   await expect(page.locator("#ed-content")).toBeVisible();
   await page.locator("#ed-content").focus();
   await page.keyboard.press("i");
@@ -200,17 +230,34 @@ test("help modal opens with wiki containing vim section", async ({ page }) => {
   await expect(page.locator("#modal")).not.toHaveClass(/show/);
 });
 
-test("shell panel renders frame with mode badge", async ({ page }) => {
+// 注: 旧 shell 面板 (#shell-body/#shell-mode-badge) 已被 sakura 风格重构替换为
+// Terminal / Output / Problems 三页签 (见需求: 底端面板单层 tabs). 这里验证新结构.
+test("bottom panel renders Terminal/Output/Problems tabs", async ({ page }) => {
   await goEditor(page);
-  // 等 setInterval 250ms 拉一次 frame
-  await expect(page.locator("#shell-mode-badge")).toHaveAttribute("data-mode", "NORMAL", { timeout: 3_000 });
-  await expect(page.locator("#shell-mode-badge")).toContainText("NORMAL");
+  await expect(page.locator("#bottom-panel")).toBeAttached();
+  await expect(page.locator('.bottom-tab[data-pane="terminal-pane"]')).toHaveText(/TERMINAL/i);
+  await expect(page.locator('.bottom-tab[data-pane="output-pane"]')).toHaveText(/OUTPUT/i);
+  await expect(page.locator('.bottom-tab[data-pane="problems-pane"]')).toHaveText(/PROBLEMS/i);
+  // 默认折叠, Ctrl+` 展开
+  await expect(page.locator("#bottom-panel")).toHaveAttribute("data-collapsed", "true");
+  await page.keyboard.press("Control+`");
+  await expect(page.locator("#bottom-panel")).toHaveAttribute("data-collapsed", "false", { timeout: 3_000 });
+  await expect(page.locator("#terminal-body")).toBeVisible();
+  await expect(page.locator("#terminal-empty")).toBeVisible();
 });
 
-test("shell click switches to INSERT (left)", async ({ page }) => {
+test("terminal panel starts a real PowerShell session and echoes output", async ({ page }) => {
+  // Windows 上 PowerShell 冷启动 (JIT + profile 加载) 可能要 15s+, 给足余量
+  test.setTimeout(90_000);
   await goEditor(page);
-  await page.locator("#shell-body").click();
-  await expect(page.locator("#shell-mode-badge")).toHaveAttribute("data-mode", "INSERT", { timeout: 2_000 });
+  await page.keyboard.press("Control+`");
+  await page.locator('.bottom-toggle[data-cmd="new-terminal"]').click();
+  await expect(page.locator("#terminal-empty")).toBeHidden({ timeout: 30_000 });
+  await page.locator("#terminal-body").focus();
+  await page.keyboard.type("Write-Host IDE1.0-UAT-OK");
+  await page.keyboard.press("Enter");
+  // PowerShell 真回显
+  await expect(page.locator("#terminal-body")).toContainText("IDE1.0-UAT-OK", { timeout: 30_000 });
 });
 
 test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }) => {
@@ -250,7 +297,7 @@ test("tree folder lazy-load expands children", async ({ page }) => {
   const srcNode = page.locator('.tree-node:has-text("src")').first();
   await srcNode.click();
   // children 加载后应有 main.rs
-  await expect(page.locator("#side-body .tree-node")).toContainText("main.rs", { timeout: 5_000 });
+  await expect(page.locator("#side-body")).toContainText("main.rs", { timeout: 5_000 });
 });
 
 test("sandbox rejects out-of-project read (direct API)", async ({ request }) => {

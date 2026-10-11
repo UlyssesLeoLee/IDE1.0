@@ -25,15 +25,26 @@
     html, body { height: 100%; overflow: hidden; background: var(--bg-edit); color: var(--fg); font: 13px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; }
 
     /* ===== App Layout ===== */
-    #app { display: grid; grid-template-rows: 30px 28px 1fr 22px; grid-template-columns: 44px 240px 1fr; height: 100vh; }
+    #app { display: grid;
+      /* 行: 1=菜单栏 2=主体(活动栏/侧栏/编辑区) 3=底端面板 4=状态栏.
+         底端面板用 auto: 折叠时无高度, 展开时按 #bottom-body 的 240px 占位,
+         不再和状态栏叠在同一个 grid 单元里 (之前两者都在第 4 行, 导致 #bottom-body
+         溢出视口、#status 盖住面板按钮). */
+      grid-template-rows: 30px minmax(0, 1fr) auto 22px;
+      grid-template-columns: 44px 240px minmax(0, 1fr);
+      height: 100vh; }
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 6px; gap: 4px; }
-    #activity-bar { grid-row: 2 / 4; grid-column: 1; background: #333; display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
-    #side-bar { grid-row: 2 / 4; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    #editor-area { grid-row: 2 / 4; grid-column: 3; display: flex; flex-direction: column; min-height: 0; }
-    #bottom-panel { grid-row: 4; grid-column: 1 / -1; background: #007acc; color: white; display: flex; align-items: center; padding: 0 8px; height: 22px; }
-    #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: white; display: flex; align-items: center; padding: 0 8px; height: 22px; display: none; }
-    .status-active #status { display: flex; }
-    .status-active #bottom-panel { display: none; }
+    #activity-bar { grid-row: 2; grid-column: 1; background: #333; display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
+    #side-bar { grid-row: 2; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+    #editor-area { grid-row: 2; grid-column: 3; display: flex; flex-direction: column; min-height: 0; }
+    #bottom-panel { grid-row: 3; grid-column: 1 / -1; display: flex; flex-direction: column; background: #252526; color: white; padding: 0; }
+    #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: white;
+         display: flex; align-items: center; padding: 0 8px; height: 22px; }
+    /* 折叠时只留标题条 (bottom-head), 展开时显示 #bottom-body.
+       之前这里是一条 .status-active #bottom-panel{display:none} 的孤儿规则 ——
+       Ctrl+` 会 toggle status-active, 结果展开时反被隐藏. */
+    #bottom-panel[data-collapsed="true"] #bottom-body { display: none; }
+        .bottom-pane.active { display: block; }
 
         /* ===== Kernel Banner ===== */
     .banner {
@@ -114,7 +125,7 @@
     #ed-content:focus { outline: none; }
 
     /* ===== Bottom Panel (single layer) ===== */
-    #bottom-head { display: flex; align-items: center; height: 28px; background: #252526; border-top: 1px solid var(--border); }
+    #bottom-head { display: flex; align-items: center; gap: 4px; height: 28px; width: 100%; background: #252526; border-top: 1px solid var(--border); }
     .bottom-tabs { display: flex; }
     .bottom-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
     .bottom-tab.active { color: var(--fg); border-bottom-color: var(--blue); background: var(--bg-edit); }
@@ -598,13 +609,19 @@ document.querySelectorAll("[data-cmd='new-terminal']").forEach((b) => {
 });
 document.querySelectorAll("[data-cmd='toggle-bottom']").forEach((b) => {
   b.addEventListener("click", () => {
-    const bp = document.getElementById("bottom-panel");
-    const cur = bp.getAttribute("data-collapsed") === "true";
-    bp.setAttribute("data-collapsed", cur ? "false" : "true");
-    document.getElementById("app").classList.toggle("status-active", cur);
-    b.textContent = cur ? "折叠" : "展开";
+    toggleBottomPanel();
   });
 });
+
+// 折叠/展开底端面板: 只切 data-collapsed, 不碰 status-active (那是状态栏语义)
+function toggleBottomPanel() {
+  const bp = document.getElementById("bottom-panel");
+  if (!bp) return;
+  const collapsed = bp.getAttribute("data-collapsed") === "true";
+  bp.setAttribute("data-collapsed", collapsed ? "false" : "true");
+  const btn = bp.querySelector('.bottom-toggle[data-cmd="toggle-bottom"]');
+  if (btn) btn.textContent = collapsed ? "折叠" : "展开";
+}
 
 // ===== Terminal =====
 async function createTerminal() {
@@ -948,10 +965,14 @@ function paintActive() {
   const t = getActiveTab();
   if (!t) return;
   clampCursor(t);
+  // 重绘会替换子节点, 焦点会掉回 body, 后续按键就不再进 keydown handler.
+  // 之前是否持有焦点, 重绘后补回去.
+  const hadFocus = document.activeElement === edContent;
   edContent.replaceChildren(document.createTextNode(t.lines.join("\n")));
   gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
   setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
   renderTabs();
+  if (hadFocus) edContent.focus();
 }
 
 // 在 INSERT 模式下插入一个字符, 推进光标, 标脏
@@ -1162,6 +1183,46 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   if (e.key === "v") { setMode("VISUAL"); e.preventDefault(); }
 });
 
+// 目录懒加载: 首次点击拉子项并插入到该节点之后
+async function toggleTreeDir(node) {
+  if (node.dataset.expanded === "1") {
+    // 已展开 -> 收起
+    let n = node.nextElementSibling;
+    while (n && n.classList.contains("tree-child")) {
+      const nx = n.nextElementSibling;
+      n.remove();
+      n = nx;
+    }
+    node.dataset.expanded = "";
+    node.classList.add("tree-collapsed");
+    return;
+  }
+  const path = node.dataset.path;
+  node.dataset.expanded = "1";
+  node.classList.remove("tree-collapsed");
+  let entries;
+  try {
+    entries = await invoke("list_dir", { path });
+  } catch (e) {
+    setTip("展开失败: " + e.message);
+    node.dataset.expanded = "";
+    node.classList.add("tree-collapsed");
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const e of entries) {
+    const child = document.createElement("div");
+    child.className = "tree-node tree-child" + (e.is_dir ? " tree-folder tree-collapsed" : " tree-file");
+    child.innerHTML = '<span class="tree-icon">' + (e.is_dir ? "\u{1F4C1}" : "\u{1F4C4}") + "</span>" + escapeHtml(e.name);
+    child.dataset.path = stripVerbatim(e.path);
+    child.dataset.name = e.name;
+    if (e.is_dir) child.addEventListener("click", () => toggleTreeDir(child));
+    else child.addEventListener("click", () => openFile(child.dataset.path));
+    frag.appendChild(child);
+  }
+  node.after(frag);
+}
+
 // ===== Side bar =====
 let currentSidePane = "explorer";
 
@@ -1191,7 +1252,19 @@ function renderSideBar() {
 if (sideTabsEl) sideTabsEl.addEventListener("click", (e) => {
   const b = e.target.closest("[data-side-tab]");
   if (b) showSidePane(b.dataset.sideTab);
-});
+})
+
+// #sb-project-name: 单击 = 重开文件夹选择流程, Shift+单击 = 仅刷新文件树
+if (sideBody) sideBody.addEventListener("click", (e) => {
+  const nameEl = e.target.closest("#sb-project-name");
+  if (!nameEl) return;
+  if (e.shiftKey) {
+    renderExplorer();          // 重新拉 list_dir
+    setTip("已刷新文件树");
+  } else {
+    openFolder();              // 重走打开项目流程
+  }
+});;
 
 document.querySelectorAll(".act-btn").forEach((btn) => {
   btn.addEventListener("click", () => showSidePane(btn.dataset.pane));
@@ -1202,7 +1275,11 @@ async function renderExplorer() {
     sideBody.innerHTML = '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
     return;
   }
-  sideBody.innerHTML = '<div class="sb-section">' + escapeHtml(projectRoot) + "</div>";
+  // 项目根行: 单击 = 换项目, Shift+单击 = 刷新树 (替代旧的 打开/刷新 两个按钮)
+  sideBody.innerHTML =
+    '<div id="sb-project-name" data-tip="点击换项目 · Shift+点击刷新文件树" title="点击换项目 · Shift+点击刷新文件树">' +
+    escapeHtml(String(stripVerbatim(projectRoot)).split(/[\\\/]/).pop() || stripVerbatim(projectRoot)) +
+    "</div>";
   try {
     const entries = await invoke("list_dir", { path: stripVerbatim(projectRoot) });
     for (const e of entries) {
@@ -1210,7 +1287,12 @@ async function renderExplorer() {
       node.className = "tree-node" + (e.is_dir ? " tree-folder" : " tree-file");
       node.innerHTML = '<span class="tree-icon">' + (e.is_dir ? "\u{1F4C1}" : "\u{1F4C4}") + "</span>" + escapeHtml(e.name);
       node.dataset.path = stripVerbatim(e.path);
-      if (!e.is_dir) {
+      node.dataset.name = e.name;
+      if (e.is_dir) {
+        // 目录: 懒加载展开 (再点一次收起)
+        node.classList.add("tree-collapsed");
+        node.addEventListener("click", () => toggleTreeDir(node));
+      } else {
         node.addEventListener("click", () => openFile(node.dataset.path));
       }
       sideBody.appendChild(node);
@@ -1366,9 +1448,7 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
   if (e.ctrlKey && e.key === "`") {
     e.preventDefault();
-    const bp = document.getElementById("bottom-panel");
-    if (bp.getAttribute("data-collapsed") === "true") bp.setAttribute("data-collapsed", "false");
-    else bp.setAttribute("data-collapsed", "true");
+    toggleBottomPanel();
   }
   if (e.key === "Escape") edContent.focus();
 });
