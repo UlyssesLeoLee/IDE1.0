@@ -232,7 +232,12 @@ test("help modal opens with wiki containing vim section", async ({ page }) => {
 
 // 注: 旧 shell 面板 (#shell-body/#shell-mode-badge) 已被 sakura 风格重构替换为
 // Terminal / Output / Problems 三页签 (见需求: 底端面板单层 tabs). 这里验证新结构.
-test("bottom panel renders Terminal/Output/Problems tabs", async ({ page }) => {
+test("bottom panel renders Terminal/Output/Problems tabs", async ({ page, request }) => {
+  // 终端 session 是 server 级全局状态; 前一个用例若留下存活 session,
+  // 页面会认为「已启动」而隐藏 #terminal-empty. 先清干净再断言空状态.
+  for (const sess of (await (await request.get("/api/terminal_list")).json()) ?? []) {
+    await request.post("/api/terminal_close", { data: { id: sess.id } });
+  }
   await goEditor(page);
   await expect(page.locator("#bottom-panel")).toBeAttached();
   await expect(page.locator('.bottom-tab[data-pane="terminal-pane"]')).toHaveText(/TERMINAL/i);
@@ -242,22 +247,32 @@ test("bottom panel renders Terminal/Output/Problems tabs", async ({ page }) => {
   await expect(page.locator("#bottom-panel")).toHaveAttribute("data-collapsed", "true");
   await page.keyboard.press("Control+`");
   await expect(page.locator("#bottom-panel")).toHaveAttribute("data-collapsed", "false", { timeout: 3_000 });
-  await expect(page.locator("#terminal-body")).toBeVisible();
+  // 未启动会话时: 显示空状态提示. terminal-body 此时无内容、折叠为 0 高
+  // (#terminal-body:empty 规则), 所以只断言 attached 而非 visible.
   await expect(page.locator("#terminal-empty")).toBeVisible();
+  await expect(page.locator("#terminal-body")).toBeAttached();
+  await expect(page.locator("#terminal-pane")).toHaveClass(/active/);
 });
 
-test("terminal panel starts a real PowerShell session and echoes output", async ({ page }) => {
+test("terminal panel starts a real PowerShell session and echoes output", async ({ page, request }) => {
   // Windows 上 PowerShell 冷启动 (JIT + profile 加载) 可能要 15s+, 给足余量
   test.setTimeout(90_000);
   await goEditor(page);
   await page.keyboard.press("Control+`");
-  await page.locator('.bottom-toggle[data-cmd="new-terminal"]').click();
+  await page.locator('.bottom-toggle[data-cmd="terminal-new"]').click();
   await expect(page.locator("#terminal-empty")).toBeHidden({ timeout: 30_000 });
   await page.locator("#terminal-body").focus();
   await page.keyboard.type("Write-Host IDE1.0-UAT-OK");
   await page.keyboard.press("Enter");
   // PowerShell 真回显
   await expect(page.locator("#terminal-body")).toContainText("IDE1.0-UAT-OK", { timeout: 30_000 });
+
+  // 关闭会话: 终端 session 是 server 级全局状态, 不关会让后续用例看到
+  // 「已启动」(页面里 #terminal-empty 被永久隐藏), 造成跨用例污染.
+  const sessions = (await (await request.get("/api/terminal_list")).json()) ?? [];
+  for (const sess of sessions) {
+    await request.post("/api/terminal_close", { data: { id: sess.id } });
+  }
 });
 
 test("clicking sb-project-name (no shift) re-opens folder flow", async ({ page }) => {

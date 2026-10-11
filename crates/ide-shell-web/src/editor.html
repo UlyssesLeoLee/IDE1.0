@@ -140,6 +140,7 @@
     .side-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
     .side-tab.active { color: var(--fg); border-bottom-color: var(--blue); }
     #side-body { flex: 1; overflow: auto; padding: 4px; font-size: 12px; }
+    .side-pane { min-height: 100%; }
     .sb-section { padding: 4px 6px; color: var(--fg-muted); text-transform: uppercase; font-size: 10px; font-weight: bold; }
     .tree-node { padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap; }
     .tree-node:hover { background: #2a2a2a; }
@@ -178,11 +179,17 @@
     .bottom-pane { display: none; flex: 1; overflow: auto; }
     .bottom-pane.active { display: flex; flex-direction: column; }
     #terminal-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: 12px; line-height: 1.4; white-space: pre-wrap; }
+    /* 空输出时 terminal-body 不抢高度, 让空状态提示真正可见 */
+    #terminal-body:empty { flex: 0 0 auto; padding: 0; }
     #terminal-body:focus { outline: 1px solid var(--blue); }
     .term-line { padding: 1px 0; }
     .term-prompt { color: var(--blue); font-weight: bold; }
     .term-stderr { color: var(--red); }
-    .terminal-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); flex-direction: column; gap: 8px; }
+    .terminal-empty {
+      display: flex; align-items: center; justify-content: center;
+      flex: 1; min-height: 120px; color: var(--fg-dim);
+      flex-direction: column; gap: 8px; text-align: center;
+    }
     .terminal-empty-hint kbd { background: #444; padding: 1px 6px; border-radius: 3px; font-family: inherit; font-size: 10px; }
 
     #output-body, #problems-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: 12px; }
@@ -452,6 +459,7 @@
       <button class="act-btn" data-pane="search" data-tip="搜索">🔍</button>
       <button class="act-btn" data-pane="scm" data-tip="源代码管理">⎇</button>
       <button class="act-btn" data-pane="outline" data-tip="大纲">≡</button>
+      <button class="act-btn" data-pane="extensions" data-tip="扩展">⊟</button>
     </div>
 
     <!-- Side Bar -->
@@ -479,14 +487,14 @@
           <button class="bottom-tab" data-pane="problems-pane">PROBLEMS</button>
         </div>
         <span class="bottom-spacer"></span>
-        <button class="bottom-toggle" data-cmd="new-terminal" data-tip="新建终端 (+ New Terminal)">+ 新建终端</button>
-        <button class="bottom-toggle" data-cmd="toggle-bottom" data-tip="折叠/展开">折叠</button>
+        <button class="bottom-toggle" data-cmd="terminal-new" data-tip="新建终端 (Ctrl+`)">+ 新建终端</button>
+        <button class="bottom-toggle" data-cmd="bottom-toggle" data-tip="折叠/展开">折叠</button>
       </div>
       <div id="bottom-body">
         <div class="bottom-pane active" id="terminal-pane">
           <div id="terminal-body" tabindex="0"></div>
           <div id="terminal-empty" class="terminal-empty">
-            <div>暂无终端会话</div>
+            <div>No terminal session — 暂无终端会话</div>
             <div class="terminal-empty-hint">点 <kbd>+ 新建终端</kbd> 或按 <kbd>Ctrl</kbd>+<kbd>`</kbd> 打开 PowerShell</div>
           </div>
         </div>
@@ -642,9 +650,7 @@ function selectBottomTab(name) {
   const pane = document.getElementById(name);
   if (tab) tab.classList.add("active");
   if (pane) pane.classList.add("active");
-  if (name === "terminal-pane" && !terminalId) {
-    createTerminal();
-  }
+
 }
 document.querySelectorAll(".bottom-tab").forEach((btn) => {
   btn.addEventListener("click", () => selectBottomTab(btn.dataset.pane));
@@ -660,14 +666,30 @@ document.querySelectorAll("[data-cmd='toggle-bottom']").forEach((b) => {
 });
 
 // 折叠/展开底端面板: 只切 data-collapsed, 不碰 status-active (那是状态栏语义)
+// 底端面板 tab 切换: .bottom-pane.active + .bottom-tab.active 双向同步
+function switchBottomPane(paneId) {
+  document.querySelectorAll(".bottom-pane").forEach((p) =>
+    p.classList.toggle("active", p.id === paneId));
+  document.querySelectorAll(".bottom-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.pane === paneId));
+  const bp = document.getElementById("bottom-panel");
+  if (bp && bp.getAttribute("data-collapsed") === "true") bp.setAttribute("data-collapsed", "false");
+}
+
 function toggleBottomPanel() {
   const bp = document.getElementById("bottom-panel");
   if (!bp) return;
   const collapsed = bp.getAttribute("data-collapsed") === "true";
   bp.setAttribute("data-collapsed", collapsed ? "false" : "true");
-  const btn = bp.querySelector('.bottom-toggle[data-cmd="toggle-bottom"]');
+  const btn = bp.querySelector('.bottom-toggle[data-cmd="bottom-toggle"]');
   if (btn) btn.textContent = collapsed ? "折叠" : "展开";
 }
+
+// 底端 tab 点击
+if (bottomHead) bottomHead.addEventListener("click", (e) => {
+  const b = e.target.closest(".bottom-tab");
+  if (b) switchBottomPane(b.dataset.pane);
+});
 
 // ===== Terminal =====
 async function createTerminal() {
@@ -822,9 +844,9 @@ function dispatchCommand(cmd) {
     case "show-search":      switchSidePane("search"); break;
     case "show-scm":         switchSidePane("scm"); break;
     case "show-outline":     switchSidePane("outline"); break;
-    case "show-terminal":    switchBottomPane("terminal-body"); break;
-    case "show-output":      switchBottomPane("output-body"); break;
-    case "show-problems":    switchBottomPane("problems-body"); break;
+    case "show-terminal":    switchBottomPane("terminal-pane"); break;
+    case "show-output":      switchBottomPane("output-pane"); break;
+    case "show-problems":    switchBottomPane("problems-pane"); break;
     case "toggle-status":    toggleStatusBar(); break;
     case "toggle-word-wrap": execCmd("toggleWordWrap"); break;
     case "toggle-line-num":  execCmd("toggleLineNumbers"); break;
@@ -873,8 +895,12 @@ function dispatchCommand(cmd) {
     case "shortcuts":        showShortcuts(); break;
     case "about":            showAbout(); break;
     case "help":             showWiki(); break;
-    // 兼容 旧 tb-btn
-    case "new-terminal":     createTerminal(); break;
+    case "modal-close":      closeModal(); break;
+    // 兼容: 菜单栏用 new-terminal, 底端面板按钮用 terminal-new
+    case "new-terminal":
+    case "terminal-new":    createTerminal(); break;
+    case "toggle-bottom":
+    case "bottom-toggle":   toggleBottomPanel(); break;
   }
 }
 
@@ -1872,6 +1898,16 @@ async function toggleTreeDir(node) {
   node.after(frag);
 }
 
+// Extensions 面板: 目前没有插件运行时, 给出明确占位 + 配置入口说明
+function renderExtensions(host) {
+  host = host || sideBody;
+  host.innerHTML =
+    '<div class="sb-section">扩展</div>' +
+    '<div class="empty-hint">尚无已安装扩展<br><br>' +
+    '扩展面板为占位实现。sakura-rs 已有 wasm 插件加载骨架<br>' +
+    '(crates/sakura-rs/src/plugin.rs), 接入后此处列出已装扩展.</div>';
+}
+
 // ===== Side bar =====
 let currentSidePane = "explorer";
 
@@ -1881,21 +1917,29 @@ function showSidePane(name) {
   renderSideBar();
 }
 
+// 每个 pane 渲染成 <div id="<name>-pane.active">, 这样 #scm-pane.active /
+// #search-pane.active 这类断言成立, 也保持「同一时刻只有一个 pane active」的语义.
+const SIDE_PANES = {
+  explorer:   { title: "资源管理器", render: renderExplorer },
+  search:     { title: "搜索",       render: renderSearch },
+  scm:        { title: "源代码管理", render: renderScm },
+  outline:    { title: "大纲",       render: renderOutline },
+  extensions: { title: "扩展",       render: renderExtensions },
+};
+
 function renderSideBar() {
-  const paneDefs = [
-    { pane: "explorer", title: "资源管理器" },
-    { pane: "search", title: "搜索" },
-    { pane: "scm", title: "源代码管理" },
-    { pane: "outline", title: "大纲" },
-  ];
-  sideTabsEl.innerHTML = paneDefs.map(t =>
-    '<button class="side-tab ' + (t.pane === currentSidePane ? "active" : "") + '" data-side-tab="' + t.pane + '">' + t.title + "</button>"
-  ).join("");
-  // Render body based on pane
-  if (currentSidePane === "explorer") renderExplorer();
-  else if (currentSidePane === "search") renderSearch();
-  else if (currentSidePane === "scm") renderScm();
-  else if (currentSidePane === "outline") renderOutline();
+  sideTabsEl.innerHTML = Object.keys(SIDE_PANES).map((key) => {
+    const def = SIDE_PANES[key];
+    const cls = key === currentSidePane ? "side-tab active" : "side-tab";
+    return '<button class="' + cls + '" data-side-tab="' + key + '">' + def.title + "</button>";
+  }).join("");
+  // 只渲染当前 pane; 旧契约要求 #<name>-pane.active 存在
+  const active = document.createElement("div");
+  active.id = currentSidePane + "-pane";
+  active.className = "side-pane active";
+  sideBody.replaceChildren(active);
+  const def = SIDE_PANES[currentSidePane];
+  if (def) def.render(active);
 }
 
 if (sideTabsEl) sideTabsEl.addEventListener("click", (e) => {
@@ -1919,13 +1963,14 @@ document.querySelectorAll(".act-btn").forEach((btn) => {
   btn.addEventListener("click", () => showSidePane(btn.dataset.pane));
 });
 
-async function renderExplorer() {
+async function renderExplorer(host) {
+  host = host || sideBody;
   if (!projectRoot) {
-    sideBody.innerHTML = '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
+    host.innerHTML = '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
     return;
   }
   // 项目根行: 单击 = 换项目, Shift+单击 = 刷新树 (替代旧的 打开/刷新 两个按钮)
-  sideBody.innerHTML =
+  host.innerHTML =
     '<div id="sb-project-name" data-tip="点击换项目 · Shift+点击刷新文件树" title="点击换项目 · Shift+点击刷新文件树">' +
     escapeHtml(String(stripVerbatim(projectRoot)).split(/[\\\/]/).pop() || stripVerbatim(projectRoot)) +
     "</div>";
@@ -1944,15 +1989,16 @@ async function renderExplorer() {
       } else {
         node.addEventListener("click", () => openFile(node.dataset.path));
       }
-      sideBody.appendChild(node);
+      host.appendChild(node);
     }
   } catch (e) {
-    sideBody.innerHTML += '<div class="empty-hint">读取失败: ' + escapeHtml(e.message) + "</div>";
+    host.innerHTML += '<div class="empty-hint">读取失败: ' + escapeHtml(e.message) + "</div>";
   }
 }
 
-function renderSearch() {
-  sideBody.innerHTML = '<input id="search-input" placeholder="搜索文件..." style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;border-radius:3px;font:inherit;" />' +
+function renderSearch(host) {
+  host = host || sideBody;
+  host.innerHTML = '<input id="search-input" placeholder="搜索文件..." style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;border-radius:3px;font:inherit;" />' +
     '<div id="search-results" style="margin-top:8px;"></div>';
   const input = document.getElementById("search-input");
   input.addEventListener("keydown", async (e) => {
@@ -1977,12 +2023,14 @@ function renderSearch() {
   input.focus();
 }
 
-async function renderScm() {
-  sideBody.innerHTML = '<div class="sb-section">源代码管理</div><div id="scm-status">加载中...</div>';
+async function renderScm(host) {
+  host = host || sideBody;
+  host.innerHTML = '<div class="sb-section">源代码管理</div><div id="scm-status">加载中...</div>';
   try {
     const j = await invoke("scm_status");
-    const statusEl = document.getElementById("scm-status");
-    statusEl.innerHTML = '<div class="empty-hint">当前分支: <b>' + escapeHtml(j.branch || "(no branch)") + "</b></div>";
+    const statusEl = host.querySelector("#scm-status");
+    statusEl.innerHTML =
+      '<div class="empty-hint">当前分支: <b id="scm-branch">' + escapeHtml(j.branch || "(no branch)") + "</b></div>";
     if (j.files) {
       for (const f of j.files) {
         const row = document.createElement("div");
@@ -1996,13 +2044,14 @@ async function renderScm() {
   }
 }
 
-async function renderOutline() {
+async function renderOutline(host) {
+  host = host || sideBody;
   const at = getActiveTab();
   if (!at) {
-    sideBody.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
+    host.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
     return;
   }
-  sideBody.innerHTML = '<div class="sb-section">' + escapeHtml(at.path.split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
+  host.innerHTML = '<div class="sb-section">' + escapeHtml(at.path.split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
   try {
     const data = await invoke("outline", { path: at.path });
     const list = document.getElementById("outline-list");
@@ -2077,17 +2126,16 @@ function showHelp() {
 }
 
 // ===== Command router =====
+// 所有 [data-cmd] 统一走 dispatchCommand (switch-case 单一事实来源).
+// 之前这里是一份影子 router, 只认旧命名且 toggle-bottom 分支会 click 自己 -> 死循环,
+// 同时抢在 .menu-row 委托之前, 导致 dispatchCommand 永远收不到命令.
 document.addEventListener("click", (e) => {
+  // 菜单行有自己的委托 (处理嵌套 submenu), 这里跳过避免双派发
+  if (e.target.closest(".menu-row")) return;
   const btn = e.target.closest("[data-cmd]");
   if (!btn) return;
-  const cmd = btn.dataset.cmd;
-  if (cmd === "open-folder") openFolder();
-  else if (cmd === "save") saveActive();
-  else if (cmd === "close-tab" && activeTabId) closeTab(activeTabId);
-  else if (cmd === "new-terminal") createTerminal();
-  else if (cmd === "toggle-bottom") document.querySelector("[data-cmd='toggle-bottom']").click();
-  else if (cmd === "help") showHelp();
-  else if (cmd === "modal-close") closeModal();
+  if (btn.classList.contains("open-btn") || btn.classList.contains("menu-item")) return;
+  dispatchCommand(btn.dataset.cmd);
 });
 
 // ===== Global keyboard =====
@@ -2095,9 +2143,18 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
   if (e.key === "F1") { e.preventDefault(); showHelp(); }
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
-  if (e.ctrlKey && e.key === "`") {
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
     e.preventDefault();
-    toggleBottomPanel();
+    showSidePane("search");
+    return;
+  }
+  if (e.ctrlKey && e.key === "`") {
+    // Ctrl+` = 终端开关: 折叠时展开并切到 Terminal; 已展开时也切回 Terminal.
+    // 不做「再次按下即折叠」—— 折叠交给面板上的「折叠」按钮 (data-cmd=bottom-toggle).
+    e.preventDefault();
+    const bp = document.getElementById("bottom-panel");
+    if (bp) bp.setAttribute("data-collapsed", "false");
+    switchBottomPane("terminal-pane");
   }
   if (e.key === "Escape") edContent.focus();
 });
@@ -2223,12 +2280,6 @@ function switchSidePane(pane) {
   const btn = document.querySelector(`.act-btn[data-pane="${pane}"]`);
   if (btn) btn.click();
   else setTip("未找到面板: " + pane);
-}
-
-function switchBottomPane(paneId) {
-  const tab = document.querySelector(`.bottom-tab[data-pane="${paneId.replace("-body","")}"]`);
-  if (tab) tab.click();
-  else setTip("未找到底端面板: " + paneId);
 }
 
 function toggleStatusBar() {
