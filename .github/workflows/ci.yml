@@ -335,12 +335,30 @@ uat-playwright:
         npm ci --no-audit --no-fund
         npx playwright install --with-deps chromium
 
-    - name: Run Playwright e2e (40 cases)
+    - name: Desktop/web frontend parity audit
+      run: |
+        cargo build -p ide-shell-desktop --bin ide-shell-desktop
+        node tests/uat/audit-desktop-parity.mjs
+
+    - name: Run Playwright e2e
       working-directory: tests/uat
       env:
         IDE_SHELL_WEB_BIN: ../../target/debug/ide-shell-web
         PLAYWRIGHT_HTML_REPORT: 1
       run: npx playwright test --reporter=html
+
+    - name: Command audit (0 throw / 0 stub / 0 unrouted)
+      working-directory: tests/uat
+      env:
+        IDE_SHELL_WEB_BIN: ../../target/debug/ide-shell-web
+      run: |
+        (../../target/debug/ide-shell-web &>/tmp/web.log &) 
+        for i in $(seq 1 30); do
+          curl -sf http://127.0.0.1:8123/api/frame >/dev/null && break
+          sleep 1
+        done
+        node audit-commands.mjs
+        pkill -f ide-shell-web || true
 
     - name: Upload Playwright report
       if: always()

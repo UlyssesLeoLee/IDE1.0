@@ -789,11 +789,56 @@ async function fetchApi(path, opts) {
   return ct.includes("json") ? r.json() : r.text();
 }
 
+// Tauri command 名与 web HTTP 端点名的差异表.
+// 桌面版注册的是 #[tauri::command] fn search_cmd, 而 HTTP 端点是 /api/search;
+// 其余同名. 新增命令时在这里补一行即可, 免得两端命名漂移.
+const TAURI_CMD_ALIAS = { search: "search_cmd" };
+
 async function invoke(name, args) {
   if (inTauri && window.__TAURI_INTERNALS__.invoke) {
-    return window.__TAURI_INTERNALS__.invoke(name, args || {});
+    return window.__TAURI_INTERNALS__.invoke(TAURI_CMD_ALIAS[name] || name, args || {});
   }
   return fetchApi("/api/" + name, { method: "POST", body: args || {} });
+}
+
+// 终端输出两条通道:
+// - web 版: 轮询 GET /api/terminal_output?id=X (后端缓冲 chunk)
+// - Tauri 版: 后端 spawn_reader 通过 app.emit 主动推 "terminal://output" 事件,
+//             没有轮询端点. 这里用 listen() 订阅, 避免轮询空转.
+let TAURI_TERMINAL_LISTEN = null;
+
+async function setupTerminalChannel() {
+  if (!inTauri || !window.__TAURI_INTERNALS__) return;
+  if (TAURI_TERMINAL_LISTEN) return;                 // 只订阅一次
+  const ev = window.__TAURI_INTERNALS__.event;
+  // Tauri 2: import('@tauri-apps/api/event') 或 window.__TAURI_INTERNALS__.event.listen
+  const listen = ev && (ev.listen || (ev.__TAURI_INTERNAL__ && ev.__TAURI_INTERNAL__.listen));
+  if (typeof listen !== "function") {
+    setTip("Tauri 事件通道不可用, 终端输出将不可见");
+    return;
+  }
+  try {
+    await listen("terminal://output", (e) => {
+      const p = e.payload || {};
+      if (!p.id || (terminalId && p.id !== terminalId)) return;
+      if (p.data) appendTerminal(p.data);
+      terminalBody.scrollTop = terminalBody.scrollHeight;
+    });
+    await listen("terminal://closed", (e) => {
+      const p = e.payload || {};
+      if (terminalId && p.id === terminalId) appendTerminal("\n[会话已结束]");
+    });
+    TAURI_TERMINAL_LISTEN = true;
+  } catch (e) {
+    setTip("终端事件订阅失败: " + e.message);
+  }
+}
+
+// web 版轮询入口 (Tauri 走事件, 不需要)
+async function fetchTerminalOutput(id) {
+  if (inTauri && window.__TAURI_INTERNALS__.invoke) return null;
+  const res = await fetch("/api/terminal_output?id=" + encodeURIComponent(id));
+  return res.ok ? res.json() : null;
 }
 
 // ===== Tooltip =====
@@ -929,6 +974,7 @@ if (bottomHead) bottomHead.addEventListener("click", (e) => {
 // ===== Terminal =====
 async function createTerminal() {
   if (terminalId) return;
+  if (inTauri) await setupTerminalChannel();
   try {
     const info = await invoke("terminal_create", {});
     terminalId = info.id;
@@ -942,10 +988,10 @@ async function createTerminal() {
 
 async function pollTerminalOutput() {
   if (!terminalId) return;
+  if (inTauri) return;               // Tauri 走事件推送, 不轮询
   try {
-    const data = await fetch("/api/terminal_output?id=" + terminalId);
-    if (!data.ok) { setTimeout(pollTerminalOutput, 200); return; }
-    const j = await data.json();
+    const j = await fetchTerminalOutput(terminalId);
+    if (!j) { setTimeout(pollTerminalOutput, 200); return; }
     if (j.chunks && j.chunks.length > 0) {
       for (const chunk of j.chunks) {
         appendTerminal(chunk);
