@@ -686,3 +686,282 @@ test.describe("命令审计 (sakura 功能覆盖)", () => {
     if (body.ok === false) expect(typeof body.error).toBe("string");
   });
 });
+
+test.describe("sakura 平替能力 (第二批)", () => {
+  test.beforeEach(async ({ page }) => {
+    await goEditor(page);
+    await page.evaluate(() => { try { (window as any).closeModal(); } catch (_) { /* ignore */ } });
+  });
+
+  test("行操作: 上移行 / 下移行 / 上下插入 / 上下删除 / 合并", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    const reset = (row = 0) => page.evaluate((r) => {
+      const t = (window as any).activeTab();
+      t.lines = ["A", "B", "C", "D"]; t.cursor = { row: r, col: 0 }; t.sel = null;
+      (window as any).renderVim(t);
+    }, row);
+
+    // 上移行: A/B 交换
+    await reset();
+    await page.evaluate(() => (window as any).dispatchCommand("move-line-down"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["B", "A", "C", "D"]);
+    await page.evaluate(() => (window as any).dispatchCommand("move-line-up"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["A", "B", "C", "D"]);
+
+    // 上下插入空行
+    await reset();
+    await page.evaluate(() => (window as any).dispatchCommand("add-line-below"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines.length)).toBe(5);
+    await reset();
+    await page.evaluate(() => (window as any).dispatchCommand("add-line-above"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines.length)).toBe(5);
+
+    // 上下删除
+    await reset(1);
+    await page.evaluate(() => (window as any).dispatchCommand("delete-line-up"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["B", "C", "D"]);
+    await reset();
+    await page.evaluate(() => (window as any).dispatchCommand("delete-line-down"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["A", "C", "D"]);
+
+    // 与上一行合并
+    await reset(1);
+    await page.evaluate(() => (window as any).dispatchCommand("join-with-prev"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["AB", "C", "D"]);
+  });
+
+  test("行排序 / 去重 / 反转 / 压缩空白", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    const setLines = (lines: string[]) => page.evaluate((ls) => {
+      const t = (window as any).activeTab();
+      t.lines = ls; t.cursor = { row: 0, col: 0 }; t.sel = null;
+      (window as any).renderVim(t);
+    }, lines);
+    const getLines = () => page.evaluate(() => (window as any).activeTab().lines.slice());
+
+    await setLines(["10", "2", "1"]);
+    await page.evaluate(() => (window as any).sortLines(true));
+    expect(await getLines()).toEqual(["1", "2", "10"]);       // 自然排序 (2 < 10)
+
+    await setLines(["x", "y", "x", "z", "y"]);
+    await page.evaluate(() => (window as any).dedupeLines());
+    expect(await getLines()).toEqual(["x", "y", "z"]);
+
+    await setLines(["1", "2", "3"]);
+    await page.evaluate(() => (window as any).reverseLines());
+    expect(await getLines()).toEqual(["3", "2", "1"]);
+
+    await setLines(["a    b", "c  "]);
+    await page.evaluate(() => (window as any).removeDuplicateSpaces());
+    expect(await getLines()).toEqual(["a b", "c"]);
+  });
+
+  test("剪贴板历史: 多次复制后列出并可恢复", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["first", "second", "third"];
+      (window as any).renderVim(t);
+      (window as any).pushClip("first");
+      (window as any).pushClip("second");
+      (window as any).pushClip("first");     // 去重后置顶
+    });
+    const hist = await page.evaluate(() => (window as any).CLIP_HISTORY.map((c) => c.text));
+    expect(hist).toEqual(["first", "second"]);
+
+    await page.evaluate(() => (window as any).dispatchCommand("clip-history"));
+    await expect(page.locator("#modal")).toHaveClass(/show/);
+    await expect(page.locator('#md-body [data-clip="0"]')).toContainText("first");
+  });
+
+  test("缩放: 菜单/快捷键/Ctrl+滚轮 都改变字号", async ({ page }) => {
+    await goEditor(page);
+    await page.evaluate(() => (window as any).setFontSize(14));
+
+    await page.evaluate(() => (window as any).dispatchCommand("zoom-in"));
+    expect(await page.evaluate(() => (window as any).VIEW_STATE.fontSize)).toBe(15);
+    await page.evaluate(() => (window as any).dispatchCommand("zoom-out"));
+    expect(await page.evaluate(() => (window as any).VIEW_STATE.fontSize)).toBe(14);
+    await page.evaluate(() => (window as any).dispatchCommand("zoom-reset"));
+    expect(await page.evaluate(() => (window as any).VIEW_STATE.fontSize)).toBe(14);
+
+    await page.evaluate(() => (window as any).setFontSize(20));
+    expect(await page.evaluate(() => document.getElementById("ed-content").style.fontSize)).toBe("20px");
+  });
+
+  test("行尾符切换影响保存内容", async ({ page, request }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("UAT_ROUNDTRIP.txt")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      (window as any).activeTab().lines = ["a", "b"];
+      (window as any).convertEol("crlf");
+    });
+    const eol = await page.evaluate(() => window.FILE_EOL);
+    expect(eol).toBe("\r\n");
+
+    await page.evaluate(() => (window as any).dispatchCommand("save"));
+    await page.waitForTimeout(400);
+    const back = await page.evaluate(async () => {
+      const t = (window as any).activeTab();
+      const res = await fetch("/api/read_file", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: t.path.replace(/^\\\\\?\\/, "") }),
+      });
+      return (await res.json()).content;
+    });
+    expect(back).toContain("\r\n");
+
+    // 还原成 LF, 避免污染 fixture
+    await page.evaluate(() => (window as any).convertEol("lf"));
+    await page.evaluate(() => (window as any).dispatchCommand("save"));
+    await page.waitForTimeout(400);
+  });
+
+  test("时间戳插入 (行首模式)", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["log line"];
+      t.cursor = { row: 0, col: 0 };
+      (window as any).renderVim(t);
+      const w: any = window;
+      w.STAMP.date = true; w.STAMP.time = false; w.STAMP.datetime = false; w.STAMP.mode = "line";
+      (window as any).dispatchCommand("insert-stamp");
+    });
+    const line = await page.evaluate(() => (window as any).activeTab().lines[0]);
+    expect(line).toMatch(/^\[\d{4}\/\d{2}\/\d{2}\] log line$/);
+  });
+
+  test("多重光标: 加光标后一次输入影响多处", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["alpha", "beta", "gamma"];
+      t.cursor = { row: 0, col: 0 }; t.sel = null;
+      (window as any).renderVim(t);
+      (window as any).addCursor(t, 1, 0);
+      (window as any).addCursor(t, 2, 0);
+    });
+    expect(await page.evaluate(() => (window as any).cursorsOf((window as any).activeTab()).length)).toBe(3);
+
+    await page.evaluate(() => (window as any).insertCharMulti("*"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["*alpha", "*beta", "*gamma"]);
+    // DOM 上有三个 caret 标记
+    expect(await page.locator("#ed-content .caret-mark").count()).toBe(3);
+
+    await page.evaluate(() => (window as any).backspaceMulti());
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["alpha", "beta", "gamma"]);
+
+    await page.evaluate(() => (window as any).clearCursors((window as any).activeTab()));
+    expect(await page.evaluate(() => (window as any).cursorsOf((window as any).activeTab()).length)).toBe(1);
+  });
+
+  test("列块选择: 删除矩形区域", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["abcdef", "ghijkl", "mnopqr"];
+      t.cursor = { row: 0, col: 0 }; t.sel = null;
+      (window as any).startColumnSelect(0, 2);
+      (window as any).extendColumnSelect(2, 4);   // 0..2 行, 2..4 列
+      (window as any).renderVim(t);
+    });
+    await expect(page.locator("#ed-content .col-sel-active").first()).toBeVisible();
+
+    await page.evaluate(() => (window as any).dispatchCommand("column-delete"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines)).toEqual(["abef", "ghkl", "mnqr"]);
+  });
+
+  test("自动补全: 关键字 + 内建 + 文件内标识符", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    // 必须用 .rs 文件: README.md 会被识别为 markdown, 没有 Rust 关键字/内建.
+    // 用 openFile 直接开顶层 .rs, 不依赖树节点点击顺序.
+    await page.evaluate(() => window.openFile("D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/fold_test.rs"));
+    await waitForTab(page);
+
+    const cands = await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      // 前缀 "cl" 命中: Rust 内建 clone / clone_from + 文件内标识符 cloneMyThing
+      t.lines = ["fn cloneMyThing() {}", "let myHelperVariable = 1;", "cl"];
+      t.cursor = { row: 2, col: 2 };
+      (window as any).renderVim(t);
+      return (window as any).completionCandidates(t, "cl");
+    });
+    expect(cands).toContain("clone");              // Rust 内建 (非关键字)
+    expect(cands).toContain("cloneMyThing");       // 文件内标识符
+
+    await page.evaluate(() => (window as any).showCompletion());
+    await expect(page.locator("#completion-popup")).toBeVisible();
+
+    await page.evaluate(() => {
+      const list = (window as any).COMPLETE_STATE.list;
+      const at = list.indexOf("cloneMyThing");
+      if (at >= 0) (window as any).COMPLETE_STATE.idx = at;
+      (window as any).applyCompletion();
+    });
+    expect(await page.evaluate(() => (window as any).activeTab().lines[2])).toBe("cloneMyThing");
+  });
+
+  test("跳转到定义 (本地符号)", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["fn helper() {}", "", "helper()"];
+      t.cursor = { row: 2, col: 2 };
+      (window as any).renderVim(t);
+      (window as any).dispatchCommand("goto-def");
+    });
+    expect(await page.evaluate(() => (window as any).activeTab().cursor.row)).toBe(0);
+  });
+
+  test("缩略图可开关并渲染行条", async ({ page }) => {
+    await goEditor(page);
+    await openProject(page, FIXTURE_ROOT);
+    await page.locator('.tree-node:has-text("README")').click();
+    await waitForTab(page);
+
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["let alpha = 1;", "let beta = 22;", "let gammaLonger = 333;"];
+      (window as any).renderVim(t);
+      (window as any).dispatchCommand("toggle-minimap");
+    });
+    await expect(page.locator("#minimap")).toBeVisible();
+    expect(await page.locator("#minimap .mm-row").count()).toBe(3);
+
+    await page.evaluate(() => (window as any).dispatchCommand("toggle-minimap"));
+    expect(await page.locator("#minimap").count()).toBe(0);
+  });
+});

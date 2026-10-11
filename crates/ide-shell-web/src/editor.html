@@ -159,6 +159,15 @@
     #minimap .mm-row:hover { background: #2a2d2e; }
     #minimap .mm-row i { display: block; height: 2px; background: #555; flex: 0 0 auto; }
     #ed-content .sel-active { background: #264f78; }
+    #ed-content .col-sel-active { background: #7a3e9d; }
+    #ed-content .caret-mark { color: var(--blue); font-weight: bold; }
+    #completion-popup {
+      position: absolute; z-index: 300; min-width: 160px; max-height: 220px; overflow: auto;
+      background: #252526; border: 1px solid #454545; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+      font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+    }
+    #completion-popup .cmp-row { padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+    #completion-popup .cmp-row.active { background: #094771; color: #fff; }
     #ed-content .sel-prefix { background: #3a3d41; }
     .opt-row { padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
     .opt-row:hover { background: #2a2d2e; }
@@ -298,6 +307,21 @@
           <div class="menu-row" data-cmd="select-all" data-shortcut="Ctrl+A"><span>全选</span><span class="mr-shortcut">Ctrl+A</span></div>
           <div class="menu-row" data-cmd="delete-line" data-shortcut="Ctrl+D"><span>删除行</span><span class="mr-shortcut">Ctrl+D</span></div>
           <div class="menu-row" data-cmd="duplicate-line" data-shortcut="Ctrl+Shift+D"><span>行复制</span><span class="mr-shortcut">Ctrl+Shift+D</span></div>
+          <div class="menu-row" data-cmd="move-line-up" data-shortcut="Ctrl+Shift+Up"><span>上移行</span><span class="mr-shortcut">Ctrl+Shift+Up</span></div>
+          <div class="menu-row" data-cmd="move-line-down" data-shortcut="Ctrl+Shift+Down"><span>下移行</span><span class="mr-shortcut">Ctrl+Shift+Down</span></div>
+          <div class="menu-row" data-cmd="add-line-above"><span>在上方插入空行</span></div>
+          <div class="menu-row" data-cmd="add-line-below"><span>在下方插入空行</span></div>
+          <div class="menu-row" data-cmd="delete-line-up" data-shortcut="Ctrl+Shift+Backspace"><span>删除上方行</span><span class="mr-shortcut">Ctrl+Shift+Backspace</span></div>
+          <div class="menu-row" data-cmd="delete-line-down" data-shortcut="Ctrl+Delete"><span>删除下方行</span><span class="mr-shortcut">Ctrl+Delete</span></div>
+          <div class="menu-row" data-cmd="join-with-prev" data-shortcut="Ctrl+J"><span>与上一行合并</span><span class="mr-shortcut">Ctrl+J</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="line-ops"><span>行排序 / 去重 / 反转</span></div>
+          <div class="menu-row" data-cmd="encoding"><span>编码转换</span></div>
+          <div class="menu-row" data-cmd="eol"><span>行尾符转换</span></div>
+          <div class="menu-row" data-cmd="clip-history" data-shortcut="Ctrl+Shift+V"><span>剪贴板历史</span><span class="mr-shortcut">Ctrl+Shift+V</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="column-delete"><span>列块删除</span><span class="mr-shortcut">Alt+拖选</span></div>
+          <div class="menu-row" data-cmd="column-replace"><span>列块替换</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row menu-submenu" data-submenu="convert">
             <span>转换</span><span class="mr-shortcut">▶</span>
@@ -375,6 +399,11 @@
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="font-bigger" data-shortcut="Ctrl+="><span>字体放大</span><span class="mr-shortcut">Ctrl+=</span></div>
           <div class="menu-row" data-cmd="font-smaller" data-shortcut="Ctrl+-"><span>字体缩小</span><span class="mr-shortcut">Ctrl+-</span></div>
+          <div class="menu-row" data-cmd="zoom-in" data-shortcut="Ctrl+滚轮上"><span>放大</span><span class="mr-shortcut">Ctrl+滚轮</span></div>
+          <div class="menu-row" data-cmd="zoom-out"><span>缩小</span></div>
+          <div class="menu-row" data-cmd="zoom-reset" data-shortcut="Ctrl+0"><span>重置缩放</span><span class="mr-shortcut">Ctrl+0</span></div>
+          <div class="menu-row" data-cmd="completion" data-shortcut="Ctrl+Space"><span>代码补全</span><span class="mr-shortcut">Ctrl+Space</span></div>
+          <div class="menu-row" data-cmd="goto-def" data-shortcut="F12"><span>跳转到定义</span><span class="mr-shortcut">F12</span></div>
           <div class="menu-row menu-submenu" data-submenu="theme">
             <span>主题</span><span class="mr-shortcut">▶</span>
             <div class="submenu-dropdown">
@@ -414,6 +443,9 @@
               <div class="menu-row" data-cmd="plugin-manage"><span>管理</span></div>
             </div>
           </div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="insert-stamp"><span>插入时间戳</span></div>
+          <div class="menu-row" data-cmd="stamp-config"><span>时间戳设置</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="customize-keys" data-shortcut="Ctrl+Alt+K"><span>自定义键</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
         </div>
@@ -562,6 +594,52 @@ let __ready = false;
 window.__ideReady = function() { return __ready; };
 
 // ===== Globals =====
+
+// 内建/标准库常用项 (补全用; 关键字表不含这些)
+const BUILTINS = {
+  rust: ["clone","println","print","format","vec","String","Vec","Option","Some","None","Result","Ok","Err",
+         "panic","assert","assert_eq","unwrap","expect","iter","map","filter","collect","push","len",
+         "is_empty","to_string","as_str","clone_from","matches","write","writeln","cfg","derive"],
+  python: ["print","len","range","enumerate","zip","open","str","int","float","list","dict","set",
+           "tuple","sorted","sum","min","max","abs","map","filter","lambda","self","super","isinstance"],
+  javascript: ["console","Array","Object","String","Number","Boolean","Promise","Map","Set","JSON","Math",
+               "Date","RegExp","Error","document","window","fetch","then","catch","push","length","forEach"],
+  typescript: ["string","number","boolean","any","unknown","never","void","Array","Promise","Record","Partial",
+               "console","JSON","Math","Date","interface","type","enum","readonly","public","private"],
+  go: ["fmt","Println","Printf","Errorf","make","new","append","copy","delete","len","cap","close","nil","true","false"],
+  c: ["printf","scanf","malloc","free","memset","memcpy","strlen","strcmp","strcpy","fopen","fclose","NULL","size_t"],
+  cpp: ["cout","cin","endl","std","vector","string","map","set","nullptr","printf","cin","sort","unique"],
+  java: ["System","String","Integer","Double","Boolean","Math","ArrayList","HashMap","List","Map","println","out"],
+  csharp: ["Console","WriteLine","string","int","double","bool","var","List","Dictionary","Task","using","namespace"],
+  ruby: ["puts","print","require","attr_accessor","each","map","select","new","nil","true","false","def","end"],
+  bash: ["echo","cd","ls","cat","grep","sed","awk","find","mkdir","rm","cp","mv","export","local","function","return"],
+  lua: ["print","pairs","ipairs","type","tostring","tonumber","pcall","error","require","local","function","end"],
+  sql: ["SELECT","FROM","WHERE","INSERT","UPDATE","DELETE","JOIN","LEFT","INNER","GROUP","ORDER","BY","LIMIT","AS","ON","COUNT","SUM"],
+  markdown: ["#","##","###","**bold**","*italic*","`code`","-","1.",">[", "```"],
+  html: ["div","span","p","a","img","ul","li","table","tr","td","th","h1","h2","h3","form","input","button"],
+  css: ["color","background","margin","padding","border","display","flex","grid","position","width","height","font-size"],
+  json: ["true","false","null"],
+  yaml: ["true","false","null","yes","no"],
+  toml: ["true","false"],
+  plain: [],
+};
+
+
+/* 提前声明: window API (L2960 附近) 与多处命令会引用这些状态,
+   集中放在 Globals 之后避免 TDZ. */
+// --- FILE_EOL ---
+let FILE_EOL = "\n";
+// --- CLIP_HISTORY ---
+const CLIP_HISTORY = [];
+// --- STAMP ---
+const STAMP = { date: false, time: false, datetime: false, mode: "line" };
+// --- COMPLETE_STATE ---
+let COMPLETE_STATE = { list: [], idx: -1, prefix: "" };
+// --- EOLS ---
+const EOLS = { lf: "\n", crlf: "\r\n", cr: "\r" };
+// --- ENCODINGS ---
+const ENCODINGS = ["utf-8", "utf-8-bom", "utf-16le", "utf-16be", "shift_jis", "euc-jp", "gbk", "big5", "latin1"];
+
 
 /* 提前声明: 下面的 const/let 会被命令表在初始化时引用,
    放在 Globals 之后避免 TDZ (Cannot access X before initialization). */
@@ -971,8 +1049,30 @@ function dispatchCommand(cmd) {
     case "copy":             execCmd("copy"); break;
     case "paste":            execCmd("paste"); break;
     case "select-all":       execCmd("selectAll"); break;
-    case "delete-line":      deleteLine(); break;
-    case "duplicate-line":   execCmd("duplicateLine"); break;
+    case "delete-line":      deleteLine(); break;    case "duplicate-line":   duplicateLine(); break;
+    case "move-line-up":     moveLines(-1); break;
+    case "move-line-down":   moveLines(1); break;
+    case "add-line-above":   addLineAbove(); break;
+    case "add-line-below":   addLineBelow(); break;
+    case "delete-line-up":   deleteLineUp(); break;
+    case "delete-line-down": deleteLineDown(); break;
+    case "join-with-prev":   joinWithPrev(); break;
+    case "line-ops":         lineOpsPanel(); break;
+    case "encoding":         encodingPanel(); break;
+    case "eol":              eolPanel(); break;
+    case "clip-history":     showClipHistory(); break;
+    case "clip-clear":       clearClipHistory(); break;
+    case "insert-stamp":     insertStamp(); break;
+    case "stamp-config":     stampPanel(); break;
+    case "zoom-in":          zoomBy(1); break;
+    case "zoom-out":         zoomBy(-1); break;
+    case "zoom-reset":       setFontSize(14); break;
+    case "completion":       showCompletion(); break;
+    case "goto-def":         gotoDefinitionLocal(); break;
+    case "column-delete":    columnDelete(); break;
+    case "column-replace":   columnPrompt(); break;
+    case "recent-clear":      clearRecent(); break;
+    case "next-cursor":      nextCursor(getActiveTab()); break;
     case "to-upper":         execCmd("toUpper"); break;
     case "to-lower":         execCmd("toLower"); break;
     case "to-fullwidth":     execCmd("toFullwidth"); break;
@@ -1489,6 +1589,7 @@ terminalBody.addEventListener("focus", () => terminalBody.focus());
     KEYWORDS: Object.fromEntries(Object.entries(LANGS).map(([k, v]) => [k, [...(v.keywords || [])]])),
     TYPES: Object.fromEntries(Object.entries(LANGS).map(([k, v]) => [k, [...(v.types || [])]])),
     LEXERS: LANGS,
+    BUILTINS: typeof BUILTINS !== "undefined" ? BUILTINS : {},
   };
   if (typeof window !== "undefined") window.Syntax = Syntax;
 
@@ -1517,11 +1618,41 @@ function renderVim(t) {
       const cls = tk.cls ? "tk-" + tk.cls : "";
       return cls ? '<span class="' + cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text);
     }).join("");
+    const text = t.lines[r];
+
+    // 列块选区 (矩形)
+    const colSel = t.colSel;
+    if (colSel && r >= Math.min(colSel.r0, colSel.r1) && r <= Math.max(colSel.r0, colSel.r1)) {
+      const c0 = Math.min(colSel.c0, colSel.c1);
+      const c1 = Math.max(colSel.c0, colSel.c1);
+      html.push('<div class="hl-row">' +
+        escapeHtml(text.slice(0, c0)) +
+        '<span class="col-sel-active">' + escapeHtml(text.slice(c0, c1 || c0 + 1)) + "</span>" +
+        escapeHtml(text.slice(c1)) +
+        "</div>");
+      continue;
+    }
+
+    // 多光标: 每个光标位置画一个标记
+    const cs2 = (t.cursors || []).filter((c) => c.row === r);
+    if (cs2.length > 0) {
+      const marks = cs2.slice().sort((a, b) => a.col - b.col);
+      let out = "", at = 0;
+      for (const m of marks) {
+        const c = Math.min(m.col, text.length);
+        out += escapeHtml(text.slice(at, c)) + '<span class="caret-mark">│</span>';
+        at = c;
+      }
+      out += escapeHtml(text.slice(at));
+      html.push('<div class="hl-row">' + out + "</div>");
+      continue;
+    }
+
     html.push('<div class="hl-row">' +
       (inSel
-        ? '<span class="sel-prefix">' + escapeHtml(t.lines[r].slice(0, cs)) + "</span>" +
-          '<span class="sel-active">' + escapeHtml(t.lines[r].slice(cs, ce)) + "</span>" +
-          '<span>' + escapeHtml(t.lines[r].slice(ce)) + "</span>"
+        ? '<span class="sel-prefix">' + escapeHtml(text.slice(0, cs)) + "</span>" +
+          '<span class="sel-active">' + escapeHtml(text.slice(cs, ce)) + "</span>" +
+          "<span>" + escapeHtml(text.slice(ce)) + "</span>"
         : rendered) +
       "</div>");
   }
@@ -1750,15 +1881,16 @@ function stripVerbatim(p) {
 }
 
 async function openFile(path) {
+  const tPath = stripVerbatim(path);
   try {
-    const res = await invoke("read_file", { path: stripVerbatim(path) });
+    const res = await invoke("read_file", { path: tPath });
     // Rust 端返回 { name, path, content } 对象 (不是裸字符串)
     const text = res && typeof res === "object" ? res.content : res;
     const id = "t" + (++maxTabId);
     TABS.set(id, {
       id,
-      path: stripVerbatim(path),
-      name: (res && res.name) || stripVerbatim(path).split(/[\\\/]/).pop(),
+      path: tPath,
+      name: (res && res.name) || tPath.split(/[\\\/]/).pop(),
       cursor: { row: 0, col: 0 },
       dirty: false,
       lines: String(text ?? "").split("\n"),
@@ -1766,7 +1898,8 @@ async function openFile(path) {
       redo: [],
     });
     setActiveTab(id);
-    setTip("已打开: " + stripVerbatim(path));
+    pushRecent(tPath);
+    setTip("已打开: " + tPath);
   } catch (e) {
     setTip("打开失败: " + e.message);
   }
@@ -1808,7 +1941,7 @@ function paintActive() {
   const hadFocus = document.activeElement === edContent;
   edContent.replaceChildren(document.createTextNode(t.lines.join("\n")));
   gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
-  setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+  updateCaretColumn();
   renderTabs();
   if (hadFocus) edContent.focus();
 }
@@ -1924,7 +2057,7 @@ async function saveActive() {
   const t = getActiveTab();
   if (!t) return false;
   try {
-    await invoke("write_file", { path: t.path, content: t.lines.join("\n") });
+    await invoke("write_file", { path: t.path, content: t.lines.join(FILE_EOL) });
     t.dirty = false;
     renderTabs();
     setTip("已保存");
@@ -1963,6 +2096,26 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
 
 // 真实键盘处理: NORMAL 只吃单键动作, INSERT 走字符输入.
 // edContent 不是 contenteditable, 所以所有变更由 t.lines + paintActive 驱动.
+// Ctrl+点击 = 加一个光标; Alt+点击 = 列块选区锚点
+edContent.addEventListener("mousedown", (e) => {
+  const tv = getActiveTab();
+  if (!tv || !e.target.closest(".hl-row")) return;
+  // 用点击位置估算行列 (等宽字体, 与 gutter 对齐)
+  const rect = edContent.getBoundingClientRect();
+  const lines = tv.lines;
+  const lineH = 18;
+  const row = Math.max(0, Math.min(lines.length - 1,
+    Math.floor((e.clientY - rect.top + edContent.scrollTop) / lineH)));
+  const col = Math.max(0, Math.round((e.clientX - rect.left - 40) / 7));
+  if (e.altKey) { e.preventDefault(); startColumnSelect(row, col); }
+  else if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    addCursor(tv, row, col);
+    renderVim(tv);
+    setTip(cursorsOf(tv).length + " 个光标");
+  }
+});
+
 if (edContent) edContent.addEventListener("keydown", (e) => {
   try { recordKey(e); } catch (_) { /* 录制不影响主流程 */ }
   const t = getActiveTab();
@@ -1974,6 +2127,8 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   if (e.ctrlKey) {
     const k = e.key.toLowerCase();
     if (k === "s") { e.preventDefault(); saveActive(); return; }
+    if (k === "n") { e.preventDefault(); completionNext(1); return; }
+    if (k === "p") { e.preventDefault(); completionNext(-1); return; }
     if (k === "z") { e.preventDefault(); doUndo(); return; }
     if (k === "y") { e.preventDefault(); doRedo(); return; }
     return;
@@ -1981,24 +2136,35 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
 
   if (e.key === "Escape") {
     const tv = getActiveTab();
-    if (tv && tv.sel) { tv.sel = null; renderVim(tv); }
+    document.getElementById("completion-popup")?.remove();
+    COMPLETE_STATE = { list: [], idx: -1, prefix: "" };
+    if (tv) {
+      if (tv.cursors && tv.cursors.length > 1) { clearCursors(tv); setTip("已退出多光标"); }
+      else if (tv.colSel) { clearColumnSelect(tv); setTip("已退出列选择"); }
+      else if (tv.sel) tv.sel = null;
+      renderVim(tv);
+    }
     setMode("NORMAL");
     e.preventDefault();
     return;
   }
 
   if (mode === "INSERT") {
-    if (e.key === "Tab") { e.preventDefault(); insertChar("  "); return; }
-    if (e.key === "Backspace") { e.preventDefault(); backspace(); return; }
+    if (e.key === "Tab") { e.preventDefault(); insertCharMulti("  "); return; }
+    if (e.key === "Backspace") { e.preventDefault(); backspaceMulti(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }
     if (e.key === "Delete") { e.preventDefault(); normalDeleteChar(); return; }
     if (e.key === "ArrowLeft") { e.preventDefault(); if (t) { t.cursor.col -= 1; paintActive(); } return; }
     if (e.key === "ArrowRight") { e.preventDefault(); if (t) { t.cursor.col += 1; paintActive(); } return; }
     if (e.key === "ArrowUp") { e.preventDefault(); if (t) { t.cursor.row -= 1; paintActive(); } return; }
     if (e.key === "ArrowDown") { e.preventDefault(); if (t) { t.cursor.row += 1; paintActive(); } return; }
-    if (e.key.length === 1) { e.preventDefault(); insertChar(e.key); return; }
+    if (e.ctrlKey && e.key === " ") { e.preventDefault(); showCompletion(); return; }
+    if (e.key.length === 1) { e.preventDefault(); insertCharMulti(e.key); return; }
     return;
   }
+
+  if (e.ctrlKey && e.key === " ") { e.preventDefault(); showCompletion(); return; }
+  if (e.key === "F12") { e.preventDefault(); gotoDefinitionLocal(); return; }
 
   // --- NORMAL / VISUAL ---
   const nav = {
@@ -2382,8 +2548,8 @@ function setFontSize(px) {
   setTip("字号: " + px + "px");
 }
 
-function fontBigger() { setFontSize((VIEW_STATE.fontSize || 14) + 1); }
-function fontSmaller() { setFontSize(Math.max(9, (VIEW_STATE.fontSize || 14) - 1)); }
+function fontBigger() { zoomBy(1); }
+function fontSmaller() { zoomBy(-1); }
 
 // 配置导入导出 (localStorage)
 
@@ -2659,6 +2825,10 @@ function openGotoLine() {
 
 // 选项面板点击委托: data-opt 里可直接执行命令
 if (mdBody) mdBody.addEventListener("click", (e) => {
+  const rc = e.target.closest("[data-recent]");
+  if (rc) { showRecent(); return; }
+  const clip = e.target.closest("[data-clip]");
+  if (clip) { restoreClip(parseInt(clip.dataset.clip, 10)); return; }
   const row = e.target.closest("[data-opt]");
   if (!row) return;
   const opt = row.dataset.opt;
@@ -2844,6 +3014,7 @@ function tagJump() {
 // ===== 测试/JS 宏 API 暴露 =====
 // UAT 与 JS 宏需要调用这些命令; 全部挂在 window 上, 便于脚本化验证.
 window.dispatchCommand = dispatchCommand;
+window.openFile = openFile;
 window.renderVim = renderVim;
 window.closeModal = closeModal;
 window.setFontSize = setFontSize;
@@ -2858,8 +3029,740 @@ Object.defineProperty(window, "FIND_STATE", { get: () => FIND_STATE });
 Object.defineProperty(window, "MACRO", { get: () => MACRO });
 Object.defineProperty(window, "VIEW_STATE", { get: () => VIEW_STATE });
 Object.defineProperty(window, "SETTINGS", { get: () => SETTINGS });
+Object.defineProperty(window, "CLIP_HISTORY", { get: () => CLIP_HISTORY });
+Object.defineProperty(window, "STAMP", { get: () => STAMP });
+Object.defineProperty(window, "COMPLETE_STATE", { get: () => COMPLETE_STATE });
+Object.defineProperty(window, "FILE_EOL", {
+  get: () => FILE_EOL,
+  set: (v) => { FILE_EOL = v; },     // 文件内同名变量, 不会递归 (getter 不是赋值目标)
+});
+window.pushClip = pushClip;
+window.sortLines = sortLines;
+window.dedupeLines = dedupeLines;
+window.removeDuplicateSpaces = removeDuplicateSpaces;
+window.convertEol = convertEol;
+window.cursorsOf = cursorsOf;
+window.addCursor = addCursor;
+window.clearCursors = clearCursors;
+window.insertCharMulti = insertCharMulti;
+window.backspaceMulti = backspaceMulti;
+window.startColumnSelect = startColumnSelect;
+window.extendColumnSelect = extendColumnSelect;
+window.completionCandidates = completionCandidates;
+window.showCompletion = showCompletion;
+window.applyCompletion = applyCompletion;
+window.showClipHistory = showClipHistory;
 Object.defineProperty(window, "PLUGINS", { get: () => PLUGINS });
 Object.defineProperty(window, "EDIT_CMDS", { get: () => EDIT_CMDS });
+
+/* ===== sakura 进阶编辑能力 =====
+   全部前端实现, 不依赖后端. 分三批:
+   A. 行操作 / 剪贴板历史 / 缩放 / 光标列指示 / 时间戳
+   B. 编码转换 / 行尾符转换 / 排序去重 / 撤销重做增强
+   C. 多重光标 / 列选择 / 自动补全 */
+
+/* ---------- A1. 行操作 (sakura 逐行增删/复制/移动) ---------- */
+function moveLines(delta) {
+  const t = getActiveTab();
+  if (!t) return;
+  const from = t.cursor.row;
+  const to = from + delta;          // delta<0 上移, >0 下移 (与菜单语义一致)
+  if (to < 0 || to >= t.lines.length) return;
+  snapshot(t);
+  const [line] = t.lines.splice(from, 1);
+  t.lines.splice(to, 0, line);
+  t.cursor.row = to;
+  t.dirty = true;
+  renderVim(t);
+  setTip("移动行: Ln " + (from + 1) + " → Ln " + (to + 1));
+}
+
+function copyLinesUp() { copyLines(1); }
+function copyLinesDown() { copyLines(-1); }
+function copyLines(dir) {
+  // dir=1 复制到上一行, dir=-1 复制到下一行
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const at = dir === 1 ? t.cursor.row : t.cursor.row + 1;
+  t.lines.splice(at, 0, t.lines[t.cursor.row]);
+  t.cursor.row = at;
+  t.dirty = true;
+  renderVim(t);
+}
+
+function addLineAbove() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const indent = (t.lines[t.cursor.row].match(/^[ \t]*/) || [""])[0];
+  t.lines.splice(t.cursor.row, 0, indent);
+  t.cursor.row = t.cursor.row;
+  t.cursor.col = indent.length;
+  t.dirty = true;
+  renderVim(t);
+}
+function addLineBelow() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const indent = (t.lines[t.cursor.row].match(/^[ \t]*/) || [""])[0];
+  t.lines.splice(t.cursor.row + 1, 0, indent);
+  t.cursor.row += 1;
+  t.cursor.col = indent.length;
+  t.dirty = true;
+  renderVim(t);
+}
+
+// 删除光标**上方**那一行 (光标行不动)
+function deleteLineUp() {
+  const t = getActiveTab();
+  if (!t) return;
+  if (t.cursor.row === 0) { setTip("已在首行, 上方无可删"); return; }
+  snapshot(t);
+  t.lines.splice(t.cursor.row - 1, 1);
+  t.cursor.row -= 1;
+  t.cursor.col = 0;
+  if (t.lines.length === 0) t.lines.push("");
+  t.dirty = true;
+  renderVim(t);
+  setTip("已删除上方行");
+}
+
+// 删除光标**下方**那一行 (光标行不动)
+function deleteLineDown() {
+  const t = getActiveTab();
+  if (!t) return;
+  if (t.cursor.row >= t.lines.length - 1) { setTip("已在末行, 下方无可删"); return; }
+  snapshot(t);
+  t.lines.splice(t.cursor.row + 1, 1);
+  if (t.lines.length === 0) t.lines.push("");
+  t.cursor.col = 0;
+  t.dirty = true;
+  renderVim(t);
+  setTip("已删除下方行");
+}
+
+// 合并上一行 (把当前行并到上行)
+function joinWithPrev() {
+  const t = getActiveTab();
+  if (!t || t.cursor.row === 0) return;
+  snapshot(t);
+  const cur = t.lines[t.cursor.row];
+  const prev = t.lines[t.cursor.row - 1];
+  t.cursor.col = prev.length;
+  t.lines[t.cursor.row - 1] = prev + cur.trimStart();
+  t.lines.splice(t.cursor.row, 1);
+  t.dirty = true;
+  renderVim(t);
+}
+
+/* ---------- A2. 剪贴板历史 (sakura 最多 20 条) ---------- */
+   // {text, at}
+const CLIP_MAX = 20;
+
+function pushClip(text) {
+  if (!text) return;
+  const at = CLIP_HISTORY.findIndex((c) => c.text === text);
+  if (at >= 0) CLIP_HISTORY.splice(at, 1);       // 去重后置顶
+  CLIP_HISTORY.unshift({ text, at: Date.now() });
+  if (CLIP_HISTORY.length > CLIP_MAX) CLIP_HISTORY.pop();
+  CLIPBOARD = text;
+}
+
+function showClipHistory() {
+  if (CLIP_HISTORY.length === 0) { setTip("剪贴板历史为空"); return; }
+  const rows = CLIP_HISTORY.map((c, i) => {
+    const preview = c.text.replace(/\n/g, "⏎").slice(0, 70);
+    const when = new Date(c.at).toLocaleTimeString("zh-CN");
+    return '<div class="opt-row" data-clip="' + i + '">' + escapeHtml(when + "  " + preview) +
+      ' <span style="color:var(--fg-dim)">(' + c.text.length + " 字符)</span></div>";
+  }).join("");
+  openModal({ title: "剪贴板历史 (" + CLIP_HISTORY.length + ")", bodyHTML: rows,
+    buttons: [{ label: "清空", cmd: "clip-clear" }, { label: "关闭", cmd: "modal-close" }] });
+}
+
+function restoreClip(i) {
+  const c = CLIP_HISTORY[i];
+  if (!c) return;
+  CLIPBOARD = c.text;
+  closeModal();
+  setTip("已恢复 " + c.text.length + " 字符");
+}
+function clearClipHistory() {
+  CLIP_HISTORY.length = 0;
+  closeModal();
+  setTip("剪贴板历史已清空");
+}
+
+/* ---------- A3. 缩放 (Ctrl+滚轮 / Ctrl+= / Ctrl+-) ---------- */
+function zoomBy(delta) {
+  const cur = VIEW_STATE.fontSize || 14;
+  setFontSize(Math.min(32, Math.max(9, cur + delta)));
+}
+function initZoomWheel() {
+  edContent.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey) return;          // 只在 Ctrl+滚轮时缩放, 不干扰正常滚动
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
+}
+
+/* ---------- A4. 光标列指示 (状态栏 + 虚拟虚线标尺) ---------- */
+function updateCaretColumn() {
+  const t = getActiveTab();
+  const el = document.getElementById("s-pos");
+  if (!t || !el) return;
+  el.textContent = "Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1);
+}
+
+/* ---------- A5. 时间戳 / 日志模式 (插入时自动带时间) ---------- */
+  // line | before | after
+
+function stampNow() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const date = d.getFullYear() + "/" + pad(d.getMonth() + 1) + "/" + pad(d.getDate());
+  const time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  if (STAMP.date) return date;
+  if (STAMP.time) return time;
+  if (STAMP.datetime) return date + " " + time;
+  return "";
+}
+
+function stampPanel() {
+  const html =
+    '<div class="opt-row"><label><input type="checkbox" id="st-date" ' + (STAMP.date ? "checked" : "") +
+    ' /> 日期 (YYYY/MM/DD)</label></div>' +
+    '<div class="opt-row"><label><input type="checkbox" id="st-time" ' + (STAMP.time ? "checked" : "") +
+    ' /> 时间 (HH:MM:SS)</label></div>' +
+    '<div class="opt-row"><label><input type="checkbox" id="st-dt" ' + (STAMP.datetime ? "checked" : "") +
+    ' /> 日期+时间</label></div>' +
+    '<div class="opt-row">位置: ' +
+      ["line 行首", "before 光标前", "after 光标后"].map((m, i) =>
+        '<label><input type="radio" name="st-mode" value="' + ["line", "before", "after"][i] + '"' +
+        (STAMP.mode === ["line", "before", "after"][i] ? " checked" : "") + ' /> ' + m + "</label>").join(" ") +
+    '</div>' +
+    '<div class="opt-row">预览: <code>' + escapeHtml(stampNow() || "(未启用)") + "</code></div>";
+  openModal({ title: "时间戳插入", bodyHTML: html, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  ["date", "time", "datetime"].forEach((k) => {
+    const el = document.getElementById("st-" + k);
+    if (el) el.addEventListener("change", () => {
+      STAMP.date = document.getElementById("st-date").checked;
+      STAMP.time = document.getElementById("st-time").checked;
+      STAMP.datetime = document.getElementById("st-dt").checked;
+      stampPanel();
+    });
+  });
+  document.querySelectorAll('input[name="st-mode"]').forEach((r) =>
+    r.addEventListener("change", () => { STAMP.mode = r.value; stampPanel(); }));
+}
+
+function insertStamp() {
+  const text = stampNow();
+  if (!text) { stampPanel(); return; }
+  const t = getActiveTab();
+  if (!t) return;
+  const at = stampAt(t);
+  if (at === null) { stampPanel(); return; }
+  snapshot(t);
+  if (STAMP.mode === "line") {
+    const indent = (t.lines[t.cursor.row].match(/^[ \t]*/) || [""])[0];
+    t.lines[t.cursor.row] = t.lines[t.cursor.row].replace(indent, indent + "[" + text + "] ");
+    t.dirty = true;
+    renderVim(t);
+  } else {
+    const line = curLine(t);
+    const head = line.slice(0, t.cursor.col), tail = line.slice(t.cursor.col);
+    const ins = text + (STAMP.mode === "before" ? " " : "");
+    t.lines[t.cursor.row] = head + ins + tail;
+    t.cursor.col += ins.length;
+    t.dirty = true;
+    paintActive();
+  }
+  setTip("已插入时间戳: " + text);
+}
+
+function stampAt(t) {
+  // 光标行未选中任何字符时, line 模式才有意义; before/after 任意位置可用
+  if (STAMP.mode === "line") {
+    const line = t.lines[t.cursor.row] || "";
+    if (t.cursor.col > 0 && line.slice(0, t.cursor.col).trim() !== "") {
+      setTip("行首插入需要光标在行首 (或缩进之后)");
+      return null;
+    }
+  }
+  return t.cursor.row;
+}
+
+/* ---------- B1. 编码转换 (sakura 支持多种编码互转) ---------- */
+
+
+function convertEncoding(target) {
+  const t = getActiveTab();
+  if (!t) return;
+  const raw = t.lines.join("\n");
+  try {
+    const bytes = new TextEncoder("utf-8").encode(raw);
+    const decoded = new TextDecoder(target).decode(bytes);
+    t.lines = decoded.split("\n");
+    t.dirty = true;
+    renderVim(t);
+    setTip("编码已转为 " + target);
+  } catch (e) {
+    openModal({ title: "编码转换失败", body: target + ": " + e.message });
+  }
+}
+
+function encodingPanel() {
+  const t = getActiveTab();
+  const cur = t && t.encoding ? t.encoding : "utf-8";
+  const rows = ENCODINGS.map((e) =>
+    '<div class="opt-row" data-enc="' + e + '"' +
+    (e === cur ? ' style="color:var(--blue)"' : "") + ">" +
+    escapeHtml(e) + (e === cur ? "  ← 当前" : "") + "</div>").join("");
+  openModal({ title: "编码转换", bodyHTML:
+    '<div class="empty-hint">当前: ' + escapeHtml(cur) + "</div>" + rows,
+    buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  mdBody.querySelectorAll("[data-enc]").forEach((r) =>
+    r.addEventListener("click", () => {
+      const enc = r.dataset.enc;
+      if (t) t.encoding = enc;
+      closeModal();
+      convertEncoding(enc);
+    }));
+}
+
+/* ---------- B2. 行尾符转换 ---------- */
+
+
+
+function convertEol(target) {
+  const t = getActiveTab();
+  if (!t || !EOLS[target]) return;
+  // lines 数组本身不含行尾, 保存时按 FILE_EOL 拼接即可;
+  // 这里做的是「当前视图重载以看到差异」+ 记录目标行尾.
+  FILE_EOL = EOLS[target];
+  setTip("行尾符: " + target.toUpperCase() + " (保存时生效)");
+  renderVim(t);
+}
+
+function eolPanel() {
+  const cur = FILE_EOL === "\r\n" ? "crlf" : FILE_EOL === "\r" ? "cr" : "lf";
+  const rows = ["lf", "crlf", "cr"].map((k) =>
+    '<div class="opt-row" data-eol="' + k + '"' + (k === cur ? ' style="color:var(--blue)"' : "") + ">" +
+    k.toUpperCase() + (k === cur ? "  ← 当前" : "") + "</div>").join("");
+  openModal({ title: "行尾符", bodyHTML: rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  mdBody.querySelectorAll("[data-eol]").forEach((r) =>
+    r.addEventListener("click", () => { closeModal(); convertEol(r.dataset.eol); }));
+}
+
+/* ---------- B3. 行排序 / 去重 / 反转 ---------- */
+function sortLines(asc) {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const sel = t.sel;
+  if (sel && sel.r1 !== sel.r0) {
+    // 只对选区排序 (按光标列做自然排序)
+    const key = t.cursor.col;
+    const seg = t.lines.slice(sel.r0, sel.r1 + 1)
+      .sort((a, b) => cmpAt(a, b, key) * (asc ? 1 : -1));
+    t.lines.splice(sel.r0, seg.length, ...seg);
+  } else {
+    t.lines.sort((a, b) => cmpAt(a, b, 0) * (asc ? 1 : -1));
+  }
+  t.dirty = true;
+  renderVim(t);
+  setTip("排序: " + (asc ? "升序" : "降序"));
+}
+
+// 数字优先的自然比较 (2 < 10)
+function cmpAt(a, b, col) {
+  const na = parseFloat(a.slice(col).replace(/[^\d.\\-].*$/, ""));
+  const nb = parseFloat(b.slice(col).replace(/[^\d.\\-].*$/, ""));
+  if (!isNaN(na) && !isNaN(nb) && na !== nb) return na < nb ? -1 : 1;
+  const sa = a.slice(col), sb = b.slice(col);
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+}
+
+function dedupeLines() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const seen = new Set();
+  const before = t.lines.length;
+  t.lines = t.lines.filter((l) => {
+    if (seen.has(l)) return false;
+    seen.add(l);
+    return true;
+  });
+  t.dirty = true;
+  renderVim(t);
+  setTip("去重: " + before + " → " + t.lines.length + " 行");
+}
+
+function reverseLines() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  t.lines.reverse();
+  t.dirty = true;
+  renderVim(t);
+  setTip("已反转行序");
+}
+
+function removeDuplicateSpaces() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  let removed = 0;
+  t.lines = t.lines.map((l) => {
+    const n = l.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/, "");
+    if (n !== l) removed++;
+    return n;
+  });
+  t.dirty = true;
+  renderVim(t);
+  setTip("压缩空白: " + removed + " 行");
+}
+
+function lineOpsPanel() {
+  openModal({
+    title: "行操作",
+    bodyHTML:
+      '<div class="opt-row" data-lo="sort-asc">升序排序</div>' +
+      '<div class="opt-row" data-lo="sort-desc">降序排序</div>' +
+      '<div class="opt-row" data-lo="dedupe">删除重复行</div>' +
+      '<div class="opt-row" data-lo="reverse">反转行序</div>' +
+      '<div class="opt-row" data-lo="squeeze">压缩连续空白并去行尾空格</div>',
+    buttons: [{ label: "关闭", cmd: "modal-close" }],
+  });
+  mdBody.querySelectorAll("[data-lo]").forEach((r) => r.addEventListener("click", () => {
+    const a = r.dataset.lo;
+    closeModal();
+    if (a === "sort-asc") sortLines(true);
+    else if (a === "sort-desc") sortLines(false);
+    else if (a === "dedupe") dedupeLines();
+    else if (a === "reverse") reverseLines();
+    else removeDuplicateSpaces();
+  }));
+}
+
+/* ---------- C1. 多重光标 (Ctrl+点击 / Alt+点击 添加, Esc 退出) ---------- */
+/* cursor 集合存在 tab.cursors; 为空时退化为单光标 [t.cursor].
+   所有编辑操作 (insertChar/backspace/normalDeleteChar) 遍历这个集合. */
+
+function cursorsOf(t) {
+  if (!t) return [];
+  if (!t.cursors || t.cursors.length === 0) return [{ row: t.cursor.row, col: t.cursor.col }];
+  return t.cursors;
+}
+
+function setCursors(t, list) {
+  t.cursors = list;
+  // 主光标 = list[0]
+  if (list.length > 0) t.cursor = { row: list[0].row, col: list[0].col };
+}
+
+function addCursor(t, row, col) {
+  const cs = cursorsOf(t).slice();
+  if (cs.some((c) => c.row === row && c.col === col)) return;
+  cs.push({ row, col });
+  cs.sort((a, b) => a.row - b.row || a.col - b.col);
+  setCursors(t, cs);
+}
+
+function nextCursor(t) {
+  const cs = cursorsOf(t).slice().sort((a, b) => a.row - b.row || a.col - b.col);
+  const at = cs.findIndex((c) => c.row > t.cursor.row ||
+    (c.row === t.cursor.row && c.col > t.cursor.col));
+  if (at < 0) setCursors(t, [cs[0]]);
+  else { setCursors(t, [cs[at]]); }
+}
+
+function clearCursors(t) {
+  if (t) { t.cursors = []; delete t.cursors; }
+}
+
+// 每个光标位置的插入 (多重光标下的字符输入)
+function insertCharMulti(ch) {
+  const t = getActiveTab();
+  if (!t) return;
+  const cs = cursorsOf(t).slice().sort((a, b) => b.row - a.row || b.col - a.col);   // 从后往前, 避免位移
+  if (cs.length === 1) { insertChar(ch); return; }
+  snapshot(t);
+  for (const c of cs) {
+    while (t.lines.length <= c.row) t.lines.push("");
+    const line = t.lines[c.row];
+    t.lines[c.row] = line.slice(0, c.col) + ch + line.slice(c.col);
+    c.col += ch.length;
+  }
+  t.dirty = true;
+  setCursors(t, cs.reverse());
+  renderVim(t);
+  setTip(cs.length + " 个光标插入 " + ch);
+}
+
+// 多光标退格
+function backspaceMulti() {
+  const t = getActiveTab();
+  if (!t) return;
+  const cs = cursorsOf(t);
+  if (cs.length === 1) { backspace(); return; }
+  snapshot(t);
+  const sorted = cs.slice().sort((a, b) => b.row - a.row || b.col - a.col);
+  for (const c of sorted) {
+    if (c.col > 0) {
+      const line = t.lines[c.row];
+      t.lines[c.row] = line.slice(0, c.col - 1) + line.slice(c.col);
+      c.col -= 1;
+    } else if (c.row > 0) {
+      const prev = t.lines[c.row - 1];
+      c.col = prev.length;
+      t.lines[c.row - 1] = prev + t.lines[c.row];
+      t.lines.splice(c.row, 1);
+    }
+  }
+  t.dirty = true;
+  setCursors(t, sorted.reverse());
+  renderVim(t);
+  setTip(sorted.length + " 个光标删除");
+}
+
+/* ---------- C2. 列选择 (Alt+拖选 / Alt+Shift+方向键) ---------- */
+/* 用 t.colSel = {r0, c0, r1, c1} 表示矩形选区. */
+
+function startColumnSelect(row, col) {
+  const t = getActiveTab();
+  if (!t) return;
+  t.sel = null;
+  t.colSel = { r0: row, c0: col, r1: row, c1: col };
+  renderVim(t);
+}
+
+function extendColumnSelect(row, col) {
+  const t = getActiveTab();
+  if (!t || !t.colSel) return;
+  t.colSel.r1 = row;
+  t.colSel.c1 = col;
+  renderVim(t);
+}
+
+function clearColumnSelect(t) {
+  if (t) t.colSel = null;
+}
+
+function columnSelectedText(t) {
+  const cs = t.colSel;
+  if (!cs) return "";
+  const r0 = Math.min(cs.r0, cs.r1), r1 = Math.max(cs.r0, cs.r1);
+  const c0 = Math.min(cs.c0, cs.c1), c1 = Math.max(cs.c0, cs.c1);
+  const out = [];
+  for (let r = r0; r <= r1; r++) {
+    const line = t.lines[r] || "";
+    out.push(c1 === c0 ? (line[c0] || "") : line.slice(c0, c1));
+  }
+  return out.join("\n");
+}
+
+// 列块删除 (整块挖空)
+function columnDelete() {
+  const t = getActiveTab();
+  if (!t || !t.colSel) return;
+  snapshot(t);
+  const r0 = Math.min(t.colSel.r0, t.colSel.r1), r1 = Math.max(t.colSel.r0, t.colSel.r1);
+  const c0 = Math.min(t.colSel.c0, t.colSel.c1), c1 = Math.max(t.colSel.c0, t.colSel.c1);
+  for (let r = r0; r <= r1; r++) {
+    const line = t.lines[r] || "";
+    t.lines[r] = line.slice(0, c0) + line.slice(c1);
+  }
+  t.colSel = null;
+  t.dirty = true;
+  renderVim(t);
+  setTip("列块已删除 (" + (r1 - r0 + 1) + "行 ×" + (c1 - c0) + "列)");
+}
+
+// 列块替换 (每行不同内容用 \n 分隔)
+function columnPrompt() {
+  const t = getActiveTab();
+  if (!t || !t.colSel) { setTip("先用 Alt+拖选 建立列块选区"); return; }
+  const cur = columnSelectedText(t);
+  const text = prompt("列块替换为 (多行用换行分隔):", cur);
+  if (text === null) return;
+  const parts = text.split("\n");
+  snapshot(t);
+  const r0 = Math.min(t.colSel.r0, t.colSel.r1), r1 = Math.max(t.colSel.r0, t.colSel.r1);
+  const c0 = Math.min(t.colSel.c0, t.colSel.c1), c1 = Math.max(t.colSel.c0, t.colSel.c1);
+  const width = c1 - c0;
+  for (let r = r0; r <= r1; r++) {
+    const line = t.lines[r] || "";
+    const repl = (parts[r - r0] || "").padEnd(width).slice(0, width);
+    t.lines[r] = line.slice(0, c0) + repl + line.slice(c1);
+  }
+  t.colSel = null;
+  t.dirty = true;
+  renderVim(t);
+  setTip("列块已替换");
+}
+
+/* ---------- C3. 自动补全 (Ctrl+Space / Tab 触发) ---------- */
+/* 无 LSP; 基于当前文件已出现的标识符 + 语言关键字, 做前缀匹配. */
+
+function completionCandidates(t, prefix) {
+  const lang = t.language || Syntax.detectLanguage(t.path || "");
+  const seen = new Map();
+  // 关键字优先
+  (Syntax.KEYWORDS[lang] || []).forEach((k) => seen.set(k, "kw"));
+  // 标准库/内建常用项 (关键字表不含 clone/println 这类)
+  (Syntax.BUILTINS[lang] || []).forEach((k) => { if (!seen.has(k)) seen.set(k, "bi"); });
+  // 当前文件里的标识符
+  for (const line of t.lines) {
+    for (const m of line.matchAll(/[A-Za-z_][A-Za-z0-9_]{2,}/g)) {
+      if (!seen.has(m[0])) seen.set(m[0], "id");
+    }
+  }
+  const p = prefix.toLowerCase();
+  const rank = { kw: 0, bi: 1, id: 2 };
+  return [...seen.keys()]
+    .filter((w) => w.toLowerCase().startsWith(p) && w !== prefix)
+    .sort((a, b) => rank[seen.get(a)] - rank[seen.get(b)] || a.length - b.length)
+    .slice(0, 40);
+}
+
+
+
+async function showCompletion() {
+  const t = getActiveTab();
+  if (!t) return;
+  const line = t.lines[t.cursor.row] || "";
+  const m = /[A-Za-z_][A-Za-z0-9_]*$/.exec(line.slice(0, t.cursor.col));
+  const prefix = m ? m[0] : "";
+  const list = completionCandidates(t, prefix);
+  if (list.length === 0) { setTip("无补全候选 (前缀: " + (prefix || "空") + ")"); return; }
+  COMPLETE_STATE = { list, idx: 0, prefix };
+  renderCompletionPopup();
+}
+
+function renderCompletionPopup() {
+  document.getElementById("completion-popup")?.remove();
+  const t = getActiveTab();
+  if (!t || COMPLETE_STATE.list.length === 0) return;
+  const pop = document.createElement("div");
+  pop.id = "completion-popup";
+  pop.className = "show";
+  COMPLETE_STATE.list.forEach((cand, i) => {
+    const row = document.createElement("div");
+    row.className = "cmp-row" + (i === COMPLETE_STATE.idx ? " active" : "");
+    row.textContent = cand;
+    row.addEventListener("click", () => { COMPLETE_STATE.idx = i; applyCompletion(); });
+    row.addEventListener("mouseenter", () => {
+      COMPLETE_STATE.idx = i;
+      pop.querySelectorAll(".cmp-row").forEach((r, j) => r.classList.toggle("active", j === i));
+    });
+    pop.appendChild(row);
+  });
+  document.getElementById("editor-area").appendChild(pop);
+  // 定位到光标下方
+  const r = edContent.getBoundingClientRect();
+  pop.style.top = (r.top + 24 + t.cursor.row * 18 - edContent.scrollTop) + "px";
+  pop.style.left = (r.left + 8 + t.cursor.col * 7) + "px";
+}
+
+function applyCompletion() {
+  const t = getActiveTab();
+  const cand = COMPLETE_STATE.list[COMPLETE_STATE.idx];
+  if (!t || !cand) return;
+  const line = t.lines[t.cursor.row] || "";
+  const head = line.slice(0, t.cursor.col).replace(/[A-Za-z_][A-Za-z0-9_]*$/, "");
+  const tail = line.slice(t.cursor.col);
+  t.lines[t.cursor.row] = head + cand + tail;
+  t.cursor.col = head.length + cand.length;
+  t.dirty = true;
+  renderVim(t);
+  document.getElementById("completion-popup")?.remove();
+  COMPLETE_STATE = { list: [], idx: -1, prefix: "" };
+}
+
+function completionNext(delta) {
+  if (COMPLETE_STATE.list.length === 0) return false;
+  COMPLETE_STATE.idx = (COMPLETE_STATE.idx + delta + COMPLETE_STATE.list.length) % COMPLETE_STATE.list.length;
+  renderCompletionPopup();
+  return true;
+}
+
+// 在当前文件里查找定义行 (gotoDefinition 的本地版)
+function gotoDefinitionLocal() {
+  const t = getActiveTab();
+  if (!t) return;
+  const line = t.lines[t.cursor.row] || "";
+  const m = /[A-Za-z_][A-Za-z0-9_]*$/.exec(line.slice(0, t.cursor.col));
+  if (!m) { setTip("光标处无标识符"); return; }
+  const sym = m[0];
+  const re = new RegExp("(^|[^A-Za-z0-9_])(fn|struct|enum|impl|trait|type|func|class|def|function|interface|const|let)\\s+" +
+    sym + "\\b");
+  for (let r = 0; r < t.lines.length; r++) {
+    if (re.test(t.lines[r])) {
+      t.cursor = { row: r, col: Math.max(0, t.lines[r].indexOf(sym)) };
+      renderVim(t);
+      setTip("定义 @ Ln " + (r + 1) + ": " + t.lines[r].trim().slice(0, 50));
+      return;
+    }
+  }
+  // 退化: 找首次出现
+  for (let r = 0; r < t.lines.length; r++) {
+    if ((t.lines[r] || "").includes(sym)) {
+      t.cursor = { row: r, col: t.lines[r].indexOf(sym) };
+      renderVim(t);
+      setTip("首次出现 @ Ln " + (r + 1));
+      return;
+    }
+  }
+  setTip("未找到 " + sym + " 的定义");
+}
+
+// ===== 最近项目 (sakura 「最近使用」) =====
+const RECENT_KEY = "ide1.0.recent.v1";
+const RECENT_MAX = 12;
+
+function recentList() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
+  catch (_) { return []; }
+}
+function pushRecent(path) {
+  if (!path) return;
+  const list = recentList().filter((r) => r.path !== path);
+  list.unshift({ path, at: Date.now() });
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+}
+function clearRecent() {
+  localStorage.removeItem(RECENT_KEY);
+  closeModal();
+  setTip("最近项目已清空");
+  const box = document.querySelector("[data-submenu='recent'] .submenu-dropdown");
+  if (box) {
+    const empty = box.querySelector(".menu-empty");
+    if (empty) empty.textContent = "无最近文件";
+  }
+}
+function showRecent() {
+  const list = recentList();
+  if (list.length === 0) { setTip("无最近项目"); return; }
+  const rows = list.map((r, i) => {
+    const when = new Date(r.at).toLocaleString("zh-CN");
+    return '<div class="opt-row" data-recent="' + i + '">' + escapeHtml(when + "  " + r.path) + "</div>";
+  }).join("");
+  openModal({ title: "最近项目 (" + list.length + ")", bodyHTML: rows,
+    buttons: [{ label: "清空历史", cmd: "recent-clear" }, { label: "关闭", cmd: "modal-close" }] });
+  mdBody.querySelectorAll("[data-recent]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const r = list[parseInt(el.dataset.recent, 10)];
+      closeModal();
+      if (r) openFile(r.path);
+    }));
+}
+
+// 打开文件后记入最近
 
 // ===== Help =====
 function showHelp() {
@@ -2893,6 +3796,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
   if (e.key === "F1") { e.preventDefault(); showHelp(); }
+  if (e.key === "F12") { e.preventDefault(); gotoDefinitionLocal(); }
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
   if (e.ctrlKey && e.shiftKey) {
     const k = e.key.toLowerCase();
@@ -2905,7 +3809,17 @@ document.addEventListener("keydown", (e) => {
     if (k === "f") { e.preventDefault(); openFind(); return; }
     if (k === "h") { e.preventDefault(); openReplace(); return; }
     if (k === "g") { e.preventDefault(); openGrep(); return; }
+    if (k === "j" && e.shiftKey) { e.preventDefault(); joinWithPrev(); return; }
     if (k === "j") { e.preventDefault(); openGotoLine(); return; }
+    if (k === "0") { e.preventDefault(); setFontSize(14); return; }
+    if (k === "=" || k === "+") { e.preventDefault(); zoomBy(1); return; }
+    if (k === "-") { e.preventDefault(); zoomBy(-1); return; }
+    if (e.shiftKey && k === "v") { e.preventDefault(); showClipHistory(); return; }
+    if (e.shiftKey && k === "d") { e.preventDefault(); copyLinesUp(); return; }
+    if (e.shiftKey && e.key === "ArrowUp") { e.preventDefault(); moveLines(-1); return; }
+    if (e.shiftKey && e.key === "ArrowDown") { e.preventDefault(); moveLines(1); return; }
+    if (e.shiftKey && e.key === "Backspace") { e.preventDefault(); deleteLineUp(); return; }
+    if (e.key === "Delete") { e.preventDefault(); deleteLineDown(); return; }
     if (k === "a") { e.preventDefault(); selectAllText(); return; }
     if (k === "c") { e.preventDefault(); copySelection(); return; }
     if (k === "x") { e.preventDefault(); cutSelection(); return; }
@@ -2948,6 +3862,7 @@ window.addEventListener("DOMContentLoaded", async function () {
     if (bannerEl) bannerEl.textContent = b;
   } catch (e) { /* ignore */ }
   showSidePane("explorer");
+  try { initZoomWheel(); } catch (_) { /* ignore */ }
   // Default mode NORMAL
   setMode("NORMAL");
   setPos("Ln 1, Col 1");
@@ -2983,7 +3898,7 @@ async function saveAll() {
   if (dirty.length === 0) { setTip("无未保存修改"); return; }
   let ok = 0, fail = 0;
   for (const t of dirty) {
-    try { await invoke("write_file", { path: t.path, content: t.lines.join("\n") }); t.dirty = false; ok++; }
+    try { await invoke("write_file", { path: t.path, content: t.lines.join(FILE_EOL) }); t.dirty = false; ok++; }
     catch (e) { fail++; setTip("保存失败 " + t.path + ": " + e.message); }
   }
   renderTabs();
@@ -3117,14 +4032,14 @@ function copySelection() {
   const t = getActiveTab();
   if (!t) return;
   const text = selectionText(t);
-  CLIPBOARD = text;
+  pushClip(text);
   setTip("已复制 " + text.length + " 字符");
 }
 
 function cutSelection() {
   const t = getActiveTab();
   if (!t) return;
-  CLIPBOARD = selectionText(t);
+  pushClip(selectionText(t));
   if (deleteSelection(t)) setTip("已剪切");
   else setTip("无选区, 按 v 进入 VISUAL 后再剪切");
 }

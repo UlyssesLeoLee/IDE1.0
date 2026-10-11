@@ -34,7 +34,15 @@ const results = await page.evaluate((cmds) => {
   const realConfirm = window.confirm;
   window.prompt = () => 'audit_tmp.txt';
   window.confirm = () => true;
+  // dispatchCommand 源码里的 case 名单 — 判断菜单/按钮声明的命令是否真的被路由.
+  // 只测「调用不抛错」不够: 没接 case 的命令会静默无反应, 依然算 ok.
+  const src = String(dispatchCommand);
+  const handled = new Set([...src.matchAll(/case "([^"]+)"/g)].map((m) => m[1]));
+  const unhandled = [];
   for (const cmd of cmds) {
+    // 面板里的嵌套选项 (font-set:18 / setlang:rust) 由 mdBody 点击委托处理, 不在 case 名单
+    const isOptAction = /^(font-set|setlang):/.test(cmd);
+    if (!handled.has(cmd) && !isOptAction) unhandled.push(cmd);
     try {
       dispatchCommand(cmd);
       out.push({ cmd, ok: true });
@@ -45,6 +53,7 @@ const results = await page.evaluate((cmds) => {
   }
   window.prompt = realPrompt;
   window.confirm = realConfirm;
+  out.unhandled = unhandled;
   return out;
 }, commands);
 
@@ -53,6 +62,10 @@ console.log(`executed ${results.length}, threw ${failed.length}`);
 if (failed.length) {
   console.log('\n=== THREW ===');
   failed.forEach((f) => console.log(`  ${f.cmd}: ${f.err}`));
+}
+if (results.unhandled && results.unhandled.length) {
+  console.log('\n=== NOT ROUTED (菜单/按钮声明了, dispatchCommand 无 case) ===');
+  results.unhandled.forEach((c) => console.log('  ' + c));
 }
 
 // 哪些命令跑完只是 setTip 占位 (提示语含未实装/待/占位)
