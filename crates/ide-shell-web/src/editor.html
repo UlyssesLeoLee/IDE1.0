@@ -46,6 +46,47 @@
     #bottom-panel[data-collapsed="true"] #bottom-body { display: none; }
         .bottom-pane.active { display: block; }
 
+
+    /* ===== Syntax token classes (tk-* 前缀) ===== */
+    #ed-content .tk-keyword { color: #569cd6; }
+    #ed-content .tk-type { color: #4ec9b0; }
+    #ed-content .tk-string { color: #ce9178; }
+    #ed-content .tk-rawstring { color: #ce9178; }
+    #ed-content .tk-template { color: #ce9178; }
+    #ed-content .tk-comment { color: #6a9955; }
+    #ed-content .tk-num { color: #b5cea8; }
+    #ed-content .tk-bool { color: #569cd6; }
+    #ed-content .tk-char { color: #ce9178; }
+    #ed-content .tk-attr { color: #9cdcfe; }
+    #ed-content .tk-annot { color: #dcdcaa; }
+    #ed-content .tk-decorator { color: #dcdcaa; }
+    #ed-content .tk-special { color: #dcdcaa; }
+    #ed-content .tk-fmt { color: #dcdcaa; }
+    #ed-content .tk-symbol { color: #d7ba7d; }
+    #ed-content .tk-ivar { color: #9cdcfe; }
+    #ed-content .tk-cvar { color: #9cdcfe; }
+    #ed-content .tk-var { color: #9cdcfe; }
+    #ed-content .tk-tag { color: #569cd6; }
+    #ed-content .tk-selector { color: #d7ba7d; }
+    #ed-content .tk-idsel { color: #d7ba7d; }
+    #ed-content .tk-classsel { color: #d7ba7d; }
+    #ed-content .tk-preproc { color: #c586c0; }
+    #ed-content .tk-shebang { color: #6a9955; }
+    #ed-content .tk-key { color: #9cdcfe; }
+    #ed-content .tk-section { color: #c586c0; }
+    #ed-content .tk-heading { color: #569cd6; font-weight: bold; }
+    #ed-content .tk-bold { color: #dcdcaa; font-weight: bold; }
+    #ed-content .tk-italic { color: #dcdcaa; font-style: italic; }
+    #ed-content .tk-code { color: #ce9178; }
+    #ed-content .tk-codeblock { color: #ce9178; background: #1a1a1a; }
+    #ed-content .tk-imglink { color: #ce9178; }
+    #ed-content .tk-link { color: #3794ff; text-decoration: underline; }
+    #ed-content .tk-bullet { color: #d7ba7d; }
+    #ed-content .tk-quote { color: #6a9955; }
+    #ed-content .tk-hr { color: #6a9955; }
+    #ed-content .tk-op { color: #d4d4d4; }
+    #ed-content .fold-marker { color: #808080; font-style: italic; }
+    #ed-content .hl-row, #ed-content .fold-row { white-space: pre-wrap; min-height: 1.4em; }
         /* ===== Kernel Banner ===== */
     .banner {
       height: 24px;
@@ -503,7 +544,12 @@ const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 let projectRoot = null;
 let activeTabId = null;
 let newIdCounter = 0;
-window.activeTab = { get id() { return activeTabId; }, getTab: getActiveTab };
+// 注意: activeTab() 必须是函数 (UAT 与内部调用都按函数用).
+// 之前这里还挂过一个 window.activeTab = {get id(), getTab()} 对象, 它会把同名函数
+// 完全遮蔽 -> 语法测试里 activeTab() 变成 "not a function".
+function activeTab() { return getActiveTab(); }
+window.getActiveTab = getActiveTab;
+window.activeTabId = () => activeTabId;
 const tabs = new Map();
 let terminalId = null;
 
@@ -846,9 +892,594 @@ if (terminalBody) terminalBody.addEventListener("keydown", async (e) => {
 
 terminalBody.addEventListener("focus", () => terminalBody.focus());
 
+/* ===== Syntax (来自 syntax.js, 内联以免 include_str 同步) ===== */
+// ===== 语言识别 (扩展名 → id) =====
+  const EXT_MAP = {
+    "rs": "rust", "py": "python", "pyi": "python", "pyx": "python",
+    "js": "javascript", "mjs": "javascript", "cjs": "javascript",
+    "ts": "typescript", "tsx": "typescript", "jsx": "javascript",
+    "go": "go", "c": "c", "h": "c", "cpp": "cpp", "cxx": "cpp", "hpp": "cpp", "hxx": "cpp", "cc": "cpp",
+    "java": "java", "rb": "ruby", "php": "php", "cs": "csharp",
+    "swift": "swift", "kt": "kotlin", "m": "objc", "mm": "objc",
+    "sh": "bash", "bash": "bash", "zsh": "bash", "fish": "bash",
+    "html": "html", "htm": "html", "xml": "xml",
+    "css": "css", "scss": "css", "less": "css",
+    "json": "json", "jsonc": "json", "json5": "json",
+    "md": "markdown", "markdown": "markdown",
+    "yaml": "yaml", "yml": "yaml",
+    "toml": "toml", "ini": "ini", "cfg": "ini",
+    "sql": "sql", "Dockerfile": "dockerfile",
+    "diff": "diff", "patch": "diff",
+    "vim": "vim",
+    "lua": "lua", "pl": "perl", "r": "r",
+    "hs": "haskell", "ex": "elixir", "exs": "elixir", "erl": "erlang",
+    "scala": "scala", "clj": "clojure", "dart": "dart",
+    "txt": "plain", "text": "plain", "log": "plain",
+  };
+
+  // 文件名 → 语言 (用于 Dockerfile / Makefile 等无扩展名)
+  const NAME_MAP = {
+    "Dockerfile": "dockerfile", "Makefile": "makefile",
+    "CMakeLists.txt": "cmake", ".bashrc": "bash", ".zshrc": "bash",
+    ".gitignore": "plain", ".gitattributes": "plain", "Cargo.toml": "toml",
+  };
+
+  function detectLanguage(filePath) {
+    if (!filePath) return "plain";
+    const name = filePath.split(/[\\/]/).pop() || "";
+    if (NAME_MAP[name]) return NAME_MAP[name];
+    const dot = name.lastIndexOf(".");
+    const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+    return EXT_MAP[ext] || "plain";
+  }
+
+  function languageLabel(lang) {
+    const labels = {
+      rust: "Rust", python: "Python", javascript: "JavaScript", typescript: "TypeScript",
+      go: "Go", c: "C", cpp: "C++", java: "Java", ruby: "Ruby", php: "PHP",
+      csharp: "C#", swift: "Swift", kotlin: "Kotlin", objc: "Objective-C",
+      bash: "Shell", html: "HTML", xml: "XML", css: "CSS", json: "JSON",
+      markdown: "Markdown", yaml: "YAML", toml: "TOML", ini: "INI",
+      sql: "SQL", dockerfile: "Dockerfile", diff: "Diff", vim: "Vim Script",
+      lua: "Lua", perl: "Perl", r: "R", haskell: "Haskell", elixir: "Elixir",
+      erlang: "Erlang", scala: "Scala", clojure: "Clojure", dart: "Dart",
+      makefile: "Makefile", cmake: "CMake", plain: "Plain",
+    };
+    return labels[lang] || lang;
+  }
+
+  // ===== 通用 token 模式 (大部分语言共享) =====
+  // 数字: 整数 + 浮点 + 十六进制 + 八进制 + 后缀
+  const RE_NUMBER = String.raw`\b(?:0[xX][0-9a-fA-F]+(?:_[0-9a-fA-F]+)*|0[oO][0-7]+(?:_[0-7]+)*|0[bB][01]+(?:_[01]+)*|\d+(?:_\d+)*(?:\.\d+(?:_\d+)*)?(?:[eE][+-]?\d+)?[fFlLuU]*)\b`;
+  // 标识符 (普通单词)
+  const RE_IDENT = String.raw`[A-Za-z_][A-Za-z0-9_]*`;
+
+  // ===== 逐语言定义 =====
+  // 每个 lexer = { lineComment, blockComment, strings: [{open, close, escape}], keywords: Set, types?: Set,
+  //                extraRules?: [{pattern, cls}], numbers?: bool }
+  const LANGS = {
+    rust: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: 'r#"', close: '"#', escape: null, raw: true }],
+      keywords: new Set(["as","async","await","break","const","continue","crate","dyn","else","enum","extern","false","fn","for","if","impl","in","let","loop","match","mod","move","mut","pub","ref","return","self","Self","static","struct","super","trait","true","type","unsafe","use","where","while","box","do","final","macro","offsetof","override","priv","proc","pure","typeof","unsized","virtual","yield","try","union"]),
+      types: new Set(["bool","char","str","String","u8","u16","u32","u64","u128","usize","i8","i16","i32","i64","i128","isize","f32","f64","Vec","Option","Result","Box","Rc","Arc","HashMap","BTreeMap","HashSet","BTreeSet"]),
+      extraRules: [
+        { pattern: String.raw`\b(?:0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?[fFuUiI]*(?:_?(?:usize|isize|u8|u16|u32|u64|u128|i8|i16|i32|i64|i128|f32|f64))?)\b`, cls: "num" },
+        { pattern: String.raw`@\w+`, cls: "attr" }, // 属性宏
+        { pattern: String.raw`#!?\[[^\]]*\]`, cls: "attr" },
+        { pattern: String.raw`\b(?:true|false|None|Some|Ok|Err)\b`, cls: "bool" },
+        { pattern: String.raw`'[^\n\\']'`, cls: "char" },
+        { pattern: String.raw`(?:->|=>|\.\.|\.\.<|\?|<|>|=)`, cls: "op" },
+      ],
+    },
+
+    python: {
+      lineComment: "#",
+      blockComment: ['"""', '"""'],  // 简化: 只识别 triple-quoted
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }, { open: '"""', close: '"""', escape: "\\" }, { open: "'''", close: "'''", escape: "\\" }, { open: 'f"', close: '"', escape: "\\", fstring: true }, { open: "f'", close: "'", escape: "\\", fstring: true }],
+      keywords: new Set(["False","None","True","and","as","assert","async","await","break","class","continue","def","del","elif","else","except","finally","for","from","global","if","import","in","is","lambda","nonlocal","not","or","pass","raise","return","try","while","with","yield","match","case","self"]),
+      types: new Set(["int","float","complex","str","bytes","bool","list","dict","set","tuple","frozenset","object","type","None","Any","Optional","Union","Callable","Iterable","Iterator","Generator","TypeVar","Generic"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`@\w+`, cls: "decorator" },
+        { pattern: String.raw`__(?:\w+)__`, cls: "special" },
+        { pattern: String.raw`\{[^{}]*\}`, cls: "fmt", within: "fstring" }, // f-string {}
+      ],
+    },
+
+    javascript: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }, { open: '`', close: '`', escape: "\\", template: true }],
+      keywords: new Set(["abstract","as","async","await","break","case","catch","class","const","continue","debugger","default","delete","do","else","enum","export","extends","false","finally","for","from","function","if","implements","import","in","instanceof","interface","let","new","null","of","package","private","protected","public","return","static","super","switch","this","throw","true","try","typeof","var","void","while","with","yield","async"]),
+      types: new Set(["any","boolean","number","string","object","never","unknown","symbol","bigint","Array","Promise","Map","Set","WeakMap","WeakSet","Date","RegExp","Error"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`\b(?:true|false|null|undefined|NaN|Infinity)\b`, cls: "bool" },
+        { pattern: String.raw`\$\{[^}]*\}`, cls: "fmt", within: "template" },
+      ],
+    },
+
+    typescript: {
+      // 与 javascript 类似但加类型关键字
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }, { open: '`', close: '`', escape: "\\", template: true }],
+      keywords: new Set(["abstract","as","async","await","break","case","catch","class","const","continue","debugger","default","delete","do","else","enum","export","extends","false","finally","for","from","function","if","implements","import","in","instanceof","interface","let","new","null","of","package","private","protected","public","readonly","return","static","super","switch","this","throw","true","try","typeof","var","void","while","with","yield"]),
+      types: new Set(["any","boolean","number","string","object","never","unknown","symbol","bigint","Array","Promise","Map","Set","WeakMap","WeakSet","Date","RegExp","Error","Partial","Required","Readonly","Record","Pick","Omit","Exclude","Extract","ReturnType"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`\b(?:true|false|null|undefined|NaN|Infinity)\b`, cls: "bool" },
+        { pattern: String.raw`\$\{[^}]*\}`, cls: "fmt", within: "template" },
+      ],
+    },
+
+    go: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: '`', close: '`', escape: null, raw: true }],
+      keywords: new Set(["break","case","chan","const","continue","default","defer","else","fallthrough","for","func","go","goto","if","import","interface","map","package","range","return","select","struct","switch","type","var","true","false","nil"]),
+      types: new Set(["bool","byte","complex64","complex128","error","float32","float64","int","int8","int16","int32","int64","rune","string","uint","uint8","uint16","uint32","uint64","uintptr"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`\b(?:true|false|nil)\b`, cls: "bool" },
+      ],
+    },
+
+    c: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }],
+      keywords: new Set(["auto","break","case","char","const","continue","default","do","double","else","enum","extern","float","for","goto","if","inline","int","long","register","restrict","return","short","signed","sizeof","static","struct","switch","typedef","union","unsigned","void","volatile","while","_Bool","_Complex","_Imaginary","_Atomic","_Generic","_Noreturn","_Static_assert","_Thread_local"]),
+      types: new Set(["bool","size_t","ssize_t","ptrdiff_t","intptr_t","uintptr_t","FILE","NULL","stdin","stdout","stderr"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`#\s*\w+`, cls: "preproc" }, // 预编译指令
+        { pattern: String.raw`'[^\n\\']'`, cls: "char" },
+      ],
+    },
+
+    cpp: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }],
+      keywords: new Set(["auto","break","case","catch","char","class","const","constexpr","continue","default","delete","do","double","dynamic_cast","else","enum","explicit","export","extern","false","float","for","friend","goto","if","inline","int","long","mutable","namespace","new","noexcept","nullptr","operator","private","protected","public","register","reinterpret_cast","return","short","signed","sizeof","static","static_cast","struct","switch","template","this","throw","true","try","typedef","typeid","typename","union","unsigned","using","virtual","void","volatile","while","and","or","not","xor"]),
+      types: new Set(["bool","size_t","string","String","vector","map","unordered_map","set","unordered_set","pair","tuple","shared_ptr","unique_ptr","weak_ptr"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`#\s*\w+`, cls: "preproc" },
+        { pattern: String.raw`::`, cls: "op" },
+      ],
+    },
+
+    java: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }],
+      keywords: new Set(["abstract","assert","boolean","break","byte","case","catch","char","class","const","continue","default","do","double","else","enum","extends","final","finally","float","for","goto","if","implements","import","instanceof","int","interface","long","native","new","package","private","protected","public","return","short","static","strictfp","super","switch","synchronized","this","throw","throws","transient","try","void","volatile","while","yield","var","record","sealed","permits","non-sealed"]),
+      types: new Set(["String","Object","Boolean","Byte","Character","Double","Float","Integer","Long","Short","Number","Throwable","Exception","RuntimeException","List","ArrayList","Map","HashMap","Set","HashSet","Optional","Stream"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`@[A-Za-z_]\w*`, cls: "annot" },
+      ],
+    },
+
+    csharp: {
+      lineComment: "//",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: '@"', close: '"', escape: '""', raw: true }, { open: "'", close: "'", escape: "\\" }],
+      keywords: new Set(["abstract","as","base","break","case","catch","checked","class","const","continue","default","delegate","do","else","enum","event","explicit","extern","false","finally","fixed","for","foreach","goto","if","implicit","in","interface","internal","is","lock","namespace","new","null","object","operator","out","override","params","private","protected","public","readonly","ref","return","sealed","sizeof","stackalloc","static","struct","switch","this","throw","true","try","typeof","unchecked","unsafe","using","var","virtual","void","volatile","while","yield","async","await","nameof"]),
+      types: new Set(["bool","byte","char","decimal","double","float","int","long","sbyte","short","string","uint","ulong","ushort","object","dynamic","String","Int32","List","Dictionary","IEnumerable","Task"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`\$\{[^}]*\}`, cls: "fmt", within: "string" },
+      ],
+    },
+
+    ruby: {
+      lineComment: "#",
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }],
+      keywords: new Set(["BEGIN","END","alias","and","begin","break","case","class","def","defined?","do","else","elsif","end","ensure","false","for","if","in","module","next","nil","not","or","redo","rescue","retry","return","self","super","then","true","undef","unless","until","when","while","yield"]),
+      types: new Set(["Array","Hash","String","Symbol","Integer","Float","Numeric","Object","Class","Proc","Lambda","IO","File"]),
+      extraRules: [
+        { pattern: String.raw`:\w+`, cls: "symbol" },
+        { pattern: String.raw`@[A-Za-z_]\w*`, cls: "ivar" },
+        { pattern: String.raw`@@[A-Za-z_]\w*`, cls: "cvar" },
+        { pattern: String.raw`%[a-zA-Z][^\n]*?[a-zA-Z]`, cls: "string" },
+      ],
+    },
+
+    bash: {
+      lineComment: "#",
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: null, raw: true }],
+      keywords: new Set(["if","then","else","elif","fi","case","esac","for","select","while","until","do","done","function","return","in","break","continue","export","local","readonly","declare","unset","set","source","alias","unalias"]),
+      extraRules: [
+        { pattern: String.raw`\$\{[^}]*\}`, cls: "var" },
+        { pattern: String.raw`\$\w+`, cls: "var" },
+        { pattern: String.raw`\b(?:true|false)\b`, cls: "bool" },
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`#!?\s*/[a-z/]+`, cls: "shebang" }, // shebang
+      ],
+    },
+
+    html: {
+      blockComment: ["<!--", "-->"],
+      strings: [{ open: '"', close: '"', escape: null }, { open: "'", close: "'", escape: null }],
+      keywords: new Set([]),
+      extraRules: [
+        { pattern: String.raw`</?[A-Za-z][A-Za-z0-9-]*`, cls: "tag" },
+        { pattern: String.raw`/?>`, cls: "tag" },
+        { pattern: String.raw`\s([A-Za-z-]+)(=)`, cls: "attr" },
+        { pattern: String.raw`"[^"]*"`, cls: "string" },  // attribute value
+        { pattern: String.raw`\bdoctype\b`, cls: "keyword", ci: true },
+      ],
+    },
+
+    css: {
+      blockComment: ["/*", "*/"],
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }],
+      keywords: new Set(["important","default","inherit","initial","unset","revert","none","auto","hidden","visible","block","inline","inline-block","flex","grid","table","absolute","relative","fixed","static","sticky"]),
+      extraRules: [
+        { pattern: String.raw`-?[A-Za-z-]+(?=\s*:)`, cls: "selector" },
+        { pattern: String.raw`#[\w-]+`, cls: "idsel" },
+        { pattern: String.raw`\.[\w-]+`, cls: "classsel" },
+        { pattern: RE_NUMBER, cls: "num" },
+      ],
+    },
+
+    json: {
+      blockComment: null,
+      strings: [{ open: '"', close: '"', escape: "\\" }],
+      keywords: new Set(["true","false","null"]),
+      // keyPattern 优先于 strings — 让 `"key":` 识别为 key 而不是 string.
+      keyPattern: String.raw`"(?:\\.|[^"\\])*"(?=\s*:)`,
+      keyCls: "key",
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+      ],
+    },
+
+    markdown: {
+      blockComment: null,
+      strings: [],
+      keywords: new Set([]),
+      extraRules: [
+        { pattern: String.raw`^(#{1,6})\s`, cls: "heading" },
+        { pattern: String.raw`\*\*[^*]+\*\*`, cls: "bold" },
+        { pattern: String.raw`__[^_]+__`, cls: "bold" },
+        { pattern: String.raw`\*[^*]+\*`, cls: "italic" },
+        { pattern: String.raw`_[^_]+_`, cls: "italic" },
+        { pattern: String.raw`\`[^\`]+\``, cls: "code" },
+        { pattern: String.raw`\`\`\`[\s\S]*?\`\`\``, cls: "codeblock" },
+        { pattern: String.raw`!\[[^\]]*\]\([^)]+\)`, cls: "imglink" },
+        { pattern: String.raw`\[([^\]]+)\]\(([^)]+)\)`, cls: "link" },
+        { pattern: String.raw`^\s*[-*+]\s+`, cls: "bullet" },
+        { pattern: String.raw`^\s*\d+\.\s+`, cls: "bullet" },
+        { pattern: String.raw`^\s*>\s.*$`, cls: "quote" },
+        { pattern: String.raw`^---+$`, cls: "hr" },
+      ],
+    },
+
+    yaml: {
+      lineComment: "#",
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: null }],
+      keywords: new Set(["true","false","yes","no","on","off","null","~"]),
+      extraRules: [
+        { pattern: String.raw`^[A-Za-z_][A-Za-z0-9_-]*(?=:)` , cls: "key" },
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`^\s*-\s+`, cls: "bullet" },
+      ],
+    },
+
+    toml: {
+      lineComment: "#",
+      strings: [{ open: '"', close: '"', escape: "\\" }, { open: "'", close: "'", escape: "\\" }, { open: '"""', close: '"""', escape: "\\" }],
+      keywords: new Set(["true","false"]),
+      extraRules: [
+        { pattern: String.raw`^\s*\[[A-Za-z0-9_.\-]+\]\s*$`, cls: "section" },
+        { pattern: String.raw`^[A-Za-z_][A-Za-z0-9_-]*(?==)`, cls: "key" },
+        { pattern: RE_NUMBER, cls: "num" },
+      ],
+    },
+
+    sql: {
+      lineComment: "--",
+      blockComment: ["/*", "*/"],
+      strings: [{ open: "'", close: "'", escape: "''" }, { open: '"', close: '"', escape: '""' }],
+      keywords: new Set(["SELECT","FROM","WHERE","INSERT","INTO","VALUES","UPDATE","SET","DELETE","CREATE","TABLE","INDEX","VIEW","DROP","ALTER","ADD","COLUMN","PRIMARY","KEY","FOREIGN","REFERENCES","JOIN","INNER","LEFT","RIGHT","OUTER","FULL","ON","AS","AND","OR","NOT","NULL","IS","IN","BETWEEN","LIKE","EXISTS","HAVING","GROUP","BY","ORDER","LIMIT","OFFSET","UNION","ALL","DISTINCT","CASE","WHEN","THEN","ELSE","END","WITH","RECURSIVE","BEGIN","COMMIT","ROLLBACK","TRANSACTION","SELECT","INT","INTEGER","VARCHAR","CHAR","TEXT","DATE","TIMESTAMP","BOOLEAN","FLOAT","DOUBLE"]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`\b(?:true|false|null)\b`, cls: "bool", ci: true },
+      ],
+    },
+
+    plain: { lineComment: null, strings: [], keywords: new Set(), extraRules: [] },
+  };
+
+  // ===== 高亮一行 =====
+  // 把 text 切成 [{text, cls}] 数组 (cls 是 CSS class). cls null 表示普通文本.
+  function highlightLine(text, lang) {
+    if (!text || lang === "plain" || !LANGS[lang]) return [{ text, cls: null }];
+    const lexer = LANGS[lang];
+    const result = [];
+    let i = 0;
+    const len = text.length;
+
+    while (i < len) {
+      // 1. 行注释 (优先级最高)
+      if (lexer.lineComment && text.startsWith(lexer.lineComment, i)) {
+        result.push({ text: text.slice(i), cls: "comment" });
+        return result;
+      }
+      // 2. 块注释起始 (单行情况 — 真正多行要跨行跟踪, 这里只做单行)
+      let matched = false;
+      if (lexer.blockComment) {
+        const [bcOpen, bcClose] = lexer.blockComment;
+        if (text.startsWith(bcOpen, i)) {
+          const end = text.indexOf(bcClose, i + bcOpen.length);
+          const endIdx = end < 0 ? len : end + bcClose.length;
+          result.push({ text: text.slice(i, endIdx), cls: "comment" });
+          i = endIdx;
+          continue;
+        }
+      }
+      // 3. JSON-style key detection: 先于 generic strings,
+      //   让 "..." (followed by :) 作为 key 而不是 string.
+      if (lexer.keyPattern) {
+        // 必须锚定在当前位置: slice(i) 后用 ^ 限定, 否则同一段会被反复命中
+        const re = new RegExp("^(?:" + lexer.keyPattern + ")");
+        const m = text.slice(i).match(re);
+        if (m) {
+          result.push({ text: m[0], cls: lexer.keyCls || "key" });
+          i += m[0].length;
+          continue;
+        }
+      }
+      // 3. 字符串
+      if (lexer.strings) {
+        for (const s of lexer.strings) {
+          if (text.startsWith(s.open, i)) {
+            let j = i + s.open.length;
+            const endStr = s.close;
+            while (j < len) {
+              if (s.escape && text[j] === s.escape && j + 1 < len) { j += 2; continue; }
+              if (text.startsWith(endStr, j)) { j += endStr.length; break; }
+              j++;
+            }
+            result.push({ text: text.slice(i, j), cls: s.raw ? "rawstring" : (s.template ? "template" : "string") });
+            i = j;
+            matched = true;
+            break;
+          }
+        }
+        if (matched) continue;
+      }
+      // 4. extraRules (按声明顺序尝试, 先匹配先得)
+      let ruleMatched = false;
+      if (lexer.extraRules) {
+        for (const rule of lexer.extraRules) {
+          const re = new RegExp("^(?:" + rule.pattern + ")");
+          const m = text.slice(i).match(re);
+          if (m) {
+            // 检测 within 限定 (e.g. fmt within fstring): 我们已经 escape 字符串, 不会到这里
+            result.push({ text: m[0], cls: rule.cls });
+            i += m[0].length;
+            ruleMatched = true;
+            break;
+          }
+        }
+        if (ruleMatched) continue;
+      }
+      // 5. 数字
+      const numRe = new RegExp("^(?:" + RE_NUMBER + ")");
+      const nm = text.slice(i).match(numRe);
+      if (nm) {
+        result.push({ text: nm[0], cls: "num" });
+        i += nm[0].length;
+        continue;
+      }
+      // 6. 标识符 / 关键字 / 类型
+      const idRe = /^[A-Za-z_][A-Za-z0-9_]*/;
+      const im = text.slice(i).match(idRe);
+      if (im) {
+        const word = im[0];
+        let cls = null;
+        if (lexer.keywords && lexer.keywords.has(word)) cls = "keyword";
+        else if (lexer.types && lexer.types.has(word)) cls = "type";
+        if (cls) result.push({ text: word, cls });
+        else result.push({ text: word, cls: null });
+        i += word.length;
+        continue;
+      }
+      // 7. 单字符 (操作符 / 标点)
+      result.push({ text: text[i], cls: "op" });
+      i++;
+    }
+    return result;
+  }
+
+  // ===== 暴露 API =====
+  var Syntax = { detectLanguage, languageLabel, highlightLine, LANGUAGES: Object.keys(LANGS) };
+  if (typeof window !== "undefined") window.Syntax = Syntax;
+
+/* ===== renderVim: 高亮 + 折叠 渲染 =====
+   paintActive() 是纯文本路径 (快, 用于输入时每字符重绘);
+   renderVim(t) 走 token class, 用于高亮/折叠/切语言这类离散操作. */
+function renderVim(t) {
+  t = t || getActiveTab();
+  if (!t) return;
+  const hadFocus = document.activeElement === edContent;
+  const lang = t.language || Syntax.detectLanguage(t.path || "");
+  const folded = t.folded || (t.folded = new Set());
+  const html = [];
+  for (let r = 0; r < t.lines.length; r++) {
+    if (folded.has(r)) {
+      html.push('<div class="fold-row"><span class="fold-marker">\u25bc fold-marker</span> ' +
+        escapeHtml(t.lines[r]) + "</div>");
+      continue;
+    }
+    const toks = Syntax.highlightLine(t.lines[r], lang);
+    html.push('<div class="hl-row">' +
+      toks.map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("") +
+      "</div>");
+  }
+  edContent.replaceChildren();
+  edContent.innerHTML = html.join("");
+  gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
+  setLang(Syntax.languageLabel(lang));
+  if (hadFocus) edContent.focus();
+}
+
+/* ===== 折叠: zc / zo / zM / zR =====
+   块边界判定: 花括号计数, 没有花括号则用缩进块. */
+function foldEndRow(t, start) {
+  const line = t.lines[start];
+  const opens = (line.match(/\{/g) || []).length;
+  const closes = (line.match(/\}/g) || []).length;
+  if (opens > closes) {
+    let depth = 0;
+    for (let r = start; r < t.lines.length; r++) {
+      depth += (t.lines[r].match(/\{/g) || []).length;
+      depth -= (t.lines[r].match(/\}/g) || []).length;
+      if (r > start && depth <= 0) return r;
+    }
+    return t.lines.length - 1;
+  }
+  const base = line.match(/^[ \t]*/)[0].length;
+  if (base === 0) return -1;
+  let end = -1;
+  for (let r = start + 1; r < t.lines.length; r++) {
+    const ind = t.lines[r].match(/^[ \t]*/)[0].length;
+    if (t.lines[r].trim() && ind < base) break;
+    end = r;
+  }
+  return end;
+}
+
+function foldAtCursor(t) {
+  t = t || getActiveTab();
+  if (!t) return;
+  const start = t.cursor.row;
+  if ((t.folded || (t.folded = new Set())).has(start)) return;
+  const end = foldEndRow(t, start);
+  if (end <= start) return;
+  // 把 start+1..end 折叠: 用一行 fold-marker 代表
+  t.lines.splice(start + 1, end - start, "/* fold-marker ... " + (end - start) + " lines ... */");
+  t.folded.add(start);
+  t.dirty = true;
+}
+
+function unfoldAtCursor(t) {
+  t = t || getActiveTab();
+  if (!t) return;
+  const start = t.cursor.row;
+  if (!t.folded || !t.folded.has(start)) return;
+  const m = t.lines[start + 1] && t.lines[start + 1].match(/\/\* fold-marker \.\.\. (\d+) lines \.\.\. \*\//);
+  t.folded.delete(start);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    t.lines.splice(start + 1, 1, ...new Array(n).fill(""));
+  }
+  t.dirty = true;
+}
+
+function foldAll(t) {
+  t = t || getActiveTab();
+  if (!t) return;
+  t.folded = new Set();
+  for (let r = 0; r < t.lines.length; r++) {
+    if (foldEndRow(t, r) > r) t.folded.add(r);
+  }
+  t.dirty = true;
+}
+
+function unfoldAll(t) {
+  t = t || getActiveTab();
+  if (!t || !t.folded) return;
+  t.folded.clear();
+  t.dirty = true;
+}
+
+/* ===== :template <lang> hello-world ===== */
+const TEMPLATES = {
+  rust: ["fn main() {", "    println!(\"Hello, world!\");", "}"],
+  python: ["def main():", "    print(\"Hello, world!\")", "", "", "if __name__ == \"__main__\":", "    main()"],
+  javascript: ["function main() {", "  console.log(\"Hello, world!\");", "}", "", "main();"],
+  typescript: ["function main(): void {", "  console.log(\"Hello, world!\");", "}", "", "main();"],
+  go: ["package main", "", "import \"fmt\"", "", "func main() {", "\tfmt.Println(\"Hello, world!\")", "}"],
+  c: ["#include <stdio.h>", "", "int main(void) {", "    printf(\"Hello, world!\\n\");", "    return 0;", "}"],
+  cpp: ["#include <iostream>", "", "int main() {", "    std::cout << \"Hello, world!\" << std::endl;", "    return 0;", "}"],
+  java: ["public class Main {", "    public static void main(String[] args) {", "        System.out.println(\"Hello, world!\");", "    }", "}"],
+  csharp: ["using System;", "", "class Program {", "    static void Main() {", "        Console.WriteLine(\"Hello, world!\");", "    }", "}"],
+  ruby: ["def main", "  puts \"Hello, world!\"", "end", "", "main"],
+  bash: ["#!/usr/bin/env bash", "echo \"Hello, world!\""],
+  lua: ["print(\"Hello, world!\")"],
+  sql: ["SELECT \"Hello, world!\";"],
+};
+
+function insertTemplate(lang, t) {
+  t = t || getActiveTab();
+  if (!t) return false;
+  const key = String(lang || "").toLowerCase();
+  const body = TEMPLATES[key];
+  if (!body) {
+    setTip("无模板: " + key);
+    return false;
+  }
+  const startLine = t.cursor.row;
+  const keep = t.lines[startLine];
+  const indent = (keep.match(/^[ \t]*/) || [""])[0];
+  const prefix = /\S/.test(keep) ? indent : indent;
+  t.lines.splice(startLine, 1, keep, ...body.map((l) => (l ? prefix + l : l)));
+  t.cursor.row = startLine + 1;
+  t.cursor.col = prefix.length;
+  t.dirty = true;
+  paintActive();
+  setTip("已插入 " + key + " 模板");
+  return true;
+}
+
+/* ===== :setlang <lang> ===== */
+function setTabLanguage(lang, t) {
+  t = t || getActiveTab();
+  if (!t) return false;
+  const id = String(lang || "").toLowerCase();
+  if (Syntax.LANGUAGES.indexOf(id) < 0) {
+    setTip("未知语言: " + id);
+    return false;
+  }
+  t.language = id;
+  renderVim(t);
+  setTip("语言: " + Syntax.languageLabel(id));
+  return true;
+}
+
+/* ===== : 命令 (行首 : 触发) ===== */
+function runExCommand(cmdStr, t) {
+  t = t || getActiveTab();
+  if (!t) return false;
+  const parts = String(cmdStr || "").trim().split(/\s+/);
+  const cmd = parts[0], arg = parts.slice(1).join(" ");
+  switch (cmd) {
+    case "w": case "write": return saveActive();
+    case "q": case "quit": if (activeTabId) closeTab(activeTabId); return true;
+    case "wq": saveActive(); if (activeTabId) closeTab(activeTabId); return true;
+    case "e": case "edit": if (arg) openFile(arg); return true;
+    case "help": showHelp(); return true;
+    case "setlang": return setTabLanguage(arg, t);
+    case "template": case "tpl": return insertTemplate(arg, t);
+    case "fold": foldAll(t); paintActive(); return true;
+    case "unfold": unfoldAll(t); paintActive(); return true;
+    case "lang": setTip("当前语言: " + Syntax.languageLabel(t.language || Syntax.detectLanguage(t.path || ""))); return true;
+    default: setTip("未知命令: " + cmd); return false;
+  }
+}
+
 // ===== Editor =====
 const TABS = tabs;
 let maxTabId = 0;
+let pendingZ = false;   // z 前缀 (zc/zo/zM/zR)
 
 function newId() {
   return "t" + (++maxTabId);
@@ -894,12 +1525,11 @@ function setActiveTab(id) {
   renderBreadcrumb();
   const t = TABS.get(id);
   if (t) {
-    // 首次打开文件要把欢迎页整块换掉, 不能只覆写 textContent (会残留 #welcome 子树)
-    edContent.replaceChildren(document.createTextNode(t.lines.join("\n")));
-    gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
     setFile(t.path);
     setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
     setMode("NORMAL");
+    // 走 renderVim: token 高亮 + 折叠标记 + 状态栏语言, 纯文本路径见 paintActive
+    renderVim(t);
   }
   edContent.focus();
 }
@@ -948,6 +1578,11 @@ function curLine(t) {
 }
 
 function snapshot(t) {
+  // tab 可能来自外部 (UAT 直接 tabs.set), 不一定带 undo/redo 栈 — 惰性补齐,
+  // 否则 t.undo.push 直接 TypeError, 整个 keydown handler 静默失效.
+  if (!t.undo) t.undo = [];
+  if (!t.redo) t.redo = [];
+  if (!t.folded) t.folded = new Set();
   t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
   if (t.undo.length > 200) t.undo.shift();
   t.redo.length = 0;
@@ -1020,9 +1655,9 @@ function insertNewline() {
   // Enter 自动缩进: 复制前一行前导空白, 行尾 { [ ( 再多一级
   const indent = (head.match(/^[ \t]*/) || [""])[0];
   const extra = /[{[(\s]$/.test(head) ? "  " : "";
-  const ins = "\n" + indent + extra;
-  t.lines[t.cursor.row] = head + ins;
-  t.lines.splice(t.cursor.row + 1, 0, tail);
+  // 缩进属于「新行」, 不是原行尾部 — 否则 lines[row] 会变成 "xxx\n  " 而新行是空的.
+  t.lines[t.cursor.row] = head;
+  t.lines.splice(t.cursor.row + 1, 0, indent + extra + tail);
   t.cursor.row += 1;
   t.cursor.col = (indent + extra).length;
   t.dirty = true;
@@ -1128,6 +1763,9 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
 if (edContent) edContent.addEventListener("keydown", (e) => {
   const t = getActiveTab();
   const mode = (document.getElementById("s-mode").dataset.mode || "NORMAL");
+  if (t && !t.undo) { t.undo = []; t.redo = []; }
+  if (t && !t.folded) t.folded = new Set();
+  if (t && !t.dirty) t.dirty = false;
 
   if (e.ctrlKey) {
     const k = e.key.toLowerCase();
@@ -1144,6 +1782,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   }
 
   if (mode === "INSERT") {
+    if (e.key === "Tab") { e.preventDefault(); insertChar("  "); return; }
     if (e.key === "Backspace") { e.preventDefault(); backspace(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }
     if (e.key === "Delete") { e.preventDefault(); normalDeleteChar(); return; }
@@ -1173,6 +1812,16 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     if (e.key === "G") { e.preventDefault(); t.cursor.row = t.lines.length - 1; t.cursor.col = 0; paintActive(); return; }
     if (e.key === "x") { e.preventDefault(); normalDeleteChar(); return; }
     if (e.key === "u") { e.preventDefault(); doUndo(); return; }
+    if (e.key === "z" && pendingZ) {
+      e.preventDefault();
+      const k = e.key;
+      pendingZ = false;
+      if (k === "c") { foldAtCursor(t); renderVim(t); return; }
+      if (k === "o") { unfoldAtCursor(t); renderVim(t); return; }
+      if (k === "M") { foldAll(t); renderVim(t); return; }
+      if (k === "R") { unfoldAll(t); renderVim(t); return; }
+    }
+    if (e.key === "z") { pendingZ = true; setTimeout(() => { pendingZ = false; }, 800); return; }
   }
   if (e.key === "i" || e.key === "a" || e.key === "o" ||
       e.key === "I" || e.key === "A" || e.key === "O") {
@@ -1233,13 +1882,13 @@ function showSidePane(name) {
 }
 
 function renderSideBar() {
-  const tabs = [
+  const paneDefs = [
     { pane: "explorer", title: "资源管理器" },
     { pane: "search", title: "搜索" },
     { pane: "scm", title: "源代码管理" },
     { pane: "outline", title: "大纲" },
   ];
-  sideTabsEl.innerHTML = tabs.map(t =>
+  sideTabsEl.innerHTML = paneDefs.map(t =>
     '<button class="side-tab ' + (t.pane === currentSidePane ? "active" : "") + '" data-side-tab="' + t.pane + '">' + t.title + "</button>"
   ).join("");
   // Render body based on pane
@@ -1703,13 +2352,13 @@ function tileWindows(mode) {
 }
 
 function switchTab(dir) {
-  const tabs = Array.from(document.querySelectorAll(".tab"));
-  if (tabs.length === 0) return;
+  const tabEls = Array.from(document.querySelectorAll(".tab"));
+  if (tabEls.length === 0) return;
   const active = document.querySelector(".tab.active");
-  let idx = tabs.indexOf(active);
+  let idx = tabEls.indexOf(active);
   if (idx < 0) idx = 0;
-  else idx = (idx + dir + tabs.length) % tabs.length;
-  tabs[idx].click();
+  else idx = (idx + dir + tabEls.length) % tabEls.length;
+  tabEls[idx].click();
 }
 
 function toggleFullscreen() {

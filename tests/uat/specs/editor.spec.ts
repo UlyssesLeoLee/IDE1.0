@@ -34,7 +34,7 @@ async function goEditor(page: Page) {
 // openFile 是 async: 点完树节点必须等 tab 真正建好, 否则后续按键落在欢迎页上.
 // (之前两个测试首跑必失败、retry 才过, 就是漏了这个等待)
 async function waitForTab(page: Page) {
-  await page.waitForFunction(() => (window as any).activeTab && (window as any).activeTab.id !== null, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as any).getActiveTab && (window as any).getActiveTab() !== undefined, { timeout: 5_000 });
   await page.locator(".tab").first().waitFor({ timeout: 5_000 });
 }
 
