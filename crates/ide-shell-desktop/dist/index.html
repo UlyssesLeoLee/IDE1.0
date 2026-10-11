@@ -125,75 +125,178 @@
     }
 
     /* ============================================================
-       Crystal Clear Mode: Ultra Transparent Glass (透视后方内容 + 反色文字)
+       Crystal Clear Mode: 艺术品级纯透明光透 (Museum-Grade Pure Optical Transparency)
        ============================================================ */
     [data-theme="clear"] {
       --theme-name: "clear";
       --fg: #ffffff;
-      --fg-muted: rgba(255, 255, 255, 0.82);
+      --fg-muted: rgba(255, 255, 255, 0.85);
       --fg-dim: rgba(255, 255, 255, 0.65);
       --bg: transparent;
       --body-bg: transparent;
 
-      --bg-bar: rgba(255, 255, 255, 0.06);
-      --bg-side: rgba(255, 255, 255, 0.04);
-      --bg-status: rgba(255, 255, 255, 0.08);
+      --bg-bar: rgba(255, 255, 255, 0.04);
+      --bg-side: rgba(255, 255, 255, 0.02);
+      --bg-status: rgba(255, 255, 255, 0.05);
       --bg-edit: transparent;
-      --bg-panel: rgba(255, 255, 255, 0.05);
-      --bg-input: rgba(255, 255, 255, 0.12);
+      --bg-panel: rgba(255, 255, 255, 0.03);
+      --bg-input: rgba(255, 255, 255, 0.08);
 
-      --border: rgba(255, 255, 255, 0.28);
-      --border-subtle: rgba(255, 255, 255, 0.16);
-      --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-      --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2);
-      --glass-inset-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+      --border: rgba(255, 255, 255, 0.22);
+      --border-subtle: rgba(255, 255, 255, 0.12);
+      --glass-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), 0 0 1px rgba(255, 255, 255, 0.5);
+      --glass-specular: inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.75), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15);
+      --glass-inset-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
 
       --blue: #38bdf8;
-      --green: #4ade80;
-      --yellow: #fde047;
+      --green: #34d399;
+      --yellow: #fbbf24;
       --red: #f87171;
       --orange: #fb923c;
 
-      --kbd-bg: rgba(255, 255, 255, 0.16);
+      --kbd-bg: rgba(255, 255, 255, 0.14);
       --kbd-border: rgba(255, 255, 255, 0.35);
-      --scroll-thumb: rgba(255, 255, 255, 0.3);
-      --scroll-thumb-hover: rgba(255, 255, 255, 0.55);
+      --scroll-thumb: rgba(255, 255, 255, 0.35);
+      --scroll-thumb-hover: rgba(255, 255, 255, 0.65);
     }
 
     [data-theme="clear"] body {
-      background: transparent;
+      background: transparent !important;
     }
 
-    /* 在透明玻璃模式下，主界面与文本应用智能高对比/反色融合 */
+    /* 纯透明模式：彻底解除所有遮挡背景的堆叠层，达到真正全透视穿透 */
     [data-theme="clear"] #app {
-      background: rgba(255, 255, 255, 0.02);
-      backdrop-filter: blur(8px) saturate(140%);
-      -webkit-backdrop-filter: blur(8px) saturate(140%);
+      background: transparent !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+
+    [data-theme="clear"] #editor-area,
+    [data-theme="clear"] #editor,
+    [data-theme="clear"] #ed-content,
+    [data-theme="clear"] #gutter {
+      background: transparent !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      box-shadow: none !important;
+    }
+
+    [data-theme="clear"] #side-bar,
+    [data-theme="clear"] #side-body {
+      background: rgba(255, 255, 255, 0.02) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+
+    [data-theme="clear"] #bottom-panel,
+    [data-theme="clear"] #bottom-body {
+      background: rgba(255, 255, 255, 0.03) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
     }
 
     /* ============================================================
-       全透明水晶质感按钮 (Crystal Glass Buttons & Controls)
-       具有水晶高折射高光、双层倒角折射光晕、微棱镜渐变与毛玻璃通透
+       自动动态反色文字核心系统 (Automatic Dynamic Inverted / Adaptive Text Engine)
+       采用 difference 动态融合运算 + 纳米级双重光学反差轮廓：
+       在白色底层自动映射为纯深黑，黑色底层自动映射为晶透白，彩色底层自动呈现互补艳色！
+       ============================================================ */
+    [data-theme="clear"] #ed-content,
+    [data-theme="clear"] #gutter,
+    [data-theme="clear"] #terminal-body,
+    [data-theme="clear"] .shortcuts,
+    [data-theme="clear"] .tree-node,
+    [data-theme="clear"] #breadcrumb,
+    [data-theme="clear"] #welcome h1,
+    [data-theme="clear"] #welcome p,
+    [data-theme="clear"] .s-tip,
+    [data-invert="auto"] #ed-content,
+    [data-invert="auto"] #gutter,
+    [data-invert="auto"] #terminal-body,
+    [data-invert="auto"] .shortcuts,
+    [data-invert="auto"] .tree-node,
+    [data-invert="auto"] #breadcrumb,
+    [data-invert="auto"] #welcome h1 {
+      color: #ffffff !important;
+      mix-blend-mode: difference !important;
+      isolation: auto !important;
+      text-shadow:
+        0 0 1px rgba(0, 0, 0, 0.95),
+        0 1px 2px rgba(0, 0, 0, 0.8),
+        0 0 10px rgba(255, 255, 255, 0.35);
+      -webkit-text-stroke: 0.15px rgba(0, 0, 0, 0.45);
+      transition: color 0.25s ease, text-shadow 0.25s ease;
+    }
+
+    /* 光学发光选区 (Luminous Prismatic Selection) */
+    [data-theme="clear"] ::selection {
+      background: rgba(56, 189, 248, 0.45) !important;
+      color: #ffffff !important;
+      text-shadow: 0 0 8px rgba(56, 189, 248, 0.8) !important;
+    }
+
+    /* 钻石光标呼吸律动 (Diamond Breathing Caret) */
+    [data-theme="clear"] #ed-content:focus {
+      caret-color: #38bdf8 !important;
+    }
+
+    /* 极光高透荧光反色模式 (Luminous Optical Invert Mode) */
+    [data-invert="luminous"] #ed-content,
+    [data-invert="luminous"] #gutter,
+    [data-invert="luminous"] #terminal-body,
+    [data-invert="luminous"] .shortcuts,
+    [data-invert="luminous"] .tree-node,
+    [data-invert="luminous"] #breadcrumb,
+    [data-invert="luminous"] #welcome h1 {
+      color: #ffffff !important;
+      mix-blend-mode: normal !important;
+      text-shadow:
+        0 0 2px rgba(0, 0, 0, 0.98),
+        0 1px 3px rgba(0, 0, 0, 0.9),
+        0 0 14px rgba(56, 189, 248, 0.8),
+        0 0 28px rgba(56, 189, 248, 0.4) !important;
+      -webkit-text-stroke: 0.2px rgba(0, 0, 0, 0.75);
+    }
+
+    /* 曜石超强反差模式 (High-Contrast Obsidian Invert Mode) */
+    [data-invert="contrast"] #ed-content,
+    [data-invert="contrast"] #gutter,
+    [data-invert="contrast"] #terminal-body,
+    [data-invert="contrast"] .shortcuts,
+    [data-invert="contrast"] .tree-node,
+    [data-invert="contrast"] #breadcrumb,
+    [data-invert="contrast"] #welcome h1 {
+      color: #0b0f19 !important;
+      mix-blend-mode: normal !important;
+      text-shadow:
+        0 0 2px rgba(255, 255, 255, 0.98),
+        0 0 8px rgba(255, 255, 255, 0.85),
+        0 1px 3px rgba(255, 255, 255, 0.75) !important;
+      -webkit-text-stroke: 0.25px rgba(255, 255, 255, 0.85);
+      font-weight: 600;
+    }
+
+    /* ============================================================
+       艺术品级全透水晶控件与按钮 (Jeweled Prismatic Crystal Controls)
        ============================================================ */
     [data-theme="clear"] .tb-btn,
     [data-theme="clear"] .theme-toggle-btn,
     [data-theme="clear"] .bottom-toggle,
     [data-theme="clear"] #welcome .open-btn,
     [data-theme="clear"] .md-btn {
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.22) 100%) !important;
-      backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
-      -webkit-backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.25) 100%) !important;
+      backdrop-filter: blur(24px) saturate(220%) brightness(112%) !important;
+      -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(112%) !important;
       border: 1px solid rgba(255, 255, 255, 0.55) !important;
-      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.30) !important;
-      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.15),
-                  0 1px 4px rgba(255, 255, 255, 0.2),
+      border-top: 1.5px solid rgba(255, 255, 255, 0.95) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.3) !important;
+      box-shadow: 0 6px 20px -3px rgba(0, 0, 0, 0.18),
+                  0 1px 4px rgba(255, 255, 255, 0.25),
                   inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
                   inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25),
                   inset 1px 0 1px rgba(255, 255, 255, 0.35),
                   inset -1px 0 1px rgba(255, 255, 255, 0.35) !important;
       color: #ffffff !important;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
       mix-blend-mode: normal;
       transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -203,14 +306,14 @@
     [data-theme="clear"] .bottom-toggle:hover,
     [data-theme="clear"] #welcome .open-btn:hover,
     [data-theme="clear"] .md-btn:hover {
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.48) 0%, rgba(255, 255, 255, 0.20) 45%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.38) 100%) !important;
-      border-color: rgba(255, 255, 255, 0.85) !important;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.24) 45%, rgba(255, 255, 255, 0.15) 55%, rgba(255, 255, 255, 0.42) 100%) !important;
+      border-color: rgba(255, 255, 255, 0.9) !important;
       border-top-color: #ffffff !important;
-      box-shadow: 0 6px 24px -2px rgba(56, 189, 248, 0.3),
-                  0 0 12px rgba(255, 255, 255, 0.4),
+      box-shadow: 0 8px 28px -3px rgba(56, 189, 248, 0.38),
+                  0 0 16px rgba(255, 255, 255, 0.45),
                   inset 0 2px 2px 0 #ffffff,
-                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.4) !important;
-      transform: translateY(-1px);
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.45) !important;
+      transform: translateY(-1.5px);
     }
 
     [data-theme="clear"] .tb-btn:active,
@@ -218,108 +321,203 @@
     [data-theme="clear"] .bottom-toggle:active,
     [data-theme="clear"] #welcome .open-btn:active {
       transform: translateY(0.5px) scale(0.98);
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
-      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.1) 100%) !important;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
     }
 
     /* 水晶质感 Menubar 顶栏按钮 (sakura 风格 8 主菜单) */
+    [data-theme="clear"] #menubar {
+      background: rgba(255, 255, 255, 0.05) !important;
+      backdrop-filter: blur(20px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(200%) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.25) !important;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+    }
+
     [data-theme="clear"] .mb-btn {
-      color: rgba(255, 255, 255, 0.9) !important;
-      border-radius: 5px;
-      margin: 2px 1px;
-      transition: all 0.2s ease;
+      color: rgba(255, 255, 255, 0.95) !important;
+      border-radius: 6px;
+      margin: 2px 2px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     [data-theme="clear"] .mb-btn:hover,
     [data-theme="clear"] .menu-item.open > .mb-btn {
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
-      backdrop-filter: blur(16px) saturate(200%) !important;
-      -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
-      border: 1px solid rgba(255, 255, 255, 0.5) !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.14) 100%) !important;
+      backdrop-filter: blur(20px) saturate(220%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(220%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.55) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.9) !important;
       color: #ffffff !important;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     }
 
     /* 水晶质感 下拉菜单浮层 (Dropdown Panels) */
     [data-theme="clear"] .menu-dropdown,
     [data-theme="clear"] .submenu-dropdown {
-      background: rgba(18, 22, 32, 0.72) !important;
-      backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
-      -webkit-backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      background: rgba(15, 23, 42, 0.82) !important;
+      backdrop-filter: blur(32px) saturate(240%) brightness(108%) !important;
+      -webkit-backdrop-filter: blur(32px) saturate(240%) brightness(108%) !important;
       border: 1px solid rgba(255, 255, 255, 0.35) !important;
-      border-top: 1px solid rgba(255, 255, 255, 0.65) !important;
-      border-radius: 8px;
-      box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.45),
-                  0 2px 8px rgba(0, 0, 0, 0.2),
-                  inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
-                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15) !important;
-      padding: 5px 0;
+      border-top: 1.5px solid rgba(255, 255, 255, 0.75) !important;
+      border-radius: 10px !important;
+      box-shadow: 0 20px 50px -8px rgba(0, 0, 0, 0.55),
+                  0 2px 10px rgba(0, 0, 0, 0.25),
+                  inset 0 1px 1px 0 rgba(255, 255, 255, 0.75),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.18) !important;
+      padding: 6px 0 !important;
     }
     [data-theme="clear"] .menu-row {
-      color: rgba(255, 255, 255, 0.92) !important;
-      border-radius: 4px;
-      margin: 1px 4px;
-      transition: background 0.15s ease;
+      color: rgba(255, 255, 255, 0.94) !important;
+      border-radius: 6px;
+      margin: 1px 5px;
+      padding: 6px 14px;
+      transition: all 0.15s ease;
     }
     [data-theme="clear"] .menu-row:hover {
-      background: linear-gradient(90deg, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.15) 100%) !important;
-      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.4) 0%, rgba(168, 85, 247, 0.25) 100%) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
       color: #ffffff !important;
+    }
+    [data-theme="clear"] .menu-row .mr-shortcut {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.85);
     }
     [data-theme="clear"] .menu-sep {
       background: rgba(255, 255, 255, 0.18) !important;
-      margin: 4px 6px;
+      margin: 5px 8px;
     }
 
     /* 水晶质感 Activity Bar 图标按钮 */
+    [data-theme="clear"] #activity-bar {
+      background: rgba(255, 255, 255, 0.04) !important;
+      backdrop-filter: blur(20px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(200%) !important;
+      border-right: 1px solid rgba(255, 255, 255, 0.2) !important;
+    }
     [data-theme="clear"] .act-btn {
-      color: rgba(255, 255, 255, 0.75);
-      border-radius: 8px;
-      transition: all 0.2s ease;
+      color: rgba(255, 255, 255, 0.8);
+      border-radius: 10px;
+      margin: 3px 0;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     [data-theme="clear"] .act-btn:hover {
-      background: rgba(255, 255, 255, 0.18) !important;
+      background: rgba(255, 255, 255, 0.2) !important;
       color: #ffffff !important;
-      border-color: rgba(255, 255, 255, 0.35) !important;
+      border-color: rgba(255, 255, 255, 0.4) !important;
+      transform: translateY(-1px);
     }
     [data-theme="clear"] .act-btn.active {
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
-      backdrop-filter: blur(18px) saturate(200%) !important;
-      -webkit-backdrop-filter: blur(18px) saturate(200%) !important;
-      border: 1px solid rgba(255, 255, 255, 0.6) !important;
-      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), inset 0 1.5px 1px #fff !important;
-      color: #38bdf8 !important;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.45) 0%, rgba(168, 85, 247, 0.25) 100%) !important;
+      backdrop-filter: blur(20px) saturate(220%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(220%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.7) !important;
+      border-top: 1.5px solid rgba(255, 255, 255, 0.95) !important;
+      box-shadow: 0 4px 16px rgba(56, 189, 248, 0.35), inset 0 1.5px 1px #fff !important;
+      color: #ffffff !important;
     }
 
     /* 水晶质感 侧栏与底栏 Tab 切换按钮 */
     [data-theme="clear"] .side-tab.active,
     [data-theme="clear"] .bottom-tab.active,
     [data-theme="clear"] .tab.active {
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
-      backdrop-filter: blur(14px) saturate(180%) !important;
-      -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
-      border: 1px solid rgba(255, 255, 255, 0.35) !important;
-      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.1) 100%) !important;
+      backdrop-filter: blur(16px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.4) !important;
+      border-top: 1.5px solid rgba(255, 255, 255, 0.8) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
       color: #ffffff !important;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     }
     [data-theme="clear"] .side-tab:hover,
     [data-theme="clear"] .bottom-tab:hover,
     [data-theme="clear"] .tab:hover {
-      background: rgba(255, 255, 255, 0.14) !important;
+      background: rgba(255, 255, 255, 0.16) !important;
       color: #ffffff !important;
     }
 
-    /* 自动和透明背景内容反色显示的文字区域 (mix-blend-mode: difference / isolation) */
-    [data-theme="clear"] #ed-content,
-    [data-theme="clear"] #gutter,
-    [data-theme="clear"] #terminal-body,
-    [data-theme="clear"] .shortcuts,
-    [data-theme="clear"] .tree-node,
+    /* 水晶质感 状态栏 (HUD Rail) */
+    [data-theme="clear"] #status {
+      background: rgba(255, 255, 255, 0.06) !important;
+      backdrop-filter: blur(20px) saturate(200%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(200%) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.25) !important;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+    }
+    [data-theme="clear"] .s-item {
+      border-right: 1px solid rgba(255, 255, 255, 0.18) !important;
+    }
+    [data-theme="clear"] .s-mode {
+      border-radius: 9999px !important;
+      font-weight: 800 !important;
+      letter-spacing: 0.04em !important;
+      padding: 1px 10px !important;
+    }
+    [data-theme="clear"] .s-mode[data-mode="NORMAL"] {
+      background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%) !important;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.7), inset 0 1px 1px #fff !important;
+      color: #ffffff !important;
+    }
+    [data-theme="clear"] .s-mode[data-mode="INSERT"] {
+      background: linear-gradient(135deg, #059669 0%, #34d399 100%) !important;
+      box-shadow: 0 0 12px rgba(52, 211, 153, 0.7), inset 0 1px 1px #fff !important;
+      color: #ffffff !important;
+    }
+    [data-theme="clear"] .s-mode[data-mode="VISUAL"] {
+      background: linear-gradient(135deg, #d97706 0%, #fbbf24 100%) !important;
+      box-shadow: 0 0 12px rgba(251, 191, 36, 0.7), inset 0 1px 1px #fff !important;
+      color: #ffffff !important;
+    }
+
+    /* 反色引擎交互徽章 */
+    .s-invert {
+      cursor: pointer;
+      border-radius: 9999px !important;
+      padding: 1px 10px !important;
+      background: rgba(255, 255, 255, 0.14) !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+      transition: all 0.2s ease !important;
+      color: #ffffff !important;
+      font-weight: 600;
+    }
+    .s-invert:hover {
+      background: rgba(56, 189, 248, 0.35) !important;
+      border-color: #38bdf8 !important;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.5), inset 0 1px 1px #fff !important;
+      transform: translateY(-1px);
+    }
+
+    /* 艺术品级欢迎界面 (Museum-Grade Welcome Hero) */
     [data-theme="clear"] #welcome h1 {
-      color: #ffffff;
-      mix-blend-mode: difference;
+      font-size: 68px !important;
+      font-weight: 900 !important;
+      letter-spacing: -0.03em !important;
+      background: linear-gradient(135deg, #ffffff 0%, rgba(255, 255, 255, 0.95) 40%, rgba(125, 211, 252, 0.9) 70%, #ffffff 100%) !important;
+      -webkit-background-clip: text !important;
+      -webkit-text-fill-color: transparent !important;
+      filter: drop-shadow(0 4px 28px rgba(56, 189, 248, 0.55)) !important;
+    }
+    [data-theme="clear"] #welcome .open-btn {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.45) 0%, rgba(168, 85, 247, 0.35) 50%, rgba(56, 189, 248, 0.45) 100%) !important;
+      backdrop-filter: blur(28px) saturate(220%) !important;
+      -webkit-backdrop-filter: blur(28px) saturate(220%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.75) !important;
+      border-top: 1.5px solid #ffffff !important;
+      box-shadow: 0 12px 36px -4px rgba(56, 189, 248, 0.45), inset 0 1.5px 2px #fff !important;
+      border-radius: 12px !important;
+      padding: 12px 30px !important;
+      font-size: 14px !important;
+      font-weight: 700 !important;
+    }
+    [data-theme="clear"] #welcome .open-btn:hover {
+      transform: translateY(-2px) scale(1.02) !important;
+      box-shadow: 0 16px 44px -2px rgba(56, 189, 248, 0.6), inset 0 2px 2px #fff !important;
     }
 
     html, body {
@@ -1050,6 +1248,8 @@
               <div class="menu-row" data-cmd="theme-clear"><span>🪟 高透视水晶玻璃 (Crystal Clear)</span></div>
             </div>
           </div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="toggle-invert" data-shortcut="Alt+I"><span>🪞 自动动态反色</span><span class="mr-shortcut">Alt+I</span></div>
         </div>
       </div>
 
@@ -1202,6 +1402,7 @@
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
       <span class="s-item" id="s-file">无活动</span>
       <span class="s-item s-tip" id="s-tip">就绪 — 点工具栏「打开文件夹」导入项目</span>
+      <span class="s-item s-invert" id="s-invert" data-tip="反色引擎 (点击切换: 自动动态反色 / 极光高透 / 曜石反差)">🪞 动态反色: 开启</span>
       <span class="s-item" id="s-lang">Plain</span>
     </div>
 
@@ -1740,18 +1941,18 @@ function showWelcome() {
 showWelcome();
 
 // ===== Theme Support (Light Glass / Obsidian / Crystal Clear) =====
-const THEME_CYCLE = ["light", "dark", "clear"];
+const THEME_CYCLE = ["clear", "dark", "light"];
 
 function initTheme() {
   const savedTheme = localStorage.getItem("ide10_theme");
-  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const initialTheme = savedTheme || (prefersDark ? "dark" : "light");
+  const initialTheme = savedTheme || "clear";
   applyTheme(initialTheme);
+  initInvert();
 
   const toggleBtn = document.getElementById("theme-toggle");
   if (toggleBtn) {
     toggleBtn.addEventListener("click", () => {
-      const current = document.documentElement.dataset.theme || "light";
+      const current = document.documentElement.dataset.theme || "clear";
       const idx = THEME_CYCLE.indexOf(current);
       const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
       try { localStorage.setItem("ide10_theme", next); } catch (_) {}
@@ -1762,7 +1963,7 @@ function initTheme() {
   if (window.matchMedia) {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
       if (!localStorage.getItem("ide10_theme")) {
-        applyTheme(e.matches ? "dark" : "light");
+        applyTheme(e.matches ? "dark" : "clear");
       }
     });
   }
@@ -1776,7 +1977,7 @@ function applyTheme(theme) {
   if (label && icon) {
     if (theme === "clear") {
       icon.textContent = "🪟";
-      label.textContent = "Transparent";
+      label.textContent = "Pure Crystal";
     } else if (theme === "dark") {
       icon.textContent = "🌙";
       label.textContent = "Obsidian";
@@ -1787,9 +1988,51 @@ function applyTheme(theme) {
   }
   if (toggleBtn) {
     const nextIdx = (THEME_CYCLE.indexOf(theme) + 1) % THEME_CYCLE.length;
-    const nextName = THEME_CYCLE[nextIdx] === "clear" ? "全透视玻璃" : THEME_CYCLE[nextIdx] === "dark" ? "黑曜石" : "浅色毛玻璃";
-    toggleBtn.title = `当前: ${theme}，点击切换到 ${nextName}`;
+    const nextName = THEME_CYCLE[nextIdx] === "clear" ? "全透视水晶" : THEME_CYCLE[nextIdx] === "dark" ? "黑曜石" : "浅色毛玻璃";
+    toggleBtn.title = `当前主题: ${theme}，点击切换到 ${nextName}`;
   }
+}
+
+// ===== Auto Dynamic Invert Engine (自动动态反色文字引擎) =====
+const INVERT_MODES = ["auto", "luminous", "contrast"];
+let currentInvertMode = "auto";
+
+function initInvert() {
+  const saved = localStorage.getItem("ide10_invert") || "auto";
+  applyInvert(saved);
+
+  const invBtn = document.getElementById("s-invert");
+  if (invBtn) {
+    invBtn.addEventListener("click", () => {
+      cycleInvert();
+    });
+  }
+}
+
+function cycleInvert() {
+  const idx = INVERT_MODES.indexOf(currentInvertMode);
+  const next = INVERT_MODES[(idx + 1) % INVERT_MODES.length];
+  applyInvert(next);
+  try { localStorage.setItem("ide10_invert", next); } catch (_) {}
+}
+
+function applyInvert(mode) {
+  currentInvertMode = mode;
+  document.documentElement.dataset.invert = mode;
+  const el = document.getElementById("s-invert");
+  if (el) {
+    if (mode === "auto") {
+      el.textContent = "🪞 动态反色: 开启";
+      el.title = "自动动态反色 (差值融合运算，随背景智能反转)";
+    } else if (mode === "luminous") {
+      el.textContent = "✨ 动态反色: 极光";
+      el.title = "极光高透荧光反色 (暗影微轮廓，透光发光)";
+    } else {
+      el.textContent = "⬛ 动态反色: 曜石";
+      el.title = "曜石超强反差反色 (高饱和深黑，清晰凝练)";
+    }
+  }
+  setTip("动态反色模式: " + (mode === "auto" ? "自动动态反色 (智能差值)" : mode === "luminous" ? "极光高透荧光" : "曜石超强反差"));
 }
 
 // ===== Bootstrap =====

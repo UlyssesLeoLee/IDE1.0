@@ -144,6 +144,8 @@ impl ShellState {
     pub fn project_root_set(&self, root: PathBuf) -> Result<PathBuf, String> {
         let canon = path_safety::safe_canonicalize(&root)
             .map_err(|e| format!("无法打开目录 {}: {e}", root.display()))?;
+        // Strip Windows verbatim prefix if present
+        let canon = path_safety::strip_verbatim(&canon);
         if !canon.is_dir() {
             return Err(format!("不是目录: {}", canon.display()));
         }
@@ -618,6 +620,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             );
         }
         ("GET", "/api/kernel_banner") => {
+            // Also handle POST for web invoke()
+            let j =
+                serde_json::to_vec(&serde_json::json!(state.kernel_banner())).unwrap_or_default();
+            send_response(stream, "200 OK", "application/json", &j);
+        }
+        ("POST", "/api/kernel_banner") => {
             let j =
                 serde_json::to_vec(&serde_json::json!(state.kernel_banner())).unwrap_or_default();
             send_response(stream, "200 OK", "application/json", &j);
@@ -644,13 +652,17 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         ("POST", "/api/open_project") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            eprintln!("[DEBUG] /api/open_project received path: {:?}", path);
             match state.project_root_set(PathBuf::from(path)) {
                 Ok(c) => {
                     let j =
                         serde_json::to_vec(&c.to_string_lossy().into_owned()).unwrap_or_default();
                     send_response(stream, "200 OK", "application/json", &j);
                 }
-                Err(e) => send_response(stream, "400 Bad Request", "text/plain", e.as_bytes()),
+                Err(e) => {
+                    eprintln!("[DEBUG] /api/open_project error: {}", e);
+                    send_response(stream, "400 Bad Request", "text/plain", e.as_bytes());
+                }
             }
         }
         ("POST", "/api/list_dir") => {

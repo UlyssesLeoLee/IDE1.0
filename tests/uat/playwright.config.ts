@@ -31,6 +31,10 @@ export default defineConfig({
     viewport: { width: 960, height: 600 },
     trace: "on-first-retry",
   },
+  // 传递环境变量给测试进程
+  env: {
+    IDE_SHELL_WEB_TEST_ROOT: "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project",
+  },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
       command: BINARY,
@@ -39,7 +43,7 @@ export default defineConfig({
       timeout: 90_000,  // CI Linux cold-start: build + connect 延长
       // 默认 fixtures 项目根 — editor.spec.ts / sandbox.spec.ts 用
       env: {
-        IDE_SHELL_WEB_TEST_ROOT: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project",
+        IDE_SHELL_WEB_TEST_ROOT: "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project",
       },
       stdout: "ignore",
       stderr: "pipe",

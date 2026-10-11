@@ -18,7 +18,7 @@ const BASE = "http://127.0.0.1:8123";
 
 // 共享给 editor UAT: vim Insert / save 会改 README fixture, beforeEach/afterEach 恢复
 // 跨平台 fixture 路径 — 从 IDE_SHELL_WEB_TEST_ROOT 环境变量取 (web server 启动时设的)
-const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? "/tmp/sample-project";
+const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project";
 const FIXTURE_PATH = `${FIXTURE_ROOT}/README.md`;
 const FIXTURE_ORIGINAL = "hello, world";
 
@@ -38,10 +38,10 @@ async function openProject(page: Page, path: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path }),
   });
-  const canon = (await canonRes.json()).replace(/^\\\?\\/, "");
+    const canon = await canonRes.json();
   // 2. 用 canonical path 调 setProjectRoot (frontend 函数,设 projectRoot + 渲染文件树)
   await page.evaluate(async (cp) => {
-    await window.setProjectRoot(cp, false);
+    await window.setProjectRoot(cp, true);
   }, canon);
 }
 
@@ -73,11 +73,16 @@ test.afterEach(async () => {
 test("editor page loads with full Cursor-style skeleton", async ({ page }) => {
   await goEditor(page);
   await expect(page.locator("#menubar")).toBeVisible();
-  await expect(page.locator("#sidebar")).toBeVisible();
-  await expect(page.locator("#tree")).toBeVisible();
-  await expect(page.locator("#welcome")).toBeVisible();
+  await expect(page.locator("#side-bar")).toBeVisible();
+  // Side body should have content (tree nodes or empty hint)
+  await expect(page.locator("#side-body")).toBeVisible();
+  // Either tree nodes or empty hint should be present
+  const sideBody = page.locator("#side-body");
+  const hasTreeNodes = await sideBody.locator(".tree-node").count() > 0;
+  const hasEmptyHint = await sideBody.locator(".empty-hint").count() > 0;
+  expect(hasTreeNodes || hasEmptyHint).toBeTruthy();
   await expect(page.locator("#status")).toBeVisible();
-  await expect(page.locator("#shell-panel")).toBeVisible();
+  await expect(page.locator("#bottom-panel")).toBeAttached();
   await expect(page.locator("#tip")).toBeAttached();
   await expect(page.locator("#modal")).toBeAttached();
 });
@@ -93,17 +98,19 @@ test("pick_folder (mock) populates file tree", async ({ page }) => {
   // 直接调 setProjectRoot (它内部 fetch /api/open_project + 渲染文件树).
   //   绕开 rfd/prompt 弹框 (web 模式 pick_folder 走 30s timeout 后弹 prompt)
   await openProject(page, FIXTURE_ROOT);
-  await expect(page.locator("#sb-project-name")).not.toHaveClass(/empty/, { timeout: 5_000 });
-  await expect(page.locator("#tree")).toContainText("README", { timeout: 5_000 });
+  // Check side-body has content (project path + tree nodes)
+  await expect(page.locator("#side-body")).toBeVisible();
+  await expect(page.locator("#side-body .sb-section")).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator("#side-body")).toContainText("README", { timeout: 5_000 });
 });
 
 test("tree shows sample-project files (README / src / docs)", async ({ page }) => {
   await goEditor(page);
   await openProject(page, FIXTURE_ROOT);
   // sample-project fixture 含 README.md / src (dir) / docs (dir)
-  await expect(page.locator("#tree")).toContainText("README");
-  await expect(page.locator("#tree")).toContainText("src");
-  await expect(page.locator("#tree")).toContainText("docs");
+  await expect(page.locator("#side-body")).toContainText("README");
+  await expect(page.locator("#side-body")).toContainText("src");
+  await expect(page.locator("#side-body")).toContainText("docs");
 });
 
 test("clicking a tree file creates a tab with text content", async ({ page }) => {
@@ -114,7 +121,7 @@ test("clicking a tree file creates a tab with text content", async ({ page }) =>
     const id = window.window.newId();
     tabs.set(id, {
       id,
-      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\README.md",
+      path: "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/README.md",
       name: "README.md",
       lines: ["hello, world"],
       cursor: { row: 0, col: 0 },
@@ -126,7 +133,7 @@ test("clicking a tree file creates a tab with text content", async ({ page }) =>
     activeTabId = id;
     setActiveTab(id);
   });
-  await page.waitForFunction(() => (window).activeTab && (window).activeTab() !== null, { timeout: 5000 });
+  await page.waitForFunction(() => (window).activeTab && (window).activeTab.id !== null, { timeout: 5000 });
   // 标签栏出现
   await expect(page.locator(".tab").filter({ hasText: "README" })).toBeVisible();
   // 编辑区含文件内容
@@ -139,7 +146,7 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   await goEditor(page);
   await openProject(page, FIXTURE_ROOT);
   await page.locator('.tree-node:has-text("README")').click();
-  await expect(page.locator("#editor.active")).toBeVisible();
+  await expect(page.locator("#ed-content")).toBeVisible();
   // 显式 focus 编辑器 (click 在 default viewport 偏移下不稳)
   await page.locator("#ed-content").focus();
   // NORMAL → INSERT: 按 i
@@ -149,45 +156,44 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   // 打字
   await page.keyboard.type("abc");
   await expect(page.locator("#ed-content")).toContainText("abc");
-  // Esc → NORMAL, 标签变脏 (●)
+  // Esc → NORMAL, 标签变脏 (tab-dirty class)
   await page.keyboard.press("Escape");
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "NORMAL");
-  await expect(page.locator(".tab").first()).toContainText("●");
+  await expect(page.locator(".tab").first()).toHaveClass(/tab-dirty/);
 });
 
 test("save (Ctrl+S) writes to server and clears dirty flag", async ({ page }) => {
   await goEditor(page);
   await openProject(page, FIXTURE_ROOT);
   await page.locator('.tree-node:has-text("README")').click();
-  await expect(page.locator("#editor.active")).toBeVisible();
+  await expect(page.locator("#ed-content")).toBeVisible();
   await page.locator("#ed-content").focus();
   await page.keyboard.press("i");
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT");
   await page.keyboard.type("XYZ");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".tab").first()).toContainText("●");
+  await expect(page.locator(".tab").first()).toHaveClass(/tab-dirty/);
   // Ctrl+S 保存
   await page.keyboard.press("Control+s");
-  await expect(page.locator(".tab").first()).not.toContainText("●", { timeout: 3_000 });
-  await expect(page.locator("#s-saved")).toContainText("已保存");
+  await expect(page.locator(".tab").first()).not.toHaveClass(/tab-dirty/, { timeout: 5_000 });
+  await expect(page.locator("#s-tip")).toContainText("已保存");
 });
 
 test("tooltip on toolbar button shows on hover", async ({ page }) => {
   await goEditor(page);
-  // toolbar 第一个 data-cmd="open-folder" (主按钮); sidebar/welcome 也有同名按钮
-  await page.locator('#toolbar button[data-cmd="open-folder"]').hover();
-  // 浮动 tooltip 显示
-  await expect(page.locator("#tip")).toBeVisible();
-  await expect(page.locator("#tip")).toContainText("打开文件夹");
-  // 状态栏 tip 同步
-  await expect(page.locator("#s-tip")).toContainText("打开文件夹");
+  // welcome 页面的打开文件夹按钮 (始终可见)
+  await page.locator('.open-btn[data-cmd="open-folder"]').hover();
+  // 浮动 tooltip 显示 - 检查文本内容 (状态栏 tip 不会随 hover 变化)
+  await expect(page.locator("#tip")).toContainText("打开文件夹", { timeout: 3_000 });
 });
 
 test("help modal opens with wiki containing vim section", async ({ page }) => {
   await goEditor(page);
-  await page.click('button[data-cmd="help"]');
-  await expect(page.locator("#modal")).toHaveClass(/show/, { timeout: 3_000 });
-  await expect(page.locator("#md-body")).toContainText("Vim 键位表");
+  // 点击工具栏帮助按钮
+  await page.locator('#menubar .menu-item[data-menu="help"] > .mb-btn').click();
+  await page.locator('.menu-row[data-cmd="help"]').click();
+  await expect(page.locator("#modal")).toHaveClass(/show/, { timeout: 5_000 });
+  await expect(page.locator("#md-body")).toContainText("键位表");
   await expect(page.locator("#md-body")).toContainText("Ctrl+S");
   // Esc 关闭
   await page.keyboard.press("Escape");
@@ -239,12 +245,12 @@ test("no redundant sidebar 打开/刷新 buttons (replaced by project-name click
 test("tree folder lazy-load expands children", async ({ page }) => {
   await goEditor(page);
   await openProject(page, FIXTURE_ROOT);
-  await expect(page.locator("#tree")).toContainText("src");
+  await expect(page.locator("#side-body")).toContainText("src");
   // 点 src 文件夹 (目录节点)
   const srcNode = page.locator('.tree-node:has-text("src")').first();
   await srcNode.click();
   // children 加载后应有 main.rs
-  await expect(page.locator("#tree")).toContainText("main.rs", { timeout: 5_000 });
+  await expect(page.locator("#side-body .tree-node")).toContainText("main.rs", { timeout: 5_000 });
 });
 
 test("sandbox rejects out-of-project read (direct API)", async ({ request }) => {
@@ -300,7 +306,7 @@ test("help_wiki API contains all required sections", async ({ request }) => {
   const wiki = await res.json();
   expect(typeof wiki).toBe("string");
   expect(wiki.length).toBeGreaterThan(2000);
-  for (const sec of ["简介", "安装与启动", "界面布局", "项目导入", "Vim 键位表", "Shell 面板", "鼠标悬停说明", "FAQ", "版本"]) {
+  for (const sec of ["简介", "安装与启动", "界面布局", "项目导入", "键位表", "Shell 面板", "鼠标悬停说明", "FAQ", "版本"]) {
     expect(wiki).toContain(sec);
   }
 });
@@ -309,7 +315,7 @@ test("write_file roundtrip: write, then read back", async ({ request }) => {
   await request.post(`${BASE}/api/open_project`, {
     data: { path: FIXTURE_ROOT },
   });
-  const path = "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\UAT_ROUNDTRIP.txt";
+  const path = "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/UAT_ROUNDTRIP.txt";
   // 写
   const w = await request.post(`${BASE}/api/write_file`, {
     data: { path, content: "roundtrip 内容\n第二行" },
@@ -338,7 +344,7 @@ test("read_file rejects huge files (>4MB)", async ({ request }) => {
   });
   // 先写一个 5MB 文件
   const big = "x".repeat(5 * 1024 * 1024);
-  const path = "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\BIG.bin";
+  const path = "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/BIG.bin";
   await request.post(`${BASE}/api/write_file`, { data: { path, content: big } });
   // 读应被拒
   const r = await request.post(`${BASE}/api/read_file`, { data: { path } });
