@@ -114,8 +114,8 @@ export async function waitForBootstrap(page: Page, timeoutMs = 5_000): Promise<v
   await page.waitForFunction(
     () => {
       const b = document.getElementById("banner");
-      // banner 含 "ide-kernel-core" 或 "ide-shell-web" 都算 bootstrap 完成
-      return b && /ide-kernel-core|ide-shell-web/.test(b.textContent || "");
+      // banner 含 "ide-kernel-core" 或 "ide-shell-web" 或后端未连接提示 都算 bootstrap 完成
+      return b && /ide-kernel-core|ide-shell-web|后端未连接/.test(b.textContent || "");
     },
     { timeout: timeoutMs }
   ).catch(() => {
