@@ -20,6 +20,7 @@
 //!
 //! 设计: server 内持有单一 App 状态 (单用户 demo). 端口默认 8123 (CI 与本地都用).
 
+pub mod auth;
 pub mod path_safety;
 pub mod wiki_data;
 
@@ -40,17 +41,39 @@ use serde::{Deserialize, Serialize};
 use path_safety::{list_dir, read_file, write_file, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
+/// 请求头大小上限 (防 header 放大攻击).
+pub const MAX_HEADER_BYTES: usize = 16 * 1024;
+/// 请求体大小上限. 文件写入本身限 4 MB, 留一倍余量给 JSON 包裹.
+pub const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 pub struct ShellState {
     app: Mutex<App>,
+    /// 请求认证配置 (token / 允许的 Host).
+    auth: auth::Auth,
     /// 当前打开的项目根 (单 user, 安全沙箱 = 限此根内访问文件).
     project_root: Mutex<Option<PathBuf>>,
 }
 
 impl ShellState {
     pub fn new() -> Self {
+        Self::with_port(8123)
+    }
+
+    /// 指定服务端口 (用于 Host 白名单).
+    pub fn with_port(port: u16) -> Self {
         Self {
             app: Mutex::new(App::new(AppConfig::default())),
             project_root: Mutex::new(None),
+            auth: auth::Auth::from_env(port),
+        }
+    }
+
+    /// 测试用: 指定 token.
+    pub fn with_auth(a: auth::Auth) -> Self {
+        Self {
+            app: Mutex::new(App::new(AppConfig::default())),
+            project_root: Mutex::new(None),
+            auth: a,
         }
     }
 
@@ -181,11 +204,35 @@ pub struct MouseRequest {
 }
 
 /// 简易 HTTP 响应。
+/// 回 CORS 头.
+///
+/// # 安全 (P0)
+///
+/// 原实现对**所有**响应写 `Access-Control-Allow-Origin: *`, 等于让用户浏览器里
+/// 打开的任意恶意网页都能读本机 shell 的响应 —— 配合 `/api/terminal_*` 即 RCE。
+///
+/// 现在改为: 有合法 Origin 才回显该 Origin (同源); 无 Origin 或不可信 Origin
+/// 一律**不回** CORS 头, 浏览器因此读不到响应。
 fn send_response(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
-    let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n",
+    send_response_cors(stream, status, content_type, body, None)
+}
+
+/// 带 Origin 回显的响应 (只有可信同源 Origin 才会被传入 Some)。
+fn send_response_cors(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+    origin: Option<&str>,
+) {
+    let mut header = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n",
         body.len()
     );
+    if let Some(o) = origin {
+        header.push_str(&format!("Access-Control-Allow-Origin: {o}\r\n"));
+    }
+    header.push_str("\r\n");
     let _ = stream.write_all(header.as_bytes());
     let _ = stream.write_all(body);
     let _ = stream.flush();
@@ -198,6 +245,7 @@ pub fn handle_request_pub(stream: &mut TcpStream, state: &ShellState) {
 
 /// 处理单个 HTTP 请求 (单连接, 短生命周期)。
 fn handle_request(stream: &mut TcpStream, state: &ShellState) {
+    let auth = &state.auth;
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).is_err() {
@@ -209,19 +257,54 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
     // 分离 path 与 query string: /api/terminal_output?id=term-0 → /api/terminal_output
     let path = path_full.split('?').next().unwrap_or(path_full);
 
-    // 读 header 完
+    // 读 header 完 (收集全部 header 供认证用)
     let mut content_length = 0usize;
+    let mut headers: auth::Headers = Vec::new();
+    let mut header_bytes = 0usize;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).is_err() || line == "\r\n" || line.is_empty() {
             break;
         }
-        if let Some(v) = line.to_lowercase().strip_prefix("content-length:") {
-            content_length = v.trim().parse().unwrap_or(0);
+        header_bytes += line.len();
+        if header_bytes > MAX_HEADER_BYTES {
+            send_response(stream, "431 Request Header Fields Too Large", "text/plain", b"");
+            return;
+        }
+        if let Some((k, v)) = line.split_once(':') {
+            headers.push((k.trim().to_ascii_lowercase(), v.trim().to_string()));
+        }
+        if let Some((k, v)) = headers.last() {
+            if k == "content-length" {
+                content_length = v.parse().unwrap_or(0);
+            }
         }
     }
 
-    // 读 body
+    // --- 认证 / Host / Origin 校验 (P0) ---
+    // 必须在校验通过后才分配 body 内存, 否则恶意 Content-Length 可先吃掉 GB 级 RAM.
+    if let Err(e) = auth.check(method, &headers) {
+        let body = serde_json::json!({ "error": e.reason }).to_string();
+        send_response(stream, e.status, "application/json", body.as_bytes());
+        return;
+    }
+    // 同源请求: 回显 Origin 让浏览器能读响应 (跨站的已在上面被拒)
+    let echo_origin = headers
+        .iter()
+        .find(|(k, _)| k == "origin")
+        .map(|(_, v)| v.as_str())
+        .filter(|o| auth.origin_is_allowed(o));
+
+    // 读 body (上限保护, 防止单请求分配过大内存)
+    if content_length > MAX_BODY_BYTES {
+        send_response(
+            stream,
+            "413 Payload Too Large",
+            "application/json",
+            br#"{"error":"body-too-large"}"#,
+        );
+        return;
+    }
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
         let _ = reader.read_exact(&mut body);
@@ -273,14 +356,14 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     return;
                 }
             };
-            let full = if std::path::Path::new(file_path).is_absolute() {
-                std::path::PathBuf::from(file_path)
-            } else {
-                root_path.join(file_path)
-            };
-            match std::fs::read_to_string(&full) {
-                Ok(content_str) => {
-                    let result = outline::outline_file(&full.to_string_lossy(), &content_str);
+            // 走沙箱读文件 (P0 安全): 原实现直接 `fs::read_to_string(&full)`,
+            // `full` 只做了 root.join 而**没有校验是否在 root 之内** ——
+            // 传 `../../../../Windows/win.ini` 即可任意文件读取.
+            // 注释里"绕过沙箱"的理由 (sandbox 的 \\?\ prefix bug) 早已由
+            // stripVerbatim 修复, 不再成立.
+            match path_safety::read_file(&root_path, file_path) {
+                Ok(fc) => {
+                    let result = outline::outline_file(file_path, &fc.content);
                     send_response(
                         stream,
                         "200 OK",
@@ -780,13 +863,31 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 }
 
 /// 启动 HTTP server 监听指定端口 (阻塞).
+/// 单连接读超时 (秒). 单线程 server 下, 一个只发请求行不发完 header 的
+/// 半开连接会永久阻塞整个服务 —— 这是手写同步 HTTP server 的经典 DoS.
+const READ_TIMEOUT_SECS: u64 = 15;
+
 pub fn serve(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
+    let port = addr
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8123);
+    let state = ShellState::with_port(port);
     eprintln!("ide-shell-web listening on http://{addr}");
-    let state = ShellState::new();
+    if state.auth.open {
+        eprintln!("[auth] 开放模式 (IDE_SHELL_WEB_NO_AUTH=1) — 仅限本地 UAT, 不要暴露");
+    } else {
+        eprintln!("[auth] token = {}", state.auth.token());
+        eprintln!("[auth] 请求需带 header: X-IDE-Token: <token>");
+    }
     for stream in listener.incoming() {
         match stream {
             Ok(mut s) => {
+                // 读超时: 防半开连接永久占用唯一的服务线程
+                let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
+                let _ = s.set_write_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
                 handle_request(&mut s, &state);
             }
             Err(e) => eprintln!("connection error: {e}"),
