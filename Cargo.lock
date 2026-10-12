@@ -2346,6 +2346,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
  "rfd",

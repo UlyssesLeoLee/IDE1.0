@@ -43,10 +43,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod doc_store;
 pub mod document;
 pub mod session;
 pub mod text_ops;
 
+pub use doc_store::{DocStore, DocView};
 pub use document::{Document, DocumentSnapshot, LineEnding, Pos};
 pub use session::{Session, TabState};
 pub use text_ops::{FindOptions, FindResult, ReplaceOutcome};
