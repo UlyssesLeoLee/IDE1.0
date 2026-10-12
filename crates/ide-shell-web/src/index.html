@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IDE1.0 IDE Shell — web UAT</title>
   <style>
     :root {
@@ -11,17 +12,23 @@
       --blue: #569cd6;
       --green: #4ec9b0;
       --yellow: #dcdcaa;
+      --red: #f48771;
       --gray: #808080;
-      --dark-gray: #5a5a5a;
+      --dark-gray: #7a7a7a; /* 提亮: 旧 #5a5a5a 对 #1e1e1e 对比度不足 */
       --black: #000000;
     }
     body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; background: var(--bg); color: var(--fg); margin: 24px; }
+    h2 { margin: 0 0 4px; }
+    p.lead { margin: 0 0 12px; color: var(--gray); font-size: 13px; }
     #shell {
       border: 1px solid var(--border);
       border-radius: 4px;
       padding: 8px;
       max-width: 880px;
+      overflow-x: auto;
+      cursor: text;
     }
+    #shell:focus-within, #shell:hover { border-color: var(--blue); }
     .section { margin-bottom: 8px; }
     .row { white-space: pre; font-size: 14px; line-height: 1.2; }
     .badge { padding: 0 6px; font-weight: bold; }
@@ -33,26 +40,54 @@
     .fg-blue      { color: var(--blue); }
     .fg-green     { color: var(--green); }
     .fg-yellow    { color: var(--yellow); }
+    .cursor { background: var(--fg); color: var(--bg); }
+    #notice { max-width: 880px; min-height: 18px; margin: 8px 0; font-size: 12px; }
+    #notice.err  { color: var(--red); }
+    #notice.info { color: var(--yellow); }
+    .toolbar { max-width: 880px; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .toolbar button {
+      font: inherit; font-size: 12px; color: var(--fg); background: #2d2d2d;
+      border: 1px solid #555; border-radius: 3px; padding: 3px 8px; cursor: pointer;
+    }
+    .toolbar button:hover:not(:disabled) { border-color: var(--blue); }
+    .toolbar button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+    .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .toolbar kbd { background: #333; color: #fff; padding: 0 4px; border-radius: 3px; border: 1px solid #555; margin-right: 4px; }
     .footer { margin-top: 12px; font-size: 12px; color: var(--dark-gray); }
-    kbd { background: #333; color: #fff; padding: 1px 5px; border-radius: 3px; font-size: 12px; border: 1px solid #555; }
   </style>
 </head>
 <body>
   <h2>IDE1.0 IDE Shell — web UAT</h2>
-  <p>Playwright e2e target. Same Rust core as <code>cargo run -p ide-shell --bin ide-shell</code> (ratatui TUI), different render backend.</p>
-  <div id="shell" data-testid="shell" data-mode="" data-buffer="" data-cursor="0">
+  <p class="lead">Playwright e2e target. Same Rust core as <code>cargo run -p ide-shell --bin ide-shell</code> (ratatui TUI), different render backend.</p>
+  <div id="shell" data-testid="shell" data-mode="" data-buffer="" data-cursor="0" title="Left click: Insert · Right click: Normal">
     <div class="section" data-testid="status" id="status"></div>
-    <div class="section" data-testid="history" id="history"></div>
+    <div class="section" data-testid="history" id="history" role="log" aria-live="polite"></div>
     <div class="section" data-testid="prompt" id="prompt"></div>
+  </div>
+  <div id="notice" data-testid="notice" role="status"></div>
+  <div class="toolbar" data-testid="toolbar" aria-label="Shortcuts (clickable)">
+    <!-- data-modes: 该按钮在哪些 mode 下真正有效; 其余 mode 禁用, 避免点了变成往 buffer 里输字符 -->
+    <button data-key="Char:i" data-modes="NORMAL" title="Enter Insert mode"><kbd>i</kbd>insert</button>
+    <button data-key="Char::" data-modes="NORMAL" title="Enter Command mode"><kbd>:</kbd>command</button>
+    <button data-key="Esc" data-modes="INSERT COMMAND" title="Back to Normal mode"><kbd>Esc</kbd>normal</button>
+    <button data-key="Char:h" data-modes="NORMAL" title="Move cursor left"><kbd>h</kbd>left</button>
+    <button data-key="Char:l" data-modes="NORMAL" title="Move cursor right"><kbd>l</kbd>right</button>
+    <button data-key="Char:0" data-modes="NORMAL" title="Cursor to line start"><kbd>0</kbd>home</button>
+    <button data-key="Char:$" data-modes="NORMAL" title="Cursor to line end"><kbd>$</kbd>end</button>
+    <button data-key="Char:x" data-modes="NORMAL" title="Delete char under cursor"><kbd>x</kbd>delete</button>
+    <button data-key="Enter" data-modes="INSERT COMMAND" title="Execute"><kbd>Enter</kbd>execute</button>
+    <button data-key="Char:q" data-modes="NORMAL" title="Quit (session stays alive)"><kbd>q</kbd>quit</button>
   </div>
   <div class="footer">
     Shortcuts:
-    <kbd>i</kbd> insert ·
-    <kbd>:</kbd> command ·
+    <kbd>i</kbd>/<kbd>a</kbd> insert ·
+    <kbd>:</kbd> command (<code>:help</code> <code>:ai</code> <code>:version</code> <code>:clear</code> <code>:q</code>) ·
     <kbd>Esc</kbd> normal ·
-    <kbd>hjkl</kbd> move ·
+    <kbd>h</kbd><kbd>l</kbd> move ·
+    <kbd>0</kbd><kbd>$</kbd> line start/end ·
+    <kbd>x</kbd> delete ·
     <kbd>Enter</kbd> execute ·
-    <kbd>:q</kbd> quit (visual only)
+    <kbd>q</kbd>/<kbd>:q</kbd> quit (web session stays alive, desktop window stays open)
   </div>
 
   <script>
@@ -63,106 +98,135 @@
       "gray": "fg-gray",
       "dark_gray": "fg-dark-gray",
     };
-    const BG_CLASS = {}; // 背景色由 .badge CSS 集中控制
 
-    function renderRows(rows) {
-      return rows.map(row => {
+    // cursor: { row, col } — 该 section 里需要高亮的单元格 (仅 prompt 段使用)
+    function renderRows(rows, cursor) {
+      return rows.map((row, r) => {
         let html = "";
-        for (const cell of row) {
+        row.forEach((cell, c) => {
           let s = cell.style || {};
           let classes = [];
           if (s.fg && COLOR_CLASS[s.fg]) classes.push(COLOR_CLASS[s.fg]);
           if (s.weight === "bold") classes.push("badge");
+          if (cursor && cursor.row === r && cursor.col === c) classes.push("cursor");
           // HTML escape
           let ch = cell.ch === "<" ? "&lt;" : cell.ch === ">" ? "&gt;" : cell.ch === "&" ? "&amp;" : cell.ch;
           html += `<span class="${classes.join(" ")}">${ch}</span>`;
-        }
+        });
         return `<div class="row">${html}</div>`;
       }).join("");
     }
 
-    function findBadgeRow(rows) {
-      // mode badge 是 content 行 (status[1]), 含 "NORMAL"/"INSERT"/"COMMAND"
-      for (const row of rows) {
-        const text = row.map(c => c.ch).join("").trim();
-        if (["NORMAL", "INSERT", "COMMAND"].includes(text.replace(/\s+/g, ""))) {
-          return row;
-        }
-      }
-      return null;
+    // ===== Tauri 适配层 (ULYS-191 §4) =====
+    // 同一份 index.html 同时支持 web server (Playwright UAT) 和 Tauri 桌面:
+    //   - 有 window.__TAURI_INTERNALS__ → 走 invoke (Tauri 2 内部 API)
+    //   - 否则 → 走 fetch /api/* (web server 模式, Playwright 兼容)
+    // Tauri 2: invoke(cmd, args) 直接返回 Promise; 失败时 reject 的是字符串
+    const tauriInvoke = (cmd, args) =>
+      window.__TAURI_INTERNALS__.invoke(cmd, args || {}).catch((e) => {
+        throw e instanceof Error ? e : new Error(String(e));
+      });
+    const inTauri = !!(typeof window !== "undefined" && window.__TAURI_INTERNALS__);
+
+    const notice = document.getElementById("notice");
+    function setNotice(kind, text) {
+      notice.className = kind;
+      notice.textContent = text;
     }
 
-    function findBufferRow(rows) {
-      for (const row of rows) {
-        const text = row.map(c => c.ch).join("");
-        if (text.includes("> ") || text.includes("▌ ") || text.includes(":")) {
-          return row;
-        }
-      }
-      return null;
+    // prompt 前缀宽度: Normal "▌ " / Insert "> " = 2, Command ":" = 1; prompt[0] 是边框行
+    function promptCursor(frame) {
+      const prefix = frame.mode === "Command" ? 1 : 2;
+      return { row: 1, col: prefix + (frame.cursor || 0) };
+    }
+
+    function applyFrame(frame) {
+      const shell = document.getElementById("shell");
+      shell.dataset.mode = frame.mode;
+      shell.dataset.buffer = frame.buffer || "";
+      shell.dataset.cursor = String(frame.cursor || 0);
+      document.getElementById("status").innerHTML = renderRows(frame.status);
+      document.getElementById("history").innerHTML = renderRows(frame.history);
+      document.getElementById("prompt").innerHTML = renderRows(frame.prompt, promptCursor(frame));
+      // 给 badge 加 data-mode 属性供 e2e 用
+      const badgeEl = document.querySelector("#status .row:nth-child(2) .badge");
+      if (badgeEl) badgeEl.dataset.mode = frame.mode;
+      // 工具栏按钮按当前 mode 启用/禁用
+      const modeUp = String(frame.mode).toUpperCase();
+      document.querySelectorAll(".toolbar button").forEach(b => {
+        b.disabled = !b.dataset.modes.split(" ").includes(modeUp);
+      });
     }
 
     async function refresh() {
       try {
-        const res = await fetch("/api/frame");
-        const frame = await res.json();
-        const shell = document.getElementById("shell");
-        shell.dataset.mode = frame.mode;
-        shell.dataset.buffer = frame.buffer || "";
-        shell.dataset.cursor = String(frame.cursor || 0);
-
-        document.getElementById("status").innerHTML = renderRows(frame.status);
-        document.getElementById("history").innerHTML = renderRows(frame.history);
-        document.getElementById("prompt").innerHTML = renderRows(frame.prompt);
-
-        // 给 badge 加 data-mode 属性供 e2e 用
-        const badgeRow = findBadgeRow(frame.status);
-        if (badgeRow) {
-          const text = badgeRow.map(c => c.ch).join("").trim();
-          const badgeEl = document.querySelector("#status .row:nth-child(2) .badge");
-          if (badgeEl) badgeEl.dataset.mode = text;
+        let frame;
+        if (inTauri) {
+          frame = await tauriInvoke("frame");
+        } else {
+          const res = await fetch("/api/frame");
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          frame = await res.json();
         }
+        applyFrame(frame);
+        if (notice.className === "err") setNotice("", "");
       } catch (e) {
-        console.error("refresh failed:", e);
+        setNotice("err", "Connection lost: " + e.message + " — retrying…");
       }
     }
 
     async function sendEvent(payload) {
-      const res = await fetch("/api/event", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (data && data.frame) {
-        const shell = document.getElementById("shell");
-        shell.dataset.mode = data.frame.mode;
-        shell.dataset.buffer = data.frame.buffer || "";
-        shell.dataset.cursor = String(data.frame.cursor || 0);
-        document.getElementById("status").innerHTML = renderRows(data.frame.status);
-        document.getElementById("history").innerHTML = renderRows(data.frame.history);
-        document.getElementById("prompt").innerHTML = renderRows(data.frame.prompt);
-        const badgeEl = document.querySelector("#status .row:nth-child(2) .badge");
-        if (badgeEl) badgeEl.dataset.mode = data.frame.mode;
+      try {
+        let data, keepGoing = true;
+        if (inTauri) {
+          // Tauri 模式: 用 key/mouse 两个独立 command
+          if (payload.kind === "mouse") {
+            data = await tauriInvoke("mouse", { button: payload.button || "Left" });
+          } else {
+            data = await tauriInvoke("key", { code: payload.code || "", modifiers: payload.modifiers || [] });
+          }
+        } else {
+          const res = await fetch("/api/event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          data = await res.json();
+        }
+        if (data && data.keep_going === false) keepGoing = false;
+        // key/event 返回 { frame, keep_going }; 个别返回直接是 frame / 空
+        let frame = data && data.frame ? data.frame : data;
+        if (!frame || !frame.status) {
+          frame = inTauri
+            ? await tauriInvoke("frame")
+            : await (await fetch("/api/frame")).json();
+        }
+        applyFrame(frame);
+        if (!keepGoing) {
+          setNotice("info", "Quit requested — this web/desktop session stays alive; the TUI binary would exit here.");
+        } else if (notice.className !== "") {
+          setNotice("", "");
+        }
+        return data;
+      } catch (e) {
+        setNotice("err", "Request failed: " + e.message);
       }
-      return data;
     }
+
+    const KEY_MAP = {
+      "Enter": "Enter", "Escape": "Esc", "Backspace": "Backspace", "Delete": "Delete", "Tab": "Tab",
+      "ArrowUp": "Up", "ArrowDown": "Down", "ArrowLeft": "Left", "ArrowRight": "Right",
+      "Home": "Home", "End": "End",
+    };
 
     // 键盘事件:捕获 document keydown, 转成 server payload
     document.addEventListener("keydown", async (ev) => {
-      let code;
-      if (ev.key === "Enter") code = "Enter";
-      else if (ev.key === "Escape") code = "Esc";
-      else if (ev.key === "Backspace") code = "Backspace";
-      else if (ev.key === "Tab") code = "Tab";
-      else if (ev.key === "ArrowUp") code = "Up";
-      else if (ev.key === "ArrowDown") code = "Down";
-      else if (ev.key === "ArrowLeft") code = "Left";
-      else if (ev.key === "ArrowRight") code = "Right";
-      else if (ev.key === "Home") code = "Home";
-      else if (ev.key === "End") code = "End";
-      else if (ev.key.length === 1) code = `Char:${ev.key}`;
-      else return;
+      let code = KEY_MAP[ev.key];
+      if (!code) {
+        if (ev.key.length === 1) code = `Char:${ev.key}`;
+        else return;
+      }
 
       let mods = [];
       if (ev.ctrlKey) mods.push("CONTROL");
@@ -171,6 +235,12 @@
 
       ev.preventDefault();
       await sendEvent({ kind: "key", code, modifiers: mods });
+    });
+
+    // 工具栏: 点击等价于按键 (mousedown preventDefault 避免抢焦点)
+    document.querySelectorAll(".toolbar button").forEach(b => {
+      b.addEventListener("mousedown", ev => ev.preventDefault());
+      b.addEventListener("click", () => sendEvent({ kind: "key", code: b.dataset.key, modifiers: [] }));
     });
 
     // 鼠标:左键 → /api/event {kind:"mouse", button:"Left"} ; 右键 → "Right"

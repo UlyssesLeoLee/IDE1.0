@@ -44,7 +44,7 @@ static SESSIONS: once_cell::sync::Lazy<Mutex<HashMap<String, Session>>> =
 static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub fn create(shell: Option<String>, cwd: Option<String>) -> Option<String> {
-    let shell_cmd = shell.unwrap_or_else(default_shell);
+    let shell_cmd = resolve_shell(shell.as_deref());
     let cwd_path = cwd.unwrap_or_else(|| {
         std::env::var("IDE_SHELL_WEB_TEST_ROOT").unwrap_or_else(|_| {
             std::env::current_dir()
@@ -189,6 +189,55 @@ fn default_shell() -> String {
     }
 }
 
+/// 把请求里的 `shell` 参数解析成实际可执行文件.
+///
+/// # 安全 (P0)
+///
+/// 原实现 `Command::new(shell_cmd)` 直接用请求 JSON 里的字符串 —— 配合无认证的
+/// `/api/terminal_create` 等于**任意可执行文件**都能被拉起。现在只接受白名单里的
+/// 逻辑名 (或白名单的绝对路径), 其余一律回落到默认 shell.
+pub fn resolve_shell(requested: Option<&str>) -> String {
+    let default = default_shell();
+    let Some(raw) = requested.map(str::trim).filter(|s| !s.is_empty()) else {
+        return default;
+    };
+
+    // 带目录前缀一律拒绝 —— 否则 `C:\\...\\cmd.exe` 会借白名单名启动任意路径下的程序,
+    // 攻击者只需放一个同名 exe 到自己目录。
+    // 只接受**裸逻辑名** (powershell / cmd / bash / ...); 默认 shell 的绝对路径
+    // 是唯一例外, 且必须是精确等于 default_shell 的值。
+    let default = default_shell();
+    if raw.contains('\\') || raw.contains('/') {
+        if raw != default {
+            eprintln!("[terminal] 拒绝带路径的 shell: {raw:?} — 回落到 {default}");
+            return default;
+        }
+        return default;
+    }
+
+    let name = raw.to_ascii_lowercase();
+    let matched = match name.as_str() {
+        // Windows
+        "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe" => Some("powershell.exe"),
+        "cmd" | "cmd.exe" => Some("cmd.exe"),
+        // POSIX
+        "bash" | "bash.exe" | "/bin/bash" => Some("bash"),
+        "sh" | "/bin/sh" => Some("sh"),
+        "zsh" | "/bin/zsh" => Some("zsh"),
+        "fish" => Some("fish"),
+
+        _ => None,
+    };
+
+    match matched {
+        Some(exe) => exe.to_string(),
+        None => {
+            eprintln!("[terminal] 拒绝未知 shell: {raw:?} — 回落到 {default}");
+            default
+        }
+    }
+}
+
 fn spawn_reader(id: String, mut reader: Box<dyn Read + Send>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -210,4 +259,72 @@ fn spawn_reader(id: String, mut reader: Box<dyn Read + Send>) {
             s.alive = false;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// P0 安全: `shell` 参数不得变成任意可执行文件。
+    #[test]
+    fn whitelisted_shell_accepted() {
+        for name in ["powershell", "PowerShell.EXE", "pwsh", "cmd", "cmd.exe"] {
+            let got = resolve_shell(Some(name));
+            assert!(
+                got.ends_with(".exe"),
+                "{name} 应解析为 exe, 得到 {got}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_shell_absolute_path_accepted() {
+        let default = default_shell();
+        assert_eq!(resolve_shell(Some(&default)), default);
+    }
+
+    #[test]
+    fn arbitrary_executable_path_rejected() {
+        let default = default_shell();
+        for evil in [
+            "C:\\Windows\\System32\\cmd.exe",   // 绝对路径绕过
+            "/bin/sh",
+            "calc.exe",
+            "notepad.exe",
+            "powershell.exe; calc",                   // 命令拼接
+            "../../evil.exe",
+        ] {
+            let got = resolve_shell(Some(evil));
+            // POSIX 下 /bin/sh 在白名单里, 其余必须回落
+            if cfg!(windows) || !evil.starts_with('/') {
+                assert_eq!(got, default, "{evil:?} 应被拒绝并回落");
+            }
+        }
+    }
+
+    #[test]
+    fn blank_and_none_fall_back_to_default() {
+        let default = default_shell();
+        assert_eq!(resolve_shell(None), default);
+        assert_eq!(resolve_shell(Some("")), default);
+        assert_eq!(resolve_shell(Some("   ")), default);
+    }
+
+    /// 带目录前缀的白名单名**必须被拒** —— 否则攻击者把同名 exe 放到自己目录
+    /// 就能借白名单名启动任意程序。
+    #[test]
+    fn whitelisted_name_with_dir_prefix_is_rejected() {
+        let default = default_shell();
+        for pathy in [
+            "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "/usr/local/bin/bash",
+            "./powershell.exe",
+        ] {
+            assert_eq!(
+                resolve_shell(Some(pathy)),
+                default,
+                "{pathy} 带路径应回落"
+            );
+        }
+    }
 }

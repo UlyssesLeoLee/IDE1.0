@@ -9,6 +9,7 @@ use crate::ai::{AiBackend, PlaceholderAi};
 use crate::input::InputBuffer;
 use crate::keymap::{map_key, Action};
 use crate::mode::Mode;
+use ide_kernel::document::Document;
 
 pub struct AppConfig {
     pub kernel_banner: String,
@@ -31,6 +32,12 @@ pub struct App {
     mode: Mode,
     /// 编辑 buffer(Insert / Normal 模式)— 用户正在构造的命令文本
     buffer: InputBuffer,
+    /// 文件编辑文档 — `:open <file>` 后由 ide-kernel::Document 承载.
+    ///
+    /// 为何与 `buffer` 并存: 本 shell 原本是 REPL, `buffer` 是单行命令输入框;
+    /// `Document` 是真正的多行可编辑文档. 两者语义不同, 不互相替代 ——
+    /// 命令行继续用 InputBuffer (够用且无 undo 需求), 文件编辑用内核.
+    document: Option<Document>,
     /// 命令 buffer(Command 模式专用)— `:` 后输入的内部命令名,
     /// 与编辑 buffer 分离,保证 `:ai` 能对编辑 buffer 补全而不被清掉。
     cmd_buffer: InputBuffer,
@@ -49,6 +56,7 @@ impl App {
             config,
             mode: Mode::Normal,
             buffer: InputBuffer::new(),
+        document: None,
             cmd_buffer: InputBuffer::new(),
             history: Vec::new(),
             ai: Box::new(PlaceholderAi),
@@ -114,6 +122,10 @@ impl App {
         }
 
         let action = map_key(event, self.mode);
+        // 有文档打开时, 编辑类按键走内核 (统一 char 语义 + undo)
+        if self.key_routes_to_document(&action) {
+            return self.apply_to_document(action);
+        }
         self.apply(action)
     }
 
@@ -141,6 +153,140 @@ impl App {
         self.ai
             .complete(&self.buffer.as_str(), "")
             .unwrap_or_default()
+    }
+
+    // ---------- 文件编辑 (ide-kernel 接入) ----------
+
+    /// 打开文件到内核 Document. 成功后进入 Normal 模式.
+    ///
+    /// 与 `InputBuffer` 并存而非替代: 命令行输入仍走 InputBuffer,
+    /// 文件内容走 `ide_kernel::Document` —— 后者才有 char 语义、undo、选区.
+    pub fn open_file(&mut self, path: &str) -> Result<(), String> {
+        // 4 MB 上限, 与 web/desktop 的 path_safety 一致
+        const MAX_BYTES: u64 = 4 * 1024 * 1024;
+        let meta = std::fs::metadata(path).map_err(|e| format!("stat 失败: {e}"))?;
+        if meta.len() > MAX_BYTES {
+            return Err(format!("文件过大: {} 字节 (上限 {} MB)", meta.len(), MAX_BYTES / 1024 / 1024));
+        }
+        let text = std::fs::read_to_string(path).map_err(|e| format!("读取失败 (仅支持 UTF-8): {e}"))?;
+        let mut doc = Document::new();
+        doc.set_text(&text);
+        doc.set_path(path);
+        // 光标落在文档末尾 (行首) ——
+        // 与 sakura / vim 的 `G` 一致; 若落在行首, 打开文件直接输入会插到最前面.
+        let last_row = (doc.line_count() - 1).max(0);
+        let last_col = doc.line_text(last_row).chars().count() as i32;
+        doc.set_caret(ide_kernel::document::Pos { row: last_row, col: last_col });
+        self.document = Some(doc);
+        self.mode = Mode::Normal;
+        Ok(())
+    }
+
+    /// 保存当前文档. 无文档时返回 Err.
+    pub fn save_file(&mut self) -> Result<(), String> {
+        let doc = self.document.as_ref().ok_or("没有打开的文件")?;
+        let path = doc.path().ok_or("文档没有路径")?.to_string();
+        let text = doc.export_text();
+        std::fs::write(&path, text).map_err(|e| format!("写入失败: {e}"))?;
+        // 保存后清 dirty 标记 (保留 undo 历史)
+        if let Some(d) = self.document.as_mut() {
+            d.mark_saved();
+        }
+        Ok(())
+    }
+
+    pub fn document(&self) -> Option<&Document> {
+        self.document.as_ref()
+    }
+
+    pub fn document_mut(&mut self) -> Option<&mut Document> {
+        self.document.as_mut()
+    }
+
+    /// 有文档打开时, Insert/Normal 模式的字符编辑应走内核而非命令行.
+    pub fn has_document(&self) -> bool {
+        self.document.is_some()
+    }
+
+    /// 执行一条内部命令 (`:open` / `:w` / `:u` 等).
+    ///
+    /// 正常路径由 Command 模式的 Enter 触发; 这个 pub 入口让集成测试能
+    /// 直接验证命令行为, 而不必模拟完整的按键序列.
+    pub fn run_command(&mut self, raw: &str) {
+        self.execute_command(raw);
+    }
+
+    /// 按键是否应路由到文档编辑 (而非命令行 buffer).
+    ///
+    /// Command 模式 (`:`) 与 Normal 模式的命令键仍归命令行 —— 这是 TUI REPL 的
+    /// 既有交互, 不因打开文件而改变.
+    fn key_routes_to_document(&self, action: &Action) -> bool {
+        if self.document.is_none() {
+            return false;
+        }
+        if self.mode == Mode::Command {
+            return false;
+        }
+        matches!(
+            action,
+            Action::Insert(_)
+                | Action::Backspace
+                | Action::Delete
+                | Action::MoveLeft
+                | Action::MoveRight
+                | Action::MoveHome
+                | Action::MoveEnd
+        )
+    }
+
+    /// 把 action 应用到内核 Document.
+    fn apply_to_document(&mut self, action: Action) -> bool {
+        use ide_kernel::document::Pos;
+        let Some(doc) = self.document.as_mut() else { return true };
+        match action {
+            Action::Insert(c) => {
+                doc.type_char(c);
+            }
+            Action::Backspace => {
+                doc.backspace();
+            }
+            Action::Delete => {
+                doc.delete_forward();
+            }
+            Action::MoveLeft => {
+                let c = doc.caret();
+                let new = if c.col > 0 {
+                    Pos { row: c.row, col: c.col - 1 }
+                } else if c.row > 0 {
+                    let prev = (c.row - 1).max(0);
+                    let len = doc.line_text(prev).chars().count() as i32;
+                    Pos { row: prev, col: len }
+                } else {
+                    c
+                };
+                doc.set_caret(new);
+            }
+            Action::MoveRight => {
+                let c = doc.caret();
+                let len = doc.line_text(c.row).chars().count() as i32;
+                let new = if c.col < len {
+                    Pos { row: c.row, col: c.col + 1 }
+                } else if c.row + 1 < doc.line_count() {
+                    Pos { row: c.row + 1, col: 0 }
+                } else {
+                    c
+                };
+                doc.set_caret(new);
+            }
+            Action::MoveHome => doc.set_caret(Pos { row: doc.caret().row, col: 0 }),
+            Action::MoveEnd => {
+                let row = doc.caret().row;
+                let len = doc.line_text(row).chars().count() as i32;
+                doc.set_caret(Pos { row, col: len });
+            }
+            _ => {}
+        }
+        true
     }
 
     fn apply(&mut self, action: Action) -> bool {
@@ -198,6 +344,50 @@ impl App {
         // 所以用户输 ":q" 实际 buffer = "q"; Insert mode 直接输 "quit" 也合法。
         // 统一去掉可选 ':' 前缀后匹配裸命令名。
         let cmd = trimmed.strip_prefix(':').unwrap_or(trimmed);
+        // ---- 带参数的文件编辑命令 (必须在精确匹配之前处理) ----
+        // `:open <path>` / `:e <path>` — 走 ide-kernel::Document
+        // 关键: 命令名必须**完整匹配**, 不能用 `strip_prefix("e")` ——
+        // 那会把 `echo hello` / `env` / `exit` 全部劫持成"打开文件",
+        // 未知命令的子进程兜底就再也走不到. 这里先按空白切出命令名再比对.
+        let (cmd_name, cmd_arg) = match cmd.split_once(char::is_whitespace) {
+            Some((n, a)) => (n, a.trim()),
+            None => (cmd, ""),
+        };
+        if matches!(cmd_name, "open" | "e") {
+            let arg = cmd_arg;
+            if arg.is_empty() {
+                self.history.push("<usage: :open <path>>".into());
+            } else {
+                match self.open_file(arg) {
+                    Ok(()) => {
+                        let d = self.document.as_ref().expect("open 成功必有文档");
+                        self.history.push(format!(
+                            "<opened {} — {} 行, 行尾 {}>",
+                            arg,
+                            d.line_count(),
+                            d.line_ending().label()
+                        ));
+                    }
+                    Err(e) => self.history.push(format!("<open 失败: {e}>")),
+                }
+            }
+            return;
+        }
+        // `:w` / `:write` — 保存 (无参)
+        if matches!(cmd, "w" | "write") {
+            match self.save_file() {
+                Ok(()) => self.history.push("<saved>".into()),
+                Err(e) => self.history.push(format!("<save 失败: {e}>")),
+            }
+            return;
+        }
+        // `:u` / `:undo` — 内核撤销
+        if matches!(cmd, "u" | "undo") {
+            let undone = self.document.as_mut().map(|d| d.undo()).unwrap_or(false);
+            self.history.push(if undone { "<undo>".to_string() } else { "<nothing to undo>".to_string() });
+            return;
+        }
+
         // 内部命令 (演示 AI native + IDE1.0 kernel 复用)
         match cmd {
             "q" | "quit" => {
@@ -227,6 +417,28 @@ impl App {
             }
             "clear" => {
                 self.history.clear();
+                return;
+            }
+            // ---- 文件编辑 (ide-kernel 接入) ----
+            _ if cmd == "open" || cmd == "e" => {
+                // `:open <path>` — 注意此命令带参数, 在上面按整体匹配不到
+                let arg = cmd.strip_prefix("open").or_else(|| cmd.strip_prefix('e')).unwrap_or("").trim();
+                if arg.is_empty() {
+                    self.history.push("<usage: :open <path>>".into());
+                } else {
+                    match self.open_file(arg) {
+                        Ok(()) => {
+                            let d = self.document.as_ref().unwrap();
+                            self.history.push(format!(
+                                "<opened {} — {} 行, 行尾 {}>",
+                                arg,
+                                d.line_count(),
+                                d.line_ending().label()
+                            ));
+                        }
+                        Err(e) => self.history.push(format!("<open 失败: {e}>")),
+                    }
+                }
                 return;
             }
             _ => {}

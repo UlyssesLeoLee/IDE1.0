@@ -28,6 +28,8 @@
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
 pub mod outline;
+pub mod doc;
+pub mod plugin;
 pub mod scm;
 pub mod search;
 pub mod terminal;
@@ -516,7 +518,35 @@ pub fn run() {
         .manage(ShellState::default())
         .manage(ProjectRoot::default())
         .manage(terminal::TerminalState::new())
+        .manage(doc::DocState::default())
         .invoke_handler(tauri::generate_handler![
+            doc::doc_active,
+            doc::doc_tabs,
+            doc::doc_open,
+            doc::doc_new_tab,
+            doc::doc_activate,
+            doc::doc_close,
+            doc::doc_insert,
+            doc::doc_type,
+            doc::doc_newline,
+            doc::doc_backspace,
+            doc::doc_delete,
+            doc::doc_delete_range,
+            doc::doc_caret,
+            doc::doc_select_all,
+            doc::doc_clear_selection,
+            doc::doc_undo,
+            doc::doc_redo,
+            doc::doc_add_cursor,
+            doc::doc_clear_cursors,
+            doc::doc_insert_all,
+            doc::doc_find,
+            doc::doc_find_all,
+            doc::doc_replace_all,
+            doc::doc_line_ending,
+            doc::doc_encoding,
+            doc::doc_export,
+            doc::doc_mark_saved,
             frame,
             reset,
             key,
@@ -541,6 +571,7 @@ pub fn run() {
             scm::scm_log,
             search::search_cmd,
             outline::outline,
+            plugin::plugin_load,
         ])
         .setup(|_app| {
             eprintln!(

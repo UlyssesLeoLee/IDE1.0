@@ -1,0 +1,70 @@
+# Cargo deny configuration for IDE1.0
+# Checks: licenses, bans, advisories, sources
+
+[advisories]
+# GitHub Advisory Database
+db = "https://github.com/RustSec/advisory-db.git"
+db-path = "~/.cargo/advisory-db"
+# Ignore specific advisories if needed (false positives)
+# ignore = ["RUSTSEC-2023-xxxx"]
+
+[licenses]
+# Allow these licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "MPL-2.0",
+    "Unicode-TOU",
+    "OpenSSL",
+    "BSD-4-Clause",  # For some legacy deps
+]
+# Deny these licenses
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.0",
+    "LGPL-3.0",
+    "AGPL-3.0",
+    "SSPL-1.0",
+    "Commons-Clause",
+    "Proprietary",
+]
+# Allow specific crates with denied licenses if needed
+# allow-by-crate = { "crate-name" = "reason" }
+
+[bans]
+# Deny specific crates (security, maintenance, compatibility)
+deny = [
+    { name = "openssl", version = "=0.10.0", reason = "Use rustls instead" },
+    { name = "native-tls", reason = "Use rustls instead" },
+    { name = "ring", version = "<0.16", reason = "Security fixes in 0.16+" },
+]
+# Allow specific versions if needed
+# allow = ["crate-name = \"version\""]
+# Skip specific crates from duplicate detection
+skip = [
+    { name = "winapi", version = "0.3" },
+    { name = "winapi", version = "0.2" },
+]
+# Multiple versions detection
+multiple-versions = "warn"
+# Highlight transitive deps
+highlight = "all"
+
+[sources]
+# Crates.io only (no git deps unless explicitly allowed)
+allow-unknown-registry = false
+# Allow specific registries
+# allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Allow specific crates from git
+allow-git = [
+    "aci-emitter = { git = \"https://github.com/UlyssesLeoLee/aci-emitter\", rev = \"df28c56\" }",
+]
+# Deny specific sources
+# deny = ["registry+https://github.com/rust-lang/crates.io-index"]

@@ -55,10 +55,7 @@ impl std::error::Error for ScmError {}
 
 impl From<std::io::Error> for ScmError {
     fn from(e: std::io::Error) -> Self {
-        ScmError {
-            kind: "io".into(),
-            message: e.to_string(),
-        }
+        ScmError { kind: "io".into(), message: e.to_string() }
     }
 }
 
@@ -100,10 +97,7 @@ pub fn status(cwd: &Path) -> Result<(Vec<FileStatus>, String), ScmError> {
         }
         let code = &line[0..2];
         let path = line[3..].trim().trim_matches('"').to_string();
-        let (x, y) = (
-            code.chars().next().unwrap_or(' '),
-            code.chars().nth(1).unwrap_or(' '),
-        );
+        let (x, y) = (code.chars().nth(0).unwrap_or(' '), code.chars().nth(1).unwrap_or(' '));
         // Untracked (??)
         if x == '?' && y == '?' {
             files.push(FileStatus {
@@ -251,13 +245,11 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         // Find dev-3 root
         let dev3 = cwd.components().find(|c| c.as_os_str() == "dev-3");
-        if dev3.is_some() {
+        if let Some(_) = dev3 {
             // walk up to dev-3
             let mut p = cwd.clone();
             while !p.join(".git").exists() {
-                if !p.pop() {
-                    break;
-                }
+                if !p.pop() { break; }
             }
             if p.join(".git").exists() {
                 assert!(is_git_repo(&p));
@@ -267,12 +259,13 @@ mod tests {
     }
 }
 
+
 // ============================================================
 // Tauri command wrappers (ProjectRoot → cwd)
 // ============================================================
 
-use std::sync::Arc;
 use tauri::State;
+use std::sync::Arc;
 
 /// Internal: resolve project root, find git root (walk up).
 fn resolve_repo(state: &State<'_, crate::ProjectRoot>) -> Result<PathBuf, String> {
@@ -309,17 +302,9 @@ pub fn scm_unstage(state: State<'_, crate::ProjectRoot>, paths: Vec<String>) -> 
 }
 
 #[tauri::command]
-pub fn scm_diff(
-    state: State<'_, crate::ProjectRoot>,
-    path: String,
-    staged: Option<bool>,
-) -> Result<String, String> {
+pub fn scm_diff(state: State<'_, crate::ProjectRoot>, path: String, staged: Option<bool>) -> Result<String, String> {
     let cwd = resolve_repo(&state)?;
-    let f = if staged.unwrap_or(false) {
-        diff_cached(&cwd, &path)
-    } else {
-        diff(&cwd, &path)
-    };
+    let f = if staged.unwrap_or(false) { diff_cached(&cwd, &path) } else { diff(&cwd, &path) };
     f.map_err(|e| e.to_string())
 }
 
@@ -330,10 +315,7 @@ pub fn scm_commit(state: State<'_, crate::ProjectRoot>, message: String) -> Resu
 }
 
 #[tauri::command]
-pub fn scm_log(
-    state: State<'_, crate::ProjectRoot>,
-    n: Option<usize>,
-) -> Result<Vec<CommitEntry>, String> {
+pub fn scm_log(state: State<'_, crate::ProjectRoot>, n: Option<usize>) -> Result<Vec<CommitEntry>, String> {
     let cwd = resolve_repo(&state)?;
     log(&cwd, n.unwrap_or(20)).map_err(|e| e.to_string())
 }

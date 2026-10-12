@@ -20,6 +20,8 @@
 //!
 //! 设计: server 内持有单一 App 状态 (单用户 demo). 端口默认 8123 (CI 与本地都用).
 
+pub mod auth;
+pub mod doc_api;
 pub mod path_safety;
 pub mod wiki_data;
 
@@ -37,20 +39,51 @@ use ide_shell::render::web::{render as render_web, WebFrame};
 use ide_shell::{App, AppConfig};
 use serde::{Deserialize, Serialize};
 
+use ide_kernel::document::LineEnding;
 use path_safety::{list_dir, read_file, write_file, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
+/// 请求头大小上限 (防 header 放大攻击).
+pub const MAX_HEADER_BYTES: usize = 16 * 1024;
+/// 请求体大小上限. 文件写入本身限 4 MB, 留一倍余量给 JSON 包裹.
+pub const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
+
 pub struct ShellState {
     app: Mutex<App>,
+    /// 请求认证配置 (token / 允许的 Host).
+    auth: auth::Auth,
+    /// 内核文档会话 — /api/doc/* 的状态 (ide-kernel::Session).
+    ///
+    /// 与 `read_file`/`write_file` 并存: 后者是无状态文件读写 (前端自己管
+    /// buffer), 前者是有状态的编辑会话 (服务端管光标/undo/选区).
+    /// 迁移期间两者共存, 见 doc_api.rs 顶部的迁移路径说明.
+    docs: std::sync::Mutex<doc_api::DocStore>,
     /// 当前打开的项目根 (单 user, 安全沙箱 = 限此根内访问文件).
     project_root: Mutex<Option<PathBuf>>,
 }
 
 impl ShellState {
     pub fn new() -> Self {
+        Self::with_port(8123)
+    }
+
+    /// 指定服务端口 (用于 Host 白名单).
+    pub fn with_port(port: u16) -> Self {
         Self {
             app: Mutex::new(App::new(AppConfig::default())),
             project_root: Mutex::new(None),
+            auth: auth::Auth::from_env(port),
+            docs: Mutex::new(doc_api::DocStore::new()),
+        }
+    }
+
+    /// 测试用: 指定 token.
+    pub fn with_auth(a: auth::Auth) -> Self {
+        Self {
+            app: Mutex::new(App::new(AppConfig::default())),
+            project_root: Mutex::new(None),
+            auth: a,
+            docs: Mutex::new(doc_api::DocStore::new()),
         }
     }
 
@@ -144,6 +177,8 @@ impl ShellState {
     pub fn project_root_set(&self, root: PathBuf) -> Result<PathBuf, String> {
         let canon = path_safety::safe_canonicalize(&root)
             .map_err(|e| format!("无法打开目录 {}: {e}", root.display()))?;
+        // Strip Windows verbatim prefix if present
+        let canon = path_safety::strip_verbatim(&canon);
         if !canon.is_dir() {
             return Err(format!("不是目录: {}", canon.display()));
         }
@@ -179,14 +214,63 @@ pub struct MouseRequest {
 }
 
 /// 简易 HTTP 响应。
+/// 回 CORS 头.
+///
+/// # 安全 (P0)
+///
+/// 原实现对**所有**响应写 `Access-Control-Allow-Origin: *`, 等于让用户浏览器里
+/// 打开的任意恶意网页都能读本机 shell 的响应 —— 配合 `/api/terminal_*` 即 RCE。
+///
+/// 现在改为: 有合法 Origin 才回显该 Origin (同源); 无 Origin 或不可信 Origin
+/// 一律**不回** CORS 头, 浏览器因此读不到响应。
 fn send_response(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
-    let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n",
+    send_response_cors(stream, status, content_type, body, None)
+}
+
+/// 带 Origin 回显的响应 (只有可信同源 Origin 才会被传入 Some)。
+fn send_response_cors(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+    origin: Option<&str>,
+) {
+    let mut header = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n",
         body.len()
     );
+    if let Some(o) = origin {
+        header.push_str(&format!("Access-Control-Allow-Origin: {o}\r\n"));
+    }
+    header.push_str("\r\n");
     let _ = stream.write_all(header.as_bytes());
     let _ = stream.write_all(body);
     let _ = stream.flush();
+}
+
+/// 从 JSON 取 (row, col), 缺省 0.
+fn doc_pos(req: &serde_json::Value) -> (i32, i32) {
+    (
+        req.get("row").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        req.get("col").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+    )
+}
+
+/// 统一响应 /api/doc/* 的结果.
+fn doc_respond<T: serde::Serialize>(stream: &mut TcpStream, value: Option<T>) {
+    let (status, j) = match value {
+        Some(v) => ("200 OK", serde_json::json!({ "ok": true, "result": v })),
+        None => (
+            "404 Not Found",
+            serde_json::json!({ "ok": false, "error": "no active document" }),
+        ),
+    };
+    send_response(
+        stream,
+        status,
+        "application/json",
+        &serde_json::to_vec(&j).unwrap_or_default(),
+    );
 }
 
 /// 处理单个 HTTP 请求 (单连接, 短生命周期)。
@@ -196,6 +280,7 @@ pub fn handle_request_pub(stream: &mut TcpStream, state: &ShellState) {
 
 /// 处理单个 HTTP 请求 (单连接, 短生命周期)。
 fn handle_request(stream: &mut TcpStream, state: &ShellState) {
+    let auth = &state.auth;
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).is_err() {
@@ -207,19 +292,54 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
     // 分离 path 与 query string: /api/terminal_output?id=term-0 → /api/terminal_output
     let path = path_full.split('?').next().unwrap_or(path_full);
 
-    // 读 header 完
+    // 读 header 完 (收集全部 header 供认证用)
     let mut content_length = 0usize;
+    let mut headers: auth::Headers = Vec::new();
+    let mut header_bytes = 0usize;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).is_err() || line == "\r\n" || line.is_empty() {
             break;
         }
-        if let Some(v) = line.to_lowercase().strip_prefix("content-length:") {
-            content_length = v.trim().parse().unwrap_or(0);
+        header_bytes += line.len();
+        if header_bytes > MAX_HEADER_BYTES {
+            send_response(stream, "431 Request Header Fields Too Large", "text/plain", b"");
+            return;
+        }
+        if let Some((k, v)) = line.split_once(':') {
+            headers.push((k.trim().to_ascii_lowercase(), v.trim().to_string()));
+        }
+        if let Some((k, v)) = headers.last() {
+            if k == "content-length" {
+                content_length = v.parse().unwrap_or(0);
+            }
         }
     }
 
-    // 读 body
+    // --- 认证 / Host / Origin 校验 (P0) ---
+    // 必须在校验通过后才分配 body 内存, 否则恶意 Content-Length 可先吃掉 GB 级 RAM.
+    if let Err(e) = auth.check(method, &headers) {
+        let body = serde_json::json!({ "error": e.reason }).to_string();
+        send_response(stream, e.status, "application/json", body.as_bytes());
+        return;
+    }
+    // 同源请求: 回显 Origin 让浏览器能读响应 (跨站的已在上面被拒)
+    let echo_origin = headers
+        .iter()
+        .find(|(k, _)| k == "origin")
+        .map(|(_, v)| v.as_str())
+        .filter(|o| auth.origin_is_allowed(o));
+
+    // 读 body (上限保护, 防止单请求分配过大内存)
+    if content_length > MAX_BODY_BYTES {
+        send_response(
+            stream,
+            "413 Payload Too Large",
+            "application/json",
+            br#"{"error":"body-too-large"}"#,
+        );
+        return;
+    }
     let mut body = vec![0u8; content_length];
     if content_length > 0 {
         let _ = reader.read_exact(&mut body);
@@ -227,7 +347,219 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
-        ("POST", "/api/outline") => {
+                ("POST", "/api/plugin_load") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let input = req.get("input").and_then(|v| v.as_str()).unwrap_or("");
+            match sakura_rs::plugin::load_and_run(std::path::Path::new(path), input) {
+                Ok(out) => {
+                    let j = serde_json::json!({ "ok": true, "output": out });
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&j).unwrap_or_default(),
+                    );
+                }
+                Err(e) => {
+                    let j = serde_json::json!({ "ok": false, "error": e.to_string() });
+                    send_response(
+                        stream,
+                        "400 Bad Request",
+                        "application/json",
+                        &serde_json::to_vec(&j).unwrap_or_default(),
+                    );
+                }
+            }
+        }
+        // ---------- 内核文档会话 (/api/doc/*) ----------
+        //
+        // 编辑语义在 Rust 侧 (ide-kernel), 前端只发"语义操作".
+        // 与 /api/read_file + /api/write_file 并存 —— 那是无状态的
+        // 文件读写, 供前端自管 buffer 的旧路径继续使用.
+        ("POST", "/api/doc/open") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // 有 path 且无 text 时从磁盘读 (仍走沙箱)
+            let content = if text.is_empty() && !path.is_empty() {
+                let root = state.project_root_get();
+                match root.as_ref() {
+                    Some(r) => path_safety::read_file(r, &path)
+                        .map(|fc| fc.content)
+                        .unwrap_or_else(|e| format!("<read error: {e}>")),
+                    None => "<project root not set>".to_string(),
+                }
+            } else {
+                text
+            };
+            let opt_path = if path.is_empty() { None } else { Some(path.as_str()) };
+            let view = state.docs.lock().ok().map(|mut d| d.open(opt_path, &content));
+            doc_respond(stream, view);
+        }
+        ("GET", "/api/doc/active") => {
+            let view = state.docs.lock().ok().and_then(|d| d.active());
+            doc_respond(stream, view);
+        }
+        ("GET", "/api/doc/tabs") => {
+            let tabs = state.docs.lock().map(|d| d.tabs()).unwrap_or_default();
+            doc_respond(stream, Some(tabs));
+        }
+        ("POST", "/api/doc/activate") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let view = state.docs.lock().ok().and_then(|mut d| d.activate(id));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/close") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let view = state.docs.lock().ok().and_then(|mut d| d.close(id));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/new_tab") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.new_tab());
+            doc_respond(stream, view);
+        }
+        // ---- 编辑原语 ----
+        ("POST", "/api/doc/insert") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let view = state.docs.lock().ok().and_then(|mut d| d.insert(r, c, text));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/type") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let ch = req.get("char").and_then(|v| v.as_str()).and_then(|s| s.chars().next()).unwrap_or(' ');
+            let view = state.docs.lock().ok().and_then(|mut d| d.type_char(r, c, ch));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/newline") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.insert_newline());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/backspace") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.backspace());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/delete") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.delete_forward());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/delete_range") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r0, c0) = doc_pos(&req);
+            let r1 = req.get("end_row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let c1 = req.get("end_col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let view = state.docs.lock().ok().and_then(|mut d| d.delete_range(r0, c0, r1, c1));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/caret") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let view = state.docs.lock().ok().and_then(|mut d| d.set_caret(r, c));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/select_all") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.select_all());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/clear_selection") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.clear_selection());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/undo") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.undo());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/redo") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.redo());
+            doc_respond(stream, view);
+        }
+        // ---- 多光标 ----
+        ("POST", "/api/doc/add_cursor") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let view = state.docs.lock().ok().and_then(|mut d| d.add_cursor(r, c));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/clear_cursors") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.clear_cursors());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/insert_all") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let view = state.docs.lock().ok().and_then(|mut d| d.insert_all_cursors(text));
+            doc_respond(stream, view);
+        }
+        // ---- 查找替换 ----
+        ("POST", "/api/doc/find") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let (r, c) = doc_pos(&req);
+            let hit = state.docs.lock().ok().and_then(|mut d| d.find(&pat, cs, r, c));
+            doc_respond(stream, hit);
+        }
+        ("POST", "/api/doc/find_all") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(1000) as usize;
+            let hits = state.docs.lock().ok().and_then(|mut d| d.find_all(&pat, cs, limit));
+            doc_respond(stream, hits);
+        }
+        ("POST", "/api/doc/replace_all") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let rep = req.get("replacement").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(1000) as usize;
+            let st = state.docs.lock().ok().and_then(|mut d| d.replace_all(&pat, &rep, cs, limit));
+            doc_respond(stream, st);
+        }
+        // ---- 格式 / 保存 ----
+        ("POST", "/api/doc/line_ending") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let label = req.get("line_ending").and_then(|v| v.as_str()).unwrap_or("");
+            let eol = match label.to_ascii_lowercase().as_str() {
+                "crlf" | "windows (crlf)" => Some(LineEnding::Crlf),
+                "cr" | "mac (cr)" => Some(LineEnding::Cr),
+                "lf" | "unix (lf)" => Some(LineEnding::Lf),
+                _ => None,
+            };
+            let view = eol.and_then(|e| state.docs.lock().ok().and_then(|mut d| d.set_line_ending(e)));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/encoding") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let label = req.get("encoding").and_then(|v| v.as_str()).unwrap_or("");
+            let view = ide_kernel::document::Encoding::from_label(label)
+                .and_then(|e| state.docs.lock().ok().and_then(|mut d| d.set_encoding(e)));
+            doc_respond(stream, view);
+        }
+        ("GET", "/api/doc/export") => {
+            let r = state.docs.lock().ok().and_then(|d| d.export());
+            match r {
+                Some((path, text)) => {
+                    let j = serde_json::json!({
+                        "ok": true,
+                        "result": { "path": path, "text": text }
+                    });
+                    send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&j).unwrap_or_default());
+                }
+                None => doc_respond::<serde_json::Value>(stream, None),
+            }
+        }
+        ("POST", "/api/doc/mark_saved") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.mark_saved());
+            doc_respond(stream, view);
+        }
+
+("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug
@@ -246,14 +578,14 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     return;
                 }
             };
-            let full = if std::path::Path::new(file_path).is_absolute() {
-                std::path::PathBuf::from(file_path)
-            } else {
-                root_path.join(file_path)
-            };
-            match std::fs::read_to_string(&full) {
-                Ok(content_str) => {
-                    let result = outline::outline_file(&full.to_string_lossy(), &content_str);
+            // 走沙箱读文件 (P0 安全): 原实现直接 `fs::read_to_string(&full)`,
+            // `full` 只做了 root.join 而**没有校验是否在 root 之内** ——
+            // 传 `../../../../Windows/win.ini` 即可任意文件读取.
+            // 注释里"绕过沙箱"的理由 (sandbox 的 \\?\ prefix bug) 早已由
+            // stripVerbatim 修复, 不再成立.
+            match path_safety::read_file(&root_path, file_path) {
+                Ok(fc) => {
+                    let result = outline::outline_file(file_path, &fc.content);
                     send_response(
                         stream,
                         "200 OK",
@@ -618,6 +950,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             );
         }
         ("GET", "/api/kernel_banner") => {
+            // Also handle POST for web invoke()
+            let j =
+                serde_json::to_vec(&serde_json::json!(state.kernel_banner())).unwrap_or_default();
+            send_response(stream, "200 OK", "application/json", &j);
+        }
+        ("POST", "/api/kernel_banner") => {
             let j =
                 serde_json::to_vec(&serde_json::json!(state.kernel_banner())).unwrap_or_default();
             send_response(stream, "200 OK", "application/json", &j);
@@ -644,13 +982,17 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         ("POST", "/api/open_project") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            eprintln!("[DEBUG] /api/open_project received path: {:?}", path);
             match state.project_root_set(PathBuf::from(path)) {
                 Ok(c) => {
                     let j =
                         serde_json::to_vec(&c.to_string_lossy().into_owned()).unwrap_or_default();
                     send_response(stream, "200 OK", "application/json", &j);
                 }
-                Err(e) => send_response(stream, "400 Bad Request", "text/plain", e.as_bytes()),
+                Err(e) => {
+                    eprintln!("[DEBUG] /api/open_project error: {}", e);
+                    send_response(stream, "400 Bad Request", "text/plain", e.as_bytes());
+                }
             }
         }
         ("POST", "/api/list_dir") => {
@@ -743,13 +1085,31 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 }
 
 /// 启动 HTTP server 监听指定端口 (阻塞).
+/// 单连接读超时 (秒). 单线程 server 下, 一个只发请求行不发完 header 的
+/// 半开连接会永久阻塞整个服务 —— 这是手写同步 HTTP server 的经典 DoS.
+const READ_TIMEOUT_SECS: u64 = 15;
+
 pub fn serve(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
+    let port = addr
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8123);
+    let state = ShellState::with_port(port);
     eprintln!("ide-shell-web listening on http://{addr}");
-    let state = ShellState::new();
+    if state.auth.open {
+        eprintln!("[auth] 开放模式 (IDE_SHELL_WEB_NO_AUTH=1) — 仅限本地 UAT, 不要暴露");
+    } else {
+        eprintln!("[auth] token = {}", state.auth.token());
+        eprintln!("[auth] 请求需带 header: X-IDE-Token: <token>");
+    }
     for stream in listener.incoming() {
         match stream {
             Ok(mut s) => {
+                // 读超时: 防半开连接永久占用唯一的服务线程
+                let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
+                let _ = s.set_write_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
                 handle_request(&mut s, &state);
             }
             Err(e) => eprintln!("connection error: {e}"),

@@ -7,6 +7,12 @@ use std::net::TcpStream;
 use std::thread;
 use std::time::Duration;
 
+/// 测试用固定 token。
+///
+/// web shell 自 P0 修复起要求 `X-IDE-Token` 头 —— 缺失即 401。
+/// 测试固定 token 而非随机, 这样 `no_token_is_rejected` 这类用例可预测。
+const TEST_TOKEN: &str = "test-token-ide10";
+
 /// 找一个空闲端口。
 fn free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -14,12 +20,18 @@ fn free_port() -> u16 {
 }
 
 fn http_post(addr: &str, path: &str, body: &str) -> (u16, String) {
+    http_post_with(addr, path, body, Some(TEST_TOKEN))
+}
+
+/// 同 http_post, 但可指定 token (None = 完全不发该头, 用于验证 401)。
+fn http_post_with(addr: &str, path: &str, body: &str, token: Option<&str>) -> (u16, String) {
     let mut stream = TcpStream::connect(addr).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
+    let token_hdr = token.map(|t| format!("X-IDE-Token: {t}\r\n")).unwrap_or_default();
     let req = format!(
-        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\n{token_hdr}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     stream.write_all(req.as_bytes()).unwrap();
@@ -40,7 +52,7 @@ fn http_get(addr: &str, path: &str) -> (u16, String) {
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nX-IDE-Token: {TEST_TOKEN}\r\nConnection: close\r\n\r\n");
     stream.write_all(req.as_bytes()).unwrap();
     let mut resp = String::new();
     stream.read_to_string(&mut resp).unwrap();
@@ -69,7 +81,9 @@ impl TestServer {
         listener.set_nonblocking(false).unwrap();
         let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let shutdown_c = shutdown.clone();
-        let state = std::sync::Arc::new(ide_shell_web::ShellState::new());
+        let state = std::sync::Arc::new(ide_shell_web::ShellState::with_auth(
+            ide_shell_web::auth::Auth::with_token(TEST_TOKEN, port),
+        ));
         // 用另一个线程 accept, 主测试线程发请求。shutdown 后 accept 超时退出。
         listener.set_nonblocking(true).unwrap();
         let handle = thread::spawn(move || loop {
@@ -222,4 +236,142 @@ fn test_server_unknown_path_404() {
     thread::sleep(Duration::from_millis(100));
     let (status, _) = http_get(&srv.addr, "/api/nonexistent");
     assert_eq!(status, 404);
+}
+
+// ============================================================
+// P0 安全回归测试
+// ============================================================
+//
+// 背景: web shell 绑定 127.0.0.1 曾等于「无访问控制」——
+//   - 响应带 `Access-Control-Allow-Origin: *` → 任意网页可读响应
+//   - `/api/terminal_create` 的 `shell` 直接来自请求 → 任意可执行文件
+//   - 不校验 Host → DNS rebinding
+// 修复后必须有测试证明这些确实被挡住, 否则回归无从发现。
+
+#[test]
+fn test_missing_token_is_rejected_401() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let (status, _) = http_post_with(&srv.addr, "/api/event", r#"{"kind":"key","code":"Char:i"}"#, None);
+    assert_eq!(status, 401, "无 token 必须 401");
+}
+
+#[test]
+fn test_wrong_token_is_rejected_403() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let (status, _) = http_post_with(
+        &srv.addr,
+        "/api/event",
+        r#"{"kind":"key","code":"Char:i"}"#,
+        Some("wrong-token"),
+    );
+    assert_eq!(status, 403, "错误 token 必须 403");
+}
+
+#[test]
+fn test_valid_token_passes() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let (status, _) = http_post(&srv.addr, "/api/event", r#"{"kind":"key","code":"Char:i"}"#);
+    assert_eq!(status, 200, "正确 token 应放行");
+}
+
+/// 跨站 Origin (模拟恶意网页) 必须被拒 —— 这是 CORS `*` 的替代防线。
+#[test]
+fn test_cross_origin_request_is_rejected() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let mut stream = TcpStream::connect(&srv.addr).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let body = r#"{"kind":"key","code":"Char:i"}"#;
+    let req = format!(
+        "POST /api/event HTTP/1.1\r\nHost: {}\r\nOrigin: https://evil.example.com\r\nX-IDE-Token: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        srv.addr, TEST_TOKEN, body.len(), body
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut resp = String::new();
+    stream.read_to_string(&mut resp).unwrap();
+    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    assert_eq!(status, 403, "跨站 Origin 必须 403");
+}
+
+/// DNS rebinding: Host 指向外部域名, 即使 token 正确也必须拒。
+#[test]
+fn test_foreign_host_is_rejected() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let mut stream = TcpStream::connect(&srv.addr).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let body = r#"{"kind":"key","code":"Char:i"}"#;
+    let req = format!(
+        "POST /api/event HTTP/1.1\r\nHost: evil.example.com\r\nX-IDE-Token: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        TEST_TOKEN, body.len(), body
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut resp = String::new();
+    stream.read_to_string(&mut resp).unwrap();
+    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    assert_eq!(status, 403, "外部 Host 必须 403 (防 DNS rebinding)");
+}
+
+/// 响应不得再带 `Access-Control-Allow-Origin: *`。
+#[test]
+fn test_response_has_no_wildcard_cors() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let mut stream = TcpStream::connect(&srv.addr).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let req = format!(
+        "GET / HTTP/1.1\r\nHost: {}\r\nX-IDE-Token: {}\r\nConnection: close\r\n\r\n",
+        srv.addr, TEST_TOKEN
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut resp = String::new();
+    stream.read_to_string(&mut resp).unwrap();
+    assert!(
+        !resp.contains("Access-Control-Allow-Origin: *"),
+        "响应不得带通配 CORS (会让任意网页读取本机响应)"
+    );
+    assert!(resp.contains("X-Content-Type-Options: nosniff"));
+}
+
+/// 超大 Content-Length 必须 413, 且不得先分配内存。
+#[test]
+fn test_oversized_content_length_is_rejected() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let mut stream = TcpStream::connect(&srv.addr).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let req = format!(
+        "POST /api/event HTTP/1.1\r\nHost: {}\r\nX-IDE-Token: {}\r\nContent-Length: 9000000000\r\nConnection: close\r\n\r\n",
+        srv.addr, TEST_TOKEN
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut resp = String::new();
+    let _ = stream.read_to_string(&mut resp);
+    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    assert_eq!(status, 413, "超大 body 必须 413");
+}
+
+/// CORS 预检不得放行 (自定义头触发预检, 拦住它就拦住了跨站真实请求)。
+#[test]
+fn test_preflight_options_is_not_granted() {
+    let srv = TestServer::start();
+    thread::sleep(Duration::from_millis(100));
+    let mut stream = TcpStream::connect(&srv.addr).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let req = format!(
+        "OPTIONS /api/event HTTP/1.1\r\nHost: {}\r\nOrigin: https://evil.example.com\r\nConnection: close\r\n\r\n",
+        srv.addr
+    );
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut resp = String::new();
+    let _ = stream.read_to_string(&mut resp);
+    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    assert_ne!(status, 200, "预检不得返回 200 (否则浏览器会放行跨站请求)");
+    assert!(
+        !resp.contains("Access-Control-Allow-Headers"),
+        "不得回 Access-Control-Allow-Headers, 否则 X-IDE-Token 可被跨站读取"
+    );
 }

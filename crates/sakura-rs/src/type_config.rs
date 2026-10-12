@@ -19,7 +19,6 @@ use crate::types;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TokenKind {
     Default,
-    Plain,
     Keyword,
     Type,
     String,
@@ -27,15 +26,15 @@ pub enum TokenKind {
     Comment,
     Function,
     Operator,
-    Punct,
     Variable,
+    Plain,
+    Punct,
 }
 
 impl TokenKind {
     pub fn css_class(&self) -> &'static str {
         match self {
             TokenKind::Default => "tok-default",
-            TokenKind::Plain => "tok-plain",
             TokenKind::Keyword => "tok-keyword",
             TokenKind::Type => "tok-type",
             TokenKind::String => "tok-string",
@@ -43,8 +42,9 @@ impl TokenKind {
             TokenKind::Comment => "tok-comment",
             TokenKind::Function => "tok-function",
             TokenKind::Operator => "tok-operator",
-            TokenKind::Punct => "tok-punct",
             TokenKind::Variable => "tok-variable",
+            TokenKind::Plain => "tok-plain",
+            TokenKind::Punct => "tok-punct",
         }
     }
 }
@@ -59,11 +59,7 @@ pub struct OutlineEntry {
 
 impl OutlineEntry {
     pub fn new(name: impl Into<String>, kind: impl Into<String>, line: i32) -> Self {
-        Self {
-            name: name.into(),
-            kind: kind.into(),
-            line,
-        }
+        Self { name: name.into(), kind: kind.into(), line }
     }
 }
 
@@ -80,21 +76,11 @@ pub struct StringDelim {
 
 impl StringDelim {
     pub fn new(open: impl Into<String>, close: impl Into<String>, line_only: bool) -> Self {
-        Self {
-            open: open.into(),
-            close: close.into(),
-            line_only,
-            escape: Some("\\".into()),
-        }
+        Self { open: open.into(), close: close.into(), line_only, escape: Some("\\".into()) }
     }
 
     pub fn raw(open: impl Into<String>, close: impl Into<String>) -> Self {
-        Self {
-            open: open.into(),
-            close: close.into(),
-            line_only: true,
-            escape: None,
-        }
+        Self { open: open.into(), close: close.into(), line_only: true, escape: None }
     }
 }
 
@@ -121,7 +107,6 @@ pub struct TypeConfig {
     pub type_keywords: Vec<String>,
 }
 
-#[allow(dead_code)]
 fn default_outline_fn(_text: &str) -> Vec<OutlineEntry> {
     Vec::new()
 }
@@ -233,17 +218,17 @@ impl TypeConfig {
                 if line[i..].starts_with(&delim.open) {
                     let after_open = i + delim.open.len();
                     let mut end = after_open;
+                    let mut found_close = false;
                     while end < chars.len() {
                         if let Some(ref esc) = delim.escape {
-                            if end < chars.len() - 1
-                                && chars[end] == esc.chars().next().unwrap_or('\\')
-                            {
+                            if end < chars.len() - 1 && chars[end] == esc.chars().next().unwrap_or('\\') {
                                 end += 2;
                                 continue;
                             }
                         }
                         if line[end..].starts_with(&delim.close) {
                             end += delim.close.len();
+                            found_close = true;
                             break;
                         }
                         if delim.line_only && chars[end] == '\n' {
@@ -264,11 +249,7 @@ impl TypeConfig {
             // 4. 数字
             if c.is_ascii_digit() {
                 let mut end = i;
-                while end < chars.len()
-                    && (chars[end].is_ascii_alphanumeric()
-                        || chars[end] == '_'
-                        || chars[end] == '.')
-                {
+                while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_' || chars[end] == '.') {
                     end += 1;
                 }
                 out.push((col, end as i32, TokenKind::Number));
@@ -389,20 +370,14 @@ mod tests {
     #[test]
     fn detect_dockerfile_by_name() {
         let r = TypeRegistry::default();
-        assert_eq!(
-            r.detect("Dockerfile").map(|t| t.name.as_str()),
-            Some("Dockerfile")
-        );
+        assert_eq!(r.detect("Dockerfile").map(|t| t.name.as_str()), Some("Dockerfile"));
     }
 
     #[test]
     fn detect_unknown() {
         let r = TypeRegistry::default();
         // 未知扩展名: 默认返回 Plain (作为 fallback)
-        assert_eq!(
-            r.detect("foo.unknown").map(|t| t.name.as_str()),
-            Some("Plain")
-        );
+        assert_eq!(r.detect("foo.unknown").map(|t| t.name.as_str()), Some("Plain"));
     }
 
     #[test]

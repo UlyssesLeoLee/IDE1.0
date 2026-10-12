@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "IDE1.0",
+  "version": "0.1.9",
+  "identifier": "dev.ide1.0.shell",
+  "build": {
+    "frontendDist": "dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "IDE1.0",
+        "width": 960,
+        "height": 600,
+        "minWidth": 640,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false,
+        "transparent": true,
+        "additionalBrowserArgs": "--remote-debugging-port=9222"
+      }
+    ],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "IDE1.0 IDE Shell — UAT/CI 构建 (WebView2 CDP 已开启)",
+    "longDescription": "仅用于自动化验证: 开启 WebView2 远程调试端口 9222, 不打包安装包."
+  }
+}

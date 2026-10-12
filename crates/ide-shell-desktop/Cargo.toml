@@ -12,6 +12,8 @@ description = "IDE1.0 IDE Shell — Tauri 2 桌面应用 (per ULYS-191 §4 Tauri
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# 编辑内核 — doc_* command 共用 web 端同一份 DocStore
+ide-kernel = { path = "../ide-kernel" }
 # Workspace 共享 deps
 serde = { workspace = true }
 serde_json = { workspace = true }

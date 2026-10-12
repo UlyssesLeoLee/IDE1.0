@@ -2313,6 +2313,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ide-kernel"
+version = "0.1.0"
+dependencies = [
+ "sakura-rs",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ide-kernel-core"
 version = "0.1.0"
 
@@ -2323,6 +2332,7 @@ dependencies = [
  "aci-emitter",
  "anyhow",
  "crossterm",
+ "ide-kernel",
  "ide-kernel-core",
  "ratatui",
  "serde",
@@ -2336,6 +2346,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
  "rfd",
@@ -2372,6 +2383,7 @@ version = "0.1.0"
 dependencies = [
  "aci-emitter",
  "crossterm",
+ "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
  "once_cell",
@@ -6621,9 +6633,9 @@ dependencies = [
 
 [[package]]
 name = "zstd-sys"
-version = "2.1.0+zstd.1.5.7"
+version = "2.1.1+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ef0a8027ec3ee71300ab3bcbcd0393f434aa72b91ca6d635a39941deae8eea0"
+checksum = "aeec9eaf2dffbbd09201e23bd0ffcbaa33bb8e9266a10734fd7ed90a85eca078"
 dependencies = [
  "cc",
  "pkg-config",
