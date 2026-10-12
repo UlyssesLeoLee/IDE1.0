@@ -34,3 +34,6 @@ crates/ide-shell-desktop/gen/
 
 # Tauri CLI (crates/ide-shell-desktop) — 本地 npm install 产物
 crates/ide-shell-desktop/node_modules/
+
+# 测试临时产物
+tests/uat/fixtures/sample-project/audit_tmp.txt
