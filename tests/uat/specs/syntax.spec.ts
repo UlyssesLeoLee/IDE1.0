@@ -14,7 +14,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { resetShell, waitForBootstrap } from "./helpers";
 
-const BASE = "http://127.0.0.1:8123";
+const BASE = `http://${process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123"}`;
 
 async function goEditor(page: Page) {
   await page.goto("/editor");
