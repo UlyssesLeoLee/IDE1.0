@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "crates/ide-kernel-core",
+  "crates/ide-kernel",
   "crates/ide-cli",
   "crates/ide-shell",
   "crates/ide-shell-web",

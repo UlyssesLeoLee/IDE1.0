@@ -2313,6 +2313,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ide-kernel"
+version = "0.1.0"
+dependencies = [
+ "sakura-rs",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ide-kernel-core"
 version = "0.1.0"
 

@@ -232,6 +232,13 @@ impl DocLineMgr {
         } else {
             // 多行删除: 保留 start 行 col..end, 删除中间行, 拼接 start.row + end.row
             // 先把 start.row 右侧保留 + end.row 左侧保留 → start.row
+            // 防御: 多行删除时 r.end.row 可能已因前一个 Ope 的逆操作失效
+            // (例如 multi-cursor 撤销: 后面的行先被恢复/删除, 行号边界变化)。
+            // 越界说明该 Ope 的范围已不适用, 安全地忽略而不是 panic。
+            if r.end.row as usize >= self.lines.len() || s.row as usize >= self.lines.len() {
+                self.set_caret(r.start);
+                return r.start;
+            }
             let end_line_text = self.lines[r.end.row as usize].text.clone();
             let end_line_col = r.end.col.max(0) as usize;
             let end_byte = end_line_text.char_indices().nth(end_line_col).map(|(b, _)| b).unwrap_or(end_line_text.len());
