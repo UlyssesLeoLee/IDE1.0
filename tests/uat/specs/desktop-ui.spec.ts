@@ -56,7 +56,10 @@ function installMock() {
           return { name: p.split("/").pop(), path: p, content: files[p] };
         }
         case "write_file": files[norm(args.path)] = args.content; return args.content.length;
-        case "search_cmd": {
+        case "search_cmd":
+        // 共享前端 (8ac5ec5) 调的是 "search"; "search_cmd" 是 ULYS-251
+        // 旧前端的命令名. 两个都留, 否则任一版本的面板都开不了.
+        case "search": {
           const out: any[] = [];
           for (const [p, text] of Object.entries(files)) {
             text.split("\n").forEach((line, i) => {
@@ -76,6 +79,12 @@ function installMock() {
           setTimeout(() => listeners["terminal://output"]?.({ payload: { id: args.id, stream: "stdout", data: "echo: " + args.data } }), 0);
           return null;
         case "terminal_close": return null;
+        // 共享前端 (8ac5ec5) 还会 invoke 这两个; ULYS-251 mock 没实现,
+        // 落到 default 会抛 "unknown command" 导致调用它的用例失败.
+        // 插件: 返回空清单即可 (用例只要求"无异常").
+        case "plugin_load": return { loaded: [], errors: [] };
+        // 终端输出: 走事件推送, 这里补一个空快照以防前端直接轮询.
+        case "terminal_output": return { id: args.id, stream: "stdout", data: "" };
         default: throw "unknown command " + cmd;
       }
     },
@@ -260,7 +269,9 @@ test.describe("desktop dist UI (ULYS-251)", () => {
 
   test("浅色主题下下拉菜单为浅色背景 (文字可读)", async ({ page }) => {
     await boot(page);
-    await page.evaluate(() => (window as any).applyTheme("light"));
+    // 注意: 共享前端用 setTheme(mode) (见 editor.html THEMES / setTheme),
+    // 不是 ULYS-251 分支上的 applyTheme —— 那版前端在合并冲突时已回退.
+    await page.evaluate(() => (window as any).setTheme("light"));
     await page.locator('.menu-item[data-menu="file"] .mb-btn').click();
     const bg = await page.locator('.menu-dropdown[data-dropdown="file"]').evaluate((el) => getComputedStyle(el).backgroundColor);
     const [r, g, b] = bg.match(/\d+/g)!.map(Number);

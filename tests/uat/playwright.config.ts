@@ -46,13 +46,12 @@ export default defineConfig({
       timeout: 90_000,  // CI Linux cold-start: build + connect 延长
       // 默认 fixtures 项目根 — editor.spec.ts / sandbox.spec.ts 用
       env: {
-<<<<<<< HEAD
-        IDE_SHELL_WEB_TEST_ROOT: "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project",
-=======
         IDE_SHELL_WEB_ADDR: ADDR,
+        // 测试环境必须开无认证模式 —— 部分 case 直接 fetch("/api/reset")
+        // 不带 token, 认证模式下会 401 导致整片用例连锁失败.
+        IDE_SHELL_WEB_NO_AUTH: "1",
         // 相对本仓库解析 (原先写死 D:\orcaWork\... 绝对路径, 换机器/CI 即失效)
         IDE_SHELL_WEB_TEST_ROOT: path.resolve(__dirname, "fixtures", "sample-project"),
->>>>>>> 3093f19745d36a74ed6713731ee12bb4b1e3538a
       },
       stdout: "ignore",
       stderr: "pipe",
