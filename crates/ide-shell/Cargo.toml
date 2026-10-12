@@ -20,6 +20,8 @@ anyhow = { workspace = true }
 aci-emitter = { workspace = true }
 # IDE1.0 现有 kernel (复用 ide-kernel-core 的 kernel_status / version / init)
 ide-kernel-core = { path = "../ide-kernel-core" }
+# 编辑内核 — 文件编辑语义与 web/desktop 共用 (route A: 单一事实来源)
+ide-kernel = { path = "../ide-kernel" }
 
 [lints]
 workspace = true

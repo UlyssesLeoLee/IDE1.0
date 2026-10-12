@@ -2332,6 +2332,7 @@ dependencies = [
  "aci-emitter",
  "anyhow",
  "crossterm",
+ "ide-kernel",
  "ide-kernel-core",
  "ratatui",
  "serde",
