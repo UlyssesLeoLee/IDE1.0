@@ -114,7 +114,10 @@
     .mb-btn:hover, .menu-item.open > .mb-btn { background: #2d2d2d; color: white; }
     .mb-btn:active { background: #3d3d3d; }
     .mn-key { color: var(--fg-muted); margin-left: 6px; font-size: 10px; text-decoration: underline; }
-    .menu-dropdown, .submenu-dropdown { display: none; position: absolute; background: #252526; border: 1px solid #454545; box-shadow: 0 2px 8px rgba(0,0,0,0.5); min-width: 240px; padding: 4px 0; z-index: 200; }
+    /* 下拉菜单跟随主题 —— 原来这里写死 background:#252526 (深色),
+   浅色主题下菜单仍是深底, 文字 (var(--fg) 近黑) 糊在深色上读不清.
+   改用 --bg-bar / --border, 各主题的变量就会生效. */
+.menu-dropdown, .submenu-dropdown { display: none; position: absolute; background: var(--bg-bar); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.5); min-width: 240px; padding: 4px 0; z-index: 200; }
     .menu-item.open > .menu-dropdown { display: block; }
     .menu-dropdown { top: 100%; left: 0; }
     .menu-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 14px; cursor: pointer; color: var(--fg); font-size: 12px; user-select: none; }
@@ -1018,19 +1021,28 @@ let TAURI_TERMINAL_LISTEN = null;
 // Tauri 2: withGlobalTauri=true 时是 window.__TAURI__.event.listen;
 // 否则 __TAURI_INTERNALS__ 上只有 invoke/transformCallback/plugins, 没有 event.
 function findTauriListen() {
-  const cands = [
-    window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen,
-    window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.event &&
-      window.__TAURI_INTERNALS__.event.listen,
-    window.__TAURI_EVENT_PLUGIN_INTERNALS__ &&
-      window.__TAURI_EVENT_PLUGIN_INTERNALS__.listen,
+  // 必须返回**绑定了宿主对象**的函数, 不能直接把方法引用取出来 ——
+  // `obj.method` 取出后再当裸函数调用时 this === undefined, Tauri 的
+  // listen 内部要通过 this 访问内部状态, 会抛 "cannot read property of
+  // undefined". 用 bind 固定宿主, 三种来源分别绑定各自的宿主对象.
+  const srcs = [
+    [window.__TAURI__ && window.__TAURI__.event, "listen"],
+    [window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.event, "listen"],
+    [window.__TAURI_EVENT_PLUGIN_INTERNALS__, "listen"],
   ];
-  return cands.find((f) => typeof f === "function") || null;
+  for (const [host, key] of srcs) {
+    if (host && typeof host[key] === "function") return host[key].bind(host);
+  }
+  return null;
 }
 
 async function setupTerminalChannel() {
   if (!inTauri || !window.__TAURI_INTERNALS__) return;
-  if (TERM_CHANNEL) return;                          // 只初始化一次
+  // 只在"已就绪"时短路. 不能写成 `if (TERM_CHANNEL) return` —— 之前
+  // 降级成 "poll" 之后, 事件 API 后来可用 (或本就可用但当时还没注入)
+  // 也再也升不回来, 终端输出就永久停在轮询模式, terminal://closed
+  // 之类的推送永远收不到.
+  if (TERM_CHANNEL === "event") return;
   const listen = findTauriListen();
   if (!listen) {
     // 没有事件 API: 如实降级为轮询 (后端 terminal_output command 可用时)
@@ -2104,6 +2116,8 @@ function runExCommand(cmdStr, t) {
 
 // ===== Editor =====
 let pendingZ = false;   // z 前缀 (zc/zo/zM/zR)
+let pendingD = false;   // d 前缀 (dd 删行)
+let pendingDTimer = null;
     // 内部剪贴板 (浏览器剪贴板 API 需要用户手势, 不可靠)
 
 function newId() {
@@ -2448,8 +2462,10 @@ function closeTab(id) {
   TABS.delete(id);
   if (activeTabId === id) activeTabId = null;
   if (TABS.size === 0) {
-    edContent.textContent = "";
-    gutter.textContent = "";
+    // 关掉最后一个标签要回到欢迎页 —— 否则编辑器区是一片空白, 用户
+    // 既看不到文件名也找不到"打开文件夹"的入口, 像是卡死了.
+    // (实测: closeTab 只清了内容, 没调 showWelcome)
+    showWelcome();
     setFile("无活动");
     setPos("Ln 1, Col 1");
   } else {
@@ -2571,6 +2587,37 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     if (e.key === "G") { e.preventDefault(); t.cursor.row = t.lines.length - 1; t.cursor.col = 0; paintActive(); return; }
     if (e.key === "x") { e.preventDefault(); normalDeleteChar(); return; }
     if (e.key === "u") { e.preventDefault(); doUndo(); return; }
+    // dd = 删除当前行. deleteLine() 早就写好了但没接到键盘上 ——
+    // NORMAL 模式只实现了 0 $ G x u z, dd/D/C 之类双键命令全部缺失,
+    // 而 dd 是 vim/sakura 最基础的操作.
+    // pendingD 用超时兜底: 800ms 内没等到第二个 d 就当单键 d 处理 (无操作).
+    if (e.key === "d") {
+      e.preventDefault();
+      if (pendingD) {
+        pendingD = false;
+        clearTimeout(pendingDTimer);
+        deleteLine();
+        setTip("已删除行");
+      } else {
+        pendingD = true;
+        clearTimeout(pendingDTimer);
+        pendingDTimer = setTimeout(() => { pendingD = false; }, 800);
+      }
+      return;
+    }
+    // p = 在当前行下粘贴 (yank 需要剪贴板, 这里用系统剪贴板不可靠,
+    // 改为复制到 tab 内的 clipboard 槽, p 从那里取)
+    if (e.key === "p") {
+      e.preventDefault();
+      const line = curLine(t);
+      t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
+      t.lines.splice(t.cursor.row + 1, 0, line);
+      t.cursor.row += 1;
+      t.dirty = true;
+      paintActive();
+      setTip("已粘贴行");
+      return;
+    }
     if (e.key === "z" && pendingZ) {
       e.preventDefault();
       const k = e.key;
@@ -2581,6 +2628,8 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       if (k === "R") { unfoldAll(t); renderVim(t); return; }
     }
     if (e.key === "z") { pendingZ = true; setTimeout(() => { pendingZ = false; }, 800); return; }
+    // 任意其它键都应清掉 dd 的挂起状态, 否则 pendingD 会一直等第二个 d
+    pendingD = false;
   }
   if (e.key === "i" || e.key === "a" || e.key === "o" ||
       e.key === "I" || e.key === "A" || e.key === "O") {
@@ -4289,7 +4338,11 @@ document.addEventListener("click", (e) => {
   if (e.target.closest(".menu-row")) return;
   const btn = e.target.closest("[data-cmd]");
   if (!btn) return;
-  if (btn.classList.contains("open-btn") || btn.classList.contains("menu-item")) return;
+  // menu-item 是菜单容器 (点它只展开下拉, 真正的命令在 .menu-row 上),
+  // 所以要排除. 但 open-btn 是**真按钮** —— 欢迎页的"打开文件夹"就靠它,
+  // 之前一起被排除掉了, 导致欢迎页按钮点了没反应 (用例: 项目打不开,
+  // #side-body 一直显示"未打开项目").
+  if (btn.classList.contains("menu-item")) return;
   dispatchCommand(btn.dataset.cmd);
 });
 
@@ -4298,6 +4351,15 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
   if (e.key === "F1") { e.preventDefault(); showHelp(); }
   if (e.key === "F12") { e.preventDefault(); gotoDefinitionLocal(); }
+  // 书签: Ctrl+F2 加/删书签, F2 跳下一个, Shift+F2 上一个.
+  // 菜单里标了这些快捷键 (data-shortcut="Ctrl+F2") 但键盘没接 ——
+  // 与 dd 同类问题: 声明了但没实现.
+  if (e.key === "F2") {
+    e.preventDefault();
+    if (e.shiftKey) bookmarkPrev(); else bookmarkNext();
+    return;
+  }
+  if (e.ctrlKey && e.key === "F2") { e.preventDefault(); toggleBookmark(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
   if (e.ctrlKey && e.shiftKey) {
     const k = e.key.toLowerCase();
@@ -4481,12 +4543,119 @@ const EDIT_CMDS = {
 };
 
 // 全角/半角 (ASCII 可见字符)
-function toFullwidth(s) {
-  return s.replace(/[\x21-\x7e]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).replace(/ /g, "\u3000");
+// 半角假名 → 全角. ���原来的实现只处理 ASCII (\x21-\x7e) 和空格, 完全漏掉了
+// 半角假名区 —— 而这正是日文编辑器的核心功能 (打不出全角假名时用半角代替,
+// 保存时统一转全角). 半角假名区的码位不是简单偏移, 需要查表:
+//   U+FF61 ｡ → U+3002
+//   U+FF62-FF63 ｢｣ → U+300C/300D
+//   U+FF64 ､ → U+FF64 (半角浊点, 与全角浊点合成)
+//   U+FF65-FF9F ｦ-ﾟ → U+30A2-U+30FC (加 0x60, 与平<->片转换同一规则)
+// 浊音/半浊音符号 (ﾞﾟ, U+FF9E/FF9F) 必须**紧跟在假名后**才转成组合浊点,
+// 单独出现时保留 (它本身就是要跟假名配对的).
+// 半角/全角转换.
+//
+// 原实现只处理 ASCII (\x21-\x7e) 和空格, **完全漏掉半角假名区**
+// (U+FF61..U+FF9F) —— 而这正是日文编辑器的核心场景: 键盘打不出全角假名时
+// 先用半角代替, 保存时统一转全角. 实测 toFullwidth("ｶﾞｷﾞ abc") 只把
+// "abc" 转了, 假名原样留下.
+//
+// 这里改成按 NFKC 规范化处理 —— Unicode 的"兼容性分解"就是全角/半角
+// 的权威定义, 比手写 60 条映射表可靠 (手写极易把 \u30a2:\uff65 这种
+// 方向写反, 实测踩过). 浏览器原生支持 String.prototype.normalize.
+//
+// 浊音/半浊音要注意: 全角"ガ"= カ(U+30AB) + 组合浊点(U+3099) 两个码位,
+// 半角"ｶﾞ"= ｶ(U+FF76) + 半浊点(U+FF9E) 两个码位. 两边都是两字符,
+// 逐字符 NFKC 后 "ｶﾞ" 会得到 "カ" + U+3099 = "ガ" —— 但要保证 NFKC 不会
+// 把组合浊点提前合并 (在字符串层面逐字符处理就是安全的, 因为 U+3099
+// 单独规范化时保持不变).
+
+// 半角/全角转换.
+//
+// 原实现只处理 ASCII (\x21-\x7e) 和空格, **完全漏掉半角假名区**
+// (U+FF61..U+FF9F) —— 而这正是日文编辑器的核心场景: 键盘打不出全角假名时
+// 先用半角代替, 保存时统一转全角. 实测 toFullwidth("ｶﾞｷﾞ abc") 只把 "abc"
+// 转了, 假名原样留下.
+//
+// 实现要点 (两个方向不对称, 不能用同一个 normalize):
+//
+//   半角 -> 全角: String.prototype.normalize("NFKC") 就是权威定义.
+//     "ｶﾞ" 的 NFKC 结果正是 "ガ" (か+组合浊点). 浏览器原生支持.
+//
+//   全角 -> 半角: **NFKC 做不到** —— U+30AB(カ) 本身不是"兼容性字符",
+//     NFKC 原样返回. 必须分两步:
+//       1. 假名字母: 把半角区 U+FF61..FF9F 的 NFKC 结果建成反向表,
+//          运行时一次性生成 (60 条, 不硬编码 —— 手写表极易把方向写反).
+//       2. 组合浊点 U+3099/U+309A -> 半浊点 U+FF9E/U+FF9F.
+//     注意"ガ"= か+3099 两码位, 要**先查字母表再查浊点表**, 不能先合并.
+//
+// 例: "ガ" -> 表查 30AB->FF76(ｶ), 再 3099->FF9E(ﾞ) = "ｶﾞ".
+
+let _KANA_F_TO_H = null;
+let _KANA_H_TO_F = null;
+
+function buildKanaTables() {
+  if (_KANA_F_TO_H) return;
+  _KANA_F_TO_H = Object.create(null);
+  _KANA_H_TO_F = Object.create(null);
+  for (let h = 0xff61; h <= 0xff9f; h++) {
+    const half = String.fromCharCode(h);
+    // 浊点 U+FF9E/FF9F 的 NFKC 是组合浊点 U+3099/U+309A, 不是单字符假名,
+    // 单独处理, 不进字母表.
+    if (h === 0xff9e || h === 0xff9f) continue;
+    const full = half.normalize("NFKC");
+    if (full.length !== 1 || full === half) continue;
+    _KANA_F_TO_H[full] = half;
+    _KANA_H_TO_F[half] = full;
+  }
+  // 半角空格/标点等非假名项由 NFKC 单独覆盖 (U+FF61 ｡ U+FF62 ｢ 等已在表内)
 }
+
+function toFullwidth(s) {
+  buildKanaTables();
+  return Array.from(s)
+    .map((c) => {
+      const code = c.charCodeAt(0);
+      if (code >= 0x21 && code <= 0x7e) {
+        return String.fromCharCode(code + 0xfee0);   // ASCII 可打印 -> 全角
+      }
+      if (code === 0x20) return "\u3000";            // 半角空格 -> 全角空格
+      if (code === 0xff9e) return "\u3099";         // 半浊点 -> 组合浊点
+      if (code === 0xff9f) return "\u309a";         // 半半浊点 -> 组合半浊点
+      return _KANA_H_TO_F[c] || c.normalize("NFKC"); // 半角假名 -> 全角
+    })
+    .join("");
+}
+
 function toHalfwidth(s) {
-  return s.replace(/[\uff01-\uff5e]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
-          .replace(/\u3000/g, " ");
+  buildKanaTables();
+  return Array.from(s)
+    .map((c) => {
+      const code = c.charCodeAt(0);
+      if (code >= 0xff01 && code <= 0xff5e) {
+        return String.fromCharCode(code - 0xfee0);   // 全角 ASCII 区 -> 半角
+      }
+      if (code === 0x3000) return " ";               // 全角空格 -> 半角空格
+      if (code === 0x3099) return "\uff9e";         // 组合浊点 -> 半浊点
+      if (code === 0x309a) return "\uff9f";         // 组合半浊点 -> 半半浊点
+      // 浊音假名 (ガ/パ/バ) 是"字母+浊点"两个码位的合成形式, 表里只存
+      // 字母 (カ/ハ), 所以要先 NFKD 拆成 カ+3099 再逐字查表.
+      if (code >= 0x30a0 && code <= 0x30ff) {
+        const parts = c.normalize("NFKD");
+        if (parts.length > 1) {
+          // 拆出来的每一段也要走完整规则 —— 特别是组合浊点 U+3099/309A
+          // 必须转成半浊点 U+FF9E/FF9F. 只查字母表会把浊点漏成
+          // 组合形式 (ｶ + ゙), 半角输入工具认不出来.
+          return Array.from(parts).map((part) => {
+            const pc = part.charCodeAt(0);
+            if (pc === 0x3099) return "\uff9e";
+            if (pc === 0x309a) return "\uff9f";
+            return _KANA_F_TO_H[part] || part;
+          }).join("");
+        }
+      }
+      return _KANA_F_TO_H[c] || c.normalize("NFKC"); // 全角假名 -> 半角
+    })
+    .join("");
 }
 
 // 逐行映射 (默认作用于全文; 有选区时只作用于选区)
