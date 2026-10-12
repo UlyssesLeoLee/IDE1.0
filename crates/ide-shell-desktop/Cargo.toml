@@ -28,6 +28,10 @@ crossterm = { workspace = true }
 rfd = "0.15"
 # Tauri 2 runtime
 tauri = { version = "2", features = [] }
+# Windows 应用主题 (AppsUseLightTheme) — 透明玻璃主题需要按桌面明暗
+# 决定文字反色方向. 纯 safe Rust (windows-registry 不含 unsafe 块),
+# 避开工作区 unsafe_code = "forbid" 约束.
+windows-registry = { version = "0.3", features = ["std"] }
 # sakura-rs — outline parser + buffer/undo (对标 sakura editor)
 sakura-rs = { path = "../sakura-rs" }
 

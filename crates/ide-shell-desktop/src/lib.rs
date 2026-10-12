@@ -33,6 +33,7 @@ pub mod plugin;
 pub mod scm;
 pub mod search;
 pub mod terminal;
+pub mod theme_luminance;
 pub mod wiki;
 
 use std::path::{Path, PathBuf};
@@ -520,6 +521,8 @@ pub fn run() {
         .manage(terminal::TerminalState::new())
         .manage(doc::DocState::default())
         .invoke_handler(tauri::generate_handler![
+            theme_luminance::desktop_luminance,
+            theme_luminance::clear_theme_vars,
             doc::doc_active,
             doc::doc_tabs,
             doc::doc_open,

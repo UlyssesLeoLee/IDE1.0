@@ -303,7 +303,7 @@
       background: transparent;
     }
 [data-theme="clear"] #app {
-      background: rgba(255, 255, 255, 0.02);
+      background: var(--glass-tint, rgba(255, 255, 255, 0.02));
       backdrop-filter: blur(8px) saturate(140%);
       -webkit-backdrop-filter: blur(8px) saturate(140%);
     }
@@ -324,7 +324,7 @@
                   inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25),
                   inset 1px 0 1px rgba(255, 255, 255, 0.35),
                   inset -1px 0 1px rgba(255, 255, 255, 0.35) !important;
-      color: #ffffff !important;
+      color: var(--fg) !important;
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
       mix-blend-mode: normal;
       transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -335,8 +335,8 @@
     [data-theme="clear"] #welcome .open-btn:hover,
     [data-theme="clear"] .md-btn:hover {
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.48) 0%, rgba(255, 255, 255, 0.20) 45%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.38) 100%) !important;
-      border-color: rgba(255, 255, 255, 0.85) !important;
-      border-top-color: #ffffff !important;
+      border-color: var(--border) !important;
+      border-top-color: var(--fg) !important;
       box-shadow: 0 6px 24px -2px rgba(56, 189, 248, 0.3),
                   0 0 12px rgba(255, 255, 255, 0.4),
                   inset 0 2px 2px 0 #ffffff,
@@ -352,7 +352,7 @@
       box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
     }
 [data-theme="clear"] .mb-btn {
-      color: rgba(255, 255, 255, 0.9) !important;
+      color: var(--fg) !important;
       border-radius: 5px;
       margin: 2px 1px;
       transition: all 0.2s ease;
@@ -364,7 +364,7 @@
       -webkit-backdrop-filter: blur(16px) saturate(200%) !important;
       border: 1px solid rgba(255, 255, 255, 0.5) !important;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.8) !important;
-      color: #ffffff !important;
+      color: var(--fg) !important;
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
 [data-theme="clear"] .menu-dropdown,
@@ -382,7 +382,7 @@
       padding: 5px 0;
     }
 [data-theme="clear"] .menu-row {
-      color: rgba(255, 255, 255, 0.92) !important;
+      color: var(--fg) !important;
       border-radius: 4px;
       margin: 1px 4px;
       transition: background 0.15s ease;
@@ -390,21 +390,21 @@
 [data-theme="clear"] .menu-row:hover {
       background: linear-gradient(90deg, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.15) 100%) !important;
       box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
-      color: #ffffff !important;
+      color: var(--fg) !important;
     }
 [data-theme="clear"] .menu-sep {
       background: rgba(255, 255, 255, 0.18) !important;
       margin: 4px 6px;
     }
 [data-theme="clear"] .act-btn {
-      color: rgba(255, 255, 255, 0.75);
+      color: var(--fg-muted);
       border-radius: 8px;
       transition: all 0.2s ease;
     }
 [data-theme="clear"] .act-btn:hover {
       background: rgba(255, 255, 255, 0.18) !important;
-      color: #ffffff !important;
-      border-color: rgba(255, 255, 255, 0.35) !important;
+      color: var(--fg) !important;
+      border-color: var(--border) !important;
     }
 [data-theme="clear"] .act-btn.active {
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
@@ -423,14 +423,14 @@
       -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
       border: 1px solid rgba(255, 255, 255, 0.35) !important;
       box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
-      color: #ffffff !important;
+      color: var(--fg) !important;
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
 [data-theme="clear"] .side-tab:hover,
     [data-theme="clear"] .bottom-tab:hover,
     [data-theme="clear"] .tab:hover {
       background: rgba(255, 255, 255, 0.14) !important;
-      color: #ffffff !important;
+      color: var(--fg) !important;
     }
 [data-theme="clear"] #ed-content,
     [data-theme="clear"] #gutter,
@@ -2933,12 +2933,13 @@ function setTheme(mode) {
   // data-theme 属性让 CSS 选择器接管; clear 主题完全靠它.
   // dark/light 也设上, 与透明主题 CSS 里的 [data-theme="dark"] 定义协同.
   if (mode === "clear") {
+    // 先用深色默认立即生效 (避免等 IPC 时闪白), 拿到后端探测结果再覆盖.
     root.removeAttribute("style");
-    root.style.color = t["--fg"];
+    root.setAttribute("data-theme", "clear");
     root.style.background = "transparent";
     document.body.style.background = "transparent";
-    document.body.style.color = t["--fg"];
-    root.setAttribute("data-theme", "clear");
+    applyClearThemeColors(t);
+    void refreshClearThemeFromBackend();
   } else {
     Object.keys(t).forEach((k) => root.style.setProperty(k, t[k]));
     document.body.style.color = t["--fg"];
@@ -2953,6 +2954,77 @@ function setTheme(mode) {
   localStorage.setItem("ide10.theme", mode);
   setTip("主题: " + (THEME_LABELS[mode] || mode));
   renderVim(getActiveTab());
+}
+
+// ---------------------------------------------------------------------------
+// 透明玻璃主题 — 文字反色
+// ---------------------------------------------------------------------------
+// 透明主题下窗口背后是用户自己的桌面壁纸, 内容不可预测: 浅色壁纸配白字
+// 完全读不清 (VS Code 的 Mica 主题靠跟随系统主题解决, 我们不跟随, 所以
+// 必须自己探测). 明暗判定的唯一事实来源是 Rust 侧 (读注册表
+// AppsUseLightTheme), 前端只消费结果, 避免两处逻辑漂移.
+
+/** 把一整套 clear 主题变量写到 root 上 (同步部分, 立即生效). */
+function applyClearThemeColors(vars) {
+  const root = document.documentElement;
+  for (const k of Object.keys(vars)) {
+    if (k.startsWith("--")) root.style.setProperty(k, vars[k]);
+  }
+  document.body.style.color = vars["--fg"] || "#ffffff";
+}
+
+/** 问后端要"桌面明暗 + 配色", 并应用. 失败时保持当前配色. */
+async function refreshClearThemeFromBackend() {
+  try {
+    const vars = await invoke("clear_theme_vars");
+    if (!vars || !vars["--fg"]) return;
+    applyClearThemeColors(vars);
+    VIEW_STATE.desktopLuminance = vars.luminance || "dark";
+    localStorage.setItem("ide10.luminance", vars.luminance || "dark");
+    renderVim(getActiveTab());
+    setTip("主题: 透明玻璃 (文字反色: " +
+      (vars.luminance === "light" ? "深色" : "浅色") + ")");
+  } catch (e) {
+    // 后端不可达 (纯前端预览 / 旧版本桌面端): 保留默认白字, 不报错.
+    VIEW_STATE.desktopLuminance = "dark";
+  }
+}
+
+/**
+ * 监听系统明暗变化: 用户在 Windows 设置里切浅/深色后, 透明主题的
+ * 文字颜色要跟着反色, 否则会突然读不清.
+ *
+ * 1s 轮询而非事件: WebView2 没有暴露 DWM 主题变化事件, 而注册表读一次
+ * 极廉价 (µs 级). 页面隐藏时停轮询 (visibilitychange), 不浪费.
+ */
+let _luminancePollTimer = null;
+let _luminanceBusy = false;
+function startLuminanceWatch() {
+  if (_luminancePollTimer) return;
+  _luminancePollTimer = setInterval(async () => {
+    if (VIEW_STATE.theme !== "clear") return;   // 非透明主题不需要反色
+    if (document.hidden) return;                // 后台不轮询
+    if (_luminanceBusy) return;                 // 上一轮还没回来
+    _luminanceBusy = true;
+    try {
+      const lum = await invoke("desktop_luminance");
+      // 只有真的变了才重新取全套配色 —— 否则每秒刷一次 setProperty
+      // 会让 getComputedStyle 缓存失效, 拖慢渲染.
+      if (lum !== VIEW_STATE.desktopLuminance) {
+        VIEW_STATE.desktopLuminance = lum;
+        await refreshClearThemeFromBackend();
+      }
+    } catch (_) {
+      // 后端不可达: 保持现状, 下一轮再试
+    } finally {
+      _luminanceBusy = false;
+    }
+  }, 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && VIEW_STATE.theme === "clear") {
+      void refreshClearThemeFromBackend();
+    }
+  });
 }
 
 function setFontSize(px) {
@@ -4300,6 +4372,8 @@ window.addEventListener("DOMContentLoaded", async function () {
     window.__ideReady = function() { return true; };
   }
   showSidePane("explorer");
+  // 透明主题的文字反色需要持续探测桌面明暗 (用户可能在设置里切系统主题)
+  startLuminanceWatch();
   try { initZoomWheel(); } catch (_) { /* ignore */ }
   // 恢复上次主题 (含透明玻璃 clear). setTheme 会写回 localStorage,
   // 所以只在有已保存值时调用, 避免每次启动都写一次.
