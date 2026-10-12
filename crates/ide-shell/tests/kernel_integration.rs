@@ -234,3 +234,50 @@ fn move_left_at_line_start_goes_to_prev_line_end() {
     assert_eq!(c.row, 0, "行首左移应到上一行");
     assert_eq!(c.col, 2, "应落在上一行末尾");
 }
+
+// ---------- 命令名匹配边界 ----------
+
+/// 回归: `:e` 曾用 `strip_prefix('e')` 实现, 把 `echo hello` 劫持成
+/// "打开文件 hello" —— 未知命令的子进程兜底因此失效.
+#[test]
+fn command_named_e_does_not_swallow_echo() {
+    let mut app = App::new(AppConfig::default());
+    app.run_command("echo hello");
+    let hist = app.history().last().cloned().unwrap_or_default();
+    assert!(
+        hist.contains("hello"),
+        "echo 应走子进程兜底并输出 hello, 实际 history: {hist:?}"
+    );
+    assert!(!hist.contains("open 失败"), "echo 不应被当成 open");
+}
+
+#[test]
+fn command_named_e_does_not_swallow_env_or_exit() {
+    for cmd in ["env", "exit", "echo"] {
+        let mut app = App::new(AppConfig::default());
+        app.run_command(cmd);
+        let hist = app.history().last().cloned().unwrap_or_default();
+        assert!(
+            !hist.contains("open 失败") && !hist.contains("usage: :open"),
+            "{cmd} 被误判成 :open, history: {hist:?}"
+        );
+    }
+}
+
+#[test]
+fn open_command_with_real_path_still_works() {
+    let p = tmp_file("prefix_ok.txt", "content");
+    let mut app = App::new(AppConfig::default());
+    app.run_command(&format!("open {}", p.display()));
+    assert!(app.has_document());
+    assert_eq!(app.document().unwrap().text(), "content");
+}
+
+#[test]
+fn open_without_argument_shows_usage() {
+    let mut app = App::new(AppConfig::default());
+    app.run_command("open");
+    let hist = app.history().last().cloned().unwrap_or_default();
+    assert!(hist.contains("usage"), "应提示用法, 实际: {hist:?}");
+    assert!(!app.has_document());
+}

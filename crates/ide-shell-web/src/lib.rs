@@ -21,6 +21,7 @@
 //! 设计: server 内持有单一 App 状态 (单用户 demo). 端口默认 8123 (CI 与本地都用).
 
 pub mod auth;
+pub mod doc_api;
 pub mod path_safety;
 pub mod wiki_data;
 
@@ -38,6 +39,7 @@ use ide_shell::render::web::{render as render_web, WebFrame};
 use ide_shell::{App, AppConfig};
 use serde::{Deserialize, Serialize};
 
+use ide_kernel::document::LineEnding;
 use path_safety::{list_dir, read_file, write_file, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
@@ -50,6 +52,12 @@ pub struct ShellState {
     app: Mutex<App>,
     /// 请求认证配置 (token / 允许的 Host).
     auth: auth::Auth,
+    /// 内核文档会话 — /api/doc/* 的状态 (ide-kernel::Session).
+    ///
+    /// 与 `read_file`/`write_file` 并存: 后者是无状态文件读写 (前端自己管
+    /// buffer), 前者是有状态的编辑会话 (服务端管光标/undo/选区).
+    /// 迁移期间两者共存, 见 doc_api.rs 顶部的迁移路径说明.
+    docs: std::sync::Mutex<doc_api::DocStore>,
     /// 当前打开的项目根 (单 user, 安全沙箱 = 限此根内访问文件).
     project_root: Mutex<Option<PathBuf>>,
 }
@@ -65,6 +73,7 @@ impl ShellState {
             app: Mutex::new(App::new(AppConfig::default())),
             project_root: Mutex::new(None),
             auth: auth::Auth::from_env(port),
+            docs: Mutex::new(doc_api::DocStore::new()),
         }
     }
 
@@ -74,6 +83,7 @@ impl ShellState {
             app: Mutex::new(App::new(AppConfig::default())),
             project_root: Mutex::new(None),
             auth: a,
+            docs: Mutex::new(doc_api::DocStore::new()),
         }
     }
 
@@ -238,6 +248,31 @@ fn send_response_cors(
     let _ = stream.flush();
 }
 
+/// 从 JSON 取 (row, col), 缺省 0.
+fn doc_pos(req: &serde_json::Value) -> (i32, i32) {
+    (
+        req.get("row").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        req.get("col").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+    )
+}
+
+/// 统一响应 /api/doc/* 的结果.
+fn doc_respond<T: serde::Serialize>(stream: &mut TcpStream, value: Option<T>) {
+    let (status, j) = match value {
+        Some(v) => ("200 OK", serde_json::json!({ "ok": true, "result": v })),
+        None => (
+            "404 Not Found",
+            serde_json::json!({ "ok": false, "error": "no active document" }),
+        ),
+    };
+    send_response(
+        stream,
+        status,
+        "application/json",
+        &serde_json::to_vec(&j).unwrap_or_default(),
+    );
+}
+
 /// 处理单个 HTTP 请求 (单连接, 短生命周期)。
 pub fn handle_request_pub(stream: &mut TcpStream, state: &ShellState) {
     handle_request(stream, state)
@@ -337,6 +372,193 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 }
             }
         }
+        // ---------- 内核文档会话 (/api/doc/*) ----------
+        //
+        // 编辑语义在 Rust 侧 (ide-kernel), 前端只发"语义操作".
+        // 与 /api/read_file + /api/write_file 并存 —— 那是无状态的
+        // 文件读写, 供前端自管 buffer 的旧路径继续使用.
+        ("POST", "/api/doc/open") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // 有 path 且无 text 时从磁盘读 (仍走沙箱)
+            let content = if text.is_empty() && !path.is_empty() {
+                let root = state.project_root_get();
+                match root.as_ref() {
+                    Some(r) => path_safety::read_file(r, &path)
+                        .map(|fc| fc.content)
+                        .unwrap_or_else(|e| format!("<read error: {e}>")),
+                    None => "<project root not set>".to_string(),
+                }
+            } else {
+                text
+            };
+            let opt_path = if path.is_empty() { None } else { Some(path.as_str()) };
+            let view = state.docs.lock().ok().map(|mut d| d.open(opt_path, &content));
+            doc_respond(stream, view);
+        }
+        ("GET", "/api/doc/active") => {
+            let view = state.docs.lock().ok().and_then(|d| d.active());
+            doc_respond(stream, view);
+        }
+        ("GET", "/api/doc/tabs") => {
+            let tabs = state.docs.lock().map(|d| d.tabs()).unwrap_or_default();
+            doc_respond(stream, Some(tabs));
+        }
+        ("POST", "/api/doc/activate") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let view = state.docs.lock().ok().and_then(|mut d| d.activate(id));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/close") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let id = req.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let view = state.docs.lock().ok().and_then(|mut d| d.close(id));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/new_tab") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.new_tab());
+            doc_respond(stream, view);
+        }
+        // ---- 编辑原语 ----
+        ("POST", "/api/doc/insert") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let view = state.docs.lock().ok().and_then(|mut d| d.insert(r, c, text));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/type") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let ch = req.get("char").and_then(|v| v.as_str()).and_then(|s| s.chars().next()).unwrap_or(' ');
+            let view = state.docs.lock().ok().and_then(|mut d| d.type_char(r, c, ch));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/newline") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.insert_newline());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/backspace") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.backspace());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/delete") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.delete_forward());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/delete_range") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r0, c0) = doc_pos(&req);
+            let r1 = req.get("end_row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let c1 = req.get("end_col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let view = state.docs.lock().ok().and_then(|mut d| d.delete_range(r0, c0, r1, c1));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/caret") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let view = state.docs.lock().ok().and_then(|mut d| d.set_caret(r, c));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/select_all") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.select_all());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/clear_selection") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.clear_selection());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/undo") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.undo());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/redo") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.redo());
+            doc_respond(stream, view);
+        }
+        // ---- 多光标 ----
+        ("POST", "/api/doc/add_cursor") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let (r, c) = doc_pos(&req);
+            let view = state.docs.lock().ok().and_then(|mut d| d.add_cursor(r, c));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/clear_cursors") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.clear_cursors());
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/insert_all") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let view = state.docs.lock().ok().and_then(|mut d| d.insert_all_cursors(text));
+            doc_respond(stream, view);
+        }
+        // ---- 查找替换 ----
+        ("POST", "/api/doc/find") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let (r, c) = doc_pos(&req);
+            let hit = state.docs.lock().ok().and_then(|mut d| d.find(&pat, cs, r, c));
+            doc_respond(stream, hit);
+        }
+        ("POST", "/api/doc/find_all") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(1000) as usize;
+            let hits = state.docs.lock().ok().and_then(|mut d| d.find_all(&pat, cs, limit));
+            doc_respond(stream, hits);
+        }
+        ("POST", "/api/doc/replace_all") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let rep = req.get("replacement").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(1000) as usize;
+            let st = state.docs.lock().ok().and_then(|mut d| d.replace_all(&pat, &rep, cs, limit));
+            doc_respond(stream, st);
+        }
+        // ---- 格式 / 保存 ----
+        ("POST", "/api/doc/line_ending") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let label = req.get("line_ending").and_then(|v| v.as_str()).unwrap_or("");
+            let eol = match label.to_ascii_lowercase().as_str() {
+                "crlf" | "windows (crlf)" => Some(LineEnding::Crlf),
+                "cr" | "mac (cr)" => Some(LineEnding::Cr),
+                "lf" | "unix (lf)" => Some(LineEnding::Lf),
+                _ => None,
+            };
+            let view = eol.and_then(|e| state.docs.lock().ok().and_then(|mut d| d.set_line_ending(e)));
+            doc_respond(stream, view);
+        }
+        ("POST", "/api/doc/encoding") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let label = req.get("encoding").and_then(|v| v.as_str()).unwrap_or("");
+            let view = ide_kernel::document::Encoding::from_label(label)
+                .and_then(|e| state.docs.lock().ok().and_then(|mut d| d.set_encoding(e)));
+            doc_respond(stream, view);
+        }
+        ("GET", "/api/doc/export") => {
+            let r = state.docs.lock().ok().and_then(|d| d.export());
+            match r {
+                Some((path, text)) => {
+                    let j = serde_json::json!({
+                        "ok": true,
+                        "result": { "path": path, "text": text }
+                    });
+                    send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&j).unwrap_or_default());
+                }
+                None => doc_respond::<serde_json::Value>(stream, None),
+            }
+        }
+        ("POST", "/api/doc/mark_saved") => {
+            let view = state.docs.lock().ok().and_then(|mut d| d.mark_saved());
+            doc_respond(stream, view);
+        }
+
 ("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");

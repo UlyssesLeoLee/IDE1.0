@@ -23,6 +23,8 @@ aci-emitter = { workspace = true }
 crossterm = { workspace = true }
 # sakura-rs — outline parser
 sakura-rs = { path = "../sakura-rs" }
+# 编辑内核 — /api/doc/* 的会话状态与编辑语义 (与 web 前端 JS 引擎并行迁移中)
+ide-kernel = { path = "../ide-kernel" }
 
 [lints]
 workspace = true

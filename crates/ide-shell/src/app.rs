@@ -346,8 +346,15 @@ impl App {
         let cmd = trimmed.strip_prefix(':').unwrap_or(trimmed);
         // ---- 带参数的文件编辑命令 (必须在精确匹配之前处理) ----
         // `:open <path>` / `:e <path>` — 走 ide-kernel::Document
-        if let Some(arg) = cmd.strip_prefix("open").or_else(|| cmd.strip_prefix('e')) {
-            let arg = arg.trim();
+        // 关键: 命令名必须**完整匹配**, 不能用 `strip_prefix("e")` ——
+        // 那会把 `echo hello` / `env` / `exit` 全部劫持成"打开文件",
+        // 未知命令的子进程兜底就再也走不到. 这里先按空白切出命令名再比对.
+        let (cmd_name, cmd_arg) = match cmd.split_once(char::is_whitespace) {
+            Some((n, a)) => (n, a.trim()),
+            None => (cmd, ""),
+        };
+        if matches!(cmd_name, "open" | "e") {
+            let arg = cmd_arg;
             if arg.is_empty() {
                 self.history.push("<usage: :open <path>>".into());
             } else {

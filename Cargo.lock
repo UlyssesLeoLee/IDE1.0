@@ -2382,6 +2382,7 @@ version = "0.1.0"
 dependencies = [
  "aci-emitter",
  "crossterm",
+ "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
  "once_cell",
