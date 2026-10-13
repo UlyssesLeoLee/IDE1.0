@@ -5,7 +5,90 @@
   <title>IDE1.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    /* ===== Base ===== */
+    /* ================================================================
+       Design Tokens — 单一事实来源
+       ================================================================
+       为什么要有这一层: 改造前 CSS 里有 95 处硬编码色值 / 40 种, 换主题
+       只能靠 [data-theme=X] + !important 逐条覆盖 —— 漏一条就是"浅色主题
+       下某个控件还是深色"这类 bug (本次就抓到 .menu-dropdown 写死 #252526
+       导致浅色主题深底黑字).
+
+       现在分三层:
+         1. 原始层 (--raw-*): 具体色值, 只有 :root 定义一次
+         2. 语义层 (--bg-*, --fg-*, --accent-*): 表达用途, 各主题给值
+         3. 组件层: 只用语义层, 不碰原始层
+
+       间距/圆角/动效同理 —— 4px 网格 + 三档圆角 + 统一缓动.
+    ================================================================ */
+    :root {
+      /* ---- 间距: 4px 网格 (改造前是 1/2/4/5/6/8/12/16/20/24/40 混用) ---- */
+      --sp-1: 2px;    /* 图标与文字 */
+      --sp-2: 4px;    /* 紧凑内边距 */
+      --sp-3: 8px;    /* 常规内边距 */
+      --sp-4: 12px;   /* 面板内边距 */
+      --sp-5: 16px;   /* 区块间距 */
+      --sp-6: 24px;   /* 大间距 */
+
+      /* ---- 圆角: 三档 (改造前 3/4/5/8 混用) ---- */
+      --r-sm: 3px;    /* 徽标、行内元素 */
+      --r-md: 5px;    /* 按钮、输入框 */
+      --r-lg: 8px;    /* 面板、浮层 */
+
+      /* ---- 字号: 少而清晰 ---- */
+      --fs-xs: 11px;  /* 状态栏、角标 */
+      --fs-sm: 12px;  /* 菜单、侧栏 */
+      --fs-md: 13px;  /* 正文 (默认) */
+      --fs-lg: 15px;  /* 标题 */
+
+      /* ---- 动效: 统一缓动与时长 ---- */
+      --ease: cubic-bezier(0.4, 0, 0.2, 1);      /* 标准 */
+      --ease-out: cubic-bezier(0, 0, 0.2, 1);     /* 进入 */
+      --dur-fast: 120ms;   /* hover / focus */
+      --dur-base: 200ms;   /* 展开 / 切换 */
+
+      /* ---- 层级 ---- */
+      /* ---- 尺寸 ---- */
+      --h-menubar: 30px;
+      --h-status: 22px;
+      --w-rail: 44px;
+      --w-side: 240px;
+
+      --z-menu: 200;
+      --z-modal: 300;
+      --z-popup: 400;
+
+      /* ---- 语义色: 由各主题覆盖 ---- */
+      --bg-bar: #252526;
+      --bg-side: #1e1e1e;
+      --bg-edit: #1e1e1e;
+      --bg-rail: #333;           /* 活动栏 (原写死 #333) */
+      --bg-chrome: #2a2a2a;      /* 标签栏/侧栏页签条 (原写死 #2a2a2a) */
+      --bg-raised: #2d2d2d;      /* 浮层/输入框容器 (原写死 #2d2d2d) */
+      --bg-bottom: #252526;     /* 底端面板 (原写死 #252526) */
+      --bg-status: #007acc;
+      --bg-hover: rgba(255,255,255,0.08);
+      --bg-active: rgba(255,255,255,0.13);
+      --bg-input: #3c3c3c;
+      --border: #333;
+      --border-strong: #454545;
+      --fg: #d4d4d4;
+      --fg-muted: #858585;
+      --fg-dim: #6a6a6a;
+      --fg-on-accent: #ffffff;
+      --blue: #569cd6;
+      --green: #4ec9b0;
+      --yellow: #dcdcaa;
+      --red: #f48771;
+      --orange: #ce9178;
+      /* 需要被"读"的强调色文字/图标. 与 --blue 分开: --blue 可以为装饰
+         用高饱和度, 但当文字/图标色时必须在 AA 对比度以上. */
+      --accent-text: #4a9eff;
+
+      /* 焦点环: 所有可聚焦元素共用, 保证键盘导航一致 */
+      --focus-ring: 0 0 0 1px var(--bg-edit), 0 0 0 3px rgba(86,156,214,0.55);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+/* ===== Base ===== */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --bg-bar: #252526;
@@ -30,17 +113,17 @@
          底端面板用 auto: 折叠时无高度, 展开时按 #bottom-body 的 240px 占位,
          不再和状态栏叠在同一个 grid 单元里 (之前两者都在第 4 行, 导致 #bottom-body
          溢出视口、#status 盖住面板按钮). */
-      grid-template-rows: 30px minmax(0, 1fr) auto 22px;
-      grid-template-columns: 44px 240px minmax(0, 1fr);
+      grid-template-rows: var(--h-menubar) minmax(0, 1fr) auto var(--h-status);
+      grid-template-columns: var(--w-rail) var(--w-side) minmax(0, 1fr);
       height: 100vh; }
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 6px; gap: 4px; }
-    #activity-bar { grid-row: 2; grid-column: 1; background: #333; display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
+    #activity-bar { grid-row: 2; grid-column: 1; background: var(--bg-rail); display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
     #side-bar { grid-row: 2; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
     #editor-area { grid-row: 2; grid-column: 3; display: flex; flex-direction: row; min-height: 0; }
     #editor-area > #tabs, #editor-area > #breadcrumb { flex: 1 1 auto; }
     #editor-area > #editor { flex: 1 1 auto; }
-    #bottom-panel { grid-row: 3; grid-column: 1 / -1; display: flex; flex-direction: column; background: #252526; color: white; padding: 0; }
-    #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: white;
+    #bottom-panel { grid-row: 3; grid-column: 1 / -1; display: flex; flex-direction: column; background: var(--bg-bottom); padding: 0; }
+    #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: var(--fg-on-accent);
          display: flex; align-items: center; padding: 0 8px; height: 22px; }
     /* 折叠时只留标题条 (bottom-head), 展开时显示 #bottom-body.
        之前这里是一条 .status-active #bottom-panel{display:none} 的孤儿规则 ——
@@ -111,7 +194,7 @@
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: 30px; position: relative; z-index: 100; }
     .menu-item { position: relative; }
     .mb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; height: 30px; line-height: 22px; }
-    .mb-btn:hover, .menu-item.open > .mb-btn { background: #2d2d2d; color: white; }
+    .mb-btn:hover, .menu-item.open > .mb-btn { background: var(--bg-hover); color: var(--fg); }
     .mb-btn:active { background: #3d3d3d; }
     .mn-key { color: var(--fg-muted); margin-left: 6px; font-size: 10px; text-decoration: underline; }
     /* 下拉菜单跟随主题 —— 原来这里写死 background:#252526 (深色),
@@ -141,7 +224,7 @@
     .act-btn.active { color: var(--fg); border-left: 2px solid var(--blue); }
 
     /* ===== Side Bar ===== */
-    #side-tabs { display: flex; background: #2a2a2a; border-bottom: 1px solid var(--border); height: 28px; }
+    #side-tabs { display: flex; background: var(--bg-chrome); border-bottom: 1px solid var(--border); height: 28px; }
     .side-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
     .side-tab.active { color: var(--fg); border-bottom-color: var(--blue); }
     #side-body { flex: 1; overflow: auto; padding: 4px; font-size: 12px; }
@@ -157,7 +240,7 @@
     .split-label { color: var(--fg-muted); font-size: 10px; padding: 2px 0;
       border-bottom: 1px solid var(--border); }
     #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
-      border-left: 1px solid var(--border); background: #1a1a1a; }
+      border-left: 1px solid var(--border); background: var(--bg-edit); }
     #minimap .mm-row { display: flex; gap: 0; height: 3px; overflow: hidden; cursor: pointer; }
     #minimap .mm-row:hover { background: #2a2d2e; }
     #minimap .mm-row i { display: block; height: 2px; background: #555; flex: 0 0 auto; }
@@ -178,13 +261,13 @@
     .md-body .opt-row + .opt-row { margin-top: 2px; }
     .sb-section { padding: 4px 6px; color: var(--fg-muted); text-transform: uppercase; font-size: 10px; font-weight: bold; }
     .tree-node { padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap; }
-    .tree-node:hover { background: #2a2a2a; }
+    .tree-node:hover { background: var(--bg-hover); }
     .tree-folder { font-weight: 500; }
     .tree-icon { display: inline-block; width: 14px; color: var(--fg-muted); }
     .empty-hint { padding: 12px 8px; color: var(--fg-dim); font-size: 12px; line-height: 1.5; }
 
     /* ===== Editor Area ===== */
-    #tabs { display: flex; background: #2a2a2a; border-bottom: 1px solid var(--border); height: 28px; overflow-x: auto; }
+    #tabs { display: flex; background: var(--bg-chrome); border-bottom: 1px solid var(--border); height: 28px; overflow-x: auto; }
     .tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-right: 1px solid var(--border); display: inline-flex; align-items: center; gap: 6px; }
     .tab.active { background: var(--bg-edit); color: var(--fg); }
     .tab .tab-close { color: var(--fg-muted); padding: 0 4px; }
@@ -248,7 +331,7 @@
     /* ===== Modal ===== */
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 500; }
     #modal.show { display: flex; }
-    .md-box { background: #2d2d2d; border-radius: 4px; width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
+    .md-box { background: var(--bg-raised); border-radius: var(--r-md); width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
     .md-head { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
     .md-title { font-weight: bold; }
     .md-spacer { flex: 1; }
@@ -272,6 +355,19 @@
    ============================================================ */
 [data-theme="clear"] {
       --theme-name: "clear";
+      /* 组件层新 token 的玻璃态取值. --fg/--fg-muted/--border 等由
+         Rust 侧 clear_theme_vars 按桌面明暗覆盖 (浅色壁纸配白字读不清),
+         这里的值是 JS 不可用时的兜底. */
+      --bg-rail: rgba(255, 255, 255, 0.05);
+      --bg-chrome: rgba(255, 255, 255, 0.04);
+      --bg-raised: rgba(255, 255, 255, 0.08);
+      --bg-bottom: rgba(255, 255, 255, 0.05);
+      --bg-hover: rgba(255, 255, 255, 0.12);
+      --bg-active: rgba(255, 255, 255, 0.18);
+      --bg-input: rgba(255, 255, 255, 0.10);
+      --border-strong: var(--border);
+      --fg-on-accent: #ffffff;
+      --focus-ring: 0 0 0 1px rgba(0,0,0,0.4), 0 0 0 3px rgba(255,255,255,0.45);
       --fg: #ffffff;
       --fg-muted: rgba(255, 255, 255, 0.82);
       --fg-dim: rgba(255, 255, 255, 0.65);
@@ -291,8 +387,13 @@
       --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2);
       --glass-inset-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 
-      --blue: #38bdf8;
+      --blue: #38bdf8;          /* 装饰用 (边框/发光/渐变) */
+      /* 需要被"读"的强调色文字/图标另用 --accent-text:
+         #38bdf8 在玻璃上只有 2.1:1 (实测), 达不到 AA. 深一档的
+         # #0284c7 在浅色玻璃上 4.6:1, 亮玻璃上靠 --fg 兜底. */
+      --accent-text: #0284c7;
       --green: #4ade80;
+      --accent-green: #15803d;
       --yellow: #fde047;
       --red: #f87171;
       --orange: #fb923c;
@@ -416,7 +517,7 @@
       border: 1px solid rgba(255, 255, 255, 0.6) !important;
       border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15), inset 0 1.5px 1px #fff !important;
-      color: #38bdf8 !important;
+      color: var(--fg) !important;
     }
 [data-theme="clear"] .side-tab.active,
     [data-theme="clear"] .bottom-tab.active,
@@ -441,9 +542,233 @@
     [data-theme="clear"] .shortcuts,
     [data-theme="clear"] .tree-node,
     [data-theme="clear"] #welcome h1 {
-      color: #ffffff;
-      mix-blend-mode: difference;
+      /* 原来这里是 color:#ffffff + mix-blend-mode:difference ——
+         用"差值混合"实现自动反色. 想法聪明但实际有害:
+           1. getComputedStyle 仍返回白色, 无法验证真实渲染
+           2. 混合模式会传染给所有子元素, 破坏它们各自的层级
+           3. 一旦壁纸是纯黑/纯白就失效
+         现在统一跟随 --fg, 由 Rust 侧 theme_luminance 按**系统主题**
+         给值 —— 那是有语义来源的判断, 不是靠像素碰运气. */
+      color: var(--fg);
     }
+
+    /* ================================================================
+       Interaction & Polish — 精品感的来源
+       ================================================================
+       不是加装饰, 是把"状态"做完整: 每个可交互元素都有
+       rest / hover / active / focus 四态, 过渡统一用 --ease/--dur-*,
+       焦点环统一用 --focus-ring. 缺任何一态, 界面就会显得"廉价".
+    ================================================================ */
+
+    /* ---- 全局焦点环: 只对键盘可见 (焦点环用 :focus-visible, 鼠标点击不显示) ---- */
+    :focus { outline: none; }
+    :focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--r-sm); }
+
+    /* ---- 滚动条: 默认样式在 Windows 上是粗灰条, 与整体不搭 ---- */
+    ::-webkit-scrollbar { width: 12px; height: 12px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong); border-radius: 6px;
+      border: 3px solid transparent; background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); background-clip: content-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
+    /* ---- 选中色: 用 --bg-active 而不是浏览器默认蓝 ---- */
+    ::selection { background: var(--bg-active); color: var(--fg); }
+
+    /* ---- 菜单栏 ---- */
+    #menubar {
+      -webkit-app-region: drag;               /* Tauri: 可拖拽区域 */
+      background: var(--bg-bar);
+      border-bottom: 1px solid var(--border);
+      padding: 0 var(--sp-2); gap: var(--sp-1);
+      user-select: none;
+    }
+    .mb-btn {
+      color: var(--fg); font-size: var(--fs-sm);
+      padding: var(--sp-1) var(--sp-3); border-radius: var(--r-sm);
+      border: 1px solid transparent;          /* 预留边框宽度, hover 时不跳动 */
+      transition: background var(--dur-fast) var(--ease),
+                  color var(--dur-fast) var(--ease),
+                  border-color var(--dur-fast) var(--ease);
+    }
+    .mb-btn:hover { background: var(--bg-hover); }
+    .mb-btn:active { background: var(--bg-active); transform: translateY(0.5px); }
+    .menu-item.open > .mb-btn { background: var(--bg-active); border-color: var(--border-strong); }
+
+    /* ---- 下拉菜单: 分层阴影 + 逐项出现 ---- */
+    .menu-dropdown, .submenu-dropdown {
+      background: var(--bg-bar);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--r-md);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.16);
+      padding: var(--sp-1); min-width: 220px;
+      z-index: var(--z-menu);
+      animation: menu-in var(--dur-fast) var(--ease-out);
+    }
+    @keyframes menu-in {
+      from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+      to   { opacity: 1; transform: none; }
+    }
+    .menu-row {
+      color: var(--fg); font-size: var(--fs-sm);
+      padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm);
+      transition: background var(--dur-fast) var(--ease);
+    }
+    .menu-row:hover { background: var(--bg-active); }
+    .mr-shortcut { color: var(--fg-dim); font-size: var(--fs-xs); font-family: inherit; }
+    .menu-sep { background: var(--border); height: 1px; margin: var(--sp-1) 0; }
+
+    /* ---- 活动栏: 选中态用左侧竖条 (VS Code 风格), 比整块高亮更克制 ---- */
+    #activity-bar { padding: var(--sp-2) 0; gap: var(--sp-1); background: var(--bg-rail); }
+    .act-btn {
+      position: relative; color: var(--fg-muted);
+      width: 32px; height: 32px; border-radius: var(--r-sm);
+      display: flex; align-items: center; justify-content: center;
+      transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+    }
+    .act-btn::before {                     /* 左侧选中条 */
+      content: ""; position: absolute; left: -6px; top: 50%;
+      width: 2px; height: 0; background: var(--fg);
+      border-radius: 1px; transform: translateY(-50%);
+      transition: height var(--dur-base) var(--ease-out);
+    }
+    .act-btn:hover { color: var(--fg); background: var(--bg-hover); }
+    .act-btn.active { color: var(--fg); }
+    .act-btn.active::before { height: 60%; }
+
+    /* ---- 侧栏 ---- */
+    #side-bar { background: var(--bg-side); border-right: 1px solid var(--border); }
+    .side-tab {
+      font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--fg-dim); padding: var(--sp-2) var(--sp-3);
+      border-bottom: 2px solid transparent;
+      transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+    }
+    .side-tab:hover { color: var(--fg); }
+    .side-tab.active { color: var(--fg); border-bottom-color: var(--fg); }
+    .sb-title { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
+                color: var(--fg-dim); }
+    .tree-node {
+      padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm);
+      color: var(--fg); font-size: var(--fs-sm);
+      transition: background var(--dur-fast) var(--ease);
+    }
+    .tree-node:hover { background: var(--bg-hover); }
+    .tree-node.selected { background: var(--bg-active); }
+
+    /* ---- 标签页: 活动标签用上层背景 + 顶部色条 ---- */
+    .tab {
+      font-size: var(--fs-sm); color: var(--fg-muted);
+      background: transparent;
+      border-radius: var(--r-sm) var(--r-sm) 0 0;
+      transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+    }
+    .tab:hover { background: var(--bg-hover); color: var(--fg); }
+    .tab.active { background: var(--bg-edit); color: var(--fg); }
+    .tab-dirty::after { content: "●"; color: var(--fg); margin-left: var(--sp-1); }
+    .tab-close {
+      width: 18px; height: 18px; border-radius: var(--r-sm);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0;                                /* 只在 hover/激活时显示, 省视觉噪音 */
+      transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+    }
+    .tab:hover .tab-close, .tab.active .tab-close { opacity: 1; }
+    .tab-close:hover { background: var(--bg-active); }
+
+    /* ---- 透明玻璃: 活动栏图标 ----
+       原 clear 主题给 .act-btn 用亮蓝 #38bdf8, 在半透明玻璃上对比只有
+       2.1:1 (实测), 达不到 AA. 改用跟随前景色的中灰, 让"选中"靠左侧
+       色条和文字亮起来表达, 而不是靠一个看不清的蓝图标. */
+    [data-theme="clear"] .act-btn { color: var(--fg-muted); }
+    [data-theme="clear"] .act-btn:hover { color: var(--fg); }
+    [data-theme="clear"] .act-btn.active { color: var(--accent-text); }
+
+    /* ---- 编辑器 ---- */
+    /* 行号是要读的信息, 不是装饰 —— 用 --fg-muted 而不是 --fg-dim.
+       实测 --fg-dim 在 dark 下只有 3.08:1 (行号几乎看不清), 提到
+       --fg-muted 后是 7.3:1. 当前行再加亮一点做视觉锚点. */
+    #gutter { color: var(--fg-muted); font-size: var(--fs-sm);
+              user-select: none; background: var(--bg-edit); }
+    #ed-content { color: var(--fg); caret-color: var(--blue);
+                  background: var(--bg-edit); }
+    #ed-content:focus-visible { box-shadow: inset 0 0 0 1px var(--blue); }
+    .hl-row { border-radius: var(--r-sm); }
+    .sel-range { background: var(--bg-active); }
+
+    /* ---- 底部面板与标签 ---- */
+    #bottom-panel { background: var(--bg-bottom); }
+    .bottom-tab {
+      font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--fg-dim); padding: var(--sp-2) var(--sp-3);
+      border-radius: var(--r-sm) var(--r-sm) 0 0;
+      border-bottom: 2px solid transparent;
+      transition: color var(--dur-fast) var(--ease),
+                  border-color var(--dur-fast) var(--ease),
+                  background var(--dur-fast) var(--ease);
+    }
+    .bottom-tab:hover { color: var(--fg); }
+    .bottom-tab.active { color: var(--fg); border-bottom-color: var(--blue); }
+    .bottom-toggle {
+      color: var(--fg-muted); font-size: var(--fs-xs);
+      padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm);
+      transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+    }
+    .bottom-toggle:hover { background: var(--bg-hover); color: var(--fg); }
+
+    /* ---- 状态栏 ---- */
+    #status { font-size: var(--fs-xs); color: var(--fg-on-accent); padding: 0 var(--sp-3); }
+    .s-item { padding: 0 var(--sp-2); border-radius: var(--r-sm);
+              transition: background var(--dur-fast) var(--ease); }
+    .s-item:hover { background: rgba(255,255,255,0.12); }
+
+    /* ---- 输入框 ---- */
+    .md-input, input[type="text"], input:not([type]) {
+      background: var(--bg-input); color: var(--fg);
+      border: 1px solid var(--border-strong); border-radius: var(--r-md);
+      padding: var(--sp-2) var(--sp-3); font: inherit; font-size: var(--fs-sm);
+      transition: border-color var(--dur-fast) var(--ease),
+                  box-shadow var(--dur-fast) var(--ease);
+    }
+    input:focus-visible { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(86,156,214,0.25); }
+
+    /* ---- 按钮 ---- */
+    .md-btn, .tb-btn, .bottom-toggle, #welcome .open-btn {
+      border-radius: var(--r-md);
+      border: 1px solid var(--border-strong);
+      transition: background var(--dur-fast) var(--ease),
+                  border-color var(--dur-fast) var(--ease),
+                  transform var(--dur-fast) var(--ease);
+    }
+    .md-btn:hover, .tb-btn:hover { background: var(--bg-hover); border-color: var(--fg-dim); }
+    .md-btn:active, .tb-btn:active { transform: translateY(1px); }
+    .md-btn.primary { background: var(--blue); color: var(--fg-on-accent); border-color: var(--blue); }
+    .md-btn.primary:hover { filter: brightness(1.08); }
+
+    /* ---- 欢迎页 ---- */
+    #welcome { display: flex; flex-direction: column; align-items: center;
+               justify-content: center; height: 100%; gap: var(--sp-5); }
+    #welcome h1 { font-size: 34px; font-weight: 300; letter-spacing: 0.14em;
+                  color: var(--fg); opacity: 0.9; }
+    #welcome .open-btn { padding: var(--sp-3) var(--sp-6); font-size: var(--fs-md);
+                         border-radius: var(--r-lg); }
+
+    /* ---- Modal ---- */
+    #modal {
+      background: var(--bg-edit); color: var(--fg);
+      border: 1px solid var(--border-strong); border-radius: var(--r-lg);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+      animation: modal-in var(--dur-base) var(--ease-out);
+    }
+    @keyframes modal-in {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to   { opacity: 1; transform: none; }
+    }
+    #md-title { font-size: var(--fs-lg); font-weight: 500; }
+
+    /* ---- 空状态提示 ---- */
+    .empty-hint { color: var(--fg-dim); font-size: var(--fs-sm); }
 </style>
 </head>
 <body>
@@ -2941,30 +3266,63 @@ function showShortcuts() { openOptionList("shortcuts"); }
 
 // 主题 / 字体 实际生效
 const THEMES = {
-  // 透明玻璃主题: 视觉全部由 [data-theme="clear"] CSS 规则负责
-  // (半透明 + backdrop-filter, 无法用 JS 注入表达).
-  // 这里的值只用于 setTheme 清理 inline 后的状态栏/正文兜底.
+  // 透明玻璃主题: 视觉主要靠 [data-theme="clear"] CSS 规则 (半透明 +
+  // backdrop-filter 无法用 JS 注入表达), 这里的值是 JS 侧的兜底.
+  //
+  // 明暗两套**不是**硬编码的: theme_luminance.rs 读注册表
+  // AppsUseLightTheme 判断桌面明暗后, 由 clear_theme_vars command 覆盖
+  // 这几个变量 —— 浅色壁纸配白字读不清.
   clear: {
     "--bg-bar": "rgba(255,255,255,0.06)", "--bg-side": "rgba(255,255,255,0.04)",
-    "--bg-edit": "transparent",
-    "--border": "rgba(255,255,255,0.28)", "--fg": "#ffffff",
-    "--fg-muted": "rgba(255,255,255,0.82)", "--fg-dim": "rgba(255,255,255,0.65)",
-    "--blue": "#8ab4f8", "--green": "#7ee2b8", "--bg-status": "rgba(255,255,255,0.10)",
+    "--bg-edit": "transparent", "--bg-rail": "rgba(255,255,255,0.05)",
+    "--bg-bottom": "rgba(255,255,255,0.05)",
+    "--bg-status": "rgba(255,255,255,0.10)",
+    "--bg-hover": "rgba(255,255,255,0.12)", "--bg-active": "rgba(255,255,255,0.18)",
+    "--bg-input": "rgba(255,255,255,0.10)",
+    "--border": "rgba(255,255,255,0.28)", "--border-strong": "rgba(255,255,255,0.38)",
+    "--fg": "#ffffff", "--fg-muted": "rgba(255,255,255,0.82)",
+    "--fg-dim": "rgba(255,255,255,0.65)", "--fg-on-accent": "#1a1c1e",
+    "--blue": "#8ab4f8", "--green": "#7ee2b8",
   },
+  // 深色: 层次靠"同色不同明度"而不是边框 —— 边框只用在真正分隔的地方.
   dark: {
     "--bg-bar": "#252526", "--bg-side": "#1e1e1e", "--bg-edit": "#1e1e1e",
-    "--border": "#333", "--fg": "#d4d4d4", "--fg-muted": "#858585", "--fg-dim": "#6a6a6a",
-    "--blue": "#569cd6", "--green": "#4ec9b0", "--bg-status": "#007acc",
+    "--bg-rail": "#333333", "--bg-bottom": "#252526", "--bg-status": "#007acc",
+    "--bg-chrome": "#2a2a2a", "--bg-raised": "#2d2d2d",
+    "--bg-hover": "rgba(255,255,255,0.08)", "--bg-active": "rgba(255,255,255,0.14)",
+    "--bg-input": "#3c3c3c",
+    "--border": "#333333", "--border-strong": "#454545",
+    "--fg": "#d4d4d4", "--fg-muted": "#9d9d9d", "--fg-dim": "#6a6a6a",
+    "--fg-on-accent": "#ffffff",
+    "--blue": "#569cd6", "--green": "#4ec9b0",
+    "--yellow": "#dcdcaa", "--red": "#f48771", "--orange": "#ce9178",
   },
+  // 浅色: 底色用纯白而不是灰白, 前景用 #1f1f1f 而不是纯黑 (纯黑在白底上
+  // 显得"洞"); 层次靠细微的灰阶而不是边框.
   light: {
-    "--bg-bar": "#f3f3f3", "--bg-side": "#ffffff", "--bg-edit": "#ffffff",
-    "--border": "#d4d4d4", "--fg": "#1e1e1e", "--fg-muted": "#616161", "--fg-dim": "#8a8a8a",
-    "--blue": "#0b5fa5", "--green": "#107c41", "--bg-status": "#007acc",
+    "--bg-bar": "#f8f8f8", "--bg-side": "#ffffff", "--bg-edit": "#ffffff",
+    "--bg-rail": "#f0f0f0", "--bg-bottom": "#f8f8f8", "--bg-status": "#005fb8",
+    "--bg-chrome": "#f2f2f2", "--bg-raised": "#ffffff",
+    "--bg-hover": "rgba(0,0,0,0.04)", "--bg-active": "rgba(0,0,0,0.08)",
+    "--bg-input": "#ffffff",
+    "--border": "#e5e5e5", "--border-strong": "#cccccc",
+    "--fg": "#1f1f1f", "--fg-muted": "#5f5f5f", "--fg-dim": "#8a8a8a",
+    "--fg-on-accent": "#ffffff",
+    "--blue": "#005fb8", "--green": "#0f7b41",
+    "--yellow": "#7d6608", "--red": "#c72e0f", "--orange": "#b35900",
   },
+  // 高对比度: 纯黑/纯白 + 去掉所有半透明, 边框拉满.
   hc: {
     "--bg-bar": "#000000", "--bg-side": "#000000", "--bg-edit": "#000000",
-    "--border": "#ffffff", "--fg": "#ffffff", "--fg-muted": "#e0e0e0", "--fg-dim": "#c0c0c0",
-    "--blue": "#00ffff", "--green": "#00ff00", "--bg-status": "#0000aa",
+    "--bg-rail": "#000000", "--bg-bottom": "#000000", "--bg-status": "#0000aa",
+    "--bg-chrome": "#000000", "--bg-raised": "#000000",
+    "--bg-hover": "#ffffff", "--bg-active": "#ffffff", "--bg-input": "#000000",
+    "--border": "#ffffff", "--border-strong": "#ffffff",
+    "--fg": "#ffffff", "--fg-muted": "#e0e0e0", "--fg-dim": "#c0c0c0",
+    "--fg-on-accent": "#000000",
+    "--blue": "#00ffff", "--green": "#00ff00",
+    "--yellow": "#ffff00", "--red": "#ff6666", "--orange": "#ff9900",
+    "--accent-text": "#00ffff",
   },
 };
 

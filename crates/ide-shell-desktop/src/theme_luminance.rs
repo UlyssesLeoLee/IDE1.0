@@ -80,6 +80,18 @@ impl DesktopLuminance {
         }
     }
 
+    /// 强调色 (蓝) 之上的文字色 —— 状态栏/主按钮用蓝底, 上面必须是白字.
+    ///
+    /// 注意这不是"跟随桌面明暗": 蓝底 (#005fb8 深蓝 / #8ab4f8 亮蓝)
+    /// 在两种桌面明暗下都需要**白字或近白字**才够对比. 浅色桌面下如果
+    /// 返回深色, 就会出现"深蓝底 + 黑字"这种几乎看不见的组合 (实测).
+    pub fn accent_fg(self) -> &'static str {
+        // 蓝底一律配白字. 亮蓝 (#8ab4f8) 上的白字对比只有 1.6:1, 但那
+        // 只出现在玻璃主题的半透明状态栏上, 背后还有用户壁纸兜底;
+        // 真正不透明的状态栏 (深色/浅色主题) 用的是各自的中蓝底.
+        "#ffffff"
+    }
+
     /// 相对亮度 (WCAG 定义), 用于前端做对比度自检。
     pub fn relative_luminance(self) -> f64 {
         match self {
@@ -136,16 +148,40 @@ pub fn detect() -> DesktopLuminance {
 /// 前端 `setTheme("clear")` 时调这个, 而不是用硬编码白字。
 pub fn build_clear_theme_vars() -> serde_json::Value {
     let l = detect();
+    // 组件层新 token 也在这里给值 —— 前端的 hover/active/rail/bottom 等
+    // 状态都从这些变量取色, 不给的话会退回 :root 的深色默认值, 在浅色
+    // 壁纸上就是深色控件压在浅背景上。
+    let (hover, active, input, rail) = match l {
+        DesktopLuminance::Light => (
+            "rgba(255,255,255,0.10)",
+            "rgba(255,255,255,0.18)",
+            "rgba(255,255,255,0.12)",
+            "rgba(255,255,255,0.06)",
+        ),
+        DesktopLuminance::Dark => (
+            "rgba(255,255,255,0.12)",
+            "rgba(255,255,255,0.18)",
+            "rgba(255,255,255,0.10)",
+            "rgba(255,255,255,0.05)",
+        ),
+    };
     serde_json::json!({
         "luminance": l.as_str(),
         "--fg": l.text_primary(),
         "--fg-muted": l.text_muted(),
         "--fg-dim": l.text_dim(),
         "--border": l.border(),
+        "--border-strong": l.border(),
+        "--fg-on-accent": l.accent_fg(),
         "--glass-tint": l.glass_tint(),
         "--bg-bar": l.glass_tint(),
         "--bg-side": l.glass_tint(),
         "--bg-status": l.glass_tint(),
+        "--bg-rail": rail,
+        "--bg-bottom": rail,
+        "--bg-hover": hover,
+        "--bg-active": active,
+        "--bg-input": input,
         "--blue": if l == DesktopLuminance::Light { "#0b57d0" } else { "#8ab4f8" },
         "--green": if l == DesktopLuminance::Light { "#0f7b41" } else { "#7ee2b8" },
     })
@@ -199,6 +235,23 @@ mod tests {
             "Dark 文字配纯黑背景对比度不足: {:.2}",
             ratio(dark_text, 0.0)
         );
+    }
+
+    #[test]
+    fn accent_fg_is_light_on_both_desktop_modes() {
+        // 状态栏是蓝底 —— 两种桌面明暗下都必须是浅字.
+        // 浅色桌面下返回深色曾导致"深蓝底 + 黑字"(实测 rgb(26,28,30)),
+        // 几乎不可读.
+        for l in [DesktopLuminance::Light, DesktopLuminance::Dark] {
+            let fg = l.accent_fg();
+            let rgb = (
+                i32::from_str_radix(&fg[1..3], 16).unwrap(),
+                i32::from_str_radix(&fg[3..5], 16).unwrap(),
+                i32::from_str_radix(&fg[5..7], 16).unwrap(),
+            );
+            let lum = (0.2126 * rgb.0 as f64 + 0.7152 * rgb.1 as f64 + 0.0722 * rgb.2 as f64) / 255.0;
+            assert!(lum > 0.7, "蓝底上的文字应偏亮, 得到 {}", fg);
+        }
     }
 
     #[test]
