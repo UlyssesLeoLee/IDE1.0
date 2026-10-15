@@ -39,6 +39,15 @@
       --fs-sm: 12px;  /* 菜单、侧栏 */
       --fs-md: 13px;  /* 正文 (默认) */
       --fs-lg: 15px;  /* 标题 */
+      --fs-icon: 18px;     /* 活动栏图标字形 */
+      --fs-display: 34px;  /* 欢迎页标题 */
+
+      /* ---- 字体: 单一事实来源 ----
+         Latin 字形永远来自等宽族 (Windows/macOS/Linux 各列一个, 保证列对齐);
+         中文放在等宽族之后、泛型 monospace 之前: 泛型 monospace 在 zh-CN 下会落到
+         NSimSun (细宋体), 与页签/按钮里的微软雅黑并存会出现两种汉字字体. */
+      --font-ui: ui-monospace, "Cascadia Code", Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Liberation Mono",
+                 "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
 
       /* ---- 动效: 统一缓动与时长 ---- */
       --ease: cubic-bezier(0.4, 0, 0.2, 1);      /* 标准 */
@@ -53,9 +62,13 @@
       --w-rail: 44px;
       --w-side: 240px;
 
+      /* 层级 (自下而上): 补全浮层 < 菜单栏(自成层叠上下文, 下拉菜单都在其中) < 对话框 < 提示气泡.
+         补全浮层必须低于菜单栏, 否则它盖住下拉/子菜单并截获点击. */
+      --z-popup: 50;
+      --z-menubar: 100;
       --z-menu: 200;
-      --z-modal: 300;
-      --z-popup: 400;
+      --z-modal: 500;
+      --z-tip: 1000;
 
       /* ---- 语义色: 由各主题覆盖 ---- */
       --bg-bar: #252526;
@@ -72,7 +85,7 @@
       --border: #333;
       --border-strong: #454545;
       --fg: #d4d4d4;
-      --fg-muted: #858585;
+      --fg-muted: #9d9d9d;
       --fg-dim: #6a6a6a;
       --fg-on-accent: #ffffff;
       --blue: #569cd6;
@@ -85,27 +98,16 @@
       --accent-text: #4a9eff;
 
       /* 焦点环: 所有可聚焦元素共用, 保证键盘导航一致 */
-      --focus-ring: 0 0 0 1px var(--bg-edit), 0 0 0 3px rgba(86,156,214,0.55);
+      --focus-ring: 0 0 0 1px var(--bg-edit), 0 0 0 3px rgba(86,156,214,0.85);
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
 /* ===== Base ===== */
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg-bar: #252526;
-      --bg-side: #1e1e1e;
-      --bg-status: #007acc;
-      --bg-edit: #1e1e1e;
-      --border: #333;
-      --fg: #d4d4d4;
-      --fg-muted: #858585;
-      --fg-dim: #6a6a6a;
-      --blue: #569cd6;
-      --green: #4ec9b0;
-      --yellow: #dcdcaa;
-      --red: #f48771;
-      --orange: #ce9178;
-    }
-    html, body { height: 100%; overflow: hidden; background: var(--bg-edit); color: var(--fg); font: 13px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; }
+    /* font-variant-ligatures 必须写在 font 简写之后 (简写会把 font-variant-* 重置). Cascadia Code 的编程连字 (!= -> => :: --) 在字符格编辑器里会
+       篡改源码字形, 且 tokenizer 逐字符分 span 也挡不住跨 span 的整形; 字宽不变, 只是字形. */
+    html, body { height: 100%; overflow: hidden; background: var(--bg-edit); color: var(--fg); font: var(--fs-md)/1.4 var(--font-ui); font-variant-ligatures: none; }
+    /* 表单控件与 kbd 默认不继承字体 (UA 给 Arial / monospace), 页签、按钮会与周围等宽文字并排出现两种字体.
+       UA 的 `font: -webkit-small-control` 简写同时把 font-variant-ligatures 重置回 normal, 所以按钮 (页签/菜单) 也要显式继承. */
+    button, kbd, input, select, textarea { font-family: inherit; font-variant-ligatures: inherit; }
 
     /* ===== App Layout ===== */
     #app { display: grid;
@@ -115,22 +117,22 @@
          溢出视口、#status 盖住面板按钮). */
       grid-template-rows: var(--h-menubar) minmax(0, 1fr) auto var(--h-status);
       grid-template-columns: var(--w-rail) var(--w-side) minmax(0, 1fr);
-      height: 100vh; }
-    #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 6px; gap: 4px; }
+      height: 100vh; overflow: clip; }
     #activity-bar { grid-row: 2; grid-column: 1; background: var(--bg-rail); display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
     #side-bar { grid-row: 2; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    #editor-area { grid-row: 2; grid-column: 3; display: flex; flex-direction: row; min-height: 0; }
-    #editor-area > #tabs, #editor-area > #breadcrumb { flex: 1 1 auto; }
-    #editor-area > #editor { flex: 1 1 auto; }
+    #editor-area { grid-row: 2; grid-column: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+    #editor-area > #tabs, #editor-area > #breadcrumb { grid-column: 1 / -1; min-width: 0; }
+    #editor-area > #editor { grid-column: 1; grid-row: 3; min-width: 0; min-height: 0; }
+    #editor-area > #minimap { grid-column: 2; grid-row: 3; min-height: 0; }
+    #editor-area.split-h > #minimap { grid-column: 2; grid-row: 3 / -1; }
+    #editor-area.split-v > #minimap, #editor-area.split-quad > #minimap { grid-column: 3; grid-row: 3 / -1; }
     #bottom-panel { grid-row: 3; grid-column: 1 / -1; display: flex; flex-direction: column; background: var(--bg-bottom); padding: 0; }
     #status { grid-row: 4; grid-column: 1 / -1; background: var(--bg-status); color: var(--fg-on-accent);
-         display: flex; align-items: center; padding: 0 8px; height: 22px; }
+         display: flex; align-items: center; padding: 0 8px; height: var(--h-status); }
     /* 折叠时只留标题条 (bottom-head), 展开时显示 #bottom-body.
        之前这里是一条 .status-active #bottom-panel{display:none} 的孤儿规则 ——
        Ctrl+` 会 toggle status-active, 结果展开时反被隐藏. */
     #bottom-panel[data-collapsed="true"] #bottom-body { display: none; }
-        .bottom-pane.active { display: block; }
-
 
     /* ===== Syntax token classes (tk-* 前缀) ===== */
     #ed-content .tk-keyword { color: #569cd6; }
@@ -170,15 +172,15 @@
     #ed-content .tk-quote { color: #6a9955; }
     #ed-content .tk-hr { color: #6a9955; }
     #ed-content .tk-op { color: #d4d4d4; }
-    #ed-content .fold-marker { color: #808080; font-style: italic; }
-    #ed-content .hl-row, #ed-content .fold-row { white-space: pre-wrap; min-height: 1.4em; }
+    #ed-content .fold-marker { color: var(--fg-muted); font-style: italic; }
+    #ed-content .hl-row, #ed-content .fold-row { white-space: inherit; min-height: 18px; }
         /* ===== Kernel Banner ===== */
     .banner {
       height: 24px;
       background: var(--bg-bar);
       border-bottom: 1px solid var(--border);
       padding: 0 12px;
-      font-size: 12px;
+      font-size: var(--fs-sm);
       color: var(--fg-muted);
       line-height: 24px;
       overflow: hidden;
@@ -191,112 +193,106 @@
     }
 
     /* ===== Menubar (sakura 风格 顶端功能按钮) ===== */
-    #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: 30px; position: relative; z-index: 100; }
+    #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: var(--h-menubar); position: relative; z-index: var(--z-menubar); }
     .menu-item { position: relative; }
     .mb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; height: 30px; line-height: 22px; }
     .mb-btn:hover, .menu-item.open > .mb-btn { background: var(--bg-hover); color: var(--fg); }
-    .mb-btn:active { background: #3d3d3d; }
-    .mn-key { color: var(--fg-muted); margin-left: 6px; font-size: 10px; text-decoration: underline; }
+    .mn-key { color: var(--fg-muted); margin-left: 6px; font-size: var(--fs-xs); text-decoration: underline; }
+    /* 打开/悬停时按钮底色变到 --bg-active, 仍用 --fg-muted 的快捷键字母只有 3.6:1 */
+    .mb-btn:hover .mn-key, .menu-item.open > .mb-btn .mn-key { color: var(--fg); }
     /* 下拉菜单跟随主题 —— 原来这里写死 background:#252526 (深色),
    浅色主题下菜单仍是深底, 文字 (var(--fg) 近黑) 糊在深色上读不清.
    改用 --bg-bar / --border, 各主题的变量就会生效. */
-.menu-dropdown, .submenu-dropdown { display: none; position: absolute; background: var(--bg-bar); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.5); min-width: 240px; padding: 4px 0; z-index: 200; }
+.menu-dropdown, .submenu-dropdown { display: none; position: absolute; background: var(--bg-bar); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.5); min-width: 240px; padding: 4px 0; z-index: var(--z-menu); }
     .menu-item.open > .menu-dropdown { display: block; }
     .menu-dropdown { top: 100%; left: 0; }
     .menu-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 14px; cursor: pointer; color: var(--fg); font-size: 12px; user-select: none; }
-    .menu-row:hover { background: #094771; color: white; }
-    .menu-row .mr-shortcut { color: var(--fg-muted); font-size: 11px; margin-left: 24px; }
-    .menu-row:hover .mr-shortcut { color: #ccc; }
+    .menu-row:hover { background: var(--bg-active); color: var(--fg); }
+    .menu-row .mr-shortcut { color: var(--fg-muted); font-size: var(--fs-xs); margin-left: 24px; }
+    .menu-row:hover .mr-shortcut { color: var(--fg); }
     .menu-row.menu-submenu { position: relative; }
     .menu-row.menu-submenu .submenu-dropdown { top: 0; left: 100%; }
     .menu-row.menu-submenu:hover > .submenu-dropdown { display: block; }
-    .menu-sep { height: 1px; background: #454545; margin: 4px 0; }
-    .menu-empty { padding: 8px 14px; color: var(--fg-dim); font-size: 11px; font-style: italic; }
+    .menu-empty { padding: 8px 14px; color: var(--fg-muted); font-size: var(--fs-xs); font-style: italic; }
     .menu-row.disabled { color: var(--fg-dim); cursor: default; pointer-events: none; }
     .menu-row.disabled .mr-shortcut { color: var(--fg-dim); }
     /* Legacy 兼容: 旧 .tb-btn (顶右 按钮) */
-    .tb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: 12px; height: 30px; line-height: 22px; }
-    .tb-btn:hover { background: #444; }
+    .tb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 8px; cursor: pointer; border-radius: 3px; font-size: var(--fs-sm); height: 30px; line-height: 22px; }
 
     /* ===== Activity Bar ===== */
-    .act-btn { width: 36px; height: 36px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 4px; font-size: 18px; }
-    .act-btn:hover { background: #444; color: var(--fg); }
-    .act-btn.active { color: var(--fg); border-left: 2px solid var(--blue); }
+    .act-btn { width: 36px; height: 36px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 4px; font-size: var(--fs-icon); }
 
     /* ===== Side Bar ===== */
     #side-tabs { display: flex; background: var(--bg-chrome); border-bottom: 1px solid var(--border); height: 28px; }
     .side-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
-    .side-tab.active { color: var(--fg); border-bottom-color: var(--blue); }
-    #side-body { flex: 1; overflow: auto; padding: 4px; font-size: 12px; }
+    #side-body { flex: 1; overflow: auto; padding: 4px; font-size: var(--fs-sm); }
     .side-pane { min-height: 100%; }
     #editor-area.split-h, #editor-area.split-v, #editor-area.split-quad {
       display: grid; gap: 1px; background: var(--border);
-      grid-template-columns: 1fr; grid-template-rows: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto repeat(2, minmax(0, 1fr));
     }
-    #editor-area.split-v { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
-    #editor-area.split-quad { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    #editor-area.split-v { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto minmax(0, 1fr); }
+    #editor-area.split-quad { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto repeat(2, minmax(0, 1fr)); }
+    /* white-space / tab-size 与 #ed-content 一致: 否则 .hl-row (white-space: inherit) 继承 normal, 缩进被吞、长行折成 36/127px 的不规则行 */
     .split-view { overflow: auto; background: var(--bg-edit); padding: 2px 6px;
-      font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.4; }
-    .split-label { color: var(--fg-muted); font-size: 10px; padding: 2px 0;
+      font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: 2; }
+    .split-label { color: var(--fg-muted); font-size: var(--fs-xs); padding: 2px 0;
       border-bottom: 1px solid var(--border); }
     #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
       border-left: 1px solid var(--border); background: var(--bg-edit); }
     #minimap .mm-row { display: flex; gap: 0; height: 3px; overflow: hidden; cursor: pointer; }
-    #minimap .mm-row:hover { background: #2a2d2e; }
+    #minimap .mm-row:hover { background: var(--bg-hover); }
     #minimap .mm-row i { display: block; height: 2px; background: #555; flex: 0 0 auto; }
     #ed-content .sel-active { background: #264f78; }
     #ed-content .col-sel-active { background: #7a3e9d; }
     #ed-content .caret-mark { color: var(--blue); font-weight: bold; }
     #completion-popup {
-      position: absolute; z-index: 300; min-width: 160px; max-height: 220px; overflow: auto;
-      background: #252526; border: 1px solid #454545; box-shadow: 0 2px 8px rgba(0,0,0,.5);
-      font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+      position: absolute; z-index: var(--z-popup); min-width: 160px; max-height: 220px; overflow: auto;
+      background: var(--bg-raised); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--r-md);
+      box-shadow: 0 4px 16px rgba(0,0,0,.28);
+      font-size: var(--fs-sm);
     }
-    #completion-popup .cmp-row { padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+    #completion-popup .cmp-row { padding: 2px 8px; cursor: pointer; white-space: nowrap; line-height: 16px; }
     #completion-popup .cmp-row.active { background: #094771; color: #fff; }
     #ed-content .sel-prefix { background: #3a3d41; }
-    .opt-row { padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
-    .opt-row:hover { background: #2a2d2e; }
+    .opt-row { padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: var(--fs-sm); }
+    .opt-row:hover { background: var(--bg-hover); }
     .opt-row[data-opt] { color: var(--fg); }
     .md-body .opt-row + .opt-row { margin-top: 2px; }
-    .sb-section { padding: 4px 6px; color: var(--fg-muted); text-transform: uppercase; font-size: 10px; font-weight: bold; }
-    .tree-node { padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap; }
-    .tree-node:hover { background: var(--bg-hover); }
+    .sb-section { padding: var(--sp-2); color: var(--fg-muted); text-transform: uppercase; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; }
+    .tree-node { padding: 2px 4px; cursor: pointer; user-select: none; white-space: nowrap; line-height: 16px; }
     .tree-folder { font-weight: 500; }
     .tree-icon { display: inline-block; width: 14px; color: var(--fg-muted); }
-    .empty-hint { padding: 12px 8px; color: var(--fg-dim); font-size: 12px; line-height: 1.5; }
+    .empty-hint { padding: var(--sp-3) var(--sp-2); overflow-wrap: anywhere; color: var(--fg-muted); font-size: 12px; line-height: 1.5; }
 
     /* ===== Editor Area ===== */
     #tabs { display: flex; background: var(--bg-chrome); border-bottom: 1px solid var(--border); height: 28px; overflow-x: auto; }
     .tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-right: 1px solid var(--border); display: inline-flex; align-items: center; gap: 6px; }
-    .tab.active { background: var(--bg-edit); color: var(--fg); }
     .tab .tab-close { color: var(--fg-muted); padding: 0 4px; }
-    .tab .tab-close:hover { color: var(--fg); background: #444; }
-    .tab-dirty::before { content: "● "; color: var(--yellow); }
+    .tab .tab-close:hover { color: var(--fg); background: var(--bg-active); }
 
-    #breadcrumb { background: #252526; border-bottom: 1px solid var(--border); padding: 2px 8px; font-size: 11px; color: var(--fg-muted); height: 22px; display: flex; align-items: center; }
+    #breadcrumb { background: var(--bg-bar); border-bottom: 1px solid var(--border); padding: 2px 8px; font-size: var(--fs-xs); color: var(--fg-muted); height: 22px; display: flex; align-items: center; }
     .crumb { padding: 0 4px; }
     .crumb.current { color: var(--fg); }
     .crumb-sep { padding: 0 2px; }
 
     #editor { flex: 1; display: flex; min-height: 0; }
-    #gutter { background: var(--bg-side); color: var(--fg-muted); padding: 4px 8px; text-align: right; user-select: none; min-width: 40px; overflow: hidden; font-size: 12px; line-height: 18px; }
-    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: 2; font-size: 13px; line-height: 18px; outline: none; }
+    #gutter { background: var(--bg-side); color: var(--fg-muted); padding: 4px 8px 16px; text-align: right; user-select: none; min-width: 40px; overflow: hidden; font-size: 12px; line-height: 18px; white-space: pre; flex: 0 0 auto; }
+    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: 2; font-size: var(--fs-md); line-height: 18px; outline: none; }
     #ed-content:focus { outline: none; }
 
     /* ===== Bottom Panel (single layer) ===== */
-    #bottom-head { display: flex; align-items: center; gap: 4px; height: 28px; width: 100%; background: #252526; border-top: 1px solid var(--border); }
+    #bottom-head { display: flex; align-items: stretch; gap: 4px; height: 28px; width: 100%; background: transparent; border-top: 1px solid var(--border); padding-right: var(--sp-3); }
     .bottom-tabs { display: flex; }
     .bottom-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
     .bottom-tab.active { color: var(--fg); border-bottom-color: var(--blue); background: var(--bg-edit); }
     .bottom-spacer { flex: 1; }
     .bottom-toggle { background: transparent; border: none; color: var(--fg-muted); cursor: pointer; padding: 4px 8px; font-size: 11px; }
-    .bottom-toggle:hover { color: var(--fg); }
 
-    #bottom-body { background: var(--bg-edit); height: 240px; overflow: hidden; display: flex; flex-direction: column; }
+    #bottom-body { background: var(--bg-edit); height: clamp(120px, 40vh, 240px); overflow: hidden; display: flex; flex-direction: column; }
     .bottom-pane { display: none; flex: 1; overflow: auto; }
     .bottom-pane.active { display: flex; flex-direction: column; }
-    #terminal-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: 12px; line-height: 1.4; white-space: pre-wrap; }
+    #terminal-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: var(--fs-sm); line-height: 1.4; white-space: pre-wrap; }
     /* 空输出时 terminal-body 不抢高度, 让空状态提示真正可见 */
     #terminal-body:empty { flex: 0 0 auto; padding: 0; }
     #terminal-body:focus { outline: 1px solid var(--blue); }
@@ -305,48 +301,48 @@
     .term-stderr { color: var(--red); }
     .terminal-empty {
       display: flex; align-items: center; justify-content: center;
-      flex: 1; min-height: 120px; color: var(--fg-dim);
+      flex: 1; min-height: 120px; color: var(--fg-muted);
       flex-direction: column; gap: 8px; text-align: center;
     }
-    .terminal-empty-hint kbd { background: #444; padding: 1px 6px; border-radius: 3px; font-family: inherit; font-size: 10px; }
+    .terminal-empty-hint kbd { background: var(--kbd-bg, var(--bg-raised)); color: var(--fg); border: 1px solid var(--kbd-border, var(--border-strong)); padding: 1px 6px; border-radius: 3px; font-family: inherit; font-size: var(--fs-xs); }
 
-    #output-body, #problems-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: 12px; }
+    #output-body, #problems-body { flex: 1; padding: 4px 8px; overflow: auto; font-size: var(--fs-sm); }
     .output-line { padding: 1px 0; }
     .output-time { color: var(--fg-muted); margin-right: 8px; }
     .output-line.stderr { color: var(--red); }
-    .output-empty { padding: 20px; text-align: center; color: var(--fg-dim); }
+    .output-empty { padding: 20px; text-align: center; color: var(--fg-muted); }
 
     /* ===== Status Bar ===== */
-    #status { font-size: 11px; }
-    .s-item { padding: 0 8px; border-right: 1px solid rgba(255,255,255,0.2); }
+    .s-item { padding: 0 8px; border-right: 1px solid color-mix(in srgb, var(--fg-on-accent) 20%, transparent); }
     .s-mode { font-weight: bold; }
-    .s-mode[data-mode="NORMAL"] { background: var(--blue); padding: 0 8px; }
-    .s-mode[data-mode="INSERT"] { background: var(--green); padding: 0 8px; }
-    .s-mode[data-mode="VISUAL"] { background: var(--orange); padding: 0 8px; }
+    /* pill = accent darkened to 62% so the status text colour reads on it (white on the light accents was 2.0-3.0:1); THEMES.hc raises --pill-mix because its status text is black */
+    .s-mode[data-mode="NORMAL"] { background: color-mix(in srgb, var(--blue) var(--pill-mix, 62%), #000); padding: 0 8px; }
+    .s-mode[data-mode="INSERT"] { background: color-mix(in srgb, var(--green) var(--pill-mix, 62%), #000); padding: 0 8px; }
+    .s-mode[data-mode="VISUAL"] { background: color-mix(in srgb, var(--orange) var(--pill-mix, 62%), #000); padding: 0 8px; }
     .s-tip { flex: 1; }
 
     /* ===== Tooltip ===== */
-    #tip { position: fixed; background: #333; color: white; padding: 4px 8px; border-radius: 3px; font-size: 11px; pointer-events: none; z-index: 1000; display: none; max-width: 400px; }
+    #tip { position: fixed; background: #333; color: white; padding: 4px 8px; border-radius: 3px; font-size: var(--fs-xs); pointer-events: none; z-index: var(--z-tip); display: none; max-width: 400px; }
 
     /* ===== Modal ===== */
-    #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 500; }
+    #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: var(--z-modal); }
     #modal.show { display: flex; }
     .md-box { background: var(--bg-raised); border-radius: var(--r-md); width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
     .md-head { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
     .md-title { font-weight: bold; }
     .md-spacer { flex: 1; }
     .md-btn { background: transparent; border: none; color: var(--fg); cursor: pointer; padding: 4px 8px; }
-    .md-btn:hover { background: #444; }
-    .md-body { padding: 12px; overflow: auto; flex: 1; white-space: pre-wrap; font-family: inherit; font-size: 12px; line-height: 1.5; }
+    .md-body { padding: 12px; overflow: auto; flex: 1; white-space: pre-wrap; font-family: inherit; font-size: var(--fs-sm); line-height: 1.5; }
     .md-foot { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
 
     /* ===== Welcome ===== */
     #welcome { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; padding: 40px; }
-    #welcome h1 { font-size: 56px; font-weight: bold; }
-    #welcome .open-btn { background: var(--blue); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-    #welcome .open-btn:hover { background: #1f8ad2; }
-    .shortcuts { font-size: 11px; color: var(--fg-muted); }
-    .shortcuts kbd { background: #444; padding: 1px 6px; border-radius: 3px; margin: 0 2px; }
+    /* 与模式胶囊同一公式: 强调色压暗到 62% (--pill-mix), 文字用 --fg-on-accent.
+       之前是固定 white + var(--blue): dark 2.95:1, hc (青色底) 1.25:1; 悬停色 #1f8ad2 还是各主题都一样的固定蓝. */
+    #welcome .open-btn { background: color-mix(in srgb, var(--blue) var(--pill-mix, 62%), #000); color: var(--fg-on-accent); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    #welcome .open-btn:hover { background: color-mix(in srgb, var(--blue) calc(var(--pill-mix, 62%) + 12%), #000); }
+    .shortcuts { font-size: var(--fs-xs); color: var(--fg-muted); }
+    .shortcuts kbd { background: var(--kbd-bg, var(--bg-raised)); color: var(--fg); border: 1px solid var(--kbd-border, var(--border-strong)); padding: 1px 6px; border-radius: 3px; margin: 0 2px; }
   
 /* ============================================================
    透明玻璃主题 (clear) — 全透明水晶质感 + backdrop-filter
@@ -389,9 +385,9 @@
 
       --blue: #38bdf8;          /* 装饰用 (边框/发光/渐变) */
       /* 需要被"读"的强调色文字/图标另用 --accent-text:
-         #38bdf8 在玻璃上只有 2.1:1 (实测), 达不到 AA. 深一档的
-         # #0284c7 在浅色玻璃上 4.6:1, 亮玻璃上靠 --fg 兜底. */
-      --accent-text: #0284c7;
+         #38bdf8 在玻璃上只有 2.1:1 (实测), 达不到 AA. 默认值面向深色玻璃 (深色桌面 / web 壳的 #1b1f2a 底),
+         #8ab4f8 在其上 6.3-6.7:1; 浅色桌面 (data-lum="light") 在文件末尾的 round 2 区块里改用深蓝. */
+      --accent-text: #8ab4f8;
       --green: #4ade80;
       --accent-green: #15803d;
       --yellow: #fde047;
@@ -408,8 +404,9 @@
     }
 [data-theme="clear"] #app {
       background: var(--glass-tint, rgba(255, 255, 255, 0.02));
-      backdrop-filter: blur(8px) saturate(140%);
-      -webkit-backdrop-filter: blur(8px) saturate(140%);
+      /* 这里不能有 backdrop-filter: 它会让 #app 成为 Backdrop Root, 后代 (下拉菜单 / 对话框 / 补全浮层) 自己的
+         backdrop-filter 就只能模糊 #app 内部的空白, 编辑区和文件树的文字会清晰地透过 72% 不透明的面板. #app 自身的模糊只作用于窗口背后
+         (透明窗口 / 纯色), 本来就是视觉空操作. */
     }
 [data-theme="clear"] .tb-btn,
     [data-theme="clear"] .theme-toggle-btn,
@@ -567,11 +564,12 @@
     /* ---- 滚动条: 默认样式在 Windows 上是粗灰条, 与整体不搭 ---- */
     ::-webkit-scrollbar { width: 12px; height: 12px; }
     ::-webkit-scrollbar-track { background: transparent; }
+    /* 滑块不能借分隔线色 (--border-strong): 12px 滑块与轨道只有 1.5-1.7:1, 静止时几乎看不见. 静止 --fg-dim, 悬停 --fg-muted. */
     ::-webkit-scrollbar-thumb {
-      background: var(--border-strong); border-radius: 6px;
+      background: var(--fg-dim); border-radius: 6px;
       border: 3px solid transparent; background-clip: content-box;
     }
-    ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); background-clip: content-box; }
     ::-webkit-scrollbar-corner { background: transparent; }
 
     /* ---- 选中色: 用 --bg-active 而不是浏览器默认蓝 ---- */
@@ -617,7 +615,6 @@
       transition: background var(--dur-fast) var(--ease);
     }
     .menu-row:hover { background: var(--bg-active); }
-    .mr-shortcut { color: var(--fg-dim); font-size: var(--fs-xs); font-family: inherit; }
     .menu-sep { background: var(--border); height: 1px; margin: var(--sp-1) 0; }
 
     /* ---- 活动栏: 选中态用左侧竖条 (VS Code 风格), 比整块高亮更克制 ---- */
@@ -642,12 +639,15 @@
     #side-bar { background: var(--bg-side); border-right: 1px solid var(--border); }
     .side-tab {
       font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--fg-dim); padding: var(--sp-2) var(--sp-3);
+      color: var(--fg-muted); padding: var(--sp-2) var(--sp-3);
       border-bottom: 2px solid transparent;
-      transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+      transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+                  background var(--dur-fast) var(--ease);
     }
     .side-tab:hover { color: var(--fg); }
     .side-tab.active { color: var(--fg); border-bottom-color: var(--fg); }
+    /* 悬停不能只改文字色 (hc 里 #e0e0e0 -> #fff 几乎看不出); 与 .tab / .tree-node / .act-btn 一样给底色, 激活项不加 */
+    .side-tab:hover:not(.active), .bottom-tab:hover:not(.active) { background: var(--bg-hover); }
     .sb-title { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
                 color: var(--fg-dim); }
     .tree-node {
@@ -683,7 +683,6 @@
        色条和文字亮起来表达, 而不是靠一个看不清的蓝图标. */
     [data-theme="clear"] .act-btn { color: var(--fg-muted); }
     [data-theme="clear"] .act-btn:hover { color: var(--fg); }
-    [data-theme="clear"] .act-btn.active { color: var(--accent-text); }
 
     /* ---- 编辑器 ---- */
     /* 行号是要读的信息, 不是装饰 —— 用 --fg-muted 而不是 --fg-dim.
@@ -701,7 +700,7 @@
     #bottom-panel { background: var(--bg-bottom); }
     .bottom-tab {
       font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--fg-dim); padding: var(--sp-2) var(--sp-3);
+      color: var(--fg-muted); padding: var(--sp-2) var(--sp-3);
       border-radius: var(--r-sm) var(--r-sm) 0 0;
       border-bottom: 2px solid transparent;
       transition: color var(--dur-fast) var(--ease),
@@ -721,7 +720,8 @@
     #status { font-size: var(--fs-xs); color: var(--fg-on-accent); padding: 0 var(--sp-3); }
     .s-item { padding: 0 var(--sp-2); border-radius: var(--r-sm);
               transition: background var(--dur-fast) var(--ease); }
-    .s-item:hover { background: rgba(255,255,255,0.12); }
+    /* 悬停用黑色面纱压暗: 状态栏是浅字配中等明度的强调色底, 再叠白色会把 11px 文字压到 3.7:1; hc 的白底黑字压暗后对比仍 >14:1 */
+    .s-item:hover { background: rgba(0,0,0,0.16); }
 
     /* ---- 输入框 ---- */
     .md-input, input[type="text"], input:not([type]) {
@@ -731,7 +731,11 @@
       transition: border-color var(--dur-fast) var(--ease),
                   box-shadow var(--dur-fast) var(--ease);
     }
-    input:focus-visible { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(86,156,214,0.25); }
+    input:focus-visible { border-color: var(--blue); box-shadow: var(--focus-ring); }
+    /* 占位符默认是 UA 的 #757575 (dark 上 2.4:1); 跟随 --fg 取 75%, 仍明显区别于已输入文字 */
+    input::placeholder { color: color-mix(in srgb, var(--fg) 75%, transparent); opacity: 1; }
+    /* 复选框默认 vertical-align: baseline, 框心比标签文字中心高约 2.5px */
+    .opt-row input[type="checkbox"], #modal input[type="checkbox"] { vertical-align: middle; }
 
     /* ---- 按钮 ---- */
     .md-btn, .tb-btn, .bottom-toggle, #welcome .open-btn {
@@ -741,6 +745,7 @@
                   border-color var(--dur-fast) var(--ease),
                   transform var(--dur-fast) var(--ease);
     }
+    .md-btn { font-size: var(--fs-sm); }     /* 之前没有字号, 落到 UA 的 13.33px, 比对话框正文 (12px) 还大 */
     .md-btn:hover, .tb-btn:hover { background: var(--bg-hover); border-color: var(--fg-dim); }
     .md-btn:active, .tb-btn:active { transform: translateY(1px); }
     .md-btn.primary { background: var(--blue); color: var(--fg-on-accent); border-color: var(--blue); }
@@ -749,14 +754,14 @@
     /* ---- 欢迎页 ---- */
     #welcome { display: flex; flex-direction: column; align-items: center;
                justify-content: center; height: 100%; gap: var(--sp-5); }
-    #welcome h1 { font-size: 34px; font-weight: 300; letter-spacing: 0.14em;
+    #welcome h1 { font-size: var(--fs-display); font-weight: 300; letter-spacing: 0.14em;
                   color: var(--fg); opacity: 0.9; }
     #welcome .open-btn { padding: var(--sp-3) var(--sp-6); font-size: var(--fs-md);
                          border-radius: var(--r-lg); }
 
     /* ---- Modal ---- */
-    #modal {
-      background: var(--bg-edit); color: var(--fg);
+    #modal .md-box {
+      color: var(--fg);
       border: 1px solid var(--border-strong); border-radius: var(--r-lg);
       box-shadow: 0 16px 48px rgba(0,0,0,0.4);
       animation: modal-in var(--dur-base) var(--ease-out);
@@ -768,7 +773,238 @@
     #md-title { font-size: var(--fs-lg); font-weight: 500; }
 
     /* ---- 空状态提示 ---- */
-    .empty-hint { color: var(--fg-dim); font-size: var(--fs-sm); }
+    .empty-hint { color: var(--fg-muted); font-size: var(--fs-sm); }
+
+    /* ===== 排版修复 batch1: skeleton ===== */
+    /* split + minimap: the strip gets its own right-hand column spanning the view rows (auto-placing it put it in a view cell and collapsed the views to 4px); tabs/breadcrumb span it via the extra explicit track */
+    #editor-area.split-h:has(> #minimap) { grid-template-columns: minmax(0, 1fr) auto; }
+    #editor-area.split-v:has(> #minimap), #editor-area.split-quad:has(> #minimap) { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; }
+    /* status bar: one line, ellipsis. ID selectors beat the later .s-item polish rules. .s-tip rule must stay AFTER the .s-item rule (equal specificity). */
+    #status { overflow: hidden; white-space: nowrap; }
+    #status > .s-item { flex: 0 0 auto; white-space: nowrap; }
+    #status > #s-file { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+    #status > .s-tip { flex: 1 1 0; min-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+    #status > .s-item:last-child { border-right: 0; }
+    /* side-bar tab strip: 5 tabs need 266px at padding 8px but only 239px exist -> one line with 4px padding (natural sum 226px) */
+    #side-tabs { overflow: hidden; }
+    .side-tab { flex: 1 1 auto; min-width: 0; padding: var(--sp-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* menubar: never wrap labels / .mn-key / '▶ 终端'; #banner absorbs the squeeze (it already has overflow:hidden + ellipsis). nowrap is what prevents the wrap; flex:none just documents that these items must not shrink. */
+    .menu-item, .tb-btn { flex: none; }
+    .mb-btn, .tb-btn { white-space: nowrap; }
+    #menubar > #banner { flex: 0 1 auto; min-width: 0; }
+    /* activity rail: below ~420px window height the 5 buttons (176px) no longer fit; keep them 32px and let the rail scroll instead of painting over the bottom panel (buttons otherwise shrink to 29px) */
+    #activity-bar { min-height: 0; overflow-y: auto; scrollbar-width: none; }
+    #activity-bar::-webkit-scrollbar { width: 0; height: 0; }
+    .act-btn { flex: 0 0 auto; }
+
+    /* ===== 排版修复 batch2: regions (A-E: 代码行 / 标签页 / 面包屑 / 欢迎页; A、B、D 的 background 另有 IN PLACE 修改) ===== */
+    /* tabs: .tab must be a BLOCK container, otherwise text-overflow:ellipsis can't apply (a 106-char name made a 771px tab).
+       The close button is absolutely placed in the 26px right padding; the dirty dot is the single ::after marker, pinned in the 12px left padding.
+       The strip is overflow-y:hidden so the 6px horizontal scrollbar can't squeeze the tabs into a second scroll axis.
+       line-height 21px = tab height while the 6px scrollbar is shown (27-6); a <button> centers its content when the tab is the full 27px, so the text stays centered in both states (24px sat 1px low next to the scrollbar). */
+    #tabs { overflow-x: auto; overflow-y: hidden; }
+    #tabs::-webkit-scrollbar { height: 6px; }
+    #tabs::-webkit-scrollbar-thumb { border-width: 1px; }
+    .tab { position: relative; display: block; flex: 0 0 auto; max-width: 200px; padding: 0 26px 0 12px; line-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tab .tab-close { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+    .tab-dirty::after { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); margin: 0; font-size: 8px; color: var(--yellow); }
+    /* breadcrumb: one line; every crumb may ellipsize, the current file name is protected */
+    #breadcrumb { overflow: hidden; white-space: nowrap; min-width: 0; }
+    #breadcrumb > .crumb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* the current file name must be able to shrink too: with flex-shrink:0 a long name stayed wider than the bar, its own ellipsis never engaged and the bar's overflow:hidden cut it mid-glyph. The ancestors give way first (shrink weight 100 vs 1), so the file name keeps the room. */
+    #breadcrumb > .crumb:not(.current) { flex: 0 100 auto; }
+    #breadcrumb > .crumb.current { flex: 0 1 auto; }
+    #breadcrumb > .crumb-sep { flex: 0 0 auto; }
+    /* welcome page lives inside #ed-content (white-space:pre) -> the 576px shortcut line could not wrap and was clipped */
+    #welcome { white-space: normal; text-align: center; min-width: 0; }
+    #welcome .shortcuts { max-width: 100%; line-height: 1.9; }
+    /* white-space:normal above must not let the button label break per character in a very narrow editor (it used to inherit pre); the 34px title was laid out in the inherited 18px line box and overlapped the gap below it */
+    #welcome .open-btn { white-space: nowrap; }
+    #welcome h1 { line-height: 1.25; }
+
+    /* ----- regions F-I: 菜单 / 提示气泡 / 菜单栏右侧 / 菜单按钮高度 ----- */
+    /* menus (F): content-sized dropdowns, never wrap a row ('删除上方行' + its shortcut wrapped inside a 240px box).
+       Do NOT give .menu-dropdown max-height/overflow:auto: that would clip the absolutely positioned flyouts. The Edit menu (22 rows) instead gets compressed rows below 700px
+       window height and a two-column layout below 560px; only the last two submenu rows open their flyout bottom-anchored (anchoring all of them pushes upper rows' flyouts off the top).
+       Keep this exact order (the later media rules rely on the earlier ones). */
+    .menu-dropdown, .submenu-dropdown { width: max-content; }
+    .menu-row { white-space: nowrap; }
+    @media (max-height: 700px) {
+      .menu-row { padding-top: 2px; padding-bottom: 2px; }
+      [data-theme="clear"] .menu-row { margin-top: 0; margin-bottom: 0; }
+      .menu-dropdown > .menu-submenu:nth-last-child(-n+2) > .submenu-dropdown { top: auto; bottom: 0; }
+    }
+    /* the Edit menu is the only one tall enough to push its 转换 flyout off the bottom between 700px and ~830px window height (unanchored it ends at y=827 in the clear theme, 767 in dark) */
+    @media (max-height: 840px) {
+      .menu-dropdown[data-dropdown="edit"] > .menu-submenu:nth-last-child(-n+2) > .submenu-dropdown { top: auto; bottom: 0; }
+    }
+    @media (max-height: 560px) {
+      .menu-dropdown[data-dropdown="edit"] { column-count: 2; column-gap: 0; min-width: 440px; }
+      .menu-dropdown[data-dropdown="edit"] > .menu-row, .menu-dropdown[data-dropdown="edit"] > .menu-sep { break-inside: avoid; }
+      .menu-dropdown[data-dropdown="edit"] .menu-submenu > .submenu-dropdown { left: auto; right: 100%; }
+    }
+    @media (max-width: 800px) {
+      .submenu-dropdown { min-width: 160px; }
+      .menu-item[data-menu="window"] .menu-submenu > .submenu-dropdown { left: auto; right: 100%; }
+    }
+    /* tooltip (G): sized to its text (the 折叠 tip used to wrap because a fixed-position box shrink-wraps to the room left of its stale `left`); text longer than the 400px max-width still wraps inside the box. Positioning lives in the mouseover handler, which flips the tip above the target near the window bottom. Hidden while a menu is open, else it stays on top of the menu's first row (#tip z-index 1000 > menu 200) */
+    #tip { width: max-content; overflow-wrap: anywhere; }
+    #app:has(.menu-item.open) #tip { display: none !important; }
+    /* menubar top-right (H): '▶ 终端' button and the banner are centred in the 29px bar content box instead of hanging from its top edge (button 30px painted over the bar border; banner 24px + its own border looked like a second bar) */
+    #menubar > #banner { align-self: stretch; height: auto; line-height: calc(var(--h-menubar) - 1px); border-bottom: 0; background: transparent; }
+    #menubar > .tb-btn { align-self: center; height: 22px; line-height: 18px; padding: 0 var(--sp-3); margin: 0 var(--sp-2); }
+    /* menu buttons (I): stay inside the bar's content box (bar border-bottom 1px); clear theme adds 2px top/bottom margins, so it needs 3px less */
+    /* line-height:normal: the 10px .mn-key inside a fixed 22px line box shifted the label 1px low in the 26px clear-theme pill (normal centres it in both heights) */
+    .mb-btn { height: calc(var(--h-menubar) - 1px); line-height: normal; }
+    [data-theme="clear"] .mb-btn { height: calc(var(--h-menubar) - 4px); }
+
+    /* ----- regions J-N: 活动栏 / 资源管理器树 / 项目行 / 底部面板头 / 对话框 ----- */
+    /* activity bar (J): the 2px blue border-left that used to sit on .act-btn.active was removed IN PLACE (base rule); the polish layer's ::before bar is the only indicator now */
+    /* explorer tree (K): long names ellipsize instead of widening #side-body (792px scroll width at 239px client); nesting is expressed with --depth, set by toggleTreeDir() on each expanded child (12px per level). .tree-node is shared by the SCM / outline / search rows, which get the ellipsis too and keep --depth 0. The icon box is 16px = the emoji width, so the glyph no longer touches the name. */
+    #side-body { overflow-x: hidden; }
+    .tree-node { overflow: hidden; text-overflow: ellipsis; padding-left: calc(var(--sp-2) + var(--depth, 0) * var(--sp-4)); }
+    .tree-icon { width: 16px; margin-right: var(--sp-2); text-align: center; }
+    /* project row (L): a labelled, non-sticky header above the tree (sticky was tried and rejected: it intercepts clicks and bleeds through in the clear theme) */
+    #sb-project-name { margin-bottom: var(--sp-2); padding: var(--sp-2); border-bottom: 1px solid var(--border); color: var(--fg); font-size: var(--fs-sm); line-height: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    #sb-project-name:hover { color: var(--accent-text); }
+    /* bottom panel (M): the head background / border-top / padding-right / align-items were changed IN PLACE (stretch lets the 2px tab underline sit flush on the pane). The toggle buttons keep their own height. */
+    .bottom-toggle { align-self: center; }
+    #terminal-body, #output-body, #problems-body { overflow-wrap: anywhere; }
+    /* modal (N): the card styling moved IN PLACE from #modal to #modal .md-box so the dimming scrim on #modal applies again. Long unbroken strings wrap inside the card; on small windows the card keeps a 16px margin all round (media-guarded so 960x600 dialogs are unchanged). */
+    .md-body { overflow-wrap: anywhere; }
+    @media (max-width: 700px), (max-height: 520px) {
+      .md-box { max-width: calc(100vw - 2 * var(--sp-5)); max-height: calc(100vh - 2 * var(--sp-5)); }
+    }
+
+    /* ===== 排版修复 batch3: typography ===== */
+    /* the rest of batch3 (duplicate :root / * block, dead hover rules, px -> --fs-* swaps, .sb-section / .empty-hint metrics) was applied IN PLACE.
+       outline header = a file name: never upper-case it ('many_fns.rs' -> 'MANY_FNS.RS' is wrong for case-sensitive names). The pane is created as <div id="outline-pane">. */
+    #outline-pane .sb-section { text-transform: none; overflow-wrap: anywhere; }
+    /* .empty-hint is shared with dialogs: inside .md-body its text must stay on the .opt-row text edge (12px body padding + 8px) and keep its old 12px rhythm; only the sidebar gets the 4px / 8px metrics (header, hint and tree text all start 8px from the sidebar edge) */
+    .md-body .empty-hint { padding: var(--sp-4) var(--sp-3); }
+
+    /* ===== 排版修复 batch4: themes-states ===== */
+    /* A-D were applied IN PLACE: THEMES.hc / THEMES.light data constants (hover/active/status/focus-ring tokens), the hard-coded hover colours (.menu-row / .opt-row / .tab-close), the --fg-dim -> --fg-muted text colours (.side-tab / .bottom-tab / .terminal-empty / .empty-hint), the kbd chips and the mode-pill backgrounds. */
+    /* mode pill + status bar (D): in the clear theme the bar is a ~4% tint, not an accent bar, so --fg-on-accent (white) text vanished on a light desktop; the pill itself keeps white text on its darkened accent */
+    [data-theme="clear"] #status { color: var(--fg); }
+    /* separators follow the status text colour: they are derived from --fg-on-accent (white on the blue bars, so dark/light are value-identical; black on hc's new white bar, where white-on-white made them vanish); the clear bar is a tint, so there they and the hover veil follow --fg (the non-clear hover veil is a fixed 16% black, see .s-item:hover) */
+    [data-theme="clear"] .s-item { border-right-color: color-mix(in srgb, var(--fg) 20%, transparent); }
+    [data-theme="clear"] .s-item:hover { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+    [data-theme="clear"] .s-mode { color: #fff; }
+    /* the pastel clear-dark green (#7ee2b8) only reaches 3.95:1 under white text at 62%; 52% clears AA (the other two accents and clear-light already pass at 62%) */
+    [data-theme="clear"] .s-mode[data-mode="INSERT"] { background: color-mix(in srgb, var(--green) 52%, #000); }
+    /* clear theme on a light desktop (E): dropdowns, dialogs and the completion popup are always dark glass, so their text must always be light. Scoping the tokens makes the existing `color: var(--fg) !important` clear rules (menu rows, dialog buttons) resolve light inside them without new !important. On a dark desktop these values equal the Rust dark values (no change). */
+    [data-theme="clear"] .menu-dropdown, [data-theme="clear"] .submenu-dropdown, [data-theme="clear"] #modal .md-box, [data-theme="clear"] #completion-popup {
+      --fg: #f0f2f5; --fg-muted: rgba(240,242,245,0.72); --fg-dim: rgba(240,242,245,0.48);
+      --border: rgba(255,255,255,0.28); --border-strong: rgba(255,255,255,0.28);
+      --bg-hover: rgba(255,255,255,0.12); --bg-active: rgba(255,255,255,0.18); --bg-input: rgba(255,255,255,0.10);
+      /* --blue is also read as TEXT inside the cards (the current encoding / EOL row is rendered with style="color:var(--blue)"); the light-desktop value #0b57d0 is ~2:1 on dark glass, #8ab4f8 is what a dark desktop gets. The focus ring is the white-band form for the same reason. */
+      --blue: #8ab4f8;
+      --focus-ring: 0 0 0 1px rgba(0,0,0,0.4), 0 0 0 3px rgba(255,255,255,0.45);
+      color: var(--fg);
+    }
+    [data-theme="clear"] #modal .md-box, [data-theme="clear"] #completion-popup {
+      background: rgba(18,22,32,0.72);
+      -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
+    }
+    /* clear-theme states (F): the active-tab !important `border: 1px solid` widened tabs by 2px and dropped the 2px underline, so tabs jumped on switch; each kind keeps the border box of its inactive state */
+    [data-theme="clear"] .side-tab.active { border-width: 0 0 2px !important; border-bottom-color: var(--fg) !important; }
+    [data-theme="clear"] .bottom-tab.active { border-width: 0 0 2px !important; border-bottom-color: var(--blue) !important; }
+    [data-theme="clear"] .tab.active { border-width: 0 1px 0 0 !important; }
+    /* the glass !important box-shadow on these buttons suppressed the keyboard focus ring */
+    [data-theme="clear"] .md-btn:focus-visible, [data-theme="clear"] .tb-btn:focus-visible, [data-theme="clear"] .bottom-toggle:focus-visible, [data-theme="clear"] #welcome .open-btn:focus-visible { box-shadow: var(--focus-ring) !important; }
+    /* the ACTIVE tab kinds and the active activity button carry the same !important glass box-shadow (inset highlight), which also hid their keyboard ring. Tabs sit in overflow-clipped strips, so they get the inset form; the activity button gets the normal ring. */
+    [data-theme="clear"] .act-btn.active:focus-visible { box-shadow: var(--focus-ring) !important; }
+    [data-theme="clear"] .side-tab.active:focus-visible, [data-theme="clear"] .bottom-tab.active:focus-visible, [data-theme="clear"] .tab.active:focus-visible { box-shadow: inset 0 0 0 2px var(--blue) !important; }
+    /* focus rings clipped by overflow containers (G): #side-bar, #side-tabs and #tabs clip the outer 3px ring, so tabs get the inset form in every theme (the clear-theme active tabs have their own !important inset rule above) */
+    .side-tab:focus-visible, .bottom-tab:focus-visible, .tab:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); border-radius: 0; }
+    /* same problem, same fix: #side-body is a keyboard-focusable scroller whenever the tree overflows, and it fills #side-bar (overflow:hidden) exactly, so the outer ring was clipped on 3 sides and painted over the active side-tab underline; the menu buttons start at y=0, so their outer ring had no room above them */
+    #side-body:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); border-radius: 0; }
+    .mb-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
+    [data-theme="clear"] .mb-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--blue) !important; }
+    /* an empty terminal collapses #terminal-body to 0px but it keeps tabindex=0 (a hard UAT constraint: no display:none), so its ring was a full-width stripe; show the ring on the visible placeholder instead */
+    #terminal-body:empty:focus-visible { box-shadow: none; outline: none; }
+    #terminal-pane:has(#terminal-body:focus-visible) #terminal-empty { box-shadow: inset 0 0 0 2px var(--blue); }
+    /* inputs with inline dark styles (I): the find / replace / grep / sidebar-search inputs are built in JS with style="background:#3c3c3c;color:white;border:1px solid #555", which made black slabs in light / clear and ignored the focus border. Overridden here instead of editing the JS template strings. The checkbox ids (#find-case, #find-regex) are not matched. */
+    #search-input, #find-input, #repl-input, #grep-input, #grep-repl { background: var(--bg-input) !important; color: var(--fg) !important; border: 1px solid var(--border-strong) !important; border-radius: var(--r-md) !important; padding: var(--sp-2) var(--sp-3) !important; }
+    #search-input:focus-visible, #find-input:focus-visible, #repl-input:focus-visible, #grep-input:focus-visible, #grep-repl:focus-visible { border-color: var(--blue) !important; }
+    /* (the dialog-card focus border needs no override of its own any more: the card scope above re-points --blue to #8ab4f8) */
+    /* light syntax palette (J): the tk-* colours are VS Code Dark+ pastels (1.3-2.5:1 on white). Light only: dark and hc (applied as data-theme="dark") and clear are untouched. Every rule is prefixed with [data-theme="light"] #ed-content. */
+    [data-theme="light"] #ed-content :is(.tk-keyword, .tk-bool, .tk-heading) { color: #0000ff; }
+    [data-theme="light"] #ed-content :is(.tk-type) { color: #267f99; }
+    [data-theme="light"] #ed-content :is(.tk-string, .tk-code, .tk-char, .tk-rawstring, .tk-template, .tk-imglink, .tk-codeblock) { color: #a31515; }
+    [data-theme="light"] #ed-content :is(.tk-comment, .tk-shebang, .tk-quote, .tk-hr) { color: #1c7a1c; }
+    [data-theme="light"] #ed-content :is(.tk-num) { color: #098658; }
+    [data-theme="light"] #ed-content :is(.tk-attr, .tk-var, .tk-ivar, .tk-cvar, .tk-key) { color: #001080; }
+    [data-theme="light"] #ed-content :is(.tk-annot, .tk-decorator, .tk-special, .tk-fmt, .tk-bold, .tk-italic) { color: #795e26; }
+    [data-theme="light"] #ed-content :is(.tk-symbol, .tk-selector, .tk-idsel, .tk-classsel, .tk-bullet) { color: #8a4b00; }
+    [data-theme="light"] #ed-content :is(.tk-tag) { color: #800000; }
+    [data-theme="light"] #ed-content :is(.tk-preproc, .tk-section) { color: #af00db; }
+    [data-theme="light"] #ed-content :is(.tk-link) { color: #0b57d0; }
+    [data-theme="light"] #ed-content :is(.tk-op) { color: var(--fg); }
+    [data-theme="light"] #ed-content .sel-prefix { background: transparent; }
+    [data-theme="light"] #ed-content .sel-active { background: #add6ff; }
+    /* the base rule hard-codes background:#1a1a1a, which would be a near-black slab behind dark-red text in light (not in the audit prototype) */
+    [data-theme="light"] #ed-content .tk-codeblock { background: #f3f3f3; }
+    /* the base column-selection fill is #7a3e9d, which under #1f1f1f text is 2.4:1 */
+    [data-theme="light"] #ed-content .col-sel-active { background: #e6c8f5; }
+
+    /* ===== 排版修复 round 1: clear theme on a light desktop + web shell ===== */
+    /* data-lum="light" is set by applyClearThemeColors() from the backend luminance (theme_luminance.rs); CSS cannot read it any other way. Everything below is scoped by [data-theme="clear"], so a stale value after switching theme is harmless, and a dark desktop (no attribute, or "dark") is untouched. */
+    /* syntax: the [data-theme=light] palette, with darker variants for the colours that stay under 4.5:1 on a pale ~#e9e9e9 glass (type, num, comment, annot, symbol, preproc, link) */
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-keyword, .tk-bool, .tk-heading) { color: #0000ff; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-type) { color: #145c6e; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-string, .tk-code, .tk-char, .tk-rawstring, .tk-template, .tk-imglink, .tk-codeblock) { color: #a31515; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-comment, .tk-shebang, .tk-quote, .tk-hr) { color: #166016; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-num) { color: #05603d; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-attr, .tk-var, .tk-ivar, .tk-cvar, .tk-key) { color: #001080; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-annot, .tk-decorator, .tk-special, .tk-fmt, .tk-bold, .tk-italic) { color: #66501f; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-symbol, .tk-selector, .tk-idsel, .tk-classsel, .tk-bullet) { color: #774000; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-tag) { color: #800000; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-preproc, .tk-section) { color: #8f00b3; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-link) { color: #0a4cb5; }
+    [data-theme="clear"][data-lum="light"] #ed-content :is(.tk-op) { color: var(--fg); }
+    [data-theme="clear"][data-lum="light"] #ed-content .tk-codeblock { color: #8c1010; background: rgba(0,0,0,0.06); }
+    /* selections: the base fills (#264f78 / #3a3d41 / #7a3e9d) are dark-theme colours; under the dark --fg of a light desktop they are 1.6-2.4:1 */
+    [data-theme="clear"][data-lum="light"] #ed-content .sel-active { background: #add6ff; }
+    [data-theme="clear"][data-lum="light"] #ed-content .sel-prefix { background: transparent; }
+    [data-theme="clear"][data-lum="light"] #ed-content .col-sel-active { background: #e6c8f5; }
+    /* hover / active veils and the focus ring: the white veils from Rust (and the white !important glass hovers) cannot show on a light backdrop (1.03:1); the dark-glass cards re-declare their own --bg-* / --focus-ring above, so they keep the light-on-dark values */
+    [data-theme="clear"][data-lum="light"] #app {
+      --bg-hover: rgba(0,0,0,0.07); --bg-active: rgba(0,0,0,0.13);
+      --focus-ring: 0 0 0 1px rgba(255,255,255,0.6), 0 0 0 3px rgba(11,87,208,0.85);
+      /* semantic text colours read on pale glass: the [data-theme=clear] values (--red #f87171, --yellow #fde047) are dark-glass tints (stderr 2.1:1, unsaved-tab dot 1.0:1). The light theme already uses #7d6608 for --yellow. Only the stderr lines, the dirty dot and #sb-project-name:hover read these three tokens, none of them inside the dark-glass cards. */
+      --red: #a31d16; --yellow: #7d6608; --accent-text: #0a4cb5;
+    }
+    [data-theme="clear"][data-lum="light"] :is(.side-tab, .bottom-tab, .tab):hover,
+    [data-theme="clear"][data-lum="light"] .act-btn:hover { background: rgba(0,0,0,0.07) !important; }
+    [data-theme="clear"][data-lum="light"] ::selection { background: rgba(11,87,208,0.30); }
+    /* web shell: the clear theme assumes a translucent native window behind the page. In a plain browser the canvas is white, so the white --fg text was 1:1 (and the saved choice is re-applied on every load). The desktop keeps its transparent window. data-shell is set at startup from inTauri; !important because setTheme() writes background:transparent inline on <html>. A (hypothetical) light luminance already has dark text on the white canvas, so it is excluded. */
+    html[data-theme="clear"][data-shell="web"]:not([data-lum="light"]) { background: #1b1f2a !important; }
+    /* activity icons (K): the 📁 / 🔍 colour emoji (25px wide) ignored --fg-muted and the active state; as text glyphs they follow the theme colour like the other three (⎇ ≡ ⊟). Characters and data-pane attributes are unchanged. font-variant-emoji needs Chromium 131+ and is a silent no-op on older WebView2. */
+    .act-btn { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-variant-emoji: text; }
+
+    /* ===== 排版修复 round 2 ===== */
+    /* welcome (short editor): the page is height:100% with centred content, so when the content is taller than the box (640x480 with the bottom panel open: 255px in 150px) the overflow went equally above and below and the top part sat in the unreachable negative scroll zone. `safe` falls back to start alignment on overflow and is identical to `center` whenever the content fits. Must follow the #welcome rule in the polish layer (same specificity, later wins). */
+    #welcome { justify-content: safe center; padding-inline: var(--sp-6); }
+    @media (max-height: 520px) { #welcome { padding-block: var(--sp-4); } }
+    /* the shortcut line is 588px wide but the 40px side padding left 580px at 960x600, so it wrapped and broke the 2-character word 帮助 into 帮 / 助 on two lines. 24px side padding fits it on one line; keep-all (breaks only at the spaces / punctuation between items) keeps the word whole whenever the line does wrap. */
+    #welcome .shortcuts { word-break: keep-all; }
+    /* welcome (no file): #gutter is min-width:40px + 16px padding even with no content, a dead column that pushed the welcome card 20px off-centre and offset the focus ring of #ed-content. Not display:none (the id stays present and measurable); a gutter with text is not :empty. */
+    #gutter:empty { min-width: 0; padding-left: 0; padding-right: 0; }
+    /* word wrap ON: pre-wrap only breaks at whitespace, so a URL / base64 / minified line kept #ed-content scrolling horizontally. No effect under white-space:pre (wrap OFF). */
+    #ed-content .hl-row, #ed-content .fold-row { overflow-wrap: anywhere; }
+    /* light theme: ::selection used --bg-active (rgba(0,0,0,.08) -> #ebebeb on white, 1.19:1); same fill as the visual-mode selection (.sel-active) above */
+    [data-theme="light"] ::selection { background: #add6ff; color: var(--fg); }
+    /* clip history '(N 字符)' is informational text with an inline style="color:var(--fg-dim)" (JS template); --fg-dim is a decorative level (2.6:1 in dark). The inline style is beaten here instead of editing the template string, like the search / find inputs above. */
+    .opt-row > span[style*="--fg-dim"] { color: var(--fg-muted) !important; }
+    /* clear theme on a light desktop (hover / active states): the glass rules paint fixed white gradients and white borders with !important, which are invisible on a pale backdrop (1.03-1.06:1 hover, 1.05 active-vs-inactive tab). No box-shadow here on purpose: the glass !important shadow only carries white highlights, and a 'none' !important at this specificity would also hide the keyboard focus ring of a hovered button. */
+    [data-theme="clear"][data-lum="light"] :is(.mb-btn:hover, .menu-item.open > .mb-btn, .tb-btn:hover, .bottom-toggle:hover) {
+      background: rgba(0,0,0,0.07) !important; border-color: rgba(26,28,30,0.22) !important; text-shadow: none;
+    }
+    [data-theme="clear"][data-lum="light"] :is(.tab.active, .side-tab.active, .bottom-tab.active, .tab.active:hover, .side-tab.active:hover, .bottom-tab.active:hover) {
+      background: rgba(0,0,0,0.09) !important; text-shadow: none;
+    }
 </style>
 </head>
 <body>
@@ -1266,6 +1502,9 @@ const TIPS = {
   "help": "打开内置 wiki 帮助 (F1)",
 };
 const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+// 让 CSS 区分"网页壳"和"桌面壳": 透明玻璃主题假设窗口背后是桌面壁纸, 在普通浏览器里画布是白的,
+// 白字落在白底上 (1:1). 只有 web 壳会给 clear 补一个不透明深色底, 桌面端保持透明窗口 (Mica/Acrylic).
+try { document.documentElement.setAttribute("data-shell", inTauri ? "desktop" : "web"); } catch (_) { /* 无 DOM 时忽略 */ }
 let projectRoot = null;
 let activeTabId = null;
 let newIdCounter = 0;
@@ -1421,8 +1660,9 @@ document.addEventListener("mouseover", (e) => {
   tipEl.textContent = t.getAttribute("data-tip");
   tipEl.style.display = "block";
   const r = t.getBoundingClientRect();
-  tipEl.style.left = Math.min(r.left, window.innerWidth - tipEl.offsetWidth - 8) + "px";
-  tipEl.style.top = (r.bottom + 4) + "px";
+  tipEl.style.left = Math.max(4, Math.min(r.left, window.innerWidth - tipEl.offsetWidth - 8)) + "px";
+  const th = tipEl.offsetHeight;
+  tipEl.style.top = (r.bottom + 4 + th > window.innerHeight - 2 ? Math.max(4, r.top - th - 4) : r.bottom + 4) + "px";
 });
 document.addEventListener("mouseout", () => { tipEl.style.display = "none"; });
 
@@ -2492,6 +2732,9 @@ function charArray(str) { return chars(str); }
 function getActiveTab() { return TABS.get(activeTabId); }
 
 function renderTabs() {
+  // 整条重建会把横向滚动位置清零; 先记下来, 重建后还原, 再保证活动标签在可视范围内
+  // (标签溢出时, 否则打开的文件落在条外, 看不出哪个标签是当前的).
+  const keepLeft = tabsEl.scrollLeft;
   tabsEl.innerHTML = "";
   for (const [id, t] of TABS) {
     const tab = document.createElement("button");
@@ -2499,6 +2742,14 @@ function renderTabs() {
     tab.dataset.tabId = id;
     tab.innerHTML = escapeHtml(t.name) + '<span class="tab-close" data-tab-close="' + id + '" title="关闭">×</span>';
     tabsEl.appendChild(tab);
+  }
+  tabsEl.scrollLeft = keepLeft;
+  const act = tabsEl.querySelector(".tab.active");
+  if (act) {
+    // 只动标签条自己的 scrollLeft (scrollIntoView 会顺带滚动祖先容器)
+    const sr = tabsEl.getBoundingClientRect(), ar = act.getBoundingClientRect();
+    if (ar.left < sr.left) tabsEl.scrollLeft += ar.left - sr.left;
+    else if (ar.right > sr.right) tabsEl.scrollLeft += ar.right - sr.right;
   }
 }
 
@@ -2832,6 +3083,8 @@ edContent.addEventListener("mousedown", (e) => {
     setTip(cursorsOf(tv).length + " 个光标");
   }
 });
+// 行号栏跟随正文滚动 (#gutter 是 overflow:hidden, 不同步则 300 行文件滚到底时旁边仍是 1-37)
+edContent.addEventListener("scroll", () => { gutter.scrollTop = edContent.scrollTop; });
 
 if (edContent) edContent.addEventListener("keydown", (e) => {
   try { recordKey(e); } catch (_) { /* 录制不影响主流程 */ }
@@ -3003,6 +3256,7 @@ async function toggleTreeDir(node) {
     child.innerHTML = '<span class="tree-icon">' + (e.is_dir ? "\u{1F4C1}" : "\u{1F4C4}") + "</span>" + escapeHtml(e.name);
     child.dataset.path = stripVerbatim(e.path);
     child.dataset.name = e.name;
+    child.style.setProperty("--depth", String((parseInt(node.style.getPropertyValue("--depth"), 10) || 0) + 1));
     if (e.is_dir) child.addEventListener("click", () => toggleTreeDir(child));
     else child.addEventListener("click", () => openFile(child.dataset.path));
     frag.appendChild(child);
@@ -3240,7 +3494,11 @@ function openOptionList(key) {
 // 注意: 不能用 `const _raw = openModal` 的包装写法 —— 那会读到包装函数自身,
 // 造成自引用; 改为给原实现加一个 _bodyHTML 字段分支.
 function showModal(opts) {
-  mdTitle.textContent = opts.title || "提示";
+  const title = opts.title || "提示";
+  // #md-body 是常驻节点 (overflow:auto): 只替换内容不会重置滚动偏移, 下一个对话框会带着上一个的偏移打开 (首行被截在上方).
+  // 同一个对话框原地重绘 (已显示且标题相同) 保留滚动位置; 其余情况 (关闭后再开 / 换成另一个对话框) 回到顶部.
+  const keepScroll = modal.classList.contains("show") && mdTitle.textContent === title;
+  mdTitle.textContent = title;
   if (opts.bodyHTML != null) mdBody.innerHTML = opts.bodyHTML;
   else mdBody.textContent = opts.body || "";
   mdFoot.innerHTML = "";
@@ -3253,6 +3511,8 @@ function showModal(opts) {
     mdFoot.appendChild(btn);
   });
   modal.classList.add("show");
+  // 放在 show 之后: #modal 在隐藏时是 display:none, 对没有布局框的元素设 scrollTop 不生效.
+  if (!keepScroll) mdBody.scrollTop = 0;
 }
 
 function openSettings() { openOptionList("settings"); }
@@ -3296,6 +3556,9 @@ const THEMES = {
     "--fg-on-accent": "#ffffff",
     "--blue": "#569cd6", "--green": "#4ec9b0",
     "--yellow": "#dcdcaa", "--red": "#f48771", "--orange": "#ce9178",
+    // 与 :root 默认值一致; 写进表里是因为 hc 以 data-theme="dark" 应用, setTheme 清理上一主题键时
+    // 查的是 THEMES.dark, hc 独有的 --focus-ring / --pill-mix / --accent-text 只能靠 dark/light 表覆盖才不会泄漏.
+    "--focus-ring": "0 0 0 1px var(--bg-edit), 0 0 0 3px rgba(86,156,214,0.85)", "--pill-mix": "62%", "--accent-text": "#4a9eff",
   },
   // 浅色: 底色用纯白而不是灰白, 前景用 #1f1f1f 而不是纯黑 (纯黑在白底上
   // 显得"洞"); 层次靠细微的灰阶而不是边框.
@@ -3310,19 +3573,22 @@ const THEMES = {
     "--fg-on-accent": "#ffffff",
     "--blue": "#005fb8", "--green": "#0f7b41",
     "--yellow": "#7d6608", "--red": "#c72e0f", "--orange": "#b35900",
+    "--focus-ring": "0 0 0 1px #ffffff, 0 0 0 3px #005fb8", "--pill-mix": "62%", "--accent-text": "#005fb8",
   },
   // 高对比度: 纯黑/纯白 + 去掉所有半透明, 边框拉满.
   hc: {
     "--bg-bar": "#000000", "--bg-side": "#000000", "--bg-edit": "#000000",
-    "--bg-rail": "#000000", "--bg-bottom": "#000000", "--bg-status": "#0000aa",
+    "--bg-rail": "#000000", "--bg-bottom": "#000000", "--bg-status": "#ffffff",
     "--bg-chrome": "#000000", "--bg-raised": "#000000",
-    "--bg-hover": "#ffffff", "--bg-active": "#ffffff", "--bg-input": "#000000",
+    "--bg-hover": "#262626", "--bg-active": "#404040", "--bg-input": "#000000",
     "--border": "#ffffff", "--border-strong": "#ffffff",
     "--fg": "#ffffff", "--fg-muted": "#e0e0e0", "--fg-dim": "#c0c0c0",
     "--fg-on-accent": "#000000",
     "--blue": "#00ffff", "--green": "#00ff00",
     "--yellow": "#ffff00", "--red": "#ff6666", "--orange": "#ff9900",
     "--accent-text": "#00ffff",
+    "--focus-ring": "0 0 0 2px #000000, 0 0 0 4px #00ffff",
+    "--pill-mix": "75%",
   },
 };
 
@@ -3377,6 +3643,9 @@ function applyClearThemeColors(vars) {
   for (const k of Object.keys(vars)) {
     if (k.startsWith("--")) root.style.setProperty(k, vars[k]);
   }
+  // 桌面明暗只有后端知道; 暴露成属性, CSS 才能给"透明玻璃 + 浅色桌面"换语法色 / 选区色 / 悬停面纱 / 焦点环.
+  // 兜底表 (THEMES.clear) 不带 luminance, 此时保持原值不动.
+  if (vars.luminance) root.setAttribute("data-lum", vars.luminance);
   document.body.style.color = vars["--fg"] || "#ffffff";
 }
 
@@ -4553,7 +4822,10 @@ async function showCompletion() {
 }
 
 function renderCompletionPopup() {
-  document.getElementById("completion-popup")?.remove();
+  // 每次按键都会重建浮层: 先记下旧浮层的滚动偏移, 新浮层建好后恢复, 再保证当前项可见 (否则 Ctrl+N 翻过第 11 项后高亮行滚出视野).
+  const old = document.getElementById("completion-popup");
+  const keepScroll = old ? old.scrollTop : 0;
+  old?.remove();
   const t = getActiveTab();
   if (!t || COMPLETE_STATE.list.length === 0) return;
   const pop = document.createElement("div");
@@ -4575,6 +4847,31 @@ function renderCompletionPopup() {
   const r = edContent.getBoundingClientRect();
   pop.style.top = (r.top + 24 + t.cursor.row * 18 - edContent.scrollTop) + "px";
   pop.style.left = (r.left + 8 + t.cursor.col * 7) + "px";
+  // 夹在 #ed-content 内 (不是 #editor-area: 它还包含 50px 的页签条和面包屑, 编辑区矮时浮层会盖住页签、面包屑和光标行):
+  // 光标行下方放得下就放下方, 否则取下方/上方中较大的一侧, 并把 max-height 收到那一侧的空间 (最小 40px, 最大 220px); 靠右时左移 (不再被 #app 的 overflow:clip 截掉).
+  const lineTop = r.top + 4 + t.cursor.row * 18 - edContent.scrollTop;
+  const bottom = r.top + edContent.clientHeight;
+  const below = bottom - 4 - (lineTop + 20), above = lineTop - (r.top + 4);
+  pop.style.maxHeight = "none";
+  const nat = Math.min(220, pop.scrollHeight + 2);
+  let hh, top;
+  if (below >= nat || below >= above) { hh = Math.max(40, Math.min(220, below)); top = lineTop + 20; }
+  else { hh = Math.max(40, Math.min(nat, above)); top = lineTop - hh; }
+  // 光标行滚出可视区时仍夹回 #ed-content 内 (沿用"永不出屏"的行为); 高度也不超过 #ed-content 的可用高度
+  hh = Math.min(hh, Math.max(40, edContent.clientHeight - 8));
+  top = Math.max(r.top + 4, Math.min(top, bottom - 4 - hh));
+  pop.style.maxHeight = hh + "px";
+  pop.style.top = top + "px";
+  const q = pop.getBoundingClientRect();
+  if (q.right > window.innerWidth - 4) {
+    pop.style.left = Math.max(4, window.innerWidth - 4 - q.width) + "px";
+  }
+  pop.scrollTop = keepScroll;
+  const act = pop.querySelector(".cmp-row.active");
+  if (act) {
+    if (act.offsetTop < pop.scrollTop) pop.scrollTop = act.offsetTop;
+    else if (act.offsetTop + act.offsetHeight > pop.scrollTop + pop.clientHeight) pop.scrollTop = act.offsetTop + act.offsetHeight - pop.clientHeight;
+  }
 }
 
 function applyCompletion() {
