@@ -33,7 +33,9 @@ pub struct HighlightManager {
 
 impl HighlightManager {
     pub fn new() -> Self {
-        Self { segments: Vec::new() }
+        Self {
+            segments: Vec::new(),
+        }
     }
 
     /// 全マッチを検出

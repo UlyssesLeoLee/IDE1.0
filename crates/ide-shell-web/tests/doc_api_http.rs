@@ -13,7 +13,11 @@ use std::time::Duration;
 const TEST_TOKEN: &str = "doc-api-token";
 
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 struct DocServer {
@@ -61,7 +65,12 @@ impl DocServer {
         s.write_all(req.as_bytes()).unwrap();
         let mut resp = String::new();
         s.read_to_string(&mut resp).unwrap();
-        let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+        let status: u16 = resp
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0);
         let body = resp.split("\r\n\r\n").nth(1).unwrap_or("");
         let json = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
         (status, json)
@@ -77,7 +86,12 @@ impl DocServer {
         s.write_all(req.as_bytes()).unwrap();
         let mut resp = String::new();
         s.read_to_string(&mut resp).unwrap();
-        let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+        let status: u16 = resp
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0);
         let body = resp.split("\r\n\r\n").nth(1).unwrap_or("");
         let json = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
         (status, json)
@@ -86,7 +100,8 @@ impl DocServer {
 
 impl Drop for DocServer {
     fn drop(&mut self) {
-        self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -101,7 +116,12 @@ fn doc_api_requires_token() {
     s.write_all(req.as_bytes()).unwrap();
     let mut resp = String::new();
     s.read_to_string(&mut resp).unwrap();
-    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    let status: u16 = resp
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
     assert_eq!(status, 401, "无 token 必须 401 —— 内核文档不应对外裸奔");
 }
 
@@ -183,7 +203,10 @@ fn find_no_match_returns_404() {
 fn replace_all_via_http() {
     let srv = DocServer::start();
     srv.post(r#"/api/doc/open"#, r#"{"text":"cat cat cat"}"#);
-    let (_, r) = srv.post(r#"/api/doc/replace_all"#, r#"{"pattern":"cat","replacement":"dog"}"#);
+    let (_, r) = srv.post(
+        r#"/api/doc/replace_all"#,
+        r#"{"pattern":"cat","replacement":"dog"}"#,
+    );
     assert_eq!(r["result"]["replaced"], 3);
     let (_, a) = srv.get("/api/doc/active");
     assert_eq!(a["result"]["text"], "dog dog dog");
@@ -206,7 +229,10 @@ fn multi_cursor_via_http() {
 fn line_ending_roundtrip_via_http() {
     let srv = DocServer::start();
     // JSON 里 \r\n 是真实 CRLF
-    srv.post(r#"/api/doc/open"#, "{\"path\":\"x.txt\",\"text\":\"a\\r\\nb\"}");
+    srv.post(
+        r#"/api/doc/open"#,
+        "{\"path\":\"x.txt\",\"text\":\"a\\r\\nb\"}",
+    );
     let (_, a) = srv.get("/api/doc/active");
     assert_eq!(a["result"]["line_ending"], "Windows (CRLF)");
 

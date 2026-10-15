@@ -36,7 +36,12 @@ impl Default for Session {
 
 impl Session {
     pub fn new() -> Self {
-        Self { docs: HashMap::new(), order: Vec::new(), active: None, next_id: 1 }
+        Self {
+            docs: HashMap::new(),
+            order: Vec::new(),
+            active: None,
+            next_id: 1,
+        }
     }
 
     /// 新建一个空白文档并激活.
@@ -159,7 +164,11 @@ impl Session {
 
     /// 所有未保存的标签 (关闭全部 / 退出前提示).
     pub fn dirty_tabs(&self) -> Vec<u64> {
-        self.order.iter().copied().filter(|id| self.docs.get(id).map(|d| d.is_dirty()).unwrap_or(false)).collect()
+        self.order
+            .iter()
+            .copied()
+            .filter(|id| self.docs.get(id).map(|d| d.is_dirty()).unwrap_or(false))
+            .collect()
     }
 
     /// 外壳渲染用的标签摘要.

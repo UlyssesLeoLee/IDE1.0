@@ -1781,7 +1781,8 @@ function dispatchCommand(cmd) {
     case "shortcuts":        showShortcuts(); break;
     case "about":            showAbout(); break;
     case "help":             showWiki(); break;
-    case "modal-close":      closeModal(); break;
+    case "modal-close":      closeModal(); mdInputSubmit = null; break;
+    case "modal-input-ok":   if (mdInputSubmit) mdInputSubmit(); break;
     // 兼容: 菜单栏用 new-terminal, 底端面板按钮用 terminal-new
     case "new-terminal":
     case "terminal-new":    createTerminal(); break;
@@ -3118,13 +3119,16 @@ function renderSearch(host) {
       const q = input.value.trim();
       if (!q) return;
       try {
-        const matches = await invoke("search", { query: q });
+        // search 后端返回 {results:[{line,path,text}]}, 参数名是 pattern (不是 query),
+        // 且 line 已是 1-based —— 前端 曾按 数组 + query 解析, 每次 都 静默 失败.
+        const resp = await invoke("search", { pattern: q, case_sensitive: false, regex: false });
+        const matches = (resp && resp.results) || [];
         const r = document.getElementById("search-results");
         r.innerHTML = "";
         for (const m of matches) {
           const row = document.createElement("div");
           row.className = "tree-node";
-          row.textContent = m.path + ":" + (m.line + 1);
+          row.textContent = m.path + ":" + m.line;
           row.addEventListener("click", () => openFile(m.path));
           r.appendChild(row);
         }
@@ -3183,28 +3187,55 @@ async function renderOutline(host) {
   }
 }
 
+// modal 输入框: 原生 prompt() 在无头浏览器里不响应会一直挂着阻塞,
+// 而且不可断言 —— web-editor.spec 期望 .md-input 带默认值 + Enter 提交.
+// value 预填, Enter (或点击 cmd) 触发 onSubmit, Esc/取消关闭.
+let mdInputSubmit = null;
+function openModalInput(title, value, onSubmit) {
+  mdBody.innerHTML = '<input type="text" class="md-input" spellcheck="false">';
+  const input = mdBody.querySelector(".md-input");
+  input.value = value || "";
+  mdFoot.innerHTML = "";
+  const ok = document.createElement("button");
+  ok.className = "md-btn";
+  ok.textContent = "确定";
+  ok.dataset.cmd = "modal-input-ok";
+  const cancel = document.createElement("button");
+  cancel.className = "md-btn";
+  cancel.textContent = "取消";
+  cancel.dataset.cmd = "modal-close";
+  mdFoot.appendChild(ok);
+  mdFoot.appendChild(cancel);
+  mdInputSubmit = () => { const v = input.value.trim(); mdInputSubmit = null; closeModal(); if (v) onSubmit(v); };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); mdInputSubmit && mdInputSubmit(); }
+    else if (e.key === "Escape") { mdInputSubmit = null; closeModal(); }
+  });
+  modal.classList.add("show");
+  input.focus();
+  input.select();
+}
+
 // ===== Open folder =====
+// 一律 弹 modal 输入框 (预填 pick_folder 的结果) 确认后再打开.
+// - 不用原生 prompt(): 无头浏览器不响应会一直挂着阻塞, 且不可断言
+//   (web-editor.spec / desktop-ui.spec 都依赖 modal 的 .md-input)
+// - 不直接 用 pick_folder 结果打开: web 侧 mock 返回的是 IDE_SHELL_WEB_TEST_ROOT,
+//   用户需要有机会改; desktop 侧 picker 返回值同样 该 让 用户 过目.
 async function openFolder() {
-  let path;
-  try {
-    path = await invoke("pick_folder");
-  } catch (e) {
-    path = null;
-  }
-  if (!path) {
-    const def = projectRoot || "D:/work";
-    path = prompt("输入项目根绝对路径:", def);
-  }
-  if (!path) return;
-  try {
-    await invoke("open_project", { path });
-    projectRoot = path;
-    setFile(path);
-    setTip("已打开项目: " + path);
-    showSidePane("explorer");
-  } catch (e) {
-    setTip("打开失败: " + e.message);
-  }
+  let def = "";
+  try { def = (await invoke("pick_folder")) || ""; } catch (e) { def = ""; }
+  openModalInput("打开项目", def || projectRoot || "", async (path) => {
+    try {
+      await invoke("open_project", { path });
+      projectRoot = path;
+      setFile(path);
+      setTip("已打开项目: " + path);
+      showSidePane("explorer");
+    } catch (e) {
+      setTip("打开失败: " + e.message);
+    }
+  });
 }
 
 // Expose setProjectRoot for tests (and general use)
@@ -3687,11 +3718,13 @@ async function openGrepDialog(withReplace) {
     const status = document.getElementById("grep-status");
     status.textContent = "搜索中...";
     try {
-      const rows = await invoke("search", {
+      // 后端返回 {results:[{line,path,text}]}, line 已是 1-based.
+      const resp = await invoke("search", {
         pattern: q,
         case_sensitive: document.getElementById("grep-case").checked,
         regex: document.getElementById("grep-regex").checked,
       });
+      const rows = (resp && resp.results) || [];
       FIND_STATE.needle = q;
       status.textContent = "命中 " + rows.length + " 处";
       const box = document.createElement("div");
@@ -3700,7 +3733,7 @@ async function openGrepDialog(withReplace) {
         const row = document.createElement("div");
         row.className = "opt-row";
         row.style.cursor = "pointer";
-        row.textContent = m.path + ":" + (m.line + 1) + ": " + String(m.text || m.line_text || "").trim().slice(0, 100);
+        row.textContent = m.path + ":" + m.line + ": " + String(m.text || m.line_text || "").trim().slice(0, 100);
         row.addEventListener("click", () => { closeModal(); openFile(stripVerbatim(m.path)); });
         box.appendChild(row);
       });
@@ -4705,6 +4738,8 @@ document.addEventListener("click", (e) => {
 });
 
 // ===== Global keyboard =====
+// Ctrl+K chord 状态 (菜单 "打开文件夹 (Ctrl+K O)" 的声明需要它).
+let ctrlKChord = false;
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && modal.classList.contains("show")) closeModal();
   if (e.key === "F1") { e.preventDefault(); showHelp(); }
@@ -4723,10 +4758,20 @@ document.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (k === "f") { e.preventDefault(); showSidePane("search"); return; }
     if (k === "r") { e.preventDefault(); macroStop(); return; }   // 与菜单一致: 开始/停止切换
-    if (k === "o") { e.preventDefault(); openFolder(); return; }
+    // Ctrl+Shift+O = 大纲 (与视图菜单 data-shortcut 一致). 原先绑的是 openFolder(),
+    // 而 "打开文件夹" 已有 菜单行 + Ctrl+K O —— 快捷键与菜单声明矛盾, 菜单栏显示的
+    // Ctrl+Shift+O 按下去却打开文件夹 (web-editor.spec 大纲用例 红 的 根因).
+    if (k === "o") { e.preventDefault(); showOutline(); return; }
   }
   if (e.ctrlKey && !e.shiftKey) {
     const k = e.key.toLowerCase();
+    // Ctrl+K 是 chord 前缀 (菜单里 "打开文件夹 (Ctrl+K O)" 的声明一直无实现).
+    if (k === "k") { e.preventDefault(); ctrlKChord = true; return; }
+    if (ctrlKChord) {
+      ctrlKChord = false;
+      if (k === "o") { e.preventDefault(); openFolder(); return; }
+      return;
+    }
     if (k === "f") { e.preventDefault(); openFind(); return; }
     if (k === "h") { e.preventDefault(); openReplace(); return; }
     if (k === "g") { e.preventDefault(); openGrep(); return; }

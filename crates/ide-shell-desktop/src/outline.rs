@@ -38,8 +38,8 @@ pub fn outline_file(path: &str, content: &str) -> OutlineResult {
 // ============================================================
 // Tauri command wrapper
 // ============================================================
-use tauri::State;
 use std::path::PathBuf;
+use tauri::State;
 
 #[tauri::command]
 pub fn outline(

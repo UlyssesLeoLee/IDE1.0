@@ -7,10 +7,10 @@
 /// 括弧種別
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BraceKind {
-    Round,   // ()
-    Square,  // []
-    Curly,   // {}
-    Angle,   // <>
+    Round,  // ()
+    Square, // []
+    Curly,  // {}
+    Angle,  // <>
 }
 
 impl BraceKind {

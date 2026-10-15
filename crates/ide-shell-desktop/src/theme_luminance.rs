@@ -41,8 +41,8 @@ impl DesktopLuminance {
     /// 在**最坏背景**下仍达标的值。
     pub fn text_primary(self) -> &'static str {
         match self {
-            Self::Light => "#1a1c1e",   // 对纯白 15.8:1, 对浅灰壁纸 ~12:1
-            Self::Dark => "#f0f2f5",    // 对纯黑 17.4:1, 对深色壁纸 ~13:1
+            Self::Light => "#1a1c1e", // 对纯白 15.8:1, 对浅灰壁纸 ~12:1
+            Self::Dark => "#f0f2f5",  // 对纯黑 17.4:1, 对深色壁纸 ~13:1
         }
     }
 
@@ -249,7 +249,8 @@ mod tests {
                 i32::from_str_radix(&fg[3..5], 16).unwrap(),
                 i32::from_str_radix(&fg[5..7], 16).unwrap(),
             );
-            let lum = (0.2126 * rgb.0 as f64 + 0.7152 * rgb.1 as f64 + 0.0722 * rgb.2 as f64) / 255.0;
+            let lum =
+                (0.2126 * rgb.0 as f64 + 0.7152 * rgb.1 as f64 + 0.0722 * rgb.2 as f64) / 255.0;
             assert!(lum > 0.7, "蓝底上的文字应偏亮, 得到 {}", fg);
         }
     }
@@ -258,7 +259,10 @@ mod tests {
     fn detect_never_panics_and_defaults_dark() {
         // 无论注册表读到什么, detect() 必须返回合法值
         let l = detect();
-        assert!(matches!(l, DesktopLuminance::Light | DesktopLuminance::Dark));
+        assert!(matches!(
+            l,
+            DesktopLuminance::Light | DesktopLuminance::Dark
+        ));
     }
 
     #[test]

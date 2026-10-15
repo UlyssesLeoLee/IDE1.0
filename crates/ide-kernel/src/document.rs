@@ -10,10 +10,10 @@
 //! - 编码标记与往返转换
 //! - 撤销栈的**事务边界** (一次按键 = 一个 OpeBlk, 而不是每个字符一条)
 
-use serde::{Deserialize, Serialize};
 use sakura_rs::buffer::DocLineMgr;
 use sakura_rs::cursor::{LogicPos, LogicRange};
 use sakura_rs::undo::{EOpeCode, Ope, OpeBlk, OpeBuf};
+use serde::{Deserialize, Serialize};
 
 /// 位置别名 — 对外用更通用的名字.
 pub type Pos = LogicPos;
@@ -79,9 +79,15 @@ impl Selection {
     /// 规范化成 start <= end 的范围.
     pub fn normalized(&self) -> LogicRange {
         if pos_le(self.head, self.anchor) {
-            LogicRange { start: self.head, end: self.anchor }
+            LogicRange {
+                start: self.head,
+                end: self.anchor,
+            }
         } else {
-            LogicRange { start: self.anchor, end: self.head }
+            LogicRange {
+                start: self.anchor,
+                end: self.head,
+            }
         }
     }
 
@@ -235,7 +241,10 @@ impl Document {
 
     /// 按行取文本 (char 语义).
     pub fn line_text(&self, row: i32) -> String {
-        self.mgr.line(row).map(|l| l.text.clone()).unwrap_or_default()
+        self.mgr
+            .line(row)
+            .map(|l| l.text.clone())
+            .unwrap_or_default()
     }
 
     pub fn lines(&self) -> &[sakura_rs::buffer::DocLine] {
@@ -334,9 +343,7 @@ impl Document {
         self.line_ending = LineEnding::detect(text);
         let normalized = match self.line_ending {
             LineEnding::Lf => text.to_string(),
-            _ => text
-                .replace("\r\n", "\n")
-                .replace('\r', "\n"),
+            _ => text.replace("\r\n", "\n").replace('\r', "\n"),
         };
         self.mgr = DocLineMgr::new();
         // 用一次 insert 建立初始内容, 不进 undo 栈
@@ -377,12 +384,18 @@ impl Document {
     /// 把位置夹到合法范围 (行存在, 列不超行长).
     pub fn clamp_pos(&self, p: Pos) -> Pos {
         let row = p.row.clamp(0, (self.mgr.line_count() - 1).max(0));
-        let len = self.mgr.line(row).map(|l| l.char_len() as i32).unwrap_or(0);
-        Pos { row, col: p.col.clamp(0, len) }
+        let len = self.mgr.line(row).map(|l| l.char_len()).unwrap_or(0);
+        Pos {
+            row,
+            col: p.col.clamp(0, len),
+        }
     }
 
     fn clamp_range(&self, r: LogicRange) -> LogicRange {
-        LogicRange { start: self.clamp_pos(r.start), end: self.clamp_pos(r.end) }
+        LogicRange {
+            start: self.clamp_pos(r.start),
+            end: self.clamp_pos(r.end),
+        }
     }
 
     // ---------- 编辑原语 (全部进 undo) ----------
@@ -438,12 +451,21 @@ impl Document {
     pub fn backspace(&mut self) -> Pos {
         let c = self.mgr.caret();
         if c.col > 0 {
-            return self.delete_range(LogicRange { start: Pos { row: c.row, col: c.col - 1 }, end: c });
+            return self.delete_range(LogicRange {
+                start: Pos {
+                    row: c.row,
+                    col: c.col - 1,
+                },
+                end: c,
+            });
         }
         if c.row > 0 {
-            let prev_len = self.mgr.line(c.row - 1).map(|l| l.char_len() as i32).unwrap_or(0);
+            let prev_len = self.mgr.line(c.row - 1).map(|l| l.char_len()).unwrap_or(0);
             return self.delete_range(LogicRange {
-                start: Pos { row: c.row - 1, col: prev_len },
+                start: Pos {
+                    row: c.row - 1,
+                    col: prev_len,
+                },
                 end: c,
             });
         }
@@ -453,12 +475,24 @@ impl Document {
     /// Delete: 删除光标后一个 char.
     pub fn delete_forward(&mut self) -> Pos {
         let c = self.mgr.caret();
-        let len = self.mgr.line(c.row).map(|l| l.char_len() as i32).unwrap_or(0);
+        let len = self.mgr.line(c.row).map(|l| l.char_len()).unwrap_or(0);
         if c.col < len {
-            return self.delete_range(LogicRange { start: c, end: Pos { row: c.row, col: c.col + 1 } });
+            return self.delete_range(LogicRange {
+                start: c,
+                end: Pos {
+                    row: c.row,
+                    col: c.col + 1,
+                },
+            });
         }
         if c.row + 1 < self.mgr.line_count() {
-            return self.delete_range(LogicRange { start: c, end: Pos { row: c.row + 1, col: 0 } });
+            return self.delete_range(LogicRange {
+                start: c,
+                end: Pos {
+                    row: c.row + 1,
+                    col: 0,
+                },
+            });
         }
         c
     }
@@ -527,10 +561,13 @@ impl Document {
     /// 全选.
     pub fn select_all(&mut self) {
         let last_row = (self.mgr.line_count() - 1).max(0);
-        let last_col = self.mgr.line(last_row).map(|l| l.char_len() as i32).unwrap_or(0);
+        let last_col = self.mgr.line(last_row).map(|l| l.char_len()).unwrap_or(0);
         self.selection = Some(Selection::new(
             Pos::ZERO,
-            Pos { row: last_row, col: last_col },
+            Pos {
+                row: last_row,
+                col: last_col,
+            },
         ));
     }
 
@@ -539,7 +576,9 @@ impl Document {
     }
 
     pub fn selected_text(&self) -> String {
-        self.selection().map(|s| self.mgr.extract_text(s.normalized())).unwrap_or_default()
+        self.selection()
+            .map(|s| self.mgr.extract_text(s.normalized()))
+            .unwrap_or_default()
     }
 
     // ---------- 多光标 ----------
@@ -596,7 +635,10 @@ impl Document {
                 code: EOpeCode::Insert,
                 caret_before: pos,
                 caret_after: after,
-                range: LogicRange { start: pos, end: pos },
+                range: LogicRange {
+                    start: pos,
+                    end: pos,
+                },
                 inserted: first_char.clone(),
                 deleted: String::new(),
             });
@@ -605,7 +647,10 @@ impl Document {
 
         // 主光标落到最靠前的那个光标处并前进一格
         if let Some(first) = cursors.first() {
-            let target = Pos { row: first.row, col: first.col + first_char.chars().count() as i32 };
+            let target = Pos {
+                row: first.row,
+                col: first.col + first_char.chars().count() as i32,
+            };
             self.mgr.set_caret(self.clamp_pos(target));
         }
         self.clear_extra_cursors();
@@ -618,7 +663,7 @@ impl Document {
         }
     }
 
-// ---------- undo / redo ----------
+    // ---------- undo / redo ----------
 
     pub fn undo(&mut self) -> bool {
         match self.undo.undo(&mut self.mgr) {

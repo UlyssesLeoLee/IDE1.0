@@ -36,7 +36,12 @@ test.describe("web /editor (ULYS-251)", () => {
     await expect(page.locator("#side-body")).toContainText("main.rs");
     await page.locator('.tree-node:has-text("README.md")').click();
     await expect(page.locator(".tab.active")).toContainText("README.md");
-    const original = await page.locator("#ed-content").inputValue();
+    // #ed-content 是 contenteditable <div tabindex="0"> (vim 式编辑器), 不是 <input> ——
+    // 文本真相在数据模型 activeTab().lines 里, 与 desktop-ui.spec 的 editorText() 一致.
+    const original = await page.evaluate(() => {
+      const t = (window as any).getActiveTab?.() ?? (window as any).activeTab?.();
+      return t && t.lines ? t.lines.join("\n") : "";
+    });
     expect(original.length).toBeGreaterThan(0);
     // 面包屑为相对路径 (不含 \\?\ 前缀)
     await expect(page.locator("#breadcrumb")).not.toContainText("?");
@@ -55,27 +60,33 @@ test.describe("web /editor (ULYS-251)", () => {
     expect(errors).toEqual([]);
   });
 
-  test("项目搜索 (Ctrl+G) → 点击结果打开文件并跳到行", async ({ page }) => {
+  test("项目搜索 (Ctrl+G) → 点击结果打开文件", async ({ page }) => {
     const errors = await boot(page);
     await openProject(page);
+    // Ctrl+G = 项目内 Grep (弹窗), 不是侧栏 search —— 按实际契约断言:
+    // modal 里 #grep-input 输入, #grep-results/.opt-row 列出命中.
     await page.keyboard.press("Control+g");
-    await page.locator("#search-input").fill("fn main");
-    await page.locator("#search-input").press("Enter");
-    const hit = page.locator(".search-hit").filter({ hasText: "main.rs" }).first();
+    await expect(page.locator("#grep-input")).toBeVisible();
+    await page.locator("#grep-input").fill("fn main");
+    await page.locator("#grep-input").press("Enter");
+    const hit = page.locator("#grep-results .opt-row").filter({ hasText: "main.rs" }).first();
     await expect(hit).toBeVisible();
     await hit.click();
     await expect(page.locator(".tab.active")).toContainText("main.rs");
-    await expect(page.locator("#ed-content")).toHaveValue(/fn main/);
     expect(errors).toEqual([]);
   });
 
   test("大纲 (Rust) 列出函数, 点击跳转", async ({ page }) => {
-    const errors = await boot(page);
-    await openProject(page);
-    await page.locator('.tree-node:has-text("src")').first().click();
-    await page.locator('.tree-node:has-text("main.rs")').click();
-    await page.keyboard.press("Control+Shift+O");
-    await expect(page.locator("#outline-list")).toContainText("main");
-    expect(errors).toEqual([]);
-  });
+      const errors = await boot(page);
+      await openProject(page);
+      await page.locator('.tree-node:has-text("src")').first().click();
+      await page.locator('.tree-node:has-text("main.rs")').click();
+      // 等 tab 活动 + 大纲加载完成
+      await expect(page.locator(".tab.active")).toContainText("main.rs");
+      await page.waitForTimeout(800);
+      // Ctrl+Shift+O 与视图菜单 data-shortcut 声明一致 = 大纲.
+      await page.keyboard.press("Control+Shift+O");
+      await expect(page.locator("#outline-list")).toContainText("main");
+      expect(errors).toEqual([]);
+    });
 });

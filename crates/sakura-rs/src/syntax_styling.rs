@@ -34,13 +34,22 @@ pub struct Style {
 
 impl Style {
     pub fn bold() -> Self {
-        Self { bold: true, ..Default::default() }
+        Self {
+            bold: true,
+            ..Default::default()
+        }
     }
     pub fn italic() -> Self {
-        Self { italic: true, ..Default::default() }
+        Self {
+            italic: true,
+            ..Default::default()
+        }
     }
     pub fn underline() -> Self {
-        Self { underline: true, ..Default::default() }
+        Self {
+            underline: true,
+            ..Default::default()
+        }
     }
 }
 
@@ -54,7 +63,11 @@ pub struct TokenStyle {
 
 impl TokenStyle {
     pub fn new(fg: Color) -> Self {
-        Self { fg, bg: None, style: Style::default() }
+        Self {
+            fg,
+            bg: None,
+            style: Style::default(),
+        }
     }
 
     pub fn with_bg(mut self, bg: Color) -> Self {
@@ -71,10 +84,16 @@ impl TokenStyle {
 /// デフォルトテーマ (Dark)
 pub fn default_dark_theme() -> std::collections::HashMap<TokenKind, TokenStyle> {
     let mut m = std::collections::HashMap::new();
-    m.insert(TokenKind::Keyword, TokenStyle::new(Color::CYAN).with_style(Style::bold()));
+    m.insert(
+        TokenKind::Keyword,
+        TokenStyle::new(Color::CYAN).with_style(Style::bold()),
+    );
     m.insert(TokenKind::String, TokenStyle::new(Color::GREEN));
     m.insert(TokenKind::Number, TokenStyle::new(Color::YELLOW));
-    m.insert(TokenKind::Comment, TokenStyle::new(Color::GRAY).with_style(Style::italic()));
+    m.insert(
+        TokenKind::Comment,
+        TokenStyle::new(Color::GRAY).with_style(Style::italic()),
+    );
     m.insert(TokenKind::Operator, TokenStyle::new(Color::WHITE));
     m.insert(TokenKind::Punct, TokenStyle::new(Color::WHITE));
     m.insert(TokenKind::Function, TokenStyle::new(Color::BLUE));
@@ -87,10 +106,16 @@ pub fn default_dark_theme() -> std::collections::HashMap<TokenKind, TokenStyle> 
 /// デフォルトテーマ (Light)
 pub fn default_light_theme() -> std::collections::HashMap<TokenKind, TokenStyle> {
     let mut m = std::collections::HashMap::new();
-    m.insert(TokenKind::Keyword, TokenStyle::new(Color(0, 0, 180)).with_style(Style::bold()));
+    m.insert(
+        TokenKind::Keyword,
+        TokenStyle::new(Color(0, 0, 180)).with_style(Style::bold()),
+    );
     m.insert(TokenKind::String, TokenStyle::new(Color(180, 0, 0)));
     m.insert(TokenKind::Number, TokenStyle::new(Color(0, 130, 0)));
-    m.insert(TokenKind::Comment, TokenStyle::new(Color(128, 128, 128)).with_style(Style::italic()));
+    m.insert(
+        TokenKind::Comment,
+        TokenStyle::new(Color(128, 128, 128)).with_style(Style::italic()),
+    );
     m.insert(TokenKind::Operator, TokenStyle::new(Color::BLACK));
     m.insert(TokenKind::Punct, TokenStyle::new(Color::BLACK));
     m.insert(TokenKind::Function, TokenStyle::new(Color(0, 100, 180)));
@@ -108,15 +133,24 @@ pub struct Theme {
 
 impl Theme {
     pub fn dark() -> Self {
-        Self { name: "dark".to_string(), styles: default_dark_theme() }
+        Self {
+            name: "dark".to_string(),
+            styles: default_dark_theme(),
+        }
     }
 
     pub fn light() -> Self {
-        Self { name: "light".to_string(), styles: default_light_theme() }
+        Self {
+            name: "light".to_string(),
+            styles: default_light_theme(),
+        }
     }
 
     pub fn get(&self, kind: TokenKind) -> TokenStyle {
-        self.styles.get(&kind).copied().unwrap_or(TokenStyle::new(Color::WHITE))
+        self.styles
+            .get(&kind)
+            .copied()
+            .unwrap_or(TokenStyle::new(Color::WHITE))
     }
 }
 
@@ -154,7 +188,9 @@ mod tests {
 
     #[test]
     fn test_style_builder() {
-        let s = TokenStyle::new(Color::RED).with_bg(Color::WHITE).with_style(Style::underline());
+        let s = TokenStyle::new(Color::RED)
+            .with_bg(Color::WHITE)
+            .with_style(Style::underline());
         assert_eq!(s.fg, Color::RED);
         assert_eq!(s.bg, Some(Color::WHITE));
         assert!(s.style.underline);

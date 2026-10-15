@@ -14,7 +14,12 @@ pub enum Pane {
 }
 
 impl Pane {
-    pub const ALL: [Pane; 4] = [Self::TopLeft, Self::TopRight, Self::BottomLeft, Self::BottomRight];
+    pub const ALL: [Pane; 4] = [
+        Self::TopLeft,
+        Self::TopRight,
+        Self::BottomLeft,
+        Self::BottomRight,
+    ];
 }
 
 #[derive(Debug, Clone)]

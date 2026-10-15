@@ -5,8 +5,8 @@
 
 use sakura_rs::buffer::DocLineMgr;
 use sakura_rs::cursor::{LogicPos, LogicRange};
-use sakura_rs::type_config::TypeRegistry;
 use sakura_rs::grep;
+use sakura_rs::type_config::TypeRegistry;
 
 // ============== Section 1: 基本编辑 ==============
 
@@ -272,11 +272,23 @@ fn sakura_5_4_regex_grep() {
 
 #[test]
 fn sakura_5_5_filter_files() {
-    use sakura_rs::grep::{FileEntry, filter_by_ext};
+    use sakura_rs::grep::{filter_by_ext, FileEntry};
     let entries = vec![
-        FileEntry { path: std::path::PathBuf::from("a.rs"), is_dir: false, size: 0 },
-        FileEntry { path: std::path::PathBuf::from("b.py"), is_dir: false, size: 0 },
-        FileEntry { path: std::path::PathBuf::from("c.txt"), is_dir: false, size: 0 },
+        FileEntry {
+            path: std::path::PathBuf::from("a.rs"),
+            is_dir: false,
+            size: 0,
+        },
+        FileEntry {
+            path: std::path::PathBuf::from("b.py"),
+            is_dir: false,
+            size: 0,
+        },
+        FileEntry {
+            path: std::path::PathBuf::from("c.txt"),
+            is_dir: false,
+            size: 0,
+        },
     ];
     let filtered = filter_by_ext(&entries, &["rs", "py"]);
     assert_eq!(filtered.len(), 2);
@@ -350,7 +362,7 @@ fn sakura_7_1_utf8_io() {
 
 #[test]
 fn sakura_7_2_shift_jis() {
-    use sakura_rs::encoding_io::{write_with_encoding, read_auto, EncodingKind};
+    use sakura_rs::encoding_io::{read_auto, write_with_encoding, EncodingKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
@@ -365,7 +377,7 @@ fn sakura_7_2_shift_jis() {
 
 #[test]
 fn sakura_7_3_euc_jp() {
-    use sakura_rs::encoding_io::{write_with_encoding, read_with_encoding, EncodingKind};
+    use sakura_rs::encoding_io::{read_with_encoding, write_with_encoding, EncodingKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
@@ -397,8 +409,8 @@ fn sakura_7_5_control_code_display() {
 #[test]
 fn sakura_7_6_file_lock() {
     use sakura_rs::file_lock::FileLock;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("sakura-feat76-{}-{}", std::process::id(), n));
@@ -415,8 +427,8 @@ fn sakura_7_6_file_lock() {
 #[test]
 fn sakura_7_7_auto_backup() {
     use sakura_rs::auto_backup::{AutoBackup, BackupConfig};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("sakura-feat77-{}-{}", std::process::id(), n));
@@ -424,7 +436,10 @@ fn sakura_7_7_auto_backup() {
     let path = dir.join("data.txt");
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(b"important data").unwrap();
-    let mut ab = AutoBackup::new(BackupConfig { interval_secs: 0, ..Default::default() });
+    let mut ab = AutoBackup::new(BackupConfig {
+        interval_secs: 0,
+        ..Default::default()
+    });
     let backup = ab.backup_file(&path).unwrap();
     assert!(backup.exists());
     let _ = std::fs::remove_dir_all(&dir);
@@ -477,13 +492,18 @@ fn sakura_8_3_clear_bookmarks() {
 
 #[test]
 fn sakura_8_4_tag_jump() {
-    use sakura_rs::tag_jump::{extract_tags, TagDb, Tag, TagKind};
+    use sakura_rs::tag_jump::{extract_tags, Tag, TagDb, TagKind};
     use std::path::PathBuf;
     let code = "fn target() {}\nfn other() {}";
     let tags = extract_tags(code, &PathBuf::from("t.rs"));
     assert!(!tags.is_empty());
     let mut db = TagDb::new();
-    db.add(Tag { name: "main".into(), kind: TagKind::Function, file: PathBuf::from("a.rs"), line: 1 });
+    db.add(Tag {
+        name: "main".into(),
+        kind: TagKind::Function,
+        file: PathBuf::from("a.rs"),
+        line: 1,
+    });
     assert_eq!(db.find("main").len(), 1);
 }
 
@@ -501,7 +521,7 @@ fn sakura_9_1_key_macro() {
 
 #[test]
 fn sakura_9_2_ppa_macro() {
-    use sakura_rs::ppa_macro::{PpaMacro, PpaCmd};
+    use sakura_rs::ppa_macro::{PpaCmd, PpaMacro};
     let mut m = PpaMacro::new("test");
     m.add(PpaCmd::InsertText("hello".to_string()));
     assert_eq!(m.execute(""), "hello");
@@ -511,7 +531,9 @@ fn sakura_9_2_ppa_macro() {
 fn sakura_9_3_js_macro() {
     use sakura_rs::js_macro::JsMacroEngine;
     let mut e = JsMacroEngine::new();
-    let r = e.execute_transform("editor.toUpperCase();", "hello").unwrap();
+    let r = e
+        .execute_transform("editor.toUpperCase();", "hello")
+        .unwrap();
     assert_eq!(r, "HELLO");
 }
 
@@ -553,14 +575,21 @@ fn sakura_10_5_sort() {
 fn sakura_10_6_unique() {
     let lines = vec!["a", "b", "a", "c", "b"];
     let mut seen = std::collections::HashSet::new();
-    let unique: Vec<_> = lines.into_iter().filter(|x| seen.insert(x.to_string())).collect();
+    let unique: Vec<_> = lines
+        .into_iter()
+        .filter(|x| seen.insert(x.to_string()))
+        .collect();
     assert_eq!(unique.len(), 3);
 }
 
 #[test]
 fn sakura_10_7_quote_copy() {
     let s = "line1\nline2";
-    let quoted = s.lines().map(|l| format!("> {}", l)).collect::<Vec<_>>().join("\n");
+    let quoted = s
+        .lines()
+        .map(|l| format!("> {}", l))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(quoted.starts_with("> line1"));
 }
 
@@ -595,7 +624,7 @@ fn sakura_11_2_tabs() {
 
 #[test]
 fn sakura_11_3_split_h() {
-    use sakura_rs::split_quad::{QuadView, Pane};
+    use sakura_rs::split_quad::{Pane, QuadView};
     use std::path::PathBuf;
     let mut v = QuadView::new(PathBuf::from("a.txt"));
     v.set_active(Pane::TopLeft);
@@ -605,7 +634,7 @@ fn sakura_11_3_split_h() {
 
 #[test]
 fn sakura_11_4_split_v() {
-    use sakura_rs::split_quad::{QuadView, Pane};
+    use sakura_rs::split_quad::{Pane, QuadView};
     use std::path::PathBuf;
     let mut v = QuadView::new(PathBuf::from("b.txt"));
     v.set_active(Pane::BottomLeft);
@@ -615,7 +644,7 @@ fn sakura_11_4_split_v() {
 
 #[test]
 fn sakura_11_5_quad_split() {
-    use sakura_rs::split_quad::{QuadView, Pane, SplitQuadManager};
+    use sakura_rs::split_quad::{Pane, QuadView, SplitQuadManager};
     use std::path::PathBuf;
     let mut m = SplitQuadManager::new();
     let mut v = QuadView::new(PathBuf::from("a.txt"));
@@ -645,8 +674,12 @@ fn sakura_12_2_ruler() {
 #[test]
 fn sakura_12_3_word_wrap() {
     let s = "abcdefghij";
-    let chunks: Vec<String> = s.chars().collect::<Vec<_>>().chunks(5)
-        .map(|c| c.iter().collect()).collect();
+    let chunks: Vec<String> = s
+        .chars()
+        .collect::<Vec<_>>()
+        .chunks(5)
+        .map(|c| c.iter().collect())
+        .collect();
     assert!(chunks.len() > 1);
 }
 
@@ -659,7 +692,7 @@ fn sakura_12_4_whitespace_visible() {
 
 #[test]
 fn sakura_12_5_font() {
-    use sakura_rs::font_manager::{FontConfig, preset_compact};
+    use sakura_rs::font_manager::{preset_compact, FontConfig};
     let f = preset_compact();
     assert_eq!(f.size_pt, 12);
     let mut f2 = FontConfig::default();
@@ -790,9 +823,27 @@ fn mock_workflow_2_multi_line() {
 #[test]
 fn mock_workflow_4_19_languages() {
     let reg = TypeRegistry::default();
-    let extensions = ["rs", "py", "js", "ts", "go", "c", "cpp", "java",
-                      "cs", "rb", "sh", "html", "css", "json", "md", "yaml",
-                      "toml", "sql", "dockerfile"];
+    let extensions = [
+        "rs",
+        "py",
+        "js",
+        "ts",
+        "go",
+        "c",
+        "cpp",
+        "java",
+        "cs",
+        "rb",
+        "sh",
+        "html",
+        "css",
+        "json",
+        "md",
+        "yaml",
+        "toml",
+        "sql",
+        "dockerfile",
+    ];
     for ext in &extensions {
         let path = format!("test.{}", ext);
         let lang = reg.detect(&path);
@@ -812,8 +863,8 @@ fn mock_workflow_5_kanji_buffer() {
 #[test]
 fn mock_workflow_6_grep_in_file() {
     use sakura_rs::grep::grep_in_file;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("sakura-mock6-{}-{}", std::process::id(), n));
@@ -858,29 +909,29 @@ fn mock_workflow_9_color_themes() {
 
 #[test]
 fn mock_workflow_10_search_replace() {
-    use sakura_rs::search_highlight::HighlightManager;
     use sakura_rs::incremental_search::{incremental_search, SearchOptions};
+    use sakura_rs::search_highlight::HighlightManager;
     let text = "function test() { return 42; }";
     let mut hm = HighlightManager::new();
     let n = hm.highlight_all(text, "function");
     assert!(n > 0);
     let h = incremental_search(text, "return", 0, SearchOptions::default()).unwrap();
-    assert!(h.start > 10);  // just verify it found it
+    assert!(h.start > 10); // just verify it found it
     let _ = h; // suppress warning
 }
 
 #[test]
 fn mock_workflow_11_end_to_end() {
-    use sakura_rs::type_config::TypeRegistry;
     use sakura_rs::incremental_search::{incremental_search, SearchOptions};
     use sakura_rs::outline_extended::parse;
+    use sakura_rs::type_config::TypeRegistry;
 
     let code = "fn main() { println!(\"Hello\"); }";
     let reg = TypeRegistry::default();
     let lang = reg.detect("test.rs");
     assert!(lang.is_some());
 
-    let _ = parse(code);  // 0 件でも OK
+    let _ = parse(code); // 0 件でも OK
 
     let h = incremental_search(code, "println", 0, SearchOptions::default()).unwrap();
     assert!(h.start < code.len());

@@ -29,10 +29,14 @@ impl FileLock {
     /// `wait` で指定時間待機 (None = 失敗時すぐ return)
     pub fn try_lock(target: &Path, wait: Option<Duration>) -> io::Result<Self> {
         let lock_path = Self::lock_path_for(target);
-        let owner = format!("{}-{}", std::process::id(), SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0));
+        let owner = format!(
+            "{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
 
         let deadline = wait.map(|d| SystemTime::now() + d);
 

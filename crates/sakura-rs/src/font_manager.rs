@@ -6,17 +6,12 @@
 use serde::{Deserialize, Serialize};
 
 /// フォントウェイト
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FontWeight {
+    #[default]
     Normal,
     Bold,
     Light,
-}
-
-impl Default for FontWeight {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// フォント設定

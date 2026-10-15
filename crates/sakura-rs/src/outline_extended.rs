@@ -26,7 +26,7 @@ pub enum OutlineKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutlineNode {
     pub kind: OutlineKind,
-    pub level: u8,  // 階層 (0 が最上位)
+    pub level: u8, // 階層 (0 が最上位)
     pub label: String,
     pub line_no: usize, // 0-indexed
     pub children: Vec<OutlineNode>,
@@ -138,7 +138,9 @@ fn parse_line(line: &str, line_no: usize) -> Option<OutlineNode> {
     }
 
     // 箇条書き
-    if let Some(stripped) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* "))
+    if let Some(stripped) = trimmed
+        .strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
         .or_else(|| trimmed.strip_prefix("+ "))
     {
         return Some(OutlineNode::new(

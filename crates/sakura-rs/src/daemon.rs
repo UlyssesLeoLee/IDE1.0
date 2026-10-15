@@ -92,7 +92,11 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
         d.stop();
         let final_count = count.load(Ordering::SeqCst);
-        assert!(final_count > 0, "expected tick to be called, got {}", final_count);
+        assert!(
+            final_count > 0,
+            "expected tick to be called, got {}",
+            final_count
+        );
     }
 
     #[test]

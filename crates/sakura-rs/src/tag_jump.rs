@@ -3,7 +3,7 @@
 // 関数/タグ定義位置へジャンプ.
 // 対応: `func()`, `def func()`, `function func()`, `class Name`, `struct Name` 等.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// タグ種別
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,49 +72,79 @@ impl TagDb {
 /// - `class Name`   (Python, JS)
 /// - `struct Name`  (Rust, C)
 /// - `enum Name`    (Rust, C)
-pub fn extract_tags(content: &str, file: &PathBuf) -> Vec<Tag> {
+pub fn extract_tags(content: &str, file: &Path) -> Vec<Tag> {
     let mut tags = Vec::new();
     for (idx, line) in content.lines().enumerate() {
         let trimmed = line.trim_start();
         // Rust: fn name
         if let Some(rest) = strip_prefix(trimmed, "fn ") {
             if let Some(name) = extract_ident_before(rest, "(") {
-                tags.push(Tag { name, kind: TagKind::Function, file: file.clone(), line: idx + 1 });
+                tags.push(Tag {
+                    name,
+                    kind: TagKind::Function,
+                    file: file.to_path_buf(),
+                    line: idx + 1,
+                });
                 continue;
             }
         }
         // Python: def name
         if let Some(rest) = strip_prefix(trimmed, "def ") {
             if let Some(name) = extract_ident_before(rest, "(") {
-                tags.push(Tag { name, kind: TagKind::Function, file: file.clone(), line: idx + 1 });
+                tags.push(Tag {
+                    name,
+                    kind: TagKind::Function,
+                    file: file.to_path_buf(),
+                    line: idx + 1,
+                });
                 continue;
             }
         }
         // JS: function name
         if let Some(rest) = strip_prefix(trimmed, "function ") {
             if let Some(name) = extract_ident_before(rest, "(") {
-                tags.push(Tag { name, kind: TagKind::Function, file: file.clone(), line: idx + 1 });
+                tags.push(Tag {
+                    name,
+                    kind: TagKind::Function,
+                    file: file.to_path_buf(),
+                    line: idx + 1,
+                });
                 continue;
             }
         }
         // class Name
         if let Some(rest) = strip_prefix(trimmed, "class ") {
             if let Some(name) = take_ident(rest) {
-                tags.push(Tag { name, kind: TagKind::Class, file: file.clone(), line: idx + 1 });
+                tags.push(Tag {
+                    name,
+                    kind: TagKind::Class,
+                    file: file.to_path_buf(),
+                    line: idx + 1,
+                });
                 continue;
             }
         }
         // struct Name
         if let Some(rest) = strip_prefix(trimmed, "struct ") {
             if let Some(name) = take_ident(rest) {
-                tags.push(Tag { name, kind: TagKind::Struct, file: file.clone(), line: idx + 1 });
+                tags.push(Tag {
+                    name,
+                    kind: TagKind::Struct,
+                    file: file.to_path_buf(),
+                    line: idx + 1,
+                });
                 continue;
             }
         }
         // enum Name
         if let Some(rest) = strip_prefix(trimmed, "enum ") {
             if let Some(name) = take_ident(rest) {
-                tags.push(Tag { name, kind: TagKind::Enum, file: file.clone(), line: idx + 1 });
+                tags.push(Tag {
+                    name,
+                    kind: TagKind::Enum,
+                    file: file.to_path_buf(),
+                    line: idx + 1,
+                });
                 continue;
             }
         }
@@ -188,8 +218,18 @@ mod tests {
     #[test]
     fn test_db_search() {
         let mut db = TagDb::new();
-        db.add(Tag { name: "main".into(), kind: TagKind::Function, file: PathBuf::from("a.rs"), line: 1 });
-        db.add(Tag { name: "main".into(), kind: TagKind::Function, file: PathBuf::from("b.rs"), line: 5 });
+        db.add(Tag {
+            name: "main".into(),
+            kind: TagKind::Function,
+            file: PathBuf::from("a.rs"),
+            line: 1,
+        });
+        db.add(Tag {
+            name: "main".into(),
+            kind: TagKind::Function,
+            file: PathBuf::from("b.rs"),
+            line: 5,
+        });
         let found = db.find("main");
         assert_eq!(found.len(), 2);
     }

@@ -27,8 +27,8 @@
 //! - IT 在 tests/e2e_commands.rs (纯函数 pub(crate 路径解析 + 沙箱 + 文件读写)
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
-pub mod outline;
 pub mod doc;
+pub mod outline;
 pub mod plugin;
 pub mod scm;
 pub mod search;

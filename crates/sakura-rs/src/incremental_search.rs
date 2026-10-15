@@ -121,7 +121,10 @@ mod tests {
             s,
             "hello",
             0,
-            SearchOptions { case_sensitive: true, wrap: false },
+            SearchOptions {
+                case_sensitive: true,
+                wrap: false,
+            },
         );
         assert!(h.is_none());
     }
@@ -154,7 +157,10 @@ mod tests {
             s,
             "abc",
             4,
-            SearchOptions { case_sensitive: false, wrap: false },
+            SearchOptions {
+                case_sensitive: false,
+                wrap: false,
+            },
         );
         assert!(h.is_none());
     }

@@ -6,7 +6,7 @@
 //! 注: 这里测的是 command 背后的 `DocStore` 行为与响应形状 (command 本身需要
 //! `tauri::State`, 在真实 app 里由 tests/uat/verify-desktop.mjs 经 CDP 覆盖).
 
-use ide_kernel::doc_store::{DocStore, DocView};
+use ide_kernel::doc_store::DocStore;
 
 /// 模拟 Tauri 侧 `DocResp` 的序列化形状.
 #[derive(serde::Serialize)]
@@ -19,7 +19,11 @@ struct Resp<T: serde::Serialize> {
 }
 
 fn ok_resp<T: serde::Serialize>(v: T) -> Resp<T> {
-    Resp { ok: true, result: Some(v), error: None }
+    Resp {
+        ok: true,
+        result: Some(v),
+        error: None,
+    }
 }
 
 #[test]
@@ -48,11 +52,25 @@ fn doc_view_fields_present() {
     let v = s.active().expect("应有活动文档");
     let json = serde_json::to_string(&v).unwrap();
     for field in [
-        "id", "path", "text", "line_count", "caret_row", "caret_col",
-        "line_ending", "encoding", "dirty", "has_selection", "selected_text",
-        "cursor_count", "can_undo", "can_redo",
+        "id",
+        "path",
+        "text",
+        "line_count",
+        "caret_row",
+        "caret_col",
+        "line_ending",
+        "encoding",
+        "dirty",
+        "has_selection",
+        "selected_text",
+        "cursor_count",
+        "can_undo",
+        "can_redo",
     ] {
-        assert!(json.contains(&format!("\"{field}\"")), "DocView 缺字段 {field}");
+        assert!(
+            json.contains(&format!("\"{field}\"")),
+            "DocView 缺字段 {field}"
+        );
     }
 }
 

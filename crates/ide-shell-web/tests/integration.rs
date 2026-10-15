@@ -29,7 +29,9 @@ fn http_post_with(addr: &str, path: &str, body: &str, token: Option<&str>) -> (u
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
-    let token_hdr = token.map(|t| format!("X-IDE-Token: {t}\r\n")).unwrap_or_default();
+    let token_hdr = token
+        .map(|t| format!("X-IDE-Token: {t}\r\n"))
+        .unwrap_or_default();
     let req = format!(
         "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\n{token_hdr}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
@@ -252,7 +254,12 @@ fn test_server_unknown_path_404() {
 fn test_missing_token_is_rejected_401() {
     let srv = TestServer::start();
     thread::sleep(Duration::from_millis(100));
-    let (status, _) = http_post_with(&srv.addr, "/api/event", r#"{"kind":"key","code":"Char:i"}"#, None);
+    let (status, _) = http_post_with(
+        &srv.addr,
+        "/api/event",
+        r#"{"kind":"key","code":"Char:i"}"#,
+        None,
+    );
     assert_eq!(status, 401, "无 token 必须 401");
 }
 
@@ -283,7 +290,9 @@ fn test_cross_origin_request_is_rejected() {
     let srv = TestServer::start();
     thread::sleep(Duration::from_millis(100));
     let mut stream = TcpStream::connect(&srv.addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     let body = r#"{"kind":"key","code":"Char:i"}"#;
     let req = format!(
         "POST /api/event HTTP/1.1\r\nHost: {}\r\nOrigin: https://evil.example.com\r\nX-IDE-Token: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -292,7 +301,12 @@ fn test_cross_origin_request_is_rejected() {
     stream.write_all(req.as_bytes()).unwrap();
     let mut resp = String::new();
     stream.read_to_string(&mut resp).unwrap();
-    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    let status: u16 = resp
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
     assert_eq!(status, 403, "跨站 Origin 必须 403");
 }
 
@@ -302,7 +316,9 @@ fn test_foreign_host_is_rejected() {
     let srv = TestServer::start();
     thread::sleep(Duration::from_millis(100));
     let mut stream = TcpStream::connect(&srv.addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     let body = r#"{"kind":"key","code":"Char:i"}"#;
     let req = format!(
         "POST /api/event HTTP/1.1\r\nHost: evil.example.com\r\nX-IDE-Token: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -311,7 +327,12 @@ fn test_foreign_host_is_rejected() {
     stream.write_all(req.as_bytes()).unwrap();
     let mut resp = String::new();
     stream.read_to_string(&mut resp).unwrap();
-    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    let status: u16 = resp
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
     assert_eq!(status, 403, "外部 Host 必须 403 (防 DNS rebinding)");
 }
 
@@ -321,7 +342,9 @@ fn test_response_has_no_wildcard_cors() {
     let srv = TestServer::start();
     thread::sleep(Duration::from_millis(100));
     let mut stream = TcpStream::connect(&srv.addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     let req = format!(
         "GET / HTTP/1.1\r\nHost: {}\r\nX-IDE-Token: {}\r\nConnection: close\r\n\r\n",
         srv.addr, TEST_TOKEN
@@ -342,7 +365,9 @@ fn test_oversized_content_length_is_rejected() {
     let srv = TestServer::start();
     thread::sleep(Duration::from_millis(100));
     let mut stream = TcpStream::connect(&srv.addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     let req = format!(
         "POST /api/event HTTP/1.1\r\nHost: {}\r\nX-IDE-Token: {}\r\nContent-Length: 9000000000\r\nConnection: close\r\n\r\n",
         srv.addr, TEST_TOKEN
@@ -350,7 +375,12 @@ fn test_oversized_content_length_is_rejected() {
     stream.write_all(req.as_bytes()).unwrap();
     let mut resp = String::new();
     let _ = stream.read_to_string(&mut resp);
-    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    let status: u16 = resp
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
     assert_eq!(status, 413, "超大 body 必须 413");
 }
 
@@ -360,7 +390,9 @@ fn test_preflight_options_is_not_granted() {
     let srv = TestServer::start();
     thread::sleep(Duration::from_millis(100));
     let mut stream = TcpStream::connect(&srv.addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
     let req = format!(
         "OPTIONS /api/event HTTP/1.1\r\nHost: {}\r\nOrigin: https://evil.example.com\r\nConnection: close\r\n\r\n",
         srv.addr
@@ -368,7 +400,12 @@ fn test_preflight_options_is_not_granted() {
     stream.write_all(req.as_bytes()).unwrap();
     let mut resp = String::new();
     let _ = stream.read_to_string(&mut resp);
-    let status: u16 = resp.split_whitespace().nth(1).unwrap_or("0").parse().unwrap_or(0);
+    let status: u16 = resp
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
     assert_ne!(status, 200, "预检不得返回 200 (否则浏览器会放行跨站请求)");
     assert!(
         !resp.contains("Access-Control-Allow-Headers"),

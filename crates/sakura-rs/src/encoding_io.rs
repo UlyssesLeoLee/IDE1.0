@@ -5,7 +5,9 @@
 use std::fs;
 use std::path::Path;
 
-use encoding_rs::{Encoding, UTF_8, SHIFT_JIS, EUC_JP, ISO_2022_JP, UTF_16LE, UTF_16BE, WINDOWS_1252};
+use encoding_rs::{
+    Encoding, EUC_JP, ISO_2022_JP, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8, WINDOWS_1252,
+};
 
 /// サポートされる文字エンコーディング
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,10 +107,7 @@ pub fn read_auto(path: &Path) -> Result<(String, EncodingKind), std::io::Error> 
 }
 
 /// 指定エンコーディングでファイルを読み込み
-pub fn read_with_encoding(
-    path: &Path,
-    enc: EncodingKind,
-) -> Result<String, std::io::Error> {
+pub fn read_with_encoding(path: &Path, enc: EncodingKind) -> Result<String, std::io::Error> {
     let bytes = fs::read(path)?;
     let (s, _, _) = enc.to_encoding_rs().decode(&bytes);
     Ok(s.into_owned())

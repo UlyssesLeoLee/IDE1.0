@@ -270,10 +270,7 @@ mod tests {
     fn whitelisted_shell_accepted() {
         for name in ["powershell", "PowerShell.EXE", "pwsh", "cmd", "cmd.exe"] {
             let got = resolve_shell(Some(name));
-            assert!(
-                got.ends_with(".exe"),
-                "{name} 应解析为 exe, 得到 {got}"
-            );
+            assert!(got.ends_with(".exe"), "{name} 应解析为 exe, 得到 {got}");
         }
     }
 
@@ -287,11 +284,11 @@ mod tests {
     fn arbitrary_executable_path_rejected() {
         let default = default_shell();
         for evil in [
-            "C:\\Windows\\System32\\cmd.exe",   // 绝对路径绕过
+            "C:\\Windows\\System32\\cmd.exe", // 绝对路径绕过
             "/bin/sh",
             "calc.exe",
             "notepad.exe",
-            "powershell.exe; calc",                   // 命令拼接
+            "powershell.exe; calc", // 命令拼接
             "../../evil.exe",
         ] {
             let got = resolve_shell(Some(evil));
@@ -320,11 +317,7 @@ mod tests {
             "/usr/local/bin/bash",
             "./powershell.exe",
         ] {
-            assert_eq!(
-                resolve_shell(Some(pathy)),
-                default,
-                "{pathy} 带路径应回落"
-            );
+            assert_eq!(resolve_shell(Some(pathy)), default, "{pathy} 带路径应回落");
         }
     }
 }

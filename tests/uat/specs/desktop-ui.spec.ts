@@ -215,6 +215,12 @@ async function openProject(page: Page) {
   // 先清 modal —— 遍历命令后可能残留查找框/对话框, 遮住欢迎页按钮.
   await page.evaluate(() => (window as any).closeModal());
   await page.locator("#welcome .open-btn").click({ timeout: 10_000 });
+  // 打开文件夹走 modal 输入框 (不是原生 prompt —— 原生 prompt 在无头环境不响应
+  // 会一直挂着阻塞, 且不可断言). 预填服务端默认根, Enter 提交.
+  await expect(page.locator("#modal")).toHaveClass(/show/);
+  await page.locator(".md-input").press("Enter");
+  // modal 关闭 → open_project 异步完成 → 侧栏刷新
+  await expect(page.locator("#modal")).not.toHaveClass(/show/);
   await expect(page.locator("#side-body")).toContainText("README.md");
 }
 

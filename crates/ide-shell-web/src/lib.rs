@@ -12,7 +12,7 @@
 //! - POST /api/mouse         → (editor.html 用) 单 mouse 派发
 //! - GET  /api/kernel_banner → IDE1.0 kernel banner
 //! - GET  /api/help_wiki     → 完整内置 wiki (桌面 APP_WIKI 同源)
-//! - GET  /api/pick_folder   → mock: 返回 IDE_SHELL_WEB_TEST_ROOT 环境变量或 cwd
+//! - POST /api/pick_folder   → mock: 返回 IDE_SHELL_WEB_TEST_ROOT 环境变量或 cwd
 //! - POST /api/open_project  → body: {"path": "..."} → canonical 化, 设为项目根
 //! - POST /api/list_dir      → body: {"path": "..."} → 沙箱内列目录
 //! - POST /api/read_file     → body: {"path": "..."} → 沙箱内读 UTF-8 文件
@@ -303,7 +303,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         header_bytes += line.len();
         if header_bytes > MAX_HEADER_BYTES {
-            send_response(stream, "431 Request Header Fields Too Large", "text/plain", b"");
+            send_response(
+                stream,
+                "431 Request Header Fields Too Large",
+                "text/plain",
+                b"",
+            );
             return;
         }
         if let Some((k, v)) = line.split_once(':') {
@@ -324,7 +329,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         return;
     }
     // 同源请求: 回显 Origin 让浏览器能读响应 (跨站的已在上面被拒)
-    let echo_origin = headers
+    let _echo_origin = headers
         .iter()
         .find(|(k, _)| k == "origin")
         .map(|(_, v)| v.as_str())
@@ -347,7 +352,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
-                ("POST", "/api/plugin_load") => {
+        ("POST", "/api/plugin_load") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let input = req.get("input").and_then(|v| v.as_str()).unwrap_or("");
@@ -379,8 +384,16 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         // 文件读写, 供前端自管 buffer 的旧路径继续使用.
         ("POST", "/api/doc/open") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let path = req
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let text = req
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             // 有 path 且无 text 时从磁盘读 (仍走沙箱)
             let content = if text.is_empty() && !path.is_empty() {
                 let root = state.project_root_get();
@@ -393,8 +406,16 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             } else {
                 text
             };
-            let opt_path = if path.is_empty() { None } else { Some(path.as_str()) };
-            let view = state.docs.lock().ok().map(|mut d| d.open(opt_path, &content));
+            let opt_path = if path.is_empty() {
+                None
+            } else {
+                Some(path.as_str())
+            };
+            let view = state
+                .docs
+                .lock()
+                .ok()
+                .map(|mut d| d.open(opt_path, &content));
             doc_respond(stream, view);
         }
         ("GET", "/api/doc/active") => {
@@ -426,14 +447,26 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let (r, c) = doc_pos(&req);
             let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
-            let view = state.docs.lock().ok().and_then(|mut d| d.insert(r, c, text));
+            let view = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.insert(r, c, text));
             doc_respond(stream, view);
         }
         ("POST", "/api/doc/type") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let (r, c) = doc_pos(&req);
-            let ch = req.get("char").and_then(|v| v.as_str()).and_then(|s| s.chars().next()).unwrap_or(' ');
-            let view = state.docs.lock().ok().and_then(|mut d| d.type_char(r, c, ch));
+            let ch = req
+                .get("char")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.chars().next())
+                .unwrap_or(' ');
+            let view = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.type_char(r, c, ch));
             doc_respond(stream, view);
         }
         ("POST", "/api/doc/newline") => {
@@ -453,7 +486,11 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let (r0, c0) = doc_pos(&req);
             let r1 = req.get("end_row").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let c1 = req.get("end_col").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            let view = state.docs.lock().ok().and_then(|mut d| d.delete_range(r0, c0, r1, c1));
+            let view = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.delete_range(r0, c0, r1, c1));
             doc_respond(stream, view);
         }
         ("POST", "/api/doc/caret") => {
@@ -492,46 +529,96 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         ("POST", "/api/doc/insert_all") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
-            let view = state.docs.lock().ok().and_then(|mut d| d.insert_all_cursors(text));
+            let view = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.insert_all_cursors(text));
             doc_respond(stream, view);
         }
         // ---- 查找替换 ----
         ("POST", "/api/doc/find") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let pat = req
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cs = req
+                .get("case_sensitive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let (r, c) = doc_pos(&req);
-            let hit = state.docs.lock().ok().and_then(|mut d| d.find(&pat, cs, r, c));
+            let hit = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.find(&pat, cs, r, c));
             doc_respond(stream, hit);
         }
         ("POST", "/api/doc/find_all") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let pat = req
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cs = req
+                .get("case_sensitive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(1000) as usize;
-            let hits = state.docs.lock().ok().and_then(|mut d| d.find_all(&pat, cs, limit));
+            let hits = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.find_all(&pat, cs, limit));
             doc_respond(stream, hits);
         }
         ("POST", "/api/doc/replace_all") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let pat = req.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let rep = req.get("replacement").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let cs = req.get("case_sensitive").and_then(|v| v.as_bool()).unwrap_or(false);
+            let pat = req
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let rep = req
+                .get("replacement")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cs = req
+                .get("case_sensitive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let limit = req.get("limit").and_then(|v| v.as_u64()).unwrap_or(1000) as usize;
-            let st = state.docs.lock().ok().and_then(|mut d| d.replace_all(&pat, &rep, cs, limit));
+            let st = state
+                .docs
+                .lock()
+                .ok()
+                .and_then(|mut d| d.replace_all(&pat, &rep, cs, limit));
             doc_respond(stream, st);
         }
         // ---- 格式 / 保存 ----
         ("POST", "/api/doc/line_ending") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let label = req.get("line_ending").and_then(|v| v.as_str()).unwrap_or("");
+            let label = req
+                .get("line_ending")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let eol = match label.to_ascii_lowercase().as_str() {
                 "crlf" | "windows (crlf)" => Some(LineEnding::Crlf),
                 "cr" | "mac (cr)" => Some(LineEnding::Cr),
                 "lf" | "unix (lf)" => Some(LineEnding::Lf),
                 _ => None,
             };
-            let view = eol.and_then(|e| state.docs.lock().ok().and_then(|mut d| d.set_line_ending(e)));
+            let view = eol.and_then(|e| {
+                state
+                    .docs
+                    .lock()
+                    .ok()
+                    .and_then(|mut d| d.set_line_ending(e))
+            });
             doc_respond(stream, view);
         }
         ("POST", "/api/doc/encoding") => {
@@ -549,7 +636,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         "ok": true,
                         "result": { "path": path, "text": text }
                     });
-                    send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&j).unwrap_or_default());
+                    send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&j).unwrap_or_default(),
+                    );
                 }
                 None => doc_respond::<serde_json::Value>(stream, None),
             }
@@ -559,7 +651,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             doc_respond(stream, view);
         }
 
-("POST", "/api/outline") => {
+        ("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug
@@ -964,7 +1056,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let j = serde_json::to_vec(&wiki_data::APP_WIKI).unwrap_or_default();
             send_response(stream, "200 OK", "application/json", &j);
         }
-        ("GET", "/api/pick_folder") => {
+        // POST (不是 GET): 前端 invoke() 一律发 POST (见 editor.html invoke()),
+        // 写成 GET 时 openFolder() 永远拿不到路径 → 静默回退到原生 prompt(),
+        // 无头浏览器里直接挂死 (web-editor.spec 3 个 + desktop-ui.spec 2 个 红 的 根因).
+        ("POST", "/api/pick_folder") => {
             // web 版无原生 dialog: 返回 IDE_SHELL_WEB_TEST_ROOT 环境变量或 cwd
             let default_root = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
                 .ok()
@@ -1109,7 +1204,8 @@ pub fn serve(addr: &str) -> std::io::Result<()> {
             Ok(mut s) => {
                 // 读超时: 防半开连接永久占用唯一的服务线程
                 let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
-                let _ = s.set_write_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
+                let _ =
+                    s.set_write_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
                 handle_request(&mut s, &state);
             }
             Err(e) => eprintln!("connection error: {e}"),

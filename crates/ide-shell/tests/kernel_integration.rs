@@ -105,7 +105,11 @@ fn multibyte_edit_uses_char_semantics() {
     key(&mut app, '語');
     assert_eq!(app.document().unwrap().line_text(0), "日本語");
     backspace(&mut app);
-    assert_eq!(app.document().unwrap().line_text(0), "日本", "退格按 char 而非 byte");
+    assert_eq!(
+        app.document().unwrap().line_text(0),
+        "日本",
+        "退格按 char 而非 byte"
+    );
 }
 
 #[test]
@@ -113,7 +117,10 @@ fn document_tracks_dirty_state() {
     let p = tmp_file("dirty.txt", "abc");
     let mut app = App::new(AppConfig::default());
     app.open_file(p.to_str().unwrap()).unwrap();
-    assert!(!app.document().unwrap().is_dirty(), "刚打开的文件不应 dirty");
+    assert!(
+        !app.document().unwrap().is_dirty(),
+        "刚打开的文件不应 dirty"
+    );
     enter_insert(&mut app);
     key(&mut app, 'X');
     assert!(app.document().unwrap().is_dirty(), "编辑后应 dirty");
@@ -168,7 +175,11 @@ fn command_mode_still_uses_command_buffer() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     app.on_key(KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE));
     key(&mut app, 'w');
-    assert_eq!(app.document().unwrap().text(), "abc", "Command 模式不应编辑文档");
+    assert_eq!(
+        app.document().unwrap().text(),
+        "abc",
+        "Command 模式不应编辑文档"
+    );
 }
 
 #[test]

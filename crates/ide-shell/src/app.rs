@@ -56,7 +56,7 @@ impl App {
             config,
             mode: Mode::Normal,
             buffer: InputBuffer::new(),
-        document: None,
+            document: None,
             cmd_buffer: InputBuffer::new(),
             history: Vec::new(),
             ai: Box::new(PlaceholderAi),
@@ -166,9 +166,14 @@ impl App {
         const MAX_BYTES: u64 = 4 * 1024 * 1024;
         let meta = std::fs::metadata(path).map_err(|e| format!("stat 失败: {e}"))?;
         if meta.len() > MAX_BYTES {
-            return Err(format!("文件过大: {} 字节 (上限 {} MB)", meta.len(), MAX_BYTES / 1024 / 1024));
+            return Err(format!(
+                "文件过大: {} 字节 (上限 {} MB)",
+                meta.len(),
+                MAX_BYTES / 1024 / 1024
+            ));
         }
-        let text = std::fs::read_to_string(path).map_err(|e| format!("读取失败 (仅支持 UTF-8): {e}"))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("读取失败 (仅支持 UTF-8): {e}"))?;
         let mut doc = Document::new();
         doc.set_text(&text);
         doc.set_path(path);
@@ -176,7 +181,10 @@ impl App {
         // 与 sakura / vim 的 `G` 一致; 若落在行首, 打开文件直接输入会插到最前面.
         let last_row = (doc.line_count() - 1).max(0);
         let last_col = doc.line_text(last_row).chars().count() as i32;
-        doc.set_caret(ide_kernel::document::Pos { row: last_row, col: last_col });
+        doc.set_caret(ide_kernel::document::Pos {
+            row: last_row,
+            col: last_col,
+        });
         self.document = Some(doc);
         self.mode = Mode::Normal;
         Ok(())
@@ -242,7 +250,9 @@ impl App {
     /// 把 action 应用到内核 Document.
     fn apply_to_document(&mut self, action: Action) -> bool {
         use ide_kernel::document::Pos;
-        let Some(doc) = self.document.as_mut() else { return true };
+        let Some(doc) = self.document.as_mut() else {
+            return true;
+        };
         match action {
             Action::Insert(c) => {
                 doc.type_char(c);
@@ -256,11 +266,17 @@ impl App {
             Action::MoveLeft => {
                 let c = doc.caret();
                 let new = if c.col > 0 {
-                    Pos { row: c.row, col: c.col - 1 }
+                    Pos {
+                        row: c.row,
+                        col: c.col - 1,
+                    }
                 } else if c.row > 0 {
                     let prev = (c.row - 1).max(0);
                     let len = doc.line_text(prev).chars().count() as i32;
-                    Pos { row: prev, col: len }
+                    Pos {
+                        row: prev,
+                        col: len,
+                    }
                 } else {
                     c
                 };
@@ -270,15 +286,24 @@ impl App {
                 let c = doc.caret();
                 let len = doc.line_text(c.row).chars().count() as i32;
                 let new = if c.col < len {
-                    Pos { row: c.row, col: c.col + 1 }
+                    Pos {
+                        row: c.row,
+                        col: c.col + 1,
+                    }
                 } else if c.row + 1 < doc.line_count() {
-                    Pos { row: c.row + 1, col: 0 }
+                    Pos {
+                        row: c.row + 1,
+                        col: 0,
+                    }
                 } else {
                     c
                 };
                 doc.set_caret(new);
             }
-            Action::MoveHome => doc.set_caret(Pos { row: doc.caret().row, col: 0 }),
+            Action::MoveHome => doc.set_caret(Pos {
+                row: doc.caret().row,
+                col: 0,
+            }),
             Action::MoveEnd => {
                 let row = doc.caret().row;
                 let len = doc.line_text(row).chars().count() as i32;
@@ -384,7 +409,11 @@ impl App {
         // `:u` / `:undo` — 内核撤销
         if matches!(cmd, "u" | "undo") {
             let undone = self.document.as_mut().map(|d| d.undo()).unwrap_or(false);
-            self.history.push(if undone { "<undo>".to_string() } else { "<nothing to undo>".to_string() });
+            self.history.push(if undone {
+                "<undo>".to_string()
+            } else {
+                "<nothing to undo>".to_string()
+            });
             return;
         }
 
@@ -422,7 +451,11 @@ impl App {
             // ---- 文件编辑 (ide-kernel 接入) ----
             _ if cmd == "open" || cmd == "e" => {
                 // `:open <path>` — 注意此命令带参数, 在上面按整体匹配不到
-                let arg = cmd.strip_prefix("open").or_else(|| cmd.strip_prefix('e')).unwrap_or("").trim();
+                let arg = cmd
+                    .strip_prefix("open")
+                    .or_else(|| cmd.strip_prefix('e'))
+                    .unwrap_or("")
+                    .trim();
                 if arg.is_empty() {
                     self.history.push("<usage: :open <path>>".into());
                 } else {

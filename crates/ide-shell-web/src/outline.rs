@@ -59,7 +59,11 @@ mod tests {
         let r = outline_file("test.rs", src);
         assert_eq!(r.language, "Rust");
         // 4 entries: main (fn), Foo (struct), bar (fn impl), Bar (trait)
-        assert!(r.entries.len() >= 3, "expected >= 3 entries, got {:?}", r.entries);
+        assert!(
+            r.entries.len() >= 3,
+            "expected >= 3 entries, got {:?}",
+            r.entries
+        );
         let names: Vec<&str> = r.entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"main"));
         assert!(names.contains(&"Foo"));

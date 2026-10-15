@@ -87,14 +87,20 @@ mod tests {
     #[test]
     fn test_delete_text() {
         let mut m = PpaMacro::new("del");
-        m.add(PpaCmd::DeleteText { start: 0, length: 3 });
+        m.add(PpaCmd::DeleteText {
+            start: 0,
+            length: 3,
+        });
         assert_eq!(m.execute("hello world"), "lo world");
     }
 
     #[test]
     fn test_replace_text() {
         let mut m = PpaMacro::new("rep");
-        m.add(PpaCmd::ReplaceText { find: "foo".to_string(), replace: "bar".to_string() });
+        m.add(PpaCmd::ReplaceText {
+            find: "foo".to_string(),
+            replace: "bar".to_string(),
+        });
         assert_eq!(m.execute("foo baz foo"), "bar baz bar");
     }
 
@@ -102,7 +108,10 @@ mod tests {
     fn test_chained_commands() {
         let mut m = PpaMacro::new("chain");
         m.add(PpaCmd::InsertText(" [edited]".to_string()));
-        m.add(PpaCmd::ReplaceText { find: "x".to_string(), replace: "y".to_string() });
+        m.add(PpaCmd::ReplaceText {
+            find: "x".to_string(),
+            replace: "y".to_string(),
+        });
         let r = m.execute("xx");
         assert_eq!(r, "yy [edited]");
     }
@@ -110,7 +119,10 @@ mod tests {
     #[test]
     fn test_empty_find() {
         let mut m = PpaMacro::new("safe");
-        m.add(PpaCmd::ReplaceText { find: "".to_string(), replace: "x".to_string() });
+        m.add(PpaCmd::ReplaceText {
+            find: "".to_string(),
+            replace: "x".to_string(),
+        });
         // 入力は変更なし (空 find は skip)
         assert_eq!(m.execute("hello"), "hello");
     }

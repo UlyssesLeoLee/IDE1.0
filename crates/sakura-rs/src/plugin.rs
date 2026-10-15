@@ -8,7 +8,7 @@
 use std::path::Path;
 
 #[cfg(feature = "wasm")]
-use wasmtime::{Engine, Module, Store, Instance, Linker, Val, ValType, FuncType, AsContextMut};
+use wasmtime::{AsContextMut, Engine, FuncType, Instance, Linker, Module, Store, Val, ValType};
 
 /// プラグイン実行エラー
 #[derive(Debug)]
@@ -43,41 +43,42 @@ pub fn load_and_run(wasm_path: &Path, input: &str) -> Result<String, PluginError
     let engine = Engine::default();
     let module = Module::from_file(&engine, wasm_path)
         .map_err(|e| PluginError::Wasm(format!("load module: {}", e)))?;
-    
+
     let mut linker = Linker::new(&engine);
     let mut store = Store::new(&engine, ());
-    
+
     let instance = linker
         .instantiate(&mut store, &module)
         .map_err(|e| PluginError::Wasm(format!("instantiate: {}", e)))?;
-    
+
     // Get the function using low-level API (wasmtime 26 doesn't support String directly in typed func)
     let process_func = instance
         .get_func(&mut store, "process")
         .ok_or_else(|| PluginError::Export("process function not found".into()))?;
-    
+
     let func_ty = process_func.ty(&store);
     let params = func_ty.params().collect::<Vec<_>>();
     let results = func_ty.results().collect::<Vec<_>>();
-    
+
     // Expect: (i32, i32) -> (i32) for string ptr/len -> ptr/len
     // or similar WASI-compatible signature
     // For simplicity, call with raw Val
     let input_ptr = input.as_ptr() as i32;
     let input_len = input.len() as i32;
-    
+
     let mut results_vec = vec![Val::I32(0)];
     let args = vec![Val::I32(input_ptr), Val::I32(input_len)];
-    
-    process_func.call(&mut store, &args, &mut results_vec)
+
+    process_func
+        .call(&mut store, &args, &mut results_vec)
         .map_err(|e| PluginError::Execution(format!("call: {}", e)))?;
-    
+
     // Result should be a pointer/length pair - simplified for now
     Ok("WASM result".to_string())
 }
 
 #[cfg(not(feature = "wasm"))]
-pub fn load_and_run(wasm_path: &Path, input: &str) -> Result<String, PluginError> {
+pub fn load_and_run(_wasm_path: &Path, _input: &str) -> Result<String, PluginError> {
     Err(PluginError::WasmUnavailable(
         "WASM support not compiled in (enable 'wasm' feature)".into(),
     ))

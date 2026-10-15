@@ -70,7 +70,9 @@ fn match_in_line(line: &str, opts: &FindOptions) -> Vec<(usize, usize)> {
                     hay[i..i + needle.len()]
                         .iter()
                         .zip(needle.iter())
-                        .all(|(a, b)| a.eq_ignore_ascii_case(b) || a.to_lowercase().eq(b.to_lowercase()))
+                        .all(|(a, b)| {
+                            a.eq_ignore_ascii_case(b) || a.to_lowercase().eq(b.to_lowercase())
+                        })
                 };
                 if hit {
                     res.push(i);
@@ -125,11 +127,17 @@ pub fn find_from(doc: &Document, opts: &FindOptions, from: Pos) -> Option<FindRe
         let line = doc.line_text(row);
         let hits = match_in_line(&line, opts);
         for (cs, ce) in hits {
-            let start = Pos { row, col: cs as i32 };
+            let start = Pos {
+                row,
+                col: cs as i32,
+            };
             if pos_gte(start, from) {
                 return Some(FindResult {
                     start,
-                    end: Pos { row, col: ce as i32 },
+                    end: Pos {
+                        row,
+                        col: ce as i32,
+                    },
                 });
             }
         }
@@ -148,7 +156,10 @@ pub fn find_from_start(doc: &Document, opts: &FindOptions) -> Option<FindResult>
 pub fn find_next(doc: &Document, opts: &FindOptions) -> Option<FindResult> {
     if let Some(sel) = doc.selection() {
         let n = sel.normalized();
-        let after = Pos { row: n.end.row, col: n.end.col };
+        let after = Pos {
+            row: n.end.row,
+            col: n.end.col,
+        };
         if let Some(r) = find_from(doc, opts, after) {
             return Some(r);
         }
@@ -161,15 +172,27 @@ pub fn find_next(doc: &Document, opts: &FindOptions) -> Option<FindResult> {
 
 /// 查找上一处 (Shift+F3 / 逆方向). 从当前选区**之前**开始找.
 pub fn find_prev(doc: &Document, opts: &FindOptions) -> Option<FindResult> {
-    let anchor = doc.selection().map(|s| s.normalized().start).unwrap_or(doc.caret());
+    let anchor = doc
+        .selection()
+        .map(|s| s.normalized().start)
+        .unwrap_or(doc.caret());
     let mut best: Option<FindResult> = None;
     let rows = doc.line_count();
     for row in (0..rows).rev() {
         let line = doc.line_text(row);
         for (cs, ce) in match_in_line(&line, opts) {
-            let start = Pos { row, col: cs as i32 };
+            let start = Pos {
+                row,
+                col: cs as i32,
+            };
             if pos_lt(start, anchor) {
-                best = Some(FindResult { start, end: Pos { row, col: ce as i32 } });
+                best = Some(FindResult {
+                    start,
+                    end: Pos {
+                        row,
+                        col: ce as i32,
+                    },
+                });
                 break; // 本行更靠左的那个已找到
             }
         }
@@ -191,7 +214,16 @@ pub fn find_all(doc: &Document, opts: &FindOptions, limit: usize) -> Vec<FindRes
             if out.len() >= limit {
                 return out;
             }
-            out.push(FindResult { start: Pos { row, col: cs as i32 }, end: Pos { row, col: ce as i32 } });
+            out.push(FindResult {
+                start: Pos {
+                    row,
+                    col: cs as i32,
+                },
+                end: Pos {
+                    row,
+                    col: ce as i32,
+                },
+            });
         }
     }
     out
@@ -217,7 +249,10 @@ fn replace_range(doc: &mut Document, start: Pos, end: Pos, replacement: &str) ->
     }
     let after = doc.insert(start, replacement);
     doc.set_caret(after);
-    ReplaceOutcome { replaced: 1, truncated: false }
+    ReplaceOutcome {
+        replaced: 1,
+        truncated: false,
+    }
 }
 
 /// 当前选区是否正好等于一处匹配.
@@ -227,31 +262,60 @@ fn selection_is_match(doc: &Document, opts: &FindOptions) -> Option<(Pos, Pos)> 
     let hits = match_in_line(&doc.line_text(r.start.row), opts);
     hits.iter()
         .find(|(cs, ce)| {
-            Pos { row: r.start.row, col: *cs as i32 } == r.start
-                && Pos { row: r.start.row, col: *ce as i32 } == r.end
+            Pos {
+                row: r.start.row,
+                col: *cs as i32,
+            } == r.start
+                && Pos {
+                    row: r.start.row,
+                    col: *ce as i32,
+                } == r.end
         })
-        .map(|(_, ce)| (r.start, Pos { row: r.start.row, col: *ce as i32 }))
+        .map(|(_, ce)| {
+            (
+                r.start,
+                Pos {
+                    row: r.start.row,
+                    col: *ce as i32,
+                },
+            )
+        })
 }
 
 /// 替换: 优先替换当前选区 (须正好是一处匹配), 否则替换下一处匹配.
-pub fn replace_current(doc: &mut Document, opts: &FindOptions, replacement: &str) -> ReplaceOutcome {
+pub fn replace_current(
+    doc: &mut Document,
+    opts: &FindOptions,
+    replacement: &str,
+) -> ReplaceOutcome {
     if let Some((s, e)) = selection_is_match(doc, opts) {
         return replace_range(doc, s, e, replacement);
     }
     match find_next(doc, opts) {
         Some(hit) => replace_range(doc, hit.start, hit.end, replacement),
-        None => ReplaceOutcome { replaced: 0, truncated: false },
+        None => ReplaceOutcome {
+            replaced: 0,
+            truncated: false,
+        },
     }
 }
 
 /// 全部替换. **倒序**执行, 避免前面的替换改变后面的位置.
-pub fn replace_all(doc: &mut Document, opts: &FindOptions, replacement: &str, limit: usize) -> ReplaceOutcome {
+pub fn replace_all(
+    doc: &mut Document,
+    opts: &FindOptions,
+    replacement: &str,
+    limit: usize,
+) -> ReplaceOutcome {
     let hits = find_all(doc, opts, limit);
     let total = hits.len();
     for hit in hits.iter().rev() {
         replace_range(doc, hit.start, hit.end, replacement);
     }
-    ReplaceOutcome { replaced: total, truncated: total >= limit && limit > 0 }
+    ReplaceOutcome {
+        replaced: total,
+        truncated: total >= limit && limit > 0,
+    }
 }
 
 fn pos_gte(a: Pos, b: Pos) -> bool {

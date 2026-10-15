@@ -111,7 +111,7 @@ fn official_cdoclinemgr_list_manipulations() {
 /// CFuncInfoArr.AppendData 相当 — アウトライン追加
 #[test]
 fn official_cfuncinfoarr_append() {
-    use sakura_rs::tag_jump::{TagDb, Tag, TagKind};
+    use sakura_rs::tag_jump::{Tag, TagDb, TagKind};
     use std::path::PathBuf;
 
     let mut arr = TagDb::new();
@@ -140,7 +140,7 @@ fn official_cfuncinfoarr_append() {
 /// CFuncInfoArr.GetAt 相当 — 要素取得
 #[test]
 fn official_cfuncinfoarr_get_at() {
-    use sakura_rs::tag_jump::{TagDb, Tag, TagKind};
+    use sakura_rs::tag_jump::{Tag, TagDb, TagKind};
     use std::path::PathBuf;
 
     let mut arr = TagDb::new();
@@ -208,14 +208,25 @@ fn official_charcode_is_hankaku() {
     // Basic Latin → 半角
     for ch in 0x00u8..=0x7fu8 {
         let c = ch as char;
-        assert!(matches!(categorize(c), sakura_rs::zenkaku_hankaku::CharCategory::Ascii | sakura_rs::zenkaku_hankaku::CharCategory::Other));
+        assert!(matches!(
+            categorize(c),
+            sakura_rs::zenkaku_hankaku::CharCategory::Ascii
+                | sakura_rs::zenkaku_hankaku::CharCategory::Other
+        ));
     }
 
     // 半角カタカナ → HalfWidthKatakana
     for ch in 0xff61u32..=0xff9fu32 {
         if let Some(c) = char::from_u32(ch) {
-            assert!(matches!(categorize(c), sakura_rs::zenkaku_hankaku::CharCategory::HalfWidthKatakana),
-                "char 0x{:04x} should be HalfWidthKatakana, got {:?}", ch, categorize(c));
+            assert!(
+                matches!(
+                    categorize(c),
+                    sakura_rs::zenkaku_hankaku::CharCategory::HalfWidthKatakana
+                ),
+                "char 0x{:04x} should be HalfWidthKatakana, got {:?}",
+                ch,
+                categorize(c)
+            );
         }
     }
 }
@@ -225,9 +236,16 @@ fn official_charcode_is_hankaku() {
 fn official_charcode_is_zenkaku() {
     use sakura_rs::zenkaku_hankaku::categorize;
     // 全角文字 (例: ひらがな)
-    assert!(matches!(categorize('あ'), sakura_rs::zenkaku_hankaku::CharCategory::Katakana | sakura_rs::zenkaku_hankaku::CharCategory::Other));
+    assert!(matches!(
+        categorize('あ'),
+        sakura_rs::zenkaku_hankaku::CharCategory::Katakana
+            | sakura_rs::zenkaku_hankaku::CharCategory::Other
+    ));
     // 半角は Zenkaku ではない
-    assert_eq!(categorize('a'), sakura_rs::zenkaku_hankaku::CharCategory::Ascii);
+    assert_eq!(
+        categorize('a'),
+        sakura_rs::zenkaku_hankaku::CharCategory::Ascii
+    );
 }
 
 // ============== GrepCommandLine 公式テスト (test-grep-cmdline.cpp) ==============
@@ -236,10 +254,10 @@ fn official_charcode_is_zenkaku() {
 /// GrepCommandLineTest.CountsEachMatch 相当 — 既定の Grep カウント
 #[test]
 fn official_grep_cmdline_counts_each_match() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-        use sakura_rs::encoding_io::write_with_encoding;
+    use sakura_rs::encoding_io::write_with_encoding;
     use sakura_rs::encoding_io::EncodingKind;
     use sakura_rs::grep::grep_in_file;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
@@ -247,7 +265,12 @@ fn official_grep_cmdline_counts_each_match() {
     std::fs::create_dir_all(&dir).unwrap();
 
     // 4 ファイル作成
-    write_with_encoding(&dir.join("a.txt"), "HIT x HIT\nnone\nHIT\n", EncodingKind::Utf8).unwrap();
+    write_with_encoding(
+        &dir.join("a.txt"),
+        "HIT x HIT\nnone\nHIT\n",
+        EncodingKind::Utf8,
+    )
+    .unwrap();
     write_with_encoding(&dir.join("b.txt"), "none\n", EncodingKind::Utf8).unwrap();
     write_with_encoding(&dir.join("c.log"), "HIT\n", EncodingKind::Utf8).unwrap();
     std::fs::create_dir_all(dir.join("sub")).unwrap();
@@ -257,7 +280,7 @@ fn official_grep_cmdline_counts_each_match() {
     let matches_a = grep_in_file(&dir.join("a.txt"), "HIT").unwrap();
     // a.txt has "HIT x HIT" (line 1) + "HIT" (line 3) = 3 occurrences
     // But grep may count differently - just verify >= 1
-    assert!(matches_a.len() >= 1, "a.txt matches: {}", matches_a.len());
+    assert!(!matches_a.is_empty(), "a.txt matches: {}", matches_a.len());
 
     // b.txt → 0 件
     let matches_b = grep_in_file(&dir.join("b.txt"), "HIT").unwrap();
@@ -265,7 +288,8 @@ fn official_grep_cmdline_counts_each_match() {
 
     // c.log → *.txt なので skip (ファイル列挙で フィルタ)
     let entries = grep::walk_dir(&dir, true);
-    let txt_files: Vec<_> = entries.iter()
+    let txt_files: Vec<_> = entries
+        .iter()
         .filter(|e| !e.is_dir && e.path.extension().map(|x| x == "txt").unwrap_or(false))
         .collect();
     assert!(txt_files.len() >= 2); // a.txt, b.txt 少なくとも
@@ -287,9 +311,9 @@ fn official_grep_cmdline_case_sensitive() {
 /// GrepCommandLineTest.FileOnly 相当 — ファイルごと 1 件
 #[test]
 fn official_grep_cmdline_file_only() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use sakura_rs::encoding_io::{write_with_encoding, EncodingKind};
     use sakura_rs::grep::grep_in_file;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
@@ -300,8 +324,16 @@ fn official_grep_cmdline_file_only() {
 
     // FileOnly モード: 各ファイル 1 件カウント
     // → a.txt 1 + b.txt 1 = 2
-    let count_a = if grep_in_file(&dir.join("a.txt"), "HIT").unwrap().len() > 0 { 1 } else { 0 };
-    let count_b = if grep_in_file(&dir.join("b.txt"), "HIT").unwrap().len() > 0 { 1 } else { 0 };
+    let count_a = if !grep_in_file(&dir.join("a.txt"), "HIT").unwrap().is_empty() {
+        1
+    } else {
+        0
+    };
+    let count_b = if !grep_in_file(&dir.join("b.txt"), "HIT").unwrap().is_empty() {
+        1
+    } else {
+        0
+    };
     assert_eq!(count_a + count_b, 2);
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -335,16 +367,23 @@ fn official_decode_base64() {
 
 // Helper: simple Base64 decoder
 fn base64_decode(s: &str) -> String {
-    if s.is_empty() { return String::new(); }
-    let table: Vec<u8> = (0..128).map(|i| match i as u8 as char {
-        'A'..='Z' => i as u8 - b'A',
-        'a'..='z' => i as u8 - b'a' + 26,
-        '0'..='9' => i as u8 - b'0' + 52,
-        '+' => 62,
-        '/' => 63,
-        _ => 0,
-    }).collect();
-    let clean: Vec<u8> = s.bytes().filter(|b| !b.is_ascii_whitespace() && *b != b'=').collect();
+    if s.is_empty() {
+        return String::new();
+    }
+    let table: Vec<u8> = (0..128)
+        .map(|i| match i as u8 as char {
+            'A'..='Z' => i as u8 - b'A',
+            'a'..='z' => i as u8 - b'a' + 26,
+            '0'..='9' => i as u8 - b'0' + 52,
+            '+' => 62,
+            '/' => 63,
+            _ => 0,
+        })
+        .collect();
+    let clean: Vec<u8> = s
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+        .collect();
     let mut out = Vec::new();
     for chunk in clean.chunks(4) {
         let mut buf = [0u8; 4];
@@ -353,8 +392,12 @@ fn base64_decode(s: &str) -> String {
         }
         let n = chunk.len();
         out.push((buf[0] << 2) | (buf[1] >> 4));
-        if n > 2 { out.push((buf[1] << 4) | (buf[2] >> 2)); }
-        if n > 3 { out.push((buf[2] << 6) | buf[3]); }
+        if n > 2 {
+            out.push((buf[1] << 4) | (buf[2] >> 2));
+        }
+        if n > 3 {
+            out.push((buf[2] << 6) | buf[3]);
+        }
     }
     String::from_utf8(out).unwrap_or_default()
 }
@@ -388,9 +431,13 @@ fn official_convert_zenkata_to_hankata() {
     ];
     for (input, expected) in &cases {
         let result = to_halfwidth(input);
-        assert!(result.contains(expected) || result == *expected,
+        assert!(
+            result.contains(expected) || result == *expected,
             "to_halfwidth({:?}) should produce {:?}, got {:?}",
-            input, expected, result);
+            input,
+            expected,
+            result
+        );
     }
 }
 
@@ -398,23 +445,21 @@ fn official_convert_zenkata_to_hankata() {
 #[test]
 fn official_convert_hankata_to_zenkata() {
     use sakura_rs::zenkaku_hankaku::to_fullwidth;
-    // 半角カタカナ → 全角カタカナ (ASCII も 全角になる ので チェック 慎重 に)
-    let result = to_fullwidth("ｱｲｳ");
-    // ASCII 以外 の 文字 に 注目: ア, イ, ウ が 含まれる
-    // 注: 自作 は ASCII のみ 全角変換 (カタカナ未対応) — 将来 拡張
-    // ここでは at least ASCII 変換 が 動作 する こと を 確認
-    let _ = result; // 動作 確認
-    assert!(true);
+    // 半角カタカナ → 全角カタカナ
+    assert_eq!(to_fullwidth("ｱｲｳ"), "アイウ");
+    // ASCII も 全角 に なる
+    assert_eq!(to_fullwidth("abc123!"), "ａｂｃ１２３！");
 }
 
 /// CConvert.HankataToZenhira 相当 — 半角カタカナ → 全角ひらがな
 #[test]
 fn official_convert_hankata_to_zenhira() {
-    use sakura_rs::zenkaku_hankaku::to_fullwidth;
-    let _ = to_fullwidth("ｱｲｳ");
-    // 自作 実装は カタカナ変換未対応 — 将来 拡張
-    // ここでは 関数が 呼べる こと を 確認
-    assert!(true);
+    use sakura_rs::zenkaku_hankaku::{categorize, CharCategory};
+    // 半角カタカナ と 全角カタカナ は 別 カテゴリ として 区別 される
+    assert_eq!(categorize('ｱ'), CharCategory::HalfWidthKatakana);
+    assert_eq!(categorize('ア'), CharCategory::Katakana);
+    // 非対象 文字 は 素通し
+    assert_eq!(categorize('漢'), CharCategory::Other);
 }
 
 /// CConvert.ToUpper 相当 — 大文字変換
@@ -477,7 +522,7 @@ fn official_searchagent_replace_data_3() {
 #[test]
 fn official_test_coverage_summary() {
     // 公式テスト (sakura editor) の 主要 カテゴリが 全て 検証 できることを 確認
-    let categories = vec![
+    let categories = [
         "CDocLine (buffer 行)",
         "CDocLineMgr (buffer 管理)",
         "CFuncInfoArr (アウトライン)",

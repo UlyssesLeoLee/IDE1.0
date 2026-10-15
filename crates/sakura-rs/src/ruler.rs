@@ -85,7 +85,12 @@ mod tests {
 
     #[test]
     fn test_custom_range() {
-        let cfg = RulerConfig { start: 1, end: 20, major_tick: 5, minor_tick: 1 };
+        let cfg = RulerConfig {
+            start: 1,
+            end: 20,
+            major_tick: 5,
+            minor_tick: 1,
+        };
         let r = render(&cfg);
         assert_eq!(r.len(), 20);
         assert_eq!(r[4].kind, RulerMark::Major);
@@ -93,8 +98,26 @@ mod tests {
 
     #[test]
     fn test_marker_for() {
-        assert_eq!(marker_for(RulerCell { col: 10, kind: RulerMark::Major }), "│");
-        assert_eq!(marker_for(RulerCell { col: 5, kind: RulerMark::Minor }), "·");
-        assert_eq!(marker_for(RulerCell { col: 1, kind: RulerMark::Plain }), " ");
+        assert_eq!(
+            marker_for(RulerCell {
+                col: 10,
+                kind: RulerMark::Major
+            }),
+            "│"
+        );
+        assert_eq!(
+            marker_for(RulerCell {
+                col: 5,
+                kind: RulerMark::Minor
+            }),
+            "·"
+        );
+        assert_eq!(
+            marker_for(RulerCell {
+                col: 1,
+                kind: RulerMark::Plain
+            }),
+            " "
+        );
     }
 }

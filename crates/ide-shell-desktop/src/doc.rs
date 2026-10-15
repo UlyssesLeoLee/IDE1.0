@@ -35,19 +35,24 @@ pub struct DocResp<T: Serialize> {
 
 impl<T: Serialize> DocResp<T> {
     fn some(v: T) -> Self {
-        Self { ok: true, result: Some(v), error: None }
+        Self {
+            ok: true,
+            result: Some(v),
+            error: None,
+        }
     }
     fn none() -> Self {
-        Self { ok: false, result: None, error: Some("no active document".into()) }
+        Self {
+            ok: false,
+            result: None,
+            error: Some("no active document".into()),
+        }
     }
 }
 
 type R<T> = Result<DocResp<T>, String>;
 
-fn view<T: Serialize>(
-    store: &Mutex<DocStore>,
-    f: impl FnOnce(&mut DocStore) -> Option<T>,
-) -> R<T> {
+fn view<T: Serialize>(store: &Mutex<DocStore>, f: impl FnOnce(&mut DocStore) -> Option<T>) -> R<T> {
     let mut g = store.lock().map_err(|e| e.to_string())?;
     Ok(match f(&mut g) {
         Some(v) => DocResp::some(v),
@@ -114,12 +119,7 @@ pub fn doc_insert(
 
 /// 输入一个字符 (有选区则替换).
 #[tauri::command]
-pub fn doc_type(
-    state: tauri::State<'_, DocState>,
-    row: i32,
-    col: i32,
-    ch: String,
-) -> R<DocView> {
+pub fn doc_type(state: tauri::State<'_, DocState>, row: i32, col: i32, ch: String) -> R<DocView> {
     let c = ch.chars().next().unwrap_or(' ');
     view(&state.0, |d| d.type_char(row, col, c))
 }
@@ -147,7 +147,9 @@ pub fn doc_delete_range(
     end_row: i32,
     end_col: i32,
 ) -> R<DocView> {
-    view(&state.0, |d| d.delete_range(start_row, start_col, end_row, end_col))
+    view(&state.0, |d| {
+        d.delete_range(start_row, start_col, end_row, end_col)
+    })
 }
 
 #[tauri::command]
@@ -219,7 +221,9 @@ pub fn doc_replace_all(
     case_sensitive: bool,
     limit: usize,
 ) -> R<ReplaceStat> {
-    view(&state.0, |d| d.replace_all(&pattern, &replacement, case_sensitive, limit))
+    view(&state.0, |d| {
+        d.replace_all(&pattern, &replacement, case_sensitive, limit)
+    })
 }
 
 #[tauri::command]
@@ -231,14 +235,18 @@ pub fn doc_line_ending(state: tauri::State<'_, DocState>, line_ending: String) -
         "lf" | "unix (lf)" => Some(LineEnding::Lf),
         _ => None,
     };
-    let Some(e) = eol else { return Ok(DocResp::none()) };
+    let Some(e) = eol else {
+        return Ok(DocResp::none());
+    };
     view(&state.0, |d| d.set_line_ending(e))
 }
 
 #[tauri::command]
 pub fn doc_encoding(state: tauri::State<'_, DocState>, encoding: String) -> R<DocView> {
     use ide_kernel::document::Encoding;
-    let Some(e) = Encoding::from_label(&encoding) else { return Ok(DocResp::none()) };
+    let Some(e) = Encoding::from_label(&encoding) else {
+        return Ok(DocResp::none());
+    };
     view(&state.0, |d| d.set_encoding(e))
 }
 
@@ -270,11 +278,31 @@ pub fn doc_mark_saved(state: tauri::State<'_, DocState>) -> R<DocView> {
 /// `lib.rs` 的注册列表与本清单一致.
 #[cfg(test)]
 pub const COMMAND_NAMES: &[&str] = &[
-    "doc_active", "doc_tabs", "doc_open", "doc_new_tab", "doc_activate",
-    "doc_close", "doc_insert", "doc_type", "doc_newline", "doc_backspace",
-    "doc_delete", "doc_delete_range", "doc_caret", "doc_select_all",
-    "doc_clear_selection", "doc_undo", "doc_redo", "doc_add_cursor",
-    "doc_clear_cursors", "doc_insert_all", "doc_find", "doc_find_all",
-    "doc_replace_all", "doc_line_ending", "doc_encoding", "doc_export",
+    "doc_active",
+    "doc_tabs",
+    "doc_open",
+    "doc_new_tab",
+    "doc_activate",
+    "doc_close",
+    "doc_insert",
+    "doc_type",
+    "doc_newline",
+    "doc_backspace",
+    "doc_delete",
+    "doc_delete_range",
+    "doc_caret",
+    "doc_select_all",
+    "doc_clear_selection",
+    "doc_undo",
+    "doc_redo",
+    "doc_add_cursor",
+    "doc_clear_cursors",
+    "doc_insert_all",
+    "doc_find",
+    "doc_find_all",
+    "doc_replace_all",
+    "doc_line_ending",
+    "doc_encoding",
+    "doc_export",
     "doc_mark_saved",
 ];

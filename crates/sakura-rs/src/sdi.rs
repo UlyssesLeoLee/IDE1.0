@@ -119,7 +119,7 @@ mod tests {
         let mut m = SdiManager::new();
         let id1 = m.open(None);
         let id2 = m.open(None);
-        assert!(m.windows().iter().find(|w| w.id == id1).unwrap().active == false);
+        assert!(!m.windows().iter().find(|w| w.id == id1).unwrap().active);
         assert!(m.windows().iter().find(|w| w.id == id2).unwrap().active);
         m.activate(id1);
         assert!(m.windows().iter().find(|w| w.id == id1).unwrap().active);

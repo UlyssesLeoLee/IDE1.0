@@ -72,7 +72,9 @@ impl Auth {
     /// `IDE_SHELL_WEB_NO_AUTH=1` 时进入开放模式 (仅供 Playwright UAT 与
     /// 本地一次性调试); 生产/CI 建议始终用 token.
     pub fn from_env(port: u16) -> Self {
-        let open = std::env::var(OPEN_ENV).map(|v| v == "1" || v == "true").unwrap_or(false);
+        let open = std::env::var(OPEN_ENV)
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
         let token = match std::env::var("IDE_SHELL_WEB_TOKEN") {
             Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
             _ => random_token(),
@@ -84,17 +86,18 @@ impl Auth {
             "127.0.0.1".to_string(),
             "localhost".to_string(),
         ];
-        Self { token, allowed_hosts, open }
+        Self {
+            token,
+            allowed_hosts,
+            open,
+        }
     }
 
     /// 便于测试: 直接指定 token.
     pub fn with_token(token: &str, port: u16) -> Self {
         Self {
             token: token.to_string(),
-            allowed_hosts: vec![
-                format!("127.0.0.1:{port}"),
-                format!("localhost:{port}"),
-            ],
+            allowed_hosts: vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")],
             open: false,
         }
     }
@@ -112,10 +115,16 @@ impl Auth {
         match header(headers, "host") {
             Some(h) if self.host_allowed(h) => {}
             Some(_) => {
-                return Err(AuthError { status: "403 Forbidden", reason: "invalid-host" });
+                return Err(AuthError {
+                    status: "403 Forbidden",
+                    reason: "invalid-host",
+                });
             }
             None => {
-                return Err(AuthError { status: "400 Bad Request", reason: "missing-host" });
+                return Err(AuthError {
+                    status: "400 Bad Request",
+                    reason: "missing-host",
+                });
             }
         }
 
@@ -123,7 +132,10 @@ impl Auth {
         // 只在「带 Origin」时检查: curl / 同源导航不带 Origin.
         if let Some(origin) = header(headers, "origin") {
             if !self.origin_allowed(origin) {
-                return Err(AuthError { status: "403 Forbidden", reason: "origin-not-allowed" });
+                return Err(AuthError {
+                    status: "403 Forbidden",
+                    reason: "origin-not-allowed",
+                });
             }
         }
 
@@ -132,7 +144,10 @@ impl Auth {
         // 我们对预检不放行任何通配 origin, 也不回 Access-Control-Allow-Headers,
         // 使恶意站点的真实请求被浏览器拦下。
         if method == "OPTIONS" {
-            return Err(AuthError { status: "204 No Content", reason: "preflight-no-cors" });
+            return Err(AuthError {
+                status: "204 No Content",
+                reason: "preflight-no-cors",
+            });
         }
 
         // --- 1. token 校验 ---
@@ -141,14 +156,20 @@ impl Auth {
         }
         match header(headers, "x-ide-token") {
             Some(t) if t == self.token => Ok(()),
-            Some(_) => Err(AuthError { status: "403 Forbidden", reason: "bad-token" }),
-            None => Err(AuthError { status: "401 Unauthorized", reason: "missing-token" }),
+            Some(_) => Err(AuthError {
+                status: "403 Forbidden",
+                reason: "bad-token",
+            }),
+            None => Err(AuthError {
+                status: "401 Unauthorized",
+                reason: "missing-token",
+            }),
         }
     }
 
     fn host_allowed(&self, host: &str) -> bool {
         let h = host.trim().to_ascii_lowercase();
-        self.allowed_hosts.iter().any(|a| *a == h)
+        self.allowed_hosts.contains(&h)
     }
 
     /// 供响应构造使用: 该 Origin 是否可信 (决定是否回显 CORS 头).
@@ -206,7 +227,10 @@ mod tests {
     use super::*;
 
     fn h(pairs: &[(&str, &str)]) -> Headers {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
@@ -251,7 +275,9 @@ mod tests {
     #[test]
     fn missing_host_rejected() {
         let a = Auth::with_token("secret", 8123);
-        let e = a.check("POST", &h(&[("x-ide-token", "secret")])).unwrap_err();
+        let e = a
+            .check("POST", &h(&[("x-ide-token", "secret")]))
+            .unwrap_err();
         assert_eq!(e.reason, "missing-host");
     }
 

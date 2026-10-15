@@ -70,7 +70,9 @@ impl Default for DocStore {
 
 impl DocStore {
     pub fn new() -> Self {
-        Self { session: Session::new() }
+        Self {
+            session: Session::new(),
+        }
     }
 
     /// 打开文本为新标签, 返回视图.
@@ -229,12 +231,29 @@ impl DocStore {
 
     // ---------- 查找替换 ----------
 
-    pub fn find(&mut self, pattern: &str, case_sensitive: bool, from_row: i32, from_col: i32) -> Option<FindHit> {
+    pub fn find(
+        &mut self,
+        pattern: &str,
+        case_sensitive: bool,
+        from_row: i32,
+        from_col: i32,
+    ) -> Option<FindHit> {
         let id = self.session.active_id()?;
         let d = self.session.get(id)?;
-        let opts = FindOptions { pattern: pattern.to_string(), case_sensitive, ..Default::default() };
-        let hit = text_ops::find_from(d, &opts, crate::document::Pos { row: from_row, col: from_col })
-            .or_else(|| text_ops::find_from_start(d, &opts))?;
+        let opts = FindOptions {
+            pattern: pattern.to_string(),
+            case_sensitive,
+            ..Default::default()
+        };
+        let hit = text_ops::find_from(
+            d,
+            &opts,
+            crate::document::Pos {
+                row: from_row,
+                col: from_col,
+            },
+        )
+        .or_else(|| text_ops::find_from_start(d, &opts))?;
         Some(FindHit {
             start_row: hit.start.row,
             start_col: hit.start.col,
@@ -243,18 +262,40 @@ impl DocStore {
         })
     }
 
-    pub fn replace_all(&mut self, pattern: &str, replacement: &str, case_sensitive: bool, limit: usize) -> Option<ReplaceStat> {
+    pub fn replace_all(
+        &mut self,
+        pattern: &str,
+        replacement: &str,
+        case_sensitive: bool,
+        limit: usize,
+    ) -> Option<ReplaceStat> {
         self.with_doc_mut(|d| {
-            let opts = FindOptions { pattern: pattern.to_string(), case_sensitive, ..Default::default() };
+            let opts = FindOptions {
+                pattern: pattern.to_string(),
+                case_sensitive,
+                ..Default::default()
+            };
             let out = text_ops::replace_all(d, &opts, replacement, limit);
-            ReplaceStat { replaced: out.replaced, truncated: out.truncated }
+            ReplaceStat {
+                replaced: out.replaced,
+                truncated: out.truncated,
+            }
         })
     }
 
-    pub fn find_all(&mut self, pattern: &str, case_sensitive: bool, limit: usize) -> Option<Vec<FindHit>> {
+    pub fn find_all(
+        &mut self,
+        pattern: &str,
+        case_sensitive: bool,
+        limit: usize,
+    ) -> Option<Vec<FindHit>> {
         let id = self.session.active_id()?;
         let d = self.session.get(id)?;
-        let opts = FindOptions { pattern: pattern.to_string(), case_sensitive, ..Default::default() };
+        let opts = FindOptions {
+            pattern: pattern.to_string(),
+            case_sensitive,
+            ..Default::default()
+        };
         Some(
             text_ops::find_all(d, &opts, limit)
                 .into_iter()

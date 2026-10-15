@@ -107,7 +107,10 @@ fn multibyte_insert_at_correct_col() {
 fn multibyte_cross_line_delete() {
     let mut d = Document::from_text("あ\nい");
     // 删掉换行: 从第 0 行末到第 1 行首
-    d.delete_range(sakura_rs::cursor::LogicRange { start: pos(0, 1), end: pos(1, 0) });
+    d.delete_range(sakura_rs::cursor::LogicRange {
+        start: pos(0, 1),
+        end: pos(1, 0),
+    });
     assert_eq!(d.line_count(), 1);
     assert_eq!(d.line_text(0), "あい");
 }
@@ -194,7 +197,7 @@ fn select_all_covers_whole_doc() {
 #[test]
 /// 反向选区规范化
 fn reverse_selection_normalized() {
-    let d = Document::from_text("abcdef");
+    let _d = Document::from_text("abcdef");
     let sel = ide_kernel::document::Selection::new(pos(0, 4), pos(0, 1));
     let n = sel.normalized();
     assert_eq!(n.start, pos(0, 1));
@@ -328,7 +331,11 @@ fn multibyte_encoding_flag() {
 
 /// 构造查找选项
 fn opts(pattern: &str, case_sensitive: bool) -> FindOptions {
-    FindOptions { pattern: pattern.into(), case_sensitive, ..Default::default() }
+    FindOptions {
+        pattern: pattern.into(),
+        case_sensitive,
+        ..Default::default()
+    }
 }
 
 #[test]

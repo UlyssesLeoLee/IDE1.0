@@ -103,29 +103,59 @@ impl KeywordSetRegistry {
 pub fn rust_default_sets() -> KeywordSetRegistry {
     let mut r = KeywordSetRegistry::new();
     r.add(KeywordSet::new(1, "Keywords").with_keywords(&[
-        "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait",
-        "if", "else", "match", "for", "while", "loop", "return", "as", "in", "where",
-    ])).unwrap();
+        "fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait", "if", "else",
+        "match", "for", "while", "loop", "return", "as", "in", "where",
+    ]))
+    .unwrap();
     r.add(KeywordSet::new(2, "Types").with_keywords(&[
-        "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
-        "f32", "f64", "bool", "char", "str", "String", "Vec", "Option", "Result",
-    ])).unwrap();
+        "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64", "bool",
+        "char", "str", "String", "Vec", "Option", "Result",
+    ]))
+    .unwrap();
     r.add(KeywordSet::new(3, "Macros").with_keywords(&[
-        "println", "print", "format", "vec", "panic", "assert", "dbg", "todo", "unimplemented",
-    ])).unwrap();
+        "println",
+        "print",
+        "format",
+        "vec",
+        "panic",
+        "assert",
+        "dbg",
+        "todo",
+        "unimplemented",
+    ]))
+    .unwrap();
     r
 }
 
 pub fn python_default_sets() -> KeywordSetRegistry {
     let mut r = KeywordSetRegistry::new();
     r.add(KeywordSet::new(1, "Keywords").with_keywords(&[
-        "def", "class", "if", "elif", "else", "for", "while", "import", "from", "as",
-        "return", "yield", "with", "try", "except", "finally", "lambda", "pass", "break",
-    ])).unwrap();
+        "def", "class", "if", "elif", "else", "for", "while", "import", "from", "as", "return",
+        "yield", "with", "try", "except", "finally", "lambda", "pass", "break",
+    ]))
+    .unwrap();
     r.add(KeywordSet::new(2, "Builtins").with_keywords(&[
-        "True", "False", "None", "self", "cls", "print", "len", "range", "list", "dict",
-        "tuple", "set", "str", "int", "float", "bool", "open", "isinstance", "type",
-    ])).unwrap();
+        "True",
+        "False",
+        "None",
+        "self",
+        "cls",
+        "print",
+        "len",
+        "range",
+        "list",
+        "dict",
+        "tuple",
+        "set",
+        "str",
+        "int",
+        "float",
+        "bool",
+        "open",
+        "isinstance",
+        "type",
+    ]))
+    .unwrap();
     r
 }
 
@@ -171,8 +201,10 @@ mod tests {
     #[test]
     fn test_find_sets() {
         let mut r = KeywordSetRegistry::new();
-        r.add(KeywordSet::new(1, "kw").with_keywords(&["fn", "let"])).unwrap();
-        r.add(KeywordSet::new(2, "types").with_keywords(&["i32", "String"])).unwrap();
+        r.add(KeywordSet::new(1, "kw").with_keywords(&["fn", "let"]))
+            .unwrap();
+        r.add(KeywordSet::new(2, "types").with_keywords(&["i32", "String"]))
+            .unwrap();
         let sets = r.find_sets("fn");
         assert_eq!(sets, vec![1]);
         let sets = r.find_sets("i32");

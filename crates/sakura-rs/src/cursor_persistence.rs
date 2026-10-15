@@ -8,16 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// カーソル位置 (0-indexed row, col)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct CursorPos {
     pub row: usize,
     pub col: usize,
-}
-
-impl Default for CursorPos {
-    fn default() -> Self {
-        Self { row: 0, col: 0 }
-    }
 }
 
 /// ファイル毎のカーソル状態
@@ -41,7 +35,10 @@ impl CursorPersistence {
         let storage_dir = project_root.join(".sakura-cursor");
         fs::create_dir_all(&storage_dir)?;
         let states = HashMap::new();
-        Ok(Self { storage_dir, states })
+        Ok(Self {
+            storage_dir,
+            states,
+        })
     }
 
     /// ファイルパスをハッシュ化 (キー)
@@ -102,7 +99,8 @@ mod tests {
 
     fn make_project_root() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("sakura-rs-cursor-{}-{}", std::process::id(), n));
+        let dir =
+            std::env::temp_dir().join(format!("sakura-rs-cursor-{}-{}", std::process::id(), n));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -152,8 +150,10 @@ mod tests {
     fn test_clear_all() {
         let root = make_project_root();
         let mut cp = CursorPersistence::new(&root).unwrap();
-        cp.save(&root.join("a.txt"), CursorState::default()).unwrap();
-        cp.save(&root.join("b.txt"), CursorState::default()).unwrap();
+        cp.save(&root.join("a.txt"), CursorState::default())
+            .unwrap();
+        cp.save(&root.join("b.txt"), CursorState::default())
+            .unwrap();
         cp.clear_all().unwrap();
         assert!(cp.load(&root.join("a.txt")).unwrap().is_none());
         assert!(cp.load(&root.join("b.txt")).unwrap().is_none());

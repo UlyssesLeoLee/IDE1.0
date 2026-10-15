@@ -84,7 +84,10 @@ mod tests {
 
     #[test]
     fn test_disable_tab() {
-        let opts = ControlCodeDisplay { show_tab: false, ..Default::default() };
+        let opts = ControlCodeDisplay {
+            show_tab: false,
+            ..Default::default()
+        };
         assert_eq!(visualize("\t", opts), "\t");
     }
 

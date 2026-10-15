@@ -79,9 +79,8 @@ pub fn terminal_create(
         let inner = &mut *state.inner.lock().map_err(|e| e.to_string())?;
         inner.counter += 1;
         let id = format!("term-{}", inner.counter);
-        let title = title.unwrap_or_else(|| {
-            format!("{} #{}", shell_display(&shell_cmd), inner.counter)
-        });
+        let title =
+            title.unwrap_or_else(|| format!("{} #{}", shell_display(&shell_cmd), inner.counter));
         (id, title)
     };
 
@@ -166,10 +165,7 @@ pub fn terminal_input(
 
 /// Close terminal session.
 #[tauri::command]
-pub fn terminal_close(
-    state: tauri::State<'_, TerminalState>,
-    id: String,
-) -> Result<(), String> {
+pub fn terminal_close(state: tauri::State<'_, TerminalState>, id: String) -> Result<(), String> {
     let mut inner = state.inner.lock().map_err(|e| e.to_string())?;
     if let Some(mut session) = inner.sessions.remove(&id) {
         let _ = session.child.kill();
@@ -180,9 +176,7 @@ pub fn terminal_close(
 
 /// List active terminal sessions.
 #[tauri::command]
-pub fn terminal_list(
-    state: tauri::State<'_, TerminalState>,
-) -> Result<Vec<TerminalInfo>, String> {
+pub fn terminal_list(state: tauri::State<'_, TerminalState>) -> Result<Vec<TerminalInfo>, String> {
     let inner = state.inner.lock().map_err(|e| e.to_string())?;
     Ok(inner
         .sessions
@@ -265,7 +259,6 @@ fn spawn_reader(
         }
     });
 }
-
 
 #[derive(Serialize, Clone)]
 struct TerminalOutputEvent {

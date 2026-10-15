@@ -14,13 +14,14 @@
 // 注: フル JavaScript ではない. 専用マクロ DSL.
 
 /// ミニ JS 風マクロ実行器
+#[derive(Default)]
 pub struct JsMacroEngine {
     text: String,
 }
 
 impl JsMacroEngine {
     pub fn new() -> Self {
-        Self { text: String::new() }
+        Self::default()
     }
 
     /// スクリプト実行
@@ -110,7 +111,10 @@ fn extract_two_args(line: &str, func: &str) -> Result<(String, String), JsError>
     let after = line
         .strip_prefix(func)
         .ok_or_else(|| JsError::Syntax(line.to_string()))?;
-    let after = after.trim_start_matches('(').trim_end_matches(';').trim_end_matches(')');
+    let after = after
+        .trim_start_matches('(')
+        .trim_end_matches(';')
+        .trim_end_matches(')');
     let after = after.trim();
     // "a", "b" を split
     let parts: Vec<&str> = after.split(',').map(|s| s.trim()).collect();
@@ -148,48 +152,54 @@ mod tests {
     #[test]
     fn test_to_upper() {
         let mut e = JsMacroEngine::new();
-        let r = e.execute_transform("editor.toUpperCase();", "hello world").unwrap();
+        let r = e
+            .execute_transform("editor.toUpperCase();", "hello world")
+            .unwrap();
         assert_eq!(r, "HELLO WORLD");
     }
 
     #[test]
     fn test_to_lower() {
         let mut e = JsMacroEngine::new();
-        let r = e.execute_transform("editor.toLowerCase();", "HELLO").unwrap();
+        let r = e
+            .execute_transform("editor.toLowerCase();", "HELLO")
+            .unwrap();
         assert_eq!(r, "hello");
     }
 
     #[test]
     fn test_insert() {
         let mut e = JsMacroEngine::new();
-        let r = e.execute_transform(r#"editor.insertText(" world");"#, "hello").unwrap();
+        let r = e
+            .execute_transform(r#"editor.insertText(" world");"#, "hello")
+            .unwrap();
         assert_eq!(r, "hello world");
     }
 
     #[test]
     fn test_set_text() {
         let mut e = JsMacroEngine::new();
-        let r = e.execute_transform(r#"editor.setText("REPLACED");"#, "original").unwrap();
+        let r = e
+            .execute_transform(r#"editor.setText("REPLACED");"#, "original")
+            .unwrap();
         assert_eq!(r, "REPLACED");
     }
 
     #[test]
     fn test_replace() {
         let mut e = JsMacroEngine::new();
-        let r = e.execute_transform(
-            r#"editor.replace("foo", "bar");"#,
-            "foo baz foo"
-        ).unwrap();
+        let r = e
+            .execute_transform(r#"editor.replace("foo", "bar");"#, "foo baz foo")
+            .unwrap();
         assert_eq!(r, "bar baz bar");
     }
 
     #[test]
     fn test_delete_range() {
         let mut e = JsMacroEngine::new();
-        let r = e.execute_transform(
-            r#"editor.deleteRange(0, 3);"#,
-            "hello world"
-        ).unwrap();
+        let r = e
+            .execute_transform(r#"editor.deleteRange(0, 3);"#, "hello world")
+            .unwrap();
         assert_eq!(r, "lo world");
     }
 

@@ -177,7 +177,10 @@ pub struct OpeBuf {
 
 impl OpeBuf {
     pub fn new(max_len: usize) -> Self {
-        Self { max_len: max_len.max(1), ..Default::default() }
+        Self {
+            max_len: max_len.max(1),
+            ..Default::default()
+        }
     }
 
     pub fn cursor(&self) -> usize {
