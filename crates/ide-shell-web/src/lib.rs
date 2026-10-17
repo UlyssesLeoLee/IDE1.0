@@ -911,19 +911,30 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         .filter_map(|x| x.as_str().map(String::from))
                         .collect::<Vec<_>>()
                 });
+            // 排除项原来硬编码 None —— 前端 Sakura 式文件模式解析出来的 !glob / !dir/**
+            // 全被静默丢弃, 「#target 排除子文件夹」这类设置完全没生效.
+            let exclude_globs = req
+                .get("exclude_globs")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect::<Vec<_>>()
+                });
             let opts = search::SearchOptions {
                 pattern,
                 case_sensitive,
                 regex,
                 include_globs,
-                exclude_globs: None,
+                exclude_globs,
                 max_results,
             };
             let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-            let result =
-                search::search(&cwd, &opts).or_else(|_| search::search_fallback(&cwd, &opts));
+            // search 已是纯 Rust 内置实现, 不再 shell out 到外部 rg;
+            // 或_else 只是兜底 IO 错误 (如根目录不可读), 不再是「rg 缺失」的降级路径.
+            let result = search::search(&cwd, &opts);
             match result {
                 Ok(results) => {
                     let resp = serde_json::json!({ "results": results });

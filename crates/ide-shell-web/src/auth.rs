@@ -151,7 +151,7 @@ impl Auth {
 
     fn host_allowed(&self, host: &str) -> bool {
         let h = host.trim().to_ascii_lowercase();
-        self.allowed_hosts.iter().any(|a| *a == h)
+        self.allowed_hosts.contains(&h)
     }
 
     /// 供响应构造使用: 该 Origin 是否可信 (决定是否回显 CORS 头).
