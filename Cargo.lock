@@ -2384,6 +2384,7 @@ version = "0.1.0"
 dependencies = [
  "aci-emitter",
  "crossterm",
+ "getrandom 0.3.4",
  "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
