@@ -125,6 +125,12 @@ async function boot(page: Page): Promise<string[]> {
   // 实测: 单独跑 -g 菜单用例时 to-upper 正常, 跟着前一个用例跑就炸.
   await page.addInitScript(() => {
     try { window.localStorage.clear(); } catch (_) { /* file:// 下可能不可用 */ }
+    // 缺省界面是极简 (Sakura 风格) + 非模态编辑; 本 spec 按完整 IDE 界面 + vim 三态写. file:// 不在 playwright.config 的
+    // storageState (只覆盖 http origin) 范围内, 所以在 clear 之后自己注入 (editor.html 的 ide10.layout / ide10.vim).
+    try {
+      window.localStorage.setItem("ide10.layout", "full");
+      window.localStorage.setItem("ide10.vim", "on");
+    } catch (_) { /* ignore */ }
   });
   page.on("pageerror", (e) => errors.push(e.message));
   // 注意: 这里**不**兜底 dialog. Playwright 会把 dialog 派发给所有

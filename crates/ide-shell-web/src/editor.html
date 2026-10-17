@@ -3860,14 +3860,23 @@ function isWordChar(c) {
   return !!c && /[\p{L}\p{N}_]/u.test(c);
 }
 
-// 单词右边界: 从 from 起跳到下一个单词的起点 (Sakura「単語の右端」是跳过
-// 当前单词 + 后续分隔符, 落在下一个单词首; 从词尾起则落在下一个词首).
+// 单词右边界: 跳到**当前单词的右端**.
+// Sakura 语义 (HLP000223「単語の右端に移動」+ 其提示): 光标在单词**内部或之前**时,
+// 移到该词的末尾; 光标已在词尾时再按才进到下一个词. 例 "I have a pen."
+// 光标在 "a" 前 -> 右移到 "a" 之后 (词尾), 不是直接跳到 "pen".
+// 注意区分与「次の単語へ」类命令 —— Sakura 没有那个命令, 它就是这个行为.
 function wordRight(line, from) {
   const a = charArray(line);
   let i = Math.max(0, Math.min(from, a.length));
-  // 先跳过分隔符
-  while (i < a.length && !isWordChar(a[i])) i++;
-  // 再跳过一个完整单词
+  // 已在词尾 (或后面全是分隔符) -> 前进到下一个词的首
+  if (i >= a.length || !isWordChar(a[i])) {
+    let j = i;
+    while (j < a.length && !isWordChar(a[j])) j++;
+    if (j >= a.length) return a.length;
+    // 落在下一个词的首 (Sakura 的默认: 词首, 不是词尾)
+    return j;
+  }
+  // 在词内 -> 走到词尾
   while (i < a.length && isWordChar(a[i])) i++;
   return i;
 }
@@ -3908,18 +3917,25 @@ function pageRows() {
 }
 
 /* 通用移动入口. mode: 行/字/段落/页/文首尾; dir: +1/-1; half: 半页.
-   有选区时按 Sakura 规则先收缩选区 (Sakura HLP000234 ~ HLP000243). */
+   有选区时按 Sakura 规则先收缩选区 (Sakura HLP000234 ~ HLP000243):
+   「(選択)」前缀的命令 = 把光标移到选区的**后端/前端**并清掉选区**, 而不是丢弃选区移动光标.
+   方向: dir > 0 (末方向: 行末/词右/下/文末) 取选区**终点**;
+        dir < 0 (首方向: 行首/词左/上/文首) 取选区**起点**. */
 function sakuraMove(t, mode, dir, half) {
   if (!t) return;
-  // 选区收缩: 上/左方向的命令收到起点, 下/右方向收到终点.
   if (t.sel) {
     const { r0, c0, r1, c1 } = t.sel;
-    const toStart = dir < 0;
-    if (mode === "line") { t.cursor = { row: toStart ? r0 : r1, col: toStart ? c0 : Math.min(c1, charLen(t.lines[toStart ? r0 : r1] || "")) }; }
-    else { t.cursor = { row: r0, col: c0 }; }
+    const toEnd = dir > 0;
+    const row = toEnd ? r1 : r0;
+    const rawCol = toEnd ? c1 : c0;
+    // 终点列可能是 Infinity (选到行尾), 夹到实际行宽
+    const col = Math.max(0, Math.min(rawCol === Infinity ? charLen(t.lines[row] || "") : rawCol,
+                                       charLen(t.lines[row] || "")));
+    t.cursor = { row, col };
     t.sel = null;
     renderVim(t);
     updateCaret(true);
+    setPos("Ln " + (row + 1) + ", Col " + (col + 1));
     return;
   }
   const lastRow = Math.max(0, t.lines.length - 1);
