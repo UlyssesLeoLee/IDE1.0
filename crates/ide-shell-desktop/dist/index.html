@@ -4,6 +4,79 @@
   <meta charset="utf-8">
   <title>IDE1.0</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+  /* ================================================================
+     界面布局引擎 (min / full) —— 必须在 <head> 里同步执行
+     ================================================================
+     默认(无任何存储)是 min: 启动即 Sakura 风格的纯文本编辑器, 面包屑/缩略图隐藏, 标签栏在 >=2 个文档时才出现;
+     活动栏 + 侧栏 (左) 和底端面板 (下) 不消失而是折叠成常驻把手 (左细条 / 面板头), 这三个开关在 min 下的含义是「展开」(展开 = 浮在编辑区上的覆盖抽屉).
+     full = 原来的完整 IDE 界面 (并排停靠, 三个开关的含义是显示 / 隐藏).
+     这里在首帧前把状态写成 <html> 的 data-* 属性, 后面的 CSS 只认属性, 所以不会先闪一下完整界面再收起.
+
+     存储 (每次访问都包 try/catch: 隐私模式下 localStorage 可能直接抛错, 此时退回内存, 本次会话内仍可切换):
+       ide10.layout        "min" | "full"          缺省/脏值 => min
+       ide10.layout.flags  JSON {区域: 布尔}       只记录与预设不同的区域 (tabs 还可取 "auto"); 选预设会清空它
+       ide10.vim           "on" | "off"            缺省: full 开 / min 关
+     主脚本通过 window.__layout 使用本引擎; 测试用 window.getLayout() / window.setLayout(预设名 | {区域: 布尔}). */
+  (function () {
+    var PRESETS = {
+      full: { activityBar: true,  sideBar: true,  tabs: true,   breadcrumb: true,  bottomPanel: true,  statusBar: true, minimap: false },
+      min:  { activityBar: false, sideBar: false, tabs: "auto", breadcrumb: false, bottomPanel: false, statusBar: true, minimap: false }
+    };
+    var ATTR = { activityBar: "data-activity-bar", sideBar: "data-side-bar", tabs: "data-tabs", breadcrumb: "data-breadcrumb",
+                 bottomPanel: "data-bottom-panel", statusBar: "data-status-bar", minimap: "data-minimap" };
+    var mem = {};   // 存储不可用/写失败时的内存兜底; 写成功后条目即删除, 此后 localStorage 是唯一真源
+    function lsGet(k) { if (k in mem) return mem[k]; try { return window.localStorage.getItem(k); } catch (_) { return null; } }
+    function lsSet(k, v) { mem[k] = v; try { window.localStorage.setItem(k, v); delete mem[k]; } catch (_) { /* 隐私模式 */ } }
+    function lsDel(k) { mem[k] = null; try { window.localStorage.removeItem(k); delete mem[k]; } catch (_) { /* 隐私模式 */ } }
+    function okVal(k, v) { return typeof v === "boolean" || (k === "tabs" && v === "auto"); }
+    function preset() { return lsGet("ide10.layout") === "full" ? "full" : "min"; }
+    function overrides() {
+      var o = {}, raw;
+      try { raw = JSON.parse(lsGet("ide10.layout.flags") || "{}"); } catch (_) { raw = null; }
+      if (raw && typeof raw === "object") for (var k in PRESETS.full) if (k in raw && okVal(k, raw[k])) o[k] = raw[k];
+      return o;
+    }
+    function flags() {
+      var base = PRESETS[preset()], o = overrides(), f = {};
+      for (var k in base) f[k] = k in o ? o[k] : base[k];
+      return f;
+    }
+    // Vim 模式缺省值按预设: min 关 (Sakura 是非模态的), full 开 (保持原有的 NORMAL/INSERT 行为).
+    // 用户在 设置 > Vim 模式 里选过就写 ide10.vim, 此后以它为准, 切预设不再改它.
+    var VIM_DEFAULT = { min: false, full: true };
+    function vimOn() { var v = lsGet("ide10.vim"); return v === "on" ? true : v === "off" ? false : VIM_DEFAULT[preset()]; }
+    function apply() {
+      var h = document.documentElement, f = flags();
+      h.setAttribute("data-layout", preset());
+      for (var k in ATTR) h.setAttribute(ATTR[k], f[k] === "auto" ? "auto" : f[k] ? "on" : "off");
+      h.setAttribute("data-vim", vimOn() ? "on" : "off");
+      if (L.onChange) L.onChange();
+    }
+    var L = window.__layout = {
+      PRESETS: PRESETS, preset: preset, flags: flags, vimOn: vimOn, vimDefault: VIM_DEFAULT, apply: apply, onChange: null,
+      setPreset: function (p) { lsSet("ide10.layout", p === "full" ? "full" : "min"); lsDel("ide10.layout.flags"); apply(); },   // 选预设 = 清空覆盖
+      setFlags: function (obj) {
+        var base = PRESETS[preset()], o = overrides();
+        for (var k in obj) {
+          if (!(k in base) || !okVal(k, obj[k])) continue;
+          if (obj[k] === base[k]) delete o[k]; else o[k] = obj[k];
+        }
+        if (Object.keys(o).length) lsSet("ide10.layout.flags", JSON.stringify(o)); else lsDel("ide10.layout.flags");
+        apply();
+      },
+      setFlag: function (k, v) { var d = {}; d[k] = v; L.setFlags(d); },
+      setVim: function (on) { lsSet("ide10.vim", on ? "on" : "off"); apply(); }
+    };
+    window.getLayout = function () { return { preset: preset(), flags: flags() }; };
+    window.setLayout = function (a) {
+      if (a === "min" || a === "full") L.setPreset(a);
+      else if (a && typeof a === "object") L.setFlags(a);
+      return window.getLayout();
+    };
+    apply();
+  })();
+  </script>
   <style>
     /* ================================================================
        Design Tokens — 单一事实来源
@@ -1005,6 +1078,118 @@
     [data-theme="clear"][data-lum="light"] :is(.tab.active, .side-tab.active, .bottom-tab.active, .tab.active:hover, .side-tab.active:hover, .bottom-tab.active:hover) {
       background: rgba(0,0,0,0.09) !important; text-shadow: none;
     }
+
+    /* ===== 界面布局 (min / full) =====
+       <html> 上的 data-* 由 <head> 里的布局引擎写入 (首帧前), 这里只认属性. 被隐藏的区域仍留在 DOM (display:none), JS 不受影响;
+       它们占的网格轨道一并折叠成 0: 列/状态栏行靠 #app 上的自定义属性归零 (写在 #app 而不是 html: 主题会在 html 上写内联自定义属性,
+       内联值会压过任何样式表规则), auto 行 (底端面板 / 标签 / 面包屑) 里没有可见项自然是 0, 所以不会留空条、空隙或溢出.
+       放在样式表最末, 同权重规则靠后者胜. */
+    /* 活动栏 / 侧栏 / 底端面板的「隐藏」只属于完整布局 (并排停靠, 关掉就消失). 极简布局里这三个开关的含义是「展开 / 折叠」,
+       折叠后留着把手, 见本节末尾的「极简布局: 折叠 + 覆盖抽屉」. */
+    html[data-layout="full"][data-activity-bar="off"] #app { --w-rail: 0px; }
+    html[data-layout="full"][data-activity-bar="off"] #activity-bar { display: none; }
+    html[data-layout="full"][data-side-bar="off"] #app { --w-side: 0px; }
+    html[data-layout="full"][data-side-bar="off"] #side-bar { display: none; }
+    html[data-status-bar="off"] #app { --h-status: 0px; }
+    html[data-status-bar="off"] #status { display: none; }
+    html[data-layout="full"][data-bottom-panel="off"] #bottom-panel { display: none; }
+    html[data-breadcrumb="off"] #breadcrumb { display: none; }
+    html[data-tabs="off"] #tabs { display: none; }
+    /* tabs=auto: 不足 2 个标签时隐藏, 第 2 个标签出现(含关闭到只剩 1 个)时自动随之显隐, 纯 CSS 无需 JS */
+    html[data-tabs="auto"] #tabs:not(:has(.tab ~ .tab)) { display: none; }
+    html[data-minimap="off"] #minimap { display: none; }
+    /* 右上角「▶ 终端」按钮和内核 banner 跟预设走 (min 隐藏), 没有单独的开关 */
+    html[data-layout="min"] #menubar > .tb-btn, html[data-layout="min"] #menubar > #banner { display: none; }
+    /* 菜单勾选标记: updateMenuChecks() 给开关行写 data-check="on|off". 视图 / 设置菜单的所有行统一让出 22px 的勾选列, 文字才对得齐 */
+    .menu-dropdown[data-dropdown="view"] .menu-row, .menu-dropdown[data-dropdown="setting"] .menu-row { position: relative; padding-left: 22px; }
+    .menu-row[data-check="on"]::before { content: "✓"; position: absolute; left: 7px; top: 50%; transform: translateY(-50%); line-height: 1; color: var(--fg); }
+    /* Vim 模式关 (缺省的非模态编辑): 状态栏不显示 NORMAL/INSERT 模式标签; #s-mode 留在 DOM 里 (data-mode 恒为 INSERT) */
+    html[data-vim="off"] #s-mode { display: none; }
+    /* 光标: #ed-content 是不可编辑的 div, 本来没有插入符. 非模态 (Vim 关) 时画一根闪烁的竖线, 位置由 updateCaret() 按 t.cursor 算;
+       Vim 开着时不画 (那里靠状态栏 Ln/Col + 模式标签), 所以 Vim 开的界面和以前逐像素一致. 打字/移动时 JS 重启动画, 让它在输入过程中保持常亮 */
+    html[data-vim="off"] #editor { position: relative; }   /* 只在 Vim 关时: 开着时不引入新的定位层, 渲染 (含透明主题的背景模糊) 保持和以前逐像素一致 */
+    #caret { position: absolute; left: 0; top: 0; width: 2px; height: 18px; background: var(--fg); pointer-events: none; display: none; z-index: 1; }
+    html[data-vim="off"] #editor:focus-within #caret.on { display: block; animation: caret-blink 1.06s steps(1) infinite; }
+    @keyframes caret-blink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { html[data-vim="off"] #editor:focus-within #caret.on { animation: none; } }
+    /* 有真光标了, 编辑区获得键盘焦点时就不再需要整圈蓝色内描边 (Sakura 也没有) */
+    html[data-vim="off"] #ed-content:focus-visible { box-shadow: none; }
+    /* 极简布局的未保存标记: 标签条常被隐藏, 看不到标签上的小圆点, 所以在状态栏文件名前画一个 ● (syncDocChrome 写 data-dirty) */
+    html[data-layout="min"] #s-file[data-dirty="on"]::before { content: "● "; }
+
+    /* ===== 极简布局: 折叠 + 覆盖抽屉 =====
+       min 下「导航 / 文件」(活动栏 + 侧栏) 和底端面板不是消失, 而是折叠成常驻的把手: 左边一条 16px 的细条 (#left-strip, 内有 ›/‹ 按钮),
+       底部是面板头 (#bottom-head: TERMINAL / OUTPUT / PROBLEMS + 展开/折叠). 开关 activityBar / sideBar / bottomPanel = true 即「展开」.
+       展开 = 抽屉浮在编辑区之上 (绝对定位, 不占栅格), 所以编辑区的位置和尺寸始终不变, 也不会跳.
+       栅格列在 min 下恒为 [16px 细条][0][编辑区], 与三个开关的取值无关; 完整布局不受影响 (并排停靠, 见上面 data-layout="full" 的规则).
+       层叠按「最近」: 最后展开 / 最后按下 (mousedown) 的抽屉在上, JS 把它写成 <html data-drawer-top="left|bottom">, 这里只认属性.
+       抽屉 z 值都在补全浮层 (50) 以下: 在编辑区打字时补全列表不能被抽屉盖住; 菜单栏 (100) 及其下拉在所有抽屉之上. */
+    html[data-layout="min"] #app {
+      position: relative;     /* 绝对定位的栅格子项以自己的栅格区域为包含块 (要求栅格容器本身是定位元素) */
+      --w-strip: 16px; --w-drawer-rail: 44px; --w-drawer-side: 240px; --h-bottom-head: 28px; --z-drawer: 40;
+      --w-rail: var(--w-strip); --w-side: 0px;
+    }
+    /* 左细条: 第 2 行第 1 列, 菜单栏与面板头之间的整个高度; 按钮顶端对齐并高于所有抽屉, 底端抽屉再宽也盖不住它 */
+    #left-strip { display: none; }
+    html[data-layout="min"] #left-strip { display: block; grid-row: 2; grid-column: 1; min-width: 0; min-height: 0; background: var(--bg-rail); border-right: 1px solid var(--border); cursor: pointer; }
+    html[data-layout="min"] #left-strip:hover { background-image: linear-gradient(var(--bg-hover), var(--bg-hover)); }
+    #left-strip-btn { position: relative; z-index: calc(var(--z-drawer, 40) + 2); display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; padding: 0; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 16px; line-height: 1; }
+    #left-strip-btn:hover { color: var(--fg); background: var(--bg-hover); }
+    #left-strip-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); border-radius: 0; }   /* 外圈焦点环会被相邻的编辑区盖掉, 用内圈 */
+    /* 左抽屉: 活动栏 + 侧栏以第 2 行整行为包含块, 天然夹在菜单栏与面板头 / 状态栏之间, 盖不到它们. 从细条右缘起, 所以细条按钮展开后仍可点 */
+    html[data-layout="min"] #activity-bar, html[data-layout="min"] #side-bar {
+      position: absolute; grid-row: 2 / 3; grid-column: 1 / -1; top: 0; bottom: 0; z-index: var(--z-drawer);   /* 终止线写明: 绝对定位项的 auto 终止线指容器的 padding 边, 写 2 会一路长到状态栏下 */
+      box-shadow: 6px 0 14px -6px rgba(0, 0, 0, 0.5);
+    }
+    html[data-layout="min"] #activity-bar { left: var(--w-strip); width: var(--w-drawer-rail); }
+    html[data-layout="min"] #side-bar { left: var(--w-strip); width: min(var(--w-drawer-side), calc(80vw - var(--w-strip))); }   /* 整个左抽屉 <= 80vw */
+    html[data-layout="min"][data-activity-bar="on"] #side-bar {
+      left: calc(var(--w-strip) + var(--w-drawer-rail));
+      width: min(var(--w-drawer-side), calc(80vw - var(--w-strip) - var(--w-drawer-rail)));
+    }
+    html[data-layout="min"][data-activity-bar="off"] #activity-bar, html[data-layout="min"][data-side-bar="off"] #side-bar { display: none; }
+    /* 底抽屉: 面板头留在栅格里 (折叠时只有它占位), 正文以面板头的上缘为底边向上长出, 通栏; 高度被夹在视口内, 够不到菜单栏 */
+    html[data-layout="min"] #bottom-panel { position: relative; z-index: var(--z-drawer); }
+    html[data-layout="min"] #bottom-body {
+      position: absolute; left: 0; right: 0; bottom: 100%;
+      height: clamp(120px, 40vh, 320px);
+      max-height: calc(100vh - var(--h-menubar) - var(--h-status) - var(--h-bottom-head));
+      border-top: 1px solid var(--border-strong); box-shadow: 0 -6px 14px -6px rgba(0, 0, 0, 0.5);
+    }
+    html[data-layout="min"][data-drawer-top="left"] :is(#activity-bar, #side-bar), html[data-layout="min"][data-drawer-top="bottom"] #bottom-panel { z-index: calc(var(--z-drawer) + 1); }
+    /* 透明玻璃主题: 面板底色只有 4-5% 的白, 浮在编辑区上会让下面的文字直接透出来; 抽屉要有自己的底 (同下拉菜单的玻璃处理, 浅色桌面用浅底) */
+    /* 底抽屉正文的显隐直接认 <html data-bottom-panel> (head 引擎首帧前写好), 不依赖 #bottom-panel[data-collapsed] (静态标记里恒为 true,
+       要等 body 末尾的 syncDrawerUI 才改) —— 存盘里是「展开」时首帧就不会先画成折叠. 选择器里重复 #bottom-panel 只为压过上面 data-collapsed 那条的权重 */
+    html[data-layout="min"][data-bottom-panel="on"] #bottom-panel #bottom-body { display: flex; }
+    html[data-layout="min"][data-bottom-panel="off"] #bottom-panel #bottom-body { display: none; }
+    html[data-layout="min"][data-theme="clear"] :is(#activity-bar, #side-bar, #bottom-body) {
+      background: rgba(18, 22, 32, 0.86); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%);
+    }
+    html[data-layout="min"][data-theme="clear"][data-lum="light"] :is(#activity-bar, #side-bar, #bottom-body) { background: rgba(246, 248, 252, 0.9); }
+    /* 分屏: 标签条 / 面包屑隐藏后它们留下两条 0px 的 auto 行, 夹在中间的 gap:1px 会把视图整体推下 2px (露出 var(--border) 色, 菜单栏下沿看着像 3px 粗).
+       min 下不要行间距, 第二排视图 (JS 打 data-row2) 用自己的上边线补回两排之间的分隔; 列间距不动 */
+    html[data-layout="min"] #editor-area:is(.split-h, .split-v, .split-quad) { row-gap: 0; }
+    html[data-layout="min"] .split-view[data-row2] { border-top: 1px solid var(--border); }
+
+    /* ===== 菜单键盘导航 (Sakura / Windows 风格) =====
+       .kb-active = 键盘 (或鼠标移上去) 选中的那一行, 外观和 :hover 完全一致, 所以只有真的用了键盘才会有新的画面;
+       .kb-open = 用键盘 (→ / Enter) 展开的子菜单: 父行保持高亮, 飞出层显示 (本来只有 :hover 能展开子菜单). 只由 JS 在打开的菜单内加减, 关菜单时全部清掉 */
+    .menu-row.kb-active, .menu-row.kb-open { background: var(--bg-active); color: var(--fg); }
+    .menu-row.kb-active > .mr-shortcut, .menu-row.kb-open > .mr-shortcut { color: var(--fg); }
+    .menu-row.menu-submenu.kb-open > .submenu-dropdown { display: block; }
+    [data-theme="clear"] .menu-row.kb-active, [data-theme="clear"] .menu-row.kb-open {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.35) 0%, rgba(56, 189, 248, 0.15) 100%) !important;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      color: var(--fg) !important;
+    }
+    /* 键盘接管 (#menubar.kbnav, JS 在键盘设高亮时打上、鼠标真的动了就摘掉): 鼠标静止所在的行不再亮、也不再弹悬停飞出层,
+       菜单里只剩键盘那一个高亮 / 一层飞出层 (原生菜单也是这样). 键盘自己展开的层 (.kb-open) 不受影响 */
+    #menubar.kbnav .menu-row:hover:not(.kb-active):not(.kb-open) { background: transparent; }
+    #menubar.kbnav .menu-row:hover:not(.kb-active):not(.kb-open) > .mr-shortcut { color: var(--fg-muted); }
+    #menubar.kbnav .menu-row.menu-submenu:hover:not(.kb-open) > .submenu-dropdown { display: none; }
+    [data-theme="clear"] #menubar.kbnav .menu-row:hover:not(.kb-active):not(.kb-open) { background: transparent !important; box-shadow: none; }
+    /* 菜单之间直接切换 (悬停 / ←→): 新下拉瞬间出现, 不重播淡入; 第一次从关闭状态打开仍有动画 (JS 在切换时打 .menu-switch, 菜单收起时摘掉) */
+    #menubar.menu-switch > .menu-item > .menu-dropdown { animation: none; }
 </style>
 </head>
 <body>
@@ -1116,6 +1301,19 @@
       <div class="menu-item" data-menu="view">
         <button class="mb-btn" data-tip="视图 (Alt+V)">视图<span class="mn-key">V</span></button>
         <div class="menu-dropdown" data-dropdown="view">
+          <div class="menu-row menu-submenu" data-submenu="layout">
+            <span>界面布局</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="layout-min"><span>极简 (Sakura 风格)</span></div>
+              <div class="menu-row" data-cmd="layout-full"><span>完整 IDE 界面</span></div>
+              <div class="menu-sep"></div>
+              <div class="menu-row" data-cmd="toggle-activity-bar"><span>活动栏</span></div>
+              <div class="menu-row" data-cmd="toggle-side-bar"><span>侧边栏</span></div>
+              <div class="menu-row" data-cmd="toggle-tabs"><span>标签栏</span></div>
+              <div class="menu-row" data-cmd="toggle-breadcrumb"><span>面包屑</span></div>
+            </div>
+          </div>
+          <div class="menu-sep"></div>
           <div class="menu-row menu-submenu" data-submenu="sidebar">
             <span>侧边栏</span><span class="mr-shortcut">▶</span>
             <div class="submenu-dropdown">
@@ -1204,6 +1402,7 @@
           <div class="menu-row" data-cmd="font" data-shortcut="Alt+F"><span>字体</span><span class="mr-shortcut">Alt+F</span></div>
           <div class="menu-row" data-cmd="theme-select"><span>主题</span></div>
           <div class="menu-row" data-cmd="language" data-shortcut="Alt+L"><span>语言</span><span class="mr-shortcut">Alt+L</span></div>
+          <div class="menu-row" data-cmd="toggle-vim"><span>Vim 模式</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="import-config"><span>导入配置</span></div>
           <div class="menu-row" data-cmd="export-config"><span>导出配置</span></div>
@@ -1253,6 +1452,11 @@
           <div id="banner" class="banner"></div>
           </div><!-- /#menubar -->
 
+    <!-- Left Strip: 极简布局下「导航 / 文件」抽屉 (活动栏 + 侧栏) 折叠后留下的常驻把手; 完整布局下 display:none. 状态 / 文案由 syncDrawerUI() 写 -->
+    <div id="left-strip">
+      <button id="left-strip-btn" type="button" aria-label="展开导航 / 文件" aria-expanded="false" aria-controls="activity-bar side-bar" data-tip="展开导航 / 文件"><span aria-hidden="true">›</span></button>
+    </div>
+
           <!-- Activity Bar -->
     <div id="activity-bar">
       <button class="act-btn active" data-pane="explorer" data-tip="资源管理器">📁</button>
@@ -1275,6 +1479,7 @@
       <div id="editor">
         <div id="gutter"></div>
         <div id="ed-content" tabindex="0"></div>
+        <div id="caret" aria-hidden="true"></div>
       </div>
     </div>
 
@@ -1310,6 +1515,9 @@
     <!-- Status Bar -->
     <div id="status">
       <span class="s-item s-mode" data-mode="NORMAL" id="s-mode">NORMAL</span>
+      <!-- 列块模式指示 (SPA-01 C-08): Sakura 进列块后状态栏会明确显示当前模式,
+           否则用户除了高亮之外看不出自己在列块里, 误以为还在普通插入. -->
+      <span class="s-item s-colsel" id="s-colsel" hidden></span>
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
       <span class="s-item" id="s-file">无活动</span>
       <span class="s-item s-tip" id="s-tip">就绪 — 点工具栏「打开文件夹」导入项目</span>
@@ -1500,6 +1708,13 @@ const TIPS = {
   "new-terminal": "新建终端 (PowerShell)",
   "toggle-bottom": "折叠/展开底部面板",
   "help": "打开内置 wiki 帮助 (F1)",
+  "layout-min": "界面布局: 极简 (Sakura 风格) —— 编辑区为主, 导航 / 文件和底端面板折叠成可展开的把手",
+  "layout-full": "界面布局: 完整 IDE 界面",
+  "toggle-activity-bar": "显示/隐藏活动栏 (极简布局: 展开/折叠)",
+  "toggle-side-bar": "显示/隐藏侧边栏 (极简布局: 展开/折叠)",
+  "toggle-tabs": "显示/隐藏标签栏 (极简布局下 >=2 个文档时自动出现)",
+  "toggle-breadcrumb": "显示/隐藏面包屑",
+  "toggle-vim": "Vim 模式: 开 = NORMAL/INSERT/VISUAL 三态; 关 = 像 Sakura 一样直接输入",
 };
 const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
 // 让 CSS 区分"网页壳"和"桌面壳": 透明玻璃主题假设窗口背后是桌面壁纸, 在普通浏览器里画布是白的,
@@ -1520,6 +1735,225 @@ window.moveCaretDown = moveCaretDown;
 window.TABS = TABS;
 window.activeTabId = () => activeTabId;
 let terminalId = null;
+
+// ===== 界面布局 (min / full): 主脚本侧的粘合 =====
+// 引擎在 <head> (window.__layout), 首帧前就把状态写到了 <html> 的 data-*, CSS 据此折叠区域.
+// 这里负责: 读写开关、「命令需要某区域就先把它亮出来」、菜单勾选标记. 全是函数声明 (提升), 不依赖后面才声明的 const.
+const LAYOUT = window.__layout;
+function layoutPreset() { return LAYOUT.preset(); }
+function layoutFlag(name) { return LAYOUT.flags()[name]; }
+function setLayoutFlag(name, value) { LAYOUT.setFlag(name, value); }
+function toggleLayoutRegion(name, label) {
+  const drawer = layoutPreset() === "min" && (name === "activityBar" || name === "sideBar");   // 极简布局: 这两项是「展开 / 折叠」
+  if (drawer && !leftOpen()) { setLeftDrawer(true); setTip(label + ": 展开"); return; }       // 折叠态: 先把左抽屉整体展开 (活动栏 + 侧栏)
+  const show = !layoutFlag(name);
+  setLayoutFlag(name, show);
+  setTip(label + ": " + (drawer ? (show ? "展开" : "折叠") : (show ? "显示" : "隐藏")));
+}
+// 标签条此刻是否可见: true/false 直接生效, "auto" 要有 >=2 个文档 (CSS 里同一条件隐藏 #tabs)
+function tabStripShown() {
+  const f = layoutFlag("tabs");
+  return f === true || (f === "auto" && TABS.size >= 2);
+}
+// 命令需要某区域时 (资源管理器/搜索/终端...) 把它亮出来, 并随开关一起落盘. 区域已显示就什么都不做, 所以完整布局下是空操作.
+function revealRegion(name) {
+  if (layoutFlag(name) !== false) {        // 已显示: 完整布局什么都不做; 极简布局里这个抽屉已展开, 用户点名要它 -> 提到最上层
+    const which = name === "sideBar" ? "left" : name === "bottomPanel" ? "bottom" : null;
+    if (which && layoutPreset() === "min" && drawerIsOpen(which)) bumpDrawer(which);
+    return false;
+  }
+  if (layoutPreset() === "min" && name === "sideBar" && !leftOpen()) { setLeftDrawer(true); return true; }   // 折叠的左抽屉: 活动栏 + 侧栏一起展开
+  if (name === "bottomPanel") {            // 亮出来就是展开态 (data-collapsed 在 min 下初始为 true)
+    const bp = document.getElementById("bottom-panel");
+    if (bp) {
+      bp.setAttribute("data-collapsed", "false");
+      const btn = bp.querySelector('.bottom-toggle[data-cmd="bottom-toggle"]');
+      if (btn) btn.textContent = "折叠";
+    }
+  }
+  setLayoutFlag(name, true);
+  return true;
+}
+// 视图菜单的 ✓ 标记 (CSS 按 data-check 画). 菜单打开 / 开关变化 / 标签数变化时刷新, 所以不会过期.
+function updateMenuChecks() {
+  const f = LAYOUT.flags(), p = LAYOUT.preset(), base = LAYOUT.PRESETS[p];
+  // 开关与预设完全一致才算「正处于该预设」. 极简布局里三个抽屉开关只是「展开 / 折叠」的瞬时状态, 不算对布局的定制 (展开着抽屉仍是极简)
+  const pure = Object.keys(base).every((k) => (p === "min" && (k === "activityBar" || k === "sideBar" || k === "bottomPanel")) || f[k] === base[k]);
+  const bp = document.getElementById("bottom-panel");
+  const checks = {
+    "layout-min": p === "min" && pure,
+    "layout-full": p === "full" && pure,
+    "toggle-activity-bar": f.activityBar,
+    "toggle-side-bar": f.sideBar,
+    "toggle-tabs": tabStripShown(),
+    "toggle-breadcrumb": f.breadcrumb,
+    "toggle-bottom": f.bottomPanel && !!bp && bp.getAttribute("data-collapsed") !== "true",
+    "toggle-status": f.statusBar,
+    "toggle-minimap": f.minimap,
+    "toggle-word-wrap": VIEW_STATE.wordWrap,
+    "toggle-line-num": VIEW_STATE.lineNumbers,
+    "toggle-vim": LAYOUT.vimOn(),
+  };
+  document.querySelectorAll(".menu-row[data-cmd]").forEach((row) => {
+    if (row.dataset.cmd in checks) row.dataset.check = checks[row.dataset.cmd] ? "on" : "off";
+  });
+}
+// Vim 模式开关 (设置 > Vim 模式, 落盘 ide10.vim). 缺省值随预设 (见 <head> 引擎的 VIM_DEFAULT), 选过之后以它为准.
+let lastVim = LAYOUT.vimOn();    // 只在开关真的变了才动模式: syncLayoutUI 每次区域开关变化都会跑, 不能把 vim 用户从 INSERT 踢回 NORMAL
+function toggleVim() {
+  LAYOUT.setVim(!LAYOUT.vimOn());      // 写盘 -> apply -> syncLayoutUI -> applyVimMode
+  setTip("Vim 模式: " + (LAYOUT.vimOn() ? "开 (NORMAL / INSERT / VISUAL)" : "关 (直接输入)"));
+}
+function applyVimMode(on) {
+  const modeEl = document.getElementById("s-mode");
+  const wasVisual = modeEl.dataset.mode === "VISUAL";     // setMode 会覆盖, 先记下
+  pendingD = false; pendingZ = false; clearTimeout(pendingDTimer);   // 关掉时不留半截的 dd / zc 前缀
+  const t = getActiveTab();
+  if (on) setMode("NORMAL");               // 打开: 和过去启动时一样从 NORMAL 开始
+  else { setMode("INSERT"); if (t && wasVisual) t.sel = null; }      // 关闭: 退出 VISUAL, 回到直接输入
+  if (t && !on) renderVim(t);              // 里面会重算光标
+  else updateCaret(false);                 // 打开 Vim: 收起光标 (vim 靠模式标签)
+}
+// 任何开关变化后: 缩略图条是 JS 动态建/删的, 要跟着开关走; 再刷新菜单勾选
+function syncLayoutUI() {
+  if (VIEW_STATE.minimap !== layoutFlag("minimap")) {
+    VIEW_STATE.minimap = layoutFlag("minimap");
+    buildMinimap();
+    renderVim(getActiveTab());
+  }
+  const vimNow = LAYOUT.vimOn();
+  if (vimNow !== lastVim) { lastVim = vimNow; applyVimMode(vimNow); }
+  syncDrawerUI();        // 先于菜单勾选: toggle-bottom 的 ✓ 读 #bottom-panel[data-collapsed], 极简布局下它由标志推出
+  updateMenuChecks();
+  syncDocChrome();       // 窗口标题只在 min 带文档名/脏标记, 切预设后要跟着变
+}
+LAYOUT.onChange = syncLayoutUI;
+
+// ===== 极简布局: 折叠 / 覆盖抽屉 =====
+// min 下「导航 / 文件」(活动栏 + 侧栏, 合称左抽屉) 和底端面板不是隐藏, 而是折叠成常驻把手 (#left-strip / 面板头);
+// 开关 activityBar / sideBar / bottomPanel = true 即展开. 展开的是浮在编辑区之上的抽屉 (CSS 绝对定位, 不占栅格, 编辑区尺寸位置不变).
+// 完整布局仍是并排停靠, 下面的逻辑除了把手的无障碍属性外都只在 min 下动作. 几何 (<= 80vw / 够不到菜单栏) 由 CSS 的 min()/clamp() 随视口自动夹住.
+// 层叠按「最近」: 最后展开 / 最后按下的抽屉在上 —— seq 是递增的最近序号, 结果写成 <html data-drawer-top>, z-index 由 CSS 取值 (不写内联样式).
+const DRAWER = { seq: 0, left: 0, bottom: 0, was: { left: false, bottom: false }, focus: null, leftStale: false };
+function leftOpen() { return !!(layoutFlag("activityBar") || layoutFlag("sideBar")); }
+function bottomOpen() { return !!layoutFlag("bottomPanel"); }
+function drawerIsOpen(which) { return which === "left" ? leftOpen() : bottomOpen(); }
+// 左抽屉整体展开 / 折叠 (活动栏 + 侧栏): 一次 setFlags 只 apply 一遍, 不会停在「只开了一半」的中间态
+function setLeftDrawer(open) { LAYOUT.setFlags({ activityBar: !!open, sideBar: !!open }); }
+function toggleLeftDrawer() {
+  const open = !leftOpen();
+  setLeftDrawer(open);
+  if (!open) edContent.focus();            // 折叠后键盘输入要有去处 (焦点此刻在细条按钮上)
+  setTip("导航 / 文件: " + (open ? "展开" : "折叠"));
+}
+// 元素属于哪个抽屉 (含把手: 左细条 / 面板头); 不在任何抽屉里则 null
+function drawerOf(el) {
+  if (!el || !el.closest) return null;
+  if (el.closest("#activity-bar, #side-bar, #left-strip")) return "left";
+  if (el.closest("#bottom-panel")) return "bottom";
+  return null;
+}
+function bumpDrawer(which) {
+  DRAWER[which] = ++DRAWER.seq;
+  document.documentElement.setAttribute("data-drawer-top", DRAWER.left > DRAWER.bottom ? "left" : "bottom");
+}
+function collapseDrawer(which) {
+  if (which === "left") setLeftDrawer(false); else setLayoutFlag("bottomPanel", false);
+  DRAWER.focus = null;
+  edContent.focus();
+}
+// 由开关推出界面: 把手的 aria / 文案 / 箭头, 底端面板头的 展开/折叠 钮, 抽屉的层叠与内容刷新. 每次布局变化 (syncLayoutUI) 都会调
+function syncDrawerUI() {
+  const L = leftOpen(), B = bottomOpen(), min = layoutPreset() === "min";
+  const sb = document.getElementById("left-strip-btn");
+  if (sb) {                               // 完整布局下细条不显示, 但照常写: 切回极简时立刻是对的
+    const label = L ? "折叠导航 / 文件" : "展开导航 / 文件";
+    sb.setAttribute("aria-expanded", L ? "true" : "false");
+    sb.setAttribute("aria-label", label);
+    sb.setAttribute("data-tip", label);
+    sb.firstElementChild.textContent = L ? "‹" : "›";
+    const tipNow = document.getElementById("tip");           // 鼠标还停在按钮上时气泡里是旧文案 (它只在 mouseover 时取一次), 就地换成新的
+    if (tipNow && tipNow.style.display === "block" && sb.matches(":hover")) tipNow.textContent = label;
+  }
+  if (min) {
+    const bp = document.getElementById("bottom-panel");
+    const tg = bp && bp.querySelector('.bottom-toggle[data-cmd="bottom-toggle"]');
+    if (bp) bp.setAttribute("data-collapsed", B ? "false" : "true");   // 极简布局里 bottomPanel 标志是唯一真源
+    if (tg) {
+      tg.textContent = B ? "折叠" : "展开";
+      tg.setAttribute("aria-expanded", B ? "true" : "false");
+      tg.setAttribute("aria-controls", "bottom-body");
+    }
+    for (const [which, now] of [["left", L], ["bottom", B]]) {
+      if (now && !DRAWER.was[which]) { bumpDrawer(which); queueDrawerRefresh(which); }   // 刚展开: 浮到最上层 + 刷新内容
+      // 刚折叠且焦点还在里面 (含把手): 把焦点还给编辑区 —— 键盘事件绑在 #ed-content 上, 焦点掉到 body 就打不了字了
+      if (!now && DRAWER.was[which] && drawerOf(document.activeElement) === which) edContent.focus();
+      if (!now && DRAWER.focus === which) DRAWER.focus = null;
+    }
+  }
+  DRAWER.was.left = L; DRAWER.was.bottom = B;
+}
+// 自适应刷新: 展开 / 窗口缩放时重新量一遍. 几何靠 CSS 随视口夹住, 这里负责内容:
+//  - 左抽屉刚展开 (且不是 showSidePane 刚画过) 且在资源管理器: 重画文件树 (看到磁盘上的新文件), 保住滚动位置和已展开的目录;
+//    搜索面板不重画 (renderSearch 会抢焦点并清掉查询词)
+//  - 底抽屉: 终端滚到底
+//  - 编辑区本身没动, 但行号栏滚动和光标按当前尺寸重量一次
+//  终端没有按列数/行数重排的 resize 接口 (后端没有 terminal_resize), 所以不做 PTY 级的 refit, 终端文字随容器宽度自动换行.
+function queueDrawerRefresh(which) {
+  if (which === "left") DRAWER.leftStale = true;
+  requestAnimationFrame(() => refreshDrawers(which));
+}
+async function refreshDrawers(which) {
+  if (layoutPreset() !== "min") return;
+  if (which === "left") await refreshLeftDrawer();
+  if (which === "bottom" && terminalBody) terminalBody.scrollTop = terminalBody.scrollHeight;
+  gutter.scrollTop = edContent.scrollTop;
+  updateCaret(false);
+}
+async function refreshLeftDrawer() {
+  if (!DRAWER.leftStale || !leftOpen()) return;
+  DRAWER.leftStale = false;
+  const host = sideBody.querySelector("#explorer-pane");
+  if (currentSidePane !== "explorer" || !projectRoot || !host) return;
+  const scroll = sideBody.scrollTop;
+  const opened = Array.from(host.querySelectorAll('.tree-folder[data-expanded="1"]')).map((n) => n.dataset.path);
+  await renderExplorer(host);
+  for (const p of opened) {              // 文档顺序 = 父目录在子目录之前, 逐个按原样重新展开
+    const n = Array.from(host.querySelectorAll(".tree-folder")).find((x) => x.dataset.path === p);
+    if (n && n.dataset.expanded !== "1") await toggleTreeDir(n);
+  }
+  if (sideBody.contains(host)) sideBody.scrollTop = scroll;   // 重画期间用户若已切到别的面板, 就不去动人家的滚动位置
+}
+let drawerResizeRaf = 0;
+window.addEventListener("resize", () => {
+  if (layoutPreset() !== "min" || drawerResizeRaf) return;
+  drawerResizeRaf = requestAnimationFrame(() => { drawerResizeRaf = 0; refreshDrawers("resize"); });
+});
+// 点细条 (按钮或空白处) 展开 / 折叠; 按钮的 Enter / 空格会派发 click 冒泡上来, 所以只在容器上监听一次, 不走全局 [data-cmd] 路由
+document.getElementById("left-strip").addEventListener("click", toggleLeftDrawer);
+// 最近操作的抽屉在上: 在抽屉 (含把手) 里按下鼠标 -> 提到最上层; DRAWER.focus 记着键盘焦点 / 鼠标最后在哪个抽屉, Esc 据此折叠
+document.addEventListener("mousedown", (e) => {
+  if (layoutPreset() !== "min") return;
+  const which = drawerOf(e.target);
+  DRAWER.focus = which;
+  if (which && drawerIsOpen(which)) bumpDrawer(which);
+}, true);
+document.addEventListener("focusin", (e) => { DRAWER.focus = layoutPreset() === "min" ? drawerOf(e.target) : null; });
+// Esc: 焦点在某个抽屉里 (含把手 / 面板头; 点在抽屉空白处焦点会落到 body, 此时看最后按下的位置) 就折叠它并把焦点还给编辑区.
+// 在编辑区里按 Esc 绝不折叠 (vim 用户一直按 Esc); 有对话框开着时 Esc 归对话框; 有菜单开着时 Esc 只关菜单 (原生菜单也是这样, 本处理器注册得比菜单的早,
+// 此刻菜单还开着, 所以能看见); 输入法组字中 (搜索框是真 <input>) Esc 是取消候选词, 不是折叠.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || layoutPreset() !== "min" || modal.classList.contains("show")) return;
+  if (e.isComposing || e.keyCode === 229 || document.querySelector(".menu-item.open")) return;
+  const el = e.target && e.target.closest ? e.target : null;
+  const which = (!el || el === document.body || el === document.documentElement) ? DRAWER.focus : drawerOf(el);
+  if (which && drawerIsOpen(which)) collapseDrawer(which);
+});
+// 测试 / 诊断用: 抽屉的展开状态和层叠顺序
+window.getDrawerState = function () {
+  return { preset: layoutPreset(), left: { open: leftOpen(), seq: DRAWER.left }, bottom: { open: bottomOpen(), seq: DRAWER.bottom },
+           top: document.documentElement.getAttribute("data-drawer-top") };
+};
 
 // ===== DOM refs =====
 const edContent = document.getElementById("ed-content");
@@ -1677,21 +2111,29 @@ function openModal(opts) {
 function closeModal() { modal.classList.remove("show"); }
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
-function promptOpenFile() {
-  if (!projectRoot) { setTip("请先打开项目"); return; }
+async function promptOpenFile() {
+  // 极简布局没有「先打开项目」这一步: 没项目就先建立默认工作目录 (和保存无标题文档时是同一步)
+  let root = projectRoot;
+  if (!root && layoutPreset() === "min") {
+    root = await ensureWorkingRoot();
+    if (!root) return;                       // 取消/失败的提示 ensureWorkingRoot 已经给了
+  }
+  if (!root) { setTip("请先打开项目"); return; }
   const rel = prompt("打开文件 (项目根内相对路径):");
   if (!rel) return;
-  openFile(stripVerbatim(projectRoot) + "\\" + rel);
+  openFile(layoutPreset() === "min" ? joinPath(root, rel) : stripVerbatim(projectRoot) + "\\" + rel);
 }
 
 // ===== 书签 (会话内, 按路径记录行号) =====
 const BOOKMARKS = new Map();   // path -> [{row, col, label}]
+// 无标题文档没有路径, 用标签 id 当键, 免得几个无标题文档共用同一份书签
+function bookmarkKey(t) { return t.path || t.id; }
 
 function toggleBookmark() {
   const t = getActiveTab();
   if (!t) return;
-  if (!BOOKMARKS.has(t.path)) BOOKMARKS.set(t.path, []);
-  const list = BOOKMARKS.get(t.path);
+  if (!BOOKMARKS.has(bookmarkKey(t))) BOOKMARKS.set(bookmarkKey(t), []);
+  const list = BOOKMARKS.get(bookmarkKey(t));
   const at = list.findIndex((b) => b.row === t.cursor.row && b.col === t.cursor.col);
   if (at >= 0) { list.splice(at, 1); setTip("已移除书签"); }
   else { list.push({ row: t.cursor.row, col: t.cursor.col }); setTip("已加书签 (" + list.length + ")"); }
@@ -1700,7 +2142,7 @@ function toggleBookmark() {
 function bookmarkNav(delta) {
   const t = getActiveTab();
   if (!t) return;
-  const list = (BOOKMARKS.get(t.path) || []).slice().sort((a, b) => a.row - b.row || a.col - b.col);
+  const list = (BOOKMARKS.get(bookmarkKey(t)) || []).slice().sort((a, b) => a.row - b.row || a.col - b.col);
   if (list.length === 0) { setTip("无书签"); return; }
   // 光标正好停在书签上 → 取相邻的那个; 否则 → 取"之后第一个"(next) / "之前最后一个"(prev)
   const onBookmark = list.findIndex((b) => b.row === t.cursor.row && b.col === t.cursor.col);
@@ -1722,9 +2164,29 @@ function bookmarkPrev() { bookmarkNav(-1); }
 
 // ===== Status bar =====
 function setMode(m) {
+  if (!LAYOUT.vimOn()) m = "INSERT";      // 非模态 (缺省, 像 Sakura): 永远是可直接输入的状态; 所有调用点 (Esc / 切文档 / 启动) 一并收口
   const e = document.getElementById("s-mode");
   e.setAttribute("data-mode", m);
   e.textContent = m;
+}
+
+/* 列块模式指示 (SPA-01 C-08). 列块是**独立于 vim 三态**的编辑模式:
+   进列块时 setMode 可能仍被别处调用改成 INSERT, 所以状态栏要单独给它一格,
+   由列块状态直接驱动, 不经过 s-mode.
+   塌缩列块 (c1 === c0, 即插入点) 显示为「列块 插入」, 让用户知道还在批量插入状态. */
+function syncColumnSelectUI(t) {
+  const el = document.getElementById("s-colsel");
+  if (!el) return;
+  const cs = t && t.colSel;
+  if (!cs) { el.hidden = true; el.textContent = ""; return; }
+  el.hidden = false;
+  const { r0, r1, c0, c1 } = colSelRect(t);
+  const rows = r1 - r0 + 1;
+  const cols = c1 - c0;
+  el.textContent = cols <= 0
+    ? "列块 " + rows + "行 插入"
+    : "列块 " + rows + "行 ×" + cols + "列";
+  el.title = "列块模式 (Shift+F6 退出): 直接输入 = 在这 " + rows + " 行的同一列插入";
 }
 function setPos(text) { document.getElementById("s-pos").textContent = text; }
 function setFile(text) { document.getElementById("s-file").textContent = text; }
@@ -1751,15 +2213,13 @@ document.querySelectorAll(".bottom-tab").forEach((btn) => {
 document.querySelectorAll("[data-cmd='new-terminal']").forEach((b) => {
   b.addEventListener("click", () => createTerminal());
 });
-document.querySelectorAll("[data-cmd='toggle-bottom']").forEach((b) => {
-  b.addEventListener("click", () => {
-    toggleBottomPanel();
-  });
-});
+// (这里原有一个 [data-cmd='toggle-bottom'] 的 click 绑定: 该元素只有视图菜单的「显示/隐藏」行, 而菜单行点击本来就走
+//  下面菜单委托里的 dispatchCommand -> toggleBottomPanel, 结果同一次点击切两遍、等于没点. 已删, 统一由 dispatchCommand 处理.)
 
 // 折叠/展开底端面板: 只切 data-collapsed, 不碰 status-active (那是状态栏语义)
 // 底端面板 tab 切换: .bottom-pane.active + .bottom-tab.active 双向同步
 function switchBottomPane(paneId) {
+  revealRegion("bottomPanel");      // min 布局下面板整块隐藏: 先亮出来 (完整布局下是空操作)
   document.querySelectorAll(".bottom-pane").forEach((p) =>
     p.classList.toggle("active", p.id === paneId));
   document.querySelectorAll(".bottom-tab").forEach((b) =>
@@ -1771,10 +2231,15 @@ function switchBottomPane(paneId) {
 function toggleBottomPanel() {
   const bp = document.getElementById("bottom-panel");
   if (!bp) return;
+  // 极简布局: 展开 / 折叠抽屉. 面板头始终在 (折叠后留作把手), data-collapsed / 按钮文案 / ✓ 由标志推出 (syncDrawerUI)
+  if (layoutPreset() === "min") { setLayoutFlag("bottomPanel", !layoutFlag("bottomPanel")); return; }
+  if (!layoutFlag("bottomPanel")) { revealRegion("bottomPanel"); return; }   // 整块隐藏中 -> 以展开态亮出来
   const collapsed = bp.getAttribute("data-collapsed") === "true";
+  // 完整布局保持原样: 只收起正文、面板头留着
   bp.setAttribute("data-collapsed", collapsed ? "false" : "true");
   const btn = bp.querySelector('.bottom-toggle[data-cmd="bottom-toggle"]');
   if (btn) btn.textContent = collapsed ? "折叠" : "展开";
+  updateMenuChecks();
 }
 
 // 底端 tab 点击
@@ -1785,6 +2250,7 @@ if (bottomHead) bottomHead.addEventListener("click", (e) => {
 
 // ===== Terminal =====
 async function createTerminal() {
+  revealRegion("bottomPanel");      // 新建终端时底端面板必须可见 (min 布局下默认隐藏)
   if (terminalId) return;
   if (inTauri) await setupTerminalChannel();
   try {
@@ -1839,46 +2305,229 @@ async function sendTerminal(data) {
 }
 
 // ===== sakura 风格 菜单 交互 =====
+// 行为对齐 Sakura / 原生 Windows 菜单 (两种布局都一样):
+//   鼠标: 点击展开, 再点 / 点外面 / Esc 收起; 有菜单展开时, 鼠标挪到别的顶层按钮上立刻切过去 (不用再点); 下拉里悬停子菜单照旧展开.
+//   键盘: Alt+字母 打开对应菜单; 单按一下 Alt (按下松开之间没按别的键) 把焦点交给菜单栏;
+//         菜单栏上 ←/→ 移动, ↓/Enter/空格 展开; 菜单里 ←/→ 换相邻菜单 (首尾循环; 当前行是子菜单父行时 → 进入, 子菜单里 ← 退出),
+//         ↑/↓ 走行 (跳过分隔线和禁用行, 首尾循环), Home/End 首/末行, Enter 执行, Esc 关闭并把焦点还给编辑区.
+// 键盘高亮 = 行上的 .kb-active (子菜单展开 = .kb-open), 焦点始终留在顶层按钮上; 按键在捕获阶段处理并拦下, 不会漏进编辑区 (否则 ↓ 会移光标).
 (function() {
+  const BAR = document.getElementById("menubar");
+  const MNEMONICS = { f: "file", e: "edit", s: "search", v: "view", t: "tool", c: "setting", w: "window", h: "help" };
+  const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || "");   // Mac 的 Option 用来打特殊字符 (ß ƒ ...), 不做 Alt 助记键 / Alt 单按
+  let hoverOpened = null;   // 悬停切过来的菜单: 紧接着在同一按钮上的那一下点击是「确认」, 不能再把它关掉 (Playwright / 真人都是先挪过去再点)
+  let altArmed = false;     // 已按下 Alt 且之后没有别的键 / 鼠标 -> 松开时切到菜单栏
+  let swallowKeyup = "";    // 空格在按钮上是松开时才触发 click, 我们在 keydown 里已处理, 要吞掉那次 keyup
+  let activeBy = "";        // 当前高亮行是谁设的: "key" | "pointer" (鼠标设的随鼠标离开清掉, 键盘设的留着)
+  let ptr = "";             // 菜单栏里最后一次见到的鼠标坐标 "x,y": 菜单变化后浏览器会补发「合成」mouseover, 坐标没变就不算鼠标真的动了
+
+  const items = () => Array.from(BAR.querySelectorAll(":scope > .menu-item"));
+  const openItem = () => BAR.querySelector(":scope > .menu-item.open");
+  const btnOf = (item) => item.querySelector(":scope > .mb-btn");
+  const barFocus = () => { const a = document.activeElement; return a && a.classList && a.classList.contains("mb-btn") && BAR.contains(a) ? a : null; };
+  /** 一个下拉 / 子菜单里能用键盘走到的行: 直接子节点里的 .menu-row, 去掉禁用行和没画出来的 (分隔线 / 空提示本来就不是 .menu-row) */
+  const rowsOf = (list) => Array.from(list.children).filter((r) => r.classList.contains("menu-row") && !r.classList.contains("disabled") && r.getClientRects().length > 0);
+  const syncAria = () => items().forEach((it) => { const b = btnOf(it); if (b) b.setAttribute("aria-expanded", it.classList.contains("open") ? "true" : "false"); });
+  items().forEach((it) => { const b = btnOf(it); if (b) b.setAttribute("aria-haspopup", "menu"); });
+  syncAria();
+
+  /** 助记键: Alt+字母. 优先看 e.key; 输入法 ("Process") / 非拉丁键盘布局退到物理键位 (Mac 不退, 见 IS_MAC) */
+  function mnemonicOf(e) {
+    const k = (e.key || "").toLowerCase();
+    if (/^[a-z]$/.test(k)) return k;
+    const m = !IS_MAC && /^Key([A-Z])$/.exec(e.code || "");
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  /** 设置高亮行 (null = 清除). 子菜单只保留「包含新高亮行」的那些键盘展开层, 其余收起, 免得悬停到别处时两个飞出层同时开着;
+   *  键盘设的高亮 (by = "key") 还会给外面的子菜单父行补上 .kb-open (飞出层不再只靠鼠标悬停撑着, 鼠标一走高亮行不会跟着消失) 并给菜单栏打 .kbnav
+   *  (CSS 据此让鼠标静止所在行不再亮 / 不再弹悬停飞出层, 只剩键盘那一个高亮); 鼠标设的高亮摘掉 .kbnav */
+  function setActive(row, by) {
+    BAR.querySelectorAll(".menu-row.kb-active").forEach((r) => { if (r !== row) r.classList.remove("kb-active"); });
+    BAR.querySelectorAll(".menu-row.kb-open").forEach((r) => { if (r === row || !r.contains(row)) r.classList.remove("kb-open"); });
+    if (!row) return;
+    row.classList.add("kb-active");
+    activeBy = by || "key";
+    BAR.classList.toggle("kbnav", activeBy === "key");
+    if (activeBy === "key") for (let p = row.parentElement.closest(".menu-submenu"); p; p = p.parentElement.closest(".menu-submenu")) p.classList.add("kb-open");
+  }
+
   // Open/close top-level menus
   function closeAllMenus() {
     document.querySelectorAll(".menu-item.open").forEach(el => el.classList.remove("open"));
+    BAR.querySelectorAll(".kb-active, .kb-open").forEach((el) => el.classList.remove("kb-active", "kb-open"));
+    BAR.classList.remove("kbnav", "menu-switch");
+    hoverOpened = null;
+    syncAria();
   }
+  /** 菜单命令执行 / 菜单收起之后: 焦点还留在 body 或菜单栏按钮上 (鼠标点行 / 再点标题收起时就是这样) 就还给编辑区, 接着打字;
+   *  命令把焦点交给了输入框 (搜索 / Grep) 就保持不动. 对话框开着时不抢 (按键会打进后面的文档), 只放掉菜单栏按钮的焦点, 免得残留菜单模式 (字母键又去开菜单) */
+  function refocusEditor() {
+    const a = document.activeElement;
+    if (a && a !== document.body && !barFocus()) return;
+    if (modal.classList.contains("show")) { if (a && a !== document.body) a.blur(); return; }
+    edContent.focus();
+  }
+  /** 打开某个顶层菜单 (所有入口: 点击 / 悬停切换 / Alt+字母 / ←→ / ↓), 焦点交给它的按钮; kbd = 用键盘打开: 高亮第一行 */
+  function openMenu(item, kbd) {
+    const switching = !!openItem();           // 已有菜单开着 = 切换: 新下拉直接出现, 不重播淡入 (否则挪一格闪一下空白; 原生菜单是瞬间换的)
+    closeAllMenus();
+    if (switching) BAR.classList.add("menu-switch");
+    updateMenuChecks();
+    item.classList.add("open");
+    syncAria();
+    const b = btnOf(item);
+    if (b && document.activeElement !== b) b.focus({ preventScroll: true });
+    if (kbd) { const first = rowsOf(item.querySelector(":scope > .menu-dropdown"))[0]; if (first) setActive(first, "key"); }
+  }
+  /** 当前键盘所在的这一层: 高亮行在子菜单里就是那个子菜单, 否则是顶层下拉 */
+  function curList(open) {
+    const act = open.querySelector(".menu-row.kb-active");
+    return act && act.parentElement.classList.contains("submenu-dropdown") ? act.parentElement : open.querySelector(":scope > .menu-dropdown");
+  }
+  function move(open, delta) {
+    const list = curList(open), rows = rowsOf(list);
+    if (!rows.length) return;
+    const act = list.querySelector(":scope > .menu-row.kb-active");
+    const i = rows.indexOf(act);
+    setActive(rows[i < 0 ? (delta > 0 ? 0 : rows.length - 1) : (i + delta + rows.length) % rows.length], "key");
+  }
+  function edge(open, last) {
+    const rows = rowsOf(curList(open));
+    if (rows.length) setActive(rows[last ? rows.length - 1 : 0], "key");
+  }
+  function enterSub(parent) {
+    parent.classList.add("kb-open");
+    const rows = rowsOf(parent.querySelector(":scope > .submenu-dropdown"));
+    if (rows.length) setActive(rows[0], "key"); else parent.classList.remove("kb-open");
+    return rows.length > 0;
+  }
+  function leaveSub(act) {
+    const parent = act.parentElement.closest(".menu-submenu");
+    if (!parent) return;
+    parent.classList.remove("kb-open");
+    setActive(parent, "key");
+  }
+
   document.querySelectorAll(".menu-item > .mb-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const item = btn.parentElement;
       const wasOpen = item.classList.contains("open");
-      closeAllMenus();
-      if (!wasOpen) item.classList.add("open");
+      if (wasOpen && hoverOpened === item) { hoverOpened = null; return; }   // 刚由悬停切过来的: 这一下点击是确认
+      if (wasOpen) { closeAllMenus(); refocusEditor(); } else openMenu(item, false);   // 再点标题收起: 焦点留在按钮上会让接着打的字母去开菜单
     });
+    // 悬停切换: 已有别的菜单展开时, 鼠标移到这个按钮上就直接打开它 (上一个自动收起)
+    btn.addEventListener("mouseenter", () => {
+      const item = btn.parentElement;
+      if (item.classList.contains("open") || !openItem()) return;
+      openMenu(item, false);
+      hoverOpened = item;
+    });
+    btn.addEventListener("mouseleave", () => { if (hoverOpened === btn.parentElement) hoverOpened = null; });
+  });
+  // 鼠标移到某行 = 高亮移到那一行 (和键盘共用一个高亮, ↓ 从鼠标所在行接着走); 用 over/out + relatedTarget 模拟 enter/leave, 对后加的行也有效
+  // 键盘接管 (kbnav) 期间, 坐标没变的 mouseover / mousemove 是浏览器在布局变化后补发的, 不算鼠标动了: 否则键盘刚设的高亮会被鼠标静止所在的行抢回去.
+  // 没有键盘接管时一律照常处理 (鼠标从栏外回到同一个像素也要亮); ptr 每次事件都刷新
+  const pointerMoved = (e) => { const p = e.clientX + "," + e.clientY; const moved = p !== ptr; ptr = p; return moved || !BAR.classList.contains("kbnav"); };
+  const pointerRow = (e) => { const r = e.target.closest && e.target.closest(".menu-row"); return r && !r.classList.contains("disabled") && r.closest(".menu-item.open") ? r : null; };
+  BAR.addEventListener("mouseover", (e) => {
+    if (!pointerMoved(e)) return;
+    const wasKb = BAR.classList.contains("kbnav");           // 键盘接管后鼠标第一下真实移动: 即使只是在同一行的子元素间挪, 也把高亮还给这一行
+    BAR.classList.remove("kbnav");
+    const row = pointerRow(e);
+    if (row && (wasKb || !(e.relatedTarget && row.contains(e.relatedTarget)))) setActive(row, "pointer");
+  });
+  // 同一个元素里挪动不产生 mouseover: 键盘接管后的第一下真实移动同样把高亮还给鼠标所在的行
+  BAR.addEventListener("mousemove", (e) => {
+    if (!pointerMoved(e) || !BAR.classList.contains("kbnav")) return;
+    BAR.classList.remove("kbnav");
+    const row = pointerRow(e);
+    if (row) setActive(row, "pointer");
+  });
+  BAR.addEventListener("mouseout", (e) => {
+    const row = e.target.closest && e.target.closest(".menu-row");
+    if (row && activeBy === "pointer" && row.classList.contains("kb-active") && !(e.relatedTarget && row.contains(e.relatedTarget))) row.classList.remove("kb-active");
   });
   // Click outside closes menus
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-item")) closeAllMenus();
   });
-  // ESC closes menus
+
+  // 键盘 (捕获阶段): 只在有菜单展开 / 焦点在菜单栏按钮上时才介入, 其余按键原样放行, 编辑热路径不受影响
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeAllMenus();
-  });
-  // Alt+letter opens menu (sakura-style menu mnemonics)
-  document.addEventListener("keydown", (e) => {
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key.length === 1) {
-      const key = e.key.toLowerCase();
-      const map = { f: "file", e: "edit", s: "search", v: "view", t: "tool", c: "setting", w: "window", h: "help" };
-      const menuName = map[key];
-      if (menuName) {
-        e.preventDefault();
-        const item = document.querySelector(`.menu-item[data-menu="${menuName}"]`);
-        if (item) {
-          closeAllMenus();
-          item.classList.add("open");
-          const first = item.querySelector(".menu-row");
-          if (first) setTimeout(() => first.focus(), 50);
-        }
-      }
+    if (e.isComposing) return;
+    if (e.key === "Alt") {                                   // 只「武装」: 松开时没被别的键 / 鼠标打断才算单按 Alt
+      if (!e.repeat) altArmed = !IS_MAC && !e.ctrlKey && !e.shiftKey && !e.metaKey;
+      return;
     }
-  });
+    altArmed = false;
+    if (modal.classList.contains("show")) return;            // 对话框开着, 键盘归它
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {   // Alt+助记字母: 开 / 切菜单. 在捕获阶段就拦下, 编辑区 (vim 的 NORMAL 里 v 会进 VISUAL, INSERT 里会打出字母) 不再同时响应
+      const name = MNEMONICS[mnemonicOf(e)];
+      if (name) { e.preventDefault(); e.stopPropagation(); openMenu(document.querySelector(`.menu-item[data-menu="${name}"]`), true); return; }
+    }
+    const open = openItem(), onBar = barFocus();
+    if (!open && !onBar) return;
+    const k = e.key;
+    if (k === "Tab") { if (open) closeAllMenus(); return; }  // 焦点正常往下走, 菜单随之收起
+    if (e.ctrlKey || e.altKey || e.metaKey) return;          // 其它 Alt / Ctrl 组合键归全局快捷键
+    const eat = () => { e.preventDefault(); e.stopPropagation(); };
+    if (k === "Escape") { eat(); closeAllMenus(); edContent.focus(); return; }
+    if (e.shiftKey) return;
+    if (k === "ArrowLeft" || k === "ArrowRight") {
+      eat();
+      const act = open && open.querySelector(".menu-row.kb-active");
+      if (act && k === "ArrowRight" && act.classList.contains("menu-submenu") && enterSub(act)) return;   // 子菜单父行: → 进入
+      if (act && k === "ArrowLeft" && act.parentElement.classList.contains("submenu-dropdown")) { leaveSub(act); return; }   // 子菜单里: ← 先退出一层
+      const all = items(), cur = open || onBar.parentElement;
+      const next = all[(all.indexOf(cur) + (k === "ArrowRight" ? 1 : -1) + all.length) % all.length];
+      if (open) openMenu(next, true); else btnOf(next).focus({ preventScroll: true });
+      return;
+    }
+    if (k === "ArrowDown" || k === "ArrowUp") {
+      eat();
+      if (!open) { openMenu(onBar.parentElement, false); }
+      move(openItem(), k === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (k === "Home" || k === "End") { if (open) { eat(); edge(open, k === "End"); } return; }
+    if (k === "Enter" || k === " ") {
+      eat();
+      if (k === " ") swallowKeyup = " ";
+      if (!open) { openMenu(onBar.parentElement, true); return; }
+      const act = open.querySelector(".menu-row.kb-active");
+      if (!act) { edge(open, false); return; }
+      if (act.classList.contains("menu-submenu")) { enterSub(act); return; }
+      act.click();                                           // 和鼠标点击走同一条路 (关菜单 + dispatchCommand + 还焦点)
+      if (!openItem()) refocusEditor();                      // 没走那条路的行 (没有 data-cmd / 自带处理器) 只要菜单收起了也要还焦点; 幂等, 菜单还开着就不动
+      return;
+    }
+    // 菜单栏上直接按助记字母 (单按 Alt 之后): 打开对应菜单
+    if (!open && k.length === 1 && MNEMONICS[k.toLowerCase()]) {
+      eat();
+      openMenu(document.querySelector(`.menu-item[data-menu="${MNEMONICS[k.toLowerCase()]}"]`), true);
+    }
+  }, true);
+  document.addEventListener("keyup", (e) => {
+    if (swallowKeyup && e.key === swallowKeyup) { swallowKeyup = ""; e.preventDefault(); e.stopPropagation(); return; }
+    if (e.key !== "Alt" || !altArmed) return;
+    altArmed = false;
+    e.preventDefault();                                      // 不让浏览器 / 系统在松开 Alt 时弹出自己的菜单
+    if (modal.classList.contains("show")) return;
+    if (openItem() || barFocus()) { closeAllMenus(); edContent.focus(); return; }   // 已在菜单模式: 再按一下 Alt 退出
+    const first = items()[0];
+    if (first) btnOf(first).focus({ preventScroll: true });
+  }, true);
+  document.addEventListener("mousedown", () => { altArmed = false; }, true);   // Alt+拖选 (列块选择) 等不算单按 Alt
+  window.addEventListener("blur", () => { altArmed = false; });                // Alt+Tab 切走: 松开事件发不到本页
+  // (Alt+letter 助记键 sakura-style menu mnemonics 在上面的捕获阶段处理器里, 菜单开着也生效: Alt+E 直接从 文件 切到 编辑)
+  // 测试 / 诊断用: 当前展开的菜单、高亮行、子菜单、菜单栏焦点
+  window.getMenuState = function () {
+    const open = openItem(), act = BAR.querySelector(".menu-row.kb-active"), sub = BAR.querySelector(".menu-row.kb-open"), b = barFocus();
+    return { open: open ? open.dataset.menu : null, row: act ? (act.dataset.cmd || act.dataset.submenu || null) : null,
+             sub: sub ? sub.dataset.submenu : null, bar: b ? b.parentElement.dataset.menu : null, armed: altArmed };
+  };
   // Handle menu-row clicks (sakura-style command dispatch)
   document.querySelectorAll(".menu-row[data-cmd]").forEach(row => {
     row.addEventListener("click", (e) => {
@@ -1891,7 +2540,12 @@ async function sendTerminal(data) {
       const cmd = row.dataset.cmd;
       closeAllMenus();
       dispatchCommand(cmd);
+      refocusEditor();                                       // 命令没把焦点交给别处 (输入框 / 对话框) 就还给编辑区, 接着打字 (鼠标和键盘 Enter 一致)
     });
+  });
+  // 点子菜单父行也展开它 (触屏没有悬停); 点在飞出层里的子行不算
+  document.querySelectorAll(".menu-row.menu-submenu").forEach((row) => {
+    row.addEventListener("click", (e) => { if (e.target.closest(".menu-row") === row) row.classList.add("kb-open"); });
   });
 })();
 
@@ -1965,6 +2619,12 @@ function dispatchCommand(cmd) {
     case "bookmark-next":    bookmarkNext(); break;
     case "bookmark-prev":    bookmarkPrev(); break;
     // 视图
+    case "layout-min":       LAYOUT.setPreset("min"); setTip("界面布局: 极简 (Sakura 风格)"); break;
+    case "layout-full":      LAYOUT.setPreset("full"); setTip("界面布局: 完整 IDE 界面"); break;
+    case "toggle-activity-bar": toggleLayoutRegion("activityBar", "活动栏"); break;
+    case "toggle-side-bar":  toggleLayoutRegion("sideBar", "侧边栏"); break;
+    case "toggle-tabs":      setLayoutFlag("tabs", !tabStripShown()); setTip("标签栏: " + (tabStripShown() ? "显示" : "隐藏")); break;
+    case "toggle-breadcrumb": toggleLayoutRegion("breadcrumb", "面包屑"); break;
     case "show-explorer":    switchSidePane("explorer"); break;
     case "show-search":      switchSidePane("search"); break;
     case "show-scm":         switchSidePane("scm"); break;
@@ -2002,6 +2662,7 @@ function dispatchCommand(cmd) {
     case "font":             openFontPicker(); break;
     case "theme-select":     openThemePicker(); break;
     case "language":         openLanguagePicker(); break;
+    case "toggle-vim":       toggleVim(); break;
     case "import-config":    importConfig(); break;
     case "export-config":    exportConfig(); break;
     case "reset-settings":   resetSettings(); break;
@@ -2490,17 +3151,23 @@ function renderVim(t) {
     }).join("");
     const text = t.lines[r];
 
-    // 列块选区 (矩形)
-    const colSel = t.colSel;
-    if (colSel && r >= Math.min(colSel.r0, colSel.r1) && r <= Math.max(colSel.r0, colSel.r1)) {
-      const c0 = Math.min(colSel.c0, colSel.c1);
-      const c1 = Math.max(colSel.c0, colSel.c1);
-      html.push('<div class="hl-row">' +
-        escapeHtml(charSlice(text, 0, c0)) +
-        '<span class="col-sel-active">' + escapeHtml(charSlice(text, c0, c1 || c0 + 1)) + "</span>" +
-        escapeHtml(charSlice(text, c1)) +
-        "</div>");
-      continue;
+    // 列块选区 (矩形). 用 colSelRect 归一化边界, 与编辑操作同一套口径 (含行尾夹取),
+    // 否则插入后 c0===c1 的塌缩态会被旧的 `c1 || c0+1` 误画成「选中 1 个字符」,
+    // 而实际含义是「光标停在列块起点」. 塌缩时画光标标记, 不画高亮块.
+    if (t.colSel) {
+      const { r0, r1, c0, c1 } = colSelRect(t);
+      if (r >= r0 && r <= r1) {
+        if (c1 <= c0) {
+          // 塌缩 = 列块插入 / 退格后的续打位置: 画一根光标, 配色不变.
+          const at = Math.min(c0, charLen(text));
+          const sp = splitAt(toks, at);
+          html.push('<div class="hl-row">' + sp.pre + '<span class="caret-mark">│</span>' + sp.post + "</div>");
+          continue;
+        }
+        const seg = splitHighlighted(toks, c0, c1);
+        html.push('<div class="hl-row">' + seg.pre + seg.mid + seg.post + "</div>");
+        continue;
+      }
     }
 
     // 多光标: 每个光标位置画一个标记
@@ -2533,6 +3200,7 @@ function renderVim(t) {
   setLang(Syntax.languageLabel(lang));
   if (VIEW_STATE.minimap) buildMinimap();
   if (hadFocus) edContent.focus();
+  updateCaret(true);
 }
 
 /* ===== 折叠: zc / zo / zM / zR =====
@@ -2668,7 +3336,10 @@ function runExCommand(cmdStr, t) {
   switch (cmd) {
     case "w": case "write": return saveActive();
     case "q": case "quit": if (activeTabId) closeTab(activeTabId); return true;
-    case "wq": saveActive(); if (activeTabId) closeTab(activeTabId); return true;
+    case "wq":
+      // 无标题文档要先走另存为: 取消/失败就别把文档关掉
+      if (t.untitled) { saveActive().then((ok) => { if (ok) closeTab(t.id); }); return true; }
+      saveActive(); if (activeTabId) closeTab(activeTabId); return true;
     case "e": case "edit": if (arg) openFile(arg); return true;
     case "help": showHelp(); return true;
     case "setlang": return setTabLanguage(arg, t);
@@ -2732,6 +3403,16 @@ function charArray(str) { return chars(str); }
 
 function getActiveTab() { return TABS.get(activeTabId); }
 
+// 文档名 / 脏标记的两个落点: 极简布局下标签条常被隐藏, 看不到标签上的小圆点, 所以另外放在
+// 状态栏文件名前 (data-dirty, ● 由 CSS 只在 min 画) 和窗口标题里. 完整布局的标题保持 "IDE1.0".
+function syncDocChrome() {
+  const t = getActiveTab();
+  const sf = document.getElementById("s-file");
+  if (sf) sf.dataset.dirty = t && t.dirty ? "on" : "off";
+  const title = layoutPreset() === "min" && t ? (t.dirty ? "● " : "") + (t.name || "") + " - IDE1.0" : "IDE1.0";
+  if (document.title !== title) document.title = title;
+}
+
 function renderTabs() {
   // 整条重建会把横向滚动位置清零; 先记下来, 重建后还原, 再保证活动标签在可视范围内
   // (标签溢出时, 否则打开的文件落在条外, 看不出哪个标签是当前的).
@@ -2752,13 +3433,16 @@ function renderTabs() {
     if (ar.left < sr.left) tabsEl.scrollLeft += ar.left - sr.left;
     else if (ar.right > sr.right) tabsEl.scrollLeft += ar.right - sr.right;
   }
+  updateMenuChecks();     // 「标签栏」的勾选取决于文档数 (tabs=auto 时 >=2 个才显示)
+  syncDocChrome();
 }
 
 function renderBreadcrumb() {
   breadcrumb.innerHTML = "";
   const at = TABS.get(activeTabId);
   if (!at) return;
-  const parts = at.path.split(/[\\\/]/).filter(Boolean);
+  // 无标题文档没有路径: 面包屑就是它的名字
+  const parts = at.untitled ? [at.name] : at.path.split(/[\\\/]/).filter(Boolean);
   if (parts[0] && parts[0].endsWith(":")) parts.shift();
   parts.forEach((p, i) => {
     if (i > 0) {
@@ -2780,7 +3464,7 @@ function setActiveTab(id) {
   renderBreadcrumb();
   const t = TABS.get(id);
   if (t) {
-    setFile(t.path);
+    setFile(t.path || t.name || "");     // 无标题文档没有路径, 显示它的名字
     setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
     setMode("NORMAL");
     // 走 renderVim: token 高亮 + 折叠标记 + 状态栏语言, 纯文本路径见 paintActive
@@ -2808,6 +3492,9 @@ async function openFile(path) {
     // Rust 端返回 { name, path, content } 对象 (不是裸字符串)
     const text = res && typeof res === "object" ? res.content : res;
     const id = "t" + (++maxTabId);
+    // 极简布局: 还没动过的空白无标题文档被打开的文件顶替 (否则白白多出一个标签, 标签条也跟着冒出来)
+    const prev = getActiveTab();
+    if (layoutPreset() === "min" && prev && prev.untitled && !prev.dirty && prev.lines.length === 1 && prev.lines[0] === "") TABS.delete(prev.id);
     TABS.set(id, {
       id,
       path: tPath,
@@ -2823,6 +3510,111 @@ async function openFile(path) {
     setTip("已打开: " + tPath);
   } catch (e) {
     setTip("打开失败: " + e.message);
+  }
+}
+
+// ===== 无标题文档 + 工作目录 + 另存为 =====
+// 无标题文档的 path 是 "" (不是 null): 老代码里 t.path.split(...) / detectLanguage(t.path || "") 照常工作, 语言就是 Plain.
+function untitledName() {
+  const used = new Set([...TABS.values()].filter((t) => t.untitled).map((t) => t.name));
+  if (!used.has("无标题")) return "无标题";
+  for (let n = 2; ; n++) if (!used.has("无标题 " + n)) return "无标题 " + n;
+}
+
+function createUntitledDoc() {
+  const id = "t" + (++maxTabId);
+  const t = { id, path: "", name: untitledName(), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: [""], undo: [], redo: [] };
+  TABS.set(id, t);
+  setActiveTab(id);
+  return t;
+}
+
+// 后端的文件读写全都限定在「项目根」内; 没打开项目时 (极简布局的常态) 先按默认根建立一个, 和「打开文件夹」是同一套机制.
+// web: 服务端默认根 (GET /api/pick_folder, 服务端同时把它设为项目根; 不能走 invoke("pick_folder"): 那会 POST, 后端只认 GET).
+// 桌面: 原生文件夹选择器 (取消 => null, 它自己会设项目根).
+let ROOT_PENDING = null;
+function ensureWorkingRoot() {
+  if (projectRoot) return Promise.resolve(projectRoot);
+  if (!ROOT_PENDING) {
+    ROOT_PENDING = (async () => {
+      try {
+        const p = await (inTauri ? invoke("pick_folder") : fetchApi("/api/pick_folder", { method: "GET" }));
+        if (!p) { setTip("已取消"); return null; }
+        projectRoot = p;
+        // 侧栏正显示「未打开项目」时刷新一下; 不会为此把隐藏的侧栏亮出来
+        if (layoutFlag("sideBar") && currentSidePane === "explorer") renderExplorer();
+        return projectRoot;
+      } catch (e) {
+        setTip("无法确定工作目录: " + e.message);
+        return null;
+      }
+    })().finally(() => { ROOT_PENDING = null; });
+  }
+  return ROOT_PENDING;
+}
+
+// 用 root 自己的分隔符拼路径 (Windows 根用反斜杠, 其余用正斜杠); 绝对路径原样交给后端沙箱去校验
+function joinPath(root, rel) {
+  rel = String(rel).trim();
+  if (/^([A-Za-z]:)?[\\\/]/.test(rel)) return rel;
+  const r = stripVerbatim(root);
+  const sep = r.indexOf("\\") >= 0 ? "\\" : "/";
+  return r.replace(/[\\\/]+$/, "") + sep + rel.replace(/^[\\\/]+/, "").replace(/[\\\/]/g, sep);
+}
+
+// 文件是否已存在: 列父目录比对文件名 (read_file 有 4MB 上限且 web 端拿不到错误正文, 不适合拿来探测)
+async function pathExists(path) {
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const base = path.slice(cut + 1).toLowerCase();
+  try { return (await invoke("list_dir", { path: path.slice(0, cut) })).some((e) => String(e.name).toLowerCase() === base); }
+  catch (_) { return false; }
+}
+
+// 另存为: 保证有工作目录 -> 问文件名 -> 写盘 -> 成功后这个标签改绑到新文件 (真实路径/名字/语言, 不再脏).
+// Ctrl+S 会让 saveActive 跑两遍 (编辑区 keydown + 冒泡到 document), 所以 BUSY 必须在任何 await 之前同步占住, 第二遍直接返回;
+// 释放要推迟到下一个宏任务: 用户在 prompt 里点了取消时本函数会同步返回, 立刻释放的话冒泡过来的第二遍会再弹一次 prompt.
+// batch=true: 「全部保存」依次给几个无标题文档起名, 后一个不能被前一个刚留下的 BUSY 挡掉
+let SAVE_AS_BUSY = false;
+async function saveAsFlow(t, batch) {
+  if (SAVE_AS_BUSY && !batch) return false;
+  SAVE_AS_BUSY = true;
+  try {
+    const root = projectRoot || await ensureWorkingRoot();
+    if (!root) return false;
+    const dir = stripVerbatim(root);
+    const input = prompt("另存为 (" + dir + " 内的文件名或相对路径):", t.untitled ? "无标题.txt" : t.name);
+    const name = input && input.trim();
+    if (!name) return false;
+    const path = joinPath(dir, name);
+    if (path !== t.path && await pathExists(path) && !confirm(name + " 已存在, 覆盖?")) return false;
+    try {
+      await invoke("write_file", { path, content: t.lines.join(FILE_EOL) });
+    } catch (e) {
+      openModal({ title: "另存失败", body: e.message });
+      return false;
+    }
+    // 写成功: 改绑. 标签在 await 期间可能已不是当前标签 (切走/被关), 所以只改 t, 编辑区重绘只在它仍是当前标签时做
+    t.path = path;
+    t.name = path.split(/[\\\/]/).pop();
+    t.untitled = false;
+    t.dirty = false;
+    if (Syntax.detectLanguage(path) !== "plain") delete t.language;   // 按新扩展名重新识别语言 (认不出就保留手动选的)
+    renderTabs();
+    if (t.id === activeTabId) {
+      renderBreadcrumb();
+      setFile(path);
+      renderVim(t);
+      edContent.focus();
+    }
+    if (layoutFlag("sideBar") && currentSidePane === "explorer") renderExplorer();   // 新文件出现在文件树里
+    pushRecent(path);
+    setTip("已保存: " + path);
+    return true;
+  } catch (e) {
+    setTip("另存失败: " + e.message);
+    return false;
+  } finally {
+    setTimeout(() => { SAVE_AS_BUSY = false; }, 0);
   }
 }
 
@@ -2854,6 +3646,47 @@ function clampCursor(t) {
   if (t.cursor.col > len) t.cursor.col = len;
 }
 
+
+/* 在**已高亮的 token 流**上按字符列切三段 (前 / 选区 / 后), 保留语法配色.
+   不能对 rendered (HTML 字符串) 直接 charSlice —— 那会从 <span> 中间劈开, 产出破损标签.
+   做法: 按 token 边界消费字符数, 只在 token 边界开口/闭合 span. */
+function splitHighlighted(toks, c0, c1) {
+  let pos = 0;
+  let pre = "", mid = "", post = "";
+  const emit = (tk) => {
+    const n = charLen(tk.text);
+    const segStart = pos, segEnd = pos + n;
+    pos = segEnd;
+    const html = tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text);
+    if (segEnd <= c0) { pre += html; return; }
+    if (segStart >= c1) { post += html; return; }
+    // token 与选区相交: 按字符切成 最多 3 段 (前段并入 pre, 中段包进 mid, 后段并入 post)
+    const cut0 = Math.max(c0 - segStart, 0);
+    const cut1 = Math.min(c1 - segStart, n);
+    if (cut0 > 0) pre += escapeHtml(charSlice(tk.text, 0, cut0));
+    mid += '<span class="col-sel-active">' + escapeHtml(charSlice(tk.text, cut0, cut1)) + "</span>";
+    if (cut1 < n) post += escapeHtml(charSlice(tk.text, cut1, n));
+  };
+  for (const tk of toks) emit(tk);
+  return { pre, mid, post };
+}
+
+/* 在 token 流上按字符列切两段 (前 / 后), 用于插光标标记 (不动已有配色). */
+function splitAt(toks, at) {
+  let pos = 0;
+  let pre = "", post = "";
+  for (const tk of toks) {
+    const n = charLen(tk.text);
+    const s = pos; pos += n;
+    if (pos <= at) { pre += tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text); continue; }
+    if (s >= at) { post += tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text); continue; }
+    const cut = at - s;
+    pre += tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(charSlice(tk.text, 0, cut)) + "</span>" : escapeHtml(charSlice(tk.text, 0, cut));
+    post = (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(charSlice(tk.text, cut, n)) + "</span>" : escapeHtml(charSlice(tk.text, cut, n))) + post;
+  }
+  return { pre, post };
+}
+
 function paintActive() {
   const t = getActiveTab();
   if (!t) return;
@@ -2866,6 +3699,78 @@ function paintActive() {
   updateCaretColumn();
   renderTabs();
   if (hadFocus) edContent.focus();
+  updateCaret(true);
+}
+
+// ===== 光标 (非模态时画一根闪烁的竖线) =====
+// #ed-content 是不可编辑的 div, 本来没有插入符. Vim 开着时靠状态栏 Ln/Col + 模式标签, 不画; 非模态 (缺省, 像 Sakura) 必须看得见光标在哪.
+// 位置按 t.cursor 算: 找到该行对应的文本节点, 用折叠的 Range 取矩形, 所以 CJK / emoji / 自动换行 / 横向滚动都按真实排版.
+function caretRect(t) {
+  const row = t.cursor.row, line = t.lines[row] || "";
+  const u = u16Index(line, t.cursor.col);        // col 是 code point 列, DOM 偏移按 UTF-16
+  let node = null, off = 0;
+  const only = edContent.firstChild;
+  if (only && only.nodeType === 3 && edContent.childNodes.length === 1) {   // paintActive: 整篇一个文本节点, 行以 \n 相连
+    node = only;
+    for (let r = 0; r < row; r++) off += (t.lines[r] || "").length + 1;
+    off += u;
+  } else {                                       // renderVim: 每行一个 .hl-row / .fold-row, 里面是 token span
+    const rowEl = edContent.children[row];
+    if (!rowEl) return null;
+    const tw = document.createTreeWalker(rowEl, NodeFilter.SHOW_TEXT);
+    let rem = u, n;
+    while ((n = tw.nextNode())) {
+      node = n;
+      if (rem <= n.length) { off = rem; break; }
+      rem -= n.length; off = n.length;
+    }
+    if (!node) { const b = rowEl.getBoundingClientRect(); return { left: b.left, top: b.top, height: b.height || 18 }; }   // 空行没有文本节点
+  }
+  const rg = document.createRange();
+  rg.setStart(node, Math.min(off, node.length));
+  rg.collapse(true);
+  const rs = rg.getClientRects();
+  const b = rs.length ? rs[0] : rg.getBoundingClientRect();
+  if (!b.width && !b.height && !b.left && !b.top) {          // 浏览器没给出矩形 (整篇单文本节点里的空行): 按行高估算
+    const h = edContent.getBoundingClientRect(), cs = getComputedStyle(edContent);
+    return { left: h.left + (parseFloat(cs.paddingLeft) || 0) - edContent.scrollLeft, height: 18,
+             top: h.top + (parseFloat(cs.paddingTop) || 0) + row * 18 - edContent.scrollTop };
+  }
+  const h = b.height || 18;                      // Range 矩形是字形盒 (14px 字约 15px 高), 光标取整行高 18, 垂直居中, 这样有字行和空行一样高
+  return { left: b.left, top: b.top - (18 - h) / 2, height: 18 };
+}
+let caretKey = "";
+// follow=true (改了文本 / 移了光标): 光标跑出可视区就把编辑区滚过去 (Vim 关时文本长过一屏, 否则看不到在打什么);
+// follow=false (滚动 / 改尺寸): 只重新定位, 不能把用户滚走的位置又拽回来
+function updateCaret(follow) {
+  const el = document.getElementById("caret");
+  if (!el) return;
+  const t = getActiveTab();
+  if (!t || !t.cursor || LAYOUT.vimOn()) { el.classList.remove("on"); return; }
+  let r = caretRect(t);
+  if (!r) { el.classList.remove("on"); return; }
+  const host = edContent.getBoundingClientRect();
+  if (follow) {
+    const bottom = host.top + edContent.clientHeight, right = host.left + edContent.clientWidth;
+    if (r.top < host.top) edContent.scrollTop += r.top - host.top - 4;
+    else if (r.top + r.height > bottom) edContent.scrollTop += r.top + r.height - bottom + 4;
+    if (r.left < host.left) edContent.scrollLeft += r.left - host.left - 24;
+    else if (r.left > right - 8) edContent.scrollLeft += r.left - right + 24;
+    r = caretRect(t) || r;
+  }
+  const inView = r.top + r.height > host.top && r.top < host.top + edContent.clientHeight &&
+                 r.left >= host.left && r.left <= host.left + edContent.clientWidth;
+  if (!inView) { el.classList.remove("on"); return; }
+  const ed = document.getElementById("editor").getBoundingClientRect();
+  el.style.left = (r.left - ed.left) + "px";
+  el.style.top = (r.top - ed.top) + "px";
+  el.style.height = r.height + "px";
+  el.classList.add("on");
+  const key = r.left + "," + r.top;
+  if (key !== caretKey) {                        // 位置变了 = 正在输入/移动: 重启闪烁, 保持常亮一个周期
+    caretKey = key;
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";
+  }
 }
 
 // 在 INSERT 模式下插入一个字符, 推进光标, 标脏
@@ -3020,9 +3925,22 @@ function doRedo() {
   paintActive();
 }
 
+// Ctrl+S 家族的键盘入口. 极简布局里菜单标的 Ctrl+Shift+S = 另存为、Ctrl+Alt+S = 全部保存, 都要真的走对应命令 (无标题文档靠它起名);
+// 完整布局保持老样子 (一律普通保存). 编辑区和 document 两处 keydown 会先后处理同一个事件, Shift / Alt 变体用事件上的标记只处理一次, 免得弹两遍文件名
+function saveByKey(e) {
+  if (layoutPreset() === "min" && (e.shiftKey || e.altKey)) {
+    if (e.__saveHandled) return;
+    e.__saveHandled = true;
+    if (e.shiftKey) saveActiveAs(); else saveAll();
+    return;
+  }
+  saveActive();
+}
+
 async function saveActive() {
   const t = getActiveTab();
   if (!t) return false;
+  if (t.untitled) return saveAsFlow(t);     // 无标题文档没有路径可写: 保存 = 另存为
   try {
     await invoke("write_file", { path: t.path, content: t.lines.join(FILE_EOL) });
     t.dirty = false;
@@ -3035,16 +3953,28 @@ async function saveActive() {
   }
 }
 
+// 极简布局: 关掉有未保存修改的文档前先确认 (唯一的无标题文档没有文件可找回, Ctrl+W 一下就丢光了). 完整布局保持原样直接关.
+// 只挂在用户入口上 (标签 ✕ / Ctrl+W / 关闭全部), closeTab 本身不问, 内部流程 (:wq 保存后关闭 等) 不受影响
+function confirmClose(t) {
+  if (layoutPreset() !== "min" || !t || !t.dirty) return true;
+  return confirm(t.name + " 有未保存修改, 关闭会丢失. 继续?");
+}
+
 function closeTab(id) {
   TABS.delete(id);
   if (activeTabId === id) activeTabId = null;
   if (TABS.size === 0) {
-    // 关掉最后一个标签要回到欢迎页 —— 否则编辑器区是一片空白, 用户
-    // 既看不到文件名也找不到"打开文件夹"的入口, 像是卡死了.
-    // (实测: closeTab 只清了内容, 没调 showWelcome)
-    showWelcome();
-    setFile("无活动");
-    setPos("Ln 1, Col 1");
+    if (layoutPreset() === "min") {
+      // 极简布局永远留一个文档: 像 Sakura 关掉最后一个文档后仍是可输入的空白编辑区, 不回欢迎页
+      createUntitledDoc();
+    } else {
+      // 关掉最后一个标签要回到欢迎页 —— 否则编辑器区是一片空白, 用户
+      // 既看不到文件名也找不到"打开文件夹"的入口, 像是卡死了.
+      // (实测: closeTab 只清了内容, 没调 showWelcome)
+      showWelcome();
+      setFile("无活动");
+      setPos("Ln 1, Col 1");
+    }
   } else {
     setActiveTab([...TABS.keys()][0]);
   }
@@ -3056,7 +3986,7 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
   const closeBtn = e.target.closest("[data-tab-close]");
   if (closeBtn) {
     e.stopPropagation();
-    closeTab(closeBtn.dataset.tabClose);
+    if (confirmClose(TABS.get(closeBtn.dataset.tabClose))) closeTab(closeBtn.dataset.tabClose);
     return;
   }
   const tab = e.target.closest(".tab");
@@ -3065,40 +3995,104 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
 
 // 真实键盘处理: NORMAL 只吃单键动作, INSERT 走字符输入.
 // edContent 不是 contenteditable, 所以所有变更由 t.lines + paintActive 驱动.
-// Ctrl+点击 = 加一个光标; Alt+点击 = 列块选区锚点
+// Ctrl+点击 = 加一个光标; Alt+点击/拖动 = 列块选区 (Sakura Shift+F6 的等价物之一)
+
+/* 屏幕坐标 -> (行, 列). 等宽字体下按行高 / 字符宽换算, 与 gutter 对齐.
+   行高与字符宽不写死: 从真实渲染测量, 改字体大小 / 缩放后仍准确
+   (写死 18 / 7 的话, 改了 --fs-md 或用户放大页面就整体偏移). */
+function posFromEvent(e) {
+  const t = getActiveTab();
+  if (!t) return null;
+  const rect = edContent.getBoundingClientRect();
+  const gutterW = gutter.getBoundingClientRect().width || 0;
+  // 行高: 量一行的实际盒子高度 (拿不到就退回 18)
+  const rowEl = edContent.querySelector(".hl-row");
+  const lineH = rowEl ? rowEl.getBoundingClientRect().height || 18 : 18;
+  // 字符宽: 用行内第一个 token 测宽 (等宽), 再按字符数折算
+  let chW = 7;
+  const probe = rowEl && rowEl.querySelector("span");
+  if (probe) {
+    const w = probe.getBoundingClientRect().width;
+    const n = charLen(probe.textContent || "");
+    if (n > 0 && w > 0) chW = w / n;
+  }
+  const row = Math.max(0, Math.min(t.lines.length - 1,
+    Math.floor((e.clientY - rect.top + edContent.scrollTop) / lineH)));
+  const col = Math.max(0, Math.round((e.clientX - rect.left - gutterW) / chW));
+  return { row, col };
+}
+
+/* Alt 拖动状态: null = 没在拖. 拖动中用 window 监听, 否则指针滑出编辑区就断. */
+let colDrag = null;
+
 edContent.addEventListener("mousedown", (e) => {
   const tv = getActiveTab();
   if (!tv || !e.target.closest(".hl-row")) return;
-  // 用点击位置估算行列 (等宽字体, 与 gutter 对齐)
-  const rect = edContent.getBoundingClientRect();
-  const lines = tv.lines;
-  const lineH = 18;
-  const row = Math.max(0, Math.min(lines.length - 1,
-    Math.floor((e.clientY - rect.top + edContent.scrollTop) / lineH)));
-  const col = Math.max(0, Math.round((e.clientX - rect.left - 40) / 7));
-  if (e.altKey) { e.preventDefault(); startColumnSelect(row, col); }
-  else if (e.ctrlKey || e.metaKey) {
+  const p = posFromEvent(e);
+  if (!p) return;
+  const { row, col } = p;
+  if (e.altKey) {
+    e.preventDefault();
+    startColumnSelect(row, col);
+    // 之前只有按下没有拖动: Alt+拖只能点出一个 1x1 的块, 拖不出矩形.
+    // 记下拖动态, 由 window 上的 mousemove/mouseup 收尾.
+    colDrag = { anchorRow: row, anchorCol: col };
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
     addCursor(tv, row, col);
     renderVim(tv);
     setTip(cursorsOf(tv).length + " 个光标");
   }
 });
+
+if (typeof window !== "undefined") {
+  window.addEventListener("mousemove", (e) => {
+    if (!colDrag) return;
+    const p = posFromEvent(e);
+    if (!p) return;
+    e.preventDefault();
+    extendColumnSelect(p.row, p.col);
+  });
+  window.addEventListener("mouseup", () => {
+    if (!colDrag) return;
+    colDrag = null;
+    const t = getActiveTab();
+    if (t && t.colSel) {
+      const { r0, r1, c0, c1 } = colSelRect(t);
+      // 拖完直接把光标对齐到列块右下角, 接着就能打字 / 继续拖.
+      t.cursor.row = r1;
+      t.cursor.col = c1;
+      renderVim(t);
+      setTip("列块 " + (r1 - r0 + 1) + "行 ×" + Math.max(1, c1 - c0) + "列");
+    }
+  });
+}
 // 行号栏跟随正文滚动 (#gutter 是 overflow:hidden, 不同步则 300 行文件滚到底时旁边仍是 1-37)
-edContent.addEventListener("scroll", () => { gutter.scrollTop = edContent.scrollTop; });
+edContent.addEventListener("scroll", () => { gutter.scrollTop = edContent.scrollTop; updateCaret(false); });
+// 编辑区尺寸变了 (开关侧栏 / 行号 / 缩略图 / 拖窗口) 光标的屏幕位置跟着变; 自动换行会换行点
+if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => updateCaret(false)).observe(edContent);
 
 if (edContent) edContent.addEventListener("keydown", (e) => {
   try { recordKey(e); } catch (_) { /* 录制不影响主流程 */ }
   const t = getActiveTab();
-  const mode = (document.getElementById("s-mode").dataset.mode || "NORMAL");
+  // Vim 关闭时不看 #s-mode (静态标记里写着 data-mode="NORMAL", 启动后头几个键会被当成 vim 命令吞掉), 直接是 INSERT
+  const vim = LAYOUT.vimOn();
+  const mode = vim ? (document.getElementById("s-mode").dataset.mode || "NORMAL") : "INSERT";
   if (t && !t.undo) { t.undo = []; t.redo = []; }
   if (t && !t.folded) t.folded = new Set();
   if (t && !t.dirty) t.dirty = false;
 
   if (e.ctrlKey) {
     const k = e.key.toLowerCase();
-    if (k === "s") { e.preventDefault(); saveActive(); return; }
-    if (k === "n") { e.preventDefault(); completionNext(1); return; }
+    if (k === "s") { e.preventDefault(); saveByKey(e); return; }
+    if (k === "n") {
+      e.preventDefault();
+      // 极简布局下 Ctrl+N 是「新建」(没有补全列表时); 事件冒泡到 document 的处理器里才真正建文档, 这里不能重复建
+      if (layoutPreset() !== "min" || COMPLETE_STATE.list.length) completionNext(1);
+      return;
+    }
     if (k === "p") { e.preventDefault(); completionNext(-1); return; }
     if (k === "z") { e.preventDefault(); doUndo(); return; }
     if (k === "y") { e.preventDefault(); doRedo(); return; }
@@ -3121,16 +4115,58 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   }
 
   if (mode === "INSERT") {
+    // 列块选区优先接管一切文本编辑: 在列块里打任何字符 / 回车 / 退格 / Delete,
+    // 都作用在**每一行**的同一列上, 而不是只作用在光标那一行 (Sakura Shift+F6 行为).
+    // 这是「一次性给多行同一位置添加内容」的能力入口.
+    if (t && t.colSel) {
+      // 列块内的方向键: 上下只动**活动角**那一行的边界, 左右只动列边界.
+      // 活动角 = 键盘最后碰过的那个角 (Sakura 语义: 上下键永远从当前活动角延伸,
+      // 不管锚点在哪一侧). 用 t.cursor 记录活动角, 而不是拿 min/max 推断 ——
+      // 推断会在 r0===r1 时把 Math.min(Math.max(r0,r1), r1+1) 算成 min(0,1)=0, 卡死不动.
+      const rect = colSelRect(t);
+      const actR = (t.colActiveRow !== undefined) ? t.colActiveRow : rect.r1;
+      const actC = (t.colActiveCol !== undefined) ? t.colActiveCol : rect.c1;
+      const lastRow = Math.max(0, t.lines.length - 1);
+      let nr = actR, nc = actC, moved = true;
+      if (e.key === "ArrowLeft") nc = Math.max(0, actC - 1);
+      else if (e.key === "ArrowRight") nc = actC + 1;
+      else if (e.key === "ArrowUp") nr = Math.max(rect.r0, actR - 1);
+      else if (e.key === "ArrowDown") nr = Math.min(lastRow, actR + 1);
+      else if (e.key === "Home") nc = 0;
+      else if (e.key === "End") nc = Number.MAX_SAFE_INTEGER;
+      else moved = false;
+      if (moved) {
+        e.preventDefault();
+        t.colActiveRow = nr;
+        t.colActiveCol = nc;
+        extendColumnSelect(nr, nc);
+        t.cursor.row = nr;
+        t.cursor.col = Math.min(nc, Number.MAX_SAFE_INTEGER);
+        updateCaret(false);
+      }
+      if (e.key === "Enter") { e.preventDefault(); columnInsert("\n"); return; }
+      if (e.key === "Tab") { e.preventDefault(); columnInsert("\t"); return; }
+      if (e.key === "Backspace") { e.preventDefault(); columnBackspace(); return; }
+      if (e.key === "Delete") { e.preventDefault(); columnDelete(); return; }
+      if (!moved && e.key.length === 1 && !(e.ctrlKey || e.metaKey) && !(e.altKey && !vim)) {
+        e.preventDefault(); columnInsert(e.key); return;
+      }
+      return;
+    }
     if (e.key === "Tab") { e.preventDefault(); insertCharMulti("  "); return; }
     if (e.key === "Backspace") { e.preventDefault(); backspaceMulti(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }
     if (e.key === "Delete") { e.preventDefault(); normalDeleteChar(); return; }
+    // 非模态编辑器的基本功 (Sakura 用户的肌肉记忆): Home / End. Vim 开着时 INSERT 保持原样
+    if (!vim && t && e.key === "Home") { e.preventDefault(); t.cursor.col = 0; paintActive(); return; }
+    if (!vim && t && e.key === "End") { e.preventDefault(); t.cursor.col = charLen(curLine(t)); paintActive(); return; }
     if (e.key === "ArrowLeft") { e.preventDefault(); if (t) { moveCaretLeft(t); paintActive(); } return; }
     if (e.key === "ArrowRight") { e.preventDefault(); if (t) { moveCaretRight(t); paintActive(); } return; }
     if (e.key === "ArrowUp") { e.preventDefault(); if (t) { moveCaretUp(t); paintActive(); } return; }
     if (e.key === "ArrowDown") { e.preventDefault(); if (t) { moveCaretDown(t); paintActive(); } return; }
     if (e.ctrlKey && e.key === " ") { e.preventDefault(); showCompletion(); return; }
-    if (e.key.length === 1) { e.preventDefault(); insertCharMulti(e.key); return; }
+    // 非模态下 Alt+字母是菜单助记键 (Alt+F 开文件菜单), 不能同时往文档里打一个字母; Vim 开着时保持原行为
+    if (e.key.length === 1 && (vim || !(e.altKey || e.metaKey))) { e.preventDefault(); insertCharMulti(e.key); return; }
     return;
   }
 
@@ -3278,7 +4314,9 @@ function renderExtensions(host) {
 // ===== Side bar =====
 let currentSidePane = "explorer";
 
-function showSidePane(name) {
+// opts.reveal === false: 只切换内容不亮出侧栏 (启动时的初始渲染; 其余调用方都是用户要看这个面板, 侧栏隐藏就先亮出来)
+function showSidePane(name, opts) {
+  if (!(opts && opts.reveal === false)) revealRegion("sideBar");
   currentSidePane = name;
   document.querySelectorAll(".act-btn").forEach((b) => b.classList.toggle("active", b.dataset.pane === name));
   renderSideBar();
@@ -3295,6 +4333,7 @@ const SIDE_PANES = {
 };
 
 function renderSideBar() {
+  DRAWER.leftStale = false;      // 内容刚画过: 极简布局里左抽屉紧随其后的「展开刷新」不必再拉一遍 list_dir
   sideTabsEl.innerHTML = Object.keys(SIDE_PANES).map((key) => {
     const def = SIDE_PANES[key];
     const cls = key === currentSidePane ? "side-tab active" : "side-tab";
@@ -3333,7 +4372,10 @@ document.querySelectorAll(".act-btn").forEach((btn) => {
 async function renderExplorer(host) {
   host = host || sideBody;
   if (!projectRoot) {
-    host.innerHTML = '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
+    // 极简布局没有工具栏: 给一个真按钮 (全局 [data-cmd] 委托会派发 open-folder), 和欢迎页的「打开文件夹」是同一个命令
+    host.innerHTML = layoutPreset() === "min"
+      ? '<div class="empty-hint">未打开项目<br><br><button class="md-btn primary" data-cmd="open-folder" data-tip="打开文件夹 (Ctrl+Shift+O)">打开文件夹</button></div>'
+      : '<div class="empty-hint">未打开项目<br><br>点工具栏「打开文件夹」导入项目</div>';
     return;
   }
   // 项目根行: 单击 = 换项目, Shift+单击 = 刷新树 (替代旧的 打开/刷新 两个按钮)
@@ -3419,6 +4461,10 @@ async function renderOutline(host) {
   const at = getActiveTab();
   if (!at) {
     host.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
+    return;
+  }
+  if (at.untitled) {                       // 没有路径可交给后端解析
+    host.innerHTML = '<div class="empty-hint">保存后才有大纲</div>';
     return;
   }
   host.innerHTML = '<div class="sb-section">' + escapeHtml(at.path.split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
@@ -3738,6 +4784,7 @@ function setFontSize(px) {
   VIEW_STATE.fontSize = px;
   edContent.style.fontSize = px + "px";
   gutter.style.fontSize = px + "px";
+  updateCaret(false);
   setTip("字号: " + px + "px");
 }
 
@@ -3756,7 +4803,9 @@ function importConfig() {
   if (!raw) { setTip("无已保存的配置"); return; }
   try {
     const cfg = JSON.parse(raw);
-    Object.assign(VIEW_STATE, cfg.view || {});
+    const { minimap, ...view } = cfg.view || {};
+    Object.assign(VIEW_STATE, view);
+    if (minimap !== undefined) setLayoutFlag("minimap", !!minimap);   // 缩略图走统一的布局开关 (同步 VIEW_STATE + 建/删条)
     BOOKMARKS.clear();
     (cfg.bookmarks || []).forEach(([k, v]) => BOOKMARKS.set(k, v));
     setTip("配置已导入");
@@ -3766,7 +4815,7 @@ function resetSettings() {
   localStorage.removeItem(CONFIG_KEY);
   VIEW_STATE.wordWrap = false;
   VIEW_STATE.lineNumbers = true;
-  VIEW_STATE.minimap = false;
+  setLayoutFlag("minimap", false);          // 缩略图归默认关 (连同条一起移除并落盘); 预设/其余区域开关不动
   VIEW_STATE.syntax = true;
   edContent.style.whiteSpace = "pre";
   gutter.style.display = "";
@@ -3784,12 +4833,11 @@ function toggleSyntaxHighlight() {
 }
 
 // 状态栏开关
+// 走统一的布局开关 (落盘 + 轨道折叠). 之前是内联 display:none, 状态栏那一行 22px 会留成一条空带.
 function toggleStatusBar() {
-  const el = document.getElementById("status");
-  const hidden = el.style.display === "none";
-  el.style.display = hidden ? "" : "none";
-  document.getElementById("app").classList.toggle("status-active", !hidden);
-  setTip("状态栏: " + (hidden ? "显示" : "隐藏"));
+  const show = !layoutFlag("statusBar");
+  setLayoutFlag("statusBar", show);
+  setTip("状态栏: " + (show ? "显示" : "隐藏"));
 }
 
 // 类型配置: 窗口 / 大纲
@@ -3967,52 +5015,230 @@ function replaceAll() {
   setTip("替换 " + count + " 处");
 }
 
+/* Grep 对话框的跨次状态 (SPA-01 G-75: 搜索/替换条件全局共享, 复用上次值).
+   与 FIND_STATE 分开: 查找替换记在 FIND_STATE, Grep 的文件模式 / 递归 / 单词单位没有对应项. */
+const GREP_STATE = { needle: "", replace: "", files: "*.*", caseSensitive: false, regex: false, subfolders: true, wholeWord: false };
+
+// Sakura 文件模式解析 (SPA-01 G-10 ~ G-15, G-30 ~ G-32, G-43):
+//   - 多个条件用 , 空格 ; 分隔; 含分隔符的文件名用 " 包裹
+//   - 前缀 ! = 排除文件; 前缀 # = 排除子文件夹 (Sakura 2.1.0.0+)
+//   - 留空 = *.*;  排除优先于包含, 与书写位置无关
+// 分隔符在引号内不生效; 未闭合的引号按普通字符处理 (宽容, 不报错阻断搜索).
+function parseFilePatterns(spec) {
+  const raw = String(spec || "").trim();
+  const include = [];
+  const excludeFiles = [];
+  const excludeDirs = [];
+  if (!raw) return { include: ["*.*"], excludeFiles, excludeDirs };
+
+  // 扫描: 引号内的分隔符当普通字符
+  const tokens = [];
+  let buf = "", inQuote = false;
+  const flush = () => { const s = buf.trim(); if (s) tokens.push(s); buf = ""; };
+  for (const ch of raw) {
+    if (ch === '"') { inQuote = !inQuote; continue; }
+    if (!inQuote && (ch === "," || ch === ";" || /\s/.test(ch))) { flush(); continue; }
+    buf += ch;
+  }
+  flush();
+
+  for (const tok of tokens) {
+    if (tok.startsWith("#")) { excludeDirs.push(tok.slice(1)); continue; }
+    if (tok.startsWith("!")) { excludeFiles.push(tok.slice(1)); continue; }
+    include.push(tok);
+  }
+  // 全是排除项时也要有包含项, 否则后端 include_globs 为空 = 不过滤 (等价 *.*)
+  if (include.length === 0) include.push("*.*");
+  return { include, excludeFiles, excludeDirs };
+}
+
+/* 把 Sakura 风格的排除目录模式翻译成 rg 的 --glob !<pattern>.
+   rg 的 --glob 匹配的是**相对搜索根的路径**, 所以目录模式要补成 <dir>/** ,
+   才能真的排掉整个子树 (只写 --glob !<dir> 只排掉名叫 dir 的文件, 不排它的内容). */
+function excludeDirGlobs(dirs) {
+  const out = [];
+  for (const d of dirs) {
+    const p = d.replace(/^[\\/]+|[\\/]+$/g, "").replace(/\\/g, "/");
+    if (!p) continue;
+    out.push("!" + p, "!" + p + "/**");
+  }
+  return out;
+}
+
 // 项目级 Grep
 async function openGrepDialog(withReplace) {
-  if (!projectRoot) { setTip("请先打开项目"); return; }
+  if (!projectRoot) {
+    if (layoutPreset() !== "min") { setTip("请先打开项目"); return; }
+    if (!(await ensureWorkingRoot())) return;   // 极简布局没有「先打开项目」这一步: 和保存 / 打开文件一样先建默认工作目录 (取消 / 失败的提示 ensureWorkingRoot 已给)
+  }
+  // 对话框沿用 Sakura 的字段组织 (SPA-01 G-01 ~ G-48), 但排版保持本项目的 opt-row 风格.
+  // 文件模式一栏同时承担「包含 / 排除文件 / 排除文件夹」三种语义, 由 parseFilePatterns 拆开 ——
+  // 这正是 Sakura 的设计 (一个框 + !/# 前缀), 不额外开两个框.
   const html =
-    '<div class="opt-row"><input id="grep-input" placeholder="在项目中查找" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
-    '<div class="opt-row"><label><input type="checkbox" id="grep-case" /> 区分大小写</label>' +
-    '<label style="margin-left:12px"><input type="checkbox" id="grep-regex" /> 正则</label></div>' +
+    '<div class="opt-row"><input id="grep-input" placeholder="在项目中查找 (留空 = 文件名搜索)" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
+    '<div class="opt-row"><input id="grep-files" placeholder="文件模式 (*.rs,*.toml  排除 !*.gen.rs  排除目录 #target)" ' +
+      'value="' + escapeHtml(GREP_STATE.files || "*.*") + '" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
+    '<div class="opt-row">' +
+      '<label><input type="checkbox" id="grep-case" /> 区分大小写</label>' +
+      '<label style="margin-left:10px"><input type="checkbox" id="grep-regex" /> 正则</label>' +
+      '<label style="margin-left:10px"><input type="checkbox" id="grep-sub" /> 包含子文件夹</label>' +
+      '<label style="margin-left:10px"><input type="checkbox" id="grep-word" /> 单词单位</label>' +
+    '</div>' +
     (withReplace ? '<div class="opt-row"><input id="grep-repl" placeholder="替换为" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' : "") +
     '<div id="grep-status" class="empty-hint">输入后回车</div>';
   openModal({ title: withReplace ? "Grep 替换" : "Grep 搜索", bodyHTML: html,
     buttons: [{ label: "关闭", cmd: "modal-close" }] });
   const inp = document.getElementById("grep-input");
+  inp.value = GREP_STATE.needle || "";
+  document.getElementById("grep-case").checked = !!GREP_STATE.caseSensitive;
+  document.getElementById("grep-regex").checked = !!GREP_STATE.regex;
+  document.getElementById("grep-sub").checked = GREP_STATE.subfolders !== false;
+  document.getElementById("grep-word").checked = !!GREP_STATE.wholeWord;
+  if (withReplace && document.getElementById("grep-repl")) document.getElementById("grep-repl").value = GREP_STATE.replace || "";
   inp.focus();
-  inp.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const q = inp.value.trim();
-    if (!q) return;
+
+  const runGrep = async () => {
+    const rawQ = inp.value;
+    const q = rawQ.trim();
+    // 空条件 = 文件名搜索 (Sakura G-01): 把文件模式当搜索词传给后端, 由 glob 匹配文件名.
+    const pats = parseFilePatterns(document.getElementById("grep-files").value);
     const status = document.getElementById("grep-status");
     status.textContent = "搜索中...";
+    GREP_STATE.needle = rawQ;
+    GREP_STATE.files = document.getElementById("grep-files").value;
+    GREP_STATE.caseSensitive = document.getElementById("grep-case").checked;
+    GREP_STATE.regex = document.getElementById("grep-regex").checked;
+    GREP_STATE.subfolders = document.getElementById("grep-sub").checked;
+    GREP_STATE.wholeWord = document.getElementById("grep-word").checked;
+    if (withReplace && document.getElementById("grep-repl")) GREP_STATE.replace = document.getElementById("grep-repl").value;
+
+    // 单词单位 (G-04): 在字面量模式外包一层 \b. 正则模式不加 (用户的正则自带边界语义).
+    let pattern = q;
+    if (q && GREP_STATE.wholeWord && !GREP_STATE.regex) {
+      pattern = "\\b" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b";
+    }
+    // 排除目录翻译成 rg 的路径 glob (# 前缀 -> !dir 与 !dir/**)
+    const exclude = pats.excludeFiles.map((g) => "!" + g).concat(excludeDirGlobs(pats.excludeDirs));
+    // 不递归时只搜顶层: rg 用 --max-depth 1, 但我们没有该选项, 用 glob 限制层级.
+    const inc = pats.include.slice();
+    if (!GREP_STATE.subfolders) inc.push("*");
+
     try {
-      // 后端返回 {results:[{line,path,text}]}, line 已是 1-based.
       const resp = await invoke("search", {
-        pattern: q,
-        case_sensitive: document.getElementById("grep-case").checked,
-        regex: document.getElementById("grep-regex").checked,
+        pattern: pattern || "*.*",
+        case_sensitive: GREP_STATE.caseSensitive,
+        regex: GREP_STATE.regex,
+        include_globs: inc,
+        exclude_globs: exclude.length ? exclude : null,
+        max_results: 5000,
       });
       const rows = (resp && resp.results) || [];
       FIND_STATE.needle = q;
-      status.textContent = "命中 " + rows.length + " 处";
-      const box = document.createElement("div");
-      box.id = "grep-results";
-      rows.slice(0, 200).forEach((m) => {
-        const row = document.createElement("div");
-        row.className = "opt-row";
-        row.style.cursor = "pointer";
-        row.textContent = m.path + ":" + m.line + ": " + String(m.text || m.line_text || "").trim().slice(0, 100);
-        row.addEventListener("click", () => { closeModal(); openFile(stripVerbatim(m.path)); });
-        box.appendChild(row);
-      });
-      mdBody.appendChild(box);
+      status.textContent = rows.length
+        ? "命中 " + rows.length + " 处, " + new Set(rows.map((m) => m.path)).size + " 个文件"
+        : "无匹配";
+      renderGrepResults(rows, q, GREP_STATE.caseSensitive);
       setTip("Grep 命中 " + rows.length + " 处");
     } catch (err) {
       status.textContent = "搜索失败: " + err.message;
     }
-  });
+  };
+
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runGrep(); } });
+  document.getElementById("grep-files").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runGrep(); } });
 }
+
+/* Grep 结果视图 (SPA-01 G-50 ~ G-62, G-70 ~ G-72):
+   - 按文件分组 (G-61 ファイル毎), 折叠显示路径 + 命中数
+   - 命中片段高亮 (G-53), 用类型别配置里的「検索文字列」色, 这里取 --blue
+   - 单击 = 打开文件并**跳到匹配行**(G-70), 双击同效 (G-71), Enter 键同效 (G-72)
+   之前点击只 openFile(path) 停在文件开头, 用户还要自己找匹配行 —— 这是对标 Sakura 的硬缺口.
+
+   mount: 结果挂到哪里. 默认 mdBody (Grep 对话框里), 但可显式传容器 ——
+   对话框关闭后结果仍在页面上的场景 (Sakura 是独立窗口) 用得着. */
+function renderGrepResults(rows, needle, caseSensitive, mount) {
+  const old = document.getElementById("grep-results");
+  if (old) old.remove();
+  const box = document.createElement("div");
+  box.id = "grep-results";
+  box.style.cssText = "max-height:46vh;overflow:auto;margin-top:6px;";
+
+  // G-61 按文件分组, 组内保持后端返回的行序 (rg 已按文件分组输出)
+  const groups = new Map();
+  for (const m of rows) {
+    if (!groups.has(m.path)) groups.set(m.path, []);
+    groups.get(m.path).push(m);
+  }
+
+  const hay = caseSensitive ? (s) => s : (s) => s.toLowerCase();
+  const ndl = caseSensitive ? needle : needle.toLowerCase();
+
+  for (const [path, hits] of groups) {
+    const head = document.createElement("div");
+    head.className = "opt-row grep-file-head";
+    head.style.cssText = "font-weight:600;cursor:pointer;padding:3px 4px;background:rgba(127,127,127,0.12);";
+    head.textContent = path + "  (" + hits.length + ")";
+    head.dataset.grepPath = path;
+    const list = document.createElement("div");
+    list.className = "grep-file-hits";
+    list.dataset.grepPath = path;
+    list.style.paddingLeft = "16px";
+    for (const m of hits) {
+      const row = document.createElement("div");
+      row.className = "opt-row grep-hit";
+      row.dataset.grepPath = path;
+      row.dataset.grepLine = String(m.line);
+      row.style.cssText = "cursor:pointer;font-family:monospace;white-space:pre;";
+      // 高亮命中片段 (全部出现都标出来, 不只第一处)
+      const txt = String(m.text || "");
+      let inner = "";
+      if (needle) {
+        const lower = hay(txt);
+        let at = 0;
+        while (true) {
+          const i = lower.indexOf(ndl, at);
+          if (i < 0) { inner += escapeHtml(txt.slice(at)); break; }
+          inner += escapeHtml(txt.slice(at, i)) +
+            '<mark style="background:var(--blue);color:#000;">' + escapeHtml(txt.substr(i, needle.length)) + "</mark>";
+          at = i + Math.max(1, needle.length);
+        }
+      } else {
+        inner = escapeHtml(txt);
+      }
+      row.innerHTML = m.line + ": " + inner;
+      row.title = path + ":" + m.line;
+      // 跳转: 打开文件 + 光标落到匹配行 (G-70)
+      const jump = () => { closeModal(); gotoPathLine(path, m.line); };
+      row.addEventListener("click", jump);          // G-71 双击前先接单击
+      row.addEventListener("dblclick", jump);       // G-71
+      row.tabIndex = 0;
+      row.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); jump(); } });  // G-72
+      list.appendChild(row);
+    }
+    head.addEventListener("click", () => { list.style.display = list.style.display === "none" ? "" : "none"; });
+    box.appendChild(head);
+    box.appendChild(list);
+  }
+  (mount || mdBody).appendChild(box);
+}
+
+/* 打开文件并把光标放到指定行 (1-based). openFile 之后光标固定在 0,0,
+   这里补上定位 + 滚动可见, 否则从 Grep 结果跳过去还要自己找. */
+async function gotoPathLine(path, line) {
+  await openFile(stripVerbatim(path));
+  const t = getActiveTab();
+  if (!t) return;
+  const row = Math.max(0, Math.min(t.lines.length - 1, (line | 0) - 1));
+  t.cursor = { row, col: 0 };
+  renderVim(t);
+  setPos("Ln " + (row + 1) + ", Col 1");
+  updateCaret(true);
+  // 把目标行滚进视野
+  const el = edContent.querySelectorAll(".hl-row")[row];
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" });
+  setTip("跳转到 " + path + ":" + (row + 1));
+}
+
 function openGrep() { openGrepDialog(false); }
 function openGrepReplace() { openGrepDialog(true); }
 
@@ -4072,6 +5298,12 @@ function applySplit() {
         .map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("");
       view.appendChild(row);
     });
+    // 显式落格 (行 3 起, 与完整布局里自动落格的结果相同): 标签条/面包屑被隐藏 (display:none) 时, 自动落格会把视图塞进
+    // 它们留下的 auto 行 (行 1/2), 而不是 1fr 的行 3+
+    const gr = SPLIT.mode === "h" ? 3 + i : SPLIT.mode === "v" ? 3 : 3 + (i >> 1);
+    view.style.gridRow = String(gr);
+    if (gr > 3) view.dataset.row2 = "";    // 第二排视图: min 布局里用它的上边线当两排之间的分隔 (行间距在 min 下为 0, 见样式表)
+    view.style.gridColumn = String(SPLIT.mode === "h" ? 1 : 1 + (i % 2));
     ed.style.display = "none";
     area.appendChild(view);
   }
@@ -4254,6 +5486,22 @@ window.insertCharMulti = insertCharMulti;
 window.backspaceMulti = backspaceMulti;
 window.startColumnSelect = startColumnSelect;
 window.extendColumnSelect = extendColumnSelect;
+window.colSelRect = colSelRect;
+window.columnInsert = columnInsert;
+window.columnDelete = columnDelete;
+window.columnSelectedText = columnSelectedText;
+window.syncColumnSelectUI = syncColumnSelectUI;
+// Grep 对标 Sakura 的入口 (SPA-01): 解析器与状态要能被 UAT 直接断言.
+window.parseFilePatterns = parseFilePatterns;
+window.excludeDirGlobs = excludeDirGlobs;
+window.GREP_STATE = GREP_STATE;
+window.renderGrepResults = renderGrepResults;
+window.gotoPathLine = gotoPathLine;
+window.openGrep = openGrep;
+window.openGrepDialog = openGrepDialog;
+// 测试钩子: projectRoot 是脚本内的 let, UAT 无法直接赋值. 只给 UAT 设项目根用,
+// 避免为了测试把整个变量挂到 window 上 (那等于把内部状态变成公开 API).
+window.__setProjectRootForTest = (r) => { projectRoot = r || null; };
 window.completionCandidates = completionCandidates;
 window.showCompletion = showCompletion;
 window.applyCompletion = applyCompletion;
@@ -4748,30 +5996,99 @@ function startColumnSelect(row, col) {
   if (!t) return;
   t.sel = null;
   t.colSel = { r0: row, c0: col, r1: row, c1: col };
+  // 活动角 = 键盘延伸的起点. 锚点/活动角分离是 Sakura 的列块语义:
+  // 从锚点往回拖和从锚点往前走, 上下键的延伸方向不同, 所以不能靠 min/max 推断.
+  t.colActiveRow = row;
+  t.colActiveCol = col;
   renderVim(t);
+  syncColumnSelectUI(t);
 }
 
 function extendColumnSelect(row, col) {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
   t.colSel.r1 = row;
-  t.colSel.c1 = col;
+  // col < 0 = 只移动纵向边界, 横向范围不变 (上下键在列块里不该改变列跨度).
+  if (col >= 0) t.colSel.c1 = col;
+  if (col >= 0) t.colActiveCol = col;
+  t.colActiveRow = row;
   renderVim(t);
+  syncColumnSelectUI(t);
+}
+
+/* 列块归一化: r0<=r1, c0<=c1, 且所有边界夹在文档范围内. */
+function colSelRect(t) {
+  const cs = t.colSel;
+  const lastRow = Math.max(0, t.lines.length - 1);
+  const r0 = Math.max(0, Math.min(cs.r0, cs.r1, lastRow));
+  const r1 = Math.max(r0, Math.min(Math.max(cs.r0, cs.r1), lastRow));
+  // 列边界可能落在行尾之外 (End 键), 取所有参与行的最长长度, 再夹住.
+  let maxLen = 0;
+  for (let r = r0; r <= r1; r++) maxLen = Math.max(maxLen, charLen(t.lines[r] || ""));
+  const c0 = Math.max(0, Math.min(cs.c0, cs.c1, maxLen));
+  const c1 = Math.max(c0, Math.min(Math.max(cs.c0, cs.c1), maxLen));
+  return { r0, r1, c0, c1 };
+}
+
+/* 列块输入: 把 text 里的每一行分别插入到对应行的列块起点.
+   - text 含 \n = 多行内容按行分配 (Sakura 的「一次性给多行添加不同内容」)
+   - text 不含 \n = 同一份内容插入到每一行 (最常见的批量加前缀 / 加引号场景)
+   - 短行会自动补空格再插入, 保证列对齐 (C-06); 不会截断已有内容. */
+function columnInsert(text) {
+  const t = getActiveTab();
+  if (!t || !t.colSel) return;
+  const { r0, r1, c0 } = colSelRect(t);
+  const parts = String(text).split("\n");
+  snapshot(t);
+  for (let r = r0; r <= r1; r++) {
+    const add = parts[r - r0] !== undefined ? parts[r - r0] : parts[parts.length - 1];
+    if (!add) continue;
+    const line = t.lines[r] || "";
+    // 短行补空格: 不然插入点会随行长漂移, 列块就对不齐了.
+    const padded = charLen(line) < c0 ? line + " ".repeat(c0 - charLen(line)) : line;
+    t.lines[r] = charSlice(padded, 0, c0) + add + charSlice(padded, c0, charLen(padded));
+  }
+  t.colSel = { r0, c0: c0 + 1, r1, c1: c0 + 1 };   // 插入点右移一列, 可以接着连续输入
+  t.dirty = true;
+  renderVim(t);
+  updateCaret(false);
+  syncColumnSelectUI(t);
+  setTip("列块插入 " + (r1 - r0 + 1) + " 行");
+}
+
+/* 列块退格: 每一行在列块起点前删掉一个字符. */
+function columnBackspace() {
+  const t = getActiveTab();
+  if (!t || !t.colSel) return;
+  const { r0, r1, c0 } = colSelRect(t);
+  snapshot(t);
+  for (let r = r0; r <= r1; r++) {
+    const line = t.lines[r] || "";
+    if (charLen(line) <= c0) continue;
+    t.lines[r] = charSlice(line, 0, c0 - 1) + charSlice(line, c0, charLen(line));
+  }
+  t.colSel = { r0, c0: Math.max(0, c0 - 1), r1, c1: Math.max(0, c0 - 1) };
+  t.dirty = true;
+  renderVim(t);
+  updateCaret(false);
+  syncColumnSelectUI(t);
 }
 
 function clearColumnSelect(t) {
   if (t) t.colSel = null;
+  syncColumnSelectUI(t);
 }
 
 function columnSelectedText(t) {
   const cs = t.colSel;
   if (!cs) return "";
-  const r0 = Math.min(cs.r0, cs.r1), r1 = Math.max(cs.r0, cs.r1);
-  const c0 = Math.min(cs.c0, cs.c1), c1 = Math.max(cs.c0, cs.c1);
+  const { r0, r1, c0, c1 } = colSelRect(t);
   const out = [];
   for (let r = r0; r <= r1; r++) {
     const line = t.lines[r] || "";
-    out.push(c1 === c0 ? (line[c0] || "") : line.slice(c0, c1));
+    // 塌缩列块 (c1 === c0) 取该列单个字符; 否则取 [c0, c1) 区间.
+    // 用 charSlice 而非 String.slice: 后者按 UTF-16 码元切, 会在代理对上劈开半个字符.
+    out.push(c1 === c0 ? charSlice(line, c0, c0 + 1) : charSlice(line, c0, c1));
   }
   return out.join("\n");
 }
@@ -4780,12 +6097,11 @@ function columnSelectedText(t) {
 function columnDelete() {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
+  const { r0, r1, c0, c1 } = colSelRect(t);
   snapshot(t);
-  const r0 = Math.min(t.colSel.r0, t.colSel.r1), r1 = Math.max(t.colSel.r0, t.colSel.r1);
-  const c0 = Math.min(t.colSel.c0, t.colSel.c1), c1 = Math.max(t.colSel.c0, t.colSel.c1);
   for (let r = r0; r <= r1; r++) {
     const line = t.lines[r] || "";
-    t.lines[r] = line.slice(0, c0) + line.slice(c1);
+    t.lines[r] = charSlice(line, 0, c0) + charSlice(line, c1, charLen(line));
   }
   t.colSel = null;
   t.dirty = true;
@@ -4802,17 +6118,18 @@ function columnPrompt() {
   if (text === null) return;
   const parts = text.split("\n");
   snapshot(t);
-  const r0 = Math.min(t.colSel.r0, t.colSel.r1), r1 = Math.max(t.colSel.r0, t.colSel.r1);
-  const c0 = Math.min(t.colSel.c0, t.colSel.c1), c1 = Math.max(t.colSel.c0, t.colSel.c1);
+  const { r0, r1, c0, c1 } = colSelRect(t);
   const width = c1 - c0;
   for (let r = r0; r <= r1; r++) {
     const line = t.lines[r] || "";
-    const repl = (parts[r - r0] || "").padEnd(width).slice(0, width);
-    t.lines[r] = line.slice(0, c0) + repl + line.slice(c1);
+    // 替换文本不足宽度时补空格, 保持列对齐; 超宽则截断 (与 Sakura 的等宽替换一致).
+    const repl = (parts[r - r0] !== undefined ? parts[r - r0] : "").padEnd(width).slice(0, width);
+    t.lines[r] = charSlice(line, 0, c0) + repl + charSlice(line, c1, charLen(line));
   }
   t.colSel = null;
   t.dirty = true;
   renderVim(t);
+  syncColumnSelectUI(t);
   setTip("列块已替换");
 }
 
@@ -4971,7 +6288,8 @@ function pushRecent(path) {
   if (!path) return;
   const list = recentList().filter((r) => r.path !== path);
   list.unshift({ path, at: Date.now() });
-  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX)));
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX))); }
+  catch (_) { /* 隐私模式: 存储不可用, 只是不记「最近使用」, 不能让打开/保存因此失败 */ }
 }
 function clearRecent() {
   localStorage.removeItem(RECENT_KEY);
@@ -5050,7 +6368,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.ctrlKey && e.key === "F2") { e.preventDefault(); toggleBookmark(); return; }
-  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveActive(); }
+  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveByKey(e); }
   if (e.ctrlKey && e.shiftKey) {
     const k = e.key.toLowerCase();
     if (k === "f") { e.preventDefault(); showSidePane("search"); return; }
@@ -5063,11 +6381,17 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && !e.shiftKey) {
     const k = e.key.toLowerCase();
     // Ctrl+K 是 chord 前缀 (菜单里 "打开文件夹 (Ctrl+K O)" 的声明一直无实现).
+    // 顺序说明: chord 分支必须在极简布局 Ctrl+O 之前, 否则 Ctrl+K O 会被后者截走.
     if (k === "k") { e.preventDefault(); ctrlKChord = true; return; }
     if (ctrlKChord) {
       ctrlKChord = false;
       if (k === "o") { e.preventDefault(); openFolder(); return; }
       return;
+    }
+    // 极简布局的 Ctrl+N 新建 / Ctrl+O 打开 (菜单上标了这两个快捷键). 补全列表正显示时 Ctrl+N 让给「下一个候选」(编辑区那边已处理)
+    if (!e.altKey && layoutPreset() === "min") {
+      if (k === "n" && COMPLETE_STATE.list.length === 0) { e.preventDefault(); createNewFile(); return; }
+      if (k === "o") { e.preventDefault(); promptOpenFile(); return; }
     }
     if (k === "f") { e.preventDefault(); openFind(); return; }
     if (k === "h") { e.preventDefault(); openReplace(); return; }
@@ -5087,12 +6411,23 @@ document.addEventListener("keydown", (e) => {
     if (k === "c") { e.preventDefault(); copySelection(); return; }
     if (k === "x") { e.preventDefault(); cutSelection(); return; }
     if (k === "v") { e.preventDefault(); pasteClipboard(); return; }
-    if (k === "w") { e.preventDefault(); if (activeTabId) closeTab(activeTabId); return; }
+    if (k === "w") { e.preventDefault(); if (activeTabId && confirmClose(getActiveTab())) closeTab(activeTabId); return; }
     if (k === ",") { e.preventDefault(); openSettings(); return; }
   }
   if (e.shiftKey && !e.ctrlKey && !e.altKey) {
     if (e.key === "F3") { e.preventDefault(); findPrev(); return; }
     if (e.key === "F4") { e.preventDefault(); findNext(); return; }
+    // Shift+F6 = 列块选区模式 (Sakura 的标准入口; Alt+拖动 是等价的手势).
+    // 光标已在列块里时再按 = 退出, 与 Sakura 的开关语义一致.
+    if (e.key === "F6") {
+      e.preventDefault();
+      const tv = getActiveTab();
+      if (!tv) return;
+      if (tv.colSel) { clearColumnSelect(tv); setMode("INSERT"); edContent.focus(); setTip("已退出列块模式"); }
+      else { startColumnSelect(tv.cursor.row, tv.cursor.col); setMode("INSERT"); setTip("列块模式: Shift+F6 退出, 方向键选区, 直接输入批量插入"); }
+      renderVim(tv);
+      return;
+    }
   }
   if (e.key === "F3") { e.preventDefault(); findNext(); return; }
   if (e.ctrlKey && e.key === "`") {
@@ -5101,7 +6436,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     const bp = document.getElementById("bottom-panel");
     if (bp) bp.setAttribute("data-collapsed", "false");
-    switchBottomPane("terminal-pane");
+    switchBottomPane("terminal-pane");     // min 布局下面板整块隐藏: 里面会先把它亮出来
   }
   if (e.key === "Escape") edContent.focus();
 });
@@ -5112,7 +6447,12 @@ function showWelcome() {
   if (!ed) return;
   ed.innerHTML = '<div id="welcome"><h1>IDE1.0</h1><button class="open-btn" data-cmd="open-folder" data-tip="打开文件夹 (Ctrl+K O)">打开文件夹</button><div class="shortcuts"><kbd>i</kbd>/<kbd>a</kbd> INSERT · <kbd>v</kbd> VISUAL · <kbd>Esc</kbd> NORMAL · <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存 · <kbd>Ctrl</kbd>+<kbd>`</kbd> 终端 · <kbd>F1</kbd> 帮助</div></div>';
 }
-showWelcome();
+// (极简布局里「底端面板」展开 / 折叠落盘在 bottomPanel 标志里; 静态标记的 data-collapsed 默认是 true (完整布局的初始态),
+//  由下面 syncLayoutUI -> syncDrawerUI 按标志还原, 所以重载后抽屉的展开状态、面板头按钮文案都是对的)
+syncLayoutUI();   // 布局初始同步: 存盘里缩略图为开时先建条, 抽屉的展开状态 / 把手属性, 并刷新菜单勾选 (data-* 属性在 <head> 里已就位, 首帧不闪)
+// 极简布局: 启动即是一个空白的「无标题」文档, 能直接输入 (像 Sakura); 完整布局仍是欢迎页.
+// 本脚本在 body 末尾, 此处执行早于首帧, 所以不会先闪一下欢迎页.
+if (layoutPreset() === "min") createUntitledDoc(); else showWelcome();
 
 // ===== Bootstrap =====
 window.addEventListener("DOMContentLoaded", async function () {
@@ -5133,7 +6473,7 @@ window.addEventListener("DOMContentLoaded", async function () {
     __ready = true;
     window.__ideReady = function() { return true; };
   }
-  showSidePane("explorer");
+  showSidePane("explorer", { reveal: false });   // 启动渲染: 不能因此把 min 布局的侧栏弹出来
   // 透明主题的文字反色需要持续探测桌面明暗 (用户可能在设置里切系统主题)
   startLuminanceWatch();
   try { initZoomWheel(); } catch (_) { /* ignore */ }
@@ -5145,9 +6485,12 @@ window.addEventListener("DOMContentLoaded", async function () {
   } catch (_) { /* private mode: 忽略 */ }
   // Default mode NORMAL
   setMode("NORMAL");
-  setPos("Ln 1, Col 1");
-  setFile("无活动");
-  setLang("Plain");
+  // 极简布局启动时已有无标题文档 (setActiveTab 填好了状态栏), 不能再被这三行盖成「无活动」
+  if (!getActiveTab()) {
+    setPos("Ln 1, Col 1");
+    setFile("无活动");
+    setLang("Plain");
+  }
   // Mark editor as fully initialized
   __ready = true;
   window.__ideReady = function() { return true; };
@@ -5159,6 +6502,11 @@ window.addEventListener("DOMContentLoaded", async function () {
 
 // --- ファイル メニュー ---
 function createNewFile() {
+  if (layoutPreset() === "min") {          // 极简布局: 像 Sakura 一样直接开一个无标题文档, 不问文件名 (保存时才起名)
+    const t = createUntitledDoc();
+    setTip("已新建: " + t.name);
+    return;
+  }
   const name = prompt("新建文件名 (相对项目根):");
   if (!name || !projectRoot) { setTip("请先打开项目"); return; }
   const path = stripVerbatim(projectRoot) + "\\" + name;
@@ -5168,6 +6516,8 @@ function createNewFile() {
 function saveActiveAs() {
   const t = getActiveTab();
   if (!t) return;
+  // 无标题文档 / 极简布局: 另存为 = 起名保存, 标签改绑到新文件. 完整布局的有名文档保持老行为 (只写一份副本, 标签不变)
+  if (t.untitled || layoutPreset() === "min") return saveAsFlow(t);
   const name = prompt("另存为 (项目根内相对路径):", t.path.split(/[\\\/]/).pop());
   if (!name) return;
   const path = stripVerbatim(projectRoot || "") + "\\" + name;
@@ -5179,13 +6529,18 @@ function saveActiveAs() {
 async function saveAll() {
   const dirty = [...TABS.values()].filter((t) => t.dirty);
   if (dirty.length === 0) { setTip("无未保存修改"); return; }
-  let ok = 0, fail = 0;
+  let ok = 0, fail = 0, skip = 0;
   for (const t of dirty) {
+    if (t.untitled) {      // 没有路径可写: 切到它, 走另存为 (取消就跳过)
+      setActiveTab(t.id);
+      if (await saveAsFlow(t, true)) ok++; else skip++;
+      continue;
+    }
     try { await invoke("write_file", { path: t.path, content: t.lines.join(FILE_EOL) }); t.dirty = false; ok++; }
     catch (e) { fail++; setTip("保存失败 " + t.path + ": " + e.message); }
   }
   renderTabs();
-  setTip("已保存 " + ok + " 个文件" + (fail ? ", 失败 " + fail : ""));
+  setTip("已保存 " + ok + " 个文件" + (fail ? ", 失败 " + fail : "") + (skip ? ", 跳过 " + skip : ""));
 }
 
 function closeActiveTab() {
@@ -5195,6 +6550,15 @@ function closeActiveTab() {
 }
 
 function closeAllTabs() {
+  if (layoutPreset() === "min") {
+    // 极简布局: 真的关掉全部 (下面按钮点击的写法只能关第一个: 关一个就重建标签条, 其余按钮节点已脱离文档),
+    // 最后一个关掉时 closeTab 会补一个空白无标题文档; 有未保存修改的文档先统一确认一次
+    const dirty = [...TABS.values()].filter((t) => t.dirty).length;
+    if (dirty && !confirm(dirty + " 个文档有未保存修改, 全部关闭会丢失. 继续?")) return;
+    [...TABS.keys()].forEach(closeTab);
+    setTip("关闭全部标签");
+    return;
+  }
   document.querySelectorAll(".tab .tab-close").forEach(btn => btn.click());
   setTip("关闭全部标签");
 }
@@ -5202,6 +6566,7 @@ function closeAllTabs() {
 async function reloadActive() {
   const t = getActiveTab();
   if (!t) { setTip("无活动标签"); return; }
+  if (t.untitled) { setTip("无标题文档没有对应的文件, 无法重新载入"); return; }
   if (t.dirty && !confirm(t.path + " 有未保存修改, 重新载入会丢失. 继续?"))
     return;
   const lines = await invoke("read_file", { path: stripVerbatim(t.path) });
@@ -5421,9 +6786,11 @@ function deleteSelection(t) {
 function copySelection() {
   const t = getActiveTab();
   if (!t) return;
-  const text = selectionText(t);
+  // 列块优先: 列块模式下没有 t.sel, 走普通分支会复制到空字符串 (Sakura 的
+  // 列块复制 = 按行取每行该列区间的文本, 用 \n 连接, 与 columnSelectedText 一致).
+  const text = t.colSel ? columnSelectedText(t) : selectionText(t);
   pushClip(text);
-  setTip("已复制 " + text.length + " 字符");
+  setTip(t.colSel ? "已复制列块 " + text.split("\n").length + " 行" : "已复制 " + text.length + " 字符");
 }
 
 function cutSelection() {
@@ -5483,11 +6850,13 @@ function insertCurrentLangTemplate() {
 function toggleWordWrap() {
   VIEW_STATE.wordWrap = !VIEW_STATE.wordWrap;
   edContent.style.whiteSpace = VIEW_STATE.wordWrap ? "pre-wrap" : "pre";
+  updateCaret(false);
   setTip("自动换行: " + (VIEW_STATE.wordWrap ? "开" : "关"));
 }
 function toggleLineNumbers() {
   VIEW_STATE.lineNumbers = !VIEW_STATE.lineNumbers;
   gutter.style.display = VIEW_STATE.lineNumbers ? "" : "none";
+  updateCaret(false);
   setTip("行号: " + (VIEW_STATE.lineNumbers ? "开" : "关"));
 }
 // 缩略图: 编辑区右侧的整文件条形预览, 真实渲染 (行高按缩放比例)
@@ -5516,11 +6885,10 @@ function buildMinimap() {
   }));
 }
 
+// 开关走统一的布局标志 (落盘); LAYOUT.onChange -> syncLayoutUI 负责 VIEW_STATE.minimap / buildMinimap / renderVim
 function toggleMinimap() {
-  VIEW_STATE.minimap = !VIEW_STATE.minimap;
-  buildMinimap();
+  setLayoutFlag("minimap", !layoutFlag("minimap"));
   setTip("缩略图: " + (VIEW_STATE.minimap ? "开" : "关"));
-  renderVim(getActiveTab());
 }
 
 function execCmd(cmd) {
