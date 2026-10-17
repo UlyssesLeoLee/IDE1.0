@@ -2614,6 +2614,21 @@ function dispatchCommand(cmd) {
     case "grep":             openGrep(); break;
     case "grep-replace":     openGrepReplace(); break;
     case "goto-line":        openGotoLine(); break;
+    // --- Sakura 光标移动命令集 (SPA-02 §2) ---
+    case "cursor-line-start":   sakuraMove(getActiveTab(), "line", -1); break;
+    case "cursor-line-end":     sakuraMove(getActiveTab(), "line", 1); break;
+    case "cursor-word-left":    sakuraMove(getActiveTab(), "word", -1); break;
+    case "cursor-word-right":   sakuraMove(getActiveTab(), "word", 1); break;
+    case "cursor-up-2":         sakuraMove(getActiveTab(), "line2", -1); break;
+    case "cursor-down-2":       sakuraMove(getActiveTab(), "line2", 1); break;
+    case "cursor-para-prev":    sakuraMove(getActiveTab(), "para", -1); break;
+    case "cursor-para-next":    sakuraMove(getActiveTab(), "para", 1); break;
+    case "cursor-page-up":      sakuraMove(getActiveTab(), "page", -1); break;
+    case "cursor-page-down":    sakuraMove(getActiveTab(), "page", 1); break;
+    case "cursor-halfpage-up":  sakuraMove(getActiveTab(), "page", -1, true); break;
+    case "cursor-halfpage-down":sakuraMove(getActiveTab(), "page", 1, true); break;
+    case "cursor-doc-start":    sakuraMove(getActiveTab(), "doc", -1); break;
+    case "cursor-doc-end":      sakuraMove(getActiveTab(), "doc", 1); break;
     case "tag-jump":         tagJump(); break;
     case "bookmark-toggle":  toggleBookmark(); break;
     case "bookmark-next":    bookmarkNext(); break;
@@ -3825,6 +3840,129 @@ function moveCaretDown(t) {
     const len = charLen(t.lines[t.cursor.row]);
     t.cursor.col = Math.min(t.cursor.col, len);
   }
+}
+
+// ================================================================
+// Sakura 光标移动命令集 (docs/SPA-02 §2, 对标 HLP000220 ~ HLP000263)
+//
+// Sakura 的移动命令有一条统一规则, 缺了它就不算对标:
+//   **有选区时, 移动命令 = 收缩选区到起点/终点**, 而不是移动光标丢弃选区.
+//   例如「行末へ移動」在有选区时把选区收到行末, 无选区才移动光标.
+//   我们原来的 moveCaret* 没有这个分支, 与 Sakura 行为不一致.
+//
+// 所有命令都在 char (码点) 语义下工作, 不碰 UTF-16 码元 (与 chars/charSlice 同一套).
+// ================================================================
+
+// 单词边界判定: 字母/数字/下划线算"单词字符", 其余算分隔符.
+// 日文没有空格分词, 但 Sakura 用的是同一套「非单词字符即边界」规则,
+// 对日文来说就是按空格/标点断词 —— 与 Sakura 行为一致.
+function isWordChar(c) {
+  return !!c && /[\p{L}\p{N}_]/u.test(c);
+}
+
+// 单词右边界: 从 from 起跳到下一个单词的起点 (Sakura「単語の右端」是跳过
+// 当前单词 + 后续分隔符, 落在下一个单词首; 从词尾起则落在下一个词首).
+function wordRight(line, from) {
+  const a = charArray(line);
+  let i = Math.max(0, Math.min(from, a.length));
+  // 先跳过分隔符
+  while (i < a.length && !isWordChar(a[i])) i++;
+  // 再跳过一个完整单词
+  while (i < a.length && isWordChar(a[i])) i++;
+  return i;
+}
+
+// 单词左边界: 从 from 回退到上一个单词的起点.
+function wordLeft(line, from) {
+  const a = charArray(line);
+  let i = Math.max(0, Math.min(from, a.length));
+  while (i > 0 && !isWordChar(a[i - 1])) i--;
+  while (i > 0 && isWordChar(a[i - 1])) i--;
+  return i;
+}
+
+// 段落边界: 空行为分界, 没有空行时整篇算一段 (Sakura HLP000262/263 语义).
+function paraNext(t, fromRow) {
+  let r = fromRow;
+  // 当前段末尾
+  while (r + 1 < t.lines.length && (t.lines[r] || "").trim() !== "") r++;
+  // 跳过空行
+  while (r + 1 < t.lines.length && (t.lines[r] || "").trim() === "") r++;
+  return Math.min(r, t.lines.length - 1);
+}
+function paraPrev(t, fromRow) {
+  let r = fromRow;
+  while (r > 0 && (t.lines[r] || "").trim() === "") r--;
+  while (r > 0 && (t.lines[r - 1] || "").trim() === "") r--;
+  while (r > 0 && (t.lines[r - 1] || "").trim() !== "") r--;
+  return Math.max(0, r);
+}
+
+// 一页 = 编辑区可视行数 (由真实高度算出, 不写死).
+function pageRows() {
+  const el = document.getElementById("editor");
+  const h = el ? el.clientHeight : 0;
+  const row = edContent.querySelector(".hl-row");
+  const lineH = row ? row.getBoundingClientRect().height || 18 : 18;
+  return Math.max(1, Math.floor(h / lineH) - 1);
+}
+
+/* 通用移动入口. mode: 行/字/段落/页/文首尾; dir: +1/-1; half: 半页.
+   有选区时按 Sakura 规则先收缩选区 (Sakura HLP000234 ~ HLP000243). */
+function sakuraMove(t, mode, dir, half) {
+  if (!t) return;
+  // 选区收缩: 上/左方向的命令收到起点, 下/右方向收到终点.
+  if (t.sel) {
+    const { r0, c0, r1, c1 } = t.sel;
+    const toStart = dir < 0;
+    if (mode === "line") { t.cursor = { row: toStart ? r0 : r1, col: toStart ? c0 : Math.min(c1, charLen(t.lines[toStart ? r0 : r1] || "")) }; }
+    else { t.cursor = { row: r0, col: c0 }; }
+    t.sel = null;
+    renderVim(t);
+    updateCaret(true);
+    return;
+  }
+  const lastRow = Math.max(0, t.lines.length - 1);
+  const cur = curLine(t);
+  switch (mode) {
+    case "line": {                       // 行首/行末
+      t.cursor.col = dir > 0 ? charLen(cur) : 0;
+      break;
+    }
+    case "word": {                       // 单词左/右
+      const c = dir > 0 ? wordRight(cur, t.cursor.col) : wordLeft(cur, t.cursor.col);
+      if (dir > 0 && c >= charLen(cur)) { if (t.cursor.row < lastRow) { t.cursor.row++; t.cursor.col = 0; } else t.cursor.col = c; }
+      else t.cursor.col = c;
+      break;
+    }
+    case "para": {
+      t.cursor.row = dir > 0 ? paraNext(t, t.cursor.row) : paraPrev(t, t.cursor.row);
+      t.cursor.col = Math.min(t.cursor.col, charLen(t.lines[t.cursor.row] || ""));
+      break;
+    }
+    case "page": {
+      const step = half ? Math.max(1, Math.floor(pageRows() / 2)) : pageRows();
+      t.cursor.row = Math.max(0, Math.min(lastRow, t.cursor.row + dir * step));
+      t.cursor.col = Math.min(t.cursor.col, charLen(t.lines[t.cursor.row] || ""));
+      break;
+    }
+    case "doc": {                        // 文首/文末
+      if (dir > 0) { t.cursor = { row: lastRow, col: charLen(t.lines[lastRow] || "") }; }
+      else t.cursor = { row: 0, col: 0 };
+      break;
+    }
+    case "line2": {                      // 上下 2 行 (Sakura 的「２行ごと」)
+      t.cursor.row = Math.max(0, Math.min(lastRow, t.cursor.row + dir * 2));
+      t.cursor.col = Math.min(t.cursor.col, charLen(t.lines[t.cursor.row] || ""));
+      break;
+    }
+  }
+  renderVim(t);
+  updateCaret(true);
+  setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+  // 移动后把光标滚进视野
+  const el = edContent.querySelectorAll(".hl-row")[t.cursor.row];
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
 }
 
 // 退格: 合并到上一行 / 行内删除
@@ -5491,6 +5629,13 @@ window.columnInsert = columnInsert;
 window.columnDelete = columnDelete;
 window.columnSelectedText = columnSelectedText;
 window.syncColumnSelectUI = syncColumnSelectUI;
+// Sakura 移动命令 (SPA-02 §2)
+window.sakuraMove = sakuraMove;
+window.wordLeft = wordLeft;
+window.wordRight = wordRight;
+window.paraNext = paraNext;
+window.paraPrev = paraPrev;
+window.pageRows = pageRows;
 // Grep 对标 Sakura 的入口 (SPA-01): 解析器与状态要能被 UAT 直接断言.
 window.parseFilePatterns = parseFilePatterns;
 window.excludeDirGlobs = excludeDirGlobs;
