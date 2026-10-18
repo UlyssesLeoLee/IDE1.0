@@ -2673,20 +2673,20 @@ function dispatchCommand(cmd) {
     case "grep-replace":     openGrepReplace(); break;
     case "goto-line":        openGotoLine(); break;
     // --- Sakura 光标移动命令集 (SPA-02 §2) ---
-    case "cursor-line-start":   sakuraMove(getActiveTab(), "line", -1); break;
-    case "cursor-line-end":     sakuraMove(getActiveTab(), "line", 1); break;
-    case "cursor-word-left":    sakuraMove(getActiveTab(), "word", -1); break;
-    case "cursor-word-right":   sakuraMove(getActiveTab(), "word", 1); break;
-    case "cursor-up-2":         sakuraMove(getActiveTab(), "line2", -1); break;
-    case "cursor-down-2":       sakuraMove(getActiveTab(), "line2", 1); break;
-    case "cursor-para-prev":    sakuraMove(getActiveTab(), "para", -1); break;
-    case "cursor-para-next":    sakuraMove(getActiveTab(), "para", 1); break;
-    case "cursor-page-up":      sakuraMove(getActiveTab(), "page", -1); break;
-    case "cursor-page-down":    sakuraMove(getActiveTab(), "page", 1); break;
-    case "cursor-halfpage-up":  sakuraMove(getActiveTab(), "page", -1, true); break;
-    case "cursor-halfpage-down":sakuraMove(getActiveTab(), "page", 1, true); break;
-    case "cursor-doc-start":    sakuraMove(getActiveTab(), "doc", -1); break;
-    case "cursor-doc-end":      sakuraMove(getActiveTab(), "doc", 1); break;
+    case "cursor-line-start":   legacyMove(getActiveTab(), "line", -1); break;
+    case "cursor-line-end":     legacyMove(getActiveTab(), "line", 1); break;
+    case "cursor-word-left":    legacyMove(getActiveTab(), "word", -1); break;
+    case "cursor-word-right":   legacyMove(getActiveTab(), "word", 1); break;
+    case "cursor-up-2":         legacyMove(getActiveTab(), "line2", -1); break;
+    case "cursor-down-2":       legacyMove(getActiveTab(), "line2", 1); break;
+    case "cursor-para-prev":    legacyMove(getActiveTab(), "para", -1); break;
+    case "cursor-para-next":    legacyMove(getActiveTab(), "para", 1); break;
+    case "cursor-page-up":      legacyMove(getActiveTab(), "page", -1); break;
+    case "cursor-page-down":    legacyMove(getActiveTab(), "page", 1); break;
+    case "cursor-halfpage-up":  legacyMove(getActiveTab(), "page", -1, true); break;
+    case "cursor-halfpage-down":legacyMove(getActiveTab(), "page", 1, true); break;
+    case "cursor-doc-start":    legacyMove(getActiveTab(), "doc", -1); break;
+    case "cursor-doc-end":      legacyMove(getActiveTab(), "doc", 1); break;
     case "tag-jump":         tagJump(); break;
     case "bookmark-toggle":  toggleBookmark(); break;
     case "bookmark-next":    bookmarkNext(); break;
@@ -3979,7 +3979,7 @@ function pageRows() {
    「(選択)」前缀的命令 = 把光标移到选区的**后端/前端**并清掉选区**, 而不是丢弃选区移动光标.
    方向: dir > 0 (末方向: 行末/词右/下/文末) 取选区**终点**;
         dir < 0 (首方向: 行首/词左/上/文首) 取选区**起点**. */
-function sakuraMove(t, mode, dir, half) {
+function legacyMove(t, mode, dir, half) {
   if (!t) return;
   if (t.sel) {
     const { r0, c0, r1, c1 } = t.sel;
@@ -4313,10 +4313,10 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     // 不放行的话, Sakura 增删改那批键位在编辑区获得焦点时按了没反应.
     // 只放行 Sakura 系列 + Ctrl+Delete (本项目原有的「删除下方行」走 document 的快捷键);
     // 其余 Ctrl 键维持原来的「吞掉」行为, 免得补全 / 宏之类被文档层抢走.
-    const sakuraKey = (!e.shiftKey && (k === "u" || k === "e" || e.key === "Backspace"))
+    const editorKey = (!e.shiftKey && (k === "u" || k === "e" || e.key === "Backspace"))
       || (e.shiftKey && (k === "u" || k === "k"))
       || (e.shiftKey && (e.key === "Backspace" || e.key === "ArrowUp" || e.key === "ArrowDown"));
-    if (!sakuraKey && e.key !== "Delete") { e.preventDefault(); }
+    if (!editorKey && e.key !== "Delete") { e.preventDefault(); }
     return;
   }
 
@@ -5827,7 +5827,7 @@ window.syncColumnSelectUI = syncColumnSelectUI;
 window.boxMove = boxMove;
 window.boxEdge = boxEdge;
 // Sakura 移动命令 (SPA-02 §2)
-window.sakuraMove = sakuraMove;
+window.legacyMove = legacyMove;
 window.wordLeft = wordLeft;
 window.wordRight = wordRight;
 window.paraNext = paraNext;

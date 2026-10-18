@@ -230,7 +230,7 @@ test("help modal opens with wiki containing vim section", async ({ page }) => {
   await expect(page.locator("#modal")).not.toHaveClass(/show/);
 });
 
-// 注: 旧 shell 面板 (#shell-body/#shell-mode-badge) 已被 sakura 风格重构替换为
+// 注: 旧 shell 面板 (#shell-body/#shell-mode-badge) 已被传统编辑器风格重构替换为
 // Terminal / Output / Problems 三页签 (见需求: 底端面板单层 tabs). 这里验证新结构.
 test("bottom panel renders Terminal/Output/Problems tabs", async ({ page, request }) => {
   // 终端 session 是 server 级全局状态; 前一个用例若留下存活 session,
@@ -417,7 +417,7 @@ test("read_file rejects huge files (>4MB)", async ({ request }) => {
   await request.post(`${BASE}/api/write_file`, { data: { path, content: "" } });
 });
 
-test.describe("命令审计 (sakura 功能覆盖)", () => {
+test.describe("命令审计 (功能覆盖)", () => {
   test("96 个菜单命令全部可执行, 无异常无占位", async ({ page }) => {
     await goEditor(page);
     await openProject(page, FIXTURE_ROOT);
@@ -687,7 +687,7 @@ test.describe("命令审计 (sakura 功能覆盖)", () => {
   });
 });
 
-test.describe("sakura 平替能力 (第二批)", () => {
+test.describe("传统编辑器对标能力 (第二批)", () => {
   test.beforeEach(async ({ page }) => {
     await goEditor(page);
     await page.evaluate(() => { try { (window as any).closeModal(); } catch (_) { /* ignore */ } });

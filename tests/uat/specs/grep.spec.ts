@@ -1,4 +1,4 @@
-// tests/uat/specs/grep-sakura.spec.ts
+// tests/uat/specs/grep.spec.ts
 // Grep 对标 Sakura Editor (docs/SPA-01 §1)
 //
 // 覆盖本轮实现的部分:

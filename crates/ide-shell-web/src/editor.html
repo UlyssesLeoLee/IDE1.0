@@ -265,7 +265,7 @@
       color: var(--fg-dim);
     }
 
-    /* ===== Menubar (sakura 风格 顶端功能按钮) ===== */
+    /* ===== Menubar (传统编辑器风格 顶端功能按钮) ===== */
     #menubar { grid-row: 1; grid-column: 1 / -1; background: var(--bg-bar); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; padding: 0; gap: 0; height: var(--h-menubar); position: relative; z-index: var(--z-menubar); }
     .menu-item { position: relative; }
     .mb-btn { background: transparent; border: none; color: var(--fg); padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; height: 30px; line-height: 22px; }
@@ -1215,7 +1215,7 @@
 </head>
 <body>
   <div id="app" class="status-active">
-    <!-- sakura-style 顶端功能按钮 (8 个主菜单) -->
+    <!-- classic 顶端功能按钮 (8 个主菜单) -->
     <div id="menubar">
       <div class="menu-item" data-menu="file">
         <button class="mb-btn" data-tip="文件操作 (Alt+F)">文件<span class="mn-key">F</span></button>
@@ -2348,7 +2348,7 @@ async function sendTerminal(data) {
   await fetchApi("/api/terminal_input", { body: { id: terminalId, data } });
 }
 
-// ===== sakura 风格 菜单 交互 =====
+// ===== 传统编辑器风格 菜单 交互 =====
 // 行为对齐 Sakura / 原生 Windows 菜单 (两种布局都一样):
 //   鼠标: 点击展开, 再点 / 点外面 / Esc 收起; 有菜单展开时, 鼠标挪到别的顶层按钮上立刻切过去 (不用再点); 下拉里悬停子菜单照旧展开.
 //   键盘: Alt+字母 打开对应菜单; 单按一下 Alt (按下松开之间没按别的键) 把焦点交给菜单栏;
@@ -2565,14 +2565,14 @@ async function sendTerminal(data) {
   }, true);
   document.addEventListener("mousedown", () => { altArmed = false; }, true);   // Alt+拖选 (列块选择) 等不算单按 Alt
   window.addEventListener("blur", () => { altArmed = false; });                // Alt+Tab 切走: 松开事件发不到本页
-  // (Alt+letter 助记键 sakura-style menu mnemonics 在上面的捕获阶段处理器里, 菜单开着也生效: Alt+E 直接从 文件 切到 编辑)
+  // (Alt+letter 助记键 classic menu mnemonics 在上面的捕获阶段处理器里, 菜单开着也生效: Alt+E 直接从 文件 切到 编辑)
   // 测试 / 诊断用: 当前展开的菜单、高亮行、子菜单、菜单栏焦点
   window.getMenuState = function () {
     const open = openItem(), act = BAR.querySelector(".menu-row.kb-active"), sub = BAR.querySelector(".menu-row.kb-open"), b = barFocus();
     return { open: open ? open.dataset.menu : null, row: act ? (act.dataset.cmd || act.dataset.submenu || null) : null,
              sub: sub ? sub.dataset.submenu : null, bar: b ? b.parentElement.dataset.menu : null, armed: altArmed };
   };
-  // Handle menu-row clicks (sakura-style command dispatch)
+  // Handle menu-row clicks (classic command dispatch)
   document.querySelectorAll(".menu-row[data-cmd]").forEach(row => {
     row.addEventListener("click", (e) => {
       // If submenu parent, don't fire
@@ -2593,7 +2593,7 @@ async function sendTerminal(data) {
   });
 })();
 
-// ===== Command Dispatcher (sakura menu items) =====
+// ===== Command Dispatcher (classic menu items) =====
 function dispatchCommand(cmd) {
   if (!cmd) return;
   setTip("命令: " + cmd);
@@ -2673,20 +2673,20 @@ function dispatchCommand(cmd) {
     case "grep-replace":     openGrepReplace(); break;
     case "goto-line":        openGotoLine(); break;
     // --- Sakura 光标移动命令集 (SPA-02 §2) ---
-    case "cursor-line-start":   sakuraMove(getActiveTab(), "line", -1); break;
-    case "cursor-line-end":     sakuraMove(getActiveTab(), "line", 1); break;
-    case "cursor-word-left":    sakuraMove(getActiveTab(), "word", -1); break;
-    case "cursor-word-right":   sakuraMove(getActiveTab(), "word", 1); break;
-    case "cursor-up-2":         sakuraMove(getActiveTab(), "line2", -1); break;
-    case "cursor-down-2":       sakuraMove(getActiveTab(), "line2", 1); break;
-    case "cursor-para-prev":    sakuraMove(getActiveTab(), "para", -1); break;
-    case "cursor-para-next":    sakuraMove(getActiveTab(), "para", 1); break;
-    case "cursor-page-up":      sakuraMove(getActiveTab(), "page", -1); break;
-    case "cursor-page-down":    sakuraMove(getActiveTab(), "page", 1); break;
-    case "cursor-halfpage-up":  sakuraMove(getActiveTab(), "page", -1, true); break;
-    case "cursor-halfpage-down":sakuraMove(getActiveTab(), "page", 1, true); break;
-    case "cursor-doc-start":    sakuraMove(getActiveTab(), "doc", -1); break;
-    case "cursor-doc-end":      sakuraMove(getActiveTab(), "doc", 1); break;
+    case "cursor-line-start":   legacyMove(getActiveTab(), "line", -1); break;
+    case "cursor-line-end":     legacyMove(getActiveTab(), "line", 1); break;
+    case "cursor-word-left":    legacyMove(getActiveTab(), "word", -1); break;
+    case "cursor-word-right":   legacyMove(getActiveTab(), "word", 1); break;
+    case "cursor-up-2":         legacyMove(getActiveTab(), "line2", -1); break;
+    case "cursor-down-2":       legacyMove(getActiveTab(), "line2", 1); break;
+    case "cursor-para-prev":    legacyMove(getActiveTab(), "para", -1); break;
+    case "cursor-para-next":    legacyMove(getActiveTab(), "para", 1); break;
+    case "cursor-page-up":      legacyMove(getActiveTab(), "page", -1); break;
+    case "cursor-page-down":    legacyMove(getActiveTab(), "page", 1); break;
+    case "cursor-halfpage-up":  legacyMove(getActiveTab(), "page", -1, true); break;
+    case "cursor-halfpage-down":legacyMove(getActiveTab(), "page", 1, true); break;
+    case "cursor-doc-start":    legacyMove(getActiveTab(), "doc", -1); break;
+    case "cursor-doc-end":      legacyMove(getActiveTab(), "doc", 1); break;
     case "tag-jump":         tagJump(); break;
     case "bookmark-toggle":  toggleBookmark(); break;
     case "bookmark-next":    bookmarkNext(); break;
@@ -3438,7 +3438,7 @@ window.newId = newId;
 // ===== char 语义层 =====
 //
 // 光标列 (t.cursor.col) 一律按 **char** (code point) 计数, 与 Rust 内核
-// (sakura_rs::LogicPos / DocLine::char_len) 保持一致.
+// (editcore::cursor::LogicPos / DocLine::char_len) 保持一致.
 //
 // 为什么要这一层: JS 的 String.length / slice / indexOf 都按 UTF-16
 // code unit 计数, 而补充平面字符 (emoji、CJK 扩展 B 的补字如 𠮷/𡈽,
@@ -3979,7 +3979,7 @@ function pageRows() {
    「(選択)」前缀的命令 = 把光标移到选区的**后端/前端**并清掉选区**, 而不是丢弃选区移动光标.
    方向: dir > 0 (末方向: 行末/词右/下/文末) 取选区**终点**;
         dir < 0 (首方向: 行首/词左/上/文首) 取选区**起点**. */
-function sakuraMove(t, mode, dir, half) {
+function legacyMove(t, mode, dir, half) {
   if (!t) return;
   if (t.sel) {
     const { r0, c0, r1, c1 } = t.sel;
@@ -4313,10 +4313,10 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     // 不放行的话, Sakura 增删改那批键位在编辑区获得焦点时按了没反应.
     // 只放行 Sakura 系列 + Ctrl+Delete (本项目原有的「删除下方行」走 document 的快捷键);
     // 其余 Ctrl 键维持原来的「吞掉」行为, 免得补全 / 宏之类被文档层抢走.
-    const sakuraKey = (!e.shiftKey && (k === "u" || k === "e" || e.key === "Backspace"))
+    const editorKey = (!e.shiftKey && (k === "u" || k === "e" || e.key === "Backspace"))
       || (e.shiftKey && (k === "u" || k === "k"))
       || (e.shiftKey && (e.key === "Backspace" || e.key === "ArrowUp" || e.key === "ArrowDown"));
-    if (!sakuraKey && e.key !== "Delete") { e.preventDefault(); }
+    if (!editorKey && e.key !== "Delete") { e.preventDefault(); }
     return;
   }
 
@@ -4433,7 +4433,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     if (e.key === "u") { e.preventDefault(); doUndo(); return; }
     // dd = 删除当前行. deleteLine() 早就写好了但没接到键盘上 ——
     // NORMAL 模式只实现了 0 $ G x u z, dd/D/C 之类双键命令全部缺失,
-    // 而 dd 是 vim/sakura 最基础的操作.
+    // 而 dd 是 vim / 传统编辑器最基础的操作.
     // pendingD 用超时兜底: 800ms 内没等到第二个 d 就当单键 d 处理 (无操作).
     if (e.key === "d") {
       e.preventDefault();
@@ -4536,8 +4536,8 @@ function renderExtensions(host) {
   host.innerHTML =
     '<div class="sb-section">扩展</div>' +
     '<div class="empty-hint">尚无已安装扩展<br><br>' +
-    '扩展面板为占位实现。sakura-rs 已有 wasm 插件加载骨架<br>' +
-    '(crates/sakura-rs/src/plugin.rs), 接入后此处列出已装扩展.</div>';
+    '扩展面板为占位实现。editcore 已有 wasm 插件加载骨架<br>' +
+    '(crates/editcore/src/plugin.rs), 接入后此处列出已装扩展.</div>';
 }
 
 // ===== Side bar =====
@@ -5345,7 +5345,7 @@ async function openGrepDialog(withReplace) {
     "</div>" +
     '<div class="opt-row" style="display:flex;align-items:center;gap:8px;">' +
       '<label style="flex:0 0 96px;">フォルダー</label>' +
-      '<input id="grep-folders" placeholder="留空 = 整个项目; 多个用 ; 分隔 (例 src;crates/sakura-rs)" ' +
+      '<input id="grep-folders" placeholder="留空 = 整个项目; 多个用 ; 分隔 (例 src;crates/editcore)" ' +
         'value="' + escapeHtml(GREP_STATE.folders) + '" ' + GREP_FIELD_IN + ' />' +
       '<button class="md-btn" id="grep-cur-dir" data-tip="以当前文件所在目录为初值">現文件夹</button>' +
     "</div>" +
@@ -5726,7 +5726,7 @@ function runPpaMacro() {
   setTip("PPA 宏执行完成");
 }
 
-/* ===== 插件 (sakura-rs 已有 wasm 加载骨架, 这里做前端注册表) ===== */
+/*/* ===== 插件 (editcore 已有 wasm 加载骨架, 这里做前端注册表) ===== */
 
 async function loadPlugin() {
   const path = prompt("加载插件 (.wasm, 需导出 process(text: &str) -> String):");
@@ -5744,7 +5744,7 @@ async function loadPlugin() {
     // 未启用 wasm feature 或模块无效时后端返回明确错误, 如实呈现
     PLUGINS.push({ path, loaded: false, lastError: e.message });
     openModal({ title: "插件加载失败", body: path + "\n\n" + e.message +
-      "\n\n提示: sakura-rs 的 wasm 运行时需开启 Cargo feature \"wasm\"." });
+      "\n\n提示: editcore 的 wasm 运行时需开启 Cargo feature \"wasm\"." });
   }
 }
 function managePlugins() {
@@ -5827,7 +5827,7 @@ window.syncColumnSelectUI = syncColumnSelectUI;
 window.boxMove = boxMove;
 window.boxEdge = boxEdge;
 // Sakura 移动命令 (SPA-02 §2)
-window.sakuraMove = sakuraMove;
+window.legacyMove = legacyMove;
 window.wordLeft = wordLeft;
 window.wordRight = wordRight;
 window.paraNext = paraNext;
@@ -5867,13 +5867,13 @@ Object.defineProperty(window, "TERM_CHANNEL", { get: () => TERM_CHANNEL });
 Object.defineProperty(window, "PLUGINS", { get: () => PLUGINS });
 Object.defineProperty(window, "EDIT_CMDS", { get: () => EDIT_CMDS });
 
-/* ===== sakura 进阶编辑能力 =====
+/* ===== 进阶编辑能力 =====
    全部前端实现, 不依赖后端. 分三批:
    A. 行操作 / 剪贴板历史 / 缩放 / 光标列指示 / 时间戳
    B. 编码转换 / 行尾符转换 / 排序去重 / 撤销重做增强
    C. 多重光标 / 列选择 / 自动补全 */
 
-/* ---------- A1. 行操作 (sakura 逐行增删/复制/移动) ---------- */
+/* ---------- A1. 行操作 (传统编辑器逐行增删/复制/移动) ---------- */
 function moveLines(delta) {
   const t = getActiveTab();
   if (!t) return;
@@ -5973,7 +5973,7 @@ function joinWithPrev() {
 
    本项目原来只有 deleteLine / addLineAbove / addLineBelow / deleteLineUp / deleteLineDown /
    joinWithPrev 这一套自造命令, 和上游 F_* 语义对不上. 这里补齐上游有而本项目缺的,
-   键位照抄 sakura_core/func/CKeyBind.cpp 的官方默认表:
+   键位照抄上游 sakura_core/func/CKeyBind.cpp 的官方默认表:
      Ctrl+E        剪切整行          (F_CUT_LINE,          HLP000174)
      Ctrl+U        剪切到行首        (F_LineCutToStart,    HLP000172)
      Shift+Ctrl+U  删到行首          (F_LineDeleteToStart, HLP000170)
@@ -6223,7 +6223,7 @@ function indentSelection(reverse) {
   setTip(reverse ? "反缩进 " + changed + " 行" : "缩进 " + changed + " 行");
 }
 
-/* ---------- A2. 剪贴板历史 (sakura 最多 20 条) ---------- */
+/* ---------- A2. 剪贴板历史 (传统惯例 最多 20 条) ---------- */
    // {text, at}
 const CLIP_MAX = 20;
 
@@ -6361,7 +6361,7 @@ function stampAt(t) {
   return t.cursor.row;
 }
 
-/* ---------- B1. 编码转换 (sakura 支持多种编码互转) ---------- */
+/* ---------- B1. 编码转换 (支持多种编码互转) ---------- */
 
 
 function convertEncoding(target) {
@@ -6936,7 +6936,7 @@ function gotoDefinitionLocal() {
   setTip("未找到 " + sym + " 的定义");
 }
 
-// ===== 最近项目 (sakura 「最近使用」) =====
+// ===== 最近项目 (「最近使用」) =====
 const RECENT_KEY = "ide1.0.recent.v1";
 const RECENT_MAX = 12;
 
@@ -7197,7 +7197,7 @@ window.addEventListener("DOMContentLoaded", async function () {
 })();
 });
 
-// ===== sakura 风格 菜单 コマンド 実装 =====
+// ===== 传统编辑器风格 菜单 コマンド 実装 =====
 
 // --- ファイル メニュー ---
 function createNewFile() {
@@ -7670,7 +7670,7 @@ function showWiki() {
 }
 
 function showAbout() {
-  setTip("关于 IDE1.0 v0.1.9 - sakura-rs 100% 完成");
+  setTip("关于 IDE1.0 v0.1.9");
 }
 
 </script>

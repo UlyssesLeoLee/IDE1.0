@@ -1,4 +1,4 @@
-// tests/uat/specs/sakura-line-ops.spec.ts
+// tests/uat/specs/line-ops.spec.ts
 // Sakura 增删改特色功能 (对标上游 F_* 命令, 见 docs/SPA-01 §2 扩展)
 //
 // 覆盖范围:
@@ -10,7 +10,7 @@
 // 键位全部照抄 sakura_core/func/CKeyBind.cpp 的官方默认表 (KeyDataInit[], 648-800 行).
 // 语义依据 help/sakura/res/HLP000014 / 137 / 166-174 / 210-214.
 //
-// 运行: npx playwright test specs/sakura-line-ops.spec.ts
+// 运行: npx playwright test specs/line-ops.spec.ts
 import { test, expect, type Page } from "@playwright/test";
 
 // 极简布局 + 非模态 —— Sakura 用户肌肉记忆所在的组合

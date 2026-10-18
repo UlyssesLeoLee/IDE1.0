@@ -1,5 +1,5 @@
 // tests/uat/specs/syntax.spec.ts
-// IDE1.0 IDE Shell — sakura 风格语法高亮 + Tab + 折叠 + 模板 + setlang
+// IDE1.0 IDE Shell — 传统编辑器风格语法高亮 + Tab + 折叠 + 模板 + setlang
 //
 // 覆盖:
 //   - 自动语言识别 (按扩展名)
