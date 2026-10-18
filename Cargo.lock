@@ -1368,6 +1368,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "editcore"
+version = "0.1.0"
+dependencies = [
+ "encoding_rs",
+ "memchr",
+ "serde",
+ "serde_json",
+ "wasmtime",
+ "windows-registry",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2316,7 +2328,7 @@ dependencies = [
 name = "ide-kernel"
 version = "0.1.0"
 dependencies = [
- "sakura-rs",
+ "editcore",
  "serde",
  "serde_json",
 ]
@@ -2346,11 +2358,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "editcore",
  "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
  "rfd",
- "sakura-rs",
  "serde",
  "serde_json",
  "tauri",
@@ -2384,12 +2396,12 @@ version = "0.1.0"
 dependencies = [
  "aci-emitter",
  "crossterm",
+ "editcore",
  "getrandom 0.3.4",
  "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
  "once_cell",
- "sakura-rs",
  "serde",
  "serde_json",
 ]
@@ -3949,18 +3961,6 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
-
-[[package]]
-name = "sakura-rs"
-version = "0.1.0"
-dependencies = [
- "encoding_rs",
- "memchr",
- "serde",
- "serde_json",
- "wasmtime",
- "windows-registry",
-]
 
 [[package]]
 name = "same-file"

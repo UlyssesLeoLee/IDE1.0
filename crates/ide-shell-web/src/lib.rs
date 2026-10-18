@@ -356,7 +356,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let input = req.get("input").and_then(|v| v.as_str()).unwrap_or("");
-            match sakura_rs::plugin::load_and_run(std::path::Path::new(path), input) {
+            match editcore::plugin::load_and_run(std::path::Path::new(path), input) {
                 Ok(out) => {
                     let j = serde_json::json!({ "ok": true, "output": out });
                     send_response(
@@ -1101,7 +1101,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 返回裸字符串, 与桌面端 #[tauri::command] desktop_luminance() -> String 保持一致.
             // 之前包成 {luminance:...} 会让前端 `lum !== VIEW_STATE.desktopLuminance` 每轮都成立,
             // 变成每秒重刷一整套 setProperty.
-            let j = serde_json::json!(sakura_rs::theme_luminance::detect().as_str());
+            let j = serde_json::json!(editcore::theme_luminance::detect().as_str());
             send_response(
                 stream,
                 "200 OK",
@@ -1110,7 +1110,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             );
         }
         ("POST", "/api/clear_theme_vars") | ("GET", "/api/clear_theme_vars") => {
-            let j = sakura_rs::theme_luminance::build_clear_theme_vars();
+            let j = editcore::theme_luminance::build_clear_theme_vars();
             send_response(
                 stream,
                 "200 OK",

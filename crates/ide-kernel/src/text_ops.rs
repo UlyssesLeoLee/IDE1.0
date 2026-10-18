@@ -243,7 +243,7 @@ pub struct ReplaceOutcome {
 /// 这是刻意的 —— 与 sakura 原本的 delete+insert 复合操作语义一致,
 /// 用户按两次 Ctrl+Z 能分别撤销删除和插入.
 fn replace_range(doc: &mut Document, start: Pos, end: Pos, replacement: &str) -> ReplaceOutcome {
-    let range = sakura_rs::cursor::LogicRange { start, end };
+    let range = editcore::cursor::LogicRange { start, end };
     if start != end {
         doc.delete_range(range);
     }

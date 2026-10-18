@@ -107,7 +107,7 @@ fn multibyte_insert_at_correct_col() {
 fn multibyte_cross_line_delete() {
     let mut d = Document::from_text("あ\nい");
     // 删掉换行: 从第 0 行末到第 1 行首
-    d.delete_range(sakura_rs::cursor::LogicRange {
+    d.delete_range(editcore::cursor::LogicRange {
         start: pos(0, 1),
         end: pos(1, 0),
     });

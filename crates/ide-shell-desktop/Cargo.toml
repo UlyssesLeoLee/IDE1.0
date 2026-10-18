@@ -33,7 +33,7 @@ tauri = { version = "2", features = [] }
 # 避开工作区 unsafe_code = "forbid" 约束.
 windows-registry = { version = "0.3", features = ["std"] }
 # sakura-rs — outline parser + buffer/undo (对标 sakura editor)
-sakura-rs = { path = "../sakura-rs" }
+editcore = { path = "../editcore" }
 
 [lints]
 workspace = true

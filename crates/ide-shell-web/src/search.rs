@@ -6,11 +6,11 @@
 
 #![allow(dead_code)]
 
-pub use sakura_rs::grep_engine::{search as search_impl, SearchOptions, SearchResult};
+pub use editcore::grep_engine::{search as search_impl, SearchOptions, SearchResult};
 
 use std::path::Path;
 
-/// 在项目根下搜索. 语义见 `sakura_rs::grep_engine::search`.
+/// 在项目根下搜索. 语义见 `editcore::grep_engine::search`.
 pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
     search_impl(cwd, opts)
 }
@@ -26,9 +26,9 @@ mod tests {
     #[test]
     fn re_exports_are_usable() {
         // 确认搬过去的符号在本 crate 真的可调用 (而不是只编译过)
-        let re = sakura_rs::grep_engine::MiniRegex::new("a+", true).unwrap();
+        let re = editcore::grep_engine::MiniRegex::new("a+", true).unwrap();
         assert!(re.is_match("aaa"));
-        assert!(sakura_rs::grep_engine::glob_match("main.rs", "*.rs", true));
-        assert!(!sakura_rs::grep_engine::SKIP_DIRS.is_empty());
+        assert!(editcore::grep_engine::glob_match("main.rs", "*.rs", true));
+        assert!(!editcore::grep_engine::SKIP_DIRS.is_empty());
     }
 }

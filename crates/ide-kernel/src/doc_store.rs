@@ -163,7 +163,7 @@ impl DocStore {
 
     pub fn delete_range(&mut self, r0: i32, c0: i32, r1: i32, c1: i32) -> Option<DocView> {
         self.with_doc_mut(|d| {
-            d.delete_range(sakura_rs::cursor::LogicRange {
+            d.delete_range(editcore::cursor::LogicRange {
                 start: crate::document::Pos { row: r0, col: c0 },
                 end: crate::document::Pos { row: r1, col: c1 },
             });

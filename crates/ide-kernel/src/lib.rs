@@ -30,7 +30,7 @@
 //!        ↓
 //!   ide_kernel::Document         ← 单文档: 本 crate 的核心
 //!        ↓
-//!   sakura_rs::{DocLineMgr, OpeBuf, LogicPos}   ← 已验证的基础部件
+//!   editcore::{DocLineMgr, OpeBuf, LogicPos}   ← 已验证的基础部件
 //! ```
 //!
 //! # 设计约束

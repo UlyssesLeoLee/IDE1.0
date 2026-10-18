@@ -8,7 +8,7 @@ members = [
   "crates/ide-shell-web",
   "crates/ide-shell-desktop",
   "crates/ide-shell-protocol",
-  "crates/sakura-rs",
+  "crates/editcore",
 ]
 
 [workspace.package]

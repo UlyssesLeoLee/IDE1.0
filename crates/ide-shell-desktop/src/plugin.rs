@@ -19,7 +19,7 @@ pub struct PluginRunResult {
 
 /// 加载并运行一个 wasm 插件 (需导出 `process(text: &str) -> String`)
 pub fn load_and_run(wasm_path: &str, input: &str) -> PluginRunResult {
-    match sakura_rs::plugin::load_and_run(std::path::Path::new(wasm_path), input) {
+    match editcore::plugin::load_and_run(std::path::Path::new(wasm_path), input) {
         Ok(out) => PluginRunResult {
             ok: true,
             output: Some(out),

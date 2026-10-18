@@ -1,0 +1,26 @@
+[package]
+name = "editcore"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Zlib"  # 沿用上游协议
+authors.workspace = true
+repository.workspace = true
+description = "editcore — 轻量高性能的文本编辑器内核, 对标经典 Win32 编辑器架构, Rust 重写, 0 重型依赖, 适合嵌入 AI agent / IDE / CLI / Web 工具."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = "1.0"
+wasmtime = { version = "26", optional = true }
+encoding_rs = "0.8"
+# grep 内容搜索的 SIMD 原语 —— ripgrep 自己就用它. 纯 safe API (内部 unsafe 不算我们的
+# unsafe_code = forbid), 且已在 Cargo.lock 里 (被 regex/aho-corasick 间接带入), 不引新下载.
+memchr = "2.7"
+# 读 Windows 注册表 AppsUseLightTheme 判断桌面明暗 (纯 safe Rust)
+windows-registry = { version = "0.3", features = ["std"] }
+
+[features]
+default = []
+wasm = ["wasmtime"]
+[lints]
+workspace = true

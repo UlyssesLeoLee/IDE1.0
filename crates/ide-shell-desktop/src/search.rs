@@ -13,16 +13,16 @@
 
 use std::path::Path;
 
-pub use sakura_rs::grep_engine::{SearchOptions, SearchResult};
+pub use editcore::grep_engine::{SearchOptions, SearchResult};
 
 /// 在项目根下搜索 (委托共用引擎).
 pub fn search(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
-    sakura_rs::grep_engine::search(cwd, opts)
+    editcore::grep_engine::search(cwd, opts)
 }
 
 /// 兼容旧调用点: 与 `search` 同一实现 (不再是「rg 缺失时的弱化降级」).
 pub fn search_fallback(cwd: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, String> {
-    sakura_rs::grep_engine::search(cwd, opts)
+    editcore::grep_engine::search(cwd, opts)
 }
 
 // ============================================================

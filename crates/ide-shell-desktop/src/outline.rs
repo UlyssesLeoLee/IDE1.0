@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use sakura_rs::type_config::{OutlineEntry, TypeRegistry};
+use editcore::type_config::{OutlineEntry, TypeRegistry};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ pub fn outline_file(path: &str, content: &str) -> OutlineResult {
             };
         }
     };
-    let entries = sakura_rs::type_config::TypeConfig::outline_dispatch(&lang.name, content);
+    let entries = editcore::type_config::TypeConfig::outline_dispatch(&lang.name, content);
     OutlineResult {
         path: path.to_string(),
         language: lang.name.to_string(),

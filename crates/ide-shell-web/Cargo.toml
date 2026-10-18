@@ -24,7 +24,7 @@ aci-emitter = { workspace = true }
 # crossterm 仅用作 KeyEvent/KeyModifiers/MouseButton 类型 (与 ide-shell::App::on_key/on_mouse 对接)
 crossterm = { workspace = true }
 # sakura-rs — outline parser
-sakura-rs = { path = "../sakura-rs" }
+editcore = { path = "../editcore" }
 # 编辑内核 — /api/doc/* 的会话状态与编辑语义 (与 web 前端 JS 引擎并行迁移中)
 ide-kernel = { path = "../ide-kernel" }
 

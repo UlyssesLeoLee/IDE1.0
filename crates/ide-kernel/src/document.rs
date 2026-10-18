@@ -10,9 +10,9 @@
 //! - 编码标记与往返转换
 //! - 撤销栈的**事务边界** (一次按键 = 一个 OpeBlk, 而不是每个字符一条)
 
-use sakura_rs::buffer::DocLineMgr;
-use sakura_rs::cursor::{LogicPos, LogicRange};
-use sakura_rs::undo::{EOpeCode, Ope, OpeBlk, OpeBuf};
+use editcore::buffer::DocLineMgr;
+use editcore::cursor::{LogicPos, LogicRange};
+use editcore::undo::{EOpeCode, Ope, OpeBlk, OpeBuf};
 use serde::{Deserialize, Serialize};
 
 /// 位置别名 — 对外用更通用的名字.
@@ -247,7 +247,7 @@ impl Document {
             .unwrap_or_default()
     }
 
-    pub fn lines(&self) -> &[sakura_rs::buffer::DocLine] {
+    pub fn lines(&self) -> &[editcore::buffer::DocLine] {
         self.mgr.lines()
     }
 
