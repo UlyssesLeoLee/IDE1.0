@@ -315,4 +315,70 @@ test.describe("Grep 对话框五栏结构 (Sakura CDlgGrep 五个 IDC_COMBO_*)",
     await expect(page.locator("#grep-status")).not.toHaveText("输入后回车");
     expect(errors).toEqual([]);
   });
+
+  test("「フォルダー」栏真正生效: 收窄搜索范围, 越界目录被拒绝", async ({ page }) => {
+    const errors = await boot(page);
+    // 服务端搜索根固定为 IDE_SHELL_WEB_TEST_ROOT (fixtures/sample-project), 无法从 JS 改,
+    // 所以直接用 fixtures 里现成的内容: README.md="hello, world", src/main.rs="fn main",
+    // docs/index.md 两者都没有 —— 三个目录的命中互不相同, 足以区分范围.
+    const search = async (needle: string, folders: string[] | null, subfolders = true) =>
+      (await page.evaluate(
+        async (a: { n: string; f: string[] | null; s: boolean }) =>
+          (await (window as any).invoke("search", {
+            pattern: a.n,
+            case_sensitive: true,
+            regex: false,
+            search_folders: a.f,
+            subfolders: a.s,
+            max_results: 100,
+          })).results,
+        { n: needle, f: folders, s: subfolders },
+      )) as { path: string; line: number; text: string }[];
+
+    // 不限目录: hello 只在 README.md
+    const all = await search("hello", null);
+    expect(all.length, "不限目录时应能搜到 README.md").toBe(1);
+    expect(all[0].path.replace(/\\/g, "/")).toContain("README.md");
+
+    // 指定 docs/ 收窄范围 -> README.md 的 hello 不再命中
+    const narrowed = await search("hello", ["docs"]);
+    expect(narrowed.length, "指定 docs 时不该命中根下的 README.md").toBe(0);
+
+    // 指定 src/ -> 能搜到 src/main.rs 里的 fn, 但搜不到 README 的 hello
+    const inSrc = await search("fn", ["src"]);
+    expect(inSrc.length, "指定 src 时应能搜到 main.rs").toBe(1);
+    expect(inSrc[0].path.replace(/\\/g, "/")).toContain("src/main.rs");
+
+    // subfolders=false: 只搜根层。README.md="hello, world" 在根层, docs/index.md 的
+    // "Docs Index" 只存在于子目录 —— 用这两个做对照 (注意根层还有 fold_test.rs 等
+    // 含 `fn` 的文件, 所以不能用 `fn` 判断递归)。
+    const topOnly = await search("hello", null, false);
+    expect(topOnly.length, "关闭递归后根层的 README.md 仍应命中").toBe(1);
+    const deep = await search("Docs", null, false);
+    expect(deep.length, "关闭递归后子目录 docs/index.md 不该命中").toBe(0);
+    const deepRecursive = await search("Docs", null, true);
+    expect(deepRecursive.length, "开着递归时应能搜到子目录").toBe(1);
+
+    // 越界目录必须被拒绝, 且不能影响其它合法目录
+    const mixed = await search("hello", ["../../../../Windows", "."]);
+    expect(
+      mixed.every((m) => !m.path.replace(/\\/g, "/").includes("/Windows/")),
+      `越界目录的结果必须被剔除, 实际: ${JSON.stringify(mixed.map((m) => m.path))}`,
+    );
+
+    // 全部越界要报错
+    const allBad = await page.evaluate(async () => {
+      try {
+        await (window as any).invoke("search", {
+          pattern: "hello",
+          search_folders: ["../../../../Windows"],
+        });
+        return "no-error";
+      } catch (e: any) {
+        return String(e?.message || e);
+      }
+    });
+    expect(allBad, "全部越界应给出明确错误").toContain("越出项目范围");
+    expect(errors).toEqual([]);
+  });
 });

@@ -225,7 +225,8 @@ impl TypeConfig {
     /// 生效的关键字全集 = 内置 + 用户自定义 (去重, 大小写按配置归一).
     /// 返回小写形式当 `keyword_case_sensitive == false`.
     pub fn effective_keywords(&self) -> Vec<String> {
-        let mut out: Vec<String> = Vec::with_capacity(self.keywords.len() + self.user_keywords.len());
+        let mut out: Vec<String> =
+            Vec::with_capacity(self.keywords.len() + self.user_keywords.len());
         for k in self.keywords.iter().chain(self.user_keywords.iter()) {
             if k.is_empty() {
                 continue;
@@ -722,7 +723,10 @@ mod tests {
         let r = TypeRegistry::default_registry();
         // Windows 上 .RS / .Py 很常见; 原实现用 == 精确比较会掉到 Plain 兜底
         assert_eq!(r.detect("main.RS").map(|t| t.name.as_str()), Some("Rust"));
-        assert_eq!(r.detect("script.PY").map(|t| t.name.as_str()), Some("Python"));
+        assert_eq!(
+            r.detect("script.PY").map(|t| t.name.as_str()),
+            Some("Python")
+        );
         assert_eq!(r.detect("A.CPP").map(|t| t.name.as_str()), Some("C++"));
     }
 
@@ -750,9 +754,15 @@ mod tests {
                 .keywords(&["DEFINE"]),
         );
         assert_eq!(r.detect("boot.inc").map(|t| t.name.as_str()), Some("Inc"));
-        assert_eq!(r.detect("x/y/BOOT.INC").map(|t| t.name.as_str()), Some("Inc"));
+        assert_eq!(
+            r.detect("x/y/BOOT.INC").map(|t| t.name.as_str()),
+            Some("Inc")
+        );
         assert_eq!(r.detect("config.h").map(|t| t.name.as_str()), Some("Inc"));
-        assert_eq!(r.detect("unrelated.txt").map(|t| t.name.as_str()), Some("Plain"));
+        assert_eq!(
+            r.detect("unrelated.txt").map(|t| t.name.as_str()),
+            Some("Plain")
+        );
     }
 
     #[test]
@@ -820,7 +830,11 @@ mod tests {
             .keyword_case_sensitive(false);
         assert!(ci.is_keyword("select"));
         assert!(ci.is_keyword("SELECT"));
-        assert_eq!(ci.effective_keywords(), vec!["select"], "不敏感时归一为小写");
+        assert_eq!(
+            ci.effective_keywords(),
+            vec!["select"],
+            "不敏感时归一为小写"
+        );
     }
 
     #[test]
@@ -879,10 +893,7 @@ mod tests {
                 t.name
             );
         }
-        assert!(
-            !is_builtin_type("MyCustomType"),
-            "非内置类型不该被保护"
-        );
+        assert!(!is_builtin_type("MyCustomType"), "非内置类型不该被保护");
     }
 
     // ---- 颜色分类 ----
@@ -955,10 +966,11 @@ mod tests {
 
     #[test]
     fn empty_registry_detect_returns_none() {
-        let r = TypeRegistry {
-            types: Vec::new(),
-        };
-        assert!(r.detect("main.rs").is_none(), "空表 + 无 Plain 兜底 -> None");
+        let r = TypeRegistry { types: Vec::new() };
+        assert!(
+            r.detect("main.rs").is_none(),
+            "空表 + 无 Plain 兜底 -> None"
+        );
         assert!(r.by_name("Rust").is_none());
         assert!(r.all().is_empty());
         assert!(r.color_classes("Rust").is_empty());
@@ -966,7 +978,7 @@ mod tests {
 
     // ---- 原有测试 ----
 
-#[test]
+    #[test]
     fn detect_rust_by_extension() {
         let r = TypeRegistry::default();
         assert_eq!(r.detect("foo.rs").map(|t| t.name.as_str()), Some("Rust"));

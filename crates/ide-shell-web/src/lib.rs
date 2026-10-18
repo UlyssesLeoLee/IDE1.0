@@ -921,12 +921,30 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         .filter_map(|x| x.as_str().map(String::from))
                         .collect::<Vec<_>>()
                 });
+            // 取字符串数组的通用闭包 —— 新增的 フォルダー / 除外ファイル / 除外フォルダー
+            // 三栏都走它 (Sakura 的五个输入框对应五个字段).
+            let strs = |key: &str| -> Option<Vec<String>> {
+                req.get(key)
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect::<Vec<_>>()
+                    })
+            };
             let opts = search::SearchOptions {
                 pattern,
                 case_sensitive,
                 regex,
+                whole_word: req.get("whole_word").and_then(|v| v.as_bool()),
                 include_globs,
                 exclude_globs,
+                include_files: strs("include_files"),
+                exclude_files: strs("exclude_files"),
+                exclude_folders: strs("exclude_folders"),
+                // フォルダー 栏: 空/缺省 = 整个项目; 引擎侧逐项校验不得越出项目根
+                search_folders: strs("search_folders"),
+                subfolders: req.get("subfolders").and_then(|v| v.as_bool()),
                 max_results,
             };
             let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
@@ -946,10 +964,13 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     );
                 }
                 Err(e) => {
+                    // 搜索条件非法 (例如「フォルダー」栏全部越出项目根) 必须报错,
+                    // 不能回 200 + 空结果 —— 那样前端只看到「无匹配」, 用户完全不知道
+                    // 自己写的目录被拒了。错误走 400 + error 字段。
                     let resp = serde_json::json!({ "results": [], "error": e });
                     send_response(
                         stream,
-                        "200 OK",
+                        "400 Bad Request",
                         "application/json",
                         &serde_json::to_vec(&resp).unwrap_or_default(),
                     );

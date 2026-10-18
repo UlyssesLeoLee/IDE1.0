@@ -44,6 +44,7 @@ pub mod encoding_io;
 pub mod file_lock;
 pub mod font_manager;
 pub mod grep;
+pub mod grep_engine;
 pub mod incremental_search;
 pub mod js_macro;
 pub mod key_macro;

@@ -2008,8 +2008,18 @@ async function fetchApi(path, opts) {
   } finally {
     clearTimeout(timeoutId);
   }
-  if (!r.ok) throw new Error("HTTP " + r.status);
   const ct = r.headers.get("content-type") || "";
+  if (!r.ok) {
+    // 错误响应体里带具体原因 (如「フォルダー」栏越出项目范围), 要掏出来给用户看,
+    // 否则只会显示干巴巴的 "HTTP 400", 用户完全不知道自己哪里写错了。
+    let detail = "";
+    try {
+      const body = ct.includes("json") ? await r.json() : await r.text();
+      if (body && typeof body === "object" && body.error) detail = String(body.error);
+      else if (typeof body === "string" && body.trim()) detail = body.trim();
+    } catch (_) { /* 响应体不是 JSON, 就只用状态码 */ }
+    throw new Error(detail || "HTTP " + r.status);
+  }
   return ct.includes("json") ? r.json() : r.text();
 }
 
@@ -5385,7 +5395,8 @@ async function openGrepDialog(withReplace) {
     const effFolders = thisOnly && curDir ? [curDir] : folders;
     const inc = pats.include.slice();
     if (thisOnly && curBase) inc.splice(0, inc.length, curBase);
-    else if (!GREP_STATE.subfolders) inc.push("*");   // 不递归时限制在顶层
+    // 关闭「包含子文件夹」**不再**靠往 include 里塞 `*` —— 后端现在有 subfolders 字段,
+    // 由引擎决定是否下钻, 前端不该用 glob 近似 (那会把 src/a.rs 也排掉)。
 
     try {
       const resp = await invoke("search", {
@@ -5393,7 +5404,7 @@ async function openGrepDialog(withReplace) {
         case_sensitive: GREP_STATE.caseSensitive,
         regex: GREP_STATE.regex,
         whole_word: GREP_STATE.wholeWord,
-        include_globs: inc,
+        include_files: inc,
         search_folders: effFolders.length ? effFolders : null,
         exclude_files: excFiles.length ? excFiles : null,
         exclude_folders: excDirs.length ? excDirs : null,

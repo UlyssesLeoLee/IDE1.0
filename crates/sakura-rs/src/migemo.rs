@@ -77,7 +77,6 @@ const ROMA_TO_KANA: &[(&str, &str)] = &[
     ("pyu", "ぴゅ"),
     ("pye", "ぴぇ"),
     ("pyo", "ぴょ"),
-
     // ===== 促音 (小書き つ) =====
     // Migemo 增量搜索的高频输入: "kitte" (切手) / "gakkou" (学校) / "assari".
     // Hepburn 记法是 xtu/xtsu, Kunrei 是 ltu/ltsu —— cmigemo 两种都支持.
@@ -176,7 +175,6 @@ const ROMA_TO_KANA: &[(&str, &str)] = &[
     ("n", "ん"),
     // 促音・長音
     ("tsu", "つ"),
-
 ];
 
 /// 双写辅音归一化: 把叠写的辅音替换成「促音记号 + 清音化后的辅音」。
@@ -192,11 +190,31 @@ fn apply_sokuon(roma: &str) -> String {
     const SOKUON: &str = "xtu";
     /// 叠辅音的第二个若为浊音, 要清音化 (がっこう 的 く 由 ぐ 变)
     const VOICED_TO_CLEAN: &[(&str, &str)] = &[
-        ("ga", "ka"), ("gi", "ki"), ("gu", "ku"), ("ge", "ke"), ("go", "ko"),
-        ("za", "sa"), ("zi", "si"), ("zu", "su"), ("ze", "se"), ("zo", "so"),
-        ("da", "ta"), ("di", "ti"), ("du", "tu"), ("de", "te"), ("do", "to"),
-        ("ba", "pa"), ("bi", "pi"), ("bu", "pu"), ("be", "pe"), ("bo", "po"),
-        ("va", "ha"), ("vi", "hi"), ("vu", "hu"), ("ve", "he"), ("vo", "ho"),
+        ("ga", "ka"),
+        ("gi", "ki"),
+        ("gu", "ku"),
+        ("ge", "ke"),
+        ("go", "ko"),
+        ("za", "sa"),
+        ("zi", "si"),
+        ("zu", "su"),
+        ("ze", "se"),
+        ("zo", "so"),
+        ("da", "ta"),
+        ("di", "ti"),
+        ("du", "tu"),
+        ("de", "te"),
+        ("do", "to"),
+        ("ba", "pa"),
+        ("bi", "pi"),
+        ("bu", "pu"),
+        ("be", "pe"),
+        ("bo", "po"),
+        ("va", "ha"),
+        ("vi", "hi"),
+        ("vu", "hu"),
+        ("ve", "he"),
+        ("vo", "ho"),
     ];
 
     let chars: Vec<char> = roma.chars().collect();
@@ -360,7 +378,10 @@ mod tests {
 
     #[test]
     fn geminate_produces_small_tsu() {
-        assert!(has(&expand_pattern("gakkou"), "がっこう"), "gakkou -> がっこう");
+        assert!(
+            has(&expand_pattern("gakkou"), "がっこう"),
+            "gakkou -> がっこう"
+        );
         assert!(has(&expand_pattern("kitte"), "きって"), "kitte -> きって");
         assert!(has(&expand_pattern("sakka"), "さっか"), "sakka -> さっか");
         assert!(has(&expand_pattern("gakkou"), "ガッコウ"), "片假名也要命中");
@@ -369,7 +390,11 @@ mod tests {
 
     #[test]
     fn sokuon_rules() {
-        assert_eq!(apply_sokuon("gakkou"), "gaxtukou", "促音插在音节末: ga + xtu + kou");
+        assert_eq!(
+            apply_sokuon("gakkou"),
+            "gaxtukou",
+            "促音插在音节末: ga + xtu + kou"
+        );
         assert_eq!(apply_sokuon("kitte"), "kixtute", "ki + xtu + te");
         assert_eq!(apply_sokuon("sakka"), "saxtuka", "sa + xtu + ka");
         assert_eq!(apply_sokuon("kite"), "kite", "非叠辅音不该被改");
@@ -390,9 +415,15 @@ mod tests {
     #[test]
     fn chouon_marks_map_to_long_vowel() {
         // 长音统一用 "-" 表达 (cmigemo 的 --romaji 全角用法)
-        assert!(has(&expand_pattern("ra-men"), "ラーメン"), "ra-men -> ラーメン");
+        assert!(
+            has(&expand_pattern("ra-men"), "ラーメン"),
+            "ra-men -> ラーメン"
+        );
         assert!(has(&expand_pattern("-"), "ー"), "单独的 - -> ー");
-        assert!(!migemo_search("ラーメン", "ra-men").is_empty(), "长音搜索应有命中");
+        assert!(
+            !migemo_search("ラーメン", "ra-men").is_empty(),
+            "长音搜索应有命中"
+        );
     }
 
     #[test]
@@ -449,7 +480,10 @@ mod tests {
 
     #[test]
     fn search_geminate_finds_kana_text() {
-        assert!(!migemo_search("がっこうに行きます", "gakkou").is_empty(), "假名文本应命中");
+        assert!(
+            !migemo_search("がっこうに行きます", "gakkou").is_empty(),
+            "假名文本应命中"
+        );
     }
 
     #[test]
@@ -461,7 +495,10 @@ mod tests {
             migemo_search("学校", "gakkou").is_empty(),
             "汉字读音需 cmigemo-dict, 当前刻意不支持 (见模块文档)"
         );
-        assert!(!migemo_search("がっこう", "gakkou").is_empty(), "假名写法必须能搜到");
+        assert!(
+            !migemo_search("がっこう", "gakkou").is_empty(),
+            "假名写法必须能搜到"
+        );
     }
 
     // ===== 边界与健壮性 =====
@@ -509,7 +546,10 @@ mod tests {
     fn table_has_no_unreachable_keys() {
         // expand_pattern 先 to_lowercase, 大写键永远匹配不上 —— 是死条目
         for (k, _) in ROMA_TO_KANA {
-            assert!(!k.chars().any(|c| c.is_uppercase()), "表里不该有大写键: {k}");
+            assert!(
+                !k.chars().any(|c| c.is_uppercase()),
+                "表里不该有大写键: {k}"
+            );
         }
     }
 
@@ -522,7 +562,7 @@ mod tests {
 
     // ---- 原有测试 ----
 
-#[test]
+    #[test]
     fn test_basic_kana() {
         let patterns = expand_pattern("ka");
         assert!(patterns.iter().any(|p| p == "か"));
