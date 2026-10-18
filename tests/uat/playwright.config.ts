@@ -30,6 +30,20 @@ export default defineConfig({
   expect: { timeout: 3_000 },
   use: {
       baseURL: `http://${ADDR}`,
+    // 全新用户的缺省界面是「极简 (Sakura 风格)」布局 + 非模态编辑; 既有用例都是按完整 IDE 界面 + vim 三态写的,
+    // 所以统一注入这两个开关 (editor.html 的 ide10.layout / ide10.vim). 不改每个 spec;
+    // 要测真正的首次启动状态, 在 spec 里 test.use({ storageState: { cookies: [], origins: [] } }) 覆盖 (见 minimal-layout.spec.ts).
+    // origin 必须与 baseURL 完全一致 (含端口), 所以同样取自 IDE_SHELL_WEB_ADDR.
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: `http://${ADDR}`,
+        localStorage: [
+          { name: "ide10.layout", value: "full" },
+          { name: "ide10.vim", value: "on" },
+        ],
+      }],
+    },
     headless: true,
     viewport: { width: 960, height: 600 },
     trace: "on-first-retry",

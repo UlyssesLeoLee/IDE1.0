@@ -7,6 +7,8 @@ const FIX = 'D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project';
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
+// 缺省界面是极简 (Sakura 风格) + 非模态编辑; 本脚本按完整 IDE 界面 + vim 三态写, 先注入开关
+await page.addInitScript(() => { try { localStorage.setItem('ide10.layout', 'full'); localStorage.setItem('ide10.vim', 'on'); } catch (_) {} });
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(e.message));
 

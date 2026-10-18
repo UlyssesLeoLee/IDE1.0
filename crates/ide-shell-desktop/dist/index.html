@@ -4794,17 +4794,21 @@ const THEMES = {
   // 明暗两套**不是**硬编码的: theme_luminance.rs 读注册表
   // AppsUseLightTheme 判断桌面明暗后, 由 clear_theme_vars command 覆盖
   // 这几个变量 —— 浅色壁纸配白字读不清.
+  // 兜底值 (后端 clear_theme_vars 不可达时用). 遮罩 55% 不是装饰, 是**可读性保障**:
+  // 原先这里只给 4%, 实测在极端壁纸 (浅色桌面配纯黑壁纸) 上正文对比度只有 1.00:1,
+  // 用户的直观感受就是「文字不鲜明」。现在五种极端壁纸下最差 4.76:1 (WCAG AA 达标)。
   clear: {
-    "--bg-bar": "rgba(255,255,255,0.06)", "--bg-side": "rgba(255,255,255,0.04)",
-    "--bg-edit": "transparent", "--bg-rail": "rgba(255,255,255,0.05)",
-    "--bg-bottom": "rgba(255,255,255,0.05)",
-    "--bg-status": "rgba(255,255,255,0.10)",
-    "--bg-hover": "rgba(255,255,255,0.12)", "--bg-active": "rgba(255,255,255,0.18)",
-    "--bg-input": "rgba(255,255,255,0.10)",
-    "--border": "rgba(255,255,255,0.28)", "--border-strong": "rgba(255,255,255,0.38)",
-    "--fg": "#ffffff", "--fg-muted": "rgba(255,255,255,0.82)",
-    "--fg-dim": "rgba(255,255,255,0.65)", "--fg-on-accent": "#1a1c1e",
+    "--bg-bar": "rgba(0,0,0,0.55)", "--bg-side": "rgba(0,0,0,0.55)",
+    "--bg-edit": "rgba(0,0,0,0.55)", "--bg-rail": "rgba(0,0,0,0.55)",
+    "--bg-bottom": "rgba(0,0,0,0.55)",
+    "--bg-status": "rgba(0,0,0,0.62)",
+    "--bg-hover": "rgba(255,255,255,0.14)", "--bg-active": "rgba(255,255,255,0.22)",
+    "--bg-input": "rgba(0,0,0,0.62)",
+    "--border": "rgba(255,255,255,0.34)", "--border-strong": "rgba(255,255,255,0.46)",
+    "--fg": "#ffffff", "--fg-muted": "rgba(255,255,255,0.88)",
+    "--fg-dim": "rgba(255,255,255,0.68)", "--fg-on-accent": "#ffffff",
     "--blue": "#8ab4f8", "--green": "#7ee2b8",
+    "luminance": "dark",
   },
   // 深色: 层次靠"同色不同明度"而不是边框 —— 边框只用在真正分隔的地方.
   dark: {

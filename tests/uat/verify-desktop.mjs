@@ -8,6 +8,7 @@
 //   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222" \
 //     ide-shell-desktop.exe &
 //   node verify-desktop.mjs
+// [布局] 本脚本需要完整 IDE 界面 + vim 三态 (editor.html 缺省已改为极简 Sakura 风格 + 非模态): 连上页面后自动写 ide10.layout=full / ide10.vim=on 并重载, 见 needFull.
 import { chromium } from '@playwright/test';
 
 const CDP = process.env.IDE_DESKTOP_CDP || 'http://127.0.0.1:9222';
@@ -39,6 +40,22 @@ if (!page) {
 
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
+// 缺省界面是极简 (Sakura 风格) + 非模态编辑; 本脚本按完整 IDE 界面 + vim 三态写 (要欢迎页 / 标签条 / 状态栏模式标签).
+// 开关存在被测 app 的 localStorage (ide10.layout / ide10.vim): 不是 full + vim 就写进去并重载一次; 旧版 app (没有 setLayout) 本来就是完整界面, 跳过.
+// 跑完想还原成极简: await page.evaluate(() => { setLayout('min'); localStorage.removeItem('ide10.vim'); })
+const needFull = await page.evaluate(() => {
+  try {
+    if (!window.setLayout) return false;
+    if (window.getLayout().preset === 'full' && localStorage.getItem('ide10.vim') === 'on') return false;
+    localStorage.setItem('ide10.layout', 'full'); localStorage.setItem('ide10.vim', 'on');
+    return true;
+  } catch (_) { return false; }
+});
+if (needFull) {
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__ideReady && window.__ideReady(), null, { timeout: 15000 }).catch(() => {});
+}
+
 
 console.log('页面:', page.url(), '\n');
 console.log('=== 1. Tauri runtime 就位 ===');

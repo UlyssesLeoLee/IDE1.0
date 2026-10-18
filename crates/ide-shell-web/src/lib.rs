@@ -1093,6 +1093,31 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         // POST (不是 GET): 前端 invoke() 一律发 POST (见 editor.html invoke()),
         // 写成 GET 时 openFolder() 永远拿不到路径 → 静默回退到原生 prompt(),
         // 无头浏览器里直接挂死 (web-editor.spec 3 个 + desktop-ui.spec 2 个 红 的 根因).
+        // 透明主题的桌面明暗探测。**这两个端点原来只存在于桌面端**
+        // (theme_luminance.rs 里的 #[tauri::command]), web server 没有对应路由,
+        // 于是前端的 1s 反色轮询每轮都 404 → 落进 catch → 静默保持旧颜色,
+        // 表现为「开了透明主题但不会动态反色」。实现已搬到 sakura-rs, 两端共用。
+        ("POST", "/api/desktop_luminance") | ("GET", "/api/desktop_luminance") => {
+            // 返回裸字符串, 与桌面端 #[tauri::command] desktop_luminance() -> String 保持一致.
+            // 之前包成 {luminance:...} 会让前端 `lum !== VIEW_STATE.desktopLuminance` 每轮都成立,
+            // 变成每秒重刷一整套 setProperty.
+            let j = serde_json::json!(sakura_rs::theme_luminance::detect().as_str());
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&j).unwrap_or_default(),
+            );
+        }
+        ("POST", "/api/clear_theme_vars") | ("GET", "/api/clear_theme_vars") => {
+            let j = sakura_rs::theme_luminance::build_clear_theme_vars();
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&j).unwrap_or_default(),
+            );
+        }
         ("POST", "/api/pick_folder") => {
             // web 版无原生 dialog: 返回 IDE_SHELL_WEB_TEST_ROOT 环境变量或 cwd
             let default_root = std::env::var("IDE_SHELL_WEB_TEST_ROOT")

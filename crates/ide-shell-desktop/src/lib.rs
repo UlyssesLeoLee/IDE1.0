@@ -33,7 +33,27 @@ pub mod plugin;
 pub mod scm;
 pub mod search;
 pub mod terminal;
-pub mod theme_luminance;
+/// 透明主题的桌面明暗探测 —— 实现已搬到 `sakura_rs::theme_luminance`,
+/// 那里 web 端与桌面端都能用 (原来只在这边, 导致 web 端的反色轮询永远拿不到值).
+///
+/// 这里只保留 Tauri command 外壳。
+pub mod theme_luminance {
+    pub use sakura_rs::theme_luminance::{
+        build_clear_theme_vars, detect, DesktopLuminance,
+    };
+
+    /// Tauri command: 当前桌面明暗 (前端轮询这个, 变了才重新取全套配色).
+    #[tauri::command]
+    pub fn desktop_luminance() -> String {
+        detect().as_str().to_string()
+    }
+
+    /// 探测桌面背景明暗并返回一整套 CSS 变量.
+    #[tauri::command]
+    pub fn clear_theme_vars() -> serde_json::Value {
+        build_clear_theme_vars()
+    }
+}
 pub mod wiki;
 
 use std::path::{Path, PathBuf};

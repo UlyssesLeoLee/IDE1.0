@@ -14,6 +14,8 @@ import { chromium } from '@playwright/test';
 const BASE = process.env.IDE_WEB_URL || 'http://127.0.0.1:8123';
 const browser = await chromium.launch();
 const page = await browser.newPage();
+// 缺省界面是极简 (Sakura 风格) + 非模态编辑; 本脚本按完整 IDE 界面 + vim 三态写, 先注入开关
+await page.addInitScript(() => { try { localStorage.setItem('ide10.layout', 'full'); localStorage.setItem('ide10.vim', 'on'); } catch (_) {} });
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message));
 
