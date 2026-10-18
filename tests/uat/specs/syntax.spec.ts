@@ -16,6 +16,11 @@ import { resetShell, waitForBootstrap } from "./helpers";
 
 const BASE = `http://${process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123"}`;
 
+// fixture 根 — 跟随 playwright.config.ts 给 web server 注入的 env.
+// 以前这里硬编码 `D:/orcaWork/IDE1.0/dev-3/...` (某台机器的绝对路径), 换机器
+// 就整片用例失败, 而且报的是「不是目录」这种看不出根因的错误.
+const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? require("path").resolve(__dirname, "..", "fixtures", "sample-project");
+
 async function goEditor(page: Page) {
   await page.goto("/editor");
 }
@@ -112,18 +117,18 @@ test("syntax: open Rust file → status bar shows 'Rust' + highlights keywords",
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+      body: JSON.stringify({ path: FIXTURE_ROOT }),
     });
     const id = window.newId();
     tabs.set(id, {
       id,
-      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs",
+      path: "${FIXTURE_ROOT}/\test_syntax.rs",
       name: "test_syntax.rs",
       lines: ["fn main() {", '    println!("hi");', "}"],
       cursor: { row: 0, col: 0 },
       mode: "normal",
       dirty: false,
-      language: Syntax.detectLanguage("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\test_syntax.rs"),
+      language: Syntax.detectLanguage("${FIXTURE_ROOT}/\test_syntax.rs"),
       history: [],
     });
     activeTabId = id;
@@ -145,19 +150,19 @@ test("syntax: Tab key in INSERT mode inserts 2 spaces", async ({ page }) => {
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+      body: JSON.stringify({ path: FIXTURE_ROOT }),
     });
     // 同步建一个 test tab — 跳过 async openFile
     const id = window.newId();
     tabs.set(id, {
       id,
-      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\tab_test.txt",
+      path: "${FIXTURE_ROOT}/\tab_test.txt",
       name: "tab_test.txt",
       lines: [""],
       cursor: { row: 0, col: 0 },
       mode: "normal",
       dirty: false,
-      language: Syntax.detectLanguage("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\tab_test.txt"),
+      language: Syntax.detectLanguage("${FIXTURE_ROOT}/\tab_test.txt"),
       history: [],
     });
     activeTabId = id;
@@ -192,7 +197,7 @@ test("syntax: Enter auto-indent copies previous indent + extra on {", async ({ p
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+      body: JSON.stringify({ path: FIXTURE_ROOT }),
     });
   });
   await page.waitForTimeout(300);
@@ -202,11 +207,11 @@ test("syntax: Enter auto-indent copies previous indent + extra on {", async ({ p
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\indent_test.rs",
+        path: "${FIXTURE_ROOT}/\indent_test.rs",
         content: "fn main() {\n",
       }),
     });
-    openFile("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\indent_test.rs");
+    openFile("${FIXTURE_ROOT}/\indent_test.rs");
   });
   await page.waitForTimeout(500);
   // Cursor at end of "fn main() {" → press Enter → cursor on new line with "  " (2 spaces)
@@ -240,18 +245,18 @@ test("syntax: :template rust inserts hello-world", async ({ page }) => {
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+      body: JSON.stringify({ path: FIXTURE_ROOT }),
     });
     // open a fresh rust file
     await fetch("/api/write_file", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\template_test.rs",
+        path: "${FIXTURE_ROOT}/\template_test.rs",
         content: "",
       }),
     });
-    openFile("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\template_test.rs");
+    openFile("${FIXTURE_ROOT}/\template_test.rs");
   });
   await page.waitForTimeout(500);
   // 调用 :template rust
@@ -275,19 +280,19 @@ test("syntax: :setlang overrides detected language", async ({ page }) => {
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+      body: JSON.stringify({ path: FIXTURE_ROOT }),
     });
     // 同步建 tab
     const id = window.newId();
     tabs.set(id, {
       id,
-      path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt",
+      path: "${FIXTURE_ROOT}/\plain_setlang.txt",
       name: "plain_setlang.txt",
       lines: ["x = 1"],
       cursor: { row: 0, col: 0 },
       mode: "normal",
       dirty: false,
-      language: Syntax.detectLanguage("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\plain_setlang.txt"),
+      language: Syntax.detectLanguage("${FIXTURE_ROOT}/\plain_setlang.txt"),
       history: [],
     });
     activeTabId = id;
@@ -310,17 +315,17 @@ test("syntax: zc fold hides block, zo expands", async ({ page }) => {
     await fetch("/api/open_project", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project" }),
+      body: JSON.stringify({ path: FIXTURE_ROOT }),
     });
     await fetch("/api/write_file", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: "D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\fold_test.rs",
+        path: "${FIXTURE_ROOT}/\fold_test.rs",
         content: "fn outer() {\n    fn inner() {\n        x();\n    }\n    inner();\n}\nfn other() {\n    y();\n}\n",
       }),
     });
-    openFile("D:\\orcaWork\\IDE1.0\\dev-3\\tests\\uat\\fixtures\\sample-project\\fold_test.rs");
+    openFile("${FIXTURE_ROOT}/\fold_test.rs");
   });
   await page.waitForTimeout(500);
   // Cursor at line 0 (fn outer) + zc

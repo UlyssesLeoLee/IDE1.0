@@ -227,6 +227,21 @@ fn send_response(stream: &mut TcpStream, status: &str, content_type: &str, body:
     send_response_cors(stream, status, content_type, body, None)
 }
 
+/// 业务错误响应 —— 一律用 `application/json` 包 `{"error": "..."}`.
+///
+/// 这里的错误分支以前发的是 `text/plain` + 中文原因, 而成功分支是 JSON。
+/// 契约不一致导致调用方只要无条件 `.json()` 就会在错误路径上炸
+/// (`SyntaxError: Unexpected token '不'`) —— UAT 里 30 个用例栽在这上面。
+fn send_error_json(stream: &mut TcpStream, status: &str, reason: &str) {
+    let j = serde_json::json!({ "error": reason });
+    send_response(
+        stream,
+        status,
+        "application/json",
+        &serde_json::to_vec(&j).unwrap_or_default(),
+    );
+}
+
 /// 带 Origin 回显的响应 (只有可信同源 Origin 才会被传入 Some)。
 fn send_response_cors(
     stream: &mut TcpStream,
@@ -1118,7 +1133,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 &serde_json::to_vec(&j).unwrap_or_default(),
             );
         }
-        ("POST", "/api/pick_folder") => {
+        // GET 也放行: UAT 的 serverRoot() 用 GET 问「当前项目根是什么」,
+        // 而这条路由以前只注册了 POST —— GET 落到兜底分支拿到 404 + text/plain,
+        // 调用方的 res.json() 于是抛 SyntaxError, 一串用例连锁失败.
+        ("GET", "/api/pick_folder") | ("POST", "/api/pick_folder") => {
             // web 版无原生 dialog: 返回 IDE_SHELL_WEB_TEST_ROOT 环境变量或 cwd
             let default_root = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
                 .ok()
@@ -1130,7 +1148,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         serde_json::to_vec(&c.to_string_lossy().into_owned()).unwrap_or_default();
                     send_response(stream, "200 OK", "application/json", &j);
                 }
-                Err(e) => send_response(stream, "400 Bad Request", "text/plain", e.as_bytes()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
         ("POST", "/api/open_project") => {
@@ -1145,7 +1163,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 }
                 Err(e) => {
                     eprintln!("[DEBUG] /api/open_project error: {}", e);
-                    send_response(stream, "400 Bad Request", "text/plain", e.as_bytes());
+                    send_error_json(stream, "400 Bad Request", &e);
                 }
             }
         }
@@ -1153,12 +1171,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let root = match state.project_root_get() {
                 Some(r) => r,
                 None => {
-                    send_response(
-                        stream,
-                        "400 Bad Request",
-                        "text/plain",
-                        "尚未打开项目".as_bytes(),
-                    );
+                    send_error_json(stream, "400 Bad Request", "尚未打开项目");
                     return;
                 }
             };
@@ -1172,19 +1185,14 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     "application/json",
                     &serde_json::to_vec(&es).unwrap_or_default(),
                 ),
-                Err(e) => send_response(stream, "400 Bad Request", "text/plain", e.as_bytes()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
         ("POST", "/api/read_file") => {
             let root = match state.project_root_get() {
                 Some(r) => r,
                 None => {
-                    send_response(
-                        stream,
-                        "400 Bad Request",
-                        "text/plain",
-                        "尚未打开项目".as_bytes(),
-                    );
+                    send_error_json(stream, "400 Bad Request", "尚未打开项目");
                     return;
                 }
             };
@@ -1198,19 +1206,14 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     "application/json",
                     &serde_json::to_vec(&fc).unwrap_or_default(),
                 ),
-                Err(e) => send_response(stream, "400 Bad Request", "text/plain", e.as_bytes()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
         ("POST", "/api/write_file") => {
             let root = match state.project_root_get() {
                 Some(r) => r,
                 None => {
-                    send_response(
-                        stream,
-                        "400 Bad Request",
-                        "text/plain",
-                        "尚未打开项目".as_bytes(),
-                    );
+                    send_error_json(stream, "400 Bad Request", "尚未打开项目");
                     return;
                 }
             };
@@ -1225,7 +1228,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     "application/json",
                     &serde_json::to_vec(&n).unwrap_or_default(),
                 ),
-                Err(e) => send_response(stream, "400 Bad Request", "text/plain", e.as_bytes()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
         ("OPTIONS", _) => {

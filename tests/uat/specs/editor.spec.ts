@@ -18,7 +18,7 @@ const BASE = `http://${process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123"}`;
 
 // 共享给 editor UAT: vim Insert / save 会改 README fixture, beforeEach/afterEach 恢复
 // 跨平台 fixture 路径 — 从 IDE_SHELL_WEB_TEST_ROOT 环境变量取 (web server 启动时设的)
-const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project";
+const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? require("path").resolve(__dirname, "..", "fixtures", "sample-project");
 const FIXTURE_PATH = `${FIXTURE_ROOT}/README.md`;
 const FIXTURE_ORIGINAL = "hello, world";
 
@@ -147,7 +147,7 @@ test("clicking a tree file creates a tab with text content", async ({ page }) =>
     const id = window.window.newId();
     tabs.set(id, {
       id,
-      path: "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/README.md",
+      path: FIXTURE_PATH,
       name: "README.md",
       lines: ["hello, world"],
       cursor: { row: 0, col: 0 },
@@ -377,7 +377,7 @@ test("write_file roundtrip: write, then read back", async ({ request }) => {
   await request.post(`${BASE}/api/open_project`, {
     data: { path: FIXTURE_ROOT },
   });
-  const path = "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/UAT_ROUNDTRIP.txt";
+  const path = `${FIXTURE_ROOT}/UAT_ROUNDTRIP.txt`;
   // 写
   const w = await request.post(`${BASE}/api/write_file`, {
     data: { path, content: "roundtrip 内容\n第二行" },
@@ -406,7 +406,7 @@ test("read_file rejects huge files (>4MB)", async ({ request }) => {
   });
   // 先写一个 5MB 文件
   const big = "x".repeat(5 * 1024 * 1024);
-  const path = "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/BIG.bin";
+  const path = `${FIXTURE_ROOT}/BIG.bin`;
   await request.post(`${BASE}/api/write_file`, { data: { path, content: big } });
   // 读应被拒
   const r = await request.post(`${BASE}/api/read_file`, { data: { path } });
@@ -904,7 +904,7 @@ test.describe("传统编辑器对标能力 (第二批)", () => {
     await openProject(page, FIXTURE_ROOT);
     // 必须用 .rs 文件: README.md 会被识别为 markdown, 没有 Rust 关键字/内建.
     // 用 openFile 直接开顶层 .rs, 不依赖树节点点击顺序.
-    await page.evaluate(() => window.openFile("D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project/fold_test.rs"));
+    await page.evaluate((p: string) => window.openFile(p), `${FIXTURE_ROOT}/fold_test.rs`);
     await waitForTab(page);
 
     const cands = await page.evaluate(() => {
