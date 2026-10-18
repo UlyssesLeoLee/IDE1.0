@@ -1117,18 +1117,47 @@
     /* 极简布局的未保存标记: 标签条常被隐藏, 看不到标签上的小圆点, 所以在状态栏文件名前画一个 ● (syncDocChrome 写 data-dirty) */
     html[data-layout="min"] #s-file[data-dirty="on"]::before { content: "● "; }
 
-    /* ===== 极简布局: 折叠 + 覆盖抽屉 =====
-       min 下「导航 / 文件」(活动栏 + 侧栏) 和底端面板不是消失, 而是折叠成常驻的把手: 左边一条 16px 的细条 (#left-strip, 内有 ›/‹ 按钮),
-       底部是面板头 (#bottom-head: TERMINAL / OUTPUT / PROBLEMS + 展开/折叠). 开关 activityBar / sideBar / bottomPanel = true 即「展开」.
-       展开 = 抽屉浮在编辑区之上 (绝对定位, 不占栅格), 所以编辑区的位置和尺寸始终不变, 也不会跳.
-       栅格列在 min 下恒为 [16px 细条][0][编辑区], 与三个开关的取值无关; 完整布局不受影响 (并排停靠, 见上面 data-layout="full" 的规则).
-       层叠按「最近」: 最后展开 / 最后按下 (mousedown) 的抽屉在上, JS 把它写成 <html data-drawer-top="left|bottom">, 这里只认属性.
-       抽屉 z 值都在补全浮层 (50) 以下: 在编辑区打字时补全列表不能被抽屉盖住; 菜单栏 (100) 及其下拉在所有抽屉之上. */
+    /* ===== 极简布局: 折叠 + 让位抽屉 =====
+       min 下「导航 / 文件」(活动栏 + 侧栏) 和底端面板不是消失, 而是折叠成常驻的把手:
+       左边一条 16px 的细条 (#left-strip, 内有 ›/‹ 按钮), 底部是面板头
+       (#bottom-head: TERMINAL / OUTPUT / PROBLEMS + 展开/折叠).
+       开关 activityBar / sideBar / bottomPanel = true 即「展开」.
+
+       **展开 = 让位, 不是覆盖.** (这是 2026-10 的行为契约变更)
+       早期实现把抽屉做成 position:absolute 浮在编辑区之上, 展开时编辑区尺寸不变 ——
+       结果抽屉直接盖住正文, 被挡的内容彻底看不到. 用户明确要求「不可以覆盖有用的信息,
+       一旦被覆盖必须重新适配大小确保显示内容完整」, 所以改为并排停靠:
+         - 左抽屉展开 -> 栅格列变宽 (--w-rail / --w-side), 编辑区自动收缩让位;
+         - 底抽屉展开 -> #bottom-body 回到栅格流 (占 auto 行), 编辑区自动变矮.
+       编辑区用 minmax(0, 1fr) + min-width/min-height: 0, 所以收缩到 0 也不会撑破栅格.
+
+       完整布局 (full) 一直是并排停靠, 本节只管 min.
+       关闭时抽屉 display:none, 轨道归零, 与「隐藏」语义一致. */
+
+    /* min 用**四列**: [细条][活动栏][侧栏][编辑区].
+       为什么要比 full 多一列: full 布局没有细条, 活动栏直接占第 1 列; min 下细条
+       常驻在第 1 列, 活动栏必须挪到第 2 列 —— 否则两者抢同一格, 活动栏只剩 16px
+       (实测点击展开后 #activity-bar 宽度是 16 而不是 44).
+       列宽全部由开关驱动: 收起时活动栏/侧栏两列归零, 编辑区 (第 4 列 minmax(0,1fr)) 占满. */
     html[data-layout="min"] #app {
-      position: relative;     /* 绝对定位的栅格子项以自己的栅格区域为包含块 (要求栅格容器本身是定位元素) */
-      --w-strip: 16px; --w-drawer-rail: 44px; --w-drawer-side: 240px; --h-bottom-head: 28px; --z-drawer: 40;
-      --w-rail: var(--w-strip); --w-side: 0px;
+      --w-strip: 16px; --w-drawer-rail: 44px; --w-drawer-side: 240px; --h-bottom-head: 28px;
+      --w-rail: 0px; --w-side: 0px;
+      grid-template-columns: var(--w-strip) var(--w-rail) var(--w-side) minmax(0, 1fr);
     }
+    html[data-layout="min"][data-activity-bar="on"] #app { --w-rail: var(--w-drawer-rail); }
+    html[data-layout="min"][data-side-bar="on"] #app { --w-side: var(--w-drawer-side); }
+    /* 窄视口: 两个抽屉全开会挤掉编辑区. 侧栏可压缩, 但编辑区至少留 240px. */
+    @media (max-width: 720px) {
+      html[data-layout="min"][data-side-bar="on"] #app {
+        --w-side: min(var(--w-drawer-side), max(0px, calc(100vw - var(--w-strip) - var(--w-drawer-rail) - 240px)));
+      }
+    }
+    /* 各区域落到新的列号上 */
+    html[data-layout="min"] #left-strip { grid-column: 1; }
+    html[data-layout="min"] #activity-bar { grid-column: 2; }
+    html[data-layout="min"] #side-bar { grid-column: 3; }
+    html[data-layout="min"] #editor-area { grid-column: 4; }
+    html[data-layout="min"] #bottom-panel, html[data-layout="min"] #status { grid-column: 1 / -1; }
     /* 左细条: 第 2 行第 1 列, 菜单栏与面板头之间的整个高度; 按钮顶端对齐并高于所有抽屉, 底端抽屉再宽也盖不住它 */
     #left-strip { display: none; }
     html[data-layout="min"] #left-strip { display: block; grid-row: 2; grid-column: 1; min-width: 0; min-height: 0; background: var(--bg-rail); border-right: 1px solid var(--border); cursor: pointer; }
@@ -1136,27 +1165,19 @@
     #left-strip-btn { position: relative; z-index: calc(var(--z-drawer, 40) + 2); display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; padding: 0; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 16px; line-height: 1; }
     #left-strip-btn:hover { color: var(--fg); background: var(--bg-hover); }
     #left-strip-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); border-radius: 0; }   /* 外圈焦点环会被相邻的编辑区盖掉, 用内圈 */
-    /* 左抽屉: 活动栏 + 侧栏以第 2 行整行为包含块, 天然夹在菜单栏与面板头 / 状态栏之间, 盖不到它们. 从细条右缘起, 所以细条按钮展开后仍可点 */
-    html[data-layout="min"] #activity-bar, html[data-layout="min"] #side-bar {
-      position: absolute; grid-row: 2 / 3; grid-column: 1 / -1; top: 0; bottom: 0; z-index: var(--z-drawer);   /* 终止线写明: 绝对定位项的 auto 终止线指容器的 padding 边, 写 2 会一路长到状态栏下 */
-      box-shadow: 6px 0 14px -6px rgba(0, 0, 0, 0.5);
-    }
-    html[data-layout="min"] #activity-bar { left: var(--w-strip); width: var(--w-drawer-rail); }
-    html[data-layout="min"] #side-bar { left: var(--w-strip); width: min(var(--w-drawer-side), calc(80vw - var(--w-strip))); }   /* 整个左抽屉 <= 80vw */
-    html[data-layout="min"][data-activity-bar="on"] #side-bar {
-      left: calc(var(--w-strip) + var(--w-drawer-rail));
-      width: min(var(--w-drawer-side), calc(80vw - var(--w-strip) - var(--w-drawer-rail)));
-    }
-    html[data-layout="min"][data-activity-bar="off"] #activity-bar, html[data-layout="min"][data-side-bar="off"] #side-bar { display: none; }
-    /* 底抽屉: 面板头留在栅格里 (折叠时只有它占位), 正文以面板头的上缘为底边向上长出, 通栏; 高度被夹在视口内, 够不到菜单栏 */
-    html[data-layout="min"] #bottom-panel { position: relative; z-index: var(--z-drawer); }
+    /* 左抽屉: 各占自己的栅格列 (第 1 列活动栏 / 第 2 列侧栏), 与完整布局一致.
+       展开时列宽由 --w-rail / --w-side 决定, 编辑区自动让位 —— 不再用绝对定位盖住正文. */
+    html[data-layout="min"] #activity-bar, html[data-layout="min"] #side-bar { min-width: 0; min-height: 0; }
+    html[data-layout="min"][data-activity-bar="off"] #activity-bar,
+    html[data-layout="min"][data-side-bar="off"] #side-bar { display: none; }
+    /* 底抽屉: #bottom-panel 本来就在栅格第 3 行 (auto 行), 正文作为它的子项按列堆叠.
+       展开时 auto 行 = 面板头 + 正文高度, 上面第 2 行的编辑区自动变矮 —— 让位, 不覆盖. */
+    html[data-layout="min"] #bottom-panel { flex-direction: column; min-height: 0; }
     html[data-layout="min"] #bottom-body {
-      position: absolute; left: 0; right: 0; bottom: 100%;
-      height: clamp(120px, 40vh, 320px);
+      flex: 0 0 clamp(120px, 40vh, 320px);
       max-height: calc(100vh - var(--h-menubar) - var(--h-status) - var(--h-bottom-head));
-      border-top: 1px solid var(--border-strong); box-shadow: 0 -6px 14px -6px rgba(0, 0, 0, 0.5);
+      border-top: 1px solid var(--border-strong);
     }
-    html[data-layout="min"][data-drawer-top="left"] :is(#activity-bar, #side-bar), html[data-layout="min"][data-drawer-top="bottom"] #bottom-panel { z-index: calc(var(--z-drawer) + 1); }
     /* 透明玻璃主题: 面板底色只有 4-5% 的白, 浮在编辑区上会让下面的文字直接透出来; 抽屉要有自己的底 (同下拉菜单的玻璃处理, 浅色桌面用浅底) */
     /* 底抽屉正文的显隐直接认 <html data-bottom-panel> (head 引擎首帧前写好), 不依赖 #bottom-panel[data-collapsed] (静态标记里恒为 true,
        要等 body 末尾的 syncDrawerUI 才改) —— 存盘里是「展开」时首帧就不会先画成折叠. 选择器里重复 #bottom-panel 只为压过上面 data-collapsed 那条的权重 */

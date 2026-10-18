@@ -8,7 +8,7 @@
 //
 // 覆盖:
 //   1. 缺省可见集合 = 菜单栏 + 编辑区 + 细状态栏 + 两个折叠把手 (左细条 / 面板头); 其余区域留在 DOM 里但 display:none, 且各区域严丝合缝铺满视口
-//  13. 折叠把手与覆盖抽屉: 把手的 aria / 提示 / 箭头; 展开是覆盖 (编辑区矩形不变); 按「最近」层叠; 落盘; Esc; 640x480 不溢出;
+//  13. 折叠把手与让位抽屉: 把手的 aria / 提示 / 箭头; **展开让位** (编辑区收缩, 抽屉占栅格不覆盖); 落盘; Esc; 640x480 不溢出;
 //      资源管理器展开时刷新 (保住已展开目录和滚动位置); Esc 遇到打开的菜单只关菜单; 完整布局仍是并排停靠
 //   2. 启动即有「无标题」文档, 焦点在编辑区, 有闪烁的光标
 //   3. 直接打字 (不需要 vim 键), Esc 不换模式, 没有模式标签; 启动瞬间的按键不会被吞
@@ -88,7 +88,8 @@ async function checkOf(page: Page, menu: string, cmd: string): Promise<string | 
 }
 
 /** 区域严丝合缝: 竖向 菜单栏/编辑区/底端面板(头)/状态栏 首尾相接铺满视口, 横向 编辑区左边的并排区域同理, 没有横向滚动.
- *  极简布局里活动栏 / 侧栏 / 底端面板正文是浮在编辑区上的抽屉, 不占栅格, 不参与铺满: 并排的只有左细条 + 编辑区. */
+ *  2026-10 起极简布局的抽屉改为**让位式**(占栅格轨道), 所以 min 的并排列与 full 一致;
+ *  折叠态下活动栏 / 侧栏是 display:none, rect() 返回 null 被过滤掉, 断言自动只覆盖可见区域. */
 async function expectTiled(page: Page, label = "") {
   const r = await page.evaluate(() => {
     const rect = (s: string) => {
@@ -97,11 +98,11 @@ async function expectTiled(page: Page, label = "") {
       const b = e.getBoundingClientRect();
       return b.width > 0 && b.height > 0 ? { l: b.left, t: b.top, r: b.right, b: b.bottom } : null;
     };
-    const min = (window as any).getLayout().preset === "min";
     return {
       iw: innerWidth, ih: innerHeight, sl: document.body.scrollLeft, sw: document.documentElement.scrollWidth,
       rows: ["#menubar", "#editor-area", "#bottom-panel", "#status"].map(rect),
-      cols: (min ? ["#left-strip", "#editor-area"] : ["#activity-bar", "#side-bar", "#editor-area"]).map(rect),
+      // 让位式布局下 min 与 full 的并排结构相同; 折叠的列是 display:none -> rect 返回 null
+      cols: ["#activity-bar", "#side-bar", "#left-strip", "#editor-area"].map(rect),
     };
   });
   const rows = r.rows.filter(Boolean) as { l: number; t: number; r: number; b: number }[];
@@ -289,7 +290,8 @@ test("页面一拿到焦点就打字: 头几个键不会被当成 vim 命令吞�
 
 // ---------------------------------------------------------------- 4. 视图 > 界面布局
 
-// 极简布局里 活动栏 / 侧边栏 / 底端面板 三项的「显示 / 隐藏」是「展开 / 折叠」: 折叠时留着把手, 展开是覆盖抽屉.
+// 极简布局里 活动栏 / 侧边栏 / 底端面板 三项的「显示 / 隐藏」是「展开 / 折叠」: 折叠时留着把手,
+// 展开是**让位抽屉** —— 占栅格轨道, 编辑区收缩, 不覆盖正文 (2026-10 契约变更).
 // 左抽屉 = 活动栏 + 侧栏: 从折叠态点任一项 = 整个左抽屉展开 (两项一起开); 已展开时再点才是各管各的.
 const TOGGLES: { cmd: string; sel: string; flag: string; other?: { sel: string; flag: string }; kept?: string }[] = [
   { cmd: "toggle-activity-bar", sel: "#activity-bar", flag: "activityBar", other: { sel: "#side-bar", flag: "sideBar" } },
@@ -314,7 +316,8 @@ for (const tg of TOGGLES) {
     await expectTiled(page, tg.cmd);
     const flags = JSON.parse((await ls(page, "ide10.layout.flags")) || "{}");
     expect(flags[tg.flag], "只存与预设不同的项").toBe(true);
-    if (tg.other || tg.kept) expect((await box(page, "#editor"))!, "抽屉是覆盖: 编辑区尺寸不变").toEqual(ed0);
+    // 让位抽屉会改变编辑区尺寸, 这里只断言开关本身生效, 几何由专门的让位契约测试覆盖
+    if (tg.other || tg.kept) expect(await box(page, "#editor"), "编辑区应仍在 DOM 且有尺寸").not.toBeNull();
 
     await page.reload();
     await page.waitForFunction(() => (window as any).__ideReady && (window as any).__ideReady(), null, { timeout: 8_000 });
@@ -431,7 +434,7 @@ test("打开文件夹 -> 左抽屉 (活动栏 + 侧栏) 自动展开并列出项
   await page.waitForFunction(() => (document.querySelector("#side-body")?.textContent || "").includes("README.md"), null, { timeout: 8_000 });
   expect(await shown(page, "#side-bar")).toBe(true);
   expect(await shown(page, "#activity-bar"), "折叠的左抽屉整体展开: 活动栏跟着出现").toBe(true);
-  expect(await box(page, "#editor"), "展开是覆盖, 编辑区不动").toEqual(ed0);
+  expect(await box(page, "#editor"), "左抽屉展开后编辑区仍应可见 (让位, 不覆盖)").not.toBeNull();
   await expectTiled(page, "open-folder");
   expect((await layoutOf(page)).flags).toMatchObject({ sideBar: true, activityBar: true });
   await page.reload();
@@ -1049,47 +1052,70 @@ test("折叠把手: 左细条 (aria-label / aria-expanded / 提示 / 箭头) 和
   expect(errors).toEqual([]);
 });
 
-test("展开是覆盖: 编辑区矩形始终不变; 抽屉几何 (活动栏 44 / 侧栏 240 / 底抽屉 clamp(120, 40vh, 320) 通栏), 夹在菜单栏与面板头之间", async ({ page }) => {
+test("展开是让位不是覆盖: 抽屉占栅格, 编辑区收缩让出空间, 收起后复原", async ({ page }) => {
+  // 2026-10 行为契约变更. 早期实现把抽屉做成 position:absolute 浮在编辑区之上,
+  // 展开时编辑区尺寸不变 —— 结果抽屉直接盖住正文, 被挡的内容彻底看不到.
+  // 现在改为并排停靠: 展开 -> 编辑区收缩; 收起 -> 完全复原.
   const errors = await boot(page);
   for (const [w, h] of [[960, 600], [1280, 800], [1920, 1080]]) {
     await page.setViewportSize({ width: w, height: h });
     await page.evaluate(() => (window as any).setLayout("min"));
-    const ed0 = await rectOf(page, "#editor"), gut0 = await rectOf(page, "#gutter"), area0 = await rectOf(page, "#editor-area");
-    const mb = await rectOf(page, "#menubar"), head = await rectOf(page, "#bottom-head"), st = await rectOf(page, "#status"), strip = await rectOf(page, "#left-strip");
     const tag = `${w}x${h}`;
-    expect(area0.l, `${tag} 编辑区从细条右缘起`).toBeCloseTo(strip.r, 0);
 
-    await page.locator("#left-strip-btn").click();                       // 左抽屉
-    const act = await rectOf(page, "#activity-bar"), side = await rectOf(page, "#side-bar");
+    const ed0 = await rectOf(page, "#editor");
+    const strip = await rectOf(page, "#left-strip");
+    const mb = await rectOf(page, "#menubar");
+    const st = await rectOf(page, "#status");
+    expect(ed0.l, `${tag} 起点: 编辑区从细条右缘起`).toBeCloseTo(strip.r, 0);
+
+    // ---- 左抽屉展开: 编辑区向右收缩, 起点右移到抽屉右缘 ----
+    await page.locator("#left-strip-btn").click();
+    const act = await rectOf(page, "#activity-bar");
+    const side = await rectOf(page, "#side-bar");
+    const ed1 = await rectOf(page, "#editor");
+
     expect(act.w, `${tag} 活动栏 44px`).toBeCloseTo(44, 0);
-    expect(act.l, `${tag} 从细条右缘起`).toBeCloseTo(strip.r, 0);
     expect(side.w, `${tag} 侧栏约 240px`).toBeCloseTo(240, 0);
     expect(side.l, `${tag} 侧栏紧接活动栏`).toBeCloseTo(act.r, 0);
-    expect(side.r, `${tag} 整个左抽屉 <= 80vw`).toBeLessThanOrEqual(0.8 * w + 1);
+
+    // 核心断言: 编辑区**让位**了 —— 左边界右移, 且右边界不变 (贴视口右边)
+    expect(ed1.l, `${tag} 左抽屉展开: 编辑区左边界应右移让位`).toBeGreaterThan(ed0.l + 10);
+    expect(ed1.l, `${tag} 编辑区左边界应贴在抽屉右缘`).toBeCloseTo(side.r, 0);
+    expect(ed1.w, `${tag} 编辑区应变窄`).toBeLessThan(ed0.w - 100);
+    expect(ed1.r, `${tag} 编辑区右边界不变`).toBeCloseTo(ed0.r, 0);
+
+    // 编辑区不能被压到 0 或负宽 (minmax(0,1fr) + min-width:0 保证)
+    expect(ed1.w, `${tag} 编辑区仍有可用宽度`).toBeGreaterThan(200);
+    // 抽屉仍在菜单栏与状态栏之间
     for (const r of [act, side]) {
       expect(r.t, `${tag} 不盖菜单栏`).toBeGreaterThanOrEqual(mb.b - 0.5);
-      expect(r.b, `${tag} 不盖面板头 / 状态栏`).toBeLessThanOrEqual(head.t + 0.5);
+      expect(r.b, `${tag} 不盖状态栏`).toBeLessThanOrEqual(st.t + 0.5);
     }
-    expect(await rectOf(page, "#editor"), `${tag} 左抽屉展开: 编辑区不动`).toEqual(ed0);
-    expect(await rectOf(page, "#gutter")).toEqual(gut0);
+    // 无重叠: 抽屉右缘 == 编辑区左缘
+    expect(ed1.l, `${tag} 抽屉与编辑区不得重叠`).toBeGreaterThanOrEqual(side.r - 0.5);
 
-    await page.locator('#bottom-head .bottom-tab[data-pane="output-pane"]').click();   // 底抽屉
+    // ---- 底抽屉展开: 编辑区变矮, 下边界上移 ----
+    await page.locator('#bottom-head .bottom-tab[data-pane="output-pane"]').click();
     const body = await rectOf(page, "#bottom-body");
-    expect(body.l, `${tag} 通栏`).toBeCloseTo(0, 0);
-    expect(body.w, `${tag} 通栏`).toBeCloseTo(w, 0);
-    expect(body.b, `${tag} 以面板头上缘为底`).toBeCloseTo(head.t, 0);
-    expect(body.h, `${tag} clamp(120px, 40vh, 320px)`).toBeCloseTo(Math.min(Math.max(120, 0.4 * h), 320), 0);
-    expect(body.t, `${tag} 不盖菜单栏`).toBeGreaterThanOrEqual(mb.b - 0.5);
-    expect(await rectOf(page, "#editor"), `${tag} 两个都展开: 编辑区不动`).toEqual(ed0);
-    expect(await rectOf(page, "#editor-area")).toEqual(area0);
-    expect((await rectOf(page, "#bottom-head")).h, `${tag} 面板头仍是细条, 不被撑高`).toBeCloseTo(head.h, 0);
-    expect((await rectOf(page, "#status")).t, `${tag} 状态栏不动`).toBeCloseTo(st.t, 0);
-    expect(await hScrollOk(page), `${tag} 无滚动条`).toBe(true);
+    const ed2 = await rectOf(page, "#editor");
 
+    expect(body.w, `${tag} 底抽屉通栏`).toBeCloseTo(w, 0);
+    expect(body.h, `${tag} clamp(120px, 40vh, 320px)`).toBeCloseTo(Math.min(Math.max(120, 0.4 * h), 320), 0);
+    expect(ed2.b, `${tag} 底抽屉展开: 编辑区下边界应上移让位`).toBeLessThan(ed1.b - 50);
+    expect(ed2.h, `${tag} 编辑区应变矮`).toBeLessThan(ed1.h - 50);
+    expect(ed2.h, `${tag} 编辑区仍够用`).toBeGreaterThan(100);
+    // 无重叠: 编辑区下边界 == 底抽屉上边界
+    expect(ed2.b, `${tag} 底抽屉与编辑区不得重叠`).toBeLessThanOrEqual(body.t + 0.5);
+    expect(body.t, `${tag} 底抽屉不盖菜单栏`).toBeGreaterThanOrEqual(mb.b - 0.5);
+
+    expect(await hScrollOk(page), `${tag} 无横向滚动条`).toBe(true);
+
+    // ---- 全部收起: 完全复原到起始矩形 ----
     await page.locator('#bottom-head [data-cmd="bottom-toggle"]').click();
     await page.locator("#left-strip-btn").click();
     expect((await shown(page, "#side-bar")) || (await shown(page, "#bottom-body"))).toBe(false);
-    expect(await rectOf(page, "#editor"), `${tag} 全部折叠: 编辑区仍不动`).toEqual(ed0);
+    const ed3 = await rectOf(page, "#editor");
+    expect(ed3, `${tag} 全部收起后编辑区应完全复原`).toEqual(ed0);
   }
   expect(errors).toEqual([]);
 });
