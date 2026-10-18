@@ -184,16 +184,28 @@
 
 ### 4.3 已知未达标项（诚实清单）
 
-1. **桌面端 `crates/ide-shell-desktop/src/search.rs` 仍 shell out 到 `rg`**（`search.rs:31`
-   `Command::new("rg")`）。违反 §3 原则 3，Windows 上 rg 不一定在 PATH，缺了就退到
-   `search_fallback`。**web 端已在内置引擎上做完**（`ide-shell-web/src/search.rs`，
-   提交 03daccc，自带 glob 引擎 + `MiniRegex` 回溯正则）；桌面端这份还是旧代码，
-   需把 web 端实现搬进 `sakura-rs` 由两端共用，是下一步。
-2. **「フォルダー」栏目前只在前端收集，尚未真正生效**——后端 `search()` 仍只接受单个
-   `cwd`，多目录搜索与越界校验要等上面那次搬迁一起做（引擎侧 API 已冻结：
-   `GrepOptions { pattern, case_sensitive, regex, whole_word, include_files, search_folders,
-   exclude_files, exclude_folders, subfolders, max_results }`）。
-3. **列块模式无可见指示**（C-08）—— 用户进列块后除高亮外看不出当前模式，与 Sakura 有差距。
-4. **Grep 结果仍在对话框里** —— Sakura 是独立窗口，可在关闭对话框后继续用。
-5. **无实时搜索**（G-73）—— Sakura 输入即出结果。
+1. **G-20 / G-22 尚未做**：文件夹拖放、`[上]` 上移一层。dialog 里已有「フォルダー」栏与
+   `[現文件夹]` 按钮，但拖一个目录进去还没有接线。
+2. **G-44 / G-45 尚未做**：按子文件夹分组显示、基准文件夹显示。Sakura 会把结果按
+   子文件夹分组并标注相对路径，当前只按文件路径分组。
+3. **G-46 / G-47 尚未做**：文字编码集选择（自动选择 / SJIS / UTF-16 ...）、CP 选择码页。
+   `encoding_io.rs` 已有读写编码能力，但 Grep 对话框没暴露这个选项。
+4. **G-43 尚未做**：文件毎最初のみ検索（每文件只出第一处）。
+5. **G-73 尚未做**：实时搜索（Sakura 输入即出结果，当前要按 Enter）。
+6. **列块模式无可见指示**（C-08）—— 用户进列块后除高亮外看不出当前模式，与 Sakura 有差距。
+7. **Grep 结果仍在对话框里** —— Sakura 是独立窗口，可在关闭对话框后继续用；
+   当前结果渲染在对话框内，关掉就没了。
+
+### 4.4 本轮已修掉的实现缺陷（记录以免回退）
+
+Grep 后端在搬迁过程中暴露并修掉的问题，均有测试兜住：
+
+| 缺陷 | 现象 | 现在 |
+|---|---|---|
+| `window.excludeDirGlobs` 悬空导出 | 页面加载抛 `ReferenceError`，其后**全部** window 导出（`GREP_STATE`/`openGrep`/`getActiveTab`…）静默失效，整份 grep spec 全红 | 删除该导出 |
+| spec `boot()` 等 `window.__ideReady` | 该符号全仓库从未导出，可选链恒为 `undefined`，用例 100% 超时 | 改等 `getActiveTab` |
+| `subfolders` 用 `*` glob 近似 | 关闭递归后连本目录的顶层文件也搜不到 | 引擎真实开关 `subfolders` |
+| 引擎错误回 `200 OK` + 空数组 | 目录越界时用户只看到「无匹配」，不知道自己被拒 | 改回 `400` + `error` 字段 |
+| `fetchApi` 丢弃错误响应体 | 只显示干巴巴的 `HTTP 400` | 解析 body 带出真实原因 |
+| Windows `\?\` 前缀泄漏 | Grep 结果显示 `\?\E:\proj\a.rs`，点击跳转对不上 | 展示前 `strip_verbatim_prefix` |
 
