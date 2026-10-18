@@ -3955,6 +3955,7 @@ name = "sakura-rs"
 version = "0.1.0"
 dependencies = [
  "encoding_rs",
+ "memchr",
  "serde",
  "serde_json",
  "wasmtime",
