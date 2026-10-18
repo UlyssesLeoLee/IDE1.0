@@ -4,7 +4,7 @@
 用户从 Sakura 迁移过来时，同一个操作、同一个快捷键、同一个边界行为，都得到等价或更好的结果。
 唯一允许的实现差异：核心逻辑用 Rust 重写，不依赖 bregonig/bregexp 等 C++ 正则库与 COM 组件。
 
-来源：`sakura-editor/sakura` 官方 help 文档（以 master 分支 help/ 为准）。
+来源：上游仓库的官方 help 文档（以 master 分支 help/ 为准）。
 每条功能标注 Sakura 版本引入点，便于对齐行为。
 
 ---
@@ -117,7 +117,7 @@
 
 验证入口：
 - `tests/uat/specs/column-block.spec.ts` —— 11 例，覆盖 C-01 ~ C-09 + 渲染完整性 + Unicode 安全
-- `tests/uat/specs/grep-sakura.spec.ts` —— 10 例，覆盖 G-10 ~ G-15、G-53、G-61、G-70、G-72、G-75
+- `tests/uat/specs/grep.spec.ts` —— 10 例，覆盖 G-10 ~ G-15、G-53、G-61、G-70、G-72、G-75
 
 ### 4.1 列块编辑（§2）
 
@@ -212,7 +212,7 @@
 | memchr SIMD 预筛 | 424ms | 494 MB/s | 12.6x |
 | **引擎 `search()` 端到端** | **382ms** | **549 MB/s** | **14x** |
 
-复现：`cargo test -p sakura-rs --test grep_bench -- --ignored --nocapture`
+复现：`cargo test -p editcore --test grep_bench -- --ignored --nocapture`
 （语料用固定 LCG 生成，不引 rand）。
 
 快速路径只处理字面量；正则走 `MiniRegex`、单词单位需判词边界，两者退回解码路径。

@@ -1,12 +1,12 @@
-//! sakura-rs bench — buffer insert throughput
+//! editcore bench — buffer insert throughput
 //!
-//! 运行: cargo run -p sakura-rs --example bench
+//! 运行: cargo run -p editcore --example bench
 
 use editcore::buffer::{DocLine, DocLineMgr};
 use std::time::Instant;
 
 fn main() {
-    println!("=== sakura-rs core ops bench ===\n");
+    println!("=== editcore core ops bench ===\n");
 
     let _buf = DocLineMgr::new();
     let mut line = DocLine::new("warmup line", 1);

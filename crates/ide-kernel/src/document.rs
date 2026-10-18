@@ -1,7 +1,7 @@
 //! `Document` — 内核的编辑单元 (单个文件).
 //!
-//! 把 `sakura-rs` 的 `DocLineMgr` (内容) + `OpeBuf` (撤销栈) + `LogicPos`
-//! (位置) 组合成一个**会话级可编辑文档**, 并补上 sakura-rs 尚未提供、
+//! 把 `editcore` 的 `DocLineMgr` (内容) + `OpeBuf` (撤销栈) + `LogicPos`
+//! (位置) 组合成一个**会话级可编辑文档**, 并补上 editcore 尚未提供、
 //! 而 Sakura Editor 必须有的部分:
 //!
 //! - 选区 (可跨行) 与多光标 (multi-cursor)

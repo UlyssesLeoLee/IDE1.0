@@ -32,7 +32,7 @@
 ### DOC-08.A.1 結合ポイント
 
 ```
-[sakura-rs] ←→ [ide-shell-web] ←→ [axum HTTP] ←→ [Browser]
+[editcore] ←→ [ide-shell-web] ←→ [axum HTTP] ←→ [Browser]
 [ide-shell-protocol] ←→ [WebSocket/HTTP/stdio]
 [ide-shell-desktop] ←→ [Tauri IPC] ←→ [webview2]
 [terminal.rs] ←→ [powershell.exe]
@@ -43,7 +43,7 @@
 
 | ID | 対象 | シナリオ | 期待結果 | 状態 |
 |---|---|---|---|---|
-| SIT-01 | sakura-rs + ide-shell-web | Buffer 作成 → HTTP API 経由取得 | JSON 一致 | ✅ |
+| SIT-01 | editcore + ide-shell-web | Buffer 作成 → HTTP API 経由取得 | JSON 一致 | ✅ |
 | SIT-02 | ide-shell-web + axum | POST /api/file → ファイル書き込み | 200 OK | ✅ |
 | SIT-03 | ide-shell-web + axum | GET /api/file?q=large_file | 4MB 超過 拒否 | ✅ |
 | SIT-04 | ide-shell-protocol + WebSocket | chat メソッド送受信 | ws_id 対応 | ✅ |
@@ -51,7 +51,7 @@
 | SIT-06 | terminal.rs + powershell | 起動 → Write-Host → 出力取得 | 文字列一致 | ✅ |
 | SIT-07 | path_safety + Windows verbatim | `\\?\C:\foo` 入力 | 正規化成功 | ✅ |
 | SIT-08 | path_safety + 8.3 短パス | `PROGRA~1` 入力 | 展開成功 | ✅ |
-| SIT-09 | editor.html + sakura-rs | undo 連続 100 回 | 状態一致 | ✅ |
+| SIT-09 | editor.html + editcore | undo 連続 100 回 | 状態一致 | ✅ |
 | SIT-10 | editor.html + syntax.js | 19 言語切替 | ハイライト正常 | ✅ |
 | SIT-11 | ide-shell-desktop + Tauri | 起動 → WebView2 ロード | window 表示 | ✅ |
 | SIT-12 | ide-shell-desktop + terminal | PowerShell spawn → 出力 | thread 正常 | ✅ |

@@ -63,7 +63,7 @@
 | 要件定義 | Requirements | 需求定义 | ulys-191-5 |
 | システム方式設計 | System Design | 系统设计 | ulys-191-7 (ide-shell-protocol) |
 | ソフトウェア方式設計 | Software Design | 软件设计 | ulys-191-15 (Outline) |
-| 詳細設計 | Detailed Design | 详细设计 | ulys-191-30 (sakura-rs PARITY) |
+| 詳細設計 | Detailed Design | 详细设计 | ulys-191-30 (editcore PARITY) |
 | 実装 | Implementation | 实现 | ulys-191-9, 10, 30 |
 | 単体テスト | Unit Test | 单元测试 | 253/253 cargo test pass |
 | 結合テスト | Integration Test | 集成测试 | ulys-191-21, 22 |
@@ -80,7 +80,7 @@
 | 三態键位 | Tri-state keymap | 三态键位模式 | NORMAL / INSERT / VISUAL |
 | 単層ペイン | Single-layer Panel | 单层面板 | Bottom Panel (Terminal/Output/Problems) |
 | ファイルツリー | File Tree | 文件树 | Explorer side bar |
-| アウトラインパネル | Outline Panel | 大纲面板 | sakura-rs `outline_dispatch` |
+| アウトラインパネル | Outline Panel | 大纲面板 | editcore `outline_dispatch` |
 | グリッドパネル | Grid Panel | 多面板栅格 | (未实现 - 计划 DOC-19) |
 | カスタムメニュー | Custom Menu | 自定义菜单 | (未实现 - 计划 DOC-15) |
 

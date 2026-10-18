@@ -45,7 +45,7 @@
 - [arch/ 既存 architecture 文档](architecture/) — DOC-05/06 への参照
 - [regression-report-2026-09-24.md](regression-report-2026-09-24.md) — DOC-13 への参照
 - [regression-report-stage1-module-switch-2026-09-26.md](regression-report-stage1-module-switch-2026-09-26.md) — DOC-15 への参照
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — DOC-04 機能要件への参照
+- [PARITY.md](../crates/editcore/PARITY.md) — DOC-04 機能要件への参照
 
 ## メタ情報
 

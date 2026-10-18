@@ -29,7 +29,7 @@ SRS (DOC-02) を **ソフトウェアレベル** で詳細化. モジュール�
 
 ## 4. タスク
 
-### DOC-04.A.1 sakura-rs (Pure Rust)
+### DOC-04.A.1 editcore (Pure Rust)
 
 | 関数 | 入力 | 出力 | 説明 |
 |---|---|---|---|
@@ -116,10 +116,10 @@ SRS (DOC-02) を **ソフトウェアレベル** で詳細化. モジュール�
 - [DOC-02 SRS](DOC-02_system_requirements.md) — 上位要件
 - [DOC-05 ソフトウェア SDD](DOC-05_software_design.md) — 設計
 - [DOC-06 詳細設計](DOC-06_software_detail_design.md) — 実装
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — 機能カバー率
+- [PARITY.md](../crates/editcore/PARITY.md) — 機能カバー率
 
 **関連実装:**
-- `crates/sakura-rs/src/lib.rs` (Buffer/Cursor API)
+- `crates/editcore/src/lib.rs` (Buffer/Cursor API)
 - `crates/ide-shell-protocol/src/lib.rs` (JSON-RPC)
 - `crates/ide-shell-web/src/lib.rs` (HTTP 13 endpoints)
 - `crates/ide-shell-desktop/src/lib.rs` (Tauri commands)

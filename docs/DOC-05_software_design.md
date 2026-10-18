@@ -30,10 +30,10 @@
 
 ## 4. タスク
 
-### DOC-05.A.1 sakura-rs モジュール構成
+### DOC-05.A.1 editcore モジュール構成
 
 ```
-sakura-rs/
+editcore/
 ├─ lib.rs              # 公開 API + re-exports
 ├─ buffer.rs           # テキストバッファ (Vec<Line>)
 ├─ cursor.rs           # カーソル位置 (row, col)
@@ -86,7 +86,7 @@ User → [doOpenFolder] → rfd ダイアログ
   → [abs_path] → path_safety 検証
   → [tree] → ファイルツリー表示
   → User → [ファイルクリック] → タブ開く
-  → [Buffer::load] → sakura-rs Buffer
+  → [Buffer::load] → editcore Buffer
   → [Editor 表示]
 ```
 
@@ -135,12 +135,12 @@ User → [+] → [terminal_create]
 | Tauri runtime | tokio | async I/O |
 | Terminal stdout | std::thread | pipe 読み込み |
 | web polling | setInterval 100ms | Terminal 更新 |
-| sakura-rs バッファ | 同期 (Mutex 不要) | 単一スレッド |
+| editcore バッファ | 同期 (Mutex 不要) | 単一スレッド |
 
 ## 5. 注記
 
 ### DOC-05.A.1.i 0 重型依存
-sakura-rs は tree-sitter WASM, regex crate 等を **一切使用しない**.
+editcore は tree-sitter WASM, regex crate 等を **一切使用しない**.
 - 自作: line-based token scanner
 - 自作: 単語境界判定 (Unicode カテゴリ)
 

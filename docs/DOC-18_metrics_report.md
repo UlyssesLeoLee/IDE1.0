@@ -40,7 +40,7 @@
 | 規模 | crate 数 | 9 | 7+ | ✅ |
 | 規模 | コミット数 | 100+ | - | ulys-191-N |
 | 規模 | 言語サポート | 19 | 15+ | ✅ |
-| 規模 | sakura 機能カバー | 100% | 75% | ✅ |
+| 規模 | 機能カバー (参考実装対比) | ~76% | 75% | 🟡 (未実測で 100% と記載していた) |
 
 ### DOC-18.A.2 品質指標
 
@@ -62,7 +62,7 @@
 
 | カテゴリ | 指標 | 値 | 目標 | 状態 |
 |---|---|---|---|---|
-| 性能 | sakura-rs bench | 56,971 ops/s | ≥ 50,000 | ✅ |
+| 性能 | editcore bench | 56,971 ops/s | ≥ 50,000 | ✅ |
 | 性能 | ファイル load (4MB) | ~50ms | ≤ 100ms | ✅ |
 | 性能 | desktop 起動 | ~1.5s | ≤ 2s | ✅ |
 | 性能 | web 起動 | ~0.8s | ≤ 1s | ✅ |
@@ -85,7 +85,7 @@
 
 **強み:**
 - コード品質 (warnings=0, coverage ≥ 60%)
-- 機能豊富 (sakura 100%, 19 言語, 22 RPC)
+- 機能豊富 (カバレッジ ~76%, 19 言語, 22 RPC)
 - 軽量 (MSI 2.88 MB)
 
 **弱み:**
@@ -109,7 +109,7 @@
 |---|---|---|---|
 | Stage 1 (1 週) | 3 | 企画 | - |
 | Stage 2 (1 週) | 4 | Tauri PoC | - |
-| Stage 3 (2 週) | 18 | sakura-rs, web, desktop, protocol | 多数 |
+| Stage 3 (2 週) | 18 | editcore, web, desktop, protocol | 多数 |
 | Stage 4 (2 週) | 8 | terminal, search, scm, outline | 多数 |
 | Stage 5 (1 日) | 1 | PR #13 merge | - |
 | Stage 6 (1 日) | 2 | IPA docs, editor.html 重写 | - |
@@ -123,7 +123,7 @@
 
 
 
-### DOC-18.A.5 sakura 機能カバレッジ (最新 2026-10-09)
+### DOC-18.A.5 機能カバレッジ (参考実装対比, 2026-10-09)
 
 | フェーズ | 完了時覆盖率 | 件数 (新規) | コミット |
 |---|---|---|---|
@@ -132,9 +132,10 @@
 | Phase 2 | 90.4% (94/104) | +7 (IO + Migemo) | `ce0b9d8` |
 | Phase 3-6 | **100.0% (104/104)** ✨ | +10 (表示/ウィンドウ/マクロ/プラグイン) | `9ee2c4a` |
 
-**sakura editor 全 104 機能 完全カバレッジ達成** 🎉
+**~~全 104 機能 完全カバレッジ達成~~** ← 訂正 (2026-10-18): 実測すると ~76% (72/95).
+`crates/editcore/PARITY.md` には未実装/部分実装が 10 件残っている.
 
-### DOC-18.A.6 sakura-rs モジュール構成 (Phase 1-6 後)
+### DOC-18.A.6 editcore モジュール構成 (Phase 1-6 後)
 
 | ファイル | 行数 (約) | テスト数 | 状態 |
 |---|---|---|---|
@@ -183,7 +184,7 @@
 - コード行数: `cloc` 相当 (find + wc)
 - テスト数: `cargo test` 出力
 - カバレッジ: `cargo-llvm-cov`
-- 性能: `examples/bench.rs` (sakura-rs)
+- 性能: `examples/bench.rs` (editcore)
 
 ### DOC-18.B.1.i SWE メトリクス
 Cyclomatic complexity, Halstead メトリクス, 凝集度 (LCOM) などは未測定 (将来).
@@ -197,7 +198,7 @@ Cyclomatic complexity, Halstead メトリクス, 凝集度 (LCOM) などは未�
 
 **関連ファイル:**
 - `.github/workflows/ci.yml` (CI 計測)
-- `crates/sakura-rs/examples/bench.rs` (性能計測)
+- `crates/editcore/examples/bench.rs` (性能計測)
 
 ## 7. 改訂履歴
 

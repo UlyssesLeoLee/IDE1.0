@@ -32,7 +32,7 @@
 ### DOC-06.A.1 データ構造
 
 ```rust
-// sakura-rs/src/buffer.rs
+// editcore/src/buffer.rs
 pub struct Buffer {
     lines: Vec<Vec<char>>,  // テキストを行ごとに保持
     cursor: Cursor,
@@ -102,7 +102,7 @@ pub struct Edit {
 #### `Grep::walk_dir(root: &Path) -> Result<Vec<Match>, io::Error>`
 - **目的:** ディレクトリを再帰的に走査し, ファイル一覧取得
 - **アルゴリズム:**
-  1. `walkdir` crate 相当 (sakura-rs は標準のみ)
+  1. `walkdir` crate 相当 (editcore は標準のみ)
   2. 拡張子フィルタ (`.rs .py .js .ts .go ...`)
   3. バイナリ判定: 初期 8KB に null バイトがあればスキップ
 - **計算量:** O(n) where n = ファイル数
@@ -112,7 +112,7 @@ pub struct Edit {
 - **アルゴリズム:**
   1. UTF-8 検証
   2. 1 行ずつ走査
-  3. 部分文字列検索 (sakura-rs は正規表現なし, `str::contains`)
+  3. 部分文字列検索 (editcore は正規表現なし, `str::contains`)
   4. マッチ位置を行番号・列範囲として `Match` 生成
 - **計算量:** O(file_size) per file
 
@@ -236,7 +236,7 @@ impl UndoStack {
 ## 5. 注記
 
 ### DOC-06.A.1.i 0 重型依存戦略
-sakura-rs は外部 crate を 1 つも持たない.
+editcore は外部 crate を 1 つも持たない.
 - regex → 自作 line scanner
 - tree-sitter → 自作 line-based トークナイザ
 - memmap → 標準 `Vec<char>` のみ
@@ -251,10 +251,10 @@ sakura-rs は外部 crate を 1 つも持たない.
 - [DOC-05 ソフトウェア SDD](DOC-05_software_design.md) — 上流
 - [DOC-07 実装報告](DOC-07_implementation_report.md) — 実装
 - [DOC-10 SUT](DOC-10_unit_test_spec.md) — テスト
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — 機能対比
+- [PARITY.md](../crates/editcore/PARITY.md) — 機能対比
 
 **関連実装:**
-- `crates/sakura-rs/src/` (lib/buffer/cursor/undo/grep/type_config)
+- `crates/editcore/src/` (lib/buffer/cursor/undo/grep/type_config)
 - `crates/ide-shell-web/src/editor.html` (state machine)
 - `crates/ide-shell-web/src/syntax.js` (言語 lexer)
 

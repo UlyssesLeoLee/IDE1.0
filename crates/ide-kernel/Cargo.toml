@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "ide-kernel — IDE1.0 唯一编辑内核: 把 sakura-rs 的 Buffer/Undo/Cursor 聚合成会话级 Document/Session, Web/Tauri/TUI 共用一份编辑语义."
+description = "ide-kernel — IDE1.0 唯一编辑内核: 把 editcore 的 Buffer/Undo/Cursor 聚合成会话级 Document/Session, Web/Tauri/TUI 共用一份编辑语义."
 
 [dependencies]
 editcore = { path = "../editcore" }

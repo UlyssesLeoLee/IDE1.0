@@ -48,15 +48,15 @@ IDE1.0 IDE Shell の **システムレベル要件** を定義する. 機能要�
 | FR-01 | ファイルオープン | ネイティブダイアログで選択 | `doOpenFolder` | ✅ |
 | FR-02 | ファイルツリー | プロジェクト階層表示 | `renderTree()` | ✅ |
 | FR-03 | タブ切替 | 複数ファイル同時編集 | `switchTab()` | ✅ |
-| FR-04 | 編集 (NORMAL/INSERT/VISUAL) | 3 態モード | sakura-rs | ✅ |
-| FR-05 | Undo/Redo | 任意回数 | sakura-rs | ✅ |
-| FR-06 | 検索/置換 | 文字列ベース | sakura-rs | ✅ |
-| FR-07 | Grep | 複数ファイル横断 | sakura-rs | ✅ |
-| FR-08 | アウトライン | 関数一覧 | sakura-rs | ✅ |
+| FR-04 | 編集 (NORMAL/INSERT/VISUAL) | 3 態モード | editcore | ✅ |
+| FR-05 | Undo/Redo | 任意回数 | editcore | ✅ |
+| FR-06 | 検索/置換 | 文字列ベース | editcore | ✅ |
+| FR-07 | Grep | 複数ファイル横断 | editcore | ✅ |
+| FR-08 | アウトライン | 関数一覧 | editcore | ✅ |
 | FR-09 | ターミナル | PowerShell 実行 | `terminal.rs` | ✅ |
 | FR-10 | 19 言語高亮 | rust/python/js/... | `syntax.js` | ✅ |
 | FR-11 | 自動インデント | Tab → 2 スペース | editor.html | ✅ |
-| FR-12 | 折り畳み | zc コマンド | sakura-rs | ✅ |
+| FR-12 | 折り畳み | zc コマンド | editcore | ✅ |
 | FR-13 | ミニマップ | (将来拡張) | - | 🟡 |
 | FR-14 | 矩形選択 | (将来拡張) | - | 🟡 |
 | FR-15 | 自動バックアップ | 5 分毎, 10 世代 | `auto_backup.rs` | ✅ |
@@ -79,7 +79,7 @@ IDE1.0 IDE Shell の **システムレベル要件** を定義する. 機能要�
 
 | ID | カテゴリ | 要件 | 値 | 状態 |
 |---|---|---|---|---|
-| NFR-01 | 性能 | sakura-rs bench | ≥ 50,000 ops/s | 56,971 ✅ |
+| NFR-01 | 性能 | editcore bench | ≥ 50,000 ops/s | 56,971 ✅ |
 | NFR-02 | 性能 | ファイル読み込み 4MB | ≤ 100ms | ✅ |
 | NFR-03 | 性能 | 起動時間 (desktop) | ≤ 2 秒 | ✅ |
 | NFR-04 | 可用性 | CI 成功率 | ≥ 88% | 8/9 (88.9%) |
@@ -108,7 +108,7 @@ IDE1.0 IDE Shell の **システムレベル要件** を定義する. 機能要�
 | ID | 制約 |
 |---|---|
 | CR-01 | フロントエンド: vanilla JS, 0 フレームワーク |
-| CR-02 | sakura-rs: 0 重型依存 (no tree-sitter WASM, no regex crate) |
+| CR-02 | editcore: 0 重型依存 (no tree-sitter WASM, no regex crate) |
 | CR-03 | ファイル読み書き: プロジェクトルートのみ |
 | CR-04 | 文字エンコード: UTF-8 のみ |
 | CR-05 | 命名: vim/Cursor/VSCode 禁止 |
@@ -130,7 +130,7 @@ D:\orcaWork\IDE1.0\dev-3\tests\uat\fixtures\sample-project
 - [DOC-01 企画書](DOC-01_project_charter.md) — 上位プロセス
 - [DOC-03 システム HLD](DOC-03_system_hld.md) — 下流設計
 - [DOC-04 ソフトウェア要件](DOC-04_software_requirements.md) — 詳細化
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — sakura 機能対比
+- [PARITY.md](../crates/editcore/PARITY.md) — 機能対比
 
 **関連実装:**
 - `crates/ide-shell-web/src/editor.html` (FR-01 ~ FR-12)

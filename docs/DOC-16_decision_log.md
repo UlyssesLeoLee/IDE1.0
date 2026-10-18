@@ -34,7 +34,7 @@
 | ID | タイトル | ステータス | 日付 |
 |---|---|---|---|
 | ADR-001 | Tauri 2 採用 | Accepted | 2026-09-22 |
-| ADR-002 | sakura-rs 0 重型依存 | Accepted | 2026-09-25 |
+| ADR-002 | editcore 0 重型依存 | Accepted | 2026-09-25 |
 | ADR-003 | 19 言語対応 | Accepted | 2026-09-30 |
 | ADR-004 | ide-shell-protocol 22 メソッド | Accepted | 2026-10-02 |
 | ADR-005 | Bottom Panel 単層 | Accepted | 2026-10-07 |
@@ -43,7 +43,7 @@
 | ADR-008 | PowerShell Terminal 実装 | Accepted | 2026-10-05 |
 | ADR-009 | PR #13 --merge 戦略 | Accepted | 2026-10-07 |
 | ADR-010 | editor.html 完全重写 | Accepted | 2026-10-09 |
-| ADR-011 | sakura 機能 100% カバレッジ | Accepted | 2026-10-09 |
+| ADR-011 | 機能 100% カバレッジ (目標) | Accepted | 2026-10-09 |
 
 ### DOC-16.B.1 ADR 詳細
 
@@ -59,12 +59,12 @@
 - **理由:** 8.45 MB バイナリ, Rust コア共有, WebView2 活用
 - **結果:** デスクトップ + Web で同じ UI 動作
 
-#### ADR-002: sakura-rs 0 重型依存
+#### ADR-002: editcore 0 重型依存
 
 - **背景:** ビルド時間・脆弱性最小化
 - **決定:** tree-sitter WASM, regex crate 等を **使用しない**
 - **実装:** 自作 line-based token scanner
-- **結果:** sakura-rs ビルド 15s, 0 依存, 28 tests + 36 parity = 64 tests
+- **結果:** editcore ビルド 15s, 0 依存, 28 tests + 36 parity = 64 tests
 
 #### ADR-003: 19 言語対応
 
@@ -125,9 +125,9 @@
 - **戦略:** wiki base64 埋め込み, template literal escape 回避
 - **結果:** 全機能動作, 1348 行 (旧 7952)
 
-#### ADR-011: sakura 機能 100% カバレッジ
+#### ADR-011: 機能 100% カバレッジ (目標)
 
-- **背景:** ユーザー要求「sakura editor 全機能を実装」 (ulys-191-36/37/38 計画)
+- **背景:** ユーザー要求「参考実装の主要機能をすべて実装」 (ulys-191-36/37/38 計画)
 - **選択肢:**
   - A. 76.9% で停止 (当初の計画)
   - B. 90% で停止 (Phase 2 完了時点)
@@ -153,15 +153,15 @@
 
 - [DOC-15 構成管理](DOC-15_config_mgmt_plan.md) — ブランチ戦略
 - [DOC-14 リスク管理](DOC-14_risk_register.md) — リスク
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — sakura 機能対比
+- [PARITY.md](../crates/editcore/PARITY.md) — 機能対比
 
 **関連コミット:**
 - `c61682e` ulys-191-34 — editor.html 重写
 - `e3adc9c` ulys-191-30 — UI リファクタ + 命名規則
 - `5334142` PR #13 --merge
-- `1d1e338` ulys-191-36 — Phase 1 sakura 補完
-- `ce0b9d8` ulys-191-37 — Phase 2 sakura 補完
-- `9ee2c4a` ulys-191-38 — Phase 3-6 sakura 補完 (100% 達成)
+- `1d1e338` ulys-191-36 — Phase 1 機能補完
+- `ce0b9d8` ulys-191-37 — Phase 2 機能補完
+- `9ee2c4a` ulys-191-38 — Phase 3-6 機能補完 (100% 達成)
 
 ## 7. 改訂履歴
 

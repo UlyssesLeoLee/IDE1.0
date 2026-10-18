@@ -2,7 +2,7 @@
 
 > **準拠:** IPA 共通フレーム2013 (Software Engineering Center, 2013/03/04)
 > **適用範囲:** IDE1.0 IDE Shell 全プロジェクト (V 字モデル)
-> **現状:** 2026-10-09 (Stage 6 完成 — sakura-rs bench + CI benchmark)
+> **現状:** 2026-10-09 (Stage 6 完成 — editcore bench + CI benchmark)
 
 ---
 
@@ -81,7 +81,7 @@
 
 | 指标 | 値 |
 |---|---|
-| Crates | 9 (ide-cli, ide-kernel-core, ide-shell, ide-shell-web, ide-shell-desktop, ide-shell-protocol, sakura-rs, aci-emitter, ide-cli) |
+| Crates | 9 (ide-cli, ide-kernel-core, ide-shell, ide-shell-web, ide-shell-desktop, ide-shell-protocol, editcore, aci-emitter, ide-cli) |
 | Cargo tests | **253/253** pass (under `RUSTFLAGS=-D warnings`) |
 | CI jobs | **8/9** PASS (UAT 在 Linux 失败 — programmatic click 限制) |
 | Coverage | **66.25%** (4 个 file ≥ 90%) |
@@ -98,7 +98,7 @@
 ## 🔗 関連リンク
 
 - [README.md](../README.md) — 项目主 README
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — sakura editor 機能对比
+- [PARITY.md](../crates/editcore/PARITY.md) — 機能対比
 - [CI workflow](../.github/workflows/ci.yml) — CI 9 jobs 详细
 - [IPA 共通フレーム2013](https://www.ipa.go.jp/archive/files/000027415.pdf) — 标准原文
 

@@ -34,7 +34,7 @@ IDE1.0 IDE Shell の **プロジェクト全体計画**. スコープ, WBS, マ�
 
 | IN (含む) | OUT (含まない) |
 |---|---|
-| Rust コア (sakura-rs) | 言語サーバ (LSP) 完全対応 |
+| Rust コア (editcore) | 言語サーバ (LSP) 完全対応 |
 | Tauri 2 デスクトップ | 完全なデバッガ |
 | Web エディタ | マーケットプレース |
 | PowerShell ターミナル | プラグイン API 完全公開 |
@@ -55,7 +55,7 @@ IDE1.0 IDE Shell の **プロジェクト全体計画**. スコープ, WBS, マ�
    2.3 詳細設計 (DOC-06)
 
 3. 実装 (Stage 3)
-   3.1 sakura-rs コア
+   3.1 editcore コア
    3.2 ide-shell-web
    3.3 ide-shell-desktop
    3.4 ide-shell-protocol
@@ -73,7 +73,7 @@ IDE1.0 IDE Shell の **プロジェクト全体計画**. スコープ, WBS, マ�
    5.3 GitHub Release
 
 6. 拡張 (Stage 6)
-   6.1 sakura 機能カバレッジ (100% → 100%)
+   6.1 機能カバレッジ (~76% → 100%, 未達成)
    6.2 IPA ドキュメント (21 件)
    6.3 ベンチマーク公開
 ```

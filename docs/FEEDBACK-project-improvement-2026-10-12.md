@@ -2,16 +2,16 @@
 
 > 分析日期: 2026-10-12 · 分析对象: `main` @ f44479f · 范围: 7 个 crate (79 个 .rs / ≈1.7 万行)、CI、文档、仓库卫生
 > 方法: 静态阅读关键代码 (web/desktop/protocol 三个 shell、terminal/scm/search、沙箱、CI、Cargo 配置、文档)。
-> **局限**: 本次会话的 shell 中找不到 `cargo`,**未实际运行 build/test/clippy**。文中测试数量、CI 状态均来自 README 与源码,未经本次验证;未逐行审阅 `sakura-rs` 全部模块。
+> **局限**: 本次会话的 shell 中找不到 `cargo`,**未实际运行 build/test/clippy**。文中测试数量、CI 状态均来自 README 与源码,未经本次验证;未逐行审阅 `editcore` 全部模块。
 
 ---
 
 ## 0. 总体评价
 
-项目工程纪律良好: `unsafe_code = "forbid"`、CI 开启 `-D warnings`、四层测试矩阵 (UT/IT/ST/UAT)、路径沙箱有专门测试、sakura-rs 有对照 PARITY 表。主要问题集中在三类:
+项目工程纪律良好: `unsafe_code = "forbid"`、CI 开启 `-D warnings`、四层测试矩阵 (UT/IT/ST/UAT)、路径沙箱有专门测试、editcore 有对照 PARITY 表。主要问题集中在三类:
 
 1. **安全边界**: web shell / protocol server 暴露「任意命令执行」且无任何认证 (P0)。
-2. **"内核"名不副实**: 品牌是 microkernel,`ide-kernel-core` 实际只有 `version()` 和一个恒返回 `"placeholder"` 的函数;真正的编辑能力在 `sakura-rs`,却没有接入 TUI shell。
+2. **"内核"名不副实**: 品牌是 microkernel,`ide-kernel-core` 实际只有 `version()` 和一个恒返回 `"placeholder"` 的函数;真正的编辑能力在 `editcore`,却没有接入 TUI shell。
 3. **文档/仓库漂移**: README 数字过期、21 份 DOC 多为模板、二进制与多余分支入库。
 
 优先级: **P0** 立即修 · **P1** 近期 · **P2** 中期 · **P3** 机会性。
@@ -61,12 +61,12 @@
 ### 2.1 `ide-kernel-core` 仍是占位 (P1)
 - 全部代码是 `version()` 与 `kernel_status() -> "placeholder"`,但被 5 个 crate 依赖,README/DD-01~04 设计书有 microkernel / session / transaction buffer / plugin loader 的宏大叙述。
 - 风险: 设计文档(DD-01 ≈ 7.7 万字符、DD-02 ≈ 10 万字符)与实现差距巨大,读者会误以为已有内核能力。
-- 建议: 二选一并写入 decision log —— (a) 把 `sakura-rs` 中通用的 Buffer/Undo/Session 事务能力上提为 kernel 的真实 API,让 TUI/Web/Desktop 三个 shell 共用;(b) 如短期不做,把 crate 与文档状态明确标为 "experimental/stub",README 首屏写清实际交付范围。
+- 建议: 二选一并写入 decision log —— (a) 把 `editcore` 中通用的 Buffer/Undo/Session 事务能力上提为 kernel 的真实 API,让 TUI/Web/Desktop 三个 shell 共用;(b) 如短期不做,把 crate 与文档状态明确标为 "experimental/stub",README 首屏写清实际交付范围。
 
 ### 2.2 编辑引擎未接入 TUI (P1)
-- `ide-shell` 的 `app.rs` 只有一个 buffer 字符串 + Vim 三态 (README 测试里 `f.buffer == "abc"`),而 `sakura-rs` 已有完整 Buffer/Undo/Cursor/Grep/Encoding/FileLock。依赖图显示 `sakura-rs` 仅被 `desktop` 与 `web` 的 outline 功能使用 (Cargo.toml 注释"outline parser")。
-- 结果: 同一产品「三外观」编辑语义不一致,sakura-rs 的数百个测试保护的是一个没有被产品主路径使用的库。
-- 建议: 以 `sakura-rs::Buffer` 为单一事实来源重构 `App`,三个 shell 只做渲染;这是项目最高价值的架构整合。
+- `ide-shell` 的 `app.rs` 只有一个 buffer 字符串 + Vim 三态 (README 测试里 `f.buffer == "abc"`),而 `editcore` 已有完整 Buffer/Undo/Cursor/Grep/Encoding/FileLock。依赖图显示 `editcore` 仅被 `desktop` 与 `web` 的 outline 功能使用 (Cargo.toml 注释"outline parser")。
+- 结果: 同一产品「三外观」编辑语义不一致,editcore 的数百个测试保护的是一个没有被产品主路径使用的库。
+- 建议: 以 `editcore::Buffer` 为单一事实来源重构 `App`,三个 shell 只做渲染;这是项目最高价值的架构整合。
 
 ### 2.3 三份 shell 后端大量重复 (P2)
 - `ide-shell-web` 与 `ide-shell-desktop` 各自拥有一份 `scm.rs / search.rs / outline.rs / terminal.rs`,以及 `list_dir/read_file/write_file`。已出现分叉 (web 的 terminal 是 HTTP 轮询,desktop 是事件推送;web 的 `outline` 路由甚至注释"sandbox 的 `\\?\` prefix 已知 bug,所以绕过沙箱直接读")。
@@ -86,11 +86,11 @@
 
 ## 3. 代码质量与可维护性 (P2)
 
-- **大文件**: `ide-shell-protocol/src/lib.rs` 1176 行、`sakura-rs/src/types.rs` 988 行、`ide-shell-web/src/lib.rs` 838 行 (含 HTTP 解析、路由、状态、测试混在一起)。建议拆模块: `server/{http,routes,state}.rs`。
+- **大文件**: `ide-shell-protocol/src/lib.rs` 1176 行、`editcore/src/types.rs` 988 行、`ide-shell-web/src/lib.rs` 838 行 (含 HTTP 解析、路由、状态、测试混在一起)。建议拆模块: `server/{http,routes,state}.rs`。
 - **路由用字符串元组 match** 且每个路由重复「取 root → 解析 JSON → 构造响应」样板,约 15 处。迁移到 axum 后可用 extractor 消除。
 - **JSON 容错吞错**: 大量 `serde_json::from_slice(&body).unwrap_or_default()` 与 `unwrap_or("")`,畸形请求被静默当成空参数处理,难排查。应返回 400 并带错误信息。
 - **`#![allow(dead_code)]`** 位于 `ide-shell-web/src/terminal.rs` 文件头,会掩盖真正的死代码;改成针对具体项的 allow,或删除未使用代码。
-- **`missing_docs = "allow"`**: 对库 crate (`sakura-rs`、`ide-shell-protocol`) 建议改 `warn`,配合 `cargo doc` CI 步骤。
+- **`missing_docs = "allow"`**: 对库 crate (`editcore`、`ide-shell-protocol`) 建议改 `warn`,配合 `cargo doc` CI 步骤。
 - **版本号三处不同步**: workspace `0.1.0`、`tauri.conf.json` `0.1.9`、README 阶段号。建议 tauri 版本读 `Cargo.toml` (Tauri 2 支持 `"version": "../Cargo.toml"`),避免漂移。
 - **MSRV 声明不可验证**: `rust-version = "1.77"`,而 `rust-toolchain.toml` 用 `stable`,CI 也只跑 stable;README 称本机 rustc 1.98.1。1.77 很可能早已被依赖 (tauri 2.x、axum 0.7、clap) 打破。要么在 CI 加一个 MSRV job,要么删除该声明。
 - **注释风格**: 注释里混有流程性标记 ("守门 #7"、"ULYS-191 §4.2.2"、"per brief"),对新读者是噪音。内部追踪编号保留在文档/commit,代码注释只讲 why。
@@ -99,7 +99,7 @@
 
 ## 4. 测试与 CI (P1/P2)
 
-- 现有矩阵很全 (README 称 UT 61 + Python 26 + ST 4 + UAT 40),但 README 数字停在早期;之后新增的 sakura-rs 测试 (`sakura_features_104.rs`、`sakura_official_parity.rs`)、desktop e2e 等没有被统计。→ 用 CI 产出的真实数字替换手写数字,或删除这类易过期的数字。
+- 现有矩阵很全 (README 称 UT 61 + Python 26 + ST 4 + UAT 40),但 README 数字停在早期;之后新增的 editcore 测试 (`feature_parity.rs`、`reference_parity.rs`)、desktop e2e 等没有被统计。→ 用 CI 产出的真实数字替换手写数字,或删除这类易过期的数字。
 - **缺少覆盖率门禁**: 有 `test/ulys-191-21-coverage-up` 分支但 CI 无 `cargo llvm-cov`。建议设最低阈值并只对新增代码卡线。
 - **缺少安全回归测试**: 沙箱有测试,但没有针对 1.1 的「跨域 POST 创建终端」「畸形/超大 Content-Length」「rg 选项注入」「symlink/junction 逃逸」的测试。修复 P0 时同步补上。
 - **缺少依赖审计**: 加 `cargo deny check` / `cargo audit` job;`aci-emitter` 通过 git `rev` 依赖外部仓库,供应链上建议 vendor 或发布到 registry,并 pin 校验。
@@ -110,9 +110,9 @@
 
 ---
 
-## 5. sakura-rs (P2)
+## 5. editcore (P2)
 
-- 对标 sakura-editor 的 PARITY 表很好,但统计显示仍有 1 个 ❌、1 个 🚧、5 个 🟡 —— 其中「矩形选择/粘贴」只是部分实现。建议把 PARITY 表变成**由测试生成**的产物 (每行绑定测试名),CI 校验表与测试一致,避免「计划」状态长期挂着。
+- 对标上游的 PARITY 表很好,但统计显示仍有 1 个 ❌、1 个 🚧、5 个 🟡 —— 其中「矩形选择/粘贴」只是部分实现。建议把 PARITY 表变成**由测试生成**的产物 (每行绑定测试名),CI 校验表与测试一致,避免「计划」状态长期挂着。
 - `js_macro.rs` 命名为 JS 宏引擎;须确认它**不**执行任意 JS/系统命令 (实现看起来是自定义解释器,但未逐行审阅)。若将来接入真实 JS 运行时,应沙箱化并禁用文件/进程 API,与 `plugin.rs` 的能力模型一起写入威胁模型。
 - `file_lock.rs`、`auto_backup.rs`、`cursor_persistence.rs` 涉及文件系统写入 `unwrap/expect` 最密集 (13/12/18 处,含测试)。确认生产路径对「磁盘满、权限不足、网络盘」返回错误而非 panic,并确保备份/锁文件的**原子写入** (写临时文件 + rename)。
 - `encoding_io.rs`: 验证对 Shift-JIS/EUC-JP/UTF-16 BOM 与非法序列的无损往返 (读后写回不改字节),这是日语编辑器的核心承诺,建议加属性测试 (`proptest`)。
@@ -128,7 +128,7 @@
 - **缺少** `CONTRIBUTING.md`、`SECURITY.md`(应写明漏洞报告渠道与"web shell 仅供本机开发/测试"的警告)、`CHANGELOG.md`、威胁模型文档。
 - `Cargo.toml` 的 `homepage` 指向某个 agent 分支的 README (`agent/minimaxm3/ulys-191-2`),分支删除后链接失效 → 改为 main 或仓库根。
 - `authors` 字段包含长段流程说明 (含"per 守门 #10…授权"),应改为简洁的姓名/邮箱。
-- LICENSE 约 35KB (看似 GPL-3 全文) 而 `Cargo.toml` 声明 `MIT OR Apache-2.0` —— **许可证声明与文件不一致**,务必核对: 若 LICENSE 是 GPL,则与 Cargo 元数据冲突;若依赖 sakura 代码移植则更需确认许可兼容性 (sakura-editor 为 zlib 风格许可)。(此条未看全文确认,请人工核对。)
+- LICENSE 约 35KB (看似 GPL-3 全文) 而 `Cargo.toml` 声明 `MIT OR Apache-2.0` —— **许可证声明与文件不一致**,务必核对: 若 LICENSE 是 GPL,则与 Cargo 元数据冲突;若移植了上游代码则更需确认许可兼容性 (上游为 zlib 风格许可)。(此条未看全文确认,请人工核对。)
 
 ---
 
@@ -165,7 +165,7 @@
 | | 确认 LICENSE 与 Cargo 声明一致 | 6 |
 | | 决定 kernel 的去向 (实装或标记 stub);移除入库 msi 与生成物 | 2.1, 7 |
 | **1-2 月 (P2)** | 抽 `ide-shell-backend` + 唯一沙箱实现;`TerminalManager` + PTY | 1.5, 2.3, 2.4 |
-| | 让 `ide-shell` 复用 `sakura-rs::Buffer` | 2.2 |
+| | 让 `ide-shell` 复用 `editcore::Buffer` | 2.2 |
 | | README 瘦身、文档归档、CHANGELOG/SECURITY | 6 |
 | **持续 (P3)** | PARITY 表自动化、proptest、覆盖率门禁、AI 真实接入 | 4, 5, 8 |
 
@@ -174,5 +174,5 @@
 ## 10. 本次分析未覆盖 / 需要验证
 
 - 未运行 `cargo build/test/clippy/fmt`,也未执行 Playwright;所有「测试全绿」结论沿用 README。
-- 未审阅: `ide-shell-protocol/src/lib.rs` 的 RPC 方法授权细节、`ide-shell/src/render`、前端 `editor.html/index.html/syntax.js` (XSS 风险需专项检查)、`sakura-rs` 中除 PARITY/js_macro 外的多数模块、`tests/uat/specs`。
+- 未审阅: `ide-shell-protocol/src/lib.rs` 的 RPC 方法授权细节、`ide-shell/src/render`、前端 `editor.html/index.html/syntax.js` (XSS 风险需专项检查)、`editcore` 中除 PARITY/js_macro 外的多数模块、`tests/uat/specs`。
 - 许可证、`js_macro` 能力范围、`outline` 路由绕过沙箱的实际可利用性,建议人工二次确认后再按 P0 处理。

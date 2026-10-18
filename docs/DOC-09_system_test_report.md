@@ -39,12 +39,12 @@
 | FR-04 | 三態键位 | ✅ | UAT 4 case + SUT |
 | FR-05 | Undo/Redo | ✅ | 28 UT |
 | FR-06 | 検索/置換 | ✅ | UAT 2 case |
-| FR-07 | Grep | ✅ | 36 sakura_parity |
+| FR-07 | Grep | ✅ | 36 editor_parity |
 | FR-08 | アウトライン | ✅ | UAT + SUT |
 | FR-09 | ターミナル | ✅ | UAT PowerShell 実測 |
 | FR-10 | 19 言語高亮 | ✅ | UAT 10 case |
 | FR-11 | 自動インデント | ✅ | UAT |
-| FR-12 | 折り畳み | ✅ | sakura_parity |
+| FR-12 | 折り畳み | ✅ | editor_parity |
 | FR-13 | ミニマップ | 🟡 (将来拡張) | 計画のみ |
 | FR-14 | 矩形選択 | 🟡 (将来拡張) | 計画のみ |
 | FR-15 | 自動バックアップ | ✅ (Phase 1) | `auto_backup.rs` |
@@ -53,7 +53,7 @@
 
 | ID | カテゴリ | 期待 | 実測 | 状態 |
 |---|---|---|---|---|
-| NFR-01 | 性能 (sakura-rs bench) | ≥ 50,000 ops/s | 56,971 | ✅ |
+| NFR-01 | 性能 (editcore bench) | ≥ 50,000 ops/s | 56,971 | ✅ |
 | NFR-02 | 性能 (4MB load) | ≤ 100ms | ~50ms | ✅ |
 | NFR-03 | 性能 (desktop 起動) | ≤ 2s | ~1.5s | ✅ |
 | NFR-04 | CI 成功率 | ≥ 88% | 8/9 (88.9%) | ✅ |
@@ -94,7 +94,7 @@ Top coverage:
 - app_integration.rs:    80.83%
 - ide_kernel_core:       75.50%
 - ide_shell:             72.00%
-- sakura-rs:             65.00%
+- editcore:             65.00%
 - editor.html (JS):      60.00% (manual e2e)
 ```
 
@@ -113,7 +113,7 @@ Top coverage:
 Linux CI の WebView2 + PowerShell テスト失敗は **インフラ制限** であり, コード品質の問題ではない. Windows 環境では全テスト pass 確認済み.
 
 ### DOC-09.B.2.i カバレッジの解釈
-66.25% は 4 層テスト (UT/IT/ST/UAT) すべてを含む. sakura-rs 単体では ≥ 80%.
+66.25% は 4 層テスト (UT/IT/ST/UAT) すべてを含む. editcore 単体では ≥ 80%.
 
 ## 6. 関連ドキュメント
 

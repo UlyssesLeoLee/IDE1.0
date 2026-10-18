@@ -413,7 +413,7 @@ CI 增量: 新增 `tauri-build-linux` job (ubuntu-latest, 出 `.deb` + `.AppImag
 
 ### Phase 3 — Editor 高级特性
 
-- **3.1 Symbol Outline** (`384f5be`): Rust 源文件 `fn main()` 通过 sakura-rs `outline_dispatch` 解析 → JSON entries → Side Bar 显示 + click jump-to-line
+- **3.1 Symbol Outline** (`384f5be`): Rust 源文件 `fn main()` 通过 editcore `outline_dispatch` 解析 → JSON entries → Side Bar 显示 + click jump-to-line
 - **3.2 Multi-cursor 视觉 v1** (`cb7b901`): Alt+Click 加光标 + Esc 清空 + status `N cursors` badge
 - **3.3 MiniMap** (`cdac369`): 右侧代码缩略图 (line 长度条 + cursor 指示)
 - **3.4 Breadcrumb** (`cdac369`): 顶部 path 显示 (drive / folders / file)
@@ -433,8 +433,8 @@ CI 增量: 新增 `tauri-build-linux` job (ubuntu-latest, 出 `.deb` + `.AppImag
 
 ### Phase 6 — 测试 + CI (ulys-191-19)
 
-- **sakura-rs bench**: `cargo run -p sakura-rs --example bench` — insert_str 10000 ops 175ms / **56,971 ops/s**
-- **CI benchmark step**: rust-bench job 加 sakura-rs 吞吐量验证 (target ≥ 50k ops/s)
+- **editcore bench**: `cargo run -p editcore --example bench` — insert_str 10000 ops 175ms / **56,971 ops/s**
+- **CI benchmark step**: rust-bench job 加 editcore 吞吐量验证 (target ≥ 50k ops/s)
 - **四层测试矩阵**: UT (cargo test --workspace) + IT (cargo test --tests) + ST (cli_smoke.sh) + UAT (playwright 68 cases)
 
 ### 累计 commits (dev-3)
@@ -447,5 +447,5 @@ cb7b901 Phase 3.2 Multi-cursor 视觉 v1
 384f5be Phase 3.1 Outline 面板
 34f64e6 web Terminal
 2953aae Bottom Panel + Terminal (desktop)
-0cb471e sakura-rs crate 全套
+0cb471e editcore crate 全套
 ```

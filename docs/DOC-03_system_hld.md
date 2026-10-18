@@ -53,7 +53,7 @@
 ├─────────────────────────────────────────────────────────┤
 │  Backend Layer (Rust)                                    │
 │  ┌─────────────┬─────────────┬─────────────┬──────────┐ │
-│  │ ide-shell-  │ ide-shell-  │ ide-shell-  │  sakura- │ │
+│  │ ide-shell-  │ ide-shell-  │ ide-shell-  │ editcore │ │
 │  │ desktop     │ web         │ protocol    │  rs      │ │
 │  │ (Tauri 2)   │ (Axum)      │ (3 proto)   │ (crate)  │ │
 │  └─────────────┴─────────────┴─────────────┴──────────┘ │
@@ -77,7 +77,7 @@
 | `ide-shell-desktop` | Tauri 2 デスクトップ | 3,500 |
 | `ide-shell-web` | Axum ウェブエディタ | 3,000 |
 | `ide-shell-protocol` | JSON-RPC 22 メソッド | 2,500 |
-| `sakura-rs` | sakura editor 重写 | 1,800 |
+| `editcore` | 編集内核 (参考実装を Rust で再実装) | 1,800 |
 | `aci-emitter` | 構造化イベント出力 | 200 |
 | **合計** | | **13,600** |
 

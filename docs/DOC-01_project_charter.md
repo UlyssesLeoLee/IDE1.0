@@ -49,7 +49,7 @@
 ### DOC-01.A.1 背景・目的・スコープ定義
 - 背景: 既存エディタの「学習コスト高・拡張性低」問題
 - 目的: AI agent 統合可能な軽量 Rust ベース IDE 構築
-- スコープ (IN): デスクトップ/Windows + Web 編集, sakura editor 機能重写
+- スコープ (IN): デスクトップ/Windows + Web 編集, 参考実装の Win32 エディタ機能 再実装
 - スコープ (OUT): 言語サーバ (LSP) 完全対応, フルデバッガ
 
 ### DOC-01.A.2 ステークホルダー識別
@@ -61,8 +61,8 @@
 
 | カテゴリ | 基準 | 目標 |
 |---|---|---|
-| 機能 | sakura editor 機能 75% カバー | 100% (現况) |
-| 性能 | sakura-rs bench ≥ 50,000 ops/s | 56,971 ops/s |
+| 機能 | 参考実装 機能 75% カバー | ~76% (実測, 72/95) |
+| 性能 | editcore bench ≥ 50,000 ops/s | 56,971 ops/s |
 | テスト | cargo test ≥ 95% pass | 253/253 (100%) |
 | CI | 9 jobs ≥ 8 PASS | 8/9 (1 限定的) |
 | 配布 | MSI installer ≤ 5 MB | 2.88 MiB |

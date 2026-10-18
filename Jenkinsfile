@@ -424,9 +424,9 @@ pipeline {
             agent { label 'rust' }
             steps {
                 sh '''
-                    cargo build -p sakura-rs --example bench --release
-                    echo "=== sakura-rs core ops throughput ==="
-                    cargo run -p sakura-rs --example bench --release 2>&1 | tail -10
+                    cargo build -p editcore --example bench --release
+                    echo "=== editcore core ops throughput ==="
+                    cargo run -p editcore --example bench --release 2>&1 | tail -10
                     echo "=== benchmark target: >= 50k ops/s ==="
                     
                     if cargo bench --no-run 2>/dev/null; then

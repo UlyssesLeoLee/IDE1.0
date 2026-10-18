@@ -240,7 +240,7 @@ pub struct ReplaceOutcome {
 ///
 /// 顺序必须是 **先删后插**: 先插会让后面的范围偏移失效.
 /// 两步各自进 undo 栈, 因此一次替换 = 两条 undo 记录;
-/// 这是刻意的 —— 与 sakura 原本的 delete+insert 复合操作语义一致,
+/// 这是刻意的 —— 与上游原本的 delete+insert 复合操作语义一致,
 /// 用户按两次 Ctrl+Z 能分别撤销删除和插入.
 fn replace_range(doc: &mut Document, start: Pos, end: Pos, replacement: &str) -> ReplaceOutcome {
     let range = editcore::cursor::LogicRange { start, end };

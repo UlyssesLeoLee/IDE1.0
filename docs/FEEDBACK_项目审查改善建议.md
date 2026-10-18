@@ -90,7 +90,7 @@
 ## 4. 测试与 CI
 
 ### 🟠 T-1 README 数据已陈旧, 与实际不符
-- README §0 称 "4 crates / 61 个 Rust 测试 / 9 jobs / PR #9 OPEN", 而 workspace 现有 7 个 crate (含 `sakura-rs`、`ide-shell-desktop`、`ide-shell-protocol`), 并有 `sakura_features_104.rs` 等大量新增测试; 阶段表仍停留在 2026-10-03。
+- README §0 称 "4 crates / 61 个 Rust 测试 / 9 jobs / PR #9 OPEN", 而 workspace 现有 7 个 crate (含 `editcore`、`ide-shell-desktop`、`ide-shell-protocol`), 并有 `feature_parity.rs` 等大量新增测试; 阶段表仍停留在 2026-10-03。
 - 建议: 不再手写数字, 改为 CI 徽章 + 由脚本在 CI 生成的测试统计 (`DOC-18_metrics_report` 同理)。
 
 ### 🟠 T-2 CI 仅 ubuntu, 但产品主打 Windows
@@ -109,7 +109,7 @@
 
 - 🟡 D-1 `docs/DOC-01~21` 为流程模板化文档, 请核对其内容是否与现状同步 (如 `DOC-13_progress_report`、`DOC-18_metrics_report`、`DOC-14_risk_register`); **本次未逐份阅读**。建议风险登记册中新增 S-1~S-5。
 - 🟡 D-2 文档语言为中/日/英混用 (DD 为日文, DOC 为中文, 代码注释中文): 如面向外部贡献者, 建议在 `docs/README.md` 约定各类文档语言, 并提供英文版 README 摘要。
-- 🟡 D-3 `sakura-rs/PARITY.md` 的"✅/🟡"状态为手写, 建议由测试名自动校验 (表中已引用测试名, 适合脚本核对)。
+- 🟡 D-3 `editcore/PARITY.md` 的"✅/🟡"状态为手写, 建议由测试名自动校验 (表中已引用测试名, 适合脚本核对)。
 
 ---
 
@@ -127,5 +127,5 @@
 ## 7. 未覆盖 / 需后续核实
 
 - 未运行任何构建与测试, 未验证 CI 当前是否全绿。
-- 未审阅: `sakura-rs` 各模块细节、`js_macro.rs`/`plugin.rs` 的脚本执行边界 (若执行用户提供的 JS/PPA 宏, 需单独做沙箱审查)、`ide-shell-protocol` 的 WebSocket 处理、前端 HTML/JS 的 XSS 面、DOC-01~21 内容。
+- 未审阅: `editcore` 各模块细节、`js_macro.rs`/`plugin.rs` 的脚本执行边界 (若执行用户提供的 JS/PPA 宏, 需单独做沙箱审查)、`ide-shell-protocol` 的 WebSocket 处理、前端 HTML/JS 的 XSS 面、DOC-01~21 内容。
 - `safe_canonicalize` 对不存在文件 / 符号链接 / Windows 特殊路径的行为仅看了调用方, 未读实现。

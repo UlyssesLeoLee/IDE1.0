@@ -41,11 +41,11 @@
 
 ### DOC-10.B.1 単体テスト一覧 (253 件)
 
-#### sakura-rs (64 件)
+#### editcore (64 件)
 
 | ファイル | テスト数 | 内容 |
 |---|---|---|
-| `sakura_parity.rs` | 36 | sakura 機能対比 |
+| `editor_parity.rs` | 36 | 機能対比回帰 |
 | `buffer.rs` (内) | 8 | バッファ操作 |
 | `cursor.rs` (内) | 4 | カーソル移動 |
 | `undo.rs` (内) | 4 | Undo/Redo |
@@ -112,14 +112,14 @@
 cargo test --workspace
 
 # 特定 crate
-cargo test -p sakura-rs
+cargo test -p editcore
 cargo test -p ide-shell-web
 
 # 警告 strict
 RUSTFLAGS="-D warnings" cargo test --workspace
 
 # 単一テスト
-cargo test -p sakura-rs test_buffer_insert_undo_redo
+cargo test -p editcore test_buffer_insert_undo_redo
 ```
 
 ### DOC-10.C.2 合格基準
@@ -129,16 +129,16 @@ cargo test -p sakura-rs test_buffer_insert_undo_redo
 | テスト数 | ≥ 200 | 253 ✅ |
 | 合格率 | 100% | 100% ✅ |
 | 警告 | 0 | 0 ✅ |
-| カバレッジ (sakura-rs) | ≥ 80% | 65% (要改善) |
+| カバレッジ (editcore) | ≥ 80% | 65% (要改善) |
 | カバレッジ (path_safety) | ≥ 90% | 93.94% ✅ |
 
 ## 5. 注記
 
 ### DOC-10.B.1.i TDD 実践
-sakura-rs 開発時は TDD (test-driven development) フローで進めた. RED → GREEN → REFACTOR サイクル.
+editcore 開発時は TDD (test-driven development) フローで進めた. RED → GREEN → REFACTOR サイクル.
 
-### DOC-10.B.1.i sakura_parity の位置付け
-sakura editor 機能カバー率を保証する **回帰テスト** として機能. 新機能追加時に PARITY 更新 + テスト追加を必須化.
+### DOC-10.B.1.i editor_parity の位置付け
+参考実装の機能カバレッジを保証する **回帰テスト** として機能. 新機能追加時に PARITY 更新 + テスト追加を必須化.
 
 ## 6. 関連ドキュメント
 
@@ -146,10 +146,10 @@ sakura editor 機能カバー率を保証する **回帰テスト** として機
 - [DOC-08 SIT](DOC-08_integration_test_spec.md) — 結合テスト
 - [DOC-09 システムテスト](DOC-09_system_test_report.md) — システム
 - [DOC-11 UAT](DOC-11_uat_report.md) — 受け入れ
-- [PARITY.md](../crates/sakura-rs/PARITY.md) — 機能対比
+- [PARITY.md](../crates/editcore/PARITY.md) — 機能対比
 
 **関連実装:**
-- `crates/sakura-rs/tests/sakura_parity.rs` (36 tests)
+- `crates/editcore/tests/editor_parity.rs` (36 tests)
 - `crates/ide-shell-web/tests/path_safety.rs` (12 tests)
 - 全 crate 内 `#[test]`
 

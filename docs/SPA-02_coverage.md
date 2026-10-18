@@ -2,7 +2,7 @@
 
 本文接续 SPA-01（Grep / 列块规格），做**全量缺口清点**，并记录按模块推进的进度。
 
-清点基线：`sakura-editor/sakura` @ `628de79`（已 clone 到 `E:/Temp/sakura-ref/sakura`）。
+清点基线：上游仓库 @ `628de79`（已 clone 到本地参考目录）。
 
 ---
 
@@ -33,8 +33,8 @@ Sakura 依赖 8 个外部 C/C++ 库。「仅有用 rust 实现这一点区别」
 |---|---|---|---|
 | bregonig | 正则引擎（BreezoLib/Oniguruma） | `search.rs` 内置引擎 | 进行中 |
 | Onigmo | 正则引擎（Ruby 风格） | 同上 | 进行中 |
-| cmigemo + cmigemo-dict | 日文罗马音（**40MB 级字典**） | `sakura-rs/migemo.rs` | 进行中 |
-| ctags | 标签索引 | `sakura-rs/tag_jump.rs` | 部分 |
+| cmigemo + cmigemo-dict | 日文罗马音（**40MB 级字典**） | `editcore/migemo.rs` | 进行中 |
+| ctags | 标签索引 | `editcore/tag_jump.rs` | 部分 |
 | darkmodelib | 暗色模式 API | 前端 CSS token | 已绕过 |
 | miniz-cpp | zip（安装包/插件包） | 未处理 | 未处理 |
 | LocaleEmulator | 日文编码兼容 | `encoding_rs` 部分覆盖 | 部分 |
@@ -105,9 +105,9 @@ commit `affa0f1` + `0de97ab`，见 SPA-01。
 
 | worktree | 负责文件 | 目标 |
 |---|---|---|
-| `E:/Temp/wt-grep-rust` | `ide-shell-web/src/search.rs`、`sakura-rs/src/grep.rs` | 后端从 shell out 到 `rg` 改为内置 Rust（glob + 搜索 + 递归枚举） |
-| `E:/Temp/wt-migemo-rust` | `sakura-rs/src/migemo.rs` | 补全 cmigemo 水准：拗音、浊音组合、促音、长音、汉字音读 |
-| `E:/Temp/wt-types-rust` | `sakura-rs/src/types.rs` | 关键字集合合并、正则语法、类型规则匹配（通配）、颜色分类、标识符抽取 |
+| `E:/Temp/wt-grep-rust` | `ide-shell-web/src/search.rs`、`editcore/src/grep.rs` | 后端从 shell out 到 `rg` 改为内置 Rust（glob + 搜索 + 递归枚举） |
+| `E:/Temp/wt-migemo-rust` | `editcore/src/migemo.rs` | 补全 cmigemo 水准：拗音、浊音组合、促音、长音、汉字音读 |
+| `E:/Temp/wt-types-rust` | `editcore/src/types.rs` | 关键字集合合并、正则语法、类型规则匹配（通配）、颜色分类、标识符抽取 |
 
 拆分依据：三者文件无交集，因此并行不会冲突；合并时互不覆盖。
 
@@ -117,6 +117,6 @@ commit `affa0f1` + `0de97ab`，见 SPA-01。
 
 1. 每条标记 ✅ 的规格必须有对应 UAT 或 Rust 单测，不接受「调用不报错」。
 2. CI 门禁含 `RUSTFLAGS: -D warnings` + `cargo clippy -- -D warnings`，本地新增 warning 就是未来的红。
-3. sakura-rs 已有 6 个 dead_code warning（type_config.rs），属既有状态，不在清理范围内，但不得新增。
+3. editcore 已有 6 个 dead_code warning（type_config.rs），属既有状态，不在清理范围内，但不得新增。
 4. 改前端不得打红 `minimal-layout.spec.ts`（该 spec 把「抽屉覆盖式展开」锁成了契约——
    这与「展开必须让位」的新需求冲突，需在对应批次里一并修正契约）。

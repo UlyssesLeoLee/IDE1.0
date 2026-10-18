@@ -39,7 +39,7 @@ DOC-06 詳細設計に対する **実装結果報告**. 各 crate の構成, ビ
 | ide-shell-desktop | release | 2m 21s | 0 | ✅ |
 | ide-shell-web | release | ~45s | 0 | ✅ |
 | ide-shell-protocol | release | ~30s | 0 | ✅ |
-| sakura-rs | release | ~15s | 0 | ✅ |
+| editcore | release | ~15s | 0 | ✅ |
 | aci-emitter | release | ~10s | 0 | ✅ |
 | **合計 (workspace)** | release | **~4m** | **0** | **✅** |
 
@@ -57,7 +57,7 @@ DOC-06 詳細設計に対する **実装結果報告**. 各 crate の構成, ビ
 ### DOC-07.B.1 単体テスト結果 (cargo test)
 
 ```
-running 277+ tests across workspace (196 sakura-rs + ~80 others)
+running 277+ tests across workspace (196 editcore + ~80 others)
 test result: ok. 253 passed; 0 failed; 0 ignored
 ```
 
@@ -68,7 +68,7 @@ test result: ok. 253 passed; 0 failed; 0 ignored
 - ide-shell-desktop: 28
 - ide-shell-web: 13
 - ide-shell-protocol: 20
-- sakura-rs: 28 (basic) + 36 (sakura_parity) = **64**
+- editcore: 28 (basic) + 36 (editor_parity) = **64**
 - aci-emitter: 4
 - **合計:** ~277
 
@@ -102,8 +102,9 @@ cargo fmt --all -- --check
 ### DOC-07.A.1.i ビルド時間計測
 リリースビルドは 4 分程度. CI 上 (Ubuntu) は ~5 分. dev profile は ~30 秒.
 
-### DOC-07.B.1.i sakura_parity テスト
-sakura editor 機能 100% カバー率を保証する 36 テスト. 詳細は `crates/sakura-rs/tests/sakura_parity.rs`.
+### DOC-07.B.1.i editor_parity テスト
+主要 API の回帰を保証する 36 テスト. 機能カバレッジそのものは ~76% (72/95).
+詳細は `crates/editcore/tests/editor_parity.rs` と `crates/editcore/PARITY.md`.
 
 ### DOC-07.C.2.i 命名規則遵守
 vim/Cursor/VSCode 命名 0 件 (commit `c61682e` で検証).
