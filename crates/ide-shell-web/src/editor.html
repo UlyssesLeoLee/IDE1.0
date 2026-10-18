@@ -5192,119 +5192,212 @@ function replaceAll() {
 
 /* Grep 对话框的跨次状态 (SPA-01 G-75: 搜索/替换条件全局共享, 复用上次值).
    与 FIND_STATE 分开: 查找替换记在 FIND_STATE, Grep 的文件模式 / 递归 / 单词单位没有对应项. */
-const GREP_STATE = { needle: "", replace: "", files: "*.*", caseSensitive: false, regex: false, subfolders: true, wholeWord: false };
+/* Grep 对话框的跨次状态 (SPA-01 G-75: 搜索/替换条件全局共享, 复用上次值).
+   字段**逐一对应 Sakura 的五个输入框** (CDlgGrep.cpp 的五个 IDC_COMBO_*):
+     needle         -> 検索文字列 (条件)
+     files          -> ファイル名
+     folders        -> フォルダー        ← 本轮新增, 原实现完全没有
+     excludeFiles   -> 除外ファイル      ← 原实现挤在 files 里靠 `!` 前缀
+     excludeFolders -> 除外フォルダー    ← 原实现挤在 files 里靠 `#` 前缀
+   另有 `thisFileOnly` 对应 Sakura 的「この文件中だけ検索」单选 (CDlgGrep::SetDataFromThisText),
+   勾上后会把 ファイル名 置成「当前文件」、フォルダー 置成「当前文件所在目录」并禁用其余四框. */
+const GREP_STATE = {
+  needle: "", replace: "",
+  files: "*.*", folders: "", excludeFiles: "", excludeFolders: "",
+  caseSensitive: false, regex: false, subfolders: true, wholeWord: false,
+  thisFileOnly: false,
+};
 
-// Sakura 文件模式解析 (SPA-01 G-10 ~ G-15, G-30 ~ G-32, G-43):
-//   - 多个条件用 , 空格 ; 分隔; 含分隔符的文件名用 " 包裹
-//   - 前缀 ! = 排除文件; 前缀 # = 排除子文件夹 (Sakura 2.1.0.0+)
-//   - 留空 = *.*;  排除优先于包含, 与书写位置无关
-// 分隔符在引号内不生效; 未闭合的引号按普通字符处理 (宽容, 不报错阻断搜索).
-function parseFilePatterns(spec) {
-  const raw = String(spec || "").trim();
-  const include = [];
-  const excludeFiles = [];
-  const excludeDirs = [];
-  if (!raw) return { include: ["*.*"], excludeFiles, excludeDirs };
+/* Sakura 模式解析 (SPA-01 G-10 ~ G-15, G-20 ~ G-23, G-30 ~ G-32, G-43)。
+   语义**逐一对照上游源码** (E:/Temp/sakura-ref/sakura):
+     - CGrepEnumKeys::SplitPatternKeepQuotes  分隔符是 ` ;,` 三种, 引号内不分隔,
+       引号出现在 token 任何位置都切换内外, 空元素丢弃;
+     - CGrepEnumKeys::AddFileKey             前缀 `!` = 除外ファイル, `#` = 除外フォルダー,
+       两者与 ファイル名 同框共存, 排除优先于包含, 与书写位置无关;
+     - CGrepAgent::CreateFolders            フォルダー 用 `;` 分隔, 去掉 `"`, 逐个展开成长路径;
+     - CDlgGrep::SetDataFromThisText        「この文件中だけ検索」勾上后把
+       ファイル名 置成「当前文件」、フォルダー 置成「当前文件所在目录」并禁用其余输入框。
 
-  // 扫描: 引号内的分隔符当普通字符
-  const tokens = [];
+   未闭合的引号按普通字符处理 (宽容, 不阻断搜索) —— 上游是 HasUnclosedQuote 报错,
+   这里放宽是为了不因为一个笔误让整个搜索失败. */
+function splitSakuraList(spec) {
+  const raw = String(spec || "");
+  const out = [];
   let buf = "", inQuote = false;
-  const flush = () => { const s = buf.trim(); if (s) tokens.push(s); buf = ""; };
+  const flush = () => { if (buf.trim()) out.push(buf.trim()); buf = ""; };
   for (const ch of raw) {
-    if (ch === '"') { inQuote = !inQuote; continue; }
-    if (!inQuote && (ch === "," || ch === ";" || /\s/.test(ch))) { flush(); continue; }
+    if (ch === '"') { inQuote = !inQuote; continue; }          // 引号只做切换, 不进结果
+    if (!inQuote && (ch === " " || ch === ";" || ch === "," || /\s/.test(ch))) { flush(); continue; }
     buf += ch;
   }
   flush();
+  return out;
+}
 
-  for (const tok of tokens) {
+/** ファイル名 一栏 -> { include, excludeFiles, excludeFolders }。
+ *  留空时 include = ["*.*"] (上游 SetFileKeys 的 WILDCARD_ANY 兜底)。*/
+function parseFilePatterns(spec) {
+  const include = [], excludeFiles = [], excludeDirs = [];
+  for (const tok of splitSakuraList(spec)) {
     if (tok.startsWith("#")) { excludeDirs.push(tok.slice(1)); continue; }
     if (tok.startsWith("!")) { excludeFiles.push(tok.slice(1)); continue; }
     include.push(tok);
   }
-  // 全是排除项时也要有包含项, 否则后端 include_globs 为空 = 不过滤 (等价 *.*)
   if (include.length === 0) include.push("*.*");
   return { include, excludeFiles, excludeDirs };
 }
 
-/* 把 Sakura 风格的排除目录模式翻译成 rg 的 --glob !<pattern>.
-   rg 的 --glob 匹配的是**相对搜索根的路径**, 所以目录模式要补成 <dir>/** ,
-   才能真的排掉整个子树 (只写 --glob !<dir> 只排掉名叫 dir 的文件, 不排它的内容). */
-function excludeDirGlobs(dirs) {
-  const out = [];
-  for (const d of dirs) {
-    const p = d.replace(/^[\\/]+|[\\/]+$/g, "").replace(/\\/g, "/");
-    if (!p) continue;
-    out.push("!" + p, "!" + p + "/**");
-  }
-  return out;
+/** フォルダー 一栏 -> 相对项目根的路径数组. 空 = 不限定 (全项目)。
+ *  保留 `{...}` 这种「基准文件夹」写法? 上游有「基准フォルダー表示」开关 (G-45),
+ *  暂不实现, 但路径原样传给后端由它校验越界。 */
+function parseSearchFolders(spec) {
+  return splitSakuraList(spec).filter(Boolean);
 }
 
-// 项目级 Grep
+/* 除外フォルダー 交给后端按目录名/相对路径排除, 不再在前端拼 `!dir` / `!dir/**`
+   —— 上一版靠前端拼 glob 传给 `exclude_globs`, 语义和 Sakura 的「目录名匹配」不同源。 */
+/* Sakura 的 Grep 对话框是**五个独立字段**, 不是一个大框 (CDlgGrep.cpp 的五个 IDC_COMBO_*):
+     検索文字列 / ファイル名 / フォルダー / 除外ファイル / 除外フォルダー
+   上一版把 后三个挤进 ファイル名 一个框 (靠 `!` `#` 前缀), 而且**没有 フォルダー 字段** ——
+   结果「搜索哪些目录」这件事完全无法表达, 与 Sakura 的交互模型不一致。 */
+const GREP_FIELD_IN = 'style="width:100%;padding:4px 6px;background:var(--input-bg,#3c3c3c);color:var(--fg,#fff);border:1px solid var(--border,#555);box-sizing:border-box;"';
+
+function grepFieldRow(label, id, ph, val) {
+  return '<div class="opt-row" style="display:flex;align-items:center;gap:8px;">' +
+    '<label style="flex:0 0 96px;" for="' + id + '">' + label + '</label>' +
+    '<input id="' + id + '" placeholder="' + escapeHtml(ph) + '" value="' + escapeHtml(val || "") + '" ' + GREP_FIELD_IN + ' />' +
+    "</div>";
+}
+
 async function openGrepDialog(withReplace) {
   if (!projectRoot) {
     if (layoutPreset() !== "min") { setTip("请先打开项目"); return; }
-    if (!(await ensureWorkingRoot())) return;   // 极简布局没有「先打开项目」这一步: 和保存 / 打开文件一样先建默认工作目录 (取消 / 失败的提示 ensureWorkingRoot 已给)
+    if (!(await ensureWorkingRoot())) return;   // 极简布局没有「先打开项目」这一步: 和保存 / 打开文件一样先建默认工作目录
   }
-  // 对话框沿用 Sakura 的字段组织 (SPA-01 G-01 ~ G-48), 但排版保持本项目的 opt-row 风格.
-  // 文件模式一栏同时承担「包含 / 排除文件 / 排除文件夹」三种语义, 由 parseFilePatterns 拆开 ——
-  // 这正是 Sakura 的设计 (一个框 + !/# 前缀), 不额外开两个框.
+  const curFile = (getActiveTab() && getActiveTab().path) || "";
+  const curDir = curFile ? curFile.replace(/[\\/][^\\/]*$/, "") : "";
+  const curBase = curFile ? curFile.replace(/^.*[\\/]/, "") : "";
+
   const html =
-    '<div class="opt-row"><input id="grep-input" placeholder="在项目中查找 (留空 = 文件名搜索)" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
-    '<div class="opt-row"><input id="grep-files" placeholder="文件模式 (*.rs,*.toml  排除 !*.gen.rs  排除目录 #target)" ' +
-      'value="' + escapeHtml(GREP_STATE.files || "*.*") + '" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
+    grepFieldRow("検索文字列", "grep-input", "在文件中查找 (留空 = 文件名搜索)", GREP_STATE.needle) +
+    '<div class="opt-row" style="display:flex;align-items:center;gap:8px;">' +
+      '<label style="flex:0 0 96px;">ファイル名</label>' +
+      '<input id="grep-files" placeholder="*.rs,*.toml   排除 !*.gen.rs   排除目录 #target" ' +
+        'value="' + escapeHtml(GREP_STATE.files) + '" ' + GREP_FIELD_IN + ' />' +
+    "</div>" +
+    '<div class="opt-row" style="display:flex;align-items:center;gap:8px;">' +
+      '<label style="flex:0 0 96px;">フォルダー</label>' +
+      '<input id="grep-folders" placeholder="留空 = 整个项目; 多个用 ; 分隔 (例 src;crates/sakura-rs)" ' +
+        'value="' + escapeHtml(GREP_STATE.folders) + '" ' + GREP_FIELD_IN + ' />' +
+      '<button class="md-btn" id="grep-cur-dir" data-tip="以当前文件所在目录为初值">現文件夹</button>' +
+    "</div>" +
+    grepFieldRow("除外ファイル", "grep-exc-files", "*.gen.rs;*.lock", GREP_STATE.excludeFiles) +
+    grepFieldRow("除外フォルダー", "grep-exc-dirs", "target;.git", GREP_STATE.excludeFolders) +
     '<div class="opt-row">' +
       '<label><input type="checkbox" id="grep-case" /> 区分大小写</label>' +
       '<label style="margin-left:10px"><input type="checkbox" id="grep-regex" /> 正则</label>' +
       '<label style="margin-left:10px"><input type="checkbox" id="grep-sub" /> 包含子文件夹</label>' +
       '<label style="margin-left:10px"><input type="checkbox" id="grep-word" /> 单词单位</label>' +
-    '</div>' +
-    (withReplace ? '<div class="opt-row"><input id="grep-repl" placeholder="替换为" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' : "") +
+    "</div>" +
+    // 搜索范围是**两颗互斥单选** (上游 IDC_RADIO_EXCEPTED / IDC_RADIO_THISDOC),
+    // 单颗 radio 无法取消, 必须有另一颗代表「整个项目」
+    '<div class="opt-row">' +
+      '<label><input type="radio" name="grep-scope" id="grep-whole-project" checked /> 整个项目</label>' +
+      '<label style="margin-left:12px"><input type="radio" name="grep-scope" id="grep-this-file" /> この文件中だけ検索 (本文件)</label>' +
+    "</div>" +
+    (withReplace ? grepFieldRow("置換文字列", "grep-repl", "替换为", GREP_STATE.replace) : "") +
     '<div id="grep-status" class="empty-hint">输入后回车</div>';
+
   openModal({ title: withReplace ? "Grep 替换" : "Grep 搜索", bodyHTML: html,
     buttons: [{ label: "关闭", cmd: "modal-close" }] });
-  const inp = document.getElementById("grep-input");
-  inp.value = GREP_STATE.needle || "";
-  document.getElementById("grep-case").checked = !!GREP_STATE.caseSensitive;
-  document.getElementById("grep-regex").checked = !!GREP_STATE.regex;
-  document.getElementById("grep-sub").checked = GREP_STATE.subfolders !== false;
-  document.getElementById("grep-word").checked = !!GREP_STATE.wholeWord;
-  if (withReplace && document.getElementById("grep-repl")) document.getElementById("grep-repl").value = GREP_STATE.replace || "";
-  inp.focus();
 
-  const runGrep = async () => {
-    const rawQ = inp.value;
-    const q = rawQ.trim();
-    // 空条件 = 文件名搜索 (Sakura G-01): 把文件模式当搜索词传给后端, 由 glob 匹配文件名.
-    const pats = parseFilePatterns(document.getElementById("grep-files").value);
-    const status = document.getElementById("grep-status");
-    status.textContent = "搜索中...";
-    GREP_STATE.needle = rawQ;
-    GREP_STATE.files = document.getElementById("grep-files").value;
-    GREP_STATE.caseSensitive = document.getElementById("grep-case").checked;
-    GREP_STATE.regex = document.getElementById("grep-regex").checked;
-    GREP_STATE.subfolders = document.getElementById("grep-sub").checked;
-    GREP_STATE.wholeWord = document.getElementById("grep-word").checked;
-    if (withReplace && document.getElementById("grep-repl")) GREP_STATE.replace = document.getElementById("grep-repl").value;
+  const $ = (id) => document.getElementById(id);
+  $("grep-case").checked = !!GREP_STATE.caseSensitive;
+  $("grep-regex").checked = !!GREP_STATE.regex;
+  $("grep-sub").checked = GREP_STATE.subfolders !== false;
+  $("grep-word").checked = !!GREP_STATE.wholeWord;
+  $("grep-this-file").checked = !!GREP_STATE.thisFileOnly;
+  $("grep-input").focus();
 
-    // 单词单位 (G-04): 在字面量模式外包一层 \b. 正则模式不加 (用户的正则自带边界语义).
-    let pattern = q;
-    if (q && GREP_STATE.wholeWord && !GREP_STATE.regex) {
-      pattern = "\\b" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b";
+  /* 「この文件中だけ検索」(上游 CDlgGrep::SetDataFromThisText): 勾上 -> ファイル名 置成
+     「当前文件」、フォルダー 置成「当前文件所在目录」, 除外两栏清空, 其余控件全部禁用;
+     取消勾选则逐字还原成勾选前的值 (上游是存进 m_szFile/m_szFolder 再写回)。 */
+  const DISABLE_IDS = ["grep-files", "grep-folders", "grep-exc-files", "grep-exc-dirs",
+                       "grep-case", "grep-regex", "grep-sub", "grep-word"];
+  let savedBeforeThis = null;
+  const applyThisFileOnly = (on) => {
+    if (on && !savedBeforeThis) {
+      savedBeforeThis = { files: $("grep-files").value, folders: $("grep-folders").value,
+                          ef: $("grep-exc-files").value, ed: $("grep-exc-dirs").value };
+      $("grep-files").value = curBase;
+      $("grep-folders").value = curDir;
+      $("grep-exc-files").value = "";
+      $("grep-exc-dirs").value = "";
+    } else if (!on && savedBeforeThis) {
+      $("grep-files").value = savedBeforeThis.files;
+      $("grep-folders").value = savedBeforeThis.folders;
+      $("grep-exc-files").value = savedBeforeThis.ef;
+      $("grep-exc-dirs").value = savedBeforeThis.ed;
+      savedBeforeThis = null;
     }
-    // 排除目录翻译成 rg 的路径 glob (# 前缀 -> !dir 与 !dir/**)
-    const exclude = pats.excludeFiles.map((g) => "!" + g).concat(excludeDirGlobs(pats.excludeDirs));
-    // 不递归时只搜顶层: rg 用 --max-depth 1, 但我们没有该选项, 用 glob 限制层级.
+    for (const id of DISABLE_IDS) { const e = $(id); if (e) e.disabled = on; }
+  };
+  $("grep-this-file").addEventListener("change", (e) => applyThisFileOnly(e.target.checked));
+  $("grep-whole-project").checked = !GREP_STATE.thisFileOnly;
+  $("grep-whole-project").addEventListener("change", (e) => { if (e.target.checked) applyThisFileOnly(false); });
+  applyThisFileOnly(!!GREP_STATE.thisFileOnly);
+
+  /* 「現文件夹」: 以当前文件所在目录填 フォルダー (上游 OnInitDialog 的
+     SplitPath_FolderAndFile(m_szCurrentFilePath, m_szFolder, nullptr)) */
+  $("grep-cur-dir").addEventListener("click", () => {
+    if (!curDir) { setTip("当前没有已保存的文件, 无法推断所在目录"); return; }
+    $("grep-folders").value = curDir;
+  });
+
+  /* 单词单位 (G-04): 字面量模式下由后端按词边界匹配; 正则模式忽略 (用户的正则自带边界语义)。
+     旧实现在前端包 \\b, 会把日文/中文按 \\b 切成永远不匹配的边界, 已在上一轮移交后端。 */
+  const runGrep = async () => {
+    const rawQ = $("grep-input").value;
+    const q = rawQ.trim();
+    const pats = parseFilePatterns($("grep-files").value);
+    const folders = parseSearchFolders($("grep-folders").value);
+    // 独立两栏的排除项与 ファイル名 里的 `!` `#` 合并 —— 后端只看一组 exclude_files/exclude_folders
+    const excFiles = pats.excludeFiles.concat(splitSakuraList($("grep-exc-files").value));
+    const excDirs  = pats.excludeDirs.concat(splitSakuraList($("grep-exc-dirs").value));
+    const status = $("grep-status");
+    status.textContent = "搜索中...";
+
+    GREP_STATE.needle = rawQ;
+    GREP_STATE.files = $("grep-files").value;
+    GREP_STATE.folders = $("grep-folders").value;
+    GREP_STATE.excludeFiles = $("grep-exc-files").value;
+    GREP_STATE.excludeFolders = $("grep-exc-dirs").value;
+    GREP_STATE.caseSensitive = $("grep-case").checked;
+    GREP_STATE.regex = $("grep-regex").checked;
+    GREP_STATE.subfolders = $("grep-sub").checked;
+    GREP_STATE.wholeWord = $("grep-word").checked;
+    GREP_STATE.thisFileOnly = $("grep-this-file").checked;
+    if (withReplace && $("grep-repl")) GREP_STATE.replace = $("grep-repl").value;
+
+    /* 本文件模式: 条件退化成「只搜这一个文件」—— ファイル名 锁成 basename,
+       フォルダー 锁成其所在目录, 两者合起来把范围钉死到该文件。 */
+    const thisOnly = $("grep-this-file").checked;
+    const effFolders = thisOnly && curDir ? [curDir] : folders;
     const inc = pats.include.slice();
-    if (!GREP_STATE.subfolders) inc.push("*");
+    if (thisOnly && curBase) inc.splice(0, inc.length, curBase);
+    else if (!GREP_STATE.subfolders) inc.push("*");   // 不递归时限制在顶层
 
     try {
       const resp = await invoke("search", {
-        pattern: pattern || "*.*",
+        pattern: q || "*.*",
         case_sensitive: GREP_STATE.caseSensitive,
         regex: GREP_STATE.regex,
+        whole_word: GREP_STATE.wholeWord,
         include_globs: inc,
-        exclude_globs: exclude.length ? exclude : null,
+        search_folders: effFolders.length ? effFolders : null,
+        exclude_files: excFiles.length ? excFiles : null,
+        exclude_folders: excDirs.length ? excDirs : null,
+        subfolders: GREP_STATE.subfolders,
         max_results: 5000,
       });
       const rows = (resp && resp.results) || [];
@@ -5318,19 +5411,16 @@ async function openGrepDialog(withReplace) {
       status.textContent = "搜索失败: " + err.message;
     }
   };
-
-  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runGrep(); } });
-  document.getElementById("grep-files").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runGrep(); } });
+  /* 任一输入框按回车即搜索 (与旧版一致; 新版五个框都要能触发, 否则在 フォルダー 里敲完回车没反应) */
+  for (const id of ["grep-input", "grep-files", "grep-folders", "grep-exc-files", "grep-exc-dirs",
+                    ...(withReplace ? ["grep-repl"] : [])]) {
+    const e = $(id);
+    if (e) e.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); runGrep(); }
+    });
+  }
 }
 
-/* Grep 结果视图 (SPA-01 G-50 ~ G-62, G-70 ~ G-72):
-   - 按文件分组 (G-61 ファイル毎), 折叠显示路径 + 命中数
-   - 命中片段高亮 (G-53), 用类型别配置里的「検索文字列」色, 这里取 --blue
-   - 单击 = 打开文件并**跳到匹配行**(G-70), 双击同效 (G-71), Enter 键同效 (G-72)
-   之前点击只 openFile(path) 停在文件开头, 用户还要自己找匹配行 —— 这是对标 Sakura 的硬缺口.
-
-   mount: 结果挂到哪里. 默认 mdBody (Grep 对话框里), 但可显式传容器 ——
-   对话框关闭后结果仍在页面上的场景 (Sakura 是独立窗口) 用得着. */
 function renderGrepResults(rows, needle, caseSensitive, mount) {
   const old = document.getElementById("grep-results");
   if (old) old.remove();
@@ -5675,7 +5765,8 @@ window.paraPrev = paraPrev;
 window.pageRows = pageRows;
 // Grep 对标 Sakura 的入口 (SPA-01): 解析器与状态要能被 UAT 直接断言.
 window.parseFilePatterns = parseFilePatterns;
-window.excludeDirGlobs = excludeDirGlobs;
+window.splitSakuraList = splitSakuraList;      // G-10 三分隔符 + G-11 引号
+window.parseSearchFolders = parseSearchFolders; // G-21 フォルダー 多目录 ; 分隔
 window.GREP_STATE = GREP_STATE;
 window.renderGrepResults = renderGrepResults;
 window.gotoPathLine = gotoPathLine;
