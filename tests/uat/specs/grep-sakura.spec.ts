@@ -19,7 +19,11 @@ async function boot(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/editor");
-  await page.waitForFunction(() => (window as any).__ideReady?.(), null, { timeout: 15_000 });
+  // 就绪信号用 window.getActiveTab —— 与 editor.spec.ts 一致。
+  // 之前这里等的是 __ideReady(), 而**全仓库根本没有导出这个符号**,
+  // 所以 waitForFunction 的可选链永远返回 undefined, 整个 describe 块 100% 超时,
+  // 是一条从来没能真正跑起来的用例 (主树上同样红, 与 Grep 改动无关)。
+  await page.waitForFunction(() => (window as any).getActiveTab?.() !== undefined, null, { timeout: 15_000 });
   return errors;
 }
 
@@ -73,15 +77,23 @@ test.describe("Grep 文件模式解析 (Sakura 语义)", () => {
     expect(onlyEx.excludeFiles).toEqual(["*.obj"]);
   });
 
-  test("排除目录翻译成路径 glob (能排掉整个子树)", async ({ page }) => {
-    await boot(page);
-    const globs = await page.evaluate(() => (window as any).excludeDirGlobs(["target", "node_modules/"]));
-    // 只写 !target 只排掉名叫 target 的文件, 不排其内容 -> 必须同时给 !target/**
-    expect(globs).toContain("!target");
-    expect(globs).toContain("!target/**");
-    expect(globs).toContain("!node_modules/**");
-    // 尾部斜杠要被规范化掉, 不能产生 !node_modules//**
-    expect(globs.some((g: string) => g.includes("//"))).toBe(false);
+  test("除外フォルダー 整栏独立存在 (不再靠 ファイル名 里的 # 前缀)", async ({ page }) => {
+    // 这条用例替代原来的「排除目录翻译成路径 glob」: 上一版在前端把 #target 拼成
+    // `!target` + `!target/**` 交给 rg, 但 rg 早已被移除, 这套翻译没有任何消费者,
+    // 真正生效的是后端按目录名/相对路径排除。现在 除外フォルダー 是对话框里的独立一栏,
+    // 前端只负责按分隔符切开, 不再拼 glob。
+    const errors = await boot(page);
+    await page.evaluate(() => (window as any).__setProjectRootForTest?.("E:/Temp"));
+    await page.evaluate(() => (window as any).openGrep());
+    await page.waitForSelector("#grep-exc-dirs");
+    expect(await page.locator("#grep-exc-dirs").count(), "缺 除外フォルダー 栏").toBe(1);
+
+    // 两栏都要能解析出排除项, 且与 ファイル名 栏里的 # 前缀等价
+    const viaPrefix = await page.evaluate(() => (window as any).parseFilePatterns("*.rs #target").excludeDirs);
+    const viaField = await page.evaluate(() => (window as any).splitSakuraList("target;.git"));
+    expect(viaPrefix).toEqual(["target"]);
+    expect(viaField).toEqual(["target", ".git"]);
+    expect(errors).toEqual([]);
   });
 });
 
@@ -196,6 +208,111 @@ test.describe("Grep 结果视图与跳转", () => {
     expect(await page.inputValue("#grep-input")).toBe("TODO");
     expect(await page.inputValue("#grep-files")).toBe("*.rs !*.gen.rs");
     expect(await page.isChecked("#grep-case")).toBe(true);
+    expect(errors).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// フォルダー / 除外ファイル / 除外フォルダー 三栏 (本轮新增)
+// 上一版把这三栏挤进 ファイル名 一个框, 且完全没有 フォルダー 栏 —— 「搜哪些目录」
+// 无法表达。以下用例锁住 Sakura 的五栏结构。
+// ---------------------------------------------------------------------------
+test.describe("Grep 对话框五栏结构 (Sakura CDlgGrep 五个 IDC_COMBO_*)", () => {
+  test("五个输入框都在, 且 フォルダー 有 [現文件夹] 按钮", async ({ page }) => {
+    const errors = await boot(page);
+    await page.evaluate(() => (window as any).__setProjectRootForTest?.("E:/Temp"));
+    await page.evaluate(() => (window as any).openGrep());
+    await page.waitForSelector("#grep-input");
+    for (const id of ["grep-input", "grep-files", "grep-folders", "grep-exc-files", "grep-exc-dirs"]) {
+      expect(await page.locator("#" + id).count(), `缺字段 ${id}`).toBe(1);
+    }
+    expect(await page.locator("#grep-cur-dir").count(), "缺 [現文件夹] 按钮").toBe(1);
+    expect(await page.locator("#grep-this-file").count(), "缺「この文件中だけ検索」").toBe(1);
+    expect(errors).toEqual([]);
+  });
+
+  test("G-21 フォルダー 多个目录用 ; 分隔", async ({ page }) => {
+    await boot(page);
+    const cases: [string, string[]][] = [
+      ["src;crates", ["src", "crates"]],
+      ["src; crates ;tests", ["src", "crates", "tests"]],
+      ["", []],
+    ];
+    for (const [input, want] of cases) {
+      const got = await page.evaluate((s: string) => (window as any).parseSearchFolders(s), input);
+      expect(got, `"${input}" 应解析成多个搜索目录`).toEqual(want);
+    }
+  });
+
+  test("G-11/G-12/G-13 引号内的 ; 不分隔, ! # 前缀分流到排除项", async ({ page }) => {
+    await boot(page);
+    // 引号包裹的路径含分隔符 -> 当成一个整体
+    const q = await page.evaluate(() => (window as any).parseFilePatterns('"a;b.rs" *.toml'));
+    expect(q.include).toEqual(["a;b.rs", "*.toml"]);
+    // ! 与 # 前缀分流
+    const p = await page.evaluate(() => (window as any).parseFilePatterns("*.rs !*.gen.rs #target"));
+    expect(p.include).toEqual(["*.rs"]);
+    expect(p.excludeFiles).toEqual(["*.gen.rs"]);
+    expect(p.excludeDirs).toEqual(["target"]);
+  });
+
+  test("五个栏位的值跨次复用 (G-75)", async ({ page }) => {
+    const errors = await boot(page);
+    await page.evaluate(() => {
+      const g = (window as any).GREP_STATE;
+      g.files = "*.rs";
+      g.folders = "src;crates";
+      g.excludeFiles = "*.gen.rs";
+      g.excludeFolders = "target";
+      (window as any).__setProjectRootForTest?.("E:/Temp");
+    });
+    await page.evaluate(() => (window as any).openGrep());
+    await page.waitForSelector("#grep-folders");
+    expect(await page.inputValue("#grep-files")).toBe("*.rs");
+    expect(await page.inputValue("#grep-folders")).toBe("src;crates");
+    expect(await page.inputValue("#grep-exc-files")).toBe("*.gen.rs");
+    expect(await page.inputValue("#grep-exc-dirs")).toBe("target");
+    expect(errors).toEqual([]);
+  });
+
+  test("「この文件中だけ検索」勾上后禁用其余控件并填入当前文件, 取消后还原", async ({ page }) => {
+    const errors = await boot(page);
+    await page.evaluate(() => {
+      const g = (window as any).GREP_STATE;
+      g.files = "*.rs";
+      g.folders = "src";
+      g.excludeFiles = "*.gen.rs";
+      g.excludeFolders = "target";
+      (window as any).__setProjectRootForTest?.("E:/Temp");
+    });
+    await page.evaluate(() => (window as any).openGrep());
+    await page.waitForSelector("#grep-this-file");
+
+    await page.check("#grep-this-file");
+    // 上游 SetDataFromThisText: 勾上后四个输入框全部禁用
+    for (const id of ["grep-files", "grep-folders", "grep-exc-files", "grep-exc-dirs"]) {
+      expect(await page.locator("#" + id).isDisabled(), `${id} 应被禁用`).toBe(true);
+    }
+    // 「整个项目」与「本文件」是同一组 radio, 取消 = 选中另一颗 (与 Sakura 一致:
+    // 上游是 IDC_RADIO_THISDOC / IDC_RADIO_EXCEPTED 两个单选互斥)
+    await page.check("#grep-whole-project");
+    expect(await page.inputValue("#grep-files")).toBe("*.rs");
+    expect(await page.inputValue("#grep-folders")).toBe("src");
+    expect(await page.inputValue("#grep-exc-files")).toBe("*.gen.rs");
+    expect(await page.inputValue("#grep-exc-dirs")).toBe("target");
+    expect(await page.locator("#grep-files").isEnabled(), "取消后应恢复可编辑").toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test("在 フォルダー 栏按回车触发搜索 (五栏都绑了 Enter)", async ({ page }) => {
+    const errors = await boot(page);
+    await page.evaluate(() => (window as any).__setProjectRootForTest?.("E:/Temp"));
+    await page.evaluate(() => (window as any).openGrep());
+    await page.waitForSelector("#grep-folders");
+    await page.fill("#grep-folders", "src");
+    await page.press("#grep-folders", "Enter");
+    // 状态文案从「输入后回车」变成搜索结果, 说明确实跑了
+    await expect(page.locator("#grep-status")).not.toHaveText("输入后回车");
     expect(errors).toEqual([]);
   });
 });
