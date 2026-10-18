@@ -83,6 +83,8 @@
 |---|---|---|
 | [SPA-01](SPA-01_parity.md) | 機能対比仕様 (Grep / 列ブロック) | 受入契約 |
 | [SPA-02](SPA-02_coverage.md) | 機能カバレッジ清点 | ギャップ分析 |
+| [WBS-01](WBS-01_feature-parity.md) | **機能カバレッジ残作業 WBS** | 上流対標 49 項目 / 37-48 人日 |
+| [ARCH-01](ARCH-01_pure-rust-migration.md) | **純 Rust 化 移行方針 (ADR)** | 実装先を Rust に固定 (2026-10-18 決定) |
 | [REFACTOR-01](REFACTOR-01_branding-neutralization.md) | **ブランド名中立化計画** | 商標リスク対応 ([DOC-14](DOC-14_risk_register.md) R-11) |
 
 ## 📊 現状 (2026-10-09)
