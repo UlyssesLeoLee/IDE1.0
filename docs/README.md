@@ -77,6 +77,14 @@
 | [DOC-20](DOC-20_operations_manual.md) | 運用手順書 | 運用プロセス |
 | [DOC-21](DOC-21_disposal_plan.md) | 廃棄計画書 | 廃棄プロセス |
 
+### 仕様・リファクタリング系 (非 IPA 番号)
+
+| ID | 名称 | 備考 |
+|---|---|---|
+| [SPA-01](SPA-01_parity.md) | 機能対比仕様 (Grep / 列ブロック) | 受入契約 |
+| [SPA-02](SPA-02_coverage.md) | 機能カバレッジ清点 | ギャップ分析 |
+| [REFACTOR-01](REFACTOR-01_branding-neutralization.md) | **ブランド名中立化計画** | 商標リスク対応 ([DOC-14](DOC-14_risk_register.md) R-11) |
+
 ## 📊 現状 (2026-10-09)
 
 | 指标 | 値 |
