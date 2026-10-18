@@ -381,4 +381,58 @@ test.describe("Grep 对话框五栏结构 (Sakura CDlgGrep 五个 IDC_COMBO_*)",
     expect(allBad, "全部越界应给出明确错误").toContain("越出项目范围");
     expect(errors).toEqual([]);
   });
+
+  test("「搜索项目外」开关: 默认拒绝项目外路径, 勾上后放行 (全盘搜索)", async ({ page }) => {
+    const errors = await boot(page);
+    await page.evaluate(() => (window as any).__setProjectRootForTest?.("E:/Temp"));
+    await page.evaluate(() => (window as any).openGrep());
+    await page.waitForSelector("#grep-outside");
+    expect(await page.locator("#grep-outside").count(), "缺「搜索项目外」开关").toBe(1);
+    expect(await page.isChecked("#grep-outside"), "默认应关闭 (防手滑扫全盘)").toBe(false);
+
+    const call = (folders: string[], outside: boolean) =>
+      page.evaluate(
+        async (a: { f: string[]; o: boolean }) => {
+          try {
+            const r = await (window as any).invoke("search", {
+              pattern: "hello",
+              case_sensitive: false,
+              search_folders: a.f,
+              allow_outside_root: a.o,
+              max_results: 5,
+            });
+            return { ok: true, n: (r.results || []).length };
+          } catch (e: any) {
+            return { ok: false, msg: String(e?.message || e) };
+          }
+        },
+        { f: folders, o: outside },
+      );
+
+    // 服务端项目根 = fixtures/sample-project. 「E:/Temp/uat-outside」是一个真实存在的
+    // 小目录, 在项目外 —— 搜它必须是「秒回」, 否则测试会超时 (真去扫 E:/Temp 整盘会几十秒).
+    const outsideDir = "E:/Temp/uat-outside";
+
+    // 1) 默认: 拒绝
+    const off = await call([outsideDir], false);
+    expect(off.ok, "默认应拒绝项目外目录: " + off.msg).toBe(false);
+    expect(off.msg || "").toContain("越出项目范围");
+
+    // 2) 勾上开关: 放行, 且真的搜得到内容
+    const on = await call([outsideDir], true);
+    expect(on.ok, "勾上开关后应放行: " + on.msg).toBe(true);
+    expect(on.n, "放行后应搜到 uat-outside/hit.txt 里的 hello").toBeGreaterThan(0);
+
+    // 3) 开关只影响「フォルダー」栏的越界判定, 项目内搜索不受影响
+    const inside = await call(["docs"], true);
+    expect(inside.ok, "项目内目录始终可搜: " + inside.msg).toBe(true);
+
+    // 4) 不存在的目录即使打开开关也要明确报错, 不能静默返回空
+    const missing = await call(["Z:/绝对不存在xyz", outsideDir], true);
+    expect(missing.ok, "部分目录不存在时应仍能搜其余目录").toBe(true);
+    const allMissing = await call(["Z:/绝对不存在xyz"], true);
+    expect(allMissing.ok, "全部不存在时应报错: " + allMissing.msg).toBe(false);
+
+    expect(errors).toEqual([]);
+  });
 });

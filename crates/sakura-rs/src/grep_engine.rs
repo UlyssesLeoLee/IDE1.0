@@ -73,9 +73,16 @@ pub struct SearchOptions {
     #[serde(default)]
     pub exclude_folders: Option<Vec<String>>,
     /// **フォルダー** 栏: 相对项目根的路径; 留空 = 整个项目.
-    /// 逐个校验必须落在项目根之内, 越界的跳过 (见 `resolve_search_folder`).
+    ///
+    /// 默认逐项校验必须落在项目根之内, 越界的跳过 (见 `resolve_search_folder`)。
+    /// 把 `allow_outside_root` 置 true 可放行项目根之外的路径 —— 用户要求
+    /// 「grep 可以全盘搜索」, 填 `D:\` 或 `C:\Users\x\projects` 就该能搜。
     #[serde(default)]
     pub search_folders: Option<Vec<String>>,
+    /// 允许「フォルダー」栏指向项目根**之外**的目录 (全盘 / 跨盘搜索).
+    /// 默认 false —— 否则一个手滑的 `..` 就会静默扫到项目外去.
+    #[serde(default)]
+    pub allow_outside_root: Option<bool>,
     /// サブフォルダーからも検索. 默认 true; false 时只搜每层的顶层.
     #[serde(default)]
     pub subfolders: Option<bool>,
@@ -451,7 +458,11 @@ fn lexical_normalize(p: &Path) -> PathBuf {
 /// 逐项解析搜索目录. 全空 = 整个项目 (返回 `[root]`).
 ///
 /// 返回值里已剔除越界项; 调用方拿到空数组且用户明明填了内容时, 说明全部越界 —— 返回 Err。
-pub fn resolve_search_folders(root: &Path, specs: &[String]) -> Result<Vec<PathBuf>, String> {
+pub fn resolve_search_folders(
+    root: &Path,
+    specs: &[String],
+    allow_outside_root: bool,
+) -> Result<Vec<PathBuf>, String> {
     if specs.is_empty() {
         return Ok(vec![root.to_path_buf()]);
     }
@@ -467,22 +478,42 @@ pub fn resolve_search_folders(root: &Path, specs: &[String]) -> Result<Vec<PathB
         } else {
             root.join(s)
         };
-        match resolve_search_folder(root, &cand) {
-            Some(p) => out.push(p),
-            None => rejected += 1,
+        if allow_outside_root {
+            // 全盘/跨盘搜索: 不做项目根校验, 但仍要规范化掉 `..` 并确认目录存在 ——
+            // 不存在的目录静默跳过会让用户以为「搜过了没结果」。
+            if cand.is_dir() {
+                out.push(canonical_or_lexical(&cand));
+            } else {
+                rejected += 1;
+            }
+        } else {
+            match resolve_search_folder(root, &cand) {
+                Some(p) => out.push(p),
+                None => rejected += 1,
+            }
         }
     }
     if out.is_empty() {
         if rejected > 0 {
-            return Err(format!(
-                "搜索文件夹全部越出项目范围, 已拒绝 {rejected} 个 (项目根: {})",
-                root.display()
-            ));
+            let why = if allow_outside_root {
+                format!("搜索文件夹都不存在, 已跳过 {rejected} 个")
+            } else {
+                format!(
+                    "搜索文件夹全部越出项目范围, 已拒绝 {rejected} 个 (项目根: {})",
+                    root.display()
+                )
+            };
+            return Err(why);
         }
         // 全是空串 -> 当作未指定
         return Ok(vec![root.to_path_buf()]);
     }
     Ok(out)
+}
+
+/// 规范化路径: 存在就用 `canonicalize` (顺带解析符号链接), 不存在则手工消解 `.` / `..`.
+fn canonical_or_lexical(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| lexical_normalize(p))
 }
 
 // ---------------------------------------------------------------------------
@@ -524,12 +555,25 @@ pub fn search(root: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, St
     }
 
     // **フォルダー** 栏: 空 = 整个项目. 越界项被剔除, 全部越界才报错.
-    let roots = resolve_search_folders(root, opts.search_folders.as_deref().unwrap_or(&[]))?;
+    let roots = resolve_search_folders(
+        root,
+        opts.search_folders.as_deref().unwrap_or(&[]),
+        opts.allow_outside_root.unwrap_or(false),
+    )?;
 
     // 枚举: 每个搜索目录各走一遍. 显式指定的目录**不跳过** SKIP_DIRS ——
     // 用户点名要搜 target/ 就是要搜它, 与「递归时自动跳过编译产物」是两件事.
+    //
+    // 但「除外フォルダー」对**搜索根本身**依然生效: `walk` 只在遍历子目录时才检查排除,
+    // 起点目录自己不会被检查 —— 于是「搜 src」+「除外 src」会返回结果, 而用户明确
+    // 要求排除它。必须在起点处先判一次。
     let mut files: Vec<PathBuf> = Vec::new();
     for r in &roots {
+        let rel = r.strip_prefix(root).unwrap_or(r).to_string_lossy().replace('\\', "/");
+        let name = r.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        if r != root && exc.iter().any(|p| is_dir_exclude(p, &name, &rel)) {
+            continue;
+        }
         walk(
             r,
             &exc,
@@ -1834,5 +1878,50 @@ mod tests {
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].line, 1);
         assert_eq!(hits[1].line, 3);
+    }
+
+    // --- 全盘 / 跨盘搜索 (allow_outside_root) ---
+
+    #[test]
+    fn allow_outside_root_permits_paths_beyond_project() {
+        let dir = TempDir::new("outside");
+        setup_multi(dir.path());
+        // 项目根之外另造一个目录
+        let other = dir.path().with_extension("other");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("far.rs"), "alpha\n").unwrap();
+
+        let mut o = opts("alpha");
+        o.search_folders = Some(vec![other.to_string_lossy().to_string()]);
+        // 默认拒绝
+        assert!(search(dir.path(), &o).is_err(), "默认应拒绝项目外路径");
+        // 打开开关后放行
+        o.allow_outside_root = Some(true);
+        let hits = search(dir.path(), &o).unwrap();
+        assert_eq!(hits.len(), 1, "开关打开后应能搜到项目外的文件");
+        assert!(hits[0].path.replace('\\', "/").ends_with("far.rs"));
+    }
+
+    #[test]
+    fn allow_outside_root_still_skips_nonexistent_dirs_with_clear_error() {
+        let dir = TempDir::new("outside2");
+        setup_multi(dir.path());
+        let mut o = opts("alpha");
+        o.search_folders = Some(vec!["Z:/绝对不存在的目录xyz".into()]);
+        o.allow_outside_root = Some(true);
+        let err = search(dir.path(), &o).unwrap_err();
+        assert!(err.contains("不存在"), "应说明目录不存在, 实际: {err}");
+    }
+
+    #[test]
+    fn allow_outside_root_does_not_disable_existing_filters() {
+        // 打开跨盘开关不应让 除外フォルダー 之类的过滤失效
+        let dir = TempDir::new("outside3");
+        setup_multi(dir.path());
+        let mut o = opts("alpha");
+        o.search_folders = Some(vec!["src".into()]);
+        o.allow_outside_root = Some(true);
+        o.exclude_folders = Some(vec!["src".into()]);
+        assert!(search(dir.path(), &o).unwrap().is_empty(), "排除项仍应生效");
     }
 }

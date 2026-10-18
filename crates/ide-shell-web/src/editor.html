@@ -5215,7 +5215,7 @@ const GREP_STATE = {
   needle: "", replace: "",
   files: "*.*", folders: "", excludeFiles: "", excludeFolders: "",
   caseSensitive: false, regex: false, subfolders: true, wholeWord: false,
-  thisFileOnly: false,
+  thisFileOnly: false, allowOutside: false,
 };
 
 /* Sakura 模式解析 (SPA-01 G-10 ~ G-15, G-20 ~ G-23, G-30 ~ G-32, G-43)。
@@ -5314,6 +5314,8 @@ async function openGrepDialog(withReplace) {
     '<div class="opt-row">' +
       '<label><input type="radio" name="grep-scope" id="grep-whole-project" checked /> 整个项目</label>' +
       '<label style="margin-left:12px"><input type="radio" name="grep-scope" id="grep-this-file" /> この文件中だけ検索 (本文件)</label>' +
+      '<label style="margin-left:12px" title="允许「フォルダー」栏指向项目之外 (可填 D:\\ 或 C:\\Users\\...)">' +
+        '<input type="checkbox" id="grep-outside" /> 搜索项目外</label>' +
     "</div>" +
     (withReplace ? grepFieldRow("置換文字列", "grep-repl", "替换为", GREP_STATE.replace) : "") +
     '<div id="grep-status" class="empty-hint">输入后回车</div>';
@@ -5327,6 +5329,7 @@ async function openGrepDialog(withReplace) {
   $("grep-sub").checked = GREP_STATE.subfolders !== false;
   $("grep-word").checked = !!GREP_STATE.wholeWord;
   $("grep-this-file").checked = !!GREP_STATE.thisFileOnly;
+  $("grep-outside").checked = !!GREP_STATE.allowOutside;
   $("grep-input").focus();
 
   /* 「この文件中だけ検索」(上游 CDlgGrep::SetDataFromThisText): 勾上 -> ファイル名 置成
@@ -5387,6 +5390,7 @@ async function openGrepDialog(withReplace) {
     GREP_STATE.subfolders = $("grep-sub").checked;
     GREP_STATE.wholeWord = $("grep-word").checked;
     GREP_STATE.thisFileOnly = $("grep-this-file").checked;
+    GREP_STATE.allowOutside = $("grep-outside").checked;
     if (withReplace && $("grep-repl")) GREP_STATE.replace = $("grep-repl").value;
 
     /* 本文件模式: 条件退化成「只搜这一个文件」—— ファイル名 锁成 basename,
@@ -5406,6 +5410,7 @@ async function openGrepDialog(withReplace) {
         whole_word: GREP_STATE.wholeWord,
         include_files: inc,
         search_folders: effFolders.length ? effFolders : null,
+        allow_outside_root: $("grep-outside").checked,
         exclude_files: excFiles.length ? excFiles : null,
         exclude_folders: excDirs.length ? excDirs : null,
         subfolders: GREP_STATE.subfolders,

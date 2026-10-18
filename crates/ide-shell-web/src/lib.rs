@@ -942,8 +942,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 include_files: strs("include_files"),
                 exclude_files: strs("exclude_files"),
                 exclude_folders: strs("exclude_folders"),
-                // フォルダー 栏: 空/缺省 = 整个项目; 引擎侧逐项校验不得越出项目根
+                // フォルダー 栏: 空/缺省 = 整个项目.
+                // allow_outside_root = true 时放行项目根之外的路径 (全盘/跨盘搜索).
                 search_folders: strs("search_folders"),
+                allow_outside_root: req.get("allow_outside_root").and_then(|v| v.as_bool()),
                 subfolders: req.get("subfolders").and_then(|v| v.as_bool()),
                 max_results,
             };
