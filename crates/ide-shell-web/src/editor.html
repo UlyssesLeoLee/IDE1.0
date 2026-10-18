@@ -1265,6 +1265,19 @@
           <div class="menu-row" data-cmd="delete-line-down" data-shortcut="Ctrl+Delete"><span>删除下方行</span><span class="mr-shortcut">Ctrl+Delete</span></div>
           <div class="menu-row" data-cmd="join-with-prev" data-shortcut="Ctrl+J"><span>与上一行合并</span><span class="mr-shortcut">Ctrl+J</span></div>
           <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="cut-line" data-shortcut="Ctrl+E"><span>剪切整行</span><span class="mr-shortcut">Ctrl+E</span></div>
+          <div class="menu-row" data-cmd="cut-line-start" data-shortcut="Ctrl+U"><span>剪切到行首</span><span class="mr-shortcut">Ctrl+U</span></div>
+          <div class="menu-row" data-cmd="delete-line-to-start" data-shortcut="Ctrl+Shift+U"><span>删除到行首</span><span class="mr-shortcut">Ctrl+Shift+U</span></div>
+          <div class="menu-row" data-cmd="delete-line-to-end" data-shortcut="Ctrl+Shift+K"><span>删除到行末</span><span class="mr-shortcut">Ctrl+Shift+K</span></div>
+          <div class="menu-row" data-cmd="delete-word-start" data-shortcut="Ctrl+Backspace"><span>删除到词首</span><span class="mr-shortcut">Ctrl+Backspace</span></div>
+          <div class="menu-row" data-cmd="delete-word-end"><span>删除到词尾</span></div>
+          <div class="menu-row" data-cmd="ltrim-lines"><span>删除行首空白</span></div>
+          <div class="menu-row" data-cmd="rtrim-lines"><span>删除行尾空白</span></div>
+          <div class="menu-row" data-cmd="uniq-consecutive"><span>去重连续重复行</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="indent-selection" data-shortcut="Tab"><span>缩进 (选区)</span><span class="mr-shortcut">Tab</span></div>
+          <div class="menu-row" data-cmd="unindent-selection" data-shortcut="Shift+Tab"><span>反缩进 (选区)</span><span class="mr-shortcut">Shift+Tab</span></div>
+          <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="line-ops"><span>行排序 / 去重 / 反转</span></div>
           <div class="menu-row" data-cmd="encoding"><span>编码转换</span></div>
           <div class="menu-row" data-cmd="eol"><span>行尾符转换</span></div>
@@ -2611,6 +2624,20 @@ function dispatchCommand(cmd) {
     case "delete-line-down": deleteLineDown(); break;
     case "join-with-prev":   joinWithPrev(); break;
     case "line-ops":         lineOpsPanel(); break;
+    // Sakura 增删改扩展: F_CUT_LINE / F_LineCutToStart / F_LineDeleteToStart /
+    // F_LineDeleteToEnd / F_WordDeleteToStart / F_WordDeleteToEnd /
+    // F_LTRIM / F_RTRIM / F_UNIQ / F_INDENT_TAB / F_UNINDENT_TAB
+    case "cut-line":             cutLine(); break;
+    case "cut-line-start":       cutToLineStart(); break;
+    case "delete-line-to-start": deleteToLineStart(); break;
+    case "delete-line-to-end":   deleteToLineEnd(); break;
+    case "delete-word-start":    deleteToWordStart(); break;
+    case "delete-word-end":      deleteToWordEnd(); break;
+    case "ltrim-lines":          ltrimLines(); break;
+    case "rtrim-lines":          rtrimLines(); break;
+    case "uniq-consecutive":     uniqConsecutiveLines(); break;
+    case "indent-selection":     indentSelection(false); break;
+    case "unindent-selection":   indentSelection(true); break;
     case "encoding":         encodingPanel(); break;
     case "eol":              eolPanel(); break;
     case "clip-history":     showClipHistory(); break;
@@ -4281,6 +4308,15 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     if (k === "p") { e.preventDefault(); completionNext(-1); return; }
     if (k === "z") { e.preventDefault(); doUndo(); return; }
     if (k === "y") { e.preventDefault(); doRedo(); return; }
+    // 下面原本那个无条件 return 会吞掉**所有** Ctrl 组合, 但 document 上的处理器才是
+    // 大部分快捷键的真正落点 (Ctrl+U / Ctrl+E / Ctrl+Backspace / Ctrl+Shift+K …).
+    // 不放行的话, Sakura 增删改那批键位在编辑区获得焦点时按了没反应.
+    // 只放行 Sakura 系列 + Ctrl+Delete (本项目原有的「删除下方行」走 document 的快捷键);
+    // 其余 Ctrl 键维持原来的「吞掉」行为, 免得补全 / 宏之类被文档层抢走.
+    const sakuraKey = (!e.shiftKey && (k === "u" || k === "e" || e.key === "Backspace"))
+      || (e.shiftKey && (k === "u" || k === "k"))
+      || (e.shiftKey && (e.key === "Backspace" || e.key === "ArrowUp" || e.key === "ArrowDown"));
+    if (!sakuraKey && e.key !== "Delete") { e.preventDefault(); }
     return;
   }
 
@@ -4300,6 +4336,13 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   }
 
   if (mode === "INSERT") {
+    // Alt+方向键 / Alt+Home / Alt+End = 矩形选取 (Sakura F_UP_BOX 等), 一律归全局的
+    // boxMove/boxEdge. 必须在**这个 if 之前**就放行:
+    //  1) 列块还没建立时 (第一次按 Alt+↓), 下面的 colSel 分支进不去, 事件会掉到
+    //     末尾的普通 moveCaretDown —— 光标被普通移动一行, 之后 boxMove 再从移动后的
+    //     行起锚, 结果第一次就跨了 2 行 (实测 r0=1 而不是 0).
+    //  2) 列块已存在时, 下面那段会再扩一次格, 一次按键变两格.
+    if (e.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
     // 列块选区优先接管一切文本编辑: 在列块里打任何字符 / 回车 / 退格 / Delete,
     // 都作用在**每一行**的同一列上, 而不是只作用在光标那一行 (Sakura Shift+F6 行为).
     // 这是「一次性给多行同一位置添加内容」的能力入口.
@@ -4320,6 +4363,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       else if (e.key === "Home") nc = 0;
       else if (e.key === "End") nc = Number.MAX_SAFE_INTEGER;
       else moved = false;
+      // (Alt+方向键 的情况已经在本 if 入口处 return 了, 不会走到这里)
       if (moved) {
         e.preventDefault();
         t.colActiveRow = nr;
@@ -5760,6 +5804,9 @@ Object.defineProperty(window, "FILE_EOL", {
   set: (v) => { FILE_EOL = v; },     // 文件内同名变量, 不会递归 (getter 不是赋值目标)
 });
 window.pushClip = pushClip;
+// CLIPBOARD 是模块级 let, UAT 需要断言「剪切/复制到底进了什么」, 所以给出只读的
+// 视图 —— 与上面 CLIP_HISTORY 用 defineProperty 的写法一致, 不把变量本身暴露成可写.
+Object.defineProperty(window, "CLIPBOARD", { get: () => CLIPBOARD });
 window.sortLines = sortLines;
 window.dedupeLines = dedupeLines;
 window.removeDuplicateSpaces = removeDuplicateSpaces;
@@ -5776,6 +5823,9 @@ window.columnInsert = columnInsert;
 window.columnDelete = columnDelete;
 window.columnSelectedText = columnSelectedText;
 window.syncColumnSelectUI = syncColumnSelectUI;
+// Sakura 列块键盘入口 (Alt+方向键 / Alt+Home+End) — SPA-01 §2 补充
+window.boxMove = boxMove;
+window.boxEdge = boxEdge;
 // Sakura 移动命令 (SPA-02 §2)
 window.sakuraMove = sakuraMove;
 window.wordLeft = wordLeft;
@@ -5783,6 +5833,17 @@ window.wordRight = wordRight;
 window.paraNext = paraNext;
 window.paraPrev = paraPrev;
 window.pageRows = pageRows;
+// Sakura 增删改扩展
+window.cutLine = cutLine;
+window.cutToLineStart = cutToLineStart;
+window.deleteToLineStart = deleteToLineStart;
+window.deleteToLineEnd = deleteToLineEnd;
+window.deleteToWordStart = deleteToWordStart;
+window.deleteToWordEnd = deleteToWordEnd;
+window.ltrimLines = ltrimLines;
+window.rtrimLines = rtrimLines;
+window.uniqConsecutiveLines = uniqConsecutiveLines;
+window.indentSelection = indentSelection;
 // Grep 对标 Sakura 的入口 (SPA-01): 解析器与状态要能被 UAT 直接断言.
 window.parseFilePatterns = parseFilePatterns;
 window.splitSakuraList = splitSakuraList;      // G-10 三分隔符 + G-11 引号
@@ -5906,6 +5967,260 @@ function joinWithPrev() {
   t.lines.splice(t.cursor.row, 1);
   t.dirty = true;
   renderVim(t);
+}
+
+/* ---------- A1-b. Sakura 增删改 (F_CUT_LINE / F_LineCutToStart / F_LineDeleteToStart / F_LineDeleteToEnd)
+
+   本项目原来只有 deleteLine / addLineAbove / addLineBelow / deleteLineUp / deleteLineDown /
+   joinWithPrev 这一套自造命令, 和上游 F_* 语义对不上. 这里补齐上游有而本项目缺的,
+   键位照抄 sakura_core/func/CKeyBind.cpp 的官方默认表:
+     Ctrl+E        剪切整行          (F_CUT_LINE,          HLP000174)
+     Ctrl+U        剪切到行首        (F_LineCutToStart,    HLP000172)
+     Shift+Ctrl+U  删到行首          (F_LineDeleteToStart, HLP000170)
+     Shift+Ctrl+K  删到行末          (F_LineDeleteToEnd,   HLP000171)
+   裸 Ctrl+K (F_LineCutToEnd 剪切到行末) 让位给本项目已有的「打开文件夹」chord (Ctrl+K O),
+   Shift 变体不冲突所以保留 —— 菜单里两条都有入口, 只是「剪切到行末」没快捷键.
+
+   四条各自直接 charSlice 拼行, 不抽公共 setter: 「切掉哪一段、留下哪一段」各不相同
+   (到行首留尾部 / 到行末留头部 / 整行整条删), 抽象出来反而更难读. */
+
+// 剪切整行 (F_CUT_LINE, HLP000174): 删掉光标所在行, 文本进剪贴板.
+// 删到只剩 1 行时补一个空行 —— 文档必须永远至少有 1 行可编辑 (与既有 deleteLine 一致).
+function cutLine() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const row = t.cursor.row;
+  const cut = t.lines[row] === undefined ? "" : t.lines[row];
+  t.lines.splice(row, 1);
+  if (t.lines.length === 0) t.lines.push("");
+  if (t.cursor.row >= t.lines.length) t.cursor.row = t.lines.length - 1;
+  t.cursor.col = 0;
+  t.dirty = true;
+  renderVim(t);
+  pushClip(cut);
+  setTip("已剪切整行: " + (cut.length ? cut.slice(0, 40) : "(空行)"));
+}
+
+// 剪切到行首 (F_LineCutToStart, HLP000172): 光标到行首之间剪掉.
+// col 已在行首时无内容可剪, 直接不动 (Sakura 同: 空选区不产生剪贴板).
+function cutToLineStart() {
+  const t = getActiveTab();
+  if (!t) return;
+  const col = Math.min(t.cursor.col, charLen(curLine(t)));
+  if (col <= 0) { setTip("光标已在行首, 无可剪内容"); return; }
+  snapshot(t);
+  const line = curLine(t);
+  t.lines[t.cursor.row] = charSlice(line, col, charLen(line));
+  t.cursor.col = 0;
+  t.dirty = true;
+  renderVim(t);
+  pushClip(charSlice(line, 0, col));
+  setTip("已剪切到行首 (" + col + " 字符)");
+}
+
+// 删到行首 (F_LineDeleteToStart, HLP000170): 剪切到行首但不进剪贴板.
+function deleteToLineStart() {
+  const t = getActiveTab();
+  if (!t) return;
+  const col = Math.min(t.cursor.col, charLen(curLine(t)));
+  if (col <= 0) { setTip("光标已在行首, 无可删内容"); return; }
+  snapshot(t);
+  const line = curLine(t);
+  t.lines[t.cursor.row] = charSlice(line, col, charLen(line));
+  t.cursor.col = 0;
+  t.dirty = true;
+  renderVim(t);
+  setTip("已删除到行首 (" + col + " 字符)");
+}
+
+// 删到行末 (F_LineDeleteToEnd, HLP000171): 光标到行末之间删掉, 不动换行符.
+// 光标在行末时什么都不删 —— 与上游一致 (Sakura 不在这里吞掉换行, 那是「删除整行」).
+function deleteToLineEnd() {
+  const t = getActiveTab();
+  if (!t) return;
+  const line = curLine(t);
+  const col = Math.min(t.cursor.col, charLen(line));
+  if (col >= charLen(line)) { setTip("光标已在行末, 无可删内容"); return; }
+  snapshot(t);
+  t.lines[t.cursor.row] = charSlice(line, 0, col);
+  t.dirty = true;
+  renderVim(t);
+  setTip("已删除到行末 (" + (charLen(line) - col) + " 字符)");
+}
+
+// 删到词首 (F_WordDeleteToStart, HLP000166): Ctrl+Backspace.
+// 复用 wordLeft —— 那是本项目已经对齐 Sakura 语义的边界函数 (词首, 跨过分隔符).
+function deleteToWordStart() {
+  const t = getActiveTab();
+  if (!t) return;
+  const line = curLine(t);
+  const from = Math.min(t.cursor.col, charLen(line));
+  const to = wordLeft(line, from);
+  if (from <= 0 || to >= from) { setTip("光标已在词首, 无可删内容"); return; }
+  snapshot(t);
+  t.lines[t.cursor.row] = charSlice(line, 0, to) + charSlice(line, from, charLen(line));
+  t.cursor.col = to;
+  t.dirty = true;
+  renderVim(t);
+  setTip("已删除到词首 (" + (from - to) + " 字符)");
+}
+
+// 删到词尾 (F_WordDeleteToEnd, HLP000167): 上游绑 Ctrl+Delete.
+// ⚠️ 本项目 Ctrl+Delete 原本是「删除下方行」(菜单上写死, 有 UAT 覆盖), 且 Alt+Delete
+// 才是上游键位而 Alt+D 是本项目的文件菜单助记 —— 所以这条只提供函数 + 菜单入口, 不抢键位.
+function deleteToWordEnd() {
+  const t = getActiveTab();
+  if (!t) return;
+  const line = curLine(t);
+  const from = Math.min(t.cursor.col, charLen(line));
+  const to = wordRight(line, from);
+  if (from >= charLen(line) || to <= from) { setTip("光标已在词尾, 无可删内容"); return; }
+  snapshot(t);
+  t.lines[t.cursor.row] = charSlice(line, 0, from) + charSlice(line, to, charLen(line));
+  t.cursor.col = from;
+  t.dirty = true;
+  renderVim(t);
+  setTip("已删除到词尾 (" + (to - from) + " 字符)");
+}
+
+/* ---------- A1-c. Sakura 其余增删改 (F_LTRIM / F_RTRIM / F_UNIQ / F_INDENT) ----------
+
+   F_LTRIM / F_RTRIM (HLP000210/211): 删行首/行尾空白. 上游键位 Alt+L / Alt+R 与本项目
+   菜单助记冲突, 只做函数 + 菜单入口, 不绑快捷键.
+   F_UNIQ (HLP000214): 去重**连续**重复行.
+   ⚠️ 本项目已有 dedupeLines, 但那是「全局去重」, 语义和 Sakura 的 uniq 不同 ——
+   所以这里补 uniqConsecutiveLines, 不动 dedupeLines 的现有行为 (line-ops 面板在用).
+   F_SORT_ASC / F_SORT_DESC: 已有 sortLines 且已是选区限定, 上游键位 Alt+A/Alt+D 与
+   菜单助记冲突, 所以只补菜单入口, 不绑快捷键.
+   F_INDENT_TAB / F_UNINDENT_TAB (HLP000113): Tab / Shift+Tab 缩进. 本项目 Tab 在 INSERT
+   下是「插入 2 空格」, 所以只在**有选区或列块**时把 Tab/Shift+Tab 解释为缩进/反缩进,
+   其余模式放行给原逻辑 —— 不抢 Tab 键本身. */
+
+// 删行首空白 (F_LTRIM, HLP000210): 选区内逐行删 ^[ \t]+; 无选区只处理光标行.
+function ltrimLines() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const rows = (t.sel && t.sel.r1 !== t.sel.r0)
+    ? Array.from({ length: t.sel.r1 - t.sel.r0 + 1 }, (_, i) => t.sel.r0 + i)
+    : [t.cursor.row];
+  let changed = 0;
+  for (const r of rows) {
+    const before = t.lines[r] || "";
+    const after = before.replace(/^[ \t]+/, "");
+    if (after !== before) { t.lines[r] = after; changed++; }
+  }
+  t.dirty = true;
+  renderVim(t);
+  setTip(changed ? "已删除 " + changed + " 行行首空白" : "行首无空白可删");
+}
+
+// 删行尾空白 (F_RTRIM, HLP000211): 选区内逐行删 [ \t]+$; 无选区只处理光标行.
+function rtrimLines() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const rows = (t.sel && t.sel.r1 !== t.sel.r0)
+    ? Array.from({ length: t.sel.r1 - t.sel.r0 + 1 }, (_, i) => t.sel.r0 + i)
+    : [t.cursor.row];
+  let changed = 0;
+  for (const r of rows) {
+    const before = t.lines[r] || "";
+    const after = before.replace(/[ \t]+$/, "");
+    if (after !== before) { t.lines[r] = after; changed++; }
+  }
+  t.dirty = true;
+  renderVim(t);
+  setTip(changed ? "已删除 " + changed + " 行行尾空白" : "行尾无空白可删");
+}
+
+// 去重连续重复行 (F_UNIQ, HLP000214): ⚠️ 只删「连续」重复, 不是全局去重.
+// 选区内时只对选区行做连续去重; 无选区时对全文做.
+function uniqConsecutiveLines() {
+  const t = getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  let removed = 0;
+  const dedupeRun = (seg) => {
+    const out = [];
+    let prev = null;
+    for (const l of seg) {
+      if (l !== prev) { out.push(l); prev = l; } else { removed++; }
+    }
+    return out;
+  };
+  if (t.sel && t.sel.r1 !== t.sel.r0) {
+    const { r0, r1 } = t.sel;
+    const seg = t.lines.slice(r0, r1 + 1);
+    t.lines.splice(r0, seg.length, ...dedupeRun(seg));
+  } else {
+    t.lines = dedupeRun(t.lines);
+  }
+  t.dirty = true;
+  renderVim(t);
+  setTip(removed ? "已去重 " + removed + " 行连续重复" : "无连续重复行");
+}
+
+// Tab / Shift+Tab = 缩进 / 反缩进 (F_INDENT_TAB / F_UNINDENT_TAB, HLP000113).
+// 只在有列块或跨行选区时生效; 无选区时什么都不做 (放行给既有 Tab 逻辑).
+// 缩进单位跟随文件: 参与行里只要有一行用 tab 缩进就插 \t, 否则插 2 空格 ——
+// 固定插 \t 会让空格缩进的项目出现混排, 而 Sakura 的缩进单位是可在设置里配的.
+function indentUnitFor(lines, rows) {
+  for (const r of rows) {
+    const line = lines[r] || "";
+    if (/^\t/.test(line)) return "\t";
+    if (/^ +/.test(line)) return "  ";
+  }
+  return null;
+}
+
+function indentSelection(reverse) {
+  const t = getActiveTab();
+  if (!t) return;
+  const multi = !!(t.colSel) || !!(t.sel && t.sel.r1 !== t.sel.r0);
+  if (!multi) return;
+  const rows = t.colSel
+    ? Array.from({ length: colSelRect(t).r1 - colSelRect(t).r0 + 1 }, (_, i) => colSelRect(t).r0 + i)
+    : Array.from({ length: t.sel.r1 - t.sel.r0 + 1 }, (_, i) => t.sel.r0 + i);
+  // 参与行里没有既有缩进时 (比如选中的都是顶格行), 默认按 2 空格走
+  const unit = indentUnitFor(t.lines, rows) || "  ";
+  snapshot(t);
+  let changed = 0;
+  if (t.colSel) {
+    const { r0, r1, c0 } = colSelRect(t);
+    for (let r = r0; r <= r1; r++) {
+      const line = t.lines[r] || "";
+      if (reverse) {
+        // 只在插入点正好落在缩进单位末尾时才删, 否则会在正中间啃掉正文字符
+        const head = charSlice(line, 0, c0);
+        if (head.length < unit.length || charSlice(line, c0 - unit.length, c0) !== unit) continue;
+        t.lines[r] = charSlice(line, 0, c0) + charSlice(line, c0 + unit.length, charLen(line));
+      } else {
+        t.lines[r] = charSlice(line, 0, c0) + unit + charSlice(line, c0, charLen(line));
+      }
+      changed++;
+    }
+  } else {
+    const { r0, r1 } = t.sel;
+    for (let r = r0; r <= r1; r++) {
+      const line = t.lines[r] || "";
+      if (reverse) {
+        // 行首是单位的前缀才删, 删完必须正好落在单位边界上 (只删一半会留半个缩进)
+        const m = line.match(new RegExp("^((?:" + (unit === "\t" ? "\\t" : " ") + ")+)"));
+        if (!m) continue;
+        const ind = m[1];
+        if (ind.length < unit.length) continue;
+        t.lines[r] = charSlice(line, unit.length, charLen(line));
+      } else {
+        t.lines[r] = unit + line;
+      }
+      changed++;
+    }
+  }
+  t.dirty = true;
+  renderVim(t);
+  setTip(reverse ? "反缩进 " + changed + " 行" : "缩进 " + changed + " 行");
 }
 
 /* ---------- A2. 剪贴板历史 (sakura 最多 20 条) ---------- */
@@ -6309,6 +6624,58 @@ function extendColumnSelect(row, col) {
   syncColumnSelectUI(t);
 }
 
+/* ---------- C2-1. Alt+方向键 = 纯键盘矩形选取 (Sakura F_UP_BOX 等) ----------
+   Sakura 把矩形选区做成两条入口 (HLP000014): 鼠标拖, 或 Shift+F6 之后用方向键.
+   本项目原本只有「Alt+拖动」和 Shift+F6, 缺了 Alt+方向键这条官方入口 ——
+   而 Alt+方向键才是 Sakura 用户肌肉记忆里最常用的一条 (不用离开 Home 行).
+
+   为什么不复用 edContent keydown 里那段 INSERT 内的方向键分支: 那里要求 colSel 已存在,
+   且只在 INSERT 模式下生效. 这里要能在任意模式 (含 NORMAL/vim) 直接起选区. */
+function boxMove(dr, dc) {
+  const t = getActiveTab();
+  if (!t) return;
+  if (!t.colSel) startColumnSelect(t.cursor.row, t.cursor.col);
+  const lastRow = Math.max(0, t.lines.length - 1);
+  const actR = (t.colActiveRow !== undefined) ? t.colActiveRow : t.colSel.r1;
+  const actC = (t.colActiveCol !== undefined) ? t.colActiveCol : t.colSel.c1;
+  const rect = colSelRect(t);
+  let nr = actR;
+  let nc = actC;
+  // 上下只动行边界, 且不许越过矩形另一端 (Sakura 语义: 收缩到当前范围以内);
+  // 左右同理. 不夹的话 Alt+↑ 能把行边界拖到矩形外面, 之后输入会溢出选区.
+  if (dr !== 0) nr = dr < 0 ? Math.max(rect.r0, actR + dr) : Math.min(lastRow, actR + dr);
+  if (dc !== 0) {
+    const maxLen = charLen(t.lines[Math.max(0, Math.min(actR, lastRow))] || "");
+    nc = dc < 0 ? Math.max(0, actC + dc) : Math.min(maxLen, actC + dc);
+  }
+  t.colActiveRow = nr;
+  t.colActiveCol = nc;
+  extendColumnSelect(nr, nc);
+  t.cursor.row = nr;
+  t.cursor.col = nc;
+  updateCaret(false);
+  const r = colSelRect(t);
+  setTip("列块 " + (r.r1 - r.r0 + 1) + "行 ×" + Math.max(1, r.c1 - r.c0) + "列");
+}
+
+/* Alt+Home / Alt+End = 列边界直接到行首/行末 (F_GOLINETOP_BOX / F_GOLINEEND_BOX).
+   行末用 Number.MAX_SAFE_INTEGER 而不是实际长度: colSelRect 会按参与行的最长行
+   clamp, 这样末列一定被覆盖到 (Sakura 的 End 语义), 而不是停在当前行的短行尾. */
+function boxEdge(toEnd) {
+  const t = getActiveTab();
+  if (!t) return;
+  if (!t.colSel) startColumnSelect(t.cursor.row, t.cursor.col);
+  const actR = (t.colActiveRow !== undefined) ? t.colActiveRow : t.colSel.r1;
+  const nc = toEnd ? Number.MAX_SAFE_INTEGER : 0;
+  t.colActiveCol = nc;
+  extendColumnSelect(actR, nc);
+  t.cursor.row = actR;
+  t.cursor.col = nc === Number.MAX_SAFE_INTEGER ? charLen(t.lines[actR] || "") : 0;
+  updateCaret(false);
+  const r = colSelRect(t);
+  setTip("列块 " + (r.r1 - r.r0 + 1) + "行 ×" + Math.max(1, r.c1 - r.c0) + "列");
+}
+
 /* 列块归一化: r0<=r1, c0<=c1, 且所有边界夹在文档范围内. */
 function colSelRect(t) {
   const cs = t.colSel;
@@ -6661,6 +7028,33 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.ctrlKey && e.key === "F2") { e.preventDefault(); toggleBookmark(); return; }
+
+  // Alt / Ctrl+Alt + 方向键 + Home/End = 矩形选区 (Sakura F_UP_BOX ~ F_GOLINEEND_BOX).
+  // 必须放在下面的 Ctrl 分支**之前**: 那里的 `e.ctrlKey && !e.shiftKey` 会把
+  // Ctrl+Alt+↑ 当普通 Ctrl 键处理掉, 而 Ctrl+Shift+U/E/K 那几个新键位也接不到
+  // (它们带 Shift, 那个分支本来就漏了 Shift 变体).
+  if (e.altKey && !e.metaKey) {
+    const step = e.ctrlKey ? 2 : 1;   // Ctrl+Alt+↑↓ = 矩形上下移 2 行 (F_UP2_BOX / F_DOWN2_BOX)
+    if (e.key === "ArrowUp")    { e.preventDefault(); boxMove(-step, 0); return; }
+    if (e.key === "ArrowDown")  { e.preventDefault(); boxMove(step, 0); return; }
+    if (e.key === "ArrowLeft")  { e.preventDefault(); boxMove(0, -1); return; }
+    if (e.key === "ArrowRight") { e.preventDefault(); boxMove(0, 1); return; }
+    if (e.key === "Home")       { e.preventDefault(); boxEdge(false); return; }
+    if (e.key === "End")        { e.preventDefault(); boxEdge(true); return; }
+  }
+
+  // Ctrl+Shift 增删系列 (Sakura F_CUT_LINE / F_LineCutToStart / F_LineDeleteToStart /
+  // F_LineDeleteToEnd), 键位照抄上游 CKeyBind.cpp 默认表:
+  //   Ctrl+U 剪切到行首 / Shift+Ctrl+U 删到行首 / Shift+Ctrl+K 删到行末 / Shift+Ctrl+E 删除整行.
+  // Ctrl+K 是「打开文件夹」的 chord 前缀 (菜单声明 Ctrl+K O), 加 Shift 不冲突,
+  // 所以「删到行末」保住了上游键位 —— 只有裸 Ctrl+K 被占用.
+  if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (k === "e") { e.preventDefault(); deleteLine(); return; }   // F_DELETE_LINE, 与 Ctrl+D 同语义
+    if (k === "u") { e.preventDefault(); deleteToLineStart(); return; }   // F_LineDeleteToStart = 删, 不是剪
+    if (k === "k") { e.preventDefault(); deleteToLineEnd(); return; }
+  }
+
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveByKey(e); }
   if (e.ctrlKey && e.shiftKey) {
     const k = e.key.toLowerCase();
@@ -6668,8 +7062,15 @@ document.addEventListener("keydown", (e) => {
     if (k === "r") { e.preventDefault(); macroStop(); return; }   // 与菜单一致: 开始/停止切换
     // Ctrl+Shift+O = 大纲 (与视图菜单 data-shortcut 一致). 原先绑的是 openFolder(),
     // 而 "打开文件夹" 已有 菜单行 + Ctrl+K O —— 快捷键与菜单声明矛盾, 菜单栏显示的
-    // Ctrl+Shift+O 按下去却打开文件夹 (web-editor.spec 大纲用例 红 的 根因).
+    // Ctrl+Shift+O 按下去却打开文件夹 (web-editor.spec 大纲用例 红 的根因).
     if (k === "o") { e.preventDefault(); showOutline(); return; }
+    // ⚠️ 这三条原本写在下面的 `e.ctrlKey && !e.shiftKey` 分支里, 而它们全都要 Shift ——
+    // 那条分支进不去, 所以 Ctrl+Shift+Up/Down/Backspace 一直是**死代码**
+    // (菜单上写着「上移行 / 下移行 / 删除上方行」, 实际按了没反应).
+    // 移到这个分支才真正生效.
+    if (e.key === "ArrowUp") { e.preventDefault(); moveLines(-1); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); moveLines(1); return; }
+    if (e.key === "Backspace") { e.preventDefault(); deleteLineUp(); return; }
   }
   if (e.ctrlKey && !e.shiftKey) {
     const k = e.key.toLowerCase();
@@ -6681,6 +7082,12 @@ document.addEventListener("keydown", (e) => {
       if (k === "o") { e.preventDefault(); openFolder(); return; }
       return;
     }
+    // Sakura 增删改 (无 Shift 变体): Ctrl+U 剪切到行首 / Ctrl+E 剪切整行 /
+    // Ctrl+Backspace 删到词首. 必须排在 Ctrl+K chord 之后 —— 否则 Ctrl+K 会被
+    // 提前吃掉, 而 Ctrl+Backspace 的 e.key 是 "Backspace" 不是字母, 不参与字母匹配.
+    if (k === "u") { e.preventDefault(); cutToLineStart(); return; }
+    if (k === "e") { e.preventDefault(); cutLine(); return; }
+    if (e.key === "Backspace") { e.preventDefault(); deleteToWordStart(); return; }
     // 极简布局的 Ctrl+N 新建 / Ctrl+O 打开 (菜单上标了这两个快捷键). 补全列表正显示时 Ctrl+N 让给「下一个候选」(编辑区那边已处理)
     if (!e.altKey && layoutPreset() === "min") {
       if (k === "n" && COMPLETE_STATE.list.length === 0) { e.preventDefault(); createNewFile(); return; }
@@ -6696,9 +7103,8 @@ document.addEventListener("keydown", (e) => {
     if (k === "-") { e.preventDefault(); zoomBy(-1); return; }
     if (e.shiftKey && k === "v") { e.preventDefault(); showClipHistory(); return; }
     if (e.shiftKey && k === "d") { e.preventDefault(); copyLinesUp(); return; }
-    if (e.shiftKey && e.key === "ArrowUp") { e.preventDefault(); moveLines(-1); return; }
-    if (e.shiftKey && e.key === "ArrowDown") { e.preventDefault(); moveLines(1); return; }
-    if (e.shiftKey && e.key === "Backspace") { e.preventDefault(); deleteLineUp(); return; }
+    // (Ctrl+Shift 的三个键位 — 上移行 / 下移行 / 删除上方行 — 已移到上面那个
+    //  e.ctrlKey && e.shiftKey 分支; 这条分支里带 Shift 的判断本来就永远进不去.)
     if (e.key === "Delete") { e.preventDefault(); deleteLineDown(); return; }
     if (k === "a") { e.preventDefault(); selectAllText(); return; }
     if (k === "c") { e.preventDefault(); copySelection(); return; }
