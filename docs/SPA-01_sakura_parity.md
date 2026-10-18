@@ -152,7 +152,7 @@
 | G-10 三分隔符 | ✅ | `parseFilePatterns` |
 | G-11 引号包裹 | ✅ | 引号内分隔符不生效 |
 | G-12 `!` 排除文件 | ✅ | 解析 + 翻译成 `!glob` 传给后端 |
-| G-13 `#` 排除目录 | ✅ | `excludeDirGlobs` 补成 `!dir` 与 `!dir/**` |
+| G-13 `#` 排除目录 | ✅ | 解析分流到「除外フォルダー」栏，由后端按目录名/相对路径排除 |
 | G-14 排除优先 | ✅ | 解析阶段就分流，书写位置无关 |
 | G-15 留空 = `*.*` | ✅ | 全是排除项时也补包含项 |
 | G-40 子文件夹递归 | ✅ | 对话框勾选框（关闭时限制顶层 glob） |
@@ -171,19 +171,29 @@
 | G-50 該当行 | ✅ | 已有 |
 | G-51 該当部分 / G-52 非該当行 | ⬜ | 未做 |
 | G-60 ノーマル / G-62 結果のみ | ⬜ | 目前只有分组视图 |
-| G-20~G-23 文件夹拖放/多文件夹/上移/现文件夹 | ⬜ | 未做 |
-| G-30/G-31 独立排除字段 | 🟡 | 用 `!`/`#` 前缀表达，未开独立输入框 |
-| G-41 只搜当前文件 | ⬜ | 未做 |
+| G-21 多文件夹 `;` 分隔 | ✅ | `parseSearchFolders`（`splitSakuraList` 同一套分隔符规则） |
+| G-23 `[现文件夹]` 按钮 | ✅ | 以当前文件所在目录填「フォルダー」栏（上游 `SplitPath_FolderAndFile`） |
+| G-20 文件夹拖放 / G-22 `[上]` 上移一层 | ⬜ | 未做 |
+| G-30 除外ファイル 独立栏 | ✅ | 对话框独立输入框 `grep-exc-files` |
+| G-31 除外フォルダー 独立栏 | ✅ | 对话框独立输入框 `grep-exc-dirs` |
+| G-41 只搜当前文件 | ✅ | 「この文件中だけ検索」radio：填入当前文件名 + 所在目录，禁用其余四栏 |
+| G-48 フォルダー 初值 = 当前文件夹 | ✅ | 打开对话框时按上游 `m_bGrepDefaultFolder` 逻辑给初值 |
 | G-44/G-45 按文件夹分组 / 基准文件夹 | ⬜ | 未做 |
 | G-73 实时显示 | ⬜ | 未做 |
 | G-74 关闭确认保存 | ⬜ | 未做 |
 
 ### 4.3 已知未达标项（诚实清单）
 
-1. **后端仍 shell out 到 `rg`**（`search.rs:66` `Command::new("rg")`）。违反 §3 原则 3，
-   Windows 上 rg 不一定在 PATH，缺了就退到 `search_fallback`（无 glob 支持）。
-   彻底方案是把 ripgrep 的 glob/正则引擎内置进 `sakura-rs`。
-2. **列块模式无可见指示**（C-08）—— 用户进列块后除高亮外看不出当前模式，与 Sakura 有差距。
-3. **Grep 结果仍在对话框里** —— Sakura 是独立窗口，可在关闭对话框后继续用。
-4. **无实时搜索**（G-73）—— Sakura 输入即出结果。
+1. **桌面端 `crates/ide-shell-desktop/src/search.rs` 仍 shell out 到 `rg`**（`search.rs:31`
+   `Command::new("rg")`）。违反 §3 原则 3，Windows 上 rg 不一定在 PATH，缺了就退到
+   `search_fallback`。**web 端已在内置引擎上做完**（`ide-shell-web/src/search.rs`，
+   提交 03daccc，自带 glob 引擎 + `MiniRegex` 回溯正则）；桌面端这份还是旧代码，
+   需把 web 端实现搬进 `sakura-rs` 由两端共用，是下一步。
+2. **「フォルダー」栏目前只在前端收集，尚未真正生效**——后端 `search()` 仍只接受单个
+   `cwd`，多目录搜索与越界校验要等上面那次搬迁一起做（引擎侧 API 已冻结：
+   `GrepOptions { pattern, case_sensitive, regex, whole_word, include_files, search_folders,
+   exclude_files, exclude_folders, subfolders, max_results }`）。
+3. **列块模式无可见指示**（C-08）—— 用户进列块后除高亮外看不出当前模式，与 Sakura 有差距。
+4. **Grep 结果仍在对话框里** —— Sakura 是独立窗口，可在关闭对话框后继续用。
+5. **无实时搜索**（G-73）—— Sakura 输入即出结果。
 
