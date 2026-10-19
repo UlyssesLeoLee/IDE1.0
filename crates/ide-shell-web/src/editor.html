@@ -44,7 +44,7 @@
     }
     // Vim 模式缺省值按预设: min 关 (Sakura 是非模态的), full 开 (保持原有的 NORMAL/INSERT 行为).
     // 用户在 设置 > Vim 模式 里选过就写 ide10.vim, 此后以它为准, 切预设不再改它.
-    var VIM_DEFAULT = { min: false, full: true };
+    var VIM_DEFAULT = { min: true, full: false }; // SPA-03 §9 fix: 所有布局 Vim 默认关闭
     function vimOn() { var v = lsGet("ide10.vim"); return v === "on" ? true : v === "off" ? false : VIM_DEFAULT[preset()]; }
     function apply() {
       var h = document.documentElement, f = flags();
@@ -1318,7 +1318,7 @@
           <div class="menu-row" data-cmd="find-prev" data-shortcut="Shift+F3"><span>查找上一个</span><span class="mr-shortcut">Shift+F3</span></div>
           <div class="menu-row" data-cmd="find-incremental" data-shortcut="Ctrl+I"><span>增量查找</span><span class="mr-shortcut">Ctrl+I</span></div>
           <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="replace" data-shortcut="Ctrl+R"><span>替换</span><span class="mr-shortcut">Ctrl+R</span></div>
+          <div class="menu-row" data-cmd="replace" data-shortcut="Ctrl+H"><span>替换</span><span class="mr-shortcut">Ctrl+H</span></div> // SPA-03 §9 fix: Ctrl+R 为重新载入，替换改 Ctrl+H
           <div class="menu-row" data-cmd="replace-all" data-shortcut="Ctrl+Alt+R"><span>全部替换</span><span class="mr-shortcut">Ctrl+Alt+R</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="grep" data-shortcut="Ctrl+G"><span>Grep 搜索</span><span class="mr-shortcut">Ctrl+G</span></div>
@@ -1433,7 +1433,7 @@
         <div class="menu-dropdown" data-dropdown="setting">
           <div class="menu-row" data-cmd="settings" data-shortcut="Ctrl+,"><span>首选项</span><span class="mr-shortcut">Ctrl+,</span></div>
           <div class="menu-row" data-cmd="keymap" data-shortcut="Ctrl+Alt+K"><span>键映射</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
-          <div class="menu-row" data-cmd="font" data-shortcut="Alt+F"><span>字体</span><span class="mr-shortcut">Alt+F</span></div>
+          <div class="menu-row" data-cmd="font"><span>字体</span></div> // SPA-03 §9 fix: Alt+F 与文件菜单助记键冲突
           <div class="menu-row" data-cmd="theme-select"><span>主题</span></div>
           <div class="menu-row" data-cmd="language" data-shortcut="Alt+L"><span>语言</span><span class="mr-shortcut">Alt+L</span></div>
           <div class="menu-row" data-cmd="toggle-vim"><span>Vim 模式</span></div>
@@ -4382,10 +4382,13 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       }
       return;
     }
+    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); unindentSelection(); return; } // SPA-03 §9 fix: Shift+Tab 反缩进，不是插入空格
     if (e.key === "Tab") { e.preventDefault(); insertCharMulti("  "); return; }
     if (e.key === "Backspace") { e.preventDefault(); backspaceMulti(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }
     if (e.key === "Delete") { e.preventDefault(); normalDeleteChar(); return; }
+    // Ctrl+Space 补全 (非 Vim INSERT 模式也应触发) —— SPA-03 §9 fix: Ctrl+Space 补全是死代码
+    if (e.ctrlKey && e.key === " ") { e.preventDefault(); showCompletion(); return; }
     // 非模态编辑器的基本功 (Sakura 用户的肌肉记忆): Home / End. Vim 开着时 INSERT 保持原样
     if (!vim && t && e.key === "Home") { e.preventDefault(); t.cursor.col = 0; paintActive(); return; }
     if (!vim && t && e.key === "End") { e.preventDefault(); t.cursor.col = charLen(curLine(t)); paintActive(); return; }
@@ -4403,6 +4406,16 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   if (e.key === "F12") { e.preventDefault(); gotoDefinitionLocal(); return; }
 
   // --- NORMAL / VISUAL ---
+  // 列块选区在 NORMAL 模式下也支持直接字符插入 (每行同列插入) —— SPA-03 §9 fix
+  if (t && t.colSel) {
+    if (e.key.length === 1 && !(e.ctrlKey || e.metaKey || e.altKey)) {
+      e.preventDefault(); columnInsert(e.key); return;
+    }
+    if (e.key === "Backspace") { e.preventDefault(); columnBackspace(); return; }
+    if (e.key === "Delete") { e.preventDefault(); columnDelete(); return; }
+    if (e.key === "Enter") { e.preventDefault(); columnInsert("\n"); return; }
+    if (e.key === "Tab") { e.preventDefault(); columnInsert("\t"); return; }
+  }
   const nav = {
     ArrowLeft: [-1, 0], h: [0, -1], ArrowUp: [-1, 0], k: [-1, 0],
     ArrowRight: [0, 1], l: [0, 1], ArrowDown: [1, 0], j: [1, 0],
@@ -5775,7 +5788,7 @@ function tagJump() {
   t.cursor = { row: idx, col: 0 };
   renderVim(t);
   const m = re.exec(t.lines[idx]);
-  setTip("标签 " + (m ? m[1] + " " + m[2] : "") + " @ Ln " + (idx + 1));
+  setTip("跳转到定义: " + (m ? m[1] + " " + m[2] : "") + " @ Ln " + (idx + 1)); // SPA-03 §9 fix: 修正复制粘贴错误的提示文案
 }
 
 // ===== 测试/JS 宏 API 暴露 =====
