@@ -254,8 +254,7 @@ fn official_charcode_is_zenkaku() {
 /// GrepCommandLineTest.CountsEachMatch 相当 — 既定の Grep カウント
 #[test]
 fn official_grep_cmdline_counts_each_match() {
-    use editcore::encoding_io::write_with_encoding;
-    use editcore::encoding_io::EncodingKind;
+    use editcore::encoding_io::{write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
     use editcore::grep::grep_in_file;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -269,12 +268,13 @@ fn official_grep_cmdline_counts_each_match() {
         &dir.join("a.txt"),
         "HIT x HIT\nnone\nHIT\n",
         EncodingKind::Utf8,
+        BomKind::None,
     )
     .unwrap();
-    write_with_encoding(&dir.join("b.txt"), "none\n", EncodingKind::Utf8).unwrap();
-    write_with_encoding(&dir.join("c.log"), "HIT\n", EncodingKind::Utf8).unwrap();
+    write_with_encoding_compat(&dir.join("b.txt"), "none\n", EncodingKind::Utf8).unwrap();
+    write_with_encoding_compat(&dir.join("c.log"), "HIT\n", EncodingKind::Utf8).unwrap();
     std::fs::create_dir_all(dir.join("sub")).unwrap();
-    write_with_encoding(&dir.join("sub/d.txt"), "HIT\n", EncodingKind::Utf8).unwrap();
+    write_with_encoding_compat(&dir.join("sub/d.txt"), "HIT\n", EncodingKind::Utf8).unwrap();
 
     // *.txt 検索 (HIT x 3)
     let matches_a = grep_in_file(&dir.join("a.txt"), "HIT").unwrap();
@@ -311,7 +311,7 @@ fn official_grep_cmdline_case_sensitive() {
 /// GrepCommandLineTest.FileOnly 相当 — ファイルごと 1 件
 #[test]
 fn official_grep_cmdline_file_only() {
-    use editcore::encoding_io::{write_with_encoding, EncodingKind};
+    use editcore::encoding_io::{write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
     use editcore::grep::grep_in_file;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -319,8 +319,8 @@ fn official_grep_cmdline_file_only() {
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("editcore-fileonly-{}-{}", std::process::id(), n));
     std::fs::create_dir_all(&dir).unwrap();
-    write_with_encoding(&dir.join("a.txt"), "HIT x HIT x HIT\n", EncodingKind::Utf8).unwrap();
-    write_with_encoding(&dir.join("b.txt"), "HIT\n", EncodingKind::Utf8).unwrap();
+    write_with_encoding_compat(&dir.join("a.txt"), "HIT x HIT x HIT\n", EncodingKind::Utf8).unwrap();
+    write_with_encoding_compat(&dir.join("b.txt"), "HIT\n", EncodingKind::Utf8).unwrap();
 
     // FileOnly モード: 各ファイル 1 件カウント
     // → a.txt 1 + b.txt 1 = 2

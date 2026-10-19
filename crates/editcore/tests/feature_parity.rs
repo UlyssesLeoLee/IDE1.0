@@ -346,15 +346,15 @@ fn feature_6_6_outline_extended() {
 
 #[test]
 fn feature_7_1_utf8_io() {
-    use editcore::encoding_io::{read_auto, write_with_encoding, EncodingKind};
+    use editcore::encoding_io::{read_auto, read_auto_compat, write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("editcore-feat7-{}-{}", std::process::id(), n));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("test.txt");
-    write_with_encoding(&path, "hello", EncodingKind::Utf8).unwrap();
-    let (read_back, enc) = read_auto(&path).unwrap();
+    write_with_encoding_compat(&path, "hello", EncodingKind::Utf8).unwrap();
+    let (read_back, enc) = read_auto_compat(&path).unwrap();
     assert_eq!(read_back, "hello");
     assert_eq!(enc, EncodingKind::Utf8);
     let _ = std::fs::remove_dir_all(&dir);
@@ -362,31 +362,31 @@ fn feature_7_1_utf8_io() {
 
 #[test]
 fn feature_7_2_shift_jis() {
-    use editcore::encoding_io::{read_auto, write_with_encoding, EncodingKind};
+    use editcore::encoding_io::{read_auto, read_auto_compat, write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("editcore-feat72-{}-{}", std::process::id(), n));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("sjis.txt");
-    write_with_encoding(&path, "こんにちは", EncodingKind::ShiftJis).unwrap();
-    let (read_back, _) = read_auto(&path).unwrap();
+    write_with_encoding_compat(&path, "こんにちは", EncodingKind::ShiftJis).unwrap();
+    let (read_back, _) = read_auto_compat(&path).unwrap();
     assert_eq!(read_back, "こんにちは");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn feature_7_3_euc_jp() {
-    use editcore::encoding_io::{read_with_encoding, write_with_encoding, EncodingKind};
+    use editcore::encoding_io::{read_with_encoding_compat, write_with_encoding_compat, EncodingKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("editcore-feat73-{}-{}", std::process::id(), n));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("euc.txt");
-    write_with_encoding(&path, "こんにちは", EncodingKind::EucJp).unwrap();
+    write_with_encoding_compat(&path, "こんにちは", EncodingKind::EucJp).unwrap();
     // 直接読み込み (encoding 指定)
-    let read_back = read_with_encoding(&path, EncodingKind::EucJp).unwrap();
+    let read_back = read_with_encoding_compat(&path, EncodingKind::EucJp).unwrap();
     assert_eq!(read_back, "こんにちは");
     let _ = std::fs::remove_dir_all(&dir);
 }
