@@ -25,6 +25,8 @@ const FIXTURE_ORIGINAL = "hello, world";
 async function goEditor(page: Page) {
   await page.goto("/editor");
   await waitForBootstrap(page, 8_000);
+  // page.evaluate 的闭包跑在浏览器里, 看不到 Node 侧的常量, 先挂到 window 上
+  await page.evaluate(([r, f]) => { (window as any).FIXTURE_ROOT = r; (window as any).FIXTURE_PATH = f; }, [FIXTURE_ROOT, FIXTURE_PATH]);
 }
 
 // 直接调 setProjectRoot (绕开 rfd/prompt 弹框 — web 模式 pick_folder 会 30s timeout 后弹 prompt,

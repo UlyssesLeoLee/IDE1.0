@@ -62,6 +62,7 @@ use std::sync::{Arc, Mutex};
 use ide_shell::render::web::{render as render_web, WebFrame};
 use ide_shell::{App, AppConfig, Mode};
 
+use tauri::Emitter;
 /// 单文件读取上限 (4 MB) — 保持轻量, 大文件/二进制请走 Shell 面板外部工具.
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -596,7 +597,7 @@ pub fn run() {
             outline::outline,
             plugin::plugin_load,
         ])
-        .setup(|_app| {
+        .setup(|app_handle| {
             eprintln!(
                 "ide-shell-desktop starting (tauri {}, target {})",
                 env!("CARGO_PKG_VERSION"),
@@ -612,10 +613,44 @@ pub fn run() {
                 std::env::var("IDE_SHELL_DESKTOP_TEST_ROOT").ok(),
                 std::env::var("IDE_LOG_FILE").ok(),
             ));
+            // 处理启动时传入的文件参数
+            if let Ok(files_json) = std::env::var("IDE_SHELL_OPEN_FILES") {
+                if let Ok(files) = serde_json::from_str::<Vec<String>>(&files_json) {
+                    for file in files {
+                        if let Err(e) = open_file_at_startup(app_handle, &file) {
+                            diag_log(&format!("[startup] open_file failed: {e}"));
+                        }
+                    }
+                    // 清理环境变量避免二次处理
+                    std::env::remove_var("IDE_SHELL_OPEN_FILES");
+                    std::env::remove_var("IDE_SHELL_OPEN_LINE");
+                    std::env::remove_var("IDE_SHELL_OPEN_COL");
+                    std::env::remove_var("IDE_SHELL_OPEN_ENCODING");
+                    std::env::remove_var("IDE_SHELL_OPEN_READONLY");
+                }
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running ide-shell-desktop");
+}
+
+
+
+/// 启动时打开指定文件
+fn open_file_at_startup(app: &mut tauri::App, path: &str) -> Result<(), String> {
+    use std::path::PathBuf;
+    let path = PathBuf::from(path);
+    let app_handle = app.handle();
+    // 这里只发送事件给前端, 实际打开逻辑在前端处理
+    app_handle.emit("ide-open-file", serde_json::json!({
+        "path": path,
+        "line": std::env::var("IDE_SHELL_OPEN_LINE").ok().and_then(|s| s.parse::<usize>().ok()),
+        "col": std::env::var("IDE_SHELL_OPEN_COL").ok().and_then(|s| s.parse::<usize>().ok()),
+        "encoding": std::env::var("IDE_SHELL_OPEN_ENCODING").ok(),
+        "readonly": std::env::var("IDE_SHELL_OPEN_READONLY").ok().map(|s| s == "1").unwrap_or(false),
+    })).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]

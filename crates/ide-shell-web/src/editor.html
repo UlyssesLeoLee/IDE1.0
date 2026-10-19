@@ -42,9 +42,9 @@
       for (var k in base) f[k] = k in o ? o[k] : base[k];
       return f;
     }
-    // Vim 模式缺省值按预设: min 关 (Sakura 是非模态的), full 开 (保持原有的 NORMAL/INSERT 行为).
+    // Vim 模式缺省值: 所有布局都关 (产品决议 2026-10-15: Vim 是可选设置, 缺省是 Sakura 式非模态).
     // 用户在 设置 > Vim 模式 里选过就写 ide10.vim, 此后以它为准, 切预设不再改它.
-    var VIM_DEFAULT = { min: true, full: false }; // SPA-03 §9 fix: 所有布局 Vim 默认关闭
+    var VIM_DEFAULT = { min: false, full: false };
     function vimOn() { var v = lsGet("ide10.vim"); return v === "on" ? true : v === "off" ? false : VIM_DEFAULT[preset()]; }
     function apply() {
       var h = document.documentElement, f = flags();
@@ -1318,7 +1318,7 @@
           <div class="menu-row" data-cmd="find-prev" data-shortcut="Shift+F3"><span>查找上一个</span><span class="mr-shortcut">Shift+F3</span></div>
           <div class="menu-row" data-cmd="find-incremental" data-shortcut="Ctrl+I"><span>增量查找</span><span class="mr-shortcut">Ctrl+I</span></div>
           <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="replace" data-shortcut="Ctrl+H"><span>替换</span><span class="mr-shortcut">Ctrl+H</span></div> // SPA-03 §9 fix: Ctrl+R 为重新载入，替换改 Ctrl+H
+          <div class="menu-row" data-cmd="replace" data-shortcut="Ctrl+H"><span>替换</span><span class="mr-shortcut">Ctrl+H</span></div>
           <div class="menu-row" data-cmd="replace-all" data-shortcut="Ctrl+Alt+R"><span>全部替换</span><span class="mr-shortcut">Ctrl+Alt+R</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="grep" data-shortcut="Ctrl+G"><span>Grep 搜索</span><span class="mr-shortcut">Ctrl+G</span></div>
@@ -1433,7 +1433,7 @@
         <div class="menu-dropdown" data-dropdown="setting">
           <div class="menu-row" data-cmd="settings" data-shortcut="Ctrl+,"><span>首选项</span><span class="mr-shortcut">Ctrl+,</span></div>
           <div class="menu-row" data-cmd="keymap" data-shortcut="Ctrl+Alt+K"><span>键映射</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
-          <div class="menu-row" data-cmd="font"><span>字体</span></div> // SPA-03 §9 fix: Alt+F 与文件菜单助记键冲突
+          <div class="menu-row" data-cmd="font"><span>字体</span></div>
           <div class="menu-row" data-cmd="theme-select"><span>主题</span></div>
           <div class="menu-row" data-cmd="language" data-shortcut="Alt+L"><span>语言</span><span class="mr-shortcut">Alt+L</span></div>
           <div class="menu-row" data-cmd="toggle-vim"><span>Vim 模式</span></div>
@@ -4382,7 +4382,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       }
       return;
     }
-    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); unindentSelection(); return; } // SPA-03 §9 fix: Shift+Tab 反缩进，不是插入空格
+    if (e.shiftKey && e.key === "Tab") { e.preventDefault(); indentSelection(true); return; }   // Shift+Tab = 反缩进 (F_UNINDENT_TAB)
     if (e.key === "Tab") { e.preventDefault(); insertCharMulti("  "); return; }
     if (e.key === "Backspace") { e.preventDefault(); backspaceMulti(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }

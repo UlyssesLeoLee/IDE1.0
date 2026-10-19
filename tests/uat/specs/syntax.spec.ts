@@ -23,6 +23,8 @@ const FIXTURE_ROOT = process.env.IDE_SHELL_WEB_TEST_ROOT ?? require("path").reso
 
 async function goEditor(page: Page) {
   await page.goto("/editor");
+  // page.evaluate 的闭包跑在浏览器里, 看不到 Node 侧的 FIXTURE_ROOT, 所以先挂到 window 上
+  await page.evaluate((r) => { (window as any).FIXTURE_ROOT = r; }, FIXTURE_ROOT);
 }
 
 test.beforeEach(async () => {
@@ -122,13 +124,13 @@ test("syntax: open Rust file → status bar shows 'Rust' + highlights keywords",
     const id = window.newId();
     tabs.set(id, {
       id,
-      path: "${FIXTURE_ROOT}/\test_syntax.rs",
+      path: `${FIXTURE_ROOT}/test_syntax.rs`,
       name: "test_syntax.rs",
       lines: ["fn main() {", '    println!("hi");', "}"],
       cursor: { row: 0, col: 0 },
       mode: "normal",
       dirty: false,
-      language: Syntax.detectLanguage("${FIXTURE_ROOT}/\test_syntax.rs"),
+      language: Syntax.detectLanguage(`${FIXTURE_ROOT}/test_syntax.rs`),
       history: [],
     });
     activeTabId = id;
@@ -156,13 +158,13 @@ test("syntax: Tab key in INSERT mode inserts 2 spaces", async ({ page }) => {
     const id = window.newId();
     tabs.set(id, {
       id,
-      path: "${FIXTURE_ROOT}/\tab_test.txt",
+      path: `${FIXTURE_ROOT}/tab_test.txt`,
       name: "tab_test.txt",
       lines: [""],
       cursor: { row: 0, col: 0 },
       mode: "normal",
       dirty: false,
-      language: Syntax.detectLanguage("${FIXTURE_ROOT}/\tab_test.txt"),
+      language: Syntax.detectLanguage(`${FIXTURE_ROOT}/tab_test.txt`),
       history: [],
     });
     activeTabId = id;
@@ -207,11 +209,11 @@ test("syntax: Enter auto-indent copies previous indent + extra on {", async ({ p
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: "${FIXTURE_ROOT}/\indent_test.rs",
+        path: `${FIXTURE_ROOT}/indent_test.rs`,
         content: "fn main() {\n",
       }),
     });
-    openFile("${FIXTURE_ROOT}/\indent_test.rs");
+    openFile(`${FIXTURE_ROOT}/indent_test.rs`);
   });
   await page.waitForTimeout(500);
   // Cursor at end of "fn main() {" → press Enter → cursor on new line with "  " (2 spaces)
@@ -252,11 +254,11 @@ test("syntax: :template rust inserts hello-world", async ({ page }) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: "${FIXTURE_ROOT}/\template_test.rs",
+        path: `${FIXTURE_ROOT}/template_test.rs`,
         content: "",
       }),
     });
-    openFile("${FIXTURE_ROOT}/\template_test.rs");
+    openFile(`${FIXTURE_ROOT}/template_test.rs`);
   });
   await page.waitForTimeout(500);
   // 调用 :template rust
@@ -286,13 +288,13 @@ test("syntax: :setlang overrides detected language", async ({ page }) => {
     const id = window.newId();
     tabs.set(id, {
       id,
-      path: "${FIXTURE_ROOT}/\plain_setlang.txt",
+      path: `${FIXTURE_ROOT}/plain_setlang.txt`,
       name: "plain_setlang.txt",
       lines: ["x = 1"],
       cursor: { row: 0, col: 0 },
       mode: "normal",
       dirty: false,
-      language: Syntax.detectLanguage("${FIXTURE_ROOT}/\plain_setlang.txt"),
+      language: Syntax.detectLanguage(`${FIXTURE_ROOT}/plain_setlang.txt`),
       history: [],
     });
     activeTabId = id;
@@ -321,11 +323,11 @@ test("syntax: zc fold hides block, zo expands", async ({ page }) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: "${FIXTURE_ROOT}/\fold_test.rs",
+        path: `${FIXTURE_ROOT}/fold_test.rs`,
         content: "fn outer() {\n    fn inner() {\n        x();\n    }\n    inner();\n}\nfn other() {\n    y();\n}\n",
       }),
     });
-    openFile("${FIXTURE_ROOT}/\fold_test.rs");
+    openFile(`${FIXTURE_ROOT}/fold_test.rs`);
   });
   await page.waitForTimeout(500);
   // Cursor at line 0 (fn outer) + zc
