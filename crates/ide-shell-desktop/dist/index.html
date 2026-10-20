@@ -1611,6 +1611,13 @@
           <div class="menu-row" data-cmd="tab-move-right"><span>标签右移</span></div>
           <div class="menu-row" data-cmd="wrap-window-width"><span>按窗口宽度折行</span></div>
           <div class="menu-row" data-cmd="tmp-wrap"><span>按指定列数折行 (临时)...</span></div>
+          <div class="menu-row" data-cmd="save-close"><span>保存并关闭</span></div>
+          <div class="menu-row" data-cmd="close-open" data-shortcut="Shift+Ctrl+F4"><span>关闭并打开...</span><span class="mr-shortcut">Shift+Ctrl+F4</span></div>
+          <div class="menu-row" data-cmd="exit-all" data-shortcut="Ctrl+Alt+F4"><span>全部退出</span><span class="mr-shortcut">Ctrl+Alt+F4</span></div>
+          <div class="menu-row" data-cmd="select-count-mode"><span>选区字数统计方式</span></div>
+          <div class="menu-row" data-cmd="copy-addcrlf"><span>在折行位置加换行后复制</span></div>
+          <div class="menu-row" data-cmd="help-search" data-shortcut="Shift+Alt+F1"><span>帮助关键字检索...</span><span class="mr-shortcut">Shift+Alt+F1</span></div>
+          <div class="menu-row" data-cmd="ext-help" data-shortcut="Ctrl+F1"><span>光标处单词的帮助</span><span class="mr-shortcut">Ctrl+F1</span></div>
           <div class="menu-row" data-cmd="topmost"><span>始终置顶</span></div>
           <div class="menu-row" data-cmd="minimize-window"><span>最小化</span></div>
           <div class="menu-row" data-cmd="file-tree"><span>文件树</span></div>
@@ -1796,6 +1803,7 @@
       <!-- 列块模式指示 (SPA-01 C-08): Sakura 进列块后状态栏会明确显示当前模式,
            否则用户除了高亮之外看不出自己在列块里, 误以为还在普通插入. -->
       <span class="s-item s-colsel" id="s-colsel" hidden></span>
+      <span class="s-item" id="s-sel" data-cmd="select-count-mode" style="cursor:pointer" title="选区字数统计方式 (点击切换: 字符 / 字节 / 行)"></span>
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
       <span class="s-item" id="s-ovr" title="Ins 键切换 插入/改写">挿入</span>
       <span class="s-item" id="s-enc" data-cmd="charset" style="cursor:pointer">UTF-8</span>
@@ -7292,6 +7300,48 @@ function boxEdge(toEnd) {
   setTip("列块 " + (r.r1 - r.r0 + 1) + "行 ×" + Math.max(1, r.c1 - r.c0) + "列");
 }
 
+/* 列块的「活动角」直接移到 (nr, nc): 单词 / 整页 / 文件首尾 这些大步移动共用 */
+function boxGoto(nr, nc) {
+  const t = getActiveTab();
+  if (!t) return;
+  if (!t.colSel) startColumnSelect(t.cursor.row, t.cursor.col);
+  const lastRow = Math.max(0, t.lines.length - 1);
+  nr = Math.max(0, Math.min(lastRow, nr));
+  nc = Math.max(0, Math.min(charLen(t.lines[nr] || ""), nc));
+  t.colActiveRow = nr; t.colActiveCol = nc;
+  extendColumnSelect(nr, nc);
+  t.cursor.row = nr; t.cursor.col = nc;
+  const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+  if (nr * lh < edContent.scrollTop || (nr + 1) * lh > edContent.scrollTop + edContent.clientHeight) edContent.scrollTop = Math.max(0, nr * lh - edContent.clientHeight / 2);
+  updateCaret(false);
+  const r = colSelRect(t);
+  setTip("列块 " + (r.r1 - r.r0 + 1) + "行 ×" + Math.max(1, r.c1 - r.c0) + "列");
+}
+function boxWord(dir) {
+  const t = getActiveTab(); if (!t) return;
+  if (!t.colSel) startColumnSelect(t.cursor.row, t.cursor.col);
+  const row = t.colActiveRow !== undefined ? t.colActiveRow : t.colSel.r1, cs = chars(t.lines[row] || "");
+  let c = t.colActiveCol !== undefined ? t.colActiveCol : t.colSel.c1;
+  const isW = (ch) => /[A-Za-z0-9_-￿]/.test(ch || "");
+  if (dir > 0) { while (c < cs.length && isW(cs[c])) c++; while (c < cs.length && !isW(cs[c])) c++; }
+  else { while (c > 0 && !isW(cs[c - 1])) c--; while (c > 0 && isW(cs[c - 1])) c--; }
+  boxGoto(row, c);
+}
+function boxFileEdge(toEnd) {
+  const t = getActiveTab(); if (!t) return;
+  if (!t.colSel) startColumnSelect(t.cursor.row, t.cursor.col);
+  const col = t.colActiveCol !== undefined ? t.colActiveCol : t.colSel.c1;
+  boxGoto(toEnd ? t.lines.length - 1 : 0, col);
+}
+function boxPage(dir, half) {
+  const t = getActiveTab(); if (!t) return;
+  if (!t.colSel) startColumnSelect(t.cursor.row, t.cursor.col);
+  const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+  const rows = Math.max(1, Math.floor(edContent.clientHeight / lh) - 1) * (half ? 0.5 : 1);
+  const row = t.colActiveRow !== undefined ? t.colActiveRow : t.colSel.r1, col = t.colActiveCol !== undefined ? t.colActiveCol : t.colSel.c1;
+  boxGoto(row + dir * Math.max(1, Math.floor(rows)), col);
+}
+
 /* 列块归一化: r0<=r1, c0<=c1, 且所有边界夹在文档范围内. */
 function colSelRect(t) {
   const cs = t.colSel;
@@ -7665,10 +7715,12 @@ document.addEventListener("keydown", (e) => {
     const step = e.ctrlKey ? 2 : 1;   // Ctrl+Alt+↑↓ = 矩形上下移 2 行 (F_UP2_BOX / F_DOWN2_BOX)
     if (e.key === "ArrowUp")    { e.preventDefault(); boxMove(-step, 0); return; }
     if (e.key === "ArrowDown")  { e.preventDefault(); boxMove(step, 0); return; }
-    if (e.key === "ArrowLeft")  { e.preventDefault(); boxMove(0, -1); return; }
-    if (e.key === "ArrowRight") { e.preventDefault(); boxMove(0, 1); return; }
-    if (e.key === "Home")       { e.preventDefault(); boxEdge(false); return; }
-    if (e.key === "End")        { e.preventDefault(); boxEdge(true); return; }
+    if (e.key === "ArrowLeft")  { e.preventDefault(); if (e.ctrlKey) boxWord(-1); else boxMove(0, -1); return; }       // Ctrl+Alt+←→ = 单词 (F_WORDLEFT_BOX / F_WORDRIGHT_BOX)
+    if (e.key === "ArrowRight") { e.preventDefault(); if (e.ctrlKey) boxWord(1); else boxMove(0, 1); return; }
+    if (e.key === "Home")       { e.preventDefault(); if (e.ctrlKey) boxFileEdge(false); else boxEdge(false); return; }   // Ctrl+Alt+Home/End = 文件首/尾 (F_GOFILETOP_BOX)
+    if (e.key === "End")        { e.preventDefault(); if (e.ctrlKey) boxFileEdge(true); else boxEdge(true); return; }
+    if (e.key === "PageUp")     { e.preventDefault(); boxPage(-1, e.ctrlKey); return; }                                // Alt+PgUp/PgDn 整页, Ctrl+Alt 半页
+    if (e.key === "PageDown")   { e.preventDefault(); boxPage(1, e.ctrlKey); return; }
   }
 
   // Ctrl+Shift 增删系列 (Sakura F_CUT_LINE / F_LineCutToStart / F_LineDeleteToStart /
@@ -9154,6 +9206,67 @@ managePlugins = function () {
   draw();
 };
 window.runPlugin = runPlugin;
+
+
+/* ===== 保存并关闭 / 关闭并打开 / 全部退出 / 选区字数统计 / 折行位置换行复制 / 帮助检索 ===== */
+const SELCOUNT = { mode: "chars" };
+function selCountText(t) {
+  if (!t) return "";
+  let text = "";
+  if (t.colSel) { const q = colSelRect(t); text = t.lines.slice(q.r0, q.r1 + 1).map((l) => charSlice(l, q.c0, Math.min(q.c1, charLen(l)))).join("\n"); }
+  else if (selNonEmpty(t)) text = selectionText(t);
+  else return "";
+  if (SELCOUNT.mode === "bytes") return "選択 " + new TextEncoder().encode(text).length + " バイト";
+  if (SELCOUNT.mode === "lines") return "選択 " + (text.split("\n").length) + " 行";
+  return "選択 " + [...text].length + " 文字";
+}
+function updateSelCount() { const el = document.getElementById("s-sel"); if (el) el.textContent = selCountText(getActiveTab()); }
+{
+  const _rv = renderVim;
+  renderVim = function (t) { const r = _rv.apply(this, arguments); try { updateSelCount(); } catch (_) {} return r; };
+}
+document.addEventListener("selectionchange", () => { try { updateSelCount(); } catch (_) {} });
+
+function wrappedCopyText(t) {
+  const cols = Math.max(10, Math.floor((edContent.clientWidth - 24) / (monoCharWidth ? monoCharWidth() : 8)));
+  const text = selOrLineText(t);
+  return text.split("\n").map((l) => { const cs = chars(l), out = []; for (let i = 0; i < cs.length; i += cols) out.push(cs.slice(i, i + cols).join("")); return out.length ? out.join("\r\n") : ""; }).join("\r\n");
+}
+function helpText() {
+  const bin = atob(WIKI_B64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+function helpSearch(word) {
+  if (!word) return;
+  const hits = helpText().split(/\r?\n/).map((l, i) => [i + 1, l]).filter(([, l]) => l.toLowerCase().includes(word.toLowerCase()));
+  openModal({ title: "帮助检索: " + word + " (" + hits.length + ")", bodyHTML: hits.length ? hits.slice(0, 200).map(([n, l]) => '<div class="opt-row"><b>' + n + "</b> " + escapeHtml(l) + "</div>").join("") : '<div class="empty-hint">没有找到</div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
+}
+function wordAtCursor() {
+  const t = getActiveTab(); if (!t) return "";
+  const cs = chars(t.lines[t.cursor.row] || ""); let a = t.cursor.col, b = a;
+  const isW = (c) => /[A-Za-z0-9_\u0080-\uFFFF]/.test(c || "");
+  while (a > 0 && isW(cs[a - 1])) a--; while (b < cs.length && isW(cs[b])) b++;
+  return cs.slice(a, b).join("");
+}
+Object.assign(CFG_CMDS, {
+  "save-close": async () => { const t = getActiveTab(); if (!t) return; await saveActive(); if (!t.dirty) closeTab(t.id); else setTip("保存未完成, 未关闭"); },
+  "close-open": () => { closeActiveTab(); setTimeout(promptOpenFile, 50); },
+  "exit-all": () => {
+    const dirty = [...TABS.values()].filter((t) => t.dirty).length;
+    if (dirty && !confirm(dirty + " 个文档有未保存修改, 仍要全部退出吗?")) return;
+    [...TABS.keys()].forEach(closeTab);
+    if (inTauri && window.__TAURI_INTERNALS__) { window.__TAURI_INTERNALS__.invoke("plugin:window|close", { label: "main" }).catch(() => window.close()); }
+    else { try { window.close(); } catch (_) {} setTip("已关闭全部文档 (浏览器标签页请手动关闭)"); }
+  },
+  "select-count-mode": () => { SELCOUNT.mode = SELCOUNT.mode === "chars" ? "bytes" : SELCOUNT.mode === "bytes" ? "lines" : "chars"; updateSelCount(); setTip("选区统计: " + ({ chars: "字符数", bytes: "字节数 (UTF-8)", lines: "行数" })[SELCOUNT.mode]); },
+  "copy-addcrlf": () => { const t = getActiveTab(); if (!t) return; pushClip(wrappedCopyText(t)); setTip("已在折行位置加换行后复制"); },
+  "help-search": () => openModalInput("帮助关键字检索", wordAtCursor(), (w) => helpSearch(w)),
+  "ext-help": () => { const w = wordAtCursor(); if (!w) { setTip("光标处没有单词"); return; } helpSearch(w); },
+});
+Object.assign(KEYMAP, { "C-S-F4": "close-open", "C-A-F4": "exit-all", "S-A-F1": "help-search", "C-F1": "ext-help" });
+Object.assign(KEYMAP_DEFAULT, { "C-S-F4": "close-open", "C-A-F4": "exit-all", "S-A-F1": "help-search", "C-F1": "ext-help" });
+try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
 
 // ===== Welcome page =====
 function showWelcome() {
