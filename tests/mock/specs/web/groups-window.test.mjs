@@ -41,7 +41,7 @@ test('(範囲選択) 次/前の変更行: 从光标到变更行建立选区', ()
     assert.deepEqual(s.sel.slice(0, 3), [0, 0, 3]);
   }));
 
-test('纵向/横向最大化 (Tauri 窗口插件替身); SQL*Plus 在终端里执行当前文件', () =>
+test('纵向/横向最大化 + 全部最小化 (Tauri 窗口插件替身)', () =>
   withMocks({ name: 'gw', portOffset: 282, mock: { tauri: true } }, async ({ page, m }) => {
     await cmd(page, 'maximize-v'); await page.waitForTimeout(300);
     let ipc = await m.tauri.ipc();
@@ -61,12 +61,23 @@ test('再変換: 原生选区对齐到编辑器选区 (之后由 IME 的变换�
     assert.equal(await page.evaluate(() => getSelection().toString()), 'world');
   }));
 
-test('SQL*Plus: 正常路径在终端执行; 含引号/分隔符的路径被拒绝 (防命令注入)', () =>
-  withMocks({ name: 'gw', portOffset: 284, mock: { tauri: true } }, async ({ page, m }) => {
+test('SQL*Plus 专用窗口: 独立会话 (不占主终端), 输入回车发送, 输出只进窗口; 路径含引号/分隔符被拒绝 (防注入)', () =>
+  withMocks({ name: 'gw', portOffset: 284 }, async ({ page }) => {
     await page.locator('#ed-content').click();
-    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a.sql'; return dispatchCommand('sqlplus-run'); }); await page.waitForTimeout(1500);
-    assert.match((await m.tauri.ipc()).filter((c) => c.name === 'terminal_input').map((c) => c.args.data).join(''), /sqlplus @"C:\proj\a\.sql"\r/);
-    const before = (await m.tauri.ipc()).filter((c) => c.name === 'terminal_input').length;
-    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a" & calc & ".sql'; return dispatchCommand('sqlplus-run'); }); await page.waitForTimeout(500);
-    assert.equal((await m.tauri.ipc()).filter((c) => c.name === 'terminal_input').length, before, '没有再发送任何输入');
+    await page.evaluate(() => { SQLWIN.autostart = false; });          // 测试机没有 sqlplus: 只验证窗口与会话
+    await page.evaluate(() => dispatchCommand('sqlplus-activate'));
+    await page.waitForFunction(() => SQLWIN.id, null, { timeout: 8000 });
+    assert.equal(await page.evaluate(() => document.getElementById('sql-win').classList.contains('on')), true);
+    assert.equal(await page.evaluate(() => terminalId), null, '主终端没有被占用');
+    await page.fill('#sql-in', 'echo SQLWIN_OK_42'); await page.press('#sql-in', 'Enter');
+    await page.waitForFunction(() => /SQLWIN_OK_42/.test(document.getElementById('sql-out').textContent.replace('echo SQLWIN_OK_42', '')), null, { timeout: 10000 });
+    // 执行当前文件: 发送 @"路径"
+    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a.sql'; return sqlplusRunFile(); }); await page.waitForTimeout(400);
+    assert.match(await page.evaluate(() => document.getElementById('sql-out').textContent), /@C:\proj\a\.sql/);
+    // 含注入字符的路径: 不发送
+    const before = await page.evaluate(() => document.getElementById('sql-out').textContent.length);
+    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a" & calc & ".sql'; return sqlplusRunFile(); }); await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => document.getElementById('sql-out').textContent.length), before, '没有再发送任何内容');
+    await page.locator('#sql-win [data-sw="stop"]').click(); await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => SQLWIN.id), null);
   }));

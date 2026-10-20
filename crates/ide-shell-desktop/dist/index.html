@@ -449,6 +449,13 @@
     .kb-row .kb-combo { flex: 0 0 150px; font-family: monospace; }
     .kb-row .kb-cmd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .kb-capture { padding: 6px; background: rgba(255, 190, 40, .2); border: 1px dashed var(--border); margin: 6px 0; }
+    #sql-win { position: fixed; left: 60px; bottom: 60px; width: min(640px, calc(100vw - 32px)); height: 340px; min-width: 300px; min-height: 160px; resize: both; overflow: hidden; display: none; flex-direction: column; z-index: calc(var(--z-modal) - 15); background: var(--bg-elev, #1e1e1e); color: var(--fg, #ddd); border: 1px solid var(--border, #555); border-radius: 6px; box-shadow: 0 8px 28px rgba(0,0,0,.45); font-size: var(--fs-sm); }
+    #sql-win.on { display: flex; }
+    #sql-win-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: move; background: rgba(127,127,127,.18); user-select: none; }
+    #sql-win-head .gw-spacer { flex: 1; }
+    #sql-win-head .md-btn { padding: 1px 8px; font-size: 12px; }
+    #sql-out { flex: 1; overflow: auto; margin: 0; padding: 6px 8px; font-family: Consolas, "MS Gothic", monospace; white-space: pre-wrap; word-break: break-all; }
+    #sql-in { border: 0; border-top: 1px solid var(--border, #555); padding: 5px 8px; background: transparent; color: inherit; font-family: Consolas, "MS Gothic", monospace; outline: none; }
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: var(--z-modal); }
     #modal.show { display: flex; }
     .md-box { background: var(--bg-raised); border-radius: var(--r-md); width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
@@ -2407,6 +2414,8 @@ async function setupTerminalChannel() {
   try {
     await listen("terminal://output", (e) => {
       const p = (e && e.payload) || {};
+      const sink = p.id && TERM_SINKS.get(p.id);
+      if (sink) { if (p.data) sink(p.data); return; }          // 专用窗口 (SQL*Plus) 的会话: 输出归它自己
       if (!p.id || (terminalId && p.id !== terminalId)) return;
       if (p.data) appendTerminal(p.data);
       terminalBody.scrollTop = terminalBody.scrollHeight;
@@ -2425,6 +2434,7 @@ async function setupTerminalChannel() {
 }
 
 // 终端输出拉取: event 通道时不需要
+const TERM_SINKS = new Map();      // 会话 id -> 输出接收函数 (独立窗口用; 主终端不在其中)
 async function fetchTerminalOutput(id) {
   if (TERM_CHANNEL === "event") return null;
   if (inTauri && window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
@@ -9532,6 +9542,94 @@ const EXTRA_KEYS = {
 Object.assign(KEYMAP, EXTRA_KEYS);
 Object.assign(KEYMAP_DEFAULT, EXTRA_KEYS);
 try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
+
+
+/* ===== SQL*Plus 专用窗口: 独立终端会话 (不占主终端), 输出只进这个窗口 ===== */
+const SQLWIN = { id: null, el: null, out: null, autostart: true, timer: 0 };
+function sqlwinSink(data) {
+  if (!SQLWIN.out) return;
+  SQLWIN.out.textContent += String(data).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+  if (SQLWIN.out.textContent.length > 200000) SQLWIN.out.textContent = SQLWIN.out.textContent.slice(-150000);
+  SQLWIN.out.scrollTop = SQLWIN.out.scrollHeight;
+}
+async function sqlwinSend(text) {
+  if (!SQLWIN.id) return;
+  if (inTauri && window.__TAURI_INTERNALS__) await window.__TAURI_INTERNALS__.invoke("terminal_input", { id: SQLWIN.id, data: text });
+  else await fetchApi("/api/terminal_input", { body: { id: SQLWIN.id, data: text } });
+}
+async function sqlwinPoll() {
+  if (!SQLWIN.id || TERM_CHANNEL === "event") return;
+  try { const j = await fetchTerminalOutput(SQLWIN.id); if (j && j.chunks) for (const c of j.chunks) sqlwinSink(c); } catch (_) {}
+  SQLWIN.timer = setTimeout(sqlwinPoll, 150);
+}
+function sqlwinEnsureUI() {
+  if (SQLWIN.el && document.body.contains(SQLWIN.el)) return SQLWIN.el;
+  const w = document.createElement("div");
+  w.id = "sql-win";
+  w.innerHTML = '<div id="sql-win-head"><span>SQL*Plus</span><span class="gw-spacer"></span>' +
+    '<button class="md-btn" data-sw="run" title="执行当前文件 (@文件)">実行</button><button class="md-btn" data-sw="clear">清屏</button>' +
+    '<button class="md-btn" data-sw="stop" title="结束会话">终了</button><button class="md-btn" data-sw="close">✕</button></div>' +
+    '<pre id="sql-out"></pre><input id="sql-in" placeholder="输入 SQL / 命令, 回车发送 (connect user/pass@db)" spellcheck="false">';
+  document.body.appendChild(w);
+  SQLWIN.el = w; SQLWIN.out = w.querySelector("#sql-out");
+  w.addEventListener("click", async (e) => {
+    const b = e.target.closest && e.target.closest("[data-sw]"); if (!b) return;
+    const k = b.dataset.sw;
+    if (k === "run") sqlplusRunFile();
+    else if (k === "clear") SQLWIN.out.textContent = "";
+    else if (k === "stop") await sqlwinStop();
+    else if (k === "close") w.classList.remove("on");
+  });
+  const inp = w.querySelector("#sql-in");
+  inp.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") { e.preventDefault(); const v = inp.value; inp.value = ""; sqlwinSink(v + "\n"); await sqlwinSend(v + "\r"); }
+    else if (e.key === "Escape") { w.classList.remove("on"); edContent.focus({ preventScroll: true }); }
+  });
+  const head = w.querySelector("#sql-win-head");
+  head.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    const r = w.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const mv = (ev) => { w.style.left = Math.max(0, ev.clientX - dx) + "px"; w.style.top = Math.max(0, ev.clientY - dy) + "px"; w.style.bottom = "auto"; };
+    const up = () => { document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); };
+    document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
+  });
+  return w;
+}
+async function sqlwinStop() {
+  clearTimeout(SQLWIN.timer);
+  if (SQLWIN.id) {
+    TERM_SINKS.delete(SQLWIN.id);
+    try { if (inTauri && window.__TAURI_INTERNALS__) await window.__TAURI_INTERNALS__.invoke("terminal_close", { id: SQLWIN.id }); else await fetchApi("/api/terminal_close", { body: { id: SQLWIN.id } }); } catch (_) {}
+    SQLWIN.id = null;
+    sqlwinSink("\n[会话已结束]\n");
+  }
+}
+async function sqlwinOpen() {
+  const w = sqlwinEnsureUI(); w.classList.add("on");
+  if (!SQLWIN.id) {
+    if (inTauri) await setupTerminalChannel();
+    try {
+      const info = await invoke("terminal_create", {});
+      SQLWIN.id = info.id; TERM_SINKS.set(info.id, sqlwinSink);
+      sqlwinSink("[" + info.id + " " + (info.shell || "") + "]\n");
+      if (TERM_CHANNEL !== "event") sqlwinPoll();
+      if (SQLWIN.autostart) await sqlwinSend("sqlplus /nolog\r");
+    } catch (e) { sqlwinSink("会话创建失败: " + ((e && e.message) || e) + "\n"); }
+  }
+  w.querySelector("#sql-in").focus();
+}
+async function sqlplusRunFile() {
+  const t = getActiveTab(); if (!t || !t.path) { setTip("先保存文件"); return; }
+  // 路径会被送进交互式 shell/SQL*Plus: 含引号 / 分隔符 / 控制字符的文件名可能逃出引号注入命令, 一律拒绝
+  if (/["&|<>^%`$;'\r\n\0]/.test(t.path)) { setTip("文件路径含特殊字符, 为安全起见不执行"); return; }
+  await sqlwinOpen();
+  if (!SQLWIN.id) return;
+  sqlwinSink("@" + t.path + "\n");
+  await sqlwinSend('@"' + t.path + '"\r');
+  setTip("已在 SQL*Plus 窗口中执行: " + t.path);
+}
+Object.assign(CFG_CMDS, { "sqlplus-activate": sqlwinOpen, "sqlplus-run": sqlplusRunFile });
+window.SQLWIN = SQLWIN;
 
 // ===== Welcome page =====
 function showWelcome() {
