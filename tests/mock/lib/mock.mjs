@@ -76,6 +76,13 @@ export async function installMocks(page, opts = {}) {
           M.ipc.push({ name, args });
           if (name === 'pick_folder' && M.folders.length) return M.folders.shift();
           if (name === 'desktop_luminance') return M.lum;
+          if (name.startsWith('plugin:window|')) {            // 窗口插件替身: 固定 1920x1080 显示器, 窗口 800x600 @ (100,50)
+            const k = name.slice(14);
+            if (k === 'current_monitor') return { position: { x: 0, y: 0 }, size: { width: 1920, height: 1080 } };
+            if (k === 'outer_position') return { x: 100, y: 50 };
+            if (k === 'outer_size') return { width: 800, height: 600 };
+            return null;
+          }
           let body = args || {};
           let url = name;
           if (name === 'search_cmd') { url = 'search'; body = (args && args.options) || {}; }

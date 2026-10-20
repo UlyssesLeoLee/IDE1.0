@@ -747,12 +747,8 @@ Ctrl+B / D / I / L / M / P / Q / T, Shift+Ctrl+D / L / M / P / T, Ctrl+Space(补
 | 大纲: Rust·Python + C++·JS·TS·Go·Java·C#·Markdown 层级 | ✅(Rust) |
 | プラグイン UI | ✅ UI;WASM 运行时需 `wasm` feature 构建 |
 
-**明确不在 v1 范围(需产品负责人确认, 见 §10)**:
+**此前列为范围外、现已补上**: 标签分组(下/上一分组、移到新分组/下一/上一分组、合并、关闭分组, 标签条只显示当前组)、纵向/横向最大化与全部最小化(桌面窗口插件)、SQL*Plus(在终端里 `sqlplus` / `sqlplus @文件`)、再変換(把原生选区对齐到编辑器选区, 由 IME「変換」键接手 — 浏览器无法编程触发 TSF 再変換)、带选区的次/前の変更行。
 
-- 标签「グループ」相关: `F_NEXTGROUP / F_PREVGROUP / F_BIND_WINDOW / F_TAB_SEPARATE / F_TAB_JOINTNEXT / F_TAB_JOINTPREV / F_GROUPCLOSE` — 本项目是单窗口 SDI, 没有多顶层窗口分组。
-- 窗口排布: `F_MAXIMIZE_V / F_MAXIMIZE_H / F_MINIMIZE_ALL` — 依赖多窗口; 单窗口的「最小化」已提供。
-- `F_ACTIVATE_SQLPLUS / F_PLSQL_COMPILE_ON_SQLPLUS` — Oracle 专用。
-- `F_RECONVERT`(IME 再変換)— 依赖 TSF 重新转换 API。
-- 范围选择的「変更行」变体 `F_MODIFYLINE_*_SEL`(次/前の変更行 已有, 带选区的变体未做)。
+**不做**: Oracle SQL*Plus 的专用窗口激活(只提供终端方式)。
 
-**仍然是已知差距**:编辑逻辑大部分仍在前端 JS(ARCH-01 的迁移未做; 本轮新增的编码转换、MIGEMO 展开、层级大纲、半角カナ表在 Rust); 大文件虚拟渲染(F4)未做。
+**仍然是已知差距**:编辑逻辑大部分仍在前端 JS(ARCH-01 的迁移未做; 本轮新增的编码转换、MIGEMO 展开、层级大纲、半角カナ表在 Rust); 大文件已做窗口化渲染(>3000 行, 自动换行关闭时; 5 万行键入个位数 ms)。

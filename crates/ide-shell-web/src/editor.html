@@ -1531,6 +1531,8 @@
           <div class="menu-row" data-cmd="funclist-prev"><span>前の関数へ</span></div>
           <div class="menu-row" data-cmd="modify-next"><span>次の変更行へ</span></div>
           <div class="menu-row" data-cmd="modify-prev"><span>前の変更行へ</span></div>
+          <div class="menu-row" data-cmd="modify-next-sel"><span>(範囲選択) 次の変更行へ</span></div>
+          <div class="menu-row" data-cmd="modify-prev-sel"><span>(範囲選択) 前の変更行へ</span></div>
           <div class="menu-row" data-cmd="tag-jump-back"><span>タグジャンプバック</span></div>
           <div class="menu-row" data-cmd="open-hc"><span>同名のC/C++ヘッダー(ソース)を開く</span></div>
           <div class="menu-row" data-cmd="bookmark-toggle" data-shortcut="Ctrl+F2"><span>切换书签</span><span class="mr-shortcut">Ctrl+F2</span></div>
@@ -1610,6 +1612,17 @@
           <div class="menu-row" data-cmd="close-others"><span>关闭其它标签</span></div>
           <div class="menu-row" data-cmd="close-right"><span>关闭右侧标签</span></div>
           <div class="menu-row" data-cmd="close-left"><span>关闭左侧标签</span></div>
+          <div class="menu-row" data-cmd="reconvert"><span>再変換</span></div>
+          <div class="menu-row" data-cmd="next-group"><span>下一个分组</span></div>
+          <div class="menu-row" data-cmd="prev-group"><span>上一个分组</span></div>
+          <div class="menu-row" data-cmd="tab-separate"><span>移到新分组</span></div>
+          <div class="menu-row" data-cmd="tab-joint-next"><span>移到下一个分组</span></div>
+          <div class="menu-row" data-cmd="tab-joint-prev"><span>移到上一个分组</span></div>
+          <div class="menu-row" data-cmd="bind-window"><span>合并为一组 (グループ化)</span></div>
+          <div class="menu-row" data-cmd="group-close"><span>关闭当前分组</span></div>
+          <div class="menu-row" data-cmd="maximize-v"><span>纵向最大化</span></div>
+          <div class="menu-row" data-cmd="maximize-h"><span>横向最大化</span></div>
+          <div class="menu-row" data-cmd="minimize-all"><span>全部最小化</span></div>
           <div class="menu-row" data-cmd="tab-move-left"><span>标签左移</span></div>
           <div class="menu-row" data-cmd="tab-move-right"><span>标签右移</span></div>
           <div class="menu-row" data-cmd="wrap-window-width"><span>按窗口宽度折行</span></div>
@@ -1655,6 +1668,8 @@
               <div class="menu-sep"></div>
               <div class="menu-row" data-cmd="js-macro"><span>运行 JS 宏</span></div>
               <div class="menu-row" data-cmd="exec-cmd" data-shortcut="Ctrl+F5"><span>外部命令执行...</span><span class="mr-shortcut">Ctrl+F5</span></div>
+              <div class="menu-row" data-cmd="sqlplus-activate" data-shortcut="Shift+F11"><span>SQL*Plus 终端</span><span class="mr-shortcut">Shift+F11</span></div>
+              <div class="menu-row" data-cmd="sqlplus-run"><span>在 SQL*Plus 中执行当前文件</span></div>
               <div class="menu-row" data-cmd="ppa-macro"><span>运行 PPA 宏</span></div>
             </div>
           </div>
@@ -3860,12 +3875,15 @@ function syncDocChrome() {
   if (document.title !== title) document.title = title;
 }
 
+function tabGroupOf(t) { return (t && t.group) || 1; }
 function renderTabs() {
   // 整条重建会把横向滚动位置清零; 先记下来, 重建后还原, 再保证活动标签在可视范围内
   // (标签溢出时, 否则打开的文件落在条外, 看不出哪个标签是当前的).
   const keepLeft = tabsEl.scrollLeft;
   tabsEl.innerHTML = "";
+  const curGrp = tabGroupOf(TABS.get(activeTabId));
   for (const [id, t] of TABS) {
+    if (tabGroupOf(t) !== curGrp) continue;               // 标签分组: 只显示当前组的标签
     const tab = document.createElement("button");
     tab.className = "tab" + (id === activeTabId ? " active" : "") + (t.dirty ? " tab-dirty" : "");
     tab.dataset.tabId = id;
@@ -9354,6 +9372,74 @@ Object.assign(KEYMAP, { "C-S-m": "macro-toggle", "C-m": "macro-save", "C-l": "ma
 Object.assign(KEYMAP_DEFAULT, { "C-S-m": "macro-toggle", "C-m": "macro-save", "C-l": "macro-load", "C-S-l": "macro-play" });
 Object.assign(KEYMAP, { "C-S-F4": "close-open", "C-A-F4": "exit-all", "S-A-F1": "help-search", "C-F1": "ext-help" });
 Object.assign(KEYMAP_DEFAULT, { "C-S-F4": "close-open", "C-A-F4": "exit-all", "S-A-F1": "help-search", "C-F1": "ext-help" });
+try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
+
+
+/* ===== 标签分组 / 窗口最大化 / 带选区的変更行 / SQL*Plus ===== */
+function tabGroups() { return [...new Set([...TABS.values()].map(tabGroupOf))].sort((a, b) => a - b); }
+function activeTabObj() { return TABS.get(activeTabId); }
+function switchGroup(dir) {
+  const gs = tabGroups(); if (gs.length < 2) { setTip("只有一个分组"); return; }
+  const cur = tabGroupOf(activeTabObj()), i = gs.indexOf(cur), g = gs[(i + dir + gs.length) % gs.length];
+  const t = [...TABS.values()].filter((x) => tabGroupOf(x) === g).sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0))[0];
+  if (t) { setActiveTab(t.id); setTip("分组 " + g); }
+}
+function moveToGroup(g) { const t = activeTabObj(); if (!t) return; t.group = g; renderTabs(); setTip("已移到分组 " + g); }
+{
+  const _sat = setActiveTab;
+  setActiveTab = function (id) { const t = TABS.get(id); if (t) t.lastActive = Date.now(); return _sat.apply(this, arguments); };
+}
+async function winCall(cmd, args) { return window.__TAURI_INTERNALS__.invoke("plugin:window|" + cmd, Object.assign({ label: "main" }, args || {})); }
+async function maximizeAxis(axis) {
+  if (!(inTauri && window.__TAURI_INTERNALS__)) { setTip("最大化仅桌面版可用"); return; }
+  try {
+    const mon = await winCall("current_monitor"), pos = await winCall("outer_position"), size = await winCall("outer_size");
+    const mp = mon.position, ms = mon.size;
+    if (axis === "v") { await winCall("set_position", { value: { type: "Physical", data: { x: pos.x, y: mp.y } } }); await winCall("set_size", { value: { type: "Physical", data: { width: size.width, height: ms.height } } }); }
+    else { await winCall("set_position", { value: { type: "Physical", data: { x: mp.x, y: pos.y } } }); await winCall("set_size", { value: { type: "Physical", data: { width: ms.width, height: size.height } } }); }
+    setTip(axis === "v" ? "已纵向最大化" : "已横向最大化");
+  } catch (e) { setTip("最大化失败: " + ((e && e.message) || e)); }
+}
+function modifyStepSel(dir) {
+  const t = getActiveTab(); if (!t) return;
+  const anchor = t.selAnchor || { row: t.cursor.row, col: t.cursor.col };
+  modifyStep(dir);
+  t.selAnchor = anchor; t.sel = normalizeSel(anchor, t.cursor);
+  renderVim(t);
+}
+Object.assign(CFG_CMDS, {
+  "reconvert": () => {
+    // 再変換: 浏览器无法直接触发 TSF 的再変換, 这里把原生选区对齐到我们的选区, 随后按 IME 的「変換」键即可对选中文字再変換
+    const t = getActiveTab(); if (!t) return;
+    if (!selNonEmpty(t)) { setTip("先选中要再変換的文字"); return; }
+    const a = domPointAt(t, t.sel.r0, t.sel.c0), b = domPointAt(t, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1]) : t.sel.c1);
+    if (!a || !b) { setTip("选区不在可见范围"); return; }
+    edContent.focus({ preventScroll: true });
+    const rg = document.createRange(); rg.setStart(a.node, a.off); rg.setEnd(b.node, b.off);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+    setTip("已选中文字: 按 IME 的「変換」键再変換");
+  },
+  "next-group": () => switchGroup(1), "prev-group": () => switchGroup(-1),
+  "tab-separate": () => moveToGroup(Math.max(0, ...tabGroups()) + 1),
+  "tab-joint-next": () => { const gs = tabGroups(), cur = tabGroupOf(activeTabObj()), i = gs.indexOf(cur); moveToGroup(i + 1 < gs.length ? gs[i + 1] : gs[0]); },
+  "tab-joint-prev": () => { const gs = tabGroups(), cur = tabGroupOf(activeTabObj()), i = gs.indexOf(cur); moveToGroup(i > 0 ? gs[i - 1] : gs[gs.length - 1]); },
+  "bind-window": () => { for (const t of TABS.values()) t.group = 1; renderTabs(); setTip("全部标签已合并为一组"); },
+  "group-close": () => closeTabsWhere((t) => tabGroupOf(t) === tabGroupOf(activeTabObj()), "当前分组"),
+  "maximize-v": () => maximizeAxis("v"), "maximize-h": () => maximizeAxis("h"),
+  "minimize-all": () => CFG_CMDS["minimize-window"](),
+  "modify-next-sel": () => modifyStepSel(1), "modify-prev-sel": () => modifyStepSel(-1),
+  "sqlplus-activate": () => { dispatchCommand("show-terminal"); setTip("SQL*Plus: 在终端中运行 sqlplus"); },
+  "sqlplus-run": async () => {
+    const t = getActiveTab(); if (!t || !t.path) { setTip("先保存文件"); return; }
+    dispatchCommand("show-terminal");
+    if (!terminalId) { try { await createTerminal(); } catch (_) {} for (let i = 0; i < 30 && !terminalId; i++) await new Promise((r) => setTimeout(r, 100)); }
+    if (!terminalId) { setTip("无法创建终端"); return; }
+    await sendTerminal('sqlplus @"' + t.path + '"\r');
+    setTip("已在 SQL*Plus 中执行: " + t.path);
+  },
+});
+Object.assign(KEYMAP, { "S-F11": "sqlplus-activate", "C-S-A-ArrowUp": "maximize-v", "C-S-A-ArrowRight": "maximize-h", "C-S-A-ArrowDown": "minimize-all" });
+Object.assign(KEYMAP_DEFAULT, { "S-F11": "sqlplus-activate", "C-S-A-ArrowUp": "maximize-v", "C-S-A-ArrowRight": "maximize-h", "C-S-A-ArrowDown": "minimize-all" });
 try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
 
 // ===== Welcome page =====
