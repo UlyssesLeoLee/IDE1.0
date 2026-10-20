@@ -1367,6 +1367,10 @@
           <div class="menu-row" data-cmd="save" data-shortcut="Ctrl+S"><span>保存</span><span class="mr-shortcut">Ctrl+S</span></div>
           <div class="menu-row" data-cmd="save-as" data-shortcut="Ctrl+Shift+S"><span>另存为...</span><span class="mr-shortcut">Ctrl+Shift+S</span></div>
           <div class="menu-row" data-cmd="save-all" data-shortcut="Ctrl+Alt+S"><span>全部保存</span><span class="mr-shortcut">Ctrl+Alt+S</span></div>
+          <div class="menu-row" data-cmd="print"><span>印刷...</span></div>
+          <div class="menu-row" data-cmd="print-preview"><span>印刷プレビュー</span></div>
+          <div class="menu-row" data-cmd="print-setup"><span>印刷ページ設定...</span></div>
+          <div class="menu-row" data-cmd="browse"><span>ブラウズ (浏览器中查看)</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="close-tab" data-shortcut="Ctrl+W"><span>关闭标签</span><span class="mr-shortcut">Ctrl+W</span></div>
           <div class="menu-row" data-cmd="close-all" data-shortcut="Ctrl+Shift+W"><span>关闭全部</span><span class="mr-shortcut">Ctrl+Shift+W</span></div>
@@ -1418,6 +1422,12 @@
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="indent-selection" data-shortcut="Tab"><span>缩进 (选区)</span><span class="mr-shortcut">Tab</span></div>
           <div class="menu-row" data-cmd="unindent-selection" data-shortcut="Shift+Tab"><span>反缩进 (选区)</span><span class="mr-shortcut">Shift+Tab</span></div>
+          <div class="menu-row" data-cmd="indent-space"><span>SPACE インデント</span></div>
+          <div class="menu-row" data-cmd="unindent-space"><span>逆 SPACE インデント</span></div>
+          <div class="menu-row" data-cmd="ins-recent-file"><span>最近使ったファイル挿入</span></div>
+          <div class="menu-row" data-cmd="ins-recent-folder"><span>最近使ったフォルダー挿入</span></div>
+          <div class="menu-row" data-cmd="base64-decode"><span>Base64 デコードして保存</span></div>
+          <div class="menu-row" data-cmd="uudecode"><span>uudecode して保存</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="line-ops"><span>行排序 / 去重 / 反转</span></div>
           <div class="menu-row" data-cmd="encoding"><span>编码转换</span></div>
@@ -1504,6 +1514,10 @@
           <div class="menu-row" data-cmd="bracket-pair"><span>対括弧の検索</span></div>
           <div class="menu-row" data-cmd="bookmark-reset"><span>ブックマークの全解除</span></div>
           <div class="menu-row" data-cmd="bookmark-view"><span>ブックマークの一覧</span></div>
+          <div class="menu-row" data-cmd="funclist-next"><span>次の関数へ</span></div>
+          <div class="menu-row" data-cmd="funclist-prev"><span>前の関数へ</span></div>
+          <div class="menu-row" data-cmd="modify-next"><span>次の変更行へ</span></div>
+          <div class="menu-row" data-cmd="modify-prev"><span>前の変更行へ</span></div>
           <div class="menu-row" data-cmd="tag-jump-back"><span>タグジャンプバック</span></div>
           <div class="menu-row" data-cmd="open-hc"><span>同名のC/C++ヘッダー(ソース)を開く</span></div>
           <div class="menu-row" data-cmd="bookmark-toggle" data-shortcut="Ctrl+F2"><span>切换书签</span><span class="mr-shortcut">Ctrl+F2</span></div>
@@ -1582,6 +1596,10 @@
           <div class="menu-row" data-cmd="window-list"><span>窗口一览</span></div>
           <div class="menu-row" data-cmd="close-others"><span>关闭其它标签</span></div>
           <div class="menu-row" data-cmd="close-right"><span>关闭右侧标签</span></div>
+          <div class="menu-row" data-cmd="close-left"><span>关闭左侧标签</span></div>
+          <div class="menu-row" data-cmd="tab-move-left"><span>标签左移</span></div>
+          <div class="menu-row" data-cmd="tab-move-right"><span>标签右移</span></div>
+          <div class="menu-row" data-cmd="wrap-window-width"><span>按窗口宽度折行</span></div>
         </div>
       </div>
 
@@ -1611,6 +1629,7 @@
               <div class="menu-row" data-cmd="macro-load"><span>读取宏...</span></div>
               <div class="menu-sep"></div>
               <div class="menu-row" data-cmd="js-macro"><span>运行 JS 宏</span></div>
+              <div class="menu-row" data-cmd="exec-cmd" data-shortcut="Ctrl+F5"><span>外部命令执行...</span><span class="mr-shortcut">Ctrl+F5</span></div>
               <div class="menu-row" data-cmd="ppa-macro"><span>运行 PPA 宏</span></div>
             </div>
           </div>
@@ -4055,6 +4074,7 @@ function snapshot(t) {
   if (!t.undo) t.undo = [];
   if (!t.redo) t.redo = [];
   if (!t.folded) t.folded = new Set();
+  if (!t.baseLines || !t.dirty) t.baseLines = t.lines.slice();          // 干净状态下的第一次改动前 = 基线 (用于「变更行」)
   t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
   if (t.undo.length > 200) t.undo.shift();
   t.redo.length = 0;
@@ -5177,7 +5197,7 @@ async function renderOutline(host) {
         const row = document.createElement("div");
         row.className = "tree-node";
         row.textContent = (e.kind === "function" ? "ƒ" : e.kind === "class" ? "C" : "•") + " " + e.name;
-        row.addEventListener("click", () => setTip("跳到 " + (e.line + 1) + " 行"));
+        row.addEventListener("click", () => { const tt = getActiveTab(); if (tt) { diffJump(tt, e.line | 0); setTip("跳到 " + ((e.line | 0) + 1) + " 行"); } });
         list.appendChild(row);
       }
       if (data.entries.length === 0) list.innerHTML = '<div class="empty-hint">无大纲 (' + (data.language || "?") + ")</div>";
@@ -8571,6 +8591,12 @@ function saveKeymapOverrides() {
   try { if (Object.keys(o).length) localStorage.setItem("ide10.keymap", JSON.stringify(o)); else localStorage.removeItem("ide10.keymap"); } catch (_) {}
   applyMenuShortcuts();
 }
+Object.assign(KEYMAP, {
+  "C-1": "toggle-toolbar", "C-2": "toggle-funckey", "C-p": "print", "C-S-p": "print-preview", "C-A-p": "print-setup",
+  "C-b": "browse", "C-F5": "exec-cmd", "A-F6": "base64-decode", "A-F5": "uudecode", "S-A-F4": "close-others",
+});
+Object.assign(KEYMAP_DEFAULT, { "C-1": "toggle-toolbar", "C-2": "toggle-funckey", "C-p": "print", "C-S-p": "print-preview", "C-A-p": "print-setup",
+  "C-b": "browse", "C-F5": "exec-cmd", "A-F6": "base64-decode", "A-F5": "uudecode", "S-A-F4": "close-others" });
 loadKeymapOverrides(); try { applyMenuShortcuts(); } catch (_) {}
 function allCommandLabels() {
   const m = new Map();
@@ -8723,6 +8749,175 @@ const CFG_CMDS = {
   },
 };
 window.commonConfig = commonConfig; window.keyConfig = keyConfig;
+
+
+/* ===== Sakura 尾部命令: 印刷 / SPACE インデント / デコード保存 / 最近のファイル挿入 / 関数・変更行ジャンプ / タブ移動 / 外部コマンド ===== */
+const RECENT_FILES_KEY = "ide10.recentfiles";
+function recentFiles() { try { return JSON.parse(localStorage.getItem(RECENT_FILES_KEY) || "[]"); } catch (_) { return []; } }
+function pushRecentFile(path) {
+  if (!path) return;
+  const l = recentFiles().filter((x) => x !== path); l.unshift(path);
+  try { localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(l.slice(0, 20))); } catch (_) {}
+}
+{
+  const _openFile = openFile;
+  openFile = async function (path) { const r = await _openFile.apply(this, arguments); try { pushRecentFile(stripVerbatim(path)); } catch (_) {} return r; };
+}
+function pickFromList(title, items, onPick) {
+  if (!items.length) { setTip("没有可选项"); return; }
+  openModal({ title, bodyHTML: items.map((x, i) => '<div class="opt-row pick-row" data-i="' + i + '" style="cursor:pointer;">' + escapeHtml(x) + "</div>").join(""), buttons: [{ label: "取消", cmd: "modal-close" }] });
+  mdBody.querySelectorAll(".pick-row").forEach((r) => r.addEventListener("click", () => { closeModal(); onPick(items[+r.dataset.i]); }));
+}
+function selectedRows(t) {
+  if (t.colSel) { const q = colSelRect(t); return [q.r0, q.r1]; }
+  if (t.sel) return [t.sel.r0, t.sel.r1];
+  return [t.cursor.row, t.cursor.row];
+}
+function selectionOrAllText(t) {
+  return selNonEmpty(t) ? selectionText(t) : t.lines.join("\n");
+}
+function printPrefs() {
+  let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.print") || "{}") || {}; } catch (_) {}
+  return Object.assign({ fontSize: 11, margin: 15, lineNumbers: true, header: true }, o);
+}
+function printHtml(t) {
+  const pp = printPrefs();
+  const w = String(t.lines.length).length;
+  const body = t.lines.map((l, i) => (pp.lineNumbers ? String(i + 1).padStart(w, " ") + " " : "") + l).join("\n");
+  return "<!doctype html><meta charset=utf-8><title>" + escapeHtml(t.path || t.name || "IDE1.0") + "</title><style>@page{margin:" + pp.margin + "mm}body{margin:0}" +
+    "pre{font:" + pp.fontSize + "pt/1.35 Consolas,'MS Gothic',monospace;white-space:pre-wrap;word-break:break-all;tab-size:" + PREFS.tabWidth + "}h1{font:10pt sans-serif;border-bottom:1px solid #888;margin:0 0 6px}</style>" +
+    (pp.header ? "<h1>" + escapeHtml(t.path || t.name || "(无标题)") + "</h1>" : "") + "<pre>" + escapeHtml(body) + "</pre>";
+}
+function printDoc() {
+  const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+  const f = document.createElement("iframe");
+  f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(f);
+  f.srcdoc = printHtml(t);
+  f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { setTip("打印不可用: " + e.message); } setTimeout(() => f.remove(), 2000); };
+  setTip("正在打印…");
+}
+function printPreview() {
+  const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+  const per = 55, pages = Math.max(1, Math.ceil(t.lines.length / per));
+  const pp = printPrefs(), w = String(t.lines.length).length;
+  const html = Array.from({ length: pages }, (_, p) =>
+    '<div class="pv-page" style="background:#fff;color:#000;margin:0 auto 10px;padding:' + pp.margin + 'px;box-shadow:0 0 4px rgba(0,0,0,.4);width:520px;font:' + pp.fontSize + 'px/1.35 monospace;white-space:pre-wrap;">' +
+    escapeHtml(t.lines.slice(p * per, (p + 1) * per).map((l, i) => (pp.lineNumbers ? String(p * per + i + 1).padStart(w, " ") + " " : "") + l).join("\n")) +
+    '<div style="text-align:center;opacity:.5;font-size:10px;">- ' + (p + 1) + " / " + pages + " -</div></div>").join("");
+  openModal({ title: "印刷プレビュー (" + pages + " 页)", bodyHTML: '<div style="max-height:60vh;overflow:auto;background:#777;padding:8px;">' + html + "</div>", buttons: [{ label: "印刷", cmd: "print" }, { label: "关闭", cmd: "modal-close" }] });
+}
+function printSetup() {
+  const pp = printPrefs();
+  const row = (id, label, v) => '<div class="cfg-row"><label>' + label + '</label><input id="' + id + '" type="number" value="' + v + '" style="width:80px"></div>';
+  openModal({ title: "印刷页面设置", bodyHTML: row("pp-font", "字号 (pt)", pp.fontSize) + row("pp-margin", "页边距 (mm)", pp.margin) +
+    '<div class="cfg-row"><label><input id="pp-ln" type="checkbox"' + (pp.lineNumbers ? " checked" : "") + '> 打印行号</label></div><div class="cfg-row"><label><input id="pp-hd" type="checkbox"' + (pp.header ? " checked" : "") + '> 打印文件名页眉</label></div>',
+    buttons: [{ label: "保存", cmd: "print-setup-save" }, { label: "取消", cmd: "modal-close" }] });
+}
+function decodeBase64Text(src) {
+  const bin = atob(src.replace(/\s+/g, ""));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+function decodeUu(src) {
+  const out = [];
+  for (const raw of src.split(/\r?\n/)) {
+    const line = raw.replace(/\s+$/, "");
+    if (!line || /^begin /.test(line) || line === "end" || line === "`") continue;
+    const n = (line.charCodeAt(0) - 32) & 63; if (!n) continue;
+    const bytes = [];
+    for (let i = 1; i + 3 < line.length + 3 && bytes.length < n; i += 4) {
+      const c = [0, 1, 2, 3].map((k) => ((line.charCodeAt(i + k) || 32) - 32) & 63);
+      bytes.push((c[0] << 2) | (c[1] >> 4), ((c[1] & 15) << 4) | (c[2] >> 2), ((c[2] & 3) << 6) | c[3]);
+    }
+    out.push(...bytes.slice(0, n));
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(out));
+}
+function decodeAndSave(kind) {
+  const t = getActiveTab(); if (!t) return;
+  let text;
+  try { text = kind === "b64" ? decodeBase64Text(selectionOrAllText(t)) : decodeUu(selectionOrAllText(t)); }
+  catch (e) { setTip("解码失败 (非 UTF-8 文本的二进制内容暂不支持保存): " + e.message); return; }
+  openModalInput((kind === "b64" ? "Base64" : "uudecode") + " 解码结果保存为 (项目根内)", kind === "b64" ? "decoded.txt" : "uudecoded.txt", async (name) => {
+    try {
+      const root = await ensureWorkingRoot(); if (!root) return;
+      await invoke("write_file", { path: joinPath(root, name), content: text, encoding: "UTF-8", bom: "none", eol: "lf", force: true });
+      setTip("已保存 " + name + " (" + text.length + " 字符)");
+    } catch (e) { setTip("保存失败: " + ((e && e.message) || e)); }
+  });
+}
+async function funcRows() {
+  const t = getActiveTab(); if (!t || !t.path) return [];
+  try { const d = await invoke("outline", { path: t.path }); return ((d && d.entries) || []).map((e) => e.line | 0).sort((a, b) => a - b); } catch (_) { return []; }
+}
+async function funclistStep(dir) {
+  const t = getActiveTab(); if (!t) return;
+  const rows = await funcRows();
+  if (!rows.length) { setTip("没有函数标记 (需要已保存的源码文件)"); return; }
+  const cur = t.cursor.row;
+  const r = dir > 0 ? rows.find((x) => x > cur) ?? rows[0] : [...rows].reverse().find((x) => x < cur) ?? rows[rows.length - 1];
+  diffJump(t, r); setTip("函数 @ " + (r + 1) + " 行");
+}
+function modifyStep(dir) {
+  const t = getActiveTab(); if (!t) return;
+  const H = t.baseLines ? diffLines(t.baseLines, t.lines) : [];
+  if (!H.length) { setTip("没有变更行"); return; }
+  const cur = t.cursor.row;
+  const h = dir > 0 ? H.find((x) => x.b0 > cur) || H[0] : [...H].reverse().find((x) => x.b0 < cur) || H[H.length - 1];
+  diffJump(t, Math.min(h.b0, t.lines.length - 1)); setTip("变更行 " + (H.indexOf(h) + 1) + "/" + H.length);
+}
+function spaceIndent(reverse) {
+  const t = getActiveTab(); if (!t) return;
+  const [r0, r1] = selectedRows(t), n = Math.max(1, PREFS.tabWidth | 0);
+  snapshot(t);
+  for (let r = r0; r <= r1; r++) {
+    const l = t.lines[r] || "";
+    if (!reverse) t.lines[r] = " ".repeat(n) + l;
+    else { const m = l.match(/^ */)[0].length; t.lines[r] = l.slice(Math.min(m, n)); }
+  }
+  t.dirty = true; renderVim(t); setTip((reverse ? "逆 " : "") + "SPACE インデント " + (r1 - r0 + 1) + " 行");
+}
+function moveTab(dir) {
+  const ids = [...TABS.keys()], i = ids.indexOf(activeTabId), j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  const old = new Map(TABS); TABS.clear(); for (const id of ids) TABS.set(id, old.get(id));
+  renderTabs();
+}
+Object.assign(CFG_CMDS, {
+  "print": printDoc, "print-preview": printPreview, "print-setup": printSetup,
+  "print-setup-save": () => {
+    const o = { fontSize: +document.getElementById("pp-font").value || 11, margin: +document.getElementById("pp-margin").value || 15, lineNumbers: document.getElementById("pp-ln").checked, header: document.getElementById("pp-hd").checked };
+    try { localStorage.setItem("ide10.print", JSON.stringify(o)); } catch (_) {}
+    closeModal(); setTip("印刷设置已保存");
+  },
+  "browse": () => {
+    const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+    const isHtml = /\.html?$/i.test(t.path || t.name || "");
+    const blob = new Blob([isHtml ? t.lines.join("\n") : printHtml(t)], { type: "text/html" });
+    const w = window.open(URL.createObjectURL(blob), "_blank");
+    setTip(w ? "已在浏览器中打开" : "新窗口被拦截, 请允许弹出窗口");
+  },
+  "indent-space": () => spaceIndent(false), "unindent-space": () => spaceIndent(true),
+  "base64-decode": () => decodeAndSave("b64"), "uudecode": () => decodeAndSave("uu"),
+  "ins-recent-file": () => pickFromList("插入最近使用的文件路径", recentFiles(), (p) => insertTextAtCursor(p)),
+  "ins-recent-folder": () => pickFromList("插入最近使用的文件夹路径", recentList().map((r) => r.path), (p) => insertTextAtCursor(p)),
+  "funclist-next": () => funclistStep(1), "funclist-prev": () => funclistStep(-1),
+  "modify-next": () => modifyStep(1), "modify-prev": () => modifyStep(-1),
+  "close-left": () => { const ids = [...TABS.keys()], at = ids.indexOf(activeTabId); const left = new Set(ids.slice(0, at)); closeTabsWhere((t) => left.has(t.id), "左侧标签"); },
+  "tab-move-left": () => moveTab(-1), "tab-move-right": () => moveTab(1),
+  "wrap-window-width": () => { if (!VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); setTip("已按窗口宽度折行"); },
+  "exec-cmd": () => {
+    openModalInput("外部命令 (在终端中执行)", "", async (cmd) => {
+      dispatchCommand("show-terminal");
+      if (!terminalId) { try { await createTerminal(); } catch (_) {} for (let i = 0; i < 30 && !terminalId; i++) await new Promise((r) => setTimeout(r, 100)); }
+      if (!terminalId) { setTip("无法创建终端"); return; }
+      await sendTerminal(cmd + "\r");
+      setTip("已执行: " + cmd);
+    });
+  },
+});
 
 // ===== Welcome page =====
 function showWelcome() {
