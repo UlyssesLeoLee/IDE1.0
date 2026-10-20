@@ -74,7 +74,8 @@ test.describe("真实鼠标: 点击 / 拖选 / Alt 纵向选择", () => {
     await expect(page.locator("#s-colsel")).toContainText("3行");
     await page.keyboard.type("X");
     const lines = await page.evaluate(() => (window as any).getActiveTab().lines.slice(0, 3));
-    expect(lines).toEqual(["abXcdefghij", "klXmnopqrst", "uvXwxyzABCD"]);
+    // Alt 拖出的 3行×4列 里原有的内容被覆盖掉 (cdef / mnop / wxyz), 不是插在它前面
+    expect(lines).toEqual(["abXghij", "klXqrst", "uvXABCD"]);
     expect(errors).toEqual([]);
   });
 

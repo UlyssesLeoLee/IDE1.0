@@ -1192,6 +1192,16 @@
     html[data-layout="min"] #editor-area:is(.split-h, .split-v, .split-quad) { row-gap: 0; }
     html[data-layout="min"] .split-view[data-row2] { border-top: 1px solid var(--border); }
 
+    /* ===== 左下角归「最近展开」的抽屉 (min 与 full 通用) =====
+       导航 (活动栏 + 侧栏) 和底部终端在左下角相交. 谁后展开, 谁占整列 / 整行, 先展开的自动重新排版去让位:
+         - 终端后开 (data-drawer-top="bottom"): 终端横贯整行, 左导航被压矮 (默认排法);
+         - 导航后开 (data-drawer-top="left"):   导航撑满整列直到状态栏, 终端缩到编辑区那几列之下.
+       data-drawer-top 由 JS (syncDrawerUI / bumpDrawer) 按最近展开 / 最近按下写在 <html> 上. */
+    html[data-drawer-top="left"] #bottom-panel { grid-column: 3; }
+    html[data-layout="min"][data-drawer-top="left"] #bottom-panel { grid-column: 4; }
+    html[data-drawer-top="left"] :is(#activity-bar, #side-bar) { grid-row: 2 / 4; }
+    html[data-layout="min"][data-drawer-top="left"] #left-strip { grid-row: 2 / 4; }
+
     /* ===== 菜单键盘导航 (Sakura / Windows 风格) =====
        .kb-active = 键盘 (或鼠标移上去) 选中的那一行, 外观和 :hover 完全一致, 所以只有真的用了键盘才会有新的画面;
        .kb-open = 用键盘 (→ / Enter) 展开的子菜单: 父行保持高亮, 飞出层显示 (本来只有 :hover 能展开子菜单). 只由 JS 在打开的菜单内加减, 关菜单时全部清掉 */
@@ -1290,6 +1300,9 @@
       -webkit-backdrop-filter: blur(14px) saturate(200%); backdrop-filter: blur(14px) saturate(200%);
       box-shadow: inset 0 1px 0 var(--mat-hi);
     }
+    ::highlight(find-marks) { background-color: rgba(255, 213, 0, 0.38); }
+    ::highlight(bracket-pair) { background-color: rgba(120, 180, 255, 0.5); outline: 1px solid rgba(120, 180, 255, 0.9); }
+    ::highlight(bookmark-gutter) { background-color: rgba(255, 120, 60, 0.7); color: #fff; }
 </style>
 </head>
 <body>
@@ -1434,6 +1447,17 @@
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="goto-line" data-shortcut="Ctrl+J"><span>跳转到行</span><span class="mr-shortcut">Ctrl+J</span></div>
           <div class="menu-row" data-cmd="tag-jump" data-shortcut="F12"><span>跳转到标签</span><span class="mr-shortcut">F12</span></div>
+          <div class="menu-row" data-cmd="isearch-fwd"><span>前方インクリメンタルサーチ</span></div>
+          <div class="menu-row" data-cmd="isearch-back"><span>後方インクリメンタルサーチ</span></div>
+          <div class="menu-row" data-cmd="isearch-regex-fwd"><span>前方正規表現インクリメンタルサーチ</span></div>
+          <div class="menu-row" data-cmd="isearch-regex-back"><span>後方正規表現インクリメンタルサーチ</span></div>
+          <div class="menu-row" data-cmd="search-clearmark"><span>検索マークの切替え</span></div>
+          <div class="menu-row" data-cmd="jump-srchstart"><span>検索開始位置へ戻る</span></div>
+          <div class="menu-row" data-cmd="bracket-pair"><span>対括弧の検索</span></div>
+          <div class="menu-row" data-cmd="bookmark-reset"><span>ブックマークの全解除</span></div>
+          <div class="menu-row" data-cmd="bookmark-view"><span>ブックマークの一覧</span></div>
+          <div class="menu-row" data-cmd="tag-jump-back"><span>タグジャンプバック</span></div>
+          <div class="menu-row" data-cmd="open-hc"><span>同名のC/C++ヘッダー(ソース)を開く</span></div>
           <div class="menu-row" data-cmd="bookmark-toggle" data-shortcut="Ctrl+F2"><span>切换书签</span><span class="mr-shortcut">Ctrl+F2</span></div>
           <div class="menu-row" data-cmd="bookmark-next" data-shortcut="F2"><span>下一个书签</span><span class="mr-shortcut">F2</span></div>
           <div class="menu-row" data-cmd="bookmark-prev" data-shortcut="Shift+F2"><span>上一个书签</span><span class="mr-shortcut">Shift+F2</span></div>
@@ -1751,7 +1775,7 @@ const ENCODINGS = ["utf-8", "utf-8-bom", "utf-16le", "utf-16be", "shift_jis", "e
 /* 提前声明: 下面的 const/let 会被命令表在初始化时引用,
    放在 Globals 之后避免 TDZ (Cannot access X before initialization). */
 // --- FIND_STATE ---
-let FIND_STATE = { needle: "", matchCase: false, useRegex: false, hits: [], idx: -1 };
+let FIND_STATE = { needle: "", matchCase: false, useRegex: false, wholeWord: false, wrap: true, marks: true, scope: "all", startPos: null, hits: [], idx: -1 };
 // --- SETTINGS ---
 // 每项的 label 支持函数形式, 在渲染时才求值 —— 否则会引用到尚未初始化的
 // VIEW_STATE / Syntax (它们声明在本对象之后).
@@ -2034,12 +2058,15 @@ function syncDrawerUI() {
       tg.setAttribute("aria-controls", "bottom-body");
     }
     for (const [which, now] of [["left", L], ["bottom", B]]) {
-      if (now && !DRAWER.was[which]) { bumpDrawer(which); queueDrawerRefresh(which); }   // 刚展开: 浮到最上层 + 刷新内容
+      if (now && !DRAWER.was[which]) queueDrawerRefresh(which);        // 刚展开: 刷新内容
       // 刚折叠且焦点还在里面 (含把手): 把焦点还给编辑区 —— 键盘事件绑在 #ed-content 上, 焦点掉到 body 就打不了字了
       if (!now && DRAWER.was[which] && drawerOf(document.activeElement) === which) edContent.focus();
       if (!now && DRAWER.focus === which) DRAWER.focus = null;
     }
   }
+  // 最近展开的抽屉占左下角 (完整布局也一样): 后展开的占据整列 / 整行, 先展开的自动重新排版去让位 (见 CSS data-drawer-top)
+  for (const [which, now] of [["left", L], ["bottom", B]]) if (now && !DRAWER.was[which]) bumpDrawer(which);
+  if (L !== B) document.documentElement.setAttribute("data-drawer-top", L ? "left" : "bottom");   // 只剩一个展开着: 它就是占角的那个
   DRAWER.was.left = L; DRAWER.was.bottom = B;
 }
 // 自适应刷新: 展开 / 窗口缩放时重新量一遍. 几何靠 CSS 随视口夹住, 这里负责内容:
@@ -2285,7 +2312,12 @@ const mdFoot = document.getElementById("md-foot");
 function openModal(opts) {
   showModal(opts);
 }
-function closeModal() { modal.classList.remove("show"); }
+function closeModal() {
+  const was = modal.classList.contains("show");
+  modal.classList.remove("show");
+  // 对话框关掉后焦点还给编辑区: 点对话框里的按钮 (或按钮随对话框一起消失) 后焦点会掉到 body, 之后的键盘输入就全失效了
+  if (was) { const a = document.activeElement; if (!a || a === document.body || modal.contains(a)) edContent.focus(); }
+}
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
 async function promptOpenFile() {
@@ -2806,6 +2838,7 @@ function dispatchCommand(cmd) {
     case "find-incremental": openIncSearch(); break;
     case "replace":          openReplace(); break;
     case "replace-all":      execCmd("replaceAll"); break;
+    case "replace-one":      replaceOne(); break;
     case "grep":             openGrep(); break;
     case "grep-replace":     openGrepReplace(); break;
     case "goto-line":        openGotoLine(); break;
@@ -5445,29 +5478,30 @@ async function triggerAutoBackup() {
 
 
 // 当前 tab 内查找 (返回 [{row, col, len}])
+const escapeRegexSrc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// 按 FIND_STATE 选项生成正则; 非法正则返回 null
+function buildFindRegex(o, global = true) {
+  if (!o.needle) return null;
+  let src = o.useRegex ? o.needle : escapeRegexSrc(o.needle);
+  if (o.wholeWord) src = "(?<![\\p{L}\\p{N}_])(?:" + src + ")(?![\\p{L}\\p{N}_])";
+  const flags = (global ? "g" : "") + (o.matchCase ? "" : "i");
+  try { return new RegExp(src, flags + "u"); } catch (_) { /* u 模式下非法转义 (如 \- ) 退回非 u */ }
+  try { return new RegExp(src.replace(/\\p\{L\}\\p\{N\}/g, "A-Za-z0-9"), flags); } catch (_) { return null; }
+}
+// 列 / 长度一律按码点 (与光标列一致), 不是 UTF-16
 function findInTab(t, needle, opts) {
   if (!t || !needle) return [];
-  const ci = !opts.matchCase;
+  const re = buildFindRegex(Object.assign({}, opts, { needle }));
+  if (!re) return [];
   const out = [];
-  const patChars = chars(ci ? needle.toLowerCase() : needle);
-  if (!patChars.length) return out;
   for (let r = 0; r < t.lines.length; r++) {
-    // 按 char 数组做匹配 —— String.indexOf 返回 UTF-16 下标, 与 char 列
-    // 混用会在 surrogate pair 处错位 (emoji / CJK 扩展 B 补字).
-    const hay = chars(ci ? t.lines[r].toLowerCase() : t.lines[r]);
-    const first = patChars[0].toLowerCase();
-    for (let i = 0; i + patChars.length <= hay.length; i++) {
-      let hit = true;
-      for (let k = 0; k < patChars.length; k++) {
-        const a = ci ? hay[i + k].toLowerCase() : hay[i + k];
-        if (a !== patChars[k]) { hit = false; break; }
-      }
-      if (hit) {
-        out.push({ row: r, col: i, len: patChars.length });
-        if (out.length > 5000) return out;
-        i += patChars.length - 1;
-      }
-      void first;
+    const line = t.lines[r];
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(line))) {
+      if (m[0] === "") { re.lastIndex++; continue; }                          // 空匹配不算命中
+      out.push({ row: r, col: charLen(line.slice(0, m.index)), len: charLen(m[0]), text: m[0] });
+      if (out.length > 5000) return out;
     }
   }
   return out;
@@ -5478,118 +5512,159 @@ function gotoHit(hit) {
   if (!t || !hit) return;
   t.cursor = { row: hit.row, col: hit.col };
   t.sel = { r0: hit.row, c0: hit.col, r1: hit.row, c1: hit.col + hit.len };
+  t.selAnchor = { row: hit.row, col: hit.col };
   renderVim(t);
   setPos("Ln " + (hit.row + 1) + ", Col " + (hit.col + 1));
+  const el = edContent.querySelectorAll(".hl-row")[hit.row];
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
 }
 
-function findNext() {
+// dir: 1 下 / -1 上. 到头后按「先頭(末尾)から再検索」选项循环
+function findStep(dir) {
   const t = getActiveTab();
   if (!t) return;
   if (!FIND_STATE.needle) { openFind(); return; }
+  if (!buildFindRegex(FIND_STATE)) { setTip("正则表达式无效: " + FIND_STATE.needle); return; }
   const hits = findInTab(t, FIND_STATE.needle, FIND_STATE);
-  if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); return; }
-  // 从当前光标之后找, 循环
-  let idx = hits.findIndex((h) => h.row > t.cursor.row ||
-    (h.row === t.cursor.row && h.col > t.cursor.col));
-  if (idx < 0) idx = 0;
   FIND_STATE.hits = hits;
-  FIND_STATE.idx = idx;
-  gotoHit(hits[idx]);
-  setTip("找到 " + (idx + 1) + "/" + hits.length);
-}
-
-function findPrev() {
-  const t = getActiveTab();
-  if (!t) return;
-  if (!FIND_STATE.needle) { openFind(); return; }
-  const hits = findInTab(t, FIND_STATE.needle, FIND_STATE);
-  if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); return; }
-  let idx = -1;
-  for (let i = hits.length - 1; i >= 0; i--) {
-    if (hits[i].row < t.cursor.row || (hits[i].row === t.cursor.row && hits[i].col < t.cursor.col)) { idx = i; break; }
+  if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); scheduleMarks(); return; }
+  const cr = t.cursor.row, cc = t.cursor.col;
+  let idx = -1, wrapped = false;
+  // 当前命中正被选中时从它的「下一处」找; 否则 (光标只是停在那里) 光标位置上的命中本身也算
+  const onHit = t.sel && t.sel.r0 === cr && t.sel.c0 === cc;
+  if (dir > 0) {
+    idx = hits.findIndex((h) => h.row > cr || (h.row === cr && (onHit ? h.col > cc : h.col >= cc)));
+    if (idx < 0) { if (!FIND_STATE.wrap) { setTip("これ以上見つかりません (末尾)"); return; } idx = 0; wrapped = true; }
+  } else {
+    for (let i = hits.length - 1; i >= 0; i--) if (hits[i].row < cr || (hits[i].row === cr && hits[i].col < cc)) { idx = i; break; }
+    if (idx < 0) { if (!FIND_STATE.wrap) { setTip("これ以上見つかりません (先頭)"); return; } idx = hits.length - 1; wrapped = true; }
   }
-  if (idx < 0) idx = hits.length - 1;
-  FIND_STATE.hits = hits;
   FIND_STATE.idx = idx;
   gotoHit(hits[idx]);
-  setTip("找到 " + (idx + 1) + "/" + hits.length);
+  setTip((wrapped ? (dir > 0 ? "先頭から再検索しました — " : "末尾から再検索しました — ") : "") + "找到 " + (idx + 1) + "/" + hits.length);
 }
+function findNext() { findStep(1); }
+function findPrev() { findStep(-1); }
 
-// 查找/替换 面板
+// 查找/替换 面板 (modal; 选项对标 Sakura CDlgFind / CDlgReplace)
 function openFindDialog(withReplace) {
   const t = getActiveTab();
-  const cur = t ? selectionText(t) : "";
+  const cur = t && selNonEmpty(t) && t.sel.r0 === t.sel.r1 ? selectionText(t) : "";
+  if (t) FIND_STATE.startPos = { row: t.cursor.row, col: t.cursor.col };
+  const inp = 'style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;"';
+  const cb = (id, label, on) => '<label style="margin-right:12px"><input type="checkbox" id="' + id + '" ' + (on ? "checked" : "") + ' /> ' + label + "</label>";
   const html =
-    '<div class="opt-row"><input id="find-input" placeholder="查找" value="' + escapeHtml(cur || FIND_STATE.needle) +
-    '" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>' +
-    '<div class="opt-row"><label><input type="checkbox" id="find-case" ' +
-    (FIND_STATE.matchCase ? "checked" : "") + ' /> 区分大小写</label>' +
-    '<label style="margin-left:12px"><input type="checkbox" id="find-regex" ' +
-    (FIND_STATE.useRegex ? "checked" : "") + ' /> 正则</label></div>' +
-    (withReplace
-      ? '<div class="opt-row"><input id="repl-input" placeholder="替换为" style="width:100%;padding:4px 6px;background:#3c3c3c;color:white;border:1px solid #555;" /></div>'
-      : "") +
+    '<div class="opt-row"><input id="find-input" placeholder="検索文字列" value="' + escapeHtml(cur || FIND_STATE.needle) + '" ' + inp + " /></div>" +
+    (withReplace ? '<div class="opt-row"><input id="repl-input" placeholder="置換後" ' + inp + " /></div>" : "") +
+    '<div class="opt-row">' + cb("find-case", "区分大小写", FIND_STATE.matchCase) + cb("find-word", "单词单位", FIND_STATE.wholeWord) + cb("find-regex", "正则", FIND_STATE.useRegex) + "</div>" +
+    '<div class="opt-row">' + cb("find-wrap", "先頭(末尾)から再検索", FIND_STATE.wrap) + cb("find-marks", "全部强调显示", FIND_STATE.marks) + "</div>" +
+    (withReplace ? '<div class="opt-row">置換対象: <label><input type="radio" name="find-scope" value="sel" ' + (FIND_STATE.scope === "sel" ? "checked" : "") + ' /> 选择范围</label> <label><input type="radio" name="find-scope" value="all" ' + (FIND_STATE.scope !== "sel" ? "checked" : "") + ' /> 文件全体</label></div>' : "") +
     '<div id="find-status" class="empty-hint"></div>';
   openModal({
-    title: withReplace ? "查找和替换" : "查找",
+    title: withReplace ? "置換" : "検索",
     bodyHTML: html,
     buttons: [
-      { label: "查找下一个", cmd: "find-next" },
-      ...(withReplace ? [{ label: "全部替换", cmd: "replace-all" }] : []),
+      { label: "↑ 上検索", cmd: "find-prev" },
+      { label: "↓ 下検索", cmd: "find-next" },
+      ...(withReplace ? [{ label: "置換", cmd: "replace-one" }, { label: "すべて置換", cmd: "replace-all" }] : []),
       { label: "关闭", cmd: "modal-close" },
     ],
   });
-  const inp = document.getElementById("find-input");
-  if (inp) { inp.focus(); inp.select(); inp.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { FIND_STATE.needle = inp.value; findNext(); }
-  }); }
-  const cs = document.getElementById("find-case");
-  if (cs) cs.addEventListener("change", () => { FIND_STATE.matchCase = cs.checked; });
-  const rg = document.getElementById("find-regex");
-  if (rg) rg.addEventListener("change", () => { FIND_STATE.useRegex = rg.checked; });
+  const sync = () => {
+    const g = (id) => document.getElementById(id);
+    FIND_STATE.needle = g("find-input").value;
+    FIND_STATE.matchCase = g("find-case").checked; FIND_STATE.wholeWord = g("find-word").checked; FIND_STATE.useRegex = g("find-regex").checked;
+    FIND_STATE.wrap = g("find-wrap").checked; FIND_STATE.marks = g("find-marks").checked;
+    const sc = document.querySelector('input[name="find-scope"]:checked'); if (sc) FIND_STATE.scope = sc.value;
+    const st = g("find-status");
+    if (st) st.textContent = FIND_STATE.needle && !buildFindRegex(FIND_STATE) ? "正则表达式无效" : "";
+    scheduleMarks();
+  };
+  const el = document.getElementById("find-input");
+  if (el) {
+    el.focus(); el.select();
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); sync(); if (e.shiftKey) findPrev(); else findNext(); if (FIND_STATE.autoClose) closeModal(); }
+    });
+  }
+  mdBody.querySelectorAll("input").forEach((i) => i.addEventListener("input", sync));
+  mdBody.querySelectorAll("input[type=checkbox],input[type=radio]").forEach((i) => i.addEventListener("change", sync));
+  sync();
   const rp = document.getElementById("repl-input");
   if (rp) rp.focus();
 }
 
 function openFind() { openFindDialog(false); }
 function openReplace() { openFindDialog(true); }
-function openIncSearch() { openFindDialog(false); }
 
-// 当前 tab 内全部替换
+// 替换文本展开: 正则模式支持 $1 / \1 / $&; 非正则按字面量
+function expandReplacement(m, repl) {
+  if (!FIND_STATE.useRegex) return repl;
+  return repl.replace(/\$(\d+|&)|\\(\d)/g, (_, a, b) => { const k = a !== undefined ? a : b; return k === "&" ? m[0] : (m[+k] ?? ""); });
+}
+function replaceInLine(line, re, repl, from = 0, to = Infinity) {
+  let out = "", at = 0, n = 0, m;
+  re.lastIndex = 0;
+  while ((m = re.exec(line))) {
+    if (m[0] === "") { re.lastIndex++; continue; }
+    const col = charLen(line.slice(0, m.index));
+    if (col < from || col + charLen(m[0]) > to) continue;
+    out += line.slice(at, m.index) + expandReplacement(m, repl);
+    at = m.index + m[0].length; n++;
+  }
+  return { text: out + line.slice(at), n };
+}
+
+// 置換 (一个): 当前选区正好是一处命中就替换它, 然后找下一个; 否则先定位到下一处
+function replaceOne() {
+  const t = getActiveTab();
+  const rp = document.getElementById("repl-input");
+  if (!t) return;
+  if (!FIND_STATE.needle) { setTip("先输入查找内容"); return; }
+  const re = buildFindRegex(FIND_STATE);
+  if (!re) { setTip("正则表达式无效"); return; }
+  if (selNonEmpty(t) && t.sel.r0 === t.sel.r1) {
+    const line = t.lines[t.sel.r0], seg = charSlice(line, t.sel.c0, t.sel.c1);
+    const one = buildFindRegex(FIND_STATE, false);
+    const m = one && one.exec(seg);
+    if (m && m[0] === seg) {
+      snapshot(t);
+      const rep = expandReplacement(m, rp ? rp.value : "");
+      t.lines[t.sel.r0] = charSlice(line, 0, t.sel.c0) + rep + charSlice(line, t.sel.c1);
+      t.cursor = { row: t.sel.r0, col: t.sel.c0 + charLen(rep) - (charLen(rep) ? 1 : 0) };   // 落在替换文本最后一个字符上, findNext 取「严格在其后」的命中
+      t.sel = null; t.dirty = true;
+      if (charLen(rep)) t.cursor.col += 0; else t.cursor.col = Math.max(0, t.cursor.col - 1);
+      renderVim(t);
+    }
+  }
+  findNext();
+}
+
+// 全部替换: scope = sel (选择范围) / all (文件全体)
 function replaceAll() {
   const t = getActiveTab();
   const rp = document.getElementById("repl-input");
   const needle = FIND_STATE.needle;
   if (!t) return;
   if (!needle) { setTip("先输入查找内容"); return; }
+  const re = buildFindRegex(FIND_STATE);
+  if (!re) { setTip("正则表达式无效"); return; }
   const withText = rp ? rp.value : "";
-  const ci = !FIND_STATE.matchCase;
+  const sc = document.querySelector('input[name="find-scope"]:checked');
+  const scope = sc ? sc.value : FIND_STATE.scope;
+  let r0 = 0, r1 = t.lines.length - 1, c0 = 0, c1 = Infinity;
+  if (scope === "sel" && selNonEmpty(t)) { r0 = t.sel.r0; r1 = t.sel.r1; c0 = t.sel.c0; c1 = t.sel.c1 === Infinity ? Infinity : t.sel.c1; }
   let count = 0;
   snapshot(t);
-  for (let r = 0; r < t.lines.length; r++) {
-    const line = t.lines[r];
-    const hay = ci ? line.toLowerCase() : line;
-    const pat = ci ? needle.toLowerCase() : needle;
-    if (!hay.includes(pat)) continue;
-    if (FIND_STATE.useRegex) {
-      try {
-        const re = new RegExp(needle, ci ? "gi" : "g");
-        count += (line.match(re) || []).length;
-        t.lines[r] = line.replace(re, withText);
-      } catch (e) { /* 非法正则, 跳过 */ }
-    } else {
-      let from = 0, at, out = "";
-      while ((at = hay.indexOf(pat, from)) >= 0) {
-        out += line.slice(from, at) + withText;
-        from = at + pat.length;
-        count++;
-      }
-      t.lines[r] = out + line.slice(from);
-    }
+  for (let r = r0; r <= r1; r++) {
+    const from = r === r0 ? c0 : 0;
+    const to = r === r1 ? c1 : Infinity;
+    const res = replaceInLine(t.lines[r], re, withText, from, to);
+    if (res.n) { t.lines[r] = res.text; count += res.n; }
   }
-  if (count > 0) { t.dirty = true; renderVim(t); }
+  if (count > 0) { t.dirty = true; t.sel = null; renderVim(t); }
   closeModal();
-  setTip("替换 " + count + " 处");
+  setTip("置換 " + count + " 処");
 }
 
 /* Grep 对话框的跨次状态 (SPA-01 G-75: 搜索/替换条件全局共享, 复用上次值).
@@ -7004,9 +7079,16 @@ function colSelRect(t) {
 function columnInsert(text) {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
-  const { r0, r1, c0 } = colSelRect(t);
+  const { r0, r1, c0, c1 } = colSelRect(t);
   const parts = String(text).split("\n");
   snapshot(t);
+  // 选区里已有的内容要被覆盖掉 (Sakura: 在矩形选区里输入 = 先删掉选中的矩形内容, 再每行插入), 不是插在它前面
+  if (c1 > c0) {
+    for (let r = r0; r <= r1; r++) {
+      const l = t.lines[r] || "";
+      t.lines[r] = charSlice(l, 0, c0) + charSlice(l, c1, charLen(l));
+    }
+  }
   for (let r = r0; r <= r1; r++) {
     const add = parts[r - r0] !== undefined ? parts[r - r0] : parts[parts.length - 1];
     if (!add) continue;
@@ -7015,7 +7097,8 @@ function columnInsert(text) {
     const padded = charLen(line) < c0 ? line + " ".repeat(c0 - charLen(line)) : line;
     t.lines[r] = charSlice(padded, 0, c0) + add + charSlice(padded, c0, charLen(padded));
   }
-  t.colSel = { r0, c0: c0 + 1, r1, c1: c0 + 1 };   // 插入点右移一列, 可以接着连续输入
+  const adv = Math.max(1, charLen(parts[0] || ""));   // 插入点右移「刚插入的字符数」列 (IME 一次上屏多个字时也对), 可以接着连续输入
+  t.colSel = { r0, c0: c0 + adv, r1, c1: c0 + adv };
   t.dirty = true;
   renderVim(t);
   updateCaret(false);
@@ -7027,7 +7110,8 @@ function columnInsert(text) {
 function columnBackspace() {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
-  const { r0, r1, c0 } = colSelRect(t);
+  const { r0, r1, c0, c1 } = colSelRect(t);
+  if (c1 > c0) { columnDelete(); t.colSel = { r0, c0, r1, c1: c0 }; syncColumnSelectUI(t); renderVim(t); return; }   // 有选中的矩形内容: 退格 = 删掉它 (保留插入点)
   snapshot(t);
   for (let r = r0; r <= r1; r++) {
     const line = t.lines[r] || "";
@@ -7594,9 +7678,9 @@ document.addEventListener("paste", (e) => {
 let IME_ACTIVE = false;
 
 // t.cursor 对应的 DOM 位置 (和 caretRect 同一套换算; 整篇单文本节点 / 每行一个 .hl-row 两种形态)
-function domPointAt(t) {
-  const row = t.cursor.row, line = t.lines[row] || "";
-  const u = u16Index(line, t.cursor.col);
+function domPointAt(t, row = t.cursor.row, col = t.cursor.col) {
+  const line = t.lines[row] || "";
+  const u = u16Index(line, col);
   const only = edContent.firstChild;
   if (only && only.nodeType === 3 && edContent.childNodes.length === 1) {
     let off = u;
@@ -7858,6 +7942,203 @@ function insertTextAtCursor(text) {
   if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; }
   for (const ch of chars(text)) insertCharMulti(ch);
 }
+
+
+/* ===== 搜索标记 / 対括弧強調 / 书签标记 (CSS Highlight API: 不改 DOM 结构, 不影响光标和选区换算) ===== */
+const BRACKETS = { "(": ")", "[": "]", "{": "}", "<": ">", "（": "）", "「": "」", "『": "』", "【": "】", "［": "］", "｛": "｝", "〈": "〉", "《": "》", "〔": "〕" };
+const BRACKET_REV = Object.fromEntries(Object.entries(BRACKETS).map(([a, b]) => [b, a]));
+function findMatchingBracket(t, row, col) {
+  const ch = charArray(t.lines[row] || "")[col];
+  const open = BRACKETS[ch] !== undefined, close = BRACKET_REV[ch] !== undefined;
+  if (!open && !close) return null;
+  const want = open ? BRACKETS[ch] : BRACKET_REV[ch], dir = open ? 1 : -1;
+  let depth = 0, scanned = 0;
+  let r = row, c = col;
+  while (r >= 0 && r < t.lines.length && scanned < 30000) {
+    const arr = charArray(t.lines[r] || "");
+    for (; c >= 0 && c < arr.length; c += dir) {
+      scanned++;
+      if (arr[c] === ch) depth++;
+      else if (arr[c] === want) { depth--; if (depth === 0) return { row: r, col: c }; }
+    }
+    r += dir; c = dir > 0 ? 0 : charLen(t.lines[r] || "") - 1;
+  }
+  return null;
+}
+let _marksQueued = false;
+function scheduleMarks() { if (_marksQueued) return; _marksQueued = true; requestAnimationFrame(() => { _marksQueued = false; try { paintMarks(); } catch (_) {} }); }
+function paintMarks() {
+  if (!window.CSS || !CSS.highlights || typeof Highlight === "undefined") return;
+  const t = getActiveTab();
+  const set = (name, ranges) => { if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges)); else CSS.highlights.delete(name); };
+  const mk = (r1, c1, r2, c2) => {
+    const a = domPointAt(t, r1, c1), b = domPointAt(t, r2, c2);
+    if (!a || !b || a.node.nodeType !== 3 || b.node.nodeType !== 3) return null;
+    const rg = document.createRange(); rg.setStart(a.node, a.off); rg.setEnd(b.node, b.off); return rg;
+  };
+  const marks = [];
+  if (t && FIND_STATE.marks && FIND_STATE.needle && !IME_ACTIVE) {
+    const re = buildFindRegex(FIND_STATE);
+    if (re) {
+      const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+      const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 20), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 40);
+      for (let r = first; r <= last && marks.length < 1500; r++) {
+        const line = t.lines[r]; re.lastIndex = 0; let m;
+        while ((m = re.exec(line))) {
+          if (m[0] === "") { re.lastIndex++; continue; }
+          const col = charLen(line.slice(0, m.index)), rg = mk(r, col, r, col + charLen(m[0]));
+          if (rg) marks.push(rg);
+        }
+      }
+    }
+  }
+  set("find-marks", marks);
+  const br = [];
+  if (t && !IME_ACTIVE && !selNonEmpty(t)) {
+    for (const c of [t.cursor.col, t.cursor.col - 1]) {
+      if (c < 0) continue;
+      const pair = findMatchingBracket(t, t.cursor.row, c);
+      if (pair) { const a = mk(t.cursor.row, c, t.cursor.row, c + 1), b = mk(pair.row, pair.col, pair.row, pair.col + 1); if (a && b) { br.push(a, b); } break; }
+    }
+  }
+  set("bracket-pair", br);
+  const gm = [];
+  const bms = t ? (BOOKMARKS.get(bookmarkKey(t)) || []) : [];
+  if (bms.length && gutter.firstChild && gutter.firstChild.nodeType === 3) {
+    const gt = gutter.firstChild;
+    for (const b of bms) {
+      let off = 0; for (let j = 0; j < b.row; j++) off += String(j + 1).length + 1;
+      if (off + String(b.row + 1).length <= gt.length) { const rg = document.createRange(); rg.setStart(gt, off); rg.setEnd(gt, off + String(b.row + 1).length); gm.push(rg); }
+    }
+  }
+  set("bookmark-gutter", gm);
+}
+for (const n of ["renderVim", "paintActive", "updateCaret"]) {       // 每次重绘 / 光标移动后刷新标记
+  const f = window[n];
+  if (typeof f === "function") window[n] = function (...a) { const r = f.apply(this, a); scheduleMarks(); return r; };
+}
+edContent.addEventListener("scroll", scheduleMarks);
+
+/* ===== 增量搜索 (インクリメンタルサーチ): 底部输入条, 边输入边跳 ===== */
+const ISEARCH = { dir: 1, regex: false, start: null, bar: null };
+function isearchBar() {
+  if (ISEARCH.bar) return ISEARCH.bar;
+  const bar = document.createElement("div");
+  bar.id = "isearch"; bar.hidden = true;
+  bar.style.cssText = "position:fixed;left:0;right:0;bottom:var(--h-status,22px);z-index:60;display:flex;gap:8px;align-items:center;padding:3px 8px;background:var(--bg-bar,#252526);border-top:1px solid var(--border,#555);color:var(--fg,#ddd);font-size:12px";
+  bar.innerHTML = '<span id="is-label"></span><input id="is-input" style="flex:1;max-width:420px;padding:2px 6px;background:#3c3c3c;color:#fff;border:1px solid #666" /><span id="is-count" style="opacity:.8"></span><span style="opacity:.6">Enter/↓ 次へ · Shift+Enter/↑ 前へ · Esc 取消</span>';
+  document.body.appendChild(bar);
+  const inp = bar.querySelector("#is-input");
+  inp.addEventListener("input", () => isearchRun(false));
+  inp.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Escape") { e.preventDefault(); isearchClose(true); }
+    else if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); ISEARCH.dir = (e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey)) ? -1 : 1; isearchRun(true); }
+    else if (e.key === "F3") { e.preventDefault(); ISEARCH.dir = e.shiftKey ? -1 : 1; isearchRun(true); }
+  });
+  inp.addEventListener("blur", () => setTimeout(() => { if (!bar.contains(document.activeElement)) isearchClose(false); }, 0));
+  ISEARCH.bar = bar;
+  return bar;
+}
+function isearchOpen(dir, regex) {
+  const t = getActiveTab(); if (!t) return;
+  const bar = isearchBar();
+  ISEARCH.dir = dir; ISEARCH.regex = regex; ISEARCH.start = { row: t.cursor.row, col: t.cursor.col };
+  bar.querySelector("#is-label").textContent = (regex ? "正規表現 " : "") + (dir > 0 ? "前方" : "後方") + "インクリメンタルサーチ:";
+  bar.querySelector("#is-count").textContent = "";
+  bar.hidden = false;
+  const inp = bar.querySelector("#is-input"); inp.value = ""; inp.focus();
+}
+function isearchClose(restore) {
+  const bar = ISEARCH.bar; if (!bar || bar.hidden) return;
+  bar.hidden = true;
+  const t = getActiveTab();
+  if (restore && t && ISEARCH.start) { t.cursor = Object.assign({}, ISEARCH.start); t.sel = null; renderVim(t); }
+  FIND_STATE.useRegex = false;
+  edContent.focus();
+}
+// next=true: 从当前命中的下一处找; false: 输入变化后从起点重新找 (含起点本身)
+function isearchRun(next) {
+  const t = getActiveTab(); const bar = ISEARCH.bar; if (!t || !bar) return;
+  const q = bar.querySelector("#is-input").value;
+  FIND_STATE.needle = q; FIND_STATE.useRegex = ISEARCH.regex; FIND_STATE.matchCase = /[A-Z]/.test(q);   // 含大写才区分大小写 (Sakura 同)
+  const cnt = bar.querySelector("#is-count");
+  if (!q) { cnt.textContent = ""; t.sel = null; renderVim(t); return; }
+  if (!buildFindRegex(FIND_STATE)) { cnt.textContent = "正则无效"; return; }
+  const hits = findInTab(t, q, FIND_STATE);
+  if (!hits.length) { cnt.textContent = "見つかりません"; return; }
+  const from = next && t.sel ? { row: t.cursor.row, col: t.cursor.col } : ISEARCH.start;
+  const after = (h) => h.row > from.row || (h.row === from.row && h.col > from.col);
+  const atOrAfter = (h) => h.row > from.row || (h.row === from.row && h.col >= from.col);
+  let idx;
+  if (ISEARCH.dir > 0) { idx = hits.findIndex(next ? after : atOrAfter); if (idx < 0) idx = 0; }
+  else { idx = -1; for (let i = hits.length - 1; i >= 0; i--) { const h = hits[i]; if (next ? !atOrAfter(h) : (h.row < from.row || (h.row === from.row && h.col <= from.col))) { idx = i; break; } } if (idx < 0) idx = hits.length - 1; }
+  gotoHit(hits[idx]);
+  cnt.textContent = (idx + 1) + "/" + hits.length;
+  if (document.activeElement !== bar.querySelector("#is-input")) bar.querySelector("#is-input").focus();
+}
+function openIncSearch() { isearchOpen(1, false); }
+
+/* ===== 其余查找 / 跳转命令 ===== */
+Object.assign(SAKURA_CMDS, {
+  "isearch-fwd": () => isearchOpen(1, false), "isearch-back": () => isearchOpen(-1, false),
+  "isearch-regex-fwd": () => isearchOpen(1, true), "isearch-regex-back": () => isearchOpen(-1, true),
+  "search-clearmark": () => { FIND_STATE.marks = !FIND_STATE.marks; scheduleMarks(); setTip("検索マーク: " + (FIND_STATE.marks ? "表示" : "非表示")); },
+  "jump-srchstart": () => {
+    const t = getActiveTab(), p = FIND_STATE.startPos;
+    if (!t || !p) { setTip("検索開始位置がありません"); return; }
+    jumpHistSet(); t.cursor = { row: Math.min(p.row, t.lines.length - 1), col: p.col }; t.sel = null; paintActive();
+  },
+  "bracket-pair": () => {
+    const t = getActiveTab(); if (!t) return;
+    for (const c of [t.cursor.col, t.cursor.col - 1]) {
+      if (c < 0) continue;
+      const pair = findMatchingBracket(t, t.cursor.row, c);
+      if (pair) { jumpHistSet(); t.cursor = { row: pair.row, col: pair.col }; t.sel = null; paintActive(); return; }
+    }
+    setTip("対括弧が見つかりません");
+  },
+  "bookmark-reset": () => { const t = getActiveTab(); if (!t) return; BOOKMARKS.set(bookmarkKey(t), []); scheduleMarks(); setTip("ブックマークを全解除しました"); },
+  "bookmark-view": () => {
+    const t = getActiveTab(); if (!t) return;
+    const list = (BOOKMARKS.get(bookmarkKey(t)) || []).slice().sort((a, b) => a.row - b.row);
+    const rows = list.length ? list.map((b) => '<div class="opt-row" data-bm="' + b.row + '" style="cursor:pointer;font-family:monospace;white-space:pre">' + (b.row + 1) + ": " + escapeHtml(t.lines[b.row] || "") + "</div>").join("") : '<div class="empty-hint">ブックマークはありません</div>';
+    openModal({ title: "ブックマークの一覧", bodyHTML: rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+    mdBody.querySelectorAll("[data-bm]").forEach((r) => r.addEventListener("click", () => { closeModal(); jumpHistSet(); t.cursor = { row: +r.dataset.bm, col: 0 }; t.sel = null; paintActive(); }));
+  },
+  "tag-jump": async () => {
+    const t = getActiveTab(); if (!t) return;
+    const { a, b } = wordBoundsAtCursor(t);
+    const word = charSlice(t.lines[t.cursor.row] || "", a, b);
+    if (!word) { setTip("カーソル位置に単語がありません"); return; }
+    jumpHistSet();
+    const re = new RegExp("^[ \\t]*(?:(?:pub|export|async|static|public|private|protected|final|abstract|extern|inline|unsafe)\\s+)*(?:fn|struct|enum|trait|impl|type|const|class|def|function|func|interface|module|namespace|let|var)\\s+" + escapeRegexSrc(word) + "(?![\\p{L}\\p{N}_])", "u");
+    for (let r = 0; r < t.lines.length; r++) {
+      if (r === t.cursor.row) continue;
+      if (re.test(t.lines[r])) { t.cursor = { row: r, col: charLen(t.lines[r].match(/^[ \t]*/)[0]) }; t.sel = null; paintActive(); setTip("タグジャンプ: " + word + " @ Ln " + (r + 1)); return; }
+    }
+    try {
+      const resp = await invoke("search", { pattern: "(fn|struct|enum|trait|type|class|def|function|func|interface)[ \\t]+" + word, regex: true, case_sensitive: true, max_results: 20 });
+      const hit = ((resp && resp.results) || []).find((m) => !(stripVerbatim(m.path) === stripVerbatim(t.path || "") && m.line - 1 === t.cursor.row));
+      if (hit) { await gotoPathLine(hit.path, hit.line); setTip("タグジャンプ: " + word + " → " + hit.path + ":" + hit.line); return; }
+    } catch (_) { /* 没有项目 / 后端不可用 */ }
+    setTip("タグが見つかりません: " + word);
+  },
+  "tag-jump-back": () => jumpHistGo(-1),
+  "open-hc": async () => {
+    const t = getActiveTab(); if (!t || !t.path) { setTip("ファイルがありません"); return; }
+    const m = /^(.*)\.([^.\\/]+)$/.exec(t.path); if (!m) return;
+    const src = ["c", "cpp", "cc", "cxx"], hdr = ["h", "hpp", "hh", "hxx"];
+    const cands = (hdr.includes(m[2].toLowerCase()) ? src : hdr).map((e) => m[1] + "." + e);
+    for (const c of cands) if (await pathExists(c)) { await openFile(c); return; }
+    setTip("対応する C/C++ ファイルが見つかりません");
+  },
+});
+Object.assign(KEYMAP, {
+  "C-F3": "search-clearmark", "C-S-F3": "jump-srchstart", "C-[": "bracket-pair", "C-]": "bracket-pair",
+  "C-S-F2": "bookmark-reset", "A-F2": "bookmark-view", "C-F2": "bookmark-toggle", "F2": "bookmark-next", "S-F2": "bookmark-prev", "C-t": "tag-jump", "F12": "tag-jump", "C-S-t": "tag-jump-back", "S-F12": "tag-jump-back", "C-S-c": "open-hc",
+});
+try { applyMenuShortcuts(); } catch (_) {}
 
 // ===== Welcome page =====
 function showWelcome() {

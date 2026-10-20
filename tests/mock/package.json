@@ -1,0 +1,13 @@
+{
+  "name": "ide1.0-mock-regression",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "IDE1.0 配套回归项目: 测试替身 (对话框 / 剪贴板 / Tauri IPC / IME / 拖放 / 桌面明暗) + 真实输入回归用例。Playwright 复用 ../uat/node_modules。",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"specs/*/*.test.mjs\"",
+    "test:web": "node --test --test-concurrency=1 \"specs/web/*.test.mjs\"",
+    "test:desktop": "node --test --test-concurrency=1 \"specs/desktop/*.test.mjs\"",
+    "fixtures": "node fixtures/make-fixtures.mjs"
+  }
+}
