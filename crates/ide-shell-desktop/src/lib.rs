@@ -236,7 +236,13 @@ pub struct DirEntry {
 pub struct FileContent {
     pub name: String,
     pub path: String,
+    /// LF 换行的文本 (原始换行种类在 `eol` 里)
     pub content: String,
+    pub encoding: String,
+    pub bom: String,
+    pub eol: String,
+    pub mixed_eol: bool,
+    pub lossy: bool,
 }
 
 // ===== Tauri commands =====
@@ -475,9 +481,14 @@ fn list_dir(state: tauri::State<'_, ProjectRoot>, path: String) -> Result<Vec<Di
     list_dir_pub(&root, &path)
 }
 
-/// 读文件 — 限项目根内, UTF-8 文本, ≤ 4MB.
+/// 读文件 — 限项目根内, ≤ 4MB. 自动判别编码 (BOM / UTF-8 / JIS / SJIS / EUC ...), 记住 BOM 与换行.
 /// **纯函数** — 不依赖 tauri::State, IT/UT 可直接调.
 pub fn read_file_pub(root: &Path, path: &str) -> Result<FileContent, String> {
+    read_file_enc_pub(root, path, None)
+}
+
+/// 同上, `encoding` = 指定编码重新打开 (F_FILE_REOPEN_*).
+pub fn read_file_enc_pub(root: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
     let target = resolve_in_project_pub(root, path)?;
     if !target.is_file() {
         return Err(format!("不是文件: {path}"));
@@ -490,32 +501,51 @@ pub fn read_file_pub(root: &Path, path: &str) -> Result<FileContent, String> {
             "文件过大 ({size} bytes > {MAX_FILE_BYTES} bytes) — 保持轻量, 请用外部工具处理"
         ));
     }
-    let content = std::fs::read_to_string(&target)
-        .map_err(|e| format!("读取失败 (仅支持 UTF-8 文本): {e}"))?;
+    let d = editcore::document_io::read_doc(&target, encoding)?;
     Ok(FileContent {
         name: target
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.to_string()),
         path: target.to_string_lossy().into_owned(),
-        content,
+        content: d.content,
+        encoding: d.charset.label().to_string(),
+        bom: d.bom.name().to_string(),
+        eol: d.eol.label().to_ascii_lowercase(),
+        mixed_eol: d.mixed_eol,
+        lossy: d.lossy,
     })
 }
 
 #[tauri::command]
-fn read_file(state: tauri::State<'_, ProjectRoot>, path: String) -> Result<FileContent, String> {
+fn read_file(
+    state: tauri::State<'_, ProjectRoot>,
+    path: String,
+    encoding: Option<String>,
+) -> Result<FileContent, String> {
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    read_file_pub(&root, &path)
+    read_file_enc_pub(&root, &path, encoding.as_deref())
 }
 
 /// 写文件 — 限项目根内. 返回写入字节数.
 /// **纯函数** — 不依赖 tauri::State, IT/UT 可直接调.
 pub fn write_file_pub(root: &Path, path: &str, content: &str) -> Result<usize, String> {
+    write_file_spec_pub(root, path, content, &editcore::document_io::WriteSpec::default())
+}
+
+/// 同上, 带编码 / BOM / 换行 (指定 encoding 时 content 是 LF 文本).
+pub fn write_file_spec_pub(
+    root: &Path,
+    path: &str,
+    content: &str,
+    spec: &editcore::document_io::WriteSpec,
+) -> Result<usize, String> {
     let target = resolve_in_project_pub(root, path)?;
-    std::fs::write(&target, content.as_bytes()).map_err(|e| format!("写入失败 {path}: {e}"))?;
-    Ok(content.len())
+    editcore::document_io::write_doc(&target, content, spec).map_err(|e| {
+        if e.starts_with("UNMAPPABLE:") { e } else { format!("写入失败 {path}: {e}") }
+    })
 }
 
 #[tauri::command]
@@ -523,11 +553,16 @@ fn write_file(
     state: tauri::State<'_, ProjectRoot>,
     path: String,
     content: String,
+    encoding: Option<String>,
+    bom: Option<String>,
+    eol: Option<String>,
+    force: Option<bool>,
 ) -> Result<usize, String> {
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    write_file_pub(&root, &path, &content)
+    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false) };
+    write_file_spec_pub(&root, &path, &content, &spec)
 }
 
 /// 完整内置 wiki — 与 CLI `--help` 同源 (main.rs 打印同一常量).

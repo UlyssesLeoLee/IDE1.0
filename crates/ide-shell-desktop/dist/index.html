@@ -1311,6 +1311,7 @@
           <div class="menu-row" data-cmd="close-all" data-shortcut="Ctrl+Shift+W"><span>关闭全部</span><span class="mr-shortcut">Ctrl+Shift+W</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="reload" data-shortcut="Ctrl+R"><span>重新载入</span><span class="mr-shortcut">Ctrl+R</span></div>
+          <div class="menu-row menu-submenu" data-submenu="reopen"><span>以指定编码重新打开</span><span class="mr-shortcut">▶</span><div class="submenu-dropdown"><div class="menu-row" data-cmd="reopen-UTF-8"><span>UTF-8</span></div><div class="menu-row" data-cmd="reopen-SJIS"><span>SJIS</span></div><div class="menu-row" data-cmd="reopen-EUC-JP"><span>EUC-JP</span></div><div class="menu-row" data-cmd="reopen-JIS"><span>JIS</span></div><div class="menu-row" data-cmd="reopen-Unicode"><span>Unicode</span></div><div class="menu-row" data-cmd="reopen-UnicodeBE"><span>UnicodeBE</span></div><div class="menu-row" data-cmd="reopen-Latin1"><span>Latin1</span></div><div class="menu-row" data-cmd="reopen-CESU-8"><span>CESU-8</span></div><div class="menu-row" data-cmd="reopen-UTF-7"><span>UTF-7</span></div><div class="menu-row" data-cmd="reopen-GBK"><span>GBK</span></div><div class="menu-row" data-cmd="reopen-Big5"><span>Big5</span></div><div class="menu-row" data-cmd="reopen-EUC-KR"><span>EUC-KR</span></div></div></div>
           <div class="menu-row menu-submenu" data-submenu="recent">
             <span>最近使用</span>
             <span class="mr-shortcut">▶</span>
@@ -1515,6 +1516,10 @@
           <div class="menu-row" data-cmd="font"><span>字体</span></div>
           <div class="menu-row" data-cmd="theme-select"><span>主题</span></div>
           <div class="menu-row" data-cmd="language" data-shortcut="Alt+L"><span>语言</span><span class="mr-shortcut">Alt+L</span></div>
+          <div class="menu-row" data-cmd="charset"><span>文字コードセット指定...</span></div>
+          <div class="menu-row" data-cmd="eol-crlf"><span>入力改行コード: CRLF</span></div>
+          <div class="menu-row" data-cmd="eol-lf"><span>入力改行コード: LF</span></div>
+          <div class="menu-row" data-cmd="eol-cr"><span>入力改行コード: CR</span></div>
           <div class="menu-row" data-cmd="toggle-vim"><span>Vim 模式</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="import-config"><span>导入配置</span></div>
@@ -1591,7 +1596,7 @@
       <div id="breadcrumb"></div>
       <div id="editor">
         <div id="gutter"></div>
-        <div id="ed-content" tabindex="0"></div>
+        <div id="ed-content" tabindex="0" contenteditable="plaintext-only" spellcheck="false" autocapitalize="off" autocorrect="off"></div>
         <div id="caret" aria-hidden="true"></div>
       </div>
     </div>
@@ -1633,6 +1638,8 @@
       <span class="s-item s-colsel" id="s-colsel" hidden></span>
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
       <span class="s-item" id="s-ovr" title="Ins 键切换 插入/改写">挿入</span>
+      <span class="s-item" id="s-enc" data-cmd="charset" style="cursor:pointer">UTF-8</span>
+      <span class="s-item" id="s-eol" data-cmd="eol" style="cursor:pointer">CRLF</span>
       <span class="s-item" id="s-file">无活动</span>
       <span class="s-item s-tip" id="s-tip">就绪 — 点工具栏「打开文件夹」导入项目</span>
       <span class="s-item" id="s-lang">Plain</span>
@@ -2694,6 +2701,8 @@ async function sendTerminal(data) {
 // ===== Command Dispatcher (classic menu items) =====
 function dispatchCommand(cmd) {
   if (!cmd) return;
+  if (cmd.startsWith("reopen-")) { reopenWithEncoding(cmd.slice(7)); return; }
+  if (cmd.startsWith("eol-")) { setDocEol(cmd.slice(4)); return; }
   setTip("命令: " + cmd);
   switch (cmd) {
     // 文件
@@ -2738,6 +2747,7 @@ function dispatchCommand(cmd) {
     case "unindent-selection":   indentSelection(true); break;
     case "encoding":         encodingPanel(); break;
     case "eol":              eolPanel(); break;
+    case "charset":          charsetPanel(); break;
     case "clip-history":     showClipHistory(); break;
     case "clip-clear":       clearClipHistory(); break;
     case "insert-stamp":     insertStamp(); break;
@@ -3649,6 +3659,7 @@ function setActiveTab(id) {
     setMode("NORMAL");
     // 走 renderVim: token 高亮 + 折叠标记 + 状态栏语言, 纯文本路径见 paintActive
     renderVim(t);
+    updateDocStatus(t);
   }
   edContent.focus();
 }
@@ -3663,6 +3674,87 @@ function escapeHtml(s) {
 // 前端统一剥掉再往下传, 否则后续 invoke 的路径校验会对不上.
 function stripVerbatim(p) {
   return String(p).replace(/^\\\\\?\\/, "");
+}
+
+
+/* ===== 文件编码 / BOM / 换行 (每个文档各自记一份, 保存时原样写回) =====
+   后端 read_file 返回 {content(LF), encoding, bom, eol, mixed_eol, lossy}; write_file 收 {encoding, bom, eol, force}.
+   以前全程只认 UTF-8, 换行是一个全局变量 FILE_EOL (切标签就串了)。 */
+const CHARSETS = ["UTF-8", "SJIS", "EUC-JP", "JIS", "Unicode", "UnicodeBE", "Latin1", "CESU-8", "UTF-7", "GBK", "Big5", "EUC-KR"];
+function docMeta(t) { return { encoding: t.encoding || "UTF-8", bom: t.bom || "none", eol: t.eol || "crlf" }; }
+function applyDocMeta(t, res) {
+  t.encoding = res.encoding || "UTF-8"; t.bom = res.bom || "none"; t.eol = res.eol || "crlf";
+  t.mixedEol = !!res.mixed_eol; t.lossy = !!res.lossy;
+}
+// 保存到 path. 目标编码表示不了某些字符时 (后端报 UNMAPPABLE) 问用户: 仍然保存 (变成 ?) 还是取消.
+async function writeDoc(path, t) {
+  const spec = Object.assign({ path, content: t.lines.join("\n") }, docMeta(t));
+  try {
+    return await invoke("write_file", spec);
+  } catch (e) {
+    if (String(e.message).startsWith("UNMAPPABLE:")) {
+      const parts = e.message.split(":");
+      if (!confirm(parts.slice(2).join(":") + "\n\n仍然以 " + spec.encoding + " 保存吗? (这些字符会变成 ?)\n取消 = 不保存, 可改用 UTF-8 / Unicode 再保存。")) {
+        const err = new Error("已取消保存 (有字符无法用 " + spec.encoding + " 表示)"); err.cancelled = true; throw err;
+      }
+      return await invoke("write_file", Object.assign(spec, { force: true }));
+    }
+    throw e;
+  }
+}
+function updateDocStatus(t) {
+  const enc = document.getElementById("s-enc"), eol = document.getElementById("s-eol");
+  if (!enc || !eol) return;
+  if (!t) { enc.textContent = ""; eol.textContent = ""; return; }
+  const m = docMeta(t);
+  enc.textContent = m.encoding + (m.bom !== "none" ? " BOM" : "");
+  eol.textContent = m.eol.toUpperCase() + (t.mixedEol ? "*" : "");
+  enc.title = "文字コードセット: " + m.encoding + " (点击指定/重新打开)";
+  eol.title = "入力改行コード: " + m.eol.toUpperCase() + (t.mixedEol ? " (文件里混用了多种换行)" : "") + " (点击切换)";
+}
+// 以指定编码重新打开当前文件 (Sakura F_FILE_REOPEN_*)
+async function reopenWithEncoding(label) {
+  const t = getActiveTab();
+  if (!t) return;
+  if (t.untitled) { setTip("无标题文档没有对应的文件, 无法重新打开"); return; }
+  if (t.dirty && !confirm(t.name + " 有未保存修改, 重新打开会丢失. 继续?")) return;
+  try {
+    const res = await invoke("read_file", { path: stripVerbatim(t.path), encoding: label });
+    t.lines = String(res.content ?? "").split("\n");
+    applyDocMeta(t, res);
+    t.dirty = false; t.sel = null; t.undo = []; t.redo = [];
+    renderVim(t); updateDocStatus(t);
+    setTip("已按 " + label + " 重新打开" + (res.lossy ? " (有无法解码的字节, 已替换为 ?)" : ""));
+  } catch (e) { setTip("重新打开失败: " + e.message); }
+}
+function setSaveEncoding(label, bom) {
+  const t = getActiveTab();
+  if (!t) return;
+  t.encoding = label;
+  t.bom = bom !== undefined ? bom : ((label === "Unicode" || label === "UnicodeBE") ? (label === "Unicode" ? "utf16le" : "utf16be") : (t.bom && /^utf16/.test(t.bom) ? "none" : (t.bom || "none")));
+  t.dirty = true; renderTabs(); updateDocStatus(t);
+  setTip("保存编码: " + label + (t.bom !== "none" ? " (带 BOM)" : ""));
+}
+function charsetPanel() {
+  const t = getActiveTab();
+  if (!t) return;
+  const cur = docMeta(t);
+  const rows = CHARSETS.map((c) =>
+    '<div class="opt-row" style="display:flex;gap:8px;align-items:center"><span style="flex:1;' + (c === cur.encoding ? 'color:var(--blue)' : '') + '">' + escapeHtml(c) + (c === cur.encoding ? "  ← 当前" : "") + '</span>' +
+    '<button class="md-btn" data-reopen="' + c + '">以此重新打开</button>' +
+    '<button class="md-btn" data-saveenc="' + c + '">保存时使用</button></div>').join("");
+  const bomRow = '<div class="opt-row"><label><input type="checkbox" id="cs-bom"' + (cur.bom === "utf8" ? " checked" : "") + (cur.encoding === "UTF-8" ? "" : " disabled") + '> UTF-8 带 BOM</label></div>';
+  openModal({ title: "文字コードセット指定", bodyHTML: '<div class="empty-hint">当前: ' + escapeHtml(cur.encoding + (cur.bom !== "none" ? " + BOM" : "") + " / " + cur.eol.toUpperCase()) + "</div>" + bomRow + rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  mdBody.querySelectorAll("[data-reopen]").forEach((b) => b.addEventListener("click", () => { closeModal(); reopenWithEncoding(b.dataset.reopen); }));
+  mdBody.querySelectorAll("[data-saveenc]").forEach((b) => b.addEventListener("click", () => { closeModal(); setSaveEncoding(b.dataset.saveenc); }));
+  const bomEl = document.getElementById("cs-bom");
+  if (bomEl) bomEl.addEventListener("change", () => { t.bom = bomEl.checked ? "utf8" : "none"; t.dirty = true; renderTabs(); updateDocStatus(t); });
+}
+function setDocEol(label) {
+  const t = getActiveTab();
+  if (!t || !EOLS[label]) return;
+  t.eol = label; t.mixedEol = false; t.dirty = true; renderTabs(); updateDocStatus(t);
+  setTip("入力改行コード: " + label.toUpperCase() + " (保存时生效)");
 }
 
 async function openFile(path) {
@@ -3685,9 +3777,12 @@ async function openFile(path) {
       undo: [],
       redo: [],
     });
+    if (res && typeof res === "object") applyDocMeta(TABS.get(id), res);
     setActiveTab(id);
     pushRecent(tPath);
-    setTip("已打开: " + tPath);
+    if (res && res.mixed_eol) setTip("已打开: " + tPath + " (注意: 文件里混用了多种换行, 保存时统一为 " + String(res.eol).toUpperCase() + ")");
+    else if (res && res.lossy) setTip("已打开: " + tPath + " (有无法按 " + res.encoding + " 解码的字节, 已替换; 可试「文字コードセット指定」)");
+    else setTip("已打开: " + tPath);
   } catch (e) {
     setTip("打开失败: " + e.message);
   }
@@ -3703,7 +3798,7 @@ function untitledName() {
 
 function createUntitledDoc() {
   const id = "t" + (++maxTabId);
-  const t = { id, path: "", name: untitledName(), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: [""], undo: [], redo: [] };
+  const t = { id, path: "", name: untitledName(), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: [""], undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: "crlf" };
   TABS.set(id, t);
   setActiveTab(id);
   return t;
@@ -3768,8 +3863,9 @@ async function saveAsFlow(t, batch) {
     const path = joinPath(dir, name);
     if (path !== t.path && await pathExists(path) && !confirm(name + " 已存在, 覆盖?")) return false;
     try {
-      await invoke("write_file", { path, content: t.lines.join(FILE_EOL) });
+      await writeDoc(path, t);
     } catch (e) {
+      if (e.cancelled) { setTip(e.message); return false; }
       openModal({ title: "另存失败", body: e.message });
       return false;
     }
@@ -4263,12 +4359,13 @@ async function saveActive() {
   if (!t) return false;
   if (t.untitled) return saveAsFlow(t);     // 无标题文档没有路径可写: 保存 = 另存为
   try {
-    await invoke("write_file", { path: t.path, content: t.lines.join(FILE_EOL) });
+    await writeDoc(t.path, t);
     t.dirty = false;
     renderTabs();
     setTip("已保存");
     return true;
   } catch (e) {
+    if (e.cancelled) { setTip(e.message); return false; }
     openModal({ title: "保存失败", body: e.message });
     return false;
   }
@@ -4487,6 +4584,7 @@ edContent.addEventListener("scroll", () => { gutter.scrollTop = edContent.scroll
 if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => updateCaret(false)).observe(edContent);
 
 if (edContent) edContent.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229 || e.key === "Process" || IME_ACTIVE) return;   // 输入法组合中: 交给输入法
   try { recordKey(e); } catch (_) { /* 录制不影响主流程 */ }
   const t = getActiveTab();
   // Vim 关闭时不看 #s-mode (静态标记里写着 data-mode="NORMAL", 启动后头几个键会被当成 vim 命令吞掉), 直接是 INSERT
@@ -6582,63 +6680,25 @@ function stampAt(t) {
 /* ---------- B1. 编码转换 (支持多种编码互转) ---------- */
 
 
-function convertEncoding(target) {
-  const t = getActiveTab();
-  if (!t) return;
-  const raw = t.lines.join("\n");
-  try {
-    const bytes = new TextEncoder("utf-8").encode(raw);
-    const decoded = new TextDecoder(target).decode(bytes);
-    t.lines = decoded.split("\n");
-    t.dirty = true;
-    renderVim(t);
-    setTip("编码已转为 " + target);
-  } catch (e) {
-    openModal({ title: "编码转换失败", body: target + ": " + e.message });
-  }
-}
+function convertEncoding(target) { charsetPanel(); }
 
-function encodingPanel() {
-  const t = getActiveTab();
-  const cur = t && t.encoding ? t.encoding : "utf-8";
-  const rows = ENCODINGS.map((e) =>
-    '<div class="opt-row" data-enc="' + e + '"' +
-    (e === cur ? ' style="color:var(--blue)"' : "") + ">" +
-    escapeHtml(e) + (e === cur ? "  ← 当前" : "") + "</div>").join("");
-  openModal({ title: "编码转换", bodyHTML:
-    '<div class="empty-hint">当前: ' + escapeHtml(cur) + "</div>" + rows,
-    buttons: [{ label: "关闭", cmd: "modal-close" }] });
-  mdBody.querySelectorAll("[data-enc]").forEach((r) =>
-    r.addEventListener("click", () => {
-      const enc = r.dataset.enc;
-      if (t) t.encoding = enc;
-      closeModal();
-      convertEncoding(enc);
-    }));
-}
+function encodingPanel() { charsetPanel(); }
 
 /* ---------- B2. 行尾符转换 ---------- */
 
 
 
-function convertEol(target) {
-  const t = getActiveTab();
-  if (!t || !EOLS[target]) return;
-  // lines 数组本身不含行尾, 保存时按 FILE_EOL 拼接即可;
-  // 这里做的是「当前视图重载以看到差异」+ 记录目标行尾.
-  FILE_EOL = EOLS[target];
-  setTip("行尾符: " + target.toUpperCase() + " (保存时生效)");
-  renderVim(t);
-}
+function convertEol(target) { setDocEol(target); }
 
 function eolPanel() {
-  const cur = FILE_EOL === "\r\n" ? "crlf" : FILE_EOL === "\r" ? "cr" : "lf";
-  const rows = ["lf", "crlf", "cr"].map((k) =>
+  const t = getActiveTab();
+  const cur = t ? docMeta(t).eol : "crlf";
+  const rows = ["crlf", "lf", "cr"].map((k) =>
     '<div class="opt-row" data-eol="' + k + '"' + (k === cur ? ' style="color:var(--blue)"' : "") + ">" +
     k.toUpperCase() + (k === cur ? "  ← 当前" : "") + "</div>").join("");
-  openModal({ title: "行尾符", bodyHTML: rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  openModal({ title: "入力改行コード", bodyHTML: rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
   mdBody.querySelectorAll("[data-eol]").forEach((r) =>
-    r.addEventListener("click", () => { closeModal(); convertEol(r.dataset.eol); }));
+    r.addEventListener("click", () => { closeModal(); setDocEol(r.dataset.eol); }));
 }
 
 /* ---------- B3. 行排序 / 去重 / 反转 ---------- */
@@ -7467,7 +7527,7 @@ function handleEditNavKey(e, t, vim) {
   } else {
     t.sel = null; t.selAnchor = null; t.cursor = { row, col };
   }
-  if (t.sel || had || vim) renderVim(t); else { updateCaret(true); }
+  if (t.sel || had || vim) renderVim(t); else paintActive();     // 无选区: 回到单文本节点形态 (和旧的方向键路径一致)
   setPos("Ln " + (row + 1) + ", Col " + (col + 1));
   return true;
 }
@@ -7496,6 +7556,67 @@ document.addEventListener("paste", (e) => {
   if (!SYS_CLIP_OK || !text) text = CLIPBOARD || text;
   pasteText(text);
 });
+
+
+/* ===== 日文 / 中文输入法 (IME) =====
+   #ed-content 是 contenteditable="plaintext-only": 浏览器因此为它弹出 IME 候选窗、做组合输入 (预编辑文字
+   直接显示在光标处)。除组合输入外的所有浏览器自带编辑 (输入、删除、拖放、撤销…) 都在 beforeinput 里拦掉,
+   文档仍然只由我们的命令修改。组合结束 (compositionend) 时: 把浏览器塞进 DOM 的预编辑文字重绘掉,
+   再把上屏文字当作一次普通插入 (走撤销栈, 替换选区, 多光标…)。 */
+let IME_ACTIVE = false;
+
+// t.cursor 对应的 DOM 位置 (和 caretRect 同一套换算; 整篇单文本节点 / 每行一个 .hl-row 两种形态)
+function domPointAt(t) {
+  const row = t.cursor.row, line = t.lines[row] || "";
+  const u = u16Index(line, t.cursor.col);
+  const only = edContent.firstChild;
+  if (only && only.nodeType === 3 && edContent.childNodes.length === 1) {
+    let off = u;
+    for (let r = 0; r < row; r++) off += (t.lines[r] || "").length + 1;
+    return { node: only, off: Math.min(off, only.length) };
+  }
+  const rowEl = edContent.children[row];
+  if (!rowEl) return null;
+  const tw = document.createTreeWalker(rowEl, NodeFilter.SHOW_TEXT);
+  let rem = u, n, node = null, off = 0;
+  while ((n = tw.nextNode())) { node = n; if (rem <= n.length) { off = rem; break; } rem -= n.length; off = n.length; }
+  return node ? { node, off } : { node: rowEl, off: 0 };
+}
+
+if (edContent) {
+  edContent.addEventListener("compositionstart", () => {
+    const t = getActiveTab();
+    IME_ACTIVE = true;
+    if (!t) return;
+    if (t.colSel) { t.colSel = null; syncColumnSelectUI(t); }
+    if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; paintActive(); }   // 输入法上屏要替换选区: 先清掉
+    const pt = domPointAt(t);
+    if (pt) { const sel = getSelection(), rg = document.createRange(); rg.setStart(pt.node, pt.off); rg.collapse(true); sel.removeAllRanges(); sel.addRange(rg); }
+    const c = document.getElementById("caret"); if (c) c.classList.remove("on");     // 预编辑期间用浏览器自己的插入符
+  });
+  edContent.addEventListener("compositionend", (e) => {
+    IME_ACTIVE = false;
+    const t = getActiveTab();
+    const data = e.data || "";
+    try { getSelection().removeAllRanges(); } catch (_) {}
+    if (!t) return;
+    paintActive();                                 // 丢掉浏览器塞进 DOM 的预编辑文字, 回到由 t.lines 驱动的画面
+    for (const ch of chars(data)) insertCharMulti(ch);
+    updateCaret(true);
+  });
+  edContent.addEventListener("beforeinput", (e) => {
+    if (e.inputType === "insertCompositionText" || e.inputType === "deleteCompositionText" || e.inputType === "insertFromComposition") return;   // 只放行输入法组合
+    e.preventDefault();                           // 其余浏览器自带编辑一律拦截 (文档只由我们的命令修改)
+    // 没有对应 keydown 的文字输入 (语音输入 / 手写 / 软键盘 / 某些输入法直接上屏 / 自动化 insertText): 当作普通输入插入, 不能丢
+    if (e.inputType === "insertText" && e.data && !IME_ACTIVE) {
+      const t = getActiveTab();
+      if (!t) return;
+      if (t.colSel) { columnInsert(e.data); return; }
+      if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; }
+      for (const ch of chars(e.data)) insertCharMulti(ch);
+    }
+  });
+}
 
 // ===== Welcome page =====
 function showWelcome() {
@@ -7592,7 +7713,7 @@ async function saveAll() {
       if (await saveAsFlow(t, true)) ok++; else skip++;
       continue;
     }
-    try { await invoke("write_file", { path: t.path, content: t.lines.join(FILE_EOL) }); t.dirty = false; ok++; }
+    try { await writeDoc(t.path, t); t.dirty = false; ok++; }
     catch (e) { fail++; setTip("保存失败 " + t.path + ": " + e.message); }
   }
   renderTabs();
@@ -7627,6 +7748,7 @@ async function reloadActive() {
     return;
   const lines = await invoke("read_file", { path: stripVerbatim(t.path) });
   t.lines = String(lines.content ?? lines).split("\n");
+  if (lines && typeof lines === "object") { applyDocMeta(t, lines); updateDocStatus(t); }
   t.dirty = false;
   t.sel = null;
   t.undo = [];

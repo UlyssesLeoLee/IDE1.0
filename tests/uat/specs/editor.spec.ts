@@ -814,8 +814,8 @@ test.describe("传统编辑器对标能力 (第二批)", () => {
       (window as any).activeTab().lines = ["a", "b"];
       (window as any).convertEol("crlf");
     });
-    const eol = await page.evaluate(() => window.FILE_EOL);
-    expect(eol).toBe("\r\n");
+    const eol = await page.evaluate(() => (window as any).activeTab().eol);   // 每个文档自己记换行 (不再是全局 FILE_EOL)
+    expect(eol).toBe("crlf");
 
     await page.evaluate(() => (window as any).dispatchCommand("save"));
     await page.waitForTimeout(400);
@@ -825,9 +825,10 @@ test.describe("传统编辑器对标能力 (第二批)", () => {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ path: t.path.replace(/^\\\\\?\\/, "") }),
       });
-      return (await res.json()).content;
+      const j = await res.json();
+      return { eol: j.eol, content: j.content };     // read_file 返回 LF 文本 + 原换行种类
     });
-    expect(back).toContain("\r\n");
+    expect(back.eol).toBe("crlf");                    // 磁盘上确实是 CRLF
 
     // 还原成 LF, 避免污染 fixture
     await page.evaluate(() => (window as any).convertEol("lf"));

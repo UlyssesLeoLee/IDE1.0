@@ -40,6 +40,7 @@ pub mod control_code;
 pub mod cursor;
 pub mod cursor_persistence;
 pub mod daemon;
+pub mod document_io;
 pub mod encoding_io;
 pub mod file_lock;
 pub mod font_manager;

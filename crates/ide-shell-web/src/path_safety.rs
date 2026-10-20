@@ -115,7 +115,14 @@ pub struct DirEntry {
 pub struct FileContent {
     pub name: String,
     pub path: String,
+    /// LF 换行的文本 (原始换行种类在 `eol` 里)
     pub content: String,
+    /// 编码 (SJIS / UTF-8 / EUC-JP / Unicode ...), BOM, 原换行 (crlf/lf/cr), 是否混用换行, 是否有非法字节
+    pub encoding: String,
+    pub bom: String,
+    pub eol: String,
+    pub mixed_eol: bool,
+    pub lossy: bool,
 }
 
 pub fn list_dir(root: &Path, path: &str) -> Result<Vec<DirEntry>, String> {
@@ -144,6 +151,11 @@ pub fn list_dir(root: &Path, path: &str) -> Result<Vec<DirEntry>, String> {
 }
 
 pub fn read_file(root: &Path, path: &str) -> Result<FileContent, String> {
+    read_file_enc(root, path, None)
+}
+
+/// 读文件; `encoding` = 指定编码重新打开 (None = 自动判别 BOM / UTF-8 / JIS / SJIS / EUC ...).
+pub fn read_file_enc(root: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
     let target = resolve_in_project(root, path)?;
     if !target.is_file() {
         return Err(format!("不是文件: {path}"));
@@ -156,20 +168,35 @@ pub fn read_file(root: &Path, path: &str) -> Result<FileContent, String> {
             "文件过大 ({size} bytes > {MAX_FILE_BYTES} bytes) — 保持轻量"
         ));
     }
-    let content = std::fs::read_to_string(&target)
-        .map_err(|e| format!("读取失败 (仅支持 UTF-8 文本): {e}"))?;
+    let d = editcore::document_io::read_doc(&target, encoding)?;
     Ok(FileContent {
         name: target
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.to_string()),
         path: target.to_string_lossy().into_owned(),
-        content,
+        content: d.content,
+        encoding: d.charset.label().to_string(),
+        bom: d.bom.name().to_string(),
+        eol: d.eol.label().to_ascii_lowercase(),
+        mixed_eol: d.mixed_eol,
+        lossy: d.lossy,
     })
 }
 
 pub fn write_file(root: &Path, path: &str, content: &str) -> Result<usize, String> {
+    write_file_spec(root, path, content, &editcore::document_io::WriteSpec::default())
+}
+
+/// 写文件; `spec.encoding` 指定时 content 视为 LF 文本并按编码 / BOM / 换行写回.
+pub fn write_file_spec(
+    root: &Path,
+    path: &str,
+    content: &str,
+    spec: &editcore::document_io::WriteSpec,
+) -> Result<usize, String> {
     let target = resolve_in_project(root, path)?;
-    std::fs::write(&target, content.as_bytes()).map_err(|e| format!("写入失败 {path}: {e}"))?;
-    Ok(content.len())
+    editcore::document_io::write_doc(&target, content, spec).map_err(|e| {
+        if e.starts_with("UNMAPPABLE:") { e } else { format!("写入失败 {path}: {e}") }
+    })
 }

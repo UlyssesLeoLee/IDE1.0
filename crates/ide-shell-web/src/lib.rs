@@ -40,7 +40,7 @@ use ide_shell::{App, AppConfig};
 use serde::{Deserialize, Serialize};
 
 use ide_kernel::document::LineEnding;
-use path_safety::{list_dir, read_file, write_file, DirEntry, FileContent};
+use path_safety::{list_dir, read_file_enc, write_file_spec, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
 /// 请求头大小上限 (防 header 放大攻击).
@@ -1198,7 +1198,8 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             };
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let resp: Result<FileContent, String> = read_file(&root, path);
+            let enc = req.get("encoding").and_then(|v| v.as_str());
+            let resp: Result<FileContent, String> = read_file_enc(&root, path, enc);
             match resp {
                 Ok(fc) => send_response(
                     stream,
@@ -1220,7 +1221,13 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let content = req.get("content").and_then(|v| v.as_str()).unwrap_or("");
-            let resp: Result<usize, String> = write_file(&root, path, content);
+            let spec = editcore::document_io::WriteSpec {
+                encoding: req.get("encoding").and_then(|v| v.as_str()).map(String::from),
+                bom: req.get("bom").and_then(|v| v.as_str()).map(String::from),
+                eol: req.get("eol").and_then(|v| v.as_str()).map(String::from),
+                force: req.get("force").and_then(|v| v.as_bool()).unwrap_or(false),
+            };
+            let resp: Result<usize, String> = write_file_spec(&root, path, content, &spec);
             match resp {
                 Ok(n) => send_response(
                     stream,
