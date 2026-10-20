@@ -725,3 +725,34 @@ Ctrl+B / D / I / L / M / P / Q / T, Shift+Ctrl+D / L / M / P / T, Ctrl+Space(补
 | Shift+F6 | startColumnSelect | 产生矩形选区 ✅ |
 | F12 / Shift+F12 | gotoDefinitionLocal | |
 | Alt+A / L / R / N / ; | — | |
+
+---
+
+## 附录 C — 实现进度(2026-10-21 更新)
+
+附录 A 是 2026-10 初的快照。此后已补齐的命令族(每项都有 `tests/mock` 里的真实按键/鼠标回归用例):
+
+| 命令族 | 状态 |
+|---|---|
+| 键盘移动 / 范围选择 / 矩形选择(含单词·页·文件首尾) / 覆盖模式 / TAB 字符 | ✅ |
+| 文件编码·BOM·换行读写保持, 以指定编码重新打开, コード変換 11 命令 | ✅(Rust) |
+| 日文输入法(IME)组合输入 | ✅ |
+| 检索 / 置換 / インクリメンタル(通常·正则·MIGEMO) / 検索マーク / 対括弧 / ブックマーク / タグ(生成·跳转·关键字) / DIFF / 次の関数·変更行 | ✅ |
+| Grep: 独立结果窗口, 边搜边显示, 可追加 | ✅ |
+| 复制变体 / 转换 / 整形 / SPACE インデント / Base64·uudecode 保存 / 挿入系 | ✅ |
+| 宏: 录制·保存·读取·回放 + Sakura 默认键 | ✅(按键序列宏) |
+| 表示: 工具栏·功能键栏·标尺·空白标记·当前行·閲覧モード·文件属性·窗口一览·F5 | ✅ |
+| 印刷 / プレビュー / ページ設定 / ブラウズ | ✅ |
+| 共通設定 / キー割り当て(可改键) / 履歴の管理 / 指定桁折り返し | ✅ |
+| 大纲: Rust·Python + C++·JS·TS·Go·Java·C#·Markdown 层级 | ✅(Rust) |
+| プラグイン UI | ✅ UI;WASM 运行时需 `wasm` feature 构建 |
+
+**明确不在 v1 范围(需产品负责人确认, 见 §10)**:
+
+- 标签「グループ」相关: `F_NEXTGROUP / F_PREVGROUP / F_BIND_WINDOW / F_TAB_SEPARATE / F_TAB_JOINTNEXT / F_TAB_JOINTPREV / F_GROUPCLOSE` — 本项目是单窗口 SDI, 没有多顶层窗口分组。
+- 窗口排布: `F_MAXIMIZE_V / F_MAXIMIZE_H / F_MINIMIZE_ALL` — 依赖多窗口; 单窗口的「最小化」已提供。
+- `F_ACTIVATE_SQLPLUS / F_PLSQL_COMPILE_ON_SQLPLUS` — Oracle 专用。
+- `F_RECONVERT`(IME 再変換)— 依赖 TSF 重新转换 API。
+- 范围选择的「変更行」变体 `F_MODIFYLINE_*_SEL`(次/前の変更行 已有, 带选区的变体未做)。
+
+**仍然是已知差距**:编辑逻辑大部分仍在前端 JS(ARCH-01 的迁移未做; 本轮新增的编码转换、MIGEMO 展开、层级大纲、半角カナ表在 Rust); 大文件虚拟渲染(F4)未做。

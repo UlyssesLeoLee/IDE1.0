@@ -102,3 +102,16 @@ test('宏: 录制 → 保存到文件 → 清空 → 读取 → 回放', () =>
     await cmd(page, 'macro-load'); await page.locator('.md-input').fill('m.mac.json'); await page.locator('.md-input').press('Enter'); await page.waitForTimeout(600);
     assert.equal(await page.evaluate(() => MACRO.keys.length), n);
   }));
+
+test('宏的 Sakura 默认键: Shift+Ctrl+M 录制/停止, Shift+Ctrl+L 回放', () =>
+  withMocks({ name: 'cd', portOffset: 185 }, async ({ page, snap, press }) => {
+    await page.locator('#ed-content').click();
+    await press('Control+Shift+m');
+    assert.equal(await page.evaluate(() => MACRO.recording), true);
+    await page.keyboard.type('ab'); await page.waitForTimeout(100);
+    await press('Control+Shift+m');
+    assert.equal(await page.evaluate(() => MACRO.recording), false);
+    assert.ok(await page.evaluate(() => MACRO.keys.length) >= 2);
+    await press('Control+Shift+l'); await page.waitForTimeout(600);
+    assert.equal(await page.evaluate(() => getActiveTab().lines[0]), 'abab');
+  }));

@@ -9264,6 +9264,9 @@ Object.assign(CFG_CMDS, {
   "help-search": () => openModalInput("帮助关键字检索", wordAtCursor(), (w) => helpSearch(w)),
   "ext-help": () => { const w = wordAtCursor(); if (!w) { setTip("光标处没有单词"); return; } helpSearch(w); },
 });
+Object.assign(CFG_CMDS, { "macro-toggle": () => { if (MACRO.recording) macroStop(); else macroStart(); } });
+Object.assign(KEYMAP, { "C-S-m": "macro-toggle", "C-m": "macro-save", "C-l": "macro-load", "C-S-l": "macro-play" });
+Object.assign(KEYMAP_DEFAULT, { "C-S-m": "macro-toggle", "C-m": "macro-save", "C-l": "macro-load", "C-S-l": "macro-play" });
 Object.assign(KEYMAP, { "C-S-F4": "close-open", "C-A-F4": "exit-all", "S-A-F1": "help-search", "C-F1": "ext-help" });
 Object.assign(KEYMAP_DEFAULT, { "C-S-F4": "close-open", "C-A-F4": "exit-all", "S-A-F1": "help-search", "C-F1": "ext-help" });
 try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
