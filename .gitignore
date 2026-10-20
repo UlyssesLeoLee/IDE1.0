@@ -42,3 +42,4 @@ tests/uat/fixtures/sample-project/audit_tmp.txt
 ui-clear-theme.png
 tests/uat/*.png
 glass-theme.png
+tests/uat/fixtures/sample-project/tags
