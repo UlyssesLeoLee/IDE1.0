@@ -2041,9 +2041,27 @@ async function fetchApi(path, opts) {
 // 其余同名. 新增命令时在这里补一行即可, 免得两端命名漂移.
 const TAURI_CMD_ALIAS = { search: "search_cmd" };
 
+// Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
+// 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
+// 在这里一次抹平, 调用点不用关心.
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }) };
+const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
+// Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
+// (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
+function asError(e) {
+  if (e instanceof Error) return e;
+  const msg = (e && typeof e === "object") ? (e.message || e.error || JSON.stringify(e)) : String(e);
+  return new Error(msg);
+}
+
 async function invoke(name, args) {
   if (inTauri && window.__TAURI_INTERNALS__.invoke) {
-    return window.__TAURI_INTERNALS__.invoke(TAURI_CMD_ALIAS[name] || name, args || {});
+    const wrap = TAURI_ARG_WRAP[name];
+    try {
+      const r = await window.__TAURI_INTERNALS__.invoke(TAURI_CMD_ALIAS[name] || name, wrap ? wrap(args || {}) : (args || {}));
+      const fix = TAURI_RESULT_FIX[name];
+      return fix ? fix(r) : r;
+    } catch (e) { throw asError(e); }
   }
   return fetchApi("/api/" + name, { method: "POST", body: args || {} });
 }
