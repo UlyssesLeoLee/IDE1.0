@@ -644,6 +644,7 @@ pub fn run() {
             scm::scm_log,
             search::search_cmd,
             outline::outline,
+            reinterpret_text,
             plugin::plugin_load,
         ])
         .setup(|app_handle| {
@@ -700,6 +701,23 @@ fn open_file_at_startup(app: &mut tauri::App, path: &str) -> Result<(), String> 
         "readonly": std::env::var("IDE_SHELL_OPEN_READONLY").ok().map(|s| s == "1").unwrap_or(false),
     })).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+
+#[derive(serde::Deserialize)]
+pub struct ReinterpretOptions {
+    pub text: String,
+    pub encode_as: String,
+    pub decode_as: String,
+}
+
+/// コード変換 (见 editcore::document_io::reinterpret_text); 与 web 版 /api/reinterpret_text 同一语义
+#[tauri::command]
+fn reinterpret_text(options: ReinterpretOptions) -> Result<serde_json::Value, String> {
+    use editcore::document_io::{reinterpret_text as r, Charset};
+    let e = Charset::from_label(&options.encode_as).ok_or("不支持的编码")?;
+    let d = Charset::from_label(&options.decode_as).ok_or("不支持的编码")?;
+    Ok(serde_json::json!({ "text": r(&options.text, e, d)? }))
 }
 
 #[cfg(test)]

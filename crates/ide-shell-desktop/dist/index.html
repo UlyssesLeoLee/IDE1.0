@@ -1479,6 +1479,12 @@
               <div class="menu-row" data-cmd="to-hankata"><span>半角片假名</span></div>
             </div>
           </div>
+          <div class="menu-row menu-submenu" data-submenu="codecnv">
+            <span>コード変換</span><span class="mr-shortcut">▶</span>
+            <div class="submenu-dropdown">
+              <div class="menu-row" data-cmd="codecnv-auto2sjis"><span>自動判別 → SJIS</span></div><div class="menu-row" data-cmd="codecnv-email"><span>E-Mail (JIS → SJIS)</span></div><div class="menu-row" data-cmd="codecnv-euc2sjis"><span>EUC → SJIS</span></div><div class="menu-row" data-cmd="codecnv-unicode2sjis"><span>Unicode → SJIS</span></div><div class="menu-row" data-cmd="codecnv-unicodebe2sjis"><span>UnicodeBE → SJIS</span></div><div class="menu-row" data-cmd="codecnv-utf82sjis"><span>UTF-8 → SJIS</span></div><div class="menu-row" data-cmd="codecnv-utf72sjis"><span>UTF-7 → SJIS</span></div><div class="menu-row" data-cmd="codecnv-sjis2jis"><span>SJIS → JIS</span></div><div class="menu-row" data-cmd="codecnv-sjis2euc"><span>SJIS → EUC</span></div><div class="menu-row" data-cmd="codecnv-sjis2utf8"><span>SJIS → UTF-8</span></div><div class="menu-row" data-cmd="codecnv-sjis2utf7"><span>SJIS → UTF-7</span></div>
+            </div>
+          </div>
           <div class="menu-row menu-submenu" data-submenu="insert">
             <span>插入</span><span class="mr-shortcut">▶</span>
             <div class="submenu-dropdown">
@@ -2288,7 +2294,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -8895,9 +8901,14 @@ Object.assign(CFG_CMDS, {
   "browse": () => {
     const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
     const isHtml = /\.html?$/i.test(t.path || t.name || "");
-    const blob = new Blob([isHtml ? t.lines.join("\n") : printHtml(t)], { type: "text/html" });
-    const w = window.open(URL.createObjectURL(blob), "_blank");
-    setTip(w ? "已在浏览器中打开" : "新窗口被拦截, 请允许弹出窗口");
+    // 文件内容不能直接跑在应用源上 (HTML 里的脚本能访问 /api): 外层是我们自己的壳页, 内容放进 sandbox iframe (不给 allow-same-origin => 不透明源)
+    const inner = isHtml ? t.lines.join("\n") : printHtml(t);
+    const shell = '<!doctype html><meta charset="utf-8"><title>' + escapeHtml(t.path || t.name || "ブラウズ") +
+      '</title><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}</style><iframe sandbox="allow-scripts allow-popups" srcdoc="' +
+      inner.replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '"></iframe>';
+    const w = window.open(URL.createObjectURL(new Blob([shell], { type: "text/html" })), "_blank", "noopener,noreferrer");
+    void w;    // noopener 下 window.open 恒返回 null, 无法判断是否被拦截
+    setTip("已请求在浏览器中打开 (若无反应, 请允许弹出窗口)");
   },
   "indent-space": () => spaceIndent(false), "unindent-space": () => spaceIndent(true),
   "base64-decode": () => decodeAndSave("b64"), "uudecode": () => decodeAndSave("uu"),
@@ -8918,6 +8929,43 @@ Object.assign(CFG_CMDS, {
     });
   },
 });
+
+
+/* ===== コード変換 (Rust: editcore::document_io::reinterpret_text) ===== */
+const CODECNV = {
+  "codecnv-auto2sjis": ["Shift_JIS", null], "codecnv-email": ["Shift_JIS", "JIS"], "codecnv-euc2sjis": ["Shift_JIS", "EUC-JP"],
+  "codecnv-unicode2sjis": ["Shift_JIS", "Unicode"], "codecnv-unicodebe2sjis": ["Shift_JIS", "UnicodeBE"],
+  "codecnv-utf82sjis": ["Shift_JIS", "UTF-8"], "codecnv-utf72sjis": ["Shift_JIS", "UTF-7"],
+  "codecnv-sjis2jis": ["JIS", "Shift_JIS"], "codecnv-sjis2euc": ["EUC-JP", "Shift_JIS"],
+  "codecnv-sjis2utf8": ["UTF-8", "Shift_JIS"], "codecnv-sjis2utf7": ["UTF-7", "Shift_JIS"],
+};
+async function reinterpretText(text, encodeAs, decodeAs) {
+  const r = await invoke("reinterpret_text", { text, encode_as: encodeAs, decode_as: decodeAs });
+  return r && typeof r === "object" ? r.text : String(r);
+}
+async function codeConvert(id) {
+  const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+  const [enc, dec] = CODECNV[id];
+  if (!selNonEmpty(t)) { t.sel = { r0: 0, c0: 0, r1: t.lines.length - 1, c1: charLen(t.lines[t.lines.length - 1]) }; }
+  const text = selectionText(t);
+  try {
+    let out;
+    if (dec) out = await reinterpretText(text, enc, dec);
+    else {                                           // 自動判別: 依次试 EUC-JP / UTF-8 / JIS, 取第一个没有替换符的结果
+      for (const cand of ["EUC-JP", "UTF-8", "JIS"]) {
+        try { const o = await reinterpretText(text, enc, cand); if (!o.includes("\uFFFD") && o !== text) { out = o; break; } } catch (_) {}
+      }
+      if (out == null) { setTip("自動判別: 没有找到合适的编码"); t.sel = null; renderVim(t); return; }
+    }
+    snapshot(t); deleteSelection(t); t.selAnchor = null; insertTextAtCursor(out); t.dirty = true; renderVim(t);
+    setTip("コード変換: " + id.replace("codecnv-", ""));
+  } catch (e) { setTip("コード変換失败: " + ((e && e.message) || e)); }
+}
+for (const id of Object.keys(CODECNV)) CFG_CMDS[id] = () => codeConvert(id);
+Object.assign(KEYMAP, { "A-F12": "codecnv-auto2sjis", "A-F11": "codecnv-email", "A-F10": "codecnv-euc2sjis", "A-F9": "codecnv-unicode2sjis", "A-F8": "codecnv-utf82sjis", "A-F7": "codecnv-utf72sjis", "S-A-F11": "codecnv-sjis2jis", "S-A-F10": "codecnv-sjis2euc", "S-A-F8": "codecnv-sjis2utf8", "S-A-F7": "codecnv-sjis2utf7" });
+Object.assign(KEYMAP_DEFAULT, { "A-F12": "codecnv-auto2sjis", "A-F11": "codecnv-email", "A-F10": "codecnv-euc2sjis", "A-F9": "codecnv-unicode2sjis", "A-F8": "codecnv-utf82sjis", "A-F7": "codecnv-utf72sjis", "S-A-F11": "codecnv-sjis2jis", "S-A-F10": "codecnv-sjis2euc", "S-A-F8": "codecnv-sjis2utf8", "S-A-F7": "codecnv-sjis2utf7" });
+try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
+window.codeConvert = codeConvert;
 
 // ===== Welcome page =====
 function showWelcome() {

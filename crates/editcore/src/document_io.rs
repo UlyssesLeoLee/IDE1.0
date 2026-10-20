@@ -483,3 +483,41 @@ pub fn write_doc(path: &std::path::Path, content: &str, spec: &WriteSpec) -> Res
     std::fs::write(path, &bytes).map_err(|e| format!("写入失败: {e}"))?;
     Ok(bytes.len())
 }
+
+/// Sakura「コード変換」: 把文本按 `encode_as` 编成字节, 再按 `decode_as` 解读。
+/// - `EUC→SJIS`: 文档里是被当成 SJIS 误读的 EUC 文字 → `reinterpret(text, ShiftJis, EucJp)` 还原
+/// - `SJIS→JIS`: 转成 JIS 转义序列字节再按 SJIS 显示 → `reinterpret(text, Iso2022Jp, ShiftJis)`
+pub fn reinterpret_text(text: &str, encode_as: Charset, decode_as: Charset) -> Result<String, String> {
+    let bytes = encode_document(text, encode_as, Bom::None, Eol::Lf).map_err(|bad| {
+        let list: String = bad.iter().take(8).collect();
+        format!("UNMAPPABLE:编码 {} 无法表示这些字符: {}", encode_as.label(), list)
+    })?;
+    Ok(decode_document(&bytes, Some(decode_as)).content)
+}
+
+#[cfg(test)]
+mod reinterpret_tests {
+    use super::*;
+
+    #[test]
+    fn euc_mojibake_is_repaired_by_reinterpreting() {
+        // "あいうえお" を EUC-JP で保存したバイト列 (全部 0xA1-0xDF) を SJIS として読むと半角カナの列になる (損失なしで往復できる)
+        let euc = encode_document("あいうえお", Charset::EucJp, Bom::None, Eol::Lf).unwrap();
+        let as_sjis = decode_document(&euc, Some(Charset::ShiftJis)).content;
+        assert_ne!(as_sjis, "あいうえお");
+        assert_eq!(reinterpret_text(&as_sjis, Charset::ShiftJis, Charset::EucJp).unwrap(), "あいうえお");
+    }
+
+    #[test]
+    fn utf8_text_shown_as_sjis_roundtrips() {
+        let utf8 = encode_document("こんにちは", Charset::Utf8, Bom::None, Eol::Lf).unwrap();
+        let as_sjis = decode_document(&utf8, Some(Charset::ShiftJis)).content;
+        assert_eq!(reinterpret_text(&as_sjis, Charset::ShiftJis, Charset::Utf8).unwrap(), "こんにちは");
+    }
+
+    #[test]
+    fn unmappable_is_reported() {
+        let e = reinterpret_text("😀", Charset::ShiftJis, Charset::Utf8).unwrap_err();
+        assert!(e.starts_with("UNMAPPABLE:"));
+    }
+}

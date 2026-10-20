@@ -666,6 +666,29 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             doc_respond(stream, view);
         }
 
+        ("POST", "/api/reinterpret_text") => {
+            // コード変換: 文本按 encode_as 编成字节再按 decode_as 解读 (纯计算, 不碰磁盘)
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let enc = req.get("encode_as").and_then(|v| v.as_str()).unwrap_or("");
+            let dec = req.get("decode_as").and_then(|v| v.as_str()).unwrap_or("");
+            let parsed = (
+                editcore::document_io::Charset::from_label(enc),
+                editcore::document_io::Charset::from_label(dec),
+            );
+            match parsed {
+                (Some(e), Some(d)) => match editcore::document_io::reinterpret_text(text, e, d) {
+                    Ok(out) => send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&serde_json::json!({ "text": out })).unwrap_or_default(),
+                    ),
+                    Err(e) => send_error_json(stream, "400 Bad Request", &e),
+                },
+                _ => send_error_json(stream, "400 Bad Request", "不支持的编码"),
+            }
+        }
         ("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
