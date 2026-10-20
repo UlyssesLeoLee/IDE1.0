@@ -1211,6 +1211,85 @@
     [data-theme="clear"] #menubar.kbnav .menu-row:hover:not(.kb-active):not(.kb-open) { background: transparent !important; box-shadow: none; }
     /* 菜单之间直接切换 (悬停 / ←→): 新下拉瞬间出现, 不重播淡入; 第一次从关闭状态打开仍有动画 (JS 在切换时打 .menu-switch, 菜单收起时摘掉) */
     #menubar.menu-switch > .menu-item > .menu-dropdown { animation: none; }
+
+    /* =====================================================================
+       透明水晶 (clear) 的分区材质.
+       以前所有区域都叠在 #app 的 55% 遮罩上 (几乎不透明), 而且只有一种"玻璃".
+       现在 #app 本身不再上遮罩, 遮罩只给编辑区 (保证正文可读); 每个分区各有一种材质,
+       总不透明度都在 22%~52%, 透出窗口背后的 (Acrylic 模糊过的) 桌面:
+         磨砂 Frost    标题栏 / 菜单栏 : 偏亮的乳白磨砂, 上亮下淡 + 底部高光线
+         亚克力 Acrylic 导航 (活动栏 / 侧栏 / 左细条): 偏蓝的冷色, 竖向渐变 + 右侧边缘光
+         蚀刻 Etched   标签条 / 面包屑 : 最薄 (22%), 只靠细线和内阴影成形
+         烟晶 Smoked   终端 / 底部面板 : 最深 (深色桌面 52%), 像烟灰玻璃, 长时间看终端不累
+         彩釉 Enamel   状态栏 : 带强调色的釉面
+       深/浅桌面各一套 (data-lum 由 applyClearThemeColors 按真实采样设置), 文字色仍由 --fg 反色。
+       ===================================================================== */
+    [data-theme="clear"] {
+      --mat-frost-a:   color-mix(in srgb, #0c1018 34%, transparent);
+      --mat-frost-b:   color-mix(in srgb, #0c1018 22%, transparent);
+      --mat-acrylic-a: color-mix(in srgb, #0a1426 46%, transparent);
+      --mat-acrylic-b: color-mix(in srgb, #14243f 34%, transparent);
+      --mat-etched:    color-mix(in srgb, #0c1018 22%, transparent);
+      --mat-smoke:     color-mix(in srgb, #04060a 52%, transparent);
+      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #1d6fd1 38%, #0a0e18) 56%, transparent);
+      --mat-hi:        rgba(255, 255, 255, 0.38);
+      --mat-lo:        rgba(255, 255, 255, 0.08);
+      --mat-edit:      var(--glass-tint, rgba(10, 14, 24, 0.40));
+    }
+    [data-theme="clear"][data-lum="light"] {
+      --mat-frost-a:   color-mix(in srgb, #ffffff 58%, transparent);
+      --mat-frost-b:   color-mix(in srgb, #f4f7fb 40%, transparent);
+      --mat-acrylic-a: color-mix(in srgb, #eaf1fb 58%, transparent);
+      --mat-acrylic-b: color-mix(in srgb, #dce8f8 44%, transparent);
+      --mat-etched:    color-mix(in srgb, #ffffff 34%, transparent);
+      --mat-smoke:     color-mix(in srgb, #f6f8fb 62%, transparent);
+      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #8fbdf5 70%, #ffffff) 66%, transparent);
+      --mat-hi:        rgba(255, 255, 255, 0.85);
+      --mat-lo:        rgba(255, 255, 255, 0.35);
+    }
+    [data-theme="clear"] #app { background: transparent; }
+    [data-theme="clear"] #ed-content, [data-theme="clear"] #gutter { background: var(--mat-edit); }
+
+    /* 磨砂: 标题栏 / 菜单栏 */
+    [data-theme="clear"] #menubar {
+      background: linear-gradient(180deg, var(--mat-frost-a), var(--mat-frost-b));
+      -webkit-backdrop-filter: blur(18px) saturate(170%); backdrop-filter: blur(18px) saturate(170%);
+      border-bottom: 1px solid var(--mat-lo);
+      box-shadow: inset 0 1px 0 var(--mat-hi), 0 1px 0 var(--mat-lo);
+    }
+    /* 亚克力: 导航 */
+    [data-theme="clear"] #activity-bar, [data-theme="clear"] #left-strip {
+      background: linear-gradient(180deg, var(--mat-acrylic-a), var(--mat-acrylic-b));
+      -webkit-backdrop-filter: blur(26px) saturate(190%); backdrop-filter: blur(26px) saturate(190%);
+      box-shadow: inset -1px 0 0 var(--mat-hi), inset 0 1px 0 var(--mat-lo);
+    }
+    [data-theme="clear"] #side-bar {
+      background: linear-gradient(135deg, var(--mat-acrylic-b), color-mix(in srgb, var(--mat-acrylic-b) 70%, transparent));
+      -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+      border-right: 1px solid var(--mat-lo);
+      box-shadow: inset -1px 0 0 var(--mat-hi);
+    }
+    /* 蚀刻: 标签条 / 面包屑 */
+    [data-theme="clear"] #tabs, [data-theme="clear"] #breadcrumb {
+      background: var(--mat-etched);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.10), inset 0 1px 0 var(--mat-lo);
+    }
+    /* 烟晶: 终端 / 底部面板 */
+    [data-theme="clear"] #bottom-panel, [data-theme="clear"] #terminal-pane, [data-theme="clear"] #terminal-body {
+      background: var(--mat-smoke);
+    }
+    [data-theme="clear"] #bottom-panel {
+      -webkit-backdrop-filter: blur(20px) saturate(140%) brightness(0.92); backdrop-filter: blur(20px) saturate(140%) brightness(0.92);
+      box-shadow: inset 0 1px 0 var(--mat-hi), inset 0 8px 14px -10px rgba(0, 0, 0, 0.45);
+    }
+    [data-theme="clear"] #bottom-head { background: transparent; }
+    /* 彩釉: 状态栏 */
+    [data-theme="clear"] #status {
+      background: var(--mat-enamel);
+      -webkit-backdrop-filter: blur(14px) saturate(200%); backdrop-filter: blur(14px) saturate(200%);
+      box-shadow: inset 0 1px 0 var(--mat-hi);
+    }
 </style>
 </head>
 <body>
