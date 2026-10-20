@@ -688,7 +688,7 @@ test("文件 > 打开: 没有项目也能用 (惰性确定工作目录), 且替�
   expect(errors).toEqual([]);
 });
 
-test("Ctrl+Shift+S = 另存为 (有名文档也问新文件名), Ctrl+Alt+S = 全部保存 (每个脏的无标题文档各问一次); 一个按键只弹一次", async ({ page, request }) => {
+test("Ctrl+Shift+S = 另存为 (有名文档也问新文件名), Ctrl+Alt+Shift+S = 全部保存 (每个脏的无标题文档各问一次); 一个按键只弹一次", async ({ page, request }) => {
   const errors = await boot(page);
   const stamp = Date.now();
   const names = ["a", "b", "c", "d"].map((x) => `uat-min-${x}-${stamp}.txt`);
@@ -717,7 +717,7 @@ test("Ctrl+Shift+S = 另存为 (有名文档也问新文件名), Ctrl+Alt+S = �
     await page.keyboard.type("u2");
     asked.length = 0;
     answers.push(names[2], names[3]);
-    await page.keyboard.press("Control+Alt+s");
+    await page.keyboard.press("Control+Alt+Shift+s");   // Sakura 的 Ctrl+Alt+S 是「指定桁で折り返す」, 全部保存改用 Ctrl+Alt+Shift+S
     await page.waitForFunction(() => Array.from((window as any).TABS.values()).every((t: any) => !t.dirty), null, { timeout: 8_000 });
     expect(asked, "全部保存: 两个无标题文档各问一次 (不是只问当前那个, 也不是同一个按键问两遍)").toHaveLength(2);
     expect(read(names[2])).toBe("u1");

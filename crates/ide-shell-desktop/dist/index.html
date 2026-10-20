@@ -1369,7 +1369,7 @@
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="save" data-shortcut="Ctrl+S"><span>保存</span><span class="mr-shortcut">Ctrl+S</span></div>
           <div class="menu-row" data-cmd="save-as" data-shortcut="Ctrl+Shift+S"><span>另存为...</span><span class="mr-shortcut">Ctrl+Shift+S</span></div>
-          <div class="menu-row" data-cmd="save-all" data-shortcut="Ctrl+Alt+S"><span>全部保存</span><span class="mr-shortcut">Ctrl+Alt+S</span></div>
+          <div class="menu-row" data-cmd="save-all" data-shortcut="Ctrl+Alt+Shift+S"><span>全部保存</span><span class="mr-shortcut">Ctrl+Alt+Shift+S</span></div>
           <div class="menu-row" data-cmd="print"><span>印刷...</span></div>
           <div class="menu-row" data-cmd="print-preview"><span>印刷プレビュー</span></div>
           <div class="menu-row" data-cmd="print-setup"><span>印刷ページ設定...</span></div>
@@ -1613,6 +1613,14 @@
           <div class="menu-row" data-cmd="close-right"><span>关闭右侧标签</span></div>
           <div class="menu-row" data-cmd="close-left"><span>关闭左侧标签</span></div>
           <div class="menu-row" data-cmd="reconvert"><span>再変換</span></div>
+          <div class="menu-row" data-cmd="begin-sel" data-shortcut="F6"><span>范围选择开始 / 结束</span><span class="mr-shortcut">F6</span></div>
+          <div class="menu-row" data-cmd="sel-para-prev"><span>(範囲選択) 前の段落へ</span></div>
+          <div class="menu-row" data-cmd="sel-para-next"><span>(範囲選択) 次の段落へ</span></div>
+          <div class="menu-row" data-cmd="box-line-top"><span>(矩形選択) 行頭へ (改行単位)</span></div>
+          <div class="menu-row" data-cmd="wrap-none"><span>折返しなし</span></div>
+          <div class="menu-row" data-cmd="toggle-key-search"><span>キーワードヘルプ自動表示</span></div>
+          <div class="menu-row" data-cmd="keybind-list" data-shortcut="Ctrl+Q"><span>キー割り当て一覧...</span><span class="mr-shortcut">Ctrl+Q</span></div>
+          <div class="menu-row" data-cmd="all-commands" data-shortcut="Shift+F1"><span>全機能一览...</span><span class="mr-shortcut">Shift+F1</span></div>
           <div class="menu-row" data-cmd="next-group"><span>下一个分组</span></div>
           <div class="menu-row" data-cmd="prev-group"><span>上一个分组</span></div>
           <div class="menu-row" data-cmd="tab-separate"><span>移到新分组</span></div>
@@ -4639,7 +4647,8 @@ function saveByKey(e) {
   if (layoutPreset() === "min" && (e.shiftKey || e.altKey)) {
     if (e.__saveHandled) return;
     e.__saveHandled = true;
-    if (e.shiftKey) saveActiveAs(); else saveAll();
+    if (e.altKey && !e.shiftKey) { dispatchCommand("tmp-wrap"); return; }        // Sakura: Ctrl+Alt+S = 指定桁で折り返す
+    if (e.altKey && e.shiftKey) saveAll(); else saveActiveAs();
     return;
   }
   saveActive();
@@ -7945,7 +7954,7 @@ function selAnchorOf(t) {
 
 // 键盘导航 / 选区编辑. 返回 true = 已处理 (调用方 return).
 function handleEditNavKey(e, t, vim) {
-  const k = e.key, ctrl = e.ctrlKey, shift = e.shiftKey;
+  const k = e.key, ctrl = e.ctrlKey, shift = e.shiftKey || !!t.selMode;
   if (k === "Insert") {
     e.preventDefault();
     if (ctrl && !shift) copySelection(); else if (shift && !ctrl) navigator.clipboard ? pasteFromSystemOrInternal() : pasteClipboard(); else toggleOverwrite();
@@ -9442,6 +9451,86 @@ Object.assign(CFG_CMDS, {
 });
 Object.assign(KEYMAP, { "S-F11": "sqlplus-activate", "C-S-A-ArrowUp": "maximize-v", "C-S-A-ArrowRight": "maximize-h", "C-S-A-ArrowDown": "minimize-all" });
 Object.assign(KEYMAP_DEFAULT, { "S-F11": "sqlplus-activate", "C-S-A-ArrowUp": "maximize-v", "C-S-A-ArrowRight": "maximize-h", "C-S-A-ArrowDown": "minimize-all" });
+try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
+
+
+/* ===== 覆盖审计补齐: 默认键位 / 范围选择模式 / 段落选择 / 键位一览 / 全机能一览 / キーワードヘルプ ===== */
+function hankataToZen(text, hira) {
+  const out = text.replace(/[\uFF61-\uFF9F]+/g, (run) => run.normalize("NFKC"));
+  return hira ? out.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60)) : out;
+}
+Object.assign(SAKURA_CMDS, {
+  "hankata-to-zenkata": () => mapLines(getActiveTab(), (x) => hankataToZen(x, false)),
+  "hankata-to-zenhira": () => mapLines(getActiveTab(), (x) => hankataToZen(x, true)),
+});
+
+function selExtendBy(fn) {
+  const t = getActiveTab(); if (!t) return;
+  const anchor = selAnchorOf(t);
+  fn(t);
+  t.selAnchor = anchor; t.sel = normalizeSel(anchor, t.cursor);
+  renderVim(t); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+}
+function keybindListText() {
+  const rows = Object.entries(KEYMAP).map(([c, cmd]) => [cmdLabelOfCombo(c), cmd]).sort((a, b) => a[1].localeCompare(b[1]));
+  return rows.map(([k, cmd]) => k.padEnd(22) + cmd).join("\n");
+}
+Object.assign(CFG_CMDS, {
+  "begin-sel": () => {
+    const t = getActiveTab(); if (!t) return;
+    t.selMode = !t.selMode;
+    if (t.selMode) { t.selAnchor = { row: t.cursor.row, col: t.cursor.col }; setTip("範囲選択モード: 方向キーで選択 (F6 / Esc で終了)"); }
+    else setTip("範囲選択モードを終了");
+  },
+  "sel-para-prev": () => selExtendBy((t) => legacyMove(t, "para", -1)),
+  "sel-para-next": () => selExtendBy((t) => legacyMove(t, "para", 1)),
+  "box-line-top": () => boxEdge(false),
+  "wrap-none": () => { EDWRAP.col = 0; edContent.style.maxWidth = ""; edContent.style.flex = ""; if (VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); setTip("折返しなし"); },
+  "toggle-key-search": () => { VIEWOPT.keysearch = !VIEWOPT.keysearch; saveViewOpt(); setTip("キーワードヘルプ自動表示: " + (VIEWOPT.keysearch ? "ON" : "OFF")); if (VIEWOPT.keysearch) keySearchTick(); },
+  "keybind-list": () => {
+    openModal({ title: "キー割り当て一覧 (" + Object.keys(KEYMAP).length + ")", bodyHTML: '<pre style="margin:0;white-space:pre;max-height:55vh;overflow:auto">' + escapeHtml(keybindListText()) + "</pre>",
+      buttons: [{ label: "复制", cmd: "keybind-copy" }, { label: "关闭", cmd: "modal-close" }] });
+  },
+  "keybind-copy": () => { pushClip(keybindListText()); setTip("键位一览已复制"); },
+  "all-commands": () => {
+    const labels = allCommandLabels();
+    const keyOf = {}; for (const [c, cmd] of Object.entries(KEYMAP)) (keyOf[cmd] = keyOf[cmd] || []).push(cmdLabelOfCombo(c));
+    const draw = (f) => {
+      const rows = [...labels.entries()].filter(([c, l]) => !f || (c + l).toLowerCase().includes(f)).sort((a, b) => a[1].localeCompare(b[1])).slice(0, 400);
+      mdBody.querySelector("#ac-list").innerHTML = rows.map(([c, l]) => '<div class="kb-row ac-row" data-cmd="' + escapeHtml(c) + '" style="cursor:pointer"><span class="kb-cmd">' + escapeHtml(l) + ' <small style="opacity:.6">' + escapeHtml(c) + '</small></span><span class="kb-combo">' + escapeHtml((keyOf[c] || []).join(" / ")) + "</span></div>").join("");
+    };
+    openModal({ title: "全機能一覧", bodyHTML: '<div class="cfg-row"><input id="ac-filter" placeholder="筛选命令" style="flex:1"></div><div class="kb-list" id="ac-list"></div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
+    draw("");
+    mdBody.querySelector("#ac-filter").addEventListener("input", (ev) => draw(ev.target.value.toLowerCase()));
+    mdBody.querySelector("#ac-filter").focus();
+  },
+});
+let _ksWord = "";
+function keySearchTick() {
+  if (!VIEWOPT.keysearch) return;
+  const w = wordAtCursor(); if (!w || w === _ksWord) return; _ksWord = w;
+  const hit = helpText().split(/\r?\n/).find((l) => l.toLowerCase().includes(w.toLowerCase()));
+  if (hit) setTip("ヘルプ: " + hit.trim().slice(0, 120));
+}
+{
+  const _uc2 = updateCaret;
+  updateCaret = function (f) { _uc2(f); try { keySearchTick(); } catch (_) {} };
+}
+// Esc 同时结束 F6 范围选择模式
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { const t = getActiveTab(); if (t && t.selMode) { t.selMode = false; setTip("範囲選択モードを終了"); } } }, true);
+document.addEventListener("click", (ev) => { const r = ev.target.closest && ev.target.closest(".ac-row"); if (r) { closeModal(); dispatchCommand(r.dataset.cmd); } });
+
+const EXTRA_KEYS = {
+  "C-A-F12": "reopen-SJIS", "C-A-F11": "reopen-JIS", "C-A-F10": "reopen-EUC-JP", "C-A-F9": "reopen-Unicode", "C-A-F8": "reopen-UTF-8", "C-A-F7": "reopen-UTF-7",
+  "C-.": "copy-passage", "C-\\": "copy-path", "F6": "begin-sel",
+  "F4": "split-v", "S-F4": "split-h", "C-S-;": "split-quad", "C-:": "split-quad", "C-;": "split-quad", "C-S--": "split-v", "C-S-\\": "split-h",
+  "C-Tab": "next-tab", "C-S-Tab": "prev-tab", "C-q": "keybind-list", "S-F1": "all-commands",
+  "C-4": "type-config", "C-5": "type-config", "C-6": "common-config", "C-7": "font",
+  "C-A-s": "tmp-wrap", "C-A-w": "wrap-window-width", "C-A-u": "wrap-window-width", "C-A-x": "wrap-none",
+  "S-A-F4": "exit-all", "C-S-A-s": "save-all", "C-3": "toggle-status",
+};
+Object.assign(KEYMAP, EXTRA_KEYS);
+Object.assign(KEYMAP_DEFAULT, EXTRA_KEYS);
 try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
 
 // ===== Welcome page =====
