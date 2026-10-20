@@ -433,6 +433,9 @@
     ::highlight(ws-zen) { background-color: rgba(255, 160, 60, 0.35); }
     ::highlight(ws-trail) { background-color: rgba(255, 70, 70, 0.35); }
     html[data-v-readonly="on"] #s-mode::after { content: " 閲覧"; }
+    /* 大文件窗口化渲染: 只有可视窗口附近的行在 DOM 里, 上下用定高占位撑出滚动条; 行高固定 = --vlh */
+    #ed-content.vwin > .hl-row, #ed-content.vwin > .fold-row { height: var(--vlh, 18px); box-sizing: border-box; overflow: hidden; min-height: 0; }
+    #ed-content > .vs-top, #ed-content > .vs-bot { margin: 0; padding: 0; border: 0; }
     ::highlight(diff-add) { background-color: rgba(60, 200, 90, 0.26); }
     ::highlight(diff-chg) { background-color: rgba(255, 190, 40, 0.28); }
     ::highlight(diff-del) { background-color: rgba(255, 80, 80, 0.45); }
@@ -2141,7 +2144,7 @@ function setLeftDrawer(open) { LAYOUT.setFlags({ activityBar: !!open, sideBar: !
 function toggleLeftDrawer() {
   const open = !leftOpen();
   setLeftDrawer(open);
-  if (!open) edContent.focus();            // 折叠后键盘输入要有去处 (焦点此刻在细条按钮上)
+  if (!open) edContent.focus({ preventScroll: true });            // 折叠后键盘输入要有去处 (焦点此刻在细条按钮上)
   setTip("导航 / 文件: " + (open ? "展开" : "折叠"));
 }
 // 元素属于哪个抽屉 (含把手: 左细条 / 面板头); 不在任何抽屉里则 null
@@ -2158,7 +2161,7 @@ function bumpDrawer(which) {
 function collapseDrawer(which) {
   if (which === "left") setLeftDrawer(false); else setLayoutFlag("bottomPanel", false);
   DRAWER.focus = null;
-  edContent.focus();
+  edContent.focus({ preventScroll: true });
 }
 // 由开关推出界面: 把手的 aria / 文案 / 箭头, 底端面板头的 展开/折叠 钮, 抽屉的层叠与内容刷新. 每次布局变化 (syncLayoutUI) 都会调
 function syncDrawerUI() {
@@ -2185,7 +2188,7 @@ function syncDrawerUI() {
     for (const [which, now] of [["left", L], ["bottom", B]]) {
       if (now && !DRAWER.was[which]) queueDrawerRefresh(which);        // 刚展开: 刷新内容
       // 刚折叠且焦点还在里面 (含把手): 把焦点还给编辑区 —— 键盘事件绑在 #ed-content 上, 焦点掉到 body 就打不了字了
-      if (!now && DRAWER.was[which] && drawerOf(document.activeElement) === which) edContent.focus();
+      if (!now && DRAWER.was[which] && drawerOf(document.activeElement) === which) edContent.focus({ preventScroll: true });
       if (!now && DRAWER.focus === which) DRAWER.focus = null;
     }
   }
@@ -2441,7 +2444,7 @@ function closeModal() {
   const was = modal.classList.contains("show");
   modal.classList.remove("show");
   // 对话框关掉后焦点还给编辑区: 点对话框里的按钮 (或按钮随对话框一起消失) 后焦点会掉到 body, 之后的键盘输入就全失效了
-  if (was) { const a = document.activeElement; if (!a || a === document.body || modal.contains(a)) edContent.focus(); }
+  if (was) { const a = document.activeElement; if (!a || a === document.body || modal.contains(a)) edContent.focus({ preventScroll: true }); }
 }
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
@@ -2700,7 +2703,7 @@ async function sendTerminal(data) {
     const a = document.activeElement;
     if (a && a !== document.body && !barFocus()) return;
     if (modal.classList.contains("show")) { if (a && a !== document.body) a.blur(); return; }
-    edContent.focus();
+    edContent.focus({ preventScroll: true });
   }
   /** 打开某个顶层菜单 (所有入口: 点击 / 悬停切换 / Alt+字母 / ←→ / ↓), 焦点交给它的按钮; kbd = 用键盘打开: 高亮第一行 */
   function openMenu(item, kbd) {
@@ -2807,7 +2810,7 @@ async function sendTerminal(data) {
     if (k === "Tab") { if (open) closeAllMenus(); return; }  // 焦点正常往下走, 菜单随之收起
     if (e.ctrlKey || e.altKey || e.metaKey) return;          // 其它 Alt / Ctrl 组合键归全局快捷键
     const eat = () => { e.preventDefault(); e.stopPropagation(); };
-    if (k === "Escape") { eat(); closeAllMenus(); edContent.focus(); return; }
+    if (k === "Escape") { eat(); closeAllMenus(); edContent.focus({ preventScroll: true }); return; }
     if (e.shiftKey) return;
     if (k === "ArrowLeft" || k === "ArrowRight") {
       eat();
@@ -2849,7 +2852,7 @@ async function sendTerminal(data) {
     altArmed = false;
     e.preventDefault();                                      // 不让浏览器 / 系统在松开 Alt 时弹出自己的菜单
     if (modal.classList.contains("show")) return;
-    if (openItem() || barFocus()) { closeAllMenus(); edContent.focus(); return; }   // 已在菜单模式: 再按一下 Alt 退出
+    if (openItem() || barFocus()) { closeAllMenus(); edContent.focus({ preventScroll: true }); return; }   // 已在菜单模式: 再按一下 Alt 退出
     const first = items()[0];
     if (first) btnOf(first).focus({ preventScroll: true });
   }, true);
@@ -3494,17 +3497,68 @@ terminalBody.addEventListener("focus", () => terminalBody.focus());
   };
   if (typeof window !== "undefined") window.Syntax = Syntax;
 
+
+/* ===== 大文件窗口化渲染 (虚拟滚动) =====
+   超过 VW.threshold 行的文档不再把每一行都放进 DOM: 只渲染可视窗口上下各 VW.buffer 行, 其余用 .vs-top / .vs-bot 两个定高占位 div
+   撑出滚动条高度 (行高固定, 所以高度 = 行数 × 行高)。滚动时窗口不够用了再重画。自动换行开着时不用窗口 (行高不固定)。 */
+const VW = { threshold: 3000, buffer: 120, margin: 40, start: 0, end: 0, lh: 18, on: false };
+function vwActive(t) { return !!t && t.lines.length > VW.threshold && !(typeof VIEW_STATE !== "undefined" && VIEW_STATE.wordWrap); }
+function vwLH() { return parseFloat(getComputedStyle(edContent).lineHeight) || 18; }
+function vwRange(t) {
+  const lh = VW.lh = vwLH(), n = t.lines.length;
+  const first = Math.floor(edContent.scrollTop / lh), vis = Math.ceil(edContent.clientHeight / lh) + 1;
+  return [Math.max(0, first - VW.buffer), Math.min(n, first + vis + VW.buffer)];
+}
+// 滚动后窗口是否还盖得住可视区 (留 margin 行余量); 盖不住就重画窗口 (不动光标, 不把用户滚走的位置拽回来)
+function vwSync(t) {
+  t = t || getActiveTab();
+  if (!vwActive(t)) { if (VW.on) { VW.on = false; renderVim(t, true); } return false; }
+  const lh = VW.lh || vwLH();
+  const first = Math.floor(edContent.scrollTop / lh), last = first + Math.ceil(edContent.clientHeight / lh);
+  const ok = VW.on && first >= VW.start + (VW.start > 0 ? VW.margin : 0) && last <= VW.end - (VW.end < t.lines.length ? VW.margin : 0);
+  if (ok) return false;
+  renderVim(t, true);
+  return true;
+}
+// 某一行的 DOM 元素 (没渲染到窗口里就是 null)
+function rowElAt(row) { return rowEl(row); }
+function rowEl(row) {
+  const ch = edContent.children;
+  if (VW.on) { const i = row - VW.start + 1; return i >= 1 && i < ch.length - 1 ? ch[i] : null; }
+  return ch[row] || null;
+}
+function rowOfEl(el) {
+  const i = Array.prototype.indexOf.call(edContent.children, el);
+  return VW.on ? VW.start + i - 1 : i;
+}
+// 把某行滚进可视区: block = "nearest" | "center" (窗口化时按行高算, 然后由 scroll 事件补画窗口)
+function scrollRowIntoView(row, block) {
+  const t = getActiveTab();
+  if (t && VW.on) {
+    const lh = VW.lh || vwLH(), top = row * lh, h = edContent.clientHeight;
+    if (block === "center") edContent.scrollTop = Math.max(0, top - h / 2 + lh);
+    else if (top < edContent.scrollTop) edContent.scrollTop = top;
+    else if (top + lh > edContent.scrollTop + h) edContent.scrollTop = top + lh - h;
+    vwSync(t);
+    return;
+  }
+  const el = rowEl(row);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block });
+}
+
 /* ===== renderVim: 高亮 + 折叠 渲染 =====
    paintActive() 是纯文本路径 (快, 用于输入时每字符重绘);
    renderVim(t) 走 token class, 用于高亮/折叠/切语言这类离散操作. */
-function renderVim(t) {
+function renderVim(t, noFollow) {
   t = t || getActiveTab();
   if (!t) return;
   const hadFocus = document.activeElement === edContent;
   const lang = t.language || Syntax.detectLanguage(t.path || "");
   const folded = t.folded || (t.folded = new Set());
   const html = [];
-  for (let r = 0; r < t.lines.length; r++) {
+  const win = vwActive(t) ? vwRange(t) : null;                 // 大文件: 只渲染可视窗口附近的行
+  const rs = win ? win[0] : 0, re = win ? win[1] : t.lines.length;
+  for (let r = rs; r < re; r++) {
     if (folded.has(r)) {
       html.push('<div class="fold-row"><span class="fold-marker">\u25bc fold-marker</span> ' +
         escapeHtml(t.lines[r]) + "</div>");
@@ -3574,12 +3628,26 @@ function renderVim(t) {
       "</div>");
   }
   edContent.replaceChildren();
-  edContent.innerHTML = html.join("");
-  gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
+  if (win) {
+    const lh = VW.lh, n = t.lines.length;
+    VW.on = true; VW.start = rs; VW.end = re;
+    edContent.classList.add("vwin");
+    edContent.style.setProperty("--vlh", lh + "px");
+    edContent.innerHTML = '<div class="vs-top" style="height:' + (rs * lh) + 'px"></div>' + html.join("") + '<div class="vs-bot" style="height:' + ((n - re) * lh) + 'px"></div>';
+    let nums = "";
+    for (let i = rs; i < re; i++) nums += (i + 1) + "\n";
+    gutter.innerHTML = '<div style="height:' + (rs * lh) + 'px"></div><div class="vgn" style="white-space:pre">' + nums.slice(0, -1) + '</div><div style="height:' + ((n - re) * lh) + 'px"></div>';
+    gutter.scrollTop = edContent.scrollTop;
+  } else {
+    VW.on = false;
+    edContent.classList.remove("vwin");
+    edContent.innerHTML = html.join("");
+    gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
+  }
   setLang(Syntax.languageLabel(lang));
   if (VIEW_STATE.minimap) buildMinimap();
-  if (hadFocus) edContent.focus();
-  updateCaret(true);
+  if (hadFocus) edContent.focus({ preventScroll: true });
+  updateCaret(!noFollow);
 }
 
 /* ===== 折叠: zc / zo / zM / zR =====
@@ -3850,7 +3918,7 @@ function setActiveTab(id) {
     renderVim(t);
     updateDocStatus(t);
   }
-  edContent.focus();
+  edContent.focus({ preventScroll: true });
 }
 
 function escapeHtml(s) {
@@ -4069,7 +4137,7 @@ async function saveAsFlow(t, batch) {
       renderBreadcrumb();
       setFile(path);
       renderVim(t);
-      edContent.focus();
+      edContent.focus({ preventScroll: true });
     }
     if (layoutFlag("sideBar") && currentSidePane === "explorer") renderExplorer();   // 新文件出现在文件树里
     pushRecent(path);
@@ -4160,11 +4228,19 @@ function paintActive() {
   // 重绘会替换子节点, 焦点会掉回 body, 后续按键就不再进 keydown handler.
   // 之前是否持有焦点, 重绘后补回去.
   const hadFocus = document.activeElement === edContent;
+  if (vwActive(t)) {                               // 大文件: 走窗口化渲染 (每次只画可视窗口附近的行)
+    renderVim(t);
+    updateCaretColumn();
+    renderTabs();
+    if (hadFocus) edContent.focus({ preventScroll: true });
+    return;
+  }
+  if (VW.on) { VW.on = false; edContent.classList.remove("vwin"); }
   edContent.replaceChildren(document.createTextNode(t.lines.join("\n")));
   gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
   updateCaretColumn();
   renderTabs();
-  if (hadFocus) edContent.focus();
+  if (hadFocus) edContent.focus({ preventScroll: true });
   updateCaret(true);
 }
 
@@ -4181,8 +4257,15 @@ function caretRect(t) {
     for (let r = 0; r < row; r++) off += (t.lines[r] || "").length + 1;
     off += u;
   } else {                                       // renderVim: 每行一个 .hl-row / .fold-row, 里面是 token span
-    const rowEl = edContent.children[row];
-    if (!rowEl) return null;
+    const rowEl = rowElAt(row);
+    if (!rowEl) {
+      if (VW.on) {                               // 窗口外的行: 按行高算位置 (给「光标跟随」用, 滚过去之后窗口会补画)
+        const h = edContent.getBoundingClientRect(), cs = getComputedStyle(edContent);
+        return { left: h.left + (parseFloat(cs.paddingLeft) || 0) - edContent.scrollLeft, height: 18,
+                 top: h.top + (parseFloat(cs.paddingTop) || 0) + row * (VW.lh || 18) - edContent.scrollTop };
+      }
+      return null;
+    }
     const tw = document.createTreeWalker(rowEl, NodeFilter.SHOW_TEXT);
     let rem = u, n;
     while ((n = tw.nextNode())) {
@@ -4222,6 +4305,7 @@ function updateCaret(follow) {
     else if (r.top + r.height > bottom) edContent.scrollTop += r.top + r.height - bottom + 4;
     if (r.left < host.left) edContent.scrollLeft += r.left - host.left - 24;
     else if (r.left > right - 8) edContent.scrollLeft += r.left - right + 24;
+    if (vwActive(t)) vwSync(t);                  // 滚动后可视区可能越出窗口: 先补画, 再取光标矩形
     r = caretRect(t) || r;
   }
   const inView = r.top + r.height > host.top && r.top < host.top + edContent.clientHeight &&
@@ -4430,8 +4514,7 @@ function legacyMove(t, mode, dir, half) {
   updateCaret(true);
   setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
   // 移动后把光标滚进视野
-  const el = edContent.querySelectorAll(".hl-row")[t.cursor.row];
-  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+  scrollRowIntoView(t.cursor.row, "nearest");
 }
 
 // 退格: 合并到上一行 / 行内删除
@@ -4639,7 +4722,8 @@ function posFromCaretRange(rg) {
   let el = node;
   while (el && el.parentNode !== edContent) el = el.parentNode;                // 找到所在的 .hl-row / .fold-row
   if (!el) return null;
-  const row = Array.prototype.indexOf.call(edContent.children, el);
+  if (el.classList && (el.classList.contains("vs-top") || el.classList.contains("vs-bot"))) return null;     // 点在占位上
+  const row = rowOfEl(el);
   let col = 0;
   const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let n;
@@ -4703,7 +4787,7 @@ edContent.addEventListener("mousedown", (e) => {
   const { row, col } = p;
   if (e.altKey) {
     e.preventDefault();
-    edContent.focus();
+    edContent.focus({ preventScroll: true });
     startColumnSelect(row, col);
     // 之前只有按下没有拖动: Alt+拖只能点出一个 1x1 的块, 拖不出矩形.
     // 记下拖动态, 由 window 上的 mousemove/mouseup 收尾.
@@ -4719,7 +4803,7 @@ edContent.addEventListener("mousedown", (e) => {
   }
   // 普通点击: 落光标; 按住不放拖动 = 范围选择; Shift+点击 = 从当前光标扩到点击处
   e.preventDefault();
-  edContent.focus();
+  edContent.focus({ preventScroll: true });
   const hadMark = !!(tv.sel || tv.colSel || (tv.cursors && tv.cursors.length > 1));
   const anchor = e.shiftKey ? { row: tv.cursor.row, col: tv.cursor.col } : { row, col };
   if (tv.cursors && tv.cursors.length > 1) clearCursors(tv);
@@ -4769,7 +4853,7 @@ if (typeof window !== "undefined") {
   });
 }
 // 行号栏跟随正文滚动 (#gutter 是 overflow:hidden, 不同步则 300 行文件滚到底时旁边仍是 1-37)
-edContent.addEventListener("scroll", () => { gutter.scrollTop = edContent.scrollTop; updateCaret(false); });
+edContent.addEventListener("scroll", () => { if (VW.on || vwActive(getActiveTab())) vwSync(getActiveTab()); gutter.scrollTop = edContent.scrollTop; updateCaret(false); });
 // 编辑区尺寸变了 (开关侧栏 / 行号 / 缩略图 / 拖窗口) 光标的屏幕位置跟着变; 自动换行会换行点
 if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => updateCaret(false)).observe(edContent);
 
@@ -5655,8 +5739,7 @@ function gotoHit(hit) {
   t.selAnchor = { row: hit.row, col: hit.col };
   renderVim(t);
   setPos("Ln " + (hit.row + 1) + ", Col " + (hit.col + 1));
-  const el = edContent.querySelectorAll(".hl-row")[hit.row];
-  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+  scrollRowIntoView(hit.row, "nearest");
 }
 
 // dir: 1 下 / -1 上. 到头后按「先頭(末尾)から再検索」选项循环
@@ -6224,8 +6307,7 @@ async function gotoPathLine(path, line) {
   setPos("Ln " + (row + 1) + ", Col 1");
   updateCaret(true);
   // 把目标行滚进视野
-  const el = edContent.querySelectorAll(".hl-row")[row];
-  if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" });
+  scrollRowIntoView(row, "center");
   setTip("跳转到 " + path + ":" + (row + 1));
 }
 
@@ -7799,7 +7881,7 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       const tv = getActiveTab();
       if (!tv) return;
-      if (tv.colSel) { clearColumnSelect(tv); setMode("INSERT"); edContent.focus(); setTip("已退出列块模式"); }
+      if (tv.colSel) { clearColumnSelect(tv); setMode("INSERT"); edContent.focus({ preventScroll: true }); setTip("已退出列块模式"); }
       else { startColumnSelect(tv.cursor.row, tv.cursor.col); setMode("INSERT"); setTip("列块模式: Shift+F6 退出, 方向键选区, 直接输入批量插入"); }
       renderVim(tv);
       return;
@@ -7814,7 +7896,7 @@ document.addEventListener("keydown", (e) => {
     if (bp) bp.setAttribute("data-collapsed", "false");
     switchBottomPane("terminal-pane");     // min 布局下面板整块隐藏: 里面会先把它亮出来
   }
-  if (e.key === "Escape") edContent.focus();
+  if (e.key === "Escape") edContent.focus({ preventScroll: true });
 });
 
 
@@ -7973,7 +8055,7 @@ function domPointAt(t, row = t.cursor.row, col = t.cursor.col) {
     for (let r = 0; r < row; r++) off += (t.lines[r] || "").length + 1;
     return { node: only, off: Math.min(off, only.length) };
   }
-  const rowEl = edContent.children[row];
+  const rowEl = rowElAt(row);
   if (!rowEl) return null;
   const tw = document.createTreeWalker(rowEl, NodeFilter.SHOW_TEXT);
   let rem = u, n, node = null, off = 0;
@@ -8430,10 +8512,13 @@ function paintMarks() {
   set("bracket-pair", br);
   const gm = [];
   const bms = t ? (BOOKMARKS.get(bookmarkKey(t)) || []) : [];
-  if (bms.length && gutter.firstChild && gutter.firstChild.nodeType === 3) {
-    const gt = gutter.firstChild;
+  const vgn = VW.on ? gutter.querySelector(".vgn") : null;
+  const gt0 = vgn ? vgn.firstChild : gutter.firstChild, gbase = vgn ? VW.start : 0;
+  if (bms.length && gt0 && gt0.nodeType === 3) {
+    const gt = gt0;
     for (const b of bms) {
-      let off = 0; for (let j = 0; j < b.row; j++) off += String(j + 1).length + 1;
+      if (b.row < gbase || (vgn && b.row >= VW.end)) continue;
+      let off = 0; for (let j = gbase; j < b.row; j++) off += String(j + 1).length + 1;
       if (off + String(b.row + 1).length <= gt.length) { const rg = document.createRange(); rg.setStart(gt, off); rg.setEnd(gt, off + String(b.row + 1).length); gm.push(rg); }
     }
   }
@@ -8512,7 +8597,7 @@ function isearchClose(restore) {
   const t = getActiveTab();
   if (restore && t && ISEARCH.start) { t.cursor = Object.assign({}, ISEARCH.start); t.sel = null; renderVim(t); }
   FIND_STATE.useRegex = false;
-  edContent.focus();
+  edContent.focus({ preventScroll: true });
 }
 // next=true: 从当前命中的下一处找; false: 输入变化后从起点重新找 (含起点本身)
 function isearchRun(next) {
@@ -9325,7 +9410,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   // Mark editor as fully initialized
   __ready = true;
   window.__ideReady = function() { return true; };
-  edContent.focus();
+  edContent.focus({ preventScroll: true });
 })();
 });
 
