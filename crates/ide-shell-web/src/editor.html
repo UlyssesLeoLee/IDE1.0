@@ -3234,8 +3234,17 @@ function renderVim(t) {
     const toks = Syntax.highlightLine(t.lines[r], lang);
     const sel = t.sel;
     const inSel = sel && r >= sel.r0 && r <= sel.r1;
-    const cs = inSel ? Math.min(sel.c0, sel.c1 === Infinity ? charLen(t.lines[r] || "") : sel.c1) : -1;
-    const ce = inSel ? (sel.c1 === Infinity ? charLen(t.lines[r] || "") : Math.max(sel.c1, 0)) : -1;
+    // 选区按文档顺序: 首行 c0..行尾, 中间行整行, 末行 0..c1 (selectionText / deleteSelection 也是这个语义);
+    // 单行选区取 c0/c1 的小者到大者. 以前每一行都按同一对 c0/c1 画, 跨行选区的高亮是错的.
+    const _len = charLen(t.lines[r] || "");
+    let cs = -1, ce = -1;
+    if (inSel) {
+      const _c1 = sel.c1 === Infinity ? _len : sel.c1;
+      if (sel.r0 === sel.r1) { cs = Math.min(sel.c0, _c1); ce = Math.max(sel.c0, _c1); }
+      else if (r === sel.r0) { cs = Math.min(sel.c0, _len); ce = _len; }
+      else if (r === sel.r1) { cs = 0; ce = Math.min(Math.max(_c1, 0), _len); }
+      else { cs = 0; ce = _len; }
+    }
     const rendered = toks.map((tk) => {
       const cls = tk.cls ? "tk-" + tk.cls : "";
       return cls ? '<span class="' + cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text);
@@ -4227,42 +4236,105 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
 // edContent 不是 contenteditable, 所以所有变更由 t.lines + paintActive 驱动.
 // Ctrl+点击 = 加一个光标; Alt+点击/拖动 = 列块选区 (Sakura Shift+F6 的等价物之一)
 
-/* 屏幕坐标 -> (行, 列). 等宽字体下按行高 / 字符宽换算, 与 gutter 对齐.
-   行高与字符宽不写死: 从真实渲染测量, 改字体大小 / 缩放后仍准确
-   (写死 18 / 7 的话, 改了 --fs-md 或用户放大页面就整体偏移). */
-function posFromEvent(e) {
+/* 屏幕坐标 -> (行, 列).
+   两种 DOM 形态都要认: 打字时整篇是**一个文本节点** (paintActive, 行以 \n 相连), 有选区/列块/Vim 时是每行一个 .hl-row (renderVim).
+   以前这里只认后一种, 而且把已经排除在编辑区之外的行号栏宽度又减了一次、还漏了 8px 内边距:
+   结果普通打字状态下点击/拖选/Alt 拖选完全无效, 有 .hl-row 时列号也整体偏 4 列.
+   现在: 先用浏览器自己的 caretRangeFromPoint 取命中的字符位置 (CJK / emoji / 变宽字体都准),
+   只有「落在行尾之外」的虚拟列 (矩形选择允许点到行尾右侧) 才用字符宽度折算. */
+let _cwCache = { font: "", w: 0 };
+function monoCharWidth() {
+  const cs = getComputedStyle(edContent);
+  if (_cwCache.font === cs.font && _cwCache.w) return _cwCache.w;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font:" + cs.font + ";letter-spacing:" + cs.letterSpacing;
+  probe.textContent = "0".repeat(40);
+  document.body.appendChild(probe);
+  const w = probe.getBoundingClientRect().width / 40;
+  probe.remove();
+  _cwCache = { font: cs.font, w: w || 8 };
+  return _cwCache.w;
+}
+// 把浏览器返回的 Range 端点换成 (行, 列[码点])
+function posFromCaretRange(rg) {
+  const node = rg && rg.startContainer;
+  if (!node || node.nodeType !== 3 || !edContent.contains(node)) return null;
+  const off = rg.startOffset;
+  if (edContent.childNodes.length === 1 && edContent.firstChild === node) {      // 整篇一个文本节点
+    const text = node.data;
+    let row = 0;
+    for (let i = text.indexOf("\n"); i >= 0 && i < off; i = text.indexOf("\n", i + 1)) row++;
+    const lineStart = text.lastIndexOf("\n", off - 1) + 1;
+    return { row, col: charLen(text.slice(lineStart, off)) };
+  }
+  let el = node;
+  while (el && el.parentNode !== edContent) el = el.parentNode;                // 找到所在的 .hl-row / .fold-row
+  if (!el) return null;
+  const row = Array.prototype.indexOf.call(edContent.children, el);
+  let col = 0;
+  const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = tw.nextNode())) {
+    if (n === node) { col += charLen(n.data.slice(0, off)); break; }
+    col += charLen(n.data);
+  }
+  return { row, col };
+}
+function posFromEvent(e, virtualCols) {
   const t = getActiveTab();
   if (!t) return null;
+  const lastRow = Math.max(0, t.lines.length - 1);
+  let hit = null;
+  if (document.caretRangeFromPoint) hit = posFromCaretRange(document.caretRangeFromPoint(e.clientX, e.clientY));
+  const cs = getComputedStyle(edContent);
   const rect = edContent.getBoundingClientRect();
-  const gutterW = gutter.getBoundingClientRect().width || 0;
-  // 行高: 量一行的实际盒子高度 (拿不到就退回 18)
-  const rowEl = edContent.querySelector(".hl-row");
-  const lineH = rowEl ? rowEl.getBoundingClientRect().height || 18 : 18;
-  // 字符宽: 用行内第一个 token 测宽 (等宽), 再按字符数折算
-  let chW = 7;
-  const probe = rowEl && rowEl.querySelector("span");
-  if (probe) {
-    const w = probe.getBoundingClientRect().width;
-    const n = charLen(probe.textContent || "");
-    if (n > 0 && w > 0) chW = w / n;
+  const lineH = parseFloat(cs.lineHeight) || 18;
+  let row, col;
+  if (hit) {
+    row = hit.row; col = hit.col;
+  } else {                                           // 退路: 纯算术 (等宽 ASCII 准确)
+    const chW = monoCharWidth();
+    row = Math.floor((e.clientY - rect.top - parseFloat(cs.paddingTop) + edContent.scrollTop) / lineH);
+    col = Math.round((e.clientX - rect.left - parseFloat(cs.paddingLeft) + edContent.scrollLeft) / chW);
   }
-  const row = Math.max(0, Math.min(t.lines.length - 1,
-    Math.floor((e.clientY - rect.top + edContent.scrollTop) / lineH)));
-  const col = Math.max(0, Math.round((e.clientX - rect.left - gutterW) / chW));
+  row = Math.max(0, Math.min(lastRow, row));
+  const len = charLen(t.lines[row] || "");
+  col = Math.max(0, col);
+  if (virtualCols && hit && col >= len) {
+    // 点在行尾右侧: 用行尾的屏幕位置折算出虚拟列 (矩形选择可以选到行尾之外)
+    const rg = document.caretRangeFromPoint(e.clientX, e.clientY);
+    const endX = rg ? rg.getBoundingClientRect().left : 0;
+    const extra = rg && e.clientX > endX ? Math.round((e.clientX - endX) / monoCharWidth()) : 0;
+    col = len + Math.max(0, extra);
+  } else {
+    col = Math.min(col, len);
+  }
   return { row, col };
 }
 
-/* Alt 拖动状态: null = 没在拖. 拖动中用 window 监听, 否则指针滑出编辑区就断. */
-let colDrag = null;
+/* 拖动状态: null = 没在拖. 拖动中用 window 监听, 否则指针滑出编辑区就断. */
+let colDrag = null;     // Alt 拖 = 矩形选择
+let selDrag = null;     // 普通拖 = 范围选择
+
+function normalizeSel(a, b) {                         // 按文档顺序 (起点在前), 起点==终点则无选区
+  if (a.row === b.row && a.col === b.col) return null;
+  const fwd = a.row < b.row || (a.row === b.row && a.col <= b.col);
+  const s0 = fwd ? a : b, s1 = fwd ? b : a;
+  return { r0: s0.row, c0: s0.col, r1: s1.row, c1: s1.col };
+}
 
 edContent.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
   const tv = getActiveTab();
-  if (!tv || !e.target.closest(".hl-row")) return;
-  const p = posFromEvent(e);
+  if (!tv) return;
+  const rect = edContent.getBoundingClientRect();
+  if (e.clientX - rect.left > edContent.clientWidth || e.clientY - rect.top > edContent.clientHeight) return;   // 点在滚动条上
+  const p = posFromEvent(e, e.altKey);
   if (!p) return;
   const { row, col } = p;
   if (e.altKey) {
     e.preventDefault();
+    edContent.focus();
     startColumnSelect(row, col);
     // 之前只有按下没有拖动: Alt+拖只能点出一个 1x1 的块, 拖不出矩形.
     // 记下拖动态, 由 window 上的 mousemove/mouseup 收尾.
@@ -4274,18 +4346,45 @@ edContent.addEventListener("mousedown", (e) => {
     addCursor(tv, row, col);
     renderVim(tv);
     setTip(cursorsOf(tv).length + " 个光标");
+    return;
   }
+  // 普通点击: 落光标; 按住不放拖动 = 范围选择; Shift+点击 = 从当前光标扩到点击处
+  e.preventDefault();
+  edContent.focus();
+  const hadMark = !!(tv.sel || tv.colSel || (tv.cursors && tv.cursors.length > 1));
+  const anchor = e.shiftKey ? { row: tv.cursor.row, col: tv.cursor.col } : { row, col };
+  if (tv.cursors && tv.cursors.length > 1) clearCursors(tv);
+  tv.colSel = null;
+  syncColumnSelectUI(tv);
+  tv.cursor = { row, col };
+  tv.sel = normalizeSel(anchor, { row, col });
+  selDrag = { anchor };
+  if (tv.sel || hadMark) renderVim(tv); else { setPos("Ln " + (row + 1) + ", Col " + (col + 1)); updateCaret(false); }
 });
 
 if (typeof window !== "undefined") {
   window.addEventListener("mousemove", (e) => {
-    if (!colDrag) return;
-    const p = posFromEvent(e);
-    if (!p) return;
-    e.preventDefault();
-    extendColumnSelect(p.row, p.col);
+    if (colDrag) {
+      const p = posFromEvent(e, true);
+      if (!p) return;
+      e.preventDefault();
+      extendColumnSelect(p.row, p.col);
+      return;
+    }
+    if (selDrag) {
+      const tv = getActiveTab();
+      const p = tv && posFromEvent(e, false);
+      if (!p) return;
+      e.preventDefault();
+      if (p.row === tv.cursor.row && p.col === tv.cursor.col) return;
+      tv.cursor = { row: p.row, col: p.col };
+      tv.sel = normalizeSel(selDrag.anchor, p);
+      renderVim(tv);
+      setPos("Ln " + (p.row + 1) + ", Col " + (p.col + 1));
+    }
   });
   window.addEventListener("mouseup", () => {
+    if (selDrag) selDrag = null;
     if (!colDrag) return;
     colDrag = null;
     const t = getActiveTab();

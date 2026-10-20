@@ -49,7 +49,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-03/M-04 行首 / 行末", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["hello world", "second line"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     await move(page, "cursor-line-end");
     expect(await cur(page)).toEqual({ row: 0, col: 11 });
@@ -67,7 +67,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-01/M-02 单词左 / 右 (Sakura: 词内移到词尾, 词尾再按才进下一个词)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["foo bar baz"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     // Sakura 语义 (HLP000223 提示: "I have a pen." 光标在 a 前, 「単語の左端」到 pen 之前):
     // 光标在词首时右移 = 走到**当前词的词尾**, 不是直接跳到下一个词.
@@ -87,7 +87,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-01/M-02 单词移动跨行 (行末右移换到下一行行首)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["alpha", "beta"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await move(page, "cursor-line-end");       // 行 0 col 5
     await move(page, "cursor-word-right");     // 越过行尾 -> 行 1 col 0
     expect(await cur(page)).toEqual({ row: 1, col: 0 });
@@ -97,7 +97,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-05/M-06 上下 2 行 (Sakura 的「２行ごと」)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["l0", "l1", "l2", "l3", "l4", "l5"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     await move(page, "cursor-down-2");
     expect(await cur(page)).toEqual({ row: 2, col: 0 });
@@ -113,7 +113,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-09 文件首 / 尾", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["a", "b", "c", "last line"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     await move(page, "cursor-doc-end");
     expect(await cur(page)).toEqual({ row: 3, col: 9 });
@@ -126,7 +126,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-10 前后段落 (空行为界)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["para one line 1", "para one line 2", "", "para two line 1", "para two line 2", "", "para three"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     await move(page, "cursor-para-next");     // 0 -> 3
     expect((await cur(page)).row).toBe(3);
@@ -147,7 +147,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("M-11 有选区时收缩选区 (Sakura 统一规则)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abcdefghij", "second"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     // 建一个选区
     await page.evaluate(() => {
@@ -182,7 +182,7 @@ test.describe("Sakura 光标移动命令集", () => {
     // 造一个远长于视口的文档
     const many = Array.from({ length: 300 }, (_, i) => "row " + i);
     await setDoc(page, many);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     const rows = await page.evaluate(() => (window as any).pageRows());
     expect(rows, "一页应等于可视行数, 且 > 1").toBeGreaterThan(1);
@@ -206,7 +206,7 @@ test.describe("Sakura 光标移动命令集", () => {
     const errors = await boot(page);
     // 每行: 😀 是代理对 (UTF-16 占 2 个码元, 但只有 1 个码点)
     await setDoc(page, ["😀😀abc", "second"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     // 行末列号应按**码点**算 = 5, 不是 UTF-16 的 7
     await move(page, "cursor-line-end");
@@ -223,7 +223,7 @@ test.describe("Sakura 光标移动命令集", () => {
   test("移动后状态栏 Ln/Col 同步", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["alpha", "beta", "gamma"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     await move(page, "cursor-doc-end");
     const pos = await page.locator("#s-pos").textContent();

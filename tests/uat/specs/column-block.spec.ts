@@ -57,7 +57,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-08 状态栏显示列块模式 (进/出与尺寸变化)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abcdef", "abcdef", "abcdef"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     const ind = page.locator("#s-colsel");
     expect(await ind.isHidden(), "未进列块时状态栏不显示列块项").toBe(true);
@@ -83,7 +83,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-08 列块与普通选区互斥", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abcdef", "abcdef"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     // 先有普通选区
     await page.evaluate(() => {
@@ -103,7 +103,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-01 Shift+F6 进入列块模式, 再按退出", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abc", "def", "ghi"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     const before = await colSel(page);
     expect(before, "初始没有列块").toBeNull();
@@ -125,7 +125,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-02 方向键扩展列块 (上下扩行 / 左右扩列)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abcdef", "abcdef", "abcdef", "abcdef"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.keyboard.press("Shift+F6");
 
     await page.keyboard.press("ArrowDown");
@@ -148,7 +148,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-04 直接输入 = 在每一行同一列插入同一内容", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["aaa", "bbb", "ccc"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
 
     // 在第 0 行第 1 列建列块, 扩到 3 行
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
@@ -163,7 +163,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-04 连续输入累积 (插入点右移, 可接着打)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["ab", "cd"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(1, 1));
 
@@ -176,7 +176,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-05 多行内容按行分配给列块各行", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["1.", "2.", "3.", "4."]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 2));
     await page.evaluate(() => (window as any).extendColumnSelect(3, 2));
 
@@ -189,7 +189,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-06 短行补空格保持列对齐 (不丢已有内容)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["long line", "ab", "also long"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     // 第 5 列 (0-based) 建块, 覆盖 3 行; 中间那行只有 2 字符 -> 必须补空格
     await page.evaluate(() => (window as any).startColumnSelect(0, 5));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 5));
@@ -208,7 +208,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-03 Delete 删除整块", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abcdef", "abcdef"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(1, 3));
 
@@ -220,7 +220,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-07 列块复制 = 按行取该列区间", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abc", "def", "ghi"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 2));
 
@@ -237,7 +237,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
   test("C-09 Esc 退出列块模式", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abc", "def"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.keyboard.press("Shift+F6");
     expect(await colSel(page), "先确认列块已开").not.toBeNull();
 
@@ -250,7 +250,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     const errors = await boot(page);
     // 一段带语法结构的代码, 列块落在 token 中间
     await setDoc(page, ['fn alpha() { let x = 1; }', 'fn beta() { let y = 2; }']);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 4));
     await page.evaluate(() => (window as any).extendColumnSelect(1, 12));
 
@@ -276,7 +276,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     const errors = await boot(page);
     // 每行第 0 列是 emoji (UTF-16 代理对), 第 1 列是 ASCII
     await setDoc(page, ["😀a", "😀b", "😀c"]);
-    await page.locator("#ed-content").click();
+    await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 2));
 
