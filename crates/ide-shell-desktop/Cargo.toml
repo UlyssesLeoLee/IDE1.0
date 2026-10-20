@@ -34,6 +34,7 @@ tauri = { version = "2", features = [] }
 windows-registry = { version = "0.3", features = ["std"] }
 # sakura-rs — outline parser + buffer/undo (对标 sakura editor)
 editcore = { path = "../editcore" }
+xcap = "0.9.8"
 
 [lints]
 workspace = true

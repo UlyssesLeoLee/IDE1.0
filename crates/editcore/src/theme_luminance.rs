@@ -14,14 +14,48 @@
 //! 2. **启发式回退** — 读不到时 (Windows 8.1 及更早 / 非 Windows /
 //!    注册表被策略锁定) 假定深色, 因为透明主题的默认配色是白字。
 //!
-//! # 为什么不用 DwmGetColorizationColor / 屏幕像素采样
+//! # 屏幕像素采样 (桌面壳, 每秒一次)
 //!
-//! - `DwmGetColorizationColor` 是 Win32 FFI, 工作区 `unsafe_code = "forbid"`。
-//! - 屏幕像素采样 (PrintWindow / BitBlt) 更糟: 那是**抓屏**, 既慢又涉及
-//!   隐私, 而且窗口本身是透明的, 抓到的正是我们要判断的东西 —— 循环依赖。
+//! 产品要求: 透明模式下文字颜色必须跟着**窗口背后真实透出来的颜色**走 (壁纸、后面的窗口都算),
+//! 而不是只看系统「应用主题」开关。所以桌面壳 (`ide-shell-desktop::backdrop`) 每秒做一次:
+//! 把本窗口临时标成「不参与屏幕捕获」(Tauri `set_content_protected`, 即 WDA_EXCLUDEFROMCAPTURE)
+//! → 截一帧显示器 → 取窗口矩形内的平均亮度 → 立刻恢复。窗口自己被排除在截图之外,
+//! 所以不存在「抓到的正是我们自己画的字」的循环依赖; 截屏走 `xcap` 的 safe API,
+//! 本仓库仍然 `unsafe_code = "forbid"`。结果交给 [`apply_backdrop_sample`] 做滞回判定。
 //!
-//! 注册表方案读的是"用户的意图", 而不是"屏幕上恰好是什么颜色", 这正是
-//! 我们要的语义。
+//! 采样不可用时 (非桌面壳 / 非 Windows / 截屏被拒) 退回注册表 `AppsUseLightTheme`。
+
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// 最近一次采样得出的明暗: 0 = 还没有, 1 = 深, 2 = 浅.
+static SAMPLED: AtomicU8 = AtomicU8::new(0);
+
+/// 采样滞回: 平均亮度 (0..1, sRGB 加权) 高于 `HI` 才翻成浅色, 低于 `LO` 才翻回深色,
+/// 落在中间保持原状 —— 否则中灰背景 (或背景在阈值附近抖动) 会让文字每秒来回闪.
+const HI: f64 = 0.56;
+const LO: f64 = 0.44;
+
+/// 用窗口背后采到的平均亮度更新明暗判定 (带滞回), 返回判定结果。
+/// 桌面壳每秒调用一次; 「背后」指排除了本窗口自身之后屏幕上真实的像素。
+pub fn apply_backdrop_sample(mean_luma: f64) -> DesktopLuminance {
+    let prev = match SAMPLED.load(Ordering::Relaxed) {
+        2 => DesktopLuminance::Light,
+        1 => DesktopLuminance::Dark,
+        _ => match read_apps_use_light_theme() {
+            Some(true) => DesktopLuminance::Light,
+            _ => DesktopLuminance::Dark,
+        },
+    };
+    let next = if mean_luma > HI {
+        DesktopLuminance::Light
+    } else if mean_luma < LO {
+        DesktopLuminance::Dark
+    } else {
+        prev
+    };
+    SAMPLED.store(if next == DesktopLuminance::Light { 2 } else { 1 }, Ordering::Relaxed);
+    next
+}
 
 /// 桌面背景的明暗倾向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -161,6 +195,13 @@ fn read_apps_use_light_theme() -> Option<bool> {
 ///
 /// 非 Windows 平台恒为 `Dark` (透明主题的默认配色)。
 pub fn detect() -> DesktopLuminance {
+    // 桌面端每秒采样一次窗口背后真实透出来的颜色 (见 apply_backdrop_sample); 有采样值就以它为准,
+    // 注册表的「应用主题」只在还没采到样 (启动初期 / 采样失败 / 非桌面壳) 时兜底。
+    match SAMPLED.load(Ordering::Relaxed) {
+        1 => return DesktopLuminance::Dark,
+        2 => return DesktopLuminance::Light,
+        _ => {}
+    }
     match read_apps_use_light_theme() {
         Some(true) => DesktopLuminance::Light,
         // Some(false) 与 None 都走 Dark: 深色是透明主题的安全默认,
@@ -214,4 +255,20 @@ pub fn build_clear_theme_vars() -> serde_json::Value {
         "--blue": if l == DesktopLuminance::Light { "#0b57d0" } else { "#8ab4f8" },
         "--green": if l == DesktopLuminance::Light { "#0f7b41" } else { "#7ee2b8" },
     })
+}
+
+#[cfg(test)]
+mod backdrop_tests {
+    use super::*;
+
+    #[test]
+    fn hysteresis_keeps_state_in_the_gray_zone() {
+        assert_eq!(apply_backdrop_sample(0.90), DesktopLuminance::Light);
+        assert_eq!(apply_backdrop_sample(0.50), DesktopLuminance::Light, "中灰区不翻");
+        assert_eq!(apply_backdrop_sample(0.10), DesktopLuminance::Dark);
+        assert_eq!(apply_backdrop_sample(0.50), DesktopLuminance::Dark, "中灰区不翻");
+        assert_eq!(detect(), DesktopLuminance::Dark, "detect() 以最近一次采样为准");
+        assert_eq!(apply_backdrop_sample(0.60), DesktopLuminance::Light);
+        assert_eq!(detect(), DesktopLuminance::Light);
+    }
 }

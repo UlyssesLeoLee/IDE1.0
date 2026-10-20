@@ -27,6 +27,7 @@
 //! - IT 在 tests/e2e_commands.rs (纯函数 pub(crate 路径解析 + 沙箱 + 文件读写)
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)
 
+pub mod backdrop;
 pub mod doc;
 pub mod outline;
 pub mod plugin;
@@ -43,9 +44,22 @@ pub mod theme_luminance {
     };
 
     /// Tauri command: 当前桌面明暗 (前端轮询这个, 变了才重新取全套配色).
+    ///
+    /// 每次调用先采样窗口背后真实透出来的颜色 (见 `crate::backdrop`), 再用滞回判定明暗;
+    /// 采样失败就退回注册表探测 (`detect()` 内部处理)。async: 采样要 sleep 一帧, 不能卡主线程。
     #[tauri::command]
-    pub fn desktop_luminance() -> String {
-        detect().as_str().to_string()
+    pub async fn desktop_luminance(window: tauri::WebviewWindow) -> String {
+        match crate::backdrop::sample_backdrop_luma(&window) {
+            Ok(luma) => {
+                let l = editcore::theme_luminance::apply_backdrop_sample(luma);
+                crate::diag_log(&format!("[backdrop] luma={luma:.3} -> {}", l.as_str()));
+                l.as_str().to_string()
+            }
+            Err(e) => {
+                crate::diag_log(&format!("[backdrop] 采样失败, 退回注册表: {e}"));
+                detect().as_str().to_string()
+            }
+        }
     }
 
     /// 探测桌面背景明暗并返回一整套 CSS 变量.
