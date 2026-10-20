@@ -1300,7 +1300,7 @@
         <button class="mb-btn" data-tip="文件操作 (Alt+F)">文件<span class="mn-key">F</span></button>
         <div class="menu-dropdown" data-dropdown="file">
           <div class="menu-row" data-cmd="new-file" data-shortcut="Ctrl+N"><span>新建</span><span class="mr-shortcut">Ctrl+N</span></div>
-          <div class="menu-row" data-cmd="open-folder" data-shortcut="Ctrl+K O"><span>打开文件夹</span><span class="mr-shortcut">Ctrl+K O</span></div>
+          <div class="menu-row" data-cmd="open-folder" data-shortcut="Ctrl+Alt+O"><span>打开文件夹</span><span class="mr-shortcut">Ctrl+Alt+O</span></div>
           <div class="menu-row" data-cmd="open-file" data-shortcut="Ctrl+O"><span>打开文件...</span><span class="mr-shortcut">Ctrl+O</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="save" data-shortcut="Ctrl+S"><span>保存</span><span class="mr-shortcut">Ctrl+S</span></div>
@@ -1310,7 +1310,7 @@
           <div class="menu-row" data-cmd="close-tab" data-shortcut="Ctrl+W"><span>关闭标签</span><span class="mr-shortcut">Ctrl+W</span></div>
           <div class="menu-row" data-cmd="close-all" data-shortcut="Ctrl+Shift+W"><span>关闭全部</span><span class="mr-shortcut">Ctrl+Shift+W</span></div>
           <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="reload" data-shortcut="Ctrl+R"><span>重新载入</span><span class="mr-shortcut">Ctrl+R</span></div>
+          <div class="menu-row" data-cmd="reload"><span>重新载入</span></div>
           <div class="menu-row menu-submenu" data-submenu="reopen"><span>以指定编码重新打开</span><span class="mr-shortcut">▶</span><div class="submenu-dropdown"><div class="menu-row" data-cmd="reopen-UTF-8"><span>UTF-8</span></div><div class="menu-row" data-cmd="reopen-SJIS"><span>SJIS</span></div><div class="menu-row" data-cmd="reopen-EUC-JP"><span>EUC-JP</span></div><div class="menu-row" data-cmd="reopen-JIS"><span>JIS</span></div><div class="menu-row" data-cmd="reopen-Unicode"><span>Unicode</span></div><div class="menu-row" data-cmd="reopen-UnicodeBE"><span>UnicodeBE</span></div><div class="menu-row" data-cmd="reopen-Latin1"><span>Latin1</span></div><div class="menu-row" data-cmd="reopen-CESU-8"><span>CESU-8</span></div><div class="menu-row" data-cmd="reopen-UTF-7"><span>UTF-7</span></div><div class="menu-row" data-cmd="reopen-GBK"><span>GBK</span></div><div class="menu-row" data-cmd="reopen-Big5"><span>Big5</span></div><div class="menu-row" data-cmd="reopen-EUC-KR"><span>EUC-KR</span></div></div></div>
           <div class="menu-row menu-submenu" data-submenu="recent">
             <span>最近使用</span>
@@ -1366,6 +1366,34 @@
           <div class="menu-row" data-cmd="column-delete"><span>列块删除</span><span class="mr-shortcut">Alt+拖选</span></div>
           <div class="menu-row" data-cmd="column-replace"><span>列块替换</span></div>
           <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="word-cut"><span>单词切り取り</span></div>
+          <div class="menu-row" data-cmd="word-delete"><span>单词削除</span></div>
+          <div class="menu-row" data-cmd="line-cut-to-end"><span>行末まで切り取り</span></div>
+          <div class="menu-row" data-cmd="select-word"><span>现在位置の单词选择</span></div>
+          <div class="menu-row" data-cmd="copy-crlf"><span>CRLF 改行でコピー</span></div>
+          <div class="menu-row" data-cmd="copy-lines"><span>选择范围内全行コピー</span></div>
+          <div class="menu-row" data-cmd="copy-passage"><span>选择范围内全行 引用符付きコピー</span></div>
+          <div class="menu-row" data-cmd="copy-linenum"><span>选择范围内全行 行番号付きコピー</span></div>
+          <div class="menu-row" data-cmd="copy-html"><span>选择范围内 色付き HTML コピー</span></div>
+          <div class="menu-row" data-cmd="copy-html-ln"><span>选择范围内 行番号 色付き HTML コピー</span></div>
+          <div class="menu-row" data-cmd="copy-fname"><span>此文件名をコピー</span></div>
+          <div class="menu-row" data-cmd="copy-path"><span>此文件のパス名をコピー</span></div>
+          <div class="menu-row" data-cmd="copy-tag"><span>此文件のパス名とカーソル位置をコピー</span></div>
+          <div class="menu-row" data-cmd="paste-box"><span>矩形貼り付け</span></div>
+          <div class="menu-row" data-cmd="sort-asc"><span>选择行の昇順ソート</span></div>
+          <div class="menu-row" data-cmd="sort-desc"><span>选择行の降順ソート</span></div>
+          <div class="menu-row" data-cmd="tab-to-space"><span>TAB→空白</span></div>
+          <div class="menu-row" data-cmd="space-to-tab"><span>空白→TAB</span></div>
+          <div class="menu-row" data-cmd="to-zenei"><span>半角英数→全角英数</span></div>
+          <div class="menu-row" data-cmd="to-hanei"><span>全角英数→半角英数</span></div>
+          <div class="menu-row" data-cmd="hankata-to-zenkata"><span>半角カタカナ→全角カタカナ</span></div>
+          <div class="menu-row" data-cmd="hankata-to-zenhira"><span>半角カタカナ→全角ひらがな</span></div>
+          <div class="menu-row" data-cmd="cur-line-center"><span>カーソル行をウィンドウ中央へ</span></div>
+          <div class="menu-row" data-cmd="ctrl-code"><span>コントロールコードの入力...</span></div>
+          <div class="menu-row" data-cmd="insert-time"><span>時刻挿入</span></div>
+          <div class="menu-row" data-cmd="jumphist-prev"><span>移動履歴: 前へ</span></div>
+          <div class="menu-row" data-cmd="jumphist-next"><span>移動履歴: 次へ</span></div>
+          <div class="menu-row" data-cmd="jumphist-set"><span>現在位置を移動履歴に登録</span></div>
           <div class="menu-row menu-submenu" data-submenu="convert">
             <span>转换</span><span class="mr-shortcut">▶</span>
             <div class="submenu-dropdown">
@@ -2701,6 +2729,7 @@ async function sendTerminal(data) {
 // ===== Command Dispatcher (classic menu items) =====
 function dispatchCommand(cmd) {
   if (!cmd) return;
+  if (SAKURA_CMDS[cmd]) { if (!getActiveTab()) { setTip("无活动标签"); return; } SAKURA_CMDS[cmd](); return; }
   if (cmd.startsWith("reopen-")) { reopenWithEncoding(cmd.slice(7)); return; }
   if (cmd.startsWith("eol-")) { setDocEol(cmd.slice(4)); return; }
   setTip("命令: " + cmd);
@@ -7355,7 +7384,6 @@ document.addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     // Ctrl+K 是 chord 前缀 (菜单里 "打开文件夹 (Ctrl+K O)" 的声明一直无实现).
     // 顺序说明: chord 分支必须在极简布局 Ctrl+O 之前, 否则 Ctrl+K O 会被后者截走.
-    if (k === "k") { e.preventDefault(); ctrlKChord = true; return; }
     if (ctrlKChord) {
       ctrlKChord = false;
       if (k === "o") { e.preventDefault(); openFolder(); return; }
@@ -7618,6 +7646,219 @@ if (edContent) {
   });
 }
 
+
+/* ===== Sakura 默认键位表 + 剩余的编辑 / 转换 / 复制命令 =====
+   KEYMAP 是一张表 (照抄 CKeyBind.cpp 默认键位里我们已实现的命令), 在 document 捕获阶段统一分发,
+   所以不受散落在各处的 keydown 分支顺序影响; 菜单上的快捷键标注也由这张表生成 (标注不会再和真实绑定打架).
+   键写法: C-=Ctrl, S-=Shift, A-=Alt, 字母小写, 其余用 e.key (F7 / Insert / ArrowUp ...). */
+const KEYMAP = {
+  "C-d": "word-cut", "C-S-d": "word-delete", "C-k": "line-cut-to-end", "C-i": "duplicate-line", "S-F10": "duplicate-line",
+  "C-w": "select-word", "C-h": "cur-line-center", "C-r": "replace",
+  "A-a": "sort-asc", "A-d": "sort-desc", "A-l": "ltrim-lines", "A-r": "rtrim-lines", "A-m": "uniq-consecutive",
+  "A-;": "insert-date", "A-:": "insert-time",
+  "F7": "cut", "F8": "copy", "S-F8": "copy-crlf", "F9": "paste", "S-F9": "paste-box",
+  "C-F6": "to-lower", "C-F7": "to-upper", "C-F8": "to-halfwidth", "C-F9": "to-zenkaku", "C-F10": "to-zenhira",
+  "C-F11": "hankata-to-zenkata", "C-F12": "hankata-to-zenhira",
+  "C-A-F5": "tab-to-space", "C-S-A-F5": "space-to-tab", "C-A-l": "to-lower", "C-S-A-l": "to-upper",
+  "C-F4": "close-tab", "C-A-o": "open-folder",
+  "A-n": "jumphist-next", "A-p": "jumphist-prev",
+};
+
+function cmdLabelOfCombo(c) {
+  const parts = [];
+  let rest = c;
+  while (/^[CSA]-./.test(rest)) { parts.push({ C: "Ctrl", S: "Shift", A: "Alt" }[rest[0]]); rest = rest.slice(2); }
+  const order = ["Shift", "Ctrl", "Alt"];                 // Sakura 的写法: Shift+Ctrl+Alt+键
+  parts.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const key = rest.length === 1 ? rest.toUpperCase() : rest.replace("Arrow", "");
+  return parts.concat(key).join("+");
+}
+function comboOfEvent(e) {
+  const single = e.key.length === 1;
+  const k = single ? e.key.toLowerCase() : e.key;
+  const shift = e.shiftKey && !(single && !/[a-z]/i.test(e.key));     // 符号键的 Shift 已体现在 e.key 里
+  return (e.ctrlKey ? "C-" : "") + (shift ? "S-" : "") + (e.altKey ? "A-" : "") + k;
+}
+function applyMenuShortcuts() {
+  const byCmd = {};
+  for (const [combo, cmd] of Object.entries(KEYMAP)) (byCmd[cmd] = byCmd[cmd] || []).push(cmdLabelOfCombo(combo));
+  document.querySelectorAll("#menubar .menu-row[data-cmd]").forEach((row) => {
+    const labels = byCmd[row.dataset.cmd];
+    let sc = row.querySelector(".mr-shortcut");
+    if (!labels) { if (row.dataset.noShortcut) { row.removeAttribute("data-shortcut"); if (sc) sc.remove(); } return; }
+    row.dataset.shortcut = labels[0];
+    if (!sc) { sc = document.createElement("span"); sc.className = "mr-shortcut"; row.appendChild(sc); }
+    sc.textContent = labels[0];
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229 || e.metaKey) return;
+  const el = e.target;
+  if (!(el === document.body || el === edContent || (el && el.closest && el.closest("#ed-content")))) return;   // 对话框 / 输入框里的键不归这张表
+  if (LAYOUT.vimOn()) return;                                                                                     // Vim 有自己的键位
+  const cmd = KEYMAP[comboOfEvent(e)];
+  if (!cmd) return;
+  if (!getActiveTab() && cmd !== "open-folder") return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  dispatchCommand(cmd);
+}, true);
+
+// ---- 选区 / 单词 helper ----
+function wordBoundsAtCursor(t) {
+  const arr = charArray(t.lines[t.cursor.row] || "");
+  const isW = (c) => /[\p{L}\p{N}_]/u.test(c);
+  let a = t.cursor.col, b = a;
+  while (a > 0 && isW(arr[a - 1])) a--;
+  while (b < arr.length && isW(arr[b])) b++;
+  if (a === b && b < arr.length) b++;                  // 光标在符号 / 空白上: 选这一个字符
+  return { a, b };
+}
+function selectWordAtCursor(t) {
+  const { a, b } = wordBoundsAtCursor(t);
+  if (a === b) return false;
+  t.selAnchor = { row: t.cursor.row, col: a };
+  t.sel = { r0: t.cursor.row, c0: a, r1: t.cursor.row, c1: b };
+  t.cursor.col = b;
+  return true;
+}
+const selRowsOf = (t) => (selNonEmpty(t) ? [t.sel.r0, t.sel.r1] : [t.cursor.row, t.cursor.row]);
+function selOrLineText(t) { return selNonEmpty(t) ? selectionText(t) : (t.lines[t.cursor.row] || ""); }
+// 作用于选区所在的行 (无选区 = 当前行); fn(line) -> 新行
+function mapSelRows(t, fn) {
+  const [r0, r1] = selRowsOf(t);
+  snapshot(t);
+  for (let r = r0; r <= r1; r++) t.lines[r] = fn(t.lines[r]);
+  t.dirty = true; renderVim(t);
+}
+
+// 把一行 (按 tab 宽 4) 里的 TAB 展开成空格 / 把行首空格还原成 TAB
+function tabsToSpaces(line, w = 4) {
+  let out = "", col = 0;
+  for (const ch of chars(line)) { if (ch === "\t") { const n = w - (col % w); out += " ".repeat(n); col += n; } else { out += ch; col += 1; } }
+  return out;
+}
+function spacesToTabs(line, w = 4) {
+  const m = /^( +)/.exec(line);
+  if (!m) return line;
+  const n = m[1].length;
+  return "\t".repeat(Math.floor(n / w)) + " ".repeat(n % w) + line.slice(n);
+}
+const toZenEi = (s) => s.replace(/[A-Za-z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xFEE0));
+const toHanEi = (s) => s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+
+// 彩色 HTML 复制: 按当前主题的真实 token 颜色生成 <pre> (别的程序粘贴能保留配色)
+function colorHtmlOf(t, rows, withNumbers) {
+  const lang = t.language || Syntax.detectLanguage(t.path || "");
+  const probe = {};
+  const colorOf = (cls) => {
+    if (!cls) return getComputedStyle(edContent).color;
+    if (!probe[cls]) { const sp = document.createElement("span"); sp.className = "tk-" + cls; edContent.appendChild(sp); probe[cls] = getComputedStyle(sp).color; sp.remove(); }
+    return probe[cls];
+  };
+  const out = rows.map((r) => {
+    const body = Syntax.highlightLine(t.lines[r], lang).map((tk) => '<span style="color:' + colorOf(tk.cls) + '">' + escapeHtml(tk.text) + "</span>").join("");
+    return (withNumbers ? '<span style="color:#888">' + String(r + 1).padStart(String(rows[rows.length - 1] + 1).length, " ") + " </span>" : "") + body;
+  });
+  return '<pre style="font-family:Consolas,monospace">' + out.join("\n") + "</pre>";
+}
+function copyRowsText(t, fmt) {
+  const [r0, r1] = selRowsOf(t);
+  const rows = []; for (let r = r0; r <= r1; r++) rows.push(r);
+  return rows.map((r) => fmt(t.lines[r], r)).join("\n");
+}
+// 矩形贴付け: 剪贴板每一行贴到 (光标行+i, 光标列), 行不够长补空格, 文档不够长补行
+function pasteBox(t, text) {
+  const parts = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+  if (!parts.length || (parts.length === 1 && !parts[0])) { setTip("剪贴板为空"); return; }
+  snapshot(t);
+  const col = t.cursor.col;
+  parts.forEach((p, i) => {
+    const r = t.cursor.row + i;
+    while (t.lines.length <= r) t.lines.push("");
+    let line = t.lines[r];
+    if (charLen(line) < col) line += " ".repeat(col - charLen(line));
+    t.lines[r] = charSlice(line, 0, col) + p + charSlice(line, col);
+  });
+  t.dirty = true; renderVim(t);
+  setTip("已矩形贴付 " + parts.length + " 行");
+}
+
+// ---- 移动履歴 (Alt+P / Alt+N) ----
+const JUMP_HIST = { list: [], idx: -1 };
+function jumpHistSet() {
+  const t = getActiveTab(); if (!t) return;
+  const here = { id: t.id, row: t.cursor.row, col: t.cursor.col };
+  const last = JUMP_HIST.list[JUMP_HIST.idx];
+  if (last && last.id === here.id && last.row === here.row) return;
+  JUMP_HIST.list.splice(JUMP_HIST.idx + 1);
+  JUMP_HIST.list.push(here); if (JUMP_HIST.list.length > 100) JUMP_HIST.list.shift();
+  JUMP_HIST.idx = JUMP_HIST.list.length - 1;
+}
+function jumpHistGo(d) {
+  if (!JUMP_HIST.list.length) { setTip("移動履歴が空です"); return; }
+  if (d < 0 && JUMP_HIST.idx === JUMP_HIST.list.length - 1) jumpHistSet();      // 回退前先把当前位置记进去, 才能再前进回来
+  const i = JUMP_HIST.idx + d;
+  if (i < 0 || i >= JUMP_HIST.list.length) { setTip(d < 0 ? "これ以上戻れません" : "これ以上進めません"); return; }
+  JUMP_HIST.idx = i;
+  const h = JUMP_HIST.list[i];
+  if (TABS.has(h.id)) { if (activeTabId !== h.id) setActiveTab(h.id); const t = getActiveTab(); t.cursor = { row: Math.min(h.row, t.lines.length - 1), col: h.col }; t.sel = null; paintActive(); }
+}
+// 会产生「跳转」的命令: 跳之前把当前位置记进履历
+for (const n of ["openGotoLine", "tagJump", "bookmarkNext", "bookmarkPrev", "gotoDefinitionLocal"]) {
+  const f = window[n];
+  if (typeof f === "function") window[n] = function (...a) { try { jumpHistSet(); } catch (_) {} return f.apply(this, a); };
+}
+
+const SAKURA_CMDS = {
+  "word-cut": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) cutSelection(); },
+  "word-delete": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) { deleteSelection(t); t.selAnchor = null; paintActive(); } },
+  "select-word": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) { renderVim(t); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1)); } },
+  "line-cut-to-end": () => {
+    const t = getActiveTab(), r = t.cursor.row, len = charLen(t.lines[r] || "");
+    if (t.cursor.col < len) t.sel = { r0: r, c0: t.cursor.col, r1: r, c1: len };
+    else if (r < t.lines.length - 1) t.sel = { r0: r, c0: len, r1: r + 1, c1: 0 };     // 行尾再按: 连换行一起剪 (合并下一行)
+    else return;
+    cutSelection(); t.selAnchor = null; paintActive();
+  },
+  "cur-line-center": () => {
+    const t = getActiveTab(), lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+    edContent.scrollTop = Math.max(0, t.cursor.row * lh - edContent.clientHeight / 2 + lh);
+    updateCaret(false);
+  },
+  "sort-asc": () => sortLines(true), "sort-desc": () => sortLines(false),
+  "insert-date": () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); insertTextAtCursor(d.getFullYear() + "/" + p(d.getMonth() + 1) + "/" + p(d.getDate())); },
+  "insert-time": () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); insertTextAtCursor(p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds())); },
+  "copy-crlf": () => { const t = getActiveTab(); pushClip(selOrLineText(t).replace(/\n/g, "\r\n")); setTip("已用 CRLF 换行复制"); },
+  "copy-lines": () => { const t = getActiveTab(); pushClip(copyRowsText(t, (l) => l)); setTip("已复制选区内全行"); },
+  "copy-passage": () => { const t = getActiveTab(); pushClip(copyRowsText(t, (l) => "> " + l)); setTip("已复制 (引用符号付き)"); },
+  "copy-linenum": () => { const t = getActiveTab(); pushClip(copyRowsText(t, (l, r) => (r + 1) + ": " + l)); setTip("已复制 (行番号付き)"); },
+  "copy-html": () => { const t = getActiveTab(), [a, b] = selRowsOf(t), rows = []; for (let r = a; r <= b; r++) rows.push(r); pushClip(colorHtmlOf(t, rows, false)); setTip("已复制彩色 HTML"); },
+  "copy-html-ln": () => { const t = getActiveTab(), [a, b] = selRowsOf(t), rows = []; for (let r = a; r <= b; r++) rows.push(r); pushClip(colorHtmlOf(t, rows, true)); setTip("已复制彩色 HTML (行番号付き)"); },
+  "copy-fname": () => { const t = getActiveTab(); pushClip(t.name || ""); setTip("已复制文件名"); },
+  "copy-path": () => { const t = getActiveTab(); pushClip(t.path || ""); setTip("已复制路径"); },
+  "copy-tag": () => { const t = getActiveTab(); pushClip((t.path || t.name) + "(" + (t.cursor.row + 1) + "," + (t.cursor.col + 1) + ")"); setTip("已复制 路径(行,列)"); },
+  "paste-box": () => { const t = getActiveTab(); pasteBox(t, CLIPBOARD); },
+  "tab-to-space": () => mapSelRows(getActiveTab(), (l) => tabsToSpaces(l)),
+  "space-to-tab": () => mapSelRows(getActiveTab(), (l) => spacesToTabs(l)),
+  "to-zenei": () => mapSelRows(getActiveTab(), toZenEi),
+  "to-hanei": () => mapSelRows(getActiveTab(), toHanEi),
+  "hankata-to-zenkata": () => EDIT_CMDS.toZenkaku(getActiveTab()),
+  "hankata-to-zenhira": () => EDIT_CMDS.toZenhira(getActiveTab()),
+  "jumphist-prev": () => jumpHistGo(-1), "jumphist-next": () => jumpHistGo(1), "jumphist-set": () => { jumpHistSet(); setTip("現在位置を移動履歴に登録"); },
+  "ctrl-code": () => {
+    const names = ["NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS", "TAB", "LF", "VT", "FF", "CR", "SO", "SI", "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM", "SUB", "ESC", "FS", "GS", "RS", "US", "DEL"];
+    const rows = names.map((n, i) => '<button class="md-btn" data-cc="' + (i === 32 ? 127 : i) + '" style="margin:2px;min-width:64px">' + n + " (0x" + (i === 32 ? 127 : i).toString(16).toUpperCase().padStart(2, "0") + ")</button>").join("");
+    openModal({ title: "コントロールコードの入力", bodyHTML: '<div class="empty-hint">点击要插入的控制字符</div>' + rows, buttons: [{ label: "关闭", cmd: "modal-close" }] });
+    mdBody.querySelectorAll("[data-cc]").forEach((b) => b.addEventListener("click", () => { closeModal(); insertTextAtCursor(String.fromCharCode(+b.dataset.cc)); }));
+  },
+};
+// 光标处插入一段文本 (替换选区, 走撤销栈)
+function insertTextAtCursor(text) {
+  const t = getActiveTab(); if (!t) return;
+  if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; }
+  for (const ch of chars(text)) insertCharMulti(ch);
+}
+
 // ===== Welcome page =====
 function showWelcome() {
   const ed = document.getElementById('ed-content');
@@ -7626,6 +7867,7 @@ function showWelcome() {
 }
 // (极简布局里「底端面板」展开 / 折叠落盘在 bottomPanel 标志里; 静态标记的 data-collapsed 默认是 true (完整布局的初始态),
 //  由下面 syncLayoutUI -> syncDrawerUI 按标志还原, 所以重载后抽屉的展开状态、面板头按钮文案都是对的)
+try { applyMenuShortcuts(); } catch (_) {}
 syncLayoutUI();   // 布局初始同步: 存盘里缩略图为开时先建条, 抽屉的展开状态 / 把手属性, 并刷新菜单勾选 (data-* 属性在 <head> 里已就位, 首帧不闪)
 // 极简布局: 启动即是一个空白的「无标题」文档, 能直接输入 (像 Sakura); 完整布局仍是欢迎页.
 // 本脚本在 body 末尾, 此处执行早于首帧, 所以不会先闪一下欢迎页.

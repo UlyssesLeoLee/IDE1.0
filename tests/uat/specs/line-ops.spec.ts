@@ -299,10 +299,11 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 0, col: 3 };
       (window as any).renderVim(t);
     });
-    // 裸 Ctrl+K 只是 chord 前缀, 不该删除任何内容
+    // Sakura: Ctrl+K = F_LineCutToEnd (行末まで切り取り); 旧的 Ctrl+K O 弦序列已让位, 打开文件夹改 Ctrl+Alt+O
+    await page.evaluate(() => { const t = (window as any).getActiveTab(); t.cursor = { row: 0, col: 1 }; (window as any).renderVim(t); });
     await page.keyboard.press("Control+k");
     await page.waitForTimeout(120);
-    expect(await doc(page), "Ctrl+K 本身不删内容").toEqual(["l1", "l2"]);
+    expect(await doc(page), "Ctrl+K 剪切到行末").toEqual(["l", "l2"]);
     expect(errors).toEqual([]);
   });
 

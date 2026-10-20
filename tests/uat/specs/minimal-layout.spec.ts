@@ -523,13 +523,13 @@ test("标签条: >=2 个文档才出现, 回到 1 个又收起 (Ctrl+N / 新建 
   // 关有未保存修改的文档会先确认 (见下面的专项用例); 这里只关心标签条的显隐, 一律确认
   let confirms = 0;
   page.on("dialog", (d) => { confirms++; d.accept(); });
-  await page.keyboard.press("Control+w");
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press("Control+F4");
+  await page.keyboard.press("Control+F4");
   expect(await tabCount(page)).toBe(1);
   expect(await shown(page, "#tabs"), "回到 1 个 -> 收起").toBe(false);
   await expectTiled(page, "back to 1");
   // 关最后一个: 还是一个空白的无标题文档 (不是欢迎页)
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press("Control+F4");
   expect(await tabCount(page)).toBe(1);
   expect(await page.locator("#welcome").count()).toBe(0);
   expect(await page.evaluate(() => (window as any).getActiveTab().untitled)).toBe(true);
@@ -545,17 +545,17 @@ test("关闭有未保存修改的文档先确认 (Ctrl+W / 标签 ✕ / 关闭�
   page.on("dialog", (d) => { asked.push(d.message()); if (answer) d.accept(); else d.dismiss(); });
   // 唯一的无标题文档: 打了字再 Ctrl+W
   await page.keyboard.type("keep me");
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press("Control+F4");
   expect(asked, "弹了一次确认, 提到文档名").toHaveLength(1);
   expect(asked[0]).toContain("无标题");
   expect(await docText(page), "取消 = 文档还在").toBe("keep me");
   answer = true;
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press("Control+F4");
   expect(asked).toHaveLength(2);
   expect(await docText(page), "确认 = 丢弃, 补一个空白的无标题文档").toBe("");
   expect(await tabCount(page)).toBe(1);
   // 干净的文档不问: 刚补上的空白文档再 Ctrl+W 直接换一个新的
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press("Control+F4");
   expect(asked).toHaveLength(2);
   // 两个标签: 点脏标签的 ✕ 同样先问
   await page.keyboard.type("dirty one");
