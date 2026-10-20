@@ -278,7 +278,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await setDoc(page, ["😀a", "😀b", "😀c"]);
     await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
-    await page.evaluate(() => (window as any).extendColumnSelect(2, 2));
+    await page.evaluate(() => (window as any).extendColumnSelect(2, 1));   // 宽度 0 的列块 = 纯插入点 (有宽度时输入会覆盖选中内容)
 
     await page.keyboard.press("Z");
     // emoji 必须完好 (没被劈成半个代理), 且 Z 插在 emoji 之后

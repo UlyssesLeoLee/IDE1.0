@@ -4848,7 +4848,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       if (k === "M") { foldAll(t); renderVim(t); return; }
       if (k === "R") { unfoldAll(t); renderVim(t); return; }
     }
-    if (e.key === "z") { pendingZ = true; setTimeout(() => { pendingZ = false; }, 800); return; }
+    if (e.key === "z") { e.preventDefault(); pendingZ = true; setTimeout(() => { pendingZ = false; }, 800); return; }
     // 任意其它键都应清掉 dd 的挂起状态, 否则 pendingD 会一直等第二个 d
     pendingD = false;
   }
@@ -7716,11 +7716,14 @@ if (edContent) {
     for (const ch of chars(data)) insertCharMulti(ch);
     updateCaret(true);
   });
+  // 有 keydown 紧跟的 insertText 说明按键已由键盘处理器决定过去留 (比如 Vim NORMAL 的前缀键), 不是「没有 keydown 的输入」
+  let lastKeydownAt = -1e9;
+  document.addEventListener("keydown", () => { lastKeydownAt = performance.now(); }, true);
   edContent.addEventListener("beforeinput", (e) => {
     if (e.inputType === "insertCompositionText" || e.inputType === "deleteCompositionText" || e.inputType === "insertFromComposition") return;   // 只放行输入法组合
     e.preventDefault();                           // 其余浏览器自带编辑一律拦截 (文档只由我们的命令修改)
     // 没有对应 keydown 的文字输入 (语音输入 / 手写 / 软键盘 / 某些输入法直接上屏 / 自动化 insertText): 当作普通输入插入, 不能丢
-    if (e.inputType === "insertText" && e.data && !IME_ACTIVE) {
+    if (e.inputType === "insertText" && e.data && !IME_ACTIVE && performance.now() - lastKeydownAt > 120) {
       const t = getActiveTab();
       if (!t) return;
       if (t.colSel) { columnInsert(e.data); return; }

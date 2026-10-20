@@ -137,7 +137,7 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
     expect(errors).toEqual([]);
   });
 
-  test("Alt+方向键建好选区后直接输入 = 每行同列插入 (与鼠标拖等价)", async ({ page }) => {
+  test("Alt+方向键建好选区后直接输入 = 每行同列覆盖选区 (与鼠标拖等价)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["aaa", "bbb", "ccc"]);
     await page.keyboard.press("Alt+ArrowRight");   // 列边界 0 → 1
@@ -145,10 +145,9 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
     await page.keyboard.press("Alt+ArrowDown");    // 3 行
     await page.keyboard.type("X");
 
-    // 列块输入落在选区**左端** c0 —— 与 Alt+拖动建立的列块完全一致
-    // (insertAt = c0, 见 columnInsert; 右移的是插入后的光标)
+    // 列块有宽度 (1 列) 时输入 = 覆盖选中内容, 落在选区**左端** c0 —— 与 Alt+拖动建立的列块完全一致
     const out = await doc(page);
-    expect(out).toEqual(["Xaaa", "Xbbb", "Xccc"]);
+    expect(out).toEqual(["Xaa", "Xbb", "Xcc"]);
     expect(out.map((s: string) => s.indexOf("X")), "X 落在三行的同一列").toEqual([0, 0, 0]);
     expect(errors).toEqual([]);
   });
