@@ -308,7 +308,7 @@
     #editor-area.split-quad { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto repeat(2, minmax(0, 1fr)); }
     /* white-space / tab-size 与 #ed-content 一致: 否则 .hl-row (white-space: inherit) 继承 normal, 缩进被吞、长行折成 36/127px 的不规则行 */
     .split-view { overflow: auto; background: var(--bg-edit); padding: 2px 6px;
-      font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: 4; }
+      font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: var(--tab-size, 4); }
     .split-label { color: var(--fg-muted); font-size: var(--fs-xs); padding: 2px 0;
       border-bottom: 1px solid var(--border); }
     #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
@@ -351,7 +351,7 @@
 
     #editor { flex: 1; display: flex; min-height: 0; }
     #gutter { background: var(--bg-side); color: var(--fg-muted); padding: 4px 8px 16px; text-align: right; user-select: none; min-width: 40px; overflow: hidden; font-size: 12px; line-height: 18px; white-space: pre; flex: 0 0 auto; }
-    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: 4; font-size: var(--fs-md); line-height: 18px; outline: none; }
+    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: var(--tab-size, 4); font-size: var(--fs-md); line-height: 18px; outline: none; }
     #ed-content:focus { outline: none; }
 
     /* ===== Bottom Panel (single layer) ===== */
@@ -433,6 +433,19 @@
     ::highlight(ws-zen) { background-color: rgba(255, 160, 60, 0.35); }
     ::highlight(ws-trail) { background-color: rgba(255, 70, 70, 0.35); }
     html[data-v-readonly="on"] #s-mode::after { content: " 閲覧"; }
+    ::highlight(diff-add) { background-color: rgba(60, 200, 90, 0.26); }
+    ::highlight(diff-chg) { background-color: rgba(255, 190, 40, 0.28); }
+    ::highlight(diff-del) { background-color: rgba(255, 80, 80, 0.45); }
+    .cfg-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+    .cfg-tab { border: 1px solid transparent; border-bottom: none; background: transparent; color: var(--fg); padding: 3px 12px; cursor: pointer; border-radius: 4px 4px 0 0; }
+    .cfg-tab.active { background: var(--bg-hover); border-color: var(--border); }
+    .cfg-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+    .cfg-row > label:first-child { flex: 0 0 150px; }
+    .kb-list { max-height: 46vh; overflow: auto; margin-top: 6px; }
+    .kb-row { display: flex; gap: 8px; align-items: center; padding: 2px 4px; border-bottom: 1px solid rgba(127,127,127,.15); }
+    .kb-row .kb-combo { flex: 0 0 150px; font-family: monospace; }
+    .kb-row .kb-cmd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kb-capture { padding: 6px; background: rgba(255, 190, 40, .2); border: 1px dashed var(--border); margin: 6px 0; }
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: var(--z-modal); }
     #modal.show { display: flex; }
     .md-box { background: var(--bg-raised); border-radius: var(--r-md); width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
@@ -1578,6 +1591,12 @@
           <div class="menu-row" data-cmd="outline" data-shortcut="Ctrl+Shift+O"><span>大纲</span><span class="mr-shortcut">Ctrl+Shift+O</span></div>
           <div class="menu-row" data-cmd="syntax" data-shortcut="Alt+S"><span>语法高亮</span><span class="mr-shortcut">Alt+S</span></div>
           <div class="menu-row" data-cmd="type-config"><span>类型配置</span></div>
+          <div class="menu-row" data-cmd="diff-with-tab"><span>与另一标签比较 (DIFF)</span></div>
+          <div class="menu-row" data-cmd="diff-with-file"><span>与文件比较 (DIFF)</span></div>
+          <div class="menu-row" data-cmd="diff-list"><span>差分一览</span></div>
+          <div class="menu-row" data-cmd="diff-next" data-shortcut="Alt+Down"><span>下一处差分</span></div>
+          <div class="menu-row" data-cmd="diff-prev"><span>上一处差分</span></div>
+          <div class="menu-row" data-cmd="diff-clear"><span>清除差分标记</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="auto-backup" data-shortcut="Ctrl+Alt+B"><span>立即备份</span><span class="mr-shortcut">Ctrl+Alt+B</span></div>
           <div class="menu-row" data-cmd="file-lock" data-shortcut="Ctrl+Alt+L"><span>文件锁定</span><span class="mr-shortcut">Ctrl+Alt+L</span></div>
@@ -1588,6 +1607,8 @@
               <div class="menu-row" data-cmd="macro-start" data-shortcut="Ctrl+Shift+R"><span>开始录制</span><span class="mr-shortcut">Ctrl+Shift+R</span></div>
               <div class="menu-row" data-cmd="macro-stop" data-shortcut="Ctrl+Shift+R"><span>停止录制</span><span class="mr-shortcut">Ctrl+Shift+R</span></div>
               <div class="menu-row" data-cmd="macro-play" data-shortcut="Ctrl+Shift+P"><span>播放宏</span><span class="mr-shortcut">Ctrl+Shift+P</span></div>
+              <div class="menu-row" data-cmd="macro-save"><span>保存宏...</span></div>
+              <div class="menu-row" data-cmd="macro-load"><span>读取宏...</span></div>
               <div class="menu-sep"></div>
               <div class="menu-row" data-cmd="js-macro"><span>运行 JS 宏</span></div>
               <div class="menu-row" data-cmd="ppa-macro"><span>运行 PPA 宏</span></div>
@@ -1621,6 +1642,8 @@
           <div class="menu-row" data-cmd="eol-lf"><span>入力改行コード: LF</span></div>
           <div class="menu-row" data-cmd="eol-cr"><span>入力改行コード: CR</span></div>
           <div class="menu-row" data-cmd="toggle-vim"><span>Vim 模式</span></div>
+          <div class="menu-row" data-cmd="common-config"><span>共通設定...</span></div>
+          <div class="menu-row" data-cmd="key-config"><span>キー割り当て...</span></div>
           <div class="menu-sep"></div>
           <div class="menu-row" data-cmd="import-config"><span>导入配置</span></div>
           <div class="menu-row" data-cmd="export-config"><span>导出配置</span></div>
@@ -1912,6 +1935,12 @@ const SPLIT = { mode: "none" };
 const CONFIG_KEY = "ide1.0.config.v1";
 // --- VIEW_STATE ---
 const VIEW_STATE = { wordWrap: false, lineNumbers: true, minimap: false };
+const PREFS = (() => {
+  let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.settings") || "{}") || {}; } catch (_) {}
+  return Object.assign({ tabWidth: 4, autoIndent: true, smartIndent: true, defaultEol: "crlf", defaultEncoding: "UTF-8" }, o);
+})();
+function savePrefs() { try { localStorage.setItem("ide10.settings", JSON.stringify(PREFS)); } catch (_) {} }
+
 // --- CLIPBOARD ---
 let CLIPBOARD = "";
 // --- editorApi ---
@@ -2816,6 +2845,7 @@ async function sendTerminal(data) {
 function dispatchCommand(cmd) {
   if (!cmd) return;
   if (VIEW_CMDS[cmd]) { VIEW_CMDS[cmd](); return; }
+  if (CFG_CMDS[cmd]) { CFG_CMDS[cmd](); return; }
   if (SAKURA_CMDS[cmd]) { if (!getActiveTab()) { setTip("无活动标签"); return; } SAKURA_CMDS[cmd](); return; }
   if (cmd.startsWith("reopen-")) { reopenWithEncoding(cmd.slice(7)); return; }
   if (cmd.startsWith("eol-")) { setDocEol(cmd.slice(4)); return; }
@@ -3915,7 +3945,7 @@ function untitledName() {
 
 function createUntitledDoc() {
   const id = "t" + (++maxTabId);
-  const t = { id, path: "", name: untitledName(), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: [""], undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: "crlf" };
+  const t = { id, path: "", name: untitledName(), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: [""], undo: [], redo: [], encoding: PREFS.defaultEncoding || "UTF-8", bom: "none", eol: PREFS.defaultEol || "crlf" };
   TABS.set(id, t);
   setActiveTab(id);
   return t;
@@ -4395,8 +4425,8 @@ function insertNewline() {
   const head = line.slice(0, t.cursor.col);
   const tail = line.slice(t.cursor.col);
   // Enter 自动缩进: 复制前一行前导空白, 行尾 { [ ( 再多一级
-  const indent = (head.match(/^[ \t]*/) || [""])[0];
-  const extra = /[{[(\s]$/.test(head) ? "  " : "";
+  const indent = PREFS.autoIndent ? (head.match(/^[ \t]*/) || [""])[0] : "";
+  const extra = PREFS.autoIndent && PREFS.smartIndent && /[{[(\s]$/.test(head) ? "  " : "";
   // 缩进属于「新行」, 不是原行尾部 — 否则 lines[row] 会变成 "xxx\n  " 而新行是空的.
   t.lines[t.cursor.row] = head;
   t.lines.splice(t.cursor.row + 1, 0, indent + extra + tail);
@@ -8333,6 +8363,22 @@ function paintMarks() {
     }
   }
   set("ws-tab", wt); set("ws-space", ws); set("ws-zen", wz); set("ws-trail", wtr);
+  const da = [], dc = [], dd = [];
+  if (t && t.diff && !IME_ACTIVE) {
+    const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+    const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 10);
+    for (const h of t.diff.hunks) {
+      if (h.b1 > h.b0) {
+        for (let r = Math.max(h.b0, first); r < Math.min(h.b1, last + 1); r++) {
+          const rg = mk(r, 0, r, charLen(t.lines[r])); if (rg) ((h.a1 > h.a0) ? dc : da).push(rg);
+        }
+      } else if (h.b0 >= first && h.b0 <= last + 1) {
+        const r = Math.min(h.b0, t.lines.length - 1), len = charLen(t.lines[r] || "");
+        const rg = len ? mk(r, 0, r, Math.min(len, 1)) : null; if (rg) dd.push(rg);
+      }
+    }
+  }
+  set("diff-add", da); set("diff-chg", dc); set("diff-del", dd);
 }
 for (const n of ["renderVim", "paintActive", "updateCaret"]) {       // 每次重绘 / 光标移动后刷新标记
   const f = window[n];
@@ -8460,6 +8506,223 @@ Object.assign(KEYMAP, {
   "C-S-F2": "bookmark-reset", "A-F2": "bookmark-view", "C-F2": "bookmark-toggle", "F2": "bookmark-next", "S-F2": "bookmark-prev", "C-t": "tag-jump", "F12": "tag-jump", "C-S-t": "tag-jump-back", "S-F12": "tag-jump-back", "C-S-c": "open-hc",
 });
 try { applyMenuShortcuts(); } catch (_) {}
+
+
+/* ===== 共通設定 / キー割り当て / DIFF / 宏の保存・读取 ===== */
+function applyPrefs() {
+  document.documentElement.style.setProperty("--tab-size", String(PREFS.tabWidth));
+  updateCaret(false); scheduleMarks();
+}
+applyPrefs();
+
+function commonConfig() {
+  const TABS_ = [
+    ["全般", () => [
+      ["number", "字号 (px)", () => VIEW_STATE.fontSize || 14, (v) => setFontSize(Math.max(8, Math.min(40, v | 0))), 8, 40],
+      ["number", "TAB 宽度", () => PREFS.tabWidth, (v) => { PREFS.tabWidth = Math.max(1, Math.min(16, v | 0)); savePrefs(); applyPrefs(); }, 1, 16],
+    ]],
+    ["編集", () => [
+      ["check", "自动缩进", () => PREFS.autoIndent, (v) => { PREFS.autoIndent = v; savePrefs(); }],
+      ["check", "在 { [ ( 后多缩进一级", () => PREFS.smartIndent, (v) => { PREFS.smartIndent = v; savePrefs(); }],
+    ]],
+    ["ファイル", () => [
+      ["select", "新文档的编码", () => PREFS.defaultEncoding, (v) => { PREFS.defaultEncoding = v; savePrefs(); }, CHARSETS],
+      ["select", "新文档的换行", () => PREFS.defaultEol, (v) => { PREFS.defaultEol = v; savePrefs(); }, ["crlf", "lf", "cr"]],
+    ]],
+    ["表示", () => [
+      ["check", "自动换行", () => VIEW_STATE.wordWrap, (v) => { if (v !== VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); }],
+      ["check", "行号", () => VIEW_STATE.lineNumbers, (v) => { if (v !== VIEW_STATE.lineNumbers) dispatchCommand("toggle-line-num"); }],
+      ["check", "工具栏", () => VIEWOPT.toolbar, (v) => { if (v !== VIEWOPT.toolbar) VIEW_CMDS["toggle-toolbar"](); }],
+      ["check", "功能键栏", () => VIEWOPT.funckey, (v) => { if (v !== VIEWOPT.funckey) VIEW_CMDS["toggle-funckey"](); }],
+      ["check", "标尺", () => VIEWOPT.ruler, (v) => { if (v !== VIEWOPT.ruler) VIEW_CMDS["toggle-ruler"](); }],
+      ["check", "空白 / TAB 标记", () => VIEWOPT.ws, (v) => { if (v !== VIEWOPT.ws) VIEW_CMDS["toggle-ws"](); }],
+      ["check", "当前行下划线", () => VIEWOPT.curline, (v) => { if (v !== VIEWOPT.curline) VIEW_CMDS["toggle-curline"](); }],
+    ]],
+  ];
+  const render = (idx) => {
+    const rows = TABS_[idx][1]().map((r, i) => {
+      const [kind, label, get, , a, b] = r;
+      if (kind === "check") return '<div class="cfg-row"><label><input type="checkbox" data-i="' + i + '"' + (get() ? " checked" : "") + "> " + escapeHtml(label) + "</label></div>";
+      if (kind === "number") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="number" data-i="' + i + '" min="' + a + '" max="' + b + '" value="' + get() + '" style="width:80px"></div>';
+      return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><select data-i="' + i + '">' + a.map((o) => '<option' + (o === get() ? " selected" : "") + ">" + escapeHtml(o) + "</option>").join("") + "</select></div>";
+    }).join("");
+    mdBody.innerHTML = '<div class="cfg-tabs">' + TABS_.map((t, i) => '<button class="cfg-tab' + (i === idx ? " active" : "") + '" data-tab="' + i + '">' + t[0] + "</button>").join("") + "</div>" + rows;
+    const defs = TABS_[idx][1]();
+    mdBody.querySelectorAll(".cfg-tab").forEach((b) => b.addEventListener("click", () => render(+b.dataset.tab)));
+    mdBody.querySelectorAll("[data-i]").forEach((el) => {
+      const d = defs[+el.dataset.i];
+      el.addEventListener("change", () => d[3](d[0] === "check" ? el.checked : d[0] === "number" ? +el.value : el.value));
+    });
+  };
+  openModal({ title: "共通設定", bodyHTML: "", buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  render(0);
+}
+
+// ---- キー割り当て ----
+const KEYMAP_DEFAULT = Object.assign({}, KEYMAP);
+function loadKeymapOverrides() {
+  let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.keymap") || "{}") || {}; } catch (_) {}
+  for (const [c, cmd] of Object.entries(o)) { if (cmd === null) delete KEYMAP[c]; else KEYMAP[c] = cmd; }
+}
+function saveKeymapOverrides() {
+  const o = {};
+  for (const [c, cmd] of Object.entries(KEYMAP)) if (KEYMAP_DEFAULT[c] !== cmd) o[c] = cmd;
+  for (const c of Object.keys(KEYMAP_DEFAULT)) if (!(c in KEYMAP)) o[c] = null;
+  try { if (Object.keys(o).length) localStorage.setItem("ide10.keymap", JSON.stringify(o)); else localStorage.removeItem("ide10.keymap"); } catch (_) {}
+  applyMenuShortcuts();
+}
+loadKeymapOverrides(); try { applyMenuShortcuts(); } catch (_) {}
+function allCommandLabels() {
+  const m = new Map();
+  document.querySelectorAll("#menubar .menu-row[data-cmd]").forEach((r) => {
+    const c = r.dataset.cmd; if (!m.has(c)) m.set(c, ((r.querySelector("span") || r).textContent || c).trim());
+  });
+  for (const c of new Set(Object.values(KEYMAP))) if (!m.has(c)) m.set(c, c);
+  return m;
+}
+function keyConfig() {
+  const labels = allCommandLabels();
+  let capture = null, filter = "";
+  const draw = () => {
+    const rows = Object.entries(KEYMAP).filter(([c, cmd]) => !filter || (cmdLabelOfCombo(c) + " " + cmd + " " + (labels.get(cmd) || "")).toLowerCase().includes(filter))
+      .sort((a, b) => a[1].localeCompare(b[1])).map(([c, cmd]) =>
+        '<div class="kb-row" data-combo="' + escapeHtml(c) + '"><span class="kb-combo">' + escapeHtml(cmdLabelOfCombo(c)) + '</span><span class="kb-cmd" title="' + escapeHtml(cmd) + '">' +
+        escapeHtml(labels.get(cmd) || cmd) + ' <small style="opacity:.6">' + escapeHtml(cmd) + '</small></span><button class="md-btn" data-act="chg">変更</button><button class="md-btn" data-act="del">削除</button></div>').join("");
+    const opts = [...labels.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([c, l]) => '<option value="' + escapeHtml(c) + '">' + escapeHtml(l + " (" + c + ")") + "</option>").join("");
+    mdBody.innerHTML =
+      '<div class="cfg-row"><input id="kb-filter" placeholder="筛选 (键 / 命令)" value="' + escapeHtml(filter) + '" style="flex:1"></div>' +
+      '<div class="cfg-row"><select id="kb-newcmd" style="flex:1">' + opts + '</select><button class="md-btn" id="kb-add">追加</button><button class="md-btn" id="kb-reset">恢复默认</button></div>' +
+      (capture ? '<div class="kb-capture" id="kb-capture">请按下新的按键组合…  (Esc 取消)</div>' : "") +
+      '<div class="kb-list">' + rows + "</div>";
+    const f = document.getElementById("kb-filter"); f.addEventListener("input", () => { filter = f.value.toLowerCase(); const pos = f.selectionStart; draw(); const g = document.getElementById("kb-filter"); g.focus(); g.setSelectionRange(pos, pos); });
+    document.getElementById("kb-reset").addEventListener("click", () => { for (const c of Object.keys(KEYMAP)) delete KEYMAP[c]; Object.assign(KEYMAP, KEYMAP_DEFAULT); saveKeymapOverrides(); draw(); });
+    document.getElementById("kb-add").addEventListener("click", () => { capture = { cmd: document.getElementById("kb-newcmd").value }; draw(); });
+    mdBody.querySelectorAll(".kb-row").forEach((row) => {
+      row.querySelector('[data-act="del"]').addEventListener("click", () => { delete KEYMAP[row.dataset.combo]; saveKeymapOverrides(); draw(); });
+      row.querySelector('[data-act="chg"]').addEventListener("click", () => { capture = { cmd: KEYMAP[row.dataset.combo], old: row.dataset.combo }; draw(); });
+    });
+  };
+  const onKey = (e) => {
+    if (!capture) return;
+    if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.key === "Escape") { capture = null; draw(); return; }
+    const combo = comboOfEvent(e);
+    const other = KEYMAP[combo];
+    if (other && other !== capture.cmd && !confirm(cmdLabelOfCombo(combo) + " 已分配给 " + other + ", 要替换吗?")) { capture = null; draw(); return; }
+    if (capture.old) delete KEYMAP[capture.old];
+    KEYMAP[combo] = capture.cmd;
+    saveKeymapOverrides(); capture = null; draw();
+  };
+  document.addEventListener("keydown", onKey, true);
+  openModal({ title: "キー割り当て", bodyHTML: "", buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  draw();
+  const mo = new MutationObserver(() => { if (!modal.classList.contains("show")) { document.removeEventListener("keydown", onKey, true); mo.disconnect(); } });
+  mo.observe(modal, { attributes: true, attributeFilter: ["class"] });
+}
+
+// ---- DIFF ----
+function diffLines(a, b) {
+  let p = 0; while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let sa = a.length, sb = b.length; while (sa > p && sb > p && a[sa - 1] === b[sb - 1]) { sa--; sb--; }
+  const A = a.slice(p, sa), B = b.slice(p, sb), n = A.length, m = B.length;
+  if (!n && !m) return [];
+  if (!n || !m || n * m > 4e6) return [{ a0: p, a1: p + n, b0: p, b1: p + m }];
+  const w = m + 1, dp = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    dp[i * w + j] = A[i] === B[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+  const hunks = []; let i = 0, j = 0, cur = null;
+  const flush = () => { if (cur) { hunks.push(cur); cur = null; } };
+  while (i < n || j < m) {
+    if (i < n && j < m && A[i] === B[j]) { flush(); i++; j++; continue; }
+    if (!cur) cur = { a0: p + i, a1: p + i, b0: p + j, b1: p + j };
+    if (j < m && (i >= n || dp[i * w + j + 1] >= dp[(i + 1) * w + j])) { j++; cur.b1 = p + j; } else { i++; cur.a1 = p + i; }
+  }
+  flush();
+  return hunks;
+}
+window.diffLines = diffLines;
+function diffApply(t, otherLines, label) {
+  const hunks = diffLines(otherLines, t.lines);
+  t.diff = { hunks, label, otherLines: otherLines.slice() };
+  scheduleMarks();
+  setTip(hunks.length ? "DIFF: " + label + " との差分 " + hunks.length + " 箇所" : "DIFF: " + label + " と同一です");
+  if (hunks.length) diffList();
+}
+function diffJump(t, row) {
+  const r = Math.max(0, Math.min(t.lines.length - 1, row));
+  t.cursor = { row: r, col: 0 }; t.sel = null; t.selAnchor = null;
+  renderVim(t); setPos("Ln " + (r + 1) + ", Col 1"); updateCaret(true);
+  const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+  edContent.scrollTop = Math.max(0, r * lh - edContent.clientHeight / 3);
+  scheduleMarks();
+}
+function diffList() {
+  const t = getActiveTab();
+  if (!t || !t.diff) { setTip("先执行 DIFF"); return; }
+  const rows = t.diff.hunks.map((h, i) => {
+    const kind = h.a1 === h.a0 ? "追加" : h.b1 === h.b0 ? "削除" : "変更";
+    return '<div class="opt-row diff-row" data-i="' + i + '" style="cursor:pointer;">' + (h.b0 + 1) + (h.b1 - h.b0 > 1 ? "-" + h.b1 : "") + "行  " + kind +
+      "  (" + (h.a1 - h.a0) + " → " + (h.b1 - h.b0) + " 行)</div>";
+  }).join("");
+  openModal({ title: "差分一览 — " + t.diff.label + " (" + t.diff.hunks.length + ")", bodyHTML: rows || '<div class="empty-hint">没有差分</div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  mdBody.querySelectorAll(".diff-row").forEach((r) => r.addEventListener("click", () => { const h = t.diff.hunks[+r.dataset.i]; closeModal(); diffJump(t, h.b0); }));
+}
+function diffStep(dir) {
+  const t = getActiveTab();
+  if (!t || !t.diff || !t.diff.hunks.length) { setTip("没有差分标记"); return; }
+  const H = t.diff.hunks, cur = t.cursor.row;
+  let h = dir > 0 ? H.find((x) => x.b0 > cur) || H[0] : [...H].reverse().find((x) => x.b0 < cur) || H[H.length - 1];
+  diffJump(t, h.b0);
+  setTip("差分 " + (H.indexOf(h) + 1) + "/" + H.length);
+}
+const CFG_CMDS = {
+  "common-config": commonConfig,
+  "key-config": keyConfig,
+  "diff-with-tab": () => {
+    const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+    const others = [...TABS.values()].filter((x) => x.id !== t.id);
+    if (!others.length) { setTip("没有可比较的其它标签"); return; }
+    openModal({ title: "与哪个标签比较?", bodyHTML: others.map((o) => '<div class="opt-row dtab-row" data-id="' + o.id + '" style="cursor:pointer;">' + escapeHtml(o.path || o.name || "(无标题)") + "</div>").join(""), buttons: [{ label: "取消", cmd: "modal-close" }] });
+    mdBody.querySelectorAll(".dtab-row").forEach((r) => r.addEventListener("click", () => { const o = TABS.get(r.dataset.id); closeModal(); diffApply(t, o.lines, o.path || o.name || "(无标题)"); }));
+  },
+  "diff-with-file": () => {
+    const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+    openModalInput("与哪个文件比较? (路径)", "", async (v) => {
+      try {
+        const root = stripVerbatim(projectRoot || "");
+        const path = /^([a-zA-Z]:|[\\/])/.test(v) ? v : (root ? root.replace(/[\\/]$/, "") + "\\" + v : v);
+        const res = await invoke("read_file", { path });
+        diffApply(t, String(res.content == null ? res : res.content).replace(/\r\n?/g, "\n").split("\n"), v);
+      } catch (e) { setTip("读取失败: " + ((e && e.message) || e)); }
+    });
+  },
+  "diff-list": diffList, "diff-next": () => diffStep(1), "diff-prev": () => diffStep(-1),
+  "diff-clear": () => { const t = getActiveTab(); if (t) { t.diff = null; scheduleMarks(); setTip("已清除差分标记"); } },
+  "macro-save": () => {
+    if (!MACRO.keys.length) { setTip("没有已录制的宏"); return; }
+    openModalInput("保存宏到文件 (项目根内)", "macro1.mac.json", async (name) => {
+      try {
+        const root = await ensureWorkingRoot(); if (!root) return;
+        await invoke("write_file", { path: joinPath(root, name), content: JSON.stringify({ version: 1, keys: MACRO.keys }, null, 1), encoding: "UTF-8", bom: "none", eol: "lf", force: true });
+        setTip("宏已保存: " + name + " (" + MACRO.keys.length + " 键)");
+      } catch (e) { setTip("保存失败: " + ((e && e.message) || e)); }
+    });
+  },
+  "macro-load": () => {
+    openModalInput("读取宏文件 (项目根内)", "macro1.mac.json", async (name) => {
+      try {
+        const root = await ensureWorkingRoot(); if (!root) return;
+        const res = await invoke("read_file", { path: joinPath(root, name) });
+        const data = JSON.parse(String(res.content == null ? res : res.content));
+        if (!data || !Array.isArray(data.keys)) throw new Error("不是宏文件");
+        MACRO.keys = data.keys.filter((k) => k && typeof k.key === "string").slice(0, 1000);
+        setTip("宏已读取: " + MACRO.keys.length + " 键 — 工具>宏>播放宏 回放");
+      } catch (e) { setTip("读取失败: " + ((e && e.message) || e)); }
+    });
+  },
+};
+window.commonConfig = commonConfig; window.keyConfig = keyConfig;
 
 // ===== Welcome page =====
 function showWelcome() {
@@ -9001,7 +9264,7 @@ function showWiki() {
 }
 
 function showAbout() {
-  setTip("关于 IDE1.0 v0.1.9");
+  setTip("关于 IDE1.0 v0.0.1");
 }
 
 </script>
