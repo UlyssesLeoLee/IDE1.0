@@ -406,6 +406,33 @@
     #grep-win .grep-sec { margin-bottom: 8px; border-bottom: 1px solid var(--border, #555); }
     #grep-win .grep-sec-head { display: flex; gap: 8px; align-items: center; padding: 2px 0; position: sticky; top: 0; background: var(--bg-elev, #252526); z-index: 1; }
     #grep-win .gs-state { margin-left: auto; opacity: .75; }
+    /* ===== 视图附件: 工具栏 / 标尺 / 功能键栏 (默认全关; 只占自己的网格行, 关着时高度为 0) ===== */
+    #editor-area:not([class*="split-"]) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+    #editor-area:not([class*="split-"]) > #editor, #editor-area:not([class*="split-"]) > #minimap { grid-row: 4; }
+    #viewbars-top { grid-column: 1 / -1; grid-row: 3; min-width: 0; display: none; }
+    #funckeys { grid-column: 1 / -1; grid-row: 5; min-width: 0; display: none; }
+    #editor-area[class*="split-"] > #viewbars-top, #editor-area[class*="split-"] > #funckeys { display: none !important; }
+    html[data-v-toolbar="on"] #viewbars-top, html[data-v-ruler="on"] #viewbars-top { display: block; }
+    html[data-v-funckey="on"] #funckeys { display: flex; }
+    #toolbar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
+    html[data-v-toolbar="on"] #toolbar { display: flex; }
+    #toolbar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
+    #toolbar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
+    #toolbar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
+    #ruler { display: none; height: 16px; overflow: hidden; position: relative; background: var(--bg-bar); border-bottom: 1px solid var(--border); color: var(--fg-muted); font-size: 10px; line-height: 16px; white-space: pre; user-select: none; }
+    html[data-v-ruler="on"] #ruler { display: block; }
+    #ruler .rl-in { position: absolute; top: 0; left: 0; font-family: monospace; }
+    #funckeys { gap: 2px; padding: 2px 4px; background: var(--bg-bar); border-top: 1px solid var(--border); }
+    #funckeys .fk { flex: 1 1 0; min-width: 0; border: 1px solid var(--border); background: transparent; color: var(--fg); padding: 1px 2px; font-size: 11px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 3px; }
+    #funckeys .fk:hover { background: var(--bg-hover); }
+    #funckeys .fk b { opacity: .6; margin-right: 3px; font-weight: 600; }
+    #curline { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; border-bottom: 1px solid var(--blue); opacity: .75; display: none; z-index: 1; }
+    html[data-v-curline="on"] #curline.on { display: block; }
+    ::highlight(ws-tab) { background-color: rgba(90, 160, 255, 0.28); }
+    ::highlight(ws-space) { background-color: rgba(160, 160, 160, 0.20); }
+    ::highlight(ws-zen) { background-color: rgba(255, 160, 60, 0.35); }
+    ::highlight(ws-trail) { background-color: rgba(255, 70, 70, 0.35); }
+    html[data-v-readonly="on"] #s-mode::after { content: " 閲覧"; }
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: var(--z-modal); }
     #modal.show { display: flex; }
     .md-box { background: var(--bg-raised); border-radius: var(--r-md); width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
@@ -1529,6 +1556,19 @@
               <div class="menu-row" data-cmd="theme-high-contrast"><span>高对比度</span></div>
             </div>
           </div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="toggle-toolbar"><span>工具栏</span></div>
+          <div class="menu-row" data-cmd="toggle-funckey"><span>功能键栏</span></div>
+          <div class="menu-row" data-cmd="toggle-ruler"><span>标尺</span></div>
+          <div class="menu-row" data-cmd="toggle-ws"><span>空白 / TAB 标记</span></div>
+          <div class="menu-row" data-cmd="toggle-curline"><span>当前行下划线</span></div>
+          <div class="menu-row" data-cmd="toggle-readonly"><span>閲覧モード (只读)</span></div>
+          <div class="menu-sep"></div>
+          <div class="menu-row" data-cmd="redraw" data-shortcut="F5"><span>再描画</span><span class="mr-shortcut">F5</span></div>
+          <div class="menu-row" data-cmd="file-properties" data-shortcut="Alt+Enter"><span>文件属性</span><span class="mr-shortcut">Alt+Enter</span></div>
+          <div class="menu-row" data-cmd="window-list"><span>窗口一览</span></div>
+          <div class="menu-row" data-cmd="close-others"><span>关闭其它标签</span></div>
+          <div class="menu-row" data-cmd="close-right"><span>关闭右侧标签</span></div>
         </div>
       </div>
 
@@ -1654,11 +1694,14 @@
     <div id="editor-area">
       <div id="tabs" class="tab-bar"></div>
       <div id="breadcrumb"></div>
+      <div id="viewbars-top"><div id="toolbar"></div><div id="ruler"><div class="rl-in"></div></div></div>
       <div id="editor">
         <div id="gutter"></div>
         <div id="ed-content" tabindex="0" contenteditable="plaintext-only" spellcheck="false" autocapitalize="off" autocorrect="off"></div>
         <div id="caret" aria-hidden="true"></div>
+        <div id="curline" aria-hidden="true"></div>
       </div>
+      <div id="funckeys"></div>
     </div>
 
     <!-- Bottom Panel (single layer) -->
@@ -1974,6 +2017,9 @@ function updateMenuChecks() {
     "toggle-word-wrap": VIEW_STATE.wordWrap,
     "toggle-line-num": VIEW_STATE.lineNumbers,
     "toggle-vim": LAYOUT.vimOn(),
+    "toggle-toolbar": VIEWOPT.toolbar, "toggle-funckey": VIEWOPT.funckey, "toggle-ruler": VIEWOPT.ruler,
+    "toggle-ws": VIEWOPT.ws, "toggle-curline": VIEWOPT.curline,
+    "toggle-readonly": !!(getActiveTab() && getActiveTab().readOnly),
   };
   document.querySelectorAll(".menu-row[data-cmd]").forEach((row) => {
     if (row.dataset.cmd in checks) row.dataset.check = checks[row.dataset.cmd] ? "on" : "off";
@@ -2769,6 +2815,7 @@ async function sendTerminal(data) {
 // ===== Command Dispatcher (classic menu items) =====
 function dispatchCommand(cmd) {
   if (!cmd) return;
+  if (VIEW_CMDS[cmd]) { VIEW_CMDS[cmd](); return; }
   if (SAKURA_CMDS[cmd]) { if (!getActiveTab()) { setTip("无活动标签"); return; } SAKURA_CMDS[cmd](); return; }
   if (cmd.startsWith("reopen-")) { reopenWithEncoding(cmd.slice(7)); return; }
   if (cmd.startsWith("eol-")) { setDocEol(cmd.slice(4)); return; }
@@ -4862,6 +4909,15 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   }
   if (e.key === "i" || e.key === "a" || e.key === "o" ||
       e.key === "I" || e.key === "A" || e.key === "O") {
+    // Vim 语义: a 光标后, A 行尾, I 行首非空白, o/O 在下/上开新行
+    if (t && t.cursor) {
+      const line = t.lines[t.cursor.row] || "", n = charLen(line), k = e.key;
+      if (k === "a") t.cursor.col = Math.min(n, t.cursor.col + 1);
+      else if (k === "A") t.cursor.col = n;
+      else if (k === "I") t.cursor.col = charLen((line.match(/^[ \t]*/) || [""])[0]);
+      else if (k === "o") { e.preventDefault(); setMode("INSERT"); addLineBelow(); return; }
+      else if (k === "O") { e.preventDefault(); setMode("INSERT"); addLineAbove(); return; }
+    }
     setMode("INSERT");
     e.preventDefault();
     return;
@@ -7827,13 +7883,13 @@ if (edContent) {
     updateCaret(true);
   });
   // 有 keydown 紧跟的 insertText 说明按键已由键盘处理器决定过去留 (比如 Vim NORMAL 的前缀键), 不是「没有 keydown 的输入」
-  let lastKeydownAt = -1e9;
-  document.addEventListener("keydown", () => { lastKeydownAt = performance.now(); }, true);
+  let lastKeydownAt = -1e9, lastKeydownKey = "";
+  document.addEventListener("keydown", (ev) => { lastKeydownAt = performance.now(); lastKeydownKey = ev.key; }, true);
   edContent.addEventListener("beforeinput", (e) => {
     if (e.inputType === "insertCompositionText" || e.inputType === "deleteCompositionText" || e.inputType === "insertFromComposition") return;   // 只放行输入法组合
     e.preventDefault();                           // 其余浏览器自带编辑一律拦截 (文档只由我们的命令修改)
     // 没有对应 keydown 的文字输入 (语音输入 / 手写 / 软键盘 / 某些输入法直接上屏 / 自动化 insertText): 当作普通输入插入, 不能丢
-    if (e.inputType === "insertText" && e.data && !IME_ACTIVE && performance.now() - lastKeydownAt > 120) {
+    if (e.inputType === "insertText" && e.data && !IME_ACTIVE && !(performance.now() - lastKeydownAt < 120 && lastKeydownKey === e.data)) {
       const t = getActiveTab();
       if (!t) return;
       if (t.colSel) { columnInsert(e.data); return; }
@@ -7843,6 +7899,143 @@ if (edContent) {
   });
 }
 
+
+
+/* ===== 视图附件 (Sakura 的 表示 菜单): 工具栏 / 功能键栏 / 标尺 / 空白标记 / 当前行下划线 / 閲覧モード 等 ===== */
+const VIEWOPT = (() => {
+  let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.view") || "{}") || {}; } catch (_) {}
+  return Object.assign({ toolbar: false, funckey: false, ruler: false, ws: false, curline: false }, o);
+})();
+function saveViewOpt() { try { localStorage.setItem("ide10.view", JSON.stringify(VIEWOPT)); } catch (_) {} }
+
+const TOOLBAR_ITEMS = [
+  ["新規", "new-file"], ["開く", "open-file"], ["保存", "save"], "|",
+  ["切り取り", "cut"], ["コピー", "copy"], ["貼り付け", "paste"], "|",
+  ["元に戻す", "undo"], ["やり直し", "redo"], "|",
+  ["検索", "find"], ["置換", "replace"], ["Grep", "grep"], ["行へ", "goto-line"], "|",
+  ["ブックマーク", "bookmark-toggle"], ["前へ", "bookmark-prev"], ["次へ", "bookmark-next"],
+];
+const FUNCKEYS = [
+  ["F1", "帮助", "help"], ["F2", "ブックマーク次", "bookmark-next"], ["F3", "次を検索", "find-next"], ["F4", "", ""],
+  ["F5", "再描画", "redraw"], ["F6", "", ""], ["F7", "切り取り", "cut"], ["F8", "コピー", "copy"],
+  ["F9", "貼り付け", "paste"], ["F10", "", ""], ["F11", "", ""], ["F12", "タグジャンプ", "tag-jump"],
+];
+function buildViewBars() {
+  const tb = document.getElementById("toolbar"), fk = document.getElementById("funckeys");
+  if (tb && !tb.firstChild) {
+    tb.innerHTML = TOOLBAR_ITEMS.map((it) => it === "|" ? '<span class="tb-sep"></span>' :
+      '<button class="tb-btn" data-cmd="' + it[1] + '" title="' + it[1] + '">' + it[0] + "</button>").join("");
+  }
+  if (fk && !fk.firstChild) {
+    fk.innerHTML = FUNCKEYS.map((k) => '<button class="fk"' + (k[2] ? ' data-cmd="' + k[2] + '"' : " disabled") + "><b>" + k[0] + "</b>" + k[1] + "</button>").join("");
+  }
+}
+function updateRuler() {
+  const el = document.querySelector("#ruler .rl-in");
+  if (!el || !VIEWOPT.ruler) return;
+  const cs = getComputedStyle(edContent);
+  const cw = monoCharWidth ? monoCharWidth() : 8;
+  const cols = Math.ceil((edContent.scrollWidth + 400) / Math.max(1, cw));
+  let a = "", b = "";
+  for (let i = 1; i <= Math.min(cols, 1200); i++) { a += (i % 10 === 0) ? String(i / 10 % 100).padStart(1, " ").slice(-1) : (i % 5 === 0 ? "+" : "."); }
+  el.style.fontSize = cs.fontSize; el.style.letterSpacing = "0";
+  el.textContent = a;
+  const gw = document.getElementById("gutter").getBoundingClientRect().width;
+  const pad = parseFloat(cs.paddingLeft) || 0;
+  el.style.left = (gw + pad - edContent.scrollLeft) + "px";
+}
+function updateCurLine() {
+  const el = document.getElementById("curline");
+  if (!el) return;
+  const t = getActiveTab();
+  if (!VIEWOPT.curline || !t || LAYOUT.vimOn()) { el.classList.remove("on"); return; }
+  const c = document.getElementById("caret");
+  if (!c || !c.classList.contains("on")) { el.classList.remove("on"); return; }
+  const top = parseFloat(c.style.top) || 0, h = parseFloat(c.style.height) || 18;
+  el.style.top = (top + h - 1) + "px";
+  const g = document.getElementById("gutter").getBoundingClientRect().width;
+  el.style.left = g + "px";
+  el.classList.add("on");
+}
+function applyViewOpt() {
+  const root = document.documentElement;
+  for (const k of ["toolbar", "funckey", "ruler", "curline"]) root.setAttribute("data-v-" + k, VIEWOPT[k] ? "on" : "off");
+  buildViewBars(); updateRuler(); updateCurLine(); scheduleMarks();
+  try { syncLayoutUI(); } catch (_) {}
+}
+function toggleViewOpt(k, label) { VIEWOPT[k] = !VIEWOPT[k]; saveViewOpt(); applyViewOpt(); setTip(label + (VIEWOPT[k] ? " 已显示" : " 已隐藏")); }
+edContent.addEventListener("scroll", () => { if (VIEWOPT.ruler) updateRuler(); if (VIEWOPT.ws) scheduleMarks(); });
+window.addEventListener("resize", () => { if (VIEWOPT.ruler) updateRuler(); });
+{
+  const _uc = updateCaret;
+  updateCaret = function (f) { _uc(f); if (VIEWOPT.curline) updateCurLine(); if (VIEWOPT.ws) scheduleMarks(); };
+}
+
+function fileProperties() {
+  const t = getActiveTab();
+  if (!t) { setTip("无活动标签"); return; }
+  const text = t.lines.join("\n");
+  const bytes = new TextEncoder().encode(text).length;
+  const words = (text.match(/\S+/g) || []).length;
+  const m = docMeta(t);
+  const rows = [
+    ["文件", t.path || "(无标题)"], ["编码", m.encoding + (m.bom && m.bom !== "none" ? " BOM" : "")],
+    ["换行", String(m.eol).toUpperCase() + (t.mixedEol ? " (混用)" : "")], ["行数", t.lines.length],
+    ["字符数", [...text].length], ["字节数 (UTF-8)", bytes], ["单词数", words],
+    ["状态", (t.dirty ? "已修改" : "未修改") + (t.readOnly ? " · 只读" : "")],
+  ];
+  openModal({ title: "文件属性", bodyHTML: rows.map((r) => '<div class="opt-row"><b style="display:inline-block;width:110px;">' + r[0] + "</b>" + escapeHtml(String(r[1])) + "</div>").join(""),
+    buttons: [{ label: "关闭", cmd: "modal-close" }] });
+}
+function windowList() {
+  const rows = [...TABS.values()].map((t) => '<div class="opt-row win-row" data-win="' + t.id + '" style="cursor:pointer;">' +
+    (t.id === activeTabId ? "▶ " : "　") + escapeHtml(t.path || t.name || "(无标题)") + (t.dirty ? " ●" : "") + "</div>").join("");
+  openModal({ title: "窗口一览 (" + TABS.size + ")", bodyHTML: rows || '<div class="empty-hint">没有打开的文档</div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  mdBody.querySelectorAll(".win-row").forEach((r) => r.addEventListener("click", () => { closeModal(); setActiveTab(r.dataset.win); renderTabs(); }));
+}
+function closeTabsWhere(pred, label) {
+  const ids = [...TABS.values()].filter(pred).map((t) => t.id);
+  if (!ids.length) { setTip("没有可关闭的标签"); return; }
+  const dirty = ids.filter((id) => TABS.get(id).dirty).length;
+  if (dirty && !confirm(dirty + " 个文档有未保存修改, " + label + "会丢失. 继续?")) return;
+  ids.forEach(closeTab);
+}
+const VIEW_CMDS = {
+  "toggle-toolbar": () => toggleViewOpt("toolbar", "工具栏"),
+  "toggle-funckey": () => toggleViewOpt("funckey", "功能键栏"),
+  "toggle-ruler": () => toggleViewOpt("ruler", "标尺"),
+  "toggle-ws": () => toggleViewOpt("ws", "空白标记"),
+  "toggle-curline": () => toggleViewOpt("curline", "当前行下划线"),
+  "toggle-readonly": () => {
+    const t = getActiveTab(); if (!t) { setTip("无活动标签"); return; }
+    t.readOnly = !t.readOnly;
+    document.documentElement.setAttribute("data-v-readonly", t.readOnly ? "on" : "off");
+    setTip(t.readOnly ? "閲覧モード: 文档只读" : "已退出閲覧モード");
+  },
+  "redraw": () => { const t = getActiveTab(); if (t) { renderVim(t); updateCaret(false); } updateRuler(); scheduleMarks(); setTip("已重绘"); },
+  "file-properties": fileProperties,
+  "window-list": windowList,
+  "close-others": () => closeTabsWhere((t) => t.id !== activeTabId, "其它标签"),
+  "close-right": () => { const ids = [...TABS.keys()], at = ids.indexOf(activeTabId); const right = new Set(ids.slice(at + 1)); closeTabsWhere((t) => right.has(t.id), "右侧标签"); },
+};
+// 閲覧モード: 拦掉一切会改文档的按键 / 输入
+document.addEventListener("keydown", (e) => {
+  const t = getActiveTab();
+  if (!t || !t.readOnly) return;
+  if (e.target && e.target.closest && e.target.closest("input, textarea, #modal")) return;
+  const k = e.key, ctrl = e.ctrlKey || e.metaKey;
+  const edits = k === "Enter" || k === "Backspace" || k === "Delete" || k === "Tab" ||
+    (!ctrl && !e.altKey && k.length === 1) || (ctrl && /^[xvyzXVYZ]$/.test(k)) || (ctrl && k === "d") || (ctrl && k === "k");
+  if (edits) { e.preventDefault(); e.stopImmediatePropagation(); setTip("閲覧モード: 只读"); }
+}, true);
+document.addEventListener("beforeinput", (e) => { const t = getActiveTab(); if (t && t.readOnly) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+document.addEventListener("keydown", (e) => {
+  if (e.target && e.target.closest && e.target.closest("input, textarea, #modal")) return;
+  if (e.key === "F5" && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); VIEW_CMDS.redraw(); }
+  else if (e.key === "Enter" && e.altKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); fileProperties(); }
+}, true);
+document.addEventListener("DOMContentLoaded", applyViewOpt);
+if (document.readyState !== "loading") applyViewOpt();
 
 /* ===== Sakura 默认键位表 + 剩余的编辑 / 转换 / 复制命令 =====
    KEYMAP 是一张表 (照抄 CKeyBind.cpp 默认键位里我们已实现的命令), 在 document 捕获阶段统一分发,
@@ -8125,6 +8318,21 @@ function paintMarks() {
     }
   }
   set("bookmark-gutter", gm);
+  const wt = [], ws = [], wz = [], wtr = [];
+  if (t && VIEWOPT.ws && !IME_ACTIVE) {
+    const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
+    const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 10);
+    for (let r = first; r <= last && wt.length + ws.length + wz.length + wtr.length < 4000; r++) {
+      const line = t.lines[r], chs = chars(line);
+      let tail = chs.length; while (tail > 0 && (chs[tail - 1] === " " || chs[tail - 1] === "\t" || chs[tail - 1] === "\u3000")) tail--;
+      for (let c = 0; c < chs.length; c++) {
+        const ch = chs[c]; if (ch !== " " && ch !== "\t" && ch !== "\u3000") continue;
+        const rg = mk(r, c, r, c + 1); if (!rg) continue;
+        if (c >= tail) wtr.push(rg); else if (ch === "\t") wt.push(rg); else if (ch === "\u3000") wz.push(rg); else ws.push(rg);
+      }
+    }
+  }
+  set("ws-tab", wt); set("ws-space", ws); set("ws-zen", wz); set("ws-trail", wtr);
 }
 for (const n of ["renderVim", "paintActive", "updateCaret"]) {       // 每次重绘 / 光标移动后刷新标记
   const f = window[n];

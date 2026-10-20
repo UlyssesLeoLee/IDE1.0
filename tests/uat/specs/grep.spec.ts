@@ -336,7 +336,9 @@ test.describe("Grep 对话框五栏结构 (Sakura CDlgGrep 五个 IDC_COMBO_*)",
       )) as { path: string; line: number; text: string }[];
 
     // 不限目录: hello 只在 README.md
-    const all = await search("hello", null);
+    // 只看 README.md 的命中: 别的用例 (命令审计) 会往夹具目录里留下含 hello 的临时文件
+    const readmeOnly = (rows: { path: string }[]) => rows.filter((m) => /README\.md$/.test(m.path.replace(/\\/g, "/")));
+    const all = readmeOnly(await search("hello", null));
     expect(all.length, "不限目录时应能搜到 README.md").toBe(1);
     expect(all[0].path.replace(/\\/g, "/")).toContain("README.md");
 
@@ -352,7 +354,7 @@ test.describe("Grep 对话框五栏结构 (Sakura CDlgGrep 五个 IDC_COMBO_*)",
     // subfolders=false: 只搜根层。README.md="hello, world" 在根层, docs/index.md 的
     // "Docs Index" 只存在于子目录 —— 用这两个做对照 (注意根层还有 fold_test.rs 等
     // 含 `fn` 的文件, 所以不能用 `fn` 判断递归)。
-    const topOnly = await search("hello", null, false);
+    const topOnly = readmeOnly(await search("hello", null, false));
     expect(topOnly.length, "关闭递归后根层的 README.md 仍应命中").toBe(1);
     const deep = await search("Docs", null, false);
     expect(deep.length, "关闭递归后子目录 docs/index.md 不该命中").toBe(0);

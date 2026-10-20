@@ -87,6 +87,13 @@ async function checkOf(page: Page, menu: string, cmd: string): Promise<string | 
   return v;
 }
 
+/** 打开文件夹现在是页内输入框 (预填 pick_folder 的结果), 不是原生 prompt(): 填入路径并回车 */
+async function fillOpenFolderModal(page: Page, root: string) {
+  await page.locator(".md-input").waitFor({ state: "visible", timeout: 8_000 });
+  await page.locator(".md-input").fill(root);
+  await page.locator(".md-input").press("Enter");
+}
+
 /** 区域严丝合缝: 竖向 菜单栏/编辑区/底端面板(头)/状态栏 首尾相接铺满视口, 横向 编辑区左边的并排区域同理, 没有横向滚动.
  *  2026-10 起极简布局的抽屉改为**让位式**(占栅格轨道), 所以 min 的并排列与 full 一致;
  *  折叠态下活动栏 / 侧栏是 display:none, rect() 返回 null 被过滤掉, 断言自动只覆盖可见区域. */
@@ -102,7 +109,7 @@ async function expectTiled(page: Page, label = "") {
       iw: innerWidth, ih: innerHeight, sl: document.body.scrollLeft, sw: document.documentElement.scrollWidth,
       rows: ["#menubar", "#editor-area", "#bottom-panel", "#status"].map(rect),
       // 让位式布局下 min 与 full 的并排结构相同; 折叠的列是 display:none -> rect 返回 null
-      cols: ["#activity-bar", "#side-bar", "#left-strip", "#editor-area"].map(rect),
+      cols: ["#left-strip", "#activity-bar", "#side-bar", "#editor-area"].map(rect),
     };
   });
   const rows = r.rows.filter(Boolean) as { l: number; t: number; r: number; b: number }[];
@@ -429,8 +436,8 @@ test("打开文件夹 -> 左抽屉 (活动栏 + 侧栏) 自动展开并列出项
   const root = await serverRoot(request);
   await resetShell();
   // web 版 open-folder: POST /api/pick_folder 不通 -> 回退 prompt() 让用户填根目录
-  page.once("dialog", (d) => d.accept(root));
   await menuCmd(page, "file", "open-folder");
+  await fillOpenFolderModal(page, root);
   await page.waitForFunction(() => (document.querySelector("#side-body")?.textContent || "").includes("README.md"), null, { timeout: 8_000 });
   expect(await shown(page, "#side-bar")).toBe(true);
   expect(await shown(page, "#activity-bar"), "折叠的左抽屉整体展开: 活动栏跟着出现").toBe(true);
@@ -744,8 +751,8 @@ test("左抽屉没有项目时给一个真按钮「打开文件夹」(极简布�
   await expect(page.locator("#side-body")).not.toContainText("工具栏");
   const root = await serverRoot(request);
   await resetShell();
-  page.once("dialog", (d) => d.accept(root));   // web 版 open-folder 回退到 prompt() (同上面的打开文件夹用例)
   await b.click();
+  await fillOpenFolderModal(page, root);
   await page.waitForFunction(() => (document.querySelector("#side-body")?.textContent || "").includes("README.md"), null, { timeout: 8_000 });
   await expect(page.locator('#side-body button[data-cmd="open-folder"]')).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -952,8 +959,8 @@ test.describe("完整布局, 不带 vim 键", () => {
 
     const root = await serverRoot(request);
     await resetShell();
-    page.once("dialog", (d) => d.accept(root));
     await page.locator("#welcome .open-btn").click();
+    await fillOpenFolderModal(page, root);
     await page.waitForFunction(() => (document.querySelector("#side-body")?.textContent || "").includes("README.md"), null, { timeout: 8_000 });
     await page.locator('.tree-node:has-text("README.md")').first().click();
     await page.waitForFunction(() => (window as any).getActiveTab && (window as any).getActiveTab(), null, { timeout: 8_000 });
@@ -1120,40 +1127,38 @@ test("展开是让位不是覆盖: 抽屉占栅格, 编辑区收缩让出空间,
   expect(errors).toEqual([]);
 });
 
-test("按「最近」层叠: 后展开的盖住先展开的 (左下角), 抽屉内 mousedown 抬升, 菜单下拉盖在所有抽屉之上", async ({ page }) => {
+test("按「最近」重排: 后展开的占整行/整列, 先展开的让位 (互不重叠), 抽屉内 mousedown 抬升, 菜单下拉盖在所有抽屉之上", async ({ page }) => {
   const errors = await boot(page);
   await page.locator("#left-strip-btn").click();
   expect((await drawerState(page)).top).toBe("left");
   await page.locator('#bottom-head .bottom-tab[data-pane="terminal-pane"]').click();
-  expect((await drawerState(page)).top, "后展开的在上").toBe("bottom");
-  const body = await rectOf(page, "#bottom-body"), side = await rectOf(page, "#side-bar");
-  const ox = 100, oy = body.t + 20;                                      // 左下角: 两个抽屉重叠的地方
-  expect(side.b).toBeGreaterThan(oy);
-  expect(await ownerAt(page, ox, oy), "后展开的底抽屉盖住左抽屉").toBe("bottom");
-  expect(+(await rectOf(page, "#bottom-panel")).z).toBeGreaterThan(+(await rectOf(page, "#side-bar")).z);
+  expect((await drawerState(page)).top, "后展开的占角").toBe("bottom");
+  let body = await rectOf(page, "#bottom-body"), side = await rectOf(page, "#side-bar"), panel = await rectOf(page, "#bottom-panel");
+  expect(panel.l, "底抽屉横贯整行").toBeCloseTo(0, 0);
+  expect(side.b, "先展开的左抽屉让位, 不压到底抽屉").toBeLessThanOrEqual(panel.t + 1);
+  expect(await ownerAt(page, 100, body.t + 20), "左下角归底抽屉").toBe("bottom");
 
-  await page.mouse.click(ox, (await rectOf(page, "#menubar")).b + 60);   // 在左抽屉里没被盖住的地方按一下 -> 抬升
+  await page.mouse.click(100, (await rectOf(page, "#menubar")).b + 60);   // 在左抽屉里按一下 -> 它成为最近的, 整列归它
   expect((await drawerState(page)).top).toBe("left");
-  expect(await ownerAt(page, ox, oy), "左抽屉被抬到上面").toBe("left");
-  await page.mouse.click(600, body.t + 60);                              // 在底抽屉里按一下 -> 又抬回去
+  side = await rectOf(page, "#side-bar"); panel = await rectOf(page, "#bottom-panel");
+  expect(panel.l, "底抽屉让位到左抽屉右侧").toBeGreaterThanOrEqual(side.r - 1);
+  body = await rectOf(page, "#bottom-body");
+  expect(await ownerAt(page, 100, body.t + 20), "左下角归左抽屉").toBe("left");
+  await page.mouse.click(600, body.t + 60);                              // 在底抽屉里按一下 -> 又换回去
   expect((await drawerState(page)).top).toBe("bottom");
-  expect(await ownerAt(page, ox, oy)).toBe("bottom");
 
   // 先折叠再重新展开左抽屉 = 它又成了「最近展开」的
   await page.locator("#left-strip-btn").click();
   await page.locator("#left-strip-btn").click();
   expect((await drawerState(page)).top).toBe("left");
-  expect(await ownerAt(page, ox, oy)).toBe("left");
   // 已展开时又被命令点名 (如显示输出) -> 提到最上层
   await page.evaluate(() => (window as any).dispatchCommand("show-output"));
   expect((await drawerState(page)).top).toBe("bottom");
-  expect(await ownerAt(page, ox, oy)).toBe("bottom");
 
   // 永远不盖菜单栏: 打开视图菜单, 下拉在抽屉重叠区之上
   await page.locator('.menu-item[data-menu="view"] > .mb-btn').click();
   const dd = await rectOf(page, '.menu-dropdown[data-dropdown="view"]');
   expect(await ownerAt(page, dd.l + 20, dd.t + 20), "菜单下拉盖在抽屉之上").toBe("menubar");
-  expect(+(await rectOf(page, "#menubar")).z).toBeGreaterThan(+(await rectOf(page, "#bottom-panel")).z);
   await page.keyboard.press("Escape");
   expect(errors).toEqual([]);
 });
@@ -1261,9 +1266,11 @@ test("窗口很小 (640x480 / 320x240) 两个抽屉都展开: 不溢出, 夹在�
     expect(side.r, `${tag} 左抽屉 <= 80vw`).toBeLessThanOrEqual(0.8 * w + 1);
     expect(act.r, `${tag} 活动栏在视口内`).toBeLessThanOrEqual(w);
     expect(side.t, `${tag}`).toBeGreaterThanOrEqual(mb.b - 0.5);
-    expect(side.b, `${tag}`).toBeLessThanOrEqual(head.t + 0.5);
+    // 最近展开的占整列/整行, 另一个让位: 左抽屉要么在面板头之上, 要么面板头在它右侧
+    expect(side.b <= head.t + 0.5 || head.l >= side.r - 0.5, `${tag} 左抽屉与面板头不重叠`).toBe(true);
     expect(body.t, `${tag} 底抽屉够不到菜单栏`).toBeGreaterThanOrEqual(mb.b - 0.5);
-    expect(body.b, `${tag}`).toBeLessThanOrEqual(head.t + 0.5);
+    expect(body.t, `${tag} 面板头在正文之上`).toBeGreaterThanOrEqual(head.b - 0.5);
+    expect(body.b, `${tag} 正文止于状态栏`).toBeLessThanOrEqual(st.t + 0.5);
     expect(body.w, `${tag} 通栏不超出`).toBeLessThanOrEqual(w + 0.5);
     expect(mb.h, `${tag} 菜单栏不被盖 / 压`).toBeCloseTo(30, 0);
     expect(st.b, `${tag} 状态栏贴底`).toBeCloseTo(h, 0);
@@ -1276,8 +1283,8 @@ test("资源管理器: 左抽屉展开时重画文件树 (看得到磁盘上的�
   const errors = await boot(page);
   const root = await serverRoot(request);
   await resetShell();
-  page.once("dialog", (d) => d.accept(root));
   await menuCmd(page, "file", "open-folder");
+  await fillOpenFolderModal(page, root);
   await page.waitForFunction(() => (document.querySelector("#side-body")?.textContent || "").includes("README.md"), null, { timeout: 8_000 });
   await page.locator('.tree-node:has-text("src")').first().click();
   await page.waitForFunction(() => document.querySelectorAll("#side-body .tree-child").length > 0, null, { timeout: 8_000 });
@@ -1351,8 +1358,8 @@ test("资源管理器: 重画后滚动位置和已展开的目录都还原 (矮�
   await page.setViewportSize({ width: 960, height: 260 });
   const root = await serverRoot(request);
   await resetShell();
-  page.once("dialog", (d) => d.accept(root));
   await menuCmd(page, "file", "open-folder");
+  await fillOpenFolderModal(page, root);
   await page.waitForFunction(() => (document.querySelector("#side-body")?.textContent || "").includes("README.md"), null, { timeout: 8_000 });
   for (const dir of ["docs", "src"]) {
     // 每次点开一个目录, 等子项数量真的增加 (目录是懒加载的; 只等「有子项」会把第二个目录的加载漏掉)

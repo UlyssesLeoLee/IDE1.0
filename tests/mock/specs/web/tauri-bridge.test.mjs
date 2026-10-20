@@ -9,7 +9,7 @@ test('Tauri: Grep 条件被包成 {options}, 裸数组结果被正确读取 (不
     assert.equal(await page.evaluate(() => inTauri), true);
     await page.locator('#ed-content').click();
     await press('Control+g'); await page.fill('#grep-input', 'hello'); await press('Enter');
-    await page.waitForFunction(() => /hello/.test((document.getElementById('grep-results') || document.getElementById('md-body') || {}).innerText || ''), null, { timeout: 8000 }).catch(() => {});
+    await page.waitForSelector('#grep-results .grep-hit', { timeout: 8000 }).catch(() => {});
     const text = await page.evaluate(() => document.getElementById('grep-results') ? document.getElementById('grep-results').innerText : document.getElementById('md-body').innerText);
     assert.match(text, /hello/);
     assert.doesNotMatch(text, /undefined/);

@@ -69,7 +69,7 @@ test.describe("web /editor (ULYS-251)", () => {
     await expect(page.locator("#grep-input")).toBeVisible();
     await page.locator("#grep-input").fill("fn main");
     await page.locator("#grep-input").press("Enter");
-    const hit = page.locator("#grep-results .opt-row").filter({ hasText: "main.rs" }).first();
+    const hit = page.locator('#grep-results .grep-hit[data-grep-path*="main.rs"]').first();   // 命中行 (组头只负责折叠)
     await expect(hit).toBeVisible();
     await hit.click();
     await expect(page.locator(".tab.active")).toContainText("main.rs");

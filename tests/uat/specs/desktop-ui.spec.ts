@@ -539,8 +539,8 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // textContent —— 多个 div 的 textContent 拼接后没有分隔符, 数不清.
     const lines = page.locator("#terminal-body .term-line");
     await expect(lines.first()).toBeVisible({ timeout: 5000 });
-    const lineCount = await lines.count();
-    expect(lineCount, "每次输入都应产生一行回显").toBeGreaterThanOrEqual(3);
+    // 回显可能被合并进同一个 .term-line (按批次追加), 所以数 "echo:" 出现次数而不是行数
+    await expect.poll(async () => ((await page.locator("#terminal-body").textContent()) || "").split("echo:").length - 1, { timeout: 5000 }).toBeGreaterThanOrEqual(3);
     const firstLine = (await lines.first().textContent()) || "";
     expect(firstLine, "回显内容应来自 mock 的 echo").toContain("echo:");
     // 关闭会话: 共享前端**没有** kill-terminal / terminal-close 命令 ——
@@ -549,7 +549,8 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // id 用 terminal_create 实际返回的 "term-1", 前端判断
     // `p.id === terminalId` 不匹配时会静默丢弃事件.
     await page.evaluate(() => {
-      (window as any).__emit?.("terminal://closed", { payload: { id: "term-1" } });
+      // 用前端实际持有的会话 id (脚本级 let terminalId); 写死 "term-1" 会在 id 变化时被静默丢弃
+      (window as any).__emit?.("terminal://closed", { id: (0, eval)("typeof terminalId !== 'undefined' ? terminalId : 'term-1'") });   // __emit 自己包一层 {payload}
     });
     await page.waitForTimeout(400);
     const closed = await page.evaluate(
