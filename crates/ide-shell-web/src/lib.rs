@@ -666,6 +666,18 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             doc_respond(stream, view);
         }
 
+        ("POST", "/api/migemo_patterns") => {
+            // MIGEMO 検索: ローマ字 → ひらがな / カタカナ / 半角カナ 等の候補パターン
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let roma = req.get("roma").and_then(|v| v.as_str()).unwrap_or("");
+            let patterns = editcore::migemo::expand_pattern(roma);
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&serde_json::json!({ "patterns": patterns })).unwrap_or_default(),
+            );
+        }
         ("POST", "/api/reinterpret_text") => {
             // コード変換: 文本按 encode_as 编成字节再按 decode_as 解读 (纯计算, 不碰磁盘)
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();

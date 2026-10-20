@@ -645,6 +645,7 @@ pub fn run() {
             search::search_cmd,
             outline::outline,
             reinterpret_text,
+            migemo_patterns,
             plugin::plugin_load,
         ])
         .setup(|app_handle| {
@@ -718,6 +719,18 @@ fn reinterpret_text(options: ReinterpretOptions) -> Result<serde_json::Value, St
     let e = Charset::from_label(&options.encode_as).ok_or("不支持的编码")?;
     let d = Charset::from_label(&options.decode_as).ok_or("不支持的编码")?;
     Ok(serde_json::json!({ "text": r(&options.text, e, d)? }))
+}
+
+
+#[derive(serde::Deserialize)]
+pub struct MigemoOptions {
+    pub roma: String,
+}
+
+/// MIGEMO 検索のパターン展開 (web 版 /api/migemo_patterns と同一語義)
+#[tauri::command]
+fn migemo_patterns(options: MigemoOptions) -> serde_json::Value {
+    serde_json::json!({ "patterns": editcore::migemo::expand_pattern(&options.roma) })
 }
 
 #[cfg(test)]

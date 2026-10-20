@@ -83,3 +83,19 @@ test('タグジャンプ (F12) 跳到定义, Shift+F12 回到原位置', () =>
     await press('F12'); assert.deepEqual((await snap()).cursor.row, 0);
     await press('Shift+F12'); assert.equal((await snap()).cursor.row, 1);
   }));
+
+test('MIGEMO インクリメンタルサーチ: ローマ字で かな / カナ / 半角カナ にヒット (候補は Rust 展開)', () =>
+  withMocks({ name: 'se', portOffset: 66 }, async ({ page, snap, press }) => {
+    await page.locator('#ed-content').click();
+    await page.evaluate(() => { const t = getActiveTab(); t.lines = ['hello', 'にほんご世界', 'カタカナ', 'ｶﾀｶﾅ半角']; t.cursor = { row: 0, col: 0 }; renderVim(t); });
+    await page.evaluate(() => dispatchCommand('isearch-migemo-fwd'));
+    await page.keyboard.type('nihongo'); await page.waitForTimeout(700);
+    assert.deepEqual((await snap()).sel, [1, 0, 1, 4]);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { getActiveTab().cursor = { row: 0, col: 0 }; dispatchCommand('isearch-migemo-fwd'); });
+    await page.keyboard.type('katakana'); await page.waitForTimeout(700);
+    assert.deepEqual((await snap()).sel.slice(0, 2), [2, 0]);
+    await page.keyboard.press('Enter'); await page.waitForTimeout(400);
+    assert.deepEqual((await snap()).sel.slice(0, 2), [3, 0], '下一处 = 半角カナ');
+    await page.keyboard.press('Escape');
+  }));

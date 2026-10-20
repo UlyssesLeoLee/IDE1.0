@@ -319,22 +319,27 @@ fn hiragana_to_katakana(c: char) -> char {
 }
 
 fn katakana_to_halfwidth(s: &str) -> String {
-    s.chars()
-        .map(|c| {
-            // 拉长音符 U+30FC 落在 U+30A1..U+30F6 区间内, 但它不是规则的
-            // 「U+30A1 起的连续块」——套用公式会算出 U+FFC0 (未定义区).
-            // 它的半角形是 U+FF70 (ｰ), 必须单列.
-            if c == '\u{30FC}' {
-                return '\u{FF70}';
-            }
-            // 「」 ー 等不参与转换
-            if ('\u{30A1}'..='\u{30F6}').contains(&c) {
-                char::from_u32(c as u32 - 0x30A1 + 0xFF65).unwrap_or(c)
-            } else {
-                c
-            }
-        })
-        .collect()
+    // 半角カナは全角と連続したコードポイントではない (ｱ=U+FF71 …) ので変換表を持つ zenkaku_hankaku に任せる。
+    // 濁音・半濁音 (ガ → ｶﾞ) は「清音 + 結合文字」に分解してから半角化し、結合文字を ﾞ ﾟ に差し替える。
+    const VOICED: &str = "ガギグゲゴザジズゼゾダヂヅデドバビブベボヴ";
+    const VOICED_BASE: &str = "カキクケコサシスセソタチツテトハヒフヘホウ";
+    const SEMI: &str = "パピプペポ";
+    const SEMI_BASE: &str = "ハヒフヘホ";
+    let vb: Vec<char> = VOICED_BASE.chars().collect();
+    let sb: Vec<char> = SEMI_BASE.chars().collect();
+    let mut tmp = String::new();
+    for c in s.chars() {
+        if let Some(i) = VOICED.chars().position(|v| v == c) {
+            tmp.push(vb[i]);
+            tmp.push('\u{3099}');
+        } else if let Some(i) = SEMI.chars().position(|v| v == c) {
+            tmp.push(sb[i]);
+            tmp.push('\u{309A}');
+        } else {
+            tmp.push(c);
+        }
+    }
+    crate::zenkaku_hankaku::to_halfwidth(&tmp).replace('\u{3099}', "\u{FF9E}").replace('\u{309A}', "\u{FF9F}")
 }
 
 /// 検索: テキスト内で パターン (複数候補) のいずれかにマッチする位置を返す
@@ -432,8 +437,11 @@ mod tests {
         // 公式会算出 U+FFC0 (未定义区) —— 必须单列成 U+FF70.
         let hw = katakana_to_halfwidth("ラーメン");
         let codes: Vec<u32> = hw.chars().map(|c| c as u32).collect();
-        assert_eq!(codes, vec![0xFFAD, 0xFF70, 0xFFA5, 0xFFB7], "got {codes:?}");
+        // ﾗ=FF97 ｰ=FF70 ﾒ=FF92 ﾝ=FF9D (旧実装の連続コードポイント式は ｭｰｦｷ のような別の文字を出していた)
+        assert_eq!(codes, vec![0xFF97, 0xFF70, 0xFF92, 0xFF9D], "got {codes:?}");
         assert!(!codes.contains(&0xFFC0), "不该产出未定义码位");
+        assert_eq!(katakana_to_halfwidth("カタカナ"), "ｶﾀｶﾅ");
+        assert_eq!(katakana_to_halfwidth("ガパ"), "ｶﾞﾊﾟ");
     }
 
     #[test]

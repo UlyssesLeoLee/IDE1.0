@@ -1515,6 +1515,8 @@
           <div class="menu-row" data-cmd="isearch-back"><span>後方インクリメンタルサーチ</span></div>
           <div class="menu-row" data-cmd="isearch-regex-fwd"><span>前方正規表現インクリメンタルサーチ</span></div>
           <div class="menu-row" data-cmd="isearch-regex-back"><span>後方正規表現インクリメンタルサーチ</span></div>
+          <div class="menu-row" data-cmd="isearch-migemo-fwd"><span>前方MIGEMOインクリメンタルサーチ</span></div>
+          <div class="menu-row" data-cmd="isearch-migemo-back"><span>後方MIGEMOインクリメンタルサーチ</span></div>
           <div class="menu-row" data-cmd="search-clearmark"><span>検索マークの切替え</span></div>
           <div class="menu-row" data-cmd="jump-srchstart"><span>検索開始位置へ戻る</span></div>
           <div class="menu-row" data-cmd="bracket-pair"><span>対括弧の検索</span></div>
@@ -2294,7 +2296,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -8413,7 +8415,7 @@ for (const n of ["renderVim", "paintActive", "updateCaret"]) {       // 每次�
 edContent.addEventListener("scroll", scheduleMarks);
 
 /* ===== 增量搜索 (インクリメンタルサーチ): 底部输入条, 边输入边跳 ===== */
-const ISEARCH = { dir: 1, regex: false, start: null, bar: null };
+const ISEARCH = { dir: 1, regex: false, migemo: false, cache: new Map(), start: null, bar: null };
 function isearchBar() {
   if (ISEARCH.bar) return ISEARCH.bar;
   const bar = document.createElement("div");
@@ -8433,11 +8435,11 @@ function isearchBar() {
   ISEARCH.bar = bar;
   return bar;
 }
-function isearchOpen(dir, regex) {
+function isearchOpen(dir, regex, migemo) {
   const t = getActiveTab(); if (!t) return;
   const bar = isearchBar();
-  ISEARCH.dir = dir; ISEARCH.regex = regex; ISEARCH.start = { row: t.cursor.row, col: t.cursor.col };
-  bar.querySelector("#is-label").textContent = (regex ? "正規表現 " : "") + (dir > 0 ? "前方" : "後方") + "インクリメンタルサーチ:";
+  ISEARCH.dir = dir; ISEARCH.regex = regex; ISEARCH.migemo = !!migemo; ISEARCH.start = { row: t.cursor.row, col: t.cursor.col };
+  bar.querySelector("#is-label").textContent = (migemo ? "MIGEMO " : regex ? "正規表現 " : "") + (dir > 0 ? "前方" : "後方") + "インクリメンタルサーチ:";
   bar.querySelector("#is-count").textContent = "";
   bar.hidden = false;
   const inp = bar.querySelector("#is-input"); inp.value = ""; inp.focus();
@@ -8454,11 +8456,26 @@ function isearchClose(restore) {
 function isearchRun(next) {
   const t = getActiveTab(); const bar = ISEARCH.bar; if (!t || !bar) return;
   const q = bar.querySelector("#is-input").value;
-  FIND_STATE.needle = q; FIND_STATE.useRegex = ISEARCH.regex; FIND_STATE.matchCase = /[A-Z]/.test(q);   // 含大写才区分大小写 (Sakura 同)
+  let needle = q, useRegex = ISEARCH.regex;
+  if (ISEARCH.migemo && q) {
+    const pats = ISEARCH.cache.get(q);
+    if (!pats) {                                      // 候选来自 Rust (editcore::migemo), 取到后重跑一次
+      invoke("migemo_patterns", { roma: q }).then((r) => {
+        ISEARCH.cache.set(q, (r && r.patterns) || [q]);
+        const inp = ISEARCH.bar && ISEARCH.bar.querySelector("#is-input");
+        if (inp && inp.value === q && !ISEARCH.bar.hidden) isearchRun(next);
+      }).catch(() => { ISEARCH.cache.set(q, [q]); });
+      bar.querySelector("#is-count").textContent = "…";
+      return;
+    }
+    needle = [...new Set(pats.filter(Boolean))].map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    useRegex = true;
+  }
+  FIND_STATE.needle = needle; FIND_STATE.useRegex = useRegex; FIND_STATE.matchCase = !ISEARCH.migemo && /[A-Z]/.test(q);   // 含大写才区分大小写 (Sakura 同)
   const cnt = bar.querySelector("#is-count");
   if (!q) { cnt.textContent = ""; t.sel = null; renderVim(t); return; }
   if (!buildFindRegex(FIND_STATE)) { cnt.textContent = "正则无效"; return; }
-  const hits = findInTab(t, q, FIND_STATE);
+  const hits = findInTab(t, needle, FIND_STATE);
   if (!hits.length) { cnt.textContent = "見つかりません"; return; }
   const from = next && t.sel ? { row: t.cursor.row, col: t.cursor.col } : ISEARCH.start;
   const after = (h) => h.row > from.row || (h.row === from.row && h.col > from.col);
@@ -8476,6 +8493,7 @@ function openIncSearch() { isearchOpen(1, false); }
 Object.assign(SAKURA_CMDS, {
   "isearch-fwd": () => isearchOpen(1, false), "isearch-back": () => isearchOpen(-1, false),
   "isearch-regex-fwd": () => isearchOpen(1, true), "isearch-regex-back": () => isearchOpen(-1, true),
+  "isearch-migemo-fwd": () => isearchOpen(1, false, true), "isearch-migemo-back": () => isearchOpen(-1, false, true),
   "search-clearmark": () => { FIND_STATE.marks = !FIND_STATE.marks; scheduleMarks(); setTip("検索マーク: " + (FIND_STATE.marks ? "表示" : "非表示")); },
   "jump-srchstart": () => {
     const t = getActiveTab(), p = FIND_STATE.startPos;
