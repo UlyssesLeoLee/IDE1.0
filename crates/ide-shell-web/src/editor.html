@@ -9434,6 +9434,8 @@ Object.assign(CFG_CMDS, {
     dispatchCommand("show-terminal");
     if (!terminalId) { try { await createTerminal(); } catch (_) {} for (let i = 0; i < 30 && !terminalId; i++) await new Promise((r) => setTimeout(r, 100)); }
     if (!terminalId) { setTip("无法创建终端"); return; }
+    // 路径会被打进交互式 shell: 含引号 / 命令分隔符 / 控制字符的文件名可能逃出引号注入命令, 一律拒绝
+    if (/["&|<>^%`$;'\r\n\0]/.test(t.path)) { setTip("文件路径含特殊字符, 为安全起见不在终端中执行"); return; }
     await sendTerminal('sqlplus @"' + t.path + '"\r');
     setTip("已在 SQL*Plus 中执行: " + t.path);
   },

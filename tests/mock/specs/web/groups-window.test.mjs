@@ -60,3 +60,13 @@ test('再変換: 原生选区对齐到编辑器选区 (之后由 IME 的变换�
     await page.evaluate(() => { const t = getActiveTab(); t.sel = { r0: 0, c0: 6, r1: 0, c1: 11 }; renderVim(t); dispatchCommand('reconvert'); });
     assert.equal(await page.evaluate(() => getSelection().toString()), 'world');
   }));
+
+test('SQL*Plus: 正常路径在终端执行; 含引号/分隔符的路径被拒绝 (防命令注入)', () =>
+  withMocks({ name: 'gw', portOffset: 284, mock: { tauri: true } }, async ({ page, m }) => {
+    await page.locator('#ed-content').click();
+    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a.sql'; return dispatchCommand('sqlplus-run'); }); await page.waitForTimeout(1500);
+    assert.match((await m.tauri.ipc()).filter((c) => c.name === 'terminal_input').map((c) => c.args.data).join(''), /sqlplus @"C:\proj\a\.sql"\r/);
+    const before = (await m.tauri.ipc()).filter((c) => c.name === 'terminal_input').length;
+    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a" & calc & ".sql'; return dispatchCommand('sqlplus-run'); }); await page.waitForTimeout(500);
+    assert.equal((await m.tauri.ipc()).filter((c) => c.name === 'terminal_input').length, before, '没有再发送任何输入');
+  }));
