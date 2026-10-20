@@ -487,6 +487,7 @@ test.describe("命令审计 (功能覆盖)", () => {
     const before = await page.evaluate(() => (window as any).activeTab().lines.slice());
     await page.evaluate(() => {
       const t = (window as any).activeTab();
+      t.sel = null;   // 粘贴会替换选区 (Sakura 行为), 这里要的是「追加到末尾」
       t.cursor = { row: t.lines.length - 1, col: t.lines[t.lines.length - 1].length };
       (window as any).dispatchCommand("paste");
     });

@@ -308,7 +308,7 @@
     #editor-area.split-quad { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto repeat(2, minmax(0, 1fr)); }
     /* white-space / tab-size 与 #ed-content 一致: 否则 .hl-row (white-space: inherit) 继承 normal, 缩进被吞、长行折成 36/127px 的不规则行 */
     .split-view { overflow: auto; background: var(--bg-edit); padding: 2px 6px;
-      font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: 2; }
+      font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: 4; }
     .split-label { color: var(--fg-muted); font-size: var(--fs-xs); padding: 2px 0;
       border-bottom: 1px solid var(--border); }
     #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
@@ -351,7 +351,7 @@
 
     #editor { flex: 1; display: flex; min-height: 0; }
     #gutter { background: var(--bg-side); color: var(--fg-muted); padding: 4px 8px 16px; text-align: right; user-select: none; min-width: 40px; overflow: hidden; font-size: 12px; line-height: 18px; white-space: pre; flex: 0 0 auto; }
-    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: 2; font-size: var(--fs-md); line-height: 18px; outline: none; }
+    #ed-content { flex: 1; padding: 4px 8px; overflow: auto; background: var(--bg-edit); white-space: pre; tab-size: 4; font-size: var(--fs-md); line-height: 18px; outline: none; }
     #ed-content:focus { outline: none; }
 
     /* ===== Bottom Panel (single layer) ===== */
@@ -1257,8 +1257,8 @@
           <div class="menu-row" data-cmd="select-all" data-shortcut="Ctrl+A"><span>全选</span><span class="mr-shortcut">Ctrl+A</span></div>
           <div class="menu-row" data-cmd="delete-line" data-shortcut="Ctrl+D"><span>删除行</span><span class="mr-shortcut">Ctrl+D</span></div>
           <div class="menu-row" data-cmd="duplicate-line" data-shortcut="Ctrl+Shift+D"><span>行复制</span><span class="mr-shortcut">Ctrl+Shift+D</span></div>
-          <div class="menu-row" data-cmd="move-line-up" data-shortcut="Ctrl+Shift+Up"><span>上移行</span><span class="mr-shortcut">Ctrl+Shift+Up</span></div>
-          <div class="menu-row" data-cmd="move-line-down" data-shortcut="Ctrl+Shift+Down"><span>下移行</span><span class="mr-shortcut">Ctrl+Shift+Down</span></div>
+          <div class="menu-row" data-cmd="move-line-up" data-shortcut="Alt+Shift+Up"><span>上移行</span><span class="mr-shortcut">Alt+Shift+Up</span></div>
+          <div class="menu-row" data-cmd="move-line-down" data-shortcut="Alt+Shift+Down"><span>下移行</span><span class="mr-shortcut">Alt+Shift+Down</span></div>
           <div class="menu-row" data-cmd="add-line-above"><span>在上方插入空行</span></div>
           <div class="menu-row" data-cmd="add-line-below"><span>在下方插入空行</span></div>
           <div class="menu-row" data-cmd="delete-line-up" data-shortcut="Ctrl+Shift+Backspace"><span>删除上方行</span><span class="mr-shortcut">Ctrl+Shift+Backspace</span></div>
@@ -1553,6 +1553,7 @@
            否则用户除了高亮之外看不出自己在列块里, 误以为还在普通插入. -->
       <span class="s-item s-colsel" id="s-colsel" hidden></span>
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
+      <span class="s-item" id="s-ovr" title="Ins 键切换 插入/改写">挿入</span>
       <span class="s-item" id="s-file">无活动</span>
       <span class="s-item s-tip" id="s-tip">就绪 — 点工具栏「打开文件夹」导入项目</span>
       <span class="s-item" id="s-lang">Plain</span>
@@ -3882,8 +3883,10 @@ function insertChar(ch) {
   // 按 char 切分再插入 —— ch 可能是 surrogate pair (emoji / CJK 扩展 B 补字),
   // 用 UTF-16 下标切会算错.
   const arr = charArray(line);
+  // 覆盖模式 (Ins): 行内还有字符时吃掉光标后的一个字符
+  const skip = OVERWRITE && t.cursor.col < arr.length ? 1 : 0;
   t.lines[t.cursor.row] =
-    arr.slice(0, t.cursor.col).join("") + ch + arr.slice(t.cursor.col).join("");
+    arr.slice(0, t.cursor.col).join("") + ch + arr.slice(t.cursor.col + skip).join("");
   t.cursor.col += chars(ch).length;
   t.dirty = true;
   paintActive();
@@ -4358,6 +4361,7 @@ edContent.addEventListener("mousedown", (e) => {
   syncColumnSelectUI(tv);
   tv.cursor = { row, col };
   tv.sel = normalizeSel(anchor, { row, col });
+  tv.selAnchor = anchor;
   selDrag = { anchor };
   if (tv.sel || hadMark) renderVim(tv); else { setPos("Ln " + (row + 1) + ", Col " + (col + 1)); updateCaret(false); }
 });
@@ -4413,6 +4417,9 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   if (t && !t.folded) t.folded = new Set();
   if (t && !t.dirty) t.dirty = false;
 
+  // Sakura 键盘移动 / 范围选择 / 选区替换式编辑 / Ins 覆盖 (列块和 Alt 组合另有处理)
+  if (t && mode === "INSERT" && !e.altKey && !e.metaKey && !t.colSel && handleEditNavKey(e, t, vim)) return;
+
   if (e.ctrlKey) {
     const k = e.key.toLowerCase();
     if (k === "s") { e.preventDefault(); saveByKey(e); return; }
@@ -4433,7 +4440,8 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     const editorKey = (!e.shiftKey && (k === "u" || k === "e" || e.key === "Backspace"))
       || (e.shiftKey && (k === "u" || k === "k"))
       || (e.shiftKey && (e.key === "Backspace" || e.key === "ArrowUp" || e.key === "ArrowDown"));
-    if (!editorKey && e.key !== "Delete") { e.preventDefault(); }
+    const isPaste = !e.shiftKey && k === "v";     // 留给 paste 事件 (读系统剪贴板)
+    if (!editorKey && e.key !== "Delete" && !isPaste) { e.preventDefault(); }
     return;
   }
 
@@ -4500,7 +4508,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       return;
     }
     if (e.shiftKey && e.key === "Tab") { e.preventDefault(); indentSelection(true); return; }   // Shift+Tab = 反缩进 (F_UNINDENT_TAB)
-    if (e.key === "Tab") { e.preventDefault(); insertCharMulti("  "); return; }
+    if (e.key === "Tab") { e.preventDefault(); insertCharMulti(vim ? "  " : "\t"); return; }   // Sakura: Tab 插入 TAB 字符
     if (e.key === "Backspace") { e.preventDefault(); backspaceMulti(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }
     if (e.key === "Delete") { e.preventDefault(); normalDeleteChar(); return; }
@@ -6364,6 +6372,7 @@ function pushClip(text) {
   CLIP_HISTORY.unshift({ text, at: Date.now() });
   if (CLIP_HISTORY.length > CLIP_MAX) CLIP_HISTORY.pop();
   CLIPBOARD = text;
+  writeSystemClipboard(text);
 }
 
 function showClipHistory() {
@@ -7164,6 +7173,9 @@ document.addEventListener("keydown", (e) => {
   // Ctrl+Alt+↑ 当普通 Ctrl 键处理掉, 而 Ctrl+Shift+U/E/K 那几个新键位也接不到
   // (它们带 Shift, 那个分支本来就漏了 Shift 变体).
   if (e.altKey && !e.metaKey) {
+    if (e.shiftKey && !e.ctrlKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {   // 上移/下移行 (Ctrl+Shift+↑↓ 归 Sakura 的选 2 行)
+      e.preventDefault(); moveLines(e.key === "ArrowUp" ? -1 : 1); return;
+    }
     const step = e.ctrlKey ? 2 : 1;   // Ctrl+Alt+↑↓ = 矩形上下移 2 行 (F_UP2_BOX / F_DOWN2_BOX)
     if (e.key === "ArrowUp")    { e.preventDefault(); boxMove(-step, 0); return; }
     if (e.key === "ArrowDown")  { e.preventDefault(); boxMove(step, 0); return; }
@@ -7198,8 +7210,6 @@ document.addEventListener("keydown", (e) => {
     // 那条分支进不去, 所以 Ctrl+Shift+Up/Down/Backspace 一直是**死代码**
     // (菜单上写着「上移行 / 下移行 / 删除上方行」, 实际按了没反应).
     // 移到这个分支才真正生效.
-    if (e.key === "ArrowUp") { e.preventDefault(); moveLines(-1); return; }
-    if (e.key === "ArrowDown") { e.preventDefault(); moveLines(1); return; }
     if (e.key === "Backspace") { e.preventDefault(); deleteLineUp(); return; }
   }
   if (e.ctrlKey && !e.shiftKey) {
@@ -7239,7 +7249,7 @@ document.addEventListener("keydown", (e) => {
     if (k === "a") { e.preventDefault(); selectAllText(); return; }
     if (k === "c") { e.preventDefault(); copySelection(); return; }
     if (k === "x") { e.preventDefault(); cutSelection(); return; }
-    if (k === "v") { e.preventDefault(); pasteClipboard(); return; }
+    if (k === "v") { return; }   // 由 paste 事件处理 (系统剪贴板)
     if (k === "w") { e.preventDefault(); if (activeTabId && confirmClose(getActiveTab())) closeTab(activeTabId); return; }
     if (k === ",") { e.preventDefault(); openSettings(); return; }
   }
@@ -7268,6 +7278,144 @@ document.addEventListener("keydown", (e) => {
     switchBottomPane("terminal-pane");     // min 布局下面板整块隐藏: 里面会先把它亮出来
   }
   if (e.key === "Escape") edContent.focus();
+});
+
+
+/* ===== Sakura 键盘移动 / 范围选择 / 选区替换式编辑 / 覆盖模式 / 系统剪贴板 =====
+   对标 CKeyBind.cpp 默认键位: ←→↑↓ Home End PgUp PgDn, Ctrl+←→ (单词) Ctrl+Home/End (文首/文末)
+   Ctrl+PgUp/PgDn (半页) Ctrl+↑↓ (滚动一行) Shift+上述 = 范围选择, Shift+Ctrl+↑↓ = 选 2 行,
+   Ins = 插入/覆盖, Ctrl+Ins/Shift+Ins/Shift+Del = 复制/粘贴/剪切. */
+let OVERWRITE = false;
+let SYS_CLIP_OK = true;       // navigator.clipboard.writeText 成功过吗 (失败就以程序内部剪贴板为准)
+
+function toggleOverwrite() {
+  OVERWRITE = !OVERWRITE;
+  const el = document.getElementById("s-ovr");
+  if (el) el.textContent = OVERWRITE ? "上書" : "挿入";
+  setTip(OVERWRITE ? "覆盖模式" : "插入模式");
+}
+
+function selNonEmpty(t) { return !!(t.sel && !(t.sel.r0 === t.sel.r1 && t.sel.c0 === t.sel.c1)); }
+
+// 选区的锚点: 优先用记下的 selAnchor, 否则由选区和光标位置推出 (Ctrl+A / 鼠标选出来的没有记)
+function selAnchorOf(t) {
+  if (t.selAnchor && selNonEmpty(t)) return t.selAnchor;
+  if (!selNonEmpty(t)) return { row: t.cursor.row, col: t.cursor.col };
+  const s0 = t.sel, endCol = s0.c1 === Infinity ? charLen(t.lines[s0.r1] || "") : s0.c1;
+  const cursorAtEnd = t.cursor.row === s0.r1 && t.cursor.col === endCol;
+  return cursorAtEnd ? { row: s0.r0, col: s0.c0 } : { row: s0.r1, col: endCol };
+}
+
+// 键盘导航 / 选区编辑. 返回 true = 已处理 (调用方 return).
+function handleEditNavKey(e, t, vim) {
+  const k = e.key, ctrl = e.ctrlKey, shift = e.shiftKey;
+  if (k === "Insert") {
+    e.preventDefault();
+    if (ctrl && !shift) copySelection(); else if (shift && !ctrl) navigator.clipboard ? pasteFromSystemOrInternal() : pasteClipboard(); else toggleOverwrite();
+    return true;
+  }
+  if (k === "Delete" && shift && !ctrl) { e.preventDefault(); cutSelection(); return true; }
+
+  const NAV = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+  if (!NAV.includes(k)) {
+    // 不是导航键: 有选区时, 输入/删除/回车 先替换(删掉)选区, 然后让原有逻辑继续插入
+    if (selNonEmpty(t) && !ctrl) {
+      if (k === "Backspace" || k === "Delete") { e.preventDefault(); deleteSelection(t); t.selAnchor = null; paintActive(); return true; }
+      if (k === "Tab") {
+        e.preventDefault();
+        if (t.sel.r0 !== t.sel.r1) { if (shift) indentSelection(true); else indentSelection(false); return true; }
+        deleteSelection(t); t.selAnchor = null; insertCharMulti(vim ? "  " : "\t"); return true;
+      }
+      if (k === "Enter" || (k.length === 1 && !e.metaKey)) { deleteSelection(t); t.selAnchor = null; }
+    }
+    if (!/^(Shift|Control|Alt|Meta|CapsLock)$/.test(k)) delete t.goalCol;
+    return false;
+  }
+
+  const lastRow = Math.max(0, t.lines.length - 1);
+  const len = (r) => charLen(t.lines[r] || "");
+  const had = selNonEmpty(t);
+  let { row, col } = t.cursor;
+  const vertical = k === "ArrowUp" || k === "ArrowDown" || k === "PageUp" || k === "PageDown";
+
+  // 无 Shift 时, 左右键遇到选区先收缩到选区端点 (Sakura: M-11)
+  if (!shift && !ctrl && had && (k === "ArrowLeft" || k === "ArrowRight")) {
+    const s0 = t.sel, toEnd = k === "ArrowRight";
+    const r = toEnd ? s0.r1 : s0.r0, c = toEnd ? (s0.c1 === Infinity ? len(s0.r1) : s0.c1) : s0.c0;
+    e.preventDefault();
+    t.cursor = { row: r, col: Math.min(c, len(r)) }; t.sel = null; t.selAnchor = null; delete t.goalCol;
+    renderVim(t); updateCaret(true); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+    return true;
+  }
+
+  if (k === "ArrowUp" || k === "ArrowDown") {
+    const d = k === "ArrowUp" ? -1 : 1;
+    if (ctrl && !shift) {                        // Ctrl+↑↓ = 文本滚动一行 (光标不动)
+      e.preventDefault();
+      edContent.scrollTop += d * (parseFloat(getComputedStyle(edContent).lineHeight) || 18);
+      return true;
+    }
+    const step = ctrl && shift ? 2 : 1;          // Shift+Ctrl+↑↓ = (范围选择) 2 行
+    if (t.goalCol === undefined) t.goalCol = col;
+    row = Math.max(0, Math.min(lastRow, row + d * step));
+    col = Math.min(t.goalCol, len(row));
+  } else if (k === "PageUp" || k === "PageDown") {
+    const d = k === "PageUp" ? -1 : 1;
+    const n = ctrl ? Math.max(1, Math.floor(pageRows() / 2)) : pageRows();
+    if (t.goalCol === undefined) t.goalCol = col;
+    row = Math.max(0, Math.min(lastRow, row + d * n));
+    col = Math.min(t.goalCol, len(row));
+  } else if (k === "ArrowLeft") {
+    if (ctrl) {
+      if (col === 0 && row > 0) { row--; col = len(row); } else col = wordLeft(t.lines[row] || "", col);
+    } else if (col > 0) col--; else if (row > 0) { row--; col = len(row); }
+  } else if (k === "ArrowRight") {
+    if (ctrl) {
+      const cur = t.lines[row] || "";
+      const c = wordRight(cur, col);
+      if (c >= charLen(cur) && col >= charLen(cur) && row < lastRow) { row++; col = 0; } else col = c;
+    } else if (col < len(row)) col++; else if (row < lastRow) { row++; col = 0; }
+  } else if (k === "Home") {
+    if (ctrl) { row = 0; col = 0; } else col = 0;
+  } else if (k === "End") {
+    if (ctrl) { row = lastRow; col = len(lastRow); } else col = len(row);
+  }
+  e.preventDefault();
+  if (!vertical) delete t.goalCol;
+  if (shift) {
+    const a = selAnchorOf(t);
+    t.selAnchor = a; t.cursor = { row, col }; t.sel = normalizeSel(a, t.cursor);
+  } else {
+    t.sel = null; t.selAnchor = null; t.cursor = { row, col };
+  }
+  if (t.sel || had || vim) renderVim(t); else { updateCaret(true); }
+  setPos("Ln " + (row + 1) + ", Col " + (col + 1));
+  return true;
+}
+
+// 系统剪贴板: 复制时同时写系统剪贴板 (别的程序能粘), 粘贴走浏览器的 paste 事件 (不需要权限弹窗)
+function writeSystemClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => { SYS_CLIP_OK = true; }, () => { SYS_CLIP_OK = false; });
+    } else SYS_CLIP_OK = false;
+  } catch (_) { SYS_CLIP_OK = false; }
+}
+function pasteFromSystemOrInternal() {
+  try {
+    navigator.clipboard.readText().then((s) => pasteText(s || CLIPBOARD), () => pasteClipboard());
+  } catch (_) { pasteClipboard(); }
+}
+document.addEventListener("paste", (e) => {
+  const tgt = e.target;
+  if (tgt && tgt.closest && tgt.closest("input, textarea, [contenteditable=true]")) return;   // 对话框输入框用浏览器默认粘贴
+  const t = getActiveTab();
+  if (!t) return;
+  e.preventDefault();
+  let text = "";
+  try { text = e.clipboardData ? e.clipboardData.getData("text/plain") : ""; } catch (_) {}
+  if (!SYS_CLIP_OK || !text) text = CLIPBOARD || text;
+  pasteText(text);
 });
 
 // ===== Welcome page =====
@@ -7630,22 +7778,30 @@ function cutSelection() {
   else setTip("无选区, 按 v 进入 VISUAL 后再剪切");
 }
 
-function pasteClipboard() {
+function pasteClipboard() { pasteText(CLIPBOARD); }
+
+function pasteText(raw) {
   const t = getActiveTab();
-  if (!t || !CLIPBOARD) { setTip("剪贴板为空"); return; }
+  const text = String(raw || "").replace(/\r\n?/g, "\n");
+  if (!t || !text) { setTip("剪贴板为空"); return; }
+  if (t.colSel) { columnInsert(text); setTip("已粘贴到列块"); return; }
+  if (selNonEmpty(t)) deleteSelection(t);            // 粘贴替换选区
+  t.selAnchor = null;
   snapshot(t);
-  const parts = CLIPBOARD.split("\n");
-    const line = curLine(t);
-    const head = line.slice(0, t.cursor.col), tail = line.slice(t.cursor.col);
-    // 在光标处插入 CLIPBOARD; 原来光标后的 tail 保持在最后一行末尾.
-    const last = parts.length - 1;
-    t.lines[t.cursor.row] = head + parts[0];
-    t.lines.splice(t.cursor.row + 1, parts.length - 1,
-      ...parts.slice(1).map((p, i) => (i === last ? p + tail : p)));
-    t.cursor.col = charLen(head) + charLen(parts[0]);
+  const parts = text.split("\n");
+  const line = curLine(t);
+  const head = charSlice(line, 0, t.cursor.col), tail = charSlice(line, t.cursor.col);
+  // 在光标处插入; 原来光标后的 tail 保持在最后一行末尾.
+  const last = parts.length - 1;
+  t.lines[t.cursor.row] = head + parts[0];
+  t.lines.splice(t.cursor.row + 1, parts.length - 1,
+    ...parts.slice(1).map((p, i) => (i === last - 1 ? p + tail : p)));
+  if (last === 0) t.lines[t.cursor.row] = head + parts[0] + tail;
+  t.cursor.row += last;
+  t.cursor.col = last === 0 ? charLen(head) + charLen(parts[0]) : charLen(parts[last]);
   t.dirty = true;
   renderVim(t);
-  setTip("已粘贴 " + CLIPBOARD.length + " 字符");
+  setTip("已粘贴 " + text.length + " 字符");
 }
 
 function duplicateLine() {
