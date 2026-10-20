@@ -53,6 +53,7 @@ pub mod keyword_set;
 pub mod matching_paren;
 pub mod migemo;
 pub mod outline_extended;
+pub mod outline_langs;
 pub mod plugin;
 pub mod ppa_macro;
 pub mod ruler;

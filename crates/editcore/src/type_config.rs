@@ -98,6 +98,9 @@ pub struct OutlineEntry {
     pub name: String,
     pub kind: String, // "function" / "class" / "method" / "section"
     pub line: i32,
+    /// 嵌套层级 (所在 class / namespace / 标题层数), 前端据此缩进成层级大纲
+    #[serde(default)]
+    pub depth: i32,
 }
 
 impl OutlineEntry {
@@ -106,6 +109,7 @@ impl OutlineEntry {
             name: name.into(),
             kind: kind.into(),
             line,
+            depth: 0,
         }
     }
 }
@@ -330,6 +334,8 @@ impl TypeConfig {
         match name {
             "Python" => crate::types::python_outline(text),
             "Rust" => crate::types::rust_outline(text),
+            "C++" | "JavaScript" | "TypeScript" | "Go" | "Java" | "C#" => crate::outline_langs::brace_outline(text, name),
+            "Markdown" => crate::outline_langs::markdown_outline(text),
             _ => Vec::new(),
         }
     }

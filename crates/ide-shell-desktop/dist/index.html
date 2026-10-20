@@ -1522,6 +1522,8 @@
           <div class="menu-row" data-cmd="bracket-pair"><span>対括弧の検索</span></div>
           <div class="menu-row" data-cmd="bookmark-reset"><span>ブックマークの全解除</span></div>
           <div class="menu-row" data-cmd="bookmark-view"><span>ブックマークの一覧</span></div>
+          <div class="menu-row" data-cmd="tags-make"><span>标签文件 (tags) 生成</span></div>
+          <div class="menu-row" data-cmd="tag-jump-keyword"><span>指定关键字的直接标签跳转...</span></div>
           <div class="menu-row" data-cmd="funclist-next"><span>次の関数へ</span></div>
           <div class="menu-row" data-cmd="funclist-prev"><span>前の関数へ</span></div>
           <div class="menu-row" data-cmd="modify-next"><span>次の変更行へ</span></div>
@@ -1608,6 +1610,11 @@
           <div class="menu-row" data-cmd="tab-move-left"><span>标签左移</span></div>
           <div class="menu-row" data-cmd="tab-move-right"><span>标签右移</span></div>
           <div class="menu-row" data-cmd="wrap-window-width"><span>按窗口宽度折行</span></div>
+          <div class="menu-row" data-cmd="tmp-wrap"><span>按指定列数折行 (临时)...</span></div>
+          <div class="menu-row" data-cmd="topmost"><span>始终置顶</span></div>
+          <div class="menu-row" data-cmd="minimize-window"><span>最小化</span></div>
+          <div class="menu-row" data-cmd="file-tree"><span>文件树</span></div>
+          <div class="menu-row" data-cmd="history-manager"><span>历史管理...</span></div>
         </div>
       </div>
 
@@ -5204,7 +5211,10 @@ async function renderOutline(host) {
       for (const e of data.entries) {
         const row = document.createElement("div");
         row.className = "tree-node";
-        row.textContent = (e.kind === "function" ? "ƒ" : e.kind === "class" ? "C" : "•") + " " + e.name;
+        const ICON = { function: "ƒ", method: "m", class: "C", struct: "S", enum: "E", interface: "I", namespace: "N", union: "U", trait: "T", record: "R", section: "§" };
+        row.textContent = (ICON[e.kind] || "•") + " " + e.name;
+        row.dataset.kind = e.kind; row.dataset.depth = String(e.depth | 0);
+        row.style.paddingLeft = (8 + (e.depth | 0) * 14) + "px";            // 按所在 class / namespace / 标题层级缩进
         row.addEventListener("click", () => { const tt = getActiveTab(); if (tt) { diffJump(tt, e.line | 0); setTip("跳到 " + ((e.line | 0) + 1) + " 行"); } });
         list.appendChild(row);
       }
@@ -8984,6 +8994,166 @@ Object.assign(KEYMAP, { "A-F12": "codecnv-auto2sjis", "A-F11": "codecnv-email", 
 Object.assign(KEYMAP_DEFAULT, { "A-F12": "codecnv-auto2sjis", "A-F11": "codecnv-email", "A-F10": "codecnv-euc2sjis", "A-F9": "codecnv-unicode2sjis", "A-F8": "codecnv-utf82sjis", "A-F7": "codecnv-utf72sjis", "S-A-F11": "codecnv-sjis2jis", "S-A-F10": "codecnv-sjis2euc", "S-A-F8": "codecnv-sjis2utf8", "S-A-F7": "codecnv-sjis2utf7" });
 try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
 window.codeConvert = codeConvert;
+
+
+/* ===== タグファイル / 履歴管理 / 一時折り返し / 最前面 ===== */
+const TAG_DEF_RE = "^\\s*(?:pub(?:\\([a-z]+\\))?\\s+)?(?:async\\s+)?(?:export\\s+)?(?:fn|function|class|struct|enum|trait|interface|def|type|const|impl|mod)\\s+([A-Za-z_][A-Za-z0-9_]*)";
+let TAGS_CACHE = null;
+function parseTags(text) {
+  const m = new Map();
+  for (const line of String(text).split(/\r?\n/)) {
+    const p = line.split("\t"); if (p.length < 3 || line.startsWith("!_")) continue;
+    if (!m.has(p[0])) m.set(p[0], []);
+    m.get(p[0]).push({ file: p[1], line: parseInt(p[2], 10) || 1 });
+  }
+  return m;
+}
+async function tagsMake() {
+  const root = await ensureWorkingRoot(); if (!root) return;
+  setTip("正在生成 tags…");
+  const resp = await invoke("search", { pattern: TAG_DEF_RE, case_sensitive: true, regex: true, whole_word: false, include_files: ["*.*"], subfolders: true, max_results: 20000 });
+  const rows = (resp && resp.results) || (Array.isArray(resp) ? resp : []);
+  const base = stripVerbatim(root).replace(/[\\/]+$/, "");
+  const re = new RegExp(TAG_DEF_RE);
+  const out = ["!_TAG_FILE_FORMAT\t2\t/extended format/", "!_TAG_FILE_SORTED\t0\t/unsorted/"];
+  let n = 0;
+  for (const r of rows) {
+    const mm = re.exec(String(r.text || "")); if (!mm) continue;
+    let f = stripVerbatim(r.path); if (f.toLowerCase().startsWith(base.toLowerCase())) f = f.slice(base.length).replace(/^[\\/]+/, "");
+    if (/(^|[\\/])tags$/.test(f)) continue;
+    out.push(mm[1] + "\t" + f.replace(/\\/g, "/") + "\t" + r.line + ";\""); n++;
+  }
+  await invoke("write_file", { path: joinPath(root, "tags"), content: out.join("\n") + "\n", encoding: "UTF-8", bom: "none", eol: "lf", force: true });
+  TAGS_CACHE = parseTags(out.join("\n"));
+  setTip("tags を作成しました: " + n + " 件");
+  return n;
+}
+async function tagJumpKeyword(word) {
+  const root = await ensureWorkingRoot(); if (!root) return;
+  if (!TAGS_CACHE) {
+    try { const r = await invoke("read_file", { path: joinPath(root, "tags") }); TAGS_CACHE = parseTags(r && r.content != null ? r.content : r); }
+    catch (_) { setTip("tags ファイルがありません (先に「标签文件生成」)"); return; }
+  }
+  const hits = TAGS_CACHE.get(word) || [];
+  if (!hits.length) { setTip("タグが見つかりません: " + word); return; }
+  const go = (h) => { jumpHistSet(); gotoPathLine(joinPath(root, h.file), h.line); };
+  if (hits.length === 1) { go(hits[0]); return; }
+  pickFromList("タグ候補: " + word, hits.map((h) => h.file + ":" + h.line), (txt) => go(hits[[...hits.map((h) => h.file + ":" + h.line)].indexOf(txt)]));
+}
+function historyManager() {
+  const draw = () => {
+    const files = recentFiles(), folders = recentList().map((r) => r.path);
+    const sec = (title, kind, list) => '<div class="sb-section" style="margin-top:6px;">' + title + " (" + list.length + ')</div>' +
+      list.map((x, i) => '<div class="kb-row"><span class="kb-cmd" title="' + escapeHtml(x) + '">' + escapeHtml(x) + '</span><button class="md-btn" data-open="' + kind + ':' + i + '">打开</button><button class="md-btn" data-del="' + kind + ':' + i + '">删除</button></div>').join("");
+    mdBody.innerHTML = '<div class="kb-list">' + sec("最近的文件", "f", files) + sec("最近的文件夹", "d", folders) + "</div>";
+    mdBody.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
+      const [k, i] = b.dataset.del.split(":");
+      if (k === "f") { const l = recentFiles(); l.splice(+i, 1); localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(l)); }
+      else { const l = recentList(); l.splice(+i, 1); localStorage.setItem(RECENT_KEY, JSON.stringify(l)); }
+      draw();
+    }));
+    mdBody.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => {
+      const [k, i] = b.dataset.open.split(":");
+      closeModal();
+      if (k === "f") openFile(files[+i]); else setProjectRoot(folders[+i], true);
+    }));
+  };
+  openModal({ title: "履歴の管理", bodyHTML: "", buttons: [{ label: "清空全部", cmd: "history-clear-all" }, { label: "关闭", cmd: "modal-close" }] });
+  draw();
+}
+Object.assign(CFG_CMDS, {
+  "tags-make": () => { tagsMake().catch((e) => setTip("tags 生成失败: " + ((e && e.message) || e))); },
+  "tag-jump-keyword": () => openModalInput("指定关键字的直接标签跳转", (() => { const t = getActiveTab(); if (!t) return ""; const l = t.lines[t.cursor.row] || ""; const cs = chars(l); let a = t.cursor.col, b = a; const isW = (c) => /[A-Za-z0-9_]/.test(c || ""); while (a > 0 && isW(cs[a - 1])) a--; while (b < cs.length && isW(cs[b])) b++; return cs.slice(a, b).join(""); })(), (w) => tagJumpKeyword(w)),
+  "history-manager": historyManager,
+  "history-clear-all": () => { try { localStorage.removeItem(RECENT_FILES_KEY); localStorage.removeItem(RECENT_KEY); } catch (_) {} closeModal(); setTip("履歴を消去しました"); },
+  "file-tree": () => dispatchCommand("show-explorer"),
+  "tmp-wrap": () => {
+    openModalInput("按指定列数折行 (0 = 取消)", String(EDWRAP.col || 80), (v) => {
+      const n = parseInt(v, 10) || 0;
+      EDWRAP.col = n > 0 ? n : 0;
+      if (n > 0) { if (!VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); edContent.style.maxWidth = "calc(" + n + "ch + 40px)"; edContent.style.flex = "0 1 auto"; setTip(n + " 列で折り返し"); }
+      else { edContent.style.maxWidth = ""; edContent.style.flex = ""; setTip("指定桁折り返しを解除"); }
+      updateCaret(false);
+    });
+  },
+  "topmost": async () => {
+    TOPMOST_ON = !TOPMOST_ON;
+    if (!(inTauri && window.__TAURI_INTERNALS__)) { setTip("置顶仅桌面版可用"); TOPMOST_ON = false; return; }
+    try { await window.__TAURI_INTERNALS__.invoke("plugin:window|set_always_on_top", { label: "main", value: TOPMOST_ON }); setTip(TOPMOST_ON ? "已置顶" : "已取消置顶"); }
+    catch (e) { TOPMOST_ON = !TOPMOST_ON; setTip("置顶失败: " + ((e && e.message) || e)); }
+  },
+  "minimize-window": async () => {
+    if (!(inTauri && window.__TAURI_INTERNALS__)) { setTip("最小化仅桌面版可用"); return; }
+    try { await window.__TAURI_INTERNALS__.invoke("plugin:window|minimize", { label: "main" }); } catch (e) { setTip("最小化失败: " + ((e && e.message) || e)); }
+  },
+});
+const EDWRAP = { col: 0 };
+let TOPMOST_ON = false;
+Object.assign(CFG_CMDS, { "wrap-window-width": () => { EDWRAP.col = 0; edContent.style.maxWidth = ""; edContent.style.flex = ""; if (!VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); setTip("已按窗口宽度折行"); } });
+Object.assign(KEYMAP, { "C-Enter": "diff-with-tab" });
+Object.assign(KEYMAP_DEFAULT, { "C-Enter": "diff-with-tab" });
+try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
+
+
+/* ===== プラグイン UI: 路径登记持久化 / 页内输入框 / 对选区(或全文)运行 / 结果替换或插入 / 移除 ===== */
+const PLUGIN_KEY = "ide10.plugins";
+function pluginRegistry() { try { return JSON.parse(localStorage.getItem(PLUGIN_KEY) || "[]"); } catch (_) { return []; } }
+function savePluginRegistry(list) { try { localStorage.setItem(PLUGIN_KEY, JSON.stringify(list)); } catch (_) {} }
+async function runPlugin(path, mode) {
+  const t = getActiveTab();
+  const sel = t && selNonEmpty(t);
+  const input = t ? (sel ? selectionText(t) : t.lines.join("\n")) : "";
+  try {
+    const r = await invoke("plugin_load", { path, input });
+    const out = (r && r.output) != null ? String(r.output) : "";
+    const at = PLUGINS.findIndex((pl) => pl.path === path);
+    const entry = { path, loaded: true, lastOutput: out };
+    if (at >= 0) PLUGINS[at] = entry; else PLUGINS.push(entry);
+    if (mode === "replace" && t) {
+      if (!sel) t.sel = { r0: 0, c0: 0, r1: t.lines.length - 1, c1: charLen(t.lines[t.lines.length - 1]) };
+      snapshot(t); deleteSelection(t); t.selAnchor = null; insertTextAtCursor(out); t.dirty = true; renderVim(t);
+      setTip("插件结果已替换" + (sel ? "选区" : "全文"));
+    } else if (mode === "insert" && t) {
+      insertTextAtCursor(out); setTip("插件结果已插入");
+    } else {
+      openModal({ title: "插件输出: " + path, bodyHTML: '<pre style="white-space:pre-wrap;margin:0">' + escapeHtml(out) + "</pre>", buttons: [{ label: "关闭", cmd: "modal-close" }] });
+    }
+    return out;
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    const at = PLUGINS.findIndex((pl) => pl.path === path), entry = { path, loaded: false, lastError: msg };
+    if (at >= 0) PLUGINS[at] = entry; else PLUGINS.push(entry);
+    openModal({ title: "插件运行失败", bodyHTML: '<div class="opt-row">' + escapeHtml(path) + '</div><div class="opt-row" style="color:var(--red,#f66)">' + escapeHtml(msg) +
+      '</div><div class="empty-hint">插件为 WASM 模块, 需导出 process(text) -> String; 运行时需要以 Cargo feature "wasm" 构建 (默认构建不含)。</div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
+    return null;
+  }
+}
+loadPlugin = async function () {
+  const last = pluginRegistry().slice(-1)[0];
+  openModalInput("加载插件 (.wasm 路径, 登记后可在「管理」里运行)", last ? last.path : "", async (path) => {
+    const list = pluginRegistry().filter((x) => x.path !== path); list.push({ path, name: path.replace(/^.*[\\/]/, "") });
+    savePluginRegistry(list);
+    await runPlugin(path, "show");
+  });
+};
+managePlugins = function () {
+  const draw = () => {
+    const list = pluginRegistry();
+    mdBody.innerHTML = list.length ? list.map((pl, i) => {
+      const st = PLUGINS.find((x) => x.path === pl.path);
+      return '<div class="kb-row"><span class="kb-cmd" title="' + escapeHtml(pl.path) + '">' + escapeHtml(pl.name || pl.path) + ' <small style="opacity:.6">' + (st ? (st.loaded ? "已运行" : "失败") : "已登记") + "</small></span>" +
+        '<button class="md-btn" data-pl="show:' + i + '">运行</button><button class="md-btn" data-pl="replace:' + i + '">替换选区</button><button class="md-btn" data-pl="insert:' + i + '">插入</button><button class="md-btn" data-pl="del:' + i + '">移除</button></div>';
+    }).join("") : '<div class="empty-hint">尚无插件 (插件 > 加载插件)</div>';
+    mdBody.querySelectorAll("[data-pl]").forEach((b) => b.addEventListener("click", async () => {
+      const [k, i] = b.dataset.pl.split(":"), pl = pluginRegistry()[+i]; if (!pl) return;
+      if (k === "del") { const l = pluginRegistry(); l.splice(+i, 1); savePluginRegistry(l); draw(); return; }
+      closeModal(); await runPlugin(pl.path, k);
+    }));
+  };
+  openModal({ title: "插件管理", bodyHTML: "", buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  draw();
+};
+window.runPlugin = runPlugin;
 
 // ===== Welcome page =====
 function showWelcome() {
