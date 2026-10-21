@@ -52,12 +52,12 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
     await setDoc(page, ["aaaa", "bbbb", "cccc", "dddd"]);
     expect(await colSelRect(page), "初始没有列块").toBeNull();
 
-    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     let r = await colSelRect(page);
     expect(r, "Alt+↓ 应直接建立列块").not.toBeNull();
     expect(r!.r1 - r!.r0, "一次按键扩 1 行 (不是 2 行)").toBe(1);
 
-    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     r = await colSelRect(page);
     expect(r!.r1 - r!.r0, "再按一次到 3 行").toBe(2);
     expect(errors).toEqual([]);
@@ -66,13 +66,13 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
   test("Alt+↑ 收缩: 上边界下移但不会越到另一端之外", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["l1", "l2", "l3", "l4"]);
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+ArrowDown");   // 0..3 = 4 行
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());   // 0..3 = 4 行
     let r = await colSelRect(page);
     expect(r!.r1).toBe(3);
 
-    await page.keyboard.press("Alt+ArrowUp");
+    await page.keyboard.press("Alt+ArrowUp"); await page.evaluate(() => (window as any).__editIdle());
     r = await colSelRect(page);
     // 活动角在 r1, Alt+↑ 把它往回拉: 矩形变窄, 但 r1 不能跑到 r0 之上
     expect(r!.r1, "Alt+↑ 收缩, r1 下移").toBe(2);
@@ -80,7 +80,7 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
     expect(r!.r1).toBeGreaterThanOrEqual(r!.r0, "不会塌成倒挂");
 
     // 一直往上按也不能把矩形压成负数
-    for (let i = 0; i < 6; i++) await page.keyboard.press("Alt+ArrowUp");
+    for (let i = 0; i < 6; i++) await page.keyboard.press("Alt+ArrowUp"); await page.evaluate(() => (window as any).__editIdle());
     r = await colSelRect(page);
     expect(r!.r1, "停在 r0, 不越过另一端").toBe(0);
     expect(r!.r1 - r!.r0, "仍是合法的单行矩形").toBe(0);
@@ -90,19 +90,19 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
   test("Alt+← / → 只动列边界, 不动行范围", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abcdef", "abcdef", "abcdef"]);
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     const before = await colSelRect(page);
     const rowsBefore = before!.r1 - before!.r0;
 
-    await page.keyboard.press("Alt+ArrowRight");
-    await page.keyboard.press("Alt+ArrowRight");
+    await page.keyboard.press("Alt+ArrowRight"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowRight"); await page.evaluate(() => (window as any).__editIdle());
     const after = await colSelRect(page);
     expect(after!.c1 - after!.c0, "右移 2 次 = 宽 2 列").toBe(2);
     expect(after!.r1 - after!.r0, "左右键不改变行范围").toBe(rowsBefore);
 
-    await page.keyboard.press("Alt+ArrowLeft");
-    await page.keyboard.press("Alt+ArrowLeft");
+    await page.keyboard.press("Alt+ArrowLeft"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowLeft"); await page.evaluate(() => (window as any).__editIdle());
     expect((await colSelRect(page))!.c1 - (await colSelRect(page))!.c0, "回到塌缩态").toBe(0);
     expect(errors).toEqual([]);
   });
@@ -113,7 +113,7 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
     // Playwright 没有 "Ctrl+Alt+X" 的组合名, 要分别按下去再放开
     await page.keyboard.down("Control");
     await page.keyboard.down("Alt");
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     await page.keyboard.up("Alt");
     await page.keyboard.up("Control");
     const r = await colSelRect(page);
@@ -124,15 +124,15 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
   test("Alt+End = 列边界到行末 (F_GOLINEEND_BOX)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abc", "abcdefgh", "ab"]);
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+End");
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+End"); await page.evaluate(() => (window as any).__editIdle());
     const r = await colSelRect(page);
     // 最长行是 8 字符, End 应按最长行 clamp, 不能停在短行的 2
     expect(r!.c1, "末列按参与行最长行算 (8)").toBe(8);
     expect(r!.c0).toBe(0);
 
-    await page.keyboard.press("Alt+Home");
+    await page.keyboard.press("Alt+Home"); await page.evaluate(() => (window as any).__editIdle());
     expect((await colSelRect(page))!.c1, "Home 把列边界收回 0").toBe(0);
     expect(errors).toEqual([]);
   });
@@ -140,9 +140,9 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
   test("Alt+方向键建好选区后直接输入 = 每行同列覆盖选区 (与鼠标拖等价)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["aaa", "bbb", "ccc"]);
-    await page.keyboard.press("Alt+ArrowRight");   // 列边界 0 → 1
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+ArrowDown");    // 3 行
+    await page.keyboard.press("Alt+ArrowRight"); await page.evaluate(() => (window as any).__editIdle());   // 列边界 0 → 1
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());    // 3 行
     await page.keyboard.type("X");
 
     // 列块有宽度 (1 列) 时输入 = 覆盖选中内容, 落在选区**左端** c0 —— 与 Alt+拖动建立的列块完全一致
@@ -155,12 +155,12 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
   test("Alt+方向键不打开菜单助记 (不吞成 Alt+字母)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["abc", "def"]);
-    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     expect(await page.locator(".menu-item.open").count(), "没开任何菜单").toBe(0);
     expect(await colSelRect(page), "选区确实建立了").not.toBeNull();
     // Alt+字母仍然照旧是菜单助记 (既有契约, 不能被这次改动破坏)
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Alt+f");
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+f"); await page.evaluate(() => (window as any).__editIdle());
     expect(await page.locator(".menu-item.open").count(), "Alt+F 仍开文件菜单").toBe(1);
     expect(errors).toEqual([]);
   });
@@ -168,8 +168,8 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
   test("列块状态下 Alt+方向键一次只扩一格 (不被两个监听器各扩一次)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["l0", "l1", "l2", "l3", "l4"]);
-    await page.keyboard.press("Alt+ArrowDown");
-    await page.keyboard.press("Alt+ArrowDown");
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
+    await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     const r = await colSelRect(page);
     // edContent 与 document 两处监听都会看到事件; 这里断言总跨度是 2 而不是 4
     expect(r!.r1 - r!.r0, "两次按键 = 2 行").toBe(2);
@@ -188,7 +188,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 1, col: 0 };
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+e");
+    await page.keyboard.press("Control+e"); await page.evaluate(() => (window as any).__editIdle());
     expect(await doc(page)).toEqual(["first", "third"]);
     const clip = await page.evaluate(() => (window as any).CLIPBOARD);
     expect(clip, "剪掉的行进剪贴板").toBe("second");
@@ -198,7 +198,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
   test("Ctrl+E 删掉最后一行后文档仍有 1 行 (不能变成 0 行)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["only"]);
-    await page.keyboard.press("Control+e");
+    await page.keyboard.press("Control+e"); await page.evaluate(() => (window as any).__editIdle());
     expect((await doc(page)).length, "永远至少 1 行").toBe(1);
     expect(errors).toEqual([]);
   });
@@ -211,7 +211,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 0, col: 6 };
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+u");
+    await page.keyboard.press("Control+u"); await page.evaluate(() => (window as any).__editIdle());
     expect(await doc(page)).toEqual(["world"]);
     expect(await page.evaluate(() => (window as any).CLIPBOARD)).toBe("hello ");
     expect(await page.evaluate(() => (window as any).getActiveTab().cursor.col), "光标回行首").toBe(0);
@@ -229,7 +229,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       (window as any).renderVim(t);
     });
     const clip0 = await page.evaluate(() => (window as any).CLIPBOARD);
-    await page.keyboard.press("Control+Shift+u");
+    await page.keyboard.press("Control+Shift+u"); await page.evaluate(() => (window as any).__editIdle());
     expect(await doc(page)).toEqual(["body"]);
     expect(await page.evaluate(() => (window as any).CLIPBOARD), "删除不进剪贴板").toBe(clip0);
     expect(await page.evaluate(() => (window as any).getActiveTab().cursor.col), "光标回行首").toBe(0);
@@ -244,7 +244,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 0, col: 4 };
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+Shift+k");
+    await page.keyboard.press("Control+Shift+k"); await page.evaluate(() => (window as any).__editIdle());
     expect(await doc(page), "只删到行末, 换行保留").toEqual(["keep", "second line"]);
     expect(errors).toEqual([]);
   });
@@ -257,7 +257,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 0, col: 3 };
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+Shift+k");
+    await page.keyboard.press("Control+Shift+k"); await page.evaluate(() => (window as any).__editIdle());
     expect(await doc(page)).toEqual(["abc", "def"]);
     expect(errors).toEqual([]);
   });
@@ -270,7 +270,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 0, col: 10 };   // beta 词内
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+Backspace");
+    await page.keyboard.press("Control+Backspace"); await page.evaluate(() => (window as any).__editIdle());
     expect(await doc(page)).toEqual(["alpha "]);
     expect(errors).toEqual([]);
   });
@@ -283,9 +283,9 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 1, col: 0 };   // 在 l2 上
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+Delete");          // Sakura: 删到词尾 -> l2 被删空
+    await page.keyboard.press("Control+Delete"); await page.evaluate(() => (window as any).__editIdle());          // Sakura: 删到词尾 -> l2 被删空
     expect(await doc(page)).toEqual(["l1", "", "l3"]);
-    await page.keyboard.press("Control+Shift+Backspace"); // 删上方行 -> 删掉 l1
+    await page.keyboard.press("Control+Shift+Backspace"); await page.evaluate(() => (window as any).__editIdle()); // 删上方行 -> 删掉 l1
     expect(await doc(page)).toEqual(["", "l3"]);
     expect(errors).toEqual([]);
   });
@@ -300,7 +300,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
     });
     // Sakura: Ctrl+K = F_LineCutToEnd (行末まで切り取り); 旧的 Ctrl+K O 弦序列已让位, 打开文件夹改 Ctrl+Alt+O
     await page.evaluate(() => { const t = (window as any).getActiveTab(); t.cursor = { row: 0, col: 1 }; (window as any).renderVim(t); });
-    await page.keyboard.press("Control+k");
+    await page.keyboard.press("Control+k"); await page.evaluate(() => (window as any).__editIdle());
     await page.waitForTimeout(120);
     expect(await doc(page), "Ctrl+K 剪切到行末").toEqual(["l", "l2"]);
     expect(errors).toEqual([]);

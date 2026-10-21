@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -4696,7 +4696,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     if (e.key === "Tab") { e.preventDefault(); insertCharMulti(vim ? "  " : "\t"); return; }   // Sakura: Tab 插入 TAB 字符
     if (e.key === "Backspace") { e.preventDefault(); backspaceMulti(); return; }
     if (e.key === "Enter") { e.preventDefault(); insertNewline(); return; }
-    if (e.key === "Delete") { e.preventDefault(); normalDeleteChar(); return; }
+    if (e.key === "Delete") { e.preventDefault(); runEdit("delete"); return; }
     // Ctrl+Space 补全 (非 Vim INSERT 模式也应触发) —— SPA-03 §9 fix: Ctrl+Space 补全是死代码
     if (e.ctrlKey && e.key === " ") { e.preventDefault(); showCompletion(); return; }
     // 非模态编辑器的基本功 (Sakura 用户的肌肉记忆): Home / End. Vim 开着时 INSERT 保持原样
@@ -7688,7 +7688,7 @@ function handleEditNavKey(e, t, vim) {
   if (!NAV.includes(k)) {
     // 不是导航键: 有选区时, 输入/删除/回车 先替换(删掉)选区, 然后让原有逻辑继续插入
     if (selNonEmpty(t) && !ctrl) {
-      if (k === "Backspace" || k === "Delete") { e.preventDefault(); deleteSelection(t); t.selAnchor = null; paintActive(); return true; }
+      if (k === "Backspace" || k === "Delete") { e.preventDefault(); runEdit(k === "Backspace" ? "backspace" : "delete"); return true; }
       if (k === "Tab") {
         e.preventDefault();
         if (t.sel.r0 !== t.sel.r1) { if (shift) indentSelection(true); else indentSelection(false); return true; }
@@ -9841,6 +9841,51 @@ selectWordAtCursor = function (t) {
   SAKURA_CMDS["word-cut"] = function () { const t = getActiveTab(); if (atEol(t)) return joinNext(t); return _wc.apply(this, arguments); };
   SAKURA_CMDS["word-delete"] = function () { const t = getActiveTab(); if (atEol(t)) return joinNext(t); return _wd.apply(this, arguments); };
 }
+
+/* ===== ARCH-01: 删除 / 剪切 / 复制行 类命令的语义在 Rust (editcore::edit_cmd) =====
+   前端交上光标周围几行与选区, Rust 返回"把第 start 行起的 remove 行换成 insert + 新光标 + 要写进剪贴板的文字", 这里套回文档。 */
+function editRequest(t, cmd) {
+  const { row, col } = t.cursor, last = Math.max(0, t.lines.length - 1);
+  const need = new Set([row - 1, row, row + 1]);
+  const had = selNonEmpty(t);
+  let sel = null;
+  if (had) {
+    sel = [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1];
+    for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
+  }
+  const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
+  return { cmd, row, col, sel, total_rows: t.lines.length, rows };
+}
+function runEdit(cmd) {
+  return enqueueInput(async () => {
+    const t = getActiveTab(); if (!t) return;
+    let res;
+    try { res = await invoke("edit_cmd", editRequest(t, cmd)); }
+    catch (err) { setTip("编辑失败: " + err.message); return; }
+    if (getActiveTab() !== t) return;
+    if (!res.changed) { if (res.tip) setTip(res.tip); return; }
+    snapshot(t);
+    if (res.undo_cursor) t.undo[t.undo.length - 1].cursor = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
+    t.lines.splice(res.start, res.remove, ...res.insert);
+    if (!t.lines.length) t.lines.push("");
+    t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
+    t.sel = null; t.selAnchor = null; delete t.goalCol; t.dirty = true;
+    if (res.clip !== null && res.clip !== undefined) pushClip(res.clip);
+    renderVim(t);
+  });
+}
+backspace = () => runEdit("backspace");
+cutToLineStart = () => runEdit("cut-line-start");
+deleteToLineStart = () => runEdit("delete-line-to-start");
+deleteToLineEnd = () => runEdit("delete-line-to-end");
+deleteToWordStart = () => runEdit("delete-word-start");
+deleteToWordEnd = () => runEdit("delete-word-end");
+cutLine = () => runEdit("cut-line");
+deleteLine = () => runEdit("delete-line");
+duplicateLine = () => runEdit("duplicate-line");
+SAKURA_CMDS["word-cut"] = () => runEdit("word-cut");
+SAKURA_CMDS["word-delete"] = () => runEdit("word-delete");
+SAKURA_CMDS["line-cut-to-end"] = () => runEdit("line-cut-to-end");
 
 // ===== Welcome page =====
 function showWelcome() {

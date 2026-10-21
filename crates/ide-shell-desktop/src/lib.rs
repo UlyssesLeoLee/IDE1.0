@@ -648,6 +648,7 @@ pub fn run() {
             edit_text,
             edit_lines,
             nav_step,
+            edit_cmd,
             migemo_patterns,
             plugin::plugin_load,
         ])
@@ -724,6 +725,14 @@ fn reinterpret_text(options: ReinterpretOptions) -> Result<serde_json::Value, St
     Ok(serde_json::json!({ "text": r(&options.text, e, d)? }))
 }
 
+
+/// 删除 / 剪切 / 复制行 类编辑命令 (web 版 /api/edit_cmd 同一语义)
+#[tauri::command]
+fn edit_cmd(options: editcore::edit_cmd::EditReq) -> Result<serde_json::Value, String> {
+    editcore::edit_cmd::run(&options)
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .ok_or_else(|| "未知的编辑命令".to_string())
+}
 
 /// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}
 #[tauri::command]

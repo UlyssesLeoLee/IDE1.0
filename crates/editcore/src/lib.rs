@@ -41,6 +41,7 @@ pub mod cursor;
 pub mod cursor_persistence;
 pub mod daemon;
 pub mod document_io;
+pub mod edit_cmd;
 pub mod edit_ops;
 pub mod encoding_io;
 pub mod file_lock;
