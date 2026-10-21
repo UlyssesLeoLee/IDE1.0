@@ -69,6 +69,7 @@ test('インクリメンタルサーチ: 边输入边跳, Esc 回到起点', () 
   withMocks({ name: 'se', portOffset: 64 }, async ({ page, snap, press }) => {
     await fill(page, TEXT);
     await page.locator('#menubar .menu-item[data-menu="search"] > .mb-btn').click();
+    await page.locator('#menubar [data-submenu="isearch"]').hover();
     await page.locator('#menubar .menu-row[data-cmd="isearch-fwd"]').click();
     await page.keyboard.type('ba');
     assert.deepEqual((await snap()).sel, [1, 0, 1, 2]);

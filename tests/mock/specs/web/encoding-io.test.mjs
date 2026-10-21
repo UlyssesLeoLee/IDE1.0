@@ -44,6 +44,7 @@ test('按指定编码重新打开 / 设置保存编码 / 换行切换 (真实菜
     await m.dialog.answer('prompt', 's.txt');
     await page.locator('#ed-content').click(); await press('Control+o'); await page.waitForTimeout(600);
     await page.locator('#menubar .menu-item[data-menu="setting"] > .mb-btn').click();
+    await page.locator('#menubar [data-submenu="eolmode"]').hover();
     await page.locator('#menubar .menu-row[data-cmd="eol-lf"]').click();
     assert.equal((await snap()).status.eol.trim(), 'LF');
     await press('Control+s'); await page.waitForTimeout(500);

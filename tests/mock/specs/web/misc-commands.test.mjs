@@ -14,11 +14,11 @@ test('选区字数统计: 字符 / 字节 / 行 三种方式点击切换, 无选
     await fill(page, 'あい\nabc');
     assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '');
     await press('Control+a'); await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '選択 6 文字');
-    await page.locator('#s-sel').click();
-    assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '選択 10 バイト');
-    await page.locator('#s-sel').click();
-    assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '選択 2 行');
+    assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '已选 6 字符');
+    await page.locator('#s-sel').click(); await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '已选 10 字节');
+    await page.locator('#s-sel').click(); await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => document.getElementById('s-sel').textContent), '已选 2 行');
   }));
 
 test('保存并关闭: 写盘后标签关闭 (无标题文档会先问文件名)', () =>

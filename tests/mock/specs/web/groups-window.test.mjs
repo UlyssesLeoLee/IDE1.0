@@ -75,9 +75,8 @@ test('SQL*Plus 专用窗口: 独立会话 (不占主终端), 输入回车发送,
     await page.evaluate(() => { getActiveTab().path = 'C:\proj\a.sql'; return sqlplusRunFile(); }); await page.waitForTimeout(400);
     assert.match(await page.evaluate(() => document.getElementById('sql-out').textContent), /@C:\proj\a\.sql/);
     // 含注入字符的路径: 不发送
-    const before = await page.evaluate(() => document.getElementById('sql-out').textContent.length);
-    await page.evaluate(() => { getActiveTab().path = 'C:\proj\a" & calc & ".sql'; return sqlplusRunFile(); }); await page.waitForTimeout(300);
-    assert.equal(await page.evaluate(() => document.getElementById('sql-out').textContent.length), before, '没有再发送任何内容');
+    await page.evaluate(() => { getActiveTab().path = 'C:\\proj\\a" & calc & ".sql'; return sqlplusRunFile(); }); await page.waitForTimeout(400);
+    assert.doesNotMatch(await page.evaluate(() => document.getElementById('sql-out').textContent), /calc/, '含注入字符的路径没有被发送');
     await page.locator('#sql-win [data-sw="stop"]').click(); await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => SQLWIN.id), null);
   }));

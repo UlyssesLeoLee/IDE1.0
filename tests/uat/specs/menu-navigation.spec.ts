@@ -215,7 +215,7 @@ for (const layout of ["full", "min"] as const) {
       await focusEditor(page);
       await page.keyboard.press("Alt+f");
       await page.keyboard.press("ArrowLeft");
-      expect(await st(page)).toMatchObject({ open: "help", row: "wiki" });     // 文件 ← 绕到 帮助 (第一行高亮)
+      expect(await st(page)).toMatchObject({ open: "help", row: "help" });     // 文件 ← 绕到 帮助 (第一行高亮)
       await page.keyboard.press("ArrowRight");
       expect((await st(page)).open).toBe("file");                             // 帮助 → 绕回 文件
       const seen: string[] = [];
@@ -372,9 +372,9 @@ for (const layout of ["full", "min"] as const) {
       await page.keyboard.press("ArrowLeft");
       expect(await st(page)).toMatchObject({ bar: "help", open: null });          // 菜单栏上也循环
       await page.keyboard.press("ArrowDown");
-      expect(await st(page)).toMatchObject({ bar: "help", open: "help", row: "wiki" });
+      expect(await st(page)).toMatchObject({ bar: "help", open: "help", row: "help" });
       await page.keyboard.press("ArrowLeft");                                      // 展开后 ← 仍然是打开并切换
-      expect(await st(page)).toMatchObject({ open: "window", row: "new-window" });
+      expect(await st(page)).toMatchObject({ open: "window", row: "split-h" });
       await page.keyboard.press("Escape");
       expect(await st(page)).toMatchObject({ bar: null, open: null });
       expect(await editorFocused(page)).toBe(true);

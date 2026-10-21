@@ -456,6 +456,31 @@
     #sql-win-head .md-btn { padding: 1px 8px; font-size: 12px; }
     #sql-out { flex: 1; overflow: auto; margin: 0; padding: 6px 8px; font-family: Consolas, "MS Gothic", monospace; white-space: pre-wrap; word-break: break-all; }
     #sql-in { border: 0; border-top: 1px solid var(--border, #555); padding: 5px 8px; background: transparent; color: inherit; font-family: Consolas, "MS Gothic", monospace; outline: none; }
+    /* 菜单超出窗口时出现自适应滚动条; 子菜单用 fixed 定位 (由 placeSubmenu 算坐标), 不会被父菜单的滚动容器裁掉 */
+    .menu-dropdown { max-height: calc(100vh - 34px); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+    .menu-dropdown::-webkit-scrollbar, .submenu-dropdown::-webkit-scrollbar { width: 8px; }
+    .menu-dropdown::-webkit-scrollbar-thumb, .submenu-dropdown::-webkit-scrollbar-thumb { background: rgba(127,127,127,.45); border-radius: 4px; }
+    .submenu-dropdown { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
+    .menu-row.menu-submenu > .submenu-dropdown.placed { position: fixed; right: auto; bottom: auto; }
+    /* ===== 可拖动调整的左侧导航宽度 / 底部终端高度; 内容超出时出现滚动条 ===== */
+    #side-bar, #bottom-panel { position: relative; }
+    .pane-resizer { position: absolute; z-index: 30; background: transparent; touch-action: none; }
+    .pane-resizer:hover, .pane-resizer.drag { background: var(--blue, #3794ff); opacity: .55; }
+    #side-resizer { top: 0; bottom: 0; right: -2px; width: 6px; cursor: col-resize; }
+    #bottom-resizer { left: 0; right: 0; top: -2px; height: 6px; cursor: row-resize; }
+    body.pane-dragging { user-select: none; }
+    body.pane-dragging * { cursor: inherit !important; }
+    #side-body { overflow: auto !important; scrollbar-width: thin; }
+    #side-body #explorer-pane, #side-body #outline-list { min-width: max-content; }
+    #side-body .tree-node { overflow: visible; text-overflow: clip; white-space: nowrap; width: max-content; min-width: 100%; box-sizing: border-box; }
+    #terminal-body { overflow-y: auto; overflow-x: auto; scrollbar-width: thin; font-family: var(--term-font, Consolas, "Cascadia Mono", "MS Gothic", monospace); font-size: var(--term-fs, 13px); line-height: var(--term-lh, 1.4); }
+    #terminal-body[data-wrap="off"] { white-space: pre; }
+    #terminal-body[data-scheme="ps"] { background: #012456 !important; color: #eeedf0; }
+    #terminal-body[data-scheme="campbell"] { background: #0c0c0c !important; color: #cccccc; }
+    #terminal-body[data-scheme="light"] { background: #f5f5f5 !important; color: #1e1e1e; }
+    #terminal-body[data-scheme="solarized"] { background: #002b36 !important; color: #93a1a1; }
+    #terminal-body::-webkit-scrollbar, #side-body::-webkit-scrollbar { width: 10px; height: 10px; }
+    #terminal-body::-webkit-scrollbar-thumb, #side-body::-webkit-scrollbar-thumb { background: rgba(127,127,127,.45); border-radius: 5px; }
     #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: var(--z-modal); }
     #modal.show { display: flex; }
     .md-box { background: var(--bg-raised); border-radius: var(--r-md); width: 600px; max-width: 80vw; max-height: 80vh; display: flex; flex-direction: column; }
@@ -969,11 +994,7 @@
     @media (max-height: 840px) {
       .menu-dropdown[data-dropdown="edit"] > .menu-submenu:nth-last-child(-n+2) > .submenu-dropdown { top: auto; bottom: 0; }
     }
-    @media (max-height: 560px) {
-      .menu-dropdown[data-dropdown="edit"] { column-count: 2; column-gap: 0; min-width: 440px; }
-      .menu-dropdown[data-dropdown="edit"] > .menu-row, .menu-dropdown[data-dropdown="edit"] > .menu-sep { break-inside: avoid; }
-      .menu-dropdown[data-dropdown="edit"] .menu-submenu > .submenu-dropdown { left: auto; right: 100%; }
-    }
+    /* (旧的「窗口很矮时编辑菜单分两栏」规则已删除: 菜单已分层变短, 超出时统一出滚动条, 子菜单由 placeSubmenu 定位) */
     @media (max-width: 800px) {
       .submenu-dropdown { min-width: 160px; }
       .menu-item[data-menu="window"] .menu-submenu > .submenu-dropdown { left: auto; right: 100%; }
@@ -1368,400 +1389,47 @@
     <!-- classic 顶端功能按钮 (8 个主菜单) -->
     <div id="menubar">
       <div class="menu-item" data-menu="file">
-        <button class="mb-btn" data-tip="文件操作 (Alt+F)">文件<span class="mn-key">F</span></button>
-        <div class="menu-dropdown" data-dropdown="file">
-          <div class="menu-row" data-cmd="new-file" data-shortcut="Ctrl+N"><span>新建</span><span class="mr-shortcut">Ctrl+N</span></div>
-          <div class="menu-row" data-cmd="open-folder" data-shortcut="Ctrl+Alt+O"><span>打开文件夹</span><span class="mr-shortcut">Ctrl+Alt+O</span></div>
-          <div class="menu-row" data-cmd="open-file" data-shortcut="Ctrl+O"><span>打开文件...</span><span class="mr-shortcut">Ctrl+O</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="save" data-shortcut="Ctrl+S"><span>保存</span><span class="mr-shortcut">Ctrl+S</span></div>
-          <div class="menu-row" data-cmd="save-as" data-shortcut="Ctrl+Shift+S"><span>另存为...</span><span class="mr-shortcut">Ctrl+Shift+S</span></div>
-          <div class="menu-row" data-cmd="save-all" data-shortcut="Ctrl+Alt+Shift+S"><span>全部保存</span><span class="mr-shortcut">Ctrl+Alt+Shift+S</span></div>
-          <div class="menu-row" data-cmd="print"><span>印刷...</span></div>
-          <div class="menu-row" data-cmd="print-preview"><span>印刷プレビュー</span></div>
-          <div class="menu-row" data-cmd="print-setup"><span>印刷ページ設定...</span></div>
-          <div class="menu-row" data-cmd="browse"><span>ブラウズ (浏览器中查看)</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="close-tab" data-shortcut="Ctrl+W"><span>关闭标签</span><span class="mr-shortcut">Ctrl+W</span></div>
-          <div class="menu-row" data-cmd="close-all" data-shortcut="Ctrl+Shift+W"><span>关闭全部</span><span class="mr-shortcut">Ctrl+Shift+W</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="reload"><span>重新载入</span></div>
-          <div class="menu-row menu-submenu" data-submenu="reopen"><span>以指定编码重新打开</span><span class="mr-shortcut">▶</span><div class="submenu-dropdown"><div class="menu-row" data-cmd="reopen-UTF-8"><span>UTF-8</span></div><div class="menu-row" data-cmd="reopen-SJIS"><span>SJIS</span></div><div class="menu-row" data-cmd="reopen-EUC-JP"><span>EUC-JP</span></div><div class="menu-row" data-cmd="reopen-JIS"><span>JIS</span></div><div class="menu-row" data-cmd="reopen-Unicode"><span>Unicode</span></div><div class="menu-row" data-cmd="reopen-UnicodeBE"><span>UnicodeBE</span></div><div class="menu-row" data-cmd="reopen-Latin1"><span>Latin1</span></div><div class="menu-row" data-cmd="reopen-CESU-8"><span>CESU-8</span></div><div class="menu-row" data-cmd="reopen-UTF-7"><span>UTF-7</span></div><div class="menu-row" data-cmd="reopen-GBK"><span>GBK</span></div><div class="menu-row" data-cmd="reopen-Big5"><span>Big5</span></div><div class="menu-row" data-cmd="reopen-EUC-KR"><span>EUC-KR</span></div></div></div>
-          <div class="menu-row menu-submenu" data-submenu="recent">
-            <span>最近使用</span>
-            <span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="recent-clear"><span>清除历史</span></div>
-              <div class="menu-sep"></div>
-              <div class="menu-empty">无最近文件</div>
-            </div>
-          </div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="file"></div>
       </div>
 
       <div class="menu-item" data-menu="edit">
-        <button class="mb-btn" data-tip="编辑操作 (Alt+E)">编辑<span class="mn-key">E</span></button>
-        <div class="menu-dropdown" data-dropdown="edit">
-          <div class="menu-row" data-cmd="undo" data-shortcut="Ctrl+Z"><span>撤销</span><span class="mr-shortcut">Ctrl+Z</span></div>
-          <div class="menu-row" data-cmd="redo" data-shortcut="Ctrl+Y"><span>重做</span><span class="mr-shortcut">Ctrl+Y</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="cut" data-shortcut="Ctrl+X"><span>剪切</span><span class="mr-shortcut">Ctrl+X</span></div>
-          <div class="menu-row" data-cmd="copy" data-shortcut="Ctrl+C"><span>复制</span><span class="mr-shortcut">Ctrl+C</span></div>
-          <div class="menu-row" data-cmd="paste" data-shortcut="Ctrl+V"><span>粘贴</span><span class="mr-shortcut">Ctrl+V</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="select-all" data-shortcut="Ctrl+A"><span>全选</span><span class="mr-shortcut">Ctrl+A</span></div>
-          <div class="menu-row" data-cmd="delete-line" data-shortcut="Ctrl+D"><span>删除行</span><span class="mr-shortcut">Ctrl+D</span></div>
-          <div class="menu-row" data-cmd="duplicate-line" data-shortcut="Ctrl+Shift+D"><span>行复制</span><span class="mr-shortcut">Ctrl+Shift+D</span></div>
-          <div class="menu-row" data-cmd="move-line-up" data-shortcut="Alt+Shift+Up"><span>上移行</span><span class="mr-shortcut">Alt+Shift+Up</span></div>
-          <div class="menu-row" data-cmd="move-line-down" data-shortcut="Alt+Shift+Down"><span>下移行</span><span class="mr-shortcut">Alt+Shift+Down</span></div>
-          <div class="menu-row" data-cmd="add-line-above"><span>在上方插入空行</span></div>
-          <div class="menu-row" data-cmd="add-line-below"><span>在下方插入空行</span></div>
-          <div class="menu-row" data-cmd="delete-line-up" data-shortcut="Ctrl+Shift+Backspace"><span>删除上方行</span><span class="mr-shortcut">Ctrl+Shift+Backspace</span></div>
-          <div class="menu-row" data-cmd="delete-line-down" data-shortcut="Ctrl+Delete"><span>删除下方行</span><span class="mr-shortcut">Ctrl+Delete</span></div>
-          <div class="menu-row" data-cmd="join-with-prev" data-shortcut="Ctrl+J"><span>与上一行合并</span><span class="mr-shortcut">Ctrl+J</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="cut-line" data-shortcut="Ctrl+E"><span>剪切整行</span><span class="mr-shortcut">Ctrl+E</span></div>
-          <div class="menu-row" data-cmd="cut-line-start" data-shortcut="Ctrl+U"><span>剪切到行首</span><span class="mr-shortcut">Ctrl+U</span></div>
-          <div class="menu-row" data-cmd="delete-line-to-start" data-shortcut="Ctrl+Shift+U"><span>删除到行首</span><span class="mr-shortcut">Ctrl+Shift+U</span></div>
-          <div class="menu-row" data-cmd="delete-line-to-end" data-shortcut="Ctrl+Shift+K"><span>删除到行末</span><span class="mr-shortcut">Ctrl+Shift+K</span></div>
-          <div class="menu-row" data-cmd="delete-word-start" data-shortcut="Ctrl+Backspace"><span>删除到词首</span><span class="mr-shortcut">Ctrl+Backspace</span></div>
-          <div class="menu-row" data-cmd="delete-word-end"><span>删除到词尾</span></div>
-          <div class="menu-row" data-cmd="ltrim-lines"><span>删除行首空白</span></div>
-          <div class="menu-row" data-cmd="rtrim-lines"><span>删除行尾空白</span></div>
-          <div class="menu-row" data-cmd="uniq-consecutive"><span>去重连续重复行</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="indent-selection" data-shortcut="Tab"><span>缩进 (选区)</span><span class="mr-shortcut">Tab</span></div>
-          <div class="menu-row" data-cmd="unindent-selection" data-shortcut="Shift+Tab"><span>反缩进 (选区)</span><span class="mr-shortcut">Shift+Tab</span></div>
-          <div class="menu-row" data-cmd="indent-space"><span>SPACE インデント</span></div>
-          <div class="menu-row" data-cmd="unindent-space"><span>逆 SPACE インデント</span></div>
-          <div class="menu-row" data-cmd="ins-recent-file"><span>最近使ったファイル挿入</span></div>
-          <div class="menu-row" data-cmd="ins-recent-folder"><span>最近使ったフォルダー挿入</span></div>
-          <div class="menu-row" data-cmd="base64-decode"><span>Base64 デコードして保存</span></div>
-          <div class="menu-row" data-cmd="uudecode"><span>uudecode して保存</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="line-ops"><span>行排序 / 去重 / 反转</span></div>
-          <div class="menu-row" data-cmd="encoding"><span>编码转换</span></div>
-          <div class="menu-row" data-cmd="eol"><span>行尾符转换</span></div>
-          <div class="menu-row" data-cmd="clip-history" data-shortcut="Ctrl+Shift+V"><span>剪贴板历史</span><span class="mr-shortcut">Ctrl+Shift+V</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="column-delete"><span>列块删除</span><span class="mr-shortcut">Alt+拖选</span></div>
-          <div class="menu-row" data-cmd="column-replace"><span>列块替换</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="word-cut"><span>单词切り取り</span></div>
-          <div class="menu-row" data-cmd="word-delete"><span>单词削除</span></div>
-          <div class="menu-row" data-cmd="line-cut-to-end"><span>行末まで切り取り</span></div>
-          <div class="menu-row" data-cmd="select-word"><span>现在位置の单词选择</span></div>
-          <div class="menu-row" data-cmd="copy-crlf"><span>CRLF 改行でコピー</span></div>
-          <div class="menu-row" data-cmd="copy-lines"><span>选择范围内全行コピー</span></div>
-          <div class="menu-row" data-cmd="copy-passage"><span>选择范围内全行 引用符付きコピー</span></div>
-          <div class="menu-row" data-cmd="copy-linenum"><span>选择范围内全行 行番号付きコピー</span></div>
-          <div class="menu-row" data-cmd="copy-html"><span>选择范围内 色付き HTML コピー</span></div>
-          <div class="menu-row" data-cmd="copy-html-ln"><span>选择范围内 行番号 色付き HTML コピー</span></div>
-          <div class="menu-row" data-cmd="copy-fname"><span>此文件名をコピー</span></div>
-          <div class="menu-row" data-cmd="copy-path"><span>此文件のパス名をコピー</span></div>
-          <div class="menu-row" data-cmd="copy-tag"><span>此文件のパス名とカーソル位置をコピー</span></div>
-          <div class="menu-row" data-cmd="paste-box"><span>矩形貼り付け</span></div>
-          <div class="menu-row" data-cmd="sort-asc"><span>选择行の昇順ソート</span></div>
-          <div class="menu-row" data-cmd="sort-desc"><span>选择行の降順ソート</span></div>
-          <div class="menu-row" data-cmd="tab-to-space"><span>TAB→空白</span></div>
-          <div class="menu-row" data-cmd="space-to-tab"><span>空白→TAB</span></div>
-          <div class="menu-row" data-cmd="to-zenei"><span>半角英数→全角英数</span></div>
-          <div class="menu-row" data-cmd="to-hanei"><span>全角英数→半角英数</span></div>
-          <div class="menu-row" data-cmd="hankata-to-zenkata"><span>半角カタカナ→全角カタカナ</span></div>
-          <div class="menu-row" data-cmd="hankata-to-zenhira"><span>半角カタカナ→全角ひらがな</span></div>
-          <div class="menu-row" data-cmd="cur-line-center"><span>カーソル行をウィンドウ中央へ</span></div>
-          <div class="menu-row" data-cmd="ctrl-code"><span>コントロールコードの入力...</span></div>
-          <div class="menu-row" data-cmd="insert-time"><span>時刻挿入</span></div>
-          <div class="menu-row" data-cmd="jumphist-prev"><span>移動履歴: 前へ</span></div>
-          <div class="menu-row" data-cmd="jumphist-next"><span>移動履歴: 次へ</span></div>
-          <div class="menu-row" data-cmd="jumphist-set"><span>現在位置を移動履歴に登録</span></div>
-          <div class="menu-row menu-submenu" data-submenu="convert">
-            <span>转换</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="to-upper"><span>大写</span></div>
-              <div class="menu-row" data-cmd="to-lower"><span>小写</span></div>
-              <div class="menu-sep"></div>
-              <div class="menu-row" data-cmd="to-fullwidth"><span>全角</span></div>
-              <div class="menu-row" data-cmd="to-halfwidth"><span>半角</span></div>
-              <div class="menu-sep"></div>
-              <div class="menu-row" data-cmd="to-zenkaku"><span>全角片假名</span></div>
-              <div class="menu-row" data-cmd="to-zenhira"><span>全角平假名</span></div>
-              <div class="menu-row" data-cmd="to-hankata"><span>半角片假名</span></div>
-            </div>
-          </div>
-          <div class="menu-row menu-submenu" data-submenu="codecnv">
-            <span>コード変換</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="codecnv-auto2sjis"><span>自動判別 → SJIS</span></div><div class="menu-row" data-cmd="codecnv-email"><span>E-Mail (JIS → SJIS)</span></div><div class="menu-row" data-cmd="codecnv-euc2sjis"><span>EUC → SJIS</span></div><div class="menu-row" data-cmd="codecnv-unicode2sjis"><span>Unicode → SJIS</span></div><div class="menu-row" data-cmd="codecnv-unicodebe2sjis"><span>UnicodeBE → SJIS</span></div><div class="menu-row" data-cmd="codecnv-utf82sjis"><span>UTF-8 → SJIS</span></div><div class="menu-row" data-cmd="codecnv-utf72sjis"><span>UTF-7 → SJIS</span></div><div class="menu-row" data-cmd="codecnv-sjis2jis"><span>SJIS → JIS</span></div><div class="menu-row" data-cmd="codecnv-sjis2euc"><span>SJIS → EUC</span></div><div class="menu-row" data-cmd="codecnv-sjis2utf8"><span>SJIS → UTF-8</span></div><div class="menu-row" data-cmd="codecnv-sjis2utf7"><span>SJIS → UTF-7</span></div>
-            </div>
-          </div>
-          <div class="menu-row menu-submenu" data-submenu="insert">
-            <span>插入</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="insert-date"><span>当前日期/时间</span></div>
-              <div class="menu-row" data-cmd="insert-template"><span>模板</span></div>
-            </div>
-          </div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="edit"></div>
       </div>
 
       <div class="menu-item" data-menu="search">
-        <button class="mb-btn" data-tip="搜索 (Alt+S)">搜索<span class="mn-key">S</span></button>
-        <div class="menu-dropdown" data-dropdown="search">
-          <div class="menu-row" data-cmd="find" data-shortcut="Ctrl+F"><span>查找</span><span class="mr-shortcut">Ctrl+F</span></div>
-          <div class="menu-row" data-cmd="find-next" data-shortcut="F3"><span>查找下一个</span><span class="mr-shortcut">F3</span></div>
-          <div class="menu-row" data-cmd="find-prev" data-shortcut="Shift+F3"><span>查找上一个</span><span class="mr-shortcut">Shift+F3</span></div>
-          <div class="menu-row" data-cmd="find-incremental" data-shortcut="Ctrl+I"><span>增量查找</span><span class="mr-shortcut">Ctrl+I</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="replace" data-shortcut="Ctrl+H"><span>替换</span><span class="mr-shortcut">Ctrl+H</span></div>
-          <div class="menu-row" data-cmd="replace-all" data-shortcut="Ctrl+Alt+R"><span>全部替换</span><span class="mr-shortcut">Ctrl+Alt+R</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="grep" data-shortcut="Ctrl+G"><span>Grep 搜索</span><span class="mr-shortcut">Ctrl+G</span></div>
-          <div class="menu-row" data-cmd="grep-replace" data-shortcut="Ctrl+Alt+G"><span>Grep 替换</span><span class="mr-shortcut">Ctrl+Alt+G</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="goto-line" data-shortcut="Ctrl+J"><span>跳转到行</span><span class="mr-shortcut">Ctrl+J</span></div>
-          <div class="menu-row" data-cmd="tag-jump" data-shortcut="F12"><span>跳转到标签</span><span class="mr-shortcut">F12</span></div>
-          <div class="menu-row" data-cmd="isearch-fwd"><span>前方インクリメンタルサーチ</span></div>
-          <div class="menu-row" data-cmd="isearch-back"><span>後方インクリメンタルサーチ</span></div>
-          <div class="menu-row" data-cmd="isearch-regex-fwd"><span>前方正規表現インクリメンタルサーチ</span></div>
-          <div class="menu-row" data-cmd="isearch-regex-back"><span>後方正規表現インクリメンタルサーチ</span></div>
-          <div class="menu-row" data-cmd="isearch-migemo-fwd"><span>前方MIGEMOインクリメンタルサーチ</span></div>
-          <div class="menu-row" data-cmd="isearch-migemo-back"><span>後方MIGEMOインクリメンタルサーチ</span></div>
-          <div class="menu-row" data-cmd="search-clearmark"><span>検索マークの切替え</span></div>
-          <div class="menu-row" data-cmd="jump-srchstart"><span>検索開始位置へ戻る</span></div>
-          <div class="menu-row" data-cmd="bracket-pair"><span>対括弧の検索</span></div>
-          <div class="menu-row" data-cmd="bookmark-reset"><span>ブックマークの全解除</span></div>
-          <div class="menu-row" data-cmd="bookmark-view"><span>ブックマークの一覧</span></div>
-          <div class="menu-row" data-cmd="tags-make"><span>标签文件 (tags) 生成</span></div>
-          <div class="menu-row" data-cmd="tag-jump-keyword"><span>指定关键字的直接标签跳转...</span></div>
-          <div class="menu-row" data-cmd="funclist-next"><span>次の関数へ</span></div>
-          <div class="menu-row" data-cmd="funclist-prev"><span>前の関数へ</span></div>
-          <div class="menu-row" data-cmd="modify-next"><span>次の変更行へ</span></div>
-          <div class="menu-row" data-cmd="modify-prev"><span>前の変更行へ</span></div>
-          <div class="menu-row" data-cmd="modify-next-sel"><span>(範囲選択) 次の変更行へ</span></div>
-          <div class="menu-row" data-cmd="modify-prev-sel"><span>(範囲選択) 前の変更行へ</span></div>
-          <div class="menu-row" data-cmd="tag-jump-back"><span>タグジャンプバック</span></div>
-          <div class="menu-row" data-cmd="open-hc"><span>同名のC/C++ヘッダー(ソース)を開く</span></div>
-          <div class="menu-row" data-cmd="bookmark-toggle" data-shortcut="Ctrl+F2"><span>切换书签</span><span class="mr-shortcut">Ctrl+F2</span></div>
-          <div class="menu-row" data-cmd="bookmark-next" data-shortcut="F2"><span>下一个书签</span><span class="mr-shortcut">F2</span></div>
-          <div class="menu-row" data-cmd="bookmark-prev" data-shortcut="Shift+F2"><span>上一个书签</span><span class="mr-shortcut">Shift+F2</span></div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="search"></div>
       </div>
 
       <div class="menu-item" data-menu="view">
-        <button class="mb-btn" data-tip="视图 (Alt+V)">视图<span class="mn-key">V</span></button>
-        <div class="menu-dropdown" data-dropdown="view">
-          <div class="menu-row menu-submenu" data-submenu="layout">
-            <span>界面布局</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="layout-min"><span>极简 (Sakura 风格)</span></div>
-              <div class="menu-row" data-cmd="layout-full"><span>完整 IDE 界面</span></div>
-              <div class="menu-sep"></div>
-              <div class="menu-row" data-cmd="toggle-activity-bar"><span>活动栏</span></div>
-              <div class="menu-row" data-cmd="toggle-side-bar"><span>侧边栏</span></div>
-              <div class="menu-row" data-cmd="toggle-tabs"><span>标签栏</span></div>
-              <div class="menu-row" data-cmd="toggle-breadcrumb"><span>面包屑</span></div>
-            </div>
-          </div>
-          <div class="menu-sep"></div>
-          <div class="menu-row menu-submenu" data-submenu="sidebar">
-            <span>侧边栏</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="show-explorer"><span>资源管理器</span></div>
-              <div class="menu-row" data-cmd="show-search"><span>搜索</span></div>
-              <div class="menu-row" data-cmd="show-scm"><span>源代码管理</span></div>
-              <div class="menu-row" data-cmd="show-outline"><span>大纲</span></div>
-            </div>
-          </div>
-          <div class="menu-row menu-submenu" data-submenu="panel">
-            <span>底端面板</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="show-terminal"><span>终端</span></div>
-              <div class="menu-row" data-cmd="show-output"><span>输出</span></div>
-              <div class="menu-row" data-cmd="show-problems"><span>问题</span></div>
-              <div class="menu-sep"></div>
-              <div class="menu-row" data-cmd="toggle-bottom" data-shortcut="Ctrl+J"><span>显示/隐藏</span><span class="mr-shortcut">Ctrl+J</span></div>
-            </div>
-          </div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="toggle-status" data-shortcut="Ctrl+`"><span>状态栏</span><span class="mr-shortcut">Ctrl+`</span></div>
-          <div class="menu-row" data-cmd="toggle-word-wrap"><span>自动换行</span></div>
-          <div class="menu-row" data-cmd="toggle-line-num" data-shortcut="Ctrl+Shift+L"><span>行号</span><span class="mr-shortcut">Ctrl+Shift+L</span></div>
-          <div class="menu-row" data-cmd="toggle-minimap"><span>缩略图</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="font-bigger" data-shortcut="Ctrl+="><span>字体放大</span><span class="mr-shortcut">Ctrl+=</span></div>
-          <div class="menu-row" data-cmd="font-smaller" data-shortcut="Ctrl+-"><span>字体缩小</span><span class="mr-shortcut">Ctrl+-</span></div>
-          <div class="menu-row" data-cmd="zoom-in" data-shortcut="Ctrl+滚轮上"><span>放大</span><span class="mr-shortcut">Ctrl+滚轮</span></div>
-          <div class="menu-row" data-cmd="zoom-out"><span>缩小</span></div>
-          <div class="menu-row" data-cmd="zoom-reset" data-shortcut="Ctrl+0"><span>重置缩放</span><span class="mr-shortcut">Ctrl+0</span></div>
-          <div class="menu-row" data-cmd="completion" data-shortcut="Ctrl+Space"><span>代码补全</span><span class="mr-shortcut">Ctrl+Space</span></div>
-          <div class="menu-row" data-cmd="goto-def" data-shortcut="F12"><span>跳转到定义</span><span class="mr-shortcut">F12</span></div>
-          <div class="menu-row menu-submenu" data-submenu="theme">
-            <span>主题</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="theme-clear"><span>透明玻璃</span></div>
-<div class="menu-row" data-cmd="theme-dark"><span>深色</span></div>
-              <div class="menu-row" data-cmd="theme-light"><span>浅色</span></div>
-              <div class="menu-row" data-cmd="theme-high-contrast"><span>高对比度</span></div>
-            </div>
-          </div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="toggle-toolbar"><span>工具栏</span></div>
-          <div class="menu-row" data-cmd="toggle-funckey"><span>功能键栏</span></div>
-          <div class="menu-row" data-cmd="toggle-ruler"><span>标尺</span></div>
-          <div class="menu-row" data-cmd="toggle-ws"><span>空白 / TAB 标记</span></div>
-          <div class="menu-row" data-cmd="toggle-curline"><span>当前行下划线</span></div>
-          <div class="menu-row" data-cmd="toggle-readonly"><span>閲覧モード (只读)</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="redraw" data-shortcut="F5"><span>再描画</span><span class="mr-shortcut">F5</span></div>
-          <div class="menu-row" data-cmd="file-properties" data-shortcut="Alt+Enter"><span>文件属性</span><span class="mr-shortcut">Alt+Enter</span></div>
-          <div class="menu-row" data-cmd="window-list"><span>窗口一览</span></div>
-          <div class="menu-row" data-cmd="close-others"><span>关闭其它标签</span></div>
-          <div class="menu-row" data-cmd="close-right"><span>关闭右侧标签</span></div>
-          <div class="menu-row" data-cmd="close-left"><span>关闭左侧标签</span></div>
-          <div class="menu-row" data-cmd="reconvert"><span>再変換</span></div>
-          <div class="menu-row" data-cmd="begin-sel" data-shortcut="F6"><span>范围选择开始 / 结束</span><span class="mr-shortcut">F6</span></div>
-          <div class="menu-row" data-cmd="sel-para-prev"><span>(範囲選択) 前の段落へ</span></div>
-          <div class="menu-row" data-cmd="sel-para-next"><span>(範囲選択) 次の段落へ</span></div>
-          <div class="menu-row" data-cmd="box-line-top"><span>(矩形選択) 行頭へ (改行単位)</span></div>
-          <div class="menu-row" data-cmd="wrap-none"><span>折返しなし</span></div>
-          <div class="menu-row" data-cmd="toggle-key-search"><span>キーワードヘルプ自動表示</span></div>
-          <div class="menu-row" data-cmd="keybind-list" data-shortcut="Ctrl+Q"><span>キー割り当て一覧...</span><span class="mr-shortcut">Ctrl+Q</span></div>
-          <div class="menu-row" data-cmd="all-commands" data-shortcut="Shift+F1"><span>全機能一览...</span><span class="mr-shortcut">Shift+F1</span></div>
-          <div class="menu-row" data-cmd="next-group"><span>下一个分组</span></div>
-          <div class="menu-row" data-cmd="prev-group"><span>上一个分组</span></div>
-          <div class="menu-row" data-cmd="tab-separate"><span>移到新分组</span></div>
-          <div class="menu-row" data-cmd="tab-joint-next"><span>移到下一个分组</span></div>
-          <div class="menu-row" data-cmd="tab-joint-prev"><span>移到上一个分组</span></div>
-          <div class="menu-row" data-cmd="bind-window"><span>合并为一组 (グループ化)</span></div>
-          <div class="menu-row" data-cmd="group-close"><span>关闭当前分组</span></div>
-          <div class="menu-row" data-cmd="maximize-v"><span>纵向最大化</span></div>
-          <div class="menu-row" data-cmd="maximize-h"><span>横向最大化</span></div>
-          <div class="menu-row" data-cmd="minimize-all"><span>全部最小化</span></div>
-          <div class="menu-row" data-cmd="tab-move-left"><span>标签左移</span></div>
-          <div class="menu-row" data-cmd="tab-move-right"><span>标签右移</span></div>
-          <div class="menu-row" data-cmd="wrap-window-width"><span>按窗口宽度折行</span></div>
-          <div class="menu-row" data-cmd="tmp-wrap"><span>按指定列数折行 (临时)...</span></div>
-          <div class="menu-row" data-cmd="save-close"><span>保存并关闭</span></div>
-          <div class="menu-row" data-cmd="close-open" data-shortcut="Shift+Ctrl+F4"><span>关闭并打开...</span><span class="mr-shortcut">Shift+Ctrl+F4</span></div>
-          <div class="menu-row" data-cmd="exit-all" data-shortcut="Ctrl+Alt+F4"><span>全部退出</span><span class="mr-shortcut">Ctrl+Alt+F4</span></div>
-          <div class="menu-row" data-cmd="select-count-mode"><span>选区字数统计方式</span></div>
-          <div class="menu-row" data-cmd="copy-addcrlf"><span>在折行位置加换行后复制</span></div>
-          <div class="menu-row" data-cmd="help-search" data-shortcut="Shift+Alt+F1"><span>帮助关键字检索...</span><span class="mr-shortcut">Shift+Alt+F1</span></div>
-          <div class="menu-row" data-cmd="ext-help" data-shortcut="Ctrl+F1"><span>光标处单词的帮助</span><span class="mr-shortcut">Ctrl+F1</span></div>
-          <div class="menu-row" data-cmd="topmost"><span>始终置顶</span></div>
-          <div class="menu-row" data-cmd="minimize-window"><span>最小化</span></div>
-          <div class="menu-row" data-cmd="file-tree"><span>文件树</span></div>
-          <div class="menu-row" data-cmd="history-manager"><span>历史管理...</span></div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="view"></div>
       </div>
 
       <div class="menu-item" data-menu="tool">
-        <button class="mb-btn" data-tip="工具 (Alt+T)">工具<span class="mn-key">T</span></button>
-        <div class="menu-dropdown" data-dropdown="tool">
-          <div class="menu-row" data-cmd="outline" data-shortcut="Ctrl+Shift+O"><span>大纲</span><span class="mr-shortcut">Ctrl+Shift+O</span></div>
-          <div class="menu-row" data-cmd="syntax" data-shortcut="Alt+S"><span>语法高亮</span><span class="mr-shortcut">Alt+S</span></div>
-          <div class="menu-row" data-cmd="type-config"><span>类型配置</span></div>
-          <div class="menu-row" data-cmd="diff-with-tab"><span>与另一标签比较 (DIFF)</span></div>
-          <div class="menu-row" data-cmd="diff-with-file"><span>与文件比较 (DIFF)</span></div>
-          <div class="menu-row" data-cmd="diff-list"><span>差分一览</span></div>
-          <div class="menu-row" data-cmd="diff-next" data-shortcut="Alt+Down"><span>下一处差分</span></div>
-          <div class="menu-row" data-cmd="diff-prev"><span>上一处差分</span></div>
-          <div class="menu-row" data-cmd="diff-clear"><span>清除差分标记</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="auto-backup" data-shortcut="Ctrl+Alt+B"><span>立即备份</span><span class="mr-shortcut">Ctrl+Alt+B</span></div>
-          <div class="menu-row" data-cmd="file-lock" data-shortcut="Ctrl+Alt+L"><span>文件锁定</span><span class="mr-shortcut">Ctrl+Alt+L</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row menu-submenu" data-submenu="macro">
-            <span>宏</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="macro-start" data-shortcut="Ctrl+Shift+R"><span>开始录制</span><span class="mr-shortcut">Ctrl+Shift+R</span></div>
-              <div class="menu-row" data-cmd="macro-stop" data-shortcut="Ctrl+Shift+R"><span>停止录制</span><span class="mr-shortcut">Ctrl+Shift+R</span></div>
-              <div class="menu-row" data-cmd="macro-play" data-shortcut="Ctrl+Shift+P"><span>播放宏</span><span class="mr-shortcut">Ctrl+Shift+P</span></div>
-              <div class="menu-row" data-cmd="macro-save"><span>保存宏...</span></div>
-              <div class="menu-row" data-cmd="macro-load"><span>读取宏...</span></div>
-              <div class="menu-sep"></div>
-              <div class="menu-row" data-cmd="js-macro"><span>运行 JS 宏</span></div>
-              <div class="menu-row" data-cmd="exec-cmd" data-shortcut="Ctrl+F5"><span>外部命令执行...</span><span class="mr-shortcut">Ctrl+F5</span></div>
-              <div class="menu-row" data-cmd="sqlplus-activate" data-shortcut="Shift+F11"><span>SQL*Plus 终端</span><span class="mr-shortcut">Shift+F11</span></div>
-              <div class="menu-row" data-cmd="sqlplus-run"><span>在 SQL*Plus 中执行当前文件</span></div>
-              <div class="menu-row" data-cmd="ppa-macro"><span>运行 PPA 宏</span></div>
-            </div>
-          </div>
-          <div class="menu-row menu-submenu" data-submenu="plugin">
-            <span>插件</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="plugin-load"><span>加载插件</span></div>
-              <div class="menu-row" data-cmd="plugin-manage"><span>管理</span></div>
-            </div>
-          </div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="insert-stamp"><span>插入时间戳</span></div>
-          <div class="menu-row" data-cmd="stamp-config"><span>时间戳设置</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="customize-keys" data-shortcut="Ctrl+Alt+K"><span>自定义键</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="tool"></div>
       </div>
 
       <div class="menu-item" data-menu="setting">
-        <button class="mb-btn" data-tip="设置 (Alt+C)">设置<span class="mn-key">C</span></button>
-        <div class="menu-dropdown" data-dropdown="setting">
-          <div class="menu-row" data-cmd="settings" data-shortcut="Ctrl+,"><span>首选项</span><span class="mr-shortcut">Ctrl+,</span></div>
-          <div class="menu-row" data-cmd="keymap" data-shortcut="Ctrl+Alt+K"><span>键映射</span><span class="mr-shortcut">Ctrl+Alt+K</span></div>
-          <div class="menu-row" data-cmd="font"><span>字体</span></div>
-          <div class="menu-row" data-cmd="theme-select"><span>主题</span></div>
-          <div class="menu-row" data-cmd="language" data-shortcut="Alt+L"><span>语言</span><span class="mr-shortcut">Alt+L</span></div>
-          <div class="menu-row" data-cmd="charset"><span>文字コードセット指定...</span></div>
-          <div class="menu-row" data-cmd="eol-crlf"><span>入力改行コード: CRLF</span></div>
-          <div class="menu-row" data-cmd="eol-lf"><span>入力改行コード: LF</span></div>
-          <div class="menu-row" data-cmd="eol-cr"><span>入力改行コード: CR</span></div>
-          <div class="menu-row" data-cmd="toggle-vim"><span>Vim 模式</span></div>
-          <div class="menu-row" data-cmd="common-config"><span>共通設定...</span></div>
-          <div class="menu-row" data-cmd="key-config"><span>キー割り当て...</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="import-config"><span>导入配置</span></div>
-          <div class="menu-row" data-cmd="export-config"><span>导出配置</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="reset-settings"><span>恢复默认</span></div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="setting"></div>
       </div>
 
       <div class="menu-item" data-menu="window">
-        <button class="mb-btn" data-tip="窗口 (Alt+W)">窗口<span class="mn-key">W</span></button>
-        <div class="menu-dropdown" data-dropdown="window">
-          <div class="menu-row" data-cmd="new-window" data-shortcut="Ctrl+Shift+N"><span>新窗口</span><span class="mr-shortcut">Ctrl+Shift+N</span></div>
-          <div class="menu-row" data-cmd="split-h" data-shortcut="Ctrl+Shift+H"><span>上下分割</span><span class="mr-shortcut">Ctrl+Shift+H</span></div>
-          <div class="menu-row" data-cmd="split-v" data-shortcut="Ctrl+Shift+V"><span>左右分割</span><span class="mr-shortcut">Ctrl+Shift+V</span></div>
-          <div class="menu-row" data-cmd="split-quad" data-shortcut="Ctrl+Shift+Q"><span>四方分割</span><span class="mr-shortcut">Ctrl+Shift+Q</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="cascade"><span>层叠</span></div>
-          <div class="menu-row" data-cmd="tile-h"><span>水平平铺</span></div>
-          <div class="menu-row" data-cmd="tile-v"><span>垂直平铺</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row menu-submenu" data-submenu="tabs">
-            <span>标签</span><span class="mr-shortcut">▶</span>
-            <div class="submenu-dropdown">
-              <div class="menu-row" data-cmd="next-tab" data-shortcut="Ctrl+Tab"><span>下一个标签</span><span class="mr-shortcut">Ctrl+Tab</span></div>
-              <div class="menu-row" data-cmd="prev-tab" data-shortcut="Ctrl+Shift+Tab"><span>上一个标签</span><span class="mr-shortcut">Ctrl+Shift+Tab</span></div>
-            </div>
-          </div>
-          <div class="menu-row" data-cmd="fullscreen" data-shortcut="F11"><span>全屏</span><span class="mr-shortcut">F11</span></div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="window"></div>
       </div>
 
       <div class="menu-item" data-menu="help">
-        <button class="mb-btn" data-tip="帮助 (Alt+H)">帮助<span class="mn-key">H</span></button>
-        <div class="menu-dropdown" data-dropdown="help">
-          <div class="menu-row" data-cmd="wiki" data-shortcut="F1"><span>wiki 帮助</span><span class="mr-shortcut">F1</span></div>
-          <div class="menu-row" data-cmd="shortcuts" data-shortcut="Ctrl+/"><span>快捷键</span><span class="mr-shortcut">Ctrl+/</span></div>
-          <div class="menu-row" data-cmd="about"><span>关于 IDE1.0</span></div>
-          <div class="menu-sep"></div>
-          <div class="menu-row" data-cmd="help" data-tip="内置 wiki 帮助"><span>内置 wiki</span></div>
-        </div>
+        <button class="mb-btn"></button>
+        <div class="menu-dropdown" data-dropdown="help"></div>
       </div>
 
       <span style="flex:1"></span>
-            <button class="tb-btn" data-cmd="new-terminal" data-tip="新建终端 (Ctrl+`)">▶ 终端</button>
+            <button class="tb-btn" data-cmd="new-terminal" data-tip="新建终端 (Ctrl+`)">+ 新建终端</button>
 
           <!-- Kernel Banner -->
           <div id="banner" class="banner"></div>
@@ -1863,6 +1531,37 @@
 
   <script>
 "use strict"
+
+/* ===== i18n (中文 / 日本語 / English) + 菜单由数据生成 =====
+   菜单结构参考 Sakura 的层级 (大类下用子菜单收纳), 每项三种语言的名字都在 I18N 里; 语言存 localStorage(ide10.lang), 缺省中文。 */
+const UI_LANGS = ["zh", "ja", "en"];
+let UI_LANG = (() => { try { const v = localStorage.getItem("ide10.lang"); return UI_LANGS.indexOf(v) >= 0 ? v : "zh"; } catch (_) { return "zh"; } })();
+const I18N = {"menu.file":["文件","ファイル","File"],"c.new-file":["新建","新規作成","New"],"c.open-file":["打开文件...","開く...","Open..."],"c.open-folder":["打开文件夹","フォルダーを開く","Open Folder"],"c.save":["保存","上書き保存","Save"],"c.save-as":["另存为...","名前を付けて保存...","Save As..."],"c.save-all":["全部保存","すべて保存","Save All"],"c.save-close":["保存并关闭","保存して閉じる","Save and Close"],"c.close-tab":["关闭标签","閉じる","Close"],"c.close-all":["关闭全部","すべて閉じる","Close All"],"c.close-open":["关闭并打开...","閉じて開く...","Close and Open..."],"c.reload":["重新载入","再読み込み","Reload"],"sub.reopen":["以指定编码重新打开","文字コードを指定して開き直す","Reopen with Encoding"],"c.reopen-UTF-8":["UTF-8","UTF-8","UTF-8"],"c.reopen-SJIS":["SJIS","SJIS","SJIS"],"c.reopen-EUC-JP":["EUC-JP","EUC-JP","EUC-JP"],"c.reopen-JIS":["JIS","JIS","JIS"],"c.reopen-Unicode":["Unicode","Unicode","Unicode"],"c.reopen-UnicodeBE":["UnicodeBE","UnicodeBE","UnicodeBE"],"c.reopen-Latin1":["Latin1","Latin1","Latin1"],"c.reopen-CESU-8":["CESU-8","CESU-8","CESU-8"],"c.reopen-UTF-7":["UTF-7","UTF-7","UTF-7"],"c.reopen-GBK":["GBK","GBK","GBK"],"c.reopen-Big5":["Big5","Big5","Big5"],"c.reopen-EUC-KR":["EUC-KR","EUC-KR","EUC-KR"],"sub.recent":["最近使用","最近使ったファイル","Recent Files"],"c.recent-clear":["清除历史","履歴をクリア","Clear History"],"sub.print":["印刷","印刷","Print"],"c.print":["打印...","印刷...","Print..."],"c.print-preview":["打印预览","印刷プレビュー","Print Preview"],"c.print-setup":["页面设置...","印刷ページ設定...","Page Setup..."],"c.browse":["在浏览器中查看","ブラウズ","Browse"],"c.file-properties":["文件属性","ファイルのプロパティ","File Properties"],"c.new-window":["新窗口","新規ウィンドウ","New Window"],"c.exit-all":["全部退出","すべて終了","Exit All"],"menu.edit":["编辑","編集","Edit"],"c.undo":["撤销","元に戻す","Undo"],"c.redo":["重做","やり直し","Redo"],"c.cut":["剪切","切り取り","Cut"],"c.copy":["复制","コピー","Copy"],"c.paste":["粘贴","貼り付け","Paste"],"c.select-all":["全选","すべて選択","Select All"],"sub.edit-delete":["删除 / 剪切扩展","削除・切り取り","Delete / Cut"],"c.word-cut":["剪切单词","単語切り取り","Cut Word"],"c.word-delete":["删除单词","単語削除","Delete Word"],"c.line-cut-to-end":["剪切到行末","行末まで切り取り","Cut to End of Line"],"c.cut-line":["剪切整行","行切り取り","Cut Line"],"c.cut-line-start":["剪切到行首","行頭まで切り取り","Cut to Start of Line"],"c.delete-line-to-start":["删除到行首","行頭まで削除","Delete to Start of Line"],"c.delete-line-to-end":["删除到行末","行末まで削除","Delete to End of Line"],"c.delete-word-start":["删除到词首","単語の左端まで削除","Delete to Word Start"],"c.delete-word-end":["删除到词尾","単語の右端まで削除","Delete to Word End"],"sub.edit-copy":["复制 / 粘贴扩展","コピー・貼り付け","Copy / Paste"],"c.copy-crlf":["以 CRLF 换行复制","CRLF改行でコピー","Copy with CRLF"],"c.copy-addcrlf":["在折行处加换行复制","折り返し位置に改行をつけてコピー","Copy with Wrap Breaks"],"c.copy-lines":["复制选区内全部行","選択範囲内全行コピー","Copy Selected Lines"],"c.copy-passage":["带引用符复制","選択範囲内全行引用符付きコピー","Copy as Quotation"],"c.copy-linenum":["带行号复制","選択範囲内全行行番号付きコピー","Copy with Line Numbers"],"c.copy-html":["彩色 HTML 复制","選択範囲内色付きHTMLコピー","Copy as Colored HTML"],"c.copy-html-ln":["带行号彩色 HTML 复制","選択範囲内行番号色付きHTMLコピー","Copy as Colored HTML with Line Numbers"],"c.copy-fname":["复制文件名","このファイル名をクリップボードにコピー","Copy File Name"],"c.copy-path":["复制文件路径","このファイルのパス名をコピー","Copy File Path"],"c.copy-tag":["复制路径与光标位置","このファイルのパス名とカーソル位置をコピー","Copy Path and Cursor Position"],"c.paste-box":["矩形粘贴","矩形貼り付け","Paste Rectangle"],"c.clip-history":["剪贴板历史","クリップボード履歴","Clipboard History"],"sub.edit-lines":["行操作","行操作","Lines"],"c.delete-line":["删除行","行削除","Delete Line"],"c.duplicate-line":["复制行","行の複製","Duplicate Line"],"c.move-line-up":["上移行","行を上へ移動","Move Line Up"],"c.move-line-down":["下移行","行を下へ移動","Move Line Down"],"c.add-line-above":["在上方插入空行","上に空行を挿入","Insert Line Above"],"c.add-line-below":["在下方插入空行","下に空行を挿入","Insert Line Below"],"c.delete-line-up":["删除上方行","上の行を削除","Delete Line Above"],"c.delete-line-down":["删除下方行","下の行を削除","Delete Line Below"],"c.join-with-prev":["与上一行合并","前の行と結合","Join with Previous Line"],"c.line-ops":["行排序 / 去重 / 反转","行の並べ替え・重複削除","Sort / Dedupe / Reverse"],"c.sort-asc":["升序排序","選択行の昇順ソート","Sort Ascending"],"c.sort-desc":["降序排序","選択行の降順ソート","Sort Descending"],"c.ltrim-lines":["删除行首空白","行頭の空白を削除","Trim Leading Whitespace"],"c.rtrim-lines":["删除行尾空白","行末の空白を削除","Trim Trailing Whitespace"],"c.uniq-consecutive":["合并连续重复行","選択行のマージ","Merge Duplicate Lines"],"sub.edit-indent":["缩进","インデント","Indent"],"c.indent-selection":["缩进 (选区)","インデント (TAB)","Indent"],"c.unindent-selection":["反缩进 (选区)","逆インデント (TAB)","Unindent"],"c.indent-space":["SPACE 缩进","SPACEインデント","Indent with Spaces"],"c.unindent-space":["SPACE 反缩进","逆SPACEインデント","Unindent Spaces"],"c.tab-to-space":["TAB→空格","TAB→空白","Tabs to Spaces"],"c.space-to-tab":["空格→TAB","空白→TAB","Spaces to Tabs"],"sub.edit-select":["选择 / 矩形","選択・矩形","Selection / Rectangle"],"c.select-word":["选择当前单词","現在位置の単語選択","Select Word"],"c.begin-sel":["范围选择开始/结束","範囲選択開始","Begin Selection"],"c.sel-para-prev":["(选择) 上一段落","(範囲選択) 前の段落へ","Select to Previous Paragraph"],"c.sel-para-next":["(选择) 下一段落","(範囲選択) 次の段落へ","Select to Next Paragraph"],"c.column-delete":["矩形删除","矩形削除","Delete Rectangle"],"c.column-replace":["矩形替换","矩形置換","Replace Rectangle"],"c.box-line-top":["(矩形) 移到行首","(矩形選択) 行頭に移動","Rectangle to Line Start"],"c.cur-line-center":["光标行居中","カーソル行をウィンドウ中央へ","Center Cursor Line"],"c.reconvert":["再変換","再変換","Reconvert"],"sub.insert":["插入","挿入","Insert"],"c.insert-date":["日期","日付挿入","Insert Date"],"c.insert-time":["时间","時刻挿入","Insert Time"],"c.insert-stamp":["时间戳","タイムスタンプ挿入","Insert Timestamp"],"c.stamp-config":["时间戳设置","タイムスタンプ設定","Timestamp Settings"],"c.insert-template":["模板","テンプレート","Template"],"c.ctrl-code":["控制字符...","コントロールコードの入力...","Control Code..."],"c.ins-recent-file":["最近使用的文件路径","最近使ったファイル挿入","Insert Recent File"],"c.ins-recent-folder":["最近使用的文件夹路径","最近使ったフォルダー挿入","Insert Recent Folder"],"sub.convert":["变换","変換","Convert"],"c.to-upper":["大写","大文字","Uppercase"],"c.to-lower":["小写","小文字","Lowercase"],"c.to-fullwidth":["全角","全角","Fullwidth"],"c.to-halfwidth":["半角","半角","Halfwidth"],"c.to-zenei":["半角英数→全角英数","半角英数→全角英数","Half→Full Alphanumeric"],"c.to-hanei":["全角英数→半角英数","全角英数→半角英数","Full→Half Alphanumeric"],"c.to-zenkaku":["全角片假名","全角カタカナ","Fullwidth Katakana"],"c.to-zenhira":["全角平假名","全角ひらがな","Fullwidth Hiragana"],"c.to-hankata":["半角片假名","半角カタカナ","Halfwidth Katakana"],"c.hankata-to-zenkata":["半角片假名→全角片假名","半角カタカナ→全角カタカナ","Half Katakana→Full Katakana"],"c.hankata-to-zenhira":["半角片假名→全角平假名","半角カタカナ→全角ひらがな","Half Katakana→Full Hiragana"],"c.base64-decode":["Base64 解码并保存","Base64デコードして保存","Base64 Decode and Save"],"c.uudecode":["uudecode 并保存","uudecodeして保存","uudecode and Save"],"c.encoding":["编码转换","文字コード変換","Encoding Conversion"],"c.eol":["换行符转换","改行コード変換","Line Ending Conversion"],"sub.codecnv":["代码转换","コード変換","Code Conversion"],"c.codecnv-auto2sjis":["自动判别 → SJIS","自動判別 → SJIS","Auto Detect → SJIS"],"c.codecnv-email":["E-Mail (JIS → SJIS)","E-Mail(JIS→SJIS)","E-Mail (JIS → SJIS)"],"c.codecnv-euc2sjis":["EUC → SJIS","EUC → SJIS","EUC → SJIS"],"c.codecnv-unicode2sjis":["Unicode → SJIS","Unicode → SJIS","Unicode → SJIS"],"c.codecnv-unicodebe2sjis":["UnicodeBE → SJIS","UnicodeBE → SJIS","UnicodeBE → SJIS"],"c.codecnv-utf82sjis":["UTF-8 → SJIS","UTF-8 → SJIS","UTF-8 → SJIS"],"c.codecnv-utf72sjis":["UTF-7 → SJIS","UTF-7 → SJIS","UTF-7 → SJIS"],"c.codecnv-sjis2jis":["SJIS → JIS","SJIS → JIS","SJIS → JIS"],"c.codecnv-sjis2euc":["SJIS → EUC","SJIS → EUC","SJIS → EUC"],"c.codecnv-sjis2utf8":["SJIS → UTF-8","SJIS → UTF-8","SJIS → UTF-8"],"c.codecnv-sjis2utf7":["SJIS → UTF-7","SJIS → UTF-7","SJIS → UTF-7"],"menu.search":["搜索","検索","Search"],"c.find":["查找...","検索...","Find..."],"c.find-next":["查找下一个","次を検索","Find Next"],"c.find-prev":["查找上一个","前を検索","Find Previous"],"c.replace":["替换...","置換...","Replace..."],"c.replace-all":["全部替换","すべて置換","Replace All"],"c.grep":["Grep 搜索...","Grep...","Grep..."],"c.grep-replace":["Grep 替换...","Grep置換...","Grep Replace..."],"sub.isearch":["增量查找","インクリメンタルサーチ","Incremental Search"],"c.find-incremental":["增量查找","インクリメンタルサーチ","Incremental Search"],"c.isearch-fwd":["向前增量查找","前方インクリメンタルサーチ","Incremental Search Forward"],"c.isearch-back":["向后增量查找","後方インクリメンタルサーチ","Incremental Search Backward"],"c.isearch-regex-fwd":["向前正则增量查找","前方正規表現インクリメンタルサーチ","Regex Incremental Forward"],"c.isearch-regex-back":["向后正则增量查找","後方正規表現インクリメンタルサーチ","Regex Incremental Backward"],"c.isearch-migemo-fwd":["向前 MIGEMO 增量查找","前方MIGEMOインクリメンタルサーチ","MIGEMO Incremental Forward"],"c.isearch-migemo-back":["向后 MIGEMO 增量查找","後方MIGEMOインクリメンタルサーチ","MIGEMO Incremental Backward"],"c.search-clearmark":["切换查找标记","検索マークの切替え","Toggle Search Marks"],"c.jump-srchstart":["回到查找起点","検索開始位置へ戻る","Back to Search Start"],"c.goto-line":["跳转到行...","指定行へジャンプ...","Go to Line..."],"c.bracket-pair":["对应括号","対括弧の検索","Matching Bracket"],"sub.bookmark":["书签","ブックマーク","Bookmarks"],"c.bookmark-toggle":["设置/取消书签","ブックマークの設定/解除","Toggle Bookmark"],"c.bookmark-next":["下一个书签","次のブックマークへ","Next Bookmark"],"c.bookmark-prev":["上一个书签","前のブックマークへ","Previous Bookmark"],"c.bookmark-reset":["清除全部书签","ブックマークの全解除","Clear All Bookmarks"],"c.bookmark-view":["书签列表","ブックマークの一覧","Bookmark List"],"sub.tags":["标签跳转 / 函数","タグジャンプ・関数","Tags / Functions"],"c.tag-jump":["跳转到定义","タグジャンプ","Tag Jump"],"c.tag-jump-back":["返回","タグジャンプバック","Tag Jump Back"],"c.tags-make":["生成 tags 文件","タグファイルの作成","Create Tags File"],"c.tag-jump-keyword":["按关键字跳转...","キーワードを指定してタグジャンプ...","Tag Jump by Keyword..."],"c.open-hc":["打开同名 C/C++ 头/源文件","同名のC/C++ヘッダー(ソース)を開く","Open Matching C/C++ Header/Source"],"c.funclist-next":["下一个函数","次の関数リストマークへ","Next Function"],"c.funclist-prev":["上一个函数","前の関数リストマークへ","Previous Function"],"sub.modify":["变更行","変更行","Modified Lines"],"c.modify-next":["下一个变更行","次の変更行へ","Next Modified Line"],"c.modify-prev":["上一个变更行","前の変更行へ","Previous Modified Line"],"c.modify-next-sel":["(选择) 下一个变更行","(範囲選択) 次の変更行へ","Select to Next Modified Line"],"c.modify-prev-sel":["(选择) 上一个变更行","(範囲選択) 前の変更行へ","Select to Previous Modified Line"],"sub.jumphist":["移动历史","移動履歴","Jump History"],"c.jumphist-prev":["上一个位置","移動履歴: 前へ","Previous Location"],"c.jumphist-next":["下一个位置","移動履歴: 次へ","Next Location"],"c.jumphist-set":["登记当前位置","現在位置を移動履歴に登録","Register Location"],"sub.diff":["文件比较 (DIFF)","ファイル比較 (DIFF)","Compare (DIFF)"],"c.diff-with-tab":["与另一标签比较","他のタブと比較","Compare with Tab"],"c.diff-with-file":["与文件比较...","ファイルと比較...","Compare with File..."],"c.diff-list":["差异列表","差分一覧","Difference List"],"c.diff-next":["下一处差异","次の差分へ","Next Difference"],"c.diff-prev":["上一处差异","前の差分へ","Previous Difference"],"c.diff-clear":["清除差异标记","差分の全解除","Clear Differences"],"menu.view":["视图","表示","View"],"sub.layout":["界面布局","画面レイアウト","Layout"],"c.layout-min":["极简 (Sakura 风格)","シンプル (Sakura風)","Minimal (Sakura style)"],"c.layout-full":["完整 IDE 界面","フル IDE 画面","Full IDE"],"c.toggle-activity-bar":["活动栏","アクティビティバー","Activity Bar"],"c.toggle-side-bar":["侧边栏","サイドバー","Side Bar"],"c.toggle-tabs":["标签栏","タブバー","Tab Bar"],"c.toggle-breadcrumb":["面包屑","パンくず","Breadcrumb"],"sub.sidebar":["侧边栏内容","サイドバー表示内容","Side Bar Views"],"c.show-explorer":["资源管理器","エクスプローラー","Explorer"],"c.show-search":["搜索","検索","Search"],"c.show-scm":["源代码管理","ソース管理","Source Control"],"c.show-outline":["大纲","アウトライン","Outline"],"c.file-tree":["文件树","ファイルツリー","File Tree"],"sub.panel":["底部面板","下部パネル","Bottom Panel"],"c.show-terminal":["终端","ターミナル","Terminal"],"c.show-output":["输出","出力","Output"],"c.show-problems":["问题","問題","Problems"],"c.new-terminal":["新建终端","新しいターミナル","New Terminal"],"c.toggle-bottom":["显示/隐藏","表示/非表示","Show / Hide"],"c.toggle-word-wrap":["自动换行","右端で折り返す","Word Wrap"],"c.toggle-line-num":["行号","行番号","Line Numbers"],"c.toggle-minimap":["缩略图","ミニマップ","Minimap"],"c.toggle-status":["状态栏","ステータスバー","Status Bar"],"sub.view-bars":["工具栏 / 标尺","ツールバー・ルーラー","Toolbar / Ruler"],"c.toggle-toolbar":["工具栏","ツールバー","Toolbar"],"c.toggle-funckey":["功能键栏","ファンクションキー","Function Keys"],"c.toggle-ruler":["标尺","ルーラー","Ruler"],"c.toggle-ws":["空白 / TAB 标记","空白・TAB表示","Whitespace / TAB Marks"],"c.toggle-curline":["当前行下划线","カーソル行アンダーライン","Current Line Underline"],"sub.view-wrap":["折行设置","折り返し設定","Wrapping"],"c.wrap-none":["不折行","折り返しなし","No Wrap"],"c.wrap-window-width":["按窗口宽度折行","現在のウィンドウ幅で折り返し","Wrap at Window Width"],"c.tmp-wrap":["按指定列数折行 (临时)...","指定桁で折り返す (一時設定)...","Wrap at Column (Temporary)..."],"sub.view-zoom":["字体 / 缩放","フォント・拡大縮小","Font / Zoom"],"c.font-bigger":["字体放大","フォント拡大","Increase Font"],"c.font-smaller":["字体缩小","フォント縮小","Decrease Font"],"c.zoom-in":["放大","拡大","Zoom In"],"c.zoom-out":["缩小","縮小","Zoom Out"],"c.zoom-reset":["重置缩放","拡大率をリセット","Reset Zoom"],"sub.theme":["主题","テーマ","Theme"],"c.theme-clear":["透明玻璃","透明ガラス","Clear Glass"],"c.theme-dark":["深色","ダーク","Dark"],"c.theme-light":["浅色","ライト","Light"],"c.theme-high-contrast":["高对比度","ハイコントラスト","High Contrast"],"c.toggle-readonly":["只读模式","閲覧モード","View Mode (Read-only)"],"c.select-count-mode":["选区字数统计方式","文字カウントの方法","Selection Count Mode"],"c.toggle-key-search":["关键字帮助自动显示","キーワードヘルプ自動表示","Auto Keyword Help"],"c.redraw":["重绘","再描画","Redraw"],"c.completion":["代码补全","入力補完","Completion"],"c.goto-def":["转到定义","定義へ移動","Go to Definition"],"menu.tool":["工具","ツール","Tools"],"c.outline":["大纲","アウトライン解析","Outline"],"c.syntax":["语法高亮","シンタックスハイライト","Syntax Highlighting"],"c.type-config":["文件类型设置","タイプ別設定","File Type Settings"],"c.auto-backup":["立即备份","今すぐバックアップ","Backup Now"],"c.file-lock":["文件锁定","ファイルロック","File Lock"],"sub.macro":["宏","マクロ","Macro"],"c.macro-start":["开始录制","キーマクロの記録開始","Start Recording"],"c.macro-stop":["停止录制","キーマクロの記録終了","Stop Recording"],"c.macro-play":["播放宏","キーマクロの実行","Play Macro"],"c.macro-save":["保存宏...","キーマクロの保存...","Save Macro..."],"c.macro-load":["读取宏...","キーマクロの読み込み...","Load Macro..."],"c.js-macro":["运行 JS 宏","JSマクロの実行","Run JS Macro"],"c.ppa-macro":["运行 PPA 宏","PPAマクロの実行","Run PPA Macro"],"sub.plugin":["插件","プラグイン","Plugins"],"c.plugin-load":["加载插件","プラグインの読み込み","Load Plugin"],"c.plugin-manage":["管理","プラグイン管理","Manage Plugins"],"c.exec-cmd":["外部命令...","外部コマンド実行...","Run External Command..."],"sub.sqlplus":["SQL*Plus","SQL*Plus","SQL*Plus"],"c.sqlplus-activate":["打开 SQL*Plus 窗口","SQL*Plusをアクティブ表示","Open SQL*Plus Window"],"c.sqlplus-run":["执行当前文件","SQL*Plusで実行","Run Current File"],"c.history-manager":["历史管理...","履歴の管理...","History Manager..."],"menu.setting":["设置","設定","Settings"],"c.term-config":["终端设置...","ターミナル設定...","Terminal Settings..."],"c.common-config":["共通设置...","共通設定...","Common Settings..."],"c.key-config":["键位分配...","キー割り当て...","Key Bindings..."],"c.customize-keys":["自定义键","キーのカスタマイズ","Customize Keys"],"c.settings":["首选项","設定","Preferences"],"c.keymap":["键映射","キーマップ","Keymap"],"c.font":["字体...","フォント...","Font..."],"c.language":["当前文件语言...","ファイルの言語...","File Language..."],"c.theme-select":["主题...","テーマ選択...","Theme..."],"sub.uilang":["界面语言 / 言語 / Language","表示言語 / Language","Display Language"],"c.lang-zh":["中文","中文","中文"],"c.lang-ja":["日本語","日本語","日本語"],"c.lang-en":["English","English","English"],"c.charset":["文字编码...","文字コードセット指定...","Character Set..."],"sub.eolmode":["输入换行符","入力改行コード","Input Line Ending"],"c.eol-crlf":["CRLF","CRLF","CRLF"],"c.eol-lf":["LF","LF","LF"],"c.eol-cr":["CR","CR","CR"],"c.toggle-vim":["Vim 模式","Vimモード","Vim Mode"],"c.import-config":["导入配置","設定のインポート","Import Settings"],"c.export-config":["导出配置","設定のエクスポート","Export Settings"],"c.reset-settings":["恢复默认","初期設定に戻す","Reset to Defaults"],"menu.window":["窗口","ウィンドウ","Window"],"c.split-h":["上下分割","上下に分割","Split Horizontally"],"c.split-v":["左右分割","左右に分割","Split Vertically"],"c.split-quad":["四分割","縦横に分割","Split into Four"],"c.cascade":["层叠","重ねて表示","Cascade"],"c.tile-h":["水平平铺","左右に並べて表示","Tile Horizontally"],"c.tile-v":["垂直平铺","上下に並べて表示","Tile Vertically"],"c.next-tab":["下一个标签","次のタブ","Next Tab"],"c.prev-tab":["上一个标签","前のタブ","Previous Tab"],"sub.tabops":["标签操作","タブ操作","Tab Operations"],"c.tab-move-left":["标签左移","タブを左に移動","Move Tab Left"],"c.tab-move-right":["标签右移","タブを右に移動","Move Tab Right"],"c.close-others":["关闭其它标签","このタブ以外を閉じる","Close Other Tabs"],"c.close-left":["关闭左侧标签","左をすべて閉じる","Close Tabs to the Left"],"c.close-right":["关闭右侧标签","右をすべて閉じる","Close Tabs to the Right"],"sub.tabgroup":["标签分组","タブグループ","Tab Groups"],"c.next-group":["下一个分组","次のグループ","Next Group"],"c.prev-group":["上一个分组","前のグループ","Previous Group"],"c.tab-separate":["移到新分组","新規グループ","Move to New Group"],"c.tab-joint-next":["移到下一个分组","次のグループに移動","Move to Next Group"],"c.tab-joint-prev":["移到上一个分组","前のグループに移動","Move to Previous Group"],"c.bind-window":["合并为一组","グループ化","Merge into One Group"],"c.group-close":["关闭当前分组","グループを閉じる","Close Group"],"c.window-list":["窗口一览","ウィンドウ一覧","Window List"],"sub.winsize":["窗口大小","ウィンドウサイズ","Window Size"],"c.maximize-v":["纵向最大化","縦方向に最大化","Maximize Vertically"],"c.maximize-h":["横向最大化","横方向に最大化","Maximize Horizontally"],"c.minimize-all":["全部最小化","すべて最小化","Minimize All"],"c.minimize-window":["最小化","最小化","Minimize"],"c.fullscreen":["全屏","全画面表示","Full Screen"],"c.topmost":["始终置顶","常に手前に表示","Always on Top"],"menu.help":["帮助","ヘルプ","Help"],"c.help":["内置 wiki","目次","Contents"],"c.wiki":["wiki 帮助","Wiki ヘルプ","Wiki Help"],"c.help-search":["关键字检索...","キーワード検索...","Search Help..."],"c.ext-help":["光标处单词的帮助","カーソル位置の単語のヘルプ","Help for Word at Cursor"],"c.shortcuts":["快捷键","ショートカットキー","Shortcuts"],"c.keybind-list":["键位一览...","キー割り当て一覧...","Key Binding List..."],"c.all-commands":["全部功能一览...","全機能一覧...","All Commands..."],"c.about":["关于 IDE1.0","IDE1.0について","About IDE1.0"],"ui.noRecent":["无最近文件","最近使ったファイルはありません","No recent files"]};
+const MENU_SC = {"new-file":"Ctrl+N","open-folder":"Ctrl+Alt+O","open-file":"Ctrl+O","save":"Ctrl+S","save-as":"Ctrl+Shift+S","save-all":"Ctrl+Alt+Shift+S","close-tab":"Ctrl+W","close-all":"Ctrl+Shift+W","undo":"Ctrl+Z","redo":"Ctrl+Y","cut":"Ctrl+X","copy":"Ctrl+C","paste":"Ctrl+V","select-all":"Ctrl+A","delete-line":"Ctrl+D","duplicate-line":"Ctrl+Shift+D","move-line-up":"Alt+Shift+Up","move-line-down":"Alt+Shift+Down","delete-line-up":"Ctrl+Shift+Backspace","delete-line-down":"Ctrl+Delete","join-with-prev":"Ctrl+J","cut-line":"Ctrl+E","cut-line-start":"Ctrl+U","delete-line-to-start":"Ctrl+Shift+U","delete-line-to-end":"Ctrl+Shift+K","delete-word-start":"Ctrl+Backspace","indent-selection":"Tab","unindent-selection":"Shift+Tab","clip-history":"Ctrl+Shift+V","find":"Ctrl+F","find-next":"F3","find-prev":"Shift+F3","find-incremental":"Ctrl+I","replace":"Ctrl+H","replace-all":"Ctrl+Alt+R","grep":"Ctrl+G","grep-replace":"Ctrl+Alt+G","goto-line":"Ctrl+J","tag-jump":"F12","bookmark-toggle":"Ctrl+F2","bookmark-next":"F2","bookmark-prev":"Shift+F2","toggle-bottom":"Ctrl+J","toggle-status":"Ctrl+`","toggle-line-num":"Ctrl+Shift+L","font-bigger":"Ctrl+=","font-smaller":"Ctrl+-","zoom-reset":"Ctrl+0","completion":"Ctrl+Space","goto-def":"F12","redraw":"F5","file-properties":"Alt+Enter","begin-sel":"F6","keybind-list":"Ctrl+Q","all-commands":"Shift+F1","close-open":"Shift+Ctrl+F4","exit-all":"Ctrl+Alt+F4","help-search":"Shift+Alt+F1","ext-help":"Ctrl+F1","outline":"Ctrl+Shift+O","syntax":"Alt+S","diff-next":"Alt+Down","auto-backup":"Ctrl+Alt+B","file-lock":"Ctrl+Alt+L","macro-start":"Ctrl+Shift+R","macro-stop":"Ctrl+Shift+R","macro-play":"Ctrl+Shift+P","exec-cmd":"Ctrl+F5","sqlplus-activate":"Shift+F11","customize-keys":"Ctrl+Alt+K","settings":"Ctrl+,","keymap":"Ctrl+Alt+K","language":"Alt+L","new-window":"Ctrl+Shift+N","split-h":"Ctrl+Shift+H","split-v":"Ctrl+Shift+V","split-quad":"Ctrl+Shift+Q","next-tab":"Ctrl+Tab","prev-tab":"Ctrl+Shift+Tab","fullscreen":"F11","wiki":"F1","shortcuts":"Ctrl+/"};
+const MENU_DEF = [["file","F",["new-file","open-folder","open-file","-","save","save-as","save-all","save-close","-","close-tab","close-all","close-open","-","reload",{s:"reopen",i:["reopen-UTF-8","reopen-SJIS","reopen-EUC-JP","reopen-JIS","reopen-Unicode","reopen-UnicodeBE","reopen-Latin1","reopen-CESU-8","reopen-UTF-7","reopen-GBK","reopen-Big5","reopen-EUC-KR"]},{s:"recent",i:["recent-clear","-","@empty"]},"-",{s:"print",i:["print","print-preview","print-setup"]},"browse","file-properties","-","new-window","exit-all"]],["edit","E",["undo","redo","-","cut","copy","paste","select-all","-",{s:"edit-delete",i:["word-cut","word-delete","line-cut-to-end","cut-line","cut-line-start","delete-line-to-start","delete-line-to-end","delete-word-start","delete-word-end"]},{s:"edit-copy",i:["copy-crlf","copy-addcrlf","copy-lines","copy-passage","copy-linenum","copy-html","copy-html-ln","-","copy-fname","copy-path","copy-tag","-","paste-box","clip-history"]},{s:"edit-lines",i:["delete-line","duplicate-line","move-line-up","move-line-down","add-line-above","add-line-below","delete-line-up","delete-line-down","join-with-prev","-","line-ops","sort-asc","sort-desc","ltrim-lines","rtrim-lines","uniq-consecutive"]},{s:"edit-indent",i:["indent-selection","unindent-selection","indent-space","unindent-space","tab-to-space","space-to-tab"]},{s:"edit-select",i:["select-word","begin-sel","sel-para-prev","sel-para-next","-","column-delete","column-replace","box-line-top","-","cur-line-center","reconvert"]},{s:"insert",i:["insert-date","insert-time","insert-stamp","stamp-config","insert-template","ctrl-code","ins-recent-file","ins-recent-folder"]},"-",{s:"convert",i:["to-upper","to-lower","-","to-fullwidth","to-halfwidth","to-zenei","to-hanei","-","to-zenkaku","to-zenhira","to-hankata","hankata-to-zenkata","hankata-to-zenhira","-","base64-decode","uudecode","-","encoding","eol"]},{s:"codecnv",i:["codecnv-auto2sjis","codecnv-email","codecnv-euc2sjis","codecnv-unicode2sjis","codecnv-unicodebe2sjis","codecnv-utf82sjis","codecnv-utf72sjis","-","codecnv-sjis2jis","codecnv-sjis2euc","codecnv-sjis2utf8","codecnv-sjis2utf7"]}]],["search","S",["find","find-next","find-prev","replace","replace-all","grep","grep-replace","-",{s:"isearch",i:["find-incremental","isearch-fwd","isearch-back","isearch-regex-fwd","isearch-regex-back","isearch-migemo-fwd","isearch-migemo-back"]},"search-clearmark","jump-srchstart","-","goto-line","bracket-pair","-",{s:"bookmark",i:["bookmark-toggle","bookmark-next","bookmark-prev","bookmark-reset","bookmark-view"]},{s:"tags",i:["tag-jump","tag-jump-back","tags-make","tag-jump-keyword","open-hc","-","funclist-next","funclist-prev"]},{s:"modify",i:["modify-next","modify-prev","modify-next-sel","modify-prev-sel"]},{s:"jumphist",i:["jumphist-prev","jumphist-next","jumphist-set"]},{s:"diff",i:["diff-with-tab","diff-with-file","diff-list","diff-next","diff-prev","diff-clear"]}]],["view","V",[{s:"layout",i:["layout-min","layout-full","-","toggle-activity-bar","toggle-side-bar","toggle-tabs","toggle-breadcrumb"]},{s:"sidebar",i:["show-explorer","show-search","show-scm","show-outline","file-tree"]},{s:"panel",i:["show-terminal","show-output","show-problems","new-terminal","-","toggle-bottom"]},"-","toggle-word-wrap","toggle-line-num","toggle-minimap","toggle-status",{s:"view-bars",i:["toggle-toolbar","toggle-funckey","toggle-ruler","toggle-ws","toggle-curline"]},{s:"view-wrap",i:["wrap-none","wrap-window-width","tmp-wrap"]},{s:"view-zoom",i:["font-bigger","font-smaller","zoom-in","zoom-out","zoom-reset"]},{s:"theme",i:["theme-clear","theme-dark","theme-light","theme-high-contrast"]},"-","toggle-readonly","select-count-mode","toggle-key-search","-","redraw","completion","goto-def"]],["tool","T",["outline","syntax","type-config","-","auto-backup","file-lock","-",{s:"macro",i:["macro-start","macro-stop","macro-play","macro-save","macro-load","-","js-macro","ppa-macro"]},{s:"plugin",i:["plugin-load","plugin-manage"]},"-","exec-cmd",{s:"sqlplus",i:["sqlplus-activate","sqlplus-run"]},"history-manager"]],["setting","C",["common-config","term-config","key-config","customize-keys","settings","keymap","font","language","theme-select",{s:"uilang",i:["lang-zh","lang-ja","lang-en"]},"charset",{s:"eolmode",i:["eol-crlf","eol-lf","eol-cr"]},"toggle-vim","-","import-config","export-config","reset-settings"]],["window","W",["split-h","split-v","split-quad","cascade","tile-h","tile-v","-","next-tab","prev-tab",{s:"tabops",i:["tab-move-left","tab-move-right","close-others","close-left","close-right"]},{s:"tabgroup",i:["next-group","prev-group","tab-separate","tab-joint-next","tab-joint-prev","bind-window","group-close"]},"window-list","-",{s:"winsize",i:["maximize-v","maximize-h","minimize-all","minimize-window"]},"fullscreen","topmost"]],["help","H",["help","wiki","help-search","ext-help","-","shortcuts","keybind-list","all-commands","-","about"]]];
+function tr(key, fallback) { const v = I18N[key]; return v ? (v[UI_LANGS.indexOf(UI_LANG)] || v[0]) : (fallback !== undefined ? fallback : key); }
+function menuItemsHtml(items) {
+  return items.map((n) => {
+    if (n === "-") return '<div class="menu-sep"></div>';
+    if (n === "@empty") return '<div class="menu-empty">' + tr("ui.noRecent") + "</div>";
+    if (typeof n === "object") return '<div class="menu-row menu-submenu" data-submenu="' + n.s + '"><span>' + tr("sub." + n.s) + '</span><span class="mr-shortcut">\u25b6</span><div class="submenu-dropdown">' + menuItemsHtml(n.i) + "</div></div>";
+    const sc = MENU_SC[n];
+    return '<div class="menu-row" data-cmd="' + n + '"' + (sc ? ' data-shortcut="' + sc + '"' : "") + "><span>" + tr("c." + n) + "</span>" + (sc ? '<span class="mr-shortcut">' + sc + "</span>" : "") + "</div>";
+  }).join("");
+}
+function buildMenus() {
+  const bar = document.getElementById("menubar");
+  if (!bar) return;
+  for (const [id, mn, items] of MENU_DEF) {
+    const item = bar.querySelector('.menu-item[data-menu="' + id + '"]');
+    if (!item) continue;
+    const btn = item.querySelector(":scope > .mb-btn"), dd = item.querySelector(":scope > .menu-dropdown");
+    const label = tr("menu." + id);
+    if (btn) { btn.innerHTML = label + '<span class="mn-key">' + mn + "</span>"; btn.setAttribute("data-tip", label + " (Alt+" + mn + ")"); }
+    if (dd) dd.innerHTML = menuItemsHtml(items);
+  }
+}
+buildMenus();
 const tabs = new Map();
 const TABS = tabs;
 window.TABS = TABS;
@@ -2121,6 +1820,7 @@ function updateMenuChecks() {
     "toggle-word-wrap": VIEW_STATE.wordWrap,
     "toggle-line-num": VIEW_STATE.lineNumbers,
     "toggle-vim": LAYOUT.vimOn(),
+    "lang-zh": UI_LANG === "zh", "lang-ja": UI_LANG === "ja", "lang-en": UI_LANG === "en",
     "toggle-toolbar": VIEWOPT.toolbar, "toggle-funckey": VIEWOPT.funckey, "toggle-ruler": VIEWOPT.ruler,
     "toggle-ws": VIEWOPT.ws, "toggle-curline": VIEWOPT.curline,
     "toggle-readonly": !!(getActiveTab() && getActiveTab().readOnly),
@@ -9630,6 +9330,266 @@ async function sqlplusRunFile() {
 }
 Object.assign(CFG_CMDS, { "sqlplus-activate": sqlwinOpen, "sqlplus-run": sqlplusRunFile });
 window.SQLWIN = SQLWIN;
+
+
+/* ===== 菜单: 子菜单定位 (fixed, 自动翻到左侧 / 上移 / 限高滚动) + 界面语言切换 ===== */
+function placeSubmenu(row) {
+  const sub = row && row.querySelector(":scope > .submenu-dropdown");
+  if (!sub) return;
+  const rr = row.getBoundingClientRect(), vw = innerWidth, vh = innerHeight, pad = 6;
+  sub.classList.add("placed");
+  sub.style.maxHeight = (vh - pad * 2) + "px";
+  const w = sub.offsetWidth, h = sub.offsetHeight;
+  let left = rr.right - 2;
+  if (left + w > vw - pad) left = Math.max(pad, rr.left - w + 2);               // 右边放不下: 翻到父菜单左边
+  let top = rr.top - 4;
+  if (top + h > vh - pad) top = Math.max(pad, vh - pad - h);                      // 下边放不下: 上移
+  sub.style.left = left + "px"; sub.style.top = top + "px";
+  const a = sub.getBoundingClientRect();                                           // 祖先有 backdrop-filter 等时 fixed 相对祖先: 按实际偏差校正
+  if (Math.abs(a.left - left) > 1) sub.style.left = (left + (left - a.left)) + "px";
+  if (Math.abs(a.top - top) > 1) sub.style.top = (top + (top - a.top)) + "px";
+}
+document.addEventListener("mouseover", (e) => { const r = e.target.closest && e.target.closest(".menu-row.menu-submenu"); if (r) placeSubmenu(r); }, true);
+new MutationObserver((muts) => { for (const m of muts) { const t = m.target; if (t.classList && t.classList.contains("menu-submenu") && t.classList.contains("kb-open")) placeSubmenu(t); } })
+  .observe(document.getElementById("menubar"), { attributes: true, subtree: true, attributeFilter: ["class"] });
+
+function setUiLang(l) {
+  if (UI_LANGS.indexOf(l) < 0) return;
+  UI_LANG = l;
+  try { localStorage.setItem("ide10.lang", l); } catch (_) {}
+  document.documentElement.setAttribute("lang", l === "zh" ? "zh-CN" : l);
+  buildMenus();
+  try { applyMenuShortcuts(); } catch (_) {}
+  try { updateMenuChecks(); } catch (_) {}
+  try { applyUiStrings(); } catch (_) {}
+  setTip(tr("ui.langChanged"));
+}
+Object.assign(CFG_CMDS, { "lang-zh": () => setUiLang("zh"), "lang-ja": () => setUiLang("ja"), "lang-en": () => setUiLang("en") });
+window.setUiLang = setUiLang;
+
+
+/* ===== 界面文字翻译 (中文 / 日本語 / English) =====
+   菜单由 buildMenus/tr() 直接生成; 其余界面 (提示 / 对话框 / 状态栏 / 欢迎页 …) 的文字由下面的翻译器按「完整文本节点」匹配字典后替换:
+   精确匹配 + 带 {} 占位的模板 (参数顺序可用 {1} {2} 重排)。编辑区 / 终端正文 / 菜单不参与。切回中文会还原原文。 */
+const UI_DICT = [["JS 宏执行完成","JS 宏执行完成","JSマクロを実行しました","JS macro finished"],["PPA 宏执行完成","PPA 宏执行完成","PPAマクロを実行しました","PPA macro finished"],["SQL*Plus: 在终端中运行 sqlplus","SQL*Plus: 在终端中运行 sqlplus","SQL*Plus: ターミナルで sqlplus を実行","SQL*Plus: run sqlplus in the terminal"],["Tauri 事件 API 不可用, 终端输出改用轮询","Tauri 事件 API 不可用, 终端输出改用轮询","Tauri イベント API が使えないため、ターミナル出力はポーリングに切り替えました","Tauri event API unavailable; terminal output falls back to polling"],["tags ファイルがありません (先に「标签文件生成」)","没有 tags 文件 (请先「生成 tags 文件」)","tags ファイルがありません (先に「タグファイルの作成」)","No tags file (create it first with \"Create Tags File\")"],["● 宏录制中 — 按 Ctrl+Shift+R 停止","● 宏录制中 — 按 Ctrl+Shift+R 停止","● マクロ記録中 — Ctrl+Shift+R で停止","● Recording macro — press Ctrl+Shift+R to stop"],["これ以上見つかりません (先頭)","没有更多结果 (已到开头)","これ以上見つかりません (先頭)","No more matches (reached the start)"],["これ以上見つかりません (末尾)","没有更多结果 (已到末尾)","これ以上見つかりません (末尾)","No more matches (reached the end)"],["カーソル位置に単語がありません","光标处没有单词","カーソル位置に単語がありません","No word at cursor"],["ファイルがありません","没有文件","ファイルがありません","No file"],["ブックマークを全解除しました","已清除全部书签","ブックマークを全解除しました","All bookmarks cleared"],["保存未完成, 未关闭","保存未完成, 未关闭","保存が完了していないため閉じませんでした","Save did not complete; not closed"],["先保存文件","先保存文件","先にファイルを保存してください","Save the file first"],["先执行 DIFF","先执行 DIFF","先に DIFF を実行してください","Run DIFF first"],["先用 Alt+拖选 建立列块选区","先用 Alt+拖选 建立列块选区","先に Alt+ドラッグで矩形選択してください","Create a rectangle selection with Alt+drag first"],["先输入查找内容","先输入查找内容","先に検索文字列を入力してください","Enter text to find first"],["先选中要再変換的文字","先选中要再変換的文字","再変換する文字を選択してください","Select the text to reconvert first"],["光标处无标识符","光标处无标识符","カーソル位置に識別子がありません","No identifier at cursor"],["光标处没有单词","光标处没有单词","カーソル位置に単語がありません","No word at cursor"],["光标已在行末, 无可删内容","光标已在行末, 无可删内容","すでに行末です","Already at end of line; nothing to delete"],["光标已在行首, 无可删内容","光标已在行首, 无可删内容","すでに行頭です","Already at start of line; nothing to delete"],["光标已在行首, 无可剪内容","光标已在行首, 无可剪内容","すでに行頭です","Already at start of line; nothing to cut"],["光标已在词尾, 无可删内容","光标已在词尾, 无可删内容","すでに単語の右端です","Already at word end; nothing to delete"],["光标已在词首, 无可删内容","光标已在词首, 无可删内容","すでに単語の左端です","Already at word start; nothing to delete"],["全屏被浏览器拒绝 (需要用户手势, 请手动按 F11)","全屏被浏览器拒绝 (需要用户手势, 请手动按 F11)","ブラウザーに全画面表示を拒否されました (F11 を押してください)","Full screen was refused by the browser (press F11)"],["全部标签已合并为一组","全部标签已合并为一组","すべてのタブを1つのグループにまとめました","All tabs merged into one group"],["关于 IDE1.0 v0.0.1","关于 IDE1.0 v0.0.1","IDE1.0 v0.0.1 について","About IDE1.0 v0.0.1"],["关闭全部标签","关闭全部标签","すべてのタブを閉じました","All tabs closed"],["列块已替换","列块已替换","矩形を置換しました","Rectangle replaced"],["列块模式: Shift+F6 退出, 方向键选区, 直接输入批量插入","列块模式: Shift+F6 退出, 方向键选区, 直接输入批量插入","矩形モード: Shift+F6 で終了、矢印で選択、入力で一括挿入","Rectangle mode: Shift+F6 to exit, arrows to select, type to insert on all lines"],["剪贴板为空","剪贴板为空","クリップボードが空です","Clipboard is empty"],["剪贴板历史为空","剪贴板历史为空","クリップボード履歴は空です","Clipboard history is empty"],["剪贴板历史已清空","剪贴板历史已清空","クリップボード履歴を消去しました","Clipboard history cleared"],["印刷设置已保存","印刷设置已保存","印刷設定を保存しました","Print settings saved"],["只有一个分组","只有一个分组","グループは1つだけです","Only one group"],["宏回放已中断","宏回放已中断","マクロの再生を中断しました","Macro playback interrupted"],["宏回放结束","宏回放结束","マクロの再生が終わりました","Macro playback finished"],["対応する C/C++ ファイルが見つかりません","找不到对应的 C/C++ 文件","対応する C/C++ ファイルが見つかりません","No matching C/C++ file found"],["対括弧が見つかりません","找不到对应括号","対括弧が見つかりません","No matching bracket"],["履歴を消去しました","已清除历史","履歴を消去しました","History cleared"],["已保存","已保存","保存しました","Saved"],["已关闭全部文档 (浏览器标签页请手动关闭)","已关闭全部文档 (浏览器标签页请手动关闭)","すべての文書を閉じました (ブラウザーのタブは手動で閉じてください)","All documents closed (close the browser tab manually)"],["已删除上方行","已删除上方行","上の行を削除しました","Deleted the line above"],["已删除下方行","已删除下方行","下の行を削除しました","Deleted the line below"],["已删除行","已删除行","行を削除しました","Line deleted"],["已刷新文件树","已刷新文件树","ファイルツリーを更新しました","File tree refreshed"],["已剪切","已剪切","切り取りました","Cut"],["已反转行序","已反转行序","行の順序を反転しました","Lines reversed"],["已取消","已取消","キャンセルしました","Cancelled"],["已在录制中","已在录制中","すでに記録中です","Already recording"],["已在折行位置加换行后复制","已在折行位置加换行后复制","折り返し位置に改行をつけてコピーしました","Copied with wrap breaks"],["已在末行, 下方无可删","已在末行, 下方无可删","すでに最終行です","Already on the last line"],["已在首行, 上方无可删","已在首行, 上方无可删","すでに先頭行です","Already on the first line"],["已复制 (引用符号付き)","已复制 (引用符号付き)","コピーしました (引用符付き)","Copied (quoted)"],["已复制 (行番号付き)","已复制 (行番号付き)","コピーしました (行番号付き)","Copied (with line numbers)"],["已复制 路径(行,列)","已复制 路径(行,列)","パス(行,桁)をコピーしました","Copied path(line,col)"],["已复制彩色 HTML (行番号付き)","已复制彩色 HTML (行番号付き)","色付きHTMLをコピーしました (行番号付き)","Copied colored HTML (with line numbers)"],["已复制彩色 HTML","已复制彩色 HTML","色付きHTMLをコピーしました","Copied colored HTML"],["已复制文件名","已复制文件名","ファイル名をコピーしました","File name copied"],["已复制路径","已复制路径","パスをコピーしました","Path copied"],["已复制选区内全行","已复制选区内全行","選択範囲内の全行をコピーしました","Copied all selected lines"],["已恢复默认设置","已恢复默认设置","初期設定に戻しました","Settings reset to defaults"],["已打开新窗口","已打开新窗口","新しいウィンドウを開きました","Opened a new window"],["已按窗口宽度折行","已按窗口宽度折行","ウィンドウ幅で折り返しました","Wrapped at window width"],["已清除差分标记","已清除差分标记","差分マークを消去しました","Difference marks cleared"],["已用 CRLF 换行复制","已用 CRLF 换行复制","CRLF 改行でコピーしました","Copied with CRLF"],["已移除书签","已移除书签","ブックマークを解除しました","Bookmark removed"],["已粘贴到列块","已粘贴到列块","矩形に貼り付けました","Pasted into rectangle"],["已粘贴行","已粘贴行","行を貼り付けました","Line pasted"],["已请求在浏览器中打开 (若无反应, 请允许弹出窗口)","已请求在浏览器中打开 (若无反应, 请允许弹出窗口)","ブラウザーで開くよう要求しました (反応がない場合はポップアップを許可してください)","Requested to open in browser (allow pop-ups if nothing happens)"],["已进入全屏","已进入全屏","全画面表示にしました","Entered full screen"],["已退出全屏","已退出全屏","全画面表示を終了しました","Left full screen"],["已退出列块模式","已退出列块模式","矩形モードを終了しました","Left rectangle mode"],["已退出列选择","已退出列选择","列選択を終了しました","Left column selection"],["已退出多光标","已退出多光标","マルチカーソルを終了しました","Left multi-cursor"],["已选中文字: 按 IME 的「変換」键再変換","已选中文字: 按 IME 的「変換」键再変換","選択しました: IME の「変換」キーで再変換してください","Text selected: press the IME Convert key to reconvert"],["已重绘","已重绘","再描画しました","Redrawn"],["当前没有已保存的文件, 无法推断所在目录","当前没有已保存的文件, 无法推断所在目录","保存済みのファイルがないためフォルダーを推定できません","No saved file, cannot infer its folder"],["折返しなし","不折行","折返しなし","No wrap"],["指定桁折り返しを解除","已取消指定列折行","指定桁折り返しを解除","Column wrap cleared"],["插件结果已插入","插件结果已插入","プラグインの結果を挿入しました","Plugin result inserted"],["文件路径含特殊字符, 为安全起见不在终端中执行","文件路径含特殊字符, 为安全起见不在终端中执行","ファイルパスに特殊文字が含まれるため、安全のためターミナルでは実行しません","File path contains special characters; not run in the terminal for safety"],["文件路径含特殊字符, 为安全起见不执行","文件路径含特殊字符, 为安全起见不执行","ファイルパスに特殊文字が含まれるため、安全のため実行しません","File path contains special characters; not run for safety"],["新窗口被浏览器拦截, 请允许弹出窗口或手动打开","新窗口被浏览器拦截, 请允许弹出窗口或手动打开","新しいウィンドウがブロックされました。ポップアップを許可するか手動で開いてください","New window was blocked; allow pop-ups or open it manually"],["无书签","无书签","ブックマークはありません","No bookmarks"],["无已保存的配置","无已保存的配置","保存済みの設定がありません","No saved settings"],["无已录制宏","无已录制宏","記録済みのマクロがありません","No recorded macro"],["无最近项目","无最近项目","最近使ったプロジェクトはありません","No recent projects"],["无未保存修改","无未保存修改","未保存の変更はありません","No unsaved changes"],["无标题文档没有对应的文件, 无法重新打开","无标题文档没有对应的文件, 无法重新打开","無題の文書にはファイルがないため開き直せません","Untitled document has no file; cannot reopen"],["无标题文档没有对应的文件, 无法重新载入","无标题文档没有对应的文件, 无法重新载入","無題の文書にはファイルがないため再読み込みできません","Untitled document has no file; cannot reload"],["无此设置面板","无此设置面板","その設定パネルはありません","No such settings panel"],["无法创建终端","无法创建终端","ターミナルを作成できません","Cannot create terminal"],["无活动标签","无活动标签","アクティブなタブがありません","No active tab"],["无选区, 按 v 进入 VISUAL 后再剪切","无选区, 按 v 进入 VISUAL 后再剪切","選択範囲がありません。v で VISUAL に入ってから切り取ってください","No selection; press v for VISUAL first, then cut"],["最大化仅桌面版可用","最大化仅桌面版可用","最大化はデスクトップ版のみ","Maximize is available in the desktop app only"],["最小化仅桌面版可用","最小化仅桌面版可用","最小化はデスクトップ版のみ","Minimize is available in the desktop app only"],["最近项目已清空","最近项目已清空","最近使ったプロジェクトを消去しました","Recent projects cleared"],["未在录制","未在录制","記録中ではありません","Not recording"],["検索開始位置がありません","没有查找起始位置","検索開始位置がありません","No search start position"],["正则表达式无效","正则表达式无效","正規表現が無効です","Invalid regular expression"],["正在打印…","正在打印…","印刷中…","Printing…"],["正在生成 tags…","正在生成 tags…","tags を生成中…","Generating tags…"],["此环境不支持全屏, 请用 F11","此环境不支持全屏, 请用 F11","この環境では全画面表示できません (F11 を使用)","Full screen unsupported here; use F11"],["没有函数标记 (需要已保存的源码文件)","没有函数标记 (需要已保存的源码文件)","関数マークがありません (保存済みのソースが必要)","No function marks (a saved source file is required)"],["没有变更行","没有变更行","変更行がありません","No modified lines"],["没有可关闭的标签","没有可关闭的标签","閉じられるタブがありません","No tabs to close"],["没有可比较的其它标签","没有可比较的其它标签","比較できる他のタブがありません","No other tab to compare"],["没有可选项","没有可选项","選択肢がありません","Nothing to choose"],["没有差分标记","没有差分标记","差分マークがありません","No difference marks"],["没有已录制的宏","没有已录制的宏","記録済みのマクロがありません","No recorded macro"],["現在位置を移動履歴に登録","已登记当前位置","現在位置を移動履歴に登録","Location registered"],["界面布局: 完整 IDE 界面","界面布局: 完整 IDE 界面","レイアウト: フル IDE","Layout: Full IDE"],["界面布局: 极简 (Sakura 风格)","界面布局: 极简 (Sakura 风格)","レイアウト: シンプル (Sakura風)","Layout: Minimal (Sakura style)"],["移動履歴が空です","移动历史为空","移動履歴が空です","Jump history is empty"],["範囲選択モード: 方向キーで選択 (F6 / Esc で終了)","范围选择模式: 方向键选择 (F6 / Esc 结束)","範囲選択モード: 方向キーで選択 (F6 / Esc で終了)","Selection mode: use arrow keys (F6 / Esc to end)"],["範囲選択モードを終了","已结束范围选择模式","範囲選択モードを終了","Selection mode ended"],["置顶仅桌面版可用","置顶仅桌面版可用","最前面表示はデスクトップ版のみ","Always-on-top is available in the desktop app only"],["自動判別: 没有找到合适的编码","自动判别: 没有找到合适的编码","自動判別: 没有找到合适的编码","Auto detect: no suitable encoding found"],["行号超出范围","行号超出范围","行番号が範囲外です","Line number out of range"],["行首插入需要光标在行首 (或缩进之后)","行首插入需要光标在行首 (或缩进之后)","行頭挿入にはカーソルが行頭 (またはインデント後) にある必要があります","Line-start insert needs the cursor at line start (or after indent)"],["请先打开项目","请先打开项目","先にプロジェクトを開いてください","Open a project first"],["请先打开项目并激活文件","请先打开项目并激活文件","先にプロジェクトを開きファイルを選択してください","Open a project and select a file first"],["选区不在可见范围","选区不在可见范围","選択範囲が表示範囲外です","Selection is out of view"],["配置已导入","配置已导入","設定をインポートしました","Settings imported"],["配置已导出到本地存储","配置已导出到本地存储","設定をローカルストレージにエクスポートしました","Settings exported to local storage"],["键位一览已复制","键位一览已复制","キー割り当て一覧をコピーしました","Key binding list copied"],["閲覧モード: 只读","只读模式 (閲覧モード)","閲覧モード: 只读","View mode: read-only"],["终端事件订阅失败 ({}), 改用轮询","终端事件订阅失败 ({}), 改用轮询","ターミナルイベントの購読に失敗 ({})。ポーリングに切り替えます","Terminal event subscription failed ({}); falling back to polling"],["已加书签 ({})","已加书签 ({})","ブックマークを設定しました ({})","Bookmark added ({})"],["书签 {}/{} @ Ln {}","书签 {}/{} @ Ln {}","ブックマーク {}/{} @ {} 行","Bookmark {}/{} @ Ln {}"],["终端 {} 已启动 ({})","终端 {} 已启动 ({})","ターミナル {} を起動しました ({})","Terminal {} started ({})"],["启动终端失败: {}","启动终端失败: {}","ターミナルの起動に失敗: {}","Failed to start terminal: {}"],["终端输入失败: {}","终端输入失败: {}","ターミナル入力に失敗: {}","Terminal input failed: {}"],["命令: {}","命令: {}","コマンド: {}","Command: {}"],["无模板: {}","无模板: {}","テンプレートがありません: {}","No template: {}"],["已插入 {} 模板","已插入 {} 模板","テンプレート {} を挿入しました","Inserted {} template"],["未知语言: {}","未知语言: {}","不明な言語: {}","Unknown language: {}"],["语言: {}","语言: {}","言語: {}","Language: {}"],["未知命令: {}","未知命令: {}","不明なコマンド: {}","Unknown command: {}"],["重新打开失败: {}","重新打开失败: {}","開き直しに失敗: {}","Reopen failed: {}"],["入力改行コード: {} (保存时生效)","输入换行符: {} (保存时生效)","入力改行コード: {} (保存时生效)","Input line ending: {} (applied on save)"],["已打开: {} (有无法按 {} 解码的字节, 已替换; 可试「文字コードセット指定」)","已打开: {} (有无法按 {} 解码的字节, 已替换; 可试「文字コードセット指定」)","開きました: {} ({} でデコードできないバイトを置換しました。「文字コードセット指定」を試してください)","Opened: {} (bytes not decodable as {} were replaced; try \"Character Set...\")"],["已打开: {}","已打开: {}","開きました: {}","Opened: {}"],["打开失败: {}","打开失败: {}","開けませんでした: {}","Open failed: {}"],["无法确定工作目录: {}","无法确定工作目录: {}","作業フォルダーを決定できません: {}","Cannot determine working folder: {}"],["已保存: {}","已保存: {}","保存しました: {}","Saved: {}"],["另存失败: {}","另存失败: {}","名前を付けて保存に失敗: {}","Save As failed: {}"],["{} 个光标","{} 个光标","{} 個のカーソル","{} cursors"],["列块 {}行 ×{}列","列块 {}行 ×{}列","矩形 {}行 ×{}桁","Rectangle {} rows × {} cols"],["展开失败: {}","展开失败: {}","展開に失敗: {}","Expand failed: {}"],["已打开项目: {}","已打开项目: {}","プロジェクトを開きました: {}","Opened project: {}"],["主题: {}","主题: {}","テーマ: {}","Theme: {}"],["字号: {}px","字号: {}px","フォントサイズ: {}px","Font size: {}px"],["语法高亮: {}","语法高亮: {}","シンタックスハイライト: {}","Syntax highlighting: {}"],["状态栏: {}","状态栏: {}","ステータスバー: {}","Status bar: {}"],["已备份到 {}","已备份到 {}","{} にバックアップしました","Backed up to {}"],["正则表达式无效: {}","正则表达式无效: {}","正規表現が無効です: {}","Invalid regular expression: {}"],["未找到: {}","未找到: {}","見つかりません: {}","Not found: {}"],["置換 {} 処","替换 {} 处","置換 {} 処","Replaced {}"],["Grep 命中 {} 处","Grep 命中 {} 处","Grep: {} 件ヒット","Grep: {} hits"],["跳转到 {}:{}","跳转到 {}:{}","{}:{} へジャンプ","Jumped to {}:{}"],["分割: {}","分割: {}","分割: {}","Split: {}"],["■ 宏已停止 ({} 键) — 工具>宏>播放宏 回放","■ 宏已停止 ({} 键) — 工具>宏>播放宏 回放","■ マクロ記録を停止 ({} キー) — ツール>マクロ>実行 で再生","■ Macro stopped ({} keys) — Tools > Macro > Play"],["▶ 回放 {} 键 (再按一次中断)","▶ 回放 {} 键 (再按一次中断)","▶ {} キーを再生 (もう一度押すと中断)","▶ Playing {} keys (press again to interrupt)"],["插件已加载: {}","插件已加载: {}","プラグインを読み込みました: {}","Plugin loaded: {}"],["移动行: Ln {} → Ln {}","移动行: Ln {} → Ln {}","行を移動: {} 行 → {} 行","Moved line: Ln {} → Ln {}"],["已剪切到行首 ({} 字符)","已剪切到行首 ({} 字符)","行頭まで切り取りました ({} 文字)","Cut to line start ({} chars)"],["已删除到行首 ({} 字符)","已删除到行首 ({} 字符)","行頭まで削除しました ({} 文字)","Deleted to line start ({} chars)"],["已删除到行末 ({} 字符)","已删除到行末 ({} 字符)","行末まで削除しました ({} 文字)","Deleted to line end ({} chars)"],["已删除到词首 ({} 字符)","已删除到词首 ({} 字符)","単語の左端まで削除しました ({} 文字)","Deleted to word start ({} chars)"],["已删除到词尾 ({} 字符)","已删除到词尾 ({} 字符)","単語の右端まで削除しました ({} 文字)","Deleted to word end ({} chars)"],["已删除 {} 行行首空白","已删除 {} 行行首空白","{} 行の行頭の空白を削除しました","Trimmed leading whitespace on {} lines"],["已删除 {} 行行尾空白","已删除 {} 行行尾空白","{} 行の行末の空白を削除しました","Trimmed trailing whitespace on {} lines"],["行首无空白可删","行首无空白可删","行頭に空白はありません","No leading whitespace to trim"],["行尾无空白可删","行尾无空白可删","行末に空白はありません","No trailing whitespace to trim"],["已去重 {} 行连续重复","已去重 {} 行连续重复","連続する重複 {} 行を削除しました","Removed {} consecutive duplicate lines"],["无连续重复行","无连续重复行","連続する重複行はありません","No consecutive duplicate lines"],["反缩进 {} 行","反缩进 {} 行","{} 行を逆インデントしました","Unindented {} lines"],["缩进 {} 行","缩进 {} 行","{} 行をインデントしました","Indented {} lines"],["已恢复 {} 字符","已恢复 {} 字符","{} 文字を復元しました","Restored {} chars"],["已插入时间戳: {}","已插入时间戳: {}","タイムスタンプを挿入しました: {}","Inserted timestamp: {}"],["排序: 升序","排序: 升序","並べ替え: 昇順","Sort: ascending"],["排序: 降序","排序: 降序","並べ替え: 降順","Sort: descending"],["去重: {} → {} 行","去重: {} → {} 行","重複削除: {} → {} 行","Dedupe: {} → {} lines"],["压缩空白: {} 行","压缩空白: {} 行","空白を圧縮: {} 行","Collapsed blanks: {} lines"],["{} 个光标插入 {}","{} 个光标插入 {}","{} 個のカーソルに {} を挿入","Inserted {} at {} cursors"],["{} 个光标删除","{} 个光标删除","{} 個のカーソルで削除","Deleted at {} cursors"],["列块插入 {} 行","列块插入 {} 行","矩形に {} 行挿入","Rectangle insert on {} lines"],["定义 @ Ln {}: {}","定义 @ Ln {}: {}","定義 @ {} 行: {}","Definition @ Ln {}: {}"],["首次出现 @ Ln {}","首次出现 @ Ln {}","最初の出現 @ {} 行","First occurrence @ Ln {}"],["未找到 {} 的定义","未找到 {} 的定义","{} の定義が見つかりません","No definition found for {}"],["覆盖模式","覆盖模式","上書きモード","Overwrite mode"],["插入模式","插入模式","挿入モード","Insert mode"],["{} 已显示","{} 已显示","{} を表示しました","{} shown"],["{} 已隐藏","{} 已隐藏","{} を非表示にしました","{} hidden"],["閲覧モード: 文档只读","閲覧模式: 文档只读","閲覧モード: 文書は読み取り専用","View mode: document is read-only"],["已退出閲覧モード","已退出閲覧モード","閲覧モードを終了しました","Left view mode"],["已矩形贴付 {} 行","已矩形贴付 {} 行","{} 行を矩形貼り付けしました","Pasted rectangle ({} lines)"],["これ以上戻れません","无法再后退","これ以上戻れません","Cannot go back any further"],["これ以上進めません","无法再前进","これ以上進めません","Cannot go forward any further"],["検索マーク: 表示","查找标记: 显示","検索マーク: 表示","Search marks: shown"],["検索マーク: 非表示","查找标记: 隐藏","検索マーク: 非表示","Search marks: hidden"],["タグジャンプ: {} @ Ln {}","标签跳转: {} @ Ln {}","タグジャンプ: {} @ {} 行","Tag jump: {} @ Ln {}"],["タグジャンプ: {} → {}:{}","标签跳转: {} → {}:{}","タグジャンプ: {} → {}:{}","Tag jump: {} → {}:{}"],["タグが見つかりません: {}","找不到标签: {}","タグが見つかりません: {}","Tag not found: {}"],["DIFF: {} との差分 {} 箇所","DIFF: 与 {} 有 {} 处差异","DIFF: {} との差分 {} 箇所","DIFF: {2} differences with {1}"],["DIFF: {} と同一です","DIFF: 与 {} 相同","DIFF: {} と同一です","DIFF: identical to {}"],["宏已保存: {} ({} 键)","宏已保存: {} ({} 键)","マクロを保存しました: {} ({} キー)","Macro saved: {} ({} keys)"],["宏已读取: {} 键 — 工具>宏>播放宏 回放","宏已读取: {} 键 — 工具>宏>播放宏 回放","マクロを読み込みました: {} キー — ツール>マクロ>実行 で再生","Macro loaded: {} keys — Tools > Macro > Play"],["打印不可用: {}","打印不可用: {}","印刷できません: {}","Printing unavailable: {}"],["解码失败 (非 UTF-8 文本的二进制内容暂不支持保存): {}","解码失败 (非 UTF-8 文本的二进制内容暂不支持保存): {}","デコードに失敗 (UTF-8 テキスト以外のバイナリは保存未対応): {}","Decode failed (binary data that is not UTF-8 text cannot be saved): {}"],["已保存 {} ({} 字符)","已保存 {} ({} 字符)","{} を保存しました ({} 文字)","Saved {} ({} chars)"],["函数 @ {} 行","函数 @ {} 行","関数 @ {} 行","Function @ Ln {}"],["SPACE インデント {} 行","SPACE 缩进 {} 行","SPACE インデント {} 行","Space-indented {} lines"],["逆 SPACE インデント {} 行","SPACE 反缩进 {} 行","逆 SPACE インデント {} 行","Space-unindented {} lines"],["已执行: {}","已执行: {}","実行しました: {}","Ran: {}"],["コード変換: {}","代码转换: {}","コード変換: {}","Code conversion: {}"],["tags を作成しました: {} 件","已生成 tags: {} 条","tags を作成しました: {} 件","Created tags: {} entries"],["{} 列で折り返し","按 {} 列折行","{} 列で折り返し","Wrapped at {} columns"],["已置顶","已置顶","最前面に表示しました","Pinned on top"],["已取消置顶","已取消置顶","最前面表示を解除しました","Unpinned"],["插件结果已替换选区","插件结果已替换选区","選択範囲をプラグインの結果で置換しました","Replaced selection with plugin result"],["插件结果已替换全文","插件结果已替换全文","全文をプラグインの結果で置換しました","Replaced whole text with plugin result"],["分组 {}","分组 {}","グループ {}","Group {}"],["已移到分组 {}","已移到分组 {}","グループ {} に移動しました","Moved to group {}"],["已纵向最大化","已纵向最大化","縦方向に最大化しました","Maximized vertically"],["已横向最大化","已横向最大化","横方向に最大化しました","Maximized horizontally"],["已在 SQL*Plus 中执行: {}","已在 SQL*Plus 中执行: {}","SQL*Plus で実行しました: {}","Ran in SQL*Plus: {}"],["已在 SQL*Plus 窗口中执行: {}","已在 SQL*Plus 窗口中执行: {}","SQL*Plus ウィンドウで実行しました: {}","Ran in the SQL*Plus window: {}"],["キーワードヘルプ自動表示: ON","关键字帮助自动显示: 开","キーワードヘルプ自動表示: ON","Auto keyword help: ON"],["キーワードヘルプ自動表示: OFF","关键字帮助自动显示: 关","キーワードヘルプ自動表示: OFF","Auto keyword help: OFF"],["ヘルプ: {}","帮助: {}","ヘルプ: {}","Help: {}"],["已新建: {}","已新建: {}","作成しました: {}","Created: {}"],["已另存为: {}","已另存为: {}","名前を付けて保存しました: {}","Saved as: {}"],["保存失败 {}: {}","保存失败 {}: {}","保存に失敗 {}: {}","Save failed {}: {}"],["已保存 {} 个文件","已保存 {} 个文件","{} 個のファイルを保存しました","Saved {} files"],["已重新载入: {}","已重新载入: {}","再読み込みしました: {}","Reloaded: {}"],["已全选 ({} 行)","已全选 ({} 行)","すべて選択しました ({} 行)","Selected all ({} lines)"],["已复制列块 {} 行","已复制列块 {} 行","矩形 {} 行をコピーしました","Copied rectangle ({} lines)"],["已复制 {} 字符","已复制 {} 字符","{} 文字をコピーしました","Copied {} chars"],["已粘贴 {} 字符","已粘贴 {} 字符","{} 文字を貼り付けました","Pasted {} chars"],["自动换行: 开","自动换行: 开","右端で折り返す: オン","Word wrap: on"],["自动换行: 关","自动换行: 关","右端で折り返す: オフ","Word wrap: off"],["行号: 开","行号: 开","行番号: オン","Line numbers: on"],["行号: 关","行号: 关","行番号: オフ","Line numbers: off"],["缩略图: 开","缩略图: 开","ミニマップ: オン","Minimap: on"],["缩略图: 关","缩略图: 关","ミニマップ: オフ","Minimap: off"],["命令未实装: {}","命令未实装: {}","未実装のコマンド: {}","Command not implemented: {}"],["未找到面板: {}","未找到面板: {}","パネルが見つかりません: {}","Panel not found: {}"],["新窗口不可用: {}","新窗口不可用: {}","新しいウィンドウは使えません: {}","New window unavailable: {}"],["全屏不可用: {}","全屏不可用: {}","全画面表示は使えません: {}","Full screen unavailable: {}"],["选区统计: 字符数","选区统计: 字符数","選択範囲の集計: 文字数","Selection count: characters"],["选区统计: 字节数 (UTF-8)","选区统计: 字节数 (UTF-8)","選択範囲の集計: バイト数 (UTF-8)","Selection count: bytes (UTF-8)"],["选区统计: 行数","选区统计: 行数","選択範囲の集計: 行数","Selection count: lines"],["已登记","已登记","登録しました","Registered"],["界面语言已切换","界面语言已切换","表示言語を切り替えました","Display language changed"],["就绪 — {}","就绪 — {}","準備完了 — {}","Ready — {}"],["先頭から再検索しました — {}","已从开头重新查找 — {}","先頭から再検索しました — {}","Search wrapped to the start — {}"],["末尾から再検索しました — {}","已从末尾重新查找 — {}","末尾から再検索しました — {}","Search wrapped to the end — {}"],["已选择 {} 行","已选择 {} 行","{} 行を選択しました","Selected {} lines"],["找到 {}","找到 {}","見つかりました {}","Found {}"],["找到 {}/{}","找到 {}/{}","{}/{} 件見つかりました","Found {}/{}"],["無标题","無标题","無題","Untitled"],["无标题","无标题","無題","Untitled"],["无标题.txt","无标题.txt","無題.txt","Untitled.txt"],["选择范围","选择范围","選択範囲","Selection"],["整个项目","整个项目","プロジェクト全体","Whole project"],["区分大小写","区分大小写","大文字小文字を区別","Match case"],["单词单位","单词单位","単語単位","Whole word"],["正则","正则","正規表現","Regex"],["包含子文件夹","包含子文件夹","サブフォルダーも検索","Include subfolders"],["搜索项目外","搜索项目外","プロジェクト外を検索","Search outside project"],["文件全体","文件全体","ファイル全体","Entire file"],["検索文字列","查找内容","検索文字列","Find what"],["ファイル名","文件名","ファイル名","File name"],["フォルダー","文件夹","フォルダー","Folder"],["除外ファイル","排除文件","除外ファイル","Exclude files"],["除外フォルダー","排除文件夹","除外フォルダー","Exclude folders"],["置換文字列","替换为","置換文字列","Replace with"],["置換後","替换后","置換後","After"],["置換対象:","替换范围:","置換対象:","Replace in:"],["現文件夹","当前文件夹","現在のフォルダー","Current folder"],["この文件中だけ検索 (本文件)","仅在本文件中搜索","このファイル中だけ検索","Search this file only"],["全部强调显示","全部强调显示","すべて強調表示","Highlight all"],["先頭(末尾)から再検索","从头(尾)重新查找","先頭(末尾)から再検索","Wrap around"],["下一个","下一个","次へ","Next"],["上一个","上一个","前へ","Previous"],["全部替换","全部替换","すべて置換","Replace All"],["替换","替换","置換","Replace"],["查找","查找","検索","Find"],["关闭","关闭","閉じる","Close"],["取消","取消","キャンセル","Cancel"],["确定","确定","OK","OK"],["追加","追加","追加","Add"],["停止","停止","停止","Stop"],["清空","清空","クリア","Clear"],["终了","结束","终了","Quit"],["実行","执行","実行","Run"],["保存","保存","保存","Save"],["保存宏到文件 (项目根内)","保存宏到文件 (项目根内)","マクロをファイルに保存 (プロジェクトルート内)","Save macro to file (inside project root)"],["读取宏文件 (项目根内)","读取宏文件 (项目根内)","マクロファイルを読み込み (プロジェクトルート内)","Load macro file (inside project root)"],["Grep 搜索","Grep 搜索","Grep 検索","Grep Search"],["Grep 替换","Grep 替换","Grep 置換","Grep Replace"],["Grep 结果","Grep 结果","Grep 結果","Grep Results"],["在文件中查找 (留空 = 文件名搜索)","在文件中查找 (留空 = 文件名搜索)","ファイル内を検索 (空欄 = ファイル名検索)","Find in files (empty = file name search)"],["输入后回车","输入后回车","入力して Enter","Type and press Enter"],["共通設定","共通设置","共通設定","Common Settings"],["全般","常规","全般","General"],["編集","编辑","編集","Editing"],["ファイル","文件","ファイル","File"],["表示","显示","表示","View"],["字号 (px)","字号 (px)","フォントサイズ (px)","Font size (px)"],["TAB 宽度","TAB 宽度","TAB 幅","TAB width"],["自动缩进","自动缩进","自動インデント","Auto indent"],["在 { [ ( 后多缩进一级","在 { [ ( 后多缩进一级","{ [ ( の後で1段深くインデント","Indent one more level after { [ ("],["新文档的编码","新文档的编码","新規文書の文字コード","Encoding for new documents"],["新文档的换行","新文档的换行","新規文書の改行コード","Line ending for new documents"],["自动换行","自动换行","右端で折り返す","Word wrap"],["行号","行号","行番号","Line numbers"],["工具栏","工具栏","ツールバー","Toolbar"],["功能键栏","功能键栏","ファンクションキー","Function keys"],["标尺","标尺","ルーラー","Ruler"],["空白 / TAB 标记","空白 / TAB 标记","空白・TAB表示","Whitespace / TAB marks"],["当前行下划线","当前行下划线","カーソル行アンダーライン","Current line underline"],["キー割り当て","键位分配","キー割り当て","Key Bindings"],["キー割り当て一覧 ({})","键位一览 ({})","キー割り当て一覧 ({})","Key Binding List ({})"],["请按下新的按键组合…  (Esc 取消)","请按下新的按键组合…  (Esc 取消)","新しいキーの組み合わせを押してください…  (Esc でキャンセル)","Press the new key combination…  (Esc to cancel)"],["筛选 (键 / 命令)","筛选 (键 / 命令)","フィルター (キー / コマンド)","Filter (key / command)"],["筛选命令","筛选命令","コマンドを絞り込み","Filter commands"],["恢复默认","恢复默认","既定に戻す","Restore defaults"],["変更","更改","変更","Change"],["削除","删除","削除","Delete"],["全機能一覧","全部功能一览","全機能一覧","All Commands"],["复制","复制","コピー","Copy"],["文件属性","文件属性","ファイルのプロパティ","File Properties"],["文件","文件","ファイル","File"],["编码","编码","文字コード","Encoding"],["换行","换行","改行","Line ending"],["行数","行数","行数","Lines"],["字符数","字符数","文字数","Characters"],["字节数 (UTF-8)","字节数 (UTF-8)","バイト数 (UTF-8)","Bytes (UTF-8)"],["单词数","单词数","単語数","Words"],["状态","状态","状態","Status"],["已修改","已修改","変更あり","Modified"],["未修改","未修改","変更なし","Unmodified"],["(混用)","(混用)","(混在)","(mixed)"],["窗口一览 ({})","窗口一览 ({})","ウィンドウ一覧 ({})","Window List ({})"],["没有打开的文档","没有打开的文档","開いている文書はありません","No open documents"],["差分一览 — {} ({})","差分一览 — {} ({})","差分一覧 — {} ({})","Difference List — {} ({})"],["没有差分","没有差分","差分はありません","No differences"],["与哪个标签比较?","与哪个标签比较?","比較するタブを選択","Compare with which tab?"],["与哪个文件比较? (路径)","与哪个文件比较? (路径)","比較するファイル (パス)","Compare with which file? (path)"],["插件管理","插件管理","プラグイン管理","Manage Plugins"],["尚无插件 (插件 > 加载插件)","尚无插件 (插件 > 加载插件)","プラグインがありません (プラグイン > 読み込み)","No plugins (Plugins > Load Plugin)"],["插件加载失败","插件加载失败","プラグインの読み込みに失敗","Plugin load failed"],["插件运行失败","插件运行失败","プラグインの実行に失敗","Plugin run failed"],["插件输出: {}","插件输出: {}","プラグイン出力: {}","Plugin output: {}"],["加载插件 (.wasm 路径, 登记后可在「管理」里运行)","加载插件 (.wasm 路径, 登记后可在「管理」里运行)","プラグインの読み込み (.wasm のパス。登録後は「管理」から実行可)","Load plugin (.wasm path; run it from \"Manage\" afterwards)"],["履歴の管理","历史管理","履歴の管理","History Manager"],["最近的文件","最近使用的文件","最近使ったファイル","Recent files"],["最近的文件夹","最近使用的文件夹","最近使ったフォルダー","Recent folders"],["清空全部","清空全部","すべて消去","Clear all"],["最近项目 ({})","最近项目 ({})","最近使ったプロジェクト ({})","Recent projects ({})"],["清空历史","清空历史","履歴を消去","Clear history"],["打开","打开","開く","Open"],["删除","删除","削除","Delete"],["移除","移除","削除","Remove"],["追加新的搜索条件 (搜索未结束也可以)","追加新的搜索条件 (搜索未结束也可以)","新しい検索条件を追加 (検索中でも可)","Add a new search (even while one is running)"],["停止所有进行中的搜索","停止所有进行中的搜索","実行中の検索をすべて停止","Stop all running searches"],["清空结果","清空结果","結果をクリア","Clear results"],["关闭 (同时停止搜索)","关闭 (同时停止搜索)","閉じる (検索も停止)","Close (also stops searches)"],["搜索中 {}/{} · 命中 {}","搜索中 {}/{} · 命中 {}","検索中 {}/{} · {} 件","Searching {}/{} · {} hits"],["搜索中…","搜索中…","検索中…","Searching…"],["搜索中...","搜索中...","検索中...","Searching..."],["已停止 · {}","已停止 · {}","停止しました · {}","Stopped · {}"],["命中 {} 处, {} 个文件","命中 {} 处, {} 个文件","{} 件ヒット ({} ファイル)","{} hits in {} files"],["命中 {} 处","命中 {} 处","{} 件ヒット","{} hits"],["无匹配","无匹配","一致なし","No matches"],["搜索失败: {}","搜索失败: {}","検索に失敗: {}","Search failed: {}"],["搜索中 {} 项 · 命中 {} 处","搜索中 {} 项 · 命中 {} 处","検索中 {} 件 · {} 件ヒット","{} searches running · {} hits"],["已在「Grep 结果」窗口中搜索 (可继续追加别的条件)","已在「Grep 结果」窗口中搜索 (可继续追加别的条件)","「Grep 結果」ウィンドウで検索中 (条件を追加できます)","Searching in the \"Grep Results\" window (you can add more searches)"],["外部命令 (在终端中执行)","外部命令 (在终端中执行)","外部コマンド (ターミナルで実行)","External command (run in terminal)"],["已执行: {}","已执行: {}","実行しました: {}","Ran: {}"],["印刷","打印","印刷","Print"],["印刷プレビュー ({} 页)","打印预览 ({} 页)","印刷プレビュー ({} 页)","Print Preview ({} pages)"],["印刷页面设置","页面设置","印刷ページ設定","Page Setup"],["字号 (pt)","字号 (pt)","フォントサイズ (pt)","Font size (pt)"],["页边距 (mm)","页边距 (mm)","余白 (mm)","Margin (mm)"],["打印行号","打印行号","行番号を印刷","Print line numbers"],["打印文件名页眉","打印文件名页眉","ファイル名ヘッダーを印刷","Print file name header"],["保存","保存","保存","Save"],["文字コードセット指定","文字编码","文字コードセット指定","Character Set"],["文字コードセット指定...","文字コードセット指定...","文字コードセット指定...","Character Set..."],["以此重新打开","以此重新打开","この文字コードで開き直す","Reopen with this"],["保存时使用","保存时使用","保存時に使用","Use when saving"],["  ← 当前","  ← 当前","  ← 現在","  ← current"],["UTF-8 带 BOM","UTF-8 带 BOM","UTF-8 BOM 付き","UTF-8 with BOM"],["指定关键字的直接标签跳转","指定关键字的直接标签跳转","キーワードを指定してタグジャンプ","Tag jump by keyword"],["タグ候補: {}","标签候选: {}","タグ候補: {}","Tag candidates: {}"],["帮助关键字检索","帮助关键字检索","ヘルプのキーワード検索","Search help keyword"],["帮助检索: {} ({})","帮助检索: {} ({})","ヘルプ検索: {} ({})","Help search: {} ({})"],["没有找到","没有找到","見つかりません","Not found"],["按指定列数折行 (0 = 取消)","按指定列数折行 (0 = 取消)","指定桁数で折り返し (0 = 解除)","Wrap at column (0 = off)"],["选区字数统计方式 (点击切换: 字符 / 字节 / 行)","选区字数统计方式 (点击切换: 字符 / 字节 / 行)","選択範囲の集計方法 (クリックで切り替え: 文字 / バイト / 行)","Selection count mode (click to cycle: chars / bytes / lines)"],["選択 {} 文字","已选 {} 字符","選択 {} 文字","{} chars selected"],["選択 {} バイト","已选 {} 字节","選択 {} バイト","{} bytes selected"],["選択 {} 行","已选 {} 行","選択 {} 行","{} lines selected"],["跳转到行 (1-{}):","跳转到行 (1-{}):","行へジャンプ (1-{}):","Go to line (1-{}):"],["另存为 (项目根内相对路径):","另存为 (项目根内相对路径):","名前を付けて保存 (プロジェクトルートからの相対パス):","Save as (path relative to project root):"],["打开文件 (项目根内相对路径):","打开文件 (项目根内相对路径):","ファイルを開く (プロジェクトルートからの相対パス):","Open file (path relative to project root):"],["新建文件名 (相对项目根):","新建文件名 (相对项目根):","新規ファイル名 (ルートからの相対パス):","New file name (relative to project root):"],["列块替换为 (多行用换行分隔):","列块替换为 (多行用换行分隔):","矩形を置換 (複数行は改行で区切る):","Replace rectangle with (separate lines with newlines):"],["输入 JS 宏 (可直接访问 editor.* / tabs / CLIPBOARD):","输入 JS 宏 (可直接访问 editor.* / tabs / CLIPBOARD):","JSマクロを入力 (editor.* / tabs / CLIPBOARD を使用可):","Enter a JS macro (editor.* / tabs / CLIPBOARD available):"],["PPA 宏 (每行一个动作: KEY <键> / TYPE <文本> / CMD <命令>):","PPA 宏 (每行一个动作: KEY <键> / TYPE <文本> / CMD <命令>):","PPAマクロ (1行1動作: KEY <キー> / TYPE <文字> / CMD <コマンド>):","PPA macro (one action per line: KEY <key> / TYPE <text> / CMD <command>):"],["输入 SQL / 命令, 回车发送 (connect user/pass@db)","输入 SQL / 命令, 回车发送 (connect user/pass@db)","SQL / コマンドを入力して Enter (connect user/pass@db)","Type SQL / commands and press Enter (connect user/pass@db)"],["执行当前文件 (@文件)","执行当前文件 (@文件)","現在のファイルを実行 (@ファイル)","Run current file (@file)"],["清屏","清屏","画面クリア","Clear"],["结束会话","结束会话","セッション終了","End session"],["{} 个文档有未保存修改, 仍要全部退出吗?","{} 个文档有未保存修改, 仍要全部退出吗?","{} 個の文書に未保存の変更があります。すべて終了しますか?","{} documents have unsaved changes. Exit all anyway?"],["{} 个文档有未保存修改, 全部关闭会丢失. 继续?","{} 个文档有未保存修改, 全部关闭会丢失. 继续?","{} 個の文書に未保存の変更があります。すべて閉じると失われます。続行しますか?","{} documents have unsaved changes; closing all will discard them. Continue?"],["{} 有未保存修改, 关闭会丢失. 继续?","{} 有未保存修改, 关闭会丢失. 继续?","{} に未保存の変更があります。閉じると失われます。続行しますか?","{} has unsaved changes; closing will discard them. Continue?"],["{} 有未保存修改, 重新打开会丢失. 继续?","{} 有未保存修改, 重新打开会丢失. 继续?","{} に未保存の変更があります。開き直すと失われます。続行しますか?","{} has unsaved changes; reopening will discard them. Continue?"],["{} 有未保存修改, 重新载入会丢失. 继续?","{} 有未保存修改, 重新载入会丢失. 继续?","{} に未保存の変更があります。再読み込みすると失われます。続行しますか?","{} has unsaved changes; reloading will discard them. Continue?"],["{} 已存在, 覆盖?","{} 已存在, 覆盖?","{} は既に存在します。上書きしますか?","{} already exists. Overwrite?"],["{} 已分配给 {}, 要替换吗?","{} 已分配给 {}, 要替换吗?","{} は {} に割り当て済みです。置き換えますか?","{} is already assigned to {}. Replace it?"],["资源管理器","资源管理器","エクスプローラー","Explorer"],["搜索","搜索","検索","Search"],["源代码管理","源代码管理","ソース管理","Source Control"],["大纲","大纲","アウトライン","Outline"],["扩展","扩展","拡張機能","Extensions"],["当前分支:","当前分支:","現在のブランチ:","Current branch:"],["未初始化 git 仓库","未初始化 git 仓库","Git リポジトリが初期化されていません","Git repository not initialized"],["尚无已安装扩展","尚无已安装扩展","インストール済みの拡張機能はありません","No extensions installed"],["未打开项目","未打开项目","プロジェクトが開かれていません","No project open"],["打开文件夹","打开文件夹","フォルダーを開く","Open Folder"],["新建终端","新建终端","新しいターミナル","New Terminal"],["+ 新建终端","+ 新建终端","+ 新しいターミナル","+ New Terminal"],["打开 PowerShell","打开 PowerShell","PowerShell を開く","Open PowerShell"],["No terminal session — 暂无终端会话","No terminal session — 暂无终端会话","ターミナルセッションがありません","No terminal session"],["折叠","折叠","折りたたむ","Collapse"],["展开","展开","展開","Expand"],["终端","终端","ターミナル","Terminal"],["输出","输出","出力","Output"],["问题","问题","問題","Problems"],["保存后才有大纲","保存后才有大纲","保存するとアウトラインが表示されます","Save the file to see its outline"],["打开一个文件查看大纲","打开一个文件查看大纲","ファイルを開くとアウトラインが表示されます","Open a file to see its outline"],["解析失败","解析失败","解析に失敗","Parse failed"],["无大纲 ({})","无大纲 ({})","アウトラインなし ({})","No outline ({})"],["加载中...","加载中...","読み込み中...","Loading..."],["无活动","无活动","なし","No active file"],["快捷键速查","快捷键速查","ショートカット早見表","Shortcut Cheat Sheet"],["帮助","帮助","ヘルプ","Help"],["IDE1.0 — 完整 wiki","IDE1.0 — 完整 wiki","IDE1.0 — Wiki 全文","IDE1.0 — Full Wiki"],["关于","关于","バージョン情報","About"],["首选项","首选项","設定","Preferences"],["类型配置 (已识别语言的词表规模)","类型配置 (已识别语言的词表规模)","タイプ別設定 (認識済み言語の語彙数)","Type settings (vocabulary size per recognized language)"],["文件锁定: {}","文件锁定: {}","ファイルロック: {}","File lock: {}"],["设置","设置","設定","Settings"],["状态栏: 显示","状态栏: 显示","ステータスバー: 表示","Status bar: shown"],["状态栏: 隐藏","状态栏: 隐藏","ステータスバー: 非表示","Status bar: hidden"],["INSERT 存盘: Ctrl+S","INSERT 存盘: Ctrl+S","INSERT 保存: Ctrl+S","INSERT save: Ctrl+S"],["已显示","已显示","表示","shown"],["已隐藏","已隐藏","非表示","hidden"],["开","开","オン","on"],["关","关","オフ","off"],["透明玻璃","透明玻璃","透明ガラス","Clear glass"],["深色","深色","ダーク","Dark"],["浅色","浅色","ライト","Light"],["高对比度","高对比度","ハイコントラスト","High contrast"],["主题: 透明玻璃 (文字反色: {})","主题: 透明玻璃 (文字反色: {})","テーマ: 透明ガラス (文字色反転: {})","Theme: clear glass (text inversion: {})"],["差值混合","差值混合","差の混合","Difference blend"],["活动栏","活动栏","アクティビティバー","Activity bar"],["侧边栏","侧边栏","サイドバー","Side bar"],["面包屑","面包屑","パンくず","Breadcrumb"],["标签栏","标签栏","タブバー","Tab bar"],["展开导航 / 文件","展开导航 / 文件","ナビゲーション / ファイルを展開","Expand navigation / files"],["折叠导航 / 文件","折叠导航 / 文件","ナビゲーション / ファイルを折りたたむ","Collapse navigation / files"],["点击换项目 · Shift+点击刷新文件树","点击换项目 · Shift+点击刷新文件树","クリックでプロジェクト変更 · Shift+クリックでツリー更新","Click to change project · Shift+click to refresh tree"],["点工具栏「打开文件夹」导入项目","点工具栏「打开文件夹」导入项目","ツールバーの「フォルダーを開く」でプロジェクトを読み込み","Use \"Open Folder\" on the toolbar to import a project"],["就绪 — 点工具栏「打开文件夹」导入项目","就绪 — 点工具栏「打开文件夹」导入项目","準備完了 — ツールバーの「フォルダーを開く」でプロジェクトを読み込み","Ready — use \"Open Folder\" on the toolbar to import a project"],["后端未连接 (仅前端模式)","后端未连接 (仅前端模式)","バックエンド未接続 (フロントのみ)","Backend not connected (front-end only)"],["读取失败: {}","读取失败: {}","読み込みに失敗: {}","Read failed: {}"],["会话创建失败: {}","会话创建失败: {}","セッションの作成に失敗: {}","Failed to create session: {}"],["[会话已结束]","[会话已结束]","[セッション終了]","[session ended]"],["内核命令失败: {}","内核命令失败: {}","カーネルコマンドの失敗: {}","Kernel command failed: {}"],["配置导入失败","配置导入失败","設定のインポートに失敗","Settings import failed"],["不是宏文件","不是宏文件","マクロファイルではありません","Not a macro file"],["保存失败","保存失败","保存に失敗","Save failed"],["备份失败","备份失败","バックアップに失敗","Backup failed"],["另存失败","另存失败","名前を付けて保存に失敗","Save As failed"],["失败","失败","失敗","Failed"],["提示","提示","ヒント","Notice"],["已取消保存 (有字符无法用 {} 表示)","已取消保存 (有字符无法用 {} 表示)","保存を取り消しました ({} で表せない文字があります)","Save cancelled (some characters cannot be represented in {})"],["JS 宏错误","JS 宏错误","JSマクロのエラー","JS macro error"],["关闭全部标签","关闭全部标签","すべてのタブを閉じました","All tabs closed"]];
+const UI_EXACT = new Map();
+const UI_TPL = [];
+(() => {
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const e of UI_DICT) {
+    if (e[0].indexOf("{}") >= 0) {
+      const lits = e[0].split("{}");
+      const re = new RegExp("^" + lits.map(esc).join("(.{1,120}?)") + "$");
+      UI_TPL.push({ re, v: e.slice(1), n: e[0].length, pre: lits[0], suf: lits[lits.length - 1] });
+    } else UI_EXACT.set(e[0].trim(), e.slice(1));
+  }
+  UI_TPL.sort((a, b) => b.n - a.n);
+})();
+I18N["ui.langChanged"] = ["界面语言已切换", "表示言語を切り替えました", "Display language changed"];
+function uiTranslateText(text) {
+  const idx = UI_LANGS.indexOf(UI_LANG);
+  const key = text.trim();
+  if (!key) return null;
+  const ex = UI_EXACT.get(key);
+  if (ex) return ex[idx];
+  if (key.length > 240) return null;                       // 长文本 (帮助 / 日志) 不是界面短句, 不参与模板匹配
+  for (const t of UI_TPL) {
+    if (!key.startsWith(t.pre) || !key.endsWith(t.suf)) continue;
+    const m = t.re.exec(key);
+    if (!m) continue;
+    let k = 0;
+    return t.v[idx].replace(/\{(\d*)\}/g, (_, d) => { const g = d ? m[+d] : m[++k]; return g === undefined ? "" : g; });
+  }
+  return null;
+}
+const UI_NODE = new WeakMap();           // 文本节点 -> {orig, set}
+const UI_SKIP = "#ed-content, #gutter, #terminal-body, #menubar, #minimap, #sql-out, #grep-results .grep-hit, script, style, textarea, input";
+function uiNode(n) {
+  const el = n.parentElement;
+  if (!el || el.closest(UI_SKIP)) return;
+  const rec = UI_NODE.get(n);
+  const orig = rec && n.data === rec.set ? rec.orig : n.data;
+  if (!/[\u3040-\u30ff\u4e00-\u9fffA-Za-z]/.test(orig)) return;
+  const tr1 = uiTranslateText(orig);
+  const lead = orig.match(/^\s*/)[0], trail = orig.match(/\s*$/)[0];
+  const out = tr1 === null ? orig : lead + tr1 + trail;
+  if (out === n.data && !rec) return;
+  if (out !== n.data) n.data = out;
+  UI_NODE.set(n, { orig, set: out });
+}
+const UI_ATTRS = ["title", "placeholder", "data-tip", "aria-label"];
+function uiAttr(el) {
+  if (el.closest && el.closest(UI_SKIP) && !el.matches("input,textarea")) return;
+  const store = el.__ui || (el.__ui = {});
+  for (const a of UI_ATTRS) {
+    if (!el.hasAttribute(a)) continue;
+    const cur = el.getAttribute(a), rec = store[a];
+    const orig = rec && cur === rec.set ? rec.orig : cur;
+    const tr1 = uiTranslateText(orig);
+    const out = tr1 === null ? orig : tr1;
+    if (out !== cur) el.setAttribute(a, out);
+    if (tr1 !== null || rec) store[a] = { orig, set: out };
+  }
+}
+function uiWalk(root) {
+  if (!root) return;
+  if (root.nodeType === 3) { uiNode(root); return; }
+  if (root.nodeType !== 1) return;
+  if (root.closest && root.closest("#ed-content, #gutter, #terminal-body")) return;
+  const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n; const nodes = [];
+  while ((n = tw.nextNode())) nodes.push(n);
+  for (const x of nodes) uiNode(x);
+  if (root.hasAttributes && UI_ATTRS.some((a) => root.hasAttribute(a))) uiAttr(root);
+  root.querySelectorAll("[title],[placeholder],[data-tip],[aria-label]").forEach(uiAttr);
+}
+function applyUiStrings() { uiWalk(document.body); }
+{
+  let pending = new Set(), queued = false;
+  const flush = () => { queued = false; const items = [...pending]; pending.clear(); for (const it of items) { try { uiWalk(it); } catch (_) {} } };
+  new MutationObserver((muts) => {
+    for (const m of muts) {
+      const t = m.target;
+      if (m.type === "childList") m.addedNodes.forEach((x) => pending.add(x));
+      else if (m.type === "characterData") { const rec = UI_NODE.get(t); if (!rec || rec.set !== t.data) pending.add(t); }
+      else if (m.type === "attributes") pending.add(t);
+    }
+    if (pending.size && !queued) { queued = true; requestAnimationFrame(flush); }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: UI_ATTRS });
+}
+applyUiStrings();
+
+
+/* ===== 左侧导航 / 底部终端: 拖动调整大小 (落盘) + 终端设置 (字体 / 字号 / 行高 / 回滚行数 / 折行 / 配色 / 显示行数) ===== */
+const PANE = (() => { let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.pane") || "{}") || {}; } catch (_) {} return o; })();
+function savePane() { try { localStorage.setItem("ide10.pane", JSON.stringify(PANE)); } catch (_) {} }
+function applySideWidth(w) {
+  const root = document.documentElement;
+  if (!w) { root.style.removeProperty("--w-drawer-side"); root.style.removeProperty("--w-side"); return; }
+  root.style.setProperty("--w-drawer-side", w + "px"); root.style.setProperty("--w-side", w + "px");
+}
+function bottomBodyEl() { return document.getElementById("bottom-body"); }
+function applyBottomHeight(h) {
+  const b = bottomBodyEl(); if (!b) return;
+  if (!h) { b.style.removeProperty("height"); b.style.removeProperty("flex-basis"); b.style.removeProperty("max-height"); return; }
+  const maxH = Math.max(80, innerHeight - 160);
+  const v = Math.max(60, Math.min(maxH, h));
+  b.style.height = v + "px"; b.style.flexBasis = v + "px";
+}
+function installResizers() {
+  const side = document.getElementById("side-bar"), bp = document.getElementById("bottom-panel");
+  if (side && !document.getElementById("side-resizer")) {
+    const r = document.createElement("div"); r.id = "side-resizer"; r.className = "pane-resizer"; r.title = "拖动调整宽度 (双击恢复)";
+    side.appendChild(r);
+    r.addEventListener("pointerdown", (e) => dragPane(e, r, (ev) => {
+      const left = side.getBoundingClientRect().left, w = Math.round(Math.max(120, Math.min(innerWidth - 260, ev.clientX - left)));
+      PANE.sideW = w; applySideWidth(w);
+    }));
+    r.addEventListener("dblclick", () => { delete PANE.sideW; savePane(); applySideWidth(0); });
+  }
+  if (bp && !document.getElementById("bottom-resizer")) {
+    const r = document.createElement("div"); r.id = "bottom-resizer"; r.className = "pane-resizer"; r.title = "拖动调整高度 (双击恢复)";
+    bp.appendChild(r);
+    r.addEventListener("pointerdown", (e) => dragPane(e, r, (ev) => {
+      const bottom = document.getElementById("status").getBoundingClientRect().top, head = document.getElementById("bottom-head");
+      const h = Math.round(bottom - ev.clientY - (head ? head.getBoundingClientRect().height : 28));
+      PANE.bottomH = Math.max(60, h); applyBottomHeight(PANE.bottomH);
+    }));
+    r.addEventListener("dblclick", () => { delete PANE.bottomH; savePane(); applyBottomHeight(0); });
+  }
+}
+function dragPane(e, handle, onMove) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  handle.classList.add("drag"); document.body.classList.add("pane-dragging");
+  const mv = (ev) => { onMove(ev); try { updateCaret(false); } catch (_) {} };
+  const up = () => {
+    handle.classList.remove("drag"); document.body.classList.remove("pane-dragging");
+    document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up);
+    savePane();
+  };
+  document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
+}
+if (PANE.sideW) applySideWidth(PANE.sideW);
+if (PANE.bottomH) applyBottomHeight(PANE.bottomH);
+installResizers();
+window.addEventListener("resize", () => { if (PANE.bottomH) applyBottomHeight(PANE.bottomH); });
+
+// ---- 终端设置 ----
+const TERMCFG = (() => {
+  let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.term") || "{}") || {}; } catch (_) {}
+  return Object.assign({ fontSize: 13, fontFamily: 'Consolas, "Cascadia Mono", "MS Gothic", monospace', lineHeight: 1.4, scrollback: 5000, wrap: true, scheme: "default", rows: 0 }, o);
+})();
+function applyTermCfg() {
+  const tb = document.getElementById("terminal-body"); if (!tb) return;
+  const root = document.documentElement;
+  root.style.setProperty("--term-fs", TERMCFG.fontSize + "px");
+  root.style.setProperty("--term-lh", String(TERMCFG.lineHeight));
+  root.style.setProperty("--term-font", TERMCFG.fontFamily);
+  tb.setAttribute("data-wrap", TERMCFG.wrap ? "on" : "off");
+  if (TERMCFG.scheme === "default") tb.removeAttribute("data-scheme"); else tb.setAttribute("data-scheme", TERMCFG.scheme);
+  if (TERMCFG.rows > 0) {                         // 「显示行数」: 面板高度 = 行数 × 行高
+    PANE.bottomH = Math.round(TERMCFG.rows * TERMCFG.fontSize * TERMCFG.lineHeight + 8); applyBottomHeight(PANE.bottomH); savePane();
+  }
+  trimTerminal();
+}
+function saveTermCfg() { try { localStorage.setItem("ide10.term", JSON.stringify(TERMCFG)); } catch (_) {} }
+function trimTerminal() {
+  const tb = document.getElementById("terminal-body"); if (!tb) return;
+  let extra = tb.querySelectorAll(".term-line").length - TERMCFG.scrollback;
+  while (extra-- > 0 && tb.firstElementChild) tb.firstElementChild.remove();
+}
+{
+  const _at = appendTerminal;
+  appendTerminal = function (raw) { _at.apply(this, arguments); trimTerminal(); };
+}
+function termConfig() {
+  const row = (label, html) => '<div class="cfg-row"><label>' + label + "</label>" + html + "</div>";
+  const sel = (id, opts, cur) => '<select id="' + id + '">' + opts.map(([v, t]) => '<option value="' + v + '"' + (String(v) === String(cur) ? " selected" : "") + ">" + t + "</option>").join("") + "</select>";
+  openModal({ title: "终端设置",
+    bodyHTML:
+      row("字号 (px)", '<input id="tc-fs" type="number" min="8" max="32" value="' + TERMCFG.fontSize + '" style="width:80px">') +
+      row("字体", sel("tc-font", [['Consolas, "Cascadia Mono", "MS Gothic", monospace', "Consolas"], ['"Cascadia Mono", Consolas, monospace', "Cascadia Mono"], ['"Lucida Console", monospace', "Lucida Console"], ['"MS Gothic", monospace', "MS Gothic"], ["monospace", "monospace"]], TERMCFG.fontFamily)) +
+      row("行高", '<input id="tc-lh" type="number" min="1" max="2.5" step="0.1" value="' + TERMCFG.lineHeight + '" style="width:80px">') +
+      row("回滚缓冲区行数", '<input id="tc-sb" type="number" min="100" max="100000" step="100" value="' + TERMCFG.scrollback + '" style="width:100px">') +
+      row("面板显示行数 (0 = 自动)", '<input id="tc-rows" type="number" min="0" max="80" value="' + TERMCFG.rows + '" style="width:80px">') +
+      row("配色方案", sel("tc-scheme", [["default", "默认"], ["ps", "PowerShell 蓝"], ["campbell", "Campbell"], ["solarized", "Solarized Dark"], ["light", "浅色"]], TERMCFG.scheme)) +
+      '<div class="cfg-row"><label><input id="tc-wrap" type="checkbox"' + (TERMCFG.wrap ? " checked" : "") + "> 自动换行 (关闭后出现横向滚动条)</label></div>",
+    buttons: [{ label: "应用", cmd: "term-config-apply" }, { label: "恢复默认", cmd: "term-config-reset" }, { label: "关闭", cmd: "modal-close" }] });
+}
+Object.assign(CFG_CMDS, {
+  "term-config": termConfig,
+  "term-config-apply": () => {
+    const g = (id) => document.getElementById(id);
+    TERMCFG.fontSize = Math.max(8, Math.min(32, +g("tc-fs").value || 13));
+    TERMCFG.fontFamily = g("tc-font").value;
+    TERMCFG.lineHeight = Math.max(1, Math.min(2.5, +g("tc-lh").value || 1.4));
+    TERMCFG.scrollback = Math.max(100, Math.min(100000, +g("tc-sb").value || 5000));
+    TERMCFG.rows = Math.max(0, Math.min(80, +g("tc-rows").value || 0));
+    TERMCFG.scheme = g("tc-scheme").value; TERMCFG.wrap = g("tc-wrap").checked;
+    saveTermCfg(); applyTermCfg(); setTip("终端设置已应用");
+  },
+  "term-config-reset": () => { try { localStorage.removeItem("ide10.term"); } catch (_) {} Object.assign(TERMCFG, { fontSize: 13, fontFamily: 'Consolas, "Cascadia Mono", "MS Gothic", monospace', lineHeight: 1.4, scrollback: 5000, wrap: true, scheme: "default", rows: 0 }); delete PANE.bottomH; savePane(); applyBottomHeight(0); applyTermCfg(); closeModal(); setTip("终端设置已恢复默认"); },
+});
+function i18nAdd(src, zh, ja, en) { UI_EXACT.set(src.trim(), [zh || src, ja || src, en || src]); }
+[
+  ["终端设置", "", "ターミナル設定", "Terminal Settings"],
+  ["字体", "", "フォント", "Font"],
+  ["行高", "", "行の高さ", "Line height"],
+  ["回滚缓冲区行数", "", "スクロールバック行数", "Scrollback lines"],
+  ["面板显示行数 (0 = 自动)", "", "パネルの表示行数 (0 = 自動)", "Visible rows in panel (0 = auto)"],
+  ["配色方案", "", "配色", "Color scheme"],
+  ["默认", "", "既定", "Default"],
+  ["PowerShell 蓝", "", "PowerShell 青", "PowerShell blue"],
+  ["自动换行 (关闭后出现横向滚动条)", "", "折り返し (オフにすると横スクロールバー)", "Word wrap (off shows a horizontal scrollbar)"],
+  ["应用", "", "適用", "Apply"],
+  ["终端设置已应用", "", "ターミナル設定を適用しました", "Terminal settings applied"],
+  ["终端设置已恢复默认", "", "ターミナル設定を既定に戻しました", "Terminal settings reset"],
+  ["拖动调整宽度 (双击恢复)", "", "ドラッグで幅を調整 (ダブルクリックで元に戻す)", "Drag to resize (double-click to reset)"],
+  ["拖动调整高度 (双击恢复)", "", "ドラッグで高さを調整 (ダブルクリックで元に戻す)", "Drag to resize (double-click to reset)"],
+].forEach((e) => i18nAdd(e[0], e[1], e[2], e[3]));
+applyTermCfg();
+window.TERMCFG = TERMCFG; window.PANE = PANE;
 
 // ===== Welcome page =====
 function showWelcome() {

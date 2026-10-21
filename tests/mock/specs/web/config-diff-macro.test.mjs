@@ -12,12 +12,12 @@ const openProject = (page, root) => page.evaluate(async (r) => { await fetch('/a
 test('共通設定: TAB 宽度 / 自动缩进 / 新文档换行 立即生效并落盘, 重载后仍在', () =>
   withMocks({ name: 'cd', portOffset: 180 }, async ({ page, snap, press }) => {
     await cmd(page, 'common-config');
-    await page.locator('.cfg-tab', { hasText: '全般' }).click();
+    await page.locator('.cfg-tab', { hasText: '常规' }).click();
     await page.locator('input[type=number][data-i="1"]').fill('8'); await page.locator('input[type=number][data-i="1"]').dispatchEvent('change');
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('ed-content')).tabSize), '8');
-    await page.locator('.cfg-tab', { hasText: '編集' }).click();
+    await page.locator('.cfg-tab', { hasText: '编辑' }).click();
     await page.locator('input[type=checkbox][data-i="0"]').uncheck();
-    await page.locator('.cfg-tab', { hasText: 'ファイル' }).click();
+    await page.locator('.cfg-tab', { hasText: '文件' }).click();
     await page.locator('select[data-i="1"]').selectOption('lf');
     await page.locator('#md-foot [data-cmd="modal-close"]').click();
     await fill(page, '  ab');                                      // 关掉自动缩进: 回车不复制缩进
