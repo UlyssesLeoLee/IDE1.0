@@ -98,6 +98,14 @@ test('桌面版: Rust 桥 (nav_step / edit_cmd / edit_text / edit_lines) 在真�
     await page.evaluate(() => { const t = getActiveTab(); t.lines = ['f(a[b])']; t.cursor = { row: 0, col: 1 }; t.sel = null; renderVim(t); });
     await page.evaluate(() => dispatchCommand('bracket-pair')); await idle();
     assert.deepEqual((await state()).cursor, { row: 0, col: 6 });
+    // bookmark: 切换两个书签后跳到下一个
+    await page.evaluate(async () => { const t = getActiveTab(); t.lines = ['a', 'b', 'c', 'd']; t.cursor = { row: 1, col: 0 }; renderVim(t); await dispatchCommand('bookmark-toggle'); t.cursor = { row: 3, col: 0 }; await dispatchCommand('bookmark-toggle'); t.cursor = { row: 0, col: 0 }; await dispatchCommand('bookmark-next'); });
+    assert.deepEqual((await state()).cursor, { row: 1, col: 0 });
+    // search_text: 查找下一个 + 全部置换
+    await page.evaluate(async () => { const t = getActiveTab(); t.lines = ['foo bar foo', 'foo']; t.cursor = { row: 0, col: 0 }; t.sel = null; FIND_STATE.needle = 'foo'; FIND_STATE.matchCase = false; FIND_STATE.wholeWord = false; FIND_STATE.useRegex = false; FIND_STATE.wrap = true; renderVim(t); findNext(); }); await idle();
+    assert.deepEqual((await state()).sel, { r0: 0, c0: 0, r1: 0, c1: 3 });
+    await page.evaluate(async () => { const h = document.createElement('input'); h.id = 'repl-input'; h.value = 'X'; document.body.appendChild(h); await replaceAll(); h.remove(); });
+    assert.deepEqual((await state()).lines, ['X bar X', 'X']);
     assert.deepEqual(d.errors, []);
   } finally { await d.close(); }
 });
