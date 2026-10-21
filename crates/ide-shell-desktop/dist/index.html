@@ -3902,10 +3902,12 @@ function snapshot(t) {
   if (!t.redo) t.redo = [];
   if (!t.folded) t.folded = new Set();
   if (!t.baseLines || !t.dirty) t.baseLines = t.lines.slice();          // 干净状态下的第一次改动前 = 基线 (用于「变更行」)
+  if (t.skipSnapAt && performance.now() - t.skipSnapAt < 80) { t.skipSnapAt = 0; return; }   // 「替换选区」= 删除 + 输入 算同一步撤销 (删除时已经记过)
   t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
   if (t.undo.length > 200) t.undo.shift();
   t.redo.length = 0;
 }
+function replaceSelection(t) { if (deleteSelection(t)) t.skipSnapAt = performance.now(); t.selAnchor = null; }
 
 function clampCursor(t) {
   if (t.cursor.row < 0) t.cursor.row = 0;
@@ -4329,6 +4331,7 @@ function doUndo() {
   const s = t.undo.pop();
   t.lines = s.lines;
   t.cursor = s.cursor;
+  t.sel = null; t.selAnchor = null;   // Sakura: 撤销 / 重做之后没有选区
   t.dirty = true;
   paintActive();
 }
@@ -4340,6 +4343,7 @@ function doRedo() {
   const s = t.redo.pop();
   t.lines = s.lines;
   t.cursor = s.cursor;
+  t.sel = null; t.selAnchor = null;   // Sakura: 撤销 / 重做之后没有选区
   t.dirty = true;
   paintActive();
 }
@@ -5625,7 +5629,7 @@ function replaceAll() {
   if (count > 0) {
     t.dirty = true; t.sel = null;
     if (inSel) { const ec = charLen(t.lines[r1]) - tailLen; t.sel = { r0, c0, r1, c1: ec }; t.selAnchor = { row: r0, col: c0 }; t.cursor = { row: r1, col: ec }; }   // Sakura: 选区范围内置换后选区保留
-    else if (lastRow >= 0) t.cursor = { row: lastRow, col: lastEnd };   // Sakura: 光标停在最后一处置换之后
+    else if (lastRow >= 0) t.cursor = FIND_STATE.useRegex ? { row: Math.min(lastRow + 1, t.lines.length - 1), col: 0 } : { row: lastRow, col: lastEnd };   // Sakura: 光标停在最后一处置换之后 (正则模式停在下一行行首)
     renderVim(t);
   }
   closeModal();
@@ -7690,7 +7694,7 @@ function handleEditNavKey(e, t, vim) {
         if (t.sel.r0 !== t.sel.r1) { if (shift) indentSelection(true); else indentSelection(false); return true; }
         deleteSelection(t); t.selAnchor = null; insertCharMulti(vim ? "  " : "\t"); return true;
       }
-      if (k === "Enter" || (k.length === 1 && !e.metaKey)) { deleteSelection(t); t.selAnchor = null; }
+      if (k === "Enter" || (k.length === 1 && !e.metaKey)) { replaceSelection(t); }
     }
     if (!/^(Shift|Control|Alt|Meta|CapsLock)$/.test(k)) delete t.goalCol;
     return false;
@@ -7815,7 +7819,7 @@ if (edContent) {
     IME_ACTIVE = true;
     if (!t) return;
     if (t.colSel) { t.colSel = null; syncColumnSelectUI(t); }
-    if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; paintActive(); }   // 输入法上屏要替换选区: 先清掉
+    if (selNonEmpty(t)) { replaceSelection(t); paintActive(); }   // 输入法上屏要替换选区: 先清掉
     const pt = domPointAt(t);
     if (pt) { const sel = getSelection(), rg = document.createRange(); rg.setStart(pt.node, pt.off); rg.collapse(true); sel.removeAllRanges(); sel.addRange(rg); }
     const c = document.getElementById("caret"); if (c) c.classList.remove("on");     // 预编辑期间用浏览器自己的插入符
@@ -7841,7 +7845,7 @@ if (edContent) {
       const t = getActiveTab();
       if (!t) return;
       if (t.colSel) { columnInsert(e.data); return; }
-      if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; }
+      if (selNonEmpty(t)) replaceSelection(t);
       for (const ch of chars(e.data)) insertCharMulti(ch);
     }
   });
@@ -8202,7 +8206,7 @@ const SAKURA_CMDS = {
 // 光标处插入一段文本 (替换选区, 走撤销栈)
 function insertTextAtCursor(text) {
   const t = getActiveTab(); if (!t) return;
-  if (selNonEmpty(t)) { deleteSelection(t); t.selAnchor = null; }
+  if (selNonEmpty(t)) replaceSelection(t);
   for (const ch of chars(text)) insertCharMulti(ch);
 }
 
@@ -8877,7 +8881,8 @@ async function codeConvert(id) {
       }
       if (out == null) { setTip("自動判別: 没有找到合适的编码"); t.sel = null; renderVim(t); return; }
     }
-    snapshot(t); deleteSelection(t); t.selAnchor = null; insertTextAtCursor(out); t.dirty = true; renderVim(t);
+    const a0 = { row: t.sel.r0, col: t.sel.c0 };
+    snapshot(t); deleteSelection(t); t.selAnchor = null; insertTextAtCursor(out); setSelRange(t, a0, t.cursor.row, t.cursor.col); t.dirty = true; renderVim(t);   // Sakura: 变换后选中结果
     setTip("コード変換: " + id.replace("codecnv-", ""));
   } catch (e) { setTip("コード変換失败: " + ((e && e.message) || e)); }
 }

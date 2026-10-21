@@ -9,7 +9,9 @@ import CASES3, { SEED as SEED3 } from './cases3.mjs';
 import CASES4 from './cases4.mjs';
 import CASES5 from './cases5.mjs';
 import CASES6 from './cases6.mjs';
-const CASES = [...CASES1, ...CASES2, ...CASES3, ...CASES4, ...CASES5, ...CASES6];
+import CASES7 from './cases7.mjs';
+import CASES8 from './cases8.mjs';
+const CASES = [...CASES1, ...CASES2, ...CASES3, ...CASES4, ...CASES5, ...CASES6, ...CASES7, ...CASES8];
 import { runSakura, hasSakura } from './sakura.mjs';
 import { withMocks } from '../mock/lib/with-mocks.mjs';
 
@@ -57,8 +59,9 @@ async function oursAll() {
         else t.cursor = { row: (c.cur || [0, 0])[0], col: (c.cur || [0, 0])[1] };
         renderVim(t); edContent.focus({ preventScroll: true });
       }, { c, seed });
-      if (c.ours.pre) { await page.evaluate((src) => { new Function(src)(); }, c.ours.pre); }
-      if (c.ours.js) { await page.evaluate((src) => { new Function(src)(); }, c.ours.js); }
+      if (c.ours.keys) { await page.locator('#ed-content').focus(); for (const k of c.ours.keys) { await page.keyboard.press(k); await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null)); await page.waitForTimeout(40); } }
+      else if (c.ours.pre) { await page.evaluate((src) => { new Function(src)(); }, c.ours.pre); }
+      if (c.ours.keys) { /* done */ } else if (c.ours.js) { await page.evaluate((src) => { new Function(src)(); }, c.ours.js); }
       else if (c.ours.key) { await page.locator('#ed-content').focus(); await page.keyboard.press(c.ours.key); } else await page.evaluate((x) => dispatchCommand(x), c.ours.cmd);
       await page.waitForTimeout(250);
       await page.evaluate(({ tail }) => {

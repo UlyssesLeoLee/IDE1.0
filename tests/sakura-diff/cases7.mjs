@@ -1,0 +1,21 @@
+// Undo / Redo 粒度
+const SEED = 'hello world foo\nsecond line\nthird\n';
+const CASES = [];
+const add = (id, sk, keys, o = {}) => CASES.push({ id, sk, ours: { keys }, seed: SEED, ...o });
+const ch = (c) => `S_Char(${c.charCodeAt(0)});`;
+add('UNDO after typing abc', [ch('a'), ch('b'), ch('c'), 'S_Undo();'], ['a', 'b', 'c', 'Control+z'], { cur: [0, 5] });
+add('UNDO x2 after typing abc', [ch('a'), ch('b'), ch('c'), 'S_Undo();', 'S_Undo();'], ['a', 'b', 'c', 'Control+z', 'Control+z'], { cur: [0, 5] });
+add('UNDO after Delete x2', ['S_Delete();', 'S_Delete();', 'S_Undo();'], ['Delete', 'Delete', 'Control+z'], { cur: [0, 5] });
+add('UNDO after Backspace x2', ['S_DeleteBack();', 'S_DeleteBack();', 'S_Undo();'], ['Backspace', 'Backspace', 'Control+z'], { cur: [0, 5] });
+add('UNDO after type, move, type', [ch('a'), 'S_Right();', ch('b'), 'S_Undo();'], ['a', 'ArrowRight', 'b', 'Control+z'], { cur: [0, 5] });
+add('UNDO cut line', ['S_CutLine();', 'S_Undo();'], ['Control+e', 'Control+z'], { cur: [1, 3] });
+add('UNDO sort', ['S_SortAsc();', 'S_Undo();'], ['Alt+a', 'Control+z'], { seed: 'c\nb\na\n', sel: [0, 0, 2, 1] });
+add('UNDO indent', ['S_IndentTab();', 'S_Undo();'], ['Tab', 'Control+z'], { sel: [0, 0, 1, 2] });
+add('REDO after undo typing', [ch('a'), ch('b'), 'S_Undo();', 'S_Redo();'], ['a', 'b', 'Control+z', 'Control+y'], { cur: [0, 5] });
+add('UNDO paste', ['S_Paste();', 'S_Undo();'], ['F9', 'Control+z'], { cur: [0, 5], clip: 'XYZ' });
+add('UNDO typing over selection', [ch('Q'), 'S_Undo();'], ['Q', 'Control+z'], { sel: [0, 2, 0, 6] });
+add('UNDO delete selection then type', ['S_Delete();', ch('Q'), 'S_Undo();'], ['Delete', 'Q', 'Control+z'], { sel: [0, 2, 0, 6] });
+add('UNDO x2 delete sel then type', ['S_Delete();', ch('Q'), 'S_Undo();', 'S_Undo();'], ['Delete', 'Q', 'Control+z', 'Control+z'], { sel: [0, 2, 0, 6] });
+add('UNDO DeleteLine', ['S_DeleteLine();', 'S_Undo();'], ['Control+Shift+e', 'Control+z'], { cur: [1, 3] });
+add('UNDO WordDelete', ['S_WordDelete();', 'S_Undo();'], ['Control+Shift+d', 'Control+z'], { cur: [0, 2] });
+export default CASES;

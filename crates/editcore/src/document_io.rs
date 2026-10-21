@@ -492,11 +492,29 @@ pub fn reinterpret_text(text: &str, encode_as: Charset, decode_as: Charset) -> R
         let list: String = bad.iter().take(8).collect();
         format!("UNMAPPABLE:编码 {} 无法表示这些字符: {}", encode_as.label(), list)
     })?;
+    // UTF-16 解读时字节数是奇数: 最后一个字节凑不成一个码元, Sakura 原样保留成字符 (不变成替换符)
+    if matches!(decode_as, Charset::Utf16Le | Charset::Utf16Be) && bytes.len() % 2 == 1 {
+        let (head, last) = bytes.split_at(bytes.len() - 1);
+        let mut out = decode_document(head, Some(decode_as)).content;
+        out.push(last[0] as char);
+        return Ok(out);
+    }
     Ok(decode_document(&bytes, Some(decode_as)).content)
 }
 
 #[cfg(test)]
 mod reinterpret_tests {
+    use super::*;
+
+    #[test]
+    fn odd_utf16_tail_byte_is_kept() {
+        // Sakura: "abc" を UNICODE として解釈 → "扡c"
+        assert_eq!(reinterpret_text("abc", Charset::ShiftJis, Charset::Utf16Le).unwrap(), "扡c");
+    }
+}
+
+#[cfg(test)]
+mod reinterpret_tests2 {
     use super::*;
 
     #[test]
