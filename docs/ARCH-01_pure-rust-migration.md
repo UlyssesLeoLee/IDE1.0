@@ -295,3 +295,31 @@ Phase 7: JS は描画のみに縮小
 | v1.0.0 | 2026-10-18 | Hermes Agent | 初版 — 純 Rust 化決定を記録、Phase 1-6 を定義、WBS-01 の U-04 を解決 |
 | v1.1.0 | 2026-10-18 | Hermes Agent | NEW-01/02 解決 — **Web 版維持** → 橋は HTTP 拡張、Phase 1 = 8-12 人日で確定 |
 | v1.2.0 | 2026-10-19 | Hermes Agent | 引入 SPA-03 实测: 6 地基 (F1-F6) / 15 键位冲突 / encoding_io 3 硬缺陷；Phase 重排为 P0-P6，键位冲突入 P0，F1/F2 与桥并行
+
+## 10. 实施进度 (2026-10-21)
+
+### 10.1 已迁移 (Phase 1 第一刀)
+
+| 内容 | Rust 位置 | 桥 | 验证 |
+|---|---|---|---|
+| 选区文字变换 (大小写 / 全角半角 / かな / TAB↔空格, 13 个命令) | `editcore::edit_ops::transform_text` | `POST /api/edit_text` · Tauri `edit_text` | 9 条 Rust 单测 + 与真实 Sakura 的差分用例 |
+| 选区涉及整行的变换 (排序 / 去行首尾空白 / 去连续重复 / TAB·空格缩进与反缩进, 9 个命令) | `editcore::edit_ops::transform_lines` | `POST /api/edit_lines` · Tauri `edit_lines` | 同上 |
+| コード変換 (`reinterpret_text`) / MIGEMO 展开 / 外部アウトライン | `editcore::document_io` / `migemo` / `outline_langs` | `/api/reinterpret_text` 等 | Rust 单测 |
+
+前端 (`editor.html`) 在这些命令里只做: 取选区 → 调桥 → 把结果套回文档 (含撤销快照、选区保持)。
+异步命令登记在 `PENDING_OPS`, `dispatchCommand` 返回其 Promise, 测试用 `window.__editIdle()` 等待。
+
+### 10.2 尚在 JS 的编辑逻辑 (约 120 个命令)
+
+光标移动 / 范围选择 / 单词·行删除 / 剪贴板 (含行模式、矩形) / 查找·置换 / 对括弧 / 书签 / 撤销栈 / 矩形选择 / 多光标 / 折叠。
+
+### 10.3 阻塞项: 同步桥
+
+上述命令要**同步**响应按键 (光标一帧内必须移动, 连续按键不能乱序)。HTTP / Tauri invoke 都是异步,
+直接搬会引入竞态 (本轮的 `__editIdle` 只适合"选区变换"这类一次性命令)。可选方案:
+
+1. **editcore 编成 WASM** (wasm32 目标与 wasm-pack 已在本机), Web / Tauri WebView 都能同步调用; 需修改 §5.1 的"不用 wasm"决定。
+2. **文档状态整体放 Rust, 前端只发按键事件、收渲染快照** (异步, 需要前端改成"乐观渲染 + 对账"), 工作量更大。
+3. 维持现状 (同步命令留在 JS, 仅把"可异步"的命令迁到 Rust)。
+
+差分基线 (`tests/sakura-diff`, 186 条, 以真实 Sakura 为准) 已经能在任何一种方案下作为迁移的回归网。
