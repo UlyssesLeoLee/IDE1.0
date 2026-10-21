@@ -4249,49 +4249,7 @@ function legacyMove(t, mode, dir, half) {
 }
 
 // 退格: 合并到上一行 / 行内删除
-function backspace() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  if (t.cursor.col > 0) {
-    const line = curLine(t);
-    // 按 char 删前一个 —— 前一个可能是 surrogate pair, UTF-16 减 1 会只删半个.
-    const arr = charArray(line);
-    t.lines[t.cursor.row] =
-      arr.slice(0, t.cursor.col - 1).join("") + arr.slice(t.cursor.col).join("");
-    t.cursor.col -= 1;
-  } else if (t.cursor.row > 0) {
-    const prev = t.lines[t.cursor.row - 1];
-    t.cursor.col = charLen(prev);
-    t.lines[t.cursor.row - 1] = prev + t.lines[t.cursor.row];
-    t.lines.splice(t.cursor.row, 1);
-    t.cursor.row -= 1;
-  } else {
-    t.undo.pop();
-    return;
-  }
-  t.dirty = true;
-  paintActive();
-}
 
-function insertNewline() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  const line = curLine(t);
-  const head = line.slice(0, t.cursor.col);
-  const tail = line.slice(t.cursor.col);
-  // Enter 自动缩进: 复制前一行前导空白, 行尾 { [ ( 再多一级
-  const indent = PREFS.autoIndent ? (head.match(/^[ \t]*/) || [""])[0] : "";
-  const extra = PREFS.autoIndent && PREFS.smartIndent && /[{[(\s]$/.test(head) ? "  " : "";
-  // 缩进属于「新行」, 不是原行尾部 — 否则 lines[row] 会变成 "xxx\n  " 而新行是空的.
-  t.lines[t.cursor.row] = head;
-  t.lines.splice(t.cursor.row + 1, 0, indent + extra + tail);
-  t.cursor.row += 1;
-  t.cursor.col = (indent + extra).length;
-  t.dirty = true;
-  paintActive();
-}
 
 // NORMAL 模式单字符操作
 function normalDeleteChar() {
@@ -4312,17 +4270,6 @@ function normalDeleteChar() {
   paintActive();
 }
 
-function deleteLine() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  t.lines.splice(t.cursor.row, 1);
-  if (t.lines.length === 0) t.lines.push("");
-  if (t.cursor.row >= t.lines.length) t.cursor.row = t.lines.length - 1;
-  t.cursor.col = 0;
-  t.dirty = true;
-  paintActive();
-}
 
 function doUndo() {
   const t = getActiveTab();
@@ -6364,20 +6311,6 @@ Object.defineProperty(window, "EDIT_CMDS", { get: () => EDIT_CMDS });
    C. 多重光标 / 列选择 / 自动补全 */
 
 /* ---------- A1. 行操作 (传统编辑器逐行增删/复制/移动) ---------- */
-function moveLines(delta) {
-  const t = getActiveTab();
-  if (!t) return;
-  const from = t.cursor.row;
-  const to = from + delta;          // delta<0 上移, >0 下移 (与菜单语义一致)
-  if (to < 0 || to >= t.lines.length) return;
-  snapshot(t);
-  const [line] = t.lines.splice(from, 1);
-  t.lines.splice(to, 0, line);
-  t.cursor.row = to;
-  t.dirty = true;
-  renderVim(t);
-  setTip("移动行: Ln " + (from + 1) + " → Ln " + (to + 1));
-}
 
 function copyLinesUp() { copyLines(1); }
 function copyLinesDown() { copyLines(-1); }
@@ -6393,71 +6326,12 @@ function copyLines(dir) {
   renderVim(t);
 }
 
-function addLineAbove() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  const indent = (t.lines[t.cursor.row].match(/^[ \t]*/) || [""])[0];
-  t.lines.splice(t.cursor.row, 0, indent);
-  t.cursor.row = t.cursor.row;
-  t.cursor.col = charLen(indent);
-  t.dirty = true;
-  renderVim(t);
-}
-function addLineBelow() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  const indent = (t.lines[t.cursor.row].match(/^[ \t]*/) || [""])[0];
-  t.lines.splice(t.cursor.row + 1, 0, indent);
-  t.cursor.row += 1;
-  t.cursor.col = indent.length;
-  t.dirty = true;
-  renderVim(t);
-}
 
 // 删除光标**上方**那一行 (光标行不动)
-function deleteLineUp() {
-  const t = getActiveTab();
-  if (!t) return;
-  if (t.cursor.row === 0) { setTip("已在首行, 上方无可删"); return; }
-  snapshot(t);
-  t.lines.splice(t.cursor.row - 1, 1);
-  t.cursor.row -= 1;
-  t.cursor.col = 0;
-  if (t.lines.length === 0) t.lines.push("");
-  t.dirty = true;
-  renderVim(t);
-  setTip("已删除上方行");
-}
 
 // 删除光标**下方**那一行 (光标行不动)
-function deleteLineDown() {
-  const t = getActiveTab();
-  if (!t) return;
-  if (t.cursor.row >= t.lines.length - 1) { setTip("已在末行, 下方无可删"); return; }
-  snapshot(t);
-  t.lines.splice(t.cursor.row + 1, 1);
-  if (t.lines.length === 0) t.lines.push("");
-  t.cursor.col = 0;
-  t.dirty = true;
-  renderVim(t);
-  setTip("已删除下方行");
-}
 
 // 合并上一行 (把当前行并到上行)
-function joinWithPrev() {
-  const t = getActiveTab();
-  if (!t || t.cursor.row === 0) return;
-  snapshot(t);
-  const cur = t.lines[t.cursor.row];
-  const prev = t.lines[t.cursor.row - 1];
-  t.cursor.col = charLen(prev);
-  t.lines[t.cursor.row - 1] = prev + cur.trimStart();
-  t.lines.splice(t.cursor.row, 1);
-  t.dirty = true;
-  renderVim(t);
-}
 
 /* ---------- A1-b. Sakura 增删改 (F_CUT_LINE / F_LineCutToStart / F_LineDeleteToStart / F_LineDeleteToEnd)
 
@@ -6476,103 +6350,21 @@ function joinWithPrev() {
 
 // 剪切整行 (F_CUT_LINE, HLP000174): 删掉光标所在行, 文本进剪贴板.
 // 删到只剩 1 行时补一个空行 —— 文档必须永远至少有 1 行可编辑 (与既有 deleteLine 一致).
-function cutLine() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  const row = t.cursor.row;
-  const cut = t.lines[row] === undefined ? "" : t.lines[row];
-  t.lines.splice(row, 1);
-  if (t.lines.length === 0) t.lines.push("");
-  if (t.cursor.row >= t.lines.length) t.cursor.row = t.lines.length - 1;
-  t.cursor.col = 0;
-  t.dirty = true;
-  renderVim(t);
-  pushClip(cut);
-  setTip("已剪切整行: " + (cut.length ? cut.slice(0, 40) : "(空行)"));
-}
 
 // 剪切到行首 (F_LineCutToStart, HLP000172): 光标到行首之间剪掉.
 // col 已在行首时无内容可剪, 直接不动 (Sakura 同: 空选区不产生剪贴板).
-function cutToLineStart() {
-  const t = getActiveTab();
-  if (!t) return;
-  const col = Math.min(t.cursor.col, charLen(curLine(t)));
-  if (col <= 0) { setTip("光标已在行首, 无可剪内容"); return; }
-  snapshot(t);
-  const line = curLine(t);
-  t.lines[t.cursor.row] = charSlice(line, col, charLen(line));
-  t.cursor.col = 0;
-  t.dirty = true;
-  renderVim(t);
-  pushClip(charSlice(line, 0, col));
-  setTip("已剪切到行首 (" + col + " 字符)");
-}
 
 // 删到行首 (F_LineDeleteToStart, HLP000170): 剪切到行首但不进剪贴板.
-function deleteToLineStart() {
-  const t = getActiveTab();
-  if (!t) return;
-  const col = Math.min(t.cursor.col, charLen(curLine(t)));
-  if (col <= 0) { setTip("光标已在行首, 无可删内容"); return; }
-  snapshot(t);
-  const line = curLine(t);
-  t.lines[t.cursor.row] = charSlice(line, col, charLen(line));
-  t.cursor.col = 0;
-  t.dirty = true;
-  renderVim(t);
-  setTip("已删除到行首 (" + col + " 字符)");
-}
 
 // 删到行末 (F_LineDeleteToEnd, HLP000171): 光标到行末之间删掉, 不动换行符.
 // 光标在行末时什么都不删 —— 与上游一致 (Sakura 不在这里吞掉换行, 那是「删除整行」).
-function deleteToLineEnd() {
-  const t = getActiveTab();
-  if (!t) return;
-  const line = curLine(t);
-  const col = Math.min(t.cursor.col, charLen(line));
-  if (col >= charLen(line)) { setTip("光标已在行末, 无可删内容"); return; }
-  snapshot(t);
-  t.lines[t.cursor.row] = charSlice(line, 0, col);
-  t.dirty = true;
-  renderVim(t);
-  setTip("已删除到行末 (" + (charLen(line) - col) + " 字符)");
-}
 
 // 删到词首 (F_WordDeleteToStart, HLP000166): Ctrl+Backspace.
 // 复用 wordLeft —— 那是本项目已经对齐 Sakura 语义的边界函数 (词首, 跨过分隔符).
-function deleteToWordStart() {
-  const t = getActiveTab();
-  if (!t) return;
-  const line = curLine(t);
-  const from = Math.min(t.cursor.col, charLen(line));
-  const to = wordLeft(line, from);
-  if (from <= 0 || to >= from) { setTip("光标已在词首, 无可删内容"); return; }
-  snapshot(t);
-  t.lines[t.cursor.row] = charSlice(line, 0, to) + charSlice(line, from, charLen(line));
-  t.cursor.col = to;
-  t.dirty = true;
-  renderVim(t);
-  setTip("已删除到词首 (" + (from - to) + " 字符)");
-}
 
 // 删到词尾 (F_WordDeleteToEnd, HLP000167): 上游绑 Ctrl+Delete.
 // ⚠️ 本项目 Ctrl+Delete 原本是「删除下方行」(菜单上写死, 有 UAT 覆盖), 且 Alt+Delete
 // 才是上游键位而 Alt+D 是本项目的文件菜单助记 —— 所以这条只提供函数 + 菜单入口, 不抢键位.
-function deleteToWordEnd() {
-  const t = getActiveTab();
-  if (!t) return;
-  const line = curLine(t);
-  const from = Math.min(t.cursor.col, charLen(line));
-  const to = wordRight(line, from);
-  if (from >= charLen(line) || to <= from) { setTip("光标已在词尾, 无可删内容"); return; }
-  snapshot(t);
-  t.lines[t.cursor.row] = charSlice(line, 0, from) + charSlice(line, to, charLen(line));
-  t.cursor.col = from;
-  t.dirty = true;
-  renderVim(t);
-  setTip("已删除到词尾 (" + (to - from) + " 字符)");
-}
 
 /* ---------- A1-c. Sakura 其余增删改 (F_LTRIM / F_RTRIM / F_UNIQ / F_INDENT) ----------
 
@@ -8168,16 +7960,7 @@ for (const n of ["openGotoLine", "tagJump", "bookmarkNext", "bookmarkPrev", "got
 }
 
 const SAKURA_CMDS = {
-  "word-cut": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) cutSelection(); },
-  "word-delete": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) { deleteSelection(t); t.selAnchor = null; paintActive(); } },
   "select-word": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) { renderVim(t); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1)); } },
-  "line-cut-to-end": () => {
-    const t = getActiveTab(), r = t.cursor.row, len = charLen(t.lines[r] || "");
-    if (t.cursor.col < len) t.sel = { r0: r, c0: t.cursor.col, r1: r, c1: len };
-    else if (r < t.lines.length - 1) t.sel = { r0: r, c0: len, r1: r + 1, c1: 0 };     // 行尾再按: 连换行一起剪 (合并下一行)
-    else return;
-    cutSelection(); t.selAnchor = null; paintActive();
-  },
   "cur-line-center": () => {
     const t = getActiveTab(), lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
     edContent.scrollTop = Math.max(0, t.cursor.row * lh - edContent.clientHeight / 2 + lh);
@@ -9752,43 +9535,6 @@ CFG_CMDS["unindent-space"] = () => spaceIndent(true);
 /* ===== 第二批对齐 (Sakura 实测) ===== */
 function firstWordCol(line) { const a = charArray(line); let i = 0; while (i < a.length && !isWordChar(a[i])) i++; return i >= a.length ? 0 : i; }
 // 单词 / 行删除在行首行末的换行处理: 删到词首在行首 = 与上一行合并; 删到词尾在行末 = 与下一行合并并吃掉下一行开头的空白 (到下一个词首)
-deleteToWordStart = function () {
-  const t = getActiveTab(); if (!t) return;
-  const line = curLine(t), from = Math.min(t.cursor.col, charLen(line));
-  if (from === 0) {
-    if (t.cursor.row === 0) { setTip("光标已在词首, 无可删内容"); return; }
-    snapshot(t);
-    const prev = t.lines[t.cursor.row - 1];
-    t.lines.splice(t.cursor.row - 1, 2, prev + line);
-    t.cursor = { row: t.cursor.row - 1, col: charLen(prev) }; t.sel = null; t.dirty = true; renderVim(t); return;
-  }
-  const to = wordLeft(line, from);
-  if (to >= from) return;
-  snapshot(t);
-  t.lines[t.cursor.row] = charSlice(line, 0, to) + charSlice(line, from, charLen(line));
-  t.cursor.col = to; t.sel = null; t.dirty = true; renderVim(t);
-};
-deleteToWordEnd = function () {
-  const t = getActiveTab(); if (!t) return;
-  const line = curLine(t), from = Math.min(t.cursor.col, charLen(line));
-  if (from >= charLen(line)) {
-    if (t.cursor.row >= t.lines.length - 1) { setTip("光标已在词尾, 无可删内容"); return; }
-    snapshot(t);
-    const next = t.lines[t.cursor.row + 1], skip = firstWordCol(next);
-    t.lines.splice(t.cursor.row, 2, line + charSlice(next, skip));
-    t.sel = null; t.dirty = true; renderVim(t); return;
-  }
-  const to = wordRight(line, from);
-  if (to <= from) return;
-  snapshot(t);
-  t.lines[t.cursor.row] = charSlice(line, 0, from) + charSlice(line, to, charLen(line));
-  t.sel = null; t.dirty = true; renderVim(t);
-};
-SAKURA_CMDS["line-cut-to-end"] = () => {
-  const t = getActiveTab(), r = t.cursor.row, len = charLen(t.lines[r] || "");
-  if (t.cursor.col >= len) { setTip("光标已在行末, 无可剪内容"); return; }       // Sakura: 行末再按什么也不做 (不吃换行)
-  t.sel = { r0: r, c0: t.cursor.col, r1: r, c1: len }; cutSelection(); t.selAnchor = null; paintActive();
-};
 // 选择单词: 光标所在字符类的连续段 (单词字符 / 空白 / 其它符号); 在行末 = 选整行 (含换行)
 selectWordAtCursor = function (t) {
   const line = t.lines[t.cursor.row] || "", a = charArray(line), col = Math.min(t.cursor.col, a.length);
@@ -9811,36 +9557,7 @@ selectWordAtCursor = function (t) {
   return true;
 };
 // 复制行 / 行操作之后选区的收尾: ltrim / rtrim 选区止于最后一行的行末 (不含换行); 复制行 (Ctrl+I) 之后没有选区
-{
-  const _dup = duplicateLine;
-  duplicateLine = function () { _dup.apply(this, arguments); const t = getActiveTab(); if (t) { t.sel = null; t.selAnchor = null; } };
-}
 
-/* ===== 第三批对齐 (Sakura 实测): 有选区时「行首/行尾 剪切·删除」只处理选区; 词删除/词剪切在行末什么也不做 ===== */
-{
-  const wrapSel = (orig, cut) => {
-    const wrapped = function () {
-      const t = getActiveTab();
-      if (t && selNonEmpty(t) && !t.colSel) { if (cut) cutSelection(); else deleteSelection(t); t.selAnchor = null; t.sel = null; renderVim(t); return; }
-      return orig.apply(this, arguments);
-    };
-    return wrapped;
-  };
-  cutToLineStart = wrapSel(cutToLineStart, true);
-  deleteToLineStart = wrapSel(deleteToLineStart, false);
-  deleteToLineEnd = wrapSel(deleteToLineEnd, false);
-  const _lcte = SAKURA_CMDS["line-cut-to-end"];
-  SAKURA_CMDS["line-cut-to-end"] = function () {
-    const t = getActiveTab();
-    if (t && selNonEmpty(t) && !t.colSel) { cutSelection(); t.selAnchor = null; t.sel = null; renderVim(t); return; }
-    return _lcte.apply(this, arguments);
-  };
-  const atEol = (t) => t && !selNonEmpty(t) && t.cursor.col >= charLen(t.lines[t.cursor.row] || "");
-  const _wc = SAKURA_CMDS["word-cut"], _wd = SAKURA_CMDS["word-delete"];
-  const joinNext = (t) => { if (t.cursor.row >= t.lines.length - 1) return; snapshot(t); t.lines.splice(t.cursor.row, 2, t.lines[t.cursor.row] + t.lines[t.cursor.row + 1]); t.dirty = true; renderVim(t); };   // Sakura: 行末的词删除 = 删掉换行
-  SAKURA_CMDS["word-cut"] = function () { const t = getActiveTab(); if (atEol(t)) return joinNext(t); return _wc.apply(this, arguments); };
-  SAKURA_CMDS["word-delete"] = function () { const t = getActiveTab(); if (atEol(t)) return joinNext(t); return _wd.apply(this, arguments); };
-}
 
 /* ===== ARCH-01: 删除 / 剪切 / 复制行 类命令的语义在 Rust (editcore::edit_cmd) =====
    前端交上光标周围几行与选区, Rust 返回"把第 start 行起的 remove 行换成 insert + 新光标 + 要写进剪贴板的文字", 这里套回文档。 */
@@ -9875,22 +9592,22 @@ function runEdit(cmd) {
     renderVim(t);
   });
 }
-backspace = () => runEdit("backspace");
-cutToLineStart = () => runEdit("cut-line-start");
-deleteToLineStart = () => runEdit("delete-line-to-start");
-deleteToLineEnd = () => runEdit("delete-line-to-end");
-deleteToWordStart = () => runEdit("delete-word-start");
-deleteToWordEnd = () => runEdit("delete-word-end");
-cutLine = () => runEdit("cut-line");
-deleteLine = () => runEdit("delete-line");
-duplicateLine = () => runEdit("duplicate-line");
-insertNewline = () => runEdit("new-line");
-addLineAbove = () => runEdit("add-line-above");
-addLineBelow = () => runEdit("add-line-below");
-deleteLineUp = () => runEdit("delete-line-up");
-deleteLineDown = () => runEdit("delete-line-down");
-joinWithPrev = () => runEdit("join-with-prev");
-moveLines = (delta) => runEdit(delta < 0 ? "move-line-up" : "move-line-down");
+function backspace() { return runEdit("backspace"); }
+function cutToLineStart() { return runEdit("cut-line-start"); }
+function deleteToLineStart() { return runEdit("delete-line-to-start"); }
+function deleteToLineEnd() { return runEdit("delete-line-to-end"); }
+function deleteToWordStart() { return runEdit("delete-word-start"); }
+function deleteToWordEnd() { return runEdit("delete-word-end"); }
+function cutLine() { return runEdit("cut-line"); }
+function deleteLine() { return runEdit("delete-line"); }
+function duplicateLine() { return runEdit("duplicate-line"); }
+function insertNewline() { return runEdit("new-line"); }
+function addLineAbove() { return runEdit("add-line-above"); }
+function addLineBelow() { return runEdit("add-line-below"); }
+function deleteLineUp() { return runEdit("delete-line-up"); }
+function deleteLineDown() { return runEdit("delete-line-down"); }
+function joinWithPrev() { return runEdit("join-with-prev"); }
+function moveLines(delta) { return runEdit(delta < 0 ? "move-line-up" : "move-line-down"); }
 SAKURA_CMDS["word-cut"] = () => runEdit("word-cut");
 SAKURA_CMDS["word-delete"] = () => runEdit("word-delete");
 SAKURA_CMDS["line-cut-to-end"] = () => runEdit("line-cut-to-end");
@@ -10283,15 +10000,6 @@ function pasteText(raw) {
   setTip("已粘贴 " + text.length + " 字符");
 }
 
-function duplicateLine() {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  t.lines.splice(t.cursor.row + 1, 0, t.lines[t.cursor.row]);
-  t.cursor.row += 1;
-  t.dirty = true;
-  renderVim(t);
-}
 
 function insertCurrentDate() {
   const t = getActiveTab();
