@@ -102,6 +102,7 @@ export async function withApp(opts, fn) {
 
 /** 当前标签页状态 (只读). */
 export async function snap(page) {
+  await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null)).catch(() => {});   // 经 Rust 桥的操作是异步的: 先等它们落地再取快照
   return page.evaluate(() => {
     const t = (window.getActiveTab && window.getActiveTab()) || null;
     const el = (id) => document.getElementById(id);

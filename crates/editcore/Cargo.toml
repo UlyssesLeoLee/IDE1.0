@@ -16,6 +16,8 @@ encoding_rs = "0.8"
 # grep 内容搜索的 SIMD 原语 —— ripgrep 自己就用它. 纯 safe API (内部 unsafe 不算我们的
 # unsafe_code = forbid), 且已在 Cargo.lock 里 (被 regex/aho-corasick 间接带入), 不引新下载.
 memchr = "2.7"
+# 文档内查找 / 置換 (search_ops) 的正则; 已在 Cargo.lock 里且已被编译 (不新增下载)
+regex = "1"
 # 读 Windows 注册表 AppsUseLightTheme 判断桌面明暗 (纯 safe Rust)
 windows-registry = { version = "0.3", features = ["std"] }
 

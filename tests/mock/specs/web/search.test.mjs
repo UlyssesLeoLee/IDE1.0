@@ -21,7 +21,7 @@ test('查找: 光标处命中也算; 大小写 / 单词单位 / 正则 / 上下�
     assert.match((await snap()).status.tip, /4\/4/);                 // food 被单词单位排除
     await press('Control+f'); await page.uncheck('#find-word'); await page.check('#find-regex'); await page.fill('#find-input', 'fo+d?'); await page.keyboard.press('Escape');
     await press('Control+Home'); await press('F3');
-    assert.equal(await page.evaluate(() => FIND_STATE.hits.length), 5);
+    assert.equal(await page.evaluate(() => FIND_STATE.total), 5);
     await press('Shift+F3'); assert.match((await snap()).status.tip, /末尾から再検索|5\/5|1\/5/);
   }));
 

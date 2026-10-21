@@ -516,11 +516,11 @@ test.describe("命令审计 (功能覆盖)", () => {
     await page.locator('.tree-node:has-text("README")').click();
     await waitForTab(page);
 
-    const hits = await page.evaluate(() => {
+    const hits = await page.evaluate(async () => {   // 匹配在 Rust (经桥), findInTab 是异步的
       const t = (window as any).activeTab();
       t.lines = ["alpha beta", "gamma alpha", "alpha"];
       (window as any).renderVim(t);
-      return (window as any).findInTab(t, "alpha", { matchCase: false });
+      return (await (window as any).findInTab(t, "alpha", { matchCase: false })).hits;
     });
     expect(hits.length).toBe(3);
     expect(hits[0]).toMatchObject({ row: 0, col: 0 });
@@ -533,7 +533,7 @@ test.describe("命令审计 (功能覆盖)", () => {
       holder.id = "repl-input";
       holder.value = "DELTA";
       document.body.appendChild(holder);
-      (window as any).replaceAll();
+      await (window as any).replaceAll();
       holder.remove();
       return (window as any).activeTab().lines;
     });

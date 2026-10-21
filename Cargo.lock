@@ -1533,6 +1533,7 @@ version = "0.0.1"
 dependencies = [
  "encoding_rs",
  "memchr",
+ "regex",
  "serde",
  "serde_json",
  "wasmtime",

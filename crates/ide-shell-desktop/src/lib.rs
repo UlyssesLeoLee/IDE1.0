@@ -648,6 +648,7 @@ pub fn run() {
             edit_text,
             edit_lines,
             nav_step,
+            search_text,
             bookmark,
             bracket_pair,
             edit_cmd,
@@ -751,6 +752,14 @@ fn bookmark(options: editcore::bookmark::BmReq) -> Result<serde_json::Value, Str
     editcore::bookmark::run(&options)
         .map(|r| serde_json::to_value(r).unwrap_or_default())
         .ok_or_else(|| "未知的书签操作".to_string())
+}
+
+/// 文档内查找 / 置換 (web 版 /api/search_text 同一语义)
+#[tauri::command]
+fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::Value, String> {
+    editcore::search_ops::run(&options)
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .ok_or_else(|| "未知的查找操作".to_string())
 }
 
 /// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}

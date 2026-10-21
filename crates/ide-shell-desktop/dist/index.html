@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -5383,31 +5383,29 @@ async function triggerAutoBackup() {
 // 当前 tab 内查找 (返回 [{row, col, len}])
 const escapeRegexSrc = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // 按 FIND_STATE 选项生成正则; 非法正则返回 null
-function buildFindRegex(o, global = true) {
-  if (!o.needle) return null;
-  let src = o.useRegex ? o.needle : escapeRegexSrc(o.needle);
-  if (o.wholeWord) src = "(?<![\\p{L}\\p{N}_])(?:" + src + ")(?![\\p{L}\\p{N}_])";
-  const flags = (global ? "g" : "") + (o.matchCase ? "" : "i");
-  try { return new RegExp(src, flags + "u"); } catch (_) { /* u 模式下非法转义 (如 \- ) 退回非 u */ }
-  try { return new RegExp(src.replace(/\\p\{L\}\\p\{N\}/g, "A-Za-z0-9"), flags); } catch (_) { return null; }
+/* 文档内查找 / 置換的匹配语义在 Rust (editcore::search_ops, /api/search_text · Tauri search_text);
+   这里只负责打包请求 (整篇文本 + 查找条件) 和把结果套回编辑区。列一律按码点。 */
+function searchRequest(op, extra) {
+  const t = getActiveTab();
+  return Object.assign({ op, needle: FIND_STATE.needle || "", whole_word: !!FIND_STATE.wholeWord, match_case: !!FIND_STATE.matchCase, use_regex: !!FIND_STATE.useRegex, lines: t && op !== "validate" ? t.lines : [] }, extra || {});
 }
-// 列 / 长度一律按码点 (与光标列一致), 不是 UTF-16
-function findInTab(t, needle, opts) {
-  if (!t || !needle) return [];
-  const re = buildFindRegex(Object.assign({}, opts, { needle }));
-  if (!re) return [];
-  const out = [];
-  for (let r = 0; r < t.lines.length; r++) {
-    const line = t.lines[r];
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(line))) {
-      if (m[0] === "") { re.lastIndex++; continue; }                          // 空匹配不算命中
-      out.push({ row: r, col: charLen(line.slice(0, m.index)), len: charLen(m[0]), text: m[0] });
-      if (out.length > 5000) return out;
-    }
+function searchText(op, extra) { return invoke("search_text", searchRequest(op, extra)); }
+async function findInTab(t, needle, opts) {
+  if (!t || !needle) return { hits: [], error: null };
+  const saved = FIND_STATE.needle; // searchRequest 读 FIND_STATE; 调用方传入的 needle / opts 优先
+  const r = await invoke("search_text", { op: "hits", needle, whole_word: !!opts.wholeWord, match_case: !!opts.matchCase, use_regex: !!opts.useRegex, lines: t.lines });
+  return { hits: r.hits || [], error: r.error || null };
+}
+// 搜索标记用的命中缓存 (异步计算, 算完再重绘一次)
+let FM_CACHE = { key: "", hits: [], busy: false };
+function findHitsCached(t) {
+  const key = [t.id, t.lines.length, t.undo ? t.undo.length : 0, t.redo ? t.redo.length : 0, FIND_STATE.needle, FIND_STATE.wholeWord, FIND_STATE.matchCase, FIND_STATE.useRegex].join("\u0001");
+  if (FM_CACHE.key === key) return FM_CACHE.hits;
+  if (!FM_CACHE.busy) {
+    FM_CACHE.busy = true;
+    findInTab(t, FIND_STATE.needle, FIND_STATE).then((r) => { FM_CACHE = { key, hits: r.hits, busy: false }; scheduleMarks(); }).catch(() => { FM_CACHE.busy = false; });
   }
-  return out;
+  return FM_CACHE.key === key ? FM_CACHE.hits : [];
 }
 
 function gotoHit(hit) {
@@ -5423,32 +5421,22 @@ function gotoHit(hit) {
 
 // dir: 1 下 / -1 上. 到头后按「先頭(末尾)から再検索」选项循环
 function findStep(dir) {
-  const t = getActiveTab();
-  if (!t) return;
-  if (!FIND_STATE.needle) { openFind(); return; }
-  if (!buildFindRegex(FIND_STATE)) { setTip("正则表达式无效: " + FIND_STATE.needle); return; }
-  const hits = findInTab(t, FIND_STATE.needle, FIND_STATE);
-  FIND_STATE.hits = hits;
-  if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); scheduleMarks(); return; }
-  const cr = t.cursor.row;
-  let cc = t.cursor.col;
-  if (dir > 0 && FIND_STATE.wholeWord && cc > 0) {          // Sakura: 单词单位搜索时, 光标在词中 -> 从该词词首起找 (命中当前词本身)
-    const a = charArray(t.lines[cr] || "");
-    if (isWordChar(a[cc - 1] || "") && isWordChar(a[cc] || "")) { while (cc > 0 && isWordChar(a[cc - 1])) cc--; }
-  }
-  let idx = -1, wrapped = false;
-  // 当前命中正被选中时从它的「下一处」找; 否则 (光标只是停在那里) 光标位置上的命中本身也算
-  const onHit = t.sel && t.sel.r0 === cr && t.sel.c0 === cc;
-  if (dir > 0) {
-    idx = hits.findIndex((h) => h.row > cr || (h.row === cr && (onHit ? h.col > cc : h.col >= cc)));
-    if (idx < 0) { if (!FIND_STATE.wrap) { setTip("これ以上見つかりません (末尾)"); return; } idx = 0; wrapped = true; }
-  } else {
-    for (let i = hits.length - 1; i >= 0; i--) if (hits[i].row < cr || (hits[i].row === cr && hits[i].col < cc)) { idx = i; break; }
-    if (idx < 0) { if (!FIND_STATE.wrap) { setTip("これ以上見つかりません (先頭)"); return; } idx = hits.length - 1; wrapped = true; }
-  }
-  FIND_STATE.idx = idx;
-  gotoHit(hits[idx]);
-  setTip((wrapped ? (dir > 0 ? "先頭から再検索しました — " : "末尾から再検索しました — ") : "") + "找到 " + (idx + 1) + "/" + hits.length);
+  return enqueueInput(async () => {
+    const t = getActiveTab();
+    if (!t) return;
+    if (!FIND_STATE.needle) { openFind(); return; }
+    let r;
+    try {
+      r = await searchText("step", { row: t.cursor.row, col: t.cursor.col, forward: dir > 0, wrap: !!FIND_STATE.wrap,
+        sel_start: t.sel && t.sel.r0 === t.cursor.row ? [t.sel.r0, t.sel.c0] : null });
+    } catch (e) { setTip("查找失败: " + e.message); return; }
+    if (r.error) { setTip("正则表达式无效: " + FIND_STATE.needle); return; }
+    if (!r.total) { setTip("未找到: " + FIND_STATE.needle); scheduleMarks(); return; }
+    if (!r.hit) { setTip(dir > 0 ? "これ以上見つかりません (末尾)" : "これ以上見つかりません (先頭)"); return; }
+    FIND_STATE.idx = r.index; FIND_STATE.total = r.total;
+    gotoHit(r.hit);
+    setTip((r.wrapped ? (dir > 0 ? "先頭から再検索しました — " : "末尾から再検索しました — ") : "") + "找到 " + (r.index + 1) + "/" + r.total);
+  });
 }
 function findNext() { findStep(1); }
 function findPrev() { findStep(-1); }
@@ -5484,7 +5472,7 @@ function openFindDialog(withReplace) {
     FIND_STATE.wrap = g("find-wrap").checked; FIND_STATE.marks = g("find-marks").checked;
     const sc = document.querySelector('input[name="find-scope"]:checked'); if (sc) FIND_STATE.scope = sc.value;
     const st = g("find-status");
-    if (st) st.textContent = FIND_STATE.needle && !buildFindRegex(FIND_STATE) ? "正则表达式无效" : "";
+    if (st) { st.textContent = ""; if (FIND_STATE.needle && FIND_STATE.useRegex) searchText("validate").then((r) => { if (st.isConnected) st.textContent = r.error ? "正则表达式无效" : ""; }).catch(() => {}); }
     scheduleMarks();
   };
   const el = document.getElementById("find-input");
@@ -5505,80 +5493,61 @@ function openFind() { openFindDialog(false); }
 function openReplace() { openFindDialog(true); }
 
 // 替换文本展开: 正则模式支持 $1 / \1 / $&; 非正则按字面量
-function expandReplacement(m, repl) {
-  if (!FIND_STATE.useRegex) return repl;
-  return repl.replace(/\$(\d+|&)|\\(\d)/g, (_, a, b) => { const k = a !== undefined ? a : b; return k === "&" ? m[0] : (m[+k] ?? ""); });
-}
-function replaceInLine(line, re, repl, from = 0, to = Infinity) {
-  let out = "", at = 0, n = 0, m, end = 0;
-  re.lastIndex = 0;
-  while ((m = re.exec(line))) {
-    if (m[0] === "") { re.lastIndex++; continue; }
-    const col = charLen(line.slice(0, m.index));
-    if (col < from || col + charLen(m[0]) > to) continue;
-    out += line.slice(at, m.index) + expandReplacement(m, repl);
-    at = m.index + m[0].length; n++; end = charLen(out);
-  }
-  return { text: out + line.slice(at), n, end };
-}
-
 // 置換 (一个): 当前选区正好是一处命中就替换它, 然后找下一个; 否则先定位到下一处
 function replaceOne() {
-  const t = getActiveTab();
-  const rp = document.getElementById("repl-input");
-  if (!t) return;
-  if (!FIND_STATE.needle) { setTip("先输入查找内容"); return; }
-  const re = buildFindRegex(FIND_STATE);
-  if (!re) { setTip("正则表达式无效"); return; }
-  if (selNonEmpty(t) && t.sel.r0 === t.sel.r1) {
-    const line = t.lines[t.sel.r0], seg = charSlice(line, t.sel.c0, t.sel.c1);
-    const one = buildFindRegex(FIND_STATE, false);
-    const m = one && one.exec(seg);
-    if (m && m[0] === seg) {
-      snapshot(t);
-      const rep = expandReplacement(m, rp ? rp.value : "");
-      t.lines[t.sel.r0] = charSlice(line, 0, t.sel.c0) + rep + charSlice(line, t.sel.c1);
-      t.cursor = { row: t.sel.r0, col: t.sel.c0 + charLen(rep) - (charLen(rep) ? 1 : 0) };   // 落在替换文本最后一个字符上, findNext 取「严格在其后」的命中
-      t.sel = null; t.dirty = true;
-      if (charLen(rep)) t.cursor.col += 0; else t.cursor.col = Math.max(0, t.cursor.col - 1);
-      renderVim(t);
+  return enqueueInput(async () => {
+    const t = getActiveTab();
+    const rp = document.getElementById("repl-input");
+    if (!t) return;
+    if (!FIND_STATE.needle) { setTip("先输入查找内容"); return; }
+    if (selNonEmpty(t) && t.sel.r0 === t.sel.r1) {
+      const line = t.lines[t.sel.r0], seg = charSlice(line, t.sel.c0, t.sel.c1);
+      let r;
+      try { r = await searchText("match_expand", { seg, repl: rp ? rp.value : "" }); } catch (e) { setTip("置換失败: " + e.message); return; }
+      if (r.error) { setTip("正则表达式无效"); return; }
+      if (r.text !== null && r.text !== undefined) {
+        snapshot(t);
+        const rep = r.text;
+        t.lines[t.sel.r0] = charSlice(line, 0, t.sel.c0) + rep + charSlice(line, t.sel.c1);
+        t.cursor = { row: t.sel.r0, col: t.sel.c0 + charLen(rep) - (charLen(rep) ? 1 : 0) };   // 落在替换文本最后一个字符上, findNext 取「严格在其后」的命中
+        t.sel = null; t.dirty = true;
+        if (!charLen(rep)) t.cursor.col = Math.max(0, t.cursor.col - 1);
+        renderVim(t);
+      }
     }
-  }
-  findNext();
+  }).then(() => findNext());
 }
 
 // 全部替换: scope = sel (选择范围) / all (文件全体)
 function replaceAll() {
-  const t = getActiveTab();
-  const rp = document.getElementById("repl-input");
-  const needle = FIND_STATE.needle;
-  if (!t) return;
-  if (!needle) { setTip("先输入查找内容"); return; }
-  const re = buildFindRegex(FIND_STATE);
-  if (!re) { setTip("正则表达式无效"); return; }
-  const withText = rp ? rp.value : "";
-  const sc = document.querySelector('input[name="find-scope"]:checked');
-  const scope = sc ? sc.value : FIND_STATE.scope;
-  let r0 = 0, r1 = t.lines.length - 1, c0 = 0, c1 = Infinity;
-  if (scope === "sel" && selNonEmpty(t)) { r0 = t.sel.r0; r1 = t.sel.r1; c0 = t.sel.c0; c1 = t.sel.c1 === Infinity ? Infinity : t.sel.c1; }
-  let count = 0;
-  let lastRow = -1, lastEnd = 0;
-  const inSel = scope === "sel" && selNonEmpty(t), tailLen = inSel ? charLen(t.lines[r1]) - (c1 === Infinity ? charLen(t.lines[r1]) : c1) : 0;
-  snapshot(t);
-  for (let r = r0; r <= r1; r++) {
-    const from = r === r0 ? c0 : 0;
-    const to = r === r1 ? c1 : Infinity;
-    const res = replaceInLine(t.lines[r], re, withText, from, to);
-    if (res.n) { t.lines[r] = res.text; count += res.n; lastRow = r; lastEnd = res.end; }
-  }
-  if (count > 0) {
-    t.dirty = true; t.sel = null;
-    if (inSel) { const ec = charLen(t.lines[r1]) - tailLen; t.sel = { r0, c0, r1, c1: ec }; t.selAnchor = { row: r0, col: c0 }; t.cursor = { row: r1, col: ec }; }   // Sakura: 选区范围内置换后选区保留
-    else if (lastRow >= 0) t.cursor = FIND_STATE.useRegex ? { row: Math.min(lastRow + 1, t.lines.length - 1), col: 0 } : { row: lastRow, col: lastEnd };   // Sakura: 光标停在最后一处置换之后 (正则模式停在下一行行首)
-    renderVim(t);
-  }
-  closeModal();
-  setTip("置換 " + count + " 処");
+  return enqueueInput(async () => {
+    const t = getActiveTab();
+    const rp = document.getElementById("repl-input");
+    if (!t) return;
+    if (!FIND_STATE.needle) { setTip("先输入查找内容"); return; }
+    const sc = document.querySelector('input[name="find-scope"]:checked');
+    const scope = sc ? sc.value : FIND_STATE.scope;
+    const inSel = scope === "sel" && selNonEmpty(t);
+    const sel = inSel ? [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1] : null;
+    const tailLen = inSel ? charLen(t.lines[sel[2]] || "") - sel[3] : 0;
+    let r;
+    try { r = await searchText("replace_all", { repl: rp ? rp.value : "", sel }); } catch (e) { setTip("置換失败: " + e.message); closeModal(); return; }
+    if (r.error) { setTip("正则表达式无效"); return; }
+    if (r.count > 0) {
+      snapshot(t);
+      for (const [row, text] of r.rows) t.lines[row] = text;
+      t.dirty = true; t.sel = null;
+      if (inSel) {                                                                             // Sakura: 选区范围内置换后选区保留
+        const ec = charLen(t.lines[sel[2]]) - tailLen;
+        t.sel = { r0: sel[0], c0: sel[1], r1: sel[2], c1: ec }; t.selAnchor = { row: sel[0], col: sel[1] }; t.cursor = { row: sel[2], col: ec };
+      } else if (r.last_row !== null && r.last_row !== undefined) {                            // Sakura: 光标停在最后一处置換之后 (正则模式停在下一行行首)
+        t.cursor = FIND_STATE.useRegex ? { row: Math.min(r.last_row + 1, t.lines.length - 1), col: 0 } : { row: r.last_row, col: r.last_end };
+      }
+      renderVim(t);
+    }
+    closeModal();
+    setTip("置換 " + r.count + " 処");
+  });
 }
 
 /* Grep 对话框的跨次状态 (SPA-01 G-75: 搜索/替换条件全局共享, 复用上次值).
@@ -7858,14 +7827,6 @@ function wordBoundsAtCursor(t) {
   if (a === b && b < arr.length) b++;                  // 光标在符号 / 空白上: 选这一个字符
   return { a, b };
 }
-function selectWordAtCursor(t) {
-  const { a, b } = wordBoundsAtCursor(t);
-  if (a === b) return false;
-  t.selAnchor = { row: t.cursor.row, col: a };
-  t.sel = { r0: t.cursor.row, c0: a, r1: t.cursor.row, c1: b };
-  t.cursor.col = b;
-  return true;
-}
 const selRowsOf = (t) => (selNonEmpty(t) ? [t.sel.r0, t.sel.r1] : [t.cursor.row, t.cursor.row]);
 function selOrLineText(t) { return selNonEmpty(t) ? selectionText(t) : (t.lines[t.cursor.row] || ""); }
 // 作用于选区所在的行 (无选区 = 当前行); fn(line) -> 新行
@@ -7949,7 +7910,7 @@ for (const n of ["openGotoLine", "tagJump", "bookmarkNext", "bookmarkPrev", "got
 }
 
 const SAKURA_CMDS = {
-  "select-word": () => { const t = getActiveTab(); if (selectWordAtCursor(t)) { renderVim(t); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1)); } },
+  "select-word": () => runEdit("select-word"),
   "cur-line-center": () => {
     const t = getActiveTab(), lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
     edContent.scrollTop = Math.max(0, t.cursor.row * lh - edContent.clientHeight / 2 + lh);
@@ -8030,17 +7991,15 @@ function paintMarks() {
   };
   const marks = [];
   if (t && FIND_STATE.marks && FIND_STATE.needle && !IME_ACTIVE) {
-    const re = buildFindRegex(FIND_STATE);
-    if (re) {
+    const hits = findHitsCached(t);
+    if (hits.length) {
       const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
       const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 20), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 40);
-      for (let r = first; r <= last && marks.length < 1500; r++) {
-        const line = t.lines[r]; re.lastIndex = 0; let m;
-        while ((m = re.exec(line))) {
-          if (m[0] === "") { re.lastIndex++; continue; }
-          const col = charLen(line.slice(0, m.index)), rg = mk(r, col, r, col + charLen(m[0]));
-          if (rg) marks.push(rg);
-        }
+      for (const h of hits) {
+        if (h.row < first || h.row > last) continue;
+        if (marks.length >= 1500) break;
+        const rg = mk(h.row, h.col, h.row, h.col + h.len);
+        if (rg) marks.push(rg);
       }
     }
   }
@@ -8141,7 +8100,9 @@ function isearchClose(restore) {
   edContent.focus({ preventScroll: true });
 }
 // next=true: 从当前命中的下一处找; false: 输入变化后从起点重新找 (含起点本身)
-function isearchRun(next) {
+let ISEARCH_TOKEN = 0;
+function isearchRun(next) { return trackOp(isearchRunImpl(next)); }
+async function isearchRunImpl(next) {
   const t = getActiveTab(); const bar = ISEARCH.bar; if (!t || !bar) return;
   const q = bar.querySelector("#is-input").value;
   let needle = q, useRegex = ISEARCH.regex;
@@ -8162,8 +8123,11 @@ function isearchRun(next) {
   FIND_STATE.needle = needle; FIND_STATE.useRegex = useRegex; FIND_STATE.matchCase = !ISEARCH.migemo && /[A-Z]/.test(q);   // 含大写才区分大小写 (Sakura 同)
   const cnt = bar.querySelector("#is-count");
   if (!q) { cnt.textContent = ""; t.sel = null; renderVim(t); return; }
-  if (!buildFindRegex(FIND_STATE)) { cnt.textContent = "正则无效"; return; }
-  const hits = findInTab(t, needle, FIND_STATE);
+  const token = ++ISEARCH_TOKEN;
+  const found = await findInTab(t, needle, FIND_STATE);
+  if (token !== ISEARCH_TOKEN) return;                       // 输入又变了: 丢弃这次结果
+  if (found.error) { cnt.textContent = "正则无效"; return; }
+  const hits = found.hits;
   if (!hits.length) { cnt.textContent = "見つかりません"; return; }
   const from = next && t.sel ? { row: t.cursor.row, col: t.cursor.col } : ISEARCH.start;
   const after = (h) => h.row > from.row || (h.row === from.row && h.col > from.col);
@@ -9490,26 +9454,6 @@ CFG_CMDS["unindent-space"] = () => spaceIndent(true);
 function firstWordCol(line) { const a = charArray(line); let i = 0; while (i < a.length && !isWordChar(a[i])) i++; return i >= a.length ? 0 : i; }
 // 单词 / 行删除在行首行末的换行处理: 删到词首在行首 = 与上一行合并; 删到词尾在行末 = 与下一行合并并吃掉下一行开头的空白 (到下一个词首)
 // 选择单词: 光标所在字符类的连续段 (单词字符 / 空白 / 其它符号); 在行末 = 选整行 (含换行)
-selectWordAtCursor = function (t) {
-  const line = t.lines[t.cursor.row] || "", a = charArray(line), col = Math.min(t.cursor.col, a.length);
-  if (col >= a.length) {
-    if (!a.length) return false;
-    const r = t.cursor.row;
-    t.selAnchor = { row: r, col: 0 };
-    if (r + 1 < t.lines.length) { t.sel = { r0: r, c0: 0, r1: r + 1, c1: 0 }; t.cursor = { row: r + 1, col: 0 }; }
-    else { t.sel = { r0: r, c0: 0, r1: r, c1: a.length }; t.cursor = { row: r, col: a.length }; }
-    return true;
-  }
-  const cls = (ch) => (isWordChar(ch) ? 1 : /\s/.test(ch) ? 2 : 3);
-  const k = cls(a[col]);
-  let i = col, j = col;
-  while (i > 0 && cls(a[i - 1]) === k) i--;
-  while (j < a.length && cls(a[j]) === k) j++;
-  t.selAnchor = { row: t.cursor.row, col: i };
-  t.sel = { r0: t.cursor.row, c0: i, r1: t.cursor.row, c1: j };
-  t.cursor.col = j;
-  return true;
-};
 // 复制行 / 行操作之后选区的收尾: ltrim / rtrim 选区止于最后一行的行末 (不含换行); 复制行 (Ctrl+I) 之后没有选区
 
 
@@ -9535,7 +9479,12 @@ function runEdit(cmd, extra) {
     try { res = await invoke("edit_cmd", editRequest(t, cmd, extra)); }
     catch (err) { setTip("编辑失败: " + err.message); return; }
     if (getActiveTab() !== t) return;
-    if (!res.changed) { if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line); if (res.tip) setTip(res.tip); return; }
+    if (!res.changed) {
+      if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
+      if (res.sel) { t.sel = { r0: res.sel[0], c0: res.sel[1], r1: res.sel[2], c1: res.sel[3] }; t.selAnchor = res.anchor ? { row: res.anchor[0], col: res.anchor[1] } : null; t.cursor = { row: res.cursor[0], col: res.cursor[1] }; renderVim(t); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1)); }
+      if (res.tip) setTip(res.tip);
+      return;
+    }
     if (res.tip) setTip(res.tip);
     snapshot(t);
     if (res.undo_cursor) t.undo[t.undo.length - 1].cursor = { row: res.undo_cursor[0], col: res.undo_cursor[1] };

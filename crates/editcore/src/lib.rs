@@ -62,6 +62,7 @@ pub mod outline_langs;
 pub mod plugin;
 pub mod ppa_macro;
 pub mod ruler;
+pub mod search_ops;
 pub mod sdi;
 pub mod search_highlight;
 pub mod split_quad;

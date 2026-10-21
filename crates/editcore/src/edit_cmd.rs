@@ -43,6 +43,9 @@ pub struct EditRes {
     pub clip: Option<String>,
     /// 剪贴板内容是整行模式 (再粘贴时插在当前行之前)
     pub clip_line: bool,
+    /// 命令产生的选区 [r0, c0, r1, c1] 与锚点 (选词等不改文本的命令用)
+    pub sel: Option<[usize; 4]>,
+    pub anchor: Option<[usize; 2]>,
     /// 提示文字
     pub tip: Option<String>,
     /// 撤销后光标回到哪里 (缺省 = 命令发出时的光标); 词删除是先选中词再删, 撤销回到词尾
@@ -94,17 +97,19 @@ impl Ctx<'_> {
             tip: None,
             undo_cursor: None,
             clip_line: false,
+            sel: None,
+            anchor: None,
         }
     }
     fn replace_line(&self, r: usize, new: String, cursor: [usize; 2], clip: Option<String>) -> EditRes {
-        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false }
+        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None }
     }
     fn join_next(&self, r: usize, skip_leading: bool) -> EditRes {
         let cur = self.line(r);
         let next = self.line(r + 1);
         let skip = if skip_leading { first_word_col(&next) } else { 0 };
         let joined = format!("{}{}", cur.iter().collect::<String>(), slice(&next, skip, usize::MAX));
-        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false }
+        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None }
     }
     fn nothing(&self, tip: &str) -> EditRes {
         EditRes { changed: false, tip: Some(tip.to_string()), cursor: [self.req.row, self.req.col], ..Default::default() }
@@ -129,7 +134,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             } else if row > 0 {
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None }
             } else {
                 cx.nothing("")
             }
@@ -156,7 +161,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 }
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None }
             } else {
                 let to = word_left(&line, col);
                 if to >= col {
@@ -329,6 +334,26 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             };
             EditRes { clip: Some(t.replace('\n', "\r\n")), cursor: [row, col], tip: Some("已用 CRLF 换行复制".into()), ..Default::default() }
         }
+        // ---- 选词 (Sakura S_SelectWord): 光标所在字符类 (单词 / 空白 / 其它) 的连续段; 行末 = 选整行 (含换行) ----
+        "select-word" => {
+            if col >= line.len() {
+                if line.is_empty() {
+                    return Some(cx.nothing(""));
+                }
+                let (sel, cursor) = if row < last_row { ([row, 0, row + 1, 0], [row + 1, 0]) } else { ([row, 0, row, line.len()], [row, line.len()]) };
+                return Some(EditRes { sel: Some(sel), anchor: Some([row, 0]), cursor, ..Default::default() });
+            }
+            let cls = |c: char| if is_word_char(c) { 1 } else if c.is_whitespace() { 2 } else { 3 };
+            let k = cls(line[col]);
+            let (mut i, mut j) = (col, col);
+            while i > 0 && cls(line[i - 1]) == k {
+                i -= 1;
+            }
+            while j < line.len() && cls(line[j]) == k {
+                j += 1;
+            }
+            EditRes { sel: Some([row, i, row, j]), anchor: Some([row, i]), cursor: [row, j], ..Default::default() }
+        }
         // ---- 整行 ----
         "cut-line" | "delete-line" => {
             let text: String = line.iter().collect();
@@ -348,6 +373,8 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 tip: None,
                 undo_cursor: None,
                 clip_line: false,
+                sel: None,
+                anchor: None,
             }
         }
         // ---- 行结构 ----
@@ -404,7 +431,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
         }
         "duplicate-line" => {
             let text: String = line.iter().collect();
-            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false }
+            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None }
         }
         _ => return None,
     })
@@ -576,6 +603,18 @@ mod tests {
         assert_eq!(r.clip.as_deref(), Some("  1:hello world foo\n  2:  indented line\n"));
         let r = run_on("copy-crlf", 0, 0, Some([0, 2, 1, 3]), DOC);
         assert_eq!(r.clip.as_deref(), Some("llo world foo\r\n  i"));
+    }
+    #[test]
+    fn select_word() {
+        let r = run_on("select-word", 0, 8, None, DOC);
+        assert_eq!((r.sel, r.cursor, r.changed), (Some([0, 6, 0, 11]), [0, 11], false));
+        let r = run_on("select-word", 0, 5, None, DOC); // 空白段
+        assert_eq!(r.sel, Some([0, 5, 0, 6]));
+        let r = run_on("select-word", 0, 15, None, DOC); // 行末: 选整行 (含换行)
+        assert_eq!((r.sel, r.cursor), (Some([0, 0, 1, 0]), [1, 0]));
+        let r = run_on("select-word", 4, 13, None, DOC); // 最后一行行末: 选到行尾
+        assert_eq!(r.sel, Some([4, 0, 4, 13]));
+        assert!(run_on("select-word", 2, 0, None, DOC).sel.is_none()); // 空行
     }
     #[test]
     fn unknown() {

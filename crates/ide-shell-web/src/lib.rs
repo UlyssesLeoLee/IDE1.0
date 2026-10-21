@@ -713,6 +713,16 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Err(e) => send_error_json(stream, "400 Bad Request", &format!("书签请求无效: {e}")),
             }
         }
+        ("POST", "/api/search_text") => {
+            // 文档内查找 / 置換 (editcore::search_ops::run); 无状态纯计算
+            match serde_json::from_slice::<editcore::search_ops::SearchReq>(&body) {
+                Ok(req) => match editcore::search_ops::run(&req) {
+                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
+                    None => send_error_json(stream, "400 Bad Request", "未知的查找操作"),
+                },
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("查找请求无效: {e}")),
+            }
+        }
         ("POST", "/api/nav_step") => {
             // 键盘光标移动 / 范围选择 (editcore::nav::step); 无状态纯计算
             match serde_json::from_slice::<editcore::nav::NavReq>(&body) {
