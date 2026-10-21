@@ -648,6 +648,7 @@ pub fn run() {
             edit_text,
             edit_lines,
             nav_step,
+            bracket_pair,
             edit_cmd,
             migemo_patterns,
             plugin::plugin_load,
@@ -732,6 +733,15 @@ fn edit_cmd(options: editcore::edit_cmd::EditReq) -> Result<serde_json::Value, S
     editcore::edit_cmd::run(&options)
         .map(|r| serde_json::to_value(r).unwrap_or_default())
         .ok_or_else(|| "未知的编辑命令".to_string())
+}
+
+/// 对括弧 (web 版 /api/bracket_pair 同一语义); 没有对应括弧返回 {}
+#[tauri::command]
+fn bracket_pair(options: editcore::bracket::BracketReq) -> serde_json::Value {
+    match editcore::bracket::find_pair(&options) {
+        Some(r) => serde_json::to_value(r).unwrap_or_default(),
+        None => serde_json::json!({}),
+    }
 }
 
 /// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}

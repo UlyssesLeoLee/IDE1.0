@@ -693,6 +693,16 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Err(e) => send_error_json(stream, "400 Bad Request", &format!("编辑请求无效: {e}")),
             }
         }
+        ("POST", "/api/bracket_pair") => {
+            // 对括弧 (editcore::bracket::find_pair); 无状态纯计算
+            match serde_json::from_slice::<editcore::bracket::BracketReq>(&body) {
+                Ok(req) => match editcore::bracket::find_pair(&req) {
+                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
+                    None => send_response(stream, "200 OK", "application/json", b"{}"),
+                },
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("括弧请求无效: {e}")),
+            }
+        }
         ("POST", "/api/nav_step") => {
             // 键盘光标移动 / 范围选择 (editcore::nav::step); 无状态纯计算
             match serde_json::from_slice::<editcore::nav::NavReq>(&body) {

@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -7995,21 +7995,27 @@ function insertTextAtCursor(text) {
 /* ===== 搜索标记 / 対括弧強調 / 书签标记 (CSS Highlight API: 不改 DOM 结构, 不影响光标和选区换算) ===== */
 const BRACKETS = { "(": ")", "[": "]", "{": "}", "<": ">", "（": "）", "「": "」", "『": "』", "【": "】", "［": "］", "｛": "｝", "〈": "〉", "《": "》", "〔": "〕" };
 const BRACKET_REV = Object.fromEntries(Object.entries(BRACKETS).map(([a, b]) => [b, a]));
-function findMatchingBracket(t, row, col) {
-  const ch = charArray(t.lines[row] || "")[col];
-  const open = BRACKETS[ch] !== undefined, close = BRACKET_REV[ch] !== undefined;
-  if (!open && !close) return null;
-  const want = open ? BRACKETS[ch] : BRACKET_REV[ch], dir = open ? 1 : -1;
-  let depth = 0, scanned = 0;
-  let r = row, c = col;
-  while (r >= 0 && r < t.lines.length && scanned < 30000) {
-    const arr = charArray(t.lines[r] || "");
-    for (; c >= 0 && c < arr.length; c += dir) {
-      scanned++;
-      if (arr[c] === ch) depth++;
-      else if (arr[c] === want) { depth--; if (depth === 0) return { row: r, col: c }; }
-    }
-    r += dir; c = dir > 0 ? 0 : charLen(t.lines[r] || "") - 1;
+
+/* 对括弧的匹配在 Rust (editcore::bracket): 前端只交光标周围的一段行 (按字符预算截取), 结果缓存给强调高亮用 */
+let BR_CACHE = { key: "", hit: null, busy: false };
+function bracketRequest(t) {
+  const { row, col } = t.cursor, last = t.lines.length - 1, rows = [];
+  let budget = 40000;
+  for (let r = row; r <= last && budget > 0; r++) { rows.push([r, t.lines[r] || ""]); budget -= (t.lines[r] || "").length + 1; }
+  budget = 40000;
+  for (let r = row - 1; r >= 0 && budget > 0; r--) { rows.push([r, t.lines[r] || ""]); budget -= (t.lines[r] || "").length + 1; }
+  return { row, col, total_rows: t.lines.length, rows };
+}
+async function bracketLookup(t) {
+  try { const r = await invoke("bracket_pair", bracketRequest(t)); return r && r.pair ? r : null; } catch (_) { return null; }
+}
+function bracketKey(t) { return t.id + ":" + t.cursor.row + ":" + t.cursor.col + ":" + t.lines.length + ":" + (t.lines[t.cursor.row] || "").length + ":" + (t.undo ? t.undo.length : 0); }
+function bracketCached(t) {
+  const key = bracketKey(t);
+  if (BR_CACHE.key === key) return BR_CACHE.hit;
+  if (!BR_CACHE.busy) {
+    BR_CACHE.busy = true;
+    bracketLookup(t).then((hit) => { BR_CACHE = { key, hit, busy: false }; scheduleMarks(); });
   }
   return null;
 }
@@ -8043,11 +8049,8 @@ function paintMarks() {
   set("find-marks", marks);
   const br = [];
   if (t && !IME_ACTIVE && !selNonEmpty(t)) {
-    for (const c of [t.cursor.col, t.cursor.col - 1]) {
-      if (c < 0) continue;
-      const pair = findMatchingBracket(t, t.cursor.row, c);
-      if (pair) { const a = mk(t.cursor.row, c, t.cursor.row, c + 1), b = mk(pair.row, pair.col, pair.row, pair.col + 1); if (a && b) { br.push(a, b); } break; }
-    }
+    const hit = bracketCached(t);
+    if (hit) { const a = mk(t.cursor.row, hit.at, t.cursor.row, hit.at + 1), b = mk(hit.pair[0], hit.pair[1], hit.pair[0], hit.pair[1] + 1); if (a && b) br.push(a, b); }
   }
   set("bracket-pair", br);
   const gm = [];
@@ -8187,15 +8190,12 @@ Object.assign(SAKURA_CMDS, {
     if (!t || !p) { setTip("検索開始位置がありません"); return; }
     jumpHistSet(); t.cursor = { row: Math.min(p.row, t.lines.length - 1), col: p.col }; t.sel = null; paintActive();
   },
-  "bracket-pair": () => {
+  "bracket-pair": () => enqueueInput(async () => {
     const t = getActiveTab(); if (!t) return;
-    for (const c of [t.cursor.col, t.cursor.col - 1]) {
-      if (c < 0) continue;
-      const pair = findMatchingBracket(t, t.cursor.row, c);
-      if (pair) { jumpHistSet(); t.cursor = { row: pair.row, col: pair.col }; t.sel = null; paintActive(); return; }
-    }
+    const hit = await bracketLookup(t);
+    if (hit) { jumpHistSet(); t.cursor = { row: hit.pair[0], col: hit.pair[1] }; t.sel = null; paintActive(); return; }
     setTip("対括弧が見つかりません");
-  },
+  }),
   "bookmark-reset": () => { const t = getActiveTab(); if (!t) return; BOOKMARKS.set(bookmarkKey(t), []); scheduleMarks(); setTip("ブックマークを全解除しました"); },
   "bookmark-view": () => {
     const t = getActiveTab(); if (!t) return;
