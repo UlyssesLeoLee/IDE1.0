@@ -41,8 +41,8 @@ test('Shift+Tab 不抛 ReferenceError; 对多行选区反缩进', () =>
     await fill(page, '  a\n  b');
     await press('Control+a'); await page.waitForTimeout(150);
     await press('Shift+Tab'); await page.waitForTimeout(150);
-    // fill() 用真实 Enter, 自动缩进让第二行是 4 空格 → 反缩进一个单位后剩 2 空格
-    assert.deepEqual((await snap()).lines, ['a', '  b']);
+    // fill() 用真实 Enter, 自动缩进让第二行是 4 空格 → Sakura 反缩进最多去掉 4 个空格 → 0
+    assert.deepEqual((await snap()).lines, ['a', 'b']);
     assert.deepEqual(app.errors, []);
   }));
 

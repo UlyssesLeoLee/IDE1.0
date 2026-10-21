@@ -283,10 +283,10 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
       t.cursor = { row: 1, col: 0 };   // 在 l2 上
       (window as any).renderVim(t);
     });
-    await page.keyboard.press("Control+Delete");          // 删下方行 -> 删掉 l3
-    expect(await doc(page)).toEqual(["l1", "l2"]);
+    await page.keyboard.press("Control+Delete");          // Sakura: 删到词尾 -> l2 被删空
+    expect(await doc(page)).toEqual(["l1", "", "l3"]);
     await page.keyboard.press("Control+Shift+Backspace"); // 删上方行 -> 删掉 l1
-    expect(await doc(page)).toEqual(["l2"]);
+    expect(await doc(page)).toEqual(["", "l3"]);
     expect(errors).toEqual([]);
   });
 
@@ -346,7 +346,7 @@ test.describe("C. 增删类特色功能", () => {
     await setDoc(page, ["    a", "\t\tb", "  c"]);
     await page.evaluate(() => {
       const t = (window as any).getActiveTab();
-      t.sel = { r0: 0, c0: 0, r1: 1, c1: 0 };
+      t.sel = { r0: 0, c0: 0, r1: 1, c1: 3 };
       (window as any).renderVim(t);
     });
     await page.evaluate(() => (window as any).dispatchCommand("ltrim-lines"));
@@ -362,7 +362,7 @@ test.describe("C. 增删类特色功能", () => {
     await setDoc(page, ["a   ", "b\t\t", "c  "]);
     await page.evaluate(() => {
       const t = (window as any).getActiveTab();
-      t.sel = { r0: 0, c0: 0, r1: 1, c1: 0 };
+      t.sel = { r0: 0, c0: 0, r1: 1, c1: 3 };
       (window as any).renderVim(t);
     });
     await page.evaluate(() => (window as any).dispatchCommand("rtrim-lines"));
@@ -376,6 +376,7 @@ test.describe("C. 增删类特色功能", () => {
   test("去重**连续**重复行: 非连续的重复必须保留 (F_UNIQ 语义, 不是全局去重)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["a", "a", "b", "a"]);
+    await page.evaluate(() => { const t = (window as any).getActiveTab(); t.sel = { r0: 0, c0: 0, r1: 3, c1: 1 }; });
     await page.evaluate(() => (window as any).dispatchCommand("uniq-consecutive"));
     expect(await doc(page), "只有连续的 a 被合并, 中间隔着的 a 保留").toEqual(["a", "b", "a"]);
     expect(errors).toEqual([]);
@@ -384,6 +385,7 @@ test.describe("C. 增删类特色功能", () => {
   test("去重连续重复行: 空行夹在中间时两侧的重复都保留", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["a", "", "a"]);
+    await page.evaluate(() => { const t = (window as any).getActiveTab(); t.sel = { r0: 0, c0: 0, r1: 2, c1: 1 }; });
     await page.evaluate(() => (window as any).dispatchCommand("uniq-consecutive"));
     expect(await doc(page), "空行隔开 = 不算连续").toEqual(["a", "", "a"]);
     expect(errors).toEqual([]);
@@ -394,11 +396,11 @@ test.describe("C. 增删类特色功能", () => {
     await setDoc(page, ["alpha", "beta", "gamma"]);
     await page.evaluate(() => {
       const t = (window as any).getActiveTab();
-      t.sel = { r0: 0, c0: 0, r1: 2, c1: 0 };
+      t.sel = { r0: 0, c0: 0, r1: 2, c1: 5 };
       (window as any).renderVim(t);
     });
     await page.evaluate(() => (window as any).dispatchCommand("indent-selection"));
-    expect(await doc(page)).toEqual(["  alpha", "  beta", "  gamma"]);
+    expect(await doc(page)).toEqual(["	alpha", "	beta", "	gamma"])   // Sakura: TAB 缩进插入 TAB 字符;
 
     await page.evaluate(() => (window as any).dispatchCommand("unindent-selection"));
     expect(await doc(page), "反缩进回到原样").toEqual(["alpha", "beta", "gamma"]);
@@ -410,7 +412,7 @@ test.describe("C. 增删类特色功能", () => {
     await setDoc(page, ["\talpha", "\tbeta"]);
     await page.evaluate(() => {
       const t = (window as any).getActiveTab();
-      t.sel = { r0: 0, c0: 0, r1: 1, c1: 0 };
+      t.sel = { r0: 0, c0: 0, r1: 1, c1: 5 };
       (window as any).renderVim(t);
     });
     await page.evaluate(() => (window as any).dispatchCommand("indent-selection"));

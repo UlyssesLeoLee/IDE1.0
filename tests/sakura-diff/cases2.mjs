@@ -1,0 +1,38 @@
+// 追加: 边界情形 (行首/行末/文件首尾/无选区/多行 等)
+export const SEED = 'hello world foo\n  indented line\n\nthird line here\nlast Line END\n';
+const LONGSEED = Array.from({ length: 12 }, (_, i) => 'line' + (i + 1)).join('\n') + '\n';
+const CASES = [];
+const add = (id, sk, ours, o = {}) => CASES.push({ id, sk: Array.isArray(sk) ? sk : [sk], ours, ...o });
+
+add('F_COPY(no sel)', 'S_Copy();', { key: 'F8' }, { cur: [1, 3], tail: 'paste' });
+add('F_CUT(no sel)', 'S_Cut();', { key: 'F7' }, { cur: [1, 3], tail: 'paste' });
+add('F_MERGE(non-adjacent)', 'S_Merge();', { key: 'Alt+m' }, { seed: 'a\nb\na\nb\nb\n', sel: [0, 0, 4, 1] });
+add('F_UNINDENT_TAB(spaces)', 'S_UnindentTab();', { key: 'Shift+Tab' }, { seed: '  a\n    b\n        c\n', sel: [0, 0, 2, 1] });
+add('F_COPYLINESWITHLINENUMBER(12 lines)', 'S_CopyLinesWithLineNumber();', { cmd: 'copy-linenum' }, { seed: LONGSEED, sel: [8, 0, 11, 2], tail: 'paste' });
+add('F_GOLINETOP@indent', 'S_GoLineTop();', { key: 'Home' }, { cur: [1, 2] });
+add('F_GOLINETOP@col1', 'S_GoLineTop();', { key: 'Home' }, { cur: [1, 1] });
+add('F_SELECTWORD@space', 'S_SelectWord();', { key: 'Control+w' }, { cur: [0, 5] });
+add('F_SELECTWORD@eol', 'S_SelectWord();', { key: 'Control+w' }, { cur: [0, 15] });
+add('F_WORDRIGHT@eol', 'S_WordRight();', { key: 'Control+ArrowRight' }, { cur: [0, 13] });
+add('F_WORDRIGHT@lineend', 'S_WordRight();', { key: 'Control+ArrowRight' }, { cur: [0, 15] });
+add('F_WORDLEFT@bol', 'S_WordLeft();', { key: 'Control+ArrowLeft' }, { cur: [1, 0] });
+add('F_WORDLEFT@indent', 'S_WordLeft();', { key: 'Control+ArrowLeft' }, { cur: [1, 4] });
+add('F_WordDeleteToStart@bol', 'S_WordDeleteToStart();', { key: 'Control+Backspace' }, { cur: [1, 0] });
+add('F_WordDeleteToEnd@eol', 'S_WordDeleteToEnd();', { key: 'Control+Delete' }, { cur: [0, 15] });
+add('F_DELETE@eol', 'S_Delete();', { key: 'Delete' }, { cur: [0, 15] });
+add('F_DELETE_BACK@bol', 'S_DeleteBack();', { key: 'Backspace' }, { cur: [1, 0] });
+add('F_LineCutToStart@bol', 'S_LineCutToStart();', { key: 'Control+u' }, { cur: [1, 0] });
+add('F_LineCutToEnd@eol', 'S_LineCutToEnd();', { key: 'Control+k' }, { cur: [0, 15] });
+add('F_CUT_LINE(last)', 'S_CutLine();', { key: 'Control+e' }, { cur: [4, 2] });
+add('F_DELETE_LINE(last)', 'S_DeleteLine();', { key: 'Control+Shift+e' }, { cur: [4, 2] });
+add('F_DUPLICATELINE(last)', 'S_DuplicateLine();', { key: 'Control+i' }, { cur: [4, 2] });
+add('F_DUPLICATELINE(sel)', 'S_DuplicateLine();', { key: 'Control+i' }, { sel: [0, 2, 1, 3] });
+add('F_UP2@top', 'S_Up2();', { cmd: 'cursor-up-2' }, { cur: [1, 3] });
+add('F_DOWN2@bottom', 'S_Down2();', { cmd: 'cursor-down-2' }, { cur: [3, 3] });
+add('F_GONEXTPARAGRAPH@last', 'S_GoNextParagraph();', { cmd: 'cursor-para-next' }, { cur: [3, 3] });
+add('F_GOPREVPARAGRAPH@mid', 'S_GoPrevParagraph();', { cmd: 'cursor-para-prev' }, { cur: [1, 3] });
+add('F_TOUPPER(nosel)', 'S_ToUpper();', { key: 'Control+F7' }, { cur: [0, 2] });
+add('F_SORT_ASC(nosel)', 'S_SortAsc();', { key: 'Alt+a' }, { seed: 'c\nb\na\n', cur: [0, 0] });
+add('F_INDENT_TAB(1 line sel)', 'S_IndentTab();', { key: 'Tab' }, { sel: [0, 1, 0, 4] });
+add('F_PASTE(multiline)', 'S_Paste();', { key: 'F9' }, { cur: [1, 4], clip: 'ab\ncd\nef' });
+export default CASES;

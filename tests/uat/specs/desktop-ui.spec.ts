@@ -452,6 +452,8 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     const setLines = (l: string[]) => page.evaluate((ls) => {
       const t = (window as any).activeTab();
       t.lines = ls;
+      const last = ls.length - 1;   // Sakura: 变换只作用于选区 -> 全选
+      t.sel = { r0: 0, c0: 0, r1: last, c1: ls[last].length };
       (window as any).renderVim(t);
     }, l);
 
@@ -481,12 +483,12 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // 全角片假名 → 平假名 (toZenhira: ァ-ン 减 0x60)
     await setLines(["ガギ abc"]);
     await page.evaluate(() => (window as any).dispatchCommand("to-zenhira"));
-    await expectText("がぎ abc");
+    await expectText("がぎ　ａｂｃ");   // Sakura: 半角英数同时变全角
 
     // 平假名 → 片假名 (toZenkaku: ぁ-ん 加 0x60)
     await setLines(["がぎ abc"]);
     await page.evaluate(() => (window as any).dispatchCommand("to-zenkaku"));
-    await expectText("ガギ abc");
+    await expectText("ガギ　ａｂｃ");
 
     // 全角英数 → 半角
     await setLines(["ＡＢＣ"]);

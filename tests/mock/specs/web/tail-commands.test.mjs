@@ -13,12 +13,12 @@ test('SPACE インデント / 逆 SPACE インデント: 选区各行加减 TAB 
   withMocks({ name: 'tc', portOffset: 200 }, async ({ page, snap, press }) => {
     await fill(page, 'a\nb\nc');
     await press('Control+a'); await cmd(page, 'indent-space');
-    assert.deepEqual((await snap()).lines, ['    a', '    b', '    c']);
+    assert.deepEqual((await snap()).lines, [' a', ' b', ' c']);   // Sakura: SPACE インデント = 1 个空格
     await cmd(page, 'unindent-space');
     assert.deepEqual((await snap()).lines, ['a', 'b', 'c']);
     await page.evaluate(() => { PREFS.tabWidth = 2; });
     await press('Control+a'); await cmd(page, 'indent-space');
-    assert.equal((await snap()).lines[0], '  a');
+    assert.equal((await snap()).lines[0], ' a');   // 与 TAB 宽度无关
   }));
 
 test('Base64 / uudecode 解码保存: 选区解码写成文件; 二进制内容给出明确提示', () =>

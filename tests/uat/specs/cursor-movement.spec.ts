@@ -69,14 +69,11 @@ test.describe("Sakura 光标移动命令集", () => {
     await setDoc(page, ["foo bar baz"]);
     await page.locator("#ed-content").focus();
 
-    // Sakura 语义 (HLP000223 提示: "I have a pen." 光标在 a 前, 「単語の左端」到 pen 之前):
-    // 光标在词首时右移 = 走到**当前词的词尾**, 不是直接跳到下一个词.
+    // Sakura 实测 (tests/sakura-diff): 右移一个单词 = 到下一个词首
     await move(page, "cursor-word-right");
-    expect(await cur(page), "0 -> 'foo' 的词尾 3").toEqual({ row: 0, col: 3 });
+    expect(await cur(page), "0 -> 'bar' 词首 4").toEqual({ row: 0, col: 4 });
     await move(page, "cursor-word-right");
-    expect(await cur(page), "已在词尾, 再按 -> 'bar' 词首 4").toEqual({ row: 0, col: 4 });
-    await move(page, "cursor-word-right");
-    expect(await cur(page), "'bar' 词尾 7").toEqual({ row: 0, col: 7 });
+    expect(await cur(page), "'baz' 词首 8").toEqual({ row: 0, col: 8 });
 
     // 左移: 从词尾回退到该词词首
     await move(page, "cursor-word-left");

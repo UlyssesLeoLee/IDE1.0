@@ -40,7 +40,7 @@ test('Shift+F8 CRLF 复制, Shift+F9 矩形贴付け, 复制变体 (行番号付
     assert.deepEqual((await snap()).lines, ['12', '3412', '  34']);
     await fill(page, 'l1\nl2\nl3'); await press('Control+a');
     await page.evaluate(() => dispatchCommand('copy-linenum')); await page.waitForTimeout(80);
-    assert.equal(await m.clipboard.get(), '1: l1\n2: l2\n3: l3');
+    assert.equal(await m.clipboard.get(), '  1:l1\n  2:l2\n  3:l3\n');
   }));
 
 test('移動履歴: 登记当前位置, 跳走后 Alt+P 回到登记位置', () =>

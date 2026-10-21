@@ -15,7 +15,7 @@ test('移动与范围选择: Shift+方向 / Ctrl+单词 / Ctrl+Home·End / 收�
     await press('Shift+ArrowDown'); assert.deepEqual((await snap()).sel, [0, 0, 1, 3]);
     await press('ArrowLeft');                                   // 无 Shift: 收缩到选区起点
     assert.deepEqual([(await snap()).sel, (await snap()).cursor], [null, { row: 0, col: 0 }]);
-    await press('Control+ArrowRight'); assert.equal((await snap()).cursor.col, 3);
+    await press('Control+ArrowRight'); assert.equal((await snap()).cursor.col, 4);   // Sakura: 到下一个词首
     await press('Control+End'); assert.deepEqual((await snap()).cursor, { row: 3, col: 4 });
     await press('Shift+Control+Home'); assert.deepEqual((await snap()).sel, [0, 0, 3, 4]);
   }));
@@ -35,12 +35,12 @@ test('选区上输入 / Delete / 粘贴 都是「替换」, 撤销能回退', ()
   withMocks({ name: 'ks', portOffset: 12 }, async ({ page, snap, press, m }) => {
     await fill(page, 'hello world');
     await press('Shift+Control+ArrowRight'); await page.keyboard.type('X');
-    assert.equal((await snap()).lines[0], 'X world');
+    assert.equal((await snap()).lines[0], 'Xworld');   // Sakura: Ctrl+Shift+→ 选到下一个词首 (含空格)
     await press('Home'); await press('Shift+ArrowRight', { times: 2 }); await press('Delete');
-    assert.equal((await snap()).lines[0], 'world');
+    assert.equal((await snap()).lines[0], 'orld');
     await m.clipboard.set('PASTED'); await press('Shift+ArrowRight', { times: 2 }); await press('Control+v');
     await page.waitForTimeout(150);
-    assert.equal((await snap()).lines[0], 'PASTEDrld');
+    assert.equal((await snap()).lines[0], 'PASTEDld');
   }));
 
 test('Ins 覆盖模式 + 状态栏; Tab 键插入 TAB 字符; Shift+Tab 反缩进', () =>

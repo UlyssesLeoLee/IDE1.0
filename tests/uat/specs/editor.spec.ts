@@ -495,8 +495,8 @@ test.describe("命令审计 (功能覆盖)", () => {
     expect(after.length).toBeGreaterThan(before.length);
 
     // 大写转换 (清掉 select-all 设的选区, 让 mapLines 作用于全文)
-    await page.evaluate(() => {
-      (window as any).activeTab().sel = null;
+    await page.evaluate(() => {   // Sakura: 变换只作用于选中的文字 -> 先全选
+      (window as any).dispatchCommand("select-all");
       (window as any).dispatchCommand("to-upper");
     });
     const upper = await page.evaluate(() => (window as any).activeTab().lines.join("\n"));
@@ -751,8 +751,9 @@ test.describe("传统编辑器对标能力 (第二批)", () => {
     const getLines = () => page.evaluate(() => (window as any).activeTab().lines.slice());
 
     await setLines(["10", "2", "1"]);
+    await page.evaluate(() => { const t = (window as any).activeTab(); t.sel = { r0: 0, c0: 0, r1: 2, c1: 1 }; });
     await page.evaluate(() => (window as any).sortLines(true));
-    expect(await getLines()).toEqual(["1", "2", "10"]);       // 自然排序 (2 < 10)
+    expect(await getLines()).toEqual(["1", "10", "2"]);       // Sakura: 按字符码逐字比较 ("10" < "2")
 
     await setLines(["x", "y", "x", "z", "y"]);
     await page.evaluate(() => (window as any).dedupeLines());
