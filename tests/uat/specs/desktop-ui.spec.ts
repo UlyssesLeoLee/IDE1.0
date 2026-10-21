@@ -536,7 +536,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // #terminal-body, click 会因被遮挡而超时.
     await page.locator("#terminal-body").focus();
     await page.keyboard.type("dir");
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const inputs = await page.evaluate(() =>
       (window as any).__calls.filter((c: any) => c.cmd === "terminal_input"),
     );

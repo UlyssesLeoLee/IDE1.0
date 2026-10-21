@@ -47,7 +47,7 @@ async function prepDoc(page: Page, layout: "full" | "min") {
   await focusEditor(page);
   if (layout === "full") await page.keyboard.press("i");
   await page.keyboard.type("hello");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.type("world");
   if (layout === "full") await page.keyboard.press("Escape");
   await expect.poll(() => page.evaluate(() => (window as any).getActiveTab().lines.join("|"))).toBe("hello|world");
@@ -272,7 +272,7 @@ for (const layout of ["full", "min"] as const) {
       const errors = await boot(page);
       await focusEditor(page);
       await page.keyboard.press("Alt+v");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "view", sub: "layout", row: "layout-min" });
       await page.keyboard.press("Escape");
       expect(await editorFocused(page)).toBe(true);
@@ -286,7 +286,7 @@ for (const layout of ["full", "min"] as const) {
       expect(await page.evaluate("VIEW_STATE.lineNumbers")).toBe(true);
       await page.keyboard.press("Alt+v");
       expect(await downTo(page, "toggle-line-num")).toBe(true);
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await openMenus(page)).toEqual([]);
       expect(await kbLeft(page)).toBe(0);
       expect(await editorFocused(page)).toBe(true);
@@ -302,7 +302,7 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "view").click();                                         // 焦点此时在按钮上
       expect(await downTo(page, "toggle-word-wrap")).toBe(true);
       const before = await page.evaluate("VIEW_STATE.wordWrap");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await openMenus(page)).toEqual([]);
       expect(await page.evaluate("VIEW_STATE.wordWrap")).toBe(!before);
       await page.evaluate(() => (window as any).dispatchCommand("toggle-word-wrap"));
@@ -433,7 +433,7 @@ for (const layout of ["full", "min"] as const) {
       // 执行一个不改文本的命令后, 焦点回到编辑区, 继续能在原处工作
       await page.keyboard.press("Alt+v");
       expect(await downTo(page, "toggle-word-wrap")).toBe(true);
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.evaluate(() => (window as any).dispatchCommand("toggle-word-wrap"));
       expect(await editorFocused(page)).toBe(true);
       expect(await docState(page)).toBe(before);
@@ -523,7 +523,7 @@ for (const layout of ["full", "min"] as const) {
       await page.keyboard.press("Alt+h");
       expect(await downTo(page, "wiki")).toBe(true);
       const before = await docState(page);
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator("#modal")).toHaveClass(/show/);
       expect(await editorFocused(page), "对话框开着, 焦点不能在编辑区").toBe(false);
       await page.keyboard.type("qqq");

@@ -265,7 +265,7 @@ test("terminal panel starts a real PowerShell session and echoes output", async 
   await expect(page.locator("#terminal-empty")).toBeHidden({ timeout: 30_000 });
   await page.locator("#terminal-body").focus();
   await page.keyboard.type("Write-Host IDE1.0-UAT-OK");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   // PowerShell 真回显
   await expect(page.locator("#terminal-body")).toContainText("IDE1.0-UAT-OK", { timeout: 30_000 });
 

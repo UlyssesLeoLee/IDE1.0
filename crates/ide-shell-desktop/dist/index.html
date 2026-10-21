@@ -9854,7 +9854,7 @@ function editRequest(t, cmd) {
     for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
   }
   const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
-  return { cmd, row, col, sel, total_rows: t.lines.length, rows };
+  return { cmd, row, col, sel, total_rows: t.lines.length, rows, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent };
 }
 function runEdit(cmd) {
   return enqueueInput(async () => {
@@ -9864,6 +9864,7 @@ function runEdit(cmd) {
     catch (err) { setTip("编辑失败: " + err.message); return; }
     if (getActiveTab() !== t) return;
     if (!res.changed) { if (res.tip) setTip(res.tip); return; }
+    if (res.tip) setTip(res.tip);
     snapshot(t);
     if (res.undo_cursor) t.undo[t.undo.length - 1].cursor = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
     t.lines.splice(res.start, res.remove, ...res.insert);
@@ -9883,6 +9884,13 @@ deleteToWordEnd = () => runEdit("delete-word-end");
 cutLine = () => runEdit("cut-line");
 deleteLine = () => runEdit("delete-line");
 duplicateLine = () => runEdit("duplicate-line");
+insertNewline = () => runEdit("new-line");
+addLineAbove = () => runEdit("add-line-above");
+addLineBelow = () => runEdit("add-line-below");
+deleteLineUp = () => runEdit("delete-line-up");
+deleteLineDown = () => runEdit("delete-line-down");
+joinWithPrev = () => runEdit("join-with-prev");
+moveLines = (delta) => runEdit(delta < 0 ? "move-line-up" : "move-line-down");
 SAKURA_CMDS["word-cut"] = () => runEdit("word-cut");
 SAKURA_CMDS["word-delete"] = () => runEdit("word-delete");
 SAKURA_CMDS["line-cut-to-end"] = () => runEdit("line-cut-to-end");

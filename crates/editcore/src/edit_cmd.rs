@@ -15,6 +15,11 @@ pub struct EditReq {
     #[serde(default)]
     pub sel: Option<[usize; 4]>,
     pub total_rows: usize,
+    /// Enter 自动缩进 / 智能缩进 (new-line 用)
+    #[serde(default)]
+    pub auto_indent: bool,
+    #[serde(default)]
+    pub smart_indent: bool,
     /// 需要用到的行: [行号, 文本] (光标行 ±1, 选区各行)
     pub rows: Vec<(usize, String)>,
 }
@@ -241,6 +246,58 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 undo_cursor: None,
             }
         }
+        // ---- 行结构 ----
+        "new-line" => {
+            let head = slice(&line, 0, col);
+            let tail = slice(&line, col, usize::MAX);
+            let hc: Vec<char> = head.chars().collect();
+            let indent: String = if req.auto_indent { hc.iter().take_while(|c| **c == ' ' || **c == '\t').collect() } else { String::new() };
+            let ends_open = hc.last().map(|c| matches!(c, '{' | '[' | '(') || c.is_whitespace()).unwrap_or(false);
+            let extra = if req.auto_indent && req.smart_indent && ends_open { "  " } else { "" };
+            let pad = format!("{indent}{extra}");
+            let pad_len = pad.chars().count();
+            EditRes { changed: true, start: row, remove: 1, insert: vec![head, format!("{pad}{tail}")], cursor: [row + 1, pad_len], ..Default::default() }
+        }
+        "add-line-above" | "add-line-below" => {
+            let indent: String = line.iter().take_while(|c| **c == ' ' || **c == '\t').collect();
+            let n = indent.chars().count();
+            let above = req.cmd == "add-line-above";
+            let at = if above { row } else { row + 1 };
+            EditRes { changed: true, start: at, remove: 0, insert: vec![indent], cursor: [at, n], ..Default::default() }
+        }
+        "delete-line-up" => {
+            if row == 0 {
+                return Some(cx.nothing("已在首行, 上方无可删"));
+            }
+            let (insert, cur) = if req.total_rows <= 1 { (vec![String::new()], [0, 0]) } else { (vec![], [row - 1, 0]) };
+            EditRes { changed: true, start: row - 1, remove: 1, insert, cursor: cur, tip: Some("已删除上方行".into()), ..Default::default() }
+        }
+        "delete-line-down" => {
+            if row >= last_row {
+                return Some(cx.nothing("已在末行, 下方无可删"));
+            }
+            EditRes { changed: true, start: row + 1, remove: 1, insert: vec![], cursor: [row, 0], tip: Some("已删除下方行".into()), ..Default::default() }
+        }
+        "join-with-prev" => {
+            if row == 0 {
+                return Some(cx.nothing(""));
+            }
+            let prev = cx.line(row - 1);
+            let cur: String = line.iter().collect();
+            let joined = format!("{}{}", prev.iter().collect::<String>(), cur.trim_start());
+            EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], ..Default::default() }
+        }
+        "move-line-up" | "move-line-down" => {
+            let up = req.cmd == "move-line-up";
+            if (up && row == 0) || (!up && row >= last_row) {
+                return Some(cx.nothing(""));
+            }
+            let other_row = if up { row - 1 } else { row + 1 };
+            let other: String = cx.line(other_row).iter().collect();
+            let cur: String = line.iter().collect();
+            let (start, insert) = if up { (row - 1, vec![cur, other]) } else { (row, vec![other, cur]) };
+            EditRes { changed: true, start, remove: 2, insert, cursor: [other_row, col], tip: Some(format!("移动行: Ln {} → Ln {}", row + 1, other_row + 1)), ..Default::default() }
+        }
         "duplicate-line" => {
             let text: String = line.iter().collect();
             EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None }
@@ -260,6 +317,8 @@ mod tests {
             col,
             sel,
             total_rows: lines.len(),
+            auto_indent: true,
+            smart_indent: true,
             rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
         })
         .unwrap()
@@ -335,7 +394,31 @@ mod tests {
         assert_eq!((apply(DOC, &r)[1].as_str(), apply(DOC, &r)[2].as_str(), r.cursor), ("  indented line", "  indented line", [2, 4]));
     }
     #[test]
+    fn line_structure() {
+        // Enter: 自动缩进 + 行尾 { [ ( 或空白再多一级
+        let r = run_on("new-line", 1, 6, None, DOC);
+        assert_eq!((r.insert.clone(), r.cursor), (vec!["  inde".to_string(), "  nted line".to_string()], [2, 2]));
+        let d = &["fn f() {"];
+        let r = run_on("new-line", 0, 8, None, d);
+        assert_eq!((r.insert.clone(), r.cursor), (vec!["fn f() {".to_string(), "  ".to_string()], [1, 2]));
+        let r = run_on("add-line-above", 1, 4, None, DOC);
+        assert_eq!((apply(DOC, &r)[1].as_str(), r.cursor), ("  ", [1, 2]));
+        let r = run_on("add-line-below", 1, 4, None, DOC);
+        assert_eq!((apply(DOC, &r)[2].as_str(), r.cursor), ("  ", [2, 2]));
+        let r = run_on("move-line-up", 1, 4, None, DOC);
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("  indented line", [0, 4]));
+        let r = run_on("move-line-down", 0, 4, None, DOC);
+        assert_eq!((apply(DOC, &r)[1].as_str(), r.cursor), ("hello world foo", [1, 4]));
+        assert!(!run_on("move-line-up", 0, 0, None, DOC).changed);
+        let r = run_on("join-with-prev", 1, 0, None, DOC);
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("hello world fooindented line", [0, 15]));
+        let r = run_on("delete-line-up", 1, 3, None, DOC);
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("  indented line", [0, 0]));
+        let r = run_on("delete-line-down", 0, 3, None, DOC);
+        assert_eq!((apply(DOC, &r)[1].as_str(), r.cursor), ("", [0, 0]));
+    }
+    #[test]
     fn unknown() {
-        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, rows: vec![] }).is_none());
+        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, rows: vec![] }).is_none());
     }
 }

@@ -212,7 +212,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(1, 3));
 
-    await page.keyboard.press("Delete");
+    await page.keyboard.press("Delete"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await doc(page)).toEqual(["adef", "adef"]);
     expect(errors).toEqual([]);
   });

@@ -12,7 +12,7 @@ async function boot(page: Page) {
   await page.locator("#ed-content").focus();
   for (const l of ["abcdefghij", "klmnopqrst", "uvwxyzABCD", "EFGHIJKLMN"]) {
     await page.keyboard.type(l);
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   }
   return errors;
 }

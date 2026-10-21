@@ -129,10 +129,11 @@ export async function fill(page, text) {
   await page.locator('#ed-content').click();
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
+  await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null));
   const ls = text.split('\n');
   for (let i = 0; i < ls.length; i++) {
     if (ls[i]) await page.keyboard.type(ls[i]);
-    if (i < ls.length - 1) await page.keyboard.press('Enter');
+    if (i < ls.length - 1) { await page.keyboard.press('Enter'); await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null)); }   // Enter 在 Rust 里异步落地
   }
   await page.keyboard.press('Control+Home');
   await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null));   // 移动在 Rust 里异步落地

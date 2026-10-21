@@ -5,7 +5,7 @@ import { withApp, grid } from '../../lib/harness.mjs';
 
 async function seed(page) {
   await page.locator('#ed-content').click();
-  for (const l of ['abcdefghij', 'klmnopqrst', 'uvwxyzABCD', 'EFGHIJKLMN']) { await page.keyboard.type(l); await page.keyboard.press('Enter'); }
+  for (const l of ['abcdefghij', 'klmnopqrst', 'uvwxyzABCD', 'EFGHIJKLMN']) { await page.keyboard.type(l); await page.keyboard.press('Enter'); await page.evaluate(() => window.__editIdle()); }
   return grid(page);
 }
 
