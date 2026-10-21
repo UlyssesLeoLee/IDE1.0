@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -2623,8 +2623,8 @@ async function sendTerminal(data) {
 function dispatchCommand(cmd) {
   if (!cmd) return;
   if (VIEW_CMDS[cmd]) { VIEW_CMDS[cmd](); return; }
-  if (CFG_CMDS[cmd]) { CFG_CMDS[cmd](); return; }
-  if (SAKURA_CMDS[cmd]) { if (!getActiveTab()) { setTip("无活动标签"); return; } SAKURA_CMDS[cmd](); return; }
+  if (CFG_CMDS[cmd]) return CFG_CMDS[cmd]();
+  if (SAKURA_CMDS[cmd]) { if (!getActiveTab()) { setTip("无活动标签"); return; } return SAKURA_CMDS[cmd](); }
   if (cmd.startsWith("reopen-")) { reopenWithEncoding(cmd.slice(7)); return; }
   if (cmd.startsWith("eol-")) { setDocEol(cmd.slice(4)); return; }
   setTip("命令: " + cmd);
@@ -9659,10 +9659,28 @@ setTimeout(() => { EDIT_CMDS.cut = () => cutSelection(); EDIT_CMDS.copy = () => 
 
 function setSelRange(t, a, bRow, bCol) { t.selAnchor = { row: a.row, col: a.col }; t.sel = { r0: a.row, c0: a.col, r1: bRow, c1: bCol }; t.cursor = { row: bRow, col: bCol }; }
 // 文字变换: 只改选中的文字, 变换后选中变换后的文字
-function selTextMap(t, fn) {
-  if (!t) return;
+// 经桥执行的编辑操作是异步的: 登记进行中的操作, 供 dispatchCommand 的返回值 / 测试等待
+const PENDING_OPS = new Set();
+window.__editIdle = () => Promise.all([...PENDING_OPS]);
+function trackOp(p) { PENDING_OPS.add(p); p.finally(() => PENDING_OPS.delete(p)); return p; }
+{
+  const _dc = dispatchCommand;
+  dispatchCommand = function () { const r = _dc.apply(this, arguments); return PENDING_OPS.size ? window.__editIdle() : r; };
+}
+// 变换本身在 Rust (editcore::edit_ops, 经 /api/edit_text · Tauri edit_text); 这里只负责取选区、套回结果
+function selTextOp(op) { return trackOp(selTextOpRun(op)); }
+function selLinesOp(op, opts) { return trackOp(selLinesOpRun(op, opts)); }
+async function selTextOpRun(op) {
+  const t = getActiveTab(); if (!t) return;
   if (!selNonEmpty(t)) { setTip(tr("ui.needSel", "需要先选择文字")); return; }
-  const text = selectionText(t), out = fn(text);
+  const text = selectionText(t);
+  let out;
+  try { out = (await invoke("edit_text", { op, text, tab_width: PREFS.tabWidth || 4 })).text; }
+  catch (e) { setTip("变换失败: " + e.message); return; }
+  if (getActiveTab() !== t || !selNonEmpty(t) || selectionText(t) !== text) return;   // 等待期间选区变了: 放弃
+  applySelText(t, text, out);
+}
+function applySelText(t, text, out) {
   if (out === text) return;
   const a = { row: t.sel.r0, col: t.sel.c0 };
   snapshot(t); deleteSelection(t); t.selAnchor = null;
@@ -9671,71 +9689,41 @@ function selTextMap(t, fn) {
   t.dirty = true; renderVim(t);
 }
 // 行操作: fn(lines[]) -> 新的 lines[]; 之后选中这些整行 (含行尾换行)
-function selLinesMap(t, fn, opts) {
-  if (!t) return;
+async function selLinesOpRun(op, opts) {
+  const t = getActiveTab(); if (!t) return;
   if (!selNonEmpty(t)) { setTip(tr("ui.needSel", "需要先选择文字")); return; }
   let r0 = t.sel.r0, r1 = t.sel.r1;
   if (r1 > r0 && t.sel.c1 === 0) r1--;                       // 选区止于下一行行首: 那一行不算
+  const seg = t.lines.slice(r0, r1 + 1);
+  let out;
+  try { out = (await invoke("edit_lines", { op, lines: seg })).lines; }
+  catch (e) { setTip("行操作失败: " + e.message); return; }
+  if (getActiveTab() !== t || t.lines.length < r1 + 1 || seg.some((l, i) => t.lines[r0 + i] !== l)) return;   // 等待期间文档变了: 放弃
   snapshot(t);
-  const seg = t.lines.slice(r0, r1 + 1), out = fn(seg);
   t.lines.splice(r0, seg.length, ...out);
   const last = r0 + out.length - 1;
   if ((!opts || opts.eol !== false) && last + 1 < t.lines.length) setSelRange(t, { row: r0, col: 0 }, last + 1, 0);
   else setSelRange(t, { row: r0, col: 0 }, last, charLen(t.lines[last] || ""));
   t.dirty = true; renderVim(t);
 }
-const cmpCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-sortLines = function (asc) { selLinesMap(getActiveTab(), (seg) => seg.slice().sort((x, y) => cmpCode(x, y) * (asc ? 1 : -1))); };
-ltrimLines = function () { selLinesMap(getActiveTab(), (seg) => seg.map((l) => l.replace(/^[ \t]+/, ""))); };
-rtrimLines = function () { selLinesMap(getActiveTab(), (seg) => seg.map((l) => l.replace(/[ \t]+$/, ""))); };
-uniqConsecutiveLines = function () { selLinesMap(getActiveTab(), (seg) => seg.filter((l, i) => i === 0 || l !== seg[i - 1])); };
+sortLines = function (asc) { return selLinesOp(asc ? "sort-asc" : "sort-desc"); };
+ltrimLines = function () { return selLinesOp("ltrim-lines", { eol: false }); };
+rtrimLines = function () { return selLinesOp("rtrim-lines", { eol: false }); };
+uniqConsecutiveLines = function () { return selLinesOp("uniq-consecutive"); };
 const _indentOld = indentSelection;
 indentSelection = function (reverse) {
   const t = getActiveTab(); if (!t) return;
   if (t.colSel) return _indentOld.apply(this, arguments);
   if (!selNonEmpty(t)) return;
-  selLinesMap(t, (seg) => seg.map((l) => reverse ? (l.startsWith("\t") ? l.slice(1) : l.replace(/^ {1,4}/, "")) : (l === "" ? l : "\t" + l)));   // Sakura: 空行不缩进
+  return selLinesOp(reverse ? "unindent-selection" : "indent-selection");
 };
-spaceIndent = function (reverse) {
-  selLinesMap(getActiveTab(), (seg) => seg.map((l) => reverse ? l.replace(/^ /, "") : (l === "" ? l : " " + l)));
-};
+spaceIndent = function (reverse) { return selLinesOp(reverse ? "unindent-space" : "indent-space"); };
 i18nAdd("需要先选择文字", "", "先に文字を選択してください", "Select text first");
 
-// ---- 全角 / 半角 / かな 变换 (语义按 Sakura 实测) ----
-const HK_FULL2HALF = (() => { const m = new Map(); for (let c = 0xFF61; c <= 0xFF9F; c++) { const h = String.fromCharCode(c), f = h.normalize("NFKC"); if (f !== h) m.set(f, h); } return m; })();
-function katToHalf(s) {
-  let out = "";
-  for (const ch of s) {
-    if (HK_FULL2HALF.has(ch)) { out += HK_FULL2HALF.get(ch); continue; }
-    const d = ch.normalize("NFD");
-    if (d.length === 2 && HK_FULL2HALF.has(d[0]) && (d[1] === "\u3099" || d[1] === "\u309A")) { out += HK_FULL2HALF.get(d[0]) + (d[1] === "\u3099" ? "\uFF9E" : "\uFF9F"); continue; }
-    out += ch;
-  }
-  return out;
-}
-const hiraToKata = (s) => s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
-const kataToHira = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
-const asciiToFull = (s) => s.replace(/[!-~]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xFEE0)).replace(/ /g, "\u3000");
-const fullToAscii = (s) => s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\u3000/g, " ");
-const halfKataToFull = (s) => s.replace(/[\uFF61-\uFF9F]+/g, (r) => r.normalize("NFKC"));
-const toHankakuAll = (s) => katToHalf(hiraToKata(fullToAscii(s)));                  // 全角 → 半角 (かな含む)
-const toZenkakuKata = (s) => hiraToKata(asciiToFull(halfKataToFull(s)));            // 半角 → 全角カタカナ (ASCII も全角に)
-const toZenkakuHira = (s) => kataToHira(asciiToFull(halfKataToFull(s)));
-Object.assign(SAKURA_CMDS, {
-  "to-upper": () => selTextMap(getActiveTab(), (x) => x.toUpperCase()),
-  "to-lower": () => selTextMap(getActiveTab(), (x) => x.toLowerCase()),
-  "to-halfwidth": () => selTextMap(getActiveTab(), toHankakuAll),
-  "to-zenkaku": () => selTextMap(getActiveTab(), toZenkakuKata),
-  "to-zenhira": () => selTextMap(getActiveTab(), toZenkakuHira),
-  "to-fullwidth": () => selTextMap(getActiveTab(), toZenkakuKata),
-  "to-zenei": () => selTextMap(getActiveTab(), toZenEi),
-  "to-hanei": () => selTextMap(getActiveTab(), toHanEi),
-  "to-hankata": () => selTextMap(getActiveTab(), katToHalf),
-  "hankata-to-zenkata": () => selTextMap(getActiveTab(), (x) => halfKataToFull(x)),
-  "hankata-to-zenhira": () => selTextMap(getActiveTab(), (x) => kataToHira(halfKataToFull(x))),
-  "tab-to-space": () => selTextMap(getActiveTab(), (x) => x.split("\n").map((l) => tabsToSpaces(l)).join("\n")),
-  "space-to-tab": () => selTextMap(getActiveTab(), (x) => x.split("\n").map((l) => spacesToTabs(l)).join("\n")),
-});
+// 全角 / 半角 / かな / 大小写 / TAB↔空格: 变换在 Rust (editcore::edit_ops), 语义按 Sakura 实测
+Object.assign(SAKURA_CMDS, Object.fromEntries(
+  ["to-upper", "to-lower", "to-halfwidth", "to-zenkaku", "to-zenhira", "to-fullwidth", "to-zenei", "to-hanei", "to-hankata",
+   "hankata-to-zenkata", "hankata-to-zenhira", "tab-to-space", "space-to-tab"].map((op) => [op, () => selTextOp(op)])));
 CFG_CMDS["indent-space"] = () => spaceIndent(false);
 CFG_CMDS["unindent-space"] = () => spaceIndent(true);
 
@@ -9806,8 +9794,6 @@ selectWordAtCursor = function (t) {
   const _dup = duplicateLine;
   duplicateLine = function () { _dup.apply(this, arguments); const t = getActiveTab(); if (t) { t.sel = null; t.selAnchor = null; } };
 }
-ltrimLines = function () { selLinesMap(getActiveTab(), (seg) => seg.map((l) => l.replace(/^[ \t]+/, "")), { eol: false }); };
-rtrimLines = function () { selLinesMap(getActiveTab(), (seg) => seg.map((l) => l.replace(/[ \t]+$/, "")), { eol: false }); };
 
 /* ===== 第三批对齐 (Sakura 实测): 有选区时「行首/行尾 剪切·删除」只处理选区; 词删除/词剪切在行末什么也不做 ===== */
 {

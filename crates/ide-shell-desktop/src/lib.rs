@@ -645,6 +645,8 @@ pub fn run() {
             search::search_cmd,
             outline::outline,
             reinterpret_text,
+            edit_text,
+            edit_lines,
             migemo_patterns,
             plugin::plugin_load,
         ])
@@ -721,6 +723,36 @@ fn reinterpret_text(options: ReinterpretOptions) -> Result<serde_json::Value, St
     Ok(serde_json::json!({ "text": r(&options.text, e, d)? }))
 }
 
+
+#[derive(serde::Deserialize)]
+pub struct EditTextOptions {
+    pub op: String,
+    pub text: String,
+    #[serde(default)]
+    pub tab_width: Option<usize>,
+}
+
+/// 选中文字的变换 (web 版 /api/edit_text 同一语义)
+#[tauri::command]
+fn edit_text(options: EditTextOptions) -> Result<serde_json::Value, String> {
+    editcore::edit_ops::transform_text(&options.op, &options.text, options.tab_width.unwrap_or(4))
+        .map(|t| serde_json::json!({ "text": t }))
+        .ok_or_else(|| "未知的变换操作".to_string())
+}
+
+#[derive(serde::Deserialize)]
+pub struct EditLinesOptions {
+    pub op: String,
+    pub lines: Vec<String>,
+}
+
+/// 选区涉及整行的变换 (web 版 /api/edit_lines 同一语义)
+#[tauri::command]
+fn edit_lines(options: EditLinesOptions) -> Result<serde_json::Value, String> {
+    editcore::edit_ops::transform_lines(&options.op, &options.lines)
+        .map(|l| serde_json::json!({ "lines": l }))
+        .ok_or_else(|| "未知的行操作".to_string())
+}
 
 #[derive(serde::Deserialize)]
 pub struct MigemoOptions {

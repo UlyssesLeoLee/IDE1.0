@@ -678,6 +678,41 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 &serde_json::to_vec(&serde_json::json!({ "patterns": patterns })).unwrap_or_default(),
             );
         }
+        ("POST", "/api/edit_text") => {
+            // 选中文字的变换 (editcore::edit_ops::transform_text); 纯计算
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let op = req.get("op").and_then(|v| v.as_str()).unwrap_or("");
+            let text = req.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let tab = req.get("tab_width").and_then(|v| v.as_u64()).unwrap_or(4) as usize;
+            match editcore::edit_ops::transform_text(op, text, tab) {
+                Some(out) => send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&serde_json::json!({ "text": out })).unwrap_or_default(),
+                ),
+                None => send_error_json(stream, "400 Bad Request", "未知的变换操作"),
+            }
+        }
+        ("POST", "/api/edit_lines") => {
+            // 选区涉及整行的变换 (editcore::edit_ops::transform_lines); 纯计算
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let op = req.get("op").and_then(|v| v.as_str()).unwrap_or("");
+            let lines: Vec<String> = req
+                .get("lines")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            match editcore::edit_ops::transform_lines(op, &lines) {
+                Some(out) => send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&serde_json::json!({ "lines": out })).unwrap_or_default(),
+                ),
+                None => send_error_json(stream, "400 Bad Request", "未知的行操作"),
+            }
+        }
         ("POST", "/api/reinterpret_text") => {
             // コード変換: 文本按 encode_as 编成字节再按 decode_as 解读 (纯计算, 不碰磁盘)
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();

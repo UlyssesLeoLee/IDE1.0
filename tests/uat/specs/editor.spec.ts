@@ -497,15 +497,15 @@ test.describe("命令审计 (功能覆盖)", () => {
     // 大写转换 (清掉 select-all 设的选区, 让 mapLines 作用于全文)
     await page.evaluate(() => {   // Sakura: 变换只作用于选中的文字 -> 先全选
       (window as any).dispatchCommand("select-all");
-      (window as any).dispatchCommand("to-upper");
+      return (window as any).dispatchCommand("to-upper");
     });
     const upper = await page.evaluate(() => (window as any).activeTab().lines.join("\n"));
     expect(upper).toBe(upper.toUpperCase());
 
     // 全角 → 半角 往返
-    await page.evaluate(() => { (window as any).dispatchCommand("to-halfwidth"); });
-    await page.evaluate(() => { (window as any).dispatchCommand("to-fullwidth"); });
-    await page.evaluate(() => { (window as any).dispatchCommand("to-halfwidth"); });
+    await page.evaluate(() => (window as any).dispatchCommand("to-halfwidth"));
+    await page.evaluate(() => (window as any).dispatchCommand("to-fullwidth"));
+    await page.evaluate(() => (window as any).dispatchCommand("to-halfwidth"));
     const half = await page.evaluate(() => (window as any).activeTab().lines.join("\n"));
     expect(half).not.toContain("\u3000");   // 无全角空格残留
   });

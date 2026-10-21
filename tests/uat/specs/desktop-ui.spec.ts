@@ -72,6 +72,11 @@ function installMock() {
           }
           return out;
         }
+        // 编辑变换在 Rust (editcore::edit_ops): mock 环境没有真 Tauri 后端, 转给同源 web 服务的同一份实现
+        case "edit_text":
+        case "edit_lines": {
+          return w.__rustEdit(cmd, args.options);
+        }
         case "scm_status": return { branch: "main", files: [{ path: "README.md", status: "modified", staged: false }] };
         case "outline": {
           const p = norm(args.path);
@@ -140,6 +145,9 @@ async function boot(page: Page): Promise<string[]> {
   // confirm(), 自动 dismiss 会让"用户取消"和"用户确认"两条路径都走到
   // dismiss 分支, 用例就测不出区别了. 需要 dialog 的用例自己
   // 用 page.once("dialog", ...) 接管.
+  const apiBase = `http://${process.env.IDE_SHELL_WEB_ADDR || "127.0.0.1:8123"}`;
+  await page.exposeFunction("__rustEdit", async (cmd: string, body: unknown) =>
+    (await fetch(apiBase + "/api/" + cmd, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json());
   await page.addInitScript(installMock);
   await page.goto(DIST);
   await page.waitForFunction(() => (window as any).__ideReady && (window as any).__ideReady());

@@ -119,7 +119,10 @@ export async function snap(page) {
     };
   });
 }
-export async function press(page, combo, { times = 1 } = {}) { for (let i = 0; i < times; i++) await page.keyboard.press(combo); }
+// 编辑变换在 Rust 里异步执行 (经桥); 按键之后等它们落地再读状态
+export async function press(page, combo, { times = 1 } = {}) {
+  for (let i = 0; i < times; i++) { await page.keyboard.press(combo); await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null)); }
+}
 
 /** 清空并逐行输入一段文本 (真实键盘), 光标回到文首. */
 export async function fill(page, text) {
