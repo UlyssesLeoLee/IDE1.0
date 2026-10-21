@@ -201,11 +201,11 @@ test("缺省非模态: 直接打字, vim 键位当普通字符, Esc 无副作用
   await page.keyboard.press("Enter");
   await page.keyboard.type("two");
   expect(await docText(page)).toBe("dihellojk\ntwo");
-  await page.keyboard.press("Home");
+  await page.keyboard.press("Home"); await page.evaluate(() => (window as any).__editIdle());
   await page.keyboard.type(">");
-  await page.keyboard.press("End");
+  await page.keyboard.press("End"); await page.evaluate(() => (window as any).__editIdle());
   await page.keyboard.type("<");
-  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp"); await page.evaluate(() => (window as any).__editIdle());
   await page.keyboard.press("Backspace");
   // 第 2 行 ">two<" 光标在第 5 列; 上移到第 1 行同一列 (dihel|lojk), 退格删掉 l
   expect(await docText(page)).toBe("dihelojk\n>two<");
@@ -245,7 +245,7 @@ test("光标: 非模态时是一根会闪的竖线, 跟着打字 / 方向键 / H
   expect(c.expect).not.toBeNull();
   expect(Math.abs(c.left - (c.expect as number))).toBeLessThan(1.5);
   expect(c.left).toBeGreaterThan(c0.left);
-  await page.keyboard.press("Home");
+  await page.keyboard.press("Home"); await page.evaluate(() => (window as any).__editIdle());
   c = await caret();
   expect(Math.abs(c.left - c0.left)).toBeLessThan(1.5);
   await page.keyboard.press("Enter");
@@ -254,8 +254,8 @@ test("光标: 非模态时是一根会闪的竖线, 跟着打字 / 方向键 / H
 
   // 中文 (宽字符) 按真实排版定位: 光标在最后一个字右边
   await page.evaluate(() => { const t = (window as any).getActiveTab(); t.lines = ["ab中文日本語"]; t.cursor = { row: 0, col: 7 }; (window as any).renderVim(t); });
-  await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle());
+  await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle());
   c = await caret();
   expect(Math.abs(c.left - (c.expect as number))).toBeLessThan(1.5);
 
@@ -266,7 +266,7 @@ test("光标: 非模态时是一根会闪的竖线, 跟着打字 / 方向键 / H
 
   // 文本长过一屏: 打字 / 方向键让光标始终在可视区内 (编辑区自己滚过去)
   await page.evaluate(() => { const t = (window as any).getActiveTab(); t.lines = Array.from({ length: 80 }, (_, n) => "line " + n); t.cursor = { row: 0, col: 0 }; (window as any).renderVim(t); });
-  for (let i = 0; i < 79; i++) await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 79; i++) await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
   c = await caret();
   expect(c.display).toBe("block");
   expect(c.top + c.h).toBeLessThanOrEqual(c.hostBottom + 0.5);

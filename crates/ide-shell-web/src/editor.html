@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -7700,66 +7700,73 @@ function handleEditNavKey(e, t, vim) {
     return false;
   }
 
-  const lastRow = Math.max(0, t.lines.length - 1);
-  const len = (r) => charLen(t.lines[r] || "");
-  const had = selNonEmpty(t);
-  let { row, col } = t.cursor;
-  const vertical = k === "ArrowUp" || k === "ArrowDown" || k === "PageUp" || k === "PageDown";
-
-  // 无 Shift 时, 左右键遇到选区先收缩到选区端点 (Sakura: M-11)
-  if (!shift && !ctrl && had && (k === "ArrowLeft" || k === "ArrowRight")) {
-    const s0 = t.sel, toEnd = k === "ArrowRight";
-    const r = toEnd ? s0.r1 : s0.r0, c = toEnd ? (s0.c1 === Infinity ? len(s0.r1) : s0.c1) : s0.c0;
+  // Ctrl+↑↓ = 文本滚动一行 (光标不动): 纯视图操作, 留在前端
+  if ((k === "ArrowUp" || k === "ArrowDown") && ctrl && !shift) {
     e.preventDefault();
-    t.cursor = { row: r, col: Math.min(c, len(r)) }; t.sel = null; t.selAnchor = null; delete t.goalCol;
-    renderVim(t); updateCaret(true); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+    edContent.scrollTop += (k === "ArrowUp" ? -1 : 1) * (parseFloat(getComputedStyle(edContent).lineHeight) || 18);
     return true;
   }
-
-  if (k === "ArrowUp" || k === "ArrowDown") {
-    const d = k === "ArrowUp" ? -1 : 1;
-    if (ctrl && !shift) {                        // Ctrl+↑↓ = 文本滚动一行 (光标不动)
-      e.preventDefault();
-      edContent.scrollTop += d * (parseFloat(getComputedStyle(edContent).lineHeight) || 18);
-      return true;
-    }
-    const step = ctrl && shift ? 2 : 1;          // Shift+Ctrl+↑↓ = (范围选择) 2 行
-    if (t.goalCol === undefined) t.goalCol = col;
-    row = Math.max(0, Math.min(lastRow, row + d * step));
-    col = Math.min(t.goalCol, len(row));
-  } else if (k === "PageUp" || k === "PageDown") {
-    const d = k === "PageUp" ? -1 : 1;
-    const n = ctrl ? Math.max(1, Math.floor(pageRows() / 2)) : pageRows();
-    if (t.goalCol === undefined) t.goalCol = col;
-    row = Math.max(0, Math.min(lastRow, row + d * n));
-    col = Math.min(t.goalCol, len(row));
-  } else if (k === "ArrowLeft") {
-    if (ctrl) {
-      if (col === 0 && row > 0) { row--; col = len(row); } else col = wordLeft(t.lines[row] || "", col);
-    } else if (col > 0) col--; else if (row > 0) { row--; col = len(row); }
-  } else if (k === "ArrowRight") {
-    if (ctrl) {
-      const cur = t.lines[row] || "";
-      const c = wordRight(cur, col);
-      if (col >= charLen(cur) && row < lastRow) { row++; col = firstWordCol(t.lines[row] || ""); } else col = c;
-    } else if (col < len(row)) col++; else if (row < lastRow) { row++; col = 0; }
-  } else if (k === "Home") {
-    if (ctrl) { row = 0; col = 0; }
-    else { const fnb = ((t.lines[row] || "").match(/^[ 	]*/) || [""])[0].length; col = col !== fnb ? fnb : 0; }    // Sakura: 先到行首非空白, 再按到第 0 列
-  } else if (k === "End") {
-    if (ctrl) { row = lastRow; col = len(lastRow); } else col = len(row);
-  }
+  // 其余移动 / 范围选择的语义在 Rust (editcore::nav), 前端交上光标周围几行与选区, 套回结果
   e.preventDefault();
-  if (!vertical) delete t.goalCol;
-  if (shift) {
-    const a = selAnchorOf(t);
-    t.selAnchor = a; t.cursor = { row, col }; t.sel = normalizeSel(a, t.cursor);
-  } else {
-    t.sel = null; t.selAnchor = null; t.cursor = { row, col };
-  }
-  if (t.sel || had || vim) renderVim(t); else paintActive();     // 无选区: 回到单文本节点形态 (和旧的方向键路径一致)
-  setPos("Ln " + (row + 1) + ", Col " + (col + 1));
+  runNav(t, vim, { key: k, ctrl, shift });
   return true;
+}
+
+// 移动请求: 只带光标周围需要的几行 (±2 行 / 末行 / PageUp·Down 的目标行), 不传整篇
+function navRequest(t, key, ctrl, shift) {
+  const last = Math.max(0, t.lines.length - 1), { row, col } = t.cursor, page = pageRows();
+  const need = new Set([row - 2, row - 1, row, row + 1, row + 2, last]);
+  if (key === "PageUp" || key === "PageDown") need.add(Math.max(0, Math.min(last, row + (key === "PageUp" ? -1 : 1) * (ctrl ? Math.max(1, Math.floor(page / 2)) : page))));
+  const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
+  const had = selNonEmpty(t);
+  const sel = had ? [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1] : null;
+  const a = shift ? selAnchorOf(t) : null;
+  return { key, ctrl, shift, row, col, goal_col: t.goalCol === undefined ? null : t.goalCol, sel, anchor: a ? [a.row, a.col] : null, total_rows: t.lines.length, rows, page_rows: page };
+}
+function runNav(t, vim, k) {
+  return enqueueInput(async () => {
+    if (getActiveTab() !== t) return;
+    const had = selNonEmpty(t);
+    let res;
+    try { res = await invoke("nav_step", navRequest(t, k.key, k.ctrl, k.shift)); }
+    catch (err) { setTip("移动失败: " + err.message); return; }
+    if (!res || res.row === undefined) return;
+    if (res.goal_col === null || res.goal_col === undefined) delete t.goalCol; else t.goalCol = res.goal_col;
+    t.cursor = { row: res.row, col: res.col };
+    t.sel = res.sel ? { r0: res.sel[0], c0: res.sel[1], r1: res.sel[2], c1: res.sel[3] } : null;
+    t.selAnchor = res.anchor ? { row: res.anchor[0], col: res.anchor[1] } : null;
+    if (t.sel || had || vim) renderVim(t); else paintActive();     // 无选区: 回到单文本节点形态
+    updateCaret(true);
+    setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+  });
+}
+
+/* 输入顺序闸门: 经桥执行的移动是异步的, 它没落地之前到来的按键 / 输入不能抢先执行 (否则会在旧光标处插字).
+   闸门开着时 (有未完成的桥操作), 后到的 keydown / beforeinput 先拦下排队, 前一个落地后按原顺序重放。 */
+const INPUT_Q = []; let INPUT_BUSY = false, INPUT_REPLAY = false;
+function enqueueInput(fn) {
+  const p = (async () => { INPUT_BUSY = true; try { await fn(); } finally { INPUT_BUSY = false; await drainInput(); } })();
+  return trackOp(p);
+}
+async function drainInput() {
+  while (INPUT_Q.length && !INPUT_BUSY) {
+    const ev = INPUT_Q.shift();
+    INPUT_REPLAY = true;
+    try { replayInput(ev); } catch (_) { /* 单个事件失败不影响后面的 */ } finally { INPUT_REPLAY = false; }
+    if (INPUT_BUSY) return;   // 重放又启动了桥操作: 它结束时自己的 drain 会接着处理队列
+  }
+}
+function replayInput(ev) {
+  if (ev.type === "keydown") edContent.dispatchEvent(new KeyboardEvent("keydown", { key: ev.key, code: ev.code, ctrlKey: ev.ctrlKey, shiftKey: ev.shiftKey, altKey: ev.altKey, metaKey: ev.metaKey, bubbles: true, cancelable: true }));
+  else edContent.dispatchEvent(new InputEvent("beforeinput", { data: ev.data, inputType: ev.inputType, bubbles: true, cancelable: true }));
+}
+for (const type of ["keydown", "beforeinput"]) {
+  edContent.addEventListener(type, (e) => {
+    if (INPUT_REPLAY || !(INPUT_BUSY || INPUT_Q.length)) return;
+    if (type === "keydown" && /^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    INPUT_Q.push({ type, key: e.key, code: e.code, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, data: e.data, inputType: e.inputType });
+  }, true);
 }
 
 // 系统剪贴板: 复制时同时写系统剪贴板 (别的程序能粘), 粘贴走浏览器的 paste 事件 (不需要权限弹窗)
@@ -9666,11 +9673,20 @@ function setSelRange(t, a, bRow, bCol) { t.selAnchor = { row: a.row, col: a.col 
 // 文字变换: 只改选中的文字, 变换后选中变换后的文字
 // 经桥执行的编辑操作是异步的: 登记进行中的操作, 供 dispatchCommand 的返回值 / 测试等待
 const PENDING_OPS = new Set();
-window.__editIdle = () => Promise.all([...PENDING_OPS]);
+window.__editIdle = async () => {   // 一直等到没有进行中的桥操作、也没有排队的输入
+  for (let i = 0; i < 10000; i++) { if (!PENDING_OPS.size && !(typeof INPUT_Q !== "undefined" && INPUT_Q.length)) return; await Promise.all([...PENDING_OPS]); await new Promise((r) => setTimeout(r, 0)); }
+};
 function trackOp(p) { PENDING_OPS.add(p); p.finally(() => PENDING_OPS.delete(p)); return p; }
 {
   const _dc = dispatchCommand;
-  dispatchCommand = function () { const r = _dc.apply(this, arguments); return PENDING_OPS.size ? window.__editIdle() : r; };
+  dispatchCommand = function () {
+    // 还有没落地的输入 (经桥的移动 / 排队的按键) 时, 命令排在它们后面执行, 保持"先按的先生效"
+    if (typeof INPUT_BUSY !== "undefined" && (INPUT_BUSY || INPUT_Q.length)) {
+      const args = arguments, self = this;
+      return (async () => { while (INPUT_BUSY || INPUT_Q.length) await window.__editIdle(); return dispatchCommand.apply(self, args); })();
+    }
+    const r = _dc.apply(this, arguments); return PENDING_OPS.size ? window.__editIdle() : r;
+  };
 }
 // 变换本身在 Rust (editcore::edit_ops, 经 /api/edit_text · Tauri edit_text); 这里只负责取选区、套回结果
 function selTextOp(op) { return trackOp(selTextOpRun(op)); }

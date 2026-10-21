@@ -74,7 +74,8 @@ function installMock() {
         }
         // 编辑变换在 Rust (editcore::edit_ops): mock 环境没有真 Tauri 后端, 转给同源 web 服务的同一份实现
         case "edit_text":
-        case "edit_lines": {
+        case "edit_lines":
+        case "nav_step": {
           return w.__rustEdit(cmd, args.options);
         }
         case "scm_status": return { branch: "main", files: [{ path: "README.md", status: "modified", staged: false }] };

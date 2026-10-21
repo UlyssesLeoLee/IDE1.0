@@ -135,6 +135,7 @@ export async function fill(page, text) {
     if (i < ls.length - 1) await page.keyboard.press('Enter');
   }
   await page.keyboard.press('Control+Home');
+  await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null));   // 移动在 Rust 里异步落地
 }
 export async function openMenu(page, menu, cmd) {
   await page.locator(`#menubar .menu-item[data-menu="${menu}"] > .mb-btn`).click();

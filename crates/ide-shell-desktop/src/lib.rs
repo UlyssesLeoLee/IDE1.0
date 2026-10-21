@@ -647,6 +647,7 @@ pub fn run() {
             reinterpret_text,
             edit_text,
             edit_lines,
+            nav_step,
             migemo_patterns,
             plugin::plugin_load,
         ])
@@ -723,6 +724,15 @@ fn reinterpret_text(options: ReinterpretOptions) -> Result<serde_json::Value, St
     Ok(serde_json::json!({ "text": r(&options.text, e, d)? }))
 }
 
+
+/// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}
+#[tauri::command]
+fn nav_step(options: editcore::nav::NavReq) -> serde_json::Value {
+    match editcore::nav::step(&options) {
+        Some(r) => serde_json::to_value(r).unwrap_or_default(),
+        None => serde_json::json!({}),
+    }
+}
 
 #[derive(serde::Deserialize)]
 pub struct EditTextOptions {

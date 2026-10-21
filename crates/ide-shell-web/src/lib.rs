@@ -678,6 +678,21 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 &serde_json::to_vec(&serde_json::json!({ "patterns": patterns })).unwrap_or_default(),
             );
         }
+        ("POST", "/api/nav_step") => {
+            // 键盘光标移动 / 范围选择 (editcore::nav::step); 无状态纯计算
+            match serde_json::from_slice::<editcore::nav::NavReq>(&body) {
+                Ok(req) => match editcore::nav::step(&req) {
+                    Some(res) => send_response(
+                        stream,
+                        "200 OK",
+                        "application/json",
+                        &serde_json::to_vec(&res).unwrap_or_default(),
+                    ),
+                    None => send_response(stream, "200 OK", "application/json", b"{}"),
+                },
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("移动请求无效: {e}")),
+            }
+        }
         ("POST", "/api/edit_text") => {
             // 选中文字的变换 (editcore::edit_ops::transform_text); 纯计算
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
