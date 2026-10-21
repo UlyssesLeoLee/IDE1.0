@@ -5481,7 +5481,12 @@ function findStep(dir) {
   const hits = findInTab(t, FIND_STATE.needle, FIND_STATE);
   FIND_STATE.hits = hits;
   if (hits.length === 0) { setTip("未找到: " + FIND_STATE.needle); scheduleMarks(); return; }
-  const cr = t.cursor.row, cc = t.cursor.col;
+  const cr = t.cursor.row;
+  let cc = t.cursor.col;
+  if (dir > 0 && FIND_STATE.wholeWord && cc > 0) {          // Sakura: 单词单位搜索时, 光标在词中 -> 从该词词首起找 (命中当前词本身)
+    const a = charArray(t.lines[cr] || "");
+    if (isWordChar(a[cc - 1] || "") && isWordChar(a[cc] || "")) { while (cc > 0 && isWordChar(a[cc - 1])) cc--; }
+  }
   let idx = -1, wrapped = false;
   // 当前命中正被选中时从它的「下一处」找; 否则 (光标只是停在那里) 光标位置上的命中本身也算
   const onHit = t.sel && t.sel.r0 === cr && t.sel.c0 === cc;
@@ -5556,16 +5561,16 @@ function expandReplacement(m, repl) {
   return repl.replace(/\$(\d+|&)|\\(\d)/g, (_, a, b) => { const k = a !== undefined ? a : b; return k === "&" ? m[0] : (m[+k] ?? ""); });
 }
 function replaceInLine(line, re, repl, from = 0, to = Infinity) {
-  let out = "", at = 0, n = 0, m;
+  let out = "", at = 0, n = 0, m, end = 0;
   re.lastIndex = 0;
   while ((m = re.exec(line))) {
     if (m[0] === "") { re.lastIndex++; continue; }
     const col = charLen(line.slice(0, m.index));
     if (col < from || col + charLen(m[0]) > to) continue;
     out += line.slice(at, m.index) + expandReplacement(m, repl);
-    at = m.index + m[0].length; n++;
+    at = m.index + m[0].length; n++; end = charLen(out);
   }
-  return { text: out + line.slice(at), n };
+  return { text: out + line.slice(at), n, end };
 }
 
 // 置換 (一个): 当前选区正好是一处命中就替换它, 然后找下一个; 否则先定位到下一处
@@ -5608,17 +5613,19 @@ function replaceAll() {
   let r0 = 0, r1 = t.lines.length - 1, c0 = 0, c1 = Infinity;
   if (scope === "sel" && selNonEmpty(t)) { r0 = t.sel.r0; r1 = t.sel.r1; c0 = t.sel.c0; c1 = t.sel.c1 === Infinity ? Infinity : t.sel.c1; }
   let count = 0;
+  let lastRow = -1, lastEnd = 0;
   const inSel = scope === "sel" && selNonEmpty(t), tailLen = inSel ? charLen(t.lines[r1]) - (c1 === Infinity ? charLen(t.lines[r1]) : c1) : 0;
   snapshot(t);
   for (let r = r0; r <= r1; r++) {
     const from = r === r0 ? c0 : 0;
     const to = r === r1 ? c1 : Infinity;
     const res = replaceInLine(t.lines[r], re, withText, from, to);
-    if (res.n) { t.lines[r] = res.text; count += res.n; }
+    if (res.n) { t.lines[r] = res.text; count += res.n; lastRow = r; lastEnd = res.end; }
   }
   if (count > 0) {
     t.dirty = true; t.sel = null;
     if (inSel) { const ec = charLen(t.lines[r1]) - tailLen; t.sel = { r0, c0, r1, c1: ec }; t.selAnchor = { row: r0, col: c0 }; t.cursor = { row: r1, col: ec }; }   // Sakura: 选区范围内置换后选区保留
+    else if (lastRow >= 0) t.cursor = { row: lastRow, col: lastEnd };   // Sakura: 光标停在最后一处置换之后
     renderVim(t);
   }
   closeModal();
@@ -7241,10 +7248,12 @@ function columnSelectedText(t) {
     const line = t.lines[r] || "";
     // 塌缩列块 (c1 === c0) 取该列单个字符; 否则取 [c0, c1) 区间.
     // 用 charSlice 而非 String.slice: 后者按 UTF-16 码元切, 会在代理对上劈开半个字符.
-    out.push(c1 === c0 ? charSlice(line, c0, c0 + 1) : charSlice(line, c0, c1));
+    out.push(c1 === c0 ? "" : charSlice(line, c0, c1));
   }
   return out.join("\n");
 }
+// Sakura: 矩形复制到剪贴板时每一行都以换行结尾 (含最后一行)
+const columnClipText = (t) => columnSelectedText(t) + "\n";
 
 // 列块删除 (整块挖空)
 function columnDelete() {
@@ -7256,7 +7265,7 @@ function columnDelete() {
     const line = t.lines[r] || "";
     t.lines[r] = charSlice(line, 0, c0) + charSlice(line, c1, charLen(line));
   }
-  t.colSel = null;
+  t.colSel = null; t.cursor = { row: r0, col: Math.min(c0, charLen(t.lines[r0] || "")) };   // Sakura: 删除后光标在矩形左上角
   t.dirty = true;
   renderVim(t);
   setTip("列块已删除 (" + (r1 - r0 + 1) + "行 ×" + (c1 - c0) + "列)");
@@ -8067,10 +8076,19 @@ function tabsToSpaces(line, w = 4) {
   return out;
 }
 function spacesToTabs(line, w = 4) {
-  const m = /^( +)/.exec(line);
-  if (!m) return line;
-  const n = m[1].length;
-  return "\t".repeat(Math.floor(n / w)) + " ".repeat(n % w) + line.slice(n);
+  // Sakura: 每段连续空格, 凡跨过制表位的部分换成 TAB (按显示列计算), 不足一个制表位的零头保留空格
+  let out = "", col = 0;
+  const a = charArray(line);
+  for (let i = 0; i < a.length;) {
+    if (a[i] === " ") {
+      let j = i; while (j < a.length && a[j] === " ") j++;
+      let c = col; const end = col + (j - i);
+      while (Math.floor(c / w) * w + w <= end) { out += "\t"; c = Math.floor(c / w) * w + w; }
+      out += " ".repeat(end - c); col = end; i = j;
+    } else if (a[i] === "\t") { out += "\t"; col = Math.floor(col / w) * w + w; i++; }
+    else { out += a[i]; col += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(a[i]) ? 2 : 1; i++; }
+  }
+  return out;
 }
 const toZenEi = (s) => s.replace(/[A-Za-z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xFEE0));
 const toHanEi = (s) => s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
@@ -9605,7 +9623,7 @@ let CLIP_LINEMODE = false;
 copySelection = function () {
   const t = getActiveTab(); if (!t) return;
   if (!t.colSel && !selNonEmpty(t)) { pushClip(((t.lines[t.cursor.row]) || "") + "\n", true); setTip("已复制行"); return; }
-  const text = t.colSel ? columnSelectedText(t) : selectionText(t);
+  const text = t.colSel ? columnClipText(t) : selectionText(t);
   pushClip(text);
   setTip(t.colSel ? "已复制列块 " + text.split("\n").length + " 行" : "已复制 " + text.length + " 字符");
 };
@@ -9618,7 +9636,8 @@ cutSelection = function () {
     t.cursor.row = Math.min(t.cursor.row, t.lines.length - 1); t.cursor.col = 0; t.dirty = true; renderVim(t); setTip("已剪切行");
     return;
   }
-  pushClip(t.colSel ? columnSelectedText(t) : selectionText(t));
+  if (t.colSel) { pushClip(columnClipText(t)); const { r0, c0 } = colSelRect(t); columnDelete(); t.cursor = { row: r0, col: c0 }; setTip("已剪切列块"); return; }
+  pushClip(selectionText(t));
   if (deleteSelection(t)) setTip("已剪切");
 };
 {
@@ -9675,10 +9694,10 @@ indentSelection = function (reverse) {
   const t = getActiveTab(); if (!t) return;
   if (t.colSel) return _indentOld.apply(this, arguments);
   if (!selNonEmpty(t)) return;
-  selLinesMap(t, (seg) => seg.map((l) => reverse ? (l.startsWith("\t") ? l.slice(1) : l.replace(/^ {1,4}/, "")) : "\t" + l));
+  selLinesMap(t, (seg) => seg.map((l) => reverse ? (l.startsWith("\t") ? l.slice(1) : l.replace(/^ {1,4}/, "")) : (l === "" ? l : "\t" + l)));   // Sakura: 空行不缩进
 };
 spaceIndent = function (reverse) {
-  selLinesMap(getActiveTab(), (seg) => seg.map((l) => reverse ? l.replace(/^ /, "") : " " + l));
+  selLinesMap(getActiveTab(), (seg) => seg.map((l) => reverse ? l.replace(/^ /, "") : (l === "" ? l : " " + l)));
 };
 i18nAdd("需要先选择文字", "", "先に文字を選択してください", "Select text first");
 
@@ -9789,6 +9808,32 @@ selectWordAtCursor = function (t) {
 }
 ltrimLines = function () { selLinesMap(getActiveTab(), (seg) => seg.map((l) => l.replace(/^[ \t]+/, "")), { eol: false }); };
 rtrimLines = function () { selLinesMap(getActiveTab(), (seg) => seg.map((l) => l.replace(/[ \t]+$/, "")), { eol: false }); };
+
+/* ===== 第三批对齐 (Sakura 实测): 有选区时「行首/行尾 剪切·删除」只处理选区; 词删除/词剪切在行末什么也不做 ===== */
+{
+  const wrapSel = (orig, cut) => {
+    const wrapped = function () {
+      const t = getActiveTab();
+      if (t && selNonEmpty(t) && !t.colSel) { if (cut) cutSelection(); else deleteSelection(t); t.selAnchor = null; t.sel = null; renderVim(t); return; }
+      return orig.apply(this, arguments);
+    };
+    return wrapped;
+  };
+  cutToLineStart = wrapSel(cutToLineStart, true);
+  deleteToLineStart = wrapSel(deleteToLineStart, false);
+  deleteToLineEnd = wrapSel(deleteToLineEnd, false);
+  const _lcte = SAKURA_CMDS["line-cut-to-end"];
+  SAKURA_CMDS["line-cut-to-end"] = function () {
+    const t = getActiveTab();
+    if (t && selNonEmpty(t) && !t.colSel) { cutSelection(); t.selAnchor = null; t.sel = null; renderVim(t); return; }
+    return _lcte.apply(this, arguments);
+  };
+  const atEol = (t) => t && !selNonEmpty(t) && t.cursor.col >= charLen(t.lines[t.cursor.row] || "");
+  const _wc = SAKURA_CMDS["word-cut"], _wd = SAKURA_CMDS["word-delete"];
+  const joinNext = (t) => { if (t.cursor.row >= t.lines.length - 1) return; snapshot(t); t.lines.splice(t.cursor.row, 2, t.lines[t.cursor.row] + t.lines[t.cursor.row + 1]); t.dirty = true; renderVim(t); };   // Sakura: 行末的词删除 = 删掉换行
+  SAKURA_CMDS["word-cut"] = function () { const t = getActiveTab(); if (atEol(t)) return joinNext(t); return _wc.apply(this, arguments); };
+  SAKURA_CMDS["word-delete"] = function () { const t = getActiveTab(); if (atEol(t)) return joinNext(t); return _wd.apply(this, arguments); };
+}
 
 // ===== Welcome page =====
 function showWelcome() {

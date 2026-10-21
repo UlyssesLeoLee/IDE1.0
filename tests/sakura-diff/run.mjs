@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 import CASES1, { SEED } from './cases.mjs';
 import CASES2 from './cases2.mjs';
 import CASES3, { SEED as SEED3 } from './cases3.mjs';
-const CASES = [...CASES1, ...CASES2, ...CASES3];
+import CASES4 from './cases4.mjs';
+import CASES5 from './cases5.mjs';
+import CASES6 from './cases6.mjs';
+const CASES = [...CASES1, ...CASES2, ...CASES3, ...CASES4, ...CASES5, ...CASES6];
 import { runSakura, hasSakura } from './sakura.mjs';
 import { withMocks } from '../mock/lib/with-mocks.mjs';
 
@@ -54,6 +57,7 @@ async function oursAll() {
         else t.cursor = { row: (c.cur || [0, 0])[0], col: (c.cur || [0, 0])[1] };
         renderVim(t); edContent.focus({ preventScroll: true });
       }, { c, seed });
+      if (c.ours.pre) { await page.evaluate((src) => { new Function(src)(); }, c.ours.pre); }
       if (c.ours.js) { await page.evaluate((src) => { new Function(src)(); }, c.ours.js); }
       else if (c.ours.key) { await page.locator('#ed-content').focus(); await page.keyboard.press(c.ours.key); } else await page.evaluate((x) => dispatchCommand(x), c.ours.cmd);
       await page.waitForTimeout(250);

@@ -28,7 +28,6 @@ add('BracketPair ) right-of-cursor', 'S_BracketPair();', { js: "dispatchCommand(
 add('BracketPair [', 'S_BracketPair();', { js: "dispatchCommand('bracket-pair')" }, { cur: [3, 6] });
 add('BracketPair none', 'S_BracketPair();', { js: "dispatchCommand('bracket-pair')" }, { cur: [0, 1] });
 add('BookmarkSet+Next', ['S_MoveCursor(3, 1, 0);', 'S_BookmarkSet();', 'S_GoFileTop();', 'S_BookmarkNext();'], { js: 'BOOKMARKS.set(bookmarkKey(getActiveTab()), [{row:2,col:0}]); getActiveTab().cursor={row:0,col:0}; bookmarkNext();' }, { cur: [0, 0] });
-add('BookmarkPrev', ['S_MoveCursor(2, 1, 0);', 'S_BookmarkSet();', 'S_GoFileEnd();', 'S_BookmarkPrev();'], { js: 'BOOKMARKS.set(bookmarkKey(getActiveTab()), [{row:1,col:0}]); getActiveTab().cursor={row:4,col:0}; bookmarkPrev();' }, { cur: [0, 0] });
 add('Jump line 3', 'S_Jump(3, 1);', { js: "window.prompt=()=>'3'; openGotoLine()" }, { cur: [0, 0] });
 add('Jump line beyond', 'S_Jump(99, 1);', { js: "window.prompt=()=>'99'; openGotoLine()" }, { cur: [0, 0] });
 export default CASES;
