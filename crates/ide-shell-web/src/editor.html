@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -2199,35 +2199,33 @@ const BOOKMARKS = new Map();   // path -> [{row, col, label}]
 // 无标题文档没有路径, 用标签 id 当键, 免得几个无标题文档共用同一份书签
 function bookmarkKey(t) { return t.path || t.id; }
 
+// 切换 / 跳转的语义在 Rust (editcore::bookmark); 列表本身 (BOOKMARKS) 仍是前端的视图数据
 function toggleBookmark() {
-  const t = getActiveTab();
-  if (!t) return;
-  if (!BOOKMARKS.has(bookmarkKey(t))) BOOKMARKS.set(bookmarkKey(t), []);
-  const list = BOOKMARKS.get(bookmarkKey(t));
-  const at = list.findIndex((b) => b.row === t.cursor.row && b.col === t.cursor.col);
-  if (at >= 0) { list.splice(at, 1); setTip("已移除书签"); }
-  else { list.push({ row: t.cursor.row, col: t.cursor.col }); setTip("已加书签 (" + list.length + ")"); }
+  return enqueueInput(async () => {
+    const t = getActiveTab(); if (!t) return;
+    const key = bookmarkKey(t);
+    let r;
+    try { r = await invoke("bookmark", { op: "toggle", list: BOOKMARKS.get(key) || [], row: t.cursor.row, col: t.cursor.col }); }
+    catch (e) { setTip("书签操作失败: " + e.message); return; }
+    BOOKMARKS.set(key, r.list.map((b) => ({ row: b.row, col: b.col })));
+    setTip(r.added ? "已加书签 (" + r.count + ")" : "已移除书签");
+    scheduleMarks();
+  });
 }
 
 function bookmarkNav(delta) {
-  const t = getActiveTab();
-  if (!t) return;
-  const list = (BOOKMARKS.get(bookmarkKey(t)) || []).slice().sort((a, b) => a.row - b.row || a.col - b.col);
-  if (list.length === 0) { setTip("无书签"); return; }
-  // 光标正好停在书签上 → 取相邻的那个; 否则 → 取"之后第一个"(next) / "之前最后一个"(prev)
-  const onBookmark = list.findIndex((b) => b.row === t.cursor.row && b.col === t.cursor.col);
-  let idx;
-  if (onBookmark >= 0) {
-    idx = (onBookmark + delta + list.length) % list.length;
-  } else {
-    let after = list.findIndex((b) => b.row > t.cursor.row ||
-      (b.row === t.cursor.row && b.col > t.cursor.col));
-    if (after < 0) after = 0;
-    idx = delta > 0 ? after : (after - 1 + list.length) % list.length;
-  }
-  t.cursor = { row: list[idx].row, col: list[idx].col };
-  renderVim(t);
-  setTip("书签 " + (idx + 1) + "/" + list.length + " @ Ln " + (list[idx].row + 1));
+  return enqueueInput(async () => {
+    const t = getActiveTab(); if (!t) return;
+    const list = BOOKMARKS.get(bookmarkKey(t)) || [];
+    if (list.length === 0) { setTip("无书签"); return; }
+    let r;
+    try { r = await invoke("bookmark", { op: delta > 0 ? "next" : "prev", list, row: t.cursor.row, col: t.cursor.col }); }
+    catch (e) { setTip("书签操作失败: " + e.message); return; }
+    if (!r.target) return;
+    t.cursor = { row: r.target.row, col: r.target.col };
+    renderVim(t);
+    setTip("书签 " + (r.index + 1) + "/" + r.count + " @ Ln " + (r.target.row + 1));
+  });
 }
 function bookmarkNext() { bookmarkNav(1); }
 function bookmarkPrev() { bookmarkNav(-1); }

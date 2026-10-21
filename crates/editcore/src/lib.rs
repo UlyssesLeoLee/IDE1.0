@@ -35,6 +35,7 @@
 #![forbid(unsafe_code)]
 
 pub mod auto_backup;
+pub mod bookmark;
 pub mod bracket;
 pub mod buffer;
 pub mod control_code;

@@ -578,16 +578,17 @@ test.describe("命令审计 (功能覆盖)", () => {
     await page.locator('.tree-node:has-text("README")').click();
     await waitForTab(page);
 
-    await page.evaluate(() => {
+    // 书签的切换 / 跳转经 Rust 桥, 是异步的: 每一步都等它落地
+    await page.evaluate(async () => {
       const t = (window as any).activeTab();
       t.lines = ["l1", "l2", "l3", "l4"];
       (window as any).renderVim(t);
       t.cursor = { row: 0, col: 0 };
-      (window as any).dispatchCommand("bookmark-toggle");
+      await (window as any).dispatchCommand("bookmark-toggle");
       t.cursor = { row: 2, col: 0 };
-      (window as any).dispatchCommand("bookmark-toggle");
+      await (window as any).dispatchCommand("bookmark-toggle");
       t.cursor = { row: 0, col: 0 };
-      (window as any).dispatchCommand("bookmark-next");
+      await (window as any).dispatchCommand("bookmark-next");
     });
     expect(await page.evaluate(() => (window as any).activeTab().cursor.row)).toBe(2);
   });

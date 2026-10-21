@@ -648,6 +648,7 @@ pub fn run() {
             edit_text,
             edit_lines,
             nav_step,
+            bookmark,
             bracket_pair,
             edit_cmd,
             migemo_patterns,
@@ -742,6 +743,14 @@ fn bracket_pair(options: editcore::bracket::BracketReq) -> serde_json::Value {
         Some(r) => serde_json::to_value(r).unwrap_or_default(),
         None => serde_json::json!({}),
     }
+}
+
+/// ブックマーク 切り替え / 次へ / 前へ (web 版 /api/bookmark 同一语义)
+#[tauri::command]
+fn bookmark(options: editcore::bookmark::BmReq) -> Result<serde_json::Value, String> {
+    editcore::bookmark::run(&options)
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .ok_or_else(|| "未知的书签操作".to_string())
 }
 
 /// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}
