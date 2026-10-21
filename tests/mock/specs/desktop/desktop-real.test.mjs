@@ -31,7 +31,7 @@ test('桌面版: Alt 拖出 3行×4列, 输入覆盖矩形内容', opts, async (
     const { page } = d;
     await page.evaluate(() => { try { localStorage.setItem('ide10.vim', 'off'); } catch (_) {} });
     await page.locator('#ed-content').click();
-    for (const l of ['abcdefghij', 'klmnopqrst', 'uvwxyzABCD', 'EFGHIJKLMN']) { await page.keyboard.type(l); await page.keyboard.press('Enter'); }
+    for (const l of ['abcdefghij', 'klmnopqrst', 'uvwxyzABCD', 'EFGHIJKLMN']) { await page.keyboard.type(l); await page.keyboard.press('Enter'); await page.evaluate(() => window.__editIdle()); }
     const g = await grid(page);
     await page.keyboard.down('Alt');
     await page.mouse.move(g.x(2), g.y(0)); await page.mouse.down(); await page.mouse.move(g.x(4), g.y(1), { steps: 4 }); await page.mouse.move(g.x(6), g.y(2), { steps: 4 });
@@ -61,4 +61,33 @@ test('桌面版透明玻璃: 背后白/黑切换, 文字颜色跟着反色 (≤ 
     assert.ok(lums.has('light') && lums.has('dark'), '背后白/黑切换时 data-lum 两种都出现过: ' + [...seen].join(' ; '));
     assert.ok(seen.has('light|rgb(0, 0, 0)') && seen.has('dark|rgb(255, 255, 255)'), '浅背景黑字 / 深背景白字');
   } finally { await d.close(); bg.stop(); }
+});
+
+test('桌面版: Rust 桥 (nav_step / edit_cmd / edit_text / edit_lines) 在真实 Tauri 里可用', opts, async () => {
+  const d = await launchDesktop({ cdpPort: 9446 });
+  try {
+    const { page } = d;
+    await page.evaluate(() => { try { localStorage.setItem('ide10.vim', 'off'); } catch (_) {} });
+    await page.locator('#ed-content').click();
+    await page.evaluate(() => { const t = getActiveTab(); t.lines = ['hello world foo', 'c', 'b', 'a']; t.cursor = { row: 0, col: 0 }; t.sel = null; renderVim(t); });
+    const idle = () => page.evaluate(() => window.__editIdle());
+    const state = () => page.evaluate(() => { const t = getActiveTab(); return { lines: t.lines.slice(), cursor: t.cursor, sel: t.sel }; });
+    // nav_step: Ctrl+→ 到下一个词首
+    await page.keyboard.press('Control+ArrowRight'); await idle();
+    assert.deepEqual((await state()).cursor, { row: 0, col: 6 });
+    // edit_cmd: Ctrl+Backspace 删到词首
+    await page.keyboard.press('Control+Backspace'); await idle();
+    assert.equal((await state()).lines[0], 'world foo');
+    // edit_cmd: Enter (自动缩进) 经桥
+    await page.keyboard.press('Control+End'); await idle();
+    // edit_lines: 排序 (选 c b a 三行)
+    await page.evaluate(() => { const t = getActiveTab(); t.sel = { r0: 1, c0: 0, r1: 3, c1: 1 }; t.selAnchor = { row: 1, col: 0 }; t.cursor = { row: 3, col: 1 }; renderVim(t); });
+    await page.evaluate(() => dispatchCommand('sort-asc')); await idle();
+    assert.deepEqual((await state()).lines.slice(1), ['a', 'b', 'c']);
+    // edit_text: 选中后转大写
+    await page.evaluate(() => { const t = getActiveTab(); t.sel = { r0: 0, c0: 0, r1: 0, c1: 5 }; t.selAnchor = { row: 0, col: 0 }; t.cursor = { row: 0, col: 5 }; renderVim(t); });
+    await page.evaluate(() => dispatchCommand('to-upper')); await idle();
+    assert.equal((await state()).lines[0], 'WORLD foo');
+    assert.deepEqual(d.errors, []);
+  } finally { await d.close(); }
 });
