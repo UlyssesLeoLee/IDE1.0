@@ -304,6 +304,7 @@ Phase 7: JS は描画のみに縮小
 |---|---|---|---|
 | 选区文字变换 (大小写 / 全角半角 / かな / TAB↔空格, 13 个命令) | `editcore::edit_ops::transform_text` | `POST /api/edit_text` · Tauri `edit_text` | 9 条 Rust 单测 + 与真实 Sakura 的差分用例 |
 | 选区涉及整行的变换 (排序 / 去行首尾空白 / 去连续重复 / TAB·空格缩进与反缩进, 9 个命令) | `editcore::edit_ops::transform_lines` | `POST /api/edit_lines` · Tauri `edit_lines` | 同上 |
+| 键盘光标移动 / 范围选择 (← → ↑ ↓ Home End PageUp PageDown, 含 Ctrl / Shift 组合, 目标列) | `editcore::nav::step` | `POST /api/nav_step` · Tauri `nav_step` | 9 条 Rust 单测 + 差分用例 (F_GO* / F_WORD* / F_LEFT·RIGHT·UP·DOWN) |
 | コード変換 (`reinterpret_text`) / MIGEMO 展开 / 外部アウトライン | `editcore::document_io` / `migemo` / `outline_langs` | `/api/reinterpret_text` 等 | Rust 单测 |
 
 前端 (`editor.html`) 在这些命令里只做: 取选区 → 调桥 → 把结果套回文档 (含撤销快照、选区保持)。
@@ -323,3 +324,9 @@ Phase 7: JS は描画のみに縮小
 3. 维持现状 (同步命令留在 JS, 仅把"可异步"的命令迁到 Rust)。
 
 差分基线 (`tests/sakura-diff`, 186 条, 以真实 Sakura 为准) 已经能在任何一种方案下作为迁移的回归网。
+
+### 10.4 选型结果与现状 (2026-10-22)
+
+用户选择"状态上移 Rust"。第一步按**无状态窗口**落地 (前端只交光标周围几行 + 选区, Rust 算新位置), 这样不必一次性搬走整份文档状态,
+但已经具备目标架构需要的三件事: ① 编辑语义在 Rust; ② 前端的输入顺序闸门 (`enqueueInput` / `INPUT_Q`: 桥操作未落地时后到的按键排队重放,
+命令排在未落地输入之后); ③ 测试侧的 `window.__editIdle()` 等待点。后续命令沿用同一模式迁移, 文档状态本体 (行数组 / 撤销栈) 最后再上移。
