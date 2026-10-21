@@ -723,6 +723,16 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Err(e) => send_error_json(stream, "400 Bad Request", &format!("查找请求无效: {e}")),
             }
         }
+        ("POST", "/api/history") => {
+            // 撤销 / 重做栈 (editcore::history::run); 按标签页 id 分开的进程内登记
+            match serde_json::from_slice::<editcore::history::HistReq>(&body) {
+                Ok(req) => match editcore::history::run(&req) {
+                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
+                    None => send_error_json(stream, "400 Bad Request", "未知的历史操作"),
+                },
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("历史请求无效: {e}")),
+            }
+        }
         ("POST", "/api/nav_step") => {
             // 键盘光标移动 / 范围选择 (editcore::nav::step); 无状态纯计算
             match serde_json::from_slice::<editcore::nav::NavReq>(&body) {

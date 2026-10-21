@@ -648,6 +648,7 @@ pub fn run() {
             edit_text,
             edit_lines,
             nav_step,
+            history,
             search_text,
             bookmark,
             bracket_pair,
@@ -760,6 +761,14 @@ fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::V
     editcore::search_ops::run(&options)
         .map(|r| serde_json::to_value(r).unwrap_or_default())
         .ok_or_else(|| "未知的查找操作".to_string())
+}
+
+/// 撤销 / 重做栈 (web 版 /api/history 同一语义)
+#[tauri::command]
+fn history(options: editcore::history::HistReq) -> Result<serde_json::Value, String> {
+    editcore::history::run(&options)
+        .map(|r| serde_json::to_value(r).unwrap_or_default())
+        .ok_or_else(|| "未知的历史操作".to_string())
 }
 
 /// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}

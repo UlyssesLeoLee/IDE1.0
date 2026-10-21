@@ -79,7 +79,8 @@ function installMock() {
         case "edit_cmd":
         case "bracket_pair":
         case "bookmark":
-        case "search_text": {
+        case "search_text":
+        case "history": {
           return w.__rustEdit(cmd, args.options);
         }
         case "scm_status": return { branch: "main", files: [{ path: "README.md", status: "modified", staged: false }] };

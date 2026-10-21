@@ -53,7 +53,7 @@ async function oursAll() {
         const t = getActiveTab();
         t.lines = seed.replace(/\n$/, '').split('\n'); if (seed.endsWith('\n')) t.lines.push('');
         Object.assign(t, { cursor: { row: 0, col: 0 }, sel: null, colSel: null, selAnchor: null, dirty: false });
-        delete t.goalCol; t.undo = []; t.redo = [];
+        delete t.goalCol; histReset(t);
         window.__mock.clip = c.clip || ''; CLIPBOARD = c.clip || '';
         if (c.sel) { t.sel = { r0: c.sel[0], c0: c.sel[1], r1: c.sel[2], c1: c.sel[3] }; t.selAnchor = { row: c.sel[0], col: c.sel[1] }; t.cursor = { row: c.sel[2], col: c.sel[3] }; }
         else t.cursor = { row: (c.cur || [0, 0])[0], col: (c.cur || [0, 0])[1] };

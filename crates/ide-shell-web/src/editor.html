@@ -2044,7 +2044,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), history: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -3713,7 +3713,7 @@ async function reopenWithEncoding(label) {
     const res = await invoke("read_file", { path: stripVerbatim(t.path), encoding: label });
     t.lines = String(res.content ?? "").split("\n");
     applyDocMeta(t, res);
-    t.dirty = false; t.sel = null; t.undo = []; t.redo = [];
+    t.dirty = false; t.sel = null; histReset(t);
     renderVim(t); updateDocStatus(t);
     setTip("已按 " + label + " 重新打开" + (res.lossy ? " (有无法解码的字节, 已替换为 ?)" : ""));
   } catch (e) { setTip("重新打开失败: " + e.message); }
@@ -3896,14 +3896,57 @@ function curLine(t) {
 function snapshot(t) {
   // tab 可能来自外部 (UAT 直接 tabs.set), 不一定带 undo/redo 栈 — 惰性补齐,
   // 否则 t.undo.push 直接 TypeError, 整个 keydown handler 静默失效.
-  if (!t.undo) t.undo = [];
-  if (!t.redo) t.redo = [];
   if (!t.folded) t.folded = new Set();
   if (!t.baseLines || !t.dirty) t.baseLines = t.lines.slice();          // 干净状态下的第一次改动前 = 基线 (用于「变更行」)
   if (t.skipSnapAt && performance.now() - t.skipSnapAt < 80) { t.skipSnapAt = 0; return; }   // 「替换选区」= 删除 + 输入 算同一步撤销 (删除时已经记过)
-  t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
-  if (t.undo.length > 200) t.undo.shift();
-  t.redo.length = 0;
+  histCommit(t);                                            // 上一次改动 (上个边界的快照 -> 现在) 记进 Rust 的撤销栈
+  t.hbase = t.lines.slice(); t.hcur = { ...t.cursor };      // 这次改动之前的状态 = 新的边界
+}
+
+/* 撤销 / 重做栈在 Rust (editcore::history, /api/history · Tauri history), 以"补丁"保存。
+   前端只留上一个边界的行快照 (hbase) 用来算补丁; 补丁在下一次 snapshot / 撤销时才结算。 */
+let HISTCHAIN = Promise.resolve();
+function linePatch(a, b) {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i++;
+  let ja = a.length, jb = b.length;
+  while (ja > i && jb > i && a[ja - 1] === b[jb - 1]) { ja--; jb--; }
+  return i === ja && i === jb ? null : { start: i, removed: a.slice(i, ja), inserted: b.slice(i, jb) };
+}
+function histCommit(t) {
+  if (!t.hbase) return;
+  const p = linePatch(t.hbase, t.lines);
+  if (!p) return;
+  const hc = t.hcur || t.cursor;
+  const patch = Object.assign(p, { cursor_before: [hc.row, hc.col], cursor_after: [t.cursor.row, t.cursor.col] });
+  t.hbase = t.lines.slice(); t.hcur = { ...t.cursor }; t.hver = (t.hver || 0) + 1;
+  HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: t.id, op: "push", patch })).catch(() => {});
+}
+function histReset(t) {
+  t.hbase = null; t.hcur = null; t.hver = (t.hver || 0) + 1;
+  HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: t.id, op: "clear" })).catch(() => {});
+}
+function applyHist(t, a) {
+  const tail = t.lines.slice(a.start + a.remove);
+  t.lines = t.lines.slice(0, a.start).concat(a.insert, tail);       // 不用 splice(...大数组): 补丁可能很大
+  if (!t.lines.length) t.lines = [""];
+  t.cursor = { row: Math.min(a.cursor[0], t.lines.length - 1), col: a.cursor[1] };
+  t.sel = null; t.selAnchor = null;                                 // Sakura: 撤销 / 重做之后没有选区
+  t.hbase = t.lines.slice(); t.hcur = { ...t.cursor }; t.hver = (t.hver || 0) + 1;
+  t.dirty = true;
+}
+function histStep(op) {
+  return enqueueInput(async () => {
+    const t = getActiveTab(); if (!t) return;
+    histCommit(t);
+    await HISTCHAIN;
+    let r;
+    try { r = await invoke("history", { tab: t.id, op, cursor: [t.cursor.row, t.cursor.col] }); } catch (e) { setTip("历史操作失败: " + e.message); return; }
+    if (getActiveTab() !== t || !r.apply) return;
+    applyHist(t, r.apply);
+    paintActive();
+  });
 }
 function replaceSelection(t) { if (deleteSelection(t)) t.skipSnapAt = performance.now(); t.selAnchor = null; }
 
@@ -4261,37 +4304,15 @@ function normalDeleteChar() {
     t.lines[t.cursor.row] = line + t.lines[t.cursor.row + 1];
     t.lines.splice(t.cursor.row + 1, 1);
   } else {
-    t.undo.pop();
-    return;
+    return;          // 没有改动: 下一次结算时差异为空, 不会产生撤销步骤
   }
   t.dirty = true;
   paintActive();
 }
 
 
-function doUndo() {
-  const t = getActiveTab();
-  if (!t || t.undo.length === 0) return;
-  t.redo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
-  const s = t.undo.pop();
-  t.lines = s.lines;
-  t.cursor = s.cursor;
-  t.sel = null; t.selAnchor = null;   // Sakura: 撤销 / 重做之后没有选区
-  t.dirty = true;
-  paintActive();
-}
-
-function doRedo() {
-  const t = getActiveTab();
-  if (!t || t.redo.length === 0) return;
-  t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
-  const s = t.redo.pop();
-  t.lines = s.lines;
-  t.cursor = s.cursor;
-  t.sel = null; t.selAnchor = null;   // Sakura: 撤销 / 重做之后没有选区
-  t.dirty = true;
-  paintActive();
-}
+function doUndo() { return histStep("undo"); }
+function doRedo() { return histStep("redo"); }
 
 // Ctrl+S 家族的键盘入口. 极简布局里菜单标的 Ctrl+Shift+S = 另存为、Ctrl+Alt+S = 全部保存, 都要真的走对应命令 (无标题文档靠它起名);
 // 完整布局保持老样子 (一律普通保存). 编辑区和 document 两处 keydown 会先后处理同一个事件, Shift / Alt 变体用事件上的标记只处理一次, 免得弹两遍文件名
@@ -4543,7 +4564,6 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   // Vim 关闭时不看 #s-mode (静态标记里写着 data-mode="NORMAL", 启动后头几个键会被当成 vim 命令吞掉), 直接是 INSERT
   const vim = LAYOUT.vimOn();
   const mode = vim ? (document.getElementById("s-mode").dataset.mode || "NORMAL") : "INSERT";
-  if (t && !t.undo) { t.undo = []; t.redo = []; }
   if (t && !t.folded) t.folded = new Set();
   if (t && !t.dirty) t.dirty = false;
 
@@ -4722,7 +4742,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     if (e.key === "p") {
       e.preventDefault();
       const line = curLine(t);
-      t.undo.push({ lines: t.lines.slice(), cursor: { ...t.cursor } });
+      snapshot(t);
       t.lines.splice(t.cursor.row + 1, 0, line);
       t.cursor.row += 1;
       t.dirty = true;
@@ -5399,7 +5419,7 @@ async function findInTab(t, needle, opts) {
 // 搜索标记用的命中缓存 (异步计算, 算完再重绘一次)
 let FM_CACHE = { key: "", hits: [], busy: false };
 function findHitsCached(t) {
-  const key = [t.id, t.lines.length, t.undo ? t.undo.length : 0, t.redo ? t.redo.length : 0, FIND_STATE.needle, FIND_STATE.wholeWord, FIND_STATE.matchCase, FIND_STATE.useRegex].join("\u0001");
+  const key = [t.id, t.lines.length, t.hver || 0, FIND_STATE.needle, FIND_STATE.wholeWord, FIND_STATE.matchCase, FIND_STATE.useRegex].join("\u0001");
   if (FM_CACHE.key === key) return FM_CACHE.hits;
   if (!FM_CACHE.busy) {
     FM_CACHE.busy = true;
@@ -7968,7 +7988,7 @@ function bracketRequest(t) {
 async function bracketLookup(t) {
   try { const r = await invoke("bracket_pair", bracketRequest(t)); return r && r.pair ? r : null; } catch (_) { return null; }
 }
-function bracketKey(t) { return t.id + ":" + t.cursor.row + ":" + t.cursor.col + ":" + t.lines.length + ":" + (t.lines[t.cursor.row] || "").length + ":" + (t.undo ? t.undo.length : 0); }
+function bracketKey(t) { return t.id + ":" + t.cursor.row + ":" + t.cursor.col + ":" + t.lines.length + ":" + (t.lines[t.cursor.row] || "").length + ":" + (t.hver || 0); }
 function bracketCached(t) {
   const key = bracketKey(t);
   if (BR_CACHE.key === key) return BR_CACHE.hit;
@@ -9487,7 +9507,7 @@ function runEdit(cmd, extra) {
     }
     if (res.tip) setTip(res.tip);
     snapshot(t);
-    if (res.undo_cursor) t.undo[t.undo.length - 1].cursor = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
+    if (res.undo_cursor) t.hcur = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
     t.lines.splice(res.start, res.remove, ...res.insert);
     if (!t.lines.length) t.lines.push("");
     t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
@@ -9668,8 +9688,7 @@ async function reloadActive() {
   if (lines && typeof lines === "object") { applyDocMeta(t, lines); updateDocStatus(t); }
   t.dirty = false;
   t.sel = null;
-  t.undo = [];
-  t.redo = [];
+  histReset(t);
   renderVim(t);
   setTip("已重新载入: " + t.path);
 }

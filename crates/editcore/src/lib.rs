@@ -47,6 +47,7 @@ pub mod edit_cmd;
 pub mod edit_ops;
 pub mod encoding_io;
 pub mod file_lock;
+pub mod history;
 pub mod font_manager;
 pub mod grep;
 pub mod grep_engine;
