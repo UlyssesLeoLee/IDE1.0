@@ -49,8 +49,8 @@ test.describe("web /editor (ULYS-251)", () => {
     try {
       await page.locator("#ed-content").press("Shift+A");
       await page.keyboard.type(" uat");
-      await page.keyboard.press("Escape");
-      await page.keyboard.press("Control+s");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator(".tab.active")).not.toHaveClass(/tab-dirty/);
       const res = await request.post("/api/read_file", { data: { path: readmePath } });
       expect((await res.json()).content.replace(/\r\n/g, "\n").split("\n")[0]).toMatch(/ uat$/);
@@ -65,7 +65,7 @@ test.describe("web /editor (ULYS-251)", () => {
     await openProject(page);
     // Ctrl+G = 项目内 Grep (弹窗), 不是侧栏 search —— 按实际契约断言:
     // modal 里 #grep-input 输入, #grep-results/.opt-row 列出命中.
-    await page.keyboard.press("Control+g");
+    await page.keyboard.press("Control+g"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(page.locator("#grep-input")).toBeVisible();
     await page.locator("#grep-input").fill("fn main");
     await page.locator("#grep-input").press("Enter");
@@ -85,7 +85,7 @@ test.describe("web /editor (ULYS-251)", () => {
       await expect(page.locator(".tab.active")).toContainText("main.rs");
       await page.waitForTimeout(800);
       // Ctrl+Shift+O 与视图菜单 data-shortcut 声明一致 = 大纲.
-      await page.keyboard.press("Control+Shift+O");
+      await page.keyboard.press("Control+Shift+O"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator("#outline-list")).toContainText("main");
       expect(errors).toEqual([]);
     });

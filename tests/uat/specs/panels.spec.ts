@@ -69,7 +69,7 @@ test.describe("Bottom Panel (Terminal / Output / Problems tabs)", () => {
     await page.goto("/editor");
     await page.waitForSelector("#bottom-panel", { timeout: 5_000 });
     // 面板默认折叠 (data-collapsed=true), Ctrl+` 展开
-    await page.keyboard.press("Control+`");
+    await page.keyboard.press("Control+`"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForSelector("#terminal-pane", { timeout: 5_000 });
     const emptyText = await page.locator("#terminal-empty").textContent();
     expect(emptyText).toContain("No terminal session");
@@ -79,7 +79,7 @@ test.describe("Bottom Panel (Terminal / Output / Problems tabs)", () => {
     await page.goto("/editor");
     await page.waitForSelector("#bottom-panel", { timeout: 5_000 });
     // 面板默认折叠, 先展开再点 tab
-    await page.keyboard.press("Control+`");
+    await page.keyboard.press("Control+`"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(200);
     await page.click('.bottom-tab[data-pane="output-pane"]', { force: true });
     await page.waitForTimeout(300);
@@ -91,7 +91,7 @@ test.describe("Bottom Panel (Terminal / Output / Problems tabs)", () => {
     await page.goto("/editor");
     await page.waitForSelector("#bottom-panel", { timeout: 5_000 });
     // 面板默认折叠, 先展开再点 tab
-    await page.keyboard.press("Control+`");
+    await page.keyboard.press("Control+`"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(200);
     await page.click('.bottom-tab[data-pane="problems-pane"]', { force: true });
     await page.waitForTimeout(300);
@@ -240,7 +240,7 @@ test.describe("Terminal UI 交互 (按钮 + 快捷键)", () => {
     await page.click('.bottom-tab[data-pane="output-pane"]', { force: true });
     await page.waitForTimeout(300);
     // Press Ctrl+`
-    await page.keyboard.press("Control+`");
+    await page.keyboard.press("Control+`"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(200);
     const terminalActive = await page.locator('.bottom-tab[data-pane="terminal-pane"].active').count();
     expect(terminalActive).toBe(1);
@@ -261,7 +261,7 @@ test.describe("Search UI", () => {
   test("Ctrl+Shift+F 全局快捷键切到 Search tab", async ({ page }) => {
     await page.goto("/editor");
     await page.waitForSelector("#activity-bar", { timeout: 5_000 });
-    await page.keyboard.press("Control+Shift+F");
+    await page.keyboard.press("Control+Shift+F"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(200);
     const searchActive = await page.locator(".act-btn[data-pane=\"search\"].active").count();
     expect(searchActive).toBe(1);

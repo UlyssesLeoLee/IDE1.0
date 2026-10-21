@@ -77,10 +77,12 @@ chunks.forEach((chunk, ci) => {
         if (e.file && e.fileText) fs.writeFileSync(path.join(root, e.file), e.fileText);
         for (const [n, c] of Object.entries(e.extra || {})) fs.writeFileSync(path.join(root, n), c);
         try {
+          await page.evaluate(() => window.__editIdle());
           await reset(page, root, e);
           const before = await snapshot(page);
           const nerr = errs.length;
           if (key) { await page.locator('#ed-content').focus(); await page.keyboard.press(key); } else await page.evaluate((c) => dispatchCommand(c), cmd);
+          await page.evaluate(() => window.__editIdle());   // 经 Rust 桥的命令是异步的
           await page.waitForTimeout(450);
           const after = await snapshot(page);
           if (errs.length > nerr) failed.push(`${id}: 抛出异常 ${errs.slice(nerr).join(' | ')}`);

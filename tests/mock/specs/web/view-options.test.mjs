@@ -32,9 +32,9 @@ test('工具栏按钮 / 功能键栏按钮 真的执行命令; 开关跨重载�
     await cmd(page, 'toggle-toolbar'); await cmd(page, 'toggle-funckey');
     await press('Control+a');
     await page.locator('#funckeys .fk', { hasText: 'コピー' }).click();
-    await page.locator('#toolbar .tb-btn', { hasText: '切り取り' }).click();
+    await page.locator('#toolbar .tb-btn', { hasText: '切り取り' }).click(); await page.evaluate(() => window.__editIdle());
     assert.equal((await snap()).lines[0], '');
-    await page.locator('#toolbar .tb-btn', { hasText: '元に戻す' }).click();
+    await page.locator('#toolbar .tb-btn', { hasText: '元に戻す' }).click(); await page.evaluate(() => window.__editIdle());
     assert.equal((await snap()).lines[0], 'abc');
     await page.reload(); await page.waitForTimeout(600);
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-v-toolbar')), 'on');

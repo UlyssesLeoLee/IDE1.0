@@ -198,7 +198,7 @@ async function newBlankTab(page: Page, path = "C:/proj/scratch.txt") {
   await page.waitForTimeout(200);
   // 进 INSERT 才能打字: NORMAL 模式下按键是 vim 命令, 不会插入字符.
   await page.locator("#ed-content").focus();
-  await page.keyboard.press("i");
+  await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT");
 }
 
@@ -363,33 +363,33 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // NORMAL 模式下键入不修改文本 (z 在 NORMAL 是前缀键, 不是字符输入).
     // 注意每步之间要重新 focus —— Escape 之后焦点会丢.
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("z");
+    await page.keyboard.press("z"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await editorText(page)).toBe("hello\nworld\nhello world\n");
     // $ 到行尾, A 进入 INSERT 在行尾追加 —— 光标初始在行首, 不先到行尾
     // 的话 A 会把字符插到行首 (实测得到 "!hello")
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("$");
+    await page.keyboard.press("$"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.locator("#ed-content").press("A");
     await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT");
     await page.keyboard.type("!");
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.locator("#ed-content").focus();
     await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "NORMAL");
     expect(await editorText(page)).toBe("hello!\nworld\nhello world\n");
     // 保存: dirty 标记应清除, 且写进后端 mock
-    await page.keyboard.press("Control+s");
+    await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await page.evaluate(() => (window as any).__files["C:/proj/README.md"])).toBe("hello!\nworld\nhello world\n");
     // dd 删除行 —— 两个 d 必须**连续**按, 中间不能重新 focus:
     // 前缀键状态 (pending "d") 挂在编辑器上, 重新 focus 会清掉它,
     // 于是第二个 d 变成新的前缀, dd 永远不触发.
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("d");
-    await page.keyboard.press("d");
+    await page.keyboard.press("d"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("d"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await editorText(page), "dd 应删掉当前行").toBe("world\nhello world\n");
 
     // u 撤销
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("u");
+    await page.keyboard.press("u"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await editorText(page), "u 应恢复被删的行").toBe("hello!\nworld\nhello world\n");
     expect(errors).toEqual([]);
   });
@@ -405,7 +405,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // fill 找不到可见元素.
     await page.evaluate(() => (window as any).closeModal());
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("Control+f");
+    await page.keyboard.press("Control+f"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(page.locator("#modal #find-input")).toBeVisible();
     await fillModalInput(page, "#find-input", "hello");
     await pressInModal(page, "#find-input");
@@ -413,36 +413,36 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // Enter 会跳到下一个匹配 (从光标位置往后找), 所以 tip 是 "找到 2/2".
     await expect(page.locator("#s-tip")).toContainText(/找到 [12]\/2/);
     // 替换: Ctrl+H 打开替换框 (id 是 repl-input), 全部替换后变 bye
-    await page.keyboard.press("Control+h");
+    await page.keyboard.press("Control+h"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(page.locator("#repl-input")).toBeVisible();
     await fillModalInput(page, "#repl-input", "bye");
     await page.locator('#modal [data-cmd="replace-all"]').click();
     expect(await editorText(page)).toBe("bye\nworld\nbye world\n");
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(page.locator("#modal")).not.toHaveClass(/show/);
     // 撤销全部替换
     await page.locator("#ed-content").click();
-    await page.keyboard.press("Control+z");
+    await page.keyboard.press("Control+z"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await editorText(page)).toBe("hello\nworld\nhello world\n");
     // 跳转到行: Ctrl+J 弹输入框, 输 3 后状态栏应显示 Ln 3
     // 跳转到行: 共享前端用原生 prompt() 要行号 (无 .md-input 那种
     // modal 输入框 —— 那是 ULYS 版结构). boot 里注册的 dialog 兜底
     // 会 accept("3"), 直接按键即可.
-    await page.keyboard.press("Control+j");
+    await page.keyboard.press("Control+j"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(300);
     await expect(page.locator("#s-pos")).toContainText("3");
     // 书签: BOOKMARKS 是模块级 const, **没有挂到 window**, 测试读不到.
     // 它的可观测副作用是 setTip 的提示文案和 localStorage 持久化 ——
     // 用这两个断言, 不去猜内部数据结构.
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("Control+F2");
+    await page.keyboard.press("Control+F2"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(200);
     const tipAfterAdd = await page.evaluate(
       () => document.getElementById("s-tip")?.textContent || "",
     );
     expect(tipAfterAdd, "应提示已添加书签").toMatch(/书签/);
     // 再按一次是 toggle (取消)
-    await page.keyboard.press("Control+F2");
+    await page.keyboard.press("Control+F2"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForTimeout(200);
     const tipAfterToggle = await page.evaluate(
       () => document.getElementById("s-tip")?.textContent || "",
@@ -592,7 +592,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     await page.evaluate(() => (window as any).closeModal());
     await newBlankTab(page);
     await page.keyboard.type("draft");
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.locator("#ed-content").focus();
     expect((await activeTab(page))!.dirty, "编辑后应标记 dirty").toBe(true);
     const tabCount = await page.locator("#tabs .tab").count();

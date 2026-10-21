@@ -7536,8 +7536,14 @@ function runNav(t, vim, k) {
 /* 输入顺序闸门: 经桥执行的移动是异步的, 它没落地之前到来的按键 / 输入不能抢先执行 (否则会在旧光标处插字).
    闸门开着时 (有未完成的桥操作), 后到的 keydown / beforeinput 先拦下排队, 前一个落地后按原顺序重放。 */
 const INPUT_Q = []; let INPUT_BUSY = false, INPUT_REPLAY = false;
+let INPUT_N = 0, OPCHAIN = Promise.resolve();
 function enqueueInput(fn) {
-  const p = (async () => { INPUT_BUSY = true; try { await fn(); } finally { INPUT_BUSY = false; await drainInput(); } })();
+  INPUT_N++; INPUT_BUSY = true;                       // 同步置位: 之后到的按键立刻被闸门拦下
+  const p = OPCHAIN.then(async () => {
+    try { await fn(); }
+    finally { INPUT_N--; if (INPUT_N === 0) { INPUT_BUSY = false; await drainInput(); } }
+  });
+  OPCHAIN = p.catch(() => {});
   return trackOp(p);
 }
 async function drainInput() {
@@ -7917,21 +7923,6 @@ function copyRowsText(t, fmt) {
   return rows.map((r) => fmt(t.lines[r], r) + "\n").join("");          // Sakura: 每一行都带行尾换行 (最后一行也是)
 }
 // 矩形贴付け: 剪贴板每一行贴到 (光标行+i, 光标列), 行不够长补空格, 文档不够长补行
-function pasteBox(t, text) {
-  const parts = String(text || "").replace(/\r\n?/g, "\n").split("\n");
-  if (!parts.length || (parts.length === 1 && !parts[0])) { setTip("剪贴板为空"); return; }
-  snapshot(t);
-  const col = t.cursor.col;
-  parts.forEach((p, i) => {
-    const r = t.cursor.row + i;
-    while (t.lines.length <= r) t.lines.push("");
-    let line = t.lines[r];
-    if (charLen(line) < col) line += " ".repeat(col - charLen(line));
-    t.lines[r] = charSlice(line, 0, col) + p + charSlice(line, col);
-  });
-  t.dirty = true; renderVim(t);
-  setTip("已矩形贴付 " + parts.length + " 行");
-}
 
 // ---- 移动履歴 (Alt+P / Alt+N) ----
 const JUMP_HIST = { list: [], idx: -1 };
@@ -7969,10 +7960,10 @@ const SAKURA_CMDS = {
   "sort-asc": () => sortLines(true), "sort-desc": () => sortLines(false),
   "insert-date": () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); insertTextAtCursor(d.getFullYear() + "/" + p(d.getMonth() + 1) + "/" + p(d.getDate())); },
   "insert-time": () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); insertTextAtCursor(p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds())); },
-  "copy-crlf": () => { const t = getActiveTab(); pushClip(selOrLineText(t).replace(/\n/g, "\r\n")); setTip("已用 CRLF 换行复制"); },
-  "copy-lines": () => { const t = getActiveTab(); pushClip(copyRowsText(t, (l) => l)); setTip("已复制选区内全行"); },
-  "copy-passage": () => { const t = getActiveTab(); pushClip(copyRowsText(t, (l) => "> " + l)); setTip("已复制 (引用符号付き)"); },
-  "copy-linenum": () => { const t = getActiveTab(); pushClip(copyRowsText(t, (l, r) => String(r + 1).padStart(Math.max(3, String(t.lines.length).length), " ") + ":" + l)); setTip("已复制 (行番号付き)"); },
+  "copy-crlf": () => runEdit("copy-crlf"),
+  "copy-lines": () => runEdit("copy-lines"),
+  "copy-passage": () => runEdit("copy-passage"),
+  "copy-linenum": () => runEdit("copy-linenum"),
   "copy-html": () => { const t = getActiveTab(), [a, b] = selRowsOf(t), rows = []; for (let r = a; r <= b; r++) rows.push(r); pushClip(colorHtmlOf(t, rows, false)); setTip("已复制彩色 HTML"); },
   "copy-html-ln": () => { const t = getActiveTab(), [a, b] = selRowsOf(t), rows = []; for (let r = a; r <= b; r++) rows.push(r); pushClip(colorHtmlOf(t, rows, true)); setTip("已复制彩色 HTML (行番号付き)"); },
   "copy-fname": () => { const t = getActiveTab(); pushClip(t.name || ""); setTip("已复制文件名"); },
@@ -9415,41 +9406,6 @@ let CLIP_LINEMODE = false;
   const _push = pushClip;
   pushClip = function (text, lineMode) { _push.apply(this, arguments); CLIP_LINEMODE = !!lineMode && !!text; };
 }
-copySelection = function () {
-  const t = getActiveTab(); if (!t) return;
-  if (!t.colSel && !selNonEmpty(t)) { pushClip(((t.lines[t.cursor.row]) || "") + "\n", true); setTip("已复制行"); return; }
-  const text = t.colSel ? columnClipText(t) : selectionText(t);
-  pushClip(text);
-  setTip(t.colSel ? "已复制列块 " + text.split("\n").length + " 行" : "已复制 " + text.length + " 字符");
-};
-cutSelection = function () {
-  const t = getActiveTab(); if (!t) return;
-  if (!t.colSel && !selNonEmpty(t)) {                       // 无选区: 剪切整行
-    pushClip(((t.lines[t.cursor.row]) || "") + "\n", true);
-    snapshot(t);
-    if (t.lines.length > 1) t.lines.splice(t.cursor.row, 1); else t.lines[0] = "";
-    t.cursor.row = Math.min(t.cursor.row, t.lines.length - 1); t.cursor.col = 0; t.dirty = true; renderVim(t); setTip("已剪切行");
-    return;
-  }
-  if (t.colSel) { pushClip(columnClipText(t)); const { r0, c0 } = colSelRect(t); columnDelete(); t.cursor = { row: r0, col: c0 }; setTip("已剪切列块"); return; }
-  pushClip(selectionText(t));
-  if (deleteSelection(t)) setTip("已剪切");
-};
-{
-  const _paste = pasteText;
-  pasteText = function (raw) {
-    const t = getActiveTab();
-    const text = String(raw || "").replace(/\r\n?/g, "\n");
-    if (t && CLIP_LINEMODE && text === CLIPBOARD && text.endsWith("\n") && !t.colSel && !selNonEmpty(t)) {
-      snapshot(t);
-      const rows = text.slice(0, -1).split("\n");
-      t.lines.splice(t.cursor.row, 0, ...rows);
-      t.cursor.row += rows.length; t.dirty = true; renderVim(t); setTip("已粘贴行");
-      return;
-    }
-    return _paste.apply(this, arguments);
-  };
-}
 setTimeout(() => { EDIT_CMDS.cut = () => cutSelection(); EDIT_CMDS.copy = () => copySelection(); EDIT_CMDS.paste = () => pasteText(CLIPBOARD); }, 0);   // EDIT_CMDS 在脚本后部才定义, 这里晚绑定
 
 function setSelRange(t, a, bRow, bCol) { t.selAnchor = { row: a.row, col: a.col }; t.sel = { r0: a.row, c0: a.col, r1: bRow, c1: bCol }; t.cursor = { row: bRow, col: bCol }; }
@@ -9561,9 +9517,10 @@ selectWordAtCursor = function (t) {
 
 /* ===== ARCH-01: 删除 / 剪切 / 复制行 类命令的语义在 Rust (editcore::edit_cmd) =====
    前端交上光标周围几行与选区, Rust 返回"把第 start 行起的 remove 行换成 insert + 新光标 + 要写进剪贴板的文字", 这里套回文档。 */
-function editRequest(t, cmd) {
+function editRequest(t, cmd, extra) {
   const { row, col } = t.cursor, last = Math.max(0, t.lines.length - 1);
   const need = new Set([row - 1, row, row + 1]);
+  if (extra && extra.text && cmd === "paste-box") for (let i = 0; i < extra.text.split("\n").length; i++) need.add(row + i);
   const had = selNonEmpty(t);
   let sel = null;
   if (had) {
@@ -9571,16 +9528,16 @@ function editRequest(t, cmd) {
     for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
   }
   const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
-  return { cmd, row, col, sel, total_rows: t.lines.length, rows, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent };
+  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
 }
-function runEdit(cmd) {
+function runEdit(cmd, extra) {
   return enqueueInput(async () => {
     const t = getActiveTab(); if (!t) return;
     let res;
-    try { res = await invoke("edit_cmd", editRequest(t, cmd)); }
+    try { res = await invoke("edit_cmd", editRequest(t, cmd, extra)); }
     catch (err) { setTip("编辑失败: " + err.message); return; }
     if (getActiveTab() !== t) return;
-    if (!res.changed) { if (res.tip) setTip(res.tip); return; }
+    if (!res.changed) { if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line); if (res.tip) setTip(res.tip); return; }
     if (res.tip) setTip(res.tip);
     snapshot(t);
     if (res.undo_cursor) t.undo[t.undo.length - 1].cursor = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
@@ -9588,10 +9545,28 @@ function runEdit(cmd) {
     if (!t.lines.length) t.lines.push("");
     t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
     t.sel = null; t.selAnchor = null; delete t.goalCol; t.dirty = true;
-    if (res.clip !== null && res.clip !== undefined) pushClip(res.clip);
+    if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
     renderVim(t);
   });
 }
+function copySelection() {
+  const t = getActiveTab(); if (!t) return;
+  if (t.colSel) { const text = columnClipText(t); pushClip(text); setTip("已复制列块 " + text.split("\n").length + " 行"); return; }
+  return runEdit("copy");
+}
+function cutSelection() {
+  const t = getActiveTab(); if (!t) return;
+  if (t.colSel) { pushClip(columnClipText(t)); const { r0, c0 } = colSelRect(t); columnDelete(); t.cursor = { row: r0, col: c0 }; setTip("已剪切列块"); return; }
+  return runEdit("cut");
+}
+function pasteText(raw) {
+  const t = getActiveTab();
+  const text = String(raw || "").replace(/\r\n?/g, "\n");
+  if (!t || !text) { setTip("剪贴板为空"); return; }
+  if (t.colSel) { columnInsert(text); setTip("已粘贴到列块"); return; }
+  return runEdit("paste", { text, line_mode: CLIP_LINEMODE && text === CLIPBOARD && text.endsWith("\n") });
+}
+function pasteBox(t, text) { return runEdit("paste-box", { text: String(text || "") }); }
 function backspace() { return runEdit("backspace"); }
 function cutToLineStart() { return runEdit("cut-line-start"); }
 function deleteToLineStart() { return runEdit("delete-line-to-start"); }
@@ -9956,49 +9931,10 @@ function deleteSelection(t) {
   return true;
 }
 
-function copySelection() {
-  const t = getActiveTab();
-  if (!t) return;
-  // 列块优先: 列块模式下没有 t.sel, 走普通分支会复制到空字符串 (Sakura 的
-  // 列块复制 = 按行取每行该列区间的文本, 用 \n 连接, 与 columnSelectedText 一致).
-  const text = t.colSel ? columnSelectedText(t) : selectionText(t);
-  pushClip(text);
-  setTip(t.colSel ? "已复制列块 " + text.split("\n").length + " 行" : "已复制 " + text.length + " 字符");
-}
 
-function cutSelection() {
-  const t = getActiveTab();
-  if (!t) return;
-  pushClip(selectionText(t));
-  if (deleteSelection(t)) setTip("已剪切");
-  else setTip("无选区, 按 v 进入 VISUAL 后再剪切");
-}
 
 function pasteClipboard() { pasteText(CLIPBOARD); }
 
-function pasteText(raw) {
-  const t = getActiveTab();
-  const text = String(raw || "").replace(/\r\n?/g, "\n");
-  if (!t || !text) { setTip("剪贴板为空"); return; }
-  if (t.colSel) { columnInsert(text); setTip("已粘贴到列块"); return; }
-  if (selNonEmpty(t)) deleteSelection(t);            // 粘贴替换选区
-  t.selAnchor = null;
-  snapshot(t);
-  const parts = text.split("\n");
-  const line = curLine(t);
-  const head = charSlice(line, 0, t.cursor.col), tail = charSlice(line, t.cursor.col);
-  // 在光标处插入; 原来光标后的 tail 保持在最后一行末尾.
-  const last = parts.length - 1;
-  t.lines[t.cursor.row] = head + parts[0];
-  t.lines.splice(t.cursor.row + 1, 0,
-    ...parts.slice(1).map((p, i) => (i === last - 1 ? p + tail : p)));
-  if (last === 0) t.lines[t.cursor.row] = head + parts[0] + tail;
-  t.cursor.row += last;
-  t.cursor.col = last === 0 ? charLen(head) + charLen(parts[0]) : charLen(parts[last]);
-  t.dirty = true;
-  renderVim(t);
-  setTip("已粘贴 " + text.length + " 字符");
-}
 
 
 function insertCurrentDate() {

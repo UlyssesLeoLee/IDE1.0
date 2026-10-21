@@ -20,6 +20,12 @@ pub struct EditReq {
     pub auto_indent: bool,
     #[serde(default)]
     pub smart_indent: bool,
+    /// 粘贴 / 矩形贴付 的文字
+    #[serde(default)]
+    pub text: Option<String>,
+    /// 剪贴板内容来自「无选区的复制 / 剪切」(整行模式)
+    #[serde(default)]
+    pub line_mode: bool,
     /// 需要用到的行: [行号, 文本] (光标行 ±1, 选区各行)
     pub rows: Vec<(usize, String)>,
 }
@@ -35,6 +41,8 @@ pub struct EditRes {
     pub cursor: [usize; 2],
     /// 要写进剪贴板的文字 (剪切类命令)
     pub clip: Option<String>,
+    /// 剪贴板内容是整行模式 (再粘贴时插在当前行之前)
+    pub clip_line: bool,
     /// 提示文字
     pub tip: Option<String>,
     /// 撤销后光标回到哪里 (缺省 = 命令发出时的光标); 词删除是先选中词再删, 撤销回到词尾
@@ -85,17 +93,18 @@ impl Ctx<'_> {
             clip: if clip { Some(self.sel_text(s)) } else { None },
             tip: None,
             undo_cursor: None,
+            clip_line: false,
         }
     }
     fn replace_line(&self, r: usize, new: String, cursor: [usize; 2], clip: Option<String>) -> EditRes {
-        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None }
+        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false }
     }
     fn join_next(&self, r: usize, skip_leading: bool) -> EditRes {
         let cur = self.line(r);
         let next = self.line(r + 1);
         let skip = if skip_leading { first_word_col(&next) } else { 0 };
         let joined = format!("{}{}", cur.iter().collect::<String>(), slice(&next, skip, usize::MAX));
-        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None }
+        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false }
     }
     fn nothing(&self, tip: &str) -> EditRes {
         EditRes { changed: false, tip: Some(tip.to_string()), cursor: [self.req.row, self.req.col], ..Default::default() }
@@ -120,7 +129,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             } else if row > 0 {
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false }
             } else {
                 cx.nothing("")
             }
@@ -147,7 +156,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 }
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false }
             } else {
                 let to = word_left(&line, col);
                 if to >= col {
@@ -226,6 +235,100 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             }
             cx.replace_line(row, slice(&line, 0, col), [row, col], Some(slice(&line, col, usize::MAX)))
         }
+        // ---- 剪贴板 ----
+        "copy" => {
+            if let Some(s) = sel {
+                let t = cx.sel_text(s);
+                let n = t.chars().count();
+                EditRes { clip: Some(t), tip: Some(format!("已复制 {n} 字符")), cursor: [row, col], ..Default::default() }
+            } else {
+                EditRes { clip: Some(format!("{}\n", line.iter().collect::<String>())), clip_line: true, tip: Some("已复制行".into()), cursor: [row, col], ..Default::default() }
+            }
+        }
+        "cut" => {
+            if let Some(s) = sel {
+                let mut r = cx.delete_sel(s, true);
+                r.tip = Some("已剪切".into());
+                r
+            } else {
+                let (insert, new_row) = if req.total_rows <= 1 { (vec![String::new()], 0) } else { (vec![], if row == last_row { row - 1 } else { row }) };
+                EditRes { changed: true, start: row, remove: 1, insert, cursor: [new_row, 0], clip: Some(format!("{}\n", line.iter().collect::<String>())), clip_line: true, tip: Some("已剪切行".into()), ..Default::default() }
+            }
+        }
+        "paste" => {
+            let text = req.text.clone().unwrap_or_default().replace("\r\n", "\n").replace('\r', "\n");
+            if text.is_empty() {
+                return Some(cx.nothing("剪贴板为空"));
+            }
+            if req.line_mode && sel.is_none() && text.ends_with('\n') {
+                // 整行模式的剪贴板: 插在当前行之前
+                let rows: Vec<String> = text[..text.len() - 1].split('\n').map(String::from).collect();
+                let n = rows.len();
+                return Some(EditRes { changed: true, start: row, remove: 0, insert: rows, cursor: [row + n, col], tip: Some("已粘贴行".into()), ..Default::default() });
+            }
+            let (r0, r1, head, tail) = match sel {
+                Some(s) => (s[0], s[2], slice(&cx.line(s[0]), 0, s[1]), slice(&cx.line(s[2]), s[3], usize::MAX)),
+                None => (row, row, slice(&line, 0, col), slice(&line, col, usize::MAX)),
+            };
+            let parts: Vec<&str> = text.split('\n').collect();
+            let last = parts.len() - 1;
+            let mut insert: Vec<String> = Vec::new();
+            let cursor;
+            if last == 0 {
+                insert.push(format!("{head}{}{tail}", parts[0]));
+                cursor = [r0, head.chars().count() + parts[0].chars().count()];
+            } else {
+                insert.push(format!("{head}{}", parts[0]));
+                for p in &parts[1..last] {
+                    insert.push((*p).to_string());
+                }
+                insert.push(format!("{}{tail}", parts[last]));
+                cursor = [r0 + last, parts[last].chars().count()];
+            }
+            EditRes { changed: true, start: r0, remove: r1 - r0 + 1, insert, cursor, tip: Some(format!("已粘贴 {} 字符", text.chars().count())), ..Default::default() }
+        }
+        "paste-box" => {
+            let text = req.text.clone().unwrap_or_default().replace("\r\n", "\n").replace('\r', "\n");
+            let parts: Vec<&str> = text.split('\n').collect();
+            if parts.len() == 1 && parts[0].is_empty() {
+                return Some(cx.nothing("剪贴板为空"));
+            }
+            // 每行贴到 (光标行+i, 光标列); 行不够长补空格, 文档不够长补行
+            let insert: Vec<String> = parts
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let mut l = if row + i < req.total_rows { cx.line(row + i) } else { Vec::new() };
+                    while l.len() < col {
+                        l.push(' ');
+                    }
+                    format!("{}{}{}", slice(&l, 0, col), p, slice(&l, col, usize::MAX))
+                })
+                .collect();
+            let remove = parts.len().min(req.total_rows - row);
+            EditRes { changed: true, start: row, remove, insert, cursor: [row, col], tip: Some(format!("已矩形贴付 {} 行", parts.len())), ..Default::default() }
+        }
+        "copy-lines" | "copy-passage" | "copy-linenum" => {
+            let (a, b) = sel.map(|s| (s[0], s[2])).unwrap_or((row, row));
+            let width = 3.max(req.total_rows.to_string().len());
+            let mut out = String::new();
+            for r in a..=b {
+                let l: String = cx.line(r).iter().collect();
+                match req.cmd.as_str() {
+                    "copy-lines" => out.push_str(&format!("{l}\n")),
+                    "copy-passage" => out.push_str(&format!("> {l}\n")),
+                    _ => out.push_str(&format!("{:>w$}:{l}\n", r + 1, w = width)),
+                }
+            }
+            EditRes { clip: Some(out), cursor: [row, col], tip: Some("已复制".into()), ..Default::default() }
+        }
+        "copy-crlf" => {
+            let t = match sel {
+                Some(s) => cx.sel_text(s),
+                None => line.iter().collect(),
+            };
+            EditRes { clip: Some(t.replace('\n', "\r\n")), cursor: [row, col], tip: Some("已用 CRLF 换行复制".into()), ..Default::default() }
+        }
         // ---- 整行 ----
         "cut-line" | "delete-line" => {
             let text: String = line.iter().collect();
@@ -244,6 +347,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 clip: if req.cmd == "cut-line" { Some(text) } else { None },
                 tip: None,
                 undo_cursor: None,
+                clip_line: false,
             }
         }
         // ---- 行结构 ----
@@ -300,7 +404,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
         }
         "duplicate-line" => {
             let text: String = line.iter().collect();
-            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None }
+            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false }
         }
         _ => return None,
     })
@@ -319,6 +423,8 @@ mod tests {
             total_rows: lines.len(),
             auto_indent: true,
             smart_indent: true,
+            text: None,
+            line_mode: false,
             rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
         })
         .unwrap()
@@ -417,8 +523,62 @@ mod tests {
         let r = run_on("delete-line-down", 0, 3, None, DOC);
         assert_eq!((apply(DOC, &r)[1].as_str(), r.cursor), ("", [0, 0]));
     }
+    fn run_text(cmd: &str, row: usize, col: usize, sel: Option<[usize; 4]>, text: &str, line_mode: bool, lines: &[&str]) -> EditRes {
+        run(&EditReq {
+            cmd: cmd.into(),
+            row,
+            col,
+            sel,
+            total_rows: lines.len(),
+            auto_indent: false,
+            smart_indent: false,
+            text: Some(text.into()),
+            line_mode,
+            rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
+        })
+        .unwrap()
+    }
+    #[test]
+    fn clipboard_copy_cut() {
+        let r = run_on("copy", 0, 0, Some([0, 2, 0, 8]), DOC);
+        assert_eq!((r.changed, r.clip.as_deref(), r.clip_line), (false, Some("llo wo"), false));
+        let r = run_on("copy", 1, 3, None, DOC);
+        assert_eq!((r.clip.as_deref(), r.clip_line), (Some("  indented line\n"), true)); // 无选区 = 整行
+        let r = run_on("cut", 0, 0, Some([0, 2, 1, 3]), DOC);
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.clip.as_deref()), ("hendented line", Some("llo world foo\n  i")));
+        let r = run_on("cut", 4, 2, None, DOC);
+        assert_eq!((apply(DOC, &r).len(), r.cursor, r.clip_line), (4, [3, 0], true));
+    }
+    #[test]
+    fn clipboard_paste() {
+        let r = run_text("paste", 0, 3, None, "XY", false, DOC);
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("helXYlo world foo", [0, 5]));
+        let r = run_text("paste", 1, 4, None, "ab\ncd\nef", false, DOC); // 多行粘贴不能吞掉后面的行
+        let v = apply(DOC, &r);
+        assert_eq!((v[1].as_str(), v[2].as_str(), v[3].as_str(), v.len(), r.cursor), ("  inab", "cd", "efdented line", 7, [3, 2]));
+        let r = run_text("paste", 0, 5, Some([0, 2, 0, 5]), "XY", false, DOC); // 替换选区
+        assert_eq!(apply(DOC, &r)[0], "heXY world foo");
+        let r = run_text("paste", 1, 3, None, "L1\nL2\n", true, DOC); // 整行模式
+        let v = apply(DOC, &r);
+        assert_eq!((v[1].as_str(), v[2].as_str(), v[3].as_str(), r.cursor), ("L1", "L2", "  indented line", [3, 3]));
+        assert!(!run_text("paste", 0, 0, None, "", false, DOC).changed);
+    }
+    #[test]
+    fn clipboard_box_and_variants() {
+        let r = run_text("paste-box", 0, 3, None, "ab\ncd", false, DOC);
+        let v = apply(DOC, &r);
+        assert_eq!((v[0].as_str(), v[1].as_str()), ("helablo world foo", "  icdndented line"));
+        let r = run_on("copy-lines", 0, 0, Some([0, 2, 1, 3]), DOC);
+        assert_eq!(r.clip.as_deref(), Some("hello world foo\n  indented line\n"));
+        let r = run_on("copy-passage", 0, 0, Some([0, 2, 1, 3]), DOC);
+        assert_eq!(r.clip.as_deref(), Some("> hello world foo\n>   indented line\n"));
+        let r = run_on("copy-linenum", 0, 0, Some([0, 2, 1, 3]), DOC);
+        assert_eq!(r.clip.as_deref(), Some("  1:hello world foo\n  2:  indented line\n"));
+        let r = run_on("copy-crlf", 0, 0, Some([0, 2, 1, 3]), DOC);
+        assert_eq!(r.clip.as_deref(), Some("llo world foo\r\n  i"));
+    }
     #[test]
     fn unknown() {
-        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, rows: vec![] }).is_none());
+        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, text: None, line_mode: false, rows: vec![] }).is_none());
     }
 }

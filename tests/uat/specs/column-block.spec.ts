@@ -62,20 +62,20 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     const ind = page.locator("#s-colsel");
     expect(await ind.isHidden(), "未进列块时状态栏不显示列块项").toBe(true);
 
-    await page.keyboard.press("Shift+F6");
+    await page.keyboard.press("Shift+F6"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(ind).toBeVisible();
     expect(await ind.textContent()).toContain("列块");
 
     // 扩到 3 行 × 2 列, 文案应随之更新
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(ind).toContainText("3行");
     await expect(ind).toContainText("2列");
 
     // 退出后隐藏
-    await page.keyboard.press("Shift+F6");
+    await page.keyboard.press("Shift+F6"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(ind).toBeHidden();
     expect(errors).toEqual([]);
   });
@@ -109,7 +109,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     expect(before, "初始没有列块").toBeNull();
 
     // 进列块模式
-    await page.keyboard.press("Shift+F6");
+    await page.keyboard.press("Shift+F6"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.waitForFunction(() => !!(window as any).getActiveTab().colSel);
     const on = await colSel(page);
     expect(on, "Shift+F6 后应有列块").not.toBeNull();
@@ -117,7 +117,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     expect(on!.norm.c0, "锚点在光标列").toBe(0);
 
     // 再按退出
-    await page.keyboard.press("Shift+F6");
+    await page.keyboard.press("Shift+F6"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await colSel(page), "再按 Shift+F6 应退出").toBeNull();
     expect(errors).toEqual([]);
   });
@@ -126,18 +126,18 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     const errors = await boot(page);
     await setDoc(page, ["abcdef", "abcdef", "abcdef", "abcdef"]);
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("Shift+F6");
+    await page.keyboard.press("Shift+F6"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
 
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     let s = await colSel(page);
     expect(s!.norm.r0, "下移两次后行范围到第 3 行").toBe(0);
     expect(s!.norm.r1).toBe(2);
     expect(s!.norm.c0, "上下键不该改变列跨度").toBe(0);
     expect(s!.norm.c1).toBe(0);
 
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     s = await colSel(page);
     expect(s!.norm.c1, "右移两次后列范围宽 2").toBe(2);
     expect(s!.norm.r1, "左右键不该改变行范围").toBe(2);
@@ -154,7 +154,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 1));
 
-    await page.keyboard.press("X");
+    await page.keyboard.press("X"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     // 每行第 1 列前都应插入 X: aXaa / bXbb / cXcc
     expect(await doc(page)).toEqual(["aXaa", "bXbb", "cXcc"]);
     expect(errors).toEqual([]);
@@ -167,8 +167,8 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(1, 1));
 
-    await page.keyboard.press("1");
-    await page.keyboard.press("2");
+    await page.keyboard.press("1"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+    await page.keyboard.press("2"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await doc(page)).toEqual(["a12b", "c12d"]);
     expect(errors).toEqual([]);
   });
@@ -194,7 +194,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await page.evaluate(() => (window as any).startColumnSelect(0, 5));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 5));
 
-    await page.keyboard.press("#");
+    await page.keyboard.press("#"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const out = await doc(page);
     // 插入点是第 5 列 (即第 6 个字符位) 之前: "long" 占 0-3, 空格占 4, 插入点在 5
     expect(out[0], "长行: 在第 5 列处插入 #").toBe("long #line");
@@ -224,7 +224,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 2));
 
-    await page.keyboard.press("Control+c");
+    await page.keyboard.press("Control+c"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     // 3 行 × 第 1 列 (0-based) = b / e / h
     const clip = await page.evaluate(() => {
       const t = (window as any).getActiveTab();
@@ -238,10 +238,10 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     const errors = await boot(page);
     await setDoc(page, ["abc", "def"]);
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("Shift+F6");
+    await page.keyboard.press("Shift+F6"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await colSel(page), "先确认列块已开").not.toBeNull();
 
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await colSel(page), "Esc 应退出列块").toBeNull();
     expect(errors).toEqual([]);
   });
@@ -280,7 +280,7 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     await page.evaluate(() => (window as any).startColumnSelect(0, 1));
     await page.evaluate(() => (window as any).extendColumnSelect(2, 1));   // 宽度 0 的列块 = 纯插入点 (有宽度时输入会覆盖选中内容)
 
-    await page.keyboard.press("Z");
+    await page.keyboard.press("Z"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     // emoji 必须完好 (没被劈成半个代理), 且 Z 插在 emoji 之后
     expect(await doc(page)).toEqual(["😀Za", "😀Zb", "😀Zc"]);
     expect(errors).toEqual([]);

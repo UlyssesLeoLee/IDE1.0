@@ -180,14 +180,14 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   // 显式 focus 编辑器 (click 在 default viewport 偏移下不稳)
   await page.locator("#ed-content").focus();
   // NORMAL → INSERT: 按 i
-  await page.keyboard.press("i");
+  await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   // 状态栏 mode 应变 INSERT
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT", { timeout: 2_000 });
   // 打字
   await page.keyboard.type("abc");
   await expect(page.locator("#ed-content")).toContainText("abc");
   // Esc → NORMAL, 标签变脏 (tab-dirty class)
-  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "NORMAL");
   await expect(page.locator(".tab").first()).toHaveClass(/tab-dirty/);
 });
@@ -200,13 +200,13 @@ test("save (Ctrl+S) writes to server and clears dirty flag", async ({ page }) =>
   await snapshotFixture();
   await expect(page.locator("#ed-content")).toBeVisible();
   await page.locator("#ed-content").focus();
-  await page.keyboard.press("i");
+  await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT");
   await page.keyboard.type("XYZ");
-  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator(".tab").first()).toHaveClass(/tab-dirty/);
   // Ctrl+S 保存
-  await page.keyboard.press("Control+s");
+  await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator(".tab").first()).not.toHaveClass(/tab-dirty/, { timeout: 5_000 });
   await expect(page.locator("#s-tip")).toContainText("已保存");
 });
@@ -228,7 +228,7 @@ test("help modal opens with wiki containing vim section", async ({ page }) => {
   await expect(page.locator("#md-body")).toContainText("键位表");
   await expect(page.locator("#md-body")).toContainText("Ctrl+S");
   // Esc 关闭
-  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#modal")).not.toHaveClass(/show/);
 });
 
@@ -247,7 +247,7 @@ test("bottom panel renders Terminal/Output/Problems tabs", async ({ page, reques
   await expect(page.locator('.bottom-tab[data-pane="problems-pane"]')).toHaveText(/PROBLEMS/i);
   // 默认折叠, Ctrl+` 展开
   await expect(page.locator("#bottom-panel")).toHaveAttribute("data-collapsed", "true");
-  await page.keyboard.press("Control+`");
+  await page.keyboard.press("Control+`"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#bottom-panel")).toHaveAttribute("data-collapsed", "false", { timeout: 3_000 });
   // 未启动会话时: 显示空状态提示. terminal-body 此时无内容、折叠为 0 高
   // (#terminal-body:empty 规则), 所以只断言 attached 而非 visible.
@@ -260,7 +260,7 @@ test("terminal panel starts a real PowerShell session and echoes output", async 
   // Windows 上 PowerShell 冷启动 (JIT + profile 加载) 可能要 15s+, 给足余量
   test.setTimeout(90_000);
   await goEditor(page);
-  await page.keyboard.press("Control+`");
+  await page.keyboard.press("Control+`"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.locator('.bottom-toggle[data-cmd="terminal-new"]').click();
   await expect(page.locator("#terminal-empty")).toBeHidden({ timeout: 30_000 });
   await page.locator("#terminal-body").focus();
@@ -483,13 +483,13 @@ test.describe("命令审计 (功能覆盖)", () => {
 
     // 全选 + 复制 → 粘贴到末尾
     await page.evaluate(() => { (window as any).dispatchCommand("select-all"); });
-    await page.evaluate(() => { (window as any).dispatchCommand("copy"); });
+    await page.evaluate(() => (window as any).dispatchCommand("copy"));
     const before = await page.evaluate(() => (window as any).activeTab().lines.slice());
     await page.evaluate(() => {
       const t = (window as any).activeTab();
       t.sel = null;   // 粘贴会替换选区 (Sakura 行为), 这里要的是「追加到末尾」
       t.cursor = { row: t.lines.length - 1, col: t.lines[t.lines.length - 1].length };
-      (window as any).dispatchCommand("paste");
+      return (window as any).dispatchCommand("paste");
     });
     const after = await page.evaluate(() => (window as any).activeTab().lines.slice());
     expect(after.length).toBeGreaterThan(before.length);
@@ -556,10 +556,10 @@ test.describe("命令审计 (功能覆盖)", () => {
     });
 
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("v");
+    await page.keyboard.press("v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "VISUAL");
     // 右移 3 次扩展选区
-    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const selLen = await page.evaluate(() => {
       const t = (window as any).activeTab();
       return t.sel ? Math.abs(t.sel.c1 - t.sel.c0) : 0;
@@ -568,7 +568,7 @@ test.describe("命令审计 (功能覆盖)", () => {
     // 选区在 DOM 上可见
     await expect(page.locator("#ed-content .sel-active").first()).toBeVisible();
 
-    await page.evaluate(() => { (window as any).dispatchCommand("cut"); });
+    await page.evaluate(() => (window as any).dispatchCommand("cut"));
     expect(await page.evaluate(() => (window as any).activeTab().lines[0])).not.toContain("hello");
   });
 
@@ -659,9 +659,9 @@ test.describe("命令审计 (功能覆盖)", () => {
 
     await page.evaluate(() => { (window as any).dispatchCommand("macro-start"); });
     await page.locator("#ed-content").focus();
-    await page.keyboard.press("i");
+    await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.type("Q");
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const recorded = await page.evaluate(() => {
       (window as any).dispatchCommand("macro-stop");
       return (window as any).MACRO.keys.length;

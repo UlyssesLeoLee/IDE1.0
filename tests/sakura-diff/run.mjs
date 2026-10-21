@@ -63,12 +63,14 @@ async function oursAll() {
       else if (c.ours.pre) { await page.evaluate((src) => { new Function(src)(); }, c.ours.pre); }
       if (c.ours.keys) { /* done */ } else if (c.ours.js) { await page.evaluate((src) => { new Function(src)(); }, c.ours.js); }
       else if (c.ours.key) { await page.locator('#ed-content').focus(); await page.keyboard.press(c.ours.key); } else await page.evaluate((x) => dispatchCommand(x), c.ours.cmd);
+      await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null));
       await page.waitForTimeout(250);
-      await page.evaluate(({ tail }) => {
+      await page.evaluate(async ({ tail }) => {
         const t = getActiveTab();
-        if (tail === 'selcopy') { try { dispatchCommand('copy'); } catch (_) {} }
+        if (tail === 'selcopy') { try { await dispatchCommand('copy'); } catch (_) {} }
         if (tail === 'paste' || tail === 'selcopy') { const clip = CLIPBOARD || ''; t.cursor = { row: t.lines.length - 1, col: charLen(t.lines[t.lines.length - 1]) }; t.sel = null; t.colSel = null; pasteText(tail === 'selcopy' ? clip : (window.__mock.clip || CLIPBOARD)); }
         else { if (selNonEmpty(t)) deleteSelection(t); insertCharMulti('|'); }
+        await window.__editIdle();
       }, { tail: tailOf(c) });
       out.set(c.id, await page.evaluate(() => getActiveTab().lines.join('\n')));
     }

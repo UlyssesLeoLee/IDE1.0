@@ -45,18 +45,18 @@ const docState = (page: Page) => page.evaluate(() => {
 async function prepDoc(page: Page, layout: "full" | "min") {
   if (layout === "full") await page.evaluate(() => (window as any).createUntitledDoc());   // 完整布局启动是欢迎页, 没有文档
   await focusEditor(page);
-  if (layout === "full") await page.keyboard.press("i");
+  if (layout === "full") await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.type("hello");
   await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.type("world");
-  if (layout === "full") await page.keyboard.press("Escape");
+  if (layout === "full") await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect.poll(() => page.evaluate(() => (window as any).getActiveTab().lines.join("|"))).toBe("hello|world");
 }
 /** ↓ 直到高亮行是 cmd (上限 40 次, 防死循环); 返回是否到达. */
 async function downTo(page: Page, cmd: string): Promise<boolean> {
   for (let i = 0; i < 40; i++) {
     if ((await st(page)).row === cmd) return true;
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   }
   return (await st(page)).row === cmd;
 }
@@ -131,7 +131,7 @@ for (const layout of ["full", "min"] as const) {
       await page.mouse.click(640, 420);
       expect(await openMenus(page)).toEqual([]);
       await btn(page, "file").click();
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await openMenus(page)).toEqual([]);
       expect(await editorFocused(page)).toBe(true);
       expect(await kbLeft(page)).toBe(0);
@@ -143,7 +143,7 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "edit").click();
       await page.locator('.menu-dropdown[data-dropdown="edit"] [data-cmd="cut"]').hover();
       expect((await st(page)).row).toBe("cut");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("copy");
       await parkMouse(page);                                                 // 键盘选的行, 鼠标离开不清
       expect((await st(page)).row).toBe("copy");
@@ -158,34 +158,34 @@ for (const layout of ["full", "min"] as const) {
     test("↑↓: 跳过分隔线, 首尾循环; Home / End; 跳过禁用行", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt+f");
+      await page.keyboard.press("Alt+f"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       let s = await st(page);
       expect(s).toMatchObject({ open: "file", row: "new-file" });             // 键盘打开: 第一行已高亮
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("open-folder");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("open-file");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("save");                              // 「打开文件...」后面是分隔线, 跳过
-      await page.keyboard.press("End");
+      await page.keyboard.press("End"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       const rows = await topRows(page, "file");
       expect((await st(page)).row).toBe(rows[rows.length - 1]);
-      await page.keyboard.press("ArrowDown");                                 // 末行 ↓ 回到首行
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                 // 末行 ↓ 回到首行
       expect((await st(page)).row).toBe("new-file");
-      await page.keyboard.press("ArrowUp");                                   // 首行 ↑ 回到末行
+      await page.keyboard.press("ArrowUp"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                   // 首行 ↑ 回到末行
       expect((await st(page)).row).toBe(rows[rows.length - 1]);
-      await page.keyboard.press("Home");
+      await page.keyboard.press("Home"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("new-file");
       // 禁用行: 测试里临时把 打开文件夹 标成 disabled
       await page.evaluate(() => document.querySelector('[data-cmd="open-folder"]')!.classList.add("disabled"));
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("open-file");
-      await page.keyboard.press("Home");
-      await page.keyboard.press("ArrowUp");
-      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("Home"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowUp"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowUp"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).not.toBe("open-folder");
       await page.evaluate(() => document.querySelector('[data-cmd="open-folder"]')!.classList.remove("disabled"));
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
@@ -197,13 +197,13 @@ for (const layout of ["full", "min"] as const) {
         await btn(page, m).click();
         const rows = await topRows(page, m);
         expect(rows.length, `${m} 有可走的行`).toBeGreaterThan(2);
-        await page.keyboard.press("ArrowDown");                               // 鼠标打开: 第一次 ↓ 到第一行
+        await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                               // 鼠标打开: 第一次 ↓ 到第一行
         for (let i = 0; i < rows.length; i++) {
           expect((await st(page)).row, `${m} 第 ${i + 1} 行`).toBe(rows[i]);
-          await page.keyboard.press("ArrowDown");
+          await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
         }
         expect((await st(page)).row, `${m} 绕回第一行`).toBe(rows[0]);
-        await page.keyboard.press("Escape");
+        await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
         expect(await kbLeft(page)).toBe(0);
       }
       expect(errors).toEqual([]);
@@ -213,68 +213,68 @@ for (const layout of ["full", "min"] as const) {
     test("←→: 在顶层菜单间移动并打开 (首尾循环), 打开后第一行高亮", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt+f");
-      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("Alt+f"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "help", row: "help" });     // 文件 ← 绕到 帮助 (第一行高亮)
-      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).open).toBe("file");                             // 帮助 → 绕回 文件
       const seen: string[] = [];
       for (let i = 0; i < MENUS.length; i++) {
         seen.push((await st(page)).open!);
-        await page.keyboard.press("ArrowRight");
+        await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
         // 视图菜单的第一行是「界面布局」子菜单父行, 它上面 → 是进入子菜单 (见下一个用例); 再按一次才换菜单
-        if ((await st(page)).sub) await page.keyboard.press("ArrowRight");
+        if ((await st(page)).sub) await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       }
       expect(seen).toEqual(MENUS);                                            // 一圈正好是 8 个菜单, 顺序 = 菜单栏顺序
       expect(await openMenus(page)).toEqual(["file"]);
       for (const m of ["help", "window", "setting"]) {                          // 反方向: 文件 ← 帮助 ← 窗口 ← 设置
-        await page.keyboard.press("ArrowLeft");
+        await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
         expect((await st(page)).open).toBe(m);
       }
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
     test("子菜单: → 进入, ↓ 跳过分隔线, ← 退回父行; 叶子行上 → 去下一个菜单", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt+v");
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "view", row: "layout", sub: null });   // 视图第一行是 界面布局 子菜单
       const sub = page.locator('.menu-dropdown[data-dropdown="view"] > [data-submenu="layout"] > .submenu-dropdown');
       await expect(sub).toBeHidden();
-      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "view", sub: "layout", row: "layout-min" });
       await expect(sub).toBeVisible();                                         // 键盘展开, 鼠标不在上面
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("layout-full");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("toggle-activity-bar");                // 分隔线后的第一行
-      await page.keyboard.press("End");
+      await page.keyboard.press("End"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("toggle-breadcrumb");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("layout-min");                          // 子菜单内部循环
-      await page.keyboard.press("ArrowLeft");                                  // ← 先退出子菜单, 不换菜单
+      await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                  // ← 先退出子菜单, 不换菜单
       expect(await st(page)).toMatchObject({ open: "view", row: "layout", sub: null });
       await expect(sub).toBeHidden();
-      await page.keyboard.press("ArrowRight");                                 // 再进
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                 // 再进
       expect((await st(page)).sub).toBe("layout");
-      await page.keyboard.press("ArrowLeft");
-      await page.keyboard.press("ArrowDown");                                  // 子菜单已收起, ↓ 在顶层走
+      await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                  // 子菜单已收起, ↓ 在顶层走
       expect((await st(page)).row).not.toBe("layout-min");
       expect(await downTo(page, "toggle-status")).toBe(true);
-      await page.keyboard.press("ArrowRight");                                 // 叶子行上 → = 下一个菜单 (工具)
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                 // 叶子行上 → = 下一个菜单 (工具)
       expect(await st(page)).toMatchObject({ open: "tool", sub: null });
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
     test("子菜单父行上 Enter = 进入子菜单 (不关菜单, 不执行)", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt+v");
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "view", sub: "layout", row: "layout-min" });
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await editorFocused(page)).toBe(true);
       expect(errors).toEqual([]);
     });
@@ -284,7 +284,7 @@ for (const layout of ["full", "min"] as const) {
       const errors = await boot(page);
       await focusEditor(page);
       expect(await page.evaluate("VIEW_STATE.lineNumbers")).toBe(true);
-      await page.keyboard.press("Alt+v");
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await downTo(page, "toggle-line-num")).toBe(true);
       await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await openMenus(page)).toEqual([]);
@@ -315,15 +315,15 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "view").click();
       expect(await downTo(page, "toggle-word-wrap")).toBe(true);
       const before = await page.evaluate("VIEW_STATE.wordWrap");
-      await page.keyboard.press("Space");
+      await page.keyboard.press("Space"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await openMenus(page)).toEqual([]);
       expect(await page.evaluate("VIEW_STATE.wordWrap")).toBe(!before);
       await page.evaluate(() => (window as any).dispatchCommand("toggle-word-wrap"));
       // 菜单栏上空格展开 (而不是展开又被 keyup 的 click 收起)
-      await page.keyboard.press("Alt");
-      await page.keyboard.press("Space");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("Space"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "file", row: "new-file" });
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
@@ -331,13 +331,13 @@ for (const layout of ["full", "min"] as const) {
       const errors = await boot(page);
       await focusEditor(page);
       await page.evaluate(() => (window as any).dispatchCommand("toggle-line-num"));   // 行号 -> 关
-      await page.keyboard.press("Alt+v");
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator('[data-cmd="toggle-line-num"]')).toHaveAttribute("data-check", "off");
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.evaluate(() => (window as any).dispatchCommand("toggle-line-num"));   // 行号 -> 开
-      await page.keyboard.press("Alt+v");
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator('[data-cmd="toggle-line-num"]')).toHaveAttribute("data-check", "on");
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
@@ -355,62 +355,62 @@ for (const layout of ["full", "min"] as const) {
         expect(await openMenus(page)).toEqual([menu]);                                 // 同时只有一个
         expect((await st(page)).row, `Alt+${k} 第一行高亮`).toBe((await topRows(page, menu))[0]);
       }
-      await page.keyboard.press("Alt+e");                                              // 帮助开着时 Alt+E 直接换到编辑
+      await page.keyboard.press("Alt+e"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                              // 帮助开着时 Alt+E 直接换到编辑
       expect((await st(page)).open).toBe("edit");
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
     test("单按 Alt: 焦点交给菜单栏 (文件), ←→ 移动不展开, ↓ 展开; 再按 Alt / Esc 退出回编辑区", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ bar: "file", open: null });
-      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ bar: "edit", open: null });
-      await page.keyboard.press("ArrowLeft");
-      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ bar: "help", open: null });          // 菜单栏上也循环
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ bar: "help", open: "help", row: "help" });
-      await page.keyboard.press("ArrowLeft");                                      // 展开后 ← 仍然是打开并切换
+      await page.keyboard.press("ArrowLeft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                      // 展开后 ← 仍然是打开并切换
       expect(await st(page)).toMatchObject({ open: "window", row: "split-h" });
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ bar: null, open: null });
       expect(await editorFocused(page)).toBe(true);
       // 再按一次 Alt 退出
-      await page.keyboard.press("Alt");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).bar).toBe("file");
-      await page.keyboard.press("Alt");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).bar).toBeNull();
       expect(await editorFocused(page)).toBe(true);
       // 菜单开着时单按 Alt = 关菜单
-      await page.keyboard.press("Alt+e");
+      await page.keyboard.press("Alt+e"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).open).toBe("edit");
-      await page.keyboard.press("Alt");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: null, bar: null });
       expect(await editorFocused(page)).toBe(true);
       // 菜单栏上直接按助记字母 (不带 Alt) 开对应菜单
-      await page.keyboard.press("Alt");
-      await page.keyboard.press("v");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await st(page)).toMatchObject({ open: "view", row: "layout" });
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(errors).toEqual([]);
     });
 
     test("Alt 被别的操作用掉就不算单按: Alt+字母后松开 Alt 菜单仍开着; Alt+点击不会聚焦菜单栏", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt+f");                                          // 按下 Alt, F, 松开 F, 松开 Alt
+      await page.keyboard.press("Alt+f"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                          // 按下 Alt, F, 松开 F, 松开 Alt
       expect(await st(page)).toMatchObject({ open: "file" });                       // 松 Alt 没有把菜单切掉
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await focusEditor(page);
       await page.keyboard.down("Alt");                                              // Alt+拖选 (列块选择) 一类: 按住 Alt 点编辑区
       await page.mouse.click(640, 420);
       await page.keyboard.up("Alt");
       expect(await st(page)).toMatchObject({ bar: null, open: null, armed: false });
       await page.keyboard.down("Alt");                                              // Alt+Tab 一类: 中间夹了别的键
-      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.keyboard.up("Alt");
       expect((await st(page)).open).toBeNull();
       expect(errors).toEqual([]);
@@ -422,16 +422,16 @@ for (const layout of ["full", "min"] as const) {
       await prepDoc(page, layout);
       await focusEditor(page);
       const before = await docState(page);
-      await page.keyboard.press("Alt+f");
+      await page.keyboard.press("Alt+f"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       for (const key of ["ArrowDown", "ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End", "ArrowLeft", "ArrowRight", "ArrowUp"]) await page.keyboard.press(key);
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await docState(page)).toBe(before);
       // Alt 单按 + 方向键 / Enter 同理
-      await page.keyboard.press("Alt");
+      await page.keyboard.press("Alt"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       for (const key of ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Escape"]) await page.keyboard.press(key);
       expect(await docState(page)).toBe(before);
       // 执行一个不改文本的命令后, 焦点回到编辑区, 继续能在原处工作
-      await page.keyboard.press("Alt+v");
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await downTo(page, "toggle-word-wrap")).toBe(true);
       await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.evaluate(() => (window as any).dispatchCommand("toggle-word-wrap"));
@@ -444,19 +444,19 @@ for (const layout of ["full", "min"] as const) {
       const errors = await boot(page);
       await prepDoc(page, layout);
       await focusEditor(page);
-      if (layout === "full") await page.keyboard.press("i");                       // INSERT: 以前 Alt+F 会同时打出 f
+      if (layout === "full") await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                       // INSERT: 以前 Alt+F 会同时打出 f
       const insertState = await docState(page);
       for (const k of Object.keys(MNEMONIC)) {
         await page.keyboard.press(`Alt+${k}`);
         expect((await st(page)).open).toBe(MNEMONIC[k]);
-        await page.keyboard.press("Escape");
+        await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       }
       expect(await docState(page)).toBe(insertState);
       if (layout === "full") {
-        await page.keyboard.press("Escape");                                       // NORMAL: 以前 Alt+V 会同时进 VISUAL
+        await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                       // NORMAL: 以前 Alt+V 会同时进 VISUAL
         const normalState = await docState(page);
         expect(JSON.parse(normalState).mode).toBe("NORMAL");
-        for (const k of Object.keys(MNEMONIC)) { await page.keyboard.press(`Alt+${k}`); await page.keyboard.press("Escape"); }
+        for (const k of Object.keys(MNEMONIC)) { await page.keyboard.press(`Alt+${k}`); await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle()); }
         expect(await docState(page)).toBe(normalState);
       }
       expect(errors).toEqual([]);
@@ -465,8 +465,8 @@ for (const layout of ["full", "min"] as const) {
     test("关闭菜单后不残留键盘高亮 / 展开的子菜单; aria-expanded 跟随", async ({ page }) => {
       const errors = await boot(page);
       await focusEditor(page);
-      await page.keyboard.press("Alt+v");
-      await page.keyboard.press("ArrowRight");                                      // 进子菜单
+      await page.keyboard.press("Alt+v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                      // 进子菜单
       expect(await kbLeft(page)).toBeGreaterThan(0);
       await expect(btn(page, "view")).toHaveAttribute("aria-expanded", "true");
       await page.mouse.click(640, 420);                                             // 点外面收起
@@ -475,8 +475,8 @@ for (const layout of ["full", "min"] as const) {
       for (const m of MENUS) await expect(btn(page, m)).toHaveAttribute("aria-haspopup", "menu");
       // 鼠标点开、键盘走一行、再换成鼠标点另一个菜单: 旧高亮不跟过去
       await btn(page, "edit").click();
-      await page.keyboard.press("ArrowDown");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await btn(page, "search").click();
       expect(await st(page)).toMatchObject({ open: "search", row: null });
       expect(errors).toEqual([]);
@@ -492,7 +492,7 @@ for (const layout of ["full", "min"] as const) {
         expect(await openMenus(page), `${cmd} 点完菜单收起`).toEqual([]);
         expect(await editorFocused(page), `${cmd} 点完焦点回到编辑区 (不是 body)`).toBe(true);
       }
-      if (layout === "full") await page.keyboard.press("i");               // vim 开: 先进 INSERT 才能打字
+      if (layout === "full") await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());               // vim 开: 先进 INSERT 才能打字
       await page.keyboard.type("Z");
       expect(await page.evaluate(() => (window as any).getActiveTab().lines.join("|"))).toContain("Z");
       expect(errors).toEqual([]);
@@ -504,7 +504,7 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "search").click();
       await page.locator('.menu-dropdown[data-dropdown="search"] > [data-cmd="find"]').click();
       await expect(page.locator("#find-input")).toBeFocused();
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       // 再点标题收起
       await focusEditor(page);
       await btn(page, "file").click();
@@ -520,7 +520,7 @@ for (const layout of ["full", "min"] as const) {
       const errors = await boot(page);
       await prepDoc(page, layout);
       await focusEditor(page);
-      await page.keyboard.press("Alt+h");
+      await page.keyboard.press("Alt+h"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await downTo(page, "wiki")).toBe(true);
       const before = await docState(page);
       await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
@@ -529,7 +529,7 @@ for (const layout of ["full", "min"] as const) {
       await page.keyboard.type("qqq");
       expect(await docState(page), "对话框开着时打的字不进文档").toBe(before);
       expect(await st(page)).toMatchObject({ open: null, bar: null });       // 也没有残留菜单模式
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator("#modal")).not.toHaveClass(/show/);
       expect(await editorFocused(page)).toBe(true);
       expect(errors).toEqual([]);
@@ -551,8 +551,8 @@ for (const layout of ["full", "min"] as const) {
       const cut = page.locator('.menu-dropdown[data-dropdown="edit"] > [data-cmd="cut"]');
       await cut.hover();
       await expect.poll(() => litRows(page)).toEqual(["cut"]);
-      await page.keyboard.press("ArrowDown");
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe("paste");
       await expect(page.locator("#menubar")).toHaveClass(/kbnav/);
       await expect.poll(() => litRows(page), "键盘接管后只剩 paste 亮, 鼠标停着的 cut 不亮").toEqual(["paste"]);
@@ -561,7 +561,7 @@ for (const layout of ["full", "min"] as const) {
       await expect.poll(() => litRows(page)).toEqual(["cut"]);
       expect((await st(page)).row).toBe("cut");
       await expect(page.locator("#menubar")).not.toHaveClass(/kbnav/);
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator("#menubar")).not.toHaveClass(/kbnav/);        // 收起菜单也清掉
       expect(errors).toEqual([]);
     });
@@ -571,22 +571,22 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "view").click();
       await page.locator('#menubar [data-submenu="sidebar"]').first().hover();
       expect(await visibleFlyouts(page)).toEqual(["sidebar"]);
-      await page.keyboard.press("ArrowDown");                                   // 高亮从停着鼠标的「侧边栏」行接着往下
-      await page.keyboard.press("ArrowRight");                                  // 进下一个子菜单父行的飞出层
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                   // 高亮从停着鼠标的「侧边栏」行接着往下
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                  // 进下一个子菜单父行的飞出层
       expect(await visibleFlyouts(page), "不会同时开两层飞出层").toHaveLength(1);
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       // 鼠标进了飞出层里的行, 键盘接手后鼠标走开
       await btn(page, "view").click();
       await page.locator('#menubar [data-submenu="sidebar"]').first().hover();
       await page.locator('#menubar [data-submenu="sidebar"] > .submenu-dropdown > .menu-row').first().hover();
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       const r1 = (await st(page)).row;
       await page.mouse.move(5, 500, { steps: 1 });
       expect(await visibleFlyouts(page), "鼠标走开后键盘所在的飞出层还在").toEqual(["sidebar"]);
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       const r2 = (await st(page)).row;
       expect(r2, "↓ 照样能走").not.toBe(r1);
-      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("ArrowUp"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect((await st(page)).row).toBe(r1);
       expect(errors).toEqual([]);
     });
@@ -599,10 +599,10 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "edit").hover();
       expect(await openMenus(page)).toEqual(["edit"]);
       expect(await anim("edit"), "悬停切换: 瞬间出现").toBe("none");
-      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await openMenus(page)).toEqual(["search"]);
       expect(await anim("search"), "→ 切换: 瞬间出现").toBe("none");
-      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await parkMouse(page);
       await btn(page, "view").click();
       expect(await anim("view"), "收起后重新打开: 又有淡入").toBe("menu-in");
