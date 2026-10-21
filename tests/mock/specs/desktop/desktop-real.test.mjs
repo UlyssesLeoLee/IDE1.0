@@ -88,6 +88,16 @@ test('桌面版: Rust 桥 (nav_step / edit_cmd / edit_text / edit_lines) 在真�
     await page.evaluate(() => { const t = getActiveTab(); t.sel = { r0: 0, c0: 0, r1: 0, c1: 5 }; t.selAnchor = { row: 0, col: 0 }; t.cursor = { row: 0, col: 5 }; renderVim(t); });
     await page.evaluate(() => dispatchCommand('to-upper')); await idle();
     assert.equal((await state()).lines[0], 'WORLD foo');
+    // edit_cmd 剪贴板: 复制 → 粘贴到行尾
+    await page.evaluate(() => { const t = getActiveTab(); t.sel = { r0: 0, c0: 0, r1: 0, c1: 5 }; t.selAnchor = { row: 0, col: 0 }; t.cursor = { row: 0, col: 5 }; renderVim(t); });
+    await page.evaluate(() => dispatchCommand('copy')); await idle();
+    await page.evaluate(() => { const t = getActiveTab(); t.sel = null; t.selAnchor = null; t.cursor = { row: 0, col: t.lines[0].length }; renderVim(t); });
+    await page.evaluate(() => dispatchCommand('paste')); await idle();
+    assert.equal((await state()).lines[0], 'WORLD fooWORLD');
+    // bracket_pair: 对括弧
+    await page.evaluate(() => { const t = getActiveTab(); t.lines = ['f(a[b])']; t.cursor = { row: 0, col: 1 }; t.sel = null; renderVim(t); });
+    await page.evaluate(() => dispatchCommand('bracket-pair')); await idle();
+    assert.deepEqual((await state()).cursor, { row: 0, col: 6 });
     assert.deepEqual(d.errors, []);
   } finally { await d.close(); }
 });
