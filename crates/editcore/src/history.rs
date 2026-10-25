@@ -10,6 +10,7 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 
 const MAX_UNDO: usize = 200;
+const MAX_TABS: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Patch {
@@ -62,6 +63,12 @@ fn registry() -> &'static Mutex<HashMap<String, History>> {
 
 pub fn run(req: &HistReq) -> Option<HistRes> {
     let mut reg = registry().lock().ok()?;
+    // 上限: 页面重新载入时旧会话的标签不会再来清理, 登记数到上限就丢掉一个旧的, 内存不会无限涨
+    if !reg.contains_key(&req.tab) && reg.len() >= MAX_TABS {
+        if let Some(k) = reg.keys().next().cloned() {
+            reg.remove(&k);
+        }
+    }
     let h = reg.entry(req.tab.clone()).or_default();
     let mut apply = None;
     match req.op.as_str() {

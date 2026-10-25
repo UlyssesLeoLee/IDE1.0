@@ -3906,6 +3906,10 @@ function snapshot(t) {
 /* 撤销 / 重做栈在 Rust (editcore::history, /api/history · Tauri history), 以"补丁"保存。
    前端只留上一个边界的行快照 (hbase) 用来算补丁; 补丁在下一次 snapshot / 撤销时才结算。 */
 let HISTCHAIN = Promise.resolve();
+// 撤销栈在后端按「页面会话 + 标签 id」登记: 标签 id (t1, t2 ...) 每次载入页面都从 1 重新数, 后端进程却一直活着,
+// 只用 t.id 的话重新载入 / 开第二个窗口后会撤销到别的文档的补丁上
+const HIST_SESSION = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(performance.now()) + ":" + String(Math.random()).slice(2);
+const histKey = (t) => HIST_SESSION + "/" + t.id;
 function linePatch(a, b) {
   const n = Math.min(a.length, b.length);
   let i = 0;
@@ -3921,11 +3925,11 @@ function histCommit(t) {
   const hc = t.hcur || t.cursor;
   const patch = Object.assign(p, { cursor_before: [hc.row, hc.col], cursor_after: [t.cursor.row, t.cursor.col] });
   t.hbase = t.lines.slice(); t.hcur = { ...t.cursor }; t.hver = (t.hver || 0) + 1;
-  HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: t.id, op: "push", patch })).catch(() => {});
+  HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: histKey(t), op: "push", patch })).catch(() => {});
 }
 function histReset(t) {
   t.hbase = null; t.hcur = null; t.hver = (t.hver || 0) + 1;
-  HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: t.id, op: "clear" })).catch(() => {});
+  HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: histKey(t), op: "clear" })).catch(() => {});
 }
 function applyHist(t, a) {
   const tail = t.lines.slice(a.start + a.remove);
@@ -3942,7 +3946,7 @@ function histStep(op) {
     histCommit(t);
     await HISTCHAIN;
     let r;
-    try { r = await invoke("history", { tab: t.id, op, cursor: [t.cursor.row, t.cursor.col] }); } catch (e) { setTip("历史操作失败: " + e.message); return; }
+    try { r = await invoke("history", { tab: histKey(t), op, cursor: [t.cursor.row, t.cursor.col] }); } catch (e) { setTip("历史操作失败: " + e.message); return; }
     if (getActiveTab() !== t || !r.apply) return;
     applyHist(t, r.apply);
     paintActive();
@@ -4352,6 +4356,7 @@ function confirmClose(t) {
 }
 
 function closeTab(id) {
+  { const ct = TABS.get(id); if (ct) histReset(ct); }   // 关掉的标签: 后端的撤销栈一起释放
   TABS.delete(id);
   if (activeTabId === id) activeTabId = null;
   if (TABS.size === 0) {
