@@ -106,6 +106,11 @@ test('桌面版: Rust 桥 (nav_step / edit_cmd / edit_text / edit_lines) 在真�
     assert.deepEqual((await state()).sel, { r0: 0, c0: 0, r1: 0, c1: 3 });
     await page.evaluate(async () => { const h = document.createElement('input'); h.id = 'repl-input'; h.value = 'X'; document.body.appendChild(h); await replaceAll(); h.remove(); });
     assert.deepEqual((await state()).lines, ['X bar X', 'X']);
+    // history: 撤销 / 重做 (栈在 Rust)
+    await page.evaluate(() => dispatchCommand('undo')); await idle();
+    assert.deepEqual((await state()).lines, ['foo bar foo', 'foo']);
+    await page.evaluate(() => dispatchCommand('redo')); await idle();
+    assert.deepEqual((await state()).lines, ['X bar X', 'X']);
     assert.deepEqual(d.errors, []);
   } finally { await d.close(); }
 });
