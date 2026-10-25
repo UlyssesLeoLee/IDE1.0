@@ -7496,6 +7496,7 @@ function navRequest(t, key, ctrl, shift) {
   const last = Math.max(0, t.lines.length - 1), { row, col } = t.cursor, page = pageRows();
   const need = new Set([row - 2, row - 1, row, row + 1, row + 2, last]);
   if (key === "PageUp" || key === "PageDown") need.add(Math.max(0, Math.min(last, row + (key === "PageUp" ? -1 : 1) * (ctrl ? Math.max(1, Math.floor(page / 2)) : page))));
+  if (selNonEmpty(t)) { need.add(t.sel.r0); need.add(t.sel.r1); }   // 左右键收缩选区时要读选区两端的行长
   const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
   const had = selNonEmpty(t);
   const sel = had ? [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1] : null;
@@ -7527,7 +7528,9 @@ let INPUT_N = 0, OPCHAIN = Promise.resolve();
 function enqueueInput(fn) {
   INPUT_N++; INPUT_BUSY = true;                       // 同步置位: 之后到的按键立刻被闸门拦下
   const p = OPCHAIN.then(async () => {
-    try { await fn(); }
+    // 桥调用万一不返回 (后端卡死 / 桌面版命令崩溃), 最多等 8 秒: 否则闸门一直关着, 所有按键都被吞掉
+    try { await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error("bridge timeout")), 8000))]); }
+    catch (e) { if (e && e.message === "bridge timeout") setTip("后端响应超时, 已放弃这次操作"); throw e; }
     finally { INPUT_N--; if (INPUT_N === 0) { INPUT_BUSY = false; await drainInput(); } }
   });
   OPCHAIN = p.catch(() => {});
@@ -7549,6 +7552,7 @@ for (const type of ["keydown", "beforeinput"]) {
   edContent.addEventListener(type, (e) => {
     if (INPUT_REPLAY || !(INPUT_BUSY || INPUT_Q.length)) return;
     if (type === "keydown" && /^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) return;
+    if (e.isComposing || e.keyCode === 229 || IME_ACTIVE || (type === "beforeinput" && /Composition/.test(e.inputType || ""))) return;   // 输入法组合中: 交给输入法, 不能拦
     e.preventDefault(); e.stopImmediatePropagation();
     INPUT_Q.push({ type, key: e.key, code: e.code, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, data: e.data, inputType: e.inputType });
   }, true);

@@ -67,7 +67,8 @@ impl Ctx<'_> {
         self.req.rows.iter().find(|(i, _)| *i == r).map(|(_, s)| chars_of(s)).unwrap_or_default()
     }
     fn sel_nonempty(&self) -> Option<[usize; 4]> {
-        self.req.sel.filter(|s| !(s[0] == s[2] && s[1] == s[3]))
+        // 起点在前 (请求里的选区可能是反向的; 反向时 r1 - r0 会下溢)
+        self.req.sel.map(|s| if (s[2], s[3]) < (s[0], s[1]) { [s[2], s[3], s[0], s[1]] } else { s }).filter(|s| !(s[0] == s[2] && s[1] == s[3]))
     }
     /// 选区文字 (行间用 \n)
     fn sel_text(&self, s: [usize; 4]) -> String {
@@ -310,7 +311,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                     format!("{}{}{}", slice(&l, 0, col), p, slice(&l, col, usize::MAX))
                 })
                 .collect();
-            let remove = parts.len().min(req.total_rows - row);
+            let remove = parts.len().min(req.total_rows.saturating_sub(row));
             EditRes { changed: true, start: row, remove, insert, cursor: [row, col], tip: Some(format!("已矩形贴付 {} 行", parts.len())), ..Default::default() }
         }
         "copy-lines" | "copy-passage" | "copy-linenum" => {
@@ -615,6 +616,13 @@ mod tests {
         let r = run_on("select-word", 4, 13, None, DOC); // 最后一行行末: 选到行尾
         assert_eq!(r.sel, Some([4, 0, 4, 13]));
         assert!(run_on("select-word", 2, 0, None, DOC).sel.is_none()); // 空行
+    }
+    #[test]
+    fn malformed_requests_do_not_panic() {
+        let r = run_on("delete", 0, 0, Some([1, 3, 0, 2]), DOC); // 反向选区
+        assert_eq!(apply(DOC, &r)[0], "hendented line"); // 与正向选区 [0,2]-[1,3] 结果相同
+        let r = run_text("paste-box", 9, 0, None, "x", false, DOC); // 光标行超出文档
+        assert_eq!(r.remove, 0);
     }
     #[test]
     fn unknown() {
