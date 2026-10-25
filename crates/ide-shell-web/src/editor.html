@@ -2683,12 +2683,6 @@ function dispatchCommand(cmd) {
     case "column-replace":   columnPrompt(); break;
     case "recent-clear":      clearRecent(); break;
     case "next-cursor":      nextCursor(getActiveTab()); break;
-    case "to-upper":         execCmd("toUpper"); break;
-    case "to-lower":         execCmd("toLower"); break;
-    case "to-fullwidth":     execCmd("toFullwidth"); break;
-    case "to-halfwidth":     execCmd("toHalfwidth"); break;
-    case "to-zenkaku":       execCmd("toZenkaku"); break;
-    case "to-zenhira":       execCmd("toZenhira"); break;
     case "to-hankata":       execCmd("toHankata"); break;
     case "insert-date":      execCmd("insertDate"); break;
     case "insert-template":  execCmd("insertTemplate"); break;
@@ -7859,36 +7853,8 @@ function wordBoundsAtCursor(t) {
 const selRowsOf = (t) => (selNonEmpty(t) ? [t.sel.r0, t.sel.r1] : [t.cursor.row, t.cursor.row]);
 function selOrLineText(t) { return selNonEmpty(t) ? selectionText(t) : (t.lines[t.cursor.row] || ""); }
 // 作用于选区所在的行 (无选区 = 当前行); fn(line) -> 新行
-function mapSelRows(t, fn) {
-  const [r0, r1] = selRowsOf(t);
-  snapshot(t);
-  for (let r = r0; r <= r1; r++) t.lines[r] = fn(t.lines[r]);
-  t.dirty = true; renderVim(t);
-}
 
 // 把一行 (按 tab 宽 4) 里的 TAB 展开成空格 / 把行首空格还原成 TAB
-function tabsToSpaces(line, w = 4) {
-  let out = "", col = 0;
-  for (const ch of chars(line)) { if (ch === "\t") { const n = w - (col % w); out += " ".repeat(n); col += n; } else { out += ch; col += 1; } }
-  return out;
-}
-function spacesToTabs(line, w = 4) {
-  // Sakura: 每段连续空格, 凡跨过制表位的部分换成 TAB (按显示列计算), 不足一个制表位的零头保留空格
-  let out = "", col = 0;
-  const a = charArray(line);
-  for (let i = 0; i < a.length;) {
-    if (a[i] === " ") {
-      let j = i; while (j < a.length && a[j] === " ") j++;
-      let c = col; const end = col + (j - i);
-      while (Math.floor(c / w) * w + w <= end) { out += "\t"; c = Math.floor(c / w) * w + w; }
-      out += " ".repeat(end - c); col = end; i = j;
-    } else if (a[i] === "\t") { out += "\t"; col = Math.floor(col / w) * w + w; i++; }
-    else { out += a[i]; col += /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/.test(a[i]) ? 2 : 1; i++; }
-  }
-  return out;
-}
-const toZenEi = (s) => s.replace(/[A-Za-z0-9]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xFEE0));
-const toHanEi = (s) => s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
 
 // 彩色 HTML 复制: 按当前主题的真实 token 颜色生成 <pre> (别的程序粘贴能保留配色)
 function colorHtmlOf(t, rows, withNumbers) {
@@ -7904,11 +7870,6 @@ function colorHtmlOf(t, rows, withNumbers) {
     return (withNumbers ? '<span style="color:#888">' + String(r + 1).padStart(String(rows[rows.length - 1] + 1).length, " ") + " </span>" : "") + body;
   });
   return '<pre style="font-family:Consolas,monospace">' + out.join("\n") + "</pre>";
-}
-function copyRowsText(t, fmt) {
-  const [r0, r1] = selRowsOf(t);
-  const rows = []; for (let r = r0; r <= r1; r++) rows.push(r);
-  return rows.map((r) => fmt(t.lines[r], r) + "\n").join("");          // Sakura: 每一行都带行尾换行 (最后一行也是)
 }
 // 矩形贴付け: 剪贴板每一行贴到 (光标行+i, 光标列), 行不够长补空格, 文档不够长补行
 
@@ -7958,12 +7919,6 @@ const SAKURA_CMDS = {
   "copy-path": () => { const t = getActiveTab(); pushClip(t.path || ""); setTip("已复制路径"); },
   "copy-tag": () => { const t = getActiveTab(); pushClip((t.path || t.name) + "(" + (t.cursor.row + 1) + "," + (t.cursor.col + 1) + ")"); setTip("已复制 路径(行,列)"); },
   "paste-box": () => { const t = getActiveTab(); pasteBox(t, CLIPBOARD); },
-  "tab-to-space": () => mapSelRows(getActiveTab(), (l) => tabsToSpaces(l)),
-  "space-to-tab": () => mapSelRows(getActiveTab(), (l) => spacesToTabs(l)),
-  "to-zenei": () => mapSelRows(getActiveTab(), toZenEi),
-  "to-hanei": () => mapSelRows(getActiveTab(), toHanEi),
-  "hankata-to-zenkata": () => EDIT_CMDS.toZenkaku(getActiveTab()),
-  "hankata-to-zenhira": () => EDIT_CMDS.toZenhira(getActiveTab()),
   "jumphist-prev": () => jumpHistGo(-1), "jumphist-next": () => jumpHistGo(1), "jumphist-set": () => { jumpHistSet(); setTip("現在位置を移動履歴に登録"); },
   "ctrl-code": () => {
     const names = ["NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS", "TAB", "LF", "VT", "FF", "CR", "SO", "SI", "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM", "SUB", "ESC", "FS", "GS", "RS", "US", "DEL"];
@@ -8960,13 +8915,7 @@ try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
 
 
 /* ===== 覆盖审计补齐: 默认键位 / 范围选择模式 / 段落选择 / 键位一览 / 全机能一览 / キーワードヘルプ ===== */
-function hankataToZen(text, hira) {
-  const out = text.replace(/[\uFF61-\uFF9F]+/g, (run) => run.normalize("NFKC"));
-  return hira ? out.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60)) : out;
-}
 Object.assign(SAKURA_CMDS, {
-  "hankata-to-zenkata": () => mapLines(getActiveTab(), (x) => hankataToZen(x, false)),
-  "hankata-to-zenhira": () => mapLines(getActiveTab(), (x) => hankataToZen(x, true)),
 });
 
 function selExtendBy(fn) {
@@ -9714,13 +9663,6 @@ const EDIT_CMDS = {
   selectAll: selectAllText,
   deleteLine: deleteLine,
   duplicateLine: duplicateLine,
-  toUpper: (t) => mapLines(t, (s) => s.toUpperCase()),
-  toLower: (t) => mapLines(t, (s) => s.toLowerCase()),
-  toFullwidth: (t) => mapLines(t, toFullwidth),
-  toHalfwidth: (t) => mapLines(t, toHalfwidth),
-  toZenkaku: (t) => mapLines(t, (s) => s.replace(/[ぁ-ん]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))),
-  toZenhira: (t) => mapLines(t, (s) => s.replace(/[ァ-ン]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))),
-  toHankata: (t) => mapLines(t, (s) => s.replace(/[ハ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))),
   insertDate: insertCurrentDate,
   insertTemplate: insertCurrentLangTemplate,
   toggleWordWrap: toggleWordWrap,
@@ -9729,136 +9671,6 @@ const EDIT_CMDS = {
   replaceAll: () => replaceAll(),
   tagJump: tagJump,
 };
-
-// 全角/半角 (ASCII 可见字符)
-// 半角假名 → 全角. ���原来的实现只处理 ASCII (\x21-\x7e) 和空格, 完全漏掉了
-// 半角假名区 —— 而这正是日文编辑器的核心功能 (打不出全角假名时用半角代替,
-// 保存时统一转全角). 半角假名区的码位不是简单偏移, 需要查表:
-//   U+FF61 ｡ → U+3002
-//   U+FF62-FF63 ｢｣ → U+300C/300D
-//   U+FF64 ､ → U+FF64 (半角浊点, 与全角浊点合成)
-//   U+FF65-FF9F ｦ-ﾟ → U+30A2-U+30FC (加 0x60, 与平<->片转换同一规则)
-// 浊音/半浊音符号 (ﾞﾟ, U+FF9E/FF9F) 必须**紧跟在假名后**才转成组合浊点,
-// 单独出现时保留 (它本身就是要跟假名配对的).
-// 半角/全角转换.
-//
-// 原实现只处理 ASCII (\x21-\x7e) 和空格, **完全漏掉半角假名区**
-// (U+FF61..U+FF9F) —— 而这正是日文编辑器的核心场景: 键盘打不出全角假名时
-// 先用半角代替, 保存时统一转全角. 实测 toFullwidth("ｶﾞｷﾞ abc") 只把
-// "abc" 转了, 假名原样留下.
-//
-// 这里改成按 NFKC 规范化处理 —— Unicode 的"兼容性分解"就是全角/半角
-// 的权威定义, 比手写 60 条映射表可靠 (手写极易把 \u30a2:\uff65 这种
-// 方向写反, 实测踩过). 浏览器原生支持 String.prototype.normalize.
-//
-// 浊音/半浊音要注意: 全角"ガ"= カ(U+30AB) + 组合浊点(U+3099) 两个码位,
-// 半角"ｶﾞ"= ｶ(U+FF76) + 半浊点(U+FF9E) 两个码位. 两边都是两字符,
-// 逐字符 NFKC 后 "ｶﾞ" 会得到 "カ" + U+3099 = "ガ" —— 但要保证 NFKC 不会
-// 把组合浊点提前合并 (在字符串层面逐字符处理就是安全的, 因为 U+3099
-// 单独规范化时保持不变).
-
-// 半角/全角转换.
-//
-// 原实现只处理 ASCII (\x21-\x7e) 和空格, **完全漏掉半角假名区**
-// (U+FF61..U+FF9F) —— 而这正是日文编辑器的核心场景: 键盘打不出全角假名时
-// 先用半角代替, 保存时统一转全角. 实测 toFullwidth("ｶﾞｷﾞ abc") 只把 "abc"
-// 转了, 假名原样留下.
-//
-// 实现要点 (两个方向不对称, 不能用同一个 normalize):
-//
-//   半角 -> 全角: String.prototype.normalize("NFKC") 就是权威定义.
-//     "ｶﾞ" 的 NFKC 结果正是 "ガ" (か+组合浊点). 浏览器原生支持.
-//
-//   全角 -> 半角: **NFKC 做不到** —— U+30AB(カ) 本身不是"兼容性字符",
-//     NFKC 原样返回. 必须分两步:
-//       1. 假名字母: 把半角区 U+FF61..FF9F 的 NFKC 结果建成反向表,
-//          运行时一次性生成 (60 条, 不硬编码 —— 手写表极易把方向写反).
-//       2. 组合浊点 U+3099/U+309A -> 半浊点 U+FF9E/U+FF9F.
-//     注意"ガ"= か+3099 两码位, 要**先查字母表再查浊点表**, 不能先合并.
-//
-// 例: "ガ" -> 表查 30AB->FF76(ｶ), 再 3099->FF9E(ﾞ) = "ｶﾞ".
-
-let _KANA_F_TO_H = null;
-let _KANA_H_TO_F = null;
-
-function buildKanaTables() {
-  if (_KANA_F_TO_H) return;
-  _KANA_F_TO_H = Object.create(null);
-  _KANA_H_TO_F = Object.create(null);
-  for (let h = 0xff61; h <= 0xff9f; h++) {
-    const half = String.fromCharCode(h);
-    // 浊点 U+FF9E/FF9F 的 NFKC 是组合浊点 U+3099/U+309A, 不是单字符假名,
-    // 单独处理, 不进字母表.
-    if (h === 0xff9e || h === 0xff9f) continue;
-    const full = half.normalize("NFKC");
-    if (full.length !== 1 || full === half) continue;
-    _KANA_F_TO_H[full] = half;
-    _KANA_H_TO_F[half] = full;
-  }
-  // 半角空格/标点等非假名项由 NFKC 单独覆盖 (U+FF61 ｡ U+FF62 ｢ 等已在表内)
-}
-
-function toFullwidth(s) {
-  buildKanaTables();
-  return Array.from(s)
-    .map((c) => {
-      const code = c.charCodeAt(0);
-      if (code >= 0x21 && code <= 0x7e) {
-        return String.fromCharCode(code + 0xfee0);   // ASCII 可打印 -> 全角
-      }
-      if (code === 0x20) return "\u3000";            // 半角空格 -> 全角空格
-      if (code === 0xff9e) return "\u3099";         // 半浊点 -> 组合浊点
-      if (code === 0xff9f) return "\u309a";         // 半半浊点 -> 组合半浊点
-      return _KANA_H_TO_F[c] || c.normalize("NFKC"); // 半角假名 -> 全角
-    })
-    .join("");
-}
-
-function toHalfwidth(s) {
-  buildKanaTables();
-  return Array.from(s)
-    .map((c) => {
-      const code = c.charCodeAt(0);
-      if (code >= 0xff01 && code <= 0xff5e) {
-        return String.fromCharCode(code - 0xfee0);   // 全角 ASCII 区 -> 半角
-      }
-      if (code === 0x3000) return " ";               // 全角空格 -> 半角空格
-      if (code === 0x3099) return "\uff9e";         // 组合浊点 -> 半浊点
-      if (code === 0x309a) return "\uff9f";         // 组合半浊点 -> 半半浊点
-      // 浊音假名 (ガ/パ/バ) 是"字母+浊点"两个码位的合成形式, 表里只存
-      // 字母 (カ/ハ), 所以要先 NFKD 拆成 カ+3099 再逐字查表.
-      if (code >= 0x30a0 && code <= 0x30ff) {
-        const parts = c.normalize("NFKD");
-        if (parts.length > 1) {
-          // 拆出来的每一段也要走完整规则 —— 特别是组合浊点 U+3099/309A
-          // 必须转成半浊点 U+FF9E/FF9F. 只查字母表会把浊点漏成
-          // 组合形式 (ｶ + ゙), 半角输入工具认不出来.
-          return Array.from(parts).map((part) => {
-            const pc = part.charCodeAt(0);
-            if (pc === 0x3099) return "\uff9e";
-            if (pc === 0x309a) return "\uff9f";
-            return _KANA_F_TO_H[part] || part;
-          }).join("");
-        }
-      }
-      return _KANA_F_TO_H[c] || c.normalize("NFKC"); // 全角假名 -> 半角
-    })
-    .join("");
-}
-
-// 逐行映射 (默认作用于全文; 有选区时只作用于选区)
-function mapLines(t, fn) {
-  if (!t) return;
-  snapshot(t);
-  const hasSel = t.sel && t.sel.r1 !== t.sel.r0;
-  if (hasSel) {
-    for (let r = t.sel.r0; r <= t.sel.r1; r++) t.lines[r] = fn(t.lines[r]);
-  } else {
-    t.lines = t.lines.map(fn);
-  }
-  t.dirty = true;
-  renderVim(t);
-}
 
 function selectAllText() {
   const t = getActiveTab();
