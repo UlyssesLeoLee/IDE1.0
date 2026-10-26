@@ -44,7 +44,8 @@ test('在中间键入: 打字立即生效且耗时短; 点击落光标按行号�
     await page.locator('#ed-content').click(); await load(page); await page.locator('#ed-content').focus();
     await page.evaluate(() => { const t = getActiveTab(); t.cursor = { row: 30000, col: 4 }; edContent.scrollTop = 30000 * 18 - 200; });
     await page.waitForTimeout(300);
-    const ms = await page.evaluate(async () => { const a = performance.now(); insertChar('X'); await new Promise((r) => requestAnimationFrame(r)); return performance.now() - a; });
+    // 键入经 Rust 桥 (异步): 耗时含一次往返
+    const ms = await page.evaluate(async () => { const a = performance.now(); insertChar('X'); await window.__editIdle(); await new Promise((r) => requestAnimationFrame(r)); return performance.now() - a; });
     assert.equal(await page.evaluate(() => getActiveTab().lines[30000]), 'lineX 30000 some text here for testing');
     assert.ok(ms < 120, '键入耗时 ' + Math.round(ms) + 'ms (非窗口化 5 万行约 300ms)');
     // 点击窗口里的一行: 落点行号 = 该行真实行号
