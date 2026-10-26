@@ -32,6 +32,9 @@ pub struct EditReq {
     /// 矩形(列块)选区 [r0, c0, r1, c1] (未归一化): box-* 命令用
     #[serde(default)]
     pub box_sel: Option<[usize; 4]>,
+    /// 多光标 [(行, 列)]: multi-* 命令用
+    #[serde(default)]
+    pub cursors: Vec<[usize; 2]>,
     /// 需要用到的行: [行号, 文本] (光标行 ±1, 选区各行)
     pub rows: Vec<(usize, String)>,
 }
@@ -58,6 +61,8 @@ pub struct EditRes {
     pub undo_cursor: Option<[usize; 2]>,
     /// box-* 命令之后的列块选区 (None = 列块已清除)
     pub box_sel: Option<[usize; 4]>,
+    /// multi-* 命令之后的全部光标 (升序, 已去重; cursor 是第一个)
+    pub cursors: Option<Vec<[usize; 2]>>,
 }
 
 fn chars_of(s: &str) -> Vec<char> {
@@ -109,17 +114,18 @@ impl Ctx<'_> {
             sel: None,
             anchor: None,
             box_sel: None,
+            cursors: None,
         }
     }
     fn replace_line(&self, r: usize, new: String, cursor: [usize; 2], clip: Option<String>) -> EditRes {
-        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None }
+        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
     }
     fn join_next(&self, r: usize, skip_leading: bool) -> EditRes {
         let cur = self.line(r);
         let next = self.line(r + 1);
         let skip = if skip_leading { first_word_col(&next) } else { 0 };
         let joined = format!("{}{}", cur.iter().collect::<String>(), slice(&next, skip, usize::MAX));
-        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None }
+        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
     }
     fn nothing(&self, tip: &str) -> EditRes {
         EditRes { changed: false, tip: Some(tip.to_string()), cursor: [self.req.row, self.req.col], ..Default::default() }
@@ -163,7 +169,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             } else if row > 0 {
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
             } else {
                 cx.nothing("")
             }
@@ -190,7 +196,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 }
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
             } else {
                 let to = word_left(&line, col);
                 if to >= col {
@@ -400,6 +406,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 sel: None,
                 anchor: None,
                 box_sel: None,
+                cursors: None,
             }
         }
         // ---- 输入文字 (键盘上的可见字符 / TAB / 输入法上屏): 有选区则替换选区; 覆盖模式吃掉光标后同样个数的字符 ----
@@ -530,6 +537,85 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 }
             }
         }
+        // ---- 多光标 (Ctrl+点击 / Alt+点击 添加): 参与的各行 (含最上面光标的上一行, 退格在行首要并到它) 一起交上来 ----
+        "multi-insert" | "multi-backspace" => {
+            let last = req.total_rows.saturating_sub(1);
+            // 光标按"全部文字拍平成一串 (行间 \n)"里的偏移处理, 这样同一行有多个光标、退格并行都不会互相错位
+            let mut at: Vec<[usize; 2]> = req.cursors.iter().map(|c| [c[0].min(last), c[1]]).collect();
+            at.sort();
+            at.dedup();
+            if at.len() < 2 {
+                return Some(cx.nothing(""));
+            }
+            let lo = at[0][0].saturating_sub(1);
+            let hi = at[at.len() - 1][0];
+            let rows: Vec<Vec<char>> = (lo..=hi).map(|r| cx.line(r)).collect();
+            let mut starts = Vec::with_capacity(rows.len());
+            let mut flat: Vec<char> = Vec::new();
+            for (i, l) in rows.iter().enumerate() {
+                if i > 0 {
+                    flat.push('\n');
+                }
+                starts.push(flat.len());
+                flat.extend_from_slice(l);
+            }
+            let mut offs: Vec<usize> = at.iter().map(|c| starts[c[0] - lo] + c[1].min(rows[c[0] - lo].len())).collect();
+            offs.sort();
+            offs.dedup();
+            let mut out: Vec<char> = Vec::with_capacity(flat.len() + 8);
+            let mut new_offs: Vec<usize> = Vec::with_capacity(offs.len());
+            let tip;
+            if req.cmd == "multi-insert" {
+                let ins: Vec<char> = req.text.clone().unwrap_or_default().chars().collect();
+                if ins.is_empty() {
+                    return Some(cx.nothing(""));
+                }
+                let mut prev = 0;
+                for (i, &o) in offs.iter().enumerate() {
+                    out.extend_from_slice(&flat[prev..o]);
+                    out.extend_from_slice(&ins);
+                    new_offs.push(o + ins.len() * (i + 1));
+                    prev = o;
+                }
+                out.extend_from_slice(&flat[prev..]);
+                tip = format!("{} 个光标插入 {}", offs.len(), ins.iter().collect::<String>());
+            } else {
+                // 每个光标删掉它前面的一个字符 (行首 = 前一行的换行, 即与上一行合并)
+                let dels: Vec<usize> = offs.iter().filter(|&&o| o > 0).map(|&o| o - 1).collect();
+                if dels.is_empty() {
+                    return Some(cx.nothing(""));
+                }
+                let mut prev = 0;
+                for &d in &dels {
+                    out.extend_from_slice(&flat[prev..d]);
+                    prev = d + 1;
+                }
+                out.extend_from_slice(&flat[prev..]);
+                for &o in &offs {
+                    new_offs.push(o - dels.iter().filter(|&&d| d < o).count());
+                }
+                tip = format!("{} 个光标删除", offs.len());
+            }
+            let text: String = out.iter().collect();
+            let insert: Vec<String> = text.split('\n').map(String::from).collect();
+            // 偏移换回 (行, 列)
+            let mut line_starts = Vec::with_capacity(insert.len());
+            let mut acc = 0;
+            for l in &insert {
+                line_starts.push(acc);
+                acc += l.chars().count() + 1;
+            }
+            let mut cursors: Vec<[usize; 2]> = new_offs
+                .iter()
+                .map(|&o| {
+                    let i = line_starts.partition_point(|&s| s <= o) - 1;
+                    [lo + i, o - line_starts[i]]
+                })
+                .collect();
+            cursors.sort();
+            cursors.dedup();
+            EditRes { changed: true, start: lo, remove: hi - lo + 1, insert, cursor: cursors[0], cursors: Some(cursors), tip: Some(tip), ..Default::default() }
+        }
         // ---- 行结构 ----
         "new-line" => {
             let head = slice(&line, 0, col);
@@ -584,7 +670,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
         }
         "duplicate-line" => {
             let text: String = line.iter().collect();
-            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None }
+            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
         }
         _ => return None,
     })
@@ -607,6 +693,7 @@ mod tests {
             line_mode: false,
             overwrite: false,
             box_sel: None,
+            cursors: vec![],
             rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
         })
         .unwrap()
@@ -718,6 +805,7 @@ mod tests {
             line_mode,
             overwrite: false,
             box_sel: None,
+            cursors: vec![],
             rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
         })
         .unwrap()
@@ -801,13 +889,13 @@ mod tests {
         // 覆盖模式: 吃掉光标后的字符; 行末则只是追加
         let mut o = run_text("insert-text", 0, 3, None, "Z", false, DOC);
         let _ = &mut o;
-        let req = EditReq { cmd: "insert-text".into(), row: 0, col: 3, sel: None, total_rows: DOC.len(), auto_indent: false, smart_indent: false, text: Some("Z".into()), line_mode: false, overwrite: true, box_sel: None, rows: vec![(0, DOC[0].to_string())] };
+        let req = EditReq { cmd: "insert-text".into(), row: 0, col: 3, sel: None, total_rows: DOC.len(), auto_indent: false, smart_indent: false, text: Some("Z".into()), line_mode: false, overwrite: true, box_sel: None, cursors: vec![], rows: vec![(0, DOC[0].to_string())] };
         assert_eq!(apply(DOC, &run(&req).unwrap())[0], "helZo world foo");
         let req = EditReq { col: 15, ..req };
         assert_eq!(apply(DOC, &run(&req).unwrap())[0], "hello world fooZ");
     }
     fn run_box(cmd: &str, row: usize, col: usize, b: [usize; 4], text: &str, lines: &[&str]) -> EditRes {
-        run(&EditReq { cmd: cmd.into(), row, col, sel: None, total_rows: lines.len(), auto_indent: false, smart_indent: false, text: Some(text.into()), line_mode: false, overwrite: false, box_sel: Some(b), rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect() }).unwrap()
+        run(&EditReq { cmd: cmd.into(), row, col, sel: None, total_rows: lines.len(), auto_indent: false, smart_indent: false, text: Some(text.into()), line_mode: false, overwrite: false, box_sel: Some(b), cursors: vec![], rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect() }).unwrap()
     }
     #[test]
     fn rectangle() {
@@ -844,8 +932,35 @@ mod tests {
         let r = run_box("box-delete", 0, 0, [0, 3, 1, 9999], "", BX);
         assert_eq!(apply(BX, &r)[..2], ["abc".to_string(), "gh".into()]);
     }
+    fn run_multi(cmd: &str, cursors: &[[usize; 2]], text: &str, lines: &[&str]) -> EditRes {
+        run(&EditReq { cmd: cmd.into(), row: cursors[0][0], col: cursors[0][1], sel: None, total_rows: lines.len(), auto_indent: false, smart_indent: false, text: Some(text.into()), line_mode: false, overwrite: false, box_sel: None, cursors: cursors.to_vec(), rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect() }).unwrap()
+    }
+    #[test]
+    fn multi_cursor() {
+        const M: &[&str] = &["abcdef", "gh", "ijklmn"];
+        // 不同行: 每个光标处插入, 光标各自右移
+        let r = run_multi("multi-insert", &[[0, 1], [2, 3]], "X", M);
+        assert_eq!((apply(M, &r), r.cursors.clone()), (vec!["aXbcdef".to_string(), "gh".into(), "ijkXlmn".into()], Some(vec![[0, 2], [2, 4]])));
+        // 同一行多个光标: 后面的光标要把前面的插入也算进去
+        let r = run_multi("multi-insert", &[[0, 1], [0, 3]], "Q", M);
+        assert_eq!((apply(M, &r)[0].as_str(), r.cursors.clone()), ("aQbcQdef", Some(vec![[0, 2], [0, 5]])));
+        // 汉字 / 多个字符
+        let r = run_multi("multi-insert", &[[0, 0], [1, 2]], "日本", M);
+        assert_eq!((apply(M, &r)[..2].to_vec(), r.cursors.clone()), (vec!["日本abcdef".to_string(), "gh日本".into()], Some(vec![[0, 2], [1, 4]])));
+        // 退格: 同行两个光标各删前一个字符
+        let r = run_multi("multi-backspace", &[[0, 2], [0, 4]], "", M);
+        assert_eq!((apply(M, &r)[0].as_str(), r.cursors.clone()), ("acef", Some(vec![[0, 1], [0, 2]])));
+        // 行首退格 = 与上一行合并, 光标落在合并处; 下面的行跟着上移
+        let r = run_multi("multi-backspace", &[[1, 0], [2, 2]], "", M);
+        assert_eq!((apply(M, &r), r.cursors.clone()), (vec!["abcdefgh".to_string(), "ikl".to_string() + "mn"], Some(vec![[0, 6], [1, 1]])));
+        // 合并后两个光标重合 -> 去重
+        let r = run_multi("multi-backspace", &[[0, 3], [1, 0]], "", &["abc", "def"]);
+        assert_eq!((apply(&["abc", "def"], &r), r.cursors.clone()), (vec!["abdef".to_string()], Some(vec![[0, 2]])));
+        // 都在 (0,0): 没有可删的
+        assert!(!run_multi("multi-backspace", &[[0, 0]], "", M).changed);
+    }
     #[test]
     fn unknown() {
-        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, text: None, line_mode: false, overwrite: false, box_sel: None, rows: vec![] }).is_none());
+        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, text: None, line_mode: false, overwrite: false, box_sel: None, cursors: vec![], rows: vec![] }).is_none());
     }
 }

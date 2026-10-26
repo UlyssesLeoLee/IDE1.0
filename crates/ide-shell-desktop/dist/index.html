@@ -6933,49 +6933,19 @@ function clearCursors(t) {
   if (t) { t.cursors = []; delete t.cursors; }
 }
 
-// 每个光标位置的插入 (多重光标下的字符输入)
+// 每个光标位置的插入 / 退格 (多重光标): 语义在 Rust (edit_cmd multi-insert / multi-backspace); 单光标走普通输入
 function insertCharMulti(ch) {
   const t = getActiveTab();
-  if (!t) return;
-  const cs = cursorsOf(t).slice().sort((a, b) => b.row - a.row || b.col - a.col);   // 从后往前, 避免位移
-  if (cs.length === 1) { insertChar(ch); return; }
-  snapshot(t);
-  for (const c of cs) {
-    while (t.lines.length <= c.row) t.lines.push("");
-    const line = t.lines[c.row];
-    t.lines[c.row] = line.slice(0, c.col) + ch + line.slice(c.col);
-    c.col += ch.length;
-  }
-  t.dirty = true;
-  setCursors(t, cs.reverse());
-  renderVim(t);
-  setTip(cs.length + " 个光标插入 " + ch);
+  if (!t || !ch) return;
+  if (cursorsOf(t).length > 1) return runEdit("multi-insert", { text: ch });
+  return insertChar(ch);
 }
 
-// 多光标退格
 function backspaceMulti() {
   const t = getActiveTab();
   if (!t) return;
-  const cs = cursorsOf(t);
-  if (cs.length === 1) { backspace(); return; }
-  snapshot(t);
-  const sorted = cs.slice().sort((a, b) => b.row - a.row || b.col - a.col);
-  for (const c of sorted) {
-    if (c.col > 0) {
-      const line = t.lines[c.row];
-      t.lines[c.row] = line.slice(0, c.col - 1) + line.slice(c.col);
-      c.col -= 1;
-    } else if (c.row > 0) {
-      const prev = t.lines[c.row - 1];
-      c.col = prev.length;
-      t.lines[c.row - 1] = prev + t.lines[c.row];
-      t.lines.splice(c.row, 1);
-    }
-  }
-  t.dirty = true;
-  setCursors(t, sorted.reverse());
-  renderVim(t);
-  setTip(sorted.length + " 个光标删除");
+  if (cursorsOf(t).length > 1) return runEdit("multi-backspace");
+  return backspace();
 }
 
 /* ---------- C2. 列选择 (Alt+拖选 / Alt+Shift+方向键) ---------- */
@@ -7712,7 +7682,7 @@ if (edContent) {
     try { getSelection().removeAllRanges(); } catch (_) {}
     if (!t) return;
     paintActive();                                 // 丢掉浏览器塞进 DOM 的预编辑文字, 回到由 t.lines 驱动的画面
-    for (const ch of chars(data)) insertCharMulti(ch);
+    if (data) insertCharMulti(data);
     updateCaret(true);
   });
   // 有 keydown 紧跟的 insertText 说明按键已由键盘处理器决定过去留 (比如 Vim NORMAL 的前缀键), 不是「没有 keydown 的输入」
@@ -7727,7 +7697,7 @@ if (edContent) {
       if (!t) return;
       if (t.colSel) { columnInsert(e.data); return; }
       if (selNonEmpty(t)) replaceSelection(t);
-      for (const ch of chars(e.data)) insertCharMulti(ch);
+      insertCharMulti(e.data);
     }
   });
 }
@@ -8018,7 +7988,7 @@ const SAKURA_CMDS = {
 function insertTextAtCursor(text) {
   const t = getActiveTab(); if (!t) return;
   if (selNonEmpty(t)) replaceSelection(t);
-  if (cursorsOf(t).length > 1) { for (const ch of chars(text)) insertCharMulti(ch); return; }
+  if (cursorsOf(t).length > 1) return runEdit("multi-insert", { text });
   snapshot(t);
   const arr = charArray(curLine(t)), n = chars(text).length;
   t.lines[t.cursor.row] = arr.slice(0, t.cursor.col).join("") + text + arr.slice(t.cursor.col).join("");
@@ -9553,8 +9523,14 @@ function editRequest(t, cmd, extra) {
     box_sel = [cs.r0, cs.c0, cs.r1, cs.c1].map(cap);
     for (let r = Math.max(0, Math.min(cs.r0, cs.r1)); r <= Math.min(last, Math.max(cs.r0, cs.r1)); r++) need.add(r);
   }
+  let cursors = [];
+  if (cmd.startsWith("multi-")) {
+    cursors = cursorsOf(t).map((c) => [c.row, c.col]);
+    const lo = Math.max(0, Math.min(...cursors.map((c) => c[0])) - 1), hi = Math.min(last, Math.max(...cursors.map((c) => c[0])));
+    for (let r = lo; r <= hi; r++) need.add(r);
+  }
   const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
-  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, box_sel, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
+  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, box_sel, cursors, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
 }
 function runEdit(cmd, extra) {
   return enqueueInput(async () => {
@@ -9578,7 +9554,8 @@ function runEdit(cmd, extra) {
     t.sel = null; t.selAnchor = null; delete t.goalCol; t.dirty = true;
     if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
     if (cmd.startsWith("box-")) { const b = res.box_sel; t.colSel = b ? { r0: b[0], c0: b[1], r1: b[2], c1: b[3] } : null; }
-    if (t.sel || t.colSel) renderVim(t); else paintActive();   // 与原来的输入 / 删除函数一致: 回到单文本节点形态, 同时刷新标签条的脏标记 (●) 与光标
+    if (res.cursors) setCursors(t, res.cursors.map((c) => ({ row: c[0], col: c[1] })));
+    if (t.sel || t.colSel || (t.cursors && t.cursors.length > 1)) renderVim(t); else paintActive();   // 与原来的输入 / 删除函数一致: 回到单文本节点形态, 同时刷新标签条的脏标记 (●) 与光标
     if (cmd.startsWith("box-")) { syncColumnSelectUI(t); updateCaret(false); }
   });
 }

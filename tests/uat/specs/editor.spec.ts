@@ -887,6 +887,21 @@ test.describe("传统编辑器对标能力 (第二批)", () => {
 
     await page.evaluate(() => (window as any).clearCursors((window as any).activeTab()));
     expect(await page.evaluate(() => (window as any).cursorsOf((window as any).activeTab()).length)).toBe(1);
+
+    // 同一行的多个光标: 后面的光标要把前面的插入 / 删除也算进去 (语义在 Rust: edit_cmd multi-*)
+    await page.evaluate(() => {
+      const t = (window as any).activeTab();
+      t.lines = ["abcdef", "gh"];
+      t.cursor = { row: 0, col: 1 }; t.sel = null;
+      (window as any).renderVim(t);
+      (window as any).addCursor(t, 0, 3);
+    });
+    await page.evaluate(() => (window as any).insertCharMulti("Q"));
+    expect(await page.evaluate(() => (window as any).activeTab().lines[0])).toBe("aQbcQdef");
+    expect(await page.evaluate(() => (window as any).activeTab().cursors.map((c: any) => [c.row, c.col]))).toEqual([[0, 2], [0, 5]]);
+    await page.evaluate(() => (window as any).backspaceMulti());
+    expect(await page.evaluate(() => (window as any).activeTab().lines[0])).toBe("abcdef");
+    expect(await page.evaluate(() => (window as any).activeTab().cursors.map((c: any) => [c.row, c.col]))).toEqual([[0, 1], [0, 3]]);
   });
 
   test("列块选择: 删除矩形区域", async ({ page }) => {
