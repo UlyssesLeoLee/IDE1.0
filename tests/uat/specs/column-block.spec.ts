@@ -6,7 +6,7 @@
 //   C-02 方向键扩展行列                  C-07 列块复制 (Ctrl+C)
 //   C-03 列块删除 (Delete)               C-08 列块与普通选区互斥
 //   C-04 直接输入 = 每行插入同一内容      C-09 Esc 退出列块
-//   C-05 多行内容按行分配
+//   C-05 多行剪贴板粘进列块: 每行都插第一行 (Sakura 实测)
 //
 // 运行: npx playwright test specs/column-block.spec.ts
 import { test, expect, type Page } from "@playwright/test";
@@ -173,16 +173,15 @@ test.describe("列块选区 / 纵向批量编辑", () => {
     expect(errors).toEqual([]);
   });
 
-  test("C-05 多行内容按行分配给列块各行", async ({ page }) => {
+  test("C-05 多行剪贴板粘进列块: 每一行都插第一行的内容 (Sakura 实测, 不按行分配)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["1.", "2.", "3.", "4."]);
     await page.locator("#ed-content").focus();
     await page.evaluate(() => (window as any).startColumnSelect(0, 2));
     await page.evaluate(() => (window as any).extendColumnSelect(3, 2));
 
-    // 直接调 columnInsert 传多行内容 (粘贴多行的等价路径)
-    await page.evaluate(() => (window as any).columnInsert("a\nbb\nccc\ndddd"));
-    expect(await doc(page)).toEqual(["1.a", "2.bb", "3.ccc", "4.dddd"]);
+    await page.evaluate(async () => { (window as any).pasteText("a\nbb\nccc\ndddd"); await (window as any).__editIdle(); });
+    expect(await doc(page)).toEqual(["1.a", "2.a", "3.a", "4.a"]);
     expect(errors).toEqual([]);
   });
 

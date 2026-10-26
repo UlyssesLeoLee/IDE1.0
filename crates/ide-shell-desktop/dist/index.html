@@ -4024,6 +4024,7 @@ function histCommit(t) {
 }
 function histReset(t) {
   t.hbase = null; t.hcur = null; t.hver = (t.hver || 0) + 1;
+  t.colSel = null; delete t.cursors;                                 // 载入新内容 / 关标签: 旧的列块 / 多光标位置作废
   HISTCHAIN = HISTCHAIN.then(() => invoke("history", { tab: histKey(t), op: "clear" })).catch(() => {});
 }
 function applyHist(t, a) {
@@ -4032,6 +4033,7 @@ function applyHist(t, a) {
   if (!t.lines.length) t.lines = [""];
   t.cursor = { row: Math.min(a.cursor[0], t.lines.length - 1), col: a.cursor[1] };
   t.sel = null; t.selAnchor = null;                                 // Sakura: 撤销 / 重做之后没有选区
+  t.colSel = null; delete t.cursors; syncColumnSelectUI(t);          // 文档变了, 旧的列块 / 多光标位置不能留着
   t.hbase = t.lines.slice(); t.hcur = { ...t.cursor }; t.hver = (t.hver || 0) + 1;
   t.dirty = true;
 }
@@ -4734,7 +4736,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
         t.cursor.col = Math.min(nc, Number.MAX_SAFE_INTEGER);
         updateCaret(false);
       }
-      if (e.key === "Enter") { e.preventDefault(); columnInsert("\n"); return; }
+      if (e.key === "Enter") { e.preventDefault(); columnEnter(); return; }
       if (e.key === "Tab") { e.preventDefault(); columnInsert("\t"); return; }
       if (e.key === "Backspace") { e.preventDefault(); columnBackspace(); return; }
       if (e.key === "Delete") { e.preventDefault(); columnDelete(); return; }
@@ -4774,7 +4776,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
     }
     if (e.key === "Backspace") { e.preventDefault(); columnBackspace(); return; }
     if (e.key === "Delete") { e.preventDefault(); columnDelete(); return; }
-    if (e.key === "Enter") { e.preventDefault(); columnInsert("\n"); return; }
+    if (e.key === "Enter") { e.preventDefault(); columnEnter(); return; }
     if (e.key === "Tab") { e.preventDefault(); columnInsert("\t"); return; }
   }
   const nav = {
@@ -5513,6 +5515,7 @@ async function searchCall(t, req) {
   const ref = { doc_id: histKey(t), doc_hash: docFingerprint(t.lines), doc_len: t.lines.length };
   const r = await invoke("search_text", Object.assign({}, req, ref, { lines: [] }));
   if (!r.need_doc) return r;
+  if (!TABS.has(t.id)) return { hits: [], total: 0, rows: [], count: 0 };   // 第一次请求的往返期间标签关了 (closeTab 已让 Rust 释放): 别再把它的整篇登记回去
   return invoke("search_text", Object.assign({}, req, { doc_id: ref.doc_id, doc_hash: docFingerprint(t.lines), doc_len: t.lines.length, lines: t.lines }));
 }
 function searchText(op, extra) { return searchCall(getActiveTab(), searchRequest(op, extra)); }
@@ -6932,18 +6935,39 @@ function clearCursors(t) {
   if (t) { t.cursors = []; delete t.cursors; }
 }
 
-// 每个光标位置的插入 / 退格 (多重光标): 语义在 Rust (edit_cmd multi-insert / multi-backspace); 单光标走普通输入
+// 清理过的光标集合: 行夹进文档、列夹进行长、去重、升序 (undo / 重载让文档缩短后 t.cursors 里会留下越界的旧光标)
+function cleanCursors(t) {
+  const last = t.lines.length - 1, seen = new Set(), out = [];
+  for (const c of cursorsOf(t)) {
+    const row = Math.max(0, Math.min(c.row, last)), col = Math.max(0, Math.min(c.col, charLen(t.lines[row] || "")));
+    const k = row + ":" + col;
+    if (seen.has(k)) continue;
+    seen.add(k); out.push({ row, col });
+  }
+  return out.sort((a, b) => a.row - b.row || a.col - b.col);
+}
+
+// 多光标要真有两个以上才走 multi-*; 有选区时输入 = 替换选区, 多余的光标丢掉 (否则选区和各光标会各改各的); 其余退回单光标
+function multiOrSingle(t) {
+  if (t.cursors && t.cursors.length > 1 && selNonEmpty(t)) clearCursors(t);
+  const cs = cleanCursors(t);
+  if (cs.length > 1) return true;
+  if (t.cursors) { if (cs.length) t.cursor = { ...cs[0] }; clearCursors(t); }
+  return false;
+}
+
+// 每个光标位置的插入 / 退格 (多重光标): 语义在 Rust (edit_cmd multi-insert / multi-backspace)
 function insertCharMulti(ch) {
   const t = getActiveTab();
   if (!t || !ch) return;
-  if (cursorsOf(t).length > 1) return runEdit("multi-insert", { text: ch });
+  if (multiOrSingle(t)) return runEdit("multi-insert", { text: ch });
   return insertChar(ch);
 }
 
 function backspaceMulti() {
   const t = getActiveTab();
   if (!t) return;
-  if (cursorsOf(t).length > 1) return runEdit("multi-backspace");
+  if (multiOrSingle(t)) return runEdit("multi-backspace");
   return backspace();
 }
 
@@ -7083,15 +7107,23 @@ function colSelRect(t) {
   return { r0, r1, c0, c1 };
 }
 
-/* 列块输入 / 退格 / 删除 / 替换 / 复制 / 剪切: 语义在 Rust (editcore::edit_cmd 的 box-*), 前端只交上列块与参与的行.
-   - 输入的 text 含 \n = 多行内容按行分配 (Sakura 的「一次性给多行添加不同内容」), 不含 = 同一份内容插入到每一行; 短行补空格对齐 */
+/* 列块输入 / 退格 / 删除 / 回车 / 替换 / 复制 / 剪切: 语义在 Rust (editcore::edit_cmd 的 box-*, 按真实 Sakura 实测), 前端只交上列块与参与的行.
+   - 输入 / 粘贴: 同一份内容插到每一行的矩形左端 (多行剪贴板只取第一行), 矩形里原有的内容不删, 短行补空格对齐, 插完矩形缩成插入点接着打
+   - 退格 / Delete: 删掉矩形里的内容 (零宽矩形什么也不删), 解除矩形, 光标回左上角; 回车: 先删内容再在左上角换行 */
 function columnInsert(text) {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
   return runEdit("box-insert", { text: String(text) });
 }
 
-/* 列块退格: 每一行在列块起点前删掉一个字符 (有选中的矩形内容则删掉它, 保留插入点). */
+/* 列块回车: 删掉矩形里的内容, 在左上角换行 (只断一行). */
+function columnEnter() {
+  const t = getActiveTab();
+  if (!t || !t.colSel) return;
+  return runEdit("box-enter");
+}
+
+/* 列块退格: 和 Delete 一样 (Sakura 实测), 不是「每行删光标前一个字符」. */
 function columnBackspace() {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
@@ -7987,7 +8019,7 @@ const SAKURA_CMDS = {
 function insertTextAtCursor(text) {
   const t = getActiveTab(); if (!t) return;
   if (selNonEmpty(t)) replaceSelection(t);
-  if (cursorsOf(t).length > 1) return runEdit("multi-insert", { text });
+  if (multiOrSingle(t)) return runEdit("multi-insert", { text });
   snapshot(t);
   const arr = charArray(curLine(t)), n = chars(text).length;
   t.lines[t.cursor.row] = arr.slice(0, t.cursor.col).join("") + text + arr.slice(t.cursor.col).join("");
@@ -9518,18 +9550,22 @@ function editRequest(t, cmd, extra) {
   }
   let box_sel = null;
   if (cmd.startsWith("box-") && t.colSel) {   // 列块: 未归一化的原样交上, 归一化 (夹行号 / 夹到最长行) 在 Rust
-    const cs = t.colSel, cap = (v) => Math.min(Number.isFinite(v) ? v : 1e9, 1e9);
-    box_sel = [cs.r0, cs.c0, cs.r1, cs.c1].map(cap);
-    for (let r = Math.max(0, Math.min(cs.r0, cs.r1)); r <= Math.min(last, Math.max(cs.r0, cs.r1)); r++) need.add(r);
+    const cs = t.colSel, cap = (v) => Math.min(Number.isFinite(v) ? v : 1e9, 1e9), clampR = (v) => Math.max(0, Math.min(cap(v), last));
+    box_sel = [clampR(cs.r0), cap(cs.c0), clampR(cs.r1), cap(cs.c1)];   // 行号先夹进文档 (undo 等让文档缩短后留下的旧列块), 交上去的行就是 Rust 要用的行
+    for (let r = Math.min(box_sel[0], box_sel[2]); r <= Math.max(box_sel[0], box_sel[2]); r++) need.add(r);
   }
   let cursors = [];
-  if (cmd.startsWith("multi-")) {
-    cursors = cursorsOf(t).map((c) => [c.row, c.col]);
-    const lo = Math.max(0, Math.min(...cursors.map((c) => c[0])) - 1), hi = Math.min(last, Math.max(...cursors.map((c) => c[0])));
-    for (let r = lo; r <= hi; r++) need.add(r);
+  if (cmd.startsWith("multi-")) {   // 只交光标所在的行 (退格在行首要并到上一行, 也交上一行); 隔得再远中间的行也不用发
+    cursors = cleanCursors(t).map((c) => [c.row, c.col]);
+    for (const [cr, cc] of cursors) { need.add(cr); if (cmd === "multi-backspace" && cc === 0 && cr > 0) need.add(cr - 1); }
   }
   const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
   return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, box_sel, cursors, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
+}
+// 套补丁: 大段插入不用 splice(...展开) (参数个数有上限, 十万行的粘贴会爆栈)
+function spliceLines(t, start, remove, insert) {
+  if (insert.length < 4000) { t.lines.splice(start, remove, ...insert); return; }
+  t.lines = t.lines.slice(0, start).concat(insert, t.lines.slice(start + remove));
 }
 function runEdit(cmd, extra) {
   return enqueueInput(async () => {
@@ -9547,7 +9583,8 @@ function runEdit(cmd, extra) {
     if (res.tip) setTip(res.tip);
     snapshot(t);
     if (res.undo_cursor) t.hcur = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
-    t.lines.splice(res.start, res.remove, ...res.insert);
+    if (res.patches) { for (const [ps, pn, pins] of res.patches.slice().sort((a, b) => b[0] - a[0])) spliceLines(t, ps, pn, pins); }   // 多光标: 几段补丁从下往上套
+    else spliceLines(t, res.start, res.remove, res.insert);
     if (!t.lines.length) t.lines.push("");
     t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
     t.sel = null; t.selAnchor = null; delete t.goalCol; t.dirty = true;
@@ -9803,6 +9840,7 @@ function deleteSelection(t) {
     t.cursor = { row: t.sel.r0, col: a };
   }
   t.sel = null;
+  if (t.cursors && t.cursors.length > 1) clearCursors(t);   // 有选区的编辑是单光标编辑: 旧光标的位置已经不对了
   t.dirty = true;
   renderVim(t);
   return true;

@@ -12,4 +12,19 @@ add('BOX delete over short line', 1, 4, 2, 3, { key: 'Delete' }, ['S_Delete();']
 add('BOX backspace', 0, 2, 1, 3, { key: 'Backspace' }, ['S_DeleteBack();']);
 add('BOX zero-width down', 0, 2, 2, 0, { key: 'F8' }, ['S_Copy();'], { tail: 'paste' });
 add('BOX leftward', 0, 5, 1, -2, { key: 'F8' }, ['S_Copy();'], { tail: 'paste' });
+// 零宽(插入点)矩形上的退格 / 输入: 行长正好等于插入列、比插入列短、在行首 (边界都要对)
+add('BOX backspace zero-width', 0, 2, 2, 0, { key: 'Backspace' }, ['S_DeleteBack();']);
+add('BOX backspace zero-width at eol', 0, 10, 2, 0, { key: 'Backspace' }, ['S_DeleteBack();']);
+add('BOX backspace zero-width col0', 0, 0, 2, 0, { key: 'Backspace' }, ['S_DeleteBack();']);
+add('BOX type zero-width', 0, 2, 2, 0, { keys: ['Q'] }, ['S_Char(81);']);
+add('BOX type over short line', 1, 4, 2, 0, { keys: ['Q'] }, ['S_Char(81);']);
+add('BOX type over selected', 0, 2, 1, 3, { keys: ['Q'] }, ['S_Char(81);']);
+add('BOX enter zero-width', 0, 2, 2, 0, { keys: ['Enter'] }, ['S_Char(13);']);
+add('BOX enter over selected', 0, 2, 1, 3, { keys: ['Enter'] }, ['S_Char(13);']);
+add('BOX enter short row', 1, 4, 2, 0, { keys: ['Enter'] }, ['S_Char(13);']);
+add('BOX tab zero-width', 0, 2, 2, 0, { keys: ['Tab'] }, ['S_Char(9);']);
+add('BOX delete zero-width', 0, 2, 2, 0, { key: 'Delete' }, ['S_Delete();']);
+add('BOX paste zero-width', 0, 2, 2, 0, { key: 'F9' }, ['S_Paste();'], { clip: 'Z' });
+add('BOX paste over selected', 0, 2, 1, 3, { key: 'F9' }, ['S_Paste();'], { clip: 'Z' });
+add('BOX paste multiline', 0, 2, 2, 0, { key: 'F9' }, ['S_Paste();'], { clip: 'Z\nY' });
 export default CASES;

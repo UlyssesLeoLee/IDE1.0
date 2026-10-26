@@ -58,13 +58,21 @@ pub fn put(id: &str, lines: Vec<String>) -> Arc<Vec<String>> {
     let mut s = store().lock().unwrap_or_else(|e| e.into_inner());
     s.tick += 1;
     let tick = s.tick;
-    s.docs.insert(id.to_string(), Entry { fp, n, lines: lines.clone(), tick });
-    if s.docs.len() > MAX_DOCS {
-        if let Some(oldest) = s.docs.iter().min_by_key(|(_, e)| e.tick).map(|(k, _)| k.clone()) {
-            s.docs.remove(&oldest);
+    insert_capped(&mut s, id, Entry { fp, n, lines: lines.clone(), tick }, MAX_DOCS);
+    lines
+}
+
+/// 放进去; 超过 max 份就淘汰最久没用的
+fn insert_capped(s: &mut Store, id: &str, e: Entry, max: usize) {
+    s.docs.insert(id.to_string(), e);
+    while s.docs.len() > max {
+        match s.docs.iter().min_by_key(|(_, e)| e.tick).map(|(k, _)| k.clone()) {
+            Some(oldest) => {
+                s.docs.remove(&oldest);
+            }
+            None => break,
         }
     }
-    lines
 }
 
 /// 取一份文档的正文: 登记过且指纹、行数都对得上才给
@@ -126,11 +134,13 @@ mod tests {
 
     #[test]
     fn oldest_doc_is_evicted() {
-        for i in 0..MAX_DOCS + 5 {
-            put(&format!("t-evict-{i}"), doc(&["x"]));
+        // 用自己的 Store, 不碰进程里共用的那份 (别的测试并行在用)
+        let mut st = Store::default();
+        for i in 0..5u64 {
+            insert_capped(&mut st, &format!("d{i}"), Entry { fp: [0, 0], n: 0, lines: Arc::new(vec![]), tick: i }, 3);
         }
-        let fp = fingerprint(&doc(&["x"]));
-        assert!(get("t-evict-0", fp, 1).is_none(), "最早登记的被淘汰");
-        assert!(get(&format!("t-evict-{}", MAX_DOCS + 4), fp, 1).is_some());
+        let mut ids: Vec<&String> = st.docs.keys().collect();
+        ids.sort();
+        assert_eq!(ids, ["d2", "d3", "d4"], "最早登记的两份被淘汰");
     }
 }

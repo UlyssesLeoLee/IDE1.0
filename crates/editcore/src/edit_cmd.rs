@@ -65,6 +65,8 @@ pub struct EditRes {
     pub cursors: Option<Vec<[usize; 2]>>,
     /// fold-* 命令算出的折叠块 [起始行, 结束行] (结束行含); 文字不改
     pub folds: Option<Vec<[usize; 2]>>,
+    /// multi-* 命令的补丁: [(起始行, 删几行, 换成的行)], 起始行是改动前的行号; 前端从下往上套。有它时不看 start / remove / insert
+    pub patches: Option<Vec<(usize, usize, Vec<String>)>>,
 }
 
 fn chars_of(s: &str) -> Vec<char> {
@@ -76,10 +78,23 @@ fn slice(cs: &[char], a: usize, b: usize) -> String {
 
 struct Ctx<'a> {
     req: &'a EditReq,
+    /// 行号 -> 在 req.rows 里的位置
+    idx: std::collections::HashMap<usize, usize>,
 }
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    fn new(req: &'a EditReq) -> Self {
+        let mut idx = std::collections::HashMap::with_capacity(req.rows.len());
+        for (i, (r, _)) in req.rows.iter().enumerate() {
+            idx.entry(*r).or_insert(i);
+        }
+        Ctx { req, idx }
+    }
+    /// 这一行前端交上来了吗 (没交的行 `line` 会给空行, 拿去改文档会把真实内容写没)
+    fn has_row(&self, r: usize) -> bool {
+        self.idx.contains_key(&r)
+    }
     fn line(&self, r: usize) -> Vec<char> {
-        self.req.rows.iter().find(|(i, _)| *i == r).map(|(_, s)| chars_of(s)).unwrap_or_default()
+        self.idx.get(&r).map(|&i| chars_of(&self.req.rows[i].1)).unwrap_or_default()
     }
     fn sel_nonempty(&self) -> Option<[usize; 4]> {
         // 起点在前 (请求里的选区可能是反向的; 反向时 r1 - r0 会下溢)
@@ -118,17 +133,18 @@ impl Ctx<'_> {
             box_sel: None,
             cursors: None,
             folds: None,
+            patches: None,
         }
     }
     fn replace_line(&self, r: usize, new: String, cursor: [usize; 2], clip: Option<String>) -> EditRes {
-        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
+        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None, patches: None }
     }
     fn join_next(&self, r: usize, skip_leading: bool) -> EditRes {
         let cur = self.line(r);
         let next = self.line(r + 1);
         let skip = if skip_leading { first_word_col(&next) } else { 0 };
         let joined = format!("{}{}", cur.iter().collect::<String>(), slice(&next, skip, usize::MAX));
-        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
+        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None, patches: None }
     }
     fn nothing(&self, tip: &str) -> EditRes {
         EditRes { changed: false, tip: Some(tip.to_string()), cursor: [self.req.row, self.req.col], ..Default::default() }
@@ -139,6 +155,9 @@ impl Ctx<'_> {
         let last = self.req.total_rows.saturating_sub(1);
         let r0 = b[0].min(b[2]).min(last);
         let r1 = b[0].max(b[2]).min(last).max(r0);
+        if (r0..=r1).any(|r| !self.has_row(r)) {
+            return None; // 参与的行没交全: 不能拿空行去改
+        }
         let max_len = (r0..=r1).map(|r| self.line(r).len()).max().unwrap_or(0);
         let c0 = b[1].min(b[3]).min(max_len);
         let c1 = b[1].max(b[3]).min(max_len).max(c0);
@@ -197,7 +216,7 @@ fn fold_end(lines: &[Vec<char>], start: usize) -> Option<usize> {
 
 /// 执行一条编辑命令. 未知命令返回 None.
 pub fn run(req: &EditReq) -> Option<EditRes> {
-    let cx = Ctx { req };
+    let cx = Ctx::new(req);
     let (row, last_row) = (req.row, req.total_rows.saturating_sub(1));
     let line = cx.line(row);
     let col = req.col.min(line.len());
@@ -213,7 +232,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             } else if row > 0 {
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None, patches: None }
             } else {
                 cx.nothing("")
             }
@@ -240,7 +259,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 }
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None, patches: None }
             } else {
                 let to = word_left(&line, col);
                 if to >= col {
@@ -452,6 +471,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 box_sel: None,
                 cursors: None,
                 folds: None,
+                patches: None,
             }
         }
         // ---- 输入文字 (键盘上的可见字符 / TAB / 输入法上屏): 有选区则替换选区; 覆盖模式吃掉光标后同样个数的字符 ----
@@ -471,10 +491,13 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             let new = format!("{}{}{}", slice(&line, 0, col), text, slice(&line, col + skip, usize::MAX));
             cx.replace_line(row, new, [row, col + n], None)
         }
-        // ---- 矩形(列块)选区 (Sakura 的 BOX 选择): 由前端把未归一化的 box_sel 与参与的行交上来 ----
-        "box-insert" | "box-backspace" | "box-delete" | "box-cut" | "box-copy" | "box-replace" => {
+        // ---- 矩形(列块)选区 (Sakura 的 BOX 选择; 语义按真实 Sakura 实测, 见 tests/sakura-diff cases5): 前端把未归一化的 box_sel 与参与的行交上来 ----
+        //   输入 / 粘贴: 在每一行的矩形左端插入, **不删**矩形里原有的内容, 插完矩形缩成插入点 (接着打)
+        //   退格 / Delete: 删掉矩形里的内容 (零宽矩形什么也不删), 矩形解除, 光标回左上角
+        //   回车: 先删矩形内容, 再在左上角换行 (只断一行)
+        "box-insert" | "box-enter" | "box-backspace" | "box-delete" | "box-cut" | "box-copy" | "box-replace" => {
             let Some(b) = cx.box_rect() else {
-                return Some(cx.nothing(""));
+                return Some(cx.nothing("列块涉及的行没有交全"));
             };
             let n_rows = b.r1 - b.r0 + 1;
             let old: Vec<Vec<char>> = (b.r0..=b.r1).map(|r| cx.line(r)).collect();
@@ -508,36 +531,25 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             };
             match req.cmd.as_str() {
                 "box-copy" => EditRes { clip: Some(clip_text()), tip: Some(format!("已复制列块 {n_rows} 行")), cursor: [row, col], ..Default::default() },
-                "box-delete" => {
+                "box-delete" | "box-backspace" => {
                     let rows: Vec<Vec<char>> = old.iter().map(&hollow).collect();
-                    let cur = [b.r0, b.c0.min(rows[0].len())];   // Sakura: 删除后光标在矩形左上角
+                    let cur = [b.r0, b.c0.min(rows[0].len())]; // Sakura: 删除后光标在矩形左上角
                     patch(rows, cur, None, format!("列块已删除 ({n_rows}行 ×{}列)", b.c1 - b.c0), None)
                 }
                 "box-cut" => {
                     let rows: Vec<Vec<char>> = old.iter().map(&hollow).collect();
                     patch(rows, [b.r0, b.c0], None, "已剪切列块".into(), Some(clip_text()))
                 }
-                "box-backspace" => {
-                    if b.c1 > b.c0 {
-                        // 有选中的矩形内容: 退格 = 删掉它, 保留插入点
-                        let rows: Vec<Vec<char>> = old.iter().map(&hollow).collect();
-                        let cur = [b.r0, b.c0.min(rows[0].len())];
-                        patch(rows, cur, Some([b.r0, b.c0, b.r1, b.c0]), "".into(), None)
-                    } else {
-                        // 每行在列块起点前删一个字符 (短于起点的行、起点在行首时不动)
-                        let rows: Vec<Vec<char>> = old
-                            .iter()
-                            .map(|l| {
-                                let mut v = l.clone();
-                                if b.c0 > 0 && l.len() > b.c0 {
-                                    v.remove(b.c0 - 1);
-                                }
-                                v
-                            })
-                            .collect();
-                        let c = b.c0.saturating_sub(1);
-                        patch(rows, [row, col], Some([b.r0, c, b.r1, c]), "".into(), None)
-                    }
+                "box-enter" => {
+                    let mut rows: Vec<Vec<char>> = old.iter().map(&hollow).collect();
+                    let c = b.c0.min(rows[0].len());
+                    let first: String = rows[0].iter().collect();
+                    // 在左上角换行: 复用普通回车 (自动缩进等), 只把第一行交给它
+                    let sub = EditReq { cmd: "new-line".into(), row: b.r0, col: c, sel: None, box_sel: None, cursors: vec![], rows: vec![(b.r0, first)], ..req.clone() };
+                    let nl = run(&sub)?;
+                    let mut insert = nl.insert.clone();
+                    insert.extend(rows.drain(1..).map(|v| v.into_iter().collect::<String>()));
+                    EditRes { changed: true, start: b.r0, remove: n_rows, insert, cursor: nl.cursor, ..Default::default() }
                 }
                 "box-replace" => {
                     // 逐行替换矩形里的内容: 文本用 \n 分行; 不足宽度补空格, 超宽截断 (等宽替换)
@@ -558,108 +570,135 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                     patch(rows, [row, col], None, "列块已替换".into(), None)
                 }
                 _ => {
-                    // box-insert: text 含 \n = 多行内容按行分配; 不含 = 同一份插到每一行; 短行补空格对齐; 选中的矩形内容先挖掉
-                    let parts: Vec<&str> = text.split('\n').collect();
+                    // box-insert: 每一行同一份内容 (多行剪贴板只取第一行, Sakura 实测); 短行补空格对齐; 矩形里原有的内容不动
+                    let add: Vec<char> = text.split('\n').next().unwrap_or("").trim_end_matches('\r').chars().collect();
+                    if add.is_empty() {
+                        return Some(cx.nothing(""));
+                    }
                     let rows: Vec<Vec<char>> = old
                         .iter()
-                        .enumerate()
-                        .map(|(i, l)| {
-                            let mut v = if b.c1 > b.c0 { hollow(l) } else { l.clone() };
-                            let add = parts.get(i).copied().unwrap_or(parts[parts.len() - 1]);
-                            if !add.is_empty() {
-                                while v.len() < b.c0 {
-                                    v.push(' ');
-                                }
-                                let tail = v.split_off(b.c0);
-                                v.extend(add.chars());
-                                v.extend(tail);
+                        .map(|l| {
+                            let mut v = l.clone();
+                            while v.len() < b.c0 {
+                                v.push(' ');
                             }
+                            let tail = v.split_off(b.c0);
+                            v.extend_from_slice(&add);
+                            v.extend(tail);
                             v
                         })
                         .collect();
-                    let adv = parts[0].chars().count().max(1);   // 插入点右移「刚插入的字符数」列, 可以接着连续输入
-                    patch(rows, [row, col], Some([b.r0, b.c0 + adv, b.r1, b.c0 + adv]), format!("列块插入 {n_rows} 行"), None)
+                    let to = b.c0 + add.len(); // 插入点右移「刚插入的字符数」列, 可以接着连续输入
+                    patch(rows, [row, col], Some([b.r0, to, b.r1, to]), format!("列块插入 {n_rows} 行"), None)
                 }
             }
         }
-        // ---- 多光标 (Ctrl+点击 / Alt+点击 添加): 参与的各行 (含最上面光标的上一行, 退格在行首要并到它) 一起交上来 ----
+        // ---- 多光标 (Ctrl+点击 / Alt+点击 添加): 只交光标所在的行 (退格在行首要并到上一行, 也交上一行) ----
+        // 光标按"一段连续行拍平成一串 (行间 \n)"里的偏移处理, 所以同一行有多个光标、退格并行都不会互相错位;
+        // 不连续的几段各出一个补丁 (patches, 前端从下往上套), 光标之间隔多远都不用把中间的行发过来。
         "multi-insert" | "multi-backspace" => {
             let last = req.total_rows.saturating_sub(1);
-            // 光标按"全部文字拍平成一串 (行间 \n)"里的偏移处理, 这样同一行有多个光标、退格并行都不会互相错位
-            let mut at: Vec<[usize; 2]> = req.cursors.iter().map(|c| [c[0].min(last), c[1]]).collect();
+            let backspace = req.cmd == "multi-backspace";
+            let ins: Vec<char> = req.text.clone().unwrap_or_default().chars().collect();
+            if !backspace && ins.is_empty() {
+                return Some(cx.nothing(""));
+            }
+            // 光标: 行夹进文档, 列夹进行长, 去重
+            let mut at: Vec<[usize; 2]> = Vec::with_capacity(req.cursors.len());
+            for c in &req.cursors {
+                let r = c[0].min(last);
+                if !cx.has_row(r) {
+                    return Some(cx.nothing("多光标涉及的行没有交全"));
+                }
+                at.push([r, c[1].min(cx.line(r).len())]);
+            }
             at.sort();
             at.dedup();
             if at.len() < 2 {
                 return Some(cx.nothing(""));
             }
-            let lo = at[0][0].saturating_sub(1);
-            let hi = at[at.len() - 1][0];
-            let rows: Vec<Vec<char>> = (lo..=hi).map(|r| cx.line(r)).collect();
-            let mut starts = Vec::with_capacity(rows.len());
-            let mut flat: Vec<char> = Vec::new();
-            for (i, l) in rows.iter().enumerate() {
-                if i > 0 {
-                    flat.push('\n');
+            // 触及的行 -> 连续的几段
+            let mut touched: Vec<usize> = Vec::new();
+            for c in &at {
+                touched.push(c[0]);
+                if backspace && c[0] > 0 && c[1] == 0 {
+                    touched.push(c[0] - 1);
                 }
-                starts.push(flat.len());
-                flat.extend_from_slice(l);
             }
-            let mut offs: Vec<usize> = at.iter().map(|c| starts[c[0] - lo] + c[1].min(rows[c[0] - lo].len())).collect();
-            offs.sort();
-            offs.dedup();
-            let mut out: Vec<char> = Vec::with_capacity(flat.len() + 8);
-            let mut new_offs: Vec<usize> = Vec::with_capacity(offs.len());
-            let tip;
-            if req.cmd == "multi-insert" {
-                let ins: Vec<char> = req.text.clone().unwrap_or_default().chars().collect();
-                if ins.is_empty() {
-                    return Some(cx.nothing(""));
-                }
-                let mut prev = 0;
-                for (i, &o) in offs.iter().enumerate() {
-                    out.extend_from_slice(&flat[prev..o]);
-                    out.extend_from_slice(&ins);
-                    new_offs.push(o + ins.len() * (i + 1));
-                    prev = o;
-                }
-                out.extend_from_slice(&flat[prev..]);
-                tip = format!("{} 个光标插入 {}", offs.len(), ins.iter().collect::<String>());
-            } else {
-                // 每个光标删掉它前面的一个字符 (行首 = 前一行的换行, 即与上一行合并)
-                let dels: Vec<usize> = offs.iter().filter(|&&o| o > 0).map(|&o| o - 1).collect();
-                if dels.is_empty() {
-                    return Some(cx.nothing(""));
-                }
-                let mut prev = 0;
-                for &d in &dels {
-                    out.extend_from_slice(&flat[prev..d]);
-                    prev = d + 1;
-                }
-                out.extend_from_slice(&flat[prev..]);
-                for &o in &offs {
-                    new_offs.push(o - dels.iter().filter(|&&d| d < o).count());
-                }
-                tip = format!("{} 个光标删除", offs.len());
+            touched.sort();
+            touched.dedup();
+            if touched.iter().any(|&r| !cx.has_row(r)) {
+                return Some(cx.nothing("多光标涉及的行没有交全"));
             }
-            let text: String = out.iter().collect();
-            let insert: Vec<String> = text.split('\n').map(String::from).collect();
-            // 偏移换回 (行, 列)
-            let mut line_starts = Vec::with_capacity(insert.len());
-            let mut acc = 0;
-            for l in &insert {
-                line_starts.push(acc);
-                acc += l.chars().count() + 1;
+            let mut segs: Vec<(usize, usize)> = Vec::new();
+            for &r in &touched {
+                match segs.last_mut() {
+                    Some(s) if s.1 + 1 == r => s.1 = r,
+                    _ => segs.push((r, r)),
+                }
             }
-            let mut cursors: Vec<[usize; 2]> = new_offs
-                .iter()
-                .map(|&o| {
-                    let i = line_starts.partition_point(|&s| s <= o) - 1;
-                    [lo + i, o - line_starts[i]]
-                })
-                .collect();
+            let mut patches: Vec<(usize, usize, Vec<String>)> = Vec::new();
+            let mut cursors: Vec<[usize; 2]> = Vec::new();
+            let mut removed = 0isize; // 前面各段因为并行少掉的行数 (插入带换行的文字时是负的)
+            for &(s, e) in &segs {
+                let rows: Vec<Vec<char>> = (s..=e).map(|r| cx.line(r)).collect();
+                let mut flat: Vec<char> = Vec::new();
+                let mut starts = Vec::with_capacity(rows.len());
+                for (i, l) in rows.iter().enumerate() {
+                    if i > 0 {
+                        flat.push('\n');
+                    }
+                    starts.push(flat.len());
+                    flat.extend_from_slice(l);
+                }
+                let offs: Vec<usize> = at.iter().filter(|c| c[0] >= s && c[0] <= e).map(|c| starts[c[0] - s] + c[1]).collect();
+                let mut out: Vec<char> = Vec::with_capacity(flat.len() + 8);
+                let mut new_offs: Vec<usize> = Vec::with_capacity(offs.len());
+                if !backspace {
+                    let mut prev = 0;
+                    for (i, &o) in offs.iter().enumerate() {
+                        out.extend_from_slice(&flat[prev..o]);
+                        out.extend_from_slice(&ins);
+                        new_offs.push(o + ins.len() * (i + 1));
+                        prev = o;
+                    }
+                    out.extend_from_slice(&flat[prev..]);
+                } else {
+                    // 每个光标删掉它前面的一个字符 (行首 = 前一行的换行, 即与上一行合并)
+                    let dels: Vec<usize> = offs.iter().filter(|&&o| o > 0).map(|&o| o - 1).collect();
+                    let mut prev = 0;
+                    for &d in &dels {
+                        out.extend_from_slice(&flat[prev..d]);
+                        prev = d + 1;
+                    }
+                    out.extend_from_slice(&flat[prev..]);
+                    for &o in &offs {
+                        new_offs.push(o - dels.iter().filter(|&&d| d < o).count());
+                    }
+                }
+                let text: String = out.iter().collect();
+                let insert: Vec<String> = text.split('\n').map(String::from).collect();
+                let mut line_starts = Vec::with_capacity(insert.len());
+                let mut acc = 0;
+                for l in &insert {
+                    line_starts.push(acc);
+                    acc += l.chars().count() + 1;
+                }
+                let base = (s as isize - removed) as usize;
+                for &o in &new_offs {
+                    let i = line_starts.partition_point(|&x| x <= o) - 1;
+                    cursors.push([base + i, o - line_starts[i]]);
+                }
+                removed += (e - s + 1) as isize - insert.len() as isize;
+                patches.push((s, e - s + 1, insert));
+            }
+            if patches.iter().all(|(s, n, ins)| ins.len() == *n && (*s..*s + *n).zip(ins).all(|(r, l)| cx.line(r).iter().collect::<String>() == *l)) {
+                return Some(cx.nothing("")); // 什么也没变 (例如都在 (0,0) 退格)
+            }
             cursors.sort();
             cursors.dedup();
-            EditRes { changed: true, start: lo, remove: hi - lo + 1, insert, cursor: cursors[0], cursors: Some(cursors), tip: Some(tip), ..Default::default() }
+            let tip = if backspace { format!("{} 个光标删除", at.len()) } else { format!("{} 个光标插入 {}", at.len(), ins.iter().collect::<String>()) };
+            EditRes { changed: true, patches: Some(patches), cursor: cursors[0], cursors: Some(cursors), tip: Some(tip), ..Default::default() }
         }
         // ---- 折叠 (zc / zM): 只算块边界, 文字不动。rows 从起点行连续交到文档末尾 ----
         "fold-range" | "fold-all" => {
@@ -738,7 +777,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
         }
         "duplicate-line" => {
             let text: String = line.iter().collect();
-            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
+            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None, patches: None }
         }
         _ => return None,
     })
@@ -973,59 +1012,91 @@ mod tests {
         assert_eq!((r.changed, r.clip.as_deref()), (false, Some("bcd\nh\njkl\n")));
         assert_eq!(run_box("box-copy", 2, 1, [2, 4, 0, 1], "", BX).clip.as_deref(), Some("bcd\nh\njkl\n"));
         assert_eq!(run_box("box-copy", 0, 2, [0, 2, 1, 2], "", BX).clip.as_deref(), Some("\n\n"));
-        // 删除: 整块挖空, 光标回矩形左上角, 列块清除
+        // 删除: 整块挖空, 光标回矩形左上角, 列块清除; 退格和删除一样 (Sakura 实测), 零宽矩形什么也不删
         let r = run_box("box-delete", 2, 4, [0, 1, 2, 4], "", BX);
         assert_eq!((apply(BX, &r), r.cursor, r.box_sel), (vec!["aef".to_string(), "g".into(), "imn".into()], [0, 1], None));
+        assert_eq!(apply(BX, &run_box("box-backspace", 2, 4, [0, 1, 2, 4], "", BX)), apply(BX, &r));
+        let r = run_box("box-backspace", 0, 2, [0, 2, 2, 2], "", BX);
+        assert_eq!((apply(BX, &r), r.cursor, r.box_sel), (BX.iter().map(|s| s.to_string()).collect::<Vec<_>>(), [0, 2], None));
         // 剪切 = 复制 + 删除
         let r = run_box("box-cut", 2, 4, [0, 1, 2, 4], "", BX);
         assert_eq!((apply(BX, &r)[0].as_str(), r.clip.as_deref()), ("aef", Some("bcd\nh\njkl\n")));
-        // 输入: 同一份插到每一行, 短行补空格对齐, 选中的内容先挖掉, 插入点右移
+        // 输入: 同一份插到每一行的矩形左端, 短行补空格对齐, 矩形里原有的内容不动, 插完矩形缩成插入点
         let r = run_box("box-insert", 0, 3, [0, 3, 2, 3], "X", BX);
         assert_eq!((apply(BX, &r), r.box_sel), (vec!["abcXdef".to_string(), "gh X".into(), "ijkXlmn".into()], Some([0, 4, 2, 4])));
         let r = run_box("box-insert", 0, 3, [0, 1, 2, 3], "Z", BX);
-        assert_eq!((apply(BX, &r)[0].as_str(), apply(BX, &r)[2].as_str(), r.box_sel), ("aZdef", "iZlmn", Some([0, 2, 2, 2])));
-        // 多行内容按行分配 (不够的行沿用最后一段)
+        assert_eq!((apply(BX, &r)[0].as_str(), apply(BX, &r)[2].as_str(), r.box_sel), ("aZbcdef", "iZjklmn", Some([0, 2, 2, 2])));
+        // 多行剪贴板只取第一行 (Sakura 实测)
         let r = run_box("box-insert", 0, 0, [0, 0, 2, 0], "1\n2", BX);
-        assert_eq!(apply(BX, &r), vec!["1abcdef".to_string(), "2gh".into(), "2ijklmn".into()]);
-        // 退格: 塌缩矩形每行删起点前一个字符; 起点在行首不动; 有内容则删掉内容并保留插入点
-        let r = run_box("box-backspace", 0, 2, [0, 2, 2, 2], "", BX);
-        assert_eq!((apply(BX, &r), r.box_sel), (vec!["acdef".to_string(), "gh".into(), "ikl".to_string() + "mn"], Some([0, 1, 2, 1])));
-        assert_eq!(apply(BX, &run_box("box-backspace", 0, 0, [0, 0, 2, 0], "", BX)), BX.iter().map(|s| s.to_string()).collect::<Vec<_>>());
-        let r = run_box("box-backspace", 0, 4, [0, 1, 2, 4], "", BX);
-        assert_eq!((apply(BX, &r)[0].as_str(), r.box_sel), ("aef", Some([0, 1, 2, 1])));
+        assert_eq!(apply(BX, &r), vec!["1abcdef".to_string(), "1gh".into(), "1ijklmn".into()]);
+        // 回车: 先删矩形内容, 再在左上角换行 (只断一行)
+        let r = run_box("box-enter", 2, 4, [0, 1, 2, 4], "", BX);
+        assert_eq!((apply(BX, &r), r.cursor, r.box_sel), (vec!["a".to_string(), "ef".into(), "g".into(), "imn".into()], [1, 0], None));
         // 替换: 等宽, 不足补空格, 超宽截断
         let r = run_box("box-replace", 0, 4, [0, 1, 2, 4], "12\nabcdef", BX);
         assert_eq!(apply(BX, &r), vec!["a12 ef".to_string(), "gabc".into(), "i   mn".into()]);
         // 列越过行尾 (End 键) 会夹在参与行的最长长度内
         let r = run_box("box-delete", 0, 0, [0, 3, 1, 9999], "", BX);
         assert_eq!(apply(BX, &r)[..2], ["abc".to_string(), "gh".into()]);
+        // 矩形落在文档末尾之外 (文档缩短后留下的旧矩形): 夹到最后一行, 行没交全就什么也不做, 不会把最后一行当空行写回去
+        let mut req = EditReq { cmd: "box-insert".into(), row: 0, col: 0, sel: None, total_rows: 3, auto_indent: false, smart_indent: false, text: Some("X".into()), line_mode: false, overwrite: false, box_sel: Some([5, 0, 6, 0]), cursors: vec![], rows: vec![(0, "abcdef".into()), (1, "gh".into())] };
+        assert!(!run(&req).unwrap().changed);
+        req.rows.push((2, "ijklmn".into()));
+        assert_eq!(apply(BX, &run(&req).unwrap())[2], "Xijklmn");
     }
     fn run_multi(cmd: &str, cursors: &[[usize; 2]], text: &str, lines: &[&str]) -> EditRes {
-        run(&EditReq { cmd: cmd.into(), row: cursors[0][0], col: cursors[0][1], sel: None, total_rows: lines.len(), auto_indent: false, smart_indent: false, text: Some(text.into()), line_mode: false, overwrite: false, box_sel: None, cursors: cursors.to_vec(), rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect() }).unwrap()
+        let mut touched: Vec<usize> = cursors.iter().flat_map(|c| [c[0].saturating_sub(1), c[0]]).collect();
+        touched.sort();
+        touched.dedup();
+        run(&EditReq { cmd: cmd.into(), row: cursors[0][0], col: cursors[0][1], sel: None, total_rows: lines.len(), auto_indent: false, smart_indent: false, text: Some(text.into()), line_mode: false, overwrite: false, box_sel: None, cursors: cursors.to_vec(), rows: touched.into_iter().filter(|&r| r < lines.len()).map(|r| (r, lines[r].to_string())).collect() }).unwrap()
+    }
+    /// 把多光标的补丁套回文本 (前端从下往上套)
+    fn apply_multi(lines: &[&str], r: &EditRes) -> Vec<String> {
+        let mut v: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+        let mut ps = r.patches.clone().unwrap();
+        ps.sort_by_key(|p| std::cmp::Reverse(p.0));
+        for (s, n, ins) in ps {
+            v.splice(s..s + n, ins);
+        }
+        v
     }
     #[test]
     fn multi_cursor() {
         const M: &[&str] = &["abcdef", "gh", "ijklmn"];
         // 不同行: 每个光标处插入, 光标各自右移
         let r = run_multi("multi-insert", &[[0, 1], [2, 3]], "X", M);
-        assert_eq!((apply(M, &r), r.cursors.clone()), (vec!["aXbcdef".to_string(), "gh".into(), "ijkXlmn".into()], Some(vec![[0, 2], [2, 4]])));
+        assert_eq!((apply_multi(M, &r), r.cursors.clone()), (vec!["aXbcdef".to_string(), "gh".into(), "ijkXlmn".into()], Some(vec![[0, 2], [2, 4]])));
         // 同一行多个光标: 后面的光标要把前面的插入也算进去
         let r = run_multi("multi-insert", &[[0, 1], [0, 3]], "Q", M);
-        assert_eq!((apply(M, &r)[0].as_str(), r.cursors.clone()), ("aQbcQdef", Some(vec![[0, 2], [0, 5]])));
+        assert_eq!((apply_multi(M, &r)[0].as_str(), r.cursors.clone()), ("aQbcQdef", Some(vec![[0, 2], [0, 5]])));
         // 汉字 / 多个字符
         let r = run_multi("multi-insert", &[[0, 0], [1, 2]], "日本", M);
-        assert_eq!((apply(M, &r)[..2].to_vec(), r.cursors.clone()), (vec!["日本abcdef".to_string(), "gh日本".into()], Some(vec![[0, 2], [1, 4]])));
+        assert_eq!((apply_multi(M, &r)[..2].to_vec(), r.cursors.clone()), (vec!["日本abcdef".to_string(), "gh日本".into()], Some(vec![[0, 2], [1, 4]])));
         // 退格: 同行两个光标各删前一个字符
         let r = run_multi("multi-backspace", &[[0, 2], [0, 4]], "", M);
-        assert_eq!((apply(M, &r)[0].as_str(), r.cursors.clone()), ("acef", Some(vec![[0, 1], [0, 2]])));
-        // 行首退格 = 与上一行合并, 光标落在合并处; 下面的行跟着上移
+        assert_eq!((apply_multi(M, &r)[0].as_str(), r.cursors.clone()), ("acef", Some(vec![[0, 1], [0, 2]])));
+        // 行首退格 = 与上一行合并, 光标落在合并处; 下面的行跟着上移 (光标行号按合并后的算)
         let r = run_multi("multi-backspace", &[[1, 0], [2, 2]], "", M);
-        assert_eq!((apply(M, &r), r.cursors.clone()), (vec!["abcdefgh".to_string(), "ikl".to_string() + "mn"], Some(vec![[0, 6], [1, 1]])));
+        assert_eq!((apply_multi(M, &r), r.cursors.clone()), (vec!["abcdefgh".to_string(), "ikl".to_string() + "mn"], Some(vec![[0, 6], [1, 1]])));
         // 合并后两个光标重合 -> 去重
         let r = run_multi("multi-backspace", &[[0, 3], [1, 0]], "", &["abc", "def"]);
-        assert_eq!((apply(&["abc", "def"], &r), r.cursors.clone()), (vec!["abdef".to_string()], Some(vec![[0, 2]])));
+        assert_eq!((apply_multi(&["abc", "def"], &r), r.cursors.clone()), (vec!["abdef".to_string()], Some(vec![[0, 2]])));
         // 都在 (0,0): 没有可删的
-        assert!(!run_multi("multi-backspace", &[[0, 0]], "", M).changed);
+        assert!(!run_multi("multi-backspace", &[[0, 0], [0, 0]], "", M).changed);
+        // 光标隔得很远: 只交光标所在的行, 各出一个补丁; 前一段并行少掉的行数要算进后一段的光标行号
+        let far: Vec<String> = (0..1000).map(|i| format!("l{i}")).collect();
+        let far_ref: Vec<&str> = far.iter().map(|s| s.as_str()).collect();
+        let r = run_multi("multi-backspace", &[[1, 0], [900, 2]], "", &far_ref);
+        let p = r.patches.clone().unwrap();
+        assert_eq!(p.len(), 2, "两段各一个补丁, 中间的 898 行不用交");
+        assert_eq!(r.cursors, Some(vec![[0, 2], [899, 1]]));
+        let applied = apply_multi(&far_ref, &r);
+        assert_eq!((applied[0].as_str(), applied.len(), applied[899].as_str()), ("l0l1", 999, "l00"));
+        // 光标行没交全 / 光标在文档末尾之外: 夹进文档, 行不全就什么也不做
+        let r = run(&EditReq { cmd: "multi-insert".into(), row: 0, col: 0, sel: None, total_rows: 3, auto_indent: false, smart_indent: false, text: Some("X".into()), line_mode: false, overwrite: false, box_sel: None, cursors: vec![[8, 5], [9, 5]], rows: vec![(2, "abc".into())] }).unwrap();
+        assert!(!r.changed, "两个旧光标都夹到最后一行行尾 -> 去重后不足两个");
+        let r = run(&EditReq { cmd: "multi-insert".into(), row: 0, col: 0, sel: None, total_rows: 3, auto_indent: false, smart_indent: false, text: Some("X".into()), line_mode: false, overwrite: false, box_sel: None, cursors: vec![[0, 0], [2, 0]], rows: vec![(0, "a".into())] }).unwrap();
+        assert!(!r.changed, "光标所在的行没交全 -> 什么也不做 (不把真实内容当空行写回去)");
     }
     #[test]
     fn folding() {

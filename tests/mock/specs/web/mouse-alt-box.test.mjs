@@ -24,7 +24,7 @@ test('点击把光标落在点击处; 行内 / 跨行拖选, 跨行高亮逐行�
     assert.deepEqual(painted, ['fghij', 'klmnopqrst', 'uvw']);
   }));
 
-test('Alt+拖动 = 3行×4列; 输入 X 覆盖矩形里的内容 (cdef/mnop/wxyz)', () =>
+test('Alt+拖动 = 3行×4列; 输入 X 插在每行矩形左端, 矩形里原有的内容 (cdef/mnop/wxyz) 不删 (Sakura 实测)', () =>
   withApp({ name: 'mb', portOffset: 21 }, async ({ page, snap, app }) => {
     const g = await seed(page);
     await page.keyboard.down('Alt');
@@ -34,11 +34,11 @@ test('Alt+拖动 = 3行×4列; 输入 X 覆盖矩形里的内容 (cdef/mnop/wxyz
     assert.deepEqual((await snap()).box, [0, 2, 2, 6]);
     assert.match((await snap()).status.colsel, /3行/);
     await page.keyboard.type('X');
-    assert.deepEqual((await snap()).lines.slice(0, 3), ['abXghij', 'klXqrst', 'uvXABCD']);
+    assert.deepEqual((await snap()).lines.slice(0, 3), ['abXcdefghij', 'klXmnopqrst', 'uvXwxyzABCD']);
     assert.deepEqual(app.errors, []);
   }));
 
-test('矩形里退格 = 删掉选中的矩形内容 (保留插入点)', () =>
+test('矩形里退格 = 删掉选中的矩形内容, 解除矩形 (Sakura 实测)', () =>
   withApp({ name: 'mb', portOffset: 22 }, async ({ page, snap }) => {
     const g = await seed(page);
     await page.keyboard.down('Alt');

@@ -74,8 +74,8 @@ test.describe("真实鼠标: 点击 / 拖选 / Alt 纵向选择", () => {
     await expect(page.locator("#s-colsel")).toContainText("3行");
     await page.keyboard.type("X"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const lines = await page.evaluate(() => (window as any).getActiveTab().lines.slice(0, 3));
-    // Alt 拖出的 3行×4列 里原有的内容被覆盖掉 (cdef / mnop / wxyz), 不是插在它前面
-    expect(lines).toEqual(["abXghij", "klXqrst", "uvXABCD"]);
+    // Sakura 实测 (tests/sakura-diff 'BOX type over selected'): 在矩形左端每行插入, 矩形里原有的内容 (cdef / mnop / wxyz) 不删
+    expect(lines).toEqual(["abXcdefghij", "klXmnopqrst", "uvXwxyzABCD"]);
     expect(errors).toEqual([]);
   });
 

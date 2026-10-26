@@ -61,8 +61,8 @@ async function oursAll() {
         else t.cursor = { row: (c.cur || [0, 0])[0], col: (c.cur || [0, 0])[1] };
         renderVim(t); edContent.focus({ preventScroll: true });
       }, { c, seed });
+      if (c.ours.pre) { await page.evaluate((src) => { new Function(src)(); }, c.ours.pre); }   // 先布置状态 (列块等), 再按键 / 执行
       if (c.ours.keys) { await page.locator('#ed-content').focus(); for (const k of c.ours.keys) { await page.keyboard.press(k); await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null)); await page.waitForTimeout(40); } }
-      else if (c.ours.pre) { await page.evaluate((src) => { new Function(src)(); }, c.ours.pre); }
       if (c.ours.keys) { /* done */ } else if (c.ours.js) { await page.evaluate((src) => { new Function(src)(); }, c.ours.js); }
       else if (c.ours.key) { await page.locator('#ed-content').focus(); await page.keyboard.press(c.ours.key); } else await page.evaluate((x) => dispatchCommand(x), c.ours.cmd);
       await page.evaluate(() => (window.__editIdle ? window.__editIdle() : null));
@@ -71,6 +71,7 @@ async function oursAll() {
         const t = getActiveTab();
         if (tail === 'selcopy') { try { await dispatchCommand('copy'); } catch (_) {} }
         if (tail === 'paste' || tail === 'selcopy') { const clip = CLIPBOARD || ''; t.cursor = { row: t.lines.length - 1, col: charLen(t.lines[t.lines.length - 1]) }; t.sel = null; t.colSel = null; pasteText(tail === 'selcopy' ? clip : (window.__mock.clip || CLIPBOARD)); }
+        else if (t.colSel) { await columnInsert('|'); }   // 矩形选择还在: Sakura 的 S_InsText 也是往每一行的矩形里打 (输入进矩形)
         else { if (selNonEmpty(t)) deleteSelection(t); insertCharMulti('|'); }
         await window.__editIdle();
       }, { tail: tailOf(c) });
