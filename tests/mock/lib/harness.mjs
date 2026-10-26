@@ -93,7 +93,7 @@ export async function withApp(opts, fn) {
   const app = await openApp({ base: srv.base, layout: opts.layout, vim: opts.vim, viewport: opts.viewport });
   try {
     await gotoEditor(app);
-    return await fn({ page: app.page, app, srv, root, snap: (p) => snap(p || app.page), press: (k, o) => press(app.page, k, o), type: (t) => app.page.keyboard.type(t) });
+    return await fn({ page: app.page, app, srv, root, snap: (p) => snap(p || app.page), press: (k, o) => press(app.page, k, o), type: async (t) => { await app.page.keyboard.type(t); await app.page.evaluate(() => (window.__editIdle ? window.__editIdle() : null)); } });
   } finally {
     await closeApp(app);
     srv.stop();

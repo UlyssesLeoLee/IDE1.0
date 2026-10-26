@@ -6,7 +6,7 @@ import { ime } from '../../lib/mock.mjs';
 
 test('预编辑文字显示在光标处, 上屏后进文档, 光标在其后', () =>
   withApp({ name: 'ime', portOffset: 40 }, async ({ page, snap }) => {
-    await page.locator('#ed-content').click(); await page.keyboard.type('ab');
+    await page.locator('#ed-content').click(); await page.keyboard.type('ab'); await page.evaluate(() => window.__editIdle());   // 键入经 Rust 桥, 异步落地
     const i = ime(page);
     for (const s of ['に', 'にほ', 'にほんご']) await i.preedit(s);
     assert.equal(await page.evaluate(() => document.getElementById('ed-content').innerText.replace(/\n/g, '|')), 'abにほんご');

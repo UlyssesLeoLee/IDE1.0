@@ -48,7 +48,7 @@ test.describe("web /editor (ULYS-251)", () => {
     const readmePath = await page.evaluate(() => (window as any).getActiveTab().path);
     try {
       await page.locator("#ed-content").press("Shift+A");
-      await page.keyboard.type(" uat");
+      await page.keyboard.type(" uat"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator(".tab.active")).not.toHaveClass(/tab-dirty/);

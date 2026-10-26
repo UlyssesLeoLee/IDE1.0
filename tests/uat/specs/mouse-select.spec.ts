@@ -11,7 +11,7 @@ async function boot(page: Page) {
   await page.waitForFunction(() => document.activeElement?.id === "ed-content");
   await page.locator("#ed-content").focus();
   for (const l of ["abcdefghij", "klmnopqrst", "uvwxyzABCD", "EFGHIJKLMN"]) {
-    await page.keyboard.type(l);
+    await page.keyboard.type(l); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   }
   return errors;
@@ -72,7 +72,7 @@ test.describe("真实鼠标: 点击 / 拖选 / Alt 纵向选择", () => {
     await page.mouse.up(); await page.keyboard.up("Alt");
     expect((await state(page)).box).toEqual([0, 2, 2, 6]);
     await expect(page.locator("#s-colsel")).toContainText("3行");
-    await page.keyboard.type("X");
+    await page.keyboard.type("X"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const lines = await page.evaluate(() => (window as any).getActiveTab().lines.slice(0, 3));
     // Alt 拖出的 3行×4列 里原有的内容被覆盖掉 (cdef / mnop / wxyz), 不是插在它前面
     expect(lines).toEqual(["abXghij", "klXqrst", "uvXABCD"]);

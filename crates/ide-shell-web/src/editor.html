@@ -4223,22 +4223,8 @@ function updateCaret(follow) {
 }
 
 // 在 INSERT 模式下插入一个字符, 推进光标, 标脏
-function insertChar(ch) {
-  const t = getActiveTab();
-  if (!t) return;
-  snapshot(t);
-  const line = curLine(t);
-  // 按 char 切分再插入 —— ch 可能是 surrogate pair (emoji / CJK 扩展 B 补字),
-  // 用 UTF-16 下标切会算错.
-  const arr = charArray(line);
-  // 覆盖模式 (Ins): 行内还有字符时吃掉光标后的一个字符
-  const skip = OVERWRITE && t.cursor.col < arr.length ? 1 : 0;
-  t.lines[t.cursor.row] =
-    arr.slice(0, t.cursor.col).join("") + ch + arr.slice(t.cursor.col + skip).join("");
-  t.cursor.col += chars(ch).length;
-  t.dirty = true;
-  paintActive();
-}
+// 输入一个字符 / 一段文字: 语义在 Rust (edit_cmd insert-text); 覆盖模式 (Ins) 由 OVERWRITE 带过去
+function insertChar(ch) { return runEdit("insert-text", { text: ch, overwrite: !!OVERWRITE }); }
 
 // 光标左右移动 —— char 语义 (col 是 code point 下标, 不是 UTF-16).
 // clamp 到当前行的 char 长度, 避免移出界.
@@ -8093,10 +8079,17 @@ const SAKURA_CMDS = {
   },
 };
 // 光标处插入一段文本 (替换选区, 走撤销栈)
+// 程序化插入一段文字 (变换后套回选区 / コード変換 / 模板等调用方要**立刻**读到新光标位置, 所以这里是同步的; 键盘输入走 insertChar -> Rust)
 function insertTextAtCursor(text) {
   const t = getActiveTab(); if (!t) return;
   if (selNonEmpty(t)) replaceSelection(t);
-  for (const ch of chars(text)) insertCharMulti(ch);
+  if (cursorsOf(t).length > 1) { for (const ch of chars(text)) insertCharMulti(ch); return; }
+  snapshot(t);
+  const arr = charArray(curLine(t)), n = chars(text).length;
+  t.lines[t.cursor.row] = arr.slice(0, t.cursor.col).join("") + text + arr.slice(t.cursor.col).join("");
+  t.cursor.col += n;
+  t.dirty = true;
+  paintActive();
 }
 
 
@@ -9643,7 +9636,7 @@ function runEdit(cmd, extra) {
     t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
     t.sel = null; t.selAnchor = null; delete t.goalCol; t.dirty = true;
     if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
-    renderVim(t);
+    if (t.sel) renderVim(t); else paintActive();   // 与原来的输入 / 删除函数一致: 回到单文本节点形态, 同时刷新标签条的脏标记 (●) 与光标
   });
 }
 function copySelection() {

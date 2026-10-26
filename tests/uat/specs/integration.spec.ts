@@ -50,7 +50,7 @@ test("mouse-driven workflow: left click → type → right click → verify Norm
   await waitForMode(page, "Insert");
 
   // 打字 (走 DOM keydown → server)
-  await page.keyboard.type("pwd");
+  await page.keyboard.type("pwd"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.waitForFunction(
     () => document.getElementById("shell")?.dataset.buffer === "pwd",
     undefined,

@@ -143,7 +143,7 @@ test.describe("A. Alt+方向键 = 纯键盘矩形选取", () => {
     await page.keyboard.press("Alt+ArrowRight"); await page.evaluate(() => (window as any).__editIdle());   // 列边界 0 → 1
     await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());
     await page.keyboard.press("Alt+ArrowDown"); await page.evaluate(() => (window as any).__editIdle());    // 3 行
-    await page.keyboard.type("X");
+    await page.keyboard.type("X"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
 
     // 列块有宽度 (1 列) 时输入 = 覆盖选中内容, 落在选区**左端** c0 —— 与 Alt+拖动建立的列块完全一致
     const out = await doc(page);

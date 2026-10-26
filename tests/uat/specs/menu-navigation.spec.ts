@@ -46,9 +46,9 @@ async function prepDoc(page: Page, layout: "full" | "min") {
   if (layout === "full") await page.evaluate(() => (window as any).createUntitledDoc());   // 完整布局启动是欢迎页, 没有文档
   await focusEditor(page);
   if (layout === "full") await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
-  await page.keyboard.type("hello");
+  await page.keyboard.type("hello"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
-  await page.keyboard.type("world");
+  await page.keyboard.type("world"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   if (layout === "full") await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect.poll(() => page.evaluate(() => (window as any).getActiveTab().lines.join("|"))).toBe("hello|world");
 }
@@ -493,7 +493,7 @@ for (const layout of ["full", "min"] as const) {
         expect(await editorFocused(page), `${cmd} 点完焦点回到编辑区 (不是 body)`).toBe(true);
       }
       if (layout === "full") await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());               // vim 开: 先进 INSERT 才能打字
-      await page.keyboard.type("Z");
+      await page.keyboard.type("Z"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await page.evaluate(() => (window as any).getActiveTab().lines.join("|"))).toContain("Z");
       expect(errors).toEqual([]);
     });
@@ -511,7 +511,7 @@ for (const layout of ["full", "min"] as const) {
       await btn(page, "file").click();
       expect(await openMenus(page)).toEqual([]);
       expect(await editorFocused(page), "收起后焦点在编辑区, 不留在菜单栏按钮上").toBe(true);
-      await page.keyboard.type("hex");                                          // 以前: 焦点在按钮上, h 会打开「帮助」菜单
+      await page.keyboard.type("hex"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                          // 以前: 焦点在按钮上, h 会打开「帮助」菜单
       expect(await st(page)).toMatchObject({ open: null, bar: null });
       expect(errors).toEqual([]);
     });
@@ -526,7 +526,7 @@ for (const layout of ["full", "min"] as const) {
       await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       await expect(page.locator("#modal")).toHaveClass(/show/);
       expect(await editorFocused(page), "对话框开着, 焦点不能在编辑区").toBe(false);
-      await page.keyboard.type("qqq");
+      await page.keyboard.type("qqq"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
       expect(await docState(page), "对话框开着时打的字不进文档").toBe(before);
       expect(await st(page)).toMatchObject({ open: null, bar: null });       // 也没有残留菜单模式
       await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());

@@ -26,6 +26,9 @@ pub struct EditReq {
     /// 剪贴板内容来自「无选区的复制 / 剪切」(整行模式)
     #[serde(default)]
     pub line_mode: bool,
+    /// 覆盖模式 (Ins): insert-text 时吃掉光标后同样个数的字符
+    #[serde(default)]
+    pub overwrite: bool,
     /// 需要用到的行: [行号, 文本] (光标行 ±1, 选区各行)
     pub rows: Vec<(usize, String)>,
 }
@@ -373,6 +376,23 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 anchor: None,
             }
         }
+        // ---- 输入文字 (键盘上的可见字符 / TAB / 输入法上屏): 有选区则替换选区; 覆盖模式吃掉光标后同样个数的字符 ----
+        "insert-text" => {
+            let text = req.text.clone().unwrap_or_default();
+            if text.is_empty() {
+                return Some(cx.nothing(""));
+            }
+            let n = text.chars().count();
+            if let Some(s) = sel {
+                let head = slice(&cx.line(s[0]), 0, s[1]);
+                let tail = slice(&cx.line(s[2]), s[3], usize::MAX);
+                return Some(EditRes { changed: true, start: s[0], remove: s[2] - s[0] + 1, insert: vec![format!("{head}{text}{tail}")], cursor: [s[0], s[1] + n], ..Default::default() });
+            }
+            // 覆盖模式: 行内还有字符时吃掉光标后的字符 (按插入的字符数)
+            let skip = if req.overwrite { n.min(line.len().saturating_sub(col)) } else { 0 };
+            let new = format!("{}{}{}", slice(&line, 0, col), text, slice(&line, col + skip, usize::MAX));
+            cx.replace_line(row, new, [row, col + n], None)
+        }
         // ---- 行结构 ----
         "new-line" => {
             let head = slice(&line, 0, col);
@@ -448,6 +468,7 @@ mod tests {
             smart_indent: true,
             text: None,
             line_mode: false,
+            overwrite: false,
             rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
         })
         .unwrap()
@@ -557,6 +578,7 @@ mod tests {
             smart_indent: false,
             text: Some(text.into()),
             line_mode,
+            overwrite: false,
             rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
         })
         .unwrap()
@@ -630,7 +652,23 @@ mod tests {
         assert_eq!((r.cursor, r.clip_line), ([0, 3], true));
     }
     #[test]
+    fn typing() {
+        let r = run_text("insert-text", 0, 3, None, "X", false, DOC);
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("helXlo world foo", [0, 4]));
+        let r = run_text("insert-text", 0, 15, None, "日本", false, DOC); // 行末追加, 光标按字符数前进
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("hello world foo日本", [0, 17]));
+        let r = run_text("insert-text", 0, 3, Some([0, 2, 0, 5]), "Q", false, DOC); // 选区被替换
+        assert_eq!((apply(DOC, &r)[0].as_str(), r.cursor), ("heQ world foo", [0, 3]));
+        // 覆盖模式: 吃掉光标后的字符; 行末则只是追加
+        let mut o = run_text("insert-text", 0, 3, None, "Z", false, DOC);
+        let _ = &mut o;
+        let req = EditReq { cmd: "insert-text".into(), row: 0, col: 3, sel: None, total_rows: DOC.len(), auto_indent: false, smart_indent: false, text: Some("Z".into()), line_mode: false, overwrite: true, rows: vec![(0, DOC[0].to_string())] };
+        assert_eq!(apply(DOC, &run(&req).unwrap())[0], "helZo world foo");
+        let req = EditReq { col: 15, ..req };
+        assert_eq!(apply(DOC, &run(&req).unwrap())[0], "hello world fooZ");
+    }
+    #[test]
     fn unknown() {
-        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, text: None, line_mode: false, rows: vec![] }).is_none());
+        assert!(run(&EditReq { cmd: "nope".into(), row: 0, col: 0, sel: None, total_rows: 1, auto_indent: false, smart_indent: false, text: None, line_mode: false, overwrite: false, rows: vec![] }).is_none());
     }
 }

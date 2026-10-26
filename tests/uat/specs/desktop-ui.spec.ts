@@ -375,7 +375,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     await page.keyboard.press("$"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.locator("#ed-content").press("A");
     await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT");
-    await page.keyboard.type("!");
+    await page.keyboard.type("!"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.locator("#ed-content").focus();
     await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "NORMAL");
@@ -539,7 +539,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // 键盘焦点在隐藏的 #term-input (输入法 / 粘贴 / 可见字符都从它来); 用 focus() 而非 click():
     // 空状态提示 #terminal-empty 会盖住 #terminal-body, click 会因被遮挡而超时.
     await page.locator("#terminal-body").focus();
-    await page.keyboard.type("dir");
+    await page.keyboard.type("dir"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     // 回车之前什么都没发, 但敲的字已经在屏幕上了 (本地回显)
     expect(await page.evaluate(() => (window as any).__calls.filter((c: any) => c.cmd === "terminal_input").length)).toBe(0);
     await expect(page.locator("#terminal-body .tl-in").last()).toContainText("dir");
@@ -588,7 +588,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     // 所以这里断言的是"关闭后回到欢迎页", 不是"弹确认框".
     await page.evaluate(() => (window as any).closeModal());
     await newBlankTab(page);
-    await page.keyboard.type("draft");
+    await page.keyboard.type("draft"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.locator("#ed-content").focus();
     expect((await activeTab(page))!.dirty, "编辑后应标记 dirty").toBe(true);

@@ -188,23 +188,23 @@ test("启动即有「无标题」文档, 焦点在编辑区", async ({ page }) =
 
 test("缺省非模态: 直接打字, vim 键位当普通字符, Esc 无副作用, 没有模式标签", async ({ page }) => {
   const errors = await boot(page);
-  await page.keyboard.type("dihello");   // d / i / h 在 vim NORMAL 下是命令; 这里必须原样进文档
+  await page.keyboard.type("dihello"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());   // d / i / h 在 vim NORMAL 下是命令; 这里必须原样进文档
   expect(await docText(page)).toBe("dihello");
   expect(await page.locator("#s-pos").textContent()).toBe("Ln 1, Col 8");
   await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle());
-  await page.keyboard.type("jk");        // Esc 后 j/k 也还是字符
+  await page.keyboard.type("jk"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());        // Esc 后 j/k 也还是字符
   expect(await docText(page)).toBe("dihellojk");
   expect(await modeOf(page)).toBe("INSERT");
   expect(await folded(page, "#s-mode"), "模式标签不显示").toBe(true);
   expect(await page.evaluate(() => (window as any).getActiveTab().dirty)).toBe(true);
   // 回车 / 退格 / 方向键 / Home / End 是基本功
   await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle());
-  await page.keyboard.type("two");
+  await page.keyboard.type("two"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await docText(page)).toBe("dihellojk\ntwo");
   await page.keyboard.press("Home"); await page.evaluate(() => (window as any).__editIdle());
-  await page.keyboard.type(">");
+  await page.keyboard.type(">"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("End"); await page.evaluate(() => (window as any).__editIdle());
-  await page.keyboard.type("<");
+  await page.keyboard.type("<"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("ArrowUp"); await page.evaluate(() => (window as any).__editIdle());
   await page.keyboard.press("Backspace"); await page.evaluate(() => (window as any).__editIdle());
   // 第 2 行 ">two<" 光标在第 5 列; 上移到第 1 行同一列 (dihel|lojk), 退格删掉 l
@@ -240,7 +240,7 @@ test("光标: 非模态时是一根会闪的竖线, 跟着打字 / 方向键 / H
   const gutterRight = await page.evaluate(() => document.getElementById("gutter")!.getBoundingClientRect().right);
   expect(c0.left, "光标在行号栏右边, 文本起点").toBeGreaterThanOrEqual(gutterRight);
 
-  await page.keyboard.type("hello");
+  await page.keyboard.type("hello"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   let c = await caret();
   expect(c.expect).not.toBeNull();
   expect(Math.abs(c.left - (c.expect as number))).toBeLessThan(1.5);
@@ -289,7 +289,7 @@ test("页面一拿到焦点就打字: 头几个键不会被当成 vim 命令吞�
   await page.goto("/editor");
   // 不等 bootstrap (它是异步的, 启动那一小段正是以前吞键的窗口): 编辑区一有焦点就打
   await page.waitForFunction(() => document.activeElement && document.activeElement.id === "ed-content");
-  await page.keyboard.type("hello");
+  await page.keyboard.type("hello"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.waitForFunction(() => (window as any).__ideReady && (window as any).__ideReady(), null, { timeout: 8_000 });
   expect(await docText(page)).toBe("hello");
   expect(errors).toEqual([]);
@@ -504,7 +504,7 @@ test("终端类命令 -> 底端抽屉展开 (Ctrl+` / 显示终端 / 输出 / �
 
 test("缩略图命令 -> #minimap 出现, 落盘", async ({ page }) => {
   const errors = await boot(page);
-  await page.keyboard.type("minimap line");
+  await page.keyboard.type("minimap line"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await menuCmd(page, "view", "toggle-minimap");
   expect(await page.locator("#minimap").count()).toBe(1);
   expect(await shown(page, "#minimap")).toBe(true);
@@ -523,7 +523,7 @@ test("标签条: >=2 个文档才出现, 回到 1 个又收起 (Ctrl+N / 新建 
   expect(await page.locator("#tabs .tab").count()).toBe(2);
   expect(await page.evaluate(() => (window as any).getActiveTab().name)).toBe("无标题 2");
   await expectTiled(page, "2 tabs");
-  await page.keyboard.type("second");
+  await page.keyboard.type("second"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await docText(page)).toBe("second");
   await menuCmd(page, "file", "new-file");   // 文件 > 新建 也是直接建, 不问文件名
   expect(await tabCount(page)).toBe(3);
@@ -551,7 +551,7 @@ test("关闭有未保存修改的文档先确认 (Ctrl+W / 标签 ✕ / 关闭�
   let answer = false;
   page.on("dialog", (d) => { asked.push(d.message()); if (answer) d.accept(); else d.dismiss(); });
   // 唯一的无标题文档: 打了字再 Ctrl+W
-  await page.keyboard.type("keep me");
+  await page.keyboard.type("keep me"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Control+F4"); await page.evaluate(() => (window as any).__editIdle());
   expect(asked, "弹了一次确认, 提到文档名").toHaveLength(1);
   expect(asked[0]).toContain("无标题");
@@ -565,7 +565,7 @@ test("关闭有未保存修改的文档先确认 (Ctrl+W / 标签 ✕ / 关闭�
   await page.keyboard.press("Control+F4"); await page.evaluate(() => (window as any).__editIdle());
   expect(asked).toHaveLength(2);
   // 两个标签: 点脏标签的 ✕ 同样先问
-  await page.keyboard.type("dirty one");
+  await page.keyboard.type("dirty one"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Control+n"); await page.evaluate(() => (window as any).__editIdle());
   expect(await shown(page, "#tabs")).toBe(true);
   answer = false;
@@ -591,7 +591,7 @@ test("关闭有未保存修改的文档先确认 (Ctrl+W / 标签 ✕ / 关闭�
 test("脏标记: 标签条隐藏时, 状态栏文件名前有 ● , 窗口标题也带 ●", async ({ page }) => {
   const errors = await boot(page);
   expect(await page.locator("#s-file").getAttribute("data-dirty")).toBe("off");
-  await page.keyboard.type("x");
+  await page.keyboard.type("x"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await page.locator("#s-file").getAttribute("data-dirty")).toBe("on");
   expect(await page.title()).toBe("● 无标题 - IDE1.0");
   expect(await page.locator("#s-file").textContent(), "文件名文本本身不变").toBe("无标题");
@@ -607,7 +607,7 @@ test("无标题文档 Ctrl+S: 惰性取工作目录 -> 只问一次文件名 -> 
   let pickFolder = 0;
   page.on("dialog", (d) => { prompts++; d.accept(name); });
   page.on("request", (r) => { if (r.url().endsWith("/api/pick_folder")) pickFolder++; });
-  await page.keyboard.type("fn main() {}");
+  await page.keyboard.type("fn main() {}"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle());
   await page.waitForFunction(() => !(window as any).getActiveTab().untitled, null, { timeout: 8_000 });
   const root = await serverRoot(request);
@@ -629,7 +629,7 @@ test("无标题文档 Ctrl+S: 惰性取工作目录 -> 只问一次文件名 -> 
     expect(await page.title()).toBe(`${name} - IDE1.0`);
     expect(await tabCount(page)).toBe(1);
     // 再按 Ctrl+S 是普通保存: 不再弹框 (光标还在行尾, 新字符接在后面)
-    await page.keyboard.type("//");
+    await page.keyboard.type("//"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     expect(await page.evaluate(() => (window as any).getActiveTab().dirty)).toBe(true);
     await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle());
     await page.waitForFunction(() => !(window as any).getActiveTab().dirty, null, { timeout: 5_000 });
@@ -645,7 +645,7 @@ test("Save-As 取消: 标签仍是无标题, 没写任何文件; 另存为命令
   const errors = await boot(page);
   let prompts = 0;
   page.on("dialog", (d) => { prompts++; d.dismiss(); });
-  await page.keyboard.type("keep me");
+  await page.keyboard.type("keep me"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle());
   await page.waitForTimeout(300);
   expect(prompts).toBe(1);
@@ -662,7 +662,7 @@ test("Save-As 沙箱不变: ../ 越界被拒绝, 弹「另存失败」, 文件�
   const errors = await boot(page);
   const name = `uat-escape-${Date.now()}.txt`;
   page.on("dialog", (d) => d.accept(`../${name}`));
-  await page.keyboard.type("nope");
+  await page.keyboard.type("nope"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle());
   await page.waitForFunction(() => /另存失败/.test(document.getElementById("modal")?.textContent || ""), null, { timeout: 8_000 });
   const root = await serverRoot(request);
@@ -695,7 +695,7 @@ test("Ctrl+Shift+S = 另存为 (有名文档也问新文件名), Ctrl+Alt+Shift+
   const answers: string[] = [names[0]];
   const asked: string[] = [];
   page.on("dialog", (d) => { asked.push(d.message()); const n = answers.shift(); if (n) d.accept(n); else d.dismiss(); });
-  await page.keyboard.type("one");
+  await page.keyboard.type("one"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Control+s"); await page.evaluate(() => (window as any).__editIdle());
   await page.waitForFunction(() => !(window as any).getActiveTab().untitled, null, { timeout: 8_000 });
   const root = await serverRoot(request);
@@ -704,7 +704,7 @@ test("Ctrl+Shift+S = 另存为 (有名文档也问新文件名), Ctrl+Alt+Shift+
     // 有名文档上的 Ctrl+Shift+S: 走另存为 (以前和 Ctrl+S 一样原地保存, 不问), 标签改绑到新文件
     asked.length = 0;
     answers.push(names[1]);
-    await page.keyboard.type("+two");
+    await page.keyboard.type("+two"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.press("Control+Shift+s"); await page.evaluate(() => (window as any).__editIdle());
     await page.waitForFunction((n) => (window as any).getActiveTab().name === n, names[1], { timeout: 8_000 });
     expect(asked, "Ctrl+Shift+S 同时被编辑区和 document 监听, 只能弹一次").toHaveLength(1);
@@ -712,9 +712,9 @@ test("Ctrl+Shift+S = 另存为 (有名文档也问新文件名), Ctrl+Alt+Shift+
     expect(await page.evaluate(() => (window as any).getActiveTab().dirty)).toBe(false);
     // Ctrl+Alt+S: 两个脏的无标题文档 -> 各问一次, 都写盘
     await page.keyboard.press("Control+n"); await page.evaluate(() => (window as any).__editIdle());
-    await page.keyboard.type("u1");
+    await page.keyboard.type("u1"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.press("Control+n"); await page.evaluate(() => (window as any).__editIdle());
-    await page.keyboard.type("u2");
+    await page.keyboard.type("u2"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     asked.length = 0;
     answers.push(names[2], names[3]);
     await page.keyboard.press("Control+Alt+Shift+s"); await page.evaluate(() => (window as any).__editIdle());   // Sakura 的 Ctrl+Alt+S 是「指定桁で折り返す」, 全部保存改用 Ctrl+Alt+Shift+S
@@ -760,8 +760,8 @@ test("左抽屉没有项目时给一个真按钮「打开文件夹」(极简布�
 
 test("分屏: 视图紧贴编辑区顶 (标签条 / 面包屑隐藏后没有 2px 空隙), 第二排视图用上边线分隔, 列间距不变", async ({ page }) => {
   const errors = await boot(page);
-  await page.keyboard.type("a");
-  for (let i = 0; i < 5; i++) { await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle()); await page.keyboard.type(String.fromCharCode(98 + i)); }
+  await page.keyboard.type("a"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+  for (let i = 0; i < 5; i++) { await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle()); await page.keyboard.type(String.fromCharCode(98 + i)); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle()); }
   for (const mode of ["split-h", "split-v", "split-quad"]) {
     await page.evaluate((m) => (window as any).dispatchCommand(m), mode);
     const r = await page.evaluate(() => {
@@ -796,7 +796,7 @@ test("分屏: 视图紧贴编辑区顶 (标签条 / 面包屑隐藏后没有 2px
 test("设置 > Vim 模式: 开 -> 模式标签 + NORMAL/INSERT/VISUAL; 关 -> 回到直接输入; 落盘", async ({ page }) => {
   const errors = await boot(page);
   expect(await checkOf(page, "setting", "toggle-vim")).toBe("off");
-  await page.keyboard.type("abc");
+  await page.keyboard.type("abc"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
 
   await menuCmd(page, "setting", "toggle-vim");
   expect(await page.evaluate(() => document.documentElement.dataset.vim)).toBe("on");
@@ -807,15 +807,15 @@ test("设置 > Vim 模式: 开 -> 模式标签 + NORMAL/INSERT/VISUAL; 关 -> �
   await expectTiled(page, "vim on");
 
   await page.locator("#ed-content").focus();
-  await page.keyboard.type("i");           // NORMAL: i -> INSERT
+  await page.keyboard.type("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());           // NORMAL: i -> INSERT
   expect(await modeOf(page)).toBe("INSERT");
-  await page.keyboard.type("X");
+  await page.keyboard.type("X"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle());
   expect(await modeOf(page)).toBe("NORMAL");
   expect(await docText(page)).toBe("abcX");
-  await page.keyboard.type("jj");          // NORMAL: 命令, 不进文档
+  await page.keyboard.type("jj"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());          // NORMAL: 命令, 不进文档
   expect(await docText(page)).toBe("abcX");
-  await page.keyboard.type("v");
+  await page.keyboard.type("v"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await modeOf(page)).toBe("VISUAL");
 
   // 在 VISUAL 里直接关掉 vim: 干净地回到直接输入, 选区被清掉
@@ -825,7 +825,7 @@ test("设置 > Vim 模式: 开 -> 模式标签 + NORMAL/INSERT/VISUAL; 关 -> �
   expect(await folded(page, "#s-mode")).toBe(true);
   expect(await page.evaluate(() => (window as any).getActiveTab().sel ?? null)).toBeNull();
   await page.locator("#ed-content").focus();
-  await page.keyboard.type("dd");
+  await page.keyboard.type("dd"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await docText(page)).toBe("abcXdd");
   expect(errors).toEqual([]);
 });
@@ -838,8 +838,8 @@ test("Vim 模式选择落盘, 重载后仍在; 与布局预设互不影响", asy
   expect(await page.evaluate(() => document.documentElement.dataset.vim)).toBe("on");
   expect(await modeOf(page)).toBe("NORMAL");
   await page.locator("#ed-content").focus();
-  await page.keyboard.type("i");
-  await page.keyboard.type("q");
+  await page.keyboard.type("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
+  await page.keyboard.type("q"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await docText(page)).toBe("q");
 
   // 显式选择胜过预设缺省: 来回切布局, vim 选择不变
@@ -930,7 +930,7 @@ test("localStorage 不可用 (隐私模式): 照常启动, 能打字, 开关在�
   });
   const errors = await boot(page);
   expect((await layoutOf(page)).preset).toBe("min");
-  await page.keyboard.type("private");
+  await page.keyboard.type("private"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await docText(page)).toBe("private");
   await menuCmd(page, "view", "toggle-side-bar");
   expect(await shown(page, "#side-bar")).toBe(true);
@@ -967,7 +967,7 @@ test.describe("完整布局, 不带 vim 键", () => {
     await page.waitForFunction(() => (window as any).getActiveTab && (window as any).getActiveTab(), null, { timeout: 8_000 });
     await page.locator("#ed-content").focus();
     const before: string = await docText(page);
-    await page.keyboard.type("i");
+    await page.keyboard.type("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     if (vimDefault) {
       expect(await docText(page), "vim 开: i 是命令, 不进文档").toBe(before);
       expect(await modeOf(page)).toBe("INSERT");
@@ -1197,7 +1197,7 @@ test("Esc: 抽屉里按 Esc 折叠它并把焦点还给编辑区; 编辑区里�
   await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle());
   expect(await shown(page, "#side-bar")).toBe(false);
   expect(await focusId()).toBe("ed-content");
-  await page.keyboard.type("ok");                                         // 焦点回到编辑区: 能直接打字
+  await page.keyboard.type("ok"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());                                         // 焦点回到编辑区: 能直接打字
   expect(await docText(page)).toBe("ok");
 
   await page.locator('#bottom-head .bottom-tab[data-pane="terminal-pane"]').click();
@@ -1246,10 +1246,10 @@ test("折叠后键盘焦点回到编辑区: 点细条 / 面板头按钮收起后
   const errors = await boot(page);
   await page.locator("#left-strip-btn").click();
   await page.locator("#left-strip-btn").click();
-  await page.keyboard.type("a");
+  await page.keyboard.type("a"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.locator('#bottom-head [data-cmd="bottom-toggle"]').click();
   await page.locator('#bottom-head [data-cmd="bottom-toggle"]').click();
-  await page.keyboard.type("b");
+  await page.keyboard.type("b"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   expect(await docText(page)).toBe("ab");
   expect(errors).toEqual([]);
 });

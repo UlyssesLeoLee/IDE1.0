@@ -184,7 +184,7 @@ test("vim Insert mode: type 'abc' in editor", async ({ page }) => {
   // 状态栏 mode 应变 INSERT
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT", { timeout: 2_000 });
   // 打字
-  await page.keyboard.type("abc");
+  await page.keyboard.type("abc"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#ed-content")).toContainText("abc");
   // Esc → NORMAL, 标签变脏 (tab-dirty class)
   await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
@@ -202,7 +202,7 @@ test("save (Ctrl+S) writes to server and clears dirty flag", async ({ page }) =>
   await page.locator("#ed-content").focus();
   await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator("#s-mode")).toHaveAttribute("data-mode", "INSERT");
-  await page.keyboard.type("XYZ");
+  await page.keyboard.type("XYZ"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await expect(page.locator(".tab").first()).toHaveClass(/tab-dirty/);
   // Ctrl+S 保存
@@ -264,7 +264,7 @@ test("terminal panel starts a real PowerShell session and echoes output", async 
   await page.locator('.bottom-toggle[data-cmd="terminal-new"]').click();
   await expect(page.locator("#terminal-empty")).toBeHidden({ timeout: 30_000 });
   await page.locator("#terminal-body").focus();
-  await page.keyboard.type("Write-Host IDE1.0-UAT-OK");
+  await page.keyboard.type("Write-Host IDE1.0-UAT-OK"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
   // PowerShell 真回显
   await expect(page.locator("#terminal-body")).toContainText("IDE1.0-UAT-OK", { timeout: 30_000 });
@@ -665,7 +665,7 @@ test.describe("命令审计 (功能覆盖)", () => {
     await page.evaluate(() => { (window as any).dispatchCommand("macro-start"); });
     await page.locator("#ed-content").focus();
     await page.keyboard.press("i"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
-    await page.keyboard.type("Q");
+    await page.keyboard.type("Q"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const recorded = await page.evaluate(() => {
       (window as any).dispatchCommand("macro-stop");
