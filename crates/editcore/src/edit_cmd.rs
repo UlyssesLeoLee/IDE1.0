@@ -3,7 +3,7 @@
 //! 无状态: 前端交上光标周围需要的几行 (`rows`) 和选区, 这里算出"把第 `start` 行起的 `remove` 行换成 `insert`"
 //! 以及新的光标 / 要写进剪贴板的文字。语义按真实 Sakura Editor 的键盘宏逐条比对 (tests/sakura-diff)。
 
-use crate::nav::{first_word_col, is_word_char, word_left, word_right};
+use crate::nav::{first_word_col, word_left, word_right, word_run};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -198,15 +198,8 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 });
             }
             // 光标所在字符类 (单词 / 空白 / 其它) 的连续段
-            let cls = |c: char| if is_word_char(c) { 1 } else if c.is_whitespace() { 2 } else { 3 };
-            let k = cls(line[col]);
-            let (mut i, mut j) = (col, col);
-            while i > 0 && cls(line[i - 1]) == k {
-                i -= 1;
-            }
-            while j < line.len() && cls(line[j]) == k {
-                j += 1;
-            }
+            // 光标所在字符种类的连续段 (漢字 / かな / 英数 / 記号 / 空白 各成一段)
+            let (i, j) = word_run(&line, col);
             let removed = slice(&line, i, j);
             let mut r = cx.replace_line(row, format!("{}{}", slice(&line, 0, i), slice(&line, j, usize::MAX)), [row, i], if cut { Some(removed) } else { None });
             r.undo_cursor = Some([row, j]);
@@ -258,7 +251,9 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 r
             } else {
                 let (insert, new_row) = if req.total_rows <= 1 { (vec![String::new()], 0) } else { (vec![], if row == last_row { row - 1 } else { row }) };
-                EditRes { changed: true, start: row, remove: 1, insert, cursor: [new_row, 0], clip: Some(format!("{}\n", line.iter().collect::<String>())), clip_line: true, tip: Some("已剪切行".into()), ..Default::default() }
+                // Sakura: 光标列保留, 落到接上来的那一行 (原来的下一行; 剪的是末行时为上一行) 的同一列
+                let below = if req.total_rows <= 1 { 0 } else if row == last_row { cx.line(row - 1).len() } else { cx.line(row + 1).len() };
+                EditRes { changed: true, start: row, remove: 1, insert, cursor: [new_row, col.min(below)], clip: Some(format!("{}\n", line.iter().collect::<String>())), clip_line: true, tip: Some("已剪切行".into()), ..Default::default() }
             }
         }
         "paste" => {
@@ -266,11 +261,18 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             if text.is_empty() {
                 return Some(cx.nothing("剪贴板为空"));
             }
-            if req.line_mode && sel.is_none() && text.ends_with('\n') {
-                // 整行模式的剪贴板: 插在当前行之前
-                let rows: Vec<String> = text[..text.len() - 1].split('\n').map(String::from).collect();
+            if req.line_mode && text.ends_with('\n') {
+                // 整行模式的剪贴板: 插在当前行之前 (有选区时先删掉选区, 插在选区起点那一行之前; Sakura 实测)
+                let mut rows: Vec<String> = text[..text.len() - 1].split('\n').map(String::from).collect();
                 let n = rows.len();
-                return Some(EditRes { changed: true, start: row, remove: 0, insert: rows, cursor: [row + n, col], tip: Some("已粘贴行".into()), ..Default::default() });
+                return Some(match sel {
+                    None => EditRes { changed: true, start: row, remove: 0, insert: rows, cursor: [row + n, col], tip: Some("已粘贴行".into()), ..Default::default() },
+                    Some(s) => {
+                        let joined = format!("{}{}", slice(&cx.line(s[0]), 0, s[1]), slice(&cx.line(s[2]), s[3], usize::MAX));
+                        rows.push(joined);
+                        EditRes { changed: true, start: s[0], remove: s[2] - s[0] + 1, insert: rows, cursor: [s[0] + n, s[1]], tip: Some("已粘贴行".into()), ..Default::default() }
+                    }
+                });
             }
             let (r0, r1, head, tail) = match sel {
                 Some(s) => (s[0], s[2], slice(&cx.line(s[0]), 0, s[1]), slice(&cx.line(s[2]), s[3], usize::MAX)),
@@ -344,15 +346,8 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 let (sel, cursor) = if row < last_row { ([row, 0, row + 1, 0], [row + 1, 0]) } else { ([row, 0, row, line.len()], [row, line.len()]) };
                 return Some(EditRes { sel: Some(sel), anchor: Some([row, 0]), cursor, ..Default::default() });
             }
-            let cls = |c: char| if is_word_char(c) { 1 } else if c.is_whitespace() { 2 } else { 3 };
-            let k = cls(line[col]);
-            let (mut i, mut j) = (col, col);
-            while i > 0 && cls(line[i - 1]) == k {
-                i -= 1;
-            }
-            while j < line.len() && cls(line[j]) == k {
-                j += 1;
-            }
+            // 光标所在字符种类的连续段 (漢字 / かな / 英数 / 記号 / 空白 各成一段)
+            let (i, j) = word_run(&line, col);
             EditRes { sel: Some([row, i, row, j]), anchor: Some([row, i]), cursor: [row, j], ..Default::default() }
         }
         // ---- 整行 ----
@@ -575,7 +570,7 @@ mod tests {
         let r = run_on("cut", 0, 0, Some([0, 2, 1, 3]), DOC);
         assert_eq!((apply(DOC, &r)[0].as_str(), r.clip.as_deref()), ("hendented line", Some("llo world foo\n  i")));
         let r = run_on("cut", 4, 2, None, DOC);
-        assert_eq!((apply(DOC, &r).len(), r.cursor, r.clip_line), (4, [3, 0], true));
+        assert_eq!((apply(DOC, &r).len(), r.cursor, r.clip_line), (4, [3, 2], true)); // 列保留
     }
     #[test]
     fn clipboard_paste() {
@@ -623,6 +618,16 @@ mod tests {
         assert_eq!(apply(DOC, &r)[0], "hendented line"); // 与正向选区 [0,2]-[1,3] 结果相同
         let r = run_text("paste-box", 9, 0, None, "x", false, DOC); // 光标行超出文档
         assert_eq!(r.remove, 0);
+    }
+    #[test]
+    fn line_mode_paste_and_cut_keep_column() {
+        // 期望值来自真实 Sakura (tests/sakura-diff/cases10.mjs)
+        let d = &["hello world foo", "  indented line", "third"];
+        let r = run_text("paste", 1, 3, Some([1, 3, 1, 15]), "hello world foo\n", true, d);
+        let v = apply(d, &r);
+        assert_eq!((v[1].as_str(), v[2].as_str(), r.cursor), ("hello world foo", "  i", [2, 3]));
+        let r = run_on("cut", 0, 3, None, d);
+        assert_eq!((r.cursor, r.clip_line), ([0, 3], true));
     }
     #[test]
     fn unknown() {

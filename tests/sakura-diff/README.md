@@ -23,11 +23,9 @@ QA_BIN=E:/IDE1.0-wt/fix-target/debug/ide-shell-web.exe node run.mjs --md report.
 
 需要本机装有 Sakura Editor (`SAKURA_EXE`, 缺省找常见安装路径); 找不到时整组跳过。
 
-## 已知差异 (保留在用例里)
+## 已知差异
 
-| 用例 | 现象 |
-|---|---|
-| `UNDO indent` | 缩进后撤销, 光标落点不同: Sakura 回到选区起点那一行, 我们回到选区终点那一行 (文本一致) |
+目前没有 (全部用例与 Sakura 一致)。
 
 ## 没有作为比对依据的情形 (用例已删除, 行为未经 Sakura 验证)
 

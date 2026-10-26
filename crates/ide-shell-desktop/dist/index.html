@@ -9400,6 +9400,7 @@ async function selLinesOpRun(op, opts) {
   catch (e) { setTip("行操作失败: " + e.message); return; }
   if (getActiveTab() !== t || t.lines.length < r1 + 1 || seg.some((l, i) => t.lines[r0 + i] !== l)) return;   // 等待期间文档变了: 放弃
   snapshot(t);
+  if (/indent/.test(op)) t.hcur = { row: r0, col: t.sel.c0 };   // Sakura: 缩进类命令撤销后光标回到选区起点那一行 (排序等回到终点, 与快照时一致)
   t.lines.splice(r0, seg.length, ...out);
   const last = r0 + out.length - 1;
   if ((!opts || opts.eol !== false) && last + 1 < t.lines.length) setSelRange(t, { row: r0, col: 0 }, last + 1, 0);

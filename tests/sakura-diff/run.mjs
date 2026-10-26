@@ -11,7 +11,9 @@ import CASES5 from './cases5.mjs';
 import CASES6 from './cases6.mjs';
 import CASES7 from './cases7.mjs';
 import CASES8 from './cases8.mjs';
-const CASES = [...CASES1, ...CASES2, ...CASES3, ...CASES4, ...CASES5, ...CASES6, ...CASES7, ...CASES8];
+import CASES9 from './cases9.mjs';
+import CASES10 from './cases10.mjs';
+const CASES = [...CASES1, ...CASES2, ...CASES3, ...CASES4, ...CASES5, ...CASES6, ...CASES7, ...CASES8, ...CASES9, ...CASES10];
 import { runSakura, hasSakura } from './sakura.mjs';
 import { withMocks } from '../mock/lib/with-mocks.mjs';
 
