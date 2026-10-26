@@ -7114,57 +7114,19 @@ function colSelRect(t) {
   return { r0, r1, c0, c1 };
 }
 
-/* 列块输入: 把 text 里的每一行分别插入到对应行的列块起点.
-   - text 含 \n = 多行内容按行分配 (Sakura 的「一次性给多行添加不同内容」)
-   - text 不含 \n = 同一份内容插入到每一行 (最常见的批量加前缀 / 加引号场景)
-   - 短行会自动补空格再插入, 保证列对齐 (C-06); 不会截断已有内容. */
+/* 列块输入 / 退格 / 删除 / 替换 / 复制 / 剪切: 语义在 Rust (editcore::edit_cmd 的 box-*), 前端只交上列块与参与的行.
+   - 输入的 text 含 \n = 多行内容按行分配 (Sakura 的「一次性给多行添加不同内容」), 不含 = 同一份内容插入到每一行; 短行补空格对齐 */
 function columnInsert(text) {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
-  const { r0, r1, c0, c1 } = colSelRect(t);
-  const parts = String(text).split("\n");
-  snapshot(t);
-  // 选区里已有的内容要被覆盖掉 (Sakura: 在矩形选区里输入 = 先删掉选中的矩形内容, 再每行插入), 不是插在它前面
-  if (c1 > c0) {
-    for (let r = r0; r <= r1; r++) {
-      const l = t.lines[r] || "";
-      t.lines[r] = charSlice(l, 0, c0) + charSlice(l, c1, charLen(l));
-    }
-  }
-  for (let r = r0; r <= r1; r++) {
-    const add = parts[r - r0] !== undefined ? parts[r - r0] : parts[parts.length - 1];
-    if (!add) continue;
-    const line = t.lines[r] || "";
-    // 短行补空格: 不然插入点会随行长漂移, 列块就对不齐了.
-    const padded = charLen(line) < c0 ? line + " ".repeat(c0 - charLen(line)) : line;
-    t.lines[r] = charSlice(padded, 0, c0) + add + charSlice(padded, c0, charLen(padded));
-  }
-  const adv = Math.max(1, charLen(parts[0] || ""));   // 插入点右移「刚插入的字符数」列 (IME 一次上屏多个字时也对), 可以接着连续输入
-  t.colSel = { r0, c0: c0 + adv, r1, c1: c0 + adv };
-  t.dirty = true;
-  renderVim(t);
-  updateCaret(false);
-  syncColumnSelectUI(t);
-  setTip("列块插入 " + (r1 - r0 + 1) + " 行");
+  return runEdit("box-insert", { text: String(text) });
 }
 
-/* 列块退格: 每一行在列块起点前删掉一个字符. */
+/* 列块退格: 每一行在列块起点前删掉一个字符 (有选中的矩形内容则删掉它, 保留插入点). */
 function columnBackspace() {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
-  const { r0, r1, c0, c1 } = colSelRect(t);
-  if (c1 > c0) { columnDelete(); t.colSel = { r0, c0, r1, c1: c0 }; syncColumnSelectUI(t); renderVim(t); return; }   // 有选中的矩形内容: 退格 = 删掉它 (保留插入点)
-  snapshot(t);
-  for (let r = r0; r <= r1; r++) {
-    const line = t.lines[r] || "";
-    if (charLen(line) <= c0) continue;
-    t.lines[r] = charSlice(line, 0, c0 - 1) + charSlice(line, c0, charLen(line));
-  }
-  t.colSel = { r0, c0: Math.max(0, c0 - 1), r1, c1: Math.max(0, c0 - 1) };
-  t.dirty = true;
-  renderVim(t);
-  updateCaret(false);
-  syncColumnSelectUI(t);
+  return runEdit("box-backspace");
 }
 
 function clearColumnSelect(t) {
@@ -7185,47 +7147,20 @@ function columnSelectedText(t) {
   }
   return out.join("\n");
 }
-// Sakura: 矩形复制到剪贴板时每一行都以换行结尾 (含最后一行)
-const columnClipText = (t) => columnSelectedText(t) + "\n";
-
-// 列块删除 (整块挖空)
+// 列块删除 (整块挖空): 光标回矩形左上角
 function columnDelete() {
   const t = getActiveTab();
   if (!t || !t.colSel) return;
-  const { r0, r1, c0, c1 } = colSelRect(t);
-  snapshot(t);
-  for (let r = r0; r <= r1; r++) {
-    const line = t.lines[r] || "";
-    t.lines[r] = charSlice(line, 0, c0) + charSlice(line, c1, charLen(line));
-  }
-  t.colSel = null; t.cursor = { row: r0, col: Math.min(c0, charLen(t.lines[r0] || "")) };   // Sakura: 删除后光标在矩形左上角
-  t.dirty = true;
-  renderVim(t);
-  setTip("列块已删除 (" + (r1 - r0 + 1) + "行 ×" + (c1 - c0) + "列)");
+  return runEdit("box-delete");
 }
 
 // 列块替换 (每行不同内容用 \n 分隔)
 function columnPrompt() {
   const t = getActiveTab();
   if (!t || !t.colSel) { setTip("先用 Alt+拖选 建立列块选区"); return; }
-  const cur = columnSelectedText(t);
-  const text = prompt("列块替换为 (多行用换行分隔):", cur);
+  const text = prompt("列块替换为 (多行用换行分隔):", columnSelectedText(t));
   if (text === null) return;
-  const parts = text.split("\n");
-  snapshot(t);
-  const { r0, r1, c0, c1 } = colSelRect(t);
-  const width = c1 - c0;
-  for (let r = r0; r <= r1; r++) {
-    const line = t.lines[r] || "";
-    // 替换文本不足宽度时补空格, 保持列对齐; 超宽则截断 (与 Sakura 的等宽替换一致).
-    const repl = (parts[r - r0] !== undefined ? parts[r - r0] : "").padEnd(width).slice(0, width);
-    t.lines[r] = charSlice(line, 0, c0) + repl + charSlice(line, c1, charLen(line));
-  }
-  t.colSel = null;
-  t.dirty = true;
-  renderVim(t);
-  syncColumnSelectUI(t);
-  setTip("列块已替换");
+  return runEdit("box-replace", { text });
 }
 
 /* ---------- C3. 自动补全 (Ctrl+Space / Tab 触发) ---------- */
@@ -9612,8 +9547,14 @@ function editRequest(t, cmd, extra) {
     sel = [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1];
     for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
   }
+  let box_sel = null;
+  if (cmd.startsWith("box-") && t.colSel) {   // 列块: 未归一化的原样交上, 归一化 (夹行号 / 夹到最长行) 在 Rust
+    const cs = t.colSel, cap = (v) => Math.min(Number.isFinite(v) ? v : 1e9, 1e9);
+    box_sel = [cs.r0, cs.c0, cs.r1, cs.c1].map(cap);
+    for (let r = Math.max(0, Math.min(cs.r0, cs.r1)); r <= Math.min(last, Math.max(cs.r0, cs.r1)); r++) need.add(r);
+  }
   const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
-  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
+  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, box_sel, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
 }
 function runEdit(cmd, extra) {
   return enqueueInput(async () => {
@@ -9636,24 +9577,24 @@ function runEdit(cmd, extra) {
     t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
     t.sel = null; t.selAnchor = null; delete t.goalCol; t.dirty = true;
     if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
-    if (t.sel) renderVim(t); else paintActive();   // 与原来的输入 / 删除函数一致: 回到单文本节点形态, 同时刷新标签条的脏标记 (●) 与光标
+    if (cmd.startsWith("box-")) { const b = res.box_sel; t.colSel = b ? { r0: b[0], c0: b[1], r1: b[2], c1: b[3] } : null; }
+    if (t.sel || t.colSel) renderVim(t); else paintActive();   // 与原来的输入 / 删除函数一致: 回到单文本节点形态, 同时刷新标签条的脏标记 (●) 与光标
+    if (cmd.startsWith("box-")) { syncColumnSelectUI(t); updateCaret(false); }
   });
 }
 function copySelection() {
   const t = getActiveTab(); if (!t) return;
-  if (t.colSel) { const text = columnClipText(t); pushClip(text); setTip("已复制列块 " + text.split("\n").length + " 行"); return; }
-  return runEdit("copy");
+  return runEdit(t.colSel ? "box-copy" : "copy");
 }
 function cutSelection() {
   const t = getActiveTab(); if (!t) return;
-  if (t.colSel) { pushClip(columnClipText(t)); const { r0, c0 } = colSelRect(t); columnDelete(); t.cursor = { row: r0, col: c0 }; setTip("已剪切列块"); return; }
-  return runEdit("cut");
+  return runEdit(t.colSel ? "box-cut" : "cut");
 }
 function pasteText(raw) {
   const t = getActiveTab();
   const text = String(raw || "").replace(/\r\n?/g, "\n");
   if (!t || !text) { setTip("剪贴板为空"); return; }
-  if (t.colSel) { columnInsert(text); setTip("已粘贴到列块"); return; }
+  if (t.colSel) return runEdit("box-insert", { text }).then(() => setTip("已粘贴到列块"));
   return runEdit("paste", { text, line_mode: CLIP_LINEMODE && text === CLIPBOARD && text.endsWith("\n") });
 }
 function pasteBox(t, text) { return runEdit("paste-box", { text: String(text || "") }); }
