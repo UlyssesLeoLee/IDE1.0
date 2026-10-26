@@ -767,10 +767,11 @@ test("分屏: 视图紧贴编辑区顶 (标签条 / 面包屑隐藏后没有 2px
     const r = await page.evaluate(() => {
       const area = document.getElementById("editor-area")!;
       const a = area.getBoundingClientRect();
-      const views = Array.from(area.querySelectorAll<HTMLElement>(".split-view")).map((v) => {
+      // 视图 = 真正的编辑器 (#editor, 占当前视图的格子) + 其余格子里的镜像 (.split-view); 按位置 (行, 列) 排好
+      const views = [document.getElementById("editor")!, ...Array.from(area.querySelectorAll<HTMLElement>(".split-view"))].map((v) => {
         const b = v.getBoundingClientRect();
-        return { l: b.left, t: b.top, r: b.right, b: b.bottom, row2: v.hasAttribute("data-row2"), bt: parseFloat(getComputedStyle(v).borderTopWidth) };
-      });
+        return { l: b.left, t: b.top, r: b.right, b: b.bottom, row2: v.hasAttribute("data-row2"), bt: v.classList.contains("split-view") ? parseFloat(getComputedStyle(v).borderTopWidth) : (v.hasAttribute("data-row2") ? 1 : 0) };
+      }).sort((x, y) => x.t - y.t || x.l - y.l);
       const cs = getComputedStyle(area);
       return { a: { l: a.left, t: a.top, r: a.right, b: a.bottom }, views, rowGap: cs.rowGap, colGap: cs.columnGap };
     });

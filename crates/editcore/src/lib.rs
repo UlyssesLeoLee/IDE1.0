@@ -69,6 +69,7 @@ pub mod search_highlight;
 pub mod split_quad;
 pub mod syntax_styling;
 pub mod tag_jump;
+pub mod text_stream;
 pub mod theme_luminance;
 pub mod type_config;
 pub mod types;

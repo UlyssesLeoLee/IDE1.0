@@ -535,30 +535,23 @@ test.describe("desktop dist UI (ULYS-251)", () => {
       (window as any).__calls.filter((c: any) => c.cmd === "terminal_create"),
     );
     expect(created.length, "应调用过 terminal_create").toBeGreaterThanOrEqual(1);
-    // 聚焦终端后逐字输入, 每键应作为 terminal_input 转发.
-    // 用 focus() 而非 click() —— 空状态提示 #terminal-empty 会盖住
-    // #terminal-body, click 会因被遮挡而超时.
+    // 终端是管道式 shell (没有 PTY): 输入在前端本地回显 + 行编辑, 回车时整行 (以 \r 结尾) 作为一次 terminal_input 发给后端.
+    // 键盘焦点在隐藏的 #term-input (输入法 / 粘贴 / 可见字符都从它来); 用 focus() 而非 click():
+    // 空状态提示 #terminal-empty 会盖住 #terminal-body, click 会因被遮挡而超时.
     await page.locator("#terminal-body").focus();
     await page.keyboard.type("dir");
+    // 回车之前什么都没发, 但敲的字已经在屏幕上了 (本地回显)
+    expect(await page.evaluate(() => (window as any).__calls.filter((c: any) => c.cmd === "terminal_input").length)).toBe(0);
+    await expect(page.locator("#terminal-body .tl-in").last()).toContainText("dir");
     await page.keyboard.press("Enter"); await page.evaluate(() => (window as any).__editIdle && (window as any).__editIdle());
     const inputs = await page.evaluate(() =>
       (window as any).__calls.filter((c: any) => c.cmd === "terminal_input"),
     );
-    expect(inputs.length).toBeGreaterThanOrEqual(3);   // d,i,r + 
+    expect(inputs.length, "回车时发出一次").toBe(1);
+    expect(inputs[0].args.data, "整行以 \\r 结尾").toBe("dir\r");
 
-    // mock 通过 terminal://output 事件回显, 应出现在终端区
-    // mock 对**每次** terminal_input 都回显 "echo: " + data, 所以 4 次
-    // 输入产生 4 段回显 (逐字符): echo: d / echo: i / echo: r / echo: \r\n.
-    // 这里只断言"回显机制生效", 不绑死具体字符串拼接形式.
-    // mock 对**每次** terminal_input 都回显一行 "echo: " + data, 所以
-    // 逐字符输入 dir + Enter = 5 行回显. 用 .term-line 计数而不是
-    // textContent —— 多个 div 的 textContent 拼接后没有分隔符, 数不清.
-    const lines = page.locator("#terminal-body .term-line");
-    await expect(lines.first()).toBeVisible({ timeout: 5000 });
-    // 回显可能被合并进同一个 .term-line (按批次追加), 所以数 "echo:" 出现次数而不是行数
-    await expect.poll(async () => ((await page.locator("#terminal-body").textContent()) || "").split("echo:").length - 1, { timeout: 5000 }).toBeGreaterThanOrEqual(3);
-    const firstLine = (await lines.first().textContent()) || "";
-    expect(firstLine, "回显内容应来自 mock 的 echo").toContain("echo:");
+    // mock 通过 terminal://output 事件回显 "echo: " + data, 应出现在终端区
+    await expect.poll(async () => ((await page.locator("#terminal-body").textContent()) || ""), { timeout: 5000 }).toContain("echo:");
     // 关闭会话: 共享前端**没有** kill-terminal / terminal-close 命令 ——
     // "会话已结束" 是后端 terminal://closed 事件推过来的.
     // 这里验可观测的状态变化 (会话已结束提示出现), 事件由 mock 发出;

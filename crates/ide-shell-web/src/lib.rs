@@ -910,8 +910,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 .split("&")
                 .next()
                 .unwrap_or("");
+            // 先取 alive 再取输出: 读线程是「先推完所有数据, 再把 alive 置 false」, 所以看到 false 时这次 drain 一定拿全了
+            let alive = terminal::is_alive(id);
             let buf = terminal::drain_output(id);
-            let resp = serde_json::json!({ "id": id, "chunks": buf });
+            let resp = serde_json::json!({ "id": id, "chunks": buf, "alive": alive });
             send_response(
                 stream,
                 "200 OK",

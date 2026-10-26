@@ -82,7 +82,31 @@ fn build(req: &SearchReq) -> Result<Regex, String> {
         return Err("empty".into());
     }
     let src = if req.use_regex { req.needle.clone() } else { regex::escape(&req.needle) };
-    RegexBuilder::new(&src).case_insensitive(!req.match_case).build().map_err(|e| e.to_string())
+    RegexBuilder::new(&src).case_insensitive(!req.match_case).build().map_err(|e| friendly_error(&e.to_string()))
+}
+
+/// 正则编译错误的中文说明。Sakura 在「正则」打开时同样把模式交给 Perl 风格的正则库: 单独的 `*` 是量词, 前面没有可重复的内容就是语法错误;
+/// 要查找字符 `*` 本身要写 `\*` 或 `[*]` —— 这里把这个提示直接写在报错里。
+fn friendly_error(raw: &str) -> String {
+    let r = raw.to_lowercase();
+    let msg = if r.contains("repetition operator missing expression") || r.contains("nothing to repeat") {
+        "量词 (* + ? {n,m}) 前面没有可重复的内容。要查找字符 * + ? 本身, 请写 \\* \\+ \\? 或 [*] [+] [?]"
+    } else if r.contains("unclosed group") {
+        "缺少右括号 ) —— 要查找字符 ( 本身请写 \\("
+    } else if r.contains("unopened group") {
+        "多出右括号 ) —— 要查找字符 ) 本身请写 \\)"
+    } else if r.contains("unclosed character class") {
+        "缺少 ] —— 要查找字符 [ 本身请写 \\["
+    } else if r.contains("unclosed counted repetition") || r.contains("repetition quantifier expects a valid decimal") {
+        "{} 里的重复次数写法不对 (应为 {n} 或 {n,m}) —— 要查找字符 { 本身请写 \\{"
+    } else if r.contains("escape sequence") || r.contains("unrecognized") {
+        "含有不支持的转义序列"
+    } else if r.contains("look-around") || r.contains("backreference") || r.contains("look-ahead") {
+        "不支持反向引用 / 环视断言"
+    } else {
+        "语法错误"
+    };
+    msg.to_string()
 }
 
 /// 一行里的全部命中: (起始字节, 结束字节, 起始列, 长度(字符数)); 空匹配不算
@@ -287,6 +311,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn regex_errors_explain_how_to_search_a_literal_star() {
+        // 与 Sakura 一致: 「正则」打开时单独的 * 是语法错误; \* 与 [*] 才是字面的星号
+        let e = run(&req("hits", "*", "r")).unwrap().error.unwrap();
+        assert!(e.contains("[*]") && e.contains("量词"), "{e}");
+        let e = run(&req("hits", "(", "r")).unwrap().error.unwrap();
+        assert!(e.contains("右括号"), "{e}");
+        let mut r = req("hits", "x*y", "r");
+        r.lines = vec!["a*b".into(), "x*y".into(), "xxy".into()];
+        assert_eq!(run(&r).unwrap().total, 2); // x*y = 零个或多个 x 再接 y: 命中 "x*y" 里的 y 和 "xxy" (不是字面的 x*y)
+        let mut lit = req("hits", "[*]", "r");
+        lit.lines = vec!["a*b".into(), "ab".into()];
+        assert_eq!(run(&lit).unwrap().hits, vec![Hit { row: 0, col: 1, len: 1 }]);
+        let mut esc = req("hits", "a\\*b", "r");
+        esc.lines = vec!["a*b".into(), "aab".into()];
+        assert_eq!(run(&esc).unwrap().hits, vec![Hit { row: 0, col: 0, len: 3 }]);
+        // 「正则」关闭时 * 就是字面字符
+        let mut plain = req("hits", "*", "");
+        plain.lines = vec!["a*b".into()];
+        assert_eq!(run(&plain).unwrap().total, 1);
+    }
     #[test]
     fn hits_flags() {
         assert_eq!(run(&req("hits", "foo", "")).unwrap().total, 8); // 忽略大小写 8 处

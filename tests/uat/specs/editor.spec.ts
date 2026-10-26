@@ -641,15 +641,19 @@ test.describe("命令审计 (功能覆盖)", () => {
     await page.locator('.tree-node:has-text("README")').click();
     await waitForTab(page);
 
+    // 分割 = 同一份文档的多个视图: 真正的编辑器占一格 (可输入), 其余格子是实时镜像 (.split-view)
     await page.evaluate(() => { (window as any).splitView("v"); });
     await expect(page.locator("#editor-area")).toHaveClass(/split-v/);
-    expect(await page.locator(".split-view").count()).toBe(2);
+    expect(await page.locator(".split-view").count(), "2 个视图 = 1 个编辑器 + 1 个镜像").toBe(1);
+    await expect(page.locator("#editor")).toBeVisible();
 
     await page.evaluate(() => { (window as any).splitView("quad"); });
-    expect(await page.locator(".split-view").count()).toBe(4);
+    expect(await page.locator(".split-view").count(), "4 个视图 = 1 个编辑器 + 3 个镜像").toBe(3);
 
     await page.evaluate(() => { (window as any).splitView("quad"); });   // 再按一次取消
     await expect(page.locator("#editor-area")).not.toHaveClass(/split-/);
+    expect(await page.locator(".split-view").count()).toBe(0);
+    await expect(page.locator("#editor"), "取消分割后编辑器回来").toBeVisible();
   });
 
   test("宏录制与回放", async ({ page }) => {

@@ -1017,7 +1017,7 @@ fn parse_atom(ctx: &mut ParseCtx) -> Result<Node, String> {
             }
         }
         ')' => return Err(ctx.err("多余的右括号 )")),
-        '*' | '+' | '?' => return Err(ctx.err("量词前面没有可重复的内容")),
+        '*' | '+' | '?' => return Err(ctx.err("量词前面没有可重复的内容。要查找字符 * + ? 本身, 请写 \\* \\+ \\? 或 [*] [+] [?]")),
         other => Node::Char(other),
     })
 }

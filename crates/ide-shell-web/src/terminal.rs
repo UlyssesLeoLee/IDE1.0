@@ -67,8 +67,12 @@ pub fn create(shell: Option<String>, cwd: Option<String>) -> Option<String> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
+    // 管道式 shell 的输入输出默认是系统 OEM 代码页 (中文系统 = GBK): 中文报错会变成 U+FFFD, 输入的中文也会乱。
+    // 统一切到 UTF-8 (PowerShell 用 [Console]::*Encoding, cmd 用 chcp 65001), 下面按 UTF-8 解码。
     if shell_cmd.contains("powershell") {
-        cmd.args(["-NoLogo", "-NoExit"]);
+        cmd.args(["-NoLogo", "-NoExit", "-Command", "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = New-Object System.Text.UTF8Encoding $false"]);
+    } else if shell_cmd.to_ascii_lowercase().contains("cmd") {
+        cmd.args(["/K", "chcp 65001>nul"]);
     }
 
     let mut child = match cmd.spawn() {
@@ -133,6 +137,12 @@ pub fn list() -> Vec<TerminalInfo> {
             alive: s.alive,
         })
         .collect()
+}
+
+/// 会话是否还活着 (不存在 / 已退出 = false)
+pub fn is_alive(id: &str) -> bool {
+    let sessions = SESSIONS.lock().unwrap();
+    sessions.get(id).map(|s| s.alive).unwrap_or(false)
 }
 
 pub fn drain_output(id: &str) -> Vec<String> {
@@ -241,11 +251,15 @@ pub fn resolve_shell(requested: Option<&str>) -> String {
 fn spawn_reader(id: String, mut reader: Box<dyn Read + Send>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        let mut chunker = editcore::text_stream::Utf8Chunker::new(); // 字符被切在两块之间时不能变成两个 U+FFFD
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).into_owned();
+                    let data = chunker.push(&buf[..n]);
+                    if data.is_empty() {
+                        continue;
+                    }
                     let sessions = SESSIONS.lock().unwrap();
                     if let Some(s) = sessions.get(&id) {
                         s.buffer.lock().unwrap().push_back(data);

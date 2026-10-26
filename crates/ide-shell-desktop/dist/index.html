@@ -370,6 +370,10 @@
     #terminal-body:empty { flex: 0 0 auto; padding: 0; }
     #terminal-body:focus { outline: 1px solid var(--blue); }
     .term-line { padding: 1px 0; }
+    #term-input { position: absolute; width: 1px; height: 1px; opacity: 0; padding: 0; border: 0; resize: none; pointer-events: none; }
+    #terminal-pane { position: relative; }
+    .tl-caret { background: transparent; }
+    #terminal-pane:focus-within .tl-caret { background: var(--fg-muted); color: var(--bg-edit); }
     .term-prompt { color: var(--blue); font-weight: bold; }
     .term-stderr { color: var(--red); }
     .terminal-empty {
@@ -1484,6 +1488,7 @@
       <div id="bottom-body">
         <div class="bottom-pane active" id="terminal-pane">
           <div id="terminal-body" tabindex="0"></div>
+          <textarea id="term-input" aria-label="终端输入" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="-1"></textarea>
           <div id="terminal-empty" class="terminal-empty">
             <div>No terminal session — 暂无终端会话</div>
             <div class="terminal-empty-hint">点 <kbd>+ 新建终端</kbd> 或按 <kbd>Ctrl</kbd>+<kbd>`</kbd> 打开 PowerShell</div>
@@ -2122,7 +2127,7 @@ async function setupTerminalChannel() {
     });
     await listen("terminal://closed", (e) => {
       const p = (e && e.payload) || {};
-      if (terminalId && p.id === terminalId) appendTerminal("\n[会话已结束]");
+      if (terminalId && p.id === terminalId) { appendTerminal("\n[会话已结束]\n"); terminalId = null; }   // 会话没了: 之后可以再新建
     });
     TAURI_TERMINAL_LISTEN = true;
     TERM_CHANNEL = "event";
@@ -2319,13 +2324,15 @@ if (bottomHead) bottomHead.addEventListener("click", (e) => {
 // ===== Terminal =====
 async function createTerminal() {
   revealRegion("bottomPanel");      // 新建终端时底端面板必须可见 (min 布局下默认隐藏)
-  if (terminalId) return;
+  if (terminalId) { setTip("终端 " + terminalId + " 已在运行"); termFocus(); return; }
   if (inTauri) await setupTerminalChannel();
   try {
     const info = await invoke("terminal_create", {});
     terminalId = info.id;
     terminalEmpty.style.display = "none";
+    TERM.out = ""; TERM.buf = ""; TERM.pos = 0; TERM.pending = ""; TERM.lineEl = null;
     setTip("终端 " + info.id + " 已启动 (" + info.shell + ")");
+    setTimeout(termFocus, 50);
     setTimeout(() => pollTerminalOutput(), 100);
   } catch (e) {
     setTip("启动终端失败: " + e.message);
@@ -2344,18 +2351,91 @@ async function pollTerminalOutput() {
       }
       terminalBody.scrollTop = terminalBody.scrollHeight;
     }
+    if (j.alive === false) {                                   // shell 退出了 (exit / 被杀): 与桌面版的 terminal://closed 同一处理
+      appendTerminal("\n[会话已结束]\n"); terminalId = null; return;
+    }
   } catch (e) { /* ignore */ }
   setTimeout(pollTerminalOutput, 100);
 }
 
-function appendTerminal(raw) {
-  for (const line of raw.split(/\r?\n/)) {
-    const div = document.createElement("div");
-    div.className = "term-line";
-    div.textContent = line.replace(/\x1b\[[0-9;]*m/g, "");
-    terminalBody.appendChild(div);
+/* ===== 终端 (管道式 shell, 没有 PTY): 输出按字符组装成行 + 本地回显 / 行编辑 =====
+   原来每个数据块都当成「若干整行」追加: 提示符和命令回显被切成不同的行, 退格 / 回车覆盖 / 控制序列都不处理;
+   键盘上只有单个可见字符 + Enter + Backspace (而且 Backspace 发的是 "\b \b" 三个字符, 会把一个空格塞进命令里),
+   没有方向键 / 历史 / 粘贴 / 输入法, 敲的字在回车前什么也看不见。 */
+const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
+const TERM = { out: "", cr: false, buf: "", pos: 0, hist: [], hi: -1, pending: "", lineEl: null, outEl: null, inEl: null };
+// shell 收到一行命令后会把它原样回显一遍 (没有换行): 我们已经本地回显过了, 回显的那一份要吞掉
+function termStripEcho(st, text) {
+  if (!st.pending && !st.eatNl) return text;
+  let out = "";
+  for (const ch of text) {
+    if (st.pending) {
+      if (ch === st.pending[0]) { st.pending = st.pending.slice(1); if (!st.pending) st.eatNl = true; continue; }
+      st.pending = "";
+    }
+    if (st.eatNl) { if (ch === "\r" || ch === "\n") { if (ch === "\n") st.eatNl = false; continue; } st.eatNl = false; }
+    out += ch;
   }
+  return out;
 }
+function termEnsureLine() {
+  if (TERM.lineEl && TERM.lineEl.isConnected) return;
+  const d = document.createElement("div");
+  d.className = "term-line";
+  const o = document.createElement("span"); o.className = "tl-out";
+  const i = document.createElement("span"); i.className = "tl-in";
+  d.append(o, i);
+  terminalBody.appendChild(d);
+  TERM.lineEl = d; TERM.outEl = o; TERM.inEl = i;
+}
+function termPaintInput() {
+  termEnsureLine();
+  TERM.outEl.textContent = TERM.out;
+  const cs = Array.from(TERM.buf);
+  const pos = Math.min(TERM.pos, cs.length);
+  TERM.inEl.innerHTML = escapeHtml(cs.slice(0, pos).join("")) + '<span class="tl-caret">' + (cs[pos] ? escapeHtml(cs[pos]) : " ") + "</span>" + escapeHtml(cs.slice(pos + 1).join(""));
+}
+function appendTerminal(raw) {
+  const text = termStripEcho(TERM, String(raw == null ? "" : raw).replace(ANSI_RE, ""));
+  for (const ch of text) {
+    if (ch === "\n") {
+      termEnsureLine(); TERM.outEl.textContent = TERM.out; TERM.inEl.textContent = "";
+      TERM.lineEl = null; TERM.out = ""; TERM.cr = false;
+    } else if (ch === "\r") TERM.cr = true;                         // 回到行首: 之后的字符覆盖本行
+    else if (ch === "\b") TERM.out = Array.from(TERM.out).slice(0, -1).join("");
+    else if (ch >= " " || ch === "\t") { if (TERM.cr) { TERM.out = ""; TERM.cr = false; } TERM.out += ch; }
+  }
+  termPaintInput();
+}
+function termInsert(text) {
+  if (!text) return;
+  const cs = Array.from(TERM.buf), ins = Array.from(text);
+  cs.splice(TERM.pos, 0, ...ins);
+  TERM.buf = cs.join(""); TERM.pos += ins.length;
+  termPaintInput();
+}
+async function termSubmit() {
+  const line = TERM.buf;
+  TERM.buf = ""; TERM.pos = 0; TERM.hi = -1;
+  if (line.trim() && TERM.hist[TERM.hist.length - 1] !== line) { TERM.hist.push(line); if (TERM.hist.length > 500) TERM.hist.shift(); }
+  // 本地回显: 提示符所在行补上这一行命令, 然后换行
+  termEnsureLine(); TERM.outEl.textContent = TERM.out; TERM.inEl.textContent = line;
+  TERM.lineEl = null; TERM.out = ""; TERM.cr = false;
+  TERM.pending = line;
+  termPaintInput();
+  terminalBody.scrollTop = terminalBody.scrollHeight;
+  await sendTerminal(line + "\r");
+}
+function termHistory(dir) {
+  if (!TERM.hist.length) return;
+  if (TERM.hi === -1) { if (dir > 0) return; TERM.hi = TERM.hist.length; TERM.draft = TERM.buf; }
+  TERM.hi = Math.max(0, Math.min(TERM.hist.length, TERM.hi + dir));
+  TERM.buf = TERM.hi >= TERM.hist.length ? (TERM.draft || "") : TERM.hist[TERM.hi];
+  TERM.pos = Array.from(TERM.buf).length;
+  if (TERM.hi >= TERM.hist.length) TERM.hi = -1;
+  termPaintInput();
+}
+function termClear() { terminalBody.querySelectorAll(".term-line").forEach((d) => d.remove()); TERM.lineEl = null; TERM.out = ""; termPaintInput(); }
 
 async function sendTerminal(data) {
   if (!terminalId) return;
@@ -2790,19 +2870,61 @@ function dispatchCommand(cmd) {
   }
 }
 
-if (terminalBody) terminalBody.addEventListener("keydown", async (e) => {
-  if (!terminalId) return;
-  let data = null;
-  if (e.key === "Enter") data = "\r\n";
-  else if (e.key === "Backspace") data = "\b \b";
-  else if (e.ctrlKey && e.key.toLowerCase() === "c") { data = "\x03"; e.preventDefault(); }
-  else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) data = e.key;
-  else return;
-  e.preventDefault();
-  await sendTerminal(data);
-});
-
-terminalBody.addEventListener("focus", () => terminalBody.focus());
+// 终端的键盘输入: 一个看不见的 textarea 抢焦点 (输入法 / 粘贴 / 可见字符都从它的 input 事件来, 和 xterm.js 同一做法)
+const termIn = document.getElementById("term-input");
+function termFocus() { if (termIn) termIn.focus({ preventScroll: true }); else terminalBody.focus(); }
+if (termIn) {
+  terminalBody.addEventListener("focus", termFocus);
+  terminalBody.addEventListener("mouseup", () => { if (!String(window.getSelection && window.getSelection()).length) termFocus(); });
+  document.getElementById("terminal-pane").addEventListener("mousedown", (e) => { if (e.target === terminalBody || e.target.closest("#terminal-empty")) setTimeout(termFocus, 0); });
+  let composing = false;
+  termIn.addEventListener("compositionstart", () => { composing = true; });
+  termIn.addEventListener("compositionend", () => { composing = false; flush(); });
+  termIn.addEventListener("input", () => { if (!composing) flush(); });
+  async function flush() {
+    const v = termIn.value; termIn.value = "";
+    if (!v || !terminalId) return;
+    const parts = v.replace(/\r\n?/g, "\n").split("\n");
+    for (let k = 0; k < parts.length; k++) { termInsert(parts[k]); if (k < parts.length - 1) await termSubmit(); }
+    terminalBody.scrollTop = terminalBody.scrollHeight;
+  }
+  termIn.addEventListener("keydown", async (e) => {
+    if (!terminalId || e.isComposing || e.key === "Process") return;
+    const k = e.key, ctrl = e.ctrlKey && !e.altKey && !e.metaKey;
+    const len = Array.from(TERM.buf).length;
+    const lk = k.toLowerCase();
+    const hasSel = !!String(window.getSelection && window.getSelection());
+    // 默认动作 (往 textarea 里插换行 / 移动光标) 必须在任何 await 之前同步取消, 否则 Enter 会再触发一次 input 事件, 多发一个空行
+    const known = ctrl ? (["l", "u", "a", "e"].includes(lk) || (lk === "c" && !hasSel))
+      : ["Enter", "Backspace", "Delete", "ArrowLeft", "ArrowRight", "Home", "End", "ArrowUp", "ArrowDown", "Escape", "Tab"].includes(k);
+    if (known) { e.preventDefault(); e.stopPropagation(); }   // 也不让 Esc / Tab / Ctrl+L 之类冒泡到全局快捷键 (Esc 会把焦点抢回编辑器)
+    let handled = true;
+    if (ctrl) {
+      if (lk === "c") {
+        if (hasSel) { handled = false; }                                                    // 有选中文字: 交给浏览器复制
+        else if (TERM.buf) { TERM.buf = ""; TERM.pos = 0; termPaintInput(); }
+        else await sendTerminal("\x03");
+      } else if (lk === "v") handled = false;                                              // 粘贴走 input 事件
+      else if (lk === "l") termClear();
+      else if (lk === "u") { TERM.buf = Array.from(TERM.buf).slice(TERM.pos).join(""); TERM.pos = 0; termPaintInput(); }
+      else if (lk === "a") { TERM.pos = 0; termPaintInput(); }
+      else if (lk === "e") { TERM.pos = len; termPaintInput(); }
+      else handled = false;
+    } else if (k === "Enter") await termSubmit();
+    else if (k === "Backspace") { if (TERM.pos > 0) { const cs = Array.from(TERM.buf); cs.splice(TERM.pos - 1, 1); TERM.buf = cs.join(""); TERM.pos--; termPaintInput(); } }
+    else if (k === "Delete") { const cs = Array.from(TERM.buf); if (TERM.pos < cs.length) { cs.splice(TERM.pos, 1); TERM.buf = cs.join(""); termPaintInput(); } }
+    else if (k === "ArrowLeft") { if (TERM.pos > 0) { TERM.pos--; termPaintInput(); } }
+    else if (k === "ArrowRight") { if (TERM.pos < len) { TERM.pos++; termPaintInput(); } }
+    else if (k === "Home") { TERM.pos = 0; termPaintInput(); }
+    else if (k === "End") { TERM.pos = len; termPaintInput(); }
+    else if (k === "ArrowUp") termHistory(-1);
+    else if (k === "ArrowDown") termHistory(1);
+    else if (k === "Escape") { TERM.buf = ""; TERM.pos = 0; termPaintInput(); }
+    else if (k === "Tab") { /* 管道式 shell 没有补全: 吞掉, 免得焦点跳走 */ }
+    else handled = false;
+    if (handled) terminalBody.scrollTop = terminalBody.scrollHeight;
+  });
+}
 
 /* ===== Syntax (来自 syntax.js, 内联以免 include_str 同步) ===== */
 // ===== 语言识别 (扩展名 → id) =====
@@ -5449,7 +5571,7 @@ function findStep(dir) {
       r = await searchText("step", { row: t.cursor.row, col: t.cursor.col, forward: dir > 0, wrap: !!FIND_STATE.wrap,
         sel_start: t.sel && t.sel.r0 === t.cursor.row ? [t.sel.r0, t.sel.c0] : null });
     } catch (e) { setTip("查找失败: " + e.message); return; }
-    if (r.error) { setTip("正则表达式无效: " + FIND_STATE.needle); return; }
+    if (r.error) { setTip("正则表达式无效: " + r.error); return; }
     if (!r.total) { setTip("未找到: " + FIND_STATE.needle); scheduleMarks(); return; }
     if (!r.hit) { setTip(dir > 0 ? "これ以上見つかりません (末尾)" : "これ以上見つかりません (先頭)"); return; }
     FIND_STATE.idx = r.index; FIND_STATE.total = r.total;
@@ -5491,7 +5613,7 @@ function openFindDialog(withReplace) {
     FIND_STATE.wrap = g("find-wrap").checked; FIND_STATE.marks = g("find-marks").checked;
     const sc = document.querySelector('input[name="find-scope"]:checked'); if (sc) FIND_STATE.scope = sc.value;
     const st = g("find-status");
-    if (st) { st.textContent = ""; if (FIND_STATE.needle && FIND_STATE.useRegex) searchText("validate").then((r) => { if (st.isConnected) st.textContent = r.error ? "正则表达式无效" : ""; }).catch(() => {}); }
+    if (st) { st.textContent = ""; if (FIND_STATE.needle && FIND_STATE.useRegex) searchText("validate").then((r) => { if (st.isConnected) st.textContent = r.error ? "正则表达式无效: " + r.error : ""; }).catch(() => {}); }
     scheduleMarks();
   };
   const el = document.getElementById("find-input");
@@ -6024,47 +6146,90 @@ if (mdBody) mdBody.addEventListener("click", (e) => {
   dispatchCommand(opt);
 });
 
-/* ===== 分屏 / 平铺 ===== */
-   // none | h | v | quad
+/* ===== 分屏 / 平铺 =====
+   Sakura 的「分割」= 同一份文档的多个视图, 每个视图能独立滚动、都能编辑。
+   这里: 真正的编辑器 (#editor) 永远只有一个 —— 它落在「当前视图」的格子里; 其它格子是同一份文档的实时镜像
+   (独立滚动位置, 文档一变就重画), 点一下镜像就把编辑器换到那个格子里继续输入。
+   取消分割 = 编辑器回到原位、镜像全部移除 (原来这里提前 return, 编辑器一直被隐藏, 取消分割后再也输入不了)。 */
+// SPLIT.mode: none | h | v | quad;  SPLIT.active: 当前视图序号
+function splitCell(mode, i) {
+  const row = mode === "h" ? 3 + i : mode === "v" ? 3 : 3 + (i >> 1);
+  const col = mode === "h" ? 1 : 1 + (i % 2);
+  return { row, col };
+}
+const MIRROR_MAX_LINES = 4000;
+function renderMirror(view, t) {
+  const keep = view.scrollTop;
+  const lang = t.language || Syntax.detectLanguage(t.path || "");
+  const n = Math.min(t.lines.length, MIRROR_MAX_LINES);
+  const parts = [];
+  for (let r = 0; r < n; r++) {
+    parts.push('<div class="hl-row">' + Syntax.highlightLine(t.lines[r], lang)
+      .map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("") + "</div>");
+  }
+  if (t.lines.length > n) parts.push('<div class="split-label">… 另外 ' + (t.lines.length - n) + " 行未显示 (镜像最多画 " + MIRROR_MAX_LINES + " 行, 点击这个视图即可在其中编辑)</div>");
+  view.innerHTML = '<div class="split-label">视图 ' + (+view.dataset.pane + 1) + " · 点击在此视图中编辑</div>" + parts.join("");
+  view.scrollTop = keep;
+}
+let _mirrorTimer = 0;
+function scheduleMirrors() {
+  if (SPLIT.mode === "none" || _mirrorTimer) return;
+  _mirrorTimer = setTimeout(() => {
+    _mirrorTimer = 0;
+    const t = getActiveTab();
+    if (SPLIT.mode === "none" || !t) return;
+    document.querySelectorAll("#editor-area > .split-view").forEach((v) => renderMirror(v, t));
+  }, 150);
+}
 function applySplit() {
   const area = document.getElementById("editor-area");
   const ed = document.getElementById("editor");
+  // 先记下各视图的滚动位置 (按序号), 重画后还给它们
+  const scrolls = {};
+  area.querySelectorAll(".split-view").forEach((v) => { scrolls[v.dataset.pane] = v.scrollTop; });
+  if (SPLIT.mode !== "none") scrolls[SPLIT.active || 0] = edContent.scrollTop;
   area.classList.remove("split-h", "split-v", "split-quad");
-  if (SPLIT.mode !== "none") area.classList.add("split-" + SPLIT.mode);
-  // 分屏时同一 tab 内容按行区间分段显示到多个 .split-view
+  area.querySelectorAll(".split-view").forEach((p) => p.remove());
   const t = getActiveTab();
-  const panes = area.querySelectorAll(".split-view");
-  panes.forEach((p) => p.remove());
-  if (SPLIT.mode === "none" || !t) return;
+  if (SPLIT.mode === "none" || !t) {
+    SPLIT.mode = "none";
+    ed.style.display = ""; ed.style.gridRow = ""; ed.style.gridColumn = ""; ed.style.minHeight = ""; ed.style.minWidth = "";
+    scheduleMarks();
+    return;
+  }
+  area.classList.add("split-" + SPLIT.mode);
   const n = SPLIT.mode === "quad" ? 4 : 2;
-  const per = Math.ceil(t.lines.length / n);
+  SPLIT.active = Math.max(0, Math.min(n - 1, SPLIT.active || 0));
   for (let i = 0; i < n; i++) {
+    // 显式落格 (行 3 起): 标签条 / 面包屑被隐藏 (display:none) 时, 自动落格会把视图塞进它们留下的 auto 行 (行 1/2)
+    const { row, col } = splitCell(SPLIT.mode, i);
+    const place = (el) => { el.style.gridRow = String(row); el.style.gridColumn = String(col); if (row > 3) el.dataset.row2 = ""; };
+    if (i === SPLIT.active) {
+      place(ed); ed.style.display = ""; ed.style.minHeight = "0"; ed.style.minWidth = "0";
+      continue;
+    }
     const view = document.createElement("div");
     view.className = "split-view";
-    view.innerHTML = '<div class="split-label">视图 ' + (i + 1) + " · Ln " + (i * per + 1) +
-      "-" + Math.min(t.lines.length, (i + 1) * per) + "</div>";
-    t.lines.slice(i * per, (i + 1) * per).forEach((line) => {
-      const row = document.createElement("div");
-      row.className = "hl-row";
-      row.innerHTML = Syntax.highlightLine(line, t.language || Syntax.detectLanguage(t.path || ""))
-        .map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("");
-      view.appendChild(row);
-    });
-    // 显式落格 (行 3 起, 与完整布局里自动落格的结果相同): 标签条/面包屑被隐藏 (display:none) 时, 自动落格会把视图塞进
-    // 它们留下的 auto 行 (行 1/2), 而不是 1fr 的行 3+
-    const gr = SPLIT.mode === "h" ? 3 + i : SPLIT.mode === "v" ? 3 : 3 + (i >> 1);
-    view.style.gridRow = String(gr);
-    if (gr > 3) view.dataset.row2 = "";    // 第二排视图: min 布局里用它的上边线当两排之间的分隔 (行间距在 min 下为 0, 见样式表)
-    view.style.gridColumn = String(SPLIT.mode === "h" ? 1 : 1 + (i % 2));
-    ed.style.display = "none";
+    view.dataset.pane = String(i);
+    view.title = "点击在此视图中编辑";
+    view.style.cursor = "text";
+    place(view);
+    renderMirror(view, t);
+    view.scrollTop = scrolls[i] || 0;
+    view.addEventListener("mousedown", () => { SPLIT.active = i; applySplit(); edContent.focus({ preventScroll: true }); });
     area.appendChild(view);
   }
-  setTip("分割: " + SPLIT.mode);
+  edContent.scrollTop = scrolls[SPLIT.active] || 0;
+  scheduleMarks();
+  updateCaret(false);
+  setTip("分割: " + SPLIT.mode + " (点击其它视图可切换编辑位置)");
 }
 
 function splitView(mode) {
   SPLIT.mode = SPLIT.mode === mode ? "none" : mode;
+  if (SPLIT.mode === "none") SPLIT.active = 0;
   applySplit();
+  if (SPLIT.mode !== "none") edContent.focus({ preventScroll: true });
 }
 function tileWindows(mode) {
   // 单窗口应用没有多窗口可平铺, 用「全屏 + 恢复」表达 cascade/tile 的意图
@@ -8990,20 +9155,26 @@ try { loadKeymapOverrides(); applyMenuShortcuts(); } catch (_) {}
 
 /* ===== SQL*Plus 专用窗口: 独立终端会话 (不占主终端), 输出只进这个窗口 ===== */
 const SQLWIN = { id: null, el: null, out: null, autostart: true, timer: 0 };
-function sqlwinSink(data) {
+const SQLECHO = { pending: "" };
+function sqlwinSink(data, local) {
   if (!SQLWIN.out) return;
-  SQLWIN.out.textContent += String(data).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+  SQLWIN.out.textContent += local ? String(data) : termStripEcho(SQLECHO, String(data).replace(ANSI_RE, ""));
   if (SQLWIN.out.textContent.length > 200000) SQLWIN.out.textContent = SQLWIN.out.textContent.slice(-150000);
   SQLWIN.out.scrollTop = SQLWIN.out.scrollHeight;
 }
 async function sqlwinSend(text) {
   if (!SQLWIN.id) return;
+  SQLECHO.pending = String(text).replace(/[\r\n]+$/, "");                      // shell 会把这行再回显一遍: 到时候吞掉
   if (inTauri && window.__TAURI_INTERNALS__) await window.__TAURI_INTERNALS__.invoke("terminal_input", { id: SQLWIN.id, data: text });
   else await fetchApi("/api/terminal_input", { body: { id: SQLWIN.id, data: text } });
 }
 async function sqlwinPoll() {
   if (!SQLWIN.id || TERM_CHANNEL === "event") return;
-  try { const j = await fetchTerminalOutput(SQLWIN.id); if (j && j.chunks) for (const c of j.chunks) sqlwinSink(c); } catch (_) {}
+  try {
+    const j = await fetchTerminalOutput(SQLWIN.id);
+    if (j && j.chunks) for (const c of j.chunks) sqlwinSink(c);
+    if (j && j.alive === false) { sqlwinSink("\n[会话已结束]\n", true); SQLWIN.id = null; return; }
+  } catch (_) {}
   SQLWIN.timer = setTimeout(sqlwinPoll, 150);
 }
 function sqlwinEnsureUI() {
@@ -9026,7 +9197,7 @@ function sqlwinEnsureUI() {
   });
   const inp = w.querySelector("#sql-in");
   inp.addEventListener("keydown", async (e) => {
-    if (e.key === "Enter") { e.preventDefault(); const v = inp.value; inp.value = ""; sqlwinSink(v + "\n"); await sqlwinSend(v + "\r"); }
+    if (e.key === "Enter") { e.preventDefault(); const v = inp.value; inp.value = ""; sqlwinSink(v + "\n", true); await sqlwinSend(v + "\r"); }
     else if (e.key === "Escape") { w.classList.remove("on"); edContent.focus({ preventScroll: true }); }
   });
   const head = w.querySelector("#sql-win-head");
@@ -9057,7 +9228,7 @@ async function sqlwinOpen() {
       SQLWIN.id = info.id; TERM_SINKS.set(info.id, sqlwinSink);
       sqlwinSink("[" + info.id + " " + (info.shell || "") + "]\n");
       if (TERM_CHANNEL !== "event") sqlwinPoll();
-      if (SQLWIN.autostart) await sqlwinSend("sqlplus /nolog\r");
+      if (SQLWIN.autostart) { sqlwinSink("sqlplus /nolog\n", true); await sqlwinSend("sqlplus /nolog\r"); }
     } catch (e) { sqlwinSink("会话创建失败: " + ((e && e.message) || e) + "\n"); }
   }
   w.querySelector("#sql-in").focus();
@@ -9068,7 +9239,7 @@ async function sqlplusRunFile() {
   if (/["&|<>^%`$;'\r\n\0]/.test(t.path)) { setTip("文件路径含特殊字符, 为安全起见不执行"); return; }
   await sqlwinOpen();
   if (!SQLWIN.id) return;
-  sqlwinSink("@" + t.path + "\n");
+  sqlwinSink("@" + t.path + "\n", true);
   await sqlwinSend('@"' + t.path + '"\r');
   setTip("已在 SQL*Plus 窗口中执行: " + t.path);
 }
@@ -9512,6 +9683,14 @@ function moveLines(delta) { return runEdit(delta < 0 ? "move-line-up" : "move-li
 SAKURA_CMDS["word-cut"] = () => runEdit("word-cut");
 SAKURA_CMDS["word-delete"] = () => runEdit("word-delete");
 SAKURA_CMDS["line-cut-to-end"] = () => runEdit("line-cut-to-end");
+
+
+// 分割视图的镜像跟着文档: renderVim / paintActive 是所有编辑后的汇合点
+{
+  const _rv = renderVim, _pa = paintActive;
+  renderVim = function () { const r = _rv.apply(this, arguments); if (SPLIT.mode !== "none") scheduleMirrors(); return r; };
+  paintActive = function () { const r = _pa.apply(this, arguments); if (SPLIT.mode !== "none") scheduleMirrors(); return r; };
+}
 
 // ===== Welcome page =====
 function showWelcome() {
