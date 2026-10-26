@@ -246,6 +246,7 @@
     #ed-content .tk-hr { color: #6a9955; }
     #ed-content .tk-op { color: #d4d4d4; }
     #ed-content .fold-marker { color: var(--fg-muted); font-style: italic; }
+    #ed-content .fold-hidden { display: none; }
     #ed-content .hl-row, #ed-content .fold-row { white-space: inherit; min-height: 18px; }
         /* ===== Kernel Banner ===== */
     .banner {
@@ -3401,16 +3402,18 @@ function renderVim(t, noFollow) {
   if (!t) return;
   const hadFocus = document.activeElement === edContent;
   const lang = t.language || Syntax.detectLanguage(t.path || "");
-  const folded = t.folded || (t.folded = new Set());
+  const folded = (t.folded instanceof Map) ? t.folded : (t.folded = new Map());
   const html = [];
   const win = vwActive(t) ? vwRange(t) : null;                 // 大文件: 只渲染可视窗口附近的行
   const rs = win ? win[0] : 0, re = win ? win[1] : t.lines.length;
+  // 折叠失效: 大文件窗口化渲染不支持; 行数变了 (块边界不再可信); 光标进了被折叠的块 (跳转 / 搜索命中) -> 自动展开。文字从来没动过
+  for (const [fs, f] of [...folded]) {
+    if (win || f.n !== t.lines.length || f.end >= t.lines.length || (t.cursor.row > fs && t.cursor.row <= f.end)) folded.delete(fs);
+  }
+  const hidden = new Set();
+  for (const [fs, f] of folded) for (let k = fs + 1; k <= f.end; k++) hidden.add(k);
   for (let r = rs; r < re; r++) {
-    if (folded.has(r)) {
-      html.push('<div class="fold-row"><span class="fold-marker">\u25bc fold-marker</span> ' +
-        escapeHtml(t.lines[r]) + "</div>");
-      continue;
-    }
+    if (hidden.has(r)) { html.push('<div class="hl-row fold-hidden"></div>'); continue; }
     const toks = Syntax.highlightLine(t.lines[r], lang);
     const sel = t.sel;
     const inSel = sel && r >= sel.r0 && r <= sel.r1;
@@ -3474,6 +3477,10 @@ function renderVim(t, noFollow) {
         : rendered) +
       "</div>");
   }
+  for (const [fs, f] of folded) {                                  // 起点行末尾: 折了多少行
+    if (fs < rs || fs >= re || hidden.has(fs)) continue;
+    html[fs - rs] = html[fs - rs].replace(/<\/div>$/, '<span class="fold-marker"> \u22ef ' + (f.end - fs) + " \u884c\u5df2\u6298\u53e0</span></div>");
+  }
   edContent.replaceChildren();
   if (win) {
     const lh = VW.lh, n = t.lines.length;
@@ -3489,7 +3496,7 @@ function renderVim(t, noFollow) {
     VW.on = false;
     edContent.classList.remove("vwin");
     edContent.innerHTML = html.join("");
-    gutter.textContent = t.lines.map((_, i) => i + 1).join("\n");
+    gutter.textContent = t.lines.map((_, i) => i + 1).filter((n) => !hidden.has(n - 1)).join("\n");
   }
   setLang(Syntax.languageLabel(lang));
   if (VIEW_STATE.minimap) buildMinimap();
@@ -3498,73 +3505,45 @@ function renderVim(t, noFollow) {
 }
 
 /* ===== 折叠: zc / zo / zM / zR =====
-   块边界判定: 花括号计数, 没有花括号则用缩进块. */
-function foldEndRow(t, start) {
-  const line = t.lines[start];
-  const opens = (line.match(/\{/g) || []).length;
-  const closes = (line.match(/\}/g) || []).length;
-  if (opens > closes) {
-    let depth = 0;
-    for (let r = start; r < t.lines.length; r++) {
-      depth += (t.lines[r].match(/\{/g) || []).length;
-      depth -= (t.lines[r].match(/\}/g) || []).length;
-      if (r > start && depth <= 0) return r;
-    }
-    return t.lines.length - 1;
-  }
-  const base = line.match(/^[ \t]*/)[0].length;
-  if (base === 0) return -1;
-  let end = -1;
-  for (let r = start + 1; r < t.lines.length; r++) {
-    const ind = t.lines[r].match(/^[ \t]*/)[0].length;
-    if (t.lines[r].trim() && ind < base) break;
-    end = r;
-  }
-  return end;
+   折叠只是显示上的隐藏 (文字不动, 保存下来的内容不变; 行数变了或光标进了块就自动展开).
+   块边界 (花括号配对 / 缩进块) 在 Rust (editcore::edit_cmd 的 fold-range / fold-all): 前端把起点行起的各行交上去, 拿回 [起, 止] 列表. */
+function runFold(t, cmd) {
+  if (vwActive(t)) { setTip("大文件不支持折叠"); return; }
+  return enqueueInput(async () => {
+    const first = cmd === "fold-all" ? 0 : t.cursor.row;
+    const req = editRequest(t, cmd);
+    req.rows = [];
+    for (let r = first; r < t.lines.length; r++) req.rows.push([r, t.lines[r]]);
+    let res;
+    try { res = await invoke("edit_cmd", req); }
+    catch (err) { setTip("折叠失败: " + err.message); return; }
+    if (getActiveTab() !== t) return;
+    const m = (cmd === "fold-all" || !(t.folded instanceof Map)) ? new Map() : t.folded;
+    for (const [s, e] of res.folds || []) m.set(s, { end: e, n: t.lines.length });
+    t.folded = m;
+    if (res.tip) setTip(res.tip);
+    renderVim(t);
+  });
 }
 
 function foldAtCursor(t) {
   t = t || getActiveTab();
-  if (!t) return;
-  const start = t.cursor.row;
-  if ((t.folded || (t.folded = new Set())).has(start)) return;
-  const end = foldEndRow(t, start);
-  if (end <= start) return;
-  // 把 start+1..end 折叠: 用一行 fold-marker 代表
-  t.lines.splice(start + 1, end - start, "/* fold-marker ... " + (end - start) + " lines ... */");
-  t.folded.add(start);
-  t.dirty = true;
+  return t ? runFold(t, "fold-range") : undefined;
 }
 
 function unfoldAtCursor(t) {
   t = t || getActiveTab();
-  if (!t) return;
-  const start = t.cursor.row;
-  if (!t.folded || !t.folded.has(start)) return;
-  const m = t.lines[start + 1] && t.lines[start + 1].match(/\/\* fold-marker \.\.\. (\d+) lines \.\.\. \*\//);
-  t.folded.delete(start);
-  if (m) {
-    const n = parseInt(m[1], 10);
-    t.lines.splice(start + 1, 1, ...new Array(n).fill(""));
-  }
-  t.dirty = true;
+  if (t && t.folded && t.folded.delete) t.folded.delete(t.cursor.row);
 }
 
 function foldAll(t) {
   t = t || getActiveTab();
-  if (!t) return;
-  t.folded = new Set();
-  for (let r = 0; r < t.lines.length; r++) {
-    if (foldEndRow(t, r) > r) t.folded.add(r);
-  }
-  t.dirty = true;
+  return t ? runFold(t, "fold-all") : undefined;
 }
 
 function unfoldAll(t) {
   t = t || getActiveTab();
-  if (!t || !t.folded) return;
-  t.folded.clear();
-  t.dirty = true;
+  if (t) t.folded = new Map();
 }
 
 /* ===== :template <lang> hello-world ===== */
@@ -3638,7 +3617,7 @@ function runExCommand(cmdStr, t) {
     case "help": showHelp(); return true;
     case "setlang": return setTabLanguage(arg, t);
     case "template": case "tpl": return insertTemplate(arg, t);
-    case "fold": foldAll(t); paintActive(); return true;
+    case "fold": foldAll(t); return true;
     case "unfold": unfoldAll(t); paintActive(); return true;
     case "lang": setTip("当前语言: " + Syntax.languageLabel(t.language || Syntax.detectLanguage(t.path || ""))); return true;
     default: setTip("未知命令: " + cmd); return false;
@@ -4012,7 +3991,7 @@ function curLine(t) {
 function snapshot(t) {
   // tab 可能来自外部 (UAT 直接 tabs.set), 不一定带 undo/redo 栈 — 惰性补齐,
   // 否则 t.undo.push 直接 TypeError, 整个 keydown handler 静默失效.
-  if (!t.folded) t.folded = new Set();
+  if (!t.folded) t.folded = new Map();
   if (!t.baseLines || !t.dirty) t.baseLines = t.lines.slice();          // 干净状态下的第一次改动前 = 基线 (用于「变更行」)
   if (t.skipSnapAt && performance.now() - t.skipSnapAt < 80) { t.skipSnapAt = 0; return; }   // 「替换选区」= 删除 + 输入 算同一步撤销 (删除时已经记过)
   histCommit(t);                                            // 上一次改动 (上个边界的快照 -> 现在) 记进 Rust 的撤销栈
@@ -4127,7 +4106,7 @@ function paintActive() {
   // 重绘会替换子节点, 焦点会掉回 body, 后续按键就不再进 keydown handler.
   // 之前是否持有焦点, 重绘后补回去.
   const hadFocus = document.activeElement === edContent;
-  if (vwActive(t)) {                               // 大文件: 走窗口化渲染 (每次只画可视窗口附近的行)
+  if (vwActive(t) || (t.folded && t.folded.size)) {   // 大文件: 走窗口化渲染 (每次只画可视窗口附近的行); 有折叠: 纯文本路径画不出隐藏的行
     renderVim(t);
     updateCaretColumn();
     renderTabs();
@@ -4671,7 +4650,7 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   // Vim 关闭时不看 #s-mode (静态标记里写着 data-mode="NORMAL", 启动后头几个键会被当成 vim 命令吞掉), 直接是 INSERT
   const vim = LAYOUT.vimOn();
   const mode = vim ? (document.getElementById("s-mode").dataset.mode || "NORMAL") : "INSERT";
-  if (t && !t.folded) t.folded = new Set();
+  if (t && !t.folded) t.folded = new Map();
   if (t && !t.dirty) t.dirty = false;
 
   // Sakura 键盘移动 / 范围选择 / 选区替换式编辑 / Ins 覆盖 (列块和 Alt 组合另有处理)
@@ -4861,9 +4840,9 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
       e.preventDefault();
       const k = e.key;
       pendingZ = false;
-      if (k === "c") { foldAtCursor(t); renderVim(t); return; }
+      if (k === "c") { foldAtCursor(t); return; }
       if (k === "o") { unfoldAtCursor(t); renderVim(t); return; }
-      if (k === "M") { foldAll(t); renderVim(t); return; }
+      if (k === "M") { foldAll(t); return; }
       if (k === "R") { unfoldAll(t); renderVim(t); return; }
     }
     if (e.key === "z") { e.preventDefault(); pendingZ = true; setTimeout(() => { pendingZ = false; }, 800); return; }

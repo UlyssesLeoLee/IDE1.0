@@ -63,6 +63,8 @@ pub struct EditRes {
     pub box_sel: Option<[usize; 4]>,
     /// multi-* 命令之后的全部光标 (升序, 已去重; cursor 是第一个)
     pub cursors: Option<Vec<[usize; 2]>>,
+    /// fold-* 命令算出的折叠块 [起始行, 结束行] (结束行含); 文字不改
+    pub folds: Option<Vec<[usize; 2]>>,
 }
 
 fn chars_of(s: &str) -> Vec<char> {
@@ -115,17 +117,18 @@ impl Ctx<'_> {
             anchor: None,
             box_sel: None,
             cursors: None,
+            folds: None,
         }
     }
     fn replace_line(&self, r: usize, new: String, cursor: [usize; 2], clip: Option<String>) -> EditRes {
-        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
+        EditRes { changed: true, start: r, remove: 1, insert: vec![new], cursor, clip, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
     }
     fn join_next(&self, r: usize, skip_leading: bool) -> EditRes {
         let cur = self.line(r);
         let next = self.line(r + 1);
         let skip = if skip_leading { first_word_col(&next) } else { 0 };
         let joined = format!("{}{}", cur.iter().collect::<String>(), slice(&next, skip, usize::MAX));
-        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
+        EditRes { changed: true, start: r, remove: 2, insert: vec![joined], cursor: [r, cur.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
     }
     fn nothing(&self, tip: &str) -> EditRes {
         EditRes { changed: false, tip: Some(tip.to_string()), cursor: [self.req.row, self.req.col], ..Default::default() }
@@ -151,6 +154,47 @@ struct BoxRect {
     c1: usize,
 }
 
+/// 从第 `start` 行起的折叠块结束行: 行内花括号多于闭括号 = 配到平衡为止 (配不上到文档末尾); 否则按缩进: 下一个非空行更深, 块延伸到缩进回到本行或更浅之前的最后一个非空行。没有可折叠的块 = None。
+fn fold_end(lines: &[Vec<char>], start: usize) -> Option<usize> {
+    let count = |l: &Vec<char>, c: char| l.iter().filter(|&&x| x == c).count() as isize;
+    let line = lines.get(start)?;
+    let end = if count(line, '{') > count(line, '}') {
+        let mut depth = 0isize;
+        let mut found = lines.len() - 1;
+        for (r, l) in lines.iter().enumerate().skip(start) {
+            depth += count(l, '{') - count(l, '}');
+            if r > start && depth <= 0 {
+                found = r;
+                break;
+            }
+        }
+        found
+    } else {
+        let indent = |l: &Vec<char>| l.iter().take_while(|c| **c == ' ' || **c == '\t').count();
+        let blank = |l: &Vec<char>| l.iter().all(|c| c.is_whitespace());
+        if blank(line) {
+            return None;
+        }
+        let base = indent(line);
+        let mut end = None;
+        for (r, l) in lines.iter().enumerate().skip(start + 1) {
+            if blank(l) {
+                continue;
+            }
+            if indent(l) <= base {
+                break;
+            }
+            end = Some(r);
+        }
+        end?
+    };
+    if end > start {
+        Some(end)
+    } else {
+        None
+    }
+}
+
 /// 执行一条编辑命令. 未知命令返回 None.
 pub fn run(req: &EditReq) -> Option<EditRes> {
     let cx = Ctx { req };
@@ -169,7 +213,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             } else if row > 0 {
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
             } else {
                 cx.nothing("")
             }
@@ -196,7 +240,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 }
                 let prev = cx.line(row - 1);
                 let joined = format!("{}{}", prev.iter().collect::<String>(), line.iter().collect::<String>());
-                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
+                EditRes { changed: true, start: row - 1, remove: 2, insert: vec![joined], cursor: [row - 1, prev.len()], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
             } else {
                 let to = word_left(&line, col);
                 if to >= col {
@@ -407,6 +451,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                 anchor: None,
                 box_sel: None,
                 cursors: None,
+                folds: None,
             }
         }
         // ---- 输入文字 (键盘上的可见字符 / TAB / 输入法上屏): 有选区则替换选区; 覆盖模式吃掉光标后同样个数的字符 ----
@@ -616,6 +661,29 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             cursors.dedup();
             EditRes { changed: true, start: lo, remove: hi - lo + 1, insert, cursor: cursors[0], cursors: Some(cursors), tip: Some(tip), ..Default::default() }
         }
+        // ---- 折叠 (zc / zM): 只算块边界, 文字不动。rows 从起点行连续交到文档末尾 ----
+        "fold-range" | "fold-all" => {
+            let mut rs: Vec<&(usize, String)> = req.rows.iter().collect();
+            rs.sort_by_key(|r| r.0);
+            let first = rs.first().map(|r| r.0).unwrap_or(0);
+            let lines: Vec<Vec<char>> = rs.iter().map(|(_, s)| s.chars().collect()).collect();
+            let mut folds: Vec<[usize; 2]> = Vec::new();
+            if req.cmd == "fold-range" {
+                if row >= first {
+                    if let Some(e) = fold_end(&lines, row - first) {
+                        folds.push([row, e + first]);
+                    }
+                }
+            } else {
+                for i in 0..lines.len() {
+                    if let Some(e) = fold_end(&lines, i) {
+                        folds.push([i + first, e + first]);
+                    }
+                }
+            }
+            let tip = if folds.is_empty() { Some("这里没有可折叠的块".to_string()) } else { None };
+            EditRes { changed: false, cursor: [row, col], folds: Some(folds), tip, ..Default::default() }
+        }
         // ---- 行结构 ----
         "new-line" => {
             let head = slice(&line, 0, col);
@@ -670,7 +738,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
         }
         "duplicate-line" => {
             let text: String = line.iter().collect();
-            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None }
+            EditRes { changed: true, start: row, remove: 1, insert: vec![text.clone(), text], cursor: [row + 1, col], clip: None, tip: None, undo_cursor: None, clip_line: false, sel: None, anchor: None, box_sel: None, cursors: None, folds: None }
         }
         _ => return None,
     })
@@ -958,6 +1026,25 @@ mod tests {
         assert_eq!((apply(&["abc", "def"], &r), r.cursors.clone()), (vec!["abdef".to_string()], Some(vec![[0, 2]])));
         // 都在 (0,0): 没有可删的
         assert!(!run_multi("multi-backspace", &[[0, 0]], "", M).changed);
+    }
+    #[test]
+    fn folding() {
+        let rows = |ls: &[&str], from: usize| -> Vec<(usize, String)> { ls.iter().enumerate().map(|(i, s)| (from + i, s.to_string())).collect() };
+        let req = |cmd: &str, row: usize, ls: &[&str]| EditReq { cmd: cmd.into(), row, col: 0, sel: None, total_rows: 20, auto_indent: false, smart_indent: false, text: None, line_mode: false, overwrite: false, box_sel: None, cursors: vec![], rows: rows(ls, row) };
+        // 花括号块 (含嵌套): 从 fn outer 配到最外层的 }
+        let code = ["fn outer() {", "    fn inner() {", "        x();", "    }", "    inner();", "}", "fn other() {", "    y();", "}"];
+        assert_eq!(run(&req("fold-range", 0, &code)).unwrap().folds, Some(vec![[0, 5]]));
+        assert_eq!(run(&req("fold-range", 1, &code[1..])).unwrap().folds, Some(vec![[1, 3]]));
+        // 缩进块 (没有花括号): 下一行更深才算; 末尾空行不吞; 顶格也能折
+        let py = ["def f():", "    a = 1", "", "    b = 2", "", "x = 3"];
+        assert_eq!(run(&req("fold-range", 0, &py)).unwrap().folds, Some(vec![[0, 3]]));
+        // 同级的下一行不是块
+        assert_eq!(run(&req("fold-range", 1, &py[1..])).unwrap().folds, Some(vec![]));
+        // 括号一直配不上: 到文档末尾
+        assert_eq!(run(&req("fold-range", 0, &["if (a) {", "  b();"])).unwrap().folds, Some(vec![[0, 1]]));
+        // 全部折叠: 每个能折的起点各一项 (含嵌套)
+        let all = run(&req("fold-all", 0, &code)).unwrap();
+        assert_eq!((all.changed, all.folds), (false, Some(vec![[0, 5], [1, 3], [6, 8]])));
     }
     #[test]
     fn unknown() {

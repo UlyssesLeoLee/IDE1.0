@@ -331,19 +331,21 @@ test("syntax: zc fold hides block, zo expands", async ({ page }) => {
   });
   await page.waitForTimeout(500);
   // Cursor at line 0 (fn outer) + zc
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const t = activeTab();
     t.cursor.row = 0; t.cursor.col = 0;
-    foldAtCursor(t);
+    await foldAtCursor(t);                       // 块边界在 Rust (edit_cmd fold-range), 异步
     renderVim(t);
   });
   await page.waitForTimeout(200);
-  // fold-marker 应出现
+  // fold-marker 应出现, 块内 5 行 (fn outer 到最外层 }) 被隐藏
   const html = await page.locator("#ed-content").innerHTML();
   expect(html).toContain("fold-marker");
-  // lines 数应减少 (5 行 → 1 行 + marker)
-  const visibleLines = (html.match(/fold-marker/g) || []).length;
-  expect(visibleLines).toBeGreaterThanOrEqual(1);
+  expect((html.match(/fold-hidden/g) || []).length).toBe(5);
+  // 折叠只是隐藏: 文字一行没少 (旧实现会把块内文字换成一行占位符, 展开后变空行)
+  const before = await page.evaluate(() => activeTab().lines.slice());
+  expect(before.length).toBe(10);
+  expect(before[2]).toBe("        x();");
   // unfold
   await page.evaluate(() => {
     const t = activeTab();
@@ -353,4 +355,14 @@ test("syntax: zc fold hides block, zo expands", async ({ page }) => {
   await page.waitForTimeout(200);
   const html2 = await page.locator("#ed-content").innerHTML();
   expect(html2).not.toContain("fold-marker");
+  expect(html2).not.toContain("fold-hidden");
+  expect(await page.evaluate(() => activeTab().lines)).toEqual(before);
+  // 折叠不算改动
+  expect(await page.evaluate(() => !!activeTab().dirty)).toBe(false);
+  // zM 全部折叠 (含嵌套): fn outer 的 1..5 行 + fn other 的 7..8 行被隐藏; zR 全部展开; 文字始终不动
+  await page.evaluate(async () => { await foldAll(activeTab()); });
+  expect((await page.locator("#ed-content").innerHTML()).match(/fold-hidden/g)?.length).toBe(7);
+  await page.evaluate(() => { unfoldAll(activeTab()); renderVim(activeTab()); });
+  expect(await page.locator("#ed-content .fold-hidden").count()).toBe(0);
+  expect(await page.evaluate(() => activeTab().lines)).toEqual(before);
 });
