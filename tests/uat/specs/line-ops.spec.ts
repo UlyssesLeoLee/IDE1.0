@@ -275,7 +275,7 @@ test.describe("B. 统一增删行 (Sakura F_* 语义)", () => {
     expect(errors).toEqual([]);
   });
 
-  test("既有 Ctrl+Delete / Ctrl+Shift+Backspace 行为不变 (没被新键位抢走)", async ({ page }) => {
+  test("Ctrl+Delete = 删到词尾 (Sakura F_WordDeleteToEnd 实测); Ctrl+Shift+Backspace = 删上方行", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["l1", "l2", "l3"]);
     await page.evaluate(() => {
@@ -391,7 +391,7 @@ test.describe("C. 增删类特色功能", () => {
     expect(errors).toEqual([]);
   });
 
-  test("缩进 / 反缩进: 空格缩进文件用空格单位 (不引入 tab 混排)", async ({ page }) => {
+  test("缩进 / 反缩进: TAB 缩进总是插入 TAB 字符 (Sakura F_INDENT_TAB 实测), 反缩进还原", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["alpha", "beta", "gamma"]);
     await page.evaluate(() => {

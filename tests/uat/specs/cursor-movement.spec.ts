@@ -64,7 +64,7 @@ test.describe("Sakura 光标移动命令集", () => {
     expect(errors).toEqual([]);
   });
 
-  test("M-01/M-02 单词左 / 右 (Sakura: 词内移到词尾, 词尾再按才进下一个词)", async ({ page }) => {
+  test("M-01/M-02 单词左 / 右 (Sakura 实测: 右移到下一个词首, 左移回到词首)", async ({ page }) => {
     const errors = await boot(page);
     await setDoc(page, ["foo bar baz"]);
     await page.locator("#ed-content").focus();

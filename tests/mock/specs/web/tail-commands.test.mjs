@@ -9,7 +9,7 @@ import { fill } from '../../lib/harness.mjs';
 const cmd = (page, c) => page.evaluate((x) => dispatchCommand(x), c);
 const openProject = (page, root) => page.evaluate(async (r) => { await fetch('/api/open_project', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: r }) }); }, root);
 
-test('SPACE インデント / 逆 SPACE インデント: 选区各行加减 TAB 宽度个空格; 跟随 TAB 宽度设置', () =>
+test('SPACE インデント / 逆 SPACE インデント: 选区各行加减 1 个空格 (Sakura 实测; 与 TAB 宽度无关)', () =>
   withMocks({ name: 'tc', portOffset: 200 }, async ({ page, snap, press }) => {
     await fill(page, 'a\nb\nc');
     await press('Control+a'); await cmd(page, 'indent-space');
