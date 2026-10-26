@@ -4437,7 +4437,7 @@ function confirmClose(t) {
 }
 
 function closeTab(id) {
-  { const ct = TABS.get(id); if (ct) histReset(ct); }   // 关掉的标签: 后端的撤销栈一起释放
+  { const ct = TABS.get(id); if (ct) { histReset(ct); invoke("search_text", { op: "forget", needle: "", doc_id: histKey(ct) }).catch(() => {}); } }   // 关掉的标签: 后端的撤销栈 / 正文镜像一起释放
   TABS.delete(id);
   if (activeTabId === id) activeTabId = null;
   if (TABS.size === 0) {
@@ -5495,11 +5495,30 @@ function searchRequest(op, extra) {
   const t = getActiveTab();
   return Object.assign({ op, needle: FIND_STATE.needle || "", whole_word: !!FIND_STATE.wholeWord, match_case: !!FIND_STATE.matchCase, use_regex: !!FIND_STATE.useRegex, lines: t && op !== "validate" ? t.lines : [] }, extra || {});
 }
-function searchText(op, extra) { return invoke("search_text", searchRequest(op, extra)); }
+/* 文档正文镜像 (editcore::doc_store): 大文档第一次把整篇交给 Rust 登记, 之后只交内容指纹 (行数 + 两路哈希), Rust 核对一致才用自己那份,
+   对不上 (改过 / 进程重启 / 被淘汰) 它返回 need_doc, 这里补发整篇。核对的是内容指纹而不是版本号: 前端哪里直接改了行数组都不会让 Rust 用到过期正文。
+   指纹算法与 Rust 的 doc_store::fingerprint 逐字相同 (UTF-16 码元, 行末补 10; FNV-1a + djb2-xor)。小文档整篇发比算指纹还便宜, 照旧。 */
+const DOC_MIRROR_MIN_LINES = 1000;
+function docFingerprint(lines) {
+  let h1 = 0x811c9dc5 | 0, h2 = 5381;
+  for (let i = 0; i < lines.length; i++) {
+    const s = lines[i];
+    for (let k = 0; k < s.length; k++) { const u = s.charCodeAt(k); h1 = Math.imul(h1 ^ u, 16777619); h2 = Math.imul(h2, 33) ^ u; }
+    h1 = Math.imul(h1 ^ 10, 16777619); h2 = Math.imul(h2, 33) ^ 10;
+  }
+  return [h1 >>> 0, h2 >>> 0];
+}
+async function searchCall(t, req) {
+  if (!t || req.op === "validate" || t.lines.length < DOC_MIRROR_MIN_LINES) return invoke("search_text", req);
+  const ref = { doc_id: histKey(t), doc_hash: docFingerprint(t.lines), doc_len: t.lines.length };
+  const r = await invoke("search_text", Object.assign({}, req, ref, { lines: [] }));
+  if (!r.need_doc) return r;
+  return invoke("search_text", Object.assign({}, req, { doc_id: ref.doc_id, doc_hash: docFingerprint(t.lines), doc_len: t.lines.length, lines: t.lines }));
+}
+function searchText(op, extra) { return searchCall(getActiveTab(), searchRequest(op, extra)); }
 async function findInTab(t, needle, opts) {
   if (!t || !needle) return { hits: [], error: null };
-  const saved = FIND_STATE.needle; // searchRequest 读 FIND_STATE; 调用方传入的 needle / opts 优先
-  const r = await invoke("search_text", { op: "hits", needle, whole_word: !!opts.wholeWord, match_case: !!opts.matchCase, use_regex: !!opts.useRegex, lines: t.lines });
+  const r = await searchCall(t, { op: "hits", needle, whole_word: !!opts.wholeWord, match_case: !!opts.matchCase, use_regex: !!opts.useRegex, lines: t.lines });
   return { hits: r.hits || [], error: r.error || null };
 }
 // 搜索标记用的命中缓存 (异步计算, 算完再重绘一次)
@@ -6372,6 +6391,7 @@ window.backspaceMulti = backspaceMulti;
 window.startColumnSelect = startColumnSelect;
 window.extendColumnSelect = extendColumnSelect;
 window.colSelRect = colSelRect;
+window.docFingerprint = docFingerprint;
 window.columnInsert = columnInsert;
 window.columnDelete = columnDelete;
 window.columnSelectedText = columnSelectedText;

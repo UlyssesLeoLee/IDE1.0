@@ -22,9 +22,16 @@ pub struct SearchReq {
     pub match_case: bool,
     #[serde(default)]
     pub use_regex: bool,
-    /// 整篇文档 (hits / step / replace_all)
+    /// 整篇文档 (hits / step / replace_all)。带 doc_id 时可以留空: 正文用 Rust 那份镜像 (见 doc_store)
     #[serde(default)]
     pub lines: Vec<String>,
+    /// 文档正文镜像: 文档 id (标签) / 内容指纹 / 行数。lines 非空 = 登记这份正文; lines 为空 = 指纹对得上就用镜像, 对不上返回 need_doc
+    #[serde(default)]
+    pub doc_id: Option<String>,
+    #[serde(default)]
+    pub doc_hash: Option<[u32; 2]>,
+    #[serde(default)]
+    pub doc_len: usize,
     // ---- step ----
     #[serde(default)]
     pub row: usize,
@@ -67,6 +74,8 @@ pub struct SearchRes {
     /// replace_all: 被改动的行 [行号, 新文本] / 置換数 / 最后一处置換之后的位置
     pub rows: Vec<(usize, String)>,
     pub count: usize,
+    /// 镜像里没有这份正文 (指纹对不上): 前端要把整篇 lines 补发过来
+    pub need_doc: bool,
     pub last_row: Option<usize>,
     pub last_end: usize,
     /// match_expand: 选中的刚好是一处命中时, 展开后的替换文字
@@ -137,9 +146,9 @@ fn next_char(s: &str, i: usize) -> usize {
     s[i..].chars().next().map(|c| i + c.len_utf8()).unwrap_or(s.len() + 1)
 }
 
-fn all_hits(re: &Regex, req: &SearchReq) -> Vec<Hit> {
+fn all_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> Vec<Hit> {
     let mut hits = Vec::new();
-    for (row, line) in req.lines.iter().enumerate() {
+    for (row, line) in lines.iter().enumerate() {
         for (s, e) in line_matches(re, line, req.whole_word) {
             hits.push(Hit { row, col: line[..s].chars().count(), len: line[s..e].chars().count() });
             if hits.len() > MAX_HITS {
@@ -184,6 +193,27 @@ fn expand(caps: &regex::Captures, repl: &str, use_regex: bool) -> String {
 }
 
 pub fn run(req: &SearchReq) -> Option<SearchRes> {
+    // 文档正文: 带 doc_id 的走镜像 (登记 / 取用 / 丢弃), 否则就是请求里的 lines
+    let mirrored: Option<std::sync::Arc<Vec<String>>> = match &req.doc_id {
+        Some(id) if req.op == "forget" => {
+            crate::doc_store::forget(id);
+            return Some(SearchRes::default());
+        }
+        Some(id) if !req.lines.is_empty() => Some(crate::doc_store::put(id, req.lines.clone())),
+        Some(id) => match req.doc_hash {
+            Some(fp) => match crate::doc_store::get(id, fp, req.doc_len) {
+                Some(d) => Some(d),
+                None => return Some(SearchRes { need_doc: true, ..Default::default() }),
+            },
+            None => None,
+        },
+        None => None,
+    };
+    let lines: &[String] = mirrored.as_deref().map(|v| v.as_slice()).unwrap_or(&req.lines);
+    run_on(req, lines)
+}
+
+fn run_on(req: &SearchReq, lines: &[String]) -> Option<SearchRes> {
     let re = match build(req) {
         Ok(r) => r,
         Err(e) => return Some(SearchRes { error: Some(e), ..Default::default() }),
@@ -191,15 +221,15 @@ pub fn run(req: &SearchReq) -> Option<SearchRes> {
     match req.op.as_str() {
         "validate" => Some(SearchRes::default()),
         "hits" => {
-            let hits = all_hits(&re, req);
+            let hits = all_hits(&re, req, lines);
             Some(SearchRes { total: hits.len(), hits, ..Default::default() })
         }
         "step" => {
-            let hits = all_hits(&re, req);
+            let hits = all_hits(&re, req, lines);
             let (cr, mut cc) = (req.row, req.col);
             // Sakura: 单词单位向后查找时, 光标在词中 -> 从该词词首起找 (命中当前词本身)
             if req.forward && req.whole_word && cc > 0 {
-                let cs: Vec<char> = req.lines.get(cr).map(|l| l.chars().collect()).unwrap_or_default();
+                let cs: Vec<char> = lines.get(cr).map(|l| l.chars().collect()).unwrap_or_default();
                 if cs.get(cc - 1).copied().map(is_word).unwrap_or(false) && cs.get(cc).copied().map(is_word).unwrap_or(false) {
                     while cc > 0 && is_word(cs[cc - 1]) {
                         cc -= 1;
@@ -230,7 +260,7 @@ pub fn run(req: &SearchReq) -> Option<SearchRes> {
             Some(SearchRes { total: hits.len(), hit: idx.map(|i| hits[i].clone()), index: idx.unwrap_or(0), wrapped, ..Default::default() })
         }
         "replace_all" => {
-            let n_rows = req.lines.len();
+            let n_rows = lines.len();
             if n_rows == 0 {
                 return Some(SearchRes::default());
             }
@@ -240,7 +270,7 @@ pub fn run(req: &SearchReq) -> Option<SearchRes> {
             };
             let mut res = SearchRes::default();
             for r in r0..=r1 {
-                let line = &req.lines[r];
+                let line = &lines[r];
                 let from = if r == r0 { c0 } else { 0 };
                 let to = if r == r1 { c1 } else { usize::MAX };
                 let (mut out, mut at, mut n, mut end) = (String::new(), 0usize, 0usize, 0usize);
@@ -300,6 +330,9 @@ mod tests {
             match_case: flags.contains('c'),
             use_regex: flags.contains('r'),
             lines: DOC.iter().map(|s| s.to_string()).collect(),
+            doc_id: None,
+            doc_hash: None,
+            doc_len: 0,
             row: 0,
             col: 0,
             forward: true,
@@ -311,6 +344,41 @@ mod tests {
         }
     }
 
+    #[test]
+    fn mirrored_document_is_used_only_when_the_fingerprint_matches() {
+        let lines: Vec<String> = DOC.iter().map(|s| s.to_string()).collect();
+        let fp = crate::doc_store::fingerprint(&lines);
+        let by_ref = |id: &str, hash: [u32; 2], n: usize| {
+            let mut r = req("hits", "foo", "");
+            r.lines = vec![];
+            r.doc_id = Some(id.into());
+            r.doc_hash = Some(hash);
+            r.doc_len = n;
+            r
+        };
+        // 没登记过: 要整篇
+        assert!(run(&by_ref("t-search-a", fp, lines.len())).unwrap().need_doc);
+        // 带整篇登记 (和不带 doc_id 的结果一样)
+        let mut put = req("hits", "foo", "");
+        put.doc_id = Some("t-search-a".into());
+        let direct = run(&req("hits", "foo", "")).unwrap();
+        assert_eq!(run(&put).unwrap().hits, direct.hits);
+        // 之后只交指纹就够, 结果一样; 指纹 / 行数对不上 = 前端改过, 不能用旧正文
+        let via = run(&by_ref("t-search-a", fp, lines.len())).unwrap();
+        assert_eq!((via.need_doc, via.hits), (false, direct.hits));
+        assert!(run(&by_ref("t-search-a", [fp[0] ^ 1, fp[1]], lines.len())).unwrap().need_doc);
+        assert!(run(&by_ref("t-search-a", fp, lines.len() + 1)).unwrap().need_doc);
+        // 置換全部也用镜像里的正文
+        let mut rep = by_ref("t-search-a", fp, lines.len());
+        rep.op = "replace_all".into();
+        rep.repl = "Z".into();
+        assert_eq!(run(&rep).unwrap().rows[0], (0, "Z Z Zbar".to_string()));
+        // 关闭标签: 丢弃
+        let mut forget = by_ref("t-search-a", fp, 0);
+        forget.op = "forget".into();
+        run(&forget);
+        assert!(run(&by_ref("t-search-a", fp, lines.len())).unwrap().need_doc);
+    }
     #[test]
     fn regex_errors_explain_how_to_search_a_literal_star() {
         // 与 Sakura 一致: 「正则」打开时单独的 * 是语法错误; \* 与 [*] 才是字面的星号

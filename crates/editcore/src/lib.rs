@@ -42,6 +42,7 @@ pub mod control_code;
 pub mod cursor;
 pub mod cursor_persistence;
 pub mod daemon;
+pub mod doc_store;
 pub mod document_io;
 pub mod edit_cmd;
 pub mod edit_ops;
