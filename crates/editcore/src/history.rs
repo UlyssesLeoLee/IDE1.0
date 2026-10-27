@@ -54,59 +54,104 @@ pub struct HistRes {
 struct History {
     undo: Vec<Patch>,
     redo: Vec<Patch>,
+    /// 最近一次被用到的时刻 (登记表的递增计数); 登记数到上限时淘汰最久没用的
+    used: u64,
 }
 
-fn registry() -> &'static Mutex<HashMap<String, History>> {
-    static R: OnceLock<Mutex<HashMap<String, History>>> = OnceLock::new();
-    R.get_or_init(|| Mutex::new(HashMap::new()))
+/// 全部标签页的撤销栈。单独成类型, 淘汰策略才能在私有实例上单测 (不碰进程里共用的那份)
+#[derive(Default)]
+struct Registry {
+    tick: u64,
+    tabs: HashMap<String, History>,
 }
 
-pub fn run(req: &HistReq) -> Option<HistRes> {
-    let mut reg = registry().lock().ok()?;
-    // 上限: 页面重新载入时旧会话的标签不会再来清理, 登记数到上限就丢掉一个旧的, 内存不会无限涨
-    if !reg.contains_key(&req.tab) && reg.len() >= MAX_TABS {
-        if let Some(k) = reg.keys().next().cloned() {
-            reg.remove(&k);
+impl Registry {
+    /// 执行一个请求; 无法识别的操作 (或缺必需参数) = None, 且不留下任何登记
+    fn run(&mut self, req: &HistReq, max_tabs: usize) -> Option<HistRes> {
+        if !matches!(req.op.as_str(), "push" | "undo" | "redo" | "clear" | "info") {
+            return None;
+        }
+        if req.op == "push" && req.patch.is_none() {
+            return None;
+        }
+        self.tick += 1;
+        let tick = self.tick;
+        // 只有 push 会新建登记; 其它操作碰到没登记过的标签页 = 空栈, 不占位置
+        if !self.tabs.contains_key(&req.tab) {
+            if req.op != "push" {
+                return Some(HistRes::default());
+            }
+            self.evict_for_new_tab(max_tabs);
+        }
+        let h = self.tabs.entry(req.tab.clone()).or_default();
+        h.used = tick;
+        let apply = step(h, req);
+        let res = HistRes { apply, undo_len: h.undo.len(), redo_len: h.redo.len() };
+        if req.op == "clear" {
+            self.tabs.remove(&req.tab);
+        }
+        Some(res)
+    }
+
+    /// 页面重新载入时旧会话的标签不会再来清理, 登记数到上限就丢掉最久没用的, 内存不会无限涨
+    fn evict_for_new_tab(&mut self, max_tabs: usize) {
+        while self.tabs.len() >= max_tabs {
+            match self.tabs.iter().min_by_key(|(_, h)| h.used).map(|(k, _)| k.clone()) {
+                Some(oldest) => {
+                    self.tabs.remove(&oldest);
+                }
+                None => break,
+            }
         }
     }
-    let h = reg.entry(req.tab.clone()).or_default();
-    let mut apply = None;
+}
+
+/// 对一个标签页的栈做一步操作, 返回要套到文档上的改动 (undo / redo 才有)
+fn step(h: &mut History, req: &HistReq) -> Option<Apply> {
     match req.op.as_str() {
         "push" => {
-            let p = req.patch.clone()?;
-            h.undo.push(p);
-            if h.undo.len() > MAX_UNDO {
-                h.undo.remove(0);
+            if let Some(p) = req.patch.clone() {
+                h.undo.push(p);
+                if h.undo.len() > MAX_UNDO {
+                    h.undo.remove(0);
+                }
+                h.redo.clear();
             }
-            h.redo.clear();
+            None
         }
         "undo" => {
-            if let Some(mut p) = h.undo.pop() {
-                apply = Some(Apply { start: p.start, remove: p.inserted.len(), insert: p.removed.clone(), cursor: p.cursor_before });
-                if let Some(c) = req.cursor {
-                    p.cursor_after = c;
-                }
-                h.redo.push(p);
+            let mut p = h.undo.pop()?;
+            let apply = Apply { start: p.start, remove: p.inserted.len(), insert: p.removed.clone(), cursor: p.cursor_before };
+            if let Some(c) = req.cursor {
+                p.cursor_after = c; // redo 回到 undo 发起时的光标
             }
+            h.redo.push(p);
+            Some(apply)
         }
         "redo" => {
-            if let Some(p) = h.redo.pop() {
-                apply = Some(Apply { start: p.start, remove: p.removed.len(), insert: p.inserted.clone(), cursor: p.cursor_after });
-                h.undo.push(p);
-            }
+            let p = h.redo.pop()?;
+            let apply = Apply { start: p.start, remove: p.removed.len(), insert: p.inserted.clone(), cursor: p.cursor_after };
+            h.undo.push(p);
+            Some(apply)
         }
         "clear" => {
             h.undo.clear();
             h.redo.clear();
+            None
         }
-        "info" => {}
-        _ => return None,
+        _ => None, // "info"
     }
-    let res = HistRes { apply, undo_len: h.undo.len(), redo_len: h.redo.len() };
-    if req.op == "clear" && res.undo_len == 0 {
-        reg.remove(&req.tab);
-    }
-    Some(res)
+}
+
+fn registry() -> &'static Mutex<Registry> {
+    static R: OnceLock<Mutex<Registry>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(Registry::default()))
+}
+
+pub fn run(req: &HistReq) -> Option<HistRes> {
+    // 别的线程持锁时 panic 会让锁"中毒"; 栈数据本身还是一致的, 照常用 (原来这里会把它当成"未知操作")
+    let mut reg = registry().lock().unwrap_or_else(|e| e.into_inner());
+    reg.run(req, MAX_TABS)
 }
 
 #[cfg(test)]
@@ -150,5 +195,37 @@ mod tests {
         let c = run(&req("t-a", "clear", None, None)).unwrap();
         assert_eq!((c.undo_len, c.redo_len), (0, 0));
         assert!(run(&req("t-a", "nope", None, None)).is_none());
+    }
+    #[test]
+    fn invalid_requests_leave_no_trace() {
+        let mut r = Registry::default();
+        assert!(r.run(&req("t-x", "nope", None, None), 8).is_none());
+        assert!(r.run(&req("t-x", "push", None, None), 8).is_none(), "push 没带补丁");
+        assert!(r.tabs.is_empty());
+        // info / undo / redo / clear 碰到没登记的标签页 = 空栈, 不占位置
+        for op in ["info", "undo", "redo", "clear"] {
+            let res = r.run(&req("t-ghost", op, None, None), 8).unwrap();
+            assert_eq!((res.apply, res.undo_len, res.redo_len), (None, 0, 0));
+        }
+        assert!(r.tabs.is_empty());
+    }
+    #[test]
+    fn the_least_recently_used_tab_is_evicted() {
+        let mut r = Registry::default();
+        for t in ["a", "b", "c"] {
+            r.run(&req(t, "push", Some(patch(0, &[], &["x"], [0, 0])), None), 3).unwrap();
+        }
+        r.run(&req("a", "info", None, None), 3).unwrap(); // a 刚用过, b 变成最久没用的
+        r.run(&req("d", "push", Some(patch(0, &[], &["x"], [0, 0])), None), 3).unwrap();
+        let mut keys: Vec<&String> = r.tabs.keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["a", "c", "d"]);
+    }
+    #[test]
+    fn clearing_a_tab_releases_its_slot() {
+        let mut r = Registry::default();
+        r.run(&req("a", "push", Some(patch(0, &[], &["x"], [0, 0])), None), 3).unwrap();
+        r.run(&req("a", "clear", None, None), 3).unwrap();
+        assert!(r.tabs.is_empty());
     }
 }
