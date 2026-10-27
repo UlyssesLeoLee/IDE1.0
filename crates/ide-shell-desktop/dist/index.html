@@ -3450,7 +3450,7 @@ if (termIn) {
   });
 }
 
-/* ===== Syntax (来自 syntax.js, 内联以免 include_str 同步) ===== */
+/* ===== Syntax (高亮 / 语言判定; 内联在本文件里, 不再有单独的 syntax.js) ===== */
 // ===== 语言识别 (扩展名 → id) =====
   const EXT_MAP = {
     "rs": "rust", "py": "python", "pyi": "python", "pyx": "python",
@@ -6182,9 +6182,9 @@ function searchRequest(op, extra) {
   const t = getActiveTab();
   return Object.assign({ op, needle: FIND_STATE.needle || "", whole_word: !!FIND_STATE.wholeWord, match_case: !!FIND_STATE.matchCase, use_regex: !!FIND_STATE.useRegex, lines: t && op !== "validate" ? t.lines : [] }, extra || {});
 }
-/* 文档正文镜像 (editcore::doc_store): 大文档第一次把整篇交给 Rust 登记, 之后只交内容指纹 (行数 + 两路哈希), Rust 核对一致才用自己那份,
+/* 文档正文镜像 (editcore::doc_mirror): 大文档第一次把整篇交给 Rust 登记, 之后只交内容指纹 (行数 + 两路哈希), Rust 核对一致才用自己那份,
    对不上 (改过 / 进程重启 / 被淘汰) 它返回 need_doc, 这里补发整篇。核对的是内容指纹而不是版本号: 前端哪里直接改了行数组都不会让 Rust 用到过期正文。
-   指纹算法与 Rust 的 doc_store::fingerprint 逐字相同 (UTF-16 码元, 行末补 10; FNV-1a + djb2-xor)。小文档整篇发比算指纹还便宜, 照旧。 */
+   指纹算法与 Rust 的 doc_mirror::fingerprint 逐字相同 (UTF-16 码元, 行末补 10; FNV-1a + djb2-xor)。小文档整篇发比算指纹还便宜, 照旧。 */
 const DOC_MIRROR_MIN_LINES = 1000;
 function docFingerprint(lines) {
   let h1 = 0x811c9dc5 | 0, h2 = 5381;
@@ -10276,69 +10276,104 @@ function firstWordCol(line) { const a = charArray(line); let i = 0; while (i < a
 
 /* ===== ARCH-01: 删除 / 剪切 / 复制行 类命令的语义在 Rust (editcore::edit_cmd) =====
    前端交上光标周围几行与选区, Rust 返回"把第 start 行起的 remove 行换成 insert + 新光标 + 要写进剪贴板的文字", 这里套回文档。 */
+/* ===== 编辑命令的桥接: 请求 (editRequest) -> Rust edit_cmd -> 套结果 (applyEditResult) -> 重画 (repaintAfterEdit) =====
+   语义全在 Rust (editcore::edit_cmd); 这里只做数据搬运。runEdit 是串起来的入口, 其余是各段的小函数。 */
+
+// 命令族: 决定请求要带什么 (box_sel / cursors)、结果怎么套 (列块 / 多光标补丁 / 单光标)
+function editFamily(cmd) { return cmd.startsWith("box-") ? "box" : cmd.startsWith("multi-") ? "multi" : "single"; }
+
+// 当前选区 -> [r0, c0, r1, c1] (到行尾的 Infinity 解析成具体列); 没有 (或为空) = null
+function selTuple(t) {
+  if (!selNonEmpty(t)) return null;
+  return [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1];
+}
+
+// 把行号集合变成请求里的 [行号, 文本] (越界的行丢掉)
+function rowsWindow(t, need) {
+  const last = Math.max(0, t.lines.length - 1);
+  return [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
+}
+
 function editRequest(t, cmd, extra) {
   const { row, col } = t.cursor, last = Math.max(0, t.lines.length - 1);
   const need = new Set([row - 1, row, row + 1]);
   if (extra && extra.text && cmd === "paste-box") for (let i = 0; i < extra.text.split("\n").length; i++) need.add(row + i);
-  const had = selNonEmpty(t);
-  let sel = null;
-  if (had) {
-    sel = [t.sel.r0, t.sel.c0, t.sel.r1, t.sel.c1 === Infinity ? charLen(t.lines[t.sel.r1] || "") : t.sel.c1];
-    for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
-  }
-  let box_sel = null;
-  if (cmd.startsWith("box-") && t.colSel) {   // 列块: 未归一化的原样交上, 归一化 (夹行号 / 夹到最长行) 在 Rust
+  const sel = selTuple(t);
+  if (sel) for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
+  const family = editFamily(cmd);
+  let box_sel = null, cursors = [];
+  if (family === "box" && t.colSel) {   // 列块: 未归一化的原样交上, 归一化 (夹行号 / 夹到最长行) 在 Rust
     const cs = t.colSel, cap = (v) => Math.min(Number.isFinite(v) ? v : 1e9, 1e9), clampR = (v) => Math.max(0, Math.min(cap(v), last));
     box_sel = [clampR(cs.r0), cap(cs.c0), clampR(cs.r1), cap(cs.c1)];   // 行号先夹进文档 (undo 等让文档缩短后留下的旧列块), 交上去的行就是 Rust 要用的行
     for (let r = Math.min(box_sel[0], box_sel[2]); r <= Math.max(box_sel[0], box_sel[2]); r++) need.add(r);
   }
-  let cursors = [];
-  if (cmd.startsWith("multi-")) {   // 只交光标所在的行 (退格在行首要并到上一行, 也交上一行); 隔得再远中间的行也不用发
+  if (family === "multi") {   // 只交光标所在的行 (退格在行首要并到上一行, 也交上一行); 隔得再远中间的行也不用发
     cursors = cleanCursors(t).map((c) => [c.row, c.col]);
     for (const [cr, cc] of cursors) { need.add(cr); if (cmd === "multi-backspace" && cc === 0 && cr > 0) need.add(cr - 1); }
   }
-  const rows = [...need].filter((r) => r >= 0 && r <= last).map((r) => [r, t.lines[r] || ""]);
-  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows, box_sel, cursors, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
+  return Object.assign({ cmd, row, col, sel, total_rows: t.lines.length, rows: rowsWindow(t, need), box_sel, cursors, auto_indent: !!PREFS.autoIndent, smart_indent: !!PREFS.smartIndent }, extra || {});
 }
+
 // 套补丁: 大段插入不用 splice(...展开) (参数个数有上限, 十万行的粘贴会爆栈)
 function spliceLines(t, start, remove, insert) {
   if (insert.length < 4000) { t.lines.splice(start, remove, ...insert); return; }
   t.lines = t.lines.slice(0, start).concat(insert, t.lines.slice(start + remove));
 }
+
+// 没改文本的结果 (复制写剪贴板 / 选词产生选区 / 只有提示)
+function applyUnchangedResult(t, res) {
+  if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
+  if (res.sel) {
+    t.sel = { r0: res.sel[0], c0: res.sel[1], r1: res.sel[2], c1: res.sel[3] };
+    t.selAnchor = res.anchor ? { row: res.anchor[0], col: res.anchor[1] } : null;
+    t.cursor = { row: res.cursor[0], col: res.cursor[1] };
+    renderVim(t);
+    setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1));
+  }
+  if (res.tip) setTip(res.tip);
+}
+
+// 改了文本的结果: 记撤销边界 -> 套补丁 -> 光标 / 选区 / 列块 / 多光标。
+// moved = 请求期间用户点了鼠标: 文字补丁照套, 但不能再用 Rust 算的光标盖回用户点的位置。
+function applyEditResult(t, cmd, res, moved) {
+  snapshot(t);
+  if (res.undo_cursor) t.hcur = { row: res.undo_cursor[0], col: res.undo_cursor[1] };   // 撤销回到哪里 (词删除回到词尾)
+  if (res.patches) { for (const [ps, pn, pins] of res.patches.slice().sort((a, b) => b[0] - a[0])) spliceLines(t, ps, pn, pins); }   // 多光标: 几段补丁从下往上套
+  else spliceLines(t, res.start, res.remove, res.insert);
+  if (!t.lines.length) t.lines.push("");
+  t.dirty = true;
+  if (!moved) {
+    const family = editFamily(cmd);
+    t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
+    t.sel = null; t.selAnchor = null; delete t.goalCol;
+    if (family !== "box") t.colSel = null;                                       // 文字变了, 旧列块的行号作废
+    if (family === "single") delete t.cursors;                                   // 单光标编辑之后多光标作废
+    if (family === "box") { const b = res.box_sel; t.colSel = b ? { r0: b[0], c0: b[1], r1: b[2], c1: b[3] } : null; }
+    if (res.cursors) setCursors(t, res.cursors.map((c) => ({ row: c[0], col: c[1] })));
+  }
+  if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
+}
+
+// 重画: 输入法组合中不重画 (会毁掉浏览器正在组合的节点, compositionend 会重画); 有选区 / 列块 / 多光标走带标记的渲染,
+// 否则回到单文本节点形态 (同时刷新标签条的脏标记 ● 与光标)
+function repaintAfterEdit(t, cmd) {
+  if (typeof IME_ACTIVE !== "undefined" && IME_ACTIVE) return;
+  if (t.sel || t.colSel || (t.cursors && t.cursors.length > 1)) renderVim(t); else paintActive();
+  if (editFamily(cmd) === "box") { syncColumnSelectUI(t); updateCaret(false); }
+}
+
 function runEdit(cmd, extra) {
   return enqueueInput(async (ctx) => {
     const t = getActiveTab(); if (!t) return;
-    const uiv = t.uiVer || 0;   // 请求期间用户点了鼠标 (光标 / 选区被改) 就不能再用 Rust 算的光标盖回去
+    const uiv = t.uiVer || 0;   // 请求期间用户点了鼠标 (mousedown 会 +1) 就算 moved
     let res;
     try { res = await invoke("edit_cmd", editRequest(t, cmd, extra)); }
     catch (err) { setTip("编辑失败: " + err.message); return; }
-    if (getActiveTab() !== t || (ctx && ctx.dead)) return;
-    const moved = (t.uiVer || 0) !== uiv;
-    if (!res.changed) {
-      if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
-      if (res.sel) { t.sel = { r0: res.sel[0], c0: res.sel[1], r1: res.sel[2], c1: res.sel[3] }; t.selAnchor = res.anchor ? { row: res.anchor[0], col: res.anchor[1] } : null; t.cursor = { row: res.cursor[0], col: res.cursor[1] }; renderVim(t); setPos("Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1)); }
-      if (res.tip) setTip(res.tip);
-      return;
-    }
+    if (getActiveTab() !== t || (ctx && ctx.dead)) return;   // 切走了标签 / 桥操作已超时作废
+    if (!res.changed) { applyUnchangedResult(t, res); return; }
     if (res.tip) setTip(res.tip);
-    snapshot(t);
-    if (res.undo_cursor) t.hcur = { row: res.undo_cursor[0], col: res.undo_cursor[1] };
-    if (res.patches) { for (const [ps, pn, pins] of res.patches.slice().sort((a, b) => b[0] - a[0])) spliceLines(t, ps, pn, pins); }   // 多光标: 几段补丁从下往上套
-    else spliceLines(t, res.start, res.remove, res.insert);
-    if (!t.lines.length) t.lines.push("");
-    t.dirty = true;
-    if (!moved) {
-      t.cursor = { row: Math.min(res.cursor[0], t.lines.length - 1), col: res.cursor[1] };
-      t.sel = null; t.selAnchor = null; delete t.goalCol;
-      if (!cmd.startsWith("box-")) t.colSel = null;                              // 文字变了, 旧列块的行号作废
-      if (!cmd.startsWith("multi-") && !cmd.startsWith("box-")) delete t.cursors;   // 单光标编辑之后多光标作废
-      if (cmd.startsWith("box-")) { const b = res.box_sel; t.colSel = b ? { r0: b[0], c0: b[1], r1: b[2], c1: b[3] } : null; }
-      if (res.cursors) setCursors(t, res.cursors.map((c) => ({ row: c[0], col: c[1] })));
-    }
-    if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
-    if (typeof IME_ACTIVE !== "undefined" && IME_ACTIVE) return;   // 输入法组合中: 不重画 (会毁掉浏览器正在组合的节点), compositionend 会重画
-    if (t.sel || t.colSel || (t.cursors && t.cursors.length > 1)) renderVim(t); else paintActive();   // 与原来的输入 / 删除函数一致: 回到单文本节点形态, 同时刷新标签条的脏标记 (●) 与光标
-    if (cmd.startsWith("box-")) { syncColumnSelectUI(t); updateCaret(false); }
+    applyEditResult(t, cmd, res, (t.uiVer || 0) !== uiv);
+    repaintAfterEdit(t, cmd);
   });
 }
 function copySelection() {
