@@ -1198,6 +1198,47 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 html.as_bytes(),
             );
         }
+        ("GET", "/PixelFontMulti-12.ttf") | ("GET", "/editor/PixelFontMulti-12.ttf") => {
+            let bytes = std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf")
+                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/PixelFontMulti-12.ttf"))
+                .or_else(|_| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf"))
+                .or_else(|_| std::fs::read("PixelFontMulti-12.ttf"));
+            if let Ok(b) = bytes {
+                send_response(stream, "200 OK", "font/ttf", &b);
+            } else {
+                send_error_json(stream, "404 Not Found", "font not found");
+            }
+        }
+        ("GET", "/logo.png") | ("GET", "/editor/logo.png") => {
+            let bytes = std::fs::read("crates/ide-shell-web/src/logo.png")
+                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/logo.png"))
+                .or_else(|_| std::fs::read("assets/logo/IDE1.0_Crystal_A_128x128.png"));
+            if let Ok(b) = bytes {
+                send_response(stream, "200 OK", "image/png", &b);
+            } else {
+                send_error_json(stream, "404 Not Found", "logo not found");
+            }
+        }
+        ("GET", "/favicon.ico") | ("GET", "/editor/favicon.ico") => {
+            let bytes = std::fs::read("crates/ide-shell-web/src/favicon.ico")
+                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/favicon.ico"))
+                .or_else(|_| std::fs::read("crates/ide-shell-desktop/icons/icon.ico"));
+            if let Ok(b) = bytes {
+                send_response(stream, "200 OK", "image/x-icon", &b);
+            } else {
+                send_error_json(stream, "404 Not Found", "favicon not found");
+            }
+        }
+        ("GET", "/favicon.png") | ("GET", "/editor/favicon.png") => {
+            let bytes = std::fs::read("crates/ide-shell-web/src/favicon.png")
+                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/favicon.png"))
+                .or_else(|_| std::fs::read("assets/logo/IDE1.0_Crystal_A_32x32.png"));
+            if let Ok(b) = bytes {
+                send_response(stream, "200 OK", "image/png", &b);
+            } else {
+                send_error_json(stream, "404 Not Found", "favicon not found");
+            }
+        }
         // ===== editor.html 用端点 — 与 desktop Tauri command 同名 =====
         ("POST", "/api/key") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
