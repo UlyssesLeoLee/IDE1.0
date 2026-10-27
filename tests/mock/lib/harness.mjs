@@ -24,7 +24,9 @@ function findBin(name) {
     path.join(REPO, 'target', 'debug', name),
     path.join(REPO, 'target', 'release', name),
   ].filter(Boolean);
-  return cands.find((p) => fs.existsSync(p)) || cands[0];
+  const found = cands.find((p) => fs.existsSync(p));
+  if (!found) throw new Error(`找不到 ${name}: 先 cargo build -p ide-shell-web, 或用 QA_BIN / QA_TARGET_DIR 指定。找过: ${cands.join(' | ')}`);
+  return found;
 }
 export const BIN = process.env.QA_BIN || findBin('ide-shell-web.exe');
 export const DESKTOP_BIN = process.env.QA_DESKTOP || null;
@@ -37,22 +39,46 @@ export function tmpProject(name = 'proj') {
   return dir;
 }
 
+// 起过的 server 子进程: 测试进程退出 / 被打断时统一收掉, 不留孤儿 ide-shell-web.exe 占着可执行文件、污染后面的运行
+const CHILDREN = new Set();
+for (const ev of ['exit', 'SIGINT', 'SIGTERM']) {
+  process.on(ev, () => { for (const c of CHILDREN) { try { c.kill(); } catch (_) {} } if (ev !== 'exit') process.exit(1); });
+}
+
+// 内嵌前端是编译进二进制的 (include_str!): 改了 editor.html 没重新编译, 测的就是旧页面。每个进程核对一次, 对不上就直接报错
+let FRONTEND_CHECKED = false;
+async function assertFreshFrontend(base) {
+  if (FRONTEND_CHECKED || process.env.QA_ALLOW_STALE === '1') return;
+  const served = await (await fetch(base + '/editor')).text();
+  const src = fs.readFileSync(path.join(REPO, 'crates/ide-shell-web/src/editor.html'), 'utf8');
+  const norm = (t) => t.replace(/\r\n/g, '\n');
+  if (norm(served) !== norm(src)) throw new Error(`${BIN} 里内嵌的页面和 crates/ide-shell-web/src/editor.html 不一致: 先重新编译 (cargo build -p ide-shell-web); 确认要测旧二进制就设 QA_ALLOW_STALE=1`);
+  FRONTEND_CHECKED = true;
+}
+
 export async function startServer({ port, root, extraEnv = {} }) {
   const addr = `127.0.0.1:${port}`;
   const child = spawn(BIN, [], {
     env: { ...process.env, IDE_SHELL_WEB_ADDR: addr, IDE_SHELL_WEB_NO_AUTH: '1', IDE_SHELL_WEB_TEST_ROOT: root, ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  CHILDREN.add(child);
+  child.on('exit', () => CHILDREN.delete(child));
   let log = '';
   child.stdout.on('data', (d) => (log += d));
   child.stderr.on('data', (d) => (log += d));
+  const stop = () => { try { child.kill(); } catch (_) {} };
   const base = `http://${addr}`;
-  for (let i = 0; i < 80; i++) {
-    try { if ((await fetch(base + '/api/frame')).ok) break; } catch (_) { /* 还没起来 */ }
-    await new Promise((r) => setTimeout(r, 250));
+  let ready = false;
+  for (let i = 0; i < 80 && !ready; i++) {
+    // 先看自己起的进程还在不在: 端口上别人 (孤儿) 的 server 答了 /api/frame 也不能算数
     if (child.exitCode !== null) throw new Error('server 提前退出: ' + log);
+    try { ready = (await fetch(base + '/api/frame')).ok && child.exitCode === null; } catch (_) { /* 还没起来 */ }
+    if (!ready) await new Promise((r) => setTimeout(r, 250));
   }
-  return { base, root, stop: () => { try { child.kill(); } catch (_) {} }, log: () => log };
+  if (!ready) { stop(); throw new Error(`server 20 秒内没起来 (${addr}): ${log}`); }
+  try { await assertFreshFrontend(base); } catch (e) { stop(); throw e; }
+  return { base, root, stop, log: () => log };
 }
 
 /**

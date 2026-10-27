@@ -8,6 +8,8 @@ import * as path from "path";
 
 // server binary 路径 (tests/uat → repo root target/debug; 本机用 CARGO_TARGET_DIR 时设 IDE_SHELL_WEB_BIN)
 // MSYS bash 路径转换问题: 总是要求 IDE_SHELL_WEB_BIN 设置为绝对路径
+// QA_BIN 是 tests/mock 用的同一个变量, 两边通用
+if (!process.env.IDE_SHELL_WEB_BIN && process.env.QA_BIN) process.env.IDE_SHELL_WEB_BIN = process.env.QA_BIN;
 if (!process.env.IDE_SHELL_WEB_BIN) {
   throw new Error(
     "IDE_SHELL_WEB_BIN env var must be set to absolute path of ide-shell-web binary " +
@@ -24,7 +26,7 @@ export default defineConfig({
     // 强制串行 — editor.spec.ts 依赖 web server bootstrap 在 page 内的初始化,
     // parallel 多 page 同时 hit server 偶发 race (vim Insert case mode badge 滞后)
     workers: 1,
-    retries: process.env.CI ? 1 : 1, // race case (vim mode 偶发 lag) 重试一次
+    retries: 1, // race case (vim mode 偶发 lag) 重试一次
   reporter: "list",
   timeout: 10_000,
   expect: { timeout: 3_000 },
@@ -48,15 +50,13 @@ export default defineConfig({
     viewport: { width: 960, height: 600 },
     trace: "on-first-retry",
   },
-  // 传递环境变量给测试进程
-  env: {
-    IDE_SHELL_WEB_TEST_ROOT: "D:/orcaWork/IDE1.0/dev-3/tests/uat/fixtures/sample-project",
-  },
+  // 启动后核对内嵌页面和 editor.html 是否一致 (没重新编译 = 测的是旧页面)
+  globalSetup: "./global-setup.ts",
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
       command: BINARY,
       url: `http://${ADDR}/api/frame`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: process.env.PW_REUSE_SERVER === "1",   // 默认不复用: 端口上残留的旧 server 会让整轮测的是旧二进制
       timeout: 90_000,  // CI Linux cold-start: build + connect 延长
       // 默认 fixtures 项目根 — editor.spec.ts / sandbox.spec.ts 用
       env: {
