@@ -175,7 +175,30 @@ struct BoxRect {
 
 /// 从第 `start` 行起的折叠块结束行: 行内花括号多于闭括号 = 配到平衡为止 (配不上到文档末尾); 否则按缩进: 下一个非空行更深, 块延伸到缩进回到本行或更浅之前的最后一个非空行。没有可折叠的块 = None。
 fn fold_end(lines: &[Vec<char>], start: usize) -> Option<usize> {
-    let count = |l: &Vec<char>, c: char| l.iter().filter(|&&x| x == c).count() as isize;
+    // 数花括号时跳过字符串 "..." / 字符 '{' / 行注释 // 里的 (它们不开块也不收块)
+    let count = |l: &Vec<char>, c: char| -> isize {
+        let (mut n, mut i, mut in_str) = (0isize, 0usize, false);
+        while i < l.len() {
+            let ch = l[i];
+            if in_str {
+                if ch == '\\' {
+                    i += 1;
+                } else if ch == '"' {
+                    in_str = false;
+                }
+            } else if ch == '"' {
+                in_str = true;
+            } else if ch == '/' && l.get(i + 1) == Some(&'/') {
+                break;
+            } else if ch == '\'' && l.get(i + 2) == Some(&'\'') {
+                i += 2; // 'x' 形式的字符字面量
+            } else if ch == c {
+                n += 1;
+            }
+            i += 1;
+        }
+        n
+    };
     let line = lines.get(start)?;
     let end = if count(line, '{') > count(line, '}') {
         let mut depth = 0isize;
@@ -492,7 +515,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
             cx.replace_line(row, new, [row, col + n], None)
         }
         // ---- 矩形(列块)选区 (Sakura 的 BOX 选择; 语义按真实 Sakura 实测, 见 tests/sakura-diff cases5): 前端把未归一化的 box_sel 与参与的行交上来 ----
-        //   输入 / 粘贴: 在每一行的矩形左端插入, **不删**矩形里原有的内容, 插完矩形缩成插入点 (接着打)
+        //   输入 / 粘贴: 先挖掉矩形里选中的内容 (覆盖), 再在每一行的矩形左端插入, 插完矩形缩成插入点 (接着打)
         //   退格 / Delete: 删掉矩形里的内容 (零宽矩形什么也不删), 矩形解除, 光标回左上角
         //   回车: 先删矩形内容, 再在左上角换行 (只断一行)
         "box-insert" | "box-enter" | "box-backspace" | "box-delete" | "box-cut" | "box-copy" | "box-replace" => {
@@ -570,7 +593,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                     patch(rows, [row, col], None, "列块已替换".into(), None)
                 }
                 _ => {
-                    // box-insert: 每一行同一份内容 (多行剪贴板只取第一行, Sakura 实测); 短行补空格对齐; 矩形里原有的内容不动
+                    // box-insert: 每一行同一份内容 (多行剪贴板只取第一行); 矩形有宽度时先挖掉里面选中的内容 (覆盖; 用户在 Sakura 里实际键入的行为, 见 README); 短行补空格对齐
                     let add: Vec<char> = text.split('\n').next().unwrap_or("").trim_end_matches('\r').chars().collect();
                     if add.is_empty() {
                         return Some(cx.nothing(""));
@@ -578,7 +601,7 @@ pub fn run(req: &EditReq) -> Option<EditRes> {
                     let rows: Vec<Vec<char>> = old
                         .iter()
                         .map(|l| {
-                            let mut v = l.clone();
+                            let mut v = if b.c1 > b.c0 { hollow(l) } else { l.clone() };
                             while v.len() < b.c0 {
                                 v.push(' ');
                             }
@@ -1021,11 +1044,11 @@ mod tests {
         // 剪切 = 复制 + 删除
         let r = run_box("box-cut", 2, 4, [0, 1, 2, 4], "", BX);
         assert_eq!((apply(BX, &r)[0].as_str(), r.clip.as_deref()), ("aef", Some("bcd\nh\njkl\n")));
-        // 输入: 同一份插到每一行的矩形左端, 短行补空格对齐, 矩形里原有的内容不动, 插完矩形缩成插入点
+        // 输入: 同一份插到每一行的矩形左端, 短行补空格对齐, 矩形里选中的内容被覆盖, 插完矩形缩成插入点
         let r = run_box("box-insert", 0, 3, [0, 3, 2, 3], "X", BX);
         assert_eq!((apply(BX, &r), r.box_sel), (vec!["abcXdef".to_string(), "gh X".into(), "ijkXlmn".into()], Some([0, 4, 2, 4])));
         let r = run_box("box-insert", 0, 3, [0, 1, 2, 3], "Z", BX);
-        assert_eq!((apply(BX, &r)[0].as_str(), apply(BX, &r)[2].as_str(), r.box_sel), ("aZbcdef", "iZjklmn", Some([0, 2, 2, 2])));
+        assert_eq!((apply(BX, &r)[0].as_str(), apply(BX, &r)[2].as_str(), r.box_sel), ("aZdef", "iZlmn", Some([0, 2, 2, 2])));
         // 多行剪贴板只取第一行 (Sakura 实测)
         let r = run_box("box-insert", 0, 0, [0, 0, 2, 0], "1\n2", BX);
         assert_eq!(apply(BX, &r), vec!["1abcdef".to_string(), "1gh".into(), "1ijklmn".into()]);
@@ -1111,6 +1134,10 @@ mod tests {
         assert_eq!(run(&req("fold-range", 0, &py)).unwrap().folds, Some(vec![[0, 3]]));
         // 同级的下一行不是块
         assert_eq!(run(&req("fold-range", 1, &py[1..])).unwrap().folds, Some(vec![]));
+        // 字符串 / 字符字面量 / 行注释里的花括号不算
+        let lit = ["fn f() {", "    let c = '{';", "    let s = \"}\"; // {", "    g();", "}"];
+        assert_eq!(run(&req("fold-range", 1, &lit[1..])).unwrap().folds, Some(vec![]), "字面量里的花括号不开块");
+        assert_eq!(run(&req("fold-range", 0, &lit)).unwrap().folds, Some(vec![[0, 4]]));
         // 括号一直配不上: 到文档末尾
         assert_eq!(run(&req("fold-range", 0, &["if (a) {", "  b();"])).unwrap().folds, Some(vec![[0, 1]]));
         // 全部折叠: 每个能折的起点各一项 (含嵌套)

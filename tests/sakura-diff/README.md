@@ -38,6 +38,8 @@ QA_BIN=E:/IDE1.0-wt/fix-target/debug/ide-shell-web.exe node run.mjs --md report.
 | 有选区时 `S_DeleteLine` / `S_CutLine` | 宏里文本不变, 像是命令没执行; 无选区的情形有用例覆盖 |
 | 矩形选择中 `S_Char` 输入 | 宏里不删矩形内容只插入, 与上游源码 (先删再插) 相反; 按源码实现 |
 
+- **矩形选择上的键入 / 粘贴**: 宏的 `S_Char` / `S_Paste` 在有宽度的矩形上只在左端插入、不删矩形内容; 但真实键盘键入 / 粘贴会**覆盖**选中的矩形 (Alt 纵向选中后批量覆盖, 用户在 Sakura 里的实际行为)。宏和键盘走的路径不同, 所以 `type over selected` / `paste over selected` 不拿宏当对照, 覆盖语义由 UAT / mock 用例锁定。零宽矩形 (插入点) 上的键入 / 退格 / 回车 / 粘贴不受影响, 仍与宏一致。
+
 ## 这套方法比对不了的
 
 - 增量搜索、移动履歴 (跳转历史): Sakura 宏里没有对应命令

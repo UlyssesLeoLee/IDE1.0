@@ -591,8 +591,8 @@
         linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0%, transparent 16%, rgba(56, 189, 248, 0.02) 28%, transparent 46%, rgba(192, 132, 252, 0.025) 62%, transparent 82%),
         linear-gradient(62deg, transparent 32%, rgba(255, 255, 255, 0.02) 48%, transparent 64%),
         rgba(255, 255, 255, 0.01);
-      -webkit-backdrop-filter: blur(16px) saturate(190%) contrast(104%) brightness(105%);
-      backdrop-filter: blur(16px) saturate(190%) contrast(104%) brightness(105%);
+      /* 不能在 #app 上放 backdrop-filter: 它会让 #app 成为 position:fixed 的包含块 + Backdrop Root
+         (子菜单 / 对话框的 fixed 定位和自己的模糊都会坏), 而且每帧模糊整个窗口开销很大。 */
     }
 [data-theme="clear"] .tb-btn,
     [data-theme="clear"] .theme-toggle-btn,
@@ -656,9 +656,10 @@
     }
 [data-theme="clear"] .menu-dropdown,
     [data-theme="clear"] .submenu-dropdown {
-      background: rgba(18, 22, 32, 0.72) !important;
-      backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
-      -webkit-backdrop-filter: blur(28px) saturate(220%) contrast(110%) !important;
+      background: rgba(18, 22, 32, 0.86) !important;
+      /* 菜单自己不能带 backdrop-filter: 带了就成了子菜单 (position:fixed) 的包含块, 子菜单会被它的 overflow 裁掉 / 盖住; 用更实的底色代替模糊 */
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
       border: 1px solid rgba(255, 255, 255, 0.35) !important;
       border-top: 1px solid rgba(255, 255, 255, 0.65) !important;
       border-radius: 8px;
@@ -1375,8 +1376,7 @@
         linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0%, transparent 16%, rgba(56, 189, 248, 0.02) 28%, transparent 46%, rgba(192, 132, 252, 0.025) 62%, transparent 82%),
         linear-gradient(62deg, transparent 32%, rgba(255, 255, 255, 0.02) 48%, transparent 64%),
         rgba(255, 255, 255, 0.01);
-      -webkit-backdrop-filter: blur(16px) saturate(190%) contrast(104%) brightness(105%);
-      backdrop-filter: blur(16px) saturate(190%) contrast(104%) brightness(105%);
+      /* 无 backdrop-filter: 见上 (全窗口模糊开销大, 并让 #app 成为 fixed 子菜单的包含块) */
     }
     [data-theme="clear"] #ed-content, [data-theme="clear"] #gutter { background: var(--mat-edit); }
 
@@ -1441,7 +1441,7 @@
       inset: 0;
       pointer-events: none;
       z-index: 9999;
-      overflow: hidden;
+      overflow: visible;
     }
     .crystal-sparkle {
       position: absolute;
@@ -5920,38 +5920,45 @@ async function refreshClearThemeFromBackend() {
 }
 
 /**
- * 监听系统明暗变化: 用户在 Windows 设置里切浅/深色后, 透明主题的
- * 文字颜色要跟着反色, 否则会突然读不清.
+ * 透明主题的文字反色 (跟着窗口背后透出来的颜色走): 事件驱动, 不轮询。
  *
- * 1s 轮询而非事件: WebView2 没有暴露 DWM 主题变化事件, 而注册表读一次
- * 极廉价 (µs 级). 页面隐藏时停轮询 (visibilitychange), 不浪费.
+ * 旧做法是每秒问一次 Rust 的 desktop_luminance, 而它每次都要 (1) 把本窗口标成「不参与屏幕捕获」
+ * (2) 截一帧整个显示器 (3) 再恢复 —— 屏幕录制会跟着闪 / 黑, 开销也大。
+ * 现在只在"背后的颜色可能变了"的时刻采样:
+ *   进入透明主题 / 窗口获得焦点 / 窗口移动或改变大小 (停下来之后) / 系统明暗主题切换 / 页面从隐藏变回可见
+ * 并且限流: 同一时间只排一次, 且距上次采样至少 LUM_MIN_GAP_MS, 拖动窗口期间不采样。
  */
-let _luminancePollTimer = null;
-let _luminanceBusy = false;
-function startLuminanceWatch() {
-  if (_luminancePollTimer) return;
-  _luminancePollTimer = setInterval(async () => {
-    if (VIEW_STATE.theme !== "clear") return;   // 非透明主题不需要反色
-    if (document.hidden) return;                // 后台不轮询
-    if (_luminanceBusy) return;                 // 上一轮还没回来
-    _luminanceBusy = true;
+const LUM_SETTLE_MS = 700, LUM_MIN_GAP_MS = 6000;
+let _lumTimer = null, _lumLast = -1e9, _lumWatching = false;
+function requestLuminanceCheck() {
+  if (VIEW_STATE.theme !== "clear" || document.hidden) return;
+  clearTimeout(_lumTimer);                                   // 还在连续变化 (拖动 / 缩放) 就一直往后推
+  const wait = Math.max(LUM_SETTLE_MS, LUM_MIN_GAP_MS - (performance.now() - _lumLast));
+  _lumTimer = setTimeout(async () => {
+    if (VIEW_STATE.theme !== "clear" || document.hidden) return;
+    _lumLast = performance.now();
     try {
       const lum = await invoke("desktop_luminance");
-      // 只有真的变了才重新取全套配色 —— 否则每秒刷一次 setProperty
-      // 会让 getComputedStyle 缓存失效, 拖慢渲染.
-      if (lum !== VIEW_STATE.desktopLuminance) {
+      if (lum !== VIEW_STATE.desktopLuminance) {             // 只有真的变了才重新取全套配色
         VIEW_STATE.desktopLuminance = lum;
         await refreshClearThemeFromBackend();
       }
-    } catch (_) {
-      // 后端不可达: 保持现状, 下一轮再试
-    } finally {
-      _luminanceBusy = false;
-    }
-  }, 1000);
+    } catch (_) { /* 后端不可达: 保持现状 */ }
+  }, wait);
+}
+function startLuminanceWatch() {
+  if (_lumWatching) return;
+  _lumWatching = true;
+  window.addEventListener("focus", requestLuminanceCheck);
+  window.addEventListener("resize", requestLuminanceCheck);
+  try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", requestLuminanceCheck); } catch (_) {}
+  try {                                                       // 桌面壳: 窗口被拖到别处 (背后的壁纸 / 窗口变了)
+    const ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && ev.listen) { void ev.listen("tauri://move", requestLuminanceCheck); void ev.listen("tauri://resize", requestLuminanceCheck); }
+  } catch (_) {}
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && VIEW_STATE.theme === "clear") {
-      void refreshClearThemeFromBackend();
+      requestLuminanceCheck();
       scheduleNextCrystalSparkle();
     } else if (document.hidden) {
       if (_sparkleTimer) { clearTimeout(_sparkleTimer); _sparkleTimer = null; }
@@ -6032,6 +6039,10 @@ function spawnCrystalSparkle() {
   const jx = (Math.random() - 0.5) * 8;
   const jy = (Math.random() - 0.5) * 8;
   const scale = 0.75 + Math.random() * 0.55;
+  // 闪光最大半径 = 48px 盒子 × scale / 2, 再留光晕扩散的余量: 中心点夹在窗口内这么远, 不会被窗口边缘截断
+  const reach = Math.ceil(24 * scale * 1.5) + 6;
+  target.x = Math.min(Math.max(target.x + jx, reach), window.innerWidth - reach) - jx;
+  target.y = Math.min(Math.max(target.y + jy, reach), window.innerHeight - reach) - jy;
 
   const el = document.createElement("div");
   el.className = "crystal-sparkle";
@@ -8734,9 +8745,22 @@ function bracketCached(t) {
 }
 let _marksQueued = false;
 function scheduleMarks() { if (_marksQueued) return; _marksQueued = true; requestAnimationFrame(() => { _marksQueued = false; try { paintMarks(); } catch (_) {} }); }
+// 折叠隐藏的行不占高度: 按滚动位置算"第几行可见"再换成文档行号; 隐藏行里的标记 (查找 / 书签 / 空白 / 差分) 不画
+function hiddenRowsOf(t) {
+  const h = new Set();
+  if (t && t.folded instanceof Map) for (const [fs, f] of t.folded) for (let k = fs + 1; k <= f.end; k++) h.add(k);
+  return h;
+}
+function visToDoc(t, hid, v) {
+  if (!hid.size) return v;
+  let seen = 0;
+  for (let r = 0; r < t.lines.length; r++) { if (hid.has(r)) continue; if (seen === v) return r; seen++; }
+  return t.lines.length - 1;
+}
 function paintMarks() {
   if (!window.CSS || !CSS.highlights || typeof Highlight === "undefined") return;
   const t = getActiveTab();
+  const hid = hiddenRowsOf(t);
   const set = (name, ranges) => { if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges)); else CSS.highlights.delete(name); };
   const mk = (r1, c1, r2, c2) => {
     const a = domPointAt(t, r1, c1), b = domPointAt(t, r2, c2);
@@ -8748,9 +8772,9 @@ function paintMarks() {
     const hits = findHitsCached(t);
     if (hits.length) {
       const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
-      const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 20), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 40);
+      const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 20), first = visToDoc(t, hid, fv), last = Math.min(t.lines.length - 1, visToDoc(t, hid, fv + Math.ceil(edContent.clientHeight / lh) + 40));
       for (const h of hits) {
-        if (h.row < first || h.row > last) continue;
+        if (h.row < first || h.row > last || hid.has(h.row)) continue;
         if (marks.length >= 1500) break;
         const rg = mk(h.row, h.col, h.row, h.col + h.len);
         if (rg) marks.push(rg);
@@ -8771,8 +8795,8 @@ function paintMarks() {
   if (bms.length && gt0 && gt0.nodeType === 3) {
     const gt = gt0;
     for (const b of bms) {
-      if (b.row < gbase || (vgn && b.row >= VW.end)) continue;
-      let off = 0; for (let j = gbase; j < b.row; j++) off += String(j + 1).length + 1;
+      if (b.row < gbase || (vgn && b.row >= VW.end) || hid.has(b.row)) continue;
+      let off = 0; for (let j = gbase; j < b.row; j++) if (!hid.has(j)) off += String(j + 1).length + 1;   // 折叠隐藏的行号不在行号栏里
       if (off + String(b.row + 1).length <= gt.length) { const rg = document.createRange(); rg.setStart(gt, off); rg.setEnd(gt, off + String(b.row + 1).length); gm.push(rg); }
     }
   }
@@ -8780,8 +8804,9 @@ function paintMarks() {
   const wt = [], ws = [], wz = [], wtr = [];
   if (t && VIEWOPT.ws && !IME_ACTIVE) {
     const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
-    const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 10);
+    const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), first = visToDoc(t, hid, fv), last = Math.min(t.lines.length - 1, visToDoc(t, hid, fv + Math.ceil(edContent.clientHeight / lh) + 10));
     for (let r = first; r <= last && wt.length + ws.length + wz.length + wtr.length < 4000; r++) {
+      if (hid.has(r)) continue;
       const line = t.lines[r], chs = chars(line);
       let tail = chs.length; while (tail > 0 && (chs[tail - 1] === " " || chs[tail - 1] === "\t" || chs[tail - 1] === "\u3000")) tail--;
       for (let c = 0; c < chs.length; c++) {
@@ -8795,7 +8820,7 @@ function paintMarks() {
   const da = [], dc = [], dd = [];
   if (t && t.diff && !IME_ACTIVE) {
     const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
-    const first = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), last = Math.min(t.lines.length - 1, first + Math.ceil(edContent.clientHeight / lh) + 10);
+    const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), first = visToDoc(t, hid, fv), last = Math.min(t.lines.length - 1, visToDoc(t, hid, fv + Math.ceil(edContent.clientHeight / lh) + 10));
     for (const h of t.diff.hunks) {
       if (h.b1 > h.b0) {
         for (let r = Math.max(h.b0, first); r < Math.min(h.b1, last + 1); r++) {

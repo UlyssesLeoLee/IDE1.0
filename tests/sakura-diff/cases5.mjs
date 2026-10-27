@@ -18,13 +18,13 @@ add('BOX backspace zero-width at eol', 0, 10, 2, 0, { key: 'Backspace' }, ['S_De
 add('BOX backspace zero-width col0', 0, 0, 2, 0, { key: 'Backspace' }, ['S_DeleteBack();']);
 add('BOX type zero-width', 0, 2, 2, 0, { keys: ['Q'] }, ['S_Char(81);']);
 add('BOX type over short line', 1, 4, 2, 0, { keys: ['Q'] }, ['S_Char(81);']);
-add('BOX type over selected', 0, 2, 1, 3, { keys: ['Q'] }, ['S_Char(81);']);
+// 注: 有宽度的矩形上, 宏的 S_Char / S_Paste 只在左端插入、不删矩形内容; 但真实键入 / 粘贴是**覆盖**选中的矩形 (用户在 Sakura 里的实际行为),
+// 所以 'type over selected' / 'paste over selected' 不拿宏当对照 (宏与键盘路径不同), 覆盖语义由 UAT / mock 用例锁定。
 add('BOX enter zero-width', 0, 2, 2, 0, { keys: ['Enter'] }, ['S_Char(13);']);
 add('BOX enter over selected', 0, 2, 1, 3, { keys: ['Enter'] }, ['S_Char(13);']);
 add('BOX enter short row', 1, 4, 2, 0, { keys: ['Enter'] }, ['S_Char(13);']);
 add('BOX tab zero-width', 0, 2, 2, 0, { keys: ['Tab'] }, ['S_Char(9);']);
 add('BOX delete zero-width', 0, 2, 2, 0, { key: 'Delete' }, ['S_Delete();']);
 add('BOX paste zero-width', 0, 2, 2, 0, { key: 'F9' }, ['S_Paste();'], { clip: 'Z' });
-add('BOX paste over selected', 0, 2, 1, 3, { key: 'F9' }, ['S_Paste();'], { clip: 'Z' });
 add('BOX paste multiline', 0, 2, 2, 0, { key: 'F9' }, ['S_Paste();'], { clip: 'Z\nY' });
 export default CASES;

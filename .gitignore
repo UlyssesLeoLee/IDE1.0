@@ -43,3 +43,8 @@ ui-clear-theme.png
 tests/uat/*.png
 glass-theme.png
 tests/uat/fixtures/sample-project/tags
+
+# 测试运行时产物
+tests/sakura-diff/.clip.txt
+tests/sakura-diff/report.md
+tests/uat/fixtures/sample-project/uat-cmd-*.txt
