@@ -1,13 +1,13 @@
-// 回归: 文档正文镜像 (editcore::doc_store) —— 大文档的查找 / 置換不再每次把整篇发给 Rust
+// 回归: 文档正文镜像 (editcore::doc_mirror) —— 大文档的查找 / 置換不再每次把整篇发给 Rust
 //   - 第一次登记整篇, 之后只交内容指纹; 前端改过正文 (哪怕是直接改行数组) 指纹对不上, Rust 要整篇, 结果跟着新正文走
-//   - 前端 docFingerprint 与 Rust 的 doc_store::fingerprint 逐字相同
+//   - 前端 docFingerprint 与 Rust 的 doc_mirror::fingerprint 逐字相同
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withMocks } from '../../lib/with-mocks.mjs';
 
 test('大文档查找: 先登记整篇, 之后只交指纹; 改过正文后重新登记, 结果不过期', () =>
   withMocks({ name: 'docm', portOffset: 530 }, async ({ page }) => {
-    // 与 Rust 单测 (doc_store::tests) 同一组输入 / 同一组期望值
+    // 与 Rust 单测 (doc_mirror::tests) 同一组输入 / 同一组期望值
     assert.deepEqual(await page.evaluate(() => [window.docFingerprint(['abc', 'def']), window.docFingerprint(['日本語😀', 'x'])]),
       [[2700757720, 821783810], [2129295297, 4181592631]]);
 

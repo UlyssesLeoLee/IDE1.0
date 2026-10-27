@@ -733,51 +733,37 @@ fn reinterpret_text(options: ReinterpretOptions) -> Result<serde_json::Value, St
 /// 删除 / 剪切 / 复制行 类编辑命令 (web 版 /api/edit_cmd 同一语义)
 #[tauri::command]
 fn edit_cmd(options: editcore::edit_cmd::EditReq) -> Result<serde_json::Value, String> {
-    editcore::edit_cmd::run(&options)
-        .map(|r| serde_json::to_value(r).unwrap_or_default())
-        .ok_or_else(|| "未知的编辑命令".to_string())
+    editcore::pure_api::edit_cmd(&options)
 }
 
 /// 对括弧 (web 版 /api/bracket_pair 同一语义); 没有对应括弧返回 {}
 #[tauri::command]
 fn bracket_pair(options: editcore::bracket::BracketReq) -> serde_json::Value {
-    match editcore::bracket::find_pair(&options) {
-        Some(r) => serde_json::to_value(r).unwrap_or_default(),
-        None => serde_json::json!({}),
-    }
+    editcore::pure_api::bracket_pair(&options)
 }
 
 /// ブックマーク 切り替え / 次へ / 前へ (web 版 /api/bookmark 同一语义)
 #[tauri::command]
 fn bookmark(options: editcore::bookmark::BmReq) -> Result<serde_json::Value, String> {
-    editcore::bookmark::run(&options)
-        .map(|r| serde_json::to_value(r).unwrap_or_default())
-        .ok_or_else(|| "未知的书签操作".to_string())
+    editcore::pure_api::bookmark(&options)
 }
 
 /// 文档内查找 / 置換 (web 版 /api/search_text 同一语义)
 #[tauri::command]
 fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::Value, String> {
-    editcore::search_ops::run(&options)
-        .map(|r| serde_json::to_value(r).unwrap_or_default())
-        .ok_or_else(|| "未知的查找操作".to_string())
+    editcore::pure_api::search_text(&options)
 }
 
 /// 撤销 / 重做栈 (web 版 /api/history 同一语义)
 #[tauri::command]
 fn history(options: editcore::history::HistReq) -> Result<serde_json::Value, String> {
-    editcore::history::run(&options)
-        .map(|r| serde_json::to_value(r).unwrap_or_default())
-        .ok_or_else(|| "未知的历史操作".to_string())
+    editcore::pure_api::history(&options)
 }
 
 /// 键盘光标移动 / 范围选择 (web 版 /api/nav_step 同一语义); 不处理的键返回 {}
 #[tauri::command]
 fn nav_step(options: editcore::nav::NavReq) -> serde_json::Value {
-    match editcore::nav::step(&options) {
-        Some(r) => serde_json::to_value(r).unwrap_or_default(),
-        None => serde_json::json!({}),
-    }
+    editcore::pure_api::nav_step(&options)
 }
 
 #[derive(serde::Deserialize)]

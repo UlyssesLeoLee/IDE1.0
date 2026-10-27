@@ -242,6 +242,23 @@ fn send_error_json(stream: &mut TcpStream, status: &str, reason: &str) {
     );
 }
 
+/// 无状态纯计算端点的统一收尾: 反序列化请求 -> `editcore::pure_api` 里的类型化入口 -> 200 JSON;
+/// 请求体坏了 / 命令未知 = 400 + 给用户看的文字。
+fn respond_pure<Req: serde::de::DeserializeOwned>(
+    stream: &mut TcpStream,
+    body: &[u8],
+    invalid: &str,
+    f: impl FnOnce(&Req) -> Result<serde_json::Value, String>,
+) {
+    match serde_json::from_slice::<Req>(body) {
+        Ok(req) => match f(&req) {
+            Ok(v) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&v).unwrap_or_default()),
+            Err(msg) => send_error_json(stream, "400 Bad Request", &msg),
+        },
+        Err(e) => send_error_json(stream, "400 Bad Request", &format!("{invalid}: {e}")),
+    }
+}
+
 /// 带 Origin 回显的响应 (只有可信同源 Origin 才会被传入 Some)。
 fn send_response_cors(
     stream: &mut TcpStream,
@@ -679,74 +696,28 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             );
         }
         ("POST", "/api/edit_cmd") => {
-            // 删除 / 剪切 / 复制行 类编辑命令 (editcore::edit_cmd::run); 无状态纯计算
-            match serde_json::from_slice::<editcore::edit_cmd::EditReq>(&body) {
-                Ok(req) => match editcore::edit_cmd::run(&req) {
-                    Some(res) => send_response(
-                        stream,
-                        "200 OK",
-                        "application/json",
-                        &serde_json::to_vec(&res).unwrap_or_default(),
-                    ),
-                    None => send_error_json(stream, "400 Bad Request", "未知的编辑命令"),
-                },
-                Err(e) => send_error_json(stream, "400 Bad Request", &format!("编辑请求无效: {e}")),
-            }
+            // 编辑命令 (editcore::pure_api::edit_cmd); 无状态纯计算
+            respond_pure::<editcore::edit_cmd::EditReq>(stream, &body, "编辑请求无效", editcore::pure_api::edit_cmd);
         }
         ("POST", "/api/bracket_pair") => {
-            // 对括弧 (editcore::bracket::find_pair); 无状态纯计算
-            match serde_json::from_slice::<editcore::bracket::BracketReq>(&body) {
-                Ok(req) => match editcore::bracket::find_pair(&req) {
-                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
-                    None => send_response(stream, "200 OK", "application/json", b"{}"),
-                },
-                Err(e) => send_error_json(stream, "400 Bad Request", &format!("括弧请求无效: {e}")),
-            }
+            // 对括弧 (editcore::pure_api::bracket_pair); 无状态纯计算
+            respond_pure::<editcore::bracket::BracketReq>(stream, &body, "括弧请求无效", |r| Ok(editcore::pure_api::bracket_pair(r)));
         }
         ("POST", "/api/bookmark") => {
-            // ブックマーク 切り替え / 次へ / 前へ (editcore::bookmark::run); 无状态纯计算
-            match serde_json::from_slice::<editcore::bookmark::BmReq>(&body) {
-                Ok(req) => match editcore::bookmark::run(&req) {
-                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
-                    None => send_error_json(stream, "400 Bad Request", "未知的书签操作"),
-                },
-                Err(e) => send_error_json(stream, "400 Bad Request", &format!("书签请求无效: {e}")),
-            }
+            // ブックマーク 切り替え / 次へ / 前へ; 无状态纯计算
+            respond_pure::<editcore::bookmark::BmReq>(stream, &body, "书签请求无效", editcore::pure_api::bookmark);
         }
         ("POST", "/api/search_text") => {
-            // 文档内查找 / 置換 (editcore::search_ops::run); 无状态纯计算
-            match serde_json::from_slice::<editcore::search_ops::SearchReq>(&body) {
-                Ok(req) => match editcore::search_ops::run(&req) {
-                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
-                    None => send_error_json(stream, "400 Bad Request", "未知的查找操作"),
-                },
-                Err(e) => send_error_json(stream, "400 Bad Request", &format!("查找请求无效: {e}")),
-            }
+            // 文档内查找 / 置換 (含正文镜像); 无状态纯计算
+            respond_pure::<editcore::search_ops::SearchReq>(stream, &body, "查找请求无效", editcore::pure_api::search_text);
         }
         ("POST", "/api/history") => {
-            // 撤销 / 重做栈 (editcore::history::run); 按标签页 id 分开的进程内登记
-            match serde_json::from_slice::<editcore::history::HistReq>(&body) {
-                Ok(req) => match editcore::history::run(&req) {
-                    Some(res) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&res).unwrap_or_default()),
-                    None => send_error_json(stream, "400 Bad Request", "未知的历史操作"),
-                },
-                Err(e) => send_error_json(stream, "400 Bad Request", &format!("历史请求无效: {e}")),
-            }
+            // 撤销 / 重做栈; 按标签页 id 分开的进程内登记
+            respond_pure::<editcore::history::HistReq>(stream, &body, "历史请求无效", editcore::pure_api::history);
         }
         ("POST", "/api/nav_step") => {
-            // 键盘光标移动 / 范围选择 (editcore::nav::step); 无状态纯计算
-            match serde_json::from_slice::<editcore::nav::NavReq>(&body) {
-                Ok(req) => match editcore::nav::step(&req) {
-                    Some(res) => send_response(
-                        stream,
-                        "200 OK",
-                        "application/json",
-                        &serde_json::to_vec(&res).unwrap_or_default(),
-                    ),
-                    None => send_response(stream, "200 OK", "application/json", b"{}"),
-                },
-                Err(e) => send_error_json(stream, "400 Bad Request", &format!("移动请求无效: {e}")),
-            }
+            // 键盘光标移动 / 范围选择; 无状态纯计算
+            respond_pure::<editcore::nav::NavReq>(stream, &body, "移动请求无效", |r| Ok(editcore::pure_api::nav_step(r)));
         }
         ("POST", "/api/edit_text") => {
             // 选中文字的变换 (editcore::edit_ops::transform_text); 纯计算

@@ -6,6 +6,7 @@
 //!
 //! 语义按真实 Sakura Editor 的宏逐条比对 (tests/sakura-diff 的 SearchNext / SearchPrev / ReplaceAll 用例)。
 
+use crate::word::is_word_char as is_word;
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +23,7 @@ pub struct SearchReq {
     pub match_case: bool,
     #[serde(default)]
     pub use_regex: bool,
-    /// 整篇文档 (hits / step / replace_all)。带 doc_id 时可以留空: 正文用 Rust 那份镜像 (见 doc_store)
+    /// 整篇文档 (hits / step / replace_all)。带 doc_id 时可以留空: 正文用 Rust 那份镜像 (见 doc_mirror)
     #[serde(default)]
     pub lines: Vec<String>,
     /// 文档正文镜像: 文档 id (标签) / 内容指纹 / 行数。lines 非空 = 登记这份正文; lines 为空 = 指纹对得上就用镜像, 对不上返回 need_doc
@@ -80,10 +81,6 @@ pub struct SearchRes {
     pub last_end: usize,
     /// match_expand: 选中的刚好是一处命中时, 展开后的替换文字
     pub text: Option<String>,
-}
-
-fn is_word(c: char) -> bool {
-    c.is_alphabetic() || c.is_numeric() || c == '_'
 }
 
 fn build(req: &SearchReq) -> Result<Regex, String> {
@@ -150,7 +147,8 @@ fn all_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> Vec<Hit> {
     let mut hits = Vec::new();
     for (row, line) in lines.iter().enumerate() {
         for (s, e) in line_matches(re, line, req.whole_word) {
-            hits.push(Hit { row, col: line[..s].chars().count(), len: line[s..e].chars().count() });
+            let (col, len) = byte_span_to_cols(line, s, e);
+            hits.push(Hit { row, col, len });
             if hits.len() > MAX_HITS {
                 return hits;
             }
@@ -196,12 +194,12 @@ pub fn run(req: &SearchReq) -> Option<SearchRes> {
     // 文档正文: 带 doc_id 的走镜像 (登记 / 取用 / 丢弃), 否则就是请求里的 lines
     let mirrored: Option<std::sync::Arc<Vec<String>>> = match &req.doc_id {
         Some(id) if req.op == "forget" => {
-            crate::doc_store::forget(id);
+            crate::doc_mirror::forget(id);
             return Some(SearchRes::default());
         }
-        Some(id) if !req.lines.is_empty() => Some(crate::doc_store::put(id, req.lines.clone())),
+        Some(id) if !req.lines.is_empty() => Some(crate::doc_mirror::put(id, req.lines.clone())),
         Some(id) => match req.doc_hash {
-            Some(fp) => match crate::doc_store::get(id, fp, req.doc_len) {
+            Some(fp) => match crate::doc_mirror::get(id, fp, req.doc_len) {
                 Some(d) => Some(d),
                 None => return Some(SearchRes { need_doc: true, ..Default::default() }),
             },
@@ -220,99 +218,111 @@ fn run_on(req: &SearchReq, lines: &[String]) -> Option<SearchRes> {
     };
     match req.op.as_str() {
         "validate" => Some(SearchRes::default()),
-        "hits" => {
-            let hits = all_hits(&re, req, lines);
-            Some(SearchRes { total: hits.len(), hits, ..Default::default() })
-        }
-        "step" => {
-            let hits = all_hits(&re, req, lines);
-            let (cr, mut cc) = (req.row, req.col);
-            // Sakura: 单词单位向后查找时, 光标在词中 -> 从该词词首起找 (命中当前词本身)
-            if req.forward && req.whole_word && cc > 0 {
-                let cs: Vec<char> = lines.get(cr).map(|l| l.chars().collect()).unwrap_or_default();
-                if cs.get(cc - 1).copied().map(is_word).unwrap_or(false) && cs.get(cc).copied().map(is_word).unwrap_or(false) {
-                    while cc > 0 && is_word(cs[cc - 1]) {
-                        cc -= 1;
-                    }
-                }
-            }
-            let on_hit = req.sel_start == Some([cr, cc]);
-            let mut wrapped = false;
-            let idx = if req.forward {
-                match hits.iter().position(|h| h.row > cr || (h.row == cr && if on_hit { h.col > cc } else { h.col >= cc })) {
-                    Some(i) => Some(i),
-                    None if req.wrap && !hits.is_empty() => {
-                        wrapped = true;
-                        Some(0)
-                    }
-                    None => None,
-                }
-            } else {
-                match hits.iter().rposition(|h| h.row < cr || (h.row == cr && h.col < cc)) {
-                    Some(i) => Some(i),
-                    None if req.wrap && !hits.is_empty() => {
-                        wrapped = true;
-                        Some(hits.len() - 1)
-                    }
-                    None => None,
-                }
-            };
-            Some(SearchRes { total: hits.len(), hit: idx.map(|i| hits[i].clone()), index: idx.unwrap_or(0), wrapped, ..Default::default() })
-        }
-        "replace_all" => {
-            let n_rows = lines.len();
-            if n_rows == 0 {
-                return Some(SearchRes::default());
-            }
-            let (r0, r1, c0, c1) = match req.sel {
-                Some(s) => (s[0], s[2].min(n_rows - 1), s[1], s[3]),
-                None => (0, n_rows - 1, 0, usize::MAX),
-            };
-            let mut res = SearchRes::default();
-            for r in r0..=r1 {
-                let line = &lines[r];
-                let from = if r == r0 { c0 } else { 0 };
-                let to = if r == r1 { c1 } else { usize::MAX };
-                let (mut out, mut at, mut n, mut end) = (String::new(), 0usize, 0usize, 0usize);
-                for (s, e) in line_matches(&re, line, req.whole_word) {
-                    let col = line[..s].chars().count();
-                    let len = line[s..e].chars().count();
-                    if col < from || col.saturating_add(len) > to {
-                        continue;
-                    }
-                    let caps = re.captures_at(line, s).filter(|c| c.get(0).map(|m| m.start() == s).unwrap_or(false));
-                    let rep = match caps {
-                        Some(c) => expand(&c, &req.repl, req.use_regex),
-                        None => req.repl.clone(),
-                    };
-                    out.push_str(&line[at..s]);
-                    out.push_str(&rep);
-                    at = e;
-                    n += 1;
-                    end = out.chars().count();
-                }
-                if n > 0 {
-                    out.push_str(&line[at..]);
-                    res.rows.push((r, out));
-                    res.count += n;
-                    res.last_row = Some(r);
-                    res.last_end = end;
-                }
-            }
-            Some(res)
-        }
-        "match_expand" => {
-            // 选中的整段刚好是一处命中: 返回展开后的替换文字
-            let seg = &req.seg;
-            let m = re.captures(seg)?;
-            let whole = m.get(0)?;
-            if whole.as_str() == seg && whole.start() == 0 {
-                Some(SearchRes { text: Some(expand(&m, &req.repl, req.use_regex)), ..Default::default() })
-            } else {
-                Some(SearchRes::default())
-            }
-        }
+        "hits" => Some(op_hits(&re, req, lines)),
+        "step" => Some(op_step(&re, req, lines)),
+        "replace_all" => Some(op_replace_all(&re, req, lines)),
+        "match_expand" => op_match_expand(&re, req), // 没匹配上 = None (HTTP 上是 400), 前端据此当作"不是一处命中"
         _ => None,
+    }
+}
+
+/// 命中处的 (列, 长度), 按码点
+fn byte_span_to_cols(line: &str, s: usize, e: usize) -> (usize, usize) {
+    (line[..s].chars().count(), line[s..e].chars().count())
+}
+
+fn op_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
+    let hits = all_hits(re, req, lines);
+    SearchRes { total: hits.len(), hits, ..Default::default() }
+}
+
+/// Sakura: 单词单位向后查找时, 光标在词中 -> 从该词词首起找 (命中当前词本身)
+fn step_start_col(req: &SearchReq, lines: &[String]) -> usize {
+    let (cr, mut cc) = (req.row, req.col);
+    if req.forward && req.whole_word && cc > 0 {
+        let cs: Vec<char> = lines.get(cr).map(|l| l.chars().collect()).unwrap_or_default();
+        if cs.get(cc - 1).copied().map(is_word).unwrap_or(false) && cs.get(cc).copied().map(is_word).unwrap_or(false) {
+            while cc > 0 && is_word(cs[cc - 1]) {
+                cc -= 1;
+            }
+        }
+    }
+    cc
+}
+
+/// 从光标处向前 / 向后找下一处命中; 到头按 `wrap` 绕回
+fn op_step(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
+    let hits = all_hits(re, req, lines);
+    let (cr, cc) = (req.row, step_start_col(req, lines));
+    let on_hit = req.sel_start == Some([cr, cc]); // 当前命中正被选中: 从它的"下一处"找
+    let mut wrapped = false;
+    let found = if req.forward {
+        hits.iter().position(|h| h.row > cr || (h.row == cr && if on_hit { h.col > cc } else { h.col >= cc }))
+    } else {
+        hits.iter().rposition(|h| h.row < cr || (h.row == cr && h.col < cc))
+    };
+    let idx = match found {
+        Some(i) => Some(i),
+        None if req.wrap && !hits.is_empty() => {
+            wrapped = true;
+            Some(if req.forward { 0 } else { hits.len() - 1 })
+        }
+        None => None,
+    };
+    SearchRes { total: hits.len(), hit: idx.map(|i| hits[i].clone()), index: idx.unwrap_or(0), wrapped, ..Default::default() }
+}
+
+/// 置換全部 (限选区): 返回被改动的行 [行号, 新文本]、置換数和最后一处置換之后的位置
+fn op_replace_all(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
+    let mut res = SearchRes::default();
+    if lines.is_empty() {
+        return res;
+    }
+    let n_rows = lines.len();
+    let (r0, r1, c0, c1) = match req.sel {
+        Some(s) => (s[0], s[2].min(n_rows - 1), s[1], s[3]),
+        None => (0, n_rows - 1, 0, usize::MAX),
+    };
+    for (r, line) in lines.iter().enumerate().take(r1 + 1).skip(r0) {
+        let from = if r == r0 { c0 } else { 0 };
+        let to = if r == r1 { c1 } else { usize::MAX };
+        let (mut out, mut at, mut n, mut end) = (String::new(), 0usize, 0usize, 0usize);
+        for (s, e) in line_matches(re, line, req.whole_word) {
+            let (col, len) = byte_span_to_cols(line, s, e);
+            if col < from || col.saturating_add(len) > to {
+                continue;
+            }
+            let caps = re.captures_at(line, s).filter(|c| c.get(0).map(|m| m.start() == s).unwrap_or(false));
+            let rep = match caps {
+                Some(c) => expand(&c, &req.repl, req.use_regex),
+                None => req.repl.clone(),
+            };
+            out.push_str(&line[at..s]);
+            out.push_str(&rep);
+            at = e;
+            n += 1;
+            end = out.chars().count();
+        }
+        if n > 0 {
+            out.push_str(&line[at..]);
+            res.rows.push((r, out));
+            res.count += n;
+            res.last_row = Some(r);
+            res.last_end = end;
+        }
+    }
+    res
+}
+
+/// 选中的整段刚好是一处命中: 返回展开后的替换文字 ($1  之类)
+fn op_match_expand(re: &Regex, req: &SearchReq) -> Option<SearchRes> {
+    let seg = &req.seg;
+    let m = re.captures(seg)?;
+    let whole = m.get(0)?;
+    if whole.as_str() == seg && whole.start() == 0 {
+        Some(SearchRes { text: Some(expand(&m, &req.repl, req.use_regex)), ..Default::default() })
+    } else {
+        Some(SearchRes::default())
     }
 }
 
@@ -347,7 +357,7 @@ mod tests {
     #[test]
     fn mirrored_document_is_used_only_when_the_fingerprint_matches() {
         let lines: Vec<String> = DOC.iter().map(|s| s.to_string()).collect();
-        let fp = crate::doc_store::fingerprint(&lines);
+        let fp = crate::doc_mirror::fingerprint(&lines);
         let by_ref = |id: &str, hash: [u32; 2], n: usize| {
             let mut r = req("hits", "foo", "");
             r.lines = vec![];
