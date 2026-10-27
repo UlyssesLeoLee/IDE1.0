@@ -79,6 +79,7 @@ chunks.forEach((chunk, ci) => {
         try {
           await page.evaluate(() => window.__editIdle());
           await reset(page, root, e);
+          await page.evaluate(() => window.__editIdle());   // pre 里的 insertChar / doUndo 经桥是异步的: 落地之后再取"之前"的快照, 否则 F_REDO 这类用例会随机地和"之后"相等
           const before = await snapshot(page);
           const nerr = errs.length;
           if (key) { await page.locator('#ed-content').focus(); await page.keyboard.press(key); } else await page.evaluate((c) => dispatchCommand(c), cmd);
