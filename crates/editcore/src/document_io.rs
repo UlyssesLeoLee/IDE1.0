@@ -539,3 +539,367 @@ mod reinterpret_tests2 {
         assert!(e.starts_with("UNMAPPABLE:"));
     }
 }
+
+// ================================================================ 安全保存 ===
+// WBS-02 1.5 / 1.6 后端: 同目录临时文件 + 重命名; 编码有损时返回标志; 外部改动检测。
+
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+
+/// 原子写失败的类型化错误。出错时原文件保持不变, 临时文件已清理。
+#[derive(Debug)]
+pub enum AtomicWriteError {
+    /// 目标是只读的且调用方没有允许清除只读属性
+    ReadOnly(PathBuf),
+    /// 目标没有父目录 / 没有文件名
+    InvalidPath(PathBuf),
+    /// 目标是个目录
+    IsDirectory(PathBuf),
+    /// 某个阶段的 IO 错误 (stage: "create-temp" / "write" / "sync" / "clear-readonly" / "rename")
+    Io { stage: &'static str, source: std::io::Error },
+}
+
+impl std::fmt::Display for AtomicWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ReadOnly(p) => write!(f, "READONLY:文件是只读的: {}", p.display()),
+            Self::InvalidPath(p) => write!(f, "路径无效: {}", p.display()),
+            Self::IsDirectory(p) => write!(f, "目标是目录: {}", p.display()),
+            Self::Io { stage, source } => write!(f, "写入失败 ({stage}): {source}"),
+        }
+    }
+}
+
+impl std::error::Error for AtomicWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self { Self::Io { source, .. } => Some(source), _ => None }
+    }
+}
+
+/// 原子写选项。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AtomicWriteOpts {
+    /// 目标是只读时: false = 拒绝 (ReadOnly 错误, 原文件不动); true = 清除只读属性后覆盖 (结果文件可写)
+    pub clear_readonly: bool,
+    /// 写完后 fsync (默认 false 以保持速度; 保存用户文档时建议 true)
+    pub sync: bool,
+}
+
+static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn tmp_path_for(path: &Path) -> Option<PathBuf> {
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let n = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Some(dir.join(format!(".{name}.{}.{n}.tmp", std::process::id())))
+}
+
+fn atomic_write_inner(path: &Path, bytes: &[u8], opts: AtomicWriteOpts, fail_after_write: bool) -> Result<(), AtomicWriteError> {
+    // 目标是符号链接时写到链接指向的真实文件, 不替换链接本身
+    let real: PathBuf = match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()),
+        _ => path.to_path_buf(),
+    };
+    let path = real.as_path();
+    let existing = std::fs::metadata(path).ok();
+    if let Some(m) = &existing {
+        if m.is_dir() { return Err(AtomicWriteError::IsDirectory(path.to_path_buf())); }
+        if m.permissions().readonly() && !opts.clear_readonly {
+            return Err(AtomicWriteError::ReadOnly(path.to_path_buf()));
+        }
+    }
+    let tmp = tmp_path_for(path).ok_or_else(|| AtomicWriteError::InvalidPath(path.to_path_buf()))?;
+    let cleanup = |e: AtomicWriteError| { let _ = std::fs::remove_file(&tmp); e };
+    let io = |stage: &'static str| move |source: std::io::Error| AtomicWriteError::Io { stage, source };
+
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(io("create-temp"))?;
+    if let Err(e) = f.write_all(bytes) { drop(f); return Err(cleanup(io("write")(e))); }
+    if fail_after_write { drop(f); return Err(cleanup(io("write")(std::io::Error::other("injected")))); }
+    if opts.sync { if let Err(e) = f.sync_all() { drop(f); return Err(cleanup(io("sync")(e))); } }
+    drop(f);
+    // 沿用原文件的权限 (非只读时); 只读目标被允许清除时新文件保持可写
+    if let Some(m) = &existing {
+        if !m.permissions().readonly() {
+            let _ = std::fs::set_permissions(&tmp, m.permissions());
+        } else {
+            let mut p = m.permissions();
+            p.set_readonly(false);
+            if let Err(e) = std::fs::set_permissions(path, p) {
+                return Err(cleanup(io("clear-readonly")(e)));
+            }
+        }
+    }
+    // std::fs::rename 在 Windows 上用 MoveFileExW(REPLACE_EXISTING), 在 Unix 上是 rename(2): 都会原子替换已有目标
+    std::fs::rename(&tmp, path).map_err(|e| cleanup(io("rename")(e)))
+}
+
+/// 原子写: 先写同目录临时文件, 再重命名覆盖目标。中途失败时原文件完好。
+pub fn atomic_write(path: &Path, bytes: &[u8], opts: AtomicWriteOpts) -> Result<(), AtomicWriteError> {
+    atomic_write_inner(path, bytes, opts, false)
+}
+
+/// 保存一份文档所需的元数据。
+#[derive(Debug, Clone, Copy)]
+pub struct SaveSpec {
+    pub charset: Charset,
+    pub bom: Bom,
+    pub eol: Eol,
+    /// 目标编码无法表示的字符: false = 不写, 返回 Unmappable; true = 仍写 (无法表示的字符变成 ?) 并置 lossy 标志
+    pub allow_lossy: bool,
+    pub write: AtomicWriteOpts,
+}
+
+#[derive(Debug)]
+pub enum SaveError {
+    /// 编码无法表示这些字符, 且未允许有损 (文件没有被改动)
+    Unmappable { charset: Charset, chars: Vec<char> },
+    Write(AtomicWriteError),
+}
+
+impl std::fmt::Display for SaveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unmappable { charset, chars } => {
+                let list: String = chars.iter().collect();
+                write!(f, "UNMAPPABLE:{}:编码 {} 无法表示这些字符: {}", charset.label(), charset.label(), list)
+            }
+            Self::Write(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for SaveError {}
+
+/// 保存结果。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaveOutcome {
+    pub bytes_written: usize,
+    /// true = 有字符在目标编码里无法表示, 已被替换成 '?' (仅 allow_lossy 时出现)
+    pub lossy: bool,
+    /// 被替换的字符 (去重, 最多 20 个)
+    pub replaced: Vec<char>,
+}
+
+/// 把 LF 文本按文档的 编码/BOM/换行 编码, 并原子写入。无法表示的字符不会被静默替换。
+pub fn save_document(path: &Path, lf_text: &str, spec: &SaveSpec) -> Result<SaveOutcome, SaveError> {
+    let (bytes, replaced) = match encode_document(lf_text, spec.charset, spec.bom, spec.eol) {
+        Ok(b) => (b, Vec::new()),
+        Err(bad) if spec.allow_lossy => {
+            let fixed: String = lf_text.chars().map(|c| if bad.contains(&c) { '?' } else { c }).collect();
+            let b = encode_document(&fixed, spec.charset, spec.bom, spec.eol)
+                .map_err(|chars| SaveError::Unmappable { charset: spec.charset, chars })?;
+            (b, bad)
+        }
+        Err(chars) => return Err(SaveError::Unmappable { charset: spec.charset, chars }),
+    };
+    atomic_write(path, &bytes, spec.write).map_err(SaveError::Write)?;
+    Ok(SaveOutcome { bytes_written: bytes.len(), lossy: !replaced.is_empty(), replaced })
+}
+
+/// 文件的 "指纹": 用来判断是否被外部改动。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct FileStamp {
+    pub exists: bool,
+    pub mtime_ms: i64,
+    pub size: u64,
+    pub readonly: bool,
+}
+
+impl FileStamp {
+    pub const MISSING: FileStamp = FileStamp { exists: false, mtime_ms: 0, size: 0, readonly: false };
+}
+
+pub fn file_stamp(path: &Path) -> FileStamp {
+    match std::fs::metadata(path) {
+        Ok(m) if !m.is_dir() => {
+            let mtime_ms = m.modified().ok().map(|t| match t.duration_since(std::time::UNIX_EPOCH) {
+                Ok(d) => d.as_millis() as i64,
+                Err(e) => -(e.duration().as_millis() as i64),
+            }).unwrap_or(0);
+            FileStamp { exists: true, mtime_ms, size: m.len(), readonly: m.permissions().readonly() }
+        }
+        _ => FileStamp::MISSING,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExternalChange {
+    Unchanged,
+    /// mtime 或大小变了
+    Modified,
+    /// 记住时存在, 现在没了
+    Deleted,
+    /// 记住时不存在 (新文档), 现在出现了
+    Created,
+}
+
+/// 纯函数: 记住的指纹 vs 现在的指纹。只读属性变化不算内容被改动。
+pub fn external_change(remembered: &FileStamp, current: &FileStamp) -> ExternalChange {
+    match (remembered.exists, current.exists) {
+        (false, false) => ExternalChange::Unchanged,
+        (false, true) => ExternalChange::Created,
+        (true, false) => ExternalChange::Deleted,
+        (true, true) => if remembered.mtime_ms != current.mtime_ms || remembered.size != current.size {
+            ExternalChange::Modified
+        } else { ExternalChange::Unchanged },
+    }
+}
+
+/// 便捷: 外部是否改过 (Modified / Deleted / Created 都算)。
+pub fn changed_externally(remembered: &FileStamp, current: &FileStamp) -> bool {
+    external_change(remembered, current) != ExternalChange::Unchanged
+}
+
+#[cfg(test)]
+mod safe_save_tests {
+    use super::*;
+
+    fn tdir(tag: &str) -> PathBuf {
+        let n = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let d = std::env::temp_dir().join(format!("docio-{tag}-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+    fn leftovers(d: &Path) -> usize {
+        std::fs::read_dir(d).unwrap().filter_map(|e| e.ok()).filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).count()
+    }
+    fn spec(cs: Charset, lossy: bool) -> SaveSpec {
+        SaveSpec { charset: cs, bom: Bom::None, eol: Eol::Lf, allow_lossy: lossy, write: AtomicWriteOpts::default() }
+    }
+
+    #[test]
+    fn atomic_write_creates_and_replaces() {
+        let d = tdir("rep");
+        let p = d.join("a.txt");
+        atomic_write(&p, b"one", AtomicWriteOpts::default()).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"one");
+        atomic_write(&p, b"two-two", AtomicWriteOpts { sync: true, ..Default::default() }).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"two-two");
+        assert_eq!(leftovers(&d), 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn failed_write_leaves_original_intact_and_cleans_temp() {
+        let d = tdir("fail");
+        let p = d.join("a.txt");
+        std::fs::write(&p, b"original").unwrap();
+        let e = atomic_write_inner(&p, b"new content", AtomicWriteOpts::default(), true).unwrap_err();
+        assert!(matches!(e, AtomicWriteError::Io { stage: "write", .. }));
+        assert_eq!(std::fs::read(&p).unwrap(), b"original");
+        assert_eq!(leftovers(&d), 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn directory_target_and_missing_parent_are_typed_errors() {
+        let d = tdir("dir");
+        let target = d.join("sub");
+        std::fs::create_dir_all(&target).unwrap();
+        let e = atomic_write(&target, b"x", AtomicWriteOpts::default()).unwrap_err();
+        assert!(matches!(e, AtomicWriteError::IsDirectory(_)));
+        assert_eq!(leftovers(&d), 0);
+        let missing = d.join("nodir").join("f.txt");
+        let e = atomic_write(&missing, b"x", AtomicWriteOpts::default()).unwrap_err();
+        assert!(matches!(e, AtomicWriteError::Io { stage: "create-temp", .. }));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn readonly_is_refused_or_cleared_explicitly() {
+        let d = tdir("ro");
+        let p = d.join("ro.txt");
+        std::fs::write(&p, b"keep").unwrap();
+        let mut perm = std::fs::metadata(&p).unwrap().permissions();
+        perm.set_readonly(true);
+        std::fs::set_permissions(&p, perm).unwrap();
+        assert!(file_stamp(&p).readonly);
+
+        let e = atomic_write(&p, b"new", AtomicWriteOpts::default()).unwrap_err();
+        assert!(matches!(e, AtomicWriteError::ReadOnly(_)));
+        assert!(e.to_string().starts_with("READONLY:"));
+        assert_eq!(std::fs::read(&p).unwrap(), b"keep");
+        assert_eq!(leftovers(&d), 0);
+
+        atomic_write(&p, b"new", AtomicWriteOpts { clear_readonly: true, sync: false }).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"new");
+        assert!(!file_stamp(&p).readonly, "清除后结果文件可写");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn save_document_uses_encoding_bom_and_eol() {
+        let d = tdir("enc");
+        let p = d.join("sj.txt");
+        let s = SaveSpec { charset: Charset::ShiftJis, bom: Bom::None, eol: Eol::Crlf, allow_lossy: false, write: Default::default() };
+        let o = save_document(&p, "日本語\nabc\n", &s).unwrap();
+        assert!(!o.lossy && o.replaced.is_empty());
+        let raw = std::fs::read(&p).unwrap();
+        assert_eq!(o.bytes_written, raw.len());
+        let back = decode_document(&raw, None);
+        assert_eq!((back.content.as_str(), back.eol, back.charset), ("日本語\nabc\n", Eol::Crlf, Charset::ShiftJis));
+
+        let u8s = SaveSpec { charset: Charset::Utf8, bom: Bom::Utf8, eol: Eol::Lf, allow_lossy: false, write: Default::default() };
+        save_document(&p, "x", &u8s).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), vec![0xEF, 0xBB, 0xBF, b'x']);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn unmappable_blocks_save_unless_lossy_allowed() {
+        let d = tdir("lossy");
+        let p = d.join("f.txt");
+        std::fs::write(&p, b"old").unwrap();
+        match save_document(&p, "hi 😀 ok", &spec(Charset::ShiftJis, false)) {
+            Err(SaveError::Unmappable { chars, charset }) => { assert_eq!(chars, vec!['😀']); assert_eq!(charset, Charset::ShiftJis); }
+            other => panic!("expected Unmappable, got {other:?}"),
+        }
+        assert_eq!(std::fs::read(&p).unwrap(), b"old", "被拒绝时文件不动");
+        let o = save_document(&p, "hi 😀 ok", &spec(Charset::ShiftJis, true)).unwrap();
+        assert!(o.lossy);
+        assert_eq!(o.replaced, vec!['😀']);
+        assert_eq!(std::fs::read(&p).unwrap(), b"hi ? ok");
+        assert!(!save_document(&p, "😀", &spec(Charset::Utf16Le, false)).unwrap().lossy);
+        let e = save_document(&p, "😀", &spec(Charset::Gbk, false)).unwrap_err();
+        assert!(e.to_string().starts_with("UNMAPPABLE:"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn stamp_and_external_change() {
+        let d = tdir("stamp");
+        let p = d.join("s.txt");
+        let none = file_stamp(&p);
+        assert_eq!(none, FileStamp::MISSING);
+        std::fs::write(&p, b"abc").unwrap();
+        let a = file_stamp(&p);
+        assert!(a.exists && a.size == 3 && a.mtime_ms > 0 && !a.readonly);
+        assert_eq!(external_change(&a, &file_stamp(&p)), ExternalChange::Unchanged);
+        assert_eq!(external_change(&none, &a), ExternalChange::Created);
+        let grown = FileStamp { size: 4, ..a };
+        assert_eq!(external_change(&a, &grown), ExternalChange::Modified);
+        let touched = FileStamp { mtime_ms: a.mtime_ms + 1500, ..a };
+        assert!(changed_externally(&a, &touched));
+        let ro = FileStamp { readonly: true, ..a };
+        assert!(!changed_externally(&a, &ro), "只读属性变化不算内容改动");
+        std::fs::remove_file(&p).unwrap();
+        assert_eq!(external_change(&a, &file_stamp(&p)), ExternalChange::Deleted);
+        assert_eq!(external_change(&none, &none), ExternalChange::Unchanged);
+        assert_eq!(file_stamp(&d), FileStamp::MISSING, "目录不算文件");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn own_save_then_restamp_is_not_external() {
+        let d = tdir("own");
+        let p = d.join("o.txt");
+        save_document(&p, "v1", &spec(Charset::Utf8, false)).unwrap();
+        let remembered = file_stamp(&p);
+        save_document(&p, "version two", &spec(Charset::Utf8, false)).unwrap();
+        assert!(changed_externally(&remembered, &file_stamp(&p)), "保存后不更新指纹就会被当成外部改动");
+        let remembered = file_stamp(&p);
+        assert!(!changed_externally(&remembered, &file_stamp(&p)));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
