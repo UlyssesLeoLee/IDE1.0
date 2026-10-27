@@ -421,14 +421,6 @@
     #tip { position: fixed; background: #333; color: white; padding: 4px 8px; border-radius: 3px; font-size: var(--fs-xs); pointer-events: none; z-index: var(--z-tip); display: none; max-width: 400px; }
 
     /* ===== Modal ===== */
-    #grep-win { position: fixed; right: 16px; bottom: 44px; width: min(620px, calc(100vw - 32px)); height: 320px; min-width: 280px; min-height: 140px; max-width: 96vw; max-height: 90vh; resize: both; overflow: hidden; display: flex; flex-direction: column; z-index: calc(var(--z-modal) - 20); background: var(--bg-elev, #252526); color: var(--fg, #ddd); border: 1px solid var(--border, #555); border-radius: 6px; box-shadow: 0 8px 28px rgba(0,0,0,.45); font-size: var(--fs-sm); }
-    #grep-win-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: move; background: rgba(127,127,127,.18); user-select: none; }
-    #grep-win-head .gw-spacer { flex: 1; }
-    #grep-win-head .md-btn, #grep-win .grep-sec-head .md-btn { padding: 1px 8px; font-size: 12px; }
-    #grep-win #grep-results { flex: 1; overflow: auto; margin: 0; max-height: none; padding: 4px 6px; }
-    #grep-win .grep-sec { margin-bottom: 8px; border-bottom: 1px solid var(--border, #555); }
-    #grep-win .grep-sec-head { display: flex; gap: 8px; align-items: center; padding: 2px 0; position: sticky; top: 0; background: var(--bg-elev, #252526); z-index: 1; }
-    #grep-win .gs-state { margin-left: auto; opacity: .75; }
     /* ===== 视图附件: 工具栏 / 标尺 / 功能键栏 (默认全关; 只占自己的网格行, 关着时高度为 0) ===== */
     #editor-area:not([class*="split-"]) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
     #editor-area:not([class*="split-"]) > #editor, #editor-area:not([class*="split-"]) > #minimap { grid-row: 4; }
@@ -4974,6 +4966,7 @@ function confirmClose(t) {
 }
 
 function closeTab(id) {
+  { const gt = TABS.get(id); if (gt && gt.grep) stopGrepJobs(gt); }   // Grep 结果标签关了: 搜索一并停止
   { const ct = TABS.get(id); if (ct) { histReset(ct); invoke("search_text", { op: "forget", needle: "", doc_id: histKey(ct) }).catch(() => {}); } }   // 关掉的标签: 后端的撤销栈 / 正文镜像一起释放
   TABS.delete(id);
   if (activeTabId === id) activeTabId = null;
@@ -5185,6 +5178,10 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   if (e.isComposing || e.keyCode === 229 || e.key === "Process" || IME_ACTIVE) return;   // 输入法组合中: 交给输入法
   try { recordKey(e); } catch (_) { /* 录制不影响主流程 */ }
   const t = getActiveTab();
+  if (t && t.grep && !e.ctrlKey && !e.altKey && !e.metaKey) {   // Grep 结果窗口: Enter 跳到命中处, 搜索中 Esc 停止
+    if (e.key === "Enter" && !e.shiftKey && grepJumpAtCursor(t)) { e.preventDefault(); return; }
+    if (e.key === "Escape" && t.grep.job && !t.grep.job.done) { e.preventDefault(); stopGrepJobs(t); setTip("Grep 已停止"); return; }
+  }
   // Vim 关闭时不看 #s-mode (静态标记里写着 data-mode="NORMAL", 启动后头几个键会被当成 vim 命令吞掉), 直接是 INSERT
   const vim = LAYOUT.vimOn();
   const mode = vim ? (document.getElementById("s-mode").dataset.mode || "NORMAL") : "INSERT";
@@ -6581,8 +6578,8 @@ async function openGrepDialog(withReplace) {
         subfolders: GREP_STATE.subfolders,
       },
     });
-    status.textContent = "已在「Grep 结果」窗口中搜索 (可继续追加别的条件)";
-    closeModal();                                   // Sakura: 条件对话框收起, 结果在独立窗口里边搜边显示
+    status.textContent = "已在新标签中搜索";
+    closeModal();                                   // Sakura: 条件对话框收起, 结果在新的编辑窗口里边搜边显示
   };
   /* 任一输入框按回车即搜索 (与旧版一致; 新版五个框都要能触发, 否则在 フォルダー 里敲完回车没反应) */
   for (const id of ["grep-input", "grep-files", "grep-folders", "grep-exc-files", "grep-exc-dirs",
@@ -6594,121 +6591,70 @@ async function openGrepDialog(withReplace) {
   }
 }
 
-function renderGrepResults(rows, needle, caseSensitive, mount) {
-  const old = document.getElementById("grep-results");
-  if (old) old.remove();
-  const box = document.createElement("div");
-  box.id = "grep-results";
-  box.style.cssText = "max-height:46vh;overflow:auto;margin-top:6px;";
-  grepAppendRows(box, new Map(), rows, needle, caseSensitive);
-  (mount || mdBody).appendChild(box);
-}
+/* ===== Grep 结果 = 一个编辑窗口 (Sakura: Grep 结果窗口就是一份普通文档) =====
+   每次搜索在主编辑区新开一个标签, 内容是 Sakura 格式的文本:
+     □検索条件  "pattern" … (头部) / 路径(行,列): 命中行文字 (每处命中一行) / N 個が検索されました。 (尾行)
+   所以它自带编辑器的一切: Ctrl+F 在结果里继续查找、复制、选择、分割窗口……; 命中词用「検索マーク」自动高亮 (Ctrl+F3 切换);
+   Enter / 双击命中行跳到对应文件的对应行; 搜索没结束时按 Esc 停止, 关掉标签也会停止。
+   后端 search 是一次性返回, 所以把一次搜索切成若干「分片」(每个一级子目录一片 + 根目录自身的文件一片), 每片返回就并入文档。 */
+const GREP_HIT_RE = /^(.+)\((\d+),(\d+)\): /;   // 路径(行,列): 内容
+const GREP_JOBS = new Set();
+let GREP_SEQ = 0;
 
-/* 把一批命中并入结果容器: 按文件分组 (G-61), 已有的文件组继续往后追加, 组头计数同步更新。
-   流式显示 (Grep 结果窗口) 和一次性渲染共用这一份。 */
-function grepAppendRows(box, groups, rows, needle, caseSensitive) {
-  const hay = caseSensitive ? (x) => x : (x) => x.toLowerCase();
-  const ndl = caseSensitive ? needle : needle.toLowerCase();
-  for (const m of rows) {
-    const path = m.path;
-    let g = groups.get(path);
-    if (!g) {
-      const head = document.createElement("div");
-      head.className = "opt-row grep-file-head";
-      head.style.cssText = "font-weight:600;cursor:pointer;padding:3px 4px;background:rgba(127,127,127,0.12);";
-      head.dataset.grepPath = path;
-      const list = document.createElement("div");
-      list.className = "grep-file-hits";
-      list.dataset.grepPath = path;
-      list.style.paddingLeft = "16px";
-      head.addEventListener("click", () => { list.style.display = list.style.display === "none" ? "" : "none"; });
-      box.appendChild(head);
-      box.appendChild(list);
-      g = { head, list, n: 0 };
-      groups.set(path, g);
-    }
-    const row = document.createElement("div");
-    row.className = "opt-row grep-hit";
-    row.dataset.grepPath = path;
-    row.dataset.grepLine = String(m.line);
-    row.style.cssText = "cursor:pointer;font-family:monospace;white-space:pre;";
-    const txt = String(m.text || "");
-    let inner = "";
-    if (needle) {
-      const lower = hay(txt);
-      let at = 0;
-      while (true) {
-        const i = lower.indexOf(ndl, at);
-        if (i < 0) { inner += escapeHtml(txt.slice(at)); break; }
-        inner += escapeHtml(txt.slice(at, i)) +
-          '<mark style="background:var(--blue);color:#000;">' + escapeHtml(txt.substr(i, needle.length)) + "</mark>";
-        at = i + Math.max(1, needle.length);
-      }
-    } else {
-      inner = escapeHtml(txt);
-    }
-    row.innerHTML = m.line + ": " + inner;
-    row.title = path + ":" + m.line;
-    const jump = () => { closeModal(); gotoPathLine(path, m.line); };      // G-70
-    row.addEventListener("click", jump);          // G-71 双击前先接单击
-    row.addEventListener("dblclick", jump);       // G-71
-    row.tabIndex = 0;
-    row.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); jump(); } });  // G-72
-    g.list.appendChild(row);
-    g.n++;
-    g.head.textContent = path + "  (" + g.n + ")";
+// 命中处在行内的列 (1-based, 按码点): 找不到就是 1
+function grepHitCol(text, p) {
+  if (!p.needle) return 1;
+  let i = -1;
+  if (p.base.regex) {
+    try { const m = new RegExp(p.needle, p.caseSensitive ? "" : "i").exec(text); i = m ? m.index : -1; } catch (_) { i = -1; }
+  } else {
+    const hay = p.caseSensitive ? text : text.toLowerCase(), ndl = p.caseSensitive ? p.needle : p.needle.toLowerCase();
+    i = hay.indexOf(ndl);
   }
+  return i < 0 ? 1 : charLen(text.slice(0, i)) + 1;
+}
+// 一处命中 -> 结果文档里的一行
+function grepHitLine(m, p) {
+  const txt = String(m.text || "").replace(/[\r\n]+$/, "");
+  return stripVerbatim(m.path) + "(" + m.line + "," + grepHitCol(txt, p) + "): " + txt;
+}
+// 结果文档里的一行 -> 命中位置; 不是命中行 = null
+function parseGrepHitLine(line) {
+  const m = GREP_HIT_RE.exec(line || "");
+  return m ? { path: m[1], line: +m[2], col: +m[3] } : null;
+}
+function grepHeaderLines(p) {
+  const b = p.base, opts = [];
+  if (b.case_sensitive) opts.push("英大文字小文字を区別する");
+  if (b.regex) opts.push("正規表現");
+  if (b.whole_word) opts.push("単語単位で探す");
+  return [
+    '□検索条件  "' + (p.needle || "") + '"',
+    "検索対象    " + (b.include_files && b.include_files.length ? b.include_files.join(";") : "*.*"),
+    "フォルダー  " + (p.folders.length ? p.folders.join(";") : stripVerbatim(projectRoot || "")) + (p.subfolders ? "  (サブフォルダーも検索)" : ""),
+    ...(opts.length ? ["オプション  " + opts.join(" / ")] : []),
+    "",
+  ];
 }
 
-/* ===== Grep 结果窗口 (Sakura: 结果在独立窗口里边搜边显示) =====
-   后端 search 是一次性返回, 所以把一次搜索切成若干「分片」(每个一级子目录一片 + 根目录自身的文件一片),
-   每片返回就立刻并入窗口; 搜索没结束时随时可以再开 Grep 对话框追加新条件, 新搜索作为新的一节并行进行,
-   每节可单独停止。 */
-const GREPWIN = { el: null, body: null, jobs: new Set(), seq: 0 };
-
-function ensureGrepWin() {
-  if (GREPWIN.el && document.body.contains(GREPWIN.el)) { GREPWIN.el.style.display = "flex"; return GREPWIN; }
-  const w = document.createElement("div");
-  w.id = "grep-win";
-  w.innerHTML =
-    '<div id="grep-win-head"><span class="gw-title">Grep 结果</span><span id="grep-win-status"></span>' +
-    '<span class="gw-spacer"></span>' +
-    '<button class="md-btn" data-gw="add" title="追加新的搜索条件 (搜索未结束也可以)">追加</button>' +
-    '<button class="md-btn" data-gw="stop" title="停止所有进行中的搜索">停止</button>' +
-    '<button class="md-btn" data-gw="clear" title="清空结果">清空</button>' +
-    '<button class="md-btn" data-gw="close" title="关闭 (同时停止搜索)">✕</button></div>' +
-    '<div id="grep-results"></div>';
-  document.body.appendChild(w);
-  GREPWIN.el = w;
-  GREPWIN.body = w.querySelector("#grep-results");
-  w.addEventListener("click", (e) => {
-    const b = e.target.closest && e.target.closest("[data-gw]");
-    if (!b) return;
-    const k = b.dataset.gw;
-    if (k === "add") openGrepDialog(false);
-    else if (k === "stop") { for (const j of GREPWIN.jobs) j.cancelled = true; }
-    else if (k === "clear") { for (const j of GREPWIN.jobs) j.cancelled = true; GREPWIN.body.innerHTML = ""; GREPWIN.jobs.clear(); updateGrepWinStatus(); }
-    else if (k === "close") { for (const j of GREPWIN.jobs) j.cancelled = true; GREPWIN.jobs.clear(); w.style.display = "none"; }
-    else if (k === "sec-stop") { const sec = b.closest(".grep-sec"); for (const j of GREPWIN.jobs) if (String(j.id) === sec.dataset.job) j.cancelled = true; }
-  });
-  // 拖标题栏移动窗口
-  const head = w.querySelector("#grep-win-head");
-  head.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button")) return;
-    const r = w.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
-    const mv = (ev) => { w.style.left = Math.max(0, ev.clientX - dx) + "px"; w.style.top = Math.max(0, ev.clientY - dy) + "px"; w.style.right = "auto"; w.style.bottom = "auto"; };
-    const up = () => { document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); };
-    document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up);
-  });
-  return GREPWIN;
+function createGrepDoc(p) {
+  const id = "t" + (++maxTabId);
+  const t = { id, path: "", name: "Grep: " + (p.needle || "(文件名)"), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: grepHeaderLines(p), undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: PREFS.defaultEol || "crlf", grep: {} };
+  TABS.set(id, t);
+  setActiveTab(id);
+  return t;
 }
 
-function updateGrepWinStatus() {
-  const el = document.getElementById("grep-win-status");
-  if (!el) return;
-  let running = 0, hits = 0;
-  for (const j of GREPWIN.jobs) { if (!j.done) running++; hits += j.hits; }
-  el.textContent = (running ? "搜索中 " + running + " 项 · " : "") + "命中 " + hits + " 处";
+// 追加了行之后重画 (一帧合并一次; 不是当前标签就等切回来时画)
+const GREP_PAINT = new Set();
+function scheduleGrepPaint(t) {
+  if (GREP_PAINT.has(t)) return;
+  GREP_PAINT.add(t);
+  requestAnimationFrame(() => { GREP_PAINT.delete(t); if (getActiveTab() === t) { paintActive(); scheduleMarks(); } });
+}
+
+function stopGrepJobs(t) {
+  for (const j of GREP_JOBS) if (!t || j.tab === t) j.cancelled = true;
 }
 
 async function grepShards(p) {
@@ -6726,58 +6672,59 @@ async function grepShards(p) {
 }
 
 async function startGrepJob(p) {
-  const w = ensureGrepWin();
-  const job = { id: ++GREPWIN.seq, cancelled: false, done: false, hits: 0, files: new Set(), groups: new Map() };
-  GREPWIN.jobs.add(job);
-  const sec = document.createElement("div");
-  sec.className = "grep-sec";
-  sec.dataset.job = String(job.id);
-  const cond = "「" + (p.needle || "(文件名)") + "」" + (p.base.include_files && p.base.include_files.length ? " " + p.base.include_files.join(",") : "") +
-    (p.folders.length ? " @" + p.folders.join(";") : "");
-  sec.innerHTML = '<div class="grep-sec-head"><b>#' + job.id + "</b> " + escapeHtml(cond) +
-    ' <span class="gs-state">搜索中…</span><button class="md-btn" data-gw="sec-stop">停止</button></div><div class="grep-sec-body"></div>';
-  w.body.appendChild(sec);
-  const body = sec.querySelector(".grep-sec-body");
-  const state = sec.querySelector(".gs-state");
+  const t = createGrepDoc(p);
+  const job = { id: ++GREP_SEQ, tab: t, cancelled: false, done: false, hits: 0, files: new Set() };
+  GREP_JOBS.add(job);
+  t.grep = { job };
+  // 命中词自动高亮: 用「検索マーク」(同一套查找选项), 之后在结果里 Ctrl+F 继续查找会换成新的词; Ctrl+F3 切换显示
+  Object.assign(FIND_STATE, { needle: p.needle || "", matchCase: !!p.base.case_sensitive, useRegex: !!p.base.regex, wholeWord: !!p.base.whole_word, marks: true });
   const MAX = 5000;
   let err = "";
   try {
     const shards = await grepShards(p);
     for (let i = 0; i < shards.length && !job.cancelled && job.hits < MAX; i++) {
-      state.textContent = "搜索中 " + (i + 1) + "/" + shards.length + " · 命中 " + job.hits;
+      setTip("Grep 搜索中 " + (i + 1) + "/" + shards.length + " · 命中 " + job.hits + " (Esc 停止)");
       try {
         const resp = await invoke("search", Object.assign({}, p.base, shards[i], { max_results: MAX - job.hits }));
         const rows = (resp && resp.results) || (Array.isArray(resp) ? resp : []);
         if (rows.length && !job.cancelled) {
-          grepAppendRows(body, job.groups, rows, p.needle, p.caseSensitive);
-          for (const m of rows) job.files.add(m.path);
+          for (const m of rows) { t.lines.push(grepHitLine(m, p)); job.files.add(m.path); }
           job.hits += rows.length;
-          updateGrepWinStatus();
+          scheduleGrepPaint(t);
         }
       } catch (e) { err = (e && e.message) || String(e); }
     }
   } catch (e) { err = (e && e.message) || String(e); }
   job.done = true;
-  state.textContent = (job.cancelled ? "已停止 · " : err && !job.hits ? "搜索失败: " + err + " · " : "") +
-    (job.hits ? "命中 " + job.hits + " 处, " + job.files.size + " 个文件" : (err ? "" : "无匹配"));
-  sec.classList.add("done");
-  const stop = sec.querySelector('[data-gw="sec-stop"]'); if (stop) stop.remove();
-  updateGrepWinStatus();
-  setTip("Grep 命中 " + job.hits + " 处");
+  GREP_JOBS.delete(job);
+  if (TABS.has(t.id)) {
+    t.lines.push((job.hits ? job.hits + " 個が検索されました。" : (err ? "検索に失敗しました: " + err : "見つかりませんでした。")) +
+      (job.cancelled ? "  (検索を中断しました)" : job.hits >= MAX ? "  (上限 " + MAX + " 件に達しました)" : ""));
+    scheduleGrepPaint(t);
+  }
+  setTip("Grep 命中 " + job.hits + " 处, " + job.files.size + " 个文件");
   return job;
 }
 window.startGrepJob = startGrepJob;
 
+// 光标所在行是命中行就跳过去 (Sakura: タグジャンプ / Enter / ダブルクリック)
+function grepJumpAtCursor(t) {
+  const hit = t && t.grep ? parseGrepHitLine(t.lines[t.cursor.row]) : null;
+  if (!hit) return false;
+  void gotoPathLine(hit.path, hit.line, hit.col - 1);
+  return true;
+}
+
 /* 打开文件并把光标放到指定行 (1-based). openFile 之后光标固定在 0,0,
    这里补上定位 + 滚动可见, 否则从 Grep 结果跳过去还要自己找. */
-async function gotoPathLine(path, line) {
+async function gotoPathLine(path, line, col = 0) {
   await openFile(stripVerbatim(path));
   const t = getActiveTab();
   if (!t) return;
   const row = Math.max(0, Math.min(t.lines.length - 1, (line | 0) - 1));
-  t.cursor = { row, col: 0 };
+  t.cursor = { row, col: Math.max(0, Math.min(col | 0, charLen(t.lines[row] || ""))) };
   renderVim(t);
-  setPos("Ln " + (row + 1) + ", Col 1");
+  setPos("Ln " + (row + 1) + ", Col " + (t.cursor.col + 1));
   updateCaret(true);
   // 把目标行滚进视野
   scrollRowIntoView(row, "center");
@@ -6786,6 +6733,9 @@ async function gotoPathLine(path, line) {
 
 function openGrep() { openGrepDialog(false); }
 function openGrepReplace() { openGrepDialog(true); }
+
+// Grep 结果窗口里双击命中行 = 跳转
+if (edContent) edContent.addEventListener("dblclick", () => { const t = getActiveTab(); if (t && t.grep) grepJumpAtCursor(t); });
 
 // 跳转到行
 function openGotoLine() {
@@ -7111,7 +7061,9 @@ window.parseFilePatterns = parseFilePatterns;
 window.splitSakuraList = splitSakuraList;      // G-10 三分隔符 + G-11 引号
 window.parseSearchFolders = parseSearchFolders; // G-21 フォルダー 多目录 ; 分隔
 window.GREP_STATE = GREP_STATE;
-window.renderGrepResults = renderGrepResults;
+window.grepHitLine = grepHitLine;
+window.parseGrepHitLine = parseGrepHitLine;
+window.grepJumpAtCursor = grepJumpAtCursor;
 window.gotoPathLine = gotoPathLine;
 window.openGrep = openGrep;
 window.openGrepDialog = openGrepDialog;

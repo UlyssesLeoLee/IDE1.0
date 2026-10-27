@@ -107,47 +107,20 @@ test.describe("Grep 结果视图与跳转", () => {
     return root;
   }
 
-  test("G-61 结果按文件分组 + G-53 命中高亮", async ({ page }) => {
+  test("G-61 / G-53 结果是 Sakura 格式的文本行; 命中词用「検索マーク」高亮", async ({ page }) => {
     const errors = await boot(page);
-    // 直接调渲染函数, 验证视图结构 (不依赖真实磁盘搜索)
-    await page.evaluate(() => {
+    const out = await page.evaluate(() => {
+      const w = window as any;
+      const p = { needle: "alpha", caseSensitive: false, base: { regex: false } };
       const rows = [
         { path: "src/a.rs", line: 3, text: "let alpha = 1;" },
-        { path: "src/a.rs", line: 9, text: "let alpha = 2;" },
+        { path: "src/a.rs", line: 9, text: "  ALPHA();" },
         { path: "src/b.rs", line: 1, text: "fn alpha() {}" },
       ];
-      // 挂到页面上可见的容器: 默认落点是 mdBody, 但对话框没打开时它不可见,
-      // 结果行无法聚焦 (测 G-72 时会失败).
-      let host = document.getElementById("grep-test-host");
-      if (!host) {
-        host = document.createElement("div");
-        host.id = "grep-test-host";
-        host.style.cssText = "position:fixed;inset:0;z-index:9999;background:#1e1e1e;overflow:auto;";
-        document.body.appendChild(host);
-      }
-      (window as any).renderGrepResults(rows, "alpha", false, host);
+      return rows.map((m) => w.grepHitLine(m, p));
     });
-
-    // 用专门的 class / data 属性断言, 不用文本匹配 (结果文本里也可能有括号,
-    // 如 "fn alpha() {}", 按 "(" 过滤会把结果行误当成文件头)
-    const check = await page.evaluate(() => {
-      const box = document.getElementById("grep-results");
-      if (!box) return null;
-      const heads = [...box.querySelectorAll(".grep-file-head")];
-      return {
-        heads: heads.map((h) => ({ path: (h as HTMLElement).dataset.grepPath, text: h.textContent!.trim() })),
-        marks: box.querySelectorAll("mark").length,
-        hits: [...box.querySelectorAll(".grep-hit")].map((r) => (r as HTMLElement).dataset.grepLine),
-      };
-    });
-    expect(check, "结果容器应存在").not.toBeNull();
-    expect(check!.heads.length, "两个文件各一个分组头").toBe(2);
-    expect(check!.heads[0].path).toBe("src/a.rs");
-    expect(check!.heads[0].text).toContain("(2)");
-    expect(check!.heads[1].path).toBe("src/b.rs");
-    expect(check!.hits, "三条命中行").toEqual(["3", "9", "1"]);
-    // 每行都应有高亮: a.rs 两行各 1 处 + b.rs 1 行 1 处 = 3 处
-    expect(check!.marks, "命中片段应被 <mark> 标出").toBeGreaterThanOrEqual(3);
+    // 路径(行,列): 内容; 列按命中处算 (不区分大小写时 ALPHA 也命中)
+    expect(out).toEqual(["src/a.rs(3,5): let alpha = 1;", "src/a.rs(9,3):   ALPHA();", "src/b.rs(1,4): fn alpha() {}"]);
     expect(errors).toEqual([]);
   });
 
@@ -170,25 +143,21 @@ test.describe("Grep 结果视图与跳转", () => {
     expect(errors).toEqual([]);
   });
 
-  test("G-72 结果行可聚焦 + Enter 触发跳转", async ({ page }) => {
+  test("G-72 命中行能被解析出文件 / 行 / 列 (Enter 与双击跳转用它); 非命中行不跳", async ({ page }) => {
     const errors = await boot(page);
-    await page.evaluate(() => {
-      let host = document.getElementById("grep-test-host");
-      if (!host) {
-        host = document.createElement("div");
-        host.id = "grep-test-host";
-        host.style.cssText = "position:fixed;inset:0;z-index:9999;background:#1e1e1e;overflow:auto;";
-        document.body.appendChild(host);
-      }
-      (window as any).renderGrepResults(
-        [{ path: "x.rs", line: 1, text: "hit here" }], "hit", false, host
-      );
+    const r = await page.evaluate(() => {
+      const w = window as any;
+      return [
+        w.parseGrepHitLine("C:/work/a(b).rs(12,5): fn x() {}"),
+        w.parseGrepHitLine("src/a.rs(3,1): "),
+        w.parseGrepHitLine('□検索条件  "hit"'),
+        w.parseGrepHitLine(""),
+      ];
     });
-    const row = page.locator("#grep-results .grep-hit").first();
-    expect(await row.getAttribute("tabindex"), "结果行可键盘聚焦").toBe("0");
-    await row.focus();
-    const focused = await page.evaluate(() => document.activeElement?.textContent?.slice(0, 20));
-    expect(focused, "Enter 前焦点应在结果行").toContain("hit here");
+    expect(r[0]).toEqual({ path: "C:/work/a(b).rs", line: 12, col: 5 });
+    expect(r[1]).toEqual({ path: "src/a.rs", line: 3, col: 1 });
+    expect(r[2], "头部行不是命中").toBeNull();
+    expect(r[3]).toBeNull();
     expect(errors).toEqual([]);
   });
 

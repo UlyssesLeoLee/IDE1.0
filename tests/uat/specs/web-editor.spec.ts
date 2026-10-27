@@ -69,9 +69,16 @@ test.describe("web /editor (ULYS-251)", () => {
     await expect(page.locator("#grep-input")).toBeVisible();
     await page.locator("#grep-input").fill("fn main");
     await page.locator("#grep-input").press("Enter");
-    const hit = page.locator('#grep-results .grep-hit[data-grep-path*="main.rs"]').first();   // 命中行 (组头只负责折叠)
-    await expect(hit).toBeVisible();
-    await hit.click();
+    // Grep 结果是主编辑区里的一个新标签 (Sakura 格式的文本); Enter 在命中行上跳到那个文件
+    await expect(page.locator(".tab.active")).toContainText("Grep: fn main");
+    await page.waitForFunction(() => (window as any).getActiveTab().lines.some((l: string) => /main\.rs\(\d+,\d+\): /.test(l)));
+    await page.evaluate(() => {
+      const t = (window as any).getActiveTab();
+      t.cursor = { row: t.lines.findIndex((l: string) => /main\.rs\(\d+,\d+\): /.test(l)), col: 0 };
+      (window as any).renderVim(t);
+    });
+    await page.locator("#ed-content").focus();
+    await page.keyboard.press("Enter");
     await expect(page.locator(".tab.active")).toContainText("main.rs");
     expect(errors).toEqual([]);
   });
