@@ -3935,8 +3935,7 @@ function renderVim(t, noFollow) {
     if (win || f.n !== t.lines.length || f.end >= t.lines.length || inside(t.cursor) || (t.cursors && t.cursors.some(inside)) ||
         (f.sig && f.sig !== docFingerprint(t.lines.slice(fs, f.end + 1)).join(":"))) folded.delete(fs);
   }
-  const hidden = new Set();
-  for (const [fs, f] of folded) for (let k = fs + 1; k <= f.end; k++) hidden.add(k);
+  const hidden = hiddenRowsOf(t);   // 上面刚剔掉失效的折叠, t.folded 就是 folded
   for (let r = rs; r < re; r++) {
     if (hidden.has(r)) { html.push('<div class="hl-row fold-hidden"></div>'); continue; }
     const toks = Syntax.highlightLine(t.lines[r], lang);
@@ -5864,6 +5863,7 @@ function setTheme(mode) {
     document.body.style.background = "transparent";
     applyClearThemeColors(t);
     void refreshClearThemeFromBackend();
+    requestLuminanceCheck();                     // 背后透出来的明暗: 进主题时采一次 (之后只在焦点 / 移动 / 缩放等事件后采)
     startCrystalSparkles();
   } else {
     stopCrystalSparkles();
@@ -5954,7 +5954,7 @@ function startLuminanceWatch() {
   try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", requestLuminanceCheck); } catch (_) {}
   try {                                                       // 桌面壳: 窗口被拖到别处 (背后的壁纸 / 窗口变了)
     const ev = window.__TAURI__ && window.__TAURI__.event;
-    if (ev && ev.listen) { void ev.listen("tauri://move", requestLuminanceCheck); void ev.listen("tauri://resize", requestLuminanceCheck); }
+    if (ev && ev.listen) for (const name of ["tauri://move", "tauri://resize"]) ev.listen(name, requestLuminanceCheck).catch(() => {});
   } catch (_) {}
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && VIEW_STATE.theme === "clear") {
@@ -8752,16 +8752,21 @@ function hiddenRowsOf(t) {
   if (t && t.folded instanceof Map) for (const [fs, f] of t.folded) for (let k = fs + 1; k <= f.end; k++) h.add(k);
   return h;
 }
-function visToDoc(t, hid, v) {
-  if (!hid.size) return v;
-  let seen = 0;
-  for (let r = 0; r < t.lines.length; r++) { if (hid.has(r)) continue; if (seen === v) return r; seen++; }
-  return t.lines.length - 1;
+// 第 v 个可见行对应的文档行号; vis = 可见行号表 (visibleRows 建一次, 一次重画里反复查)
+function visibleRows(t, hid) {
+  if (!hid.size) return null;
+  const vis = [];
+  for (let r = 0; r < t.lines.length; r++) if (!hid.has(r)) vis.push(r);
+  return vis;
+}
+function visToDoc(t, vis, v) {
+  if (!vis) return v;
+  return vis.length ? vis[Math.min(v, vis.length - 1)] : 0;
 }
 function paintMarks() {
   if (!window.CSS || !CSS.highlights || typeof Highlight === "undefined") return;
   const t = getActiveTab();
-  const hid = hiddenRowsOf(t);
+  const hid = hiddenRowsOf(t), vis = visibleRows(t, hid);
   const set = (name, ranges) => { if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges)); else CSS.highlights.delete(name); };
   const mk = (r1, c1, r2, c2) => {
     const a = domPointAt(t, r1, c1), b = domPointAt(t, r2, c2);
@@ -8773,7 +8778,7 @@ function paintMarks() {
     const hits = findHitsCached(t);
     if (hits.length) {
       const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
-      const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 20), first = visToDoc(t, hid, fv), last = Math.min(t.lines.length - 1, visToDoc(t, hid, fv + Math.ceil(edContent.clientHeight / lh) + 40));
+      const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 20), first = visToDoc(t, vis, fv), last = Math.min(t.lines.length - 1, visToDoc(t, vis, fv + Math.ceil(edContent.clientHeight / lh) + 40));
       for (const h of hits) {
         if (h.row < first || h.row > last || hid.has(h.row)) continue;
         if (marks.length >= 1500) break;
@@ -8805,7 +8810,7 @@ function paintMarks() {
   const wt = [], ws = [], wz = [], wtr = [];
   if (t && VIEWOPT.ws && !IME_ACTIVE) {
     const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
-    const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), first = visToDoc(t, hid, fv), last = Math.min(t.lines.length - 1, visToDoc(t, hid, fv + Math.ceil(edContent.clientHeight / lh) + 10));
+    const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), first = visToDoc(t, vis, fv), last = Math.min(t.lines.length - 1, visToDoc(t, vis, fv + Math.ceil(edContent.clientHeight / lh) + 10));
     for (let r = first; r <= last && wt.length + ws.length + wz.length + wtr.length < 4000; r++) {
       if (hid.has(r)) continue;
       const line = t.lines[r], chs = chars(line);
@@ -8821,10 +8826,11 @@ function paintMarks() {
   const da = [], dc = [], dd = [];
   if (t && t.diff && !IME_ACTIVE) {
     const lh = parseFloat(getComputedStyle(edContent).lineHeight) || 18;
-    const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), first = visToDoc(t, hid, fv), last = Math.min(t.lines.length - 1, visToDoc(t, hid, fv + Math.ceil(edContent.clientHeight / lh) + 10));
+    const fv = Math.max(0, Math.floor(edContent.scrollTop / lh) - 5), first = visToDoc(t, vis, fv), last = Math.min(t.lines.length - 1, visToDoc(t, vis, fv + Math.ceil(edContent.clientHeight / lh) + 10));
     for (const h of t.diff.hunks) {
       if (h.b1 > h.b0) {
         for (let r = Math.max(h.b0, first); r < Math.min(h.b1, last + 1); r++) {
+          if (hid.has(r)) continue;
           const rg = mk(r, 0, r, charLen(t.lines[r])); if (rg) ((h.a1 > h.a0) ? dc : da).push(rg);
         }
       } else if (h.b0 >= first && h.b0 <= last + 1) {
@@ -10322,9 +10328,9 @@ function spliceLines(t, start, remove, insert) {
 }
 
 // 没改文本的结果 (复制写剪贴板 / 选词产生选区 / 只有提示)
-function applyUnchangedResult(t, res) {
+function applyUnchangedResult(t, res, moved) {
   if (res.clip !== null && res.clip !== undefined) pushClip(res.clip, res.clip_line);
-  if (res.sel) {
+  if (res.sel && !moved) {
     t.sel = { r0: res.sel[0], c0: res.sel[1], r1: res.sel[2], c1: res.sel[3] };
     t.selAnchor = res.anchor ? { row: res.anchor[0], col: res.anchor[1] } : null;
     t.cursor = { row: res.cursor[0], col: res.cursor[1] };
@@ -10371,9 +10377,10 @@ function runEdit(cmd, extra) {
     try { res = await invoke("edit_cmd", editRequest(t, cmd, extra)); }
     catch (err) { setTip("编辑失败: " + err.message); return; }
     if (getActiveTab() !== t || (ctx && ctx.dead)) return;   // 切走了标签 / 桥操作已超时作废
-    if (!res.changed) { applyUnchangedResult(t, res); return; }
+    const moved = (t.uiVer || 0) !== uiv;
+    if (!res.changed) { applyUnchangedResult(t, res, moved); return; }
     if (res.tip) setTip(res.tip);
-    applyEditResult(t, cmd, res, (t.uiVer || 0) !== uiv);
+    applyEditResult(t, cmd, res, moved);
     repaintAfterEdit(t, cmd);
   });
 }

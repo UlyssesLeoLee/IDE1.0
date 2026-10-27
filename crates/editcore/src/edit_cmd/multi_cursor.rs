@@ -53,11 +53,7 @@ pub(super) fn run(cx: &Ctx, op: MultiOp) -> EditRes {
         MultiOp::Backspace => format!("{} 个光标删除", at.len()),
         MultiOp::Insert(ins) => format!("{} 个光标插入 {}", at.len(), ins.iter().collect::<String>()),
     };
-    let mut res = EditRes::nothing(cursors[0], &tip);
-    res.changed = true;
-    res.patches = Some(patches);
-    res.cursors = Some(cursors);
-    res
+    EditRes { changed: true, cursor: cursors[0], cursors: Some(cursors), patches: Some(patches), tip: Some(tip), ..Default::default() }
 }
 
 /// 光标: 行夹进文档, 列夹进行长, 去重、升序。涉及的行没交全或不足两个光标 = Err(给用户的提示, 可为空) —— 什么也不做
