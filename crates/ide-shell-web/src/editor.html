@@ -6969,7 +6969,7 @@ function runJsMacro() {
     openModal({ title: "JS 宏错误", body: e.message });
   }
 }
-function runPpaMacro() {
+async function runPpaMacro() {
   const code = prompt("PPA 宏 (每行一个动作: KEY <键> / TYPE <文本> / CMD <命令>):",
     "KEY i\nTYPE hello\nKEY Escape\n");
   if (!code) return;
@@ -6982,6 +6982,7 @@ function runPpaMacro() {
     if (act === "KEY") edContent.dispatchEvent(new KeyboardEvent("keydown", { key: arg, bubbles: true, cancelable: true }));
     else if (act === "TYPE") typeText(arg);
     else dispatchCommand(arg);
+    await window.__editIdle();   // 每一步落地再做下一步: TYPE / 命令 / 按键经桥是异步的, 不等的话按键会插到前面的命令之前
   }
   setTip("PPA 宏执行完成");
 }
