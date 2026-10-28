@@ -75,3 +75,42 @@ test('章节上移 / 下移 (含子章节) 与文档检查', () =>
     const txt = await page.evaluate(() => document.getElementById('modal').textContent);
     assert.match(txt, /MD-H1/, '标题 B 直接跳到 4 级被报告');
   }));
+
+test('Markdown 快捷键并入键位表: 只在 MD 文档里生效, 其它文档仍是 Sakura 原命令, 冲突可识别', () =>
+  withMocks({ name: 'mdbar', portOffset: 584 }, async ({ page, press }) => {
+    await page.locator('#ed-content').click();
+    // 冲突列表: 与 Sakura 原有键相撞的两个
+    const conf = await page.evaluate(() => shortcutConflicts().map((x) => [x.combo, x.md, x.original]));
+    assert.deepEqual(conf.sort(), [['C-b', 'md-bold', 'browse'], ['C-i', 'md-italic', 'duplicate-line']].sort());
+    // Markdown 文档: Ctrl+B 加粗, Ctrl+I 斜体
+    await setup(page, 'k.md', ['hello world']);
+    await page.evaluate(() => { const t = getActiveTab(); t.sel = { r0: 0, c0: 0, r1: 0, c1: 5 }; t.cursor = { row: 0, col: 5 }; renderVim(t); });
+    await page.locator('#ed-content').focus();
+    await press('Control+b');
+    await page.waitForFunction(() => getActiveTab().lines[0] === '**hello** world', null, { timeout: 8000 });
+    // 非 Markdown 文档: Ctrl+I 还是复制行 (不是斜体)
+    await setup(page, 'k.txt', ['row']);
+    await page.locator('#ed-content').focus();
+    await press('Control+i');
+    await page.waitForFunction(() => getActiveTab().lines.length === 2, null, { timeout: 8000 });
+    assert.deepEqual(await page.evaluate(() => getActiveTab().lines), ['row', 'row']);
+    // 重新分配: 用户把 Ctrl+B 改给别的命令后, 以用户的为准
+    await page.evaluate(() => { KEYMAP['C-b'] = 'duplicate-line'; });
+    await setup(page, 'k2.md', ['x']);
+    await page.locator('#ed-content').focus();
+    await press('Control+b');
+    await page.waitForFunction(() => getActiveTab().lines.length === 2, null, { timeout: 8000 });
+  }));
+
+test('结构化搜索: 按节点类型过滤, 点结果跳到那一行', () =>
+  withMocks({ name: 'mdbar', portOffset: 585 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await setup(page, 'f.md', ['# A', 'x', '## B', 'see [d](a.md)', '', '- [ ] todo one', '```', '## in fence', '```', '## C']);
+    await page.evaluate(() => window.__mock.answers.prompt.push('heading #2'));
+    await page.click('#md-bar [data-md="md-find"]');
+    await page.waitForSelector('.md-hit', { timeout: 8000 });
+    const rows = await page.evaluate(() => [...document.querySelectorAll('.md-hit')].map((e) => +e.dataset.line));
+    assert.deepEqual(rows, [3, 10], '只列 2 级标题, 围栏里的不算');
+    await page.click('.md-hit:last-child');
+    await page.waitForFunction(() => getActiveTab().cursor.row === 9, null, { timeout: 8000 });
+  }));

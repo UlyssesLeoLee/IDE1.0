@@ -31,6 +31,12 @@ pub const TOOLS: &[Tool] = &[
         schema: r#"{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"#,
     },
     Tool {
+        name: "md_find",
+        description: "按节点类型做结构化搜索: kind = heading / link / image / fence / task / todo; query 为空 = 全部 (heading 可写 #2 限定层级, fence 写语言名)。返回 [{line,kind,text,detail}]",
+        write: false,
+        schema: r#"{"type":"object","properties":{"text":{"type":"string"},"kind":{"type":"string","enum":["heading","link","image","fence","task","todo"]},"query":{"type":"string"}},"required":["text","kind"]}"#,
+    },
+    Tool {
         name: "md_lint",
         description: "检查 Markdown 文档质量 (标题跳级 / 重复标题 / 围栏未闭合 / 空链接 / 图片缺 alt / 空 mermaid), 返回 [{line,rule,message}]",
         write: false,
@@ -100,6 +106,7 @@ fn usize_arg(args: &Value, k: &str) -> Result<usize, String> {
 pub fn call(name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "md_outline" => Ok(json!({ "outline": outline(str_arg(args, "text")?) })),
+        "md_find" => Ok(json!({ "hits": crate::md_struct::find(str_arg(args, "text")?, str_arg(args, "kind")?, args.get("query").and_then(Value::as_str).unwrap_or(""))? })),
         "md_lint" => Ok(json!({ "issues": crate::md_lint::lint(str_arg(args, "text")?) })),
         "md_render" => Ok(json!({ "html": crate::md_render::render(str_arg(args, "text")?) })),
         "search_text" => {
