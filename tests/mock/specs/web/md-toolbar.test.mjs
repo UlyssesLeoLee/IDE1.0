@@ -114,3 +114,22 @@ test('结构化搜索: 按节点类型过滤, 点结果跳到那一行', () =>
     await page.click('.md-hit:last-child');
     await page.waitForFunction(() => getActiveTab().cursor.row === 9, null, { timeout: 8000 });
   }));
+
+test('导出 HTML: 按模板写出同名 .html (正文已转义), 模板可改; 未保存的文档先提示', () =>
+  withMocks({ name: 'mdbar', portOffset: 586 }, async ({ page, root }) => {
+    const fs = await import('node:fs'), path = await import('node:path');
+    fs.writeFileSync(path.join(root, 'doc.md'), '# Hi\n\n<script>alert(1)</script>\n\n- a\n');
+    await page.evaluate(async (r) => { await fetch('/api/open_project', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: r }) }); }, root);
+    await page.locator('#ed-content').click();
+    await page.evaluate(async (p) => { await openFile(p); }, path.join(root, 'doc.md'));
+    await page.waitForFunction(() => /doc\.md$/.test(getActiveTab().path || ''), null, { timeout: 8000 });
+    await page.evaluate(() => localStorage.setItem('ide10.mdTemplate', '<html><title>{{title}}</title><body class="x">{{body}}</body></html>'));
+    await page.click('#md-bar [data-md="md-export-html"]');
+    await page.waitForFunction(() => /已导出/.test(document.getElementById('tip').textContent), null, { timeout: 8000 }).catch(() => {});
+    const out = path.join(root, 'doc.html');
+    for (let i = 0; i < 40 && !fs.existsSync(out); i++) await new Promise((r) => setTimeout(r, 200));
+    const html = fs.readFileSync(out, 'utf8');
+    assert.match(html, /<title>doc<\/title><body class="x"><h1 id="hi">Hi<\/h1>/);
+    assert.ok(!html.includes('<script>'), '正文里的脚本被转义');
+    assert.equal(fs.readFileSync(path.join(root, 'doc.md'), 'utf8').startsWith('# Hi'), true, '源 Markdown 没被改');
+  }));

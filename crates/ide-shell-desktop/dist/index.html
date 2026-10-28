@@ -11009,7 +11009,7 @@ const MD_BTNS = [
   ["H1", "md-h1", "标题 1 (Ctrl+Alt+1)"], ["H2", "md-h2", "标题 2 (Ctrl+Alt+2)"], ["H3", "md-h3", "标题 3 (Ctrl+Alt+3)"], ["H4", "md-h4", "标题 4"], "|",
   ["• 列表", "md-ul", "无序列表"], ["1. 列表", "md-ol", "有序列表"], ["☑ 任务", "md-task", "任务列表"], ["❝ 引用", "md-quote", "引用"], "|",
   ["🔗 链接", "md-link", "链接 (Ctrl+Shift+K)"], ["🖼 图片", "md-image", "图片"], ["▦ 表格", "md-table", "表格 3×3"], ["{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)"],
-  ["↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"], ["↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格"], ["🔎 结构", "md-find", "结构化搜索: 按标题 / 链接 / 图片 / 代码块 / 任务过滤, 点结果跳转"], ["✓ 检查", "md-lint", "文档质量检查 (标题跳级 / 重复标题 / 空链接 / 缺 alt / 围栏未闭合)"], "|",
+  ["↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"], ["↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格"], ["🔎 结构", "md-find", "结构化搜索: 按标题 / 链接 / 图片 / 代码块 / 任务过滤, 点结果跳转"], ["Δ Diff", "git-diff", "当前文件的 Git 改动 (只读 git diff)"], ["⇪ 导出 HTML", "md-export-html", "按模板导出同名 .html (模板可在命令「md-export-template」里编辑)"], ["✓ 检查", "md-lint", "文档质量检查 (标题跳级 / 重复标题 / 空链接 / 缺 alt / 围栏未闭合)"], "|",
   ["─ 分隔线", "md-hr", "分隔线"], ["💡 Callout", "md-callout", "Obsidian callout"], ["◇ Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)"],
 ];
 const MD = { built: false, timer: 0, seq: 0 };
@@ -11032,13 +11032,56 @@ function buildMdBar() {
   bar.addEventListener("mousedown", (e) => { if (e.target.closest("button")) e.preventDefault(); });   // 点按钮不抢编辑器焦点 / 选区
   bar.addEventListener("click", (e) => {
     const b = e.target.closest("[data-md]"); if (!b) return;
-    if (b.dataset.md === "preview") toggleMdPreview(); else { mdCommand(b.dataset.md); edContent.focus({ preventScroll: true }); }
+    if (b.dataset.md === "preview") toggleMdPreview();
+    else { if (b.dataset.md.startsWith("md-")) mdCommand(b.dataset.md); else dispatchCommand(b.dataset.md); edContent.focus({ preventScroll: true }); }
   });
   host.insertBefore(bar, host.firstChild);
   const pv = document.createElement("div");
   pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (只读)");
   document.getElementById("editor").appendChild(pv);
 }
+/* ===== Git Diff (FR-045): 复用宿主的 Git (只读 `git diff`), 结果开成一个新标签; 原生 Diff 照旧 ===== */
+function projectRelPath(p) {
+  const root = stripVerbatim(projectRoot || ""), rel = stripVerbatim(p || "");
+  return root && rel.toLowerCase().startsWith(root.toLowerCase()) ? rel.slice(root.length).replace(/^[\\/]+/, "") : rel;
+}
+SAKURA_CMDS["git-diff"] = async () => {
+  const t = getActiveTab();
+  if (!t || t.untitled || !t.path) { setTip("当前文档没有对应的磁盘文件"); return; }
+  const rel = projectRelPath(t.path);
+  let r;
+  try { r = await invoke("scm_diff", { path: rel, staged: false }); } catch (e) { setTip("Git Diff 失败: " + e.message); return; }
+  const text = typeof r === "string" ? r : ((r && r.diff) || "");
+  if (!text.trim()) { setTip("没有未提交的改动: " + rel); return; }
+  const id = "t" + (++maxTabId);
+  TABS.set(id, { id, path: "", name: "Diff: " + rel, untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: text.replace(/\r\n/g, "\n").split("\n"), undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: "lf", language: "diff" });
+  setActiveTab(id);
+};
+
+/* ===== 模板与导出 (FR-049): 导出 HTML; 模板原文可编辑 (存在本机), 失败不改源 Markdown。DOCX / PDF 属于导出插件的事, 核心不带 ===== */
+const MD_TEMPLATE_KEY = "ide10.mdTemplate";
+const MD_TEMPLATE_DEFAULT = '<!doctype html>\n<html><head><meta charset="utf-8"><title>{{title}}</title>\n<style>body{max-width:860px;margin:2em auto;padding:0 1em;font:16px/1.7 sans-serif}pre{background:#f4f4f4;padding:.6em;overflow:auto}code{background:#f4f4f4;padding:0 .25em}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:3px 10px}blockquote{border-left:3px solid #ccc;margin:0;padding:0 1em;color:#555}.callout{border-left:4px solid #58a6ff;background:#f4f8ff;padding:.4em 1em}</style></head>\n<body>\n{{body}}\n</body></html>\n';
+function mdTemplate() { try { return localStorage.getItem(MD_TEMPLATE_KEY) || MD_TEMPLATE_DEFAULT; } catch (_) { return MD_TEMPLATE_DEFAULT; } }
+async function mdExportTemplate() {
+  const v = await uiPrompt("导出模板 ({{title}} = 标题, {{body}} = 渲染后的正文)。留空 = 恢复默认", mdTemplate(), { title: "导出模板", multiline: true });
+  if (v == null) return;
+  try { if (v.trim()) localStorage.setItem(MD_TEMPLATE_KEY, v); else localStorage.removeItem(MD_TEMPLATE_KEY); } catch (_) {}
+  setTip(v.trim() ? "导出模板已保存" : "已恢复默认导出模板");
+}
+async function mdExportHtml() {
+  const t = getActiveTab();
+  if (!t || !isMdTab(t)) { setTip("当前文档不是 Markdown"); return; }
+  if (t.untitled || !t.path) { setTip("先保存文档再导出"); return; }
+  try {
+    const r = await invoke("md_render", { text: t.lines.join("\n") });
+    const title = (t.name || "").replace(/\.[^.]+$/, "");
+    const html = mdTemplate().replace("{{title}}", () => title.replace(/[<>&"]/g, "")).replace("{{body}}", () => r.html);   // 函数形式: 正文里的 $& 之类不被当成替换记号
+    const out = stripVerbatim(t.path).replace(/\.[^.\\/]+$/, "") + ".html";
+    await invoke("write_file", { path: out, content: html, encoding: "UTF-8", bom: "none", eol: "lf", force: true });
+    setTip("已导出: " + out);
+  } catch (e) { setTip("导出失败 (源文档未改动): " + e.message); }
+}
+
 // 结构化搜索 (FR-034): "类型 [条件]", 例: heading #2 用法 / link / image / fence rust / todo
 async function mdFind() {
   const t = getActiveTab(); if (!t) return;
@@ -11065,6 +11108,8 @@ function mdCommand(cmd) {
   const t = getActiveTab(); if (!t || !isMdTab(t)) return;
   if (cmd === "md-lint") return mdLint();
   if (cmd === "md-find") return mdFind();
+  if (cmd === "md-export-html") return mdExportHtml();
+  if (cmd === "md-export-template") return mdExportTemplate();
   if (t.mdPreview) { setTip("预览中为只读: 先切回源码再编辑"); return; }
   return runEdit(cmd);
 }
