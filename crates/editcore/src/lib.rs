@@ -56,6 +56,7 @@ pub mod incremental_search;
 pub mod js_macro;
 pub mod key_macro;
 pub mod keyword_set;
+pub mod macro_sakura;
 pub mod matching_paren;
 pub mod migemo;
 pub mod nav;

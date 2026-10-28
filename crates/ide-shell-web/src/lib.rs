@@ -1019,92 +1019,20 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             }
         },
         ("POST", "/api/search") => {
-            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let pattern = req
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let case_sensitive = req.get("case_sensitive").and_then(|v| v.as_bool());
-            let regex = req.get("regex").and_then(|v| v.as_bool());
-            let max_results = req
-                .get("max_results")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize);
-            let include_globs = req
-                .get("include_globs")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                });
-            // 排除项原来硬编码 None —— 前端 Sakura 式文件模式解析出来的 !glob / !dir/**
-            // 全被静默丢弃, 「#target 排除子文件夹」这类设置完全没生效.
-            let exclude_globs = req
-                .get("exclude_globs")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                });
-            // 取字符串数组的通用闭包 —— 新增的 フォルダー / 除外ファイル / 除外フォルダー
-            // 三栏都走它 (Sakura 的五个输入框对应五个字段).
-            let strs = |key: &str| -> Option<Vec<String>> {
-                req.get(key)
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|x| x.as_str().map(String::from))
-                            .collect::<Vec<_>>()
-                    })
-            };
-            let opts = search::SearchOptions {
-                pattern,
-                case_sensitive,
-                regex,
-                whole_word: req.get("whole_word").and_then(|v| v.as_bool()),
-                include_globs,
-                exclude_globs,
-                include_files: strs("include_files"),
-                exclude_files: strs("exclude_files"),
-                exclude_folders: strs("exclude_folders"),
-                // フォルダー 栏: 空/缺省 = 整个项目.
-                // allow_outside_root = true 时放行项目根之外的路径 (全盘/跨盘搜索).
-                search_folders: strs("search_folders"),
-                allow_outside_root: req.get("allow_outside_root").and_then(|v| v.as_bool()),
-                subfolders: req.get("subfolders").and_then(|v| v.as_bool()),
-                max_results,
-            };
-            let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-            // search 已是纯 Rust 内置实现, 不再 shell out 到外部 rg;
-            // 或_else 只是兜底 IO 错误 (如根目录不可读), 不再是「rg 缺失」的降级路径.
-            let result = search::search(&cwd, &opts);
-            match result {
-                Ok(results) => {
-                    let resp = serde_json::json!({ "results": results });
-                    send_response(
-                        stream,
-                        "200 OK",
-                        "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default(),
-                    );
+            // 项目内检索 / Grep: 请求直接反序列化成 SearchOptions (含 charset 等可选字段, 不再手工逐字段取)
+            match serde_json::from_slice::<search::SearchOptions>(&body) {
+                Ok(opts) => {
+                    let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+                    match search::search(&cwd, &opts) {
+                        Ok(results) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({ "results": results })).unwrap_or_default()),
+                        // 搜索条件非法 (例如「フォルダー」栏全部越出项目根) 必须报错, 不能回 200 + 空结果:
+                        // 那样前端只看到「无匹配」, 用户不知道自己写的目录被拒了。
+                        Err(e) => send_response(stream, "400 Bad Request", "application/json", &serde_json::to_vec(&serde_json::json!({ "results": [], "error": e })).unwrap_or_default()),
+                    }
                 }
-                Err(e) => {
-                    // 搜索条件非法 (例如「フォルダー」栏全部越出项目根) 必须报错,
-                    // 不能回 200 + 空结果 —— 那样前端只看到「无匹配」, 用户完全不知道
-                    // 自己写的目录被拒了。错误走 400 + error 字段。
-                    let resp = serde_json::json!({ "results": [], "error": e });
-                    send_response(
-                        stream,
-                        "400 Bad Request",
-                        "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default(),
-                    );
-                }
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("搜索请求无效: {e}")),
             }
         }
 

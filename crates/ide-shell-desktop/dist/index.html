@@ -328,6 +328,9 @@
     /* white-space / tab-size 与 #ed-content 一致: 否则 .hl-row (white-space: inherit) 继承 normal, 缩进被吞、长行折成 36/127px 的不规则行 */
     .split-view { overflow: auto; background: var(--bg-edit); padding: 2px 6px;
       font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: var(--tab-size, 4); }
+    .split-copy-bar { position: sticky; bottom: 0; margin-top: 4px; padding: 3px 6px; text-align: center; cursor: pointer;
+      color: var(--fg-muted); font-size: var(--fs-xs); background: var(--bg-raised); border-top: 1px solid var(--border); }
+    .split-copy-bar:hover { color: var(--fg); background: var(--bg-hover); }
     .split-label { color: var(--fg-muted); font-size: var(--fs-xs); padding: 2px 0;
       border-bottom: 1px solid var(--border); }
     #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
@@ -346,7 +349,7 @@
     }
     #completion-popup .cmp-row { padding: 2px 8px; cursor: pointer; white-space: nowrap; line-height: 16px; }
     #completion-popup .cmp-row.active { background: #094771; color: #fff; }
-    #ed-content .sel-prefix { background: #3a3d41; }
+    #ed-content .sel-prefix { background: transparent; }   /* 只给选中的文字着底色, 选区前面没选的文字不着色 */
     .opt-row { padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: var(--fs-sm); }
     .opt-row:hover { background: var(--bg-hover); }
     .opt-row[data-opt] { color: var(--fg); }
@@ -525,36 +528,36 @@
    ============================================================ */
 [data-theme="clear"] {
       --theme-name: "clear";
-      /* 组件层新 token 的玻璃态取值. --fg/--fg-muted/--border 等由
-         Rust 侧 clear_theme_vars 按桌面明暗覆盖 (浅色壁纸配白字读不清),
-         这里的值是 JS 不可用时的兜底. */
-      --bg-rail: rgba(255, 255, 255, 0.05);
-      --bg-chrome: rgba(255, 255, 255, 0.04);
-      --bg-raised: rgba(255, 255, 255, 0.08);
-      --bg-bottom: rgba(255, 255, 255, 0.05);
-      --bg-hover: rgba(255, 255, 255, 0.12);
-      --bg-active: rgba(255, 255, 255, 0.18);
+      /* 组件层新 token 的玻璃态取值: 通透水晶材质 + 棱镜色散光泽 */
+      --bg-rail: rgba(255, 255, 255, 0.04);
+      --bg-chrome: rgba(255, 255, 255, 0.03);
+      --bg-raised: rgba(255, 255, 255, 0.06);
+      --bg-bottom: rgba(255, 255, 255, 0.04);
+      --bg-hover: rgba(255, 255, 255, 0.15);
+      --bg-active: rgba(255, 255, 255, 0.24);
       --bg-input: rgba(255, 255, 255, 0.10);
       --border-strong: var(--border);
       --fg-on-accent: #ffffff;
       --focus-ring: 0 0 0 1px rgba(0,0,0,0.4), 0 0 0 3px rgba(255,255,255,0.45);
       --fg: #ffffff;
-      --fg-muted: rgba(255, 255, 255, 0.82);
-      --fg-dim: rgba(255, 255, 255, 0.65);
+      --fg-muted: rgba(255, 255, 255, 0.88);
+      --fg-dim: rgba(255, 255, 255, 0.68);
       --bg: transparent;
       --body-bg: transparent;
 
-      --bg-bar: rgba(255, 255, 255, 0.06);
-      --bg-side: rgba(255, 255, 255, 0.04);
-      --bg-status: rgba(255, 255, 255, 0.08);
+      --bg-bar: rgba(255, 255, 255, 0.05);
+      --bg-side: rgba(255, 255, 255, 0.035);
+      --bg-status: rgba(255, 255, 255, 0.07);
       --bg-edit: transparent;
-      --bg-panel: rgba(255, 255, 255, 0.05);
+      --bg-panel: rgba(255, 255, 255, 0.04);
       --bg-input: rgba(255, 255, 255, 0.12);
 
-      --border: rgba(255, 255, 255, 0.28);
-      --border-subtle: rgba(255, 255, 255, 0.16);
-      --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
-      --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2);
+      --border: rgba(255, 255, 255, 0.32);
+      --border-subtle: rgba(255, 255, 255, 0.18);
+      --mat-prism-cyan: rgba(56, 189, 248, 0.40);
+      --mat-prism-pink: rgba(216, 180, 254, 0.32);
+      --glass-shadow: 0 20px 48px -4px rgba(0, 0, 0, 0.18);
+      --glass-specular: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.85), inset 0 -1px 1px 0 rgba(255, 255, 255, 0.22), inset 1px 0 1px var(--mat-prism-cyan), inset -1px 0 1px var(--mat-prism-pink);
       --glass-inset-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
 
       --blue: #38bdf8;          /* 装饰用 (边框/发光/渐变) */
@@ -578,31 +581,36 @@
     }
 [data-theme="clear"] #app {
       background:
-        radial-gradient(ellipse 95% 60% at 50% -12%, rgba(56, 189, 248, 0.08), transparent 70%),
-        radial-gradient(ellipse 75% 50% at 100% 100%, rgba(168, 85, 247, 0.06), transparent 60%),
-        linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0%, transparent 16%, rgba(56, 189, 248, 0.02) 28%, transparent 46%, rgba(192, 132, 252, 0.025) 62%, transparent 82%),
-        linear-gradient(62deg, transparent 32%, rgba(255, 255, 255, 0.02) 48%, transparent 64%),
-        rgba(255, 255, 255, 0.01);
-      /* 不能在 #app 上放 backdrop-filter: 它会让 #app 成为 position:fixed 的包含块 + Backdrop Root
-         (子菜单 / 对话框的 fixed 定位和自己的模糊都会坏), 而且每帧模糊整个窗口开销很大。 */
+        radial-gradient(ellipse 95% 60% at 50% -12%, rgba(56, 189, 248, 0.12), transparent 70%),
+        radial-gradient(ellipse 75% 50% at 100% 100%, rgba(168, 85, 247, 0.09), transparent 60%),
+        linear-gradient(118deg, rgba(255, 255, 255, 0.045) 0%, transparent 16%, rgba(56, 189, 248, 0.03) 28%, transparent 46%, rgba(192, 132, 252, 0.035) 62%, transparent 82%),
+        linear-gradient(62deg, transparent 32%, rgba(255, 255, 255, 0.03) 48%, transparent 64%),
+        rgba(255, 255, 255, 0.012);
+      /* #app 自身不放 backdrop-filter (避免成为 fixed 子菜单的包含块并拖慢整窗; 模糊由编辑区与各分区独立承载) */
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    [data-theme="clear"] #editor-area {
+      -webkit-backdrop-filter: blur(18px) saturate(210%) brightness(108%);
+      backdrop-filter: blur(18px) saturate(210%) brightness(108%);
     }
 [data-theme="clear"] .tb-btn,
     [data-theme="clear"] .theme-toggle-btn,
     [data-theme="clear"] .bottom-toggle,
     [data-theme="clear"] #welcome .open-btn,
     [data-theme="clear"] .md-btn {
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.04) 55%, rgba(255, 255, 255, 0.22) 100%) !important;
-      backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
-      -webkit-backdrop-filter: blur(20px) saturate(220%) brightness(110%) !important;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.12) 46%, rgba(56, 189, 248, 0.08) 54%, rgba(255, 255, 255, 0.28) 100%) !important;
+      backdrop-filter: blur(20px) saturate(220%) brightness(112%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(220%) brightness(112%) !important;
       border: 1px solid rgba(255, 255, 255, 0.55) !important;
-      border-top: 1px solid rgba(255, 255, 255, 0.85) !important;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.30) !important;
-      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.15),
-                  0 1px 4px rgba(255, 255, 255, 0.2),
-                  inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
+      border-top: 1.5px solid rgba(255, 255, 255, 0.95) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.16),
+                  0 1px 4px rgba(255, 255, 255, 0.25),
+                  inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.98),
                   inset 0 -1px 1px 0 rgba(255, 255, 255, 0.25),
-                  inset 1px 0 1px rgba(255, 255, 255, 0.35),
-                  inset -1px 0 1px rgba(255, 255, 255, 0.35) !important;
+                  inset 1px 0 1px var(--mat-prism-cyan, rgba(56, 189, 248, 0.35)),
+                  inset -1px 0 1px var(--mat-prism-pink, rgba(192, 132, 252, 0.35)) !important;
       color: var(--fg) !important;
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
       mix-blend-mode: normal;
@@ -648,17 +656,18 @@
     }
 [data-theme="clear"] .menu-dropdown,
     [data-theme="clear"] .submenu-dropdown {
-      background: rgba(18, 22, 32, 0.86) !important;
-      /* 菜单自己不能带 backdrop-filter: 带了就成了子菜单 (position:fixed) 的包含块, 子菜单会被它的 overflow 裁掉 / 盖住; 用更实的底色代替模糊 */
+      background: linear-gradient(150deg, rgba(20, 26, 44, 0.62) 0%, rgba(12, 17, 32, 0.48) 100%) !important;
       backdrop-filter: none !important;
       -webkit-backdrop-filter: none !important;
-      border: 1px solid rgba(255, 255, 255, 0.35) !important;
-      border-top: 1px solid rgba(255, 255, 255, 0.65) !important;
+      border: 1px solid rgba(255, 255, 255, 0.45) !important;
+      border-top: 1.5px solid rgba(255, 255, 255, 0.90) !important;
       border-radius: 8px;
-      box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.45),
-                  0 2px 8px rgba(0, 0, 0, 0.2),
-                  inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
-                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15) !important;
+      box-shadow: 0 16px 42px -4px rgba(0, 0, 0, 0.38),
+                  0 2px 10px rgba(0, 0, 0, 0.22),
+                  inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.75),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2),
+                  inset 1px 0 1px var(--mat-prism-cyan, rgba(56, 189, 248, 0.25)),
+                  inset -1px 0 1px var(--mat-prism-pink, rgba(192, 132, 252, 0.25)) !important;
       padding: 5px 0;
     }
 [data-theme="clear"] .menu-row {
@@ -698,13 +707,16 @@
 [data-theme="clear"] .side-tab.active,
     [data-theme="clear"] .bottom-tab.active,
     [data-theme="clear"] .tab.active {
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.08) 100%) !important;
-      backdrop-filter: blur(14px) saturate(180%) !important;
-      -webkit-backdrop-filter: blur(14px) saturate(180%) !important;
-      border: 1px solid rgba(255, 255, 255, 0.35) !important;
-      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.7) !important;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.12) 100%) !important;
+      backdrop-filter: blur(18px) saturate(210%) brightness(110%) !important;
+      -webkit-backdrop-filter: blur(18px) saturate(210%) brightness(110%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.45) !important;
+      box-shadow: inset 0 1.5px 1px rgba(255, 255, 255, 0.95),
+                  inset 0 -1px 1px rgba(255, 255, 255, 0.22),
+                  inset 1px 0 1px var(--mat-prism-cyan, rgba(56, 189, 248, 0.35)),
+                  inset -1px 0 1px var(--mat-prism-pink, rgba(192, 132, 252, 0.35)) !important;
       color: var(--fg) !important;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     }
 [data-theme="clear"] .side-tab:hover,
     [data-theme="clear"] .bottom-tab:hover,
@@ -1079,8 +1091,16 @@
       color: var(--fg);
     }
     [data-theme="clear"] #modal .md-box, [data-theme="clear"] #completion-popup {
-      background: rgba(18,22,32,0.72);
-      -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
+      background: linear-gradient(150deg, rgba(20, 28, 48, 0.58) 0%, rgba(12, 18, 34, 0.45) 100%) !important;
+      -webkit-backdrop-filter: blur(28px) saturate(220%) brightness(112%) !important;
+      backdrop-filter: blur(28px) saturate(220%) brightness(112%) !important;
+      border: 1px solid rgba(255, 255, 255, 0.48) !important;
+      border-top: 1.5px solid rgba(255, 255, 255, 0.92) !important;
+      box-shadow: 0 20px 48px -4px rgba(0, 0, 0, 0.42),
+                  inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.8),
+                  inset 0 -1px 1px 0 rgba(255, 255, 255, 0.2),
+                  inset 1px 0 1px var(--mat-prism-cyan, rgba(56, 189, 248, 0.3)),
+                  inset -1px 0 1px var(--mat-prism-pink, rgba(192, 132, 252, 0.3)) !important;
     }
     /* clear-theme states (F): the active-tab !important `border: 1px solid` widened tabs by 2px and dropped the 2px underline, so tabs jumped on switch; each kind keeps the border box of its inactive state */
     [data-theme="clear"] .side-tab.active { border-width: 0 0 2px !important; border-bottom-color: var(--fg) !important; }
@@ -1155,7 +1175,13 @@
     [data-theme="clear"][data-lum="light"] .act-btn:hover { background: rgba(0,0,0,0.07) !important; }
     [data-theme="clear"][data-lum="light"] ::selection { background: rgba(11,87,208,0.30); }
     /* web shell: the clear theme assumes a translucent native window behind the page. In a plain browser the canvas is white, so the white --fg text was 1:1 (and the saved choice is re-applied on every load). The desktop keeps its transparent window. data-shell is set at startup from inTauri; !important because setTheme() writes background:transparent inline on <html>. A (hypothetical) light luminance already has dark text on the white canvas, so it is excluded. */
-    html[data-theme="clear"][data-shell="web"]:not([data-lum="light"]) { background: #1b1f2a !important; }
+    html[data-theme="clear"][data-shell="web"]:not([data-lum="light"]) {
+      background:
+        radial-gradient(ellipse 85% 55% at 15% 0%, rgba(56, 189, 248, 0.22), transparent 65%),
+        radial-gradient(ellipse 70% 55% at 85% 100%, rgba(192, 132, 252, 0.18), transparent 60%),
+        radial-gradient(ellipse 65% 50% at 50% 45%, rgba(14, 165, 233, 0.10), transparent 70%),
+        linear-gradient(135deg, #090e1a 0%, #0f1628 45%, #080c18 100%) !important;
+    }
     /* activity icons (K): the 📁 / 🔍 colour emoji (25px wide) ignored --fg-muted and the active state; as text glyphs they follow the theme colour like the other three (⎇ ≡ ⊟). Characters and data-pane attributes are unchanged. font-variant-emoji needs Chromium 131+ and is a silent no-op on older WebView2. */
     .act-btn { font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-variant-emoji: text; }
 
@@ -1286,9 +1312,17 @@
     html[data-layout="min"][data-bottom-panel="on"] #bottom-panel #bottom-body { display: flex; }
     html[data-layout="min"][data-bottom-panel="off"] #bottom-panel #bottom-body { display: none; }
     html[data-layout="min"][data-theme="clear"] :is(#activity-bar, #side-bar, #bottom-body) {
-      background: rgba(18, 22, 32, 0.86); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%);
+      background: linear-gradient(145deg, rgba(16, 24, 42, 0.48) 0%, rgba(10, 16, 30, 0.32) 100%) !important;
+      backdrop-filter: blur(26px) saturate(210%) brightness(110%) !important;
+      -webkit-backdrop-filter: blur(26px) saturate(210%) brightness(110%) !important;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset -1px 0 0 rgba(56, 189, 248, 0.25), 0 8px 32px rgba(0, 0, 0, 0.22);
     }
-    html[data-layout="min"][data-theme="clear"][data-lum="light"] :is(#activity-bar, #side-bar, #bottom-body) { background: rgba(246, 248, 252, 0.9); }
+    html[data-layout="min"][data-theme="clear"][data-lum="light"] :is(#activity-bar, #side-bar, #bottom-body) {
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.48) 0%, rgba(240, 246, 255, 0.32) 100%) !important;
+      backdrop-filter: blur(26px) saturate(200%) brightness(105%) !important;
+      -webkit-backdrop-filter: blur(26px) saturate(200%) brightness(105%) !important;
+      box-shadow: inset 0 1.5px 0.5px rgba(255, 255, 255, 0.9), inset -1px 0 0 rgba(56, 189, 248, 0.2), 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
     /* 分屏: 标签条 / 面包屑隐藏后它们留下两条 0px 的 auto 行, 夹在中间的 gap:1px 会把视图整体推下 2px (露出 var(--border) 色, 菜单栏下沿看着像 3px 粗).
        min 下不要行间距, 第二排视图 (JS 打 data-row2) 用自己的上边线补回两排之间的分隔; 列间距不动 */
     html[data-layout="min"] #editor-area:is(.split-h, .split-v, .split-quad) { row-gap: 0; }
@@ -1337,94 +1371,99 @@
        深/浅桌面各一套 (data-lum 由 applyClearThemeColors 按真实采样设置), 文字色仍由 --fg 反色。
        ===================================================================== */
     [data-theme="clear"] {
-      /* 高透水晶分区材质: 显著提高透光通透度 (8%~24% 晶莹剔透基底) */
-      --mat-frost-a:   color-mix(in srgb, #0e1726 16%, transparent);
-      --mat-frost-b:   color-mix(in srgb, #0e1726 08%, transparent);
-      --mat-acrylic-a: color-mix(in srgb, #0a1832 18%, transparent);
-      --mat-acrylic-b: color-mix(in srgb, #10223e 10%, transparent);
-      --mat-etched:    color-mix(in srgb, #0e1726 09%, transparent);
-      --mat-smoke:     color-mix(in srgb, #050a14 20%, transparent);
-      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #0284c7 38%, #070d18) 22%, transparent);
-      --mat-hi:        rgba(255, 255, 255, 0.60);
-      --mat-lo:        rgba(255, 255, 255, 0.14);
-      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(10, 16, 28, 0.55)) 24%, transparent);
+      /* 高透水晶分区材质: 显著提高透光通透度与双向折射 (6%~18% 晶莹剔透基底) */
+      --mat-frost-a:   color-mix(in srgb, #0e1726 12%, transparent);
+      --mat-frost-b:   color-mix(in srgb, #0e1726 05%, transparent);
+      --mat-acrylic-a: color-mix(in srgb, #0a1832 14%, transparent);
+      --mat-acrylic-b: color-mix(in srgb, #10223e 07%, transparent);
+      --mat-etched:    color-mix(in srgb, #0e1726 06%, transparent);
+      --mat-smoke:     color-mix(in srgb, #050a14 15%, transparent);
+      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #0284c7 40%, #070d18) 18%, transparent);
+      --mat-hi:        rgba(255, 255, 255, 0.85);
+      --mat-lo:        rgba(255, 255, 255, 0.16);
+      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(10, 16, 28, 0.45)) 15%, transparent);
     }
     [data-theme="clear"][data-lum="light"] {
-      --mat-frost-a:   color-mix(in srgb, #ffffff 42%, transparent);
-      --mat-frost-b:   color-mix(in srgb, #f4f8fb 24%, transparent);
-      --mat-acrylic-a: color-mix(in srgb, #eaf2fb 40%, transparent);
-      --mat-acrylic-b: color-mix(in srgb, #dce8f8 26%, transparent);
-      --mat-etched:    color-mix(in srgb, #ffffff 20%, transparent);
-      --mat-smoke:     color-mix(in srgb, #f6f8fb 34%, transparent);
-      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #38bdf8 60%, #ffffff) 36%, transparent);
-      --mat-hi:        rgba(255, 255, 255, 0.90);
-      --mat-lo:        rgba(255, 255, 255, 0.40);
-      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(255, 255, 255, 0.55)) 30%, transparent);
-    }
-    [data-theme="clear"] #app {
-      background:
-        radial-gradient(ellipse 95% 60% at 50% -12%, rgba(56, 189, 248, 0.08), transparent 70%),
-        radial-gradient(ellipse 75% 50% at 100% 100%, rgba(168, 85, 247, 0.06), transparent 60%),
-        linear-gradient(118deg, rgba(255, 255, 255, 0.035) 0%, transparent 16%, rgba(56, 189, 248, 0.02) 28%, transparent 46%, rgba(192, 132, 252, 0.025) 62%, transparent 82%),
-        linear-gradient(62deg, transparent 32%, rgba(255, 255, 255, 0.02) 48%, transparent 64%),
-        rgba(255, 255, 255, 0.01);
-      /* 无 backdrop-filter: 见上 (全窗口模糊开销大, 并让 #app 成为 fixed 子菜单的包含块) */
+      --mat-frost-a:   color-mix(in srgb, #ffffff 35%, transparent);
+      --mat-frost-b:   color-mix(in srgb, #f4f8fb 18%, transparent);
+      --mat-acrylic-a: color-mix(in srgb, #eaf2fb 32%, transparent);
+      --mat-acrylic-b: color-mix(in srgb, #dce8f8 18%, transparent);
+      --mat-etched:    color-mix(in srgb, #ffffff 14%, transparent);
+      --mat-smoke:     color-mix(in srgb, #f6f8fb 24%, transparent);
+      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #38bdf8 60%, #ffffff) 28%, transparent);
+      --mat-hi:        rgba(255, 255, 255, 0.95);
+      --mat-lo:        rgba(255, 255, 255, 0.45);
+      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(255, 255, 255, 0.50)) 20%, transparent);
     }
     [data-theme="clear"] #ed-content, [data-theme="clear"] #gutter { background: var(--mat-edit); }
 
-    /* 水晶质感纹路 & 文本立体防护 */
+    /* 水晶质感纹路 & 棱镜色散切面纹理 */
     [data-theme="clear"] #ed-content {
       background-image:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0%, transparent 35%, rgba(56, 189, 248, 0.02) 70%, transparent 100%),
-        repeating-linear-gradient(60deg, transparent, transparent 160px, rgba(255, 255, 255, 0.012) 160px, rgba(255, 255, 255, 0.012) 161px);
+        linear-gradient(125deg, rgba(255, 255, 255, 0.04) 0%, transparent 38%, rgba(56, 189, 248, 0.028) 65%, transparent 100%),
+        linear-gradient(55deg, transparent 25%, rgba(192, 132, 252, 0.02) 48%, transparent 72%),
+        radial-gradient(ellipse 120% 80% at 50% -20%, rgba(56, 189, 248, 0.04), transparent 60%),
+        repeating-linear-gradient(60deg, transparent, transparent 180px, rgba(255, 255, 255, 0.015) 180px, rgba(255, 255, 255, 0.015) 181px);
       text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 1px rgba(0, 0, 0, 0.95);
     }
     [data-theme="clear"][data-lum="light"] #ed-content {
       background-image:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, transparent 35%, rgba(14, 165, 233, 0.03) 70%, transparent 100%),
-        repeating-linear-gradient(60deg, transparent, transparent 160px, rgba(255, 255, 255, 0.06) 160px, rgba(255, 255, 255, 0.06) 161px);
+        linear-gradient(125deg, rgba(255, 255, 255, 0.10) 0%, transparent 38%, rgba(14, 165, 233, 0.04) 65%, transparent 100%),
+        linear-gradient(55deg, transparent 25%, rgba(168, 85, 247, 0.03) 48%, transparent 72%),
+        radial-gradient(ellipse 120% 80% at 50% -20%, rgba(14, 165, 233, 0.06), transparent 60%),
+        repeating-linear-gradient(60deg, transparent, transparent 180px, rgba(255, 255, 255, 0.07) 180px, rgba(255, 255, 255, 0.07) 181px);
       text-shadow: 0 1px 2px rgba(255, 255, 255, 0.9), 0 0 1px rgba(255, 255, 255, 0.95);
     }
 
     /* 磨砂晶面: 标题栏 / 菜单栏 */
     [data-theme="clear"] #menubar {
       background: linear-gradient(180deg, var(--mat-frost-a), var(--mat-frost-b));
-      -webkit-backdrop-filter: blur(20px) saturate(200%) brightness(108%); backdrop-filter: blur(20px) saturate(200%) brightness(108%);
+      -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(112%); backdrop-filter: blur(24px) saturate(220%) brightness(112%);
       border-bottom: 1px solid var(--mat-lo);
-      box-shadow: inset 0 1.5px 0.5px var(--mat-hi), inset 0 -1px 0 rgba(255, 255, 255, 0.12), 0 4px 16px rgba(0, 0, 0, 0.06);
+      box-shadow: inset 0 1.5px 0.5px var(--mat-hi),
+                  inset 0 -1px 0.5px rgba(255, 255, 255, 0.16),
+                  inset 1px 0 0 var(--mat-prism-cyan, rgba(56, 189, 248, 0.3)),
+                  0 4px 18px rgba(0, 0, 0, 0.08);
     }
     /* 亚克力晶面: 导航 */
     [data-theme="clear"] #activity-bar, [data-theme="clear"] #left-strip {
       background: linear-gradient(180deg, var(--mat-acrylic-a), var(--mat-acrylic-b));
-      -webkit-backdrop-filter: blur(24px) saturate(210%); backdrop-filter: blur(24px) saturate(210%);
+      -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(108%); backdrop-filter: blur(24px) saturate(220%) brightness(108%);
       box-shadow: inset -1.5px 0 0.5px var(--mat-hi), inset 0 1px 0 var(--mat-lo), 4px 0 20px rgba(0, 0, 0, 0.06);
     }
     [data-theme="clear"] #side-bar {
-      background: linear-gradient(135deg, var(--mat-acrylic-b), color-mix(in srgb, var(--mat-acrylic-b) 50%, transparent));
-      -webkit-backdrop-filter: blur(22px) saturate(190%); backdrop-filter: blur(22px) saturate(190%);
+      background: linear-gradient(135deg, var(--mat-acrylic-b), color-mix(in srgb, var(--mat-acrylic-b) 40%, transparent));
+      -webkit-backdrop-filter: blur(22px) saturate(200%) brightness(106%); backdrop-filter: blur(22px) saturate(200%) brightness(106%);
       border-right: 1px solid var(--mat-lo);
-      box-shadow: inset -1px 0 0 var(--mat-hi), inset 1px 0 0 rgba(255, 255, 255, 0.08);
+      box-shadow: inset -1px 0 0 var(--mat-hi), inset 1px 0 0 var(--mat-prism-cyan, rgba(56, 189, 248, 0.25));
     }
     /* 蚀刻切面: 标签条 / 面包屑 */
     [data-theme="clear"] #tabs, [data-theme="clear"] #breadcrumb {
       background: var(--mat-etched);
-      -webkit-backdrop-filter: blur(12px) saturate(160%); backdrop-filter: blur(12px) saturate(160%);
-      box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.08), inset 0 1px 0 var(--mat-lo);
+      -webkit-backdrop-filter: blur(16px) saturate(190%) brightness(106%); backdrop-filter: blur(16px) saturate(190%) brightness(106%);
+      box-shadow: inset 0 -1px 1px rgba(0, 0, 0, 0.06), inset 0 1.2px 0 var(--mat-hi), inset 0 -1px 0 rgba(255,255,255,0.12);
+    }
+    /* 视图附件栏 (工具栏/标尺/功能键) 融入高透水晶材质 */
+    [data-theme="clear"] :is(#toolbar, #ruler, #funckeys, #viewbars-top) {
+      background: var(--mat-etched) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(180%) brightness(106%);
+      backdrop-filter: blur(14px) saturate(180%) brightness(106%);
+      box-shadow: inset 0 1px 0 var(--mat-lo), inset 0 -1px 0 rgba(255, 255, 255, 0.08);
     }
     /* 烟晶: 终端 / 底部面板 */
     [data-theme="clear"] #bottom-panel, [data-theme="clear"] #terminal-pane, [data-theme="clear"] #terminal-body {
       background: var(--mat-smoke);
     }
     [data-theme="clear"] #bottom-panel {
-      -webkit-backdrop-filter: blur(22px) saturate(170%) brightness(0.96); backdrop-filter: blur(22px) saturate(170%) brightness(0.96);
-      box-shadow: inset 0 1px 0 var(--mat-hi), inset 0 12px 24px -12px rgba(0, 0, 0, 0.35);
+      -webkit-backdrop-filter: blur(24px) saturate(190%) brightness(102%); backdrop-filter: blur(24px) saturate(190%) brightness(102%);
+      box-shadow: inset 0 1.5px 0.5px var(--mat-hi), inset 0 -1px 0 rgba(255,255,255,0.15), inset 0 12px 24px -12px rgba(0, 0, 0, 0.25);
     }
     [data-theme="clear"] #bottom-head { background: transparent; }
-    /* 彩釉: 状态栏 */
+    /* 彩釉: 状态栏 (宝石底座琉璃晶彩) */
     [data-theme="clear"] #status {
-      background: var(--mat-enamel);
-      -webkit-backdrop-filter: blur(16px) saturate(220%); backdrop-filter: blur(16px) saturate(220%);
-      box-shadow: inset 0 1.5px 0.5px var(--mat-hi), 0 -2px 14px rgba(14, 165, 233, 0.15);
+      background: linear-gradient(90deg, var(--mat-enamel) 0%, color-mix(in srgb, var(--mat-enamel) 80%, rgba(56, 189, 248, 0.22)) 50%, var(--mat-enamel) 100%);
+      -webkit-backdrop-filter: blur(20px) saturate(230%) brightness(112%); backdrop-filter: blur(20px) saturate(230%) brightness(112%);
+      box-shadow: inset 0 1.5px 0.5px var(--mat-hi), inset 0 -1px 0.5px rgba(255, 255, 255, 0.18), 0 -2px 18px rgba(14, 165, 233, 0.22);
     }
 
     /* ===== 次世代透明水晶: 边角动态闪光动效 (Next-Gen Dynamic Crystal Sparkle) ===== */
@@ -2224,7 +2263,7 @@ const MACRO = { recording: false, keys: [], playing: false };
 // --- PLUGINS ---
 const PLUGINS = [];
 // --- SPLIT ---
-const SPLIT = { mode: "none" };
+const SPLIT = { mode: "none", pin: {} };   // pin[i]: 视图 i 固定显示的文档 id (做过独立副本之后才有); 没有就跟随当前文档
 // --- CONFIG_KEY ---
 const CONFIG_KEY = "ide1.0.config.v1";
 // --- VIEW_STATE ---
@@ -5779,12 +5818,12 @@ const THEMES = {
   // 原先这里只给 4%, 实测在极端壁纸 (浅色桌面配纯黑壁纸) 上正文对比度只有 1.00:1,
   // 用户的直观感受就是「文字不鲜明」。现在五种极端壁纸下最差 4.76:1 (WCAG AA 达标)。
   clear: {
-    "--bg-bar": "rgba(0,0,0,0.55)", "--bg-side": "rgba(0,0,0,0.55)",
-    "--bg-edit": "transparent", "--bg-rail": "rgba(0,0,0,0.55)",
-    "--bg-bottom": "rgba(0,0,0,0.55)",
-    "--bg-status": "rgba(0,0,0,0.62)",
-    "--bg-hover": "rgba(255,255,255,0.14)", "--bg-active": "rgba(255,255,255,0.22)",
-    "--bg-input": "rgba(0,0,0,0.62)",
+    "--bg-bar": "rgba(0,0,0,0.38)", "--bg-side": "rgba(0,0,0,0.36)",
+    "--bg-edit": "transparent", "--bg-rail": "rgba(0,0,0,0.36)",
+    "--bg-bottom": "rgba(0,0,0,0.40)",
+    "--bg-status": "rgba(0,0,0,0.42)",
+    "--bg-hover": "rgba(255,255,255,0.16)", "--bg-active": "rgba(255,255,255,0.24)",
+    "--bg-input": "rgba(0,0,0,0.55)",
     "--border": "rgba(255,255,255,0.34)", "--border-strong": "rgba(255,255,255,0.46)",
     "--fg": "#ffffff", "--fg-muted": "rgba(255,255,255,0.88)",
     "--fg-dim": "rgba(255,255,255,0.68)", "--fg-on-accent": "#ffffff",
@@ -6059,7 +6098,7 @@ function spawnCrystalSparkle() {
 function scheduleNextCrystalSparkle() {
   if (_sparkleTimer) clearTimeout(_sparkleTimer);
   if (document.documentElement.getAttribute("data-theme") !== "clear") return;
-  const delay = 5500 + Math.random() * 6000;
+  const delay = 3500 + Math.random() * 4500;
   _sparkleTimer = setTimeout(() => {
     spawnCrystalSparkle();
     scheduleNextCrystalSparkle();
@@ -6780,6 +6819,37 @@ function splitCell(mode, i) {
   return { row, col };
 }
 const MIRROR_MAX_LINES = 4000;
+function paneTab(i) { const id = SPLIT.pin[i]; return (id && TABS.get(id)) || getActiveTab(); }
+// 点视图底边: 把这个视图的文档复制成一个独立文档 (无路径, 保存 = 另存为), 在这个视图里编辑; 其它视图固定显示各自原来的文档
+function splitDetachCopy(i) {
+  const n = SPLIT.mode === "quad" ? 4 : 2;
+  const shows = [];
+  for (let k = 0; k < n; k++) shows[k] = k === SPLIT.active ? getActiveTab() : paneTab(k);
+  const src = shows[i];
+  if (!src) return;
+  const id = "t" + (++maxTabId), dot = src.name.lastIndexOf(".");
+  const name = dot > 0 ? src.name.slice(0, dot) + " (副本)" + src.name.slice(dot) : src.name + " (副本)";
+  TABS.set(id, { id, path: "", name, untitled: true, cursor: { row: src.cursor.row, col: src.cursor.col }, dirty: true, lines: src.lines.slice(), undo: [], redo: [],
+    encoding: src.encoding || "UTF-8", bom: src.bom || "none", eol: src.eol || "crlf", language: src.language });
+  SPLIT.pin = {};
+  for (let k = 0; k < n; k++) if (k !== i) SPLIT.pin[k] = shows[k].id;
+  SPLIT.active = i;
+  setActiveTab(id);
+  applySplit();
+  setTip("已在视图 " + (i + 1) + " 创建独立副本「" + name + "」, 可单独修改、单独保存 (Ctrl+S 另存为)");
+}
+// 点中某个镜像视图: 编辑器换到它那里; 做过副本时, 离开的视图固定在它刚才的文档上, 进入的视图换上它固定的文档
+function splitEnterPane(i) {
+  if (Object.keys(SPLIT.pin).length) {
+    const dest = TABS.get(SPLIT.pin[i]);
+    SPLIT.pin[SPLIT.active] = activeTabId;
+    delete SPLIT.pin[i];
+    if (dest) setActiveTab(dest.id);
+  }
+  SPLIT.active = i;
+  applySplit();
+  edContent.focus({ preventScroll: true });
+}
 function renderMirror(view, t) {
   const keep = view.scrollTop;
   const lang = t.language || Syntax.detectLanguage(t.path || "");
@@ -6790,7 +6860,8 @@ function renderMirror(view, t) {
       .map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("") + "</div>");
   }
   if (t.lines.length > n) parts.push('<div class="split-label">… 另外 ' + (t.lines.length - n) + " 行未显示 (镜像最多画 " + MIRROR_MAX_LINES + " 行, 点击这个视图即可在其中编辑)</div>");
-  view.innerHTML = '<div class="split-label">视图 ' + (+view.dataset.pane + 1) + " · 点击在此视图中编辑</div>" + parts.join("");
+  view.innerHTML = '<div class="split-label">视图 ' + (+view.dataset.pane + 1) + " · " + escapeHtml(t.name) + " · 点击在此视图中编辑</div>" + parts.join("") +
+    '<div class="split-copy-bar" title="复制成独立文档: 单独修改、单独保存">⧉ 点此底边: 在本视图创建独立副本 (单独修改 / 单独保存)</div>';
   view.scrollTop = keep;
 }
 let _mirrorTimer = 0;
@@ -6798,9 +6869,8 @@ function scheduleMirrors() {
   if (SPLIT.mode === "none" || _mirrorTimer) return;
   _mirrorTimer = setTimeout(() => {
     _mirrorTimer = 0;
-    const t = getActiveTab();
-    if (SPLIT.mode === "none" || !t) return;
-    document.querySelectorAll("#editor-area > .split-view").forEach((v) => renderMirror(v, t));
+    if (SPLIT.mode === "none" || !getActiveTab()) return;
+    document.querySelectorAll("#editor-area > .split-view").forEach((v) => renderMirror(v, paneTab(+v.dataset.pane)));
   }, 150);
 }
 function applySplit() {
@@ -6836,9 +6906,12 @@ function applySplit() {
     view.title = "点击在此视图中编辑";
     view.style.cursor = "text";
     place(view);
-    renderMirror(view, t);
+    renderMirror(view, paneTab(i));
     view.scrollTop = scrolls[i] || 0;
-    view.addEventListener("mousedown", () => { SPLIT.active = i; applySplit(); edContent.focus({ preventScroll: true }); });
+    view.addEventListener("mousedown", (e) => {
+      if (e.target.closest && e.target.closest(".split-copy-bar")) { e.preventDefault(); splitDetachCopy(i); return; }
+      splitEnterPane(i);
+    });
     area.appendChild(view);
   }
   edContent.scrollTop = scrolls[SPLIT.active] || 0;
@@ -6849,6 +6922,7 @@ function applySplit() {
 
 function splitView(mode) {
   SPLIT.mode = SPLIT.mode === mode ? "none" : mode;
+  SPLIT.pin = {};
   if (SPLIT.mode === "none") SPLIT.active = 0;
   applySplit();
   if (SPLIT.mode !== "none") edContent.focus({ preventScroll: true });
