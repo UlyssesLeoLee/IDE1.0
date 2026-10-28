@@ -31,6 +31,12 @@ pub const TOOLS: &[Tool] = &[
         schema: r#"{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"#,
     },
     Tool {
+        name: "md_lint",
+        description: "检查 Markdown 文档质量 (标题跳级 / 重复标题 / 围栏未闭合 / 空链接 / 图片缺 alt / 空 mermaid), 返回 [{line,rule,message}]",
+        write: false,
+        schema: r#"{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"#,
+    },
+    Tool {
         name: "search_text",
         description: "在给定行里查找: 返回命中数与位置 (op 固定 hits)",
         write: false,
@@ -94,6 +100,7 @@ fn usize_arg(args: &Value, k: &str) -> Result<usize, String> {
 pub fn call(name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "md_outline" => Ok(json!({ "outline": outline(str_arg(args, "text")?) })),
+        "md_lint" => Ok(json!({ "issues": crate::md_lint::lint(str_arg(args, "text")?) })),
         "md_render" => Ok(json!({ "html": crate::md_render::render(str_arg(args, "text")?) })),
         "search_text" => {
             let mut a = args.clone();

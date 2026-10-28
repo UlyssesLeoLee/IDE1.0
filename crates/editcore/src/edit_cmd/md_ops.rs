@@ -29,6 +29,8 @@ pub(super) fn run(cx: &Ctx) -> Option<EditRes> {
         "table" => table(cx),
         "hr" => hr(cx),
         "callout" => callout(cx),
+        "section-up" => section_move(cx, true),
+        "section-down" => section_move(cx, false),
         _ => return None,
     })
 }
@@ -177,6 +179,60 @@ fn heading(cx: &Ctx, level: usize) -> EditRes {
         .collect();
     let last = out.last().map(|s| s.chars().count()).unwrap_or(0);
     EditRes::splice(r0, r1 - r0 + 1, out, [r1, last])
+}
+
+// ---------- 章节移动 (FR-031): 标题层级决定章节范围, 单事务整段交换, 子内容完整 ----------
+
+/// 第 r 行是标题 (围栏代码块里的 # 不算) -> 层级
+fn heading_at(lines: &[String], fences: &[bool], r: usize) -> usize {
+    if fences[r] { 0 } else { heading_level(&lines[r]) }
+}
+
+fn section_move(cx: &Ctx, up: bool) -> EditRes {
+    let n = cx.req.total_rows;
+    if (0..n).any(|r| !cx.has_row(r)) {
+        return cx.nothing("章节移动需要整篇文档的行");
+    }
+    let lines: Vec<String> = (0..n).map(|r| cx.line(r).iter().collect()).collect();
+    // 哪些行在围栏代码块里 (含围栏行本身)
+    let mut fences = vec![false; n];
+    let mut inside = false;
+    for (i, l) in lines.iter().enumerate() {
+        if l.trim_start().starts_with("```") {
+            fences[i] = true;
+            inside = !inside;
+        } else {
+            fences[i] = inside;
+        }
+    }
+    // 光标所在章节: 向上找最近的标题
+    let Some(s) = (0..=cx.row.min(n - 1)).rev().find(|&r| heading_at(&lines, &fences, r) > 0) else {
+        return cx.nothing("光标不在任何章节里");
+    };
+    let lvl = heading_at(&lines, &fences, s);
+    let section_end = |from: usize, level: usize| (from + 1..n).find(|&r| { let h = heading_at(&lines, &fences, r); h > 0 && h <= level }).unwrap_or(n);
+    let e = section_end(s, lvl);
+    let (a_start, a_end, b_start, b_end) = if up {
+        // 前一个同级章节: 向上找最近的层级 <= lvl 的标题, 必须正好同级
+        let Some(p) = (0..s).rev().find(|&r| { let h = heading_at(&lines, &fences, r); h > 0 && h <= lvl }) else {
+            return cx.nothing("已是第一个章节");
+        };
+        if heading_at(&lines, &fences, p) != lvl {
+            return cx.nothing("上方是上一级标题, 不能越级移动");
+        }
+        (p, s, s, e)
+    } else {
+        if e >= n || heading_at(&lines, &fences, e) != lvl {
+            return cx.nothing("已是最后一个同级章节");
+        }
+        (s, e, e, section_end(e, lvl))
+    };
+    let mut moved: Vec<String> = lines[b_start..b_end].to_vec();
+    moved.extend_from_slice(&lines[a_start..a_end]);
+    // 光标跟着章节走: 保持在章节内的相对行
+    let off = cx.row - s;
+    let new_start = if up { a_start } else { a_start + (b_end - b_start) };
+    EditRes::splice(a_start, b_end - a_start, moved, [new_start + off, cx.col]).tip(if up { "章节已上移" } else { "章节已下移" })
 }
 
 // ---------- 块 ----------
@@ -341,6 +397,23 @@ mod tests {
         assert_eq!(go("md-link", &["see docs"], 0, 8, Some([0, 4, 0, 8]), None).0, ["see [docs](url)"]);
         assert_eq!(go("md-image", &["a"], 0, 1, None, None).0, ["a![alt](url)"]);
         assert_eq!(go("md-hr", &["x"], 0, 0, None, None).0, ["x", "", "---", ""]);
+    }
+
+    #[test]
+    fn section_move_swaps_siblings_with_children_and_follows_cursor() {
+        let doc = ["# A", "a1", "## A1", "x", "# B", "b1", "```", "# not heading", "```", "# C"];
+        let (d, cur) = go("md-section-up", &doc, 5, 1, None, None);
+        assert_eq!(d, ["# B", "b1", "```", "# not heading", "```", "# A", "a1", "## A1", "x", "# C"]);
+        assert_eq!(cur, [1, 1], "光标仍在 B 章节的同一行");
+        let (d, cur) = go("md-section-down", &doc, 1, 0, None, None);
+        assert_eq!(d, ["# B", "b1", "```", "# not heading", "```", "# A", "a1", "## A1", "x", "# C"]);
+        assert_eq!(cur, [6, 0]);
+        // 子章节不能越级: A1 上方是 A (上一级)
+        let req = EditReq { cmd: "md-section-up".into(), row: 3, total_rows: doc.len(), rows: doc.iter().enumerate().map(|(i, l)| (i, l.to_string())).collect(), ..Default::default() };
+        assert!(!run_cmd(&req).unwrap().changed);
+        // 最后一个同级章节不能再下移
+        let req = EditReq { cmd: "md-section-down".into(), row: 9, total_rows: doc.len(), rows: doc.iter().enumerate().map(|(i, l)| (i, l.to_string())).collect(), ..Default::default() };
+        assert!(!run_cmd(&req).unwrap().changed);
     }
 
     #[test]

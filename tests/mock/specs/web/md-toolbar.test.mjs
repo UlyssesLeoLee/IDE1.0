@@ -60,3 +60,18 @@ test('插件输出走白名单净化: script / on* / javascript: (含夹控制�
     assert.ok(h.includes('<rect') && h.includes('ok'), '合法内容保留');
     assert.equal(await page.evaluate(() => window.__x), undefined, '没有任何脚本执行');
   }));
+
+test('章节上移 / 下移 (含子章节) 与文档检查', () =>
+  withMocks({ name: 'mdbar', portOffset: 583 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await setup(page, 's.md', ['# A', 'a', '## A1', 'x', '# B', 'b', '#### deep']);
+    await page.evaluate(() => { const t = getActiveTab(); t.cursor = { row: 5, col: 0 }; renderVim(t); });
+    await page.click('#md-bar [data-md="md-section-up"]');
+    await page.waitForFunction(() => getActiveTab().lines[0] === '# B', null, { timeout: 8000 });
+    assert.deepEqual(await page.evaluate(() => getActiveTab().lines), ['# B', 'b', '#### deep', '# A', 'a', '## A1', 'x']);
+    assert.equal(await page.evaluate(() => getActiveTab().cursor.row), 1, '光标跟着章节');
+    await page.click('#md-bar [data-md="md-lint"]');
+    await page.waitForSelector('.opt-row', { timeout: 8000 });
+    const txt = await page.evaluate(() => document.getElementById('modal').textContent);
+    assert.match(txt, /MD-H1/, '标题 B 直接跳到 4 级被报告');
+  }));

@@ -10406,6 +10406,7 @@ function editRequest(t, cmd, extra) {
   if (extra && extra.text && cmd === "paste-box") for (let i = 0; i < extra.text.split("\n").length; i++) need.add(row + i);
   const sel = selTuple(t);
   if (sel) for (let r = sel[0]; r <= sel[2]; r++) need.add(r);
+  if (cmd === "md-section-up" || cmd === "md-section-down") for (let r = 0; r < t.lines.length; r++) need.add(r);   // 章节范围由标题层级决定, Rust 要看整篇
   const family = editFamily(cmd);
   let box_sel = null, cursors = [];
   if (family === "box" && t.colSel) {   // 列块: 未归一化的原样交上, 归一化 (夹行号 / 夹到最长行) 在 Rust
@@ -10836,6 +10837,7 @@ const MD_BTNS = [
   ["H1", "md-h1", "标题 1 (Ctrl+Alt+1)"], ["H2", "md-h2", "标题 2 (Ctrl+Alt+2)"], ["H3", "md-h3", "标题 3 (Ctrl+Alt+3)"], ["H4", "md-h4", "标题 4"], "|",
   ["• 列表", "md-ul", "无序列表"], ["1. 列表", "md-ol", "有序列表"], ["☑ 任务", "md-task", "任务列表"], ["❝ 引用", "md-quote", "引用"], "|",
   ["🔗 链接", "md-link", "链接 (Ctrl+Shift+K)"], ["🖼 图片", "md-image", "图片"], ["▦ 表格", "md-table", "表格 3×3"], ["{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)"],
+  ["↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"], ["↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格"], ["✓ 检查", "md-lint", "文档质量检查 (标题跳级 / 重复标题 / 空链接 / 缺 alt / 围栏未闭合)"], "|",
   ["─ 分隔线", "md-hr", "分隔线"], ["💡 Callout", "md-callout", "Obsidian callout"], ["◇ Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)"],
 ];
 const MD_KEYS = { b: "md-bold", i: "md-italic", e: "md-code" };
@@ -10866,8 +10868,15 @@ function buildMdBar() {
   pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (只读)");
   document.getElementById("editor").appendChild(pv);
 }
+async function mdLint() {
+  const t = getActiveTab(); if (!t) return;
+  const { issues } = await invoke("agent", { op: "call", name: "md_lint", args: { text: t.lines.join("\n") } });
+  if (!issues.length) { setTip("文档检查通过: 没有发现问题"); return; }
+  openModal({ title: "文档检查: " + issues.length + " 个问题", bodyHTML: issues.map((i) => '<div class="opt-row">第 ' + i.line + " 行 · <b>" + escapeHtml(i.rule) + "</b> · " + escapeHtml(i.message) + "</div>").join(""), buttons: [{ label: "关闭", cmd: "modal-close" }] });
+}
 function mdCommand(cmd) {
   const t = getActiveTab(); if (!t || !isMdTab(t)) return;
+  if (cmd === "md-lint") return mdLint();
   if (t.mdPreview) { setTip("预览中为只读: 先切回源码再编辑"); return; }
   return runEdit(cmd);
 }
