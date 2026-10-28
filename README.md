@@ -189,6 +189,14 @@ Stage 3.0 集成设计见 [`docs/01_基本设计/architecture/aci-integration.md
 
 MIT OR Apache-2.0 (dual), per workspace.
 
+## §7.1 Code signing policy / 隐私声明
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). *(申请中: 通过之前发布的 Windows 安装包尚未签名。)*
+
+- **Authors / Reviewers / Approvers**: [@UlyssesLeoLee](https://github.com/UlyssesLeoLee) (当前为单人维护; 有第二位维护者加入后在此分开列出)。
+- 只签名由本仓库源码经自动化工作流 ([`release-windows.yml`](.github/workflows/release-windows.yml)) 构建的二进制; 每次发布在签名前都需要人工批准。
+- **隐私**: IDE1.0 在本机运行, 没有遥测。除非你主动要求, 程序不会向其它联网系统发送信息: 「扩展」面板的"检查更新 / 安装"只在你点击时访问 GitHub (`api.github.com`、Release 资产); Chat 面板 / "让 AI 给出改善方案"只在你确认后, 把你选定的文字 (选中内容或当前章节) 发往**你自己配置的** AI 端点, API Key 只保存在本机并只发给该端点。
+
 ## §8 IDE Shell 骨架 (ULYS-191 §3)
 
 > **同产品双外观,内核相通,尽量在一起做** (per D-Boy 10/3 拍板).

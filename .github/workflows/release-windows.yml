@@ -1,0 +1,79 @@
+# Windows 发布构建: 从源码自动构建 .msi, 作为 artifact 上传; 配置了 SignPath 之后交给 SignPath 签名 (发布前需人工批准)。
+# SignPath Foundation 要求: 二进制由本仓库源码经可验证的自动化流程构建; 每次发布签名前人工批准 (在 SignPath 签名策略里设置)。
+# 注意: 这份工作流还没有在 GitHub 上跑过 (需要先申请通过并配置下面的 Secrets / Variables)。
+name: release-windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # 把产物挂到 Release
+  actions: read     # SignPath action 读取 artifact
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Tauri CLI
+        working-directory: tools
+        run: npm install --no-audit --no-fund
+
+      - name: Build Windows .msi
+        working-directory: crates/ide-shell-desktop
+        run: ../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json
+
+      - name: Upload unsigned .msi
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-msi-unsigned
+          path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
+          retention-days: 30
+
+  sign:
+    # 只有配置了 SignPath (Variables: SIGNPATH_ORGANIZATION_ID; Secrets: SIGNPATH_API_TOKEN) 才执行
+    if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    needs: msi
+    runs-on: windows-latest
+    steps:
+      - name: Submit signing request to SignPath (release 签名策略需要人工批准)
+        id: sign
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ide1-0
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ needs.msi.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Upload signed .msi
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-msi-signed
+          path: signed/*.msi
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" signed/*.msi --clobber
