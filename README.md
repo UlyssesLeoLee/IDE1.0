@@ -160,7 +160,7 @@ IDE1.0 当前 4 个详细设计书 (设计阶段, **未实装**):
 | DD-02 | Session Transaction Buffer Engine 详细設計書 | 设计 (实装待 ULYS-191 后续 brief) |
 | DD-04 | Plugin Loader / Search / TUI | 设计 (实装待 ULYS-191 后续 brief) |
 
-Stage 3.0 集成设计见 [`docs/architecture/aci-integration.md`](docs/01_基本设计/architecture/aci-integration.md).
+Stage 3.0 集成设计见 [`docs/01_基本设计/architecture/aci-integration.md`](docs/01_基本设计/architecture/aci-integration.md).
 
 ## §5 守门合规 (13 项, per AGENTS.md §4)
 
