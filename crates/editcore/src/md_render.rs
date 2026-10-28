@@ -219,9 +219,9 @@ fn render_depth(src: &str, depth: usize) -> String {
             if let Some(r) = first.strip_prefix("[!").and_then(|r| r.split_once(']')) {
                 let kind: String = r.0.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
                 let title = if r.1.trim().is_empty() { r.0.to_string() } else { r.1.trim().to_string() };
-                out.push_str(&format!("<div class=\"callout callout-{}\"><div class=\"callout-title\">{}</div>{}</div>", esc(&kind.to_lowercase()), inline(&title, depth), render(&q[1..].join("\n"))));
+                out.push_str(&format!("<div class=\"callout callout-{}\"><div class=\"callout-title\">{}</div>{}</div>", esc(&kind.to_lowercase()), inline(&title, depth), render_depth(&q[1..].join("\n"), depth + 1)));
             } else {
-                out.push_str(&format!("<blockquote>{}</blockquote>", render(&q.join("\n"))));
+                out.push_str(&format!("<blockquote>{}</blockquote>", render_depth(&q.join("\n"), depth + 1)));
             }
         } else if i + 1 < lines.len() && l.contains('|') && table_sep(lines[i + 1]) {
             let head = cells(l);
@@ -307,8 +307,18 @@ mod tests {
 
     #[test]
     fn deep_nesting_does_not_overflow_the_stack() {
-        let quotes = format!("{} x", ">".repeat(5000));
-        assert!(render(&quotes).contains('x'));
+        // 小栈线程里跑: 深度上限不生效就会栈溢出 (整个测试进程被 abort)
+        std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let quotes = format!("{} x", ">".repeat(5000));
+                assert!(render(&quotes).contains('x'));
+                let callouts = format!("{}x", "> [!note] t\n".repeat(5000));
+                assert!(render(&callouts).contains('x'));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
         let em = format!("{}x{}", "**".repeat(5000), "**".repeat(5000));
         assert!(render(&em).contains('x'));
     }
