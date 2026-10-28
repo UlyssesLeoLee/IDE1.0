@@ -120,3 +120,9 @@ editcore 各模块                      (纯计算, 无 UI、无全局可变状�
 - [ ] 新功能登记进 Agent API 工具表 (如果可智能化)?
 - [ ] 测试: 单测 + 受影响的 mock; 合并前整套 + sakura-diff?
 - [ ] 文档 (`CHANGELOG.md`、本规范、对应 WBS) 同步了?
+
+## 附: 回归脚本 (已存进仓库, 不要每次现写)
+
+- 全量回归: `bash tests/run-all.sh` (Rust 单测 -> 编译 -> mock -> UAT -> Sakura 差分; `--skip-rust` / `--skip-sakura`), 日志在 `$TMPDIR/ide-regress/`。
+- 单个 mock 用例: `cd tests/mock && QA_BIN=<ide-shell-web 二进制> node --test specs/web/<name>.test.mjs`。
+- 跑的过程中不要改 `editor.html` (测试会检查二进制内嵌页面与源文件一致)。
