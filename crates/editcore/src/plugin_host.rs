@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod store;
+
 /// 宿主支持的最高插件 API 版本
 pub const HOST_API_VERSION: u32 = 1;
 /// 单个资产大小上限 (清单 / 入口脚本)
@@ -80,6 +82,9 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     matches!((parse_semver(latest), parse_semver(current)), (Some(a), Some(b)) if a > b)
 }
 
+pub(crate) fn valid_id_pub(id: &str) -> bool {
+    valid_id(id)
+}
 fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
@@ -230,6 +235,27 @@ pub fn sha256_hex(data: &[u8]) -> String {
     h.iter().map(|x| format!("{x:08x}")).collect()
 }
 
+
+/// 不匹配时发给用户配置的大模型的提示词: 只放事实 (宿主契约、仓库 / tag / 资产、结构化问题), 不含任何密钥。
+pub fn mismatch_prompt(repo: &str, tag: &str, asset_names: &[String], report: &CompatReport, app_version: &str) -> String {
+    let problems: Vec<String> = report.problems.iter().map(|p| format!("- [{}] {} (提示: {})", p.code, p.message, p.hint)).collect();
+    format!(
+        "你是插件兼容性顾问。IDE1.0 编辑器 (版本 {app_version}, 插件 apiVersion 最高 {HOST_API_VERSION}) 想从 GitHub 仓库 {repo} 的最新 Release {tag} 安装插件, 但检查未通过。
+         
+宿主插件契约: Release 资产里必须有 manifest.json (字段: id[a-z0-9-], name, version[x.y.z], apiVersion, minAppVersion?, license, description, repo, entry[默认 main.js], permissions[editor.read|editor.write|storage|net:<host>], contributes[markdown.fence|command|agent.tool]) 和 manifest.entry 指向的入口脚本; 入口脚本在沙箱 iframe 中运行, 通过全局 ide.register({{...}}) 注册贡献点方法。
+         
+Release 资产: {}
+
+检查发现的问题:
+{}
+         
+请回答: 1) 根因; 2) 给插件作者或用户的具体修改步骤; 3) 如果能写出适配用的 manifest.json / main.js, 给出完整内容; 4) 风险提示。只给建议, 不要假设你能直接修改任何文件。",
+        asset_names.join(", "),
+        problems.join("
+")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +266,14 @@ mod tests {
     const GOOD: &str = r#"{"id":"pele","name":"Pele","version":"1.12.0","apiVersion":1,"minAppVersion":"0.1.2","permissions":[],"contributes":{"markdown.fence":[{"lang":"mermaid","method":"render"}]}}"#;
     fn codes(r: &CompatReport) -> Vec<&'static str> {
         r.problems.iter().map(|p| p.code).collect()
+    }
+
+    #[test]
+    fn mismatch_prompt_has_facts_and_no_secrets() {
+        let r = check_compat(&[], None, "0.1.2");
+        let p = mismatch_prompt("o/r", "v1", &["a.js".to_string()], &r, "0.1.2");
+        assert!(p.contains("o/r") && p.contains("v1") && p.contains("NO_MANIFEST") && p.contains("a.js") && p.contains("apiVersion"));
+        assert!(!p.to_lowercase().contains("api key") && !p.contains("sk-"));
     }
 
     #[test]

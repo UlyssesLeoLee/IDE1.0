@@ -77,3 +77,61 @@ pub fn md_render(req: &MdRenderReq) -> Value {
 pub struct MdRenderReq {
     pub text: String,
 }
+
+// ---------- 插件 (docs/01_基本设计/PLUGIN-SYSTEM.md) ----------
+
+/// 插件操作。网络类 (inspect / install / check_updates) 只在用户点按钮时才会发来, 没有后台轮询
+#[derive(serde::Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum PluginReq {
+    List,
+    /// 读插件文件 (入口脚本等), 文本
+    Asset { id: String, file: String },
+    Toggle { id: String, enabled: bool },
+    Remove { id: String },
+    Inspect { repo: String },
+    Install { repo: String, approved: Vec<String> },
+    CheckUpdates,
+    /// 插件与内建功能同一能力位冲突时选谁 (docs §8.1)
+    Resolve { has_native: bool, has_plugin: bool, prefer: Option<crate::plugin_host::Prefer>, smart_active: bool },
+    /// 不匹配时给大模型的提示词 (只含事实, 不含 Key)
+    MismatchPrompt { repo: String },
+}
+
+pub fn plugins(req: &PluginReq) -> Result<Value, String> {
+    use crate::plugin_host::{self as ph, store};
+    let root = store::default_root();
+    let app = env!("CARGO_PKG_VERSION");
+    Ok(match req {
+        PluginReq::List => json!({ "plugins": store::list(&root), "host_api": ph::HOST_API_VERSION, "app_version": app }),
+        PluginReq::Asset { id, file } => {
+            let b = store::read_asset(&root, id, file)?;
+            json!({ "text": String::from_utf8(b).map_err(|_| "插件文件不是 UTF-8 文本".to_string())? })
+        }
+        PluginReq::Toggle { id, enabled } => {
+            store::set_enabled(&root, id, *enabled)?;
+            json!({ "ok": true })
+        }
+        PluginReq::Remove { id } => {
+            store::remove(&root, id)?;
+            json!({ "ok": true })
+        }
+        PluginReq::Inspect { repo } => to_json(&store::inspect(&store::CurlHttp, &root, repo, app)?),
+        PluginReq::Install { repo, approved } => to_json(&store::install(&store::CurlHttp, &root, repo, app, approved)?),
+        PluginReq::CheckUpdates => {
+            let rows: Vec<Value> = store::check_updates(&store::CurlHttp, &root, app)
+                .into_iter()
+                .map(|(id, r)| match r {
+                    Ok(i) => json!({ "id": id, "update_available": i.update_available, "latest": i.report.manifest.map(|m| m.version), "ok": i.report.ok, "problems": i.report.problems }),
+                    Err(e) => json!({ "id": id, "error": e }),
+                })
+                .collect();
+            json!({ "updates": rows })
+        }
+        PluginReq::Resolve { has_native, has_plugin, prefer, smart_active } => json!({ "choice": ph::resolve_conflict(*has_native, *has_plugin, *prefer, *smart_active) }),
+        PluginReq::MismatchPrompt { repo } => {
+            let ins = store::inspect(&store::CurlHttp, &root, repo, app)?;
+            json!({ "prompt": ph::mismatch_prompt(&ins.release.repo, &ins.release.tag, &ins.release.assets.iter().map(|a| a.name.clone()).collect::<Vec<_>>(), &ins.report, app) })
+        }
+    })
+}
