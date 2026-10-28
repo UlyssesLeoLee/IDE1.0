@@ -13,6 +13,7 @@
 //! | `box_ops` | box-insert box-enter box-backspace box-delete box-cut box-copy box-replace |
 //! | `multi_cursor` | multi-insert multi-backspace |
 //! | `fold` | fold-range fold-all |
+//! | `md_ops` | md-bold md-italic md-strike md-code md-highlight md-h1..h6 md-quote md-ul md-ol md-task md-link md-image md-codeblock md-mermaid md-table md-hr md-callout |
 //!
 //! 共用: `req_res` (请求 / 响应 DTO 与响应构造器), `ctx` (执行环境: 预先算好的光标行 / 列 / 选区与取行)。
 
@@ -21,6 +22,7 @@ mod clipboard;
 mod ctx;
 mod fold;
 mod line_ops;
+mod md_ops;
 mod multi_cursor;
 mod req_res;
 mod text_ops;
@@ -93,7 +95,8 @@ fn dispatch(cx: &Ctx) -> Option<EditRes> {
         // 折叠
         "fold-range" => fold::run(cx, false),
         "fold-all" => fold::run(cx, true),
-        _ => return None,
+        // Markdown 便捷编辑 (md-*); 不是 md 命令就是未知命令
+        _ => return md_ops::run(cx),
     })
 }
 

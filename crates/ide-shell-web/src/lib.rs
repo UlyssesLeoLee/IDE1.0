@@ -711,6 +711,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 文档内查找 / 置換 (含正文镜像); 无状态纯计算
             respond_pure::<editcore::search_ops::SearchReq>(stream, &body, "查找请求无效", editcore::pure_api::search_text);
         }
+        ("POST", "/api/md_render") => {
+            // Markdown 预览: 文本 -> 已转义 HTML (只读)
+            respond_pure::<editcore::pure_api::MdRenderReq>(stream, &body, "Markdown 预览请求无效", |r| Ok(editcore::pure_api::md_render(r)));
+        }
         ("POST", "/api/history") => {
             // 撤销 / 重做栈; 按标签页 id 分开的进程内登记
             respond_pure::<editcore::history::HistReq>(stream, &body, "历史请求无效", editcore::pure_api::history);

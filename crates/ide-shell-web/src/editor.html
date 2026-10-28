@@ -437,6 +437,31 @@
     #toolbar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
     #toolbar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
     #toolbar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
+    /* ===== Markdown 工具条 / 预览 ===== */
+    #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
+    html[data-md="on"] #viewbars-top { display: block; }
+    html[data-md="on"] #md-bar { display: flex; }
+    html[data-md="on"] #toolbar { display: flex; }   /* Markdown 文档: Sakura 的工具栏一并显示 (快捷键提示在按钮 title 里) */
+    #md-bar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
+    #md-bar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
+    #md-bar .tb-btn.on { background: var(--bg-active); border-color: var(--border-strong); }
+    #md-bar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
+    #editor { position: relative; }
+    #md-preview { display: none; position: absolute; inset: 0; overflow: auto; background: var(--bg-edit); z-index: 3; padding: 12px 24px; }
+    html[data-md-preview="on"] #md-preview { display: block; }
+    .md-body-view { max-width: 860px; margin: 0 auto; line-height: 1.7; font-size: var(--fs-md); color: var(--fg); }
+    .md-body-view h1, .md-body-view h2 { border-bottom: 1px solid var(--border); padding-bottom: .2em; }
+    .md-body-view pre { background: var(--bg-raised); padding: 8px 10px; border-radius: 4px; overflow: auto; }
+    .md-body-view code { background: var(--bg-raised); padding: 0 4px; border-radius: 3px; }
+    .md-body-view pre code { padding: 0; background: transparent; }
+    .md-body-view blockquote { margin: .6em 0; padding: 0 12px; border-left: 3px solid var(--border-strong); color: var(--fg-muted); }
+    .md-body-view table { border-collapse: collapse; } .md-body-view th, .md-body-view td { border: 1px solid var(--border); padding: 3px 10px; }
+    .md-body-view img { max-width: 100%; } .md-body-view mark { background: #b8860b66; color: inherit; } .md-body-view .tag { color: var(--blue); }
+    .md-body-view li.task { list-style: none; margin-left: -1.2em; }
+    .md-body-view .callout { margin: .8em 0; padding: 6px 12px; border-left: 4px solid var(--blue); background: var(--bg-raised); border-radius: 3px; }
+    .md-body-view .callout-title { font-weight: 600; margin-bottom: 2px; }
+    .md-body-view .callout-warning, .md-body-view .callout-caution { border-left-color: #d29922; } .md-body-view .callout-danger, .md-body-view .callout-bug { border-left-color: #f85149; }
+    .md-body-view .md-fence-out.err { color: #f85149; white-space: pre-wrap; }
     #ruler { display: none; height: 16px; overflow: hidden; position: relative; background: var(--bg-bar); border-bottom: 1px solid var(--border); color: var(--fg-muted); font-size: 10px; line-height: 16px; white-space: pre; user-select: none; }
     html[data-v-ruler="on"] #ruler { display: block; }
     #ruler .rl-in { position: absolute; top: 0; left: 0; font-family: monospace; }
@@ -2603,7 +2628,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), history: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), md_render: (a) => ({ options: a }), history: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -10453,6 +10478,138 @@ SAKURA_CMDS["line-cut-to-end"] = () => runEdit("line-cut-to-end");
   renderVim = function () { const r = _rv.apply(this, arguments); if (SPLIT.mode !== "none") scheduleMirrors(); return r; };
   paintActive = function () { const r = _pa.apply(this, arguments); if (SPLIT.mode !== "none") scheduleMirrors(); return r; };
 }
+
+/* ===== Markdown 工具条 + 预览 (docs/00_要件基线/REQ: FR-005..FR-025, INV-03/04) =====
+   - 只有活动文档是 Markdown 时才建立工具条 DOM (非 Markdown 文件零成本, INV-03); 预览只在点开时才请求渲染 (NFR-007/013)。
+   - 每个按钮 / 快捷键都是同一条命令 md-* -> runEdit -> Rust (edit_cmd/md_ops), 工具条、快捷键、命令面板同一结果 (INV-04)。
+   - 预览只读: 渲染结果来自 Rust (md_render, 已转义), 不写回文档 (INV-02)。围栏代码块交给插件 (MD_FENCE_HANDLERS, 如 Pele 的 mermaid), 没有插件就是普通代码块。 */
+const MD_BTNS = [
+  ["B", "md-bold", "粗体 (Ctrl+B)"], ["I", "md-italic", "斜体 (Ctrl+I)"], ["S", "md-strike", "删除线 (Ctrl+Shift+X)"], ["==", "md-highlight", "高亮 ==文字=="], ["`", "md-code", "行内代码 (Ctrl+E)"], "|",
+  ["H1", "md-h1", "标题 1 (Ctrl+Alt+1)"], ["H2", "md-h2", "标题 2 (Ctrl+Alt+2)"], ["H3", "md-h3", "标题 3 (Ctrl+Alt+3)"], ["H4", "md-h4", "标题 4"], "|",
+  ["• 列表", "md-ul", "无序列表"], ["1. 列表", "md-ol", "有序列表"], ["☑ 任务", "md-task", "任务列表"], ["❝ 引用", "md-quote", "引用"], "|",
+  ["🔗 链接", "md-link", "链接 (Ctrl+Shift+K)"], ["🖼 图片", "md-image", "图片"], ["▦ 表格", "md-table", "表格 3×3"], ["{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)"],
+  ["─ 分隔线", "md-hr", "分隔线"], ["💡 Callout", "md-callout", "Obsidian callout"], ["◇ Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)"],
+];
+const MD_KEYS = { b: "md-bold", i: "md-italic", e: "md-code" };
+const MD = { built: false, timer: 0, seq: 0 };
+window.MD_FENCE_HANDLERS = window.MD_FENCE_HANDLERS || {};   // lang -> async (text) => { svg | html | error }; 由插件主机登记
+
+function isMdTab(t) {
+  if (!t) return false;
+  const n = String(t.path || t.name || "").toLowerCase();
+  return /\.(md|markdown|mdx)$/.test(n) || t.language === "markdown";
+}
+function buildMdBar() {
+  if (MD.built) return;
+  MD.built = true;
+  const host = document.getElementById("viewbars-top");
+  const bar = document.createElement("div");
+  bar.id = "md-bar";
+  bar.innerHTML = MD_BTNS.map((b) => b === "|" ? '<span class="tb-sep"></span>' :
+    '<button class="tb-btn" data-md="' + b[1] + '" title="' + b[2] + '">' + escapeHtml(b[0]) + "</button>").join("") +
+    '<span class="tb-sep"></span><button class="tb-btn md-toggle" data-md="preview" title="源码 / 渲染预览切换 (Ctrl+Shift+V)">👁 预览</button>';
+  bar.addEventListener("mousedown", (e) => { if (e.target.closest("button")) e.preventDefault(); });   // 点按钮不抢编辑器焦点 / 选区
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-md]"); if (!b) return;
+    if (b.dataset.md === "preview") toggleMdPreview(); else { mdCommand(b.dataset.md); edContent.focus({ preventScroll: true }); }
+  });
+  host.insertBefore(bar, host.firstChild);
+  const pv = document.createElement("div");
+  pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (只读)");
+  document.getElementById("editor").appendChild(pv);
+}
+function mdCommand(cmd) {
+  const t = getActiveTab(); if (!t || !isMdTab(t)) return;
+  if (t.mdPreview) { setTip("预览中为只读: 先切回源码再编辑"); return; }
+  return runEdit(cmd);
+}
+function toggleMdPreview() {
+  const t = getActiveTab(); if (!t || !isMdTab(t)) { setTip("当前文档不是 Markdown"); return; }
+  t.mdPreview = !t.mdPreview;
+  mdRefresh();
+  if (!t.mdPreview) edContent.focus({ preventScroll: true });
+}
+async function renderMdPreview() {
+  const t = getActiveTab(), pv = document.getElementById("md-preview");
+  if (!t || !pv || !t.mdPreview) return;
+  const seq = ++MD.seq;
+  let r;
+  try { r = await invoke("md_render", { text: t.lines.join("\n") }); } catch (e) { pv.textContent = "预览失败: " + e.message; return; }
+  if (seq !== MD.seq || getActiveTab() !== t || !t.mdPreview) return;
+  const top = pv.scrollTop;
+  pv.innerHTML = '<article class="md-body-view">' + r.html + "</article>";   // r.html 由 Rust 转义生成
+  pv.scrollTop = top;
+  for (const el of pv.querySelectorAll("pre.md-fence")) {
+    const lang = el.dataset.lang, h = lang && window.MD_FENCE_HANDLERS[lang];
+    if (!h) { if (lang === "mermaid") el.setAttribute("title", "没有可用的 Mermaid 渲染插件 (扩展面板里启用 Pele)"); continue; }
+    Promise.resolve().then(() => h(el.textContent)).then((out) => {
+      if (!out || !el.isConnected) return;
+      const box = document.createElement("div"); box.className = "md-fence-out";
+      if (out.error) { box.classList.add("err"); box.textContent = out.error; el.after(box); return; }   // 失败: 保留源码, 旁边显示错误 (FR-022)
+      box.replaceChildren(mdSanitize(out.svg || out.html || "")); el.replaceWith(box);
+    }).catch(() => {});
+  }
+}
+// 插件返回的 HTML / SVG 先净化再放进页面: 去 script / foreignObject / iframe 等、on* 属性、javascript: 链接 (PLUGIN-SYSTEM §1)
+function mdSanitize(html) {
+  const doc = new DOMParser().parseFromString("<body>" + html + "</body>", "text/html");
+  for (const el of doc.body.querySelectorAll("script, iframe, object, embed, foreignObject, link, meta, base, form")) el.remove();
+  for (const el of doc.body.querySelectorAll("*")) {
+    for (const a of [...el.attributes]) {
+      const n = a.name.toLowerCase(), v = a.value.trim().toLowerCase();
+      if (n.startsWith("on") || ((n === "href" || n === "src" || n === "xlink:href") && /^(javascript|data|vbscript):/.test(v))) el.removeAttribute(a.name);
+    }
+  }
+  const frag = document.createDocumentFragment();
+  while (doc.body.firstChild) frag.appendChild(document.importNode(doc.body.firstChild, true));
+  return frag;
+}
+function scheduleMdPreview() {
+  if (MD.timer) return;
+  MD.timer = setTimeout(() => { MD.timer = 0; renderMdPreview(); }, 200);
+}
+// 活动文档变了 / 内容变了: 刷新工具条显示和预览 (只做廉价判断)
+function mdRefresh() {
+  const t = getActiveTab(), md = isMdTab(t);
+  if (md) buildMdBar();
+  document.documentElement.setAttribute("data-md", md ? "on" : "off");
+  document.documentElement.setAttribute("data-md-preview", md && t.mdPreview ? "on" : "off");
+  if (md && MD.built) {
+    const b = document.querySelector("#md-bar .md-toggle");
+    if (b) b.classList.toggle("on", !!t.mdPreview);
+    if (t.mdPreview) scheduleMdPreview();
+  }
+}
+{
+  const _rv2 = renderVim, _pa2 = paintActive, _sat = setActiveTab;
+  renderVim = function () { const r = _rv2.apply(this, arguments); mdRefresh(); return r; };
+  paintActive = function () { const r = _pa2.apply(this, arguments); mdRefresh(); return r; };
+  setActiveTab = function () { const r = _sat.apply(this, arguments); mdRefresh(); return r; };
+}
+// 快捷键只在 Markdown 文档里生效 (其它文档里 Ctrl+B 等保持原样, NFR-020: 不抢占)
+document.addEventListener("keydown", (e) => {
+  const t = getActiveTab();
+  if (!t || !isMdTab(t) || !(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  let cmd = null;
+  if (!e.shiftKey && !e.altKey && MD_KEYS[k]) cmd = MD_KEYS[k];
+  else if (e.shiftKey && !e.altKey && k === "x") cmd = "md-strike";
+  else if (e.shiftKey && !e.altKey && k === "k") cmd = "md-link";
+  else if (e.altKey && !e.shiftKey && /^[1-6]$/.test(k)) cmd = "md-h" + k;
+  else if (e.shiftKey && !e.altKey && k === "v") { e.preventDefault(); e.stopPropagation(); toggleMdPreview(); return; }
+  if (!cmd) return;
+  e.preventDefault(); e.stopPropagation();
+  mdCommand(cmd);
+}, true);
+// 工具条按钮的提示里写出 Sakura 的快捷键 (REQ: 顶部要有和 Sakura 一样的功能快捷键)
+const SAKURA_TB_KEYS = { "new-file": "Ctrl+N", "open-file": "Ctrl+O", save: "Ctrl+S", cut: "Ctrl+X", copy: "Ctrl+C", paste: "Ctrl+V", undo: "Ctrl+Z", redo: "Ctrl+Y", find: "Ctrl+F", replace: "Ctrl+R", grep: "Ctrl+G", "goto-line": "Ctrl+J", "bookmark-toggle": "Ctrl+F2", "bookmark-prev": "Shift+F2", "bookmark-next": "F2" };
+function titleSakuraToolbar() {
+  for (const b of document.querySelectorAll("#toolbar .tb-btn[data-cmd]")) {
+    const k = SAKURA_TB_KEYS[b.dataset.cmd]; if (k) b.title = b.textContent + " (" + k + ")";
+  }
+}
+{ const _bvb = buildViewBars; buildViewBars = function () { const r = _bvb.apply(this, arguments); titleSakuraToolbar(); return r; }; }
+titleSakuraToolbar();
 
 // ===== Welcome page =====
 function showWelcome() {

@@ -650,6 +650,7 @@ pub fn run() {
             nav_step,
             history,
             search_text,
+            md_render,
             bookmark,
             bracket_pair,
             edit_cmd,
@@ -752,6 +753,12 @@ fn bookmark(options: editcore::bookmark::BmReq) -> Result<serde_json::Value, Str
 #[tauri::command]
 fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::Value, String> {
     editcore::pure_api::search_text(&options)
+}
+
+/// Markdown 预览 (web 版 /api/md_render 同一语义)
+#[tauri::command]
+fn md_render(options: editcore::pure_api::MdRenderReq) -> Result<serde_json::Value, String> {
+    Ok(editcore::pure_api::md_render(&options))
 }
 
 /// 撤销 / 重做栈 (web 版 /api/history 同一语义)

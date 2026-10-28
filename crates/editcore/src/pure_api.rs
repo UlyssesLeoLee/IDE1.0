@@ -67,3 +67,13 @@ mod tests {
         assert_eq!(v["changed"], true);
     }
 }
+
+/// Markdown 预览: 文本 -> 已转义的 HTML (只读, 不写回)
+pub fn md_render(req: &MdRenderReq) -> Value {
+    json!({ "html": crate::md_render::render(&req.text) })
+}
+
+#[derive(serde::Deserialize)]
+pub struct MdRenderReq {
+    pub text: String,
+}
