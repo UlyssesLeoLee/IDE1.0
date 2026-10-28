@@ -40,3 +40,16 @@ test('Sakura 宏: 规划在 Rust, 前端逐步执行; 语法错误整体失败�
     assert.equal(bad, false);
     assert.deepEqual(await page.evaluate(() => getActiveTab().lines), before, '有语法错误: 一步都不执行');
   }));
+
+test('Grep 置換是写操作: 不开项目被拒绝; 请求里放开"搜索项目外"也不能改到项目根之外的文件', () =>
+  withMocks({ name: 'grepw', portOffset: 583 }, async ({ page, root }) => {
+    const outside = fs.mkdtempSync(path.join(path.dirname(root), 'outside-'));
+    fs.writeFileSync(path.join(outside, 'o.txt'), 'foo outside\n');
+    const post = (body) => page.evaluate(async (b) => { const r = await fetch('/api/grep_replace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }); return { status: r.status, body: await r.text() }; }, body);
+    const body = { pattern: 'foo', replacement: 'bar', search_folders: [outside], allow_outside_root: true };
+    assert.equal((await post(body)).status, 400, '没有打开项目: 拒绝');
+    await open(page, root);
+    await post(body);   // 项目已打开, 请求自称允许项目外: 服务端忽略这个开关
+    assert.equal(fs.readFileSync(path.join(outside, 'o.txt'), 'utf8'), 'foo outside\n', '项目根之外的文件没被改');
+    fs.rmSync(outside, { recursive: true, force: true });
+  }));

@@ -46,9 +46,10 @@ pub fn search_cmd(
 #[tauri::command]
 pub fn grep_replace_cmd(
     state: State<'_, crate::ProjectRoot>,
-    options: editcore::grep_engine::ReplaceOptions,
+    mut options: editcore::grep_engine::ReplaceOptions,
 ) -> Result<editcore::grep_engine::ReplaceReport, String> {
     let project = state.get().ok_or("project root not set")?;
+    options.search.allow_outside_root = Some(false); // 写操作不允许离开项目根
     editcore::grep_engine::grep_replace(&project, &options)
 }
 

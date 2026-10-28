@@ -720,10 +720,15 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("POST", "/api/grep_replace") => {
             // Grep 置换: 检索条件同 /api/search, 另带 replacement / backup / skip_paths; 按原编码 / BOM / 逐行换行原子写回
+            // 写操作: 只在已打开的项目根内 (和 write_file 同一道闸), 且不允许请求自己放开"搜索项目外"
+            let Some(root) = state.project_root_get() else {
+                send_error_json(stream, "400 Bad Request", "尚未打开项目");
+                return;
+            };
             match serde_json::from_slice::<editcore::grep_engine::ReplaceOptions>(&body) {
-                Ok(opts) => {
-                    let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-                    match editcore::grep_engine::grep_replace(&cwd, &opts) {
+                Ok(mut opts) => {
+                    opts.search.allow_outside_root = Some(false);
+                    match editcore::grep_engine::grep_replace(&root, &opts) {
                         Ok(rep) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&rep).unwrap_or_default()),
                         Err(e) => send_error_json(stream, "400 Bad Request", &e),
                     }
