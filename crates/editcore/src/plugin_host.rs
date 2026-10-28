@@ -32,6 +32,9 @@ pub struct Manifest {
     pub repo: String,
     #[serde(default = "main_js")]
     pub entry: String,
+    /// 入口之前先在沙箱里加载的脚本 (例如打包好的第三方库), 按顺序
+    #[serde(default)]
+    pub scripts: Vec<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
     #[serde(default)]
@@ -127,6 +130,13 @@ pub fn check_compat(assets: &[Asset], manifest_json: Option<&str>, app_version: 
         problems.push(problem("BAD_ENTRY", format!("入口「{}」不合法", m.entry), "入口必须是 Release 资产里的相对文件名"));
     } else if !assets.iter().any(|a| a.name == m.entry) {
         problems.push(problem("NO_ENTRY", format!("Release 资产里没有入口脚本 {}", m.entry), "把入口脚本作为 Release 资产上传"));
+    }
+    for sc in &m.scripts {
+        if !valid_entry(sc) {
+            problems.push(problem("BAD_ENTRY", format!("scripts 里的「{sc}」不合法"), "只能是 Release 资产里的相对文件名"));
+        } else if !assets.iter().any(|a| &a.name == sc) {
+            problems.push(problem("NO_ENTRY", format!("Release 资产里没有脚本 {sc}"), "把 manifest.scripts 里列的文件作为 Release 资产上传"));
+        }
     }
     for p in &m.permissions {
         let known = KNOWN_PERMISSIONS.contains(&p.as_str()) || p.strip_prefix("net:").is_some_and(|h| !h.is_empty() && !h.contains('/'));

@@ -125,7 +125,15 @@ pub fn list(root: &Path) -> Vec<Installed> {
 }
 
 fn read_installed_manifest(root: &Path, id: &str) -> Option<Manifest> {
-    serde_json::from_slice(&std::fs::read(root.join(id).join("manifest.json")).ok()?).ok()
+    let mut m: Manifest = serde_json::from_slice(&std::fs::read(root.join(id).join("manifest.json")).ok()?).ok()?;
+    if m.id != id {
+        return None; // 目录名与清单 id 不一致: 不认
+    }
+    // 更新源以安装时登记的仓库为准, 不信清单里自称的 repo
+    if let Some(e) = load_registry(root).plugins.get(id) {
+        m.repo = e.repo.clone();
+    }
+    Some(m)
 }
 
 /// 读插件的一个文件 (入口脚本 / 样式 / 许可证)。装的版本优先于打包的
@@ -211,26 +219,40 @@ pub struct Inspection {
 
 /// 取最新 Release 并做兼容性检查 (不安装)。清单读不到 / 不合格时 `report.problems` 说明原因, 界面据此报错
 pub fn inspect(http: &dyn Http, root: &Path, repo: &str, app_version: &str) -> Result<Inspection, String> {
+    inspect_with_manifest(http, root, repo, app_version).map(|(i, _)| i)
+}
+
+/// 同 [`inspect`], 并返回被校验的那份 manifest.json 的**原始字节**: 安装时写入这份, 不再重新下载 (防止校验后被替换)
+fn inspect_with_manifest(http: &dyn Http, root: &Path, repo: &str, app_version: &str) -> Result<(Inspection, Option<Vec<u8>>), String> {
     let release = fetch_latest(http, repo)?;
     let assets: Vec<Asset> = release.assets.iter().map(|a| Asset { name: a.name.clone(), size: a.size }).collect();
-    let manifest_text = release.assets.iter().find(|a| a.name == "manifest.json").and_then(|a| http.get(&a.url).ok()).and_then(|b| String::from_utf8(b).ok());
-    let report = check_compat(&assets, manifest_text.as_deref(), app_version);
+    let manifest_bytes = release.assets.iter().find(|a| a.name == "manifest.json").and_then(|a| http.get(&a.url).ok());
+    let manifest_text = manifest_bytes.as_ref().and_then(|b| std::str::from_utf8(b).ok());
+    let report = check_compat(&assets, manifest_text, app_version);
     let installed_version = report.manifest.as_ref().and_then(|m| list(root).into_iter().find(|p| p.manifest.id == m.id).map(|p| p.manifest.version));
     let update_available = match (&report.manifest, &installed_version) {
         (Some(m), Some(v)) => is_newer(&m.version, v),
         _ => false,
     };
-    Ok(Inspection { release, report, installed_version, update_available })
+    Ok((Inspection { release, report, installed_version, update_available }, manifest_bytes))
 }
 
 /// 安装 / 更新到最新 Release。`approved` = 用户在确认框里同意的权限, 必须覆盖清单声明的全部权限
 pub fn install(http: &dyn Http, root: &Path, repo: &str, app_version: &str, approved: &[String]) -> Result<Installed, String> {
-    let ins = inspect(http, root, repo, app_version)?;
+    let (ins, manifest_bytes) = inspect_with_manifest(http, root, repo, app_version)?;
     if !ins.report.ok {
         let why: Vec<String> = ins.report.problems.iter().map(|p| format!("{}: {}", p.code, p.message)).collect();
         return Err(format!("插件与当前编辑器不匹配, 未安装: {}", why.join("; ")));
     }
     let m = ins.report.manifest.clone().ok_or("缺少清单")?;
+    let manifest_bytes = manifest_bytes.ok_or("缺少清单")?;
+    // 身份: 插件 id 绑定到安装它的仓库 —— 另一个仓库不能顶替已有 id (包括随程序打包的默认插件); 清单里自称的 repo 不作数
+    let owner = load_registry(root).plugins.get(&m.id).map(|e| e.repo.clone()).or_else(|| bundled_manifest(&m.id).map(|b| b.repo));
+    if let Some(o) = owner {
+        if parse_repo(&o).as_deref() != Some(ins.release.repo.as_str()) {
+            return Err(format!("插件 id「{}」属于仓库 {o}, 不能被 {} 顶替", m.id, ins.release.repo));
+        }
+    }
     if let Some(p) = m.permissions.iter().find(|p| !approved.contains(p)) {
         return Err(format!("权限「{p}」未获用户同意, 未安装"));
     }
@@ -240,7 +262,10 @@ pub fn install(http: &dyn Http, root: &Path, repo: &str, app_version: &str, appr
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
     let result = (|| -> Result<BTreeMap<String, String>, String> {
         let mut sums = BTreeMap::new();
-        for a in ins.release.assets.iter().filter(|a| a.name == "manifest.json" || a.name == m.entry || a.name == "styles.css" || a.name == "LICENSE" || a.name.ends_with(".js")) {
+        // 清单用校验过的那份字节, 其余资产才下载
+        sums.insert("manifest.json".to_string(), sha256_hex(&manifest_bytes));
+        std::fs::write(tmp.join("manifest.json"), &manifest_bytes).map_err(|e| e.to_string())?;
+        for a in ins.release.assets.iter().filter(|a| a.name != "manifest.json" && (a.name == m.entry || m.scripts.contains(&a.name) || a.name == "styles.css" || a.name == "LICENSE" || a.name.ends_with(".js"))) {
             if !valid_file_name(&a.name) {
                 continue;
             }
@@ -385,6 +410,28 @@ mod tests {
         // 入口缺失
         let h = release("o/hello", "v1.0.0", &[("manifest.json", MANI)]);
         assert!(install(&h, &root, "o/hello", "0.1.2", &["storage".into()]).unwrap_err().contains("NO_ENTRY"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn id_is_bound_to_its_repo_and_manifest_is_not_refetched() {
+        let root = tmp("identity");
+        // 另一个仓库不能顶替随程序打包的 pele
+        let evil = MANI.replace("\"id\":\"hello\"", "\"id\":\"pele\"").replace("o/hello", "evil/pele");
+        let h = release("evil/pele", "v9.0.0", &[("manifest.json", &evil), ("main.js", "x")]);
+        let e = install(&h, &root, "evil/pele", "0.1.2", &["storage".into()]).unwrap_err();
+        assert!(e.contains("不能被") && !root.join("pele").exists(), "{e}");
+        // 已装的 hello 不能被别的仓库顶替
+        let h = release("o/hello", "v1.0.0", &[("manifest.json", MANI), ("main.js", "a")]);
+        install(&h, &root, "o/hello", "0.1.2", &["storage".into()]).unwrap();
+        let h2 = release("x/other", "v1.0.0", &[("manifest.json", &MANI.replace("o/hello", "x/other")), ("main.js", "b")]);
+        assert!(install(&h2, &root, "x/other", "0.1.2", &["storage".into()]).unwrap_err().contains("不能被"));
+        assert_eq!(read_asset(&root, "hello", "main.js").unwrap(), b"a");
+        // 安装只取一次 manifest.json: 校验过的字节就是落盘的字节
+        let h3 = release("o/hello", "v1.1.0", &[("manifest.json", &MANI.replace("1.0.0", "1.1.0")), ("main.js", "c")]);
+        install(&h3, &root, "o/hello", "0.1.2", &["storage".into()]).unwrap();
+        let n = h3.1.borrow().iter().filter(|u| u.ends_with("/manifest.json")).count();
+        assert_eq!(n, 1, "manifest.json 只下载一次");
         let _ = std::fs::remove_dir_all(&root);
     }
 

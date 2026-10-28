@@ -437,6 +437,14 @@
     #toolbar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
     #toolbar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
     #toolbar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
+    .ext-body { padding: 4px 8px; font-size: var(--fs-sm); overflow: auto; }
+    .ext-row { border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+    .ext-head { display: flex; gap: 6px; align-items: baseline; } .ext-on { margin-left: auto; font-size: var(--fs-xs); }
+    .ext-ver, .ext-meta { color: var(--fg-muted); font-size: var(--fs-xs); } .ext-desc { margin: 2px 0; }
+    .ext-slot { display: block; font-size: var(--fs-xs); margin-top: 4px; } .ext-err { color: #f85149; margin: 4px 0; }
+    .ext-install { display: flex; gap: 4px; } .ext-install input, .ext-ai input { flex: 1; min-width: 0; width: 100%; margin: 2px 0; box-sizing: border-box; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
+    .ext-ai-out { white-space: pre-wrap; background: var(--bg-raised); padding: 6px; border-radius: 4px; max-height: 280px; overflow: auto; }
+    .ext-actions { margin: 6px 0; }
     /* ===== Markdown 工具条 / 预览 ===== */
     #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
     html[data-md="on"] #viewbars-top { display: block; }
@@ -5513,14 +5521,7 @@ async function toggleTreeDir(node) {
 }
 
 // Extensions 面板: 目前没有插件运行时, 给出明确占位 + 配置入口说明
-function renderExtensions(host) {
-  host = host || sideBody;
-  host.innerHTML =
-    '<div class="sb-section">扩展</div>' +
-    '<div class="empty-hint">尚无已安装扩展<br><br>' +
-    '扩展面板为占位实现。editcore 已有 wasm 插件加载骨架<br>' +
-    '(crates/editcore/src/plugin.rs), 接入后此处列出已装扩展.</div>';
-}
+// 扩展面板见 "插件主机" 一节 (renderExtensions / drawExtensions)
 
 // ===== Side bar =====
 let currentSidePane = "explorer";
@@ -10478,6 +10479,208 @@ SAKURA_CMDS["line-cut-to-end"] = () => runEdit("line-cut-to-end");
   renderVim = function () { const r = _rv.apply(this, arguments); if (SPLIT.mode !== "none") scheduleMirrors(); return r; };
   paintActive = function () { const r = _pa.apply(this, arguments); if (SPLIT.mode !== "none") scheduleMirrors(); return r; };
 }
+
+/* ===== 插件主机 (docs/01_基本设计/PLUGIN-SYSTEM.md; FR-035..FR-040, NFR-007/028) =====
+   - 懒加载: 只有贡献点被真正用到才创建沙箱 iframe 并执行入口脚本; 没用到的插件零成本。
+   - 沙箱: sandbox="allow-scripts" (不给 allow-same-origin) + CSP 禁网络, 只能经 postMessage 与宿主说话; 超时 / 过大 / 抛错只影响这个插件 (FR-039)。
+   - 插件与内建功能冲突: 决定逻辑在 Rust (plugin_host::resolve_conflict); 没激活智能功能时默认插件覆盖原生, 用户偏好最高。
+   - 网络类操作 (检查 / 安装 / 更新) 只在用户点按钮时发起, 没有后台轮询。 */
+const PLUG = { list: null, frames: new Map(), callId: 0, pending: new Map(), CALL_TIMEOUT: 15000, MAX_RESULT: 2 * 1024 * 1024 };
+const PLUG_PREFER_KEY = "ide10.plugPrefer";
+function plugPrefs() { try { return JSON.parse(localStorage.getItem(PLUG_PREFER_KEY) || "{}") || {}; } catch (_) { return {}; } }
+function plugSetPref(slot, v) { const p = plugPrefs(); if (v) p[slot] = v; else delete p[slot]; try { localStorage.setItem(PLUG_PREFER_KEY, JSON.stringify(p)); } catch (_) {} }
+const plugApi = (req) => invoke("plugins", req);
+
+// ----- AI 设置 (用户在首选项填的 Key; 只在用户触发时随请求发往用户自己配置的端点, 不写日志、不给插件) -----
+const AI_KEY = "ide10.ai";
+function aiConfig() { try { return Object.assign({ baseUrl: "https://api.openai.com/v1", model: "", key: "" }, JSON.parse(localStorage.getItem(AI_KEY) || "{}")); } catch (_) { return { baseUrl: "", model: "", key: "" }; } }
+function aiSaveConfig(c) { try { localStorage.setItem(AI_KEY, JSON.stringify(c)); } catch (_) {} }
+function aiConfigured() { const c = aiConfig(); return !!(c.key && c.model && c.baseUrl); }
+async function aiAsk(prompt) {
+  const c = aiConfig();
+  if (!aiConfigured()) throw new Error("还没有配置 AI: 请先填写接口地址 / 模型 / Key");
+  const r = await fetch(c.baseUrl.replace(/\/+$/, "") + "/chat/completions", {
+    method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + c.key },
+    body: JSON.stringify({ model: c.model, messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!r.ok) throw new Error("AI 请求失败 " + r.status);
+  const j = await r.json();
+  return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
+}
+// 智能功能是否激活: 配置了 AI 且用户已打开过智能界面 (Chat) —— 之前插件直接覆盖原生, 不弹窗不联网
+function smartActive() { return aiConfigured() && !!window.__smartOpened; }
+
+// ----- 沙箱 -----
+function plugFrameDoc(scripts) {
+  const esc = (t) => t.replace(/<\/script/gi, "<\\/script");
+  return '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\'; style-src \'unsafe-inline\'; img-src data:">' +
+    "<script>const __h={};window.ide={register(o){Object.assign(__h,o)}};addEventListener('message',async(e)=>{const m=e.data;if(!m||m.t!=='call')return;" +
+    "try{const f=__h[m.method];if(!f)throw new Error('插件没有方法 '+m.method);const r=await f(...m.args);parent.postMessage({t:'res',id:m.id,r:r},'*')}" +
+    "catch(err){parent.postMessage({t:'res',id:m.id,e:String((err&&err.message)||err)},'*')}});<\/script>" +
+    scripts.map((s) => "<script>" + esc(s) + "<\/script>").join("") + "<script>parent.postMessage({t:'ready'},'*')<\/script>";
+}
+window.addEventListener("message", (e) => {
+  const m = e.data; if (!m || typeof m !== "object") return;
+  for (const rec of PLUG.frames.values()) {
+    if (rec.iframe && rec.iframe.contentWindow === e.source) {
+      if (m.t === "ready") { rec.ready(); return; }
+      if (m.t === "res") { const p = PLUG.pending.get(m.id); if (p) { PLUG.pending.delete(m.id); clearTimeout(p.timer); m.e ? p.reject(new Error(m.e)) : p.resolve(m.r); } return; }
+    }
+  }
+});
+function plugUnload(id) {
+  const rec = PLUG.frames.get(id); if (!rec) return;
+  PLUG.frames.delete(id);
+  if (rec.iframe) rec.iframe.remove();
+  for (const [cid, p] of PLUG.pending) if (p.id === id) { PLUG.pending.delete(cid); clearTimeout(p.timer); p.reject(new Error("插件已卸载")); }
+}
+function plugLoad(plugin) {
+  const id = plugin.manifest.id;
+  const have = PLUG.frames.get(id); if (have) return have.promise;
+  const rec = {};
+  rec.promise = (async () => {
+    const files = [...(plugin.manifest.scripts || []), plugin.manifest.entry];
+    const texts = [];
+    for (const f of files) texts.push((await plugApi({ op: "asset", id, file: f })).text);
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("sandbox", "allow-scripts");
+    iframe.style.cssText = "position:fixed;left:-10000px;top:0;width:900px;height:700px;border:0;visibility:hidden";   // 有版面 (图表库要量尺寸) 但看不见
+    rec.iframe = iframe;
+    const ready = new Promise((res, rej) => { rec.ready = res; setTimeout(() => rej(new Error("插件启动超时")), PLUG.CALL_TIMEOUT); });
+    iframe.srcdoc = plugFrameDoc(texts);
+    document.body.appendChild(iframe);
+    await ready;
+    return rec;
+  })().catch((e) => { plugUnload(id); throw e; });
+  PLUG.frames.set(id, rec);
+  return rec.promise;
+}
+async function plugCall(plugin, method, args) {
+  const rec = await plugLoad(plugin), id = plugin.manifest.id;
+  return new Promise((resolve, reject) => {
+    const cid = ++PLUG.callId;
+    const timer = setTimeout(() => { PLUG.pending.delete(cid); plugUnload(id); reject(new Error("插件调用超时, 已卸载")); }, PLUG.CALL_TIMEOUT);
+    PLUG.pending.set(cid, { id, resolve: (r) => { if (JSON.stringify(r || "").length > PLUG.MAX_RESULT) reject(new Error("插件返回内容过大")); else resolve(r); }, reject, timer });
+    rec.iframe.contentWindow.postMessage({ t: "call", id: cid, method, args: args || [] }, "*");
+  });
+}
+
+// ----- 贡献点: markdown.fence (和内建的"普通代码块"同一能力位, 冲突由 Rust 仲裁) -----
+async function plugRefresh() {
+  const r = await plugApi({ op: "list" });
+  PLUG.list = r.plugins; PLUG.appVersion = r.app_version;
+  for (const id of [...PLUG.frames.keys()]) { const p = PLUG.list.find((x) => x.manifest.id === id); if (!p || !p.enabled) plugUnload(id); }   // 禁用 / 卸载: 立即热卸载
+  plugBindFences();
+}
+function plugFenceProviders() {
+  const out = {};
+  for (const p of PLUG.list || []) {
+    if (!p.enabled) continue;
+    for (const c of (p.manifest.contributes || {})["markdown.fence"] || []) out[c.lang] = { plugin: p, method: c.method };
+  }
+  return out;
+}
+function plugBindFences() {
+  for (const k of Object.keys(window.MD_FENCE_HANDLERS)) if (window.MD_FENCE_HANDLERS[k] && window.MD_FENCE_HANDLERS[k].__plug) delete window.MD_FENCE_HANDLERS[k];
+  for (const [lang, prov] of Object.entries(plugFenceProviders())) {
+    const h = async (text) => {
+      const slot = "markdown.fence:" + lang;
+      const choice = await plugResolve(slot, true, true);
+      if (choice !== "plugin") return null;                       // 选原生: 保持普通代码块
+      try { return await plugCall(prov.plugin, prov.method, [text]); }
+      catch (e) { setTip("插件 " + prov.plugin.manifest.name + " 失败, 已回退为普通代码块: " + e.message); return null; }   // 回退, 不改偏好
+    };
+    h.__plug = true;
+    window.MD_FENCE_HANDLERS[lang] = h;
+  }
+}
+async function plugResolve(slot, hasNative, hasPlugin) {
+  const prefer = plugPrefs()[slot] || null;
+  const r = await plugApi({ op: "resolve", has_native: hasNative, has_plugin: hasPlugin, prefer, smart_active: smartActive() });
+  if (r.choice === "ask_user") {
+    const useP = confirm("「" + slot + "」同时有插件和内建实现。\n\n确定 = 使用插件\n取消 = 使用内建\n\n(之后可在 扩展 面板里改)");
+    plugSetPref(slot, useP ? "plugin" : "native");
+    return useP ? "plugin" : "native";
+  }
+  return r.choice;
+}
+
+// ----- 扩展面板 -----
+function renderExtensions(host) {
+  host = host || sideBody;
+  host.innerHTML = '<div class="sb-section">扩展</div><div id="ext-body" class="ext-body">读取中…</div>';
+  plugRefresh().then(() => drawExtensions()).catch((e) => { const b = document.getElementById("ext-body"); if (b) b.textContent = "读取扩展失败: " + e.message; });
+}
+function drawExtensions() {
+  const body = document.getElementById("ext-body"); if (!body) return;
+  const prefs = plugPrefs();
+  const rows = (PLUG.list || []).map((p) => {
+    const m = p.manifest;
+    const slots = Object.entries(m.contributes || {}).flatMap(([k, arr]) => k === "markdown.fence" ? arr.map((c) => k + ":" + c.lang) : []);
+    const sel = slots.map((s) => '<label class="ext-slot">' + escapeHtml(s) + ' <select data-ext-pref="' + escapeHtml(s) + '"><option value="">默认</option>' +
+      ["plugin", "native", "ask"].map((v) => '<option value="' + v + '"' + (prefs[s] === v ? " selected" : "") + ">" + ({ plugin: "插件优先", native: "内建优先", ask: "询问" })[v] + "</option>").join("") + "</select></label>").join("");
+    return '<div class="ext-row"><div class="ext-head"><b>' + escapeHtml(m.name) + '</b> <span class="ext-ver">v' + escapeHtml(m.version) + " · " + (p.source === "bundled" ? "默认" : "已安装") + "</span>" +
+      '<label class="ext-on"><input type="checkbox" data-ext-toggle="' + escapeHtml(m.id) + '"' + (p.enabled ? " checked" : "") + "> 启用</label></div>" +
+      '<div class="ext-desc">' + escapeHtml(m.description || "") + '</div><div class="ext-meta">权限: ' + (m.permissions.length ? escapeHtml(m.permissions.join(", ")) : "无") + " · " + escapeHtml(m.license || "") + "</div>" + sel +
+      (p.source === "installed" ? '<button class="tb-btn" data-ext-remove="' + escapeHtml(m.id) + '">卸载</button>' : "") + "</div>";
+  }).join("") || '<div class="empty-hint">尚无扩展</div>';
+  const ai = aiConfig();
+  body.innerHTML = rows +
+    '<div class="ext-actions"><button class="tb-btn" id="ext-check">检查更新</button></div><div id="ext-upd"></div>' +
+    '<div class="sb-section">从 GitHub 安装</div><div class="ext-install"><input id="ext-repo" placeholder="owner/repo 或仓库地址" spellcheck="false"><button class="tb-btn" id="ext-inspect">检查最新 Release</button></div><div id="ext-report"></div>' +
+    '<details class="ext-ai"><summary>AI 设置 (用于"让 AI 给出改善方案")</summary><input id="ai-base" placeholder="接口地址" value="' + escapeHtml(ai.baseUrl) + '"><input id="ai-model" placeholder="模型" value="' + escapeHtml(ai.model) + '"><input id="ai-key" type="password" placeholder="API Key (只保存在本机)" value="' + escapeHtml(ai.key) + '"><button class="tb-btn" id="ai-save">保存</button></details>';
+}
+async function extInspect(repo) {
+  const out = document.getElementById("ext-report"); out.textContent = "正在读取最新 Release…";
+  let ins;
+  try { ins = await plugApi({ op: "inspect", repo }); } catch (e) { out.innerHTML = '<div class="ext-err">' + escapeHtml(e.message) + "</div>"; return; }
+  const rep = ins.report, m = rep.manifest;
+  let h = "<div><b>" + escapeHtml(ins.release.repo) + "</b> " + escapeHtml(ins.release.tag) + " · 资产: " + escapeHtml(ins.release.assets.map((a) => a.name).join(", ")) + "</div>";
+  if (rep.ok) {
+    h += "<div>插件 <b>" + escapeHtml(m.name) + "</b> v" + escapeHtml(m.version) + " · " + escapeHtml(m.license || "") + "<br>要求权限: " + (m.permissions.length ? escapeHtml(m.permissions.join(", ")) : "无") + "</div>" +
+      '<button class="tb-btn" id="ext-do-install" data-repo="' + escapeHtml(ins.release.repo) + '" data-perms="' + escapeHtml(JSON.stringify(m.permissions)) + '">' + (ins.installed_version ? (ins.update_available ? "更新到 " + escapeHtml(m.version) : "重新安装") : "同意权限并安装") + "</button>";
+  } else {
+    h += '<div class="ext-err">与当前编辑器不匹配, 未安装:<ul>' + rep.problems.map((p) => "<li><b>" + escapeHtml(p.code) + "</b> " + escapeHtml(p.message) + "<br><i>" + escapeHtml(p.hint) + "</i></li>").join("") + "</ul></div>" +
+      '<button class="tb-btn" id="ext-ai-plan" data-repo="' + escapeHtml(ins.release.repo) + '">让 AI 给出改善方案</button><pre id="ext-ai-out" class="ext-ai-out"></pre>';
+  }
+  out.innerHTML = h;
+}
+document.addEventListener("click", async (e) => {
+  const t = e.target; if (!t.closest || !t.closest("#ext-body")) return;
+  try {
+    if (t.id === "ext-inspect") { const v = document.getElementById("ext-repo").value.trim(); if (v) await extInspect(v); return; }
+    if (t.id === "ext-do-install") {
+      t.disabled = true; t.textContent = "安装中…";
+      await plugApi({ op: "install", repo: t.dataset.repo, approved: JSON.parse(t.dataset.perms) });
+      await plugRefresh(); drawExtensions(); setTip("插件已安装, 立即生效"); return;
+    }
+    if (t.id === "ext-ai-plan") {
+      const out = document.getElementById("ext-ai-out");
+      if (!aiConfigured()) { out.textContent = "还没有配置 AI: 展开下方「AI 设置」填写接口地址 / 模型 / Key 后再试。"; return; }
+      out.textContent = "正在请求你配置的大模型…";
+      const { prompt } = await plugApi({ op: "mismatch_prompt", repo: t.dataset.repo });
+      out.textContent = await aiAsk(prompt);   // 原样显示, 不自动执行任何建议
+      return;
+    }
+    if (t.id === "ext-check") {
+      const upd = document.getElementById("ext-upd"); upd.textContent = "检查中…";
+      const { updates } = await plugApi({ op: "check_updates" });
+      upd.innerHTML = updates.map((u) => "<div>" + escapeHtml(u.id) + ": " + (u.error ? '<span class="ext-err">' + escapeHtml(u.error) + "</span>" : (u.update_available ? "有新版本 " + escapeHtml(u.latest) : (u.ok ? "已是最新" : "最新 Release 与本编辑器不匹配 (" + u.problems.map((p) => escapeHtml(p.code)).join(", ") + ")"))) + "</div>").join("") || "没有可检查的插件";
+      return;
+    }
+    if (t.id === "ai-save") { aiSaveConfig({ baseUrl: document.getElementById("ai-base").value.trim(), model: document.getElementById("ai-model").value.trim(), key: document.getElementById("ai-key").value }); setTip("AI 设置已保存"); return; }
+    if (t.dataset.extRemove) { await plugApi({ op: "remove", id: t.dataset.extRemove }); await plugRefresh(); drawExtensions(); return; }
+  } catch (err) { setTip("扩展操作失败: " + err.message); const o = document.getElementById("ext-report"); if (o) o.insertAdjacentHTML("beforeend", '<div class="ext-err">' + escapeHtml(err.message) + "</div>"); }
+});
+document.addEventListener("change", async (e) => {
+  const t = e.target; if (!t.closest || !t.closest("#ext-body")) return;
+  try {
+    if (t.dataset.extToggle) { await plugApi({ op: "toggle", id: t.dataset.extToggle, enabled: t.checked }); await plugRefresh(); drawExtensions(); }
+    else if (t.dataset.extPref !== undefined) plugSetPref(t.dataset.extPref, t.value);
+  } catch (err) { setTip("扩展操作失败: " + err.message); }
+});
+// 启动时只读一次插件清单 (本地, 很小) 以绑定贡献点; 不加载任何插件代码
+setTimeout(() => { plugRefresh().catch(() => {}); }, 0);
 
 /* ===== Markdown 工具条 + 预览 (docs/00_要件基线/REQ: FR-005..FR-025, INV-03/04) =====
    - 只有活动文档是 Markdown 时才建立工具条 DOM (非 Markdown 文件零成本, INV-03); 预览只在点开时才请求渲染 (NFR-007/013)。

@@ -8,6 +8,7 @@
   "description": "把 ```mermaid 代码块渲染成 SVG (obsidianmd/pele)",
   "repo": "obsidianmd/pele",
   "entry": "main.js",
+  "scripts": ["pele.global.js"],
   "permissions": [],
   "contributes": {
     "markdown.fence": [{ "lang": "mermaid", "method": "render" }]
