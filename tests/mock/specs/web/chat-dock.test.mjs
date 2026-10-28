@@ -13,12 +13,12 @@ test('不打开 Chat 时没有任何 DOM / 工具表请求; 打开后编辑区�
     assert.equal(await page.evaluate(() => !!document.getElementById('chat-dock')), false, '未打开: 没有 DOM');
     assert.equal(calls.length, 0, '未打开: 没有 agent 请求');
     const w0 = await page.evaluate(() => document.getElementById('editor-area').getBoundingClientRect().width);
-    await page.click('#chat-toggle');
+    await page.click('#right-strip-btn');
     await page.waitForSelector('#chat-dock', { state: 'visible' });
     const r = await page.evaluate(() => ({ e: document.getElementById('editor-area').getBoundingClientRect(), c: document.getElementById('chat-dock').getBoundingClientRect() }));
     assert.ok(r.e.width < w0 - 200, '编辑区变窄让位');
     assert.ok(r.e.right <= r.c.left + 1, '不重叠');
-    await page.click('#chat-close');
+    await page.click('#right-strip-btn');   // 同一个把手再点 = 折叠 (和左侧同一设计)
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('chat-dock')).display), 'none', '可折叠');
   }));
 
@@ -44,7 +44,7 @@ test('模型调工具 -> 补丁提案 -> 用户应用 (撤销可还原); 外发�
       t.sel = { r0: 1, c0: 0, r1: 1, c1: 4 }; renderVim(t);
     });
     await page.evaluate(() => window.__mock.answers.confirm.push(true));   // 外发确认框: 允许
-    await page.click('#chat-toggle');
+    await page.click('#right-strip-btn');
     await page.fill('#chat-input', '把这行改一下');
     await page.press('#chat-input', 'Enter');
     await page.waitForSelector('.chat-proposal', { timeout: 10000 });

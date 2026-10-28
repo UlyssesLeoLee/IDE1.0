@@ -22,6 +22,15 @@
 //  11. 首帧无闪 / localStorage 不可用 (隐私模式) 也能启动
 //  12. 完整布局 (只注入 layout=full, 不带 vim 键) 的编辑方式跟随缺省值
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+
+// 页面里的确认 / 输入对话框是主题化的 modal (uiConfirm / uiPrompt); 这份 spec 的断言基于浏览器原生 dialog 事件,
+// 所以让页面把它们接给原生 window.confirm / prompt (主题化对话框本身由 tests/mock 的 themed-dialogs 用例覆盖)
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__uiDialogHook = { confirm: (m: string) => window.confirm(m), prompt: (m: string, d?: string) => window.prompt(m, d) };
+  });
+});
+
 import * as fs from "fs";
 import * as path from "path";
 import { resetShell } from "./helpers";
@@ -109,7 +118,7 @@ async function expectTiled(page: Page, label = "") {
       iw: innerWidth, ih: innerHeight, sl: document.body.scrollLeft, sw: document.documentElement.scrollWidth,
       rows: ["#menubar", "#editor-area", "#bottom-panel", "#status"].map(rect),
       // 让位式布局下 min 与 full 的并排结构相同; 折叠的列是 display:none -> rect 返回 null
-      cols: ["#left-strip", "#activity-bar", "#side-bar", "#editor-area"].map(rect),
+      cols: ["#left-strip", "#activity-bar", "#side-bar", "#editor-area", "#right-strip", "#chat-dock"].map(rect),
     };
   });
   const rows = r.rows.filter(Boolean) as { l: number; t: number; r: number; b: number }[];

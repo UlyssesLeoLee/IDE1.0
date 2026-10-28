@@ -29,6 +29,8 @@ export async function installMocks(page, opts = {}) {
     window.prompt = mk('prompt', () => null);
     window.confirm = mk('confirm', () => false);
     window.alert = mk('alert', () => undefined);
+    // 页面里的主题化对话框 (uiConfirm / uiPrompt) 在测试里改走这里: 保持原来 confirm/prompt 的脚本化回答与记录
+    window.__uiDialogHook = { confirm: (...a) => window.confirm(...a), prompt: (...a) => window.prompt(...a) };   // 取调用时的 window.confirm / prompt: 测试里可以临时改写
     const rec = (n, r) => (...a) => { M.win.push({ call: n, args: a.map(String) }); return r; };
     window.open = rec('open', { closed: false, focus() {}, close() {} });
     window.print = rec('print');

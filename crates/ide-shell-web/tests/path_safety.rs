@@ -259,8 +259,12 @@ fn test_read_file_non_utf8() {
     // 写 invalid UTF-8 字节
     fs::write(&file, [0xFF, 0xFE, 0xFD, 0x00, 0x01]).unwrap();
     let r = read_file(&dir, "binary.bin");
-    // 不是 valid UTF-8 → read_to_string 错
-    assert!(r.is_err());
+    // 读文件现在会自动判别编码 (BOM / UTF-8 / SJIS / EUC-JP …): 不再因为"不是 UTF-8"整体报错,
+    // 但无法无损解码的字节必须被标出来 (lossy), 不能悄悄当成正常文本
+    match r {
+        Err(_) => {}
+        Ok(fc) => assert!(fc.lossy || fc.encoding != "UTF-8", "非 UTF-8 字节被当作无损的 UTF-8 文本: {:?}", fc.encoding),
+    }
 }
 
 #[test]

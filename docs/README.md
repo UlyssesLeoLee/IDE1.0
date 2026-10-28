@@ -1,134 +1,58 @@
-# IDE1.0 IDE Shell — IPA 準拠ドキュメント体系
+# 轻量IDE Markdown增强 — 工程设计与测试交付包（QA修订版 v2.1）
 
-> **準拠:** IPA 共通フレーム2013 (Software Engineering Center, 2013/03/04)
-> **適用範囲:** IDE1.0 IDE Shell 全プロジェクト (V 字モデル)
-> **現状:** 2026-10-09 (Stage 6 完成 — editcore bench + CI benchmark)
+**对象**：Sakura Editor 风格轻量IDE；**不是**已对真实 Sakura Editor 完成集成验证的成品。  
+**基线**：REQ-LIDE-MD-001 v2.0（49 FR / 28 NFR），**编制日期**：2026-10-22。  
+**状态**：全部为设计与测试定义资料，**未运行代码测试，也不宣称功能实现**。
+**QA v2.1复审结论**：可用于Stage0 POC与评审输入，但**不可直接冻结为可执行全量测试规格**；部分UT/IT仍需代码级细化。
 
----
+## 快速入口
 
-## V 字モデル図 (CF2013 §3 適用)
+1. [要件基线与变更控制](00_要件基线/REQ_要件基线与变更控制.md)
+2. [BD-001 基本设计书](01_基本设计/BD-001_基本设计书.md)
+3. [DD-001 详细设计书](02_详细设计/DD-001_详细设计书.md)
+4. [UTD-001 单体测试设计书](03_测试资料/UT/UTD-001_单体测试设计书.md)
+5. [ITD-001 结合测试设计书](03_测试资料/IT/ITD-001_结合测试设计书.md)
+6. [STD-001 系统测试计划与设计](03_测试资料/ST/STD-001_系统测试计划与设计.md)
+7. [追踪矩阵与测试用例 Excel](03_测试资料/共通/追踪矩阵与测试用例.xlsx)
+8. [深度自审 v2.1](04_评审与管理/QA-002_深度自审与修订记录.md) · [G0 宿主可行性检查](04_评审与管理/G0_宿主可行性验证清单.md)
+9. [审查清单](04_评审与管理/Review_Checklist.md) · [未决事项](04_评审与管理/Open_Items.md) · [发布门禁](04_评审与管理/Release_Gates.md)
 
-```
-                    要件定義      詳細設計      実装      検証
-                        ↓              ↓           ↓           ↓
-                       DOC-02          DOC-06      DOC-07    DOC-09
-要件 ───→ システム方式 ──→ ソフトウェア方式 ─→ コード ──→ システム
-  ↑              ↑              ↑            ↑           ↑
-[DOC-12]    [DOC-04]        [DOC-05]                  DOC-08 結合
-プロジェクト   SRS-soft        SDD                          SIT
-計画                                                           ↑
-                                                          DOC-11
-                                                          UAT
-```
+## 测试规模
 
-## ディレクトリ構成 (IPA 共通フレーム2013 の工程順)
+- UT：**98**条，逐49个FR规划正常/异常边界两例；仅关键高风险场景补充了精确输入/断言，其余仍需实施前细化。
+- IT：**49**条，逐49个FR提供一个模块/接口集成验证。
+- ST：**45**条，17条真实用户流程 + 28条NFR测试。
+- 全部初始状态：**未执行**。待有实现代码、真实宿主、测试环境后填写证据与判定。
 
-| フォルダ | 工程 (CF2013) | 主な内容 |
-|---|---|---|
-| `00_要件基线/` | 企画・要件定義 | DOC-01 企画書 / DOC-02 システム要件 / DOC-04 ソフトウェア要件 / **REQ Markdown 要件基線 (FR-001〜 / NFR-)** |
-| `01_基本设计/` | システム方式・ソフトウェア方式設計 | DOC-03 HLD / DOC-05 SDD / BD-001 / ARCH-01 / PLUGIN-SYSTEM / `diagrams/` `architecture/` |
-| `02_详细设计/` | ソフトウェア詳細設計 | DOC-06 / DD-001 / CODING-STANDARDS / `contracts/` / `legacy/` (旧 DD-01·02·04, INC-07) |
-| `03_测试资料/` | 結合・システム・適格性確認テスト | `UT/` `IT/` `ST/` `UAT/` `fixtures/` `共通/` |
-| `04_评审与管理/` | 支援・管理プロセス | DOC-12〜18 (計画・進捗・リスク・構成・ADR・管理表・測定) / 自己レビュー / Open_Items / FEEDBACK |
-| `05_实装与运维/` | 実装・運用・保守・廃棄 | DOC-07 / DOC-19 / DOC-20 / DOC-21 / RELEASE |
-| `06_功能对标/` | Sakura 対標 | SPA-01〜03 / WBS-01〜02 |
-| `common/` | 共通 | テンプレート・採番規則・用語集 |
+## Mermaid 设计图
 
-新しい文書は上表の工程に合うフォルダへ置き、`04_评审与管理/DOC-17_doc_index.md` に登録する。
+全部在 `01_基本设计/diagrams/`，有9张源 `.mmd`，基本设计书已引用：
 
-## 📚 ドキュメント一覧 (21 文档 + 3 共通)
+- `architecture.mmd` — 系统总体架构
+- `module_dependencies.mmd` — 模块依赖
+- `deployment.mmd` — 进程与惰性部署
+- `edit_sequence.mmd` — 编辑事务时序
+- `plugin_sequence.mmd` — 插件运行时序
+- `preview_sequence.mmd` — 预览渲染时序
+- `session_state.mmd` — 编辑模式状态图
+- `entity_model.mmd` — 逻辑数据ER图
+- `workflow_trace.mmd` — 要件设计/测试追踪流程
 
-### 共通ドキュメント (Task 1 完成)
+## 格式与编辑约定
 
-| ファイル | 説明 |
-|---|---|
-| [doc-template.md](common/doc-template.md) | IPA 4層構造テンプレート |
-| [numbering-system.md](common/numbering-system.md) | CF2013 準拠 编号規則 |
-| [glossary.md](common/glossary.md) | 日英中 用語集 |
+- Markdown 文档：UTF-8，可在 Sakura 风格编辑器、VS Code、GitHub 等阅读。
+- Mermaid：以 `.mmd` 可编辑源图存储，未生成静态图片作为权威版。
+- Excel：FR/NFR追踪、UT/IT/ST明细、接口表、未决事项；筛选、填写实际结果、缺陷证据。
+- 测试数据：`03_测试资料/fixtures/`；1/10/50MiB大文件通过脚本在测试工作区临时生成。
 
-### V字模型 左辺 (要件・設計) — Task 2
+## 使用顺序
 
-| ID | 名称 | CF2013 主プロセス |
-|---|---|---|
-| [DOC-01](00_要件基线/DOC-01_project_charter.md) | 企画書 (Project Charter) | 企画プロセス |
-| [DOC-02](00_要件基线/DOC-02_system_requirements.md) | システム要件定義書 (SRS) | 要件定義プロセス |
-| [DOC-03](01_基本设计/DOC-03_system_hld.md) | システム方式設計書 (HLD) | システム方式設計 |
-| [DOC-04](00_要件基线/DOC-04_software_requirements.md) | ソフトウェア要件仕様書 | ソフトウェア要件分析 |
-| [DOC-05](01_基本设计/DOC-05_software_design.md) | ソフトウェア方式設計書 (SDD) | ソフトウェア方式設計 |
-| [DOC-06](02_详细设计/DOC-06_software_detail_design.md) | ソフトウェア詳細設計書 (DDD) | ソフトウェア詳細設計 |
+**Stage0** 验证真实宿主API、Undo/IME/编码、OS隔离与性能基线 → **G1/G2** 评审冻结BD/DD → **UT → IT → ST** 执行并附真实证据 → **G6** 发布。
 
-### V字模型 底部 (実装・結合) — Task 3
+## 重要风险和约束
 
-| ID | 名称 | CF2013 主プロセス |
-|---|---|---|
-| [DOC-07](05_实装与运维/DOC-07_implementation_report.md) | 実装報告書 | 実装プロセス |
-| [DOC-08](03_测试资料/IT/DOC-08_integration_test_spec.md) | 結合テスト仕様書 (SIT) | システム結合 |
-
-### V字模型 顶部・右辺 (テスト・検証) — Task 4
-
-| ID | 名称 | CF2013 主プロセス |
-|---|---|---|
-| [DOC-09](03_测试资料/ST/DOC-09_system_test_report.md) | システムテスト報告書 | システム適格性確認テスト |
-| [DOC-10](03_测试资料/UT/DOC-10_unit_test_spec.md) | 単体テスト仕様書 (SUT) | ソフトウェア結合 |
-| [DOC-11](03_测试资料/UAT/DOC-11_uat_report.md) | 統合テスト報告書 (UAT) | ソフトウェア適格性確認テスト |
-
-### プロセス系 (計画・管理) — Task 5
-
-| ID | 名称 | CF2013 主プロセス |
-|---|---|---|
-| [DOC-12](04_评审与管理/DOC-12_project_plan.md) | プロジェクト計画書 | プロジェクト計画 |
-| [DOC-13](04_评审与管理/DOC-13_progress_report.md) | 進捗管理報告書 | プロジェクトアセスメント及び制御 |
-| [DOC-14](04_评审与管理/DOC-14_risk_register.md) | リスク管理表 | リスク管理 |
-| [DOC-15](04_评审与管理/DOC-15_config_mgmt_plan.md) | 構成管理計画書 | 構成管理 |
-| [DOC-16](04_评审与管理/DOC-16_decision_log.md) | 意思決定記録 (ADR) | 意思決定管理 |
-| [DOC-17](04_评审与管理/DOC-17_doc_index.md) | ドキュメント管理表 | 情報管理 |
-| [DOC-18](04_评审与管理/DOC-18_metrics_report.md) | 測定・分析報告 | 測定 |
-
-### ライフサイクル後段 (保守・運用・廃棄) — Task 6
-
-| ID | 名称 | CF2013 主プロセス |
-|---|---|---|
-| [DOC-19](05_实装与运维/DOC-19_maintenance_plan.md) | 保守計画書 | 保守プロセス |
-| [DOC-20](05_实装与运维/DOC-20_operations_manual.md) | 運用手順書 | 運用プロセス |
-| [DOC-21](05_实装与运维/DOC-21_disposal_plan.md) | 廃棄計画書 | 廃棄プロセス |
-
-### 仕様・リファクタリング系 (非 IPA 番号)
-
-| ID | 名称 | 備考 |
-|---|---|---|
-| [SPA-01](06_功能对标/SPA-01_parity.md) | 機能対比仕様 (Grep / 列ブロック) | 受入契約 |
-| [SPA-02](06_功能对标/SPA-02_coverage.md) | 機能カバレッジ清点 | ギャップ分析 |
-| [WBS-01](06_功能对标/WBS-01_feature-parity.md) | **機能カバレッジ残作業 WBS** | 上流対標 49 項目 / 37-48 人日 |
-| [ARCH-01](01_基本设计/ARCH-01_pure-rust-migration.md) | **純 Rust 化 移行方針 (ADR)** | 実装先を Rust に固定 (2026-10-18 決定) |
-| [REFACTOR-01](01_基本设计/REFACTOR-01_branding-neutralization.md) | **ブランド名中立化計画** | 商標リスク対応 ([DOC-14](04_评审与管理/DOC-14_risk_register.md) R-11) |
-
-## 📊 現状 (2026-10-09)
-
-| 指标 | 値 |
-|---|---|
-| Crates | 9 (ide-cli, ide-kernel-core, ide-shell, ide-shell-web, ide-shell-desktop, ide-shell-protocol, editcore, aci-emitter, ide-cli) |
-| Cargo tests | **253/253** pass (under `RUSTFLAGS=-D warnings`) |
-| CI jobs | **8/9** PASS (UAT 在 Linux 失败 — programmatic click 限制) |
-| Coverage | **66.25%** (4 个 file ≥ 90%) |
-| Latest commit | `c61682e feat(ulys-191-34): 重写 editor.html` |
-| origin/main HEAD | `c61682e` |
-
-## 🎯 CF2013 適用プロセス体系
-
-- **合意プロセス** (取得/供给): DOC-01, DOC-02
-- **テクニカルプロセス** (技术): DOC-03 ~ DOC-11, DOC-19 ~ DOC-21
-- **プロジェクトプロセス** (项目): DOC-12, DOC-13
-- **組織のイネーブリングプロセス** (组织赋能): DOC-14 ~ DOC-18
-
-## 🔗 関連リンク
-
-- [README.md](../README.md) — 项目主 README
-- [PARITY.md](../crates/editcore/PARITY.md) — 機能対比
-- [CI workflow](../.github/workflows/ci.yml) — CI 9 jobs 详细
-- [IPA 共通フレーム2013](https://www.ipa.go.jp/archive/files/000027415.pdf) — 标准原文
-
----
-
-**作成:** Hermes Agent (Stage 6 完了時点)
-**準拠:** IPA 共通フレーム2013 §3 / §5 / §6 / §7
-**最終更新:** 2026-10-09
+- P0坚持原生编辑器优先：浏览器/渲染器/AI/图形均为可选惰性资源。
+- 插件权限隔离不能只写一个逻辑权限函数；需真正受限的运行边界。
+- 本包严格采用 **49 FR/28 NFR** ID范围，变更需正式CR。
+- 性能NFR是初始目标，**未经实际测量不能宣称达标**。
+- 仿照日本IPA工程要件编制方式，非IPA官方认证或特定公司签审完成件。

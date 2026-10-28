@@ -6,6 +6,15 @@
 // 目标: 菜单上显示的每一项都能执行 (无 JS 异常, 无 "未实装"/"未知命令" 提示),
 // 关键流程 (打开项目/编辑/保存/查找替换/终端) 端到端可用.
 import { test, expect, type Page } from "@playwright/test";
+
+// 页面里的确认 / 输入对话框是主题化的 modal (uiConfirm / uiPrompt); 这份 spec 的断言基于浏览器原生 dialog 事件,
+// 所以让页面把它们接给原生 window.confirm / prompt (主题化对话框本身由 tests/mock 的 themed-dialogs 用例覆盖)
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__uiDialogHook = { confirm: (m: string) => window.confirm(m), prompt: (m: string, d?: string) => window.prompt(m, d) };
+  });
+});
+
 import * as path from "path";
 import { pathToFileURL } from "url";
 

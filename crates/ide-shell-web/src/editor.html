@@ -207,7 +207,7 @@
          不再和状态栏叠在同一个 grid 单元里 (之前两者都在第 4 行, 导致 #bottom-body
          溢出视口、#status 盖住面板按钮). */
       grid-template-rows: var(--h-menubar) minmax(0, 1fr) auto var(--h-status);
-      grid-template-columns: var(--w-rail) var(--w-side) minmax(0, 1fr);
+      grid-template-columns: var(--w-rail) var(--w-side) minmax(0, 1fr) var(--w-rstrip, 16px) var(--w-chat-cur, 0px);   /* 后两列: Chat 右细条 (常驻) + Chat 右栏 (展开才有宽度) */
       height: 100vh; overflow: clip; }
     #activity-bar { grid-row: 2; grid-column: 1; background: var(--bg-rail); display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
     #side-bar { grid-row: 2; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
@@ -328,9 +328,12 @@
     /* white-space / tab-size 与 #ed-content 一致: 否则 .hl-row (white-space: inherit) 继承 normal, 缩进被吞、长行折成 36/127px 的不规则行 */
     .split-view { overflow: auto; background: var(--bg-edit); padding: 2px 6px;
       font-size: var(--fs-md); line-height: 1.4; white-space: pre; tab-size: var(--tab-size, 4); }
-    .split-copy-bar { position: sticky; bottom: 0; margin-top: 4px; padding: 3px 6px; text-align: center; cursor: pointer;
-      color: var(--fg-muted); font-size: var(--fs-xs); background: var(--bg-raised); border-top: 1px solid var(--border); }
-    .split-copy-bar:hover { color: var(--fg); background: var(--bg-hover); }
+    /* 分割线 (两个视图之间的边): 粗一点、鼠标移上去变成"复制"光标, 点一下 = 在这个视图里创建独立副本 (单独修改 / 单独保存) */
+    /* 用内阴影画, 不占版面 (不改各视图的尺寸 / 边线) */
+    #editor-area [data-edges~="b"] { box-shadow: inset 0 -3px 0 var(--border-strong); }
+    #editor-area [data-edges~="t"] { box-shadow: inset 0 3px 0 var(--border-strong); }
+    #editor-area [data-edges~="r"] { box-shadow: inset -3px 0 0 var(--border-strong); }
+    #editor-area [data-edges~="l"] { box-shadow: inset 3px 0 0 var(--border-strong); }
     .split-label { color: var(--fg-muted); font-size: var(--fs-xs); padding: 2px 0;
       border-bottom: 1px solid var(--border); }
     #minimap { width: 90px; flex: 0 0 90px; overflow: hidden; padding: 2px 4px;
@@ -446,10 +449,15 @@
     .ext-ai-out { white-space: pre-wrap; background: var(--bg-raised); padding: 6px; border-radius: 4px; max-height: 280px; overflow: auto; }
     .ext-actions { margin: 6px 0; }
     /* ===== Chat 右栏: 占自己的栅格列 (在最后一列之后的隐式列), 和左侧一样让位而不是盖住编辑区; 底部面板 / 状态栏停在它左边 ===== */
-    #app { grid-auto-columns: 0px; }
-    html[data-chat="on"] #app { grid-auto-columns: var(--w-chat, 340px); }
-    #chat-dock { display: none; grid-row: 2 / 5; grid-column: 4; min-width: 0; min-height: 0; flex-direction: column; background: var(--bg-side); border-left: 1px solid var(--border); overflow: hidden; }
-    html[data-layout="min"] #chat-dock { grid-column: 5; }
+    html[data-chat="on"] { --w-chat-cur: var(--w-chat, 340px); }
+    #right-strip { grid-row: 2; grid-column: 4; min-width: 0; min-height: 0; background: var(--bg-rail); border-left: 1px solid var(--border); cursor: pointer; }
+    html[data-layout="min"] #right-strip { grid-column: 5; }
+    #right-strip:hover { background-image: linear-gradient(var(--bg-hover), var(--bg-hover)); }
+    #right-strip-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; padding: 0; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 16px; line-height: 1; }
+    #right-strip-btn:hover { color: var(--fg); background: var(--bg-hover); }
+    #right-strip-btn:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); border-radius: 0; }
+    #chat-dock { display: none; grid-row: 2; grid-column: 5; min-width: 0; min-height: 0; flex-direction: column; background: var(--bg-side); border-left: 1px solid var(--border); overflow: hidden; }
+    html[data-layout="min"] #chat-dock { grid-column: 6; }
     html[data-chat="on"] #chat-dock { display: flex; }
     #chat-head { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
     #chat-head .chat-sp { flex: 1; } .chat-ctx { font-size: var(--fs-xs); color: var(--fg-muted); white-space: nowrap; }
@@ -461,7 +469,15 @@
     #chat-ai { padding: 2px 8px; font-size: var(--fs-xs); } #chat-ai input { display: block; width: 100%; box-sizing: border-box; margin: 2px 0; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
     #chat-inputrow { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
     #chat-input { flex: 1; min-width: 0; resize: none; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: var(--fs-sm); }
-    #chat-toggle { margin-left: auto; padding: 0 8px; } #chat-toggle.on { background: var(--bg-active); }
+    /* 查找 / 置換对话框 (Sakura 是非模态的可移动窗口): 不压暗页面、不拦截编辑区的点击, 标题栏可拖动;
+       搜到的位置被它盖住时自动让到另一侧 (用户拖过就不再自动动) */
+    #modal.float { background: transparent; pointer-events: none; }
+    #modal.float .md-box { pointer-events: auto; position: absolute; top: 56px; right: 28px; width: min(440px, 92vw); max-height: 70vh; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+    #modal.float .md-head { cursor: move; user-select: none; }
+    /* 主题化确认 / 输入对话框 (uiConfirm / uiPrompt) */
+    .ui-dlg-msg { white-space: pre-wrap; line-height: 1.6; max-width: 520px; margin-bottom: 8px; }
+    .md-btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    textarea.md-input { width: 100%; box-sizing: border-box; font-family: inherit; }
     /* ===== Markdown 工具条 / 预览 ===== */
     #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
     html[data-md="on"] #viewbars-top { display: block; }
@@ -1320,7 +1336,7 @@
     html[data-layout="min"] #app {
       --w-strip: 16px; --w-drawer-rail: 44px; --w-drawer-side: 240px; --h-bottom-head: 28px;
       --w-rail: 0px; --w-side: 0px;
-      grid-template-columns: var(--w-strip) var(--w-rail) var(--w-side) minmax(0, 1fr);
+      grid-template-columns: var(--w-strip) var(--w-rail) var(--w-side) minmax(0, 1fr) var(--w-rstrip, 16px) var(--w-chat-cur, 0px);
     }
     html[data-layout="min"][data-activity-bar="on"] #app { --w-rail: var(--w-drawer-rail); }
     html[data-layout="min"][data-side-bar="on"] #app { --w-side: var(--w-drawer-side); }
@@ -1476,7 +1492,7 @@
                   0 4px 18px rgba(0, 0, 0, 0.08);
     }
     /* 亚克力晶面: 导航 */
-    [data-theme="clear"] #activity-bar, [data-theme="clear"] #left-strip {
+    [data-theme="clear"] #activity-bar, [data-theme="clear"] #left-strip, [data-theme="clear"] #right-strip {
       background: linear-gradient(180deg, var(--mat-acrylic-a), var(--mat-acrylic-b));
       -webkit-backdrop-filter: blur(24px) saturate(220%) brightness(108%); backdrop-filter: blur(24px) saturate(220%) brightness(108%);
       box-shadow: inset -1.5px 0 0.5px var(--mat-hi), inset 0 1px 0 var(--mat-lo), 4px 0 20px rgba(0, 0, 0, 0.06);
@@ -2041,6 +2057,10 @@
           </div><!-- /#menubar -->
 
     <!-- Left Strip: 极简布局下「导航 / 文件」抽屉 (活动栏 + 侧栏) 折叠后留下的常驻把手; 完整布局下 display:none. 状态 / 文案由 syncDrawerUI() 写 -->
+    <!-- Right Strip: Chat 右栏折叠后留下的常驻把手 (和左细条同一设计: 点它展开 / 折叠; 右栏本身第一次展开才创建) -->
+    <div id="right-strip">
+      <button id="right-strip-btn" type="button" aria-label="展开 Chat" aria-expanded="false" aria-controls="chat-dock" data-tip="Chat (Ctrl+Shift+L)"><span aria-hidden="true">‹</span></button>
+    </div>
     <div id="left-strip">
       <button id="left-strip-btn" type="button" aria-label="展开导航 / 文件" aria-expanded="false" aria-controls="activity-bar side-bar" data-tip="展开导航 / 文件"><span aria-hidden="true">›</span></button>
     </div>
@@ -2144,9 +2164,9 @@
    菜单结构参考 Sakura 的层级 (大类下用子菜单收纳), 每项三种语言的名字都在 I18N 里; 语言存 localStorage(ide10.lang), 缺省中文。 */
 const UI_LANGS = ["zh", "ja", "en"];
 let UI_LANG = (() => { try { const v = localStorage.getItem("ide10.lang"); return UI_LANGS.indexOf(v) >= 0 ? v : "zh"; } catch (_) { return "zh"; } })();
-const I18N = {"menu.file":["文件","ファイル","File"],"c.new-file":["新建","新規作成","New"],"c.open-file":["打开文件...","開く...","Open..."],"c.open-folder":["打开文件夹","フォルダーを開く","Open Folder"],"c.save":["保存","上書き保存","Save"],"c.save-as":["另存为...","名前を付けて保存...","Save As..."],"c.save-all":["全部保存","すべて保存","Save All"],"c.save-close":["保存并关闭","保存して閉じる","Save and Close"],"c.close-tab":["关闭标签","閉じる","Close"],"c.close-all":["关闭全部","すべて閉じる","Close All"],"c.close-open":["关闭并打开...","閉じて開く...","Close and Open..."],"c.reload":["重新载入","再読み込み","Reload"],"sub.reopen":["以指定编码重新打开","文字コードを指定して開き直す","Reopen with Encoding"],"c.reopen-UTF-8":["UTF-8","UTF-8","UTF-8"],"c.reopen-SJIS":["SJIS","SJIS","SJIS"],"c.reopen-EUC-JP":["EUC-JP","EUC-JP","EUC-JP"],"c.reopen-JIS":["JIS","JIS","JIS"],"c.reopen-Unicode":["Unicode","Unicode","Unicode"],"c.reopen-UnicodeBE":["UnicodeBE","UnicodeBE","UnicodeBE"],"c.reopen-Latin1":["Latin1","Latin1","Latin1"],"c.reopen-CESU-8":["CESU-8","CESU-8","CESU-8"],"c.reopen-UTF-7":["UTF-7","UTF-7","UTF-7"],"c.reopen-GBK":["GBK","GBK","GBK"],"c.reopen-Big5":["Big5","Big5","Big5"],"c.reopen-EUC-KR":["EUC-KR","EUC-KR","EUC-KR"],"sub.recent":["最近使用","最近使ったファイル","Recent Files"],"c.recent-clear":["清除历史","履歴をクリア","Clear History"],"sub.print":["印刷","印刷","Print"],"c.print":["打印...","印刷...","Print..."],"c.print-preview":["打印预览","印刷プレビュー","Print Preview"],"c.print-setup":["页面设置...","印刷ページ設定...","Page Setup..."],"c.browse":["在浏览器中查看","ブラウズ","Browse"],"c.file-properties":["文件属性","ファイルのプロパティ","File Properties"],"c.new-window":["新窗口","新規ウィンドウ","New Window"],"c.exit-all":["全部退出","すべて終了","Exit All"],"menu.edit":["编辑","編集","Edit"],"c.undo":["撤销","元に戻す","Undo"],"c.redo":["重做","やり直し","Redo"],"c.cut":["剪切","切り取り","Cut"],"c.copy":["复制","コピー","Copy"],"c.paste":["粘贴","貼り付け","Paste"],"c.select-all":["全选","すべて選択","Select All"],"sub.edit-delete":["删除 / 剪切扩展","削除・切り取り","Delete / Cut"],"c.word-cut":["剪切单词","単語切り取り","Cut Word"],"c.word-delete":["删除单词","単語削除","Delete Word"],"c.line-cut-to-end":["剪切到行末","行末まで切り取り","Cut to End of Line"],"c.cut-line":["剪切整行","行切り取り","Cut Line"],"c.cut-line-start":["剪切到行首","行頭まで切り取り","Cut to Start of Line"],"c.delete-line-to-start":["删除到行首","行頭まで削除","Delete to Start of Line"],"c.delete-line-to-end":["删除到行末","行末まで削除","Delete to End of Line"],"c.delete-word-start":["删除到词首","単語の左端まで削除","Delete to Word Start"],"c.delete-word-end":["删除到词尾","単語の右端まで削除","Delete to Word End"],"sub.edit-copy":["复制 / 粘贴扩展","コピー・貼り付け","Copy / Paste"],"c.copy-crlf":["以 CRLF 换行复制","CRLF改行でコピー","Copy with CRLF"],"c.copy-addcrlf":["在折行处加换行复制","折り返し位置に改行をつけてコピー","Copy with Wrap Breaks"],"c.copy-lines":["复制选区内全部行","選択範囲内全行コピー","Copy Selected Lines"],"c.copy-passage":["带引用符复制","選択範囲内全行引用符付きコピー","Copy as Quotation"],"c.copy-linenum":["带行号复制","選択範囲内全行行番号付きコピー","Copy with Line Numbers"],"c.copy-html":["彩色 HTML 复制","選択範囲内色付きHTMLコピー","Copy as Colored HTML"],"c.copy-html-ln":["带行号彩色 HTML 复制","選択範囲内行番号色付きHTMLコピー","Copy as Colored HTML with Line Numbers"],"c.copy-fname":["复制文件名","このファイル名をクリップボードにコピー","Copy File Name"],"c.copy-path":["复制文件路径","このファイルのパス名をコピー","Copy File Path"],"c.copy-tag":["复制路径与光标位置","このファイルのパス名とカーソル位置をコピー","Copy Path and Cursor Position"],"c.paste-box":["矩形粘贴","矩形貼り付け","Paste Rectangle"],"c.clip-history":["剪贴板历史","クリップボード履歴","Clipboard History"],"sub.edit-lines":["行操作","行操作","Lines"],"c.delete-line":["删除行","行削除","Delete Line"],"c.duplicate-line":["复制行","行の複製","Duplicate Line"],"c.move-line-up":["上移行","行を上へ移動","Move Line Up"],"c.move-line-down":["下移行","行を下へ移動","Move Line Down"],"c.add-line-above":["在上方插入空行","上に空行を挿入","Insert Line Above"],"c.add-line-below":["在下方插入空行","下に空行を挿入","Insert Line Below"],"c.delete-line-up":["删除上方行","上の行を削除","Delete Line Above"],"c.delete-line-down":["删除下方行","下の行を削除","Delete Line Below"],"c.join-with-prev":["与上一行合并","前の行と結合","Join with Previous Line"],"c.line-ops":["行排序 / 去重 / 反转","行の並べ替え・重複削除","Sort / Dedupe / Reverse"],"c.sort-asc":["升序排序","選択行の昇順ソート","Sort Ascending"],"c.sort-desc":["降序排序","選択行の降順ソート","Sort Descending"],"c.ltrim-lines":["删除行首空白","行頭の空白を削除","Trim Leading Whitespace"],"c.rtrim-lines":["删除行尾空白","行末の空白を削除","Trim Trailing Whitespace"],"c.uniq-consecutive":["合并连续重复行","選択行のマージ","Merge Duplicate Lines"],"sub.edit-indent":["缩进","インデント","Indent"],"c.indent-selection":["缩进 (选区)","インデント (TAB)","Indent"],"c.unindent-selection":["反缩进 (选区)","逆インデント (TAB)","Unindent"],"c.indent-space":["SPACE 缩进","SPACEインデント","Indent with Spaces"],"c.unindent-space":["SPACE 反缩进","逆SPACEインデント","Unindent Spaces"],"c.tab-to-space":["TAB→空格","TAB→空白","Tabs to Spaces"],"c.space-to-tab":["空格→TAB","空白→TAB","Spaces to Tabs"],"sub.edit-select":["选择 / 矩形","選択・矩形","Selection / Rectangle"],"c.select-word":["选择当前单词","現在位置の単語選択","Select Word"],"c.begin-sel":["范围选择开始/结束","範囲選択開始","Begin Selection"],"c.sel-para-prev":["(选择) 上一段落","(範囲選択) 前の段落へ","Select to Previous Paragraph"],"c.sel-para-next":["(选择) 下一段落","(範囲選択) 次の段落へ","Select to Next Paragraph"],"c.column-delete":["矩形删除","矩形削除","Delete Rectangle"],"c.column-replace":["矩形替换","矩形置換","Replace Rectangle"],"c.box-line-top":["(矩形) 移到行首","(矩形選択) 行頭に移動","Rectangle to Line Start"],"c.cur-line-center":["光标行居中","カーソル行をウィンドウ中央へ","Center Cursor Line"],"c.reconvert":["再変換","再変換","Reconvert"],"sub.insert":["插入","挿入","Insert"],"c.insert-date":["日期","日付挿入","Insert Date"],"c.insert-time":["时间","時刻挿入","Insert Time"],"c.insert-stamp":["时间戳","タイムスタンプ挿入","Insert Timestamp"],"c.stamp-config":["时间戳设置","タイムスタンプ設定","Timestamp Settings"],"c.insert-template":["模板","テンプレート","Template"],"c.ctrl-code":["控制字符...","コントロールコードの入力...","Control Code..."],"c.ins-recent-file":["最近使用的文件路径","最近使ったファイル挿入","Insert Recent File"],"c.ins-recent-folder":["最近使用的文件夹路径","最近使ったフォルダー挿入","Insert Recent Folder"],"sub.convert":["变换","変換","Convert"],"c.to-upper":["大写","大文字","Uppercase"],"c.to-lower":["小写","小文字","Lowercase"],"c.to-fullwidth":["全角","全角","Fullwidth"],"c.to-halfwidth":["半角","半角","Halfwidth"],"c.to-zenei":["半角英数→全角英数","半角英数→全角英数","Half→Full Alphanumeric"],"c.to-hanei":["全角英数→半角英数","全角英数→半角英数","Full→Half Alphanumeric"],"c.to-zenkaku":["全角片假名","全角カタカナ","Fullwidth Katakana"],"c.to-zenhira":["全角平假名","全角ひらがな","Fullwidth Hiragana"],"c.to-hankata":["半角片假名","半角カタカナ","Halfwidth Katakana"],"c.hankata-to-zenkata":["半角片假名→全角片假名","半角カタカナ→全角カタカナ","Half Katakana→Full Katakana"],"c.hankata-to-zenhira":["半角片假名→全角平假名","半角カタカナ→全角ひらがな","Half Katakana→Full Hiragana"],"c.base64-decode":["Base64 解码并保存","Base64デコードして保存","Base64 Decode and Save"],"c.uudecode":["uudecode 并保存","uudecodeして保存","uudecode and Save"],"c.encoding":["编码转换","文字コード変換","Encoding Conversion"],"c.eol":["换行符转换","改行コード変換","Line Ending Conversion"],"sub.codecnv":["代码转换","コード変換","Code Conversion"],"c.codecnv-auto2sjis":["自动判别 → SJIS","自動判別 → SJIS","Auto Detect → SJIS"],"c.codecnv-email":["E-Mail (JIS → SJIS)","E-Mail(JIS→SJIS)","E-Mail (JIS → SJIS)"],"c.codecnv-euc2sjis":["EUC → SJIS","EUC → SJIS","EUC → SJIS"],"c.codecnv-unicode2sjis":["Unicode → SJIS","Unicode → SJIS","Unicode → SJIS"],"c.codecnv-unicodebe2sjis":["UnicodeBE → SJIS","UnicodeBE → SJIS","UnicodeBE → SJIS"],"c.codecnv-utf82sjis":["UTF-8 → SJIS","UTF-8 → SJIS","UTF-8 → SJIS"],"c.codecnv-utf72sjis":["UTF-7 → SJIS","UTF-7 → SJIS","UTF-7 → SJIS"],"c.codecnv-sjis2jis":["SJIS → JIS","SJIS → JIS","SJIS → JIS"],"c.codecnv-sjis2euc":["SJIS → EUC","SJIS → EUC","SJIS → EUC"],"c.codecnv-sjis2utf8":["SJIS → UTF-8","SJIS → UTF-8","SJIS → UTF-8"],"c.codecnv-sjis2utf7":["SJIS → UTF-7","SJIS → UTF-7","SJIS → UTF-7"],"menu.search":["搜索","検索","Search"],"c.find":["查找...","検索...","Find..."],"c.find-next":["查找下一个","次を検索","Find Next"],"c.find-prev":["查找上一个","前を検索","Find Previous"],"c.replace":["替换...","置換...","Replace..."],"c.replace-all":["全部替换","すべて置換","Replace All"],"c.grep":["Grep 搜索...","Grep...","Grep..."],"c.grep-replace":["Grep 替换...","Grep置換...","Grep Replace..."],"sub.isearch":["增量查找","インクリメンタルサーチ","Incremental Search"],"c.find-incremental":["增量查找","インクリメンタルサーチ","Incremental Search"],"c.isearch-fwd":["向前增量查找","前方インクリメンタルサーチ","Incremental Search Forward"],"c.isearch-back":["向后增量查找","後方インクリメンタルサーチ","Incremental Search Backward"],"c.isearch-regex-fwd":["向前正则增量查找","前方正規表現インクリメンタルサーチ","Regex Incremental Forward"],"c.isearch-regex-back":["向后正则增量查找","後方正規表現インクリメンタルサーチ","Regex Incremental Backward"],"c.isearch-migemo-fwd":["向前 MIGEMO 增量查找","前方MIGEMOインクリメンタルサーチ","MIGEMO Incremental Forward"],"c.isearch-migemo-back":["向后 MIGEMO 增量查找","後方MIGEMOインクリメンタルサーチ","MIGEMO Incremental Backward"],"c.search-clearmark":["切换查找标记","検索マークの切替え","Toggle Search Marks"],"c.jump-srchstart":["回到查找起点","検索開始位置へ戻る","Back to Search Start"],"c.goto-line":["跳转到行...","指定行へジャンプ...","Go to Line..."],"c.bracket-pair":["对应括号","対括弧の検索","Matching Bracket"],"sub.bookmark":["书签","ブックマーク","Bookmarks"],"c.bookmark-toggle":["设置/取消书签","ブックマークの設定/解除","Toggle Bookmark"],"c.bookmark-next":["下一个书签","次のブックマークへ","Next Bookmark"],"c.bookmark-prev":["上一个书签","前のブックマークへ","Previous Bookmark"],"c.bookmark-reset":["清除全部书签","ブックマークの全解除","Clear All Bookmarks"],"c.bookmark-view":["书签列表","ブックマークの一覧","Bookmark List"],"sub.tags":["标签跳转 / 函数","タグジャンプ・関数","Tags / Functions"],"c.tag-jump":["跳转到定义","タグジャンプ","Tag Jump"],"c.tag-jump-back":["返回","タグジャンプバック","Tag Jump Back"],"c.tags-make":["生成 tags 文件","タグファイルの作成","Create Tags File"],"c.tag-jump-keyword":["按关键字跳转...","キーワードを指定してタグジャンプ...","Tag Jump by Keyword..."],"c.open-hc":["打开同名 C/C++ 头/源文件","同名のC/C++ヘッダー(ソース)を開く","Open Matching C/C++ Header/Source"],"c.funclist-next":["下一个函数","次の関数リストマークへ","Next Function"],"c.funclist-prev":["上一个函数","前の関数リストマークへ","Previous Function"],"sub.modify":["变更行","変更行","Modified Lines"],"c.modify-next":["下一个变更行","次の変更行へ","Next Modified Line"],"c.modify-prev":["上一个变更行","前の変更行へ","Previous Modified Line"],"c.modify-next-sel":["(选择) 下一个变更行","(範囲選択) 次の変更行へ","Select to Next Modified Line"],"c.modify-prev-sel":["(选择) 上一个变更行","(範囲選択) 前の変更行へ","Select to Previous Modified Line"],"sub.jumphist":["移动历史","移動履歴","Jump History"],"c.jumphist-prev":["上一个位置","移動履歴: 前へ","Previous Location"],"c.jumphist-next":["下一个位置","移動履歴: 次へ","Next Location"],"c.jumphist-set":["登记当前位置","現在位置を移動履歴に登録","Register Location"],"sub.diff":["文件比较 (DIFF)","ファイル比較 (DIFF)","Compare (DIFF)"],"c.diff-with-tab":["与另一标签比较","他のタブと比較","Compare with Tab"],"c.diff-with-file":["与文件比较...","ファイルと比較...","Compare with File..."],"c.diff-list":["差异列表","差分一覧","Difference List"],"c.diff-next":["下一处差异","次の差分へ","Next Difference"],"c.diff-prev":["上一处差异","前の差分へ","Previous Difference"],"c.diff-clear":["清除差异标记","差分の全解除","Clear Differences"],"menu.view":["视图","表示","View"],"sub.layout":["界面布局","画面レイアウト","Layout"],"c.layout-min":["极简 (Sakura 风格)","シンプル (Sakura風)","Minimal (Sakura style)"],"c.layout-full":["完整 IDE 界面","フル IDE 画面","Full IDE"],"c.toggle-activity-bar":["活动栏","アクティビティバー","Activity Bar"],"c.toggle-side-bar":["侧边栏","サイドバー","Side Bar"],"c.toggle-tabs":["标签栏","タブバー","Tab Bar"],"c.toggle-breadcrumb":["面包屑","パンくず","Breadcrumb"],"sub.sidebar":["侧边栏内容","サイドバー表示内容","Side Bar Views"],"c.show-explorer":["资源管理器","エクスプローラー","Explorer"],"c.show-search":["搜索","検索","Search"],"c.show-scm":["源代码管理","ソース管理","Source Control"],"c.show-outline":["大纲","アウトライン","Outline"],"c.file-tree":["文件树","ファイルツリー","File Tree"],"sub.panel":["底部面板","下部パネル","Bottom Panel"],"c.show-terminal":["终端","ターミナル","Terminal"],"c.show-output":["输出","出力","Output"],"c.show-problems":["问题","問題","Problems"],"c.new-terminal":["新建终端","新しいターミナル","New Terminal"],"c.toggle-bottom":["显示/隐藏","表示/非表示","Show / Hide"],"c.toggle-word-wrap":["自动换行","右端で折り返す","Word Wrap"],"c.toggle-line-num":["行号","行番号","Line Numbers"],"c.toggle-minimap":["缩略图","ミニマップ","Minimap"],"c.toggle-status":["状态栏","ステータスバー","Status Bar"],"sub.view-bars":["工具栏 / 标尺","ツールバー・ルーラー","Toolbar / Ruler"],"c.toggle-toolbar":["工具栏","ツールバー","Toolbar"],"c.toggle-funckey":["功能键栏","ファンクションキー","Function Keys"],"c.toggle-ruler":["标尺","ルーラー","Ruler"],"c.toggle-ws":["空白 / TAB 标记","空白・TAB表示","Whitespace / TAB Marks"],"c.toggle-curline":["当前行下划线","カーソル行アンダーライン","Current Line Underline"],"sub.view-wrap":["折行设置","折り返し設定","Wrapping"],"c.wrap-none":["不折行","折り返しなし","No Wrap"],"c.wrap-window-width":["按窗口宽度折行","現在のウィンドウ幅で折り返し","Wrap at Window Width"],"c.tmp-wrap":["按指定列数折行 (临时)...","指定桁で折り返す (一時設定)...","Wrap at Column (Temporary)..."],"sub.view-zoom":["字体 / 缩放","フォント・拡大縮小","Font / Zoom"],"c.font-bigger":["字体放大","フォント拡大","Increase Font"],"c.font-smaller":["字体缩小","フォント縮小","Decrease Font"],"c.zoom-in":["放大","拡大","Zoom In"],"c.zoom-out":["缩小","縮小","Zoom Out"],"c.zoom-reset":["重置缩放","拡大率をリセット","Reset Zoom"],"sub.theme":["主题","テーマ","Theme"],"c.theme-clear":["透明玻璃","透明ガラス","Clear Glass"],"c.theme-dark":["深色","ダーク","Dark"],"c.theme-light":["浅色","ライト","Light"],"c.theme-high-contrast":["高对比度","ハイコントラスト","High Contrast"],"c.theme-retro16":["复古 16-Bit","レトロ 16-Bit","Retro 16-Bit"],"c.toggle-readonly":["只读模式","閲覧モード","View Mode (Read-only)"],"c.select-count-mode":["选区字数统计方式","文字カウントの方法","Selection Count Mode"],"c.toggle-key-search":["关键字帮助自动显示","キーワードヘルプ自動表示","Auto Keyword Help"],"c.redraw":["重绘","再描画","Redraw"],"c.completion":["代码补全","入力補完","Completion"],"c.goto-def":["转到定义","定義へ移動","Go to Definition"],"menu.tool":["工具","ツール","Tools"],"c.outline":["大纲","アウトライン解析","Outline"],"c.syntax":["语法高亮","シンタックスハイライト","Syntax Highlighting"],"c.type-config":["文件类型设置","タイプ別設定","File Type Settings"],"c.auto-backup":["立即备份","今すぐバックアップ","Backup Now"],"c.file-lock":["文件锁定","ファイルロック","File Lock"],"sub.macro":["宏","マクロ","Macro"],"c.macro-start":["开始录制","キーマクロの記録開始","Start Recording"],"c.macro-stop":["停止录制","キーマクロの記録終了","Stop Recording"],"c.macro-play":["播放宏","キーマクロの実行","Play Macro"],"c.macro-save":["保存宏...","キーマクロの保存...","Save Macro..."],"c.macro-load":["读取宏...","キーマクロの読み込み...","Load Macro..."],"c.js-macro":["运行 JS 宏","JSマクロの実行","Run JS Macro"],"c.ppa-macro":["运行 PPA 宏","PPAマクロの実行","Run PPA Macro"],"sub.plugin":["插件","プラグイン","Plugins"],"c.plugin-load":["加载插件","プラグインの読み込み","Load Plugin"],"c.plugin-manage":["管理","プラグイン管理","Manage Plugins"],"c.exec-cmd":["外部命令...","外部コマンド実行...","Run External Command..."],"sub.sqlplus":["SQL*Plus","SQL*Plus","SQL*Plus"],"c.sqlplus-activate":["打开 SQL*Plus 窗口","SQL*Plusをアクティブ表示","Open SQL*Plus Window"],"c.sqlplus-run":["执行当前文件","SQL*Plusで実行","Run Current File"],"c.history-manager":["历史管理...","履歴の管理...","History Manager..."],"menu.setting":["设置","設定","Settings"],"c.term-config":["终端设置...","ターミナル設定...","Terminal Settings..."],"c.common-config":["共通设置...","共通設定...","Common Settings..."],"c.key-config":["键位分配...","キー割り当て...","Key Bindings..."],"c.customize-keys":["自定义键","キーのカスタマイズ","Customize Keys"],"c.settings":["首选项","設定","Preferences"],"c.keymap":["键映射","キーマップ","Keymap"],"c.font":["字体...","フォント...","Font..."],"c.language":["当前文件语言...","ファイルの言語...","File Language..."],"c.theme-select":["主题...","テーマ選択...","Theme..."],"sub.uilang":["界面语言 / 言語 / Language","表示言語 / Language","Display Language"],"c.lang-zh":["中文","中文","中文"],"c.lang-ja":["日本語","日本語","日本語"],"c.lang-en":["English","English","English"],"c.charset":["文字编码...","文字コードセット指定...","Character Set..."],"sub.eolmode":["输入换行符","入力改行コード","Input Line Ending"],"c.eol-crlf":["CRLF","CRLF","CRLF"],"c.eol-lf":["LF","LF","LF"],"c.eol-cr":["CR","CR","CR"],"c.toggle-vim":["Vim 模式","Vimモード","Vim Mode"],"c.import-config":["导入配置","設定のインポート","Import Settings"],"c.export-config":["导出配置","設定のエクスポート","Export Settings"],"c.reset-settings":["恢复默认","初期設定に戻す","Reset to Defaults"],"menu.window":["窗口","ウィンドウ","Window"],"c.split-h":["上下分割","上下に分割","Split Horizontally"],"c.split-v":["左右分割","左右に分割","Split Vertically"],"c.split-quad":["四分割","縦横に分割","Split into Four"],"c.cascade":["层叠","重ねて表示","Cascade"],"c.tile-h":["水平平铺","左右に並べて表示","Tile Horizontally"],"c.tile-v":["垂直平铺","上下に並べて表示","Tile Vertically"],"c.next-tab":["下一个标签","次のタブ","Next Tab"],"c.prev-tab":["上一个标签","前のタブ","Previous Tab"],"sub.tabops":["标签操作","タブ操作","Tab Operations"],"c.tab-move-left":["标签左移","タブを左に移動","Move Tab Left"],"c.tab-move-right":["标签右移","タブを右に移動","Move Tab Right"],"c.close-others":["关闭其它标签","このタブ以外を閉じる","Close Other Tabs"],"c.close-left":["关闭左侧标签","左をすべて閉じる","Close Tabs to the Left"],"c.close-right":["关闭右侧标签","右をすべて閉じる","Close Tabs to the Right"],"sub.tabgroup":["标签分组","タブグループ","Tab Groups"],"c.next-group":["下一个分组","次のグループ","Next Group"],"c.prev-group":["上一个分组","前のグループ","Previous Group"],"c.tab-separate":["移到新分组","新規グループ","Move to New Group"],"c.tab-joint-next":["移到下一个分组","次のグループに移動","Move to Next Group"],"c.tab-joint-prev":["移到上一个分组","前のグループに移動","Move to Previous Group"],"c.bind-window":["合并为一组","グループ化","Merge into One Group"],"c.group-close":["关闭当前分组","グループを閉じる","Close Group"],"c.window-list":["窗口一览","ウィンドウ一覧","Window List"],"sub.winsize":["窗口大小","ウィンドウサイズ","Window Size"],"c.maximize-v":["纵向最大化","縦方向に最大化","Maximize Vertically"],"c.maximize-h":["横向最大化","横方向に最大化","Maximize Horizontally"],"c.minimize-all":["全部最小化","すべて最小化","Minimize All"],"c.minimize-window":["最小化","最小化","Minimize"],"c.fullscreen":["全屏","全画面表示","Full Screen"],"c.topmost":["始终置顶","常に手前に表示","Always on Top"],"menu.help":["帮助","ヘルプ","Help"],"c.help":["内置 wiki","目次","Contents"],"c.wiki":["wiki 帮助","Wiki ヘルプ","Wiki Help"],"c.help-search":["关键字检索...","キーワード検索...","Search Help..."],"c.ext-help":["光标处单词的帮助","カーソル位置の単語のヘルプ","Help for Word at Cursor"],"c.shortcuts":["快捷键","ショートカットキー","Shortcuts"],"c.keybind-list":["键位一览...","キー割り当て一覧...","Key Binding List..."],"c.all-commands":["全部功能一览...","全機能一覧...","All Commands..."],"c.about":["关于 IDE1.0","IDE1.0について","About IDE1.0"],"ui.noRecent":["无最近文件","最近使ったファイルはありません","No recent files"]};
+const I18N = {"menu.file":["文件","ファイル","File"],"c.new-file":["新建","新規作成","New"],"c.open-file":["打开文件...","開く...","Open..."],"c.open-folder":["打开文件夹","フォルダーを開く","Open Folder"],"c.save":["保存","上書き保存","Save"],"c.save-as":["另存为...","名前を付けて保存...","Save As..."],"c.save-all":["全部保存","すべて保存","Save All"],"c.save-close":["保存并关闭","保存して閉じる","Save and Close"],"c.close-tab":["关闭标签","閉じる","Close"],"c.close-all":["关闭全部","すべて閉じる","Close All"],"c.close-open":["关闭并打开...","閉じて開く...","Close and Open..."],"c.reload":["重新载入","再読み込み","Reload"],"sub.reopen":["以指定编码重新打开","文字コードを指定して開き直す","Reopen with Encoding"],"c.reopen-UTF-8":["UTF-8","UTF-8","UTF-8"],"c.reopen-SJIS":["SJIS","SJIS","SJIS"],"c.reopen-EUC-JP":["EUC-JP","EUC-JP","EUC-JP"],"c.reopen-JIS":["JIS","JIS","JIS"],"c.reopen-Unicode":["Unicode","Unicode","Unicode"],"c.reopen-UnicodeBE":["UnicodeBE","UnicodeBE","UnicodeBE"],"c.reopen-Latin1":["Latin1","Latin1","Latin1"],"c.reopen-CESU-8":["CESU-8","CESU-8","CESU-8"],"c.reopen-UTF-7":["UTF-7","UTF-7","UTF-7"],"c.reopen-GBK":["GBK","GBK","GBK"],"c.reopen-Big5":["Big5","Big5","Big5"],"c.reopen-EUC-KR":["EUC-KR","EUC-KR","EUC-KR"],"sub.recent":["最近使用","最近使ったファイル","Recent Files"],"c.recent-clear":["清除历史","履歴をクリア","Clear History"],"sub.print":["印刷","印刷","Print"],"c.print":["打印...","印刷...","Print..."],"c.print-preview":["打印预览","印刷プレビュー","Print Preview"],"c.print-setup":["页面设置...","印刷ページ設定...","Page Setup..."],"c.browse":["在浏览器中查看","ブラウズ","Browse"],"c.file-properties":["文件属性","ファイルのプロパティ","File Properties"],"c.new-window":["新窗口","新規ウィンドウ","New Window"],"c.exit-all":["全部退出","すべて終了","Exit All"],"menu.edit":["编辑","編集","Edit"],"c.undo":["撤销","元に戻す","Undo"],"c.redo":["重做","やり直し","Redo"],"c.cut":["剪切","切り取り","Cut"],"c.copy":["复制","コピー","Copy"],"c.paste":["粘贴","貼り付け","Paste"],"c.select-all":["全选","すべて選択","Select All"],"sub.edit-delete":["删除 / 剪切扩展","削除・切り取り","Delete / Cut"],"c.word-cut":["剪切单词","単語切り取り","Cut Word"],"c.word-delete":["删除单词","単語削除","Delete Word"],"c.line-cut-to-end":["剪切到行末","行末まで切り取り","Cut to End of Line"],"c.cut-line":["剪切整行","行切り取り","Cut Line"],"c.cut-line-start":["剪切到行首","行頭まで切り取り","Cut to Start of Line"],"c.delete-line-to-start":["删除到行首","行頭まで削除","Delete to Start of Line"],"c.delete-line-to-end":["删除到行末","行末まで削除","Delete to End of Line"],"c.delete-word-start":["删除到词首","単語の左端まで削除","Delete to Word Start"],"c.delete-word-end":["删除到词尾","単語の右端まで削除","Delete to Word End"],"sub.edit-copy":["复制 / 粘贴扩展","コピー・貼り付け","Copy / Paste"],"c.copy-crlf":["以 CRLF 换行复制","CRLF改行でコピー","Copy with CRLF"],"c.copy-addcrlf":["在折行处加换行复制","折り返し位置に改行をつけてコピー","Copy with Wrap Breaks"],"c.copy-lines":["复制选区内全部行","選択範囲内全行コピー","Copy Selected Lines"],"c.copy-passage":["带引用符复制","選択範囲内全行引用符付きコピー","Copy as Quotation"],"c.copy-linenum":["带行号复制","選択範囲内全行行番号付きコピー","Copy with Line Numbers"],"c.copy-html":["彩色 HTML 复制","選択範囲内色付きHTMLコピー","Copy as Colored HTML"],"c.copy-html-ln":["带行号彩色 HTML 复制","選択範囲内行番号色付きHTMLコピー","Copy as Colored HTML with Line Numbers"],"c.copy-fname":["复制文件名","このファイル名をクリップボードにコピー","Copy File Name"],"c.copy-path":["复制文件路径","このファイルのパス名をコピー","Copy File Path"],"c.copy-tag":["复制路径与光标位置","このファイルのパス名とカーソル位置をコピー","Copy Path and Cursor Position"],"c.paste-box":["矩形粘贴","矩形貼り付け","Paste Rectangle"],"c.clip-history":["剪贴板历史","クリップボード履歴","Clipboard History"],"sub.edit-lines":["行操作","行操作","Lines"],"c.delete-line":["删除行","行削除","Delete Line"],"c.duplicate-line":["复制行","行の複製","Duplicate Line"],"c.move-line-up":["上移行","行を上へ移動","Move Line Up"],"c.move-line-down":["下移行","行を下へ移動","Move Line Down"],"c.add-line-above":["在上方插入空行","上に空行を挿入","Insert Line Above"],"c.add-line-below":["在下方插入空行","下に空行を挿入","Insert Line Below"],"c.delete-line-up":["删除上方行","上の行を削除","Delete Line Above"],"c.delete-line-down":["删除下方行","下の行を削除","Delete Line Below"],"c.join-with-prev":["与上一行合并","前の行と結合","Join with Previous Line"],"c.line-ops":["行排序 / 去重 / 反转","行の並べ替え・重複削除","Sort / Dedupe / Reverse"],"c.sort-asc":["升序排序","選択行の昇順ソート","Sort Ascending"],"c.sort-desc":["降序排序","選択行の降順ソート","Sort Descending"],"c.ltrim-lines":["删除行首空白","行頭の空白を削除","Trim Leading Whitespace"],"c.rtrim-lines":["删除行尾空白","行末の空白を削除","Trim Trailing Whitespace"],"c.uniq-consecutive":["合并连续重复行","選択行のマージ","Merge Duplicate Lines"],"sub.edit-indent":["缩进","インデント","Indent"],"c.indent-selection":["缩进 (选区)","インデント (TAB)","Indent"],"c.unindent-selection":["反缩进 (选区)","逆インデント (TAB)","Unindent"],"c.indent-space":["SPACE 缩进","SPACEインデント","Indent with Spaces"],"c.unindent-space":["SPACE 反缩进","逆SPACEインデント","Unindent Spaces"],"c.tab-to-space":["TAB→空格","TAB→空白","Tabs to Spaces"],"c.space-to-tab":["空格→TAB","空白→TAB","Spaces to Tabs"],"sub.edit-select":["选择 / 矩形","選択・矩形","Selection / Rectangle"],"c.select-word":["选择当前单词","現在位置の単語選択","Select Word"],"c.begin-sel":["范围选择开始/结束","範囲選択開始","Begin Selection"],"c.sel-para-prev":["(选择) 上一段落","(範囲選択) 前の段落へ","Select to Previous Paragraph"],"c.sel-para-next":["(选择) 下一段落","(範囲選択) 次の段落へ","Select to Next Paragraph"],"c.column-delete":["矩形删除","矩形削除","Delete Rectangle"],"c.column-replace":["矩形替换","矩形置換","Replace Rectangle"],"c.box-line-top":["(矩形) 移到行首","(矩形選択) 行頭に移動","Rectangle to Line Start"],"c.cur-line-center":["光标行居中","カーソル行をウィンドウ中央へ","Center Cursor Line"],"c.reconvert":["再変換","再変換","Reconvert"],"sub.insert":["插入","挿入","Insert"],"c.insert-date":["日期","日付挿入","Insert Date"],"c.insert-time":["时间","時刻挿入","Insert Time"],"c.insert-stamp":["时间戳","タイムスタンプ挿入","Insert Timestamp"],"c.stamp-config":["时间戳设置","タイムスタンプ設定","Timestamp Settings"],"c.insert-template":["模板","テンプレート","Template"],"c.ctrl-code":["控制字符...","コントロールコードの入力...","Control Code..."],"c.ins-recent-file":["最近使用的文件路径","最近使ったファイル挿入","Insert Recent File"],"c.ins-recent-folder":["最近使用的文件夹路径","最近使ったフォルダー挿入","Insert Recent Folder"],"sub.convert":["变换","変換","Convert"],"c.to-upper":["大写","大文字","Uppercase"],"c.to-lower":["小写","小文字","Lowercase"],"c.to-fullwidth":["全角","全角","Fullwidth"],"c.to-halfwidth":["半角","半角","Halfwidth"],"c.to-zenei":["半角英数→全角英数","半角英数→全角英数","Half→Full Alphanumeric"],"c.to-hanei":["全角英数→半角英数","全角英数→半角英数","Full→Half Alphanumeric"],"c.to-zenkaku":["全角片假名","全角カタカナ","Fullwidth Katakana"],"c.to-zenhira":["全角平假名","全角ひらがな","Fullwidth Hiragana"],"c.to-hankata":["半角片假名","半角カタカナ","Halfwidth Katakana"],"c.hankata-to-zenkata":["半角片假名→全角片假名","半角カタカナ→全角カタカナ","Half Katakana→Full Katakana"],"c.hankata-to-zenhira":["半角片假名→全角平假名","半角カタカナ→全角ひらがな","Half Katakana→Full Hiragana"],"c.base64-decode":["Base64 解码并保存","Base64デコードして保存","Base64 Decode and Save"],"c.uudecode":["uudecode 并保存","uudecodeして保存","uudecode and Save"],"c.encoding":["编码转换","文字コード変換","Encoding Conversion"],"c.eol":["换行符转换","改行コード変換","Line Ending Conversion"],"sub.codecnv":["代码转换","コード変換","Code Conversion"],"c.codecnv-auto2sjis":["自动判别 → SJIS","自動判別 → SJIS","Auto Detect → SJIS"],"c.codecnv-email":["E-Mail (JIS → SJIS)","E-Mail(JIS→SJIS)","E-Mail (JIS → SJIS)"],"c.codecnv-euc2sjis":["EUC → SJIS","EUC → SJIS","EUC → SJIS"],"c.codecnv-unicode2sjis":["Unicode → SJIS","Unicode → SJIS","Unicode → SJIS"],"c.codecnv-unicodebe2sjis":["UnicodeBE → SJIS","UnicodeBE → SJIS","UnicodeBE → SJIS"],"c.codecnv-utf82sjis":["UTF-8 → SJIS","UTF-8 → SJIS","UTF-8 → SJIS"],"c.codecnv-utf72sjis":["UTF-7 → SJIS","UTF-7 → SJIS","UTF-7 → SJIS"],"c.codecnv-sjis2jis":["SJIS → JIS","SJIS → JIS","SJIS → JIS"],"c.codecnv-sjis2euc":["SJIS → EUC","SJIS → EUC","SJIS → EUC"],"c.codecnv-sjis2utf8":["SJIS → UTF-8","SJIS → UTF-8","SJIS → UTF-8"],"c.codecnv-sjis2utf7":["SJIS → UTF-7","SJIS → UTF-7","SJIS → UTF-7"],"menu.search":["搜索","検索","Search"],"c.find":["查找...","検索...","Find..."],"c.find-next":["查找下一个","次を検索","Find Next"],"c.find-prev":["查找上一个","前を検索","Find Previous"],"c.replace":["替换...","置換...","Replace..."],"c.replace-all":["全部替换","すべて置換","Replace All"],"c.grep":["Grep 搜索...","Grep...","Grep..."],"c.grep-replace":["Grep 替换...","Grep置換...","Grep Replace..."],"sub.isearch":["增量查找","インクリメンタルサーチ","Incremental Search"],"c.find-incremental":["增量查找","インクリメンタルサーチ","Incremental Search"],"c.isearch-fwd":["向前增量查找","前方インクリメンタルサーチ","Incremental Search Forward"],"c.isearch-back":["向后增量查找","後方インクリメンタルサーチ","Incremental Search Backward"],"c.isearch-regex-fwd":["向前正则增量查找","前方正規表現インクリメンタルサーチ","Regex Incremental Forward"],"c.isearch-regex-back":["向后正则增量查找","後方正規表現インクリメンタルサーチ","Regex Incremental Backward"],"c.isearch-migemo-fwd":["向前 MIGEMO 增量查找","前方MIGEMOインクリメンタルサーチ","MIGEMO Incremental Forward"],"c.isearch-migemo-back":["向后 MIGEMO 增量查找","後方MIGEMOインクリメンタルサーチ","MIGEMO Incremental Backward"],"c.search-clearmark":["切换查找标记","検索マークの切替え","Toggle Search Marks"],"c.jump-srchstart":["回到查找起点","検索開始位置へ戻る","Back to Search Start"],"c.goto-line":["跳转到行...","指定行へジャンプ...","Go to Line..."],"c.bracket-pair":["对应括号","対括弧の検索","Matching Bracket"],"sub.bookmark":["书签","ブックマーク","Bookmarks"],"c.bookmark-toggle":["设置/取消书签","ブックマークの設定/解除","Toggle Bookmark"],"c.bookmark-next":["下一个书签","次のブックマークへ","Next Bookmark"],"c.bookmark-prev":["上一个书签","前のブックマークへ","Previous Bookmark"],"c.bookmark-reset":["清除全部书签","ブックマークの全解除","Clear All Bookmarks"],"c.bookmark-view":["书签列表","ブックマークの一覧","Bookmark List"],"sub.tags":["标签跳转 / 函数","タグジャンプ・関数","Tags / Functions"],"c.tag-jump":["跳转到定义","タグジャンプ","Tag Jump"],"c.tag-jump-back":["返回","タグジャンプバック","Tag Jump Back"],"c.tags-make":["生成 tags 文件","タグファイルの作成","Create Tags File"],"c.tag-jump-keyword":["按关键字跳转...","キーワードを指定してタグジャンプ...","Tag Jump by Keyword..."],"c.open-hc":["打开同名 C/C++ 头/源文件","同名のC/C++ヘッダー(ソース)を開く","Open Matching C/C++ Header/Source"],"c.funclist-next":["下一个函数","次の関数リストマークへ","Next Function"],"c.funclist-prev":["上一个函数","前の関数リストマークへ","Previous Function"],"sub.modify":["变更行","変更行","Modified Lines"],"c.modify-next":["下一个变更行","次の変更行へ","Next Modified Line"],"c.modify-prev":["上一个变更行","前の変更行へ","Previous Modified Line"],"c.modify-next-sel":["(选择) 下一个变更行","(範囲選択) 次の変更行へ","Select to Next Modified Line"],"c.modify-prev-sel":["(选择) 上一个变更行","(範囲選択) 前の変更行へ","Select to Previous Modified Line"],"sub.jumphist":["移动历史","移動履歴","Jump History"],"c.jumphist-prev":["上一个位置","移動履歴: 前へ","Previous Location"],"c.jumphist-next":["下一个位置","移動履歴: 次へ","Next Location"],"c.jumphist-set":["登记当前位置","現在位置を移動履歴に登録","Register Location"],"sub.diff":["文件比较 (DIFF)","ファイル比較 (DIFF)","Compare (DIFF)"],"c.diff-with-tab":["与另一标签比较","他のタブと比較","Compare with Tab"],"c.diff-with-file":["与文件比较...","ファイルと比較...","Compare with File..."],"c.diff-list":["差异列表","差分一覧","Difference List"],"c.diff-next":["下一处差异","次の差分へ","Next Difference"],"c.diff-prev":["上一处差异","前の差分へ","Previous Difference"],"c.diff-clear":["清除差异标记","差分の全解除","Clear Differences"],"menu.view":["视图","表示","View"],"sub.layout":["界面布局","画面レイアウト","Layout"],"c.layout-min":["极简 (Sakura 风格)","シンプル (Sakura風)","Minimal (Sakura style)"],"c.layout-full":["完整 IDE 界面","フル IDE 画面","Full IDE"],"c.toggle-activity-bar":["活动栏","アクティビティバー","Activity Bar"],"c.toggle-side-bar":["侧边栏","サイドバー","Side Bar"],"c.toggle-chat":["Chat 右栏","Chat パネル","Chat Panel"],"c.toggle-tabs":["标签栏","タブバー","Tab Bar"],"c.toggle-breadcrumb":["面包屑","パンくず","Breadcrumb"],"sub.sidebar":["侧边栏内容","サイドバー表示内容","Side Bar Views"],"c.show-explorer":["资源管理器","エクスプローラー","Explorer"],"c.show-search":["搜索","検索","Search"],"c.show-scm":["源代码管理","ソース管理","Source Control"],"c.show-outline":["大纲","アウトライン","Outline"],"c.file-tree":["文件树","ファイルツリー","File Tree"],"sub.panel":["底部面板","下部パネル","Bottom Panel"],"c.show-terminal":["终端","ターミナル","Terminal"],"c.show-output":["输出","出力","Output"],"c.show-problems":["问题","問題","Problems"],"c.new-terminal":["新建终端","新しいターミナル","New Terminal"],"c.toggle-bottom":["显示/隐藏","表示/非表示","Show / Hide"],"c.toggle-word-wrap":["自动换行","右端で折り返す","Word Wrap"],"c.toggle-line-num":["行号","行番号","Line Numbers"],"c.toggle-minimap":["缩略图","ミニマップ","Minimap"],"c.toggle-status":["状态栏","ステータスバー","Status Bar"],"sub.view-bars":["工具栏 / 标尺","ツールバー・ルーラー","Toolbar / Ruler"],"c.toggle-toolbar":["工具栏","ツールバー","Toolbar"],"c.toggle-funckey":["功能键栏","ファンクションキー","Function Keys"],"c.toggle-ruler":["标尺","ルーラー","Ruler"],"c.toggle-ws":["空白 / TAB 标记","空白・TAB表示","Whitespace / TAB Marks"],"c.toggle-curline":["当前行下划线","カーソル行アンダーライン","Current Line Underline"],"sub.view-wrap":["折行设置","折り返し設定","Wrapping"],"c.wrap-none":["不折行","折り返しなし","No Wrap"],"c.wrap-window-width":["按窗口宽度折行","現在のウィンドウ幅で折り返し","Wrap at Window Width"],"c.tmp-wrap":["按指定列数折行 (临时)...","指定桁で折り返す (一時設定)...","Wrap at Column (Temporary)..."],"sub.view-zoom":["字体 / 缩放","フォント・拡大縮小","Font / Zoom"],"c.font-bigger":["字体放大","フォント拡大","Increase Font"],"c.font-smaller":["字体缩小","フォント縮小","Decrease Font"],"c.zoom-in":["放大","拡大","Zoom In"],"c.zoom-out":["缩小","縮小","Zoom Out"],"c.zoom-reset":["重置缩放","拡大率をリセット","Reset Zoom"],"sub.theme":["主题","テーマ","Theme"],"c.theme-clear":["透明玻璃","透明ガラス","Clear Glass"],"c.theme-dark":["深色","ダーク","Dark"],"c.theme-light":["浅色","ライト","Light"],"c.theme-high-contrast":["高对比度","ハイコントラスト","High Contrast"],"c.theme-retro16":["复古 16-Bit","レトロ 16-Bit","Retro 16-Bit"],"c.toggle-readonly":["只读模式","閲覧モード","View Mode (Read-only)"],"c.select-count-mode":["选区字数统计方式","文字カウントの方法","Selection Count Mode"],"c.toggle-key-search":["关键字帮助自动显示","キーワードヘルプ自動表示","Auto Keyword Help"],"c.redraw":["重绘","再描画","Redraw"],"c.completion":["代码补全","入力補完","Completion"],"c.goto-def":["转到定义","定義へ移動","Go to Definition"],"menu.tool":["工具","ツール","Tools"],"c.outline":["大纲","アウトライン解析","Outline"],"c.syntax":["语法高亮","シンタックスハイライト","Syntax Highlighting"],"c.type-config":["文件类型设置","タイプ別設定","File Type Settings"],"c.auto-backup":["立即备份","今すぐバックアップ","Backup Now"],"c.file-lock":["文件锁定","ファイルロック","File Lock"],"sub.macro":["宏","マクロ","Macro"],"c.macro-start":["开始录制","キーマクロの記録開始","Start Recording"],"c.macro-stop":["停止录制","キーマクロの記録終了","Stop Recording"],"c.macro-play":["播放宏","キーマクロの実行","Play Macro"],"c.macro-save":["保存宏...","キーマクロの保存...","Save Macro..."],"c.macro-load":["读取宏...","キーマクロの読み込み...","Load Macro..."],"c.js-macro":["运行 JS 宏","JSマクロの実行","Run JS Macro"],"c.ppa-macro":["运行 PPA 宏","PPAマクロの実行","Run PPA Macro"],"sub.plugin":["插件","プラグイン","Plugins"],"c.plugin-load":["加载插件","プラグインの読み込み","Load Plugin"],"c.plugin-manage":["管理","プラグイン管理","Manage Plugins"],"c.exec-cmd":["外部命令...","外部コマンド実行...","Run External Command..."],"sub.sqlplus":["SQL*Plus","SQL*Plus","SQL*Plus"],"c.sqlplus-activate":["打开 SQL*Plus 窗口","SQL*Plusをアクティブ表示","Open SQL*Plus Window"],"c.sqlplus-run":["执行当前文件","SQL*Plusで実行","Run Current File"],"c.history-manager":["历史管理...","履歴の管理...","History Manager..."],"menu.setting":["设置","設定","Settings"],"c.term-config":["终端设置...","ターミナル設定...","Terminal Settings..."],"c.common-config":["共通设置...","共通設定...","Common Settings..."],"c.key-config":["键位分配...","キー割り当て...","Key Bindings..."],"c.customize-keys":["自定义键","キーのカスタマイズ","Customize Keys"],"c.settings":["首选项","設定","Preferences"],"c.keymap":["键映射","キーマップ","Keymap"],"c.font":["字体...","フォント...","Font..."],"c.language":["当前文件语言...","ファイルの言語...","File Language..."],"c.theme-select":["主题...","テーマ選択...","Theme..."],"sub.uilang":["界面语言 / 言語 / Language","表示言語 / Language","Display Language"],"c.lang-zh":["中文","中文","中文"],"c.lang-ja":["日本語","日本語","日本語"],"c.lang-en":["English","English","English"],"c.charset":["文字编码...","文字コードセット指定...","Character Set..."],"sub.eolmode":["输入换行符","入力改行コード","Input Line Ending"],"c.eol-crlf":["CRLF","CRLF","CRLF"],"c.eol-lf":["LF","LF","LF"],"c.eol-cr":["CR","CR","CR"],"c.toggle-vim":["Vim 模式","Vimモード","Vim Mode"],"c.import-config":["导入配置","設定のインポート","Import Settings"],"c.export-config":["导出配置","設定のエクスポート","Export Settings"],"c.reset-settings":["恢复默认","初期設定に戻す","Reset to Defaults"],"menu.window":["窗口","ウィンドウ","Window"],"c.split-h":["上下分割","上下に分割","Split Horizontally"],"c.split-v":["左右分割","左右に分割","Split Vertically"],"c.split-quad":["四分割","縦横に分割","Split into Four"],"c.cascade":["层叠","重ねて表示","Cascade"],"c.tile-h":["水平平铺","左右に並べて表示","Tile Horizontally"],"c.tile-v":["垂直平铺","上下に並べて表示","Tile Vertically"],"c.next-tab":["下一个标签","次のタブ","Next Tab"],"c.prev-tab":["上一个标签","前のタブ","Previous Tab"],"sub.tabops":["标签操作","タブ操作","Tab Operations"],"c.tab-move-left":["标签左移","タブを左に移動","Move Tab Left"],"c.tab-move-right":["标签右移","タブを右に移動","Move Tab Right"],"c.close-others":["关闭其它标签","このタブ以外を閉じる","Close Other Tabs"],"c.close-left":["关闭左侧标签","左をすべて閉じる","Close Tabs to the Left"],"c.close-right":["关闭右侧标签","右をすべて閉じる","Close Tabs to the Right"],"sub.tabgroup":["标签分组","タブグループ","Tab Groups"],"c.next-group":["下一个分组","次のグループ","Next Group"],"c.prev-group":["上一个分组","前のグループ","Previous Group"],"c.tab-separate":["移到新分组","新規グループ","Move to New Group"],"c.tab-joint-next":["移到下一个分组","次のグループに移動","Move to Next Group"],"c.tab-joint-prev":["移到上一个分组","前のグループに移動","Move to Previous Group"],"c.bind-window":["合并为一组","グループ化","Merge into One Group"],"c.group-close":["关闭当前分组","グループを閉じる","Close Group"],"c.window-list":["窗口一览","ウィンドウ一覧","Window List"],"sub.winsize":["窗口大小","ウィンドウサイズ","Window Size"],"c.maximize-v":["纵向最大化","縦方向に最大化","Maximize Vertically"],"c.maximize-h":["横向最大化","横方向に最大化","Maximize Horizontally"],"c.minimize-all":["全部最小化","すべて最小化","Minimize All"],"c.minimize-window":["最小化","最小化","Minimize"],"c.fullscreen":["全屏","全画面表示","Full Screen"],"c.topmost":["始终置顶","常に手前に表示","Always on Top"],"menu.help":["帮助","ヘルプ","Help"],"c.help":["内置 wiki","目次","Contents"],"c.wiki":["wiki 帮助","Wiki ヘルプ","Wiki Help"],"c.help-search":["关键字检索...","キーワード検索...","Search Help..."],"c.ext-help":["光标处单词的帮助","カーソル位置の単語のヘルプ","Help for Word at Cursor"],"c.shortcuts":["快捷键","ショートカットキー","Shortcuts"],"c.keybind-list":["键位一览...","キー割り当て一覧...","Key Binding List..."],"c.all-commands":["全部功能一览...","全機能一覧...","All Commands..."],"c.about":["关于 IDE1.0","IDE1.0について","About IDE1.0"],"ui.noRecent":["无最近文件","最近使ったファイルはありません","No recent files"]};
 const MENU_SC = {"new-file":"Ctrl+N","open-folder":"Ctrl+Alt+O","open-file":"Ctrl+O","save":"Ctrl+S","save-as":"Ctrl+Shift+S","save-all":"Ctrl+Alt+Shift+S","close-tab":"Ctrl+W","close-all":"Ctrl+Shift+W","undo":"Ctrl+Z","redo":"Ctrl+Y","cut":"Ctrl+X","copy":"Ctrl+C","paste":"Ctrl+V","select-all":"Ctrl+A","delete-line":"Ctrl+D","duplicate-line":"Ctrl+Shift+D","move-line-up":"Alt+Shift+Up","move-line-down":"Alt+Shift+Down","delete-line-up":"Ctrl+Shift+Backspace","delete-word-end":"Ctrl+Delete","join-with-prev":"Ctrl+J","cut-line":"Ctrl+E","cut-line-start":"Ctrl+U","delete-line-to-start":"Ctrl+Shift+U","delete-line-to-end":"Ctrl+Shift+K","delete-word-start":"Ctrl+Backspace","indent-selection":"Tab","unindent-selection":"Shift+Tab","clip-history":"Ctrl+Shift+V","find":"Ctrl+F","find-next":"F3","find-prev":"Shift+F3","find-incremental":"Ctrl+I","replace":"Ctrl+H","replace-all":"Ctrl+Alt+R","grep":"Ctrl+G","grep-replace":"Ctrl+Alt+G","goto-line":"Ctrl+J","tag-jump":"F12","bookmark-toggle":"Ctrl+F2","bookmark-next":"F2","bookmark-prev":"Shift+F2","toggle-bottom":"Ctrl+J","toggle-status":"Ctrl+`","toggle-line-num":"Ctrl+Shift+L","font-bigger":"Ctrl+=","font-smaller":"Ctrl+-","zoom-reset":"Ctrl+0","completion":"Ctrl+Space","goto-def":"F12","redraw":"F5","file-properties":"Alt+Enter","begin-sel":"F6","keybind-list":"Ctrl+Q","all-commands":"Shift+F1","close-open":"Shift+Ctrl+F4","exit-all":"Ctrl+Alt+F4","help-search":"Shift+Alt+F1","ext-help":"Ctrl+F1","outline":"Ctrl+Shift+O","syntax":"Alt+S","diff-next":"Alt+Down","auto-backup":"Ctrl+Alt+B","file-lock":"Ctrl+Alt+L","macro-start":"Ctrl+Shift+R","macro-stop":"Ctrl+Shift+R","macro-play":"Ctrl+Shift+P","exec-cmd":"Ctrl+F5","sqlplus-activate":"Shift+F11","customize-keys":"Ctrl+Alt+K","settings":"Ctrl+,","keymap":"Ctrl+Alt+K","language":"Alt+L","new-window":"Ctrl+Shift+N","split-h":"Ctrl+Shift+H","split-v":"Ctrl+Shift+V","split-quad":"Ctrl+Shift+Q","next-tab":"Ctrl+Tab","prev-tab":"Ctrl+Shift+Tab","fullscreen":"F11","wiki":"F1","shortcuts":"Ctrl+/"};
-const MENU_DEF = [["file","F",["new-file","open-folder","open-file","-","save","save-as","save-all","save-close","-","close-tab","close-all","close-open","-","reload",{s:"reopen",i:["reopen-UTF-8","reopen-SJIS","reopen-EUC-JP","reopen-JIS","reopen-Unicode","reopen-UnicodeBE","reopen-Latin1","reopen-CESU-8","reopen-UTF-7","reopen-GBK","reopen-Big5","reopen-EUC-KR"]},{s:"recent",i:["recent-clear","-","@empty"]},"-",{s:"print",i:["print","print-preview","print-setup"]},"browse","file-properties","-","new-window","exit-all"]],["edit","E",["undo","redo","-","cut","copy","paste","select-all","-",{s:"edit-delete",i:["word-cut","word-delete","line-cut-to-end","cut-line","cut-line-start","delete-line-to-start","delete-line-to-end","delete-word-start","delete-word-end"]},{s:"edit-copy",i:["copy-crlf","copy-addcrlf","copy-lines","copy-passage","copy-linenum","copy-html","copy-html-ln","-","copy-fname","copy-path","copy-tag","-","paste-box","clip-history"]},{s:"edit-lines",i:["delete-line","duplicate-line","move-line-up","move-line-down","add-line-above","add-line-below","delete-line-up","delete-line-down","join-with-prev","-","line-ops","sort-asc","sort-desc","ltrim-lines","rtrim-lines","uniq-consecutive"]},{s:"edit-indent",i:["indent-selection","unindent-selection","indent-space","unindent-space","tab-to-space","space-to-tab"]},{s:"edit-select",i:["select-word","begin-sel","sel-para-prev","sel-para-next","-","column-delete","column-replace","box-line-top","-","cur-line-center","reconvert"]},{s:"insert",i:["insert-date","insert-time","insert-stamp","stamp-config","insert-template","ctrl-code","ins-recent-file","ins-recent-folder"]},"-",{s:"convert",i:["to-upper","to-lower","-","to-fullwidth","to-halfwidth","to-zenei","to-hanei","-","to-zenkaku","to-zenhira","to-hankata","hankata-to-zenkata","hankata-to-zenhira","-","base64-decode","uudecode","-","encoding","eol"]},{s:"codecnv",i:["codecnv-auto2sjis","codecnv-email","codecnv-euc2sjis","codecnv-unicode2sjis","codecnv-unicodebe2sjis","codecnv-utf82sjis","codecnv-utf72sjis","-","codecnv-sjis2jis","codecnv-sjis2euc","codecnv-sjis2utf8","codecnv-sjis2utf7"]}]],["search","S",["find","find-next","find-prev","replace","replace-all","grep","grep-replace","-",{s:"isearch",i:["find-incremental","isearch-fwd","isearch-back","isearch-regex-fwd","isearch-regex-back","isearch-migemo-fwd","isearch-migemo-back"]},"search-clearmark","jump-srchstart","-","goto-line","bracket-pair","-",{s:"bookmark",i:["bookmark-toggle","bookmark-next","bookmark-prev","bookmark-reset","bookmark-view"]},{s:"tags",i:["tag-jump","tag-jump-back","tags-make","tag-jump-keyword","open-hc","-","funclist-next","funclist-prev"]},{s:"modify",i:["modify-next","modify-prev","modify-next-sel","modify-prev-sel"]},{s:"jumphist",i:["jumphist-prev","jumphist-next","jumphist-set"]},{s:"diff",i:["diff-with-tab","diff-with-file","diff-list","diff-next","diff-prev","diff-clear"]}]],["view","V",[{s:"layout",i:["layout-min","layout-full","-","toggle-activity-bar","toggle-side-bar","toggle-tabs","toggle-breadcrumb"]},{s:"sidebar",i:["show-explorer","show-search","show-scm","show-outline","file-tree"]},{s:"panel",i:["show-terminal","show-output","show-problems","new-terminal","-","toggle-bottom"]},"-","toggle-word-wrap","toggle-line-num","toggle-minimap","toggle-status",{s:"view-bars",i:["toggle-toolbar","toggle-funckey","toggle-ruler","toggle-ws","toggle-curline"]},{s:"view-wrap",i:["wrap-none","wrap-window-width","tmp-wrap"]},{s:"view-zoom",i:["font-bigger","font-smaller","zoom-in","zoom-out","zoom-reset"]},{s:"theme",i:["theme-clear","theme-dark","theme-light","theme-high-contrast","theme-retro16"]},"-","toggle-readonly","select-count-mode","toggle-key-search","-","redraw","completion","goto-def"]],["tool","T",["outline","syntax","type-config","-","auto-backup","file-lock","-",{s:"macro",i:["macro-start","macro-stop","macro-play","macro-save","macro-load","-","js-macro","ppa-macro"]},{s:"plugin",i:["plugin-load","plugin-manage"]},"-","exec-cmd",{s:"sqlplus",i:["sqlplus-activate","sqlplus-run"]},"history-manager"]],["setting","C",["common-config","term-config","key-config","customize-keys","settings","keymap","font","language","theme-select",{s:"uilang",i:["lang-zh","lang-ja","lang-en"]},"charset",{s:"eolmode",i:["eol-crlf","eol-lf","eol-cr"]},"toggle-vim","-","import-config","export-config","reset-settings"]],["window","W",["split-h","split-v","split-quad","cascade","tile-h","tile-v","-","next-tab","prev-tab",{s:"tabops",i:["tab-move-left","tab-move-right","close-others","close-left","close-right"]},{s:"tabgroup",i:["next-group","prev-group","tab-separate","tab-joint-next","tab-joint-prev","bind-window","group-close"]},"window-list","-",{s:"winsize",i:["maximize-v","maximize-h","minimize-all","minimize-window"]},"fullscreen","topmost"]],["help","H",["help","wiki","help-search","ext-help","-","shortcuts","keybind-list","all-commands","-","about"]]];
+const MENU_DEF = [["file","F",["new-file","open-folder","open-file","-","save","save-as","save-all","save-close","-","close-tab","close-all","close-open","-","reload",{s:"reopen",i:["reopen-UTF-8","reopen-SJIS","reopen-EUC-JP","reopen-JIS","reopen-Unicode","reopen-UnicodeBE","reopen-Latin1","reopen-CESU-8","reopen-UTF-7","reopen-GBK","reopen-Big5","reopen-EUC-KR"]},{s:"recent",i:["recent-clear","-","@empty"]},"-",{s:"print",i:["print","print-preview","print-setup"]},"browse","file-properties","-","new-window","exit-all"]],["edit","E",["undo","redo","-","cut","copy","paste","select-all","-",{s:"edit-delete",i:["word-cut","word-delete","line-cut-to-end","cut-line","cut-line-start","delete-line-to-start","delete-line-to-end","delete-word-start","delete-word-end"]},{s:"edit-copy",i:["copy-crlf","copy-addcrlf","copy-lines","copy-passage","copy-linenum","copy-html","copy-html-ln","-","copy-fname","copy-path","copy-tag","-","paste-box","clip-history"]},{s:"edit-lines",i:["delete-line","duplicate-line","move-line-up","move-line-down","add-line-above","add-line-below","delete-line-up","delete-line-down","join-with-prev","-","line-ops","sort-asc","sort-desc","ltrim-lines","rtrim-lines","uniq-consecutive"]},{s:"edit-indent",i:["indent-selection","unindent-selection","indent-space","unindent-space","tab-to-space","space-to-tab"]},{s:"edit-select",i:["select-word","begin-sel","sel-para-prev","sel-para-next","-","column-delete","column-replace","box-line-top","-","cur-line-center","reconvert"]},{s:"insert",i:["insert-date","insert-time","insert-stamp","stamp-config","insert-template","ctrl-code","ins-recent-file","ins-recent-folder"]},"-",{s:"convert",i:["to-upper","to-lower","-","to-fullwidth","to-halfwidth","to-zenei","to-hanei","-","to-zenkaku","to-zenhira","to-hankata","hankata-to-zenkata","hankata-to-zenhira","-","base64-decode","uudecode","-","encoding","eol"]},{s:"codecnv",i:["codecnv-auto2sjis","codecnv-email","codecnv-euc2sjis","codecnv-unicode2sjis","codecnv-unicodebe2sjis","codecnv-utf82sjis","codecnv-utf72sjis","-","codecnv-sjis2jis","codecnv-sjis2euc","codecnv-sjis2utf8","codecnv-sjis2utf7"]}]],["search","S",["find","find-next","find-prev","replace","replace-all","grep","grep-replace","-",{s:"isearch",i:["find-incremental","isearch-fwd","isearch-back","isearch-regex-fwd","isearch-regex-back","isearch-migemo-fwd","isearch-migemo-back"]},"search-clearmark","jump-srchstart","-","goto-line","bracket-pair","-",{s:"bookmark",i:["bookmark-toggle","bookmark-next","bookmark-prev","bookmark-reset","bookmark-view"]},{s:"tags",i:["tag-jump","tag-jump-back","tags-make","tag-jump-keyword","open-hc","-","funclist-next","funclist-prev"]},{s:"modify",i:["modify-next","modify-prev","modify-next-sel","modify-prev-sel"]},{s:"jumphist",i:["jumphist-prev","jumphist-next","jumphist-set"]},{s:"diff",i:["diff-with-tab","diff-with-file","diff-list","diff-next","diff-prev","diff-clear"]}]],["view","V",[{s:"layout",i:["layout-min","layout-full","-","toggle-activity-bar","toggle-side-bar","toggle-chat","toggle-tabs","toggle-breadcrumb"]},{s:"sidebar",i:["show-explorer","show-search","show-scm","show-outline","file-tree"]},{s:"panel",i:["show-terminal","show-output","show-problems","new-terminal","-","toggle-bottom"]},"-","toggle-word-wrap","toggle-line-num","toggle-minimap","toggle-status",{s:"view-bars",i:["toggle-toolbar","toggle-funckey","toggle-ruler","toggle-ws","toggle-curline"]},{s:"view-wrap",i:["wrap-none","wrap-window-width","tmp-wrap"]},{s:"view-zoom",i:["font-bigger","font-smaller","zoom-in","zoom-out","zoom-reset"]},{s:"theme",i:["theme-clear","theme-dark","theme-light","theme-high-contrast","theme-retro16"]},"-","toggle-readonly","select-count-mode","toggle-key-search","-","redraw","completion","goto-def"]],["tool","T",["outline","syntax","type-config","-","auto-backup","file-lock","-",{s:"macro",i:["macro-start","macro-stop","macro-play","macro-save","macro-load","-","js-macro","ppa-macro"]},{s:"plugin",i:["plugin-load","plugin-manage"]},"-","exec-cmd",{s:"sqlplus",i:["sqlplus-activate","sqlplus-run"]},"history-manager"]],["setting","C",["common-config","term-config","key-config","customize-keys","settings","keymap","font","language","theme-select",{s:"uilang",i:["lang-zh","lang-ja","lang-en"]},"charset",{s:"eolmode",i:["eol-crlf","eol-lf","eol-cr"]},"toggle-vim","-","import-config","export-config","reset-settings"]],["window","W",["split-h","split-v","split-quad","cascade","tile-h","tile-v","-","next-tab","prev-tab",{s:"tabops",i:["tab-move-left","tab-move-right","close-others","close-left","close-right"]},{s:"tabgroup",i:["next-group","prev-group","tab-separate","tab-joint-next","tab-joint-prev","bind-window","group-close"]},"window-list","-",{s:"winsize",i:["maximize-v","maximize-h","minimize-all","minimize-window"]},"fullscreen","topmost"]],["help","H",["help","wiki","help-search","ext-help","-","shortcuts","keybind-list","all-commands","-","about"]]];
 function tr(key, fallback) { const v = I18N[key]; return v ? (v[UI_LANGS.indexOf(UI_LANG)] || v[0]) : (fallback !== undefined ? fallback : key); }
 function menuItemsHtml(items) {
   return items.map((n) => {
@@ -2348,6 +2368,7 @@ const TIPS = {
   "layout-full": "界面布局: 完整 IDE 界面",
   "toggle-activity-bar": "显示/隐藏活动栏 (极简布局: 展开/折叠)",
   "toggle-side-bar": "显示/隐藏侧边栏 (极简布局: 展开/折叠)",
+  "toggle-chat": "显示/隐藏 Chat 右栏 (Ctrl+Shift+L)",
   "toggle-tabs": "显示/隐藏标签栏 (极简布局下 >=2 个文档时自动出现)",
   "toggle-breadcrumb": "显示/隐藏面包屑",
   "toggle-vim": "Vim 模式: 开 = NORMAL/INSERT/VISUAL 三态; 关 = 像 Sakura 一样直接输入",
@@ -2421,6 +2442,7 @@ function updateMenuChecks() {
     "layout-full": p === "full" && pure,
     "toggle-activity-bar": f.activityBar,
     "toggle-side-bar": f.sideBar,
+    "toggle-chat": document.documentElement.getAttribute("data-chat") === "on",
     "toggle-tabs": tabStripShown(),
     "toggle-breadcrumb": f.breadcrumb,
     "toggle-bottom": f.bottomPanel && !!bp && bp.getAttribute("data-collapsed") !== "true",
@@ -2784,9 +2806,44 @@ function openModal(opts) {
 }
 function closeModal() {
   const was = modal.classList.contains("show");
+  if (UI_DLG) { const d = UI_DLG; UI_DLG = null; d.resolve(d.cancel); }
+  modal.classList.remove("float");
   modal.classList.remove("show");
   // 对话框关掉后焦点还给编辑区: 点对话框里的按钮 (或按钮随对话框一起消失) 后焦点会掉到 body, 之后的键盘输入就全失效了
   if (was) { const a = document.activeElement; if (!a || a === document.body || modal.contains(a)) edContent.focus({ preventScroll: true }); }
+}
+
+function resetFloatBox() {
+  const box = modal.querySelector(".md-box");
+  if (!box || !box.dataset.moved && !box.style.top) return;
+  delete box.dataset.moved;
+  box.style.left = box.style.top = box.style.right = box.style.bottom = "";
+}
+(() => {
+  const head = modal.querySelector(".md-head"), box = modal.querySelector(".md-box");
+  head.addEventListener("mousedown", (e) => {
+    if (!modal.classList.contains("float") || e.target.closest("button")) return;
+    const r = box.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    box.dataset.moved = "1"; box.style.right = "auto"; box.style.bottom = "auto";
+    const mv = (ev) => {
+      box.style.left = Math.max(0, Math.min(window.innerWidth - r.width, ev.clientX - dx)) + "px";
+      box.style.top = Math.max(0, Math.min(window.innerHeight - 48, ev.clientY - dy)) + "px";
+    };
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+    e.preventDefault();
+  });
+})();
+// 搜到的位置 (光标) 被浮动对话框盖住 -> 把对话框挪到另一侧 (上 <-> 下); 用户自己拖过的位置不动
+function avoidFindDialog() {
+  if (!modal.classList.contains("float")) return;
+  const box = modal.querySelector(".md-box");
+  if (box.dataset.moved === "1") return;
+  const c = document.getElementById("caret").getBoundingClientRect(), b = box.getBoundingClientRect();
+  const hit = c.bottom > b.top - 6 && c.top < b.bottom + 6 && c.right > b.left - 6 && c.left < b.right + 6;
+  if (!hit) return;
+  const atTop = b.top < window.innerHeight / 2;
+  box.style.top = atTop ? "auto" : "56px"; box.style.bottom = atTop ? "40px" : "auto";
 }
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
@@ -2798,7 +2855,7 @@ async function promptOpenFile() {
     if (!root) return;                       // 取消/失败的提示 ensureWorkingRoot 已经给了
   }
   if (!root) { setTip("请先打开项目"); return; }
-  const rel = prompt("打开文件 (项目根内相对路径):");
+  const rel = await uiPrompt("打开文件 (项目根内相对路径):", "", { title: "打开文件" });
   if (!rel) return;
   openFile(layoutPreset() === "min" ? joinPath(root, rel) : stripVerbatim(projectRoot) + "\\" + rel);
 }
@@ -4389,7 +4446,7 @@ async function writeDoc(path, t) {
   } catch (e) {
     if (String(e.message).startsWith("UNMAPPABLE:")) {
       const parts = e.message.split(":");
-      if (!confirm(parts.slice(2).join(":") + "\n\n仍然以 " + spec.encoding + " 保存吗? (这些字符会变成 ?)\n取消 = 不保存, 可改用 UTF-8 / Unicode 再保存。")) {
+      if (!(await uiConfirm(parts.slice(2).join(":") + "\n\n仍然以 " + spec.encoding + " 保存吗? (这些字符会变成 ?)\n取消 = 不保存, 可改用 UTF-8 / Unicode 再保存。", { title: "无法用该编码表示", ok: "仍然保存" }))) {
         const err = new Error("已取消保存 (有字符无法用 " + spec.encoding + " 表示)"); err.cancelled = true; throw err;
       }
       return await invoke("write_file", Object.assign(spec, { force: true }));
@@ -4412,7 +4469,7 @@ async function reopenWithEncoding(label) {
   const t = getActiveTab();
   if (!t) return;
   if (t.untitled) { setTip("无标题文档没有对应的文件, 无法重新打开"); return; }
-  if (t.dirty && !confirm(t.name + " 有未保存修改, 重新打开会丢失. 继续?")) return;
+  if (t.dirty && !(await uiConfirm(t.name + " 有未保存修改, 重新打开会丢失. 继续?", { title: "重新打开", ok: "继续" }))) return;
   try {
     const res = await invoke("read_file", { path: stripVerbatim(t.path), encoding: label });
     t.lines = String(res.content ?? "").split("\n");
@@ -4552,11 +4609,11 @@ async function saveAsFlow(t, batch) {
     const root = projectRoot || await ensureWorkingRoot();
     if (!root) return false;
     const dir = stripVerbatim(root);
-    const input = prompt("另存为 (" + dir + " 内的文件名或相对路径):", t.untitled ? "无标题.txt" : t.name);
+    const input = await uiPrompt("另存为 (" + dir + " 内的文件名或相对路径):", t.untitled ? "无标题.txt" : t.name, { title: "另存为" });
     const name = input && input.trim();
     if (!name) return false;
     const path = joinPath(dir, name);
-    if (path !== t.path && await pathExists(path) && !confirm(name + " 已存在, 覆盖?")) return false;
+    if (path !== t.path && await pathExists(path) && !(await uiConfirm(name + " 已存在, 覆盖?", { title: "覆盖文件", ok: "覆盖" }))) return false;
     try {
       await writeDoc(path, t);
     } catch (e) {
@@ -5049,9 +5106,9 @@ async function saveActive() {
 
 // 极简布局: 关掉有未保存修改的文档前先确认 (唯一的无标题文档没有文件可找回, Ctrl+W 一下就丢光了). 完整布局保持原样直接关.
 // 只挂在用户入口上 (标签 ✕ / Ctrl+W / 关闭全部), closeTab 本身不问, 内部流程 (:wq 保存后关闭 等) 不受影响
-function confirmClose(t) {
+async function confirmClose(t) {
   if (layoutPreset() !== "min" || !t || !t.dirty) return true;
-  return confirm(t.name + " 有未保存修改, 关闭会丢失. 继续?");
+  return uiConfirm(t.name + " 有未保存修改, 关闭会丢失. 继续?", { title: "关闭标签", ok: "不保存并关闭", cancel: "取消" });
 }
 
 function closeTab(id) {
@@ -5082,7 +5139,7 @@ if (tabsEl) tabsEl.addEventListener("click", (e) => {
   const closeBtn = e.target.closest("[data-tab-close]");
   if (closeBtn) {
     e.stopPropagation();
-    if (confirmClose(TABS.get(closeBtn.dataset.tabClose))) closeTab(closeBtn.dataset.tabClose);
+    confirmClose(TABS.get(closeBtn.dataset.tabClose)).then((ok) => { if (ok) closeTab(closeBtn.dataset.tabClose); });
     return;
   }
   const tab = e.target.closest(".tab");
@@ -5748,6 +5805,59 @@ function openModalInput(title, value, onSubmit) {
   input.select();
 }
 
+/* ===== 主题化的确认 / 输入对话框 =====
+   原生 confirm() / prompt() 不跟主题 (白底系统框), 还会阻塞整个页面; 这里用和其它对话框同一套 modal。
+   测试环境 (harness) 通过 window.__uiDialogHook 接管, 以便脚本化回答。 */
+let UI_DLG = null;
+function uiDialogFinish(v) {
+  const d = UI_DLG; if (!d) return;
+  UI_DLG = null; closeModal(); d.resolve(v);
+}
+function uiBtn(label, onClick, primary) {
+  const b = document.createElement("button");
+  b.className = "md-btn" + (primary ? " primary" : ""); b.textContent = label; b.type = "button";
+  b.addEventListener("click", onClick);
+  return b;
+}
+function uiConfirm(msg, opts) {
+  opts = opts || {};
+  if (window.__uiDialogHook) return Promise.resolve(window.__uiDialogHook.confirm(msg));
+  return new Promise((resolve) => {
+    if (UI_DLG) uiDialogFinish(UI_DLG.cancel);
+    UI_DLG = { resolve, cancel: false };
+    mdInputSubmit = null;
+    mdTitle.textContent = opts.title || "确认";
+    const m = document.createElement("div"); m.className = "ui-dlg-msg"; m.textContent = msg;
+    mdBody.replaceChildren(m);
+    const ok = uiBtn(opts.ok || "确定", () => uiDialogFinish(true), true);
+    mdFoot.replaceChildren(ok, uiBtn(opts.cancel || "取消", () => uiDialogFinish(false)));
+    modal.classList.add("show");
+    ok.focus();
+  });
+}
+function uiPrompt(msg, def, opts) {
+  opts = opts || {};
+  if (window.__uiDialogHook) return Promise.resolve(window.__uiDialogHook.prompt(msg, def));
+  return new Promise((resolve) => {
+    if (UI_DLG) uiDialogFinish(UI_DLG.cancel);
+    UI_DLG = { resolve, cancel: null };
+    mdInputSubmit = null;
+    mdTitle.textContent = opts.title || "输入";
+    const m = document.createElement("div"); m.className = "ui-dlg-msg"; m.textContent = msg;
+    const inp = document.createElement(opts.multiline ? "textarea" : "input");
+    inp.className = "md-input"; inp.spellcheck = false; inp.value = def == null ? "" : String(def);
+    if (opts.multiline) inp.rows = 8;
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !(opts.multiline && !e.ctrlKey)) { e.preventDefault(); uiDialogFinish(inp.value); }
+      else if (e.key === "Escape") { e.preventDefault(); uiDialogFinish(null); }
+    });
+    mdBody.replaceChildren(m, inp);
+    mdFoot.replaceChildren(uiBtn("确定", () => uiDialogFinish(inp.value), true), uiBtn("取消", () => uiDialogFinish(null)));
+    modal.classList.add("show");
+    inp.focus(); inp.select();
+  });
+}
+
 // ===== Open folder =====
 // 一律 弹 modal 输入框 (预填 pick_folder 的结果) 确认后再打开.
 // - 不用原生 prompt(): 无头浏览器不响应会一直挂着阻塞, 且不可断言
@@ -5803,6 +5913,8 @@ function openOptionList(key) {
 // 注意: 不能用 `const _raw = openModal` 的包装写法 —— 那会读到包装函数自身,
 // 造成自引用; 改为给原实现加一个 _bodyHTML 字段分支.
 function showModal(opts) {
+  modal.classList.remove("float");
+  resetFloatBox();
   const title = opts.title || "提示";
   // #md-body 是常驻节点 (overflow:auto): 只替换内容不会重置滚动偏移, 下一个对话框会带着上一个的偏移打开 (首行被截在上方).
   // 同一个对话框原地重绘 (已显示且标题相同) 保留滚动位置; 其余情况 (关闭后再开 / 换成另一个对话框) 回到顶部.
@@ -6308,7 +6420,8 @@ function gotoHit(hit) {
   t.selAnchor = { row: hit.row, col: hit.col };
   renderVim(t);
   setPos("Ln " + (hit.row + 1) + ", Col " + (hit.col + 1));
-  scrollRowIntoView(hit.row, "nearest");
+  scrollRowIntoView(hit.row, "auto");
+  requestAnimationFrame(() => requestAnimationFrame(avoidFindDialog));   // 等光标位置更新后再量
 }
 
 // dir: 1 下 / -1 上. 到头后按「先頭(末尾)から再検索」选项循环
@@ -6357,6 +6470,18 @@ function openFindDialog(withReplace) {
       { label: "关闭", cmd: "modal-close" },
     ],
   });
+  modal.classList.add("float");
+  let incTimer = 0;
+  const jumpToFirst = () => {
+    // 增量: 从打开对话框时的光标位置起找第一处, 找到就把编辑区带到那里 (不动对话框的焦点)
+    if (!FIND_STATE.needle || !FIND_STATE.startPos) return;
+    const tt = getActiveTab(); if (!tt) return;
+    searchText("step", { row: FIND_STATE.startPos.row, col: FIND_STATE.startPos.col, forward: true, wrap: true, sel_start: null }).then((r) => {
+      if (r.error || !r.hit || getActiveTab() !== tt) return;
+      FIND_STATE.idx = r.index; FIND_STATE.total = r.total;
+      gotoHit(r.hit);
+    }).catch(() => {});
+  };
   const sync = () => {
     const g = (id) => document.getElementById(id);
     FIND_STATE.needle = g("find-input").value;
@@ -6375,6 +6500,7 @@ function openFindDialog(withReplace) {
     });
   }
   mdBody.querySelectorAll("input").forEach((i) => i.addEventListener("input", sync));
+  if (el && !withReplace) el.addEventListener("input", () => { clearTimeout(incTimer); incTimer = setTimeout(jumpToFirst, 120); });   // 置換对话框不增量跳: 选区会变成"置換范围"
   mdBody.querySelectorAll("input[type=checkbox],input[type=radio]").forEach((i) => i.addEventListener("change", sync));
   sync();
   const rp = document.getElementById("repl-input");
@@ -6679,7 +6805,7 @@ async function openGrepDialog(withReplace) {
     const excDirs = pats.excludeDirs.concat(splitSakuraList($("grep-exc-dirs").value));
     const folders = thisOnly && curDir ? [curDir] : parseSearchFolders($("grep-folders").value);
     const dirty = [...TABS.values()].filter((t) => t.dirty && t.path).map((t) => t.path);
-    if (!confirm("将在匹配的文件里把「" + q + "」全部置換为「" + $("grep-repl").value + "」并写回磁盘 (改写前备份为 .bak)。\n有未保存修改的已打开文件会跳过。继续?")) return;
+    if (!(await uiConfirm("将在匹配的文件里把「" + q + "」全部置換为「" + $("grep-repl").value + "」并写回磁盘 (改写前备份为 .bak)。\n有未保存修改的已打开文件会跳过。继续?", { title: "全部置換", ok: "置換" }))) return;
     $("grep-status").textContent = "置換中...";
     try {
       const rep = await invoke("grep_replace", {
@@ -6849,10 +6975,10 @@ function openGrepReplace() { openGrepDialog(true); }
 if (edContent) edContent.addEventListener("dblclick", () => { const t = getActiveTab(); if (t && t.grep) grepJumpAtCursor(t); });
 
 // 跳转到行
-function openGotoLine() {
+async function openGotoLine() {
   const t = getActiveTab();
   if (!t) return;
-  const n = prompt("跳转到行 (1-" + t.lines.length + "):");
+  const n = await uiPrompt("跳转到行 (1-" + t.lines.length + "):", "", { title: "跳转到行" });
   if (!n) return;
   const row = parseInt(n, 10);
   if (isNaN(row) || row < 1) { setTip("行号超出范围"); return; }
@@ -6885,6 +7011,34 @@ if (mdBody) mdBody.addEventListener("click", (e) => {
    (独立滚动位置, 文档一变就重画), 点一下镜像就把编辑器换到那个格子里继续输入。
    取消分割 = 编辑器回到原位、镜像全部移除 (原来这里提前 return, 编辑器一直被隐藏, 取消分割后再也输入不了)。 */
 // SPLIT.mode: none | h | v | quad;  SPLIT.active: 当前视图序号
+// 视图 i 与别的视图相接的边: t/b/l/r (分割线所在)
+function splitEdges(mode, i) {
+  if (mode === "h") return i === 0 ? "b" : "t";
+  if (mode === "v") return i === 0 ? "r" : "l";
+  return ((i % 2) === 0 ? "r" : "l") + " " + ((i >> 1) === 0 ? "b" : "t");
+}
+const SPLIT_EDGE_PX = 6;
+// 鼠标在哪个视图的分割线上 (没有 = null)
+function splitEdgeHit(e) {
+  if (SPLIT.mode === "none") return null;
+  const pane = e.target.closest && e.target.closest("#editor-area > .split-view, #editor-area > #editor");
+  if (!pane) return null;
+  const edges = pane.dataset.edges || "", r = pane.getBoundingClientRect(), T = SPLIT_EDGE_PX;
+  const hit = (edges.includes("b") && r.bottom - e.clientY <= T) || (edges.includes("t") && e.clientY - r.top <= T) ||
+    (edges.includes("r") && r.right - e.clientX <= T) || (edges.includes("l") && e.clientX - r.left <= T);
+  return hit ? (pane.id === "editor" ? SPLIT.active : +pane.dataset.pane) : null;
+}
+document.addEventListener("mousedown", (e) => {
+  const i = splitEdgeHit(e);
+  if (i == null) return;
+  e.preventDefault(); e.stopPropagation();
+  splitDetachCopy(i);
+}, true);
+document.addEventListener("mousemove", (e) => {
+  if (SPLIT.mode === "none") return;
+  const pane = e.target.closest && e.target.closest("#editor-area > .split-view, #editor-area > #editor");
+  if (pane) pane.style.cursor = splitEdgeHit(e) != null ? "copy" : (pane.id === "editor" ? "" : "text");
+}, true);
 function splitCell(mode, i) {
   const row = mode === "h" ? 3 + i : mode === "v" ? 3 : 3 + (i >> 1);
   const col = mode === "h" ? 1 : 1 + (i % 2);
@@ -6932,8 +7086,7 @@ function renderMirror(view, t) {
       .map((tk) => (tk.cls ? '<span class="tk-' + tk.cls + '">' + escapeHtml(tk.text) + "</span>" : escapeHtml(tk.text))).join("") + "</div>");
   }
   if (t.lines.length > n) parts.push('<div class="split-label">… 另外 ' + (t.lines.length - n) + " 行未显示 (镜像最多画 " + MIRROR_MAX_LINES + " 行, 点击这个视图即可在其中编辑)</div>");
-  view.innerHTML = '<div class="split-label">视图 ' + (+view.dataset.pane + 1) + " · " + escapeHtml(t.name) + " · 点击在此视图中编辑</div>" + parts.join("") +
-    '<div class="split-copy-bar" title="复制成独立文档: 单独修改、单独保存">⧉ 点此底边: 在本视图创建独立副本 (单独修改 / 单独保存)</div>';
+  view.innerHTML = '<div class="split-label">视图 ' + (+view.dataset.pane + 1) + " · " + escapeHtml(t.name) + " · 点击在此视图中编辑 · 点分割线 = 创建独立副本</div>" + parts.join("");
   view.scrollTop = keep;
 }
 let _mirrorTimer = 0;
@@ -6957,6 +7110,7 @@ function applySplit() {
   const t = getActiveTab();
   if (SPLIT.mode === "none" || !t) {
     SPLIT.mode = "none";
+    delete ed.dataset.edges; ed.style.cursor = "";
     ed.style.display = ""; ed.style.gridRow = ""; ed.style.gridColumn = ""; ed.style.minHeight = ""; ed.style.minWidth = "";
     scheduleMarks();
     return;
@@ -6970,20 +7124,19 @@ function applySplit() {
     const place = (el) => { el.style.gridRow = String(row); el.style.gridColumn = String(col); if (row > 3) el.dataset.row2 = ""; };
     if (i === SPLIT.active) {
       place(ed); ed.style.display = ""; ed.style.minHeight = "0"; ed.style.minWidth = "0";
+      ed.dataset.edges = splitEdges(SPLIT.mode, i);
       continue;
     }
     const view = document.createElement("div");
     view.className = "split-view";
     view.dataset.pane = String(i);
-    view.title = "点击在此视图中编辑";
+    view.dataset.edges = splitEdges(SPLIT.mode, i);
+    view.title = "点击在此视图中编辑; 点分割线 = 创建独立副本";
     view.style.cursor = "text";
     place(view);
     renderMirror(view, paneTab(i));
     view.scrollTop = scrolls[i] || 0;
-    view.addEventListener("mousedown", (e) => {
-      if (e.target.closest && e.target.closest(".split-copy-bar")) { e.preventDefault(); splitDetachCopy(i); return; }
-      splitEnterPane(i);
-    });
+    view.addEventListener("mousedown", () => splitEnterPane(i));
     area.appendChild(view);
   }
   edContent.scrollTop = scrolls[SPLIT.active] || 0;
@@ -7052,8 +7205,8 @@ function recordKey(e) {
 }
 
 /* ===== JS 宏: 在编辑器上下文里执行一段 JS ===== */
-function runJsMacro() {
-  const code = prompt("输入 JS 宏 (可直接访问 editor.* / tabs / CLIPBOARD):",
+async function runJsMacro() {
+  const code = await uiPrompt("输入 JS 宏 (可直接访问 editor.* / tabs / CLIPBOARD):",
     "// 示例: editor.note('hello');\n");
   if (!code) return;
   try {
@@ -7066,7 +7219,7 @@ function runJsMacro() {
   }
 }
 async function runPpaMacro() {
-  const code = prompt("PPA 宏 (每行一个动作: KEY <键> / TYPE <文本> / CMD <命令>):",
+  const code = await uiPrompt("PPA 宏 (每行一个动作: KEY <键> / TYPE <文本> / CMD <命令>):",
     "KEY i\nTYPE hello\nKEY Escape\n");
   if (!code) return;
   for (const raw of code.split(/\r?\n/)) {
@@ -7086,7 +7239,7 @@ async function runPpaMacro() {
 /*/* ===== 插件 (editcore 已有 wasm 加载骨架, 这里做前端注册表) ===== */
 
 async function loadPlugin() {
-  const path = prompt("加载插件 (.wasm, 需导出 process(text: &str) -> String):");
+  const path = await uiPrompt("加载插件 (.wasm, 需导出 process(text: &str) -> String):", "", { title: "加载插件" });
   if (!path) return;
   const t = getActiveTab();
   const input = t ? t.lines.join("\n") : "";
@@ -7940,10 +8093,10 @@ function columnDelete() {
 }
 
 // 列块替换 (每行不同内容用 \n 分隔)
-function columnPrompt() {
+async function columnPrompt() {
   const t = getActiveTab();
   if (!t || !t.colSel) { setTip("先用 Alt+拖选 建立列块选区"); return; }
-  const text = prompt("列块替换为 (多行用换行分隔):", columnSelectedText(t));
+  const text = await uiPrompt("列块替换为 (多行用换行分隔):", columnSelectedText(t), { title: "列块替换", multiline: true });
   if (text === null) return;
   return runEdit("box-replace", { text });
 }
@@ -8267,7 +8420,7 @@ document.addEventListener("keydown", (e) => {
     if (k === "c") { e.preventDefault(); copySelection(); return; }
     if (k === "x") { e.preventDefault(); cutSelection(); return; }
     if (k === "v") { return; }   // 由 paste 事件处理 (系统剪贴板)
-    if (k === "w") { e.preventDefault(); if (activeTabId && confirmClose(getActiveTab())) closeTab(activeTabId); return; }
+    if (k === "w") { e.preventDefault(); if (activeTabId) { const ct = getActiveTab(); confirmClose(ct).then((ok) => { if (ok) closeTab(ct.id); }); } return; }
     if (k === ",") { e.preventDefault(); openSettings(); return; }
   }
   if (e.shiftKey && !e.ctrlKey && !e.altKey) {
@@ -8613,11 +8766,11 @@ function windowList() {
   openModal({ title: "窗口一览 (" + TABS.size + ")", bodyHTML: rows || '<div class="empty-hint">没有打开的文档</div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
   mdBody.querySelectorAll(".win-row").forEach((r) => r.addEventListener("click", () => { closeModal(); setActiveTab(r.dataset.win); renderTabs(); }));
 }
-function closeTabsWhere(pred, label) {
+async function closeTabsWhere(pred, label) {
   const ids = [...TABS.values()].filter(pred).map((t) => t.id);
   if (!ids.length) { setTip("没有可关闭的标签"); return; }
   const dirty = ids.filter((id) => TABS.get(id).dirty).length;
-  if (dirty && !confirm(dirty + " 个文档有未保存修改, " + label + "会丢失. 继续?")) return;
+  if (dirty && !(await uiConfirm(dirty + " 个文档有未保存修改, " + label + "会丢失. 继续?", { title: "关闭标签", ok: "继续" }))) return;
   ids.forEach(closeTab);
 }
 const VIEW_CMDS = {
@@ -9186,14 +9339,14 @@ function keyConfig() {
       row.querySelector('[data-act="chg"]').addEventListener("click", () => { capture = { cmd: KEYMAP[row.dataset.combo], old: row.dataset.combo }; draw(); });
     });
   };
-  const onKey = (e) => {
+  const onKey = async (e) => {
     if (!capture) return;
     if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.key === "Escape") { capture = null; draw(); return; }
     const combo = comboOfEvent(e);
     const other = KEYMAP[combo];
-    if (other && other !== capture.cmd && !confirm(cmdLabelOfCombo(combo) + " 已分配给 " + other + ", 要替换吗?")) { capture = null; draw(); return; }
+    if (other && other !== capture.cmd && !(await uiConfirm(cmdLabelOfCombo(combo) + " 已分配给 " + other + ", 要替换吗?", { title: "快捷键冲突", ok: "替换" }))) { capture = null; draw(); return; }
     if (capture.old) delete KEYMAP[capture.old];
     KEYMAP[combo] = capture.cmd;
     saveKeymapOverrides(); capture = null; draw();
@@ -9762,9 +9915,9 @@ function wordAtCursor() {
 Object.assign(CFG_CMDS, {
   "save-close": async () => { const t = getActiveTab(); if (!t) return; await saveActive(); if (!t.dirty) closeTab(t.id); else setTip("保存未完成, 未关闭"); },
   "close-open": () => { closeActiveTab(); setTimeout(promptOpenFile, 50); },
-  "exit-all": () => {
+  "exit-all": async () => {
     const dirty = [...TABS.values()].filter((t) => t.dirty).length;
-    if (dirty && !confirm(dirty + " 个文档有未保存修改, 仍要全部退出吗?")) return;
+    if (dirty && !(await uiConfirm(dirty + " 个文档有未保存修改, 仍要全部退出吗?", { title: "退出", ok: "退出" }))) return;
     [...TABS.keys()].forEach(closeTab);
     if (inTauri && window.__TAURI_INTERNALS__) { window.__TAURI_INTERNALS__.invoke("plugin:window|close", { label: "main" }).catch(() => window.close()); }
     else { try { window.close(); } catch (_) {} setTip("已关闭全部文档 (浏览器标签页请手动关闭)"); }
@@ -10647,7 +10800,7 @@ async function plugResolve(slot, hasNative, hasPlugin) {
   const prefer = plugPrefs()[slot] || null;
   const r = await plugApi({ op: "resolve", has_native: hasNative, has_plugin: hasPlugin, prefer, smart_active: smartActive() });
   if (r.choice === "ask_user") {
-    const useP = confirm("「" + slot + "」同时有插件和内建实现。\n\n确定 = 使用插件\n取消 = 使用内建\n\n(之后可在 扩展 面板里改)");
+    const useP = await uiConfirm("「" + slot + "」同时有插件和内建实现。\n\n确定 = 使用插件\n取消 = 使用内建\n\n(之后可在 扩展 面板里改)", { title: "插件与内建功能冲突", ok: "使用插件", cancel: "使用内建" });
     plugSetPref(slot, useP ? "plugin" : "native");
     return useP ? "plugin" : "native";
   }
@@ -10767,7 +10920,7 @@ async function checkExternalChange() {
   t.stamp = cur;   // 同一次改动只问一次
   if (!cur.exists) { setTip("⚠ " + t.name + " 已被外部删除或移走 (保存会重新创建)"); return; }
   if (t.dirty) { setTip("⚠ " + t.name + " 已被外部修改, 你也有未保存的修改: 保存会覆盖外部的改动 (可用「重新载入」放弃自己的修改)"); return; }
-  if (confirm(t.name + " 已被外部修改。重新载入吗?")) reloadActive();
+  if (await uiConfirm(t.name + " 已被外部修改。重新载入吗?", { title: "外部改动", ok: "重新载入", cancel: "保留" })) reloadActive();
 }
 window.addEventListener("focus", () => { checkExternalChange(); });
 
@@ -10998,7 +11151,8 @@ function toggleChat(force) {
   const on = typeof force === "boolean" ? force : !chatOpen();
   if (on) { buildChat(); window.__smartOpened = true; }
   document.documentElement.setAttribute("data-chat", on ? "on" : "off");
-  const b = document.getElementById("chat-toggle"); if (b) b.classList.toggle("on", on);
+  const b = document.getElementById("right-strip-btn");
+  if (b) { b.setAttribute("aria-expanded", on ? "true" : "false"); b.setAttribute("aria-label", on ? "折叠 Chat" : "展开 Chat"); b.firstElementChild.textContent = on ? "›" : "‹"; }
   if (on) document.getElementById("chat-input").focus(); else edContent.focus({ preventScroll: true });
 }
 function buildChat() {
@@ -11058,7 +11212,7 @@ async function chatSend() {
   if (ctx) {
     let ok = false; try { ok = localStorage.getItem(CHAT_CONSENT_KEY) === "1"; } catch (_) {}
     if (!ok) {
-      if (!confirm("将把「" + ctx.label + "」(" + ctx.text.length + " 个字符) 发送到你配置的 AI 端点:\n" + aiConfig().baseUrl + "\n\n只发这一部分，不发整篇文档。允许吗? (允许后不再询问)")) ctx = null;
+      if (!(await uiConfirm("将把「" + ctx.label + "」(" + ctx.text.length + " 个字符) 发送到你配置的 AI 端点:\n" + aiConfig().baseUrl + "\n\n只发这一部分，不发整篇文档。允许吗? (允许后不再询问)", { title: "发送到 AI", ok: "允许" }))) ctx = null;
       else { try { localStorage.setItem(CHAT_CONSENT_KEY, "1"); } catch (_) {} }
     }
   }
@@ -11111,12 +11265,7 @@ function chatProposal(p) {
   document.getElementById("chat-msgs").appendChild(card);
 }
 {
-  const st = document.getElementById("status");
-  if (st) {
-    const b = document.createElement("button"); b.id = "chat-toggle"; b.className = "tb-btn"; b.textContent = "💬 Chat"; b.title = "Chat 右栏 (Ctrl+Shift+L)";
-    b.addEventListener("click", () => toggleChat());
-    st.appendChild(b);
-  }
+  document.getElementById("right-strip").addEventListener("click", () => toggleChat());
   VIEW_CMDS["toggle-chat"] = () => toggleChat();
   document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChat(); } }, true);
 }
@@ -11182,24 +11331,24 @@ window.addEventListener("DOMContentLoaded", async function () {
 // ===== 传统编辑器风格 菜单 コマンド 実装 =====
 
 // --- ファイル メニュー ---
-function createNewFile() {
+async function createNewFile() {
   if (layoutPreset() === "min") {          // 极简布局: 像 Sakura 一样直接开一个无标题文档, 不问文件名 (保存时才起名)
     const t = createUntitledDoc();
     setTip("已新建: " + t.name);
     return;
   }
-  const name = prompt("新建文件名 (相对项目根):");
+  const name = await uiPrompt("新建文件名 (相对项目根):", "", { title: "新建文件" });
   if (!name || !projectRoot) { setTip("请先打开项目"); return; }
   const path = stripVerbatim(projectRoot) + "\\" + name;
   openFile(path).then(() => setTip("已新建: " + name));
 }
 
-function saveActiveAs() {
+async function saveActiveAs() {
   const t = getActiveTab();
   if (!t) return;
   // 无标题文档 / 极简布局: 另存为 = 起名保存, 标签改绑到新文件. 完整布局的有名文档保持老行为 (只写一份副本, 标签不变)
   if (t.untitled || layoutPreset() === "min") return saveAsFlow(t);
-  const name = prompt("另存为 (项目根内相对路径):", t.path.split(/[\\\/]/).pop());
+  const name = await uiPrompt("另存为 (项目根内相对路径):", t.path.split(/[\\\/]/).pop(), { title: "另存为" });
   if (!name) return;
   const path = stripVerbatim(projectRoot || "") + "\\" + name;
   invoke("write_file", { path, content: t.lines.join("\n") }).then(() => {
@@ -11230,12 +11379,12 @@ function closeActiveTab() {
   else setTip("无活动标签");
 }
 
-function closeAllTabs() {
+async function closeAllTabs() {
   if (layoutPreset() === "min") {
     // 极简布局: 真的关掉全部 (下面按钮点击的写法只能关第一个: 关一个就重建标签条, 其余按钮节点已脱离文档),
     // 最后一个关掉时 closeTab 会补一个空白无标题文档; 有未保存修改的文档先统一确认一次
     const dirty = [...TABS.values()].filter((t) => t.dirty).length;
-    if (dirty && !confirm(dirty + " 个文档有未保存修改, 全部关闭会丢失. 继续?")) return;
+    if (dirty && !(await uiConfirm(dirty + " 个文档有未保存修改, 全部关闭会丢失. 继续?", { title: "全部关闭", ok: "继续" }))) return;
     [...TABS.keys()].forEach(closeTab);
     setTip("关闭全部标签");
     return;
@@ -11248,7 +11397,7 @@ async function reloadActive() {
   const t = getActiveTab();
   if (!t) { setTip("无活动标签"); return; }
   if (t.untitled) { setTip("无标题文档没有对应的文件, 无法重新载入"); return; }
-  if (t.dirty && !confirm(t.path + " 有未保存修改, 重新载入会丢失. 继续?"))
+  if (t.dirty && !(await uiConfirm(t.path + " 有未保存修改, 重新载入会丢失. 继续?", { title: "重新载入", ok: "继续" })))
     return;
   const lines = await invoke("read_file", { path: stripVerbatim(t.path) });
   t.lines = String(lines.content ?? lines).split("\n");
