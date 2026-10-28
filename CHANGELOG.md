@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.3 — 2026-10-28
+
+### 新功能
+- **Markdown 工具条** (REQ 要件基线 FR-005..FR-025): 打开 .md 文档时顶部出现 Markdown 工具条 —— 粗体 / 斜体 / 删除线 / 高亮 / 行内代码, 标题 1–4, 无序 / 有序 / 任务列表, 引用, 链接, 图片, 表格, 围栏代码块 (自动选安全围栏长度), 分隔线, Obsidian callout, Mermaid; 同时显示 Sakura 工具栏 (按钮提示里写出 Sakura 快捷键)。所有按钮和快捷键 (Ctrl+B / I / E / Shift+X / Shift+K / Alt+1..6) 走同一条 `md-*` 编辑命令 (Rust `edit_cmd/md_ops`), 只改选区或光标所在行。**预览**一键切换 (Ctrl+Shift+V): 只读, Obsidian 风格 (Front Matter / callout / wikilink / `==高亮==` / `%%注释%%` / 标签 / 任务列表 / 表格), 用户 HTML 与不安全链接一律转义。非 Markdown 文档零成本。
+- **热插拔插件系统**: 沙箱 iframe (仅 allow-scripts + 禁网络 CSP) + 清单 / 权限 / 兼容性检查; **扩展面板**可启停、检查更新、从 GitHub 仓库安装最新 Release 并一键更新; 与编辑器不匹配时报结构化错误并可"让 AI 给出改善方案"; 安装原子换名、失败回滚、清单只下载一次、插件 id 绑定仓库。**默认插件 Pele** (Mermaid → SVG) 随程序打包。插件与内建功能冲突时由 Rust 仲裁: 没激活智能功能时默认插件覆盖原生, 用户偏好最高, 失败回退。设计见 `docs/01_基本设计/PLUGIN-SYSTEM.md`。
+- **Chat 右栏** (💬 / Ctrl+Shift+L): 不打开就不存在; 占自己的栅格列不盖编辑区; 在「AI 设置」填接口 / 模型 / Key 后调用编辑器的智能 API; 文档内容外发前确认一次且只发选中内容 / 当前章节; 写类工具只产出补丁提案, 审核差异后点"应用" (一步撤销)。
+- **Agent API** (`/api/agent`, Tauri `agent`): 静态工具表 (md_outline / md_render / search_text / propose_patch / plugin_list), OpenAI function-calling 格式, 可直接给 LangGraph 用。
+- **分屏独立副本**: 点分屏视图的底边, 该视图得到一个独立副本, 可单独修改、单独保存 (另存为)。
+
+### 修复与改善
+- 选中文字时只有选中的部分着底色, 选区前面没选的文字不再着色。
+- 安装包不再放进源码库: 只在发版时按版本构建, 作为 Release 资产单独上传 (见 `docs/05_实装与运维/RELEASE.md`); 加了仓库卫生测试。
+- 合入三个 WBS 库: 原子保存 / 备份 / 外部改动检测 (`document_io`、`auto_backup`)、编码感知 Grep 与按原编码写回的替换 (`grep_engine`)、Sakura 宏计划 (`macro_sakura`); `/api/search` 改为类型化请求。
+- Grep 结果改成主编辑区里的编辑窗口 (Sakura 格式, 边搜边追加, 命中词自动高亮, Enter / 双击跳转)。
+
+### 文档
+- `docs/` 按 IPA 共通フレーム 工程重排 (00 要件 / 01 基本设计 / 02 详细设计 / 03 测试资料 / 04 评审与管理 / 05 实装与运维 / 06 功能对标), 纳入 Markdown 要件基线、BD / DD、测试资料; 新增代码规范 `CODING-STANDARDS`; 回归脚本存为 `tests/run-all.sh`。
+
 ## 0.1.2 — 2026-10-27
 
 ### 修复与改善
