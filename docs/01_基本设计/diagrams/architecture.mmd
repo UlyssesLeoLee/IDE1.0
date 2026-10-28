@@ -1,0 +1,21 @@
+flowchart TB
+    U[用户 / AI Agent] --> IDE[轻量IDE宿主 / 原生编辑器]
+    IDE --> HA[Host Adapter]
+    HA --> ES[Document Session]
+    ES --> CB[Command Bus / Edit Transaction]
+    ES --> SI[Markdown Structure Index]
+    CB --> HA
+    SI --> OUT[Outline / Reference / Diagnostics]
+    U --> TP[Tool Palette / Slash / Shortcut]
+    TP --> CB
+    ES -.用户显式开启.-> PM[Preview Manager]
+    PM --> RV[可选只读 WebView / HTML]
+    RV -.按需.-> MM[Mermaid / Math]
+    U --> PR[Plugin Registry / Manifest Only]
+    PR -.执行时启动.-> PX[隔离Plugin Worker]
+    PX --> CB
+    ES -.按需.-> EXT[Git / AI / Trace / Export adapters]
+    classDef core fill:#dceaff,stroke:#4175a6,color:#1b3556;
+    classDef lazy fill:#f1f5f9,stroke:#94a3b8,color:#334155;
+    class IDE,HA,ES,CB,SI,TP,PR core;
+    class PM,RV,MM,PX,EXT lazy;

@@ -1,0 +1,13 @@
+flowchart LR
+    R[需求 FR/NFR] --> B[基本设计 BDS]
+    B --> D[详细设计 DDS]
+    D --> I[实现代码 Commit / Module]
+    D --> UT[UT 用例]
+    B --> IT[IT 用例]
+    R --> ST[ST 用例]
+    UT --> E[证据与缺陷]
+    IT --> E
+    ST --> E
+    E --> G[验收与发布门禁]
+    classDef artifact fill:#e8f3ff,stroke:#3873aa;
+    class R,B,D,UT,IT,ST artifact;

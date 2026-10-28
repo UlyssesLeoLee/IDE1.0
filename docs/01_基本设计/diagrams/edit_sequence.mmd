@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    actor User as 编辑者
+    participant UI as 工具/快捷键/Slash
+    participant CMD as CommandBus
+    participant SES as Session
+    participant STR as StructureIndex
+    participant HOST as HostAdapter
+    participant V as PreviewManager
+    User->>UI: 选择加粗(选区)
+    UI->>CMD: execute(commandId, selection, documentVersion)
+    CMD->>SES: validate context/version/permission
+    alt 输入法组合中或版本冲突
+        SES-->>CMD: 拒绝+原因
+        CMD-->>UI: 安全提示
+    else 允许
+        CMD->>STR: compute minimal patches
+        STR-->>CMD: rangeEdit[]
+        CMD->>HOST: applyEditTransaction(expectedVersion, edits)
+        HOST-->>CMD: newVersion+undoId
+        CMD->>SES: invalidate affected ranges
+        SES-->>V: schedule preview update (only if open)
+        CMD-->>UI: success
+    end

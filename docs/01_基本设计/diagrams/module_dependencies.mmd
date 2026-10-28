@@ -1,0 +1,20 @@
+flowchart LR
+    Host[Host API] --> Adapt[Host Adapter]
+    Adapt --> Session[Session]
+    Session --> Struct[Structure Index]
+    Session --> Command[Command Bus]
+    Command --> Patch[Edit Patch Engine]
+    Patch --> Adapt
+    Struct --> Outline[Outline]
+    Struct --> Context[Context Resolver]
+    Context --> Tools[Tools & Slash]
+    Tools --> Command
+    Session -.lazy.-> Preview[Preview]
+    Preview -.lazy.-> Mermaid[Mermaid Renderer]
+    Registry[Manifest Registry] -.lazy execute.-> Worker[Plugin Worker]
+    Worker --> Command
+    Session -.lazy.-> AI[AI Proposal]
+    AI --> Command
+    Session -.lazy.-> Trace[Trace & Git]
+    classDef optional stroke-dasharray: 5 3;
+    class Preview,Mermaid,Worker,AI,Trace optional;

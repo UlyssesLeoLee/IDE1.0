@@ -104,7 +104,7 @@
 
 ## テンプレート実例
 
-参照: [DOC-12_project_plan.md](../DOC-12_project_plan.md) (本テンプレート準拠の実例)
+参照: [DOC-12_project_plan.md](../04_评审与管理/DOC-12_project_plan.md) (本テンプレート準拠の実例)
 
 ---
 

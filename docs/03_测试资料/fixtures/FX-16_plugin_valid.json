@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "pluginId": "org.example.md-footnote",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "displayName": "脚注工具",
+  "description": "向文档当前选区插入脚注",
+  "activation": "onCommand",
+  "entryPoint": "worker/footnote-worker.exe",
+  "permissions": [
+    "document.read.selection",
+    "document.write.active"
+  ],
+  "contributions": {
+    "commands": [
+      {
+        "id": "org.example.md-footnote.insert",
+        "title": "插入脚注",
+        "kind": "insert",
+        "when": "editor.lang == markdown && !editor.imeComposing"
+      }
+    ],
+    "tools": [
+      {
+        "id": "org.example.md-footnote.tool",
+        "commandId": "org.example.md-footnote.insert",
+        "groupId": "extension",
+        "icon": "footnote",
+        "rank": 500
+      }
+    ]
+  }
+}

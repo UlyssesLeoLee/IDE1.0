@@ -1,0 +1,11 @@
+flowchart TB
+    IDE[原生轻量IDE进程] --> CORE[Markdown Core 轻量模块]
+    CORE --> IDX[Parser/index on worker thread]
+    CORE --> REG[Plugin manifest registry]
+    CORE -.只在预览开启时.-> VIEW[预览UI / 可选 WebView2 子进程]
+    VIEW -.图表被请求.-> M[捆绑的Mermaid/Math资源]
+    REG -.用户调用.-> WORKER[插件受限子进程]
+    CORE -.显式请求.-> CLI[Git / AI / Export 适配]
+    WORKER --> POLICY[Windows 低权限/沙箱能力或禁用高危插件]
+    classDef lazy fill:#f8fafc,stroke:#94a3b8,stroke-dasharray: 4 2;
+    class VIEW,M,WORKER,CLI,POLICY lazy;

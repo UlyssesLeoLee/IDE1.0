@@ -1,4 +1,4 @@
-//! 热插拔插件底座 (见 docs/PLUGIN-SYSTEM.md): 清单解析与校验、兼容性检查、版本比较、SHA-256、
+//! 热插拔插件底座 (见 docs/01_基本设计/PLUGIN-SYSTEM.md): 清单解析与校验、兼容性检查、版本比较、SHA-256、
 //! 插件与内建功能的冲突仲裁。全是纯函数 —— 网络 / 文件落盘在上层, 前端沙箱在 `plugins/host.js`。
 
 use serde::{Deserialize, Serialize};
@@ -98,7 +98,7 @@ pub fn check_compat(assets: &[Asset], manifest_json: Option<&str>, app_version: 
     let m: Manifest = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
-            problems.push(problem("BAD_MANIFEST", format!("manifest.json 解析失败: {e}"), "按 docs/PLUGIN-SYSTEM.md §2 的字段修正清单"));
+            problems.push(problem("BAD_MANIFEST", format!("manifest.json 解析失败: {e}"), "按 docs/01_基本设计/PLUGIN-SYSTEM.md §2 的字段修正清单"));
             return CompatReport { ok: false, manifest: None, problems };
         }
     };
@@ -131,7 +131,7 @@ pub fn check_compat(assets: &[Asset], manifest_json: Option<&str>, app_version: 
     }
     for k in m.contributes.keys() {
         if !KNOWN_CONTRIBUTIONS.contains(&k.as_str()) {
-            problems.push(problem("UNKNOWN_CONTRIBUTION", format!("未知贡献点「{k}」"), "见 docs/PLUGIN-SYSTEM.md §3"));
+            problems.push(problem("UNKNOWN_CONTRIBUTION", format!("未知贡献点「{k}」"), "见 docs/01_基本设计/PLUGIN-SYSTEM.md §3"));
         }
     }
     for a in assets.iter().filter(|a| a.size > MAX_ASSET_BYTES) {
@@ -140,7 +140,7 @@ pub fn check_compat(assets: &[Asset], manifest_json: Option<&str>, app_version: 
     CompatReport { ok: problems.is_empty(), manifest: Some(m), problems }
 }
 
-// ---------- 冲突仲裁 (docs/PLUGIN-SYSTEM.md §8.1) ----------
+// ---------- 冲突仲裁 (docs/01_基本设计/PLUGIN-SYSTEM.md §8.1) ----------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

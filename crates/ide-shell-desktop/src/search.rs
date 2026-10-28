@@ -5,7 +5,7 @@
 //! # 为什么不 shell out 到外部 rg
 //!
 //! 本文件原先是 `Command::new("rg")` + 缺 rg 时退到一份手写 walk, 违反
-//! docs/SPA-01_sakura_parity.md §3 原则 3「Rust 优先」, 且两端行为会漂移:
+//! docs/06_功能对标/SPA-01_parity.md §3 原则 3「Rust 优先」, 且两端行为会漂移:
 //! web 端已经是内置引擎, 桌面端还在调外部 rg, 同一份搜索条件在两个壳里结果可能不同。
 //! 现在两端共用 `sakura-rs::grep_engine` 一份实现。
 

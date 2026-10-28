@@ -85,7 +85,7 @@
 ## 0.0.1 — 2026-10-20
 
 首个对外版本。目标: 做一个 Rust 版的 Sakura Editor 对标编辑器 (Tauri 桌面版 + 网页版共用同一套前端)。
-这是**早期预览版**: 与 Sakura 的对标仍有大量缺口 (见 `docs/SPA-03_v1-gap-design.md`, 268 条默认命令当时约 20% 一致, 本版之后已显著提高)。
+这是**早期预览版**: 与 Sakura 的对标仍有大量缺口 (见 `docs/06_功能对标/SPA-03_v1-gap-design.md`, 268 条默认命令当时约 20% 一致, 本版之后已显著提高)。
 
 ### 编辑
 - 键盘移动与范围选择: 方向键 / Home / End / PgUp / PgDn, Ctrl+←→ (单词), Ctrl+Home/End, Ctrl+PgUp/PgDn (半页), Ctrl+↑↓ (滚动), 加 Shift = 范围选择, Shift+Ctrl+↑↓ = 选 2 行。

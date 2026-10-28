@@ -1,5 +1,5 @@
 // tests/uat/specs/grep.spec.ts
-// Grep 对标 Sakura Editor (docs/SPA-01 §1)
+// Grep 对标 Sakura Editor (docs/06_功能对标/SPA-01 §1)
 //
 // 覆盖本轮实现的部分:
 //   G-10 多分隔符 (, 空格 ;)        G-14 排除优先于包含

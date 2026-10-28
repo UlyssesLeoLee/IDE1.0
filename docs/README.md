@@ -21,6 +21,21 @@
                                                           UAT
 ```
 
+## ディレクトリ構成 (IPA 共通フレーム2013 の工程順)
+
+| フォルダ | 工程 (CF2013) | 主な内容 |
+|---|---|---|
+| `00_要件基线/` | 企画・要件定義 | DOC-01 企画書 / DOC-02 システム要件 / DOC-04 ソフトウェア要件 / **REQ Markdown 要件基線 (FR-001〜 / NFR-)** |
+| `01_基本设计/` | システム方式・ソフトウェア方式設計 | DOC-03 HLD / DOC-05 SDD / BD-001 / ARCH-01 / PLUGIN-SYSTEM / `diagrams/` `architecture/` |
+| `02_详细设计/` | ソフトウェア詳細設計 | DOC-06 / DD-001 / CODING-STANDARDS / `contracts/` / `legacy/` (旧 DD-01·02·04, INC-07) |
+| `03_测试资料/` | 結合・システム・適格性確認テスト | `UT/` `IT/` `ST/` `UAT/` `fixtures/` `共通/` |
+| `04_评审与管理/` | 支援・管理プロセス | DOC-12〜18 (計画・進捗・リスク・構成・ADR・管理表・測定) / 自己レビュー / Open_Items / FEEDBACK |
+| `05_实装与运维/` | 実装・運用・保守・廃棄 | DOC-07 / DOC-19 / DOC-20 / DOC-21 / RELEASE |
+| `06_功能对标/` | Sakura 対標 | SPA-01〜03 / WBS-01〜02 |
+| `common/` | 共通 | テンプレート・採番規則・用語集 |
+
+新しい文書は上表の工程に合うフォルダへ置き、`04_评审与管理/DOC-17_doc_index.md` に登録する。
+
 ## 📚 ドキュメント一覧 (21 文档 + 3 共通)
 
 ### 共通ドキュメント (Task 1 完成)
@@ -35,57 +50,57 @@
 
 | ID | 名称 | CF2013 主プロセス |
 |---|---|---|
-| [DOC-01](DOC-01_project_charter.md) | 企画書 (Project Charter) | 企画プロセス |
-| [DOC-02](DOC-02_system_requirements.md) | システム要件定義書 (SRS) | 要件定義プロセス |
-| [DOC-03](DOC-03_system_hld.md) | システム方式設計書 (HLD) | システム方式設計 |
-| [DOC-04](DOC-04_software_requirements.md) | ソフトウェア要件仕様書 | ソフトウェア要件分析 |
-| [DOC-05](DOC-05_software_design.md) | ソフトウェア方式設計書 (SDD) | ソフトウェア方式設計 |
-| [DOC-06](DOC-06_software_detail_design.md) | ソフトウェア詳細設計書 (DDD) | ソフトウェア詳細設計 |
+| [DOC-01](00_要件基线/DOC-01_project_charter.md) | 企画書 (Project Charter) | 企画プロセス |
+| [DOC-02](00_要件基线/DOC-02_system_requirements.md) | システム要件定義書 (SRS) | 要件定義プロセス |
+| [DOC-03](01_基本设计/DOC-03_system_hld.md) | システム方式設計書 (HLD) | システム方式設計 |
+| [DOC-04](00_要件基线/DOC-04_software_requirements.md) | ソフトウェア要件仕様書 | ソフトウェア要件分析 |
+| [DOC-05](01_基本设计/DOC-05_software_design.md) | ソフトウェア方式設計書 (SDD) | ソフトウェア方式設計 |
+| [DOC-06](02_详细设计/DOC-06_software_detail_design.md) | ソフトウェア詳細設計書 (DDD) | ソフトウェア詳細設計 |
 
 ### V字模型 底部 (実装・結合) — Task 3
 
 | ID | 名称 | CF2013 主プロセス |
 |---|---|---|
-| [DOC-07](DOC-07_implementation_report.md) | 実装報告書 | 実装プロセス |
-| [DOC-08](DOC-08_integration_test_spec.md) | 結合テスト仕様書 (SIT) | システム結合 |
+| [DOC-07](05_实装与运维/DOC-07_implementation_report.md) | 実装報告書 | 実装プロセス |
+| [DOC-08](03_测试资料/IT/DOC-08_integration_test_spec.md) | 結合テスト仕様書 (SIT) | システム結合 |
 
 ### V字模型 顶部・右辺 (テスト・検証) — Task 4
 
 | ID | 名称 | CF2013 主プロセス |
 |---|---|---|
-| [DOC-09](DOC-09_system_test_report.md) | システムテスト報告書 | システム適格性確認テスト |
-| [DOC-10](DOC-10_unit_test_spec.md) | 単体テスト仕様書 (SUT) | ソフトウェア結合 |
-| [DOC-11](DOC-11_uat_report.md) | 統合テスト報告書 (UAT) | ソフトウェア適格性確認テスト |
+| [DOC-09](03_测试资料/ST/DOC-09_system_test_report.md) | システムテスト報告書 | システム適格性確認テスト |
+| [DOC-10](03_测试资料/UT/DOC-10_unit_test_spec.md) | 単体テスト仕様書 (SUT) | ソフトウェア結合 |
+| [DOC-11](03_测试资料/UAT/DOC-11_uat_report.md) | 統合テスト報告書 (UAT) | ソフトウェア適格性確認テスト |
 
 ### プロセス系 (計画・管理) — Task 5
 
 | ID | 名称 | CF2013 主プロセス |
 |---|---|---|
-| [DOC-12](DOC-12_project_plan.md) | プロジェクト計画書 | プロジェクト計画 |
-| [DOC-13](DOC-13_progress_report.md) | 進捗管理報告書 | プロジェクトアセスメント及び制御 |
-| [DOC-14](DOC-14_risk_register.md) | リスク管理表 | リスク管理 |
-| [DOC-15](DOC-15_config_mgmt_plan.md) | 構成管理計画書 | 構成管理 |
-| [DOC-16](DOC-16_decision_log.md) | 意思決定記録 (ADR) | 意思決定管理 |
-| [DOC-17](DOC-17_doc_index.md) | ドキュメント管理表 | 情報管理 |
-| [DOC-18](DOC-18_metrics_report.md) | 測定・分析報告 | 測定 |
+| [DOC-12](04_评审与管理/DOC-12_project_plan.md) | プロジェクト計画書 | プロジェクト計画 |
+| [DOC-13](04_评审与管理/DOC-13_progress_report.md) | 進捗管理報告書 | プロジェクトアセスメント及び制御 |
+| [DOC-14](04_评审与管理/DOC-14_risk_register.md) | リスク管理表 | リスク管理 |
+| [DOC-15](04_评审与管理/DOC-15_config_mgmt_plan.md) | 構成管理計画書 | 構成管理 |
+| [DOC-16](04_评审与管理/DOC-16_decision_log.md) | 意思決定記録 (ADR) | 意思決定管理 |
+| [DOC-17](04_评审与管理/DOC-17_doc_index.md) | ドキュメント管理表 | 情報管理 |
+| [DOC-18](04_评审与管理/DOC-18_metrics_report.md) | 測定・分析報告 | 測定 |
 
 ### ライフサイクル後段 (保守・運用・廃棄) — Task 6
 
 | ID | 名称 | CF2013 主プロセス |
 |---|---|---|
-| [DOC-19](DOC-19_maintenance_plan.md) | 保守計画書 | 保守プロセス |
-| [DOC-20](DOC-20_operations_manual.md) | 運用手順書 | 運用プロセス |
-| [DOC-21](DOC-21_disposal_plan.md) | 廃棄計画書 | 廃棄プロセス |
+| [DOC-19](05_实装与运维/DOC-19_maintenance_plan.md) | 保守計画書 | 保守プロセス |
+| [DOC-20](05_实装与运维/DOC-20_operations_manual.md) | 運用手順書 | 運用プロセス |
+| [DOC-21](05_实装与运维/DOC-21_disposal_plan.md) | 廃棄計画書 | 廃棄プロセス |
 
 ### 仕様・リファクタリング系 (非 IPA 番号)
 
 | ID | 名称 | 備考 |
 |---|---|---|
-| [SPA-01](SPA-01_parity.md) | 機能対比仕様 (Grep / 列ブロック) | 受入契約 |
-| [SPA-02](SPA-02_coverage.md) | 機能カバレッジ清点 | ギャップ分析 |
-| [WBS-01](WBS-01_feature-parity.md) | **機能カバレッジ残作業 WBS** | 上流対標 49 項目 / 37-48 人日 |
-| [ARCH-01](ARCH-01_pure-rust-migration.md) | **純 Rust 化 移行方針 (ADR)** | 実装先を Rust に固定 (2026-10-18 決定) |
-| [REFACTOR-01](REFACTOR-01_branding-neutralization.md) | **ブランド名中立化計画** | 商標リスク対応 ([DOC-14](DOC-14_risk_register.md) R-11) |
+| [SPA-01](06_功能对标/SPA-01_parity.md) | 機能対比仕様 (Grep / 列ブロック) | 受入契約 |
+| [SPA-02](06_功能对标/SPA-02_coverage.md) | 機能カバレッジ清点 | ギャップ分析 |
+| [WBS-01](06_功能对标/WBS-01_feature-parity.md) | **機能カバレッジ残作業 WBS** | 上流対標 49 項目 / 37-48 人日 |
+| [ARCH-01](01_基本设计/ARCH-01_pure-rust-migration.md) | **純 Rust 化 移行方針 (ADR)** | 実装先を Rust に固定 (2026-10-18 決定) |
+| [REFACTOR-01](01_基本设计/REFACTOR-01_branding-neutralization.md) | **ブランド名中立化計画** | 商標リスク対応 ([DOC-14](04_评审与管理/DOC-14_risk_register.md) R-11) |
 
 ## 📊 現状 (2026-10-09)
 
