@@ -152,3 +152,15 @@ pub fn agent(req: &AgentReq) -> Result<Value, String> {
         AgentReq::Call { name, args } => crate::agent_api::call(name, args),
     }
 }
+
+// ---------- Sakura 宏 (.mac) 计划 ----------
+
+#[derive(serde::Deserialize)]
+pub struct MacroPlanReq {
+    pub src: String,
+}
+
+/// 解析并规划一份 Sakura 宏: 返回逐步动作; 语法错误 / 未知函数整体失败 (不执行一半), 错误文字带行号
+pub fn macro_plan(req: &MacroPlanReq) -> Result<Value, String> {
+    crate::macro_sakura::plan(&req.src).map(|steps| json!({ "steps": steps })).map_err(|e| e.to_string())
+}

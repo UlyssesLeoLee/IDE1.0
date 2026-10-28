@@ -2653,7 +2653,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), md_render: (a) => ({ options: a }), plugins: (a) => ({ options: a }), agent: (a) => ({ options: a }), history: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), md_render: (a) => ({ options: a }), plugins: (a) => ({ options: a }), agent: (a) => ({ options: a }), macro_plan: (a) => ({ options: a }), grep_replace: (a) => ({ options: a }), history: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -6545,6 +6545,7 @@ async function openGrepDialog(withReplace) {
     "</div>" +
     grepFieldRow("除外ファイル", "grep-exc-files", "*.gen.rs;*.lock", GREP_STATE.excludeFiles) +
     grepFieldRow("除外フォルダー", "grep-exc-dirs", "target;.git", GREP_STATE.excludeFolders) +
+    grepFieldRow("文字コード", "grep-charset", "留空 = 自动判别 (BOM / UTF-8 / SJIS / EUC-JP / JIS / UTF-16); 或填 SJIS / UTF-8 …", GREP_STATE.charset) +
     '<div class="opt-row">' +
       '<label><input type="checkbox" id="grep-case" /> 区分大小写</label>' +
       '<label style="margin-left:10px"><input type="checkbox" id="grep-regex" /> 正则</label>' +
@@ -6559,7 +6560,8 @@ async function openGrepDialog(withReplace) {
       '<label style="margin-left:12px" title="允许「フォルダー」栏指向项目之外 (可填 D:\\ 或 C:\\Users\\...)">' +
         '<input type="checkbox" id="grep-outside" /> 搜索项目外</label>' +
     "</div>" +
-    (withReplace ? grepFieldRow("置換文字列", "grep-repl", "替换为", GREP_STATE.replace) : "") +
+    (withReplace ? grepFieldRow("置換文字列", "grep-repl", "替换为", GREP_STATE.replace) +
+      '<div class="opt-row"><button class="md-btn" id="grep-do-repl" data-tip="把命中处按原编码 / BOM / 换行原子写回文件; 已打开且有未保存修改的文件会跳过; 改写前备份为 .bak">全部置換 (写回文件)</button></div>' : "") +
     '<div id="grep-status" class="empty-hint">输入后回车</div>';
 
   openModal({ title: withReplace ? "Grep 替换" : "Grep 搜索", bodyHTML: html,
@@ -6627,6 +6629,7 @@ async function openGrepDialog(withReplace) {
     GREP_STATE.folders = $("grep-folders").value;
     GREP_STATE.excludeFiles = $("grep-exc-files").value;
     GREP_STATE.excludeFolders = $("grep-exc-dirs").value;
+    GREP_STATE.charset = $("grep-charset").value;
     GREP_STATE.caseSensitive = $("grep-case").checked;
     GREP_STATE.regex = $("grep-regex").checked;
     GREP_STATE.subfolders = $("grep-sub").checked;
@@ -6658,11 +6661,37 @@ async function openGrepDialog(withReplace) {
         exclude_files: excFiles.length ? excFiles : null,
         exclude_folders: excDirs.length ? excDirs : null,
         subfolders: GREP_STATE.subfolders,
+        charset: $("grep-charset").value.trim() || null,
       },
     });
     status.textContent = "已在新标签中搜索";
     closeModal();                                   // Sakura: 条件对话框收起, 结果在新的编辑窗口里边搜边显示
   };
+  /* 全部置換: 后端 grep_replace 按文件原编码 / BOM / 逐行换行原子写回, 改写前备份; 已打开且有未保存修改的文件跳过 */
+  if (withReplace) $("grep-do-repl").addEventListener("click", async () => {
+    const q = $("grep-input").value;
+    if (!q) { $("grep-status").textContent = "先输入検索文字列"; return; }
+    const pats = parseFilePatterns($("grep-files").value);
+    const thisOnly = $("grep-this-file").checked;
+    const inc = pats.include.slice();
+    if (thisOnly && curBase) inc.splice(0, inc.length, curBase);
+    const excFiles = pats.excludeFiles.concat(splitSakuraList($("grep-exc-files").value));
+    const excDirs = pats.excludeDirs.concat(splitSakuraList($("grep-exc-dirs").value));
+    const folders = thisOnly && curDir ? [curDir] : parseSearchFolders($("grep-folders").value);
+    const dirty = [...TABS.values()].filter((t) => t.dirty && t.path).map((t) => t.path);
+    if (!confirm("将在匹配的文件里把「" + q + "」全部置換为「" + $("grep-repl").value + "」并写回磁盘 (改写前备份为 .bak)。\n有未保存修改的已打开文件会跳过。继续?")) return;
+    $("grep-status").textContent = "置換中...";
+    try {
+      const rep = await invoke("grep_replace", {
+        pattern: q, case_sensitive: $("grep-case").checked, regex: $("grep-regex").checked, whole_word: $("grep-word").checked,
+        include_files: inc, search_folders: folders.length ? folders : null, allow_outside_root: $("grep-outside").checked,
+        exclude_files: excFiles.length ? excFiles : null, exclude_folders: excDirs.length ? excDirs : null, subfolders: $("grep-sub").checked,
+        charset: $("grep-charset").value.trim() || null, replacement: $("grep-repl").value, backup: true, skip_paths: dirty,
+      });
+      $("grep-status").textContent = "置換 " + rep.total_replacements + " 処 / " + rep.files_changed + " 个文件" + (rep.files_skipped ? ", 跳过 " + rep.files_skipped + " (有未保存修改)" : "") + (rep.files_failed ? ", 失败 " + rep.files_failed : "");
+      for (const t of TABS.values()) if (t.path && rep.files.some((f) => f.path && stripVerbatim(f.path) === t.path) && !t.dirty) stampTab(t);
+    } catch (e) { $("grep-status").textContent = "置換失败: " + e.message; }
+  });
   /* 任一输入框按回车即搜索 (与旧版一致; 新版五个框都要能触发, 否则在 フォルダー 里敲完回车没反应) */
   for (const id of ["grep-input", "grep-files", "grep-folders", "grep-exc-files", "grep-exc-dirs",
                     ...(withReplace ? ["grep-repl"] : [])]) {
@@ -9076,6 +9105,7 @@ function commonConfig() {
     ["ファイル", () => [
       ["select", "新文档的编码", () => PREFS.defaultEncoding, (v) => { PREFS.defaultEncoding = v; savePrefs(); }, CHARSETS],
       ["select", "新文档的换行", () => PREFS.defaultEol, (v) => { PREFS.defaultEol = v; savePrefs(); }, ["crlf", "lf", "cr"]],
+      ["check", "保存时备份旧文件 (.sakura-backup/, 保留最近 5 代)", () => !!PREFS.saveBackup, (v) => { PREFS.saveBackup = v; savePrefs(); }],
     ]],
     ["表示", () => [
       ["check", "自动换行", () => VIEW_STATE.wordWrap, (v) => { if (v !== VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); }],
@@ -10699,6 +10729,103 @@ document.addEventListener("change", async (e) => {
 });
 // 启动时只读一次插件清单 (本地, 很小) 以绑定贡献点; 不加载任何插件代码
 setTimeout(() => { plugRefresh().catch(() => {}); }, 0);
+
+/* ===== 保存与外部改动 (document_io / auto_backup 的前端接线) =====
+   - 保存走原子写 (后端先写临时文件再换名, 断电 / 中途失败原文件完好); 首选项勾选"保存时备份旧文件"则先备份到 .sakura-backup/ (保留最近几代)。
+   - 每个磁盘文件记一份"指纹" (mtime/大小); 窗口重新获得焦点时问一次文件有没有被外部改过 —— 不轮询。 */
+async function stampTab(t) {
+  if (!t || t.untitled || !t.path) return;
+  try { t.stamp = await invoke("stat_file", { path: stripVerbatim(t.path) }); } catch (_) { t.stamp = null; }
+}
+{
+  const _wd = writeDoc;
+  writeDoc = async function (path, t) {
+    const r = await _wd.call(this, path, t);   // writeDoc 的 spec 里 backup 见下面的 docMeta 包装
+    await stampTab(t);
+    return r;
+  };
+  const _dm = docMeta;
+  docMeta = function (t) { return Object.assign(_dm(t), PREFS.saveBackup ? { backup: true } : {}); };
+  const _of = openFile;
+  openFile = async function (p) {
+    const r = await _of.apply(this, arguments);
+    const tp = stripVerbatim(p);
+    for (const t of TABS.values()) if (t.path === tp && !t.stamp) stampTab(t);
+    return r;
+  };
+}
+let EXT_CHECK_AT = -1e9;
+async function checkExternalChange() {
+  const t = getActiveTab();
+  if (!t || t.untitled || !t.path || !t.stamp || performance.now() - EXT_CHECK_AT < 1500) return;
+  EXT_CHECK_AT = performance.now();
+  let cur; try { cur = await invoke("stat_file", { path: stripVerbatim(t.path) }); } catch (_) { return; }
+  const was = t.stamp;
+  const changed = was.exists !== cur.exists || (cur.exists && (was.mtime_ms !== cur.mtime_ms || was.size !== cur.size));
+  if (!changed || getActiveTab() !== t) return;
+  t.stamp = cur;   // 同一次改动只问一次
+  if (!cur.exists) { setTip("⚠ " + t.name + " 已被外部删除或移走 (保存会重新创建)"); return; }
+  if (t.dirty) { setTip("⚠ " + t.name + " 已被外部修改, 你也有未保存的修改: 保存会覆盖外部的改动 (可用「重新载入」放弃自己的修改)"); return; }
+  if (confirm(t.name + " 已被外部修改。重新载入吗?")) reloadActive();
+}
+window.addEventListener("focus", () => { checkExternalChange(); });
+
+/* ===== Sakura 宏 (.mac) 运行 (editcore::macro_sakura 的前端执行器) =====
+   规划在 Rust: 整份宏先解析成逐步动作 (语法错误 / 未知函数整体失败, 不执行一半); 这里只负责逐步执行, 每一步落地 (等输入队列排空) 再做下一步。
+   当前文档是 .mac -> 运行整份; 否则运行选区里的宏文本。 */
+function macroSetFind(text, flags) {
+  FIND_STATE.needle = text;
+  FIND_STATE.wholeWord = !!(flags & 0x01); FIND_STATE.matchCase = !!(flags & 0x02); FIND_STATE.useRegex = !!(flags & 0x04); FIND_STATE.wrap = !!(flags & 0x20);
+}
+async function macroReplaceAll(search, replace, flags) {
+  macroSetFind(search, flags);
+  const t = getActiveTab();
+  const r = await searchText("replace_all", { repl: replace, sel: null });
+  if (r.error) throw new Error("正则表达式无效");
+  if (r.count > 0) {
+    snapshot(t);
+    for (const [row, text] of r.rows) t.lines[row] = text;
+    t.dirty = true; t.sel = null; renderVim(t);
+  }
+}
+async function macroStep(a) {
+  const t = getActiveTab(); if (!t) throw new Error("没有活动文档");
+  const last = Math.max(0, t.lines.length - 1);
+  switch (a.type) {
+    case "command":
+      if (!a.cmd) throw new Error("未支持的按键 " + (a.key || a.id));
+      await dispatchCommand(a.cmd); break;
+    case "ins_text": insertTextAtCursor(a.text); break;
+    case "char": if (a.code === 13) await insertNewline(); else insertTextAtCursor(String.fromCharCode(a.code)); break;
+    case "move_cursor": case "move_cursor_layout": {
+      const to = { row: Math.min(a.row, last), col: a.col };
+      if (a.select) { const from = t.selAnchor || { ...t.cursor }; t.selAnchor = from; t.sel = normalizeSel(from, to); } else { t.sel = null; t.selAnchor = null; }
+      t.cursor = to; renderVim(t); break;
+    }
+    case "jump": t.cursor = { row: Math.max(0, Math.min(a.line - 1, last)), col: 0 }; t.sel = null; renderVim(t); scrollRowIntoView(t.cursor.row, "nearest"); break;
+    case "search_next": macroSetFind(a.text, a.flags); await findStep(1); break;
+    case "search_prev": macroSetFind(a.text, a.flags); await findStep(-1); break;
+    case "replace_all": await macroReplaceAll(a.search, a.replace, a.flags); break;
+    case "replace_next": macroSetFind(a.search, a.flags); await findStep(1); if (selNonEmpty(getActiveTab())) insertTextAtCursor(a.replace); break;
+    default: throw new Error("未知动作 " + a.type);
+  }
+  await enqueueInput(async () => {});   // 等这一步的编辑真正落地
+}
+async function runSakuraMacro(src) {
+  let plan;
+  try { plan = await invoke("macro_plan", { src }); } catch (e) { setTip("宏有误, 未执行: " + e.message); return false; }
+  for (const s of plan.steps) {
+    try { await macroStep(s.action); } catch (e) { setTip("宏第 " + s.line + " 行 " + s.name + " 失败: " + e.message); return false; }
+  }
+  setTip("宏已执行 (" + plan.steps.length + " 步)");
+  return true;
+}
+SAKURA_CMDS["run-sakura-macro"] = () => {
+  const t = getActiveTab(); if (!t) return;
+  const src = /\.mac$/i.test(t.name || t.path || "") ? t.lines.join("\n") : (selNonEmpty(t) ? selectionText(t) : "");
+  if (!src.trim()) { setTip("当前文档不是 .mac, 也没有选中宏文本"); return; }
+  return runSakuraMacro(src);
+};
 
 /* ===== Markdown 工具条 + 预览 (docs/00_要件基线/REQ: FR-005..FR-025, INV-03/04) =====
    - 只有活动文档是 Markdown 时才建立工具条 DOM (非 Markdown 文件零成本, INV-03); 预览只在点开时才请求渲染 (NFR-007/013)。

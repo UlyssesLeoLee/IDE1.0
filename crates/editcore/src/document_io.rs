@@ -452,12 +452,19 @@ pub struct WriteSpec {
     pub eol: Option<String>,
     /// 目标编码里无法表示的字符: false = 报错 (不静默替换), true = 仍写 (无法表示的字符变成 ?)
     pub force: bool,
+    /// 保存前把旧文件备份到 `.sakura-backup/` (保留最近几代; 备份失败不挡保存, 只是不备份)
+    pub backup: bool,
 }
 
 /// 写文件. `content` 是 LF 文本 (指定了 encoding 时); 没指定 encoding 就按旧行为原样写 UTF-8。
 pub fn write_doc(path: &std::path::Path, content: &str, spec: &WriteSpec) -> Result<usize, String> {
+    if spec.backup {
+        let _ = crate::auto_backup::backup_before_save(path, &crate::auto_backup::SaveBackupConfig::default());
+    }
+    // 原子写: 先写同目录临时文件再换名, 中途失败 / 断电原文件完好; 只读文件明确拒绝而不是半写
+    let write = |bytes: &[u8]| atomic_write(path, bytes, AtomicWriteOpts { clear_readonly: false, sync: true }).map_err(|e| format!("写入失败: {e}"));
     let Some(enc_label) = spec.encoding.as_deref().filter(|s| !s.is_empty()) else {
-        std::fs::write(path, content.as_bytes()).map_err(|e| format!("写入失败: {e}"))?;
+        write(content.as_bytes())?;
         return Ok(content.len());
     };
     let cs = Charset::from_label(enc_label).ok_or_else(|| format!("不支持的编码: {enc_label}"))?;
@@ -480,7 +487,7 @@ pub fn write_doc(path: &std::path::Path, content: &str, spec: &WriteSpec) -> Res
             return Err(format!("UNMAPPABLE:{}:编码 {} 无法表示这些字符: {}", cs.label(), cs.label(), list));
         }
     };
-    std::fs::write(path, &bytes).map_err(|e| format!("写入失败: {e}"))?;
+    write(&bytes)?;
     Ok(bytes.len())
 }
 

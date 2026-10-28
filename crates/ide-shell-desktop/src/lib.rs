@@ -548,6 +548,14 @@ pub fn write_file_spec_pub(
     })
 }
 
+/// 文件指纹 (web 版 /api/stat_file 同一语义): 外部改动检测
+#[tauri::command]
+fn stat_file(state: tauri::State<'_, ProjectRoot>, path: String) -> Result<editcore::document_io::FileStamp, String> {
+    let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
+    let target = resolve_in_project_pub(&root, &path)?;
+    Ok(editcore::document_io::file_stamp(&target))
+}
+
 #[tauri::command]
 fn write_file(
     state: tauri::State<'_, ProjectRoot>,
@@ -557,11 +565,12 @@ fn write_file(
     bom: Option<String>,
     eol: Option<String>,
     force: Option<bool>,
+    backup: Option<bool>,
 ) -> Result<usize, String> {
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false) };
+    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false), backup: backup.unwrap_or(false) };
     write_file_spec_pub(&root, &path, &content, &spec)
 }
 
@@ -631,6 +640,7 @@ pub fn run() {
             list_dir,
             read_file,
             write_file,
+            stat_file,
             help_wiki,
             terminal::terminal_create,
             terminal::terminal_input,
@@ -643,6 +653,8 @@ pub fn run() {
             scm::scm_commit,
             scm::scm_log,
             search::search_cmd,
+            search::grep_replace_cmd,
+            macro_plan,
             outline::outline,
             reinterpret_text,
             edit_text,
@@ -761,6 +773,12 @@ fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::V
 #[tauri::command]
 fn plugins(options: editcore::pure_api::PluginReq) -> Result<serde_json::Value, String> {
     editcore::pure_api::plugins(&options)
+}
+
+/// Sakura 宏计划 (web 版 /api/macro_plan 同一语义)
+#[tauri::command]
+fn macro_plan(options: editcore::pure_api::MacroPlanReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::macro_plan(&options)
 }
 
 /// 智能功能 API (web 版 /api/agent 同一语义)

@@ -188,6 +188,12 @@ pub fn write_file(root: &Path, path: &str, content: &str) -> Result<usize, Strin
     write_file_spec(root, path, content, &editcore::document_io::WriteSpec::default())
 }
 
+/// 文件指纹 (mtime / 大小 / 只读): 前端据此判断文件有没有被外部改过 (窗口重新获得焦点时问一次, 不轮询)
+pub fn stat_file(root: &Path, path: &str) -> Result<editcore::document_io::FileStamp, String> {
+    let target = resolve_in_project(root, path)?;
+    Ok(editcore::document_io::file_stamp(&target))
+}
+
 /// 写文件; `spec.encoding` 指定时 content 视为 LF 文本并按编码 / BOM / 换行写回.
 pub fn write_file_spec(
     root: &Path,

@@ -56,3 +56,6 @@ tests/uat/fixtures/sample-project/uat-cmd-*.txt
 *.AppImage
 *.deb
 *.nsis.zip
+
+# 保存前自动备份目录
+.sakura-backup/

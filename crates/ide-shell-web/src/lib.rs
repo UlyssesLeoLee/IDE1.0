@@ -40,7 +40,7 @@ use ide_shell::{App, AppConfig};
 use serde::{Deserialize, Serialize};
 
 use ide_kernel::document::LineEnding;
-use path_safety::{list_dir, read_file_enc, write_file_spec, DirEntry, FileContent};
+use path_safety::{list_dir, read_file_enc, stat_file, write_file_spec, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
 /// 请求头大小上限 (防 header 放大攻击).
@@ -715,6 +715,22 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 插件: 列表 / 读文件 / 启停 / 卸载 / 检查 / 安装更新 / 冲突仲裁 (网络类只在用户点按钮时才会被调用)
             respond_pure::<editcore::pure_api::PluginReq>(stream, &body, "插件请求无效", editcore::pure_api::plugins);
         }
+        ("POST", "/api/macro_plan") => {
+            respond_pure::<editcore::pure_api::MacroPlanReq>(stream, &body, "宏请求无效", editcore::pure_api::macro_plan);
+        }
+        ("POST", "/api/grep_replace") => {
+            // Grep 置换: 检索条件同 /api/search, 另带 replacement / backup / skip_paths; 按原编码 / BOM / 逐行换行原子写回
+            match serde_json::from_slice::<editcore::grep_engine::ReplaceOptions>(&body) {
+                Ok(opts) => {
+                    let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT").map(std::path::PathBuf::from).unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+                    match editcore::grep_engine::grep_replace(&cwd, &opts) {
+                        Ok(rep) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&rep).unwrap_or_default()),
+                        Err(e) => send_error_json(stream, "400 Bad Request", &e),
+                    }
+                }
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("置换请求无效: {e}")),
+            }
+        }
         ("POST", "/api/agent") => {
             // 智能功能 API: 工具表 / 调用工具 (写类工具只产出补丁提案); 没人调用就零开销
             respond_pure::<editcore::pure_api::AgentReq>(stream, &body, "Agent 请求无效", editcore::pure_api::agent);
@@ -1304,6 +1320,18 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
+        ("POST", "/api/stat_file") => {
+            // 文件指纹 (外部改动检测)
+            let Some(root) = state.project_root_get() else {
+                send_error_json(stream, "400 Bad Request", "尚未打开项目");
+                return;
+            };
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            match stat_file(&root, req.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
+                Ok(s) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&s).unwrap_or_default()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
+            }
+        }
         ("POST", "/api/write_file") => {
             let root = match state.project_root_get() {
                 Some(r) => r,
@@ -1320,6 +1348,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 bom: req.get("bom").and_then(|v| v.as_str()).map(String::from),
                 eol: req.get("eol").and_then(|v| v.as_str()).map(String::from),
                 force: req.get("force").and_then(|v| v.as_bool()).unwrap_or(false),
+                backup: req.get("backup").and_then(|v| v.as_bool()).unwrap_or(false),
             };
             let resp: Result<usize, String> = write_file_spec(&root, path, content, &spec);
             match resp {
