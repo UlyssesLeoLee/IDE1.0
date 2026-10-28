@@ -445,6 +445,23 @@
     .ext-install { display: flex; gap: 4px; } .ext-install input, .ext-ai input { flex: 1; min-width: 0; width: 100%; margin: 2px 0; box-sizing: border-box; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
     .ext-ai-out { white-space: pre-wrap; background: var(--bg-raised); padding: 6px; border-radius: 4px; max-height: 280px; overflow: auto; }
     .ext-actions { margin: 6px 0; }
+    /* ===== Chat 右栏: 占自己的栅格列 (在最后一列之后的隐式列), 和左侧一样让位而不是盖住编辑区; 底部面板 / 状态栏停在它左边 ===== */
+    #app { grid-auto-columns: 0px; }
+    html[data-chat="on"] #app { grid-auto-columns: var(--w-chat, 340px); }
+    #chat-dock { display: none; grid-row: 2 / 5; grid-column: 4; min-width: 0; min-height: 0; flex-direction: column; background: var(--bg-side); border-left: 1px solid var(--border); overflow: hidden; }
+    html[data-layout="min"] #chat-dock { grid-column: 5; }
+    html[data-chat="on"] #chat-dock { display: flex; }
+    #chat-head { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+    #chat-head .chat-sp { flex: 1; } .chat-ctx { font-size: var(--fs-xs); color: var(--fg-muted); white-space: nowrap; }
+    #chat-msgs { flex: 1; min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .chat-msg { padding: 5px 8px; border-radius: 6px; font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-word; }
+    .chat-user { background: var(--bg-active); align-self: flex-end; max-width: 92%; } .chat-ai { background: var(--bg-raised); }
+    .chat-sys, .chat-tool { color: var(--fg-muted); font-size: var(--fs-xs); } .chat-err { color: #f85149; }
+    .chat-proposal { background: var(--bg-raised); border: 1px solid var(--border-strong); } .chat-proposal pre { margin: 4px 0; max-height: 200px; overflow: auto; font-size: var(--fs-xs); }
+    #chat-ai { padding: 2px 8px; font-size: var(--fs-xs); } #chat-ai input { display: block; width: 100%; box-sizing: border-box; margin: 2px 0; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
+    #chat-inputrow { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
+    #chat-input { flex: 1; min-width: 0; resize: none; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: var(--fs-sm); }
+    #chat-toggle { margin-left: auto; padding: 0 8px; } #chat-toggle.on { background: var(--bg-active); }
     /* ===== Markdown 工具条 / 预览 ===== */
     #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
     html[data-md="on"] #viewbars-top { display: block; }
@@ -2636,7 +2653,7 @@ const TAURI_CMD_ALIAS = { search: "search_cmd" };
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
 // 在这里一次抹平, 调用点不用关心.
-const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), md_render: (a) => ({ options: a }), plugins: (a) => ({ options: a }), history: (a) => ({ options: a }) };
+const TAURI_ARG_WRAP = { search: (a) => ({ options: a }), reinterpret_text: (a) => ({ options: a }), migemo_patterns: (a) => ({ options: a }), edit_text: (a) => ({ options: a }), edit_lines: (a) => ({ options: a }), nav_step: (a) => ({ options: a }), edit_cmd: (a) => ({ options: a }), bracket_pair: (a) => ({ options: a }), bookmark: (a) => ({ options: a }), search_text: (a) => ({ options: a }), md_render: (a) => ({ options: a }), plugins: (a) => ({ options: a }), agent: (a) => ({ options: a }), history: (a) => ({ options: a }) };
 const TAURI_RESULT_FIX = { search: (r) => (Array.isArray(r) ? { results: r } : r) };
 // Tauri 的 invoke 失败时 reject 的是**字符串**, 不是 Error —— 直接读 err.message 会得到 undefined
 // (Grep 显示「搜索失败: undefined」就是这样来的). 统一包成 Error.
@@ -10521,10 +10538,11 @@ function plugFrameDoc(scripts) {
 }
 window.addEventListener("message", (e) => {
   const m = e.data; if (!m || typeof m !== "object") return;
-  for (const rec of PLUG.frames.values()) {
+  for (const [pid, rec] of PLUG.frames) {
     if (rec.iframe && rec.iframe.contentWindow === e.source) {
       if (m.t === "ready") { rec.ready(); return; }
-      if (m.t === "res") { const p = PLUG.pending.get(m.id); if (p) { PLUG.pending.delete(m.id); clearTimeout(p.timer); m.e ? p.reject(new Error(m.e)) : p.resolve(m.r); } return; }
+      // 只认"发起这次调用的那个插件"的回复: 别的插件猜到调用号也不能代答
+      if (m.t === "res") { const p = PLUG.pending.get(m.id); if (p && p.id === pid) { PLUG.pending.delete(m.id); clearTimeout(p.timer); m.e ? p.reject(new Error(m.e)) : p.resolve(m.r); } return; }
     }
   }
 });
@@ -10762,17 +10780,22 @@ const MD_OK_ATTRS = new Set(("class id width height viewbox x y x1 y1 x2 y2 cx c
   "preserveaspectratio clip-path mask xmlns xmlns:xlink href xlink:href src alt title colspan rowspan role aria-label aria-hidden").split(" "));
 function mdSafeUrl(v) {
   const u = String(v).replace(/[\x00-\x20]/g, "").toLowerCase();
-  if (u.startsWith("#")) return true;
-  if (/^(https?:|mailto:)/.test(u)) return true;
-  return !/^[a-z][a-z0-9+.-]*:/.test(u);   // 带别的 scheme (javascript: data: vbscript: …) 一律拒绝
+  // 插件输出里的链接 / 图片只认页内锚点 (#id) 和内联位图 (data:image/png|jpeg|gif|webp;base64): 不允许 http(s) / 相对路径,
+  // 否则图里的 <image href> 会让预览向外发请求 (把文档内容编码进 URL 外泄)
+  return u.startsWith("#") || /^data:image\/(png|jpe?g|gif|webp);base64,/.test(u);
 }
+let MD_NS = 0;
 function mdSanitize(html) {
   const doc = new DOMParser().parseFromString("<body>" + html + "</body>", "text/html");
+  const ns = "pg" + (++MD_NS) + "-";   // 插件输出里的 id 加前缀: 防止它顶替宿主页面里同名元素 (DOM clobbering); 页内引用同步改写
   for (const el of [...doc.body.querySelectorAll("*")]) {
     if (!MD_OK_TAGS.has(el.tagName.toLowerCase())) { el.remove(); continue; }
     for (const a of [...el.attributes]) {
       const n = a.name.toLowerCase();
-      if (!MD_OK_ATTRS.has(n) || ((n === "href" || n === "xlink:href" || n === "src") && !mdSafeUrl(a.value))) el.removeAttribute(a.name);
+      if (!MD_OK_ATTRS.has(n) || ((n === "href" || n === "xlink:href" || n === "src") && !mdSafeUrl(a.value))) { el.removeAttribute(a.name); continue; }
+      if (n === "id") el.setAttribute("id", ns + a.value);
+      else if (n === "href" || n === "xlink:href") { if (a.value.trim().startsWith("#")) el.setAttribute(a.name, "#" + ns + a.value.trim().slice(1)); }
+      else if (/url\(/i.test(a.value)) el.setAttribute(a.name, a.value.replace(/url\(\s*#([^)]*)\)/gi, (_, id) => "url(#" + ns + id.trim() + ")").replace(/url\((?!#)[^)]*\)/gi, "none"));
     }
   }
   const frag = document.createDocumentFragment();
@@ -10825,6 +10848,142 @@ function titleSakuraToolbar() {
 }
 { const _bvb = buildViewBars; buildViewBars = function () { const r = _bvb.apply(this, arguments); titleSakuraToolbar(); return r; }; }
 titleSakuraToolbar();
+
+/* ===== Chat 右栏 (REQ FR-042..FR-044, NFR-026; docs/02_详细设计/CODING-STANDARDS.md §7) =====
+   - 不打开就不存在: 第一次打开才创建 DOM、读 Agent 工具表; 打开之前没有任何智能功能的代码路径被执行 (内建的"图运行器"= 下面这个小循环, 只在发送时跑)。
+   - 布局和左侧一样占自己的栅格列 (不盖住编辑区); 底部面板在它左边, 不会互相遮挡。
+   - 文档内容只在用户确认过 (一次) 后才随请求发往用户自己配置的 AI 端点; 默认只带选中内容 / 光标所在章节, 不带整篇 (FR-042)。
+   - 模型只能通过 Agent API 的工具行动; 写类工具只产出补丁提案, 用户审核差异、点"应用"后才套用, 并可一步撤销 (FR-043/044)。 */
+const CHAT = { built: false, messages: [], tools: null, busy: false, MAX_ROUNDS: 5 };
+const CHAT_CONSENT_KEY = "ide10.aiConsent";
+
+function chatOpen() { return document.documentElement.getAttribute("data-chat") === "on"; }
+function toggleChat(force) {
+  const on = typeof force === "boolean" ? force : !chatOpen();
+  if (on) { buildChat(); window.__smartOpened = true; }
+  document.documentElement.setAttribute("data-chat", on ? "on" : "off");
+  const b = document.getElementById("chat-toggle"); if (b) b.classList.toggle("on", on);
+  if (on) document.getElementById("chat-input").focus(); else edContent.focus({ preventScroll: true });
+}
+function buildChat() {
+  if (CHAT.built) return;
+  CHAT.built = true;
+  const d = document.createElement("aside");
+  d.id = "chat-dock"; d.setAttribute("aria-label", "Chat");
+  d.innerHTML = '<div id="chat-head"><b>Chat</b><span class="chat-sp"></span><label class="chat-ctx"><input type="checkbox" id="chat-ctx" checked> 带上选中内容/当前章节</label>' +
+    '<button class="tb-btn" id="chat-clear" title="清空对话">清空</button><button class="tb-btn" id="chat-close" title="折叠 (Ctrl+Shift+L)">✕</button></div>' +
+    '<div id="chat-msgs" aria-live="polite"></div>' +
+    '<details id="chat-ai"><summary>AI 设置</summary><input id="cai-base" placeholder="接口地址 (OpenAI 兼容)"><input id="cai-model" placeholder="模型"><input id="cai-key" type="password" placeholder="API Key (只保存在本机)"><button class="tb-btn" id="cai-save">保存</button></details>' +
+    '<div id="chat-inputrow"><textarea id="chat-input" rows="2" placeholder="向 AI 提问; 它可以调用编辑器的智能 API (大纲 / 查找 / 渲染 / 补丁提案)。Enter 发送, Shift+Enter 换行"></textarea><button class="tb-btn" id="chat-send">发送</button></div>';
+  document.getElementById("app").appendChild(d);
+  const c = aiConfig();
+  d.querySelector("#cai-base").value = c.baseUrl; d.querySelector("#cai-model").value = c.model; d.querySelector("#cai-key").value = c.key;
+  if (!aiConfigured()) d.querySelector("#chat-ai").open = true;
+  chatSay("sys", "在上方展开「AI 设置」填好接口地址 / 模型 / Key 后就能对话。文档内容不会被默认发出: 只有勾选「带上选中内容」并确认后，选中部分才会发给你配置的端点。");
+  d.querySelector("#chat-close").onclick = () => toggleChat(false);
+  d.querySelector("#chat-clear").onclick = () => { CHAT.messages = []; document.getElementById("chat-msgs").replaceChildren(); };
+  d.querySelector("#cai-save").onclick = () => { aiSaveConfig({ baseUrl: d.querySelector("#cai-base").value.trim(), model: d.querySelector("#cai-model").value.trim(), key: d.querySelector("#cai-key").value }); setTip("AI 设置已保存"); };
+  d.querySelector("#chat-send").onclick = chatSend;
+  d.querySelector("#chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); chatSend(); } });
+}
+function chatSay(role, text) {
+  const box = document.getElementById("chat-msgs");
+  const el = document.createElement("div"); el.className = "chat-msg chat-" + role; el.textContent = text;   // 一律 textContent: 模型输出不当 HTML
+  box.appendChild(el); box.scrollTop = box.scrollHeight;
+  return el;
+}
+// 上下文: 选中内容; 没有选中就取光标所在的 Markdown 章节 (标题到下一个同级标题), 都没有就不带
+function chatContext() {
+  const t = getActiveTab(); if (!t) return null;
+  if (selNonEmpty(t)) return { label: "选中内容", range: [t.sel.r0, t.sel.r1], text: selectionText(t) };
+  if (isMdTab(t)) {
+    let s = t.cursor.row; while (s > 0 && !/^#{1,6} /.test(t.lines[s])) s--;
+    if (!/^#{1,6} /.test(t.lines[s] || "")) return null;
+    const lvl = t.lines[s].match(/^#+/)[0].length; let e = s + 1;
+    while (e < t.lines.length && !(/^#{1,6} /.test(t.lines[e]) && t.lines[e].match(/^#+/)[0].length <= lvl)) e++;
+    return { label: "当前章节", range: [s, e - 1], text: t.lines.slice(s, e).join("\n") };
+  }
+  return null;
+}
+async function chatCallModel(messages) {
+  const c = aiConfig();
+  const r = await fetch(c.baseUrl.replace(/\/+$/, "") + "/chat/completions", {
+    method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + c.key },
+    body: JSON.stringify({ model: c.model, messages, tools: CHAT.tools.map((t) => ({ type: t.type, function: t.function })), tool_choice: "auto" }),
+  });
+  if (!r.ok) throw new Error("AI 请求失败 " + r.status);
+  return (await r.json()).choices[0].message;
+}
+async function chatSend() {
+  const input = document.getElementById("chat-input"), q = input.value.trim();
+  if (!q || CHAT.busy) return;
+  if (!aiConfigured()) { chatSay("err", "还没有配置 AI: 先填接口地址 / 模型 / Key。"); document.getElementById("chat-ai").open = true; return; }
+  let ctx = document.getElementById("chat-ctx").checked ? chatContext() : null;
+  if (ctx) {
+    let ok = false; try { ok = localStorage.getItem(CHAT_CONSENT_KEY) === "1"; } catch (_) {}
+    if (!ok) {
+      if (!confirm("将把「" + ctx.label + "」(" + ctx.text.length + " 个字符) 发送到你配置的 AI 端点:\n" + aiConfig().baseUrl + "\n\n只发这一部分，不发整篇文档。允许吗? (允许后不再询问)")) ctx = null;
+      else { try { localStorage.setItem(CHAT_CONSENT_KEY, "1"); } catch (_) {} }
+    }
+  }
+  input.value = ""; chatSay("user", q);
+  CHAT.busy = true; document.getElementById("chat-send").disabled = true;
+  try {
+    if (!CHAT.tools) CHAT.tools = (await invoke("agent", { op: "tools" })).tools;   // 第一次发送才读工具表
+    const t = getActiveTab();
+    const sys = "你是 IDE1.0 编辑器里的助手。只能通过提供的工具行动; 要改文档只能调用 propose_patch 提出补丁 (行号从 0 起), 由用户审核后套用。" +
+      (t ? " 当前文档: " + (t.name || "") + ", 共 " + t.lines.length + " 行 (total_rows)。" : "") +
+      (ctx ? "\n用户授权发送的" + ctx.label + " (第 " + (ctx.range[0] + 1) + "–" + (ctx.range[1] + 1) + " 行):\n" + ctx.text : "");
+    const msgs = [{ role: "system", content: sys }, ...CHAT.messages, { role: "user", content: q }];
+    for (let round = 0; round < CHAT.MAX_ROUNDS; round++) {
+      const m = await chatCallModel(msgs);
+      msgs.push(m);
+      if (!m.tool_calls || !m.tool_calls.length) { if (m.content) chatSay("ai", m.content); break; }
+      if (m.content) chatSay("ai", m.content);
+      for (const tc of m.tool_calls) {
+        let args = {}; try { args = JSON.parse(tc.function.arguments || "{}"); } catch (_) {}
+        let result;
+        try { result = await invoke("agent", { op: "call", name: tc.function.name, args }); } catch (e) { result = { error: e.message }; }
+        chatSay("tool", "🔧 " + tc.function.name + (result.error ? " → 失败: " + result.error : " → 完成"));
+        if (result && result.kind === "patch_proposal") chatProposal(result);
+        msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result && result.kind === "patch_proposal" ? { status: "已提交给用户审核, 尚未套用" } : result).slice(0, 20000) });
+      }
+    }
+    CHAT.messages = msgs.slice(1).filter((x) => x.role === "user" || (x.role === "assistant" && x.content && !x.tool_calls)).slice(-20);   // 只留来回的文字, 工具往返不进下一轮
+  } catch (e) { chatSay("err", e.message); }
+  CHAT.busy = false; document.getElementById("chat-send").disabled = false;
+}
+// 补丁提案: 显示前后差异, 用户点"应用"才套用 (一步撤销), "拒绝"丢弃
+function chatProposal(p) {
+  const t = getActiveTab();
+  const old = t ? t.lines.slice(p.start, p.start + p.remove) : [];
+  const card = document.createElement("div"); card.className = "chat-msg chat-proposal";
+  const h = document.createElement("div"); h.textContent = "补丁提案: 第 " + (p.start + 1) + " 行起替换 " + p.remove + " 行" + (p.reason ? " — " + p.reason : "");
+  const diff = document.createElement("pre");
+  diff.textContent = old.map((l) => "- " + l).join("\n") + (old.length && p.insert.length ? "\n" : "") + p.insert.map((l) => "+ " + l).join("\n");
+  const ok = document.createElement("button"), no = document.createElement("button");
+  ok.className = no.className = "tb-btn"; ok.textContent = "应用"; no.textContent = "拒绝";
+  ok.onclick = () => {
+    const tt = getActiveTab();
+    if (!tt || tt !== t || tt.lines.length < p.start + p.remove || old.join("\n") !== tt.lines.slice(p.start, p.start + p.remove).join("\n")) { chatSay("err", "文档已变化, 提案不再适用, 未套用。"); card.remove(); return; }
+    snapshot(tt); spliceLines(tt, p.start, p.remove, p.insert); if (!tt.lines.length) tt.lines.push("");
+    tt.dirty = true; tt.sel = null; tt.cursor = { row: Math.min(p.start, tt.lines.length - 1), col: 0 };
+    paintActive(); setTip("已套用 AI 补丁 (Ctrl+Z 可撤销)"); card.remove(); chatSay("sys", "已套用一个补丁提案。");
+  };
+  no.onclick = () => { card.remove(); chatSay("sys", "已拒绝一个补丁提案。"); };
+  card.append(h, diff, ok, no);
+  document.getElementById("chat-msgs").appendChild(card);
+}
+{
+  const st = document.getElementById("status");
+  if (st) {
+    const b = document.createElement("button"); b.id = "chat-toggle"; b.className = "tb-btn"; b.textContent = "💬 Chat"; b.title = "Chat 右栏 (Ctrl+Shift+L)";
+    b.addEventListener("click", () => toggleChat());
+    st.appendChild(b);
+  }
+  VIEW_CMDS["toggle-chat"] = () => toggleChat();
+  document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChat(); } }, true);
+}
 
 // ===== Welcome page =====
 function showWelcome() {

@@ -652,6 +652,7 @@ pub fn run() {
             search_text,
             md_render,
             plugins,
+            agent,
             bookmark,
             bracket_pair,
             edit_cmd,
@@ -760,6 +761,12 @@ fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::V
 #[tauri::command]
 fn plugins(options: editcore::pure_api::PluginReq) -> Result<serde_json::Value, String> {
     editcore::pure_api::plugins(&options)
+}
+
+/// 智能功能 API (web 版 /api/agent 同一语义)
+#[tauri::command]
+fn agent(options: editcore::pure_api::AgentReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::agent(&options)
 }
 
 /// Markdown 预览 (web 版 /api/md_render 同一语义)

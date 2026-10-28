@@ -59,6 +59,7 @@ pub mod keyword_set;
 pub mod macro_sakura;
 pub mod plugin_host;
 pub mod md_render;
+pub mod agent_api;
 pub mod matching_paren;
 pub mod migemo;
 pub mod nav;

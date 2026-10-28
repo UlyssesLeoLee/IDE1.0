@@ -135,3 +135,20 @@ pub fn plugins(req: &PluginReq) -> Result<Value, String> {
         }
     })
 }
+
+// ---------- Agent API (给内建对话 / 外部 LangGraph, 见 agent_api) ----------
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum AgentReq {
+    /// 工具表 (OpenAI tools 格式)
+    Tools,
+    Call { name: String, #[serde(default)] args: Value },
+}
+
+pub fn agent(req: &AgentReq) -> Result<Value, String> {
+    match req {
+        AgentReq::Tools => Ok(json!({ "tools": crate::agent_api::tools_json() })),
+        AgentReq::Call { name, args } => crate::agent_api::call(name, args),
+    }
+}

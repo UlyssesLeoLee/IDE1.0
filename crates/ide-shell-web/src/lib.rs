@@ -715,6 +715,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 插件: 列表 / 读文件 / 启停 / 卸载 / 检查 / 安装更新 / 冲突仲裁 (网络类只在用户点按钮时才会被调用)
             respond_pure::<editcore::pure_api::PluginReq>(stream, &body, "插件请求无效", editcore::pure_api::plugins);
         }
+        ("POST", "/api/agent") => {
+            // 智能功能 API: 工具表 / 调用工具 (写类工具只产出补丁提案); 没人调用就零开销
+            respond_pure::<editcore::pure_api::AgentReq>(stream, &body, "Agent 请求无效", editcore::pure_api::agent);
+        }
         ("POST", "/api/md_render") => {
             // Markdown 预览: 文本 -> 已转义 HTML (只读)
             respond_pure::<editcore::pure_api::MdRenderReq>(stream, &body, "Markdown 预览请求无效", |r| Ok(editcore::pure_api::md_render(r)));
