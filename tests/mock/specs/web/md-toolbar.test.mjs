@@ -45,3 +45,18 @@ test('按钮 / 快捷键走同一条 md 命令; 预览只读不改文档, 脚本
     await page.click('#md-bar [data-md="preview"]');
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('md-preview')).display), 'none', '再点切回源码');
   }));
+
+test('插件输出走白名单净化: script / on* / javascript: (含夹控制字符) / animate 都被去掉', () =>
+  withMocks({ name: 'mdbar', portOffset: 574 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await setup(page, 'n.md', ['```evil', 'x', '```']);
+    await page.evaluate(() => {
+      window.MD_FENCE_HANDLERS.evil = async () => ({ svg: '<svg onload="window.__x=1"><script>window.__x=2</script><a href="jav\tascript:window.__x=3"><text>ok</text></a><animate attributeName="href" values="javascript:1"/><style>*{}</style><rect width="5" onclick="1"/></svg>' });
+    });
+    await page.click('#md-bar [data-md="preview"]');
+    await page.waitForSelector('#md-preview .md-fence-out svg', { timeout: 8000 });
+    const h = await page.evaluate(() => document.querySelector('#md-preview .md-fence-out').innerHTML.toLowerCase());
+    for (const bad of ['<script', 'onload', 'onclick', 'javascript', 'animate', '<style']) assert.ok(!h.includes(bad), `残留 ${bad}: ${h}`);
+    assert.ok(h.includes('<rect') && h.includes('ok'), '合法内容保留');
+    assert.equal(await page.evaluate(() => window.__x), undefined, '没有任何脚本执行');
+  }));

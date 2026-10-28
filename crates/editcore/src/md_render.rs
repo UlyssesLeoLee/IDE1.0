@@ -46,7 +46,15 @@ fn take_until<'a>(s: &'a str, from: usize, end: &str) -> Option<(&'a str, usize)
     s[from..].find(end).filter(|&p| p > 0).map(|p| (&s[from..from + p], from + p + end.len()))
 }
 
-fn inline(src: &str) -> String {
+/// 嵌套深度上限: 超过就把剩下的当普通文字 (防止恶意文档靠无限嵌套的 `>` / `**` 把栈撑爆)
+const MAX_DEPTH: usize = 32;
+/// 预览输入上限 (超过的部分不渲染)
+const MAX_INPUT: usize = 4 * 1024 * 1024;
+
+fn inline(src: &str, depth: usize) -> String {
+    if depth > MAX_DEPTH {
+        return esc(src);
+    }
     let mut out = String::new();
     let mut i = 0;
     let b = src.as_bytes();
@@ -55,7 +63,7 @@ fn inline(src: &str) -> String {
         let two = |m: &str, tag: &str, out: &mut String, i: &mut usize| -> bool {
             if rest.starts_with(m) {
                 if let Some((inner, next)) = take_until(src, *i + m.len(), m) {
-                    out.push_str(&format!("<{tag}>{}</{tag}>", inline(inner)));
+                    out.push_str(&format!("<{tag}>{}</{tag}>", inline(inner, depth + 1)));
                     *i = next;
                     return true;
                 }
@@ -80,7 +88,7 @@ fn inline(src: &str) -> String {
         }
         if rest.starts_with('*') && !rest.starts_with("**") {
             if let Some((inner, next)) = take_until(src, i + 1, "*") {
-                out.push_str(&format!("<em>{}</em>", inline(inner)));
+                out.push_str(&format!("<em>{}</em>", inline(inner, depth + 1)));
                 i = next;
                 continue;
             }
@@ -106,7 +114,7 @@ fn inline(src: &str) -> String {
                         if img {
                             out.push_str(&format!("<img alt=\"{}\" src=\"{}\" loading=\"lazy\">", esc(label), esc(url)));
                         } else {
-                            out.push_str(&format!("<a href=\"{}\" rel=\"noopener noreferrer\">{}</a>", esc(url), inline(label)));
+                            out.push_str(&format!("<a href=\"{}\" rel=\"noopener noreferrer\">{}</a>", esc(url), inline(label, depth + 1)));
                         }
                     } else {
                         out.push_str(&esc(&src[i..next])); // 不安全的链接按普通文字显示
@@ -159,6 +167,14 @@ fn list_item(l: &str) -> Option<(usize, bool, &str)> {
 
 /// 渲染整篇文档
 pub fn render(src: &str) -> String {
+    render_depth(src, 0)
+}
+
+fn render_depth(src: &str, depth: usize) -> String {
+    if depth > MAX_DEPTH {
+        return format!("<p>{}</p>", esc(src));
+    }
+    let src = if src.len() > MAX_INPUT { &src[..src.floor_char_boundary(MAX_INPUT)] } else { src };
     let text = src.replace("\r\n", "\n");
     let mut lines: Vec<&str> = text.split('\n').collect();
     let mut out = String::new();
@@ -187,7 +203,7 @@ pub fn render(src: &str) -> String {
             out.push_str(&format!("<pre class=\"md-fence\" data-lang=\"{}\"><code>{}</code></pre>", esc(lang), esc(&body.join("\n"))));
         } else if let Some(h) = Some(l.chars().take_while(|&c| c == '#').count()).filter(|&h| (1..=6).contains(&h) && l[h..].starts_with(' ')) {
             let t = l[h + 1..].trim().trim_end_matches('#').trim();
-            out.push_str(&format!("<h{h} id=\"{}\">{}</h{h}>", esc(&slug(t)), inline(t)));
+            out.push_str(&format!("<h{h} id=\"{}\">{}</h{h}>", esc(&slug(t)), inline(t, depth)));
             i += 1;
         } else if is_hr(l) {
             out.push_str("<hr>");
@@ -203,7 +219,7 @@ pub fn render(src: &str) -> String {
             if let Some(r) = first.strip_prefix("[!").and_then(|r| r.split_once(']')) {
                 let kind: String = r.0.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
                 let title = if r.1.trim().is_empty() { r.0.to_string() } else { r.1.trim().to_string() };
-                out.push_str(&format!("<div class=\"callout callout-{}\"><div class=\"callout-title\">{}</div>{}</div>", esc(&kind.to_lowercase()), inline(&title), render(&q[1..].join("\n"))));
+                out.push_str(&format!("<div class=\"callout callout-{}\"><div class=\"callout-title\">{}</div>{}</div>", esc(&kind.to_lowercase()), inline(&title, depth), render(&q[1..].join("\n"))));
             } else {
                 out.push_str(&format!("<blockquote>{}</blockquote>", render(&q.join("\n"))));
             }
@@ -211,14 +227,14 @@ pub fn render(src: &str) -> String {
             let head = cells(l);
             let mut t = String::from("<table><thead><tr>");
             for c in &head {
-                t.push_str(&format!("<th>{}</th>", inline(c)));
+                t.push_str(&format!("<th>{}</th>", inline(c, depth)));
             }
             t.push_str("</tr></thead><tbody>");
             i += 2;
             while i < lines.len() && lines[i].contains('|') && !lines[i].trim().is_empty() {
                 t.push_str("<tr>");
                 for c in cells(lines[i]) {
-                    t.push_str(&format!("<td>{}</td>", inline(&c)));
+                    t.push_str(&format!("<td>{}</td>", inline(&c, depth)));
                 }
                 t.push_str("</tr>");
                 i += 1;
@@ -234,9 +250,9 @@ pub fn render(src: &str) -> String {
                     break;
                 }
                 let (cls, body) = match (item.strip_prefix("[ ] "), item.strip_prefix("[x] ").or_else(|| item.strip_prefix("[X] "))) {
-                    (Some(r), _) => (" class=\"task\"", format!("<input type=\"checkbox\" disabled> {}", inline(r))),
-                    (_, Some(r)) => (" class=\"task\"", format!("<input type=\"checkbox\" checked disabled> {}", inline(r))),
-                    _ => ("", inline(item)),
+                    (Some(r), _) => (" class=\"task\"", format!("<input type=\"checkbox\" disabled> {}", inline(r, depth))),
+                    (_, Some(r)) => (" class=\"task\"", format!("<input type=\"checkbox\" checked disabled> {}", inline(r, depth))),
+                    _ => ("", inline(item, depth)),
                 };
                 out.push_str(&format!("<li{cls}>{body}</li>"));
                 i += 1;
@@ -249,7 +265,7 @@ pub fn render(src: &str) -> String {
                 p.push(lines[i].trim());
                 i += 1;
             }
-            let html = inline(&p.join("\n"));
+            let html = inline(&p.join("\n"), depth);
             if !html.trim().is_empty() {
                 out.push_str(&format!("<p>{}</p>", html.replace('\n', "<br>")));
             }
@@ -287,6 +303,14 @@ mod tests {
         for want in ["<h1 id=\"title\">Title</h1>", "<strong>b</strong>", "<em>i</em>", "<del>s</del>", "<mark>m</mark>", "<code>c&lt;d&gt;</code>", "<ul>", "checked disabled", "<ol>", "<hr>", "<th>A</th>", "<td>2</td>"] {
             assert!(h.contains(want), "缺 {want}: {h}");
         }
+    }
+
+    #[test]
+    fn deep_nesting_does_not_overflow_the_stack() {
+        let quotes = format!("{} x", ">".repeat(5000));
+        assert!(render(&quotes).contains('x'));
+        let em = format!("{}x{}", "**".repeat(5000), "**".repeat(5000));
+        assert!(render(&em).contains('x'));
     }
 
     #[test]

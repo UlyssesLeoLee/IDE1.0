@@ -10550,18 +10550,30 @@ async function renderMdPreview() {
     }).catch(() => {});
   }
 }
-// 插件返回的 HTML / SVG 先净化再放进页面: 去 script / foreignObject / iframe 等、on* 属性、javascript: 链接 (PLUGIN-SYSTEM §1)
+// 插件返回的 HTML / SVG 先净化再放进页面。白名单: 只放行下列元素和属性 (没有 script / style / animate / set / foreignObject /
+// iframe / form 等); 链接类属性去掉控制字符和空白后只认 http(s) / mailto / # / 相对路径 (PLUGIN-SYSTEM §1)。
+const MD_OK_TAGS = new Set(("svg g defs symbol use path rect circle ellipse line polyline polygon text tspan textpath title desc marker clippath mask lineargradient radialgradient stop pattern image " +
+  "div span p br b i u s em strong code pre sub sup small ul ol li table thead tbody tr th td a img h1 h2 h3 h4 h5 h6 blockquote hr").split(" "));
+const MD_OK_ATTRS = new Set(("class id width height viewbox x y x1 y1 x2 y2 cx cy r rx ry d points transform fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-opacity fill-opacity opacity " +
+  "font-size font-family font-weight text-anchor dominant-baseline dx dy offset stop-color stop-opacity gradientunits gradienttransform patternunits marker-start marker-end marker-mid markerwidth markerheight refx refy orient " +
+  "preserveaspectratio clip-path mask xmlns xmlns:xlink href xlink:href src alt title colspan rowspan role aria-label aria-hidden").split(" "));
+function mdSafeUrl(v) {
+  const u = String(v).replace(/[\x00-\x20]/g, "").toLowerCase();
+  if (u.startsWith("#")) return true;
+  if (/^(https?:|mailto:)/.test(u)) return true;
+  return !/^[a-z][a-z0-9+.-]*:/.test(u);   // 带别的 scheme (javascript: data: vbscript: …) 一律拒绝
+}
 function mdSanitize(html) {
   const doc = new DOMParser().parseFromString("<body>" + html + "</body>", "text/html");
-  for (const el of doc.body.querySelectorAll("script, iframe, object, embed, foreignObject, link, meta, base, form")) el.remove();
-  for (const el of doc.body.querySelectorAll("*")) {
+  for (const el of [...doc.body.querySelectorAll("*")]) {
+    if (!MD_OK_TAGS.has(el.tagName.toLowerCase())) { el.remove(); continue; }
     for (const a of [...el.attributes]) {
-      const n = a.name.toLowerCase(), v = a.value.trim().toLowerCase();
-      if (n.startsWith("on") || ((n === "href" || n === "src" || n === "xlink:href") && /^(javascript|data|vbscript):/.test(v))) el.removeAttribute(a.name);
+      const n = a.name.toLowerCase();
+      if (!MD_OK_ATTRS.has(n) || ((n === "href" || n === "xlink:href" || n === "src") && !mdSafeUrl(a.value))) el.removeAttribute(a.name);
     }
   }
   const frag = document.createDocumentFragment();
-  while (doc.body.firstChild) frag.appendChild(document.importNode(doc.body.firstChild, true));
+  while (doc.body.firstChild) frag.appendChild(document.adoptNode(doc.body.firstChild));
   return frag;
 }
 function scheduleMdPreview() {
