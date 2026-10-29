@@ -81,12 +81,14 @@ test('印刷プレビュー: 分页 + 行号; 印刷设置可保存; ブラウ�
     assert.ok(html.includes('line120') && !/\b120 line120/.test(html));
   }));
 
-test('外部命令: 在终端里执行 (Tauri 替身记录 terminal_input)', () =>
+test('外部命令: 运行并捕获输出 (Tauri 替身记录 exec_cmd, 输出开成新标签; 不再把命令打进终端)', () =>
   withMocks({ name: 'tc', portOffset: 205, mock: { tauri: true } }, async ({ page, root, m }) => {
     await openProject(page, root);
     await page.locator('#ed-content').click();
-    await cmd(page, 'exec-cmd'); await page.locator('.md-input').fill('echo hi'); await page.locator('.md-input').press('Enter'); await page.waitForTimeout(1500);
+    await cmd(page, 'exec-cmd'); await page.locator('#ex-cmd').fill('echo hi'); await page.locator('#ex-cmd').press('Enter');
+    await page.waitForFunction(() => /^出力/.test(getActiveTab().name || ''), null, { timeout: 15000 });
     const ipc = await m.tauri.ipc();
-    const inputs = ipc.filter((c) => c.name === 'terminal_input').map((c) => c.args.data).join('');
-    assert.match(inputs, /echo hi\r/);
+    assert.ok(ipc.some((c) => c.name === 'exec_cmd' && c.args.command === 'echo hi'), '走 exec_cmd');
+    assert.equal(ipc.filter((c) => c.name === 'terminal_input').length, 0, '不再往终端里打');
+    assert.match(await page.evaluate(() => getActiveTab().lines.join(' ')), /hi/);
   }));
