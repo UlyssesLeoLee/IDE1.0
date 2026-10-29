@@ -665,6 +665,7 @@ pub fn run() {
             md_render,
             plugins,
             agent,
+            set_window_theme,
             bookmark,
             bracket_pair,
             edit_cmd,
@@ -779,6 +780,13 @@ fn plugins(options: editcore::pure_api::PluginReq) -> Result<serde_json::Value, 
 #[tauri::command]
 fn macro_plan(options: editcore::pure_api::MacroPlanReq) -> Result<serde_json::Value, String> {
     editcore::pure_api::macro_plan(&options)
+}
+
+/// 让原生窗口标题栏跟着应用主题走 (深色 / 浅色)。前端在主题或透明主题的明暗变化时调用; 只用 Tauri 的安全接口,
+/// 不直接调 DWM (工作区禁用 unsafe)。
+#[tauri::command]
+fn set_window_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
+    window.set_theme(Some(if dark { tauri::Theme::Dark } else { tauri::Theme::Light })).map_err(|e| e.to_string())
 }
 
 /// 智能功能 API (web 版 /api/agent 同一语义)

@@ -2813,10 +2813,27 @@ function closeModal() {
   if (was) { const a = document.activeElement; if (!a || a === document.body || modal.contains(a)) edContent.focus({ preventScroll: true }); }
 }
 
+// 浮动对话框停在底部时要让到底部面板 (终端栏) 和状态栏的上方, 否则会盖住「展开终端」的按钮
+function floatBottomOffset() {
+  const bp = document.getElementById("bottom-panel"), st = document.getElementById("status");
+  const top = Math.min(bp && bp.getBoundingClientRect().height > 0 ? bp.getBoundingClientRect().top : window.innerHeight,
+    st && st.getBoundingClientRect().height > 0 ? st.getBoundingClientRect().top : window.innerHeight);
+  return Math.max(8, window.innerHeight - top + 8);
+}
+// 终端栏展开 / 折叠 / 窗口缩放: 停在底部的浮动框跟着抬高
+{
+  const reposition = () => {
+    const box = modal.querySelector(".md-box");
+    if (box && modal.classList.contains("float") && box.dataset.pos === "bottom" && box.dataset.moved !== "1") box.style.bottom = floatBottomOffset() + "px";
+  };
+  window.addEventListener("resize", reposition);
+  const bp = document.getElementById("bottom-panel");
+  if (bp && window.ResizeObserver) new ResizeObserver(reposition).observe(bp);
+}
 function resetFloatBox() {
   const box = modal.querySelector(".md-box");
   if (!box || !box.dataset.moved && !box.style.top) return;
-  delete box.dataset.moved;
+  delete box.dataset.moved; delete box.dataset.pos;
   box.style.left = box.style.top = box.style.right = box.style.bottom = "";
 }
 (() => {
@@ -2835,15 +2852,19 @@ function resetFloatBox() {
   });
 })();
 // 搜到的位置 (光标) 被浮动对话框盖住 -> 把对话框挪到另一侧 (上 <-> 下); 用户自己拖过的位置不动
-function avoidFindDialog() {
+function avoidFindDialog(row) {
   if (!modal.classList.contains("float")) return;
   const box = modal.querySelector(".md-box");
   if (box.dataset.moved === "1") return;
-  const c = document.getElementById("caret").getBoundingClientRect(), b = box.getBoundingClientRect();
-  const hit = c.bottom > b.top - 6 && c.top < b.bottom + 6 && c.right > b.left - 6 && c.left < b.right + 6;
+  // 焦点在查找框里时编辑区的光标是隐藏的 (量不到), 所以按命中行本身的位置判断; 行是整行宽, 只看竖向是否被盖住
+  const el = row != null ? rowEl(row) : null;
+  const c = (el || document.getElementById("caret")).getBoundingClientRect(), b = box.getBoundingClientRect();
+  const hit = c.height > 0 && c.bottom > b.top - 6 && c.top < b.bottom + 6 && (el ? true : c.right > b.left - 6 && c.left < b.right + 6);
   if (!hit) return;
   const atTop = b.top < window.innerHeight / 2;
-  box.style.top = atTop ? "auto" : "56px"; box.style.bottom = atTop ? "40px" : "auto";
+  box.dataset.pos = atTop ? "bottom" : "top";
+  box.style.top = atTop ? "auto" : "56px";
+  box.style.bottom = atTop ? floatBottomOffset() + "px" : "auto";
 }
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
@@ -6423,7 +6444,7 @@ function gotoHit(hit) {
   renderVim(t);
   setPos("Ln " + (hit.row + 1) + ", Col " + (hit.col + 1));
   scrollRowIntoView(hit.row, "auto");
-  requestAnimationFrame(() => requestAnimationFrame(avoidFindDialog));   // 等光标位置更新后再量
+  requestAnimationFrame(() => requestAnimationFrame(() => avoidFindDialog(hit.row)));   // 等光标位置更新后再量
 }
 
 // dir: 1 下 / -1 上. 到头后按「先頭(末尾)から再検索」选项循环
@@ -10935,6 +10956,26 @@ document.addEventListener("change", async (e) => {
 });
 // 启动时只读一次插件清单 (本地, 很小) 以绑定贡献点; 不加载任何插件代码
 setTimeout(() => { plugRefresh().catch(() => {}); }, 0);
+
+/* ===== 原生标题栏跟随主题 (桌面版) =====
+   窗口的标题栏是系统画的, 原来一直按系统的明暗走, 和应用主题不一致 (浅色主题配黑标题栏, 反之亦然)。
+   主题 (data-theme) 或透明主题的明暗 (data-lum) 一变就通知 Rust 设窗口主题; 事件驱动, 不轮询。 */
+function wantDarkChrome() {
+  const r = document.documentElement, th = r.getAttribute("data-theme");
+  if (th === "light") return false;
+  if (th === "clear") return r.getAttribute("data-lum") !== "light";
+  return true;   // dark / hc / retro16 都是深底
+}
+let TB_LAST = null;
+function syncTitlebar() {
+  if (!inTauri || !window.__TAURI_INTERNALS__) return;
+  const dark = wantDarkChrome();
+  if (dark === TB_LAST) return;
+  TB_LAST = dark;
+  invoke("set_window_theme", { dark }).catch(() => { TB_LAST = null; });
+}
+new MutationObserver(syncTitlebar).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-lum"] });
+syncTitlebar();
 
 /* ===== 保存与外部改动 (document_io / auto_backup 的前端接线) =====
    - 保存走原子写 (后端先写临时文件再换名, 断电 / 中途失败原文件完好); 首选项勾选"保存时备份旧文件"则先备份到 .sakura-backup/ (保留最近几代)。
