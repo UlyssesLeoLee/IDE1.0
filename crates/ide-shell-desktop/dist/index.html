@@ -8986,6 +8986,7 @@ document.addEventListener("keydown", (e) => {
   const el = e.target;
   if (!(el === document.body || el === edContent || (el && el.closest && el.closest("#ed-content")))) return;   // 对话框 / 输入框里的键不归这张表
   if (LAYOUT.vimOn()) return;                                                                                     // Vim 有自己的键位
+  if (window.__KEY_CAPTURE) return;                                                                               // 「キー割り当て」正在捕获按键: 这个键是要被记下来的, 不能当命令执行
   const combo = comboOfEvent(e);
   let cmd = KEYMAP[combo];
   if (cmd && cmd.startsWith("md-") && !isMdTab(getActiveTab())) cmd = MD_SHADOW[combo];   // 非 Markdown 文档: 还是 Sakura 的原命令 (没有原命令就不拦截)
@@ -9463,8 +9464,9 @@ function allCommandLabels() {
 }
 function keyConfig() {
   const labels = allCommandLabels();
-  let capture = null, filter = "";
+  let capture = null, filter = "", lookupNote = "";
   const draw = () => {
+    window.__KEY_CAPTURE = !!capture;
     const rows = Object.entries(KEYMAP).filter(([c, cmd]) => !filter || (cmdLabelOfCombo(c) + " " + cmd + " " + (labels.get(cmd) || "")).toLowerCase().includes(filter))
       .sort((a, b) => a[1].localeCompare(b[1])).map(([c, cmd]) =>
         '<div class="kb-row" data-combo="' + escapeHtml(c) + '"><span class="kb-combo">' + escapeHtml(cmdLabelOfCombo(c)) + '</span><span class="kb-cmd" title="' + escapeHtml(cmd) + '">' +
@@ -9472,14 +9474,16 @@ function keyConfig() {
     const opts = [...labels.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([c, l]) => '<option value="' + escapeHtml(c) + '">' + escapeHtml(l + " (" + c + ")") + "</option>").join("");
     mdBody.innerHTML =
       '<div class="cfg-row"><input id="kb-filter" placeholder="筛选 (键 / 命令)" value="' + escapeHtml(filter) + '" style="flex:1"></div>' +
-      '<div class="cfg-row"><select id="kb-newcmd" style="flex:1">' + opts + '</select><button class="md-btn" id="kb-add">追加</button><button class="md-btn" id="kb-reset">恢复默认</button></div>' +
-      (capture ? '<div class="kb-capture" id="kb-capture">请按下新的按键组合…  (Esc 取消)</div>' : "") +
+      '<div class="cfg-row"><select id="kb-newcmd" style="flex:1">' + opts + '</select><button class="md-btn" id="kb-add">追加</button><button class="md-btn" id="kb-find" title="按下一个键, 查它现在绑定了什么命令">按键查找</button><button class="md-btn" id="kb-reset">恢复默认</button></div>' +
+      (capture ? '<div class="kb-capture" id="kb-capture">' + (capture.lookup ? "请按下要查找的按键组合…  (Esc 取消)" : "请按下新的按键组合…  (Esc 取消)") + "</div>" : "") +
+      (lookupNote ? '<div class="empty-hint">' + escapeHtml(lookupNote) + "</div>" : "") +
       (shortcutConflicts().length ? '<div class="empty-hint">⚠ 下列按键在 Markdown 文档里是 Markdown 命令, 在其它文档里仍是原命令: ' +
         escapeHtml(shortcutConflicts().map((x) => cmdLabelOfCombo(x.combo) + " (" + (labels.get(x.original) || x.original) + " → " + (labels.get(x.md) || x.md) + ")").join("; ")) + "。可在下面重新分配。</div>" : "") +
       '<div class="kb-list">' + rows + "</div>";
     const f = document.getElementById("kb-filter"); f.addEventListener("input", () => { filter = f.value.toLowerCase(); const pos = f.selectionStart; draw(); const g = document.getElementById("kb-filter"); g.focus(); g.setSelectionRange(pos, pos); });
     document.getElementById("kb-reset").addEventListener("click", () => { for (const c of Object.keys(KEYMAP)) delete KEYMAP[c]; Object.assign(KEYMAP, KEYMAP_DEFAULT); saveKeymapOverrides(); draw(); });
-    document.getElementById("kb-add").addEventListener("click", () => { capture = { cmd: document.getElementById("kb-newcmd").value }; draw(); });
+    document.getElementById("kb-add").addEventListener("click", () => { capture = { cmd: document.getElementById("kb-newcmd").value }; lookupNote = ""; draw(); });
+    document.getElementById("kb-find").addEventListener("click", () => { capture = { lookup: true }; draw(); });
     mdBody.querySelectorAll(".kb-row").forEach((row) => {
       row.querySelector('[data-act="del"]').addEventListener("click", () => { delete KEYMAP[row.dataset.combo]; saveKeymapOverrides(); draw(); });
       row.querySelector('[data-act="chg"]').addEventListener("click", () => { capture = { cmd: KEYMAP[row.dataset.combo], old: row.dataset.combo }; draw(); });
@@ -9491,6 +9495,12 @@ function keyConfig() {
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.key === "Escape") { capture = null; draw(); return; }
     const combo = comboOfEvent(e);
+    if (capture.lookup) {          // 按键查找: 这个键现在绑了什么 (Markdown 文档里覆盖过的键一并说明), 并把列表筛到它
+      const bound = KEYMAP[combo], shadow = MD_SHADOW[combo];
+      lookupNote = cmdLabelOfCombo(combo) + " → " + (bound ? (labels.get(bound) || bound) + " (" + bound + ")" : "没有绑定命令 (可以用于新的分配)") +
+        (shadow && String(bound).startsWith("md-") ? "；在非 Markdown 文档里是 " + (labels.get(shadow) || shadow) : "");
+      filter = cmdLabelOfCombo(combo).toLowerCase(); capture = null; draw(); return;
+    }
     const other = KEYMAP[combo];
     if (other && other !== capture.cmd && !(await uiConfirm(cmdLabelOfCombo(combo) + " 已分配给 " + other + ", 要替换吗?", { title: "快捷键冲突", ok: "替换" }))) { capture = null; draw(); return; }
     if (capture.old) delete KEYMAP[capture.old];
@@ -9500,7 +9510,7 @@ function keyConfig() {
   document.addEventListener("keydown", onKey, true);
   openModal({ title: "キー割り当て", bodyHTML: "", buttons: [{ label: "关闭", cmd: "modal-close" }] });
   draw();
-  const mo = new MutationObserver(() => { if (!modal.classList.contains("show")) { document.removeEventListener("keydown", onKey, true); mo.disconnect(); } });
+  const mo = new MutationObserver(() => { if (!modal.classList.contains("show")) { document.removeEventListener("keydown", onKey, true); window.__KEY_CAPTURE = false; mo.disconnect(); } });
   mo.observe(modal, { attributes: true, attributeFilter: ["class"] });
 }
 
