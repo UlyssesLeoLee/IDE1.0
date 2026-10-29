@@ -22,7 +22,8 @@ summary() { echo "[$1] $2"; }
 
 cd "$REPO" || exit 2
 if [ "$SKIP_RUST" = 0 ]; then
-  CARGO_TARGET_DIR="$TARGET_DIR" cargo test --workspace --exclude ide-shell-desktop > "$OUT_DIR/rust.out" 2>&1 || FAIL=1
+  # 单测用单独的产物目录: 后面的 mock / UAT 会一直开着 $TARGET_DIR 里的 web 二进制, 同一目录下重新链接测试可执行文件会被锁住 (LNK1104)
+  CARGO_TARGET_DIR="${TARGET_DIR}-rust" cargo test --workspace --exclude ide-shell-desktop > "$OUT_DIR/rust.out" 2>&1 || FAIL=1
   summary rust "$(grep -E '^test result' "$OUT_DIR/rust.out" | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
 fi
 CARGO_TARGET_DIR="$TARGET_DIR" cargo build -p ide-shell-web > "$OUT_DIR/build.out" 2>&1 || { summary build FAILED; exit 1; }
