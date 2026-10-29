@@ -69,6 +69,7 @@ fn dispatch(cx: &Ctx) -> Option<EditRes> {
         "duplicate-line" => line_ops::duplicate_line(cx),
         "add-line-above" => line_ops::add_line(cx, true),
         "add-line-below" => line_ops::add_line(cx, false),
+        "toggle-line-comment" => line_ops::toggle_line_comment(cx),
         "new-line" => line_ops::new_line(cx),
         // 剪贴板
         "copy" => clipboard::copy(cx),
@@ -104,7 +105,7 @@ fn dispatch(cx: &Ctx) -> Option<EditRes> {
 #[cfg(test)]
 pub(crate) const ALL_COMMANDS: &[&str] = &[
     "backspace", "delete", "delete-word-start", "delete-word-end", "word-cut", "word-delete", "cut-line-start", "delete-line-to-start", "delete-line-to-end", "line-cut-to-end", "insert-text", "select-word",
-    "cut-line", "delete-line", "delete-line-up", "delete-line-down", "join-with-prev", "move-line-up", "move-line-down", "duplicate-line", "add-line-above", "add-line-below", "new-line",
+    "cut-line", "delete-line", "delete-line-up", "delete-line-down", "join-with-prev", "move-line-up", "move-line-down", "duplicate-line", "add-line-above", "add-line-below", "new-line", "toggle-line-comment",
     "copy", "cut", "paste", "paste-box", "copy-lines", "copy-passage", "copy-linenum", "copy-crlf",
     "box-insert", "box-enter", "box-backspace", "box-delete", "box-cut", "box-copy", "box-replace",
     "multi-insert", "multi-backspace", "fold-range", "fold-all",
