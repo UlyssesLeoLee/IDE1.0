@@ -64,4 +64,11 @@ function render(text) {
 
 ide.register({
   "command:show": async (ctx) => render((ctx && ctx.text) || ""),
+  // agent.tool: 给内建对话 / 外部 Agent 用的只读工具
+  "agent.tool:stats": async (args) => {
+    const { nodes, edges } = parse(String((args && args.text) || ""));
+    const levels = {};
+    for (const n of nodes) levels["H" + n.level] = (levels["H" + n.level] || 0) + 1;
+    return { headings: nodes.length, levels, refs: edges.filter((e) => e.kind === "ref").length };
+  },
 });

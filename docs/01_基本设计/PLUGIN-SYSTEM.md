@@ -58,7 +58,7 @@ ide.register({
 |---|---|---|---|
 | `markdown.fence` | Markdown 预览遇到 ` ```lang ` 代码块 | `{svg}` / `{html}` / `{error}` | **已实现** (默认插件 Pele) |
 | `command` | 命令面板 / 工具条 (命令名 `plugin:<id>:<cmd>`) | 有 `editor.read` 才把当前文档文本交给插件; 返回 `{svg\|html, summary}` 或 `{error}`, 宿主净化后放进对话框 | **已实现** (默认插件 `doc-graph`) |
-| `agent.tool` | 内建对话 / 外部 Agent 调用 | JSON 结果 (登记进 `agent_api` 工具表) | v1 |
+| `agent.tool` | 内建对话 (Chat 右栏) 调用; 工具名 `plugin_<id>_<name>` | JSON 结果; 只读 —— 想改文档只能返回补丁提案, 且要再过 Rust `propose_patch` 校验 | **已实现** (`doc-graph` 的 `stats`) |
 | `statusbar.item` / `sidebar.panel` | 宿主在对应位置渲染 | 受限 HTML | 后续 |
 
 新增贡献点 = 宿主加一个"插座"并在本表登记; **不改插件机制本身**。
@@ -170,4 +170,4 @@ PL-1~PL-6 是"底座", 先做; PL-7/8/9 作为底座上的第一批使用者。
 
 ## 10. 实现状态 (2026-10-28)
 
-PL-1 ~ PL-9 全部落地: `editcore::plugin_host` (+`store`)、`/api/plugins`、沙箱主机 / 扩展面板 / 冲突仲裁、两个默认插件 (Pele、doc-graph)、`agent_api`、Chat 右栏。尚未实现: `agent.tool` 贡献点 (插件向 Agent 工具表登记工具)、`statusbar.item` / `sidebar.panel`。
+PL-1 ~ PL-9 全部落地: `editcore::plugin_host` (+`store`)、`/api/plugins`、沙箱主机 / 扩展面板 / 冲突仲裁、两个默认插件 (Pele、doc-graph)、`agent_api`、Chat 右栏。尚未实现: `statusbar.item` / `sidebar.panel` (原设计里标为"后续")。外部 LangGraph 目前只能调内建的 `/api/agent` 工具表, 插件工具只在 Chat 右栏里可用 (插件在前端沙箱里运行)。

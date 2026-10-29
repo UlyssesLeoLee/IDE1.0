@@ -1,15 +1,40 @@
 {
   "id": "doc-graph",
   "name": "文档关系图 (标题 / 链接)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiVersion": 1,
   "minAppVersion": "0.1.4",
   "license": "AGPL-3.0-only",
   "description": "把当前 Markdown 文档画成关系图: 标题层级是树, [[wikilink]] / 相对链接是跨章节的边; 点节点跳到对应行。禁用它不影响任何文本编辑功能 (REQ FR-047, 独立插件)",
   "repo": "UlyssesLeoLee/IDE1.0",
   "entry": "main.js",
-  "permissions": ["editor.read"],
+  "permissions": [
+    "editor.read"
+  ],
   "contributes": {
-    "command": [{ "id": "show", "title": "文档关系图" }]
+    "command": [
+      {
+        "id": "show",
+        "title": "文档关系图"
+      }
+    ],
+    "agent.tool": [
+      {
+        "name": "stats",
+        "description": "统计文档的标题数、各级标题数量和跨章节引用数 (只读)",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Markdown 文本"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        }
+      }
+    ]
   }
 }

@@ -59,3 +59,32 @@ test('模型调工具 -> 补丁提案 -> 用户应用 (撤销可还原); 外发�
     await page.keyboard.press('Control+z');
     await page.waitForFunction(() => getActiveTab().lines[1] === 'beta', null, { timeout: 8000 });
   }));
+
+test('插件的 agent.tool: 工具表里带上插件工具, 模型调用 -> 沙箱插件执行 -> 结果回给模型', () =>
+  withMocks({ name: 'chat', portOffset: 588 }, async ({ page }) => {
+    const bodies = [];
+    await page.route('https://llm.test/v1/chat/completions', async (route) => {
+      const body = JSON.parse(route.request().postData());
+      bodies.push(body);
+      const last = body.messages[body.messages.length - 1];
+      const reply = last.role === 'tool'
+        ? { role: 'assistant', content: '统计完成' }
+        : { role: 'assistant', content: null, tool_calls: [{ id: 'p1', type: 'function', function: { name: 'plugin_doc-graph_stats', arguments: JSON.stringify({ text: '# A\n## B\nsee [[A]]' }) } }] };
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ choices: [{ message: reply }] }) });
+    });
+    await page.route('https://llm.test/**', (route) => route.request().method() === 'OPTIONS'
+      ? route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } }) : route.fallback());
+    await page.locator('#ed-content').click();
+    await page.waitForFunction(() => typeof PLUG !== 'undefined' && PLUG.list, null, { timeout: 8000 });
+    await page.evaluate(() => { localStorage.setItem('ide10.ai', JSON.stringify({ baseUrl: 'https://llm.test/v1', model: 'm', key: 'k' })); document.getElementById('chat-ctx'); });
+    await page.click('#right-strip-btn');
+    await page.uncheck('#chat-ctx');
+    await page.fill('#chat-input', '统计一下');
+    await page.press('#chat-input', 'Enter');
+    await page.waitForFunction(() => [...document.querySelectorAll('.chat-ai')].some((e) => /统计完成/.test(e.textContent)), null, { timeout: 20000 });
+    assert.ok(bodies[0].tools.some((t) => t.function.name === 'plugin_doc-graph_stats'), '工具表里有插件工具');
+    assert.ok(bodies[0].tools.some((t) => t.function.name === 'propose_patch'), '内建工具还在');
+    const toolMsg = bodies[1].messages.find((m) => m.role === 'tool');
+    assert.match(toolMsg.content, /"headings":2/);
+    assert.match(toolMsg.content, /"refs":1/);
+  }));

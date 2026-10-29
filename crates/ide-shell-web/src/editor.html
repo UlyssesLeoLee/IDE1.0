@@ -11299,11 +11299,37 @@ function chatContext() {
   }
   return null;
 }
+// 插件贡献的 Agent 工具 (contributes["agent.tool"]): 工具名在模型那边是 plugin_<插件id>_<工具名>; 只读调用, 想改文档只能返回补丁提案,
+// 提案要再过一遍 Rust 的 propose_patch 校验 (范围 / 行数上限), 和内建工具走同一道闸, 最后仍由用户审核后套用。
+function chatPluginTools() {
+  const out = [];
+  for (const p of (PLUG.list || [])) {
+    if (!p.enabled) continue;
+    for (const t of ((p.manifest.contributes || {})["agent.tool"] || [])) {
+      out.push({ type: "function", function: { name: "plugin_" + p.manifest.id + "_" + t.name, description: "[插件 " + p.manifest.name + "] " + (t.description || ""), parameters: t.schema || { type: "object", properties: {} } } });
+    }
+  }
+  return out;
+}
+function chatAllTools() { return (CHAT.tools || []).concat(chatPluginTools()); }
+async function chatInvokeTool(name, args) {
+  const m = /^plugin_([a-z0-9-]+)_(.+)$/.exec(name);
+  if (!m) return invoke("agent", { op: "call", name, args });
+  const plugin = (PLUG.list || []).find((p) => p.enabled && p.manifest.id === m[1]);
+  if (!plugin) return { error: "插件工具不可用 (插件已禁用或不存在): " + name };
+  let r;
+  try { r = await plugCall(plugin, "agent.tool:" + m[2], [args]); } catch (e) { return { error: "插件工具失败: " + e.message }; }
+  if (r && r.kind === "patch_proposal") {
+    try { return await invoke("agent", { op: "call", name: "propose_patch", args: { start: r.start, remove: r.remove, insert: r.insert, total_rows: (getActiveTab() || { lines: [] }).lines.length, reason: r.reason } }); }
+    catch (e) { return { error: "插件的补丁提案无效: " + e.message }; }
+  }
+  return r == null ? {} : r;
+}
 async function chatCallModel(messages) {
   const c = aiConfig();
   const r = await fetch(c.baseUrl.replace(/\/+$/, "") + "/chat/completions", {
     method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + c.key },
-    body: JSON.stringify({ model: c.model, messages, tools: CHAT.tools.map((t) => ({ type: t.type, function: t.function })), tool_choice: "auto" }),
+    body: JSON.stringify({ model: c.model, messages, tools: chatAllTools().map((t) => ({ type: t.type, function: t.function })), tool_choice: "auto" }),
   });
   if (!r.ok) throw new Error("AI 请求失败 " + r.status);
   return (await r.json()).choices[0].message;
@@ -11337,7 +11363,7 @@ async function chatSend() {
       for (const tc of m.tool_calls) {
         let args = {}; try { args = JSON.parse(tc.function.arguments || "{}"); } catch (_) {}
         let result;
-        try { result = await invoke("agent", { op: "call", name: tc.function.name, args }); } catch (e) { result = { error: e.message }; }
+        try { result = await chatInvokeTool(tc.function.name, args); } catch (e) { result = { error: e.message }; }
         chatSay("tool", "🔧 " + tc.function.name + (result.error ? " → 失败: " + result.error : " → 完成"));
         if (result && result.kind === "patch_proposal") chatProposal(result);
         msgs.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result && result.kind === "patch_proposal" ? { status: "已提交给用户审核, 尚未套用" } : result).slice(0, 20000) });
