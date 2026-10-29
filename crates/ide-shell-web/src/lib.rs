@@ -730,6 +730,9 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
+        ("POST", "/api/macro_record") => {
+            respond_pure::<editcore::pure_api::MacroRecordReq>(stream, &body, "宏录制请求无效", |r| Ok(editcore::pure_api::macro_record(r)));
+        }
         ("POST", "/api/macro_plan") => {
             respond_pure::<editcore::pure_api::MacroPlanReq>(stream, &body, "宏请求无效", editcore::pure_api::macro_plan);
         }

@@ -667,6 +667,7 @@ pub fn run() {
             agent,
             set_window_theme,
             exec_cmd,
+            macro_record,
             bookmark,
             bracket_pair,
             edit_cmd,
@@ -787,6 +788,12 @@ fn exec_cmd(
 ) -> Result<editcore::exec_cmd::ExecOut, String> {
     let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
     editcore::exec_cmd::run(&root, &command, stdin.as_deref(), timeout_ms)
+}
+
+/// 录制事件 -> .mac 文本 (web 版 /api/macro_record 同一语义)
+#[tauri::command]
+fn macro_record(options: editcore::pure_api::MacroRecordReq) -> serde_json::Value {
+    editcore::pure_api::macro_record(&options)
 }
 
 /// Sakura 宏计划 (web 版 /api/macro_plan 同一语义)

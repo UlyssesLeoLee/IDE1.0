@@ -164,3 +164,13 @@ pub struct MacroPlanReq {
 pub fn macro_plan(req: &MacroPlanReq) -> Result<Value, String> {
     crate::macro_sakura::plan(&req.src).map(|steps| json!({ "steps": steps })).map_err(|e| e.to_string())
 }
+
+/// 录制到的命令级事件 -> `.mac` 文本 (WBS-02 4.2)
+#[derive(serde::Deserialize)]
+pub struct MacroRecordReq {
+    pub events: Vec<crate::macro_sakura::RecEvent>,
+}
+
+pub fn macro_record(req: &MacroRecordReq) -> Value {
+    to_json(&crate::macro_sakura::record_to_mac(&req.events))
+}

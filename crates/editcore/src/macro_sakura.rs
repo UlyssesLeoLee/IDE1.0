@@ -922,3 +922,133 @@ mod tests {
         }
     }
 }
+
+// ---------- 录制: 命令级事件 -> `.mac` 文本 (WBS-02 4.2) ----------
+
+/// 前端录制到的一个事件: 走命令分发器的命令 / 编辑命令 (退格、回车…) / 键入的文字
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RecEvent {
+    /// `key`: 这个命令默认绑定的键 (Sakura 写法, 例 `Control+i`); 命令没有直接对应的 `S_` 函数时靠它反查
+    Command { cmd: String, #[serde(default)] key: Option<String> },
+    Edit { cmd: String },
+    Text { text: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RecOut {
+    /// 生成的 `.mac` 文本 (Sakura 格式, 可直接再解析 / 运行)
+    pub text: String,
+    /// 认不出对应 `S_` 函数的命令 (没写进宏里)
+    pub skipped: Vec<String>,
+}
+
+fn mac_escape(s: &str) -> String {
+    let mut o = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => o.push_str("\\\\"),
+            '"' => o.push_str("\\\""),
+            '\r' => o.push_str("\\r"),
+            '\n' => o.push_str("\\n"),
+            '\t' => o.push_str("\\t"),
+            '\0' => o.push_str("\\0"),
+            _ => o.push(c),
+        }
+    }
+    o
+}
+
+/// 命令 id (`duplicate-line` 这类) -> S_ 函数名 (不含 `S_`); 同一个命令有几个名字时取字节序最前的, 结果稳定
+fn s_name_for_cmd(cmd: &str) -> Option<&'static str> {
+    SAKURA_COMMANDS.iter().find(|e| e.2 == Some(cmd)).map(|e| e.0)
+}
+
+/// 默认键 -> S_ 函数名 (不分大小写; 同一个键有几个名字时取字节序最前的)
+fn s_name_for_key(key: &str) -> Option<&'static str> {
+    SAKURA_COMMANDS.iter().find(|e| e.3.is_some_and(|k| k.eq_ignore_ascii_case(key))).map(|e| e.0)
+}
+
+/// 编辑命令 (键盘直接键入的): 没有命令 id 的几个基本操作
+fn edit_to_line(cmd: &str) -> Option<String> {
+    Some(match cmd {
+        "new-line" => "S_Char(13);".to_string(),
+        "backspace" => "S_DeleteBack();".to_string(),
+        "delete" => "S_Delete();".to_string(),
+        other => return s_name_for_cmd(other).map(|n| format!("S_{n}();")),
+    })
+}
+
+/// 把录制到的事件写成 `.mac`: 相邻的键入文字合成一条 `S_InsText`, 认不出的命令记进 `skipped`
+pub fn record_to_mac(events: &[RecEvent]) -> RecOut {
+    let mut lines: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    let mut pending = String::new();
+    let flush = |pending: &mut String, lines: &mut Vec<String>| {
+        if !pending.is_empty() {
+            lines.push(format!("S_InsText(\"{}\");", mac_escape(pending)));
+            pending.clear();
+        }
+    };
+    for ev in events {
+        match ev {
+            RecEvent::Text { text } => pending.push_str(text),
+            RecEvent::Command { cmd, .. } | RecEvent::Edit { cmd } => {
+                flush(&mut pending, &mut lines);
+                let line = match ev {
+                    RecEvent::Edit { .. } => edit_to_line(cmd),
+                    RecEvent::Command { key, .. } => s_name_for_cmd(cmd).or_else(|| key.as_deref().and_then(s_name_for_key)).map(|n| format!("S_{n}();")),
+                    RecEvent::Text { .. } => None,
+                };
+                match line {
+                    Some(l) => lines.push(l),
+                    None => {
+                        if !skipped.contains(cmd) {
+                            skipped.push(cmd.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    flush(&mut pending, &mut lines);
+    let mut text = lines.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    RecOut { text, skipped }
+}
+
+#[cfg(test)]
+mod record_tests {
+    use super::*;
+
+    #[test]
+    fn typed_text_is_merged_and_escaped() {
+        let r = record_to_mac(&[RecEvent::Text { text: "ab".into() }, RecEvent::Text { text: "c\"d\\".into() }, RecEvent::Edit { cmd: "new-line".into() }, RecEvent::Text { text: "x".into() }]);
+        assert_eq!(r.text, "S_InsText(\"abc\\\"d\\\\\");\nS_Char(13);\nS_InsText(\"x\");\n");
+        assert!(r.skipped.is_empty());
+    }
+
+    #[test]
+    fn commands_map_back_to_s_functions_and_unknown_ones_are_reported() {
+        let r = record_to_mac(&[
+            RecEvent::Command { cmd: "duplicate-line".into(), key: Some("Control+i".into()) },
+            RecEvent::Edit { cmd: "backspace".into() },
+            RecEvent::Command { cmd: "no-such-command".into(), key: None },
+            RecEvent::Command { cmd: "no-such-command".into(), key: Some("Control+Alt+Shift+F24".into()) },
+        ]);
+        assert!(r.text.contains("S_DuplicateLine();"), "命令 id 反查不到时用默认键反查: {}", r.text);
+        assert!(r.text.contains("S_DeleteBack();"));
+        assert_eq!(r.skipped, ["no-such-command"], "同一个未知命令只报一次");
+    }
+
+    #[test]
+    fn recorded_macro_plans_back_into_the_same_actions() {
+        let ev = [RecEvent::Text { text: "héllo\tworld\n".into() }, RecEvent::Edit { cmd: "new-line".into() }, RecEvent::Edit { cmd: "delete".into() }];
+        let steps = plan(&record_to_mac(&ev).text).expect("录出来的宏必须能被自己的解析器接受");
+        assert_eq!(steps.len(), 3);
+        assert_eq!(steps[0].action, Action::InsText { text: "héllo\tworld\n".into() });
+        assert_eq!(steps[1].action, Action::Char { code: 13 });
+    }
+}
