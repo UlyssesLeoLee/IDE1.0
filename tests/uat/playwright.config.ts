@@ -65,6 +65,7 @@ export default defineConfig({
         // 不带 token, 认证模式下会 401 导致整片用例连锁失败.
         IDE_SHELL_WEB_NO_AUTH: "1",
         IDE_PLUGIN_DIR: (process.env.TEMP || "/tmp") + "/ide-uat-plugins",   // 测试不碰真实的插件登记
+        IDE_SETTINGS_FILE: "off",   // 设置落盘关掉: UAT 所有用例共用一个服务进程, 落盘会让用例之间互相带状态
         // 相对本仓库解析 (原先写死 D:\orcaWork\... 绝对路径, 换机器/CI 即失效)
         IDE_SHELL_WEB_TEST_ROOT: path.resolve(__dirname, "fixtures", "sample-project"),
       },

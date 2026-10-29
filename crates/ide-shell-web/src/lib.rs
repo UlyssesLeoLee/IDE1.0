@@ -730,6 +730,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
+        ("POST", "/api/settings") => {
+            // 设置落盘: 全部 / 设置 / 删除 / 导入 / 导出 (前端把 ide10.* 的本地设置镜像到一个 JSON 文件)
+            respond_pure::<editcore::pure_api::SettingsReq>(stream, &body, "设置请求无效", editcore::pure_api::settings);
+        }
         ("POST", "/api/macro_record") => {
             respond_pure::<editcore::pure_api::MacroRecordReq>(stream, &body, "宏录制请求无效", |r| Ok(editcore::pure_api::macro_record(r)));
         }

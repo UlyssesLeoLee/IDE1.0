@@ -174,3 +174,48 @@ pub struct MacroRecordReq {
 pub fn macro_record(req: &MacroRecordReq) -> Value {
     to_json(&crate::macro_sakura::record_to_mac(&req.events))
 }
+
+// ---------- 设置落盘 (settings_store) ----------
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum SettingsReq {
+    /// 全部设置 (前端启动时读一次)
+    All,
+    Set { key: String, value: String },
+    Remove { key: String },
+    /// 导入一份导出的 JSON (合并)
+    Import { json: String },
+    /// 导出成 JSON 文本 (可携带)
+    Export,
+}
+
+pub fn settings(req: &SettingsReq) -> Result<Value, String> {
+    use crate::settings_store as st;
+    // IDE_SETTINGS_FILE=off: 关闭落盘 (读出来是空, 写入忽略) —— 多个页面共用一个服务进程的测试环境用
+    if std::env::var("IDE_SETTINGS_FILE").is_ok_and(|v| v == "off") {
+        return Ok(match req {
+            SettingsReq::All => json!({ "settings": {}, "path": "off" }),
+            SettingsReq::Export => json!({ "json": "{}" }),
+            SettingsReq::Import { .. } => json!({ "imported": 0, "skipped": 0 }),
+            _ => json!({ "ok": true }),
+        });
+    }
+    let path = st::default_path();
+    Ok(match req {
+        SettingsReq::All => json!({ "settings": st::load(&path), "path": path.to_string_lossy() }),
+        SettingsReq::Set { key, value } => {
+            st::set(&path, key, Some(value))?;
+            json!({ "ok": true })
+        }
+        SettingsReq::Remove { key } => {
+            st::set(&path, key, None)?;
+            json!({ "ok": true })
+        }
+        SettingsReq::Import { json: text } => {
+            let (ok, skipped) = st::import(&path, text)?;
+            json!({ "imported": ok, "skipped": skipped })
+        }
+        SettingsReq::Export => json!({ "json": serde_json::to_string_pretty(&st::load(&path)).unwrap_or_default() }),
+    })
+}

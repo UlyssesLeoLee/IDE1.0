@@ -694,6 +694,7 @@ pub fn run() {
             grants::launch_files,
             grants::native_save_as,
             exec_cmd,
+            settings,
             macro_record,
             bookmark,
             bracket_pair,
@@ -815,6 +816,12 @@ fn exec_cmd(
 ) -> Result<editcore::exec_cmd::ExecOut, String> {
     let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
     editcore::exec_cmd::run(&root, &command, stdin.as_deref(), timeout_ms)
+}
+
+/// 设置落盘 (web 版 /api/settings 同一语义)
+#[tauri::command]
+fn settings(options: editcore::pure_api::SettingsReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::settings(&options)
 }
 
 /// 录制事件 -> .mac 文本 (web 版 /api/macro_record 同一语义)
