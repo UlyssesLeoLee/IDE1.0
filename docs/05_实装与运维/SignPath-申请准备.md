@@ -8,7 +8,7 @@
 
 | 要求 | 现状 | 要做的事 |
 |---|---|---|
-| OSI 批准的开源许可, 不得商业双重授权, 无专有代码 | 根目录 `LICENSE` 是 **AGPL-3.0** (OSI 批准); 但 `Cargo.toml` 写的是 `MIT OR Apache-2.0` —— **前后不一致** | **先由你决定到底用哪个许可**, 再把 `LICENSE`、`Cargo.toml` (`license =`)、`README`、各 crate 对齐。随程序打包的 Pele 是 MIT (第三方组件, 允许) |
+| OSI 批准的开源许可, 不得商业双重授权, 无专有代码 | 已统一为 **AGPL-3.0-only** (根目录 `LICENSE`、`Cargo.toml`、README 一致; `editcore` 沿用上游的部分仍标 Zlib, 同为 OSI 批准) | 已完成。随程序打包的 Pele 是 MIT (第三方组件, 允许) |
 | 团队拥有并维护仓库, 只签自己源码构建出的二进制 | 仓库 `UlyssesLeoLee/IDE1.0`, 桌面程序由本仓库源码构建 | 无 |
 | 非提交者的改动 (PR) 必须有团队成员审核; 定义 作者 / 审核者 / 批准者 角色 | 目前单人维护, 没有角色说明 | 在 README 的 Code signing policy 里写明角色与成员 (见 §3); 开 GitHub 分支保护 (PR 需审核) |
 | README / 下载页有 **Code signing policy** 小节, 注明 "Free code signing provided by SignPath.io, certificate by SignPath Foundation" | 没有 | 加上 (§3 有现成文字) |
@@ -23,7 +23,7 @@
 
 ## 2. 提交前的待办 (按顺序)
 
-1. **定许可** (AGPL-3.0 还是 MIT/Apache-2.0), 全仓库对齐。 ← 需要你拍板, 我不替你选。
+1. ~~定许可~~ 已定 AGPL-3.0 并对齐。
 2. README 加 **Code signing policy** 和**隐私声明** (§3), 并在 GitHub Release 说明里放同样的链接。
 3. 开 GitHub 分支保护 (`dev` / `main`: PR 需要审核), 并给自己的 GitHub 和 SignPath 账号开 MFA。
 4. 产出并发布一次 **.msi**: 本机已装好 Tauri CLI (`crates/ide-shell-desktop/node_modules`, 已被忽略不入库), 用 `npx tauri build --bundles msi`; 正式流程走 CI。
@@ -57,7 +57,7 @@ systems unless you ask it to:
 
 - **Project name**: IDE1.0
 - **Repository**: https://github.com/UlyssesLeoLee/IDE1.0
-- **License**: <对齐后的许可, OSI approved>
+- **License**: AGPL-3.0-only (OSI approved)
 - **Description**: A lightweight, fast desktop text editor modelled on Sakura Editor, written in Rust (Tauri). Features: Sakura-compatible editing commands and macros, Grep/replace with encoding awareness, Markdown tools and preview, a sandboxed hot-pluggable extension system, and an optional AI chat panel that only runs when the user opens it.
 - **What would be signed**: Windows installer (.msi) and executable built by the repository's GitHub Actions release workflow.
 - **Maintainers / contact**: <你的姓名与邮箱>
@@ -66,4 +66,4 @@ systems unless you ask it to:
 ## 5. 风险提示
 
 - SignPath Foundation 不保证通过; 常见被拒原因: 项目太新、没有真实用户、仓库归属 / 许可不清、没有自动化构建。目前 IDE1.0 的 Release 次数多, 但 star / 用户数很可能偏少 —— 申请时如实写, 不要夸大。
-- 许可不一致 (AGPL-3.0 vs MIT/Apache-2.0) 是最容易被直接卡住的一点, 请优先处理。
+- 许可已对齐; 申请表里的 License 填 `AGPL-3.0-only`。

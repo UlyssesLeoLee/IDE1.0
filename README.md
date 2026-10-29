@@ -187,7 +187,9 @@ Stage 3.0 集成设计见 [`docs/01_基本设计/architecture/aci-integration.md
 
 ## §7 License
 
-MIT OR Apache-2.0 (dual), per workspace.
+GNU Affero General Public License v3.0 (`AGPL-3.0-only`), 见 [LICENSE](LICENSE)。
+
+随程序打包的第三方组件保留各自的许可: 默认插件 Pele (MIT, `crates/editcore/plugins/pele/LICENSE`); `editcore` 中沿用上游 Sakura Editor 的部分为 Zlib 许可。
 
 ## §7.1 Code signing policy / 隐私声明
 

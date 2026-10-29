@@ -8,9 +8,9 @@ on:
     tags: ["v*"]
   workflow_dispatch: {}
 
+# 默认最小权限: 构建任务只读; 只有挂 Release 的 sign 任务单独给 contents: write
 permissions:
-  contents: write   # 把产物挂到 Release
-  actions: read     # SignPath action 读取 artifact
+  contents: read
 
 jobs:
   msi:
@@ -20,6 +20,8 @@ jobs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # 构建步骤不需要仓库写令牌
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -33,7 +35,7 @@ jobs:
 
       - name: Install Tauri CLI
         working-directory: tools
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund   # 严格按 package-lock.json 安装
 
       - name: Build Windows .msi
         working-directory: crates/ide-shell-desktop
@@ -52,6 +54,9 @@ jobs:
     if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
     needs: msi
     runs-on: windows-latest
+    permissions:
+      contents: write   # 只有这一个任务需要: 把签名后的 .msi 挂到 Release
+      actions: read     # SignPath action 读取上一步的 artifact
     steps:
       - name: Submit signing request to SignPath (release 签名策略需要人工批准)
         id: sign
@@ -77,3 +82,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.ref_name }}" signed/*.msi --clobber
+
+# 备注 (供审阅): 第三方 action 目前按主版本号引用 (actions/*@v4 等)。申请通过、正式启用签名前,
+# 应把它们固定到提交 SHA (供应链加固), 并开启 Dependabot 更新 action。
