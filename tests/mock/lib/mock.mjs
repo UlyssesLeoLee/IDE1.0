@@ -18,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 export async function installMocks(page, opts = {}) {
   const cfg = { tauri: false, fakeClipboard: true, clipboardDenied: false, baseUrl: '', ...opts };
   await page.addInitScript((cfg) => {
-    const M = (window.__mock = { dialogs: [], answers: { prompt: [], confirm: [], alert: [] }, folders: [], win: [], ipc: [], events: {}, clip: '', lum: 'dark' });
+    const M = (window.__mock = { native: { open: [], save: [] }, dialogs: [], answers: { prompt: [], confirm: [], alert: [] }, folders: [], win: [], ipc: [], events: {}, clip: '', lum: 'dark' });
     const mk = (kind, dflt) => (msg, def) => {
       const q = M.answers[kind];
       const has = q.length > 0;
@@ -78,7 +78,10 @@ export async function installMocks(page, opts = {}) {
           M.ipc.push({ name, args });
           if (name === 'pick_folder' && M.folders.length) return M.folders.shift();
           if (name === 'desktop_luminance') return M.lum;
-          if (name === 'set_window_theme') return null;   // 原生标题栏明暗: 只记录 (M.ipc), 不需要后端
+          if (name === 'set_window_theme') return null;
+          if (name === 'launch_files') return M.launch || [];   // 命令行启动参数替身 (测试可预先写 window.__mock.launch)
+          if (name === 'native_open_file') { if (M.native.open.length) return M.native.open.shift(); throw 'no native dialog'; }   // 系统打开对话框替身: 按脚本回答, 没脚本 = 没有这个命令 (前端退回输入框)
+          if (name === 'native_save_as') { if (M.native.save.length) return M.native.save.shift(); throw 'no native dialog'; }   // 原生标题栏明暗: 只记录 (M.ipc), 不需要后端
           if (name.startsWith('plugin:window|')) {            // 窗口插件替身: 固定 1920x1080 显示器, 窗口 800x600 @ (100,50)
             const k = name.slice(14);
             if (k === 'current_monitor') return { position: { x: 0, y: 0 }, size: { width: 1920, height: 1080 } };

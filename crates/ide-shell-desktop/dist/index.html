@@ -2868,6 +2868,15 @@ function avoidFindDialog(row) {
 }
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
+// 桌面版的系统对话框: 返回 { used: true, ... } (对话框确实弹过了; 取消 = 空结果) 或 { used: false } (没有这个命令, 例如网页版 / 测试替身, 退回输入框)
+async function nativeOpenPaths() {
+  if (!inTauri) return { used: false };
+  try { return { used: true, paths: await invoke("native_open_file") }; } catch (_) { return { used: false }; }
+}
+async function nativeSavePath(defaultName) {
+  if (!inTauri) return { used: false };
+  try { return { used: true, path: await invoke("native_save_as", { default_name: defaultName }) }; } catch (_) { return { used: false }; }
+}
 // "路径" / "路径:行" / "路径:行:列" (行列从 1 起) -> { path, line, col }; Windows 盘符 (C:\x) 不会被当成行号
 function splitPathLineCol(spec) {
   const m = /^(.*?):(\d+)(?::(\d+))?$/.exec(String(spec).trim());
@@ -2875,6 +2884,8 @@ function splitPathLineCol(spec) {
   return { path: m[1], line: +m[2], col: m[3] ? +m[3] : 1 };
 }
 async function promptOpenFile() {
+  const nat = await nativeOpenPaths();
+  if (nat.used) { for (const p of nat.paths || []) await openFile(p); return; }   // 系统「打开」对话框 (可多选, 可以在项目外)
   // 极简布局没有「先打开项目」这一步: 没项目就先建立默认工作目录 (和保存无标题文档时是同一步)
   let root = projectRoot;
   if (!root && layoutPreset() === "min") {
@@ -4637,14 +4648,21 @@ async function saveAsFlow(t, batch) {
   if (SAVE_AS_BUSY && !batch) return false;
   SAVE_AS_BUSY = true;
   try {
-    const root = projectRoot || await ensureWorkingRoot();
-    if (!root) return false;
-    const dir = stripVerbatim(root);
-    const input = await uiPrompt("另存为 (" + dir + " 内的文件名或相对路径):", t.untitled ? "无标题.txt" : t.name, { title: "另存为" });
-    const name = input && input.trim();
-    if (!name) return false;
-    const path = joinPath(dir, name);
-    if (path !== t.path && await pathExists(path) && !(await uiConfirm(name + " 已存在, 覆盖?", { title: "覆盖文件", ok: "覆盖" }))) return false;
+    let path, name;
+    const nat = await nativeSavePath(t.untitled ? "无标题.txt" : t.name);
+    if (nat.used) {
+      if (!nat.path) return false;                 // 在系统对话框里取消了 (覆盖确认也由系统对话框负责)
+      path = nat.path; name = path.split(/[\\\/]/).pop();
+    } else {
+      const root = projectRoot || await ensureWorkingRoot();
+      if (!root) return false;
+      const dir = stripVerbatim(root);
+      const input = await uiPrompt("另存为 (" + dir + " 内的文件名或相对路径):", t.untitled ? "无标题.txt" : t.name, { title: "另存为" });
+      name = input && input.trim();
+      if (!name) return false;
+      path = joinPath(dir, name);
+      if (path !== t.path && await pathExists(path) && !(await uiConfirm(name + " 已存在, 覆盖?", { title: "覆盖文件", ok: "覆盖" }))) return false;
+    }
     try {
       await writeDoc(path, t);
     } catch (e) {
@@ -10982,6 +11000,12 @@ function syncTitlebar() {
   TB_LAST = dark;
   invoke("set_window_theme", { dark }).catch(() => { TB_LAST = null; });
 }
+// 命令行 / 文件关联启动时带的文件 (路径[:行[:列]], -Y= -X=): 启动后打开它们 (用户亲手指定的, 项目外也行)
+if (inTauri) setTimeout(async () => {
+  try {
+    for (const f of await invoke("launch_files")) { if (f.line) await gotoPathLine(f.path, f.line, f.col - 1); else await openFile(f.path); }
+  } catch (_) {}
+}, 400);
 new MutationObserver(syncTitlebar).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-lum"] });
 syncTitlebar();
 

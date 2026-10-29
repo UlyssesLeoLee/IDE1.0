@@ -29,6 +29,7 @@
 
 pub mod backdrop;
 pub mod doc;
+pub mod grants;
 pub mod outline;
 pub mod plugin;
 pub mod scm;
@@ -490,6 +491,12 @@ pub fn read_file_pub(root: &Path, path: &str) -> Result<FileContent, String> {
 /// 同上, `encoding` = 指定编码重新打开 (F_FILE_REOPEN_*).
 pub fn read_file_enc_pub(root: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
     let target = resolve_in_project_pub(root, path)?;
+    read_resolved(&target, path, encoding)
+}
+
+/// 读一个已经确认可以访问的文件 (项目内, 或用户在系统对话框里选定的)
+pub fn read_resolved(target: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
+    let target = target.to_path_buf();
     if !target.is_file() {
         return Err(format!("不是文件: {path}"));
     }
@@ -520,9 +527,13 @@ pub fn read_file_enc_pub(root: &Path, path: &str, encoding: Option<&str>) -> Res
 #[tauri::command]
 fn read_file(
     state: tauri::State<'_, ProjectRoot>,
+    grants: tauri::State<'_, grants::Grants>,
     path: String,
     encoding: Option<String>,
 ) -> Result<FileContent, String> {
+    if let Some(t) = grants.granted(&path) {
+        return read_resolved(&t, &path, encoding.as_deref()); // 用户在系统对话框里选定的文件 (可以在项目外)
+    }
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
@@ -543,14 +554,22 @@ pub fn write_file_spec_pub(
     spec: &editcore::document_io::WriteSpec,
 ) -> Result<usize, String> {
     let target = resolve_in_project_pub(root, path)?;
-    editcore::document_io::write_doc(&target, content, spec).map_err(|e| {
+    write_resolved(&target, path, content, spec)
+}
+
+/// 写一个已经确认可以访问的文件 (项目内, 或用户在系统对话框里选定的)
+pub fn write_resolved(target: &Path, path: &str, content: &str, spec: &editcore::document_io::WriteSpec) -> Result<usize, String> {
+    editcore::document_io::write_doc(target, content, spec).map_err(|e| {
         if e.starts_with("UNMAPPABLE:") { e } else { format!("写入失败 {path}: {e}") }
     })
 }
 
 /// 文件指纹 (web 版 /api/stat_file 同一语义): 外部改动检测
 #[tauri::command]
-fn stat_file(state: tauri::State<'_, ProjectRoot>, path: String) -> Result<editcore::document_io::FileStamp, String> {
+fn stat_file(state: tauri::State<'_, ProjectRoot>, grants: tauri::State<'_, grants::Grants>, path: String) -> Result<editcore::document_io::FileStamp, String> {
+    if let Some(t) = grants.granted(&path) {
+        return Ok(editcore::document_io::file_stamp(&t));
+    }
     let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
     let target = resolve_in_project_pub(&root, &path)?;
     Ok(editcore::document_io::file_stamp(&target))
@@ -559,6 +578,7 @@ fn stat_file(state: tauri::State<'_, ProjectRoot>, path: String) -> Result<editc
 #[tauri::command]
 fn write_file(
     state: tauri::State<'_, ProjectRoot>,
+    grants: tauri::State<'_, grants::Grants>,
     path: String,
     content: String,
     encoding: Option<String>,
@@ -567,10 +587,13 @@ fn write_file(
     force: Option<bool>,
     backup: Option<bool>,
 ) -> Result<usize, String> {
+    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false), backup: backup.unwrap_or(false) };
+    if let Some(t) = grants.granted(&path) {
+        return write_resolved(&t, &path, &content, &spec); // 用户在系统「另存为 / 打开」里选定的文件 (可以在项目外, 也不需要先打开项目)
+    }
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false), backup: backup.unwrap_or(false) };
     write_file_spec_pub(&root, &path, &content, &spec)
 }
 
@@ -597,6 +620,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ShellState::default())
         .manage(ProjectRoot::default())
+        .manage(grants::Grants::default())
         .manage(terminal::TerminalState::new())
         .manage(doc::DocState::default())
         .invoke_handler(tauri::generate_handler![
@@ -666,6 +690,9 @@ pub fn run() {
             plugins,
             agent,
             set_window_theme,
+            grants::native_open_file,
+            grants::launch_files,
+            grants::native_save_as,
             exec_cmd,
             macro_record,
             bookmark,
