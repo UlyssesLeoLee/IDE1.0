@@ -11,7 +11,7 @@ pub const HOST_API_VERSION: u32 = 1;
 /// 单个资产大小上限 (清单 / 入口脚本)
 pub const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
 /// 宿主认识的权限; 不认识的权限一律报 `UNKNOWN_PERMISSION`
-const KNOWN_PERMISSIONS: [&str; 3] = ["editor.read", "editor.write", "storage"];
+const KNOWN_PERMISSIONS: [&str; 4] = ["editor.read", "editor.write", "storage", "agent.tool"];
 /// 宿主提供的贡献点
 const KNOWN_CONTRIBUTIONS: [&str; 3] = ["markdown.fence", "command", "agent.tool"];
 
@@ -141,7 +141,7 @@ pub fn check_compat(assets: &[Asset], manifest_json: Option<&str>, app_version: 
     for p in &m.permissions {
         let known = KNOWN_PERMISSIONS.contains(&p.as_str()) || p.strip_prefix("net:").is_some_and(|h| !h.is_empty() && !h.contains('/'));
         if !known {
-            problems.push(problem("UNKNOWN_PERMISSION", format!("未知权限「{p}」"), "只能声明 editor.read / editor.write / storage / net:<host>"));
+            problems.push(problem("UNKNOWN_PERMISSION", format!("未知权限「{p}」"), "只能声明 editor.read / editor.write / storage / agent.tool / net:<host>"));
         }
     }
     for k in m.contributes.keys() {

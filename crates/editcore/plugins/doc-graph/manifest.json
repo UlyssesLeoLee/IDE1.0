@@ -9,7 +9,8 @@
   "repo": "UlyssesLeoLee/IDE1.0",
   "entry": "main.js",
   "permissions": [
-    "editor.read"
+    "editor.read",
+    "agent.tool"
   ],
   "contributes": {
     "command": [

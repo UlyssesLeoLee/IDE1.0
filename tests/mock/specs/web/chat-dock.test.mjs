@@ -88,3 +88,14 @@ test('插件的 agent.tool: 工具表里带上插件工具, 模型调用 -> 沙�
     assert.match(toolMsg.content, /"headings":2/);
     assert.match(toolMsg.content, /"refs":1/);
   }));
+
+test('没有 agent.tool 权限的插件不能往模型的工具表里放工具', () =>
+  withMocks({ name: 'chat', portOffset: 589 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await page.waitForFunction(() => typeof PLUG !== 'undefined' && PLUG.list, null, { timeout: 8000 });
+    assert.equal(await page.evaluate(() => chatPluginTools().map((t) => t.function.name).join()), 'plugin_doc-graph_stats', '有权限: 列出');
+    await page.evaluate(() => { const p = PLUG.list.find((x) => x.manifest.id === 'doc-graph'); p.manifest.permissions = p.manifest.permissions.filter((x) => x !== 'agent.tool'); });
+    assert.equal(await page.evaluate(() => chatPluginTools().length), 0, '没权限: 不列');
+    const r = await page.evaluate(() => chatInvokeTool('plugin_doc-graph_stats', { text: '# A' }));
+    assert.match(r.error, /不可用/, '没权限: 也不能被调用');
+  }));

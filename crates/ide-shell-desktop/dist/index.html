@@ -11251,13 +11251,13 @@ const CHAT = { built: false, messages: [], tools: null, busy: false, MAX_ROUNDS:
 const CHAT_CONSENT_KEY = "ide10.aiConsent";
 
 function chatOpen() { return document.documentElement.getAttribute("data-chat") === "on"; }
-function toggleChat(force) {
+function toggleChat(force, keepFocus) {
   const on = typeof force === "boolean" ? force : !chatOpen();
   if (on) { buildChat(); window.__smartOpened = true; }
   document.documentElement.setAttribute("data-chat", on ? "on" : "off");
   const b = document.getElementById("right-strip-btn");
   if (b) { b.setAttribute("aria-expanded", on ? "true" : "false"); b.setAttribute("aria-label", on ? "折叠 Chat" : "展开 Chat"); b.firstElementChild.textContent = on ? "›" : "‹"; }
-  if (on) document.getElementById("chat-input").focus(); else edContent.focus({ preventScroll: true });
+  if (on && !keepFocus) document.getElementById("chat-input").focus(); else edContent.focus({ preventScroll: true });   // 菜单命令打开时焦点留在编辑区 (命令执行后仍能直接输入)
 }
 function buildChat() {
   if (CHAT.built) return;
@@ -11304,7 +11304,7 @@ function chatContext() {
 function chatPluginTools() {
   const out = [];
   for (const p of (PLUG.list || [])) {
-    if (!p.enabled) continue;
+    if (!p.enabled || !p.manifest.permissions.includes("agent.tool")) continue;   // 要有 agent.tool 权限 (安装时用户同意过) 才能往模型的工具表里放东西
     for (const t of ((p.manifest.contributes || {})["agent.tool"] || [])) {
       out.push({ type: "function", function: { name: "plugin_" + p.manifest.id + "_" + t.name, description: "[插件 " + p.manifest.name + "] " + (t.description || ""), parameters: t.schema || { type: "object", properties: {} } } });
     }
@@ -11315,7 +11315,7 @@ function chatAllTools() { return (CHAT.tools || []).concat(chatPluginTools()); }
 async function chatInvokeTool(name, args) {
   const m = /^plugin_([a-z0-9-]+)_(.+)$/.exec(name);
   if (!m) return invoke("agent", { op: "call", name, args });
-  const plugin = (PLUG.list || []).find((p) => p.enabled && p.manifest.id === m[1]);
+  const plugin = (PLUG.list || []).find((p) => p.enabled && p.manifest.id === m[1] && p.manifest.permissions.includes("agent.tool"));
   if (!plugin) return { error: "插件工具不可用 (插件已禁用或不存在): " + name };
   let r;
   try { r = await plugCall(plugin, "agent.tool:" + m[2], [args]); } catch (e) { return { error: "插件工具失败: " + e.message }; }
@@ -11396,7 +11396,7 @@ function chatProposal(p) {
 }
 {
   document.getElementById("right-strip").addEventListener("click", () => toggleChat());
-  VIEW_CMDS["toggle-chat"] = () => toggleChat();
+  VIEW_CMDS["toggle-chat"] = () => toggleChat(undefined, true);
   document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChat(); } }, true);
 }
 
