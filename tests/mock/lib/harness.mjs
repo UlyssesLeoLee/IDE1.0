@@ -59,7 +59,7 @@ async function assertFreshFrontend(base) {
 export async function startServer({ port, root, extraEnv = {} }) {
   const addr = `127.0.0.1:${port}`;
   const child = spawn(BIN, [], {
-    env: { ...process.env, IDE_SHELL_WEB_ADDR: addr, IDE_SHELL_WEB_NO_AUTH: '1', IDE_SHELL_WEB_TEST_ROOT: root, ...extraEnv },
+    env: { ...process.env, IDE_SHELL_WEB_ADDR: addr, IDE_SHELL_WEB_NO_AUTH: '1', IDE_SHELL_WEB_TEST_ROOT: root, IDE_PLUGIN_DIR: root + '-plugins', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   CHILDREN.add(child);

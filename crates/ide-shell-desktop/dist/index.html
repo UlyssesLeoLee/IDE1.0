@@ -3362,6 +3362,7 @@ async function sendTerminal(data) {
 function dispatchCommand(cmd) {
   if (!cmd) return;
   if (cmd.startsWith("md-")) return cmd === "md-preview" ? toggleMdPreview() : mdCommand(cmd);
+  if (cmd.startsWith("plugin:")) return plugRunCommand(cmd);
   if (VIEW_CMDS[cmd]) { VIEW_CMDS[cmd](); return; }
   if (CFG_CMDS[cmd]) return CFG_CMDS[cmd]();
   if (SAKURA_CMDS[cmd]) { if (!getActiveTab()) { setTip("无活动标签"); return; } return SAKURA_CMDS[cmd](); }
@@ -10792,6 +10793,7 @@ async function plugRefresh() {
   PLUG.list = r.plugins; PLUG.appVersion = r.app_version;
   for (const id of [...PLUG.frames.keys()]) { const p = PLUG.list.find((x) => x.manifest.id === id); if (!p || !p.enabled) plugUnload(id); }   // 禁用 / 卸载: 立即热卸载
   plugBindFences();
+  plugBindCommands();
 }
 function plugFenceProviders() {
   const out = {};
@@ -10824,6 +10826,37 @@ async function plugResolve(slot, hasNative, hasPlugin) {
     return useP ? "plugin" : "native";
   }
   return r.choice;
+}
+
+// ----- 贡献点: command (插件在命令面板 / 工具条里贡献的命令, 命令名 plugin:<id>:<cmd>) -----
+// 有 editor.read 权限才把当前文档文本交给插件; 插件返回 { svg | html, summary } 或 { error }, 宿主净化后放进对话框。
+function plugBindCommands() {
+  PLUG.commands = {};
+  for (const p of PLUG.list || []) {
+    if (!p.enabled) continue;
+    for (const c of ((p.manifest.contributes || {}).command || [])) PLUG.commands["plugin:" + p.manifest.id + ":" + c.id] = { plugin: p, id: c.id, title: c.title || c.id };
+  }
+  if (typeof mdSyncPluginButtons === "function") mdSyncPluginButtons();   // 工具条上插件贡献的按钮: 插件禁用 / 卸载就消失
+}
+async function plugRunCommand(full) {
+  const c = PLUG.commands && PLUG.commands[full];
+  if (!c) { setTip("插件命令不可用 (插件已禁用或不存在): " + full); return; }
+  const t = getActiveTab();
+  const args = t && c.plugin.manifest.permissions.includes("editor.read") ? [{ text: t.lines.join("\n"), name: t.name || "" }] : [{}];
+  let out;
+  try { out = await plugCall(c.plugin, "command:" + c.id, args); } catch (e) { setTip("插件命令失败 (编辑器不受影响): " + e.message); return; }
+  if (!out) return;
+  if (out.error) { setTip(out.error); return; }
+  openModal({ title: c.title, bodyHTML: '<div class="opt-row" id="plug-sum"></div><div id="plug-out" style="overflow:auto"></div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
+  document.getElementById("plug-sum").textContent = out.summary || "";
+  const box = document.getElementById("plug-out");
+  box.replaceChildren(mdSanitize(out.svg || out.html || ""));
+  box.addEventListener("click", (e) => {            // 点带 data-line 的节点: 跳到文档那一行
+    const g = e.target.closest && e.target.closest("[data-line]");
+    if (!g || !t) return;
+    const row = Math.max(0, Math.min(+g.getAttribute("data-line") - 1, t.lines.length - 1));
+    closeModal(); setActiveTab(t.id); t.cursor = { row, col: 0 }; t.sel = null; renderVim(t); scrollRowIntoView(row, "auto");
+  });
 }
 
 // ----- 扩展面板 -----
@@ -11009,7 +11042,7 @@ const MD_BTNS = [
   ["H1", "md-h1", "标题 1 (Ctrl+Alt+1)"], ["H2", "md-h2", "标题 2 (Ctrl+Alt+2)"], ["H3", "md-h3", "标题 3 (Ctrl+Alt+3)"], ["H4", "md-h4", "标题 4"], "|",
   ["• 列表", "md-ul", "无序列表"], ["1. 列表", "md-ol", "有序列表"], ["☑ 任务", "md-task", "任务列表"], ["❝ 引用", "md-quote", "引用"], "|",
   ["🔗 链接", "md-link", "链接 (Ctrl+Shift+K)"], ["🖼 图片", "md-image", "图片"], ["▦ 表格", "md-table", "表格 3×3"], ["{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)"],
-  ["↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"], ["↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格"], ["🔎 结构", "md-find", "结构化搜索: 按标题 / 链接 / 图片 / 代码块 / 任务过滤, 点结果跳转"], ["Δ Diff", "git-diff", "当前文件的 Git 改动 (只读 git diff)"], ["⇪ 导出 HTML", "md-export-html", "按模板导出同名 .html (模板可在命令「md-export-template」里编辑)"], ["✓ 检查", "md-lint", "文档质量检查 (标题跳级 / 重复标题 / 空链接 / 缺 alt / 围栏未闭合)"], "|",
+  ["↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"], ["↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格"], ["🔎 结构", "md-find", "结构化搜索: 按标题 / 链接 / 图片 / 代码块 / 任务过滤, 点结果跳转"], ["🕸 关系图", "plugin:doc-graph:show", "文档关系图 (默认插件 doc-graph: 标题树 + 跨章节引用, 点节点跳转; 禁用该插件按钮就消失)"], ["Δ Diff", "git-diff", "当前文件的 Git 改动 (只读 git diff)"], ["⇪ 导出 HTML", "md-export-html", "按模板导出同名 .html (模板可在命令「md-export-template」里编辑)"], ["✓ 检查", "md-lint", "文档质量检查 (标题跳级 / 重复标题 / 空链接 / 缺 alt / 围栏未闭合)"], "|",
   ["─ 分隔线", "md-hr", "分隔线"], ["💡 Callout", "md-callout", "Obsidian callout"], ["◇ Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)"],
 ];
 const MD = { built: false, timer: 0, seq: 0 };
@@ -11036,6 +11069,7 @@ function buildMdBar() {
     else { if (b.dataset.md.startsWith("md-")) mdCommand(b.dataset.md); else dispatchCommand(b.dataset.md); edContent.focus({ preventScroll: true }); }
   });
   host.insertBefore(bar, host.firstChild);
+  mdSyncPluginButtons();
   const pv = document.createElement("div");
   pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (只读)");
   document.getElementById("editor").appendChild(pv);
@@ -11104,6 +11138,10 @@ async function mdLint() {
   if (!issues.length) { setTip("文档检查通过: 没有发现问题"); return; }
   openModal({ title: "文档检查: " + issues.length + " 个问题", bodyHTML: issues.map((i) => '<div class="opt-row">第 ' + i.line + " 行 · <b>" + escapeHtml(i.rule) + "</b> · " + escapeHtml(i.message) + "</div>").join(""), buttons: [{ label: "关闭", cmd: "modal-close" }] });
 }
+function mdSyncPluginButtons() {
+  if (!MD.built) return;
+  for (const b of document.querySelectorAll("#md-bar [data-md^='plugin:']")) b.style.display = PLUG.commands && PLUG.commands[b.dataset.md] ? "" : "none";
+}
 function mdCommand(cmd) {
   const t = getActiveTab(); if (!t || !isMdTab(t)) return;
   if (cmd === "md-lint") return mdLint();
@@ -11146,7 +11184,7 @@ const MD_OK_TAGS = new Set(("svg g defs symbol use path rect circle ellipse line
   "div span p br b i u s em strong code pre sub sup small ul ol li table thead tbody tr th td a img h1 h2 h3 h4 h5 h6 blockquote hr").split(" "));
 const MD_OK_ATTRS = new Set(("class id width height viewbox x y x1 y1 x2 y2 cx cy r rx ry d points transform fill stroke stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-opacity fill-opacity opacity " +
   "font-size font-family font-weight text-anchor dominant-baseline dx dy offset stop-color stop-opacity gradientunits gradienttransform patternunits marker-start marker-end marker-mid markerwidth markerheight refx refy orient " +
-  "preserveaspectratio clip-path mask xmlns xmlns:xlink href xlink:href src alt title colspan rowspan role aria-label aria-hidden").split(" "));
+  "preserveaspectratio clip-path mask xmlns xmlns:xlink href xlink:href src alt title colspan rowspan role aria-label aria-hidden data-line").split(" "));
 function mdSafeUrl(v) {
   const u = String(v).replace(/[\x00-\x20]/g, "").toLowerCase();
   // 插件输出里的链接 / 图片只认页内锚点 (#id) 和内联位图 (data:image/png|jpeg|gif|webp;base64): 不允许 http(s) / 相对路径,

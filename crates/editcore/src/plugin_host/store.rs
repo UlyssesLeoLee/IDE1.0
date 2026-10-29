@@ -15,6 +15,8 @@ const BUNDLED: &[(&str, &str, &[u8])] = &[
     ("pele", "main.js", include_bytes!("../../plugins/pele/main.js")),
     ("pele", "pele.global.js", include_bytes!("../../plugins/pele/pele.global.js")),
     ("pele", "LICENSE", include_bytes!("../../plugins/pele/LICENSE")),
+    ("doc-graph", "manifest.json", include_bytes!("../../plugins/doc-graph/manifest.json")),
+    ("doc-graph", "main.js", include_bytes!("../../plugins/doc-graph/main.js")),
 ];
 
 pub trait Http {
@@ -366,6 +368,18 @@ mod tests {
         set_enabled(&root, "pele", false).unwrap();
         assert!(!list(&root).iter().find(|p| p.manifest.id == "pele").unwrap().enabled, "禁用记在 registry 里");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn every_bundled_plugin_passes_the_compat_check_it_would_get_from_github() {
+        let ids = bundled_ids();
+        assert!(ids.contains(&"pele") && ids.contains(&"doc-graph"));
+        for id in ids {
+            let assets: Vec<Asset> = BUNDLED.iter().filter(|(i, _, _)| *i == id).map(|(_, f, b)| Asset { name: f.to_string(), size: b.len() as u64 }).collect();
+            let manifest = std::str::from_utf8(bundled_file(id, "manifest.json").unwrap()).unwrap();
+            let r = check_compat(&assets, Some(manifest), env!("CARGO_PKG_VERSION"));
+            assert!(r.ok, "{id}: {:?}", r.problems);
+        }
     }
 
     #[test]

@@ -46,3 +46,31 @@ test('扩展面板列出插件并能显示不匹配报告入口', () =>
     assert.match(txt, /检查更新/);
     assert.ok(await page.evaluate(() => !!document.getElementById('ext-inspect')), '有 GitHub 安装入口');
   }));
+
+test('doc-graph 插件 (command 贡献点, FR-047): 画标题树 + 跨章节引用, 点节点跳转; 禁用后按钮和命令都消失, 文本编辑不受影响', () =>
+  withMocks({ name: 'plug', portOffset: 587 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await page.waitForFunction(() => typeof PLUG !== 'undefined' && PLUG.commands && PLUG.commands['plugin:doc-graph:show'], null, { timeout: 8000 });
+    await page.evaluate(() => {
+      const t = getActiveTab(); t.name = 'g.md'; t.path = ''; t.cursor = { row: 0, col: 0 }; t.sel = null;
+      t.lines = ['# Intro', 'see [[Usage]]', '## Setup', 'x', '# Usage', 'y', '```', '# not a heading', '```'];
+      renderVim(t);
+    });
+    await page.click('#md-bar [data-md="plugin:doc-graph:show"]');
+    await page.waitForSelector('#plug-out svg .gnode', { timeout: 15000 });
+    assert.equal(await page.evaluate(() => document.querySelectorAll('#plug-out .gnode').length), 3, '三个标题(围栏里的不算)');
+    assert.match(await page.evaluate(() => document.getElementById('plug-sum').textContent), /3 个标题, 1 条跨章节引用/);
+    assert.equal(await page.evaluate(() => document.querySelectorAll('iframe[sandbox]').length), 1, '跑在沙箱 iframe 里');
+    // 点 Usage 节点: 跳到第 5 行
+    await page.evaluate(() => { const g = [...document.querySelectorAll('#plug-out .gnode')].find((x) => /Usage/.test(x.textContent)); g.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await page.waitForFunction(() => getActiveTab().cursor.row === 4, null, { timeout: 8000 });
+    // 禁用: 命令和按钮消失
+    await page.evaluate(async () => { await plugApi({ op: 'toggle', id: 'doc-graph', enabled: false }); await plugRefresh(); });
+    assert.equal(await page.evaluate(() => !!PLUG.commands['plugin:doc-graph:show']), false);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('#md-bar [data-md="plugin:doc-graph:show"]')).display), 'none');
+    // 文本主链路照常
+    await page.evaluate(() => { const t = getActiveTab(); t.cursor = { row: 0, col: 0 }; renderVim(t); });
+    await page.locator('#ed-content').focus();
+    await page.keyboard.type('Z');
+    await page.waitForFunction(() => getActiveTab().lines[0].startsWith('Z'), null, { timeout: 8000 });
+  }));
