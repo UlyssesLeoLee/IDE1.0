@@ -19,17 +19,17 @@ jobs:
     outputs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false   # 构建步骤不需要仓库写令牌
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
 
@@ -43,7 +43,7 @@ jobs:
 
       - name: Upload unsigned .msi
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ide-msi-unsigned
           path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
@@ -60,7 +60,7 @@ jobs:
     steps:
       - name: Submit signing request to SignPath (release 签名策略需要人工批准)
         id: sign
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@ced31329c0317e779dad2eec2a7c3bb46ea1343e # v1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -71,7 +71,7 @@ jobs:
           output-artifact-directory: signed
 
       - name: Upload signed .msi
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ide-msi-signed
           path: signed/*.msi
@@ -83,5 +83,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.ref_name }}" signed/*.msi --clobber
 
-# 备注 (供审阅): 第三方 action 目前按主版本号引用 (actions/*@v4 等)。申请通过、正式启用签名前,
-# 应把它们固定到提交 SHA (供应链加固), 并开启 Dependabot 更新 action。
+# 备注: 第三方 action 已固定到提交 SHA (行尾注释是对应的版本); 更新由 .github/dependabot.yml 提 PR, 审核后再合并。
