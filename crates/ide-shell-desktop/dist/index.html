@@ -6735,6 +6735,12 @@ async function openGrepDialog(withReplace) {
       '<label style="margin-left:12px" title="允许「フォルダー」栏指向项目之外 (可填 D:\\ 或 C:\\Users\\...)">' +
         '<input type="checkbox" id="grep-outside" /> 搜索项目外</label>' +
     "</div>" +
+    '<div class="opt-row">出力: ' +
+      '<label><input type="radio" name="grep-form" value="normal" checked /> 标准 (路径(行,列): 内容)</label>' +
+      '<label style="margin-left:10px"><input type="radio" name="grep-form" value="files" /> 只文件名</label>' +
+      '<label style="margin-left:10px"><input type="radio" name="grep-form" value="match" /> 只命中部分</label></div>' +
+    '<div class="opt-row"><label><input type="checkbox" id="grep-first" /> 每个文件只取第一处</label>' +
+      '<label style="margin-left:10px"><input type="checkbox" id="grep-rel" /> 路径显示为相对项目根</label></div>' +
     (withReplace ? grepFieldRow("置換文字列", "grep-repl", "替换为", GREP_STATE.replace) +
       '<div class="opt-row"><button class="md-btn" id="grep-do-repl" data-tip="把命中处按原编码 / BOM / 换行原子写回文件; 已打开且有未保存修改的文件会跳过; 改写前备份为 .bak">全部置換 (写回文件)</button></div>' : "") +
     '<div id="grep-status" class="empty-hint">输入后回车</div>';
@@ -6749,6 +6755,8 @@ async function openGrepDialog(withReplace) {
   $("grep-word").checked = !!GREP_STATE.wholeWord;
   $("grep-this-file").checked = !!GREP_STATE.thisFileOnly;
   $("grep-outside").checked = !!GREP_STATE.allowOutside;
+  $("grep-first").checked = !!GREP_STATE.first; $("grep-rel").checked = !!GREP_STATE.relative;
+  const formEl = document.querySelector('input[name="grep-form"][value="' + (GREP_STATE.form || "normal") + '"]'); if (formEl) formEl.checked = true;
   $("grep-input").focus();
 
   /* 「この文件中だけ検索」(上游 CDlgGrep::SetDataFromThisText): 勾上 -> ファイル名 置成
@@ -6823,7 +6831,10 @@ async function openGrepDialog(withReplace) {
     // 由引擎决定是否下钻, 前端不该用 glob 近似 (那会把 src/a.rs 也排掉)。
 
     FIND_STATE.needle = q;
+    GREP_STATE.form = (document.querySelector('input[name="grep-form"]:checked') || { value: "normal" }).value;
+    GREP_STATE.first = $("grep-first").checked; GREP_STATE.relative = $("grep-rel").checked;
     startGrepJob({
+      out: { form: GREP_STATE.form, first: GREP_STATE.first, relative: GREP_STATE.relative },
       needle: q, caseSensitive: GREP_STATE.caseSensitive, thisOnly,
       folders: effFolders, subfolders: GREP_STATE.subfolders,
       base: {
@@ -6899,10 +6910,33 @@ function grepHitCol(text, p) {
   }
   return i < 0 ? 1 : charLen(text.slice(0, i)) + 1;
 }
-// 一处命中 -> 结果文档里的一行
+// 命中处的文字本身 (「命中部分のみ」用); 找不到就整行
+function grepMatchText(text, p) {
+  if (!p.needle) return text;
+  try {
+    if (p.base.regex) { const m = new RegExp(p.needle, p.caseSensitive ? "" : "i").exec(text); return m ? m[0] : text; }
+    const i = (p.caseSensitive ? text : text.toLowerCase()).indexOf(p.caseSensitive ? p.needle : p.needle.toLowerCase());
+    return i < 0 ? text : text.slice(i, i + p.needle.length);
+  } catch (_) { return text; }
+}
+// 一处命中 -> 结果文档里的一行。p.out = { form: "normal" | "files" | "match", relative: bool }; "files" 形式由 grepShape 按文件去重, 这里只给路径
 function grepHitLine(m, p) {
+  const out = p.out || {};
   const txt = String(m.text || "").replace(/[\r\n]+$/, "");
-  return stripVerbatim(m.path) + "(" + m.line + "," + grepHitCol(txt, p) + "): " + txt;
+  const path = out.relative ? projectRelPath(m.path) : stripVerbatim(m.path);
+  if (out.form === "files") return path;
+  return path + "(" + m.line + "," + grepHitCol(txt, p) + "): " + (out.form === "match" ? grepMatchText(txt, p) : txt);
+}
+// 一批命中 -> 要追加的行 (按输出选项: 每文件只取第一处 / 文件名只列一次)
+function grepShape(rows, p, job) {
+  const out = p.out || {}, lines = [];
+  for (const m of rows) {
+    const seen = job.files.has(m.path);
+    if ((out.first || out.form === "files") && seen) continue;
+    lines.push(grepHitLine(m, p));
+    job.files.add(m.path);
+  }
+  return lines;
 }
 // 结果文档里的一行 -> 命中位置; 不是命中行 = null
 function parseGrepHitLine(line) {
@@ -6961,7 +6995,7 @@ async function startGrepJob(p) {
   const t = createGrepDoc(p);
   const job = { id: ++GREP_SEQ, tab: t, cancelled: false, done: false, hits: 0, files: new Set() };
   GREP_JOBS.add(job);
-  t.grep = { job };
+  t.grep = { job, filesOnly: !!(p.out && p.out.form === "files") };
   // 命中词自动高亮: 用「検索マーク」(同一套查找选项), 之后在结果里 Ctrl+F 继续查找会换成新的词; Ctrl+F3 切换显示
   Object.assign(FIND_STATE, { needle: p.needle || "", matchCase: !!p.base.case_sensitive, useRegex: !!p.base.regex, wholeWord: !!p.base.whole_word, marks: true });
   const MAX = 5000;
@@ -6974,7 +7008,8 @@ async function startGrepJob(p) {
         const resp = await invoke("search", Object.assign({}, p.base, shards[i], { max_results: MAX - job.hits }));
         const rows = (resp && resp.results) || (Array.isArray(resp) ? resp : []);
         if (rows.length && !job.cancelled) {
-          for (const m of rows) { t.lines.push(grepHitLine(m, p)); job.files.add(m.path); }
+          for (const l of grepShape(rows, p, job)) t.lines.push(l);
+          for (const m of rows) job.files.add(m.path);
           job.hits += rows.length;
           scheduleGrepPaint(t);
         }
@@ -6994,11 +7029,17 @@ async function startGrepJob(p) {
 window.startGrepJob = startGrepJob;
 
 // 光标所在行是命中行就跳过去 (Sakura: タグジャンプ / Enter / ダブルクリック)
+function grepAbsPath(pth) {
+  const q = stripVerbatim(pth);
+  return /^([A-Za-z]:[\\/]|[\\/])/.test(q) || !projectRoot ? q : joinPath(stripVerbatim(projectRoot), q);   // 相对路径显示的结果: 接上项目根
+}
 function grepJumpAtCursor(t) {
-  const hit = t && t.grep ? parseGrepHitLine(t.lines[t.cursor.row]) : null;
-  if (!hit) return false;
-  void gotoPathLine(hit.path, hit.line, hit.col - 1);
-  return true;
+  if (!t || !t.grep) return false;
+  const line = t.lines[t.cursor.row];
+  const hit = parseGrepHitLine(line);
+  if (hit) { void gotoPathLine(grepAbsPath(hit.path), hit.line, hit.col - 1); return true; }
+  if (t.grep.filesOnly && line && !/^(□|検索|フォルダー|\d+ 個|見つかりません)/.test(line)) { void openFile(grepAbsPath(line.trim())); return true; }   // 「只文件名」形式: 整行就是路径
+  return false;
 }
 
 /* 打开文件并把光标放到指定行 (1-based). openFile 之后光标固定在 0,0,
