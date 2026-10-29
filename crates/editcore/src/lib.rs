@@ -59,6 +59,7 @@ pub mod keyword_set;
 pub mod macro_sakura;
 pub mod plugin_host;
 pub mod md_render;
+pub mod exec_cmd;
 pub mod md_lint;
 pub mod md_struct;
 pub mod agent_api;

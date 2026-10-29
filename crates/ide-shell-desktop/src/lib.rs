@@ -666,6 +666,7 @@ pub fn run() {
             plugins,
             agent,
             set_window_theme,
+            exec_cmd,
             bookmark,
             bracket_pair,
             edit_cmd,
@@ -774,6 +775,18 @@ fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::V
 #[tauri::command]
 fn plugins(options: editcore::pure_api::PluginReq) -> Result<serde_json::Value, String> {
     editcore::pure_api::plugins(&options)
+}
+
+/// 外部命令执行并捕获输出 (web 版 /api/exec_cmd 同一语义)
+#[tauri::command]
+fn exec_cmd(
+    state: tauri::State<'_, ProjectRoot>,
+    command: String,
+    stdin: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<editcore::exec_cmd::ExecOut, String> {
+    let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
+    editcore::exec_cmd::run(&root, &command, stdin.as_deref(), timeout_ms)
 }
 
 /// Sakura 宏计划 (web 版 /api/macro_plan 同一语义)

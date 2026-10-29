@@ -715,6 +715,21 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 插件: 列表 / 读文件 / 启停 / 卸载 / 检查 / 安装更新 / 冲突仲裁 (网络类只在用户点按钮时才会被调用)
             respond_pure::<editcore::pure_api::PluginReq>(stream, &body, "插件请求无效", editcore::pure_api::plugins);
         }
+        ("POST", "/api/exec_cmd") => {
+            // 外部命令执行并捕获输出 (Sakura 的 外部コマンド実行): 在已打开的项目根下运行, 有超时和输出上限
+            let Some(root) = state.project_root_get() else {
+                send_error_json(stream, "400 Bad Request", "尚未打开项目");
+                return;
+            };
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let command = req.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            let stdin = req.get("stdin").and_then(|v| v.as_str());
+            let timeout = req.get("timeout_ms").and_then(|v| v.as_u64());
+            match editcore::exec_cmd::run(&root, command, stdin, timeout) {
+                Ok(out) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&out).unwrap_or_default()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
+            }
+        }
         ("POST", "/api/macro_plan") => {
             respond_pure::<editcore::pure_api::MacroPlanReq>(stream, &body, "宏请求无效", editcore::pure_api::macro_plan);
         }

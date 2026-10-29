@@ -2868,6 +2868,12 @@ function avoidFindDialog(row) {
 }
 
 // 打开文件: 走 list_dir 的树选择过于笨重, 这里用相对路径输入
+// "路径" / "路径:行" / "路径:行:列" (行列从 1 起) -> { path, line, col }; Windows 盘符 (C:\x) 不会被当成行号
+function splitPathLineCol(spec) {
+  const m = /^(.*?):(\d+)(?::(\d+))?$/.exec(String(spec).trim());
+  if (!m || m[1].length === 0 || /^[A-Za-z]$/.test(m[1])) return { path: String(spec).trim(), line: 0, col: 0 };
+  return { path: m[1], line: +m[2], col: m[3] ? +m[3] : 1 };
+}
 async function promptOpenFile() {
   // 极简布局没有「先打开项目」这一步: 没项目就先建立默认工作目录 (和保存无标题文档时是同一步)
   let root = projectRoot;
@@ -2876,9 +2882,11 @@ async function promptOpenFile() {
     if (!root) return;                       // 取消/失败的提示 ensureWorkingRoot 已经给了
   }
   if (!root) { setTip("请先打开项目"); return; }
-  const rel = await uiPrompt("打开文件 (项目根内相对路径):", "", { title: "打开文件" });
-  if (!rel) return;
-  openFile(layoutPreset() === "min" ? joinPath(root, rel) : stripVerbatim(projectRoot) + "\\" + rel);
+  const spec = await uiPrompt("打开文件 (项目根内相对路径; 可写 路径:行 或 路径:行:列):", "", { title: "打开文件" });
+  if (!spec) return;
+  const { path: rel, line, col } = splitPathLineCol(spec);
+  const full = layoutPreset() === "min" ? joinPath(root, rel) : stripVerbatim(projectRoot) + "\\" + rel;
+  if (line) await gotoPathLine(full, line, col - 1); else openFile(full);
 }
 
 // ===== 书签 (会话内, 按路径记录行号) =====
@@ -10977,6 +10985,26 @@ function syncTitlebar() {
 new MutationObserver(syncTitlebar).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-lum"] });
 syncTitlebar();
 
+/* ===== 关窗口时的未保存提示 =====
+   网页版: beforeunload (浏览器自己的确认框, 页面无法自定义文字); 桌面版: Tauri 的关闭请求 -> 主题化确认框。 */
+const dirtyDocCount = () => [...TABS.values()].filter((t) => t.dirty && !t.grep).length;
+let CLOSE_CONFIRMED = false;
+window.addEventListener("beforeunload", (e) => {
+  if (CLOSE_CONFIRMED || inTauri || !dirtyDocCount()) return;
+  e.preventDefault(); e.returnValue = "";
+});
+if (inTauri) {
+  try {
+    const w = window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow && window.__TAURI__.window.getCurrentWindow();
+    if (w && w.onCloseRequested) w.onCloseRequested(async (ev) => {
+      const n = dirtyDocCount();
+      if (!n || CLOSE_CONFIRMED) return;
+      ev.preventDefault();
+      if (await uiConfirm(n + " 个文档有未保存修改, 关闭窗口会丢失. 继续?", { title: "关闭窗口", ok: "不保存并关闭", cancel: "取消" })) { CLOSE_CONFIRMED = true; w.close(); }
+    });
+  } catch (_) {}
+}
+
 /* ===== 保存与外部改动 (document_io / auto_backup 的前端接线) =====
    - 保存走原子写 (后端先写临时文件再换名, 断电 / 中途失败原文件完好); 首选项勾选"保存时备份旧文件"则先备份到 .sakura-backup/ (保留最近几代)。
    - 每个磁盘文件记一份"指纹" (mtime/大小); 窗口重新获得焦点时问一次文件有没有被外部改过 —— 不轮询。 */
@@ -11115,6 +11143,48 @@ function buildMdBar() {
   pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (只读)");
   document.getElementById("editor").appendChild(pv);
 }
+/* ===== 外部コマンド実行 (WBS-02 4.7): 运行命令并捕获输出, 不再只是把命令打进终端 =====
+   命令在项目根下运行 (有超时和输出上限); 可把选区作标准输入; 输出可以开成新标签, 也可以插入光标处 / 替换选区。 */
+CFG_CMDS["exec-cmd"] = () => {
+  const t = getActiveTab(); if (!t) return;
+  const hasSel = selNonEmpty(t);
+  let hist = []; try { hist = JSON.parse(localStorage.getItem("ide10.execHist") || "[]"); } catch (_) {}
+  openModal({
+    title: "外部コマンド実行",
+    bodyHTML: '<div class="opt-row"><input id="ex-cmd" list="ex-hist" placeholder="命令 (在项目根目录下运行)" spellcheck="false" style="width:100%"></div>' +
+      '<datalist id="ex-hist">' + hist.map((h) => '<option value="' + escapeHtml(h) + '">').join("") + "</datalist>" +
+      '<div class="opt-row"><label><input type="checkbox" id="ex-stdin"' + (hasSel ? " checked" : " disabled") + "> 选区作为标准输入</label></div>" +
+      '<div class="opt-row">输出: <label><input type="radio" name="ex-out" value="tab" checked> 新标签</label> ' +
+      '<label><input type="radio" name="ex-out" value="insert"> 插入光标处 / 替换选区</label></div><div id="ex-status" class="empty-hint">Enter 执行 (最长 30 秒)</div>',
+    buttons: [{ label: "关闭", cmd: "modal-close" }],
+  });
+  const cmdEl = document.getElementById("ex-cmd"), status = document.getElementById("ex-status");
+  const run = async () => {
+    const command = cmdEl.value.trim(); if (!command) return;
+    status.textContent = "执行中…";
+    const useStdin = document.getElementById("ex-stdin").checked, out = document.querySelector('input[name="ex-out"]:checked').value;
+    const input = useStdin ? selectionText(t) : null;
+    let r;
+    try { r = await invoke("exec_cmd", { command, stdin: input, timeout_ms: 30000 }); } catch (e) { status.textContent = "执行失败: " + e.message; return; }
+    try { localStorage.setItem("ide10.execHist", JSON.stringify([command, ...hist.filter((h) => h !== command)].slice(0, 20))); } catch (_) {}
+    const text = (r.stdout || "") + (r.stderr ? (r.stdout && !r.stdout.endsWith("\n") ? "\n" : "") + r.stderr : "");
+    const info = r.timed_out ? "超时, 已终止" : "终了コード " + r.code + (r.truncated ? " (输出过长, 已截断)" : "");
+    closeModal();
+    if (out === "insert") {
+      setActiveTab(t.id);
+      insertTextAtCursor(text.replace(/\r\n?/g, "\n").replace(/\n$/, ""));
+    } else {
+      const id = "t" + (++maxTabId);
+      TABS.set(id, { id, path: "", name: "出力: " + command.slice(0, 28), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"), undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: "lf" });
+      setActiveTab(id);
+    }
+    setTip(command + " — " + info);
+  };
+  mdFoot.insertBefore(uiBtn("执行", run, true), mdFoot.firstChild);
+  cmdEl.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); run(); } });
+  cmdEl.focus();
+};
+
 /* ===== Git Diff (FR-045): 复用宿主的 Git (只读 `git diff`), 结果开成一个新标签; 原生 Diff 照旧 ===== */
 function projectRelPath(p) {
   const root = stripVerbatim(projectRoot || ""), rel = stripVerbatim(p || "");
