@@ -154,3 +154,5 @@ REQ (Markdown 增强, 49 条 FR) 另有进度: P0/P1 的工具条、预览、插
 - 首选项新增「AI 模型」页 (接口 / 模型 / Key / effort); 聊天窗只留 effort 选择。
 - 文字按下方实际底色自动反色 (md 预览内); 透明玻璃整体再透约 40%; 标题栏随主题有各自外观。
 - 未做 / 待真机验证: 桌面版自绘标题栏的拖动、边缘缩放需在真机上看; 编辑区正文(非 md 预览)仍按全局明暗反色。
+- 3.5 色・フォント: 首选项「色・フォント」页 —— 编辑区字体 / 行高 / 文字色 / 关键字·类型·字符串·注释·数字颜色 (子集, 非 Sakura 全部元素)。
+- 3.7 sakura.ini 导入: 首选项「导入」页 —— `[Common]` 的 nMRUArrNum_MAX / bExitConfirm / bRegularExp / bLoHiCase / bWordOnly 与 `[Types(n)]` 的 nTabSpace / bInsSpace / bAutoIndent (按 szTypeExts 对应语言); 其余键忽略 (子集)。

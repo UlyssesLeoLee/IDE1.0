@@ -9483,8 +9483,22 @@ try { applyMenuShortcuts(); } catch (_) {}
 
 
 /* ===== 共通設定 / キー割り当て / DIFF / 宏の保存・读取 ===== */
+/* 色・フォント (WBS-02 3.5): 编辑区字体 / 行高 + 语法元素颜色 (Sakura「色設定」的子集), 存在首选项里。
+   颜色走一块注入的样式 (!important 压过主题里写死的 token 色); 不设 = 用主题默认。 */
+const COLOR_ITEMS = [["keyword", "关键字", "#569cd6"], ["type", "类型", "#4ec9b0"], ["string", "字符串", "#ce9178"], ["comment", "注释", "#6a9955"], ["num", "数字", "#b5cea8"]];
+function applyColorFont() {
+  const ff = (PREFS.fontFamily || "").trim(), lh = +PREFS.lineHeight || 0;
+  for (const el of [edContent, gutter]) { el.style.fontFamily = ff || ""; el.style.lineHeight = lh ? lh + "px" : ""; }
+  let st = document.getElementById("user-colors");
+  if (!st) { st = document.createElement("style"); st.id = "user-colors"; document.head.appendChild(st); }
+  const c = PREFS.colors || {};
+  st.textContent = COLOR_ITEMS.filter((it) => /^#[0-9a-f]{6}$/i.test(c[it[0]] || "")).map((it) => "#ed-content .tk-" + it[0] + "{color:" + c[it[0]] + " !important}").join("\n") +
+    (/^#[0-9a-f]{6}$/i.test(c.text || "") ? "\n#ed-content{color:" + c.text + " !important}" : "");
+  updateCaret(false); scheduleMarks();
+}
 function applyPrefs() {
   document.documentElement.style.setProperty("--tab-size", String(PREFS.tabWidth));
+  try { applyColorFont(); } catch (_) {}
   updateCaret(false); scheduleMarks();
 }
 applyPrefs();
@@ -9517,6 +9531,19 @@ function commonConfig(openTab) {
       ["check", "关闭窗口 / 刷新时, 有未保存修改先提示", () => PREFS.confirmClose !== false, (v) => { PREFS.confirmClose = v; savePrefs(); }],
       ["number", "最近使用的文件: 保留个数", () => PREFS.mruFiles || 20, (v) => { PREFS.mruFiles = num(v, 1, 99, 20); savePrefs(); }, 1, 99],
     ]],
+    ["导入", () => [
+      ["action", "导入 sakura.ini… (子集: 最近文件数 / 退出确认 / 查找默认 / 各类型的 Tab 宽度·空格·自动缩进)", null, () => {
+        const f = document.createElement("input"); f.type = "file"; f.accept = ".ini,text/plain";
+        f.onchange = async () => { try { const n = f.files[0] ? importSakuraIni(await f.files[0].text()) : 0; setTip(n ? "已导入 " + n + " 项设置" : "没有认得的设置项"); } catch (e) { setTip("导入失败: " + e.message); } };
+        f.click();
+      }],
+    ]],
+    ["色・フォント", () => [
+      ["text", "编辑区字体 (空 = 默认; 例: Consolas, \"MS Gothic\", monospace)", () => PREFS.fontFamily || "", (v) => { PREFS.fontFamily = String(v).trim(); savePrefs(); applyColorFont(); }],
+      ["number", "行高 (px, 0 = 默认)", () => PREFS.lineHeight || 0, (v) => { PREFS.lineHeight = num(v, 0, 60, 0); savePrefs(); applyColorFont(); }, 0, 60],
+      ["color", "文字颜色 (留空 = 随主题)", () => (PREFS.colors || {}).text || "", (v) => { PREFS.colors = Object.assign({}, PREFS.colors, { text: v }); savePrefs(); applyColorFont(); }],
+      ...COLOR_ITEMS.map((it) => ["color", it[1] + "颜色 (留空 = 随主题)", () => (PREFS.colors || {})[it[0]] || "", (v) => { PREFS.colors = Object.assign({}, PREFS.colors, { [it[0]]: v }); savePrefs(); applyColorFont(); }]),
+    ]],
     ["AI", () => [
       ["text", "接口地址 (OpenAI 兼容)", () => aiConfig().baseUrl, (v) => aiSaveConfig(Object.assign(aiConfig(), { baseUrl: String(v).trim() }))],
       ["text", "模型", () => aiConfig().model, (v) => aiSaveConfig(Object.assign(aiConfig(), { model: String(v).trim() }))],
@@ -9538,11 +9565,13 @@ function commonConfig(openTab) {
     ]],
   ];
   const pending = new Map();                       // "页.项" -> 草稿值
-  const valueOf = (idx, i, d) => (pending.has(idx + "." + i) ? pending.get(idx + "." + i) : d[2]());
+  const valueOf = (idx, i, d) => (!d[2] ? undefined : pending.has(idx + "." + i) ? pending.get(idx + "." + i) : d[2]());
   const render = (idx) => {
     const defs = TABS_[idx][1]();
     const rows = defs.map((d, i) => {
       const [kind, label, , , a, b] = d, v = valueOf(idx, i, d);
+      if (kind === "action") return '<div class="cfg-row"><button class="md-btn" type="button" data-act="' + i + '">' + escapeHtml(label) + "</button></div>";
+      if (kind === "color") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="color" data-i="' + i + '" value="' + (v || "#808080") + '"><button class="md-btn" data-clear="' + i + '" type="button">清除</button></div>';
       if (kind === "text" || kind === "password") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="' + kind + '" data-i="' + i + '" value="' + escapeHtml(v) + '" style="width:260px" autocomplete="off"></div>';
       if (kind === "check") return '<div class="cfg-row"><label><input type="checkbox" data-i="' + i + '"' + (v ? " checked" : "") + "> " + escapeHtml(label) + "</label></div>";
       if (kind === "number") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="number" data-i="' + i + '" min="' + a + '" max="' + b + '" value="' + escapeHtml(v) + '" style="width:80px"></div>';
@@ -9550,6 +9579,8 @@ function commonConfig(openTab) {
     }).join("");
     mdBody.innerHTML = '<div class="cfg-tabs">' + TABS_.map((t, k) => '<button class="cfg-tab' + (k === idx ? " active" : "") + '" data-tab="' + k + '">' + t[0] + "</button>").join("") + "</div>" + rows;
     mdBody.querySelectorAll(".cfg-tab").forEach((b) => b.addEventListener("click", () => render(+b.dataset.tab)));
+    mdBody.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => defs[+b.dataset.act][3]()));
+    mdBody.querySelectorAll("[data-clear]").forEach((b) => b.addEventListener("click", () => { pending.set(idx + "." + b.dataset.clear, ""); const inp = mdBody.querySelector('[data-i="' + b.dataset.clear + '"]'); if (inp) inp.value = "#808080"; }));
     mdBody.querySelectorAll("[data-i]").forEach((el) => {
       const d = defs[+el.dataset.i];
       el.addEventListener("change", () => pending.set(idx + "." + el.dataset.i, d[0] === "check" ? el.checked : d[0] === "number" ? +el.value : el.value));
@@ -11492,6 +11523,48 @@ function typeSettingDefault(lang, key) {
     case "lineComment": return (Syntax.LEXERS[lang] && Syntax.LEXERS[lang].lineComment) || "";
     default: return undefined;
   }
+}
+/* 导入 sakura.ini (WBS-02 3.7, 子集): [Common] 的 nMRUArrNum_MAX / bExitConfirm / bRegularExp / bLoHiCase / bWordOnly,
+   [Types(0)] (= 默认类型) 的 nTabSpace / bInsSpace / bAutoIndent 进全局首选项, 其余 [Types(n)] 按 szTypeExts 里的扩展名对应到语言, 写入类型别设置。
+   只认认得的键, 其余原样忽略; 返回导入了多少项, 方便给用户反馈。 */
+function parseIni(text) {
+  const out = {}; let cur = null;
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim(); if (!line || line[0] === ";") continue;
+    const m = /^\[(.+)\]$/.exec(line); if (m) { cur = out[m[1]] = {}; continue; }
+    const i = line.indexOf("="); if (i > 0 && cur) cur[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  return out;
+}
+function importSakuraIni(text) {
+  const ini = parseIni(text); let n = 0;
+  const b = (v) => v === "1";
+  const c = ini.Common || {};
+  if (c.nMRUArrNum_MAX !== undefined && +c.nMRUArrNum_MAX > 0) { PREFS.mruFiles = Math.min(99, +c.nMRUArrNum_MAX); n++; }
+  if (c.bExitConfirm !== undefined) { PREFS.confirmClose = b(c.bExitConfirm); n++; }
+  if (c.bRegularExp !== undefined) { PREFS.findRegex = b(c.bRegularExp); FIND_STATE.useRegex = PREFS.findRegex; n++; }
+  if (c.bLoHiCase !== undefined) { PREFS.findCase = b(c.bLoHiCase); FIND_STATE.matchCase = PREFS.findCase; n++; }
+  if (c.bWordOnly !== undefined) { PREFS.findWord = b(c.bWordOnly); FIND_STATE.wholeWord = PREFS.findWord; n++; }
+  const all = typeSettingsAll();
+  for (const [sec, kv] of Object.entries(ini)) {
+    const m = /^Types\((\d+)\)$/.exec(sec); if (!m) continue;
+    const tab = kv.nTabSpace !== undefined ? Math.max(1, Math.min(16, +kv.nTabSpace || 4)) : undefined;
+    if (+m[1] === 0) {
+      if (tab !== undefined) { PREFS.tabWidth = tab; n++; }
+      if (kv.bInsSpace !== undefined) { PREFS.insertSpaces = b(kv.bInsSpace); n++; }
+      if (kv.bAutoIndent !== undefined) { PREFS.autoIndent = b(kv.bAutoIndent); n++; }
+      continue;
+    }
+    const langs = new Set(String(kv.szTypeExts || "").split(/[;, ]+/).filter(Boolean).map((e) => Syntax.detectLanguage("x." + e.replace(/^\./, ""))).filter((l) => l && l !== "plain"));
+    for (const lang of langs) {
+      const o = all[lang] || (all[lang] = {});
+      if (tab !== undefined) { o.tabWidth = tab; n++; }
+      if (kv.bInsSpace !== undefined) { o.insertSpaces = b(kv.bInsSpace); n++; }
+      if (kv.bAutoIndent !== undefined) { o.autoIndent = b(kv.bAutoIndent); n++; }
+    }
+  }
+  savePrefs(); typeSettingsSave(all); applyPrefs(); try { typeApply(); } catch (_) {}
+  return n;
 }
 function typeSetting(t, key) {
   const lang = langOf(t), o = (typeSettingsAll()[lang] || {})[key];
