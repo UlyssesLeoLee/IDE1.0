@@ -835,6 +835,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         ("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            // 带了正文 (未保存的修改 / 无标题文档): 直接按正文分析, 不读盘 (WBS-02 5.10)
+            if let Some(text) = req.get("text").and_then(|v| v.as_str()) {
+                let result = outline::outline_file(file_path, text);
+                send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&result).unwrap_or_default());
+                return;
+            }
             // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug
             let root = state.project_root_get();
             let root_path = match root {

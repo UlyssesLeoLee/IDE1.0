@@ -45,7 +45,12 @@ use tauri::State;
 pub fn outline(
     state: State<'_, crate::ProjectRoot>,
     path: String,
+    text: Option<String>,
 ) -> Result<OutlineResult, String> {
+    // 带了正文 (未保存的修改 / 无标题文档): 直接按正文分析, 不读盘 (WBS-02 5.10)
+    if let Some(t) = text {
+        return Ok(outline_file(&path, &t));
+    }
     let arc: &std::sync::Arc<std::sync::Mutex<Option<PathBuf>>> = &state.0;
     let guard = arc.lock().map_err(|e| e.to_string())?;
     let project = guard.clone().ok_or("project root not set")?;

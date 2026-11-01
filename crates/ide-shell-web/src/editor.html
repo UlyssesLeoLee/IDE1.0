@@ -5879,13 +5879,10 @@ async function renderOutline(host, doc) {
     host.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
     return;
   }
-  if (at.untitled) {                       // 没有路径可交给后端解析
-    host.innerHTML = '<div class="empty-hint">保存后才有大纲</div>';
-    return;
-  }
-  host.innerHTML = '<div class="sb-section">' + escapeHtml(at.path.split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
+  // 正文随请求发给后端分析: 未保存的修改、无标题文档(按名字认语言)也有大纲 (WBS-02 5.10)
+  host.innerHTML = '<div class="sb-section">' + escapeHtml((at.path || at.name || "").split(/[\\\/]/).pop() || "") + "</div><div id='outline-list'>加载中...</div>";
   try {
-    const data = await invoke("outline", { path: at.path });
+    const data = await invoke("outline", { path: at.path || at.name || "", text: at.lines.join(String.fromCharCode(10)) });
     const list = document.getElementById("outline-list");
     list.innerHTML = "";
     if (data && data.entries) {
