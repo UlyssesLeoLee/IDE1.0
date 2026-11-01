@@ -2169,6 +2169,7 @@
       <span class="s-item s-colsel" id="s-colsel" hidden></span>
       <span class="s-item" id="s-sel" data-cmd="select-count-mode" style="cursor:pointer" title="选区字数统计方式 (点击切换: 字符 / 字节 / 行)"></span>
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
+      <span class="s-item" id="s-rec" hidden title="正在录制宏"></span>
       <span class="s-item" id="s-code" title="光标处字符的码位 (Sakura 状态栏的「文字コード」)"></span>
       <span class="s-item" id="s-ovr" title="Ins 键切换 插入/改写">挿入</span>
       <span class="s-item" id="s-enc" data-cmd="charset" style="cursor:pointer">UTF-8</span>
@@ -11546,6 +11547,14 @@ CFG_CMDS["macro-rec-mac"] = async () => {
   setActiveTab(id);
   setTip("已生成 " + r.text.split("\n").filter(Boolean).length + " 条宏语句" + (r.skipped.length ? "; 没有对应 S_ 函数 (未写入): " + r.skipped.join(", ") : "") + " — 保存为 .mac 后可用「运行 Sakura 宏」回放");
 };
+
+// 状态栏的录制指示 (WBS-02 5.7): 键盘宏 / 命令级宏录制中显示 ● REC; 每条命令执行完刷新一次 (事件驱动, 不轮询)
+function syncRecIndicator() {
+  const el = document.getElementById("s-rec"); if (!el) return;
+  const on = !!(MACRO.recording || (typeof REC !== "undefined" && REC.on));
+  el.hidden = !on; if (on) el.textContent = "● REC";
+}
+{ const _dc = dispatchCommand; dispatchCommand = function () { const r = _dc.apply(this, arguments); Promise.resolve(r).finally(syncRecIndicator); return r; }; }
 
 /* ===== 宏登记 (WBS-02 4.3): 20 个槽, 每槽 名字 + 种类 (Sakura .mac / JS) + 代码; 命令 macro-slot-1..20, 可在「键位」里绑键、在首选项「宏」页编辑 =====
    对应 Sakura 的「共通設定 → マクロ」登记表; 存在首选项里 (PREFS.macroSlots)。 */

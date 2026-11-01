@@ -15,3 +15,13 @@ test('状态栏显示光标处字符的码位, 行尾 EOL, 末行行尾 EOF, 位
     await press('End'); assert.equal(await code(), 'EOF');
     assert.match(await page.evaluate(() => document.getElementById('s-pos').title), /共 2 行/);
   }));
+
+test('宏录制中状态栏显示 ● REC, 停止后隐藏', () =>
+  withMocks({ name: 'sf', portOffset: 633 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await page.evaluate(() => dispatchCommand('macro-toggle'));
+    await page.waitForFunction(() => !document.getElementById('s-rec').hidden);
+    assert.match(await page.evaluate(() => document.getElementById('s-rec').textContent), /REC/);
+    await page.evaluate(() => dispatchCommand('macro-toggle'));
+    await page.waitForFunction(() => document.getElementById('s-rec').hidden);
+  }));
