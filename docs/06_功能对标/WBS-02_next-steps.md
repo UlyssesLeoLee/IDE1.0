@@ -157,3 +157,4 @@ REQ (Markdown 增强, 49 条 FR) 另有进度: P0/P1 的工具条、预览、插
 - 3.5 色・フォント: 首选项「色・フォント」页 —— 编辑区字体 / 行高 / 文字色 / 关键字·类型·字符串·注释·数字颜色 (子集, 非 Sakura 全部元素)。
 - 3.7 sakura.ini 导入: 首选项「导入」页 —— `[Common]` 的 nMRUArrNum_MAX / bExitConfirm / bRegularExp / bLoHiCase / bWordOnly 与 `[Types(n)]` 的 nTabSpace / bInsSpace / bAutoIndent (按 szTypeExts 对应语言); 其余键忽略 (子集)。
 - 4.3 宏登记: 首选项「宏」页 20 个槽 (名字/种类 .mac|JS/代码), 命令 macro-slot-1..20 (键位里可绑键) 与 macro-register-doc (当前文档登记进空槽)。
+- 5.6(部分) 文件拖入打开: 桌面版 Rust 拖放事件 -> 授权后在窗口里打开 (真机未验证); 网页版读成带文件名的文档 (>4MB / 二进制不收)。剪贴板格式、编辑区内拖动移动/复制仍未做。

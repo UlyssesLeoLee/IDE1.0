@@ -629,6 +629,18 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        // 文件拖进窗口 (WBS-02 5.6): 用户亲手拖进来的文件视同授权, 交给前端按"打开这些文件"处理 (和单实例转发同一个事件)
+        .on_window_event(|window, event| {
+            use tauri::{Emitter, Manager};
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                let args: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                let app = window.app_handle();
+                let files = grants::launch_files_from(&args, &app.state::<grants::Grants>());
+                if !files.is_empty() {
+                    let _ = app.emit("second-instance", files);
+                }
+            }
+        })
         .manage(ShellState::default())
         .manage(ProjectRoot::default())
         .manage(grants::Grants::default())

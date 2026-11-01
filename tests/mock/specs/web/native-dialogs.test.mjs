@@ -62,3 +62,15 @@ test('单实例转发: second-instance 带来的文件在已运行的窗口里�
     await page.waitForFunction(() => /fwd\.txt$/.test(getActiveTab().path || '') && getActiveTab().cursor.row === 1, null, { timeout: 10000 });
   });
 });
+
+test('拖文件进窗口 (网页版): 读成带文件名的文档; 二进制不收', async () => {
+  await withMocks({ name: 'nd', portOffset: 630 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    await page.evaluate(async () => {
+      await openDroppedFiles([new File(['x1\r\nx2'], 'dropped.txt'), new File(['a\u0000b'], 'bin.dat')]);
+    });
+    const r = await page.evaluate(() => { const t = getActiveTab(); return { name: t.name, lines: t.lines, n: TABS.size }; });
+    assert.equal(r.name, 'dropped.txt'); assert.deepEqual(r.lines, ['x1', 'x2']);
+    assert.match(await page.evaluate(() => document.getElementById('s-tip') ? document.getElementById('s-tip').textContent : ''), /二进制|dropped|./);
+  });
+});

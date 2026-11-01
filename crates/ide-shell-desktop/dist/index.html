@@ -11296,6 +11296,25 @@ function syncTitlebar() {
   invoke("set_window_theme", { dark }).catch(() => { TB_LAST = null; });
 }
 // 命令行 / 文件关联启动时带的文件 (路径[:行[:列]], -Y= -X=): 启动后打开它们 (用户亲手指定的, 项目外也行)
+/* 拖文件进窗口 (WBS-02 5.6): 桌面版由 Rust 的拖放事件给出真实路径 (见 second-instance); 网页版浏览器不给路径, 读成文本开成无标题文档(带文件名)。
+   超过 4MB 或看起来是二进制 (有 NUL) 的不收, 给提示。 */
+document.addEventListener("dragover", (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+document.addEventListener("drop", async (e) => {
+  const files = e.dataTransfer && e.dataTransfer.files; if (!files || !files.length) return;
+  e.preventDefault();
+  if (inTauri) return;                                   // 桌面版走原生拖放事件
+  await openDroppedFiles([...files]);
+});
+async function openDroppedFiles(files) {
+  for (const f of files) {
+    if (f.size > 4 * 1024 * 1024) { setTip(f.name + " 超过 4MB, 没有打开"); continue; }
+    const text = await f.text();
+    if (text.includes("\u0000")) { setTip(f.name + " 像是二进制文件, 没有打开"); continue; }
+    const t = createUntitledDoc();
+    t.name = f.name; t.lines = text.replace(/\r\n?/g, "\n").split("\n"); t.dirty = false; t.untitled = true;
+    renderVim(t); setActiveTab(t.id);
+  }
+}
 async function openLaunchFiles(files) {
   for (const f of files || []) { if (f.line) await gotoPathLine(f.path, f.line, f.col - 1); else await openFile(f.path); }
 }
