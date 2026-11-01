@@ -9531,6 +9531,14 @@ function commonConfig(openTab) {
       ["check", "关闭窗口 / 刷新时, 有未保存修改先提示", () => PREFS.confirmClose !== false, (v) => { PREFS.confirmClose = v; savePrefs(); }],
       ["number", "最近使用的文件: 保留个数", () => PREFS.mruFiles || 20, (v) => { PREFS.mruFiles = num(v, 1, 99, 20); savePrefs(); }, 1, 99],
     ]],
+    ["宏", () => [
+      ["action", "把当前文档(或选中部分)登记到第一个空槽", null, () => { CFG_CMDS["macro-register-doc"](); }],
+      ...macroSlots().flatMap((m, i) => [
+        ["text", "宏 " + (i + 1) + " 名字", () => macroSlots()[i].name, (v) => setMacroSlot(i, { name: String(v).trim() })],
+        ["select", "宏 " + (i + 1) + " 种类", () => macroSlots()[i].kind, (v) => setMacroSlot(i, { kind: v }), ["mac", "js"], ["Sakura .mac", "JavaScript (Editor.*)"]],
+        ["textarea", "宏 " + (i + 1) + " 代码 (命令 macro-slot-" + (i + 1) + ", 可在键位里绑键)", () => macroSlots()[i].code, (v) => setMacroSlot(i, { code: String(v) })],
+      ]),
+    ]],
     ["导入", () => [
       ["action", "导入 sakura.ini… (子集: 最近文件数 / 退出确认 / 查找默认 / 各类型的 Tab 宽度·空格·自动缩进)", null, () => {
         const f = document.createElement("input"); f.type = "file"; f.accept = ".ini,text/plain";
@@ -9570,6 +9578,7 @@ function commonConfig(openTab) {
     const defs = TABS_[idx][1]();
     const rows = defs.map((d, i) => {
       const [kind, label, , , a, b] = d, v = valueOf(idx, i, d);
+      if (kind === "textarea") return '<div class="cfg-row" style="flex-direction:column;align-items:stretch"><label>' + escapeHtml(label) + '</label><textarea data-i="' + i + '" rows="3" spellcheck="false" style="width:100%;font-family:monospace;box-sizing:border-box">' + escapeHtml(v) + "</textarea></div>";
       if (kind === "action") return '<div class="cfg-row"><button class="md-btn" type="button" data-act="' + i + '">' + escapeHtml(label) + "</button></div>";
       if (kind === "color") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="color" data-i="' + i + '" value="' + (v || "#808080") + '"><button class="md-btn" data-clear="' + i + '" type="button">清除</button></div>';
       if (kind === "text" || kind === "password") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="' + kind + '" data-i="' + i + '" value="' + escapeHtml(v) + '" style="width:260px" autocomplete="off"></div>';
@@ -9637,6 +9646,8 @@ function allCommandLabels() {
     const c = r.dataset.cmd; if (!m.has(c)) m.set(c, ((r.querySelector("span") || r).textContent || c).trim());
   });
   for (const b of MD_BTNS) if (b !== "|") m.set(b[1], "Markdown: " + b[2].replace(/\s*\(.*\)$/, ""));
+  macroSlots().forEach((mm, i) => m.set("macro-slot-" + (i + 1), "マクロ " + (i + 1) + (mm.name ? ": " + mm.name : "")));
+  m.set("macro-register-doc", "マクロ: 登记当前文档");
   m.set("md-preview", "Markdown: 源码 / 预览切换");
   for (const c of new Set(Object.values(KEYMAP))) if (!m.has(c)) m.set(c, c);
   return m;
@@ -11507,6 +11518,26 @@ CFG_CMDS["macro-rec-mac"] = async () => {
   TABS.set(id, { id, path: "", name: "录制的宏.mac", untitled: true, cursor: { row: 0, col: 0 }, dirty: true, lines: ("/* 命令级录制 */\n" + r.text).replace(/\n$/, "").split("\n"), undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: "crlf" });
   setActiveTab(id);
   setTip("已生成 " + r.text.split("\n").filter(Boolean).length + " 条宏语句" + (r.skipped.length ? "; 没有对应 S_ 函数 (未写入): " + r.skipped.join(", ") : "") + " — 保存为 .mac 后可用「运行 Sakura 宏」回放");
+};
+
+/* ===== 宏登记 (WBS-02 4.3): 20 个槽, 每槽 名字 + 种类 (Sakura .mac / JS) + 代码; 命令 macro-slot-1..20, 可在「键位」里绑键、在首选项「宏」页编辑 =====
+   对应 Sakura 的「共通設定 → マクロ」登记表; 存在首选项里 (PREFS.macroSlots)。 */
+const MACRO_SLOTS = 20;
+const macroSlots = () => { const a = Array.isArray(PREFS.macroSlots) ? PREFS.macroSlots : []; return Array.from({ length: MACRO_SLOTS }, (_, i) => Object.assign({ name: "", kind: "mac", code: "" }, a[i])); };
+function setMacroSlot(i, patch) { const a = macroSlots(); a[i] = Object.assign(a[i], patch); PREFS.macroSlots = a; savePrefs(); }
+async function runMacroSlot(i) {
+  const m = macroSlots()[i];
+  if (!m.code.trim()) { setTip("宏 " + (i + 1) + " 是空的 (首选项 → 宏 里登记)"); return false; }
+  return m.kind === "js" ? runJsMacroSource(m.code) : runSakuraMacro(m.code);
+}
+for (let i = 0; i < MACRO_SLOTS; i++) CFG_CMDS["macro-slot-" + (i + 1)] = () => runMacroSlot(i);
+CFG_CMDS["macro-register-doc"] = () => {            // 把当前 .mac / .js 文档(或选中部分)登记进第一个空槽
+  const t = getActiveTab(); if (!t) return;
+  const code = selNonEmpty(t) ? selectionText(t) : t.lines.join("\n"); if (!code.trim()) { setTip("没有可登记的内容"); return; }
+  const a = macroSlots(), i = a.findIndex((m) => !m.code.trim());
+  if (i < 0) { setTip("20 个宏槽都满了"); return; }
+  setMacroSlot(i, { name: (t.name || "宏").replace(/\.[^.]+$/, ""), kind: /\.js$/i.test(t.name || "") ? "js" : "mac", code });
+  setTip("已登记到宏 " + (i + 1) + ": " + a[i].name);
 };
 
 /* ===== タイプ別設定 (WBS-02 3.2 / 3.3): 每种文件类型各自的 Tab 宽度 / Tab 插入空格 / 自动缩进 / 行注释符 =====
