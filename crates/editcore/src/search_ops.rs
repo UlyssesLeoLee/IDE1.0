@@ -7,7 +7,7 @@
 //! 语义按真实 Sakura Editor 的宏逐条比对 (tests/sakura-diff 的 SearchNext / SearchPrev / ReplaceAll 用例)。
 
 use crate::word::is_word_char as is_word;
-use regex::{Regex, RegexBuilder};
+use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 
 const MAX_HITS: usize = 5000;
@@ -83,12 +83,58 @@ pub struct SearchRes {
     pub text: Option<String>,
 }
 
+/// 查找引擎: 先用 `regex` (快, 线性时间); 它编译不了的环视 `(?=…) (?<=…)` / 反向引用 `` 才换 `fancy-regex` (回溯, 支持这些)。
+/// 两者对外是同一套"取命中 / 取分组"接口, 上面的查找 / 替换逻辑不用分两份 (WBS-02 2.1)。
+enum Regex {
+    Fast(regex::Regex),
+    Fancy(fancy_regex::Regex),
+}
+
+/// 一次命中的各分组 (按字节区间, 借用原文)
+struct Caps<'a> {
+    hay: &'a str,
+    groups: Vec<Option<(usize, usize)>>,
+}
+
+impl<'a> Caps<'a> {
+    fn get(&self, k: usize) -> Option<&'a str> {
+        self.groups.get(k).copied().flatten().map(|(s, e)| &self.hay[s..e])
+    }
+    fn start0(&self) -> Option<usize> {
+        self.groups.first().copied().flatten().map(|(s, _)| s)
+    }
+}
+
+impl Regex {
+    fn find_at(&self, hay: &str, pos: usize) -> Option<(usize, usize)> {
+        match self {
+            Regex::Fast(r) => r.find_at(hay, pos).map(|m| (m.start(), m.end())),
+            Regex::Fancy(r) => r.find_from_pos(hay, pos).ok().flatten().map(|m| (m.start(), m.end())),
+        }
+    }
+    fn captures_at<'a>(&self, hay: &'a str, pos: usize) -> Option<Caps<'a>> {
+        match self {
+            Regex::Fast(r) => r.captures_at(hay, pos).map(|c| Caps { hay, groups: (0..c.len()).map(|i| c.get(i).map(|m| (m.start(), m.end()))).collect() }),
+            Regex::Fancy(r) => r.captures_from_pos(hay, pos).ok().flatten().map(|c| Caps { hay, groups: (0..c.len()).map(|i| c.get(i).map(|m| (m.start(), m.end()))).collect() }),
+        }
+    }
+}
+
 fn build(req: &SearchReq) -> Result<Regex, String> {
     if req.needle.is_empty() {
         return Err("empty".into());
     }
     let src = if req.use_regex { req.needle.clone() } else { regex::escape(&req.needle) };
-    RegexBuilder::new(&src).case_insensitive(!req.match_case).build().map_err(|e| friendly_error(&e.to_string()))
+    match RegexBuilder::new(&src).case_insensitive(!req.match_case).build() {
+        Ok(r) => Ok(Regex::Fast(r)),
+        Err(e) => {
+            let raw = e.to_string().to_lowercase();
+            if req.use_regex && (raw.contains("look-around") || raw.contains("backreference")) {
+                return fancy_regex::RegexBuilder::new(&src).case_insensitive(!req.match_case).build().map(Regex::Fancy).map_err(|e| friendly_error(&e.to_string()));
+            }
+            Err(friendly_error(&e.to_string()))
+        }
+    }
 }
 
 /// 正则编译错误的中文说明。Sakura 在「正则」打开时同样把模式交给 Perl 风格的正则库: 单独的 `*` 是量词, 前面没有可重复的内容就是语法错误;
@@ -108,7 +154,7 @@ fn friendly_error(raw: &str) -> String {
     } else if r.contains("escape sequence") || r.contains("unrecognized") {
         "含有不支持的转义序列"
     } else if r.contains("look-around") || r.contains("backreference") || r.contains("look-ahead") {
-        "不支持反向引用 / 环视断言"
+        "环视 / 反向引用的写法有误"
     } else {
         "语法错误"
     };
@@ -120,21 +166,21 @@ fn line_matches(re: &Regex, line: &str, whole_word: bool) -> Vec<(usize, usize)>
     let mut out = Vec::new();
     let mut pos = 0usize;
     while pos <= line.len() {
-        let Some(m) = re.find_at(line, pos) else { break };
-        if m.start() == m.end() {
-            pos = next_char(line, m.end());
+        let Some((ms, me)) = re.find_at(line, pos) else { break };
+        if ms == me {
+            pos = next_char(line, me);
             continue;
         }
         if whole_word {
-            let before = line[..m.start()].chars().next_back();
-            let after = line[m.end()..].chars().next();
+            let before = line[..ms].chars().next_back();
+            let after = line[me..].chars().next();
             if before.map(is_word).unwrap_or(false) || after.map(is_word).unwrap_or(false) {
-                pos = next_char(line, m.start());
+                pos = next_char(line, ms);
                 continue;
             }
         }
-        out.push((m.start(), m.end()));
-        pos = m.end();
+        out.push((ms, me));
+        pos = me;
     }
     out
 }
@@ -158,7 +204,7 @@ fn all_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> Vec<Hit> {
 }
 
 /// 正则模式下展开 $1 $& \1 (与前端原实现一致); 普通模式原样返回
-fn expand(caps: &regex::Captures, repl: &str, use_regex: bool) -> String {
+fn expand(caps: &Caps, repl: &str, use_regex: bool) -> String {
     if !use_regex {
         return repl.to_string();
     }
@@ -168,7 +214,7 @@ fn expand(caps: &regex::Captures, repl: &str, use_regex: bool) -> String {
     while i < cs.len() {
         let c = cs[i];
         if c == '$' && i + 1 < cs.len() && cs[i + 1] == '&' {
-            out.push_str(caps.get(0).map(|m| m.as_str()).unwrap_or(""));
+            out.push_str(caps.get(0).unwrap_or(""));
             i += 2;
         } else if c == '$' && i + 1 < cs.len() && cs[i + 1].is_ascii_digit() {
             let mut j = i + 1;
@@ -176,11 +222,11 @@ fn expand(caps: &regex::Captures, repl: &str, use_regex: bool) -> String {
                 j += 1;
             }
             let k: usize = cs[i + 1..j].iter().collect::<String>().parse().unwrap_or(usize::MAX);
-            out.push_str(caps.get(k).map(|m| m.as_str()).unwrap_or(""));
+            out.push_str(caps.get(k).unwrap_or(""));
             i = j;
         } else if c == '\\' && i + 1 < cs.len() && cs[i + 1].is_ascii_digit() {
             let k = cs[i + 1].to_digit(10).unwrap_or(0) as usize;
-            out.push_str(caps.get(k).map(|m| m.as_str()).unwrap_or(""));
+            out.push_str(caps.get(k).unwrap_or(""));
             i += 2;
         } else {
             out.push(c);
@@ -292,7 +338,7 @@ fn op_replace_all(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
             if col < from || col.saturating_add(len) > to {
                 continue;
             }
-            let caps = re.captures_at(line, s).filter(|c| c.get(0).map(|m| m.start() == s).unwrap_or(false));
+            let caps = re.captures_at(line, s).filter(|c| c.start0() == Some(s));
             let rep = match caps {
                 Some(c) => expand(&c, &req.repl, req.use_regex),
                 None => req.repl.clone(),
@@ -317,9 +363,9 @@ fn op_replace_all(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
 /// 选中的整段刚好是一处命中: 返回展开后的替换文字 ($1  之类)
 fn op_match_expand(re: &Regex, req: &SearchReq) -> Option<SearchRes> {
     let seg = &req.seg;
-    let m = re.captures(seg)?;
+    let m = re.captures_at(seg, 0)?;
     let whole = m.get(0)?;
-    if whole.as_str() == seg && whole.start() == 0 {
+    if whole == seg && m.start0() == Some(0) {
         Some(SearchRes { text: Some(expand(&m, &req.repl, req.use_regex)), ..Default::default() })
     } else {
         Some(SearchRes::default())
@@ -469,5 +515,27 @@ mod tests {
         assert_eq!(run(&r).unwrap().text.as_deref(), Some("oo-f"));
         r.seg = "foox".into();
         assert!(run(&r).unwrap().text.is_none());
+    }
+
+    #[test]
+    fn lookaround_and_backreference_use_the_fancy_engine() {
+        // 正向环视: 只替换后面跟着 bar 的 foo
+        let mut r = req("replace_all", "foo(?=bar)", "cr");
+        r.repl = "X".into();
+        let res = run(&r).unwrap();
+        assert_eq!(res.count, 1);
+        assert_eq!(res.rows[0].1, "foo Foo Xbar");
+        // 反向引用: 找连续重复的字母
+        let mut r = req("hits", r"(o)\1", "cr");
+        r.lines = vec!["foo bar fooo".into()];
+        let hits = run(&r).unwrap().hits;
+        assert_eq!(hits.len(), 2, "foo 里的 oo, fooo 里的 oo: {hits:?}");
+        // 后行环视 + $1 展开
+        let mut r = req("replace_all", r"(?<=\()(\w+)", "cr");
+        r.repl = "<$1>".into();
+        let res = run(&r).unwrap();
+        assert!(res.rows.iter().any(|(_, l)| l.contains("(<1>)")), "{:?}", res.rows);
+        // 普通模式不受影响
+        assert!(run(&req("validate", "a(b", "c")).unwrap().error.is_none());
     }
 }
