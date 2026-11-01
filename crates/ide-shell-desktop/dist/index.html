@@ -2169,6 +2169,7 @@
       <span class="s-item s-colsel" id="s-colsel" hidden></span>
       <span class="s-item" id="s-sel" data-cmd="select-count-mode" style="cursor:pointer" title="选区字数统计方式 (点击切换: 字符 / 字节 / 行)"></span>
       <span class="s-item" id="s-pos">Ln 1, Col 1</span>
+      <span class="s-item" id="s-code" title="光标处字符的码位 (Sakura 状态栏的「文字コード」)"></span>
       <span class="s-item" id="s-ovr" title="Ins 键切换 插入/改写">挿入</span>
       <span class="s-item" id="s-enc" data-cmd="charset" style="cursor:pointer">UTF-8</span>
       <span class="s-item" id="s-eol" data-cmd="eol" style="cursor:pointer">CRLF</span>
@@ -7844,6 +7845,13 @@ function updateCaretColumn() {
   const el = document.getElementById("s-pos");
   if (!t || !el) return;
   el.textContent = "Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1);
+  el.title = "共 " + t.lines.length + " 行";
+  // 光标处字符的码位: 行尾显示 EOL, 文件末尾显示 EOF (Sakura 状态栏同名字段)
+  const code = document.getElementById("s-code");
+  if (code) {
+    const line = t.lines[t.cursor.row] || "", cp = [...line][t.cursor.col];
+    code.textContent = cp !== undefined ? "U+" + cp.codePointAt(0).toString(16).toUpperCase().padStart(4, "0") : (t.cursor.row >= t.lines.length - 1 ? "EOF" : "EOL");
+  }
 }
 
 /* ---------- A5. 时间戳 / 日志模式 (插入时自动带时间) ---------- */
