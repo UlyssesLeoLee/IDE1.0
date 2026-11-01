@@ -11296,10 +11296,13 @@ function syncTitlebar() {
   invoke("set_window_theme", { dark }).catch(() => { TB_LAST = null; });
 }
 // 命令行 / 文件关联启动时带的文件 (路径[:行[:列]], -Y= -X=): 启动后打开它们 (用户亲手指定的, 项目外也行)
+async function openLaunchFiles(files) {
+  for (const f of files || []) { if (f.line) await gotoPathLine(f.path, f.line, f.col - 1); else await openFile(f.path); }
+}
 if (inTauri) setTimeout(async () => {
-  try {
-    for (const f of await invoke("launch_files")) { if (f.line) await gotoPathLine(f.path, f.line, f.col - 1); else await openFile(f.path); }
-  } catch (_) {}
+  try { await openLaunchFiles(await invoke("launch_files")); } catch (_) {}
+  // 单实例 (WBS-02 1.8): 第二次启动的命令行文件由 Rust 转发成 second-instance 事件, 在这个已运行的窗口里打开
+  try { const listen = findTauriListen(); if (listen) await listen("second-instance", (e) => { openLaunchFiles(e && e.payload).catch(() => {}); }); } catch (_) {}
 }, 400);
 new MutationObserver(syncTitlebar).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-lum"] });
 syncTitlebar();

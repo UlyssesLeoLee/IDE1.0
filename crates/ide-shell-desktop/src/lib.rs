@@ -618,6 +618,17 @@ pub fn run() {
     // conf + dist mtime 触发. build script 走 frontendDist + cargo:rerun-if-changed.
     let _ = std::env::current_dir();
     tauri::Builder::default()
+        // 单实例 (WBS-02 1.8): 第二次启动不开新进程, 把它的命令行文件交给已运行的窗口并把窗口提到前台
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            use tauri::{Emitter, Manager};
+            let args: Vec<String> = argv.into_iter().skip(1).collect();
+            let files = grants::launch_files_from(&args, &app.state::<grants::Grants>());
+            let _ = app.emit("second-instance", files);
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .manage(ShellState::default())
         .manage(ProjectRoot::default())
         .manage(grants::Grants::default())

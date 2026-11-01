@@ -139,7 +139,12 @@ pub fn parse_launch_args(args: &[String]) -> Vec<LaunchFile> {
 #[tauri::command]
 pub fn launch_files(grants: tauri::State<'_, Grants>) -> Vec<LaunchFile> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    parse_launch_args(&args)
+    launch_files_from(&args, &grants)
+}
+
+/// 解析一份命令行 (不含程序名) 并给其中存在的文件授权; 启动时和"第二个实例转发过来"时共用
+pub fn launch_files_from(args: &[String], grants: &Grants) -> Vec<LaunchFile> {
+    parse_launch_args(args)
         .into_iter()
         .filter_map(|f| grants.grant(std::path::Path::new(&f.path)).map(|p| LaunchFile { path: p.to_string_lossy().into_owned(), ..f }))
         .collect()

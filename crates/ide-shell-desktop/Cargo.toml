@@ -28,6 +28,8 @@ crossterm = { workspace = true }
 rfd = "0.15"
 # Tauri 2 runtime
 tauri = { version = "2", features = [] }
+# 单实例: 第二次启动把命令行交给已运行的窗口 (WBS-02 1.8)
+tauri-plugin-single-instance = "2"
 # Windows 应用主题 (AppsUseLightTheme) — 透明玻璃主题需要按桌面明暗
 # 决定文字反色方向. 纯 safe Rust (windows-registry 不含 unsafe 块),
 # 避开工作区 unsafe_code = "forbid" 约束.

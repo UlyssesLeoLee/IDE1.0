@@ -52,3 +52,13 @@ test('启动参数里的文件 (路径:行:列): 启动后被打开并定位', a
     assert.equal(await page.evaluate(() => getActiveTab().cursor.col), 3);
   });
 });
+
+test('单实例转发: second-instance 带来的文件在已运行的窗口里打开并定位', async () => {
+  await withMocks({ name: 'nd', portOffset: 629, mock: { tauri: true } }, async ({ page, root }) => {
+    fs.writeFileSync(path.join(root, 'fwd.txt'), 'a\nb\nc\n');
+    await open(page, root);
+    await page.locator('#ed-content').click();
+    await page.evaluate(async (p) => { await openLaunchFiles([{ path: p, line: 2, col: 1 }]); }, path.join(root, 'fwd.txt'));
+    await page.waitForFunction(() => /fwd\.txt$/.test(getActiveTab().path || '') && getActiveTab().cursor.row === 1, null, { timeout: 10000 });
+  });
+});
