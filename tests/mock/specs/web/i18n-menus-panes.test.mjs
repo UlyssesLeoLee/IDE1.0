@@ -19,7 +19,7 @@ test('界面语言: 中 → 日 → 英 → 中, 菜单 / 提示 / 对话框都�
     assert.deepEqual(await menuLabels(page), ['File', 'Edit', 'Search', 'View', 'Tools', 'Settings', 'Window', 'Help']);
     await cmd(page, 'common-config'); await page.waitForTimeout(300);
     assert.match(await page.evaluate(() => document.getElementById('md-body').innerText), /Font size|Auto indent/);
-    await page.locator('#md-foot [data-cmd="modal-close"]').click();
+    await page.locator('#md-foot button:nth-child(2)').click();
     assert.equal(await page.evaluate(() => localStorage.getItem('ide10.lang')), 'en');
     await page.reload(); await page.waitForTimeout(800);
     assert.deepEqual(await menuLabels(page), ['File', 'Edit', 'Search', 'View', 'Tools', 'Settings', 'Window', 'Help']);

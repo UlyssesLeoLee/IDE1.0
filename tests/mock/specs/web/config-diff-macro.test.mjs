@@ -9,17 +9,17 @@ import { fill } from '../../lib/harness.mjs';
 const cmd = (page, c) => page.evaluate((x) => dispatchCommand(x), c);
 const openProject = (page, root) => page.evaluate(async (r) => { await fetch('/api/open_project', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: r }) }); }, root);
 
-test('共通設定: TAB 宽度 / 自动缩进 / 新文档换行 立即生效并落盘, 重载后仍在', () =>
+test('共通設定: TAB 宽度 / 自动缩进 / 新文档换行 点 OK 后生效并落盘, 重载后仍在', () =>
   withMocks({ name: 'cd', portOffset: 180 }, async ({ page, snap, press }) => {
     await cmd(page, 'common-config');
     await page.locator('.cfg-tab', { hasText: '常规' }).click();
     await page.locator('input[type=number][data-i="1"]').fill('8'); await page.locator('input[type=number][data-i="1"]').dispatchEvent('change');
-    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('ed-content')).tabSize), '8');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('ed-content')).tabSize), '4', 'OK 之前还是草稿, 没生效');
     await page.locator('.cfg-tab', { hasText: '编辑' }).click();
     await page.locator('input[type=checkbox][data-i="0"]').uncheck();
     await page.locator('.cfg-tab', { hasText: '文件' }).click();
     await page.locator('select[data-i="1"]').selectOption('lf');
-    await page.locator('#md-foot [data-cmd="modal-close"]').click();
+    await page.locator('#md-foot button:first-child').click();      // OK: 草稿才生效
     await fill(page, '  ab');                                      // 关掉自动缩进: 回车不复制缩进
     await press('End'); await press('Enter'); await page.keyboard.type('x');
     assert.deepEqual((await snap()).lines, ['  ab', 'x']);

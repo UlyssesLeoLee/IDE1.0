@@ -315,7 +315,10 @@
     .act-btn { width: 36px; height: 36px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 4px; font-size: var(--fs-icon); }
 
     /* ===== Side Bar ===== */
-    #side-tabs { display: flex; background: var(--bg-chrome); border-bottom: 1px solid var(--border); height: 28px; }
+    #side-tabs { display: none; background: var(--bg-chrome); border-bottom: 1px solid var(--border); height: 28px; }
+    #side-tabs[data-extra="on"] { display: flex; }
+    .side-tab .st-x { margin-left: 6px; opacity: .6; cursor: pointer; }
+    .side-tab .st-x:hover { opacity: 1; }
     .side-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
     #side-body { flex: 1; overflow: auto; padding: 4px; font-size: var(--fs-sm); }
     .side-pane { min-height: 100%; }
@@ -384,6 +387,8 @@
     .bottom-tabs { display: flex; }
     .bottom-tab { padding: 4px 12px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 11px; border-bottom: 2px solid transparent; }
     .bottom-tab.active { color: var(--fg); border-bottom-color: var(--blue); background: var(--bg-edit); }
+    .bottom-tab .st-x { margin-left: 8px; opacity: .6; cursor: pointer; }
+    .bottom-tab .st-x:hover { opacity: 1; }
     .bottom-spacer { flex: 1; }
     .bottom-toggle { background: transparent; border: none; color: var(--fg-muted); cursor: pointer; padding: 4px 8px; font-size: 11px; }
 
@@ -433,11 +438,36 @@
     #viewbars-top { grid-column: 1 / -1; grid-row: 3; min-width: 0; display: none; }
     #funckeys { grid-column: 1 / -1; grid-row: 5; min-width: 0; display: none; }
     #editor-area[class*="split-"] > #viewbars-top, #editor-area[class*="split-"] > #funckeys { display: none !important; }
-    html[data-v-toolbar="on"] #viewbars-top, html[data-v-ruler="on"] #viewbars-top { display: block; }
+    html[data-v-ruler="on"] #viewbars-top { display: block; }
     html[data-v-funckey="on"] #funckeys { display: flex; }
-    #toolbar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
+    /* 快捷按钮 (原 Sakura 工具栏): 像 Office 的快速访问工具栏, 放在最顶端标题栏的右侧, 不再占编辑区上方一整行 */
+    #toolbar { display: none; gap: 1px; padding: 0 4px; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; -webkit-app-region: no-drag; }
     html[data-v-toolbar="on"] #toolbar { display: flex; }
-    #toolbar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
+    #toolbar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 0 6px; height: 24px; min-width: 26px; font-size: 14px; line-height: 1; border-radius: 4px; cursor: pointer; }
+    /* 标题栏 (菜单栏兼): 标题 + 窗口控制钮; 窗口控制钮只在桌面版有意义 */
+    #tb-title { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 8px; font-size: 12px; font-weight: 600; color: var(--fg); user-select: none; }
+    #tb-title .tb-logo { color: var(--blue, #569cd6); font-size: 13px; }
+    #win-ctl { display: none; align-items: stretch; margin-left: 4px; -webkit-app-region: no-drag; }
+    html[data-shell="desktop"] #win-ctl { display: flex; }
+    #win-ctl .wc-btn { width: 46px; border: none; background: transparent; color: var(--fg); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    #win-ctl .wc-btn:hover { background: var(--bg-hover); }
+    #win-ctl .wc-close:hover { background: #e81123; color: #fff; }
+    #menubar .menu-item, #menubar .tb-btn, #menubar #banner { -webkit-app-region: no-drag; }
+    @media (max-width: 1100px) { #menubar > .tb-btn[data-cmd="new-terminal"] { display: none; } }
+    /* ---- 标题栏主题组件: 随主题一起设计 (标题字样 / 图标 / 快捷按钮 / 窗口控制钮) ---- */
+    [data-theme="clear"] #tb-title { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); letter-spacing: .02em; }
+    [data-theme="clear"] #tb-title .tb-logo { background: linear-gradient(135deg, #38bdf8, #c084fc); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 4px rgba(56, 189, 248, .55)); }
+    [data-theme="clear"] #toolbar { margin: 0 6px; padding: 1px 6px; border-radius: 12px; background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.06)); box-shadow: inset 0 1px 0 var(--mat-hi), inset 0 -1px 0 rgba(255,255,255,.12); }
+    [data-theme="clear"] #toolbar .tb-btn { background: transparent !important; border: 1px solid transparent !important; box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; text-shadow: none; border-radius: 8px !important; }
+    [data-theme="clear"] #toolbar .tb-btn:hover { background: rgba(255,255,255,.28) !important; border-color: rgba(255,255,255,.45) !important; }
+    [data-theme="clear"] #win-ctl .wc-btn { width: 40px; margin: 3px 1px; border-radius: 8px; transition: background .15s; }
+    [data-theme="clear"] #win-ctl .wc-btn:hover { background: rgba(255,255,255,.28); }
+    [data-theme="clear"] #win-ctl .wc-close:hover { background: rgba(232, 17, 35, .85); color: #fff; }
+    [data-theme="retro16"] #tb-title { text-transform: uppercase; letter-spacing: .08em; }
+    [data-theme="retro16"] #tb-title .tb-logo { color: #ffff55; }
+    [data-theme="retro16"] #win-ctl .wc-btn { border-left: 1px solid currentColor; border-radius: 0; }
+    [data-theme="hc"] #win-ctl .wc-btn { border: 1px solid currentColor; }
+    [data-theme="light"] #tb-title .tb-logo { color: #0b63c4; }
     #toolbar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
     #toolbar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
     .ext-body { padding: 4px 8px; font-size: var(--fs-sm); overflow: auto; }
@@ -466,7 +496,8 @@
     .chat-user { background: var(--bg-active); align-self: flex-end; max-width: 92%; } .chat-ai { background: var(--bg-raised); }
     .chat-sys, .chat-tool { color: var(--fg-muted); font-size: var(--fs-xs); } .chat-err { color: #f85149; }
     .chat-proposal { background: var(--bg-raised); border: 1px solid var(--border-strong); } .chat-proposal pre { margin: 4px 0; max-height: 200px; overflow: auto; font-size: var(--fs-xs); }
-    #chat-ai { padding: 2px 8px; font-size: var(--fs-xs); } #chat-ai input { display: block; width: 100%; box-sizing: border-box; margin: 2px 0; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
+    #chat-model { display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: var(--fs-xs); border-bottom: 1px solid var(--border); } #chat-model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); } #chat-model select { background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); }
+    #chat-ai-unused input { display: block; width: 100%; box-sizing: border-box; margin: 2px 0; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
     #chat-inputrow { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
     #chat-input { flex: 1; min-width: 0; resize: none; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: var(--fs-sm); }
     /* 查找 / 置換对话框 (Sakura 是非模态的可移动窗口): 不压暗页面、不拦截编辑区的点击, 标题栏可拖动;
@@ -482,7 +513,6 @@
     #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
     html[data-md="on"] #viewbars-top { display: block; }
     html[data-md="on"] #md-bar { display: flex; }
-    html[data-md="on"] #toolbar { display: flex; }   /* Markdown 文档: Sakura 的工具栏一并显示 (快捷键提示在按钮 title 里) */
     #md-bar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
     #md-bar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
     #md-bar .tb-btn.on { background: var(--bg-active); border-color: var(--border-strong); }
@@ -1438,28 +1468,28 @@
        ===================================================================== */
     [data-theme="clear"] {
       /* 高透水晶分区材质: 显著提高透光通透度与双向折射 (6%~18% 晶莹剔透基底) */
-      --mat-frost-a:   color-mix(in srgb, #0e1726 12%, transparent);
-      --mat-frost-b:   color-mix(in srgb, #0e1726 05%, transparent);
-      --mat-acrylic-a: color-mix(in srgb, #0a1832 14%, transparent);
-      --mat-acrylic-b: color-mix(in srgb, #10223e 07%, transparent);
-      --mat-etched:    color-mix(in srgb, #0e1726 06%, transparent);
-      --mat-smoke:     color-mix(in srgb, #050a14 15%, transparent);
-      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #0284c7 40%, #070d18) 18%, transparent);
+      --mat-frost-a:   color-mix(in srgb, #0e1726 07%, transparent);
+      --mat-frost-b:   color-mix(in srgb, #0e1726 03%, transparent);
+      --mat-acrylic-a: color-mix(in srgb, #0a1832 08%, transparent);
+      --mat-acrylic-b: color-mix(in srgb, #10223e 04%, transparent);
+      --mat-etched:    color-mix(in srgb, #0e1726 03%, transparent);
+      --mat-smoke:     color-mix(in srgb, #050a14 09%, transparent);
+      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #0284c7 40%, #070d18) 11%, transparent);
       --mat-hi:        rgba(255, 255, 255, 0.85);
       --mat-lo:        rgba(255, 255, 255, 0.16);
-      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(10, 16, 28, 0.45)) 15%, transparent);
+      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(10, 16, 28, 0.45)) 09%, transparent);
     }
     [data-theme="clear"][data-lum="light"] {
-      --mat-frost-a:   color-mix(in srgb, #ffffff 35%, transparent);
-      --mat-frost-b:   color-mix(in srgb, #f4f8fb 18%, transparent);
-      --mat-acrylic-a: color-mix(in srgb, #eaf2fb 32%, transparent);
-      --mat-acrylic-b: color-mix(in srgb, #dce8f8 18%, transparent);
-      --mat-etched:    color-mix(in srgb, #ffffff 14%, transparent);
-      --mat-smoke:     color-mix(in srgb, #f6f8fb 24%, transparent);
-      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #38bdf8 60%, #ffffff) 28%, transparent);
+      --mat-frost-a:   color-mix(in srgb, #ffffff 21%, transparent);
+      --mat-frost-b:   color-mix(in srgb, #f4f8fb 11%, transparent);
+      --mat-acrylic-a: color-mix(in srgb, #eaf2fb 19%, transparent);
+      --mat-acrylic-b: color-mix(in srgb, #dce8f8 11%, transparent);
+      --mat-etched:    color-mix(in srgb, #ffffff 08%, transparent);
+      --mat-smoke:     color-mix(in srgb, #f6f8fb 14%, transparent);
+      --mat-enamel:    color-mix(in srgb, color-mix(in srgb, #38bdf8 60%, #ffffff) 17%, transparent);
       --mat-hi:        rgba(255, 255, 255, 0.95);
       --mat-lo:        rgba(255, 255, 255, 0.45);
-      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(255, 255, 255, 0.50)) 20%, transparent);
+      --mat-edit:      color-mix(in srgb, var(--glass-tint, rgba(255, 255, 255, 0.50)) 12%, transparent);
     }
     [data-theme="clear"] #ed-content, [data-theme="clear"] #gutter { background: var(--mat-edit); }
 
@@ -2008,7 +2038,8 @@
 <body>
   <div id="app" class="status-active">
     <!-- classic 顶端功能按钮 (8 个主菜单) -->
-    <div id="menubar">
+    <div id="menubar" data-tauri-drag-region>
+      <div id="tb-title" data-tauri-drag-region><span class="tb-logo" data-tauri-drag-region aria-hidden="true">◆</span><span id="tb-name" data-tauri-drag-region>IDE1.0</span></div>
       <div class="menu-item" data-menu="file">
         <button class="mb-btn"></button>
         <div class="menu-dropdown" data-dropdown="file"></div>
@@ -2049,11 +2080,17 @@
         <div class="menu-dropdown" data-dropdown="help"></div>
       </div>
 
-      <span style="flex:1"></span>
+      <span style="flex:1" id="tb-drag" data-tauri-drag-region></span>
+      <div id="toolbar" role="toolbar" aria-label="快捷按钮"></div>
             <button class="tb-btn" data-cmd="new-terminal" data-tip="新建终端 (Ctrl+`)">+ 新建终端</button>
 
           <!-- Kernel Banner -->
           <div id="banner" class="banner"></div>
+      <div id="win-ctl" aria-label="窗口控制">
+        <button type="button" class="wc-btn" data-wc="min" aria-label="最小化" data-tip="最小化"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M1 5.5h8" stroke="currentColor" stroke-width="1"/></svg></button>
+        <button type="button" class="wc-btn" data-wc="max" aria-label="最大化 / 还原" data-tip="最大化 / 还原"><svg viewBox="0 0 10 10" width="10" height="10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>
+        <button type="button" class="wc-btn wc-close" data-wc="close" aria-label="关闭" data-tip="关闭"><svg viewBox="0 0 10 10" width="10" height="10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1"/></svg></button>
+      </div>
           </div><!-- /#menubar -->
 
     <!-- Left Strip: 极简布局下「导航 / 文件」抽屉 (活动栏 + 侧栏) 折叠后留下的常驻把手; 完整布局下 display:none. 状态 / 文案由 syncDrawerUI() 写 -->
@@ -2084,7 +2121,7 @@
     <div id="editor-area">
       <div id="tabs" class="tab-bar"></div>
       <div id="breadcrumb"></div>
-      <div id="viewbars-top"><div id="toolbar"></div><div id="ruler"><div class="rl-in"></div></div></div>
+      <div id="viewbars-top"><div id="ruler"><div class="rl-in"></div></div></div>
       <div id="editor">
         <div id="gutter"></div>
         <div id="ed-content" tabindex="0" contenteditable="plaintext-only" spellcheck="false" autocapitalize="off" autocorrect="off"></div>
@@ -4392,6 +4429,9 @@ function syncDocChrome() {
   if (sf) sf.dataset.dirty = t && t.dirty ? "on" : "off";
   const title = layoutPreset() === "min" && t ? (t.dirty ? "● " : "") + (t.name || "") + " - IDE1.0" : "IDE1.0";
   if (document.title !== title) document.title = title;
+  const tn = document.getElementById("tb-name");     // 自绘标题栏上的标题: 总是带文档名
+  const full = t ? (t.dirty ? "● " : "") + (t.name || "") + " - IDE1.0" : "IDE1.0";
+  if (tn && tn.textContent !== full) tn.textContent = full;
 }
 
 function tabGroupOf(t) { return (t && t.group) || 1; }
@@ -5653,8 +5693,35 @@ let currentSidePane = "explorer";
 function showSidePane(name, opts) {
   if (!(opts && opts.reveal === false)) revealRegion("sideBar");
   currentSidePane = name;
-  document.querySelectorAll(".act-btn").forEach((b) => b.classList.toggle("active", b.dataset.pane === name));
+  if (SIDE_PANES[name]) currentBasePane = name;
+  document.querySelectorAll(".act-btn").forEach((b) => b.classList.toggle("active", b.dataset.pane === currentBasePane));
   renderSideBar();
+}
+/* 额外的、可关闭的侧栏标签 (文档目录等): 只有出现这类标签时才画横向标签条 (基础面板由竖向活动栏切换, 不再重复一套).
+   目前的来源: Markdown 文档 —— 打开 / 切到 md 文档时给它开一个「目录」标签, 关掉后同一文档不再自动开. */
+let currentBasePane = "explorer";
+const SIDE_EXTRA = [];            // [{ key: "doc-outline:<tabId>", tabId }]
+const sideExtraKey = (id) => "doc-outline:" + id;
+function sideExtraTitle(x) { const t = TABS.get(x.tabId); return "目录 · " + (t && t.name ? t.name : "?"); }
+function openDocOutlineTab(tabId, opts) {
+  const t = TABS.get(tabId); if (!t || t.untitled && !t.lines) return;
+  if (!SIDE_EXTRA.some((x) => x.tabId === tabId)) SIDE_EXTRA.push({ key: sideExtraKey(tabId), tabId });
+  if (opts && opts.show) showSidePane(sideExtraKey(tabId)); else renderSideBar();
+}
+function closeSideExtra(key) {
+  const i = SIDE_EXTRA.findIndex((x) => x.key === key); if (i < 0) return;
+  const x = SIDE_EXTRA[i]; SIDE_EXTRA.splice(i, 1);
+  const t = TABS.get(x.tabId); if (t) t.outlineClosed = true;       // 用户关的, 不要再自动开
+  if (currentSidePane === key) { currentSidePane = currentBasePane; document.querySelectorAll(".act-btn").forEach((b) => b.classList.toggle("active", b.dataset.pane === currentBasePane)); }
+  renderSideBar();
+}
+// md 文档被激活时自动给它一个目录标签 (mdRefresh 里调); 文档关了就把它的标签也收掉
+function syncSideExtras() {
+  const before = SIDE_EXTRA.map((x) => x.key).join() + "|" + currentSidePane;
+  for (let i = SIDE_EXTRA.length - 1; i >= 0; i--) if (!TABS.has(SIDE_EXTRA[i].tabId)) { if (currentSidePane === SIDE_EXTRA[i].key) currentSidePane = currentBasePane; SIDE_EXTRA.splice(i, 1); }
+  const t = getActiveTab();
+  if (t && !t.outlineClosed && !t.untitled && /\.(md|markdown)$/i.test(t.path || t.name || "") && !SIDE_EXTRA.some((x) => x.tabId === t.id)) SIDE_EXTRA.push({ key: sideExtraKey(t.id), tabId: t.id });
+  if (SIDE_EXTRA.map((x) => x.key).join() + "|" + currentSidePane !== before) renderSideBar();
 }
 
 // 每个 pane 渲染成 <div id="<name>-pane.active">, 这样 #scm-pane.active /
@@ -5669,11 +5736,15 @@ const SIDE_PANES = {
 
 function renderSideBar() {
   DRAWER.leftStale = false;      // 内容刚画过: 极简布局里左抽屉紧随其后的「展开刷新」不必再拉一遍 list_dir
-  sideTabsEl.innerHTML = Object.keys(SIDE_PANES).map((key) => {
-    const def = SIDE_PANES[key];
-    const cls = key === currentSidePane ? "side-tab active" : "side-tab";
-    return '<button class="' + cls + '" data-side-tab="' + key + '">' + def.title + "</button>";
-  }).join("");
+  const extra = SIDE_EXTRA.find((x) => x.key === currentSidePane);
+  if (!SIDE_PANES[currentSidePane] && !extra) currentSidePane = currentBasePane;
+  sideTabsEl.dataset.extra = SIDE_EXTRA.length ? "on" : "off";
+  // 有额外标签时: 当前基础面板 (点它回基础面板) + 每个额外标签 (带 × 可关)
+  sideTabsEl.innerHTML = SIDE_EXTRA.length
+    ? '<button class="side-tab' + (currentSidePane === currentBasePane ? " active" : "") + '" data-side-tab="' + currentBasePane + '">' + SIDE_PANES[currentBasePane].title + "</button>" +
+      SIDE_EXTRA.map((x) => '<button class="side-tab' + (x.key === currentSidePane ? " active" : "") + '" data-side-tab="' + x.key + '">' + escapeHtml(sideExtraTitle(x)) +
+        '<span class="st-x" data-side-close="' + x.key + '" role="button" aria-label="关闭" title="关闭">×</span></button>').join("")
+    : "";
   // 只渲染当前 pane; 旧契约要求 #<name>-pane.active 存在
   const active = document.createElement("div");
   active.id = currentSidePane + "-pane";
@@ -5681,9 +5752,12 @@ function renderSideBar() {
   sideBody.replaceChildren(active);
   const def = SIDE_PANES[currentSidePane];
   if (def) def.render(active);
+  else if (extra) { active.id = "doc-outline-pane"; renderOutline(active, TABS.get(extra.tabId)); }
 }
 
 if (sideTabsEl) sideTabsEl.addEventListener("click", (e) => {
+  const x = e.target.closest("[data-side-close]");
+  if (x) { e.stopPropagation(); closeSideExtra(x.dataset.sideClose); return; }
   const b = e.target.closest("[data-side-tab]");
   if (b) showSidePane(b.dataset.sideTab);
 })
@@ -5701,7 +5775,14 @@ if (sideBody) sideBody.addEventListener("click", (e) => {
 });;
 
 document.querySelectorAll(".act-btn").forEach((btn) => {
-  btn.addEventListener("click", () => showSidePane(btn.dataset.pane));
+  btn.addEventListener("click", () => {
+    const shown = layoutPreset() === "min" ? leftOpen() : layoutFlag("sideBar") !== false;
+    if (shown && btn.dataset.pane === currentSidePane && btn.classList.contains("active")) {       // 再点一次 = 收起
+      if (layoutPreset() === "min") setLeftDrawer(false); else setLayoutFlag("sideBar", false);
+      return;
+    }
+    showSidePane(btn.dataset.pane);
+  });
 });
 
 async function renderExplorer(host) {
@@ -5791,9 +5872,9 @@ async function renderScm(host) {
   }
 }
 
-async function renderOutline(host) {
+async function renderOutline(host, doc) {
   host = host || sideBody;
-  const at = getActiveTab();
+  const at = doc || getActiveTab();
   if (!at) {
     host.innerHTML = '<div class="empty-hint">打开一个文件查看大纲</div>';
     return;
@@ -5815,7 +5896,7 @@ async function renderOutline(host) {
         row.textContent = (ICON[e.kind] || "•") + " " + e.name;
         row.dataset.kind = e.kind; row.dataset.depth = String(e.depth | 0);
         row.style.paddingLeft = (8 + (e.depth | 0) * 14) + "px";            // 按所在 class / namespace / 标题层级缩进
-        row.addEventListener("click", () => { const tt = getActiveTab(); if (tt) { diffJump(tt, e.line | 0); setTip("跳到 " + ((e.line | 0) + 1) + " 行"); } });
+        row.addEventListener("click", () => { const tt = at; if (tt && TABS.has(tt.id)) { if (getActiveTab() !== tt) setActiveTab(tt.id); diffJump(tt, e.line | 0); setTip("跳到 " + ((e.line | 0) + 1) + " 行"); } });
         list.appendChild(row);
       }
       if (data.entries.length === 0) list.innerHTML = '<div class="empty-hint">无大纲 (' + (data.language || "?") + ")</div>";
@@ -8804,27 +8885,37 @@ if (edContent) {
 /* ===== 视图附件 (Sakura 的 表示 菜单): 工具栏 / 功能键栏 / 标尺 / 空白标记 / 当前行下划线 / 閲覧モード 等 ===== */
 const VIEWOPT = (() => {
   let o = {}; try { o = JSON.parse(localStorage.getItem("ide10.view") || "{}") || {}; } catch (_) {}
-  return Object.assign({ toolbar: false, funckey: false, ruler: false, ws: false, curline: false }, o);
+  const v = Object.assign({ toolbar: true, funckey: false, ruler: false, ws: false, curline: false }, o);
+  // 快捷按钮改成标题栏里的常驻小按钮 (像 Office): 老用户存的 toolbar:false 是"没有那一行"的意思, 迁移一次改成显示
+  try { if (!localStorage.getItem("ide10.view.qab")) { v.toolbar = true; localStorage.setItem("ide10.view.qab", "1"); } } catch (_) {}
+  return v;
 })();
 function saveViewOpt() { try { localStorage.setItem("ide10.view", JSON.stringify(VIEWOPT)); } catch (_) {} }
 
-const TOOLBAR_ITEMS = [
-  ["新規", "new-file"], ["開く", "open-file"], ["保存", "save"], "|",
-  ["切り取り", "cut"], ["コピー", "copy"], ["貼り付け", "paste"], "|",
-  ["元に戻す", "undo"], ["やり直し", "redo"], "|",
-  ["検索", "find"], ["置換", "replace"], ["Grep", "grep"], ["行へ", "goto-line"], "|",
-  ["ブックマーク", "bookmark-toggle"], ["前へ", "bookmark-prev"], ["次へ", "bookmark-next"],
+const TOOLBAR_ITEMS = [          // [Sakura 的名字 (悬停提示), 命令, 图标]
+  ["新規", "new-file", "🗎"], ["開く", "open-file", "📂"], ["保存", "save", "💾"], "|",
+  ["切り取り", "cut", "✂"], ["コピー", "copy", "⧉"], ["貼り付け", "paste", "📋"], "|",
+  ["元に戻す", "undo", "↶"], ["やり直し", "redo", "↷"], "|",
+  ["検索", "find", "🔍"], ["置換", "replace", "⇄"], ["Grep", "grep", "≣"], ["行へ", "goto-line", "↴"], "|",
+  ["ブックマーク", "bookmark-toggle", "★"], ["前へ", "bookmark-prev", "▲"], ["次へ", "bookmark-next", "▼"],
 ];
 const FUNCKEYS = [
   ["F1", "帮助", "help"], ["F2", "ブックマーク次", "bookmark-next"], ["F3", "次を検索", "find-next"], ["F4", "", ""],
   ["F5", "再描画", "redraw"], ["F6", "", ""], ["F7", "切り取り", "cut"], ["F8", "コピー", "copy"],
   ["F9", "貼り付け", "paste"], ["F10", "", ""], ["F11", "", ""], ["F12", "タグジャンプ", "tag-jump"],
 ];
+const qabHidden = () => (Array.isArray(PREFS.qabHidden) ? PREFS.qabHidden : []);
+function setQabHidden(cmd, hide) {
+  const l = qabHidden().filter((c) => c !== cmd); if (hide) l.push(cmd);
+  PREFS.qabHidden = l; savePrefs(); const tb = document.getElementById("toolbar"); if (tb) { tb.replaceChildren(); buildViewBars(); }
+}
 function buildViewBars() {
   const tb = document.getElementById("toolbar"), fk = document.getElementById("funckeys");
   if (tb && !tb.firstChild) {
-    tb.innerHTML = TOOLBAR_ITEMS.map((it) => it === "|" ? '<span class="tb-sep"></span>' :
-      '<button class="tb-btn" data-cmd="' + it[1] + '" title="' + it[1] + '">' + it[0] + "</button>").join("");
+    const hid = qabHidden();      // 首选项「快捷按钮」页里取消勾选的按钮不画; 相邻的分隔线合并
+    const items = TOOLBAR_ITEMS.filter((it) => it === "|" || !hid.includes(it[1])).filter((it, i, a) => !(it === "|" && (i === 0 || a[i - 1] === "|" || i === a.length - 1)));
+    tb.innerHTML = items.map((it) => it === "|" ? '<span class="tb-sep"></span>' :
+      '<button class="tb-btn" data-cmd="' + it[1] + '" data-label="' + it[0] + '" title="' + it[0] + '" aria-label="' + it[0] + '">' + it[2] + "</button>").join("");
   }
   if (fk && !fk.firstChild) {
     fk.innerHTML = FUNCKEYS.map((k) => '<button class="fk"' + (k[2] ? ' data-cmd="' + k[2] + '"' : " disabled") + "><b>" + k[0] + "</b>" + k[1] + "</button>").join("");
@@ -9234,9 +9325,21 @@ function isearchBar() {
   if (ISEARCH.bar) return ISEARCH.bar;
   const bar = document.createElement("div");
   bar.id = "isearch"; bar.hidden = true;
-  bar.style.cssText = "position:fixed;left:0;right:0;bottom:var(--h-status,22px);z-index:60;display:flex;gap:8px;align-items:center;padding:3px 8px;background:var(--bg-bar,#252526);border-top:1px solid var(--border,#555);color:var(--fg,#ddd);font-size:12px";
+  bar.style.cssText = "display:flex;gap:8px;align-items:center;padding:6px 10px;color:var(--fg);font-size:12px";
   bar.innerHTML = '<span id="is-label"></span><input id="is-input" style="flex:1;max-width:420px;padding:2px 6px;background:#3c3c3c;color:#fff;border:1px solid #666" /><span id="is-count" style="opacity:.8"></span><span style="opacity:.6">Enter/↓ 次へ · Shift+Enter/↑ 前へ · Esc 取消</span>';
-  document.body.appendChild(bar);
+  // 终端栏里的标签页 + 页面: 标签带 × (再点一次标签 / × 都能关掉)
+  const pane = document.createElement("div");
+  pane.id = "isearch-pane"; pane.className = "bottom-pane";
+  pane.appendChild(bar);
+  document.getElementById("bottom-body").appendChild(pane);
+  const tab = document.createElement("button");
+  tab.className = "bottom-tab"; tab.id = "isearch-tab"; tab.dataset.pane = "isearch-pane"; tab.hidden = true;
+  tab.innerHTML = '<span>インクリメンタルサーチ</span><span class="st-x" role="button" aria-label="关闭" title="关闭">×</span>';
+  tab.addEventListener("click", (e) => {
+    if (e.target.closest(".st-x") || tab.classList.contains("active")) { isearchClose(true); return; }     // × 或再点一次当前标签 = 关
+    selectBottomTab("isearch-pane");
+  });
+  document.querySelector("#bottom-head .bottom-tabs").appendChild(tab);
   const inp = bar.querySelector("#is-input");
   inp.addEventListener("input", () => isearchRun(false));
   inp.addEventListener("keydown", (e) => {
@@ -9245,7 +9348,8 @@ function isearchBar() {
     else if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); ISEARCH.dir = (e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey)) ? -1 : 1; isearchRun(true); }
     else if (e.key === "F3") { e.preventDefault(); ISEARCH.dir = e.shiftKey ? -1 : 1; isearchRun(true); }
   });
-  inp.addEventListener("blur", () => setTimeout(() => { if (!bar.contains(document.activeElement)) isearchClose(false); }, 0));
+  inp.addEventListener("blur", () => setTimeout(() => { if (!bar.contains(document.activeElement) && !ISEARCH.tabClick) isearchClose(false); }, 0));
+  tab.addEventListener("mousedown", () => { ISEARCH.tabClick = true; setTimeout(() => { ISEARCH.tabClick = false; }, 300); });
   ISEARCH.bar = bar;
   return bar;
 }
@@ -9255,12 +9359,22 @@ function isearchOpen(dir, regex, migemo) {
   ISEARCH.dir = dir; ISEARCH.regex = regex; ISEARCH.migemo = !!migemo; ISEARCH.start = { row: t.cursor.row, col: t.cursor.col };
   bar.querySelector("#is-label").textContent = (migemo ? "MIGEMO " : regex ? "正規表現 " : "") + (dir > 0 ? "前方" : "後方") + "インクリメンタルサーチ:";
   bar.querySelector("#is-count").textContent = "";
+  if (bar.hidden) {                     // 记住打开前的底部面板状态, 关的时候原样还回去
+    const act = document.querySelector(".bottom-pane.active"), bp = document.getElementById("bottom-panel");
+    ISEARCH.prev = { pane: act ? act.id : "terminal-pane", wasOpen: layoutFlag("bottomPanel") !== false && bp.getAttribute("data-collapsed") !== "true" };
+  }
   bar.hidden = false;
+  document.getElementById("isearch-tab").hidden = false;
+  switchBottomPane("isearch-pane");       // 亮出底部面板并切到这个标签
   const inp = bar.querySelector("#is-input"); inp.value = ""; inp.focus();
 }
 function isearchClose(restore) {
   const bar = ISEARCH.bar; if (!bar || bar.hidden) return;
   bar.hidden = true;
+  document.getElementById("isearch-tab").hidden = true;
+  const prev = ISEARCH.prev || { pane: "terminal-pane", wasOpen: true };
+  switchBottomPane(prev.pane === "isearch-pane" ? "terminal-pane" : prev.pane);
+  if (!prev.wasOpen) { try { toggleBottomPanel(); } catch (_) {} }     // 原来是折叠的就折回去
   const t = getActiveTab();
   if (restore && t && ISEARCH.start) { t.cursor = Object.assign({}, ISEARCH.start); t.sel = null; renderVim(t); }
   FIND_STATE.useRegex = false;
@@ -9375,20 +9489,43 @@ function applyPrefs() {
 }
 applyPrefs();
 
-function commonConfig() {
+/* 共通設定 (WBS-02 3.4): 多页对话框, 改动先放在草稿里, OK 才生效、取消全部丢弃 (以前每改一项立刻生效、没有取消)。
+   每一项 = [种类, 标签, 取当前值, 应用函数, 参数…]; 草稿 pending 以 "页.项" 为键。 */
+function commonConfig(openTab) {
+  const num = (v, lo, hi, d) => Math.max(lo, Math.min(hi, Number.isFinite(+v) ? Math.trunc(+v) : d));
   const TABS_ = [
     ["全般", () => [
-      ["number", "字号 (px)", () => VIEW_STATE.fontSize || 14, (v) => setFontSize(Math.max(8, Math.min(40, v | 0))), 8, 40],
-      ["number", "TAB 宽度", () => PREFS.tabWidth, (v) => { PREFS.tabWidth = Math.max(1, Math.min(16, v | 0)); savePrefs(); applyPrefs(); }, 1, 16],
+      ["number", "字号 (px)", () => VIEW_STATE.fontSize || 14, (v) => setFontSize(num(v, 8, 40, 14)), 8, 40],
+      ["number", "TAB 宽度 (没有类型别设置时)", () => PREFS.tabWidth, (v) => { PREFS.tabWidth = num(v, 1, 16, 4); savePrefs(); TYPE_TAB_APPLIED = null; applyPrefs(); typeApply(); }, 1, 16],
     ]],
     ["編集", () => [
       ["check", "自动缩进", () => PREFS.autoIndent, (v) => { PREFS.autoIndent = v; savePrefs(); }],
       ["check", "在 { [ ( 后多缩进一级", () => PREFS.smartIndent, (v) => { PREFS.smartIndent = v; savePrefs(); }],
+      ["check", "Tab 键插入空格 (补到下一个 Tab 位; 类型别设置可单独改)", () => !!PREFS.insertSpaces, (v) => { PREFS.insertSpaces = v; savePrefs(); }],
+    ]],
+    ["検索", () => [
+      ["check", "默认区分大小写", () => !!PREFS.findCase, (v) => { PREFS.findCase = v; FIND_STATE.matchCase = v; savePrefs(); }],
+      ["check", "默认正则表达式", () => !!PREFS.findRegex, (v) => { PREFS.findRegex = v; FIND_STATE.useRegex = v; savePrefs(); }],
+      ["check", "默认单词单位", () => !!PREFS.findWord, (v) => { PREFS.findWord = v; FIND_STATE.wholeWord = v; savePrefs(); }],
+      ["check", "默认先頭(末尾)から再検索 (到头后折返)", () => PREFS.findWrap !== false, (v) => { PREFS.findWrap = v; FIND_STATE.wrap = v; savePrefs(); }],
     ]],
     ["ファイル", () => [
       ["select", "新文档的编码", () => PREFS.defaultEncoding, (v) => { PREFS.defaultEncoding = v; savePrefs(); }, CHARSETS],
       ["select", "新文档的换行", () => PREFS.defaultEol, (v) => { PREFS.defaultEol = v; savePrefs(); }, ["crlf", "lf", "cr"]],
       ["check", "保存时备份旧文件 (.sakura-backup/, 保留最近 5 代)", () => !!PREFS.saveBackup, (v) => { PREFS.saveBackup = v; savePrefs(); }],
+      ["check", "窗口获得焦点时检查文件是否被外部修改", () => PREFS.checkExternal !== false, (v) => { PREFS.checkExternal = v; savePrefs(); }],
+      ["check", "关闭窗口 / 刷新时, 有未保存修改先提示", () => PREFS.confirmClose !== false, (v) => { PREFS.confirmClose = v; savePrefs(); }],
+      ["number", "最近使用的文件: 保留个数", () => PREFS.mruFiles || 20, (v) => { PREFS.mruFiles = num(v, 1, 99, 20); savePrefs(); }, 1, 99],
+    ]],
+    ["AI", () => [
+      ["text", "接口地址 (OpenAI 兼容)", () => aiConfig().baseUrl, (v) => aiSaveConfig(Object.assign(aiConfig(), { baseUrl: String(v).trim() }))],
+      ["text", "模型", () => aiConfig().model, (v) => aiSaveConfig(Object.assign(aiConfig(), { model: String(v).trim() }))],
+      ["password", "API Key (只保存在本机)", () => aiConfig().key, (v) => aiSaveConfig(Object.assign(aiConfig(), { key: String(v) }))],
+      ["select", "effort (推理强度; 聊天窗里也能改)", () => aiConfig().effort || "", (v) => { aiSaveConfig(Object.assign(aiConfig(), { effort: v })); try { chatModelLabel(); } catch (_) {} }, AI_EFFORTS.map((e) => e[0]), AI_EFFORTS.map((e) => e[1])],
+    ]],
+    ["快捷按钮", () => [
+      ["check", "在标题栏显示快捷按钮", () => VIEWOPT.toolbar, (v) => { if (v !== VIEWOPT.toolbar) VIEW_CMDS["toggle-toolbar"](); }],
+      ...TOOLBAR_ITEMS.filter((it) => it !== "|").map((it) => ["check", it[2] + "  " + it[0] + " (" + it[1] + ")", () => !qabHidden().includes(it[1]), (v) => setQabHidden(it[1], !v)]),
     ]],
     ["表示", () => [
       ["check", "自动换行", () => VIEW_STATE.wordWrap, (v) => { if (v !== VIEW_STATE.wordWrap) dispatchCommand("toggle-word-wrap"); }],
@@ -9400,23 +9537,34 @@ function commonConfig() {
       ["check", "当前行下划线", () => VIEWOPT.curline, (v) => { if (v !== VIEWOPT.curline) VIEW_CMDS["toggle-curline"](); }],
     ]],
   ];
+  const pending = new Map();                       // "页.项" -> 草稿值
+  const valueOf = (idx, i, d) => (pending.has(idx + "." + i) ? pending.get(idx + "." + i) : d[2]());
   const render = (idx) => {
-    const rows = TABS_[idx][1]().map((r, i) => {
-      const [kind, label, get, , a, b] = r;
-      if (kind === "check") return '<div class="cfg-row"><label><input type="checkbox" data-i="' + i + '"' + (get() ? " checked" : "") + "> " + escapeHtml(label) + "</label></div>";
-      if (kind === "number") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="number" data-i="' + i + '" min="' + a + '" max="' + b + '" value="' + get() + '" style="width:80px"></div>';
-      return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><select data-i="' + i + '">' + a.map((o) => '<option' + (o === get() ? " selected" : "") + ">" + escapeHtml(o) + "</option>").join("") + "</select></div>";
-    }).join("");
-    mdBody.innerHTML = '<div class="cfg-tabs">' + TABS_.map((t, i) => '<button class="cfg-tab' + (i === idx ? " active" : "") + '" data-tab="' + i + '">' + t[0] + "</button>").join("") + "</div>" + rows;
     const defs = TABS_[idx][1]();
+    const rows = defs.map((d, i) => {
+      const [kind, label, , , a, b] = d, v = valueOf(idx, i, d);
+      if (kind === "text" || kind === "password") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="' + kind + '" data-i="' + i + '" value="' + escapeHtml(v) + '" style="width:260px" autocomplete="off"></div>';
+      if (kind === "check") return '<div class="cfg-row"><label><input type="checkbox" data-i="' + i + '"' + (v ? " checked" : "") + "> " + escapeHtml(label) + "</label></div>";
+      if (kind === "number") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="number" data-i="' + i + '" min="' + a + '" max="' + b + '" value="' + escapeHtml(v) + '" style="width:80px"></div>';
+      return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><select data-i="' + i + '">' + a.map((o, k) => '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" + escapeHtml(b ? b[k] : o) + "</option>").join("") + "</select></div>";
+    }).join("");
+    mdBody.innerHTML = '<div class="cfg-tabs">' + TABS_.map((t, k) => '<button class="cfg-tab' + (k === idx ? " active" : "") + '" data-tab="' + k + '">' + t[0] + "</button>").join("") + "</div>" + rows;
     mdBody.querySelectorAll(".cfg-tab").forEach((b) => b.addEventListener("click", () => render(+b.dataset.tab)));
     mdBody.querySelectorAll("[data-i]").forEach((el) => {
       const d = defs[+el.dataset.i];
-      el.addEventListener("change", () => d[3](d[0] === "check" ? el.checked : d[0] === "number" ? +el.value : el.value));
+      el.addEventListener("change", () => pending.set(idx + "." + el.dataset.i, d[0] === "check" ? el.checked : d[0] === "number" ? +el.value : el.value));
     });
   };
-  openModal({ title: "共通設定", bodyHTML: "", buttons: [{ label: "关闭", cmd: "modal-close" }] });
-  render(0);
+  openModal({ title: "共通設定", bodyHTML: "", buttons: [] });
+  mdFoot.replaceChildren(
+    uiBtn("OK", () => {
+      for (const [key, v] of pending) { const [idx, i] = key.split(".").map(Number); try { TABS_[idx][1]()[i][3](v); } catch (_) {} }
+      closeModal(); setTip(pending.size ? "共通設定を保存しました" : "変更なし");
+    }, true),
+    uiBtn("取消", () => closeModal()),
+  );
+  const first = openTab ? TABS_.findIndex((t) => t[0] === openTab) : 0;
+  render(first < 0 ? 0 : first);
 }
 
 // ---- キー割り当て ----
@@ -9624,7 +9772,7 @@ function recentFiles() { try { return JSON.parse(localStorage.getItem(RECENT_FIL
 function pushRecentFile(path) {
   if (!path) return;
   const l = recentFiles().filter((x) => x !== path); l.unshift(path);
-  try { localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(l.slice(0, 20))); } catch (_) {}
+  try { localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(l.slice(0, Math.max(1, +PREFS.mruFiles || 20)))); } catch (_) {}
 }
 {
   const _openFile = openFile;
@@ -10075,7 +10223,7 @@ Object.assign(CFG_CMDS, {
     const dirty = [...TABS.values()].filter((t) => t.dirty).length;
     if (dirty && !(await uiConfirm(dirty + " 个文档有未保存修改, 仍要全部退出吗?", { title: "退出", ok: "退出" }))) return;
     [...TABS.keys()].forEach(closeTab);
-    if (inTauri && window.__TAURI_INTERNALS__) { window.__TAURI_INTERNALS__.invoke("plugin:window|close", { label: "main" }).catch(() => window.close()); }
+    if (inTauri && window.__TAURI_INTERNALS__) { closeWindow(); }
     else { try { window.close(); } catch (_) {} setTip("已关闭全部文档 (浏览器标签页请手动关闭)"); }
   },
   "select-count-mode": () => { SELCOUNT.mode = SELCOUNT.mode === "chars" ? "bytes" : SELCOUNT.mode === "bytes" ? "lines" : "chars"; updateSelCount(); setTip("选区统计: " + ({ chars: "字符数", bytes: "字节数 (UTF-8)", lines: "行数" })[SELCOUNT.mode]); },
@@ -10850,7 +10998,10 @@ const plugApi = (req) => invoke("plugins", req);
 
 // ----- AI 设置 (用户在首选项填的 Key; 只在用户触发时随请求发往用户自己配置的端点, 不写日志、不给插件) -----
 const AI_KEY = "ide10.ai";
-function aiConfig() { try { return Object.assign({ baseUrl: "https://api.openai.com/v1", model: "", key: "" }, JSON.parse(localStorage.getItem(AI_KEY) || "{}")); } catch (_) { return { baseUrl: "", model: "", key: "" }; } }
+const AI_EFFORTS = [["", "默认 (不指定)"], ["minimal", "minimal 最省"], ["low", "low 低"], ["medium", "medium 中"], ["high", "high 高"]];
+function aiConfig() { try { return Object.assign({ baseUrl: "https://api.openai.com/v1", model: "", key: "", effort: "" }, JSON.parse(localStorage.getItem(AI_KEY) || "{}")); } catch (_) { return { baseUrl: "", model: "", key: "", effort: "" }; } }
+// 请求体里的 effort: 只有选了才带 reasoning_effort (OpenAI 兼容端点的约定; 不选 = 让模型用自己的默认)
+function aiEffortField(c) { return c.effort ? { reasoning_effort: c.effort } : {}; }
 function aiSaveConfig(c) { try { localStorage.setItem(AI_KEY, JSON.stringify(c)); } catch (_) {} }
 function aiConfigured() { const c = aiConfig(); return !!(c.key && c.model && c.baseUrl); }
 async function aiAsk(prompt) {
@@ -10858,7 +11009,7 @@ async function aiAsk(prompt) {
   if (!aiConfigured()) throw new Error("还没有配置 AI: 请先填写接口地址 / 模型 / Key");
   const r = await fetch(c.baseUrl.replace(/\/+$/, "") + "/chat/completions", {
     method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + c.key },
-    body: JSON.stringify({ model: c.model, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify(Object.assign({ model: c.model, messages: [{ role: "user", content: prompt }] }, aiEffortField(c))),
   });
   if (!r.ok) throw new Error("AI 请求失败 " + r.status);
   const j = await r.json();
@@ -11018,7 +11169,7 @@ function drawExtensions() {
   body.innerHTML = rows +
     '<div class="ext-actions"><button class="tb-btn" id="ext-check">检查更新</button></div><div id="ext-upd"></div>' +
     '<div class="sb-section">从 GitHub 安装</div><div class="ext-install"><input id="ext-repo" placeholder="owner/repo 或仓库地址" spellcheck="false"><button class="tb-btn" id="ext-inspect">检查最新 Release</button></div><div id="ext-report"></div>' +
-    '<details class="ext-ai"><summary>AI 设置 (用于"让 AI 给出改善方案")</summary><input id="ai-base" placeholder="接口地址" value="' + escapeHtml(ai.baseUrl) + '"><input id="ai-model" placeholder="模型" value="' + escapeHtml(ai.model) + '"><input id="ai-key" type="password" placeholder="API Key (只保存在本机)" value="' + escapeHtml(ai.key) + '"><button class="tb-btn" id="ai-save">保存</button></details>';
+    '<div class="ext-ai"><button class="tb-btn" id="ai-open-prefs">AI 设置 (用于"让 AI 给出改善方案") → 在首选项里设置</button></div>';
 }
 async function extInspect(repo) {
   const out = document.getElementById("ext-report"); out.textContent = "正在读取最新 Release…";
@@ -11046,7 +11197,7 @@ document.addEventListener("click", async (e) => {
     }
     if (t.id === "ext-ai-plan") {
       const out = document.getElementById("ext-ai-out");
-      if (!aiConfigured()) { out.textContent = "还没有配置 AI: 展开下方「AI 设置」填写接口地址 / 模型 / Key 后再试。"; return; }
+      if (!aiConfigured()) { out.textContent = "还没有配置 AI: 到「首选项 → AI 模型」填写接口地址 / 模型 / Key 后再试。"; return; }
       out.textContent = "正在请求你配置的大模型…";
       const { prompt } = await plugApi({ op: "mismatch_prompt", repo: t.dataset.repo });
       out.textContent = await aiAsk(prompt);   // 原样显示, 不自动执行任何建议
@@ -11058,7 +11209,7 @@ document.addEventListener("click", async (e) => {
       upd.innerHTML = updates.map((u) => "<div>" + escapeHtml(u.id) + ": " + (u.error ? '<span class="ext-err">' + escapeHtml(u.error) + "</span>" : (u.update_available ? "有新版本 " + escapeHtml(u.latest) : (u.ok ? "已是最新" : "最新 Release 与本编辑器不匹配 (" + u.problems.map((p) => escapeHtml(p.code)).join(", ") + ")"))) + "</div>").join("") || "没有可检查的插件";
       return;
     }
-    if (t.id === "ai-save") { aiSaveConfig({ baseUrl: document.getElementById("ai-base").value.trim(), model: document.getElementById("ai-model").value.trim(), key: document.getElementById("ai-key").value }); setTip("AI 设置已保存"); return; }
+    if (t.id === "ai-open-prefs") { commonConfig("AI"); return; }
     if (t.dataset.extRemove) { await plugApi({ op: "remove", id: t.dataset.extRemove }); await plugRefresh(); drawExtensions(); return; }
   } catch (err) { setTip("扩展操作失败: " + err.message); const o = document.getElementById("ext-report"); if (o) o.insertAdjacentHTML("beforeend", '<div class="ext-err">' + escapeHtml(err.message) + "</div>"); }
 });
@@ -11081,6 +11232,19 @@ function wantDarkChrome() {
   if (th === "clear") return r.getAttribute("data-lum") !== "light";
   return true;   // dark / hc / retro16 都是深底
 }
+/* 自绘标题栏的窗口控制钮: 桌面版去掉了系统标题栏 (tauri.conf decorations:false), 最小化 / 最大化 / 关闭由这里发给 Tauri。
+   关闭 = 先走和系统关闭一样的"有未保存修改先提示"流程 (onCloseRequested), 再由处理函数销毁窗口。 */
+async function closeWindow() {
+  try { await winCall("close"); } catch (_) { try { await winCall("destroy"); } catch (e) { window.close(); } }
+}
+document.getElementById("win-ctl").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-wc]"); if (!b || !inTauri) return;
+  try {
+    if (b.dataset.wc === "min") await winCall("minimize");
+    else if (b.dataset.wc === "max") await winCall("toggle_maximize");
+    else await closeWindow();
+  } catch (err) { setTip("窗口操作失败: " + ((err && err.message) || err)); }
+});
 let TB_LAST = null;
 function syncTitlebar() {
   if (!inTauri || !window.__TAURI_INTERNALS__) return;
@@ -11103,7 +11267,7 @@ syncTitlebar();
 const dirtyDocCount = () => [...TABS.values()].filter((t) => t.dirty && !t.grep).length;
 let CLOSE_CONFIRMED = false;
 window.addEventListener("beforeunload", (e) => {
-  if (CLOSE_CONFIRMED || inTauri || !dirtyDocCount()) return;
+  if (CLOSE_CONFIRMED || inTauri || PREFS.confirmClose === false || !dirtyDocCount()) return;
   e.preventDefault(); e.returnValue = "";
 });
 if (inTauri) {
@@ -11111,12 +11275,18 @@ if (inTauri) {
     const w = window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow && window.__TAURI__.window.getCurrentWindow();
     if (w && w.onCloseRequested) w.onCloseRequested(async (ev) => {
       const n = dirtyDocCount();
-      if (!n || CLOSE_CONFIRMED) return;
+      if (!n || CLOSE_CONFIRMED || PREFS.confirmClose === false) return;
       ev.preventDefault();
-      if (await uiConfirm(n + " 个文档有未保存修改, 关闭窗口会丢失. 继续?", { title: "关闭窗口", ok: "不保存并关闭", cancel: "取消" })) { CLOSE_CONFIRMED = true; w.close(); }
+      if (await uiConfirm(n + " 个文档有未保存修改, 关闭窗口会丢失. 继续?", { title: "关闭窗口", ok: "不保存并关闭", cancel: "取消" })) { CLOSE_CONFIRMED = true; try { await w.destroy(); } catch (_) { w.close(); } }
     });
   } catch (_) {}
 }
+
+// 共通設定「検索」页的默认值 -> 查找状态 (启动时套一次)
+if (PREFS.findCase !== undefined) FIND_STATE.matchCase = !!PREFS.findCase;
+if (PREFS.findRegex !== undefined) FIND_STATE.useRegex = !!PREFS.findRegex;
+if (PREFS.findWord !== undefined) FIND_STATE.wholeWord = !!PREFS.findWord;
+if (PREFS.findWrap !== undefined) FIND_STATE.wrap = PREFS.findWrap !== false;
 
 /* ===== 保存与外部改动 (document_io / auto_backup 的前端接线) =====
    - 保存走原子写 (后端先写临时文件再换名, 断电 / 中途失败原文件完好); 首选项勾选"保存时备份旧文件"则先备份到 .sakura-backup/ (保留最近几代)。
@@ -11145,7 +11315,7 @@ async function stampTab(t) {
 let EXT_CHECK_AT = -1e9;
 async function checkExternalChange() {
   const t = getActiveTab();
-  if (!t || t.untitled || !t.path || !t.stamp || performance.now() - EXT_CHECK_AT < 1500) return;
+  if (PREFS.checkExternal === false || !t || t.untitled || !t.path || !t.stamp || performance.now() - EXT_CHECK_AT < 1500) return;
   EXT_CHECK_AT = performance.now();
   let cur; try { cur = await invoke("stat_file", { path: stripVerbatim(t.path) }); } catch (_) { return; }
   const was = t.stamp;
@@ -11318,7 +11488,7 @@ function typeSettingDefault(lang, key) {
   switch (key) {
     case "tabWidth": return PREFS.tabWidth;
     case "autoIndent": return !!PREFS.autoIndent;
-    case "insertSpaces": return false;
+    case "insertSpaces": return !!PREFS.insertSpaces;
     case "lineComment": return (Syntax.LEXERS[lang] && Syntax.LEXERS[lang].lineComment) || "";
     default: return undefined;
   }
@@ -11581,6 +11751,40 @@ function toggleMdPreview() {
   mdRefresh();
   if (!t.mdPreview) edContent.focus({ preventScroll: true });
 }
+/* 自动反色 (考虑遮挡): 文字永远按它正下方真实叠出来的底色选黑 / 白, 不只看桌面明暗。
+   从元素往上叠每一层不透明度 > 0 的背景色, 最底下垫上桌面色 (data-lum 决定), 得到文字实际所在的底色;
+   文字色和它的对比度不够 (< 4.5) 就改成黑或白 —— 解决 md 里代码块 / 表头 / 引用 / 标注框 等自带底色的块上黑底黑字、白底白字。 */
+function _rgba(c) { const m = /rgba?\(([^)]+)\)/.exec(c || ""); if (!m) return [0, 0, 0, 0]; const v = m[1].split(/[ ,\/]+/).filter(Boolean).map(parseFloat); return [v[0] || 0, v[1] || 0, v[2] || 0, v.length > 3 ? v[3] : 1]; }
+function _lum(r, g, b) { const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); }
+function effectiveBackdrop(el, stop) {
+  const light = document.documentElement.getAttribute("data-lum") === "light" || document.documentElement.getAttribute("data-theme") === "light";
+  let [r, g, b] = light ? [238, 242, 248] : [14, 20, 32];          // 最底层: 桌面 (深 / 浅)
+  const layers = [];
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+    const c = _rgba(getComputedStyle(n).backgroundColor);
+    if (c[3] > 0) { layers.push(c); if (c[3] >= 0.98) break; }
+    if (n === stop) break;
+  }
+  for (let i = layers.length - 1; i >= 0; i--) { const [lr, lg, lb, la] = layers[i]; r = lr * la + r * (1 - la); g = lg * la + g * (1 - la); b = lb * la + b * (1 - la); }
+  return [r, g, b];
+}
+function fixContrast(root) {
+  if (!root) return;
+  let n = 0;
+  for (const el of root.querySelectorAll("*")) {
+    if (++n > 4000) break;
+    if (!el.firstChild || ![...el.childNodes].some((c) => c.nodeType === 3 && c.nodeValue.trim())) continue;   // 只处理直接带文字的元素
+    const cs = getComputedStyle(el), fg = _rgba(cs.color), bg = effectiveBackdrop(el, root);
+    const lb = _lum(bg[0], bg[1], bg[2]), lf = _lum(fg[0], fg[1], fg[2]);
+    const ratio = (Math.max(lb, lf) + 0.05) / (Math.min(lb, lf) + 0.05);
+    if (ratio < 4.5) el.style.color = lb > 0.4 ? "#111827" : "#f3f4f6";
+    else if (el.style.color && el.dataset.autoInv) el.style.color = "";
+    if (ratio < 4.5) el.dataset.autoInv = "1";
+  }
+}
+// 主题明暗变了 (data-lum / data-theme): 之前改过颜色的先清掉, 再按新底色重算
+new MutationObserver(() => { const pv = document.getElementById("md-preview"); if (pv && pv.firstChild) { for (const e of pv.querySelectorAll("[data-auto-inv]")) { e.style.color = ""; delete e.dataset.autoInv; } fixContrast(pv); } })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-lum"] });
 async function renderMdPreview() {
   const t = getActiveTab(), pv = document.getElementById("md-preview");
   if (!t || !pv || !t.mdPreview) return;
@@ -11591,6 +11795,7 @@ async function renderMdPreview() {
   const top = pv.scrollTop;
   pv.innerHTML = '<article class="md-body-view">' + r.html + "</article>";   // r.html 由 Rust 转义生成
   pv.scrollTop = top;
+  fixContrast(pv);
   for (const el of pv.querySelectorAll("pre.md-fence")) {
     const lang = el.dataset.lang, h = lang && window.MD_FENCE_HANDLERS[lang];
     if (!h) { if (lang === "mermaid") el.setAttribute("title", "没有可用的 Mermaid 渲染插件 (扩展面板里启用 Pele)"); continue; }
@@ -11598,7 +11803,7 @@ async function renderMdPreview() {
       if (!out || !el.isConnected) return;
       const box = document.createElement("div"); box.className = "md-fence-out";
       if (out.error) { box.classList.add("err"); box.textContent = out.error; el.after(box); return; }   // 失败: 保留源码, 旁边显示错误 (FR-022)
-      box.replaceChildren(mdSanitize(out.svg || out.html || "")); el.replaceWith(box);
+      box.replaceChildren(mdSanitize(out.svg || out.html || "")); el.replaceWith(box); fixContrast(pv);
     }).catch(() => {});
   }
 }
@@ -11644,6 +11849,7 @@ function mdRefresh() {
   if (md) buildMdBar();
   document.documentElement.setAttribute("data-md", md ? "on" : "off");
   document.documentElement.setAttribute("data-md-preview", md && t.mdPreview ? "on" : "off");
+  try { syncSideExtras(); } catch (_) {}      // md 文档在侧栏有自己的「目录」标签 (没有 md 文档时侧栏不画横向标签条)
   if (md && MD.built) {
     const b = document.querySelector("#md-bar .md-toggle");
     if (b) b.classList.toggle("on", !!t.mdPreview);
@@ -11661,7 +11867,7 @@ function mdRefresh() {
 const SAKURA_TB_KEYS = { "new-file": "Ctrl+N", "open-file": "Ctrl+O", save: "Ctrl+S", cut: "Ctrl+X", copy: "Ctrl+C", paste: "Ctrl+V", undo: "Ctrl+Z", redo: "Ctrl+Y", find: "Ctrl+F", replace: "Ctrl+R", grep: "Ctrl+G", "goto-line": "Ctrl+J", "bookmark-toggle": "Ctrl+F2", "bookmark-prev": "Shift+F2", "bookmark-next": "F2" };
 function titleSakuraToolbar() {
   for (const b of document.querySelectorAll("#toolbar .tb-btn[data-cmd]")) {
-    const k = SAKURA_TB_KEYS[b.dataset.cmd]; if (k) b.title = b.textContent + " (" + k + ")";
+    const k = SAKURA_TB_KEYS[b.dataset.cmd]; if (k) b.title = (b.dataset.label || b.textContent) + " (" + k + ")";
   }
 }
 { const _bvb = buildViewBars; buildViewBars = function () { const r = _bvb.apply(this, arguments); titleSakuraToolbar(); return r; }; }
@@ -11692,18 +11898,24 @@ function buildChat() {
   d.innerHTML = '<div id="chat-head"><b>Chat</b><span class="chat-sp"></span><label class="chat-ctx"><input type="checkbox" id="chat-ctx" checked> 带上选中内容/当前章节</label>' +
     '<button class="tb-btn" id="chat-clear" title="清空对话">清空</button><button class="tb-btn" id="chat-close" title="折叠 (Ctrl+Shift+L)">✕</button></div>' +
     '<div id="chat-msgs" aria-live="polite"></div>' +
-    '<details id="chat-ai"><summary>AI 设置</summary><input id="cai-base" placeholder="接口地址 (OpenAI 兼容)"><input id="cai-model" placeholder="模型"><input id="cai-key" type="password" placeholder="API Key (只保存在本机)"><button class="tb-btn" id="cai-save">保存</button></details>' +
+    '<div id="chat-model"><span id="chat-model-name"></span><label class="chat-effort" title="模型的推理强度 (effort)">effort <select id="chat-effort">' + AI_EFFORTS.map((e) => '<option value="' + e[0] + '">' + e[1] + "</option>").join("") + '</select></label><button class="tb-btn" id="chat-prefs" title="模型 / 接口 / Key 在首选项里设置">模型设置…</button></div>' +
     '<div id="chat-inputrow"><textarea id="chat-input" rows="2" placeholder="向 AI 提问; 它可以调用编辑器的智能 API (大纲 / 查找 / 渲染 / 补丁提案)。Enter 发送, Shift+Enter 换行"></textarea><button class="tb-btn" id="chat-send">发送</button></div>';
   document.getElementById("app").appendChild(d);
   const c = aiConfig();
-  d.querySelector("#cai-base").value = c.baseUrl; d.querySelector("#cai-model").value = c.model; d.querySelector("#cai-key").value = c.key;
-  if (!aiConfigured()) d.querySelector("#chat-ai").open = true;
-  chatSay("sys", "在上方展开「AI 设置」填好接口地址 / 模型 / Key 后就能对话。文档内容不会被默认发出: 只有勾选「带上选中内容」并确认后，选中部分才会发给你配置的端点。");
+  d.querySelector("#chat-effort").value = c.effort || "";
+  d.querySelector("#chat-effort").onchange = (e) => { aiSaveConfig(Object.assign(aiConfig(), { effort: e.target.value })); chatModelLabel(); };
+  d.querySelector("#chat-prefs").onclick = () => commonConfig("AI");
+  chatModelLabel();
+  chatSay("sys", "模型 / 接口地址 / Key 在「首选项 → AI 模型」里设置 (本窗口只选 effort)。文档内容不会被默认发出: 只有勾选「带上选中内容」并确认后，选中部分才会发给你配置的端点。");
   d.querySelector("#chat-close").onclick = () => toggleChat(false);
   d.querySelector("#chat-clear").onclick = () => { CHAT.messages = []; document.getElementById("chat-msgs").replaceChildren(); };
-  d.querySelector("#cai-save").onclick = () => { aiSaveConfig({ baseUrl: d.querySelector("#cai-base").value.trim(), model: d.querySelector("#cai-model").value.trim(), key: d.querySelector("#cai-key").value }); setTip("AI 设置已保存"); };
   d.querySelector("#chat-send").onclick = chatSend;
   d.querySelector("#chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); chatSend(); } });
+}
+function chatModelLabel() {
+  const el = document.getElementById("chat-model-name"), c = aiConfig(); if (!el) return;
+  el.textContent = c.model ? c.model : "未设置模型";
+  const sel = document.getElementById("chat-effort"); if (sel) sel.value = c.effort || "";
 }
 function chatSay(role, text) {
   const box = document.getElementById("chat-msgs");
@@ -11754,7 +11966,7 @@ async function chatCallModel(messages) {
   const c = aiConfig();
   const r = await fetch(c.baseUrl.replace(/\/+$/, "") + "/chat/completions", {
     method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + c.key },
-    body: JSON.stringify({ model: c.model, messages, tools: chatAllTools().map((t) => ({ type: t.type, function: t.function })), tool_choice: "auto" }),
+    body: JSON.stringify(Object.assign({ model: c.model, messages, tools: chatAllTools().map((t) => ({ type: t.type, function: t.function })), tool_choice: "auto" }, aiEffortField(c))),
   });
   if (!r.ok) throw new Error("AI 请求失败 " + r.status);
   return (await r.json()).choices[0].message;
@@ -11762,7 +11974,7 @@ async function chatCallModel(messages) {
 async function chatSend() {
   const input = document.getElementById("chat-input"), q = input.value.trim();
   if (!q || CHAT.busy) return;
-  if (!aiConfigured()) { chatSay("err", "还没有配置 AI: 先填接口地址 / 模型 / Key。"); document.getElementById("chat-ai").open = true; return; }
+  if (!aiConfigured()) { chatSay("err", "还没有配置 AI: 到「首选项 → AI 模型」填接口地址 / 模型 / Key。"); commonConfig("AI"); return; }
   let ctx = document.getElementById("chat-ctx").checked ? chatContext() : null;
   if (ctx) {
     let ok = false; try { ok = localStorage.getItem(CHAT_CONSENT_KEY) === "1"; } catch (_) {}

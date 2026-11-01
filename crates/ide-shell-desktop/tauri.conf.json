@@ -17,6 +17,7 @@
         "minHeight": 400,
         "resizable": true,
         "fullscreen": false,
+        "decorations": false,
         "transparent": true,
         "windowEffects": { "effects": ["acrylic"], "color": [10, 14, 24, 40] }
       }
