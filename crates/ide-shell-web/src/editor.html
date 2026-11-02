@@ -7839,6 +7839,24 @@ function initZoomWheel() {
   }, { passive: false });
 }
 
+/* 显示列 (WBS-02 5.3 / 5.7): 全角 / 宽字符占 2 格, 组合符 0 格, Tab 补到下一个 Tab 位 —— 和 Sakura 状态栏的「桁」一致。
+   只在这一行有非 ASCII 或 Tab 时才和字符列不同; 纯 ASCII 行直接返回 col (热路径零成本)。 */
+function cellWidth(cp) {
+  if (cp < 0x300) return 1;
+  if ((cp >= 0x300 && cp <= 0x36f) || (cp >= 0x200b && cp <= 0x200f) || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0;
+  return (cp >= 0x1100 && cp <= 0x115f) || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3) || (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe6f) || (cp >= 0xff00 && cp <= 0xff60) || (cp >= 0xffe0 && cp <= 0xffe6) || (cp >= 0x1f300 && cp <= 0x1f64f) ||
+    (cp >= 0x1f900 && cp <= 0x1f9ff) || (cp >= 0x20000 && cp <= 0x3fffd) ? 2 : 1;
+}
+function displayCol(line, col, tab) {
+  let cells = 0, i = 0;
+  for (const ch of line) {
+    if (i++ >= col) break;
+    const cp = ch.codePointAt(0);
+    cells += cp === 9 ? tab - (cells % tab) : cellWidth(cp);
+  }
+  return cells;
+}
 /* ---------- A4. 光标列指示 (状态栏 + 虚拟虚线标尺) ---------- */
 function updateCaretColumn() {
   const t = getActiveTab();
@@ -7846,6 +7864,11 @@ function updateCaretColumn() {
   if (!t || !el) return;
   el.textContent = "Ln " + (t.cursor.row + 1) + ", Col " + (t.cursor.col + 1);
   el.title = "共 " + t.lines.length + " 行";
+  const ln = t.lines[t.cursor.row] || "";
+  if (/[^\x00-\xff]|\t/.test(ln)) {            // 有宽字符 / Tab 才算显示列
+    const dc = displayCol(ln, t.cursor.col, +PREFS.tabWidth || 4) + 1;
+    if (dc !== t.cursor.col + 1) { el.textContent += " (表示 " + dc + ")"; el.title += " · 表示列 " + dc + " (全角占 2 格, Tab 补到 Tab 位)"; }
+  }
   // 光标处字符的码位: 行尾显示 EOL, 文件末尾显示 EOF (Sakura 状态栏同名字段)
   const code = document.getElementById("s-code");
   if (code) {
