@@ -37,6 +37,8 @@ pub struct App {
     term: Terminal,
     md_preview: bool,
     wrap: bool,
+    inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
+    prefs_open: bool,
     /// 自动换行时每个逻辑行的累计高度 (按 文档 / 版本 / 宽度 / 字号 缓存; 行数多时关闭换行)
     wrap_cache: Option<((u64, u64, i32, i32, usize), Vec<f32>)>,
     max_cols: usize,
@@ -48,11 +50,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(files: Vec<PathBuf>, trace: Trace) -> Self {
+    pub fn new(args: Vec<String>, inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>, trace: Trace) -> Self {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, wrap: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, wrap: false, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -62,8 +64,8 @@ impl App {
         app.wrap = st.wrap;
         app.recent = st.recent.clone();
         app.saved = st;
-        for f in files {
-            app.open_path(&f);
+        for a in &args {
+            app.open_spec(a);
         }
         if app.docs.is_empty() {
             app.new_doc();
@@ -120,6 +122,46 @@ impl App {
             now.save();
             self.saved = now;
         }
+    }
+
+    /// 命令行 / 别的实例转来的 `路径[:行[:列]]`
+    fn open_spec(&mut self, spec: &str) {
+        let (path, line, col) = editcore::text_util::split_path_line_col(spec);
+        let p = PathBuf::from(&path);
+        if !p.is_file() {
+            self.cur_or_new().tip = format!("找不到文件: {path}");
+            return;
+        }
+        self.open_path(&p);
+        if line > 0 {
+            self.cur().goto(line - 1, col.saturating_sub(1));
+        }
+    }
+
+    fn cur_or_new(&mut self) -> &mut Doc {
+        if self.docs.is_empty() {
+            self.new_doc();
+        }
+        self.cur()
+    }
+
+    /// 首选项窗口: 改了立刻生效、立刻落盘 (persist_if_changed)
+    fn prefs_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.prefs_open;
+        egui::Window::new("首选项").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            ui.checkbox(&mut self.dark, "深色主题");
+            ui.checkbox(&mut self.highlight, "语法高亮");
+            ui.checkbox(&mut self.wrap, "自动换行");
+            ui.horizontal(|ui| { ui.label("字号"); ui.add(egui::Slider::new(&mut self.font_px, 8.0..=40.0)); });
+            ui.horizontal(|ui| { ui.label("Tab 宽度"); ui.add(egui::Slider::new(&mut self.tab, 1..=16)); });
+            if ui.button("恢复默认").clicked() {
+                let d = Settings::default();
+                self.dark = d.dark; self.font_px = d.font_px; self.tab = d.tab_width; self.highlight = d.highlight; self.wrap = d.wrap;
+            }
+            ui.separator();
+            ui.small(format!("设置文件: {}", crate::settings::path().map(|p| p.display().to_string()).unwrap_or_else(|| "(未启用落盘)".into())));
+        });
+        self.prefs_open = open;
     }
 
     fn open_folder_dialog(&mut self) {
@@ -300,6 +342,9 @@ impl App {
                 if ui.button("在文件夹中搜索 (Grep)…  Ctrl+Shift+F").clicked() { self.side.open = true; self.side.tab = Tab::Search; ui.close(); }
                 if ui.button("下一个  F3").clicked() { self.find_next(true); ui.close(); }
                 if ui.button("上一个  Shift+F3").clicked() { self.find_next(false); ui.close(); }
+            });
+            ui.menu_button("设置", |ui| {
+                if ui.button("首选项…").clicked() { self.prefs_open = true; ui.close(); }
             });
             ui.menu_button("书签", |ui| {
                 if ui.button("设置 / 取消  Ctrl+F2").clicked() { self.cur().bookmark("toggle"); ui.close(); }
@@ -785,6 +830,12 @@ impl eframe::App for App {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         for p in dropped { self.open_path(&p); }
 
+        let forwarded: Vec<Vec<String>> = self.inbox.as_ref().map(|rx| rx.try_iter().collect()).unwrap_or_default();
+        for paths in forwarded {
+            for a in &paths { self.open_spec(a); }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        if self.prefs_open { self.prefs_window(ctx); }
         self.shortcuts(ctx);
         egui::Panel::top("menu").show(root, |ui| self.menu(ui, ctx));
         egui::Panel::top("tabs").show(root, |ui| {

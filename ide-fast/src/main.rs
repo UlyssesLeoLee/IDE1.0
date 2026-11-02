@@ -9,6 +9,7 @@
 mod app;
 mod doc;
 mod fonts;
+mod instance;
 mod settings;
 mod macros;
 mod markdown;
@@ -35,7 +36,13 @@ impl Trace {
 fn main() -> eframe::Result<()> {
     let trace = Trace::new();
     trace.mark("main enter");
-    let files: Vec<std::path::PathBuf> = std::env::args_os().skip(1).map(Into::into).collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    // 单实例: 已经有一个在运行就把文件交给它, 自己退出
+    if instance::forward_to_running(&args) {
+        trace.mark("handed over to the running instance");
+        return Ok(());
+    }
+    let inbox = instance::listen();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("IDE1.0 Fast")
@@ -55,7 +62,7 @@ fn main() -> eframe::Result<()> {
             trace.mark("window + GL context ready");
             fonts::install(&cc.egui_ctx);
             trace.mark("fonts installed");
-            Ok(Box::new(app::App::new(files, trace)))
+            Ok(Box::new(app::App::new(args, inbox, trace)))
         }),
     )
 }
