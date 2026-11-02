@@ -896,6 +896,9 @@ release:
         path: dist/
         merge-multiple: true
 
+    - name: Package theme and editor plugins
+      run: node scripts/package-plugins.mjs
+
     - name: Generate release notes
       run: |
         cat > RELEASE_NOTES.md << 'EOF'
@@ -921,6 +924,7 @@ release:
           dist/ide-shell-desktop-*.AppImage
           dist/ide-shell-desktop-*.msi
           dist/ide-shell-desktop-*.dmg
+          dist/plugins/*.zip
         body_path: RELEASE_NOTES.md
         draft: false
         prerelease: false

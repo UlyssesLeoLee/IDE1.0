@@ -1,0 +1,47 @@
+{
+  "id": "theme-retro16",
+  "name": "复古 16-Bit 主题",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.2",
+  "license": "MIT",
+  "description": "街机暗夜深紫底色 + 16 位荧光色 + 阶梯像素边框",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": [],
+  "contributes": {
+    "theme": {
+      "id": "retro16",
+      "name": "复古 16-Bit",
+      "label": "复古 16-Bit",
+      "translucent": false,
+      "vars": {
+        "--bg-bar": "#120e24",
+        "--bg-side": "#0e0b1c",
+        "--bg-edit": "#0b0914",
+        "--bg-rail": "#191333",
+        "--bg-bottom": "#120e24",
+        "--bg-status": "#160f2e",
+        "--bg-chrome": "#171230",
+        "--bg-raised": "#1a1438",
+        "--bg-hover": "#271e4d",
+        "--bg-active": "#3a2b6e",
+        "--bg-input": "#150f2b",
+        "--border": "#2d2354",
+        "--border-strong": "#4f3e91",
+        "--fg": "#f0f4fc",
+        "--fg-muted": "#7882a4",
+        "--fg-dim": "#4e5675",
+        "--fg-on-accent": "#ffffff",
+        "--blue": "#00f0ff",
+        "--green": "#00ff66",
+        "--yellow": "#ffd700",
+        "--red": "#ff2a85",
+        "--orange": "#ff8800",
+        "--accent-text": "#00f0ff",
+        "--focus-ring": "0 0 0 2px #000000, 0 0 0 4px #00f0ff",
+        "--pill-mix": "75%"
+      }
+    }
+  }
+}

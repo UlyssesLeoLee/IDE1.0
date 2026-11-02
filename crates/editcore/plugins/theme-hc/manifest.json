@@ -1,0 +1,47 @@
+{
+  "id": "theme-hc",
+  "name": "高对比度主题",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.2",
+  "license": "MIT",
+  "description": "极高对比度无障碍主题，纯黑背景搭配纯白强边框与荧光高能辅助色",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": [],
+  "contributes": {
+    "theme": {
+      "id": "hc",
+      "name": "高对比度",
+      "label": "高对比度",
+      "translucent": false,
+      "vars": {
+        "--bg-bar": "#000000",
+        "--bg-side": "#000000",
+        "--bg-edit": "#000000",
+        "--bg-rail": "#000000",
+        "--bg-bottom": "#000000",
+        "--bg-status": "#ffffff",
+        "--bg-chrome": "#000000",
+        "--bg-raised": "#000000",
+        "--bg-hover": "#262626",
+        "--bg-active": "#404040",
+        "--bg-input": "#000000",
+        "--border": "#ffffff",
+        "--border-strong": "#ffffff",
+        "--fg": "#ffffff",
+        "--fg-muted": "#e0e0e0",
+        "--fg-dim": "#c0c0c0",
+        "--fg-on-accent": "#000000",
+        "--blue": "#00ffff",
+        "--green": "#00ff00",
+        "--yellow": "#ffff00",
+        "--red": "#ff6666",
+        "--orange": "#ff9900",
+        "--accent-text": "#00ffff",
+        "--focus-ring": "0 0 0 2px #000000, 0 0 0 4px #00ffff",
+        "--pill-mix": "75%"
+      }
+    }
+  }
+}

@@ -22,7 +22,7 @@ test('快捷按钮在标题栏 (默认显示, 可关); 功能键栏 / 标尺 默
     assert.ok(rl[3] <= ed[1] + 1, '标尺在编辑区之上');
     assert.ok(ed[3] <= fk[1] + 1, '功能键栏在编辑区之下');
     assert.ok(ed[3] - ed[1] > 100, '编辑区仍有高度');
-    assert.ok((await page.evaluate(() => document.querySelectorAll('#toolbar .tb-btn').length)) >= 10);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#toolbar .tb-btn')].map((b) => b.dataset.cmd)), ['grep'], '默认只有 Grep 搜索一个快捷按钮');
     assert.equal(await page.evaluate(() => document.querySelectorAll('#funckeys .fk').length), 12);
     assert.match(await page.evaluate(() => document.querySelector('#ruler .rl-in').textContent), /^\.{4}\+\.{4}\d/);
     await cmd(page, 'toggle-ruler'); await cmd(page, 'toggle-funckey');
@@ -32,6 +32,7 @@ test('快捷按钮在标题栏 (默认显示, 可关); 功能键栏 / 标尺 默
 test('工具栏按钮 / 功能键栏按钮 真的执行命令; 开关跨重载保留', () =>
   withMocks({ name: 'vo', portOffset: 171 }, async ({ page, snap, press }) => {
     await fill(page, 'abc');
+    await page.evaluate(() => setQab(['grep', 'cut', 'undo']));
     await cmd(page, 'toggle-funckey');
     await press('Control+a');
     await page.locator('#funckeys .fk', { hasText: 'コピー' }).click();

@@ -19,6 +19,18 @@ const BUNDLED: &[(&str, &str, &[u8])] = &[
     ("doc-graph", "main.js", include_bytes!("../../plugins/doc-graph/main.js")),
     ("ppa", "manifest.json", include_bytes!("../../plugins/ppa/manifest.json")),
     ("ppa", "main.js", include_bytes!("../../plugins/ppa/main.js")),
+    ("theme-crystal", "manifest.json", include_bytes!("../../plugins/theme-crystal/manifest.json")),
+    ("theme-crystal", "main.js", include_bytes!("../../plugins/theme-crystal/main.js")),
+    ("theme-retro16", "manifest.json", include_bytes!("../../plugins/theme-retro16/manifest.json")),
+    ("theme-retro16", "main.js", include_bytes!("../../plugins/theme-retro16/main.js")),
+    ("theme-clear", "manifest.json", include_bytes!("../../plugins/theme-clear/manifest.json")),
+    ("theme-clear", "main.js", include_bytes!("../../plugins/theme-clear/main.js")),
+    ("theme-dark", "manifest.json", include_bytes!("../../plugins/theme-dark/manifest.json")),
+    ("theme-dark", "main.js", include_bytes!("../../plugins/theme-dark/main.js")),
+    ("theme-light", "manifest.json", include_bytes!("../../plugins/theme-light/manifest.json")),
+    ("theme-light", "main.js", include_bytes!("../../plugins/theme-light/main.js")),
+    ("theme-hc", "manifest.json", include_bytes!("../../plugins/theme-hc/manifest.json")),
+    ("theme-hc", "main.js", include_bytes!("../../plugins/theme-hc/main.js")),
 ];
 
 pub trait Http {

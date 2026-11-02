@@ -13,7 +13,7 @@ pub const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
 /// 宿主认识的权限; 不认识的权限一律报 `UNKNOWN_PERMISSION`
 const KNOWN_PERMISSIONS: [&str; 4] = ["editor.read", "editor.write", "storage", "agent.tool"];
 /// 宿主提供的贡献点
-const KNOWN_CONTRIBUTIONS: [&str; 3] = ["markdown.fence", "command", "agent.tool"];
+const KNOWN_CONTRIBUTIONS: [&str; 4] = ["markdown.fence", "command", "agent.tool", "theme"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Manifest {

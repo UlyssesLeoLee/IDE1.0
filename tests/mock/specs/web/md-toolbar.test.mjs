@@ -16,6 +16,7 @@ test('非 Markdown 文档没有工具条 DOM; Markdown 文档出现并带 Sakura
     await setup(page, 'a.md', ['hello world']);
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('md-bar')).display), 'flex');
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-md')), 'on');
+    await page.evaluate(() => setQab(['grep', 'save']));
     const tip = await page.evaluate(() => document.querySelector('#toolbar .tb-btn[data-cmd="save"]').title);
     assert.match(tip, /Ctrl\+S/, 'Sakura 工具栏按钮写出快捷键');
     await setup(page, 'b.txt', ['x']);

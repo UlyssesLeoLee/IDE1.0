@@ -1,0 +1,40 @@
+{
+  "id": "theme-clear",
+  "name": "透明玻璃主题",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.2",
+  "license": "MIT",
+  "description": "经典亚克力半透明玻璃主题，支持桌面壁纸穿透与动态明暗色调自适应",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": [],
+  "contributes": {
+    "theme": {
+      "id": "clear",
+      "name": "透明玻璃",
+      "label": "透明玻璃",
+      "translucent": true,
+      "vars": {
+        "--bg-bar": "rgba(0,0,0,0.38)",
+        "--bg-side": "rgba(0,0,0,0.36)",
+        "--bg-edit": "transparent",
+        "--bg-rail": "rgba(0,0,0,0.36)",
+        "--bg-bottom": "rgba(0,0,0,0.40)",
+        "--bg-status": "rgba(0,0,0,0.42)",
+        "--bg-hover": "rgba(255,255,255,0.16)",
+        "--bg-active": "rgba(255,255,255,0.24)",
+        "--bg-input": "rgba(0,0,0,0.55)",
+        "--border": "rgba(255,255,255,0.34)",
+        "--border-strong": "rgba(255,255,255,0.46)",
+        "--fg": "#ffffff",
+        "--fg-muted": "rgba(255,255,255,0.88)",
+        "--fg-dim": "rgba(255,255,255,0.68)",
+        "--fg-on-accent": "#ffffff",
+        "--blue": "#8ab4f8",
+        "--green": "#7ee2b8",
+        "luminance": "dark"
+      }
+    }
+  }
+}
