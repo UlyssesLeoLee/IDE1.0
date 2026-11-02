@@ -170,7 +170,16 @@ pub fn render(src: &str) -> String {
     render_depth(src, 0)
 }
 
+/// 预览用: 同 [`render`], 顶层块额外带 `data-l="起-止"` (原文行范围), 供预览里点块就地编辑 / 点目录滚动
+pub fn render_with_lines(src: &str) -> String {
+    render_inner(src, 0, true)
+}
+
 fn render_depth(src: &str, depth: usize) -> String {
+    render_inner(src, depth, false)
+}
+
+fn render_inner(src: &str, depth: usize, mark: bool) -> String {
     if depth > MAX_DEPTH {
         return format!("<p>{}</p>", esc(src));
     }
@@ -178,15 +187,18 @@ fn render_depth(src: &str, depth: usize) -> String {
     let text = src.replace("\r\n", "\n");
     let mut lines: Vec<&str> = text.split('\n').collect();
     let mut out = String::new();
+    let mut base = 0usize; // lines[0] 在原文里的行号 (去掉 Front Matter 之后要加回来)
     // Front Matter: 折叠显示, 不解析
     if lines.first().map(|l| l.trim_end()) == Some("---") {
         if let Some(end) = lines.iter().skip(1).position(|l| l.trim_end() == "---" || l.trim_end() == "...") {
             out.push_str(&format!("<details class=\"frontmatter\"><summary>Front Matter</summary><pre>{}</pre></details>", esc(&lines[1..=end].join("\n"))));
             lines.drain(..end + 2);
+            base = end + 2;
         }
     }
     let mut i = 0;
     while i < lines.len() {
+        let (start, before) = (i, out.len());
         let l = lines[i];
         if l.trim().is_empty() {
             i += 1;
@@ -270,13 +282,46 @@ fn render_depth(src: &str, depth: usize) -> String {
                 out.push_str(&format!("<p>{}</p>", html.replace('\n', "<br>")));
             }
         }
+        // 顶层块带上它在原文里的行范围 (data-l="起-止", 0 起): 预览里点块就能回到对应的源码行就地编辑, 点目录也能滚到对应块
+        if mark && depth == 0 && out.len() > before {
+            // 没闭合的围栏会让 i 越过末行: 范围夹在文档最后一行内, 否则预览里点这个块会取到越界的行
+            tag_block(&mut out, before, base + start, base + i.min(lines.len()).max(start + 1) - 1);
+        }
     }
     out
 }
 
+/// 给 `out[from..]` 开头的那个标签加上 `data-l="a-b"` (标签名之后)
+fn tag_block(out: &mut String, from: usize, a: usize, b: usize) {
+    let tail = &out[from..];
+    if !tail.starts_with('<') {
+        return;
+    }
+    if let Some(p) = tail.find(|c: char| c == ' ' || c == '>') {
+        out.insert_str(from + p, &format!(" data-l=\"{a}-{b}\""));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::render;
+    use super::{render, render_with_lines};
+
+    #[test]
+    fn top_level_blocks_carry_their_source_line_range() {
+        let h = render_with_lines("# T\n\npara one\ncontinues\n\n- a\n- b\n\n```js\nx\n```");
+        for want in ["<h1 data-l=\"0-0\" id=\"t\">", "<p data-l=\"2-3\">", "<ul data-l=\"5-6\">", "<pre data-l=\"8-10\" class=\"md-fence\""] {
+            assert!(h.contains(want), "缺 {want}: {h}");
+        }
+        // Front Matter 之后行号要加回去
+        let h = render_with_lines("---\ntitle: x\n---\n\n# H");
+        assert!(h.contains("<h1 data-l=\"4-4\""), "{h}");
+        // 没闭合的围栏: 范围不越界
+        let h = render_with_lines("para\n\n```js\nx");
+        assert!(h.contains("data-l=\"2-3\""), "{h}");
+        // 嵌套里不加
+        let h = render_with_lines("> quote\n> more");
+        assert_eq!(h.matches("data-l").count(), 1, "{h}");
+    }
 
     #[test]
     fn user_html_is_always_escaped() {
@@ -300,7 +345,7 @@ mod tests {
     #[test]
     fn basic_blocks() {
         let h = render("# Title\n\npara **b** *i* ~~s~~ ==m== `c<d>`\n\n- a\n- [x] done\n\n1. one\n2. two\n\n---\n\n| A | B |\n| --- | --- |\n| 1 | 2 |");
-        for want in ["<h1 id=\"title\">Title</h1>", "<strong>b</strong>", "<em>i</em>", "<del>s</del>", "<mark>m</mark>", "<code>c&lt;d&gt;</code>", "<ul>", "checked disabled", "<ol>", "<hr>", "<th>A</th>", "<td>2</td>"] {
+        for want in ["id=\"title\">Title</h1>", "<strong>b</strong>", "<em>i</em>", "<del>s</del>", "<mark>m</mark>", "<code>c&lt;d&gt;</code>", "<ul", "checked disabled", "<ol", "<hr", "<th>A</th>", "<td>2</td>"] {
             assert!(h.contains(want), "缺 {want}: {h}");
         }
     }

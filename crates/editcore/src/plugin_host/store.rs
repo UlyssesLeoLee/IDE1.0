@@ -48,6 +48,9 @@ impl Http for CurlHttp {
 struct Registry {
     #[serde(default)]
     plugins: BTreeMap<String, Entry>,
+    /// 用户删掉的内置插件 id (不再列出、不再加载; 「恢复」或装插件包才回来)
+    #[serde(default)]
+    removed: std::collections::BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,11 +102,24 @@ fn valid_file_name(f: &str) -> bool {
     !f.is_empty() && !f.contains(['/', '\\', ':']) && f != ".." && f != "."
 }
 
+/// 插件包里的文件名还要躲开 Windows 的坑: 设备名 (nul / con / aux / com1… 带不带扩展名都算)、结尾的点和空格 (会被系统悄悄去掉)
+fn windows_safe_name(f: &str) -> bool {
+    if f.ends_with('.') || f.ends_with(' ') || f.contains(['<', '>', '"', '|', '?', '*']) {
+        return false;
+    }
+    let stem = f.split('.').next().unwrap_or("").to_ascii_lowercase();
+    let reserved = matches!(stem.as_str(), "con" | "prn" | "aux" | "nul") || ((stem.starts_with("com") || stem.starts_with("lpt")) && stem.len() == 4 && stem.as_bytes()[3].is_ascii_digit());
+    !reserved
+}
+
 /// 已有的插件: 打包的默认插件 + 用户安装的 (同 id 时装的版本更新就用装的)
 pub fn list(root: &Path) -> Vec<Installed> {
     let reg = load_registry(root);
     let mut out: Vec<Installed> = Vec::new();
     for id in bundled_ids() {
+        if reg.removed.contains(id) {
+            continue; // 用户删掉了这个内置插件
+        }
         let Some(m) = bundled_manifest(id) else { continue };
         let installed = reg.plugins.get(id);
         if let Some(e) = installed {
@@ -160,19 +176,195 @@ pub fn set_enabled(root: &Path, id: &str, enabled: bool) -> Result<(), String> {
     save_registry(root, &reg)
 }
 
-/// 卸载用户装的版本 (打包的默认插件只能禁用, 删掉装的更新则回到打包版本)
+/// 删除一个插件。用户装的: 连文件一起删; 随程序打包的默认插件: 也可以删 (记入 `removed`, 不再列出 / 加载),
+/// 之后能用「恢复内置」或 Release 里的插件包 (.zip) 装回来 —— 数据都在注册表和插件目录里, 程序本体不变。
 pub fn remove(root: &Path, id: &str) -> Result<(), String> {
     if !super::valid_id_pub(id) {
         return Err("非法的插件 id".into());
     }
     let mut reg = load_registry(root);
     reg.plugins.remove(id);
+    if bundled_ids().contains(&id) {
+        reg.removed.insert(id.to_string());
+    }
     save_registry(root, &reg)?;
     let dir = root.join(id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// 被用户删掉的内置插件 (id, 名字, 版本): 界面列出来, 供「恢复内置」
+pub fn removed_bundled(root: &Path) -> Vec<(String, String, String)> {
+    load_registry(root).removed.iter().filter_map(|id| bundled_manifest(id).map(|m| (id.clone(), m.name, m.version))).collect()
+}
+
+/// 恢复一个被删掉的内置插件 (用程序里打包的那份)
+pub fn restore_bundled(root: &Path, id: &str) -> Result<(), String> {
+    if !bundled_ids().contains(&id) {
+        return Err(format!("{id} 不是内置插件"));
+    }
+    let mut reg = load_registry(root);
+    reg.removed.remove(id);
+    reg.plugins.remove(id);
+    save_registry(root, &reg)?;
+    let dir = root.join(id);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?; // 装过的旧文件不留孤儿
+    }
+    Ok(())
+}
+
+// ---------- 插件包 (.zip) ----------
+// Release 里的 `plugin-<id>-<版本>.zip`: 里面是 manifest.json + 入口脚本 (+ 样式 / 许可证 / 依赖脚本), 可以放在一层顶层目录里。
+// 和从 GitHub 安装走同一套兼容检查和权限确认; 先 inspect_package 给用户看, 同意后才 install_package。
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PackageInspection {
+    pub report: CompatReport,
+    /// 各文件的 SHA-256 (确认框里显示)
+    pub files: BTreeMap<String, String>,
+    pub installed_version: Option<String>,
+    /// 这个 id 已经被别的来源占用 (内置 / 已装, 仓库不同) 时的说明; 有值就不能装
+    pub conflict: Option<String>,
+}
+
+const MAX_PACKAGE_BYTES: usize = 4 * MAX_ASSET_BYTES as usize;
+const MAX_PACKAGE_FILES: usize = 64;
+
+fn unpack(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    use std::io::Read;
+    if bytes.len() > MAX_PACKAGE_BYTES {
+        return Err("插件包太大".into());
+    }
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| format!("不是有效的 zip 插件包: {e}"))?;
+    if zip.len() > MAX_PACKAGE_FILES {
+        return Err(format!("插件包里文件太多 (> {MAX_PACKAGE_FILES})"));
+    }
+    let mut raw: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut total = 0usize;
+    for i in 0..zip.len() {
+        let f = zip.by_index(i).map_err(|e| format!("读取插件包失败: {e}"))?;
+        if f.is_dir() {
+            continue;
+        }
+        let name = f.name().replace('\\', "/");
+        if name.starts_with('/') || name.contains(':') || name.split('/').any(|p| p == ".." || p.is_empty()) {
+            return Err(format!("插件包里有不安全的路径: {name}"));
+        }
+        let mut buf = Vec::new();
+        f.take(MAX_ASSET_BYTES + 1).read_to_end(&mut buf).map_err(|e| format!("解压 {name} 失败: {e}"))?;
+        if buf.len() as u64 > MAX_ASSET_BYTES {
+            return Err(format!("{name} 超过大小上限"));
+        }
+        total += buf.len();
+        if total > MAX_PACKAGE_BYTES {
+            return Err("插件包解压后太大".into());
+        }
+        raw.push((name, buf));
+    }
+    // 允许所有文件都在同一层顶层目录里 (去掉它)
+    let top: Option<&str> = raw.first().and_then(|(n, _)| n.split_once('/').map(|(d, _)| d));
+    let strip = top.filter(|d| raw.iter().all(|(n, _)| n.strip_prefix(*d).map(|r| r.starts_with('/')).unwrap_or(false)));
+    let mut files = BTreeMap::new();
+    for (n, b) in &raw {
+        let rest = match strip {
+            Some(d) => &n[d.len() + 1..],
+            None => n.as_str(),
+        };
+        if !valid_file_name(rest) || !windows_safe_name(rest) {
+            return Err(format!("插件包里的文件名不合法 (只允许一层, 不能是设备名或以点 / 空格结尾): {n}"));
+        }
+        // 大小写不同的同名文件在 NTFS 上是同一个文件: 会互相覆盖而登记的哈希对不上, 直接拒绝
+        if files.keys().any(|k: &String| k.eq_ignore_ascii_case(rest)) {
+            return Err(format!("插件包里有只差大小写的重名文件: {n}"));
+        }
+        files.insert(rest.to_string(), b.clone());
+    }
+    Ok(files)
+}
+
+fn package_conflict(root: &Path, m: &Manifest) -> Option<String> {
+    let owner = load_registry(root).plugins.get(&m.id).map(|e| e.repo.clone()).or_else(|| bundled_manifest(&m.id).map(|b| b.repo));
+    let o = owner.filter(|o| !o.is_empty())?;
+    let same = |a: &str, b: &str| match (parse_repo(a), parse_repo(b)) {
+        (Some(x), Some(y)) => x.eq_ignore_ascii_case(&y),
+        _ => a.trim().eq_ignore_ascii_case(b.trim()),
+    };
+    (!same(&o, &m.repo)).then(|| format!("插件 id「{}」属于仓库 {o}, 这个包声明的仓库是「{}」, 不能顶替", m.id, m.repo))
+}
+
+pub fn inspect_package(root: &Path, bytes: &[u8], app_version: &str) -> Result<PackageInspection, String> {
+    let files = unpack(bytes)?;
+    let assets: Vec<Asset> = files.iter().map(|(n, b)| Asset { name: n.clone(), size: b.len() as u64 }).collect();
+    let manifest_text = files.get("manifest.json").and_then(|b| std::str::from_utf8(b).ok());
+    let report = check_compat(&assets, manifest_text, app_version);
+    let installed_version = report.manifest.as_ref().and_then(|m| list(root).into_iter().find(|p| p.manifest.id == m.id).map(|p| p.manifest.version));
+    let conflict = report.manifest.as_ref().and_then(|m| package_conflict(root, m));
+    Ok(PackageInspection { report, files: files.iter().map(|(n, b)| (n.clone(), sha256_hex(b))).collect(), installed_version, conflict })
+}
+
+/// 安装插件包。`approved` 必须覆盖清单声明的全部权限; 原子换名, 失败保留旧版本
+pub fn install_package(root: &Path, bytes: &[u8], app_version: &str, approved: &[String]) -> Result<Installed, String> {
+    let ins = inspect_package(root, bytes, app_version)?;
+    if !ins.report.ok {
+        let why: Vec<String> = ins.report.problems.iter().map(|p| format!("{}: {}", p.code, p.message)).collect();
+        return Err(format!("插件与当前编辑器不匹配, 未安装: {}", why.join("; ")));
+    }
+    if let Some(c) = ins.conflict {
+        return Err(c);
+    }
+    let m = ins.report.manifest.clone().ok_or("缺少清单")?;
+    // 低于程序里内置版本的包装上去也不会生效 (list() 只在已装版本 >= 内置版本时才用已装的): 明说, 不假装装好了
+    if let Some(b) = bundled_manifest(&m.id) {
+        if is_newer(&b.version, &m.version) {
+            return Err(format!("这个包的版本 {} 低于程序内置的 {}, 装上也不会生效; 要用内置版请「恢复内置」", m.version, b.version));
+        }
+    }
+    if let Some(p) = m.permissions.iter().find(|p| !approved.contains(p)) {
+        return Err(format!("权限「{p}」未获用户同意, 未安装"));
+    }
+    let files = unpack(bytes)?;
+    let tmp = root.join(format!(".tmp-{}", m.id));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let mut sums = BTreeMap::new();
+    for (n, b) in &files {
+        if let Err(e) = std::fs::write(tmp.join(n), b) {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e.to_string());
+        }
+        sums.insert(n.clone(), sha256_hex(b));
+    }
+    let dest = root.join(&m.id);
+    let old = root.join(format!(".old-{}", m.id));
+    let _ = std::fs::remove_dir_all(&old);
+    let had_old = dest.exists();
+    if had_old {
+        std::fs::rename(&dest, &old).map_err(|e| e.to_string())?;
+    }
+    if let Err(e) = std::fs::rename(&tmp, &dest) {
+        if had_old {
+            let _ = std::fs::rename(&old, &dest);
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!("安装失败 (旧版本保持可用): {e}"));
+    }
+    let mut reg = load_registry(root);
+    let enabled = reg.plugins.get(&m.id).map(|e| e.enabled).unwrap_or(true);
+    reg.removed.remove(&m.id);
+    reg.plugins.insert(m.id.clone(), Entry { version: m.version.clone(), repo: m.repo.clone(), enabled, permissions: approved.to_vec(), sha256: sums.clone() });
+    if let Err(e) = save_registry(root, &reg) {
+        // 登记写不进去 (磁盘满 / 被杀毒锁住): 把旧版本换回来, 不留下"文件是新的、登记是旧的"的状态
+        let _ = std::fs::remove_dir_all(&dest);
+        if had_old {
+            let _ = std::fs::rename(&old, &dest);
+        }
+        return Err(format!("安装失败 (登记写入失败, 旧版本保持可用): {e}"));
+    }
+    let _ = std::fs::remove_dir_all(&old);
+    Ok(Installed { manifest: m, enabled, source: "installed", sha256: sums })
 }
 
 // ---------- GitHub Release ----------
@@ -310,6 +502,7 @@ pub fn install(http: &dyn Http, root: &Path, repo: &str, app_version: &str, appr
     let _ = std::fs::remove_dir_all(&old);
     let mut reg = load_registry(root);
     let enabled = reg.plugins.get(&m.id).map(|e| e.enabled).unwrap_or(true);
+    reg.removed.remove(&m.id);
     reg.plugins.insert(m.id.clone(), Entry { version: m.version.clone(), repo: ins.release.repo.clone(), enabled, permissions: approved.to_vec(), sha256: sums.clone() });
     save_registry(root, &reg)?;
     Ok(Installed { manifest: m, enabled, source: "installed", sha256: sums })
@@ -461,6 +654,88 @@ mod tests {
         assert!(install(&h2, &root, "o/hello", "0.1.2", &["storage".into()]).is_err());
         assert_eq!(read_asset(&root, "hello", "main.js").unwrap(), b"old", "旧版本保持可用");
         assert!(!root.join(".tmp-hello").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 造一个 zip (测试用): files = (包内路径, 内容)
+    fn make_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opt = zip::write::SimpleFileOptions::default();
+        for (n, c) in files {
+            w.start_file(*n, opt).unwrap();
+            w.write_all(c).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn bundled_plugin_can_be_deleted_and_comes_back_from_a_package() {
+        let root = tmp("pkg-bundled");
+        assert!(list(&root).iter().any(|p| p.manifest.id == "ppa"), "内置 ppa 默认就在");
+        remove(&root, "ppa").unwrap();
+        assert!(!list(&root).iter().any(|p| p.manifest.id == "ppa"), "删掉后不再列出");
+        assert!(removed_bundled(&root).iter().any(|(id, _, _)| id == "ppa"), "记在已删除的内置插件里");
+        // 用 Release 里的插件包 (就是打包的那份文件) 装回来
+        let pkg = make_zip(&[("manifest.json", bundled_file("ppa", "manifest.json").unwrap()), ("main.js", bundled_file("ppa", "main.js").unwrap())]);
+        let ins = inspect_package(&root, &pkg, "0.1.7").unwrap();
+        assert!(ins.report.ok && ins.conflict.is_none() && ins.files.contains_key("main.js"), "{:?}", ins.report.problems);
+        // 没同意权限 -> 不装
+        assert!(install_package(&root, &pkg, "0.1.7", &[]).unwrap_err().contains("未获用户同意"));
+        let got = install_package(&root, &pkg, "0.1.7", &["editor.read".into(), "editor.write".into()]).unwrap();
+        assert_eq!(got.manifest.id, "ppa");
+        assert!(list(&root).iter().any(|p| p.manifest.id == "ppa" && p.source == "installed"), "装回来了");
+        assert!(removed_bundled(&root).is_empty());
+        assert!(read_asset(&root, "ppa", "main.js").unwrap().len() > 100);
+        // 再删, 再用「恢复内置」回来
+        remove(&root, "ppa").unwrap();
+        restore_bundled(&root, "ppa").unwrap();
+        assert!(list(&root).iter().any(|p| p.manifest.id == "ppa" && p.source == "bundled"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn package_install_is_strict() {
+        let root = tmp("pkg-strict");
+        let m = MANI.replace("o/hello", "o/hello");
+        // 一层顶层目录可以; 全新 id 的包可以装
+        let ok = make_zip(&[("hello/manifest.json", m.as_bytes()), ("hello/main.js", b"a")]);
+        install_package(&root, &ok, "0.1.7", &["storage".into()]).unwrap();
+        assert_eq!(read_asset(&root, "hello", "main.js").unwrap(), b"a");
+        // 路径穿越 / 多层目录 / 缺清单 / 不是 zip / 仓库不一致顶替
+        assert!(inspect_package(&root, &make_zip(&[("../evil.js", b"x"), ("manifest.json", m.as_bytes())]), "0.1.7").is_err());
+        assert!(inspect_package(&root, &make_zip(&[("a/b/main.js", b"x")]), "0.1.7").is_err());
+        let nomani = inspect_package(&root, &make_zip(&[("main.js", b"x")]), "0.1.7").unwrap();
+        assert!(!nomani.report.ok);
+        assert!(inspect_package(&root, b"not a zip", "0.1.7").is_err());
+        let other = make_zip(&[("manifest.json", m.replace("o/hello", "x/other").as_bytes()), ("main.js", b"b")]);
+        let c = inspect_package(&root, &other, "0.1.7").unwrap();
+        assert!(c.conflict.is_some());
+        assert!(install_package(&root, &other, "0.1.7", &["storage".into()]).unwrap_err().contains("不能顶替"));
+        assert_eq!(read_asset(&root, "hello", "main.js").unwrap(), b"a", "被拒绝后原版本不变");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn package_review_fixes() {
+        let root = tmp("pkg-review");
+        let m = MANI;
+        // Windows 设备名 / 结尾的点 / 只差大小写的重名都拒绝
+        for bad in ["nul", "con.js", "aux.txt", "com1", "main.js.", "x?.js"] {
+            assert!(inspect_package(&root, &make_zip(&[("manifest.json", m.as_bytes()), (bad, b"x")]), "0.1.7").is_err(), "{bad}");
+        }
+        assert!(inspect_package(&root, &make_zip(&[("manifest.json", m.as_bytes()), ("main.js", b"a"), ("MAIN.JS", b"b")]), "0.1.7").is_err());
+        // 低于内置版本的包: 明说装不上
+        let mani = String::from_utf8(bundled_file("ppa", "manifest.json").unwrap().to_vec()).unwrap().replace("\"version\": \"0.1.0\"", "\"version\": \"0.0.1\"");
+        let low = make_zip(&[("manifest.json", mani.as_bytes()), ("main.js", b"x")]);
+        assert!(install_package(&root, &low, "0.1.7", &["editor.read".into(), "editor.write".into()]).unwrap_err().contains("低于程序内置"));
+        // restore_bundled 不留装过的孤儿目录
+        let pkg = make_zip(&[("manifest.json", bundled_file("ppa", "manifest.json").unwrap()), ("main.js", bundled_file("ppa", "main.js").unwrap())]);
+        remove(&root, "ppa").unwrap();
+        install_package(&root, &pkg, "0.1.7", &["editor.read".into(), "editor.write".into()]).unwrap();
+        assert!(root.join("ppa").exists());
+        restore_bundled(&root, "ppa").unwrap();
+        assert!(!root.join("ppa").exists(), "孤儿目录被清掉");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

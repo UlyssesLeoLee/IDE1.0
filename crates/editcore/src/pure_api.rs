@@ -68,14 +68,42 @@ mod tests {
     }
 }
 
+/// 标准 base64 解码 (插件包经 JSON 传进来; 自己写 20 行比多一个依赖轻)
+fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' | b'\n' | b'\r' | b' ' => continue,
+            _ => return Err("插件包数据不是合法的 base64".into()),
+        };
+        acc = (acc << 6) | v as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
 /// Markdown 预览: 文本 -> 已转义的 HTML (只读, 不写回)
 pub fn md_render(req: &MdRenderReq) -> Value {
-    json!({ "html": crate::md_render::render(&req.text) })
+    json!({ "html": if req.lines { crate::md_render::render_with_lines(&req.text) } else { crate::md_render::render(&req.text) } })
 }
 
 #[derive(serde::Deserialize)]
 pub struct MdRenderReq {
     pub text: String,
+    /// 预览要块的原文行范围 (data-l); 导出 HTML 不要
+    #[serde(default)]
+    pub lines: bool,
 }
 
 // ---------- 插件 (docs/01_基本设计/PLUGIN-SYSTEM.md) ----------
@@ -89,6 +117,11 @@ pub enum PluginReq {
     Asset { id: String, file: String },
     Toggle { id: String, enabled: bool },
     Remove { id: String },
+    /// 恢复被删掉的内置插件
+    RestoreBundled { id: String },
+    /// 插件包 (.zip, base64): 先看 (清单 / 权限 / 哈希 / 兼容问题), 再装
+    InspectPackage { data: String },
+    InstallPackage { data: String, approved: Vec<String> },
     Inspect { repo: String },
     Install { repo: String, approved: Vec<String> },
     CheckUpdates,
@@ -103,7 +136,13 @@ pub fn plugins(req: &PluginReq) -> Result<Value, String> {
     let root = store::default_root();
     let app = env!("CARGO_PKG_VERSION");
     Ok(match req {
-        PluginReq::List => json!({ "plugins": store::list(&root), "host_api": ph::HOST_API_VERSION, "app_version": app }),
+        PluginReq::List => json!({ "plugins": store::list(&root), "removed": store::removed_bundled(&root).into_iter().map(|(id, name, version)| json!({ "id": id, "name": name, "version": version })).collect::<Vec<_>>(), "host_api": ph::HOST_API_VERSION, "app_version": app }),
+        PluginReq::RestoreBundled { id } => {
+            store::restore_bundled(&root, id)?;
+            json!({ "ok": true })
+        }
+        PluginReq::InspectPackage { data } => to_json(&store::inspect_package(&root, &b64_decode(data)?, app)?),
+        PluginReq::InstallPackage { data, approved } => to_json(&store::install_package(&root, &b64_decode(data)?, app, approved)?),
         PluginReq::Asset { id, file } => {
             let b = store::read_asset(&root, id, file)?;
             json!({ "text": String::from_utf8(b).map_err(|_| "插件文件不是 UTF-8 文本".to_string())? })

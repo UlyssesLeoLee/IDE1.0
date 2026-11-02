@@ -445,8 +445,10 @@
     html[data-v-toolbar="on"] #toolbar { display: flex; }
     #toolbar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 0 6px; height: 24px; min-width: 26px; font-size: 14px; line-height: 1; border-radius: 4px; cursor: pointer; }
     /* 标题栏 (菜单栏兼): 标题 + 窗口控制钮; 窗口控制钮只在桌面版有意义 */
-    #tb-title { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 8px; font-size: 12px; font-weight: 600; color: var(--fg); user-select: none; }
-    #tb-title .tb-logo { color: var(--blue, #569cd6); font-size: 13px; }
+    /* 标题: 一行、随内容定宽, 窗口窄时从右边省略号收缩 (以前没有 nowrap, 初始就折成两行被裁掉); logo 是固定的图片, 不随主题变 */
+    #tb-title { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 8px; font-size: 12px; font-weight: 600; color: var(--fg); user-select: none; flex: 0 1 auto; min-width: 0; max-width: 28ch; white-space: nowrap; }
+    #tb-title .tb-logo { flex: none; width: 16px; height: 16px; object-fit: contain; }
+    #tb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #win-ctl { display: none; align-items: stretch; margin-left: 4px; -webkit-app-region: no-drag; }
     html[data-shell="desktop"] #win-ctl { display: flex; }
     #win-ctl .wc-btn { width: 46px; border: none; background: transparent; color: var(--fg); cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -456,7 +458,6 @@
     @media (max-width: 1100px) { #menubar > .tb-btn[data-cmd="new-terminal"] { display: none; } }
     /* ---- 标题栏主题组件: 随主题一起设计 (标题字样 / 图标 / 快捷按钮 / 窗口控制钮) ---- */
     [data-theme="clear"] #tb-title { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); letter-spacing: .02em; }
-    [data-theme="clear"] #tb-title .tb-logo { background: linear-gradient(135deg, #38bdf8, #c084fc); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 4px rgba(56, 189, 248, .55)); }
     [data-theme="clear"] #toolbar { margin: 0 6px; padding: 1px 6px; border-radius: 12px; background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.06)); box-shadow: inset 0 1px 0 var(--mat-hi), inset 0 -1px 0 rgba(255,255,255,.12); }
     [data-theme="clear"] #toolbar .tb-btn { background: transparent !important; border: 1px solid transparent !important; box-shadow: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; text-shadow: none; border-radius: 8px !important; }
     [data-theme="clear"] #toolbar .tb-btn:hover { background: rgba(255,255,255,.28) !important; border-color: rgba(255,255,255,.45) !important; }
@@ -464,10 +465,9 @@
     [data-theme="clear"] #win-ctl .wc-btn:hover { background: rgba(255,255,255,.28); }
     [data-theme="clear"] #win-ctl .wc-close:hover { background: rgba(232, 17, 35, .85); color: #fff; }
     [data-theme="retro16"] #tb-title { text-transform: uppercase; letter-spacing: .08em; }
-    [data-theme="retro16"] #tb-title .tb-logo { color: #ffff55; }
     [data-theme="retro16"] #win-ctl .wc-btn { border-left: 1px solid currentColor; border-radius: 0; }
     [data-theme="hc"] #win-ctl .wc-btn { border: 1px solid currentColor; }
-    [data-theme="light"] #tb-title .tb-logo { color: #0b63c4; }
+
     #toolbar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
     #toolbar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
     .ext-body { padding: 4px 8px; font-size: var(--fs-sm); overflow: auto; }
@@ -519,6 +519,16 @@
     #editor { position: relative; }
     #md-preview { display: none; position: absolute; inset: 0; overflow: auto; background: var(--bg-edit); z-index: 3; padding: 12px 24px; }
     html[data-md-preview="on"] #md-preview { display: block; }
+    #md-preview [data-l] { cursor: text; border-radius: 4px; }
+    #md-preview [data-l]:hover { background: color-mix(in srgb, var(--blue, #569cd6) 8%, transparent); }
+    #md-preview .md-flash { animation: md-flash 0.9s ease-out; }
+    @keyframes md-flash { from { background: color-mix(in srgb, var(--blue, #569cd6) 35%, transparent); } to { background: transparent; } }
+    #md-preview .md-edit-block { margin: 6px 0; }
+    #md-preview .md-edit-ta { width: 100%; box-sizing: border-box; font: inherit; font-family: var(--font-mono, monospace); background: var(--bg-raised); color: var(--fg); border: 1px solid var(--blue, #569cd6); border-radius: 4px; padding: 6px 8px; resize: vertical; }
+    /* 预览和原文二选一: 预览打开时把原文层 (正文 / 行号 / 光标 / 当前行线) 藏起来 (visibility 保留布局, 光标几何照常能算)。
+       以前只靠预览自己的不透明背景盖住原文, 透明玻璃主题里背景是半透明的, 原文就透出来和预览叠在一起。 */
+    html[data-md-preview="on"] :is(#ed-content, #gutter, #caret, #curline, #minimap) { visibility: hidden; }
+    [data-theme="clear"] #md-preview { background: var(--mat-edit); -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%); }
     .md-body-view { max-width: 860px; margin: 0 auto; line-height: 1.7; font-size: var(--fs-md); color: var(--fg); }
     .md-body-view h1, .md-body-view h2 { border-bottom: 1px solid var(--border); padding-bottom: .2em; }
     .md-body-view pre { background: var(--bg-raised); padding: 8px 10px; border-radius: 4px; overflow: auto; }
@@ -2038,7 +2048,7 @@
   <div id="app" class="status-active">
     <!-- classic 顶端功能按钮 (8 个主菜单) -->
     <div id="menubar" data-tauri-drag-region>
-      <div id="tb-title" data-tauri-drag-region><span class="tb-logo" data-tauri-drag-region aria-hidden="true">◆</span><span id="tb-name" data-tauri-drag-region>IDE1.0</span></div>
+      <div id="tb-title" data-tauri-drag-region><img class="tb-logo" src="logo.png" width="16" height="16" alt="" draggable="false" data-tauri-drag-region><span id="tb-name" data-tauri-drag-region>IDE1.0</span></div>
       <div class="menu-item" data-menu="file">
         <button class="mb-btn"></button>
         <div class="menu-dropdown" data-dropdown="file"></div>
@@ -2412,6 +2422,8 @@ const TIPS = {
   "toggle-vim": "Vim 模式: 开 = NORMAL/INSERT/VISUAL 三态; 关 = 像 Sakura 一样直接输入",
 };
 const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+const startupMark = (n) => { if (inTauri) { try { window.__TAURI_INTERNALS__.invoke("startup_mark", { name: n }).catch(() => {}); } catch (_) {} } };   // 启动耗时打点 (Rust 端设了 IDE_STARTUP_TRACE 才记)
+startupMark("script-start");
 // 让 CSS 区分"网页壳"和"桌面壳": 透明玻璃主题假设窗口背后是桌面壁纸, 在普通浏览器里画布是白的,
 // 白字落在白底上 (1:1). 只有 web 壳会给 clear 补一个不透明深色底, 桌面端保持透明窗口 (Mica/Acrylic).
 try { document.documentElement.setAttribute("data-shell", inTauri ? "desktop" : "web"); } catch (_) { /* 无 DOM 时忽略 */ }
@@ -5954,7 +5966,7 @@ async function renderOutline(host, doc) {
         row.textContent = (ICON[e.kind] || "•") + " " + e.name;
         row.dataset.kind = e.kind; row.dataset.depth = String(e.depth | 0);
         row.style.paddingLeft = (8 + (e.depth | 0) * 14) + "px";            // 按所在 class / namespace / 标题层级缩进
-        row.addEventListener("click", () => { const tt = at; if (tt && TABS.has(tt.id)) { if (getActiveTab() !== tt) setActiveTab(tt.id); diffJump(tt, e.line | 0); setTip("跳到 " + ((e.line | 0) + 1) + " 行"); } });
+        row.addEventListener("click", () => { const tt = at; if (tt && TABS.has(tt.id)) { if (getActiveTab() !== tt) setActiveTab(tt.id); if (tt.mdPreview && mdPreviewScrollTo(e.line | 0)) { tt.cursor = { row: Math.min(e.line | 0, tt.lines.length - 1), col: 0 }; setTip("预览已跳到第 " + ((e.line | 0) + 1) + " 行"); return; } diffJump(tt, e.line | 0); setTip("跳到 " + ((e.line | 0) + 1) + " 行"); } });
         list.appendChild(row);
       }
       if (data.entries.length === 0) list.innerHTML = '<div class="empty-hint">无大纲 (' + (data.language || "?") + ")</div>";
@@ -9186,7 +9198,14 @@ function comboOfEvent(e) {
   const shift = e.shiftKey && !(single && !/[a-z]/i.test(e.key));     // 符号键的 Shift 已体现在 e.key 里
   return (e.ctrlKey ? "C-" : "") + (shift ? "S-" : "") + (e.altKey ? "A-" : "") + k;
 }
+// 启动时脚本里有十来处都要「刷新菜单快捷键」, 每次都遍历全部菜单行: 合并成同一轮任务里只做一次 (脚本执行完的微任务里)
+let _amsQueued = false;
 function applyMenuShortcuts() {
+  if (_amsQueued) return;
+  _amsQueued = true;
+  queueMicrotask(() => { _amsQueued = false; applyMenuShortcutsNow(); });
+}
+function applyMenuShortcutsNow() {
   const byCmd = {};
   for (const [combo, cmd] of Object.entries(KEYMAP)) (byCmd[cmd] = byCmd[cmd] || []).push(cmdLabelOfCombo(combo));
   document.querySelectorAll("#menubar .menu-row[data-cmd]").forEach((row) => {
@@ -9680,10 +9699,15 @@ function commonConfig(openTab) {
       ...COLOR_ITEMS.map((it) => ["color", it[1] + "颜色 (留空 = 随主题)", () => (PREFS.colors || {})[it[0]] || "", (v) => { PREFS.colors = Object.assign({}, PREFS.colors, { [it[0]]: v }); savePrefs(); applyColorFont(); }]),
     ]],
     ["AI", () => [
-      ["text", "接口地址 (OpenAI 兼容)", () => aiConfig().baseUrl, (v) => aiSaveConfig(Object.assign(aiConfig(), { baseUrl: String(v).trim() }))],
+      ["text", "接口地址 (OpenAI 兼容)", () => aiConfig().baseUrl, (v) => { const c = aiConfig(), nb = String(v).trim(); aiSaveConfig(Object.assign(c, { baseUrl: nb }, nb !== c.baseUrl ? { efforts: [], effort: "" } : {})); }],   // 换了供应商: 旧供应商的档位和已选档位作废
       ["text", "模型", () => aiConfig().model, (v) => aiSaveConfig(Object.assign(aiConfig(), { model: String(v).trim() }))],
       ["password", "API Key (只保存在本机)", () => aiConfig().key, (v) => aiSaveConfig(Object.assign(aiConfig(), { key: String(v) }))],
-      ["select", "effort (推理强度; 聊天窗里也能改)", () => aiConfig().effort || "", (v) => { aiSaveConfig(Object.assign(aiConfig(), { effort: v })); try { chatModelLabel(); } catch (_) {} }, AI_EFFORTS.map((e) => e[0]), AI_EFFORTS.map((e) => e[1])],
+      ["select", "effort (推理强度; 聊天窗里也能改)", () => aiConfig().effort || "", (v) => { aiSaveConfig(Object.assign(aiConfig(), { effort: v })); try { chatModelLabel(); } catch (_) {} }, aiEffortOptions(aiConfig()).map((e) => e[0]), aiEffortOptions(aiConfig()).map((e) => e[1])],
+      ["action", "从供应商获取 effort 档位 (查模型接口; 用的是已保存的接口地址 / 模型 / Key —— 刚改的请先点 OK 保存, 再回来点)", null, async () => {
+        try { const l = await aiFetchEfforts(); aiSaveConfig(Object.assign(aiConfig(), { efforts: l })); try { chatModelLabel(); } catch (_) {} setTip("获取到 effort 档位: " + l.join(" / ") + " (重新打开本页可见)"); }
+        catch (e) { setTip(e.message); }
+      }],
+      ["text", "自定义 effort 档位 (逗号分隔, 例: low,medium,high,xhigh; 留空 = 用获取到的 / 通用默认)", () => (aiConfig().efforts || []).join(","), (v) => { aiSaveConfig(Object.assign(aiConfig(), { efforts: String(v).split(/[,，\s]+/).map((x) => x.trim()).filter((x) => /^[A-Za-z0-9_.-]{1,24}$/.test(x)) })); try { chatModelLabel(); } catch (_) {} }],
     ]],
     ["快捷按钮", () => [
       ["check", "在标题栏显示快捷按钮", () => VIEWOPT.toolbar, (v) => { if (v !== VIEWOPT.toolbar) VIEW_CMDS["toggle-toolbar"](); }],
@@ -9711,7 +9735,8 @@ function commonConfig(openTab) {
       if (kind === "text" || kind === "password") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="' + kind + '" data-i="' + i + '" value="' + escapeHtml(v) + '" style="width:260px" autocomplete="off"></div>';
       if (kind === "check") return '<div class="cfg-row"><label><input type="checkbox" data-i="' + i + '"' + (v ? " checked" : "") + "> " + escapeHtml(label) + "</label></div>";
       if (kind === "number") return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><input type="number" data-i="' + i + '" min="' + a + '" max="' + b + '" value="' + escapeHtml(v) + '" style="width:80px"></div>';
-      return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><select data-i="' + i + '">' + a.map((o, k) => '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" + escapeHtml(b ? b[k] : o) + "</option>").join("") + "</select></div>";
+      const extra = v !== undefined && v !== "" && !a.includes(v) ? '<option value="' + escapeHtml(v) + '" selected>' + escapeHtml(v) + " (当前值, 不在列表里)</option>" : "";   // 已保存的值不在选项里也要显示出来, 否则下拉看着是「默认」而实际还在用它
+      return '<div class="cfg-row"><label>' + escapeHtml(label) + '</label><select data-i="' + i + '">' + a.map((o, k) => '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" + escapeHtml(b ? b[k] : o) + "</option>").join("") + extra + "</select></div>";
     }).join("");
     mdBody.innerHTML = '<div class="cfg-tabs">' + TABS_.map((t, k) => '<button class="cfg-tab' + (k === idx ? " active" : "") + '" data-tab="' + k + '">' + t[0] + "</button>").join("") + "</div>" + rows;
     mdBody.querySelectorAll(".cfg-tab").forEach((b) => b.addEventListener("click", () => render(+b.dataset.tab)));
@@ -11167,7 +11192,54 @@ const plugApi = (req) => invoke("plugins", req);
 
 // ----- AI 设置 (用户在首选项填的 Key; 只在用户触发时随请求发往用户自己配置的端点, 不写日志、不给插件) -----
 const AI_KEY = "ide10.ai";
-const AI_EFFORTS = [["", "默认 (不指定)"], ["minimal", "minimal 最省"], ["low", "low 低"], ["medium", "medium 中"], ["high", "high 高"]];
+/* effort 档位 (推理强度): 不再写死 —— 优先用「从供应商获取」到的档位 (查模型接口), 手动填的自定义档位其次, 都没有才用通用默认。
+   请求里只有选了档位才带 reasoning_effort。 */
+const AI_EFFORTS_DEFAULT = ["minimal", "low", "medium", "high"];
+const aiEffortList = (c) => (c && Array.isArray(c.efforts) && c.efforts.length ? c.efforts : AI_EFFORTS_DEFAULT);
+const aiEffortOptions = (c) => [["", "默认 (不指定)"], ...aiEffortList(c).map((l) => [l, l])];
+const EFFORT_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+/* 从模型接口的返回里找 effort 档位。供应商写法各不相同, 所以按形状找而不是认某一家:
+   - 键名含 effort 的数组: ["low","medium","high"]
+   - 键名含 effort 的对象: { low: {supported:true}, high: {supported:false} } -> 取 supported 的; 或 { levels: [...] } / { enum: [...] } / { values: [...] }
+   找不到 = 空数组 (界面再提示手动填)。 */
+function extractEfforts(node, depth) {
+  depth = depth || 0;
+  if (!node || typeof node !== "object" || depth > 8) return [];
+  const out = [];
+  const clean = (arr) => arr.filter((x) => typeof x === "string" && /^[A-Za-z0-9_.-]{1,24}$/.test(x));
+  for (const [k, v] of Object.entries(node)) {
+    if (/effort/i.test(k)) {
+      if (Array.isArray(v)) out.push(...clean(v));
+      else if (v && typeof v === "object") {
+        for (const key of ["levels", "enum", "values", "supported_values", "options"]) if (Array.isArray(v[key])) out.push(...clean(v[key]));
+        for (const [lk, lv] of Object.entries(v)) if (lv && typeof lv === "object" && lv.supported === true && /^[A-Za-z0-9_.-]{1,24}$/.test(lk)) out.push(lk);
+      }
+    }
+    if (v && typeof v === "object") out.push(...extractEfforts(v, depth + 1));
+  }
+  const uniq = [...new Set(out)];
+  return uniq.sort((a, b) => { const ia = EFFORT_ORDER.indexOf(a), ib = EFFORT_ORDER.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+}
+async function aiFetchEfforts() {
+  const c = aiConfig();
+  if (!c.baseUrl || !c.key) throw new Error("先填好接口地址和 API Key");
+  const base = c.baseUrl.replace(/\/+$/, ""), headers = { authorization: "Bearer " + c.key, "x-api-key": c.key, "anthropic-version": "2023-06-01" };
+  const urls = c.model ? [base + "/models/" + encodeURIComponent(c.model), base + "/models"] : [base + "/models"];
+  let lastErr = "";
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { headers });
+      if (!r.ok) { lastErr = "HTTP " + r.status; continue; }
+      const j = await r.json();
+      const list = Array.isArray(j.data) ? j.data : Array.isArray(j.models) ? j.models : null;      // 列表接口: 先找这个模型自己那一项, 没有再看全部
+      const mine = list && c.model ? list.find((m) => m && (m.id === c.model || m.name === c.model)) : null;
+      if (list && c.model && !mine) { lastErr = "接口列表里没有模型 " + c.model; continue; }       // 找不到本模型就不要把别的模型的档位并起来当成它的
+      const found = extractEfforts(mine || (list ? { data: list } : j));
+      if (found.length) return found;
+    } catch (e) { lastErr = e.message; }
+  }
+  throw new Error("供应商的模型接口没有公布 effort 档位" + (lastErr ? " (" + lastErr + ")" : "") + ", 可以在下面手动填写");
+}
 function aiConfig() { try { return Object.assign({ baseUrl: "https://api.openai.com/v1", model: "", key: "", effort: "" }, JSON.parse(localStorage.getItem(AI_KEY) || "{}")); } catch (_) { return { baseUrl: "", model: "", key: "", effort: "" }; } }
 // 请求体里的 effort: 只有选了才带 reasoning_effort (OpenAI 兼容端点的约定; 不选 = 让模型用自己的默认)
 function aiEffortField(c) { return c.effort ? { reasoning_effort: c.effort } : {}; }
@@ -11246,7 +11318,7 @@ async function plugCall(plugin, method, args) {
 // ----- 贡献点: markdown.fence (和内建的"普通代码块"同一能力位, 冲突由 Rust 仲裁) -----
 async function plugRefresh() {
   const r = await plugApi({ op: "list" });
-  PLUG.list = r.plugins; PLUG.appVersion = r.app_version;
+  PLUG.list = r.plugins; PLUG.appVersion = r.app_version; PLUG.removed = r.removed || [];
   for (const id of [...PLUG.frames.keys()]) { const p = PLUG.list.find((x) => x.manifest.id === id); if (!p || !p.enabled) plugUnload(id); }   // 禁用 / 卸载: 立即热卸载
   plugBindFences();
   plugBindCommands();
@@ -11371,13 +11443,43 @@ function drawExtensions() {
     return '<div class="ext-row"><div class="ext-head"><b>' + escapeHtml(m.name) + '</b> <span class="ext-ver">v' + escapeHtml(m.version) + " · " + (p.source === "bundled" ? "默认" : "已安装") + "</span>" +
       '<label class="ext-on"><input type="checkbox" data-ext-toggle="' + escapeHtml(m.id) + '"' + (p.enabled ? " checked" : "") + "> 启用</label></div>" +
       '<div class="ext-desc">' + escapeHtml(m.description || "") + '</div><div class="ext-meta">权限: ' + (m.permissions.length ? escapeHtml(m.permissions.join(", ")) : "无") + " · " + escapeHtml(m.license || "") + "</div>" + sel +
-      (p.source === "installed" ? '<button class="tb-btn" data-ext-remove="' + escapeHtml(m.id) + '">卸载</button>' : "") + "</div>";
+      '<button class="tb-btn" data-ext-remove="' + escapeHtml(m.id) + '" data-ext-bundled="' + (p.source === "bundled" ? "1" : "") + '">' + (p.source === "installed" ? "卸载" : "删除") + "</button></div>";
   }).join("") || '<div class="empty-hint">尚无扩展</div>';
+  const gone = (PLUG.removed || []).map((x) => '<div class="ext-row"><div class="ext-head"><b>' + escapeHtml(x.name) + '</b> <span class="ext-ver">v' + escapeHtml(x.version) + ' · 已删除的内置插件</span></div>' +
+    '<button class="tb-btn" data-ext-restore="' + escapeHtml(x.id) + '">恢复内置</button></div>').join("");
   const ai = aiConfig();
-  body.innerHTML = rows +
-    '<div class="ext-actions"><button class="tb-btn" id="ext-check">检查更新</button></div><div id="ext-upd"></div>' +
+  body.innerHTML = rows + gone +
+    '<div class="ext-actions"><button class="tb-btn" id="ext-check">检查更新</button> <button class="tb-btn" id="ext-pkg" title="Release 里的 plugin-<id>-<版本>.zip">安装插件包 (.zip)…</button></div><div id="ext-upd"></div><div id="ext-pkg-report" class="ext-report"></div>' +
     '<div class="sb-section">从 GitHub 安装</div><div class="ext-install"><input id="ext-repo" placeholder="owner/repo 或仓库地址" spellcheck="false"><button class="tb-btn" id="ext-inspect">检查最新 Release</button></div><div id="ext-report"></div>' +
     '<div class="ext-ai"><button class="tb-btn" id="ai-open-prefs">AI 设置 (用于"让 AI 给出改善方案") → 在首选项里设置</button></div>';
+}
+/* 插件包 (.zip) 安装: 选文件 -> Rust 解包 + 兼容检查 + 权限 + 哈希 -> 给用户看 -> 同意才装 (和从 GitHub 安装同一套闸) */
+let EXT_PKG = null;
+function extPickPackage() {
+  const f = document.createElement("input"); f.type = "file"; f.accept = ".zip,application/zip";
+  f.onchange = async () => {
+    const file = f.files[0]; if (!file) return;
+    const out = document.getElementById("ext-pkg-report"); if (!out) return;
+    if (file.size > 4 * 1024 * 1024) { out.innerHTML = '<div class="ext-err">插件包超过 4MB</div>'; return; }
+    out.textContent = "正在检查插件包…";
+    try {
+      const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = () => rej(r.error); r.readAsDataURL(file); });
+      const ins = await plugApi({ op: "inspect_package", data });
+      const rep = ins.report, m = rep.manifest;
+      let h = "<div><b>" + escapeHtml(file.name) + "</b> · 文件: " + escapeHtml(Object.keys(ins.files).join(", ")) + "</div>";
+      if (rep.ok && !ins.conflict) {
+        EXT_PKG = { data, perms: m.permissions };
+        h += "<div>插件 <b>" + escapeHtml(m.name) + "</b> v" + escapeHtml(m.version) + " · " + escapeHtml(m.license || "") + "<br>要求权限: " + (m.permissions.length ? escapeHtml(m.permissions.join(", ")) : "无") + "<br>包里自称的来源: " + escapeHtml(m.repo || "(未写)") + " <i>(zip 包没有签名, 这个来源没有被验证; 只装你信任的来源给的包)</i></div>" +
+          "<div class='ext-meta'>" + Object.entries(ins.files).map(([n, h2]) => escapeHtml(n) + " sha256:" + escapeHtml(h2.slice(0, 12)) + "…").join(" · ") + "</div>" +
+          '<button class="tb-btn" id="ext-pkg-install">' + (ins.installed_version ? "替换已有的 v" + escapeHtml(ins.installed_version) : "同意权限并安装") + "</button>";
+      } else {
+        const probs = (rep.problems || []).map((p) => "<li><b>" + escapeHtml(p.code) + "</b> " + escapeHtml(p.message) + "<br><i>" + escapeHtml(p.hint) + "</i></li>").join("") + (ins.conflict ? "<li>" + escapeHtml(ins.conflict) + "</li>" : "");
+        h += '<div class="ext-err">不能安装:<ul>' + probs + "</ul></div>";
+      }
+      out.innerHTML = h;
+    } catch (e) { out.innerHTML = '<div class="ext-err">' + escapeHtml(e.message) + "</div>"; }
+  };
+  f.click();
 }
 async function extInspect(repo) {
   const out = document.getElementById("ext-report"); out.textContent = "正在读取最新 Release…";
@@ -11418,7 +11520,18 @@ document.addEventListener("click", async (e) => {
       return;
     }
     if (t.id === "ai-open-prefs") { commonConfig("AI"); return; }
-    if (t.dataset.extRemove) { await plugApi({ op: "remove", id: t.dataset.extRemove }); await plugRefresh(); drawExtensions(); return; }
+    if (t.id === "ext-pkg") { extPickPackage(); return; }
+    if (t.id === "ext-pkg-install" && EXT_PKG) {
+      t.disabled = true; t.textContent = "安装中…";
+      await plugApi({ op: "install_package", data: EXT_PKG.data, approved: EXT_PKG.perms }); EXT_PKG = null;
+      await plugRefresh(); drawExtensions(); setTip("插件包已安装, 立即生效"); return;
+    }
+    if (t.dataset.extRestore) { await plugApi({ op: "restore_bundled", id: t.dataset.extRestore }); await plugRefresh(); drawExtensions(); setTip("已恢复内置插件"); return; }
+    if (t.dataset.extRemove) {
+      const bundled = !!t.dataset.extBundled;
+      if (!(await uiConfirm(bundled ? "删除这个内置插件? 它的功能会消失; 之后可在这里「恢复内置」, 或用 Release 里的插件包 (.zip) 装回来。" : "卸载这个插件? 文件会被删除。", { title: bundled ? "删除内置插件" : "卸载插件", ok: bundled ? "删除" : "卸载", cancel: "取消" }))) return;
+      await plugApi({ op: "remove", id: t.dataset.extRemove }); await plugRefresh(); drawExtensions(); return;
+    }
   } catch (err) { setTip("扩展操作失败: " + err.message); const o = document.getElementById("ext-report"); if (o) o.insertAdjacentHTML("beforeend", '<div class="ext-err">' + escapeHtml(err.message) + "</div>"); }
 });
 document.addEventListener("change", async (e) => {
@@ -11662,7 +11775,7 @@ function buildMdBar() {
   host.insertBefore(bar, host.firstChild);
   mdSyncPluginButtons();
   const pv = document.createElement("div");
-  pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (只读)");
+  pv.id = "md-preview"; pv.setAttribute("aria-label", "Markdown 预览 (点一个块就地编辑)");
   document.getElementById("editor").appendChild(pv);
 }
 /* ===== 按命令录制的键盘宏 (WBS-02 4.2): 录下执行过的命令和键入的文字, 停下后生成 Sakura 格式的 .mac 文本 =====
@@ -12085,13 +12198,67 @@ function fixContrast(root) {
 // 主题明暗变了 (data-lum / data-theme): 之前改过颜色的先清掉, 再按新底色重算
 new MutationObserver(() => { const pv = document.getElementById("md-preview"); if (pv && pv.firstChild) { for (const e of pv.querySelectorAll("[data-auto-inv]")) { e.style.color = ""; delete e.dataset.autoInv; } fixContrast(pv); } })
   .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-lum"] });
+/* 预览里编辑 (WBS: 预览模式也能改字): 点一个块 -> 它变成该块原文的输入框 (Rust 给每个顶层块标了 data-l="起-止" 原文行范围),
+   失焦 / Ctrl+Enter 提交 = 一步撤销地替换那几行并重画预览; Esc 放弃。块里的链接 / 复选框 / 折叠不触发编辑。
+   目录 (大纲) 点击在预览里滚到对应的块, 不用切回原文。 */
+function mdPreviewEditStart(block) {
+  const t = getActiveTab(); if (!t || !t.mdPreview || t.readOnly || block.classList.contains("md-editing")) return;
+  const [a, b] = block.dataset.l.split("-").map(Number);
+  if (!(a >= 0 && b >= a && b < t.lines.length)) return;
+  const ta = document.createElement("textarea");
+  ta.className = "md-edit-ta"; ta.spellcheck = false; ta.value = t.lines.slice(a, b + 1).join(String.fromCharCode(10));
+  ta.rows = Math.max(2, b - a + 2);
+  const pv = document.getElementById("md-preview");
+  const wrap = document.createElement("div"); wrap.className = "md-edit-block md-editing"; wrap.dataset.l = block.dataset.l;
+  wrap.appendChild(ta); block.replaceWith(wrap);
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true;
+    if (commit && getActiveTab() === t && t.lines.length > b && ta.value !== t.lines.slice(a, b + 1).join(String.fromCharCode(10))) {
+      snapshot(t);
+      const nl = ta.value.replace(/\r\n?/g, String.fromCharCode(10)).split(String.fromCharCode(10));
+      spliceLines(t, a, b - a + 1, ta.value === "" ? [] : nl);
+      if (!t.lines.length) t.lines.push("");
+      t.dirty = true; t.cursor = { row: Math.min(a, t.lines.length - 1), col: 0 };
+      t.sel = null; t.selAnchor = null; t.colSel = null; delete t.cursors; delete t.goalCol; delete t.goalX;     // 源码层的旧选区 / 列块 / 多光标作废
+      // 后面各块的 data-l 立刻平移 (重画是异步的: 这之前如果又点了别的块, 不平移就会按旧行号编辑错行)
+      const delta = (ta.value === "" ? 0 : nl.length) - (b - a + 1);
+      if (delta) for (const el of pv.querySelectorAll("[data-l]")) { const [x, y] = el.dataset.l.split("-").map(Number); if (x > b) el.dataset.l = (x + delta) + "-" + (y + delta); }
+      try { syncDocChrome(); renderTabs(); paintActive(); } catch (_) {}
+    }
+    wrap.remove(); MD.editing = false; renderMdPreview();
+  };
+  ta.addEventListener("blur", () => finish(true));
+  ta.addEventListener("keydown", (e) => {
+    e.stopPropagation();                                                     // 输入框里的按键不要进编辑器的快捷键 / 命令
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finish(true); }
+  });
+  MD.editing = true; ta.focus();
+}
+function mdPreviewScrollTo(line) {
+  const pv = document.getElementById("md-preview"); if (!pv) return false;
+  let hit = null;
+  for (const el of pv.querySelectorAll("[data-l]")) { const [a] = el.dataset.l.split("-").map(Number); if (a <= line) hit = el; else break; }
+  if (!hit) return false;
+  hit.scrollIntoView({ block: "start", behavior: "auto" });
+  hit.classList.add("md-flash"); setTimeout(() => hit.classList.remove("md-flash"), 900);
+  return true;
+}
+document.addEventListener("click", (e) => {
+  const pv = e.target.closest && e.target.closest("#md-preview"); if (!pv || e.target.closest(".md-editing, a, input, summary, details, button")) return;
+  if (window.getSelection && String(window.getSelection())) return;           // 正在选文字复制, 不当作点击编辑
+  const block = e.target.closest("[data-l]"); if (block && pv.contains(block)) mdPreviewEditStart(block);
+});
 async function renderMdPreview() {
   const t = getActiveTab(), pv = document.getElementById("md-preview");
   if (!t || !pv || !t.mdPreview) return;
+  if (MD.editing && pv.querySelector(".md-editing")) return;                  // 正在块里打字: 不要重画把输入框冲掉
   const seq = ++MD.seq;
   let r;
-  try { r = await invoke("md_render", { text: t.lines.join("\n") }); } catch (e) { pv.textContent = "预览失败: " + e.message; return; }
+  try { r = await invoke("md_render", { text: t.lines.join("\n"), lines: true }); } catch (e) { pv.textContent = "预览失败: " + e.message; return; }
   if (seq !== MD.seq || getActiveTab() !== t || !t.mdPreview) return;
+  if (pv.querySelector(".md-editing")) return;                               // 渲染期间用户点开了某个块的输入框: 这次结果作废, 等它提交后再重画
   const top = pv.scrollTop;
   pv.innerHTML = '<article class="md-body-view">' + r.html + "</article>";   // r.html 由 Rust 转义生成
   pv.scrollTop = top;
@@ -12101,7 +12268,7 @@ async function renderMdPreview() {
     if (!h) { if (lang === "mermaid") el.setAttribute("title", "没有可用的 Mermaid 渲染插件 (扩展面板里启用 Pele)"); continue; }
     Promise.resolve().then(() => h(el.textContent)).then((out) => {
       if (!out || !el.isConnected) return;
-      const box = document.createElement("div"); box.className = "md-fence-out";
+      const box = document.createElement("div"); box.className = "md-fence-out"; if (el.dataset.l) box.dataset.l = el.dataset.l;
       if (out.error) { box.classList.add("err"); box.textContent = out.error; el.after(box); return; }   // 失败: 保留源码, 旁边显示错误 (FR-022)
       box.replaceChildren(mdSanitize(out.svg || out.html || "")); el.replaceWith(box); fixContrast(pv);
     }).catch(() => {});
@@ -12198,7 +12365,7 @@ function buildChat() {
   d.innerHTML = '<div id="chat-head"><b>Chat</b><span class="chat-sp"></span><label class="chat-ctx"><input type="checkbox" id="chat-ctx" checked> 带上选中内容/当前章节</label>' +
     '<button class="tb-btn" id="chat-clear" title="清空对话">清空</button><button class="tb-btn" id="chat-close" title="折叠 (Ctrl+Shift+L)">✕</button></div>' +
     '<div id="chat-msgs" aria-live="polite"></div>' +
-    '<div id="chat-model"><span id="chat-model-name"></span><label class="chat-effort" title="模型的推理强度 (effort)">effort <select id="chat-effort">' + AI_EFFORTS.map((e) => '<option value="' + e[0] + '">' + e[1] + "</option>").join("") + '</select></label><button class="tb-btn" id="chat-prefs" title="模型 / 接口 / Key 在首选项里设置">模型设置…</button></div>' +
+    '<div id="chat-model"><span id="chat-model-name"></span><label class="chat-effort" title="模型的推理强度 (effort)">effort <select id="chat-effort"></select></label><button class="tb-btn" id="chat-prefs" title="模型 / 接口 / Key 在首选项里设置">模型设置…</button></div>' +
     '<div id="chat-inputrow"><textarea id="chat-input" rows="2" placeholder="向 AI 提问; 它可以调用编辑器的智能 API (大纲 / 查找 / 渲染 / 补丁提案)。Enter 发送, Shift+Enter 换行"></textarea><button class="tb-btn" id="chat-send">发送</button></div>';
   document.getElementById("app").appendChild(d);
   const c = aiConfig();
@@ -12215,7 +12382,12 @@ function buildChat() {
 function chatModelLabel() {
   const el = document.getElementById("chat-model-name"), c = aiConfig(); if (!el) return;
   el.textContent = c.model ? c.model : "未设置模型";
-  const sel = document.getElementById("chat-effort"); if (sel) sel.value = c.effort || "";
+  const sel = document.getElementById("chat-effort");
+  if (sel) {
+    sel.replaceChildren(...aiEffortOptions(c).map(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; return o; }));
+    if (c.effort && !aiEffortList(c).includes(c.effort)) { const o = document.createElement("option"); o.value = c.effort; o.textContent = c.effort + " (已不在档位里)"; sel.appendChild(o); }
+    sel.value = c.effort || "";
+  }
 }
 function chatSay(role, text) {
   const box = document.getElementById("chat-msgs");
@@ -12695,6 +12867,7 @@ function showAbout() {
   setTip("关于 IDE1.0 v0.0.1");
 }
 
+startupMark("script-end"); requestAnimationFrame(() => requestAnimationFrame(() => startupMark("first-frame")));
 </script>
 
 </body>

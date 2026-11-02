@@ -351,6 +351,20 @@ fn get_mode(state: tauri::State<'_, ShellState>) -> Result<String, String> {
 
 // ===== 项目导入 / 文件树 / 文件读写 (ULYS-191 §5 Cursor 风格 UI) =====
 
+/// 启动耗时追踪 (设了环境变量 IDE_STARTUP_TRACE=1 才写, 平时零开销): 记「距 run() 入口多少毫秒」, 页面脚本也能通过 startup_mark 打点。
+/// 用来找启动慢在哪一段 (进程 -> 窗口 -> 页面加载 -> 脚本 -> 首帧), 而不是凭感觉优化。
+static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+pub fn startup_trace(msg: &str) {
+    let t0 = *START.get_or_init(std::time::Instant::now);
+    if std::env::var_os("IDE_STARTUP_TRACE").is_some() {
+        diag_log(&format!("[startup +{}ms] {msg}", t0.elapsed().as_millis()));
+    }
+}
+#[tauri::command]
+fn startup_mark(name: String) {
+    startup_trace(&format!("page: {}", name.chars().take(60).collect::<String>()));
+}
+
 /// 诊断: 写一行到 IDE_LOG_FILE 文件 (默认 %TEMP%/ide-shell-desktop-diag.log)
 /// 桌面 GUI 没 console, 但 eprintln 用户看不到, 所以 log 到文件.
 pub fn diag_log(msg: &str) {
@@ -626,6 +640,7 @@ pub fn help_wiki_text() -> &'static str {
 /// Tauri app entry — 注册 state + commands + 启动.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    startup_trace("run() enter");
     // 强制 tauri::generate_context! 重展开 — cargo proc-macro 按 lib.rs 改时重生成 token stream.
     // 注意: 这只重 build 这一条函数. assets embed 走 build script (tauri-build) — 那条链通过
     // conf + dist mtime 触发. build script 走 frontendDist + cargo:rerun-if-changed.
@@ -728,6 +743,7 @@ pub fn run() {
             set_window_theme,
             grants::native_open_file,
             grants::launch_files,
+            startup_mark,
             grants::native_save_as,
             exec_cmd,
             settings,
@@ -738,7 +754,9 @@ pub fn run() {
             migemo_patterns,
             plugin::plugin_load,
         ])
+        .on_page_load(|_w, payload| startup_trace(&format!("page {:?}", payload.event())))
         .setup(|app_handle| {
+            startup_trace("setup");
             eprintln!(
                 "ide-shell-desktop starting (tauri {}, target {})",
                 env!("CARGO_PKG_VERSION"),
@@ -772,8 +790,12 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running ide-shell-desktop");
+        .build(tauri::generate_context!())
+        .map(|app| {
+            startup_trace("built (window + webview created)");
+            app.run(|_, _| {});
+        })
+        .expect("error while building ide-shell-desktop");
 }
 
 

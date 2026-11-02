@@ -80,3 +80,33 @@ test('自动反色看实际底色: 深色底块上的深色字被改成浅色', 
     assert.notEqual(r.sp, 'rgb(0, 0, 0)', '黑底块上的黑字被反成浅色');
     assert.equal(r.ok, 'rgb(0, 0, 0)', '白底上的黑字保持');
   }));
+
+test('effort 档位从供应商模型接口取 (数组 / supported 对象 / 列表里找本模型), 取不到才用默认, 也可自定义', () =>
+  withMocks({ name: 'ui', portOffset: 649 }, async ({ page }) => {
+    await page.locator('#ed-content').click();
+    const ex = await page.evaluate(() => ({
+      arr: extractEfforts({ id: 'm', supported_reasoning_efforts: ['low', 'high', 'xhigh'] }),
+      obj: extractEfforts({ capabilities: { effort: { supported: true, low: { supported: true }, medium: { supported: true }, high: { supported: false }, max: { supported: true } } } }),
+      lv: extractEfforts({ reasoning_effort: { levels: ['minimal', 'medium'] } }),
+      none: extractEfforts({ id: 'm', context_window: 1 }),
+    }));
+    assert.deepEqual(ex.arr, ['low', 'high', 'xhigh']);
+    assert.deepEqual(ex.obj, ['low', 'medium', 'max']);
+    assert.deepEqual(ex.lv, ['minimal', 'medium']);
+    assert.deepEqual(ex.none, []);
+    // 列表接口: 找本模型那一项 (别的模型的档位不算)
+    await page.route('https://api.vendor.test/v1/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' },
+      body: JSON.stringify(route.request().url().endsWith('/models') ? { data: [{ id: 'other', efforts: ['low'] }, { id: 'mine', capabilities: { reasoning_effort: ['low', 'medium', 'high', 'max'] } }] } : {}) }));
+    const got = await page.evaluate(async () => { aiSaveConfig({ baseUrl: 'https://api.vendor.test/v1', model: 'mine', key: 'k', effort: '' }); return aiFetchEfforts(); });
+    assert.deepEqual(got, ['low', 'medium', 'high', 'max']);
+    // 存下来之后聊天窗和首选项的下拉用这些档位
+    await page.evaluate((l) => { aiSaveConfig(Object.assign(aiConfig(), { efforts: l, effort: 'max' })); toggleChat(true); chatModelLabel(); }, got);
+    await page.waitForSelector('#chat-effort');
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#chat-effort option')].map((o) => o.value)), ['', 'low', 'medium', 'high', 'max']);
+    assert.equal(await page.locator('#chat-effort').inputValue(), 'max');
+    // 没公布档位 -> 抛错提示手动填; 没有存档位 -> 通用默认
+    await page.route('https://api.none.test/v1/**', (route) => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: '{"data":[]}' }));
+    const err = await page.evaluate(async () => { aiSaveConfig({ baseUrl: 'https://api.none.test/v1', model: 'x', key: 'k' }); try { await aiFetchEfforts(); return 'ok'; } catch (e) { return e.message; } });
+    assert.match(err, /没有公布 effort 档位.*手动/);
+    assert.deepEqual(await page.evaluate(() => aiEffortList(aiConfig())), ['minimal', 'low', 'medium', 'high']);
+  }));
