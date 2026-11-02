@@ -40,7 +40,7 @@ use ide_shell::{App, AppConfig};
 use serde::{Deserialize, Serialize};
 
 use ide_kernel::document::LineEnding;
-use path_safety::{list_dir, read_file_enc, stat_file, write_file_spec, DirEntry, FileContent};
+use path_safety::{list_dir, read_file_enc_max, stat_file, write_file_spec, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
 /// 请求头大小上限 (防 header 放大攻击).
@@ -1342,7 +1342,8 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let enc = req.get("encoding").and_then(|v| v.as_str());
-            let resp: Result<FileContent, String> = read_file_enc(&root, path, enc);
+            let max = req.get("max_bytes").and_then(|v| v.as_u64());
+            let resp: Result<FileContent, String> = read_file_enc_max(&root, path, enc, max);
             match resp {
                 Ok(fc) => send_response(
                     stream,

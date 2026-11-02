@@ -4592,10 +4592,24 @@ function setDocEol(label) {
   setTip("入力改行コード: " + label.toUpperCase() + " (保存时生效)");
 }
 
+/* 大文件 (WBS-02 5.9): 默认上限 4MB (保持轻量); 首选项「ファイル」里可调到最多 32MB。超过默认上限而用户允许时, 先给大小警告再放行。 */
+const bigFileLimit = () => { const mb = +PREFS.maxFileMB; return mb > 4 ? Math.min(32, mb) * 1048576 : 0; };
+async function readFileWithLimit(path, extra) {
+  try { return await invoke("read_file", Object.assign({ path }, extra || {})); }
+  catch (e) {
+    const m = /文件过大 \((\d+) bytes/.exec((e && e.message) || "");
+    if (!m) throw e;
+    const size = +m[1], lim = bigFileLimit(), mb = (size / 1048576).toFixed(1);
+    if (!lim) throw new Error("文件 " + mb + "MB, 超过默认上限 4MB。要打开大文件, 在首选项「ファイル」里调高「大文件上限」(最多 32MB, 会变慢)");
+    if (size > lim) throw new Error("文件 " + mb + "MB, 超过你设置的上限 " + Math.round(lim / 1048576) + "MB");
+    if (!(await uiConfirm("文件有 " + mb + "MB, 打开和编辑会明显变慢。继续打开吗?", { title: "大文件", ok: "打开", cancel: "取消" }))) throw new Error("已取消打开大文件");
+    return invoke("read_file", Object.assign({ path, max_bytes: lim }, extra || {}));
+  }
+}
 async function openFile(path) {
   const tPath = stripVerbatim(path);
   try {
-    const res = await invoke("read_file", { path: tPath });
+    const res = await readFileWithLimit(tPath);
     // Rust 端返回 { name, path, content } 对象 (不是裸字符串)
     const text = res && typeof res === "object" ? res.content : res;
     const id = "t" + (++maxTabId);
@@ -9557,6 +9571,7 @@ function commonConfig(openTab) {
       ["check", "保存时备份旧文件 (.sakura-backup/, 保留最近 5 代)", () => !!PREFS.saveBackup, (v) => { PREFS.saveBackup = v; savePrefs(); }],
       ["check", "窗口获得焦点时检查文件是否被外部修改", () => PREFS.checkExternal !== false, (v) => { PREFS.checkExternal = v; savePrefs(); }],
       ["check", "关闭窗口 / 刷新时, 有未保存修改先提示", () => PREFS.confirmClose !== false, (v) => { PREFS.confirmClose = v; savePrefs(); }],
+      ["number", "大文件上限 (MB; 4 = 默认, 最大 32; 超过 4MB 的文件打开前会先警告, 编辑会变慢)", () => PREFS.maxFileMB || 4, (v) => { PREFS.maxFileMB = num(v, 4, 32, 4); savePrefs(); }, 4, 32],
       ["number", "最近使用的文件: 保留个数", () => PREFS.mruFiles || 20, (v) => { PREFS.mruFiles = num(v, 1, 99, 20); savePrefs(); }, 1, 99],
     ]],
     ["宏", () => [

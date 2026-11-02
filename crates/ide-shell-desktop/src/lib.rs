@@ -80,6 +80,8 @@ use ide_shell::{App, AppConfig, Mode};
 use tauri::Emitter;
 /// 单文件读取上限 (4 MB) — 保持轻量, 大文件/二进制请走 Shell 面板外部工具.
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// 用户在首选项里主动调高后的绝对上限 (WBS-02 5.9): 默认仍是 4MB, 保持轻量
+pub const LARGE_FILE_CAP: u64 = 32 * 1024 * 1024;
 
 /// Tauri managed state wrapper — 单用户 demo, App 由 Tauri runtime 持有.
 pub struct ShellState(pub Mutex<App>);
@@ -490,12 +492,22 @@ pub fn read_file_pub(root: &Path, path: &str) -> Result<FileContent, String> {
 
 /// 同上, `encoding` = 指定编码重新打开 (F_FILE_REOPEN_*).
 pub fn read_file_enc_pub(root: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
+    read_file_enc_max_pub(root, path, encoding, None)
+}
+
+/// 同上, `max_bytes` = 用户在首选项里允许的上限, 夹在 [4MB, 32MB]
+pub fn read_file_enc_max_pub(root: &Path, path: &str, encoding: Option<&str>, max_bytes: Option<u64>) -> Result<FileContent, String> {
     let target = resolve_in_project_pub(root, path)?;
-    read_resolved(&target, path, encoding)
+    read_resolved_max(&target, path, encoding, max_bytes)
 }
 
 /// 读一个已经确认可以访问的文件 (项目内, 或用户在系统对话框里选定的)
 pub fn read_resolved(target: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
+    read_resolved_max(target, path, encoding, None)
+}
+
+pub fn read_resolved_max(target: &Path, path: &str, encoding: Option<&str>, max_bytes: Option<u64>) -> Result<FileContent, String> {
+    let limit = max_bytes.unwrap_or(MAX_FILE_BYTES).clamp(MAX_FILE_BYTES, LARGE_FILE_CAP);
     let target = target.to_path_buf();
     if !target.is_file() {
         return Err(format!("不是文件: {path}"));
@@ -503,9 +515,9 @@ pub fn read_resolved(target: &Path, path: &str, encoding: Option<&str>) -> Resul
     let size = std::fs::metadata(&target)
         .map_err(|e| format!("读取元数据失败: {e}"))?
         .len();
-    if size > MAX_FILE_BYTES {
+    if size > limit {
         return Err(format!(
-            "文件过大 ({size} bytes > {MAX_FILE_BYTES} bytes) — 保持轻量, 请用外部工具处理"
+            "文件过大 ({size} bytes > {limit} bytes) — 保持轻量, 请用外部工具处理"
         ));
     }
     let d = editcore::document_io::read_doc(&target, encoding)?;
@@ -530,14 +542,15 @@ fn read_file(
     grants: tauri::State<'_, grants::Grants>,
     path: String,
     encoding: Option<String>,
+    max_bytes: Option<u64>,
 ) -> Result<FileContent, String> {
     if let Some(t) = grants.granted(&path) {
-        return read_resolved(&t, &path, encoding.as_deref()); // 用户在系统对话框里选定的文件 (可以在项目外)
+        return read_resolved_max(&t, &path, encoding.as_deref(), max_bytes); // 用户在系统对话框里选定的文件 (可以在项目外)
     }
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    read_file_enc_pub(&root, &path, encoding.as_deref())
+    read_file_enc_max_pub(&root, &path, encoding.as_deref(), max_bytes)
 }
 
 /// 写文件 — 限项目根内. 返回写入字节数.
