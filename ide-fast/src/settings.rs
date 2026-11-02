@@ -12,12 +12,14 @@ pub struct Settings {
     pub tab_width: usize,
     pub highlight: bool,
     pub wrap: bool,
+    /// 选中的主题插件 id (空 = 内置深 / 浅色)
+    pub theme_plugin: String,
     pub recent: Vec<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, recent: vec![] }
+        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![] }
     }
 }
 
@@ -43,6 +45,7 @@ impl Settings {
         if let Some(t) = v["tab_width"].as_u64() { s.tab_width = (t as usize).clamp(1, 16); }
         if let Some(h) = v["highlight"].as_bool() { s.highlight = h; }
         if let Some(w) = v["wrap"].as_bool() { s.wrap = w; }
+        if let Some(t) = v["theme_plugin"].as_str() { s.theme_plugin = t.to_string(); }
         if let Some(a) = v["recent"].as_array() {
             s.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
         }
@@ -51,7 +54,7 @@ impl Settings {
 
     pub fn save(&self) {
         let Some(p) = path() else { return };
-        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "recent": self.recent });
+        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin, "recent": self.recent });
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }

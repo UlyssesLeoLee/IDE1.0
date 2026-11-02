@@ -1,6 +1,7 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
 use crate::doc::{expand_tabs, Doc};
+use crate::plugins;
 use crate::settings::Settings;
 use crate::sidebar::{Sidebar, Tab};
 use crate::terminal::Terminal;
@@ -35,6 +36,19 @@ pub struct App {
     registry: TypeRegistry,
     side: Sidebar,
     term: Terminal,
+    /// 主题插件: 选中的 id 与换算好的外观
+    theme_id: String,
+    theme_visuals: Option<egui::Visuals>,
+    /// 分割窗口: 左右两个编辑区各看一个文档; active 永远是有焦点那一栏的文档
+    split_on: bool,
+    left_doc: usize,
+    right_doc: usize,
+    focus_right: bool,
+    /// 当前这栏是否接收键盘 (分割时只有焦点栏收)
+    pane_keys: bool,
+    /// 终端: 选区作标准输入 / 输出替换选区
+    term_stdin: bool,
+    term_replace: bool,
     md_preview: bool,
     wrap: bool,
     goal_x: Option<f32>,
@@ -55,10 +69,11 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
+        if !st.theme_plugin.is_empty() { app.set_theme_plugin(&st.theme_plugin.clone()); }
         app.font_px = st.font_px;
         app.tab = st.tab_width;
         app.highlight = st.highlight;
@@ -113,7 +128,7 @@ impl App {
     }
 
     fn current_settings(&self) -> Settings {
-        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, recent: self.recent.clone() }
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone() }
     }
 
     /// 设置变了就落盘 (每帧比较一次, 只有真变了才写)
@@ -305,6 +320,7 @@ impl App {
             }
         }
         self.docs.remove(i);
+        self.split_on = false;
         if self.docs.is_empty() {
             self.new_doc();
         }
@@ -328,6 +344,7 @@ impl App {
                 });
                 if ui.button("保存  Ctrl+S").clicked() { ui.close(); self.save(false); }
                 if ui.button("另存为…").clicked() { ui.close(); self.save(true); }
+                if ui.button("打印 / 打印预览…  Ctrl+P").clicked() { ui.close(); self.print_cur(); }
                 if ui.button("关闭标签  Ctrl+W").clicked() { ui.close(); let a = self.active; self.close_tab(a); }
                 ui.separator();
                 if ui.button("退出").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
@@ -354,6 +371,34 @@ impl App {
                 if ui.button("折叠 / 展开当前行  Ctrl+Shift+[").clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
                 if ui.button("全部展开  Ctrl+Shift+]").clicked() { self.cur().folds.clear(); ui.close(); }
             });
+            ui.menu_button("插件", |ui| {
+                let rows = plugins::rows();
+                if ui.radio(self.theme_id.is_empty(), "内置主题 (深 / 浅色)").clicked() { self.set_theme_plugin(""); ui.close(); }
+                for r in &rows {
+                    ui.horizontal(|ui| {
+                        if let Some(t) = &r.theme {
+                            if ui.radio(self.theme_id == r.id, format!("主题: {}", t.label)).clicked() { self.set_theme_plugin(&r.id); ui.close(); }
+                        } else {
+                            ui.label(format!("{} {}{}", r.name, r.version, if r.script_only { "  (脚本插件, 高速版不运行)" } else { "" }));
+                        }
+                        if ui.small_button("删除").clicked() {
+                            let _ = plugins::remove(&r.id);
+                            if self.theme_id == r.id { self.set_theme_plugin(""); }
+                            ui.close();
+                        }
+                    });
+                }
+                ui.separator();
+                if ui.button("导入插件 (.zip)…").clicked() { ui.close(); self.import_plugin_zip(); }
+                let gone = plugins::removed_bundled();
+                if !gone.is_empty() {
+                    ui.menu_button("恢复内置插件", |ui| {
+                        for (id, name, _) in gone {
+                            if ui.button(name).clicked() { let _ = plugins::restore(&id); ui.close(); }
+                        }
+                    });
+                }
+            });
             ui.menu_button("设置", |ui| {
                 if ui.button("首选项…").clicked() { self.prefs_open = true; ui.close(); }
             });
@@ -371,6 +416,7 @@ impl App {
                 if ui.button("运行 .mac 文件…").clicked() { ui.close(); self.run_mac_file(); }
             });
             ui.menu_button("视图", |ui| {
+                if ui.checkbox(&mut self.split_on.clone(), "分割窗口  Ctrl+\\").clicked() { self.toggle_split(); ui.close(); }
                 ui.checkbox(&mut self.term.open, "终端  Ctrl+`");
                 ui.checkbox(&mut self.md_preview, "Markdown 预览  Ctrl+Shift+V");
                 if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
@@ -418,6 +464,8 @@ impl App {
             ui.strong("终端");
             if ui.small_button("清屏").clicked() { self.term.output.clear(); }
             if ui.small_button("×").clicked() { self.term.open = false; }
+            ui.checkbox(&mut self.term_stdin, "选区作标准输入");
+            ui.checkbox(&mut self.term_replace, "输出替换选区");
             if self.term.running() { ui.label("运行中…"); }
         });
         let h = (ui.available_height() - 28.0).max(30.0);
@@ -431,7 +479,13 @@ impl App {
         }
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             let cwd = self.side.root.clone().or_else(|| self.docs[self.active.min(self.docs.len() - 1)].path.as_ref().and_then(|p| p.parent().map(|x| x.to_path_buf()))).unwrap_or_else(|| PathBuf::from("."));
-            self.term.submit(cwd);
+            let (want_in, want_rep) = (self.term_stdin, self.term_replace);
+            let (stdin, rdoc) = if want_in || want_rep {
+                let d = self.cur();
+                let sel = d.edit("copy", None).unwrap_or_default();
+                (Some(sel), if want_rep { Some(d.id) } else { None })
+            } else { (None, None) };
+            self.term.submit(cwd, stdin, rdoc);
             r.request_focus();
         }
     }
@@ -558,6 +612,8 @@ impl App {
         if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket) { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::CloseBracket) { self.cur().folds.clear(); }
+        if cmd(ctx, Modifiers::COMMAND, Key::P) { self.print_cur(); }
+        if cmd(ctx, Modifiers::COMMAND, Key::Backslash) { self.toggle_split(); }
         if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::V) { self.md_preview = !self.md_preview; }
         if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
@@ -578,6 +634,63 @@ impl App {
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
+    /// 一栏编辑区: 临时把 active 换成这栏的文档, 画完换回; 点击这栏 = 它拿到焦点
+    fn editor_pane(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool, right: bool) {
+        if !self.split_on {
+            self.pane_keys = true;
+            return self.editor(ui, ctx, find_has_focus);
+        }
+        let last = self.docs.len() - 1;
+        let doc = if right { self.right_doc.min(last) } else { self.left_doc.min(last) };
+        let keep = self.active;
+        self.active = doc;
+        self.pane_keys = self.focus_right == right;
+        self.editor(ui, ctx, find_has_focus);
+        self.active = keep;
+        if ctx.input(|i| i.pointer.any_pressed()) && ui.rect_contains_pointer(ui.max_rect()) {
+            self.focus_right = right;
+        }
+    }
+
+    fn print_cur(&mut self) {
+        let (name, lines) = { let d = self.cur(); (d.name.clone(), d.lines.clone()) };
+        let pt = (self.font_px * 0.75).clamp(7.0, 14.0);
+        let tip = match crate::print::open_for_print(&name, &lines, true, pt) { Ok(_) => "已在浏览器打开打印页".to_string(), Err(e) => e };
+        self.cur().tip = tip;
+    }
+
+    /// 选主题插件 (空 id = 回到内置深 / 浅色)
+    fn set_theme_plugin(&mut self, id: &str) {
+        self.theme_id = id.to_string();
+        self.theme_visuals = plugins::rows().into_iter().find(|r| r.id == id && r.enabled).and_then(|r| r.theme).map(|t| plugins::visuals(&t.vars));
+        if self.theme_visuals.is_none() { self.theme_id.clear(); }
+    }
+
+    /// 选一个 zip -> 给确认框 (名称 / 版本 / 权限) -> 安装
+    fn import_plugin_zip(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("插件包", &["zip"]).pick_file() else { return };
+        let bytes = match std::fs::read(&path) { Ok(b) => b, Err(e) => { self.cur().tip = format!("读不了 {}: {e}", path.display()); return; } };
+        let msg = match plugins::inspect_zip(&bytes) {
+            Err(e) => { rfd::MessageDialog::new().set_title("无法导入").set_description(e).show(); return; }
+            Ok((note, perms)) => {
+                let ok = rfd::MessageDialog::new().set_title("导入插件").set_description(format!("{note}\n\n来源: {} (未验证)\n导入吗?", path.display())).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
+                if !ok { return; }
+                match plugins::install_zip(&bytes, &perms) { Ok(m) => m, Err(e) => e }
+            }
+        };
+        self.cur().tip = msg;
+    }
+
+    fn toggle_split(&mut self) {
+        self.split_on = !self.split_on;
+        if self.split_on {
+            let a = self.active.min(self.docs.len() - 1);
+            self.left_doc = a;
+            self.right_doc = if self.docs.len() > 1 { (a + 1) % self.docs.len() } else { a };
+            self.focus_right = false;
+        }
+    }
+
     fn editor(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool) {
         let font = FontId::monospace(self.font_px);
         let (row_h, char_w) = ctx.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0')));
@@ -627,7 +740,7 @@ impl App {
         // ---- 键盘 (查找框有焦点时不抢) ----
         let mut clip_out: Option<String> = None;
         let mut preedit_now = self.preedit.clone();
-        if !find_has_focus {
+        if !find_has_focus && self.pane_keys {
             let mut events = ctx.input(|i| i.events.clone());
             if wrap {
                 // 自动换行下 ↑ ↓ Home End 按显示行走 (按真实排版取位置); 带修饰键的仍交给 editcore
@@ -820,6 +933,10 @@ impl App {
 }
 
 /// 文件树: 目录用折叠头 (展开才读目录), 文件点击打开
+/// 标签分组: 下标 = Doc.group
+const GROUP_NAMES: [&str; 6] = ["不分组", "红组", "橙组", "绿组", "蓝组", "紫组"];
+const GROUP_COLORS: [Option<Color32>; 6] = [None, Some(Color32::from_rgb(230, 80, 80)), Some(Color32::from_rgb(235, 150, 50)), Some(Color32::from_rgb(80, 190, 110)), Some(Color32::from_rgb(80, 150, 235)), Some(Color32::from_rgb(170, 110, 225))];
+
 fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut Option<(PathBuf, usize)>) {
     for e in side.children_of(dir) {
         if e.is_dir {
@@ -894,7 +1011,7 @@ fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: 
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = &root.ctx().clone();
-        ctx.set_visuals(if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() });
+        ctx.set_visuals(match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } });
         // 关窗口: 有未保存修改先问
         if ctx.input(|i| i.viewport().close_requested()) && !self.confirm_exit && self.docs.iter().any(|d| d.dirty) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -918,6 +1035,12 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         if self.prefs_open { self.prefs_window(ctx); }
+        if self.split_on {
+            let last = self.docs.len() - 1;
+            self.left_doc = self.left_doc.min(last);
+            self.right_doc = self.right_doc.min(last);
+            self.active = if self.focus_right { self.right_doc } else { self.left_doc };
+        }
         self.shortcuts(ctx);
         egui::Panel::top("menu").show(root, |ui| self.menu(ui, ctx));
         egui::Panel::top("tabs").show(root, |ui| {
@@ -925,13 +1048,24 @@ impl eframe::App for App {
                 let mut close: Option<usize> = None;
                 for i in 0..self.docs.len() {
                     let label = format!("{}{}", if self.docs[i].dirty { "● " } else { "" }, self.docs[i].name);
-                    if ui.selectable_label(i == self.active, label).clicked() { self.active = i; }
+                    let gcol = GROUP_COLORS.get(self.docs[i].group as usize).copied().flatten();
+                    let text = match gcol { Some(c) => egui::RichText::new(format!("● {label}")).color(c), None => egui::RichText::new(label) };
+                    let tab_resp = ui.selectable_label(i == self.active, text);
+                    if tab_resp.clicked() { self.active = i; }
+                    tab_resp.context_menu(|ui| {
+                        for (g, name) in GROUP_NAMES.iter().enumerate() {
+                            if ui.selectable_label(self.docs[i].group as usize == g, *name).clicked() { self.docs[i].group = g as u8; ui.close(); }
+                        }
+                    });
                     if ui.small_button("×").clicked() { close = Some(i); }
                     ui.add_space(6.0);
                 }
                 if let Some(i) = close { self.close_tab(i); }
             });
         });
+        if self.split_on {
+            if self.focus_right { self.right_doc = self.active; } else { self.left_doc = self.active; }
+        }
         if self.side.open {
             egui::Panel::left("side").resizable(true).default_size(250.0).show(root, |ui| self.side_ui(ui));
         }
@@ -963,6 +1097,11 @@ impl eframe::App for App {
             egui::Panel::bottom("term").resizable(true).default_size(180.0).show(root, |ui| self.term_ui(ui));
         }
         self.term.poll();
+        if let Some((id, out)) = self.term.replace_out.take() {
+            if let Some(d) = self.docs.iter_mut().find(|d| d.id == id) {
+                d.edit("paste", Some(out.trim_end_matches(['\r', '\n']).to_string()));
+            }
+        }
         if self.term.running() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
         let is_md = {
             let n = self.docs[self.active.min(self.docs.len() - 1)].name.to_lowercase();
@@ -971,7 +1110,10 @@ impl eframe::App for App {
         if self.md_preview && is_md {
             egui::Panel::right("mdprev").resizable(true).default_size(420.0).show(root, |ui| self.md_ui(ui));
         }
-        egui::CentralPanel::default_margins().frame(egui::Frame::NONE).show(root, |ui| self.editor(ui, ctx, find_focus));
+        if self.split_on {
+            egui::Panel::right("split").resizable(true).default_size(root.available_width() * 0.5).show(root, |ui| self.editor_pane(ui, ctx, find_focus, true));
+        }
+        egui::CentralPanel::default_margins().frame(egui::Frame::NONE).show(root, |ui| self.editor_pane(ui, ctx, find_focus, false));
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
     }

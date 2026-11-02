@@ -10,6 +10,8 @@ mod app;
 mod doc;
 mod fonts;
 mod instance;
+mod plugins;
+mod print;
 mod settings;
 mod macros;
 mod markdown;

@@ -12,12 +12,14 @@ pub struct Terminal {
     pub output: String,
     pub history: Vec<String>,
     hist_pos: Option<usize>,
+    replace_doc: Option<u64>,
+    pub replace_out: Option<(u64, String)>,
     rx: Option<Receiver<(String, Result<ExecOut, String>)>>,
 }
 
 impl Terminal {
     pub fn new() -> Self {
-        Terminal { open: false, input: String::new(), output: String::new(), history: vec![], hist_pos: None, rx: None }
+        Terminal { open: false, input: String::new(), output: String::new(), history: vec![], hist_pos: None, replace_doc: None, replace_out: None, rx: None }
     }
 
     pub fn running(&self) -> bool {
@@ -25,7 +27,7 @@ impl Terminal {
     }
 
     /// 执行输入框里的命令 (`cls` / `clear` 清屏)
-    pub fn submit(&mut self, cwd: PathBuf) {
+    pub fn submit(&mut self, cwd: PathBuf, stdin: Option<String>, replace_doc: Option<u64>) {
         let cmd = self.input.trim().to_string();
         if cmd.is_empty() || self.running() {
             return;
@@ -37,10 +39,11 @@ impl Terminal {
             return;
         }
         self.history.push(cmd.clone());
-        self.output.push_str(&format!("> {cmd}\n"));
+        self.output.push_str(&format!("> {cmd}{}\n", if stdin.is_some() { "   (选区作标准输入)" } else { "" }));
+        self.replace_doc = replace_doc;
         let (tx, rx) = channel();
         std::thread::spawn(move || {
-            let r = exec_cmd::run(&cwd, &cmd, None, Some(60_000));
+            let r = exec_cmd::run(&cwd, &cmd, stdin.as_deref(), Some(60_000));
             let _ = tx.send((cmd, r));
         });
         self.rx = Some(rx);
@@ -51,6 +54,11 @@ impl Terminal {
         let Some(rx) = &self.rx else { return false };
         match rx.try_recv() {
             Ok((_, Ok(o))) => {
+                if let Some(id) = self.replace_doc.take() {
+                    if o.code.unwrap_or(0) == 0 && !o.timed_out {
+                        self.replace_out = Some((id, o.stdout.clone()));
+                    }
+                }
                 self.output.push_str(&o.stdout);
                 if !o.stderr.is_empty() {
                     self.output.push_str(&o.stderr);
@@ -108,7 +116,7 @@ mod tests {
     fn runs_a_command_in_the_background_and_collects_output() {
         let mut t = Terminal::new();
         t.input = "echo hello-fast".into();
-        t.submit(std::env::temp_dir());
+        t.submit(std::env::temp_dir(), None, None);
         assert!(t.running());
         for _ in 0..300 {
             if t.poll() {
@@ -119,8 +127,24 @@ mod tests {
         assert!(t.output.contains("hello-fast"), "{}", t.output);
         assert!(!t.running());
         t.input = "cls".into();
-        t.submit(std::env::temp_dir());
+        t.submit(std::env::temp_dir(), None, None);
         assert!(t.output.is_empty());
         assert_eq!(t.history, vec!["echo hello-fast"]);
+    }
+
+    #[test]
+    fn selection_goes_to_stdin_and_output_comes_back_for_replacement() {
+        let mut t = Terminal::new();
+        t.input = if cfg!(windows) { "findstr \"^\"".into() } else { "cat".into() };
+        t.submit(std::env::temp_dir(), Some("piped-text".into()), Some(7));
+        for _ in 0..300 {
+            if t.poll() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let (id, out) = t.replace_out.take().expect("成功的命令把输出交回来");
+        assert_eq!(id, 7);
+        assert!(out.contains("piped-text"), "{out}");
     }
 }
