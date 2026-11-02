@@ -5334,6 +5334,32 @@ function posFromEvent(e, virtualCols) {
 /* 拖动状态: null = 没在拖. 拖动中用 window 监听, 否则指针滑出编辑区就断. */
 let colDrag = null;     // Alt 拖 = 矩形选择
 let selDrag = null;     // 普通拖 = 范围选择
+let txtDrag = null;     // 在已有选区里按下再拖 = 移动选中的文字 (按住 Ctrl 放下 = 复制), 没拖动就是普通点击 (WBS-02 5.6)
+const posInSel = (t, row, col) => !!t.sel && (row > t.sel.r0 || (row === t.sel.r0 && col > t.sel.c0)) && (row < t.sel.r1 || (row === t.sel.r1 && col < t.sel.c1));
+/* 把选中的文字移 / 复制到 p: 一步撤销。先删选区 (目标在选区之后时按删掉的量修正目标位置), 再在目标处插入, 插入的文字保持选中。 */
+function dragMoveText(t, p, copy) {
+  if (t.readOnly || !t.sel) return false;
+  const text = selectionText(t), { r0, c0, r1 } = t.sel, c1 = Math.min(t.sel.c1, [...(t.lines[t.sel.r1] || "")].length);
+  if (!text) return false;
+  snapshot(t);
+  let tr = p.row, tc = p.col;
+  if (!copy) {
+    const head = [...t.lines[r0]].slice(0, c0).join(""), tail = [...t.lines[r1]].slice(c1).join("");
+    t.lines.splice(r0, r1 - r0 + 1, head + tail);
+    if (tr === r1 && tc >= c1) { tr = r0; tc = c0 + (tc - c1); }
+    else if (tr > r1) tr -= r1 - r0;
+  }
+  const parts = text.split("\n"), line = [...(t.lines[tr] || "")];
+  const before = line.slice(0, tc).join(""), after = line.slice(tc).join("");
+  if (parts.length === 1) t.lines[tr] = before + parts[0] + after;
+  else t.lines.splice(tr, 1, before + parts[0], ...parts.slice(1, -1), parts[parts.length - 1] + after);
+  const er = tr + parts.length - 1, ec = parts.length === 1 ? tc + [...parts[0]].length : [...parts[parts.length - 1]].length;
+  setSelRange(t, { row: tr, col: tc }, er, ec);
+  t.dirty = true; delete t.goalCol;
+  renderVim(t); updateCaret(true);
+  setTip(copy ? "已复制选中的文字" : "已移动选中的文字 (Ctrl+Z 可撤销)");
+  return true;
+}
 
 function normalizeSel(a, b) {                         // 按文档顺序 (起点在前), 起点==终点则无选区
   if (a.row === b.row && a.col === b.col) return null;
@@ -5368,6 +5394,13 @@ edContent.addEventListener("mousedown", (e) => {
     setTip(cursorsOf(tv).length + " 个光标");
     return;
   }
+  // 在已有选区里按下: 可能是拖动选中的文字去别处 (松开时才知道), 先不动选区
+  if (!e.shiftKey && !tv.readOnly && !tv.colSel && !(tv.cursors && tv.cursors.length > 1) && posInSel(tv, row, col)) {
+    e.preventDefault();
+    edContent.focus({ preventScroll: true });
+    txtDrag = { x: e.clientX, y: e.clientY, moved: false, click: { row, col } };
+    return;
+  }
   // 普通点击: 落光标; 按住不放拖动 = 范围选择; Shift+点击 = 从当前光标扩到点击处
   e.preventDefault();
   edContent.focus({ preventScroll: true });
@@ -5385,6 +5418,11 @@ edContent.addEventListener("mousedown", (e) => {
 
 if (typeof window !== "undefined") {
   window.addEventListener("mousemove", (e) => {
+    if (txtDrag) {
+      if (!txtDrag.moved && Math.hypot(e.clientX - txtDrag.x, e.clientY - txtDrag.y) > 4) txtDrag.moved = true;
+      if (txtDrag.moved) { edContent.style.cursor = e.ctrlKey || e.metaKey ? "copy" : "grabbing"; e.preventDefault(); }
+      return;
+    }
     if (colDrag) {
       const p = posFromEvent(e, true);
       if (!p) return;
@@ -5404,7 +5442,15 @@ if (typeof window !== "undefined") {
       setPos("Ln " + (p.row + 1) + ", Col " + (p.col + 1));
     }
   });
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("mouseup", (e) => {
+    if (txtDrag) {
+      const d = txtDrag; txtDrag = null; edContent.style.cursor = "";
+      const tv = getActiveTab(); if (!tv) return;
+      if (!d.moved) { tv.sel = null; tv.selAnchor = null; tv.cursor = d.click; renderVim(tv); updateCaret(false); return; }     // 没拖动 = 普通点击: 收起选区
+      const p = posFromEvent(e, false);
+      if (p && !posInSel(tv, p.row, p.col)) dragMoveText(tv, p, e.ctrlKey || e.metaKey);
+      return;
+    }
     if (selDrag) selDrag = null;
     if (!colDrag) return;
     colDrag = null;
