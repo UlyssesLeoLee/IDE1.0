@@ -704,6 +704,8 @@ enum Matcher {
         whole_word: bool,
     },
     Re(Box<MiniRegex>),
+    /// 含环视 / 反向引用的模式 (fancy-regex)
+    Fancy(Box<fancy_regex::Regex>),
 }
 
 /// 去掉 Windows `canonicalize` 产生的 `\\?\` verbatim 前缀 (只影响展示).
@@ -723,6 +725,34 @@ fn is_word_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+/// 模式里有环视 `(?=` `(?!` `(?<=` `(?<!` 或反向引用 `\1`..`\9` -> 要用回溯能力更强的 fancy-regex (WBS-02 2.1);
+/// 其余模式仍走内置 `MiniRegex` (线性、可控、和 Sakura 差分用例对齐)。`\\1` (转义的反斜杠后接数字字面量) 不算。
+fn needs_fancy(pat: &str) -> bool {
+    let b: Vec<char> = pat.chars().collect();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == '\\' {
+            if i + 1 < b.len() && b[i + 1].is_ascii_digit() && b[i + 1] != '0' {
+                return true;
+            }
+            i += 2;
+            continue;
+        }
+        if b[i] == '(' && i + 2 < b.len() && b[i + 1] == '?' {
+            let (c2, c3) = (b[i + 2], b.get(i + 3).copied().unwrap_or(' '));
+            if c2 == '=' || c2 == '!' || (c2 == '<' && (c3 == '=' || c3 == '!')) {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+fn build_fancy(pat: &str, case_sensitive: bool) -> Result<fancy_regex::Regex, String> {
+    fancy_regex::RegexBuilder::new(pat).case_insensitive(!case_sensitive).build().map_err(|e| format!("正则表达式无效: {e}"))
+}
+
 impl Matcher {
     fn new(
         pattern: &str,
@@ -730,6 +760,9 @@ impl Matcher {
         case_sensitive: bool,
         whole_word: bool,
     ) -> Result<Self, String> {
+        if regex && needs_fancy(pattern) {
+            return Ok(Matcher::Fancy(Box::new(build_fancy(pattern, case_sensitive)?)));
+        }
         if regex {
             // 正则模式忽略 whole_word —— 用户的正则自带边界语义, 再套一层 \b 会双重收窄.
             let re = MiniRegex::new(pattern, case_sensitive)
@@ -782,6 +815,7 @@ impl Matcher {
                 false
             }
             Matcher::Re(re) => re.is_match(line),
+            Matcher::Fancy(re) => re.is_match(line).unwrap_or(false),
         }
     }
 }
@@ -1404,6 +1438,8 @@ type Caps = Vec<Option<(usize, usize)>>;
 enum ReplMatcher {
     Literal { needle: Vec<char>, fold: bool, whole_word: bool },
     Re { re: Box<MiniRegex>, group_ids: HashMap<*const Node, usize>, ngroups: usize },
+    /// 含环视 / 反向引用的模式 (fancy-regex)
+    Fancy(Box<fancy_regex::Regex>),
 }
 
 fn fold_char(c: char) -> char {
@@ -1541,6 +1577,9 @@ impl ReplMatcher {
         if opts.pattern.is_empty() {
             return Err("置换需要非空的检索条件".to_string());
         }
+        if opts.regex.unwrap_or(false) && needs_fancy(&opts.pattern) {
+            return Ok(ReplMatcher::Fancy(Box::new(build_fancy(&opts.pattern, case_sensitive)?)));
+        }
         if opts.regex.unwrap_or(false) {
             let re = MiniRegex::new(&opts.pattern, case_sensitive).map(Box::new)
                 .map_err(|e| format!("正则表达式无效: {e}"))?;
@@ -1602,6 +1641,15 @@ impl ReplMatcher {
                     at += 1;
                 }
                 None
+            }
+            ReplMatcher::Fancy(re) => {
+                // fancy-regex 按字节位置工作: 字符下标 <-> 字节下标互转 (行内, 一次 O(n))
+                let s: String = chars.iter().collect();
+                let mut byte_of: Vec<usize> = s.char_indices().map(|(b, _)| b).collect();
+                byte_of.push(s.len());
+                let char_of = |b: usize| byte_of.binary_search(&b).unwrap_or_else(|i| i);
+                let c = re.captures_from_pos(&s, *byte_of.get(from)?).ok().flatten()?;
+                Some((0..c.len()).map(|i| c.get(i).map(|m| (char_of(m.start()), char_of(m.end())))).collect())
             }
             ReplMatcher::Re { re, group_ids, ngroups } => {
                 // 与 MiniRegex::is_match 同步: 不区分大小写时按字符逐个小写化 (长度对齐, 位置可直接用于原文)
@@ -2136,6 +2184,21 @@ mod tests {
             2,
             "正则模式下 '.' 是通配"
         );
+    }
+
+    #[test]
+    fn lookaround_and_backreference_use_fancy_matcher() {
+        assert!(needs_fancy("foo(?=bar)") && needs_fancy("(?<!a)b") && needs_fancy(r"(a)\1"));
+        assert!(!needs_fancy(r"\\1") && !needs_fancy("a(?:b)c") && !needs_fancy(r"\d+"));
+        let m = Matcher::new("foo(?=bar)", true, true, false).unwrap();
+        assert!(m.matches("foobar") && !m.matches("foobaz"));
+        let m = Matcher::new(r"(o)\1", true, true, false).unwrap();
+        assert!(m.matches("fooo") && !m.matches("fo o"));
+        // 置换: 后行环视 + $1 展开, 多字节字符位置对得上
+        let opts = SearchOptions { pattern: r"(?<=é)(x)".into(), regex: Some(true), case_sensitive: Some(true), ..Default::default() };
+        let rm = ReplMatcher::new(&opts).unwrap();
+        let (out, n, _) = replace_in_text("éx x éx", &rm, "[$1]");
+        assert_eq!((out.as_str(), n), ("é[x] x é[x]", 2));
     }
 
     // --- MiniRegex 引擎 ---
