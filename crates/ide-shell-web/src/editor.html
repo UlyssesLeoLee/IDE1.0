@@ -7874,10 +7874,10 @@ function displayCol(line, col, tab) {
 /* 折行感知的 ↑ ↓ Home End (WBS-02 5.2): 自动换行打开时, 这四个键按**显示行**走, 不再按逻辑行跳。
    做法是几何的、不另存一份折行模型: 取光标矩形, 在它上一行 / 下一行 / 本行最左 / 最右的坐标处问浏览器「这个点是哪个字符」
    (和鼠标点击同一条 caretRangeFromPoint -> posFromCaretRange 路径, CJK / 变宽字体都准)。
-   ↑↓ 记住第一次的横坐标 (goalX), 连按时不会越走越偏。没有折行 (逻辑行 = 显示行) / 命中不到文本 / 带修饰键 / 有选区 / 多光标 / 列块 / Vim 时, 一律交还原来的逻辑行处理。 */
-function wrapVisualMove(key) {
+   ↑↓ 记住第一次的横坐标 (goalX), 连按时不会越走越偏。没有折行 (逻辑行 = 显示行) / 命中不到文本 / 带 Ctrl·Alt / 无 Shift 时有选区 / 多光标 / 列块 / Vim 时, 一律交还原来的逻辑行处理。Shift+↑↓/Home/End 同样按显示行伸缩选区。 */
+function wrapVisualMove(key, shift) {
   const t = getActiveTab();
-  if (!t || !VIEW_STATE.wordWrap || t.cursors || t.colSel || t.grep || selNonEmpty(t) || LAYOUT.vimOn()) return false;
+  if (!t || !VIEW_STATE.wordWrap || t.cursors || t.colSel || t.grep || (selNonEmpty(t) && !shift) || LAYOUT.vimOn()) return false;
   const r = caretRect(t, true); if (!r) return false;
   const eb = edContent.getBoundingClientRect(), cs = getComputedStyle(edContent);
   const lh = r.height || 18, cy = r.top + lh / 2;
@@ -7894,17 +7894,19 @@ function wrapVisualMove(key) {
     const whole = key === "Home" ? 0 : charLen(t.lines[pos.row]);
     if (pos.row !== t.cursor.row || pos.col === whole) return false;
   } else if (pos.row === t.cursor.row && pos.col === t.cursor.col) return false;
+  const anchor = shift ? selAnchorOf(t) : null;           // Shift: 锚点不动, 选区随光标伸缩 (和逻辑行的 Shift+方向键一致)
   t.cursor = { row: pos.row, col: Math.min(pos.col, charLen(t.lines[pos.row])) };
-  t.sel = null; t.selAnchor = null;
+  t.sel = anchor ? normalizeSel(anchor, t.cursor) : null; t.selAnchor = anchor && t.sel ? anchor : null;
   if (key === "ArrowUp" || key === "ArrowDown") t.goalX = x; else delete t.goalX;
   delete t.goalCol;
-  paintActive();
+  if (t.sel) renderVim(t); else paintActive();
+  updateCaret(true);
   return true;
 }
 if (edContent) edContent.addEventListener("keydown", (e) => {
-  if (e.isComposing || e.keyCode === 229 || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  if (e.isComposing || e.keyCode === 229 || e.ctrlKey || e.altKey || e.metaKey) return;
   if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) { const t = getActiveTab(); if (t && t.goalX !== undefined && !/^(Shift|Control|Alt|Meta)$/.test(e.key)) delete t.goalX; return; }
-  if (wrapVisualMove(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  if (wrapVisualMove(e.key, e.shiftKey)) { e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);
 
 /* ---------- A4. 光标列指示 (状态栏 + 虚拟虚线标尺) ---------- */

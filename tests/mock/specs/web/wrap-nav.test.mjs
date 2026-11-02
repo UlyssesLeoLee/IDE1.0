@@ -51,3 +51,20 @@ test('不折行 (自动换行关) 时 ↓ 仍是逻辑行', () =>
     await press('ArrowDown');
     assert.equal((await cur(page)).row, 1);
   }));
+
+test('折行时 Shift+↓ / Shift+End 按显示行伸缩选区, 锚点不动', () =>
+  withMocks({ name: 'wn', portOffset: 642 }, async ({ page, press }) => {
+    await page.locator('#ed-content').click();
+    await setup(page);
+    await page.evaluate(() => { getActiveTab().cursor = { row: 0, col: 5 }; updateCaret(false); });
+    await press('Shift+ArrowDown');
+    let s = await page.evaluate(() => ({ sel: getActiveTab().sel, cur: getActiveTab().cursor }));
+    assert.deepEqual([s.sel.r0, s.sel.c0, s.sel.r1], [0, 5, 0], '选区从原光标到下一显示行 (仍在第 1 个逻辑行)');
+    assert.ok(s.sel.c1 > 15 && s.sel.c1 < 30);
+    await press('Shift+ArrowUp');
+    s = await page.evaluate(() => ({ sel: getActiveTab().sel }));
+    assert.equal(s.sel, null, '退回锚点所在显示行后选区收成空');
+    await press('Shift+End');
+    s = await page.evaluate(() => ({ sel: getActiveTab().sel }));
+    assert.ok(s.sel && s.sel.c0 === 5 && s.sel.c1 > 15 && s.sel.c1 < 30, '选到本显示行行尾: ' + JSON.stringify(s.sel));
+  }));
