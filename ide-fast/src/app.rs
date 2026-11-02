@@ -36,6 +36,9 @@ pub struct App {
     side: Sidebar,
     term: Terminal,
     md_preview: bool,
+    wrap: bool,
+    /// 自动换行时每个逻辑行的累计高度 (按 文档 / 版本 / 宽度 / 字号 缓存; 行数多时关闭换行)
+    wrap_cache: Option<((u64, u64, i32, i32, usize), Vec<f32>)>,
     max_cols: usize,
     trace: Trace,
     first_frame: bool,
@@ -49,13 +52,14 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, wrap: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
         app.font_px = st.font_px;
         app.tab = st.tab_width;
         app.highlight = st.highlight;
+        app.wrap = st.wrap;
         app.recent = st.recent.clone();
         app.saved = st;
         for f in files {
@@ -106,7 +110,7 @@ impl App {
     }
 
     fn current_settings(&self) -> Settings {
-        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, recent: self.recent.clone() }
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, recent: self.recent.clone() }
     }
 
     /// 设置变了就落盘 (每帧比较一次, 只有真变了才写)
@@ -315,6 +319,7 @@ impl App {
                 ui.checkbox(&mut self.md_preview, "Markdown 预览  Ctrl+Shift+V");
                 if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
                 ui.checkbox(&mut self.highlight, "语法高亮");
+                ui.checkbox(&mut self.wrap, "自动换行  Alt+Z");
                 ui.checkbox(&mut self.side.open, "侧栏  Ctrl+B");
                 ui.menu_button("Tab 宽度", |ui| {
                     for w in [2usize, 3, 4, 8] {
@@ -455,6 +460,7 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) { self.side.open = true; self.side.tab = Tab::Search; } else if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
         if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
+        if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
         if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::V) { self.md_preview = !self.md_preview; }
         if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
@@ -489,7 +495,29 @@ impl App {
         let digits = format!("{}", self.docs[ai].lines.len()).len().max(3);
         let gutter = digits as f32 * char_w + 18.0;
         let pad = 6.0;
-        let total_h = self.docs[ai].lines.len() as f32 * row_h + row_h * 2.0;
+        // 自动换行: 每个逻辑行按可用宽度折成若干显示行, 行高不等 -> 记累计高度 (太长的文档不换行, 免得每次排版都要扫全篇)
+        let wrap = self.wrap && self.docs[ai].lines.len() <= 20000;
+        let wrap_w = if wrap { (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0) } else { f32::INFINITY };
+        let offs: Vec<f32> = if wrap {
+            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32, (self.font_px * 10.0) as i32, tab);
+            if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
+                let d = &self.docs[ai];
+                let mut acc = Vec::with_capacity(d.lines.len() + 1);
+                let mut y = 0.0f32;
+                for l in &d.lines {
+                    acc.push(y);
+                    let (disp, _) = expand_tabs(l, tab);
+                    let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
+                    job.wrap.break_anywhere = true;
+                    y += ctx.fonts_mut(|f| f.layout_job(job)).size().y.max(row_h);
+                }
+                acc.push(y);
+                self.wrap_cache = Some((key, acc));
+            }
+            self.wrap_cache.as_ref().map(|c| c.1.clone()).unwrap_or_default()
+        } else { vec![] };
+        let top = |row: usize| -> f32 { if wrap { offs.get(row).copied().unwrap_or(0.0) } else { row as f32 * row_h } };
+        let total_h = if wrap { offs.last().copied().unwrap_or(0.0) + row_h * 2.0 } else { self.docs[ai].lines.len() as f32 * row_h + row_h * 2.0 };
         let page_rows = ((ui.available_height() / row_h) as usize).max(1);
 
         // ---- 键盘 (查找框有焦点时不抢) ----
@@ -539,23 +567,40 @@ impl App {
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
             let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
             let d = &self.docs[ai];
-            let first = (viewport.min.y / row_h).floor().max(0.0) as usize;
-            let last = ((viewport.max.y / row_h).ceil() as usize + 1).min(d.lines.len());
+            let (first, last) = if wrap {
+                let f = offs.partition_point(|&o| o <= viewport.min.y).saturating_sub(1).min(d.lines.len().saturating_sub(1));
+                let l = (offs.partition_point(|&o| o < viewport.max.y) + 1).min(d.lines.len());
+                (f, l)
+            } else {
+                ((viewport.min.y / row_h).floor().max(0.0) as usize, ((viewport.max.y / row_h).ceil() as usize + 1).min(d.lines.len()))
+            };
             let x0 = rect.min.x + gutter + pad;
             for row in first..last {
-                let y = rect.min.y + row as f32 * row_h;
+                let y = rect.min.y + top(row);
                 let (disp, map) = expand_tabs(&d.lines[row], tab);
                 widest = widest.max(disp.chars().count());
-                let galley = painter.layout_job(highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color));
+                let mut job = highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color);
+                if wrap { job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true; }
+                let galley = painter.layout_job(job);
                 // 选区底色
                 if let Some(s) = d.sel {
                     if row >= s[0] && row <= s[2] {
                         let c0 = if row == s[0] { s[1] } else { 0 };
                         let c1 = if row == s[2] { s[3] } else { d.lines[row].chars().count() };
-                        let xa = x_of(&painter, &disp, &map, c0, &font, text_color);
-                        let mut xb = x_of(&painter, &disp, &map, c1.min(map.len() - 1), &font, text_color);
-                        if row != s[2] { xb += char_w * 0.6; } // 跨行的行尾多画一点, 表示换行也被选中
-                        painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xa, y), Pos2::new(x0 + xb, y + row_h)), 0.0, sel_bg);
+                        if wrap {
+                            let (ds, de) = (map[c0.min(map.len() - 1)], map[c1.min(map.len() - 1)]);
+                            for k in ds..de {
+                                let a = galley.pos_from_cursor(egui::text::CCursor::new(k)).min;
+                                let b = galley.pos_from_cursor(egui::text::CCursor::new(k + 1)).min;
+                                let xe = if (b.y - a.y).abs() < 0.5 && b.x > a.x { b.x } else { a.x + char_w };
+                                painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + a.x, y + a.y), Pos2::new(x0 + xe, y + a.y + row_h)), 0.0, sel_bg);
+                            }
+                        } else {
+                            let xa = x_of(&painter, &disp, &map, c0, &font, text_color);
+                            let mut xb = x_of(&painter, &disp, &map, c1.min(map.len() - 1), &font, text_color);
+                            if row != s[2] { xb += char_w * 0.6; } // 跨行的行尾多画一点, 表示换行也被选中
+                            painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xa, y), Pos2::new(x0 + xb, y + row_h)), 0.0, sel_bg);
+                        }
                     }
                 }
                 if let Some(b) = d.box_sel {
@@ -576,8 +621,15 @@ impl App {
             let [cr, cc] = d.cursor;
             if cr < d.lines.len() {
                 let (disp, map) = expand_tabs(&d.lines[cr], tab);
-                let cx = x0 + x_of(&painter, &disp, &map, cc.min(map.len() - 1), &font, text_color);
-                let cy = rect.min.y + cr as f32 * row_h;
+                let (cx, cy) = if wrap {
+                    let mut job = highlight_job(&d.lines[cr], &disp, &map, None, &theme, &font, text_color);
+                    job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true;
+                    let g = painter.layout_job(job);
+                    let p = g.pos_from_cursor(egui::text::CCursor::new(map[cc.min(map.len() - 1)])).min;
+                    (x0 + p.x, rect.min.y + top(cr) + p.y)
+                } else {
+                    (x0 + x_of(&painter, &disp, &map, cc.min(map.len() - 1), &font, text_color), rect.min.y + cr as f32 * row_h)
+                };
                 let blink = ui.input(|i| (i.time * 1000.0) as u64 % 1100 < 700);
                 if !preedit.is_empty() {
                     // 组字中的文字: 画在光标处并加下划线 (后面的文字不被挤开, 提交后才真正插入)
@@ -600,7 +652,7 @@ impl App {
                 if ec[0] >= first && ec[0] < last {
                     let (disp, map) = expand_tabs(&d.lines[ec[0]], tab);
                     let ex = x0 + x_of(&painter, &disp, &map, ec[1].min(map.len() - 1), &font, text_color);
-                    painter.rect_filled(Rect::from_min_size(Pos2::new(ex, rect.min.y + ec[0] as f32 * row_h), Vec2::new(2.0, row_h)), 0.0, text_color);
+                    painter.rect_filled(Rect::from_min_size(Pos2::new(ex, rect.min.y + top(ec[0])), Vec2::new(2.0, row_h)), 0.0, text_color);
                 }
             }
             if resp.is_pointer_button_down_on() || resp.clicked() || resp.dragged() {
@@ -616,12 +668,13 @@ impl App {
         let (rect, x0) = out.inner;
         self.max_cols = widest;
         if let Some((p, shift, dragging)) = clicked {
-            let row = (((p.y - rect.min.y) / row_h).floor().max(0.0)) as usize;
+            let rel_y = (p.y - rect.min.y).max(0.0);
             let d = &mut self.docs[ai];
+            let row = if wrap { offs.partition_point(|&o| o <= rel_y).saturating_sub(1) } else { (rel_y / row_h).floor() as usize };
             let row = row.min(d.lines.len() - 1);
             let (disp, map) = expand_tabs(&d.lines[row], tab);
             let want = (p.x - x0).max(0.0);
-            let col = col_at(ctx, &disp, &map, want, &font);
+            let col = col_at(ctx, &disp, &map, want, rel_y - top(row), &font, wrap_w);
             let (alt, ctrl) = ctx.input(|i| (i.modifiers.alt, i.modifiers.command || i.modifiers.ctrl));
             if dragging {
                 if d.box_sel.is_some() { d.box_drag(row, col); } else { d.drag_to(row, col); }
@@ -698,9 +751,11 @@ fn x_of(painter: &egui::Painter, disp: &str, map: &[usize], col: usize, font: &F
 }
 
 /// 点在 x 处 -> 字符列 (取离得最近的字符边界)
-fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, font: &FontId) -> usize {
-    let galley = ctx.fonts_mut(|f| f.layout_no_wrap(disp.to_string(), font.clone(), Color32::WHITE));
-    let idx: usize = galley.cursor_from_pos(Vec2::new(x, 0.0)).index.into(); // 显示字符下标
+fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: &FontId, wrap_w: f32) -> usize {
+    let mut job = egui::text::LayoutJob::simple(disp.to_string(), font.clone(), Color32::WHITE, wrap_w);
+    job.wrap.break_anywhere = true;
+    let galley = ctx.fonts_mut(|f| f.layout_job(job));
+    let idx: usize = galley.cursor_from_pos(Vec2::new(x, y.max(0.0))).index.into(); // 显示字符下标
     // 显示下标 -> 字符列: 取 map[col] <= idx 的最大 col
     let mut col = 0;
     for (c, &m) in map.iter().enumerate() {

@@ -11,12 +11,13 @@ pub struct Settings {
     pub font_px: f32,
     pub tab_width: usize,
     pub highlight: bool,
+    pub wrap: bool,
     pub recent: Vec<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, recent: vec![] }
+        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, recent: vec![] }
     }
 }
 
@@ -41,6 +42,7 @@ impl Settings {
         if let Some(f) = v["font_px"].as_f64() { s.font_px = (f as f32).clamp(8.0, 40.0); }
         if let Some(t) = v["tab_width"].as_u64() { s.tab_width = (t as usize).clamp(1, 16); }
         if let Some(h) = v["highlight"].as_bool() { s.highlight = h; }
+        if let Some(w) = v["wrap"].as_bool() { s.wrap = w; }
         if let Some(a) = v["recent"].as_array() {
             s.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
         }
@@ -49,7 +51,7 @@ impl Settings {
 
     pub fn save(&self) {
         let Some(p) = path() else { return };
-        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "recent": self.recent });
+        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "recent": self.recent });
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
