@@ -1111,9 +1111,9 @@ impl eframe::App for App {
             egui::Panel::right("mdprev").resizable(true).default_size(420.0).show(root, |ui| self.md_ui(ui));
         }
         if self.split_on {
-            egui::Panel::right("split").resizable(true).default_size(root.available_width() * 0.5).show(root, |ui| self.editor_pane(ui, ctx, find_focus, true));
+            egui::Panel::right("split").resizable(true).default_size(root.available_width() * 0.5).frame(egui::Frame::NONE.fill(ctx.global_style().visuals.extreme_bg_color)).show(root, |ui| self.editor_pane(ui, ctx, find_focus, true));
         }
-        egui::CentralPanel::default_margins().frame(egui::Frame::NONE).show(root, |ui| self.editor_pane(ui, ctx, find_focus, false));
+        egui::CentralPanel::default_margins().frame(egui::Frame::NONE.fill(ctx.global_style().visuals.extreme_bg_color)).show(root, |ui| self.editor_pane(ui, ctx, find_focus, false));
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
     }
