@@ -9,6 +9,7 @@ members = [
   "crates/ide-shell-desktop",
   "crates/ide-shell-protocol",
   "crates/editcore",
+  "ide-fast",
 ]
 
 [workspace.package]

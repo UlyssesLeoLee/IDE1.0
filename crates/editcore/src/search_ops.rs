@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 const MAX_HITS: usize = 5000;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct SearchReq {
     /// "hits" | "step" | "replace_all" | "match_expand" | "validate"
     pub op: String,

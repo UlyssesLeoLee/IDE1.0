@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- IDE1.0 高速版的独立安装包 (WiX v3)。和 Tauri 版是两个产品: 不同的 UpgradeCode / 安装目录 / 注册表键, 可以并存安装。
+     构建: packaging/build-msi.ps1 (它会先用 cargo 构建 release 版)。 -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="IDE1.0 Fast" Language="1033" Version="$(var.Version)" Manufacturer="ide1" UpgradeCode="eeec6d8b-4609-4df9-999b-ddadc720c74e">
+    <Package InstallerVersion="450" Compressed="yes" InstallScope="perMachine" Description="IDE1.0 Fast - native Rust Sakura-style text editor" SummaryCodepage="1252" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of IDE1.0 Fast is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="IDE1.0 Fast" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExe" Guid="*">
+        <File Id="IdeFastExe" Source="$(var.ExePath)" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- 开始菜单快捷方式: 单独一个组件, 以 HKCU 注册表项作 KeyPath (Windows Installer 对快捷方式的要求) -->
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="IdeFastShortcut" Name="IDE1.0 Fast" Target="[#IdeFastExe]" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" />
+        <RegistryValue Root="HKCU" Key="Software\ide1\IDE1.0 Fast" Name="shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Title="IDE1.0 Fast" Level="1">
+      <ComponentRef Id="MainExe" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Product>
+</Wix>
