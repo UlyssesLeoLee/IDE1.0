@@ -4,6 +4,7 @@
 //! 这里就是那个"调用方": 组请求 -> 调 `editcore` -> 套补丁 -> 记撤销。所以 Sakura 的键位语义 (词移动、行首智能 Home、
 //! 自动缩进、整行剪切……) 不用在 GUI 里重写第二份。
 
+use editcore::bookmark::{self, Bm, BmReq};
 use editcore::document_io::{self, AtomicWriteOpts, Bom, Charset, Eol, SaveSpec};
 use editcore::edit_cmd::{self, EditReq};
 use editcore::nav::{self, NavReq};
@@ -43,12 +44,28 @@ pub struct Doc {
     pub reveal: bool,
     /// 文本版本号: 每次改行内容 +1 (大纲等缓存据此判断要不要重算)
     pub rev: u64,
+    /// 书签 (按行; 行增删时跟着移动)
+    pub bookmarks: Vec<Bm>,
+    /// 矩形选区 [r0, c0, r1, c1] (未归一化: 锚点在前, 光标在后)
+    pub box_sel: Option<[usize; 4]>,
+    /// 额外的光标 (多光标; 主光标是 `cursor`)
+    pub extra: Vec<[usize; 2]>,
+    /// 键盘宏录制中 / 上一次录下的宏
+    pub rec: Option<Vec<RecEv>>,
+    pub last_macro: Vec<RecEv>,
+}
+
+/// 录下来的一步 (回放时原样再走一遍 editcore)
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecEv {
+    Edit(String, Option<String>),
+    Nav(String, bool, bool),
 }
 
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0 }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![] }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -59,7 +76,7 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0 })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![] })
     }
 
     pub fn text_lf(&self) -> String {
@@ -111,8 +128,20 @@ impl Doc {
         self.reveal = true;
     }
 
+    fn shift_bookmarks(&mut self, start: usize, remove: usize, insert: usize) {
+        self.bookmarks.retain_mut(|b| {
+            if b.row >= start + remove {
+                b.row = b.row + insert - remove;
+                true
+            } else {
+                b.row < start + insert || b.row < start // 被替换范围里的: 还在新范围内就保留
+            }
+        });
+    }
+
     fn splice(&mut self, start: usize, remove: usize, insert: Vec<String>) {
         self.rev += 1;
+        self.shift_bookmarks(start, remove, insert.len());
         let end = (start + remove).min(self.lines.len());
         self.lines.splice(start.min(self.lines.len())..end, insert);
         if self.lines.is_empty() {
@@ -128,9 +157,48 @@ impl Doc {
 
     /// 执行一条 editcore 编辑命令; 返回要写进剪贴板的文字 (复制 / 剪切类)
     pub fn edit(&mut self, cmd: &str, text: Option<String>) -> Option<String> {
+        if let Some(r) = self.rec.as_mut() {
+            r.push(RecEv::Edit(cmd.to_string(), text.clone()));
+        }
+        // 矩形选区 / 多光标: 键入、退格、删除、回车、复制、剪切走各自的命令; 别的命令先退出这两种模式
+        let mut cmd = cmd.to_string();
+        let mut text = text;
+        if self.box_sel.is_some() {
+            cmd = match cmd.as_str() {
+                "insert-text" => "box-insert".into(),
+                "paste" => { text = text.map(|t| t.lines().next().unwrap_or("").to_string()); "box-insert".into() }
+                "backspace" => "box-backspace".into(),
+                "delete" => "box-delete".into(),
+                "new-line" => "box-enter".into(),
+                "copy" => "box-copy".into(),
+                "cut" => "box-cut".into(),
+                c if c.starts_with("box-") => c.to_string(),
+                other => { self.box_sel = None; other.to_string() }
+            };
+        } else if !self.extra.is_empty() {
+            cmd = match cmd.as_str() {
+                "insert-text" => "multi-insert".into(),
+                "paste" => "multi-insert".into(),
+                "backspace" => "multi-backspace".into(),
+                c if c.starts_with("multi-") => c.to_string(),
+                other => { self.extra.clear(); other.to_string() }
+            };
+        }
+        let multi = cmd.starts_with("multi-");
+        let mut all_cursors: Vec<[usize; 2]> = vec![];
+        let mut extra_rows: Vec<usize> = vec![];
+        if multi {
+            all_cursors.push(self.cursor);
+            all_cursors.extend(self.extra.iter().copied());
+            all_cursors.sort();
+            extra_rows = all_cursors.iter().flat_map(|c| [c[0].saturating_sub(1), c[0], c[0] + 1]).collect();
+        }
+        if let Some(b) = self.box_sel {
+            extra_rows.extend(b[0].min(b[2])..=b[0].max(b[2]));
+        }
         let req = EditReq {
-            cmd: cmd.into(), row: self.cursor[0], col: self.cursor[1], sel: self.sel, total_rows: self.lines.len(), auto_indent: true, smart_indent: false, text,
-            rows: self.rows_for(&[]), ..Default::default()
+            cmd: cmd.clone(), row: self.cursor[0], col: self.cursor[1], sel: self.sel, total_rows: self.lines.len(), auto_indent: true, smart_indent: false, text,
+            box_sel: self.box_sel, cursors: all_cursors, rows: self.rows_for(&extra_rows), ..Default::default()
         };
         let Some(res) = edit_cmd::run(&req) else {
             self.tip = format!("未知命令: {cmd}");
@@ -138,6 +206,25 @@ impl Doc {
         };
         if let Some(t) = &res.tip {
             self.tip = t.clone();
+        }
+        if let Some(patches) = res.patches.clone() {
+            // 多光标: 几段补丁 (起始行是改动前的行号), 从下往上套; 整体记成一步撤销
+            let old = self.lines.clone();
+            let before = (self.cursor, self.sel);
+            let mut ps = patches;
+            ps.sort_by(|a, b| b.0.cmp(&a.0));
+            for (s, n, ins) in ps {
+                self.splice(s, n, ins);
+            }
+            self.undo.push(Undo { start: 0, removed: old, inserted: self.lines.clone(), before, after: res.cursor });
+            self.redo.clear();
+            self.dirty = true;
+        }
+        if let Some(cs) = &res.cursors {
+            self.extra = cs.iter().skip(1).copied().collect();
+        }
+        if cmd.starts_with("box-") {
+            self.box_sel = res.box_sel;
         }
         if res.changed && res.patches.is_none() {
             let (start, remove) = (res.start, res.remove);
@@ -190,6 +277,11 @@ impl Doc {
 
     /// 移动键 (← → ↑ ↓ Home End PageUp PageDown, 含 Ctrl / Shift)
     pub fn nav(&mut self, key: &str, ctrl: bool, shift: bool, page_rows: usize) {
+        if let Some(r) = self.rec.as_mut() {
+            r.push(RecEv::Nav(key.to_string(), ctrl, shift));
+        }
+        self.box_sel = None;
+        self.extra.clear();
         let anchor = if shift { self.anchor.or(Some(self.cursor)).filter(|_| true) } else { None };
         let anchor = match (shift, self.sel, self.anchor) {
             (true, Some(_), Some(a)) => Some(a),
@@ -205,6 +297,31 @@ impl Doc {
             self.clamp();
             self.reveal = true;
         }
+    }
+
+    /// 命令存在才执行 (宏里用: 不认识的命令要报错而不是悄悄跳过)
+    pub fn try_edit(&mut self, cmd: &str) -> bool {
+        let known = edit_cmd::run(&EditReq { cmd: cmd.into(), row: 0, col: 0, total_rows: 1, rows: vec![(0, String::new())], ..Default::default() }).is_some();
+        if known {
+            self.edit(cmd, None);
+        }
+        known
+    }
+
+    /// 宏的「移动光标」: select 为真时从当前位置 (或锚点) 选到那里
+    pub fn move_to(&mut self, row: usize, col: usize, select: bool) {
+        let row = row.min(self.lines.len() - 1);
+        let col = col.min(self.row_len(row));
+        if select {
+            let a = self.anchor.unwrap_or(self.cursor);
+            self.anchor = Some(a);
+            self.set_sel(a, [row, col]);
+        } else {
+            self.sel = None;
+            self.anchor = None;
+        }
+        self.cursor = [row, col];
+        self.reveal = true;
     }
 
     pub fn select_all(&mut self) {
@@ -229,6 +346,35 @@ impl Doc {
         self.goal_col = None;
     }
 
+    pub fn box_start(&mut self, row: usize, col: usize) {
+        let row = row.min(self.lines.len() - 1);
+        self.sel = None;
+        self.extra.clear();
+        self.box_sel = Some([row, col, row, col]);
+        self.cursor = [row, col];
+    }
+
+    pub fn box_drag(&mut self, row: usize, col: usize) {
+        if let Some(b) = self.box_sel.as_mut() {
+            b[2] = row.min(self.lines.len() - 1);
+            b[3] = col;
+            self.cursor = [b[2], col.min(self.lines.get(b[2]).map(|l| l.chars().count()).unwrap_or(0))];
+        }
+    }
+
+    /// Ctrl+点击: 加 / 去一个光标
+    pub fn toggle_cursor(&mut self, row: usize, col: usize) {
+        let row = row.min(self.lines.len() - 1);
+        let col = col.min(self.row_len(row));
+        self.box_sel = None;
+        self.sel = None;
+        if let Some(i) = self.extra.iter().position(|c| *c == [row, col]) {
+            self.extra.remove(i);
+        } else if [row, col] != self.cursor {
+            self.extra.push([row, col]);
+        }
+    }
+
     pub fn drag_to(&mut self, row: usize, col: usize) {
         let row = row.min(self.lines.len() - 1);
         let col = col.min(self.row_len(row));
@@ -246,6 +392,8 @@ impl Doc {
             self.tip = "没有可撤销的操作".into();
             return;
         };
+        self.box_sel = None;
+        self.extra.clear();
         self.splice(u.start, u.inserted.len(), u.removed.clone());
         self.cursor = u.before.0;
         self.sel = u.before.1;
@@ -261,6 +409,8 @@ impl Doc {
             self.tip = "没有可重做的操作".into();
             return;
         };
+        self.box_sel = None;
+        self.extra.clear();
         self.splice(u.start, u.removed.len(), u.inserted.clone());
         self.cursor = u.after;
         self.sel = None;
@@ -269,6 +419,51 @@ impl Doc {
         self.dirty = true;
         self.clamp();
         self.reveal = true;
+    }
+
+    // ---------------- 书签 (editcore::bookmark) ----------------
+    pub fn bookmark(&mut self, op: &str) {
+        let req = BmReq { op: op.into(), list: self.bookmarks.clone(), row: self.cursor[0], col: 0 };
+        let Some(res) = bookmark::run(&req) else { return };
+        if let Some(l) = res.list {
+            self.bookmarks = l;
+            self.tip = if res.added { "已设置书签".into() } else { "已取消书签".into() };
+        }
+        if let Some(t) = res.target {
+            self.goto(t.row, 0);
+            self.tip = format!("书签 {}/{}", res.index + 1, res.count);
+        } else if op != "toggle" {
+            self.tip = "没有书签".into();
+        }
+    }
+
+    // ---------------- 键盘宏 (录制 / 回放: 把录下的编辑和移动原样再走一遍 editcore) ----------------
+    pub fn macro_toggle(&mut self) {
+        match self.rec.take() {
+            Some(r) => {
+                self.tip = format!("宏录制结束 ({} 步) — Ctrl+Shift+L 回放", r.len());
+                self.last_macro = r;
+            }
+            None => {
+                self.rec = Some(vec![]);
+                self.tip = "● 录制宏… 再按 Ctrl+Shift+M 结束".into();
+            }
+        }
+    }
+
+    pub fn macro_play(&mut self) {
+        let m = self.last_macro.clone();
+        if m.is_empty() {
+            self.tip = "还没有录下的宏".into();
+            return;
+        }
+        for ev in m {
+            match ev {
+                RecEv::Edit(c, t) => { self.edit(&c, t); }
+                RecEv::Nav(k, c, s) => self.nav(&k, c, s, 20),
+            }
+        }
+        self.tip = "宏已回放".into();
     }
 
     // ---------------- 查找 ----------------
@@ -418,4 +613,64 @@ mod tests {
         assert_eq!(s, "a   b");
         assert_eq!(m, vec![0, 1, 4, 5]);
     }
+
+    #[test]
+    fn bookmarks_toggle_navigate_and_follow_line_edits() {
+        let mut d = doc(&["a", "b", "c", "d"]);
+        d.goto(1, 0);
+        d.bookmark("toggle");
+        d.goto(3, 0);
+        d.bookmark("toggle");
+        d.goto(0, 0);
+        d.bookmark("next");
+        assert_eq!(d.cursor[0], 1);
+        d.bookmark("next");
+        assert_eq!(d.cursor[0], 3);
+        d.goto(0, 0);
+        d.edit("add-line-above", None); // 上面多一行: 书签整体下移
+        assert_eq!(d.bookmarks.iter().map(|b| b.row).collect::<Vec<_>>(), vec![2, 4]);
+    }
+
+    #[test]
+    fn box_selection_types_into_every_row() {
+        let mut d = doc(&["abcd", "efgh", "ijkl"]);
+        d.box_start(0, 1);
+        d.box_drag(2, 1);
+        d.type_text("X");
+        assert_eq!(d.lines, vec!["aXbcd", "eXfgh", "iXjkl"]);
+        d.undo();
+        assert_eq!(d.lines, vec!["abcd", "efgh", "ijkl"]);
+    }
+
+    #[test]
+    fn multi_cursor_inserts_everywhere_in_one_undo_step() {
+        let mut d = doc(&["ab", "cd"]);
+        d.goto(0, 0);
+        d.toggle_cursor(1, 0);
+        d.type_text("-");
+        assert_eq!(d.lines, vec!["-ab", "-cd"]);
+        assert_eq!(d.extra.len(), 1);
+        d.edit("backspace", None);
+        assert_eq!(d.lines, vec!["ab", "cd"]);
+        d.undo();
+        d.undo();
+        assert_eq!(d.lines, vec!["ab", "cd"]);
+    }
+
+    #[test]
+    fn keyboard_macro_records_and_replays() {
+        let mut d = doc(&["x", "y"]);
+        d.macro_toggle();
+        d.nav("End", false, false, 10);
+        d.type_text("!");
+        d.nav("ArrowDown", false, false, 10);
+        d.macro_toggle();
+        assert_eq!(d.lines, vec!["x!", "y"]);
+        d.goto(0, 0);
+        d.macro_play();
+        assert_eq!(d.lines[0], "x!!");
+        d.macro_play();
+        assert_eq!(d.lines[1], "y!", "第二次回放是在第 2 行接着做");
+    }
 }
+

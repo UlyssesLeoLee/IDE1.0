@@ -10,6 +10,7 @@ mod app;
 mod doc;
 mod fonts;
 mod settings;
+mod macros;
 mod sidebar;
 
 use std::time::Instant;

@@ -294,6 +294,19 @@ impl App {
                 if ui.button("下一个  F3").clicked() { self.find_next(true); ui.close(); }
                 if ui.button("上一个  Shift+F3").clicked() { self.find_next(false); ui.close(); }
             });
+            ui.menu_button("书签", |ui| {
+                if ui.button("设置 / 取消  Ctrl+F2").clicked() { self.cur().bookmark("toggle"); ui.close(); }
+                if ui.button("下一个  F2").clicked() { self.cur().bookmark("next"); ui.close(); }
+                if ui.button("上一个  Shift+F2").clicked() { self.cur().bookmark("prev"); ui.close(); }
+            });
+            ui.menu_button("宏", |ui| {
+                let rec = self.cur().rec.is_some();
+                if ui.button(if rec { "结束录制  Ctrl+Shift+M" } else { "开始录制  Ctrl+Shift+M" }).clicked() { self.cur().macro_toggle(); ui.close(); }
+                if ui.button("回放  Ctrl+Shift+L").clicked() { self.cur().macro_play(); ui.close(); }
+                ui.separator();
+                if ui.button("运行当前文档 (Sakura .mac)").clicked() { ui.close(); self.run_mac_doc(); }
+                if ui.button("运行 .mac 文件…").clicked() { ui.close(); self.run_mac_file(); }
+            });
             ui.menu_button("视图", |ui| {
                 if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
                 ui.checkbox(&mut self.highlight, "语法高亮");
@@ -310,6 +323,27 @@ impl App {
                 ui.label("IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)");
             });
         });
+    }
+
+    /// 把当前文档的文本当 Sakura 宏运行 (作用在上一份活动的另一个文档上; 只有一份就作用在自己上)
+    fn run_mac_doc(&mut self) {
+        let src = self.cur().text_lf();
+        let target = if self.docs.len() > 1 { (0..self.docs.len()).rev().find(|&i| i != self.active) } else { Some(self.active) };
+        self.run_mac_src(&src, target.unwrap_or(self.active));
+    }
+
+    fn run_mac_file(&mut self) {
+        let Some(p) = rfd::FileDialog::new().add_filter("Sakura 宏", &["mac"]).pick_file() else { return };
+        match editcore::document_io::read_doc(&p, None) {
+            Ok(d) => { let a = self.active; self.run_mac_src(&d.content, a); }
+            Err(e) => self.cur().tip = format!("读取宏失败: {e}"),
+        }
+    }
+
+    fn run_mac_src(&mut self, src: &str, target: usize) {
+        let last = self.docs.len() - 1;
+        let d = &mut self.docs[target.min(last)];
+        d.tip = match crate::macros::run_mac(d, src) { Ok(n) => format!("宏已执行 ({n} 步)"), Err(e) => format!("宏未执行: {e}") };
     }
 
     fn find_next(&mut self, fwd: bool) {
@@ -356,6 +390,11 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) { self.side.open = true; self.side.tab = Tab::Search; } else if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
         if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
+        if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
+        if cmd(ctx, Modifiers::SHIFT, Key::F2) { self.cur().bookmark("prev"); } else if cmd(ctx, Modifiers::NONE, Key::F2) { self.cur().bookmark("next"); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::M) { self.cur().macro_toggle(); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::L) { self.cur().macro_play(); }
+        if cmd(ctx, Modifiers::NONE, Key::Escape) { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
         if cmd(ctx, Modifiers::SHIFT, Key::F3) { self.find_next(false); } else if cmd(ctx, Modifiers::NONE, Key::F3) { self.find_next(true); }
         if cmd(ctx, Modifiers::COMMAND, Key::Equals) { self.font_px = (self.font_px + 1.0).min(40.0); }
         if cmd(ctx, Modifiers::COMMAND, Key::Minus) { self.font_px = (self.font_px - 1.0).max(8.0); }
@@ -452,7 +491,18 @@ impl App {
                         painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xa, y), Pos2::new(x0 + xb, y + row_h)), 0.0, sel_bg);
                     }
                 }
+                if let Some(b) = d.box_sel {
+                    let (r0, r1, c0, c1) = (b[0].min(b[2]), b[0].max(b[2]), b[1].min(b[3]), b[1].max(b[3]));
+                    if row >= r0 && row <= r1 && c1 > c0 {
+                        let tail = map.len().saturating_sub(1);
+                        let xx = |c: usize| x_of(&painter, &disp, &map, c.min(tail), &font, text_color) + char_w * c.saturating_sub(tail) as f32;
+                        painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xx(c0), y), Pos2::new(x0 + xx(c1), y + row_h)), 0.0, sel_bg);
+                    }
+                }
                 painter.galley(Pos2::new(x0, y), galley, text_color);
+                if d.bookmarks.iter().any(|b| b.row == row) {
+                    painter.circle_filled(Pos2::new(rect.min.x + 7.0, y + row_h / 2.0), 3.5, Color32::from_rgb(80, 170, 255));
+                }
                 painter.text(Pos2::new(rect.min.x + gutter - 8.0, y), egui::Align2::RIGHT_TOP, format!("{}", row + 1), font.clone(), weak);
             }
             // 光标
@@ -479,6 +529,13 @@ impl App {
                     o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect, cursor_rect: Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)), should_interrupt_composition: false });
                 });
             }
+            for ec in &d.extra {
+                if ec[0] >= first && ec[0] < last {
+                    let (disp, map) = expand_tabs(&d.lines[ec[0]], tab);
+                    let ex = x0 + x_of(&painter, &disp, &map, ec[1].min(map.len() - 1), &font, text_color);
+                    painter.rect_filled(Rect::from_min_size(Pos2::new(ex, rect.min.y + ec[0] as f32 * row_h), Vec2::new(2.0, row_h)), 0.0, text_color);
+                }
+            }
             if resp.is_pointer_button_down_on() || resp.clicked() || resp.dragged() {
                 if let Some(p) = resp.interact_pointer_pos() {
                     clicked = Some((p, ui.input(|i| i.modifiers.shift), resp.dragged() && !resp.drag_started()));
@@ -498,7 +555,14 @@ impl App {
             let (disp, map) = expand_tabs(&d.lines[row], tab);
             let want = (p.x - x0).max(0.0);
             let col = col_at(ctx, &disp, &map, want, &font);
-            if dragging { d.drag_to(row, col); } else if ctx.input(|i| i.pointer.any_pressed()) { d.click(row, col, shift); }
+            let (alt, ctrl) = ctx.input(|i| (i.modifiers.alt, i.modifiers.command || i.modifiers.ctrl));
+            if dragging {
+                if d.box_sel.is_some() { d.box_drag(row, col); } else { d.drag_to(row, col); }
+            } else if ctx.input(|i| i.pointer.any_pressed()) {
+                if alt { d.box_start(row, col); }
+                else if ctrl { d.toggle_cursor(row, col); }
+                else { d.box_sel = None; d.extra.clear(); d.click(row, col, shift); }
+            }
         }
         let _ = max_cols;
         if self.first_frame {
@@ -626,6 +690,9 @@ impl eframe::App for App {
                 ui.label(d.charset.label());
                 ui.label(d.eol.label());
                 ui.label(format!("共 {} 行", d.lines.len()));
+                if d.rec.is_some() { ui.colored_label(Color32::from_rgb(230, 70, 70), "● REC"); }
+                if d.box_sel.is_some() { ui.label("[矩形]"); }
+                if !d.extra.is_empty() { ui.label(format!("{} 个光标", d.extra.len() + 1)); }
                 ui.separator();
                 ui.label(&d.tip);
             });
