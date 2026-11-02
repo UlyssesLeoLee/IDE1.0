@@ -497,7 +497,6 @@
     .chat-sys, .chat-tool { color: var(--fg-muted); font-size: var(--fs-xs); } .chat-err { color: #f85149; }
     .chat-proposal { background: var(--bg-raised); border: 1px solid var(--border-strong); } .chat-proposal pre { margin: 4px 0; max-height: 200px; overflow: auto; font-size: var(--fs-xs); }
     #chat-model { display: flex; align-items: center; gap: 8px; padding: 3px 8px; font-size: var(--fs-xs); border-bottom: 1px solid var(--border); } #chat-model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); } #chat-model select { background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); }
-    #chat-ai-unused input { display: block; width: 100%; box-sizing: border-box; margin: 2px 0; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; }
     #chat-inputrow { display: flex; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--border); }
     #chat-input { flex: 1; min-width: 0; resize: none; background: var(--bg-edit); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: var(--fs-sm); }
     /* 查找 / 置換对话框 (Sakura 是非模态的可移动窗口): 不压暗页面、不拦截编辑区的点击, 标题栏可拖动;
@@ -9541,7 +9540,7 @@ function commonConfig(openTab) {
       ["action", "把当前文档(或选中部分)登记到第一个空槽", null, () => { CFG_CMDS["macro-register-doc"](); }],
       ...macroSlots().flatMap((m, i) => [
         ["text", "宏 " + (i + 1) + " 名字", () => macroSlots()[i].name, (v) => setMacroSlot(i, { name: String(v).trim() })],
-        ["select", "宏 " + (i + 1) + " 种类", () => macroSlots()[i].kind, (v) => setMacroSlot(i, { kind: v }), ["mac", "js"], ["Sakura .mac", "JavaScript (Editor.*)"]],
+        ["select", "宏 " + (i + 1) + " 种类", () => macroSlots()[i].kind, (v) => setMacroSlot(i, { kind: v }), ["mac", "js", "ppa"], ["Sakura .mac", "JavaScript (Editor.*)", "PPA 子集 (需启用 PPA 插件)"]],
         ["textarea", "宏 " + (i + 1) + " 代码 (命令 macro-slot-" + (i + 1) + ", 可在键位里绑键)", () => macroSlots()[i].code, (v) => setMacroSlot(i, { code: String(v) })],
       ]),
     ]],
@@ -11173,15 +11172,54 @@ function plugBindCommands() {
   }
   if (typeof mdSyncPluginButtons === "function") mdSyncPluginButtons();   // 工具条上插件贡献的按钮: 插件禁用 / 卸载就消失
 }
-async function plugRunCommand(full) {
+/* editor.write 贡献点: 插件命令返回 { edit: { start, remove, insert, cursor? } } = 一个行补丁, 宿主校验后按一步撤销套用。
+   没声明 editor.write 的插件返回 edit 一律忽略; 范围越界 / 行数过多直接拒绝。 */
+function applyPluginEdit(t, plugin, edit) {
+  if (!edit) return false;
+  if (!plugin.manifest.permissions.includes("editor.write")) { setTip("插件没有 editor.write 权限, 修改已忽略"); return false; }
+  const { start, remove, insert } = edit;
+  if (!Number.isInteger(start) || !Number.isInteger(remove) || !Array.isArray(insert) || start < 0 || remove < 0 || start + remove > t.lines.length || insert.length > 200000 || insert.some((l) => typeof l !== "string")) {
+    setTip("插件返回的修改无效, 已拒绝"); return false;
+  }
+  snapshot(t); spliceLines(t, start, remove, insert);
+  if (!t.lines.length) t.lines.push("");
+  t.dirty = true; t.sel = null;
+  const c = edit.cursor && Number.isInteger(edit.cursor.row) ? edit.cursor : { row: start, col: 0 };
+  t.cursor = { row: Math.max(0, Math.min(c.row, t.lines.length - 1)), col: Math.max(0, c.col | 0) };
+  paintActive(); return true;
+}
+function plugDocArgs(t, plugin) {
+  if (!t || !plugin.manifest.permissions.includes("editor.read")) return {};
+  return { text: t.lines.join("\n"), name: t.name || "", cursor: { row: t.cursor.row, col: t.cursor.col }, selection: t.sel ? { r0: t.sel.r0, c0: t.sel.c0, r1: t.sel.r1, c1: t.sel.c1 } : null };
+}
+/* PPA 脚本入口: 脚本放在 .ppa 文档里, 在「最近活动的另一份文档」上运行 (像 Sakura 从文件运行宏); 宏登记里种类选 PPA 则直接在当前文档上运行 */
+async function plugRunPpa(script, target) {
+  if (!(PLUG.commands && PLUG.commands["plugin:ppa:run"])) { setTip("PPA 插件未启用 (扩展面板里启用「PPA 宏子集」)"); return false; }
+  const t = target || getActiveTab(); if (!t) return false;
+  return plugRunCommand("plugin:ppa:run", { script }, t);
+}
+function ppaDocTarget() {
+  const cur = getActiveTab(); if (!cur) return null;
+  return [...TABS.values()].filter((x) => x !== cur && !x.grep).sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0))[0] || null;
+}
+CFG_CMDS["run-ppa-doc"] = async () => {
+  const t = getActiveTab(); if (!t) return;
+  if (!/\.ppa$/i.test(t.name || "")) { setTip("把脚本存成 .ppa 文档再运行 (或在首选项「宏」里登记种类为 PPA 的宏)"); return; }
+  const target = ppaDocTarget();
+  if (!target) { setTip("没有可以运行脚本的另一份文档"); return; }
+  const ok = await plugRunPpa(t.lines.join("\n"), target);
+  if (ok) setActiveTab(target.id);
+};
+async function plugRunCommand(full, extra, targetTab) {
   const c = PLUG.commands && PLUG.commands[full];
   if (!c) { setTip("插件命令不可用 (插件已禁用或不存在): " + full); return; }
-  const t = getActiveTab();
-  const args = t && c.plugin.manifest.permissions.includes("editor.read") ? [{ text: t.lines.join("\n"), name: t.name || "" }] : [{}];
+  const t = targetTab || getActiveTab();
+  const args = [Object.assign(plugDocArgs(t, c.plugin), extra || {})];
   let out;
   try { out = await plugCall(c.plugin, "command:" + c.id, args); } catch (e) { setTip("插件命令失败 (编辑器不受影响): " + e.message); return; }
   if (!out) return;
-  if (out.error) { setTip(out.error); return; }
+  if (out.error) { setTip(out.error); return false; }
+  if (out.edit || (out.summary && !out.svg && !out.html)) { const done = out.edit ? applyPluginEdit(t, c.plugin, out.edit) : true; if (out.summary) setTip(out.summary); return done; }
   openModal({ title: c.title, bodyHTML: '<div class="opt-row" id="plug-sum"></div><div id="plug-out" style="overflow:auto"></div>', buttons: [{ label: "关闭", cmd: "modal-close" }] });
   document.getElementById("plug-sum").textContent = out.summary || "";
   const box = document.getElementById("plug-out");
@@ -11564,7 +11602,7 @@ function setMacroSlot(i, patch) { const a = macroSlots(); a[i] = Object.assign(a
 async function runMacroSlot(i) {
   const m = macroSlots()[i];
   if (!m.code.trim()) { setTip("宏 " + (i + 1) + " 是空的 (首选项 → 宏 里登记)"); return false; }
-  return m.kind === "js" ? runJsMacroSource(m.code) : runSakuraMacro(m.code);
+  return m.kind === "js" ? runJsMacroSource(m.code) : m.kind === "ppa" ? plugRunPpa(m.code) : runSakuraMacro(m.code);
 }
 for (let i = 0; i < MACRO_SLOTS; i++) CFG_CMDS["macro-slot-" + (i + 1)] = () => runMacroSlot(i);
 CFG_CMDS["macro-register-doc"] = () => {            // 把当前 .mac / .js 文档(或选中部分)登记进第一个空槽

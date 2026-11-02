@@ -17,6 +17,8 @@ const BUNDLED: &[(&str, &str, &[u8])] = &[
     ("pele", "LICENSE", include_bytes!("../../plugins/pele/LICENSE")),
     ("doc-graph", "manifest.json", include_bytes!("../../plugins/doc-graph/manifest.json")),
     ("doc-graph", "main.js", include_bytes!("../../plugins/doc-graph/main.js")),
+    ("ppa", "manifest.json", include_bytes!("../../plugins/ppa/manifest.json")),
+    ("ppa", "main.js", include_bytes!("../../plugins/ppa/main.js")),
 ];
 
 pub trait Http {
@@ -373,7 +375,7 @@ mod tests {
     #[test]
     fn every_bundled_plugin_passes_the_compat_check_it_would_get_from_github() {
         let ids = bundled_ids();
-        assert!(ids.contains(&"pele") && ids.contains(&"doc-graph"));
+        assert!(ids.contains(&"pele") && ids.contains(&"doc-graph") && ids.contains(&"ppa"));
         for id in ids {
             let assets: Vec<Asset> = BUNDLED.iter().filter(|(i, _, _)| *i == id).map(|(_, f, b)| Asset { name: f.to_string(), size: b.len() as u64 }).collect();
             let manifest = std::str::from_utf8(bundled_file(id, "manifest.json").unwrap()).unwrap();

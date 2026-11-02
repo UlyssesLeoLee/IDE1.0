@@ -160,3 +160,4 @@ REQ (Markdown 增强, 49 条 FR) 另有进度: P0/P1 的工具条、预览、插
 - 5.6(部分) 文件拖入打开: 桌面版 Rust 拖放事件 -> 授权后在窗口里打开 (真机未验证); 网页版读成带文件名的文档 (>4MB / 二进制不收)。剪贴板格式、编辑区内拖动移动/复制仍未做。
 - 5.10(部分) 大纲按编辑器里的正文分析: 未保存的修改 / 无标题文档也有大纲 (outline 命令新增可选 text)。F_FUNCLIST_NEXT/PREV 早已有 (funclist-next/prev); 跟随光标、排序过滤仍未做。
 - 5.7(部分) 状态栏: 新增光标处字符码位 (U+xxxx / EOL / EOF) 与总行数提示。宏录制指示、显示列、竖向参考线等仍未做。
+- 4.4 PPA 子集: 做成随程序打包、可热插拔的插件 `ppa` (crates/editcore/plugins/ppa): Pascal 风格脚本 (var / if / while / for / repeat / 过程与函数 / 字符串函数 / S_GetSelectedString·S_GetLineStr·S_GetFileName·S_InsText 等 S_ 编辑函数), 在虚拟文档上运行, 结果一步撤销写回 (新增宿主贡献点 `editor.write`: 命令返回 edit 行补丁, 宿主校验后套用)。入口: 首选项「宏」页宏槽种类选 PPA, 或把脚本存成 .ppa 后运行命令 run-ppa-doc。不支持: 类型检查 / 记录 / 数组 / 对话框 (InputBox 取默认值, MessageBox 记入输出)。
