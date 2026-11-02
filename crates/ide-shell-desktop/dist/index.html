@@ -4897,7 +4897,7 @@ function paintActive() {
 // ===== 光标 (非模态时画一根闪烁的竖线) =====
 // #ed-content 是不可编辑的 div, 本来没有插入符. Vim 开着时靠状态栏 Ln/Col + 模式标签, 不画; 非模态 (缺省, 像 Sakura) 必须看得见光标在哪.
 // 位置按 t.cursor 算: 找到该行对应的文本节点, 用折叠的 Range 取矩形, 所以 CJK / emoji / 自动换行 / 横向滚动都按真实排版.
-function caretRect(t) {
+function caretRect(t, preferLast) {
   const row = t.cursor.row, line = t.lines[row] || "";
   const u = u16Index(line, t.cursor.col);        // col 是 code point 列, DOM 偏移按 UTF-16
   let node = null, off = 0;
@@ -4929,7 +4929,7 @@ function caretRect(t) {
   rg.setStart(node, Math.min(off, node.length));
   rg.collapse(true);
   const rs = rg.getClientRects();
-  const b = rs.length ? rs[0] : rg.getBoundingClientRect();
+  const b = rs.length ? rs[preferLast ? rs.length - 1 : 0] : rg.getBoundingClientRect();   // 折行边界上有两个矩形 (上一显示行的行尾 / 下一显示行的行首); preferLast = 取行首那个
   if (!b.width && !b.height && !b.left && !b.top) {          // 浏览器没给出矩形 (整篇单文本节点里的空行): 按行高估算
     const h = edContent.getBoundingClientRect(), cs = getComputedStyle(edContent);
     return { left: h.left + (parseFloat(cs.paddingLeft) || 0) - edContent.scrollLeft, height: 18,
@@ -7871,6 +7871,42 @@ function displayCol(line, col, tab) {
   }
   return cells;
 }
+/* 折行感知的 ↑ ↓ Home End (WBS-02 5.2): 自动换行打开时, 这四个键按**显示行**走, 不再按逻辑行跳。
+   做法是几何的、不另存一份折行模型: 取光标矩形, 在它上一行 / 下一行 / 本行最左 / 最右的坐标处问浏览器「这个点是哪个字符」
+   (和鼠标点击同一条 caretRangeFromPoint -> posFromCaretRange 路径, CJK / 变宽字体都准)。
+   ↑↓ 记住第一次的横坐标 (goalX), 连按时不会越走越偏。没有折行 (逻辑行 = 显示行) / 命中不到文本 / 带修饰键 / 有选区 / 多光标 / 列块 / Vim 时, 一律交还原来的逻辑行处理。 */
+function wrapVisualMove(key) {
+  const t = getActiveTab();
+  if (!t || !VIEW_STATE.wordWrap || t.cursors || t.colSel || t.grep || selNonEmpty(t) || LAYOUT.vimOn()) return false;
+  const r = caretRect(t, true); if (!r) return false;
+  const eb = edContent.getBoundingClientRect(), cs = getComputedStyle(edContent);
+  const lh = r.height || 18, cy = r.top + lh / 2;
+  const left = eb.left + (parseFloat(cs.paddingLeft) || 0) + 1, right = eb.right - (parseFloat(cs.paddingRight) || 0) - 1;
+  let x, y;
+  if (key === "ArrowUp") { x = t.goalX !== undefined ? t.goalX : r.left; y = cy - lh; }
+  else if (key === "ArrowDown") { x = t.goalX !== undefined ? t.goalX : r.left; y = cy + lh; }
+  else { x = key === "Home" ? left : right; y = cy; }
+  if (!document.caretRangeFromPoint || y < eb.top || y > eb.bottom) return false;
+  const pos = posFromCaretRange(document.caretRangeFromPoint(x, y));
+  if (!pos || pos.row < 0 || pos.row >= t.lines.length) return false;
+  if (key === "Home" || key === "End") {
+    // 本行没折行 (命中点还是同一逻辑行的开头 / 末尾) 就不接管, 保持原有的 Home / End 语义
+    const whole = key === "Home" ? 0 : charLen(t.lines[pos.row]);
+    if (pos.row !== t.cursor.row || pos.col === whole) return false;
+  } else if (pos.row === t.cursor.row && pos.col === t.cursor.col) return false;
+  t.cursor = { row: pos.row, col: Math.min(pos.col, charLen(t.lines[pos.row])) };
+  t.sel = null; t.selAnchor = null;
+  if (key === "ArrowUp" || key === "ArrowDown") t.goalX = x; else delete t.goalX;
+  delete t.goalCol;
+  paintActive();
+  return true;
+}
+if (edContent) edContent.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229 || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+  if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) { const t = getActiveTab(); if (t && t.goalX !== undefined && !/^(Shift|Control|Alt|Meta)$/.test(e.key)) delete t.goalX; return; }
+  if (wrapVisualMove(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+
 /* ---------- A4. 光标列指示 (状态栏 + 虚拟虚线标尺) ---------- */
 function updateCaretColumn() {
   const t = getActiveTab();
