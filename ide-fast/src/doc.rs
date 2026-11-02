@@ -43,8 +43,6 @@ pub struct Doc {
     pub reveal: bool,
 }
 
-pub const TAB: usize = 4;
-
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
@@ -321,14 +319,15 @@ impl Doc {
 }
 
 /// 把一行里的 Tab 展开成空格 (到下一个 Tab 位), 并给出 "字符下标 -> 显示列" 的映射 (长度 = 字符数 + 1)
-pub fn expand_tabs(line: &str) -> (String, Vec<usize>) {
+pub fn expand_tabs(line: &str, tab: usize) -> (String, Vec<usize>) {
+    let tab = tab.max(1);
     let mut out = String::with_capacity(line.len());
     let mut map = Vec::with_capacity(line.len() + 1);
     let mut col = 0usize;
     for ch in line.chars() {
         map.push(col);
         if ch == '\t' {
-            let n = TAB - (col % TAB);
+            let n = tab - (col % tab);
             out.extend(std::iter::repeat(' ').take(n));
             col += n;
         } else {
@@ -401,7 +400,7 @@ mod tests {
 
     #[test]
     fn tabs_expand_to_tab_stops() {
-        let (s, m) = expand_tabs("a\tb");
+        let (s, m) = expand_tabs("a\tb", 4);
         assert_eq!(s, "a   b");
         assert_eq!(m, vec![0, 1, 4, 5]);
     }

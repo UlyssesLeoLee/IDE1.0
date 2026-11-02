@@ -9,6 +9,7 @@
 mod app;
 mod doc;
 mod fonts;
+mod settings;
 
 use std::time::Instant;
 

@@ -1,8 +1,11 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
 use crate::doc::{expand_tabs, Doc};
+use crate::settings::Settings;
 use crate::Trace;
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec2};
+use editcore::syntax_styling::Theme;
+use editcore::type_config::{TypeConfig, TypeRegistry};
 use std::path::PathBuf;
 
 struct Find {
@@ -23,6 +26,11 @@ pub struct App {
     find: Find,
     dark: bool,
     font_px: f32,
+    tab: usize,
+    highlight: bool,
+    recent: Vec<String>,
+    saved: Settings,
+    registry: TypeRegistry,
     max_cols: usize,
     trace: Trace,
     first_frame: bool,
@@ -36,8 +44,15 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
+        let st = Settings::load();
+        app.dark = st.dark;
+        app.font_px = st.font_px;
+        app.tab = st.tab_width;
+        app.highlight = st.highlight;
+        app.recent = st.recent.clone();
+        app.saved = st;
         for f in files {
             app.open_path(&f);
         }
@@ -73,10 +88,28 @@ impl App {
                 }
                 self.docs.push(d);
                 self.active = self.docs.len() - 1;
+                let mut st = self.current_settings();
+                st.push_recent(p);
+                self.recent = st.recent.clone();
+                self.saved = st.clone();
+                st.save();
             }
             Err(e) => {
                 rfd::MessageDialog::new().set_title("打开失败").set_description(format!("{}\n{e}", p.display())).show();
             }
+        }
+    }
+
+    fn current_settings(&self) -> Settings {
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, recent: self.recent.clone() }
+    }
+
+    /// 设置变了就落盘 (每帧比较一次, 只有真变了才写)
+    fn persist_if_changed(&mut self) {
+        let now = self.current_settings();
+        if now != self.saved {
+            now.save();
+            self.saved = now;
         }
     }
 
@@ -146,6 +179,14 @@ impl App {
             ui.menu_button("文件", |ui| {
                 if ui.button("新建  Ctrl+N").clicked() { self.new_doc(); ui.close(); }
                 if ui.button("打开…  Ctrl+O").clicked() { ui.close(); self.open_dialog(); }
+                ui.menu_button("最近使用", |ui| {
+                    if self.recent.is_empty() { ui.label("(没有)"); }
+                    let mut pick: Option<String> = None;
+                    for r in &self.recent {
+                        if ui.button(r).clicked() { pick = Some(r.clone()); ui.close(); }
+                    }
+                    if let Some(r) = pick { self.open_path(std::path::Path::new(&r)); }
+                });
                 if ui.button("保存  Ctrl+S").clicked() { ui.close(); self.save(false); }
                 if ui.button("另存为…").clicked() { ui.close(); self.save(true); }
                 if ui.button("关闭标签  Ctrl+W").clicked() { ui.close(); let a = self.active; self.close_tab(a); }
@@ -171,6 +212,12 @@ impl App {
             });
             ui.menu_button("视图", |ui| {
                 if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
+                ui.checkbox(&mut self.highlight, "语法高亮");
+                ui.menu_button("Tab 宽度", |ui| {
+                    for w in [2usize, 3, 4, 8] {
+                        if ui.radio_value(&mut self.tab, w, format!("{w}")).clicked() { ui.close(); }
+                    }
+                });
                 if ui.button("放大  Ctrl+=").clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
                 if ui.button("缩小  Ctrl+-").clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
             });
@@ -243,7 +290,10 @@ impl App {
         let weak = ui.visuals().weak_text_color();
         let sel_bg = ui.visuals().selection.bg_fill;
         let max_cols = self.max_cols;
+        let tab = self.tab;
         let ai = self.active.min(self.docs.len() - 1);
+        let theme = if self.dark { Theme::dark() } else { Theme::light() };
+        let cfg: Option<TypeConfig> = if self.highlight { self.registry.detect(&self.docs[ai].name).cloned() } else { None };
         let digits = format!("{}", self.docs[ai].lines.len()).len().max(3);
         let gutter = digits as f32 * char_w + 18.0;
         let pad = 6.0;
@@ -302,9 +352,9 @@ impl App {
             let x0 = rect.min.x + gutter + pad;
             for row in first..last {
                 let y = rect.min.y + row as f32 * row_h;
-                let (disp, map) = expand_tabs(&d.lines[row]);
+                let (disp, map) = expand_tabs(&d.lines[row], tab);
                 widest = widest.max(disp.chars().count());
-                let galley = painter.layout_no_wrap(disp.clone(), font.clone(), text_color);
+                let galley = painter.layout_job(highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color));
                 // 选区底色
                 if let Some(s) = d.sel {
                     if row >= s[0] && row <= s[2] {
@@ -322,7 +372,7 @@ impl App {
             // 光标
             let [cr, cc] = d.cursor;
             if cr < d.lines.len() {
-                let (disp, map) = expand_tabs(&d.lines[cr]);
+                let (disp, map) = expand_tabs(&d.lines[cr], tab);
                 let cx = x0 + x_of(&painter, &disp, &map, cc.min(map.len() - 1), &font, text_color);
                 let cy = rect.min.y + cr as f32 * row_h;
                 let blink = ui.input(|i| (i.time * 1000.0) as u64 % 1100 < 700);
@@ -359,7 +409,7 @@ impl App {
             let row = (((p.y - rect.min.y) / row_h).floor().max(0.0)) as usize;
             let d = &mut self.docs[ai];
             let row = row.min(d.lines.len() - 1);
-            let (disp, map) = expand_tabs(&d.lines[row]);
+            let (disp, map) = expand_tabs(&d.lines[row], tab);
             let want = (p.x - x0).max(0.0);
             let col = col_at(ctx, &disp, &map, want, &font);
             if dragging { d.drag_to(row, col); } else if ctx.input(|i| i.pointer.any_pressed()) { d.click(row, col, shift); }
@@ -370,6 +420,39 @@ impl App {
             self.trace.mark("first frame");
         }
     }
+}
+
+/// 一行的带色排版: 词法由 editcore 的 `TypeConfig::highlight_line` 给 (按字符列), 这里换成显示列 (Tab 已展开) 再上色
+fn highlight_job(line: &str, disp: &str, map: &[usize], cfg: Option<&TypeConfig>, theme: &Theme, font: &FontId, default: Color32) -> egui::text::LayoutJob {
+    use egui::text::{LayoutJob, TextFormat};
+    let mut job = LayoutJob::default();
+    let fmt = |c: Color32| TextFormat { font_id: font.clone(), color: c, ..Default::default() };
+    let Some(cfg) = cfg else {
+        job.append(disp, 0.0, fmt(default));
+        return job;
+    };
+    // 显示字符下标 -> 字节偏移
+    let mut byte_of: Vec<usize> = disp.char_indices().map(|(b, _)| b).collect();
+    byte_of.push(disp.len());
+    let dlen = byte_of.len() - 1;
+    let mut at = 0usize; // 已经输出到的显示字符下标
+    for (s, e, kind) in cfg.highlight_line(line) {
+        let (s, e) = (s.max(0) as usize, e.max(0) as usize);
+        let (ds, de) = (map.get(s).copied().unwrap_or(dlen).min(dlen), map.get(e).copied().unwrap_or(dlen).min(dlen));
+        if ds < at || de <= ds {
+            continue;
+        }
+        if ds > at {
+            job.append(&disp[byte_of[at]..byte_of[ds]], 0.0, fmt(default));
+        }
+        let c = theme.get(kind).fg;
+        job.append(&disp[byte_of[ds]..byte_of[de]], 0.0, fmt(Color32::from_rgb(c.0, c.1, c.2)));
+        at = de;
+    }
+    if at < dlen {
+        job.append(&disp[byte_of[at]..], 0.0, fmt(default));
+    }
+    job
 }
 
 /// 第 col 个字符前缘的 x (按真实排版量, 全角 / 变宽字体都准)
@@ -449,6 +532,7 @@ impl eframe::App for App {
             });
         }
         egui::CentralPanel::default_margins().frame(egui::Frame::NONE).show(root, |ui| self.editor(ui, ctx, find_focus));
+        self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
     }
 }

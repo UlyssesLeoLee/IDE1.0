@@ -3068,6 +3068,7 @@ dependencies = [
  "editcore",
  "eframe",
  "rfd",
+ "serde_json",
 ]
 
 [[package]]
