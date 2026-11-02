@@ -37,6 +37,7 @@ pub struct App {
     term: Terminal,
     md_preview: bool,
     wrap: bool,
+    goal_x: Option<f32>,
     inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
     prefs_open: bool,
     /// 自动换行时每个逻辑行的累计高度 (按 文档 / 版本 / 宽度 / 字号 缓存; 行数多时关闭换行)
@@ -54,7 +55,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, wrap: false, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -227,8 +228,14 @@ impl App {
                         ui.checkbox(&mut self.side.grep.case, "区分大小写");
                         ui.checkbox(&mut self.side.grep.regex, "正则");
                     });
+                    ui.add(egui::TextEdit::singleline(&mut self.side.grep.repl).hint_text("置换为 (正则下可用 $1)").desired_width(f32::INFINITY));
                     let go = ui.button("搜索").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
                     if go { self.side.start_grep(); }
+                    if ui.button("全部置换 (改写文件, 保留 .bak)").clicked() {
+                        let dirty: Vec<String> = self.docs.iter().filter(|d| d.dirty).filter_map(|d| d.path.as_ref().map(|p| p.to_string_lossy().into_owned())).collect();
+                        let ok = rfd::MessageDialog::new().set_title("Grep 置换").set_description("会改写磁盘上所有命中的文件 (原文件另存为 .bak)。继续吗?").set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
+                        if ok { let m = self.side.replace_all(dirty); self.side.grep.msg = m; self.side.grep.results.clear(); }
+                    }
                     ui.label(&self.side.grep.msg);
                     let root = self.side.root.clone().unwrap_or_default();
                     egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
@@ -342,6 +349,10 @@ impl App {
                 if ui.button("在文件夹中搜索 (Grep)…  Ctrl+Shift+F").clicked() { self.side.open = true; self.side.tab = Tab::Search; ui.close(); }
                 if ui.button("下一个  F3").clicked() { self.find_next(true); ui.close(); }
                 if ui.button("上一个  Shift+F3").clicked() { self.find_next(false); ui.close(); }
+            });
+            ui.menu_button("折叠", |ui| {
+                if ui.button("折叠 / 展开当前行  Ctrl+Shift+[").clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
+                if ui.button("全部展开  Ctrl+Shift+]").clicked() { self.cur().folds.clear(); ui.close(); }
             });
             ui.menu_button("设置", |ui| {
                 if ui.button("首选项…").clicked() { self.prefs_open = true; ui.close(); }
@@ -461,6 +472,45 @@ impl App {
         if let Some(l) = jump { self.docs[ai].goto(l, 0); }
     }
 
+    /// 自动换行下的 ↑ ↓ Home End: 用当前行 (和相邻行) 的真实排版找「上一 / 下一显示行」同一横坐标处
+    fn wrap_nav(&mut self, ctx: &egui::Context, font: &FontId, wrap_w: f32, tab: usize, key: Key) {
+        use egui::text::CCursor;
+        let ai = self.active.min(self.docs.len() - 1);
+        let (r, c) = (self.docs[ai].cursor[0], self.docs[ai].cursor[1]);
+        let layout = |ctx: &egui::Context, line: &str| {
+            let (disp, map) = expand_tabs(line, tab);
+            let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
+            job.wrap.break_anywhere = true;
+            (ctx.fonts_mut(|f| f.layout_job(job)), map)
+        };
+        let to_col = |idx: usize, map: &[usize]| -> usize { let mut col = 0; for (k, &m) in map.iter().enumerate() { if m <= idx { col = k; } else { break; } } col.min(map.len().saturating_sub(1)) };
+        let (g, map) = layout(ctx, &self.docs[ai].lines[r]);
+        let here = g.pos_from_cursor(CCursor::new(map[c.min(map.len() - 1)]));
+        let x = self.goal_x.unwrap_or(here.min.x);
+        let (nr, ncol, keep_goal) = match key {
+            Key::Home => (r, to_col(g.cursor_from_pos(Vec2::new(0.0, here.min.y + 1.0)).index.into(), &map), false),
+            Key::End => (r, to_col(g.cursor_from_pos(Vec2::new(f32::MAX / 4.0, here.min.y + 1.0)).index.into(), &map), false),
+            Key::ArrowUp => {
+                if here.min.y > 1.0 {
+                    (r, to_col(g.cursor_from_pos(Vec2::new(x, here.min.y - 1.0)).index.into(), &map), true)
+                } else if r > 0 {
+                    let (g2, m2) = layout(ctx, &self.docs[ai].lines[r - 1]);
+                    (r - 1, to_col(g2.cursor_from_pos(Vec2::new(x, g2.size().y - 1.0)).index.into(), &m2), true)
+                } else { (r, c, true) }
+            }
+            _ => {
+                if here.max.y < g.size().y - 1.0 {
+                    (r, to_col(g.cursor_from_pos(Vec2::new(x, here.max.y + 1.0)).index.into(), &map), true)
+                } else if r + 1 < self.docs[ai].lines.len() {
+                    let (g2, m2) = layout(ctx, &self.docs[ai].lines[r + 1]);
+                    (r + 1, to_col(g2.cursor_from_pos(Vec2::new(x, 1.0)).index.into(), &m2), true)
+                } else { (r, c, true) }
+            }
+        };
+        self.docs[ai].goto(nr, ncol);
+        self.goal_x = if keep_goal { Some(x) } else { None };
+    }
+
     fn find_next(&mut self, fwd: bool) {
         let (n, c, r) = (self.find.needle.clone(), self.find.case, self.find.regex);
         match self.cur().find_step(&n, c, r, fwd) {
@@ -506,6 +556,8 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) { self.side.open = true; self.side.tab = Tab::Search; } else if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
         if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
         if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket) { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::CloseBracket) { self.cur().folds.clear(); }
         if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::V) { self.md_preview = !self.md_preview; }
         if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
@@ -543,33 +595,55 @@ impl App {
         // 自动换行: 每个逻辑行按可用宽度折成若干显示行, 行高不等 -> 记累计高度 (太长的文档不换行, 免得每次排版都要扫全篇)
         let wrap = self.wrap && self.docs[ai].lines.len() <= 20000;
         let wrap_w = if wrap { (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0) } else { f32::INFINITY };
-        let offs: Vec<f32> = if wrap {
-            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32, (self.font_px * 10.0) as i32, tab);
+        let use_offs = wrap || !self.docs[ai].folds.is_empty();
+        let offs: Vec<f32> = if use_offs {
+            let fsig: usize = self.docs[ai].folds.iter().map(|f| f.0 * 31 + f.1).sum::<usize>() + self.docs[ai].folds.len();
+            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32, tab + (wrap as usize) * 100);
             if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
                 let d = &self.docs[ai];
                 let mut acc = Vec::with_capacity(d.lines.len() + 1);
                 let mut y = 0.0f32;
-                for l in &d.lines {
+                for (r, l) in d.lines.iter().enumerate() {
                     acc.push(y);
-                    let (disp, _) = expand_tabs(l, tab);
-                    let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
-                    job.wrap.break_anywhere = true;
-                    y += ctx.fonts_mut(|f| f.layout_job(job)).size().y.max(row_h);
+                    if d.is_hidden(r) { continue; }
+                    if wrap {
+                        let (disp, _) = expand_tabs(l, tab);
+                        let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
+                        job.wrap.break_anywhere = true;
+                        y += ctx.fonts_mut(|f| f.layout_job(job)).size().y.max(row_h);
+                    } else {
+                        y += row_h;
+                    }
                 }
                 acc.push(y);
                 self.wrap_cache = Some((key, acc));
             }
             self.wrap_cache.as_ref().map(|c| c.1.clone()).unwrap_or_default()
         } else { vec![] };
-        let top = |row: usize| -> f32 { if wrap { offs.get(row).copied().unwrap_or(0.0) } else { row as f32 * row_h } };
-        let total_h = if wrap { offs.last().copied().unwrap_or(0.0) + row_h * 2.0 } else { self.docs[ai].lines.len() as f32 * row_h + row_h * 2.0 };
+        let top = |row: usize| -> f32 { if use_offs { offs.get(row).copied().unwrap_or(0.0) } else { row as f32 * row_h } };
+        let total_h = if use_offs { offs.last().copied().unwrap_or(0.0) + row_h * 2.0 } else { self.docs[ai].lines.len() as f32 * row_h + row_h * 2.0 };
         let page_rows = ((ui.available_height() / row_h) as usize).max(1);
 
         // ---- 键盘 (查找框有焦点时不抢) ----
         let mut clip_out: Option<String> = None;
         let mut preedit_now = self.preedit.clone();
         if !find_has_focus {
-            let events = ctx.input(|i| i.events.clone());
+            let mut events = ctx.input(|i| i.events.clone());
+            if wrap {
+                // 自动换行下 ↑ ↓ Home End 按显示行走 (按真实排版取位置); 带修饰键的仍交给 editcore
+                let mut rest = Vec::with_capacity(events.len());
+                for ev in events {
+                    if let egui::Event::Key { key, pressed: true, modifiers, .. } = &ev {
+                        if !modifiers.ctrl && !modifiers.command && !modifiers.alt && !modifiers.shift && matches!(key, Key::ArrowUp | Key::ArrowDown | Key::Home | Key::End) {
+                            let k = *key;
+                            self.wrap_nav(ctx, &font, wrap_w, tab, k);
+                            continue;
+                        }
+                    }
+                    rest.push(ev);
+                }
+                events = rest;
+            }
             let d = &mut self.docs[ai];
             for ev in events {
                 match ev {
@@ -612,7 +686,7 @@ impl App {
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
             let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
             let d = &self.docs[ai];
-            let (first, last) = if wrap {
+            let (first, last) = if use_offs {
                 let f = offs.partition_point(|&o| o <= viewport.min.y).saturating_sub(1).min(d.lines.len().saturating_sub(1));
                 let l = (offs.partition_point(|&o| o < viewport.max.y) + 1).min(d.lines.len());
                 (f, l)
@@ -621,6 +695,7 @@ impl App {
             };
             let x0 = rect.min.x + gutter + pad;
             for row in first..last {
+                if d.is_hidden(row) { continue; }
                 let y = rect.min.y + top(row);
                 let (disp, map) = expand_tabs(&d.lines[row], tab);
                 widest = widest.max(disp.chars().count());
@@ -657,6 +732,9 @@ impl App {
                     }
                 }
                 painter.galley(Pos2::new(x0, y), galley, text_color);
+                if d.folds.iter().any(|f| f.0 == row) {
+                    painter.text(Pos2::new(rect.min.x + 2.0, y), egui::Align2::LEFT_TOP, "▸", font.clone(), weak);
+                }
                 if d.bookmarks.iter().any(|b| b.row == row) {
                     painter.circle_filled(Pos2::new(rect.min.x + 7.0, y + row_h / 2.0), 3.5, Color32::from_rgb(80, 170, 255));
                 }
@@ -715,8 +793,12 @@ impl App {
         if let Some((p, shift, dragging)) = clicked {
             let rel_y = (p.y - rect.min.y).max(0.0);
             let d = &mut self.docs[ai];
-            let row = if wrap { offs.partition_point(|&o| o <= rel_y).saturating_sub(1) } else { (rel_y / row_h).floor() as usize };
+            let row = if use_offs { offs.partition_point(|&o| o <= rel_y).saturating_sub(1) } else { (rel_y / row_h).floor() as usize };
             let row = row.min(d.lines.len() - 1);
+            if p.x < rect.min.x + gutter - 6.0 && ctx.input(|i| i.pointer.any_pressed()) {       // 点行号左侧: 折叠 / 展开这一行
+                d.toggle_fold(row);
+                return;
+            }
             let (disp, map) = expand_tabs(&d.lines[row], tab);
             let want = (p.x - x0).max(0.0);
             let col = col_at(ctx, &disp, &map, want, rel_y - top(row), &font, wrap_w);

@@ -53,6 +53,8 @@ pub struct Doc {
     /// 键盘宏录制中 / 上一次录下的宏
     pub rec: Option<Vec<RecEv>>,
     pub last_macro: Vec<RecEv>,
+    /// 已折叠的范围 (起始行, 结束行含): 起始行还显示, 后面的行隐藏
+    pub folds: Vec<(usize, usize)>,
 }
 
 /// 录下来的一步 (回放时原样再走一遍 editcore)
@@ -65,7 +67,7 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![] }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![] }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -76,7 +78,7 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![] })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![] })
     }
 
     pub fn text_lf(&self) -> String {
@@ -139,7 +141,44 @@ impl Doc {
         });
     }
 
+    /// 缩进折叠: 从 `row` 往下, 缩进比它深的连续行 (中间空行算在内, 结尾空行不算) 是它的折叠范围
+    pub fn fold_range_at(&self, row: usize) -> Option<(usize, usize)> {
+        let indent = |l: &str| -> Option<usize> {
+            if l.trim().is_empty() { return None; }
+            Some(l.chars().take_while(|c| c.is_whitespace()).map(|c| if c == '\t' { 4 } else { 1 }).sum())
+        };
+        let base = indent(self.lines.get(row)?)?;
+        let mut end = row;
+        for r in row + 1..self.lines.len() {
+            match indent(&self.lines[r]) {
+                None => continue,
+                Some(i) if i > base => end = r,
+                Some(_) => break,
+            }
+        }
+        (end > row).then_some((row, end))
+    }
+
+    pub fn toggle_fold(&mut self, row: usize) {
+        if let Some(i) = self.folds.iter().position(|f| f.0 == row) {
+            self.folds.remove(i);
+        } else if let Some(r) = self.fold_range_at(row) {
+            self.folds.push(r);
+            // 光标落在被折起来的行里: 移回折叠起始行
+            if self.cursor[0] > r.0 && self.cursor[0] <= r.1 {
+                self.goto(r.0, 0);
+            }
+        }
+    }
+
+    pub fn is_hidden(&self, row: usize) -> bool {
+        self.folds.iter().any(|&(s, e)| row > s && row <= e)
+    }
+
     fn splice(&mut self, start: usize, remove: usize, insert: Vec<String>) {
+        if remove != insert.len() {
+            self.folds.clear(); // 行数变了: 折叠范围作废 (改行内容不影响)
+        }
         self.rev += 1;
         self.shift_bookmarks(start, remove, insert.len());
         let end = (start + remove).min(self.lines.len());
@@ -153,6 +192,8 @@ impl Doc {
         let last = self.lines.len().saturating_sub(1);
         self.cursor[0] = self.cursor[0].min(last);
         self.cursor[1] = self.cursor[1].min(self.row_len(self.cursor[0]));
+        let r = self.cursor[0];
+        self.folds.retain(|&(s, e)| !(r > s && r <= e)); // 光标移进折叠范围就展开它
     }
 
     /// 执行一条 editcore 编辑命令; 返回要写进剪贴板的文字 (复制 / 剪切类)
@@ -671,6 +712,20 @@ mod tests {
         assert_eq!(d.lines[0], "x!!");
         d.macro_play();
         assert_eq!(d.lines[1], "y!", "第二次回放是在第 2 行接着做");
+    }
+
+    #[test]
+    fn indentation_folds_hide_rows_and_unfold_when_the_cursor_enters() {
+        let mut d = doc(&["fn a() {", "    x", "", "    y", "}", "fn b() {", "    z", "}"]);
+        assert_eq!(d.fold_range_at(0), Some((0, 3)));
+        assert_eq!(d.fold_range_at(1), None);
+        d.toggle_fold(0);
+        assert!(d.is_hidden(1) && d.is_hidden(3) && !d.is_hidden(4) && !d.is_hidden(0));
+        d.goto(2, 0); // 光标进折叠范围 -> 展开
+        assert!(d.folds.is_empty());
+        d.toggle_fold(5);
+        d.edit("add-line-below", None); // 行数变了: 折叠清掉
+        assert!(d.folds.is_empty());
     }
 }
 
