@@ -3,6 +3,7 @@
 use crate::doc::{expand_tabs, Doc};
 use crate::settings::Settings;
 use crate::sidebar::{Sidebar, Tab};
+use crate::terminal::Terminal;
 use crate::Trace;
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec2};
 use editcore::syntax_styling::Theme;
@@ -33,6 +34,8 @@ pub struct App {
     saved: Settings,
     registry: TypeRegistry,
     side: Sidebar,
+    term: Terminal,
+    md_preview: bool,
     max_cols: usize,
     trace: Trace,
     first_frame: bool,
@@ -46,7 +49,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), md_preview: false, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -308,6 +311,8 @@ impl App {
                 if ui.button("运行 .mac 文件…").clicked() { ui.close(); self.run_mac_file(); }
             });
             ui.menu_button("视图", |ui| {
+                ui.checkbox(&mut self.term.open, "终端  Ctrl+`");
+                ui.checkbox(&mut self.md_preview, "Markdown 预览  Ctrl+Shift+V");
                 if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
                 ui.checkbox(&mut self.highlight, "语法高亮");
                 ui.checkbox(&mut self.side.open, "侧栏  Ctrl+B");
@@ -344,6 +349,66 @@ impl App {
         let last = self.docs.len() - 1;
         let d = &mut self.docs[target.min(last)];
         d.tip = match crate::macros::run_mac(d, src) { Ok(n) => format!("宏已执行 ({n} 步)"), Err(e) => format!("宏未执行: {e}") };
+    }
+
+    /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
+    fn term_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.strong("终端");
+            if ui.small_button("清屏").clicked() { self.term.output.clear(); }
+            if ui.small_button("×").clicked() { self.term.open = false; }
+            if self.term.running() { ui.label("运行中…"); }
+        });
+        let h = (ui.available_height() - 28.0).max(30.0);
+        egui::ScrollArea::vertical().max_height(h).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+            ui.add(egui::Label::new(egui::RichText::new(&self.term.output).monospace()).selectable(true));
+        });
+        let r = ui.add(egui::TextEdit::singleline(&mut self.term.input).font(egui::TextStyle::Monospace).hint_text("输入命令, Enter 执行").desired_width(f32::INFINITY));
+        if r.has_focus() {
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) { self.term.history_step(true); }
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) { self.term.history_step(false); }
+        }
+        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            let cwd = self.side.root.clone().or_else(|| self.docs[self.active.min(self.docs.len() - 1)].path.as_ref().and_then(|p| p.parent().map(|x| x.to_path_buf()))).unwrap_or_else(|| PathBuf::from("."));
+            self.term.submit(cwd);
+            r.request_focus();
+        }
+    }
+
+    /// Markdown 预览: 块来自文档行的实时解析, 点块 = 编辑区跳到那一行
+    fn md_ui(&mut self, ui: &mut egui::Ui) {
+        use crate::markdown::{inline, parse, Block};
+        use egui::RichText;
+        let ai = self.active.min(self.docs.len() - 1);
+        let blocks = parse(&self.docs[ai].lines);
+        let mut jump: Option<usize> = None;
+        let (text_c, strong_c, code_bg) = (ui.visuals().text_color(), ui.visuals().strong_text_color(), ui.visuals().code_bg_color);
+        let rich = |s: &str| -> egui::text::LayoutJob {
+            let mut job = egui::text::LayoutJob::default();
+            for (t, b, i, c) in inline(s) {
+                let mut f = egui::TextFormat { font_id: if c { FontId::monospace(13.0) } else { FontId::proportional(14.0) }, color: text_c, italics: i, ..Default::default() };
+                if b { f.font_id = FontId::proportional(15.0); f.color = strong_c; }
+                if c { f.background = code_bg; }
+                job.append(&t, 0.0, f);
+            }
+            job
+        };
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            for b in &blocks {
+                let r = match &b.block {
+                    Block::Heading { level, text } => ui.label(RichText::new(text).strong().size(match level { 1 => 26.0, 2 => 21.0, 3 => 18.0, _ => 15.0 })),
+                    Block::Para(t) => ui.label(rich(t)),
+                    Block::Quote(t) => ui.label(RichText::new(format!("│ {t}")).italics().weak()),
+                    Block::Code { text, .. } => ui.label(RichText::new(text).monospace().background_color(ui.visuals().code_bg_color)),
+                    Block::List { ordered, items } => ui.vertical(|ui| { for (k, it) in items.iter().enumerate() { ui.label(rich(&format!("{} {}", if *ordered { format!("{}.", k + 1) } else { "•".into() }, it))); } }).response,
+                    Block::Table { rows } => ui.vertical(|ui| { for (k, row) in rows.iter().enumerate() { let t = row.join("   │   "); ui.label(if k == 0 { RichText::new(t).strong() } else { RichText::new(t) }); } }).response,
+                    Block::Rule => { ui.separator(); ui.label("") }
+                };
+                if r.interact(Sense::click()).clicked() { jump = Some(b.line); }
+                ui.add_space(6.0);
+            }
+        });
+        if let Some(l) = jump { self.docs[ai].goto(l, 0); }
     }
 
     fn find_next(&mut self, fwd: bool) {
@@ -390,6 +455,8 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) { self.side.open = true; self.side.tab = Tab::Search; } else if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
         if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
+        if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::V) { self.md_preview = !self.md_preview; }
         if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
         if cmd(ctx, Modifiers::SHIFT, Key::F2) { self.cur().bookmark("prev"); } else if cmd(ctx, Modifiers::NONE, Key::F2) { self.cur().bookmark("next"); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::M) { self.cur().macro_toggle(); }
@@ -703,6 +770,18 @@ impl eframe::App for App {
                 self.find_bar(ui);
                 find_focus = ctx.memory(|m| m.focused().is_some());
             });
+        }
+        if self.term.open {
+            egui::Panel::bottom("term").resizable(true).default_size(180.0).show(root, |ui| self.term_ui(ui));
+        }
+        self.term.poll();
+        if self.term.running() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
+        let is_md = {
+            let n = self.docs[self.active.min(self.docs.len() - 1)].name.to_lowercase();
+            n.ends_with(".md") || n.ends_with(".markdown")
+        };
+        if self.md_preview && is_md {
+            egui::Panel::right("mdprev").resizable(true).default_size(420.0).show(root, |ui| self.md_ui(ui));
         }
         egui::CentralPanel::default_margins().frame(egui::Frame::NONE).show(root, |ui| self.editor(ui, ctx, find_focus));
         self.persist_if_changed();

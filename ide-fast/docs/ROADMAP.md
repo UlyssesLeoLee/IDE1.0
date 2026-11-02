@@ -12,7 +12,7 @@
 - 书签、折叠、矩形选择 / 多光标 (editcore 已有 `box_*` / `multi_*` 命令)
 - 命令行打开 `文件:行:列`、单实例转发
 
-## 里程碑 3: 导航与工具
+## 里程碑 3 (进行中): 导航与工具
 - 侧栏文件树 + 大纲 (`outline`)、Grep (`grep_engine`, 结果窗口)
 - Markdown 预览 (用 `md_render` 的块结构做原生渲染, 不含 Mermaid)
 - 外部命令执行 (`exec_cmd`)、宏 (`macro_sakura` / `js_macro` 的 Rust 部分)

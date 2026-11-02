@@ -11,6 +11,8 @@ mod doc;
 mod fonts;
 mod settings;
 mod macros;
+mod markdown;
+mod terminal;
 mod sidebar;
 
 use std::time::Instant;
