@@ -2,6 +2,7 @@
 
 use crate::doc::{expand_tabs, Doc};
 use crate::settings::Settings;
+use crate::sidebar::{Sidebar, Tab};
 use crate::Trace;
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec2};
 use editcore::syntax_styling::Theme;
@@ -31,6 +32,7 @@ pub struct App {
     recent: Vec<String>,
     saved: Settings,
     registry: TypeRegistry,
+    side: Sidebar,
     max_cols: usize,
     trace: Trace,
     first_frame: bool,
@@ -44,7 +46,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -113,6 +115,86 @@ impl App {
         }
     }
 
+    fn open_folder_dialog(&mut self) {
+        if let Some(d) = rfd::FileDialog::new().pick_folder() {
+            self.side.set_root(d);
+        }
+    }
+
+    /// 打开文件并跳到某行 (Grep 结果 / 命令行 `文件:行`)
+    fn open_at(&mut self, p: &std::path::Path, line: usize) {
+        self.open_path(p);
+        if self.docs.iter().any(|d| d.path.as_deref() == Some(p)) {
+            self.cur().goto(line.saturating_sub(1), 0);
+        }
+    }
+
+    /// 侧栏内容: 文件树 / 大纲 / Grep
+    fn side_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            for (t, name) in [(Tab::Files, "文件"), (Tab::Outline, "大纲"), (Tab::Search, "搜索")] {
+                if ui.selectable_label(self.side.tab == t, name).clicked() { self.side.tab = t; }
+            }
+        });
+        ui.separator();
+        let mut open: Option<(PathBuf, usize)> = None;
+        match self.side.tab {
+            Tab::Files => {
+                match self.side.root.clone() {
+                    None => { if ui.button("打开文件夹…").clicked() { self.open_folder_dialog(); } }
+                    Some(root) => {
+                        ui.horizontal(|ui| {
+                            ui.strong(root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string()));
+                            if ui.small_button("刷新").clicked() { self.side.refresh(); }
+                        });
+                        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| tree(ui, &mut self.side, &root, &mut open));
+                    }
+                }
+            }
+            Tab::Outline => {
+                let ai = self.active.min(self.docs.len() - 1);
+                let d = &self.docs[ai];
+                self.side.update_outline(d.id, d.rev, &d.name, &d.lines);
+                let mut jump: Option<usize> = None;
+                egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                    if self.side.outline.is_empty() { ui.label("(没有可显示的大纲)"); }
+                    for e in &self.side.outline {
+                        ui.horizontal(|ui| {
+                            ui.add_space(e.depth.max(0) as f32 * 12.0);
+                            if ui.selectable_label(false, format!("{}  {}", icon_of(&e.kind), e.name)).clicked() { jump = Some(e.line.max(0) as usize); }
+                        });
+                    }
+                });
+                if let Some(l) = jump { self.cur().goto(l, 0); }
+            }
+            Tab::Search => {
+                if self.side.root.is_none() {
+                    ui.label("先在「文件」里打开一个文件夹, 再在它下面搜索。");
+                    if ui.button("打开文件夹…").clicked() { self.open_folder_dialog(); }
+                } else {
+                    let r = ui.add(egui::TextEdit::singleline(&mut self.side.grep.pattern).hint_text("搜索内容").desired_width(f32::INFINITY));
+                    ui.add(egui::TextEdit::singleline(&mut self.side.grep.include).hint_text("文件名过滤, 如 *.rs, *.md").desired_width(f32::INFINITY));
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut self.side.grep.case, "区分大小写");
+                        ui.checkbox(&mut self.side.grep.regex, "正则");
+                    });
+                    let go = ui.button("搜索").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+                    if go { self.side.start_grep(); }
+                    ui.label(&self.side.grep.msg);
+                    let root = self.side.root.clone().unwrap_or_default();
+                    egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                        for h in &self.side.grep.results {
+                            let rel = std::path::Path::new(&h.path).strip_prefix(&root).map(|p| p.display().to_string()).unwrap_or_else(|_| h.path.clone());
+                            let t: String = h.text.trim().chars().take(80).collect();
+                            if ui.selectable_label(false, format!("{rel}:{}  {t}", h.line)).clicked() { open = Some((PathBuf::from(&h.path), h.line as usize)); }
+                        }
+                    });
+                }
+            }
+        }
+        if let Some((p, l)) = open { self.open_at(&p, l); }
+    }
+
     fn cur(&mut self) -> &mut Doc {
         let i = self.active.min(self.docs.len() - 1);
         &mut self.docs[i]
@@ -179,6 +261,7 @@ impl App {
             ui.menu_button("文件", |ui| {
                 if ui.button("新建  Ctrl+N").clicked() { self.new_doc(); ui.close(); }
                 if ui.button("打开…  Ctrl+O").clicked() { ui.close(); self.open_dialog(); }
+                if ui.button("打开文件夹…").clicked() { ui.close(); self.open_folder_dialog(); }
                 ui.menu_button("最近使用", |ui| {
                     if self.recent.is_empty() { ui.label("(没有)"); }
                     let mut pick: Option<String> = None;
@@ -207,12 +290,14 @@ impl App {
             });
             ui.menu_button("查找", |ui| {
                 if ui.button("查找 / 置换…  Ctrl+F").clicked() { self.find.open = true; self.find.focus = true; ui.close(); }
+                if ui.button("在文件夹中搜索 (Grep)…  Ctrl+Shift+F").clicked() { self.side.open = true; self.side.tab = Tab::Search; ui.close(); }
                 if ui.button("下一个  F3").clicked() { self.find_next(true); ui.close(); }
                 if ui.button("上一个  Shift+F3").clicked() { self.find_next(false); ui.close(); }
             });
             ui.menu_button("视图", |ui| {
                 if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
                 ui.checkbox(&mut self.highlight, "语法高亮");
+                ui.checkbox(&mut self.side.open, "侧栏  Ctrl+B");
                 ui.menu_button("Tab 宽度", |ui| {
                     for w in [2usize, 3, 4, 8] {
                         if ui.radio_value(&mut self.tab, w, format!("{w}")).clicked() { ui.close(); }
@@ -269,7 +354,8 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::O) { self.open_dialog(); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::S) { self.save(true); } else if cmd(ctx, Modifiers::COMMAND, Key::S) { self.save(false); }
         if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
-        if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) { self.side.open = true; self.side.tab = Tab::Search; } else if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
+        if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
         if cmd(ctx, Modifiers::SHIFT, Key::F3) { self.find_next(false); } else if cmd(ctx, Modifiers::NONE, Key::F3) { self.find_next(true); }
         if cmd(ctx, Modifiers::COMMAND, Key::Equals) { self.font_px = (self.font_px + 1.0).min(40.0); }
         if cmd(ctx, Modifiers::COMMAND, Key::Minus) { self.font_px = (self.font_px - 1.0).max(8.0); }
@@ -422,6 +508,21 @@ impl App {
     }
 }
 
+/// 文件树: 目录用折叠头 (展开才读目录), 文件点击打开
+fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut Option<(PathBuf, usize)>) {
+    for e in side.children_of(dir) {
+        if e.is_dir {
+            egui::CollapsingHeader::new(&e.name).id_salt(&e.path).show(ui, |ui| tree(ui, side, &e.path, open));
+        } else if ui.selectable_label(false, &e.name).clicked() {
+            *open = Some((e.path.clone(), 1));
+        }
+    }
+}
+
+fn icon_of(kind: &str) -> &'static str {
+    match kind { "function" | "method" => "ƒ", "class" | "struct" => "C", "enum" => "E", "interface" | "trait" => "I", "section" => "§", _ => "•" }
+}
+
 /// 一行的带色排版: 词法由 editcore 的 `TypeConfig::highlight_line` 给 (按字符列), 这里换成显示列 (Tab 已展开) 再上色
 fn highlight_job(line: &str, disp: &str, map: &[usize], cfg: Option<&TypeConfig>, theme: &Theme, font: &FontId, default: Color32) -> egui::text::LayoutJob {
     use egui::text::{LayoutJob, TextFormat};
@@ -512,6 +613,11 @@ impl eframe::App for App {
                 if let Some(i) = close { self.close_tab(i); }
             });
         });
+        if self.side.open {
+            egui::Panel::left("side").resizable(true).default_size(250.0).show(root, |ui| self.side_ui(ui));
+        }
+        self.side.poll_grep();
+        if self.side.grep_running() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
         egui::Panel::bottom("status").show(root, |ui| {
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
             ui.horizontal(|ui| {

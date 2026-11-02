@@ -41,12 +41,14 @@ pub struct Doc {
     pub tip: String,
     /// 编辑区该滚到哪 (行); 光标移动后置位, 绘制时消费
     pub reveal: bool,
+    /// 文本版本号: 每次改行内容 +1 (大纲等缓存据此判断要不要重算)
+    pub rev: u64,
 }
 
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0 }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -57,7 +59,7 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0 })
     }
 
     pub fn text_lf(&self) -> String {
@@ -99,7 +101,18 @@ impl Doc {
         set.into_iter().map(|i| (i, self.lines[i].clone())).collect()
     }
 
+    /// 光标跳到 (行, 列) 并滚到可见处 (大纲 / Grep 结果 / 书签用)
+    pub fn goto(&mut self, row: usize, col: usize) {
+        self.cursor = [row.min(self.lines.len() - 1), col];
+        self.clamp();
+        self.sel = None;
+        self.anchor = None;
+        self.goal_col = None;
+        self.reveal = true;
+    }
+
     fn splice(&mut self, start: usize, remove: usize, insert: Vec<String>) {
+        self.rev += 1;
         let end = (start + remove).min(self.lines.len());
         self.lines.splice(start.min(self.lines.len())..end, insert);
         if self.lines.is_empty() {
@@ -310,6 +323,7 @@ impl Doc {
                 }
             }
             let before = (self.cursor, self.sel);
+            self.rev += 1;
             self.undo.push(Undo { start: 0, removed: old, inserted: self.lines.clone(), before, after: self.cursor });
             self.redo.clear();
             self.dirty = true;
