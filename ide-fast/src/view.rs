@@ -99,7 +99,7 @@ impl ThemeColors {
 }
 
 /// 相对基线 (打开 / 上次保存时的内容) 哪些行被改过 / 新加: 去掉相同的头尾后对中间段做 LCS, 不在 LCS 里的行记为 true。
-/// 中间段太大 (积 > 4M) 就整段记为改动, 不为一个小标记拖慢编辑。
+/// 中间段太大 (积 > 1M) 就整段记为改动, 不为一个小标记拖慢编辑。
 pub fn changed_lines(base: &[String], cur: &[String]) -> Vec<bool> {
     let mut out = vec![false; cur.len()];
     let mut head = 0;
@@ -114,7 +114,7 @@ pub fn changed_lines(base: &[String], cur: &[String]) -> Vec<bool> {
     if b.is_empty() {
         return out;
     }
-    if a.is_empty() || a.len() * b.len() > 4_000_000 {
+    if a.is_empty() || a.len() * b.len() > 1_000_000 {
         out[head..cur.len() - tail].iter_mut().for_each(|x| *x = true);
         return out;
     }
