@@ -2,7 +2,7 @@
 //! 纯函数, 不碰界面。太大的文档 (中间不同的部分超过 `MAX_CELLS` 格) 退化成一个整块替换, 保证不卡。
 
 /// 超过这个格数 (中段行数之积) 就不做 LCS, 直接当一整块不同
-const MAX_CELLS: usize = 16_000_000;
+const MAX_CELLS: usize = 4_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hunk {

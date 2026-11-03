@@ -375,6 +375,7 @@ impl App {
         st.push_recent_dir(&d);
         self.recent_dirs = st.recent_dirs;
         self.side.set_root(d);
+        self.side.scm.loaded = false;
         self.side.open = true;
     }
 
@@ -2230,7 +2231,7 @@ impl eframe::App for App {
                 d.edit("paste", Some(out.trim_end_matches(['\r', '\n']).to_string()));
             }
         }
-        if self.term.busy() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
+        if let Some(ms) = self.term.repaint_ms() { ctx.request_repaint_after(std::time::Duration::from_millis(ms)); }
         let is_md = {
             let n = self.docs[self.active.min(self.docs.len() - 1)].name.to_lowercase();
             n.ends_with(".md") || n.ends_with(".markdown")

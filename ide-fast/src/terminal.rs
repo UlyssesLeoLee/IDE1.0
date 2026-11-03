@@ -31,19 +31,27 @@ pub struct LineBuffer {
     col: usize,
     esc: Esc,
     csi: String,
+    ver: u64,
 }
 
 impl LineBuffer {
     pub fn new() -> Self {
-        LineBuffer { done: String::new(), line: vec![], col: 0, esc: Esc::None, csi: String::new() }
+        LineBuffer { done: String::new(), line: vec![], col: 0, esc: Esc::None, csi: String::new(), ver: 0 }
     }
 
     pub fn clear(&mut self) {
+        let v = self.ver + 1;
         *self = LineBuffer::new();
+        self.ver = v;
     }
 
     /// 喂入一段输出文本 (转义序列可以被切在两次调用之间)
+    pub fn version(&self) -> u64 {
+        self.ver
+    }
+
     pub fn feed(&mut self, text: &str) {
+        self.ver += 1;
         for c in text.chars() {
             match self.esc {
                 Esc::Got => {
@@ -143,9 +151,9 @@ impl LineBuffer {
                 self.line.clear();
                 self.col = 0;
             }
-            'C' => self.col += n.max(1),
+            'C' => self.col = (self.col + n.max(1)).min(4096),
             'D' => self.col = self.col.saturating_sub(n.max(1)),
-            'G' => self.col = n.max(1) - 1,
+            'G' => self.col = (n.max(1) - 1).min(4096),
             _ => {}
         }
     }
@@ -246,16 +254,34 @@ pub struct Terminal {
     pub persistent: bool,
     session: Option<Session>,
     buf: LineBuffer,
+    /// 最近有输入 / 输出到这个时刻之前, 界面用快节奏刷新; 之后空闲慢刷新
+    hot_until: Option<std::time::Instant>,
+    shown: std::cell::RefCell<Option<((usize, u64), String)>>,
 }
 
 impl Terminal {
     pub fn new() -> Self {
-        Terminal { open: false, input: String::new(), output: String::new(), history: vec![], hist_pos: None, replace_doc: None, replace_out: None, rx: None, persistent: true, session: None, buf: LineBuffer::new() }
+        Terminal { open: false, input: String::new(), output: String::new(), history: vec![], hist_pos: None, replace_doc: None, replace_out: None, rx: None, persistent: true, session: None, buf: LineBuffer::new(), hot_until: None, shown: Default::default() }
     }
 
     /// 一次性命令在跑
     pub fn running(&self) -> bool {
         self.rx.is_some()
+    }
+
+    /// 下一次界面刷新间隔 (毫秒); None = 不用刷新
+    pub fn repaint_ms(&self) -> Option<u64> {
+        if self.rx.is_some() || self.hot_until.is_some_and(|t| t > std::time::Instant::now()) {
+            Some(80)
+        } else if self.session.is_some() {
+            Some(500)
+        } else {
+            None
+        }
+    }
+
+    fn heat(&mut self) {
+        self.hot_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
     }
 
     /// 需要持续刷新界面 (有会话或有命令在跑)
@@ -298,9 +324,14 @@ impl Terminal {
 
     /// 要显示的全部文本: 一次性命令的输出在前, 会话输出在后
     pub fn display(&self) -> String {
-        let mut s = self.output.clone();
-        s.push_str(&self.buf.text());
-        s
+        let key = (self.output.len(), self.buf.version());
+        let mut c = self.shown.borrow_mut();
+        if c.as_ref().map(|c| c.0) != Some(key) {
+            let mut s = self.output.clone();
+            s.push_str(&self.buf.text());
+            *c = Some((key, s));
+        }
+        c.as_ref().map(|c| c.1.clone()).unwrap_or_default()
     }
 
     /// 结束会话 (下一条命令会重新开一个)
@@ -322,6 +353,7 @@ impl Terminal {
         }
         // 管道里 shell 不会回显输入, 本地补一份, 看起来像在终端里敲的
         self.buf.feed(&format!("{cmd}\n"));
+        self.heat();
         if let Some(s) = self.session.as_mut() {
             if !s.send_line(cmd) {
                 self.buf.feed("[shell 已退出]\n");
@@ -338,6 +370,7 @@ impl Terminal {
             if !t.is_empty() {
                 self.buf.feed(&t);
                 fresh = true;
+                self.hot_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
             }
             if !s.alive() {
                 let rest = s.drain();

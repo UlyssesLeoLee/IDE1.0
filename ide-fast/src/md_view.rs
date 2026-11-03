@@ -22,6 +22,9 @@ pub struct MdEvent {
 #[derive(Default)]
 pub struct MdCache {
     images: HashMap<PathBuf, Option<egui::TextureHandle>>,
+    /// 每块上次量到的高度 (含块间距); 视口外的块只占位不排版, 每帧开销与可见块数成正比
+    heights: Vec<f32>,
+    width: f32,
 }
 
 pub struct MdCtx<'a> {
@@ -269,8 +272,22 @@ pub fn open_url(url: &str) -> Result<(), String> {
 pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCache, scroll_line: Option<usize>) -> MdEvent {
     let target = scroll_line.and_then(|l| block_at(blocks, l));
     let mut ev = MdEvent::default();
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+    let w = ui.available_width();
+    if (cache.width - w).abs() > 1.0 {
+        cache.width = w;
+        cache.heights.clear();
+    }
+    cache.heights.resize(blocks.len(), 40.0);
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, view| {
+        let origin = ui.cursor().min.y;
         for (n, b) in blocks.iter().enumerate() {
+            let y = ui.cursor().min.y - origin;
+            let h = cache.heights[n];
+            if target != Some(n) && (y + h < view.min.y - 200.0 || y > view.max.y + 200.0) {
+                ui.allocate_space(egui::vec2(w, h));
+                continue;
+            }
+            let before = ui.cursor().min.y;
             let mut click_block = true; // 链接、表格内容自己处理点击; 其它块点击 = 回到源码行
             let r = match &b.block {
                 Block::Heading { level, text } => {
@@ -342,6 +359,7 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                 ev.jump = Some(b.line);
             }
             ui.add_space(6.0);
+            cache.heights[n] = ui.cursor().min.y - before;
         }
     });
     ev
