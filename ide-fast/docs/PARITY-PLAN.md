@@ -109,7 +109,7 @@ This batch replaces the hard-coded `shortcuts()` and `menu()`.
 9. Tool-menu items: syntax picker, exec-cmd (Ctrl+F5), history manager.
 10. Print preview and the remaining Edit-menu undo features.
 
-## Batch 8: Script plugins (gated on A1, A3, A4, A5)
+## Batch 8: Script plugins (gated on A1, A3, A4, A5) -- DONE: items 1-4, PPA runner and doc-graph (rquickjs host `plugin_host.rs`, `plugin_ui.rs`, `svg_lite.rs` instead of resvg, `Doc::apply_line_patch`). Open: markdown.fence provider (pele) in the preview, agent.tool, A4/A5 optional items.
 
 1. `plugin_host.rs` with the rquickjs runtime: `ide.register`, 15s timeout, 2 MB result cap, unload on disable.
 2. Plugin command contributions in the menu and palette, with permission-gated document args.

@@ -81,6 +81,8 @@ pub struct App {
     grep_doc: Option<u64>,
     /// 结果文档里请求跳转的 (文档 id, 行)
     jump_req: Option<(u64, usize)>,
+    /// 脚本插件: 宿主在第一次跑命令时才创建 (启动路径上不碰 JS 引擎)
+    plug: crate::plugin_ui::PlugState,
     /// 编辑区控件的 id (有别的输入框拿着焦点时, 编辑区不抢键盘; 编辑区自己拿着焦点不算)
     editor_ids: Vec<egui::Id>,
     /// 移动履历 (Alt+P / Alt+N)
@@ -119,7 +121,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false,
         };
         app.persist = persist;
         app.apply_settings(&st);
@@ -1089,17 +1091,32 @@ impl App {
                 if ui.radio(self.theme_id.is_empty(), tr("c.builtin-theme")).clicked() { self.set_theme_plugin(""); ui.close(); }
                 for r in &rows {
                     ui.horizontal(|ui| {
+                        if !r.commands.is_empty() || r.script_only {
+                            if ui.checkbox(&mut r.enabled.clone(), "").on_hover_text(tr("ui.plugin-enabled")).clicked() {
+                                let _ = plugins::set_enabled(&r.id, !r.enabled);
+                                if r.enabled { self.plug.unload(&r.id); }
+                            }
+                        }
                         if let Some(t) = &r.theme {
                             if ui.radio(self.theme_id == r.id, format!("{}{}", tr("ui.theme-prefix"), t.label)).clicked() { self.set_theme_plugin(&r.id); ui.close(); }
                         } else {
-                            ui.label(format!("{} {}{}", r.name, r.version, if r.script_only { tr("ui.script-only") } else { "" }));
+                            ui.label(format!("{} {}{}", r.name, r.version, if r.script_only && r.pele_like() { tr("ui.script-only") } else { "" }));
                         }
                         if ui.small_button(tr("c.delete")).clicked() {
                             let _ = plugins::remove(&r.id);
+                            self.plug.unload(&r.id);
                             if self.theme_id == r.id { self.set_theme_plugin(""); }
                             ui.close();
                         }
                     });
+                }
+                // 脚本插件贡献的命令: 点了才(惰性)启动 JS 宿主
+                let cmds: Vec<(String, String, String)> = rows.iter().filter(|r| r.enabled).flat_map(|r| r.commands.iter().map(|(c, t)| (r.id.clone(), c.clone(), t.clone()))).collect();
+                if !cmds.is_empty() {
+                    ui.separator();
+                    for (id, c, t) in cmds {
+                        if ui.button(format!("▶ {t}")).clicked() { ui.close(); self.run_plugin_command(&id, &c, &t); }
+                    }
                 }
                 ui.separator();
                 if ui.button(tr("c.plugin-import")).clicked() { ui.close(); self.import_plugin_zip(); }
@@ -1174,6 +1191,7 @@ impl App {
                 ui.separator();
                 if ui.button(tr("c.macro-run-doc")).clicked() { ui.close(); self.run_mac_doc(); }
                 if ui.button(tr("c.macro-run-file")).clicked() { ui.close(); self.run_mac_file(); }
+                if ui.button(tr("c.macro-run-ppa")).clicked() { ui.close(); self.run_ppa_doc(); }
             });
             ui.menu_button(tr("menu.view"), |ui| {
                 if ui.checkbox(&mut self.split_on.clone(), lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
@@ -1212,6 +1230,45 @@ impl App {
         let src = self.cur().text_lf();
         let target = if self.docs.len() > 1 { (0..self.docs.len()).rev().find(|&i| i != self.active) } else { Some(self.active) };
         self.run_mac_src(&src, target.unwrap_or(self.active));
+    }
+
+    /// 点了插件菜单里的命令: 按权限取文档参数, 交给脚本宿主异步跑 (结果在 `ui()` 里轮询)
+    fn run_plugin_command(&mut self, plugin: &str, cmd: &str, title: &str) {
+        if plugin == "ppa" && cmd == "run" {
+            return self.run_ppa_doc();
+        }
+        let Some(row) = plugins::rows().into_iter().find(|r| r.id == plugin && r.enabled) else {
+            self.cur().tip = trf("dlg.plugin-off", &[plugin]);
+            return;
+        };
+        let a = self.active;
+        self.plug.start(plugin, &row.perms, cmd, title, &self.docs[a], None);
+        self.docs[a].tip = trf("dlg.plugin-running", &[title]);
+    }
+
+    /// PPA: 脚本 = 选区 (没有选区就是当前 .ppa 文档), 作用在最近活动的另一份文档上 (有选区且只有一份文档就作用在自己上)
+    fn run_ppa_doc(&mut self) {
+        let Some(row) = plugins::rows().into_iter().find(|r| r.id == "ppa" && r.enabled) else {
+            self.cur().tip = tr("dlg.ppa-off").into();
+            return;
+        };
+        let sel = crate::plugin_ui::selection_text(self.cur());
+        let script = if !sel.is_empty() {
+            sel
+        } else if self.cur().name.to_lowercase().ends_with(".ppa") {
+            self.cur().text_lf()
+        } else {
+            self.cur().tip = tr("dlg.ppa-hint").into();
+            return;
+        };
+        let other = (0..self.docs.len()).rev().find(|&i| i != self.active);
+        let Some(target) = other.or(if script.is_empty() { None } else { Some(self.active) }) else { return };
+        if other.is_none() && self.docs[self.active].name.to_lowercase().ends_with(".ppa") {
+            self.cur().tip = tr("dlg.ppa-no-target").into();
+            return;
+        }
+        self.plug.start("ppa", &row.perms, "run", "PPA", &self.docs[target], Some(serde_json::json!({ "script": script })));
+        self.docs[self.active].tip = trf("dlg.plugin-running", &["PPA"]);
     }
 
     fn run_mac_file(&mut self) {
@@ -2160,6 +2217,17 @@ impl eframe::App for App {
             match grep::parse_result_line(&line) {
                 Some((p, l, c)) => { self.center_once = true; self.open_at(&p, l, c.saturating_sub(1)); }
                 None => self.cur().tip = "这一行不是命中行".into(),
+            }
+        }
+        // 脚本插件: 收结果 (补丁 / 提示 / 结果窗口); 点图里的节点跳到对应行
+        self.plug.poll(&mut self.docs, self.active, ctx);
+        if self.plug.win.is_some() {
+            if let Some((id, row)) = self.plug.window(ctx, self.theme_visuals.as_ref().and_then(|v| v.override_text_color).or(Some(if self.dark { egui::Color32::from_gray(220) } else { egui::Color32::from_gray(30) }))) {
+                if let Some(i) = self.docs.iter().position(|d| d.id == id) {
+                    self.active = i;
+                    self.docs[i].goto(row, 0);
+                    self.center_once = true;
+                }
             }
         }
         let mut st_cmd: Option<StatusCmd> = None;

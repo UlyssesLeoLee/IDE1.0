@@ -1,6 +1,6 @@
 //! 插件 (声明式部分): 复用 editcore 的插件仓库 (`plugin_host::store`) —— 和 Tauri 版同一个目录、同一套 zip 导入 / 删除 / 恢复内置。
-//! 高速版**不嵌 JS 引擎**, 所以只有不需要脚本的插件在这里生效: 主题插件 (`contributes.theme` 的颜色变量 -> egui Visuals)。
-//! 带脚本入口的插件 (PPA / 文档关系图 / Pele 等) 能列出、导入、删除, 但在这里不运行 (列表里标明), 到 Tauri 版里用。
+//! 声明式部分在这里: 主题插件 (`contributes.theme` 的颜色变量 -> egui Visuals) 和命令贡献的清单 (`contributes.command`)。
+//! 带脚本入口的插件 (PPA / 文档关系图 ...) 的命令由 `plugin_host` (QuickJS) 惰性运行; Pele (mermaid) 需要 DOM, 高速版里不支持。
 
 use eframe::egui::{self, Color32};
 use editcore::plugin_host::store::{self, Installed};
@@ -23,8 +23,19 @@ pub struct Row {
     pub version: String,
     pub enabled: bool,
     pub theme: Option<ThemeSpec>,
-    /// 有脚本入口且没有声明式贡献 -> 这里不运行
+    /// 有脚本入口且没有声明式贡献 -> 脚本插件 (命令走 plugin_host 惰性运行)
     pub script_only: bool,
+    /// `contributes.command`: (命令 id, 标题)
+    pub commands: Vec<(String, String)>,
+    /// manifest 声明的权限 (editor.read / editor.write ...): 决定交给脚本的文档参数和能不能写回
+    pub perms: Vec<String>,
+}
+
+impl Row {
+    /// 脚本插件里高速版跑不了的: 没有命令贡献的脚本插件 (例如 Pele 的 markdown.fence, 需要 DOM)
+    pub fn pele_like(&self) -> bool {
+        self.script_only && self.commands.is_empty()
+    }
 }
 
 pub fn rows() -> Vec<Row> {
@@ -38,7 +49,14 @@ fn row_of(p: Installed) -> Row {
         Some(ThemeSpec { label: t["label"].as_str().or(t["name"].as_str()).unwrap_or(&m.name).to_string(), vars })
     });
     let script_only = theme.is_none() && !m.entry.is_empty();
-    Row { id: m.id.clone(), name: m.name.clone(), version: m.version.clone(), enabled: p.enabled, theme, script_only }
+    let commands = m.contributes.get("command").and_then(|c| c.as_array()).map(|a| {
+        a.iter().filter_map(|c| {
+            let id = c["id"].as_str()?.to_string();
+            let title = c["title"].as_str().unwrap_or(&id).to_string();
+            Some((id, title))
+        }).collect()
+    }).unwrap_or_default();
+    Row { id: m.id.clone(), name: m.name.clone(), version: m.version.clone(), enabled: p.enabled, theme, script_only, commands, perms: m.permissions.clone() }
 }
 
 /// `#rgb` `#rrggbb` `#rrggbbaa` `rgb(r,g,b)` `rgba(r,g,b,a)`
@@ -147,6 +165,11 @@ pub fn install_zip(bytes: &[u8], approved: &[String]) -> Result<String, String> 
     store::install_package(&root(), bytes, env!("CARGO_PKG_VERSION"), approved).map(|i| format!("已安装 {} {}", i.manifest.name, i.manifest.version))
 }
 
+/// 启用 / 禁用 (写回插件仓库; 调用方负责让宿主丢掉它的运行环境)
+pub fn set_enabled(id: &str, on: bool) -> Result<(), String> {
+    store::set_enabled(&root(), id, on)
+}
+
 pub fn remove(id: &str) -> Result<(), String> {
     store::remove(&root(), id)
 }
@@ -186,6 +209,9 @@ mod tests {
         let light = rows.iter().find(|r| r.id == "theme-light").and_then(|r| r.theme.clone()).expect("浅色");
         assert!(!visuals(&light.vars).dark_mode);
         assert!(rows.iter().any(|r| r.script_only), "脚本类插件被标出来");
+        let ppa = rows.iter().find(|r| r.id == "ppa").expect("内置 PPA");
+        assert_eq!(ppa.commands.first().map(|c| c.0.as_str()), Some("run"));
+        assert!(ppa.perms.iter().any(|p| p == "editor.write"));
         std::env::remove_var("IDE_PLUGIN_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }

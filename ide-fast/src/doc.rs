@@ -77,6 +77,9 @@ pub struct Doc {
     pub changed_cache: Option<(u64, Vec<bool>)>,
 }
 
+/// 插件补丁一次最多插入的行数 (和 Tauri 版 applyPluginEdit 相同)
+pub const PATCH_MAX_LINES: usize = 200_000;
+
 /// 超过 HARD 直接拒绝 (整篇载入内存, 太大会拖垮编辑器); 「打开前要确认」的阈值在首选项里 (max_file_mb)
 pub const HARD_LIMIT: u64 = 32 * 1024 * 1024;
 
@@ -491,6 +494,27 @@ impl Doc {
         self.anchor = None;
         self.clamp();
         self.reveal = true;
+    }
+
+    /// 插件 (editor.write) 交来的行补丁: 范围 / 行数 / 类型校验通过才套用, 一步撤销。越界一律拒绝, 文档不动
+    pub fn apply_line_patch(&mut self, start: usize, remove: usize, insert: Vec<String>, cursor: Option<[usize; 2]>) -> Result<(), String> {
+        if self.readonly {
+            return Err("只读文档, 插件的修改已忽略".into());
+        }
+        if start.checked_add(remove).is_none_or(|e| e > self.lines.len()) {
+            return Err("插件返回的修改越界, 已拒绝".into());
+        }
+        if insert.len() > PATCH_MAX_LINES {
+            return Err("插件返回的修改行数过多, 已拒绝".into());
+        }
+        // 光标默认落在补丁起点; 越界的光标夹回文档内
+        let c = cursor.unwrap_or([start, 0]);
+        let new_len = self.lines.len() - remove + insert.len();
+        let insert = if new_len == 0 { vec![String::new()] } else { insert };
+        let total = self.lines.len() - remove + insert.len();
+        let row = c[0].min(total.saturating_sub(1));
+        self.replace_rows(start, remove, insert, [row, c[1]]);
+        Ok(())
     }
 
     /// 选区覆盖的整行 (含首尾); 选区终点在行首且跨行时不算那一行。没有选区 = None
@@ -994,6 +1018,25 @@ mod tests {
         let mut d = Doc::untitled(1, 1);
         d.lines = lines.iter().map(|s| s.to_string()).collect();
         d
+    }
+
+    #[test]
+    fn plugin_line_patch_is_validated_and_one_undo_step() {
+        let mut d = doc(&["a", "b", "c"]);
+        assert!(d.apply_line_patch(2, 2, vec![], None).is_err(), "越界拒绝");
+        assert!(d.apply_line_patch(usize::MAX, 2, vec![], None).is_err(), "溢出拒绝");
+        assert!(d.apply_line_patch(0, 0, vec!["x".to_string(); PATCH_MAX_LINES + 1], None).is_err(), "行数过多拒绝");
+        assert_eq!(d.lines, vec!["a", "b", "c"], "被拒绝的补丁不改文档");
+        d.apply_line_patch(1, 1, vec!["B1".into(), "B2".into()], Some([3, 1])).unwrap();
+        assert_eq!(d.lines, vec!["a", "B1", "B2", "c"]);
+        assert_eq!(d.cursor, [3, 1]);
+        d.undo();
+        assert_eq!(d.lines, vec!["a", "b", "c"], "一步撤销");
+        d.readonly = true;
+        assert!(d.apply_line_patch(0, 1, vec![], None).is_err(), "只读拒绝");
+        d.readonly = false;
+        d.apply_line_patch(0, 3, vec![], Some([9, 0])).unwrap();
+        assert_eq!(d.lines, vec![""], "删光后至少留一个空行");
     }
 
     #[test]

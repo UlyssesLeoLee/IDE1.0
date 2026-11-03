@@ -152,7 +152,7 @@ pub const T: &[Row] = &[
     // ---- 插件
     ("c.builtin-theme", ["内置主题 (深 / 浅色)", "内蔵テーマ (ダーク / ライト)", "Built-in Theme (dark / light)"]),
     ("ui.theme-prefix", ["主题: ", "テーマ: ", "Theme: "]),
-    ("ui.script-only", ["  (脚本插件, 高速版不运行)", "  (スクリプトプラグイン。高速版では実行されません)", "  (script plugin; not run in the fast build)"]),
+    ("ui.script-only", ["  (代码块渲染器, 高速版预览暂未接入)", "  (コードブロック描画: 高速版プレビュー未対応)", "  (fence renderer; not wired into the fast preview yet)"]),
     ("c.delete", ["删除", "削除", "Delete"]),
     ("c.plugin-import", ["导入插件 (.zip)…", "プラグインをインポート (.zip)…", "Import Plugin (.zip)…"]),
     ("sub.plugin-restore", ["恢复内置插件", "内蔵プラグインを復元", "Restore Bundled Plugins"]),
@@ -193,6 +193,13 @@ pub const T: &[Row] = &[
     ("c.macro-stop", ["结束录制", "記録終了", "Stop Recording"]),
     ("c.macro-play", ["回放", "再生", "Play"]),
     ("c.macro-run-doc", ["运行当前文档 (Sakura .mac)", "現在の文書を実行 (Sakura .mac)", "Run Current Document (Sakura .mac)"]),
+    ("c.macro-run-ppa", ["运行当前文档 / 选区 (PPA)", "現在の文書/選択範囲を実行 (PPA)", "Run Document / Selection (PPA)"]),
+    ("ui.plugin-enabled", ["启用 / 禁用", "有効 / 無効", "Enable / disable"]),
+    ("dlg.plugin-off", ["插件 {} 未启用", "プラグイン {} は無効です", "Plugin {} is not enabled"]),
+    ("dlg.plugin-running", ["正在运行插件命令: {}", "プラグインコマンド実行中: {}", "Running plugin command: {}"]),
+    ("dlg.ppa-off", ["PPA 插件未启用 (插件菜单里勾选「PPA 宏子集」)", "PPA プラグインが無効です (プラグインメニューで有効化)", "PPA plugin is not enabled (tick it in the Plugins menu)"]),
+    ("dlg.ppa-hint", ["把脚本存成 .ppa 文档再运行 (或先选中一段脚本)", ".ppa 文書として保存して実行 (またはスクリプトを選択)", "Save the script as a .ppa document (or select the script) first"]),
+    ("dlg.ppa-no-target", ["没有可以运行脚本的另一份文档", "スクリプトを適用する別の文書がありません", "No other document to run the script on"]),
     ("c.macro-run-file", ["运行 .mac 文件…", ".mac ファイルを実行…", "Run .mac File…"]),
     // ---- 视图
     ("c.terminal", ["终端", "ターミナル", "Terminal"]),
