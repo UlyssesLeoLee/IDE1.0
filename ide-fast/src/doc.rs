@@ -60,6 +60,30 @@ pub struct Doc {
     /// 改写模式 (Ins) / 只读
     pub overwrite: bool,
     pub readonly: bool,
+    /// 读 / 写文件时的 (修改时间, 大小): 窗口重新获得焦点时拿它判断文件有没有被外部改过
+    pub stamp: Option<(std::time::SystemTime, u64)>,
+}
+
+/// 超过它打开前要确认; 超过 HARD 直接拒绝 (整篇载入内存, 太大会拖垮编辑器)
+pub const SOFT_LIMIT: u64 = 4 * 1024 * 1024;
+pub const HARD_LIMIT: u64 = 32 * 1024 * 1024;
+
+/// 前 8 KB 里有 NUL 且不是带 BOM 的 UTF-16 = 二进制
+fn looks_binary(p: &Path) -> bool {
+    use std::io::Read;
+    let mut buf = [0u8; 8192];
+    let Ok(mut f) = std::fs::File::open(p) else { return false };
+    let n = f.read(&mut buf).unwrap_or(0);
+    let b = &buf[..n];
+    if b.starts_with(&[0xFF, 0xFE]) || b.starts_with(&[0xFE, 0xFF]) {
+        return false;
+    }
+    b.contains(&0)
+}
+
+pub fn stamp_of(p: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let m = std::fs::metadata(p).ok()?;
+    Some((m.modified().ok()?, m.len()))
 }
 
 /// 录下来的一步 (回放时原样再走一遍 editcore)
@@ -72,10 +96,17 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, stamp: None }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if size > HARD_LIMIT {
+            return Err(format!("文件太大 ({} MB, 上限 {} MB): 高速版把整篇载入内存, 请用专门的大文件查看器", size / 1024 / 1024, HARD_LIMIT / 1024 / 1024));
+        }
+        if looks_binary(path) {
+            return Err("看起来是二进制文件 (含 NUL 字节), 不按文本打开".into());
+        }
         let d = document_io::read_doc(path, None)?;
         let mut lines: Vec<String> = d.content.split('\n').map(str::to_string).collect();
         if lines.is_empty() {
@@ -83,7 +114,27 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, stamp: stamp_of(path) })
+    }
+
+    /// 磁盘上的文件和读进来时不一样了 (被别的程序改过 / 删了)
+    pub fn changed_on_disk(&self) -> bool {
+        match (&self.path, self.stamp) {
+            (Some(p), Some(st)) => stamp_of(p) != Some(st),
+            _ => false,
+        }
+    }
+
+    /// 从磁盘重新载入 (丢弃内存里的修改); 保留标签分组 / 只读
+    pub fn reload(&mut self) -> Result<(), String> {
+        let Some(p) = self.path.clone() else { return Err("还没有保存过, 没有可重新载入的文件".into()) };
+        let mut n = Doc::open(self.id, &p)?;
+        n.group = self.group;
+        n.readonly = self.readonly;
+        n.rev = self.rev + 1;
+        n.tip = "已从磁盘重新载入".into();
+        *self = n;
+        Ok(())
     }
 
     pub fn text_lf(&self) -> String {
@@ -96,6 +147,7 @@ impl Doc {
         self.path = Some(path.to_path_buf());
         self.name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| self.name.clone());
         self.dirty = false;
+        self.stamp = stamp_of(path);
         Ok(())
     }
 
@@ -391,6 +443,18 @@ impl Doc {
             self.sel = Some([r0, 0, r1, last_len]);
             self.anchor = Some([r0, 0]);
         }
+    }
+
+    /// 三击: 选中整行 (含换行; 最后一行到行尾)
+    pub fn select_line(&mut self, row: usize) {
+        let row = row.min(self.lines.len() - 1);
+        let end = if row + 1 < self.lines.len() { [row + 1, 0] } else { [row, self.lines[row].chars().count()] };
+        self.box_sel = None;
+        self.extra.clear();
+        self.anchor = Some([row, 0]);
+        self.sel = Some([row, 0, end[0], end[1]]);
+        self.cursor = end;
+        self.reveal = true;
     }
 
     pub fn type_text(&mut self, text: &str) {
@@ -854,5 +918,29 @@ b
         d.overwrite = true;
         d.type_text("X");
         assert_eq!(d.lines[1], "X");
+    }
+
+    #[test]
+    fn binary_files_are_refused_and_external_changes_are_detected() {
+        let d = std::env::temp_dir().join(format!("ide-fast-ext-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("bin.dat"), [1u8, 0, 2, 0, 3]).unwrap();
+        assert!(Doc::open(1, &d.join("bin.dat")).err().unwrap().contains("二进制"));
+        let f = d.join("a.txt");
+        std::fs::write(&f, "one
+").unwrap();
+        let mut doc = Doc::open(1, &f).unwrap();
+        assert!(!doc.changed_on_disk());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&f, "two two
+").unwrap();
+        assert!(doc.changed_on_disk(), "大小变了就算被外部改过");
+        doc.group = 3;
+        doc.reload().unwrap();
+        assert_eq!(doc.lines[0], "two two");
+        assert_eq!(doc.group, 3, "重载保留标签分组");
+        assert!(!doc.changed_on_disk());
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

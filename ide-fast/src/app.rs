@@ -38,6 +38,7 @@ pub struct App {
     side: Sidebar,
     term: Terminal,
     goto_open: bool,
+    was_focused: bool,
     goto_text: String,
     /// 主题插件: 选中的 id 与换算好的外观
     theme_id: String,
@@ -72,7 +73,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -108,6 +109,12 @@ impl App {
         if let Some(i) = self.docs.iter().position(|d| d.path.as_deref() == Some(p)) {
             self.active = i;
             return;
+        }
+        if std::fs::metadata(p).map(|m| m.len() > crate::doc::SOFT_LIMIT && m.len() <= crate::doc::HARD_LIMIT).unwrap_or(false) {
+            let mb = std::fs::metadata(p).map(|m| m.len() / 1024 / 1024).unwrap_or(0);
+            let go = rfd::MessageDialog::new().set_title("较大的文件").set_description(format!("{}
+约 {mb} MB, 打开可能比较慢。继续吗?", p.display())).set_buttons(rfd::MessageButtons::YesNo).show();
+            if go != rfd::MessageDialogResult::Yes { return; }
         }
         let id = self.id();
         match Doc::open(id, p) {
@@ -347,6 +354,7 @@ impl App {
                 });
                 if ui.button("保存  Ctrl+S").clicked() { ui.close(); self.save(false); }
                 if ui.button("另存为…").clicked() { ui.close(); self.save(true); }
+                if ui.button("重新载入 (丢弃修改)").clicked() { ui.close(); self.reload_current(); }
                 if ui.button("打印 / 打印预览…  Ctrl+P").clicked() { ui.close(); self.print_cur(); }
                 if ui.button("关闭标签  Ctrl+W").clicked() { ui.close(); let a = self.active; self.close_tab(a); }
                 ui.separator();
@@ -753,6 +761,32 @@ impl App {
         if let Some(n) = go { let d = self.cur(); let row = n.saturating_sub(1).min(d.lines.len() - 1); d.goto(row, 0); }
     }
 
+    /// 窗口重新获得焦点时: 看每个文档的文件有没有被外部改过; 没动过就静默重载, 有未保存修改就问
+    fn check_external(&mut self) {
+        for i in 0..self.docs.len() {
+            if !self.docs[i].changed_on_disk() { continue; }
+            let name = self.docs[i].name.clone();
+            let reload = if !self.docs[i].dirty {
+                true
+            } else {
+                rfd::MessageDialog::new().set_title("文件被外部修改").set_description(format!("「{name}」在磁盘上被修改了, 而你这里也有未保存的修改。
+重新载入会丢弃你的修改。重新载入吗?")).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes
+            };
+            if reload {
+                if let Err(e) = self.docs[i].reload() { self.docs[i].tip = e; }
+                else { self.docs[i].tip = "文件在外部被修改, 已重新载入".into(); }
+            } else {
+                self.docs[i].stamp = crate::doc::stamp_of(self.docs[i].path.as_deref().unwrap_or(std::path::Path::new("")));
+            }
+        }
+    }
+
+    fn reload_current(&mut self) {
+        let (dirty, name) = { let d = self.cur(); (d.dirty, d.name.clone()) };
+        if dirty && rfd::MessageDialog::new().set_title("重新载入").set_description(format!("丢弃「{name}」未保存的修改并从磁盘重新载入吗?")).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        if let Err(e) = self.cur().reload() { self.cur().tip = e; }
+    }
+
     fn toggle_split(&mut self) {
         self.split_on = !self.split_on;
         if self.split_on {
@@ -866,6 +900,7 @@ impl App {
         let reveal = std::mem::take(&mut self.docs[ai].reveal);
         let mut widest = max_cols;
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
+        let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
         let out = egui::ScrollArea::both().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             let width = (widest as f32 * char_w + gutter + pad * 2.0 + 40.0).max(ui.available_width());
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
@@ -968,6 +1003,7 @@ impl App {
                     clicked = Some((p, ui.input(|i| i.modifiers.shift), resp.dragged() && !resp.drag_started()));
                 }
             }
+            multi_click = if resp.triple_clicked() { 3 } else if resp.double_clicked() { 2 } else { 0 };
             if resp.clicked() || resp.drag_started() {
                 resp.request_focus();
             }
@@ -995,6 +1031,8 @@ impl App {
                 else if ctrl { d.toggle_cursor(row, col); }
                 else { d.box_sel = None; d.extra.clear(); d.click(row, col, shift); }
             }
+            if multi_click == 2 && !dragging { d.edit("select-word", None); }
+            if multi_click == 3 && !dragging { d.select_line(row); }
         }
         let _ = max_cols;
         if self.first_frame {
@@ -1106,6 +1144,9 @@ impl eframe::App for App {
             for a in &paths { self.open_spec(a); }
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        if focused && !self.was_focused { self.check_external(); }
+        self.was_focused = focused;
         if self.prefs_open { self.prefs_window(ctx); }
         if self.goto_open { self.goto_window(ctx); }
         if self.split_on {
