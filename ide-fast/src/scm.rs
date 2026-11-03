@@ -53,13 +53,19 @@ pub struct Status {
 /// 仓库本地配置里的 filter / diff 驱动会在 add / diff 时执行外部命令: 有就拒绝, 让用户到终端里自己处理
 fn local_drivers(cwd: &Path) -> bool {
     let mut c = Command::new("git");
-    c.args(["config", "--local", "--name-only", "--get-regexp", r"^(filter|diff|core\.(pager|editor|askpass))\."]).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    c.args(["config", "--includes", "--show-scope", "--name-only", "--get-regexp", r"^(filter\.|diff\.external$|diff\..*\.(command|textconv)$)"]).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         c.creation_flags(0x0800_0000);
     }
-    c.output().map(|o| o.status.success() && !o.stdout.is_empty()).unwrap_or(false)
+    // 退出码 1 = 没有匹配 (安全); 其余失败一律当作不安全
+    match c.output() {
+        // 用户自己的 global / system 配置 (如 git-lfs 的 filter) 是可信的, 只看仓库一侧的 scope
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).lines().any(|l| !(l.starts_with("global") || l.starts_with("system"))),
+        Ok(o) => o.status.code() != Some(1),
+        Err(_) => true,
+    }
 }
 
 fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
@@ -69,7 +75,7 @@ fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     let mut c = Command::new("git");
     c.env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_ATTR_NOSYSTEM", "1");
     // 仓库自带的配置不能让只读查询去执行命令
-    c.args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=NUL", "-c", "core.sshCommand=false"]).args(args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    c.args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=NUL", "-c", "core.sshCommand=false", "-c", "core.attributesFile="]).arg("--no-optional-locks").args(args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -90,7 +96,7 @@ pub fn load_status(cwd: &Path) -> Status {
         Err(e) => return Status { error: Some(if e.is_empty() { "不是 Git 仓库".into() } else { e }), ..Default::default() },
     };
     let branch = git(&top, &["rev-parse", "--abbrev-ref", "HEAD"]).map(|b| b.trim().to_string()).unwrap_or_default();
-    match git(&top, &["-c", "core.quotepath=false", "status", "--porcelain"]) {
+    match git(&top, &["-c", "core.quotepath=false", "status", "--porcelain", "--ignore-submodules=all"]) {
         Ok(t) => Status { branch, changes: parse_porcelain(&t), top: Some(top), error: None },
         Err(e) => Status { branch, top: Some(top), error: Some(e), ..Default::default() },
     }
@@ -98,7 +104,7 @@ pub fn load_status(cwd: &Path) -> Status {
 
 /// 某个文件的统一差异 (`staged` = 暂存区对 HEAD; 否则工作区对暂存区); 未跟踪文件没有差异可看
 pub fn file_diff(top: &Path, path: &str, staged: bool) -> Result<String, String> {
-    let mut args = vec!["-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv"];
+    let mut args = vec!["-c", "core.quotepath=false", "diff", "--ignore-submodules=all", "--no-color", "--no-ext-diff", "--no-textconv"];
     if staged {
         args.push("--cached");
     }
@@ -185,7 +191,7 @@ mod tests {
         let d = std::env::temp_dir().join(format!("ide-fast-scm-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        assert!(git(&d, &["init", "-q"]).is_ok());
+        let r = git(&d, &["init", "-q"]); assert!(r.is_ok(), "{r:?}");
         let cfg = ["-c", "user.name=t", "-c", "user.email=t@t"];
         std::fs::write(d.join("a.txt"), "one\n").unwrap();
         git(&d, &["add", "a.txt"]).unwrap();
