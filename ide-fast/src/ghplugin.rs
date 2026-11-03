@@ -13,10 +13,6 @@ use std::sync::mpsc::{channel, Receiver};
 /// 单次下载的字节上限 (清单 / 脚本 / API 响应都远小于这个)
 pub const MAX_DOWNLOAD: u64 = MAX_ASSET_BYTES;
 
-fn curl_path() -> PathBuf {
-    std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("curl.exe")).filter(|p| p.is_file()).unwrap_or_else(|| PathBuf::from("curl"))
-}
-
 /// 更严的 curl 客户端: https 限定 (含重定向)、大小 / 时间有上限
 pub struct StrictCurl;
 
@@ -36,7 +32,9 @@ impl Http for StrictCurl {
         if !url.starts_with("https://") || url.contains(['\r', '\n']) {
             return Err(format!("只允许 https 地址: {url}"));
         }
-        let out = std::process::Command::new(curl_path()).args(Self::args(url)).output().map_err(|e| format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"))?;
+        let mut cmd = crate::curlx::curl_command();
+        cmd.args(Self::args(url));
+        let out = cmd.output().map_err(|e| format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"))?;
         if !out.status.success() {
             return Err(format!("下载失败 {url}: {}", String::from_utf8_lossy(&out.stderr).trim()));
         }

@@ -205,7 +205,9 @@ fn ap(m: &M, p: [f32; 2]) -> [f32; 2] {
 }
 
 fn scale_of(m: &M) -> f32 {
-    (m[0] * m[3] - m[1] * m[2]).abs().sqrt()
+    let k = (m[0] * m[3] - m[1] * m[2]).abs().sqrt();
+    // 插件给的变换可能是 NaN / 极大: 当作 1, 免得字号 / 线宽爆炸
+    if k.is_finite() && k < 1000.0 { k } else { 1.0 }
 }
 
 /// `translate(..) scale(..) rotate(..) matrix(..)` 的组合
@@ -442,7 +444,7 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
             "path" | "line" | "polyline" | "polygon" | "circle" | "ellipse" | "rect" | "text" => {
                 let st = derive(&top, tag, &vars);
                 let sc = scale_of(&st.tf);
-                let stroke = st.stroke.map(|c| (c, st.sw * sc));
+                let stroke = st.stroke.map(|c| (c, (st.sw * sc).clamp(0.0, 64.0)));
                 let first = match name {
                     "path" => {
                         let mut first = None;
@@ -494,7 +496,7 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                         // text
                         match st.fill {
                             Some(color) => {
-                                let ix = push_item(&mut out, Shape::Text { p: ap(&st.tf, [num(tag, "x"), num(tag, "y")]), s: String::new(), size: st.size * sc, color, anchor: st.anchor }, st.line);
+                                let ix = push_item(&mut out, Shape::Text { p: ap(&st.tf, [num(tag, "x"), num(tag, "y")]), s: String::new(), size: (st.size * sc).clamp(4.0, 200.0), color, anchor: st.anchor }, st.line);
                                 if !selfclose {
                                     text_ix = Some(ix);
                                 }
