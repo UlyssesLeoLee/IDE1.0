@@ -74,8 +74,10 @@ fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     }
     let mut c = Command::new("git");
     c.env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_ATTR_NOSYSTEM", "1");
+    // 状态 / 差异 / 暂存都是纯本地操作: 不许联网、不许弹凭据、不许惰性拉取
+    c.env("GIT_NO_LAZY_FETCH", "1").env("GIT_TERMINAL_PROMPT", "0").env("GIT_PROTOCOL_FROM_USER", "0").env("GIT_ASKPASS", "");
     // 仓库自带的配置不能让只读查询去执行命令
-    c.args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=NUL", "-c", "core.sshCommand=false", "-c", "core.attributesFile="]).arg("--no-optional-locks").args(args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    c.args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=NUL", "-c", "core.sshCommand=false", "-c", "core.attributesFile=", "-c", "protocol.allow=never", "-c", "credential.helper="]).arg("--no-optional-locks").args(args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
