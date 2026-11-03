@@ -15,13 +15,17 @@ pub struct Settings {
     /// 选中的主题插件 id (空 = 内置深 / 浅色)
     pub theme_plugin: String,
     pub recent: Vec<String>,
+    /// 最近打开的文件夹
+    pub recent_dirs: Vec<String>,
+    /// 每个文件上次的光标 (路径, 行, 列), 最多 50 条, 新的在前
+    pub positions: Vec<(String, usize, usize)>,
     /// 查找 / Grep 的默认条件
     pub search: SearchPrefs,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], search: SearchPrefs::default() }
+        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default() }
     }
 }
 
@@ -93,12 +97,18 @@ impl Settings {
         if let Some(a) = v["recent"].as_array() {
             s.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
         }
+        if let Some(a) = v["recent_dirs"].as_array() {
+            s.recent_dirs = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
+        }
+        if let Some(a) = v["positions"].as_array() {
+            s.positions = a.iter().filter_map(|x| Some((x[0].as_str()?.to_string(), x[1].as_u64()? as usize, x[2].as_u64()? as usize))).take(50).collect();
+        }
         s
     }
 
     pub fn save(&self) {
         let Some(p) = path() else { return };
-        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin, "recent": self.recent, "search": self.search.to_json() });
+        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin, "recent": self.recent, "recent_dirs": self.recent_dirs, "positions": self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>(), "search": self.search.to_json() });
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
@@ -106,6 +116,22 @@ impl Settings {
         if std::fs::write(&tmp, serde_json::to_vec_pretty(&v).unwrap_or_default()).is_ok() {
             let _ = std::fs::rename(&tmp, &p);
         }
+    }
+
+    /// 最近文件夹: 同最近文件的规则
+    pub fn push_recent_dir(&mut self, p: &std::path::Path) {
+        let s = p.to_string_lossy().into_owned();
+        self.recent_dirs.retain(|x| x != &s);
+        self.recent_dirs.insert(0, s);
+        self.recent_dirs.truncate(12);
+    }
+
+    /// 记住某文件的光标位置 (已有的挪到最前)
+    pub fn remember_pos(&mut self, p: &std::path::Path, row: usize, col: usize) {
+        let s = p.to_string_lossy().into_owned();
+        self.positions.retain(|x| x.0 != s);
+        self.positions.insert(0, (s, row, col));
+        self.positions.truncate(50);
     }
 
     /// 最近文件: 新的放最前, 去重, 最多 12 个
@@ -132,12 +158,21 @@ mod tests {
         s.push_recent(std::path::Path::new("a.txt"));
         s.push_recent(std::path::Path::new("b.txt"));
         s.push_recent(std::path::Path::new("a.txt"));
+        s.push_recent_dir(std::path::Path::new("d1"));
+        s.push_recent_dir(std::path::Path::new("d2"));
+        s.push_recent_dir(std::path::Path::new("d1"));
+        s.remember_pos(std::path::Path::new("a.txt"), 7, 3);
+        s.remember_pos(std::path::Path::new("b.txt"), 1, 0);
+        s.remember_pos(std::path::Path::new("a.txt"), 9, 2);
         s.search.find_regex = true;
         s.search.find_wrap = false;
         s.search.grep_files = "*.rs".into();
         s.search.grep_exc_folders = "target".into();
         s.save();
         let l = Settings::load();
+        assert_eq!(l.recent_dirs, vec!["d1".to_string(), "d2".to_string()]);
+        assert_eq!(l.positions[0], ("a.txt".to_string(), 9, 2), "再记一次的挪到最前");
+        assert_eq!(l.positions.len(), 2, "同一文件只留一条");
         assert_eq!(l.search, s.search, "查找 / Grep 默认条件落盘后原样读回");
         assert_eq!((l.dark, l.font_px, l.recent.clone()), (false, 19.0, vec!["a.txt".to_string(), "b.txt".to_string()]));
         std::fs::write(&f, "{ broken").unwrap();

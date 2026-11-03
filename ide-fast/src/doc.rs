@@ -65,6 +65,8 @@ pub struct Doc {
     pub grep_result: bool,
     /// 读 / 写文件时的 (修改时间, 大小): 窗口重新获得焦点时拿它判断文件有没有被外部改过
     pub stamp: Option<(std::time::SystemTime, u64)>,
+    /// 读进来时换行符混用 (状态栏提示)
+    pub mixed_eol: bool,
 }
 
 /// 超过它打开前要确认; 超过 HARD 直接拒绝 (整篇载入内存, 太大会拖垮编辑器)
@@ -99,10 +101,15 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
+        Self::open_with(id, path, None)
+    }
+
+    /// `forced` = 指定编码标签 (以指定编码重新打开); None = 自动判别
+    pub fn open_with(id: u64, path: &Path, forced: Option<&str>) -> Result<Self, String> {
         let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         if size > HARD_LIMIT {
             return Err(format!("文件太大 ({} MB, 上限 {} MB): 高速版把整篇载入内存, 请用专门的大文件查看器", size / 1024 / 1024, HARD_LIMIT / 1024 / 1024));
@@ -110,14 +117,14 @@ impl Doc {
         if looks_binary(path) {
             return Err("看起来是二进制文件 (含 NUL 字节), 不按文本打开".into());
         }
-        let d = document_io::read_doc(path, None)?;
+        let d = document_io::read_doc(path, forced)?;
         let mut lines: Vec<String> = d.content.split('\n').map(str::to_string).collect();
         if lines.is_empty() {
             lines.push(String::new());
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path) })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path), mixed_eol: d.mixed_eol })
     }
 
     /// 磁盘上的文件和读进来时不一样了 (被别的程序改过 / 删了)
@@ -138,6 +145,89 @@ impl Doc {
         n.tip = "已从磁盘重新载入".into();
         *self = n;
         Ok(())
+    }
+
+    /// 以指定编码重新打开 (丢弃内存里的修改); 保留分组 / 只读
+    pub fn reopen_as(&mut self, charset: Charset) -> Result<(), String> {
+        let Some(p) = self.path.clone() else { return Err("还没有保存过, 没有可重新打开的文件".into()) };
+        let mut n = Doc::open_with(self.id, &p, Some(charset.label()))?;
+        n.group = self.group;
+        n.readonly = self.readonly;
+        n.rev = self.rev + 1;
+        n.tip = format!("已按 {} 重新打开", charset.label());
+        *self = n;
+        Ok(())
+    }
+
+    /// 改保存时的换行符 (内存里始终是 LF, 只是元数据; 改了算「已修改」好提醒用户保存)
+    pub fn set_eol(&mut self, eol: Eol) {
+        if self.eol != eol {
+            self.eol = eol;
+            self.dirty = true;
+        }
+        self.mixed_eol = false;
+        self.tip = format!("保存时的换行符: {}", eol.label());
+    }
+
+    /// 改保存时的字符编码; BOM 跟着编码走 (UTF-16 必带, 其余编码不带; UTF-8 保留原来有没有)
+    pub fn set_charset(&mut self, cs: Charset) {
+        if self.charset != cs {
+            self.charset = cs;
+            self.bom = match cs {
+                Charset::Utf16Le => Bom::Utf16Le,
+                Charset::Utf16Be => Bom::Utf16Be,
+                Charset::Utf8 if self.bom == Bom::Utf8 => Bom::Utf8,
+                _ => Bom::None,
+            };
+            self.dirty = true;
+        }
+        self.tip = format!("保存时的编码: {}", cs.label());
+    }
+
+    /// 切换 UTF-8 的 BOM (别的编码没有可选的 BOM)
+    pub fn toggle_bom(&mut self) {
+        if self.charset != Charset::Utf8 {
+            self.tip = "只有 UTF-8 可以选择带不带 BOM".into();
+            return;
+        }
+        self.bom = if self.bom == Bom::Utf8 { Bom::None } else { Bom::Utf8 };
+        self.dirty = true;
+        self.tip = if self.bom == Bom::Utf8 { "保存时带 BOM".into() } else { "保存时不带 BOM".into() };
+    }
+
+    /// 文件属性 (给「文件属性」对话框)
+    pub fn properties(&self) -> String {
+        let chars: usize = self.lines.iter().map(|l| l.chars().count()).sum::<usize>() + self.lines.len().saturating_sub(1);
+        let (size, mtime) = match self.path.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
+            Some(m) => (format!("{} 字节", m.len()), m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| format!("{} (Unix 秒)", d.as_secs())).unwrap_or_else(|| "?".into())),
+            None => ("(尚未保存)".into(), "-".into()),
+        };
+        let bom = match self.bom { Bom::None => "无", Bom::Utf8 => "UTF-8", Bom::Utf16Le => "UTF-16LE", Bom::Utf16Be => "UTF-16BE" };
+        format!("名称: {}\n路径: {}\n大小: {}\n修改时间: {}\n行数: {}\n字符数: {}\n编码: {}\nBOM: {}\n换行符: {}{}\n只读: {}",
+            self.name, self.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "(无)".into()), size, mtime, self.lines.len(), chars,
+            self.charset.label(), bom, self.eol.label(), if self.mixed_eol { " (原文件混用)" } else { "" }, if self.readonly { "是" } else { "否" })
+    }
+
+    /// 光标处 (或光标前一个字符) 的括弧: (本身的位置, 另一半的位置); 复用 editcore::bracket (与 Tauri 版同一套)
+    pub fn bracket_pair(&self) -> Option<([usize; 2], [usize; 2])> {
+        let [r, c] = self.cursor;
+        // 光标处和前一个字符都不是括弧就不用交行 (括弧强调每次光标一动都会问, 要便宜)
+        const BR: &str = "()[]{}<>（）「」『』【】［］｛｝〈〉《》〔〕";
+        let line = self.lines.get(r)?;
+        let here = line.chars().nth(c).map_or(false, |ch| BR.contains(ch)) || c.checked_sub(1).and_then(|p| line.chars().nth(p)).map_or(false, |ch| BR.contains(ch));
+        if !here { return None; }
+        // 只交上光标上下一段行 (editcore 本身最多扫 30000 个字符)
+        let (a, b) = (r.saturating_sub(1500), (r + 1500).min(self.lines.len()));
+        let req = editcore::bracket::BracketReq { row: r, col: c, total_rows: self.lines.len(), rows: (a..b).map(|i| (i, self.lines[i].clone())).collect() };
+        editcore::bracket::find_pair(&req).map(|res| ([r, res.at], res.pair))
+    }
+
+    /// 对括弧跳转 (Ctrl+[ / Ctrl+]); 返回是否跳了
+    pub fn jump_to_pair(&mut self) -> bool {
+        match self.bracket_pair() {
+            Some((_, p)) => { self.goto(p[0], p[1]); true }
+            None => { self.tip = "没有对应的括弧".into(); false }
+        }
     }
 
     pub fn text_lf(&self) -> String {
@@ -1155,5 +1245,53 @@ b
         assert_eq!(doc.group, 3, "重载保留标签分组");
         assert!(!doc.changed_on_disk());
         let _ = std::fs::remove_dir_all(&d);
+    }
+    #[test]
+    fn eol_charset_bom_changes_mark_dirty_and_follow_rules() {
+        let mut d = doc(&["a"]);
+        d.eol = Eol::Crlf;
+        d.set_eol(Eol::Lf);
+        assert!(d.dirty && d.eol == Eol::Lf);
+        d.dirty = false;
+        d.set_eol(Eol::Lf);
+        assert!(!d.dirty, "没变就不算修改");
+        d.set_charset(Charset::Utf16Le);
+        assert_eq!(d.bom, Bom::Utf16Le);
+        d.set_charset(Charset::Utf8);
+        assert_eq!(d.bom, Bom::None);
+        d.toggle_bom();
+        assert_eq!(d.bom, Bom::Utf8);
+        d.set_charset(Charset::Gbk);
+        d.toggle_bom();
+        assert_eq!(d.bom, Bom::None, "GBK 没有可选 BOM");
+    }
+
+    #[test]
+    fn reopen_with_another_encoding_rereads_the_file() {
+        let dir = std::env::temp_dir().join(format!("ide-fast-reopen-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("g.txt");
+        std::fs::write(&f, [0xD6u8, 0xD0, 0xCE, 0xC4, b'a', b'b', b'c']).unwrap(); // "中文abc" 的 GBK 字节
+        let mut d = Doc::open(1, &f).unwrap();
+        d.group = 2;
+        d.reopen_as(Charset::Gbk).unwrap();
+        assert_eq!(d.lines, vec!["中文abc"]);
+        assert_eq!((d.charset, d.group), (Charset::Gbk, 2));
+        let mut u = Doc::untitled(2, 1);
+        assert!(u.reopen_as(Charset::Utf8).is_err());
+        assert!(d.properties().contains("GBK"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bracket_pair_and_jump() {
+        let mut d = doc(&["fn a(x) {", "  y[0]", "}"]);
+        d.goto(0, 8);
+        assert_eq!(d.bracket_pair(), Some(([0, 8], [2, 0])));
+        assert!(d.jump_to_pair());
+        assert_eq!(d.cursor, [2, 0]);
+        d.goto(1, 0);
+        assert!(!d.jump_to_pair());
+        assert_eq!(d.cursor, [1, 0]);
     }
 }

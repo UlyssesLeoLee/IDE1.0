@@ -7,7 +7,9 @@ use crate::grep::{self, Ev as GEv};
 use crate::plugins;
 use crate::settings::Settings;
 use crate::sidebar::{Sidebar, Tab};
+use crate::tabs::{self, CloseKind, JumpHist};
 use crate::terminal::Terminal;
+use editcore::document_io::{Charset, Eol};
 use crate::Trace;
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec2};
 use editcore::syntax_styling::Theme;
@@ -66,6 +68,21 @@ pub struct App {
     jump_req: Option<(u64, usize)>,
     /// 编辑区控件的 id (有别的输入框拿着焦点时, 编辑区不抢键盘; 编辑区自己拿着焦点不算)
     editor_ids: Vec<egui::Id>,
+    /// 移动履历 (Alt+P / Alt+N)
+    jump: JumpHist,
+    /// 「文件属性」对话框的内容 (Some = 打开着)
+    props: Option<String>,
+    /// 书签列表窗口
+    bm_open: bool,
+    fullscreen: bool,
+    topmost: bool,
+    recent_dirs: Vec<String>,
+    /// 每个文件上次的光标 (路径, 行, 列)
+    positions: Vec<(String, usize, usize)>,
+    /// 括弧强调的缓存: ((文档 id, 版本, 光标), 结果); 光标没动就不重算
+    bracket_cache: Option<((u64, u64, [usize; 2]), Option<([usize; 2], [usize; 2])>)>,
+    /// 上一帧的活动标签下标: 变了就把新的活动标签滚进标签栏可见范围
+    last_active: usize,
 }
 
 impl App {
@@ -73,7 +90,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![],
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX,
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -83,6 +100,8 @@ impl App {
         app.highlight = st.highlight;
         app.wrap = st.wrap;
         app.recent = st.recent.clone();
+        app.recent_dirs = st.recent_dirs.clone();
+        app.positions = st.positions.clone();
         app.apply_search_prefs(&st);
         app.saved = st;
         for a in &args {
@@ -126,6 +145,9 @@ impl App {
                 }
                 self.docs.push(d);
                 self.active = self.docs.len() - 1;
+                if let Some((r, c)) = self.positions.iter().find(|x| std::path::Path::new(&x.0) == p).map(|x| (x.1, x.2)) {
+                    self.docs[self.active].goto(r, c); // 回到上次关掉时的光标位置
+                }
                 let mut st = self.current_settings();
                 st.push_recent(p);
                 self.recent = st.recent.clone();
@@ -141,7 +163,7 @@ impl App {
     fn current_settings(&self) -> Settings {
         let (f, g) = (&self.find, &self.side.grep.o);
         let search = crate::settings::SearchPrefs { find_case: f.opts.case, find_regex: f.opts.regex, find_word: f.opts.word, find_wrap: f.opts.wrap, find_marks: f.marks, grep_case: g.case, grep_regex: g.regex, grep_word: g.word, grep_sub: g.sub, grep_outside: g.outside, grep_files: g.files.clone(), grep_exc_files: g.exc_files.clone(), grep_exc_folders: g.exc_folders.clone() };
-        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), search }
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), recent_dirs: self.recent_dirs.clone(), positions: self.positions.clone(), search }
     }
 
     /// 启动时把上次的查找 / Grep 条件放回去
@@ -205,8 +227,16 @@ impl App {
 
     fn open_folder_dialog(&mut self) {
         if let Some(d) = rfd::FileDialog::new().pick_folder() {
-            self.side.set_root(d);
+            self.open_folder(d);
         }
+    }
+
+    fn open_folder(&mut self, d: PathBuf) {
+        let mut st = self.current_settings();
+        st.push_recent_dir(&d);
+        self.recent_dirs = st.recent_dirs;
+        self.side.set_root(d);
+        self.side.open = true;
     }
 
     /// 打开文件并跳到某行 (Grep 结果 / 命令行 `文件:行`)
@@ -434,13 +464,173 @@ impl App {
                 _ => return false,
             }
         }
-        self.docs.remove(i);
+        self.remember_pos(i);
+        let gone = self.docs.remove(i);
+        self.jump.forget(gone.id);
         self.split_on = false;
         if self.docs.is_empty() {
             self.new_doc();
         }
         self.active = self.active.min(self.docs.len() - 1);
         true
+    }
+
+    /// 记下第 i 个文档的光标位置 (有路径才记), 下次打开时回到这里
+    fn remember_pos(&mut self, i: usize) {
+        let d = &self.docs[i];
+        let Some(p) = d.path.clone() else { return };
+        let mut st = Settings::default();
+        st.positions = std::mem::take(&mut self.positions);
+        st.remember_pos(&p, d.cursor[0], d.cursor[1]);
+        self.positions = st.positions;
+    }
+
+    // ---------------------------------------------------------------- 标签 / 窗口命令
+
+    fn select_tab(&mut self, i: usize) {
+        if i < self.docs.len() { self.active = i; }
+    }
+
+    fn next_tab(&mut self, fwd: bool) {
+        self.active = tabs::cycle(self.active.min(self.docs.len() - 1), self.docs.len(), fwd);
+    }
+
+    fn move_active_tab(&mut self, left: bool) {
+        let a = self.active.min(self.docs.len() - 1);
+        self.active = tabs::move_tab(&mut self.docs, a, left);
+        self.split_on = false;
+    }
+
+    /// 批量关标签 (其它 / 左边 / 右边 / 全部): 逐个关, 有未保存的会问, 选了取消就停在那里
+    fn close_many(&mut self, kind: CloseKind) {
+        let a = self.active.min(self.docs.len() - 1);
+        let keep = self.docs[a].id;
+        let ids: Vec<u64> = tabs::close_set(kind, a, self.docs.len()).into_iter().map(|i| self.docs[i].id).collect();
+        for id in ids {
+            let Some(i) = self.docs.iter().position(|d| d.id == id) else { continue };
+            if !self.close_tab(i) { break; }
+        }
+        if let Some(i) = self.docs.iter().position(|d| d.id == keep) { self.active = i; }
+    }
+
+    /// 全部保存: 有路径的直接存, 无标题的逐个弹另存为 (取消就跳过那个)
+    fn save_all(&mut self) {
+        let keep = self.active;
+        let mut n = 0;
+        for i in 0..self.docs.len() {
+            if !self.docs[i].dirty || self.docs[i].grep_result { continue; }
+            self.active = i;
+            if self.save(false) { n += 1; }
+        }
+        self.active = keep.min(self.docs.len() - 1);
+        self.cur().tip = format!("已保存 {n} 个文件");
+    }
+
+    /// 保存并关闭当前标签
+    fn save_close(&mut self) {
+        if self.cur().dirty && !self.save(false) { return; }
+        let a = self.active;
+        self.close_tab(a);
+    }
+
+    /// 关闭当前标签, 再选一个文件打开
+    fn close_open(&mut self) {
+        let a = self.active;
+        if self.close_tab(a) { self.open_dialog(); }
+    }
+
+    /// 以指定编码重新打开当前文件 (有未保存修改先问)
+    fn reopen_as(&mut self, cs: Charset) {
+        let (dirty, name, has_path) = { let d = self.cur(); (d.dirty, d.name.clone(), d.path.is_some()) };
+        if !has_path { self.cur().tip = "还没有保存过, 不能按别的编码重新打开".into(); return; }
+        if dirty && rfd::MessageDialog::new().set_title("重新打开").set_description(format!("丢弃「{name}」未保存的修改, 按 {} 重新打开吗?", cs.label())).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        if let Err(e) = self.cur().reopen_as(cs) { self.cur().tip = e; }
+    }
+
+    /// 用系统默认程序打开当前文件 (html 就是浏览器)
+    fn browse_current(&mut self) {
+        let Some(p) = self.cur().path.clone() else { self.cur().tip = "还没有保存过".into(); return };
+        let r = if cfg!(windows) { std::process::Command::new("explorer").arg(&p).spawn() } else { std::process::Command::new("xdg-open").arg(&p).spawn() };
+        if let Err(e) = r { self.cur().tip = format!("打不开: {e}"); }
+    }
+
+    /// 新窗口: 起一个独立的新进程 (`--new` 不和已有实例合并)
+    fn new_window(&mut self) {
+        let r = std::env::current_exe().and_then(|exe| std::process::Command::new(exe).arg("--new").spawn());
+        if let Err(e) = r { self.cur().tip = format!("开不了新窗口: {e}"); }
+    }
+
+    fn clear_recent(&mut self) {
+        self.recent.clear();
+        self.recent_dirs.clear();
+    }
+
+    fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
+        self.fullscreen = !self.fullscreen;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
+    }
+
+    fn toggle_topmost(&mut self, ctx: &egui::Context) {
+        self.topmost = !self.topmost;
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.topmost { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal }));
+    }
+
+    // ---------------------------------------------------------------- 移动履历 / 括弧
+
+    /// 当前位置记进移动履历 (会「跳走」的命令之前调)
+    fn jump_mark(&mut self) {
+        let d = self.cur();
+        let here = (d.id, d.cursor[0], d.cursor[1]);
+        self.jump.set(here);
+    }
+
+    fn jump_go(&mut self, d: i32) {
+        let here = { let c = self.cur(); (c.id, c.cursor[0], c.cursor[1]) };
+        match self.jump.go(d, here) {
+            Some((id, r, c)) => {
+                if let Some(i) = self.docs.iter().position(|x| x.id == id) { self.active = i; self.docs[i].goto(r, c); }
+            }
+            None => self.cur().tip = if d < 0 { "没有更早的移动履历".into() } else { "没有更新的移动履历".into() },
+        }
+    }
+
+    fn bracket_jump(&mut self) {
+        self.jump_mark();
+        self.cur().jump_to_pair();
+    }
+
+    /// 书签列表: 点一行跳过去; 可以全部清除
+    fn bookmark_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.bm_open;
+        let mut go: Option<usize> = None;
+        let mut clear = false;
+        let ai = self.active.min(self.docs.len() - 1);
+        egui::Window::new("书签列表").open(&mut open).collapsible(false).default_width(360.0).show(ctx, |ui| {
+            let d = &self.docs[ai];
+            if d.bookmarks.is_empty() { ui.label("(当前文档没有书签)"); }
+            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                for b in &d.bookmarks {
+                    let text = d.lines.get(b.row).map(|l| l.trim()).unwrap_or("");
+                    let shown: String = text.chars().take(60).collect();
+                    if ui.selectable_label(false, format!("{:>5}  {}", b.row + 1, shown)).clicked() { go = Some(b.row); }
+                }
+            });
+            ui.separator();
+            if ui.button("全部清除").clicked() { clear = true; }
+        });
+        self.bm_open = open;
+        if clear { self.cur().bookmarks.clear(); self.cur().tip = "已清除全部书签".into(); }
+        if let Some(r) = go { self.jump_mark(); self.cur().goto(r, 0); }
+    }
+
+    fn props_window(&mut self, ctx: &egui::Context) {
+        let Some(text) = self.props.clone() else { return };
+        let mut open = true;
+        egui::Window::new("文件属性").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            ui.add(egui::Label::new(egui::RichText::new(&text).monospace()).selectable(true));
+            if ui.button("复制").clicked() { ctx.copy_text(text.clone()); }
+        });
+        if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.props = None; }
     }
 
     fn menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -456,12 +646,38 @@ impl App {
                         if ui.button(r).clicked() { pick = Some(r.clone()); ui.close(); }
                     }
                     if let Some(r) = pick { self.open_path(std::path::Path::new(&r)); }
+                    ui.separator();
+                    if ui.button("清除历史").clicked() { self.clear_recent(); ui.close(); }
                 });
+                ui.menu_button("最近的文件夹", |ui| {
+                    if self.recent_dirs.is_empty() { ui.label("(没有)"); }
+                    let mut pick: Option<String> = None;
+                    for r in &self.recent_dirs {
+                        if ui.button(r).clicked() { pick = Some(r.clone()); ui.close(); }
+                    }
+                    if let Some(r) = pick { self.open_folder(PathBuf::from(r)); }
+                });
+                ui.separator();
                 if ui.button("保存  Ctrl+S").clicked() { ui.close(); self.save(false); }
-                if ui.button("另存为…").clicked() { ui.close(); self.save(true); }
-                if ui.button("重新载入 (丢弃修改)").clicked() { ui.close(); self.reload_current(); }
-                if ui.button("打印 / 打印预览…  Ctrl+P").clicked() { ui.close(); self.print_cur(); }
+                if ui.button("另存为…  Ctrl+Shift+S").clicked() { ui.close(); self.save(true); }
+                if ui.button("全部保存  Ctrl+Alt+Shift+S").clicked() { ui.close(); self.save_all(); }
+                if ui.button("保存并关闭").clicked() { ui.close(); self.save_close(); }
+                ui.separator();
                 if ui.button("关闭标签  Ctrl+W").clicked() { ui.close(); let a = self.active; self.close_tab(a); }
+                if ui.button("关闭全部  Ctrl+Shift+W").clicked() { ui.close(); self.close_many(CloseKind::All); }
+                if ui.button("关闭并打开…  Ctrl+Shift+F4").clicked() { ui.close(); self.close_open(); }
+                ui.separator();
+                if ui.button("重新载入 (丢弃修改)").clicked() { ui.close(); self.reload_current(); }
+                ui.menu_button("以指定编码重新打开", |ui| {
+                    for cs in Charset::ALL {
+                        if ui.button(cs.label()).clicked() { ui.close(); self.reopen_as(cs); }
+                    }
+                });
+                ui.separator();
+                if ui.button("打印 / 打印预览…  Ctrl+P").clicked() { ui.close(); self.print_cur(); }
+                if ui.button("在浏览器 / 默认程序中打开").clicked() { ui.close(); self.browse_current(); }
+                if ui.button("文件属性…  Alt+Enter").clicked() { ui.close(); self.props = Some(self.cur().properties()); }
+                if ui.button("新窗口").clicked() { ui.close(); self.new_window(); }
                 ui.separator();
                 if ui.button("退出").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             });
@@ -522,8 +738,40 @@ impl App {
             });
             ui.menu_button("书签", |ui| {
                 if ui.button("设置 / 取消  Ctrl+F2").clicked() { self.cur().bookmark("toggle"); ui.close(); }
-                if ui.button("下一个  F2").clicked() { self.cur().bookmark("next"); ui.close(); }
-                if ui.button("上一个  Shift+F2").clicked() { self.cur().bookmark("prev"); ui.close(); }
+                if ui.button("下一个  F2").clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
+                if ui.button("上一个  Shift+F2").clicked() { self.jump_mark(); self.cur().bookmark("prev"); ui.close(); }
+                if ui.button("书签列表…  Alt+F2").clicked() { self.bm_open = true; ui.close(); }
+                if ui.button("全部清除  Ctrl+Shift+F2").clicked() { self.cur().bookmarks.clear(); self.cur().tip = "已清除全部书签".into(); ui.close(); }
+                ui.separator();
+                if ui.button("对括弧跳转  Ctrl+[").clicked() { self.bracket_jump(); ui.close(); }
+                if ui.button("移动履历: 上一个  Alt+P").clicked() { self.jump_go(-1); ui.close(); }
+                if ui.button("移动履历: 下一个  Alt+N").clicked() { self.jump_go(1); ui.close(); }
+                if ui.button("把当前位置记入履历").clicked() { self.jump_mark(); self.cur().tip = "已记入移动履历".into(); ui.close(); }
+            });
+            ui.menu_button("窗口", |ui| {
+                if ui.button("分割窗口  Ctrl+\\").clicked() { self.toggle_split(); ui.close(); }
+                ui.separator();
+                if ui.button("下一个标签  Ctrl+Tab").clicked() { self.next_tab(true); ui.close(); }
+                if ui.button("上一个标签  Ctrl+Shift+Tab").clicked() { self.next_tab(false); ui.close(); }
+                ui.menu_button("标签操作", |ui| {
+                    if ui.button("标签左移").clicked() { self.move_active_tab(true); ui.close(); }
+                    if ui.button("标签右移").clicked() { self.move_active_tab(false); ui.close(); }
+                    if ui.button("关闭其它标签").clicked() { self.close_many(CloseKind::Others); ui.close(); }
+                    if ui.button("关闭左侧标签").clicked() { self.close_many(CloseKind::Left); ui.close(); }
+                    if ui.button("关闭右侧标签").clicked() { self.close_many(CloseKind::Right); ui.close(); }
+                });
+                ui.menu_button("窗口列表", |ui| {
+                    let mut pick = None;
+                    for (i, d) in self.docs.iter().enumerate() {
+                        if ui.selectable_label(i == self.active, format!("{}{}", if d.dirty { "● " } else { "" }, d.name)).clicked() { pick = Some(i); ui.close(); }
+                    }
+                    if let Some(i) = pick { self.select_tab(i); }
+                });
+                ui.separator();
+                if ui.button("最小化").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
+                if ui.button("最大化 / 还原").clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
+                if ui.checkbox(&mut self.fullscreen.clone(), "全屏  F11").clicked() { self.toggle_fullscreen(ctx); ui.close(); }
+                if ui.checkbox(&mut self.topmost.clone(), "总在最前").clicked() { self.toggle_topmost(ctx); ui.close(); }
             });
             ui.menu_button("宏", |ui| {
                 let rec = self.cur().rec.is_some();
@@ -698,8 +946,18 @@ impl App {
         let cmd = |ctx: &egui::Context, m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(m, k));
         if cmd(ctx, Modifiers::COMMAND, Key::N) { self.new_doc(); }
         if cmd(ctx, Modifiers::COMMAND, Key::O) { self.open_dialog(); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::S) { self.save(true); } else if cmd(ctx, Modifiers::COMMAND, Key::S) { self.save(false); }
-        if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT, Key::S) { self.save_all(); }
+        else if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::S) { self.save(true); } else if cmd(ctx, Modifiers::COMMAND, Key::S) { self.save(false); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::W) { self.close_many(CloseKind::All); }
+        else if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F4) { self.close_open(); }
+        // 标签 / 窗口 (键位同 Tauri 版): Ctrl+Tab 切换, F11 全屏, Alt+Enter 文件属性, Alt+P / Alt+N 移动履历, Ctrl+[ / Ctrl+] 对括弧
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab) { self.next_tab(false); } else if cmd(ctx, Modifiers::COMMAND, Key::Tab) { self.next_tab(true); }
+        if cmd(ctx, Modifiers::NONE, Key::F11) { self.toggle_fullscreen(ctx); }
+        if cmd(ctx, Modifiers::ALT, Key::Enter) { self.props = Some(self.cur().properties()); }
+        if cmd(ctx, Modifiers::ALT, Key::P) { self.jump_go(-1); }
+        if cmd(ctx, Modifiers::ALT, Key::N) { self.jump_go(1); }
+        if cmd(ctx, Modifiers::COMMAND, Key::OpenBracket) || cmd(ctx, Modifiers::COMMAND, Key::CloseBracket) { self.bracket_jump(); }
         // 搜索: Ctrl+F 查找, Ctrl+H / Ctrl+R 置换, Ctrl+Alt+R 全部置换, Ctrl+G / Ctrl+Shift+F Grep (键位同 Tauri 版)
         if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::R) { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); }
         else if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::G) || cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::G) { self.focus_grep(); }
@@ -713,8 +971,10 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::Backslash) { self.toggle_split(); }
         if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::V) { self.md_preview = !self.md_preview; }
-        if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
-        if cmd(ctx, Modifiers::SHIFT, Key::F2) { self.cur().bookmark("prev"); } else if cmd(ctx, Modifiers::NONE, Key::F2) { self.cur().bookmark("next"); }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F2) { self.cur().bookmarks.clear(); self.cur().tip = "已清除全部书签".into(); }
+        else if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
+        if cmd(ctx, Modifiers::ALT, Key::F2) { self.bm_open = !self.bm_open; }
+        if cmd(ctx, Modifiers::SHIFT, Key::F2) { self.jump_mark(); self.cur().bookmark("prev"); } else if cmd(ctx, Modifiers::NONE, Key::F2) { self.jump_mark(); self.cur().bookmark("next"); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::M) { self.cur().macro_toggle(); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::L) { self.cur().macro_play(); }
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
@@ -851,7 +1111,7 @@ impl App {
             }
         });
         if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.goto_open = false; }
-        if let Some(n) = go { let d = self.cur(); let row = n.saturating_sub(1).min(d.lines.len() - 1); d.goto(row, 0); }
+        if let Some(n) = go { self.jump_mark(); let d = self.cur(); let row = n.saturating_sub(1).min(d.lines.len() - 1); d.goto(row, 0); }
     }
 
     /// 窗口重新获得焦点时: 看每个文档的文件有没有被外部改过; 没动过就静默重载, 有未保存修改就问
@@ -902,6 +1162,14 @@ impl App {
         let theme = if self.dark { Theme::dark() } else { Theme::light() };
         let marks = self.find.marks_for(&self.docs[ai]);
         let mark_bg = Color32::from_rgba_unmultiplied(255, 200, 0, 70);
+        let bracket_bg = Color32::from_rgba_unmultiplied(110, 190, 255, 95);
+        // 括弧强调: 光标在括弧上 (或紧跟其后) 时两个括弧都垫底色; 光标 / 文本没动就用缓存
+        let bracket = {
+            let d = &self.docs[ai];
+            let key = (d.id, d.rev, d.cursor);
+            if self.bracket_cache.as_ref().map(|c| c.0) != Some(key) { self.bracket_cache = Some((key, d.bracket_pair())); }
+            self.bracket_cache.as_ref().and_then(|c| c.1)
+        };
         let cfg: Option<TypeConfig> = if self.highlight { self.registry.detect(&self.docs[ai].name).cloned() } else { None };
         let digits = format!("{}", self.docs[ai].lines.len()).len().max(3);
         let gutter = digits as f32 * char_w + 18.0;
@@ -1043,6 +1311,9 @@ impl App {
                     let lo = ms.partition_point(|h| h.row < row);
                     for h in ms[lo..].iter().take_while(|h| h.row == row) { span(h.col, h.col + h.len, false, mark_bg); }
                 }
+                if let Some((a, b)) = bracket {
+                    for p in [a, b] { if p[0] == row { span(p[1], p[1] + 1, false, bracket_bg); } }
+                }
                 if let Some(s) = d.sel {
                     if row >= s[0] && row <= s[2] {
                         let c0 = if row == s[0] { s[1] } else { 0 };
@@ -1157,6 +1428,23 @@ impl App {
 const GROUP_NAMES: [&str; 6] = ["不分组", "红组", "橙组", "绿组", "蓝组", "紫组"];
 const GROUP_COLORS: [Option<Color32>; 6] = [None, Some(Color32::from_rgb(230, 80, 80)), Some(Color32::from_rgb(235, 150, 50)), Some(Color32::from_rgb(80, 190, 110)), Some(Color32::from_rgb(80, 150, 235)), Some(Color32::from_rgb(170, 110, 225))];
 
+/// 状态栏里点出来的命令
+enum StatusCmd {
+    Goto,
+    Charset(Charset),
+    Reopen(Charset),
+    Bom,
+    Eol(Eol),
+}
+
+/// 标签栏里点出来的命令 (画完再执行, 免得画的时候改 docs)
+enum TabCmd {
+    Select(usize),
+    Close(usize),
+    Many(usize, CloseKind),
+    Move(usize, bool),
+}
+
 fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut Option<(PathBuf, usize)>) {
     for e in side.children_of(dir) {
         if e.is_dir {
@@ -1232,6 +1520,7 @@ impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = &root.ctx().clone();
         ctx.set_visuals(match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } });
+        if ctx.input(|i| i.viewport().close_requested()) { for i in 0..self.docs.len() { self.remember_pos(i); } }
         // 关窗口: 有未保存修改先问
         if ctx.input(|i| i.viewport().close_requested()) && !self.confirm_exit && self.docs.iter().any(|d| d.dirty) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1259,6 +1548,8 @@ impl eframe::App for App {
         self.was_focused = focused;
         if self.prefs_open { self.prefs_window(ctx); }
         if self.goto_open { self.goto_window(ctx); }
+        if self.bm_open { self.bookmark_window(ctx); }
+        if self.props.is_some() { self.props_window(ctx); }
         if self.split_on {
             let last = self.docs.len() - 1;
             self.left_doc = self.left_doc.min(last);
@@ -1267,26 +1558,52 @@ impl eframe::App for App {
         }
         self.shortcuts(ctx);
         egui::Panel::top("menu").show(root, |ui| self.menu(ui, ctx));
-        egui::Panel::top("tabs").show(root, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                let mut close: Option<usize> = None;
-                for i in 0..self.docs.len() {
-                    let label = format!("{}{}", if self.docs[i].dirty { "● " } else { "" }, self.docs[i].name);
-                    let gcol = GROUP_COLORS.get(self.docs[i].group as usize).copied().flatten();
-                    let text = match gcol { Some(c) => egui::RichText::new(format!("● {label}")).color(c), None => egui::RichText::new(label) };
-                    let tab_resp = ui.selectable_label(i == self.active, text);
-                    if tab_resp.clicked() { self.active = i; }
-                    tab_resp.context_menu(|ui| {
-                        for (g, name) in GROUP_NAMES.iter().enumerate() {
-                            if ui.selectable_label(self.docs[i].group as usize == g, *name).clicked() { self.docs[i].group = g as u8; ui.close(); }
+        // 标签栏: 只有一个标签时整条收起; 标签多了横向滚动 (滚轮 / Shift+滚轮 / 拖动), 活动标签变了就滚进可见范围
+        let mut tab_cmd: Option<TabCmd> = None;
+        if self.docs.len() > 1 {
+            egui::Panel::top("tabs").show(root, |ui| {
+                let scroll_active = self.last_active != self.active;
+                let wheel = ui.input(|i| i.smooth_scroll_delta);
+                if ui.rect_contains_pointer(ui.max_rect()) && wheel.y != 0.0 && wheel.x == 0.0 { ui.scroll_with_delta(Vec2::new(wheel.y, 0.0)); }
+                egui::ScrollArea::horizontal().auto_shrink([false, true]).scroll_source(egui::scroll_area::ScrollSource::ALL).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for i in 0..self.docs.len() {
+                            let label = format!("{}{}", if self.docs[i].dirty { "● " } else { "" }, self.docs[i].name);
+                            let gcol = GROUP_COLORS.get(self.docs[i].group as usize).copied().flatten();
+                            let text = match gcol { Some(c) => egui::RichText::new(format!("● {label}")).color(c), None => egui::RichText::new(label) };
+                            let tab_resp = ui.selectable_label(i == self.active, text);
+                            if tab_resp.clicked() { tab_cmd = Some(TabCmd::Select(i)); }
+                            if tab_resp.middle_clicked() { tab_cmd = Some(TabCmd::Close(i)); }
+                            if scroll_active && i == self.active { tab_resp.scroll_to_me(None); }
+                            tab_resp.context_menu(|ui| {
+                                if ui.button("关闭").clicked() { tab_cmd = Some(TabCmd::Close(i)); ui.close(); }
+                                if ui.button("关闭其它").clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Others)); ui.close(); }
+                                if ui.button("关闭左侧").clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Left)); ui.close(); }
+                                if ui.button("关闭右侧").clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Right)); ui.close(); }
+                                ui.separator();
+                                if ui.button("标签左移").clicked() { tab_cmd = Some(TabCmd::Move(i, true)); ui.close(); }
+                                if ui.button("标签右移").clicked() { tab_cmd = Some(TabCmd::Move(i, false)); ui.close(); }
+                                if ui.button("复制路径").clicked() { if let Some(p) = &self.docs[i].path { ctx.copy_text(p.display().to_string()); } ui.close(); }
+                                ui.separator();
+                                for (g, name) in GROUP_NAMES.iter().enumerate() {
+                                    if ui.selectable_label(self.docs[i].group as usize == g, *name).clicked() { self.docs[i].group = g as u8; ui.close(); }
+                                }
+                            });
+                            if ui.small_button("×").clicked() { tab_cmd = Some(TabCmd::Close(i)); }
+                            ui.add_space(6.0);
                         }
                     });
-                    if ui.small_button("×").clicked() { close = Some(i); }
-                    ui.add_space(6.0);
-                }
-                if let Some(i) = close { self.close_tab(i); }
+                });
             });
-        });
+        }
+        self.last_active = self.active;
+        match tab_cmd {
+            Some(TabCmd::Select(i)) => self.select_tab(i),
+            Some(TabCmd::Close(i)) => { self.close_tab(i); }
+            Some(TabCmd::Many(i, k)) => { self.select_tab(i); self.close_many(k); }
+            Some(TabCmd::Move(i, left)) => { self.select_tab(i); self.move_active_tab(left); }
+            None => {}
+        }
         if self.split_on {
             if self.focus_right { self.right_doc = self.active; } else { self.left_doc = self.active; }
         }
@@ -1304,13 +1621,31 @@ impl eframe::App for App {
                 None => self.cur().tip = "这一行不是命中行".into(),
             }
         }
+        let mut st_cmd: Option<StatusCmd> = None;
         egui::Panel::bottom("status").show(root, |ui| {
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
             ui.horizontal(|ui| {
-                ui.label(format!("Ln {}, Col {}", d.cursor[0] + 1, d.cursor[1] + 1));
+                // 位置: 点一下 = 转到行
+                if ui.add(egui::Label::new(format!("Ln {}, Col {}", d.cursor[0] + 1, d.cursor[1] + 1)).sense(Sense::click())).on_hover_text("转到行…").clicked() { st_cmd = Some(StatusCmd::Goto); }
                 ui.separator();
-                ui.label(d.charset.label());
-                ui.label(d.eol.label());
+                // 编码 / 换行符 / BOM: 点开菜单改 (改保存时的格式, 或按别的编码重新打开)
+                ui.menu_button(d.charset.label(), |ui| {
+                    ui.label("保存时的编码");
+                    for cs in Charset::ALL {
+                        if ui.selectable_label(cs == d.charset, cs.label()).clicked() { st_cmd = Some(StatusCmd::Charset(cs)); ui.close(); }
+                    }
+                    ui.separator();
+                    ui.menu_button("以此编码重新打开", |ui| {
+                        for cs in Charset::ALL { if ui.button(cs.label()).clicked() { st_cmd = Some(StatusCmd::Reopen(cs)); ui.close(); } }
+                    });
+                    if ui.button(if d.bom == editcore::document_io::Bom::None { "保存时加 BOM (UTF-8)" } else { "保存时去掉 BOM" }).clicked() { st_cmd = Some(StatusCmd::Bom); ui.close(); }
+                });
+                ui.menu_button(d.eol.label(), |ui| {
+                    for e in [Eol::Crlf, Eol::Lf, Eol::Cr] {
+                        if ui.selectable_label(e == d.eol, e.label()).clicked() { st_cmd = Some(StatusCmd::Eol(e)); ui.close(); }
+                    }
+                });
+                if d.mixed_eol { ui.colored_label(Color32::from_rgb(230, 160, 40), "换行混用").on_hover_text("原文件混用了几种换行符; 点左边的换行符选一种统一"); }
                 ui.label(format!("共 {} 行", d.lines.len()));
                 if d.overwrite { ui.label("改写"); }
                 if d.readonly { ui.label("只读"); }
@@ -1321,6 +1656,14 @@ impl eframe::App for App {
                 ui.label(&d.tip);
             });
         });
+        match st_cmd {
+            Some(StatusCmd::Goto) => { self.goto_open = true; self.goto_text.clear(); }
+            Some(StatusCmd::Charset(cs)) => self.cur().set_charset(cs),
+            Some(StatusCmd::Reopen(cs)) => self.reopen_as(cs),
+            Some(StatusCmd::Bom) => self.cur().toggle_bom(),
+            Some(StatusCmd::Eol(e)) => self.cur().set_eol(e),
+            None => {}
+        }
         if self.find.open {
             egui::Panel::bottom("find").show(root, |ui| {
                 let i = self.active.min(self.docs.len() - 1);

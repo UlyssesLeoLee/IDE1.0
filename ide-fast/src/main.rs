@@ -20,6 +20,7 @@ mod macros;
 mod markdown;
 mod terminal;
 mod sidebar;
+mod tabs;
 
 use std::time::Instant;
 
@@ -38,16 +39,22 @@ impl Trace {
     }
 }
 
+/// 命令行里的 `--new`: 取出并告诉调用方 (其余原样当文件参数)
+fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
+    let new = args.iter().any(|a| a == "--new");
+    (new, args.into_iter().filter(|a| a != "--new").collect())
+}
+
 fn main() -> eframe::Result<()> {
     let trace = Trace::new();
     trace.mark("main enter");
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    // 单实例: 已经有一个在运行就把文件交给它, 自己退出
-    if instance::forward_to_running(&args) {
+    let (force_new, args) = split_new_flag(std::env::args().skip(1).collect());
+    // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
+    if !force_new && instance::forward_to_running(&args) {
         trace.mark("handed over to the running instance");
         return Ok(());
     }
-    let inbox = instance::listen();
+    let inbox = if force_new { None } else { instance::listen() };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("IDE1.0 Fast")
@@ -70,4 +77,16 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app::App::new(args, inbox, trace)))
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_new_flag;
+
+    #[test]
+    fn new_flag_is_taken_out_of_the_file_args() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(split_new_flag(v(&["--new", "a.txt"])), (true, v(&["a.txt"])));
+        assert_eq!(split_new_flag(v(&["a.txt"])), (false, v(&["a.txt"])));
+    }
 }

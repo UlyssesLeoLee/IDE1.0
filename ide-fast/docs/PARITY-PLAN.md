@@ -61,6 +61,8 @@ This batch replaces the hard-coded `shortcuts()` and `menu()`.
 
 ## Batch 4: Window, tabs, file menu and navigation
 
+> 状态: 已做 1 (除 window list 对话框外的标签命令)、2 (除 file-properties 之外的全部, 属性为只读文本框)、3 (EOL/编码/BOM 改写, 状态栏可点, 混用换行提示; codecnv-* 未做)、4 中的全屏 / 置顶 / 最小化 / 最大化、5 的标签栏滚动与单标签收起、6 的移动履历与括弧强调 / 跳转、8。未做: 4 的上下 / 四分割与真正的标签分组窗格、7 拖放选中文字、6 的 tag jump 与修改行步进。
+
 1. Tab commands: next/prev (Ctrl+Tab), move left/right, close others/right/all, save-all, save-close, close-open, window list, plus the tab right-click menu items.
 2. File menu gaps: reload, reopen-with-encoding (12 encodings), recent-clear, file properties, browse, new-window (`--new` flag), recent folders, per-file cursor restore.
 3. EOL/charset/BOM change, clickable status bar labels, mixed-EOL notice, codecnv-*.
