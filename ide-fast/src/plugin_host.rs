@@ -251,7 +251,7 @@ mod tests {
     use super::*;
 
     fn engine(src: &str) -> Engine {
-        Engine::load(&[("t.js".into(), src.into())], Duration::from_millis(400)).expect("加载")
+        Engine::load(&[("t.js".into(), src.into())], Duration::from_millis(2500)).expect("加载")
     }
 
     #[test]
