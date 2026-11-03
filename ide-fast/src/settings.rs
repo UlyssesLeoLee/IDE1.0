@@ -50,6 +50,11 @@ pub struct Settings {
     pub view: ViewState,
     /// 改过的快捷键: (命令 id, 键串), 只存和默认不同的; 键串为空 = 解除绑定 (见 keymap.rs)
     pub keys: Vec<(String, String)>,
+    /// 启动时 (没有命令行文件时) 重新打开上次关闭时的标签
+    pub restore_session: bool,
+    /// 上次关闭时打开的文件 (最多 20 个, 只记有路径的文档) 和活动标签在其中的位置
+    pub session: Vec<String>,
+    pub session_active: usize,
 }
 
 impl Default for Settings {
@@ -58,9 +63,19 @@ impl Default for Settings {
             dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default(),
             lang: "zh".into(), auto_indent: true, smart_indent: false, insert_spaces: false, default_encoding: "UTF-8".into(), default_eol: "CRLF".into(),
             save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
-            colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![],
+            colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![], restore_session: true, session: vec![], session_active: 0,
         }
     }
+}
+
+const MAX_SESSION: usize = 20;
+
+/// 会话文件列表里的路径是不是可以放心去打开: 必须是本地盘符的绝对路径 (UNC / 设备路径会触发网络认证, 一律不要), 长度有上限
+pub fn session_path_ok(p: &str) -> bool {
+    if p.is_empty() || p.len() > 1024 || p.starts_with("\\\\") || p.starts_with("//") { return false; }
+    let path = std::path::Path::new(p);
+    if !path.is_absolute() { return false; }
+    !path.components().next().is_some_and(|c| matches!(c, std::path::Component::Prefix(x) if !matches!(x.kind(), std::path::Prefix::Disk(_))))
 }
 
 /// 颜色覆盖: None = 跟随主题
@@ -227,6 +242,7 @@ impl Settings {
         let st = |k: &str, t: &mut String| { if let Some(x) = v[k].as_str() { *t = x.to_string(); } };
         b("dark", &mut self.dark); b("highlight", &mut self.highlight); b("wrap", &mut self.wrap);
         b("auto_indent", &mut self.auto_indent); b("smart_indent", &mut self.smart_indent); b("insert_spaces", &mut self.insert_spaces);
+        b("restore_session", &mut self.restore_session);
         b("save_backup", &mut self.save_backup); b("check_external", &mut self.check_external); b("confirm_close", &mut self.confirm_close);
         st("theme_plugin", &mut self.theme_plugin); st("default_encoding", &mut self.default_encoding); st("default_eol", &mut self.default_eol); st("font_family", &mut self.font_family);
         if let Some(f) = v["font_px"].as_f64() { self.font_px = (f as f32).clamp(8.0, 40.0); }
@@ -251,6 +267,10 @@ impl Settings {
         if let Some(a) = v["recent"].as_array() {
             self.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(36).collect();
         }
+        if let Some(a) = v["session"].as_array() {
+            self.session = a.iter().filter_map(|x| x.as_str()).filter(|p| session_path_ok(p)).map(str::to_string).take(MAX_SESSION).collect();
+        }
+        if let Some(n) = v["session_active"].as_u64() { self.session_active = (n as usize).min(MAX_SESSION); }
         if let Some(a) = v["recent_dirs"].as_array() {
             self.recent_dirs = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
         }
@@ -273,7 +293,7 @@ impl Settings {
     /// 偏好部分 (导出配置用: 不含最近文件 / 光标位置 / 窗口状态)
     pub fn prefs_json(&self) -> Value {
         json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin,
-                "lang": self.lang, "auto_indent": self.auto_indent, "smart_indent": self.smart_indent, "insert_spaces": self.insert_spaces,
+                "lang": self.lang, "restore_session": self.restore_session, "auto_indent": self.auto_indent, "smart_indent": self.smart_indent, "insert_spaces": self.insert_spaces,
                 "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
                 "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
                 "colors": self.colors.to_json(),
@@ -287,6 +307,8 @@ impl Settings {
         let o = v.as_object_mut().expect("prefs_json 是对象");
         o.insert("recent".into(), json!(self.recent));
         o.insert("recent_dirs".into(), json!(self.recent_dirs));
+        o.insert("session".into(), json!(self.session));
+        o.insert("session_active".into(), json!(self.session_active));
         o.insert("positions".into(), json!(self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>()));
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
@@ -317,7 +339,7 @@ impl Settings {
 
     /// 偏好恢复默认 (最近文件 / 光标位置 / 查找条件 / 界面状态保留)
     pub fn reset_prefs(&mut self) {
-        let keep = Settings { recent: std::mem::take(&mut self.recent), recent_dirs: std::mem::take(&mut self.recent_dirs), positions: std::mem::take(&mut self.positions), search: self.search.clone(), view: self.view.clone(), lang: self.lang.clone(), ..Settings::default() };
+        let keep = Settings { recent: std::mem::take(&mut self.recent), recent_dirs: std::mem::take(&mut self.recent_dirs), positions: std::mem::take(&mut self.positions), search: self.search.clone(), view: self.view.clone(), lang: self.lang.clone(), session: std::mem::take(&mut self.session), session_active: self.session_active, ..Settings::default() };
         *self = keep;
     }
 
@@ -360,8 +382,9 @@ impl Settings {
         let mut search = self.search.clone();
         (search.find_case, search.find_regex, search.find_word, search.find_wrap, search.find_marks) = (o.search.find_case, o.search.find_regex, o.search.find_word, o.search.find_wrap, o.search.find_marks);
         let keep = (std::mem::take(&mut self.recent), std::mem::take(&mut self.recent_dirs), std::mem::take(&mut self.positions), self.view.clone(), std::mem::take(&mut self.keys));
+        let (session, session_active) = (std::mem::take(&mut self.session), self.session_active);
         // 键位不在首选项草稿里改 (有自己的对话框, 改了立刻生效): 草稿开着期间改过的键位不能被旧草稿盖回去
-        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, keys: keep.4, search, ..o.clone() };
+        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, keys: keep.4, session, session_active, search, ..o.clone() };
         self.recent.truncate(self.mru_files.max(1));
     }
 
@@ -571,5 +594,37 @@ mod tests {
         assert_eq!(live.keys, vec![("c.wrap".to_string(), "F9".to_string())]);
         live.reset_prefs();
         assert!(live.keys.is_empty());
+    }
+
+    #[test]
+    fn session_roundtrips_and_refuses_unsafe_paths() {
+        let mut s = Settings::default();
+        s.session = vec!["C:\\work\\a.txt".into(), "D:\\b.md".into()];
+        s.session_active = 1;
+        let mut back = Settings::default();
+        back.apply_json(&s.to_json(), true);
+        assert_eq!(back.session, s.session);
+        assert_eq!(back.session_active, 1);
+        assert!(back.restore_session, "默认开启");
+        assert!(!session_path_ok("\\\\evil\\share\\x.txt"), "UNC");
+        assert!(!session_path_ok("//evil/share/x.txt"));
+        assert!(!session_path_ok("relative\\x.txt"));
+        assert!(!session_path_ok(""));
+        assert!(!session_path_ok(&format!("C:\\{}", "a".repeat(2000))));
+        let mut t = Settings::default();
+        let many: Vec<String> = (0..100).map(|i| format!("C:\\f{i}.txt")).collect();
+        t.apply_json(&json!({ "session": many, "session_active": 9999, "restore_session": false }), true);
+        assert_eq!(t.session.len(), 20, "封顶");
+        assert_eq!(t.session_active, 20);
+        assert!(!t.restore_session);
+        // 导入别人的配置 (state = false) 不带会话
+        let mut u = Settings::default();
+        u.apply_json(&json!({ "session": ["C:\\x.txt"] }), false);
+        assert!(u.session.is_empty());
+        // 恢复默认 / 草稿合并不丢会话
+        t.reset_prefs();
+        assert_eq!(t.session.len(), 20);
+        t.adopt_prefs(&Settings::default());
+        assert_eq!(t.session.len(), 20);
     }
 }

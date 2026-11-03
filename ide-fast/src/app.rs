@@ -113,6 +113,8 @@ pub struct App {
     diff_pick: bool,
     /// 命令面板 / 键位设置 / 键位一览
     cmdui: CmdUi,
+    /// 「关于」窗口开着
+    about_open: bool,
     /// 打开命令面板那一刻的脚本插件命令 (打开期间不再反复读盘)
     pal_plugins: Vec<PluginCmd>,
 }
@@ -127,7 +129,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![],
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false,
         };
         app.persist = persist;
         app.apply_settings(&st);
@@ -142,6 +144,7 @@ impl App {
         for a in &args {
             app.open_spec(a);
         }
+        if args.is_empty() && st.restore_session { app.restore_session(&st); }
         if app.docs.is_empty() {
             app.new_doc();
         }
@@ -200,12 +203,23 @@ impl App {
         }
     }
 
+    /// 现在打开的有路径的文档 (会话恢复用), 最多 20 个
+    fn session_paths(&self) -> Vec<String> {
+        self.docs.iter().filter_map(|d| d.path.as_ref().map(|p| p.display().to_string())).take(20).collect()
+    }
+
+    /// 活动文档在 `session_paths` 里的位置 (活动的是无路径文档 = 0)
+    fn session_active(&self) -> usize {
+        let cur = self.docs.get(self.active.min(self.docs.len().saturating_sub(1))).and_then(|d| d.path.as_ref());
+        self.docs.iter().filter_map(|d| d.path.as_ref()).take(20).position(|p| Some(p) == cur).unwrap_or(0)
+    }
+
     fn current_settings(&self) -> Settings {
         let (f, g) = (&self.find, &self.side.grep.o);
         let search = crate::settings::SearchPrefs { find_case: f.opts.case, find_regex: f.opts.regex, find_word: f.opts.word, find_wrap: f.opts.wrap, find_marks: f.marks, grep_case: g.case, grep_regex: g.regex, grep_word: g.word, grep_sub: g.sub, grep_outside: g.outside, grep_files: g.files.clone(), grep_exc_files: g.exc_files.clone(), grep_exc_folders: g.exc_folders.clone() };
         let mut view = self.cfg.view.clone();
         (view.side_open, view.term_open, view.md_preview) = (self.side.open, self.term.open, self.md_preview);
-        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), recent_dirs: self.recent_dirs.clone(), positions: self.positions.clone(), search, view, ..self.cfg.clone() }
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), recent_dirs: self.recent_dirs.clone(), positions: self.positions.clone(), search, view, session: self.session_paths(), session_active: self.session_active(), ..self.cfg.clone() }
     }
 
     /// 把一份设置套到运行状态上 (启动、首选项 OK、恢复默认、导入配置都走这里)
@@ -254,7 +268,7 @@ impl App {
     /// 启动时把上次的查找 / Grep 条件放回去
     fn apply_search_prefs(&mut self, st: &Settings) {
         let p = &st.search;
-        self.find.opts = crate::find::FindOpts { case: p.find_case, regex: p.find_regex, word: p.find_word, wrap: p.find_wrap };
+        self.find.opts = crate::find::FindOpts { case: p.find_case, regex: p.find_regex, word: p.find_word, wrap: p.find_wrap, migemo: self.find.opts.migemo };
         self.find.marks = p.find_marks;
         let g = &mut self.side.grep.o;
         (g.case, g.regex, g.word, g.sub, g.outside) = (p.grep_case, p.grep_regex, p.grep_word, p.grep_sub, p.grep_outside);
@@ -1071,6 +1085,10 @@ impl App {
                 if ui.button(lk("c.select-all", "Ctrl+A")).clicked() { self.cur().select_all(); ui.close(); }
                 ui.separator();
                 self.cmd_menu(ui, ctx);
+                ui.separator();
+                for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath)] {
+                    if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
+                }
             });
             ui.menu_button(tr("menu.search"), |ui| {
                 if ui.button(lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
@@ -1080,6 +1098,9 @@ impl App {
                 if ui.button(lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if ui.button(lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
                 if ui.button(lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
+                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext)] {
+                    if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
+                }
                 ui.menu_button("比较", |ui| {
                     if ui.button("与其他标签比较…").clicked() { self.diff_pick = true; ui.close(); }
                     if ui.button("与文件比较…").clicked() { self.diff_with_file(); ui.close(); }
@@ -1198,6 +1219,9 @@ impl App {
                 if ui.button(lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
                 if ui.button(lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
                 ui.separator();
+                if ui.button(trz("保存键盘宏…")).clicked() { ui.close(); self.macro_save(); }
+                if ui.button(trz("载入键盘宏…")).clicked() { ui.close(); self.macro_load(); }
+                ui.separator();
                 if ui.button(lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
                 if ui.button(lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
                 if ui.button(lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
@@ -1233,7 +1257,7 @@ impl App {
                 if ui.button(lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
                 if ui.button(lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
                 ui.separator();
-                ui.label(tr("ui.about"));
+                if ui.button(lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
             });
         });
     }
@@ -1544,11 +1568,80 @@ impl App {
             KApp::ResetCfg => self.reset_settings(),
             KApp::KeyConfig => self.cmdui.open_keycfg(),
             KApp::KeyList => self.cmdui.open_keylist(),
+            KApp::CopyFname => self.copy_doc_name(ctx, false),
+            KApp::CopyPath => self.copy_doc_name(ctx, true),
+            KApp::SelParaPrev => self.cur().select_para(false),
+            KApp::SelParaNext => self.cur().select_para(true),
+            KApp::ModNext => self.step_modified(true),
+            KApp::ModPrev => self.step_modified(false),
+            KApp::MacroSave => self.macro_save(),
+            KApp::MacroLoad => self.macro_load(),
+            KApp::About => self.about_open = true,
             KApp::Palette => {
                 self.cmdui.toggle_palette();
                 self.pal_plugins = Self::plugin_cmds();
             }
         }
+    }
+
+    /// 复制当前文档的文件名 / 完整路径 (没保存过的文档没有路径)
+    fn copy_doc_name(&mut self, ctx: &egui::Context, full: bool) {
+        let (name, path) = { let d = self.cur(); (d.name.clone(), d.path.clone()) };
+        let text = if full { path.map(|p| p.display().to_string()) } else { Some(name) };
+        self.cur().tip = match text {
+            Some(t) => { ctx.copy_text(t.clone()); trf("dlg.copied-name", &[&t]) }
+            None => tr("dlg.no-path").into(),
+        };
+    }
+
+    fn step_modified(&mut self, fwd: bool) {
+        self.jump_mark();
+        if !self.cur().step_changed(fwd) { self.cur().tip = tr("dlg.no-more-changes").into(); }
+    }
+
+    /// 把当前文档最近录下的键盘宏存成 JSON 文件
+    fn macro_save(&mut self) {
+        let steps = self.cur().last_macro.clone();
+        if steps.is_empty() { self.cur().tip = tr("dlg.macro-empty").into(); return; }
+        let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("key-macro.json").save_file() else { return };
+        let tip = match std::fs::write(&path, crate::macros::macro_to_json(&steps)) { Ok(()) => trf("dlg.macro-saved", &[&path.display().to_string()]), Err(e) => e.to_string() };
+        self.cur().tip = tip;
+    }
+
+    /// 从 JSON 文件载入键盘宏 (文件大小先封顶, 内容整份校验过才替换)
+    fn macro_load(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() else { return };
+        let res = match std::fs::metadata(&path) {
+            Ok(m) if m.len() > 8 * 1024 * 1024 => Err("文件超过 8 MB".to_string()),
+            Err(e) => Err(e.to_string()),
+            Ok(_) => std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| crate::macros::macro_from_json(&t)),
+        };
+        match res {
+            Ok(steps) => { let n = steps.len().to_string(); let d = self.cur(); d.last_macro = steps; d.tip = trf("dlg.macro-loaded", &[&n]); }
+            Err(e) => self.cur().tip = trf("dlg.macro-bad", &[&e]),
+        }
+    }
+
+    /// 启动时重新打开上次的文件 (只在没有命令行文件时): 路径过一遍 `session_path_ok`, 不存在 / 超过大文件阈值的跳过 (启动时不弹确认框)
+    fn restore_session(&mut self, st: &Settings) {
+        let limit = st.max_file_mb as u64 * 1024 * 1024;
+        let mut active = None;
+        for (i, p) in st.session.iter().enumerate() {
+            let path = std::path::Path::new(p);
+            if !crate::settings::session_path_ok(p) || !std::fs::metadata(path).map(|m| m.is_file() && m.len() <= limit).unwrap_or(false) { continue; }
+            self.open_path(path);
+            if i == st.session_active { active = Some(self.active); }
+        }
+        if let Some(a) = active.filter(|a| *a < self.docs.len()) { self.active = a; }
+    }
+
+    fn about_window(&mut self, ctx: &egui::Context) {
+        let mut open = true;
+        egui::Window::new(tr("dlg.about-title")).open(&mut open).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.strong(format!("IDE1.0 Fast {}", env!("CARGO_PKG_VERSION")));
+            ui.label(tr("ui.about"));
+        });
+        if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.about_open = false; }
     }
 
     /// 命令面板 / 键位设置 / 键位一览三个窗口; 键位改动立刻套用并落盘
@@ -1561,6 +1654,7 @@ impl App {
             self.persist_if_changed();
         }
         if let Some(tip) = self.cmdui.keylist_window(ctx) { self.cur().tip = tip; }
+        if self.about_open { self.about_window(ctx); }
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
@@ -2625,5 +2719,31 @@ mod tests {
         let g = a.geom_now.expect("正常状态记下了位置");
         assert_eq!((g.x, g.y, g.w, g.h), (40.0, 50.0, 884.0, 660.0));
         assert!(!a.maximized_now);
+    }
+
+    #[test]
+    fn session_is_restored_only_without_command_line_files() {
+        let dir = std::env::temp_dir().join(format!("idefast-session-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "aaa").unwrap();
+        std::fs::write(&b, "bbb").unwrap();
+        let mut st = Settings::default();
+        st.session = vec![a.display().to_string(), dir.join("gone.txt").display().to_string(), b.display().to_string(), "\\\\evil\\share\\x.txt".into()];
+        st.session_active = 2;
+        let app1 = App::build(vec![], None, Trace::new(), st.clone(), false);
+        let names: Vec<_> = app1.docs.iter().map(|d| d.name.clone()).collect();
+        assert_eq!(names, vec!["a.txt", "b.txt"], "不存在的 / UNC 的跳过");
+        assert_eq!(app1.docs[app1.active].name, "b.txt", "活动标签回到上次的位置");
+        // 往回写: 当前打开的文件就是下次的会话
+        let now = app1.current_settings();
+        assert_eq!(now.session, vec![a.display().to_string(), b.display().to_string()]);
+        assert_eq!(now.session_active, 1);
+        // 命令行给了文件 = 不恢复; 关掉开关 = 不恢复
+        let app2 = App::build(vec![a.display().to_string()], None, Trace::new(), st.clone(), false);
+        assert_eq!(app2.docs.len(), 1);
+        st.restore_session = false;
+        assert_eq!(App::build(vec![], None, Trace::new(), st, false).docs.len(), 1, "只有一份空白文档");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

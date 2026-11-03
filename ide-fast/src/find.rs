@@ -16,18 +16,41 @@ pub struct FindOpts {
     pub word: bool,
     /// 到头后从另一端接着找
     pub wrap: bool,
+    /// Migemo: 用罗马字找日文 (kensaku 能找到 検索 / けんさく / ケンサク); 内部换成一个转义过的候选正则
+    pub migemo: bool,
 }
 
 impl Default for FindOpts {
     fn default() -> Self {
-        FindOpts { case: false, regex: false, word: false, wrap: true }
+        FindOpts { case: false, regex: false, word: false, wrap: true, migemo: false }
     }
+}
+
+/// 罗马字 -> Migemo 候选的正则 (`(?:kensaku|けんさく|ケンサク|...)`, 字面量已转义)。
+/// 空串 / 太长 (> 48 字符, 候选会爆炸) / 没有候选 = None, 调用方退回普通查找。
+pub fn migemo_regex(roma: &str) -> Option<String> {
+    let roma = roma.trim();
+    if roma.is_empty() || roma.chars().count() > 48 {
+        return None;
+    }
+    let mut alts: Vec<String> = editcore::migemo::expand_pattern(roma).into_iter().filter(|p| !p.is_empty()).take(64).map(|p| regex_escape(&p)).collect();
+    alts.dedup();
+    if alts.is_empty() { None } else { Some(format!("(?:{})", alts.join("|"))) }
+}
+
+fn regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for c in s.chars() {
+        if "\\.+*?()|[]{}^$#&-~".contains(c) { out.push('\\'); }
+        out.push(c);
+    }
+    out
 }
 
 impl FindOpts {
     /// 键盘宏里的检索标志 (`S_SearchNext` 等) 换成查找条件
     pub fn from_flags(f: &editcore::macro_sakura::SearchFlags) -> Self {
-        FindOpts { case: f.case_sensitive, regex: f.regex, word: f.word, wrap: f.wrap }
+        FindOpts { case: f.case_sensitive, regex: f.regex, word: f.word, wrap: f.wrap, migemo: false }
     }
 }
 
@@ -226,6 +249,7 @@ impl Find {
             ui.checkbox(&mut self.opts.word, "单词单位");
             ui.checkbox(&mut self.opts.regex, "正则");
             ui.checkbox(&mut self.opts.wrap, "折返");
+            ui.checkbox(&mut self.opts.migemo, "Migemo").on_hover_text("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク");
             ui.checkbox(&mut self.marks, "全部强调");
             if let Some(e) = &self.err {
                 ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("正则无效: {e}"));
@@ -393,5 +417,31 @@ mod tests {
         assert_eq!(d.lines[0], "12-ab 34-cd");
         d.undo();
         assert_eq!(d.lines[0], "12-ab cd34", "一次置换 = 一步撤销");
+    }
+
+    #[test]
+    fn migemo_pattern_covers_kana_and_escapes() {
+        let p = migemo_regex("kensaku").expect("有候选");
+        assert!(p.starts_with("(?:") && p.ends_with(')'));
+        assert!(p.contains("kensaku"), "原文也在候选里");
+        assert!(p.contains("けんさく") || p.contains("ケンサク"), "平假名 / 片假名候选: {p}");
+        // 正则元字符被转义, 不会让用户输入变成正则
+        let q = migemo_regex("a.b*").unwrap();
+        assert!(q.contains("a\\.b\\*"), "{q}");
+        assert!(migemo_regex("").is_none());
+        assert!(migemo_regex(&"a".repeat(60)).is_none(), "太长就退回普通查找");
+    }
+
+    #[test]
+    fn migemo_search_finds_japanese_with_roman_letters() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["abc".into(), "これは検索のテスト, けんさく, ケンサク".into()];
+        let o = FindOpts { migemo: true, ..FindOpts::default() };
+        assert!(d.find_step("kensaku", o, true).unwrap());
+        assert_eq!(d.cursor[0], 1, "第二行才有日文");
+        let hits = d.find_hits("kensaku", o).unwrap();
+        assert!(hits.len() >= 2, "平假名和片假名都应命中, 实际 {}", hits.len());
+        d.goto(0, 0);
+        assert!(!matches!(d.find_step("kensaku", FindOpts::default(), true), Ok(true)), "关掉 Migemo 就是字面查找");
     }
 }

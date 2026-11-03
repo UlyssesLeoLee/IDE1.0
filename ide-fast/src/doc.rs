@@ -663,6 +663,40 @@ impl Doc {
         self.reveal = true;
     }
 
+    /// 选到上 / 下一个段落边界 (空行): 先跳过光标所在的空行, 再走到下一个空行的行首; 到头就选到文首 / 文末。连续按继续扩大
+    pub fn select_para(&mut self, forward: bool) {
+        let n = self.lines.len();
+        let blank = |l: &String| l.trim().is_empty();
+        let mut r = self.cursor[0].min(n - 1);
+        let target = if forward {
+            while r + 1 < n && blank(&self.lines[r]) { r += 1; }
+            while r + 1 < n && !blank(&self.lines[r]) { r += 1; }
+            if blank(&self.lines[r]) { [r, 0] } else { [n - 1, self.row_len(n - 1)] }
+        } else {
+            while r > 0 && blank(&self.lines[r]) { r -= 1; }
+            while r > 0 && !blank(&self.lines[r]) { r -= 1; }
+            if blank(&self.lines[r]) { [r, 0] } else { [0, 0] }
+        };
+        let a = self.anchor.unwrap_or(self.cursor);
+        self.anchor = Some(a);
+        self.set_sel(a, target);
+        self.cursor = target;
+        self.goal_col = None;
+        self.reveal = true;
+    }
+
+    /// 跳到下 / 上一处改动 (相对打开 / 上次保存) 的起始行; 没有了返回 false
+    pub fn step_changed(&mut self, forward: bool) -> bool {
+        let rows = self.changed().to_vec();
+        let start = |r: usize| rows[r] && (r == 0 || !rows[r - 1]);
+        let cur = self.cursor[0];
+        let hit = if forward { (cur + 1..rows.len()).find(|&r| start(r)) } else { (0..cur).rev().find(|&r| start(r)) };
+        match hit {
+            Some(r) => { self.goto(r, 0); true }
+            None => false,
+        }
+    }
+
     pub fn select_all(&mut self) {
         let last = self.lines.len() - 1;
         self.sel = Some([0, 0, last, self.row_len(last)]);
@@ -807,7 +841,12 @@ impl Doc {
 
     // ---------------- 查找 ----------------
     fn search_req(&self, op: &str, needle: &str, o: FindOpts) -> SearchReq {
-        SearchReq { op: op.into(), needle: needle.into(), match_case: o.case, use_regex: o.regex, whole_word: o.word, wrap: o.wrap, lines: self.lines.clone(), ..Default::default() }
+        // Migemo: 查找串换成转义过的候选正则 (不能和用户自己的正则 / 单词单位混用)
+        let (needle, regex, word) = match o.migemo.then(|| crate::find::migemo_regex(needle)).flatten() {
+            Some(p) => (p, true, false),
+            None => (needle.to_string(), o.regex, o.word),
+        };
+        SearchReq { op: op.into(), needle, match_case: o.case, use_regex: regex, whole_word: word, wrap: o.wrap, lines: self.lines.clone(), ..Default::default() }
     }
 
     /// 正则写错了的说明 (没写错 / 没开正则 / 查找串空 = None); 查找栏边输入边提示
@@ -1406,5 +1445,44 @@ b
         d.goto(1, 0);
         assert!(!d.jump_to_pair());
         assert_eq!(d.cursor, [1, 0]);
+    }
+
+    #[test]
+    fn paragraph_selection_grows_to_blank_lines_and_ends() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["a".into(), "b".into(), "".into(), "c".into(), "d".into(), "".into(), "e".into()];
+        d.goto(0, 1);
+        d.select_para(true);
+        assert_eq!(d.sel, Some([0, 1, 2, 0]), "到第一个空行的行首");
+        d.select_para(true);
+        assert_eq!(d.sel, Some([0, 1, 5, 0]), "连续按: 跳过空行, 扩到下一个空行");
+        d.select_para(true);
+        assert_eq!(d.sel, Some([0, 1, 6, 1]), "最后一段没有空行 = 选到文末");
+        d.goto(6, 0);
+        d.select_para(false);
+        assert_eq!(d.sel, Some([5, 0, 6, 0]));
+        d.goto(1, 0);
+        d.select_para(false);
+        assert_eq!(d.sel, Some([0, 0, 1, 0]), "向上到文首");
+    }
+
+    #[test]
+    fn modified_line_stepping_visits_each_block_start() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = (0..10).map(|i| format!("l{i}")).collect();
+        d.base = d.lines.clone();
+        d.lines[2] = "x".into();
+        d.lines[3] = "y".into();
+        d.lines[7] = "z".into();
+        d.rev += 1;
+        d.goto(0, 0);
+        assert!(d.step_changed(true));
+        assert_eq!(d.cursor[0], 2, "连续改动的一块只停在块首");
+        assert!(d.step_changed(true));
+        assert_eq!(d.cursor[0], 7);
+        assert!(!d.step_changed(true), "后面没有了");
+        assert!(d.step_changed(false));
+        assert_eq!(d.cursor[0], 2);
+        assert!(!d.step_changed(false));
     }
 }

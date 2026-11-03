@@ -94,6 +94,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
         PrefsTab::Files => {
             ui.checkbox(&mut d.save_backup, tr("pf.save-backup"));
             ui.checkbox(&mut d.check_external, tr("pf.check-external"));
+            ui.checkbox(&mut d.restore_session, tr("pf.restore-session"));
             ui.checkbox(&mut d.confirm_close, tr("pf.confirm-close"));
             ui.horizontal(|ui| { ui.label(tr("pf.max-file")); ui.add(egui::Slider::new(&mut d.max_file_mb, 1..=32)); });
             ui.horizontal(|ui| { ui.label(tr("pf.mru")); ui.add(egui::Slider::new(&mut d.mru_files, 1..=36)); });

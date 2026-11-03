@@ -1,7 +1,7 @@
 //! Sakura `.mac` 宏: 解析 / 规划交给 `editcore::macro_sakura::plan` (和 Tauri 版同一套), 这里把每一步动作执行在 `Doc` 上。
 //! 能直接对应到 editcore 编辑命令的 `S_` 函数照常执行; 没有对应命令的 (只有默认键的) 明确报「未支持」, 不静默跳过。
 
-use crate::doc::Doc;
+use crate::doc::{Doc, RecEv};
 use crate::find::FindOpts;
 use editcore::macro_sakura::{self, Action};
 
@@ -73,6 +73,55 @@ fn key_action(doc: &mut Doc, key: &str) -> bool {
     }
 }
 
+/// 录下的键盘宏最多这么多步 / 每个命令名、键名最长这么多字符 / 插入文字最长这么多字符 (宏文件是不可信输入)
+const MAX_STEPS: usize = 100_000;
+const MAX_NAME: usize = 64;
+const MAX_TEXT: usize = 200_000;
+
+/// 键盘宏 -> JSON 文本: `{"version":1,"steps":[["e","命令","文字|null"],["n","键",ctrl,shift]]}`
+pub fn macro_to_json(steps: &[RecEv]) -> String {
+    let v: Vec<serde_json::Value> = steps.iter().map(|s| match s {
+        RecEv::Edit(c, t) => serde_json::json!(["e", c, t]),
+        RecEv::Nav(k, c, sh) => serde_json::json!(["n", k, c, sh]),
+    }).collect();
+    serde_json::to_string_pretty(&serde_json::json!({ "version": 1, "steps": v })).unwrap_or_default()
+}
+
+/// JSON 文本 -> 键盘宏; 格式不对 / 命令名不合法 / 超长都拒绝 (整份拒绝, 不执行一半)
+pub fn macro_from_json(text: &str) -> Result<Vec<RecEv>, String> {
+    let v: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("不是有效的宏文件: {e}"))?;
+    let steps = v["steps"].as_array().ok_or("宏文件里没有 steps")?;
+    if steps.len() > MAX_STEPS {
+        return Err(format!("宏太长 ({} 步, 上限 {MAX_STEPS})", steps.len()));
+    }
+    let mut out = Vec::with_capacity(steps.len());
+    for (i, s) in steps.iter().enumerate() {
+        let bad = || format!("第 {} 步格式不对", i + 1);
+        let kind = s[0].as_str().ok_or_else(bad)?;
+        let name = s[1].as_str().ok_or_else(bad)?;
+        if name.is_empty() || name.chars().count() > MAX_NAME {
+            return Err(bad());
+        }
+        match kind {
+            "e" => {
+                // 命令名只能是 editcore 的 kebab-case 写法; 名字对不上的命令回放时什么也不做 (和录制时一样走 Doc::edit)
+                if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                    return Err(format!("第 {} 步: 命令名不合法 {name}", i + 1));
+                }
+                let t = match &s[2] {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::String(t) if t.chars().count() <= MAX_TEXT => Some(t.clone()),
+                    _ => return Err(bad()),
+                };
+                out.push(RecEv::Edit(name.to_string(), t));
+            }
+            "n" => out.push(RecEv::Nav(name.to_string(), s[2].as_bool().ok_or_else(bad)?, s[3].as_bool().ok_or_else(bad)?)),
+            _ => return Err(bad()),
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +153,25 @@ mod tests {
         d.lines = vec!["keep".into()];
         assert!(run_mac(&mut d, "S_InsText(\"x\");\nS_NoSuchFunction();").is_err());
         assert_eq!(d.lines, vec!["keep"]);
+    }
+
+    #[test]
+    fn key_macro_json_roundtrip() {
+        let m = vec![RecEv::Edit("insert-text".into(), Some("héllo \"q\"\n".into())), RecEv::Nav("ArrowDown".into(), true, false), RecEv::Edit("delete-line".into(), None)];
+        let back = macro_from_json(&macro_to_json(&m)).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn hostile_macro_files_are_rejected_whole() {
+        assert!(macro_from_json("not json").is_err());
+        assert!(macro_from_json("{}").is_err());
+        assert!(macro_from_json(r#"{"steps":[["e","Delete Line; rm",null]]}"#).is_err(), "命令名不合法");
+        assert!(macro_from_json(r#"{"steps":[["e","delete-line",null],["x","a"]]}"#).is_err(), "一步坏了整份拒绝");
+        assert!(macro_from_json(r#"{"steps":[["n","ArrowDown","yes",false]]}"#).is_err());
+        let long = "a".repeat(MAX_NAME + 1);
+        assert!(macro_from_json(&format!(r#"{{"steps":[["n","{long}",false,false]]}}"#)).is_err());
+        let many = format!(r#"{{"steps":[{}]}}"#, vec![r#"["n","ArrowDown",false,false]"#; MAX_STEPS + 1].join(","));
+        assert!(macro_from_json(&many).is_err(), "步数封顶");
     }
 }

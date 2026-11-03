@@ -23,6 +23,7 @@ pub enum App {
     MacroToggle, MacroPlay, MacroRunDoc, MacroRunFile, MacroRunPpa,
     Terminal, MdPreview, Dark, Highlight, Wrap, Sidebar, LineNumbers, StatusBar, Whitespace, Ruler, CurLine, Minimap, MinimalMode, ZoomIn, ZoomOut, ZoomReset,
     Prefs, ExportCfg, ImportCfg, ImportSakura, ResetCfg, KeyConfig, KeyList, Palette,
+    CopyFname, CopyPath, SelParaPrev, SelParaNext, ModNext, ModPrev, MacroSave, MacroLoad, About,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -125,6 +126,11 @@ fn build() -> Vec<Entry> {
         t("c.common-config", "", "menu.setting", Prefs), t("c.export-config", "", "menu.setting", ExportCfg), t("c.import-config", "", "menu.setting", ImportCfg),
         t("c.import-sakura", "", "menu.setting", ImportSakura), t("c.reset-settings", "", "menu.setting", ResetCfg),
         t("c.key-config", "", "menu.setting", KeyConfig), t("c.key-list", "Ctrl+Q", "menu.help", KeyList), t("c.palette", "Shift+F1|Ctrl+Shift+P", "menu.help", Palette),
+        t("c.about", "", "menu.help", About),
+        z("app.copy-fname", "复制文件名", "", "menu.edit", CopyFname), z("app.copy-path", "复制完整路径", "", "menu.edit", CopyPath),
+        z("app.sel-para-prev", "选到上一段落", "", "menu.edit", SelParaPrev), z("app.sel-para-next", "选到下一段落", "", "menu.edit", SelParaNext),
+        z("app.mod-next", "下一处改动", "", "menu.search", ModNext), z("app.mod-prev", "上一处改动", "", "menu.search", ModPrev),
+        z("app.macro-save", "保存键盘宏…", "", "menu.macro", MacroSave), z("app.macro-load", "载入键盘宏…", "", "menu.macro", MacroLoad),
     ];
     for e in &mut v {
         match e.run {
