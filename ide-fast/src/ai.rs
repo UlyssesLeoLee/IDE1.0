@@ -228,6 +228,46 @@ pub fn trim_history(mut h: Vec<Msg>) -> Vec<Msg> {
     h
 }
 
+
+// ---------- 工具往返 ----------
+
+/// 模型给的 arguments 串 -> JSON 对象; 空 / 非法 = 空对象 (和 Tauri 版一样)
+pub fn parse_args(s: &str) -> Value {
+    serde_json::from_str::<Value>(s).ok().filter(Value::is_object).unwrap_or_else(|| json!({}))
+}
+
+/// 执行内建工具。propose_patch 的 total_rows 一律用真实行数 (不信模型报的)
+pub fn exec_builtin(name: &str, args: &Value, total_rows: usize) -> Value {
+    let mut a = args.clone();
+    if name == "propose_patch" {
+        a["total_rows"] = json!(total_rows);
+    }
+    editcore::agent_api::call(name, &a).unwrap_or_else(|e| json!({ "error": e }))
+}
+
+/// 回给模型的 tool 消息: 补丁提案只回「已提交审核」, 其余结果按字符数截断
+pub fn tool_message(id: &str, result: &Value) -> Value {
+    let body = if result["kind"] == "patch_proposal" { json!({ "status": "已提交给用户审核, 尚未套用" }).to_string() } else { result.to_string() };
+    json!({ "role": "tool", "tool_call_id": id, "content": body.chars().take(MAX_TOOL_RESULT).collect::<String>() })
+}
+
+/// 带工具调用的 assistant 消息 (OpenAI 格式)
+pub fn assistant_message(t: &Turn) -> Value {
+    let mut m = json!({ "role": "assistant", "content": t.content });
+    if !t.tool_calls.is_empty() {
+        m["tool_calls"] = Value::Array(t.tool_calls.iter().map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.args } })).collect());
+    }
+    m
+}
+
+/// 一轮请求的完整消息: 系统提示 + 历史 + 本次提问
+pub fn base_messages(system: String, history: &[Msg], q: &str) -> Vec<Value> {
+    let mut v = vec![json!({ "role": "system", "content": system })];
+    v.extend(history.iter().map(|m| json!({ "role": m.role, "content": m.content })));
+    v.push(json!({ "role": "user", "content": q }));
+    v
+}
+
 // ---------- SSE 解析 ----------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -721,5 +761,24 @@ mod tests {
         let cfg = AiConfig { base_url: "http://example.com/v1".into(), model: "m".into(), key: "k12345".into(), ..Default::default() };
         let (_, t) = run(&cfg);
         assert!(t.error.unwrap().contains("https"));
+    }
+
+    #[test]
+    fn tool_round_helpers() {
+        assert_eq!(parse_args("not json"), json!({}));
+        assert_eq!(parse_args("[1]"), json!({}));
+        assert_eq!(parse_args("{\"a\":1}")["a"], 1);
+        let r = exec_builtin("propose_patch", &json!({ "start": 0, "remove": 1, "insert": ["x"], "total_rows": 999 }), 3);
+        assert_eq!(r["kind"], "patch_proposal");
+        assert!(exec_builtin("propose_patch", &json!({ "start": 5, "remove": 1, "insert": [] }), 3)["error"].is_string());
+        assert!(exec_builtin("nope", &json!({}), 1)["error"].is_string());
+        assert!(tool_message("c", &r)["content"].as_str().unwrap().contains("尚未套用"));
+        let big = json!({ "t": "字".repeat(30_000) });
+        assert_eq!(tool_message("c", &big)["content"].as_str().unwrap().chars().count(), MAX_TOOL_RESULT);
+        let turn = Turn { content: "hi".into(), tool_calls: vec![ToolCall { id: "i".into(), name: "n".into(), args: "{}".into() }], ..Default::default() };
+        assert_eq!(assistant_message(&turn)["tool_calls"][0]["function"]["name"], "n");
+        assert!(assistant_message(&Turn::default()).get("tool_calls").is_none());
+        let m = base_messages("s".into(), &[Msg { role: "user".into(), content: "a".into() }], "q");
+        assert_eq!((m.len(), m[2]["content"].clone()), (3, json!("q")));
     }
 }

@@ -24,6 +24,7 @@ use std::path::PathBuf;
 mod chrome;
 mod extras;
 mod ghopts;
+mod aichat;
 mod mdopts;
 mod printui;
 mod sysopts;
@@ -34,6 +35,7 @@ pub struct App {
     sys: sysopts::SysState,
     md10: mdopts::MdState,
     gh: ghopts::GhState,
+    ai: aichat::AiState,
     docs: Vec<Doc>,
     active: usize,
     next_id: u64,
@@ -149,7 +151,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), print_ui: Default::default(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), ai: Default::default(), print_ui: Default::default(),
         };
         app.persist = persist;
         app.sys.glass = plugins::is_translucent(&st.theme_plugin); // 窗口透明与否在建窗口时就定了 (main.rs 同一判断)
@@ -1271,6 +1273,7 @@ impl App {
             ui.menu_button(tr("menu.view"), |ui| {
                 if ui.checkbox(&mut self.split_on.clone(), lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
                 ui.checkbox(&mut self.term.open, lk("c.terminal", "Ctrl+`"));
+                if ui.checkbox(&mut self.ai.open.clone(), lk("c.ai-chat", "Ctrl+Alt+L")).clicked() { self.ai_toggle(); ui.close(); }
                 ui.checkbox(&mut self.md_preview, lk("c.md-preview", "Ctrl+Shift+V"));
                 if ui.checkbox(&mut self.dark, lk("c.dark", "")).clicked() { ui.close(); }
                 ui.checkbox(&mut self.highlight, lk("c.highlight", ""));
@@ -1619,6 +1622,7 @@ impl App {
             KApp::MacroRunFile => self.run_mac_file(),
             KApp::MacroRunPpa => self.run_ppa_doc(),
             KApp::Terminal => self.term.open = !self.term.open,
+            KApp::AiChat => self.ai_toggle(),
             KApp::MdPreview => self.md_preview = !self.md_preview,
             KApp::Dark => self.dark = !self.dark,
             KApp::Highlight => self.highlight = !self.highlight,
@@ -1735,6 +1739,7 @@ impl App {
         if let Some(tip) = self.cmdui.keylist_window(ctx) { self.cur().tip = tip; }
         if self.about_open { self.about_window(ctx); }
         self.gh_window(ctx);
+        self.ai_windows(ctx);
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
@@ -2626,6 +2631,10 @@ impl eframe::App for App {
             let n = self.docs[self.active.min(self.docs.len() - 1)].name.to_lowercase();
             n.ends_with(".md") || n.ends_with(".markdown")
         };
+        self.ai_poll(ctx);
+        if self.ai.open {
+            egui::Panel::right("aichat").resizable(true).default_size(340.0).show(root, |ui| self.ai_ui(ui));
+        }
         if self.md_preview && is_md {
             egui::Panel::right("mdprev").resizable(true).default_size(420.0).show(root, |ui| self.md_ui(ui));
         }
