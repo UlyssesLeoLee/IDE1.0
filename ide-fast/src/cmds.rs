@@ -1,8 +1,6 @@
 //! 命令表: 菜单项与快捷键都从这里生成 (一处定义, 菜单文字里的快捷键提示和实际绑定不会对不上)。
 //! 语义不在这里: `Edit` 交给 editcore 的 `edit_cmd`, `Transform` / `Lines` 是纯文本函数 (见下), 其余是窗口级动作。
 
-use eframe::egui::{Key, Modifiers};
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
     /// editcore `edit_cmd` 的命令名
@@ -33,13 +31,13 @@ use Action::*;
 pub const CMDS: &[Cmd] = &[
     Cmd { group: "行", label: "剪切行", keys: "Ctrl+L", action: Edit("cut-line") },
     Cmd { group: "行", label: "复制行 (含换行)", keys: "", action: Edit("copy-lines") },
-    Cmd { group: "行", label: "复制当前行  Ctrl+D", keys: "", action: Edit("duplicate-line") },
+    Cmd { group: "行", label: "复制当前行", keys: "Ctrl+D", action: Edit("duplicate-line") },
     Cmd { group: "行", label: "删除当前行", keys: "Ctrl+Shift+K", action: Edit("delete-line") },
     Cmd { group: "行", label: "与上一行合并", keys: "", action: Edit("join-with-prev") },
     Cmd { group: "行", label: "在上方插入空行", keys: "Ctrl+Shift+Enter", action: Edit("add-line-above") },
     Cmd { group: "行", label: "在下方插入空行", keys: "Ctrl+Enter", action: Edit("add-line-below") },
-    Cmd { group: "行", label: "上移一行", keys: "Alt+ArrowUp", action: Edit("move-line-up") },
-    Cmd { group: "行", label: "下移一行", keys: "Alt+ArrowDown", action: Edit("move-line-down") },
+    Cmd { group: "行", label: "上移一行", keys: "Alt+Up", action: Edit("move-line-up") },
+    Cmd { group: "行", label: "下移一行", keys: "Alt+Down", action: Edit("move-line-down") },
     Cmd { group: "行", label: "剪切到行尾", keys: "", action: Edit("line-cut-to-end") },
     Cmd { group: "行", label: "剪切到行首", keys: "", action: Edit("cut-line-start") },
     Cmd { group: "行", label: "删除到行尾", keys: "", action: Edit("delete-line-to-end") },
@@ -92,25 +90,6 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "Markdown", label: "提示块", keys: "", action: Edit("md-callout") },
 ];
 
-/// `Ctrl+Shift+K` -> (修饰键, 键); 认不出来 = None
-pub fn parse_keys(spec: &str) -> Option<(Modifiers, Key)> {
-    if spec.is_empty() {
-        return None;
-    }
-    let mut m = Modifiers::NONE;
-    let mut key = None;
-    for part in spec.split('+') {
-        match part {
-            "Ctrl" => m |= Modifiers::COMMAND,
-            "Shift" => m |= Modifiers::SHIFT,
-            "Alt" => m |= Modifiers::ALT,
-            "/" => key = Some(Key::Slash),
-            other => key = Key::from_name(other),
-        }
-    }
-    key.map(|k| (m, k))
-}
-
 // ---------------------------------------------------------------- 纯文本变换 (可单测)
 
 pub fn transform(kind: &str, text: &str, tab: usize) -> String {
@@ -161,20 +140,6 @@ pub fn lines_op(kind: &str, lines: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn key_specs_parse() {
-        assert_eq!(parse_keys("Ctrl+Shift+K"), Some((Modifiers::COMMAND | Modifiers::SHIFT, Key::K)));
-        assert_eq!(parse_keys("Ctrl+/"), Some((Modifiers::COMMAND, Key::Slash)));
-        assert_eq!(parse_keys("Alt+ArrowUp"), Some((Modifiers::ALT, Key::ArrowUp)));
-        assert_eq!(parse_keys("Insert"), Some((Modifiers::NONE, Key::Insert)));
-        assert_eq!(parse_keys(""), None);
-        for c in CMDS {
-            if !c.keys.is_empty() {
-                assert!(parse_keys(c.keys).is_some(), "{} 的快捷键写错了: {}", c.label, c.keys);
-            }
-        }
-    }
 
     #[test]
     fn every_edit_command_exists_in_editcore() {

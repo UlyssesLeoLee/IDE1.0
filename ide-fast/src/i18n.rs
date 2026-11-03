@@ -86,6 +86,9 @@ pub fn trf(key: &'static str, args: &[&str]) -> String {
 
 /// 菜单项文字: 名字 + 两个空格 + 快捷键提示 (键为空 = 只有名字)
 pub fn lk(key: &'static str, keys: &str) -> String {
+    // 注册表里有的命令用当前生效的键 (改过键就跟着变); 没有的用调用处写的提示
+    let shown = crate::keymap::display(key);
+    let keys = shown.as_deref().unwrap_or(keys);
     if keys.is_empty() { tr(key).to_string() } else { format!("{}  {}", tr(key), keys) }
 }
 
@@ -230,6 +233,36 @@ pub const T: &[Row] = &[
     ("c.close-left-s", ["关闭左侧", "左を閉じる", "Close Left"]),
     ("c.close-right-s", ["关闭右侧", "右を閉じる", "Close Right"]),
     ("c.copy-path", ["复制路径", "パスをコピー", "Copy Path"]),
+    ("c.key-config", ["键位设置…", "キー設定…", "Key Bindings…"]),
+    ("c.key-list", ["键位一览", "キー一覧", "Key List"]),
+    ("c.palette", ["命令面板…", "コマンドパレット…", "Command Palette…"]),
+    ("pal.hint", ["输入命令名 (支持模糊匹配), Enter 执行, Esc 关闭", "コマンド名を入力 (あいまい検索), Enter で実行, Esc で閉じる", "Type a command (fuzzy match), Enter to run, Esc to close"]),
+    ("pal.none", ["没有匹配的命令", "一致するコマンドがありません", "No matching command"]),
+    ("pal.plugin", ["插件", "プラグイン", "Plugin"]),
+    ("kc.title", ["键位设置", "キー設定", "Key Bindings"]),
+    ("kc.filter", ["筛选命令 / 键", "コマンド / キーで絞り込み", "Filter commands / keys"]),
+    ("kc.capture", ["请按下新的快捷键… (Esc 取消)", "新しいキーを押してください… (Esc でキャンセル)", "Press the new shortcut… (Esc to cancel)"]),
+    ("kc.rebind", ["改键", "変更", "Rebind"]),
+    ("kc.clear", ["清除", "解除", "Clear"]),
+    ("kc.default", ["默认", "既定", "Default"]),
+    ("kc.reset-all", ["全部恢复默认", "すべて既定に戻す", "Reset all"]),
+    ("kc.close", ["关闭", "閉じる", "Close"]),
+    ("kc.unbound", ["(未绑定)", "(未割り当て)", "(unbound)"]),
+    ("kc.conflict", ["{} 已被其它命令占用: {}", "{} は他のコマンドが使用中: {}", "{} is already used by: {}"]),
+    ("kc.steal", ["抢占 (对方解除绑定)", "奪う (相手は解除)", "Take it (unbind the other)"]),
+    ("kc.cancel", ["取消", "キャンセル", "Cancel"]),
+    ("kc.changed", ["已改 {} 条", "{} 件変更済み", "{} changed"]),
+    ("kc.assigned", ["{} → {}", "{} → {}", "{} → {}"]),
+    ("kc.fixed", ["系统键", "システムキー", "system"]),
+    ("kc.list-title", ["键位一览", "キー一覧", "Key List"]),
+    ("kc.copy", ["复制全部", "すべてコピー", "Copy all"]),
+    ("kc.copied", ["已复制键位一览", "キー一覧をコピーしました", "Key list copied"]),
+    ("kc.err-esc", ["Esc 留给取消, 不能绑定", "Esc はキャンセル用なので割り当てできません", "Esc is reserved for cancel"]),
+    ("kc.err-plain", ["需要带 Ctrl 或 Alt (功能键除外), 否则会吃掉正常打字", "Ctrl か Alt が必要です (ファンクションキーを除く)。通常の入力が効かなくなります", "Needs Ctrl or Alt (function keys excepted), otherwise normal typing would break"]),
+    ("kc.err-modifier", ["修饰键本身不能绑定, 请按完整的组合", "修飾キー単独は割り当てできません。組み合わせを押してください", "A modifier key alone cannot be bound; press a full combination"]),
+    ("kc.err-unknown", ["未知命令", "不明なコマンド", "Unknown command"]),
+    ("kc.err-fixed", ["这个键由系统处理, 不能改", "このキーはシステムが処理するため変更できません", "This key is handled by the system and cannot be changed"]),
+    ("kc.err-system", ["{} 是系统键, 不能占用", "{} はシステムキーのため使えません", "{} is a system key and cannot be taken"]),
     ("grp.0", ["不分组", "グループなし", "No Group"]),
     ("grp.1", ["红组", "赤グループ", "Red"]),
     ("grp.2", ["橙组", "橙グループ", "Orange"]),
@@ -350,7 +383,7 @@ pub const CMD_T: &[Row] = &[
     // 行
     ("剪切行", ["剪切行", "行を切り取り", "Cut Line"]),
     ("复制行 (含换行)", ["复制行 (含换行)", "行をコピー (改行含む)", "Copy Lines (with EOL)"]),
-    ("复制当前行  Ctrl+D", ["复制当前行  Ctrl+D", "現在行を複製  Ctrl+D", "Duplicate Line  Ctrl+D"]),
+    ("复制当前行", ["复制当前行", "現在行を複製", "Duplicate Line"]),
     ("删除当前行", ["删除当前行", "現在行を削除", "Delete Line"]),
     ("与上一行合并", ["与上一行合并", "前の行と結合", "Join with Previous Line"]),
     ("在上方插入空行", ["在上方插入空行", "上に空行を挿入", "Insert Line Above"]),
@@ -414,6 +447,13 @@ pub const CMD_T: &[Row] = &[
     ("表格", ["表格", "表", "Table"]),
     ("分隔线", ["分隔线", "区切り線", "Horizontal Rule"]),
     ("提示块", ["提示块", "コールアウト", "Callout"]),
+    ("向前查找当前词", ["向前查找当前词", "前方のカーソル語を検索", "Find Word Backward"]),
+    ("与其他标签比较…", ["与其他标签比较…", "他のタブと比較…", "Compare with Tab…"]),
+    ("与文件比较…", ["与文件比较…", "ファイルと比較…", "Compare with File…"]),
+    ("差异列表", ["差异列表", "差分一覧", "Diff List"]),
+    ("下一处差异", ["下一处差异", "次の差分", "Next Difference"]),
+    ("上一处差异", ["上一处差异", "前の差分", "Previous Difference"]),
+    ("清除比较", ["清除比较", "比較をクリア", "Clear Comparison"]),
 ];
 
 #[cfg(test)]
@@ -473,7 +513,7 @@ mod tests {
     /// 代码里用到的每个 `tr("...")` / `lk("...")` / `trf("...")` 键都得在表里
     #[test]
     fn every_key_used_in_source_exists() {
-        let srcs = [include_str!("app.rs"), include_str!("find.rs"), include_str!("sidebar.rs"), include_str!("terminal.rs")];
+        let srcs = [include_str!("app.rs"), include_str!("find.rs"), include_str!("sidebar.rs"), include_str!("terminal.rs"), include_str!("cmdui.rs"), include_str!("keymap.rs")];
         let idx = index();
         let mut n = 0;
         for src in srcs {

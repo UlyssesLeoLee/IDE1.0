@@ -48,6 +48,8 @@ pub struct Settings {
     /// 按扩展名覆盖的设置
     pub file_types: Vec<TypePref>,
     pub view: ViewState,
+    /// 改过的快捷键: (命令 id, 键串), 只存和默认不同的; 键串为空 = 解除绑定 (见 keymap.rs)
+    pub keys: Vec<(String, String)>,
 }
 
 impl Default for Settings {
@@ -56,7 +58,7 @@ impl Default for Settings {
             dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default(),
             lang: "zh".into(), auto_indent: true, smart_indent: false, insert_spaces: false, default_encoding: "UTF-8".into(), default_eol: "CRLF".into(),
             save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
-            colors: Colors::default(), file_types: vec![], view: ViewState::default(),
+            colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![],
         }
     }
 }
@@ -242,6 +244,9 @@ impl Settings {
             }).collect();
         }
         self.search.apply_json(&v["search"]);
+        if let Some(o) = v["keys"].as_object() {
+            self.keys = crate::keymap::clean(o.iter().filter_map(|(k, x)| Some((k.clone(), x.as_str()?.to_string()))).collect());
+        }
         if !state { return; }
         if let Some(a) = v["recent"].as_array() {
             self.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(36).collect();
@@ -273,7 +278,8 @@ impl Settings {
                 "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
                 "colors": self.colors.to_json(),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces })).collect::<Vec<_>>(),
-                "search": self.search.to_json() })
+                "search": self.search.to_json(),
+                "keys": Value::Object(self.keys.iter().map(|(k, x)| (k.clone(), json!(x))).collect()) })
     }
 
     pub fn to_json(&self) -> Value {
@@ -353,8 +359,9 @@ impl Settings {
     pub fn adopt_prefs(&mut self, o: &Settings) {
         let mut search = self.search.clone();
         (search.find_case, search.find_regex, search.find_word, search.find_wrap, search.find_marks) = (o.search.find_case, o.search.find_regex, o.search.find_word, o.search.find_wrap, o.search.find_marks);
-        let keep = (std::mem::take(&mut self.recent), std::mem::take(&mut self.recent_dirs), std::mem::take(&mut self.positions), self.view.clone());
-        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, search, ..o.clone() };
+        let keep = (std::mem::take(&mut self.recent), std::mem::take(&mut self.recent_dirs), std::mem::take(&mut self.positions), self.view.clone(), std::mem::take(&mut self.keys));
+        // 键位不在首选项草稿里改 (有自己的对话框, 改了立刻生效): 草稿开着期间改过的键位不能被旧草稿盖回去
+        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, keys: keep.4, search, ..o.clone() };
         self.recent.truncate(self.mru_files.max(1));
     }
 
@@ -540,5 +547,29 @@ mod tests {
         assert_eq!(parse_hex("#12345"), None);
         assert_eq!(parse_hex("#gggggg"), None);
         assert_eq!(hex([1, 2, 255]), "#0102ff");
+    }
+
+    #[test]
+    fn custom_keys_roundtrip_and_hostile_values_are_dropped() {
+        let mut s = Settings::default();
+        s.keys = vec![("c.save".into(), String::new()), ("c.wrap".into(), "Ctrl+Shift+J".into())];
+        let back = {
+            let mut t = Settings::default();
+            t.apply_json(&s.to_json(), true);
+            t
+        };
+        assert_eq!(back.keys, s.keys);
+        // 导出的偏好里也带键位
+        assert!(s.prefs_json()["keys"]["c.wrap"].is_string());
+        let mut t = Settings::default();
+        t.apply_json(&json!({ "keys": { "c.wrap": "A", "nope": "Ctrl+J", "c.copy": "Ctrl+K", "c.sidebar": 5, "c.find": "Ctrl+Shift+J" } }), false);
+        assert_eq!(t.keys, vec![("c.find".to_string(), "Ctrl+Shift+J".to_string())]);
+        // 草稿不能盖掉草稿开着期间改的键位; 恢复默认会清掉键位
+        let mut live = Settings::default();
+        live.keys = vec![("c.wrap".into(), "F9".into())];
+        live.adopt_prefs(&Settings::default());
+        assert_eq!(live.keys, vec![("c.wrap".to_string(), "F9".to_string())]);
+        live.reset_prefs();
+        assert!(live.keys.is_empty());
     }
 }

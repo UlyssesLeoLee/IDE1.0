@@ -2,6 +2,8 @@
 
 use crate::doc::{expand_tabs, Doc};
 use crate::cmds::{self, Action};
+use crate::cmdui::{CmdUi, Item, PluginCmd};
+use crate::keymap::{self, App as KApp, Run};
 use crate::find::Find;
 use crate::grep::{self, Ev as GEv};
 use crate::i18n::{lk, tr, trf, trz, Lang};
@@ -109,6 +111,10 @@ pub struct App {
     diff: Option<crate::diff::DiffView>,
     diff_list_open: bool,
     diff_pick: bool,
+    /// 命令面板 / 键位设置 / 键位一览
+    cmdui: CmdUi,
+    /// 打开命令面板那一刻的脚本插件命令 (打开期间不再反复读盘)
+    pal_plugins: Vec<PluginCmd>,
 }
 
 impl App {
@@ -121,7 +127,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![],
         };
         app.persist = persist;
         app.apply_settings(&st);
@@ -212,6 +218,7 @@ impl App {
         self.wrap = st.wrap;
         crate::i18n::set_code(&st.lang);
         self.cfg = st.clone();
+        keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
         // 最近文件个数变小了要立刻截断
         let n = st.mru_files.max(1);
@@ -318,7 +325,7 @@ impl App {
                 if ui.button(tr("pf.ok")).clicked() { ok = true; }
                 if ui.button(tr("pf.cancel")).clicked() { cancel = true; }
                 if ui.button(tr("pf.apply")).clicked() { apply = true; }
-                if ui.button(tr("c.reset-settings")).clicked() { reset = true; }
+                if ui.button(lk("c.reset-settings", "")).clicked() { reset = true; }
             });
             ui.small(trf("pf.file", &[&crate::settings::path().map(|p| p.display().to_string()).unwrap_or_else(|| tr("pf.file-off").into())]));
         });
@@ -1011,7 +1018,7 @@ impl App {
             ui.menu_button(tr("menu.file"), |ui| {
                 if ui.button(lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
                 if ui.button(lk("c.open-file", "Ctrl+O")).clicked() { ui.close(); self.open_dialog(); }
-                if ui.button(tr("c.open-folder")).clicked() { ui.close(); self.open_folder_dialog(); }
+                if ui.button(lk("c.open-folder", "")).clicked() { ui.close(); self.open_folder_dialog(); }
                 ui.menu_button(tr("sub.recent"), |ui| {
                     if self.recent.is_empty() { ui.label(tr("ui.none")); }
                     let mut pick: Option<String> = None;
@@ -1020,7 +1027,7 @@ impl App {
                     }
                     if let Some(r) = pick { self.open_path(std::path::Path::new(&r)); }
                     ui.separator();
-                    if ui.button(tr("c.recent-clear")).clicked() { self.clear_recent(); ui.close(); }
+                    if ui.button(lk("c.recent-clear", "")).clicked() { self.clear_recent(); ui.close(); }
                 });
                 ui.menu_button(tr("sub.recent-dirs"), |ui| {
                     if self.recent_dirs.is_empty() { ui.label(tr("ui.none")); }
@@ -1034,13 +1041,13 @@ impl App {
                 if ui.button(lk("c.save", "Ctrl+S")).clicked() { ui.close(); self.save(false); }
                 if ui.button(lk("c.save-as", "Ctrl+Shift+S")).clicked() { ui.close(); self.save(true); }
                 if ui.button(lk("c.save-all", "Ctrl+Alt+Shift+S")).clicked() { ui.close(); self.save_all(); }
-                if ui.button(tr("c.save-close")).clicked() { ui.close(); self.save_close(); }
+                if ui.button(lk("c.save-close", "")).clicked() { ui.close(); self.save_close(); }
                 ui.separator();
                 if ui.button(lk("c.close-tab", "Ctrl+W")).clicked() { ui.close(); let a = self.active; self.close_tab(a); }
                 if ui.button(lk("c.close-all", "Ctrl+Shift+W")).clicked() { ui.close(); self.close_many(CloseKind::All); }
                 if ui.button(lk("c.close-open", "Ctrl+Shift+F4")).clicked() { ui.close(); self.close_open(); }
                 ui.separator();
-                if ui.button(tr("c.reload")).clicked() { ui.close(); self.reload_current(); }
+                if ui.button(lk("c.reload", "")).clicked() { ui.close(); self.reload_current(); }
                 ui.menu_button(tr("sub.reopen"), |ui| {
                     for cs in Charset::ALL {
                         if ui.button(cs.label()).clicked() { ui.close(); self.reopen_as(cs); }
@@ -1048,11 +1055,11 @@ impl App {
                 });
                 ui.separator();
                 if ui.button(lk("c.print", "Ctrl+P")).clicked() { ui.close(); self.print_cur(); }
-                if ui.button(tr("c.browse")).clicked() { ui.close(); self.browse_current(); }
+                if ui.button(lk("c.browse", "")).clicked() { ui.close(); self.browse_current(); }
                 if ui.button(lk("c.file-properties", "Alt+Enter")).clicked() { ui.close(); self.props = Some(self.cur().properties()); }
-                if ui.button(tr("c.new-window")).clicked() { ui.close(); self.new_window(); }
+                if ui.button(lk("c.new-window", "")).clicked() { ui.close(); self.new_window(); }
                 ui.separator();
-                if ui.button(tr("c.exit")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
+                if ui.button(lk("c.exit", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             });
             ui.menu_button(tr("menu.edit"), |ui| {
                 if ui.button(lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
@@ -1130,7 +1137,7 @@ impl App {
                 }
             });
             ui.menu_button(tr("menu.setting"), |ui| {
-                if ui.button(tr("c.common-config")).clicked() { self.open_prefs(); ui.close(); }
+                if ui.button(lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
                 ui.menu_button(tr("sub.uilang"), |ui| {
                     for l in Lang::ALL {
                         if ui.radio(crate::i18n::cur() == l, l.native()).clicked() {
@@ -1142,10 +1149,12 @@ impl App {
                     }
                 });
                 ui.separator();
-                if ui.button(tr("c.export-config")).clicked() { ui.close(); self.export_settings(); }
-                if ui.button(tr("c.import-config")).clicked() { ui.close(); self.import_settings(); }
-                if ui.button(tr("c.import-sakura")).clicked() { ui.close(); self.import_sakura(); }
-                if ui.button(tr("c.reset-settings")).clicked() { ui.close(); self.reset_settings(); }
+                if ui.button(lk("c.export-config", "")).clicked() { ui.close(); self.export_settings(); }
+                if ui.button(lk("c.import-config", "")).clicked() { ui.close(); self.import_settings(); }
+                if ui.button(lk("c.import-sakura", "")).clicked() { ui.close(); self.import_sakura(); }
+                if ui.button(lk("c.reset-settings", "")).clicked() { ui.close(); self.reset_settings(); }
+                ui.separator();
+                if ui.button(lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
             });
             ui.menu_button(tr("menu.bookmark"), |ui| {
                 if ui.button(lk("c.bookmark-toggle", "Ctrl+F2")).clicked() { self.cur().bookmark("toggle"); ui.close(); }
@@ -1157,7 +1166,7 @@ impl App {
                 if ui.button(lk("c.bracket-jump", "Ctrl+[")).clicked() { self.bracket_jump(); ui.close(); }
                 if ui.button(lk("c.hist-prev", "Alt+P")).clicked() { self.jump_go(-1); ui.close(); }
                 if ui.button(lk("c.hist-next", "Alt+N")).clicked() { self.jump_go(1); ui.close(); }
-                if ui.button(tr("c.hist-mark")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
+                if ui.button(lk("c.hist-mark", "")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
             });
             ui.menu_button(tr("menu.window"), |ui| {
                 if ui.button(lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
@@ -1165,11 +1174,11 @@ impl App {
                 if ui.button(lk("c.next-tab", "Ctrl+Tab")).clicked() { self.next_tab(true); ui.close(); }
                 if ui.button(lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() { self.next_tab(false); ui.close(); }
                 ui.menu_button(tr("sub.tabops"), |ui| {
-                    if ui.button(tr("c.tab-move-left")).clicked() { self.move_active_tab(true); ui.close(); }
-                    if ui.button(tr("c.tab-move-right")).clicked() { self.move_active_tab(false); ui.close(); }
-                    if ui.button(tr("c.close-others")).clicked() { self.close_many(CloseKind::Others); ui.close(); }
-                    if ui.button(tr("c.close-left")).clicked() { self.close_many(CloseKind::Left); ui.close(); }
-                    if ui.button(tr("c.close-right")).clicked() { self.close_many(CloseKind::Right); ui.close(); }
+                    if ui.button(lk("c.tab-move-left", "")).clicked() { self.move_active_tab(true); ui.close(); }
+                    if ui.button(lk("c.tab-move-right", "")).clicked() { self.move_active_tab(false); ui.close(); }
+                    if ui.button(lk("c.close-others", "")).clicked() { self.close_many(CloseKind::Others); ui.close(); }
+                    if ui.button(lk("c.close-left", "")).clicked() { self.close_many(CloseKind::Left); ui.close(); }
+                    if ui.button(lk("c.close-right", "")).clicked() { self.close_many(CloseKind::Right); ui.close(); }
                 });
                 ui.menu_button(tr("sub.winlist"), |ui| {
                     let mut pick = None;
@@ -1179,36 +1188,36 @@ impl App {
                     if let Some(i) = pick { self.select_tab(i); }
                 });
                 ui.separator();
-                if ui.button(tr("c.minimize-window")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
-                if ui.button(tr("c.maximize")).clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
+                if ui.button(lk("c.minimize-window", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
+                if ui.button(lk("c.maximize", "")).clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
                 if ui.checkbox(&mut self.fullscreen.clone(), lk("c.fullscreen", "F11")).clicked() { self.toggle_fullscreen(ctx); ui.close(); }
-                if ui.checkbox(&mut self.topmost.clone(), tr("c.topmost")).clicked() { self.toggle_topmost(ctx); ui.close(); }
+                if ui.checkbox(&mut self.topmost.clone(), lk("c.topmost", "")).clicked() { self.toggle_topmost(ctx); ui.close(); }
             });
             ui.menu_button(tr("menu.macro"), |ui| {
                 let rec = self.cur().rec.is_some();
                 if ui.button(lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
                 if ui.button(lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
                 ui.separator();
-                if ui.button(tr("c.macro-run-doc")).clicked() { ui.close(); self.run_mac_doc(); }
-                if ui.button(tr("c.macro-run-file")).clicked() { ui.close(); self.run_mac_file(); }
-                if ui.button(tr("c.macro-run-ppa")).clicked() { ui.close(); self.run_ppa_doc(); }
+                if ui.button(lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
+                if ui.button(lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
+                if ui.button(lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
             });
             ui.menu_button(tr("menu.view"), |ui| {
                 if ui.checkbox(&mut self.split_on.clone(), lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
                 ui.checkbox(&mut self.term.open, lk("c.terminal", "Ctrl+`"));
                 ui.checkbox(&mut self.md_preview, lk("c.md-preview", "Ctrl+Shift+V"));
-                if ui.checkbox(&mut self.dark, tr("c.dark")).clicked() { ui.close(); }
-                ui.checkbox(&mut self.highlight, tr("c.highlight"));
+                if ui.checkbox(&mut self.dark, lk("c.dark", "")).clicked() { ui.close(); }
+                ui.checkbox(&mut self.highlight, lk("c.highlight", ""));
                 ui.checkbox(&mut self.wrap, lk("c.wrap", "Alt+Z"));
                 ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
                 ui.separator();
-                ui.checkbox(&mut self.cfg.view.line_numbers, tr("c.line-numbers"));
-                ui.checkbox(&mut self.cfg.view.status_bar, tr("c.status-bar"));
-                ui.checkbox(&mut self.cfg.view.whitespace, tr("c.whitespace"));
-                ui.checkbox(&mut self.cfg.view.ruler, tr("c.ruler"));
-                ui.checkbox(&mut self.cfg.view.cur_line, tr("c.cur-line"));
-                ui.checkbox(&mut self.cfg.view.minimap, tr("c.minimap"));
-                if ui.button(tr("c.minimal-mode")).clicked() { self.set_minimal(); ui.close(); }
+                ui.checkbox(&mut self.cfg.view.line_numbers, lk("c.line-numbers", ""));
+                ui.checkbox(&mut self.cfg.view.status_bar, lk("c.status-bar", ""));
+                ui.checkbox(&mut self.cfg.view.whitespace, lk("c.whitespace", ""));
+                ui.checkbox(&mut self.cfg.view.ruler, lk("c.ruler", ""));
+                ui.checkbox(&mut self.cfg.view.cur_line, lk("c.cur-line", ""));
+                ui.checkbox(&mut self.cfg.view.minimap, lk("c.minimap", ""));
+                if ui.button(lk("c.minimal-mode", "")).clicked() { self.set_minimal(); ui.close(); }
                 ui.separator();
                 ui.menu_button(tr("sub.tabwidth"), |ui| {
                     for w in [2usize, 3, 4, 8] {
@@ -1220,6 +1229,10 @@ impl App {
                 if ui.button(lk("c.zoom-reset", "Ctrl+0")).clicked() { self.font_px = DEFAULT_FONT_PX; }
             });
             ui.menu_button(tr("menu.help"), |ui| {
+                if ui.button(lk("c.palette", "")).clicked() { ui.close(); self.run_app(KApp::Palette, ctx); }
+                if ui.button(lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
+                if ui.button(lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
+                ui.separator();
                 ui.label(tr("ui.about"));
             });
         });
@@ -1400,66 +1413,154 @@ impl App {
         self.find.open_with(&self.docs[i], replace);
     }
 
+    /// 快捷键分发: 表驱动 (keymap.rs 的注册表 + 用户改过的键), 修饰键多的先消费 (Ctrl+Shift+F3 先于 F3)。
+    /// 只有 Esc 的多级取消是固定逻辑。等用户按新键时 (键位设置对话框) 一律不分发。
     fn shortcuts(&mut self, ctx: &egui::Context) {
+        if self.cmdui.capturing() { return; }
         let cmd = |ctx: &egui::Context, m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(m, k));
-        if cmd(ctx, Modifiers::COMMAND, Key::N) { self.new_doc(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::O) { self.open_dialog(); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT, Key::S) { self.save_all(); }
-        else if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::S) { self.save(true); } else if cmd(ctx, Modifiers::COMMAND, Key::S) { self.save(false); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::W) { self.close_many(CloseKind::All); }
-        else if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F4) { self.close_open(); }
-        // 标签 / 窗口 (键位同 Tauri 版): Ctrl+Tab 切换, F11 全屏, Alt+Enter 文件属性, Alt+P / Alt+N 移动履历, Ctrl+[ / Ctrl+] 对括弧
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::Tab) { self.next_tab(false); } else if cmd(ctx, Modifiers::COMMAND, Key::Tab) { self.next_tab(true); }
-        if cmd(ctx, Modifiers::NONE, Key::F11) { self.toggle_fullscreen(ctx); }
-        if cmd(ctx, Modifiers::ALT, Key::Enter) { self.props = Some(self.cur().properties()); }
-        if cmd(ctx, Modifiers::ALT, Key::P) { self.jump_go(-1); }
-        if cmd(ctx, Modifiers::ALT, Key::N) { self.jump_go(1); }
-        // 搜索: Ctrl+F 查找, Ctrl+H / Ctrl+R 置换, Ctrl+Alt+R 全部置换, Ctrl+G / Ctrl+Shift+F Grep (键位同 Tauri 版)
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::R) { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); }
-        else if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::G) || cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::G) { self.focus_grep(); }
-        else if cmd(ctx, Modifiers::COMMAND, Key::H) || cmd(ctx, Modifiers::COMMAND, Key::R) { self.open_find(true); }
-        else if cmd(ctx, Modifiers::COMMAND, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::I) { self.open_find(false); }
-        if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
-        if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
-        if self.diff.is_some() {
-            if cmd(ctx, Modifiers::ALT, Key::ArrowDown) { self.diff_step(true); } else if cmd(ctx, Modifiers::ALT, Key::ArrowUp) { self.diff_step(false); }
+        for (idx, m, k) in keymap::bound() {
+            if keymap::entries()[idx].needs_diff && self.diff.is_none() { continue; }
+            if cmd(ctx, m, k) { self.run_entry(idx, ctx); }
         }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket) { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::CloseBracket) { self.cur().folds.clear(); }
-        // 放在折叠 (Ctrl+Shift+[ / ]) 之后: 否则带 Shift 的组合会先被对括弧跳转吃掉
-        if cmd(ctx, Modifiers::COMMAND, Key::OpenBracket) || cmd(ctx, Modifiers::COMMAND, Key::CloseBracket) { self.bracket_jump(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::P) { self.print_cur(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::Backslash) { self.toggle_split(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::V) { self.md_preview = !self.md_preview; }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F2) { self.cur().bookmarks.clear(); self.cur().tip = "已清除全部书签".into(); }
-        else if cmd(ctx, Modifiers::COMMAND, Key::F2) { self.cur().bookmark("toggle"); }
-        if cmd(ctx, Modifiers::ALT, Key::F2) { self.bm_open = !self.bm_open; }
-        if cmd(ctx, Modifiers::SHIFT, Key::F2) { self.jump_mark(); self.cur().bookmark("prev"); } else if cmd(ctx, Modifiers::NONE, Key::F2) { self.jump_mark(); self.cur().bookmark("next"); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::M) { self.cur().macro_toggle(); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::L) { self.cur().macro_play(); }
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
         if cmd(ctx, Modifiers::NONE, Key::Escape) {
             if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
             else if self.find.open { self.find.open = false; }
             else { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
         }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F3) { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], false); }
-        else if cmd(ctx, Modifiers::COMMAND, Key::F3) { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); }
-        else if cmd(ctx, Modifiers::SHIFT, Key::F3) { self.find_next(false); } else if cmd(ctx, Modifiers::NONE, Key::F3) { self.find_next(true); }
-        if cmd(ctx, Modifiers::COMMAND, Key::Equals) { self.font_px = (self.font_px + 1.0).min(40.0); }
-        if cmd(ctx, Modifiers::COMMAND, Key::Num0) { self.font_px = DEFAULT_FONT_PX; }
-        if cmd(ctx, Modifiers::COMMAND, Key::Minus) { self.font_px = (self.font_px - 1.0).max(8.0); }
-        if cmd(ctx, Modifiers::COMMAND, Key::Z) { self.cur().undo(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::Y) { self.cur().redo(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::A) { self.cur().select_all(); }
-        if cmd(ctx, Modifiers::COMMAND, Key::D) { self.cur().edit("duplicate-line", None); }
-        for c in cmds::CMDS {
-            if let Some((m, k)) = cmds::parse_keys(c.keys) {
-                if cmd(ctx, m, k) { self.run_action(c.action, ctx); }
+    }
+
+    /// 跑注册表里的一条命令 (快捷键、命令面板共用)
+    fn run_entry(&mut self, idx: usize, ctx: &egui::Context) {
+        match keymap::entries()[idx].run {
+            Run::Act(a) => self.run_action(a, ctx),
+            Run::App(a) => self.run_app(a, ctx),
+        }
+    }
+
+    fn run_item(&mut self, it: Item, ctx: &egui::Context) {
+        match it {
+            Item::Cmd(i) => self.run_entry(i, ctx),
+            Item::Plugin(i) => {
+                if let Some((id, c, t)) = self.pal_plugins.get(i).cloned() { self.run_plugin_command(&id, &c, &t); }
             }
         }
+    }
+
+    /// 命令面板里可选的脚本插件命令 (启用的插件贡献的)
+    fn plugin_cmds() -> Vec<PluginCmd> {
+        plugins::rows().into_iter().filter(|r| r.enabled).flat_map(|r| r.commands.iter().map(|(c, t)| (r.id.clone(), c.clone(), t.clone())).collect::<Vec<_>>()).collect()
+    }
+
+    /// 窗口级动作 (菜单、快捷键、命令面板都走这里)
+    fn run_app(&mut self, a: KApp, ctx: &egui::Context) {
+        let ai = self.active.min(self.docs.len() - 1);
+        match a {
+            KApp::NewDoc => self.new_doc(),
+            KApp::OpenFile => self.open_dialog(),
+            KApp::OpenFolder => self.open_folder_dialog(),
+            KApp::Save => { self.save(false); }
+            KApp::SaveAs => { self.save(true); }
+            KApp::SaveAll => self.save_all(),
+            KApp::SaveClose => self.save_close(),
+            KApp::CloseTab => { let t = self.active; self.close_tab(t); }
+            KApp::CloseAll => self.close_many(CloseKind::All),
+            KApp::CloseOpen => self.close_open(),
+            KApp::Reload => self.reload_current(),
+            KApp::RecentClear => self.clear_recent(),
+            KApp::Print => self.print_cur(),
+            KApp::Browse => self.browse_current(),
+            KApp::Props => self.props = Some(self.cur().properties()),
+            KApp::NewWindow => self.new_window(),
+            KApp::Exit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            KApp::Undo => self.cur().undo(),
+            KApp::Redo => self.cur().redo(),
+            KApp::Cut => { if let Some(c) = self.cur().edit("cut", None) { ctx.copy_text(c); } }
+            KApp::Copy => { if let Some(c) = self.cur().edit("copy", None) { ctx.copy_text(c); } }
+            KApp::Paste => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+            KApp::SelectAll => self.cur().select_all(),
+            KApp::Find => self.open_find(false),
+            KApp::Replace => self.open_find(true),
+            KApp::Grep => self.focus_grep(),
+            KApp::FindNext => self.find_next(true),
+            KApp::FindPrev => self.find_next(false),
+            KApp::FindWord => self.find.word_search(&mut self.docs[ai], true),
+            KApp::FindWordPrev => self.find.word_search(&mut self.docs[ai], false),
+            KApp::ReplaceAll => self.find.replace_all(&mut self.docs[ai]),
+            KApp::DiffTab => self.diff_pick = true,
+            KApp::DiffFile => self.diff_with_file(),
+            KApp::DiffList => self.diff_list_open = true,
+            KApp::DiffNext => self.diff_step(true),
+            KApp::DiffPrev => self.diff_step(false),
+            KApp::DiffClear => { self.diff = None; self.diff_list_open = false; }
+            KApp::FoldToggle => { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
+            KApp::UnfoldAll => self.cur().folds.clear(),
+            KApp::BmToggle => self.cur().bookmark("toggle"),
+            KApp::BmNext => { self.jump_mark(); self.cur().bookmark("next"); }
+            KApp::BmPrev => { self.jump_mark(); self.cur().bookmark("prev"); }
+            KApp::BmView => self.bm_open = !self.bm_open,
+            KApp::BmReset => { self.cur().bookmarks.clear(); self.cur().tip = tr("dlg.bm-cleared").into(); }
+            KApp::BracketJump => self.bracket_jump(),
+            KApp::HistPrev => self.jump_go(-1),
+            KApp::HistNext => self.jump_go(1),
+            KApp::HistMark => { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); }
+            KApp::Split => self.toggle_split(),
+            KApp::NextTab => self.next_tab(true),
+            KApp::PrevTab => self.next_tab(false),
+            KApp::TabLeft => self.move_active_tab(true),
+            KApp::TabRight => self.move_active_tab(false),
+            KApp::CloseOthers => self.close_many(CloseKind::Others),
+            KApp::CloseLeft => self.close_many(CloseKind::Left),
+            KApp::CloseRight => self.close_many(CloseKind::Right),
+            KApp::Minimize => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+            KApp::Maximize => { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); }
+            KApp::Fullscreen => self.toggle_fullscreen(ctx),
+            KApp::Topmost => self.toggle_topmost(ctx),
+            KApp::MacroToggle => self.cur().macro_toggle(),
+            KApp::MacroPlay => self.cur().macro_play(),
+            KApp::MacroRunDoc => self.run_mac_doc(),
+            KApp::MacroRunFile => self.run_mac_file(),
+            KApp::MacroRunPpa => self.run_ppa_doc(),
+            KApp::Terminal => self.term.open = !self.term.open,
+            KApp::MdPreview => self.md_preview = !self.md_preview,
+            KApp::Dark => self.dark = !self.dark,
+            KApp::Highlight => self.highlight = !self.highlight,
+            KApp::Wrap => self.wrap = !self.wrap,
+            KApp::Sidebar => self.side.open = !self.side.open,
+            KApp::LineNumbers => self.cfg.view.line_numbers = !self.cfg.view.line_numbers,
+            KApp::StatusBar => self.cfg.view.status_bar = !self.cfg.view.status_bar,
+            KApp::Whitespace => self.cfg.view.whitespace = !self.cfg.view.whitespace,
+            KApp::Ruler => self.cfg.view.ruler = !self.cfg.view.ruler,
+            KApp::CurLine => self.cfg.view.cur_line = !self.cfg.view.cur_line,
+            KApp::Minimap => self.cfg.view.minimap = !self.cfg.view.minimap,
+            KApp::MinimalMode => self.set_minimal(),
+            KApp::ZoomIn => self.font_px = (self.font_px + 1.0).min(40.0),
+            KApp::ZoomOut => self.font_px = (self.font_px - 1.0).max(8.0),
+            KApp::ZoomReset => self.font_px = DEFAULT_FONT_PX,
+            KApp::Prefs => self.open_prefs(),
+            KApp::ExportCfg => self.export_settings(),
+            KApp::ImportCfg => self.import_settings(),
+            KApp::ImportSakura => self.import_sakura(),
+            KApp::ResetCfg => self.reset_settings(),
+            KApp::KeyConfig => self.cmdui.open_keycfg(),
+            KApp::KeyList => self.cmdui.open_keylist(),
+            KApp::Palette => {
+                self.cmdui.toggle_palette();
+                self.pal_plugins = Self::plugin_cmds();
+            }
+        }
+    }
+
+    /// 命令面板 / 键位设置 / 键位一览三个窗口; 键位改动立刻套用并落盘
+    fn cmd_windows(&mut self, ctx: &egui::Context) {
+        if let Some(it) = self.cmdui.palette_window(ctx, &self.pal_plugins) { self.run_item(it, ctx); }
+        if let Some(ov) = self.cmdui.keycfg_window(ctx, &self.cfg.keys) {
+            let mut next = self.current_settings();
+            next.keys = ov;
+            self.apply_settings(&next);
+            self.persist_if_changed();
+        }
+        if let Some(tip) = self.cmdui.keylist_window(ctx) { self.cur().tip = tip; }
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
@@ -1529,7 +1630,7 @@ impl App {
         for c in cmds::CMDS {
             if !groups.contains(&c.group) { groups.push(c.group); }
         }
-        let label = |c: &cmds::Cmd| if c.keys.is_empty() || c.label.contains("Ctrl+") { trz(c.label).to_string() } else { format!("{}  {}", trz(c.label), c.keys) };
+        let label = |c: &cmds::Cmd| match keymap::display(&keymap::action_id(c.action)).filter(|k| !k.is_empty()) { Some(k) => format!("{}  {}", trz(c.label), k), None => trz(c.label).to_string() };
         for g in groups {
             if g.is_empty() {
                 for c in cmds::CMDS.iter().filter(|c| c.group.is_empty()) {
@@ -2146,6 +2247,7 @@ impl eframe::App for App {
         self.diff_refresh();
         self.diff_windows(ctx);
         if self.props.is_some() { self.props_window(ctx); }
+        self.cmd_windows(ctx);
         if self.split_on {
             let last = self.docs.len() - 1;
             self.left_doc = self.left_doc.min(last);
@@ -2177,8 +2279,8 @@ impl eframe::App for App {
                                 if ui.button(tr("c.close-left-s")).clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Left)); ui.close(); }
                                 if ui.button(tr("c.close-right-s")).clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Right)); ui.close(); }
                                 ui.separator();
-                                if ui.button(tr("c.tab-move-left")).clicked() { tab_cmd = Some(TabCmd::Move(i, true)); ui.close(); }
-                                if ui.button(tr("c.tab-move-right")).clicked() { tab_cmd = Some(TabCmd::Move(i, false)); ui.close(); }
+                                if ui.button(lk("c.tab-move-left", "")).clicked() { tab_cmd = Some(TabCmd::Move(i, true)); ui.close(); }
+                                if ui.button(lk("c.tab-move-right", "")).clicked() { tab_cmd = Some(TabCmd::Move(i, false)); ui.close(); }
                                 if ui.button(tr("c.copy-path")).clicked() { if let Some(p) = &self.docs[i].path { ctx.copy_text(p.display().to_string()); } ui.close(); }
                                 ui.separator();
                                 for (g, name) in GROUP_KEYS.iter().enumerate() {
@@ -2288,7 +2390,7 @@ impl eframe::App for App {
             });
         }
         // 查找栏 / 侧栏输入框 / 对话框正在收键盘时, 编辑区不抢
-        let find_focus = ctx.memory(|m| m.focused()).map(|f| !self.editor_ids.contains(&f)).unwrap_or(false);
+        let find_focus = self.cmdui.capturing() || ctx.memory(|m| m.focused()).map(|f| !self.editor_ids.contains(&f)).unwrap_or(false);
         if self.term.open {
             let r = egui::Panel::bottom("term").resizable(true).default_size(self.cfg.view.term_h).show(root, |ui| self.term_ui(ui));
             if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.term_h = r.response.rect.height().round().clamp(60.0, 900.0); }

@@ -13,6 +13,8 @@ mod grep;
 mod i18n;
 mod prefs;
 mod cmds;
+mod keymap;
+mod cmdui;
 mod fonts;
 mod instance;
 mod plugins;
