@@ -294,10 +294,10 @@ impl Find {
 
     fn full_bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         ui.horizontal_wrapped(|ui| {
-            if ui.selectable_label(self.replace, "置换").on_hover_text("显示 / 隐藏置换行 (Ctrl+H)").clicked() {
+            if ui.selectable_label(self.replace, crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
                 self.replace = !self.replace;
             }
-            ui.label("查找");
+            ui.label(crate::i18n::trz("查找"));
             let r = ui.add(egui::TextEdit::singleline(&mut self.needle).desired_width(220.0));
             if self.focus == Focus::Find {
                 r.request_focus();
@@ -308,27 +308,27 @@ impl Find {
                 self.next(d, fwd);
                 r.request_focus();
             }
-            if ui.button("↓").on_hover_text("下一个 F3").clicked() { self.next(d, true); }
-            if ui.button("↑").on_hover_text("上一个 Shift+F3").clicked() { self.next(d, false); }
-            ui.checkbox(&mut self.opts.case, "区分大小写");
-            ui.checkbox(&mut self.opts.word, "单词单位");
-            ui.checkbox(&mut self.opts.regex, "正则");
-            ui.checkbox(&mut self.opts.wrap, "折返");
-            ui.checkbox(&mut self.opts.migemo, "Migemo").on_hover_text("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク");
-            ui.checkbox(&mut self.marks, "全部强调");
+            if ui.button("↓").on_hover_text(crate::i18n::trz("下一个 F3")).clicked() { self.next(d, true); }
+            if ui.button("↑").on_hover_text(crate::i18n::trz("上一个 Shift+F3")).clicked() { self.next(d, false); }
+            ui.checkbox(&mut self.opts.case, crate::i18n::trz("区分大小写"));
+            ui.checkbox(&mut self.opts.word, crate::i18n::trz("单词单位"));
+            ui.checkbox(&mut self.opts.regex, crate::i18n::trz("正则"));
+            ui.checkbox(&mut self.opts.wrap, crate::i18n::trz("折返"));
+            ui.checkbox(&mut self.opts.migemo, "Migemo").on_hover_text(crate::i18n::trz("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク"));
+            ui.checkbox(&mut self.marks, crate::i18n::trz("全部强调"));
             if let Some(e) = &self.err {
-                ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("正则无效: {e}"));
+                ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
             } else {
                 let n = self.count_label(d);
                 if !n.is_empty() { ui.weak(n); }
                 ui.label(&self.msg);
             }
-            if ui.button("×").on_hover_text("关闭 Esc").clicked() { self.open = false; }
+            if ui.button("×").on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; }
         });
         if self.replace {
             ui.horizontal_wrapped(|ui| {
                 ui.add_space(22.0);
-                ui.label("置换");
+                ui.label(crate::i18n::trz("置换"));
                 let r = ui.add(egui::TextEdit::singleline(&mut self.repl).desired_width(220.0));
                 if self.focus == Focus::Repl {
                     r.request_focus();
@@ -338,9 +338,9 @@ impl Find {
                     self.replace_one(d);
                     r.request_focus();
                 }
-                if ui.button("置换").on_hover_text("置换当前命中并找下一个").clicked() { self.replace_one(d); }
-                if ui.button("全部置换").clicked() { self.replace_all(d); }
-                ui.checkbox(&mut self.in_sel, "仅选区");
+                if ui.button(crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("置换当前命中并找下一个")).clicked() { self.replace_one(d); }
+                if ui.button(crate::i18n::trz("全部置换")).clicked() { self.replace_all(d); }
+                ui.checkbox(&mut self.in_sel, crate::i18n::trz("仅选区"));
             });
         }
     }

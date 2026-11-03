@@ -43,6 +43,8 @@ mod textdrag;
 mod backup;
 mod ghplugin;
 mod ai;
+mod split;
+mod appicon;
 mod mdtools;
 
 use std::time::Instant;
@@ -85,6 +87,7 @@ fn main() -> eframe::Result<()> {
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0]);
+    if let Some(icon) = appicon::window_icon() { viewport = viewport.with_icon(std::sync::Arc::new(icon)); }
     if let Some(g) = st.view.geom {
         viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
     }

@@ -161,6 +161,10 @@ pub struct ViewState {
     pub ruler: bool,
     pub cur_line: bool,
     pub minimap: bool,
+    /// 工具栏 / 功能键栏 / 活动栏 (默认都关)
+    pub toolbar: bool,
+    pub funckey: bool,
+    pub rail: bool,
     /// 折行列数 (0 = 按窗口宽度); 只在开着自动换行时有效
     pub wrap_col: usize,
     /// 固定列数折行时是否应用行头 / 行尾禁则
@@ -168,11 +172,13 @@ pub struct ViewState {
     /// 戳记: 内容 (0 日期 / 1 时间 / 2 日期+时间) 与位置 (0 行首 / 1 光标处), 见 `textconv::StampKind`
     pub stamp_kind: u8,
     pub stamp_pos: u8,
+    /// 页面设置 (打印 / 预览)
+    pub print: crate::print::PageSetup,
 }
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, wrap_col: 0, kinsoku: true, stamp_kind: 2, stamp_pos: 0 }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, stamp_kind: 2, stamp_pos: 0, print: Default::default() }
     }
 }
 
@@ -307,8 +313,18 @@ impl Settings {
         b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
         b_of(w, "line_numbers", &mut self.view.line_numbers); b_of(w, "status_bar", &mut self.view.status_bar); b_of(w, "whitespace", &mut self.view.whitespace);
         b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap);
+        b_of(w, "toolbar", &mut self.view.toolbar); b_of(w, "funckey", &mut self.view.funckey); b_of(w, "rail", &mut self.view.rail);
         if let Some(b) = w["kinsoku"].as_bool() { self.view.kinsoku = b; }
         if let Some(n) = w["wrap_col"].as_u64() { self.view.wrap_col = if n == 0 { 0 } else { (n as usize).clamp(10, crate::tools::WRAP_COL_MAX) }; }
+        let pr = &w["print"];
+        if pr.is_object() {
+            let mut p = self.view.print.clone();
+            if let Some(c) = pr["paper"].as_str() { p.paper = crate::print::Paper::from_code(c); }
+            b_of(pr, "landscape", &mut p.landscape); b_of(pr, "line_numbers", &mut p.line_numbers); b_of(pr, "header", &mut p.header); b_of(pr, "footer", &mut p.footer);
+            if let Some(f) = pr["font_pt"].as_f64() { p.font_pt = f as f32; }
+            if let Some(f) = pr["margin_mm"].as_f64() { p.margin_mm = f as f32; }
+            self.view.print = p.clamped();
+        }
         if let Some(n) = w["stamp_kind"].as_u64() { self.view.stamp_kind = n.min(2) as u8; }
         if let Some(n) = w["stamp_pos"].as_u64() { self.view.stamp_pos = n.min(1) as u8; }
         if let Some(f) = w["side_w"].as_f64() { self.view.side_w = (f as f32).clamp(120.0, 900.0); }
@@ -345,8 +361,9 @@ impl Settings {
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
         o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom,
-            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap,
-            "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos }));
+            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
+            "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos,
+            "print": { "paper": w.print.paper.code(), "landscape": w.print.landscape, "font_pt": w.print.font_pt, "margin_mm": w.print.margin_mm, "line_numbers": w.print.line_numbers, "header": w.print.header, "footer": w.print.footer } }));
         v
     }
 
@@ -380,24 +397,54 @@ impl Settings {
     /// 键名按 Sakura 的 ini 格式: `[Common]` 里的 `nMRUArrNum_MAX` / `bExitConfirm` / `bBackUp`, `[Types(0)]` (基本设定) 里的
     /// `nTabSpace` / `bInsSpace` / `bAutoIndent` / `bSmartIndent`。
     pub fn import_sakura_ini(&mut self, text: &str) -> usize {
-        let mut section = String::new();
-        let mut n = 0;
-        for line in text.lines() {
+        // 先按节收集 (szTypeExts 可能出现在 nTabSpace 之后)
+        let mut secs: Vec<(String, Vec<(String, String)>)> = vec![];
+        for line in text.lines().take(200_000) {
             let line = line.trim();
-            if let Some(s) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) { section = s.to_string(); continue; }
-            let Some((k, val)) = line.split_once('=') else { continue };
-            let (k, val) = (k.trim(), val.trim());
-            let num = val.parse::<i64>().ok();
-            let flag = num.map(|x| x != 0);
-            match (section.as_str(), k) {
-                ("Common", "nMRUArrNum_MAX") => if let Some(x) = num { self.mru_files = (x as usize).clamp(1, 36); n += 1 },
-                ("Common", "bExitConfirm") => if let Some(f) = flag { self.confirm_close = f; n += 1 },
-                ("Common", "bBackUp") => if let Some(f) = flag { self.save_backup = f; n += 1 },
-                ("Types(0)", "nTabSpace") => if let Some(x) = num { self.tab_width = (x as usize).clamp(1, 16); n += 1 },
-                ("Types(0)", "bInsSpace") => if let Some(f) = flag { self.insert_spaces = f; n += 1 },
-                ("Types(0)", "bAutoIndent") => if let Some(f) = flag { self.auto_indent = f; n += 1 },
-                ("Types(0)", "bSmartIndent") | ("Types(0)", "nSmartIndent") => if let Some(x) = num { self.smart_indent = x != 0; n += 1 },
-                _ => {}
+            if let Some(s) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) { secs.push((s.to_string(), vec![])); continue; }
+            let (Some((k, val)), Some(cur)) = (line.split_once('='), secs.last_mut()) else { continue };
+            cur.1.push((k.trim().to_string(), val.trim().to_string()));
+        }
+        let mut n = 0;
+        for (section, kv) in &secs {
+            let get = |k: &str| kv.iter().find(|(x, _)| x == k).map(|(_, v)| v.as_str());
+            let num = |k: &str| get(k).and_then(|v| v.parse::<i64>().ok());
+            let flag = |k: &str| num(k).map(|x| x != 0);
+            if section == "Common" {
+                if let Some(x) = num("nMRUArrNum_MAX") { self.mru_files = (x.clamp(1, 36)) as usize; n += 1; }
+                if let Some(f) = flag("bExitConfirm") { self.confirm_close = f; n += 1; }
+                if let Some(f) = flag("bBackUp") { self.save_backup = f; n += 1; }
+                if let Some(f) = flag("bRegularExp") { self.search.find_regex = f; n += 1; }
+                if let Some(f) = flag("bLoHiCase") { self.search.find_case = f; n += 1; }
+                if let Some(f) = flag("bWordOnly") { self.search.find_word = f; n += 1; }
+                continue;
+            }
+            let Some(idx) = section.strip_prefix("Types(").and_then(|r| r.strip_suffix(')')).and_then(|r| r.parse::<usize>().ok()) else { continue };
+            // 自动换行: 2 = 按窗口宽度 (Sakura 的 nTextWrapMethod), 其它 = 不换
+            let wrap = num("nTextWrapMethod").map(|m| m == 2);
+            let smart = flag("bSmartIndent").or_else(|| num("nSmartIndent").map(|x| x != 0));
+            if idx == 0 {
+                if let Some(x) = num("nTabSpace") { self.tab_width = x.clamp(1, 16) as usize; n += 1; }
+                if let Some(f) = flag("bInsSpace") { self.insert_spaces = f; n += 1; }
+                if let Some(f) = flag("bAutoIndent") { self.auto_indent = f; n += 1; }
+                if let Some(f) = smart { self.smart_indent = f; n += 1; }
+                if let Some(w) = wrap { self.wrap = w; n += 1; }
+            } else if let Some(exts) = get("szTypeExts") {
+                // 其它文件类型: 按扩展名写进「按扩展名的覆盖项」(最多 64 种, 每种最多 16 个扩展名)
+                let (tab, ins) = (num("nTabSpace").map(|x| x.clamp(1, 16) as usize), flag("bInsSpace"));
+                if tab.is_none() && ins.is_none() && wrap.is_none() { continue; }
+                for ext in exts.split([';', ',']).map(|e| e.trim().trim_start_matches('.').to_lowercase()).filter(|e| !e.is_empty() && e.len() <= 16 && !e.contains(['*', '/', '\\'])).take(16) {
+                    let slot = match self.file_types.iter().position(|t| t.ext == ext) {
+                        Some(i) => i,
+                        None if self.file_types.len() < 64 => { self.file_types.push(TypePref { ext, ..Default::default() }); self.file_types.len() - 1 }
+                        None => continue,
+                    };
+                    let t = &mut self.file_types[slot];
+                    if tab.is_some() { t.tab_width = tab; }
+                    if ins.is_some() { t.insert_spaces = ins; }
+                    if wrap.is_some() { t.wrap = wrap; }
+                }
+                n += 1;
             }
         }
         n
@@ -514,7 +561,7 @@ mod tests {
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, wrap_col: 72, kinsoku: false, stamp_kind: 1, stamp_pos: 1 };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉
@@ -565,6 +612,19 @@ mod tests {
         assert_eq!(n, 7);
         assert_eq!((s.mru_files, s.confirm_close, s.save_backup, s.tab_width, s.insert_spaces, s.auto_indent, s.smart_indent), (20, false, true, 8, true, false, true));
         assert_eq!(Settings::default().clone().import_sakura_ini("garbage"), 0);
+    }
+
+    #[test]
+    fn sakura_ini_import_covers_search_flags_wrap_and_per_type_overrides() {
+        let ini = "[Common]\nbRegularExp=1\nbLoHiCase=1\nbWordOnly=1\n[Types(0)]\nnTextWrapMethod=2\n[Types(2)]\nnTabSpace=2\nbInsSpace=1\nszTypeExts=c;.CPP;*.bad;h\nnTextWrapMethod=0\n[Types(3)]\nnTabSpace=9\n";
+        let mut s = Settings::default();
+        let n = s.import_sakura_ini(ini);
+        assert_eq!(n, 5, "3 个查找开关 + 全局换行 + 一个带扩展名的类型");
+        assert_eq!((s.search.find_regex, s.search.find_case, s.search.find_word, s.wrap), (true, true, true, true));
+        let exts: Vec<_> = s.file_types.iter().map(|t| t.ext.as_str()).collect();
+        assert_eq!(exts, vec!["c", "cpp", "h"], "含通配符的扩展名被丢弃, 大小写归一");
+        assert!(s.file_types.iter().all(|t| t.tab_width == Some(2) && t.insert_spaces == Some(true) && t.wrap == Some(false)));
+        assert_eq!(s.tab_width, 4, "没有 szTypeExts 的类型不动全局值");
     }
 
     #[test]

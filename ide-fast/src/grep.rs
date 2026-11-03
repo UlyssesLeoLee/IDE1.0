@@ -480,7 +480,7 @@ impl Grep {
         use egui::Key;
         let mut ev = Vec::new();
         let w = f32::INFINITY;
-        let r = ui.add(egui::TextEdit::singleline(&mut self.o.pattern).hint_text("搜索内容 (空 = 只按文件名找)").desired_width(w));
+        let r = ui.add(egui::TextEdit::singleline(&mut self.o.pattern).hint_text(crate::i18n::trz("搜索内容 (空 = 只按文件名找)")).desired_width(w));
         if self.focus_pattern {
             r.request_focus();
             self.focus_pattern = false;
@@ -488,52 +488,52 @@ impl Grep {
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
             ev.push(Ev::Start);
         }
-        ui.add(egui::TextEdit::singleline(&mut self.o.files).hint_text("文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target").desired_width(w));
-        egui::CollapsingHeader::new("文件夹 / 排除 / 字符集").default_open(true).show(ui, |ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.o.folders).hint_text("文件夹 (留空 = 整个项目, 多个用 ; 分隔)").desired_width(w));
-            if ui.add_enabled(has_cur_file, egui::Button::new("当前文件所在文件夹").small()).clicked() {
+        ui.add(egui::TextEdit::singleline(&mut self.o.files).hint_text(crate::i18n::trz("文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target")).desired_width(w));
+        egui::CollapsingHeader::new(crate::i18n::trz("文件夹 / 排除 / 字符集")).default_open(true).show(ui, |ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.o.folders).hint_text(crate::i18n::trz("文件夹 (留空 = 整个项目, 多个用 ; 分隔)")).desired_width(w));
+            if ui.add_enabled(has_cur_file, egui::Button::new(crate::i18n::trz("当前文件所在文件夹")).small()).clicked() {
                 ev.push(Ev::UseCurDir);
             }
-            ui.add(egui::TextEdit::singleline(&mut self.o.exc_files).hint_text("排除文件, 如 *.min.js").desired_width(w));
-            ui.add(egui::TextEdit::singleline(&mut self.o.exc_folders).hint_text("排除文件夹, 如 target;dist").desired_width(w));
+            ui.add(egui::TextEdit::singleline(&mut self.o.exc_files).hint_text(crate::i18n::trz("排除文件, 如 *.min.js")).desired_width(w));
+            ui.add(egui::TextEdit::singleline(&mut self.o.exc_folders).hint_text(crate::i18n::trz("排除文件夹, 如 target;dist")).desired_width(w));
             ui.horizontal(|ui| {
-                ui.label("字符集");
-                let shown = if self.o.charset.is_empty() { "自动" } else { self.o.charset.as_str() }.to_string();
+                ui.label(crate::i18n::trz("字符集"));
+                let shown = if self.o.charset.is_empty() { crate::i18n::trz("自动") } else { self.o.charset.as_str() }.to_string();
                 egui::ComboBox::from_id_salt("grep-charset").selected_text(shown).show_ui(ui, |ui| {
-                    for (v, name) in [("", "自动"), ("utf-8", "utf-8"), ("sjis", "sjis"), ("euc-jp", "euc-jp"), ("gbk", "gbk"), ("big5", "big5"), ("utf-16le", "utf-16le"), ("utf-16be", "utf-16be")] {
+                    for (v, name) in [("", crate::i18n::trz("自动")), ("utf-8", "utf-8"), ("sjis", "sjis"), ("euc-jp", "euc-jp"), ("gbk", "gbk"), ("big5", "big5"), ("utf-16le", "utf-16le"), ("utf-16be", "utf-16be")] {
                         ui.selectable_value(&mut self.o.charset, v.to_string(), name);
                     }
                 });
             });
         });
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.o.case, "区分大小写");
-            ui.checkbox(&mut self.o.word, "单词单位");
-            ui.checkbox(&mut self.o.regex, "正则");
-            ui.checkbox(&mut self.o.sub, "子文件夹");
-            ui.checkbox(&mut self.o.outside, "项目外");
-            ui.checkbox(&mut self.o.this_file, "仅当前文件");
+            ui.checkbox(&mut self.o.case, crate::i18n::trz("区分大小写"));
+            ui.checkbox(&mut self.o.word, crate::i18n::trz("单词单位"));
+            ui.checkbox(&mut self.o.regex, crate::i18n::trz("正则"));
+            ui.checkbox(&mut self.o.sub, crate::i18n::trz("子文件夹"));
+            ui.checkbox(&mut self.o.outside, crate::i18n::trz("项目外"));
+            ui.checkbox(&mut self.o.this_file, crate::i18n::trz("仅当前文件"));
         });
         ui.horizontal(|ui| {
-            ui.label("输出");
-            egui::ComboBox::from_id_salt("grep-fmt").selected_text(match self.o.fmt { Fmt::Normal => "标准", Fmt::Files => "仅文件名", Fmt::Count => "各文件命中数" }).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.o.fmt, Fmt::Normal, "标准");
-                ui.selectable_value(&mut self.o.fmt, Fmt::Files, "仅文件名");
-                ui.selectable_value(&mut self.o.fmt, Fmt::Count, "各文件命中数");
+            ui.label(crate::i18n::trz("输出"));
+            egui::ComboBox::from_id_salt("grep-fmt").selected_text(match self.o.fmt { Fmt::Normal => crate::i18n::trz("标准"), Fmt::Files => crate::i18n::trz("仅文件名"), Fmt::Count => crate::i18n::trz("各文件命中数") }).show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.o.fmt, Fmt::Normal, crate::i18n::trz("标准"));
+                ui.selectable_value(&mut self.o.fmt, Fmt::Files, crate::i18n::trz("仅文件名"));
+                ui.selectable_value(&mut self.o.fmt, Fmt::Count, crate::i18n::trz("各文件命中数"));
             });
         });
         ui.horizontal(|ui| {
             if self.running() {
-                if ui.button("停止  Esc").clicked() { ev.push(Ev::Stop); }
-            } else if ui.button("搜索").clicked() {
+                if ui.button(crate::i18n::trz("停止  Esc")).clicked() { ev.push(Ev::Stop); }
+            } else if ui.button(crate::i18n::trz("搜索")).clicked() {
                 ev.push(Ev::Start);
             }
-            if ui.button("结果开成标签").on_hover_text("把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转").clicked() {
+            if ui.button(crate::i18n::trz("结果开成标签")).on_hover_text(crate::i18n::trz("把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转")).clicked() {
                 ev.push(Ev::ResultDoc);
             }
         });
-        ui.add(egui::TextEdit::singleline(&mut self.o.repl).hint_text("置换为 (正则下可用 $1)").desired_width(w));
-        if ui.button("全部置换 (改写文件, 保留 .bak)").clicked() {
+        ui.add(egui::TextEdit::singleline(&mut self.o.repl).hint_text(crate::i18n::trz("置换为 (正则下可用 $1)")).desired_width(w));
+        if ui.button(crate::i18n::trz("全部置换 (改写文件, 保留 .bak)")).clicked() {
             ev.push(Ev::ReplaceAll);
         }
         ui.label(&self.msg);

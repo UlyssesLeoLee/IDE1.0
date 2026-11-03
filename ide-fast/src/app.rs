@@ -21,9 +21,11 @@ use editcore::syntax_styling::{Color, Theme};
 use editcore::type_config::{TokenKind, TypeConfig, TypeRegistry};
 use std::path::PathBuf;
 
+mod chrome;
 mod extras;
 mod ghopts;
 mod mdopts;
+mod printui;
 mod sysopts;
 mod tagops;
 
@@ -57,9 +59,7 @@ pub struct App {
     tc: crate::view::ThemeColors,
     /// 分割窗口: 左右两个编辑区各看一个文档; active 永远是有焦点那一栏的文档
     split_on: bool,
-    left_doc: usize,
-    right_doc: usize,
-    focus_right: bool,
+    panes: crate::split::Panes,
     /// 当前这栏是否接收键盘 (分割时只有焦点栏收)
     pane_keys: bool,
     /// 终端: 选区作标准输入 / 输出替换选区
@@ -136,6 +136,7 @@ pub struct App {
     tags: crate::tagjump::TagState,
     /// 正在拖放选中文字 (按下时落在选区里才有)
     text_drag: Option<crate::textdrag::TextDrag>,
+    print_ui: printui::PrintUi,
 }
 
 impl App {
@@ -148,7 +149,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), print_ui: Default::default(),
         };
         app.persist = persist;
         app.sys.glass = plugins::is_translucent(&st.theme_plugin); // 窗口透明与否在建窗口时就定了 (main.rs 同一判断)
@@ -436,7 +437,7 @@ impl App {
     fn side_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for (t, name) in [(Tab::Files, "文件"), (Tab::Outline, "大纲"), (Tab::Search, "搜索"), (Tab::Scm, "Git")] {
-                if ui.selectable_label(self.side.tab == t, name).clicked() { self.side.tab = t; }
+                if ui.selectable_label(self.side.tab == t, trz(name)).clicked() { self.side.tab = t; }
             }
         });
         ui.separator();
@@ -444,16 +445,16 @@ impl App {
         match self.side.tab {
             Tab::Files => {
                 match self.side.root.clone() {
-                    None => { if ui.button("打开文件夹…").clicked() { self.open_folder_dialog(); } }
+                    None => { if ui.button(trz("打开文件夹…")).clicked() { self.open_folder_dialog(); } }
                     Some(root) => {
                         let mut op: Option<FileOp> = None;
                         ui.horizontal(|ui| {
                             let title = ui.strong(root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string()));
                             title.context_menu(|ui| {
-                                if ui.button("新建文件…").clicked() { op = Some(FileOp::NewFile(root.clone())); ui.close(); }
-                                if ui.button("新建文件夹…").clicked() { op = Some(FileOp::NewDir(root.clone())); ui.close(); }
+                                if ui.button(trz("新建文件…")).clicked() { op = Some(FileOp::NewFile(root.clone())); ui.close(); }
+                                if ui.button(trz("新建文件夹…")).clicked() { op = Some(FileOp::NewDir(root.clone())); ui.close(); }
                             });
-                            if ui.small_button("刷新").clicked() { self.side.refresh(); }
+                            if ui.small_button(trz("刷新")).clicked() { self.side.refresh(); }
                         });
                         self.pending_ui(ui);
                         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| tree(ui, &mut self.side, &root, &mut open, &mut op));
@@ -467,7 +468,7 @@ impl App {
                 self.side.update_outline(d.id, d.rev, &d.name, &d.lines);
                 let mut jump: Option<usize> = None;
                 egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                    if self.side.outline.is_empty() { ui.label("(没有可显示的大纲)"); }
+                    if self.side.outline.is_empty() { ui.label(trz("(没有可显示的大纲)")); }
                     for e in &self.side.outline {
                         ui.horizontal(|ui| {
                             ui.add_space(e.depth.max(0) as f32 * 12.0);
@@ -515,8 +516,8 @@ impl App {
             }
             if let Some(e) = &p.error { ui.colored_label(red, e); }
             ui.horizontal(|ui| {
-                if ui.button("确定").clicked() { go = true; }
-                if ui.button("取消").clicked() { cancel = true; }
+                if ui.button(trz("确定")).clicked() { go = true; }
+                if ui.button(trz("取消")).clicked() { cancel = true; }
             });
         });
         if cancel { self.side.pending = None; } else if go { self.apply_file_op(); }
@@ -570,27 +571,27 @@ impl App {
         ui.horizontal(|ui| {
             let st = &self.side.scm.status;
             ui.strong(if st.branch.is_empty() { "Git".to_string() } else { format!("分支 {}", st.branch) });
-            if ui.small_button("刷新").clicked() { self.side.scm.refresh(root.clone()); }
+            if ui.small_button(trz("刷新")).clicked() { self.side.scm.refresh(root.clone()); }
             if self.side.scm.loading() { ui.label("…"); }
         });
         if let Some(e) = self.side.scm.status.error.clone() { ui.colored_label(self.tc.red, e); }
         let Some(top) = self.side.scm.status.top.clone() else { return };
         let changes = self.side.scm.status.changes.clone();
-        if changes.is_empty() && self.side.scm.status.error.is_none() { ui.label("没有改动"); }
+        if changes.is_empty() && self.side.scm.status.error.is_none() { ui.label(trz("没有改动")); }
         let tc = self.tc;
         let mut act: Option<(String, u8)> = None; // 0 = 打开, 1 = 差异, 2 = 暂存, 3 = 取消暂存
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             for (title, staged) in [("已暂存的更改", true), ("更改", false)] {
                 let rows: Vec<&crate::scm::Change> = changes.iter().filter(|c| c.staged() == staged).collect();
                 if rows.is_empty() { continue; }
-                ui.label(egui::RichText::new(format!("{title} ({})", rows.len())).strong());
+                ui.label(egui::RichText::new(format!("{} ({})", trz(title), rows.len())).strong());
                 for c in rows {
                     ui.horizontal(|ui| {
                         let col = match c.letter() { 'M' => tc.yellow, 'A' | 'U' => tc.green, 'D' => tc.red, _ => tc.blue };
                         ui.label(egui::RichText::new(c.letter().to_string()).monospace().color(col));
-                        if ui.small_button("差异").clicked() { act = Some((c.path.clone(), 1)); }
-                        if staged { if ui.small_button("-").on_hover_text("取消暂存").clicked() { act = Some((c.path.clone(), 3)); } }
-                        else if ui.small_button("+").on_hover_text("暂存").clicked() { act = Some((c.path.clone(), 2)); }
+                        if ui.small_button(trz("差异")).clicked() { act = Some((c.path.clone(), 1)); }
+                        if staged { if ui.small_button("-").on_hover_text(trz("取消暂存")).clicked() { act = Some((c.path.clone(), 3)); } }
+                        else if ui.small_button("+").on_hover_text(trz("暂存")).clicked() { act = Some((c.path.clone(), 2)); }
                         if ui.selectable_label(false, &c.path).clicked() { act = Some((c.path.clone(), 0)); }
                     });
                 }
@@ -677,11 +678,11 @@ impl App {
             let mut open = true;
             let mut pick: Option<usize> = None;
             let cur = self.active.min(self.docs.len() - 1);
-            egui::Window::new("与哪个标签比较").open(&mut open).collapsible(false).show(ctx, |ui| {
+            egui::Window::new(trz("与哪个标签比较")).open(&mut open).collapsible(false).show(ctx, |ui| {
                 for (i, d) in self.docs.iter().enumerate().filter(|(i, _)| *i != cur) {
                     if ui.selectable_label(false, &d.name).clicked() { pick = Some(i); }
                 }
-                if self.docs.len() < 2 { ui.label("需要至少两个标签"); }
+                if self.docs.len() < 2 { ui.label(trz("需要至少两个标签")); }
             });
             if let Some(i) = pick { self.start_diff(i); open = false; }
             self.diff_pick = open;
@@ -689,8 +690,8 @@ impl App {
         if self.diff_list_open {
             let mut open = true;
             let mut jump: Option<usize> = None;
-            egui::Window::new("差异列表").open(&mut open).default_width(280.0).show(ctx, |ui| {
-                let Some(v) = &self.diff else { ui.label("没有进行中的比较"); return };
+            egui::Window::new(trz("差异列表")).open(&mut open).default_width(280.0).show(ctx, |ui| {
+                let Some(v) = &self.diff else { ui.label(trz("没有进行中的比较")); return };
                 ui.label(v.summary());
                 let right = self.docs[self.active.min(self.docs.len() - 1)].id == v.right;
                 egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
@@ -888,7 +889,7 @@ impl App {
         let gone = self.docs.remove(i);
         self.sys.backup.forget(&gone);
         self.jump.forget(gone.id);
-        self.split_on = false;
+        self.end_split();
         if self.docs.is_empty() {
             self.new_doc();
         }
@@ -919,7 +920,7 @@ impl App {
     fn move_active_tab(&mut self, left: bool) {
         let a = self.active.min(self.docs.len() - 1);
         self.active = tabs::move_tab(&mut self.docs, a, left);
-        self.split_on = false;
+        self.end_split();
     }
 
     /// 批量关标签 (其它 / 左边 / 右边 / 全部): 逐个关, 有未保存的会问, 选了取消就停在那里
@@ -1096,6 +1097,8 @@ impl App {
                 });
                 ui.separator();
                 if ui.button(lk("c.print", "Ctrl+P")).clicked() { ui.close(); self.print_cur(); }
+                if ui.button(lk("c.print-setup", "")).clicked() { ui.close(); self.print_ui.setup_open = true; }
+                if ui.button(lk("c.print-preview", "")).clicked() { ui.close(); self.print_ui.preview = Some(0); }
                 if ui.button(lk("c.browse", "")).clicked() { ui.close(); self.browse_current(); }
                 if ui.button(lk("c.file-properties", "Alt+Enter")).clicked() { ui.close(); self.props = Some(self.cur().properties()); }
                 if ui.button(lk("c.new-window", "")).clicked() { ui.close(); self.new_window(); }
@@ -1134,13 +1137,13 @@ impl App {
                 for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext)] {
                     if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
-                ui.menu_button("比较", |ui| {
-                    if ui.button("与其他标签比较…").clicked() { self.diff_pick = true; ui.close(); }
-                    if ui.button("与文件比较…").clicked() { self.diff_with_file(); ui.close(); }
-                    if ui.button("差异列表").clicked() { self.diff_list_open = true; ui.close(); }
-                    if ui.button("下一处差异 (Alt+↓)").clicked() { self.diff_step(true); ui.close(); }
-                    if ui.button("上一处差异 (Alt+↑)").clicked() { self.diff_step(false); ui.close(); }
-                    if ui.button("清除比较").clicked() { self.diff = None; self.diff_list_open = false; ui.close(); }
+                ui.menu_button(trz("比较"), |ui| {
+                    if ui.button(trz("与其他标签比较…")).clicked() { self.diff_pick = true; ui.close(); }
+                    if ui.button(trz("与文件比较…")).clicked() { self.diff_with_file(); ui.close(); }
+                    if ui.button(trz("差异列表")).clicked() { self.diff_list_open = true; ui.close(); }
+                    if ui.button(trz("下一处差异 (Alt+↓)")).clicked() { self.diff_step(true); ui.close(); }
+                    if ui.button(trz("上一处差异 (Alt+↑)")).clicked() { self.diff_step(false); ui.close(); }
+                    if ui.button(trz("清除比较")).clicked() { self.diff = None; self.diff_list_open = false; ui.close(); }
                 });
             });
             ui.menu_button(tr("menu.fold"), |ui| {
@@ -1228,6 +1231,8 @@ impl App {
             });
             ui.menu_button(tr("menu.window"), |ui| {
                 if ui.button(lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
+                if ui.button(lk("c.split-rows", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Rows); ui.close(); }
+                if ui.button(lk("c.split-quad", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Quad); ui.close(); }
                 ui.separator();
                 if ui.button(lk("c.next-tab", "Ctrl+Tab")).clicked() { self.next_tab(true); ui.close(); }
                 if ui.button(lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() { self.next_tab(false); ui.close(); }
@@ -1287,6 +1292,9 @@ impl App {
                 ui.checkbox(&mut self.cfg.view.ruler, lk("c.ruler", ""));
                 ui.checkbox(&mut self.cfg.view.cur_line, lk("c.cur-line", ""));
                 ui.checkbox(&mut self.cfg.view.minimap, lk("c.minimap", ""));
+                ui.checkbox(&mut self.cfg.view.toolbar, lk("c.toolbar", ""));
+                ui.checkbox(&mut self.cfg.view.funckey, lk("c.funckey", ""));
+                ui.checkbox(&mut self.cfg.view.rail, lk("c.rail", ""));
                 if ui.button(lk("c.minimal-mode", "")).clicked() { self.set_minimal(); ui.close(); }
                 ui.separator();
                 ui.menu_button(tr("sub.tabwidth"), |ui| {
@@ -1371,14 +1379,14 @@ impl App {
     /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
     fn term_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.strong("终端");
-            if ui.small_button("清屏").clicked() { self.term.clear(); }
-            if ui.small_button("重启").on_hover_text("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)").clicked() { self.term.restart(); }
-            ui.checkbox(&mut self.term.persistent, "常驻会话");
+            ui.strong(trz("终端"));
+            if ui.small_button(trz("清屏")).clicked() { self.term.clear(); }
+            if ui.small_button(trz("重启")).on_hover_text(trz("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)")).clicked() { self.term.restart(); }
+            ui.checkbox(&mut self.term.persistent, trz("常驻会话"));
             if ui.small_button("×").clicked() { self.term.open = false; }
-            ui.checkbox(&mut self.term_stdin, "选区作标准输入");
-            ui.checkbox(&mut self.term_replace, "输出替换选区");
-            if self.term.running() { ui.label("运行中…"); }
+            ui.checkbox(&mut self.term_stdin, trz("选区作标准输入"));
+            ui.checkbox(&mut self.term_replace, trz("输出替换选区"));
+            if self.term.running() { ui.label(trz("运行中…")); }
         });
         let h = (ui.available_height() - 28.0).max(30.0);
         self.term.set_scrollback(self.cfg.term_scrollback);
@@ -1554,6 +1562,8 @@ impl App {
             KApp::Reload => self.reload_current(),
             KApp::RecentClear => self.clear_recent(),
             KApp::Print => self.print_cur(),
+            KApp::PrintSetup => self.print_ui.setup_open = true,
+            KApp::PrintPreview => self.print_ui.preview = Some(0),
             KApp::Browse => self.browse_current(),
             KApp::Props => self.props = Some(self.cur().properties()),
             KApp::NewWindow => self.new_window(),
@@ -1590,6 +1600,8 @@ impl App {
             KApp::HistNext => self.jump_go(1),
             KApp::HistMark => { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); }
             KApp::Split => self.toggle_split(),
+            KApp::SplitRows => self.toggle_split_kind(crate::split::SplitKind::Rows),
+            KApp::SplitQuad => self.toggle_split_kind(crate::split::SplitKind::Quad),
             KApp::NextTab => self.next_tab(true),
             KApp::PrevTab => self.next_tab(false),
             KApp::TabLeft => self.move_active_tab(true),
@@ -1618,6 +1630,9 @@ impl App {
             KApp::Ruler => self.cfg.view.ruler = !self.cfg.view.ruler,
             KApp::CurLine => self.cfg.view.cur_line = !self.cfg.view.cur_line,
             KApp::Minimap => self.cfg.view.minimap = !self.cfg.view.minimap,
+            KApp::ToolbarToggle => self.cfg.view.toolbar = !self.cfg.view.toolbar,
+            KApp::FunckeyToggle => self.cfg.view.funckey = !self.cfg.view.funckey,
+            KApp::RailToggle => self.cfg.view.rail = !self.cfg.view.rail,
             KApp::MinimalMode => self.set_minimal(),
             KApp::ZoomIn => self.font_px = (self.font_px + 1.0).min(40.0),
             KApp::ZoomOut => self.font_px = (self.font_px - 1.0).max(8.0),
@@ -1724,28 +1739,21 @@ impl App {
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
     /// 一栏编辑区: 临时把 active 换成这栏的文档, 画完换回; 点击这栏 = 它拿到焦点
-    fn editor_pane(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool, right: bool) {
+    fn editor_pane(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool, pane: usize) {
         if !self.split_on {
             self.pane_keys = true;
             return self.editor(ui, ctx, find_has_focus);
         }
-        let last = self.docs.len() - 1;
-        let doc = if right { self.right_doc.min(last) } else { self.left_doc.min(last) };
+        let doc = self.panes.docs[pane].min(self.docs.len() - 1);
         let keep = self.active;
         self.active = doc;
-        self.pane_keys = self.focus_right == right;
-        self.editor(ui, ctx, find_has_focus);
+        self.pane_keys = self.panes.focus == pane;
+        // 每个窗格自己的 id 空间 (四分割时同一个 Ui 下并排的窗格否则会撞 id)
+        ui.push_id(("pane", pane), |ui| self.editor(ui, ctx, find_has_focus));
         self.active = keep;
         if ctx.input(|i| i.pointer.any_pressed()) && ui.rect_contains_pointer(ui.max_rect()) {
-            self.focus_right = right;
+            self.panes.focus = pane;
         }
-    }
-
-    fn print_cur(&mut self) {
-        let (name, lines) = { let d = self.cur(); (d.name.clone(), d.lines.clone()) };
-        let pt = (self.font_px * 0.75).clamp(7.0, 14.0);
-        let tip = match crate::print::open_for_print(&name, &lines, true, pt) { Ok(_) => "已在浏览器打开打印页".to_string(), Err(e) => e };
-        self.cur().tip = tip;
     }
 
     /// 极简布局 (Sakura 风格的单个文本框): 收起侧栏 / 终端 / 预览 / 分割, 只留编辑区和状态栏
@@ -1753,10 +1761,11 @@ impl App {
         self.side.open = false;
         self.term.open = false;
         self.md_preview = false;
-        if self.split_on { self.toggle_split(); }
+        self.end_split();
         self.cfg.view.status_bar = true;
         self.cfg.view.minimap = false;
         self.cfg.view.ruler = false;
+        (self.cfg.view.toolbar, self.cfg.view.funckey, self.cfg.view.rail) = (false, false, false);
     }
 
     /// 选主题插件 (空 id = 回到内置深 / 浅色)
@@ -1879,14 +1888,17 @@ impl App {
         if let Err(e) = self.cur().reload() { self.cur().tip = e; }
     }
 
-    fn toggle_split(&mut self) {
-        self.split_on = !self.split_on;
-        if self.split_on {
-            let a = self.active.min(self.docs.len() - 1);
-            self.left_doc = a;
-            self.right_doc = if self.docs.len() > 1 { (a + 1) % self.docs.len() } else { a };
-            self.focus_right = false;
-        }
+    fn toggle_split(&mut self) { self.toggle_split_kind(crate::split::SplitKind::Cols); }
+
+    fn toggle_split_kind(&mut self, k: crate::split::SplitKind) {
+        let (a, n) = (self.active.min(self.docs.len() - 1), self.docs.len());
+        self.panes.toggle(k, a, n);
+        self.split_on = self.panes.kind != crate::split::SplitKind::Off;
+    }
+
+    fn end_split(&mut self) {
+        self.panes.kind = crate::split::SplitKind::Off;
+        self.split_on = false;
     }
 
     fn editor(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool) {
@@ -2315,17 +2327,17 @@ fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut
         if e.is_dir {
             let h = egui::CollapsingHeader::new(&e.name).id_salt(&e.path).show(ui, |ui| tree(ui, side, &e.path, open, op));
             h.header_response.context_menu(|ui| {
-                if ui.button("新建文件…").clicked() { *op = Some(FileOp::NewFile(e.path.clone())); ui.close(); }
-                if ui.button("新建文件夹…").clicked() { *op = Some(FileOp::NewDir(e.path.clone())); ui.close(); }
-                if ui.button("重命名…").clicked() { *op = Some(FileOp::Rename(e.path.clone())); ui.close(); }
-                if ui.button("删除…").clicked() { *op = Some(FileOp::Delete(e.path.clone())); ui.close(); }
+                if ui.button(trz("新建文件…")).clicked() { *op = Some(FileOp::NewFile(e.path.clone())); ui.close(); }
+                if ui.button(trz("新建文件夹…")).clicked() { *op = Some(FileOp::NewDir(e.path.clone())); ui.close(); }
+                if ui.button(trz("重命名…")).clicked() { *op = Some(FileOp::Rename(e.path.clone())); ui.close(); }
+                if ui.button(trz("删除…")).clicked() { *op = Some(FileOp::Delete(e.path.clone())); ui.close(); }
             });
         } else {
             let r = ui.selectable_label(false, &e.name);
             if r.clicked() { *open = Some((e.path.clone(), 1)); }
             r.context_menu(|ui| {
-                if ui.button("重命名…").clicked() { *op = Some(FileOp::Rename(e.path.clone())); ui.close(); }
-                if ui.button("删除…").clicked() { *op = Some(FileOp::Delete(e.path.clone())); ui.close(); }
+                if ui.button(trz("重命名…")).clicked() { *op = Some(FileOp::Rename(e.path.clone())); ui.close(); }
+                if ui.button(trz("删除…")).clicked() { *op = Some(FileOp::Delete(e.path.clone())); ui.close(); }
             });
         }
     }
@@ -2453,14 +2465,14 @@ impl eframe::App for App {
         self.cmd_windows(ctx);
         self.tools_windows(ctx);
         self.tag_windows(ctx);
+        self.print_windows(ctx);
         if self.split_on {
-            let last = self.docs.len() - 1;
-            self.left_doc = self.left_doc.min(last);
-            self.right_doc = self.right_doc.min(last);
-            self.active = if self.focus_right { self.right_doc } else { self.left_doc };
+            self.panes.clamp(self.docs.len());
+            self.active = self.panes.focused_doc();
         }
         self.shortcuts(ctx);
         egui::Panel::top("menu").show(root, |ui| self.menu(ui, ctx));
+        if self.cfg.view.toolbar { egui::Panel::top("toolbar").show(root, |ui| self.toolbar(ui, ctx)); }
         // 标签栏: 只有一个标签时整条收起; 标签多了横向滚动 (滚轮 / Shift+滚轮 / 拖动), 活动标签变了就滚进可见范围
         let mut tab_cmd: Option<TabCmd> = None;
         if self.docs.len() > 1 {
@@ -2508,8 +2520,9 @@ impl eframe::App for App {
             None => {}
         }
         if self.split_on {
-            if self.focus_right { self.right_doc = self.active; } else { self.left_doc = self.active; }
+            self.panes.docs[self.panes.focus] = self.active;
         }
+        if self.cfg.view.rail { egui::Panel::left("rail").resizable(false).exact_size(64.0).show(root, |ui| self.activity_rail(ui)); }
         if self.side.open {
             let r = egui::Panel::left("side").resizable(true).default_size(self.cfg.view.side_w).show(root, |ui| self.side_ui(ui));
             // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
@@ -2589,6 +2602,7 @@ impl eframe::App for App {
             Some(StatusCmd::Eol(e)) => self.cur().set_eol(e),
             None => {}
         }
+        if self.cfg.view.funckey { egui::Panel::bottom("funckey").show(root, |ui| self.funckey_bar(ui, ctx)); }
         if self.find.open {
             egui::Panel::bottom("find").show(root, |ui| {
                 let i = self.active.min(self.docs.len() - 1);
@@ -2615,10 +2629,23 @@ impl eframe::App for App {
         if self.md_preview && is_md {
             egui::Panel::right("mdprev").resizable(true).default_size(420.0).show(root, |ui| self.md_ui(ui));
         }
-        if self.split_on {
-            egui::Panel::right("split").resizable(true).default_size(root.available_width() * 0.5).frame(egui::Frame::NONE.fill(ctx.global_style().visuals.extreme_bg_color)).show(root, |ui| self.editor_pane(ui, ctx, find_focus, true));
+        use crate::split::SplitKind as SK;
+        let fill = ctx.global_style().visuals.extreme_bg_color;
+        let kind = self.panes.kind;
+        if matches!(kind, SK::Rows | SK::Quad) {
+            egui::Panel::bottom("split_b").resizable(true).default_size(root.available_height() * 0.5).frame(egui::Frame::NONE.fill(fill)).show(root, |ui| {
+                if kind == SK::Rows { self.editor_pane(ui, ctx, find_focus, 1); } else {
+                    ui.columns(2, |c| { self.editor_pane(&mut c[0], ctx, find_focus, 2); self.editor_pane(&mut c[1], ctx, find_focus, 3); });
+                }
+            });
         }
-        egui::CentralPanel::default_margins().frame(egui::Frame::NONE.fill(ctx.global_style().visuals.extreme_bg_color)).show(root, |ui| self.editor_pane(ui, ctx, find_focus, false));
+        if kind == SK::Cols {
+            egui::Panel::right("split").resizable(true).default_size(root.available_width() * 0.5).frame(egui::Frame::NONE.fill(fill)).show(root, |ui| self.editor_pane(ui, ctx, find_focus, 1));
+        }
+        egui::CentralPanel::default_margins().frame(egui::Frame::NONE.fill(fill)).show(root, |ui| {
+            if kind == SK::Quad { ui.columns(2, |c| { self.editor_pane(&mut c[0], ctx, find_focus, 0); self.editor_pane(&mut c[1], ctx, find_focus, 1); }); }
+            else { self.editor_pane(ui, ctx, find_focus, 0); }
+        });
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
     }
