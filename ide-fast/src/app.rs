@@ -957,7 +957,6 @@ impl App {
         if cmd(ctx, Modifiers::ALT, Key::Enter) { self.props = Some(self.cur().properties()); }
         if cmd(ctx, Modifiers::ALT, Key::P) { self.jump_go(-1); }
         if cmd(ctx, Modifiers::ALT, Key::N) { self.jump_go(1); }
-        if cmd(ctx, Modifiers::COMMAND, Key::OpenBracket) || cmd(ctx, Modifiers::COMMAND, Key::CloseBracket) { self.bracket_jump(); }
         // 搜索: Ctrl+F 查找, Ctrl+H / Ctrl+R 置换, Ctrl+Alt+R 全部置换, Ctrl+G / Ctrl+Shift+F Grep (键位同 Tauri 版)
         if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::R) { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); }
         else if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::G) || cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::G) { self.focus_grep(); }
@@ -967,6 +966,8 @@ impl App {
         if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket) { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::CloseBracket) { self.cur().folds.clear(); }
+        // 放在折叠 (Ctrl+Shift+[ / ]) 之后: 否则带 Shift 的组合会先被对括弧跳转吃掉
+        if cmd(ctx, Modifiers::COMMAND, Key::OpenBracket) || cmd(ctx, Modifiers::COMMAND, Key::CloseBracket) { self.bracket_jump(); }
         if cmd(ctx, Modifiers::COMMAND, Key::P) { self.print_cur(); }
         if cmd(ctx, Modifiers::COMMAND, Key::Backslash) { self.toggle_split(); }
         if cmd(ctx, Modifiers::COMMAND, Key::Backtick) { self.term.open = !self.term.open; }
