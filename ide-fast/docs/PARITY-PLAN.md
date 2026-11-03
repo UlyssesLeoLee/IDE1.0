@@ -1,5 +1,63 @@
 # 高速版对标计划 (自动审计, 2026-11-02)
 
+## 状态总表 (批次 9 对照代码重新审计)
+
+状态: **done** = 已实现并有单测或真窗口验证; **partial** = 主要部分有了, 缺的写在说明里; **not done** = 没做, 说明里写原因。
+下面的「缺口明细」是批次 1 之前的原始审计, 保留作设计依据, 其中「现状」一栏已过时, 以本表为准。
+
+| 条目 | 状态 | 说明 |
+|---|---|---|
+| 批次 1 文件安全 / 大文件 / 外部修改 / 关窗确认 | done | `doc.rs` 大小上限 + 二进制拒绝, 获得焦点时检查外部修改, 关窗确认 |
+| 批次 1 转到行 / 行注释 / Tab 缩进 / 选区变换 / 整理行 / 编辑命令接线 / 改写 / 只读 / Markdown 命令 | done | `cmds.rs` 命令表 |
+| 批次 1 双击选词 / 三击选行 / 段落选择 | done | 段落选择 (选到上 / 下一段落) 为批次 9 |
+| 批次 1 F6 范围选择模式 (begin-sel) | not done | 要给 `Doc` 加一个选择模式并让所有方向键路径都认它, 改动面大、和 Shift+方向键重复; 用 Shift+方向键 / 段落选择代替 |
+| 批次 2 查找条 / 置换 / 强调 / Grep 全套 | done | 见下面「批次 2 状态」; 增量查找 (边输入边找) 已有 |
+| 批次 2 Migemo 查找 | done | 批次 9: 查找条「Migemo」开关, 候选正则由 `editcore::migemo` 生成并转义, 过长退回字面查找 |
+| 批次 2 独立的 isearch 增量搜索条 (正向 / 反向 / 正则 / Migemo 四种模式) | not done | 查找条的边输入边找 + Migemo 开关已覆盖用法, 不再做第二套搜索条 |
+| 批次 3 命令注册表 / 键位表 | done | 批次 9: `keymap.rs` (170+ 条命令, 稳定 id, 默认键), 快捷键分发表驱动, 菜单提示读生效的键 |
+| 批次 3 命令面板 (Shift+F1 / Ctrl+Shift+P) | done | `cmdui.rs`: 模糊匹配全部命令和脚本插件命令, 方向键 / Enter / Esc |
+| 批次 3 键位设置 + 键位一览 (Ctrl+Q) | done | 按键捕获、冲突检测与抢占、清除 / 恢复默认 / 全部恢复、存进 `settings.json` 的 `keys`; 一览可筛选、可复制 |
+| 批次 3 帮助菜单 (命令面板 / 键位一览 / 键位设置 / 关于) | done | 没有外部帮助文档, F1 不绑定 (和 Tauri 版的 wiki 无对应物) |
+| 批次 3 把菜单整体重写成 MENU_DEF 式生成 | partial | 快捷键、面板、提示共用注册表; 菜单本身仍是手写结构 (只是提示由注册表生成)。完全生成需要给每项配分组 / 分隔符 / 勾选状态, 收益小 |
+| 批次 3 编辑区原生处理的键 (剪切 / 复制 / 粘贴、Ctrl+退格 等) 可改键 | not done | 它们由编辑区直接吃事件, 键位表里标成「系统键」, 只显示不能改 (改了会和文本输入路径打架) |
+| 批次 4 标签命令 / 文件菜单 / 编码·换行改写 / 状态栏点击 / 全屏·置顶 / 移动履历 / 括弧 / 书签列表 | done | |
+| 批次 4 修改行步进 (modify-next / prev) | done | 批次 9: 下一处 / 上一处改动 (改动块的起始行), 进编辑菜单 / 命令面板, 没有默认键 |
+| 批次 4 上下 / 四分割、真正的标签分组窗格 | not done | 现在是左右两栏 + 标签颜色分组。多窗格要重写 `editor_pane` 的焦点和滚动模型 |
+| 批次 4 拖放选中文字 (移动 / 复制) | not done | 鼠标按在选区里目前是折叠选区重新框选; 做拖放要区分点击 / 拖动意图并画落点, 和矩形选择的鼠标逻辑交织 |
+| 批次 4 tag jump (tags 文件) | not done | 依赖 ctags 生成的 tags 文件, 日常用得少; `editcore::tag_jump` 已有, 留作后续 |
+| 批次 4 codecnv-* 系列 (SJIS / EUC / UTF-7 互转等) | not done | 打开 / 保存时的编码转换和「以指定编码重新打开」已覆盖主要用途; 对选区做编码内容转换极少用 |
+| 批次 5 偏好对话框 / 状态持久化 / i18n / 导入导出 / 类型别设置 / 字体行高 / 颜色覆盖 / 保存时备份 | done | |
+| 批次 5 会话恢复 (重开上次的标签) | done | 批次 9: 启动无命令行文件时恢复; 路径当不可信数据校验 (拒绝 UNC / 相对路径 / 超长), 跳过大文件, 偏好里可关 |
+| 批次 5 自动备份定时器 / 打开时文件锁 | not done | 保存时备份有了; 定时器需要在 UI 线程之外另起计时 / 写盘, 和「不常驻后台、不轮询」的原则冲突; 文件锁要 OS 级独占打开, 会让别的程序 (含 Tauri 版) 打不开同一文件 |
+| 批次 5 查找栏 / 侧栏 / 终端 / Grep 面板文字翻译 | not done | 菜单、对话框、状态栏、命令表、偏好已翻译; 这几处还是中文字面量 |
+| 批次 5 sakura.ini 导入 | partial | 只认 7 个明确对得上的键 |
+| 批次 6 视图开关 / 行号 / 状态栏 / 标尺 / 空白标记 / 当前行 / 小地图 / 状态栏内容 / 修改行标记 / 主题插件映射 | done | |
+| 批次 6 工具栏 / 功能键栏 / 活动栏 / 自绘标题栏 / 应用图标 | not done | 纯外观: 需要图标资源和自绘窗口边框 (`with_decorations(false)` 会丢系统的拖动 / 贴边行为); 菜单栏 + 命令面板已覆盖入口 |
+| 批次 6 固定列换行 / 避头尾 | not done | 现在只有按窗口宽度换行 |
+| 批次 6 打印页面设置对话框 | not done | 打印走系统浏览器的打印对话框, 页面设置在那里 |
+| 批次 6 插入日期 / 时间 / 戳记 | not done | 需要本地时区: std 没有, 加 `chrono` / `time` 要改 `Cargo.lock` (在 `ide-fast/` 之外), 本批次不碰; 用 UTC 会插错时间, 宁可不做 |
+| 批次 6 控制字符表 / 插入最近文件路径 / copy-html / 剪贴板历史 / base64·uudecode / 假名转换 | not done | 都是低频; 假名互转 `editcore` 里没有现成函数 (只有全角 / 半角), 不在这里另写一份语义 |
+| 批次 6 复制文件名 / 完整路径 | done | 批次 9 |
+| 批次 6 玻璃 / 半透明主题 + 背景亮度取色 | not done | 需要透明视口 + DWM 背景材质: workspace 禁 `unsafe`, 要引入 `window-vibrancy` 等新依赖 (改 `Cargo.lock`), 还要截屏取色。没有合理的原生近似, 玻璃主题在高速版里按不透明配色显示 |
+| 批次 7 Markdown 预览 (原生块渲染 / 点块跳行 / 大纲) | partial | `md_view.rs` 有标题 / 列表 (含任务) / 代码 / 表格 / 提示块 / 图片 / 链接, 点块回到源码行; 没有在预览里直接编辑、lint、HTML 导出、结构化查找 |
+| 批次 7 持久终端会话 | done | `terminal.rs` 常驻 shell + 行缓冲, 带单测; 一次性 `exec_cmd` 仍用于选区管道 |
+| 批次 7 终端外观设置 (字体 / 滚动行数 / 配色) | not done | 终端固定用等宽字体 |
+| 批次 7 差异比较 / Git 源代码管理面板 | done | `diff.rs`, `scm.rs` (git 调用拒绝本地 filter / diff 驱动, 不执行仓库配置里的命令) |
+| 批次 7 扩展面板 (启用开关 / 权限 / GitHub 安装 / 检查更新) | partial | 插件菜单里有启用开关、导入、删除、恢复内置; GitHub 安装和更新检查要 HTTP 客户端 (新依赖), 没做 |
+| 批次 7 宏菜单 | partial | 批次 9: 键盘宏保存 / 载入 (JSON); 「录成 Sakura .mac」(macro-rec-mac) 没做 |
+| 批次 7 工具菜单: 语法类型选择 / 历史管理 / SQL*Plus | not done | 语法由扩展名决定, 手动覆盖要在 `Doc` 上加类型字段并改所有 `registry.detect` 调用点; SQL*Plus 与 Vim 模式按 A8 排除 |
+| 批次 7 打印预览 (应用内分页) | not done | 在系统浏览器里预览 / 打印 |
+| 批次 8 脚本插件 (QuickJS 宿主 / 命令贡献 / `editor.write` / SVG / PPA / 文档关系图) | done | 惰性启动, 15 秒墙钟中断, 2 MB 结果上限, SVG 用 `svg_lite` 子集 |
+| 批次 8 `markdown.fence` (Pele / mermaid) 接入预览 | not done | 包能在 QuickJS 里渲染出 SVG, 但它用 CSS 变量 / 复杂样式, `svg_lite` 画不好 |
+| 批次 8 `agent.tool` 贡献 | not done | 没有 AI 面板就没有消费者 |
+| 批次 8 AI Chat 面板 (A4) | not done | 需要 HTTP 客户端、API key 存储和授权流程 (新依赖 + 密钥落盘), 没有合理的原生近似; 按 ROADMAP 留在 Tauri 版 |
+| 决策 A1-A3 (JS 引擎 / SVG) | done | rquickjs; 自带 `svg_lite` 代替 resvg |
+| 决策 A5 玻璃主题 | not done | 见上 |
+| 决策 A6 i18n | done | 中 / 日 / 英 |
+| 决策 A7 scm 逻辑 | done | 在 `ide-fast/src/scm.rs` 里自带, 没有动 Tauri 版 |
+| 决策 A8 Vim 模式 / SQL*Plus | not done (按决策排除) | editcore 里没有对应语义 |
+
+
 # ide-fast Parity Implementation Plan (merged from 6 area audits)
 
 Order within each batch is impact desc, effort asc. Each batch compiles and can be committed alone. Batches 1-2 hold the quick, high-value wins. The command registry comes in batch 3, so batches 1-2 use direct hooks into the existing `shortcuts()` and `menu()` code, which batch 3 then replaces.

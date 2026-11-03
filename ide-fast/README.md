@@ -31,6 +31,8 @@ ide-fast/
   src/main.rs         入口 + 启动耗时追踪 (IDE_FAST_TRACE=1)
   src/app.rs          菜单 / 标签 / 编辑区绘制与输入 / 查找条 / 状态栏
   src/doc.rs          文档模型: 行向量 + 光标 / 选区 + 撤销栈, 桥接 editcore
+  src/keymap.rs       命令注册表 + 键位表 (id / 默认键 / 冲突检测 / 模糊匹配), 快捷键分发和菜单提示的唯一来源
+  src/cmdui.rs        命令面板 / 键位设置 / 键位一览的窗口
   src/fonts.rs        系统 CJK 字体接成 fallback (不往程序里打包字体)
   docs/               设计说明、与 Tauri 版的差异清单、进度
   packaging/          独立安装包 (MSI / 便携 exe) 的构建脚本与说明
@@ -38,7 +40,7 @@ ide-fast/
 
 ## 现在有的 / 还没有的
 
-详见 `docs/ROADMAP.md`。简述: 有 多标签、编码保持的打开保存、Sakura 编辑与光标移动、撤销、剪贴板、查找置换 (正则)、语法高亮、设置落盘、侧栏 (文件树 / 大纲 / 后台 Grep)、书签、矩形选择、多光标、键盘宏与 Sakura `.mac` 宏、终端面板、Markdown 预览、自动换行、折叠、Grep 置换、命令行 `文件:行:列`、单实例、输入法。分割窗口、标签分组、打印、主题插件 / 插件 zip 导入。**没有**: 脚本插件的运行 (需要 JS 引擎, 留在 Tauri 版)。
+详见 `docs/ROADMAP.md`。简述: 有 多标签、编码保持的打开保存、Sakura 编辑与光标移动、撤销、剪贴板、查找置换 (正则)、语法高亮、设置落盘、侧栏 (文件树 / 大纲 / 后台 Grep)、书签、矩形选择、多光标、键盘宏与 Sakura `.mac` 宏、终端面板、Markdown 预览、自动换行、折叠、Grep 置换、命令行 `文件:行:列`、单实例、输入法。分割窗口、标签分组、打印、主题插件 / 插件 zip 导入、脚本插件 (QuickJS)、**命令面板 (Shift+F1 / Ctrl+Shift+P)**、**键位设置 (设置菜单) 与键位一览 (Ctrl+Q)**、Migemo 查找、会话恢复。**没有**: AI Chat、玻璃主题 (留在 Tauri 版) 以及一批低频项, 逐项原因见 `docs/PARITY-PLAN.md` 的状态总表。
 
 ## 构建与测量
 
