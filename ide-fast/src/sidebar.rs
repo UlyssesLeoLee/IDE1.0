@@ -11,6 +11,79 @@ pub enum Tab {
     Files,
     Outline,
     Search,
+    /// 源代码管理 (git 状态)
+    Scm,
+}
+
+/// 文件树上待确认 / 待输入的操作
+#[derive(Clone, PartialEq, Debug)]
+pub enum FileOp {
+    NewFile(PathBuf),
+    NewDir(PathBuf),
+    Rename(PathBuf),
+    Delete(PathBuf),
+}
+
+pub struct Pending {
+    pub op: FileOp,
+    /// 名字输入框
+    pub text: String,
+    pub error: Option<String>,
+    /// 刚弹出: 第一帧把焦点给输入框
+    pub fresh: bool,
+}
+
+/// 名字合法性: 不能空、不能带路径分隔符、不能是 `.` `..`、不能含系统保留字符
+pub fn check_name(name: &str) -> Result<(), String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err("名字不能为空".into());
+    }
+    if n == "." || n == ".." || n.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control()) {
+        return Err("名字里不能有 / \\ : * ? \" < > |".into());
+    }
+    if n.ends_with('.') || n.ends_with(' ') {
+        return Err("名字不能以点或空格结尾".into());
+    }
+    Ok(())
+}
+
+/// 在 dir 下新建空文件; 已存在就拒绝 (不覆盖)
+pub fn create_file(dir: &Path, name: &str) -> Result<PathBuf, String> {
+    check_name(name)?;
+    let p = dir.join(name.trim());
+    std::fs::OpenOptions::new().write(true).create_new(true).open(&p).map_err(|e| format!("新建失败: {e}"))?;
+    Ok(p)
+}
+
+pub fn create_dir(dir: &Path, name: &str) -> Result<PathBuf, String> {
+    check_name(name)?;
+    let p = dir.join(name.trim());
+    if p.exists() {
+        return Err("同名文件或文件夹已存在".into());
+    }
+    std::fs::create_dir(&p).map_err(|e| format!("新建失败: {e}"))?;
+    Ok(p)
+}
+
+/// 重命名 (留在原目录); 目标已存在就拒绝
+pub fn rename_entry(path: &Path, new_name: &str) -> Result<PathBuf, String> {
+    check_name(new_name)?;
+    let to = path.with_file_name(new_name.trim());
+    if to == path {
+        return Ok(to);
+    }
+    if to.exists() {
+        return Err("同名文件或文件夹已存在".into());
+    }
+    std::fs::rename(path, &to).map_err(|e| format!("重命名失败: {e}"))?;
+    Ok(to)
+}
+
+/// 删除文件或整个文件夹 (调用前界面已经让用户确认)
+pub fn delete_entry(path: &Path) -> Result<(), String> {
+    let r = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
+    r.map_err(|e| format!("删除失败: {e}"))
 }
 
 #[derive(Clone)]
@@ -26,6 +99,9 @@ pub struct Sidebar {
     pub root: Option<PathBuf>,
     children: HashMap<PathBuf, Vec<Entry>>,
     pub grep: Grep,
+    pub scm: crate::scm::Scm,
+    /// 文件树上正在进行的新建 / 重命名 / 删除
+    pub pending: Option<Pending>,
     /// 大纲缓存: (文档 id, 版本号) -> 条目
     outline_key: Option<(u64, u64)>,
     pub outline: Vec<OutlineEntry>,
@@ -42,6 +118,8 @@ impl Sidebar {
             root: None,
             children: HashMap::new(),
             grep: Grep::new(),
+            scm: crate::scm::Scm::new(),
+            pending: None,
             outline_key: None,
             outline: vec![],
         }
@@ -112,6 +190,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+
+    #[test]
+    fn file_operations_create_rename_delete_and_refuse_bad_names() {
+        let d = std::env::temp_dir().join(format!("ide-fast-ops-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let f = create_file(&d, "a.txt").unwrap();
+        assert!(f.is_file());
+        assert!(create_file(&d, "a.txt").is_err(), "已存在不覆盖");
+        for bad in ["", "  ", "a/b", "a\\b", "..", "x:y", "tail."] {
+            assert!(check_name(bad).is_err(), "{bad:?}");
+        }
+        let sub = create_dir(&d, "sub").unwrap();
+        assert!(sub.is_dir() && create_dir(&d, "sub").is_err());
+        let g = rename_entry(&f, "b.txt").unwrap();
+        assert!(g.is_file() && !f.exists());
+        std::fs::write(d.join("c.txt"), "x").unwrap();
+        assert!(rename_entry(&g, "c.txt").is_err(), "目标已存在");
+        std::fs::write(sub.join("in.txt"), "x").unwrap();
+        delete_entry(&sub).unwrap();
+        assert!(!sub.exists(), "文件夹连内容一起删");
+        delete_entry(&g).unwrap();
+        assert!(!g.exists());
+        assert!(delete_entry(&g).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn outline_is_cached_by_revision() {

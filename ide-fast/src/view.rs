@@ -193,9 +193,40 @@ pub fn minimap_rows(n: usize, h: usize) -> Vec<(usize, usize)> {
     (0..rows).map(|i| (i * n / rows, ((i + 1) * n / rows).max(i * n / rows + 1).min(n))).collect()
 }
 
+/// 统一差异 (`.diff` / `.patch`) 一行的着色: 文件头 / 块头蓝, 增绿, 删红; 其它行 None (用默认色)
+pub fn diff_line_color(line: &str, tc: &ThemeColors) -> Option<Color32> {
+    if line.starts_with("+++") || line.starts_with("---") || line.starts_with("diff ") || line.starts_with("index ") || line.starts_with("@@") {
+        Some(tc.blue)
+    } else if line.starts_with('+') {
+        Some(tc.green)
+    } else if line.starts_with('-') {
+        Some(tc.red)
+    } else {
+        None
+    }
+}
+
+/// 文件名是不是差异文件 (自己着色, editcore 没有这个语言)
+pub fn is_diff_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.ends_with(".diff") || n.ends_with(".patch")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn diff_lines_get_colours_by_their_first_characters() {
+        let tc = ThemeColors::builtin(true);
+        assert_eq!(diff_line_color("+added", &tc), Some(tc.green));
+        assert_eq!(diff_line_color("-gone", &tc), Some(tc.red));
+        assert_eq!(diff_line_color("@@ -1 +1 @@", &tc), Some(tc.blue));
+        assert_eq!(diff_line_color("+++ b/x", &tc), Some(tc.blue), "文件头不当成增行");
+        assert_eq!(diff_line_color("--- a/x", &tc), Some(tc.blue));
+        assert_eq!(diff_line_color(" context", &tc), None);
+        assert!(is_diff_name("Diff: a.rs.diff") && is_diff_name("x.PATCH") && !is_diff_name("diff.rs"));
+    }
+
 
     fn v(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()

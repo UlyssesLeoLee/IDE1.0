@@ -8,7 +8,7 @@ use crate::i18n::{lk, tr, trf, trz, Lang};
 use crate::plugins;
 use crate::prefs::{prefs_page, Prefs, PrefsTab};
 use crate::settings::Settings;
-use crate::sidebar::{Sidebar, Tab};
+use crate::sidebar::{FileOp, Sidebar, Tab};
 use crate::tabs::{self, CloseKind, JumpHist};
 use crate::terminal::Terminal;
 use editcore::document_io::{Charset, Eol};
@@ -98,6 +98,15 @@ pub struct App {
     bracket_cache: Option<((u64, u64, [usize; 2]), Option<([usize; 2], [usize; 2])>)>,
     /// 上一帧的活动标签下标: 变了就把新的活动标签滚进标签栏可见范围
     last_active: usize,
+    /// Markdown 预览: 图片纹理缓存与按 (文档, 版本) 缓存的解析结果
+    md_cache: crate::md_view::MdCache,
+    md_parsed: Option<((u64, u64), Vec<crate::markdown::Parsed>)>,
+    /// 预览要滚到的源码行 (大纲点击)
+    md_scroll_to: Option<usize>,
+    /// 当前的两份文档比较; 差异列表窗口 / 选择对比标签窗口
+    diff: Option<crate::diff::DiffView>,
+    diff_list_open: bool,
+    diff_pick: bool,
 }
 
 impl App {
@@ -110,7 +119,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false,
         };
         app.persist = persist;
         app.apply_settings(&st);
@@ -377,10 +386,10 @@ impl App {
         self.cur().goto(line.saturating_sub(1), col);
     }
 
-    /// 侧栏内容: 文件树 / 大纲 / Grep
+    /// 侧栏内容: 文件树 / 大纲 / Grep / Git
     fn side_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            for (t, name) in [(Tab::Files, "文件"), (Tab::Outline, "大纲"), (Tab::Search, "搜索")] {
+            for (t, name) in [(Tab::Files, "文件"), (Tab::Outline, "大纲"), (Tab::Search, "搜索"), (Tab::Scm, "Git")] {
                 if ui.selectable_label(self.side.tab == t, name).clicked() { self.side.tab = t; }
             }
         });
@@ -391,11 +400,18 @@ impl App {
                 match self.side.root.clone() {
                     None => { if ui.button("打开文件夹…").clicked() { self.open_folder_dialog(); } }
                     Some(root) => {
+                        let mut op: Option<FileOp> = None;
                         ui.horizontal(|ui| {
-                            ui.strong(root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string()));
+                            let title = ui.strong(root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.display().to_string()));
+                            title.context_menu(|ui| {
+                                if ui.button("新建文件…").clicked() { op = Some(FileOp::NewFile(root.clone())); ui.close(); }
+                                if ui.button("新建文件夹…").clicked() { op = Some(FileOp::NewDir(root.clone())); ui.close(); }
+                            });
                             if ui.small_button("刷新").clicked() { self.side.refresh(); }
                         });
-                        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| tree(ui, &mut self.side, &root, &mut open));
+                        self.pending_ui(ui);
+                        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| tree(ui, &mut self.side, &root, &mut open, &mut op));
+                        if let Some(o) = op { self.begin_file_op(o); }
                     }
                 }
             }
@@ -413,7 +429,10 @@ impl App {
                         });
                     }
                 });
-                if let Some(l) = jump { self.cur().goto(l, 0); }
+                if let Some(l) = jump {
+                    self.cur().goto(l, 0);
+                    if self.md_preview { self.md_scroll_to = Some(l); }
+                }
             }
             Tab::Search => {
                 let root = self.grep_root().unwrap_or_default();
@@ -422,8 +441,223 @@ impl App {
                 let evs = self.side.grep.panel(ui, &shown_root, has_cur);
                 for ev in evs { self.grep_event(ev); }
             }
+            Tab::Scm => self.scm_ui(ui, &mut open),
         }
         if let Some((p, l)) = open { self.open_at(&p, l, 0); }
+    }
+
+    /// 文件树操作的输入 / 确认条
+    fn pending_ui(&mut self, ui: &mut egui::Ui) {
+        let red = self.tc.red;
+        let Some(p) = self.side.pending.as_mut() else { return };
+        let name_of = |f: &std::path::Path| f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let (title, needs_text) = match &p.op {
+            FileOp::NewFile(_) => ("新建文件".to_string(), true),
+            FileOp::NewDir(_) => ("新建文件夹".to_string(), true),
+            FileOp::Rename(f) => (format!("重命名 {}", name_of(f)), true),
+            FileOp::Delete(f) => (format!("确定删除 {} ?", name_of(f)), false),
+        };
+        let mut go = false;
+        let mut cancel = false;
+        ui.group(|ui| {
+            ui.label(title);
+            if needs_text {
+                let r = ui.add(egui::TextEdit::singleline(&mut p.text).desired_width(f32::INFINITY));
+                if p.fresh { r.request_focus(); p.fresh = false; }
+                if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) { go = true; }
+                if ui.input(|i| i.key_pressed(Key::Escape)) { cancel = true; }
+            }
+            if let Some(e) = &p.error { ui.colored_label(red, e); }
+            ui.horizontal(|ui| {
+                if ui.button("确定").clicked() { go = true; }
+                if ui.button("取消").clicked() { cancel = true; }
+            });
+        });
+        if cancel { self.side.pending = None; } else if go { self.apply_file_op(); }
+    }
+
+    fn begin_file_op(&mut self, op: FileOp) {
+        let text = match &op { FileOp::Rename(p) => p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), _ => String::new() };
+        self.side.pending = Some(crate::sidebar::Pending { op, text, error: None, fresh: true });
+    }
+
+    /// 执行文件树上的操作; 失败把原因留在条上, 成功后刷新树并同步已打开的标签
+    fn apply_file_op(&mut self) {
+        let Some(p) = self.side.pending.as_mut() else { return };
+        let mut open_after: Option<PathBuf> = None;
+        let mut moved: Option<(PathBuf, PathBuf)> = None;
+        let mut deleted: Option<PathBuf> = None;
+        let r: Result<(), String> = match &p.op {
+            FileOp::NewFile(d) => crate::sidebar::create_file(d, &p.text).map(|f| open_after = Some(f)),
+            FileOp::NewDir(d) => crate::sidebar::create_dir(d, &p.text).map(|_| ()),
+            FileOp::Rename(f) => crate::sidebar::rename_entry(f, &p.text).map(|to| moved = Some((f.clone(), to))),
+            FileOp::Delete(f) => crate::sidebar::delete_entry(f).map(|_| deleted = Some(f.clone())),
+        };
+        if let Err(e) = r { p.error = Some(e); return; }
+        self.side.pending = None;
+        if let Some((from, to)) = moved { self.docs_follow_rename(&from, &to); }
+        if let Some(f) = deleted {
+            for d in self.docs.iter_mut().filter(|d| d.path.as_deref().is_some_and(|p| p.starts_with(&f))) { d.dirty = true; d.tip = "磁盘上的文件已被删除".into(); }
+        }
+        self.side.refresh();
+        if let Some(f) = open_after { self.open_path(&f); }
+    }
+
+    /// 文件 / 文件夹改名后, 打开着的标签跟着换路径和标题
+    fn docs_follow_rename(&mut self, from: &std::path::Path, to: &std::path::Path) {
+        for d in self.docs.iter_mut() {
+            let Some(old) = d.path.clone() else { continue };
+            if let Ok(rest) = old.strip_prefix(from) {
+                let np = if rest.as_os_str().is_empty() { to.to_path_buf() } else { to.join(rest) };
+                d.name = np.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                d.path = Some(np);
+            }
+        }
+    }
+
+    /// Git 页: 分支、改动列表, 点文件打开, 「差异」在新标签里看统一差异, 暂存 / 取消暂存
+    fn scm_ui(&mut self, ui: &mut egui::Ui, open: &mut Option<(PathBuf, usize)>) {
+        let root = self.grep_root().unwrap_or_default();
+        if self.side.scm.poll() { ui.ctx().request_repaint(); }
+        if !self.side.scm.loaded && !self.side.scm.loading() { self.side.scm.refresh(root.clone()); }
+        if self.side.scm.loading() { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
+        ui.horizontal(|ui| {
+            let st = &self.side.scm.status;
+            ui.strong(if st.branch.is_empty() { "Git".to_string() } else { format!("分支 {}", st.branch) });
+            if ui.small_button("刷新").clicked() { self.side.scm.refresh(root.clone()); }
+            if self.side.scm.loading() { ui.label("…"); }
+        });
+        if let Some(e) = self.side.scm.status.error.clone() { ui.colored_label(self.tc.red, e); }
+        let Some(top) = self.side.scm.status.top.clone() else { return };
+        let changes = self.side.scm.status.changes.clone();
+        if changes.is_empty() && self.side.scm.status.error.is_none() { ui.label("没有改动"); }
+        let tc = self.tc;
+        let mut act: Option<(String, u8)> = None; // 0 = 打开, 1 = 差异, 2 = 暂存, 3 = 取消暂存
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            for (title, staged) in [("已暂存的更改", true), ("更改", false)] {
+                let rows: Vec<&crate::scm::Change> = changes.iter().filter(|c| c.staged() == staged).collect();
+                if rows.is_empty() { continue; }
+                ui.label(egui::RichText::new(format!("{title} ({})", rows.len())).strong());
+                for c in rows {
+                    ui.horizontal(|ui| {
+                        let col = match c.letter() { 'M' => tc.yellow, 'A' | 'U' => tc.green, 'D' => tc.red, _ => tc.blue };
+                        ui.label(egui::RichText::new(c.letter().to_string()).monospace().color(col));
+                        if ui.small_button("差异").clicked() { act = Some((c.path.clone(), 1)); }
+                        if staged { if ui.small_button("-").on_hover_text("取消暂存").clicked() { act = Some((c.path.clone(), 3)); } }
+                        else if ui.small_button("+").on_hover_text("暂存").clicked() { act = Some((c.path.clone(), 2)); }
+                        if ui.selectable_label(false, &c.path).clicked() { act = Some((c.path.clone(), 0)); }
+                    });
+                }
+            }
+        });
+        let Some((path, kind)) = act else { return };
+        match kind {
+            0 => *open = Some((top.join(&path), 1)),
+            1 => {
+                let staged = changes.iter().any(|c| c.path == path && c.staged() && c.y == ' ');
+                match crate::scm::file_diff(&top, &path, staged) {
+                    Ok(t) if t.trim().is_empty() => self.cur().tip = format!("{path}: 没有可显示的差异 (未跟踪文件?)"),
+                    Ok(t) => self.open_text_doc(&format!("Diff: {path}.diff"), &t),
+                    Err(e) => self.cur().tip = e,
+                }
+            }
+            k => {
+                let r = if k == 2 { crate::scm::stage(&top, &path) } else { crate::scm::unstage(&top, &path) };
+                if let Err(e) = r { self.cur().tip = e; }
+                self.side.scm.refresh(root);
+            }
+        }
+    }
+
+    /// 把一段文字开成新的只读标签 (Git 差异 / 文档比较结果)
+    fn open_text_doc(&mut self, name: &str, text: &str) {
+        let id = self.id();
+        let mut d = Doc::untitled(id, 0);
+        d.name = name.to_string();
+        d.lines = text.trim_end_matches('\n').split('\n').map(str::to_string).collect();
+        d.base = d.lines.clone();
+        d.readonly = true;
+        self.docs.push(d);
+        self.active = self.docs.len() - 1;
+    }
+
+    /// 比较当前标签 (左) 和第 `other` 个标签 (右)
+    fn start_diff(&mut self, other: usize) {
+        let cur = self.active.min(self.docs.len() - 1);
+        if other == cur || other >= self.docs.len() { return; }
+        let (l, r) = (&self.docs[cur], &self.docs[other]);
+        let v = crate::diff::DiffView::new(l.id, r.id, &l.lines, &r.lines, (l.rev, r.rev));
+        let tip = format!("比较 {} ↔ {}: {}", l.name, r.name, v.summary());
+        self.diff = Some(v);
+        self.cur().tip = tip;
+    }
+
+    /// 选一个文件打开成标签, 再和当前标签比较
+    fn diff_with_file(&mut self) {
+        let Some(p) = rfd::FileDialog::new().pick_file() else { return };
+        let cur_id = self.cur().id;
+        self.open_path(&p);
+        let other = self.active.min(self.docs.len() - 1);
+        if let Some(ci) = self.docs.iter().position(|d| d.id == cur_id) {
+            self.active = ci;
+            self.start_diff(other);
+        }
+    }
+
+    /// 下一处 / 上一处差异 (在当前标签所在的那一侧找, 到头回绕)
+    fn diff_step(&mut self, forward: bool) {
+        let Some(v) = &self.diff else { self.cur().tip = "没有进行中的比较".into(); return };
+        let (id, row) = { let d = &self.docs[self.active.min(self.docs.len() - 1)]; (d.id, d.cursor[0]) };
+        if id != v.left && id != v.right { self.cur().tip = "当前标签不在比较里".into(); return; }
+        match crate::diff::step(&v.hunks, row, forward, id == v.right) {
+            Some(r) => self.cur().goto(r, 0),
+            None => self.cur().tip = "两份文档完全相同".into(),
+        }
+    }
+
+    /// 比较的文档变了就重算; 任何一份被关掉就结束比较
+    fn diff_refresh(&mut self) {
+        let Some(v) = self.diff.as_mut() else { return };
+        let (a, b) = (self.docs.iter().find(|d| d.id == v.left), self.docs.iter().find(|d| d.id == v.right));
+        match (a, b) {
+            (Some(a), Some(b)) => v.refresh(&a.lines, &b.lines, (a.rev, b.rev)),
+            _ => { self.diff = None; self.diff_list_open = false; }
+        }
+    }
+
+    /// 选择对比标签 / 差异列表 两个小窗口
+    fn diff_windows(&mut self, ctx: &egui::Context) {
+        if self.diff_pick {
+            let mut open = true;
+            let mut pick: Option<usize> = None;
+            let cur = self.active.min(self.docs.len() - 1);
+            egui::Window::new("与哪个标签比较").open(&mut open).collapsible(false).show(ctx, |ui| {
+                for (i, d) in self.docs.iter().enumerate().filter(|(i, _)| *i != cur) {
+                    if ui.selectable_label(false, &d.name).clicked() { pick = Some(i); }
+                }
+                if self.docs.len() < 2 { ui.label("需要至少两个标签"); }
+            });
+            if let Some(i) = pick { self.start_diff(i); open = false; }
+            self.diff_pick = open;
+        }
+        if self.diff_list_open {
+            let mut open = true;
+            let mut jump: Option<usize> = None;
+            egui::Window::new("差异列表").open(&mut open).default_width(280.0).show(ctx, |ui| {
+                let Some(v) = &self.diff else { ui.label("没有进行中的比较"); return };
+                ui.label(v.summary());
+                let right = self.docs[self.active.min(self.docs.len() - 1)].id == v.right;
+                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    for (n, h) in v.hunks.iter().enumerate() {
+                        let (kind, (s, len)) = (if h.a_len == 0 { "新增" } else if h.b_len == 0 { "删除" } else { "修改" }, if right { (h.b_start, h.b_len) } else { (h.a_start, h.a_len) });
+                        let label = format!("{}. {kind}  第 {} 行起 ({} 行)", n + 1, s + 1, len);
+                        if ui.selectable_label(false, label).clicked() { jump = Some(s); }
+                    }
+                });
+            });
+            if let Some(r) = jump { self.cur().goto(r, 0); }
+            self.diff_list_open = open;
+        }
     }
 
     /// Grep 的搜索根: 打开的文件夹; 没有就用当前文件所在目录, 再没有就是进程工作目录
@@ -836,6 +1070,14 @@ impl App {
                 if ui.button(lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if ui.button(lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
                 if ui.button(lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
+                ui.menu_button("比较", |ui| {
+                    if ui.button("与其他标签比较…").clicked() { self.diff_pick = true; ui.close(); }
+                    if ui.button("与文件比较…").clicked() { self.diff_with_file(); ui.close(); }
+                    if ui.button("差异列表").clicked() { self.diff_list_open = true; ui.close(); }
+                    if ui.button("下一处差异 (Alt+↓)").clicked() { self.diff_step(true); ui.close(); }
+                    if ui.button("上一处差异 (Alt+↑)").clicked() { self.diff_step(false); ui.close(); }
+                    if ui.button("清除比较").clicked() { self.diff = None; self.diff_list_open = false; ui.close(); }
+                });
             });
             ui.menu_button(tr("menu.fold"), |ui| {
                 if ui.button(lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
@@ -989,7 +1231,9 @@ impl App {
     fn term_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.strong("终端");
-            if ui.small_button("清屏").clicked() { self.term.output.clear(); }
+            if ui.small_button("清屏").clicked() { self.term.clear(); }
+            if ui.small_button("重启").on_hover_text("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)").clicked() { self.term.restart(); }
+            ui.checkbox(&mut self.term.persistent, "常驻会话");
             if ui.small_button("×").clicked() { self.term.open = false; }
             ui.checkbox(&mut self.term_stdin, "选区作标准输入");
             ui.checkbox(&mut self.term_replace, "输出替换选区");
@@ -997,10 +1241,11 @@ impl App {
         });
         let h = (ui.available_height() - 28.0).max(30.0);
         egui::ScrollArea::vertical().max_height(h).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-            ui.add(egui::Label::new(egui::RichText::new(&self.term.output).monospace()).selectable(true));
+            ui.add(egui::Label::new(egui::RichText::new(self.term.display()).monospace()).selectable(true));
         });
         let r = ui.add(egui::TextEdit::singleline(&mut self.term.input).font(egui::TextStyle::Monospace).hint_text("输入命令, Enter 执行").desired_width(f32::INFINITY));
         if r.has_focus() {
+            if self.term.input.is_empty() && ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C)) { self.term.restart(); }
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) { self.term.history_step(true); }
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) { self.term.history_step(false); }
         }
@@ -1017,40 +1262,34 @@ impl App {
         }
     }
 
-    /// Markdown 预览: 块来自文档行的实时解析, 点块 = 编辑区跳到那一行
+    /// Markdown 预览: 块按 (文档, 版本) 缓存解析; 点块 = 编辑区跳到那一行, 点链接 = 打开 / 跳到标题
     fn md_ui(&mut self, ui: &mut egui::Ui) {
-        use crate::markdown::{inline, parse, Block};
-        use egui::RichText;
         let ai = self.active.min(self.docs.len() - 1);
-        let blocks = parse(&self.docs[ai].lines);
-        let mut jump: Option<usize> = None;
-        let (text_c, strong_c, code_bg) = (ui.visuals().text_color(), ui.visuals().strong_text_color(), ui.visuals().code_bg_color);
-        let rich = |s: &str| -> egui::text::LayoutJob {
-            let mut job = egui::text::LayoutJob::default();
-            for (t, b, i, c) in inline(s) {
-                let mut f = egui::TextFormat { font_id: if c { FontId::monospace(13.0) } else { FontId::proportional(14.0) }, color: text_c, italics: i, ..Default::default() };
-                if b { f.font_id = FontId::proportional(15.0); f.color = strong_c; }
-                if c { f.background = code_bg; }
-                job.append(&t, 0.0, f);
+        let key = (self.docs[ai].id, self.docs[ai].rev);
+        if self.md_parsed.as_ref().map(|p| p.0) != Some(key) {
+            self.md_parsed = Some((key, crate::markdown::parse(&self.docs[ai].lines)));
+        }
+        let blocks = self.md_parsed.take().expect("刚刚填好");
+        let theme = self.tc.syntax_theme();
+        let base = self.docs[ai].path.as_ref().and_then(|p| p.parent()).map(|p| p.to_path_buf());
+        let cx = crate::md_view::MdCtx { base: base.as_deref(), registry: &self.registry, theme: &theme, tc: self.tc };
+        let ev = crate::md_view::show(ui, &blocks.1, &cx, &mut self.md_cache, self.md_scroll_to.take());
+        if let Some(l) = ev.jump { self.docs[ai].goto(l, 0); }
+        if let Some(link) = ev.link {
+            if let Some(name) = link.strip_prefix("wiki:") {
+                self.docs[ai].tip = format!("维基链接 [[{name}]]: 预览里不跳转");
+            } else if let Some(anchor) = link.strip_prefix('#') {
+                // 页内锚点: 找标题文字相同 (忽略大小写和空白) 的块
+                let norm = |s: &str| s.trim().to_lowercase().replace(' ', "-");
+                let hit = blocks.1.iter().position(|b| matches!(&b.block, crate::markdown::Block::Heading { text, .. } if norm(text) == norm(anchor)));
+                match hit { Some(i) => self.md_scroll_to = Some(blocks.1[i].line), None => self.docs[ai].tip = format!("没有找到标题 #{anchor}") }
+            } else if crate::md_view::openable(&link) {
+                if let Err(e) = crate::md_view::open_url(&link) { self.docs[ai].tip = e; }
+            } else {
+                self.docs[ai].tip = format!("不打开此链接: {link}");
             }
-            job
-        };
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for b in &blocks {
-                let r = match &b.block {
-                    Block::Heading { level, text } => ui.label(RichText::new(text).strong().size(match level { 1 => 26.0, 2 => 21.0, 3 => 18.0, _ => 15.0 })),
-                    Block::Para(t) => ui.label(rich(t)),
-                    Block::Quote(t) => ui.label(RichText::new(format!("│ {t}")).italics().weak()),
-                    Block::Code { text, .. } => ui.label(RichText::new(text).monospace().background_color(ui.visuals().code_bg_color)),
-                    Block::List { ordered, items } => ui.vertical(|ui| { for (k, it) in items.iter().enumerate() { ui.label(rich(&format!("{} {}", if *ordered { format!("{}.", k + 1) } else { "•".into() }, it))); } }).response,
-                    Block::Table { rows } => ui.vertical(|ui| { for (k, row) in rows.iter().enumerate() { let t = row.join("   │   "); ui.label(if k == 0 { RichText::new(t).strong() } else { RichText::new(t) }); } }).response,
-                    Block::Rule => { ui.separator(); ui.label("") }
-                };
-                if r.interact(Sense::click()).clicked() { jump = Some(b.line); }
-                ui.add_space(6.0);
-            }
-        });
-        if let Some(l) = jump { self.docs[ai].goto(l, 0); }
+        }
+        self.md_parsed = Some(blocks);
     }
 
     /// 自动换行下的 ↑ ↓ Home End: 用当前行 (和相邻行) 的真实排版找「上一 / 下一显示行」同一横坐标处
@@ -1125,6 +1364,9 @@ impl App {
         else if cmd(ctx, Modifiers::COMMAND, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::I) { self.open_find(false); }
         if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
         if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
+        if self.diff.is_some() {
+            if cmd(ctx, Modifiers::ALT, Key::ArrowDown) { self.diff_step(true); } else if cmd(ctx, Modifiers::ALT, Key::ArrowUp) { self.diff_step(false); }
+        }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket) { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::CloseBracket) { self.cur().folds.clear(); }
         // 放在折叠 (Ctrl+Shift+[ / ]) 之后: 否则带 Shift 的组合会先被对括弧跳转吃掉
@@ -1467,6 +1709,7 @@ impl App {
             ed_id = Some(resp.id);
             let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
             let d = &self.docs[ai];
+            let dmarks: Option<&[crate::diff::Mark]> = self.diff.as_ref().and_then(|v| v.marks_of(d.id));
             let (first, last) = if use_offs {
                 let f = offs.partition_point(|&o| o <= viewport.min.y).saturating_sub(1).min(d.lines.len().saturating_sub(1));
                 let l = (offs.partition_point(|&o| o < viewport.max.y) + 1).min(d.lines.len());
@@ -1475,12 +1718,14 @@ impl App {
                 ((viewport.min.y / row_h).floor().max(0.0) as usize, ((viewport.max.y / row_h).ceil() as usize + 1).min(d.lines.len()))
             };
             let x0 = rect.min.x + gutter + pad;
+            let is_diff = crate::view::is_diff_name(&d.name);
             for row in first..last {
                 if d.is_hidden(row) { continue; }
                 let y = rect.min.y + top(row);
                 let (disp, map) = expand_tabs(&d.lines[row], tab);
                 widest = widest.max(disp.chars().count());
-                let mut job = highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color, row_h);
+                let row_c = if is_diff { crate::view::diff_line_color(&d.lines[row], &tc).unwrap_or(text_color) } else { text_color };
+                let mut job = highlight_job(&d.lines[row], &disp, &map, if is_diff { None } else { cfg.as_ref() }, &theme, &font, row_c, row_h);
                 if wrap { job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true; }
                 let galley = painter.layout_job(job);
                 // 选区 / 查找命中的底色都走这一个函数: 一段 [c0, c1) 列 (自动换行时逐字符取排版位置, 否则一整块)
@@ -1546,6 +1791,11 @@ impl App {
                 painter.galley(Pos2::new(x0, y), galley, text_color);
                 if d.changed_cache.as_ref().map(|c| c.1.get(row).copied().unwrap_or(false)).unwrap_or(false) {
                     painter.rect_filled(Rect::from_min_size(Pos2::new(rect.min.x + gutter - 5.0, y), Vec2::new(3.0, row_h)), 0.0, tc.yellow);
+                }
+                if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
+                    use crate::diff::Mark;
+                    let (c, h) = match m { Mark::Added => (tc.green, row_h), Mark::Changed => (tc.orange, row_h), Mark::Removed => (tc.red, row_h), Mark::Gap => (tc.red, 3.0), Mark::Same => (tc.fg, 0.0) };
+                    if h > 0.0 { painter.rect_filled(Rect::from_min_size(Pos2::new(rect.min.x + gutter - 9.0, y), Vec2::new(3.0, h)), 0.0, c); }
                 }
                 if d.folds.iter().any(|f| f.0 == row) {
                     painter.text(Pos2::new(rect.min.x + 2.0, y + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, "▸", font.clone(), weak);
@@ -1705,12 +1955,23 @@ enum TabCmd {
     Move(usize, bool),
 }
 
-fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut Option<(PathBuf, usize)>) {
+fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut Option<(PathBuf, usize)>, op: &mut Option<FileOp>) {
     for e in side.children_of(dir) {
         if e.is_dir {
-            egui::CollapsingHeader::new(&e.name).id_salt(&e.path).show(ui, |ui| tree(ui, side, &e.path, open));
-        } else if ui.selectable_label(false, &e.name).clicked() {
-            *open = Some((e.path.clone(), 1));
+            let h = egui::CollapsingHeader::new(&e.name).id_salt(&e.path).show(ui, |ui| tree(ui, side, &e.path, open, op));
+            h.header_response.context_menu(|ui| {
+                if ui.button("新建文件…").clicked() { *op = Some(FileOp::NewFile(e.path.clone())); ui.close(); }
+                if ui.button("新建文件夹…").clicked() { *op = Some(FileOp::NewDir(e.path.clone())); ui.close(); }
+                if ui.button("重命名…").clicked() { *op = Some(FileOp::Rename(e.path.clone())); ui.close(); }
+                if ui.button("删除…").clicked() { *op = Some(FileOp::Delete(e.path.clone())); ui.close(); }
+            });
+        } else {
+            let r = ui.selectable_label(false, &e.name);
+            if r.clicked() { *open = Some((e.path.clone(), 1)); }
+            r.context_menu(|ui| {
+                if ui.button("重命名…").clicked() { *op = Some(FileOp::Rename(e.path.clone())); ui.close(); }
+                if ui.button("删除…").clicked() { *op = Some(FileOp::Delete(e.path.clone())); ui.close(); }
+            });
         }
     }
 }
@@ -1824,6 +2085,8 @@ impl eframe::App for App {
         if self.prefs.is_some() { self.prefs_window(ctx); }
         if self.goto_open { self.goto_window(ctx); }
         if self.bm_open { self.bookmark_window(ctx); }
+        self.diff_refresh();
+        self.diff_windows(ctx);
         if self.props.is_some() { self.props_window(ctx); }
         if self.split_on {
             let last = self.docs.len() - 1;
@@ -1967,7 +2230,7 @@ impl eframe::App for App {
                 d.edit("paste", Some(out.trim_end_matches(['\r', '\n']).to_string()));
             }
         }
-        if self.term.running() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
+        if self.term.busy() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
         let is_md = {
             let n = self.docs[self.active.min(self.docs.len() - 1)].name.to_lowercase();
             n.ends_with(".md") || n.ends_with(".markdown")
@@ -2087,6 +2350,75 @@ mod tests {
         a.set_minimal();
         assert_eq!((a.side.open, a.term.open, a.md_preview, a.cfg.view.ruler), (false, false, false, false));
         assert!(a.cfg.view.status_bar, "极简布局仍留状态栏");
+    }
+
+    fn set_lines(d: &mut Doc, text: &str) {
+        d.lines = text.split('\n').map(str::to_string).collect();
+        d.rev += 1;
+    }
+
+    #[test]
+    fn comparing_two_tabs_marks_lines_tracks_edits_and_ends_when_a_tab_closes() {
+        let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+        a.new_doc();
+        set_lines(&mut a.docs[0], "a\nb\nc");
+        set_lines(&mut a.docs[1], "a\nX\nc\nd");
+        a.active = 0;
+        a.start_diff(1);
+        let v = a.diff.as_ref().expect("比较已开始");
+        assert_eq!(v.hunks.len(), 2, "第 2 行改了, 末尾多一行");
+        let (l, r) = (v.left, v.right);
+        assert!(a.diff.as_ref().unwrap().marks_of(l).is_some() && a.diff.as_ref().unwrap().marks_of(r).is_some());
+        // 改右边: 版本号变了, 重算
+        set_lines(&mut a.docs[1], "a\nb\nc");
+        a.diff_refresh();
+        assert!(a.diff.as_ref().unwrap().hunks.is_empty());
+        // 下一处差异在没有差异时给提示而不是动光标
+        a.diff_step(true);
+        assert_eq!(a.docs[0].cursor, [0, 0]);
+        // 关掉一份: 比较结束
+        a.docs.truncate(1);
+        a.diff_refresh();
+        assert!(a.diff.is_none());
+    }
+
+    #[test]
+    fn diff_step_walks_hunks_and_wraps() {
+        let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+        a.new_doc();
+        set_lines(&mut a.docs[0], "1\n2\n3\n4\n5\n6");
+        set_lines(&mut a.docs[1], "1\nX\n3\n4\nY\n6");
+        a.active = 1; // 右侧当前
+        a.docs[1].cursor = [0, 0];
+        a.diff = Some(crate::diff::DiffView::new(a.docs[0].id, a.docs[1].id, &a.docs[0].lines, &a.docs[1].lines, (a.docs[0].rev, a.docs[1].rev)));
+        a.diff_step(true);
+        assert_eq!(a.docs[1].cursor[0], 1);
+        a.diff_step(true);
+        assert_eq!(a.docs[1].cursor[0], 4);
+        a.diff_step(true);
+        assert_eq!(a.docs[1].cursor[0], 1, "到头回绕");
+        a.diff_step(false);
+        assert_eq!(a.docs[1].cursor[0], 4, "往回也回绕");
+    }
+
+    #[test]
+    fn renaming_a_file_or_folder_retargets_open_tabs() {
+        let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+        a.docs[0].path = Some(PathBuf::from("/p/old/a.txt"));
+        a.docs[0].name = "a.txt".into();
+        a.docs_follow_rename(std::path::Path::new("/p/old"), std::path::Path::new("/p/new"));
+        assert_eq!(a.docs[0].path.as_deref(), Some(std::path::Path::new("/p/new/a.txt")));
+        a.docs_follow_rename(std::path::Path::new("/p/new/a.txt"), std::path::Path::new("/p/new/b.md"));
+        assert_eq!((a.docs[0].name.as_str(), a.docs[0].path.as_deref()), ("b.md", Some(std::path::Path::new("/p/new/b.md"))));
+    }
+
+    #[test]
+    fn opening_a_text_doc_makes_a_read_only_tab() {
+        let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+        a.open_text_doc("Diff: x.diff", "@@ -1 +1 @@\n-a\n+b\n");
+        let d = a.cur();
+        assert!(d.readonly && !d.dirty && d.name == "Diff: x.diff");
+        assert_eq!(d.lines, vec!["@@ -1 +1 @@", "-a", "+b"]);
     }
 
     #[test]
