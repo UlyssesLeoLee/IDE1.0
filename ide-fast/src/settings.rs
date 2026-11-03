@@ -163,6 +163,8 @@ pub struct ViewState {
     pub minimap: bool,
     /// 折行列数 (0 = 按窗口宽度); 只在开着自动换行时有效
     pub wrap_col: usize,
+    /// 固定列数折行时是否应用行头 / 行尾禁则
+    pub kinsoku: bool,
     /// 戳记: 内容 (0 日期 / 1 时间 / 2 日期+时间) 与位置 (0 行首 / 1 光标处), 见 `textconv::StampKind`
     pub stamp_kind: u8,
     pub stamp_pos: u8,
@@ -170,7 +172,7 @@ pub struct ViewState {
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, wrap_col: 0, stamp_kind: 2, stamp_pos: 0 }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, wrap_col: 0, kinsoku: true, stamp_kind: 2, stamp_pos: 0 }
     }
 }
 
@@ -305,6 +307,7 @@ impl Settings {
         b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
         b_of(w, "line_numbers", &mut self.view.line_numbers); b_of(w, "status_bar", &mut self.view.status_bar); b_of(w, "whitespace", &mut self.view.whitespace);
         b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap);
+        if let Some(b) = w["kinsoku"].as_bool() { self.view.kinsoku = b; }
         if let Some(n) = w["wrap_col"].as_u64() { self.view.wrap_col = if n == 0 { 0 } else { (n as usize).clamp(10, crate::tools::WRAP_COL_MAX) }; }
         if let Some(n) = w["stamp_kind"].as_u64() { self.view.stamp_kind = n.min(2) as u8; }
         if let Some(n) = w["stamp_pos"].as_u64() { self.view.stamp_pos = n.min(1) as u8; }
@@ -343,7 +346,7 @@ impl Settings {
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
         o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom,
             "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap,
-            "wrap_col": w.wrap_col, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos }));
+            "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos }));
         v
     }
 
@@ -511,7 +514,7 @@ mod tests {
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, wrap_col: 72, stamp_kind: 1, stamp_pos: 1 };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, wrap_col: 72, kinsoku: false, stamp_kind: 1, stamp_pos: 1 };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉

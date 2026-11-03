@@ -135,8 +135,19 @@ impl App {
             KApp::WrapCol => { let n = self.cfg.view.wrap_col; self.tools.open_wrap(n); }
             KApp::WrapWindow => self.set_wrap_col(0),
             KApp::WrapNone => self.wrap = false,
-            KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake => self.cur().tip = "标签跳转尚未接上".into(),
-            KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack => self.cur().tip = "增量查找条尚未接上".into(),
+            KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake => self.run_tag(a),
+            KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack => {
+                let (fwd, regex, migemo) = match a {
+                    KApp::IsFwd => (true, false, false),
+                    KApp::IsBack => (false, false, false),
+                    KApp::IsRegexFwd => (true, true, false),
+                    KApp::IsRegexBack => (false, true, false),
+                    KApp::IsMigemoFwd => (true, false, true),
+                    _ => (false, false, true),
+                };
+                let i = self.active.min(self.docs.len() - 1);
+                self.find.open_isearch(&self.docs[i], fwd, regex, migemo);
+            }
             _ => {}
         }
     }

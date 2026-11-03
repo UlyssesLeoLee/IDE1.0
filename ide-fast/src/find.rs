@@ -88,6 +88,8 @@ pub struct Find {
     pub msg: String,
     /// 正则写错了的说明 (边输入边检查)
     pub err: Option<String>,
+    /// 独立增量查找条 (isearch) 的方向: Some(true) = 向后, Some(false) = 向前, None = 普通查找栏
+    pub isearch: Option<bool>,
     focus: Focus,
     /// 增量查找的起点: 打开查找栏时 (或上一次明确"找下一个"之后) 的位置
     start: [usize; 2],
@@ -98,7 +100,7 @@ pub struct Find {
 
 impl Find {
     pub fn new() -> Self {
-        Find { open: false, replace: false, needle: String::new(), repl: String::new(), opts: FindOpts::default(), marks: true, in_sel: false, msg: String::new(), err: None, focus: Focus::None, start: [0, 0], last: None, cache: HashMap::new() }
+        Find { open: false, replace: false, needle: String::new(), repl: String::new(), opts: FindOpts::default(), marks: true, in_sel: false, msg: String::new(), err: None, isearch: None, focus: Focus::None, start: [0, 0], last: None, cache: HashMap::new() }
     }
 
     /// 打开查找栏: 单行选区的文字作查找串, 记下增量查找的起点; `replace` = 同时显示置换行并把焦点放在它上面
@@ -108,6 +110,7 @@ impl Find {
         }
         self.start = d.sel.map(|s| [s[0], s[1]]).unwrap_or(d.cursor);
         self.open = true;
+        self.isearch = None;
         if replace {
             self.replace = true;
         }
@@ -115,6 +118,21 @@ impl Find {
         self.focus = if replace && !self.needle.is_empty() { Focus::Repl } else { Focus::Find };
         self.err = d.find_error(&self.needle, self.opts);
         self.last = Some((self.needle.clone(), self.opts)); // 打开时不动选区
+    }
+
+    /// 打开独立的增量查找条 (Sakura 的 isearch): 查找串从空开始, 边输入边从光标处往 `fwd` 方向找; 正则 / Migemo 由命令决定
+    pub fn open_isearch(&mut self, d: &Doc, fwd: bool, regex: bool, migemo: bool) {
+        self.opts.regex = regex;
+        self.opts.migemo = migemo;
+        self.needle.clear();
+        self.replace = false;
+        self.isearch = Some(fwd);
+        self.start = d.sel.map(|s| [s[0], s[1]]).unwrap_or(d.cursor);
+        self.open = true;
+        self.focus = Focus::Find;
+        self.err = None;
+        self.msg.clear();
+        self.last = Some((String::new(), self.opts));
     }
 
     /// 找下一处 / 上一处 (F3 / Shift+F3); 查找串是空的就拿选区或光标下的单词
@@ -192,7 +210,11 @@ impl Find {
             self.msg.clear();
             return;
         }
-        match d.find_from(&self.needle, self.opts, self.start) {
+        let r = match self.isearch {
+            Some(false) => d.find_from_dir(&self.needle, self.opts, false, self.start),
+            _ => d.find_from(&self.needle, self.opts, self.start),
+        };
+        match r {
             Ok(_) => self.msg = d.tip.clone(),
             Err(e) => self.err = Some(e),
         }
@@ -228,6 +250,49 @@ impl Find {
 
     /// 查找栏 (底部面板里画): 第一行查找串 + 选项, 第二行 (开着置换时) 置换串 + 按钮
     pub fn bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
+        if self.isearch.is_some() {
+            self.isearch_bar(ui, d);
+        } else {
+            self.full_bar(ui, d);
+        }
+        // 查找串 / 条件变了就边输入边找 (打开栏、F3、置换之后已经同步过 last, 不会误跳)
+        let now = (self.needle.clone(), self.opts);
+        if self.last.as_ref() != Some(&now) {
+            self.last = Some(now);
+            self.changed(d);
+        }
+    }
+
+    /// 增量查找条: 一行 — 方向 / 查找串 / 正则 / Migemo / 区分大小写; Enter 往同方向找下一处, Esc 关
+    fn isearch_bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
+        let fwd = self.isearch.unwrap_or(true);
+        ui.horizontal_wrapped(|ui| {
+            ui.strong(crate::i18n::trz("增量查找"));
+            if ui.selectable_label(fwd, "↓").on_hover_text(crate::i18n::trz("向后")).clicked() && !fwd { self.isearch = Some(true); self.last = None; }
+            if ui.selectable_label(!fwd, "↑").on_hover_text(crate::i18n::trz("向前")).clicked() && fwd { self.isearch = Some(false); self.last = None; }
+            let r = ui.add(egui::TextEdit::singleline(&mut self.needle).desired_width(260.0));
+            if self.focus == Focus::Find {
+                r.request_focus();
+                self.focus = Focus::None;
+            }
+            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                let go = self.isearch.unwrap_or(true) != ui.input(|i| i.modifiers.shift);
+                self.step(d, go);
+                r.request_focus();
+            }
+            ui.checkbox(&mut self.opts.regex, crate::i18n::trz("正则"));
+            ui.checkbox(&mut self.opts.migemo, "Migemo");
+            ui.checkbox(&mut self.opts.case, crate::i18n::trz("区分大小写"));
+            if let Some(e) = &self.err {
+                ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
+            } else {
+                ui.label(&self.msg);
+            }
+            if ui.button("×").clicked() { self.open = false; self.isearch = None; }
+        });
+    }
+
+    fn full_bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         ui.horizontal_wrapped(|ui| {
             if ui.selectable_label(self.replace, "置换").on_hover_text("显示 / 隐藏置换行 (Ctrl+H)").clicked() {
                 self.replace = !self.replace;
@@ -277,12 +342,6 @@ impl Find {
                 if ui.button("全部置换").clicked() { self.replace_all(d); }
                 ui.checkbox(&mut self.in_sel, "仅选区");
             });
-        }
-        // 查找串 / 条件变了就边输入边找 (打开栏、F3、置换之后已经同步过 last, 不会误跳)
-        let now = (self.needle.clone(), self.opts);
-        if self.last.as_ref() != Some(&now) {
-            self.last = Some(now);
-            self.changed(d);
         }
     }
 }

@@ -1,6 +1,7 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
-use crate::doc::{expand_tabs, Doc};
+use crate::doc::Doc;
+use crate::kinsoku::expand_wrap;
 use crate::cmds::{self, Action};
 use crate::cmdui::{CmdUi, Item, PluginCmd};
 use crate::keymap::{self, App as KApp, Run};
@@ -24,6 +25,7 @@ mod extras;
 mod ghopts;
 mod mdopts;
 mod sysopts;
+mod tagops;
 
 pub struct App {
     /// 批次 10: 自动备份 / 文件锁 / 玻璃窗口 / 底部页签 (`app/sysopts.rs`)、Markdown 预览扩展 (`app/mdopts.rs`)、GitHub 插件窗口 (`app/ghopts.rs`)
@@ -130,6 +132,10 @@ pub struct App {
     pal_plugins: Vec<PluginCmd>,
     /// 批次 10 的小工具窗口 (剪贴板历史 / 控制字符 / 戳记 / 折行列数)
     tools: crate::tools::Tools,
+    /// 标签跳转: 候选列表 / 关键字框 / 返回栈
+    tags: crate::tagjump::TagState,
+    /// 正在拖放选中文字 (按下时落在选区里才有)
+    text_drag: Option<crate::textdrag::TextDrag>,
 }
 
 impl App {
@@ -142,7 +148,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), sys: Default::default(), md10: Default::default(), gh: Default::default(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(),
         };
         app.persist = persist;
         app.sys.glass = plugins::is_translucent(&st.theme_plugin); // 窗口透明与否在建窗口时就定了 (main.rs 同一判断)
@@ -1270,6 +1276,8 @@ impl App {
                     if ui.radio(self.wrap && col == 0, Self::app_label(KApp::WrapWindow, "按窗口宽度折行")).clicked() { self.run_app(KApp::WrapWindow, ctx); ui.close(); }
                     let label = if col > 0 { format!("{} ({col})", Self::app_label(KApp::WrapCol, "按指定列数折行…")) } else { Self::app_label(KApp::WrapCol, "按指定列数折行…") };
                     if ui.radio(self.wrap && col > 0, label).clicked() { self.run_app(KApp::WrapCol, ctx); ui.close(); }
+                    ui.separator();
+                    ui.add_enabled(col > 0, egui::Checkbox::new(&mut self.cfg.view.kinsoku, trz("行头 / 行尾禁则 (指定列数折行时)")));
                 });
                 ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
                 ui.separator();
@@ -1439,12 +1447,12 @@ impl App {
     }
 
     /// 自动换行下的 ↑ ↓ Home End: 用当前行 (和相邻行) 的真实排版找「上一 / 下一显示行」同一横坐标处
-    fn wrap_nav(&mut self, ctx: &egui::Context, font: &FontId, wrap_w: f32, tab: usize, key: Key) {
+    fn wrap_nav(&mut self, ctx: &egui::Context, font: &FontId, wrap_w: f32, tab: usize, kcols: usize, key: Key) {
         use egui::text::CCursor;
         let ai = self.active.min(self.docs.len() - 1);
         let (r, c) = (self.docs[ai].cursor[0], self.docs[ai].cursor[1]);
         let layout = |ctx: &egui::Context, line: &str| {
-            let (disp, map) = expand_tabs(line, tab);
+            let (disp, map) = expand_wrap(line, tab, kcols);
             let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
             job.wrap.break_anywhere = true;
             (ctx.fonts_mut(|f| f.layout_job(job)), map)
@@ -1499,7 +1507,8 @@ impl App {
         }
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
         if cmd(ctx, Modifiers::NONE, Key::Escape) {
-            if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
+            if self.text_drag.as_ref().is_some_and(|t| t.started && !t.cancelled) { if let Some(t) = self.text_drag.as_mut() { t.cancelled = true; t.drop = None; } self.cur().tip = trz("已取消拖放").into(); }
+            else if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
             else if self.find.open { self.find.open = false; }
             else if self.cur().sel_mode { self.cur().sel_mode = false; self.cur().tip = trz("范围选择模式: 关").into(); }
             else { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
@@ -1914,10 +1923,12 @@ impl App {
         let win_w = (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0);
         // 指定列数折行: 列宽 = 列数 × 半角字符宽, 窗口更窄时仍以窗口为准
         let wrap_w = if !wrap { f32::INFINITY } else if self.cfg.view.wrap_col > 0 { win_w.min(self.cfg.view.wrap_col as f32 * char_w + 1.0) } else { win_w };
+        // 固定列数折行 + 禁则: 折行点自己算 (显示文字里插入换行); 0 = 交给 egui 按宽度折
+        let kcols = if wrap && self.cfg.view.kinsoku { self.cfg.view.wrap_col } else { 0 };
         let use_offs = wrap || !self.docs[ai].folds.is_empty();
         let offs: Vec<f32> = if use_offs {
             let fsig: usize = self.docs[ai].folds.iter().map(|f| f.0 * 31 + f.1).sum::<usize>() + self.docs[ai].folds.len();
-            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000, tab + (wrap as usize) * 100);
+            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000, tab + (wrap as usize) * 100 + kcols * 1000);
             if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
                 let d = &self.docs[ai];
                 let mut acc = Vec::with_capacity(d.lines.len() + 1);
@@ -1926,7 +1937,7 @@ impl App {
                     acc.push(y);
                     if d.is_hidden(r) { continue; }
                     if wrap {
-                        let (disp, _) = expand_tabs(l, tab);
+                        let (disp, _) = expand_wrap(l, tab, kcols);
                         let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
                         job.wrap.break_anywhere = true;
                         for sec in &mut job.sections { sec.format.line_height = Some(row_h); }
@@ -1944,6 +1955,8 @@ impl App {
         let total_h = if use_offs { offs.last().copied().unwrap_or(0.0) + row_h * 2.0 } else { self.docs[ai].lines.len() as f32 * row_h + row_h * 2.0 };
         let page_rows = ((ui.available_height() / row_h) as usize).max(1);
 
+        let text_drop: Option<[usize; 2]> = self.text_drag.filter(|t| t.started).and_then(|t| t.drop);
+        let mut drag_end: Option<Pos2> = None;
         // ---- 键盘 (查找框有焦点时不抢) ----
         let mut clip_out: Option<String> = None;
         let mut preedit_now = self.preedit.clone();
@@ -1957,7 +1970,7 @@ impl App {
                     if let egui::Event::Key { key, pressed: true, modifiers, .. } = &ev {
                         if !modifiers.ctrl && !modifiers.command && !modifiers.alt && !modifiers.shift && matches!(key, Key::ArrowUp | Key::ArrowDown | Key::Home | Key::End) {
                             let k = *key;
-                            self.wrap_nav(ctx, &font, wrap_w, tab, k);
+                            self.wrap_nav(ctx, &font, wrap_w, tab, kcols, k);
                             continue;
                         }
                     }
@@ -2028,7 +2041,7 @@ impl App {
             for row in first..last {
                 if d.is_hidden(row) { continue; }
                 let y = rect.min.y + top(row);
-                let (disp, map) = expand_tabs(&d.lines[row], tab);
+                let (disp, map) = expand_wrap(&d.lines[row], tab, kcols);
                 widest = widest.max(disp.chars().count());
                 let row_c = if is_diff { crate::view::diff_line_color(&d.lines[row], &tc).unwrap_or(text_color) } else { text_color };
                 let mut job = highlight_job(&d.lines[row], &disp, &map, if is_diff { None } else { cfg.as_ref() }, &theme, &font, row_c, row_h);
@@ -2136,7 +2149,7 @@ impl App {
             // 光标
             let [cr, cc] = d.cursor;
             if cr < d.lines.len() {
-                let (disp, map) = expand_tabs(&d.lines[cr], tab);
+                let (disp, map) = expand_wrap(&d.lines[cr], tab, kcols);
                 let (cx, cy) = if wrap {
                     let mut job = highlight_job(&d.lines[cr], &disp, &map, None, &theme, &font, text_color, row_h);
                     job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true;
@@ -2164,9 +2177,26 @@ impl App {
                     o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect, cursor_rect: Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)), should_interrupt_composition: false });
                 });
             }
+            if let Some(dr) = text_drop {
+                // 拖放文字的落点: 一根蓝色竖线
+                if dr[0] >= first && dr[0] < last && dr[0] < d.lines.len() {
+                    let (disp, map) = expand_wrap(&d.lines[dr[0]], tab, kcols);
+                    let c = dr[1].min(map.len() - 1);
+                    let (dx, dy) = if wrap {
+                        let mut job = highlight_job(&d.lines[dr[0]], &disp, &map, None, &theme, &font, text_color, row_h);
+                        job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true;
+                        let g = painter.layout_job(job);
+                        let p = g.pos_from_cursor(egui::text::CCursor::new(map[c])).min;
+                        (x0 + p.x, rect.min.y + top(dr[0]) + p.y)
+                    } else {
+                        (x0 + x_of(&painter, &disp, &map, c, &font, text_color), rect.min.y + dr[0] as f32 * row_h)
+                    };
+                    painter.rect_filled(Rect::from_min_size(Pos2::new(dx, dy), Vec2::new(2.0, row_h)), 0.0, tc.blue);
+                }
+            }
             for ec in &d.extra {
                 if ec[0] >= first && ec[0] < last {
-                    let (disp, map) = expand_tabs(&d.lines[ec[0]], tab);
+                    let (disp, map) = expand_wrap(&d.lines[ec[0]], tab, kcols);
                     let ex = x0 + x_of(&painter, &disp, &map, ec[1].min(map.len() - 1), &font, text_color);
                     painter.rect_filled(Rect::from_min_size(Pos2::new(ex, rect.min.y + top(ec[0])), Vec2::new(2.0, row_h)), 0.0, text_color);
                 }
@@ -2175,6 +2205,9 @@ impl App {
                 if let Some(p) = resp.interact_pointer_pos() {
                     clicked = Some((p, ui.input(|i| i.modifiers.shift), resp.dragged() && !resp.drag_started()));
                 }
+            }
+            if resp.drag_stopped() {
+                drag_end = resp.interact_pointer_pos().or_else(|| ui.input(|i| i.pointer.latest_pos()));
             }
             multi_click = if resp.triple_clicked() { 3 } else if resp.double_clicked() { 2 } else { 0 };
             if resp.clicked() || resp.drag_started() {
@@ -2205,7 +2238,7 @@ impl App {
         }
         if let Some(id) = ed_id { if !self.editor_ids.contains(&id) { self.editor_ids.push(id); } }
         self.max_cols = widest;
-        if let Some((p, shift, dragging)) = clicked {
+        if let Some((p, shift, dragging, ended)) = drag_end.map(|p| (p, false, true, true)).or(clicked.map(|(p, s, d)| (p, s, d, false))) {
             let rel_y = (p.y - rect.min.y).max(0.0);
             let d = &mut self.docs[ai];
             let row = if use_offs { offs.partition_point(|&o| o <= rel_y).saturating_sub(1) } else { (rel_y / row_h).floor() as usize };
@@ -2214,16 +2247,32 @@ impl App {
                 d.toggle_fold(row);
                 return;
             }
-            let (disp, map) = expand_tabs(&d.lines[row], tab);
+            let (disp, map) = expand_wrap(&d.lines[row], tab, kcols);
             let want = (p.x - x0).max(0.0);
             let col = col_at(ctx, &disp, &map, want, rel_y - top(row), &font, wrap_w);
             let (alt, ctrl) = ctx.input(|i| (i.modifiers.alt, i.modifiers.command || i.modifiers.ctrl));
-            if dragging {
-                if d.box_sel.is_some() { d.box_drag(row, col); } else { d.drag_to(row, col); }
+            let in_sel = d.sel.is_some_and(|s| (row, col) >= (s[0], s[1]) && (row, col) < (s[2], s[3]));
+            if ended {
+                // 松手: 拖放文字就落下去 (Ctrl = 复制); 否则照旧结束框选
+                match self.text_drag.take() {
+                    Some(t) if t.started && !t.cancelled => {
+                        if d.drop_selection([row, col], ctrl) { d.tip = tr(if ctrl { "dlg.drop-copied" } else { "dlg.drop-moved" }).into(); }
+                    }
+                    Some(_) => {}
+                    None => { if d.box_sel.is_some() { d.box_drag(row, col); } else { d.drag_to(row, col); } }
+                }
+            } else if dragging {
+                if let Some(t) = self.text_drag.as_mut() {
+                    if !t.cancelled { t.started = true; t.drop = Some([row, col]); }
+                } else if d.box_sel.is_some() { d.box_drag(row, col); } else { d.drag_to(row, col); }
             } else if ctx.input(|i| i.pointer.any_pressed()) {
+                self.text_drag = None;
                 if alt { d.box_start(row, col); }
-                else if ctrl { d.toggle_cursor(row, col); }
+                else if ctrl && !in_sel { d.toggle_cursor(row, col); }
+                else if !shift && multi_click == 0 && d.box_sel.is_none() && in_sel && !d.grep_result { self.text_drag = Some(crate::textdrag::TextDrag::default()); }
                 else { d.box_sel = None; d.extra.clear(); d.click(row, col, shift); }
+            } else if ctx.input(|i| i.pointer.any_released()) && self.text_drag.take().is_some() {
+                d.click(row, col, false); // 只是点了一下选区里面: 现在才把选区收起来放光标
             }
             if multi_click == 2 && !dragging {
                 if d.grep_result { d.goto(row, 0); self.jump_req = Some((d.id, row)); } else { d.edit("select-word", None); }
@@ -2403,6 +2452,7 @@ impl eframe::App for App {
         if self.props.is_some() { self.props_window(ctx); }
         self.cmd_windows(ctx);
         self.tools_windows(ctx);
+        self.tag_windows(ctx);
         if self.split_on {
             let last = self.docs.len() - 1;
             self.left_doc = self.left_doc.min(last);
