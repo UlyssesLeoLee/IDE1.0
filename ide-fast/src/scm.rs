@@ -50,8 +50,24 @@ pub struct Status {
     pub error: Option<String>,
 }
 
-fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
+/// 仓库本地配置里的 filter / diff 驱动会在 add / diff 时执行外部命令: 有就拒绝, 让用户到终端里自己处理
+fn local_drivers(cwd: &Path) -> bool {
     let mut c = Command::new("git");
+    c.args(["config", "--local", "--name-only", "--get-regexp", r"^(filter|diff|core\.(pager|editor|askpass))\."]).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    c.output().map(|o| o.status.success() && !o.stdout.is_empty()).unwrap_or(false)
+}
+
+fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    if local_drivers(cwd) {
+        return Err("这个仓库的本地配置定义了 filter / diff 外部命令, 高速版不自动运行 git (请在终端里操作)".into());
+    }
+    let mut c = Command::new("git");
+    c.env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_ATTR_NOSYSTEM", "1");
     // 仓库自带的配置不能让只读查询去执行命令
     c.args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=NUL", "-c", "core.sshCommand=false"]).args(args).current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
@@ -82,7 +98,7 @@ pub fn load_status(cwd: &Path) -> Status {
 
 /// 某个文件的统一差异 (`staged` = 暂存区对 HEAD; 否则工作区对暂存区); 未跟踪文件没有差异可看
 pub fn file_diff(top: &Path, path: &str, staged: bool) -> Result<String, String> {
-    let mut args = vec!["-c", "core.quotepath=false", "diff", "--no-color"];
+    let mut args = vec!["-c", "core.quotepath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv"];
     if staged {
         args.push("--cached");
     }
