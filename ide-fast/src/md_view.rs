@@ -62,8 +62,15 @@ pub fn resolve_local(base: Option<&Path>, target: &str) -> Option<PathBuf> {
     if target.contains("://") || target.starts_with("data:") {
         return None;
     }
+    // UNC / 设备路径会触发网络认证 (NTLM 泄露), 一律不解析
+    if target.starts_with("\\\\") || target.starts_with("//") || target.starts_with("file://") && !target.starts_with("file:///") {
+        return None;
+    }
     let t = target.strip_prefix("file:///").unwrap_or(target);
     let p = PathBuf::from(t);
+    if p.components().next().is_some_and(|c| matches!(c, std::path::Component::Prefix(x) if !matches!(x.kind(), std::path::Prefix::Disk(_)))) {
+        return None;
+    }
     Some(if p.is_absolute() { p } else { base?.join(p) })
 }
 

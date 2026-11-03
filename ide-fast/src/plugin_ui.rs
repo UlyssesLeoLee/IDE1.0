@@ -83,7 +83,7 @@ impl PlugState {
     }
 
     /// 每帧调用: 收完成的任务, 把结果落到文档 / 提示 / 结果窗口
-    pub fn poll(&mut self, docs: &mut [Doc], active: usize, ctx: &egui::Context) {
+    pub fn poll(&mut self, docs: &mut [Doc], _active: usize, ctx: &egui::Context) {
         if self.jobs.is_empty() {
             return;
         }
@@ -98,7 +98,8 @@ impl PlugState {
         }
         for (i, r) in done.into_iter().rev() {
             let job = self.jobs.remove(i);
-            let ix = docs.iter().position(|d| d.id == job.doc_id).unwrap_or(active.min(docs.len().saturating_sub(1)));
+            // 发起命令的文档已关闭: 丢弃结果, 不写到别的文档
+            let Some(ix) = docs.iter().position(|d| d.id == job.doc_id) else { continue };
             let tip = self.finish(&job, r, &mut docs[ix]);
             if let Some(t) = tip {
                 docs[ix].tip = t;
