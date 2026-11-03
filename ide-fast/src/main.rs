@@ -8,6 +8,7 @@
 
 mod app;
 mod doc;
+mod cmds;
 mod fonts;
 mod instance;
 mod plugins;

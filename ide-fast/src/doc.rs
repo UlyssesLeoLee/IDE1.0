@@ -57,6 +57,9 @@ pub struct Doc {
     pub folds: Vec<(usize, usize)>,
     /// 标签分组 (0 = 不分组, 1..=5 = 红 橙 绿 蓝 紫)
     pub group: u8,
+    /// 改写模式 (Ins) / 只读
+    pub overwrite: bool,
+    pub readonly: bool,
 }
 
 /// 录下来的一步 (回放时原样再走一遍 editcore)
@@ -69,7 +72,7 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0 }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -80,7 +83,7 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0 })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false })
     }
 
     pub fn text_lf(&self) -> String {
@@ -200,6 +203,10 @@ impl Doc {
 
     /// 执行一条 editcore 编辑命令; 返回要写进剪贴板的文字 (复制 / 剪切类)
     pub fn edit(&mut self, cmd: &str, text: Option<String>) -> Option<String> {
+        if self.readonly && !matches!(cmd, "copy" | "copy-lines" | "copy-crlf" | "copy-linenum" | "copy-passage" | "select-word") {
+            self.tip = "只读: 不能修改 (编辑 → 只读 可以关掉)".into();
+            return None;
+        }
         if let Some(r) = self.rec.as_mut() {
             r.push(RecEv::Edit(cmd.to_string(), text.clone()));
         }
@@ -240,7 +247,7 @@ impl Doc {
             extra_rows.extend(b[0].min(b[2])..=b[0].max(b[2]));
         }
         let req = EditReq {
-            cmd: cmd.clone(), row: self.cursor[0], col: self.cursor[1], sel: self.sel, total_rows: self.lines.len(), auto_indent: true, smart_indent: false, text,
+            cmd: cmd.clone(), row: self.cursor[0], col: self.cursor[1], sel: self.sel, total_rows: self.lines.len(), auto_indent: true, smart_indent: false, overwrite: self.overwrite, text,
             box_sel: self.box_sel, cursors: all_cursors, rows: self.rows_for(&extra_rows), ..Default::default()
         };
         let Some(res) = edit_cmd::run(&req) else {
@@ -303,6 +310,86 @@ impl Doc {
         self.undo.push(u);
         if self.undo.len() > 5000 {
             self.undo.remove(0);
+        }
+    }
+
+    /// 把 [start, start+remove) 行换成 insert, 记一步撤销, 光标放到 cursor
+    pub fn replace_rows(&mut self, start: usize, remove: usize, insert: Vec<String>, cursor: [usize; 2]) {
+        let removed: Vec<String> = self.lines.iter().skip(start).take(remove).cloned().collect();
+        if removed == insert {
+            return;
+        }
+        let before = (self.cursor, self.sel);
+        self.splice(start, remove, insert.clone());
+        self.undo.push(Undo { start, removed, inserted: insert, before, after: cursor });
+        self.redo.clear();
+        self.dirty = true;
+        self.cursor = cursor;
+        self.sel = None;
+        self.anchor = None;
+        self.clamp();
+        self.reveal = true;
+    }
+
+    /// 选区覆盖的整行 (含首尾); 选区终点在行首且跨行时不算那一行。没有选区 = None
+    pub fn selected_rows(&self) -> Option<(usize, usize)> {
+        let s = self.sel?;
+        Some((s[0], if s[3] == 0 && s[2] > s[0] { s[2] - 1 } else { s[2] }))
+    }
+
+    /// 整行变换 (排序 / 去重 / 去空白…): 作用在选中的行, 没有选区 = 全文
+    pub fn lines_op(&mut self, kind: &str) {
+        let (r0, r1) = self.selected_rows().unwrap_or((0, self.lines.len().saturating_sub(1)));
+        let r1 = r1.min(self.lines.len().saturating_sub(1));
+        let new = crate::cmds::lines_op(kind, self.lines[r0..=r1].to_vec());
+        let n = new.len();
+        self.replace_rows(r0, r1 - r0 + 1, if n == 0 { vec![String::new()] } else { new }, [r0, 0]);
+        self.tip = format!("已处理 {} 行", r1 - r0 + 1);
+    }
+
+    /// 选区文字变换 (大小写 / 全半角 / Tab 与空格); 没有选区什么也不做
+    pub fn transform_sel(&mut self, kind: &str, tab: usize) {
+        if self.sel.is_none() {
+            self.tip = "先选中要转换的文字".into();
+            return;
+        }
+        let (cursor, sel, anchor) = (self.cursor, self.sel, self.anchor);
+        let Some(text) = self.edit("copy", None) else { return };
+        // copy 会把选区清掉; 放回去, paste 才是「替换选区」
+        self.cursor = cursor;
+        self.sel = sel;
+        self.anchor = anchor;
+        self.edit("paste", Some(crate::cmds::transform(kind, &text, tab)));
+    }
+
+    /// 缩进 / 反缩进: 多行选区时对每个非空行加 / 减一级; 单行且不是选区时 Tab 照常插入制表符
+    pub fn indent(&mut self, outdent: bool, tab: usize) {
+        let multi = self.selected_rows().map(|(a, b)| b > a).unwrap_or(false);
+        if !outdent && !multi {
+            self.type_text("\t");
+            return;
+        }
+        let (r0, r1) = self.selected_rows().unwrap_or((self.cursor[0], self.cursor[0]));
+        let r1 = r1.min(self.lines.len() - 1);
+        let new: Vec<String> = self.lines[r0..=r1]
+            .iter()
+            .map(|l| {
+                if !outdent {
+                    if l.is_empty() { String::new() } else { format!("\t{l}") }
+                } else if let Some(rest) = l.strip_prefix('\t') {
+                    rest.to_string()
+                } else {
+                    let n = l.chars().take(tab.max(1)).take_while(|c| *c == ' ').count();
+                    l.chars().skip(n).collect()
+                }
+            })
+            .collect();
+        let last_len = new.last().map(|l| l.chars().count()).unwrap_or(0);
+        let keep_sel = multi;
+        self.replace_rows(r0, r1 - r0 + 1, new, [r1, last_len]);
+        if keep_sel {
+            self.sel = Some([r0, 0, r1, last_len]);
+            self.anchor = Some([r0, 0]);
         }
     }
 
@@ -729,5 +816,43 @@ mod tests {
         d.edit("add-line-below", None); // 行数变了: 折叠清掉
         assert!(d.folds.is_empty());
     }
-}
 
+    #[test]
+    fn line_ops_indent_readonly_and_overwrite() {
+        let mut d = Doc::untitled(1, 1);
+        d.type_text("b
+a
+b
+");
+        d.select_all();
+        d.lines_op("sort-asc");
+        assert_eq!(d.lines, vec!["a", "b", "b", ""], "选区止于行首的那一行不算");
+        d.select_all();
+        d.lines_op("unique");
+        assert_eq!(d.lines, vec!["a", "b", ""]);
+        d.undo();
+        assert_eq!(d.lines, vec!["a", "b", "b", ""], "整行变换是一步撤销");
+        // 多行选区 Tab 缩进 / Shift+Tab 反缩进
+        d.select_all();
+        d.indent(false, 4);
+        assert_eq!(d.lines, vec!["	a", "	b", "	b", ""]);
+        d.indent(true, 4);
+        assert_eq!(d.lines, vec!["a", "b", "b", ""]);
+        // 选区大小写
+        d.goto(0, 0);
+        d.nav("ArrowRight", false, true, 10);
+        d.transform_sel("upper", 4);
+        assert_eq!(d.lines[0], "A");
+        // 只读: 改不了
+        d.readonly = true;
+        let before = d.lines.clone();
+        d.type_text("zzz");
+        assert_eq!(d.lines, before);
+        d.readonly = false;
+        // 改写: 吃掉光标后的字符
+        d.goto(1, 0);
+        d.overwrite = true;
+        d.type_text("X");
+        assert_eq!(d.lines[1], "X");
+    }
+}

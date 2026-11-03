@@ -1,6 +1,7 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
 use crate::doc::{expand_tabs, Doc};
+use crate::cmds::{self, Action};
 use crate::plugins;
 use crate::settings::Settings;
 use crate::sidebar::{Sidebar, Tab};
@@ -36,6 +37,8 @@ pub struct App {
     registry: TypeRegistry,
     side: Sidebar,
     term: Terminal,
+    goto_open: bool,
+    goto_text: String,
     /// 主题插件: 选中的 id 与换算好的外观
     theme_id: String,
     theme_visuals: Option<egui::Visuals>,
@@ -69,7 +72,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -358,8 +361,7 @@ impl App {
                 if ui.button("粘贴  Ctrl+V").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste); ui.close(); }
                 if ui.button("全选  Ctrl+A").clicked() { self.cur().select_all(); ui.close(); }
                 ui.separator();
-                if ui.button("复制当前行  Ctrl+D").clicked() { self.cur().edit("duplicate-line", None); ui.close(); }
-                if ui.button("删除当前行  Ctrl+Shift+K").clicked() { self.cur().edit("delete-line", None); ui.close(); }
+                self.cmd_menu(ui, ctx);
             });
             ui.menu_button("查找", |ui| {
                 if ui.button("查找 / 置换…  Ctrl+F").clicked() { self.find.open = true; self.find.focus = true; ui.close(); }
@@ -628,9 +630,12 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::Y) { self.cur().redo(); }
         if cmd(ctx, Modifiers::COMMAND, Key::A) { self.cur().select_all(); }
         if cmd(ctx, Modifiers::COMMAND, Key::D) { self.cur().edit("duplicate-line", None); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::K) { self.cur().edit("delete-line", None); }
-        if cmd(ctx, Modifiers::ALT, Key::ArrowUp) { self.cur().edit("move-line-up", None); }
-        if cmd(ctx, Modifiers::ALT, Key::ArrowDown) { self.cur().edit("move-line-down", None); }
+        for c in cmds::CMDS {
+            if let Some((m, k)) = cmds::parse_keys(c.keys) {
+                if cmd(ctx, m, k) { self.run_action(c.action, ctx); }
+            }
+        }
+        if cmd(ctx, Modifiers::COMMAND, Key::J) { self.run_action(Action::GotoLine, ctx); }
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
@@ -679,6 +684,73 @@ impl App {
             }
         };
         self.cur().tip = msg;
+    }
+
+    /// 命令表 -> 菜单: 空 group 的直接放, 其余按 group 分成子菜单 (首次出现的顺序)
+    fn cmd_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let mut groups: Vec<&'static str> = vec![];
+        for c in cmds::CMDS {
+            if !groups.contains(&c.group) { groups.push(c.group); }
+        }
+        let label = |c: &cmds::Cmd| if c.keys.is_empty() || c.label.contains("Ctrl+") { c.label.to_string() } else { format!("{}  {}", c.label, c.keys) };
+        for g in groups {
+            if g.is_empty() {
+                for c in cmds::CMDS.iter().filter(|c| c.group.is_empty()) {
+                    let checked = match c.action {
+                        Action::ToggleOverwrite => Some(self.cur().overwrite),
+                        Action::ToggleReadonly => Some(self.cur().readonly),
+                        _ => None,
+                    };
+                    let text = label(c);
+                    let clicked = match checked { Some(mut on) => ui.checkbox(&mut on, text).clicked(), None => ui.button(text).clicked() };
+                    if clicked { self.run_action(c.action, ctx); ui.close(); }
+                }
+            } else {
+                ui.menu_button(g, |ui| {
+                    for c in cmds::CMDS.iter().filter(|c| c.group == g) {
+                        if ui.button(label(c)).clicked() { self.run_action(c.action, ctx); ui.close(); }
+                    }
+                });
+            }
+        }
+    }
+
+    fn run_action(&mut self, a: Action, ctx: &egui::Context) {
+        let tab = self.tab;
+        match a {
+            Action::Edit(n) => { if let Some(c) = self.cur().edit(n, None) { ctx.copy_text(c); } }
+            Action::Transform(k) => self.cur().transform_sel(k, tab),
+            Action::Lines(k) => self.cur().lines_op(k),
+            Action::Indent => self.cur().indent(false, tab),
+            Action::Outdent => self.cur().indent(true, tab),
+            Action::ToggleComment => {
+                let name = self.cur().name.clone();
+                match self.registry.detect(&name).and_then(|t| t.line_comment.clone()) {
+                    Some(mark) => { self.cur().edit("toggle-line-comment", Some(mark)); }
+                    None => self.cur().tip = "这个类型没有行注释符".into(),
+                }
+            }
+            Action::GotoLine => { self.goto_open = true; self.goto_text.clear(); }
+            Action::ToggleOverwrite => { let d = self.cur(); d.overwrite = !d.overwrite; d.tip = if d.overwrite { "改写模式".into() } else { "插入模式".into() }; }
+            Action::ToggleReadonly => { let d = self.cur(); d.readonly = !d.readonly; d.tip = if d.readonly { "已设为只读".into() } else { "已取消只读".into() }; }
+        }
+    }
+
+    fn goto_window(&mut self, ctx: &egui::Context) {
+        let mut go: Option<usize> = None;
+        let mut open = self.goto_open;
+        egui::Window::new("转到行").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            let total = self.docs[self.active.min(self.docs.len() - 1)].lines.len();
+            let r = ui.add(egui::TextEdit::singleline(&mut self.goto_text).hint_text(format!("1 – {total}")).desired_width(120.0));
+            r.request_focus();
+            if ui.input(|i| i.key_pressed(Key::Enter)) {
+                go = self.goto_text.trim().parse::<usize>().ok();
+                if go.is_none() { self.cur().tip = "请输入行号".into(); }
+                self.goto_open = false;
+            }
+        });
+        if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.goto_open = false; }
+        if let Some(n) = go { let d = self.cur(); let row = n.saturating_sub(1).min(d.lines.len() - 1); d.goto(row, 0); }
     }
 
     fn toggle_split(&mut self) {
@@ -778,7 +850,7 @@ impl App {
                             Key::Enter => { d.edit("new-line", None); }
                             Key::Backspace => { d.edit(if ctrl { "delete-word-start" } else { "backspace" }, None); }
                             Key::Delete => { d.edit(if ctrl { "delete-word-end" } else { "delete" }, None); }
-                            Key::Tab => { d.type_text("\t"); }
+                            Key::Tab => { d.indent(false, tab); }
                             _ => {}
                         }
                     }
@@ -1035,6 +1107,7 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         if self.prefs_open { self.prefs_window(ctx); }
+        if self.goto_open { self.goto_window(ctx); }
         if self.split_on {
             let last = self.docs.len() - 1;
             self.left_doc = self.left_doc.min(last);
@@ -1079,6 +1152,8 @@ impl eframe::App for App {
                 ui.label(d.charset.label());
                 ui.label(d.eol.label());
                 ui.label(format!("共 {} 行", d.lines.len()));
+                if d.overwrite { ui.label("改写"); }
+                if d.readonly { ui.label("只读"); }
                 if d.rec.is_some() { ui.colored_label(Color32::from_rgb(230, 70, 70), "● REC"); }
                 if d.box_sel.is_some() { ui.label("[矩形]"); }
                 if !d.extra.is_empty() { ui.label(format!("{} 个光标", d.extra.len() + 1)); }
