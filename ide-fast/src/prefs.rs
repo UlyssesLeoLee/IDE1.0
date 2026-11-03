@@ -14,6 +14,7 @@ pub enum PrefsTab {
     Font,
     Types,
     Search,
+    Terminal,
 }
 
 pub struct Prefs {
@@ -71,6 +72,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.checkbox(&mut d.dark, tr("pf.dark"));
             ui.checkbox(&mut d.highlight, tr("pf.highlight"));
             ui.checkbox(&mut d.wrap, tr("pf.wrap"));
+            ui.checkbox(&mut d.glass_blur, tr("pf.glass-blur")).on_hover_text(tr("pf.glass-note"));
             ui.horizontal(|ui| { ui.label(tr("pf.font-size")); ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0)); });
             ui.horizontal(|ui| { ui.label(tr("pf.tab-width")); ui.add(egui::Slider::new(&mut d.tab_width, 1..=16)); });
         }
@@ -93,6 +95,11 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
         }
         PrefsTab::Files => {
             ui.checkbox(&mut d.save_backup, tr("pf.save-backup"));
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut d.auto_backup, tr("pf.auto-backup"));
+                ui.add_enabled(d.auto_backup, egui::DragValue::new(&mut d.auto_backup_min).range(crate::backup::MIN_INTERVAL..=crate::backup::MAX_INTERVAL).suffix(tr("pf.minutes")));
+            });
+            ui.checkbox(&mut d.file_lock, tr("pf.file-lock")).on_hover_text(tr("pf.file-lock-tip"));
             ui.checkbox(&mut d.check_external, tr("pf.check-external"));
             ui.checkbox(&mut d.restore_session, tr("pf.restore-session"));
             ui.checkbox(&mut d.confirm_close, tr("pf.confirm-close"));
@@ -126,6 +133,26 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                             if ui.small_button(tr("pf.col.clear")).clicked() { *slot = None; }
                         }
                         None => { if ui.small_button(tr("pf.col.set")).clicked() { *slot = Some([128, 128, 128]); } }
+                    }
+                });
+            }
+        }
+        PrefsTab::Terminal => {
+            ui.horizontal(|ui| { ui.label(tr("pf.term-font")); ui.add(egui::Slider::new(&mut d.term_font_px, 8.0..=32.0)); });
+            ui.horizontal(|ui| {
+                ui.label(tr("pf.term-scrollback"));
+                ui.add(egui::DragValue::new(&mut d.term_scrollback).range(crate::terminal::MIN_SCROLLBACK..=crate::terminal::MAX_SCROLLBACK).speed(50.0));
+            });
+            for (name, slot) in [("pf.term-fg", &mut d.term_fg), ("pf.term-bg", &mut d.term_bg)] {
+                ui.horizontal(|ui| {
+                    ui.add_sized([70.0, 18.0], egui::Label::new(tr(name)));
+                    match slot {
+                        Some(c) => {
+                            ui.color_edit_button_srgb(c);
+                            ui.label(settings::hex(*c));
+                            if ui.small_button(tr("pf.col.clear")).clicked() { *slot = None; }
+                        }
+                        None => { if ui.small_button(tr("pf.col.set")).clicked() { *slot = Some(if name == "pf.term-bg" { [24, 24, 24] } else { [220, 220, 220] }); } }
                     }
                 });
             }

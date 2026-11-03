@@ -75,6 +75,8 @@ pub struct Doc {
     pub base: Vec<String>,
     /// 修改行标记缓存: (rev, 结果)
     pub changed_cache: Option<(u64, Vec<bool>)>,
+    /// F6 范围选择模式: 开着时方向键 / 翻页键都在扩大选区 (不用按 Shift)
+    pub sel_mode: bool,
 }
 
 /// 插件补丁一次最多插入的行数 (和 Tauri 版 applyPluginEdit 相同)
@@ -111,7 +113,7 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false, auto_indent: true, smart_indent: false, insert_spaces: false, base: vec![String::new()], changed_cache: None }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false, auto_indent: true, smart_indent: false, insert_spaces: false, base: vec![String::new()], changed_cache: None, sel_mode: false }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -133,7 +135,7 @@ impl Doc {
             lines.push(String::new());
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
-        Ok(Doc { id, path: Some(path.to_path_buf()), name, base: lines.clone(), changed_cache: None, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
+        Ok(Doc { id, path: Some(path.to_path_buf()), name, base: lines.clone(), changed_cache: None, sel_mode: false, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
                  undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path), mixed_eol: d.mixed_eol, auto_indent: true, smart_indent: false, insert_spaces: false })
     }
 
@@ -292,6 +294,7 @@ impl Doc {
 
     /// 光标跳到 (行, 列) 并滚到可见处 (大纲 / Grep 结果 / 书签用)
     pub fn goto(&mut self, row: usize, col: usize) {
+        self.sel_mode = false;
         self.cursor = [row.min(self.lines.len() - 1), col];
         self.clamp();
         self.sel = None;
@@ -372,6 +375,7 @@ impl Doc {
             self.tip = "只读: 不能修改 (编辑 → 只读 可以关掉)".into();
             return None;
         }
+        self.sel_mode = false;
         if let Some(r) = self.rec.as_mut() {
             r.push(RecEv::Edit(cmd.to_string(), text.clone()));
         }
@@ -616,6 +620,7 @@ impl Doc {
 
     /// 移动键 (← → ↑ ↓ Home End PageUp PageDown, 含 Ctrl / Shift)
     pub fn nav(&mut self, key: &str, ctrl: bool, shift: bool, page_rows: usize) {
+        let shift = shift || self.sel_mode; // F6 范围选择模式: 不按 Shift 也在扩选 (宏里记成带 Shift 的移动)
         if let Some(r) = self.rec.as_mut() {
             r.push(RecEv::Nav(key.to_string(), ctrl, shift));
         }
@@ -698,6 +703,7 @@ impl Doc {
     }
 
     pub fn select_all(&mut self) {
+        self.sel_mode = false;
         let last = self.lines.len() - 1;
         self.sel = Some([0, 0, last, self.row_len(last)]);
         self.anchor = Some([0, 0]);
@@ -705,6 +711,7 @@ impl Doc {
     }
 
     pub fn click(&mut self, row: usize, col: usize, extend: bool) {
+        self.sel_mode = false;
         let row = row.min(self.lines.len() - 1);
         let col = col.min(self.row_len(row));
         if extend {
@@ -720,6 +727,7 @@ impl Doc {
     }
 
     pub fn box_start(&mut self, row: usize, col: usize) {
+        self.sel_mode = false;
         let row = row.min(self.lines.len() - 1);
         self.sel = None;
         self.extra.clear();
@@ -758,6 +766,89 @@ impl Doc {
 
     fn set_sel(&mut self, a: [usize; 2], b: [usize; 2]) {
         self.sel = if a == b { None } else if (a[0], a[1]) <= (b[0], b[1]) { Some([a[0], a[1], b[0], b[1]]) } else { Some([b[0], b[1], a[0], a[1]]) };
+    }
+
+    /// F6: 范围选择模式开 / 关。开时以当前光标为锚点 (已有选区就接着它扩), 之后方向键扩选; 关时选区保留
+    pub fn toggle_sel_mode(&mut self) {
+        if self.sel_mode {
+            self.sel_mode = false;
+            self.tip = "范围选择模式: 关".into();
+            return;
+        }
+        self.box_sel = None;
+        self.extra.clear();
+        if self.sel.is_none() {
+            self.anchor = Some(self.cursor);
+        }
+        self.sel_mode = true;
+        self.tip = "范围选择模式: 用方向键扩选 (F6 / Esc 结束)".into();
+    }
+
+    /// 选区文字, 没有选区 = 整篇; 同时返回那个范围
+    pub fn selection_or_all(&self) -> ([usize; 4], String) {
+        let range = self.sel.unwrap_or_else(|| {
+            let last = self.lines.len() - 1;
+            [0, 0, last, self.row_len(last)]
+        });
+        (range, range_text(&self.lines, range))
+    }
+
+    /// 把选区 (没有选区 = 整篇) 的文字交给 `f` 换成新文字, 一步撤销, 结果保持选中 (Sakura 的 コード変換 / 变换类命令)
+    pub fn convert_selection(&mut self, f: impl FnOnce(&str) -> Result<String, String>) -> bool {
+        if self.readonly {
+            self.tip = "只读: 不能修改 (编辑 → 只读 可以关掉)".into();
+            return false;
+        }
+        let (range, text) = self.selection_or_all();
+        let out = match f(&text) {
+            Ok(o) => o,
+            Err(e) => {
+                self.tip = e;
+                return false;
+            }
+        };
+        self.box_sel = None;
+        self.extra.clear();
+        self.anchor = Some([range[0], range[1]]);
+        self.sel = Some(range);
+        self.cursor = [range[2], range[3]];
+        self.edit("paste", Some(out));
+        let end = self.cursor;
+        self.set_sel([range[0], range[1]], end);
+        self.anchor = Some([range[0], range[1]]);
+        true
+    }
+
+    /// 在光标处插入一个控制字符 (LF / CR 当成换行; 其他原样插入)
+    pub fn insert_control(&mut self, c: char) {
+        match c {
+            '\n' | '\r' => { self.edit("new-line", None); }
+            c => { self.edit("insert-text", Some(c.to_string())); }
+        }
+    }
+
+    /// 在光标处插入戳记: 行首 = 缩进之后 `[戳记] ` (整行一步撤销); 光标处 = 直接插入
+    pub fn insert_stamp(&mut self, stamp: &str, pos: crate::textconv::StampPos) {
+        if self.readonly {
+            self.tip = "只读: 不能修改 (编辑 → 只读 可以关掉)".into();
+            return;
+        }
+        match pos {
+            crate::textconv::StampPos::AtCursor => { self.edit("paste", Some(stamp.to_string())); }
+            crate::textconv::StampPos::LineStart => {
+                let r = self.cursor[0];
+                let (line, n) = crate::textconv::stamp_line_start(&self.lines[r], stamp);
+                let indent = self.lines[r].chars().take_while(|c| *c == ' ' || *c == '\t').count();
+                let col = if self.cursor[1] >= indent { self.cursor[1] + n } else { self.cursor[1] };
+                self.replace_rows(r, 1, vec![line], [r, col]);
+            }
+        }
+        self.tip = format!("已插入戳记: {stamp}");
+    }
+
+    /// 增量查找 (带方向): 从 `start` 起向前 / 向后找第一处, 命中本身在 start 上也算
+    pub fn find_from_dir(&mut self, needle: &str, o: FindOpts, forward: bool, start: [usize; 2]) -> Result<bool, String> {
+        self.find_at(needle, o, forward, start, false)
     }
 
     pub fn undo(&mut self) {
@@ -1026,6 +1117,21 @@ impl Doc {
         self.tip = format!("置换了 {} 处", res.count);
         Ok(res.count)
     }
+}
+
+/// [r0,c0)-[r1,c1) 范围内的文字 (行间用 LF; 列是字符下标, 越界夹回行尾)
+pub fn range_text(lines: &[String], s: [usize; 4]) -> String {
+    let mut out = String::new();
+    for r in s[0]..=s[2].min(lines.len().saturating_sub(1)) {
+        let chars: Vec<char> = lines[r].chars().collect();
+        let a = if r == s[0] { s[1].min(chars.len()) } else { 0 };
+        let b = if r == s[2] { s[3].min(chars.len()) } else { chars.len() };
+        if r > s[0] {
+            out.push('\n');
+        }
+        out.extend(&chars[a..b.max(a)]);
+    }
+    out
 }
 
 /// 把一行里的 Tab 展开成空格 (到下一个 Tab 位), 并给出 "字符下标 -> 显示列" 的映射 (长度 = 字符数 + 1)

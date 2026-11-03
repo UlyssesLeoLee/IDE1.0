@@ -48,7 +48,10 @@ pub fn open_for_print(name: &str, lines: &[String], line_numbers: bool, font_pt:
     let path = dir.join(format!("{safe}.html"));
     std::fs::write(&path, page_html(name, lines, line_numbers, font_pt, true)).map_err(|e| e.to_string())?;
     #[cfg(windows)]
-    let r = std::process::Command::new("cmd").args(["/C", "start", "", &path.display().to_string()]).spawn();
+    let r = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd").args(["/C", "start", "", &path.display().to_string()]).creation_flags(0x0800_0000).spawn() // CREATE_NO_WINDOW
+    };
     #[cfg(not(windows))]
     let r = std::process::Command::new("xdg-open").arg(&path).spawn();
     r.map_err(|e| format!("无法打开浏览器: {e}"))?;

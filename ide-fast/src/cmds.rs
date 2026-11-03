@@ -15,6 +15,8 @@ pub enum Action {
     GotoLine,
     ToggleOverwrite,
     ToggleReadonly,
+    /// 选区 (没有 = 整篇) 的编码内容转换, 后缀见 `textconv::CODECNV`
+    CodeCnv(&'static str),
 }
 
 pub struct Cmd {
@@ -53,6 +55,14 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "转换", label: "转为小写", keys: "Ctrl+U", action: Transform("lower") },
     Cmd { group: "转换", label: "半角 → 全角", keys: "", action: Transform("full") },
     Cmd { group: "转换", label: "全角 → 半角", keys: "", action: Transform("half") },
+    Cmd { group: "转换", label: "半角 → 全角 (含假名)", keys: "Ctrl+F9", action: Transform("to-zenkaku") },
+    Cmd { group: "转换", label: "全角 → 半角 (含假名)", keys: "Ctrl+F8", action: Transform("to-halfwidth") },
+    Cmd { group: "转换", label: "转为全角平假名", keys: "Ctrl+F10", action: Transform("to-zenhira") },
+    Cmd { group: "转换", label: "转为半角片假名", keys: "", action: Transform("to-hankata") },
+    Cmd { group: "转换", label: "半角假名 → 全角片假名", keys: "Ctrl+F11", action: Transform("hankata-to-zenkata") },
+    Cmd { group: "转换", label: "半角假名 → 全角平假名", keys: "Ctrl+F12", action: Transform("hankata-to-zenhira") },
+    Cmd { group: "转换", label: "半角英数 → 全角英数", keys: "", action: Transform("to-zenei") },
+    Cmd { group: "转换", label: "全角英数 → 半角英数", keys: "", action: Transform("to-hanei") },
     Cmd { group: "转换", label: "Tab → 空格", keys: "", action: Transform("tab2space") },
     Cmd { group: "转换", label: "行首空格 → Tab", keys: "", action: Transform("space2tab") },
     Cmd { group: "整理行", label: "升序排序", keys: "", action: Lines("sort-asc") },
@@ -68,6 +78,17 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "", label: "转到行…", keys: "Ctrl+J", action: GotoLine },
     Cmd { group: "", label: "改写 / 插入模式", keys: "Insert", action: ToggleOverwrite },
     Cmd { group: "", label: "只读", keys: "", action: ToggleReadonly },
+    Cmd { group: "编码转换", label: "自动判别 → SJIS", keys: "Alt+F12", action: CodeCnv("auto2sjis") },
+    Cmd { group: "编码转换", label: "邮件 (JIS) → SJIS", keys: "Alt+F11", action: CodeCnv("email") },
+    Cmd { group: "编码转换", label: "EUC → SJIS", keys: "Alt+F10", action: CodeCnv("euc2sjis") },
+    Cmd { group: "编码转换", label: "Unicode → SJIS", keys: "Alt+F9", action: CodeCnv("unicode2sjis") },
+    Cmd { group: "编码转换", label: "UnicodeBE → SJIS", keys: "", action: CodeCnv("unicodebe2sjis") },
+    Cmd { group: "编码转换", label: "UTF-8 → SJIS", keys: "Alt+F8", action: CodeCnv("utf82sjis") },
+    Cmd { group: "编码转换", label: "UTF-7 → SJIS", keys: "Alt+F7", action: CodeCnv("utf72sjis") },
+    Cmd { group: "编码转换", label: "SJIS → JIS", keys: "Alt+Shift+F11", action: CodeCnv("sjis2jis") },
+    Cmd { group: "编码转换", label: "SJIS → EUC", keys: "Alt+Shift+F10", action: CodeCnv("sjis2euc") },
+    Cmd { group: "编码转换", label: "SJIS → UTF-8", keys: "Alt+Shift+F8", action: CodeCnv("sjis2utf8") },
+    Cmd { group: "编码转换", label: "SJIS → UTF-7", keys: "Alt+Shift+F7", action: CodeCnv("sjis2utf7") },
     Cmd { group: "Markdown", label: "粗体", keys: "Ctrl+Alt+B", action: Edit("md-bold") },
     Cmd { group: "Markdown", label: "斜体", keys: "Ctrl+Alt+I", action: Edit("md-italic") },
     Cmd { group: "Markdown", label: "删除线", keys: "", action: Edit("md-strike") },
@@ -98,6 +119,10 @@ pub fn transform(kind: &str, text: &str, tab: usize) -> String {
         "lower" => text.to_lowercase(),
         "full" => editcore::zenkaku_hankaku::to_fullwidth(text),
         "half" => editcore::zenkaku_hankaku::to_halfwidth(text),
+        // 假名 / 英数的全半角互转: 语义在 editcore::edit_ops (Sakura 实测), 这里不再抄第二份
+        "to-zenkaku" | "to-halfwidth" | "to-zenhira" | "to-hankata" | "hankata-to-zenkata" | "hankata-to-zenhira" | "to-zenei" | "to-hanei" => {
+            editcore::edit_ops::transform_text(kind, text, tab).unwrap_or_else(|| text.to_string())
+        }
         "tab2space" => text.replace('\t', &" ".repeat(tab.max(1))),
         "space2tab" => text
             .split('\n')
@@ -157,6 +182,19 @@ mod tests {
         assert_eq!(transform("tab2space", "a\tb", 2), "a  b");
         assert_eq!(transform("space2tab", "    x\n  y", 4), "\tx\n  y");
         assert_eq!(transform("full", "ab1", 4), "ａｂ１");
+        // 假名互转走 editcore::edit_ops
+        assert_eq!(transform("to-zenhira", "ｶﾀｶﾅ カタカナ", 4), "かたかな　かたかな");
+        assert_eq!(transform("to-hankata", "カタカナガパ", 4), "ｶﾀｶﾅｶﾞﾊﾟ");
+        assert_eq!(transform("hankata-to-zenkata", "ｶﾞﾊﾟ", 4), "ガパ");
+        assert_eq!(transform("hankata-to-zenhira", "ｶﾞﾊﾟ", 4), "がぱ");
+        assert_eq!(transform("to-zenei", "ab1", 4), "ａｂ１");
+        assert_eq!(transform("to-hanei", "ａｂ１", 4), "ab1");
+        assert_eq!(transform("no-such-op", "x", 4), "x");
+        for c in CMDS {
+            if let Transform(k) = c.action {
+                assert!(["upper", "lower", "full", "half", "tab2space", "space2tab"].contains(&k) || editcore::edit_ops::transform_text(k, "a", 4).is_some(), "editcore 不认识变换 {k}");
+            }
+        }
         let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(lines_op("sort-asc", v(&["b", "a", "c"])), v(&["a", "b", "c"]));
         assert_eq!(lines_op("unique", v(&["a", "b", "a"])), v(&["a", "b"]));

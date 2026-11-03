@@ -28,7 +28,7 @@
 | 批次 4 codecnv-* 系列 (SJIS / EUC / UTF-7 互转等) | not done | 打开 / 保存时的编码转换和「以指定编码重新打开」已覆盖主要用途; 对选区做编码内容转换极少用 |
 | 批次 5 偏好对话框 / 状态持久化 / i18n / 导入导出 / 类型别设置 / 字体行高 / 颜色覆盖 / 保存时备份 | done | |
 | 批次 5 会话恢复 (重开上次的标签) | done | 批次 9: 启动无命令行文件时恢复; 路径当不可信数据校验 (拒绝 UNC / 相对路径 / 超长), 跳过大文件, 偏好里可关 |
-| 批次 5 自动备份定时器 / 打开时文件锁 | not done | 保存时备份有了; 定时器需要在 UI 线程之外另起计时 / 写盘, 和「不常驻后台、不轮询」的原则冲突; 文件锁要 OS 级独占打开, 会让别的程序 (含 Tauri 版) 打不开同一文件 |
+| 批次 5 自动备份定时器 / 打开时文件锁 | done (批次 10) | `backup.rs`: 选项开着且有未保存文档时才排刷新 (无轮询), 备份到设置目录 `autosave/` (设置 > 打开自动备份文件); 文件锁 = Windows 共享读 / 禁止写, 保存时自动放开 (非 Windows 无强制锁, 提示不支持) |
 | 批次 5 查找栏 / 侧栏 / 终端 / Grep 面板文字翻译 | not done | 菜单、对话框、状态栏、命令表、偏好已翻译; 这几处还是中文字面量 |
 | 批次 5 sakura.ini 导入 | partial | 只认 7 个明确对得上的键 |
 | 批次 6 视图开关 / 行号 / 状态栏 / 标尺 / 空白标记 / 当前行 / 小地图 / 状态栏内容 / 修改行标记 / 主题插件映射 | done | |
@@ -38,21 +38,22 @@
 | 批次 6 插入日期 / 时间 / 戳记 | not done | 需要本地时区: std 没有, 加 `chrono` / `time` 要改 `Cargo.lock` (在 `ide-fast/` 之外), 本批次不碰; 用 UTC 会插错时间, 宁可不做 |
 | 批次 6 控制字符表 / 插入最近文件路径 / copy-html / 剪贴板历史 / base64·uudecode / 假名转换 | not done | 都是低频; 假名互转 `editcore` 里没有现成函数 (只有全角 / 半角), 不在这里另写一份语义 |
 | 批次 6 复制文件名 / 完整路径 | done | 批次 9 |
-| 批次 6 玻璃 / 半透明主题 + 背景亮度取色 | not done | 需要透明视口 + DWM 背景材质: workspace 禁 `unsafe`, 要引入 `window-vibrancy` 等新依赖 (改 `Cargo.lock`), 还要截屏取色。没有合理的原生近似, 玻璃主题在高速版里按不透明配色显示 |
+| 批次 6 玻璃 / 半透明主题 + 背景亮度取色 | partial (批次 10) | 半透明主题 (`translucent`) 用透明窗口 + 保留 alpha 的颜色, Windows 经 `window-vibrancy` 加 DWM 模糊 (首选项可关); 透明要在建窗口时定, 运行中换主题需重启。背景亮度取色 (截屏采样) 未做: `dynamic` 一律按浅色文字处理 |
 | 批次 7 Markdown 预览 (原生块渲染 / 点块跳行 / 大纲) | partial | `md_view.rs` 有标题 / 列表 (含任务) / 代码 / 表格 / 提示块 / 图片 / 链接, 点块回到源码行; 没有在预览里直接编辑、lint、HTML 导出、结构化查找 |
+| 批次 7 Markdown 预览编辑 / 检查 / 导出 | done (批次 10) | 块右上角 ✎ 就地改源码, 任务复选框可点 (都是一步撤销的行补丁), 检查 (editcore::md_lint) 进「问题」页, 导出同名 .html (editcore::md_render + Tauri 同款模板) |
 | 批次 7 持久终端会话 | done | `terminal.rs` 常驻 shell + 行缓冲, 带单测; 一次性 `exec_cmd` 仍用于选区管道 |
-| 批次 7 终端外观设置 (字体 / 滚动行数 / 配色) | not done | 终端固定用等宽字体 |
+| 批次 7 终端外观设置 (字体 / 滚动行数 / 配色) + 底部页签条 | done (批次 10) | 首选项「终端」页; 底部面板有 终端 / 输出 / 问题 三个页签 |
 | 批次 7 差异比较 / Git 源代码管理面板 | done | `diff.rs`, `scm.rs` (git 调用拒绝本地 filter / diff 驱动, 不执行仓库配置里的命令) |
-| 批次 7 扩展面板 (启用开关 / 权限 / GitHub 安装 / 检查更新) | partial | 插件菜单里有启用开关、导入、删除、恢复内置; GitHub 安装和更新检查要 HTTP 客户端 (新依赖), 没做 |
+| 批次 7 扩展面板 (启用开关 / 权限 / GitHub 安装 / 检查更新) | done (批次 10) | 插件菜单 > 从 GitHub 安装 / 更新: 只在点击时联网, 仅 https (含重定向), 大小 / 时间有上限, 清单与权限经 `store::inspect/install` 校验并需用户确认 |
 | 批次 7 宏菜单 | partial | 批次 9: 键盘宏保存 / 载入 (JSON); 「录成 Sakura .mac」(macro-rec-mac) 没做 |
 | 批次 7 工具菜单: 语法类型选择 / 历史管理 / SQL*Plus | not done | 语法由扩展名决定, 手动覆盖要在 `Doc` 上加类型字段并改所有 `registry.detect` 调用点; SQL*Plus 与 Vim 模式按 A8 排除 |
 | 批次 7 打印预览 (应用内分页) | not done | 在系统浏览器里预览 / 打印 |
 | 批次 8 脚本插件 (QuickJS 宿主 / 命令贡献 / `editor.write` / SVG / PPA / 文档关系图) | done | 惰性启动, 15 秒墙钟中断, 2 MB 结果上限, SVG 用 `svg_lite` 子集 |
-| 批次 8 `markdown.fence` (Pele / mermaid) 接入预览 | not done | 包能在 QuickJS 里渲染出 SVG, 但它用 CSS 变量 / 复杂样式, `svg_lite` 画不好 |
+| 批次 8 `markdown.fence` (Pele / mermaid) 接入预览 | done (批次 10) | `svg_lite` 补了 CSS 变量 / transform / 继承绘制属性 / 圆弧 / 多边形, 围栏经插件宿主惰性渲染并按主题着色 |
 | 批次 8 `agent.tool` 贡献 | not done | 没有 AI 面板就没有消费者 |
 | 批次 8 AI Chat 面板 (A4) | not done | 需要 HTTP 客户端、API key 存储和授权流程 (新依赖 + 密钥落盘), 没有合理的原生近似; 按 ROADMAP 留在 Tauri 版 |
 | 决策 A1-A3 (JS 引擎 / SVG) | done | rquickjs; 自带 `svg_lite` 代替 resvg |
-| 决策 A5 玻璃主题 | not done | 见上 |
+| 决策 A5 玻璃主题 | partial (批次 10) | 见上 |
 | 决策 A6 i18n | done | 中 / 日 / 英 |
 | 决策 A7 scm 逻辑 | done | 在 `ide-fast/src/scm.rs` 里自带, 没有动 Tauri 版 |
 | 决策 A8 Vim 模式 / SQL*Plus | not done (按决策排除) | editcore 里没有对应语义 |

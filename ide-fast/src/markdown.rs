@@ -20,6 +20,8 @@ pub struct Item {
     /// 任务列表: Some(是否已勾选)
     pub task: Option<bool>,
     pub text: String,
+    /// 源码行 (0 起): 预览里点任务复选框时据此改写那一行
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,7 +147,7 @@ pub fn parse(lines: &[String]) -> Vec<Parsed> {
                         Some("[x] ") | Some("[X] ") => (Some(true), &t[4..]),
                         _ => (None, t),
                     };
-                    items.push(Item { depth, ordered, num, task, text: text.trim().to_string() });
+                    items.push(Item { depth, ordered, num, task, text: text.trim().to_string(), line: i });
                     i += 1;
                 } else if lines[i].trim().is_empty() && lines.get(i + 1).map(|n| list_item(n).is_some()).unwrap_or(false) {
                     i += 1; // 松散列表: 项之间的单个空行

@@ -16,6 +16,40 @@ pub struct MdEvent {
     pub jump: Option<usize>,
     /// 点了链接 (原样的目标; `wiki:名字` 表示维基链接)
     pub link: Option<String>,
+    /// 点了块右上角的 ✎: 块的序号 (宿主据此算出源码行范围, 见 `mdtools::block_span`)
+    pub edit_req: Option<usize>,
+    /// 就地编辑框按了「应用」: (起, 止, 新文字)
+    pub apply: Option<(usize, usize, String)>,
+    /// 点了任务复选框: 源码行
+    pub toggle: Option<usize>,
+    /// 需要渲染的围栏块 (语言, 源码): 宿主按插件贡献去渲染, 结果下一帧经 `MdCtx::fences` 回来
+    pub fence_req: Vec<(String, String)>,
+}
+
+/// 预览里正在就地编辑的块
+pub struct MdEdit {
+    pub start: usize,
+    pub end: usize,
+    pub buf: String,
+    /// 开始编辑时的文档 id / 修订号: 之后文档在别处被改过就放弃这次编辑 (行范围可能已经不对)
+    pub doc: u64,
+    pub rev: u64,
+}
+
+/// 围栏块的渲染结果 (插件贡献的 `markdown.fence`)
+pub enum FenceRes {
+    Pending,
+    Svg(crate::svg_lite::Svg),
+    Failed(String),
+}
+
+/// 围栏结果的键: 语言 + 源码
+pub fn fence_key(lang: &str, text: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in lang.bytes().chain(std::iter::once(0)).chain(text.bytes()) {
+        h = (h ^ b as u64).wrapping_mul(0x100_0000_01b3);
+    }
+    h
 }
 
 /// 已加载的图片纹理 (路径 -> 纹理; 加载失败记 None, 不反复重试)
@@ -25,6 +59,8 @@ pub struct MdCache {
     /// 每块上次量到的高度 (含块间距); 视口外的块只占位不排版, 每帧开销与可见块数成正比
     heights: Vec<f32>,
     width: f32,
+    /// 正在就地编辑的块 (同时只有一个)
+    pub edit: Option<MdEdit>,
 }
 
 pub struct MdCtx<'a> {
@@ -33,6 +69,9 @@ pub struct MdCtx<'a> {
     pub registry: &'a TypeRegistry,
     pub theme: &'a Theme,
     pub tc: ThemeColors,
+    /// 有插件认领的围栏语言 -> 已有的渲染结果 (键见 `fence_key`)
+    pub fence_langs: &'a [String],
+    pub fences: &'a HashMap<u64, FenceRes>,
 }
 
 /// 只认本地 PNG (不引入网络和别的解码器); 太大的不读
@@ -219,7 +258,10 @@ fn list_ui(ui: &mut egui::Ui, items: &[Item], cx: &MdCtx, cache: &mut MdCache, e
         };
         ui.horizontal_top(|ui| {
             ui.add_space(it.depth as f32 * 18.0 + 4.0);
-            if let Some(mut done) = it.task { ui.add_enabled(false, egui::Checkbox::without_text(&mut done)); } else { ui.label(RichText::new(marker).color(cx.tc.fg_dim)); }
+            if let Some(mut done) = it.task {
+                // 点一下 = 改写源码那一行的 [ ] / [x] (宿主套补丁, 一步撤销); 画面等文档变了再更新
+                if ui.add(egui::Checkbox::without_text(&mut done)).changed() { ev.toggle = Some(it.line); }
+            } else { ui.label(RichText::new(marker).color(cx.tc.fg_dim)); }
             inline_ui(ui, &it.text, cx, cache, 14.0, cx.tc.fg, ev);
         });
     }
@@ -253,6 +295,48 @@ fn table_ui(ui: &mut egui::Ui, id: usize, rows: &[Vec<String>], aligns: &[Align]
 }
 
 /// 源码第 `line` 行 (0 起) 落在哪个块: 起始行不超过它的最后一个块
+/// 就地编辑框: 多行文本 + 应用 / 取消
+fn edit_ui(ui: &mut egui::Ui, cache: &mut MdCache, ev: &mut MdEvent) {
+    let Some(e) = cache.edit.as_mut() else { return };
+    let rows = e.buf.lines().count().clamp(3, 14);
+    ui.add(egui::TextEdit::multiline(&mut e.buf).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY).desired_rows(rows).code_editor());
+    let (mut apply, mut cancel) = (false, false);
+    ui.horizontal(|ui| {
+        apply = ui.button(crate::i18n::tr("md.apply")).clicked();
+        cancel = ui.button(crate::i18n::tr("md.cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
+    });
+    if apply {
+        ev.apply = Some((e.start, e.end, e.buf.clone()));
+        cache.edit = None;
+    } else if cancel {
+        cache.edit = None;
+    }
+}
+
+/// 插件贡献的围栏 (如 Pele 的 mermaid): 有结果画图, 还没有就请宿主去渲染, 失败显示原因和源码
+fn fence_ui(ui: &mut egui::Ui, lang: &str, text: &str, cx: &MdCtx, ev: &mut MdEvent) -> egui::Response {
+    let key = fence_key(lang, text);
+    egui::Frame::NONE
+        .inner_margin(4)
+        .show(ui, |ui| match cx.fences.get(&key) {
+            Some(FenceRes::Svg(svg)) => {
+                crate::svg_lite::show(ui, svg, Some(cx.tc.fg));
+            }
+            Some(FenceRes::Failed(why)) => {
+                ui.weak(format!("{lang}: {why}"));
+                ui.add(egui::Label::new(RichText::new(text).monospace()).selectable(true));
+            }
+            Some(FenceRes::Pending) => {
+                ui.weak(crate::i18n::trf("md.fence-pending", &[lang]));
+            }
+            None => {
+                ev.fence_req.push((lang.to_string(), text.to_string()));
+                ui.weak(crate::i18n::trf("md.fence-pending", &[lang]));
+            }
+        })
+        .response
+}
+
 pub fn block_at(blocks: &[Parsed], line: usize) -> Option<usize> {
     blocks.iter().rposition(|b| b.line <= line)
 }
@@ -295,6 +379,12 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                 continue;
             }
             let before = ui.cursor().min.y;
+            if cache.edit.as_ref().is_some_and(|e| e.start == b.line) {
+                edit_ui(ui, cache, &mut ev);
+                ui.add_space(6.0);
+                cache.heights[n] = ui.cursor().min.y - before;
+                continue;
+            }
             let mut click_block = true; // 链接、表格内容自己处理点击; 其它块点击 = 回到源码行
             let r = match &b.block {
                 Block::Heading { level, text } => {
@@ -330,6 +420,10 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                         })
                         .response
                 }
+                Block::Code { lang, text } if cx.fence_langs.contains(lang) => {
+                    click_block = false;
+                    fence_ui(ui, lang, text, cx, &mut ev)
+                }
                 Block::Code { lang, text } => {
                     let r = egui::Frame::NONE
                         .fill(if cx.tc.dark { Color32::from_black_alpha(70) } else { Color32::from_black_alpha(14) })
@@ -364,6 +458,13 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
             }
             if click_block && ev.link.is_none() && r.interact(Sense::click()).clicked() {
                 ev.jump = Some(b.line);
+            }
+            // 鼠标在块上时右上角出现 ✎: 就地编辑这一块的源码
+            if cache.edit.is_none() && ui.rect_contains_pointer(egui::Rect::from_min_max(r.rect.min, egui::pos2(ui.max_rect().right(), r.rect.bottom().max(r.rect.top() + 18.0)))) {
+                let hot = egui::Rect::from_min_size(egui::pos2(ui.max_rect().right() - 24.0, r.rect.top()), egui::vec2(22.0, 18.0));
+                let resp = ui.interact(hot, egui::Id::new(("md-edit", n)), Sense::click());
+                ui.painter().text(hot.center(), egui::Align2::CENTER_CENTER, "✎", FontId::proportional(13.0), if resp.hovered() { cx.tc.fg } else { cx.tc.fg_dim });
+                if resp.on_hover_text(crate::i18n::tr("md.edit-block")).clicked() { ev.edit_req = Some(n); }
             }
             ui.add_space(6.0);
             cache.heights[n] = ui.cursor().min.y - before;
@@ -419,7 +520,8 @@ mod tests {
     fn code_blocks_get_highlight_colours_for_known_languages() {
         let reg = TypeRegistry::default_registry();
         let theme = ThemeColors::builtin(true).syntax_theme();
-        let cx = MdCtx { base: None, registry: &reg, theme: &theme, tc: ThemeColors::builtin(true) };
+        let fences = HashMap::new();
+        let cx = MdCtx { base: None, registry: &reg, theme: &theme, tc: ThemeColors::builtin(true), fence_langs: &[], fences: &fences };
         let colored = code_job("let x = 1; // c", "rust", &cx, Color32::WHITE);
         assert!(colored.sections.len() > 1, "rust 代码被切成多种颜色");
         let plain = code_job("let x = 1;", "", &cx, Color32::WHITE);

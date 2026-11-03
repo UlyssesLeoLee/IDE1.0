@@ -24,6 +24,10 @@ pub enum App {
     Terminal, MdPreview, Dark, Highlight, Wrap, Sidebar, LineNumbers, StatusBar, Whitespace, Ruler, CurLine, Minimap, MinimalMode, ZoomIn, ZoomOut, ZoomReset,
     Prefs, ExportCfg, ImportCfg, ImportSakura, ResetCfg, KeyConfig, KeyList, Palette,
     CopyFname, CopyPath, SelParaPrev, SelParaNext, ModNext, ModPrev, MacroSave, MacroLoad, About,
+    SelMode, TagJump, TagBack, TagKeyword, TagsMake,
+    IsFwd, IsBack, IsRegexFwd, IsRegexBack, IsMigemoFwd, IsMigemoBack,
+    Base64Decode, UuDecode, CopyHtml, CopyHtmlLn, ClipHistory, CtrlCodes, InsDate, InsTime, InsStamp, StampCfg,
+    WrapCol, WrapWindow, WrapNone,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -86,6 +90,7 @@ pub fn action_id(a: Action) -> String {
         Action::GotoLine => "goto-line".into(),
         Action::ToggleOverwrite => "overwrite".into(),
         Action::ToggleReadonly => "readonly".into(),
+        Action::CodeCnv(k) => format!("codecnv.{k}"),
     }
 }
 
@@ -131,6 +136,19 @@ fn build() -> Vec<Entry> {
         z("app.sel-para-prev", "选到上一段落", "", "menu.edit", SelParaPrev), z("app.sel-para-next", "选到下一段落", "", "menu.edit", SelParaNext),
         z("app.mod-next", "下一处改动", "", "menu.search", ModNext), z("app.mod-prev", "上一处改动", "", "menu.search", ModPrev),
         z("app.macro-save", "保存键盘宏…", "", "menu.macro", MacroSave), z("app.macro-load", "载入键盘宏…", "", "menu.macro", MacroLoad),
+        z("app.sel-mode", "范围选择模式 (开始 / 结束)", "F6", "menu.edit", SelMode),
+        z("app.tag-jump", "标签跳转", "F12|Ctrl+T", "menu.search", TagJump), z("app.tag-back", "标签跳转: 返回", "Shift+F12|Ctrl+Shift+T", "menu.search", TagBack),
+        z("app.tag-keyword", "指定关键字的标签跳转…", "", "menu.search", TagKeyword), z("app.tags-make", "生成标签文件 (tags)", "", "menu.search", TagsMake),
+        z("app.is-fwd", "增量查找: 向后", "", "menu.search", IsFwd), z("app.is-back", "增量查找: 向前", "", "menu.search", IsBack),
+        z("app.is-regex-fwd", "增量查找: 正则 向后", "", "menu.search", IsRegexFwd), z("app.is-regex-back", "增量查找: 正则 向前", "", "menu.search", IsRegexBack),
+        z("app.is-migemo-fwd", "增量查找: Migemo 向后", "", "menu.search", IsMigemoFwd), z("app.is-migemo-back", "增量查找: Migemo 向前", "", "menu.search", IsMigemoBack),
+        z("app.base64", "Base64 解码", "Alt+F6", "menu.edit", Base64Decode), z("app.uudecode", "uudecode 解码", "Alt+F5", "menu.edit", UuDecode),
+        z("app.copy-html", "复制为彩色 HTML", "", "menu.edit", CopyHtml), z("app.copy-html-ln", "复制为彩色 HTML (带行号)", "", "menu.edit", CopyHtmlLn),
+        z("app.clip-history", "剪贴板历史…", "", "menu.edit", ClipHistory), z("app.ctrl-codes", "插入控制字符…", "", "menu.edit", CtrlCodes),
+        z("app.ins-date", "插入日期", "Alt+;", "menu.edit", InsDate), z("app.ins-time", "插入时间", "Alt+Shift+;", "menu.edit", InsTime),
+        z("app.ins-stamp", "插入戳记", "", "menu.edit", InsStamp), z("app.stamp-cfg", "戳记设置…", "", "menu.edit", StampCfg),
+        z("app.wrap-col", "按指定列数折行…", "Ctrl+Alt+S", "menu.view", WrapCol), z("app.wrap-window", "按窗口宽度折行", "Ctrl+Alt+W", "menu.view", WrapWindow),
+        z("app.wrap-none", "不折行", "Ctrl+Alt+X", "menu.view", WrapNone),
     ];
     for e in &mut v {
         match e.run {

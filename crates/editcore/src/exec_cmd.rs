@@ -31,6 +31,7 @@ fn shell(command: &str) -> Command {
         let mut c = Command::new("cmd");
         // raw_arg: 命令行原样交给 cmd (用 .args 会按 C 运行库规则给引号加反斜杠, cmd 不认, 带引号的命令就坏了)
         c.arg("/C").raw_arg(command);
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: GUI 进程里跑命令不要弹出控制台窗口
         c
     }
     #[cfg(not(windows))]

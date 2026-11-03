@@ -20,7 +20,16 @@ use editcore::syntax_styling::{Color, Theme};
 use editcore::type_config::{TokenKind, TypeConfig, TypeRegistry};
 use std::path::PathBuf;
 
+mod extras;
+mod ghopts;
+mod mdopts;
+mod sysopts;
+
 pub struct App {
+    /// 批次 10: 自动备份 / 文件锁 / 玻璃窗口 / 底部页签 (`app/sysopts.rs`)、Markdown 预览扩展 (`app/mdopts.rs`)、GitHub 插件窗口 (`app/ghopts.rs`)
+    sys: sysopts::SysState,
+    md10: mdopts::MdState,
+    gh: ghopts::GhState,
     docs: Vec<Doc>,
     active: usize,
     next_id: u64,
@@ -119,6 +128,8 @@ pub struct App {
     exit_session: Option<(Vec<String>, usize)>,
     /// 打开命令面板那一刻的脚本插件命令 (打开期间不再反复读盘)
     pal_plugins: Vec<PluginCmd>,
+    /// 批次 10 的小工具窗口 (剪贴板历史 / 控制字符 / 戳记 / 折行列数)
+    tools: crate::tools::Tools,
 }
 
 impl App {
@@ -131,9 +142,10 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), sys: Default::default(), md10: Default::default(), gh: Default::default(),
         };
         app.persist = persist;
+        app.sys.glass = plugins::is_translucent(&st.theme_plugin); // 窗口透明与否在建窗口时就定了 (main.rs 同一判断)
         app.apply_settings(&st);
         app.recent = st.recent.clone();
         app.recent_dirs = st.recent_dirs.clone();
@@ -332,7 +344,7 @@ impl App {
         let mut open = true;
         egui::Window::new(tr("pf.title")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search")] {
+                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search"), (PrefsTab::Terminal, "pf.tab.terminal")] {
                     ui.selectable_value(&mut p.tab, t, tr(key));
                 }
             });
@@ -831,8 +843,12 @@ impl App {
                 self.cur().tip = format!("backup: {e}");
             }
         }
+        let (cur_id, old_bk) = { let d = self.cur(); (d.id, crate::backup::file_name(d.path.as_deref(), &d.name, d.id)) };
+        self.before_save(cur_id);
         match self.cur().save_to(&path) {
             Ok(()) => {
+                let ai = self.active.min(self.docs.len() - 1);
+                self.after_save(ai, &old_bk);
                 self.cur().tip = trf("dlg.saved", &[&path.display().to_string()]);
                 true
             }
@@ -864,6 +880,7 @@ impl App {
         }
         self.remember_pos(i);
         let gone = self.docs.remove(i);
+        self.sys.backup.forget(&gone);
         self.jump.forget(gone.id);
         self.split_on = false;
         if self.docs.is_empty() {
@@ -1083,15 +1100,21 @@ impl App {
                 if ui.button(lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
                 if ui.button(lk("c.redo", "Ctrl+Y")).clicked() { self.cur().redo(); ui.close(); }
                 ui.separator();
-                if ui.button(lk("c.cut", "Ctrl+X")).clicked() { if let Some(c) = self.cur().edit("cut", None) { ctx.copy_text(c); } ui.close(); }
-                if ui.button(lk("c.copy", "Ctrl+C")).clicked() { if let Some(c) = self.cur().edit("copy", None) { ctx.copy_text(c); } ui.close(); }
+                if ui.button(lk("c.cut", "Ctrl+X")).clicked() { if let Some(c) = self.cur().edit("cut", None) { self.put_clip(ctx, c); } ui.close(); }
+                if ui.button(lk("c.copy", "Ctrl+C")).clicked() { if let Some(c) = self.cur().edit("copy", None) { self.put_clip(ctx, c); } ui.close(); }
                 if ui.button(lk("c.paste", "Ctrl+V")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste); ui.close(); }
                 if ui.button(lk("c.select-all", "Ctrl+A")).clicked() { self.cur().select_all(); ui.close(); }
                 ui.separator();
                 self.cmd_menu(ui, ctx);
                 ui.separator();
-                for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath)] {
-                    if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
+                for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("范围选择模式 (开始 / 结束)", KApp::SelMode), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath),
+                               ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
+                    if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
+                }
+                ui.separator();
+                ui.menu_button(trz("插入"), |ui| self.insert_menu(ui, ctx));
+                for (z, a) in [("Base64 解码", KApp::Base64Decode), ("uudecode 解码", KApp::UuDecode)] {
+                    if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
             });
             ui.menu_button(tr("menu.search"), |ui| {
@@ -1126,6 +1149,7 @@ impl App {
                         if !r.commands.is_empty() || r.script_only {
                             if ui.checkbox(&mut r.enabled.clone(), "").on_hover_text(tr("ui.plugin-enabled")).clicked() {
                                 let _ = plugins::set_enabled(&r.id, !r.enabled);
+                                self.md10.invalidate();
                                 if r.enabled { self.plug.unload(&r.id); }
                             }
                         }
@@ -1136,6 +1160,7 @@ impl App {
                         }
                         if ui.small_button(tr("c.delete")).clicked() {
                             let _ = plugins::remove(&r.id);
+                            self.md10.invalidate();
                             self.plug.unload(&r.id);
                             if self.theme_id == r.id { self.set_theme_plugin(""); }
                             ui.close();
@@ -1152,11 +1177,12 @@ impl App {
                 }
                 ui.separator();
                 if ui.button(tr("c.plugin-import")).clicked() { ui.close(); self.import_plugin_zip(); }
+                if ui.button(tr("c.plugin-github")).clicked() { ui.close(); self.gh_open(); }
                 let gone = plugins::removed_bundled();
                 if !gone.is_empty() {
                     ui.menu_button(tr("sub.plugin-restore"), |ui| {
                         for (id, name, _) in gone {
-                            if ui.button(name).clicked() { let _ = plugins::restore(&id); ui.close(); }
+                            if ui.button(name).clicked() { let _ = plugins::restore(&id); self.md10.invalidate(); ui.close(); }
                         }
                     });
                 }
@@ -1178,6 +1204,7 @@ impl App {
                 if ui.button(lk("c.import-config", "")).clicked() { ui.close(); self.import_settings(); }
                 if ui.button(lk("c.import-sakura", "")).clicked() { ui.close(); self.import_sakura(); }
                 if ui.button(lk("c.reset-settings", "")).clicked() { ui.close(); self.reset_settings(); }
+                if ui.button(tr("c.open-autosave")).clicked() { ui.close(); self.open_autosave(); }
                 ui.separator();
                 if ui.button(lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
             });
@@ -1237,6 +1264,13 @@ impl App {
                 if ui.checkbox(&mut self.dark, lk("c.dark", "")).clicked() { ui.close(); }
                 ui.checkbox(&mut self.highlight, lk("c.highlight", ""));
                 ui.checkbox(&mut self.wrap, lk("c.wrap", "Alt+Z"));
+                ui.menu_button(trz("折行方式"), |ui| {
+                    let col = self.cfg.view.wrap_col;
+                    if ui.radio(!self.wrap, Self::app_label(KApp::WrapNone, "不折行")).clicked() { self.run_app(KApp::WrapNone, ctx); ui.close(); }
+                    if ui.radio(self.wrap && col == 0, Self::app_label(KApp::WrapWindow, "按窗口宽度折行")).clicked() { self.run_app(KApp::WrapWindow, ctx); ui.close(); }
+                    let label = if col > 0 { format!("{} ({col})", Self::app_label(KApp::WrapCol, "按指定列数折行…")) } else { Self::app_label(KApp::WrapCol, "按指定列数折行…") };
+                    if ui.radio(self.wrap && col > 0, label).clicked() { self.run_app(KApp::WrapCol, ctx); ui.close(); }
+                });
                 ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
                 ui.separator();
                 ui.checkbox(&mut self.cfg.view.line_numbers, lk("c.line-numbers", ""));
@@ -1339,8 +1373,15 @@ impl App {
             if self.term.running() { ui.label("运行中…"); }
         });
         let h = (ui.available_height() - 28.0).max(30.0);
-        egui::ScrollArea::vertical().max_height(h).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-            ui.add(egui::Label::new(egui::RichText::new(self.term.display()).monospace()).selectable(true));
+        self.term.set_scrollback(self.cfg.term_scrollback);
+        let (tfg, tbg) = (self.cfg.term_fg.map(|c| Color32::from_rgb(c[0], c[1], c[2])), self.cfg.term_bg.map(|c| Color32::from_rgb(c[0], c[1], c[2])));
+        let tpx = self.cfg.term_font_px;
+        egui::Frame::NONE.fill(tbg.unwrap_or(Color32::TRANSPARENT)).show(ui, |ui| {
+            egui::ScrollArea::vertical().max_height(h).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
+                let mut t = egui::RichText::new(self.term.display()).monospace().size(tpx);
+                if let Some(c) = tfg { t = t.color(c); }
+                ui.add(egui::Label::new(t).selectable(true));
+            });
         });
         let r = ui.add(egui::TextEdit::singleline(&mut self.term.input).font(egui::TextStyle::Monospace).hint_text("输入命令, Enter 执行").desired_width(f32::INFINITY));
         if r.has_focus() {
@@ -1369,11 +1410,17 @@ impl App {
             self.md_parsed = Some((key, crate::markdown::parse(&self.docs[ai].lines)));
         }
         let blocks = self.md_parsed.take().expect("刚刚填好");
+        if self.md_cache.edit.as_ref().is_some_and(|e| e.doc != self.docs[ai].id || e.rev != self.docs[ai].rev) { self.md_cache.edit = None; } // 文档在别处改过: 放弃就地编辑
+        self.md10.sync_theme(self.dark, &self.theme_id);
+        self.md_toolbar(ui);
+        self.md_poll_fences(&ui.ctx().clone());
+        let fence_langs = self.md10.langs();
         let theme = self.tc.syntax_theme();
         let base = self.docs[ai].path.as_ref().and_then(|p| p.parent()).map(|p| p.to_path_buf());
-        let cx = crate::md_view::MdCtx { base: base.as_deref(), registry: &self.registry, theme: &theme, tc: self.tc };
+        let cx = crate::md_view::MdCtx { base: base.as_deref(), registry: &self.registry, theme: &theme, tc: self.tc, fence_langs: &fence_langs, fences: &self.md10.fences };
         let ev = crate::md_view::show(ui, &blocks.1, &cx, &mut self.md_cache, self.md_scroll_to.take());
         if let Some(l) = ev.jump { self.docs[ai].goto(l, 0); }
+        self.md_handle(ai, &blocks.1, &ev);
         if let Some(link) = ev.link {
             if let Some(name) = link.strip_prefix("wiki:") {
                 self.docs[ai].tip = format!("维基链接 [[{name}]]: 预览里不跳转");
@@ -1454,6 +1501,7 @@ impl App {
         if cmd(ctx, Modifiers::NONE, Key::Escape) {
             if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
             else if self.find.open { self.find.open = false; }
+            else if self.cur().sel_mode { self.cur().sel_mode = false; self.cur().tip = trz("范围选择模式: 关").into(); }
             else { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
         }
     }
@@ -1503,8 +1551,8 @@ impl App {
             KApp::Exit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             KApp::Undo => self.cur().undo(),
             KApp::Redo => self.cur().redo(),
-            KApp::Cut => { if let Some(c) = self.cur().edit("cut", None) { ctx.copy_text(c); } }
-            KApp::Copy => { if let Some(c) = self.cur().edit("copy", None) { ctx.copy_text(c); } }
+            KApp::Cut => { if let Some(c) = self.cur().edit("cut", None) { self.put_clip(ctx, c); } }
+            KApp::Copy => { if let Some(c) = self.cur().edit("copy", None) { self.put_clip(ctx, c); } }
             KApp::Paste => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
             KApp::SelectAll => self.cur().select_all(),
             KApp::Find => self.open_find(false),
@@ -1581,6 +1629,9 @@ impl App {
             KApp::MacroSave => self.macro_save(),
             KApp::MacroLoad => self.macro_load(),
             KApp::About => self.about_open = true,
+            KApp::SelMode | KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake | KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack
+            | KApp::Base64Decode | KApp::UuDecode | KApp::CopyHtml | KApp::CopyHtmlLn | KApp::ClipHistory | KApp::CtrlCodes | KApp::InsDate | KApp::InsTime | KApp::InsStamp | KApp::StampCfg
+            | KApp::WrapCol | KApp::WrapWindow | KApp::WrapNone => self.run_extra(a, ctx),
             KApp::Palette => {
                 self.cmdui.toggle_palette();
                 self.pal_plugins = Self::plugin_cmds();
@@ -1593,7 +1644,7 @@ impl App {
         let (name, path) = { let d = self.cur(); (d.name.clone(), d.path.clone()) };
         let text = if full { path.map(|p| p.display().to_string()) } else { Some(name) };
         self.cur().tip = match text {
-            Some(t) => { ctx.copy_text(t.clone()); trf("dlg.copied-name", &[&t]) }
+            Some(t) => { self.put_clip(ctx, t.clone()); trf("dlg.copied-name", &[&t]) }
             None => tr("dlg.no-path").into(),
         };
     }
@@ -1659,6 +1710,7 @@ impl App {
         }
         if let Some(tip) = self.cmdui.keylist_window(ctx) { self.cur().tip = tip; }
         if self.about_open { self.about_window(ctx); }
+        self.gh_window(ctx);
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
@@ -1702,7 +1754,8 @@ impl App {
     fn set_theme_plugin(&mut self, id: &str) {
         self.theme_id = id.to_string();
         let spec = plugins::rows().into_iter().find(|r| r.id == id && r.enabled).and_then(|r| r.theme);
-        self.theme_visuals = spec.as_ref().map(|t| plugins::visuals(&t.vars));
+        self.sys.theme_glass = spec.as_ref().is_some_and(|t| t.translucent);
+        self.theme_visuals = spec.as_ref().map(|t| plugins::visuals_glass(&t.vars, t.translucent));
         self.theme_vars = spec.map(|t| t.vars);
         if self.theme_visuals.is_none() { self.theme_id.clear(); }
     }
@@ -1716,6 +1769,7 @@ impl App {
             Ok((note, perms)) => {
                 let ok = rfd::MessageDialog::new().set_title(tr("dlg.import-plugin")).set_description(format!("{note}\n\n来源: {} (未验证)\n导入吗?", path.display())).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
                 if !ok { return; }
+                self.md10.invalidate();
                 match plugins::install_zip(&bytes, &perms) { Ok(m) => m, Err(e) => e }
             }
         };
@@ -1755,7 +1809,7 @@ impl App {
         let name = self.cur().name.clone();
         let tab = self.eff(&name).0;
         match a {
-            Action::Edit(n) => { if let Some(c) = self.cur().edit(n, None) { ctx.copy_text(c); } }
+            Action::Edit(n) => { if let Some(c) = self.cur().edit(n, None) { self.put_clip(ctx, c); } }
             Action::Transform(k) => self.cur().transform_sel(k, tab),
             Action::Lines(k) => self.cur().lines_op(k),
             Action::Indent => self.cur().indent(false, tab),
@@ -1768,6 +1822,7 @@ impl App {
                 }
             }
             Action::GotoLine => { self.goto_open = true; self.goto_text.clear(); }
+            Action::CodeCnv(id) => self.run_codecnv(id),
             Action::ToggleOverwrite => { let d = self.cur(); d.overwrite = !d.overwrite; d.tip = if d.overwrite { "改写模式".into() } else { "插入模式".into() }; }
             Action::ToggleReadonly => { let d = self.cur(); d.readonly = !d.readonly; d.tip = if d.readonly { "已设为只读".into() } else { "已取消只读".into() }; }
         }
@@ -1837,15 +1892,7 @@ impl App {
         let max_cols = self.max_cols;
         let ai = self.active.min(self.docs.len() - 1);
         let (tab, wrap_pref, _) = self.eff(&self.docs[ai].name.clone());
-        let mut theme = self.tc.syntax_theme();
-        // 词法颜色覆盖 (首选项「字体与颜色」)
-        for (kind, c) in [(TokenKind::Keyword, self.cfg.colors.keyword), (TokenKind::String, self.cfg.colors.string), (TokenKind::Comment, self.cfg.colors.comment), (TokenKind::Number, self.cfg.colors.number)] {
-            if let Some(c) = c {
-                let mut st = theme.get(kind);
-                st.fg = Color(c[0], c[1], c[2]);
-                theme.styles.insert(kind, st);
-            }
-        }
+        let theme = self.syntax_theme_full(); // 含首选项「字体与颜色」里的词法颜色覆盖
         let marks = self.find.marks_for(&self.docs[ai]);
         let mark_bg = Color32::from_rgba_unmultiplied(255, 200, 0, 70);
         let bracket_bg = Color32::from_rgba_unmultiplied(110, 190, 255, 95);
@@ -1864,7 +1911,9 @@ impl App {
         let pad = 6.0;
         // 自动换行: 每个逻辑行按可用宽度折成若干显示行, 行高不等 -> 记累计高度 (太长的文档不换行, 免得每次排版都要扫全篇)
         let wrap = wrap_pref && self.docs[ai].lines.len() <= 20000;
-        let wrap_w = if wrap { (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0) } else { f32::INFINITY };
+        let win_w = (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0);
+        // 指定列数折行: 列宽 = 列数 × 半角字符宽, 窗口更窄时仍以窗口为准
+        let wrap_w = if !wrap { f32::INFINITY } else if self.cfg.view.wrap_col > 0 { win_w.min(self.cfg.view.wrap_col as f32 * char_w + 1.0) } else { win_w };
         let use_offs = wrap || !self.docs[ai].folds.is_empty();
         let offs: Vec<f32> = if use_offs {
             let fsig: usize = self.docs[ai].folds.iter().map(|f| f.0 * 31 + f.1).sum::<usize>() + self.docs[ai].folds.len();
@@ -1945,7 +1994,7 @@ impl App {
                 }
             }
         }
-        if let Some(c) = clip_out { ctx.copy_text(c); }
+        if let Some(c) = clip_out { self.put_clip(ctx, c); }
         if let Some(r) = jump_row { self.jump_req = Some((self.docs[ai].id, r)); }
         self.preedit = preedit_now;
         let preedit = self.preedit.clone();
@@ -2298,6 +2347,11 @@ fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: 
 const DEFAULT_FONT_PX: f32 = 15.0;
 
 impl eframe::App for App {
+    /// 半透明主题: 窗口是透明的,清屏色也要全透明,面板自己的 alpha 才能透出桌面 / 模糊材质
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        if self.sys.glass { [0.0; 4] } else { Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32() }
+    }
+
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = &root.ctx().clone();
         self.tc = match &self.theme_vars { Some(v) if self.theme_visuals.is_some() => crate::view::ThemeColors::from_vars(v), _ => crate::view::ThemeColors::builtin(self.dark) };
@@ -2309,6 +2363,7 @@ impl eframe::App for App {
             self.applied_font = self.cfg.font_family.clone();
         }
         self.sync_doc_prefs();
+        self.sys_frame(ctx);
         self.track_geometry(ctx);
         if ctx.input(|i| i.viewport().close_requested()) {
             if self.exit_session.is_none() { self.exit_session = Some((self.session_paths(), self.session_active())); }
@@ -2347,6 +2402,7 @@ impl eframe::App for App {
         self.diff_windows(ctx);
         if self.props.is_some() { self.props_window(ctx); }
         self.cmd_windows(ctx);
+        self.tools_windows(ctx);
         if self.split_on {
             let last = self.docs.len() - 1;
             self.left_doc = self.left_doc.min(last);
@@ -2469,6 +2525,7 @@ impl eframe::App for App {
                 if d.readonly { ui.label(tr("st.readonly")); }
                 if d.rec.is_some() { ui.colored_label(Color32::from_rgb(230, 70, 70), "● REC"); }
                 if d.box_sel.is_some() { ui.label(tr("st.box")); }
+                if d.sel_mode { ui.colored_label(Color32::from_rgb(230, 160, 40), trz("范围选择")); }
                 if !d.extra.is_empty() { ui.label(trf("st.cursors", &[&(d.extra.len() + 1).to_string()])); }
                 ui.separator();
                 ui.label(&d.tip);
@@ -2491,7 +2548,7 @@ impl eframe::App for App {
         // 查找栏 / 侧栏输入框 / 对话框正在收键盘时, 编辑区不抢
         let find_focus = self.cmdui.capturing() || ctx.memory(|m| m.focused()).map(|f| !self.editor_ids.contains(&f)).unwrap_or(false);
         if self.term.open {
-            let r = egui::Panel::bottom("term").resizable(true).default_size(self.cfg.view.term_h).show(root, |ui| self.term_ui(ui));
+            let r = egui::Panel::bottom("term").resizable(true).default_size(self.cfg.view.term_h).show(root, |ui| self.bottom_ui(ui));
             if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.term_h = r.response.rect.height().round().clamp(60.0, 900.0); }
         }
         self.term.poll();

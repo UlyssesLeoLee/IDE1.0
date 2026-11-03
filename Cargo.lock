@@ -3065,12 +3065,14 @@ dependencies = [
 name = "ide-fast"
 version = "0.3.0"
 dependencies = [
+ "chrono",
  "editcore",
  "eframe",
  "png 0.17.16",
  "rfd",
  "rquickjs",
  "serde_json",
+ "window-vibrancy",
 ]
 
 [[package]]

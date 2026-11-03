@@ -10,6 +10,9 @@ use std::sync::mpsc::{channel, Receiver};
 
 /// 会话输出最多留这么多字节, 超出从最前面丢 (按行)
 const MAX_KEEP: usize = 1 << 20;
+/// 「保留行数」设置的范围 (默认 5000); 字节上限 `MAX_KEEP` 仍然同时生效
+pub const MIN_SCROLLBACK: usize = 100;
+pub const MAX_SCROLLBACK: usize = 100_000;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Esc {
@@ -32,17 +35,42 @@ pub struct LineBuffer {
     esc: Esc,
     csi: String,
     ver: u64,
+    /// `done` 里的行数 / 最多保留多少行
+    done_lines: usize,
+    max_lines: usize,
 }
 
 impl LineBuffer {
     pub fn new() -> Self {
-        LineBuffer { done: String::new(), line: vec![], col: 0, esc: Esc::None, csi: String::new(), ver: 0 }
+        LineBuffer { done: String::new(), line: vec![], col: 0, esc: Esc::None, csi: String::new(), ver: 0, done_lines: 0, max_lines: MAX_SCROLLBACK }
     }
 
     pub fn clear(&mut self) {
-        let v = self.ver + 1;
+        let (v, m) = (self.ver + 1, self.max_lines);
         *self = LineBuffer::new();
         self.ver = v;
+        self.max_lines = m;
+    }
+
+    /// 最多保留的行数 (夹到合法范围); 变小了立刻裁掉多的
+    pub fn set_scrollback(&mut self, lines: usize) {
+        let n = lines.clamp(MIN_SCROLLBACK, MAX_SCROLLBACK);
+        if n != self.max_lines {
+            self.max_lines = n;
+            self.trim_lines();
+            self.ver += 1;
+        }
+    }
+
+    /// 超过行数上限就从最前面丢整行
+    fn trim_lines(&mut self) {
+        if self.done_lines <= self.max_lines {
+            return;
+        }
+        let drop = self.done_lines - self.max_lines;
+        let at = self.done.match_indices('\n').nth(drop - 1).map(|(i, _)| i + 1).unwrap_or(self.done.len());
+        self.done.drain(..at);
+        self.done_lines = self.max_lines;
     }
 
     /// 喂入一段输出文本 (转义序列可以被切在两次调用之间)
@@ -121,12 +149,17 @@ impl LineBuffer {
         let l: String = self.line.drain(..).collect();
         self.done.push_str(l.trim_end());
         self.done.push('\n');
+        self.done_lines += 1;
         self.col = 0;
+        if self.done_lines > self.max_lines + self.max_lines / 4 {
+            self.trim_lines(); // 多攒 1/4 再一起丢, 不用每行都搬一次内存
+        }
         if self.done.len() > MAX_KEEP {
             let cut = self.done.len() - MAX_KEEP / 2;
             let cut = (cut..self.done.len()).find(|&i| self.done.is_char_boundary(i)).unwrap_or(self.done.len());
             let at = self.done[cut..].find('\n').map(|i| cut + i + 1).unwrap_or(cut);
             self.done.drain(..at);
+            self.done_lines = self.done.matches('\n').count();
         }
     }
 
@@ -148,6 +181,7 @@ impl LineBuffer {
             },
             'J' if n == 2 || n == 3 => {
                 self.done.clear();
+                self.done_lines = 0;
                 self.line.clear();
                 self.col = 0;
             }
@@ -317,6 +351,11 @@ impl Terminal {
     }
 
     /// 清屏 (一次性输出和会话输出都清)
+    /// 外观设置里的保留行数
+    pub fn set_scrollback(&mut self, lines: usize) {
+        self.buf.set_scrollback(lines);
+    }
+
     pub fn clear(&mut self) {
         self.output.clear();
         self.buf.clear();
@@ -523,6 +562,25 @@ mod tests {
         assert_eq!(b.text(), "ab\n");
         b.feed("x\u{1b}[2Jy");
         assert_eq!(b.text(), "y", "2J 清屏");
+    }
+
+    #[test]
+    fn scrollback_setting_keeps_only_the_newest_lines() {
+        let mut b = LineBuffer::new();
+        b.set_scrollback(MIN_SCROLLBACK);
+        for i in 0..1000 {
+            b.feed(&format!("line {i}\n"));
+        }
+        let t = b.text();
+        let n = t.lines().count();
+        assert!((MIN_SCROLLBACK..=MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1).contains(&n), "{n}");
+        assert!(t.ends_with("line 999\n") && !t.contains("line 0\n"));
+        b.set_scrollback(1000);
+        b.set_scrollback(1); // 夹到下限 (不会变成 0 行),并且立刻裁到这个行数
+        assert_eq!(b.text().lines().count(), MIN_SCROLLBACK);
+        b.clear();
+        for _ in 0..500 { b.feed("y\n"); }
+        assert!(b.text().lines().count() <= MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1, "clear 之后设置还在");
     }
 
     #[test]

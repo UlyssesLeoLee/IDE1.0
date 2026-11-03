@@ -6,6 +6,9 @@
 //!
 //! 启动耗时追踪: 设环境变量 `IDE_FAST_TRACE=1`, 在 stderr 打印 "进程入口 -> 窗口创建 -> 首帧" 各点的毫秒数。
 
+// Windows 发行版走 GUI 子系统: 否则双击启动会多出一个控制台窗口 (调试构建保留控制台, 方便看 IDE_FAST_TRACE 输出)
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod app;
 mod doc;
 mod find;
@@ -32,6 +35,12 @@ mod terminal;
 mod sidebar;
 mod tabs;
 mod view;
+mod textconv;
+mod tools;
+mod backup;
+mod ghplugin;
+mod ai;
+mod mdtools;
 
 use std::time::Instant;
 
@@ -69,12 +78,15 @@ fn main() -> eframe::Result<()> {
     // 上次的窗口位置 / 大小 / 最大化状态 (没有就用默认的 1100x720)
     let st = settings::Settings::load();
     let font_file = st.font_family.clone();
+    // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
+    let glass = plugins::is_translucent(&st.theme_plugin);
+    let blur = glass && st.glass_blur;
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0]);
     if let Some(g) = st.view.geom {
         viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
     }
     let options = eframe::NativeOptions {
-        viewport,
+        viewport: viewport.with_transparent(glass),
         // 不画抗锯齿多重采样、不要深度 / 模板缓冲: 文本编辑器用不上, 少一点 GPU 初始化
         multisampling: 0,
         depth_buffer: 0,
@@ -89,6 +101,13 @@ fn main() -> eframe::Result<()> {
             trace.mark("window + GL context ready");
             fonts::install(&cc.egui_ctx, &font_file);
             trace.mark("fonts installed");
+            #[cfg(windows)]
+            if blur {
+                // 窗口背后加 DWM 模糊; 失败 (旧系统 / 驱动) 就只剩 alpha 叠色, 不影响使用
+                let _ = window_vibrancy::apply_blur(cc, Some((0, 0, 0, 1)));
+            }
+            #[cfg(not(windows))]
+            let _ = blur;
             Ok(Box::new(app::App::new(args, inbox, trace)))
         }),
     )

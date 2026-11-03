@@ -55,6 +55,18 @@ pub struct Settings {
     /// 上次关闭时打开的文件 (最多 20 个, 只记有路径的文档) 和活动标签在其中的位置
     pub session: Vec<String>,
     pub session_active: usize,
+    /// 自动备份: 每隔 `auto_backup_min` 分钟把有未保存修改的文档写到备份目录 (见 `backup.rs`)
+    pub auto_backup: bool,
+    pub auto_backup_min: u32,
+    /// 打开文件时加「共享读、禁止写」的锁 (见 `backup.rs`)
+    pub file_lock: bool,
+    /// 终端外观: 字号 (像素) / 保留行数 / 前景 / 背景 (None = 跟随主题)
+    pub term_font_px: f32,
+    pub term_scrollback: usize,
+    pub term_fg: Option<[u8; 3]>,
+    pub term_bg: Option<[u8; 3]>,
+    /// 半透明主题: 窗口背后用 Windows 的模糊 (DWM) 材质; 关 = 只做 alpha 叠色
+    pub glass_blur: bool,
 }
 
 impl Default for Settings {
@@ -64,6 +76,7 @@ impl Default for Settings {
             lang: "zh".into(), auto_indent: true, smart_indent: false, insert_spaces: false, default_encoding: "UTF-8".into(), default_eol: "CRLF".into(),
             save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
             colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![], restore_session: true, session: vec![], session_active: 0,
+            auto_backup: false, auto_backup_min: 5, file_lock: false, term_font_px: 13.0, term_scrollback: 5000, term_fg: None, term_bg: None, glass_blur: true,
         }
     }
 }
@@ -148,11 +161,16 @@ pub struct ViewState {
     pub ruler: bool,
     pub cur_line: bool,
     pub minimap: bool,
+    /// 折行列数 (0 = 按窗口宽度); 只在开着自动换行时有效
+    pub wrap_col: usize,
+    /// 戳记: 内容 (0 日期 / 1 时间 / 2 日期+时间) 与位置 (0 行首 / 1 光标处), 见 `textconv::StampKind`
+    pub stamp_kind: u8,
+    pub stamp_pos: u8,
 }
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, wrap_col: 0, stamp_kind: 2, stamp_pos: 0 }
     }
 }
 
@@ -244,6 +262,12 @@ impl Settings {
         b("auto_indent", &mut self.auto_indent); b("smart_indent", &mut self.smart_indent); b("insert_spaces", &mut self.insert_spaces);
         b("restore_session", &mut self.restore_session);
         b("save_backup", &mut self.save_backup); b("check_external", &mut self.check_external); b("confirm_close", &mut self.confirm_close);
+        b("auto_backup", &mut self.auto_backup); b("file_lock", &mut self.file_lock); b("glass_blur", &mut self.glass_blur);
+        if let Some(n) = v["auto_backup_min"].as_u64() { self.auto_backup_min = crate::backup::clamp_interval(n.min(u32::MAX as u64) as u32); }
+        if let Some(f) = v["term_font_px"].as_f64() { self.term_font_px = (f as f32).clamp(8.0, 32.0); }
+        if let Some(n) = v["term_scrollback"].as_u64() { self.term_scrollback = (n as usize).clamp(crate::terminal::MIN_SCROLLBACK, crate::terminal::MAX_SCROLLBACK); }
+        if v.get("term_fg").is_some() { self.term_fg = v["term_fg"].as_str().and_then(parse_hex); }
+        if v.get("term_bg").is_some() { self.term_bg = v["term_bg"].as_str().and_then(parse_hex); }
         st("theme_plugin", &mut self.theme_plugin); st("default_encoding", &mut self.default_encoding); st("default_eol", &mut self.default_eol); st("font_family", &mut self.font_family);
         if let Some(f) = v["font_px"].as_f64() { self.font_px = (f as f32).clamp(8.0, 40.0); }
         if let Some(f) = v["line_height"].as_f64() { self.line_height = (f as f32).clamp(0.8, 2.5); }
@@ -281,6 +305,9 @@ impl Settings {
         b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
         b_of(w, "line_numbers", &mut self.view.line_numbers); b_of(w, "status_bar", &mut self.view.status_bar); b_of(w, "whitespace", &mut self.view.whitespace);
         b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap);
+        if let Some(n) = w["wrap_col"].as_u64() { self.view.wrap_col = if n == 0 { 0 } else { (n as usize).clamp(10, crate::tools::WRAP_COL_MAX) }; }
+        if let Some(n) = w["stamp_kind"].as_u64() { self.view.stamp_kind = n.min(2) as u8; }
+        if let Some(n) = w["stamp_pos"].as_u64() { self.view.stamp_pos = n.min(1) as u8; }
         if let Some(f) = w["side_w"].as_f64() { self.view.side_w = (f as f32).clamp(120.0, 900.0); }
         if let Some(f) = w["term_h"].as_f64() { self.view.term_h = (f as f32).clamp(60.0, 900.0); }
         let g = &w["geom"];
@@ -297,6 +324,8 @@ impl Settings {
                 "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
                 "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
                 "colors": self.colors.to_json(),
+                "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur,
+                "term_font_px": self.term_font_px, "term_scrollback": self.term_scrollback, "term_fg": self.term_fg.map(hex), "term_bg": self.term_bg.map(hex),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces })).collect::<Vec<_>>(),
                 "search": self.search.to_json(),
                 "keys": Value::Object(self.keys.iter().map(|(k, x)| (k.clone(), json!(x))).collect()) })
@@ -313,7 +342,8 @@ impl Settings {
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
         o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom,
-            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap }));
+            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap,
+            "wrap_col": w.wrap_col, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos }));
         v
     }
 
@@ -481,7 +511,7 @@ mod tests {
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, wrap_col: 72, stamp_kind: 1, stamp_pos: 1 };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉

@@ -19,10 +19,16 @@ eframe = { version = "0.37", default-features = false, features = ["default_font
 # 系统打开 / 另存为对话框
 rfd = { version = "0.15", default-features = false }
 serde_json = "1"
+# 本地时间 (插入日期 / 时间 / 戳记); 工作区已有, 只开 clock 特性
+chrono.workspace = true
 # Markdown 预览里的本地 PNG 图片
 png = { version = "0.17", default-features = false }
 # 脚本插件宿主 (惰性创建, 启动时不加载): QuickJS, 带内存上限 + 墙钟中断
 rquickjs = { version = "0.9", default-features = false }
+
+# 半透明 (玻璃) 主题: Windows 的 DWM 模糊背景 (内部有 unsafe, 由依赖承担; 本 crate 仍 forbid unsafe)。Tauri 版同一个版本, 已在锁文件里
+[target.'cfg(windows)'.dependencies]
+window-vibrancy = { version = "0.8", default-features = false }
 
 [lints]
 workspace = true

@@ -75,6 +75,12 @@ impl PlugState {
         self.jobs.push(Job { rx, perms: perms.to_vec(), title: title.to_string(), doc_id: doc.id, rev: doc.rev });
     }
 
+    /// 直接调插件登记的方法 (如 `markdown.fence` 的 render), 不经命令 / 文档参数; 宿主第一次用到时才创建
+    pub fn call_raw(&mut self, plugin: &str, method: &str, args: &Value) -> Receiver<Result<String, String>> {
+        let host = self.host.get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
+        host.call(plugin, method, args)
+    }
+
     /// 插件被禁用 / 删除: 丢掉运行环境 (宿主没创建过就什么都不用做)
     pub fn unload(&mut self, plugin: &str) {
         if let Some(h) = &self.host {

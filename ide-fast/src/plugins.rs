@@ -15,6 +15,8 @@ pub fn root() -> PathBuf {
 pub struct ThemeSpec {
     pub label: String,
     pub vars: BTreeMap<String, String>,
+    /// `contributes.theme.translucent`: 半透明 (玻璃) 主题 —— 窗口要透明, 颜色保留 alpha
+    pub translucent: bool,
 }
 
 pub struct Row {
@@ -29,12 +31,14 @@ pub struct Row {
     pub commands: Vec<(String, String)>,
     /// manifest 声明的权限 (editor.read / editor.write ...): 决定交给脚本的文档参数和能不能写回
     pub perms: Vec<String>,
+    /// `contributes.markdown.fence`: (围栏语言, 渲染方法名) —— 预览里这种围栏交给插件画成 SVG
+    pub fences: Vec<(String, String)>,
 }
 
 impl Row {
     /// 脚本插件里高速版跑不了的: 没有命令贡献的脚本插件 (例如 Pele 的 markdown.fence, 需要 DOM)
     pub fn pele_like(&self) -> bool {
-        self.script_only && self.commands.is_empty()
+        self.script_only && self.commands.is_empty() && self.fences.is_empty()
     }
 }
 
@@ -46,7 +50,7 @@ fn row_of(p: Installed) -> Row {
     let m = &p.manifest;
     let theme = m.contributes.get("theme").and_then(|t| {
         let vars: BTreeMap<String, String> = t["vars"].as_object()?.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect();
-        Some(ThemeSpec { label: t["label"].as_str().or(t["name"].as_str()).unwrap_or(&m.name).to_string(), vars })
+        Some(ThemeSpec { label: t["label"].as_str().or(t["name"].as_str()).unwrap_or(&m.name).to_string(), vars, translucent: t["translucent"].as_bool().unwrap_or(false) })
     });
     let script_only = theme.is_none() && !m.entry.is_empty();
     let commands = m.contributes.get("command").and_then(|c| c.as_array()).map(|a| {
@@ -56,7 +60,10 @@ fn row_of(p: Installed) -> Row {
             Some((id, title))
         }).collect()
     }).unwrap_or_default();
-    Row { id: m.id.clone(), name: m.name.clone(), version: m.version.clone(), enabled: p.enabled, theme, script_only, commands, perms: m.permissions.clone() }
+    let fences = m.contributes.get("markdown.fence").and_then(|c| c.as_array()).map(|a| {
+        a.iter().filter_map(|c| Some((c["lang"].as_str()?.to_string(), c["method"].as_str()?.to_string()))).collect()
+    }).unwrap_or_default();
+    Row { id: m.id.clone(), name: m.name.clone(), version: m.version.clone(), enabled: p.enabled, theme, script_only, commands, perms: m.permissions.clone(), fences }
 }
 
 /// `#rgb` `#rrggbb` `#rrggbbaa` `rgb(r,g,b)` `rgba(r,g,b,a)`
@@ -85,14 +92,33 @@ fn luminance(c: Color32) -> f32 {
     (0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32) / 255.0
 }
 
+/// 启动时问一句: 这个主题插件是不是半透明的 (id 为空 = 内置深 / 浅色, 不碰插件仓库)
+pub fn is_translucent(id: &str) -> bool {
+    !id.is_empty() && rows().into_iter().any(|r| r.id == id && r.enabled && r.theme.is_some_and(|t| t.translucent))
+}
+
+/// 玻璃主题里编辑区的垫色: 文字是浅色 (深色主题) 垫黑、否则垫白, 透明度固定, 保证透出桌面时文字仍然看得清
+fn glass_edit_tint(vars: &BTreeMap<String, String>) -> Color32 {
+    let light_text = vars.get("--fg").and_then(|v| parse_color(v)).map(|c| luminance(c) >= 0.5).unwrap_or(true);
+    if light_text { Color32::from_rgba_unmultiplied(0, 0, 0, 77) } else { Color32::from_rgba_unmultiplied(255, 255, 255, 77) }
+}
+
 /// 主题变量 -> egui 外观。取不到的变量就沿用深 / 浅基底 (背景亮度决定基底)
+#[cfg(test)]
 pub fn visuals(vars: &BTreeMap<String, String>) -> egui::Visuals {
+    visuals_glass(vars, false)
+}
+
+/// 同 [`visuals`]; `glass` = 半透明主题: 面板 / 控件的 rgba 颜色保留 alpha (窗口是透明的, 底下就是桌面 / 模糊材质),
+/// 编辑区用固定垫色 (`--bg-edit: transparent` 时), 弹出的菜单 / 窗口用接近不透明的底, 免得文字叠在桌面上看不清。
+pub fn visuals_glass(vars: &BTreeMap<String, String>, glass: bool) -> egui::Visuals {
     let get = |k: &str| vars.get(k).and_then(|v| parse_color(v));
-    let edit = get("--bg-edit").unwrap_or(Color32::from_gray(30));
-    let mut v = if luminance(edit) < 0.5 { egui::Visuals::dark() } else { egui::Visuals::light() };
-    // 半透明颜色在原生窗口里没有底图可透, 先铺到 --bg-edit 上
+    let edit = get("--bg-edit").unwrap_or(if glass { glass_edit_tint(vars) } else { Color32::from_gray(30) });
+    let dark_base = if glass { vars.get("--fg").and_then(|v| parse_color(v)).map(|c| luminance(c) >= 0.5).unwrap_or(true) } else { luminance(edit) < 0.5 };
+    let mut v = if dark_base { egui::Visuals::dark() } else { egui::Visuals::light() };
+    // 不透明主题: 半透明颜色在原生窗口里没有底图可透, 先铺到 --bg-edit 上
     let solid = |c: Color32| -> Color32 {
-        if c.a() == 255 {
+        if glass || c.a() == 255 {
             return c;
         }
         let a = c.a() as f32 / 255.0;
@@ -134,6 +160,11 @@ pub fn visuals(vars: &BTreeMap<String, String>) -> egui::Visuals {
     if let Some(c) = get("--bg-active") {
         v.widgets.active.weak_bg_fill = solid(c);
         v.widgets.active.bg_fill = solid(c);
+    }
+    if glass {
+        // 菜单 / 弹窗叠在别的东西上, 底要几乎不透明 (面板那层 alpha 太低, 文字会糊在桌面上)
+        let base = if dark_base { Color32::from_rgb(24, 26, 32) } else { Color32::from_rgb(244, 245, 248) };
+        v.window_fill = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 238);
     }
     v
 }
@@ -193,6 +224,26 @@ mod tests {
         assert_eq!(parse_color("rgb(1, 2, 3)"), Some(Color32::from_rgb(1, 2, 3)));
         assert_eq!(parse_color("rgba(255,255,255,0.5)").map(|c| c.a()), Some(127));
         assert_eq!(parse_color("var(--x)"), None);
+    }
+
+    #[test]
+    fn glass_themes_keep_alpha_and_get_a_readable_tint() {
+        let vars: BTreeMap<String, String> = [("--bg-edit", "transparent"), ("--bg-side", "rgba(255,255,255,0.1)"), ("--fg", "#ffffff")].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let g = visuals_glass(&vars, true);
+        assert!(g.panel_fill.a() < 60 && g.panel_fill.a() > 0, "面板保留半透明: {:?}", g.panel_fill);
+        assert!(g.extreme_bg_color.a() > 0 && g.extreme_bg_color.a() < 255, "编辑区有垫色但不全黑: {:?}", g.extreme_bg_color);
+        assert!(g.window_fill.a() >= 230, "弹窗几乎不透明");
+        assert!(g.dark_mode);
+        assert_eq!(visuals(&vars).panel_fill.a(), 255, "非玻璃主题仍铺成不透明");
+        assert!(!is_translucent(""), "内置主题不是玻璃");
+    }
+
+    #[test]
+    fn bundled_crystal_and_clear_are_the_translucent_ones() {
+        let rows = rows();
+        let t = |id: &str| rows.iter().find(|r| r.id == id).and_then(|r| r.theme.as_ref()).map(|t| t.translucent);
+        assert_eq!((t("theme-crystal"), t("theme-clear")), (Some(true), Some(true)));
+        assert_eq!(t("theme-dark"), Some(false));
     }
 
     #[test]
