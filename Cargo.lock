@@ -214,7 +214,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
  "x11rb",
 ]
 
@@ -1754,7 +1754,7 @@ dependencies = [
 
 [[package]]
 name = "editcore"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "encoding_rs",
  "fancy-regex",
@@ -3051,7 +3051,7 @@ checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
 name = "ide-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aci-emitter",
  "anyhow",
@@ -3063,18 +3063,19 @@ dependencies = [
 
 [[package]]
 name = "ide-fast"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "editcore",
  "eframe",
  "png 0.17.16",
  "rfd",
+ "rquickjs",
  "serde_json",
 ]
 
 [[package]]
 name = "ide-kernel"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "editcore",
  "serde",
@@ -3083,11 +3084,11 @@ dependencies = [
 
 [[package]]
 name = "ide-kernel-core"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "ide-shell"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aci-emitter",
  "anyhow",
@@ -3102,7 +3103,7 @@ dependencies = [
 
 [[package]]
 name = "ide-shell-desktop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -3123,7 +3124,7 @@ dependencies = [
 
 [[package]]
 name = "ide-shell-protocol"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3142,7 +3143,7 @@ dependencies = [
 
 [[package]]
 name = "ide-shell-web"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aci-emitter",
  "crossterm",
@@ -5338,6 +5339,33 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "rquickjs"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c5227859c4dfc83f428e58f9569bf439e628c8d139020e7faff437e6f5abaa0"
+dependencies = [
+ "rquickjs-core",
+]
+
+[[package]]
+name = "rquickjs-core"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e82e0ca83028ad5b533b53b96c395bbaab905a5774de4aaf1004eeacafa3d85d"
+dependencies = [
+ "rquickjs-sys",
+]
+
+[[package]]
+name = "rquickjs-sys"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fed0097b0b4fbb2a87f6dd3b995a7c64ca56de30007eb7e867dfdfc78324ba5"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

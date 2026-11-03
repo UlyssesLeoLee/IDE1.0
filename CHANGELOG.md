@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-11-02
 
 ### 高速版 (原生 Rust, `ide-fast/`) — 批次 9
 
