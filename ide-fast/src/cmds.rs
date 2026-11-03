@@ -67,7 +67,7 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "缩进", label: "增加缩进", keys: "", action: Indent },
     Cmd { group: "缩进", label: "减少缩进", keys: "Shift+Tab", action: Outdent },
     Cmd { group: "", label: "切换行注释", keys: "Ctrl+/", action: ToggleComment },
-    Cmd { group: "", label: "转到行…", keys: "Ctrl+G", action: GotoLine },
+    Cmd { group: "", label: "转到行…", keys: "Ctrl+J", action: GotoLine },
     Cmd { group: "", label: "改写 / 插入模式", keys: "Insert", action: ToggleOverwrite },
     Cmd { group: "", label: "只读", keys: "", action: ToggleReadonly },
     Cmd { group: "Markdown", label: "粗体", keys: "Ctrl+Alt+B", action: Edit("md-bold") },

@@ -45,6 +45,8 @@ Mostly small items in `doc.rs` and `app.rs`; no new crates.
 6. Grep result document (Sakura header/footer, Enter/double-click jump, Ctrl+F inside results).
 7. Grep-replace option parity and reload of open clean tabs.
 8. Search defaults persisted in prefs.
+**批次 2 状态 (已实现)**: 1-8 项均已落地 (find.rs / grep.rs)。查找、增量查找、强调、置换都走 editcore::search_ops (step / hits / match_expand / validate), 没有用 search_highlight / incremental_search (Tauri 两个前端也没用它们)。Ctrl+G 改为 Grep (同 Tauri), 转到行只留 Ctrl+J。未做: 迁移 / Migemo 增量查找 (isearch)、Grep 结果里命中词强调 (结果文档用查找栏的强调即可)、单个超大目录内的取消粒度 (分片最深两层, 更深的整棵一片)。
+
 
 ## Batch 3: Command registry, key map and menu rewrite (internal architecture)
 

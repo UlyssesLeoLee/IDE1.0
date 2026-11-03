@@ -8,7 +8,8 @@ use editcore::bookmark::{self, Bm, BmReq};
 use editcore::document_io::{self, AtomicWriteOpts, Bom, Charset, Eol, SaveSpec};
 use editcore::edit_cmd::{self, EditReq};
 use editcore::nav::{self, NavReq};
-use editcore::search_ops::{self, SearchReq};
+use crate::find::FindOpts;
+use editcore::search_ops::{self, Hit, SearchReq};
 use std::path::{Path, PathBuf};
 
 /// 一次可撤销的行补丁 (撤销 = 把插入的行换回删掉的行)
@@ -60,6 +61,8 @@ pub struct Doc {
     /// 改写模式 (Ins) / 只读
     pub overwrite: bool,
     pub readonly: bool,
+    /// 是 Grep 结果文档 (只读; 在命中行上按 Enter / 双击跳到那个文件)
+    pub grep_result: bool,
     /// 读 / 写文件时的 (修改时间, 大小): 窗口重新获得焦点时拿它判断文件有没有被外部改过
     pub stamp: Option<(std::time::SystemTime, u64)>,
 }
@@ -96,7 +99,7 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, stamp: None }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -114,7 +117,7 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, stamp: stamp_of(path) })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path) })
     }
 
     /// 磁盘上的文件和读进来时不一样了 (被别的程序改过 / 删了)
@@ -661,62 +664,185 @@ impl Doc {
     }
 
     // ---------------- 查找 ----------------
-    fn search_req(&self, op: &str, needle: &str, case: bool, regex: bool) -> SearchReq {
-        SearchReq { op: op.into(), needle: needle.into(), match_case: case, use_regex: regex, lines: self.lines.clone(), ..Default::default() }
+    fn search_req(&self, op: &str, needle: &str, o: FindOpts) -> SearchReq {
+        SearchReq { op: op.into(), needle: needle.into(), match_case: o.case, use_regex: o.regex, whole_word: o.word, wrap: o.wrap, lines: self.lines.clone(), ..Default::default() }
     }
 
-    /// 从光标处找下一处 / 上一处; 找到就选中它
-    pub fn find_step(&mut self, needle: &str, case: bool, regex: bool, forward: bool) -> Result<bool, String> {
+    /// 正则写错了的说明 (没写错 / 没开正则 / 查找串空 = None); 查找栏边输入边提示
+    pub fn find_error(&self, needle: &str, o: FindOpts) -> Option<String> {
+        if needle.is_empty() || !o.regex {
+            return None;
+        }
+        let mut req = self.search_req("validate", needle, o);
+        req.lines = vec![]; // 只编译, 不需要正文
+        search_ops::run(&req).and_then(|r| r.error)
+    }
+
+    /// 全部命中 (按位置排序, 最多 5001 处); 查找串空 = 没有
+    pub fn find_hits(&self, needle: &str, o: FindOpts) -> Result<Vec<Hit>, String> {
+        if needle.is_empty() {
+            return Ok(vec![]);
+        }
+        let res = search_ops::run(&self.search_req("hits", needle, o)).unwrap_or_default();
+        match res.error {
+            Some(e) => Err(e),
+            None => Ok(res.hits),
+        }
+    }
+
+    fn select_hit(&mut self, h: &Hit) {
+        self.anchor = Some([h.row, h.col]);
+        self.sel = Some([h.row, h.col, h.row, h.col + h.len]);
+        self.cursor = [h.row, h.col + h.len];
+        self.reveal = true;
+    }
+
+    /// 从 `pos` 起找下一处 / 上一处; `on_sel` = pos 正是当前选中的命中的起点 (从它的"下一处"找)。找到就选中它
+    fn find_at(&mut self, needle: &str, o: FindOpts, forward: bool, pos: [usize; 2], on_sel: bool) -> Result<bool, String> {
         if needle.is_empty() {
             return Ok(false);
         }
-        let mut req = self.search_req("step", needle, case, regex);
-        req.row = self.cursor[0];
-        req.col = self.cursor[1];
+        let mut req = self.search_req("step", needle, o);
+        req.row = pos[0];
+        req.col = pos[1];
         req.forward = forward;
-        req.wrap = true;
-        req.sel_start = self.sel.map(|s| [s[0], s[1]]);
+        req.sel_start = if on_sel { Some(pos) } else { None };
         let Some(res) = search_ops::run(&req) else { return Ok(false) };
         if let Some(e) = res.error {
             return Err(e);
         }
         match res.hit {
             Some(h) => {
-                self.anchor = Some([h.row, h.col]);
-                self.sel = Some([h.row, h.col, h.row, h.col + h.len]);
-                self.cursor = [h.row, h.col + h.len];
-                self.reveal = true;
-                self.tip = format!("{}/{}{}", res.index + 1, res.total, if res.wrapped { " (已折返)" } else { "" });
+                self.select_hit(&h);
+                self.tip = format!("{}/{}{}", res.index + 1, if res.total > 5000 { "5000+".to_string() } else { res.total.to_string() }, if res.wrapped { " (已折返)" } else { "" });
                 Ok(true)
             }
             None => {
-                self.tip = "没有找到".into();
+                // 一处也没有 / 有, 但按"不折返"已经到头了: 提示不一样
+                self.tip = if res.total == 0 { format!("没有找到: {needle}") } else if forward { "已到文件末尾 (未折返)".into() } else { "已到文件开头 (未折返)".into() };
                 Ok(false)
             }
         }
     }
 
-    pub fn replace_all(&mut self, needle: &str, repl: &str, case: bool, regex: bool) -> Result<usize, String> {
-        let mut req = self.search_req("replace_all", needle, case, regex);
+    /// 从光标 (有选区 = 选区起点) 找下一处 / 上一处; 找到就选中它
+    pub fn find_step(&mut self, needle: &str, o: FindOpts, forward: bool) -> Result<bool, String> {
+        let (pos, on_sel) = match self.sel {
+            Some(s) => ([s[0], s[1]], true),
+            None => (self.cursor, false),
+        };
+        self.find_at(needle, o, forward, pos, on_sel)
+    }
+
+    /// 增量查找: 从 `start` 起向后找第一处 (命中本身在 start 上也算); 不把 start 当成"当前命中"
+    pub fn find_from(&mut self, needle: &str, o: FindOpts, start: [usize; 2]) -> Result<bool, String> {
+        self.find_at(needle, o, true, start, false)
+    }
+
+    /// 单行选区的文字 (查找框预填用); 没有选区 / 跨行 / 空 = None
+    pub fn selected_text_single(&self) -> Option<String> {
+        let s = self.sel?;
+        if s[0] != s[2] || s[3] <= s[1] {
+            return None;
+        }
+        Some(self.lines.get(s[0])?.chars().skip(s[1]).take(s[3] - s[1]).collect())
+    }
+
+    /// 光标所在的单词 (Ctrl+F3 用); 光标不在词上 = None
+    pub fn word_at_cursor(&self) -> Option<String> {
+        use editcore::word::is_word_char;
+        let cs: Vec<char> = self.lines.get(self.cursor[0])?.chars().collect();
+        let c = self.cursor[1].min(cs.len());
+        let (mut a, mut b) = (c, c);
+        while a > 0 && is_word_char(cs[a - 1]) {
+            a -= 1;
+        }
+        while b < cs.len() && is_word_char(cs[b]) {
+            b += 1;
+        }
+        if a == b { None } else { Some(cs[a..b].iter().collect()) }
+    }
+
+    /// 置换: 选中的刚好是一处命中就换掉它 ($1 \1 $& 在正则下展开), 然后跳到下一处; 选中的不是命中就只是找下一处。返回是否真换了
+    pub fn replace_one(&mut self, needle: &str, repl: &str, o: FindOpts) -> Result<bool, String> {
+        if self.readonly {
+            self.tip = "只读文档不能置换".into();
+            return Ok(false);
+        }
+        if needle.is_empty() {
+            return Ok(false);
+        }
+        let mut replaced = false;
+        if let Some(seg) = self.selected_text_single() {
+            let s = self.sel.unwrap_or_default();
+            let mut req = self.search_req("match_expand", needle, o);
+            req.lines = vec![];
+            req.seg = seg;
+            req.repl = repl.into();
+            // 没匹配上 = None; 只匹配了一部分 = text 为 None: 都当作"选中的不是一处命中"
+            if let Some(res) = search_ops::run(&req) {
+                if let Some(e) = res.error {
+                    return Err(e);
+                }
+                if let Some(text) = res.text {
+                    let line = &self.lines[s[0]];
+                    let new: String = line.chars().take(s[1]).chain(text.chars()).chain(line.chars().skip(s[3])).collect();
+                    let cur = [s[0], s[1] + text.chars().count()];
+                    self.replace_rows(s[0], 1, vec![new], cur);
+                    replaced = true;
+                }
+            }
+        }
+        let found = self.find_step(needle, o, true)?;
+        if replaced {
+            self.tip = if found { format!("置换了 1 处; {}", self.tip) } else { "置换了 1 处; 后面没有了".into() };
+        }
+        Ok(replaced)
+    }
+
+    /// 全部置换 (`in_sel` 且有选区 = 只换选区里的); 一步撤销, 光标放到最后一处置换之后。返回置换数
+    pub fn replace_all(&mut self, needle: &str, repl: &str, o: FindOpts, in_sel: bool) -> Result<usize, String> {
+        if self.readonly {
+            self.tip = "只读文档不能置换".into();
+            return Ok(0);
+        }
+        if needle.is_empty() {
+            return Ok(0);
+        }
+        let mut req = self.search_req("replace_all", needle, o);
         req.repl = repl.into();
+        if in_sel {
+            req.sel = self.sel;
+        }
         let Some(res) = search_ops::run(&req) else { return Ok(0) };
         if let Some(e) = res.error {
             return Err(e);
         }
-        if res.count > 0 {
-            // 整篇换成一步撤销: 记成"整份文档替换"
-            let old = self.lines.clone();
-            for (r, t) in res.rows {
-                if r < self.lines.len() {
-                    self.lines[r] = t;
-                }
-            }
-            let before = (self.cursor, self.sel);
-            self.rev += 1;
-            self.undo.push(Undo { start: 0, removed: old, inserted: self.lines.clone(), before, after: self.cursor });
-            self.redo.clear();
-            self.dirty = true;
+        if res.count == 0 {
+            self.tip = format!("没有找到: {needle}");
+            return Ok(0);
         }
+        // 撤销记录只覆盖改动过的那段行 (不是整篇)
+        let first = res.rows.iter().map(|r| r.0).min().unwrap_or(0);
+        let last = res.rows.iter().map(|r| r.0).max().unwrap_or(0);
+        let removed: Vec<String> = self.lines[first..=last].to_vec();
+        for (r, t) in res.rows {
+            if r < self.lines.len() {
+                self.lines[r] = t;
+            }
+        }
+        let inserted: Vec<String> = self.lines[first..=last].to_vec();
+        let before = (self.cursor, self.sel);
+        let cur = [res.last_row.unwrap_or(first), res.last_end];
+        self.cursor = cur;
+        self.sel = None;
+        self.anchor = None;
+        self.rev += 1;
+        self.undo.push(Undo { start: first, removed, inserted, before, after: cur });
+        self.redo.clear();
+        self.dirty = true;
+        self.reveal = true;
+        self.tip = format!("置换了 {} 处", res.count);
         Ok(res.count)
     }
 }
@@ -790,15 +916,102 @@ mod tests {
 
     #[test]
     fn find_and_replace_all() {
+        let o = FindOpts::default();
         let mut d = doc(&["foo Foo", "foo"]);
-        assert!(d.find_step("foo", false, false, true).unwrap());
+        assert!(d.find_step("foo", o, true).unwrap());
         assert_eq!(d.sel, Some([0, 0, 0, 3]));
-        assert!(d.find_step("foo", false, false, true).unwrap());
+        assert!(d.find_step("foo", o, true).unwrap());
         assert_eq!(d.sel, Some([0, 4, 0, 7]));
-        assert_eq!(d.replace_all("foo", "X", false, false).unwrap(), 3);
+        assert_eq!(d.replace_all("foo", "X", o, false).unwrap(), 3);
         assert_eq!(d.lines, vec!["X X", "X"]);
+        assert_eq!(d.cursor, [1, 1], "光标在最后一处置换之后");
         d.undo();
         assert_eq!(d.lines, vec!["foo Foo", "foo"]);
+    }
+
+    #[test]
+    fn find_step_backward_whole_word_and_no_wrap() {
+        let mut d = doc(&["foo foobar foo", "x"]);
+        let w = FindOpts { word: true, ..FindOpts::default() };
+        assert!(d.find_step("foo", w, true).unwrap());
+        assert!(d.find_step("foo", w, true).unwrap());
+        assert_eq!(d.sel, Some([0, 11, 0, 14]), "foobar 里的 foo 不算整词");
+        assert!(d.find_step("foo", w, false).unwrap(), "往回找 = 第一处, 不会又停在当前这一处");
+        assert_eq!(d.sel, Some([0, 0, 0, 3]));
+        // 不折返: 到头说"到头", 没有这个词说"没有找到"
+        let n = FindOpts { wrap: false, ..w };
+        assert!(!d.find_step("foo", n, false).unwrap());
+        assert!(d.tip.contains("文件开头"), "{}", d.tip);
+        assert!(!d.find_step("zzz", n, true).unwrap());
+        assert!(d.tip.contains("没有找到"), "{}", d.tip);
+        d.sel = Some([0, 11, 0, 14]);
+        assert!(!d.find_step("foo", n, true).unwrap());
+        assert!(d.tip.contains("文件末尾"), "{}", d.tip);
+        assert!(d.find_step("foo", FindOpts { wrap: true, ..n }, true).unwrap());
+        assert!(d.tip.contains("已折返"), "{}", d.tip);
+    }
+
+    #[test]
+    fn replace_all_in_selection_only_and_places_cursor() {
+        let o = FindOpts::default();
+        let mut d = doc(&["a a a", "a a a", "a a a"]);
+        d.sel = Some([0, 2, 1, 3]); // 第 1 行从第 3 列起, 到第 2 行第 4 列
+        assert_eq!(d.replace_all("a", "b", o, true).unwrap(), 4, "选区里只有这 4 个");
+        assert_eq!(d.lines, vec!["a b b", "b b a", "a a a"]);
+        assert_eq!(d.cursor, [1, 3]);
+        assert_eq!(d.sel, None);
+        d.undo();
+        assert_eq!(d.lines, vec!["a a a", "a a a", "a a a"]);
+        assert_eq!(d.replace_all("a", "z", o, false).unwrap(), 9);
+        assert_eq!(d.cursor, [2, 5]);
+        assert_eq!(d.replace_all("nope", "z", o, false).unwrap(), 0);
+        d.readonly = true;
+        assert_eq!(d.replace_all("z", "y", o, false).unwrap(), 0, "只读文档不置换");
+        assert_eq!(d.lines[0], "z z z");
+    }
+
+    #[test]
+    fn replace_one_expands_captures_and_ignores_non_hit_selections() {
+        let rx = FindOpts { regex: true, ..FindOpts::default() };
+        let mut d = doc(&["key=value", "other"]);
+        d.sel = Some([0, 0, 0, 9]);
+        assert!(d.replace_one(r"(\w+)=(\w+)", "$2:$1", rx).unwrap());
+        assert_eq!(d.lines[0], "value:key");
+        // 选中的只是命中的一部分 = 不是一处命中: 不置换, 只找下一个
+        let mut d2 = doc(&["foobar foo"]);
+        d2.sel = Some([0, 0, 0, 3]);
+        let w = FindOpts { word: true, ..FindOpts::default() };
+        assert!(!d2.replace_one("foobar", "X", w).unwrap(), "foo 不是 foobar 的命中");
+        assert_eq!(d2.lines[0], "foobar foo");
+        let mut d3 = doc(&["abc abc"]);
+        d3.sel = Some([0, 0, 0, 2]); // "ab" 不是 "abc" 的完整命中
+        assert!(!d3.replace_one("abc", "X", FindOpts::default()).unwrap());
+        assert_eq!(d3.lines[0], "abc abc");
+        assert_eq!(d3.sel, Some([0, 4, 0, 7]), "只是跳到下一处");
+        // 普通模式: $1 原样当文字
+        let mut d4 = doc(&["a"]);
+        d4.sel = Some([0, 0, 0, 1]);
+        d4.replace_one("a", "$1", FindOpts::default()).unwrap();
+        assert_eq!(d4.lines[0], "$1");
+    }
+
+    #[test]
+    fn find_helpers_selection_text_word_and_validation() {
+        let mut d = doc(&["let alpha_1 = 2;"]);
+        d.cursor = [0, 6];
+        assert_eq!(d.word_at_cursor().as_deref(), Some("alpha_1"));
+        d.cursor = [0, 3]; // 空格后一个字符: 光标紧挨着 let 的末尾
+        assert_eq!(d.word_at_cursor().as_deref(), Some("let"));
+        d.cursor = [0, 12];
+        assert_eq!(d.word_at_cursor(), None);
+        d.sel = Some([0, 4, 0, 11]);
+        assert_eq!(d.selected_text_single().as_deref(), Some("alpha_1"));
+        let rx = FindOpts { regex: true, ..FindOpts::default() };
+        assert!(d.find_error("(", rx).is_some());
+        assert!(d.find_error("(", FindOpts::default()).is_none(), "没开正则不检查");
+        assert!(d.find_error("a+", rx).is_none());
+        assert_eq!(d.find_hits("a", FindOpts::default()).unwrap().len(), 2);
+        assert!(d.find_hits("(", rx).is_err());
     }
 
     #[test]

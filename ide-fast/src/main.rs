@@ -8,6 +8,8 @@
 
 mod app;
 mod doc;
+mod find;
+mod grep;
 mod cmds;
 mod fonts;
 mod instance;

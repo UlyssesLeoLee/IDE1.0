@@ -2,6 +2,7 @@
 //! 能直接对应到 editcore 编辑命令的 `S_` 函数照常执行; 没有对应命令的 (只有默认键的) 明确报「未支持」, 不静默跳过。
 
 use crate::doc::Doc;
+use crate::find::FindOpts;
 use editcore::macro_sakura::{self, Action};
 
 /// 执行一份宏文本; 返回执行了多少步。语法错误 / 未知函数整体失败, 文档不会被改一半。
@@ -25,12 +26,16 @@ pub fn run_mac(doc: &mut Doc, src: &str) -> Result<usize, String> {
             }
             Action::MoveCursor { row, col, select } | Action::MoveCursorLayout { row, col, select } => doc.move_to(row, col, select),
             Action::Jump { line, .. } => doc.goto((line.max(1) as usize) - 1, 0),
-            Action::SearchNext { text, flags } => { let f = macro_sakura::SearchFlags::from_bits(flags); doc.find_step(&text, f.case_sensitive, f.regex, true).map_err(|e| e.to_string())?; }
-            Action::SearchPrev { text, flags } => { let f = macro_sakura::SearchFlags::from_bits(flags); doc.find_step(&text, f.case_sensitive, f.regex, false).map_err(|e| e.to_string())?; }
-            Action::ReplaceAll { search, replace, flags } => { let f = macro_sakura::SearchFlags::from_bits(flags); doc.replace_all(&search, &replace, f.case_sensitive, f.regex).map_err(|e| e.to_string())?; }
-            Action::ReplaceNext { search, replace, flags } => {
+            Action::SearchNext { text, flags } => { let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(flags)); doc.find_step(&text, o, true).map_err(|e| e.to_string())?; }
+            Action::SearchPrev { text, flags } => { let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(flags)); doc.find_step(&text, o, false).map_err(|e| e.to_string())?; }
+            Action::ReplaceAll { search, replace, flags } => {
                 let f = macro_sakura::SearchFlags::from_bits(flags);
-                if doc.find_step(&search, f.case_sensitive, f.regex, true).map_err(|e| e.to_string())? { doc.type_text(&replace); }
+                doc.replace_all(&search, &replace, FindOpts::from_flags(&f), f.in_selection).map_err(|e| e.to_string())?;
+            }
+            Action::ReplaceNext { search, replace, flags } => {
+                // 先找到下一处, 再按 "置换" 的语义换掉它 (正则下 $1 \1 $& 会展开) 并停在再下一处
+                let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(flags));
+                if doc.find_step(&search, o, true).map_err(|e| e.to_string())? { doc.replace_one(&search, &replace, o).map_err(|e| e.to_string())?; }
             }
         }
     }
@@ -79,6 +84,18 @@ mod tests {
         let n = run_mac(&mut d, "S_InsText(\"X\");\nS_DuplicateLine();\nS_ReplaceAll(\"bar\", \"BAZ\", 0);").unwrap();
         assert_eq!(n, 3);
         assert_eq!(d.lines, vec!["Xfoo BAZ", "Xfoo BAZ", "second"], "复制行之后「全部置换」两行都换");
+    }
+
+    #[test]
+    fn macro_search_flags_reach_the_find_engine() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["foo foobar foo".into()];
+        run_mac(&mut d, "S_ReplaceAll(\"foo\", \"X\", 1);").unwrap(); // 0x01 = 单词单位
+        assert_eq!(d.lines, vec!["X foobar X"]);
+        let mut d2 = Doc::untitled(2, 1);
+        d2.lines = vec!["k=v k=v".into()];
+        run_mac(&mut d2, "S_ReplaceNext(\"([a-z])=([a-z])\", \"$2=$1\", 4);").unwrap(); // 0x04 = 正则: $1 $2 要展开
+        assert_eq!(d2.lines, vec!["v=k k=v"]);
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 use crate::doc::{expand_tabs, Doc};
 use crate::cmds::{self, Action};
+use crate::find::Find;
+use crate::grep::{self, Ev as GEv};
 use crate::plugins;
 use crate::settings::Settings;
 use crate::sidebar::{Sidebar, Tab};
@@ -11,16 +13,6 @@ use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec
 use editcore::syntax_styling::Theme;
 use editcore::type_config::{TypeConfig, TypeRegistry};
 use std::path::PathBuf;
-
-struct Find {
-    open: bool,
-    needle: String,
-    repl: String,
-    case: bool,
-    regex: bool,
-    msg: String,
-    focus: bool,
-}
 
 pub struct App {
     docs: Vec<Doc>,
@@ -66,14 +58,22 @@ pub struct App {
     confirm_exit: bool,
     /// 输入法正在组字的文字 (还没提交): 画在光标处, 不进文档
     preedit: String,
+    /// 下一次滚到光标时把它放在窗口中央 (从 Grep 结果跳转时)
+    center_once: bool,
+    /// 正在被 Grep 流式填充的结果文档
+    grep_doc: Option<u64>,
+    /// 结果文档里请求跳转的 (文档 id, 行)
+    jump_req: Option<(u64, usize)>,
+    /// 编辑区控件的 id (有别的输入框拿着焦点时, 编辑区不抢键盘; 编辑区自己拿着焦点不算)
+    editor_ids: Vec<egui::Id>,
 }
 
 impl App {
     pub fn new(args: Vec<String>, inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>, trace: Trace) -> Self {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
-            find: Find { open: false, needle: String::new(), repl: String::new(), case: false, regex: false, msg: String::new(), focus: false },
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(),
+            find: Find::new(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![],
         };
         let st = Settings::load();
         app.dark = st.dark;
@@ -83,6 +83,7 @@ impl App {
         app.highlight = st.highlight;
         app.wrap = st.wrap;
         app.recent = st.recent.clone();
+        app.apply_search_prefs(&st);
         app.saved = st;
         for a in &args {
             app.open_spec(a);
@@ -138,7 +139,19 @@ impl App {
     }
 
     fn current_settings(&self) -> Settings {
-        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone() }
+        let (f, g) = (&self.find, &self.side.grep.o);
+        let search = crate::settings::SearchPrefs { find_case: f.opts.case, find_regex: f.opts.regex, find_word: f.opts.word, find_wrap: f.opts.wrap, find_marks: f.marks, grep_case: g.case, grep_regex: g.regex, grep_word: g.word, grep_sub: g.sub, grep_outside: g.outside, grep_files: g.files.clone(), grep_exc_files: g.exc_files.clone(), grep_exc_folders: g.exc_folders.clone() };
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), search }
+    }
+
+    /// 启动时把上次的查找 / Grep 条件放回去
+    fn apply_search_prefs(&mut self, st: &Settings) {
+        let p = &st.search;
+        self.find.opts = crate::find::FindOpts { case: p.find_case, regex: p.find_regex, word: p.find_word, wrap: p.find_wrap };
+        self.find.marks = p.find_marks;
+        let g = &mut self.side.grep.o;
+        (g.case, g.regex, g.word, g.sub, g.outside) = (p.grep_case, p.grep_regex, p.grep_word, p.grep_sub, p.grep_outside);
+        (g.files, g.exc_files, g.exc_folders) = (p.grep_files.clone(), p.grep_exc_files.clone(), p.grep_exc_folders.clone());
     }
 
     /// 设置变了就落盘 (每帧比较一次, 只有真变了才写)
@@ -197,11 +210,11 @@ impl App {
     }
 
     /// 打开文件并跳到某行 (Grep 结果 / 命令行 `文件:行`)
-    fn open_at(&mut self, p: &std::path::Path, line: usize) {
-        self.open_path(p);
-        if self.docs.iter().any(|d| d.path.as_deref() == Some(p)) {
-            self.cur().goto(line.saturating_sub(1), 0);
-        }
+    fn open_at(&mut self, p: &std::path::Path, line: usize, col: usize) {
+        if p.is_file() { self.open_path(p); }
+        // 路径不是磁盘文件 (只搜当前文件、还没存盘的标签): 就在当前标签里跳
+        if p.is_file() && !self.docs.iter().any(|d| d.path.as_deref() == Some(p)) { return; }
+        self.cur().goto(line.saturating_sub(1), col);
     }
 
     /// 侧栏内容: 文件树 / 大纲 / Grep
@@ -243,37 +256,129 @@ impl App {
                 if let Some(l) = jump { self.cur().goto(l, 0); }
             }
             Tab::Search => {
-                if self.side.root.is_none() {
-                    ui.label("先在「文件」里打开一个文件夹, 再在它下面搜索。");
-                    if ui.button("打开文件夹…").clicked() { self.open_folder_dialog(); }
-                } else {
-                    let r = ui.add(egui::TextEdit::singleline(&mut self.side.grep.pattern).hint_text("搜索内容").desired_width(f32::INFINITY));
-                    ui.add(egui::TextEdit::singleline(&mut self.side.grep.include).hint_text("文件名过滤, 如 *.rs, *.md").desired_width(f32::INFINITY));
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.side.grep.case, "区分大小写");
-                        ui.checkbox(&mut self.side.grep.regex, "正则");
-                    });
-                    ui.add(egui::TextEdit::singleline(&mut self.side.grep.repl).hint_text("置换为 (正则下可用 $1)").desired_width(f32::INFINITY));
-                    let go = ui.button("搜索").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
-                    if go { self.side.start_grep(); }
-                    if ui.button("全部置换 (改写文件, 保留 .bak)").clicked() {
-                        let dirty: Vec<String> = self.docs.iter().filter(|d| d.dirty).filter_map(|d| d.path.as_ref().map(|p| p.to_string_lossy().into_owned())).collect();
-                        let ok = rfd::MessageDialog::new().set_title("Grep 置换").set_description("会改写磁盘上所有命中的文件 (原文件另存为 .bak)。继续吗?").set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
-                        if ok { let m = self.side.replace_all(dirty); self.side.grep.msg = m; self.side.grep.results.clear(); }
-                    }
-                    ui.label(&self.side.grep.msg);
-                    let root = self.side.root.clone().unwrap_or_default();
-                    egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                        for h in &self.side.grep.results {
-                            let rel = std::path::Path::new(&h.path).strip_prefix(&root).map(|p| p.display().to_string()).unwrap_or_else(|_| h.path.clone());
-                            let t: String = h.text.trim().chars().take(80).collect();
-                            if ui.selectable_label(false, format!("{rel}:{}  {t}", h.line)).clicked() { open = Some((PathBuf::from(&h.path), h.line as usize)); }
-                        }
-                    });
-                }
+                let root = self.grep_root().unwrap_or_default();
+                let has_cur = self.cur().path.is_some();
+                let shown_root = self.side.grep.last.as_ref().map(|l| l.1.clone()).unwrap_or(root);
+                let evs = self.side.grep.panel(ui, &shown_root, has_cur);
+                for ev in evs { self.grep_event(ev); }
             }
         }
-        if let Some((p, l)) = open { self.open_at(&p, l); }
+        if let Some((p, l)) = open { self.open_at(&p, l, 0); }
+    }
+
+    /// Grep 的搜索根: 打开的文件夹; 没有就用当前文件所在目录, 再没有就是进程工作目录
+    fn grep_root(&mut self) -> Option<PathBuf> {
+        self.side.root.clone().or_else(|| self.cur().path.as_ref().and_then(|p| p.parent().map(|d| d.to_path_buf()))).or_else(|| std::env::current_dir().ok())
+    }
+
+    /// 打开 Grep 页并把焦点放到搜索框; 选区 (单行) 作搜索内容
+    fn focus_grep(&mut self) {
+        if let Some(t) = self.cur().selected_text_single() { self.side.grep.o.pattern = if self.side.grep.o.regex { crate::find::escape_regex(&t) } else { t }; }
+        self.side.open = true;
+        self.side.tab = Tab::Search;
+        self.side.grep.focus_pattern = true;
+    }
+
+    fn grep_event(&mut self, ev: GEv) {
+        match ev {
+            GEv::Start => self.grep_start(),
+            GEv::Stop => { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
+            GEv::ResultDoc => self.open_grep_doc(),
+            GEv::UseCurDir => {
+                if let Some(d) = self.cur().path.as_ref().and_then(|p| p.parent()).map(|d| d.to_string_lossy().into_owned()) { self.side.grep.o.folders = d; }
+            }
+            GEv::ReplaceAll => self.grep_replace(),
+            GEv::Open { path, line, text } => {
+                let o = self.side.grep.last.as_ref().map(|l| l.0.clone()).unwrap_or_else(|| self.side.grep.o.clone());
+                let col = grep::first_cols(&[text], &o)[0].saturating_sub(1);
+                self.center_once = true;
+                self.open_at(std::path::Path::new(&path), line, col);
+            }
+        }
+    }
+
+    fn grep_start(&mut self) {
+        let Some(root) = self.grep_root() else { self.side.grep.msg = "找不到搜索位置".into(); return };
+        if self.side.grep.o.this_file {
+            let (label, lines) = { let d = self.cur(); (d.path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| d.name.clone()), d.lines.clone()) };
+            self.side.grep.start_text(root.clone(), &label, &lines);
+        } else {
+            self.side.grep.start(root.clone());
+        }
+        if let Some(id) = self.grep_doc { self.reset_grep_doc(id); }
+    }
+
+    fn grep_replace(&mut self) {
+        let Some(root) = self.grep_root() else { return };
+        let o = self.side.grep.o.clone();
+        if o.pattern.is_empty() { self.side.grep.msg = "请输入要搜索的内容".into(); return; }
+        let dirty: Vec<String> = self.docs.iter().filter(|d| d.dirty).filter_map(|d| d.path.as_ref().map(|p| p.to_string_lossy().into_owned())).collect();
+        let text = format!("把「{}」置换为「{}」\n范围: {}\n会改写磁盘上所有命中的文件 (原文件另存为 .bak)。继续吗?", o.pattern, o.repl, root.display());
+        if rfd::MessageDialog::new().set_title("Grep 置换").set_description(text).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        let (msg, written) = grep::replace(&root, &o, dirty);
+        // 已打开且没有未保存修改的标签: 重新读盘, 免得显示旧内容、之后又存回去
+        let mut reloaded = 0;
+        for d in self.docs.iter_mut().filter(|d| !d.dirty) {
+            if d.path.as_ref().map(|p| written.iter().any(|w| grep::same_path(w, &p.to_string_lossy()))).unwrap_or(false) && d.reload().is_ok() { reloaded += 1; }
+        }
+        self.side.grep.msg = if reloaded > 0 { format!("{msg}; 已重新载入 {reloaded} 个打开的标签") } else { msg };
+        self.side.grep.results.clear();
+    }
+
+    /// Grep 结果开成(或复用)一个只读标签, 此后新结果继续流进去
+    fn open_grep_doc(&mut self) {
+        let Some(_) = self.side.grep.last.clone() else { self.side.grep.msg = "还没有搜索结果".into(); return };
+        let id = match self.grep_doc.filter(|id| self.docs.iter().any(|d| d.id == *id)) {
+            Some(id) => id,
+            None => {
+                let id = self.id();
+                let mut d = Doc::untitled(id, 0);
+                d.name = "Grep 结果".into();
+                d.readonly = true;
+                d.grep_result = true;
+                self.docs.push(d);
+                id
+            }
+        };
+        self.grep_doc = Some(id);
+        if let Some(i) = self.docs.iter().position(|d| d.id == id) { self.active = i; }
+        self.reset_grep_doc(id);
+        self.side.grep.finished = self.side.grep.end.clone(); // 已经跑完的: 补上尾
+        self.side.grep.rendered = 0;
+        self.sync_grep_doc();
+    }
+
+    fn reset_grep_doc(&mut self, id: u64) {
+        let Some((o, root)) = self.side.grep.last.clone() else { return };
+        if let Some(d) = self.docs.iter_mut().find(|d| d.id == id) {
+            d.lines = grep::header(&o, &root);
+            d.rev += 1;
+            d.cursor = [0, 0];
+            d.sel = None;
+        }
+        self.side.grep.rendered = 0;
+    }
+
+    /// 每帧: 把 Grep 新来的结果追加到结果文档 (标准格式边搜边追加, 其它格式在结束时一次写出)
+    fn sync_grep_doc(&mut self) {
+        let Some(id) = self.grep_doc else { return };
+        let Some(di) = self.docs.iter().position(|d| d.id == id) else { self.grep_doc = None; return };
+        let g = &mut self.side.grep;
+        let Some((o, _)) = g.last.clone() else { return };
+        let mut add: Vec<String> = Vec::new();
+        if o.fmt == grep::Fmt::Normal && g.rendered < g.results.len() {
+            add.extend(grep::normal_lines(&g.results[g.rendered..], &o));
+            g.rendered = g.results.len();
+        }
+        if let Some(end) = g.finished.take() {
+            if o.fmt != grep::Fmt::Normal { add.extend(grep::summary_lines(&g.results, o.fmt)); }
+            add.extend(grep::footer(g.results.len(), &end));
+        }
+        if add.is_empty() { return; }
+        let d = &mut self.docs[di];
+        d.lines.extend(add);
+        d.rev += 1;
+        d.dirty = false;
     }
 
     fn cur(&mut self) -> &mut Doc {
@@ -372,10 +477,13 @@ impl App {
                 self.cmd_menu(ui, ctx);
             });
             ui.menu_button("查找", |ui| {
-                if ui.button("查找 / 置换…  Ctrl+F").clicked() { self.find.open = true; self.find.focus = true; ui.close(); }
-                if ui.button("在文件夹中搜索 (Grep)…  Ctrl+Shift+F").clicked() { self.side.open = true; self.side.tab = Tab::Search; ui.close(); }
+                if ui.button("查找…  Ctrl+F").clicked() { self.open_find(false); ui.close(); }
+                if ui.button("置换…  Ctrl+H / Ctrl+R").clicked() { self.open_find(true); ui.close(); }
+                if ui.button("在文件夹中搜索 (Grep)…  Ctrl+G").clicked() { self.focus_grep(); ui.close(); }
                 if ui.button("下一个  F3").clicked() { self.find_next(true); ui.close(); }
                 if ui.button("上一个  Shift+F3").clicked() { self.find_next(false); ui.close(); }
+                if ui.button("查找光标处的单词  Ctrl+F3").clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
+                if ui.button("全部置换  Ctrl+Alt+R").clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
             });
             ui.menu_button("折叠", |ui| {
                 if ui.button("折叠 / 展开当前行  Ctrl+Shift+[").clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
@@ -576,39 +684,14 @@ impl App {
     }
 
     fn find_next(&mut self, fwd: bool) {
-        let (n, c, r) = (self.find.needle.clone(), self.find.case, self.find.regex);
-        match self.cur().find_step(&n, c, r, fwd) {
-            Ok(_) => self.find.msg = self.cur().tip.clone(),
-            Err(e) => self.find.msg = e,
-        }
+        let i = self.active.min(self.docs.len() - 1);
+        self.find.next(&mut self.docs[i], fwd);
     }
 
-    fn find_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("查找");
-            let r = ui.add(egui::TextEdit::singleline(&mut self.find.needle).desired_width(200.0));
-            if self.find.focus {
-                r.request_focus();
-                self.find.focus = false;
-            }
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                let fwd = !ui.input(|i| i.modifiers.shift);
-                self.find_next(fwd);
-                r.request_focus();
-            }
-            if ui.button("↓").clicked() { self.find_next(true); }
-            if ui.button("↑").clicked() { self.find_next(false); }
-            ui.label("置换");
-            ui.add(egui::TextEdit::singleline(&mut self.find.repl).desired_width(140.0));
-            if ui.button("全部置换").clicked() {
-                let (n, rp, c, rg) = (self.find.needle.clone(), self.find.repl.clone(), self.find.case, self.find.regex);
-                self.find.msg = match self.cur().replace_all(&n, &rp, c, rg) { Ok(k) => format!("置换了 {k} 处"), Err(e) => e };
-            }
-            ui.checkbox(&mut self.find.case, "区分大小写");
-            ui.checkbox(&mut self.find.regex, "正则");
-            ui.label(&self.find.msg);
-            if ui.button("×").clicked() { self.find.open = false; }
-        });
+    /// 打开查找栏 (`replace` = 同时显示置换行)
+    fn open_find(&mut self, replace: bool) {
+        let i = self.active.min(self.docs.len() - 1);
+        self.find.open_with(&self.docs[i], replace);
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
@@ -617,7 +700,11 @@ impl App {
         if cmd(ctx, Modifiers::COMMAND, Key::O) { self.open_dialog(); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::S) { self.save(true); } else if cmd(ctx, Modifiers::COMMAND, Key::S) { self.save(false); }
         if cmd(ctx, Modifiers::COMMAND, Key::W) { let a = self.active; self.close_tab(a); }
-        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) { self.side.open = true; self.side.tab = Tab::Search; } else if cmd(ctx, Modifiers::COMMAND, Key::F) { self.find.open = true; self.find.focus = true; }
+        // 搜索: Ctrl+F 查找, Ctrl+H / Ctrl+R 置换, Ctrl+Alt+R 全部置换, Ctrl+G / Ctrl+Shift+F Grep (键位同 Tauri 版)
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::R) { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); }
+        else if cmd(ctx, Modifiers::COMMAND | Modifiers::ALT, Key::G) || cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::G) { self.focus_grep(); }
+        else if cmd(ctx, Modifiers::COMMAND, Key::H) || cmd(ctx, Modifiers::COMMAND, Key::R) { self.open_find(true); }
+        else if cmd(ctx, Modifiers::COMMAND, Key::F) || cmd(ctx, Modifiers::COMMAND, Key::I) { self.open_find(false); }
         if cmd(ctx, Modifiers::COMMAND, Key::B) { self.side.open = !self.side.open; }
         if cmd(ctx, Modifiers::ALT, Key::Z) { self.wrap = !self.wrap; }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::OpenBracket) { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); }
@@ -630,8 +717,15 @@ impl App {
         if cmd(ctx, Modifiers::SHIFT, Key::F2) { self.cur().bookmark("prev"); } else if cmd(ctx, Modifiers::NONE, Key::F2) { self.cur().bookmark("next"); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::M) { self.cur().macro_toggle(); }
         if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::L) { self.cur().macro_play(); }
-        if cmd(ctx, Modifiers::NONE, Key::Escape) { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
-        if cmd(ctx, Modifiers::SHIFT, Key::F3) { self.find_next(false); } else if cmd(ctx, Modifiers::NONE, Key::F3) { self.find_next(true); }
+        // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
+        if cmd(ctx, Modifiers::NONE, Key::Escape) {
+            if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
+            else if self.find.open { self.find.open = false; }
+            else { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
+        }
+        if cmd(ctx, Modifiers::COMMAND | Modifiers::SHIFT, Key::F3) { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], false); }
+        else if cmd(ctx, Modifiers::COMMAND, Key::F3) { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); }
+        else if cmd(ctx, Modifiers::SHIFT, Key::F3) { self.find_next(false); } else if cmd(ctx, Modifiers::NONE, Key::F3) { self.find_next(true); }
         if cmd(ctx, Modifiers::COMMAND, Key::Equals) { self.font_px = (self.font_px + 1.0).min(40.0); }
         if cmd(ctx, Modifiers::COMMAND, Key::Minus) { self.font_px = (self.font_px - 1.0).max(8.0); }
         if cmd(ctx, Modifiers::COMMAND, Key::Z) { self.cur().undo(); }
@@ -643,7 +737,6 @@ impl App {
                 if cmd(ctx, m, k) { self.run_action(c.action, ctx); }
             }
         }
-        if cmd(ctx, Modifiers::COMMAND, Key::J) { self.run_action(Action::GotoLine, ctx); }
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
@@ -807,6 +900,8 @@ impl App {
         let tab = self.tab;
         let ai = self.active.min(self.docs.len() - 1);
         let theme = if self.dark { Theme::dark() } else { Theme::light() };
+        let marks = self.find.marks_for(&self.docs[ai]);
+        let mark_bg = Color32::from_rgba_unmultiplied(255, 200, 0, 70);
         let cfg: Option<TypeConfig> = if self.highlight { self.registry.detect(&self.docs[ai].name).cloned() } else { None };
         let digits = format!("{}", self.docs[ai].lines.len()).len().max(3);
         let gutter = digits as f32 * char_w + 18.0;
@@ -846,6 +941,7 @@ impl App {
         // ---- 键盘 (查找框有焦点时不抢) ----
         let mut clip_out: Option<String> = None;
         let mut preedit_now = self.preedit.clone();
+        let mut jump_row: Option<usize> = None; // Grep 结果文档里 Enter 的那一行
         if !find_has_focus && self.pane_keys {
             let mut events = ctx.input(|i| i.events.clone());
             if wrap {
@@ -881,7 +977,7 @@ impl App {
                         if modifiers.alt && !ctrl { continue; }
                         if let Some(k) = nav { d.nav(k, ctrl, shift, page_rows); continue; }
                         match key {
-                            Key::Enter => { d.edit("new-line", None); }
+                            Key::Enter => { if d.grep_result { jump_row = Some(d.cursor[0]); } else { d.edit("new-line", None); } }
                             Key::Backspace => { d.edit(if ctrl { "delete-word-start" } else { "backspace" }, None); }
                             Key::Delete => { d.edit(if ctrl { "delete-word-end" } else { "delete" }, None); }
                             Key::Tab => { d.indent(false, tab); }
@@ -893,17 +989,21 @@ impl App {
             }
         }
         if let Some(c) = clip_out { ctx.copy_text(c); }
+        if let Some(r) = jump_row { self.jump_req = Some((self.docs[ai].id, r)); }
         self.preedit = preedit_now;
         let preedit = self.preedit.clone();
 
         // ---- 绘制 ----
         let reveal = std::mem::take(&mut self.docs[ai].reveal);
+        let center = reveal && std::mem::take(&mut self.center_once);
         let mut widest = max_cols;
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
+        let mut ed_id: Option<egui::Id> = None;
         let out = egui::ScrollArea::both().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
             let width = (widest as f32 * char_w + gutter + pad * 2.0 + 40.0).max(ui.available_width());
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
+            ed_id = Some(resp.id);
             let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
             let d = &self.docs[ai];
             let (first, last) = if use_offs {
@@ -922,25 +1022,32 @@ impl App {
                 let mut job = highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color);
                 if wrap { job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true; }
                 let galley = painter.layout_job(job);
-                // 选区底色
+                // 选区 / 查找命中的底色都走这一个函数: 一段 [c0, c1) 列 (自动换行时逐字符取排版位置, 否则一整块)
+                let span = |c0: usize, c1: usize, extend: bool, color: Color32| {
+                    if wrap {
+                        let (ds, de) = (map[c0.min(map.len() - 1)], map[c1.min(map.len() - 1)]);
+                        for k in ds..de {
+                            let a = galley.pos_from_cursor(egui::text::CCursor::new(k)).min;
+                            let b = galley.pos_from_cursor(egui::text::CCursor::new(k + 1)).min;
+                            let xe = if (b.y - a.y).abs() < 0.5 && b.x > a.x { b.x } else { a.x + char_w };
+                            painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + a.x, y + a.y), Pos2::new(x0 + xe, y + a.y + row_h)), 0.0, color);
+                        }
+                    } else {
+                        let xa = x_of(&painter, &disp, &map, c0, &font, text_color);
+                        let mut xb = x_of(&painter, &disp, &map, c1.min(map.len() - 1), &font, text_color);
+                        if extend { xb += char_w * 0.6; } // 跨行的行尾多画一点, 表示换行也被选中
+                        painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xa, y), Pos2::new(x0 + xb, y + row_h)), 0.0, color);
+                    }
+                };
+                if let Some(ms) = &marks {
+                    let lo = ms.partition_point(|h| h.row < row);
+                    for h in ms[lo..].iter().take_while(|h| h.row == row) { span(h.col, h.col + h.len, false, mark_bg); }
+                }
                 if let Some(s) = d.sel {
                     if row >= s[0] && row <= s[2] {
                         let c0 = if row == s[0] { s[1] } else { 0 };
                         let c1 = if row == s[2] { s[3] } else { d.lines[row].chars().count() };
-                        if wrap {
-                            let (ds, de) = (map[c0.min(map.len() - 1)], map[c1.min(map.len() - 1)]);
-                            for k in ds..de {
-                                let a = galley.pos_from_cursor(egui::text::CCursor::new(k)).min;
-                                let b = galley.pos_from_cursor(egui::text::CCursor::new(k + 1)).min;
-                                let xe = if (b.y - a.y).abs() < 0.5 && b.x > a.x { b.x } else { a.x + char_w };
-                                painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + a.x, y + a.y), Pos2::new(x0 + xe, y + a.y + row_h)), 0.0, sel_bg);
-                            }
-                        } else {
-                            let xa = x_of(&painter, &disp, &map, c0, &font, text_color);
-                            let mut xb = x_of(&painter, &disp, &map, c1.min(map.len() - 1), &font, text_color);
-                            if row != s[2] { xb += char_w * 0.6; } // 跨行的行尾多画一点, 表示换行也被选中
-                            painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xa, y), Pos2::new(x0 + xb, y + row_h)), 0.0, sel_bg);
-                        }
+                        span(c0, c1, row != s[2], sel_bg);
                     }
                 }
                 if let Some(b) = d.box_sel {
@@ -985,7 +1092,7 @@ impl App {
                     painter.rect_filled(Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)), 0.0, text_color);
                 }
                 if reveal {
-                    ui.scroll_to_rect(Rect::from_min_size(Pos2::new(cx - 8.0, cy), Vec2::new(40.0, row_h * 2.0)), None);
+                    ui.scroll_to_rect(Rect::from_min_size(Pos2::new(cx - 8.0, cy), Vec2::new(40.0, row_h * 2.0)), if center { Some(egui::Align::Center) } else { None });
                 }
                 ui.ctx().output_mut(|o| {
                     o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect, cursor_rect: Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)), should_interrupt_composition: false });
@@ -1010,6 +1117,7 @@ impl App {
             (rect, x0)
         });
         let (rect, x0) = out.inner;
+        if let Some(id) = ed_id { if !self.editor_ids.contains(&id) { self.editor_ids.push(id); } }
         self.max_cols = widest;
         if let Some((p, shift, dragging)) = clicked {
             let rel_y = (p.y - rect.min.y).max(0.0);
@@ -1031,7 +1139,9 @@ impl App {
                 else if ctrl { d.toggle_cursor(row, col); }
                 else { d.box_sel = None; d.extra.clear(); d.click(row, col, shift); }
             }
-            if multi_click == 2 && !dragging { d.edit("select-word", None); }
+            if multi_click == 2 && !dragging {
+                if d.grep_result { d.goto(row, 0); self.jump_req = Some((d.id, row)); } else { d.edit("select-word", None); }
+            }
             if multi_click == 3 && !dragging { d.select_line(row); }
         }
         let _ = max_cols;
@@ -1183,8 +1293,17 @@ impl eframe::App for App {
         if self.side.open {
             egui::Panel::left("side").resizable(true).default_size(250.0).show(root, |ui| self.side_ui(ui));
         }
-        self.side.poll_grep();
-        if self.side.grep_running() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
+        self.side.grep.poll();
+        self.sync_grep_doc();
+        if self.side.grep.running() { ctx.request_repaint_after(std::time::Duration::from_millis(80)); }
+        // 结果文档里 Enter / 双击命中行: 打开那个文件并把命中处放到窗口中央
+        if let Some((id, row)) = self.jump_req.take() {
+            let line = self.docs.iter().find(|d| d.id == id).and_then(|d| d.lines.get(row).cloned()).unwrap_or_default();
+            match grep::parse_result_line(&line) {
+                Some((p, l, c)) => { self.center_once = true; self.open_at(&p, l, c.saturating_sub(1)); }
+                None => self.cur().tip = "这一行不是命中行".into(),
+            }
+        }
         egui::Panel::bottom("status").show(root, |ui| {
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
             ui.horizontal(|ui| {
@@ -1202,13 +1321,14 @@ impl eframe::App for App {
                 ui.label(&d.tip);
             });
         });
-        let mut find_focus = false;
         if self.find.open {
             egui::Panel::bottom("find").show(root, |ui| {
-                self.find_bar(ui);
-                find_focus = ctx.memory(|m| m.focused().is_some());
+                let i = self.active.min(self.docs.len() - 1);
+                self.find.bar(ui, &mut self.docs[i]);
             });
         }
+        // 查找栏 / 侧栏输入框 / 对话框正在收键盘时, 编辑区不抢
+        let find_focus = ctx.memory(|m| m.focused()).map(|f| !self.editor_ids.contains(&f)).unwrap_or(false);
         if self.term.open {
             egui::Panel::bottom("term").resizable(true).default_size(180.0).show(root, |ui| self.term_ui(ui));
         }

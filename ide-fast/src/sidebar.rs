@@ -1,11 +1,10 @@
-//! 侧栏: 文件树 / 大纲 / Grep。语义都来自 editcore (`outline_dispatch` / `grep_engine::search`), 这里只管列表和点击。
-//! 文件树按需读目录 (展开才读, 读过缓存); Grep 在后台线程里跑 (不卡界面), 结果逐条点开跳到行。
+//! 侧栏: 文件树 / 大纲 / Grep。大纲来自 editcore (`outline_dispatch`); Grep 的状态和控件在 `grep.rs`, 这里只放文件树和大纲。
+//! 文件树按需读目录 (展开才读, 读过缓存)。
 
-use editcore::grep_engine::{self, ReplaceOptions, SearchOptions, SearchResult};
+use crate::grep::Grep;
 use editcore::type_config::OutlineEntry;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -21,23 +20,12 @@ pub struct Entry {
     pub is_dir: bool,
 }
 
-pub struct GrepState {
-    pub pattern: String,
-    pub repl: String,
-    pub include: String,
-    pub case: bool,
-    pub regex: bool,
-    pub results: Vec<SearchResult>,
-    pub msg: String,
-    rx: Option<Receiver<Result<Vec<SearchResult>, String>>>,
-}
-
 pub struct Sidebar {
     pub open: bool,
     pub tab: Tab,
     pub root: Option<PathBuf>,
     children: HashMap<PathBuf, Vec<Entry>>,
-    pub grep: GrepState,
+    pub grep: Grep,
     /// 大纲缓存: (文档 id, 版本号) -> 条目
     outline_key: Option<(u64, u64)>,
     pub outline: Vec<OutlineEntry>,
@@ -53,7 +41,7 @@ impl Sidebar {
             tab: Tab::Files,
             root: None,
             children: HashMap::new(),
-            grep: GrepState { pattern: String::new(), repl: String::new(), include: String::new(), case: false, regex: false, results: vec![], msg: String::new(), rx: None },
+            grep: Grep::new(),
             outline_key: None,
             outline: vec![],
         }
@@ -104,86 +92,6 @@ impl Sidebar {
         self.outline = editcore::type_config::TypeConfig::outline_dispatch(&ty, &lines.join("\n"));
     }
 
-    /// 在项目根下开始 Grep (后台线程); 上一次没跑完的结果作废
-    pub fn start_grep(&mut self) {
-        let Some(root) = self.root.clone() else {
-            self.grep.msg = "先打开一个文件夹".into();
-            return;
-        };
-        if self.grep.pattern.is_empty() {
-            self.grep.msg = "请输入要搜索的内容".into();
-            return;
-        }
-        let include: Vec<String> = self.grep.include.split([',', ';', ' ']).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
-        let opts = SearchOptions {
-            pattern: self.grep.pattern.clone(),
-            case_sensitive: Some(self.grep.case),
-            regex: Some(self.grep.regex),
-            include_files: if include.is_empty() { None } else { Some(include) },
-            max_results: Some(2000),
-            ..Default::default()
-        };
-        let (tx, rx) = channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(grep_engine::search(&root, &opts));
-        });
-        self.grep.rx = Some(rx);
-        self.grep.results.clear();
-        self.grep.msg = "搜索中…".into();
-    }
-
-    /// 每帧调用: 取后台结果; 返回 true 表示有新结果 (需要重画)
-    pub fn poll_grep(&mut self) -> bool {
-        let Some(rx) = &self.grep.rx else { return false };
-        match rx.try_recv() {
-            Ok(Ok(r)) => {
-                self.grep.msg = format!("{} 处命中", r.len());
-                self.grep.results = r;
-                self.grep.rx = None;
-                true
-            }
-            Ok(Err(e)) => {
-                self.grep.msg = e;
-                self.grep.rx = None;
-                true
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => false,
-            Err(_) => {
-                self.grep.rx = None;
-                false
-            }
-        }
-    }
-
-    /// 全部置换 (Grep 置换): 对项目根下命中的文件逐个改写; `dirty` = 已打开且有未保存修改的文件 (不改写, 只报告跳过)。返回结果说明
-    pub fn replace_all(&mut self, dirty: Vec<String>) -> String {
-        let Some(root) = self.root.clone() else { return "先打开一个文件夹".into() };
-        if self.grep.pattern.is_empty() {
-            return "请输入要搜索的内容".into();
-        }
-        let include: Vec<String> = self.grep.include.split([',', ';', ' ']).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect();
-        let opts = ReplaceOptions {
-            search: SearchOptions {
-                pattern: self.grep.pattern.clone(),
-                case_sensitive: Some(self.grep.case),
-                regex: Some(self.grep.regex),
-                include_files: if include.is_empty() { None } else { Some(include) },
-                ..Default::default()
-            },
-            replacement: self.grep.repl.clone(),
-            backup: Some(true),
-            skip_paths: Some(dirty),
-            ..Default::default()
-        };
-        match grep_engine::grep_replace(&root, &opts) {
-            Ok(r) => format!("置换 {} 处, 改写 {} 个文件 (已备份为 .bak){}{}", r.total_replacements, r.files_changed, if r.files_skipped > 0 { format!(", 跳过 {} 个有未保存修改的已打开文件", r.files_skipped) } else { String::new() }, if r.files_failed > 0 { format!(", {} 个失败", r.files_failed) } else { String::new() }),
-            Err(e) => e,
-        }
-    }
-
-    pub fn grep_running(&self) -> bool {
-        self.grep.rx.is_some()
-    }
 }
 
 #[cfg(test)]
@@ -204,26 +112,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    #[test]
-    fn grep_runs_in_background_and_returns_hits() {
-        let d = std::env::temp_dir().join(format!("ide-fast-grep-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        std::fs::write(d.join("a.rs"), "fn main() {}\nlet needle = 1;\n").unwrap();
-        let mut s = Sidebar::new();
-        s.set_root(d.clone());
-        s.grep.pattern = "needle".into();
-        s.start_grep();
-        for _ in 0..200 {
-            if s.poll_grep() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert_eq!(s.grep.results.len(), 1, "{}", s.grep.msg);
-        assert_eq!(s.grep.results[0].line, 2);
-        let _ = std::fs::remove_dir_all(&d);
-    }
 
     #[test]
     fn outline_is_cached_by_revision() {
@@ -236,22 +124,5 @@ mod tests {
         assert!(s.outline.is_empty(), "同一版本不重算");
         s.update_outline(1, 2, "a.md", &lines);
         assert!(!s.outline.is_empty());
-    }
-
-    #[test]
-    fn grep_replace_rewrites_files_and_keeps_a_backup() {
-        let d = std::env::temp_dir().join(format!("ide-fast-grepr-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        std::fs::write(d.join("a.txt"), "old value\nold again\n").unwrap();
-        let mut s = Sidebar::new();
-        s.set_root(d.clone());
-        s.grep.pattern = "old".into();
-        s.grep.repl = "new".into();
-        let msg = s.replace_all(vec![]);
-        assert!(msg.contains("置换 2 处"), "{msg}");
-        assert_eq!(std::fs::read_to_string(d.join("a.txt")).unwrap(), "new value\nnew again\n");
-        assert!(d.join("a.txt.bak").exists(), "有备份");
-        let _ = std::fs::remove_dir_all(&d);
     }
 }
