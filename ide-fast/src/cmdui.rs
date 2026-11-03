@@ -83,7 +83,7 @@ fn pick(events: &[egui::Event]) -> Option<Captured> {
 /// 这一帧里用户按下的键; 取到之后这一帧的按键事件到此为止 (否则同一帧稍后的快捷键分发会把刚绑好的键当成一次按下, 立刻执行那条命令)
 fn captured(ctx: &egui::Context) -> Option<Captured> {
     let got = ctx.input(|i| pick(&i.events));
-    if got.is_some() { ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Key { .. }))); }
+    if got.is_some() { ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Key { .. } | egui::Event::Text(_) | egui::Event::Ime(_) | egui::Event::Paste(_)))); }
     got
 }
 

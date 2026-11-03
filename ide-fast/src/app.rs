@@ -115,6 +115,8 @@ pub struct App {
     cmdui: CmdUi,
     /// 「关于」窗口开着
     about_open: bool,
+    /// 关窗请求那一刻的会话 (路径, 活动位置): 关窗确认会逐个关掉标签, 之后再算会话就少了刚处理过的文件
+    exit_session: Option<(Vec<String>, usize)>,
     /// 打开命令面板那一刻的脚本插件命令 (打开期间不再反复读盘)
     pal_plugins: Vec<PluginCmd>,
 }
@@ -129,7 +131,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None,
         };
         app.persist = persist;
         app.apply_settings(&st);
@@ -205,11 +207,13 @@ impl App {
 
     /// 现在打开的有路径的文档 (会话恢复用), 最多 20 个
     fn session_paths(&self) -> Vec<String> {
+        if let Some((p, _)) = &self.exit_session { return p.clone(); }
         self.docs.iter().filter_map(|d| d.path.as_ref().map(|p| p.display().to_string())).take(20).collect()
     }
 
     /// 活动文档在 `session_paths` 里的位置 (活动的是无路径文档 = 0)
     fn session_active(&self) -> usize {
+        if let Some((_, a)) = &self.exit_session { return *a; }
         let cur = self.docs.get(self.active.min(self.docs.len().saturating_sub(1))).and_then(|d| d.path.as_ref());
         self.docs.iter().filter_map(|d| d.path.as_ref()).take(20).position(|p| Some(p) == cur).unwrap_or(0)
     }
@@ -2307,6 +2311,7 @@ impl eframe::App for App {
         self.sync_doc_prefs();
         self.track_geometry(ctx);
         if ctx.input(|i| i.viewport().close_requested()) {
+            if self.exit_session.is_none() { self.exit_session = Some((self.session_paths(), self.session_active())); }
             for i in 0..self.docs.len() { self.remember_pos(i); }
             self.cfg.view.geom = self.geom_now.map(|g| crate::settings::WinGeom { maximized: self.maximized_now, ..g });
         }
@@ -2321,7 +2326,7 @@ impl eframe::App for App {
                     if !self.close_tab(i) { all = false; break; }
                 } else { i += 1; }
             }
-            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
+            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; }
         }
         // 拖文件进窗口: 打开
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
@@ -2744,6 +2749,29 @@ mod tests {
         assert_eq!(app2.docs.len(), 1);
         st.restore_session = false;
         assert_eq!(App::build(vec![], None, Trace::new(), st, false).docs.len(), 1, "只有一份空白文档");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_snapshot_survives_the_close_confirmation_loop() {
+        let dir = std::env::temp_dir().join(format!("idefast-exit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
+        let mut st = Settings::default();
+        st.session = vec![a.display().to_string(), b.display().to_string()];
+        st.session_active = 1;
+        let mut app = App::build(vec![], None, Trace::new(), st, false);
+        // 关窗请求: 先冻结, 之后确认循环把标签一个个关掉也不影响要写下去的会话
+        app.exit_session = Some((app.session_paths(), app.session_active()));
+        app.docs.truncate(1);
+        let now = app.current_settings();
+        assert_eq!(now.session.len(), 2, "两个文件都在会话里");
+        assert_eq!(now.session_active, 1);
+        // 用户取消关窗: 快照清掉, 会话又跟着现在打开的文件走
+        app.exit_session = None;
+        assert_eq!(app.current_settings().session.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
