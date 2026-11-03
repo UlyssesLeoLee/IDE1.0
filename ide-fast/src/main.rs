@@ -23,6 +23,7 @@ mod markdown;
 mod terminal;
 mod sidebar;
 mod tabs;
+mod view;
 
 use std::time::Instant;
 

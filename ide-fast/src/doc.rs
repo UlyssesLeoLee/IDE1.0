@@ -71,6 +71,10 @@ pub struct Doc {
     pub auto_indent: bool,
     pub smart_indent: bool,
     pub insert_spaces: bool,
+    /// 基线: 打开 / 上次保存时的全文 (修改行标记据此比较)
+    pub base: Vec<String>,
+    /// 修改行标记缓存: (rev, 结果)
+    pub changed_cache: Option<(u64, Vec<bool>)>,
 }
 
 /// 超过 HARD 直接拒绝 (整篇载入内存, 太大会拖垮编辑器); 「打开前要确认」的阈值在首选项里 (max_file_mb)
@@ -104,7 +108,7 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false, auto_indent: true, smart_indent: false, insert_spaces: false }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false, auto_indent: true, smart_indent: false, insert_spaces: false, base: vec![String::new()], changed_cache: None }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -126,7 +130,7 @@ impl Doc {
             lines.push(String::new());
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
-        Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
+        Ok(Doc { id, path: Some(path.to_path_buf()), name, base: lines.clone(), changed_cache: None, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
                  undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path), mixed_eol: d.mixed_eol, auto_indent: true, smart_indent: false, insert_spaces: false })
     }
 
@@ -244,7 +248,17 @@ impl Doc {
         self.name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| self.name.clone());
         self.dirty = false;
         self.stamp = stamp_of(path);
+        self.base = self.lines.clone();
+        self.changed_cache = None;
         Ok(())
+    }
+
+    /// 每行是否相对基线改过 (按 rev 缓存)
+    pub fn changed(&mut self) -> &[bool] {
+        if self.changed_cache.as_ref().map(|c| c.0) != Some(self.rev) {
+            self.changed_cache = Some((self.rev, crate::view::changed_lines(&self.base, &self.lines)));
+        }
+        &self.changed_cache.as_ref().expect("刚算过").1
     }
 
     pub fn row_len(&self, r: usize) -> usize {
@@ -1259,6 +1273,19 @@ b
         assert_eq!(doc.group, 3, "重载保留标签分组");
         assert!(!doc.changed_on_disk());
         let _ = std::fs::remove_dir_all(&d);
+    }
+    #[test]
+    fn changed_lines_follow_edits_and_reset_on_save() {
+        let mut d = doc(&["a", "b", "c"]);
+        d.base = d.lines.clone();
+        assert_eq!(d.changed(), &[false, false, false]);
+        d.lines[1] = "B".into();
+        d.rev += 1;
+        assert_eq!(d.changed(), &[false, true, false]);
+        let p = std::env::temp_dir().join(format!("ide-fast-chg-{}.txt", std::process::id()));
+        d.save_to(&p).unwrap();
+        assert_eq!(d.changed(), &[false, false, false], "保存后基线更新");
+        let _ = std::fs::remove_file(&p);
     }
     #[test]
     fn eol_charset_bom_changes_mark_dirty_and_follow_rules() {

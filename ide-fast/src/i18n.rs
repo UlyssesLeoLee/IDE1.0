@@ -204,6 +204,17 @@ pub const T: &[Row] = &[
     ("sub.tabwidth", ["Tab 宽度", "タブ幅", "Tab Width"]),
     ("c.zoom-in", ["放大", "拡大", "Zoom In"]),
     ("c.zoom-out", ["缩小", "縮小", "Zoom Out"]),
+    ("c.zoom-reset", ["重置缩放", "拡大率をリセット", "Reset Zoom"]),
+    ("c.line-numbers", ["行号", "行番号", "Line Numbers"]),
+    ("c.status-bar", ["状态栏", "ステータスバー", "Status Bar"]),
+    ("c.whitespace", ["显示空白符", "空白文字を表示", "Show Whitespace"]),
+    ("c.ruler", ["列标尺", "桁ルーラー", "Column Ruler"]),
+    ("c.cur-line", ["当前行下划线", "カーソル行に下線", "Current Line Underline"]),
+    ("c.minimap", ["小地图", "ミニマップ", "Minimap"]),
+    ("c.minimal-mode", ["极简布局 (仅编辑区)", "ミニマル表示 (編集領域のみ)", "Minimal Layout (editor only)"]),
+    ("st.char-col", ["字符列 {}", "文字位置 {}", "Character column {}"]),
+    ("st.selected", ["已选 {} 字符 / {} 行", "{} 文字 / {} 行選択", "{} chars / {} lines selected"]),
+    ("st.plain", ["纯文本", "テキスト", "Plain Text"]),
     // ---- 帮助
     ("ui.about", ["IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)", "IDE1.0 高速版 — ネイティブ Rust (egui)\n編集の挙動は editcore を再利用 (Tauri 版と同一)", "IDE1.0 Fast — native Rust (egui)\nEditing semantics reuse editcore (same as the Tauri build)"]),
     // ---- 标签右键 / 分组

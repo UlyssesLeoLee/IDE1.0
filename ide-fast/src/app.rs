@@ -39,6 +39,9 @@ pub struct App {
     /// 主题插件: 选中的 id 与换算好的外观
     theme_id: String,
     theme_visuals: Option<egui::Visuals>,
+    /// 主题变量 (CSS 变量名 -> 颜色串) 与换算好的语义色; 没选主题插件时用内置深 / 浅色
+    theme_vars: Option<std::collections::BTreeMap<String, String>>,
+    tc: crate::view::ThemeColors,
     /// 分割窗口: 左右两个编辑区各看一个文档; active 永远是有焦点那一栏的文档
     split_on: bool,
     left_doc: usize,
@@ -107,7 +110,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX,
         };
         app.persist = persist;
         app.apply_settings(&st);
@@ -937,6 +940,15 @@ impl App {
                 ui.checkbox(&mut self.highlight, tr("c.highlight"));
                 ui.checkbox(&mut self.wrap, lk("c.wrap", "Alt+Z"));
                 ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
+                ui.separator();
+                ui.checkbox(&mut self.cfg.view.line_numbers, tr("c.line-numbers"));
+                ui.checkbox(&mut self.cfg.view.status_bar, tr("c.status-bar"));
+                ui.checkbox(&mut self.cfg.view.whitespace, tr("c.whitespace"));
+                ui.checkbox(&mut self.cfg.view.ruler, tr("c.ruler"));
+                ui.checkbox(&mut self.cfg.view.cur_line, tr("c.cur-line"));
+                ui.checkbox(&mut self.cfg.view.minimap, tr("c.minimap"));
+                if ui.button(tr("c.minimal-mode")).clicked() { self.set_minimal(); ui.close(); }
+                ui.separator();
                 ui.menu_button(tr("sub.tabwidth"), |ui| {
                     for w in [2usize, 3, 4, 8] {
                         if ui.radio_value(&mut self.tab, w, format!("{w}")).clicked() { ui.close(); }
@@ -944,6 +956,7 @@ impl App {
                 });
                 if ui.button(lk("c.zoom-in", "Ctrl+=")).clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
                 if ui.button(lk("c.zoom-out", "Ctrl+-")).clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
+                if ui.button(lk("c.zoom-reset", "Ctrl+0")).clicked() { self.font_px = DEFAULT_FONT_PX; }
             });
             ui.menu_button(tr("menu.help"), |ui| {
                 ui.label(tr("ui.about"));
@@ -1136,6 +1149,7 @@ impl App {
         else if cmd(ctx, Modifiers::COMMAND, Key::F3) { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); }
         else if cmd(ctx, Modifiers::SHIFT, Key::F3) { self.find_next(false); } else if cmd(ctx, Modifiers::NONE, Key::F3) { self.find_next(true); }
         if cmd(ctx, Modifiers::COMMAND, Key::Equals) { self.font_px = (self.font_px + 1.0).min(40.0); }
+        if cmd(ctx, Modifiers::COMMAND, Key::Num0) { self.font_px = DEFAULT_FONT_PX; }
         if cmd(ctx, Modifiers::COMMAND, Key::Minus) { self.font_px = (self.font_px - 1.0).max(8.0); }
         if cmd(ctx, Modifiers::COMMAND, Key::Z) { self.cur().undo(); }
         if cmd(ctx, Modifiers::COMMAND, Key::Y) { self.cur().redo(); }
@@ -1174,10 +1188,23 @@ impl App {
         self.cur().tip = tip;
     }
 
+    /// 极简布局 (Sakura 风格的单个文本框): 收起侧栏 / 终端 / 预览 / 分割, 只留编辑区和状态栏
+    fn set_minimal(&mut self) {
+        self.side.open = false;
+        self.term.open = false;
+        self.md_preview = false;
+        if self.split_on { self.toggle_split(); }
+        self.cfg.view.status_bar = true;
+        self.cfg.view.minimap = false;
+        self.cfg.view.ruler = false;
+    }
+
     /// 选主题插件 (空 id = 回到内置深 / 浅色)
     fn set_theme_plugin(&mut self, id: &str) {
         self.theme_id = id.to_string();
-        self.theme_visuals = plugins::rows().into_iter().find(|r| r.id == id && r.enabled).and_then(|r| r.theme).map(|t| plugins::visuals(&t.vars));
+        let spec = plugins::rows().into_iter().find(|r| r.id == id && r.enabled).and_then(|r| r.theme);
+        self.theme_visuals = spec.as_ref().map(|t| plugins::visuals(&t.vars));
+        self.theme_vars = spec.map(|t| t.vars);
         if self.theme_visuals.is_none() { self.theme_id.clear(); }
     }
 
@@ -1311,7 +1338,7 @@ impl App {
         let max_cols = self.max_cols;
         let ai = self.active.min(self.docs.len() - 1);
         let (tab, wrap_pref, _) = self.eff(&self.docs[ai].name.clone());
-        let mut theme = if self.dark { Theme::dark() } else { Theme::light() };
+        let mut theme = self.tc.syntax_theme();
         // 词法颜色覆盖 (首选项「字体与颜色」)
         for (kind, c) in [(TokenKind::Keyword, self.cfg.colors.keyword), (TokenKind::String, self.cfg.colors.string), (TokenKind::Comment, self.cfg.colors.comment), (TokenKind::Number, self.cfg.colors.number)] {
             if let Some(c) = c {
@@ -1332,7 +1359,9 @@ impl App {
         };
         let cfg: Option<TypeConfig> = if self.highlight { self.registry.detect(&self.docs[ai].name).cloned() } else { None };
         let digits = format!("{}", self.docs[ai].lines.len()).len().max(3);
-        let gutter = digits as f32 * char_w + 18.0;
+        let vw = self.cfg.view.clone();
+        let tc = self.tc;
+        let gutter = if vw.line_numbers { digits as f32 * char_w + 18.0 } else { 18.0 };
         let pad = 6.0;
         // 自动换行: 每个逻辑行按可用宽度折成若干显示行, 行高不等 -> 记累计高度 (太长的文档不换行, 免得每次排版都要扫全篇)
         let wrap = wrap_pref && self.docs[ai].lines.len() <= 20000;
@@ -1426,6 +1455,9 @@ impl App {
         let reveal = std::mem::take(&mut self.docs[ai].reveal);
         let center = reveal && std::mem::take(&mut self.center_once);
         let mut widest = max_cols;
+        if !self.docs[ai].grep_result { let _ = self.docs[ai].changed(); }  // 修改行标记: 按 rev 缓存, 绘制时只读
+        // 列标尺: 固定在编辑区上方, 横向跟着滚动 (滚动量在 ScrollArea 返回后才知道, 先占位)
+        let ruler_rect = if vw.ruler { Some(ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::hover()).0) } else { None };
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
         let mut ed_id: Option<egui::Id> = None;
@@ -1490,14 +1522,60 @@ impl App {
                         painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xx(c0), y), Pos2::new(x0 + xx(c1), y + row_h)), 0.0, sel_bg);
                     }
                 }
+                if vw.cur_line && row == d.cursor[0] && !d.grep_result {
+                    let yb = rect.min.y + top(row + 1) - 1.0;
+                    painter.line_segment([Pos2::new(rect.min.x + gutter, yb), Pos2::new(rect.max.x, yb)], egui::Stroke::new(1.0, tc.border));
+                }
+                if vw.whitespace {
+                    let faint = Color32::from_rgba_unmultiplied(tc.fg_dim.r(), tc.fg_dim.g(), tc.fg_dim.b(), 110);
+                    let at = |col: usize| -> (f32, f32) {
+                        if wrap {
+                            let p = galley.pos_from_cursor(egui::text::CCursor::new(map[col.min(map.len() - 1)])).min;
+                            (p.x, p.y)
+                        } else { (x_of(&painter, &disp, &map, col.min(map.len() - 1), &font, text_color), 0.0) }
+                    };
+                    for (c, ch) in crate::view::whitespace_marks(&d.lines[row]) {
+                        let (px, py) = at(c);
+                        painter.text(Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, ch, font.clone(), faint);
+                    }
+                    if row + 1 < d.lines.len() {
+                        let (px, py) = at(d.lines[row].chars().count());
+                        painter.text(Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, '↵', font.clone(), faint);
+                    }
+                }
                 painter.galley(Pos2::new(x0, y), galley, text_color);
+                if d.changed_cache.as_ref().map(|c| c.1.get(row).copied().unwrap_or(false)).unwrap_or(false) {
+                    painter.rect_filled(Rect::from_min_size(Pos2::new(rect.min.x + gutter - 5.0, y), Vec2::new(3.0, row_h)), 0.0, tc.yellow);
+                }
                 if d.folds.iter().any(|f| f.0 == row) {
                     painter.text(Pos2::new(rect.min.x + 2.0, y + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, "▸", font.clone(), weak);
                 }
                 if d.bookmarks.iter().any(|b| b.row == row) {
                     painter.circle_filled(Pos2::new(rect.min.x + 7.0, y + row_h / 2.0), 3.5, Color32::from_rgb(80, 170, 255));
                 }
-                painter.text(Pos2::new(rect.min.x + gutter - 8.0, y + (row_h - base_h) / 2.0), egui::Align2::RIGHT_TOP, format!("{}", row + 1), font.clone(), weak);
+                if vw.line_numbers {
+                    let num_c = if row == d.cursor[0] { tc.fg } else { weak };
+                    painter.text(Pos2::new(rect.min.x + gutter - 8.0, y + (row_h - base_h) / 2.0), egui::Align2::RIGHT_TOP, format!("{}", row + 1), font.clone(), num_c);
+                }
+            }
+            if vw.minimap && !d.lines.is_empty() {
+                // 小地图: 贴在可见区右缘, 每个像素行代表一段源码行, 横条长度 = 该段最长行的长度
+                let mw = 80.0f32;
+                let vh = viewport.height();
+                let mrect = Rect::from_min_size(Pos2::new(rect.min.x + viewport.max.x - mw, rect.min.y + viewport.min.y), Vec2::new(mw, vh));
+                let mp = ui.painter_at(mrect.intersect(ui.clip_rect()));
+                mp.rect_filled(mrect, 0.0, Color32::from_rgba_unmultiplied(tc.bg_edit.r(), tc.bg_edit.g(), tc.bg_edit.b(), 215));
+                let buckets = crate::view::minimap_rows(d.lines.len(), (vh / 2.0) as usize);
+                let bh = (vh / buckets.len().max(1) as f32).min(3.0); // 行很少时每行 3 像素, 不拉成大块
+                let bar = Color32::from_rgba_unmultiplied(tc.fg_dim.r(), tc.fg_dim.g(), tc.fg_dim.b(), 150);
+                for (i, (a, b)) in buckets.iter().enumerate() {
+                    let n = if b - a > 8 { d.lines[*a].trim_end().chars().count() } else { d.lines[*a..*b].iter().map(|l| l.trim_end().chars().count()).max().unwrap_or(0) };
+                    if n > 0 { mp.rect_filled(Rect::from_min_size(Pos2::new(mrect.min.x + 4.0, mrect.min.y + i as f32 * bh), Vec2::new((n as f32 * 0.7).min(mw - 8.0), (bh - 0.5).max(1.0))), 0.0, bar); }
+                }
+                let total = d.lines.len() as f32;
+                let span_h = bh * buckets.len() as f32;
+                let (v0, v1) = ((first as f32 / total).min(1.0), (last as f32 / total).min(1.0));
+                mp.rect_filled(Rect::from_min_max(Pos2::new(mrect.min.x, mrect.min.y + v0 * span_h), Pos2::new(mrect.max.x, mrect.min.y + (v1 * span_h).max(v0 * span_h + 4.0))), 0.0, Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 40));
             }
             // 光标
             let [cr, cc] = d.cursor;
@@ -1549,6 +1627,26 @@ impl App {
             (rect, x0)
         });
         let (rect, x0) = out.inner;
+        if let Some(rr) = ruler_rect {
+            let rp = ui.painter_at(rr);
+            rp.rect_filled(rr, 0.0, tc.bg_bar);
+            rp.line_segment([rr.left_bottom(), rr.right_bottom()], egui::Stroke::new(1.0, tc.border));
+            let small = FontId::new((self.font_px * 0.7).max(8.0), crate::fonts::editor_family());
+            let origin = rr.min.x + gutter + pad - out.state.clamped_offset().x;
+            let cur_col = { let d = &self.docs[ai]; crate::view::display_col(&d.lines[d.cursor[0].min(d.lines.len() - 1)], d.cursor[1], tab) };
+            let cols = ((rr.width() + out.state.clamped_offset().x) / char_w) as usize + 1;
+            for cell in editcore::ruler::render(&editcore::ruler::RulerConfig { start: 1, end: cols.max(10), major_tick: 10, minor_tick: 5 }) {
+                let cx = origin + (cell.col - 1) as f32 * char_w;
+                if cx < rr.min.x + gutter - char_w || cx > rr.max.x { continue; }
+                match cell.kind {
+                    editcore::ruler::RulerMark::Major => { rp.text(Pos2::new(cx + char_w, rr.center().y), egui::Align2::RIGHT_CENTER, format!("{}", cell.col), small.clone(), tc.fg_dim); }
+                    editcore::ruler::RulerMark::Minor => { rp.text(Pos2::new(cx + char_w / 2.0, rr.center().y), egui::Align2::CENTER_CENTER, editcore::ruler::marker_for(cell), small.clone(), tc.fg_dim); }
+                    editcore::ruler::RulerMark::Plain => {}
+                }
+            }
+            let cx = origin + (cur_col - 1) as f32 * char_w;
+            rp.rect_filled(Rect::from_min_size(Pos2::new(cx, rr.min.y), Vec2::new(char_w, rr.height())), 0.0, Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 70));
+        }
         if let Some(id) = ed_id { if !self.editor_ids.contains(&id) { self.editor_ids.push(id); } }
         self.max_cols = widest;
         if let Some((p, shift, dragging)) = clicked {
@@ -1678,9 +1776,13 @@ fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: 
     col.min(map.len().saturating_sub(1))
 }
 
+/// 缩放重置 (Ctrl+0) 回到的字号, 也是设置的默认字号
+const DEFAULT_FONT_PX: f32 = 15.0;
+
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = &root.ctx().clone();
+        self.tc = match &self.theme_vars { Some(v) if self.theme_visuals.is_some() => crate::view::ThemeColors::from_vars(v), _ => crate::view::ThemeColors::builtin(self.dark) };
         let mut vis = match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } };
         if let Some(c) = self.cfg.colors.bg { vis.extreme_bg_color = Color32::from_rgb(c[0], c[1], c[2]); } // 编辑区背景覆盖
         ctx.set_visuals(vis);
@@ -1797,11 +1899,14 @@ impl eframe::App for App {
             }
         }
         let mut st_cmd: Option<StatusCmd> = None;
-        egui::Panel::bottom("status").show(root, |ui| {
+        if self.cfg.view.status_bar { egui::Panel::bottom("status").frame(egui::Frame::new().fill(self.tc.bg_status).inner_margin(egui::Margin::symmetric(8, 3)).stroke(egui::Stroke::new(1.0, self.tc.border))).show(root, |ui| {
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
+            let lang = self.registry.detect(&d.name).map(|c| c.name.clone());
+            let dcol = crate::view::display_col(&d.lines[d.cursor[0].min(d.lines.len() - 1)], d.cursor[1], self.tab);
             ui.horizontal(|ui| {
                 // 位置: 点一下 = 转到行
-                if ui.add(egui::Label::new(format!("Ln {}, Col {}", d.cursor[0] + 1, d.cursor[1] + 1)).sense(Sense::click())).on_hover_text(tr("st.goto-hint")).clicked() { st_cmd = Some(StatusCmd::Goto); }
+                if ui.add(egui::Label::new(format!("Ln {}, Col {}", d.cursor[0] + 1, dcol)).sense(Sense::click())).on_hover_text(format!("{}
+{}", tr("st.goto-hint"), trf("st.char-col", &[&(d.cursor[1] + 1).to_string()]))).clicked() { st_cmd = Some(StatusCmd::Goto); }
                 ui.separator();
                 // 编码 / 换行符 / BOM: 点开菜单改 (改保存时的格式, 或按别的编码重新打开)
                 ui.menu_button(d.charset.label(), |ui| {
@@ -1822,7 +1927,12 @@ impl eframe::App for App {
                 });
                 if d.mixed_eol { ui.colored_label(Color32::from_rgb(230, 160, 40), tr("st.mixed-eol")).on_hover_text(tr("st.mixed-eol-tip")); }
                 ui.label(trf("st.lines", &[&d.lines.len().to_string()]));
-                if d.overwrite { ui.label(tr("st.overwrite")); }
+                if let Some(sel) = d.sel {
+                    let (n, l) = crate::view::sel_stats(&d.lines, sel);
+                    ui.label(trf("st.selected", &[&n.to_string(), &l.to_string()]));
+                }
+                ui.label(lang.unwrap_or_else(|| tr("st.plain").to_string()));
+                ui.label(if d.overwrite { "OVR" } else { "INS" });
                 if d.readonly { ui.label(tr("st.readonly")); }
                 if d.rec.is_some() { ui.colored_label(Color32::from_rgb(230, 70, 70), "● REC"); }
                 if d.box_sel.is_some() { ui.label(tr("st.box")); }
@@ -1830,7 +1940,7 @@ impl eframe::App for App {
                 ui.separator();
                 ui.label(&d.tip);
             });
-        });
+        }); }
         match st_cmd {
             Some(StatusCmd::Goto) => { self.goto_open = true; self.goto_text.clear(); }
             Some(StatusCmd::Charset(cs)) => self.cur().set_charset(cs),
@@ -1964,6 +2074,35 @@ mod tests {
         next.reset_prefs();
         a.apply_settings(&next);
         assert_eq!((a.tab, a.cfg.font_family.as_str(), a.recent.clone()), (4, "", vec!["keep.txt".to_string()]));
+    }
+
+    #[test]
+    fn view_toggles_persist_and_minimal_layout_hides_panels() {
+        let mut st = Settings::default();
+        st.view.ruler = true; st.view.whitespace = true; st.view.line_numbers = false;
+        let (mut a, _g) = app(st);
+        let back = a.current_settings();
+        assert_eq!((back.view.ruler, back.view.whitespace, back.view.line_numbers, back.view.status_bar), (true, true, false, true));
+        a.side.open = true; a.term.open = true; a.md_preview = true;
+        a.set_minimal();
+        assert_eq!((a.side.open, a.term.open, a.md_preview, a.cfg.view.ruler), (false, false, false, false));
+        assert!(a.cfg.view.status_bar, "极简布局仍留状态栏");
+    }
+
+    #[test]
+    fn choosing_a_theme_plugin_switches_colors_and_syntax_theme() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("ide-fast-app-theme-{}", std::process::id()));
+        std::env::set_var("IDE_PLUGIN_DIR", &dir);
+        let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+        a.set_theme_plugin("theme-light");
+        assert!(a.theme_vars.is_some());
+        let tc = crate::view::ThemeColors::from_vars(a.theme_vars.as_ref().unwrap());
+        assert!(!tc.dark);
+        a.set_theme_plugin("");
+        assert!(a.theme_vars.is_none() && a.theme_id.is_empty());
+        std::env::remove_var("IDE_PLUGIN_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

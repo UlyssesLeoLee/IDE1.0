@@ -78,7 +78,7 @@ pub fn visuals(vars: &BTreeMap<String, String>) -> egui::Visuals {
             return c;
         }
         let a = c.a() as f32 / 255.0;
-        let mix = |f: u8, b: u8| (f as f32 * a + b as f32 * (1.0 - a)) as u8;
+        let mix = |f: u8, b: u8| (f as f32 + b as f32 * (1.0 - a)).min(255.0) as u8; // Color32 是预乘 alpha
         Color32::from_rgb(mix(c.r(), edit.r()), mix(c.g(), edit.g()), mix(c.b(), edit.b()))
     };
     if let Some(c) = get("--bg-side") {
@@ -174,6 +174,7 @@ mod tests {
 
     #[test]
     fn bundled_theme_plugins_load_and_map_to_visuals() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("ide-fast-plug-{}", std::process::id()));
         std::env::set_var("IDE_PLUGIN_DIR", &dir);
         let rows = rows();

@@ -124,11 +124,18 @@ pub struct ViewState {
     pub term_h: f32,
     pub md_preview: bool,
     pub geom: Option<WinGeom>,
+    /// 视图开关: 行号 / 状态栏 / 空白符标记 / 列标尺 / 当前行下划线 / 小地图
+    pub line_numbers: bool,
+    pub status_bar: bool,
+    pub whitespace: bool,
+    pub ruler: bool,
+    pub cur_line: bool,
+    pub minimap: bool,
 }
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false }
     }
 }
 
@@ -247,6 +254,8 @@ impl Settings {
         }
         let w = &v["view"];
         b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
+        b_of(w, "line_numbers", &mut self.view.line_numbers); b_of(w, "status_bar", &mut self.view.status_bar); b_of(w, "whitespace", &mut self.view.whitespace);
+        b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap);
         if let Some(f) = w["side_w"].as_f64() { self.view.side_w = (f as f32).clamp(120.0, 900.0); }
         if let Some(f) = w["term_h"].as_f64() { self.view.term_h = (f as f32).clamp(60.0, 900.0); }
         let g = &w["geom"];
@@ -275,7 +284,8 @@ impl Settings {
         o.insert("positions".into(), json!(self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>()));
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
-        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom }));
+        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom,
+            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap }));
         v
     }
 
@@ -441,7 +451,7 @@ mod tests {
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }) };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉
