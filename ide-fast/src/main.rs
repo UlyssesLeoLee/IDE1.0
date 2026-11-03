@@ -10,6 +10,8 @@ mod app;
 mod doc;
 mod find;
 mod grep;
+mod i18n;
+mod prefs;
 mod cmds;
 mod fonts;
 mod instance;
@@ -55,11 +57,15 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
     let inbox = if force_new { None } else { instance::listen() };
+    // 上次的窗口位置 / 大小 / 最大化状态 (没有就用默认的 1100x720)
+    let st = settings::Settings::load();
+    let font_file = st.font_family.clone();
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0]);
+    if let Some(g) = st.view.geom {
+        viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
+    }
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("IDE1.0 Fast")
-            .with_inner_size([1100.0, 720.0])
-            .with_min_inner_size([480.0, 320.0]),
+        viewport,
         // 不画抗锯齿多重采样、不要深度 / 模板缓冲: 文本编辑器用不上, 少一点 GPU 初始化
         multisampling: 0,
         depth_buffer: 0,
@@ -72,7 +78,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             trace.mark("window + GL context ready");
-            fonts::install(&cc.egui_ctx);
+            fonts::install(&cc.egui_ctx, &font_file);
             trace.mark("fonts installed");
             Ok(Box::new(app::App::new(args, inbox, trace)))
         }),

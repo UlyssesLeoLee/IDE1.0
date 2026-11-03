@@ -1,8 +1,9 @@
 //! 设置落盘: `%APPDATA%\\IDE1.0 Fast\\settings.json` (非 Windows: `~/.local/share/IDE1.0 Fast/settings.json`)。
-//! 只存几项用户偏好 (主题 / 字号 / 最近文件 / Tab 宽度 / 语法高亮开关); 读不到或解析失败 = 用默认值, 不报错、不挡启动。
+//! 存用户偏好 (主题 / 字号 / 字体 / 颜色 / 缩进 / 编码 / 备份 ...) 和界面状态 (面板大小 / 窗口位置 / 语言 / 最近文件);
+//! 读不到或解析失败 = 用默认值, 不报错、不挡启动。每个键独立读取 (缺的键保持默认), 所以老版本写的文件、手写的文件都能读。
 //! 写入是原子的 (临时文件 + 换名); `IDE_FAST_SETTINGS=off` 关闭落盘 (测试用), `IDE_FAST_SETTINGS=<路径>` 指定文件。
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::path::PathBuf;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -21,11 +22,130 @@ pub struct Settings {
     pub positions: Vec<(String, usize, usize)>,
     /// 查找 / Grep 的默认条件
     pub search: SearchPrefs,
+    /// 界面语言 zh / ja / en
+    pub lang: String,
+    pub auto_indent: bool,
+    pub smart_indent: bool,
+    /// Tab 键插入空格 (而不是制表符)
+    pub insert_spaces: bool,
+    /// 新文档的编码标签 (`Charset::label`) / 换行符标签 (`Eol::label`)
+    pub default_encoding: String,
+    pub default_eol: String,
+    /// 保存时把旧文件备份到 `.sakura-backup`
+    pub save_backup: bool,
+    /// 窗口重新获得焦点时检查文件有没有被外部改过
+    pub check_external: bool,
+    /// 关窗口时有未保存修改先确认
+    pub confirm_close: bool,
+    /// 超过这个大小(MB)的文件打开前要确认; 硬上限另见 `doc::HARD_LIMIT`
+    pub max_file_mb: u32,
+    /// 最近文件保留个数
+    pub mru_files: usize,
+    /// 编辑器字体族 (空 = egui 默认等宽); 行高倍数
+    pub font_family: String,
+    pub line_height: f32,
+    pub colors: Colors,
+    /// 按扩展名覆盖的设置
+    pub file_types: Vec<TypePref>,
+    pub view: ViewState,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default() }
+        Settings {
+            dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default(),
+            lang: "zh".into(), auto_indent: true, smart_indent: false, insert_spaces: false, default_encoding: "UTF-8".into(), default_eol: "CRLF".into(),
+            save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
+            colors: Colors::default(), file_types: vec![], view: ViewState::default(),
+        }
+    }
+}
+
+/// 颜色覆盖: None = 跟随主题
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct Colors {
+    pub text: Option<[u8; 3]>,
+    pub bg: Option<[u8; 3]>,
+    pub keyword: Option<[u8; 3]>,
+    pub string: Option<[u8; 3]>,
+    pub comment: Option<[u8; 3]>,
+    pub number: Option<[u8; 3]>,
+}
+
+impl Colors {
+    pub fn slots(&mut self) -> [&mut Option<[u8; 3]>; 6] {
+        [&mut self.text, &mut self.bg, &mut self.keyword, &mut self.string, &mut self.comment, &mut self.number]
+    }
+    const KEYS: [&'static str; 6] = ["text", "bg", "keyword", "string", "comment", "number"];
+
+    fn to_json(&self) -> Value {
+        let mut m = Map::new();
+        let all = [self.text, self.bg, self.keyword, self.string, self.comment, self.number];
+        for (k, c) in Self::KEYS.iter().zip(all) {
+            if let Some(c) = c { m.insert((*k).into(), Value::String(hex(c))); }
+        }
+        Value::Object(m)
+    }
+
+    fn apply_json(&mut self, v: &Value) {
+        for (k, slot) in Self::KEYS.iter().zip(self.slots()) {
+            *slot = v[*k].as_str().and_then(parse_hex);
+        }
+    }
+}
+
+pub fn hex(c: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+
+/// `#rrggbb` / `rrggbb`
+pub fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let s = s.trim().trim_start_matches('#');
+    if s.len() != 6 || !s.is_ascii() { return None; }
+    let n = u32::from_str_radix(s, 16).ok()?;
+    Some([(n >> 16) as u8, (n >> 8) as u8, n as u8])
+}
+
+/// 某个扩展名的覆盖项 (None = 沿用全局)
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct TypePref {
+    pub ext: String,
+    pub tab_width: Option<usize>,
+    pub wrap: Option<bool>,
+    pub insert_spaces: Option<bool>,
+}
+
+/// 界面状态: 面板大小 / 开关 / 窗口位置
+#[derive(Clone, PartialEq, Debug)]
+pub struct ViewState {
+    pub side_open: bool,
+    pub side_w: f32,
+    pub term_open: bool,
+    pub term_h: f32,
+    pub md_preview: bool,
+    pub geom: Option<WinGeom>,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None }
+    }
+}
+
+/// 窗口位置 / 大小 (逻辑点); 最大化时 x y w h 是还原后的
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct WinGeom {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub maximized: bool,
+}
+
+impl WinGeom {
+    /// 位置 / 大小明显不对 (最小化时系统给 -32000 之类, 或尺寸太小) 就不要
+    pub fn sane(&self) -> bool {
+        self.w >= 300.0 && self.h >= 200.0 && self.w <= 10000.0 && self.h <= 10000.0 && self.x > -10000.0 && self.y > -10000.0 && self.x < 20000.0 && self.y < 20000.0
     }
 }
 
@@ -87,35 +207,145 @@ impl Settings {
         let Some(p) = path() else { return s };
         let Ok(text) = std::fs::read_to_string(p) else { return s };
         let Ok(v) = serde_json::from_str::<Value>(&text) else { return s };
-        if let Some(b) = v["dark"].as_bool() { s.dark = b; }
-        if let Some(f) = v["font_px"].as_f64() { s.font_px = (f as f32).clamp(8.0, 40.0); }
-        if let Some(t) = v["tab_width"].as_u64() { s.tab_width = (t as usize).clamp(1, 16); }
-        if let Some(h) = v["highlight"].as_bool() { s.highlight = h; }
-        if let Some(w) = v["wrap"].as_bool() { s.wrap = w; }
-        if let Some(t) = v["theme_plugin"].as_str() { s.theme_plugin = t.to_string(); }
-        s.search.apply_json(&v["search"]);
+        s.apply_json(&v, true);
+        s
+    }
+
+    /// 把 JSON 里认得的键套到自己身上 (缺的键保持原值, 数值夹到合法范围)。
+    /// `state` = 连最近文件 / 光标位置 / 界面状态一起读 (启动时); 导入别人的配置文件时为 false, 只动偏好。
+    pub fn apply_json(&mut self, v: &Value, state: bool) {
+        let b = |k: &str, t: &mut bool| { if let Some(x) = v[k].as_bool() { *t = x; } };
+        let st = |k: &str, t: &mut String| { if let Some(x) = v[k].as_str() { *t = x.to_string(); } };
+        b("dark", &mut self.dark); b("highlight", &mut self.highlight); b("wrap", &mut self.wrap);
+        b("auto_indent", &mut self.auto_indent); b("smart_indent", &mut self.smart_indent); b("insert_spaces", &mut self.insert_spaces);
+        b("save_backup", &mut self.save_backup); b("check_external", &mut self.check_external); b("confirm_close", &mut self.confirm_close);
+        st("theme_plugin", &mut self.theme_plugin); st("default_encoding", &mut self.default_encoding); st("default_eol", &mut self.default_eol); st("font_family", &mut self.font_family);
+        if let Some(f) = v["font_px"].as_f64() { self.font_px = (f as f32).clamp(8.0, 40.0); }
+        if let Some(f) = v["line_height"].as_f64() { self.line_height = (f as f32).clamp(0.8, 2.5); }
+        if let Some(t) = v["tab_width"].as_u64() { self.tab_width = (t as usize).clamp(1, 16); }
+        if let Some(t) = v["max_file_mb"].as_u64() { self.max_file_mb = (t as u32).clamp(1, 32); }
+        if let Some(t) = v["mru_files"].as_u64() { self.mru_files = (t as usize).clamp(1, 36); }
+        if let Some(l) = v["lang"].as_str() { if crate::i18n::Lang::from_code(l).is_some() { self.lang = l.to_string(); } }
+        self.colors.apply_json(&v["colors"]);
+        if let Some(a) = v["file_types"].as_array() {
+            self.file_types = a.iter().filter_map(|t| {
+                let ext = t["ext"].as_str()?.trim().trim_start_matches('.').to_lowercase();
+                if ext.is_empty() { return None; }
+                Some(TypePref { ext, tab_width: t["tab_width"].as_u64().map(|n| (n as usize).clamp(1, 16)), wrap: t["wrap"].as_bool(), insert_spaces: t["insert_spaces"].as_bool() })
+            }).collect();
+        }
+        self.search.apply_json(&v["search"]);
+        if !state { return; }
         if let Some(a) = v["recent"].as_array() {
-            s.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
+            self.recent = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(36).collect();
         }
         if let Some(a) = v["recent_dirs"].as_array() {
-            s.recent_dirs = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
+            self.recent_dirs = a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(12).collect();
         }
         if let Some(a) = v["positions"].as_array() {
-            s.positions = a.iter().filter_map(|x| Some((x[0].as_str()?.to_string(), x[1].as_u64()? as usize, x[2].as_u64()? as usize))).take(50).collect();
+            self.positions = a.iter().filter_map(|x| Some((x[0].as_str()?.to_string(), x[1].as_u64()? as usize, x[2].as_u64()? as usize))).take(50).collect();
         }
-        s
+        let w = &v["view"];
+        b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
+        if let Some(f) = w["side_w"].as_f64() { self.view.side_w = (f as f32).clamp(120.0, 900.0); }
+        if let Some(f) = w["term_h"].as_f64() { self.view.term_h = (f as f32).clamp(60.0, 900.0); }
+        let g = &w["geom"];
+        if let (Some(x), Some(y), Some(ww), Some(h)) = (g["x"].as_f64(), g["y"].as_f64(), g["w"].as_f64(), g["h"].as_f64()) {
+            let geom = WinGeom { x: x as f32, y: y as f32, w: ww as f32, h: h as f32, maximized: g["maximized"].as_bool().unwrap_or(false) };
+            if geom.sane() { self.view.geom = Some(geom); }
+        }
+    }
+
+    /// 偏好部分 (导出配置用: 不含最近文件 / 光标位置 / 窗口状态)
+    pub fn prefs_json(&self) -> Value {
+        json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin,
+                "lang": self.lang, "auto_indent": self.auto_indent, "smart_indent": self.smart_indent, "insert_spaces": self.insert_spaces,
+                "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
+                "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
+                "colors": self.colors.to_json(),
+                "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces })).collect::<Vec<_>>(),
+                "search": self.search.to_json() })
+    }
+
+    pub fn to_json(&self) -> Value {
+        let mut v = self.prefs_json();
+        let o = v.as_object_mut().expect("prefs_json 是对象");
+        o.insert("recent".into(), json!(self.recent));
+        o.insert("recent_dirs".into(), json!(self.recent_dirs));
+        o.insert("positions".into(), json!(self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>()));
+        let w = &self.view;
+        let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
+        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom }));
+        v
     }
 
     pub fn save(&self) {
         let Some(p) = path() else { return };
-        let v = json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin, "recent": self.recent, "recent_dirs": self.recent_dirs, "positions": self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>(), "search": self.search.to_json() });
-        if let Some(d) = p.parent() {
-            let _ = std::fs::create_dir_all(d);
+        write_atomic(&p, &self.to_json());
+    }
+
+    /// 导出偏好到文件
+    pub fn export_to(&self, p: &std::path::Path) -> Result<(), String> {
+        let bytes = serde_json::to_vec_pretty(&self.prefs_json()).map_err(|e| e.to_string())?;
+        std::fs::write(p, bytes).map_err(|e| e.to_string())
+    }
+
+    /// 从文件导入偏好 (只动偏好, 不动最近文件 / 窗口状态); 不是 JSON 对象 = Err
+    pub fn import_from(&mut self, p: &std::path::Path) -> Result<(), String> {
+        let text = std::fs::read_to_string(p).map_err(|e| e.to_string())?;
+        let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        if !v.is_object() { return Err("not an object".into()); }
+        self.apply_json(&v, false);
+        Ok(())
+    }
+
+    /// 偏好恢复默认 (最近文件 / 光标位置 / 查找条件 / 界面状态保留)
+    pub fn reset_prefs(&mut self) {
+        let keep = Settings { recent: std::mem::take(&mut self.recent), recent_dirs: std::mem::take(&mut self.recent_dirs), positions: std::mem::take(&mut self.positions), search: self.search.clone(), view: self.view.clone(), lang: self.lang.clone(), ..Settings::default() };
+        *self = keep;
+    }
+
+    /// 导入 Sakura 的 sakura.ini: 只认下面这几项明确对得上的键, 其余忽略; 返回导入了几项。
+    /// 键名按 Sakura 的 ini 格式: `[Common]` 里的 `nMRUArrNum_MAX` / `bExitConfirm` / `bBackUp`, `[Types(0)]` (基本设定) 里的
+    /// `nTabSpace` / `bInsSpace` / `bAutoIndent` / `bSmartIndent`。
+    pub fn import_sakura_ini(&mut self, text: &str) -> usize {
+        let mut section = String::new();
+        let mut n = 0;
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(s) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) { section = s.to_string(); continue; }
+            let Some((k, val)) = line.split_once('=') else { continue };
+            let (k, val) = (k.trim(), val.trim());
+            let num = val.parse::<i64>().ok();
+            let flag = num.map(|x| x != 0);
+            match (section.as_str(), k) {
+                ("Common", "nMRUArrNum_MAX") => if let Some(x) = num { self.mru_files = (x as usize).clamp(1, 36); n += 1 },
+                ("Common", "bExitConfirm") => if let Some(f) = flag { self.confirm_close = f; n += 1 },
+                ("Common", "bBackUp") => if let Some(f) = flag { self.save_backup = f; n += 1 },
+                ("Types(0)", "nTabSpace") => if let Some(x) = num { self.tab_width = (x as usize).clamp(1, 16); n += 1 },
+                ("Types(0)", "bInsSpace") => if let Some(f) = flag { self.insert_spaces = f; n += 1 },
+                ("Types(0)", "bAutoIndent") => if let Some(f) = flag { self.auto_indent = f; n += 1 },
+                ("Types(0)", "bSmartIndent") | ("Types(0)", "nSmartIndent") => if let Some(x) = num { self.smart_indent = x != 0; n += 1 },
+                _ => {}
+            }
         }
-        let tmp = p.with_extension("json.tmp");
-        if std::fs::write(&tmp, serde_json::to_vec_pretty(&v).unwrap_or_default()).is_ok() {
-            let _ = std::fs::rename(&tmp, &p);
-        }
+        n
+    }
+
+    /// 某个文件名适用的 (Tab 宽度, 自动换行, Tab 插入空格): 先看按扩展名的覆盖项, 没有就用传进来的全局值 (运行时的全局值在 App 字段里, 不一定和 self 里的一样)
+    pub fn effective_for(&self, name: &str, tab_width: usize, wrap: bool, insert_spaces: bool) -> (usize, bool, bool) {
+        let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
+        let t = self.file_types.iter().find(|t| !ext.is_empty() && t.ext == ext);
+        (t.and_then(|t| t.tab_width).unwrap_or(tab_width), t.and_then(|t| t.wrap).unwrap_or(wrap), t.and_then(|t| t.insert_spaces).unwrap_or(insert_spaces))
+    }
+
+    /// 把另一份(首选项草稿)里的偏好并进来: 最近文件 / 光标位置 / 界面状态 / Grep 条件保持自己的 (草稿开着期间它们可能已经变了)
+    pub fn adopt_prefs(&mut self, o: &Settings) {
+        let mut search = self.search.clone();
+        (search.find_case, search.find_regex, search.find_word, search.find_wrap, search.find_marks) = (o.search.find_case, o.search.find_regex, o.search.find_word, o.search.find_wrap, o.search.find_marks);
+        let keep = (std::mem::take(&mut self.recent), std::mem::take(&mut self.recent_dirs), std::mem::take(&mut self.positions), self.view.clone());
+        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, search, ..o.clone() };
+        self.recent.truncate(self.mru_files.max(1));
     }
 
     /// 最近文件夹: 同最近文件的规则
@@ -134,12 +364,26 @@ impl Settings {
         self.positions.truncate(50);
     }
 
-    /// 最近文件: 新的放最前, 去重, 最多 12 个
+    /// 最近文件: 新的放最前, 去重, 最多 `mru_files` 个
     pub fn push_recent(&mut self, p: &std::path::Path) {
         let s = p.to_string_lossy().into_owned();
         self.recent.retain(|x| x != &s);
         self.recent.insert(0, s);
-        self.recent.truncate(12);
+        self.recent.truncate(self.mru_files.max(1));
+    }
+}
+
+fn b_of(v: &Value, k: &str, t: &mut bool) {
+    if let Some(x) = v[k].as_bool() { *t = x; }
+}
+
+fn write_atomic(p: &std::path::Path, v: &Value) {
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let tmp = p.with_extension("json.tmp");
+    if std::fs::write(&tmp, serde_json::to_vec_pretty(v).unwrap_or_default()).is_ok() {
+        let _ = std::fs::rename(&tmp, p);
     }
 }
 
@@ -147,8 +391,12 @@ impl Settings {
 mod tests {
     use super::*;
 
+    /// 这些测试都改环境变量 IDE_FAST_SETTINGS, 要串行
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn roundtrip_and_recent_order() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("ide-fast-set-{}", std::process::id()));
         let f = dir.join("s.json");
         std::env::set_var("IDE_FAST_SETTINGS", &f);
@@ -179,5 +427,108 @@ mod tests {
         assert_eq!(Settings::load(), Settings::default(), "损坏的设置文件 = 默认值");
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("IDE_FAST_SETTINGS");
+    }
+
+    #[test]
+    fn every_new_key_roundtrips() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("ide-fast-set2-{}", std::process::id()));
+        let f = dir.join("s.json");
+        std::env::set_var("IDE_FAST_SETTINGS", &f);
+        let mut s = Settings::default();
+        s.lang = "ja".into(); s.auto_indent = false; s.smart_indent = true; s.insert_spaces = true;
+        s.default_encoding = "UTF-16LE".into(); s.default_eol = "LF".into(); s.save_backup = true; s.check_external = false; s.confirm_close = false;
+        s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
+        s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
+        s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None }];
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }) };
+        s.save();
+        assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
+        // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉
+        std::fs::write(&f, r#"{"max_file_mb":999,"mru_files":0,"line_height":9,"lang":"xx","view":{"geom":{"x":-32000,"y":-32000,"w":160,"h":28}}}"#).unwrap();
+        let l = Settings::load();
+        assert_eq!((l.max_file_mb, l.mru_files, l.line_height, l.lang.as_str(), l.view.geom), (32, 1, 2.5, "zh", None));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("IDE_FAST_SETTINGS");
+    }
+
+    #[test]
+    fn mru_limit_follows_setting() {
+        let mut s = Settings::default();
+        s.mru_files = 3;
+        for n in 0..6 { s.push_recent(std::path::Path::new(&format!("f{n}.txt"))); }
+        assert_eq!(s.recent, vec!["f5.txt", "f4.txt", "f3.txt"]);
+    }
+
+    #[test]
+    fn export_import_and_reset() {
+        let dir = std::env::temp_dir().join(format!("ide-fast-set3-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("cfg.json");
+        let mut a = Settings::default();
+        a.tab_width = 8; a.font_family = "Consolas".into(); a.recent = vec!["x.txt".into()]; a.colors.bg = Some([9, 9, 9]);
+        a.export_to(&f).unwrap();
+        let mut b = Settings::default();
+        b.recent = vec!["keep.txt".into()];
+        b.import_from(&f).unwrap();
+        assert_eq!((b.tab_width, b.font_family.as_str(), b.colors.bg), (8, "Consolas", Some([9, 9, 9])));
+        assert_eq!(b.recent, vec!["keep.txt".to_string()], "导入只动偏好, 不动最近文件");
+        std::fs::write(&f, "[1,2]").unwrap();
+        assert!(b.import_from(&f).is_err(), "不是对象 = 拒绝");
+        std::fs::write(&f, "nope").unwrap();
+        assert!(b.import_from(&f).is_err());
+        b.view.side_w = 400.0;
+        b.reset_prefs();
+        assert_eq!((b.tab_width, b.font_family.as_str(), b.colors.bg), (4, "", None));
+        assert_eq!((b.recent.clone(), b.view.side_w), (vec!["keep.txt".to_string()], 400.0), "恢复默认保留最近文件和界面状态");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sakura_ini_import_maps_known_keys_only() {
+        let ini = "[Common]\nnMRUArrNum_MAX=20\nbExitConfirm=0\nbBackUp=1\nfoo=3\n[Types(0)]\nnTabSpace=8\nbInsSpace=1\nbAutoIndent=0\nnSmartIndent=1\n[Types(1)]\nnTabSpace=2\n";
+        let mut s = Settings::default();
+        let n = s.import_sakura_ini(ini);
+        assert_eq!(n, 7);
+        assert_eq!((s.mru_files, s.confirm_close, s.save_backup, s.tab_width, s.insert_spaces, s.auto_indent, s.smart_indent), (20, false, true, 8, true, false, true));
+        assert_eq!(Settings::default().clone().import_sakura_ini("garbage"), 0);
+    }
+
+    #[test]
+    fn per_extension_overrides_win_over_global() {
+        let mut s = Settings::default();
+        s.tab_width = 4; s.wrap = false;
+        s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: Some(true) }, TypePref { ext: "go".into(), tab_width: Some(8), ..Default::default() }];
+        assert_eq!(s.effective_for("Notes.MD", 4, false, false), (2, true, true), "扩展名不分大小写");
+        assert_eq!(s.effective_for("main.go", 4, false, false), (8, false, false), "没覆盖的项沿用全局");
+        assert_eq!(s.effective_for("a.rs", 6, true, true), (6, true, true), "全局值用传进来的");
+        assert_eq!(s.effective_for("Makefile", 4, false, false), (4, false, false), "没有扩展名 = 全局");
+    }
+
+    #[test]
+    fn adopt_prefs_keeps_live_lists_and_grep_state() {
+        let mut live = Settings::default();
+        live.recent = vec!["a".into(), "b".into(), "c".into()];
+        live.search.grep_files = "*.rs".into();
+        live.view.side_w = 321.0;
+        let mut draft = Settings::default();
+        draft.recent = vec!["stale".into()];
+        draft.tab_width = 2; draft.mru_files = 2;
+        draft.search.find_case = true; draft.search.grep_files = "old".into();
+        live.adopt_prefs(&draft);
+        assert_eq!(live.tab_width, 2);
+        assert_eq!(live.recent, vec!["a", "b"], "最近文件用现在的, 并按新的个数截断");
+        assert!(live.search.find_case, "查找默认条件取草稿的");
+        assert_eq!(live.search.grep_files, "*.rs", "Grep 条件不被草稿覆盖");
+        assert_eq!(live.view.side_w, 321.0);
+    }
+
+    #[test]
+    fn hex_colors_parse() {
+        assert_eq!(parse_hex("#ff8000"), Some([255, 128, 0]));
+        assert_eq!(parse_hex("00ff00"), Some([0, 255, 0]));
+        assert_eq!(parse_hex("#12345"), None);
+        assert_eq!(parse_hex("#gggggg"), None);
+        assert_eq!(hex([1, 2, 255]), "#0102ff");
     }
 }

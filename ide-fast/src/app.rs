@@ -4,7 +4,9 @@ use crate::doc::{expand_tabs, Doc};
 use crate::cmds::{self, Action};
 use crate::find::Find;
 use crate::grep::{self, Ev as GEv};
+use crate::i18n::{lk, tr, trf, trz, Lang};
 use crate::plugins;
+use crate::prefs::{prefs_page, Prefs, PrefsTab};
 use crate::settings::Settings;
 use crate::sidebar::{Sidebar, Tab};
 use crate::tabs::{self, CloseKind, JumpHist};
@@ -12,8 +14,8 @@ use crate::terminal::Terminal;
 use editcore::document_io::{Charset, Eol};
 use crate::Trace;
 use eframe::egui::{self, Color32, FontId, Key, Modifiers, Pos2, Rect, Sense, Vec2};
-use editcore::syntax_styling::Theme;
-use editcore::type_config::{TypeConfig, TypeRegistry};
+use editcore::syntax_styling::{Color, Theme};
+use editcore::type_config::{TokenKind, TypeConfig, TypeRegistry};
 use std::path::PathBuf;
 
 pub struct App {
@@ -51,7 +53,17 @@ pub struct App {
     wrap: bool,
     goal_x: Option<f32>,
     inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
-    prefs_open: bool,
+    /// 设置改了是否落盘
+    persist: bool,
+    /// 首选项对话框: Some = 打开着, 里面是草稿 (OK 才生效, Cancel 丢弃)
+    prefs: Option<Box<Prefs>>,
+    /// 首选项里没有对应 App 字段的那些键 (自动缩进 / 编码 / 备份 / 颜色 ...) 和界面状态
+    cfg: Settings,
+    /// 已经装进 egui 的编辑器字体文件名 (变了才重装)
+    applied_font: String,
+    /// 最近一次「正常状态」(非最大化 / 最小化 / 全屏) 的窗口位置和大小; 关窗口时落盘
+    geom_now: Option<crate::settings::WinGeom>,
+    maximized_now: bool,
     /// 自动换行时每个逻辑行的累计高度 (按 文档 / 版本 / 宽度 / 字号 缓存; 行数多时关闭换行)
     wrap_cache: Option<((u64, u64, i32, i32, usize), Vec<f32>)>,
     max_cols: usize,
@@ -87,23 +99,26 @@ pub struct App {
 
 impl App {
     pub fn new(args: Vec<String>, inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>, trace: Trace) -> Self {
+        Self::build(args, inbox, trace, Settings::load(), true)
+    }
+
+    /// `persist` = 设置改了要不要落盘 (测试里关掉, 免得碰用户真实的设置文件)
+    fn build(args: Vec<String>, inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>, trace: Trace, st: Settings, persist: bool) -> Self {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs_open: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX,
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, split_on: false, left_doc: 0, right_doc: 0, focus_right: false, pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX,
         };
-        let st = Settings::load();
-        app.dark = st.dark;
-        if !st.theme_plugin.is_empty() { app.set_theme_plugin(&st.theme_plugin.clone()); }
-        app.font_px = st.font_px;
-        app.tab = st.tab_width;
-        app.highlight = st.highlight;
-        app.wrap = st.wrap;
+        app.persist = persist;
+        app.apply_settings(&st);
         app.recent = st.recent.clone();
         app.recent_dirs = st.recent_dirs.clone();
         app.positions = st.positions.clone();
-        app.apply_search_prefs(&st);
-        app.saved = st;
+        app.side.open = st.view.side_open;
+        app.term.open = st.view.term_open;
+        app.md_preview = st.view.md_preview;
+        app.applied_font = st.font_family.clone();
+        app.saved = app.current_settings();
         for a in &args {
             app.open_spec(a);
         }
@@ -121,7 +136,13 @@ impl App {
     fn new_doc(&mut self) {
         self.untitled_n += 1;
         let (id, n) = (self.id(), self.untitled_n);
-        self.docs.push(Doc::untitled(id, n));
+        let mut d = Doc::untitled(id, n);
+        if let Some(cs) = Charset::from_label(&self.cfg.default_encoding) {
+            d.charset = cs;
+            d.bom = match cs { Charset::Utf16Le => editcore::document_io::Bom::Utf16Le, Charset::Utf16Be => editcore::document_io::Bom::Utf16Be, _ => editcore::document_io::Bom::None };
+        }
+        if let Some(e) = Eol::from_label(&self.cfg.default_eol) { d.eol = e; }
+        self.docs.push(d);
         self.active = self.docs.len() - 1;
     }
 
@@ -130,10 +151,9 @@ impl App {
             self.active = i;
             return;
         }
-        if std::fs::metadata(p).map(|m| m.len() > crate::doc::SOFT_LIMIT && m.len() <= crate::doc::HARD_LIMIT).unwrap_or(false) {
+        if std::fs::metadata(p).map(|m| m.len() > self.cfg.max_file_mb as u64 * 1024 * 1024 && m.len() <= crate::doc::HARD_LIMIT).unwrap_or(false) {
             let mb = std::fs::metadata(p).map(|m| m.len() / 1024 / 1024).unwrap_or(0);
-            let go = rfd::MessageDialog::new().set_title("较大的文件").set_description(format!("{}
-约 {mb} MB, 打开可能比较慢。继续吗?", p.display())).set_buttons(rfd::MessageButtons::YesNo).show();
+            let go = rfd::MessageDialog::new().set_title(tr("dlg.big-title")).set_description(trf("dlg.big-body", &[&p.display().to_string(), &mb.to_string()])).set_buttons(rfd::MessageButtons::YesNo).show();
             if go != rfd::MessageDialogResult::Yes { return; }
         }
         let id = self.id();
@@ -152,10 +172,10 @@ impl App {
                 st.push_recent(p);
                 self.recent = st.recent.clone();
                 self.saved = st.clone();
-                st.save();
+                if self.persist { st.save(); }
             }
             Err(e) => {
-                rfd::MessageDialog::new().set_title("打开失败").set_description(format!("{}\n{e}", p.display())).show();
+                rfd::MessageDialog::new().set_title(tr("dlg.open-failed")).set_description(format!("{}\n{e}", p.display())).show();
             }
         }
     }
@@ -163,7 +183,51 @@ impl App {
     fn current_settings(&self) -> Settings {
         let (f, g) = (&self.find, &self.side.grep.o);
         let search = crate::settings::SearchPrefs { find_case: f.opts.case, find_regex: f.opts.regex, find_word: f.opts.word, find_wrap: f.opts.wrap, find_marks: f.marks, grep_case: g.case, grep_regex: g.regex, grep_word: g.word, grep_sub: g.sub, grep_outside: g.outside, grep_files: g.files.clone(), grep_exc_files: g.exc_files.clone(), grep_exc_folders: g.exc_folders.clone() };
-        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), recent_dirs: self.recent_dirs.clone(), positions: self.positions.clone(), search }
+        let mut view = self.cfg.view.clone();
+        (view.side_open, view.term_open, view.md_preview) = (self.side.open, self.term.open, self.md_preview);
+        Settings { dark: self.dark, font_px: self.font_px, tab_width: self.tab, highlight: self.highlight, wrap: self.wrap, theme_plugin: self.theme_id.clone(), recent: self.recent.clone(), recent_dirs: self.recent_dirs.clone(), positions: self.positions.clone(), search, view, ..self.cfg.clone() }
+    }
+
+    /// 把一份设置套到运行状态上 (启动、首选项 OK、恢复默认、导入配置都走这里)
+    fn apply_settings(&mut self, st: &Settings) {
+        self.dark = st.dark;
+        if st.theme_plugin != self.theme_id { self.set_theme_plugin(&st.theme_plugin.clone()); }
+        self.font_px = st.font_px;
+        self.tab = st.tab_width;
+        self.highlight = st.highlight;
+        self.wrap = st.wrap;
+        crate::i18n::set_code(&st.lang);
+        self.cfg = st.clone();
+        self.apply_search_prefs(st);
+        // 最近文件个数变小了要立刻截断
+        let n = st.mru_files.max(1);
+        self.recent.truncate(n);
+    }
+
+    /// 记下窗口位置 / 大小 (只记正常状态; 最大化时保留最近一次正常状态的尺寸, 下次启动先开成这个尺寸再最大化)
+    fn track_geometry(&mut self, ctx: &egui::Context) {
+        let (outer, inner, max, min, full) = ctx.input(|i| { let v = i.viewport(); (v.outer_rect, v.inner_rect, v.maximized.unwrap_or(false), v.minimized.unwrap_or(false), v.fullscreen.unwrap_or(false)) });
+        self.maximized_now = max;
+        if max || min || full { return; }
+        if let (Some(o), Some(i)) = (outer, inner) {
+            let g = crate::settings::WinGeom { x: o.min.x, y: o.min.y, w: i.width(), h: i.height(), maximized: false };
+            if g.sane() { self.geom_now = Some(g); }
+        }
+    }
+
+    /// 每帧把编辑偏好写进各文档 (自动缩进 / 智能缩进 / Tab 插入空格, 后者按扩展名可覆盖); 便宜, 且新建 / 打开的文档不用另外挂钩
+    fn sync_doc_prefs(&mut self) {
+        let (ai, si, ins) = (self.cfg.auto_indent, self.cfg.smart_indent, self.cfg.insert_spaces);
+        for i in 0..self.docs.len() {
+            let (_, _, sp) = self.cfg.effective_for(&self.docs[i].name, self.tab, self.wrap, ins);
+            let d = &mut self.docs[i];
+            (d.auto_indent, d.smart_indent, d.insert_spaces) = (ai, si, sp);
+        }
+    }
+
+    /// 某个文件名适用的 (Tab 宽度, 自动换行, Tab 插入空格)
+    fn eff(&self, name: &str) -> (usize, bool, bool) {
+        self.cfg.effective_for(name, self.tab, self.wrap, self.cfg.insert_spaces)
     }
 
     /// 启动时把上次的查找 / Grep 条件放回去
@@ -180,7 +244,7 @@ impl App {
     fn persist_if_changed(&mut self) {
         let now = self.current_settings();
         if now != self.saved {
-            now.save();
+            if self.persist { now.save(); }
             self.saved = now;
         }
     }
@@ -190,7 +254,7 @@ impl App {
         let (path, line, col) = editcore::text_util::split_path_line_col(spec);
         let p = PathBuf::from(&path);
         if !p.is_file() {
-            self.cur_or_new().tip = format!("找不到文件: {path}");
+            self.cur_or_new().tip = trf("dlg.not-found", &[&path]);
             return;
         }
         self.open_path(&p);
@@ -206,23 +270,86 @@ impl App {
         self.cur()
     }
 
-    /// 首选项窗口: 改了立刻生效、立刻落盘 (persist_if_changed)
+    /// 打开首选项: 草稿 = 当前设置的拷贝
+    fn open_prefs(&mut self) {
+        if self.prefs.is_none() {
+            self.prefs = Some(Box::new(Prefs { draft: self.current_settings(), tab: PrefsTab::General, new_ext: String::new(), fonts: crate::fonts::system_fonts() }));
+        }
+    }
+
+    /// 把草稿并进当前设置并落盘 (OK / 应用)
+    fn prefs_commit(&mut self) {
+        let Some(p) = self.prefs.as_ref() else { return };
+        let mut next = self.current_settings();
+        next.adopt_prefs(&p.draft);
+        self.apply_settings(&next);
+        self.persist_if_changed();
+    }
+
+    /// 首选项窗口: 分页 + 草稿, OK 才生效 / 落盘, Cancel 丢弃
     fn prefs_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.prefs_open;
-        egui::Window::new("首选项").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-            ui.checkbox(&mut self.dark, "深色主题");
-            ui.checkbox(&mut self.highlight, "语法高亮");
-            ui.checkbox(&mut self.wrap, "自动换行");
-            ui.horizontal(|ui| { ui.label("字号"); ui.add(egui::Slider::new(&mut self.font_px, 8.0..=40.0)); });
-            ui.horizontal(|ui| { ui.label("Tab 宽度"); ui.add(egui::Slider::new(&mut self.tab, 1..=16)); });
-            if ui.button("恢复默认").clicked() {
-                let d = Settings::default();
-                self.dark = d.dark; self.font_px = d.font_px; self.tab = d.tab_width; self.highlight = d.highlight; self.wrap = d.wrap;
-            }
+        let Some(mut p) = self.prefs.take() else { return };
+        let (mut ok, mut cancel, mut apply, mut reset) = (false, false, false, false);
+        let mut open = true;
+        egui::Window::new(tr("pf.title")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search")] {
+                    ui.selectable_value(&mut p.tab, t, tr(key));
+                }
+            });
             ui.separator();
-            ui.small(format!("设置文件: {}", crate::settings::path().map(|p| p.display().to_string()).unwrap_or_else(|| "(未启用落盘)".into())));
+            egui::ScrollArea::vertical().max_height(340.0).auto_shrink([false, true]).show(ui, |ui| prefs_page(ui, &mut p));
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button(tr("pf.ok")).clicked() { ok = true; }
+                if ui.button(tr("pf.cancel")).clicked() { cancel = true; }
+                if ui.button(tr("pf.apply")).clicked() { apply = true; }
+                if ui.button(tr("c.reset-settings")).clicked() { reset = true; }
+            });
+            ui.small(trf("pf.file", &[&crate::settings::path().map(|p| p.display().to_string()).unwrap_or_else(|| tr("pf.file-off").into())]));
         });
-        self.prefs_open = open;
+        if ctx.input(|i| i.key_pressed(Key::Escape)) { cancel = true; }
+        self.prefs = Some(p);
+        if ok || apply { self.prefs_commit(); }
+        if reset { self.reset_settings(); }
+        if ok || cancel || !open { self.prefs = None; }
+    }
+
+    /// 偏好恢复默认 (问一下; 最近文件 / 光标位置 / 界面状态保留)
+    fn reset_settings(&mut self) {
+        if rfd::MessageDialog::new().set_title(tr("dlg.reset-title")).set_description(tr("dlg.reset-body")).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        let mut next = self.current_settings();
+        next.reset_prefs();
+        self.apply_settings(&next);
+        let fresh = self.current_settings();
+        if let Some(p) = self.prefs.as_mut() { p.draft = fresh; }
+        self.persist_if_changed();
+    }
+
+    fn export_settings(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("ide-fast-settings.json").save_file() else { return };
+        let tip = match self.current_settings().export_to(&path) { Ok(()) => trf("dlg.settings-exported", &[&path.display().to_string()]), Err(e) => e };
+        self.cur_or_new().tip = tip;
+    }
+
+    fn import_settings(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).pick_file() else { return };
+        let mut next = self.current_settings();
+        match next.import_from(&path) {
+            Ok(()) => { self.apply_settings(&next); self.persist_if_changed(); self.cur_or_new().tip = tr("dlg.settings-imported").into(); }
+            Err(_) => { rfd::MessageDialog::new().set_title(tr("dlg.cant-import")).set_description(tr("dlg.settings-bad")).show(); }
+        }
+    }
+
+    fn import_sakura(&mut self) {
+        let Some(path) = rfd::FileDialog::new().add_filter("sakura.ini", &["ini"]).pick_file() else { return };
+        // Sakura 的 ini 常是 Shift-JIS / UTF-16: 走 editcore 的自动判别读
+        let Ok(d) = editcore::document_io::read_doc(&path, None) else { rfd::MessageDialog::new().set_title(tr("dlg.cant-import")).set_description(tr("dlg.settings-bad")).show(); return };
+        let mut next = self.current_settings();
+        let n = next.import_sakura_ini(&d.content);
+        self.apply_settings(&next);
+        self.persist_if_changed();
+        self.cur_or_new().tip = format!("sakura.ini: {n}");
     }
 
     fn open_folder_dialog(&mut self) {
@@ -433,13 +560,19 @@ impl App {
         } else {
             self.cur().path.clone().unwrap()
         };
+        if self.cfg.save_backup && path.is_file() {
+            // 保存前把磁盘上的旧版本备份到 .sakura-backup (编辑器自己的保险, 失败只提示不挡保存)
+            if let Err(e) = editcore::auto_backup::backup_before_save(&path, &editcore::auto_backup::SaveBackupConfig::default()) {
+                self.cur().tip = format!("backup: {e}");
+            }
+        }
         match self.cur().save_to(&path) {
             Ok(()) => {
-                self.cur().tip = format!("已保存 {}", path.display());
+                self.cur().tip = trf("dlg.saved", &[&path.display().to_string()]);
                 true
             }
             Err(e) => {
-                rfd::MessageDialog::new().set_title("保存失败").set_description(e).show();
+                rfd::MessageDialog::new().set_title(tr("dlg.save-failed")).set_description(e).show();
                 false
             }
         }
@@ -448,7 +581,7 @@ impl App {
     /// 关标签: 有未保存修改先问; 返回是否真的关了
     fn close_tab(&mut self, i: usize) -> bool {
         if self.docs[i].dirty {
-            let r = rfd::MessageDialog::new().set_title("未保存的修改").set_description(format!("「{}」有未保存的修改, 保存吗?", self.docs[i].name))
+            let r = rfd::MessageDialog::new().set_title(tr("dlg.unsaved-title")).set_description(trf("dlg.unsaved-body", &[&self.docs[i].name]))
                 .set_buttons(rfd::MessageButtons::YesNoCancel).show();
             match r {
                 rfd::MessageDialogResult::Yes => {
@@ -543,7 +676,7 @@ impl App {
     fn reopen_as(&mut self, cs: Charset) {
         let (dirty, name, has_path) = { let d = self.cur(); (d.dirty, d.name.clone(), d.path.is_some()) };
         if !has_path { self.cur().tip = "还没有保存过, 不能按别的编码重新打开".into(); return; }
-        if dirty && rfd::MessageDialog::new().set_title("重新打开").set_description(format!("丢弃「{name}」未保存的修改, 按 {} 重新打开吗?", cs.label())).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        if dirty && rfd::MessageDialog::new().set_title(tr("dlg.reopen-title")).set_description(trf("dlg.reopen-body", &[&name, cs.label()])).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
         if let Err(e) = self.cur().reopen_as(cs) { self.cur().tip = e; }
     }
 
@@ -605,9 +738,9 @@ impl App {
         let mut go: Option<usize> = None;
         let mut clear = false;
         let ai = self.active.min(self.docs.len() - 1);
-        egui::Window::new("书签列表").open(&mut open).collapsible(false).default_width(360.0).show(ctx, |ui| {
+        egui::Window::new(tr("dlg.bm-title")).open(&mut open).collapsible(false).default_width(360.0).show(ctx, |ui| {
             let d = &self.docs[ai];
-            if d.bookmarks.is_empty() { ui.label("(当前文档没有书签)"); }
+            if d.bookmarks.is_empty() { ui.label(tr("dlg.bm-empty")); }
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                 for b in &d.bookmarks {
                     let text = d.lines.get(b.row).map(|l| l.trim()).unwrap_or("");
@@ -616,17 +749,17 @@ impl App {
                 }
             });
             ui.separator();
-            if ui.button("全部清除").clicked() { clear = true; }
+            if ui.button(tr("c.bookmark-reset")).clicked() { clear = true; }
         });
         self.bm_open = open;
-        if clear { self.cur().bookmarks.clear(); self.cur().tip = "已清除全部书签".into(); }
+        if clear { self.cur().bookmarks.clear(); self.cur().tip = tr("dlg.bm-cleared").into(); }
         if let Some(r) = go { self.jump_mark(); self.cur().goto(r, 0); }
     }
 
     fn props_window(&mut self, ctx: &egui::Context) {
         let Some(text) = self.props.clone() else { return };
         let mut open = true;
-        egui::Window::new("文件属性").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new(tr("dlg.props-title")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
             ui.add(egui::Label::new(egui::RichText::new(&text).monospace()).selectable(true));
             if ui.button("复制").clicked() { ctx.copy_text(text.clone()); }
         });
@@ -635,22 +768,22 @@ impl App {
 
     fn menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("文件", |ui| {
-                if ui.button("新建  Ctrl+N").clicked() { self.new_doc(); ui.close(); }
-                if ui.button("打开…  Ctrl+O").clicked() { ui.close(); self.open_dialog(); }
-                if ui.button("打开文件夹…").clicked() { ui.close(); self.open_folder_dialog(); }
-                ui.menu_button("最近使用", |ui| {
-                    if self.recent.is_empty() { ui.label("(没有)"); }
+            ui.menu_button(tr("menu.file"), |ui| {
+                if ui.button(lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
+                if ui.button(lk("c.open-file", "Ctrl+O")).clicked() { ui.close(); self.open_dialog(); }
+                if ui.button(tr("c.open-folder")).clicked() { ui.close(); self.open_folder_dialog(); }
+                ui.menu_button(tr("sub.recent"), |ui| {
+                    if self.recent.is_empty() { ui.label(tr("ui.none")); }
                     let mut pick: Option<String> = None;
                     for r in &self.recent {
                         if ui.button(r).clicked() { pick = Some(r.clone()); ui.close(); }
                     }
                     if let Some(r) = pick { self.open_path(std::path::Path::new(&r)); }
                     ui.separator();
-                    if ui.button("清除历史").clicked() { self.clear_recent(); ui.close(); }
+                    if ui.button(tr("c.recent-clear")).clicked() { self.clear_recent(); ui.close(); }
                 });
-                ui.menu_button("最近的文件夹", |ui| {
-                    if self.recent_dirs.is_empty() { ui.label("(没有)"); }
+                ui.menu_button(tr("sub.recent-dirs"), |ui| {
+                    if self.recent_dirs.is_empty() { ui.label(tr("ui.none")); }
                     let mut pick: Option<String> = None;
                     for r in &self.recent_dirs {
                         if ui.button(r).clicked() { pick = Some(r.clone()); ui.close(); }
@@ -658,64 +791,64 @@ impl App {
                     if let Some(r) = pick { self.open_folder(PathBuf::from(r)); }
                 });
                 ui.separator();
-                if ui.button("保存  Ctrl+S").clicked() { ui.close(); self.save(false); }
-                if ui.button("另存为…  Ctrl+Shift+S").clicked() { ui.close(); self.save(true); }
-                if ui.button("全部保存  Ctrl+Alt+Shift+S").clicked() { ui.close(); self.save_all(); }
-                if ui.button("保存并关闭").clicked() { ui.close(); self.save_close(); }
+                if ui.button(lk("c.save", "Ctrl+S")).clicked() { ui.close(); self.save(false); }
+                if ui.button(lk("c.save-as", "Ctrl+Shift+S")).clicked() { ui.close(); self.save(true); }
+                if ui.button(lk("c.save-all", "Ctrl+Alt+Shift+S")).clicked() { ui.close(); self.save_all(); }
+                if ui.button(tr("c.save-close")).clicked() { ui.close(); self.save_close(); }
                 ui.separator();
-                if ui.button("关闭标签  Ctrl+W").clicked() { ui.close(); let a = self.active; self.close_tab(a); }
-                if ui.button("关闭全部  Ctrl+Shift+W").clicked() { ui.close(); self.close_many(CloseKind::All); }
-                if ui.button("关闭并打开…  Ctrl+Shift+F4").clicked() { ui.close(); self.close_open(); }
+                if ui.button(lk("c.close-tab", "Ctrl+W")).clicked() { ui.close(); let a = self.active; self.close_tab(a); }
+                if ui.button(lk("c.close-all", "Ctrl+Shift+W")).clicked() { ui.close(); self.close_many(CloseKind::All); }
+                if ui.button(lk("c.close-open", "Ctrl+Shift+F4")).clicked() { ui.close(); self.close_open(); }
                 ui.separator();
-                if ui.button("重新载入 (丢弃修改)").clicked() { ui.close(); self.reload_current(); }
-                ui.menu_button("以指定编码重新打开", |ui| {
+                if ui.button(tr("c.reload")).clicked() { ui.close(); self.reload_current(); }
+                ui.menu_button(tr("sub.reopen"), |ui| {
                     for cs in Charset::ALL {
                         if ui.button(cs.label()).clicked() { ui.close(); self.reopen_as(cs); }
                     }
                 });
                 ui.separator();
-                if ui.button("打印 / 打印预览…  Ctrl+P").clicked() { ui.close(); self.print_cur(); }
-                if ui.button("在浏览器 / 默认程序中打开").clicked() { ui.close(); self.browse_current(); }
-                if ui.button("文件属性…  Alt+Enter").clicked() { ui.close(); self.props = Some(self.cur().properties()); }
-                if ui.button("新窗口").clicked() { ui.close(); self.new_window(); }
+                if ui.button(lk("c.print", "Ctrl+P")).clicked() { ui.close(); self.print_cur(); }
+                if ui.button(tr("c.browse")).clicked() { ui.close(); self.browse_current(); }
+                if ui.button(lk("c.file-properties", "Alt+Enter")).clicked() { ui.close(); self.props = Some(self.cur().properties()); }
+                if ui.button(tr("c.new-window")).clicked() { ui.close(); self.new_window(); }
                 ui.separator();
-                if ui.button("退出").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
+                if ui.button(tr("c.exit")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             });
-            ui.menu_button("编辑", |ui| {
-                if ui.button("撤销  Ctrl+Z").clicked() { self.cur().undo(); ui.close(); }
-                if ui.button("重做  Ctrl+Y").clicked() { self.cur().redo(); ui.close(); }
+            ui.menu_button(tr("menu.edit"), |ui| {
+                if ui.button(lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
+                if ui.button(lk("c.redo", "Ctrl+Y")).clicked() { self.cur().redo(); ui.close(); }
                 ui.separator();
-                if ui.button("剪切  Ctrl+X").clicked() { if let Some(c) = self.cur().edit("cut", None) { ctx.copy_text(c); } ui.close(); }
-                if ui.button("复制  Ctrl+C").clicked() { if let Some(c) = self.cur().edit("copy", None) { ctx.copy_text(c); } ui.close(); }
-                if ui.button("粘贴  Ctrl+V").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste); ui.close(); }
-                if ui.button("全选  Ctrl+A").clicked() { self.cur().select_all(); ui.close(); }
+                if ui.button(lk("c.cut", "Ctrl+X")).clicked() { if let Some(c) = self.cur().edit("cut", None) { ctx.copy_text(c); } ui.close(); }
+                if ui.button(lk("c.copy", "Ctrl+C")).clicked() { if let Some(c) = self.cur().edit("copy", None) { ctx.copy_text(c); } ui.close(); }
+                if ui.button(lk("c.paste", "Ctrl+V")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste); ui.close(); }
+                if ui.button(lk("c.select-all", "Ctrl+A")).clicked() { self.cur().select_all(); ui.close(); }
                 ui.separator();
                 self.cmd_menu(ui, ctx);
             });
-            ui.menu_button("查找", |ui| {
-                if ui.button("查找…  Ctrl+F").clicked() { self.open_find(false); ui.close(); }
-                if ui.button("置换…  Ctrl+H / Ctrl+R").clicked() { self.open_find(true); ui.close(); }
-                if ui.button("在文件夹中搜索 (Grep)…  Ctrl+G").clicked() { self.focus_grep(); ui.close(); }
-                if ui.button("下一个  F3").clicked() { self.find_next(true); ui.close(); }
-                if ui.button("上一个  Shift+F3").clicked() { self.find_next(false); ui.close(); }
-                if ui.button("查找光标处的单词  Ctrl+F3").clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
-                if ui.button("全部置换  Ctrl+Alt+R").clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
+            ui.menu_button(tr("menu.search"), |ui| {
+                if ui.button(lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
+                if ui.button(lk("c.replace", "Ctrl+H / Ctrl+R")).clicked() { self.open_find(true); ui.close(); }
+                if ui.button(lk("c.grep", "Ctrl+G")).clicked() { self.focus_grep(); ui.close(); }
+                if ui.button(lk("c.find-next", "F3")).clicked() { self.find_next(true); ui.close(); }
+                if ui.button(lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
+                if ui.button(lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
+                if ui.button(lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
             });
-            ui.menu_button("折叠", |ui| {
-                if ui.button("折叠 / 展开当前行  Ctrl+Shift+[").clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
-                if ui.button("全部展开  Ctrl+Shift+]").clicked() { self.cur().folds.clear(); ui.close(); }
+            ui.menu_button(tr("menu.fold"), |ui| {
+                if ui.button(lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
+                if ui.button(lk("c.unfold-all", "Ctrl+Shift+]")).clicked() { self.cur().folds.clear(); ui.close(); }
             });
-            ui.menu_button("插件", |ui| {
+            ui.menu_button(tr("menu.plugin"), |ui| {
                 let rows = plugins::rows();
-                if ui.radio(self.theme_id.is_empty(), "内置主题 (深 / 浅色)").clicked() { self.set_theme_plugin(""); ui.close(); }
+                if ui.radio(self.theme_id.is_empty(), tr("c.builtin-theme")).clicked() { self.set_theme_plugin(""); ui.close(); }
                 for r in &rows {
                     ui.horizontal(|ui| {
                         if let Some(t) = &r.theme {
-                            if ui.radio(self.theme_id == r.id, format!("主题: {}", t.label)).clicked() { self.set_theme_plugin(&r.id); ui.close(); }
+                            if ui.radio(self.theme_id == r.id, format!("{}{}", tr("ui.theme-prefix"), t.label)).clicked() { self.set_theme_plugin(&r.id); ui.close(); }
                         } else {
-                            ui.label(format!("{} {}{}", r.name, r.version, if r.script_only { "  (脚本插件, 高速版不运行)" } else { "" }));
+                            ui.label(format!("{} {}{}", r.name, r.version, if r.script_only { tr("ui.script-only") } else { "" }));
                         }
-                        if ui.small_button("删除").clicked() {
+                        if ui.small_button(tr("c.delete")).clicked() {
                             let _ = plugins::remove(&r.id);
                             if self.theme_id == r.id { self.set_theme_plugin(""); }
                             ui.close();
@@ -723,44 +856,59 @@ impl App {
                     });
                 }
                 ui.separator();
-                if ui.button("导入插件 (.zip)…").clicked() { ui.close(); self.import_plugin_zip(); }
+                if ui.button(tr("c.plugin-import")).clicked() { ui.close(); self.import_plugin_zip(); }
                 let gone = plugins::removed_bundled();
                 if !gone.is_empty() {
-                    ui.menu_button("恢复内置插件", |ui| {
+                    ui.menu_button(tr("sub.plugin-restore"), |ui| {
                         for (id, name, _) in gone {
                             if ui.button(name).clicked() { let _ = plugins::restore(&id); ui.close(); }
                         }
                     });
                 }
             });
-            ui.menu_button("设置", |ui| {
-                if ui.button("首选项…").clicked() { self.prefs_open = true; ui.close(); }
-            });
-            ui.menu_button("书签", |ui| {
-                if ui.button("设置 / 取消  Ctrl+F2").clicked() { self.cur().bookmark("toggle"); ui.close(); }
-                if ui.button("下一个  F2").clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
-                if ui.button("上一个  Shift+F2").clicked() { self.jump_mark(); self.cur().bookmark("prev"); ui.close(); }
-                if ui.button("书签列表…  Alt+F2").clicked() { self.bm_open = true; ui.close(); }
-                if ui.button("全部清除  Ctrl+Shift+F2").clicked() { self.cur().bookmarks.clear(); self.cur().tip = "已清除全部书签".into(); ui.close(); }
-                ui.separator();
-                if ui.button("对括弧跳转  Ctrl+[").clicked() { self.bracket_jump(); ui.close(); }
-                if ui.button("移动履历: 上一个  Alt+P").clicked() { self.jump_go(-1); ui.close(); }
-                if ui.button("移动履历: 下一个  Alt+N").clicked() { self.jump_go(1); ui.close(); }
-                if ui.button("把当前位置记入履历").clicked() { self.jump_mark(); self.cur().tip = "已记入移动履历".into(); ui.close(); }
-            });
-            ui.menu_button("窗口", |ui| {
-                if ui.button("分割窗口  Ctrl+\\").clicked() { self.toggle_split(); ui.close(); }
-                ui.separator();
-                if ui.button("下一个标签  Ctrl+Tab").clicked() { self.next_tab(true); ui.close(); }
-                if ui.button("上一个标签  Ctrl+Shift+Tab").clicked() { self.next_tab(false); ui.close(); }
-                ui.menu_button("标签操作", |ui| {
-                    if ui.button("标签左移").clicked() { self.move_active_tab(true); ui.close(); }
-                    if ui.button("标签右移").clicked() { self.move_active_tab(false); ui.close(); }
-                    if ui.button("关闭其它标签").clicked() { self.close_many(CloseKind::Others); ui.close(); }
-                    if ui.button("关闭左侧标签").clicked() { self.close_many(CloseKind::Left); ui.close(); }
-                    if ui.button("关闭右侧标签").clicked() { self.close_many(CloseKind::Right); ui.close(); }
+            ui.menu_button(tr("menu.setting"), |ui| {
+                if ui.button(tr("c.common-config")).clicked() { self.open_prefs(); ui.close(); }
+                ui.menu_button(tr("sub.uilang"), |ui| {
+                    for l in Lang::ALL {
+                        if ui.radio(crate::i18n::cur() == l, l.native()).clicked() {
+                            let mut n = self.current_settings();
+                            n.lang = l.code().into();
+                            self.apply_settings(&n);
+                            ui.close();
+                        }
+                    }
                 });
-                ui.menu_button("窗口列表", |ui| {
+                ui.separator();
+                if ui.button(tr("c.export-config")).clicked() { ui.close(); self.export_settings(); }
+                if ui.button(tr("c.import-config")).clicked() { ui.close(); self.import_settings(); }
+                if ui.button(tr("c.import-sakura")).clicked() { ui.close(); self.import_sakura(); }
+                if ui.button(tr("c.reset-settings")).clicked() { ui.close(); self.reset_settings(); }
+            });
+            ui.menu_button(tr("menu.bookmark"), |ui| {
+                if ui.button(lk("c.bookmark-toggle", "Ctrl+F2")).clicked() { self.cur().bookmark("toggle"); ui.close(); }
+                if ui.button(lk("c.bookmark-next", "F2")).clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
+                if ui.button(lk("c.bookmark-prev", "Shift+F2")).clicked() { self.jump_mark(); self.cur().bookmark("prev"); ui.close(); }
+                if ui.button(lk("c.bookmark-view", "Alt+F2")).clicked() { self.bm_open = true; ui.close(); }
+                if ui.button(lk("c.bookmark-reset", "Ctrl+Shift+F2")).clicked() { self.cur().bookmarks.clear(); self.cur().tip = tr("dlg.bm-cleared").into(); ui.close(); }
+                ui.separator();
+                if ui.button(lk("c.bracket-jump", "Ctrl+[")).clicked() { self.bracket_jump(); ui.close(); }
+                if ui.button(lk("c.hist-prev", "Alt+P")).clicked() { self.jump_go(-1); ui.close(); }
+                if ui.button(lk("c.hist-next", "Alt+N")).clicked() { self.jump_go(1); ui.close(); }
+                if ui.button(tr("c.hist-mark")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
+            });
+            ui.menu_button(tr("menu.window"), |ui| {
+                if ui.button(lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
+                ui.separator();
+                if ui.button(lk("c.next-tab", "Ctrl+Tab")).clicked() { self.next_tab(true); ui.close(); }
+                if ui.button(lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() { self.next_tab(false); ui.close(); }
+                ui.menu_button(tr("sub.tabops"), |ui| {
+                    if ui.button(tr("c.tab-move-left")).clicked() { self.move_active_tab(true); ui.close(); }
+                    if ui.button(tr("c.tab-move-right")).clicked() { self.move_active_tab(false); ui.close(); }
+                    if ui.button(tr("c.close-others")).clicked() { self.close_many(CloseKind::Others); ui.close(); }
+                    if ui.button(tr("c.close-left")).clicked() { self.close_many(CloseKind::Left); ui.close(); }
+                    if ui.button(tr("c.close-right")).clicked() { self.close_many(CloseKind::Right); ui.close(); }
+                });
+                ui.menu_button(tr("sub.winlist"), |ui| {
                     let mut pick = None;
                     for (i, d) in self.docs.iter().enumerate() {
                         if ui.selectable_label(i == self.active, format!("{}{}", if d.dirty { "● " } else { "" }, d.name)).clicked() { pick = Some(i); ui.close(); }
@@ -768,37 +916,37 @@ impl App {
                     if let Some(i) = pick { self.select_tab(i); }
                 });
                 ui.separator();
-                if ui.button("最小化").clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
-                if ui.button("最大化 / 还原").clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
-                if ui.checkbox(&mut self.fullscreen.clone(), "全屏  F11").clicked() { self.toggle_fullscreen(ctx); ui.close(); }
-                if ui.checkbox(&mut self.topmost.clone(), "总在最前").clicked() { self.toggle_topmost(ctx); ui.close(); }
+                if ui.button(tr("c.minimize-window")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
+                if ui.button(tr("c.maximize")).clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
+                if ui.checkbox(&mut self.fullscreen.clone(), lk("c.fullscreen", "F11")).clicked() { self.toggle_fullscreen(ctx); ui.close(); }
+                if ui.checkbox(&mut self.topmost.clone(), tr("c.topmost")).clicked() { self.toggle_topmost(ctx); ui.close(); }
             });
-            ui.menu_button("宏", |ui| {
+            ui.menu_button(tr("menu.macro"), |ui| {
                 let rec = self.cur().rec.is_some();
-                if ui.button(if rec { "结束录制  Ctrl+Shift+M" } else { "开始录制  Ctrl+Shift+M" }).clicked() { self.cur().macro_toggle(); ui.close(); }
-                if ui.button("回放  Ctrl+Shift+L").clicked() { self.cur().macro_play(); ui.close(); }
+                if ui.button(lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
+                if ui.button(lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
                 ui.separator();
-                if ui.button("运行当前文档 (Sakura .mac)").clicked() { ui.close(); self.run_mac_doc(); }
-                if ui.button("运行 .mac 文件…").clicked() { ui.close(); self.run_mac_file(); }
+                if ui.button(tr("c.macro-run-doc")).clicked() { ui.close(); self.run_mac_doc(); }
+                if ui.button(tr("c.macro-run-file")).clicked() { ui.close(); self.run_mac_file(); }
             });
-            ui.menu_button("视图", |ui| {
-                if ui.checkbox(&mut self.split_on.clone(), "分割窗口  Ctrl+\\").clicked() { self.toggle_split(); ui.close(); }
-                ui.checkbox(&mut self.term.open, "终端  Ctrl+`");
-                ui.checkbox(&mut self.md_preview, "Markdown 预览  Ctrl+Shift+V");
-                if ui.checkbox(&mut self.dark, "深色主题").clicked() { ui.close(); }
-                ui.checkbox(&mut self.highlight, "语法高亮");
-                ui.checkbox(&mut self.wrap, "自动换行  Alt+Z");
-                ui.checkbox(&mut self.side.open, "侧栏  Ctrl+B");
-                ui.menu_button("Tab 宽度", |ui| {
+            ui.menu_button(tr("menu.view"), |ui| {
+                if ui.checkbox(&mut self.split_on.clone(), lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
+                ui.checkbox(&mut self.term.open, lk("c.terminal", "Ctrl+`"));
+                ui.checkbox(&mut self.md_preview, lk("c.md-preview", "Ctrl+Shift+V"));
+                if ui.checkbox(&mut self.dark, tr("c.dark")).clicked() { ui.close(); }
+                ui.checkbox(&mut self.highlight, tr("c.highlight"));
+                ui.checkbox(&mut self.wrap, lk("c.wrap", "Alt+Z"));
+                ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
+                ui.menu_button(tr("sub.tabwidth"), |ui| {
                     for w in [2usize, 3, 4, 8] {
                         if ui.radio_value(&mut self.tab, w, format!("{w}")).clicked() { ui.close(); }
                     }
                 });
-                if ui.button("放大  Ctrl+=").clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
-                if ui.button("缩小  Ctrl+-").clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
+                if ui.button(lk("c.zoom-in", "Ctrl+=")).clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
+                if ui.button(lk("c.zoom-out", "Ctrl+-")).clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
             });
-            ui.menu_button("帮助", |ui| {
-                ui.label("IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)");
+            ui.menu_button(tr("menu.help"), |ui| {
+                ui.label(tr("ui.about"));
             });
         });
     }
@@ -1038,9 +1186,9 @@ impl App {
         let Some(path) = rfd::FileDialog::new().add_filter("插件包", &["zip"]).pick_file() else { return };
         let bytes = match std::fs::read(&path) { Ok(b) => b, Err(e) => { self.cur().tip = format!("读不了 {}: {e}", path.display()); return; } };
         let msg = match plugins::inspect_zip(&bytes) {
-            Err(e) => { rfd::MessageDialog::new().set_title("无法导入").set_description(e).show(); return; }
+            Err(e) => { rfd::MessageDialog::new().set_title(tr("dlg.cant-import")).set_description(e).show(); return; }
             Ok((note, perms)) => {
-                let ok = rfd::MessageDialog::new().set_title("导入插件").set_description(format!("{note}\n\n来源: {} (未验证)\n导入吗?", path.display())).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
+                let ok = rfd::MessageDialog::new().set_title(tr("dlg.import-plugin")).set_description(format!("{note}\n\n来源: {} (未验证)\n导入吗?", path.display())).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
                 if !ok { return; }
                 match plugins::install_zip(&bytes, &perms) { Ok(m) => m, Err(e) => e }
             }
@@ -1054,7 +1202,7 @@ impl App {
         for c in cmds::CMDS {
             if !groups.contains(&c.group) { groups.push(c.group); }
         }
-        let label = |c: &cmds::Cmd| if c.keys.is_empty() || c.label.contains("Ctrl+") { c.label.to_string() } else { format!("{}  {}", c.label, c.keys) };
+        let label = |c: &cmds::Cmd| if c.keys.is_empty() || c.label.contains("Ctrl+") { trz(c.label).to_string() } else { format!("{}  {}", trz(c.label), c.keys) };
         for g in groups {
             if g.is_empty() {
                 for c in cmds::CMDS.iter().filter(|c| c.group.is_empty()) {
@@ -1068,7 +1216,7 @@ impl App {
                     if clicked { self.run_action(c.action, ctx); ui.close(); }
                 }
             } else {
-                ui.menu_button(g, |ui| {
+                ui.menu_button(trz(g), |ui| {
                     for c in cmds::CMDS.iter().filter(|c| c.group == g) {
                         if ui.button(label(c)).clicked() { self.run_action(c.action, ctx); ui.close(); }
                     }
@@ -1078,7 +1226,8 @@ impl App {
     }
 
     fn run_action(&mut self, a: Action, ctx: &egui::Context) {
-        let tab = self.tab;
+        let name = self.cur().name.clone();
+        let tab = self.eff(&name).0;
         match a {
             Action::Edit(n) => { if let Some(c) = self.cur().edit(n, None) { ctx.copy_text(c); } }
             Action::Transform(k) => self.cur().transform_sel(k, tab),
@@ -1101,13 +1250,13 @@ impl App {
     fn goto_window(&mut self, ctx: &egui::Context) {
         let mut go: Option<usize> = None;
         let mut open = self.goto_open;
-        egui::Window::new("转到行").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new(tr("dlg.goto-title")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
             let total = self.docs[self.active.min(self.docs.len() - 1)].lines.len();
             let r = ui.add(egui::TextEdit::singleline(&mut self.goto_text).hint_text(format!("1 – {total}")).desired_width(120.0));
             r.request_focus();
             if ui.input(|i| i.key_pressed(Key::Enter)) {
                 go = self.goto_text.trim().parse::<usize>().ok();
-                if go.is_none() { self.cur().tip = "请输入行号".into(); }
+                if go.is_none() { self.cur().tip = tr("dlg.goto-bad").into(); }
                 self.goto_open = false;
             }
         });
@@ -1123,12 +1272,11 @@ impl App {
             let reload = if !self.docs[i].dirty {
                 true
             } else {
-                rfd::MessageDialog::new().set_title("文件被外部修改").set_description(format!("「{name}」在磁盘上被修改了, 而你这里也有未保存的修改。
-重新载入会丢弃你的修改。重新载入吗?")).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes
+                rfd::MessageDialog::new().set_title(tr("dlg.ext-title")).set_description(trf("dlg.ext-body", &[&name])).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes
             };
             if reload {
                 if let Err(e) = self.docs[i].reload() { self.docs[i].tip = e; }
-                else { self.docs[i].tip = "文件在外部被修改, 已重新载入".into(); }
+                else { self.docs[i].tip = tr("dlg.ext-reloaded").into(); }
             } else {
                 self.docs[i].stamp = crate::doc::stamp_of(self.docs[i].path.as_deref().unwrap_or(std::path::Path::new("")));
             }
@@ -1137,7 +1285,7 @@ impl App {
 
     fn reload_current(&mut self) {
         let (dirty, name) = { let d = self.cur(); (d.dirty, d.name.clone()) };
-        if dirty && rfd::MessageDialog::new().set_title("重新载入").set_description(format!("丢弃「{name}」未保存的修改并从磁盘重新载入吗?")).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        if dirty && rfd::MessageDialog::new().set_title(tr("dlg.reload-title")).set_description(trf("dlg.reload-body", &[&name])).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
         if let Err(e) = self.cur().reload() { self.cur().tip = e; }
     }
 
@@ -1152,15 +1300,26 @@ impl App {
     }
 
     fn editor(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool) {
-        let font = FontId::monospace(self.font_px);
-        let (row_h, char_w) = ctx.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0')));
-        let text_color = ui.visuals().text_color();
+        let font = FontId::new(self.font_px, crate::fonts::editor_family());
+        let (base_h, char_w) = ctx.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0')));
+        // 行高倍数: 整行(含自动换行的每个显示行)都按这个高度排, 文字在行内居中
+        let row_h = (base_h * self.cfg.line_height).max(4.0);
+        let rgb = |c: [u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
+        let text_color = self.cfg.colors.text.map(rgb).unwrap_or_else(|| ui.visuals().text_color());
         let weak = ui.visuals().weak_text_color();
         let sel_bg = ui.visuals().selection.bg_fill;
         let max_cols = self.max_cols;
-        let tab = self.tab;
         let ai = self.active.min(self.docs.len() - 1);
-        let theme = if self.dark { Theme::dark() } else { Theme::light() };
+        let (tab, wrap_pref, _) = self.eff(&self.docs[ai].name.clone());
+        let mut theme = if self.dark { Theme::dark() } else { Theme::light() };
+        // 词法颜色覆盖 (首选项「字体与颜色」)
+        for (kind, c) in [(TokenKind::Keyword, self.cfg.colors.keyword), (TokenKind::String, self.cfg.colors.string), (TokenKind::Comment, self.cfg.colors.comment), (TokenKind::Number, self.cfg.colors.number)] {
+            if let Some(c) = c {
+                let mut st = theme.get(kind);
+                st.fg = Color(c[0], c[1], c[2]);
+                theme.styles.insert(kind, st);
+            }
+        }
         let marks = self.find.marks_for(&self.docs[ai]);
         let mark_bg = Color32::from_rgba_unmultiplied(255, 200, 0, 70);
         let bracket_bg = Color32::from_rgba_unmultiplied(110, 190, 255, 95);
@@ -1176,12 +1335,12 @@ impl App {
         let gutter = digits as f32 * char_w + 18.0;
         let pad = 6.0;
         // 自动换行: 每个逻辑行按可用宽度折成若干显示行, 行高不等 -> 记累计高度 (太长的文档不换行, 免得每次排版都要扫全篇)
-        let wrap = self.wrap && self.docs[ai].lines.len() <= 20000;
+        let wrap = wrap_pref && self.docs[ai].lines.len() <= 20000;
         let wrap_w = if wrap { (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0) } else { f32::INFINITY };
         let use_offs = wrap || !self.docs[ai].folds.is_empty();
         let offs: Vec<f32> = if use_offs {
             let fsig: usize = self.docs[ai].folds.iter().map(|f| f.0 * 31 + f.1).sum::<usize>() + self.docs[ai].folds.len();
-            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32, tab + (wrap as usize) * 100);
+            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000, tab + (wrap as usize) * 100);
             if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
                 let d = &self.docs[ai];
                 let mut acc = Vec::with_capacity(d.lines.len() + 1);
@@ -1193,6 +1352,7 @@ impl App {
                         let (disp, _) = expand_tabs(l, tab);
                         let mut job = egui::text::LayoutJob::simple(disp, font.clone(), Color32::WHITE, wrap_w);
                         job.wrap.break_anywhere = true;
+                        for sec in &mut job.sections { sec.format.line_height = Some(row_h); }
                         y += ctx.fonts_mut(|f| f.layout_job(job)).size().y.max(row_h);
                     } else {
                         y += row_h;
@@ -1288,7 +1448,7 @@ impl App {
                 let y = rect.min.y + top(row);
                 let (disp, map) = expand_tabs(&d.lines[row], tab);
                 widest = widest.max(disp.chars().count());
-                let mut job = highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color);
+                let mut job = highlight_job(&d.lines[row], &disp, &map, cfg.as_ref(), &theme, &font, text_color, row_h);
                 if wrap { job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true; }
                 let galley = painter.layout_job(job);
                 // 选区 / 查找命中的底色都走这一个函数: 一段 [c0, c1) 列 (自动换行时逐字符取排版位置, 否则一整块)
@@ -1332,19 +1492,19 @@ impl App {
                 }
                 painter.galley(Pos2::new(x0, y), galley, text_color);
                 if d.folds.iter().any(|f| f.0 == row) {
-                    painter.text(Pos2::new(rect.min.x + 2.0, y), egui::Align2::LEFT_TOP, "▸", font.clone(), weak);
+                    painter.text(Pos2::new(rect.min.x + 2.0, y + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, "▸", font.clone(), weak);
                 }
                 if d.bookmarks.iter().any(|b| b.row == row) {
                     painter.circle_filled(Pos2::new(rect.min.x + 7.0, y + row_h / 2.0), 3.5, Color32::from_rgb(80, 170, 255));
                 }
-                painter.text(Pos2::new(rect.min.x + gutter - 8.0, y), egui::Align2::RIGHT_TOP, format!("{}", row + 1), font.clone(), weak);
+                painter.text(Pos2::new(rect.min.x + gutter - 8.0, y + (row_h - base_h) / 2.0), egui::Align2::RIGHT_TOP, format!("{}", row + 1), font.clone(), weak);
             }
             // 光标
             let [cr, cc] = d.cursor;
             if cr < d.lines.len() {
                 let (disp, map) = expand_tabs(&d.lines[cr], tab);
                 let (cx, cy) = if wrap {
-                    let mut job = highlight_job(&d.lines[cr], &disp, &map, None, &theme, &font, text_color);
+                    let mut job = highlight_job(&d.lines[cr], &disp, &map, None, &theme, &font, text_color, row_h);
                     job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true;
                     let g = painter.layout_job(job);
                     let p = g.pos_from_cursor(egui::text::CCursor::new(map[cc.min(map.len() - 1)])).min;
@@ -1426,7 +1586,8 @@ impl App {
 
 /// 文件树: 目录用折叠头 (展开才读目录), 文件点击打开
 /// 标签分组: 下标 = Doc.group
-const GROUP_NAMES: [&str; 6] = ["不分组", "红组", "橙组", "绿组", "蓝组", "紫组"];
+/// 标签分组名的翻译键 (顺序 = 分组编号)
+const GROUP_KEYS: [&str; 6] = ["grp.0", "grp.1", "grp.2", "grp.3", "grp.4", "grp.5"];
 const GROUP_COLORS: [Option<Color32>; 6] = [None, Some(Color32::from_rgb(230, 80, 80)), Some(Color32::from_rgb(235, 150, 50)), Some(Color32::from_rgb(80, 190, 110)), Some(Color32::from_rgb(80, 150, 235)), Some(Color32::from_rgb(170, 110, 225))];
 
 /// 状态栏里点出来的命令
@@ -1461,10 +1622,10 @@ fn icon_of(kind: &str) -> &'static str {
 }
 
 /// 一行的带色排版: 词法由 editcore 的 `TypeConfig::highlight_line` 给 (按字符列), 这里换成显示列 (Tab 已展开) 再上色
-fn highlight_job(line: &str, disp: &str, map: &[usize], cfg: Option<&TypeConfig>, theme: &Theme, font: &FontId, default: Color32) -> egui::text::LayoutJob {
+fn highlight_job(line: &str, disp: &str, map: &[usize], cfg: Option<&TypeConfig>, theme: &Theme, font: &FontId, default: Color32, line_h: f32) -> egui::text::LayoutJob {
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
-    let fmt = |c: Color32| TextFormat { font_id: font.clone(), color: c, ..Default::default() };
+    let fmt = |c: Color32| TextFormat { font_id: font.clone(), color: c, line_height: Some(line_h), ..Default::default() };
     let Some(cfg) = cfg else {
         job.append(disp, 0.0, fmt(default));
         return job;
@@ -1520,10 +1681,21 @@ fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: 
 impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = &root.ctx().clone();
-        ctx.set_visuals(match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } });
-        if ctx.input(|i| i.viewport().close_requested()) { for i in 0..self.docs.len() { self.remember_pos(i); } }
+        let mut vis = match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } };
+        if let Some(c) = self.cfg.colors.bg { vis.extreme_bg_color = Color32::from_rgb(c[0], c[1], c[2]); } // 编辑区背景覆盖
+        ctx.set_visuals(vis);
+        if self.cfg.font_family != self.applied_font {
+            crate::fonts::install(ctx, &self.cfg.font_family);
+            self.applied_font = self.cfg.font_family.clone();
+        }
+        self.sync_doc_prefs();
+        self.track_geometry(ctx);
+        if ctx.input(|i| i.viewport().close_requested()) {
+            for i in 0..self.docs.len() { self.remember_pos(i); }
+            self.cfg.view.geom = self.geom_now.map(|g| crate::settings::WinGeom { maximized: self.maximized_now, ..g });
+        }
         // 关窗口: 有未保存修改先问
-        if ctx.input(|i| i.viewport().close_requested()) && !self.confirm_exit && self.docs.iter().any(|d| d.dirty) {
+        if ctx.input(|i| i.viewport().close_requested()) && !self.confirm_exit && self.cfg.confirm_close && self.docs.iter().any(|d| d.dirty) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             let mut i = 0;
             let mut all = true;
@@ -1545,9 +1717,9 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
-        if focused && !self.was_focused { self.check_external(); }
+        if focused && !self.was_focused && self.cfg.check_external { self.check_external(); }
         self.was_focused = focused;
-        if self.prefs_open { self.prefs_window(ctx); }
+        if self.prefs.is_some() { self.prefs_window(ctx); }
         if self.goto_open { self.goto_window(ctx); }
         if self.bm_open { self.bookmark_window(ctx); }
         if self.props.is_some() { self.props_window(ctx); }
@@ -1577,17 +1749,17 @@ impl eframe::App for App {
                             if tab_resp.middle_clicked() { tab_cmd = Some(TabCmd::Close(i)); }
                             if scroll_active && i == self.active { tab_resp.scroll_to_me(None); }
                             tab_resp.context_menu(|ui| {
-                                if ui.button("关闭").clicked() { tab_cmd = Some(TabCmd::Close(i)); ui.close(); }
-                                if ui.button("关闭其它").clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Others)); ui.close(); }
-                                if ui.button("关闭左侧").clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Left)); ui.close(); }
-                                if ui.button("关闭右侧").clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Right)); ui.close(); }
+                                if ui.button(tr("c.close")).clicked() { tab_cmd = Some(TabCmd::Close(i)); ui.close(); }
+                                if ui.button(tr("c.close-others-s")).clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Others)); ui.close(); }
+                                if ui.button(tr("c.close-left-s")).clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Left)); ui.close(); }
+                                if ui.button(tr("c.close-right-s")).clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Right)); ui.close(); }
                                 ui.separator();
-                                if ui.button("标签左移").clicked() { tab_cmd = Some(TabCmd::Move(i, true)); ui.close(); }
-                                if ui.button("标签右移").clicked() { tab_cmd = Some(TabCmd::Move(i, false)); ui.close(); }
-                                if ui.button("复制路径").clicked() { if let Some(p) = &self.docs[i].path { ctx.copy_text(p.display().to_string()); } ui.close(); }
+                                if ui.button(tr("c.tab-move-left")).clicked() { tab_cmd = Some(TabCmd::Move(i, true)); ui.close(); }
+                                if ui.button(tr("c.tab-move-right")).clicked() { tab_cmd = Some(TabCmd::Move(i, false)); ui.close(); }
+                                if ui.button(tr("c.copy-path")).clicked() { if let Some(p) = &self.docs[i].path { ctx.copy_text(p.display().to_string()); } ui.close(); }
                                 ui.separator();
-                                for (g, name) in GROUP_NAMES.iter().enumerate() {
-                                    if ui.selectable_label(self.docs[i].group as usize == g, *name).clicked() { self.docs[i].group = g as u8; ui.close(); }
+                                for (g, name) in GROUP_KEYS.iter().enumerate() {
+                                    if ui.selectable_label(self.docs[i].group as usize == g, tr(name)).clicked() { self.docs[i].group = g as u8; ui.close(); }
                                 }
                             });
                             if ui.small_button("×").clicked() { tab_cmd = Some(TabCmd::Close(i)); }
@@ -1609,7 +1781,9 @@ impl eframe::App for App {
             if self.focus_right { self.right_doc = self.active; } else { self.left_doc = self.active; }
         }
         if self.side.open {
-            egui::Panel::left("side").resizable(true).default_size(250.0).show(root, |ui| self.side_ui(ui));
+            let r = egui::Panel::left("side").resizable(true).default_size(self.cfg.view.side_w).show(root, |ui| self.side_ui(ui));
+            // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
+            if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.side_w = r.response.rect.width().round().clamp(120.0, 900.0); }
         }
         self.side.grep.poll();
         self.sync_grep_doc();
@@ -1627,32 +1801,32 @@ impl eframe::App for App {
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
             ui.horizontal(|ui| {
                 // 位置: 点一下 = 转到行
-                if ui.add(egui::Label::new(format!("Ln {}, Col {}", d.cursor[0] + 1, d.cursor[1] + 1)).sense(Sense::click())).on_hover_text("转到行…").clicked() { st_cmd = Some(StatusCmd::Goto); }
+                if ui.add(egui::Label::new(format!("Ln {}, Col {}", d.cursor[0] + 1, d.cursor[1] + 1)).sense(Sense::click())).on_hover_text(tr("st.goto-hint")).clicked() { st_cmd = Some(StatusCmd::Goto); }
                 ui.separator();
                 // 编码 / 换行符 / BOM: 点开菜单改 (改保存时的格式, 或按别的编码重新打开)
                 ui.menu_button(d.charset.label(), |ui| {
-                    ui.label("保存时的编码");
+                    ui.label(tr("st.charset-save"));
                     for cs in Charset::ALL {
                         if ui.selectable_label(cs == d.charset, cs.label()).clicked() { st_cmd = Some(StatusCmd::Charset(cs)); ui.close(); }
                     }
                     ui.separator();
-                    ui.menu_button("以此编码重新打开", |ui| {
+                    ui.menu_button(tr("st.reopen-as"), |ui| {
                         for cs in Charset::ALL { if ui.button(cs.label()).clicked() { st_cmd = Some(StatusCmd::Reopen(cs)); ui.close(); } }
                     });
-                    if ui.button(if d.bom == editcore::document_io::Bom::None { "保存时加 BOM (UTF-8)" } else { "保存时去掉 BOM" }).clicked() { st_cmd = Some(StatusCmd::Bom); ui.close(); }
+                    if ui.button(if d.bom == editcore::document_io::Bom::None { tr("st.add-bom") } else { tr("st.rm-bom") }).clicked() { st_cmd = Some(StatusCmd::Bom); ui.close(); }
                 });
                 ui.menu_button(d.eol.label(), |ui| {
                     for e in [Eol::Crlf, Eol::Lf, Eol::Cr] {
                         if ui.selectable_label(e == d.eol, e.label()).clicked() { st_cmd = Some(StatusCmd::Eol(e)); ui.close(); }
                     }
                 });
-                if d.mixed_eol { ui.colored_label(Color32::from_rgb(230, 160, 40), "换行混用").on_hover_text("原文件混用了几种换行符; 点左边的换行符选一种统一"); }
-                ui.label(format!("共 {} 行", d.lines.len()));
-                if d.overwrite { ui.label("改写"); }
-                if d.readonly { ui.label("只读"); }
+                if d.mixed_eol { ui.colored_label(Color32::from_rgb(230, 160, 40), tr("st.mixed-eol")).on_hover_text(tr("st.mixed-eol-tip")); }
+                ui.label(trf("st.lines", &[&d.lines.len().to_string()]));
+                if d.overwrite { ui.label(tr("st.overwrite")); }
+                if d.readonly { ui.label(tr("st.readonly")); }
                 if d.rec.is_some() { ui.colored_label(Color32::from_rgb(230, 70, 70), "● REC"); }
-                if d.box_sel.is_some() { ui.label("[矩形]"); }
-                if !d.extra.is_empty() { ui.label(format!("{} 个光标", d.extra.len() + 1)); }
+                if d.box_sel.is_some() { ui.label(tr("st.box")); }
+                if !d.extra.is_empty() { ui.label(trf("st.cursors", &[&(d.extra.len() + 1).to_string()])); }
                 ui.separator();
                 ui.label(&d.tip);
             });
@@ -1674,7 +1848,8 @@ impl eframe::App for App {
         // 查找栏 / 侧栏输入框 / 对话框正在收键盘时, 编辑区不抢
         let find_focus = ctx.memory(|m| m.focused()).map(|f| !self.editor_ids.contains(&f)).unwrap_or(false);
         if self.term.open {
-            egui::Panel::bottom("term").resizable(true).default_size(180.0).show(root, |ui| self.term_ui(ui));
+            let r = egui::Panel::bottom("term").resizable(true).default_size(self.cfg.view.term_h).show(root, |ui| self.term_ui(ui));
+            if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.term_h = r.response.rect.height().round().clamp(60.0, 900.0); }
         }
         self.term.poll();
         if let Some((id, out)) = self.term.replace_out.take() {
@@ -1696,5 +1871,117 @@ impl eframe::App for App {
         egui::CentralPanel::default_margins().frame(egui::Frame::NONE.fill(ctx.global_style().visuals.extreme_bg_color)).show(root, |ui| self.editor_pane(ui, ctx, find_focus, false));
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::TypePref;
+
+    /// 不落盘的 App; 语言是全局量, 拿锁串行化
+    fn app(st: Settings) -> (App, std::sync::MutexGuard<'static, ()>) {
+        let g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        (App::build(vec![], None, Trace::new(), st, false), g)
+    }
+
+    #[test]
+    fn settings_survive_a_trip_through_the_running_app() {
+        let mut st = Settings::default();
+        st.dark = false; st.font_px = 18.0; st.tab_width = 2; st.lang = "en".into(); st.auto_indent = false; st.save_backup = true;
+        st.font_family = "consola.ttf".into(); st.line_height = 1.5; st.colors.keyword = Some([1, 2, 3]);
+        st.view.side_w = 333.0; st.view.term_h = 99.0;
+        let (a, _g) = app(st.clone());
+        let back = a.current_settings();
+        assert_eq!((back.dark, back.font_px, back.tab_width, back.lang.as_str(), back.auto_indent, back.save_backup), (false, 18.0, 2, "en", false, true));
+        assert_eq!((back.font_family.as_str(), back.line_height, back.colors.keyword), ("consola.ttf", 1.5, Some([1, 2, 3])));
+        assert_eq!((back.view.side_w, back.view.term_h), (333.0, 99.0));
+        assert_eq!(crate::i18n::cur(), crate::i18n::Lang::En, "语言设置生效到界面");
+        crate::i18n::set(crate::i18n::Lang::Zh);
+    }
+
+    #[test]
+    fn new_documents_use_the_default_encoding_and_eol() {
+        let mut st = Settings::default();
+        st.default_encoding = "GBK".into(); st.default_eol = "LF".into();
+        let (mut a, _g) = app(st);
+        a.new_doc();
+        let d = a.cur();
+        assert_eq!((d.charset, d.eol), (Charset::Gbk, Eol::Lf));
+        let mut st = Settings::default();
+        st.default_encoding = "Unicode".into();
+        let (mut b, _g2) = (App::build(vec![], None, Trace::new(), st, false), ());
+        b.new_doc();
+        assert_eq!(b.cur().bom, editcore::document_io::Bom::Utf16Le, "UTF-16 的新文档带对应的 BOM");
+        assert_eq!(App::build(vec![], None, Trace::new(), Settings { default_encoding: "bogus".into(), ..Settings::default() }, false).docs[0].charset, Charset::Utf8, "认不出的编码 = UTF-8");
+    }
+
+    #[test]
+    fn doc_prefs_follow_settings_and_extension_overrides() {
+        let mut st = Settings::default();
+        st.auto_indent = false; st.smart_indent = true; st.insert_spaces = false;
+        st.file_types = vec![TypePref { ext: "py".into(), insert_spaces: Some(true), tab_width: Some(2), wrap: Some(true) }];
+        let (mut a, _g) = app(st);
+        a.docs[0].name = "x.py".into();
+        a.new_doc();
+        a.docs[1].name = "y.txt".into();
+        a.sync_doc_prefs();
+        assert_eq!((a.docs[0].auto_indent, a.docs[0].smart_indent, a.docs[0].insert_spaces), (false, true, true), ".py 的 Tab 插入空格被覆盖为开");
+        assert_eq!(a.docs[1].insert_spaces, false);
+        assert_eq!(a.eff("x.py"), (2, true, true));
+        assert_eq!(a.eff("y.txt"), (4, false, false));
+    }
+
+    #[test]
+    fn prefs_dialog_applies_on_ok_and_discards_on_cancel() {
+        let (mut a, _g) = app(Settings::default());
+        a.recent = vec!["a.txt".into(), "b.txt".into(), "c.txt".into()];
+        a.open_prefs();
+        {
+            let p = a.prefs.as_mut().unwrap();
+            p.draft.tab_width = 8; p.draft.mru_files = 2; p.draft.lang = "ja".into(); p.draft.insert_spaces = true;
+        }
+        assert_eq!((a.tab, a.cfg.insert_spaces), (4, false), "草稿没提交前不影响运行状态");
+        a.recent.push("d.txt".into()); // 对话框开着时又打开了文件: 提交不能把它冲掉
+        a.prefs_commit();
+        assert_eq!((a.tab, a.cfg.insert_spaces, a.cfg.lang.as_str()), (8, true, "ja"));
+        assert_eq!(crate::i18n::cur(), crate::i18n::Lang::Ja);
+        assert_eq!(a.recent, vec!["a.txt", "b.txt"], "最近文件个数按新设置截断, 内容用现在的而不是草稿里的旧快照");
+        // 取消: 草稿丢弃
+        a.prefs = None;
+        a.open_prefs();
+        a.prefs.as_mut().unwrap().draft.tab_width = 3;
+        a.prefs = None;
+        assert_eq!(a.tab, 8);
+        crate::i18n::set(crate::i18n::Lang::Zh);
+    }
+
+    #[test]
+    fn reset_keeps_recent_files_but_restores_preferences() {
+        let (mut a, _g) = app(Settings { tab_width: 9, font_family: "x.ttf".into(), ..Settings::default() });
+        a.recent = vec!["keep.txt".into()];
+        let mut next = a.current_settings();
+        next.reset_prefs();
+        a.apply_settings(&next);
+        assert_eq!((a.tab, a.cfg.font_family.as_str(), a.recent.clone()), (4, "", vec!["keep.txt".to_string()]));
+    }
+
+    #[test]
+    fn geometry_is_remembered_only_in_the_normal_state() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput {
+            viewport_id: egui::ViewportId::ROOT,
+            viewports: std::iter::once((egui::ViewportId::ROOT, egui::ViewportInfo {
+                outer_rect: Some(Rect::from_min_size(Pos2::new(40.0, 50.0), Vec2::new(900.0, 700.0))),
+                inner_rect: Some(Rect::from_min_size(Pos2::new(48.0, 80.0), Vec2::new(884.0, 660.0))),
+                ..Default::default()
+            })).collect(),
+            ..Default::default()
+        }, |ui| a.track_geometry(ui.ctx()));
+        out.textures_delta.clear();
+        let g = a.geom_now.expect("正常状态记下了位置");
+        assert_eq!((g.x, g.y, g.w, g.h), (40.0, 50.0, 884.0, 660.0));
+        assert!(!a.maximized_now);
     }
 }

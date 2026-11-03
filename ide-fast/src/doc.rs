@@ -67,10 +67,13 @@ pub struct Doc {
     pub stamp: Option<(std::time::SystemTime, u64)>,
     /// 读进来时换行符混用 (状态栏提示)
     pub mixed_eol: bool,
+    /// 编辑偏好 (首选项里的自动缩进 / 智能缩进 / Tab 插入空格); App 在新建 / 打开 / 改首选项时统一写入
+    pub auto_indent: bool,
+    pub smart_indent: bool,
+    pub insert_spaces: bool,
 }
 
-/// 超过它打开前要确认; 超过 HARD 直接拒绝 (整篇载入内存, 太大会拖垮编辑器)
-pub const SOFT_LIMIT: u64 = 4 * 1024 * 1024;
+/// 超过 HARD 直接拒绝 (整篇载入内存, 太大会拖垮编辑器); 「打开前要确认」的阈值在首选项里 (max_file_mb)
 pub const HARD_LIMIT: u64 = 32 * 1024 * 1024;
 
 /// 前 8 KB 里有 NUL 且不是带 BOM 的 UTF-16 = 二进制
@@ -101,7 +104,7 @@ pub enum RecEv {
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
         Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
-              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false }
+              charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false, auto_indent: true, smart_indent: false, insert_spaces: false }
     }
 
     pub fn open(id: u64, path: &Path) -> Result<Self, String> {
@@ -124,7 +127,7 @@ impl Doc {
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
         Ok(Doc { id, path: Some(path.to_path_buf()), name, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
-                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path), mixed_eol: d.mixed_eol })
+                 undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path), mixed_eol: d.mixed_eol, auto_indent: true, smart_indent: false, insert_spaces: false })
     }
 
     /// 磁盘上的文件和读进来时不一样了 (被别的程序改过 / 删了)
@@ -392,7 +395,7 @@ impl Doc {
             extra_rows.extend(b[0].min(b[2])..=b[0].max(b[2]));
         }
         let req = EditReq {
-            cmd: cmd.clone(), row: self.cursor[0], col: self.cursor[1], sel: self.sel, total_rows: self.lines.len(), auto_indent: true, smart_indent: false, overwrite: self.overwrite, text,
+            cmd: cmd.clone(), row: self.cursor[0], col: self.cursor[1], sel: self.sel, total_rows: self.lines.len(), auto_indent: self.auto_indent, smart_indent: self.smart_indent, overwrite: self.overwrite, text,
             box_sel: self.box_sel, cursors: all_cursors, rows: self.rows_for(&extra_rows), ..Default::default()
         };
         let Some(res) = edit_cmd::run(&req) else {
@@ -507,20 +510,31 @@ impl Doc {
         self.edit("paste", Some(crate::cmds::transform(kind, &text, tab)));
     }
 
+    /// 一次缩进插入的文字: 制表符; 开了「Tab 插入空格」就补空格到下一个 Tab 位 (col = 当前列, 整行缩进传 0)
+    pub fn indent_unit(&self, tab: usize, col: usize) -> String {
+        if !self.insert_spaces {
+            return "\t".into();
+        }
+        let t = tab.max(1);
+        " ".repeat(t - col % t)
+    }
+
     /// 缩进 / 反缩进: 多行选区时对每个非空行加 / 减一级; 单行且不是选区时 Tab 照常插入制表符
     pub fn indent(&mut self, outdent: bool, tab: usize) {
         let multi = self.selected_rows().map(|(a, b)| b > a).unwrap_or(false);
         if !outdent && !multi {
-            self.type_text("\t");
+            let u = self.indent_unit(tab, self.cursor[1]);
+            self.type_text(&u);
             return;
         }
         let (r0, r1) = self.selected_rows().unwrap_or((self.cursor[0], self.cursor[0]));
         let r1 = r1.min(self.lines.len() - 1);
+        let unit = self.indent_unit(tab, 0);
         let new: Vec<String> = self.lines[r0..=r1]
             .iter()
             .map(|l| {
                 if !outdent {
-                    if l.is_empty() { String::new() } else { format!("\t{l}") }
+                    if l.is_empty() { String::new() } else { format!("{unit}{l}") }
                 } else if let Some(rest) = l.strip_prefix('\t') {
                     rest.to_string()
                 } else {
@@ -1281,6 +1295,35 @@ b
         assert!(u.reopen_as(Charset::Utf8).is_err());
         assert!(d.properties().contains("GBK"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn indent_preferences_reach_the_editing_commands() {
+        // Tab 插入空格: 补到下一个 Tab 位; 整行缩进用满一个 Tab 宽度
+        let mut d = doc(&["ab"]);
+        d.insert_spaces = true;
+        d.goto(0, 2);
+        d.indent(false, 4);
+        assert_eq!(d.lines[0], "ab  ");
+        let mut m = doc(&["x", "", "y"]);
+        m.insert_spaces = true;
+        m.sel = Some([0, 0, 2, 1]);
+        m.indent(false, 4);
+        assert_eq!(m.lines, vec!["    x", "", "    y"], "空行不缩进");
+        let mut t = doc(&["ab"]);
+        t.goto(0, 2);
+        t.indent(false, 4);
+        assert_eq!(t.lines[0], "ab\t", "默认仍是制表符");
+        // 自动缩进开 / 关: 回车后新行是否带上一行的缩进
+        let mut on = doc(&["    foo"]);
+        on.goto(0, 7);
+        on.edit("new-line", None);
+        assert_eq!(on.lines[1], "    ", "自动缩进开 = 沿用上一行缩进");
+        let mut off = doc(&["    foo"]);
+        off.auto_indent = false;
+        off.goto(0, 7);
+        off.edit("new-line", None);
+        assert_eq!(off.lines[1], "", "自动缩进关 = 新行顶格");
     }
 
     #[test]

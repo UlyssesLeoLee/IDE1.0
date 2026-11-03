@@ -82,6 +82,8 @@ This batch replaces the hard-coded `shortcuts()` and `menu()`.
 6. Editor font family and line height; text and token colour overrides.
 7. Auto-backup timer and file-lock on open.
 
+**Status (batch 5 done):** items 1-6 and the save-time backup are implemented (`prefs.rs`, `i18n.rs`, `settings.rs`); not done: the auto-backup timer and file-lock on open, translation of the find bar / sidebar / terminal / grep labels (menus, dialogs, status bar, command table and preferences are translated), and the sakura.ini import only maps a handful of keys.
+
 ## Batch 6: View and design parity
 
 1. View toggles: line numbers, status bar, zoom reset (Ctrl+0), whitespace marks, current-line underline, ruler, minimap, breadcrumb.

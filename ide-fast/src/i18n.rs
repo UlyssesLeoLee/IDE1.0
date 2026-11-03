@@ -1,0 +1,478 @@
+//! 界面语言 (中文 / 日本語 / English): `tr(键)` 按当前语言取字符串。
+//!
+//! 两张表: `T` 是语义键 (`menu.file` ...) -> 三种语言; `CMD_T` 以中文原文作键, 给命令表 (cmds.rs 的标签 / 分组) 用 ——
+//! 命令表是数据, 不想在每一行里再塞一个键。表里没有的键 / 原文原样返回 (宁可显示中文也不显示空白)。
+//! Tauri 版的 `I18N` 表 (editor.html) 有一批值已被截断损坏 (如 "保存并关…"), 所以这里按 ide-fast 实际用到的菜单 / 对话框重新写了一份,
+//! 键名沿用 editor.html 的 `menu.* / sub.* / c.*` 命名风格。
+//! 当前语言放进一个全局原子量 (和 Tauri 版的 localStorage 一样是进程级状态), 免得每个 `fn` 都要多带一个参数。
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Lang {
+    Zh,
+    Ja,
+    En,
+}
+
+impl Lang {
+    pub const ALL: [Lang; 3] = [Lang::Zh, Lang::Ja, Lang::En];
+    pub fn code(self) -> &'static str {
+        match self { Lang::Zh => "zh", Lang::Ja => "ja", Lang::En => "en" }
+    }
+    pub fn from_code(s: &str) -> Option<Lang> {
+        match s { "zh" => Some(Lang::Zh), "ja" => Some(Lang::Ja), "en" => Some(Lang::En), _ => None }
+    }
+    /// 语言自己的名字 (菜单里各语言都用本语言写, 看不懂当前界面也找得到)
+    pub fn native(self) -> &'static str {
+        match self { Lang::Zh => "中文", Lang::Ja => "日本語", Lang::En => "English" }
+    }
+}
+
+static LANG: AtomicU8 = AtomicU8::new(0);
+
+pub fn set(l: Lang) {
+    LANG.store(l as u8, Ordering::Relaxed);
+}
+
+pub fn set_code(code: &str) {
+    set(Lang::from_code(code).unwrap_or(Lang::Zh));
+}
+
+pub fn cur() -> Lang {
+    match LANG.load(Ordering::Relaxed) { 1 => Lang::Ja, 2 => Lang::En, _ => Lang::Zh }
+}
+
+fn pick(row: &'static [&'static str; 3]) -> &'static str {
+    let s = row[cur() as usize];
+    if s.is_empty() { row[0] } else { s }
+}
+
+fn index() -> &'static HashMap<&'static str, &'static [&'static str; 3]> {
+    static IDX: OnceLock<HashMap<&'static str, &'static [&'static str; 3]>> = OnceLock::new();
+    IDX.get_or_init(|| T.iter().map(|(k, v)| (*k, v)).collect())
+}
+
+fn zh_index() -> &'static HashMap<&'static str, &'static [&'static str; 3]> {
+    static IDX: OnceLock<HashMap<&'static str, &'static [&'static str; 3]>> = OnceLock::new();
+    IDX.get_or_init(|| CMD_T.iter().map(|(k, v)| (*k, v)).collect())
+}
+
+/// 语义键 -> 当前语言的字符串; 没有这个键 = 返回键本身
+pub fn tr(key: &'static str) -> &'static str {
+    index().get(key).map(|r| pick(r)).unwrap_or(key)
+}
+
+/// 中文原文 -> 当前语言 (命令表的标签 / 分组); 没收录 = 原样返回
+pub fn trz(zh: &'static str) -> &'static str {
+    zh_index().get(zh).map(|r| pick(r)).unwrap_or(zh)
+}
+
+/// 带 `{}` 占位的字符串: 把 `{}` 依次换成参数
+pub fn trf(key: &'static str, args: &[&str]) -> String {
+    let mut out = String::new();
+    let mut it = args.iter();
+    let mut rest = tr(key);
+    while let Some(p) = rest.find("{}") {
+        out.push_str(&rest[..p]);
+        out.push_str(it.next().copied().unwrap_or(""));
+        rest = &rest[p + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 菜单项文字: 名字 + 两个空格 + 快捷键提示 (键为空 = 只有名字)
+pub fn lk(key: &'static str, keys: &str) -> String {
+    if keys.is_empty() { tr(key).to_string() } else { format!("{}  {}", tr(key), keys) }
+}
+
+/// 语言是进程级全局量, 测试之间会互相踩: 会改语言的测试用这把锁串行化
+#[cfg(test)]
+pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+type Row = (&'static str, [&'static str; 3]);
+
+/// 语义键表: (键, [中, 日, 英])
+pub const T: &[Row] = &[
+    // ---- 顶层菜单
+    ("menu.file", ["文件", "ファイル", "File"]),
+    ("menu.edit", ["编辑", "編集", "Edit"]),
+    ("menu.search", ["查找", "検索", "Search"]),
+    ("menu.fold", ["折叠", "折りたたみ", "Folding"]),
+    ("menu.plugin", ["插件", "プラグイン", "Plugins"]),
+    ("menu.setting", ["设置", "設定", "Settings"]),
+    ("menu.bookmark", ["书签", "ブックマーク", "Bookmarks"]),
+    ("menu.window", ["窗口", "ウィンドウ", "Window"]),
+    ("menu.macro", ["宏", "マクロ", "Macro"]),
+    ("menu.view", ["视图", "表示", "View"]),
+    ("menu.help", ["帮助", "ヘルプ", "Help"]),
+    // ---- 文件
+    ("c.new-file", ["新建", "新規作成", "New"]),
+    ("c.open-file", ["打开…", "開く…", "Open…"]),
+    ("c.open-folder", ["打开文件夹…", "フォルダーを開く…", "Open Folder…"]),
+    ("sub.recent", ["最近使用", "最近使ったファイル", "Recent Files"]),
+    ("sub.recent-dirs", ["最近的文件夹", "最近使ったフォルダー", "Recent Folders"]),
+    ("ui.none", ["(没有)", "(なし)", "(none)"]),
+    ("c.recent-clear", ["清除历史", "履歴をクリア", "Clear History"]),
+    ("c.save", ["保存", "上書き保存", "Save"]),
+    ("c.save-as", ["另存为…", "名前を付けて保存…", "Save As…"]),
+    ("c.save-all", ["全部保存", "すべて保存", "Save All"]),
+    ("c.save-close", ["保存并关闭", "保存して閉じる", "Save and Close"]),
+    ("c.close-tab", ["关闭标签", "タブを閉じる", "Close Tab"]),
+    ("c.close-all", ["关闭全部", "すべて閉じる", "Close All"]),
+    ("c.close-open", ["关闭并打开…", "閉じて開く…", "Close and Open…"]),
+    ("c.reload", ["重新载入 (丢弃修改)", "再読み込み (変更を破棄)", "Reload (discard changes)"]),
+    ("sub.reopen", ["以指定编码重新打开", "文字コードを指定して開き直す", "Reopen with Encoding"]),
+    ("c.print", ["打印 / 打印预览…", "印刷 / 印刷プレビュー…", "Print / Print Preview…"]),
+    ("c.browse", ["在浏览器 / 默认程序中打开", "ブラウザー / 既定のアプリで開く", "Open in Browser / Default App"]),
+    ("c.file-properties", ["文件属性…", "ファイルのプロパティ…", "File Properties…"]),
+    ("c.new-window", ["新窗口", "新規ウィンドウ", "New Window"]),
+    ("c.exit", ["退出", "終了", "Exit"]),
+    // ---- 编辑
+    ("c.undo", ["撤销", "元に戻す", "Undo"]),
+    ("c.redo", ["重做", "やり直し", "Redo"]),
+    ("c.cut", ["剪切", "切り取り", "Cut"]),
+    ("c.copy", ["复制", "コピー", "Copy"]),
+    ("c.paste", ["粘贴", "貼り付け", "Paste"]),
+    ("c.select-all", ["全选", "すべて選択", "Select All"]),
+    // ---- 查找
+    ("c.find", ["查找…", "検索…", "Find…"]),
+    ("c.replace", ["置换…", "置換…", "Replace…"]),
+    ("c.grep", ["在文件夹中搜索 (Grep)…", "フォルダー内を検索 (Grep)…", "Search in Folder (Grep)…"]),
+    ("c.find-next", ["下一个", "次を検索", "Find Next"]),
+    ("c.find-prev", ["上一个", "前を検索", "Find Previous"]),
+    ("c.find-word", ["查找光标处的单词", "カーソル位置の単語を検索", "Find Word at Cursor"]),
+    ("c.replace-all", ["全部置换", "すべて置換", "Replace All"]),
+    // ---- 折叠
+    ("c.fold-toggle", ["折叠 / 展开当前行", "現在行を折りたたみ / 展開", "Fold / Unfold Current Line"]),
+    ("c.unfold-all", ["全部展开", "すべて展開", "Unfold All"]),
+    // ---- 插件
+    ("c.builtin-theme", ["内置主题 (深 / 浅色)", "内蔵テーマ (ダーク / ライト)", "Built-in Theme (dark / light)"]),
+    ("ui.theme-prefix", ["主题: ", "テーマ: ", "Theme: "]),
+    ("ui.script-only", ["  (脚本插件, 高速版不运行)", "  (スクリプトプラグイン。高速版では実行されません)", "  (script plugin; not run in the fast build)"]),
+    ("c.delete", ["删除", "削除", "Delete"]),
+    ("c.plugin-import", ["导入插件 (.zip)…", "プラグインをインポート (.zip)…", "Import Plugin (.zip)…"]),
+    ("sub.plugin-restore", ["恢复内置插件", "内蔵プラグインを復元", "Restore Bundled Plugins"]),
+    // ---- 设置
+    ("c.common-config", ["首选项…", "共通設定…", "Preferences…"]),
+    ("sub.uilang", ["界面语言 / 言語 / Language", "表示言語 / 言語 / Language", "Display Language / 言語 / 语言"]),
+    ("c.export-config", ["导出配置…", "設定のエクスポート…", "Export Settings…"]),
+    ("c.import-config", ["导入配置…", "設定のインポート…", "Import Settings…"]),
+    ("c.import-sakura", ["导入 sakura.ini…", "sakura.ini をインポート…", "Import sakura.ini…"]),
+    ("c.reset-settings", ["恢复默认设置", "初期設定に戻す", "Reset to Defaults"]),
+    // ---- 书签
+    ("c.bookmark-toggle", ["设置 / 取消", "設定 / 解除", "Toggle"]),
+    ("c.bookmark-next", ["下一个", "次のブックマーク", "Next"]),
+    ("c.bookmark-prev", ["上一个", "前のブックマーク", "Previous"]),
+    ("c.bookmark-view", ["书签列表…", "ブックマーク一覧…", "Bookmark List…"]),
+    ("c.bookmark-reset", ["全部清除", "すべて解除", "Clear All"]),
+    ("c.bracket-jump", ["对括弧跳转", "対応する括弧へジャンプ", "Jump to Matching Bracket"]),
+    ("c.hist-prev", ["移动履历: 上一个", "移動履歴: 前へ", "Jump History: Previous"]),
+    ("c.hist-next", ["移动履历: 下一个", "移動履歴: 次へ", "Jump History: Next"]),
+    ("c.hist-mark", ["把当前位置记入履历", "現在位置を履歴に記録", "Record Current Position"]),
+    // ---- 窗口
+    ("c.split", ["分割窗口", "ウィンドウ分割", "Split Window"]),
+    ("c.next-tab", ["下一个标签", "次のタブ", "Next Tab"]),
+    ("c.prev-tab", ["上一个标签", "前のタブ", "Previous Tab"]),
+    ("sub.tabops", ["标签操作", "タブ操作", "Tab Operations"]),
+    ("c.tab-move-left", ["标签左移", "タブを左へ移動", "Move Tab Left"]),
+    ("c.tab-move-right", ["标签右移", "タブを右へ移動", "Move Tab Right"]),
+    ("c.close-others", ["关闭其它标签", "他のタブを閉じる", "Close Other Tabs"]),
+    ("c.close-left", ["关闭左侧标签", "左側のタブを閉じる", "Close Tabs to the Left"]),
+    ("c.close-right", ["关闭右侧标签", "右側のタブを閉じる", "Close Tabs to the Right"]),
+    ("sub.winlist", ["窗口列表", "ウィンドウ一覧", "Window List"]),
+    ("c.minimize-window", ["最小化", "最小化", "Minimize"]),
+    ("c.maximize", ["最大化 / 还原", "最大化 / 元に戻す", "Maximize / Restore"]),
+    ("c.fullscreen", ["全屏", "全画面表示", "Full Screen"]),
+    ("c.topmost", ["总在最前", "常に手前に表示", "Always on Top"]),
+    // ---- 宏
+    ("c.macro-start", ["开始录制", "記録開始", "Start Recording"]),
+    ("c.macro-stop", ["结束录制", "記録終了", "Stop Recording"]),
+    ("c.macro-play", ["回放", "再生", "Play"]),
+    ("c.macro-run-doc", ["运行当前文档 (Sakura .mac)", "現在の文書を実行 (Sakura .mac)", "Run Current Document (Sakura .mac)"]),
+    ("c.macro-run-file", ["运行 .mac 文件…", ".mac ファイルを実行…", "Run .mac File…"]),
+    // ---- 视图
+    ("c.terminal", ["终端", "ターミナル", "Terminal"]),
+    ("c.md-preview", ["Markdown 预览", "Markdown プレビュー", "Markdown Preview"]),
+    ("c.dark", ["深色主题", "ダークテーマ", "Dark Theme"]),
+    ("c.highlight", ["语法高亮", "構文ハイライト", "Syntax Highlighting"]),
+    ("c.wrap", ["自动换行", "右端で折り返す", "Word Wrap"]),
+    ("c.sidebar", ["侧栏", "サイドバー", "Sidebar"]),
+    ("sub.tabwidth", ["Tab 宽度", "タブ幅", "Tab Width"]),
+    ("c.zoom-in", ["放大", "拡大", "Zoom In"]),
+    ("c.zoom-out", ["缩小", "縮小", "Zoom Out"]),
+    // ---- 帮助
+    ("ui.about", ["IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)", "IDE1.0 高速版 — ネイティブ Rust (egui)\n編集の挙動は editcore を再利用 (Tauri 版と同一)", "IDE1.0 Fast — native Rust (egui)\nEditing semantics reuse editcore (same as the Tauri build)"]),
+    // ---- 标签右键 / 分组
+    ("c.close", ["关闭", "閉じる", "Close"]),
+    ("c.close-others-s", ["关闭其它", "他を閉じる", "Close Others"]),
+    ("c.close-left-s", ["关闭左侧", "左を閉じる", "Close Left"]),
+    ("c.close-right-s", ["关闭右侧", "右を閉じる", "Close Right"]),
+    ("c.copy-path", ["复制路径", "パスをコピー", "Copy Path"]),
+    ("grp.0", ["不分组", "グループなし", "No Group"]),
+    ("grp.1", ["红组", "赤グループ", "Red"]),
+    ("grp.2", ["橙组", "橙グループ", "Orange"]),
+    ("grp.3", ["绿组", "緑グループ", "Green"]),
+    ("grp.4", ["蓝组", "青グループ", "Blue"]),
+    ("grp.5", ["紫组", "紫グループ", "Purple"]),
+    // ---- 状态栏
+    ("st.goto-hint", ["转到行…", "行へ移動…", "Go to line…"]),
+    ("st.charset-save", ["保存时的编码", "保存時の文字コード", "Encoding when saving"]),
+    ("st.reopen-as", ["以此编码重新打开", "この文字コードで開き直す", "Reopen with this encoding"]),
+    ("st.add-bom", ["保存时加 BOM (UTF-8)", "保存時に BOM を付ける (UTF-8)", "Add BOM when saving (UTF-8)"]),
+    ("st.rm-bom", ["保存时去掉 BOM", "保存時に BOM を外す", "Remove BOM when saving"]),
+    ("st.mixed-eol", ["换行混用", "改行コード混在", "Mixed EOL"]),
+    ("st.mixed-eol-tip", ["原文件混用了几种换行符; 点左边的换行符选一种统一", "元のファイルに複数の改行コードが混在しています。左の改行コードをクリックして統一してください", "The file mixed several line endings; click the EOL on the left to unify"]),
+    ("st.lines", ["共 {} 行", "全 {} 行", "{} lines"]),
+    ("st.overwrite", ["改写", "上書き", "OVR"]),
+    ("st.readonly", ["只读", "読み取り専用", "Read-only"]),
+    ("st.box", ["[矩形]", "[矩形]", "[Box]"]),
+    ("st.cursors", ["{} 个光标", "カーソル {} 個", "{} cursors"]),
+    // ---- 对话框
+    ("dlg.big-title", ["较大的文件", "大きいファイル", "Large File"]),
+    ("dlg.big-body", ["{}\n约 {} MB, 打开可能比较慢。继续吗?", "{}\n約 {} MB です。開くのに時間がかかる場合があります。続行しますか?", "{}\nAbout {} MB; opening may be slow. Continue?"]),
+    ("dlg.open-failed", ["打开失败", "開けませんでした", "Open Failed"]),
+    ("dlg.save-failed", ["保存失败", "保存に失敗しました", "Save Failed"]),
+    ("dlg.unsaved-title", ["未保存的修改", "未保存の変更", "Unsaved Changes"]),
+    ("dlg.unsaved-body", ["「{}」有未保存的修改, 保存吗?", "「{}」に未保存の変更があります。保存しますか?", "\"{}\" has unsaved changes. Save?"]),
+    ("dlg.reopen-title", ["重新打开", "開き直す", "Reopen"]),
+    ("dlg.reopen-body", ["丢弃「{}」未保存的修改, 按 {} 重新打开吗?", "「{}」の未保存の変更を破棄し、{} で開き直しますか?", "Discard unsaved changes in \"{}\" and reopen as {}?"]),
+    ("dlg.reload-title", ["重新载入", "再読み込み", "Reload"]),
+    ("dlg.reload-body", ["丢弃「{}」未保存的修改并从磁盘重新载入吗?", "「{}」の未保存の変更を破棄してディスクから再読み込みしますか?", "Discard unsaved changes in \"{}\" and reload from disk?"]),
+    ("dlg.ext-title", ["文件被外部修改", "ファイルが外部で変更されました", "File Changed Externally"]),
+    ("dlg.ext-body", ["「{}」在磁盘上被修改了, 而你这里也有未保存的修改。\n重新载入会丢弃你的修改。重新载入吗?", "「{}」はディスク上で変更されましたが、こちらにも未保存の変更があります。\n再読み込みすると変更は破棄されます。再読み込みしますか?", "\"{}\" changed on disk, and you also have unsaved changes.\nReloading discards your changes. Reload?"]),
+    ("dlg.ext-reloaded", ["文件在外部被修改, 已重新载入", "ファイルが外部で変更されたため再読み込みしました", "The file changed externally and was reloaded"]),
+    ("dlg.exit-title", ["退出", "終了", "Exit"]),
+    ("dlg.cant-import", ["无法导入", "インポートできません", "Cannot Import"]),
+    ("dlg.import-plugin", ["导入插件", "プラグインのインポート", "Import Plugin"]),
+    ("dlg.reset-title", ["恢复默认设置", "初期設定に戻す", "Reset to Defaults"]),
+    ("dlg.reset-body", ["把首选项恢复为默认值吗? (最近文件、搜索条件等不受影响)", "環境設定を既定値に戻しますか? (最近のファイルや検索条件は変わりません)", "Reset preferences to defaults? (Recent files and search options are kept)"]),
+    ("dlg.settings-exported", ["配置已导出: {}", "設定をエクスポートしました: {}", "Settings exported: {}"]),
+    ("dlg.settings-imported", ["配置已导入", "設定をインポートしました", "Settings imported"]),
+    ("dlg.settings-bad", ["不是有效的配置文件", "有効な設定ファイルではありません", "Not a valid settings file"]),
+    ("dlg.goto-title", ["转到行", "行へ移動", "Go to Line"]),
+    ("dlg.goto-bad", ["请输入行号", "行番号を入力してください", "Enter a line number"]),
+    ("dlg.bm-title", ["书签列表", "ブックマーク一覧", "Bookmark List"]),
+    ("dlg.bm-empty", ["(当前文档没有书签)", "(このドキュメントにブックマークはありません)", "(no bookmarks in this document)"]),
+    ("dlg.bm-cleared", ["已清除全部书签", "すべてのブックマークを解除しました", "All bookmarks cleared"]),
+    ("dlg.props-title", ["文件属性", "ファイルのプロパティ", "File Properties"]),
+    ("dlg.hist-marked", ["已记入移动履历", "移動履歴に記録しました", "Recorded in jump history"]),
+    ("dlg.saved", ["已保存 {}", "保存しました {}", "Saved {}"]),
+    ("dlg.not-found", ["找不到文件: {}", "ファイルが見つかりません: {}", "File not found: {}"]),
+    // ---- 首选项
+    ("pf.title", ["首选项", "共通設定", "Preferences"]),
+    ("pf.ok", ["确定", "OK", "OK"]),
+    ("pf.cancel", ["取消", "キャンセル", "Cancel"]),
+    ("pf.apply", ["应用", "適用", "Apply"]),
+    ("pf.tab.general", ["常规", "全般", "General"]),
+    ("pf.tab.edit", ["编辑", "編集", "Editing"]),
+    ("pf.tab.files", ["文件", "ファイル", "Files"]),
+    ("pf.tab.font", ["字体与颜色", "フォントと色", "Font & Colors"]),
+    ("pf.tab.types", ["文件类型", "ファイルタイプ", "File Types"]),
+    ("pf.tab.search", ["查找", "検索", "Search"]),
+    ("pf.language", ["界面语言", "表示言語", "Language"]),
+    ("pf.dark", ["深色主题", "ダークテーマ", "Dark theme"]),
+    ("pf.highlight", ["语法高亮", "構文ハイライト", "Syntax highlighting"]),
+    ("pf.wrap", ["自动换行", "右端で折り返す", "Word wrap"]),
+    ("pf.font-size", ["字号", "フォントサイズ", "Font size"]),
+    ("pf.tab-width", ["Tab 宽度", "タブ幅", "Tab width"]),
+    ("pf.auto-indent", ["自动缩进", "自動インデント", "Auto indent"]),
+    ("pf.smart-indent", ["智能缩进 (按语言)", "スマートインデント (言語別)", "Smart indent (per language)"]),
+    ("pf.insert-spaces", ["Tab 键插入空格", "Tab キーで空白を挿入", "Insert spaces for Tab"]),
+    ("pf.default-enc", ["新文档的编码", "新規文書の文字コード", "Encoding for new documents"]),
+    ("pf.default-eol", ["新文档的换行符", "新規文書の改行コード", "Line ending for new documents"]),
+    ("pf.save-backup", ["保存时备份旧文件 (.sakura-backup)", "保存時に旧ファイルをバックアップ (.sakura-backup)", "Back up the old file on save (.sakura-backup)"]),
+    ("pf.check-external", ["窗口获得焦点时检查外部修改", "ウィンドウ復帰時に外部変更を確認", "Check for external changes on focus"]),
+    ("pf.confirm-close", ["关闭有未保存修改的窗口前确认", "未保存の変更がある場合に終了前に確認", "Confirm before closing with unsaved changes"]),
+    ("pf.max-file", ["打开前确认的文件大小 (MB)", "開く前に確認するファイルサイズ (MB)", "Confirm before opening files above (MB)"]),
+    ("pf.mru", ["最近文件个数", "最近使ったファイルの数", "Recent files to remember"]),
+    ("pf.font-family", ["编辑器字体", "エディターのフォント", "Editor font"]),
+    ("pf.font-default", ["(默认等宽字体)", "(既定の等幅フォント)", "(default monospace)"]),
+    ("pf.line-height", ["行高", "行の高さ", "Line height"]),
+    ("pf.colors", ["颜色覆盖 (留空 = 跟随主题)", "色の上書き (未設定 = テーマに従う)", "Color overrides (unset = follow theme)"]),
+    ("pf.col.text", ["文字", "文字", "Text"]),
+    ("pf.col.bg", ["背景", "背景", "Background"]),
+    ("pf.col.keyword", ["关键字", "キーワード", "Keyword"]),
+    ("pf.col.string", ["字符串", "文字列", "String"]),
+    ("pf.col.comment", ["注释", "コメント", "Comment"]),
+    ("pf.col.number", ["数字", "数値", "Number"]),
+    ("pf.col.clear", ["清除", "クリア", "Clear"]),
+    ("pf.col.set", ["设置", "設定", "Set"]),
+    ("pf.types-hint", ["按扩展名覆盖: 留空的项沿用全局设置", "拡張子ごとに上書き: 未設定の項目は全体設定に従います", "Override per extension; unset items follow the global setting"]),
+    ("pf.type-ext", ["扩展名", "拡張子", "Extension"]),
+    ("pf.type-add", ["添加", "追加", "Add"]),
+    ("pf.type-remove", ["移除", "削除", "Remove"]),
+    ("pf.inherit", ["沿用", "継承", "inherit"]),
+    ("pf.find-case", ["区分大小写", "大文字小文字を区別", "Match case"]),
+    ("pf.find-regex", ["正则表达式", "正規表現", "Regular expression"]),
+    ("pf.find-word", ["全字匹配", "単語単位", "Whole word"]),
+    ("pf.find-wrap", ["到末尾后循环查找", "末尾で先頭に戻る", "Wrap around"]),
+    ("pf.file", ["设置文件: {}", "設定ファイル: {}", "Settings file: {}"]),
+    ("pf.file-off", ["(未启用落盘)", "(保存無効)", "(persistence off)"]),
+    ("pf.restart-note", ["字体、行高和颜色在按「应用」或「确定」后生效", "フォント・行の高さ・色は「適用」または OK で反映されます", "Font, line height and colors take effect on Apply or OK"]),
+    // ---- 侧栏 / 终端 / 查找条
+    ("sd.files", ["文件", "ファイル", "Files"]),
+    ("sd.search", ["搜索", "検索", "Search"]),
+    ("sd.outline", ["大纲", "アウトライン", "Outline"]),
+];
+
+/// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
+pub const CMD_T: &[Row] = &[
+    // 分组
+    ("行", ["行", "行", "Lines"]),
+    ("单词", ["单词", "単語", "Words"]),
+    ("复制", ["复制", "コピー", "Copy"]),
+    ("转换", ["转换", "変換", "Convert"]),
+    ("整理行", ["整理行", "行の整理", "Tidy Lines"]),
+    ("缩进", ["缩进", "インデント", "Indent"]),
+    ("Markdown", ["Markdown", "Markdown", "Markdown"]),
+    // 行
+    ("剪切行", ["剪切行", "行を切り取り", "Cut Line"]),
+    ("复制行 (含换行)", ["复制行 (含换行)", "行をコピー (改行含む)", "Copy Lines (with EOL)"]),
+    ("复制当前行  Ctrl+D", ["复制当前行  Ctrl+D", "現在行を複製  Ctrl+D", "Duplicate Line  Ctrl+D"]),
+    ("删除当前行", ["删除当前行", "現在行を削除", "Delete Line"]),
+    ("与上一行合并", ["与上一行合并", "前の行と結合", "Join with Previous Line"]),
+    ("在上方插入空行", ["在上方插入空行", "上に空行を挿入", "Insert Line Above"]),
+    ("在下方插入空行", ["在下方插入空行", "下に空行を挿入", "Insert Line Below"]),
+    ("上移一行", ["上移一行", "行を上へ移動", "Move Line Up"]),
+    ("下移一行", ["下移一行", "行を下へ移動", "Move Line Down"]),
+    ("剪切到行尾", ["剪切到行尾", "行末まで切り取り", "Cut to End of Line"]),
+    ("剪切到行首", ["剪切到行首", "行頭まで切り取り", "Cut to Start of Line"]),
+    ("删除到行尾", ["删除到行尾", "行末まで削除", "Delete to End of Line"]),
+    ("删除到行首", ["删除到行首", "行頭まで削除", "Delete to Start of Line"]),
+    // 单词
+    ("选择当前单词", ["选择当前单词", "現在の単語を選択", "Select Word"]),
+    ("剪切单词", ["剪切单词", "単語を切り取り", "Cut Word"]),
+    ("删除单词", ["删除单词", "単語を削除", "Delete Word"]),
+    // 复制
+    ("复制 (行尾统一 CRLF)", ["复制 (行尾统一 CRLF)", "コピー (改行を CRLF に統一)", "Copy (normalize to CRLF)"]),
+    ("复制 (带行号)", ["复制 (带行号)", "コピー (行番号付き)", "Copy (with line numbers)"]),
+    ("复制引用 (> 前缀)", ["复制引用 (> 前缀)", "引用としてコピー (> 付き)", "Copy as Quote (> prefix)"]),
+    ("矩形粘贴", ["矩形粘贴", "矩形貼り付け", "Paste Rectangle"]),
+    // 转换
+    ("转为大写", ["转为大写", "大文字に変換", "To Uppercase"]),
+    ("转为小写", ["转为小写", "小文字に変換", "To Lowercase"]),
+    ("半角 → 全角", ["半角 → 全角", "半角 → 全角", "Half-width → Full-width"]),
+    ("全角 → 半角", ["全角 → 半角", "全角 → 半角", "Full-width → Half-width"]),
+    ("Tab → 空格", ["Tab → 空格", "Tab → 空白", "Tabs → Spaces"]),
+    ("行首空格 → Tab", ["行首空格 → Tab", "行頭の空白 → Tab", "Leading Spaces → Tabs"]),
+    // 整理行
+    ("升序排序", ["升序排序", "昇順に並べ替え", "Sort Ascending"]),
+    ("降序排序", ["降序排序", "降順に並べ替え", "Sort Descending"]),
+    ("去重 (保留首次出现)", ["去重 (保留首次出现)", "重複を削除 (最初を残す)", "Remove Duplicates (keep first)"]),
+    ("反转行顺序", ["反转行顺序", "行の順序を反転", "Reverse Lines"]),
+    ("去除行尾空白", ["去除行尾空白", "行末の空白を削除", "Trim Trailing Whitespace"]),
+    ("去除行首空白", ["去除行首空白", "行頭の空白を削除", "Trim Leading Whitespace"]),
+    ("删除空行", ["删除空行", "空行を削除", "Delete Empty Lines"]),
+    // 缩进
+    ("增加缩进", ["增加缩进", "インデントを増やす", "Increase Indent"]),
+    ("减少缩进", ["减少缩进", "インデントを減らす", "Decrease Indent"]),
+    // 其它
+    ("切换行注释", ["切换行注释", "行コメントの切り替え", "Toggle Line Comment"]),
+    ("转到行…", ["转到行…", "行へ移動…", "Go to Line…"]),
+    ("改写 / 插入模式", ["改写 / 插入模式", "上書き / 挿入モード", "Overwrite / Insert Mode"]),
+    ("只读", ["只读", "読み取り専用", "Read-only"]),
+    // Markdown
+    ("粗体", ["粗体", "太字", "Bold"]),
+    ("斜体", ["斜体", "斜体", "Italic"]),
+    ("删除线", ["删除线", "取り消し線", "Strikethrough"]),
+    ("行内代码", ["行内代码", "インラインコード", "Inline Code"]),
+    ("高亮", ["高亮", "ハイライト", "Highlight"]),
+    ("标题 1", ["标题 1", "見出し 1", "Heading 1"]),
+    ("标题 2", ["标题 2", "見出し 2", "Heading 2"]),
+    ("标题 3", ["标题 3", "見出し 3", "Heading 3"]),
+    ("标题 4", ["标题 4", "見出し 4", "Heading 4"]),
+    ("引用", ["引用", "引用", "Quote"]),
+    ("无序列表", ["无序列表", "箇条書き", "Bulleted List"]),
+    ("有序列表", ["有序列表", "番号付きリスト", "Numbered List"]),
+    ("任务列表", ["任务列表", "タスクリスト", "Task List"]),
+    ("链接", ["链接", "リンク", "Link"]),
+    ("图片", ["图片", "画像", "Image"]),
+    ("代码块", ["代码块", "コードブロック", "Code Block"]),
+    ("Mermaid 图", ["Mermaid 图", "Mermaid 図", "Mermaid Diagram"]),
+    ("表格", ["表格", "表", "Table"]),
+    ("分隔线", ["分隔线", "区切り線", "Horizontal Rule"]),
+    ("提示块", ["提示块", "コールアウト", "Callout"]),
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use super::TEST_LOCK as LANG_LOCK;
+
+    #[test]
+    fn tables_are_complete_and_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for (k, row) in T.iter().chain(CMD_T.iter()) {
+            assert!(row.iter().all(|s| !s.is_empty()), "{k} 缺翻译");
+            assert!(row.iter().all(|s| !s.contains('\u{FFFD}')), "{k} 含乱码");
+        }
+        for (k, _) in T { assert!(seen.insert(*k), "重复的键 {k}"); }
+        let mut seen = std::collections::HashSet::new();
+        for (k, _) in CMD_T { assert!(seen.insert(*k), "命令表重复的键 {k}"); }
+    }
+
+    #[test]
+    fn lookup_follows_language_and_falls_back() {
+        let _g = LANG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set(Lang::Zh);
+        assert_eq!(tr("menu.file"), "文件");
+        set(Lang::Ja);
+        assert_eq!(tr("menu.file"), "ファイル");
+        set(Lang::En);
+        assert_eq!(tr("menu.file"), "File");
+        assert_eq!(tr("no.such.key"), "no.such.key", "没收录的键原样返回");
+        assert_eq!(trz("切换行注释"), "Toggle Line Comment");
+        assert_eq!(trz("没收录的中文"), "没收录的中文");
+        assert_eq!(trf("st.lines", &["12"]), "12 lines");
+        assert_eq!(trf("dlg.big-body", &["a.txt", "9"]), "a.txt\nAbout 9 MB; opening may be slow. Continue?");
+        assert_eq!(lk("c.save", "Ctrl+S"), "Save  Ctrl+S");
+        set_code("ja");
+        assert_eq!(cur(), Lang::Ja);
+        set_code("garbage");
+        assert_eq!(cur(), Lang::Zh, "认不出的语言码 = 中文");
+        set(Lang::Zh);
+    }
+
+    #[test]
+    fn language_codes_roundtrip() {
+        for l in Lang::ALL { assert_eq!(Lang::from_code(l.code()), Some(l)); }
+    }
+
+    /// 命令表里每个标签和分组都得有翻译, 以后加命令忘了补这里会在这儿红
+    #[test]
+    fn every_command_label_is_translated() {
+        for c in crate::cmds::CMDS {
+            assert!(zh_index().contains_key(c.label), "命令标签缺翻译: {}", c.label);
+            if !c.group.is_empty() { assert!(zh_index().contains_key(c.group), "命令分组缺翻译: {}", c.group); }
+        }
+    }
+
+    /// 代码里用到的每个 `tr("...")` / `lk("...")` / `trf("...")` 键都得在表里
+    #[test]
+    fn every_key_used_in_source_exists() {
+        let srcs = [include_str!("app.rs"), include_str!("find.rs"), include_str!("sidebar.rs"), include_str!("terminal.rs")];
+        let idx = index();
+        let mut n = 0;
+        for src in srcs {
+            for f in ["tr(\"", "lk(\"", "trf(\""] {
+                let mut rest = src;
+                while let Some(p) = rest.find(f) {
+                    // 排除 xxx_tr(" 这类别的函数名
+                    let before = rest[..p].chars().last();
+                    rest = &rest[p + f.len()..];
+                    if before.map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false) { continue; }
+                    let end = rest.find('"').unwrap();
+                    let key = &rest[..end];
+                    assert!(idx.contains_key(key), "代码里用了表里没有的键: {key}");
+                    n += 1;
+                }
+            }
+        }
+        assert!(n > 50, "应当扫到不少键 (实际 {n})");
+    }
+}
