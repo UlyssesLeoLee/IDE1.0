@@ -14,6 +14,8 @@ struct Job {
     title: String,
     /// 命令作用的文档 (id; 期间被关掉就丢弃结果)
     doc_id: u64,
+    /// 启动时文档的修订号: 期间被改过, 行补丁基于旧文本, 不再套用
+    rev: u64,
 }
 
 /// 结果窗口的内容
@@ -70,7 +72,7 @@ impl PlugState {
         }
         let host = self.host.get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
         let rx = host.call(plugin, &format!("command:{cmd}"), &json!([arg]));
-        self.jobs.push(Job { rx, perms: perms.to_vec(), title: title.to_string(), doc_id: doc.id });
+        self.jobs.push(Job { rx, perms: perms.to_vec(), title: title.to_string(), doc_id: doc.id, rev: doc.rev });
     }
 
     /// 插件被禁用 / 删除: 丢掉运行环境 (宿主没创建过就什么都不用做)
@@ -122,6 +124,8 @@ impl PlugState {
         if let Some(p) = out.edit {
             let tip = if !job.perms.iter().any(|p| p == "editor.write") {
                 "插件没有 editor.write 权限, 修改已忽略".to_string()
+            } else if doc.rev != job.rev {
+                "文档在插件运行期间被修改, 补丁已放弃".to_string()
             } else {
                 match doc.apply_line_patch(p.start, p.remove, p.insert, p.cursor) {
                     Ok(()) => out.summary.clone(),
@@ -215,12 +219,14 @@ mod tests {
         let mut st = PlugState::default();
         let mut d = doc(&["a", "b"]);
         let patch = r#"{"summary":"已修改","edit":{"start":0,"remove":1,"insert":["X"]}}"#;
-        let ro = Job { rx: std::sync::mpsc::channel().1, perms: perms(&["editor.read"]), title: "t".into(), doc_id: 7 };
+        let ro = Job { rx: std::sync::mpsc::channel().1, perms: perms(&["editor.read"]), title: "t".into(), doc_id: 7, rev: 0 };
         let tip = st.finish(&ro, Ok(patch.into()), &mut d).unwrap();
         assert!(tip.contains("editor.write") && d.lines[0] == "a", "{tip}");
-        let rw = Job { perms: perms(&["editor.read", "editor.write"]), ..ro };
+        let mut rw = Job { perms: perms(&["editor.read", "editor.write"]), ..ro };
         assert_eq!(st.finish(&rw, Ok(patch.into()), &mut d).as_deref(), Some("已修改"));
         assert_eq!(d.lines, vec!["X", "b"]);
+        assert!(st.finish(&rw, Ok(patch.into()), &mut d).unwrap().contains("修改"), "旧修订号的补丁被放弃");
+        rw.rev = d.rev;
         let bad = r#"{"edit":{"start":5,"remove":1,"insert":[]}}"#;
         assert!(st.finish(&rw, Ok(bad.into()), &mut d).unwrap().contains("越界"));
         assert!(st.finish(&rw, Err("炸了".into()), &mut d).unwrap().contains("炸了"));
@@ -231,7 +237,7 @@ mod tests {
     fn svg_and_data_results_open_the_window() {
         let mut st = PlugState::default();
         let mut d = doc(&["# a"]);
-        let j = Job { rx: std::sync::mpsc::channel().1, perms: perms(&["editor.read"]), title: "图".into(), doc_id: 7 };
+        let j = Job { rx: std::sync::mpsc::channel().1, perms: perms(&["editor.read"]), title: "图".into(), doc_id: 7, rev: 0 };
         let svg = r##"{"svg":"<svg width=\"50\" height=\"20\"><g data-line=\"1\"><circle cx=\"5\" cy=\"5\" r=\"3\" fill=\"#fff\"/></g></svg>","summary":"1 个标题"}"##;
         assert_eq!(st.finish(&j, Ok(svg.into()), &mut d).as_deref(), Some("1 个标题"));
         let w = st.win.take().unwrap();
