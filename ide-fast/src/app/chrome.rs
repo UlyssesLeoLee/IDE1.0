@@ -15,7 +15,7 @@ const TOOLBAR: &[&str] = &[
 const FKEYS: [Key; 12] = [Key::F1, Key::F2, Key::F3, Key::F4, Key::F5, Key::F6, Key::F7, Key::F8, Key::F9, Key::F10, Key::F11, Key::F12];
 
 /// 命令 id 在注册表里的下标
-fn index_of(id: &str) -> Option<usize> {
+pub(super) fn index_of(id: &str) -> Option<usize> {
     keymap::entries().iter().position(|e| e.id == id)
 }
 

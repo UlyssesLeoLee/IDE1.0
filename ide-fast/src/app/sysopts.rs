@@ -25,6 +25,12 @@ pub(super) struct SysState {
     /// 当前主题是半透明主题 / 已经提示过要重启
     pub theme_glass: bool,
     pub glass_warned: bool,
+    /// 「立即重启」对话框开着
+    pub restart_ask: bool,
+    /// 窗口现在是不是带系统标题栏 (和 `cfg.system_title_bar` 不一致时 `top_bar` 发 Decorations 命令)
+    pub decor: bool,
+    /// 自绘标题栏里的应用图标 (第一次画时才建纹理)
+    pub title_icon: Option<egui::TextureHandle>,
     pub bottom: BottomTab,
     /// 输出页的日志 (备份 / 锁 / 导出 / 插件安装 ... 的结果)
     pub log: Vec<String>,
@@ -60,11 +66,35 @@ impl App {
                 d.tip = msg;
             }
         }
-        if self.sys.theme_glass && !self.sys.glass && !self.sys.glass_warned && !self.first_frame {
+        if !self.sys.theme_glass { self.sys.glass_warned = false; }
+        if crate::relaunch::needs_restart(self.sys.glass, self.sys.theme_glass) && !self.sys.glass_warned && !self.first_frame {
             self.sys.glass_warned = true;
+            self.sys.restart_ask = true;
             let msg = tr("sys.glass-restart").to_string();
             self.log(msg.clone());
             self.cur().tip = msg;
+        }
+    }
+
+    /// 半透明主题要重启才能让窗口真正透明: 问一句「立即重启 / 稍后」。立即重启 = 走正常关闭流程 (有未保存的先问), 关完由 main 拉起新进程
+    pub(super) fn restart_window(&mut self, ctx: &egui::Context) {
+        if !self.sys.restart_ask { return; }
+        let mut now = false;
+        let mut later = false;
+        egui::Window::new(trz("重启以启用半透明窗口")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.label(trz("窗口是否透明在创建窗口时就定了, 运行中无法切换。重启后会重新打开现在的文件。"));
+            ui.horizontal(|ui| {
+                now = ui.button(trz("立即重启")).clicked();
+                later = ui.button(trz("稍后")).clicked();
+            });
+        });
+        if now {
+            self.sys.restart_ask = false;
+            let paths: Vec<String> = self.docs.iter().filter_map(|d| d.path.as_ref().map(|p| p.display().to_string())).collect();
+            crate::relaunch::request(paths);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if later {
+            self.sys.restart_ask = false;
         }
     }
 
@@ -106,6 +136,7 @@ impl App {
                     self.sys.bottom = t;
                 }
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, crate::panels::Dock::Bottom));
         });
         match self.sys.bottom {
             BottomTab::Terminal => self.term_ui(ui),

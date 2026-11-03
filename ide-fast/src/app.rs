@@ -22,6 +22,8 @@ use editcore::type_config::{TokenKind, TypeConfig, TypeRegistry};
 use std::path::PathBuf;
 
 mod chrome;
+mod docks;
+mod titlebar;
 mod textcmds;
 mod ghopts;
 mod aichat;
@@ -154,6 +156,7 @@ impl App {
             dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), ai: Default::default(), print_ui: Default::default(),
         };
         app.persist = persist;
+        app.sys.decor = st.system_title_bar;
         app.sys.glass = plugins::is_translucent(&st.theme_plugin); // 窗口透明与否在建窗口时就定了 (main.rs 同一判断)
         app.apply_settings(&st);
         app.recent = st.recent.clone();
@@ -441,6 +444,7 @@ impl App {
             for (t, name) in [(Tab::Files, "文件"), (Tab::Outline, "大纲"), (Tab::Search, "搜索"), (Tab::Scm, "Git")] {
                 if ui.selectable_label(self.side.tab == t, trz(name)).clicked() { self.side.tab = t; }
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, crate::panels::Dock::Side));
         });
         ui.separator();
         let mut open: Option<(PathBuf, usize)> = None;
@@ -1288,6 +1292,10 @@ impl App {
                     ui.add_enabled(col > 0, egui::Checkbox::new(&mut self.cfg.view.kinsoku, trz("行头 / 行尾禁则 (指定列数折行时)")));
                 });
                 ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
+                for (a, zh, on) in [(KApp::SideCollapse, "折叠左侧栏", self.cfg.view.side_collapsed), (KApp::RightCollapse, "折叠右侧面板", self.cfg.view.right_collapsed), (KApp::BottomCollapse, "折叠底部面板", self.cfg.view.bottom_collapsed)] {
+                    if ui.checkbox(&mut on.clone(), Self::app_label(a, zh)).clicked() { self.run_app(a, ctx); ui.close(); }
+                }
+                if ui.checkbox(&mut self.cfg.system_title_bar.clone(), Self::app_label(KApp::SystemTitleBar, "使用系统标题栏")).clicked() { self.run_app(KApp::SystemTitleBar, ctx); ui.close(); }
                 ui.separator();
                 ui.checkbox(&mut self.cfg.view.line_numbers, lk("c.line-numbers", ""));
                 ui.checkbox(&mut self.cfg.view.status_bar, lk("c.status-bar", ""));
@@ -1621,13 +1629,17 @@ impl App {
             KApp::MacroRunDoc => self.run_mac_doc(),
             KApp::MacroRunFile => self.run_mac_file(),
             KApp::MacroRunPpa => self.run_ppa_doc(),
-            KApp::Terminal => self.term.open = !self.term.open,
+            KApp::Terminal => self.toggle_dock_open(crate::panels::Dock::Bottom),
             KApp::AiChat => self.ai_toggle(),
             KApp::MdPreview => self.md_preview = !self.md_preview,
             KApp::Dark => self.dark = !self.dark,
             KApp::Highlight => self.highlight = !self.highlight,
             KApp::Wrap => self.wrap = !self.wrap,
-            KApp::Sidebar => self.side.open = !self.side.open,
+            KApp::Sidebar => self.toggle_dock_open(crate::panels::Dock::Side),
+            KApp::SideCollapse => self.collapse_dock(crate::panels::Dock::Side),
+            KApp::RightCollapse => self.collapse_dock(crate::panels::Dock::Right),
+            KApp::BottomCollapse => self.collapse_dock(crate::panels::Dock::Bottom),
+            KApp::SystemTitleBar => self.toggle_system_title_bar(),
             KApp::LineNumbers => self.cfg.view.line_numbers = !self.cfg.view.line_numbers,
             KApp::StatusBar => self.cfg.view.status_bar = !self.cfg.view.status_bar,
             KApp::Whitespace => self.cfg.view.whitespace = !self.cfg.view.whitespace,
@@ -2419,6 +2431,20 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // 自绘标题栏 + 最大化: Windows 把无边框的最大化窗口放大出屏幕 8 点 (可调大小的窗口框), 内容缩进这么多才不会被裁掉
+        let inset = self.maximized_inset(root.ctx());
+        if inset > 0.0 {
+            let rect = root.max_rect().shrink(inset);
+            let mut child = root.new_child(egui::UiBuilder::new().max_rect(rect));
+            self.ui_main(&mut child);
+        } else {
+            self.ui_main(root);
+        }
+    }
+}
+
+impl App {
+    fn ui_main(&mut self, root: &mut egui::Ui) {
         let ctx = &root.ctx().clone();
         self.tc = match &self.theme_vars { Some(v) if self.theme_visuals.is_some() => crate::view::ThemeColors::from_vars(v), _ => crate::view::ThemeColors::builtin(self.dark) };
         let mut vis = match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } };
@@ -2447,7 +2473,7 @@ impl eframe::App for App {
                     if !self.close_tab(i) { all = false; break; }
                 } else { i += 1; }
             }
-            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; }
+            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; crate::relaunch::cancel(); }
         }
         // 拖文件进窗口: 打开
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
@@ -2476,7 +2502,7 @@ impl eframe::App for App {
             self.active = self.panes.focused_doc();
         }
         self.shortcuts(ctx);
-        egui::Panel::top("menu").show(root, |ui| self.menu(ui, ctx));
+        self.top_bar(root, ctx);
         if self.cfg.view.toolbar { egui::Panel::top("toolbar").show(root, |ui| self.toolbar(ui, ctx)); }
         // 标签栏: 只有一个标签时整条收起; 标签多了横向滚动 (滚轮 / Shift+滚轮 / 拖动), 活动标签变了就滚进可见范围
         let mut tab_cmd: Option<TabCmd> = None;
@@ -2528,10 +2554,16 @@ impl eframe::App for App {
             self.panes.docs[self.panes.focus] = self.active;
         }
         if self.cfg.view.rail { egui::Panel::left("rail").resizable(false).exact_size(64.0).show(root, |ui| self.activity_rail(ui)); }
-        if self.side.open {
-            let r = egui::Panel::left("side").resizable(true).default_size(self.cfg.view.side_w).show(root, |ui| self.side_ui(ui));
-            // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
-            if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.side_w = r.response.rect.width().round().clamp(120.0, 900.0); }
+        self.normalize_docks();
+        use crate::panels::{Dock, Mode};
+        match self.dock_mode(Dock::Side, self.side.open) {
+            Mode::Full => {
+                let r = egui::Panel::left("side").resizable(true).default_size(self.cfg.view.side_w).show(root, |ui| self.side_ui(ui));
+                // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
+                if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.side_w = crate::panels::clamp_size(Dock::Side, r.response.rect.width().round()); }
+            }
+            Mode::Strip => self.dock_strip(root, Dock::Side),
+            Mode::Hidden => {}
         }
         self.side.grep.poll();
         self.sync_grep_doc();
@@ -2616,9 +2648,13 @@ impl eframe::App for App {
         }
         // 查找栏 / 侧栏输入框 / 对话框正在收键盘时, 编辑区不抢
         let find_focus = self.cmdui.capturing() || ctx.memory(|m| m.focused()).map(|f| !self.editor_ids.contains(&f)).unwrap_or(false);
-        if self.term.open {
-            let r = egui::Panel::bottom("term").resizable(true).default_size(self.cfg.view.term_h).show(root, |ui| self.bottom_ui(ui));
-            if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.term_h = r.response.rect.height().round().clamp(60.0, 900.0); }
+        match self.dock_mode(Dock::Bottom, self.term.open) {
+            Mode::Full => {
+                let r = egui::Panel::bottom("term").resizable(true).default_size(self.cfg.view.term_h).show(root, |ui| self.bottom_ui(ui));
+                if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.term_h = crate::panels::clamp_size(Dock::Bottom, r.response.rect.height().round()); }
+            }
+            Mode::Strip => self.dock_strip(root, Dock::Bottom),
+            Mode::Hidden => {}
         }
         self.term.poll();
         if let Some((id, out)) = self.term.replace_out.take() {
@@ -2632,11 +2668,20 @@ impl eframe::App for App {
             n.ends_with(".md") || n.ends_with(".markdown")
         };
         self.ai_poll(ctx);
-        if self.ai.open {
-            egui::Panel::right("aichat").resizable(true).default_size(340.0).show(root, |ui| self.ai_ui(ui));
-        }
-        if self.md_preview && is_md {
-            egui::Panel::right("mdprev").resizable(true).default_size(420.0).show(root, |ui| self.md_ui(ui));
+        match self.dock_mode(Dock::Right, crate::panels::right_visible(self.ai.open, self.md_preview, is_md)) {
+            Mode::Full => {
+                let settled = !ctx.input(|i| i.pointer.any_down());
+                if self.ai.open {
+                    let r = egui::Panel::right("aichat").resizable(true).default_size(self.cfg.view.ai_w).show(root, |ui| self.ai_ui(ui));
+                    if settled { self.cfg.view.ai_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
+                }
+                if self.md_preview && is_md {
+                    let r = egui::Panel::right("mdprev").resizable(true).default_size(self.cfg.view.md_w).show(root, |ui| self.md_ui(ui));
+                    if settled { self.cfg.view.md_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
+                }
+            }
+            Mode::Strip => self.dock_strip(root, Dock::Right),
+            Mode::Hidden => {}
         }
         use crate::split::SplitKind as SK;
         let fill = ctx.global_style().visuals.extreme_bg_color;
@@ -2655,6 +2700,8 @@ impl eframe::App for App {
             if kind == SK::Quad { ui.columns(2, |c| { self.editor_pane(&mut c[0], ctx, find_focus, 0); self.editor_pane(&mut c[1], ctx, find_focus, 1); }); }
             else { self.editor_pane(ui, ctx, find_focus, 0); }
         });
+        self.restart_window(ctx);
+        self.window_grips(ctx);
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
     }

@@ -362,6 +362,7 @@ impl App {
             ui.strong(tr("ai.title"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.small_button("×").clicked() { self.ai.open = false; }
+                self.dock_chevron(ui, crate::panels::Dock::Right);
                 if ui.small_button(tr("ai.settings")).clicked() { self.ai.settings = !self.ai.settings; }
                 if ui.small_button(tr("ai.clear")).clicked() { act = Some(Act::Clear); }
             });

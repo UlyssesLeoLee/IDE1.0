@@ -67,6 +67,8 @@ pub struct Settings {
     pub term_bg: Option<[u8; 3]>,
     /// 半透明主题: 窗口背后用 Windows 的模糊 (DWM) 材质; 关 = 只做 alpha 叠色
     pub glass_blur: bool,
+    /// 用系统标题栏 (默认 false = 自绘标题栏: 菜单 / 快捷按钮 / 窗口按钮都在里面)
+    pub system_title_bar: bool,
 }
 
 impl Default for Settings {
@@ -76,7 +78,7 @@ impl Default for Settings {
             lang: "zh".into(), auto_indent: true, smart_indent: false, insert_spaces: false, default_encoding: "UTF-8".into(), default_eol: "CRLF".into(),
             save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
             colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![], restore_session: true, session: vec![], session_active: 0,
-            auto_backup: false, auto_backup_min: 5, file_lock: false, term_font_px: 13.0, term_scrollback: 5000, term_fg: None, term_bg: None, glass_blur: true,
+            auto_backup: false, auto_backup_min: 5, file_lock: false, term_font_px: 13.0, term_scrollback: 5000, term_fg: None, term_bg: None, glass_blur: true, system_title_bar: false,
         }
     }
 }
@@ -152,6 +154,13 @@ pub struct ViewState {
     pub side_w: f32,
     pub term_open: bool,
     pub term_h: f32,
+    /// 右侧面板宽: AI 对话 / Markdown 预览各记一个
+    pub ai_w: f32,
+    pub md_w: f32,
+    /// 折成细条 (只在对应面板显示时有意义); 右侧 = AI 对话和预览共用一条
+    pub side_collapsed: bool,
+    pub right_collapsed: bool,
+    pub bottom_collapsed: bool,
     pub md_preview: bool,
     pub geom: Option<WinGeom>,
     /// 视图开关: 行号 / 状态栏 / 空白符标记 / 列标尺 / 当前行下划线 / 小地图
@@ -178,7 +187,7 @@ pub struct ViewState {
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, stamp_kind: 2, stamp_pos: 0, print: Default::default() }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, ai_w: 340.0, md_w: 420.0, side_collapsed: false, right_collapsed: false, bottom_collapsed: false, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, stamp_kind: 2, stamp_pos: 0, print: Default::default() }
     }
 }
 
@@ -270,7 +279,7 @@ impl Settings {
         b("auto_indent", &mut self.auto_indent); b("smart_indent", &mut self.smart_indent); b("insert_spaces", &mut self.insert_spaces);
         b("restore_session", &mut self.restore_session);
         b("save_backup", &mut self.save_backup); b("check_external", &mut self.check_external); b("confirm_close", &mut self.confirm_close);
-        b("auto_backup", &mut self.auto_backup); b("file_lock", &mut self.file_lock); b("glass_blur", &mut self.glass_blur);
+        b("auto_backup", &mut self.auto_backup); b("file_lock", &mut self.file_lock); b("glass_blur", &mut self.glass_blur); b("system_title_bar", &mut self.system_title_bar);
         if let Some(n) = v["auto_backup_min"].as_u64() { self.auto_backup_min = crate::backup::clamp_interval(n.min(u32::MAX as u64) as u32); }
         if let Some(f) = v["term_font_px"].as_f64() { self.term_font_px = (f as f32).clamp(8.0, 32.0); }
         if let Some(n) = v["term_scrollback"].as_u64() { self.term_scrollback = (n as usize).clamp(crate::terminal::MIN_SCROLLBACK, crate::terminal::MAX_SCROLLBACK); }
@@ -313,6 +322,7 @@ impl Settings {
         b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
         b_of(w, "line_numbers", &mut self.view.line_numbers); b_of(w, "status_bar", &mut self.view.status_bar); b_of(w, "whitespace", &mut self.view.whitespace);
         b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap);
+        b_of(w, "side_collapsed", &mut self.view.side_collapsed); b_of(w, "right_collapsed", &mut self.view.right_collapsed); b_of(w, "bottom_collapsed", &mut self.view.bottom_collapsed);
         b_of(w, "toolbar", &mut self.view.toolbar); b_of(w, "funckey", &mut self.view.funckey); b_of(w, "rail", &mut self.view.rail);
         if let Some(b) = w["kinsoku"].as_bool() { self.view.kinsoku = b; }
         if let Some(n) = w["wrap_col"].as_u64() { self.view.wrap_col = if n == 0 { 0 } else { (n as usize).clamp(10, crate::tools::WRAP_COL_MAX) }; }
@@ -328,7 +338,9 @@ impl Settings {
         if let Some(n) = w["stamp_kind"].as_u64() { self.view.stamp_kind = n.min(2) as u8; }
         if let Some(n) = w["stamp_pos"].as_u64() { self.view.stamp_pos = n.min(1) as u8; }
         if let Some(f) = w["side_w"].as_f64() { self.view.side_w = (f as f32).clamp(120.0, 900.0); }
-        if let Some(f) = w["term_h"].as_f64() { self.view.term_h = (f as f32).clamp(60.0, 900.0); }
+        if let Some(f) = w["term_h"].as_f64() { self.view.term_h = crate::panels::clamp_size(crate::panels::Dock::Bottom, f as f32); }
+        if let Some(f) = w["ai_w"].as_f64() { self.view.ai_w = crate::panels::clamp_size(crate::panels::Dock::Right, f as f32); }
+        if let Some(f) = w["md_w"].as_f64() { self.view.md_w = crate::panels::clamp_size(crate::panels::Dock::Right, f as f32); }
         let g = &w["geom"];
         if let (Some(x), Some(y), Some(ww), Some(h)) = (g["x"].as_f64(), g["y"].as_f64(), g["w"].as_f64(), g["h"].as_f64()) {
             let geom = WinGeom { x: x as f32, y: y as f32, w: ww as f32, h: h as f32, maximized: g["maximized"].as_bool().unwrap_or(false) };
@@ -343,7 +355,7 @@ impl Settings {
                 "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
                 "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
                 "colors": self.colors.to_json(),
-                "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur,
+                "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar,
                 "term_font_px": self.term_font_px, "term_scrollback": self.term_scrollback, "term_fg": self.term_fg.map(hex), "term_bg": self.term_bg.map(hex),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces })).collect::<Vec<_>>(),
                 "search": self.search.to_json(),
@@ -360,7 +372,7 @@ impl Settings {
         o.insert("positions".into(), json!(self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>()));
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
-        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "md_preview": w.md_preview, "geom": geom,
+        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_preview": w.md_preview, "geom": geom,
             "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
             "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos,
             "print": { "paper": w.print.paper.code(), "landscape": w.print.landscape, "font_pt": w.print.font_pt, "margin_mm": w.print.margin_mm, "line_numbers": w.print.line_numbers, "header": w.print.header, "footer": w.print.footer } }));
@@ -553,12 +565,12 @@ mod tests {
         let f = dir.join("s.json");
         std::env::set_var("IDE_FAST_SETTINGS", &f);
         let mut s = Settings::default();
-        s.lang = "ja".into(); s.auto_indent = false; s.smart_indent = true; s.insert_spaces = true;
+        s.system_title_bar = true; s.lang = "ja".into(); s.auto_indent = false; s.smart_indent = true; s.insert_spaces = true;
         s.default_encoding = "UTF-16LE".into(); s.default_eol = "LF".into(); s.save_backup = true; s.check_external = false; s.confirm_close = false;
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, ai_w: 360.0, md_w: 480.0, side_collapsed: true, right_collapsed: true, bottom_collapsed: true, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉

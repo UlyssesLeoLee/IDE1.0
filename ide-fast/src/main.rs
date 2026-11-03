@@ -48,6 +48,8 @@ mod curlx;
 mod split;
 mod appicon;
 mod mdtools;
+mod panels;
+mod relaunch;
 
 use std::time::Instant;
 
@@ -76,8 +78,10 @@ fn main() -> eframe::Result<()> {
     let trace = Trace::new();
     trace.mark("main enter");
     let (force_new, args) = split_new_flag(std::env::args().skip(1).collect());
+    // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
+    let (relaunched, args) = relaunch::take_flag(args);
     // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
-    if !force_new && instance::forward_to_running(&args) {
+    if !force_new && !relaunched && instance::forward_to_running(&args) {
         trace.mark("handed over to the running instance");
         return Ok(());
     }
@@ -88,7 +92,8 @@ fn main() -> eframe::Result<()> {
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
-    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0]);
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0])
+        .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
     if let Some(icon) = appicon::window_icon() { viewport = viewport.with_icon(std::sync::Arc::new(icon)); }
     if let Some(g) = st.view.geom {
         viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
@@ -102,7 +107,7 @@ fn main() -> eframe::Result<()> {
         persist_window: false,
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "IDE1.0 Fast",
         options,
         Box::new(move |cc| {
@@ -118,7 +123,12 @@ fn main() -> eframe::Result<()> {
             let _ = blur;
             Ok(Box::new(app::App::new(args, inbox, trace)))
         }),
-    )
+    );
+    // 「立即重启」: 窗口已经关完、设置已经落盘, 再拉起新进程 (带着现在打开的文件)
+    if let Some(paths) = relaunch::take() {
+        let _ = relaunch::spawn(&paths, st.restore_session);
+    }
+    result
 }
 
 #[cfg(test)]
