@@ -22,7 +22,7 @@ use editcore::type_config::{TokenKind, TypeConfig, TypeRegistry};
 use std::path::PathBuf;
 
 mod chrome;
-mod extras;
+mod textcmds;
 mod ghopts;
 mod aichat;
 mod mdopts;

@@ -29,7 +29,7 @@
 | 批次 5 偏好对话框 / 状态持久化 / i18n / 导入导出 / 类型别设置 / 字体行高 / 颜色覆盖 / 保存时备份 | done | |
 | 批次 5 会话恢复 (重开上次的标签) | done | 批次 9: 启动无命令行文件时恢复; 路径当不可信数据校验 (拒绝 UNC / 相对路径 / 超长), 跳过大文件, 偏好里可关 |
 | 批次 5 自动备份定时器 / 打开时文件锁 | done (批次 10) | `backup.rs`: 选项开着且有未保存文档时才排刷新 (无轮询), 备份到设置目录 `autosave/` (设置 > 打开自动备份文件); 文件锁 = Windows 共享读 / 禁止写, 保存时自动放开 (非 Windows 无强制锁, 提示不支持) |
-| 批次 5 查找栏 / 侧栏 / 终端 / Grep 面板文字翻译 | not done | 菜单、对话框、状态栏、命令表、偏好已翻译; 这几处还是中文字面量 |
+| 批次 5 查找栏 / 侧栏 / 终端 / Grep 面板文字翻译 | done (批次 10) | 菜单、对话框、状态栏、命令表、偏好、查找条、侧栏、Git、终端、Grep 面板均三语; 个别状态提示消息 (tip) 仍是中文 |
 | 批次 5 sakura.ini 导入 | done (批次 10) | 与 Tauri 版同等: Common 的 MRU / 退出确认 / 备份 / 正则 / 大小写 / 单词, Types(0) 的 Tab / 空格 / 自动缩进 / 智能缩进 / 换行方式, Types(n) 按 szTypeExts 写进按扩展名的覆盖项 |
 | 批次 6 视图开关 / 行号 / 状态栏 / 标尺 / 空白标记 / 当前行 / 小地图 / 状态栏内容 / 修改行标记 / 主题插件映射 | done | |
 | 批次 6 工具栏 / 功能键栏 / 活动栏 / 应用图标 | done (批次 10) | `app/chrome.rs`: 三者都在「视图」菜单里开关, 默认关 (极简布局不变); 文字按钮, 命令走注册表; 窗口图标取自 ide-fast.ico 的 64px PNG 帧 (`appicon.rs`)。自绘标题栏: not done | 纯外观: 需要图标资源和自绘窗口边框 (`with_decorations(false)` 会丢系统的拖动 / 贴边行为); 菜单栏 + 命令面板已覆盖入口 |
@@ -51,7 +51,7 @@
 | 批次 8 脚本插件 (QuickJS 宿主 / 命令贡献 / `editor.write` / SVG / PPA / 文档关系图) | done | 惰性启动, 15 秒墙钟中断, 2 MB 结果上限, SVG 用 `svg_lite` 子集 |
 | 批次 8 `markdown.fence` (Pele / mermaid) 接入预览 | done (批次 10) | `svg_lite` 补了 CSS 变量 / transform / 继承绘制属性 / 圆弧 / 多边形, 围栏经插件宿主惰性渲染并按主题着色 |
 | 批次 8 `agent.tool` 贡献 | done (批次 10) | AI 面板的工具表含启用且有 agent.tool 权限的插件工具, 调用 `agent.tool:<name>`, 补丁提案过 editcore 同一道校验 |
-| 批次 8 AI Chat 面板 (A4) | done (批次 10) | 右侧面板 (Ctrl+Alt+L): 接口 / 模型 / 密钥存 ai.json, 流式回复 (系统 curl, 密钥走 stdin), 工具往返 (6 轮), 补丁提案应用 / 拒绝, 插入编辑器, 取消; 仅 https (回环可 http), 4MB 上限, 超时; 本机模拟服务测试 |
+| 批次 8 AI Chat 面板 (A4) | done (批次 10) | 右侧面板 (Ctrl+Alt+L): 接口 / 模型 / 密钥存 ai.json, 流式回复 (系统 curl, 密钥走 stdin), 工具往返 (6 轮; 模型点名的插件工具须在清单 `contributes["agent.tool"]` 里声明且名字合法, 否则回「unknown tool」), 补丁提案应用 / 拒绝, 插入编辑器, 取消; 仅 https (回环可 http), 4MB 上限, 超时; 流式回复按行解码不会切坏多字节字符; 密钥明文存放, 设置页有一行提示; 保存失败会显示; 联网只在点发送 (含首次同意) 时发生; 本机模拟服务测试。联网与原子写盘分别在 `curlx.rs` / `fsx.rs`, 与 GitHub 插件共用 |
 | 决策 A1-A3 (JS 引擎 / SVG) | done | rquickjs; 自带 `svg_lite` 代替 resvg |
 | 决策 A5 玻璃主题 | partial (批次 10) | 见上 |
 | 决策 A6 i18n | done | 中 / 日 / 英 |
@@ -143,7 +143,7 @@ This batch replaces the hard-coded `shortcuts()` and `menu()`.
 6. Editor font family and line height; text and token colour overrides.
 7. Auto-backup timer and file-lock on open.
 
-**Status (batch 5 done):** items 1-6 and the save-time backup are implemented (`prefs.rs`, `i18n.rs`, `settings.rs`); not done: the auto-backup timer and file-lock on open, translation of the find bar / sidebar / terminal / grep labels (menus, dialogs, status bar, command table and preferences are translated), and the sakura.ini import only maps a handful of keys.
+**Status (batch 5 done, updated batch 10):** items 1-6 and the save-time backup are implemented (`prefs.rs`, `i18n.rs`, `settings.rs`); the auto-backup timer, file lock on open, find bar / sidebar / terminal / grep translation and the full sakura.ini import landed in batch 10 (see the table at the top).
 
 ## Batch 6: View and design parity
 

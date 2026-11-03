@@ -501,10 +501,7 @@ fn write_atomic(p: &std::path::Path, v: &Value) {
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let tmp = p.with_extension("json.tmp");
-    if std::fs::write(&tmp, serde_json::to_vec_pretty(v).unwrap_or_default()).is_ok() {
-        let _ = std::fs::rename(&tmp, p);
-    }
+    let _ = crate::fsx::atomic_write(p, &serde_json::to_vec_pretty(v).unwrap_or_default(), false);
 }
 
 #[cfg(test)]

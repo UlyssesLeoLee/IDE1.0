@@ -116,13 +116,9 @@ fn write_all(dir: &Path, jobs: &[Job]) {
     }
 }
 
-/// 同目录临时文件 + 换名
+/// 同目录临时文件 + 换名 (见 `fsx`)
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
+    crate::fsx::atomic_write(path, bytes, false)
 }
 
 fn prune(dir: &Path, max_age: Duration) {

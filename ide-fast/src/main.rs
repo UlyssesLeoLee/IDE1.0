@@ -43,6 +43,8 @@ mod textdrag;
 mod backup;
 mod ghplugin;
 mod ai;
+mod fsx;
+mod curlx;
 mod split;
 mod appicon;
 mod mdtools;

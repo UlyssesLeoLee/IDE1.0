@@ -70,6 +70,14 @@ enum Act {
 }
 
 impl App {
+    /// 保存 AI 配置; 写盘失败要让用户看见
+    fn ai_save_cfg(&mut self) {
+        if let Err(e) = self.ai_cfg().save() {
+            let m = tr("ai.save-failed").replacen("{}", &e, 1);
+            self.ai.items.push(Item::Err(m));
+        }
+    }
+
     fn ai_cfg(&mut self) -> &mut AiConfig {
         self.ai.cfg.get_or_insert_with(AiConfig::load)
     }
@@ -194,11 +202,10 @@ impl App {
         for (slot, call) in turn.tool_calls.iter().enumerate() {
             let args = ai::parse_args(&call.args);
             if let Some((pid, tool)) = ai::split_plugin_tool(&call.name) {
-                let ok = installed.iter().any(|p| p.enabled && p.manifest.id == pid && p.manifest.permissions.iter().any(|x| x == "agent.tool"));
-                if ok {
+                if ai::plugin_tool_declared(&installed, &pid, &tool) {
                     spawn.push((slot, call.clone(), pid, tool, args));
                 } else {
-                    immediate.push((slot, call.clone(), json!({ "error": format!("插件工具不可用 (插件已禁用或不存在): {}", call.name) })));
+                    immediate.push((slot, call.clone(), json!({ "error": format!("unknown tool: {}", call.name) })));
                 }
             } else {
                 immediate.push((slot, call.clone(), ai::exec_builtin(&call.name, &args, rows)));
@@ -341,7 +348,7 @@ impl App {
             if allow {
                 let c = self.ai_cfg();
                 c.consent = true;
-                c.save();
+                self.ai_save_cfg();
             }
             self.ai_start(q, allow, ctx);
         }
@@ -444,7 +451,7 @@ impl App {
             Some(Act::Reject(i)) => self.ai.items[i] = Item::Sys(tr("ai.rejected").into()),
             Some(Act::Insert(t)) => { self.cur().edit("paste", Some(t)); }
             Some(Act::Copy(t)) => ctx.copy_text(t),
-            Some(Act::Save) => { self.ai_cfg().save(); self.ai.settings = false; }
+            Some(Act::Save) => { self.ai_save_cfg(); self.ai.settings = false; }
             None => {}
         }
     }
