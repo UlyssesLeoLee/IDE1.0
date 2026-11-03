@@ -255,7 +255,7 @@ impl CmdUi {
                 });
             });
         });
-        if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.keylist = None; }
+        if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.keylist = None; }
         tip
     }
 }

@@ -230,7 +230,7 @@ pub fn is_modifier_key(k: Key) -> bool {
     matches!(k, ShiftLeft | ShiftRight | ControlLeft | ControlRight | AltLeft | AltRight | SuperLeft | SuperRight | CapsLock | NumLock | ScrollLock | Fn)
 }
 
-/// 用户新绑的键是否安全: 不能把普通打字键 (没有 Ctrl / Alt) 抢走; 功能键和 Insert / Delete 之类的导航键可以单独用
+/// 用户新绑的键是否安全: 不能把普通打字键 (没有 Ctrl / Alt) 抢走; 只有功能键可以不带修饰键单独用
 pub fn validate_binding(m: Modifiers, k: Key) -> Result<(), String> {
     use Key::*;
     if is_modifier_key(k) { return Err(tr("kc.err-modifier").into()); }

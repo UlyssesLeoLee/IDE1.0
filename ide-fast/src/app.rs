@@ -1645,7 +1645,7 @@ impl App {
             ui.strong(format!("IDE1.0 Fast {}", env!("CARGO_PKG_VERSION")));
             ui.label(tr("ui.about"));
         });
-        if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.about_open = false; }
+        if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.about_open = false; }
     }
 
     /// 命令面板 / 键位设置 / 键位一览三个窗口; 键位改动立刻套用并落盘
@@ -2629,6 +2629,7 @@ mod tests {
 
     #[test]
     fn comparing_two_tabs_marks_lines_tracks_edits_and_ends_when_a_tab_closes() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
         let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
         a.new_doc();
         set_lines(&mut a.docs[0], "a\nb\nc");
@@ -2654,6 +2655,7 @@ mod tests {
 
     #[test]
     fn diff_step_walks_hunks_and_wraps() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
         let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
         a.new_doc();
         set_lines(&mut a.docs[0], "1\n2\n3\n4\n5\n6");
@@ -2673,6 +2675,7 @@ mod tests {
 
     #[test]
     fn renaming_a_file_or_folder_retargets_open_tabs() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
         let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
         a.docs[0].path = Some(PathBuf::from("/p/old/a.txt"));
         a.docs[0].name = "a.txt".into();
@@ -2684,6 +2687,7 @@ mod tests {
 
     #[test]
     fn opening_a_text_doc_makes_a_read_only_tab() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
         let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
         a.open_text_doc("Diff: x.diff", "@@ -1 +1 @@\n-a\n+b\n");
         let d = a.cur();
@@ -2728,6 +2732,7 @@ mod tests {
 
     #[test]
     fn session_is_restored_only_without_command_line_files() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
         let dir = std::env::temp_dir().join(format!("idefast-session-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
@@ -2754,6 +2759,7 @@ mod tests {
 
     #[test]
     fn session_snapshot_survives_the_close_confirmation_loop() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
         let dir = std::env::temp_dir().join(format!("idefast-exit-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
