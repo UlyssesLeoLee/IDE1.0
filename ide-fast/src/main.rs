@@ -39,6 +39,8 @@ mod textconv;
 mod tools;
 mod tagjump;
 mod kinsoku;
+mod icons;
+mod msgtr;
 mod textdrag;
 mod backup;
 mod ghplugin;

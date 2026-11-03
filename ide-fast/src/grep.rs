@@ -536,7 +536,7 @@ impl Grep {
         if ui.button(crate::i18n::trz("全部置换 (改写文件, 保留 .bak)")).clicked() {
             ev.push(Ev::ReplaceAll);
         }
-        ui.label(&self.msg);
+        ui.label(crate::msgtr::msg(&self.msg).as_ref());
         let row_h = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
         egui::ScrollArea::both().auto_shrink([false, false]).show_rows(ui, row_h, self.results.len(), |ui, range| {
             for i in range {

@@ -31,6 +31,8 @@ pub(super) struct SysState {
     pub decor: bool,
     /// 自绘标题栏里的应用图标 (第一次画时才建纹理)
     pub title_icon: Option<egui::TextureHandle>,
+    /// 启动时发现的遗留自动备份 (非空 = 弹「恢复」窗口)
+    pub restore: Vec<crate::backup::Leftover>,
     pub bottom: BottomTab,
     /// 输出页的日志 (备份 / 锁 / 导出 / 插件安装 ... 的结果)
     pub log: Vec<String>,
@@ -74,6 +76,60 @@ impl App {
             self.log(msg.clone());
             self.cur().tip = msg;
         }
+    }
+
+    /// 遗留备份的年龄文字
+    pub(super) fn age_text(secs: Option<u64>) -> String {
+        match secs {
+            None => tr("sys.restore-age-unknown").to_string(),
+            Some(s) if s < 3600 => trf("sys.restore-age-min", &[&(s / 60).max(1).to_string()]),
+            Some(s) if s < 86400 => trf("sys.restore-age-hour", &[&(s / 3600).to_string()]),
+            Some(s) => trf("sys.restore-age-day", &[&(s / 86400).to_string()]),
+        }
+    }
+
+    /// 启动后的恢复提示: 列出遗留备份, 可逐个打开 / 全部打开 / 全部丢弃 / 稍后 (稍后 = 文件留着, 下次启动再问)。只在有遗留时才画, 不轮询
+    pub(super) fn restore_window(&mut self, ctx: &egui::Context) {
+        if self.sys.restore.is_empty() { return; }
+        let (mut open_one, mut open_all, mut discard, mut later) = (None, false, false, false);
+        egui::Window::new(tr("sys.restore-title")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+            ui.label(tr("sys.restore-hint"));
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                for (i, l) in self.sys.restore.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        if ui.small_button(tr("sys.restore-open")).clicked() { open_one = Some(i); }
+                        ui.label(format!("{}  ({} KB, {})", l.name, (l.size + 1023) / 1024, Self::age_text(l.age_secs)));
+                    });
+                }
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                open_all = ui.button(tr("sys.restore-open-all")).clicked();
+                discard = ui.button(tr("sys.restore-discard")).clicked();
+                later = ui.button(tr("sys.restore-later")).clicked();
+            });
+        });
+        if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { later = true; }
+        if let Some(i) = open_one {
+            let l = self.sys.restore.remove(i);
+            self.open_path(&l.path);
+        }
+        if open_all {
+            let n = self.sys.restore.len();
+            for l in std::mem::take(&mut self.sys.restore) { self.open_path(&l.path); }
+            let msg = trf("sys.restore-opened", &[&n.to_string()]);
+            self.log(msg.clone());
+            self.cur().tip = msg;
+        }
+        if discard {
+            let n = self.sys.restore.len();
+            for l in std::mem::take(&mut self.sys.restore) { let _ = std::fs::remove_file(&l.path); }
+            let msg = trf("sys.restore-discarded", &[&n.to_string()]);
+            self.log(msg.clone());
+            self.cur().tip = msg;
+        }
+        if later { self.sys.restore.clear(); }
     }
 
     /// 半透明主题要重启才能让窗口真正透明: 问一句「立即重启 / 稍后」。立即重启 = 走正常关闭流程 (有未保存的先问), 关完由 main 拉起新进程

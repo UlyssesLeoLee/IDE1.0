@@ -41,6 +41,44 @@ pub fn file_name(path: Option<&Path>, name: &str, id: u64) -> String {
     format!("{clean}.{h:016x}.autosave")
 }
 
+/// 启动时发现的遗留备份 (上次没正常关: 崩溃 / 断电 / 结束进程)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Leftover {
+    pub path: PathBuf,
+    pub name: String,
+    pub size: u64,
+    /// 距今多少秒 (拿不到修改时间 = None)
+    pub age_secs: Option<u64>,
+}
+
+/// 最多列几个 (备份目录被塞满也不卡启动)
+const MAX_LEFTOVERS: usize = 40;
+
+/// 扫描备份目录里的 `.autosave` 文件, 新的在前。只认普通文件 (不跟符号链接), 空文件跳过。目录不存在 = 空
+pub fn leftovers_in(dir: &Path) -> Vec<Leftover> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
+    let now = std::time::SystemTime::now();
+    let mut v: Vec<(std::time::SystemTime, Leftover)> = vec![];
+    for e in rd.flatten().take(2000) {
+        let path = e.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("autosave") { continue; }
+        let Ok(m) = std::fs::symlink_metadata(&path) else { continue };
+        if !m.is_file() || m.len() == 0 { continue; }
+        let mt = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        // 文件名 = <原名>.<16 位指纹>.autosave, 给人看的只要原名
+        let shown = name.strip_suffix(".autosave").and_then(|r| r.rsplit_once('.')).map(|(a, _)| a.to_string()).unwrap_or(name);
+        v.push((mt, Leftover { path, name: shown, size: m.len(), age_secs: now.duration_since(mt).ok().map(|d| d.as_secs()) }));
+    }
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v.into_iter().take(MAX_LEFTOVERS).map(|x| x.1).collect()
+}
+
+/// 默认备份目录里的遗留备份
+pub fn leftovers() -> Vec<Leftover> {
+    dir().map(|d| leftovers_in(&d)).unwrap_or_default()
+}
+
 /// 距离下一次备份还有多久; 0 = 到点了
 pub fn remaining(last: Instant, now: Instant, interval_min: u32) -> Duration {
     Duration::from_secs(clamp_interval(interval_min) as u64 * 60).saturating_sub(now.saturating_duration_since(last))
@@ -220,6 +258,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn leftovers_list_autosave_files_newest_first_and_skip_junk() {
+        let d = tmp("left");
+        std::fs::write(d.join("a.txt.0123456789abcdef.autosave"), "hello").unwrap();
+        std::fs::write(d.join("empty.0000000000000000.autosave"), "").unwrap();
+        std::fs::write(d.join("note.md"), "x").unwrap();
+        std::fs::create_dir(d.join("sub.autosave")).unwrap();
+        let v = leftovers_in(&d);
+        assert_eq!(v.len(), 1, "空文件 / 非 autosave / 目录都不算");
+        assert_eq!((v[0].name.as_str(), v[0].size), ("a.txt", 5));
+        assert!(leftovers_in(&d.join("nope")).is_empty());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

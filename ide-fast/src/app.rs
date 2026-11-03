@@ -1,7 +1,7 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
 use crate::doc::Doc;
-use crate::kinsoku::expand_wrap;
+use crate::kinsoku::{expand_wrap, Wrap};
 use crate::cmds::{self, Action};
 use crate::cmdui::{CmdUi, Item, PluginCmd};
 use crate::keymap::{self, App as KApp, Run};
@@ -174,6 +174,7 @@ impl App {
         if app.docs.is_empty() {
             app.new_doc();
         }
+        if persist { app.sys.restore = crate::backup::leftovers(); } // 只扫一次: 上次没正常退出留下的自动备份
         app
     }
 
@@ -286,6 +287,11 @@ impl App {
             let d = &mut self.docs[i];
             (d.auto_indent, d.smart_indent, d.insert_spaces) = (ai, si, sp);
         }
+    }
+
+    /// 文档适用的文件类型: 手动指定的优先 (名字查不到就退回按扩展名判定)
+    fn type_of(&self, d: &Doc) -> Option<&TypeConfig> {
+        d.syntax.as_deref().and_then(|n| self.registry.by_name(n)).or_else(|| self.registry.detect(&d.name))
     }
 
     /// 某个文件名适用的 (Tab 宽度, 自动换行, Tab 插入空格)
@@ -520,7 +526,7 @@ impl App {
                 if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) { go = true; }
                 if ui.input(|i| i.key_pressed(Key::Escape)) { cancel = true; }
             }
-            if let Some(e) = &p.error { ui.colored_label(red, e); }
+            if let Some(e) = &p.error { ui.colored_label(red, crate::msgtr::msg(e).as_ref()); }
             ui.horizontal(|ui| {
                 if ui.button(trz("确定")).clicked() { go = true; }
                 if ui.button(trz("取消")).clicked() { cancel = true; }
@@ -576,11 +582,11 @@ impl App {
         if self.side.scm.loading() { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
         ui.horizontal(|ui| {
             let st = &self.side.scm.status;
-            ui.strong(if st.branch.is_empty() { "Git".to_string() } else { format!("分支 {}", st.branch) });
+            ui.strong(if st.branch.is_empty() { "Git".to_string() } else { crate::msgtr::msg(&format!("分支 {}", st.branch)).into_owned() });
             if ui.small_button(trz("刷新")).clicked() { self.side.scm.refresh(root.clone()); }
             if self.side.scm.loading() { ui.label("…"); }
         });
-        if let Some(e) = self.side.scm.status.error.clone() { ui.colored_label(self.tc.red, e); }
+        if let Some(e) = self.side.scm.status.error.clone() { ui.colored_label(self.tc.red, crate::msgtr::msg(&e).as_ref()); }
         let Some(top) = self.side.scm.status.top.clone() else { return };
         let changes = self.side.scm.status.changes.clone();
         if changes.is_empty() && self.side.scm.status.error.is_none() { ui.label(trz("没有改动")); }
@@ -702,8 +708,8 @@ impl App {
                 let right = self.docs[self.active.min(self.docs.len() - 1)].id == v.right;
                 egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                     for (n, h) in v.hunks.iter().enumerate() {
-                        let (kind, (s, len)) = (if h.a_len == 0 { "新增" } else if h.b_len == 0 { "删除" } else { "修改" }, if right { (h.b_start, h.b_len) } else { (h.a_start, h.a_len) });
-                        let label = format!("{}. {kind}  第 {} 行起 ({} 行)", n + 1, s + 1, len);
+                        let (kind, (s, len)) = (if h.a_len == 0 { trz("新增") } else if h.b_len == 0 { trz("删除") } else { trz("修改") }, if right { (h.b_start, h.b_len) } else { (h.a_start, h.a_len) });
+                        let label = trf("diff.hunk", &[&(n + 1).to_string(), kind, &(s + 1).to_string(), &len.to_string()]);
                         if ui.selectable_label(false, label).clicked() { jump = Some(s); }
                     }
                 });
@@ -1056,7 +1062,7 @@ impl App {
         let mut open = true;
         egui::Window::new(tr("dlg.props-title")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
             ui.add(egui::Label::new(egui::RichText::new(&text).monospace()).selectable(true));
-            if ui.button("复制").clicked() { ctx.copy_text(text.clone()); }
+            if ui.button(trz("复制")).clicked() { ctx.copy_text(text.clone()); }
         });
         if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.props = None; }
     }
@@ -1204,6 +1210,16 @@ impl App {
             });
             ui.menu_button(tr("menu.setting"), |ui| {
                 if ui.button(lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
+                ui.menu_button(trz("语法类型"), |ui| {
+                    let i = self.active.min(self.docs.len() - 1);
+                    let cur = self.docs[i].syntax.clone();
+                    if ui.radio(cur.is_none(), trz("自动 (按扩展名)")).clicked() { self.docs[i].syntax = None; ui.close(); }
+                    ui.separator();
+                    let names: Vec<String> = self.registry.all().iter().map(|t| t.name.clone()).collect();
+                    for n in names {
+                        if ui.radio(cur.as_deref() == Some(n.as_str()), &n).clicked() { self.docs[i].syntax = Some(n); ui.close(); }
+                    }
+                });
                 ui.menu_button(tr("sub.uilang"), |ui| {
                     for l in Lang::ALL {
                         if ui.radio(crate::i18n::cur() == l, l.native()).clicked() {
@@ -1290,6 +1306,7 @@ impl App {
                     if ui.radio(self.wrap && col > 0, label).clicked() { self.run_app(KApp::WrapCol, ctx); ui.close(); }
                     ui.separator();
                     ui.add_enabled(col > 0, egui::Checkbox::new(&mut self.cfg.view.kinsoku, trz("行头 / 行尾禁则 (指定列数折行时)")));
+                    ui.add_enabled(col > 0 && self.cfg.view.kinsoku, egui::Checkbox::new(&mut self.cfg.view.hang, trz("句读挂在行尾 (ぶら下げ)")));
                 });
                 ui.checkbox(&mut self.side.open, lk("c.sidebar", "Ctrl+B"));
                 for (a, zh, on) in [(KApp::SideCollapse, "折叠左侧栏", self.cfg.view.side_collapsed), (KApp::RightCollapse, "折叠右侧面板", self.cfg.view.right_collapsed), (KApp::BottomCollapse, "折叠底部面板", self.cfg.view.bottom_collapsed)] {
@@ -1410,7 +1427,7 @@ impl App {
                 ui.add(egui::Label::new(t).selectable(true));
             });
         });
-        let r = ui.add(egui::TextEdit::singleline(&mut self.term.input).font(egui::TextStyle::Monospace).hint_text("输入命令, Enter 执行").desired_width(f32::INFINITY));
+        let r = ui.add(egui::TextEdit::singleline(&mut self.term.input).font(egui::TextStyle::Monospace).hint_text(trz("输入命令, Enter 执行")).desired_width(f32::INFINITY));
         if r.has_focus() {
             if self.term.input.is_empty() && ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C)) { self.term.restart(); }
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) { self.term.history_step(true); }
@@ -1466,7 +1483,7 @@ impl App {
     }
 
     /// 自动换行下的 ↑ ↓ Home End: 用当前行 (和相邻行) 的真实排版找「上一 / 下一显示行」同一横坐标处
-    fn wrap_nav(&mut self, ctx: &egui::Context, font: &FontId, wrap_w: f32, tab: usize, kcols: usize, key: Key) {
+    fn wrap_nav(&mut self, ctx: &egui::Context, font: &FontId, wrap_w: f32, tab: usize, kcols: Wrap, key: Key) {
         use egui::text::CCursor;
         let ai = self.active.min(self.docs.len() - 1);
         let (r, c) = (self.docs[ai].cursor[0], self.docs[ai].cursor[1]);
@@ -1790,6 +1807,11 @@ impl App {
         self.theme_id = id.to_string();
         let spec = plugins::rows().into_iter().find(|r| r.id == id && r.enabled).and_then(|r| r.theme);
         self.sys.theme_glass = spec.as_ref().is_some_and(|t| t.translucent);
+        // 玻璃主题声明 luminance=dynamic 时, 文字色按系统「应用主题」明暗取 (一次读取, 不轮询)
+        let spec = spec.map(|mut t| {
+            if t.translucent { plugins::apply_dynamic_luminance(&mut t.vars, editcore::theme_luminance::detect()); }
+            t
+        });
         self.theme_visuals = spec.as_ref().map(|t| plugins::visuals_glass(&t.vars, t.translucent));
         self.theme_vars = spec.map(|t| t.vars);
         if self.theme_visuals.is_none() { self.theme_id.clear(); }
@@ -1850,8 +1872,8 @@ impl App {
             Action::Indent => self.cur().indent(false, tab),
             Action::Outdent => self.cur().indent(true, tab),
             Action::ToggleComment => {
-                let name = self.cur().name.clone();
-                match self.registry.detect(&name).and_then(|t| t.line_comment.clone()) {
+                let mark = { let i = self.active.min(self.docs.len() - 1); self.type_of(&self.docs[i]).and_then(|t| t.line_comment.clone()) };
+                match mark {
                     Some(mark) => { self.cur().edit("toggle-line-comment", Some(mark)); }
                     None => self.cur().tip = "这个类型没有行注释符".into(),
                 }
@@ -1941,7 +1963,7 @@ impl App {
             if self.bracket_cache.as_ref().map(|c| c.0) != Some(key) { self.bracket_cache = Some((key, d.bracket_pair())); }
             self.bracket_cache.as_ref().and_then(|c| c.1)
         };
-        let cfg: Option<TypeConfig> = if self.highlight { self.registry.detect(&self.docs[ai].name).cloned() } else { None };
+        let cfg: Option<TypeConfig> = if self.highlight { self.type_of(&self.docs[ai]).cloned() } else { None };
         let digits = format!("{}", self.docs[ai].lines.len()).len().max(3);
         let vw = self.cfg.view.clone();
         let tc = self.tc;
@@ -1949,15 +1971,16 @@ impl App {
         let pad = 6.0;
         // 自动换行: 每个逻辑行按可用宽度折成若干显示行, 行高不等 -> 记累计高度 (太长的文档不换行, 免得每次排版都要扫全篇)
         let wrap = wrap_pref && self.docs[ai].lines.len() <= 20000;
+        let wcol = self.cfg.wrap_col_for(&self.docs[ai].name, self.cfg.view.wrap_col);
         let win_w = (ui.available_width() - gutter - pad * 2.0 - 16.0).max(char_w * 8.0);
         // 指定列数折行: 列宽 = 列数 × 半角字符宽, 窗口更窄时仍以窗口为准
-        let wrap_w = if !wrap { f32::INFINITY } else if self.cfg.view.wrap_col > 0 { win_w.min(self.cfg.view.wrap_col as f32 * char_w + 1.0) } else { win_w };
+        let wrap_w = if !wrap { f32::INFINITY } else if wcol > 0 { win_w.min((wcol + if self.cfg.view.hang && self.cfg.view.kinsoku { 2 } else { 0 }) as f32 * char_w + 1.0) } else { win_w };
         // 固定列数折行 + 禁则: 折行点自己算 (显示文字里插入换行); 0 = 交给 egui 按宽度折
-        let kcols = if wrap && self.cfg.view.kinsoku { self.cfg.view.wrap_col } else { 0 };
+        let kcols = if wrap && self.cfg.view.kinsoku { Wrap { cols: wcol, hang: self.cfg.view.hang } } else { Wrap::default() };
         let use_offs = wrap || !self.docs[ai].folds.is_empty();
         let offs: Vec<f32> = if use_offs {
             let fsig: usize = self.docs[ai].folds.iter().map(|f| f.0 * 31 + f.1).sum::<usize>() + self.docs[ai].folds.len();
-            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000, tab + (wrap as usize) * 100 + kcols * 1000);
+            let key = (self.docs[ai].id, self.docs[ai].rev, wrap_w as i32 + fsig as i32 * 7, (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000, tab + (wrap as usize) * 100 + kcols.cols * 1000 + kcols.hang as usize * 50);
             if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
                 let d = &self.docs[ai];
                 let mut acc = Vec::with_capacity(d.lines.len() + 1);
@@ -2590,7 +2613,7 @@ impl App {
         let mut st_cmd: Option<StatusCmd> = None;
         if self.cfg.view.status_bar { egui::Panel::bottom("status").frame(egui::Frame::new().fill(self.tc.bg_status).inner_margin(egui::Margin::symmetric(8, 3)).stroke(egui::Stroke::new(1.0, self.tc.border))).show(root, |ui| {
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
-            let lang = self.registry.detect(&d.name).map(|c| c.name.clone());
+            let lang = self.type_of(d).map(|c| c.name.clone());
             let dcol = crate::view::display_col(&d.lines[d.cursor[0].min(d.lines.len() - 1)], d.cursor[1], self.tab);
             ui.horizontal(|ui| {
                 // 位置: 点一下 = 转到行
@@ -2628,7 +2651,7 @@ impl App {
                 if d.sel_mode { ui.colored_label(Color32::from_rgb(230, 160, 40), trz("范围选择")); }
                 if !d.extra.is_empty() { ui.label(trf("st.cursors", &[&(d.extra.len() + 1).to_string()])); }
                 ui.separator();
-                ui.label(&d.tip);
+                ui.label(crate::msgtr::msg(&d.tip).as_ref());
             });
         }); }
         match st_cmd {
@@ -2701,6 +2724,7 @@ impl App {
             else { self.editor_pane(ui, ctx, find_focus, 0); }
         });
         self.restart_window(ctx);
+        self.restore_window(ctx);
         self.window_grips(ctx);
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
@@ -2750,10 +2774,21 @@ mod tests {
     }
 
     #[test]
+    fn manual_syntax_type_overrides_the_extension_and_unknown_names_fall_back() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].name = "x.txt".into();
+        assert_eq!(a.type_of(&a.docs[0]).map(|t| t.name.as_str()), Some("Plain"));
+        a.docs[0].syntax = Some("Rust".into());
+        assert_eq!(a.type_of(&a.docs[0]).map(|t| t.name.as_str()), Some("Rust"));
+        a.docs[0].syntax = Some("NoSuchType".into());
+        assert_eq!(a.type_of(&a.docs[0]).map(|t| t.name.as_str()), Some("Plain"), "查不到 = 按扩展名");
+    }
+
+    #[test]
     fn doc_prefs_follow_settings_and_extension_overrides() {
         let mut st = Settings::default();
         st.auto_indent = false; st.smart_indent = true; st.insert_spaces = false;
-        st.file_types = vec![TypePref { ext: "py".into(), insert_spaces: Some(true), tab_width: Some(2), wrap: Some(true) }];
+        st.file_types = vec![TypePref { ext: "py".into(), insert_spaces: Some(true), tab_width: Some(2), wrap: Some(true), wrap_col: None }];
         let (mut a, _g) = app(st);
         a.docs[0].name = "x.py".into();
         a.new_doc();

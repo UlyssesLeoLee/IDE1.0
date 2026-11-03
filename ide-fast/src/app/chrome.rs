@@ -36,7 +36,10 @@ impl App {
                 if id.is_empty() { ui.separator(); continue; }
                 let Some(i) = index_of(id) else { continue };
                 let e = &keymap::entries()[i];
-                if ui.small_button(e.label.text()).on_hover_text(crate::i18n::lk_for(e)).clicked() { run = Some(i); }
+                let tip = crate::i18n::lk_for(e);
+                // 有图标的命令用画笔图标按钮 (不靠图标字体), 没有的仍是文字按钮
+                let clicked = if crate::icons::has_icon(id) { crate::icons::icon_button(ui, id, tip).clicked() } else { ui.small_button(e.label.text()).on_hover_text(tip).clicked() };
+                if clicked { run = Some(i); }
             }
         });
         if let Some(i) = run { self.run_entry(i, ctx); }

@@ -160,8 +160,8 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
         PrefsTab::Types => {
             ui.small(tr("pf.types-hint"));
             let mut remove: Option<usize> = None;
-            egui::Grid::new("pf-types").num_columns(5).spacing([8.0, 4.0]).show(ui, |ui| {
-                ui.label(tr("pf.type-ext")); ui.label(tr("pf.tab-width")); ui.label(tr("pf.wrap")); ui.label(tr("pf.insert-spaces")); ui.label("");
+            egui::Grid::new("pf-types").num_columns(6).spacing([8.0, 4.0]).show(ui, |ui| {
+                ui.label(tr("pf.type-ext")); ui.label(tr("pf.tab-width")); ui.label(tr("pf.wrap")); ui.label(tr("pf.insert-spaces")); ui.label(tr("pf.wrap-col")); ui.label("");
                 ui.end_row();
                 for (i, t) in d.file_types.iter_mut().enumerate() {
                     ui.label(format!(".{}", t.ext));
@@ -173,6 +173,12 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     });
                     tri_combo(ui, ("pf-wrap", i), &mut t.wrap);
                     tri_combo(ui, ("pf-sp", i), &mut t.insert_spaces);
+                    let mut won = t.wrap_col.is_some();
+                    let mut wc = t.wrap_col.filter(|c| *c > 0).unwrap_or(80);
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut won, "").on_hover_text(tr("pf.wrap-col-tip")).changed() { t.wrap_col = if won { Some(wc) } else { None }; }
+                        if won && ui.add(egui::DragValue::new(&mut wc).range(10..=crate::tools::WRAP_COL_MAX)).changed() { t.wrap_col = Some(wc); }
+                    });
                     if ui.small_button(tr("pf.type-remove")).clicked() { remove = Some(i); }
                     ui.end_row();
                 }

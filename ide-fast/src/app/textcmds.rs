@@ -72,8 +72,7 @@ impl App {
 
     /// 把选中的行 (没有选区 = 整篇) 复制成带颜色的 HTML 源码
     fn copy_html(&mut self, ctx: &egui::Context, numbers: bool) {
-        let name = self.cur().name.clone();
-        let cfg: Option<TypeConfig> = if self.highlight { self.registry.detect(&name).cloned() } else { None };
+        let cfg: Option<TypeConfig> = if self.highlight { let i = self.active.min(self.docs.len() - 1); self.type_of(&self.docs[i]).cloned() } else { None };
         let theme = self.syntax_theme_full();
         let fg = self.cfg.colors.text.unwrap_or_else(|| { let c = self.tc.fg; [c.r(), c.g(), c.b()] });
         let d = self.cur();

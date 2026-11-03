@@ -8,6 +8,8 @@ use crate::doc::expand_tabs;
 const NO_START: &str = "、。，．・：；？！゛゜ゝゞヽヾー々〉》」』】〕〗〙〟）］｝｠｡｣､･ﾞﾟ’”‰′″℃ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ)]},.:;?!%";
 /// 不能出现在行尾的字符 (开括号)
 const NO_END: &str = "〈《「『【〔〖〘〝（［｛｟｢‘“([{";
+/// 可「ぶら下げ」(挂在行尾、超出折行列) 的句读
+const HANGABLE: &str = "、。，．,.";
 /// 回退找折行点最多退几个字符 (退太多说明这行全是禁则字符, 干脆按原位折)
 const MAX_BACK: usize = 6;
 
@@ -20,8 +22,22 @@ pub fn cell_width(c: char) -> usize {
     if wide { 2 } else { 1 }
 }
 
-/// 算折行点: 返回「哪些字符下标处要换到新的一行」(升序, 不含 0)。`cols` = 一行最多几列 (< 2 当作不折)
+/// 折行参数: `cols` = 一行最多几列 (0 = 不处理); `hang` = 允许句读挂在行尾 (ぶら下げ)
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Wrap {
+    pub cols: usize,
+    pub hang: bool,
+}
+
+/// 算折行点 (不挂标点)
+#[cfg(test)]
 pub fn breaks(chars: &[char], cols: usize) -> Vec<usize> {
+    breaks_hang(chars, cols, false)
+}
+
+/// 算折行点: 返回「哪些字符下标处要换到新的一行」(升序, 不含 0)。`cols` = 一行最多几列 (< 2 当作不折)。
+/// `hang` 开着时, 本该折到行头的句读 (、。) 改为挂在上一行末尾, 每行最多挂一个
+pub fn breaks_hang(chars: &[char], cols: usize, hang: bool) -> Vec<usize> {
     let mut out = vec![];
     if cols < 2 {
         return out;
@@ -29,8 +45,15 @@ pub fn breaks(chars: &[char], cols: usize) -> Vec<usize> {
     let mut start = 0usize; // 当前行的第一个字符
     let mut used = 0usize;
     let mut i = 0usize;
+    let mut hung = false;
     while i < chars.len() {
         let w = cell_width(chars[i]);
+        if hang && !hung && used + w > cols && i > start && HANGABLE.contains(chars[i]) {
+            hung = true; // 挂在行尾: 不占列, 下一个字符一定要换行
+            used = cols;
+            i += 1;
+            continue;
+        }
         if used + w > cols && i > start {
             // 在 i 前折; 行头禁则 / 行尾禁则就往回退 (追い出し)
             let mut b = i;
@@ -45,6 +68,7 @@ pub fn breaks(chars: &[char], cols: usize) -> Vec<usize> {
             out.push(b);
             start = b;
             used = 0;
+            hung = false;
             i = b;
             continue;
         }
@@ -55,13 +79,14 @@ pub fn breaks(chars: &[char], cols: usize) -> Vec<usize> {
 }
 
 /// 同 `expand_tabs`, 但按 `cols` 列折行并在折行点插入 `\n`; `cols == 0` = 不处理 (原样返回)。映射表语义不变: 字符下标 -> 显示字符下标
-pub fn expand_wrap(line: &str, tab: usize, cols: usize) -> (String, Vec<usize>) {
+pub fn expand_wrap(line: &str, tab: usize, w: Wrap) -> (String, Vec<usize>) {
     let (disp, mut map) = expand_tabs(line, tab);
+    let cols = w.cols;
     if cols == 0 {
         return (disp, map);
     }
     let chars: Vec<char> = disp.chars().collect();
-    let bs = breaks(&chars, cols);
+    let bs = breaks_hang(&chars, cols, w.hang);
     if bs.is_empty() {
         return (disp, map);
     }
@@ -122,17 +147,34 @@ mod tests {
 
     #[test]
     fn expand_wrap_inserts_newlines_and_shifts_map() {
-        let (s, m) = expand_wrap("abcdefgh", 4, 4);
+        let (s, m) = expand_wrap("abcdefgh", 4, Wrap { cols: 4, hang: false });
         assert_eq!(s, "abcd\nefgh");
         assert_eq!(m, vec![0, 1, 2, 3, 5, 6, 7, 8, 9]);
         // 不折时与 expand_tabs 一致
-        assert_eq!(expand_wrap("a\tb", 4, 0), expand_tabs("a\tb", 4));
+        assert_eq!(expand_wrap("a\tb", 4, Wrap::default()), expand_tabs("a\tb", 4));
+    }
+
+    #[test]
+    fn hanging_punctuation_stays_on_the_previous_row() {
+        // 「あいう。え」 6 列: 不挂 = [2] (把う带下去); 挂 = 。 留在第一行末尾, え 换行
+        assert_eq!(breaks_hang(&"あいう。え".chars().collect::<Vec<_>>(), 6, true), vec![4]);
+        // 只挂句读: 闭括号仍走追い出し
+        assert_eq!(breaks_hang(&"あいう」え".chars().collect::<Vec<_>>(), 6, true), vec![2]);
+        // 每行最多挂一个: 连着两个句读时第二个走追い出し, 行宽不会超过 列数 + 2
+        let (s2, _) = expand_wrap("あいう。。えお", 4, Wrap { cols: 6, hang: true });
+        for row in s2.split('\n') {
+            assert!(row.chars().map(cell_width).sum::<usize>() <= 8, "{row}");
+        }
+        let (s, m) = expand_wrap("あいう。え", 4, Wrap { cols: 6, hang: true });
+        assert_eq!(s, "あいう。
+え");
+        assert_eq!(m.len(), 6);
     }
 
     #[test]
     fn every_row_fits_the_column() {
         let text = "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ、「何でも」薄暗い所で。";
-        let (s, _) = expand_wrap(text, 4, 20);
+        let (s, _) = expand_wrap(text, 4, Wrap { cols: 20, hang: false });
         for row in s.split('\n') {
             let w: usize = row.chars().map(cell_width).sum();
             assert!(w <= 20, "row too wide: {row}");

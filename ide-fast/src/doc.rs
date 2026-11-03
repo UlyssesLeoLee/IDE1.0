@@ -23,6 +23,8 @@ struct Undo {
 }
 
 pub struct Doc {
+    /// 手动指定的文件类型名 (None = 按扩展名判定)
+    pub syntax: Option<String>,
     #[allow(dead_code)]
     pub id: u64,
     pub path: Option<PathBuf>,
@@ -112,7 +114,7 @@ pub enum RecEv {
 
 impl Doc {
     pub fn untitled(id: u64, n: usize) -> Self {
-        Doc { id, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
+        Doc { id, syntax: None, path: None, name: if n <= 1 { "无标题".into() } else { format!("无标题 {n}") }, lines: vec![String::new()], cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false,
               charset: Charset::Utf8, bom: Bom::None, eol: Eol::Crlf, undo: vec![], redo: vec![], tip: String::new(), reveal: false, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: None, mixed_eol: false, auto_indent: true, smart_indent: false, insert_spaces: false, base: vec![String::new()], changed_cache: None, sel_mode: false }
     }
 
@@ -135,7 +137,7 @@ impl Doc {
             lines.push(String::new());
         }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "?".into());
-        Ok(Doc { id, path: Some(path.to_path_buf()), name, base: lines.clone(), changed_cache: None, sel_mode: false, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
+        Ok(Doc { id, syntax: None, path: Some(path.to_path_buf()), name, base: lines.clone(), changed_cache: None, sel_mode: false, lines, cursor: [0, 0], sel: None, anchor: None, goal_col: None, dirty: false, charset: d.charset, bom: d.bom, eol: d.eol,
                  undo: vec![], redo: vec![], tip: format!("{} · {} · {}", d.charset.label(), d.eol.label(), if d.lossy { "有无法解码的字节" } else { "已读取" }), reveal: true, rev: 0, bookmarks: vec![], box_sel: None, extra: vec![], rec: None, last_macro: vec![], folds: vec![], group: 0, overwrite: false, readonly: false, grep_result: false, stamp: stamp_of(path), mixed_eol: d.mixed_eol, auto_indent: true, smart_indent: false, insert_spaces: false })
     }
 

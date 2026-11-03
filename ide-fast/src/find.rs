@@ -286,7 +286,7 @@ impl Find {
             if let Some(e) = &self.err {
                 ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
             } else {
-                ui.label(&self.msg);
+                ui.label(crate::msgtr::msg(&self.msg).as_ref());
             }
             if ui.button("×").clicked() { self.open = false; self.isearch = None; }
         });
@@ -321,7 +321,7 @@ impl Find {
             } else {
                 let n = self.count_label(d);
                 if !n.is_empty() { ui.weak(n); }
-                ui.label(&self.msg);
+                ui.label(crate::msgtr::msg(&self.msg).as_ref());
             }
             if ui.button("×").on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; }
         });

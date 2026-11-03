@@ -92,6 +92,18 @@ fn luminance(c: Color32) -> f32 {
     (0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32) / 255.0
 }
 
+/// 主题声明 `"luminance": "dynamic"` 时, 文字色跟桌面明暗走: 浅色桌面用深色字, 深色桌面用浅色字。
+/// 明暗取自 Windows 的「应用主题」开关 (`editcore::theme_luminance::detect`, 一次注册表读取, 选主题 / 启动时各读一次, 不轮询);
+/// 不采屏幕像素 (那要每秒截屏, 且与本窗口自身互相干扰), 所以壁纸与系统主题不一致时可能不准, 见 PARITY-PLAN。
+pub fn apply_dynamic_luminance(vars: &mut BTreeMap<String, String>, l: editcore::theme_luminance::DesktopLuminance) {
+    if vars.get("luminance").map(String::as_str) != Some("dynamic") {
+        return;
+    }
+    vars.insert("--fg".into(), l.text_primary().into());
+    vars.insert("--fg-muted".into(), l.text_muted().into());
+    vars.insert("--fg-dim".into(), l.text_dim().into());
+}
+
 /// 启动时问一句: 这个主题插件是不是半透明的 (id 为空 = 内置深 / 浅色, 不碰插件仓库)
 pub fn is_translucent(id: &str) -> bool {
     !id.is_empty() && rows().into_iter().any(|r| r.id == id && r.enabled && r.theme.is_some_and(|t| t.translucent))
@@ -236,6 +248,27 @@ mod tests {
         assert!(g.dark_mode);
         assert_eq!(visuals(&vars).panel_fill.a(), 255, "非玻璃主题仍铺成不透明");
         assert!(!is_translucent(""), "内置主题不是玻璃");
+    }
+
+    #[test]
+    fn dynamic_luminance_flips_text_colour_with_the_desktop() {
+        use editcore::theme_luminance::DesktopLuminance::{Dark, Light};
+        let mut v: BTreeMap<String, String> = BTreeMap::new();
+        v.insert("--fg".into(), "#ffffff".into());
+        v.insert("luminance".into(), "dynamic".into());
+        let mut dark = v.clone();
+        apply_dynamic_luminance(&mut dark, Dark);
+        assert!(luminance(parse_color(&dark["--fg"]).unwrap()) > 0.9);
+        apply_dynamic_luminance(&mut v, Light);
+        assert!(luminance(parse_color(&v["--fg"]).unwrap()) < 0.1, "浅色桌面 = 深色字");
+        assert!(luminance(parse_color(&v["--fg-muted"]).unwrap()) < 0.2);
+        // 玻璃垫色跟着变: 深色字垫白
+        assert_eq!(glass_edit_tint(&v), Color32::from_rgba_unmultiplied(255, 255, 255, 77));
+        // 没声明 dynamic 的主题不动
+        let mut fixed: BTreeMap<String, String> = BTreeMap::new();
+        fixed.insert("--fg".into(), "#ffffff".into());
+        apply_dynamic_luminance(&mut fixed, Light);
+        assert_eq!(fixed["--fg"], "#ffffff");
     }
 
     #[test]
