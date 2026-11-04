@@ -2,11 +2,11 @@
 //! 查找语义全在 `Doc` (-> `editcore::search_ops`, 和 Tauri 版同一套): F3、增量查找、强调用的是同一个 `step` / `hits`,
 //! 所以三者落在同一处。这里只管状态和那两排控件, 不碰文档内部。
 
-use crate::ui_ext::TipExt;
 use crate::ckbox::CheckExt;
 use crate::doc::Doc;
-use eframe::egui::{self, Key};
+use crate::ui_ext::TipExt;
 use editcore::search_ops::Hit;
+use eframe::egui::{self, Key};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -24,7 +24,13 @@ pub struct FindOpts {
 
 impl Default for FindOpts {
     fn default() -> Self {
-        FindOpts { case: false, regex: false, word: false, wrap: true, migemo: false }
+        FindOpts {
+            case: false,
+            regex: false,
+            word: false,
+            wrap: true,
+            migemo: false,
+        }
     }
 }
 
@@ -35,15 +41,26 @@ pub fn migemo_regex(roma: &str) -> Option<String> {
     if roma.is_empty() || roma.chars().count() > 48 {
         return None;
     }
-    let mut alts: Vec<String> = editcore::migemo::expand_pattern(roma).into_iter().filter(|p| !p.is_empty()).take(64).map(|p| regex_escape(&p)).collect();
+    let mut alts: Vec<String> = editcore::migemo::expand_pattern(roma)
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .take(64)
+        .map(|p| regex_escape(&p))
+        .collect();
     alts.dedup();
-    if alts.is_empty() { None } else { Some(format!("(?:{})", alts.join("|"))) }
+    if alts.is_empty() {
+        None
+    } else {
+        Some(format!("(?:{})", alts.join("|")))
+    }
 }
 
 fn regex_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 4);
     for c in s.chars() {
-        if "\\.+*?()|[]{}^$#&-~".contains(c) { out.push('\\'); }
+        if "\\.+*?()|[]{}^$#&-~".contains(c) {
+            out.push('\\');
+        }
         out.push(c);
     }
     out
@@ -52,7 +69,13 @@ fn regex_escape(s: &str) -> String {
 impl FindOpts {
     /// 键盘宏里的检索标志 (`S_SearchNext` 等) 换成查找条件
     pub fn from_flags(f: &editcore::macro_sakura::SearchFlags) -> Self {
-        FindOpts { case: f.case_sensitive, regex: f.regex, word: f.word, wrap: f.wrap, migemo: false }
+        FindOpts {
+            case: f.case_sensitive,
+            regex: f.regex,
+            word: f.word,
+            wrap: f.wrap,
+            migemo: false,
+        }
     }
 }
 
@@ -102,7 +125,22 @@ pub struct Find {
 
 impl Find {
     pub fn new() -> Self {
-        Find { open: false, replace: false, needle: String::new(), repl: String::new(), opts: FindOpts::default(), marks: true, in_sel: false, msg: String::new(), err: None, isearch: None, focus: Focus::None, start: [0, 0], last: None, cache: HashMap::new() }
+        Find {
+            open: false,
+            replace: false,
+            needle: String::new(),
+            repl: String::new(),
+            opts: FindOpts::default(),
+            marks: true,
+            in_sel: false,
+            msg: String::new(),
+            err: None,
+            isearch: None,
+            focus: Focus::None,
+            start: [0, 0],
+            last: None,
+            cache: HashMap::new(),
+        }
     }
 
     /// 打开查找栏: 单行选区的文字作查找串, 记下增量查找的起点; `replace` = 同时显示置换行并把焦点放在它上面
@@ -117,7 +155,11 @@ impl Find {
             self.replace = true;
         }
         // 开着置换且查找串已有内容 (多半是刚从选区取来的) = 直接去填置换串
-        self.focus = if replace && !self.needle.is_empty() { Focus::Repl } else { Focus::Find };
+        self.focus = if replace && !self.needle.is_empty() {
+            Focus::Repl
+        } else {
+            Focus::Find
+        };
         self.err = d.find_error(&self.needle, self.opts);
         self.last = Some((self.needle.clone(), self.opts)); // 打开时不动选区
     }
@@ -155,7 +197,9 @@ impl Find {
     }
 
     fn seed_from_doc(&mut self, d: &Doc) -> bool {
-        let Some(t) = d.selected_text_single().or_else(|| d.word_at_cursor()) else { return false };
+        let Some(t) = d.selected_text_single().or_else(|| d.word_at_cursor()) else {
+            return false;
+        };
         self.needle = if self.opts.regex { escape_regex(&t) } else { t };
         true
     }
@@ -169,7 +213,8 @@ impl Find {
             Ok(found) => {
                 self.msg = d.tip.clone();
                 if found {
-                    self.start = d.sel.map(|s| [s[0], s[1]]).unwrap_or(d.cursor); // 之后再改查找串, 从这里接着找
+                    self.start = d.sel.map(|s| [s[0], s[1]]).unwrap_or(d.cursor);
+                    // 之后再改查找串, 从这里接着找
                 }
             }
             Err(e) => self.err = Some(e),
@@ -229,7 +274,12 @@ impl Find {
     }
 
     pub fn marks_for(&mut self, d: &Doc) -> Option<Arc<Vec<Hit>>> {
-        if !self.open || !self.marks || self.needle.is_empty() || self.err.is_some() || d.lines.len() > MARK_MAX_ROWS {
+        if !self.open
+            || !self.marks
+            || self.needle.is_empty()
+            || self.err.is_some()
+            || d.lines.len() > MARK_MAX_ROWS
+        {
             self.cache.clear();
             return None;
         }
@@ -242,7 +292,15 @@ impl Find {
             self.cache.clear();
         }
         let hits = Arc::new(d.find_hits(&self.needle, self.opts).unwrap_or_default());
-        self.cache.insert(d.id, Marks { rev: d.rev, needle: self.needle.clone(), opts: self.opts, hits: hits.clone() });
+        self.cache.insert(
+            d.id,
+            Marks {
+                rev: d.rev,
+                needle: self.needle.clone(),
+                opts: self.opts,
+                hits: hits.clone(),
+            },
+        );
         Some(hits)
     }
 
@@ -259,41 +317,93 @@ impl Find {
     /// 圆角 8 + 1px 边 + 阴影 `0 6px 24px`; 头部标题 15px + ✕, 正文(查找串 / 选项 / 置换行 / 状态), 底部按钮 `↑ ↓ 关闭`
     pub fn window(&mut self, ctx: &egui::Context, d: &mut Doc) {
         let w = dialog_width(ctx.content_rect().width());
-        let (fill, edge) = { let v = &ctx.global_style().visuals; (v.window_fill, v.window_stroke.color) };
-        let frame = egui::Frame::new().fill(fill).stroke(egui::Stroke::new(1.0, edge)).corner_radius(8.0)
-            .shadow(egui::epaint::Shadow { offset: [0, 6], blur: 24, spread: 0, color: egui::Color32::from_black_alpha(89) });
+        let (fill, edge) = {
+            let v = &ctx.global_style().visuals;
+            (v.window_fill, v.window_stroke.color)
+        };
+        let frame = egui::Frame::new()
+            .fill(fill)
+            .stroke(egui::Stroke::new(1.0, edge))
+            .corner_radius(8.0)
+            .shadow(egui::epaint::Shadow {
+                offset: [0, 6],
+                blur: 24,
+                spread: 0,
+                color: egui::Color32::from_black_alpha(89),
+            });
         let isearch = self.isearch.is_some();
-        egui::Window::new("find-dialog").title_bar(false).resizable(false).collapsible(false).anchor(egui::Align2::RIGHT_TOP, [-DIALOG_RIGHT, DIALOG_TOP]).frame(frame).show(ctx, |ui| {
-            ui.set_width(w);
-            ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
-            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                ui.set_width(w - 24.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(crate::i18n::trz(if isearch { "增量查找" } else { "查找" })).size(15.0));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.scope(|ui| {
-                            crate::btnstyle::outline(ui);
-                            if ui.add(egui::Button::new("×").min_size(egui::Vec2::new(28.0, 24.0))).tip(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; self.isearch = None; }
+        egui::Window::new("find-dialog")
+            .title_bar(false)
+            .resizable(false)
+            .collapsible(false)
+            .anchor(egui::Align2::RIGHT_TOP, [-DIALOG_RIGHT, DIALOG_TOP])
+            .frame(frame)
+            .show(ctx, |ui| {
+                ui.set_width(w);
+                ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(w - 24.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(crate::i18n::trz(if isearch {
+                                    "增量查找"
+                                } else {
+                                    "查找"
+                                }))
+                                .size(15.0),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.scope(|ui| {
+                                        crate::btnstyle::outline(ui);
+                                        if ui
+                                            .add(
+                                                egui::Button::new("×")
+                                                    .min_size(egui::Vec2::new(28.0, 24.0)),
+                                            )
+                                            .tip(crate::i18n::trz("关闭 Esc"))
+                                            .clicked()
+                                        {
+                                            self.open = false;
+                                            self.isearch = None;
+                                        }
+                                    });
+                                },
+                            );
                         });
                     });
-                });
-            });
-            let y = ui.cursor().top();
-            ui.painter().hline(ui.max_rect().x_range(), y, egui::Stroke::new(1.0, edge));
-            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                ui.set_width(w - 24.0);
-                if isearch { self.isearch_body(ui, d); } else { self.full_body(ui, d); }
-            });
-            if !isearch {
-                // 底部按钮区: 与正文之间一条 1px 分隔线 (Tauri `.md-foot` 的上边框)
                 let y = ui.cursor().top();
-                ui.painter().hline(ui.max_rect().x_range(), y, egui::Stroke::new(1.0, edge));
-                egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                    ui.set_width(w - 24.0);
-                    ui.scope(|ui| { crate::btnstyle::outline(ui); self.full_footer(ui, d); });
-                });
-            }
-        });
+                ui.painter()
+                    .hline(ui.max_rect().x_range(), y, egui::Stroke::new(1.0, edge));
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(w - 24.0);
+                        if isearch {
+                            self.isearch_body(ui, d);
+                        } else {
+                            self.full_body(ui, d);
+                        }
+                    });
+                if !isearch {
+                    // 底部按钮区: 与正文之间一条 1px 分隔线 (Tauri `.md-foot` 的上边框)
+                    let y = ui.cursor().top();
+                    ui.painter()
+                        .hline(ui.max_rect().x_range(), y, egui::Stroke::new(1.0, edge));
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(12, 8))
+                        .show(ui, |ui| {
+                            ui.set_width(w - 24.0);
+                            ui.scope(|ui| {
+                                crate::btnstyle::outline(ui);
+                                self.full_footer(ui, d);
+                            });
+                        });
+                }
+            });
         // 查找串 / 条件变了就边输入边找 (打开栏、F3、置换之后已经同步过 last, 不会误跳)
         let now = (self.needle.clone(), self.opts);
         if self.last.as_ref() != Some(&now) {
@@ -304,7 +414,12 @@ impl Find {
 
     fn needle_box(&mut self, ui: &mut egui::Ui) -> egui::Response {
         let bg = crate::btnstyle::input_bg(ui.visuals().dark_mode);
-        let r = ui.add(egui::TextEdit::singleline(&mut self.needle).background_color(bg).hint_text(crate::i18n::trz("查找内容")).desired_width(f32::INFINITY));
+        let r = ui.add(
+            egui::TextEdit::singleline(&mut self.needle)
+                .background_color(bg)
+                .hint_text(crate::i18n::trz("查找内容"))
+                .desired_width(f32::INFINITY),
+        );
         if self.focus == Focus::Find {
             r.request_focus();
             self.focus = Focus::None;
@@ -316,8 +431,24 @@ impl Find {
     fn isearch_body(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         let fwd = self.isearch.unwrap_or(true);
         ui.horizontal(|ui| {
-            if ui.selectable_label(fwd, "↓").tip(crate::i18n::trz("向后")).clicked() && !fwd { self.isearch = Some(true); self.last = None; }
-            if ui.selectable_label(!fwd, "↑").tip(crate::i18n::trz("向前")).clicked() && fwd { self.isearch = Some(false); self.last = None; }
+            if ui
+                .selectable_label(fwd, "↓")
+                .tip(crate::i18n::trz("向后"))
+                .clicked()
+                && !fwd
+            {
+                self.isearch = Some(true);
+                self.last = None;
+            }
+            if ui
+                .selectable_label(!fwd, "↑")
+                .tip(crate::i18n::trz("向前"))
+                .clicked()
+                && fwd
+            {
+                self.isearch = Some(false);
+                self.last = None;
+            }
         });
         let r = self.needle_box(ui);
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -336,14 +467,21 @@ impl Find {
     /// 命中数 / 正则错误 / 提示
     fn status_line(&mut self, ui: &mut egui::Ui, d: &Doc, count: bool) {
         if let Some(e) = &self.err {
-            ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
+            ui.colored_label(
+                egui::Color32::from_rgb(230, 80, 80),
+                format!("{}: {e}", crate::i18n::trz("正则无效")),
+            );
         } else {
             if count {
                 let n = self.count_label(d);
-                if !n.is_empty() { ui.weak(n); }
+                if !n.is_empty() {
+                    ui.weak(n);
+                }
             }
             let m = crate::msgtr::msg(&self.msg);
-            if !m.is_empty() { ui.label(m.as_ref()); }
+            if !m.is_empty() {
+                ui.label(m.as_ref());
+            }
         }
     }
 
@@ -359,12 +497,20 @@ impl Find {
             ui.check(&mut self.opts.word, crate::i18n::trz("单词单位"));
             ui.check(&mut self.opts.regex, crate::i18n::trz("正则"));
             ui.check(&mut self.opts.wrap, crate::i18n::trz("折返"));
-            ui.check(&mut self.opts.migemo, "Migemo").tip(crate::i18n::trz("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク"));
+            ui.check(&mut self.opts.migemo, "Migemo")
+                .tip(crate::i18n::trz(
+                    "用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク",
+                ));
             ui.check(&mut self.marks, crate::i18n::trz("全部强调"));
         });
         if self.replace {
             let bg = crate::btnstyle::input_bg(ui.visuals().dark_mode);
-            let r = ui.add(egui::TextEdit::singleline(&mut self.repl).background_color(bg).desired_width(f32::INFINITY).hint_text(crate::i18n::trz("置换")));
+            let r = ui.add(
+                egui::TextEdit::singleline(&mut self.repl)
+                    .background_color(bg)
+                    .desired_width(f32::INFINITY)
+                    .hint_text(crate::i18n::trz("置换")),
+            );
             if self.focus == Focus::Repl {
                 r.request_focus();
                 self.focus = Focus::None;
@@ -374,8 +520,16 @@ impl Find {
                 r.request_focus();
             }
             ui.horizontal_wrapped(|ui| {
-                if ui.button(crate::i18n::trz("置换")).tip(crate::i18n::trz("置换当前命中并找下一个")).clicked() { self.replace_one(d); }
-                if ui.button(crate::i18n::trz("全部置换")).clicked() { self.replace_all(d); }
+                if ui
+                    .button(crate::i18n::trz("置换"))
+                    .tip(crate::i18n::trz("置换当前命中并找下一个"))
+                    .clicked()
+                {
+                    self.replace_one(d);
+                }
+                if ui.button(crate::i18n::trz("全部置换")).clicked() {
+                    self.replace_all(d);
+                }
                 ui.check(&mut self.in_sel, crate::i18n::trz("仅选区"));
             });
         }
@@ -385,13 +539,31 @@ impl Find {
     /// 底部按钮: 左 = 置换开关, 右 = `↑ 上一个 / ↓ 下一个 / 关闭`
     fn full_footer(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         ui.horizontal(|ui| {
-            if ui.selectable_label(self.replace, crate::i18n::trz("置换")).tip(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
+            if ui
+                .selectable_label(self.replace, crate::i18n::trz("置换"))
+                .tip(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)"))
+                .clicked()
+            {
                 self.replace = !self.replace;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button(crate::i18n::trz("关闭")).clicked() { self.open = false; }
-                if ui.button(format!("↓ {}", crate::i18n::trz("下一个"))).tip("F3").clicked() { self.next(d, true); }
-                if ui.button(format!("↑ {}", crate::i18n::trz("上一个"))).tip("Shift+F3").clicked() { self.next(d, false); }
+                if ui.button(crate::i18n::trz("关闭")).clicked() {
+                    self.open = false;
+                }
+                if ui
+                    .button(format!("↓ {}", crate::i18n::trz("下一个")))
+                    .tip("F3")
+                    .clicked()
+                {
+                    self.next(d, true);
+                }
+                if ui
+                    .button(format!("↑ {}", crate::i18n::trz("上一个")))
+                    .tip("Shift+F3")
+                    .clicked()
+                {
+                    self.next(d, false);
+                }
             });
         });
     }
@@ -491,7 +663,11 @@ mod tests {
         f.open_with(&d, false);
         f.needle = "(".into();
         f.changed(&mut d);
-        assert!(f.err.as_deref().unwrap_or("").contains("右括号"), "{:?}", f.err);
+        assert!(
+            f.err.as_deref().unwrap_or("").contains("右括号"),
+            "{:?}",
+            f.err
+        );
         assert_eq!(d.sel, None);
         f.opts.regex = false; // 不当正则就是普通字符
         f.changed(&mut d);
@@ -558,24 +734,43 @@ mod tests {
         let p = migemo_regex("kensaku").expect("有候选");
         assert!(p.starts_with("(?:") && p.ends_with(')'));
         assert!(p.contains("kensaku"), "原文也在候选里");
-        assert!(p.contains("けんさく") || p.contains("ケンサク"), "平假名 / 片假名候选: {p}");
+        assert!(
+            p.contains("けんさく") || p.contains("ケンサク"),
+            "平假名 / 片假名候选: {p}"
+        );
         // 正则元字符被转义, 不会让用户输入变成正则
         let q = migemo_regex("a.b*").unwrap();
         assert!(q.contains("a\\.b\\*"), "{q}");
         assert!(migemo_regex("").is_none());
-        assert!(migemo_regex(&"a".repeat(60)).is_none(), "太长就退回普通查找");
+        assert!(
+            migemo_regex(&"a".repeat(60)).is_none(),
+            "太长就退回普通查找"
+        );
     }
 
     #[test]
     fn migemo_search_finds_japanese_with_roman_letters() {
         let mut d = Doc::untitled(1, 1);
-        d.lines = vec!["abc".into(), "これは検索のテスト, けんさく, ケンサク".into()];
-        let o = FindOpts { migemo: true, ..FindOpts::default() };
+        d.lines = vec![
+            "abc".into(),
+            "これは検索のテスト, けんさく, ケンサク".into(),
+        ];
+        let o = FindOpts {
+            migemo: true,
+            ..FindOpts::default()
+        };
         assert!(d.find_step("kensaku", o, true).unwrap());
         assert_eq!(d.cursor[0], 1, "第二行才有日文");
         let hits = d.find_hits("kensaku", o).unwrap();
-        assert!(hits.len() >= 2, "平假名和片假名都应命中, 实际 {}", hits.len());
+        assert!(
+            hits.len() >= 2,
+            "平假名和片假名都应命中, 实际 {}",
+            hits.len()
+        );
         d.goto(0, 0);
-        assert!(!matches!(d.find_step("kensaku", FindOpts::default(), true), Ok(true)), "关掉 Migemo 就是字面查找");
+        assert!(
+            !matches!(d.find_step("kensaku", FindOpts::default(), true), Ok(true)),
+            "关掉 Migemo 就是字面查找"
+        );
     }
 }

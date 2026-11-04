@@ -8,13 +8,35 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Shape {
-    Line { pts: Vec<[f32; 2]>, color: Color32, w: f32 },
-    Circle { c: [f32; 2], r: f32, fill: Option<Color32> },
-    Rect { r: [f32; 4], fill: Option<Color32>, stroke: Option<Color32> },
+    Line {
+        pts: Vec<[f32; 2]>,
+        color: Color32,
+        w: f32,
+    },
+    Circle {
+        c: [f32; 2],
+        r: f32,
+        fill: Option<Color32>,
+    },
+    Rect {
+        r: [f32; 4],
+        fill: Option<Color32>,
+        stroke: Option<Color32>,
+    },
     /// `anchor`: 0 = 文字从 x 起, 0.5 = 以 x 居中, 1 = 到 x 结束 (`text-anchor`)
-    Text { p: [f32; 2], s: String, size: f32, color: Color32, anchor: f32 },
+    Text {
+        p: [f32; 2],
+        s: String,
+        size: f32,
+        color: Color32,
+        anchor: f32,
+    },
     /// 闭合图形: 填充 (从第一个点扇形剖分: 凸形 / 饼图扇形 / 箭头这类「从起点看得见全部」的形状正确) 和描边
-    Poly { pts: Vec<[f32; 2]>, fill: Option<Color32>, stroke: Option<(Color32, f32)> },
+    Poly {
+        pts: Vec<[f32; 2]>,
+        fill: Option<Color32>,
+        stroke: Option<(Color32, f32)>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,17 +73,23 @@ fn attr(tag: &str, name: &str) -> Option<String> {
 }
 
 fn unescape(s: &str) -> String {
-    s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
 }
 
 fn num(tag: &str, name: &str) -> f32 {
-    attr(tag, name).and_then(|v| v.trim_end_matches("px").parse().ok()).unwrap_or(0.0)
+    attr(tag, name)
+        .and_then(|v| v.trim_end_matches("px").parse().ok())
+        .unwrap_or(0.0)
 }
 
 mod path;
 mod xform;
 use path::path_points;
-use xform::{ap, mul, parse_transform, scale_of, M, ID};
+use xform::{ap, mul, parse_transform, scale_of, ID, M};
 
 /// `var(--名字, 备用值)` 递归展开 (有深度上限); 不是 var() 原样返回
 fn resolve(v: &str, vars: &std::collections::HashMap<String, String>, depth: u8) -> String {
@@ -137,11 +165,18 @@ fn derive(parent: &St, tag: &str, vars: &std::collections::HashMap<String, Strin
         s.sw = w;
     }
     if let Some(a) = get("text-anchor") {
-        s.anchor = match a.as_str() { "middle" => 0.5, "end" => 1.0, _ => 0.0 };
+        s.anchor = match a.as_str() {
+            "middle" => 0.5,
+            "end" => 1.0,
+            _ => 0.0,
+        };
     }
     if let Some(z) = get("font-size").as_deref().and_then(px) {
         s.size = z;
-    } else if let Some(z) = style_decl(tag, "font").and_then(|f| f.split_whitespace().find_map(|t| t.strip_suffix("px").and_then(|n| n.parse().ok()))) {
+    } else if let Some(z) = style_decl(tag, "font").and_then(|f| {
+        f.split_whitespace()
+            .find_map(|t| t.strip_suffix("px").and_then(|n| n.parse().ok()))
+    }) {
         s.size = z;
     }
     if let Some(t) = attr(tag, "transform") {
@@ -154,12 +189,20 @@ fn derive(parent: &St, tag: &str, vars: &std::collections::HashMap<String, Strin
 }
 
 fn push_item(out: &mut Svg, shape: Shape, line: Option<usize>) -> usize {
-    out.items.push(Item { shape, line, tip: None });
+    out.items.push(Item {
+        shape,
+        line,
+        tip: None,
+    });
     out.items.len() - 1
 }
 
 fn points_attr(tag: &str) -> Vec<[f32; 2]> {
-    let v: Vec<f32> = attr(tag, "points").unwrap_or_default().split([' ', ',']).filter_map(|t| t.trim().parse().ok()).collect();
+    let v: Vec<f32> = attr(tag, "points")
+        .unwrap_or_default()
+        .split([' ', ','])
+        .filter_map(|t| t.trim().parse().ok())
+        .collect();
     v.chunks_exact(2).map(|c| [c[0], c[1]]).collect()
 }
 
@@ -172,7 +215,16 @@ pub fn parse(svg: &str) -> Result<Svg, String> {
 pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String> {
     let mut out = Svg::default();
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let root = St { fill: Some(Color32::BLACK), stroke: None, sw: 1.0, anchor: 0.0, size: 13.0, color: Color32::BLACK, tf: ID, line: None };
+    let root = St {
+        fill: Some(Color32::BLACK),
+        stroke: None,
+        sw: 1.0,
+        anchor: 0.0,
+        size: 13.0,
+        color: Color32::BLACK,
+        tf: ID,
+        line: None,
+    };
     // 绘制状态栈: 栈底是 <svg>, 每个 <g> 压一层, 子元素继承栈顶
     let mut stack: Vec<St> = vec![root];
     let mut skip_depth = 0usize; // <script> / <foreignObject> / <defs> ... 里面的全部忽略
@@ -181,7 +233,16 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
     let mut text_ix: Option<usize> = None;
     let mut title_for: Option<usize> = None;
     let mut in_title = false;
-    const SKIP: [&str; 8] = ["script", "foreignObject", "defs", "marker", "clipPath", "mask", "symbol", "style"];
+    const SKIP: [&str; 8] = [
+        "script",
+        "foreignObject",
+        "defs",
+        "marker",
+        "clipPath",
+        "mask",
+        "symbol",
+        "style",
+    ];
     while let Some(lt) = rest.find('<') {
         let text_before = &rest[..lt];
         rest = &rest[lt..];
@@ -201,7 +262,9 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
         }
         let closing = tag.starts_with('/');
         let body = tag.trim_start_matches('/');
-        let name_end = body.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(body.len());
+        let name_end = body
+            .find(|c: char| c.is_whitespace() || c == '/')
+            .unwrap_or(body.len());
         let name = &body[..name_end];
         let selfclose = tag.ends_with('/');
         if closing {
@@ -248,7 +311,10 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                 }
                 stack[0] = derive(&stack[0], tag, &vars);
                 if let Some(vb) = attr(tag, "viewBox") {
-                    let v: Vec<f32> = vb.split([' ', ',']).filter_map(|s| s.parse().ok()).collect();
+                    let v: Vec<f32> = vb
+                        .split([' ', ','])
+                        .filter_map(|s| s.parse().ok())
+                        .collect();
                     if v.len() == 4 {
                         out.w = v[2];
                         out.h = v[3];
@@ -275,7 +341,11 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                             let closed = pts.len() > 2 && pts.first() == pts.last();
                             let pts: Vec<[f32; 2]> = pts.iter().map(|p| ap(&st.tf, *p)).collect();
                             let shape = if closed && st.fill.is_some() {
-                                Shape::Poly { pts, fill: st.fill, stroke }
+                                Shape::Poly {
+                                    pts,
+                                    fill: st.fill,
+                                    stroke,
+                                }
                             } else if let Some((color, w)) = stroke {
                                 Shape::Line { pts, color, w }
                             } else {
@@ -287,15 +357,27 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                         first
                     }
                     "line" => stroke.map(|(color, w)| {
-                        let pts = vec![ap(&st.tf, [num(tag, "x1"), num(tag, "y1")]), ap(&st.tf, [num(tag, "x2"), num(tag, "y2")])];
+                        let pts = vec![
+                            ap(&st.tf, [num(tag, "x1"), num(tag, "y1")]),
+                            ap(&st.tf, [num(tag, "x2"), num(tag, "y2")]),
+                        ];
                         push_item(&mut out, Shape::Line { pts, color, w }, st.line)
                     }),
                     "polyline" | "polygon" => {
-                        let mut pts: Vec<[f32; 2]> = points_attr(tag).iter().map(|p| ap(&st.tf, *p)).collect();
+                        let mut pts: Vec<[f32; 2]> =
+                            points_attr(tag).iter().map(|p| ap(&st.tf, *p)).collect();
                         if pts.len() < 2 {
                             None
                         } else if name == "polygon" {
-                            Some(push_item(&mut out, Shape::Poly { pts, fill: st.fill, stroke }, st.line))
+                            Some(push_item(
+                                &mut out,
+                                Shape::Poly {
+                                    pts,
+                                    fill: st.fill,
+                                    stroke,
+                                },
+                                st.line,
+                            ))
                         } else {
                             stroke.map(|(color, w)| {
                                 pts.shrink_to_fit();
@@ -303,15 +385,52 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                             })
                         }
                     }
-                    "circle" => Some(push_item(&mut out, Shape::Circle { c: ap(&st.tf, [num(tag, "cx"), num(tag, "cy")]), r: num(tag, "r") * sc, fill: st.fill }, st.line)),
-                    "ellipse" => Some(push_item(&mut out, Shape::Circle { c: ap(&st.tf, [num(tag, "cx"), num(tag, "cy")]), r: (num(tag, "rx") + num(tag, "ry")) / 2.0 * sc, fill: st.fill }, st.line)),
+                    "circle" => Some(push_item(
+                        &mut out,
+                        Shape::Circle {
+                            c: ap(&st.tf, [num(tag, "cx"), num(tag, "cy")]),
+                            r: num(tag, "r") * sc,
+                            fill: st.fill,
+                        },
+                        st.line,
+                    )),
+                    "ellipse" => Some(push_item(
+                        &mut out,
+                        Shape::Circle {
+                            c: ap(&st.tf, [num(tag, "cx"), num(tag, "cy")]),
+                            r: (num(tag, "rx") + num(tag, "ry")) / 2.0 * sc,
+                            fill: st.fill,
+                        },
+                        st.line,
+                    )),
                     "rect" => {
-                        let (x, y, w, h) = (num(tag, "x"), num(tag, "y"), num(tag, "width"), num(tag, "height"));
+                        let (x, y, w, h) = (
+                            num(tag, "x"),
+                            num(tag, "y"),
+                            num(tag, "width"),
+                            num(tag, "height"),
+                        );
                         let shape = if st.tf[1].abs() < 1e-6 && st.tf[2].abs() < 1e-6 {
                             let (a, b) = (ap(&st.tf, [x, y]), ap(&st.tf, [x + w, y + h]));
-                            Shape::Rect { r: [a[0].min(b[0]), a[1].min(b[1]), (b[0] - a[0]).abs(), (b[1] - a[1]).abs()], fill: st.fill, stroke: st.stroke }
+                            Shape::Rect {
+                                r: [
+                                    a[0].min(b[0]),
+                                    a[1].min(b[1]),
+                                    (b[0] - a[0]).abs(),
+                                    (b[1] - a[1]).abs(),
+                                ],
+                                fill: st.fill,
+                                stroke: st.stroke,
+                            }
                         } else {
-                            Shape::Poly { pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]].iter().map(|p| ap(&st.tf, *p)).collect(), fill: st.fill, stroke }
+                            Shape::Poly {
+                                pts: [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]
+                                    .iter()
+                                    .map(|p| ap(&st.tf, *p))
+                                    .collect(),
+                                fill: st.fill,
+                                stroke,
+                            }
                         };
                         Some(push_item(&mut out, shape, st.line))
                     }
@@ -319,7 +438,17 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                         // text
                         match st.fill {
                             Some(color) => {
-                                let ix = push_item(&mut out, Shape::Text { p: ap(&st.tf, [num(tag, "x"), num(tag, "y")]), s: String::new(), size: (st.size * sc).clamp(4.0, 200.0), color, anchor: st.anchor }, st.line);
+                                let ix = push_item(
+                                    &mut out,
+                                    Shape::Text {
+                                        p: ap(&st.tf, [num(tag, "x"), num(tag, "y")]),
+                                        s: String::new(),
+                                        size: (st.size * sc).clamp(4.0, 200.0),
+                                        color,
+                                        anchor: st.anchor,
+                                    },
+                                    st.line,
+                                );
                                 if !selfclose {
                                     text_ix = Some(ix);
                                 }
@@ -340,7 +469,8 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
     if !seen_svg {
         return Err("不是 SVG".into());
     }
-    out.items.retain(|it| !matches!(&it.shape, Shape::Text { s, .. } if s.trim().is_empty()));
+    out.items
+        .retain(|it| !matches!(&it.shape, Shape::Text { s, .. } if s.trim().is_empty()));
     if out.items.is_empty() {
         return Err("SVG 里没有可绘制的图元".into());
     }
@@ -359,24 +489,34 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
 
 fn bbox_max(s: &Shape) -> (f32, f32) {
     match s {
-        Shape::Line { pts, .. } => pts.iter().fold((0.0, 0.0), |a, p| (f32::max(a.0, p[0]), f32::max(a.1, p[1]))),
+        Shape::Line { pts, .. } => pts.iter().fold((0.0, 0.0), |a, p| {
+            (f32::max(a.0, p[0]), f32::max(a.1, p[1]))
+        }),
         Shape::Circle { c, r, .. } => (c[0] + r, c[1] + r),
         Shape::Rect { r, .. } => (r[0] + r[2], r[1] + r[3]),
-        Shape::Text { p, s, size, .. } => (p[0] + s.chars().count() as f32 * size * 0.6, p[1] + 4.0),
-        Shape::Poly { pts, .. } => pts.iter().fold((0.0, 0.0), |a, p| (f32::max(a.0, p[0]), f32::max(a.1, p[1]))),
+        Shape::Text { p, s, size, .. } => {
+            (p[0] + s.chars().count() as f32 * size * 0.6, p[1] + 4.0)
+        }
+        Shape::Poly { pts, .. } => pts.iter().fold((0.0, 0.0), |a, p| {
+            (f32::max(a.0, p[0]), f32::max(a.1, p[1]))
+        }),
     }
 }
 
 /// 把 SVG 画进 `ui` (固定 1:1 大小, 外面套 ScrollArea)。返回被点击的 `data-line` (1 起)
 pub fn show(ui: &mut egui::Ui, svg: &Svg, text_override: Option<Color32>) -> Option<usize> {
-    let (resp, painter) = ui.allocate_painter(Vec2::new(svg.w.max(1.0), svg.h.max(1.0)), Sense::click());
+    let (resp, painter) =
+        ui.allocate_painter(Vec2::new(svg.w.max(1.0), svg.h.max(1.0)), Sense::click());
     let o = resp.rect.min.to_vec2();
     let at = |p: [f32; 2]| Pos2::new(p[0], p[1]) + o;
     // 先算每个分组的包围盒 (用来命中 + 高亮), 同时画出来
     let mut boxes: Vec<(usize, Rect)> = vec![];
     let mut grow = |line: Option<usize>, r: Rect| {
         if let Some(l) = line {
-            match boxes.iter_mut().find(|(k, _)| *k == l) { Some((_, b)) => *b = b.union(r), None => boxes.push((l, r)) }
+            match boxes.iter_mut().find(|(k, _)| *k == l) {
+                Some((_, b)) => *b = b.union(r),
+                None => boxes.push((l, r)),
+            }
         }
     };
     let hover = ui.input(|i| i.pointer.hover_pos());
@@ -385,7 +525,11 @@ pub fn show(ui: &mut egui::Ui, svg: &Svg, text_override: Option<Color32>) -> Opt
     for it in &svg.items {
         match &it.shape {
             Shape::Text { s, size, color, .. } => {
-                let g = painter.layout_no_wrap(s.clone(), egui::FontId::proportional(*size), text_override.unwrap_or(*color));
+                let g = painter.layout_no_wrap(
+                    s.clone(),
+                    egui::FontId::proportional(*size),
+                    text_override.unwrap_or(*color),
+                );
                 galleys.push(Some(g));
             }
             _ => galleys.push(None),
@@ -395,8 +539,16 @@ pub fn show(ui: &mut egui::Ui, svg: &Svg, text_override: Option<Color32>) -> Opt
         let r = match &it.shape {
             Shape::Circle { c, r, .. } => Rect::from_center_size(at(*c), Vec2::splat(r * 2.0)),
             Shape::Rect { r, .. } => Rect::from_min_size(at([r[0], r[1]]), Vec2::new(r[2], r[3])),
-            Shape::Text { p, anchor, .. } => { let g = g.as_ref().unwrap(); Rect::from_min_size(at([p[0], p[1]]) - Vec2::new(anchor * g.size().x, g.size().y * 0.8), g.size()) }
-            Shape::Poly { pts, .. } => Rect::from_points(&pts.iter().map(|p| at(*p)).collect::<Vec<_>>()),
+            Shape::Text { p, anchor, .. } => {
+                let g = g.as_ref().unwrap();
+                Rect::from_min_size(
+                    at([p[0], p[1]]) - Vec2::new(anchor * g.size().x, g.size().y * 0.8),
+                    g.size(),
+                )
+            }
+            Shape::Poly { pts, .. } => {
+                Rect::from_points(&pts.iter().map(|p| at(*p)).collect::<Vec<_>>())
+            }
             Shape::Line { .. } => continue,
         };
         grow(it.line, r.expand(2.0));
@@ -413,20 +565,34 @@ pub fn show(ui: &mut egui::Ui, svg: &Svg, text_override: Option<Color32>) -> Opt
                 let ps: Vec<Pos2> = pts.iter().map(|p| at(*p)).collect();
                 painter.add(egui::Shape::line(ps, Stroke::new(*w, *color)));
             }
-            Shape::Circle { c, r, fill } => { if let Some(f) = fill { painter.circle_filled(at(*c), *r, *f); } }
+            Shape::Circle { c, r, fill } => {
+                if let Some(f) = fill {
+                    painter.circle_filled(at(*c), *r, *f);
+                }
+            }
             Shape::Rect { r, fill, stroke } => {
                 let rc = Rect::from_min_size(at([r[0], r[1]]), Vec2::new(r[2], r[3]));
-                if let Some(f) = fill { painter.rect_filled(rc, 0.0, *f); }
-                if let Some(s) = stroke { painter.rect_stroke(rc, 0.0, Stroke::new(1.0, *s), egui::StrokeKind::Inside); }
+                if let Some(f) = fill {
+                    painter.rect_filled(rc, 0.0, *f);
+                }
+                if let Some(s) = stroke {
+                    painter.rect_stroke(rc, 0.0, Stroke::new(1.0, *s), egui::StrokeKind::Inside);
+                }
             }
             Shape::Poly { pts, fill, stroke } => {
                 let ps: Vec<Pos2> = pts.iter().map(|p| at(*p)).collect();
                 if let (Some(f), Some(first)) = (fill, ps.first()) {
                     for w in ps[1..].windows(2) {
-                        painter.add(egui::Shape::convex_polygon(vec![*first, w[0], w[1]], *f, Stroke::NONE));
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![*first, w[0], w[1]],
+                            *f,
+                            Stroke::NONE,
+                        ));
                     }
                 }
-                if let Some((c, w)) = stroke { painter.add(egui::Shape::line(ps, Stroke::new(*w, *c))); }
+                if let Some((c, w)) = stroke {
+                    painter.add(egui::Shape::line(ps, Stroke::new(*w, *c)));
+                }
             }
             Shape::Text { p, anchor, .. } => {
                 let g = g.unwrap();
@@ -436,12 +602,21 @@ pub fn show(ui: &mut egui::Ui, svg: &Svg, text_override: Option<Color32>) -> Opt
         }
     }
     if let (Some(l), Some(h)) = (hot, hover) {
-        if let Some(tip) = svg.items.iter().find(|it| it.line == Some(l) && it.tip.is_some()).and_then(|it| it.tip.clone()) {
+        if let Some(tip) = svg
+            .items
+            .iter()
+            .find(|it| it.line == Some(l) && it.tip.is_some())
+            .and_then(|it| it.tip.clone())
+        {
             let _ = h;
             resp.clone().tip(tip);
         }
     }
-    if resp.clicked() { hot } else { None }
+    if resp.clicked() {
+        hot
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -454,7 +629,9 @@ mod tests {
         let v = parse(s).unwrap();
         assert_eq!((v.w, v.h), (480.0, 100.0));
         assert_eq!(v.items.len(), 3);
-        assert!(matches!(&v.items[0].shape, Shape::Line { pts, .. } if pts == &vec![[26.0, 26.0], [26.0, 50.0], [14.0, 50.0]]));
+        assert!(
+            matches!(&v.items[0].shape, Shape::Line { pts, .. } if pts == &vec![[26.0, 26.0], [26.0, 50.0], [14.0, 50.0]])
+        );
         assert_eq!(v.items[1].line, Some(3));
         assert!(matches!(&v.items[2].shape, Shape::Text { s, .. } if s == "A & B"));
         assert_eq!(v.items[2].tip.as_deref(), Some("第 3 行"));
@@ -464,10 +641,30 @@ mod tests {
     fn pele_style_svg_resolves_css_vars_transforms_and_inherited_paint() {
         let s = r#"<svg viewBox="0 0 86 160" width="86" height="160" style="--_s:var(--pele-surface,#f3f3f3);--_l:var(--pele-line,#111111);font:16px sans-serif" fill="var(--_l)"><g fill="none" stroke="var(--_l)"><path d="M42.9,56L42.9,97"/><path d="M42.9,104L39.5,96L46.3,96Z" fill="var(--_l)" stroke="none"/></g><g transform="translate(42.9,32)"><rect x="-34" y="-24" width="68" height="48" fill="var(--_s)" stroke="var(--pele-border,#8a8a8a)"/><text x="0" y="5" text-anchor="middle">Start</text></g></svg>"#;
         let v = parse_with(s, &[("--pele-surface", "#102030".into())]).unwrap();
-        assert!(matches!(&v.items[0].shape, Shape::Line { color, .. } if *color == Color32::from_rgb(0x11, 0x11, 0x11)), "继承 stroke + var 备用值: {:?}", v.items[0]);
-        assert!(matches!(&v.items[1].shape, Shape::Poly { fill: Some(_), stroke: None, .. }), "闭合 + fill = 填充多边形");
-        assert!(matches!(&v.items[2].shape, Shape::Rect { r, fill, .. } if (r[0] - 8.9).abs() < 1e-3 && r[1..] == [8.0, 68.0, 48.0] && *fill == Some(Color32::from_rgb(0x10, 0x20, 0x30))), "translate + 外部变量: {:?}", v.items[2]);
-        assert!(matches!(&v.items[3].shape, Shape::Text { p, size, anchor, s, .. } if *p == [42.9, 37.0] && *size == 16.0 && *anchor == 0.5 && s == "Start"));
+        assert!(
+            matches!(&v.items[0].shape, Shape::Line { color, .. } if *color == Color32::from_rgb(0x11, 0x11, 0x11)),
+            "继承 stroke + var 备用值: {:?}",
+            v.items[0]
+        );
+        assert!(
+            matches!(
+                &v.items[1].shape,
+                Shape::Poly {
+                    fill: Some(_),
+                    stroke: None,
+                    ..
+                }
+            ),
+            "闭合 + fill = 填充多边形"
+        );
+        assert!(
+            matches!(&v.items[2].shape, Shape::Rect { r, fill, .. } if (r[0] - 8.9).abs() < 1e-3 && r[1..] == [8.0, 68.0, 48.0] && *fill == Some(Color32::from_rgb(0x10, 0x20, 0x30))),
+            "translate + 外部变量: {:?}",
+            v.items[2]
+        );
+        assert!(
+            matches!(&v.items[3].shape, Shape::Text { p, size, anchor, s, .. } if *p == [42.9, 37.0] && *size == 16.0 && *anchor == 0.5 && s == "Start")
+        );
     }
 
     #[test]

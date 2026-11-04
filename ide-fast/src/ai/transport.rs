@@ -13,16 +13,49 @@ const MAX_TIME_SECS: u32 = 300;
 
 /// curl 配置里引号字符串的转义 (只有 \ 和 " 需要)
 fn cfg_quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r"))
+    format!(
+        "\"{}\"",
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+    )
 }
 
 /// 传给 curl 的命令行参数 (不含密钥和正文) —— 拆出来给测试
 pub fn curl_args(url: &str) -> Vec<String> {
-    let proto = if url.starts_with("https://") { "=https" } else { "=http" };
-    ["-sS", "-N", "--proto", proto, "--max-redirs", "0", "--connect-timeout", "15", "--max-time", &MAX_TIME_SECS.to_string(), "--speed-limit", "1", "--speed-time", "60", "--max-filesize", &MAX_RESPONSE.to_string(), "-K", "-", "-w", &format!("\\n{STATUS_MARK}%{{http_code}}\\n"), "--", url]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+    let proto = if url.starts_with("https://") {
+        "=https"
+    } else {
+        "=http"
+    };
+    [
+        "-sS",
+        "-N",
+        "--proto",
+        proto,
+        "--max-redirs",
+        "0",
+        "--connect-timeout",
+        "15",
+        "--max-time",
+        &MAX_TIME_SECS.to_string(),
+        "--speed-limit",
+        "1",
+        "--speed-time",
+        "60",
+        "--max-filesize",
+        &MAX_RESPONSE.to_string(),
+        "-K",
+        "-",
+        "-w",
+        &format!("\\n{STATUS_MARK}%{{http_code}}\\n"),
+        "--",
+        url,
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 
 /// 密钥和正文走标准输入的 curl 配置
@@ -47,7 +80,8 @@ pub struct Handle {
 
 impl Handle {
     pub fn cancel(&self) {
-        self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         if let Ok(mut g) = self.child.lock() {
             if let Some(c) = g.as_mut() {
                 let _ = c.kill();
@@ -60,14 +94,22 @@ impl Handle {
 }
 
 /// 起一条线程发请求, 流式把文字和最终结果送回 `tx` (每个事件后调 `wake` 让界面重绘)
-pub fn spawn_request(cfg: &AiConfig, messages: Vec<Value>, tools: Vec<Value>, tx: Sender<Event>, wake: impl Fn() + Send + 'static) -> Handle {
+pub fn spawn_request(
+    cfg: &AiConfig,
+    messages: Vec<Value>,
+    tools: Vec<Value>,
+    tx: Sender<Event>,
+    wake: impl Fn() + Send + 'static,
+) -> Handle {
     let h = Handle::default();
     let (hh, cfg) = (h.clone(), cfg.clone());
-    let _ = std::thread::Builder::new().name("ai-chat".into()).spawn(move || {
-        let turn = run_request(&cfg, &messages, &tools, &hh, &tx, &wake);
-        let _ = tx.send(Event::Done(turn));
-        wake();
-    });
+    let _ = std::thread::Builder::new()
+        .name("ai-chat".into())
+        .spawn(move || {
+            let turn = run_request(&cfg, &messages, &tools, &hh, &tx, &wake);
+            let _ = tx.send(Event::Done(turn));
+            wake();
+        });
     h
 }
 
@@ -96,10 +138,20 @@ fn pump_lines(mut rd: impl BufRead, limit: usize, mut on_line: impl FnMut(&str))
 }
 
 fn fail(cfg: &AiConfig, msg: String) -> Turn {
-    Turn { error: Some(redact(&msg, &cfg.key)), ..Default::default() }
+    Turn {
+        error: Some(redact(&msg, &cfg.key)),
+        ..Default::default()
+    }
 }
 
-fn run_request(cfg: &AiConfig, messages: &[Value], tools: &[Value], h: &Handle, tx: &Sender<Event>, wake: &dyn Fn()) -> Turn {
+fn run_request(
+    cfg: &AiConfig,
+    messages: &[Value],
+    tools: &[Value],
+    h: &Handle,
+    tx: &Sender<Event>,
+    wake: &dyn Fn(),
+) -> Turn {
     let url = match endpoint(&cfg.base_url) {
         Ok(u) => u,
         Err(e) => return fail(cfg, e),
@@ -110,10 +162,18 @@ fn run_request(cfg: &AiConfig, messages: &[Value], tools: &[Value], h: &Handle, 
         Err(e) => return fail(cfg, e),
     };
     let mut cmd = crate::curlx::curl_command();
-    cmd.args(curl_args(&url)).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(curl_args(&url))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return fail(cfg, format!("无法运行 curl ({e}): 请确认系统自带 curl 可用")),
+        Err(e) => {
+            return fail(
+                cfg,
+                format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"),
+            )
+        }
     };
     let (stdin, stdout, stderr) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
     if let Ok(mut g) = h.child.lock() {
@@ -124,9 +184,11 @@ fn run_request(cfg: &AiConfig, messages: &[Value], tools: &[Value], h: &Handle, 
     }
     // 配置写完就关 stdin (写在线程里, 避免大正文和 curl 输出互相堵死)
     if let Some(mut si) = stdin {
-        let _ = std::thread::Builder::new().name("ai-chat-in".into()).spawn(move || {
-            let _ = si.write_all(conf.as_bytes());
-        });
+        let _ = std::thread::Builder::new()
+            .name("ai-chat-in".into())
+            .spawn(move || {
+                let _ = si.write_all(conf.as_bytes());
+            });
     }
     let err_thread = stderr.map(|mut e| {
         std::thread::spawn(move || {
@@ -148,7 +210,12 @@ fn run_request(cfg: &AiConfig, messages: &[Value], tools: &[Value], h: &Handle, 
             h.cancel();
         }
     }
-    let status = h.child.lock().ok().and_then(|mut g| g.take()).and_then(|mut c| c.wait().ok());
+    let status = h
+        .child
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
+        .and_then(|mut c| c.wait().ok());
     let stderr_text = err_thread.and_then(|t| t.join().ok()).unwrap_or_default();
     let mut turn = p.finish();
     if h.cancelled() && !too_big {
@@ -156,7 +223,9 @@ fn run_request(cfg: &AiConfig, messages: &[Value], tools: &[Value], h: &Handle, 
     } else if too_big {
         turn.error = Some("响应超过大小上限, 已中止".into());
     } else if turn.error.is_none() && status.is_some_and(|s| !s.success()) {
-        turn.error = Some(stderr_text.trim().to_string()).filter(|s| !s.is_empty()).or(Some("请求失败".into()));
+        turn.error = Some(stderr_text.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or(Some("请求失败".into()));
     }
     if let Some(e) = turn.error.take() {
         turn.error = Some(redact(&e, &cfg.key));
@@ -179,13 +248,37 @@ pub fn get_json(cfg: &AiConfig, url: &str) -> Result<(u16, Value), String> {
             cfg_quote(&format!("Authorization: Bearer {}", cfg.key)),
             cfg_quote(&format!("x-api-key: {}", cfg.key)),
         );
-        let proto = if url.starts_with("https://") { "=https" } else { "=http" };
+        let proto = if url.starts_with("https://") {
+            "=https"
+        } else {
+            "=http"
+        };
         let mut cmd = crate::curlx::curl_command();
-        cmd.args(["-sS", "--proto", proto, "--max-redirs", "0", "--connect-timeout", "15", "--max-time", "30", "--max-filesize", &MODELS_MAX.to_string(), "-K", "-", "-w", "\n%{http_code}", "--", url])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = cmd.spawn().map_err(|e| format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"))?;
+        cmd.args([
+            "-sS",
+            "--proto",
+            proto,
+            "--max-redirs",
+            "0",
+            "--connect-timeout",
+            "15",
+            "--max-time",
+            "30",
+            "--max-filesize",
+            &MODELS_MAX.to_string(),
+            "-K",
+            "-",
+            "-w",
+            "\n%{http_code}",
+            "--",
+            url,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"))?;
         if let Some(mut si) = child.stdin.take() {
             let _ = si.write_all(conf.as_bytes());
         }
@@ -200,17 +293,33 @@ pub fn get_json(cfg: &AiConfig, url: &str) -> Result<(u16, Value), String> {
         let ok = child.wait().map(|s| s.success()).unwrap_or(false);
         let text = String::from_utf8_lossy(&out).to_string();
         let Some((body, code)) = text.rsplit_once('\n') else {
-            return Err(if err.trim().is_empty() { "接口没有返回内容".to_string() } else { err.trim().to_string() });
+            return Err(if err.trim().is_empty() {
+                "接口没有返回内容".to_string()
+            } else {
+                err.trim().to_string()
+            });
         };
-        let status: u16 = code.trim().parse().map_err(|_| if ok { "读不到 HTTP 状态码".to_string() } else { err.trim().to_string() })?;
+        let status: u16 = code.trim().parse().map_err(|_| {
+            if ok {
+                "读不到 HTTP 状态码".to_string()
+            } else {
+                err.trim().to_string()
+            }
+        })?;
         if status == 0 {
             // curl 没拿到任何响应 (连不上 / 超时 / 证书不对…): 状态码是 000, 真正的原因在 stderr
-            return Err(if err.trim().is_empty() { "连不上接口".to_string() } else { err.trim().to_string() });
+            return Err(if err.trim().is_empty() {
+                "连不上接口".to_string()
+            } else {
+                err.trim().to_string()
+            });
         }
         if !(200..300).contains(&status) {
             return Ok((status, Value::Null));
         }
-        serde_json::from_str::<Value>(body).map(|j| (status, j)).map_err(|_| "接口返回的不是 JSON".to_string())
+        serde_json::from_str::<Value>(body)
+            .map(|j| (status, j))
+            .map_err(|_| "接口返回的不是 JSON".to_string())
     };
     run().map_err(|e| redact(&e, &cfg.key))
 }
@@ -237,10 +346,15 @@ mod tests {
     fn multibyte_split_across_chunks_is_kept_intact() {
         let data = "data: 你好😀\nsecond 行\n".as_bytes();
         let mut lines = vec![];
-        let big = pump_lines(BufReader::with_capacity(1, OneByte(data)), 1000, |l| lines.push(l.to_string()));
+        let big = pump_lines(BufReader::with_capacity(1, OneByte(data)), 1000, |l| {
+            lines.push(l.to_string())
+        });
         assert!(!big);
         assert_eq!(lines, vec!["data: 你好😀\n", "second 行\n"]);
-        assert!(pump_lines(BufReader::new(&b"aaaa\nbbbb\n"[..]), 6, |_| {}), "超限要停");
+        assert!(
+            pump_lines(BufReader::new(&b"aaaa\nbbbb\n"[..]), 6, |_| {}),
+            "超限要停"
+        );
     }
 
     #[test]
@@ -256,9 +370,16 @@ mod tests {
         }
         let mut rd = BufReader::with_capacity(8192, Flood(0));
         let mut lines = 0;
-        assert!(pump_lines(&mut rd, 1_000_000, |_| lines += 1), "无换行洪流必须判超限");
+        assert!(
+            pump_lines(&mut rd, 1_000_000, |_| lines += 1),
+            "无换行洪流必须判超限"
+        );
         assert_eq!(lines, 0);
-        assert!(rd.get_ref().0 <= 1_000_000 + 1 + 8192, "读取量必须封顶: {}", rd.get_ref().0);
+        assert!(
+            rd.get_ref().0 <= 1_000_000 + 1 + 8192,
+            "读取量必须封顶: {}",
+            rd.get_ref().0
+        );
         // 刚好等于上限的一行 (含换行) 不算超限
         let mut exact = vec![b'y'; 99];
         exact.push(b'\n');
@@ -268,20 +389,37 @@ mod tests {
 
     #[test]
     fn debug_and_errors_never_show_the_key() {
-        let c = AiConfig { key: "sk-secret-123".into(), ..AiConfig::default_cfg() };
+        let c = AiConfig {
+            key: "sk-secret-123".into(),
+            ..AiConfig::default_cfg()
+        };
         assert!(!format!("{c:?}").contains("sk-secret"));
-        assert_eq!(redact("bad key sk-secret-123 here", &c.key), "bad key *** here");
+        assert_eq!(
+            redact("bad key sk-secret-123 here", &c.key),
+            "bad key *** here"
+        );
         let a = curl_args("https://h/v1/chat/completions").join(" ");
         assert!(!a.contains("sk-secret") && a.contains("--proto =https"));
     }
 
     #[test]
     fn config_roundtrip_and_quote() {
-        let c = AiConfig { base_url: "https://x/v1".into(), model: "m".into(), key: "k".into(), effort: "high".into(), efforts: vec![], consent: true };
+        let c = AiConfig {
+            base_url: "https://x/v1".into(),
+            model: "m".into(),
+            key: "k".into(),
+            effort: "high".into(),
+            efforts: vec![],
+            consent: true,
+        };
         assert_eq!(AiConfig::from_json(&c.to_json()), c);
         assert_eq!(AiConfig::from_json(&json!({})).base_url, PRESETS[0].1);
         let cfgtxt = curl_config("k\"ey", "{\"a\":\"b\\n\"}").unwrap();
-        assert!(cfgtxt.contains("Bearer k\\\"ey") && cfgtxt.contains("data-raw = \"{\\\"a\\\":\\\"b\\\\n\\\"}\""), "{cfgtxt}");
+        assert!(
+            cfgtxt.contains("Bearer k\\\"ey")
+                && cfgtxt.contains("data-raw = \"{\\\"a\\\":\\\"b\\\\n\\\"}\""),
+            "{cfgtxt}"
+        );
         assert!(curl_config("a\nb", "{}").is_err());
     }
 
@@ -298,7 +436,14 @@ mod tests {
                 req.extend_from_slice(&buf[..n]);
                 let txt = String::from_utf8_lossy(&req).to_string();
                 if let Some(i) = txt.find("\r\n\r\n") {
-                    let cl = txt.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                    let cl = txt
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                        })
+                        .unwrap_or(0);
                     if req.len() >= i + 4 + cl {
                         break;
                     }
@@ -307,7 +452,8 @@ mod tests {
                     break;
                 }
             }
-            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
+            let head =
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
             let _ = s.write_all(head.as_bytes());
             let _ = s.write_all(reply.as_bytes());
             let _ = s.flush();
@@ -321,10 +467,19 @@ mod tests {
 
     fn run(cfg: &AiConfig) -> (String, Turn) {
         let (tx, rx) = std::sync::mpsc::channel();
-        let _h = spawn_request(cfg, vec![json!({ "role": "user", "content": "你好" })], tool_table(&[]), tx, || {});
+        let _h = spawn_request(
+            cfg,
+            vec![json!({ "role": "user", "content": "你好" })],
+            tool_table(&[]),
+            tx,
+            || {},
+        );
         let mut text = String::new();
         loop {
-            match rx.recv_timeout(std::time::Duration::from_secs(30)).expect("超时") {
+            match rx
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .expect("超时")
+            {
                 Event::Text(t) => text.push_str(&t),
                 Event::Done(t) => return (text, t),
             }
@@ -336,24 +491,55 @@ mod tests {
     #[test]
     fn streams_from_a_local_mock_server_without_leaking_the_key() {
         let (url, srv) = mock(STREAM, false);
-        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        let cfg = AiConfig {
+            base_url: url,
+            model: "m".into(),
+            key: "sk-test-key-xyz".into(),
+            ..Default::default()
+        };
         let (text, turn) = run(&cfg);
         assert_eq!(text, "Hello");
-        assert_eq!((turn.content.as_str(), turn.http_status, turn.error.clone()), ("Hello", Some(200), None), "{turn:?}");
+        assert_eq!(
+            (turn.content.as_str(), turn.http_status, turn.error.clone()),
+            ("Hello", Some(200), None),
+            "{turn:?}"
+        );
         let req = srv.join().unwrap();
-        assert!(req.contains("Authorization: Bearer sk-test-key-xyz"), "{req}");
+        assert!(
+            req.contains("Authorization: Bearer sk-test-key-xyz"),
+            "{req}"
+        );
         assert!(req.starts_with("POST /v1/chat/completions"), "{req}");
         assert!(req.contains("\"stream\":true") && req.contains("你好"));
     }
 
     #[test]
     fn fetches_effort_levels_from_a_local_models_endpoint() {
-        let (url, srv) = mock(r#"{"data":[{"id":"other","reasoning_effort":["low"]},{"id":"m","reasoning_effort":["high","low","minimal"]}]}"#, false);
-        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
-        assert_eq!(crate::ai::fetch_efforts(&cfg).unwrap(), ["minimal", "low", "high"], "只取这个模型自己那一项, 按强弱排序");
+        let (url, srv) = mock(
+            r#"{"data":[{"id":"other","reasoning_effort":["low"]},{"id":"m","reasoning_effort":["high","low","minimal"]}]}"#,
+            false,
+        );
+        let cfg = AiConfig {
+            base_url: url,
+            model: "m".into(),
+            key: "sk-test-key-xyz".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::ai::fetch_efforts(&cfg).unwrap(),
+            ["minimal", "low", "high"],
+            "只取这个模型自己那一项, 按强弱排序"
+        );
         let req = srv.join().unwrap();
-        assert!(req.starts_with("GET /v1/models/m "), "先查这个模型自己的地址: {req}");
-        assert!(req.contains("Authorization: Bearer sk-test-key-xyz") && req.contains("x-api-key: sk-test-key-xyz"), "{req}");
+        assert!(
+            req.starts_with("GET /v1/models/m "),
+            "先查这个模型自己的地址: {req}"
+        );
+        assert!(
+            req.contains("Authorization: Bearer sk-test-key-xyz")
+                && req.contains("x-api-key: sk-test-key-xyz"),
+            "{req}"
+        );
     }
 
     /// 本机模拟服务: 连着接 `n` 个请求, 每个都回同一段 JSON
@@ -367,7 +553,9 @@ mod tests {
                 let mut buf = [0u8; 4096];
                 while !String::from_utf8_lossy(&req).contains("\r\n\r\n") {
                     let k = s.read(&mut buf).unwrap_or(0);
-                    if k == 0 { break; }
+                    if k == 0 {
+                        break;
+                    }
                     req.extend_from_slice(&buf[..k]);
                 }
                 let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{reply}").as_bytes());
@@ -382,17 +570,33 @@ mod tests {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/v1", l.local_addr().unwrap());
         drop(l); // 端口空着: 连接被拒
-        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        let cfg = AiConfig {
+            base_url: url,
+            model: "m".into(),
+            key: "sk-test-key-xyz".into(),
+            ..Default::default()
+        };
         let e = crate::ai::fetch_efforts(&cfg).unwrap_err();
-        assert!(!e.contains("HTTP 0") && e.contains("手动填写") && !e.contains("sk-test-key-xyz"), "{e}");
+        assert!(
+            !e.contains("HTTP 0") && e.contains("手动填写") && !e.contains("sk-test-key-xyz"),
+            "{e}"
+        );
     }
 
     #[test]
     fn effort_fetch_reports_a_model_missing_from_the_list_without_leaking_the_key() {
         let url = mock_json_n(r#"{"data":[{"id":"other","reasoning_effort":["low"]}]}"#, 2);
-        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        let cfg = AiConfig {
+            base_url: url,
+            model: "m".into(),
+            key: "sk-test-key-xyz".into(),
+            ..Default::default()
+        };
         let e = crate::ai::fetch_efforts(&cfg).unwrap_err();
-        assert!(e.contains("接口列表里没有模型 m") && e.contains("手动填写"), "两个地址都返回了列表却没有这个模型: {e}");
+        assert!(
+            e.contains("接口列表里没有模型 m") && e.contains("手动填写"),
+            "两个地址都返回了列表却没有这个模型: {e}"
+        );
         assert!(!e.contains("sk-test-key-xyz"), "错误信息不带密钥: {e}");
     }
 
@@ -406,20 +610,42 @@ mod tests {
             let _ = s.read(&mut b);
             let _ = s.write_all(b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n{\"error\":{\"message\":\"Incorrect API key sk-test-key-xyz\"}}");
         });
-        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        let cfg = AiConfig {
+            base_url: url,
+            model: "m".into(),
+            key: "sk-test-key-xyz".into(),
+            ..Default::default()
+        };
         let (_, t) = run(&cfg);
         let e = t.error.unwrap();
-        assert!(e.contains("Incorrect API key") && !e.contains("sk-test-key-xyz"), "{e}");
+        assert!(
+            e.contains("Incorrect API key") && !e.contains("sk-test-key-xyz"),
+            "{e}"
+        );
 
-        let (url, _srv) = mock("data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n", true);
-        let cfg = AiConfig { base_url: url, model: "m".into(), key: "k12345".into(), ..Default::default() };
+        let (url, _srv) = mock(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n\n",
+            true,
+        );
+        let cfg = AiConfig {
+            base_url: url,
+            model: "m".into(),
+            key: "k12345".into(),
+            ..Default::default()
+        };
         let (tx, rx) = std::sync::mpsc::channel();
         let h = spawn_request(&cfg, vec![], vec![], tx, || {});
-        assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(15)).unwrap(), Event::Text(_)));
+        assert!(matches!(
+            rx.recv_timeout(std::time::Duration::from_secs(15)).unwrap(),
+            Event::Text(_)
+        ));
         let t0 = std::time::Instant::now();
         h.cancel();
         loop {
-            if let Event::Done(t) = rx.recv_timeout(std::time::Duration::from_secs(10)).expect("取消后应结束") {
+            if let Event::Done(t) = rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("取消后应结束")
+            {
                 assert_eq!(t.error.as_deref(), Some("已取消"));
                 break;
             }
@@ -429,7 +655,12 @@ mod tests {
 
     #[test]
     fn refuses_non_https_remote_before_any_network() {
-        let cfg = AiConfig { base_url: "http://example.com/v1".into(), model: "m".into(), key: "k12345".into(), ..Default::default() };
+        let cfg = AiConfig {
+            base_url: "http://example.com/v1".into(),
+            model: "m".into(),
+            key: "k12345".into(),
+            ..Default::default()
+        };
         let (_, t) = run(&cfg);
         assert!(t.error.unwrap().contains("https"));
     }

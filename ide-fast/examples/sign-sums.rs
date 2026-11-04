@@ -24,7 +24,9 @@ fn load_key(path: &str) -> Result<SigningKey, String> {
         }
         s
     } else {
-        raw.as_slice().try_into().map_err(|_| "私钥文件应是 64 个十六进制字符或 32 个原始字节".to_string())?
+        raw.as_slice()
+            .try_into()
+            .map_err(|_| "私钥文件应是 64 个十六进制字符或 32 个原始字节".to_string())?
     };
     Ok(SigningKey::from_bytes(&seed))
 }
@@ -39,11 +41,19 @@ fn check_version_line(text: &str, ver: &str, ch: &str) -> Result<(), String> {
         };
         let parts: Vec<&str> = core.split('.').collect();
         parts.len() == 3
-            && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
-            && pre.map_or(true, |p| p.split('.').all(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')))
+            && parts
+                .iter()
+                .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+            && pre.map_or(true, |p| {
+                p.split('.').all(|s| {
+                    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                })
+            })
     };
     if !bare_semver {
-        return Err(format!("--version 不是裸 semver (X.Y.Z 或 X.Y.Z-pre.N, 不带 v 前缀 / +build): {ver}"));
+        return Err(format!(
+            "--version 不是裸 semver (X.Y.Z 或 X.Y.Z-pre.N, 不带 v 前缀 / +build): {ver}"
+        ));
     }
     if ch != "stable" && ch != "dev" {
         return Err(format!("--channel 只能是 stable 或 dev: {ch}"));
@@ -55,7 +65,9 @@ fn check_version_line(text: &str, ver: &str, ch: &str) -> Result<(), String> {
     let first = first.strip_suffix('\r').unwrap_or(first);
     let want = format!("version: {ver} channel: {ch}");
     if first != want {
-        return Err(format!("拒绝签名: 清单第一行必须恰好是 \"{want}\", 实际是 \"{first}\""));
+        return Err(format!(
+            "拒绝签名: 清单第一行必须恰好是 \"{want}\", 实际是 \"{first}\""
+        ));
     }
     Ok(())
 }

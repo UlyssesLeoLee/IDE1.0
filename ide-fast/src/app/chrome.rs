@@ -5,7 +5,20 @@ use crate::panels::Dock;
 use crate::sidebar::Tab;
 use egui::Key;
 
-const FKEYS: [Key; 12] = [Key::F1, Key::F2, Key::F3, Key::F4, Key::F5, Key::F6, Key::F7, Key::F8, Key::F9, Key::F10, Key::F11, Key::F12];
+const FKEYS: [Key; 12] = [
+    Key::F1,
+    Key::F2,
+    Key::F3,
+    Key::F4,
+    Key::F5,
+    Key::F6,
+    Key::F7,
+    Key::F8,
+    Key::F9,
+    Key::F10,
+    Key::F11,
+    Key::F12,
+];
 
 /// 命令 id 在注册表里的下标
 pub(super) fn index_of(id: &str) -> Option<usize> {
@@ -16,7 +29,10 @@ pub(super) fn index_of(id: &str) -> Option<usize> {
 pub fn function_key_cmds(bound: &[(usize, egui::Modifiers, Key)]) -> [Option<usize>; 12] {
     let mut out = [None; 12];
     for (n, k) in FKEYS.iter().enumerate() {
-        out[n] = bound.iter().find(|(_, m, key)| key == k && *m == egui::Modifiers::NONE).map(|b| b.0);
+        out[n] = bound
+            .iter()
+            .find(|(_, m, key)| key == k && *m == egui::Modifiers::NONE)
+            .map(|b| b.0);
     }
     out
 }
@@ -27,16 +43,27 @@ impl App {
         let cmds = self.cfg.toolbar_cmds.clone(); // 首选项 > 工具栏里自定义的按钮
         ui.horizontal_wrapped(|ui| {
             for id in &cmds {
-                if id.is_empty() { ui.separator(); continue; }
+                if id.is_empty() {
+                    ui.separator();
+                    continue;
+                }
                 let Some(i) = index_of(id) else { continue };
                 let e = &keymap::entries()[i];
                 let tip = crate::i18n::lk_for(e);
                 // 有图标的命令用画笔图标按钮 (不靠图标字体), 没有的仍是文字按钮
-                let clicked = if crate::icons::has_icon(id) { crate::icons::icon_button(ui, id.as_str(), tip).clicked() } else { ui.small_button(e.label.text()).tip(tip).clicked() };
-                if clicked { run = Some(i); }
+                let clicked = if crate::icons::has_icon(id) {
+                    crate::icons::icon_button(ui, id.as_str(), tip).clicked()
+                } else {
+                    ui.small_button(e.label.text()).tip(tip).clicked()
+                };
+                if clicked {
+                    run = Some(i);
+                }
             }
         });
-        if let Some(i) = run { self.run_entry(i, ctx); }
+        if let Some(i) = run {
+            self.run_entry(i, ctx);
+        }
     }
 
     pub(super) fn funckey_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -45,14 +72,24 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             for (n, c) in cmds.iter().enumerate() {
                 let (label, tip) = match c {
-                    Some(i) => (keymap::entries()[*i].label.text(), crate::i18n::lk_for(&keymap::entries()[*i])),
+                    Some(i) => (
+                        keymap::entries()[*i].label.text(),
+                        crate::i18n::lk_for(&keymap::entries()[*i]),
+                    ),
                     None => ("", String::new()),
                 };
-                let b = ui.add_enabled(c.is_some(), egui::Button::new(format!("F{} {}", n + 1, label)).small());
-                if c.is_some() && b.tip(tip).clicked() { run = *c; }
+                let b = ui.add_enabled(
+                    c.is_some(),
+                    egui::Button::new(format!("F{} {}", n + 1, label)).small(),
+                );
+                if c.is_some() && b.tip(tip).clicked() {
+                    run = *c;
+                }
             }
         });
-        if let Some(i) = run { self.run_entry(i, ctx); }
+        if let Some(i) = run {
+            self.run_entry(i, ctx);
+        }
     }
 
     /// 活动栏 (Tauri 的 `#activity-bar`): 44 宽 rail 底色, 32x32 的矢量图标钮, 间距 4;
@@ -71,14 +108,37 @@ impl App {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::splat(RAIL_BTN), Sense::click());
                 let p = ui.painter();
                 let (act_bg, act_fg) = rail_active(tc.dark, tc.blue);
-                if on { p.rect_filled(rect, 6.0, act_bg); } else if resp.hovered() { p.rect_filled(rect, 6.0, tc.bg_hover); }
-                let col = if on { act_fg } else if resp.hovered() { tc.fg } else { tc.fg_dim };
+                if on {
+                    p.rect_filled(rect, 6.0, act_bg);
+                } else if resp.hovered() {
+                    p.rect_filled(rect, 6.0, tc.bg_hover);
+                }
+                let col = if on {
+                    act_fg
+                } else if resp.hovered() {
+                    tc.fg
+                } else {
+                    tc.fg_dim
+                };
                 crate::svgicon::paint(p, rect.center(), 18.0, icon, col, 1.8);
                 if on {
-                    let bar = if tc.dark { Color32::from_rgb(0x00, 0x7a, 0xcc) } else { Color32::from_rgb(0x00, 0x5f, 0xb8) };
-                    p.rect_filled(Rect::from_center_size(egui::pos2(edge + 1.5, rect.center().y), Vec2::new(3.0, RAIL_BTN * 0.6)), 2.0, bar);
+                    let bar = if tc.dark {
+                        Color32::from_rgb(0x00, 0x7a, 0xcc)
+                    } else {
+                        Color32::from_rgb(0x00, 0x5f, 0xb8)
+                    };
+                    p.rect_filled(
+                        Rect::from_center_size(
+                            egui::pos2(edge + 1.5, rect.center().y),
+                            Vec2::new(3.0, RAIL_BTN * 0.6),
+                        ),
+                        2.0,
+                        bar,
+                    );
                 }
-                if resp.tip(trz(tip)).clicked() { hit = Some(*t); }
+                if resp.tip(trz(tip)).clicked() {
+                    hit = Some(*t);
+                }
             }
         });
         if let Some(t) = hit {
@@ -110,7 +170,11 @@ const RAIL: &[(Tab, &[crate::svgicon::PathDef], &str)] = &[
 
 /// 活动项的 (底色, 图标色): 深色白 12% 叠色 + 白图标; 浅色 `#e8edf3` + 强调蓝
 pub fn rail_active(dark: bool, blue: Color32) -> (Color32, Color32) {
-    if dark { (Color32::from_white_alpha(31), Color32::WHITE) } else { (Color32::from_rgb(0xe8, 0xed, 0xf3), blue) }
+    if dark {
+        (Color32::from_white_alpha(31), Color32::WHITE)
+    } else {
+        (Color32::from_rgb(0xe8, 0xed, 0xf3), blue)
+    }
 }
 
 #[cfg(test)]
@@ -120,7 +184,15 @@ mod tests {
     #[test]
     fn rail_has_the_five_tauri_entries_in_order() {
         let tabs: Vec<Tab> = RAIL.iter().map(|r| r.0).collect();
-        assert!(tabs == vec![Tab::Files, Tab::Search, Tab::Scm, Tab::Outline, Tab::Plugins]);
+        assert!(
+            tabs == vec![
+                Tab::Files,
+                Tab::Search,
+                Tab::Scm,
+                Tab::Outline,
+                Tab::Plugins
+            ]
+        );
     }
 
     #[test]
@@ -131,16 +203,30 @@ mod tests {
 
     #[test]
     fn toolbar_commands_all_exist_in_the_registry() {
-        for id in crate::settings::DEFAULT_TOOLBAR.iter().filter(|s| !s.is_empty()) {
+        for id in crate::settings::DEFAULT_TOOLBAR
+            .iter()
+            .filter(|s| !s.is_empty())
+        {
             assert!(index_of(id).is_some(), "工具栏命令 {id} 不在注册表里");
         }
-        let d: Vec<String> = crate::settings::DEFAULT_TOOLBAR.iter().map(|s| s.to_string()).collect();
-        assert_eq!(crate::settings::sanitize_toolbar(d.clone()), d, "默认工具栏清洗后原样");
+        let d: Vec<String> = crate::settings::DEFAULT_TOOLBAR
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            crate::settings::sanitize_toolbar(d.clone()),
+            d,
+            "默认工具栏清洗后原样"
+        );
     }
 
     #[test]
     fn function_keys_pick_unmodified_bindings_only() {
-        let b = vec![(3, egui::Modifiers::NONE, Key::F3), (4, egui::Modifiers::CTRL, Key::F4), (5, egui::Modifiers::NONE, Key::F5)];
+        let b = vec![
+            (3, egui::Modifiers::NONE, Key::F3),
+            (4, egui::Modifiers::CTRL, Key::F4),
+            (5, egui::Modifiers::NONE, Key::F5),
+        ];
         let m = function_key_cmds(&b);
         assert_eq!((m[2], m[3], m[4], m[0]), (Some(3), None, Some(5), None));
     }

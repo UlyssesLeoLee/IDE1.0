@@ -4,20 +4,42 @@
 use eframe::egui::{Event, Key, Modifiers};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NavKey { Up, Down, Left, Right }
+pub enum NavKey {
+    Up,
+    Down,
+    Left,
+    Right,
+}
 
 pub fn nav_key(key: Key, m: Modifiers) -> Option<NavKey> {
-    if m.any() { return None; }
-    Some(match key { Key::ArrowUp => NavKey::Up, Key::ArrowDown => NavKey::Down, Key::ArrowLeft => NavKey::Left, Key::ArrowRight => NavKey::Right, _ => return None })
+    if m.any() {
+        return None;
+    }
+    Some(match key {
+        Key::ArrowUp => NavKey::Up,
+        Key::ArrowDown => NavKey::Down,
+        Key::ArrowLeft => NavKey::Left,
+        Key::ArrowRight => NavKey::Right,
+        _ => return None,
+    })
 }
 
 /// 返回 (顶层菜单下标, 高亮项下标)。`n_items == 0` 时 ↑ ↓ 不动 (菜单项还没登记)
-pub fn step(menu: usize, item: Option<usize>, n_menus: usize, n_items: usize, key: NavKey) -> (usize, Option<usize>) {
+pub fn step(
+    menu: usize,
+    item: Option<usize>,
+    n_menus: usize,
+    n_items: usize,
+    key: NavKey,
+) -> (usize, Option<usize>) {
     match key {
         NavKey::Right if n_menus > 0 => ((menu + 1) % n_menus, None),
         NavKey::Left if n_menus > 0 => ((menu + n_menus - 1) % n_menus, None),
         NavKey::Down if n_items > 0 => (menu, Some(item.map_or(0, |i| (i + 1) % n_items))),
-        NavKey::Up if n_items > 0 => (menu, Some(item.map_or(n_items - 1, |i| (i + n_items - 1) % n_items))),
+        NavKey::Up if n_items > 0 => (
+            menu,
+            Some(item.map_or(n_items - 1, |i| (i + n_items - 1) % n_items)),
+        ),
         _ => (menu, item),
     }
 }
@@ -25,7 +47,19 @@ pub fn step(menu: usize, item: Option<usize>, n_menus: usize, n_items: usize, ke
 /// 这一批原始事件里有没有 Alt+字母 (没有 Ctrl / Command)
 fn alt_letter(events: &[Event]) -> Option<char> {
     events.iter().find_map(|e| match e {
-        Event::Key { key, pressed: true, modifiers, .. } if modifiers.alt && !modifiers.ctrl && !modifiers.command && key.name().len() == 1 && key.name().chars().all(|c| c.is_ascii_alphabetic()) => key.name().chars().next(),
+        Event::Key {
+            key,
+            pressed: true,
+            modifiers,
+            ..
+        } if modifiers.alt
+            && !modifiers.ctrl
+            && !modifiers.command
+            && key.name().len() == 1
+            && key.name().chars().all(|c| c.is_ascii_alphabetic()) =>
+        {
+            key.name().chars().next()
+        }
         _ => None,
     })
 }
@@ -35,11 +69,22 @@ fn alt_letter(events: &[Event]) -> Option<char> {
 /// `swallow` 跨帧保存「还要吃哪个字母、几帧」。
 pub fn scrub(events: &mut Vec<Event>, swallow: &mut Option<(char, u8)>, menu_open: bool) {
     let alt = alt_letter(events);
-    let esc = events.iter().any(|e| matches!(e, Event::Key { key: Key::Escape, pressed: true, .. }));
+    let esc = events.iter().any(|e| {
+        matches!(
+            e,
+            Event::Key {
+                key: Key::Escape,
+                pressed: true,
+                ..
+            }
+        )
+    });
     if esc && (menu_open || alt.is_some()) {
         events.retain(|e| !matches!(e, Event::Text(_)));
     }
-    if let Some(c) = alt { *swallow = Some((c, 2)); }
+    if let Some(c) = alt {
+        *swallow = Some((c, 2));
+    }
     if let Some((c, left)) = *swallow {
         events.retain(|e| !matches!(e, Event::Text(t) if t.len() == 1 && t.chars().next().is_some_and(|x| x.eq_ignore_ascii_case(&c))));
         *swallow = if left > 1 { Some((c, left - 1)) } else { None };
@@ -51,7 +96,10 @@ pub fn scrub(events: &mut Vec<Event>, swallow: &mut Option<(char, u8)>, menu_ope
 /// Alt 按下沿「武装」, 之后任何键盘 / 鼠标按键 / 滚轮 / 文字 / 失焦事件, 或又按了 Ctrl / Shift / Cmd, 都解除武装; 松开沿且仍武装才算一次单按。
 /// (照 Tauri `altArmed`: Alt+字母、Alt+点击、Alt+拖选 (列块) 都不算。)
 #[derive(Default, Debug)]
-pub struct AltTap { armed: bool, alt: bool }
+pub struct AltTap {
+    armed: bool,
+    alt: bool,
+}
 
 impl AltTap {
     /// 喂一帧的原始事件; 返回「这一帧里松开了一次单按的 Alt」
@@ -61,15 +109,33 @@ impl AltTap {
             match e {
                 Event::ModifiersChanged(m) => {
                     let plain = !m.ctrl && !m.shift && !m.command && !m.mac_cmd;
-                    if m.alt && !self.alt { self.armed = plain; }
-                    if m.alt && !plain { self.armed = false; }
-                    if !m.alt && self.alt { fire |= self.armed; self.armed = false; }
+                    if m.alt && !self.alt {
+                        self.armed = plain;
+                    }
+                    if m.alt && !plain {
+                        self.armed = false;
+                    }
+                    if !m.alt && self.alt {
+                        fire |= self.armed;
+                        self.armed = false;
+                    }
                     self.alt = m.alt;
                 }
                 // Alt 键本身也作为 Event::Key (AltLeft / AltRight) 送来, 不算打断
-                Event::Key { key: Key::AltLeft | Key::AltRight, .. } => {}
-                Event::Key { .. } | Event::Text(_) | Event::PointerButton { .. } | Event::MouseWheel { .. } | Event::WindowFocused(_)
-                | Event::Copy | Event::Cut | Event::Paste(_) | Event::Ime(_) | Event::Touch { .. } => self.armed = false,
+                Event::Key {
+                    key: Key::AltLeft | Key::AltRight,
+                    ..
+                } => {}
+                Event::Key { .. }
+                | Event::Text(_)
+                | Event::PointerButton { .. }
+                | Event::MouseWheel { .. }
+                | Event::WindowFocused(_)
+                | Event::Copy
+                | Event::Cut
+                | Event::Paste(_)
+                | Event::Ime(_)
+                | Event::Touch { .. } => self.armed = false,
                 _ => {}
             }
         }
@@ -92,7 +158,9 @@ pub enum BarOut {
 
 /// 菜单栏焦点在第 `cur` 个菜单 (共 `n` 个) 时按下 `key` (无修饰键): ← → 循环切换, ↓ Enter 空格 展开并高亮第一项, ↑ 展开并高亮最后一项, Esc 退出
 pub fn bar_key(cur: usize, n: usize, key: Key, m: Modifiers) -> BarOut {
-    if m.any() { return BarOut::Pass; }
+    if m.any() {
+        return BarOut::Pass;
+    }
     match key {
         Key::ArrowLeft => BarOut::Move(step(cur, None, n, 0, NavKey::Left).0),
         Key::ArrowRight => BarOut::Move(step(cur, None, n, 0, NavKey::Right).0),
@@ -108,7 +176,13 @@ mod tests {
     use super::*;
 
     fn key(k: Key, m: Modifiers) -> Event {
-        Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: m }
+        Event::Key {
+            key: k,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: m,
+        }
     }
 
     #[test]
@@ -119,7 +193,11 @@ mod tests {
         assert_eq!(i, Some(1));
         let (_, i) = step(m, i, 7, 5, NavKey::Down);
         assert_eq!(i, Some(2), "第三次 ↓ 才到第三项");
-        assert_eq!(step(0, Some(4), 7, 5, NavKey::Down).1, Some(0), "到底回到第一项");
+        assert_eq!(
+            step(0, Some(4), 7, 5, NavKey::Down).1,
+            Some(0),
+            "到底回到第一项"
+        );
     }
 
     #[test]
@@ -131,8 +209,16 @@ mod tests {
 
     #[test]
     fn left_right_switch_menu_even_with_nothing_highlighted() {
-        assert_eq!(step(0, None, 7, 5, NavKey::Right), (1, None), "没高亮时 → 也能切");
-        assert_eq!(step(6, Some(3), 7, 5, NavKey::Right), (0, None), "最后一个再 → 回到第一个, 高亮清掉");
+        assert_eq!(
+            step(0, None, 7, 5, NavKey::Right),
+            (1, None),
+            "没高亮时 → 也能切"
+        );
+        assert_eq!(
+            step(6, Some(3), 7, 5, NavKey::Right),
+            (0, None),
+            "最后一个再 → 回到第一个, 高亮清掉"
+        );
         assert_eq!(step(0, None, 7, 5, NavKey::Left), (6, None));
         assert_eq!(step(3, Some(2), 7, 5, NavKey::Left), (2, None));
     }
@@ -152,7 +238,12 @@ mod tests {
 
     #[test]
     fn esc_with_alt_letter_in_one_frame_types_nothing() {
-        let mut ev = vec![key(Key::V, Modifiers::ALT), key(Key::Escape, Modifiers::NONE), Event::Text("v".into()), Event::Text("x".into())];
+        let mut ev = vec![
+            key(Key::V, Modifiers::ALT),
+            key(Key::Escape, Modifiers::NONE),
+            Event::Text("v".into()),
+            Event::Text("x".into()),
+        ];
         let mut sw = None;
         scrub(&mut ev, &mut sw, true);
         assert!(!ev.iter().any(|e| matches!(e, Event::Text(_))));
@@ -182,17 +273,32 @@ mod tests {
     }
 
     fn mc(alt: bool, shift: bool) -> Event {
-        Event::ModifiersChanged(Modifiers { alt, shift, ..Default::default() })
+        Event::ModifiersChanged(Modifiers {
+            alt,
+            shift,
+            ..Default::default()
+        })
     }
     fn click(pressed: bool) -> Event {
-        Event::PointerButton { pos: eframe::egui::pos2(0.0, 0.0), button: eframe::egui::PointerButton::Primary, pressed, modifiers: Modifiers::ALT }
+        Event::PointerButton {
+            pos: eframe::egui::pos2(0.0, 0.0),
+            button: eframe::egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::ALT,
+        }
     }
 
     #[test]
     fn alt_alone_fires_on_release() {
         let mut t = AltTap::default();
-        assert!(!t.feed(&[mc(true, false), key(Key::AltLeft, Modifiers::ALT)]), "Alt 键自己的 Key 事件不打断");
-        assert!(!t.feed(&[Event::PointerMoved(eframe::egui::pos2(1.0, 1.0))]), "只动鼠标不打断");
+        assert!(
+            !t.feed(&[mc(true, false), key(Key::AltLeft, Modifiers::ALT)]),
+            "Alt 键自己的 Key 事件不打断"
+        );
+        assert!(
+            !t.feed(&[Event::PointerMoved(eframe::egui::pos2(1.0, 1.0))]),
+            "只动鼠标不打断"
+        );
         assert!(t.feed(&[mc(false, false)]));
         assert!(!t.feed(&[mc(false, false)]), "只触发一次");
     }
@@ -210,7 +316,13 @@ mod tests {
             Event::Text("v".into()),
             click(true),
             click(false),
-            Event::MouseWheel { unit: eframe::egui::MouseWheelUnit::Line, delta: eframe::egui::vec2(0.0, 1.0), phase: eframe::egui::TouchPhase::Move, source: eframe::egui::MouseWheelSource::Wheel, modifiers: Modifiers::ALT },
+            Event::MouseWheel {
+                unit: eframe::egui::MouseWheelUnit::Line,
+                delta: eframe::egui::vec2(0.0, 1.0),
+                phase: eframe::egui::TouchPhase::Move,
+                source: eframe::egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::ALT,
+            },
             Event::WindowFocused(false),
         ] {
             let mut t = AltTap::default();
@@ -245,12 +357,18 @@ mod tests {
         assert_eq!(bar_key(0, 7, Key::ArrowRight, n), BarOut::Move(1));
         assert_eq!(bar_key(6, 7, Key::ArrowRight, n), BarOut::Move(0), "循环");
         assert_eq!(bar_key(0, 7, Key::ArrowLeft, n), BarOut::Move(6));
-        assert_eq!(bar_key(2, 7, Key::ArrowDown, n), BarOut::Open(2, NavKey::Down));
+        assert_eq!(
+            bar_key(2, 7, Key::ArrowDown, n),
+            BarOut::Open(2, NavKey::Down)
+        );
         assert_eq!(bar_key(2, 7, Key::Enter, n), BarOut::Open(2, NavKey::Down));
         assert_eq!(bar_key(2, 7, Key::Space, n), BarOut::Open(2, NavKey::Down));
         assert_eq!(bar_key(2, 7, Key::ArrowUp, n), BarOut::Open(2, NavKey::Up));
         assert_eq!(bar_key(2, 7, Key::Escape, n), BarOut::Leave);
         assert_eq!(bar_key(2, 7, Key::A, n), BarOut::Pass);
-        assert_eq!(bar_key(2, 7, Key::ArrowRight, Modifiers::SHIFT), BarOut::Pass);
+        assert_eq!(
+            bar_key(2, 7, Key::ArrowRight, Modifiers::SHIFT),
+            BarOut::Pass
+        );
     }
 }

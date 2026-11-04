@@ -27,7 +27,9 @@ pub fn code_label(lines: &[String], cursor: [usize; 2]) -> String {
 /// `Ln r, Col c`, 显示列与字符列不同 (全角 / Tab) 时再补 ` (表示 n)` (Tauri `updateCaretColumn`)
 pub fn pos_label(row: usize, char_col: usize, display_col: usize) -> String {
     let mut s = format!("Ln {}, Col {}", row + 1, char_col + 1);
-    if display_col != char_col + 1 { s.push_str(&format!(" (表示 {display_col})")); }
+    if display_col != char_col + 1 {
+        s.push_str(&format!(" (表示 {display_col})"));
+    }
     s
 }
 
@@ -35,7 +37,11 @@ pub fn pos_label(row: usize, char_col: usize, display_col: usize) -> String {
 fn sep(ui: &mut egui::Ui, text: Color32) {
     let r = ui.max_rect();
     let x = ui.cursor().left() + 0.5;
-    ui.painter().vline(x, r.y_range(), egui::Stroke::new(1.0, text.gamma_multiply(0.2)));
+    ui.painter().vline(
+        x,
+        r.y_range(),
+        egui::Stroke::new(1.0, text.gamma_multiply(0.2)),
+    );
     ui.add_space(1.0);
 }
 
@@ -49,102 +55,212 @@ fn item(ui: &mut egui::Ui, text: Color32, label: egui::RichText) -> egui::Respon
 }
 
 fn text_w(ui: &egui::Ui, s: &str) -> f32 {
-    ui.painter().layout_no_wrap(s.to_string(), egui::TextStyle::Body.resolve(ui.style()), Color32::WHITE).size().x
+    ui.painter()
+        .layout_no_wrap(
+            s.to_string(),
+            egui::TextStyle::Body.resolve(ui.style()),
+            Color32::WHITE,
+        )
+        .size()
+        .x
 }
 
 impl App {
     pub(super) fn status_panel(&mut self, root: &mut egui::Ui) {
-        if !self.cfg.view.status_bar { return; }
+        if !self.cfg.view.status_bar {
+            return;
+        }
         let mut st_cmd: Option<StatusCmd> = None;
         let on = self.tc.on_status();
         let welcome = self.welcome_visible();
-        let frame = egui::Frame::new().fill(self.tc.bg_status).inner_margin(egui::Margin::symmetric(0, 3));
+        let frame = egui::Frame::new()
+            .fill(self.tc.bg_status)
+            .inner_margin(egui::Margin::symmetric(0, 3));
         egui::Panel::bottom("status").frame(frame).show(root, |ui| {
             status_bar_style(ui, on);
             ui.spacing_mut().item_spacing.x = 0.0;
             // Tauri 状态栏是 11px 等宽字
-            for ts in [egui::TextStyle::Body, egui::TextStyle::Button] { ui.style_mut().text_styles.insert(ts, FontId::monospace(11.0)); }
+            for ts in [egui::TextStyle::Body, egui::TextStyle::Button] {
+                ui.style_mut()
+                    .text_styles
+                    .insert(ts, FontId::monospace(11.0));
+            }
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
-            let lang = self.type_of(d).map(|c| c.name.clone()).unwrap_or_else(|| "Plain".into());
+            let lang = self
+                .type_of(d)
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "Plain".into());
             let row = d.cursor[0].min(d.lines.len() - 1);
             let dcol = crate::view::display_col(&d.lines[row], d.cursor[1], self.tab);
             let (total_w, right) = (ui.available_width(), ui.max_rect().right());
             ui.horizontal(|ui| {
-                if d.box_sel.is_some() { item(ui, on, egui::RichText::new(tr("st.box"))); }
+                if d.box_sel.is_some() {
+                    item(ui, on, egui::RichText::new(tr("st.box")));
+                }
                 if let Some(sel) = d.sel {
                     let (n, l) = crate::view::sel_stats(&d.lines, sel);
                     let text = match self.sys.sel_count {
-                        1 => trf("st.selected-bytes", &[&crate::doc::range_text(&d.lines, sel).len().to_string(), &l.to_string()]),
+                        1 => trf(
+                            "st.selected-bytes",
+                            &[
+                                &crate::doc::range_text(&d.lines, sel).len().to_string(),
+                                &l.to_string(),
+                            ],
+                        ),
                         2 => trf("st.selected-lines", &[&l.to_string()]),
                         _ => trf("st.selected", &[&n.to_string(), &l.to_string()]),
                     };
                     ui.add_space(8.0);
                     // 点一下换统计方式 (字符 / 字节 / 行), 同 Tauri `#s-sel`
-                    if ui.add(egui::Label::new(egui::RichText::new(text)).sense(Sense::click())).tip(tr("st.sel-hint").to_string()).clicked() { st_cmd = Some(StatusCmd::SelCount); }
+                    if ui
+                        .add(egui::Label::new(egui::RichText::new(text)).sense(Sense::click()))
+                        .tip(tr("st.sel-hint").to_string())
+                        .clicked()
+                    {
+                        st_cmd = Some(StatusCmd::SelCount);
+                    }
                     ui.add_space(8.0);
                     sep(ui, on);
                 }
                 // 位置: 点一下 = 转到行; 悬停给总行数和字符列
                 ui.add_space(8.0);
-                let tip = format!("{}\n{}\n{}", trf("st.lines", &[&d.lines.len().to_string()]), tr("st.goto-hint"), trf("st.char-col", &[&(d.cursor[1] + 1).to_string()]));
-                if ui.add(egui::Label::new(pos_label(row, d.cursor[1], dcol)).sense(Sense::click())).tip(tip).clicked() { st_cmd = Some(StatusCmd::Goto); }
+                let tip = format!(
+                    "{}\n{}\n{}",
+                    trf("st.lines", &[&d.lines.len().to_string()]),
+                    tr("st.goto-hint"),
+                    trf("st.char-col", &[&(d.cursor[1] + 1).to_string()])
+                );
+                if ui
+                    .add(egui::Label::new(pos_label(row, d.cursor[1], dcol)).sense(Sense::click()))
+                    .tip(tip)
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::Goto);
+                }
                 ui.add_space(8.0);
                 sep(ui, on);
-                if d.rec.is_some() { item(ui, on, egui::RichText::new("● REC").color(Color32::from_rgb(255, 120, 120))); }
-                if !welcome { item(ui, on, egui::RichText::new(code_label(&d.lines, d.cursor))); }
-                item(ui, on, egui::RichText::new(if d.overwrite { "上書" } else { "挿入" }));
+                if d.rec.is_some() {
+                    item(
+                        ui,
+                        on,
+                        egui::RichText::new("● REC").color(Color32::from_rgb(255, 120, 120)),
+                    );
+                }
+                if !welcome {
+                    item(ui, on, egui::RichText::new(code_label(&d.lines, d.cursor)));
+                }
+                item(
+                    ui,
+                    on,
+                    egui::RichText::new(if d.overwrite { "上書" } else { "挿入" }),
+                );
                 // 编码 / 换行符 / BOM: 点开菜单改 (改保存时的格式, 或按别的编码重新打开)
                 ui.menu_button(d.charset.label(), |ui| {
                     ui.label(tr("st.charset-save"));
                     for cs in Charset::ALL {
-                        if ui.selectable_label(cs == d.charset, cs.label()).clicked() { st_cmd = Some(StatusCmd::Charset(cs)); ui.close(); }
+                        if ui.selectable_label(cs == d.charset, cs.label()).clicked() {
+                            st_cmd = Some(StatusCmd::Charset(cs));
+                            ui.close();
+                        }
                     }
                     ui.separator();
                     ui.menu_button(tr("st.reopen-as"), |ui| {
-                        for cs in Charset::ALL { if ui.button(cs.label()).clicked() { st_cmd = Some(StatusCmd::Reopen(cs)); ui.close(); } }
+                        for cs in Charset::ALL {
+                            if ui.button(cs.label()).clicked() {
+                                st_cmd = Some(StatusCmd::Reopen(cs));
+                                ui.close();
+                            }
+                        }
                     });
-                    if ui.button(if d.bom == editcore::document_io::Bom::None { tr("st.add-bom") } else { tr("st.rm-bom") }).clicked() { st_cmd = Some(StatusCmd::Bom); ui.close(); }
+                    if ui
+                        .button(if d.bom == editcore::document_io::Bom::None {
+                            tr("st.add-bom")
+                        } else {
+                            tr("st.rm-bom")
+                        })
+                        .clicked()
+                    {
+                        st_cmd = Some(StatusCmd::Bom);
+                        ui.close();
+                    }
                 });
                 sep(ui, on);
                 ui.menu_button(d.eol.label(), |ui| {
                     for e in [Eol::Crlf, Eol::Lf, Eol::Cr] {
-                        if ui.selectable_label(e == d.eol, e.label()).clicked() { st_cmd = Some(StatusCmd::Eol(e)); ui.close(); }
+                        if ui.selectable_label(e == d.eol, e.label()).clicked() {
+                            st_cmd = Some(StatusCmd::Eol(e));
+                            ui.close();
+                        }
                     }
                 });
                 sep(ui, on);
                 if d.mixed_eol {
                     ui.add_space(8.0);
-                    ui.colored_label(Color32::from_rgb(255, 200, 90), tr("st.mixed-eol")).tip(tr("st.mixed-eol-tip"));
+                    ui.colored_label(Color32::from_rgb(255, 200, 90), tr("st.mixed-eol"))
+                        .tip(tr("st.mixed-eol-tip"));
                     ui.add_space(8.0);
                     sep(ui, on);
                 }
-                if d.readonly { item(ui, on, egui::RichText::new(tr("st.readonly"))); }
-                if d.sel_mode { item(ui, on, egui::RichText::new(trz("范围选择")).color(Color32::from_rgb(255, 200, 90))); }
-                if !d.extra.is_empty() { item(ui, on, egui::RichText::new(trf("st.cursors", &[&(d.extra.len() + 1).to_string()]))); }
+                if d.readonly {
+                    item(ui, on, egui::RichText::new(tr("st.readonly")));
+                }
+                if d.sel_mode {
+                    item(
+                        ui,
+                        on,
+                        egui::RichText::new(trz("范围选择")).color(Color32::from_rgb(255, 200, 90)),
+                    );
+                }
+                if !d.extra.is_empty() {
+                    item(
+                        ui,
+                        on,
+                        egui::RichText::new(trf("st.cursors", &[&(d.extra.len() + 1).to_string()])),
+                    );
+                }
                 // 文件名 (最宽 40%, 超出 …)
-                let name = if welcome { crate::msgtr::msg("无活动").into_owned() } else { format!("{}{}", if d.dirty { "● " } else { "" }, super::tabbar::doc_label(d)) };
+                let name = if welcome {
+                    crate::msgtr::msg("无活动").into_owned()
+                } else {
+                    format!(
+                        "{}{}",
+                        if d.dirty { "● " } else { "" },
+                        super::tabbar::doc_label(d)
+                    )
+                };
                 ui.add_space(8.0);
                 let w = (total_w * 0.4).min(text_w(ui, &name) + 1.0);
-                ui.allocate_ui_with_layout(Vec2::new(w, ui.available_height()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.add(egui::Label::new(name).truncate());
-                });
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w, ui.available_height()),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.add(egui::Label::new(name).truncate());
+                    },
+                );
                 ui.add_space(8.0);
                 sep(ui, on);
                 // 提示撑满剩下的宽, 语法名靠右
                 let lang_w = text_w(ui, &lang) + 16.0;
                 let tip_w = (right - ui.cursor().left() - lang_w - 1.0).max(0.0);
-                ui.allocate_ui_with_layout(Vec2::new(tip_w, ui.available_height()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.set_min_width(tip_w);
-                    ui.add_space(8.0);
-                    ui.add(egui::Label::new(crate::msgtr::msg(&d.tip).as_ref()).truncate());
-                });
+                ui.allocate_ui_with_layout(
+                    Vec2::new(tip_w, ui.available_height()),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.set_min_width(tip_w);
+                        ui.add_space(8.0);
+                        ui.add(egui::Label::new(crate::msgtr::msg(&d.tip).as_ref()).truncate());
+                    },
+                );
                 sep(ui, on);
                 ui.add_space(8.0);
                 ui.label(lang);
             });
         });
         match st_cmd {
-            Some(StatusCmd::Goto) => { self.goto_open = true; self.goto_text.clear(); }
+            Some(StatusCmd::Goto) => {
+                self.goto_open = true;
+                self.goto_text.clear();
+            }
             Some(StatusCmd::Charset(cs)) => self.cur().set_charset(cs),
             Some(StatusCmd::Reopen(cs)) => self.reopen_as(cs),
             Some(StatusCmd::Bom) => self.cur().toggle_bom(),
@@ -159,7 +275,9 @@ impl App {
 mod tests {
     use super::*;
 
-    fn lines(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
+    fn lines(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
 
     #[test]
     fn code_label_shows_codepoint_eol_or_eof() {

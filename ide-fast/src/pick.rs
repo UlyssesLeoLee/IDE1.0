@@ -50,7 +50,11 @@ pub struct Row {
 impl Row {
     pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Self {
         let label = label.into();
-        Row { value: label.clone(), label, detail: detail.into() }
+        Row {
+            value: label.clone(),
+            label,
+            detail: detail.into(),
+        }
     }
 
     pub fn with_value(mut self, v: impl Into<String>) -> Self {
@@ -70,16 +74,26 @@ pub fn filter(rows: &[Row], query: &str, mode: Match) -> Vec<usize> {
     }
     match mode {
         Match::Fuzzy => {
-            let mut hits: Vec<(i32, usize)> = rows.iter().enumerate().filter_map(|(i, r)| keymap::fuzzy_score(q, &format!("{} {}", r.label, r.detail)).map(|s| (s, i))).collect();
+            let mut hits: Vec<(i32, usize)> = rows
+                .iter()
+                .enumerate()
+                .filter_map(|(i, r)| {
+                    keymap::fuzzy_score(q, &format!("{} {}", r.label, r.detail)).map(|s| (s, i))
+                })
+                .collect();
             hits.sort_by_key(|&(s, i)| (std::cmp::Reverse(s), i));
             hits.into_iter().map(|(_, i)| i).collect()
         }
         Match::Words => {
             let words: Vec<String> = q.split_whitespace().map(str::to_lowercase).collect();
-            rows.iter().enumerate().filter(|(_, r)| {
-                let hay = format!("{} {}", r.label, r.detail).to_lowercase();
-                words.iter().all(|w| hay.contains(w.as_str()))
-            }).map(|(i, _)| i).collect()
+            rows.iter()
+                .enumerate()
+                .filter(|(_, r)| {
+                    let hay = format!("{} {}", r.label, r.detail).to_lowercase();
+                    words.iter().all(|w| hay.contains(w.as_str()))
+                })
+                .map(|(i, _)| i)
+                .collect()
         }
     }
 }
@@ -109,7 +123,16 @@ pub enum Outcome {
 
 impl Pick {
     pub fn new(kind: Kind, title: impl Into<String>, mode: Match, rows: Vec<Row>) -> Self {
-        Pick { kind, title: title.into(), mode, target: None, rows, query: String::new(), sel: 0, moved: true }
+        Pick {
+            kind,
+            title: title.into(),
+            mode,
+            target: None,
+            rows,
+            query: String::new(),
+            sel: 0,
+            moved: true,
+        }
     }
 
     pub fn for_doc(mut self, id: u64) -> Self {
@@ -154,13 +177,26 @@ impl Pick {
     }
 
     /// `key` 的本体, 过滤结果由调用方给 (窗口一帧只过滤一次)。选中行只在画出来的前 `MAX_ROWS` 行里移动
-    fn step(&mut self, vis: &[usize], down: bool, up: bool, enter: bool, esc: bool) -> Option<Outcome> {
+    fn step(
+        &mut self,
+        vis: &[usize],
+        down: bool,
+        up: bool,
+        enter: bool,
+        esc: bool,
+    ) -> Option<Outcome> {
         if esc {
             return Some(Outcome::Closed);
         }
         let last = vis.len().min(MAX_ROWS).saturating_sub(1);
-        if down { self.sel = (self.sel + 1).min(last); self.moved = true; }
-        if up { self.sel = self.sel.saturating_sub(1); self.moved = true; }
+        if down {
+            self.sel = (self.sel + 1).min(last);
+            self.moved = true;
+        }
+        if up {
+            self.sel = self.sel.saturating_sub(1);
+            self.moved = true;
+        }
         self.sel = self.sel.min(last);
         if enter {
             return vis.get(self.sel).map(|&r| Outcome::Picked(r));
@@ -170,33 +206,66 @@ impl Pick {
 
     /// 画窗口 (过滤框拿着焦点, 编辑区在这期间不吃键盘)
     pub fn window(&mut self, ctx: &egui::Context) -> Outcome {
-        let (down, up, enter, esc) = ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::Enter), i.consume_key(Modifiers::NONE, Key::Escape)));
+        let (down, up, enter, esc) = ctx.input_mut(|i| {
+            (
+                i.consume_key(Modifiers::NONE, Key::ArrowDown),
+                i.consume_key(Modifiers::NONE, Key::ArrowUp),
+                i.consume_key(Modifiers::NONE, Key::Enter),
+                i.consume_key(Modifiers::NONE, Key::Escape),
+            )
+        });
         let vis = self.visible();
         if let Some(o) = self.step(&vis, down, up, enter, esc) {
             return o;
         }
         let mut picked: Option<usize> = None;
         let mut open = true;
-        egui::Window::new(self.title.clone()).open(&mut open).collapsible(false).resizable(true).default_width(560.0).default_height(340.0).anchor(egui::Align2::CENTER_TOP, [0.0, 56.0]).show(ctx, |ui| {
-            let r = ui.add(egui::TextEdit::singleline(&mut self.query).hint_text(crate::i18n::trz("输入以过滤")).desired_width(f32::INFINITY));
-            r.request_focus();
-            if r.changed() { self.sel = 0; self.moved = true; }
-            ui.separator();
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                if vis.is_empty() { ui.weak(crate::i18n::trz("没有匹配的项")); }
-                for (n, &ri) in vis.iter().take(MAX_ROWS).enumerate() {
-                    let row = &self.rows[ri];
-                    ui.horizontal(|ui| {
-                        let resp = ui.selectable_label(n == self.sel, &row.label);
-                        if resp.clicked() { picked = Some(ri); }
-                        if n == self.sel && self.moved { resp.scroll_to_me(None); }
-                        if !row.detail.is_empty() { ui.weak(&row.detail); }
-                    });
+        egui::Window::new(self.title.clone())
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(560.0)
+            .default_height(340.0)
+            .anchor(egui::Align2::CENTER_TOP, [0.0, 56.0])
+            .show(ctx, |ui| {
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut self.query)
+                        .hint_text(crate::i18n::trz("输入以过滤"))
+                        .desired_width(f32::INFINITY),
+                );
+                r.request_focus();
+                if r.changed() {
+                    self.sel = 0;
+                    self.moved = true;
                 }
-                if vis.len() > MAX_ROWS { ui.weak(format!("… {}", vis.len() - MAX_ROWS)); }
+                ui.separator();
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if vis.is_empty() {
+                            ui.weak(crate::i18n::trz("没有匹配的项"));
+                        }
+                        for (n, &ri) in vis.iter().take(MAX_ROWS).enumerate() {
+                            let row = &self.rows[ri];
+                            ui.horizontal(|ui| {
+                                let resp = ui.selectable_label(n == self.sel, &row.label);
+                                if resp.clicked() {
+                                    picked = Some(ri);
+                                }
+                                if n == self.sel && self.moved {
+                                    resp.scroll_to_me(None);
+                                }
+                                if !row.detail.is_empty() {
+                                    ui.weak(&row.detail);
+                                }
+                            });
+                        }
+                        if vis.len() > MAX_ROWS {
+                            ui.weak(format!("… {}", vis.len() - MAX_ROWS));
+                        }
+                    });
+                self.moved = false;
             });
-            self.moved = false;
-        });
         match picked {
             Some(r) => Outcome::Picked(r),
             None if !open => Outcome::Closed,
@@ -210,7 +279,12 @@ mod tests {
     use super::*;
 
     fn rows() -> Vec<Row> {
-        vec![Row::new("main.rs", "src/main.rs"), Row::new("notes.txt", "C:/notes.txt"), Row::new("README.md", "README.md"), Row::new("Cargo.toml", "")]
+        vec![
+            Row::new("main.rs", "src/main.rs"),
+            Row::new("notes.txt", "C:/notes.txt"),
+            Row::new("README.md", "README.md"),
+            Row::new("Cargo.toml", ""),
+        ]
     }
 
     #[test]
@@ -229,20 +303,42 @@ mod tests {
 
     #[test]
     fn words_need_every_word_and_ignore_case_but_keep_order() {
-        let r = vec![Row::new("保存 Save the file", "Ctrl+S"), Row::new("另存为 SAVE AS", ""), Row::new("打开", "Ctrl+O")];
-        assert_eq!(filter(&r, "save", Match::Words), vec![0, 1], "不分大小写, 顺序不变");
-        assert_eq!(filter(&r, "save ctrl", Match::Words), vec![0], "每个词都得出现 (细节列也算)");
+        let r = vec![
+            Row::new("保存 Save the file", "Ctrl+S"),
+            Row::new("另存为 SAVE AS", ""),
+            Row::new("打开", "Ctrl+O"),
+        ];
+        assert_eq!(
+            filter(&r, "save", Match::Words),
+            vec![0, 1],
+            "不分大小写, 顺序不变"
+        );
+        assert_eq!(
+            filter(&r, "save ctrl", Match::Words),
+            vec![0],
+            "每个词都得出现 (细节列也算)"
+        );
         assert!(filter(&r, "save open", Match::Words).is_empty());
     }
 
     #[test]
     fn keys_move_clamp_and_pick_through_the_filter() {
         let mut p = Pick::new(Kind::Windows, "t", Match::Fuzzy, rows());
-        assert_eq!(p.key(false, true, false, false), None, "第一行再往上还是第一行");
+        assert_eq!(
+            p.key(false, true, false, false),
+            None,
+            "第一行再往上还是第一行"
+        );
         assert_eq!(p.key(true, false, false, false), None);
         assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(1)));
-        for _ in 0..9 { p.key(true, false, false, false); }
-        assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(3)), "往下到底不越界");
+        for _ in 0..9 {
+            p.key(true, false, false, false);
+        }
+        assert_eq!(
+            p.key(false, false, true, false),
+            Some(Outcome::Picked(3)),
+            "往下到底不越界"
+        );
         assert_eq!(p.key(false, false, false, true), Some(Outcome::Closed));
     }
 
@@ -250,24 +346,45 @@ mod tests {
     fn picked_index_points_into_the_unfiltered_rows() {
         let mut p = Pick::new(Kind::Recent, "t", Match::Fuzzy, rows()).with_query("readme");
         assert_eq!(p.visible(), vec![2]);
-        assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(2)), "选中的是原列表里的第 2 行, 不是过滤后的第 0 行");
+        assert_eq!(
+            p.key(false, false, true, false),
+            Some(Outcome::Picked(2)),
+            "选中的是原列表里的第 2 行, 不是过滤后的第 0 行"
+        );
         let mut none = Pick::new(Kind::Recent, "t", Match::Fuzzy, rows()).with_query("qqqq");
-        assert_eq!(none.key(false, false, true, false), None, "没有匹配时 Enter 什么也不选");
+        assert_eq!(
+            none.key(false, false, true, false),
+            None,
+            "没有匹配时 Enter 什么也不选"
+        );
     }
 
     #[test]
     fn selection_stays_within_the_rows_that_are_drawn() {
-        let many: Vec<Row> = (0..MAX_ROWS + 50).map(|i| Row::new(format!("r{i}"), "")).collect();
+        let many: Vec<Row> = (0..MAX_ROWS + 50)
+            .map(|i| Row::new(format!("r{i}"), ""))
+            .collect();
         let mut p = Pick::new(Kind::Help, "t", Match::Words, many);
-        for _ in 0..MAX_ROWS + 40 { p.key(true, false, false, false); }
-        assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(MAX_ROWS - 1)), "最多到画出来的最后一行");
+        for _ in 0..MAX_ROWS + 40 {
+            p.key(true, false, false, false);
+        }
+        assert_eq!(
+            p.key(false, false, true, false),
+            Some(Outcome::Picked(MAX_ROWS - 1)),
+            "最多到画出来的最后一行"
+        );
     }
 
     #[test]
     fn value_defaults_to_the_label_and_can_be_replaced() {
         assert_eq!(Row::new("C:/a.txt", "").value, "C:/a.txt");
         assert_eq!(Row::new("▶ a.txt", "").with_value("7").value, "7");
-        assert_eq!(Pick::new(Kind::Charset, "t", Match::Fuzzy, rows()).for_doc(3).target, Some(3));
+        assert_eq!(
+            Pick::new(Kind::Charset, "t", Match::Fuzzy, rows())
+                .for_doc(3)
+                .target,
+            Some(3)
+        );
     }
 
     #[test]
@@ -275,11 +392,21 @@ mod tests {
         let mut p = Pick::new(Kind::Windows, "t", Match::Fuzzy, rows()).start_at(2);
         assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(2)));
         let mut q = Pick::new(Kind::Windows, "t", Match::Fuzzy, rows()).start_at(99);
-        assert_eq!(q.key(false, false, true, false), Some(Outcome::Picked(0)), "越界的起点忽略");
+        assert_eq!(
+            q.key(false, false, true, false),
+            Some(Outcome::Picked(0)),
+            "越界的起点忽略"
+        );
     }
 
     fn key_event(key: Key) -> egui::Event {
-        egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers: Modifiers::NONE }
+        egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }
     }
 
     /// 真的跑一帧: 窗口画得出来 (不 panic), 没有按键时一直开着; 方向键 + Enter / Esc 经过 egui 的按键消费走到结果
@@ -289,13 +416,28 @@ mod tests {
         let mut p = Pick::new(Kind::Windows, "窗口一览", Match::Fuzzy, rows());
         let frame = |p: &mut Pick, events: Vec<egui::Event>| {
             let mut out = Outcome::Open;
-            let mut full = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| { out = p.window(ui.ctx()); });
+            let mut full = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    out = p.window(ui.ctx());
+                },
+            );
             full.textures_delta.clear();
             out
         };
         assert_eq!(frame(&mut p, vec![]), Outcome::Open);
-        assert_eq!(frame(&mut p, vec![key_event(Key::ArrowDown)]), Outcome::Open);
-        assert_eq!(frame(&mut p, vec![key_event(Key::Enter)]), Outcome::Picked(1), "下移一行后回车 = 第 1 行");
+        assert_eq!(
+            frame(&mut p, vec![key_event(Key::ArrowDown)]),
+            Outcome::Open
+        );
+        assert_eq!(
+            frame(&mut p, vec![key_event(Key::Enter)]),
+            Outcome::Picked(1),
+            "下移一行后回车 = 第 1 行"
+        );
         assert_eq!(frame(&mut p, vec![key_event(Key::Escape)]), Outcome::Closed);
     }
 }

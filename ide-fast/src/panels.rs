@@ -44,7 +44,11 @@ pub fn bottom_mode(open: bool, collapsed: bool, full_ui: bool) -> Mode {
 
 /// 折叠命令 / 箭头按钮: 显示着就翻转折叠; 没显示就先展开显示出来。返回新的 (open, collapsed)
 pub fn toggle_collapse(open: bool, collapsed: bool) -> (bool, bool) {
-    if open { (true, !collapsed) } else { (true, false) }
+    if open {
+        (true, !collapsed)
+    } else {
+        (true, false)
+    }
 }
 
 /// 「显示 / 隐藏」命令 (Ctrl+B 等): 折成细条时先展开, 展开着才真正隐藏
@@ -133,14 +137,22 @@ mod tests {
     fn collapse_flips_when_open_and_opens_when_hidden() {
         assert_eq!(toggle_collapse(true, false), (true, true));
         assert_eq!(toggle_collapse(true, true), (true, false));
-        assert_eq!(toggle_collapse(false, false), (true, false), "没显示: 先展开显示");
+        assert_eq!(
+            toggle_collapse(false, false),
+            (true, false),
+            "没显示: 先展开显示"
+        );
         assert_eq!(toggle_collapse(false, true), (true, false));
     }
 
     #[test]
     fn open_toggle_expands_a_strip_before_hiding() {
         assert_eq!(toggle_open(true, false), (false, false));
-        assert_eq!(toggle_open(true, true), (true, false), "细条状态下按 Ctrl+B = 展开");
+        assert_eq!(
+            toggle_open(true, true),
+            (true, false),
+            "细条状态下按 Ctrl+B = 展开"
+        );
         assert_eq!(toggle_open(false, false), (true, false));
     }
 
@@ -154,8 +166,14 @@ mod tests {
     #[test]
     fn right_dock_needs_chat_or_a_markdown_preview() {
         assert!(!right_visible(false, false, true, false));
-        assert!(!right_visible(false, true, false, false), "预览开着但当前不是 md");
-        assert!(!right_visible(false, true, true, true), "覆盖模式预览不占右侧停靠区");
+        assert!(
+            !right_visible(false, true, false, false),
+            "预览开着但当前不是 md"
+        );
+        assert!(
+            !right_visible(false, true, true, true),
+            "覆盖模式预览不占右侧停靠区"
+        );
         assert!(right_visible(true, true, true, true));
         assert!(right_visible(false, true, true, false));
         assert!(right_visible(true, false, false, false));

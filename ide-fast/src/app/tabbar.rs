@@ -25,7 +25,11 @@ pub fn tab_width(text_w: f32) -> f32 {
 /// 标签 / 状态栏上显示的文档名: 只有还没存过的「无标题 N」要随界面语言翻译; 磁盘上的文件名原样显示
 /// (文件名叫「开」「注意」之类时, 不能被当成提示文字译掉; 也省得每帧每个标签都跑一遍模板匹配)
 pub(super) fn doc_label(d: &crate::doc::Doc) -> std::borrow::Cow<'_, str> {
-    if d.path.is_none() { crate::msgtr::msg(&d.name) } else { std::borrow::Cow::Borrowed(d.name.as_str()) }
+    if d.path.is_none() {
+        crate::msgtr::msg(&d.name)
+    } else {
+        std::borrow::Cow::Borrowed(d.name.as_str())
+    }
 }
 
 /// 标签栏要不要画: 多个文档, 或者开了活动栏 (完整界面, Tauri 的 `tabs: true`)
@@ -35,9 +39,18 @@ pub fn bar_visible(docs: usize, full_ui: bool) -> bool {
 
 /// 面包屑的各段 (Tauri `renderBreadcrumb`): 路径按分隔符拆开、去掉盘符; 没有路径的无标题文档就是它的名字
 pub fn crumb_parts(path: Option<&std::path::Path>, name: &str) -> Vec<String> {
-    let Some(p) = path else { return vec![name.to_string()] };
-    let mut parts: Vec<String> = p.to_string_lossy().split(['\\', '/']).filter(|s| !s.is_empty()).map(str::to_string).collect();
-    if parts.first().is_some_and(|s| s.ends_with(':')) { parts.remove(0); }
+    let Some(p) = path else {
+        return vec![name.to_string()];
+    };
+    let mut parts: Vec<String> = p
+        .to_string_lossy()
+        .split(['\\', '/'])
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if parts.first().is_some_and(|s| s.ends_with(':')) {
+        parts.remove(0);
+    }
     parts
 }
 
@@ -46,53 +59,109 @@ impl App {
     fn crumb_bar(&self, root: &mut egui::Ui) {
         let tc = self.tc;
         let d = &self.docs[self.active.min(self.docs.len() - 1)];
-        let parts = if self.welcome_visible() { vec![] } else { crumb_parts(d.path.as_deref(), &d.name) };
-        egui::Panel::top("crumb").exact_size(CRUMB_H + 1.0).frame(egui::Frame::NONE.fill(tc.bg_bar)).show(root, |ui| {
-            let bar = ui.max_rect();
-            ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, egui::Stroke::new(1.0, tc.border));
-            ui.allocate_ui_with_layout(Vec2::new(bar.width(), CRUMB_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.add_space(8.0);
-                let n = parts.len();
-                for (i, p) in parts.iter().enumerate() {
-                    if i > 0 { ui.add_space(2.0); ui.label(egui::RichText::new("›").size(11.0).color(tc.fg_dim)); ui.add_space(2.0); }
-                    ui.add_space(4.0);
-                    ui.add(egui::Label::new(egui::RichText::new(p).size(11.0).color(if i + 1 == n { tc.fg } else { tc.fg_dim })).truncate());
-                    ui.add_space(4.0);
-                }
+        let parts = if self.welcome_visible() {
+            vec![]
+        } else {
+            crumb_parts(d.path.as_deref(), &d.name)
+        };
+        egui::Panel::top("crumb")
+            .exact_size(CRUMB_H + 1.0)
+            .frame(egui::Frame::NONE.fill(tc.bg_bar))
+            .show(root, |ui| {
+                let bar = ui.max_rect();
+                ui.painter().hline(
+                    bar.x_range(),
+                    bar.bottom() - 0.5,
+                    egui::Stroke::new(1.0, tc.border),
+                );
+                ui.allocate_ui_with_layout(
+                    Vec2::new(bar.width(), CRUMB_H),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.add_space(8.0);
+                        let n = parts.len();
+                        for (i, p) in parts.iter().enumerate() {
+                            if i > 0 {
+                                ui.add_space(2.0);
+                                ui.label(egui::RichText::new("›").size(11.0).color(tc.fg_dim));
+                                ui.add_space(2.0);
+                            }
+                            ui.add_space(4.0);
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(p).size(11.0).color(if i + 1 == n {
+                                        tc.fg
+                                    } else {
+                                        tc.fg_dim
+                                    }),
+                                )
+                                .truncate(),
+                            );
+                            ui.add_space(4.0);
+                        }
+                    },
+                );
             });
-        });
     }
 
     pub(super) fn tab_bar(&mut self, root: &mut egui::Ui, ctx: &egui::Context) {
         let mut tab_cmd: Option<TabCmd> = None;
         if bar_visible(self.docs.len(), self.cfg.view.rail) {
             let tc = self.tc;
-            egui::Panel::top("tabs").exact_size(TAB_H + 1.0).frame(egui::Frame::NONE.fill(tc.bg_chrome)).show(root, |ui| {
-                let bar = ui.max_rect();
-                ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, egui::Stroke::new(1.0, tc.border));
-                let scroll_active = self.last_active != self.active;
-                let wheel = ui.input(|i| i.smooth_scroll_delta);
-                if ui.rect_contains_pointer(bar) && wheel.y != 0.0 && wheel.x == 0.0 { ui.scroll_with_delta(Vec2::new(wheel.y, 0.0)); }
-                egui::ScrollArea::horizontal().auto_shrink([false, true]).scroll_source(egui::scroll_area::ScrollSource::ALL).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 0.0;
-                        // 欢迎页显示时 (唯一的空白无标题文档) Tauri 没有任何标签: 条还在, 标签不画
-                        if !self.welcome_visible() {
-                            for i in 0..self.docs.len() { self.tab_item(ui, ctx, i, scroll_active, &mut tab_cmd); }
-                        }
-                    });
+            egui::Panel::top("tabs")
+                .exact_size(TAB_H + 1.0)
+                .frame(egui::Frame::NONE.fill(tc.bg_chrome))
+                .show(root, |ui| {
+                    let bar = ui.max_rect();
+                    ui.painter().hline(
+                        bar.x_range(),
+                        bar.bottom() - 0.5,
+                        egui::Stroke::new(1.0, tc.border),
+                    );
+                    let scroll_active = self.last_active != self.active;
+                    let wheel = ui.input(|i| i.smooth_scroll_delta);
+                    if ui.rect_contains_pointer(bar) && wheel.y != 0.0 && wheel.x == 0.0 {
+                        ui.scroll_with_delta(Vec2::new(wheel.y, 0.0));
+                    }
+                    egui::ScrollArea::horizontal()
+                        .auto_shrink([false, true])
+                        .scroll_source(egui::scroll_area::ScrollSource::ALL)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                // 欢迎页显示时 (唯一的空白无标题文档) Tauri 没有任何标签: 条还在, 标签不画
+                                if !self.welcome_visible() {
+                                    for i in 0..self.docs.len() {
+                                        self.tab_item(ui, ctx, i, scroll_active, &mut tab_cmd);
+                                    }
+                                }
+                            });
+                        });
                 });
-            });
-            if self.cfg.view.rail { self.crumb_bar(root); }
+            if self.cfg.view.rail {
+                self.crumb_bar(root);
+            }
         }
         self.last_active = self.active;
         match tab_cmd {
             Some(TabCmd::Select(i)) => self.select_tab(i),
-            Some(TabCmd::Close(i)) => { self.close_tab(i); }
-            Some(TabCmd::Many(i, k)) => { self.select_tab(i); self.close_many(k); }
-            Some(TabCmd::Move(i, left)) => { self.select_tab(i); self.move_active_tab(left); }
-            Some(TabCmd::Group(i, g)) => { if let Some(d) = self.docs.get_mut(i) { d.group = g; } }
+            Some(TabCmd::Close(i)) => {
+                self.close_tab(i);
+            }
+            Some(TabCmd::Many(i, k)) => {
+                self.select_tab(i);
+                self.close_many(k);
+            }
+            Some(TabCmd::Move(i, left)) => {
+                self.select_tab(i);
+                self.move_active_tab(left);
+            }
+            Some(TabCmd::Group(i, g)) => {
+                if let Some(d) = self.docs.get_mut(i) {
+                    d.group = g;
+                }
+            }
             None => {}
         }
         if self.split_on {
@@ -100,51 +169,165 @@ impl App {
         }
     }
 
-    fn tab_item(&self, ui: &mut egui::Ui, ctx: &egui::Context, i: usize, scroll_active: bool, cmd: &mut Option<TabCmd>) {
+    fn tab_item(
+        &self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        i: usize,
+        scroll_active: bool,
+        cmd: &mut Option<TabCmd>,
+    ) {
         let tc = self.tc;
         let active = i == self.active;
         let doc = &self.docs[i];
         let gcol = GROUP_COLORS.get(doc.group as usize).copied().flatten();
-        let fg = if active { if tc.dark { Color32::WHITE } else { tc.blue } } else { tc.fg_dim };
+        let fg = if active {
+            if tc.dark {
+                Color32::WHITE
+            } else {
+                tc.blue
+            }
+        } else {
+            tc.fg_dim
+        };
         let font = FontId::proportional(12.0);
         let mut job = egui::text::LayoutJob::default();
-        if let Some(c) = gcol { job.append("● ", 0.0, egui::TextFormat::simple(font.clone(), c)); }
-        job.append(doc_label(doc).as_ref(), 0.0, egui::TextFormat::simple(font.clone(), fg));
-        job.wrap = egui::text::TextWrapping { max_width: TAB_MAX_W - PAD_L - PAD_R, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+        if let Some(c) = gcol {
+            job.append("● ", 0.0, egui::TextFormat::simple(font.clone(), c));
+        }
+        job.append(
+            doc_label(doc).as_ref(),
+            0.0,
+            egui::TextFormat::simple(font.clone(), fg),
+        );
+        job.wrap = egui::text::TextWrapping {
+            max_width: TAB_MAX_W - PAD_L - PAD_R,
+            max_rows: 1,
+            break_anywhere: true,
+            overflow_character: Some('…'),
+        };
         let galley = ui.painter().layout_job(job);
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(tab_width(galley.size().x), TAB_H), Sense::click());
-        let close_rect = Rect::from_center_size(egui::pos2(rect.right() - CLOSE_GAP - CLOSE / 2.0, rect.center().y), Vec2::splat(CLOSE));
-        let close = ui.interact(close_rect, ui.make_persistent_id(("tab-x", i)), Sense::click());
-        if resp.clicked() && !close.hovered() { *cmd = Some(TabCmd::Select(i)); }
-        if close.clicked() || resp.middle_clicked() { *cmd = Some(TabCmd::Close(i)); }
-        if scroll_active && active { resp.scroll_to_me(None); }
+        let (rect, resp) =
+            ui.allocate_exact_size(Vec2::new(tab_width(galley.size().x), TAB_H), Sense::click());
+        let close_rect = Rect::from_center_size(
+            egui::pos2(rect.right() - CLOSE_GAP - CLOSE / 2.0, rect.center().y),
+            Vec2::splat(CLOSE),
+        );
+        let close = ui.interact(
+            close_rect,
+            ui.make_persistent_id(("tab-x", i)),
+            Sense::click(),
+        );
+        if resp.clicked() && !close.hovered() {
+            *cmd = Some(TabCmd::Select(i));
+        }
+        if close.clicked() || resp.middle_clicked() {
+            *cmd = Some(TabCmd::Close(i));
+        }
+        if scroll_active && active {
+            resp.scroll_to_me(None);
+        }
         let p = ui.painter();
         let hot = resp.hovered() || close.hovered();
-        let top_round = egui::CornerRadius { nw: 3, ne: 3, sw: 0, se: 0 };
-        if active { p.rect_filled(rect, top_round, tc.bg_edit); } else if hot { p.rect_filled(rect, top_round, tc.bg_hover); }
-        if active { p.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, tc.bg_status); }
-        p.vline(rect.right() - 0.5, rect.y_range(), egui::Stroke::new(1.0, tc.border));
-        p.galley(egui::pos2(rect.left() + PAD_L, rect.center().y - galley.size().y / 2.0), galley, fg);
-        if doc.dirty { p.text(egui::pos2(rect.left() + 4.0, rect.center().y), egui::Align2::LEFT_CENTER, "●", FontId::proportional(8.0), tc.yellow); }
+        let top_round = egui::CornerRadius {
+            nw: 3,
+            ne: 3,
+            sw: 0,
+            se: 0,
+        };
+        if active {
+            p.rect_filled(rect, top_round, tc.bg_edit);
+        } else if hot {
+            p.rect_filled(rect, top_round, tc.bg_hover);
+        }
+        if active {
+            p.rect_filled(
+                Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),
+                0.0,
+                tc.bg_status,
+            );
+        }
+        p.vline(
+            rect.right() - 0.5,
+            rect.y_range(),
+            egui::Stroke::new(1.0, tc.border),
+        );
+        p.galley(
+            egui::pos2(rect.left() + PAD_L, rect.center().y - galley.size().y / 2.0),
+            galley,
+            fg,
+        );
+        if doc.dirty {
+            p.text(
+                egui::pos2(rect.left() + 4.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                "●",
+                FontId::proportional(8.0),
+                tc.yellow,
+            );
+        }
         if active || hot {
-            if close.hovered() { p.rect_filled(close_rect, 3.0, tc.bg_active); }
+            if close.hovered() {
+                p.rect_filled(close_rect, 3.0, tc.bg_active);
+            }
             let c = close_rect.center();
             let st = egui::Stroke::new(1.2, if close.hovered() { tc.fg } else { tc.fg_dim });
-            p.line_segment([egui::pos2(c.x - 3.5, c.y - 3.5), egui::pos2(c.x + 3.5, c.y + 3.5)], st);
-            p.line_segment([egui::pos2(c.x + 3.5, c.y - 3.5), egui::pos2(c.x - 3.5, c.y + 3.5)], st);
+            p.line_segment(
+                [
+                    egui::pos2(c.x - 3.5, c.y - 3.5),
+                    egui::pos2(c.x + 3.5, c.y + 3.5),
+                ],
+                st,
+            );
+            p.line_segment(
+                [
+                    egui::pos2(c.x + 3.5, c.y - 3.5),
+                    egui::pos2(c.x - 3.5, c.y + 3.5),
+                ],
+                st,
+            );
         }
         resp.context_menu(|ui| {
-            if ui.button(tr("c.close")).clicked() { *cmd = Some(TabCmd::Close(i)); ui.close(); }
-            if ui.button(tr("c.close-others-s")).clicked() { *cmd = Some(TabCmd::Many(i, CloseKind::Others)); ui.close(); }
-            if ui.button(tr("c.close-left-s")).clicked() { *cmd = Some(TabCmd::Many(i, CloseKind::Left)); ui.close(); }
-            if ui.button(tr("c.close-right-s")).clicked() { *cmd = Some(TabCmd::Many(i, CloseKind::Right)); ui.close(); }
+            if ui.button(tr("c.close")).clicked() {
+                *cmd = Some(TabCmd::Close(i));
+                ui.close();
+            }
+            if ui.button(tr("c.close-others-s")).clicked() {
+                *cmd = Some(TabCmd::Many(i, CloseKind::Others));
+                ui.close();
+            }
+            if ui.button(tr("c.close-left-s")).clicked() {
+                *cmd = Some(TabCmd::Many(i, CloseKind::Left));
+                ui.close();
+            }
+            if ui.button(tr("c.close-right-s")).clicked() {
+                *cmd = Some(TabCmd::Many(i, CloseKind::Right));
+                ui.close();
+            }
             ui.separator();
-            if menuui::mbtn(ui, lk("c.tab-move-left", "")).clicked() { *cmd = Some(TabCmd::Move(i, true)); ui.close(); }
-            if menuui::mbtn(ui, lk("c.tab-move-right", "")).clicked() { *cmd = Some(TabCmd::Move(i, false)); ui.close(); }
-            if ui.button(tr("c.copy-path")).clicked() { if let Some(p) = &doc.path { ctx.copy_text(p.display().to_string()); } ui.close(); }
+            if menuui::mbtn(ui, lk("c.tab-move-left", "")).clicked() {
+                *cmd = Some(TabCmd::Move(i, true));
+                ui.close();
+            }
+            if menuui::mbtn(ui, lk("c.tab-move-right", "")).clicked() {
+                *cmd = Some(TabCmd::Move(i, false));
+                ui.close();
+            }
+            if ui.button(tr("c.copy-path")).clicked() {
+                if let Some(p) = &doc.path {
+                    ctx.copy_text(p.display().to_string());
+                }
+                ui.close();
+            }
             ui.separator();
             for (g, name) in GROUP_KEYS.iter().enumerate() {
-                if ui.selectable_label(doc.group as usize == g, tr(name)).clicked() { *cmd = Some(TabCmd::Group(i, g as u8)); ui.close(); }
+                if ui
+                    .selectable_label(doc.group as usize == g, tr(name))
+                    .clicked()
+                {
+                    *cmd = Some(TabCmd::Group(i, g as u8));
+                    ui.close();
+                }
             }
         });
     }
@@ -155,7 +338,9 @@ mod tests {
     /// 磁盘上的文件名原样显示; 只有没存过的「无标题」随语言译
     #[test]
     fn only_untitled_documents_are_translated_in_labels() {
-        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::i18n::set(crate::i18n::Lang::En);
         let mut d = crate::doc::Doc::untitled(1, 0);
         assert_eq!(doc_label(&d), "Untitled");
@@ -170,7 +355,10 @@ mod tests {
     #[test]
     fn crumbs_split_the_path_and_drop_the_drive() {
         let p = std::path::Path::new(r"E:\IDE1.0\src\main.rs");
-        assert_eq!(crumb_parts(Some(p), "main.rs"), vec!["IDE1.0", "src", "main.rs"]);
+        assert_eq!(
+            crumb_parts(Some(p), "main.rs"),
+            vec!["IDE1.0", "src", "main.rs"]
+        );
         assert_eq!(crumb_parts(None, "无标题"), vec!["无标题"]);
     }
 

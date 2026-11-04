@@ -111,9 +111,9 @@ jobs:
             ${{ runner.os }}-${{ matrix.rust }}-cargo-
 
       - name: cargo fmt --check
-        if: false  # WBS-03 O1.5: 先整体 cargo fmt 再打开
         working-directory: .
-        run: cargo fmt --all -- --check
+        # WBS-03 O1.5: ide-fast 格式化门禁
+        run: cargo fmt -p ide-fast -- --check
 
       - name: cargo check
         if: false  # WBS-03 O1.2: 整个 workspace 在 Linux 上还编不过

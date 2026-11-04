@@ -54,14 +54,26 @@ impl Engine {
         let base = Instant::now();
         let deadline = Arc::new(AtomicU64::new(u64::MAX));
         let d2 = deadline.clone();
-        rt.set_interrupt_handler(Some(Box::new(move || base.elapsed().as_millis() as u64 > d2.load(Ordering::Relaxed))));
+        rt.set_interrupt_handler(Some(Box::new(move || {
+            base.elapsed().as_millis() as u64 > d2.load(Ordering::Relaxed)
+        })));
         let ctx = Context::full(&rt).map_err(|e| e.to_string())?;
-        let me = Engine { _rt: rt, ctx, deadline, base, timeout };
+        let me = Engine {
+            _rt: rt,
+            ctx,
+            deadline,
+            base,
+            timeout,
+        };
         me.arm();
         me.ctx.with(|ctx| -> Result<(), String> {
-            ctx.eval::<(), _>(BOOT).catch(&ctx).map_err(|e| e.to_string())?;
+            ctx.eval::<(), _>(BOOT)
+                .catch(&ctx)
+                .map_err(|e| e.to_string())?;
             for (name, src) in sources {
-                ctx.eval::<(), _>(src.as_bytes().to_vec()).catch(&ctx).map_err(|e| format!("{name}: {}", fmt_err(&e.to_string())))?;
+                ctx.eval::<(), _>(src.as_bytes().to_vec())
+                    .catch(&ctx)
+                    .map_err(|e| format!("{name}: {}", fmt_err(&e.to_string())))?;
             }
             Ok(())
         })?;
@@ -69,7 +81,10 @@ impl Engine {
     }
 
     fn arm(&self) {
-        self.deadline.store(self.base.elapsed().as_millis() as u64 + self.timeout.as_millis() as u64, Ordering::Relaxed);
+        self.deadline.store(
+            self.base.elapsed().as_millis() as u64 + self.timeout.as_millis() as u64,
+            Ordering::Relaxed,
+        );
     }
 
     /// 调用已登记的处理函数: `args` 是 JSON 数组 (展开成参数), 返回结果的 JSON 文本
@@ -77,13 +92,22 @@ impl Engine {
         self.arm();
         let out = self.ctx.with(|ctx: Ctx| -> Result<String, String> {
             let f: Function = ctx.globals().get("__call").map_err(|e| e.to_string())?;
-            let p: Promise = f.call((method, args_json)).catch(&ctx).map_err(|e| fmt_err(&e.to_string()))?;
-            p.finish::<String>().catch(&ctx).map_err(|e| fmt_err(&e.to_string()))
+            let p: Promise = f
+                .call((method, args_json))
+                .catch(&ctx)
+                .map_err(|e| fmt_err(&e.to_string()))?;
+            p.finish::<String>()
+                .catch(&ctx)
+                .map_err(|e| fmt_err(&e.to_string()))
         });
         self.deadline.store(u64::MAX, Ordering::Relaxed);
         let s = out?;
         if s.len() > MAX_RESULT {
-            return Err(format!("插件结果过大 ({} 字节, 上限 {})", s.len(), MAX_RESULT));
+            return Err(format!(
+                "插件结果过大 ({} 字节, 上限 {})",
+                s.len(),
+                MAX_RESULT
+            ));
         }
         Ok(s)
     }
@@ -105,7 +129,12 @@ fn fmt_err(s: &str) -> String {
 // ---------- 工作线程 ----------
 
 enum Msg {
-    Call { plugin: String, method: String, args: String, reply: Sender<Result<String, String>> },
+    Call {
+        plugin: String,
+        method: String,
+        args: String,
+        reply: Sender<Result<String, String>>,
+    },
     Unload(String),
 }
 
@@ -118,14 +147,27 @@ impl PluginHost {
     pub fn new(root: PathBuf) -> Self {
         let (tx, rx) = channel::<Msg>();
         // 栈要比 JS_STACK 大, 不然 QuickJS 还没报栈溢出, 线程先爆了
-        let _ = std::thread::Builder::new().name("plugin-host".into()).stack_size(JS_STACK * 2).spawn(move || worker(root, rx));
+        let _ = std::thread::Builder::new()
+            .name("plugin-host".into())
+            .stack_size(JS_STACK * 2)
+            .spawn(move || worker(root, rx));
         PluginHost { tx }
     }
 
     /// 异步调用: 返回一个收件箱, UI 每帧 `try_recv`
-    pub fn call(&self, plugin: &str, method: &str, args: &Value) -> Receiver<Result<String, String>> {
+    pub fn call(
+        &self,
+        plugin: &str,
+        method: &str,
+        args: &Value,
+    ) -> Receiver<Result<String, String>> {
         let (reply, rx) = channel();
-        let msg = Msg::Call { plugin: plugin.into(), method: method.into(), args: args.to_string(), reply: reply.clone() };
+        let msg = Msg::Call {
+            plugin: plugin.into(),
+            method: method.into(),
+            args: args.to_string(),
+            reply: reply.clone(),
+        };
         if self.tx.send(msg).is_err() {
             let _ = reply.send(Err("插件宿主已停止".into()));
         }
@@ -145,7 +187,12 @@ fn worker(root: PathBuf, rx: Receiver<Msg>) {
             Msg::Unload(id) => {
                 engines.remove(&id);
             }
-            Msg::Call { plugin, method, args, reply } => {
+            Msg::Call {
+                plugin,
+                method,
+                args,
+                reply,
+            } => {
                 let res = (|| {
                     if !engines.contains_key(&plugin) {
                         let sources = sources_of(&root, &plugin)?;
@@ -167,12 +214,20 @@ fn worker(root: PathBuf, rx: Receiver<Msg>) {
 /// 读插件的脚本: manifest.scripts 然后入口; 插件必须已安装且启用
 fn sources_of(root: &std::path::Path, id: &str) -> Result<Vec<(String, String)>, String> {
     use editcore::plugin_host::store;
-    let p = store::list(root).into_iter().find(|p| p.manifest.id == id).ok_or_else(|| format!("没有安装插件 {id}"))?;
+    let p = store::list(root)
+        .into_iter()
+        .find(|p| p.manifest.id == id)
+        .ok_or_else(|| format!("没有安装插件 {id}"))?;
     if !p.enabled {
         return Err(format!("插件 {id} 已禁用"));
     }
     let mut out = vec![];
-    for f in p.manifest.scripts.iter().chain(std::iter::once(&p.manifest.entry)) {
+    for f in p
+        .manifest
+        .scripts
+        .iter()
+        .chain(std::iter::once(&p.manifest.entry))
+    {
         let bytes = store::read_asset(root, id, f)?;
         out.push((f.clone(), String::from_utf8_lossy(&bytes).into_owned()));
     }
@@ -205,17 +260,45 @@ pub struct Outcome {
 pub fn parse_outcome(json: &str) -> Outcome {
     let v: Value = serde_json::from_str(json).unwrap_or(Value::Null);
     let Some(o) = v.as_object() else {
-        return Outcome { raw: if v.is_null() { None } else { Some(pretty(&v)) }, ..Default::default() };
+        return Outcome {
+            raw: if v.is_null() { None } else { Some(pretty(&v)) },
+            ..Default::default()
+        };
     };
     let s = |k: &str| o.get(k).and_then(Value::as_str).map(str::to_string);
-    let mut out = Outcome { error: s("error"), summary: s("summary").unwrap_or_default(), svg: s("svg"), html: s("html"), ..Default::default() };
+    let mut out = Outcome {
+        error: s("error"),
+        summary: s("summary").unwrap_or_default(),
+        svg: s("svg"),
+        html: s("html"),
+        ..Default::default()
+    };
     out.edit = o.get("edit").and_then(|e| {
         let us = |k: &str| e.get(k).and_then(Value::as_u64).map(|n| n as usize);
-        let insert: Option<Vec<String>> = e.get("insert")?.as_array()?.iter().map(|l| l.as_str().map(str::to_string)).collect();
-        let cursor = e.get("cursor").and_then(|c| Some([c.get("row")?.as_u64()? as usize, c.get("col")?.as_u64()? as usize]));
-        Some(Patch { start: us("start")?, remove: us("remove")?, insert: insert?, cursor })
+        let insert: Option<Vec<String>> = e
+            .get("insert")?
+            .as_array()?
+            .iter()
+            .map(|l| l.as_str().map(str::to_string))
+            .collect();
+        let cursor = e.get("cursor").and_then(|c| {
+            Some([
+                c.get("row")?.as_u64()? as usize,
+                c.get("col")?.as_u64()? as usize,
+            ])
+        });
+        Some(Patch {
+            start: us("start")?,
+            remove: us("remove")?,
+            insert: insert?,
+            cursor,
+        })
     });
-    let known = out.error.is_some() || !out.summary.is_empty() || out.svg.is_some() || out.html.is_some() || o.contains_key("edit");
+    let known = out.error.is_some()
+        || !out.summary.is_empty()
+        || out.svg.is_some()
+        || out.html.is_some()
+        || o.contains_key("edit");
     if !known {
         out.raw = Some(pretty(&v));
     }
@@ -243,7 +326,12 @@ pub fn strip_html(h: &str) -> String {
             _ => {}
         }
     }
-    out.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&").trim().to_string()
+    out.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -256,7 +344,9 @@ mod tests {
 
     #[test]
     fn register_and_call_sync_and_async_handlers() {
-        let e = engine(r#"ide.register({ "a": (x, y) => x + y, "b": async (o) => ({ n: o.k * 2 }) });"#);
+        let e = engine(
+            r#"ide.register({ "a": (x, y) => x + y, "b": async (o) => ({ n: o.k * 2 }) });"#,
+        );
         assert_eq!(e.call("a", "[2,3]").unwrap(), "5");
         assert_eq!(e.call("b", r#"[{"k":21}]"#).unwrap(), r#"{"n":42}"#);
         assert!(e.call("nope", "[]").unwrap_err().contains("nope"));
@@ -266,14 +356,22 @@ mod tests {
     fn script_errors_are_reported_not_fatal() {
         let e = engine(r#"ide.register({ "boom": () => { throw new Error("坏了"); } });"#);
         assert!(e.call("boom", "[]").unwrap_err().contains("坏了"));
-        assert_eq!(engine("ide.register({x:()=>1})").call("x", "[]").unwrap(), "1");
+        assert_eq!(
+            engine("ide.register({x:()=>1})").call("x", "[]").unwrap(),
+            "1"
+        );
         assert!(Engine::load(&[("bad.js".into(), "this is not js".into())], CALL_TIMEOUT).is_err());
     }
 
     #[test]
     fn sandbox_has_no_io_globals() {
-        let e = engine(r#"ide.register({ t: () => [typeof fetch, typeof XMLHttpRequest, typeof document, typeof window, typeof require, typeof process].join() });"#);
-        assert_eq!(e.call("t", "[]").unwrap(), r#""undefined,undefined,undefined,undefined,undefined,undefined""#);
+        let e = engine(
+            r#"ide.register({ t: () => [typeof fetch, typeof XMLHttpRequest, typeof document, typeof window, typeof require, typeof process].join() });"#,
+        );
+        assert_eq!(
+            e.call("t", "[]").unwrap(),
+            r#""undefined,undefined,undefined,undefined,undefined,undefined""#
+        );
     }
 
     #[test]
@@ -293,19 +391,47 @@ mod tests {
 
     #[test]
     fn outcome_shapes_parse() {
-        let o = parse_outcome(r#"{"summary":"ok","edit":{"start":1,"remove":2,"insert":["a","b"],"cursor":{"row":3,"col":4}}}"#);
-        assert_eq!(o.edit, Some(Patch { start: 1, remove: 2, insert: vec!["a".into(), "b".into()], cursor: Some([3, 4]) }));
-        assert_eq!(parse_outcome(r#"{"error":"炸"}"#).error.as_deref(), Some("炸"));
-        assert_eq!(parse_outcome(r#"{"svg":"<svg/>","summary":"s"}"#).svg.as_deref(), Some("<svg/>"));
-        assert!(parse_outcome(r#"{"headings":3}"#).raw.unwrap().contains("headings"));
+        let o = parse_outcome(
+            r#"{"summary":"ok","edit":{"start":1,"remove":2,"insert":["a","b"],"cursor":{"row":3,"col":4}}}"#,
+        );
+        assert_eq!(
+            o.edit,
+            Some(Patch {
+                start: 1,
+                remove: 2,
+                insert: vec!["a".into(), "b".into()],
+                cursor: Some([3, 4])
+            })
+        );
+        assert_eq!(
+            parse_outcome(r#"{"error":"炸"}"#).error.as_deref(),
+            Some("炸")
+        );
+        assert_eq!(
+            parse_outcome(r#"{"svg":"<svg/>","summary":"s"}"#)
+                .svg
+                .as_deref(),
+            Some("<svg/>")
+        );
+        assert!(parse_outcome(r#"{"headings":3}"#)
+            .raw
+            .unwrap()
+            .contains("headings"));
         assert!(parse_outcome("null").raw.is_none());
         assert_eq!(parse_outcome(r#"{"summary":"x","edit":null}"#).edit, None);
-        assert_eq!(strip_html("<p>a &amp; b</p><p>c</p>"), "a & b\n\nc".replace("\n\n", "\n"));
+        assert_eq!(
+            strip_html("<p>a &amp; b</p><p>c</p>"),
+            "a & b\n\nc".replace("\n\n", "\n")
+        );
     }
 
     #[test]
     fn bundled_ppa_edits_a_virtual_doc() {
-        let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../crates/editcore/plugins/ppa/main.js")).unwrap();
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../crates/editcore/plugins/ppa/main.js"
+        ))
+        .unwrap();
         let e = Engine::load(&[("main.js".into(), src)], CALL_TIMEOUT).unwrap();
         let input = serde_json::json!([{ "script": "var i: Integer; begin for i := 1 to 3 do S_InsText('x'); end;", "text": "abc", "cursor": {"row":0,"col":0} }]);
         let out = parse_outcome(&e.call("command:run", &input.to_string()).unwrap());
@@ -313,12 +439,20 @@ mod tests {
         let p = out.edit.expect("有补丁");
         assert_eq!(p.insert, vec!["xxxabc".to_string()]);
         let bad = serde_json::json!([{ "script": "foo(", "text": "" }]);
-        assert!(parse_outcome(&e.call("command:run", &bad.to_string()).unwrap()).error.is_some());
+        assert!(
+            parse_outcome(&e.call("command:run", &bad.to_string()).unwrap())
+                .error
+                .is_some()
+        );
     }
 
     #[test]
     fn bundled_doc_graph_renders_svg_with_data_lines() {
-        let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../crates/editcore/plugins/doc-graph/main.js")).unwrap();
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../crates/editcore/plugins/doc-graph/main.js"
+        ))
+        .unwrap();
         let e = Engine::load(&[("main.js".into(), src)], CALL_TIMEOUT).unwrap();
         let input = serde_json::json!([{ "text": "# A\n## B\ntext [[A]]\n" }]);
         let out = parse_outcome(&e.call("command:show", &input.to_string()).unwrap());
@@ -326,40 +460,74 @@ mod tests {
         assert!(svg.contains("data-line=\"2\""));
         assert!(out.summary.contains("2 个标题"));
         let empty = serde_json::json!([{ "text": "plain" }]);
-        assert!(parse_outcome(&e.call("command:show", &empty.to_string()).unwrap()).error.is_some());
+        assert!(
+            parse_outcome(&e.call("command:show", &empty.to_string()).unwrap())
+                .error
+                .is_some()
+        );
     }
 
     #[test]
     fn pele_bundle_loads_and_renders_mermaid_to_svg() {
         // pele 是纯 JS 渲染器 (730 KB), QuickJS 里无需 DOM 就能出 SVG; 预览里的 fence 接入留待后续
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../crates/editcore/plugins/pele/");
+        let dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../crates/editcore/plugins/pele/"
+        );
         let a = std::fs::read_to_string(format!("{dir}pele.global.js")).unwrap();
         let b = std::fs::read_to_string(format!("{dir}main.js")).unwrap();
-        let e = Engine::load(&[("pele.global.js".into(), a), ("main.js".into(), b)], Duration::from_secs(20)).unwrap();
-        let out = e.call("render", &serde_json::json!(["graph TD
- A-->B"]).to_string()).unwrap();
-        assert!(parse_outcome(&out).svg.is_some_and(|s| s.starts_with("<svg")));
+        let e = Engine::load(
+            &[("pele.global.js".into(), a), ("main.js".into(), b)],
+            Duration::from_secs(20),
+        )
+        .unwrap();
+        let out = e
+            .call(
+                "render",
+                &serde_json::json!(["graph TD
+ A-->B"])
+                .to_string(),
+            )
+            .unwrap();
+        assert!(parse_outcome(&out)
+            .svg
+            .is_some_and(|s| s.starts_with("<svg")));
     }
 
     #[test]
     fn host_thread_loads_bundled_plugin_lazily_and_honors_disable() {
-        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("ide-fast-host-{}", std::process::id()));
         std::env::set_var("IDE_PLUGIN_DIR", &dir);
         let root = crate::plugins::root();
         let _ = editcore::plugin_host::store::list(&root); // 触发内置插件落盘
         let host = PluginHost::new(root.clone());
-        let rx = host.call("doc-graph", "command:show", &serde_json::json!([{ "text": "# T\n" }]));
+        let rx = host.call(
+            "doc-graph",
+            "command:show",
+            &serde_json::json!([{ "text": "# T\n" }]),
+        );
         let out = rx.recv_timeout(Duration::from_secs(20)).unwrap().unwrap();
         assert!(out.contains("svg"));
-        let none = host.call("nonexistent", "command:x", &serde_json::json!([])).recv_timeout(Duration::from_secs(5)).unwrap();
+        let none = host
+            .call("nonexistent", "command:x", &serde_json::json!([]))
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
         assert!(none.is_err());
         editcore::plugin_host::store::set_enabled(&root, "doc-graph", false).unwrap();
         host.unload("doc-graph");
-        let off = host.call("doc-graph", "command:show", &serde_json::json!([{ "text": "# T\n" }])).recv_timeout(Duration::from_secs(5)).unwrap();
+        let off = host
+            .call(
+                "doc-graph",
+                "command:show",
+                &serde_json::json!([{ "text": "# T\n" }]),
+            )
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
         assert!(off.unwrap_err().contains("禁用"));
         std::env::remove_var("IDE_PLUGIN_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-

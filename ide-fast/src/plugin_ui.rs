@@ -37,8 +37,15 @@ pub struct PlugState {
 
 /// 选区文字 (多行用 \n 连); 没有选区 = 空串。列按字符数
 pub fn selection_text(d: &Doc) -> String {
-    let Some([r0, c0, r1, c1]) = d.sel else { return String::new() };
-    let cut = |l: &str, a: usize, b: usize| l.chars().skip(a).take(b.saturating_sub(a)).collect::<String>();
+    let Some([r0, c0, r1, c1]) = d.sel else {
+        return String::new();
+    };
+    let cut = |l: &str, a: usize, b: usize| {
+        l.chars()
+            .skip(a)
+            .take(b.saturating_sub(a))
+            .collect::<String>()
+    };
     if r0 == r1 {
         return cut(&d.lines[r0], c0, c1);
     }
@@ -53,7 +60,9 @@ pub fn doc_args(d: &Doc, perms: &[String]) -> Value {
     if !perms.iter().any(|p| p == "editor.read") {
         return json!({});
     }
-    let sel = d.sel.map(|[r0, c0, r1, c1]| json!({ "r0": r0, "c0": c0, "r1": r1, "c1": c1 }));
+    let sel = d
+        .sel
+        .map(|[r0, c0, r1, c1]| json!({ "r0": r0, "c0": c0, "r1": r1, "c1": c1 }));
     json!({ "text": d.lines.join("\n"), "name": d.name, "cursor": { "row": d.cursor[0], "col": d.cursor[1] }, "selection": sel })
 }
 
@@ -65,19 +74,42 @@ impl PlugState {
     }
 
     /// 开始跑一个插件命令。`extra` 并进文档参数 (例如 PPA 的 script)
-    pub fn start(&mut self, plugin: &str, perms: &[String], cmd: &str, title: &str, doc: &Doc, extra: Option<Value>) {
+    pub fn start(
+        &mut self,
+        plugin: &str,
+        perms: &[String],
+        cmd: &str,
+        title: &str,
+        doc: &Doc,
+        extra: Option<Value>,
+    ) {
         let mut arg = doc_args(doc, perms);
         if let (Some(a), Some(Value::Object(e))) = (arg.as_object_mut(), extra) {
             a.extend(e);
         }
-        let host = self.host.get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
+        let host = self
+            .host
+            .get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
         let rx = host.call(plugin, &format!("command:{cmd}"), &json!([arg]));
-        self.jobs.push(Job { rx, perms: perms.to_vec(), title: title.to_string(), doc_id: doc.id, rev: doc.rev });
+        self.jobs.push(Job {
+            rx,
+            perms: perms.to_vec(),
+            title: title.to_string(),
+            doc_id: doc.id,
+            rev: doc.rev,
+        });
     }
 
     /// 直接调插件登记的方法 (如 `markdown.fence` 的 render), 不经命令 / 文档参数; 宿主第一次用到时才创建
-    pub fn call_raw(&mut self, plugin: &str, method: &str, args: &Value) -> Receiver<Result<String, String>> {
-        let host = self.host.get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
+    pub fn call_raw(
+        &mut self,
+        plugin: &str,
+        method: &str,
+        args: &Value,
+    ) -> Receiver<Result<String, String>> {
+        let host = self
+            .host
+            .get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
         host.call(plugin, method, args)
     }
 
@@ -105,7 +137,9 @@ impl PlugState {
         for (i, r) in done.into_iter().rev() {
             let job = self.jobs.remove(i);
             // 发起命令的文档已关闭: 丢弃结果, 不写到别的文档
-            let Some(ix) = docs.iter().position(|d| d.id == job.doc_id) else { continue };
+            let Some(ix) = docs.iter().position(|d| d.id == job.doc_id) else {
+                continue;
+            };
             let tip = self.finish(&job, r, &mut docs[ix]);
             if let Some(t) = tip {
                 docs[ix].tip = t;
@@ -142,7 +176,11 @@ impl PlugState {
             return Some(tip);
         }
         if !shows {
-            return if out.summary.is_empty() { None } else { Some(out.summary) };
+            return if out.summary.is_empty() {
+                None
+            } else {
+                Some(out.summary)
+            };
         }
         let (svg, text) = match (&out.svg, &out.html, &out.raw) {
             (Some(s), _, _) => match svg_lite::parse(s) {
@@ -154,31 +192,51 @@ impl PlugState {
             _ => (None, String::new()),
         };
         let tip = out.summary.clone();
-        self.win = Some(ResultWin { title: job.title.clone(), summary: out.summary, svg, text, doc_id: doc.id });
+        self.win = Some(ResultWin {
+            title: job.title.clone(),
+            summary: out.summary,
+            svg,
+            text,
+            doc_id: doc.id,
+        });
         Some(tip) // 状态栏的「正在运行」提示换成摘要
     }
 
     /// 结果窗口; 返回被点中的 (文档 id, 0 起的行号)
-    pub fn window(&mut self, ctx: &egui::Context, dark_text: Option<egui::Color32>) -> Option<(u64, usize)> {
+    pub fn window(
+        &mut self,
+        ctx: &egui::Context,
+        dark_text: Option<egui::Color32>,
+    ) -> Option<(u64, usize)> {
         let w = self.win.as_ref()?;
         let mut open = true;
         let mut jump = None;
         let doc_id = w.doc_id;
-        egui::Window::new(w.title.clone()).open(&mut open).default_size([520.0, 420.0]).resizable(true).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-            if !w.summary.is_empty() {
-                ui.label(&w.summary);
-                ui.separator();
-            }
-            egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-                if let Some(svg) = &w.svg {
-                    if let Some(line) = svg_lite::show(ui, svg, dark_text) {
-                        jump = Some((doc_id, line.saturating_sub(1)));
-                    }
-                } else {
-                    ui.add(egui::Label::new(egui::RichText::new(&w.text).monospace()).selectable(true));
+        egui::Window::new(w.title.clone())
+            .open(&mut open)
+            .default_size([520.0, 420.0])
+            .resizable(true)
+            .default_pos(egui::pos2(24.0, 56.0))
+            .show(ctx, |ui| {
+                if !w.summary.is_empty() {
+                    ui.label(&w.summary);
+                    ui.separator();
                 }
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        if let Some(svg) = &w.svg {
+                            if let Some(line) = svg_lite::show(ui, svg, dark_text) {
+                                jump = Some((doc_id, line.saturating_sub(1)));
+                            }
+                        } else {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&w.text).monospace())
+                                    .selectable(true),
+                            );
+                        }
+                    });
             });
-        });
         if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.win = None;
         }
@@ -204,7 +262,11 @@ mod tests {
         let mut d = doc(&["ab", "cd"]);
         d.sel = Some([0, 1, 1, 1]);
         assert_eq!(doc_args(&d, &perms(&[])), json!({}));
-        assert_eq!(doc_args(&d, &perms(&["editor.write"])), json!({}), "只有 write 不给文本");
+        assert_eq!(
+            doc_args(&d, &perms(&["editor.write"])),
+            json!({}),
+            "只有 write 不给文本"
+        );
         let a = doc_args(&d, &perms(&["editor.read"]));
         assert_eq!(a["text"], "ab\ncd");
         assert_eq!(a["selection"]["r1"], 1);
@@ -226,17 +288,40 @@ mod tests {
         let mut st = PlugState::default();
         let mut d = doc(&["a", "b"]);
         let patch = r#"{"summary":"已修改","edit":{"start":0,"remove":1,"insert":["X"]}}"#;
-        let ro = Job { rx: std::sync::mpsc::channel().1, perms: perms(&["editor.read"]), title: "t".into(), doc_id: 7, rev: 0 };
+        let ro = Job {
+            rx: std::sync::mpsc::channel().1,
+            perms: perms(&["editor.read"]),
+            title: "t".into(),
+            doc_id: 7,
+            rev: 0,
+        };
         let tip = st.finish(&ro, Ok(patch.into()), &mut d).unwrap();
         assert!(tip.contains("editor.write") && d.lines[0] == "a", "{tip}");
-        let mut rw = Job { perms: perms(&["editor.read", "editor.write"]), ..ro };
-        assert_eq!(st.finish(&rw, Ok(patch.into()), &mut d).as_deref(), Some("已修改"));
+        let mut rw = Job {
+            perms: perms(&["editor.read", "editor.write"]),
+            ..ro
+        };
+        assert_eq!(
+            st.finish(&rw, Ok(patch.into()), &mut d).as_deref(),
+            Some("已修改")
+        );
         assert_eq!(d.lines, vec!["X", "b"]);
-        assert!(st.finish(&rw, Ok(patch.into()), &mut d).unwrap().contains("修改"), "旧修订号的补丁被放弃");
+        assert!(
+            st.finish(&rw, Ok(patch.into()), &mut d)
+                .unwrap()
+                .contains("修改"),
+            "旧修订号的补丁被放弃"
+        );
         rw.rev = d.rev;
         let bad = r#"{"edit":{"start":5,"remove":1,"insert":[]}}"#;
-        assert!(st.finish(&rw, Ok(bad.into()), &mut d).unwrap().contains("越界"));
-        assert!(st.finish(&rw, Err("炸了".into()), &mut d).unwrap().contains("炸了"));
+        assert!(st
+            .finish(&rw, Ok(bad.into()), &mut d)
+            .unwrap()
+            .contains("越界"));
+        assert!(st
+            .finish(&rw, Err("炸了".into()), &mut d)
+            .unwrap()
+            .contains("炸了"));
         assert!(st.win.is_none());
     }
 
@@ -244,9 +329,18 @@ mod tests {
     fn svg_and_data_results_open_the_window() {
         let mut st = PlugState::default();
         let mut d = doc(&["# a"]);
-        let j = Job { rx: std::sync::mpsc::channel().1, perms: perms(&["editor.read"]), title: "图".into(), doc_id: 7, rev: 0 };
+        let j = Job {
+            rx: std::sync::mpsc::channel().1,
+            perms: perms(&["editor.read"]),
+            title: "图".into(),
+            doc_id: 7,
+            rev: 0,
+        };
         let svg = r##"{"svg":"<svg width=\"50\" height=\"20\"><g data-line=\"1\"><circle cx=\"5\" cy=\"5\" r=\"3\" fill=\"#fff\"/></g></svg>","summary":"1 个标题"}"##;
-        assert_eq!(st.finish(&j, Ok(svg.into()), &mut d).as_deref(), Some("1 个标题"));
+        assert_eq!(
+            st.finish(&j, Ok(svg.into()), &mut d).as_deref(),
+            Some("1 个标题")
+        );
         let w = st.win.take().unwrap();
         assert!(w.svg.is_some() && w.summary == "1 个标题" && w.doc_id == 7);
         // 解析不了的 SVG 退回显示源码; 没有已知字段的结果显示数据
@@ -254,7 +348,11 @@ mod tests {
         assert!(st.win.take().unwrap().svg.is_none());
         st.finish(&j, Ok(r#"{"headings":2}"#.into()), &mut d);
         assert!(st.win.take().unwrap().text.contains("headings"));
-        assert_eq!(st.finish(&j, Ok(r#"{"summary":"仅提示"}"#.into()), &mut d).as_deref(), Some("仅提示"));
+        assert_eq!(
+            st.finish(&j, Ok(r#"{"summary":"仅提示"}"#.into()), &mut d)
+                .as_deref(),
+            Some("仅提示")
+        );
         assert!(st.win.is_none());
     }
 

@@ -102,7 +102,9 @@ impl App {
             return;
         }
         if !self.ai_cfg().configured() {
-            self.ai.items.push(Item::Err(tr("ai.not-configured").into()));
+            self.ai
+                .items
+                .push(Item::Err(tr("ai.not-configured").into()));
             self.ai.settings = true;
             return;
         }
@@ -118,7 +120,12 @@ impl App {
     fn ai_context(&self, i: usize) -> Option<ai::Context> {
         let d = &self.docs[i];
         let n = d.name.to_lowercase();
-        ai::context_of(&d.lines, Some(crate::plugin_ui::selection_text(d)), d.cursor[0], n.ends_with(".md") || n.ends_with(".markdown"))
+        ai::context_of(
+            &d.lines,
+            Some(crate::plugin_ui::selection_text(d)),
+            d.cursor[0],
+            n.ends_with(".md") || n.ends_with(".markdown"),
+        )
     }
 
     fn ai_start(&mut self, q: String, with_ctx: bool, ctx: &egui::Context) {
@@ -131,27 +138,49 @@ impl App {
         self.ai.input.clear();
         self.ai.items.push(Item::User(q));
         let (rx, handle) = self.ai_spawn(&msgs, &tools, ctx);
-        self.ai.run = Some(Run { rx, handle, msgs, tools, round: 0, doc_id: self.docs[i].id, stream: None, slots: vec![], pending: vec![] });
+        self.ai.run = Some(Run {
+            rx,
+            handle,
+            msgs,
+            tools,
+            round: 0,
+            doc_id: self.docs[i].id,
+            stream: None,
+            slots: vec![],
+            pending: vec![],
+        });
     }
 
-    fn ai_spawn(&mut self, msgs: &[Value], tools: &[Value], ctx: &egui::Context) -> (Receiver<Event>, Handle) {
+    fn ai_spawn(
+        &mut self,
+        msgs: &[Value],
+        tools: &[Value],
+        ctx: &egui::Context,
+    ) -> (Receiver<Event>, Handle) {
         let (tx, rx) = channel();
         let c = ctx.clone();
         let cfg = self.ai_cfg().clone();
-        let h = ai::spawn_request(&cfg, msgs.to_vec(), tools.to_vec(), tx, move || c.request_repaint());
+        let h = ai::spawn_request(&cfg, msgs.to_vec(), tools.to_vec(), tx, move || {
+            c.request_repaint()
+        });
         (rx, h)
     }
 
     /// 每帧: 收流式文字 / 回合结果 / 插件工具结果。没有请求时什么都不做 (无空转轮询)
     pub(super) fn ai_poll(&mut self, ctx: &egui::Context) {
-        let Some(run) = self.ai.run.as_mut() else { return };
+        let Some(run) = self.ai.run.as_mut() else {
+            return;
+        };
         let mut events = vec![];
         loop {
             match run.rx.try_recv() {
                 Ok(e) => events.push(e),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    events.push(Event::Done(ai::Turn { error: Some("请求线程意外结束".into()), ..Default::default() }));
+                    events.push(Event::Done(ai::Turn {
+                        error: Some("请求线程意外结束".into()),
+                        ..Default::default()
+                    }));
                     break;
                 }
             }
@@ -169,7 +198,9 @@ impl App {
     }
 
     fn ai_append(&mut self, t: &str) {
-        let Some(run) = self.ai.run.as_mut() else { return };
+        let Some(run) = self.ai.run.as_mut() else {
+            return;
+        };
         match run.stream {
             Some(i) => {
                 if let Some(Item::Ai(s)) = self.ai.items.get_mut(i) {
@@ -184,7 +215,9 @@ impl App {
     }
 
     fn ai_turn(&mut self, turn: ai::Turn, ctx: &egui::Context) {
-        let Some(run) = self.ai.run.as_mut() else { return };
+        let Some(run) = self.ai.run.as_mut() else {
+            return;
+        };
         run.stream = None;
         if let Some(e) = &turn.error {
             self.ai.items.push(Item::Err(e.clone()));
@@ -198,7 +231,11 @@ impl App {
             return;
         }
         let doc_id = run.doc_id;
-        let rows = self.docs.iter().find(|d| d.id == doc_id).map_or(0, |d| d.lines.len());
+        let rows = self
+            .docs
+            .iter()
+            .find(|d| d.id == doc_id)
+            .map_or(0, |d| d.lines.len());
         let installed = editcore::plugin_host::store::list(&plugins::root());
         if let Some(run) = self.ai.run.as_mut() {
             run.slots = vec![None; turn.tool_calls.len()];
@@ -211,14 +248,24 @@ impl App {
                 if ai::plugin_tool_declared(&installed, &pid, &tool) {
                     spawn.push((slot, call.clone(), pid, tool, args));
                 } else {
-                    immediate.push((slot, call.clone(), json!({ "error": format!("unknown tool: {}", call.name) })));
+                    immediate.push((
+                        slot,
+                        call.clone(),
+                        json!({ "error": format!("unknown tool: {}", call.name) }),
+                    ));
                 }
             } else {
-                immediate.push((slot, call.clone(), ai::exec_builtin(&call.name, &args, rows)));
+                immediate.push((
+                    slot,
+                    call.clone(),
+                    ai::exec_builtin(&call.name, &args, rows),
+                ));
             }
         }
         for (slot, call, pid, tool, args) in spawn {
-            let rx = self.plug.call_raw(&pid, &format!("agent.tool:{tool}"), &json!([args]));
+            let rx = self
+                .plug
+                .call_raw(&pid, &format!("agent.tool:{tool}"), &json!([args]));
             if let Some(run) = self.ai.run.as_mut() {
                 run.pending.push(Pending { slot, call, rx });
             }
@@ -230,7 +277,9 @@ impl App {
     }
 
     fn ai_poll_plugins(&mut self, ctx: &egui::Context) {
-        let Some(run) = self.ai.run.as_mut() else { return };
+        let Some(run) = self.ai.run.as_mut() else {
+            return;
+        };
         if run.pending.is_empty() {
             return;
         }
@@ -249,7 +298,11 @@ impl App {
                 None => i += 1,
             }
         }
-        let rows = self.docs.iter().find(|d| d.id == doc_id).map_or(0, |d| d.lines.len());
+        let rows = self
+            .docs
+            .iter()
+            .find(|d| d.id == doc_id)
+            .map_or(0, |d| d.lines.len());
         for (p, r) in done {
             let v = match r {
                 Ok(j) => match serde_json::from_str::<Value>(&j) {
@@ -273,9 +326,28 @@ impl App {
         if result["kind"] == "patch_proposal" {
             let start = result["start"].as_u64().unwrap_or(0) as usize;
             let remove = result["remove"].as_u64().unwrap_or(0) as usize;
-            let insert: Vec<String> = result["insert"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-            let old = self.docs.iter().find(|d| d.id == doc_id).map(|d| d.lines.iter().skip(start).take(remove).cloned().collect()).unwrap_or_default();
-            self.ai.items.push(Item::Proposal(Proposal { doc_id, start, remove, insert, old, reason: result["reason"].as_str().unwrap_or("").to_string() }));
+            let insert: Vec<String> = result["insert"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let old = self
+                .docs
+                .iter()
+                .find(|d| d.id == doc_id)
+                .map(|d| d.lines.iter().skip(start).take(remove).cloned().collect())
+                .unwrap_or_default();
+            self.ai.items.push(Item::Proposal(Proposal {
+                doc_id,
+                start,
+                remove,
+                insert,
+                old,
+                reason: result["reason"].as_str().unwrap_or("").to_string(),
+            }));
         }
         if let Some(run) = self.ai.run.as_mut() {
             if let Some(s) = run.slots.get_mut(slot) {
@@ -286,7 +358,9 @@ impl App {
 
     /// 本轮工具都有结果了 -> 把结果并进消息, 发下一轮
     fn ai_next_round(&mut self, ctx: &egui::Context) {
-        let Some(run) = self.ai.run.as_mut() else { return };
+        let Some(run) = self.ai.run.as_mut() else {
+            return;
+        };
         if !run.pending.is_empty() || run.slots.iter().any(Option::is_none) {
             return;
         }
@@ -307,8 +381,16 @@ impl App {
                 .msgs
                 .iter()
                 .skip(1)
-                .filter(|m| m["role"] == "user" || (m["role"] == "assistant" && m["tool_calls"].is_null() && m["content"].as_str().is_some_and(|s| !s.is_empty())))
-                .map(|m| Msg { role: m["role"].as_str().unwrap_or("").into(), content: m["content"].as_str().unwrap_or("").into() })
+                .filter(|m| {
+                    m["role"] == "user"
+                        || (m["role"] == "assistant"
+                            && m["tool_calls"].is_null()
+                            && m["content"].as_str().is_some_and(|s| !s.is_empty()))
+                })
+                .map(|m| Msg {
+                    role: m["role"].as_str().unwrap_or("").into(),
+                    content: m["content"].as_str().unwrap_or("").into(),
+                })
                 .collect();
             self.ai.history = ai::trim_history(h);
         }
@@ -322,15 +404,22 @@ impl App {
     }
 
     fn ai_apply(&mut self, idx: usize) {
-        let Some(Item::Proposal(p)) = self.ai.items.get(idx) else { return };
+        let Some(Item::Proposal(p)) = self.ai.items.get(idx) else {
+            return;
+        };
         let msg = match self.docs.iter_mut().find(|d| d.id == p.doc_id) {
-            Some(d) if d.lines.len() >= p.start + p.remove && d.lines[p.start..p.start + p.remove] == p.old[..] => match d.apply_line_patch(p.start, p.remove, p.insert.clone(), None) {
-                Ok(()) => {
-                    d.tip = tr("ai.applied").into();
-                    Item::Sys(tr("ai.applied").into())
+            Some(d)
+                if d.lines.len() >= p.start + p.remove
+                    && d.lines[p.start..p.start + p.remove] == p.old[..] =>
+            {
+                match d.apply_line_patch(p.start, p.remove, p.insert.clone(), None) {
+                    Ok(()) => {
+                        d.tip = tr("ai.applied").into();
+                        Item::Sys(tr("ai.applied").into())
+                    }
+                    Err(e) => Item::Err(e),
                 }
-                Err(e) => Item::Err(e),
-            },
+            }
             _ => Item::Err(tr("ai.stale").into()),
         };
         self.ai.items[idx] = msg;
@@ -340,15 +429,26 @@ impl App {
         let Some(q) = self.ai.ask.clone() else { return };
         let url = self.ai_cfg().base_url.clone();
         let i = self.active.min(self.docs.len() - 1);
-        let (label, n) = self.ai_context(i).map(|c| (c.label, c.text.chars().count())).unwrap_or(("", 0));
+        let (label, n) = self
+            .ai_context(i)
+            .map(|c| (c.label, c.text.chars().count()))
+            .unwrap_or(("", 0));
         let mut choice = None;
-        egui::Window::new(tr("ai.consent-title")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-            ui.label(trf("ai.consent", &[label, &n.to_string(), &url]));
-            ui.horizontal(|ui| {
-                if ui.button(tr("ai.allow")).clicked() { choice = Some(true); }
-                if ui.button(tr("ai.deny")).clicked() { choice = Some(false); }
+        egui::Window::new(tr("ai.consent-title"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(trf("ai.consent", &[label, &n.to_string(), &url]));
+                ui.horizontal(|ui| {
+                    if ui.button(tr("ai.allow")).clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button(tr("ai.deny")).clicked() {
+                        choice = Some(false);
+                    }
+                });
             });
-        });
         if let Some(allow) = choice {
             self.ai.ask = None;
             if allow {
@@ -366,15 +466,36 @@ impl App {
         let busy = self.ai.run.is_some();
         // 头部 (Tauri `#chat-head`): 左「Chat」(11px 等宽), 右 ✕ / 清空 / 「带上选中内容 / 当前章节」勾选
         let tc = self.tc;
-        let edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
-        let boxed = |t: &str| egui::Button::new(egui::RichText::new(t).size(12.0).color(tc.fg)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, edge)).corner_radius(4.0).min_size(Vec2::new(0.0, 26.0));
+        let edge = if tc.dark {
+            Color32::from_gray(69)
+        } else {
+            Color32::from_gray(204)
+        };
+        let boxed = |t: &str| {
+            egui::Button::new(egui::RichText::new(t).size(12.0).color(tc.fg))
+                .fill(Color32::TRANSPARENT)
+                .stroke(egui::Stroke::new(1.0, edge))
+                .corner_radius(4.0)
+                .min_size(Vec2::new(0.0, 26.0))
+        };
         ui.horizontal(|ui| {
             ui.set_min_height(30.0);
             ui.label(egui::RichText::new("Chat").monospace().size(11.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(boxed("×").min_size(Vec2::new(26.0, 26.0))).tip(trz("折叠 (Ctrl+Alt+L)")).clicked() { self.ai.open = false; }
-                if ui.add(boxed(tr("ai.clear"))).clicked() { act = Some(Act::Clear); }
-                ui.add(egui::Checkbox::new(&mut self.ai.use_ctx, egui::RichText::new(tr("ai.ctx")).size(11.0)));
+                if ui
+                    .add(boxed("×").min_size(Vec2::new(26.0, 26.0)))
+                    .tip(trz("折叠 (Ctrl+Alt+L)"))
+                    .clicked()
+                {
+                    self.ai.open = false;
+                }
+                if ui.add(boxed(tr("ai.clear"))).clicked() {
+                    act = Some(Act::Clear);
+                }
+                ui.add(egui::Checkbox::new(
+                    &mut self.ai.use_ctx,
+                    egui::RichText::new(tr("ai.ctx")).size(11.0),
+                ));
             });
         });
         if self.ai.settings {
@@ -382,7 +503,9 @@ impl App {
             let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
             ui.horizontal_wrapped(|ui| {
                 for (name, url) in ai::PRESETS {
-                    if ui.small_button(*name).clicked() { cfg.base_url = (*url).to_string(); }
+                    if ui.small_button(*name).clicked() {
+                        cfg.base_url = (*url).to_string();
+                    }
                 }
             });
             egui::Grid::new("ai_cfg").num_columns(2).show(ui, |ui| {
@@ -393,20 +516,47 @@ impl App {
                 ui.add(egui::TextEdit::singleline(&mut cfg.model).desired_width(220.0));
                 ui.end_row();
                 ui.label(tr("ai.key"));
-                ui.add(egui::TextEdit::singleline(&mut cfg.key).password(true).desired_width(220.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut cfg.key)
+                        .password(true)
+                        .desired_width(220.0),
+                );
                 ui.end_row();
                 ui.label(tr("ai.effort"));
                 // 档位下拉: 默认 (不指定) + 获取到 / 手填的档位 (没有就用通用默认); 当前值不在列表里也照样显示
                 let opts = ai::options(cfg);
-                let shown = if cfg.effort.is_empty() { tr("ai.effort-default").to_string() } else { cfg.effort.clone() };
-                egui::ComboBox::from_id_salt("ai-effort").width(220.0).selected_text(shown).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut cfg.effort, String::new(), tr("ai.effort-default"));
-                    for o in &opts { ui.selectable_value(&mut cfg.effort, o.clone(), o); }
-                });
+                let shown = if cfg.effort.is_empty() {
+                    tr("ai.effort-default").to_string()
+                } else {
+                    cfg.effort.clone()
+                };
+                egui::ComboBox::from_id_salt("ai-effort")
+                    .width(220.0)
+                    .selected_text(shown)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut cfg.effort,
+                            String::new(),
+                            tr("ai.effort-default"),
+                        );
+                        for o in &opts {
+                            ui.selectable_value(&mut cfg.effort, o.clone(), o);
+                        }
+                    });
                 ui.end_row();
                 ui.label(tr("ai.effort-custom"));
-                let text = self.ai.efforts_text.get_or_insert_with(|| cfg.efforts.join(","));
-                if ui.add(egui::TextEdit::singleline(text).hint_text("low,medium,high,xhigh").desired_width(220.0)).changed() {
+                let text = self
+                    .ai
+                    .efforts_text
+                    .get_or_insert_with(|| cfg.efforts.join(","));
+                if ui
+                    .add(
+                        egui::TextEdit::singleline(text)
+                            .hint_text("low,medium,high,xhigh")
+                            .desired_width(220.0),
+                    )
+                    .changed()
+                {
                     cfg.efforts = ai::parse_custom(text);
                 }
                 ui.end_row();
@@ -414,18 +564,26 @@ impl App {
             // 从供应商获取档位: 点了才联网, 后台线程查模型接口 (密钥只发给上面填的接口地址)
             ui.horizontal(|ui| {
                 let busy = self.ai.fetch.is_some();
-                if ui.add_enabled(!busy, egui::Button::new(tr("ai.effort-fetch"))).clicked() {
+                if ui
+                    .add_enabled(!busy, egui::Button::new(tr("ai.effort-fetch")))
+                    .clicked()
+                {
                     let (tx, rx) = std::sync::mpsc::channel();
                     let snapshot = cfg.clone();
                     let ctx = ui.ctx().clone();
-                    let _ = std::thread::Builder::new().name("ai-efforts".into()).spawn(move || {
-                        let _ = tx.send(ai::fetch_efforts(&snapshot));
-                        ctx.request_repaint();
-                    });
+                    let _ =
+                        std::thread::Builder::new()
+                            .name("ai-efforts".into())
+                            .spawn(move || {
+                                let _ = tx.send(ai::fetch_efforts(&snapshot));
+                                ctx.request_repaint();
+                            });
                     self.ai.fetch = Some(rx);
                     self.ai.fetch_msg = tr("ai.effort-fetching").to_string();
                 }
-                if busy { ui.spinner(); }
+                if busy {
+                    ui.spinner();
+                }
             });
             if let Some(rx) = &self.ai.fetch {
                 match rx.try_recv() {
@@ -433,7 +591,10 @@ impl App {
                         self.ai.fetch = None;
                         self.ai.fetch_msg = match res {
                             Ok(list) => {
-                                let msg = trf("ai.effort-got", &[&list.len().to_string(), &list.join(", ")]);
+                                let msg = trf(
+                                    "ai.effort-got",
+                                    &[&list.len().to_string(), &list.join(", ")],
+                                );
                                 self.ai.efforts_text = Some(list.join(","));
                                 cfg.efforts = list;
                                 msg
@@ -441,67 +602,133 @@ impl App {
                             Err(e) => e,
                         };
                     }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(150)),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => ui
+                        .ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(150)),
                     Err(_) => self.ai.fetch = None,
                 }
             }
-            if !self.ai.fetch_msg.is_empty() { ui.weak(self.ai.fetch_msg.as_str()); }
-            if let Err(e) = ai::endpoint(&cfg.base_url) { ui.colored_label(Color32::LIGHT_RED, e); }
+            if !self.ai.fetch_msg.is_empty() {
+                ui.weak(self.ai.fetch_msg.as_str());
+            }
+            if let Err(e) = ai::endpoint(&cfg.base_url) {
+                ui.colored_label(Color32::LIGHT_RED, e);
+            }
             ui.weak(tr("ai.key-note"));
-            if ui.button(tr("ai.save")).clicked() { act = Some(Act::Save); }
+            if ui.button(tr("ai.save")).clicked() {
+                act = Some(Act::Save);
+            }
         }
         ui.separator();
         let avail = (ui.available_height() - 110.0).max(60.0);
-        egui::ScrollArea::vertical().max_height(avail).auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
-            for idx in 0..self.ai.items.len() {
-                match &self.ai.items[idx] {
-                    Item::User(t) => { ui.label(egui::RichText::new(format!("{} {t}", tr("ai.you"))).strong()); }
-                    Item::Ai(t) => {
-                        ui.label(t.as_str());
-                        if !t.is_empty() && !busy {
-                            ui.horizontal(|ui| {
-                                if ui.small_button(tr("ai.insert")).clicked() { act = Some(Act::Insert(t.clone())); }
-                                if ui.small_button(tr("ai.copy")).clicked() { act = Some(Act::Copy(t.clone())); }
+        egui::ScrollArea::vertical()
+            .max_height(avail)
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                for idx in 0..self.ai.items.len() {
+                    match &self.ai.items[idx] {
+                        Item::User(t) => {
+                            ui.label(egui::RichText::new(format!("{} {t}", tr("ai.you"))).strong());
+                        }
+                        Item::Ai(t) => {
+                            ui.label(t.as_str());
+                            if !t.is_empty() && !busy {
+                                ui.horizontal(|ui| {
+                                    if ui.small_button(tr("ai.insert")).clicked() {
+                                        act = Some(Act::Insert(t.clone()));
+                                    }
+                                    if ui.small_button(tr("ai.copy")).clicked() {
+                                        act = Some(Act::Copy(t.clone()));
+                                    }
+                                });
+                            }
+                        }
+                        Item::Tool(t) => {
+                            ui.weak(t.as_str());
+                        }
+                        Item::Err(t) => {
+                            ui.colored_label(Color32::LIGHT_RED, t.as_str());
+                        }
+                        Item::Sys(t) => {
+                            ui.weak(t.as_str());
+                        }
+                        Item::Proposal(p) => {
+                            egui::Frame::group(ui.style()).show(ui, |ui| {
+                                let head = trf(
+                                    "ai.proposal",
+                                    &[&(p.start + 1).to_string(), &p.remove.to_string()],
+                                );
+                                ui.label(if p.reason.is_empty() {
+                                    head
+                                } else {
+                                    format!("{head} — {}", p.reason)
+                                });
+                                for l in &p.old {
+                                    ui.colored_label(
+                                        Color32::from_rgb(220, 110, 110),
+                                        format!("- {l}"),
+                                    );
+                                }
+                                for l in &p.insert {
+                                    ui.colored_label(
+                                        Color32::from_rgb(110, 200, 120),
+                                        format!("+ {l}"),
+                                    );
+                                }
+                                ui.horizontal(|ui| {
+                                    if ui.button(tr("ai.apply")).clicked() {
+                                        act = Some(Act::Apply(idx));
+                                    }
+                                    if ui.button(tr("ai.reject")).clicked() {
+                                        act = Some(Act::Reject(idx));
+                                    }
+                                });
                             });
                         }
                     }
-                    Item::Tool(t) => { ui.weak(t.as_str()); }
-                    Item::Err(t) => { ui.colored_label(Color32::LIGHT_RED, t.as_str()); }
-                    Item::Sys(t) => { ui.weak(t.as_str()); }
-                    Item::Proposal(p) => {
-                        egui::Frame::group(ui.style()).show(ui, |ui| {
-                            let head = trf("ai.proposal", &[&(p.start + 1).to_string(), &p.remove.to_string()]);
-                            ui.label(if p.reason.is_empty() { head } else { format!("{head} — {}", p.reason) });
-                            for l in &p.old { ui.colored_label(Color32::from_rgb(220, 110, 110), format!("- {l}")); }
-                            for l in &p.insert { ui.colored_label(Color32::from_rgb(110, 200, 120), format!("+ {l}")); }
-                            ui.horizontal(|ui| {
-                                if ui.button(tr("ai.apply")).clicked() { act = Some(Act::Apply(idx)); }
-                                if ui.button(tr("ai.reject")).clicked() { act = Some(Act::Reject(idx)); }
-                            });
-                        });
-                    }
+                    ui.add_space(4.0);
                 }
-                ui.add_space(4.0);
-            }
-            if busy { ui.weak(tr("ai.thinking")); }
-        });
+                if busy {
+                    ui.weak(tr("ai.thinking"));
+                }
+            });
         ui.separator();
         // 模型行 (Tauri 聊天底部): 左 = 当前模型 (没设就写「未设置模型」), 右 = 模型设置…
         let model = self.ai_cfg().model.clone();
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(if model.is_empty() { trz("未设置模型").to_string() } else { model }).size(11.0).color(tc.fg_dim));
+            ui.label(
+                egui::RichText::new(if model.is_empty() {
+                    trz("未设置模型").to_string()
+                } else {
+                    model
+                })
+                .size(11.0)
+                .color(tc.fg_dim),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(boxed(&format!("{}…", trz("模型设置")))).clicked() { self.ai.settings = !self.ai.settings; }
+                if ui.add(boxed(&format!("{}…", trz("模型设置")))).clicked() {
+                    self.ai.settings = !self.ai.settings;
+                }
             });
         });
         let id = ui.make_persistent_id("ai_input");
-        let enter = ui.memory(|m| m.has_focus(id)) && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+        let enter = ui.memory(|m| m.has_focus(id))
+            && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
         // 输入框 + 右侧「发送」(忙时是「取消」): Tauri 的聊天输入是一行两栏
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 62.0).max(80.0);
-            ui.add(egui::TextEdit::multiline(&mut self.ai.input).id(id).desired_rows(3).desired_width(w).hint_text(tr("ai.placeholder")));
+            ui.add(
+                egui::TextEdit::multiline(&mut self.ai.input)
+                    .id(id)
+                    .desired_rows(3)
+                    .desired_width(w)
+                    .hint_text(tr("ai.placeholder")),
+            );
             if busy {
-                if ui.add(boxed(tr("ai.cancel"))).clicked() { act = Some(Act::Cancel); }
+                if ui.add(boxed(tr("ai.cancel"))).clicked() {
+                    act = Some(Act::Cancel);
+                }
             } else if ui.add(boxed(tr("ai.send"))).clicked() || enter {
                 act = Some(Act::Send);
             }
@@ -516,9 +743,14 @@ impl App {
             }
             Some(Act::Apply(i)) => self.ai_apply(i),
             Some(Act::Reject(i)) => self.ai.items[i] = Item::Sys(tr("ai.rejected").into()),
-            Some(Act::Insert(t)) => { self.cur().edit("paste", Some(t)); }
+            Some(Act::Insert(t)) => {
+                self.cur().edit("paste", Some(t));
+            }
             Some(Act::Copy(t)) => ctx.copy_text(t),
-            Some(Act::Save) => { self.ai_save_cfg(); self.ai.settings = false; }
+            Some(Act::Save) => {
+                self.ai_save_cfg();
+                self.ai.settings = false;
+            }
             None => {}
         }
     }

@@ -3,7 +3,9 @@
 //! 样式只作用在菜单里 (`MenuConfig::style`), 不影响窗口里的普通控件。
 
 use crate::view::ThemeColors;
-use eframe::egui::{self, epaint::Shadow, Align2, Color32, FontId, Response, Stroke, TextFormat, Ui, Vec2};
+use eframe::egui::{
+    self, epaint::Shadow, Align2, Color32, FontId, Response, Stroke, TextFormat, Ui, Vec2,
+};
 
 /// 菜单栏按钮的字号 / 左右内边距 (Tauri `.mb-btn`: 13px, 约 8-12px)
 pub const MENU_FONT: f32 = 13.0;
@@ -31,33 +33,58 @@ pub fn mnemonic(menu_key: &str) -> char {
 /// 所有可能当助记字母的键 (A..Z)
 pub const MNEMONIC_KEYS: [egui::Key; 26] = {
     use egui::Key::*;
-    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+    [
+        A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    ]
 };
 
 /// 助记字母对应的键 (Alt+字母)
 pub fn mnemonic_key(menu_key: &str) -> Option<egui::Key> {
     let m = mnemonic(menu_key);
-    if m == ' ' { None } else { egui::Key::from_name(&m.to_string()) }
+    if m == ' ' {
+        None
+    } else {
+        egui::Key::from_name(&m.to_string())
+    }
 }
 
 /// 这次按键 (只按了 Alt, 没有 Ctrl / Shift) 对应的顶层菜单下标
 pub fn menu_for_key(keys: &[&str], mods: egui::Modifiers, key: egui::Key) -> Option<usize> {
-    if !mods.alt || mods.ctrl || mods.shift || mods.command { return None; }
+    if !mods.alt || mods.ctrl || mods.shift || mods.command {
+        return None;
+    }
     keys.iter().position(|k| mnemonic_key(k) == Some(key))
 }
 
 /// 当前菜单栏焦点 (App 每帧写进 egui 临时数据, `top` 读)
-pub fn bar_focus_id() -> egui::Id { egui::Id::new("menubar-focus-idx") }
+pub fn bar_focus_id() -> egui::Id {
+    egui::Id::new("menubar-focus-idx")
+}
 
 /// 顶层菜单按钮, 并把它的弹出层 id 记下来 (给 Alt+助记字母用)
-pub fn top<R>(ui: &mut Ui, mids: &mut Vec<(&'static str, egui::Id)>, key: &'static str, title: egui::text::LayoutJob, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
+pub fn top<R>(
+    ui: &mut Ui,
+    mids: &mut Vec<(&'static str, egui::Id)>,
+    key: &'static str,
+    title: egui::text::LayoutJob,
+    content: impl FnOnce(&mut Ui) -> R,
+) -> egui::InnerResponse<Option<R>> {
     let r = ui.menu_button(title, content);
     // 菜单栏焦点 (单按 Alt): 这个菜单名上画一层半透明前景色 + 1px 描边 (Tauri `.mb-btn:focus-visible`)
-    if ui.data(|d| d.get_temp::<Option<usize>>(bar_focus_id())).flatten() == Some(mids.len()) {
+    if ui
+        .data(|d| d.get_temp::<Option<usize>>(bar_focus_id()))
+        .flatten()
+        == Some(mids.len())
+    {
         let col = ui.visuals().widgets.inactive.fg_stroke.color;
         let rc = r.response.rect;
         ui.painter().rect_filled(rc, 0.0, col.gamma_multiply(0.16));
-        ui.painter().rect_stroke(rc.shrink(0.5), 0.0, Stroke::new(1.0, col.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            rc.shrink(0.5),
+            0.0,
+            Stroke::new(1.0, col.gamma_multiply(0.7)),
+            egui::StrokeKind::Inside,
+        );
     }
     mids.push((key, egui::Popup::default_response_id(&r.response)));
     r
@@ -66,9 +93,26 @@ pub fn top<R>(ui: &mut Ui, mids: &mut Vec<(&'static str, egui::Id)>, key: &'stat
 /// 菜单按钮文字: 菜单名 (13px, 随悬停变色) + 6px 间隔 + 带下划线的助记字母 (11px, 弱前景; `' '` = 不画, 窄窗口用)
 pub fn menu_title(tc: &ThemeColors, label: &str, mn: char) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
-    job.append(label, 0.0, TextFormat { font_id: FontId::proportional(MENU_FONT), color: Color32::PLACEHOLDER, ..Default::default() });
+    job.append(
+        label,
+        0.0,
+        TextFormat {
+            font_id: FontId::proportional(MENU_FONT),
+            color: Color32::PLACEHOLDER,
+            ..Default::default()
+        },
+    );
     if mn != ' ' {
-        job.append(&mn.to_string(), 6.0, TextFormat { font_id: FontId::proportional(11.0), color: tc.fg_dim, underline: Stroke::new(1.0, tc.fg_dim), ..Default::default() });
+        job.append(
+            &mn.to_string(),
+            6.0,
+            TextFormat {
+                font_id: FontId::proportional(11.0),
+                color: tc.fg_dim,
+                underline: Stroke::new(1.0, tc.fg_dim),
+                ..Default::default()
+            },
+        );
     }
     job
 }
@@ -78,7 +122,8 @@ pub fn bar_style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + '
     move |s: &mut egui::Style| {
         s.spacing.button_padding = Vec2::new(MENU_PAD_X, 3.0);
         s.spacing.item_spacing = Vec2::new(0.0, 0.0);
-        s.text_styles.insert(egui::TextStyle::Button, FontId::proportional(MENU_FONT));
+        s.text_styles
+            .insert(egui::TextStyle::Button, FontId::proportional(MENU_FONT));
         let v = &mut s.visuals;
         v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
         v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
@@ -94,8 +139,19 @@ pub fn bar_style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + '
 
 /// 一个菜单按钮的宽度 (含内边距)
 pub fn title_width(ui: &Ui, label: &str, mn: char) -> f32 {
-    let f = |t: &str, px: f32| ui.painter().layout_no_wrap(t.to_string(), FontId::proportional(px), Color32::WHITE).size().x;
-    f(label, MENU_FONT) + if mn != ' ' { 6.0 + f(&mn.to_string(), 11.0) } else { 0.0 } + 2.0 * MENU_PAD_X
+    let f = |t: &str, px: f32| {
+        ui.painter()
+            .layout_no_wrap(t.to_string(), FontId::proportional(px), Color32::WHITE)
+            .size()
+            .x
+    };
+    f(label, MENU_FONT)
+        + if mn != ' ' {
+            6.0 + f(&mn.to_string(), 11.0)
+        } else {
+            0.0
+        }
+        + 2.0 * MENU_PAD_X
 }
 
 /// 菜单里的样式修改器: 下拉框(底色 = 菜单栏色, 1px 边, 直角, 阴影 `0 2px 8px`), 行内边距, 悬停色, 最小宽
@@ -106,12 +162,18 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
         s.spacing.item_spacing = Vec2::new(8.0, 0.0);
         s.spacing.menu_width = 240.0;
         s.spacing.menu_margin = egui::Margin::symmetric(0, 4);
-        s.text_styles.insert(egui::TextStyle::Button, FontId::proportional(12.0));
+        s.text_styles
+            .insert(egui::TextStyle::Button, FontId::proportional(12.0));
         let v = &mut s.visuals;
         v.window_fill = tc.bg_bar;
         v.window_stroke = Stroke::new(1.0, tc.border);
         v.menu_corner_radius = egui::CornerRadius::ZERO;
-        v.popup_shadow = Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(128) };
+        v.popup_shadow = Shadow {
+            offset: [0, 2],
+            blur: 8,
+            spread: 0,
+            color: Color32::from_black_alpha(128),
+        };
         v.widgets.hovered.weak_bg_fill = tc.bg_active;
         v.widgets.hovered.fg_stroke.color = tc.fg;
         v.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
@@ -126,7 +188,10 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
 pub fn scroll(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     let max = menu_max_height(ui.ctx().content_rect().bottom(), ui.cursor().top());
     ui.set_max_height(max); // 弹出层的可用高度默认只有上一帧内容那么高, 先放开到窗口底
-    egui::ScrollArea::vertical().max_height(max).auto_shrink([true, true]).show(ui, add);
+    egui::ScrollArea::vertical()
+        .max_height(max)
+        .auto_shrink([true, true])
+        .show(ui, add);
 }
 
 /// 菜单正文最高多少: 从菜单顶到窗口底, 留 12px 边
@@ -144,17 +209,27 @@ pub fn split_keys(s: &str) -> (&str, &str) {
 pub fn mbtn(ui: &mut Ui, text: impl AsRef<str>) -> Response {
     let (name, keys) = split_keys(text.as_ref());
     let mut b = egui::Button::new(name);
-    if !keys.is_empty() { b = b.shortcut_text(keys); }
+    if !keys.is_empty() {
+        b = b.shortcut_text(keys);
+    }
     ui.add(b)
 }
 
 pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
     let (name, keys) = split_keys(label.as_ref());
     let mut b = egui::Button::new(name).fill(Color32::TRANSPARENT);
-    if !keys.is_empty() { b = b.shortcut_text(keys); }
+    if !keys.is_empty() {
+        b = b.shortcut_text(keys);
+    }
     let r = ui.add(b);
     if on {
-        ui.painter().text(egui::pos2(r.rect.left() + 7.0, r.rect.center().y), Align2::LEFT_CENTER, "✓", FontId::proportional(12.0), tc.fg);
+        ui.painter().text(
+            egui::pos2(r.rect.left() + 7.0, r.rect.center().y),
+            Align2::LEFT_CENTER,
+            "✓",
+            FontId::proportional(12.0),
+            tc.fg,
+        );
     }
     r
 }
@@ -177,7 +252,20 @@ mod tests {
 
     #[test]
     fn every_menu_has_a_distinct_mnemonic() {
-        let keys = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.tool", "menu.help"];
+        let keys = [
+            "menu.file",
+            "menu.edit",
+            "menu.search",
+            "menu.fold",
+            "menu.plugin",
+            "menu.setting",
+            "menu.bookmark",
+            "menu.window",
+            "menu.macro",
+            "menu.view",
+            "menu.tool",
+            "menu.help",
+        ];
         let mut seen = std::collections::HashSet::new();
         for k in keys {
             let m = mnemonic(k);
@@ -188,21 +276,68 @@ mod tests {
 
     #[test]
     fn tauri_letters_are_kept_for_the_shared_menus() {
-        assert_eq!((mnemonic("menu.file"), mnemonic("menu.edit"), mnemonic("menu.search"), mnemonic("menu.view"), mnemonic("menu.setting"), mnemonic("menu.window"), mnemonic("menu.help")), ('F', 'E', 'S', 'V', 'C', 'W', 'H'));
+        assert_eq!(
+            (
+                mnemonic("menu.file"),
+                mnemonic("menu.edit"),
+                mnemonic("menu.search"),
+                mnemonic("menu.view"),
+                mnemonic("menu.setting"),
+                mnemonic("menu.window"),
+                mnemonic("menu.help")
+            ),
+            ('F', 'E', 'S', 'V', 'C', 'W', 'H')
+        );
     }
 
     #[test]
     fn alt_letter_picks_the_menu_with_that_mnemonic() {
-        let keys = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.tool", "menu.help"];
+        let keys = [
+            "menu.file",
+            "menu.edit",
+            "menu.search",
+            "menu.fold",
+            "menu.plugin",
+            "menu.setting",
+            "menu.bookmark",
+            "menu.window",
+            "menu.macro",
+            "menu.view",
+            "menu.tool",
+            "menu.help",
+        ];
         let alt = egui::Modifiers::ALT;
         for (i, k) in keys.iter().enumerate() {
             let key = mnemonic_key(k).expect("字母键");
             assert_eq!(menu_for_key(&keys, alt, key), Some(i), "{k}");
         }
-        assert_eq!(menu_for_key(&keys, alt, egui::Key::Q), None, "Q 没有对应菜单");
-        assert_eq!(menu_for_key(&keys, egui::Modifiers::NONE, egui::Key::F), None, "不按 Alt 不开菜单");
-        assert_eq!(menu_for_key(&keys, egui::Modifiers::ALT | egui::Modifiers::SHIFT, egui::Key::F), None, "Alt+Shift+F 留给命令");
-        assert_eq!(menu_for_key(&keys, egui::Modifiers::ALT | egui::Modifiers::CTRL, egui::Key::F), None);
+        assert_eq!(
+            menu_for_key(&keys, alt, egui::Key::Q),
+            None,
+            "Q 没有对应菜单"
+        );
+        assert_eq!(
+            menu_for_key(&keys, egui::Modifiers::NONE, egui::Key::F),
+            None,
+            "不按 Alt 不开菜单"
+        );
+        assert_eq!(
+            menu_for_key(
+                &keys,
+                egui::Modifiers::ALT | egui::Modifiers::SHIFT,
+                egui::Key::F
+            ),
+            None,
+            "Alt+Shift+F 留给命令"
+        );
+        assert_eq!(
+            menu_for_key(
+                &keys,
+                egui::Modifiers::ALT | egui::Modifiers::CTRL,
+                egui::Key::F
+            ),
+            None
+        );
     }
 
     #[test]

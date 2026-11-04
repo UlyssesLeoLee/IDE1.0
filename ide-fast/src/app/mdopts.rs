@@ -3,8 +3,8 @@
 //! 插件宿主 (QuickJS) 因此也是用到才创建;结果按 (语言, 源码) 缓存,不重复渲染。
 
 use super::*;
-use crate::md_view::{fence_key, FenceRes, MdEdit, MdEvent};
 use crate::markdown::Parsed;
+use crate::md_view::{fence_key, FenceRes, MdEdit, MdEvent};
 use crate::mdtools;
 use crate::svgicon;
 use std::collections::HashMap;
@@ -18,14 +18,90 @@ const FENCE_JOBS: usize = 6;
 /// 工具条按钮 (editor.html `MD_BTNS`; 分组之间一条竖线): (按钮字, 编辑命令, 提示, 矢量图标)。
 /// Tauri 里 🔗 🖼 ☑ ❝ 🔎 💡 ◇ ⇪ ✓ 是彩色 emoji, egui 字体画不出, 这里换成 `svgicon` 的矢量图标 (跟主题文字色走)。
 /// 按钮字以 `@` 开头 = i18n 键; 命令以 `ide:` 开头 = ide-fast 自己的动作 (结构 / 导出 / 检查)
-type MdBtn = (&'static str, &'static str, &'static str, Option<&'static [svgicon::PathDef]>);
+type MdBtn = (
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<&'static [svgicon::PathDef]>,
+);
 const MD_BAR: &[&[MdBtn]] = &[
-    &[("B", "md-bold", "粗体 (Ctrl+B)", None), ("I", "md-italic", "斜体 (Ctrl+I)", None), ("S", "md-strike", "删除线 (Ctrl+Shift+X)", None), ("==", "md-highlight", "高亮 ==文字==", None), ("`", "md-code", "行内代码 (Ctrl+E)", None)],
-    &[("H1", "md-h1", "标题 1 (Ctrl+Alt+1)", None), ("H2", "md-h2", "标题 2 (Ctrl+Alt+2)", None), ("H3", "md-h3", "标题 3 (Ctrl+Alt+3)", None), ("H4", "md-h4", "标题 4", None)],
-    &[("• 列表", "md-ul", "无序列表", None), ("1. 列表", "md-ol", "有序列表", None), ("任务", "md-task", "任务列表", Some(svgicon::TASK)), ("引用", "md-quote", "引用", Some(svgicon::QUOTE))],
-    &[("链接", "md-link", "链接 (Ctrl+Shift+K)", Some(svgicon::LINK)), ("图片", "md-image", "图片", Some(svgicon::IMAGE)), ("表格", "md-table", "表格 3×3", None), ("{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)", None)],
-    &[("↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格", None), ("↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格", None), ("@md.struct", "ide:struct", "@md.struct-tip", Some(svgicon::SEARCH)), ("@md.export-html", "ide:export", "@md.export-tip", Some(svgicon::EXPORT)), ("@md.lint", "ide:lint", "@md.lint-tip", Some(svgicon::LINT))],
-    &[("分隔线", "md-hr", "分隔线", None), ("Callout", "md-callout", "Obsidian callout", Some(svgicon::CALLOUT)), ("Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)", Some(svgicon::MERMAID))],
+    &[
+        ("B", "md-bold", "粗体 (Ctrl+B)", None),
+        ("I", "md-italic", "斜体 (Ctrl+I)", None),
+        ("S", "md-strike", "删除线 (Ctrl+Shift+X)", None),
+        ("==", "md-highlight", "高亮 ==文字==", None),
+        ("`", "md-code", "行内代码 (Ctrl+E)", None),
+    ],
+    &[
+        ("H1", "md-h1", "标题 1 (Ctrl+Alt+1)", None),
+        ("H2", "md-h2", "标题 2 (Ctrl+Alt+2)", None),
+        ("H3", "md-h3", "标题 3 (Ctrl+Alt+3)", None),
+        ("H4", "md-h4", "标题 4", None),
+    ],
+    &[
+        ("• 列表", "md-ul", "无序列表", None),
+        ("1. 列表", "md-ol", "有序列表", None),
+        ("任务", "md-task", "任务列表", Some(svgicon::TASK)),
+        ("引用", "md-quote", "引用", Some(svgicon::QUOTE)),
+    ],
+    &[
+        (
+            "链接",
+            "md-link",
+            "链接 (Ctrl+Shift+K)",
+            Some(svgicon::LINK),
+        ),
+        ("图片", "md-image", "图片", Some(svgicon::IMAGE)),
+        ("表格", "md-table", "表格 3×3", None),
+        (
+            "{ } 代码块",
+            "md-codeblock",
+            "围栏代码块 (自动选安全围栏)",
+            None,
+        ),
+    ],
+    &[
+        (
+            "↑ 章节",
+            "md-section-up",
+            "把光标所在章节(含子章节)上移一格",
+            None,
+        ),
+        (
+            "↓ 章节",
+            "md-section-down",
+            "把光标所在章节(含子章节)下移一格",
+            None,
+        ),
+        (
+            "@md.struct",
+            "ide:struct",
+            "@md.struct-tip",
+            Some(svgicon::SEARCH),
+        ),
+        (
+            "@md.export-html",
+            "ide:export",
+            "@md.export-tip",
+            Some(svgicon::EXPORT),
+        ),
+        ("@md.lint", "ide:lint", "@md.lint-tip", Some(svgicon::LINT)),
+    ],
+    &[
+        ("分隔线", "md-hr", "分隔线", None),
+        (
+            "Callout",
+            "md-callout",
+            "Obsidian callout",
+            Some(svgicon::CALLOUT),
+        ),
+        (
+            "Mermaid",
+            "md-mermaid",
+            "Mermaid 图 (需要渲染插件才能在预览里出图)",
+            Some(svgicon::MERMAID),
+        ),
+    ],
 ];
 
 /// 文字 + 矢量图标的工具条按钮 (11px 字, 图标 12px 在字左 4px; 悬停 / 按下用当前 `Visuals` 的控件态, 图标和字同色, 悬停时图标放大 10%)
@@ -35,21 +111,46 @@ fn bar_button(ui: &mut egui::Ui, icon: Option<&[svgicon::PathDef]>, label: &str)
     let galley = ui.painter().layout_no_wrap(label.to_string(), font, color);
     let pad = ui.spacing().button_padding;
     let icon_w = if icon.is_some() { 12.0 + 4.0 } else { 0.0 };
-    let size = egui::vec2(pad.x * 2.0 + icon_w + galley.size().x, (galley.size().y + pad.y * 2.0).max(20.0));
+    let size = egui::vec2(
+        pad.x * 2.0 + icon_w + galley.size().x,
+        (galley.size().y + pad.y * 2.0).max(20.0),
+    );
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     if ui.is_rect_visible(rect) {
         let v = ui.visuals();
-        let w = if resp.is_pointer_button_down_on() { &v.widgets.active } else if resp.hovered() { &v.widgets.hovered } else { &v.widgets.inactive };
-        let (fill, stroke, fg, r) = (w.weak_bg_fill, w.bg_stroke, w.fg_stroke.color, w.corner_radius);
+        let w = if resp.is_pointer_button_down_on() {
+            &v.widgets.active
+        } else if resp.hovered() {
+            &v.widgets.hovered
+        } else {
+            &v.widgets.inactive
+        };
+        let (fill, stroke, fg, r) = (
+            w.weak_bg_fill,
+            w.bg_stroke,
+            w.fg_stroke.color,
+            w.corner_radius,
+        );
         let p = ui.painter();
         p.rect(rect, r, fill, stroke, egui::StrokeKind::Inside);
         let mut x = rect.left() + pad.x;
         if let Some(paths) = icon {
             let k = if resp.hovered() { 1.1 } else { 1.0 };
-            svgicon::paint(p, egui::pos2(x + 6.0, rect.center().y), 12.0 * k, paths, fg, 1.8);
+            svgicon::paint(
+                p,
+                egui::pos2(x + 6.0, rect.center().y),
+                12.0 * k,
+                paths,
+                fg,
+                1.8,
+            );
             x += icon_w;
         }
-        p.galley(egui::pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+        p.galley(
+            egui::pos2(x, rect.center().y - galley.size().y / 2.0),
+            galley,
+            fg,
+        );
     }
     resp
 }
@@ -80,7 +181,15 @@ impl MdState {
 
     fn providers(&mut self) -> &[(String, String, String)] {
         self.providers.get_or_insert_with(|| {
-            crate::plugins::rows().into_iter().filter(|r| r.enabled).flat_map(|r| r.fences.into_iter().map(move |(lang, m)| (lang, r.id.clone(), m))).collect()
+            crate::plugins::rows()
+                .into_iter()
+                .filter(|r| r.enabled)
+                .flat_map(|r| {
+                    r.fences
+                        .into_iter()
+                        .map(move |(lang, m)| (lang, r.id.clone(), m))
+                })
+                .collect()
         })
     }
 
@@ -96,9 +205,32 @@ fn hexc(c: egui::Color32) -> String {
 
 /// 主题色 -> 围栏图 (Pele) 的 CSS 变量: 线 / 字用主题前景, 节点底比编辑区底略亮 / 暗一点
 fn fence_vars(tc: &crate::view::ThemeColors) -> Vec<(&'static str, String)> {
-    let mix = |a: egui::Color32, b: egui::Color32, t: f32| egui::Color32::from_rgb((a.r() as f32 * (1.0 - t) + b.r() as f32 * t) as u8, (a.g() as f32 * (1.0 - t) + b.g() as f32 * t) as u8, (a.b() as f32 * (1.0 - t) + b.b() as f32 * t) as u8);
-    let bg = if tc.bg_edit.a() < 255 { if tc.dark { egui::Color32::from_gray(30) } else { egui::Color32::WHITE } } else { tc.bg_edit };
-    vec![("--pele-bg", hexc(bg)), ("--pele-fg", hexc(tc.fg)), ("--pele-muted", hexc(tc.fg_dim)), ("--pele-line", hexc(tc.fg_dim)), ("--pele-surface", hexc(mix(bg, tc.fg, 0.10))), ("--pele-surface-alt", hexc(mix(bg, tc.fg, 0.18))), ("--pele-border", hexc(tc.fg_dim)), ("--pele-accent", hexc(tc.blue))]
+    let mix = |a: egui::Color32, b: egui::Color32, t: f32| {
+        egui::Color32::from_rgb(
+            (a.r() as f32 * (1.0 - t) + b.r() as f32 * t) as u8,
+            (a.g() as f32 * (1.0 - t) + b.g() as f32 * t) as u8,
+            (a.b() as f32 * (1.0 - t) + b.b() as f32 * t) as u8,
+        )
+    };
+    let bg = if tc.bg_edit.a() < 255 {
+        if tc.dark {
+            egui::Color32::from_gray(30)
+        } else {
+            egui::Color32::WHITE
+        }
+    } else {
+        tc.bg_edit
+    };
+    vec![
+        ("--pele-bg", hexc(bg)),
+        ("--pele-fg", hexc(tc.fg)),
+        ("--pele-muted", hexc(tc.fg_dim)),
+        ("--pele-line", hexc(tc.fg_dim)),
+        ("--pele-surface", hexc(mix(bg, tc.fg, 0.10))),
+        ("--pele-surface-alt", hexc(mix(bg, tc.fg, 0.18))),
+        ("--pele-border", hexc(tc.fg_dim)),
+        ("--pele-accent", hexc(tc.blue)),
+    ]
 }
 
 fn outcome_to_res(r: Result<String, String>, vars: &[(&'static str, String)]) -> FenceRes {
@@ -132,7 +264,9 @@ impl App {
             match rx.try_recv() {
                 Ok(r) => finished.push((i, outcome_to_res(r, &vars))),
                 Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => finished.push((i, FenceRes::Failed("插件宿主已停止".into()))),
+                Err(TryRecvError::Disconnected) => {
+                    finished.push((i, FenceRes::Failed("插件宿主已停止".into())))
+                }
             }
         }
         for (i, res) in finished.into_iter().rev() {
@@ -156,13 +290,26 @@ impl App {
         if let Some(n) = ev.edit_req.filter(|_| ev.apply.is_none()) {
             let d = &self.docs[ai];
             if let Some((start, end)) = mdtools::block_span(blocks, n, &d.lines) {
-                self.md_cache.edit = Some(MdEdit { start, end, buf: d.lines[start..end].join("\n"), orig: d.lines[start..end].join("\n"), shown: false, doc: d.id, rev: d.rev });
+                self.md_cache.edit = Some(MdEdit {
+                    start,
+                    end,
+                    buf: d.lines[start..end].join("\n"),
+                    orig: d.lines[start..end].join("\n"),
+                    shown: false,
+                    doc: d.id,
+                    rev: d.rev,
+                });
             }
         }
         if let Some((start, end, text)) = &ev.apply {
             let d = &mut self.docs[ai];
             let cur = [(*start).min(d.lines.len().saturating_sub(1)), 0];
-            if let Err(e) = d.apply_line_patch(*start, end.saturating_sub(*start), mdtools::text_to_lines(text), Some(cur)) {
+            if let Err(e) = d.apply_line_patch(
+                *start,
+                end.saturating_sub(*start),
+                mdtools::text_to_lines(text),
+                Some(cur),
+            ) {
                 d.tip = e;
             }
         }
@@ -177,17 +324,30 @@ impl App {
             return;
         }
         if text.len() > FENCE_MAX_BYTES {
-            self.md10.fences.insert(key, FenceRes::Failed(trf("md.fence-big", &[&(FENCE_MAX_BYTES / 1024).to_string()])));
+            self.md10.fences.insert(
+                key,
+                FenceRes::Failed(trf(
+                    "md.fence-big",
+                    &[&(FENCE_MAX_BYTES / 1024).to_string()],
+                )),
+            );
             return;
         }
         if self.md10.jobs.len() >= FENCE_JOBS {
             return; // 下一帧再请求
         }
-        let Some((_, plugin, method)) = self.md10.providers().iter().find(|p| p.0 == lang).cloned() else { return };
+        let Some((_, plugin, method)) = self.md10.providers().iter().find(|p| p.0 == lang).cloned()
+        else {
+            return;
+        };
         if self.md10.fences.len() >= FENCE_CACHE {
-            self.md10.fences.retain(|_, v| matches!(v, FenceRes::Pending));
+            self.md10
+                .fences
+                .retain(|_, v| matches!(v, FenceRes::Pending));
         }
-        let rx = self.plug.call_raw(&plugin, &method, &serde_json::json!([text]));
+        let rx = self
+            .plug
+            .call_raw(&plugin, &method, &serde_json::json!([text]));
         self.md10.fences.insert(key, FenceRes::Pending);
         self.md10.jobs.push((key, rx));
     }
@@ -201,7 +361,11 @@ impl App {
         self.sys.problems_doc = Some(self.docs[i].id);
         self.term.open = true;
         self.sys.bottom = super::sysopts::BottomTab::Problems;
-        let msg = if n == 0 { tr("md.lint-ok").to_string() } else { trf("md.lint-n", &[&n.to_string()]) };
+        let msg = if n == 0 {
+            tr("md.lint-ok").to_string()
+        } else {
+            trf("md.lint-n", &[&n.to_string()])
+        };
         self.log(msg.clone());
         self.docs[i].tip = msg;
     }
@@ -228,82 +392,147 @@ impl App {
     /// Tauri 的 `#md-bar`: md 文档上方一条工具条 (2px 6px 内边距, bg_bar 底, 下边线, 横向可滚), 左边是格式按钮, 右边是 预览 开关;
     /// 按钮 11px、透明底 + 透明边、圆角 3, 悬停 bg_hover + 描边, 开着的预览按钮 bg_active。再加 ide-fast 自己的 检查 / 导出 两个按钮
     pub(super) fn md_bar(&mut self, root: &mut egui::Ui, ctx: &egui::Context, is_md: bool) {
-        if !is_md || !self.cfg.view.md_overlay { return; }
+        if !is_md || !self.cfg.view.md_overlay {
+            return;
+        }
         let tc = self.tc;
         let on = self.md_preview;
         let mut cmd: Option<&'static str> = None;
         let mut toggle = false;
-        let frame = egui::Frame::NONE.fill(tc.bg_bar).inner_margin(egui::Margin::symmetric(6, 2)).stroke(egui::Stroke::NONE);
-        let r = egui::Panel::top("mdbar").frame(frame).show_separator_line(false).show(root, |ui| {
-            let v = ui.visuals_mut();
-            for w in [&mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active] {
-                w.weak_bg_fill = egui::Color32::TRANSPARENT;
-                w.bg_stroke = egui::Stroke::NONE;
-                w.corner_radius = 3.0.into();
-                w.fg_stroke.color = tc.fg;
-            }
-            v.widgets.hovered.weak_bg_fill = tc.bg_hover;
-            v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, tc.border);
-            v.widgets.active.weak_bg_fill = tc.bg_active;
-            ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
-            ui.spacing_mut().button_padding = egui::vec2(8.0, 1.0);
-            let sep = |ui: &mut egui::Ui| {
-                let (r, _) = ui.allocate_exact_size(egui::vec2(9.0, 18.0), egui::Sense::hover());
-                ui.painter().vline(r.center().x, r.y_range(), egui::Stroke::new(1.0, tc.border));
-            };
-            // 预览开关钉在最右 (Tauri 它在条尾, 窄窗口里要横向滚才够得着; 这里不让它滚出去)
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let mut b = egui::Button::new(egui::RichText::new(trz("预览")).size(11.0));
-                if on { b = b.fill(tc.bg_active).stroke(egui::Stroke::new(1.0, tc.border)); }
-                if ui.add(b).tip(trz("源码 / 渲染预览切换 (Ctrl+Shift+V)")).clicked() { toggle = true; }
-                sep(ui);
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    egui::ScrollArea::horizontal().id_salt("mdbar-scroll").auto_shrink([false, true]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for g in MD_BAR {
-                                for (label, c, tip, icon) in *g {
-                                    let label = if let Some(k) = label.strip_prefix('@') { tr(k) } else { trz(label) };
-                                    let tip = if let Some(k) = tip.strip_prefix('@') { tr(k) } else { trz(tip) };
-                                    if bar_button(ui, *icon, label).tip(tip).clicked() { cmd = Some(*c); }
-                                }
-                                sep(ui);
-                            }
-                        });
+        let frame = egui::Frame::NONE
+            .fill(tc.bg_bar)
+            .inner_margin(egui::Margin::symmetric(6, 2))
+            .stroke(egui::Stroke::NONE);
+        let r = egui::Panel::top("mdbar")
+            .frame(frame)
+            .show_separator_line(false)
+            .show(root, |ui| {
+                let v = ui.visuals_mut();
+                for w in [
+                    &mut v.widgets.inactive,
+                    &mut v.widgets.hovered,
+                    &mut v.widgets.active,
+                ] {
+                    w.weak_bg_fill = egui::Color32::TRANSPARENT;
+                    w.bg_stroke = egui::Stroke::NONE;
+                    w.corner_radius = 3.0.into();
+                    w.fg_stroke.color = tc.fg;
+                }
+                v.widgets.hovered.weak_bg_fill = tc.bg_hover;
+                v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, tc.border);
+                v.widgets.active.weak_bg_fill = tc.bg_active;
+                ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
+                ui.spacing_mut().button_padding = egui::vec2(8.0, 1.0);
+                let sep = |ui: &mut egui::Ui| {
+                    let (r, _) =
+                        ui.allocate_exact_size(egui::vec2(9.0, 18.0), egui::Sense::hover());
+                    ui.painter().vline(
+                        r.center().x,
+                        r.y_range(),
+                        egui::Stroke::new(1.0, tc.border),
+                    );
+                };
+                // 预览开关钉在最右 (Tauri 它在条尾, 窄窗口里要横向滚才够得着; 这里不让它滚出去)
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut b = egui::Button::new(egui::RichText::new(trz("预览")).size(11.0));
+                    if on {
+                        b = b
+                            .fill(tc.bg_active)
+                            .stroke(egui::Stroke::new(1.0, tc.border));
+                    }
+                    if ui
+                        .add(b)
+                        .tip(trz("源码 / 渲染预览切换 (Ctrl+Shift+V)"))
+                        .clicked()
+                    {
+                        toggle = true;
+                    }
+                    sep(ui);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        egui::ScrollArea::horizontal()
+                            .id_salt("mdbar-scroll")
+                            .auto_shrink([false, true])
+                            .scroll_bar_visibility(
+                                egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                            )
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    for g in MD_BAR {
+                                        for (label, c, tip, icon) in *g {
+                                            let label = if let Some(k) = label.strip_prefix('@') {
+                                                tr(k)
+                                            } else {
+                                                trz(label)
+                                            };
+                                            let tip = if let Some(k) = tip.strip_prefix('@') {
+                                                tr(k)
+                                            } else {
+                                                trz(tip)
+                                            };
+                                            if bar_button(ui, *icon, label).tip(tip).clicked() {
+                                                cmd = Some(*c);
+                                            }
+                                        }
+                                        sep(ui);
+                                    }
+                                });
+                            });
                     });
                 });
             });
-        });
         let rc = r.response.rect;
-        root.painter().hline(rc.x_range(), rc.bottom() - 0.5, egui::Stroke::new(1.0, tc.border));
+        root.painter().hline(
+            rc.x_range(),
+            rc.bottom() - 0.5,
+            egui::Stroke::new(1.0, tc.border),
+        );
         match cmd {
             Some("ide:struct") => self.md_struct_open(),
             Some("ide:export") => self.md_export_now(),
             Some("ide:lint") => self.md_lint_now(),
-            Some(c) => { if let Some(clip) = self.cur().edit(c, None) { self.put_clip(ctx, clip); } }
+            Some(c) => {
+                if let Some(clip) = self.cur().edit(c, None) {
+                    self.put_clip(ctx, clip);
+                }
+            }
             None => {}
         }
-        if toggle { self.md_preview = !self.md_preview; }
+        if toggle {
+            self.md_preview = !self.md_preview;
+        }
     }
 
     /// Tauri 的 `#md-preview`: 盖在编辑区 (位置 = 中央区) 上的整块预览, 编辑区底色, 正文最宽 860 居中; 点一个块就地编辑。
     /// 画在 `Order::Background` 的独立层里: 盖住编辑区, 但查找对话框 / 菜单这些更高层照常在它上面
     pub(super) fn md_overlay(&mut self, ctx: &egui::Context, area: egui::Rect) {
         let fill = ctx.global_style().visuals.extreme_bg_color;
-        egui::Area::new(egui::Id::new("md-overlay")).order(egui::Order::Background).fixed_pos(area.min).constrain(false).show(ctx, |ui| {
-            let (rect, _) = ui.allocate_exact_size(area.size(), egui::Sense::click_and_drag());
-            ui.painter().rect_filled(rect, 0.0, fill);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-            child.set_clip_rect(rect);
-            self.md_ui(&mut child, true);
-        });
+        egui::Area::new(egui::Id::new("md-overlay"))
+            .order(egui::Order::Background)
+            .fixed_pos(area.min)
+            .constrain(false)
+            .show(ctx, |ui| {
+                let (rect, _) = ui.allocate_exact_size(area.size(), egui::Sense::click_and_drag());
+                ui.painter().rect_filled(rect, 0.0, fill);
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                child.set_clip_rect(rect);
+                self.md_ui(&mut child, true);
+            });
     }
 
     pub(super) fn md_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.small_button(tr("md.lint")).tip(tr("md.lint-tip")).clicked() {
+            if ui
+                .small_button(tr("md.lint"))
+                .tip(tr("md.lint-tip"))
+                .clicked()
+            {
                 self.md_lint_now();
             }
-            if ui.small_button(tr("md.export-html")).tip(tr("md.export-tip")).clicked() {
+            if ui
+                .small_button(tr("md.export-html"))
+                .tip(tr("md.export-tip"))
+                .clicked()
+            {
                 self.md_export_now();
             }
         });

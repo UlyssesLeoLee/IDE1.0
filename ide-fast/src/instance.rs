@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 
 fn port_file() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
     Some(base.join("IDE1.0 Fast").join("instance.port"))
 }
 
@@ -18,15 +20,25 @@ pub fn forward_to_running(args: &[String]) -> bool {
         return false; // 调试 / 测试: 允许多开
     }
     let Some(pf) = port_file() else { return false };
-    let Ok(port) = std::fs::read_to_string(&pf).map(|s| s.trim().parse::<u16>().unwrap_or(0)) else { return false };
+    let Ok(port) = std::fs::read_to_string(&pf).map(|s| s.trim().parse::<u16>().unwrap_or(0))
+    else {
+        return false;
+    };
     if port == 0 {
         return false;
     }
-    let Ok(mut s) = TcpStream::connect_timeout(&std::net::SocketAddr::from(([127, 0, 0, 1], port)), std::time::Duration::from_millis(300)) else { return false };
+    let Ok(mut s) = TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(300),
+    ) else {
+        return false;
+    };
     let mut msg = String::from("IDE-FAST-OPEN\n");
     for a in args {
         // 相对路径按「调用者」的当前目录解析成绝对路径再发
-        let p = std::path::absolute(a).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| a.clone());
+        let p = std::path::absolute(a)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| a.clone());
         msg.push_str(&p.replace('\n', " "));
         msg.push('\n');
     }
@@ -82,10 +94,18 @@ mod tests {
         std::env::set_var("APPDATA", &dir);
         std::env::remove_var("IDE_FAST_MULTI");
         let rx = listen().expect("first instance listens");
-        assert!(forward_to_running(&["a.txt:3".to_string(), "C:\\x\\b.md".to_string()]), "第二个实例连得上");
-        let got = rx.recv_timeout(std::time::Duration::from_secs(3)).expect("first gets the paths");
+        assert!(
+            forward_to_running(&["a.txt:3".to_string(), "C:\\x\\b.md".to_string()]),
+            "第二个实例连得上"
+        );
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .expect("first gets the paths");
         assert_eq!(got.len(), 2);
-        assert!(got[0].ends_with("a.txt:3") && got[1].ends_with("b.md"), "{got:?}");
+        assert!(
+            got[0].ends_with("a.txt:3") && got[1].ends_with("b.md"),
+            "{got:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

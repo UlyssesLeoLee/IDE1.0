@@ -11,7 +11,10 @@ pub const MAX_DEPTH: usize = 8;
 pub const MAX_CANDS: usize = 200;
 const MAX_PARENTS: usize = 8;
 const SKIP_DIRS: &[&str] = &["target", "node_modules", "dist", "build", "out", "vendor"];
-const EXTS: &[&str] = &["rs", "py", "js", "mjs", "ts", "jsx", "tsx", "c", "h", "cpp", "cc", "hpp", "cs", "java", "go", "rb", "php", "kt", "swift", "lua"];
+const EXTS: &[&str] = &[
+    "rs", "py", "js", "mjs", "ts", "jsx", "tsx", "c", "h", "cpp", "cc", "hpp", "cs", "java", "go",
+    "rb", "php", "kt", "swift", "lua",
+];
 
 /// 一个候选定义位置 (行号从 1 起)
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,7 +43,10 @@ pub fn find_tags_file(from: &Path) -> Option<PathBuf> {
     for _ in 0..MAX_PARENTS {
         let d = dir?;
         let p = d.join("tags");
-        if std::fs::symlink_metadata(&p).map(|m| m.is_file()).unwrap_or(false) {
+        if std::fs::symlink_metadata(&p)
+            .map(|m| m.is_file())
+            .unwrap_or(false)
+        {
             return Some(p);
         }
         dir = d.parent();
@@ -59,7 +65,9 @@ pub fn safe_rel(rel: &str) -> bool {
         return false;
     }
     let p = Path::new(rel);
-    !p.is_absolute() && p.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+    !p.is_absolute()
+        && p.components()
+            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
 /// ctags 的地址 `/^text$/` -> 要匹配的整行文字; 不是这个形式 = None
@@ -90,7 +98,9 @@ pub fn lookup_in_tags(text: &str, base: &Path, name: &str) -> Vec<Cand> {
             continue;
         }
         let mut f = l.splitn(3, '\t');
-        let (Some(n), Some(file), Some(rest)) = (f.next(), f.next(), f.next()) else { continue };
+        let (Some(n), Some(file), Some(rest)) = (f.next(), f.next(), f.next()) else {
+            continue;
+        };
         if n != name || !safe_rel(file) {
             continue;
         }
@@ -98,7 +108,12 @@ pub fn lookup_in_tags(text: &str, base: &Path, name: &str) -> Vec<Cand> {
             Some(i) => (&rest[..i], rest[i + 2..].trim_start_matches('\t')),
             None => (rest, ""),
         };
-        let kind = tail.split('\t').next().unwrap_or("").trim_start_matches("kind:").to_string();
+        let kind = tail
+            .split('\t')
+            .next()
+            .unwrap_or("")
+            .trim_start_matches("kind:")
+            .to_string();
         let path = base.join(file);
         let line = match addr.trim().parse::<usize>() {
             Ok(n) if n > 0 => n,
@@ -107,7 +122,12 @@ pub fn lookup_in_tags(text: &str, base: &Path, name: &str) -> Vec<Cand> {
                 None => continue,
             },
         };
-        out.push(Cand { name: n.to_string(), path, line, kind });
+        out.push(Cand {
+            name: n.to_string(),
+            path,
+            line,
+            kind,
+        });
         if out.len() >= MAX_CANDS {
             break;
         }
@@ -128,7 +148,9 @@ pub fn source_files(root: &Path) -> Vec<PathBuf> {
     let mut out = vec![];
     let mut stack = vec![(root.to_path_buf(), 0usize)];
     while let Some((dir, depth)) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         let mut ents: Vec<_> = rd.flatten().collect();
         ents.sort_by_key(|e| e.file_name());
         for e in ents {
@@ -136,10 +158,18 @@ pub fn source_files(root: &Path) -> Vec<PathBuf> {
             let name = e.file_name().to_string_lossy().into_owned();
             let p = e.path();
             if ft.is_dir() {
-                if depth < MAX_DEPTH && !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
+                if depth < MAX_DEPTH
+                    && !name.starts_with('.')
+                    && !SKIP_DIRS.contains(&name.as_str())
+                {
                     stack.push((p, depth + 1));
                 }
-            } else if ft.is_file() && p.extension().and_then(|x| x.to_str()).map(|x| EXTS.contains(&x.to_ascii_lowercase().as_str())).unwrap_or(false) {
+            } else if ft.is_file()
+                && p.extension()
+                    .and_then(|x| x.to_str())
+                    .map(|x| EXTS.contains(&x.to_ascii_lowercase().as_str()))
+                    .unwrap_or(false)
+            {
                 out.push(p);
                 if out.len() >= MAX_FILES {
                     return out;
@@ -167,7 +197,12 @@ pub fn scan(root: &Path, name: &str) -> Vec<Cand> {
     for f in source_files(root) {
         for t in tags_of(&f) {
             if t.name == name {
-                out.push(Cand { name: t.name, path: f.clone(), line: t.line, kind: kind_label(t.kind).into() });
+                out.push(Cand {
+                    name: t.name,
+                    path: f.clone(),
+                    line: t.line,
+                    kind: kind_label(t.kind).into(),
+                });
             }
         }
         if out.len() >= MAX_CANDS {
@@ -184,7 +219,10 @@ pub fn lookup(name: &str, doc_dir: Option<&Path>, scan_root: Option<&Path>) -> V
     }
     let from = doc_dir.or(scan_root);
     if let Some(tf) = from.and_then(find_tags_file) {
-        if std::fs::metadata(&tf).map(|m| m.len() <= 64 * MAX_FILE_BYTES).unwrap_or(false) {
+        if std::fs::metadata(&tf)
+            .map(|m| m.len() <= 64 * MAX_FILE_BYTES)
+            .unwrap_or(false)
+        {
             if let (Some(base), Ok(text)) = (tf.parent(), std::fs::read_to_string(&tf)) {
                 let hits = lookup_in_tags(&text, base, name);
                 if !hits.is_empty() {
@@ -202,10 +240,21 @@ pub fn lookup(name: &str, doc_dir: Option<&Path>, scan_root: Option<&Path>) -> V
 /// tags 文件的内容 (ctags 扩展格式的子集, 按名字排序): 每行 `名字<TAB>相对路径<TAB>行号;"<TAB>种类`
 pub fn render_tags(root: &Path, entries: &[Cand]) -> String {
     let mut v: Vec<&Cand> = entries.iter().collect();
-    v.sort_by(|a, b| a.name.as_bytes().cmp(b.name.as_bytes()).then(a.path.cmp(&b.path)).then(a.line.cmp(&b.line)));
+    v.sort_by(|a, b| {
+        a.name
+            .as_bytes()
+            .cmp(b.name.as_bytes())
+            .then(a.path.cmp(&b.path))
+            .then(a.line.cmp(&b.line))
+    });
     let mut s = String::from("!_TAG_FILE_FORMAT\t2\t/extended format/\n!_TAG_FILE_SORTED\t1\t/0=unsorted, 1=sorted/\n!_TAG_PROGRAM_NAME\tide-fast\n");
     for c in v {
-        let rel = c.path.strip_prefix(root).unwrap_or(&c.path).to_string_lossy().replace('\\', "/");
+        let rel = c
+            .path
+            .strip_prefix(root)
+            .unwrap_or(&c.path)
+            .to_string_lossy()
+            .replace('\\', "/");
         s.push_str(&format!("{}\t{}\t{};\"\t{}\n", c.name, rel, c.line, c.kind));
     }
     s
@@ -216,11 +265,19 @@ pub fn generate(root: &Path) -> Result<(usize, PathBuf), String> {
     let mut all = vec![];
     for f in source_files(root) {
         for t in tags_of(&f) {
-            all.push(Cand { name: t.name, path: f.clone(), line: t.line, kind: kind_label(t.kind).into() });
+            all.push(Cand {
+                name: t.name,
+                path: f.clone(),
+                line: t.line,
+                kind: kind_label(t.kind).into(),
+            });
         }
     }
     let target = root.join("tags");
-    if std::fs::symlink_metadata(&target).map(|m| !m.is_file()).unwrap_or(false) {
+    if std::fs::symlink_metadata(&target)
+        .map(|m| !m.is_file())
+        .unwrap_or(false)
+    {
         return Err("tags 不是普通文件".into());
     }
     std::fs::write(&target, render_tags(root, &all)).map_err(|e| e.to_string())?;
@@ -264,14 +321,20 @@ impl TagState {
         let mut evs = vec![];
         if self.kw_open {
             let mut open = true;
-            egui::Window::new(trz("指定关键字的标签跳转")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                let r = ui.add(egui::TextEdit::singleline(&mut self.kw_text).desired_width(240.0));
-                r.request_focus();
-                if ui.input(|i| i.key_pressed(Key::Enter)) && !self.kw_text.trim().is_empty() {
-                    evs.push(Ev::Lookup(self.kw_text.trim().to_string()));
-                    self.kw_open = false;
-                }
-            });
+            egui::Window::new(trz("指定关键字的标签跳转"))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    let r =
+                        ui.add(egui::TextEdit::singleline(&mut self.kw_text).desired_width(240.0));
+                    r.request_focus();
+                    if ui.input(|i| i.key_pressed(Key::Enter)) && !self.kw_text.trim().is_empty() {
+                        evs.push(Ev::Lookup(self.kw_text.trim().to_string()));
+                        self.kw_open = false;
+                    }
+                });
             if !open || ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.kw_open = false;
             }
@@ -279,16 +342,29 @@ impl TagState {
         if let Some(list) = &self.pick {
             let mut open = true;
             let mut go: Option<Cand> = None;
-            egui::Window::new(trz("选择跳转位置")).open(&mut open).collapsible(false).default_width(480.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                    for c in list {
-                        let label = format!("{}  {}:{}  [{}]", c.name, c.path.display(), c.line, c.kind);
-                        if ui.selectable_label(false, label).clicked() {
-                            go = Some(c.clone());
-                        }
-                    }
+            egui::Window::new(trz("选择跳转位置"))
+                .open(&mut open)
+                .collapsible(false)
+                .default_width(480.0)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(320.0)
+                        .show(ui, |ui| {
+                            for c in list {
+                                let label = format!(
+                                    "{}  {}:{}  [{}]",
+                                    c.name,
+                                    c.path.display(),
+                                    c.line,
+                                    c.kind
+                                );
+                                if ui.selectable_label(false, label).clicked() {
+                                    go = Some(c.clone());
+                                }
+                            }
+                        });
                 });
-            });
             if let Some(c) = go {
                 evs.push(Ev::Go(c));
                 self.pick = None;

@@ -21,63 +21,63 @@
     clippy::assertions_on_constants
 )]
 
+mod ai;
 mod app;
-mod complete;
-mod glassfx;
-mod ui_ext;
-mod ckbox;
-mod scrollx;
+mod appicon;
+mod backup;
 mod btnstyle;
+mod ckbox;
+mod cmds;
+mod cmdui;
+mod complete;
+mod curlx;
+mod diff;
 mod doc;
 mod find;
-mod grep;
-mod i18n;
-mod prefs;
-mod cmds;
-mod keymap;
-mod cmdui;
 mod fonts;
+mod fsx;
+mod ghplugin;
+mod glassfx;
+mod grep;
+mod help;
+mod i18n;
+mod icons;
 mod instance;
-mod plugins;
-mod plugin_host;
-mod plugin_ui;
-mod svg_lite;
-mod print;
-mod settings;
+mod keymap;
+mod kinsoku;
 mod macros;
-mod diff;
 mod markdown;
 mod md_view;
-mod scm;
-mod terminal;
-mod sidebar;
-mod tabs;
-mod view;
-mod textconv;
-mod tools;
-mod pick;
-mod help;
-mod tagjump;
-mod kinsoku;
-mod icons;
-mod svgicon;
-mod msgtr;
-mod textdrag;
-mod backup;
-mod ghplugin;
-mod ai;
-mod fsx;
-mod curlx;
-mod split;
-mod appicon;
 mod mdtools;
+mod msgtr;
 mod panels;
-mod rowview;
+mod pick;
+mod plugin_host;
+mod plugin_ui;
+mod plugins;
+mod prefs;
+mod print;
 mod relaunch;
+mod rowview;
+mod scm;
+mod scrollx;
+mod settings;
+mod sidebar;
+mod split;
+mod svg_lite;
+mod svgicon;
+mod tabs;
+mod tagjump;
+mod terminal;
+mod textconv;
+mod textdrag;
+mod tools;
+mod ui_ext;
+mod updapply;
 mod update;
 mod updkey;
 mod updnet;
-mod updapply;
+mod view;
 
 use std::time::Instant;
 
@@ -92,8 +92,15 @@ pub struct Trace {
 impl Trace {
     pub fn new() -> Self {
         let v = std::env::var_os("IDE_FAST_TRACE");
-        let file = v.as_ref().filter(|s| s.to_string_lossy().contains(['/', '\\', '.'])).map(std::path::PathBuf::from);
-        Trace { t0: Instant::now(), on: v.is_some(), file }
+        let file = v
+            .as_ref()
+            .filter(|s| s.to_string_lossy().contains(['/', '\\', '.']))
+            .map(std::path::PathBuf::from);
+        Trace {
+            t0: Instant::now(),
+            on: v.is_some(),
+            file,
+        }
     }
 }
 impl Default for Trace {
@@ -107,11 +114,18 @@ impl Trace {
             return;
         }
         // 微秒精度: 取整到毫秒会把 <1ms 的阶段吞掉
-        let line = format!("[fast +{:.1}ms] {what}", self.t0.elapsed().as_secs_f64() * 1000.0);
+        let line = format!(
+            "[fast +{:.1}ms] {what}",
+            self.t0.elapsed().as_secs_f64() * 1000.0
+        );
         match &self.file {
             Some(p) => {
                 use std::io::Write;
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(p)
+                {
                     let _ = writeln!(f, "{line}");
                 }
             }
@@ -152,11 +166,20 @@ fn main() -> eframe::Result<()> {
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
-    let mut viewport = eframe::egui::ViewportBuilder::default().with_visible(false).with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0])
+    let mut viewport = eframe::egui::ViewportBuilder::default()
+        .with_visible(false)
+        .with_title("IDE1.0 Fast")
+        .with_inner_size([1100.0, 720.0])
+        .with_min_inner_size([480.0, 320.0])
         .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
-    if let Some(icon) = appicon::window_icon() { viewport = viewport.with_icon(std::sync::Arc::new(icon)); }
+    if let Some(icon) = appicon::window_icon() {
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
     if let Some(g) = st.view.geom {
-        viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
+        viewport = viewport
+            .with_inner_size([g.w, g.h])
+            .with_position([g.x, g.y])
+            .with_maximized(g.maximized);
     }
     let options = eframe::NativeOptions {
         viewport: viewport.with_transparent(true), // 一律透明窗口: 运行中切到玻璃主题才不用重启 (清屏色在不透明主题下是不透明的)
@@ -217,7 +240,10 @@ mod tests {
     #[test]
     fn new_flag_is_taken_out_of_the_file_args() {
         let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(split_new_flag(v(&["--new", "a.txt"])), (true, v(&["a.txt"])));
+        assert_eq!(
+            split_new_flag(v(&["--new", "a.txt"])),
+            (true, v(&["a.txt"]))
+        );
         assert_eq!(split_new_flag(v(&["a.txt"])), (false, v(&["a.txt"])));
     }
 }

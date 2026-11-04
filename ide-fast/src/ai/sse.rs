@@ -39,7 +39,13 @@ impl SseParser {
             return None;
         }
         let Some(data) = line.strip_prefix("data:") else {
-            if !line.trim().is_empty() && !line.starts_with(':') && !line.starts_with("event:") && !line.starts_with("id:") && !line.starts_with("retry:") && self.raw.len() < MAX_RESPONSE {
+            if !line.trim().is_empty()
+                && !line.starts_with(':')
+                && !line.starts_with("event:")
+                && !line.starts_with("id:")
+                && !line.starts_with("retry:")
+                && self.raw.len() < MAX_RESPONSE
+            {
                 self.raw.push_str(line);
                 self.raw.push('\n');
             }
@@ -96,9 +102,22 @@ impl SseParser {
                     if let Some(e) = v["error"]["message"].as_str().or(v["error"].as_str()) {
                         self.turn.error = Some(e.to_string());
                     } else if let Some(m) = v["choices"][0]["message"].as_object() {
-                        self.turn.content = m.get("content").and_then(Value::as_str).unwrap_or("").to_string();
-                        for tc in m.get("tool_calls").and_then(Value::as_array).into_iter().flatten() {
-                            self.turn.tool_calls.push(ToolCall { id: tc["id"].as_str().unwrap_or("").into(), name: tc["function"]["name"].as_str().unwrap_or("").into(), args: tc["function"]["arguments"].as_str().unwrap_or("{}").into() });
+                        self.turn.content = m
+                            .get("content")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        for tc in m
+                            .get("tool_calls")
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                        {
+                            self.turn.tool_calls.push(ToolCall {
+                                id: tc["id"].as_str().unwrap_or("").into(),
+                                name: tc["function"]["name"].as_str().unwrap_or("").into(),
+                                args: tc["function"]["arguments"].as_str().unwrap_or("{}").into(),
+                            });
                         }
                         self.turn.done = true;
                     }
@@ -141,7 +160,14 @@ mod tests {
         assert_eq!(shown, vec!["你", "好"]);
         let t = p.finish();
         assert_eq!(t.content, "你好");
-        assert_eq!(t.tool_calls, vec![ToolCall { id: "c1".into(), name: "md_outline".into(), args: "{\"text\":\"# a\"}".into() }]);
+        assert_eq!(
+            t.tool_calls,
+            vec![ToolCall {
+                id: "c1".into(),
+                name: "md_outline".into(),
+                args: "{\"text\":\"# a\"}".into()
+            }]
+        );
         assert!(t.done && t.error.is_none());
     }
 
@@ -154,7 +180,10 @@ mod tests {
         let mut p = SseParser::default();
         p.feed_line(r#"{"choices":[{"message":{"content":"ok","tool_calls":[{"function":{"name":"plugin_list","arguments":"{}"}}]}}]}"#);
         let t = p.finish();
-        assert_eq!((t.content.as_str(), t.tool_calls[0].id.as_str()), ("ok", "call_0"));
+        assert_eq!(
+            (t.content.as_str(), t.tool_calls[0].id.as_str()),
+            ("ok", "call_0")
+        );
         let mut p = SseParser::default();
         p.feed_line("IDEFAST_HTTP:502");
         assert_eq!(p.finish().error.as_deref(), Some("HTTP 502"));

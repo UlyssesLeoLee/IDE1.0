@@ -20,7 +20,13 @@ impl App {
         self.gh.open = true;
     }
 
-    fn gh_start(&mut self, job: impl FnOnce(&dyn editcore::plugin_host::store::Http, &std::path::Path) -> Done + Send + 'static, status: String) {
+    fn gh_start(
+        &mut self,
+        job: impl FnOnce(&dyn editcore::plugin_host::store::Http, &std::path::Path) -> Done
+            + Send
+            + 'static,
+        status: String,
+    ) {
         if self.gh.busy.is_some() {
             return;
         }
@@ -40,7 +46,11 @@ impl App {
         self.gh.busy = None;
         match done {
             Done::Inspected(Ok(f)) => {
-                self.gh.status = if f.installable() { trf("gh.found", &[&f.name, &f.version]) } else { tr("gh.incompatible").to_string() };
+                self.gh.status = if f.installable() {
+                    trf("gh.found", &[&f.name, &f.version])
+                } else {
+                    tr("gh.incompatible").to_string()
+                };
                 self.gh.found = Some(f);
             }
             Done::Inspected(Err(e)) => {
@@ -62,7 +72,10 @@ impl App {
                 self.log(format!("GitHub: {e}"));
             }
             Done::Updates(u) => {
-                let n = u.iter().filter(|(_, r)| r.as_ref().is_ok_and(|f| f.update)).count();
+                let n = u
+                    .iter()
+                    .filter(|(_, r)| r.as_ref().is_ok_and(|f| f.update))
+                    .count();
                 self.gh.status = trf("gh.updates", &[&n.to_string()]);
                 self.gh.updates = u;
             }
@@ -80,14 +93,29 @@ impl App {
 
     /// 确认框 -> 安装 (权限以框里列出的为准)
     fn gh_confirm_install(&mut self, f: &Found) {
-        let perms = if f.perms.is_empty() { tr("gh.no-perms").to_string() } else { f.perms.join(", ") };
-        let body = trf("gh.confirm", &[&f.repo, &f.name, &f.version, &f.tag, &perms]);
-        let ok = rfd::MessageDialog::new().set_title(tr("gh.title")).set_description(body).set_buttons(rfd::MessageButtons::YesNo).show() == rfd::MessageDialogResult::Yes;
+        let perms = if f.perms.is_empty() {
+            tr("gh.no-perms").to_string()
+        } else {
+            f.perms.join(", ")
+        };
+        let body = trf(
+            "gh.confirm",
+            &[&f.repo, &f.name, &f.version, &f.tag, &perms],
+        );
+        let ok = rfd::MessageDialog::new()
+            .set_title(tr("gh.title"))
+            .set_description(body)
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show()
+            == rfd::MessageDialogResult::Yes;
         if !ok {
             return;
         }
         let (repo, approved) = (f.repo.clone(), f.perms.clone());
-        self.gh_start(move |http, root| Done::Installed(ghplugin::install(http, root, &repo, &approved)), trf("gh.installing", &[&f.name]));
+        self.gh_start(
+            move |http, root| Done::Installed(ghplugin::install(http, root, &repo, &approved)),
+            trf("gh.installing", &[&f.name]),
+        );
     }
 
     pub(super) fn gh_window(&mut self, ctx: &egui::Context) {
@@ -99,75 +127,133 @@ impl App {
         let mut check_repo: Option<String> = None;
         let mut check_all = false;
         let mut install: Option<Found> = None;
-        egui::Window::new(tr("gh.title")).open(&mut open).collapsible(false).default_width(440.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-            ui.small(tr("gh.note"));
-            ui.horizontal(|ui| {
-                ui.label(tr("gh.repo"));
-                let r = ui.add(egui::TextEdit::singleline(&mut self.gh.repo).hint_text("owner/name").desired_width(220.0));
-                let busy = self.gh.busy.is_some();
-                let go = ui.add_enabled(!busy && !self.gh.repo.trim().is_empty(), egui::Button::new(tr("gh.check"))).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !busy && !self.gh.repo.trim().is_empty());
-                if go {
-                    check_repo = Some(self.gh.repo.clone());
+        egui::Window::new(tr("gh.title"))
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(440.0)
+            .default_pos(egui::pos2(24.0, 56.0))
+            .show(ctx, |ui| {
+                ui.small(tr("gh.note"));
+                ui.horizontal(|ui| {
+                    ui.label(tr("gh.repo"));
+                    let r = ui.add(
+                        egui::TextEdit::singleline(&mut self.gh.repo)
+                            .hint_text("owner/name")
+                            .desired_width(220.0),
+                    );
+                    let busy = self.gh.busy.is_some();
+                    let go = ui
+                        .add_enabled(
+                            !busy && !self.gh.repo.trim().is_empty(),
+                            egui::Button::new(tr("gh.check")),
+                        )
+                        .clicked()
+                        || (r.lost_focus()
+                            && ui.input(|i| i.key_pressed(Key::Enter))
+                            && !busy
+                            && !self.gh.repo.trim().is_empty());
+                    if go {
+                        check_repo = Some(self.gh.repo.clone());
+                    }
+                });
+                if let Some(f) = &self.gh.found {
+                    ui.separator();
+                    ui.strong(format!("{} {}", f.name, f.version));
+                    ui.label(format!("{}  ({})", f.repo, f.tag));
+                    ui.label(match (&f.installed, f.update) {
+                        (Some(v), true) => trf("gh.update-from", &[v]),
+                        (Some(v), false) => trf("gh.up-to-date", &[v]),
+                        (None, _) => tr("gh.not-installed").to_string(),
+                    });
+                    ui.label(format!(
+                        "{}: {}",
+                        tr("gh.perms"),
+                        if f.perms.is_empty() {
+                            tr("gh.no-perms").to_string()
+                        } else {
+                            f.perms.join(", ")
+                        }
+                    ));
+                    for p in &f.problems {
+                        ui.colored_label(self.tc.red, p);
+                    }
+                    let label = if f.installed.is_some() {
+                        tr("gh.update")
+                    } else {
+                        tr("gh.install")
+                    };
+                    if ui
+                        .add_enabled(
+                            f.installable() && self.gh.busy.is_none(),
+                            egui::Button::new(label),
+                        )
+                        .clicked()
+                    {
+                        install = Some(f.clone());
+                    }
+                }
+                ui.separator();
+                if ui
+                    .add_enabled(
+                        self.gh.busy.is_none(),
+                        egui::Button::new(tr("gh.check-all")),
+                    )
+                    .clicked()
+                {
+                    check_all = true;
+                }
+                for (id, r) in &self.gh.updates {
+                    match r {
+                        Ok(f) if f.update => {
+                            ui.horizontal(|ui| {
+                                ui.label(format!(
+                                    "{id}: {} → {}",
+                                    f.installed.clone().unwrap_or_default(),
+                                    f.version
+                                ));
+                                if ui
+                                    .add_enabled(
+                                        self.gh.busy.is_none() && f.installable(),
+                                        egui::Button::new(tr("gh.update")).small(),
+                                    )
+                                    .clicked()
+                                {
+                                    install = Some(f.clone());
+                                }
+                            });
+                        }
+                        Ok(f) => {
+                            ui.weak(format!("{id}: {}", trf("gh.up-to-date", &[&f.version])));
+                        }
+                        Err(e) => {
+                            ui.weak(format!("{id}: {e}"));
+                        }
+                    }
+                }
+                if self.gh.busy.is_some() {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(&self.gh.status);
+                    });
+                } else if !self.gh.status.is_empty() {
+                    ui.label(&self.gh.status);
                 }
             });
-            if let Some(f) = &self.gh.found {
-                ui.separator();
-                ui.strong(format!("{} {}", f.name, f.version));
-                ui.label(format!("{}  ({})", f.repo, f.tag));
-                ui.label(match (&f.installed, f.update) {
-                    (Some(v), true) => trf("gh.update-from", &[v]),
-                    (Some(v), false) => trf("gh.up-to-date", &[v]),
-                    (None, _) => tr("gh.not-installed").to_string(),
-                });
-                ui.label(format!("{}: {}", tr("gh.perms"), if f.perms.is_empty() { tr("gh.no-perms").to_string() } else { f.perms.join(", ") }));
-                for p in &f.problems {
-                    ui.colored_label(self.tc.red, p);
-                }
-                let label = if f.installed.is_some() { tr("gh.update") } else { tr("gh.install") };
-                if ui.add_enabled(f.installable() && self.gh.busy.is_none(), egui::Button::new(label)).clicked() {
-                    install = Some(f.clone());
-                }
-            }
-            ui.separator();
-            if ui.add_enabled(self.gh.busy.is_none(), egui::Button::new(tr("gh.check-all"))).clicked() {
-                check_all = true;
-            }
-            for (id, r) in &self.gh.updates {
-                match r {
-                    Ok(f) if f.update => {
-                        ui.horizontal(|ui| {
-                            ui.label(format!("{id}: {} → {}", f.installed.clone().unwrap_or_default(), f.version));
-                            if ui.add_enabled(self.gh.busy.is_none() && f.installable(), egui::Button::new(tr("gh.update")).small()).clicked() {
-                                install = Some(f.clone());
-                            }
-                        });
-                    }
-                    Ok(f) => {
-                        ui.weak(format!("{id}: {}", trf("gh.up-to-date", &[&f.version])));
-                    }
-                    Err(e) => {
-                        ui.weak(format!("{id}: {e}"));
-                    }
-                }
-            }
-            if self.gh.busy.is_some() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(&self.gh.status);
-                });
-            } else if !self.gh.status.is_empty() {
-                ui.label(&self.gh.status);
-            }
-        });
         if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
             self.gh.open = false;
         }
         if let Some(repo) = check_repo {
             let st = trf("gh.checking", &[&repo]);
-            self.gh_start(move |http, root| Done::Inspected(ghplugin::inspect(http, root, &repo)), st);
+            self.gh_start(
+                move |http, root| Done::Inspected(ghplugin::inspect(http, root, &repo)),
+                st,
+            );
         }
         if check_all {
-            self.gh_start(|http, root| Done::Updates(ghplugin::check_updates(http, root)), tr("gh.checking-all").to_string());
+            self.gh_start(
+                |http, root| Done::Updates(ghplugin::check_updates(http, root)),
+                tr("gh.checking-all").to_string(),
+            );
         }
         if let Some(f) = install {
             self.gh_confirm_install(&f);

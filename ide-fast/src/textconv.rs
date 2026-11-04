@@ -151,7 +151,14 @@ fn esc(s: &str, out: &mut String) {
 }
 
 /// 选中的这些行变成带颜色的 `<pre>`; `first_no` 是第一行的行号 (从 0 起), `numbers` = 每行前面带行号
-pub fn color_html(lines: &[String], first_no: usize, numbers: bool, cfg: Option<&TypeConfig>, theme: &Theme, default: [u8; 3]) -> String {
+pub fn color_html(
+    lines: &[String],
+    first_no: usize,
+    numbers: bool,
+    cfg: Option<&TypeConfig>,
+    theme: &Theme,
+    default: [u8; 3],
+) -> String {
     let hex = |c: [u8; 3]| format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]);
     let width = (first_no + lines.len()).to_string().len();
     let mut out = String::from("<pre style=\"font-family:Consolas,monospace\">");
@@ -160,7 +167,10 @@ pub fn color_html(lines: &[String], first_no: usize, numbers: bool, cfg: Option<
             out.push('\n');
         }
         if numbers {
-            out.push_str(&format!("<span style=\"color:#888888\">{:>width$} </span>", first_no + k + 1));
+            out.push_str(&format!(
+                "<span style=\"color:#888888\">{:>width$} </span>",
+                first_no + k + 1
+            ));
         }
         let chars: Vec<char> = line.chars().collect();
         let mut at = 0usize;
@@ -174,7 +184,10 @@ pub fn color_html(lines: &[String], first_no: usize, numbers: bool, cfg: Option<
         };
         if let Some(cfg) = cfg {
             for (s, e, kind) in cfg.highlight_line(line) {
-                let (s, e) = ((s.max(0) as usize).min(chars.len()), (e.max(0) as usize).min(chars.len()));
+                let (s, e) = (
+                    (s.max(0) as usize).min(chars.len()),
+                    (e.max(0) as usize).min(chars.len()),
+                );
                 if s < at || e <= s {
                     continue;
                 }
@@ -194,8 +207,9 @@ pub fn color_html(lines: &[String], first_no: usize, numbers: bool, cfg: Option<
 
 /// 控制字符名 (0..=31 之后是 DEL)
 pub const CTRL_NAMES: [&str; 33] = [
-    "NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS", "TAB", "LF", "VT", "FF", "CR", "SO", "SI", "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM",
-    "SUB", "ESC", "FS", "GS", "RS", "US", "DEL",
+    "NUL", "SOH", "STX", "ETX", "EOT", "ENQ", "ACK", "BEL", "BS", "TAB", "LF", "VT", "FF", "CR",
+    "SO", "SI", "DLE", "DC1", "DC2", "DC3", "DC4", "NAK", "SYN", "ETB", "CAN", "EM", "SUB", "ESC",
+    "FS", "GS", "RS", "US", "DEL",
 ];
 
 /// 控制字符表第 i 项 (0..=32) 对应的字符: 0..=31 原码, 32 = DEL (0x7F)
@@ -224,7 +238,14 @@ pub struct Clock {
 pub fn local_now() -> Clock {
     use chrono::{Datelike, Timelike};
     let n = chrono::Local::now();
-    Clock { year: n.year(), month: n.month(), day: n.day(), hour: n.hour(), minute: n.minute(), second: n.second() }
+    Clock {
+        year: n.year(),
+        month: n.month(),
+        day: n.day(),
+        hour: n.hour(),
+        minute: n.minute(),
+        second: n.second(),
+    }
 }
 
 impl Clock {
@@ -258,11 +279,19 @@ pub enum StampPos {
 
 impl StampKind {
     pub fn from_u8(n: u8) -> Self {
-        match n { 0 => Self::Date, 1 => Self::Time, _ => Self::DateTime }
+        match n {
+            0 => Self::Date,
+            1 => Self::Time,
+            _ => Self::DateTime,
+        }
     }
 
     pub fn to_u8(self) -> u8 {
-        match self { Self::Date => 0, Self::Time => 1, Self::DateTime => 2 }
+        match self {
+            Self::Date => 0,
+            Self::Time => 1,
+            Self::DateTime => 2,
+        }
     }
 
     pub fn text(self, c: &Clock) -> String {
@@ -276,17 +305,27 @@ impl StampKind {
 
 impl StampPos {
     pub fn from_u8(n: u8) -> Self {
-        if n == 1 { Self::AtCursor } else { Self::LineStart }
+        if n == 1 {
+            Self::AtCursor
+        } else {
+            Self::LineStart
+        }
     }
 
     pub fn to_u8(self) -> u8 {
-        match self { Self::LineStart => 0, Self::AtCursor => 1 }
+        match self {
+            Self::LineStart => 0,
+            Self::AtCursor => 1,
+        }
     }
 }
 
 /// 行首戳记: 在缩进之后插入 `[戳记] `; 返回新行和插入的字符数 (光标在缩进之后要往后挪这么多)
 pub fn stamp_line_start(line: &str, stamp: &str) -> (String, usize) {
-    let indent: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+    let indent: String = line
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
     let ins = format!("[{stamp}] ");
     let n = ins.chars().count();
     (format!("{indent}{ins}{}", &line[indent.len()..]), n)
@@ -304,7 +343,10 @@ pub fn wrap_with_crlf(text: &str, cols: usize) -> String {
         .map(|line| {
             let line = line.strip_suffix('\r').unwrap_or(line);
             let cs: Vec<char> = line.chars().collect();
-            cs.chunks(cols).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join("\r\n")
+            cs.chunks(cols)
+                .map(|c| c.iter().collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\r\n")
         })
         .collect::<Vec<_>>()
         .join("\r\n")
@@ -315,8 +357,14 @@ pub fn wrap_with_crlf(text: &str, cols: usize) -> String {
 pub fn hc_counterparts(path: &std::path::Path) -> Vec<std::path::PathBuf> {
     const SRC: [&str; 4] = ["c", "cpp", "cc", "cxx"];
     const HDR: [&str; 4] = ["h", "hpp", "hh", "hxx"];
-    let Some(ext) = path.extension().and_then(|e| e.to_str()) else { return vec![] };
-    let want = if HDR.contains(&ext.to_ascii_lowercase().as_str()) { SRC } else { HDR };
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return vec![];
+    };
+    let want = if HDR.contains(&ext.to_ascii_lowercase().as_str()) {
+        SRC
+    } else {
+        HDR
+    };
     want.iter().map(|e| path.with_extension(e)).collect()
 }
 
@@ -361,7 +409,10 @@ mod tests {
     fn auto_detect_picks_the_first_clean_candidate_or_fails() {
         let garbled = reinterpret_text("あいうえお", Charset::EucJp, Charset::ShiftJis).unwrap();
         assert_eq!(codecnv("auto2sjis", &garbled).unwrap(), "あいうえお");
-        assert!(codecnv("auto2sjis", "plain ascii").is_err(), "没变化 = 找不到合适的编码");
+        assert!(
+            codecnv("auto2sjis", "plain ascii").is_err(),
+            "没变化 = 找不到合适的编码"
+        );
     }
 
     #[test]
@@ -373,8 +424,16 @@ mod tests {
     #[test]
     fn base64_decodes_variants_and_rejects_garbage() {
         assert_eq!(base64_decode("aGVsbG8=").unwrap(), b"hello");
-        assert_eq!(base64_decode("aGVs\r\nbG8").unwrap(), b"hello", "空白 / 缺填充都行");
-        assert_eq!(base64_decode("-_8=").unwrap(), vec![0xfb, 0xff], "URL 安全字母表");
+        assert_eq!(
+            base64_decode("aGVs\r\nbG8").unwrap(),
+            b"hello",
+            "空白 / 缺填充都行"
+        );
+        assert_eq!(
+            base64_decode("-_8=").unwrap(),
+            vec![0xfb, 0xff],
+            "URL 安全字母表"
+        );
         assert!(base64_decode("a$b=").is_err());
         assert!(base64_decode("   ").is_err());
         assert!(base64_decode("A").is_err(), "单个字符凑不出一个字节");
@@ -398,12 +457,22 @@ mod tests {
         assert!(html.starts_with("<pre") && html.ends_with("</pre>"));
         assert!(html.contains("a&lt;b &amp; &quot;c&quot;"), "{html}");
         assert!(html.contains("color:#010203"));
-        assert!(html.contains(" 9 </span>") && html.contains("10 </span>"), "行号右对齐: {html}");
+        assert!(
+            html.contains(" 9 </span>") && html.contains("10 </span>"),
+            "行号右对齐: {html}"
+        );
         assert!(html.contains("    x"), "Tab 展开");
         assert_eq!(html.matches('\n').count(), 1);
         let rust = editcore::type_config::TypeRegistry::default_registry();
         let cfg = rust.detect("a.rs").cloned();
-        let h2 = color_html(&["fn main() {}".to_string()], 0, false, cfg.as_ref(), &Theme::dark(), [200, 200, 200]);
+        let h2 = color_html(
+            &["fn main() {}".to_string()],
+            0,
+            false,
+            cfg.as_ref(),
+            &Theme::dark(),
+            [200, 200, 200],
+        );
         assert!(h2.matches("<span").count() >= 2, "关键字单独上色: {h2}");
     }
 
@@ -420,7 +489,14 @@ mod tests {
 
     #[test]
     fn clock_formats_and_stamp_kinds() {
-        let c = Clock { year: 2026, month: 3, day: 7, hour: 4, minute: 5, second: 9 };
+        let c = Clock {
+            year: 2026,
+            month: 3,
+            day: 7,
+            hour: 4,
+            minute: 5,
+            second: 9,
+        };
         assert_eq!(c.date(), "2026/03/07");
         assert_eq!(c.time(), "04:05:09");
         assert_eq!(StampKind::DateTime.text(&c), "2026/03/07 04:05:09");
@@ -428,19 +504,36 @@ mod tests {
         for k in [StampKind::Date, StampKind::Time, StampKind::DateTime] {
             assert_eq!(StampKind::from_u8(k.to_u8()), k);
         }
-        assert_eq!(StampPos::from_u8(StampPos::AtCursor.to_u8()), StampPos::AtCursor);
-        assert_eq!(StampKind::from_u8(200), StampKind::DateTime, "settings.json 里的坏值回到默认");
+        assert_eq!(
+            StampPos::from_u8(StampPos::AtCursor.to_u8()),
+            StampPos::AtCursor
+        );
+        assert_eq!(
+            StampKind::from_u8(200),
+            StampKind::DateTime,
+            "settings.json 里的坏值回到默认"
+        );
     }
 
     #[test]
     fn local_clock_is_plausible() {
         let c = local_now();
-        assert!(c.year >= 2024 && (1..=12).contains(&c.month) && (1..=31).contains(&c.day) && c.hour < 24 && c.minute < 60 && c.second < 62);
+        assert!(
+            c.year >= 2024
+                && (1..=12).contains(&c.month)
+                && (1..=31).contains(&c.day)
+                && c.hour < 24
+                && c.minute < 60
+                && c.second < 62
+        );
     }
 
     #[test]
     fn line_start_stamp_goes_after_the_indent() {
-        assert_eq!(stamp_line_start("  \tfoo", "T"), ("  \t[T] foo".to_string(), 4));
+        assert_eq!(
+            stamp_line_start("  \tfoo", "T"),
+            ("  \t[T] foo".to_string(), 4)
+        );
         assert_eq!(stamp_line_start("", "T"), ("[T] ".to_string(), 4));
         assert_eq!(stamp_line_start("日本", "T").0, "[T] 日本");
     }
@@ -454,20 +547,50 @@ mod tests {
     #[test]
     fn wrapping_copy_cuts_by_characters_and_uses_crlf() {
         assert_eq!(wrap_with_crlf("abcdefg", 3), "abc\r\ndef\r\ng");
-        assert_eq!(wrap_with_crlf("ab\n\ncd", 3), "ab\r\n\r\ncd", "原有的换行和空行保持");
-        assert_eq!(wrap_with_crlf("日本語テキスト", 3), "日本語\r\nテキス\r\nト", "按字符数切, 不按字节");
-        assert_eq!(wrap_with_crlf("abcd\r\nef", 2), "ab\r\ncd\r\nef", "已有的 CRLF 不重复");
-        assert_eq!(wrap_with_crlf("abc", 0), "a\r\nb\r\nc", "列数为 0 当作 1, 不死循环");
+        assert_eq!(
+            wrap_with_crlf("ab\n\ncd", 3),
+            "ab\r\n\r\ncd",
+            "原有的换行和空行保持"
+        );
+        assert_eq!(
+            wrap_with_crlf("日本語テキスト", 3),
+            "日本語\r\nテキス\r\nト",
+            "按字符数切, 不按字节"
+        );
+        assert_eq!(
+            wrap_with_crlf("abcd\r\nef", 2),
+            "ab\r\ncd\r\nef",
+            "已有的 CRLF 不重复"
+        );
+        assert_eq!(
+            wrap_with_crlf("abc", 0),
+            "a\r\nb\r\nc",
+            "列数为 0 当作 1, 不死循环"
+        );
     }
 
     #[test]
     fn header_and_source_counterparts() {
         use std::path::{Path, PathBuf};
         let p = |v: &[&str]| v.iter().map(PathBuf::from).collect::<Vec<_>>();
-        assert_eq!(hc_counterparts(Path::new("d/foo.cpp")), p(&["d/foo.h", "d/foo.hpp", "d/foo.hh", "d/foo.hxx"]));
-        assert_eq!(hc_counterparts(Path::new("d/foo.H")), p(&["d/foo.c", "d/foo.cpp", "d/foo.cc", "d/foo.cxx"]), "扩展名不分大小写");
-        assert_eq!(hc_counterparts(Path::new("foo.hpp"))[0], PathBuf::from("foo.c"));
-        assert_eq!(hc_counterparts(Path::new("a.b/foo.txt"))[0], PathBuf::from("a.b/foo.h"), "其它扩展名当作源文件");
+        assert_eq!(
+            hc_counterparts(Path::new("d/foo.cpp")),
+            p(&["d/foo.h", "d/foo.hpp", "d/foo.hh", "d/foo.hxx"])
+        );
+        assert_eq!(
+            hc_counterparts(Path::new("d/foo.H")),
+            p(&["d/foo.c", "d/foo.cpp", "d/foo.cc", "d/foo.cxx"]),
+            "扩展名不分大小写"
+        );
+        assert_eq!(
+            hc_counterparts(Path::new("foo.hpp"))[0],
+            PathBuf::from("foo.c")
+        );
+        assert_eq!(
+            hc_counterparts(Path::new("a.b/foo.txt"))[0],
+            PathBuf::from("a.b/foo.h"),
+            "其它扩展名当作源文件"
+        );
         assert!(hc_counterparts(Path::new("Makefile")).is_empty());
     }
 }

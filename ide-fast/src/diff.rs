@@ -28,13 +28,23 @@ pub enum Mark {
 /// 逐行比较, 返回按位置排序的差异块
 pub fn diff_lines(a: &[String], b: &[String]) -> Vec<Hunk> {
     let pre = a.iter().zip(b).take_while(|(x, y)| x == y).count();
-    let suf = a[pre..].iter().rev().zip(b[pre..].iter().rev()).take_while(|(x, y)| x == y).count();
+    let suf = a[pre..]
+        .iter()
+        .rev()
+        .zip(b[pre..].iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count();
     let (am, bm) = (&a[pre..a.len() - suf], &b[pre..b.len() - suf]);
     if am.is_empty() && bm.is_empty() {
         return vec![];
     }
     if am.is_empty() || bm.is_empty() || am.len().saturating_mul(bm.len()) > MAX_CELLS {
-        return vec![Hunk { a_start: pre, a_len: am.len(), b_start: pre, b_len: bm.len() }];
+        return vec![Hunk {
+            a_start: pre,
+            a_len: am.len(),
+            b_start: pre,
+            b_len: bm.len(),
+        }];
     }
     // lcs[i][j] = am[i..] 与 bm[j..] 的最长公共子序列长度
     let (n, m) = (am.len(), bm.len());
@@ -42,7 +52,11 @@ pub fn diff_lines(a: &[String], b: &[String]) -> Vec<Hunk> {
     let mut lcs = vec![0u32; (n + 1) * w];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
-            lcs[i * w + j] = if am[i] == bm[j] { lcs[(i + 1) * w + j + 1] + 1 } else { lcs[(i + 1) * w + j].max(lcs[i * w + j + 1]) };
+            lcs[i * w + j] = if am[i] == bm[j] {
+                lcs[(i + 1) * w + j + 1] + 1
+            } else {
+                lcs[(i + 1) * w + j].max(lcs[i * w + j + 1])
+            };
         }
     }
     let mut out: Vec<Hunk> = vec![];
@@ -51,7 +65,12 @@ pub fn diff_lines(a: &[String], b: &[String]) -> Vec<Hunk> {
     let mut open: Option<(usize, usize)> = None;
     let close = |open: &mut Option<(usize, usize)>, i: usize, j: usize, out: &mut Vec<Hunk>| {
         if let Some((si, sj)) = open.take() {
-            out.push(Hunk { a_start: pre + si, a_len: i - si, b_start: pre + sj, b_len: j - sj });
+            out.push(Hunk {
+                a_start: pre + si,
+                a_len: i - si,
+                b_start: pre + sj,
+                b_len: j - sj,
+            });
         }
     };
     while i < n || j < m {
@@ -76,8 +95,16 @@ pub fn diff_lines(a: &[String], b: &[String]) -> Vec<Hunk> {
 pub fn marks(hunks: &[Hunk], a_len: usize, b_len: usize) -> (Vec<Mark>, Vec<Mark>) {
     let (mut l, mut r) = (vec![Mark::Same; a_len], vec![Mark::Same; b_len]);
     for h in hunks {
-        let kind_a = if h.b_len == 0 { Mark::Removed } else { Mark::Changed };
-        let kind_b = if h.a_len == 0 { Mark::Added } else { Mark::Changed };
+        let kind_a = if h.b_len == 0 {
+            Mark::Removed
+        } else {
+            Mark::Changed
+        };
+        let kind_b = if h.a_len == 0 {
+            Mark::Added
+        } else {
+            Mark::Changed
+        };
         for row in h.a_start..h.a_start + h.a_len {
             if let Some(m) = l.get_mut(row) {
                 *m = kind_a;
@@ -114,9 +141,18 @@ pub fn step(hunks: &[Hunk], row: usize, forward: bool, right: bool) -> Option<us
         return None;
     }
     if forward {
-        hunks.iter().map(start).find(|&s| s > row).or_else(|| hunks.first().map(start))
+        hunks
+            .iter()
+            .map(start)
+            .find(|&s| s > row)
+            .or_else(|| hunks.first().map(start))
     } else {
-        hunks.iter().map(start).rev().find(|&s| s < row).or_else(|| hunks.last().map(start))
+        hunks
+            .iter()
+            .map(start)
+            .rev()
+            .find(|&s| s < row)
+            .or_else(|| hunks.last().map(start))
     }
 }
 
@@ -134,7 +170,14 @@ impl DiffView {
     pub fn new(left: u64, right: u64, a: &[String], b: &[String], revs: (u64, u64)) -> Self {
         let hunks = diff_lines(a, b);
         let (left_marks, right_marks) = marks(&hunks, a.len(), b.len());
-        DiffView { left, right, revs, hunks, left_marks, right_marks }
+        DiffView {
+            left,
+            right,
+            revs,
+            hunks,
+            left_marks,
+            right_marks,
+        }
     }
 
     /// 文档改过 (版本号变了) 就重算
@@ -156,7 +199,11 @@ impl DiffView {
     }
 
     pub fn summary(&self) -> String {
-        if self.hunks.is_empty() { "两份文档完全相同".into() } else { format!("{} 处差异", self.hunks.len()) }
+        if self.hunks.is_empty() {
+            "两份文档完全相同".into()
+        } else {
+            format!("{} 处差异", self.hunks.len())
+        }
     }
 }
 
@@ -165,7 +212,11 @@ mod tests {
     use super::*;
 
     fn v(s: &str) -> Vec<String> {
-        if s.is_empty() { vec![] } else { s.split(',').map(str::to_string).collect() }
+        if s.is_empty() {
+            vec![]
+        } else {
+            s.split(',').map(str::to_string).collect()
+        }
     }
 
     #[test]
@@ -177,13 +228,37 @@ mod tests {
     fn insert_delete_and_change_are_told_apart() {
         // 中间插入 x
         let h = diff_lines(&v("a,b,c"), &v("a,x,b,c"));
-        assert_eq!(h, vec![Hunk { a_start: 1, a_len: 0, b_start: 1, b_len: 1 }]);
+        assert_eq!(
+            h,
+            vec![Hunk {
+                a_start: 1,
+                a_len: 0,
+                b_start: 1,
+                b_len: 1
+            }]
+        );
         // 删除 b
         let h = diff_lines(&v("a,b,c"), &v("a,c"));
-        assert_eq!(h, vec![Hunk { a_start: 1, a_len: 1, b_start: 1, b_len: 0 }]);
+        assert_eq!(
+            h,
+            vec![Hunk {
+                a_start: 1,
+                a_len: 1,
+                b_start: 1,
+                b_len: 0
+            }]
+        );
         // b 改成 y
         let h = diff_lines(&v("a,b,c"), &v("a,y,c"));
-        assert_eq!(h, vec![Hunk { a_start: 1, a_len: 1, b_start: 1, b_len: 1 }]);
+        assert_eq!(
+            h,
+            vec![Hunk {
+                a_start: 1,
+                a_len: 1,
+                b_start: 1,
+                b_len: 1
+            }]
+        );
     }
 
     #[test]

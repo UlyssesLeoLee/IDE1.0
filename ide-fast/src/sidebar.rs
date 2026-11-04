@@ -41,7 +41,12 @@ pub fn check_name(name: &str) -> Result<(), String> {
     if n.is_empty() {
         return Err("名字不能为空".into());
     }
-    if n == "." || n == ".." || n.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control()) {
+    if n == "."
+        || n == ".."
+        || n.chars().any(|c| {
+            matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control()
+        })
+    {
         return Err("名字里不能有 / \\ : * ? \" < > |".into());
     }
     if n.ends_with('.') || n.ends_with(' ') {
@@ -54,7 +59,11 @@ pub fn check_name(name: &str) -> Result<(), String> {
 pub fn create_file(dir: &Path, name: &str) -> Result<PathBuf, String> {
     check_name(name)?;
     let p = dir.join(name.trim());
-    std::fs::OpenOptions::new().write(true).create_new(true).open(&p).map_err(|e| format!("新建失败: {e}"))?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&p)
+        .map_err(|e| format!("新建失败: {e}"))?;
     Ok(p)
 }
 
@@ -84,7 +93,11 @@ pub fn rename_entry(path: &Path, new_name: &str) -> Result<PathBuf, String> {
 
 /// 删除文件或整个文件夹 (调用前界面已经让用户确认)
 pub fn delete_entry(path: &Path) -> Result<(), String> {
-    let r = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
+    let r = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
     r.map_err(|e| format!("删除失败: {e}"))
 }
 
@@ -147,12 +160,20 @@ impl Sidebar {
                         if is_dir && SKIP.contains(&name.as_str()) {
                             return None;
                         }
-                        Some(Entry { name, path: e.path(), is_dir })
+                        Some(Entry {
+                            name,
+                            path: e.path(),
+                            is_dir,
+                        })
                     })
                     .collect()
             })
             .unwrap_or_default();
-        v.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        v.sort_by(|a, b| {
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
         self.children.insert(dir.to_path_buf(), v.clone());
         v
     }
@@ -168,17 +189,26 @@ impl Sidebar {
         }
         self.outline_key = Some((doc_id, rev));
         let registry = editcore::type_config::TypeRegistry::default_registry();
-        let ty = registry.detect(name).map(|t| t.name.clone()).unwrap_or_else(|| "Plain".into());
+        let ty = registry
+            .detect(name)
+            .map(|t| t.name.clone())
+            .unwrap_or_else(|| "Plain".into());
         self.outline = editcore::type_config::TypeConfig::outline_dispatch(&ty, &lines.join("\n"));
     }
-
 }
 
 /// 文档的大纲条目所在行 (升序、去重; 0 起算), 按文件名判断类型; 没有大纲 = 空
 pub fn outline_rows(name: &str, lines: &[String]) -> Vec<usize> {
     let registry = editcore::type_config::TypeRegistry::default_registry();
-    let ty = registry.detect(name).map(|t| t.name.clone()).unwrap_or_else(|| "Plain".into());
-    let mut rows: Vec<usize> = editcore::type_config::TypeConfig::outline_dispatch(&ty, &lines.join("\n")).iter().map(|e| e.line.max(0) as usize).collect();
+    let ty = registry
+        .detect(name)
+        .map(|t| t.name.clone())
+        .unwrap_or_else(|| "Plain".into());
+    let mut rows: Vec<usize> =
+        editcore::type_config::TypeConfig::outline_dispatch(&ty, &lines.join("\n"))
+            .iter()
+            .map(|e| e.line.max(0) as usize)
+            .collect();
     rows.sort_unstable();
     rows.dedup();
     rows
@@ -188,9 +218,16 @@ pub fn outline_rows(name: &str, lines: &[String]) -> Vec<usize> {
 /// 向前找第一个比 `cur` 大的行, 向后找最后一个比 `cur` 小的行, 到头了绕回另一端 (同 Tauri 的 funclistStep); 没有条目返回 None。
 pub fn step_row(rows: &[usize], cur: usize, fwd: bool) -> Option<usize> {
     if fwd {
-        rows.iter().copied().find(|&r| r > cur).or(rows.first().copied())
+        rows.iter()
+            .copied()
+            .find(|&r| r > cur)
+            .or(rows.first().copied())
     } else {
-        rows.iter().rev().copied().find(|&r| r < cur).or(rows.last().copied())
+        rows.iter()
+            .rev()
+            .copied()
+            .find(|&r| r < cur)
+            .or(rows.last().copied())
     }
 }
 
@@ -202,12 +239,24 @@ mod tests {
     fn function_step_moves_to_neighbours_and_wraps() {
         let rows = [2, 10, 30];
         assert_eq!(step_row(&rows, 0, true), Some(2));
-        assert_eq!(step_row(&rows, 2, true), Some(10), "光标就在条目上时, 下一个是后面那个");
+        assert_eq!(
+            step_row(&rows, 2, true),
+            Some(10),
+            "光标就在条目上时, 下一个是后面那个"
+        );
         assert_eq!(step_row(&rows, 15, true), Some(30));
-        assert_eq!(step_row(&rows, 30, true), Some(2), "最后一个再往下绕回第一个");
+        assert_eq!(
+            step_row(&rows, 30, true),
+            Some(2),
+            "最后一个再往下绕回第一个"
+        );
         assert_eq!(step_row(&rows, 30, false), Some(10));
         assert_eq!(step_row(&rows, 15, false), Some(10));
-        assert_eq!(step_row(&rows, 2, false), Some(30), "第一个再往上绕回最后一个");
+        assert_eq!(
+            step_row(&rows, 2, false),
+            Some(30),
+            "第一个再往上绕回最后一个"
+        );
         assert_eq!(step_row(&rows, 0, false), Some(30));
         assert_eq!(step_row(&[], 5, true), None);
         assert_eq!(step_row(&[7], 7, true), Some(7), "只有一个条目: 绕回它自己");
@@ -215,7 +264,10 @@ mod tests {
 
     #[test]
     fn function_step_works_on_a_real_outline() {
-        let src: Vec<String> = ["fn a() {}", "", "fn b() {", "}", "", "fn c() {}"].iter().map(|s| s.to_string()).collect();
+        let src: Vec<String> = ["fn a() {}", "", "fn b() {", "}", "", "fn c() {}"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let mut s = Sidebar::new();
         s.update_outline(1, 1, "x.rs", &src);
         let mut rows: Vec<usize> = s.outline.iter().map(|e| e.line.max(0) as usize).collect();
@@ -239,7 +291,6 @@ mod tests {
         assert_eq!(names, vec!["b_dir", "a.txt"], "目录在前, .git 被隐藏");
         let _ = std::fs::remove_dir_all(&d);
     }
-
 
     #[test]
     fn file_operations_create_rename_delete_and_refuse_bad_names() {

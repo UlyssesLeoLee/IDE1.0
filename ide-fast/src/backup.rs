@@ -37,7 +37,17 @@ pub fn file_name(path: Option<&Path>, name: &str, id: u64) -> String {
     for b in key.bytes() {
         h = (h ^ b as u64).wrapping_mul(0x100_0000_01b3);
     }
-    let clean: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).take(60).collect();
+    let clean: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(60)
+        .collect();
     format!("{clean}.{h:016x}.autosave")
 }
 
@@ -56,19 +66,42 @@ const MAX_LEFTOVERS: usize = 40;
 
 /// 扫描备份目录里的 `.autosave` 文件, 新的在前。只认普通文件 (不跟符号链接), 空文件跳过。目录不存在 = 空
 pub fn leftovers_in(dir: &Path) -> Vec<Leftover> {
-    let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return vec![];
+    };
     let now = std::time::SystemTime::now();
     let mut v: Vec<(std::time::SystemTime, Leftover)> = vec![];
     for e in rd.flatten().take(2000) {
         let path = e.path();
-        if path.extension().and_then(|x| x.to_str()) != Some("autosave") { continue; }
-        let Ok(m) = std::fs::symlink_metadata(&path) else { continue };
-        if !m.is_file() || m.len() == 0 { continue; }
+        if path.extension().and_then(|x| x.to_str()) != Some("autosave") {
+            continue;
+        }
+        let Ok(m) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !m.is_file() || m.len() == 0 {
+            continue;
+        }
         let mt = m.modified().unwrap_or(std::time::UNIX_EPOCH);
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         // 文件名 = <原名>.<16 位指纹>.autosave, 给人看的只要原名
-        let shown = name.strip_suffix(".autosave").and_then(|r| r.rsplit_once('.')).map(|(a, _)| a.to_string()).unwrap_or(name);
-        v.push((mt, Leftover { path, name: shown, size: m.len(), age_secs: now.duration_since(mt).ok().map(|d| d.as_secs()) }));
+        let shown = name
+            .strip_suffix(".autosave")
+            .and_then(|r| r.rsplit_once('.'))
+            .map(|(a, _)| a.to_string())
+            .unwrap_or(name);
+        v.push((
+            mt,
+            Leftover {
+                path,
+                name: shown,
+                size: m.len(),
+                age_secs: now.duration_since(mt).ok().map(|d| d.as_secs()),
+            },
+        ));
     }
     v.sort_by_key(|a| std::cmp::Reverse(a.0));
     v.into_iter().take(MAX_LEFTOVERS).map(|x| x.1).collect()
@@ -81,7 +114,8 @@ pub fn leftovers() -> Vec<Leftover> {
 
 /// 距离下一次备份还有多久; 0 = 到点了
 pub fn remaining(last: Instant, now: Instant, interval_min: u32) -> Duration {
-    Duration::from_secs(clamp_interval(interval_min) as u64 * 60).saturating_sub(now.saturating_duration_since(last))
+    Duration::from_secs(clamp_interval(interval_min) as u64 * 60)
+        .saturating_sub(now.saturating_duration_since(last))
 }
 
 struct Job {
@@ -98,7 +132,13 @@ pub struct AutoBackup {
 
 impl AutoBackup {
     /// 每帧调用。返回「最晚该在多久之后再被叫到」: None = 现在不需要任何定时刷新 (选项关着 / 没有脏文档)。
-    pub fn tick(&mut self, enabled: bool, interval_min: u32, docs: &[Doc], now: Instant) -> Option<Duration> {
+    pub fn tick(
+        &mut self,
+        enabled: bool,
+        interval_min: u32,
+        docs: &[Doc],
+        now: Instant,
+    ) -> Option<Duration> {
         let dirty = |d: &&Doc| d.dirty && !d.grep_result;
         if !enabled || !docs.iter().any(|d| dirty(&d)) {
             self.last = None; // 下次出现脏文档时从那一刻重新计时
@@ -113,10 +153,14 @@ impl AutoBackup {
         let jobs = self.collect_jobs(docs);
         if !jobs.is_empty() {
             if let Some(dir) = dir() {
-                let _ = std::thread::Builder::new().name("autosave".into()).spawn(move || write_all(&dir, &jobs));
+                let _ = std::thread::Builder::new()
+                    .name("autosave".into())
+                    .spawn(move || write_all(&dir, &jobs));
             }
         }
-        Some(Duration::from_secs(clamp_interval(interval_min) as u64 * 60))
+        Some(Duration::from_secs(
+            clamp_interval(interval_min) as u64 * 60,
+        ))
     }
 
     /// 该备份的文档 → 要写的备份: 只收有未保存修改的 (不含 Grep 结果页), 这一版已经备份过的跳过, 太大的跳过; 收下的记为「已备份这一版」
@@ -133,7 +177,10 @@ impl AutoBackup {
                     editcore::document_io::Eol::Cr => "\r",
                 };
                 let text = d.lines.join(sep);
-                (text.len() <= MAX_DOC_BYTES).then(|| Job { file: file_name(d.path.as_deref(), &d.name, d.id), text })
+                (text.len() <= MAX_DOC_BYTES).then(|| Job {
+                    file: file_name(d.path.as_deref(), &d.name, d.id),
+                    text,
+                })
             })
             .collect();
         for d in docs.iter().filter(dirty) {
@@ -184,9 +231,16 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 fn prune(dir: &Path, max_age: Duration) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
-        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > max_age);
+        let old = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > max_age);
         if old && e.path().extension().is_some_and(|x| x == "autosave") {
             let _ = std::fs::remove_file(e.path());
         }
@@ -217,13 +271,22 @@ pub struct FileLocks {
 fn open_shared_read(p: &Path) -> std::io::Result<std::fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_SHARE_READ: u32 = 1;
-    std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(p)
+    std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(p)
 }
 
 pub fn lock_file(p: &Path) -> Result<std::fs::File, LockOutcome> {
     #[cfg(windows)]
     {
-        open_shared_read(p).map_err(|e| if e.raw_os_error() == Some(32) || e.raw_os_error() == Some(33) { LockOutcome::Busy } else { LockOutcome::Failed(e.to_string()) })
+        open_shared_read(p).map_err(|e| {
+            if e.raw_os_error() == Some(32) || e.raw_os_error() == Some(33) {
+                LockOutcome::Busy
+            } else {
+                LockOutcome::Failed(e.to_string())
+            }
+        })
     }
     #[cfg(not(windows))]
     {
@@ -241,9 +304,15 @@ impl FileLocks {
             self.tried.clear();
             return news;
         }
-        let live: Vec<(u64, &PathBuf)> = docs.iter().filter(|d| !d.grep_result).filter_map(|d| d.path.as_ref().map(|p| (d.id, p))).collect();
-        self.held.retain(|id, (p, _)| live.iter().any(|(i, q)| i == id && *q == p));
-        self.tried.retain(|id, p| live.iter().any(|(i, q)| i == id && *q == p));
+        let live: Vec<(u64, &PathBuf)> = docs
+            .iter()
+            .filter(|d| !d.grep_result)
+            .filter_map(|d| d.path.as_ref().map(|p| (d.id, p)))
+            .collect();
+        self.held
+            .retain(|id, (p, _)| live.iter().any(|(i, q)| i == id && *q == p));
+        self.tried
+            .retain(|id, p| live.iter().any(|(i, q)| i == id && *q == p));
         for (id, p) in live {
             if self.held.contains_key(&id) || self.tried.get(&id) == Some(p) || !p.is_file() {
                 continue;
@@ -300,10 +369,16 @@ mod tests {
 
     #[test]
     fn interval_is_clamped_and_remaining_counts_down() {
-        assert_eq!((clamp_interval(0), clamp_interval(5), clamp_interval(99999)), (1, 5, 1440));
+        assert_eq!(
+            (clamp_interval(0), clamp_interval(5), clamp_interval(99999)),
+            (1, 5, 1440)
+        );
         let t0 = Instant::now();
         assert_eq!(remaining(t0, t0, 2), Duration::from_secs(120));
-        assert_eq!(remaining(t0, t0 + Duration::from_secs(90), 2), Duration::from_secs(30));
+        assert_eq!(
+            remaining(t0, t0 + Duration::from_secs(90), 2),
+            Duration::from_secs(30)
+        );
         assert!(remaining(t0, t0 + Duration::from_secs(500), 2).is_zero());
     }
 
@@ -323,11 +398,31 @@ mod tests {
         let mut ab = AutoBackup::default();
         let mut d = Doc::untitled(1, 1);
         let now = Instant::now();
-        assert_eq!(ab.tick(false, 1, std::slice::from_ref(&d), now), None, "选项关着不排刷新");
-        assert_eq!(ab.tick(true, 1, std::slice::from_ref(&d), now), None, "没有脏文档不排刷新");
+        assert_eq!(
+            ab.tick(false, 1, std::slice::from_ref(&d), now),
+            None,
+            "选项关着不排刷新"
+        );
+        assert_eq!(
+            ab.tick(true, 1, std::slice::from_ref(&d), now),
+            None,
+            "没有脏文档不排刷新"
+        );
         d.dirty = true;
-        assert_eq!(ab.tick(true, 1, std::slice::from_ref(&d), now), Some(Duration::from_secs(60)), "脏了才开始计时");
-        assert_eq!(ab.tick(true, 1, std::slice::from_ref(&d), now + Duration::from_secs(20)), Some(Duration::from_secs(40)));
+        assert_eq!(
+            ab.tick(true, 1, std::slice::from_ref(&d), now),
+            Some(Duration::from_secs(60)),
+            "脏了才开始计时"
+        );
+        assert_eq!(
+            ab.tick(
+                true,
+                1,
+                std::slice::from_ref(&d),
+                now + Duration::from_secs(20)
+            ),
+            Some(Duration::from_secs(40))
+        );
     }
 
     #[test]
@@ -352,9 +447,16 @@ mod tests {
         std::fs::write(&p, "x").unwrap();
         let h = lock_file(&p).unwrap();
         assert!(std::fs::read(&p).is_ok(), "共享读");
-        assert!(std::fs::OpenOptions::new().write(true).open(&p).is_err(), "禁止写");
+        assert!(
+            std::fs::OpenOptions::new().write(true).open(&p).is_err(),
+            "禁止写"
+        );
         assert!(std::fs::remove_file(&p).is_err(), "禁止删除");
-        assert_eq!(lock_file(&p).map(|_| ()), Ok(()), "同一进程再读锁一次没问题");
+        assert_eq!(
+            lock_file(&p).map(|_| ()),
+            Ok(()),
+            "同一进程再读锁一次没问题"
+        );
         drop(h);
         assert!(std::fs::OpenOptions::new().write(true).open(&p).is_ok());
         // 别人正在写时锁不上
@@ -372,19 +474,28 @@ mod tests {
         let mut d = Doc::untitled(5, 1);
         d.path = Some(p.clone());
         let mut locks = FileLocks::default();
-        assert!(locks.sync(false, std::slice::from_ref(&d)).is_empty() && !locks.holds(5), "选项关着不锁");
+        assert!(
+            locks.sync(false, std::slice::from_ref(&d)).is_empty() && !locks.holds(5),
+            "选项关着不锁"
+        );
         let news = locks.sync(true, std::slice::from_ref(&d));
         if cfg!(windows) {
             assert!(news.is_empty() && locks.holds(5));
             locks.release(5);
-            assert!(std::fs::OpenOptions::new().write(true).open(&p).is_ok(), "放掉后能写");
+            assert!(
+                std::fs::OpenOptions::new().write(true).open(&p).is_ok(),
+                "放掉后能写"
+            );
             locks.sync(true, std::slice::from_ref(&d));
             assert!(locks.holds(5), "下一帧重新持有");
             locks.sync(true, &[]);
             assert!(!locks.holds(5), "文档关了锁就放");
         } else {
             assert_eq!(news, vec![(5, LockOutcome::Unsupported)]);
-            assert!(locks.sync(true, std::slice::from_ref(&d)).is_empty(), "不每帧重试");
+            assert!(
+                locks.sync(true, std::slice::from_ref(&d)).is_empty(),
+                "不每帧重试"
+            );
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -405,10 +516,21 @@ mod tests {
         assert_eq!(jobs[0].text, "x\r\ny", "按文档的换行符拼");
         assert!(a.collect_jobs(&docs).is_empty(), "同一版不重复备份");
         let dir = tmp("flush");
-        assert_eq!(a.flush_to(&docs, &dir), 1, "立即备份: 这一版虽然备份过, 也重写");
-        let written = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).count();
+        assert_eq!(
+            a.flush_to(&docs, &dir),
+            1,
+            "立即备份: 这一版虽然备份过, 也重写"
+        );
+        let written = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .count();
         assert_eq!(written, 1);
-        assert_eq!(a.flush_to(&[Doc::untitled(9, 9)], &dir), 0, "没有未保存修改的文档: 不写");
+        assert_eq!(
+            a.flush_to(&[Doc::untitled(9, 9)], &dir),
+            0,
+            "没有未保存修改的文档: 不写"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

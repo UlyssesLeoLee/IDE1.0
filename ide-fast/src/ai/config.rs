@@ -17,7 +17,11 @@ pub struct AiConfig {
 
 impl std::fmt::Debug for AiConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AiConfig").field("base_url", &self.base_url).field("model", &self.model).field("key", &"<redacted>").finish()
+        f.debug_struct("AiConfig")
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("key", &"<redacted>")
+            .finish()
     }
 }
 
@@ -35,11 +39,30 @@ pub fn config_path() -> Option<PathBuf> {
 
 impl AiConfig {
     pub fn default_cfg() -> Self {
-        AiConfig { base_url: PRESETS[0].1.into(), ..Default::default() }
+        AiConfig {
+            base_url: PRESETS[0].1.into(),
+            ..Default::default()
+        }
     }
     pub fn from_json(v: &Value) -> Self {
         let s = |k: &str| v[k].as_str().unwrap_or("").to_string();
-        let mut c = AiConfig { base_url: s("baseUrl"), model: s("model"), key: s("key"), effort: s("effort"), efforts: super::efforts::clean_list(v["efforts"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default()), consent: v["consent"].as_bool().unwrap_or(false) };
+        let mut c = AiConfig {
+            base_url: s("baseUrl"),
+            model: s("model"),
+            key: s("key"),
+            effort: s("effort"),
+            efforts: super::efforts::clean_list(
+                v["efforts"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            ),
+            consent: v["consent"].as_bool().unwrap_or(false),
+        };
         if c.base_url.is_empty() {
             c.base_url = PRESETS[0].1.into();
         }
@@ -49,11 +72,17 @@ impl AiConfig {
         json!({ "baseUrl": self.base_url, "model": self.model, "key": self.key, "effort": self.effort, "efforts": self.efforts, "consent": self.consent })
     }
     pub fn load() -> Self {
-        config_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()).map(|v| Self::from_json(&v)).unwrap_or_else(Self::default_cfg)
+        config_path()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .map(|v| Self::from_json(&v))
+            .unwrap_or_else(Self::default_cfg)
     }
     /// 设置关闭 (IDE_FAST_SETTINGS=off) 时不落盘
     pub fn save(&self) -> Result<(), String> {
-        let Some(p) = config_path() else { return Ok(()) };
+        let Some(p) = config_path() else {
+            return Ok(());
+        };
         if let Some(d) = p.parent() {
             std::fs::create_dir_all(d).map_err(|e| format!("无法创建配置目录: {e}"))?;
         }
@@ -61,13 +90,19 @@ impl AiConfig {
         crate::fsx::atomic_write(&p, &bytes, true).map_err(|e| format!("保存 AI 配置失败: {e}"))
     }
     pub fn configured(&self) -> bool {
-        !self.key.trim().is_empty() && !self.model.trim().is_empty() && endpoint(&self.base_url).is_ok()
+        !self.key.trim().is_empty()
+            && !self.model.trim().is_empty()
+            && endpoint(&self.base_url).is_ok()
     }
 }
 
 /// 把密钥从任何要显示 / 记录的文字里抹掉
 pub fn redact(s: &str, key: &str) -> String {
-    if key.len() >= 4 { s.replace(key, "***") } else { s.to_string() }
+    if key.len() >= 4 {
+        s.replace(key, "***")
+    } else {
+        s.to_string()
+    }
 }
 
 fn is_loopback(host: &str) -> bool {
@@ -85,12 +120,26 @@ pub fn checked_base(base: &str) -> Result<String, String> {
     if b.contains(|c: char| c.is_control() || c.is_whitespace() || c == '\\') {
         return Err("接口地址含非法字符".into());
     }
-    let (https, rest) = if let Some(r) = b.strip_prefix("https://") { (true, r) } else if let Some(r) = b.strip_prefix("http://") { (false, r) } else { return Err("接口地址必须以 https:// 开头".into()) };
+    let (https, rest) = if let Some(r) = b.strip_prefix("https://") {
+        (true, r)
+    } else if let Some(r) = b.strip_prefix("http://") {
+        (false, r)
+    } else {
+        return Err("接口地址必须以 https:// 开头".into());
+    };
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
     if authority.is_empty() || authority.contains('@') {
         return Err("接口地址不能为空, 也不能内嵌账号口令".into());
     }
-    let host = if authority.starts_with('[') { authority.split(']').next().map(|h| format!("{h}]")).unwrap_or_default() } else { authority.split(':').next().unwrap_or("").to_string() };
+    let host = if authority.starts_with('[') {
+        authority
+            .split(']')
+            .next()
+            .map(|h| format!("{h}]"))
+            .unwrap_or_default()
+    } else {
+        authority.split(':').next().unwrap_or("").to_string()
+    };
     if !https && !is_loopback(&host.to_ascii_lowercase()) {
         return Err("只允许 https 接口 (本机 localhost / 127.0.0.1 可用 http)".into());
     }
@@ -106,7 +155,10 @@ mod tests {
 
     #[test]
     fn endpoint_rules() {
-        assert_eq!(endpoint("https://api.openai.com/v1/").unwrap(), "https://api.openai.com/v1/chat/completions");
+        assert_eq!(
+            endpoint("https://api.openai.com/v1/").unwrap(),
+            "https://api.openai.com/v1/chat/completions"
+        );
         assert!(endpoint("http://example.com/v1").is_err());
         assert!(endpoint("http://127.0.0.1:11434/v1").is_ok());
         assert!(endpoint("http://localhost/v1").is_ok());
@@ -121,8 +173,14 @@ mod tests {
 
     #[test]
     fn debug_and_errors_never_show_the_key() {
-        let c = AiConfig { key: "sk-secret-123".into(), ..AiConfig::default_cfg() };
+        let c = AiConfig {
+            key: "sk-secret-123".into(),
+            ..AiConfig::default_cfg()
+        };
         assert!(!format!("{c:?}").contains("sk-secret"));
-        assert_eq!(redact("bad key sk-secret-123 here", &c.key), "bad key *** here");
-            }
+        assert_eq!(
+            redact("bad key sk-secret-123 here", &c.key),
+            "bad key *** here"
+        );
+    }
 }

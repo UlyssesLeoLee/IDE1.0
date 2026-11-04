@@ -19,13 +19,20 @@ pub fn editor_family() -> FontFamily {
 }
 
 fn fonts_dir() -> std::path::PathBuf {
-    std::env::var_os("WINDIR").map(|w| std::path::PathBuf::from(w).join("Fonts")).unwrap_or_else(|| "C:/Windows/Fonts".into())
+    std::env::var_os("WINDIR")
+        .map(|w| std::path::PathBuf::from(w).join("Fonts"))
+        .unwrap_or_else(|| "C:/Windows/Fonts".into())
 }
 
 /// 系统字体目录里能直接用的字体文件名 (.ttf / .otf, 排序去重); 目录读不到 = 空
 pub fn system_fonts() -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(fonts_dir())
-        .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| is_font_file(n)).collect())
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| is_font_file(n))
+                .collect()
+        })
         .unwrap_or_default();
     v.sort_by_key(|n| n.to_lowercase());
     v.dedup();
@@ -48,22 +55,34 @@ pub fn load(editor_file: &str) -> Loaded {
     let dir = fonts_dir();
     let mut fallbacks = vec![];
     for (file, index) in CANDIDATES {
-        let Ok(bytes) = std::fs::read(dir.join(file)) else { continue };
+        let Ok(bytes) = std::fs::read(dir.join(file)) else {
+            continue;
+        };
         fallbacks.push((*file, *index, bytes));
         if fallbacks.len() >= 2 {
             break; // 两个就够覆盖中日文; 再多只会拖慢启动
         }
     }
     // 文件名只取最后一段, 免得设置文件里写个 ..\ 去读别处的文件
-    let safe = std::path::Path::new(editor_file).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let editor = if !safe.is_empty() && is_font_file(&safe) { std::fs::read(dir.join(&safe)).ok() } else { None };
+    let safe = std::path::Path::new(editor_file)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let editor = if !safe.is_empty() && is_font_file(&safe) {
+        std::fs::read(dir.join(&safe)).ok()
+    } else {
+        None
+    };
     Loaded { fallbacks, editor }
 }
 
 /// 后台读字体; `install_loaded` 之前 join。线程起不来 (几乎不可能) 就返回 None, 调用方退回同步读取
 pub fn prefetch(editor_file: &str) -> Option<std::thread::JoinHandle<Loaded>> {
     let f = editor_file.to_string();
-    std::thread::Builder::new().name("font-prefetch".into()).spawn(move || load(&f)).ok()
+    std::thread::Builder::new()
+        .name("font-prefetch".into())
+        .spawn(move || load(&f))
+        .ok()
 }
 
 /// `editor_file` = 编辑器字体的文件名 (空 = 默认等宽); 读不到文件就当没选
@@ -84,10 +103,16 @@ pub fn install_loaded(ctx: &egui::Context, loaded: Loaded) {
     }
     let mut editor: Vec<String> = vec![];
     if let Some(bytes) = loaded.editor {
-        defs.font_data.insert("editor-font".into(), Arc::new(FontData::from_owned(bytes)));
+        defs.font_data
+            .insert("editor-font".into(), Arc::new(FontData::from_owned(bytes)));
         editor.push("editor-font".into());
     }
-    editor.extend(defs.families.get(&FontFamily::Monospace).cloned().unwrap_or_default());
+    editor.extend(
+        defs.families
+            .get(&FontFamily::Monospace)
+            .cloned()
+            .unwrap_or_default(),
+    );
     defs.families.insert(editor_family(), editor);
     ctx.set_fonts(defs);
 }

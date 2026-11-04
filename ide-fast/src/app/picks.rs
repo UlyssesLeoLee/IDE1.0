@@ -7,9 +7,23 @@ use crate::help;
 use crate::pick::{Kind, Match, Outcome, Pick, Row};
 
 /// 窗口一览的行: `▶` 标当前标签、`●` 标有未保存修改; 右侧是路径; 值是文档 id (选中时按 id 找标签)
-pub fn window_rows<'a>(docs: impl Iterator<Item = (u64, &'a str, Option<&'a str>, bool)>, active: usize) -> Vec<Row> {
+pub fn window_rows<'a>(
+    docs: impl Iterator<Item = (u64, &'a str, Option<&'a str>, bool)>,
+    active: usize,
+) -> Vec<Row> {
     docs.enumerate()
-        .map(|(i, (id, name, path, dirty))| Row::new(format!("{}{}{}", if i == active { "▶ " } else { "　" }, if dirty { "● " } else { "" }, name), path.unwrap_or("")).with_value(id.to_string()))
+        .map(|(i, (id, name, path, dirty))| {
+            Row::new(
+                format!(
+                    "{}{}{}",
+                    if i == active { "▶ " } else { "　" },
+                    if dirty { "● " } else { "" },
+                    name
+                ),
+                path.unwrap_or(""),
+            )
+            .with_value(id.to_string())
+        })
         .collect()
 }
 
@@ -20,14 +34,23 @@ pub fn path_rows(paths: &[String], what: &str) -> Vec<Row> {
 
 /// 收藏夹: 最近的文件在前, 最近的文件夹在后; 值带前缀 `f:` (文件) / `d:` (文件夹)
 pub fn favorite_rows(files: &[String], dirs: &[String]) -> Vec<Row> {
-    let mut rows: Vec<Row> = files.iter().map(|p| Row::new(p.clone(), trz("文件")).with_value(format!("f:{p}"))).collect();
-    rows.extend(dirs.iter().map(|p| Row::new(p.clone(), trz("文件夹")).with_value(format!("d:{p}"))));
+    let mut rows: Vec<Row> = files
+        .iter()
+        .map(|p| Row::new(p.clone(), trz("文件")).with_value(format!("f:{p}")))
+        .collect();
+    rows.extend(
+        dirs.iter()
+            .map(|p| Row::new(p.clone(), trz("文件夹")).with_value(format!("d:{p}"))),
+    );
     rows
 }
 
 /// 字符集列表: 当前的字符集右边标「当前」
 pub fn charset_rows(cur: Charset) -> Vec<Row> {
-    Charset::ALL.iter().map(|c| Row::new(c.label(), if *c == cur { trz("当前") } else { "" })).collect()
+    Charset::ALL
+        .iter()
+        .map(|c| Row::new(c.label(), if *c == cur { trz("当前") } else { "" }))
+        .collect()
 }
 
 impl App {
@@ -46,13 +69,22 @@ impl App {
             KApp::HelpSearch => self.open_help_search(String::new()),
             KApp::ExtHelp => {
                 let w = self.word_under_cursor();
-                if w.is_empty() { self.cur().tip = "光标处没有单词".into(); } else { self.open_help_search(w); }
+                if w.is_empty() {
+                    self.cur().tip = "光标处没有单词".into();
+                } else {
+                    self.open_help_search(w);
+                }
             }
             KApp::KeySearch => {
                 self.cfg.view.key_search = !self.cfg.view.key_search;
                 self.tools.key_word.clear();
                 self.tools.key_pos = None;
-                self.cur().tip = if self.cfg.view.key_search { "关键字帮助自动显示: 开" } else { "关键字帮助自动显示: 关" }.into();
+                self.cur().tip = if self.cfg.view.key_search {
+                    "关键字帮助自动显示: 开"
+                } else {
+                    "关键字帮助自动显示: 关"
+                }
+                .into();
             }
             KApp::PaneOutline => self.show_side(Tab::Outline),
             KApp::PaneFiles => self.show_side(Tab::Files),
@@ -69,24 +101,44 @@ impl App {
 
     fn word_under_cursor(&mut self) -> String {
         let d = self.cur();
-        help::word_at(d.lines.get(d.cursor[0]).map(String::as_str).unwrap_or(""), d.cursor[1])
+        help::word_at(
+            d.lines.get(d.cursor[0]).map(String::as_str).unwrap_or(""),
+            d.cursor[1],
+        )
     }
 
     fn open_window_list(&mut self) {
         let active = self.active.min(self.docs.len().saturating_sub(1));
-        let pathbufs: Vec<Option<String>> = self.docs.iter().map(|d| d.path.as_ref().map(|p| p.display().to_string())).collect();
-        let rows = window_rows(self.docs.iter().zip(&pathbufs).map(|(d, p)| (d.id, d.name.as_str(), p.as_deref(), d.dirty)), active);
+        let pathbufs: Vec<Option<String>> = self
+            .docs
+            .iter()
+            .map(|d| d.path.as_ref().map(|p| p.display().to_string()))
+            .collect();
+        let rows = window_rows(
+            self.docs
+                .iter()
+                .zip(&pathbufs)
+                .map(|(d, p)| (d.id, d.name.as_str(), p.as_deref(), d.dirty)),
+            active,
+        );
         let title = format!("{} ({})", trz("窗口一览"), rows.len());
-        self.tools.pick = Some(Pick::new(Kind::Windows, title, Match::Fuzzy, rows).start_at(active));
+        self.tools.pick =
+            Some(Pick::new(Kind::Windows, title, Match::Fuzzy, rows).start_at(active));
     }
 
     fn open_path_pick(&mut self, kind: Kind) {
         let (title, rows) = match kind {
             Kind::Recent => (trz("最近的文件"), path_rows(&self.recent, "")),
             Kind::Folders => (trz("最近的文件夹"), path_rows(&self.recent_dirs, "")),
-            Kind::Favorite => (trz("收藏夹"), favorite_rows(&self.recent, &self.recent_dirs)),
+            Kind::Favorite => (
+                trz("收藏夹"),
+                favorite_rows(&self.recent, &self.recent_dirs),
+            ),
             Kind::InsFile => (trz("插入最近的文件路径"), path_rows(&self.recent, "")),
-            _ => (trz("插入最近的文件夹路径"), path_rows(&self.recent_dirs, "")),
+            _ => (
+                trz("插入最近的文件夹路径"),
+                path_rows(&self.recent_dirs, ""),
+            ),
         };
         if rows.is_empty() {
             self.cur().tip = tr("ui.none").into();
@@ -97,21 +149,38 @@ impl App {
     }
 
     fn open_charset_pick(&mut self, kind: Kind) {
-        let (cur, doc) = { let d = self.cur(); (d.charset, d.id) };
-        let title = if kind == Kind::Reopen { trz("指定字符集重新打开") } else { trz("指定字符集") };
+        let (cur, doc) = {
+            let d = self.cur();
+            (d.charset, d.id)
+        };
+        let title = if kind == Kind::Reopen {
+            trz("指定字符集重新打开")
+        } else {
+            trz("指定字符集")
+        };
         let at = Charset::ALL.iter().position(|c| *c == cur).unwrap_or(0);
-        self.tools.pick = Some(Pick::new(kind, title, Match::Fuzzy, charset_rows(cur)).start_at(at).for_doc(doc));
+        self.tools.pick = Some(
+            Pick::new(kind, title, Match::Fuzzy, charset_rows(cur))
+                .start_at(at)
+                .for_doc(doc),
+        );
     }
 
     fn open_help_search(&mut self, word: String) {
         let rows = help::rows(&help::manual());
-        self.tools.pick = Some(Pick::new(Kind::Help, trz("关键字帮助检索"), Match::Words, rows).with_query(&word));
+        self.tools.pick = Some(
+            Pick::new(Kind::Help, trz("关键字帮助检索"), Match::Words, rows).with_query(&word),
+        );
     }
 
     /// 手册开成(或刷新)只读标签; `line` 从 1 数, 有就跳过去
     pub(super) fn open_manual(&mut self, line: Option<usize>) {
         let text = help::manual();
-        let idx = match self.docs.iter().position(|d| d.name == help::MANUAL_NAME && d.path.is_none()) {
+        let idx = match self
+            .docs
+            .iter()
+            .position(|d| d.name == help::MANUAL_NAME && d.path.is_none())
+        {
             Some(i) => {
                 // 命令一览跟着此刻的键位和语言走, 所以重开时整份换成新的 (撤销栈 / 修改标记 / 选区都不留, id 不变)
                 let (id, rev) = (self.docs[i].id, self.docs[i].rev);
@@ -133,13 +202,19 @@ impl App {
 
     /// 画选择列表, 处理选中
     pub(super) fn pick_window(&mut self, ctx: &egui::Context) {
-        let Some(p) = self.tools.pick.as_mut() else { return };
+        let Some(p) = self.tools.pick.as_mut() else {
+            return;
+        };
         match p.window(ctx) {
             Outcome::Open => {}
             Outcome::Closed => self.tools.pick = None,
             Outcome::Picked(row) => {
-                let Some(p) = self.tools.pick.take() else { return };
-                if let Some(r) = p.rows().get(row) { self.apply_pick(p.kind, r, p.target); }
+                let Some(p) = self.tools.pick.take() else {
+                    return;
+                };
+                if let Some(r) = p.rows().get(row) {
+                    self.apply_pick(p.kind, r, p.target);
+                }
             }
         }
     }
@@ -149,10 +224,15 @@ impl App {
     pub(super) fn apply_pick(&mut self, kind: Kind, row: &Row, target: Option<u64>) {
         let doc_of = |a: &App, id: u64| a.docs.iter().position(|d| d.id == id);
         let target_ix = target.and_then(|id| doc_of(self, id));
-        let charset = Charset::ALL.iter().copied().find(|c| c.label() == row.value);
+        let charset = Charset::ALL
+            .iter()
+            .copied()
+            .find(|c| c.label() == row.value);
         match kind {
             Kind::Windows => {
-                if let Some(i) = row.value.parse().ok().and_then(|id| doc_of(self, id)) { self.select_tab(i); }
+                if let Some(i) = row.value.parse().ok().and_then(|id| doc_of(self, id)) {
+                    self.select_tab(i);
+                }
             }
             Kind::Recent => self.open_path(std::path::Path::new(&row.value)),
             Kind::Folders => self.open_folder(PathBuf::from(&row.value)),
@@ -169,7 +249,9 @@ impl App {
                 self.insert_text(&row.value);
             }
             Kind::Charset => {
-                if let (Some(i), Some(cs)) = (target_ix, charset) { self.docs[i].set_charset(cs); }
+                if let (Some(i), Some(cs)) = (target_ix, charset) {
+                    self.docs[i].set_charset(cs);
+                }
             }
             Kind::Reopen => {
                 if let (Some(i), Some(cs)) = (target_ix, charset) {
@@ -183,14 +265,25 @@ impl App {
 
     /// 关键字帮助自动显示: 光标换到新的单词上时, 把手册里第一处提到它的行放进状态栏提示
     pub(super) fn key_search_tick(&mut self) {
-        if !self.cfg.view.key_search { return; }
-        let (id, cur) = { let d = self.cur(); (d.id, d.cursor) };
-        if self.tools.key_pos == Some((id, cur)) { return; }
+        if !self.cfg.view.key_search {
+            return;
+        }
+        let (id, cur) = {
+            let d = self.cur();
+            (d.id, d.cursor)
+        };
+        if self.tools.key_pos == Some((id, cur)) {
+            return;
+        }
         self.tools.key_pos = Some((id, cur));
         let word = self.word_under_cursor();
-        if word == self.tools.key_word { return; }
+        if word == self.tools.key_word {
+            return;
+        }
         self.tools.key_word = word.clone();
-        if let Some(t) = help::tip_for(&word) { self.cur().tip = t; }
+        if let Some(t) = help::tip_for(&word) {
+            self.cur().tip = t;
+        }
     }
 }
 
@@ -201,11 +294,22 @@ mod tests {
 
     #[test]
     fn window_rows_mark_the_active_tab_and_unsaved_ones() {
-        let rows = window_rows([(7, "a.txt", Some("C:/a.txt"), false), (8, "b.txt", None, true), (9, "c.txt", Some("D:/c.txt"), false)].into_iter(), 1);
+        let rows = window_rows(
+            [
+                (7, "a.txt", Some("C:/a.txt"), false),
+                (8, "b.txt", None, true),
+                (9, "c.txt", Some("D:/c.txt"), false),
+            ]
+            .into_iter(),
+            1,
+        );
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].label, "　a.txt");
         assert_eq!(rows[1].label, "▶ ● b.txt", "当前标签 + 未保存");
-        assert_eq!((rows[1].detail.as_str(), rows[2].detail.as_str()), ("", "D:/c.txt"));
+        assert_eq!(
+            (rows[1].detail.as_str(), rows[2].detail.as_str()),
+            ("", "D:/c.txt")
+        );
         assert_eq!(rows[2].value, "9", "值是文档 id");
     }
 
@@ -213,7 +317,14 @@ mod tests {
     fn favorites_list_files_first_and_tag_folders() {
         let rows = favorite_rows(&["a".into(), "b".into()], &["d".into()]);
         assert_eq!(rows.len(), 3);
-        assert_eq!((rows[0].value.as_str(), rows[2].label.as_str(), rows[2].value.as_str()), ("f:a", "d", "d:d"));
+        assert_eq!(
+            (
+                rows[0].value.as_str(),
+                rows[2].label.as_str(),
+                rows[2].value.as_str()
+            ),
+            ("f:a", "d", "d:d")
+        );
     }
 
     #[test]
@@ -226,8 +337,16 @@ mod tests {
     }
 
     fn app_with_docs(names: &[&str]) -> (App, std::sync::MutexGuard<'static, ()>) {
-        let g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut a = App::build(vec![], None, crate::Trace::new(), crate::settings::Settings::default(), false);
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut a = App::build(
+            vec![],
+            None,
+            crate::Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
         for n in names {
             a.new_doc();
             a.cur().name = (*n).to_string();
@@ -266,7 +385,10 @@ mod tests {
         a.apply_pick(Kind::InsFile, &p.rows()[1], p.target);
         a.apply_pick(Kind::InsDir, &Row::new("C:/proj", ""), p.target);
         assert_eq!(a.cur().id, x, "插到打开列表时的那个文档");
-        assert!(a.cur().lines.join("\n").contains("C:/b.txt") && a.cur().lines.join("\n").contains("C:/proj"));
+        assert!(
+            a.cur().lines.join("\n").contains("C:/b.txt")
+                && a.cur().lines.join("\n").contains("C:/proj")
+        );
         let before = a.cur().lines.clone();
         a.apply_pick(Kind::InsFile, &Row::new("C:/z", ""), Some(9999));
         assert_eq!(a.cur().lines, before, "目标文档不在了就不插入");
@@ -284,7 +406,11 @@ mod tests {
         let p = a.tools.pick.take().expect("字符集列表");
         a.select_tab(2); // 列表开着期间换了标签
         a.apply_pick(Kind::Charset, &p.rows()[1], p.target);
-        assert_eq!((a.docs[1].charset, a.docs[2].charset), (Charset::ShiftJis, Charset::Utf8), "改的是打开列表时的文档");
+        assert_eq!(
+            (a.docs[1].charset, a.docs[2].charset),
+            (Charset::ShiftJis, Charset::Utf8),
+            "改的是打开列表时的文档"
+        );
         a.apply_pick(Kind::Charset, &Row::new("NO-SUCH", ""), p.target);
         assert_eq!(a.docs[1].charset, Charset::ShiftJis);
     }
@@ -309,7 +435,10 @@ mod tests {
         a.docs[m].undo(); // 撤销栈清空了: 旧的记录不会套到新正文上
         let d = &a.docs[m];
         assert_eq!(d.name, help::MANUAL_NAME);
-        assert!(d.id == id && d.readonly && !d.dirty, "刷新后是干净的只读手册, id 不变");
+        assert!(
+            d.id == id && d.readonly && !d.dirty,
+            "刷新后是干净的只读手册, id 不变"
+        );
         assert_eq!(d.lines.join("\n"), help::manual().trim_end_matches('\n'));
     }
 
@@ -367,9 +496,19 @@ mod tests {
     fn the_pick_window_works_inside_a_full_frame_and_enter_switches_the_tab() {
         let (mut a, _g) = app_with_docs(&["one", "two"]);
         let ctx = egui::Context::default();
-        let key = |k: Key| egui::Event::Key { key: k, physical_key: Some(k), pressed: true, repeat: false, modifiers: Modifiers::NONE };
+        let key = |k: Key| egui::Event::Key {
+            key: k,
+            physical_key: Some(k),
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
         let frame = |a: &mut App, events: Vec<egui::Event>| {
-            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0))), events, ..Default::default() };
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0))),
+                events,
+                ..Default::default()
+            };
             let mut out = ctx.run_ui(raw, |ui| a.ui_main(ui));
             out.textures_delta.clear();
         };
@@ -396,7 +535,11 @@ mod tests {
         let (mut a, _g) = app_with_docs(&["one", "two", "three"]);
         let ctx = egui::Context::default();
         let frame = |a: &mut App, events: Vec<egui::Event>| {
-            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0))), events, ..Default::default() };
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0))),
+                events,
+                ..Default::default()
+            };
             let mut out = ctx.run_ui(raw, |ui| a.ui_main(ui));
             out.textures_delta.clear();
         };
@@ -405,10 +548,22 @@ mod tests {
         assert!(a.split_on);
         frame(&mut a, vec![]);
         let want = a.docs.iter().position(|d| d.name == "three").unwrap();
-        let rows = window_rows(a.docs.iter().map(|d| (d.id, d.name.as_str(), None, false)), a.active);
+        let rows = window_rows(
+            a.docs.iter().map(|d| (d.id, d.name.as_str(), None, false)),
+            a.active,
+        );
         a.tools.pick = Some(Pick::new(Kind::Windows, "t", Match::Fuzzy, rows).start_at(want));
         frame(&mut a, vec![]);
-        frame(&mut a, vec![egui::Event::Key { key: Key::Enter, physical_key: Some(Key::Enter), pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+        frame(
+            &mut a,
+            vec![egui::Event::Key {
+                key: Key::Enter,
+                physical_key: Some(Key::Enter),
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }],
+        );
         assert!(a.tools.pick.is_none());
         frame(&mut a, vec![]);
         assert_eq!(a.active, want, "下一帧仍然是选中的标签");

@@ -13,7 +13,12 @@ impl App {
 
     /// 查找并跳转: 一个候选直接去, 多个弹列表, 没有就提示
     pub(super) fn tag_lookup(&mut self, name: &str) {
-        let doc_dir = self.cur().path.as_deref().and_then(|p| p.parent()).map(|p| p.to_path_buf());
+        let doc_dir = self
+            .cur()
+            .path
+            .as_deref()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf());
         let root = self.side.root.clone();
         let mut cands = tagjump::lookup(name, doc_dir.as_deref(), root.as_deref());
         match cands.len() {
@@ -24,7 +29,10 @@ impl App {
     }
 
     pub(super) fn tag_go(&mut self, c: Cand) {
-        let (id, pos) = { let d = self.cur(); (d.id, d.cursor) };
+        let (id, pos) = {
+            let d = self.cur();
+            (d.id, d.cursor)
+        };
         self.tags.push(id, pos);
         self.open_at(&c.path, c.line, 0);
         self.cur().tip = trf("dlg.tag-jumped", &[&c.name, &c.line.to_string()]);
@@ -36,7 +44,10 @@ impl App {
             return;
         };
         match self.docs.iter().position(|d| d.id == id) {
-            Some(i) => { self.active = i; self.docs[i].goto(pos[0], pos[1]); }
+            Some(i) => {
+                self.active = i;
+                self.docs[i].goto(pos[0], pos[1]);
+            }
             None => self.cur().tip = tr("dlg.tag-closed").into(),
         }
     }

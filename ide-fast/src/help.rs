@@ -32,8 +32,12 @@ fn body() -> String {
 fn list_heading() -> &'static str {
     match crate::i18n::cur() {
         crate::i18n::Lang::Zh => "[11] 命令一览\n-------------\n名称\t键\t[命令 id]\t分类\n",
-        crate::i18n::Lang::Ja => "[11] コマンド一覧\n-----------------\n名前\tキー\t[コマンド id]\t分類\n",
-        crate::i18n::Lang::En => "[11] Command List\n-----------------\nName\tKey\t[Command id]\tCategory\n",
+        crate::i18n::Lang::Ja => {
+            "[11] コマンド一覧\n-----------------\n名前\tキー\t[コマンド id]\t分類\n"
+        }
+        crate::i18n::Lang::En => {
+            "[11] Command List\n-----------------\nName\tKey\t[Command id]\tCategory\n"
+        }
     }
 }
 
@@ -68,7 +72,10 @@ pub fn rows(manual: &str) -> Vec<Row> {
         .lines()
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty())
-        .map(|(i, l)| Row::new(l.trim().replace('\t', "  "), format!("L{}", i + 1)).with_value((i + 1).to_string()))
+        .map(|(i, l)| {
+            Row::new(l.trim().replace('\t', "  "), format!("L{}", i + 1))
+                .with_value((i + 1).to_string())
+        })
         .collect()
 }
 
@@ -78,8 +85,21 @@ pub fn word_at(line: &str, col: usize) -> String {
     use editcore::word::{char_kind, word_run, CharKind};
     let cs: Vec<char> = line.chars().collect();
     let col = col.min(cs.len());
-    let wordy = |i: usize| cs.get(i).is_some_and(|&c| !matches!(char_kind(c), CharKind::Space | CharKind::ZenSpace | CharKind::Kigo));
-    let at = if wordy(col) { col } else if col > 0 && wordy(col - 1) { col - 1 } else { return String::new() };
+    let wordy = |i: usize| {
+        cs.get(i).is_some_and(|&c| {
+            !matches!(
+                char_kind(c),
+                CharKind::Space | CharKind::ZenSpace | CharKind::Kigo
+            )
+        })
+    };
+    let at = if wordy(col) {
+        col
+    } else if col > 0 && wordy(col - 1) {
+        col - 1
+    } else {
+        return String::new();
+    };
     let (a, b) = word_run(&cs, at);
     cs[a..b].iter().collect()
 }
@@ -90,7 +110,11 @@ pub fn first_hit(manual: &str, word: &str) -> Option<(usize, String)> {
     if w.is_empty() {
         return None;
     }
-    manual.lines().enumerate().find(|(_, l)| l.to_lowercase().contains(&w)).map(|(i, l)| (i + 1, l.trim().replace('\t', "  ")))
+    manual
+        .lines()
+        .enumerate()
+        .find(|(_, l)| l.to_lowercase().contains(&w))
+        .map(|(i, l)| (i + 1, l.trim().replace('\t', "  ")))
 }
 
 /// 自动显示的提示 (状态栏): `帮助: <行>`; 词太短 / 没有命中 = None
@@ -127,14 +151,23 @@ mod tests {
     #[test]
     fn the_three_manuals_have_the_same_shape() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let sections = |t: &str| -> Vec<String> { t.lines().filter_map(|l| l.strip_prefix('[')).filter_map(|r| r.split(']').next()).map(str::to_string).collect() };
+        let sections = |t: &str| -> Vec<String> {
+            t.lines()
+                .filter_map(|l| l.strip_prefix('['))
+                .filter_map(|r| r.split(']').next())
+                .map(str::to_string)
+                .collect()
+        };
         let mut shapes = vec![];
         for l in [Lang::Zh, Lang::Ja, Lang::En] {
             set(l);
             let b = body();
             shapes.push((sections(&b), b.lines().count()));
             let m = manual();
-            assert!(m.contains("[11]") && m.contains("[c.palette]"), "{l:?}: 命令一览在");
+            assert!(
+                m.contains("[11]") && m.contains("[c.palette]"),
+                "{l:?}: 命令一览在"
+            );
             assert!(!m.contains('\r'));
         }
         set(Lang::Zh);
@@ -150,11 +183,21 @@ mod tests {
         let _g = zh();
         let m = manual();
         assert!(m.starts_with("IDE1.0 高速版"), "正文在前");
-        let ids: Vec<String> = keymap::entries().iter().map(|e| format!("[{}]", e.id)).collect();
+        let ids: Vec<String> = keymap::entries()
+            .iter()
+            .map(|e| format!("[{}]", e.id))
+            .collect();
         for id in &ids {
-            assert_eq!(m.matches(id.as_str()).count(), 1, "命令一览里 {id} 必须恰好出现一次");
+            assert_eq!(
+                m.matches(id.as_str()).count(),
+                1,
+                "命令一览里 {id} 必须恰好出现一次"
+            );
         }
-        assert!(m.contains("[c.palette]") && m.contains("Shift+F1"), "键位是现场从命令表读的");
+        assert!(
+            m.contains("[c.palette]") && m.contains("Shift+F1"),
+            "键位是现场从命令表读的"
+        );
     }
 
     #[test]
@@ -163,7 +206,15 @@ mod tests {
         let rs = rows("甲\n\n  乙\t丙  \n");
         assert_eq!(rs.len(), 2);
         assert_eq!((rs[0].label.as_str(), rs[0].value.as_str()), ("甲", "1"));
-        assert_eq!((rs[1].label.as_str(), rs[1].value.as_str(), rs[1].detail.as_str()), ("乙  丙", "3", "L3"), "空行占行号, TAB 变两个空格");
+        assert_eq!(
+            (
+                rs[1].label.as_str(),
+                rs[1].value.as_str(),
+                rs[1].detail.as_str()
+            ),
+            ("乙  丙", "3", "L3"),
+            "空行占行号, TAB 变两个空格"
+        );
     }
 
     #[test]
@@ -187,7 +238,11 @@ mod tests {
         assert_eq!(word_at("再変換 mode", 1), "再変換");
         assert_eq!(word_at("abc", 99), "abc", "列号越界不 panic");
         assert_eq!(word_at("", 0), "");
-        assert_eq!(word_at("これは漢字です", 4), "漢字", "Sakura 的词: 漢字和ひらがな分开");
+        assert_eq!(
+            word_at("これは漢字です", 4),
+            "漢字",
+            "Sakura 的词: 漢字和ひらがな分开"
+        );
         assert_eq!(word_at("x = (y)", 4), "", "记号上不算词");
     }
 
@@ -213,15 +268,25 @@ mod tests {
         let long = format!("宏 {}", "长".repeat(300));
         assert_eq!(auto_tip(&long, "宏"), None, "一个字符的词不提示");
         let t2 = auto_tip(&format!("宏函数 {}", "长".repeat(300)), "宏函数").unwrap();
-        assert!(t2.starts_with("帮助: 宏函数") && t2.ends_with('…') && t2.chars().count() <= 4 + TIP_MAX_CHARS + 1);
-        assert_eq!(auto_tip("宏函数\n", "宏函数").as_deref(), Some("帮助: 宏函数"));
+        assert!(
+            t2.starts_with("帮助: 宏函数")
+                && t2.ends_with('…')
+                && t2.chars().count() <= 4 + TIP_MAX_CHARS + 1
+        );
+        assert_eq!(
+            auto_tip("宏函数\n", "宏函数").as_deref(),
+            Some("帮助: 宏函数")
+        );
     }
 
     #[test]
     fn tip_for_prefers_the_prose_and_falls_back_to_the_command_list() {
         let _g = zh();
         assert!(tip_for("窗口一览").is_some_and(|t| t.starts_with("帮助: ")));
-        assert!(tip_for("app.pick-reopen").is_some_and(|t| t.contains("[app.pick-reopen]")), "正文里没有的词查命令一览");
+        assert!(
+            tip_for("app.pick-reopen").is_some_and(|t| t.contains("[app.pick-reopen]")),
+            "正文里没有的词查命令一览"
+        );
         assert_eq!(tip_for("zzqqxx-no-such-word"), None);
         assert_eq!(tip_for("a"), None, "太短不提示");
     }

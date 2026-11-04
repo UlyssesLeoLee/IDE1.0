@@ -310,7 +310,12 @@ fn index() -> &'static [Tpl] {
             .iter()
             .map(|(zh, ja, en)| {
                 let pieces: Vec<&str> = zh.split("{}").collect();
-                Tpl { weight: pieces.iter().map(|p| p.len()).sum(), pieces, ja, en }
+                Tpl {
+                    weight: pieces.iter().map(|p| p.len()).sum(),
+                    pieces,
+                    ja,
+                    en,
+                }
             })
             .collect();
         v.sort_by_key(|a| std::cmp::Reverse(a.weight));
@@ -355,8 +360,19 @@ fn fill(tpl: &str, caps: &[String]) -> String {
 
 fn translate(s: &str, depth: u8) -> Option<String> {
     for t in index() {
-        let Some(caps) = capture(&t.pieces, s) else { continue };
-        let caps: Vec<String> = caps.iter().map(|c| if depth < 2 { translate(c, depth + 1).unwrap_or_else(|| (*c).to_string()) } else { (*c).to_string() }).collect();
+        let Some(caps) = capture(&t.pieces, s) else {
+            continue;
+        };
+        let caps: Vec<String> = caps
+            .iter()
+            .map(|c| {
+                if depth < 2 {
+                    translate(c, depth + 1).unwrap_or_else(|| (*c).to_string())
+                } else {
+                    (*c).to_string()
+                }
+            })
+            .collect();
         return Some(fill(if cur() == Lang::Ja { t.ja } else { t.en }, &caps));
     }
     None
@@ -384,11 +400,21 @@ mod tests {
         set(Lang::En);
         assert_eq!(msg("已保存 3 个文件"), "Saved 3 file(s)");
         assert_eq!(msg("已停止, 12 处命中"), "Stopped, 12 hit(s)");
-        assert_eq!(msg("5 处命中 (已达 5000 上限)"), "5 hit(s) (limit 5000 reached)");
-        assert_eq!(msg("置换 4 处, 改写 2 个文件 (已备份为 .bak), 1 个失败"), "Replaced 4 in 2 file(s) (backed up as .bak), 1 failed");
+        assert_eq!(
+            msg("5 处命中 (已达 5000 上限)"),
+            "5 hit(s) (limit 5000 reached)"
+        );
+        assert_eq!(
+            msg("置换 4 处, 改写 2 个文件 (已备份为 .bak), 1 个失败"),
+            "Replaced 4 in 2 file(s) (backed up as .bak), 1 failed"
+        );
         assert_eq!(msg("1/9 (已折返)"), "1/9 (wrapped)");
         assert_eq!(msg("置换了 1 处; 1/3"), "Replaced 1; 1/3");
-        assert_eq!(msg("置换了 1 处; 没有找到: x"), "Replaced 1; Not found: x", "嵌套的提示也会翻译");
+        assert_eq!(
+            msg("置换了 1 处; 没有找到: x"),
+            "Replaced 1; Not found: x",
+            "嵌套的提示也会翻译"
+        );
         assert_eq!(msg("没有任何模板的文字"), "没有任何模板的文字");
         set(Lang::Ja);
         assert_eq!(msg("没有找到: abc"), "見つかりません: abc");
@@ -408,7 +434,10 @@ mod tests {
 
     #[test]
     fn matching_is_anchored_at_both_ends() {
-        assert_eq!(capture(&["打不开: ", ""], "打不开: x.txt"), Some(vec!["x.txt"]));
+        assert_eq!(
+            capture(&["打不开: ", ""], "打不开: x.txt"),
+            Some(vec!["x.txt"])
+        );
         assert_eq!(capture(&["", " 处"], "5 处命中"), None);
         assert_eq!(capture(&["a", "b", "c"], "a1b2c"), Some(vec!["1", "2"]));
         assert_eq!(capture(&["无标题"], "无标题 2"), None);

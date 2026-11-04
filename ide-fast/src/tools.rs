@@ -58,7 +58,11 @@ impl Tools {
 
     /// 打开「折行列数」输入框 (预填当前值; 没有就 80)
     pub fn open_wrap(&mut self, cur: usize) {
-        self.wrap_text = if cur > 0 { cur.to_string() } else { "80".into() };
+        self.wrap_text = if cur > 0 {
+            cur.to_string()
+        } else {
+            "80".into()
+        };
         self.wrap_open = true;
     }
 
@@ -70,7 +74,21 @@ impl Tools {
 
     /// 一行预览: 换行显示成 ↵, 最多 `n` 个字符
     pub fn preview(text: &str, n: usize) -> String {
-        let mut s: String = text.chars().take(n).map(|c| if c == '\n' { '↵' } else if c == '\r' { ' ' } else if c == '\t' { '→' } else { c }).collect();
+        let mut s: String = text
+            .chars()
+            .take(n)
+            .map(|c| {
+                if c == '\n' {
+                    '↵'
+                } else if c == '\r' {
+                    ' '
+                } else if c == '\t' {
+                    '→'
+                } else {
+                    c
+                }
+            })
+            .collect();
         if text.chars().count() > n {
             s.push('…');
         }
@@ -82,83 +100,146 @@ impl Tools {
         let mut evs = vec![];
         if self.clip_open {
             let mut open = true;
-            egui::Window::new(trz("剪贴板历史")).open(&mut open).collapsible(false).default_width(420.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                if self.clip.is_empty() {
-                    ui.label(trz("还没有复制过内容 (只记录本程序里的复制 / 剪切)"));
-                }
-                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                    for c in &self.clip {
-                        ui.horizontal(|ui| {
-                            if ui.small_button(trz("粘贴")).clicked() { evs.push(Ev::Paste(c.clone())); }
-                            if ui.small_button(trz("复制")).clicked() { evs.push(Ev::Copy(c.clone())); }
-                            ui.label(format!("{}  ({} {})", Self::preview(c, 60), c.chars().count(), trz("字符")));
+            egui::Window::new(trz("剪贴板历史"))
+                .open(&mut open)
+                .collapsible(false)
+                .default_width(420.0)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    if self.clip.is_empty() {
+                        ui.label(trz("还没有复制过内容 (只记录本程序里的复制 / 剪切)"));
+                    }
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for c in &self.clip {
+                                ui.horizontal(|ui| {
+                                    if ui.small_button(trz("粘贴")).clicked() {
+                                        evs.push(Ev::Paste(c.clone()));
+                                    }
+                                    if ui.small_button(trz("复制")).clicked() {
+                                        evs.push(Ev::Copy(c.clone()));
+                                    }
+                                    ui.label(format!(
+                                        "{}  ({} {})",
+                                        Self::preview(c, 60),
+                                        c.chars().count(),
+                                        trz("字符")
+                                    ));
+                                });
+                            }
                         });
+                    ui.separator();
+                    if ui.button(trz("清空")).clicked() {
+                        self.clip.clear();
                     }
                 });
-                ui.separator();
-                if ui.button(trz("清空")).clicked() { self.clip.clear(); }
-            });
             self.clip_open = open;
         }
         if self.ctrl_open {
             let mut open = true;
-            egui::Window::new(trz("控制字符")).open(&mut open).collapsible(false).default_width(420.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                ui.label(trz("点要插入的控制字符"));
-                ui.horizontal_wrapped(|ui| {
-                    for (i, name) in textconv::CTRL_NAMES.iter().enumerate() {
-                        let Some(c) = textconv::ctrl_char(i) else { continue };
-                        if ui.button(format!("{name} (0x{:02X})", c as u32)).clicked() { evs.push(Ev::Ctrl(c)); }
-                    }
+            egui::Window::new(trz("控制字符"))
+                .open(&mut open)
+                .collapsible(false)
+                .default_width(420.0)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    ui.label(trz("点要插入的控制字符"));
+                    ui.horizontal_wrapped(|ui| {
+                        for (i, name) in textconv::CTRL_NAMES.iter().enumerate() {
+                            let Some(c) = textconv::ctrl_char(i) else {
+                                continue;
+                            };
+                            if ui.button(format!("{name} (0x{:02X})", c as u32)).clicked() {
+                                evs.push(Ev::Ctrl(c));
+                            }
+                        }
+                    });
                 });
-            });
             self.ctrl_open = open;
         }
         if self.stamp_open {
             let mut open = true;
-            egui::Window::new(trz("戳记设置")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                let mut kind = StampKind::from_u8(view.stamp_kind);
-                let mut pos = StampPos::from_u8(view.stamp_pos);
-                ui.radio_value(&mut kind, StampKind::Date, trz("日期 (YYYY/MM/DD)"));
-                ui.radio_value(&mut kind, StampKind::Time, trz("时间 (HH:MM:SS)"));
-                ui.radio_value(&mut kind, StampKind::DateTime, trz("日期 + 时间"));
-                ui.separator();
-                ui.radio_value(&mut pos, StampPos::LineStart, trz("行首 (缩进之后, 写成 [戳记] )"));
-                ui.radio_value(&mut pos, StampPos::AtCursor, trz("光标处"));
-                ui.separator();
-                ui.label(format!("{} {}", trz("预览:"), kind.text(&textconv::local_now())));
-                (view.stamp_kind, view.stamp_pos) = (kind.to_u8(), pos.to_u8());
-            });
+            egui::Window::new(trz("戳记设置"))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    let mut kind = StampKind::from_u8(view.stamp_kind);
+                    let mut pos = StampPos::from_u8(view.stamp_pos);
+                    ui.radio_value(&mut kind, StampKind::Date, trz("日期 (YYYY/MM/DD)"));
+                    ui.radio_value(&mut kind, StampKind::Time, trz("时间 (HH:MM:SS)"));
+                    ui.radio_value(&mut kind, StampKind::DateTime, trz("日期 + 时间"));
+                    ui.separator();
+                    ui.radio_value(
+                        &mut pos,
+                        StampPos::LineStart,
+                        trz("行首 (缩进之后, 写成 [戳记] )"),
+                    );
+                    ui.radio_value(&mut pos, StampPos::AtCursor, trz("光标处"));
+                    ui.separator();
+                    ui.label(format!(
+                        "{} {}",
+                        trz("预览:"),
+                        kind.text(&textconv::local_now())
+                    ));
+                    (view.stamp_kind, view.stamp_pos) = (kind.to_u8(), pos.to_u8());
+                });
             self.stamp_open = open;
         }
         if self.wrap_open {
             let mut open = true;
-            egui::Window::new(trz("按指定列数折行")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                ui.label(trz("列数 (半角字符数; 0 = 按窗口宽度)"));
-                let r = ui.add(egui::TextEdit::singleline(&mut self.wrap_text).desired_width(80.0));
-                r.request_focus();
-                if ui.input(|i| i.key_pressed(Key::Enter)) {
-                    evs.push(Ev::WrapCol(parse_wrap_col(&self.wrap_text)));
-                    self.wrap_open = false;
-                }
-            });
-            if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.wrap_open = false; }
+            egui::Window::new(trz("按指定列数折行"))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    ui.label(trz("列数 (半角字符数; 0 = 按窗口宽度)"));
+                    let r =
+                        ui.add(egui::TextEdit::singleline(&mut self.wrap_text).desired_width(80.0));
+                    r.request_focus();
+                    if ui.input(|i| i.key_pressed(Key::Enter)) {
+                        evs.push(Ev::WrapCol(parse_wrap_col(&self.wrap_text)));
+                        self.wrap_open = false;
+                    }
+                });
+            if !open || ctx.input(|i| i.key_pressed(Key::Escape)) {
+                self.wrap_open = false;
+            }
         }
         if self.col_open {
             let mut open = true;
             let mut apply = false;
-            egui::Window::new(trz("列块替换")).open(&mut open).collapsible(false).default_width(360.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-                ui.label(trz("列块替换为 (多行用换行分隔)"));
-                ui.add(egui::TextEdit::multiline(&mut self.col_text).desired_rows(4).desired_width(f32::INFINITY));
-                ui.horizontal(|ui| {
-                    if ui.button(trz("应用")).clicked() { apply = true; }
-                    if ui.button(trz("取消")).clicked() { self.col_open = false; }
+            egui::Window::new(trz("列块替换"))
+                .open(&mut open)
+                .collapsible(false)
+                .default_width(360.0)
+                .default_pos(egui::pos2(24.0, 56.0))
+                .show(ctx, |ui| {
+                    ui.label(trz("列块替换为 (多行用换行分隔)"));
+                    ui.add(
+                        egui::TextEdit::multiline(&mut self.col_text)
+                            .desired_rows(4)
+                            .desired_width(f32::INFINITY),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button(trz("应用")).clicked() {
+                            apply = true;
+                        }
+                        if ui.button(trz("取消")).clicked() {
+                            self.col_open = false;
+                        }
+                    });
                 });
-            });
             if apply {
                 evs.push(Ev::ColumnReplace(std::mem::take(&mut self.col_text)));
                 self.col_open = false;
             }
-            if !open { self.col_open = false; }
+            if !open {
+                self.col_open = false;
+            }
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             self.col_open = false;
@@ -192,7 +273,9 @@ mod tests {
         t.push_clip("");
         t.push_clip(&"x".repeat(CLIP_ITEM_MAX + 1));
         assert_eq!(t.clip.len(), 2);
-        for n in 0..50 { t.push_clip(&format!("item{n}")); }
+        for n in 0..50 {
+            t.push_clip(&format!("item{n}"));
+        }
         assert_eq!(t.clip.len(), CLIP_MAX);
         assert_eq!(t.clip[0], "item49");
     }
@@ -212,6 +295,10 @@ mod tests {
         assert_eq!(parse_wrap_col("-5"), 0);
         assert_eq!(parse_wrap_col("3"), 10);
         assert_eq!(parse_wrap_col("99999999"), WRAP_COL_MAX);
-        assert_eq!(parse_wrap_col("99999999999999999999999999"), 0, "溢出 = 解析失败");
+        assert_eq!(
+            parse_wrap_col("99999999999999999999999999"),
+            0,
+            "溢出 = 解析失败"
+        );
     }
 }

@@ -42,7 +42,16 @@ pub struct LineBuffer {
 
 impl LineBuffer {
     pub fn new() -> Self {
-        LineBuffer { done: String::new(), line: vec![], col: 0, esc: Esc::None, csi: String::new(), ver: 0, done_lines: 0, max_lines: MAX_SCROLLBACK }
+        LineBuffer {
+            done: String::new(),
+            line: vec![],
+            col: 0,
+            esc: Esc::None,
+            csi: String::new(),
+            ver: 0,
+            done_lines: 0,
+            max_lines: MAX_SCROLLBACK,
+        }
     }
 
     pub fn clear(&mut self) {
@@ -68,7 +77,12 @@ impl LineBuffer {
             return;
         }
         let drop = self.done_lines - self.max_lines;
-        let at = self.done.match_indices('\n').nth(drop - 1).map(|(i, _)| i + 1).unwrap_or(self.done.len());
+        let at = self
+            .done
+            .match_indices('\n')
+            .nth(drop - 1)
+            .map(|(i, _)| i + 1)
+            .unwrap_or(self.done.len());
         self.done.drain(..at);
         self.done_lines = self.max_lines;
     }
@@ -156,8 +170,13 @@ impl LineBuffer {
         }
         if self.done.len() > MAX_KEEP {
             let cut = self.done.len() - MAX_KEEP / 2;
-            let cut = (cut..self.done.len()).find(|&i| self.done.is_char_boundary(i)).unwrap_or(self.done.len());
-            let at = self.done[cut..].find('\n').map(|i| cut + i + 1).unwrap_or(cut);
+            let cut = (cut..self.done.len())
+                .find(|&i| self.done.is_char_boundary(i))
+                .unwrap_or(self.done.len());
+            let at = self.done[cut..]
+                .find('\n')
+                .map(|i| cut + i + 1)
+                .unwrap_or(cut);
             self.done.drain(..at);
             self.done_lines = self.done.matches('\n').count();
         }
@@ -165,7 +184,13 @@ impl LineBuffer {
 
     /// 处理 CSI 序列里有显示效果的几个: K 擦行, J 清屏, C/D 光标左右, G 到列; 其余 (颜色等) 忽略
     fn csi_done(&mut self, fin: char) {
-        let n: usize = self.csi.trim_start_matches('?').split(';').next().and_then(|x| x.parse().ok()).unwrap_or(0);
+        let n: usize = self
+            .csi
+            .trim_start_matches('?')
+            .split(';')
+            .next()
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(0);
         match fin {
             'K' => match n {
                 0 => self.line.truncate(self.col),
@@ -226,7 +251,10 @@ impl Session {
         let mut c = Command::new("cmd.exe");
         #[cfg(not(windows))]
         let mut c = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
-        c.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        c.current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -237,12 +265,21 @@ impl Session {
         pump(child.stdout.take().ok_or("没有标准输出")?, tx.clone());
         pump(child.stderr.take().ok_or("没有标准错误")?, tx);
         let stdin = child.stdin.take().ok_or("没有标准输入")?;
-        Ok(Session { child, stdin, rx, tail: vec![] })
+        Ok(Session {
+            child,
+            stdin,
+            rx,
+            tail: vec![],
+        })
     }
 
     fn send_line(&mut self, line: &str) -> bool {
         let nl: &[u8] = if cfg!(windows) { b"\r\n" } else { b"\n" };
-        self.stdin.write_all(line.as_bytes()).and_then(|_| self.stdin.write_all(nl)).and_then(|_| self.stdin.flush()).is_ok()
+        self.stdin
+            .write_all(line.as_bytes())
+            .and_then(|_| self.stdin.write_all(nl))
+            .and_then(|_| self.stdin.flush())
+            .is_ok()
     }
 
     /// 取已到的输出并解码 (UTF-8 被切断的尾巴留到下一块; 其余走 editcore 的自动判别)
@@ -295,7 +332,21 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn new() -> Self {
-        Terminal { open: false, input: String::new(), output: String::new(), history: vec![], hist_pos: None, replace_doc: None, replace_out: None, rx: None, persistent: true, session: None, buf: LineBuffer::new(), hot_until: None, shown: Default::default() }
+        Terminal {
+            open: false,
+            input: String::new(),
+            output: String::new(),
+            history: vec![],
+            hist_pos: None,
+            replace_doc: None,
+            replace_out: None,
+            rx: None,
+            persistent: true,
+            session: None,
+            buf: LineBuffer::new(),
+            hot_until: None,
+            shown: Default::default(),
+        }
     }
 
     /// 一次性命令在跑
@@ -305,7 +356,11 @@ impl Terminal {
 
     /// 下一次界面刷新间隔 (毫秒); None = 不用刷新
     pub fn repaint_ms(&self) -> Option<u64> {
-        if self.rx.is_some() || self.hot_until.is_some_and(|t| t > std::time::Instant::now()) {
+        if self.rx.is_some()
+            || self
+                .hot_until
+                .is_some_and(|t| t > std::time::Instant::now())
+        {
             Some(80)
         } else if self.session.is_some() {
             Some(500)
@@ -341,7 +396,14 @@ impl Terminal {
             self.session_send(&cwd, &cmd);
             return;
         }
-        self.output.push_str(&format!("> {cmd}{}\n", if stdin.is_some() { "   (选区作标准输入)" } else { "" }));
+        self.output.push_str(&format!(
+            "> {cmd}{}\n",
+            if stdin.is_some() {
+                "   (选区作标准输入)"
+            } else {
+                ""
+            }
+        ));
         self.replace_doc = replace_doc;
         let (tx, rx) = channel();
         std::thread::spawn(move || {
@@ -410,7 +472,8 @@ impl Terminal {
             if !t.is_empty() {
                 self.buf.feed(&t);
                 fresh = true;
-                self.hot_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
+                self.hot_until =
+                    Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
             }
             if !s.alive() {
                 let rest = s.drain();
@@ -440,7 +503,8 @@ impl Terminal {
                 if o.timed_out {
                     self.output.push_str("[超时, 已结束进程]\n");
                 } else if o.code.unwrap_or(0) != 0 {
-                    self.output.push_str(&format!("[退出码 {}]\n", o.code.unwrap_or(-1)));
+                    self.output
+                        .push_str(&format!("[退出码 {}]\n", o.code.unwrap_or(-1)));
                 }
                 if !self.output.ends_with('\n') {
                     self.output.push('\n');
@@ -515,7 +579,11 @@ mod tests {
     #[test]
     fn selection_goes_to_stdin_and_output_comes_back_for_replacement() {
         let mut t = Terminal::new();
-        t.input = if cfg!(windows) { "findstr \"^\"".into() } else { "cat".into() };
+        t.input = if cfg!(windows) {
+            "findstr \"^\"".into()
+        } else {
+            "cat".into()
+        };
         t.submit(std::env::temp_dir(), Some("piped-text".into()), Some(7));
         wait(&mut t, |t| !t.running());
         let (id, out) = t.replace_out.take().expect("成功的命令把输出交回来");
@@ -527,14 +595,26 @@ mod tests {
     fn persistent_shell_keeps_state_between_commands() {
         let mut t = Terminal::new();
         let d = std::env::temp_dir();
-        t.input = if cfg!(windows) { "set IDEFAST_X=kept-value".into() } else { "IDEFAST_X=kept-value".into() };
+        t.input = if cfg!(windows) {
+            "set IDEFAST_X=kept-value".into()
+        } else {
+            "IDEFAST_X=kept-value".into()
+        };
         t.submit(d.clone(), None, None);
-        t.input = if cfg!(windows) { "echo %IDEFAST_X%".into() } else { "echo $IDEFAST_X".into() };
+        t.input = if cfg!(windows) {
+            "echo %IDEFAST_X%".into()
+        } else {
+            "echo $IDEFAST_X".into()
+        };
         t.submit(d, None, None);
         assert!(t.busy(), "会话在跑");
         wait(&mut t, |t| t.display().matches("kept-value").count() >= 2);
         // 第一次出现在本地回显的 set 命令里, 第二次才是 echo 打出来的值: 至少 2 次, 说明变量跨命令保留了
-        assert!(t.display().matches("kept-value").count() >= 2, "{}", t.display());
+        assert!(
+            t.display().matches("kept-value").count() >= 2,
+            "{}",
+            t.display()
+        );
         t.restart();
         assert!(!t.busy());
         assert!(t.display().contains("会话已重启"));
@@ -574,14 +654,22 @@ mod tests {
         }
         let t = b.text();
         let n = t.lines().count();
-        assert!((MIN_SCROLLBACK..=MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1).contains(&n), "{n}");
+        assert!(
+            (MIN_SCROLLBACK..=MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1).contains(&n),
+            "{n}"
+        );
         assert!(t.ends_with("line 999\n") && !t.contains("line 0\n"));
         b.set_scrollback(1000);
         b.set_scrollback(1); // 夹到下限 (不会变成 0 行),并且立刻裁到这个行数
         assert_eq!(b.text().lines().count(), MIN_SCROLLBACK);
         b.clear();
-        for _ in 0..500 { b.feed("y\n"); }
-        assert!(b.text().lines().count() <= MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1, "clear 之后设置还在");
+        for _ in 0..500 {
+            b.feed("y\n");
+        }
+        assert!(
+            b.text().lines().count() <= MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1,
+            "clear 之后设置还在"
+        );
     }
 
     #[test]
