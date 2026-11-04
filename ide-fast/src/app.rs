@@ -360,7 +360,7 @@ impl App {
         let Some(mut p) = self.prefs.take() else { return };
         let (mut ok, mut cancel, mut apply, mut reset) = (false, false, false, false);
         let mut open = true;
-        egui::Window::new(tr("pf.title")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).show(ctx, |ui| {
+        egui::Window::new(tr("pf.title")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search"), (PrefsTab::Terminal, "pf.tab.terminal")] {
                     ui.selectable_value(&mut p.tab, t, tr(key));
@@ -690,7 +690,7 @@ impl App {
             let mut open = true;
             let mut pick: Option<usize> = None;
             let cur = self.active.min(self.docs.len() - 1);
-            egui::Window::new(trz("与哪个标签比较")).open(&mut open).collapsible(false).show(ctx, |ui| {
+            egui::Window::new(trz("与哪个标签比较")).open(&mut open).collapsible(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 for (i, d) in self.docs.iter().enumerate().filter(|(i, _)| *i != cur) {
                     if ui.selectable_label(false, &d.name).clicked() { pick = Some(i); }
                 }
@@ -702,7 +702,7 @@ impl App {
         if self.diff_list_open {
             let mut open = true;
             let mut jump: Option<usize> = None;
-            egui::Window::new(trz("差异列表")).open(&mut open).default_width(280.0).show(ctx, |ui| {
+            egui::Window::new(trz("差异列表")).open(&mut open).default_width(280.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 let Some(v) = &self.diff else { ui.label(trz("没有进行中的比较")); return };
                 ui.label(v.summary());
                 let right = self.docs[self.active.min(self.docs.len() - 1)].id == v.right;
@@ -1039,7 +1039,7 @@ impl App {
         let mut go: Option<usize> = None;
         let mut clear = false;
         let ai = self.active.min(self.docs.len() - 1);
-        egui::Window::new(tr("dlg.bm-title")).open(&mut open).collapsible(false).default_width(360.0).show(ctx, |ui| {
+        egui::Window::new(tr("dlg.bm-title")).open(&mut open).collapsible(false).default_width(360.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             let d = &self.docs[ai];
             if d.bookmarks.is_empty() { ui.label(tr("dlg.bm-empty")); }
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
@@ -1060,7 +1060,7 @@ impl App {
     fn props_window(&mut self, ctx: &egui::Context) {
         let Some(text) = self.props.clone() else { return };
         let mut open = true;
-        egui::Window::new(tr("dlg.props-title")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new(tr("dlg.props-title")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.add(egui::Label::new(egui::RichText::new(&text).monospace()).selectable(true));
             if ui.button(trz("复制")).clicked() { ctx.copy_text(text.clone()); }
         });
@@ -1888,7 +1888,7 @@ impl App {
     fn goto_window(&mut self, ctx: &egui::Context) {
         let mut go: Option<usize> = None;
         let mut open = self.goto_open;
-        egui::Window::new(tr("dlg.goto-title")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new(tr("dlg.goto-title")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             let total = self.docs[self.active.min(self.docs.len() - 1)].lines.len();
             let r = ui.add(egui::TextEdit::singleline(&mut self.goto_text).hint_text(format!("1 – {total}")).desired_width(120.0));
             r.request_focus();

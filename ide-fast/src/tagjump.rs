@@ -259,7 +259,7 @@ impl TagState {
         let mut evs = vec![];
         if self.kw_open {
             let mut open = true;
-            egui::Window::new(trz("指定关键字的标签跳转")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            egui::Window::new(trz("指定关键字的标签跳转")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut self.kw_text).desired_width(240.0));
                 r.request_focus();
                 if ui.input(|i| i.key_pressed(Key::Enter)) && !self.kw_text.trim().is_empty() {
@@ -274,7 +274,7 @@ impl TagState {
         if let Some(list) = &self.pick {
             let mut open = true;
             let mut go: Option<Cand> = None;
-            egui::Window::new(trz("选择跳转位置")).open(&mut open).collapsible(false).default_width(480.0).show(ctx, |ui| {
+            egui::Window::new(trz("选择跳转位置")).open(&mut open).collapsible(false).default_width(480.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for c in list {
                         let label = format!("{}  {}:{}  [{}]", c.name, c.path.display(), c.line, c.kind);

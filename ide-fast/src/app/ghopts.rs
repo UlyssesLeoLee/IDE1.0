@@ -99,7 +99,7 @@ impl App {
         let mut check_repo: Option<String> = None;
         let mut check_all = false;
         let mut install: Option<Found> = None;
-        egui::Window::new(tr("gh.title")).open(&mut open).collapsible(false).default_width(440.0).show(ctx, |ui| {
+        egui::Window::new(tr("gh.title")).open(&mut open).collapsible(false).default_width(440.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.small(tr("gh.note"));
             ui.horizontal(|ui| {
                 ui.label(tr("gh.repo"));

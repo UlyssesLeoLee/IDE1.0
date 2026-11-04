@@ -164,7 +164,7 @@ impl PlugState {
         let mut open = true;
         let mut jump = None;
         let doc_id = w.doc_id;
-        egui::Window::new(w.title.clone()).open(&mut open).default_size([520.0, 420.0]).resizable(true).show(ctx, |ui| {
+        egui::Window::new(w.title.clone()).open(&mut open).default_size([520.0, 420.0]).resizable(true).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             if !w.summary.is_empty() {
                 ui.label(&w.summary);
                 ui.separator();

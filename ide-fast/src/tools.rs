@@ -67,7 +67,7 @@ impl Tools {
         let mut evs = vec![];
         if self.clip_open {
             let mut open = true;
-            egui::Window::new(trz("剪贴板历史")).open(&mut open).collapsible(false).default_width(420.0).show(ctx, |ui| {
+            egui::Window::new(trz("剪贴板历史")).open(&mut open).collapsible(false).default_width(420.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 if self.clip.is_empty() {
                     ui.label(trz("还没有复制过内容 (只记录本程序里的复制 / 剪切)"));
                 }
@@ -87,7 +87,7 @@ impl Tools {
         }
         if self.ctrl_open {
             let mut open = true;
-            egui::Window::new(trz("控制字符")).open(&mut open).collapsible(false).default_width(420.0).show(ctx, |ui| {
+            egui::Window::new(trz("控制字符")).open(&mut open).collapsible(false).default_width(420.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 ui.label(trz("点要插入的控制字符"));
                 ui.horizontal_wrapped(|ui| {
                     for (i, name) in textconv::CTRL_NAMES.iter().enumerate() {
@@ -100,7 +100,7 @@ impl Tools {
         }
         if self.stamp_open {
             let mut open = true;
-            egui::Window::new(trz("戳记设置")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            egui::Window::new(trz("戳记设置")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 let mut kind = StampKind::from_u8(view.stamp_kind);
                 let mut pos = StampPos::from_u8(view.stamp_pos);
                 ui.radio_value(&mut kind, StampKind::Date, trz("日期 (YYYY/MM/DD)"));
@@ -117,7 +117,7 @@ impl Tools {
         }
         if self.wrap_open {
             let mut open = true;
-            egui::Window::new(trz("按指定列数折行")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+            egui::Window::new(trz("按指定列数折行")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
                 ui.label(trz("列数 (半角字符数; 0 = 按窗口宽度)"));
                 let r = ui.add(egui::TextEdit::singleline(&mut self.wrap_text).desired_width(80.0));
                 r.request_focus();

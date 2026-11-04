@@ -65,7 +65,7 @@ impl App {
         let Some(mut pg) = self.print_ui.preview else { return };
         pg = pg.min(pages.len() - 1);
         let (mut open, mut do_print) = (true, false);
-        egui::Window::new(trz("打印预览")).open(&mut open).default_size([520.0, 640.0]).show(ctx, |ui| {
+        egui::Window::new(trz("打印预览")).open(&mut open).default_size([520.0, 640.0]).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.add_enabled(pg > 0, egui::Button::new("<")).clicked() { pg -= 1; }
                 ui.label(format!("{} / {}", pg + 1, pages.len()));

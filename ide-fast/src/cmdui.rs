@@ -173,7 +173,7 @@ impl CmdUi {
         }
         let mut open = true;
         let mut close = false;
-        egui::Window::new(tr("kc.title")).open(&mut open).collapsible(false).default_width(640.0).default_height(460.0).show(ctx, |ui| {
+        egui::Window::new(tr("kc.title")).open(&mut open).collapsible(false).default_width(640.0).default_height(460.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut st.filter).hint_text(tr("kc.filter")).desired_width(240.0));
                 if ui.button(tr("kc.reset-all")).clicked() { work.clear(); changed = true; st.pending = None; }
@@ -233,7 +233,7 @@ impl CmdUi {
         let filter = self.keylist.as_mut()?;
         let mut open = true;
         let mut tip = None;
-        egui::Window::new(tr("kc.list-title")).open(&mut open).collapsible(false).default_width(520.0).default_height(420.0).show(ctx, |ui| {
+        egui::Window::new(tr("kc.list-title")).open(&mut open).collapsible(false).default_width(520.0).default_height(420.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(filter).hint_text(tr("kc.filter")).desired_width(220.0));
                 if ui.button(tr("kc.copy")).clicked() {
