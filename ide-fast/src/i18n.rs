@@ -236,6 +236,7 @@ pub const T: &[Row] = &[
     ("c.ruler", ["列标尺", "桁ルーラー", "Column Ruler"]),
     ("c.cur-line", ["当前行下划线", "カーソル行に下線", "Current Line Underline"]),
     ("c.minimap", ["小地图", "ミニマップ", "Minimap"]),
+    ("c.full-mode", ["完整界面 (活动栏 + 侧栏 + 标签栏)", "フル表示 (アクティビティバー + サイドバー + タブ)", "Full Layout (rail + side bar + tabs)"]),
     ("c.minimal-mode", ["极简布局 (仅编辑区)", "ミニマル表示 (編集領域のみ)", "Minimal Layout (editor only)"]),
     ("st.char-col", ["字符列 {}", "文字位置 {}", "Character column {}"]),
     ("st.selected", ["已选 {} 字符 / {} 行", "{} 文字 / {} 行選択", "{} chars / {} lines selected"]),

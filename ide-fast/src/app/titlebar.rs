@@ -15,15 +15,41 @@ const BTN_W: f32 = 44.0;
 /// 缩放把手的粗细 / 角上的边长
 const GRIP: f32 = 5.0;
 const CORNER: f32 = 12.0;
-/// 快捷按钮区的宽度, 以及栏至少多宽才画它
-const QUICK_W: f32 = 270.0;
-const QUICK_MIN_W: f32 = 900.0;
-
 /// 快捷按钮: (命令 id, 文字)。面板开关用画出来的小图标, 不在这里。
 const QUICK: &[(&str, &str)] = &[("c.new-file", "新"), ("c.open-file", "开"), ("c.save", "存"), ("c.find", "找"), ("c.palette", ">_"), ("c.split", "||")];
 
-/// 左区至少这么宽才画标题文字 (11 个菜单已占 ~600, 再窄会把「帮助」挤掉)
-const TITLE_MIN_W: f32 = 780.0;
+/// 标题栏各块的宽度 (逻辑点): 左边距 + 图标 + 间隔、一个快捷图标钮 (含间隔)、面板开关三连 (含分隔线)、终端按钮、菜单与右区之间的余量、窗口标题文字的上限
+const LEFT_FIXED: f32 = 6.0 + 16.0 + 6.0;
+const QUICK_BTN: f32 = 26.0;
+const DOCKS_W: f32 = 3.0 * 30.0 + 10.0;
+const TERM_W: f32 = 92.0;
+const GAP: f32 = 10.0;
+const TITLE_MAX: f32 = 220.0;
+
+/// 标题栏怎么排: 菜单永远完整显示、绝不和右边的按钮重叠; 空间不够时按优先级一样样撤 ——
+/// 先撤快捷图标钮, 再撤面板开关, 再撤窗口标题文字, 再撤终端按钮, 最后撤菜单的助记字母
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct BarPlan {
+    pub mnemonics: bool,
+    pub title: bool,
+    pub term: bool,
+    pub docks: bool,
+    pub quick: usize,
+}
+
+/// `total` = 栏宽, `menu_mn` / `menu_plain` = 菜单带 / 不带助记字母时的总宽, `title_w` = 标题文字宽
+pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarPlan {
+    let avail = total - BTN_W * 3.0 - LEFT_FIXED - GAP;
+    let mnemonics = menu_mn <= avail;
+    let mut rem = avail - if mnemonics { menu_mn } else { menu_plain };
+    let mut take = |w: f32| if rem >= w { rem -= w; true } else { false };
+    let term = take(TERM_W);
+    let title = take(title_w.min(TITLE_MAX) + 8.0);
+    let docks = take(DOCKS_W);
+    let mut quick = 0;
+    while quick < QUICK.len() && take(QUICK_BTN) { quick += 1; }
+    BarPlan { mnemonics, title, term, docks, quick }
+}
 
 /// 标题栏文字 (Tauri: 无文档「IDE1.0」, 有文档「文件名 - IDE1.0」)
 pub fn window_title(doc: Option<&str>) -> String {
@@ -91,6 +117,9 @@ pub fn max_inset(system_title_bar: bool, maximized: bool, fullscreen: bool) -> f
     if !system_title_bar && maximized && !fullscreen && cfg!(windows) { MAX_OVERSHOOT } else { 0.0 }
 }
 
+/// 菜单栏上的菜单 (与 `App::menu` 里的顺序一致)
+pub const MENU_KEYS: [&str; 11] = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.help"];
+
 impl App {
     pub(super) fn maximized_inset(&self, ctx: &egui::Context) -> f32 {
         let (m, f) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
@@ -127,38 +156,59 @@ impl App {
             } else if drag.drag_started_by(egui::PointerButton::Primary) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
-            // 三块固定位置: 左 = 图标 + 菜单, 中 = 快捷按钮 + 面板开关 (栏够宽才画), 右 = 窗口按钮 (MenuBar 会占满剩余宽度, 所以不能靠「剩多少」来排)
-            let quick_w = if rect.width() >= QUICK_MIN_W { QUICK_W } else { 0.0 };
+            // 三块固定位置: 左 = 图标 + 标题 + 菜单, 中 = 快捷按钮 + 面板开关 + 终端钮 (按宽度逐样撤, 见 `plan_bar`), 右 = 窗口按钮
+            let title = window_title({ let d = &self.docs[self.active.min(self.docs.len() - 1)]; d.path.is_some().then_some(d.name.as_str()) });
+            let tc = self.tc;
+            let (mw, mp, tw) = {
+                let keys = MENU_KEYS;
+                let (mut w1, mut w0) = (0.0, 0.0);
+                for k in keys { let l = tr(k); w1 += menuui::title_width(ui, l, menuui::mnemonic(k)); w0 += menuui::title_width(ui, l, ' '); }
+                (w1, w0, ui.painter().layout_no_wrap(title.clone(), egui::FontId::proportional(12.0), tc.fg).size().x)
+            };
+            let plan = plan_bar(rect.width(), mw, mp, tw);
+            self.sys.mn_hide = !plan.mnemonics;
+            let mid_w = if plan.term { TERM_W } else { 0.0 } + if plan.docks { DOCKS_W } else { 0.0 } + plan.quick as f32 * QUICK_BTN;
             let right = Rect::from_min_max(egui::pos2(rect.right() - BTN_W * 3.0, rect.top()), rect.max);
-            let mid = Rect::from_min_max(egui::pos2(right.left() - quick_w, rect.top()), egui::pos2(right.left(), rect.bottom()));
+            let mid = Rect::from_min_max(egui::pos2(right.left() - mid_w, rect.top()), egui::pos2(right.left(), rect.bottom()));
             let left = Rect::from_min_max(rect.min, egui::pos2(mid.left(), rect.bottom()));
             let lay = egui::Layout::left_to_right(egui::Align::Center);
             ui.scope_builder(egui::UiBuilder::new().max_rect(left).layout(lay), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.add_space(6.0);
                 if let Some(t) = &icon { ui.image((t.id(), Vec2::splat(16.0))); }
-                if left.width() >= TITLE_MIN_W {
-                    let d = &self.docs[self.active.min(self.docs.len() - 1)];
-                    ui.label(egui::RichText::new(window_title(d.path.is_some().then_some(d.name.as_str()))).size(12.0).strong());
+                if plan.title {
+                    ui.add_space(2.0);
+                    ui.add(egui::Label::new(egui::RichText::new(title.as_str()).size(12.0).strong()).truncate());
                     ui.add_space(6.0);
+                } else {
+                    ui.add_space(4.0);
                 }
-                ui.add_space(2.0);
-                ui.spacing_mut().button_padding = Vec2::new(5.0, 2.0);
                 self.menu(ui, ctx);
             });
-            if quick_w > 0.0 {
+            if mid_w > 0.0 {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(mid).layout(lay), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    for (id, glyph) in QUICK {
+                    for (id, _) in QUICK.iter().take(plan.quick) {
                         let Some(i) = chrome::index_of(id) else { continue };
                         let e = &keymap::entries()[i];
                         let tip = crate::i18n::lk_for(e);
-                        let _ = glyph;
                         if crate::icons::icon_button(ui, id, tip).clicked() { run = Some(i); }
                     }
-                    ui.separator();
-                    for d in [Dock::Side, Dock::Bottom, Dock::Right] {
-                        if self.dock_toggle_icon(ui, d) { self.collapse_dock(d); }
+                    if plan.docks {
+                        if plan.quick > 0 { ui.separator(); }
+                        for d in [Dock::Side, Dock::Bottom, Dock::Right] {
+                            if self.dock_toggle_icon(ui, d) { self.collapse_dock(d); }
+                        }
+                    }
+                    if plan.term {
+                        ui.add_space(4.0);
+                        if let Some(i) = chrome::index_of("c.terminal") {
+                            let tip = crate::i18n::lk_for(&keymap::entries()[i]);
+                            let txt = egui::RichText::new(format!(">_ {}", trz("终端"))).size(12.0).color(tc.fg);
+                            let edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
+                            let b = egui::Button::new(txt).fill(tc.bg_hover).stroke(egui::Stroke::new(1.0, edge)).corner_radius(4.0).min_size(Vec2::new(TERM_W - 12.0, 22.0));
+                            if ui.add(b).on_hover_text(tip).clicked() { run = Some(i); }
+                        }
                     }
                 });
             }
@@ -321,6 +371,32 @@ mod tests {
         for (id, _) in QUICK {
             assert!(chrome::index_of(id).is_some(), "{id}");
         }
+    }
+
+    /// 菜单宽度取真实值的量级: 11 个菜单, 带助记字母约 55 / 个, 不带约 42 / 个
+    const MW: f32 = 11.0 * 55.0;
+    const MP: f32 = 11.0 * 42.0;
+
+    #[test]
+    fn the_plan_never_lets_the_menu_overflow_at_any_width() {
+        for w in [700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
+            let p = plan_bar(w, MW, MP, 50.0);
+            let menu = if p.mnemonics { MW } else { MP };
+            let mid = if p.term { TERM_W } else { 0.0 } + if p.docks { DOCKS_W } else { 0.0 } + p.quick as f32 * QUICK_BTN;
+            let title = if p.title { 58.0 } else { 0.0 };
+            assert!(LEFT_FIXED + title + menu + mid + BTN_W * 3.0 <= w, "宽 {w}: 排不下 {p:?}");
+        }
+    }
+
+    #[test]
+    fn the_plan_drops_things_progressively_as_the_window_narrows() {
+        let wide = plan_bar(1600.0, MW, MP, 50.0);
+        assert!(wide.mnemonics && wide.title && wide.term && wide.docks && wide.quick == QUICK.len());
+        let mid = plan_bar(1100.0, MW, MP, 50.0);
+        assert!(mid.mnemonics && mid.term, "1100: 菜单 (带助记) 和终端钮都在");
+        assert!(mid.quick < QUICK.len(), "1100: 快捷钮已被撤掉几个, 不压菜单");
+        let narrow = plan_bar(700.0, MW, MP, 50.0);
+        assert!(!narrow.mnemonics && !narrow.docks && narrow.quick == 0);
     }
 
     #[test]

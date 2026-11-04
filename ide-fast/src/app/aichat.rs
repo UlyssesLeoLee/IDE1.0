@@ -358,12 +358,17 @@ impl App {
         let ctx = ui.ctx().clone();
         let mut act: Option<Act> = None;
         let busy = self.ai.run.is_some();
+        // 头部 (Tauri `#chat-head`): 左「Chat」(11px 等宽), 右 ✕ / 清空 / 「带上选中内容 / 当前章节」勾选
+        let tc = self.tc;
+        let edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
+        let boxed = |t: &str| egui::Button::new(egui::RichText::new(t).size(12.0).color(tc.fg)).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, edge)).corner_radius(4.0).min_size(Vec2::new(0.0, 26.0));
         ui.horizontal(|ui| {
-            ui.strong(tr("ai.title"));
+            ui.set_min_height(30.0);
+            ui.label(egui::RichText::new("Chat").monospace().size(11.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("×").clicked() { self.ai.open = false; }
-                if ui.small_button(tr("ai.settings")).clicked() { self.ai.settings = !self.ai.settings; }
-                if ui.small_button(tr("ai.clear")).clicked() { act = Some(Act::Clear); }
+                if ui.add(boxed("×").min_size(Vec2::new(26.0, 26.0))).on_hover_text(trz("折叠 (Ctrl+Alt+L)")).clicked() { self.ai.open = false; }
+                if ui.add(boxed(tr("ai.clear"))).clicked() { act = Some(Act::Clear); }
+                ui.add(egui::Checkbox::new(&mut self.ai.use_ctx, egui::RichText::new(tr("ai.ctx")).size(11.0)));
             });
         });
         if self.ai.settings {
@@ -428,14 +433,23 @@ impl App {
             if busy { ui.weak(tr("ai.thinking")); }
         });
         ui.separator();
-        ui.checkbox(&mut self.ai.use_ctx, tr("ai.ctx"));
+        // 模型行 (Tauri 聊天底部): 左 = 当前模型 (没设就写「未设置模型」), 右 = 模型设置…
+        let model = self.ai_cfg().model.clone();
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(if model.is_empty() { trz("未设置模型").to_string() } else { model }).size(11.0).color(tc.fg_dim));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(boxed(&format!("{}…", trz("模型设置")))).clicked() { self.ai.settings = !self.ai.settings; }
+            });
+        });
         let id = ui.make_persistent_id("ai_input");
         let enter = ui.memory(|m| m.has_focus(id)) && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
-        ui.add(egui::TextEdit::multiline(&mut self.ai.input).id(id).desired_rows(3).desired_width(f32::INFINITY).hint_text(tr("ai.placeholder")));
+        // 输入框 + 右侧「发送」(忙时是「取消」): Tauri 的聊天输入是一行两栏
         ui.horizontal(|ui| {
+            let w = (ui.available_width() - 62.0).max(80.0);
+            ui.add(egui::TextEdit::multiline(&mut self.ai.input).id(id).desired_rows(3).desired_width(w).hint_text(tr("ai.placeholder")));
             if busy {
-                if ui.button(tr("ai.cancel")).clicked() { act = Some(Act::Cancel); }
-            } else if ui.button(tr("ai.send")).clicked() || enter {
+                if ui.add(boxed(tr("ai.cancel"))).clicked() { act = Some(Act::Cancel); }
+            } else if ui.add(boxed(tr("ai.send"))).clicked() || enter {
                 act = Some(Act::Send);
             }
         });

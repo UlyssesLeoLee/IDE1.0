@@ -108,20 +108,51 @@ impl App {
                 });
             }
             Dock::Bottom => {
-                let frame = egui::Frame::NONE.fill(tc.bg_bar).inner_margin(egui::Margin::symmetric(8, 2));
+                let frame = egui::Frame::NONE.fill(tc.bg_bar);
                 egui::Panel::bottom("bottom_strip").resizable(false).exact_size(panels::BOTTOM_HEAD).frame(frame).show(root, |ui| {
-                    ui.horizontal_centered(|ui| {
-                        for (t, key) in [(BottomTab::Terminal, "bt.terminal"), (BottomTab::Output, "bt.output"), (BottomTab::Problems, "bt.problems")] {
-                            if ui.selectable_label(self.sys.bottom == t, tr(key)).clicked() { self.sys.bottom = t; }
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, Dock::Bottom));
-                    });
+                    self.bottom_head(ui);
                 });
             }
         }
         if toggle {
             self.collapse_dock(d);
         }
+    }
+
+    /// 底部面板头 (Tauri `#bottom-head`, 28px): 左 = TERMINAL / OUTPUT / PROBLEMS 三个大写页签 (11px 等宽, 当前页 2px 蓝色下划线),
+    /// 右 = 「+ 新建终端」和「折叠 / 展开」两个带边的小按钮。展开和折叠两种状态共用这一条
+    pub(super) fn bottom_head(&mut self, ui: &mut egui::Ui) {
+        let tc = self.tc;
+        let edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
+        let head = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), panels::BOTTOM_HEAD));
+        ui.painter().rect_filled(head, 0.0, tc.bg_bar);
+        ui.painter().hline(head.x_range(), head.top() + 0.5, egui::Stroke::new(1.0, tc.border));
+        ui.allocate_ui_with_layout(head.size(), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (t, name) in [(BottomTab::Terminal, "TERMINAL"), (BottomTab::Output, "OUTPUT"), (BottomTab::Problems, "PROBLEMS")] {
+                let mut label = name.to_string();
+                if t == BottomTab::Problems && !self.sys.problems.is_empty() { label = format!("{label} ({})", self.sys.problems.len()); }
+                let on = self.sys.bottom == t;
+                let g = ui.painter().layout_no_wrap(label, egui::FontId::monospace(11.0), if on { tc.fg } else { tc.fg_dim });
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 16.0, panels::BOTTOM_HEAD), Sense::click());
+                let col = if on || resp.hovered() { tc.fg } else { tc.fg_dim };
+                ui.painter().galley(egui::pos2(rect.left() + 8.0, rect.center().y - g.size().y / 2.0), g, col);
+                if on { ui.painter().rect_filled(Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max), 0.0, tc.blue); }
+                if resp.clicked() { self.sys.bottom = t; }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.add_space(8.0);
+                self.dock_chevron(ui, Dock::Bottom);
+                let txt = egui::RichText::new(format!("+ {}", trz("新建终端"))).size(11.0).color(tc.fg_dim);
+                let b = egui::Button::new(txt).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, edge)).corner_radius(5.0);
+                if ui.add(b).on_hover_text(trz("新建终端 (Ctrl+`)")).clicked() {
+                    self.sys.bottom = BottomTab::Terminal;
+                    if self.dock_collapsed(Dock::Bottom) || !self.term.open { self.term.open = true; self.expand_dock(Dock::Bottom); }
+                    self.term.restart();
+                }
+            });
+        });
     }
 
     /// 一个停靠区这一帧怎么画

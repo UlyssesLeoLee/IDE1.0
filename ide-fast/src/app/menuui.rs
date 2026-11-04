@@ -5,6 +5,10 @@
 use crate::view::ThemeColors;
 use eframe::egui::{self, epaint::Shadow, Align2, Color32, FontId, Response, Stroke, TextFormat, Ui, Vec2};
 
+/// 菜单栏按钮的字号 / 左右内边距 (Tauri `.mb-btn`: 13px, 约 8-12px)
+pub const MENU_FONT: f32 = 13.0;
+pub const MENU_PAD_X: f32 = 8.0;
+
 /// 菜单名 -> 助记字母 (Tauri `MENU_DEF`: 文件 F / 编辑 E / 搜索 S / 视图 V / 设置 C / 窗口 W / 帮助 H; ide-fast 多出的菜单取各自的首字母)
 pub fn mnemonic(menu_key: &str) -> char {
     match menu_key {
@@ -23,14 +27,39 @@ pub fn mnemonic(menu_key: &str) -> char {
     }
 }
 
-/// 菜单按钮文字: 菜单名 (12px, 随悬停变色) + 6px 间隔 + 带下划线的助记字母 (11px, 弱前景)
+/// 菜单按钮文字: 菜单名 (13px, 随悬停变色) + 6px 间隔 + 带下划线的助记字母 (11px, 弱前景; `' '` = 不画, 窄窗口用)
 pub fn menu_title(tc: &ThemeColors, label: &str, mn: char) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
-    job.append(label, 0.0, TextFormat { font_id: FontId::proportional(12.0), color: Color32::PLACEHOLDER, ..Default::default() });
+    job.append(label, 0.0, TextFormat { font_id: FontId::proportional(MENU_FONT), color: Color32::PLACEHOLDER, ..Default::default() });
     if mn != ' ' {
         job.append(&mn.to_string(), 6.0, TextFormat { font_id: FontId::proportional(11.0), color: tc.fg_dim, underline: Stroke::new(1.0, tc.fg_dim), ..Default::default() });
     }
     job
+}
+
+/// 菜单栏本身 (按钮一字排开) 的样式: 紧凑内边距、按钮之间不留缝, 悬停底色用 `bg_active`; 下拉框用 `style`
+pub fn bar_style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
+    move |s: &mut egui::Style| {
+        s.spacing.button_padding = Vec2::new(MENU_PAD_X, 3.0);
+        s.spacing.item_spacing = Vec2::new(0.0, 0.0);
+        s.text_styles.insert(egui::TextStyle::Button, FontId::proportional(MENU_FONT));
+        let v = &mut s.visuals;
+        v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+        v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+        v.widgets.inactive.bg_stroke = Stroke::NONE;
+        v.widgets.hovered.weak_bg_fill = tc.bg_active;
+        v.widgets.hovered.bg_stroke = Stroke::NONE;
+        v.widgets.hovered.fg_stroke.color = tc.fg;
+        v.widgets.inactive.fg_stroke.color = tc.fg;
+        v.widgets.open.weak_bg_fill = tc.bg_active;
+        v.widgets.open.fg_stroke.color = tc.fg;
+    }
+}
+
+/// 一个菜单按钮的宽度 (含内边距)
+pub fn title_width(ui: &Ui, label: &str, mn: char) -> f32 {
+    let f = |t: &str, px: f32| ui.painter().layout_no_wrap(t.to_string(), FontId::proportional(px), Color32::WHITE).size().x;
+    f(label, MENU_FONT) + if mn != ' ' { 6.0 + f(&mn.to_string(), 11.0) } else { 0.0 } + 2.0 * MENU_PAD_X
 }
 
 /// 菜单里的样式修改器: 下拉框(底色 = 菜单栏色, 1px 边, 直角, 阴影 `0 2px 8px`), 行内边距, 悬停色, 最小宽

@@ -43,6 +43,11 @@ fn decode(png_bytes: &[u8]) -> Option<eframe::egui::IconData> {
     (rgba.len() == (w * h * 4) as usize).then_some(eframe::egui::IconData { rgba, width: w, height: h })
 }
 
+/// 欢迎页的大徽标 (256 边长的 PNG 编进可执行文件, 画的时候缩到 96)
+pub fn logo() -> Option<eframe::egui::IconData> {
+    decode(include_bytes!("../packaging/logo-256.png"))
+}
+
 pub fn window_icon() -> Option<eframe::egui::IconData> {
     decode(pick_png(ICO, WANT)?)
 }

@@ -29,8 +29,12 @@ pub(super) struct SysState {
     pub restart_ask: bool,
     /// 窗口现在是不是带系统标题栏 (和 `cfg.system_title_bar` 不一致时 `top_bar` 发 Decorations 命令)
     pub decor: bool,
+    /// 菜单栏太窄时不画助记字母 (标题栏每帧按宽度定)
+    pub mn_hide: bool,
     /// 自绘标题栏里的应用图标 (第一次画时才建纹理)
     pub title_icon: Option<egui::TextureHandle>,
+    /// 欢迎页的大徽标 (第一次画欢迎页时才解码建纹理)
+    pub logo: Option<egui::TextureHandle>,
     /// 启动时发现的遗留自动备份 (非空 = 弹「恢复」窗口)
     pub restore: Vec<crate::backup::Leftover>,
     pub bottom: BottomTab,
@@ -182,18 +186,7 @@ impl App {
 
     /// 底部面板: 页签条 + 当前页
     pub(super) fn bottom_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            for (t, key) in [(BottomTab::Terminal, "bt.terminal"), (BottomTab::Output, "bt.output"), (BottomTab::Problems, "bt.problems")] {
-                let mut label = tr(key).to_string();
-                if t == BottomTab::Problems && !self.sys.problems.is_empty() {
-                    label = format!("{label} ({})", self.sys.problems.len());
-                }
-                if ui.selectable_label(self.sys.bottom == t, label).clicked() {
-                    self.sys.bottom = t;
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, crate::panels::Dock::Bottom));
-        });
+        self.bottom_head(ui);
         match self.sys.bottom {
             BottomTab::Terminal => self.term_ui(ui),
             BottomTab::Output => self.output_ui(ui),
