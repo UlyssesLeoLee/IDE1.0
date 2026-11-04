@@ -806,6 +806,37 @@ impl Settings {
                 self.view.geom = Some(geom);
             }
         }
+        self.sanitize();
+    }
+
+    /// 统一清洗和规整内存中或加载后的设置字段，确保处于合法界限与不变式约束内
+    pub fn sanitize(&mut self) {
+        self.font_px = self.font_px.clamp(8.0, 40.0);
+        self.line_height = self.line_height.clamp(0.8, 2.5);
+        self.tab_width = self.tab_width.clamp(1, 16);
+        self.max_file_mb = self.max_file_mb.clamp(1, 32);
+        self.mru_files = self.mru_files.clamp(1, 36);
+        self.term_font_px = self.term_font_px.clamp(8.0, 32.0);
+        self.term_scrollback = self.term_scrollback.clamp(
+            crate::terminal::MIN_SCROLLBACK,
+            crate::terminal::MAX_SCROLLBACK,
+        );
+        self.auto_backup_min = crate::backup::clamp_interval(self.auto_backup_min);
+        if crate::i18n::Lang::from_code(&self.lang).is_none() {
+            self.lang = "zh".to_string();
+        }
+        if crate::update::Channel::from_code(&self.update_channel).is_none() {
+            self.update_channel = "stable".to_string();
+        }
+        self.macro_slots = sanitize_slots(std::mem::take(&mut self.macro_slots));
+        self.toolbar_cmds = sanitize_toolbar(std::mem::take(&mut self.toolbar_cmds));
+        self.keys = crate::keymap::clean(std::mem::take(&mut self.keys));
+        self.recent.truncate(36);
+        self.recent_dirs.truncate(12);
+        self.session.retain(|p| session_path_ok(p));
+        self.session.truncate(MAX_SESSION);
+        self.session_active = self.session_active.min(MAX_SESSION);
+        self.positions.truncate(50);
     }
 
     /// 偏好部分 (导出配置用: 不含最近文件 / 光标位置 / 窗口状态)
@@ -1724,5 +1755,52 @@ nTabSpace=2
         assert_eq!(t.session.len(), 20);
         t.adopt_prefs(&Settings::default());
         assert_eq!(t.session.len(), 20);
+    }
+
+    #[test]
+    fn legacy_v0_3_0_settings_loads_cleanly_with_defaults() {
+        let legacy_json = r#"{
+            "dark": false,
+            "font_px": 18.0,
+            "tab_width": 4,
+            "highlight": true,
+            "wrap": false,
+            "recent": ["legacy_file.txt"],
+            "search": {
+                "find_case": true
+            }
+        }"#;
+        let v: Value = serde_json::from_str(legacy_json).expect("valid json");
+        let mut s = Settings::default();
+        s.apply_json(&v, true);
+        assert!(!s.dark);
+        assert_eq!(s.font_px, 18.0);
+        assert_eq!(s.tab_width, 4);
+        assert!(s.highlight);
+        assert!(!s.wrap);
+        assert_eq!(s.recent, vec!["legacy_file.txt".to_string()]);
+        assert!(s.search.find_case);
+        // 新增字段应具备完备的默认值且已被 sanitize 规整
+        assert_eq!(s.macro_slots.len(), MACRO_SLOTS);
+        assert_eq!(s.toolbar_cmds.len(), DEFAULT_TOOLBAR.len());
+        assert_eq!(s.update_channel, "stable");
+        assert_eq!(s.lang, "zh");
+
+        // 校验超出合法边界的值会被正确清洗
+        let untrusted_json = r#"{
+            "font_px": 999.0,
+            "tab_width": 999,
+            "max_file_mb": 0,
+            "lang": "invalid_lang_code",
+            "update_channel": "hack_channel"
+        }"#;
+        let v_bad: Value = serde_json::from_str(untrusted_json).expect("valid json");
+        let mut s_bad = Settings::default();
+        s_bad.apply_json(&v_bad, true);
+        assert_eq!(s_bad.font_px, 40.0);
+        assert_eq!(s_bad.tab_width, 16);
+        assert_eq!(s_bad.max_file_mb, 1);
+        assert_eq!(s_bad.lang, "zh");
+        assert_eq!(s_bad.update_channel, "stable");
     }
 }
