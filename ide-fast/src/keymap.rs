@@ -15,7 +15,7 @@ use crate::i18n::tr;
 pub enum App {
     NewDoc, OpenFile, OpenFolder, Save, SaveAs, SaveAll, SaveClose, CloseTab, CloseAll, CloseOpen, Reload, RecentClear, Print, PrintSetup, PrintPreview, Browse, Props, NewWindow, Exit,
     Undo, Redo, Cut, Copy, Paste, SelectAll,
-    Find, Replace, Grep, FindNext, FindPrev, FindWord, FindWordPrev, ReplaceAll,
+    Find, Replace, Grep, MdStruct, FindNext, FindPrev, FindWord, FindWordPrev, ReplaceAll,
     DiffTab, DiffFile, DiffList, DiffNext, DiffPrev, DiffClear,
     FoldToggle, UnfoldAll,
     BmToggle, BmNext, BmPrev, BmView, BmReset, BracketJump, HistPrev, HistNext, HistMark,
@@ -108,6 +108,7 @@ fn build() -> Vec<Entry> {
         t("c.select-all", "Ctrl+A", "menu.edit", SelectAll),
         t("c.find", "Ctrl+F|Ctrl+I", "menu.search", Find), t("c.replace", "Ctrl+H|Ctrl+R", "menu.search", Replace),
         t("c.grep", "Ctrl+G|Ctrl+Shift+F|Ctrl+Alt+G", "menu.search", Grep),
+        t("c.md-struct", "", "menu.search", MdStruct),
         t("c.find-next", "F3", "menu.search", FindNext), t("c.find-prev", "Shift+F3", "menu.search", FindPrev), t("c.find-word", "Ctrl+F3", "menu.search", FindWord),
         z("app.find-word-prev", "向前查找当前词", "Ctrl+Shift+F3", "menu.search", FindWordPrev), t("c.replace-all", "Ctrl+Alt+R", "menu.search", ReplaceAll),
         z("app.diff-tab", "与其他标签比较…", "", "menu.search", DiffTab), z("app.diff-file", "与文件比较…", "", "menu.search", DiffFile), z("app.diff-list", "差异列表", "", "menu.search", DiffList),

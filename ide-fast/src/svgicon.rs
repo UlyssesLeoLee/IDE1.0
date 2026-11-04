@@ -29,6 +29,31 @@ pub const EXTENSIONS: &[PathDef] = &[
     ("M3 14h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3z", false),
 ];
 
+/// Markdown 工具条图标 (Tauri 用的彩色 emoji 的矢量替身, 同一个 24x24 / 描边 1.8 风格, 颜色跟主题文字色走)
+pub const LINK: &[PathDef] = &[
+    ("M10 13a5 5 0 0 0 7.54 0.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71", false),
+    ("M14 11a5 5 0 0 0-7.54-0.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71", false),
+];
+pub const IMAGE: &[PathDef] = &[
+    ("M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", false),
+    ("M7.5 8.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0z", true),
+    ("M21 15l-5-5L5 21", false),
+];
+pub const TASK: &[PathDef] = &[
+    ("M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", false),
+    ("M8 12l3 3l5-6", false),
+];
+pub const QUOTE: &[PathDef] = &[
+    ("M5 4V20", false), ("M10 8H20", false), ("M10 12H20", false), ("M10 16H16", false),
+];
+pub const CALLOUT: &[PathDef] = &[
+    ("M9 17h6", false), ("M10 21h4", false),
+    ("M9 17v-1.5a6 6 0 1 1 6 0V17", false),
+];
+pub const MERMAID: &[PathDef] = &[("M12 3L21 12L12 21L3 12z", false)];
+pub const EXPORT: &[PathDef] = &[("M12 15V4", false), ("M8 8l4-4l4 4", false), ("M5 14v6h14v-6", false)];
+pub const LINT: &[PathDef] = &[("M4 12.5l5.5 5.5L20 7", false)];
+
 /// 展平后的一段折线
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sub {
@@ -198,6 +223,15 @@ mod tests {
             let b = bounds(icon);
             assert!(b.min.x >= 2.5 && b.min.y >= 2.5 && b.max.x <= 21.5 && b.max.y <= 21.5, "{b:?}");
             assert!(b.width() > 10.0 && b.height() > 10.0, "{b:?}");
+        }
+    }
+
+    #[test]
+    fn markdown_bar_icons_fit_the_grid_and_are_not_empty() {
+        for (n, icon) in [("link", LINK), ("image", IMAGE), ("task", TASK), ("quote", QUOTE), ("callout", CALLOUT), ("mermaid", MERMAID), ("export", EXPORT), ("lint", LINT)] {
+            let b = bounds(icon);
+            assert!(b.min.x >= 1.5 && b.min.y >= 1.5 && b.max.x <= 22.5 && b.max.y <= 22.5, "{n}: {b:?}");
+            assert!(b.width() > 8.0 && b.height() > 8.0, "{n}: {b:?}");
         }
     }
 }

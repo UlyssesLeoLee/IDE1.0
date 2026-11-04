@@ -37,6 +37,7 @@ mod ghopts;
 mod updateui;
 mod aichat;
 mod mdopts;
+mod mdstruct;
 mod printui;
 mod sysopts;
 mod tagops;
@@ -1156,6 +1157,8 @@ impl App {
         let hide = self.sys.mn_hide;
         let mn = move |k: &str| if hide { ' ' } else { menuui::mnemonic(k) };
         let mut mids: Vec<(&'static str, egui::Id)> = Vec::new();
+        let bf = self.sys.bar_focus;
+        ui.data_mut(|d| d.insert_temp(menuui::bar_focus_id(), bf));
         egui::MenuBar::new().style(menuui::bar_style(tc)).config(egui::containers::menu::MenuConfig::new().style(menuui::style(tc))).ui(ui, |ui| {
             menuui::top(ui, &mut mids, "menu.file", menuui::menu_title(&tc, tr("menu.file"), mn("menu.file")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
@@ -1230,6 +1233,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace", "Ctrl+H / Ctrl+R")).clicked() { self.open_find(true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.grep", "Ctrl+G")).clicked() { self.focus_grep(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.md-struct", "")).clicked() { ui.close(); self.md_struct_open(); }
                 if menuui::mbtn(ui, lk("c.find-next", "F3")).clicked() { self.find_next(true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
@@ -1675,7 +1679,66 @@ impl App {
             ctx.memory_mut(|m| if let Some(f) = m.focused() { m.surrender_focus(f); });
             self.sys.nav_q.clear();
         }
+        if let Some((n, k)) = self.sys.bar_open.take() {
+            if let Some(&(_, id)) = self.sys.menu_ids.get(n) {
+                egui::Popup::close_all(ctx);
+                egui::Popup::open_id(ctx, id);
+                ctx.memory_mut(|m| if let Some(f) = m.focused() { m.surrender_focus(f); });
+                self.sys.nav_q.clear();
+                self.sys.nav_q.push(k);
+            }
+        }
         self.menu_arrows(ctx);
+    }
+
+    /// 单按 Alt = 把焦点放到菜单栏 (照 Tauri `altArmed`): 高亮第一个顶层菜单, ← → 切换, ↓ / Enter / 空格 展开, Esc 或再按 Alt 退出;
+    /// 菜单已展开时再单按 Alt 就关菜单。菜单栏焦点开着时这些键在这里吃掉 (编辑区不会同时移动光标); 点鼠标 / 按别的键就退出焦点。
+    /// 在 `raw_input_hook` 里调用: 此时拿得到未经 egui 处理的原始事件和修饰键
+    fn bar_focus_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput, menu_open: bool) {
+        let n = self.sys.menu_ids.len();
+        if self.sys.alt_tap.feed(&raw.events) && n > 0 && !self.cmdui.capturing() {
+            if menu_open {
+                egui::Popup::close_all(ctx);
+                self.sys.bar_focus = None;
+            } else if self.sys.bar_focus.take().is_none() {
+                self.sys.bar_focus = Some(0);
+                ctx.memory_mut(|mem| if let Some(f) = mem.focused() { mem.surrender_focus(f); });
+            }
+            ctx.request_repaint();
+            return;
+        }
+        let Some(cur) = self.sys.bar_focus else { return };
+        if menu_open || n == 0 { self.sys.bar_focus = None; return; }
+        let cur = cur.min(n - 1);
+        let mnemonics: Vec<char> = self.sys.menu_ids.iter().map(|x| menuui::mnemonic(x.0)).collect();
+        let mut state = Some(cur);
+        let mut open = None;
+        let mut eat_text = false;
+        raw.events.retain(|e| match e {
+            egui::Event::Text(_) if eat_text || state.is_some() => false,
+            _ if state.is_none() => true,
+            egui::Event::PointerButton { pressed: true, .. } | egui::Event::WindowFocused(false) => { state = None; true }
+            egui::Event::Key { key, pressed, modifiers, .. } => {
+                if matches!(key, Key::AltLeft | Key::AltRight) { return true; }
+                // 菜单栏上直接按助记字母: 打开对应菜单 (Tauri 同)
+                if modifiers.is_none() && key.name().len() == 1 {
+                    if let Some(i) = mnemonics.iter().position(|c| key.name().eq_ignore_ascii_case(&c.to_string())) {
+                        if *pressed { open = Some((i, menunav::NavKey::Down)); state = None; eat_text = true; }
+                        return false;
+                    }
+                }
+                match menunav::bar_key(state.unwrap_or(cur), n, *key, *modifiers) {
+                    menunav::BarOut::Pass => { if *pressed { state = None; } true }
+                    menunav::BarOut::Leave => { if *pressed { state = None; } false }
+                    menunav::BarOut::Move(i) => { if *pressed { state = Some(i); } false }
+                    menunav::BarOut::Open(i, k) => { if *pressed { open = Some((i, k)); state = None; eat_text = true; } false }
+                }
+            }
+            _ => true,
+        });
+        self.sys.bar_focus = state;
+        if open.is_some() { self.sys.bar_open = open; }
+        ctx.request_repaint();
     }
 
     /// 当前开着的顶层菜单下标
@@ -1759,6 +1822,7 @@ impl App {
             KApp::Find => self.open_find(false),
             KApp::Replace => self.open_find(true),
             KApp::Grep => self.focus_grep(),
+            KApp::MdStruct => self.md_struct_open(),
             KApp::FindNext => self.find_next(true),
             KApp::FindPrev => self.find_next(false),
             KApp::FindWord => self.find.word_search(&mut self.docs[ai], true),
@@ -2618,6 +2682,9 @@ impl eframe::App for App {
     /// 菜单开着时截下方向键 (egui 的空间焦点导航会乱跳), 并清洗 Alt+字母 / Esc 同帧的 Text 事件
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         let menu = self.open_top_menu(ctx);
+        let any_popup = egui::Popup::is_any_open(ctx);
+        self.bar_focus_hook(ctx, raw, menu.is_some() || any_popup);
+        let menu = self.open_top_menu(ctx);
         menunav::scrub(&mut raw.events, &mut self.sys.swallow, menu.is_some() || egui::Popup::is_any_open(ctx));
         let Some(menu) = menu else { return };
         // 焦点在子菜单里 (不是顶层菜单那一层) 就让 egui 自己处理
@@ -2725,6 +2792,7 @@ impl App {
         self.was_focused = focused;
         if self.prefs.is_some() { self.prefs_window(ctx); }
         if self.goto_open { self.goto_window(ctx); }
+        if self.sys.mdq.open { self.md_struct_window(ctx); }
         if self.bm_open { self.bookmark_window(ctx); }
         self.diff_refresh();
         self.diff_windows(ctx);

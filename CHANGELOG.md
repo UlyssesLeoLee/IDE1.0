@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### 高速版新增
+- **单按 Alt 聚焦菜单栏** (同 Tauri / Windows): 按下再松开 Alt, 中间没有别的键 / 鼠标 / 文字 / 失焦, 高亮第一个顶层菜单; ← → 循环切换, ↓ / Enter / 空格 展开并高亮第一项 (↑ 最后一项), 助记字母直接开菜单, Esc 或再按 Alt 退出, 菜单展开时单按 Alt 关菜单。Alt+字母、Alt+点击 / 拖选 (列块) 不受影响。状态机在 `app/menunav.rs` (`AltTap` / `bar_key`, 有单测)。
+- **Markdown 工具条矢量图标**: Tauri 的彩色 emoji (链接 图片 任务 引用 结构 Callout Mermaid 导出 检查) 换成 painter 画的矢量图标 (`svgicon.rs`), 跟主题文字色走, 悬停放大 10%, 提示用 Tauri 样式工具提示。
+- **结构化搜索** (Markdown 工具条「结构」/ 查找菜单 / 命令面板): `类型 [条件]` (heading #2 关键字 / link / image / fence 语言 / task / todo), 复用 `editcore::md_struct::find` (同 Tauri `md_find`), 命中列表点一条跳到该行; 中 / 日 / 英文案。
 - **检查更新…** (帮助菜单 / 命令面板): 直连 GitHub Releases, 稳定 / 开发两个通道 (首选项里选), 可选「每天启动时检查一次」(默认关, 首帧之后才做); 下载后必须通过 `SHA256SUMS.txt` 的 SHA-256 校验才能 "安装并重启" (msi 走 `msiexec /passive`, 便携版自行换文件), 失败保留当前版本。设计见 `ide-fast/docs/UPDATE.md`。
 - **更新包验签**: `SHA256SUMS.txt` 必须带发布者的 ed25519 分离签名 `SHA256SUMS.txt.sig` (原始 64 字节), 先验签再信任清单里的哈希; 缺签名 / 验签失败 = 拒绝并删除下载物; 安装前再粗检文件头 (msi 的 OLE 头、exe 的 `MZ`)。公钥内置在 `ide-fast/src/updkey.rs`, **目前是全 0 占位 = 未配置**, 此时更新窗口提示"更新签名密钥未配置"、"安装并重启"保持禁用、只给发布页链接 (发行版里没有任何环境变量可以绕过)。附签名工具 `ide-fast/packaging/sign-release.ps1` + `examples/sign-sums.rs`, 密钥生成 / 保管 / 轮换见 `ide-fast/docs/UPDATE.md`。新增依赖 `ed25519-dalek` (仅验证, 关掉全部默认特性), release exe 体积无可测增长。
 

@@ -6,6 +6,7 @@ use super::*;
 use crate::md_view::{fence_key, FenceRes, MdEdit, MdEvent};
 use crate::markdown::Parsed;
 use crate::mdtools;
+use crate::svgicon;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -14,15 +15,44 @@ const FENCE_MAX_BYTES: usize = 64 * 1024;
 const FENCE_CACHE: usize = 64;
 const FENCE_JOBS: usize = 6;
 
-/// 工具条按钮 (editor.html `MD_BTNS`; 分组之间一条竖线): (按钮字, 编辑命令, 提示)
-const MD_BAR: &[&[(&str, &str, &str)]] = &[
-    &[("B", "md-bold", "粗体 (Ctrl+B)"), ("I", "md-italic", "斜体 (Ctrl+I)"), ("S", "md-strike", "删除线 (Ctrl+Shift+X)"), ("==", "md-highlight", "高亮 ==文字=="), ("`", "md-code", "行内代码 (Ctrl+E)")],
-    &[("H1", "md-h1", "标题 1 (Ctrl+Alt+1)"), ("H2", "md-h2", "标题 2 (Ctrl+Alt+2)"), ("H3", "md-h3", "标题 3 (Ctrl+Alt+3)"), ("H4", "md-h4", "标题 4")],
-    &[("• 列表", "md-ul", "无序列表"), ("1. 列表", "md-ol", "有序列表"), ("☑ 任务", "md-task", "任务列表"), ("❝ 引用", "md-quote", "引用")],
-    &[("链接", "md-link", "链接 (Ctrl+Shift+K)"), ("图片", "md-image", "图片"), ("表格", "md-table", "表格 3×3"), ("{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)")],
-    &[("↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"), ("↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格")],
-    &[("分隔线", "md-hr", "分隔线"), ("Callout", "md-callout", "Obsidian callout"), ("Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)")],
+/// 工具条按钮 (editor.html `MD_BTNS`; 分组之间一条竖线): (按钮字, 编辑命令, 提示, 矢量图标)。
+/// Tauri 里 🔗 🖼 ☑ ❝ 🔎 💡 ◇ ⇪ ✓ 是彩色 emoji, egui 字体画不出, 这里换成 `svgicon` 的矢量图标 (跟主题文字色走)。
+/// 按钮字以 `@` 开头 = i18n 键; 命令以 `ide:` 开头 = ide-fast 自己的动作 (结构 / 导出 / 检查)
+type MdBtn = (&'static str, &'static str, &'static str, Option<&'static [svgicon::PathDef]>);
+const MD_BAR: &[&[MdBtn]] = &[
+    &[("B", "md-bold", "粗体 (Ctrl+B)", None), ("I", "md-italic", "斜体 (Ctrl+I)", None), ("S", "md-strike", "删除线 (Ctrl+Shift+X)", None), ("==", "md-highlight", "高亮 ==文字==", None), ("`", "md-code", "行内代码 (Ctrl+E)", None)],
+    &[("H1", "md-h1", "标题 1 (Ctrl+Alt+1)", None), ("H2", "md-h2", "标题 2 (Ctrl+Alt+2)", None), ("H3", "md-h3", "标题 3 (Ctrl+Alt+3)", None), ("H4", "md-h4", "标题 4", None)],
+    &[("• 列表", "md-ul", "无序列表", None), ("1. 列表", "md-ol", "有序列表", None), ("任务", "md-task", "任务列表", Some(svgicon::TASK)), ("引用", "md-quote", "引用", Some(svgicon::QUOTE))],
+    &[("链接", "md-link", "链接 (Ctrl+Shift+K)", Some(svgicon::LINK)), ("图片", "md-image", "图片", Some(svgicon::IMAGE)), ("表格", "md-table", "表格 3×3", None), ("{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)", None)],
+    &[("↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格", None), ("↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格", None), ("@md.struct", "ide:struct", "@md.struct-tip", Some(svgicon::SEARCH)), ("@md.export-html", "ide:export", "@md.export-tip", Some(svgicon::EXPORT)), ("@md.lint", "ide:lint", "@md.lint-tip", Some(svgicon::LINT))],
+    &[("分隔线", "md-hr", "分隔线", None), ("Callout", "md-callout", "Obsidian callout", Some(svgicon::CALLOUT)), ("Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)", Some(svgicon::MERMAID))],
 ];
+
+/// 文字 + 矢量图标的工具条按钮 (11px 字, 图标 12px 在字左 4px; 悬停 / 按下用当前 `Visuals` 的控件态, 图标和字同色, 悬停时图标放大 10%)
+fn bar_button(ui: &mut egui::Ui, icon: Option<&[svgicon::PathDef]>, label: &str) -> egui::Response {
+    let font = egui::FontId::proportional(11.0);
+    let color = ui.visuals().widgets.inactive.fg_stroke.color;
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, color);
+    let pad = ui.spacing().button_padding;
+    let icon_w = if icon.is_some() { 12.0 + 4.0 } else { 0.0 };
+    let size = egui::vec2(pad.x * 2.0 + icon_w + galley.size().x, (galley.size().y + pad.y * 2.0).max(20.0));
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let v = ui.visuals();
+        let w = if resp.is_pointer_button_down_on() { &v.widgets.active } else if resp.hovered() { &v.widgets.hovered } else { &v.widgets.inactive };
+        let (fill, stroke, fg, r) = (w.weak_bg_fill, w.bg_stroke, w.fg_stroke.color, w.corner_radius);
+        let p = ui.painter();
+        p.rect(rect, r, fill, stroke, egui::StrokeKind::Inside);
+        let mut x = rect.left() + pad.x;
+        if let Some(paths) = icon {
+            let k = if resp.hovered() { 1.1 } else { 1.0 };
+            svgicon::paint(p, egui::pos2(x + 6.0, rect.center().y), 12.0 * k, paths, fg, 1.8);
+            x += icon_w;
+        }
+        p.galley(egui::pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+    }
+    resp
+}
 
 #[derive(Default)]
 pub(super) struct MdState {
@@ -203,7 +233,6 @@ impl App {
         let on = self.md_preview;
         let mut cmd: Option<&'static str> = None;
         let mut toggle = false;
-        let (mut lint, mut export) = (false, false);
         let frame = egui::Frame::NONE.fill(tc.bg_bar).inner_margin(egui::Margin::symmetric(6, 2)).stroke(egui::Stroke::NONE);
         let r = egui::Panel::top("mdbar").frame(frame).show_separator_line(false).show(root, |ui| {
             let v = ui.visuals_mut();
@@ -232,13 +261,13 @@ impl App {
                     egui::ScrollArea::horizontal().id_salt("mdbar-scroll").auto_shrink([false, true]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
                         ui.horizontal(|ui| {
                             for g in MD_BAR {
-                                for (label, c, tip) in *g {
-                                    if ui.add(egui::Button::new(egui::RichText::new(*label).size(11.0))).tip(trz(tip)).clicked() { cmd = Some(*c); }
+                                for (label, c, tip, icon) in *g {
+                                    let label = if let Some(k) = label.strip_prefix('@') { tr(k) } else { trz(label) };
+                                    let tip = if let Some(k) = tip.strip_prefix('@') { tr(k) } else { trz(tip) };
+                                    if bar_button(ui, *icon, label).tip(tip).clicked() { cmd = Some(*c); }
                                 }
                                 sep(ui);
                             }
-                            if ui.add(egui::Button::new(egui::RichText::new(tr("md.lint")).size(11.0))).tip(tr("md.lint-tip")).clicked() { lint = true; }
-                            if ui.add(egui::Button::new(egui::RichText::new(tr("md.export-html")).size(11.0))).tip(tr("md.export-tip")).clicked() { export = true; }
                         });
                     });
                 });
@@ -246,12 +275,14 @@ impl App {
         });
         let rc = r.response.rect;
         root.painter().hline(rc.x_range(), rc.bottom() - 0.5, egui::Stroke::new(1.0, tc.border));
-        if let Some(c) = cmd {
-            if let Some(clip) = self.cur().edit(c, None) { self.put_clip(ctx, clip); }
+        match cmd {
+            Some("ide:struct") => self.md_struct_open(),
+            Some("ide:export") => self.md_export_now(),
+            Some("ide:lint") => self.md_lint_now(),
+            Some(c) => { if let Some(clip) = self.cur().edit(c, None) { self.put_clip(ctx, clip); } }
+            None => {}
         }
         if toggle { self.md_preview = !self.md_preview; }
-        if lint { self.md_lint_now(); }
-        if export { self.md_export_now(); }
     }
 
     /// Tauri 的 `#md-preview`: 盖在编辑区 (位置 = 中央区) 上的整块预览, 编辑区底色, 正文最宽 860 居中; 点一个块就地编辑。

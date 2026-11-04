@@ -34,6 +34,14 @@ pub(super) struct SysState {
     pub nav_q: Vec<super::menunav::NavKey>,
     /// Alt+字母附带的 Text 事件还要吃几帧
     pub swallow: Option<(char, u8)>,
+    /// 单按 Alt 识别器 (`menunav::AltTap`)
+    pub alt_tap: super::menunav::AltTap,
+    /// 菜单栏焦点 (单按 Alt 之后): 高亮的顶层菜单下标; None = 焦点不在菜单栏
+    pub bar_focus: Option<usize>,
+    /// 菜单栏焦点上按了 ↓ / Enter / 空格 / ↑: 下一次 shortcuts 展开该菜单并送入这个方向键
+    pub bar_open: Option<(usize, super::menunav::NavKey)>,
+    /// 「结构」搜索窗口 (Markdown 结构化搜索)
+    pub mdq: super::mdstruct::MdQuery,
     /// 窗口背后现在有没有 DWM 模糊 (玻璃主题 + 「模糊背景」设置)
     pub blur_on: bool,
     /// 列标尺占的高度 (标尺开着时 = 一行高, 否则 0); 欢迎页让出这一条

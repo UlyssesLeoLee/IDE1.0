@@ -196,9 +196,6 @@ Tauri: 全部 inline SVG, `viewBox 0 0 24 24`, `fill none; stroke currentColor; 
 
 ## 6. 仍有差异 (第六轮之后的现状, 只列真正做不到的)
 
-- 单独按 Alt (不带字母) 把焦点放到菜单栏 (Alt+字母开菜单后的 ↑ ↓ ← → / Enter / Esc 已在第七轮做完)、再用方向键在菜单名之间走 (Tauri `altArmed`): egui 的菜单栏没有「焦点在菜单栏上」这个状态, 要自己重画整条菜单栏的焦点模型, 收益只有这一个手势; 保留 Alt+字母开菜单 (打开后方向键 / 回车 / Esc / 左右切换都可用)。
-- 工具条 / 菜单里 Tauri 用的彩色 emoji 图标 (👁 🔗 🖼 ☑ ❝ 💡 ◇ 🔎): egui 自带字体没有这些字形, 画出来是豆腐块, 所以 ide-fast 的按钮用纯文字 (功能一致)。要画就得内置彩色 emoji 字体 (几 MB, 违背启动 / 体积预算)。
-- Markdown 工具条的「🔎 结构」(结构化搜索): ide-fast 没有对应的功能 (不是样式问题), 按钮不列。
 - 玻璃主题的「模糊背景」: 原先的 `apply_blur` 在本机 (Windows 11 10.0.26300) 背后是纯黑, 第七轮改用 `apply_acrylic` (`DWMWA_SYSTEMBACKDROP_TYPE`), 截图验证有真模糊 (`parity-shots/fast7-glass-acrylic.png`; 旧效果 `fast7-glass-blur-black-old.png`)。Mica 只取壁纸色不模糊窗口; 全部失败时回到纯 alpha 透明 (`IDE_FAST_BACKDROP=none` 同效果)。没在别的 Windows 版本上验证。
 
 ## 7. 有意保留的结构 / 功能差异 (不是样式问题, 也不是「做不到」)
@@ -269,3 +266,11 @@ Tauri: 全部 inline SVG, `viewBox 0 0 24 24`, `fill none; stroke currentColor; 
 3. **Esc 同帧杂字母**: `menunav::scrub` 单测覆盖 (同帧 / 晚一帧 / 仅 Esc / 正常键入不受影响)。真窗口里 Alt+V Esc Alt+V Esc 后编辑区没有 `v`; 但同一个事件批里的竞态用键盘注入难以稳定重现, 靠单测保证。
 4. **模糊背景黑屏**: 在彩色条纹窗口上逐个试: blur = 近乎纯黑, acrylic = 真模糊, mica = 壁纸色, none = 纯透明条纹。默认改 Acrylic。
 5. **首帧 p90**: 见 `PERF.md` 「第七轮」: 尾部全在 `window builder -> GL ready` (驱动 / winit), 我们的代码 p90 合计约 3 ms。
+
+## 第八轮 (关闭第七轮仍列为「做不到」的三项, 截图 `parity-shots/fast8-*.png`)
+
+1. **单按 Alt 聚焦菜单栏**: egui 0.37 没有 Alt 的修饰键帧值, 改按 `Event::ModifiersChanged` 事件顺序识别 (`menunav::AltTap`): Alt 按下沿武装, 中间出现任何 Key (Alt 自己的除外) / 文字 / 鼠标按键 / 滚轮 / 失焦 / 又按 Ctrl / Shift 即解除, 松开沿仍武装才算。菜单栏焦点 (`sys.bar_focus`) 由 `raw_input_hook` 里吃掉 ← → ↓ ↑ Enter 空格 Esc 和助记字母 (编辑区不同时响应), 展开菜单后交给第七轮的方向键状态机。真窗口 (keybd_event) 核对: 单按 Alt 高亮「文件」(`fast8-alt-bar-focus-dark/light.png`); Alt, →, → 到「查找」, ↓ 展开; Esc 退出后 → 回到编辑区移动光标; 菜单开着再单按 Alt 关菜单; Alt+E 仍直接开「编辑」菜单。
+2. **工具条图标**: 链接 / 图片 / 任务 / 引用 / 结构 / 导出 HTML / 检查 / Callout / Mermaid 用 `svgicon` 的 24 格矢量路径画 (12px, 线宽 1.8), 按钮 = 图标 + 11px 字, 同位置同含义 (`fast8-md-bar-dark.png` / `fast8-md-bar-light.png`, 对照 `web-full-*.png`)。未做: 「🕸 关系图」(依赖 doc-graph 插件) 和「Δ Diff」按钮, ide-fast 没有对应的工具条入口 (Diff 在查找菜单)。
+3. **「结构」搜索**: Tauri 的 `mdFind` 调 `editcore::md_struct::find`, ide-fast 直接用同一个函数 (`app/mdstruct.rs`): 一个窗口, 类型快捷钮 + 一行 `类型 [条件]` 输入 (同 Tauri 提示框语法), 实时结果列表, 点击跳行 (进跳转履历); 入口: 工具条「结构」、查找菜单「结构化搜索…」、命令面板。与 Tauri 的差别: 不限 Markdown 文档 (任何文档都能搜), 用窗口而不是模态提示框 (`fast8-struct-dialog-dark.png`)。
+
+仍未做 / 未验证: 点击结果跳转只有单测 (搜索与输入解析) 没有真窗口点击截图; 菜单栏焦点下按 ↓ 后第一项的键盘高亮在截图里被鼠标悬停高亮盖住, 逻辑沿用第七轮已验证的状态机; 没有在 IME 开着时验证 Alt 单按 (搜狗输入法会吞字母, 只用了 Alt / 方向键 / Enter / Esc)。

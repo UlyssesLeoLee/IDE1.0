@@ -46,9 +46,19 @@ pub fn menu_for_key(keys: &[&str], mods: egui::Modifiers, key: egui::Key) -> Opt
     keys.iter().position(|k| mnemonic_key(k) == Some(key))
 }
 
+/// 当前菜单栏焦点 (App 每帧写进 egui 临时数据, `top` 读)
+pub fn bar_focus_id() -> egui::Id { egui::Id::new("menubar-focus-idx") }
+
 /// 顶层菜单按钮, 并把它的弹出层 id 记下来 (给 Alt+助记字母用)
 pub fn top<R>(ui: &mut Ui, mids: &mut Vec<(&'static str, egui::Id)>, key: &'static str, title: egui::text::LayoutJob, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
     let r = ui.menu_button(title, content);
+    // 菜单栏焦点 (单按 Alt): 这个菜单名上画一层半透明前景色 + 1px 描边 (Tauri `.mb-btn:focus-visible`)
+    if ui.data(|d| d.get_temp::<Option<usize>>(bar_focus_id())).flatten() == Some(mids.len()) {
+        let col = ui.visuals().widgets.inactive.fg_stroke.color;
+        let rc = r.response.rect;
+        ui.painter().rect_filled(rc, 0.0, col.gamma_multiply(0.16));
+        ui.painter().rect_stroke(rc.shrink(0.5), 0.0, Stroke::new(1.0, col.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+    }
     mids.push((key, egui::Popup::default_response_id(&r.response)));
     r
 }
