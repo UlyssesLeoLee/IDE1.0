@@ -1,0 +1,98 @@
+//! 菜单外观 (照 Tauri 版 `.mb-btn` / `.menu-dropdown` / `.menu-row`): 菜单按钮带助记字母, 下拉框底色 / 边 / 阴影 / 最小宽 240,
+//! 行内边距 `5px 14px`、12px 字、悬停 `bg_active`, 勾选 / 单选统一成行首 `✓` 文字 (没有复选框方块)。
+//! 样式只作用在菜单里 (`MenuConfig::style`), 不影响窗口里的普通控件。
+
+use crate::view::ThemeColors;
+use eframe::egui::{self, epaint::Shadow, Align2, Color32, FontId, Response, Stroke, TextFormat, Ui, Vec2};
+
+/// 菜单名 -> 助记字母 (Tauri `MENU_DEF`: 文件 F / 编辑 E / 搜索 S / 视图 V / 设置 C / 窗口 W / 帮助 H; ide-fast 多出的菜单取各自的首字母)
+pub fn mnemonic(menu_key: &str) -> char {
+    match menu_key {
+        "menu.file" => 'F',
+        "menu.edit" => 'E',
+        "menu.search" => 'S',
+        "menu.fold" => 'O',
+        "menu.plugin" => 'P',
+        "menu.setting" => 'C',
+        "menu.bookmark" => 'B',
+        "menu.window" => 'W',
+        "menu.macro" => 'M',
+        "menu.view" => 'V',
+        "menu.help" => 'H',
+        _ => ' ',
+    }
+}
+
+/// 菜单按钮文字: 菜单名 (12px, 随悬停变色) + 6px 间隔 + 带下划线的助记字母 (11px, 弱前景)
+pub fn menu_title(tc: &ThemeColors, label: &str, mn: char) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(label, 0.0, TextFormat { font_id: FontId::proportional(12.0), color: Color32::PLACEHOLDER, ..Default::default() });
+    if mn != ' ' {
+        job.append(&mn.to_string(), 6.0, TextFormat { font_id: FontId::proportional(11.0), color: tc.fg_dim, underline: Stroke::new(1.0, tc.fg_dim), ..Default::default() });
+    }
+    job
+}
+
+/// 菜单里的样式修改器: 下拉框(底色 = 菜单栏色, 1px 边, 直角, 阴影 `0 2px 8px`), 行内边距, 悬停色, 最小宽
+pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
+    move |s: &mut egui::Style| {
+        egui::containers::menu::menu_style(s);
+        s.spacing.button_padding = Vec2::new(14.0, 5.0);
+        s.spacing.item_spacing = Vec2::new(8.0, 0.0);
+        s.spacing.menu_width = 240.0;
+        s.spacing.menu_margin = egui::Margin::symmetric(0, 4);
+        s.text_styles.insert(egui::TextStyle::Button, FontId::proportional(12.0));
+        let v = &mut s.visuals;
+        v.window_fill = tc.bg_bar;
+        v.window_stroke = Stroke::new(1.0, tc.border);
+        v.menu_corner_radius = egui::CornerRadius::ZERO;
+        v.popup_shadow = Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(128) };
+        v.widgets.hovered.weak_bg_fill = tc.bg_active;
+        v.widgets.hovered.fg_stroke.color = tc.fg;
+        v.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
+        v.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
+        v.widgets.active.corner_radius = egui::CornerRadius::ZERO;
+        v.widgets.active.weak_bg_fill = tc.bg_active;
+        v.widgets.inactive.fg_stroke.color = tc.fg;
+    }
+}
+
+/// 一行带勾选标记的菜单项: 选中时行首(左边距 7px 处)画一个 `✓`, 文字位置不变; 勾选和单选都用它
+pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
+    let r = ui.add(egui::Button::new(label.as_ref()).fill(Color32::TRANSPARENT));
+    if on {
+        ui.painter().text(egui::pos2(r.rect.left() + 7.0, r.rect.center().y), Align2::LEFT_CENTER, "✓", FontId::proportional(12.0), tc.fg);
+    }
+    r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_menu_has_a_distinct_mnemonic() {
+        let keys = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.help"];
+        let mut seen = std::collections::HashSet::new();
+        for k in keys {
+            let m = mnemonic(k);
+            assert_ne!(m, ' ', "{k}");
+            assert!(seen.insert(m), "助记字母重复: {m}");
+        }
+    }
+
+    #[test]
+    fn tauri_letters_are_kept_for_the_shared_menus() {
+        assert_eq!((mnemonic("menu.file"), mnemonic("menu.edit"), mnemonic("menu.search"), mnemonic("menu.view"), mnemonic("menu.setting"), mnemonic("menu.window"), mnemonic("menu.help")), ('F', 'E', 'S', 'V', 'C', 'W', 'H'));
+    }
+
+    #[test]
+    fn menu_title_has_label_then_underlined_letter() {
+        let tc = ThemeColors::builtin(true);
+        let j = menu_title(&tc, "文件", 'F');
+        assert_eq!(j.sections.len(), 2);
+        assert_eq!(j.text, "文件F");
+        assert_eq!(j.sections[1].leading_space, 6.0);
+        assert_ne!(j.sections[1].format.underline, Stroke::NONE);
+    }
+}

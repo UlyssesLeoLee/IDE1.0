@@ -25,6 +25,11 @@ impl App {
         }
     }
 
+    /// 展开一个折叠成细条的停靠区 (活动栏点击用)
+    pub(super) fn expand_dock(&mut self, d: Dock) {
+        self.set_dock_collapsed(d, false);
+    }
+
     /// 这个停靠区「想显示」吗 (右侧: AI 对话开着, 或 Markdown 预览开着)
     pub(super) fn dock_wanted(&self, d: Dock) -> bool {
         match d {

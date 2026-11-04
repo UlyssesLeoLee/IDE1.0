@@ -40,6 +40,7 @@ mod tools;
 mod tagjump;
 mod kinsoku;
 mod icons;
+mod svgicon;
 mod msgtr;
 mod textdrag;
 mod backup;

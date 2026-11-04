@@ -31,6 +31,10 @@ pub struct ThemeColors {
     pub bg_chrome: Color32,
     /// 悬停叠色 (`--bg-hover`), 半透明
     pub bg_hover: Color32,
+    /// 按下 / 选中控件的叠色 (`--bg-active`), 半透明
+    pub bg_active: Color32,
+    /// retro16 主题 (语法色用它自己的霓虹色); 由 App 按主题 id 设置
+    pub retro16: bool,
 }
 
 fn luminance(c: Color32) -> f32 {
@@ -55,9 +59,9 @@ impl ThemeColors {
         let rgb = Color32::from_rgb;
         // 取值来自 Tauri 版 editor.html 的 :root / THEMES (见 docs/VISUAL-PARITY.md 第 2 节)
         if dark {
-            ThemeColors { dark, bg_edit: g(30), bg_status: rgb(0, 122, 204), bg_bar: rgb(37, 37, 38), fg: g(212), fg_dim: g(157), border: g(51), blue: rgb(86, 156, 214), green: rgb(106, 190, 120), yellow: rgb(220, 200, 90), red: rgb(230, 90, 90), orange: rgb(214, 150, 80), bg_side: g(30), bg_rail: g(51), bg_chrome: g(42), bg_hover: Color32::from_white_alpha(20) }
+            ThemeColors { dark, bg_edit: g(30), bg_status: rgb(0, 122, 204), bg_bar: rgb(37, 37, 38), fg: g(212), fg_dim: g(157), border: g(51), blue: rgb(86, 156, 214), green: rgb(106, 190, 120), yellow: rgb(220, 200, 90), red: rgb(230, 90, 90), orange: rgb(214, 150, 80), bg_side: g(30), bg_rail: g(51), bg_chrome: g(42), bg_hover: Color32::from_white_alpha(20), bg_active: Color32::from_white_alpha(36), retro16: false }
         } else {
-            ThemeColors { dark, bg_edit: g(255), bg_status: rgb(0, 95, 184), bg_bar: g(248), fg: g(31), fg_dim: g(95), border: g(229), blue: rgb(0, 95, 184), green: rgb(20, 130, 50), yellow: rgb(150, 110, 0), red: rgb(190, 40, 40), orange: rgb(180, 90, 0), bg_side: g(255), bg_rail: g(240), bg_chrome: g(242), bg_hover: Color32::from_black_alpha(10) }
+            ThemeColors { dark, bg_edit: g(255), bg_status: rgb(0, 95, 184), bg_bar: g(248), fg: g(31), fg_dim: g(95), border: g(229), blue: rgb(0, 95, 184), green: rgb(20, 130, 50), yellow: rgb(150, 110, 0), red: rgb(190, 40, 40), orange: rgb(180, 90, 0), bg_side: g(255), bg_rail: g(240), bg_chrome: g(242), bg_hover: Color32::from_black_alpha(10), bg_active: Color32::from_black_alpha(20), retro16: false }
         }
     }
 
@@ -80,11 +84,13 @@ impl ThemeColors {
         v.window_stroke = egui::Stroke::new(1.0, if self.dark { g(69) } else { g(204) });
         let (w0, w1, w2) = if self.dark { (g(50), g(66), g(80)) } else { (g(238), g(228), g(214)) };
         v.widgets.inactive.weak_bg_fill = w0;
-        v.widgets.inactive.bg_fill = w0;
         v.widgets.hovered.weak_bg_fill = w1;
-        v.widgets.hovered.bg_fill = w1;
         v.widgets.active.weak_bg_fill = w2;
-        v.widgets.active.bg_fill = w2;
+        // 滚动条滑块取 bg_fill (按钮用 weak_bg_fill, 互不影响): 常态 --fg-dim, 悬停 / 拖动 --fg-muted
+        let (thumb, thumb_hot) = if self.dark { (g(0x6a), g(0x9d)) } else { (g(0x8a), g(0x5f)) };
+        v.widgets.inactive.bg_fill = thumb;
+        v.widgets.hovered.bg_fill = thumb_hot;
+        v.widgets.active.bg_fill = thumb_hot;
         v.selection.bg_fill = Color32::from_rgba_unmultiplied(self.blue.r(), self.blue.g(), self.blue.b(), 90);
         v.hyperlink_color = self.blue;
         let r = egui::CornerRadius::same(3);
@@ -125,30 +131,53 @@ impl ThemeColors {
         t
     }
 
-    /// 语法高亮用的 Theme: 先取内置深 / 浅色, 再把关键字 / 字符串 / 数字 / 注释 / 函数 / 类型换成主题色;
-    /// 和背景对比太弱的颜色 (浅色主题里的亮黄 ...) 保留内置色, 免得字看不见
+    /// 语法高亮用的 Theme: 取 Tauri 版 editor.html 的固定调色板 (深色 VS Code Dark+, 浅色见 `[data-theme="light"] #ed-content`),
+    /// 与主题插件的 `--blue / --green` 无关 —— Tauri 的 `.tk-*` 颜色也不读主题变量; 浅 / 深由编辑区底色亮度定 (同 clear 主题的 data-lum);
+    /// retro16 主题有自己的霓虹色
     pub fn syntax_theme(&self) -> Theme {
         let mut th = if self.dark { Theme::dark() } else { Theme::light() };
-        let conv = |c: Color32| Color(c.r(), c.g(), c.b());
-        let ok = |c: Color32| (luminance(c) - luminance(self.bg_edit)).abs() >= 0.25;
-        let mut set = |kind: TokenKind, c: Color32, style: Style| {
-            if ok(c) {
-                th.styles.insert(kind, TokenStyle::new(conv(c)).with_style(style));
-            }
-        };
-        set(TokenKind::Keyword, self.blue, Style::bold());
-        set(TokenKind::String, self.green, Style::default());
-        set(TokenKind::Number, self.orange, Style::default());
-        set(TokenKind::Comment, self.fg_dim, Style::italic());
-        set(TokenKind::Function, self.yellow, Style::default());
-        set(TokenKind::Type, self.red, Style::default());
+        let p = syntax_palette(self.dark, self.retro16);
+        let conv = |c: [u8; 3]| Color(c[0], c[1], c[2]);
+        let fg = Color(self.fg.r(), self.fg.g(), self.fg.b());
+        let mut put = |k: TokenKind, c: [u8; 3], style: Style| { th.styles.insert(k, TokenStyle::new(conv(c)).with_style(style)); };
+        put(TokenKind::Keyword, p.keyword, if self.retro16 { Style::bold() } else { Style::default() });
+        put(TokenKind::Type, p.ty, if self.retro16 { Style::bold() } else { Style::default() });
+        put(TokenKind::String, p.string, Style::default());
+        put(TokenKind::Number, p.number, Style::default());
+        put(TokenKind::Comment, p.comment, if self.retro16 { Style::italic() } else { Style::default() });
+        put(TokenKind::Function, p.function, Style::default());
         for k in [TokenKind::Plain, TokenKind::Operator, TokenKind::Punct, TokenKind::Variable] {
-            if ok(self.fg) {
-                th.styles.insert(k, TokenStyle::new(conv(self.fg)));
-            }
+            th.styles.insert(k, TokenStyle::new(fg));
         }
         th
     }
+}
+
+/// 语法调色板 (RGB)
+pub struct SyntaxPalette {
+    pub keyword: [u8; 3],
+    pub ty: [u8; 3],
+    pub string: [u8; 3],
+    pub number: [u8; 3],
+    pub comment: [u8; 3],
+    pub function: [u8; 3],
+}
+
+/// Tauri 的 `.tk-keyword #569cd6 / .tk-type #4ec9b0 / .tk-string #ce9178 / .tk-comment #6a9955 / .tk-num #b5cea8 / .tk-annot #dcdcaa`;
+/// 浅色 `#0000ff / #267f99 / #a31515 / #1c7a1c / #098658 / #795e26`; retro16 `#ff2a85 / #b366ff / #00ff66 / #637094 / #ffd700`
+pub fn syntax_palette(dark: bool, retro16: bool) -> SyntaxPalette {
+    if retro16 {
+        SyntaxPalette { keyword: [0xff, 0x2a, 0x85], ty: [0xb3, 0x66, 0xff], string: [0x00, 0xff, 0x66], number: [0xff, 0xd7, 0x00], comment: [0x63, 0x70, 0x94], function: [0x00, 0xf0, 0xff] }
+    } else if dark {
+        SyntaxPalette { keyword: [0x56, 0x9c, 0xd6], ty: [0x4e, 0xc9, 0xb0], string: [0xce, 0x91, 0x78], number: [0xb5, 0xce, 0xa8], comment: [0x6a, 0x99, 0x55], function: [0xdc, 0xdc, 0xaa] }
+    } else {
+        SyntaxPalette { keyword: [0x00, 0x00, 0xff], ty: [0x26, 0x7f, 0x99], string: [0xa3, 0x15, 0x15], number: [0x09, 0x86, 0x58], comment: [0x1c, 0x7a, 0x1c], function: [0x79, 0x5e, 0x26] }
+    }
+}
+
+/// 编辑区行高: 倍数 1.0 (默认) = Tauri 的 18px 行高 / 13px 字号之比 (`#ed-content line-height:18px`), 其它倍数按字体自身行高放缩
+pub fn row_height(base_h: f32, mult: f32, font_px: f32) -> f32 {
+    if (mult - 1.0).abs() < 1e-3 { (font_px * 18.0 / 13.0).max(4.0) } else { (base_h * mult).max(4.0) }
 }
 
 /// 相对基线 (打开 / 上次保存时的内容) 哪些行被改过 / 新加: 去掉相同的头尾后对中间段做 LCS, 不在 LCS 里的行记为 true。
@@ -352,14 +381,26 @@ mod tests {
     }
 
     #[test]
-    fn syntax_theme_takes_theme_colors_but_keeps_readable_defaults() {
-        let t = ThemeColors::from_vars(&vars(&[("--bg-edit", "#000000"), ("--fg", "#ffffff"), ("--blue", "#00f0ff"), ("--green", "#7ee2b8")]));
-        let th = t.syntax_theme();
-        assert_eq!(th.get(TokenKind::Keyword).fg, Color(0, 240, 255));
-        assert_eq!(th.get(TokenKind::String).fg, Color(126, 226, 184));
-        // 浅色背景 + 亮黄函数色: 对比太弱, 保留内置浅色主题的函数色
-        let l = ThemeColors::from_vars(&vars(&[("--bg-edit", "#ffffff"), ("--yellow", "#ffff00")]));
-        assert_eq!(l.syntax_theme().get(TokenKind::Function).fg, Theme::light().get(TokenKind::Function).fg);
+    fn default_row_height_is_18_at_13px() {
+        assert_eq!(row_height(15.6, 1.0, 13.0), 18.0);
+        assert_eq!(row_height(15.6, 1.5, 13.0), 15.6 * 1.5);
+    }
+
+    #[test]
+    fn syntax_colours_are_tauris_palette_not_theme_vars() {
+        let d = ThemeColors::builtin(true).syntax_theme();
+        assert_eq!(d.get(TokenKind::String).fg, Color(0xce, 0x91, 0x78));
+        assert_eq!(d.get(TokenKind::Number).fg, Color(0xb5, 0xce, 0xa8));
+        assert_eq!(d.get(TokenKind::Keyword).fg, Color(0x56, 0x9c, 0xd6));
+        let l = ThemeColors::builtin(false).syntax_theme();
+        assert_eq!(l.get(TokenKind::String).fg, Color(0xa3, 0x15, 0x15));
+        assert_eq!(l.get(TokenKind::Comment).fg, Color(0x1c, 0x7a, 0x1c));
+        // 主题插件的 --blue / --green 不改语法色, 只由明暗决定
+        let t = ThemeColors::from_vars(&vars(&[("--bg-edit", "#000000"), ("--blue", "#00f0ff"), ("--green", "#7ee2b8")]));
+        assert_eq!(t.syntax_theme().get(TokenKind::String).fg, Color(0xce, 0x91, 0x78));
+        let mut r = t;
+        r.retro16 = true;
+        assert_eq!(r.syntax_theme().get(TokenKind::Keyword).fg, Color(0xff, 0x2a, 0x85));
     }
 
     #[test]

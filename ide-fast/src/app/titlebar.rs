@@ -22,6 +22,14 @@ const QUICK_MIN_W: f32 = 900.0;
 /// 快捷按钮: (命令 id, 文字)。面板开关用画出来的小图标, 不在这里。
 const QUICK: &[(&str, &str)] = &[("c.new-file", "新"), ("c.open-file", "开"), ("c.save", "存"), ("c.find", "找"), ("c.palette", ">_"), ("c.split", "||")];
 
+/// 左区至少这么宽才画标题文字 (11 个菜单已占 ~600, 再窄会把「帮助」挤掉)
+const TITLE_MIN_W: f32 = 780.0;
+
+/// 标题栏文字 (Tauri: 无文档「IDE1.0」, 有文档「文件名 - IDE1.0」)
+pub fn window_title(doc: Option<&str>) -> String {
+    match doc { Some(n) if !n.is_empty() => format!("{n} - IDE1.0"), _ => "IDE1.0".to_string() }
+}
+
 /// 光标在窗口的哪个缩放把手上 (None = 不在边缘)。`edge` = 边的粗细, 角比边更宽
 pub fn grip(pos: Pos2, win: Rect, edge: f32) -> Option<Dir> {
     if !win.contains(pos) {
@@ -129,6 +137,11 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.add_space(6.0);
                 if let Some(t) = &icon { ui.image((t.id(), Vec2::splat(16.0))); }
+                if left.width() >= TITLE_MIN_W {
+                    let d = &self.docs[self.active.min(self.docs.len() - 1)];
+                    ui.label(egui::RichText::new(window_title(d.path.is_some().then_some(d.name.as_str()))).size(12.0).strong());
+                    ui.add_space(6.0);
+                }
                 ui.add_space(2.0);
                 ui.spacing_mut().button_padding = Vec2::new(5.0, 2.0);
                 self.menu(ui, ctx);
@@ -139,7 +152,9 @@ impl App {
                     for (id, glyph) in QUICK {
                         let Some(i) = chrome::index_of(id) else { continue };
                         let e = &keymap::entries()[i];
-                        if ui.add(egui::Button::new(*glyph).small().frame(false).min_size(Vec2::new(20.0, 22.0))).on_hover_text(crate::i18n::lk_for(e)).clicked() { run = Some(i); }
+                        let tip = crate::i18n::lk_for(e);
+                        let _ = glyph;
+                        if crate::icons::icon_button(ui, id, tip).clicked() { run = Some(i); }
                     }
                     ui.separator();
                     for d in [Dock::Side, Dock::Bottom, Dock::Right] {
@@ -293,6 +308,12 @@ mod tests {
         assert_eq!(max_inset(true, true, false), 0.0);
         assert_eq!(max_inset(false, false, false), 0.0);
         assert_eq!(max_inset(false, true, true), 0.0);
+    }
+
+    #[test]
+    fn title_text_follows_tauri() {
+        assert_eq!(window_title(None), "IDE1.0");
+        assert_eq!(window_title(Some("a.rs")), "a.rs - IDE1.0");
     }
 
     #[test]

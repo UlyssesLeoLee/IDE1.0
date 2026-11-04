@@ -13,6 +13,8 @@ pub enum Tab {
     Search,
     /// 源代码管理 (git 状态)
     Scm,
+    /// 扩展 (插件列表)
+    Plugins,
 }
 
 /// 文件树上待确认 / 待输入的操作

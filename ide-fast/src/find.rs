@@ -248,13 +248,33 @@ impl Find {
         }
     }
 
-    /// 查找栏 (底部面板里画): 第一行查找串 + 选项, 第二行 (开着置换时) 置换串 + 按钮
-    pub fn bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
-        if self.isearch.is_some() {
-            self.isearch_bar(ui, d);
-        } else {
-            self.full_bar(ui, d);
-        }
+    /// 查找对话框 (Tauri 的 `#modal.float`): 右上角浮动 (距顶 56 / 距右 28), 宽 min(440, 92% 窗宽),
+    /// 圆角 8 + 1px 边 + 阴影 `0 6px 24px`; 头部标题 15px + ✕, 正文(查找串 / 选项 / 置换行 / 状态), 底部按钮 `↑ ↓ 关闭`
+    pub fn window(&mut self, ctx: &egui::Context, d: &mut Doc) {
+        let w = dialog_width(ctx.content_rect().width());
+        let (fill, edge) = { let v = &ctx.global_style().visuals; (v.window_fill, v.window_stroke.color) };
+        let frame = egui::Frame::new().fill(fill).stroke(egui::Stroke::new(1.0, edge)).corner_radius(8.0)
+            .shadow(egui::epaint::Shadow { offset: [0, 6], blur: 24, spread: 0, color: egui::Color32::from_black_alpha(89) });
+        let isearch = self.isearch.is_some();
+        egui::Window::new("find-dialog").title_bar(false).resizable(false).collapsible(false).anchor(egui::Align2::RIGHT_TOP, [-DIALOG_RIGHT, DIALOG_TOP]).frame(frame).show(ctx, |ui| {
+            ui.set_width(w);
+            ui.spacing_mut().item_spacing = egui::Vec2::new(8.0, 6.0);
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                ui.set_width(w - 24.0);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(crate::i18n::trz(if isearch { "增量查找" } else { "查找" })).size(15.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(egui::Button::new("✕").frame(false)).on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; self.isearch = None; }
+                    });
+                });
+            });
+            let y = ui.cursor().top();
+            ui.painter().hline(ui.max_rect().x_range(), y, egui::Stroke::new(1.0, edge));
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                ui.set_width(w - 24.0);
+                if isearch { self.isearch_body(ui, d); } else { self.full_body(ui, d); }
+            });
+        });
         // 查找串 / 条件变了就边输入边找 (打开栏、F3、置换之后已经同步过 last, 不会误跳)
         let now = (self.needle.clone(), self.opts);
         if self.last.as_ref() != Some(&now) {
@@ -263,88 +283,102 @@ impl Find {
         }
     }
 
-    /// 增量查找条: 一行 — 方向 / 查找串 / 正则 / Migemo / 区分大小写; Enter 往同方向找下一处, Esc 关
-    fn isearch_bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
+    fn needle_box(&mut self, ui: &mut egui::Ui) -> egui::Response {
+        let r = ui.add(egui::TextEdit::singleline(&mut self.needle).desired_width(f32::INFINITY));
+        if self.focus == Focus::Find {
+            r.request_focus();
+            self.focus = Focus::None;
+        }
+        r
+    }
+
+    /// 增量查找: 方向 / 查找串 / 正则 / Migemo / 区分大小写; Enter 往同方向找下一处, Esc 关
+    fn isearch_body(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         let fwd = self.isearch.unwrap_or(true);
-        ui.horizontal_wrapped(|ui| {
-            ui.strong(crate::i18n::trz("增量查找"));
+        ui.horizontal(|ui| {
             if ui.selectable_label(fwd, "↓").on_hover_text(crate::i18n::trz("向后")).clicked() && !fwd { self.isearch = Some(true); self.last = None; }
             if ui.selectable_label(!fwd, "↑").on_hover_text(crate::i18n::trz("向前")).clicked() && fwd { self.isearch = Some(false); self.last = None; }
-            let r = ui.add(egui::TextEdit::singleline(&mut self.needle).desired_width(260.0));
-            if self.focus == Focus::Find {
-                r.request_focus();
-                self.focus = Focus::None;
-            }
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                let go = self.isearch.unwrap_or(true) != ui.input(|i| i.modifiers.shift);
-                self.step(d, go);
-                r.request_focus();
-            }
+        });
+        let r = self.needle_box(ui);
+        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            let go = self.isearch.unwrap_or(true) != ui.input(|i| i.modifiers.shift);
+            self.step(d, go);
+            r.request_focus();
+        }
+        ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut self.opts.regex, crate::i18n::trz("正则"));
             ui.checkbox(&mut self.opts.migemo, "Migemo");
             ui.checkbox(&mut self.opts.case, crate::i18n::trz("区分大小写"));
-            if let Some(e) = &self.err {
-                ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
-            } else {
-                ui.label(crate::msgtr::msg(&self.msg).as_ref());
-            }
-            if ui.button("×").clicked() { self.open = false; self.isearch = None; }
         });
+        self.status_line(ui, d, false);
     }
 
-    fn full_bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
+    /// 命中数 / 正则错误 / 提示
+    fn status_line(&mut self, ui: &mut egui::Ui, d: &Doc, count: bool) {
+        if let Some(e) = &self.err {
+            ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
+        } else {
+            if count {
+                let n = self.count_label(d);
+                if !n.is_empty() { ui.weak(n); }
+            }
+            let m = crate::msgtr::msg(&self.msg);
+            if !m.is_empty() { ui.label(m.as_ref()); }
+        }
+    }
+
+    fn full_body(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
+        let r = self.needle_box(ui);
+        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            let fwd = !ui.input(|i| i.modifiers.shift);
+            self.next(d, fwd);
+            r.request_focus();
+        }
         ui.horizontal_wrapped(|ui| {
-            // 关闭钮放最前: 放在行尾时窗口一窄就被折到第二行, 压在「置换」上
-            if ui.button("×").on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; }
-            if ui.selectable_label(self.replace, crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
-                self.replace = !self.replace;
-            }
-            ui.label(crate::i18n::trz("查找"));
-            let r = ui.add(egui::TextEdit::singleline(&mut self.needle).desired_width(220.0));
-            if self.focus == Focus::Find {
-                r.request_focus();
-                self.focus = Focus::None;
-            }
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                let fwd = !ui.input(|i| i.modifiers.shift);
-                self.next(d, fwd);
-                r.request_focus();
-            }
-            if ui.button("↓").on_hover_text(crate::i18n::trz("下一个 F3")).clicked() { self.next(d, true); }
-            if ui.button("↑").on_hover_text(crate::i18n::trz("上一个 Shift+F3")).clicked() { self.next(d, false); }
             ui.checkbox(&mut self.opts.case, crate::i18n::trz("区分大小写"));
             ui.checkbox(&mut self.opts.word, crate::i18n::trz("单词单位"));
             ui.checkbox(&mut self.opts.regex, crate::i18n::trz("正则"));
             ui.checkbox(&mut self.opts.wrap, crate::i18n::trz("折返"));
             ui.checkbox(&mut self.opts.migemo, "Migemo").on_hover_text(crate::i18n::trz("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク"));
             ui.checkbox(&mut self.marks, crate::i18n::trz("全部强调"));
-            if let Some(e) = &self.err {
-                ui.colored_label(egui::Color32::from_rgb(230, 80, 80), format!("{}: {e}", crate::i18n::trz("正则无效")));
-            } else {
-                let n = self.count_label(d);
-                if !n.is_empty() { ui.weak(n); }
-                ui.label(crate::msgtr::msg(&self.msg).as_ref());
-            }
         });
         if self.replace {
+            let r = ui.add(egui::TextEdit::singleline(&mut self.repl).desired_width(f32::INFINITY).hint_text(crate::i18n::trz("置换")));
+            if self.focus == Focus::Repl {
+                r.request_focus();
+                self.focus = Focus::None;
+            }
+            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                self.replace_one(d);
+                r.request_focus();
+            }
             ui.horizontal_wrapped(|ui| {
-                ui.add_space(22.0);
-                ui.label(crate::i18n::trz("置换"));
-                let r = ui.add(egui::TextEdit::singleline(&mut self.repl).desired_width(220.0));
-                if self.focus == Focus::Repl {
-                    r.request_focus();
-                    self.focus = Focus::None;
-                }
-                if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                    self.replace_one(d);
-                    r.request_focus();
-                }
                 if ui.button(crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("置换当前命中并找下一个")).clicked() { self.replace_one(d); }
                 if ui.button(crate::i18n::trz("全部置换")).clicked() { self.replace_all(d); }
                 ui.checkbox(&mut self.in_sel, crate::i18n::trz("仅选区"));
             });
         }
+        self.status_line(ui, d, true);
+        ui.horizontal(|ui| {
+            if ui.selectable_label(self.replace, crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
+                self.replace = !self.replace;
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(crate::i18n::trz("关闭")).clicked() { self.open = false; }
+                if ui.button(format!("↓ {}", crate::i18n::trz("下一个"))).on_hover_text("F3").clicked() { self.next(d, true); }
+                if ui.button(format!("↑ {}", crate::i18n::trz("上一个"))).on_hover_text("Shift+F3").clicked() { self.next(d, false); }
+            });
+        });
     }
+}
+
+/// 对话框距窗口顶 / 右边的距离 (Tauri `top: 56px; right: 28px`)
+const DIALOG_TOP: f32 = 56.0;
+const DIALOG_RIGHT: f32 = 28.0;
+
+/// 对话框宽: `min(440px, 92vw)`
+pub fn dialog_width(window_w: f32) -> f32 {
+    (window_w * 0.92).min(440.0)
 }
 
 /// 把文字里的正则元字符转义 (正则开着时拿选区 / 单词作查找串用)
@@ -367,6 +401,12 @@ mod tests {
         let mut d = Doc::untitled(1, 1);
         d.lines = lines.iter().map(|s| s.to_string()).collect();
         d
+    }
+
+    #[test]
+    fn dialog_is_440_wide_but_never_wider_than_92_percent_of_the_window() {
+        assert_eq!(dialog_width(1280.0), 440.0);
+        assert_eq!(dialog_width(400.0), 368.0);
     }
 
     #[test]

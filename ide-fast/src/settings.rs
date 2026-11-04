@@ -74,7 +74,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            dark: true, font_px: 15.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default(),
+            dark: true, font_px: 13.0, tab_width: 4, highlight: true, wrap: false, theme_plugin: String::new(), recent: vec![], recent_dirs: vec![], positions: vec![], search: SearchPrefs::default(),
             lang: "zh".into(), auto_indent: true, smart_indent: false, insert_spaces: false, default_encoding: "UTF-8".into(), default_eol: "CRLF".into(),
             save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
             colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![], restore_session: true, session: vec![], session_active: 0,

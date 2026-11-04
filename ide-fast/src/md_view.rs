@@ -270,7 +270,7 @@ fn list_ui(ui: &mut egui::Ui, items: &[Item], cx: &MdCtx, cache: &mut MdCache, e
 fn table_ui(ui: &mut egui::Ui, id: usize, rows: &[Vec<String>], aligns: &[Align], cx: &MdCtx, cache: &mut MdCache, ev: &mut MdEvent) {
     let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     egui::Frame::NONE.stroke(egui::Stroke::new(1.0, cx.tc.border)).show(ui, |ui| {
-        egui::Grid::new(("md-table", id)).striped(true).spacing([14.0, 5.0]).show(ui, |ui| {
+        egui::Grid::new(("md-table", id)).striped(true).spacing([20.0, 6.0]).show(ui, |ui| {
             for (k, row) in rows.iter().enumerate() {
                 for c in 0..cols {
                     let text = row.get(c).map(String::as_str).unwrap_or("");
@@ -284,7 +284,7 @@ fn table_ui(ui: &mut egui::Ui, id: usize, rows: &[Vec<String>], aligns: &[Align]
                         if k == 0 {
                             ui.label(RichText::new(text).strong());
                         } else {
-                            inline_ui(ui, text, cx, cache, 14.0, cx.tc.fg, ev);
+                            inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
                         }
                     });
                 }
@@ -388,18 +388,24 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
             let mut click_block = true; // 链接、表格内容自己处理点击; 其它块点击 = 回到源码行
             let r = match &b.block {
                 Block::Heading { level, text } => {
-                    let size = match level { 1 => 26.0, 2 => 21.0, 3 => 18.0, _ => 15.0 };
+                    let size = match level { 1 => 26.0, 2 => 19.5, 3 => 15.2, _ => 13.0 }; // Tauri: 13px 基准的 2em / 1.5em / 1.17em / 1em
                     let r = ui.add(egui::Label::new(RichText::new(text).strong().size(size)).sense(Sense::click()));
                     if *level <= 2 {
                         ui.separator();
                     }
                     r
                 }
-                Block::Para(t) => inline_ui(ui, t, cx, cache, 14.0, cx.tc.fg, &mut ev),
-                Block::Quote(t) => egui::Frame::NONE
-                    .inner_margin(egui::Margin { left: 10, right: 4, top: 2, bottom: 2 })
-                    .show(ui, |ui| inline_ui(ui, t, cx, cache, 14.0, cx.tc.fg_dim, &mut ev))
-                    .response,
+                Block::Para(t) => inline_ui(ui, t, cx, cache, 13.0, cx.tc.fg, &mut ev),
+                Block::Quote(t) => {
+                    // Tauri: blockquote 左 3px 粗边 (--border-strong), padding 0 12px, 前景 --fg-muted
+                    let r = egui::Frame::NONE
+                        .inner_margin(egui::Margin { left: 15, right: 4, top: 2, bottom: 2 })
+                        .show(ui, |ui| inline_ui(ui, t, cx, cache, 13.0, cx.tc.fg_dim, &mut ev))
+                        .response;
+                    let bar = if cx.tc.dark { Color32::from_gray(0x45) } else { Color32::from_gray(0xcc) };
+                    ui.painter().rect_filled(egui::Rect::from_min_max(r.rect.left_top(), egui::pos2(r.rect.left() + 3.0, r.rect.bottom())), 0.0, bar);
+                    r
+                }
                 Block::Callout { kind, title, text } => {
                     let (icon, name) = callout_label(kind);
                     let accent = match kind.as_str() {
@@ -426,8 +432,10 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                 }
                 Block::Code { lang, text } => {
                     let r = egui::Frame::NONE
-                        .fill(if cx.tc.dark { Color32::from_black_alpha(70) } else { Color32::from_black_alpha(14) })
-                        .inner_margin(8)
+                        .fill(if cx.tc.dark { Color32::from_gray(45) } else { Color32::WHITE })
+                        .stroke(egui::Stroke::new(if cx.tc.dark { 0.0 } else { 1.0 }, cx.tc.border))
+                        .corner_radius(4.0)
+                        .inner_margin(egui::Margin::symmetric(10, 8))
                         .show(ui, |ui| {
                             if lang == "mermaid" {
                                 ui.weak("Mermaid 图只在 Tauri 版里渲染, 这里显示源码");
