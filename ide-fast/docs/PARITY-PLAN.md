@@ -40,7 +40,7 @@
 | 批次 6 插入日期 / 时间 / 戳记 | done (批次 10) | `chrono` (clock) 取本地时区, 工作区已有依赖; 插入日期 / 时间 / 戳记 + 戳记设置 |
 | 批次 6 控制字符表 / 插入最近文件路径 / copy-html / 剪贴板历史 / base64·uudecode / 假名转换 | done (批次 10) | 全部进编辑菜单 + 命令面板 + 键位表; 假名互转用 `editcore::edit_ops::transform_text` 现成的 to-zenkaku / to-zenhira / to-hankata / hankata-to-* |
 | 批次 6 复制文件名 / 完整路径 | done | 批次 9 |
-| 批次 6 玻璃 / 半透明主题 + 背景亮度取色 | partial (批次 10) | 半透明主题 (`translucent`) 用透明窗口 + 保留 alpha 的颜色, Windows 经 `window-vibrancy` 加 DWM 模糊 (首选项可关); 透明要在建窗口时定, 运行中换主题需重启。批次 11: 主题声明 `luminance: dynamic` 时文字色按 Windows「应用主题」明暗取 (`editcore::theme_luminance::detect`, 选主题 / 启动时读一次注册表, 不轮询; `plugins::apply_dynamic_luminance`)。截屏采样 (每秒截屏排除自身再取平均亮度) 不做: 要周期性截屏与排除窗口自身, 违反「不轮询 / 不拖慢」, 壁纸与系统主题不一致时可能不准 |
+| 批次 6 玻璃 / 半透明主题 + 背景亮度取色 | partial (批次 10) | 半透明主题 (`translucent`) 用透明窗口 + 保留 alpha 的颜色, Windows 经 `window-vibrancy` 加 DWM 模糊 (首选项可关); 窗口一律以透明建, 运行中切到 / 离开半透明主题只开关 DWM 模糊和清屏色, 不再重启 (外观对标第六轮, `app/sysopts.rs::glass_sync`)。批次 11: 主题声明 `luminance: dynamic` 时文字色按 Windows「应用主题」明暗取 (`editcore::theme_luminance::detect`, 选主题 / 启动时读一次注册表, 不轮询; `plugins::apply_dynamic_luminance`)。截屏采样 (每秒截屏排除自身再取平均亮度) 不做: 要周期性截屏与排除窗口自身, 违反「不轮询 / 不拖慢」, 壁纸与系统主题不一致时可能不准 |
 | 批次 7 Markdown 预览 (原生块渲染 / 点块跳行 / 大纲) | partial | `md_view.rs` 有标题 / 列表 (含任务) / 代码 / 表格 / 提示块 / 图片 / 链接, 点块回到源码行; 没有在预览里直接编辑、lint、HTML 导出、结构化查找 |
 | 批次 7 Markdown 预览编辑 / 检查 / 导出 | done (批次 10) | 块右上角 ✎ 就地改源码, 任务复选框可点 (都是一步撤销的行补丁), 检查 (editcore::md_lint) 进「问题」页, 导出同名 .html (editcore::md_render + Tauri 同款模板) |
 | 批次 7 持久终端会话 | done | `terminal.rs` 常驻 shell + 行缓冲, 带单测; 一次性 `exec_cmd` 仍用于选区管道 |
@@ -56,7 +56,8 @@
 | 批次 8 `agent.tool` 贡献 | done (批次 10) | AI 面板的工具表含启用且有 agent.tool 权限的插件工具, 调用 `agent.tool:<name>`, 补丁提案过 editcore 同一道校验 |
 | 批次 8 AI Chat 面板 (A4) | done (批次 10) | 右侧面板 (Ctrl+Alt+L): 接口 / 模型 / 密钥存 ai.json, 流式回复 (系统 curl, 密钥走 stdin), 工具往返 (6 轮; 模型点名的插件工具须在清单 `contributes["agent.tool"]` 里声明且名字合法, 否则回「unknown tool」), 补丁提案应用 / 拒绝, 插入编辑器, 取消; 仅 https (回环可 http), 4MB 上限, 超时; 流式回复按行解码不会切坏多字节字符; 密钥明文存放, 设置页有一行提示; 保存失败会显示; 联网只在点发送 (含首次同意) 时发生; 本机模拟服务测试。联网与原子写盘分别在 `curlx.rs` / `fsx.rs`, 与 GitHub 插件共用 |
 | 决策 A1-A3 (JS 引擎 / SVG) | done | rquickjs; 自带 `svg_lite` 代替 resvg |
-| 决策 A5 玻璃主题 | partial (批次 10) | 见上; 切换主题后须重启, 亮度只读系统明暗 (不做截屏采样) |
+| 决策 A5 玻璃主题 | partial (批次 10) | 见上; 切换主题当场生效 (无重启), 亮度只读系统明暗 (不做截屏采样) |
+| 外观对标第六轮: Markdown 预览覆盖编辑区 / Tauri 工具提示 / Alt+助记字母开菜单 / 玻璃主题免重启 | done (Unreleased) | 见 `VISUAL-PARITY.md` 第六轮; 仍做不到的只剩单按 Alt 聚焦菜单栏、彩色 emoji 图标、「结构搜索」按钮 (无对应功能) 与本机 DWM 模糊发黑 (`VISUAL-PARITY.md` 第 6 节) |
 | 检查更新 (Tauri 版没有同名功能, 高速版自带) | done (Unreleased) | `updnet.rs` / `update.rs`: 帮助菜单, 直连 GitHub Releases, 稳定 / 开发通道, SHA-256 校验, msi 与便携版安装并重启, 可选每日检查 (默认关), **清单 ed25519 验签 (`updkey.rs` 公钥目前是占位 = 未配置, 窗口提示并禁用安装, 待所有者生成密钥后启用)**。已有 363 项单测 + 本机模拟服务测试; 真窗口里验证过更新窗口能打开并进入「正在检查」状态; **msiexec 安装与便携版 .new 替换没有真机跑过** (安装包是 per-machine, 需管理员), 见 `UPDATE.md` / `MSI-TEST.md` |
 | 决策 A6 i18n | done | 中 / 日 / 英 |
 | 决策 A7 scm 逻辑 | done | 在 `ide-fast/src/scm.rs` 里自带, 没有动 Tauri 版 |

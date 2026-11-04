@@ -277,22 +277,17 @@ mod tests {
     }
 
     #[test]
-    fn a_glass_theme_in_an_opaque_window_asks_for_a_restart_once() {
+    fn glass_theme_only_toggles_the_blur_not_the_window() {
         let (mut a, _g) = app();
-        let ctx = egui::Context::default();
-        a.first_frame = false;
-        a.sys.glass = false;
+        a.cfg.glass_blur = true;
+        a.sys.blur_on = false;
         a.sys.theme_glass = true;
-        a.sys_frame(&ctx);
-        assert!(a.sys.restart_ask, "要重启才能透明: 弹对话框");
-        a.sys.restart_ask = false;
-        a.sys_frame(&ctx);
-        assert!(!a.sys.restart_ask, "同一个主题只问一次");
+        assert!(a.glass_wants_blur(), "半透明主题 + 模糊开: 要加模糊, 不重启");
+        a.cfg.glass_blur = false;
+        assert!(!a.glass_wants_blur());
+        a.cfg.glass_blur = true;
         a.sys.theme_glass = false;
-        a.sys_frame(&ctx);
-        a.sys.theme_glass = true;
-        a.sys_frame(&ctx);
-        assert!(a.sys.restart_ask, "换走再换回来又是一次新的选择");
+        assert!(!a.glass_wants_blur(), "换回不透明主题: 去掉模糊");
     }
 
     #[test]

@@ -170,7 +170,8 @@ impl App {
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
-        app.sys.glass = plugins::is_translucent(&st.theme_plugin); // 窗口透明与否在建窗口时就定了 (main.rs 同一判断)
+        // 窗口一律透明 (main.rs); 模糊材质由 glass_sync 按主题随时开关
+        app.sys.blur_on = plugins::is_translucent(&st.theme_plugin) && st.glass_blur; // main.rs 建窗口时已按同一判断加了模糊
         app.apply_settings(&st);
         app.recent = st.recent.clone();
         app.recent_dirs = st.recent_dirs.clone();
@@ -1628,12 +1629,12 @@ impl App {
     /// 只有 Esc 的多级取消是固定逻辑。等用户按新键时 (键位设置对话框) 一律不分发。
     fn shortcuts(&mut self, ctx: &egui::Context) {
         if self.cmdui.capturing() { return; }
+        self.menu_mnemonics(ctx); // Alt+助记字母先于命令键 (同 Tauri: 在捕获阶段就拦下; Alt+P 开「插件」菜单而不是「上一个位置」)
         let cmd = |ctx: &egui::Context, m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(m, k));
         for (idx, m, k) in keymap::bound() {
             if keymap::entries()[idx].needs_diff && self.diff.is_none() { continue; }
             if cmd(ctx, m, k) { self.run_entry(idx, ctx); }
         }
-        self.menu_mnemonics(ctx);
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
         // 菜单 / 弹出层开着时 Esc 只关它 (这里若先把 Esc 吃掉, 菜单永远收不起来)
         if ctx.input(|i| i.key_pressed(Key::Escape)) && egui::Popup::is_any_open(ctx) {
@@ -1648,17 +1649,19 @@ impl App {
         }
     }
 
-    /// Alt+助记字母: 打开对应的顶层菜单 (命令绑定了同一个 Alt+字母时命令优先, 已经在上面分发过了)。
+    /// Alt+助记字母: 打开对应的顶层菜单 (和 Tauri 一样先于命令键: 命令绑了同一个 Alt+字母也让给菜单)。另外所有「只按 Alt + 字母」的组合都不让字母漏进文档。
     /// 打开后的上下键 / 回车 / Esc 走 egui 菜单自带的焦点导航和关闭逻辑
     fn menu_mnemonics(&mut self, ctx: &egui::Context) {
         let keys: Vec<&str> = self.sys.menu_ids.iter().map(|m| m.0).collect();
         let hit = ctx.input_mut(|i| {
             let m = i.modifiers;
             let k = menuui::MNEMONIC_KEYS.iter().copied().find(|k| i.key_pressed(*k))?;
+            // Alt+字母 winit 还会补一条 Text 事件: 不吃掉的话字母会被打进文档 (命令键 Alt+Z 等同理, 这里统一清)
+            if m.alt && !m.ctrl && !m.command {
+                i.events.retain(|e| !matches!(e, egui::Event::Text(t) if t.eq_ignore_ascii_case(k.name())));
+            }
             let n = menuui::menu_for_key(&keys, m, k)?;
             i.consume_key(m, k);
-            // Alt+字母 winit 还会补一条 Text 事件: 不吃掉的话字母会被打进文档
-            i.events.retain(|e| !matches!(e, egui::Event::Text(t) if t.eq_ignore_ascii_case(k.name())));
             Some(n)
         });
         if let Some(n) = hit {
@@ -2582,10 +2585,11 @@ const DEFAULT_FONT_PX: f32 = 15.0;
 impl eframe::App for App {
     /// 半透明主题: 窗口是透明的,清屏色也要全透明,面板自己的 alpha 才能透出桌面 / 模糊材质
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        if self.sys.glass { [0.0; 4] } else { Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32() }
+        if self.sys.theme_glass { [0.0; 4] } else { Color32::from_rgb(12, 12, 12).to_normalized_gamma_f32() }
     }
 
-    fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
+        self.glass_sync(frame);
         // 自绘标题栏 + 最大化: Windows 把无边框的最大化窗口放大出屏幕 8 点 (可调大小的窗口框), 内容缩进这么多才不会被裁掉
         let inset = self.maximized_inset(root.ctx());
         if inset > 0.0 {
@@ -2656,7 +2660,7 @@ impl App {
                     if !self.close_tab(i) { all = false; break; }
                 } else { i += 1; }
             }
-            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; crate::relaunch::cancel(); crate::updapply::cancel(); }
+            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; crate::updapply::cancel(); }
         }
         // 拖文件进窗口: 打开
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
@@ -2794,7 +2798,6 @@ impl App {
                 if self.welcome_visible() { self.welcome(ui, area); }
             }
         });
-        self.restart_window(ctx);
         self.restore_window(ctx);
         self.window_grips(ctx);
         self.persist_if_changed();

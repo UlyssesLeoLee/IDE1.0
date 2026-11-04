@@ -490,14 +490,19 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
             if target == Some(n) {
                 ui.scroll_to_rect(r.rect, Some(egui::Align::TOP));
             }
-            if click_block && ev.link.is_none() && r.interact(Sense::click()).clicked() {
-                if opts.click_edits { ev.edit_req = Some(n); } else { ev.jump = Some(b.line); }
+            if click_block && ev.link.is_none() {
+                if opts.click_edits {
+                    // 覆盖模式: 点块 = 就地编辑。段落是一排小控件, 整块 `interact` 拿不到点击, 直接看指针: 在块内按下又松开 (拖选文字不算), 链接 / 任务框已经先处理过
+                    if ev.toggle.is_none() && ui.input(|i| i.pointer.primary_clicked()) && ui.rect_contains_pointer(r.rect) { ev.edit_req = Some(n); }
+                } else if r.interact(Sense::click()).clicked() {
+                    ev.jump = Some(b.line);
+                }
             }
             // 鼠标在块上时右上角出现 ✎: 就地编辑这一块的源码
             if cache.edit.is_none() && ui.rect_contains_pointer(egui::Rect::from_min_max(r.rect.min, egui::pos2(ui.max_rect().right(), r.rect.bottom().max(r.rect.top() + 18.0)))) {
-                let hot = egui::Rect::from_min_size(egui::pos2(ui.max_rect().right() - 24.0, r.rect.top()), egui::vec2(22.0, 18.0));
+                let hot = egui::Rect::from_min_size(egui::pos2(ui.max_rect().right() - 38.0, r.rect.top()), egui::vec2(36.0, 18.0));
                 let resp = ui.interact(hot, egui::Id::new(("md-edit", n)), Sense::click());
-                ui.painter().text(hot.center(), egui::Align2::CENTER_CENTER, "✎", FontId::proportional(13.0), if resp.hovered() { cx.tc.fg } else { cx.tc.fg_dim });
+                ui.painter().text(hot.center(), egui::Align2::CENTER_CENTER, crate::i18n::tr("md.edit-short"), FontId::proportional(11.0), if resp.hovered() { cx.tc.fg } else { cx.tc.fg_dim });
                 if resp.tip(crate::i18n::tr("md.edit-block")).clicked() { ev.edit_req = Some(n); }
             }
             ui.add_space(6.0);

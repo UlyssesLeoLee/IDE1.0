@@ -194,15 +194,18 @@ Tauri: 全部 inline SVG, `viewBox 0 0 24 24`, `fill none; stroke currentColor; 
 
 每一步都要: 首帧 <= ~260 ms (用 `tests/perf.ps1 -Compare` 对比)、无控制台窗口、不丢功能、`cargo test -p ide-fast` 全绿。
 
-## 6. 仍有差异 (第五轮之后的现状, 只列 egui 做不到的)
+## 6. 仍有差异 (第六轮之后的现状, 只列真正做不到的)
 
-- 工具提示气泡 (#333 底 / 白字 / 圆角 3 / 11px): egui 0.37 的 `Tooltip` 用 `Frame::popup(全局 style)` 生成外框, 没有「只改提示」的样式钩子 (`Popup::style` 对 `on_hover_text` 不可达); 单改全局 `window_fill` 会连所有窗口 / 对话框一起变, 想分开只能给每个窗口传显式 Frame。其余第四轮列出的差异 (默认底部头 / 查找框装饰 / 复选框 / 工具菜单 / 700 高菜单裁切 / 标尺 / 终端工具行 / 无标题标签 / 状态栏 / 滚动条变体) 本轮都已对齐, 见第 8 节第五轮。
+- 单独按 Alt (不带字母) 把焦点放到菜单栏、再用方向键在菜单名之间走 (Tauri `altArmed`): egui 的菜单栏没有「焦点在菜单栏上」这个状态, 要自己重画整条菜单栏的焦点模型, 收益只有这一个手势; 保留 Alt+字母开菜单 (打开后方向键 / 回车 / Esc / 左右切换都可用)。
+- 工具条 / 菜单里 Tauri 用的彩色 emoji 图标 (👁 🔗 🖼 ☑ ❝ 💡 ◇ 🔎): egui 自带字体没有这些字形, 画出来是豆腐块, 所以 ide-fast 的按钮用纯文字 (功能一致)。要画就得内置彩色 emoji 字体 (几 MB, 违背启动 / 体积预算)。
+- Markdown 工具条的「🔎 结构」(结构化搜索): ide-fast 没有对应的功能 (不是样式问题), 按钮不列。
+- 玻璃主题的「模糊背景」(`glass_blur`): 切换已经可以运行中生效 (见第 8 节第六轮), 但本机 (Windows 11 10.0.26300) 上 `window-vibrancy::apply_blur` 加上去后背后是纯黑而不是模糊的桌面, 启动时就加模糊的旧路径同样如此; 关掉「模糊背景」(首选项) 则是真透明。这是系统调用 (`SetWindowCompositionAttribute` 的 BLURBEHIND) 在这台机器上的表现, 不是 egui / 切换方式的问题; 没在别的 Windows 版本上验证。
 
 ## 7. 有意保留的结构 / 功能差异 (不是样式问题, 也不是「做不到」)
 
-- 菜单助记字母只做显示: 按 Alt+字母打开菜单是行为 (不是外观); egui 的 `MenuBar` 没有公开的「打开某个菜单」入口, 要做得重写菜单弹出状态, 未做。
-- Markdown 预览: Tauri 是编辑区内整块覆盖 + 顶部工具条, ide-fast 是右侧停靠区 (功能结构差异); h1 / h2 下划线沿用 egui 分隔线。
 - 「插件」「宏」「书签」「折叠」是 ide-fast 额外的菜单, 为不丢功能保留; Tauri「工具」里的 SQL*Plus / 历史管理在 ide-fast 没有对应功能, 工具菜单不列。
+- Alt+P (Tauri 里原本也是「上一个位置」命令键): 和 Tauri 一样, 助记字母优先, Alt+P 开「插件」菜单; 「上一个位置」仍在书签菜单和命令面板里。
+- Markdown 预览除默认的「覆盖编辑区」外还保留「停靠在右侧」模式 (视图菜单 > Markdown 预览覆盖编辑区 取消勾选), 为不丢原有用法。覆盖模式下预览 / 工具条 / 就地编辑 / 与编辑区的行同步都照 Tauri; 编辑区的标尺 / 行号被预览盖住 (Tauri 是隐藏, 同效果)。
 - 光标宽度 / hover / active 态没有逐像素截图对比。截图含窗口隐形边框 (约 7px) 下方的其他窗口像素, 贴边杂点不是 ide-fast 绘制。
 
 ## 8. 实施记录 (第一至五轮)
@@ -251,3 +254,10 @@ Tauri: 全部 inline SVG, `viewBox 0 0 24 24`, `fill none; stroke currentColor; 
 - 标签栏: 欢迎页显示时 (唯一的空白无标题文档) 不画「无标题」标签; 另外补了 Tauri 的 22px 面包屑条 (路径分段 + `›`, 当前文件名用前景色, 欢迎页留空)。
 - 状态栏: 顺序 / 标签 / 样式照 editor.html: `[列块] [选区字数] Ln r, Col c (表示 n) | [● REC] [U+码位 / EOL / EOF] | 挿入 / 上書 | 编码 | 换行符 | 文件名 (无活动) | 提示 (撑满) ... Plain (靠右)`, 11px 等宽字、每项左右 8px + 右侧 1px 竖线 (字色 20%)。总行数挪进位置项的悬停提示, 换行混用 / 只读 / 范围选择 / 多光标仍在有效时显示。编码 / 换行符 / 转到行点击行为不变。
 - 滚动条: 侧栏 / 终端改成 Tauri 的 10px 款 (无边距, 滑块 `rgba(127,127,127,.45)`), 用 `scrollx::show` 在外层 scope 换样式、进内容前还原, 文字 / 按钮颜色不受影响; 其余区域仍是 12px 全局款。
+
+## 第六轮 (关闭第五轮列为「做不到」的四项, 截图 `parity-shots/fast6-*.png`)
+
+1. **Markdown 预览覆盖编辑区** (`app/mdopts.rs::md_overlay`, `md_view::MdOpts`): 默认盖在编辑区上 (editor.html `#md-preview { position:absolute; inset:0; padding:12px 24px }`): 编辑区底色, 24 / 12 内边距, 正文最宽 860 居中 (滚动条贴区域右缘), 点一个块 = 就地编辑 (Tauri 同; 停靠模式仍是「点块 = 编辑区跳到那一行」), 右上角悬停「编辑」。画在 `Order::Background` 的独立层里, 查找框 / 菜单在它上面。md 文档上方加 `#md-bar` 同款工具条 (`app/mdopts.rs::md_bar`: 2px 6px 内边距, bg_bar 底, 下边线, 11px 透明按钮, 悬停 bg_hover + 描边, 横向可滚): B I S == ` / H1-H4 / 列表 任务 引用 / 链接 图片 表格 代码块 / 章节上下移 / 分隔线 Callout Mermaid, 外加 ide-fast 的 检查 / 导出, 「预览」开关钉在最右 (Tauri 在条尾, 窄窗口要横滚才够得着)。预览开着时不占右侧停靠区; Ctrl+Shift+V / 视图菜单 / 命令面板仍是同一个开关。设置项 `view.md_overlay` (默认 true)。
+2. **工具提示** (`ui_ext.rs::TipExt::tip`): 自己画的 `Order::Tooltip` 层, #333 底 / 白字 / 圆角 3 / 内边距 4x8 / 11px / 最宽 400 / 贴控件下方 4px (放不下翻到上方) / 立即出现 (Tauri `#tip` 是 mouseover 立即显示, 没有延迟), 不碰全局弹出框样式, 窗口 / 对话框 / 菜单样式不变。全部 `on_hover_text` 已换成 `.tip(..)`。
+3. **菜单助记字母** (`app.rs::menu_mnemonics`, `menuui::{menu_for_key, top}`): Alt+F / E / S / O / P / C / B / W / M / V / T / H 打开对应顶层菜单 (已开着别的菜单就切过去), 先于命令键 (同 Tauri 捕获阶段), 打开时放掉编辑区焦点、两帧后把焦点送到第一项, 之后 ↑ ↓ 回车 Esc ← → 走 egui 菜单导航; 所有「只按 Alt + 字母」的组合不再把字母漏进文档。单测覆盖映射 (含 Alt+Shift / Alt+Ctrl 不触发); 真窗口里 Alt+E / V / C / P 逐个按过。
+4. **玻璃主题运行中切换, 去掉「立即重启」**: 原来的结论是「窗口是否透明建窗口时就定了」。重新验证: 窗口一律以透明建 (`with_transparent(true)`, WGL 像素格式带合成标志), 不透明主题把清屏色设成不透明 (面板本来就铺满, 画面不变, 截图逐像素与之前一致); 切到 / 离开半透明主题时只需要 `window_vibrancy::apply_blur / clear_blur` (它们接受 `HasWindowHandle`, 直接作用在现有 HWND 上, 没有 unsafe) 和清屏色 (`app/sysopts.rs::glass_sync`)。真窗口里: 不透明启动 -> 插件菜单选「透明玻璃」-> 窗口当场透出背后的窗口; 选回「内置主题」-> 当场变回不透明。首帧中位数 243 ms (旧 303 ms, 同机同轮, 噪声内), PE 子系统仍是 2 (GUI)。删掉了重启对话框和 `relaunch` 里的「立即重启」请求 (只留自更新用的 `--relaunch` 开关)。

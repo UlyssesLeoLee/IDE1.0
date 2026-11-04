@@ -136,7 +136,7 @@ fn main() -> eframe::Result<()> {
         viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
     }
     let options = eframe::NativeOptions {
-        viewport: viewport.with_transparent(glass),
+        viewport: viewport.with_transparent(true), // 一律透明窗口: 运行中切到玻璃主题才不用重启 (清屏色在不透明主题下是不透明的)
         // 不画抗锯齿多重采样、不要深度 / 模板缓冲: 文本编辑器用不上, 少一点 GPU 初始化
         multisampling: 0,
         depth_buffer: 0,
@@ -180,10 +180,6 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     );
-    // 「立即重启」: 窗口已经关完、设置已经落盘, 再拉起新进程 (带着现在打开的文件)
-    if let Some(paths) = relaunch::take() {
-        let _ = relaunch::spawn(&paths, st.restore_session);
-    }
     // 「安装并重启」(自更新): 窗口已经关完、设置已经落盘; msi 交给 msiexec, 便携版运行 `<exe>.new` 完成替换
     if let Some(a) = updapply::take() {
         let _ = updapply::launch(&a);

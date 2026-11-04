@@ -20,13 +20,8 @@ const LOG_MAX: usize = 300;
 pub(super) struct SysState {
     pub backup: AutoBackup,
     pub locks: FileLocks,
-    /// 窗口创建时就是透明的 (启动时的主题是半透明主题); 透明要在建窗口时定, 运行中换主题只能提示重启
-    pub glass: bool,
-    /// 当前主题是半透明主题 / 已经提示过要重启
+    /// 当前主题是半透明主题 (窗口建出来就是透明的, 这时只决定清屏色 / 要不要加模糊)
     pub theme_glass: bool,
-    pub glass_warned: bool,
-    /// 「立即重启」对话框开着
-    pub restart_ask: bool,
     /// 窗口现在是不是带系统标题栏 (和 `cfg.system_title_bar` 不一致时 `top_bar` 发 Decorations 命令)
     pub decor: bool,
     /// 菜单栏太窄时不画助记字母 (标题栏每帧按宽度定)
@@ -35,6 +30,8 @@ pub(super) struct SysState {
     pub menu_ids: Vec<(&'static str, egui::Id)>,
     /// Alt+助记字母打开菜单后, 还要等几帧再把焦点送进菜单 (0 = 不用)
     pub mn_focus: u8,
+    /// 窗口背后现在有没有 DWM 模糊 (玻璃主题 + 「模糊背景」设置)
+    pub blur_on: bool,
     /// 列标尺占的高度 (标尺开着时 = 一行高, 否则 0); 欢迎页让出这一条
     pub ruler_h: f32,
     /// 自绘标题栏里的应用图标 (第一次画时才建纹理)
@@ -78,14 +75,22 @@ impl App {
                 d.tip = msg;
             }
         }
-        if !self.sys.theme_glass { self.sys.glass_warned = false; }
-        if crate::relaunch::needs_restart(self.sys.glass, self.sys.theme_glass) && !self.sys.glass_warned && !self.first_frame {
-            self.sys.glass_warned = true;
-            self.sys.restart_ask = true;
-            let msg = tr("sys.glass-restart").to_string();
-            self.log(msg.clone());
-            self.cur().tip = msg;
+    }
+
+    /// 现在窗口背后要不要 DWM 模糊: 半透明主题 + 「模糊背景」设置
+    pub(super) fn glass_wants_blur(&self) -> bool { self.sys.theme_glass && self.cfg.glass_blur }
+
+    /// 玻璃主题: 窗口一直是透明的, 切到 / 离开半透明主题时只需开 / 关窗口背后的 DWM 模糊 (`window-vibrancy` 的安全接口, 直接作用在现有 HWND 上), 不用重启
+    pub(super) fn glass_sync(&mut self, frame: &eframe::Frame) {
+        let want = self.glass_wants_blur();
+        if want == self.sys.blur_on { return; }
+        self.sys.blur_on = want;
+        #[cfg(windows)]
+        {
+            let _ = if want { window_vibrancy::apply_blur(frame, Some((0, 0, 0, 1))) } else { window_vibrancy::clear_blur(frame) };
         }
+        #[cfg(not(windows))]
+        let _ = frame;
     }
 
     /// 遗留备份的年龄文字
@@ -140,28 +145,6 @@ impl App {
             self.cur().tip = msg;
         }
         if later { self.sys.restore.clear(); }
-    }
-
-    /// 半透明主题要重启才能让窗口真正透明: 问一句「立即重启 / 稍后」。立即重启 = 走正常关闭流程 (有未保存的先问), 关完由 main 拉起新进程
-    pub(super) fn restart_window(&mut self, ctx: &egui::Context) {
-        if !self.sys.restart_ask { return; }
-        let mut now = false;
-        let mut later = false;
-        egui::Window::new(trz("重启以启用半透明窗口")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-            ui.label(trz("窗口是否透明在创建窗口时就定了, 运行中无法切换。重启后会重新打开现在的文件。"));
-            ui.horizontal(|ui| {
-                now = ui.button(trz("立即重启")).clicked();
-                later = ui.button(trz("稍后")).clicked();
-            });
-        });
-        if now {
-            self.sys.restart_ask = false;
-            let paths: Vec<String> = self.docs.iter().filter_map(|d| d.path.as_ref().map(|p| p.display().to_string())).collect();
-            crate::relaunch::request(paths);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        } else if later {
-            self.sys.restart_ask = false;
-        }
     }
 
     /// 保存前: 放掉自己持有的锁 (否则自己的写入会被自己挡住);下一帧 `sys_frame` 会重新持有
