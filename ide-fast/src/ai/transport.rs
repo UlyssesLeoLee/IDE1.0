@@ -19,7 +19,7 @@ fn cfg_quote(s: &str) -> String {
 /// 传给 curl 的命令行参数 (不含密钥和正文) —— 拆出来给测试
 pub fn curl_args(url: &str) -> Vec<String> {
     let proto = if url.starts_with("https://") { "=https" } else { "=http" };
-    ["-sS", "-N", "--proto", proto, "--max-redirs", "0", "--connect-timeout", "15", "--max-time", &MAX_TIME_SECS.to_string(), "--speed-limit", "1", "--speed-time", "60", "-K", "-", "-w", &format!("\\n{STATUS_MARK}%{{http_code}}\\n"), "--", url]
+    ["-sS", "-N", "--proto", proto, "--max-redirs", "0", "--connect-timeout", "15", "--max-time", &MAX_TIME_SECS.to_string(), "--speed-limit", "1", "--speed-time", "60", "--max-filesize", &MAX_RESPONSE.to_string(), "-K", "-", "-w", &format!("\\n{STATUS_MARK}%{{http_code}}\\n"), "--", url]
         .iter()
         .map(|s| s.to_string())
         .collect()
@@ -73,11 +73,13 @@ pub fn spawn_request(cfg: &AiConfig, messages: Vec<Value>, tools: Vec<Value>, tx
 
 /// 按行读流。行尾 `\n` 不会出现在多字节 UTF-8 序列中间, 所以跨数据块被切开的字符会先攒齐再解码;
 /// 超过 `limit` 字节返回 true 并停止; 只有真正非法的字节才会被替换。
+/// 每次读取都用 `take(剩余额度 + 1)` 封顶: 服务器永不发换行也只会占用 `limit + 1` 字节内存。
 fn pump_lines(mut rd: impl BufRead, limit: usize, mut on_line: impl FnMut(&str)) -> bool {
     let (mut total, mut buf) = (0usize, Vec::new());
     loop {
         buf.clear();
-        match rd.read_until(b'\n', &mut buf) {
+        let room = (limit - total.min(limit)) as u64 + 1;
+        match rd.by_ref().take(room).read_until(b'\n', &mut buf) {
             Ok(0) | Err(_) => return false,
             Ok(n) => {
                 total += n;
@@ -188,6 +190,29 @@ mod tests {
         assert!(!big);
         assert_eq!(lines, vec!["data: 你好😀\n", "second 行\n"]);
         assert!(pump_lines(BufReader::new(&b"aaaa\nbbbb\n"[..]), 6, |_| {}), "超限要停");
+    }
+
+    #[test]
+    fn newline_less_flood_is_capped_in_memory() {
+        /// 无限不带换行的数据源; 记录一共被读走多少字节
+        struct Flood(usize);
+        impl Read for Flood {
+            fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+                out.fill(b'x');
+                self.0 += out.len();
+                Ok(out.len())
+            }
+        }
+        let mut rd = BufReader::with_capacity(8192, Flood(0));
+        let mut lines = 0;
+        assert!(pump_lines(&mut rd, 1_000_000, |_| lines += 1), "无换行洪流必须判超限");
+        assert_eq!(lines, 0);
+        assert!(rd.get_ref().0 <= 1_000_000 + 1 + 8192, "读取量必须封顶: {}", rd.get_ref().0);
+        // 刚好等于上限的一行 (含换行) 不算超限
+        let mut exact = vec![b'y'; 99];
+        exact.push(b'\n');
+        assert!(!pump_lines(BufReader::new(&exact[..]), 100, |_| {}));
+        assert!(pump_lines(BufReader::new(&exact[..]), 99, |_| {}));
     }
 
     #[test]
