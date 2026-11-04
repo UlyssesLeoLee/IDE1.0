@@ -112,6 +112,7 @@ impl App {
                 Ev::Copy(t) => { self.put_clip(ctx, t); }
                 Ev::Ctrl(c) => self.cur().insert_control(c),
                 Ev::WrapCol(n) => self.set_wrap_col(n),
+                Ev::ColumnReplace(t) => { self.cur().edit("box-replace", Some(t)); }
             }
         }
         (self.cfg.view.stamp_kind, self.cfg.view.stamp_pos) = (view.stamp_kind, view.stamp_pos);
@@ -121,6 +122,8 @@ impl App {
     pub(super) fn run_extra(&mut self, a: KApp, ctx: &egui::Context) {
         match a {
             KApp::SelMode => self.cur().toggle_sel_mode(),
+            KApp::ColDelete => self.column_delete(),
+            KApp::ColReplace => self.column_replace(),
             KApp::Base64Decode => self.decode_selection(false),
             KApp::UuDecode => self.decode_selection(true),
             KApp::CopyHtml => self.copy_html(ctx, false),
@@ -148,6 +151,40 @@ impl App {
                 self.find.open_isearch(&self.docs[i], fwd, regex, migemo);
             }
             _ => {}
+        }
+    }
+
+    /// 列块删除 (同 Tauri `column-delete`): 把矩形选区整块挖空, 光标回到矩形左上角; 没有列块选区就提示怎么建立
+    pub(super) fn column_delete(&mut self) {
+        let d = self.cur();
+        if d.box_sel.is_none() { d.tip = "先用 Alt+拖选 建立列块选区".into(); return; }
+        d.edit("box-delete", None);
+    }
+
+    /// 列块替换 (同 Tauri `column-replace`): 弹出输入框 (预填列块现在的内容), 应用后每一行换成对应的一行文字
+    pub(super) fn column_replace(&mut self) {
+        let d = self.cur();
+        if d.box_sel.is_none() { d.tip = "先用 Alt+拖选 建立列块选区".into(); return; }
+        // 借 box-copy 取列块文字; 它会清掉选区、改光标、记进正在录的键盘宏, 取完把这些都放回去 (应用时还要靠这个列块选区)
+        let (cursor, sel, anchor, box_sel, tip) = (d.cursor, d.sel, d.anchor, d.box_sel, d.tip.clone());
+        let rec = d.rec.take();
+        let text = d.edit("box-copy", None).unwrap_or_default();
+        (d.cursor, d.sel, d.anchor, d.box_sel, d.tip, d.rec) = (cursor, sel, anchor, box_sel, tip, rec);
+        self.tools.open_col(text);
+    }
+
+    /// 函数列表的下一个 / 上一个 (同 Tauri `funclist-next` / `funclist-prev`): 按大纲条目所在行跳, 到头绕回另一端; 记进跳转履历
+    pub(super) fn step_function(&mut self, fwd: bool) {
+        let i = self.active.min(self.docs.len() - 1);
+        let d = &self.docs[i];
+        self.side.update_outline(d.id, d.rev, &d.name, &d.lines);
+        let mut rows: Vec<usize> = self.side.outline.iter().map(|e| e.line.max(0) as usize).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        let cur = d.cursor[0];
+        match crate::sidebar::step_row(&rows, cur, fwd) {
+            Some(r) => { self.jump_mark(); let d = &mut self.docs[i]; d.goto(r, 0); d.tip = format!("函数 @ {} 行", r + 1); }
+            None => self.docs[i].tip = "没有函数标记 (这种文件类型没有大纲)".into(),
         }
     }
 

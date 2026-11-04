@@ -22,6 +22,8 @@ pub struct Tools {
     pub stamp_open: bool,
     pub wrap_open: bool,
     wrap_text: String,
+    pub col_open: bool,
+    col_text: String,
 }
 
 /// 窗口里点出来的动作, 由 `App` 去改文档 / 剪贴板
@@ -34,6 +36,8 @@ pub enum Ev {
     Ctrl(char),
     /// 折行列数定了 (0 = 按窗口宽度)
     WrapCol(usize),
+    /// 列块替换: 把矩形选区换成这段文字 (多行用换行分隔, 一行对应一行)
+    ColumnReplace(String),
 }
 
 impl Tools {
@@ -51,6 +55,12 @@ impl Tools {
     pub fn open_wrap(&mut self, cur: usize) {
         self.wrap_text = if cur > 0 { cur.to_string() } else { "80".into() };
         self.wrap_open = true;
+    }
+
+    /// 打开「列块替换」输入框 (预填列块现在的内容)
+    pub fn open_col(&mut self, prefill: String) {
+        self.col_text = prefill;
+        self.col_open = true;
     }
 
     /// 一行预览: 换行显示成 ↵, 最多 `n` 个字符
@@ -128,7 +138,25 @@ impl Tools {
             });
             if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.wrap_open = false; }
         }
+        if self.col_open {
+            let mut open = true;
+            let mut apply = false;
+            egui::Window::new(trz("列块替换")).open(&mut open).collapsible(false).default_width(360.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
+                ui.label(trz("列块替换为 (多行用换行分隔)"));
+                ui.add(egui::TextEdit::multiline(&mut self.col_text).desired_rows(4).desired_width(f32::INFINITY));
+                ui.horizontal(|ui| {
+                    if ui.button(trz("应用")).clicked() { apply = true; }
+                    if ui.button(trz("取消")).clicked() { self.col_open = false; }
+                });
+            });
+            if apply {
+                evs.push(Ev::ColumnReplace(std::mem::take(&mut self.col_text)));
+                self.col_open = false;
+            }
+            if !open { self.col_open = false; }
+        }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            self.col_open = false;
             self.clip_open = false;
             self.ctrl_open = false;
             self.stamp_open = false;

@@ -1220,7 +1220,7 @@ impl App {
                 self.cmd_menu(ui, ctx);
                 ui.separator();
                 for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("范围选择模式 (开始 / 结束)", KApp::SelMode), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath),
-                               ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
+                               ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
                     if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.separator();
@@ -1238,7 +1238,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
-                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext)] {
+                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext)] {
                     if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.menu_button(trz("比较"), |ui| {
@@ -1385,6 +1385,10 @@ impl App {
         if ui.button(trz("保存键盘宏…")).clicked() { ui.close(); self.macro_save(); }
         if ui.button(trz("载入键盘宏…")).clicked() { ui.close(); self.macro_load(); }
         ui.separator();
+        let rec_mac = self.cur().rec.is_some();
+        if ui.button(trz(if rec_mac { "停止录制并生成 .mac" } else { "宏录制 (.mac)" })).clicked() { ui.close(); self.macro_rec_mac(); }
+        if ui.button(trz("把刚录的键盘宏转成 .mac")).clicked() { ui.close(); self.macro_to_mac(); }
+        ui.separator();
         if menuui::mbtn(ui, lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
         if menuui::mbtn(ui, lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
         if menuui::mbtn(ui, lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
@@ -1488,8 +1492,9 @@ impl App {
 
     fn run_mac_src(&mut self, src: &str, target: usize) {
         let last = self.docs.len() - 1;
+        let tab = self.tab;
         let d = &mut self.docs[target.min(last)];
-        d.tip = match crate::macros::run_mac(d, src) { Ok(n) => format!("宏已执行 ({n} 步)"), Err(e) => format!("宏未执行: {e}") };
+        d.tip = match crate::macros::run_mac(d, src, tab) { Ok(n) => format!("宏已执行 ({n} 步)"), Err(e) => format!("宏未执行: {e}") };
     }
 
     /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
@@ -1904,9 +1909,13 @@ impl App {
             KApp::ModPrev => self.step_modified(false),
             KApp::MacroSave => self.macro_save(),
             KApp::MacroLoad => self.macro_load(),
+            KApp::MacroRecMac => self.macro_rec_mac(),
+            KApp::FuncNext => self.step_function(true),
+            KApp::FuncPrev => self.step_function(false),
+            KApp::MacroToMac => self.macro_to_mac(),
             KApp::About => self.about_open = true,
             KApp::CheckUpdate => self.upd_open(),
-            KApp::SelMode | KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake | KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack
+            KApp::ColDelete | KApp::ColReplace | KApp::SelMode | KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake | KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack
             | KApp::Base64Decode | KApp::UuDecode | KApp::CopyHtml | KApp::CopyHtmlLn | KApp::ClipHistory | KApp::CtrlCodes | KApp::InsDate | KApp::InsTime | KApp::InsStamp | KApp::StampCfg
             | KApp::WrapCol | KApp::WrapWindow | KApp::WrapNone => self.run_extra(a, ctx),
             KApp::Palette => {
@@ -1938,6 +1947,35 @@ impl App {
         let Some(path) = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("key-macro.json").save_file() else { return };
         let tip = match std::fs::write(&path, crate::macros::macro_to_json(&steps)) { Ok(()) => trf("dlg.macro-saved", &[&path.display().to_string()]), Err(e) => e.to_string() };
         self.cur().tip = tip;
+    }
+
+    /// 宏录制 (.mac), 同 Tauri 版: 没在录就开始录; 正在录就停下, 并把刚录的转成 Sakura `.mac` 开成新标签
+    fn macro_rec_mac(&mut self) {
+        let recording = self.cur().rec.is_some();
+        self.cur().macro_toggle();
+        if recording {
+            self.macro_to_mac();
+        } else {
+            self.cur().tip = "● 录制宏 (.mac): 再执行一次「宏录制 (.mac)」停止并生成".into();
+        }
+    }
+
+    /// 把当前标签最近录的键盘宏 (`last_macro`) 转成 Sakura `.mac`, 开成一个未保存的新标签; 没有对应 `S_` 函数的步骤列在提示里
+    fn macro_to_mac(&mut self) {
+        let steps = self.cur().last_macro.clone();
+        if steps.is_empty() { self.cur().tip = tr("dlg.macro-empty").into(); return; }
+        let out = crate::macros::rec_to_mac(&steps);
+        let (text, n) = crate::macros::mac_document(&out);
+        let skipped = if out.skipped.is_empty() { String::new() } else { format!("; 没有对应 S_ 函数 (未写入): {}", out.skipped.join(", ")) };
+        if n == 0 { self.cur().tip = format!("没有可写成 .mac 的操作{skipped}"); return; }
+        let id = self.id();
+        let mut d = Doc::untitled(id, 0);
+        d.name = "录制的宏.mac".into();
+        d.lines = text.trim_end_matches('\n').split('\n').map(str::to_string).collect();
+        d.dirty = true;
+        d.tip = format!("已生成 {n} 条宏语句{skipped} — 保存为 .mac 后可用「运行当前文档 (Sakura .mac)」回放");
+        self.docs.push(d);
+        self.active = self.docs.len() - 1;
     }
 
     /// 从 JSON 文件载入键盘宏 (文件大小先封顶, 内容整份校验过才替换)
@@ -3006,6 +3044,56 @@ EDITED".into())), ..Default::default() };
         assert_eq!(a.type_of(&a.docs[0]).map(|t| t.name.as_str()), Some("Rust"));
         a.docs[0].syntax = Some("NoSuchType".into());
         assert_eq!(a.type_of(&a.docs[0]).map(|t| t.name.as_str()), Some("Plain"), "查不到 = 按扩展名");
+    }
+
+    #[test]
+    fn function_step_jumps_between_outline_entries_and_wraps() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].name = "x.rs".into();
+        a.docs[0].lines = ["fn a() {}", "", "fn b() {", "}", "", "fn c() {}"].iter().map(|s| s.to_string()).collect();
+        a.docs[0].cursor = [3, 0];
+        a.step_function(true);
+        assert_eq!(a.docs[0].cursor[0], 5);
+        a.step_function(true);
+        assert_eq!(a.docs[0].cursor[0], 0, "最后一个函数再往下绕回第一个");
+        a.step_function(false);
+        assert_eq!(a.docs[0].cursor[0], 5, "第一个再往上绕回最后一个");
+        a.docs[0].name = "x.txt".into();
+        a.docs[0].lines = vec!["plain".into()];
+        a.docs[0].rev += 1; // 内容变了, 大纲缓存按修订号失效
+        a.docs[0].cursor = [0, 0];
+        a.step_function(true);
+        assert_eq!(a.docs[0].cursor, [0, 0], "没有大纲的文件: 不动");
+        assert!(a.docs[0].tip.contains("没有函数标记"), "{}", a.docs[0].tip);
+    }
+
+    #[test]
+    fn column_delete_needs_a_box_selection_and_removes_the_block() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].lines = vec!["abcdef".into(), "ghijkl".into(), "mnopqr".into()];
+        a.column_delete();
+        assert_eq!(a.docs[0].lines[0], "abcdef", "没有列块选区: 什么也不改");
+        assert!(a.docs[0].tip.contains("Alt+拖选"));
+        a.docs[0].box_sel = Some([0, 1, 2, 3]); // 第 0..=2 行, 第 1..3 列
+        a.column_delete();
+        assert_eq!(a.docs[0].lines, vec!["adef", "gjkl", "mpqr"]);
+        assert_eq!(a.docs[0].cursor, [0, 1], "光标回到矩形左上角");
+    }
+
+    #[test]
+    fn column_replace_opens_with_the_block_text_and_applies_per_row() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].lines = vec!["abcdef".into(), "ghijkl".into()];
+        a.column_replace();
+        assert!(!a.tools.col_open, "没有列块选区: 不弹窗");
+        a.docs[0].box_sel = Some([0, 1, 1, 3]);
+        a.docs[0].cursor = [1, 3];
+        a.column_replace();
+        assert!(a.tools.col_open);
+        assert_eq!((a.docs[0].box_sel, a.docs[0].cursor), (Some([0, 1, 1, 3]), [1, 3]), "取预填文字不能弄丢列块选区和光标");
+        assert!(a.docs[0].rec.is_none() && a.docs[0].lines == vec!["abcdef", "ghijkl"]);
+        a.docs[0].edit("box-replace", Some("12\nXY".into()));
+        assert_eq!(a.docs[0].lines, vec!["a12def", "gXYjkl"], "每一行换成对应的一行文字");
     }
 
     #[test]

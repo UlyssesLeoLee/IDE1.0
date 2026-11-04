@@ -174,9 +174,47 @@ impl Sidebar {
 
 }
 
+/// 函数列表的「下一个 / 上一个」: `rows` 是大纲条目所在行 (升序、去重), `cur` 是光标所在行。
+/// 向前找第一个比 `cur` 大的行, 向后找最后一个比 `cur` 小的行, 到头了绕回另一端 (同 Tauri 的 funclistStep); 没有条目返回 None。
+pub fn step_row(rows: &[usize], cur: usize, fwd: bool) -> Option<usize> {
+    if fwd {
+        rows.iter().copied().find(|&r| r > cur).or(rows.first().copied())
+    } else {
+        rows.iter().rev().copied().find(|&r| r < cur).or(rows.last().copied())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn function_step_moves_to_neighbours_and_wraps() {
+        let rows = [2, 10, 30];
+        assert_eq!(step_row(&rows, 0, true), Some(2));
+        assert_eq!(step_row(&rows, 2, true), Some(10), "光标就在条目上时, 下一个是后面那个");
+        assert_eq!(step_row(&rows, 15, true), Some(30));
+        assert_eq!(step_row(&rows, 30, true), Some(2), "最后一个再往下绕回第一个");
+        assert_eq!(step_row(&rows, 30, false), Some(10));
+        assert_eq!(step_row(&rows, 15, false), Some(10));
+        assert_eq!(step_row(&rows, 2, false), Some(30), "第一个再往上绕回最后一个");
+        assert_eq!(step_row(&rows, 0, false), Some(30));
+        assert_eq!(step_row(&[], 5, true), None);
+        assert_eq!(step_row(&[7], 7, true), Some(7), "只有一个条目: 绕回它自己");
+    }
+
+    #[test]
+    fn function_step_works_on_a_real_outline() {
+        let src: Vec<String> = ["fn a() {}", "", "fn b() {", "}", "", "fn c() {}"].iter().map(|s| s.to_string()).collect();
+        let mut s = Sidebar::new();
+        s.update_outline(1, 1, "x.rs", &src);
+        let mut rows: Vec<usize> = s.outline.iter().map(|e| e.line.max(0) as usize).collect();
+        rows.sort_unstable();
+        rows.dedup();
+        assert_eq!(rows, [0, 2, 5], "{:?}", s.outline);
+        assert_eq!(step_row(&rows, 3, true), Some(5));
+        assert_eq!(step_row(&rows, 3, false), Some(2));
+    }
 
     #[test]
     fn tree_lists_dirs_first_and_skips_vcs_dirs() {

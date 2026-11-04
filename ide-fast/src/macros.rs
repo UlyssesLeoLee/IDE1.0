@@ -6,7 +6,7 @@ use crate::find::FindOpts;
 use editcore::macro_sakura::{self, Action};
 
 /// 执行一份宏文本; 返回执行了多少步。语法错误 / 未知函数整体失败, 文档不会被改一半。
-pub fn run_mac(doc: &mut Doc, src: &str) -> Result<usize, String> {
+pub fn run_mac(doc: &mut Doc, src: &str, tab: usize) -> Result<usize, String> {
     let steps = macro_sakura::plan(src).map_err(|e| e.to_string())?;
     let n = steps.len();
     for s in steps {
@@ -16,7 +16,7 @@ pub fn run_mac(doc: &mut Doc, src: &str) -> Result<usize, String> {
                     if !doc.try_edit(&c) {
                         return Err(format!("第 {} 行 {}: 未支持的命令 {c}", s.line, s.name));
                     }
-                } else if !key.as_deref().is_some_and(|k| key_action(doc, k)) {
+                } else if !key.as_deref().is_some_and(|k| key_action(doc, k, tab)) {
                     return Err(format!("第 {} 行 {}: 这条命令高速版还不支持 ({id})", s.line, s.name));
                 }
             }
@@ -42,9 +42,51 @@ pub fn run_mac(doc: &mut Doc, src: &str) -> Result<usize, String> {
     Ok(n)
 }
 
+/// 录出来的 `.mac` 要开成新文档时的文字: 一行注释头 + 宏语句; 返回 (文字, 语句条数)
+pub fn mac_document(out: &macro_sakura::RecOut) -> (String, usize) {
+    let n = out.text.lines().filter(|l| !l.trim().is_empty()).count();
+    (format!("/* 键盘录制 */\n{}", out.text), n)
+}
+
+/// Sakura 默认键 <-> editcore 编辑命令: 取自 Tauri 版 `KEYMAP` 里属于编辑命令的那些键 (它们在 Sakura 的 `S_` 表里只有键、没有命令名)。
+/// 运行 `.mac` 时按键找命令 (`key_action`), 录成 `.mac` 时按命令找键 (`rec_to_mac`), 两边共用这一张表, 所以录出来的宏能原样跑回去。
+/// 单测保证: 每个键在 `SAKURA_COMMANDS` 里有对应的 `S_` 函数, 每个命令 editcore 认得。
+const EDIT_KEYS: &[(&str, &str)] = &[
+    ("Control+d", "word-cut"), ("Control+Shift+d", "word-delete"), ("Control+k", "line-cut-to-end"), ("Control+i", "duplicate-line"),
+    ("Control+w", "select-word"), ("F7", "cut"), ("F8", "copy"), ("Shift+F8", "copy-crlf"), ("F9", "paste"),
+];
+
+/// 只在运行 `.mac` 时用的键: 选区变换 (大小写 / 全半角 / Tab 与空格), 高速版里走 `Doc::transform_sel` 而不是 editcore 编辑命令 (键盘宏不录它们, 所以没有反向查找)
+const TRANSFORM_KEYS: &[(&str, &str)] = &[
+    ("Control+F6", "lower"), ("Control+F7", "upper"), ("Control+F8", "to-halfwidth"), ("Control+F9", "to-zenkaku"), ("Control+F10", "to-zenhira"),
+    ("Control+F11", "hankata-to-zenkata"), ("Control+F12", "hankata-to-zenhira"), ("Control+Alt+F5", "tab2space"), ("Control+Shift+Alt+F5", "space2tab"),
+];
+
+/// 同上, 整理行 (选中的行; 没有选区 = 全文): 排序 / 去行首、行尾空白
+const LINES_KEYS: &[(&str, &str)] = &[("Alt+a", "sort-asc"), ("Alt+d", "sort-desc"), ("Alt+l", "trim-start"), ("Alt+r", "trim-end")];
+
+fn edit_for_key(key: &str) -> Option<&'static str> {
+    EDIT_KEYS.iter().find(|(k, _)| *k == key).map(|(_, c)| *c)
+}
+
+fn key_for_edit(cmd: &str) -> Option<&'static str> {
+    EDIT_KEYS.iter().find(|(_, c)| *c == cmd).map(|(k, _)| *k)
+}
+
 /// 只有默认键、没有命令名的 `S_` 函数: 按它的默认键 (DOM 写法, 如 `Control+Shift+ArrowLeft`) 在高速版里执行。
-/// 移动键走 `nav::step`, 几个常用编辑键走 editcore 命令; 其它返回 false (调用方报「不支持」)。
-fn key_action(doc: &mut Doc, key: &str) -> bool {
+/// 编辑键查 `EDIT_KEYS`, 移动键走 `nav::step`, 退格 / 删除 / 回车走 editcore 命令; 其它返回 false (调用方报「不支持」)。
+fn key_action(doc: &mut Doc, key: &str, tab: usize) -> bool {
+    if let Some(cmd) = edit_for_key(key) {
+        return doc.try_edit(cmd);
+    }
+    if let Some((_, kind)) = TRANSFORM_KEYS.iter().find(|(k, _)| *k == key) {
+        doc.transform_sel(kind, tab);
+        return true;
+    }
+    if let Some((_, kind)) = LINES_KEYS.iter().find(|(k, _)| *k == key) {
+        doc.lines_op(kind);
+        return true;
+    }
     let mut ctrl = false;
     let mut shift = false;
     let mut alt = false;
@@ -68,9 +110,29 @@ fn key_action(doc: &mut Doc, key: &str) -> bool {
         "Backspace" => { doc.edit(if ctrl { "delete-word-start" } else { "backspace" }, None); true }
         "Delete" => { doc.edit(if ctrl { "delete-word-end" } else { "delete" }, None); true }
         "Enter" if !ctrl => { doc.edit("new-line", None); true }
-        "i" if ctrl && !shift => { doc.edit("duplicate-line", None); true }
         _ => false,
     }
+}
+
+/// 高速版录到的键盘宏 -> Sakura `.mac` 文本。生成器是 `editcore::macro_sakura::record_to_mac` (和 Tauri 版「宏录制 (.mac)」同一个):
+/// 键入的文字合成 `S_InsText`, 编辑命令按命令名反查 `S_` 函数, 移动键按默认键反查; 找不到对应 `S_` 函数的步骤记进 `skipped`, 不写进宏里。
+pub fn rec_to_mac(steps: &[RecEv]) -> macro_sakura::RecOut {
+    use macro_sakura::RecEvent;
+    let events: Vec<RecEvent> = steps
+        .iter()
+        .map(|s| match s {
+            RecEv::Edit(c, Some(t)) if c == "insert-text" => RecEvent::Text { text: t.clone() },
+            RecEv::Edit(c, _) if matches!(c.as_str(), "new-line" | "backspace" | "delete") => RecEvent::Edit { cmd: c.clone() },
+            // 其它编辑命令: 先按命令名反查 S_ 函数, 反查不到再用它的 Sakura 默认键 (`EDIT_KEYS`)
+            RecEv::Edit(c, _) => RecEvent::Command { cmd: c.clone(), key: key_for_edit(c).map(str::to_string) },
+            RecEv::Nav(k, ctrl, shift) => {
+                // 键名用表里的 DOM 写法 (`Control+Shift+ArrowLeft`); 同时当作「命令名」, 万一反查不到就原样出现在 skipped 里
+                let key = format!("{}{}{k}", if *ctrl { "Control+" } else { "" }, if *shift { "Shift+" } else { "" });
+                RecEvent::Command { cmd: key.clone(), key: Some(key) }
+            }
+        })
+        .collect();
+    macro_sakura::record_to_mac(&events)
 }
 
 /// 录下的键盘宏最多这么多步 / 每个命令名、键名最长这么多字符 / 插入文字最长这么多字符 (宏文件是不可信输入)
@@ -130,7 +192,7 @@ mod tests {
     fn runs_a_sakura_macro_on_a_doc() {
         let mut d = Doc::untitled(1, 1);
         d.lines = vec!["foo bar".into(), "second".into()];
-        let n = run_mac(&mut d, "S_InsText(\"X\");\nS_DuplicateLine();\nS_ReplaceAll(\"bar\", \"BAZ\", 0);").unwrap();
+        let n = run_mac(&mut d, "S_InsText(\"X\");\nS_DuplicateLine();\nS_ReplaceAll(\"bar\", \"BAZ\", 0);", 4).unwrap();
         assert_eq!(n, 3);
         assert_eq!(d.lines, vec!["Xfoo BAZ", "Xfoo BAZ", "second"], "复制行之后「全部置换」两行都换");
     }
@@ -139,11 +201,11 @@ mod tests {
     fn macro_search_flags_reach_the_find_engine() {
         let mut d = Doc::untitled(1, 1);
         d.lines = vec!["foo foobar foo".into()];
-        run_mac(&mut d, "S_ReplaceAll(\"foo\", \"X\", 1);").unwrap(); // 0x01 = 单词单位
+        run_mac(&mut d, "S_ReplaceAll(\"foo\", \"X\", 1);", 4).unwrap(); // 0x01 = 单词单位
         assert_eq!(d.lines, vec!["X foobar X"]);
         let mut d2 = Doc::untitled(2, 1);
         d2.lines = vec!["k=v k=v".into()];
-        run_mac(&mut d2, "S_ReplaceNext(\"([a-z])=([a-z])\", \"$2=$1\", 4);").unwrap(); // 0x04 = 正则: $1 $2 要展开
+        run_mac(&mut d2, "S_ReplaceNext(\"([a-z])=([a-z])\", \"$2=$1\", 4);", 4).unwrap(); // 0x04 = 正则: $1 $2 要展开
         assert_eq!(d2.lines, vec!["v=k k=v"]);
     }
 
@@ -151,8 +213,116 @@ mod tests {
     fn bad_macro_fails_before_changing_anything() {
         let mut d = Doc::untitled(1, 1);
         d.lines = vec!["keep".into()];
-        assert!(run_mac(&mut d, "S_InsText(\"x\");\nS_NoSuchFunction();").is_err());
+        assert!(run_mac(&mut d, "S_InsText(\"x\");\nS_NoSuchFunction();", 4).is_err());
         assert_eq!(d.lines, vec!["keep"]);
+    }
+
+    /// 录一段键盘宏 -> 转成 .mac -> 在另一份一模一样的文档上运行, 结果必须和直接回放录制一样
+    #[test]
+    fn recorded_key_macro_exports_to_mac_that_replays_the_same() {
+        let start = vec!["alpha beta".to_string(), "second line".to_string()];
+        let mut rec = Doc::untitled(1, 1);
+        rec.lines = start.clone();
+        rec.macro_toggle();
+        rec.type_text("X");
+        rec.nav("ArrowRight", true, false, 20);
+        rec.nav("ArrowRight", false, true, 20);
+        rec.edit("duplicate-line", None);
+        rec.edit("new-line", None);
+        rec.edit("backspace", None);
+        rec.nav("End", false, false, 20);
+        rec.type_text("é\"\\ end");
+        rec.macro_toggle();
+        let out = rec_to_mac(&rec.last_macro);
+        assert!(out.skipped.is_empty(), "这几种操作都有对应 S_ 函数: {:?}", out.skipped);
+        assert!(out.text.contains("S_InsText(\"X\");") && out.text.contains("S_DuplicateLine();"), "{}", out.text);
+        assert!(out.text.contains("S_WordRight();") && out.text.contains("S_Right_Sel();"), "移动键按默认键反查: {}", out.text);
+        assert!(out.text.contains("S_InsText(\"é\\\"\\\\ end\");"), "文字转义: {}", out.text);
+        // 同一份起始文档: 回放录制 vs 运行导出的 .mac
+        let mut replay = Doc::untitled(2, 1);
+        replay.lines = start.clone();
+        replay.last_macro = rec.last_macro.clone();
+        replay.macro_play();
+        let mut viamac = Doc::untitled(3, 1);
+        viamac.lines = start;
+        run_mac(&mut viamac, &out.text, 4).unwrap();
+        assert_eq!(viamac.lines, replay.lines, "导出的 .mac 与直接回放结果一致");
+        assert_eq!(viamac.cursor, replay.cursor);
+    }
+
+    /// EDIT_KEYS 的每一项都要两头对得上: 键在 Sakura 表里有 S_ 函数 (且就是这个键), 命令 editcore 认得并真的能执行
+    #[test]
+    fn every_edit_key_entry_resolves_both_ways() {
+        let mut bad: Vec<String> = vec![];
+        for (key, cmd) in EDIT_KEYS {
+            let out = rec_to_mac(&[RecEv::Edit((*cmd).into(), None)]);
+            if !out.skipped.is_empty() {
+                bad.push(format!("{cmd}: 录不成 S_ 函数 (键 {key})"));
+                continue;
+            }
+            match macro_sakura::plan(&out.text).map(|s| s.into_iter().next().map(|x| x.action)) {
+                Ok(Some(Action::Command { key: Some(k), .. })) if k == *key => {}
+                other => bad.push(format!("{cmd}: 录出来的 S_ 函数默认键不是 {key}: {other:?} / {}", out.text.trim())),
+            }
+            let mut d = Doc::untitled(1, 1);
+            d.lines = vec!["abc def".into(), "xyz".into()];
+            if run_mac(&mut d, &out.text, 4).is_err() {
+                bad.push(format!("{cmd}: 高速版运行不了自己录的宏 (editcore 不认识这条命令?)"));
+            }
+            if edit_for_key(key) != Some(*cmd) || key_for_edit(cmd) != Some(*key) {
+                bad.push(format!("{cmd}: 表里两个方向的查找不一致"));
+            }
+        }
+        assert!(bad.is_empty(), "EDIT_KEYS 里这些项不合格:\n{}", bad.join("\n"));
+        let mut keys: Vec<_> = EDIT_KEYS.iter().map(|e| e.0).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), EDIT_KEYS.len(), "键不能重复");
+    }
+
+    /// 只运行不录制的键 (选区变换 / 整理行): 键要对得上 Sakura 的 S_ 函数, 并且真的改了文档
+    #[test]
+    fn run_only_keys_resolve_to_s_functions_and_act() {
+        use macro_sakura::RecEvent;
+        for (key, _) in TRANSFORM_KEYS.iter().chain(LINES_KEYS.iter()) {
+            // 借录制器的反查确认: 这个键在 Sakura 表里有 S_ 函数, 且是只有键的命令
+            let out = macro_sakura::record_to_mac(&[RecEvent::Command { cmd: (*key).into(), key: Some((*key).into()) }]);
+            assert!(out.skipped.is_empty(), "{key} 在 Sakura 表里没有对应的 S_ 函数");
+            assert!(matches!(macro_sakura::plan(&out.text).unwrap()[0].action, Action::Command { key: Some(_), cmd: None, .. }), "{key}: {}", out.text);
+        }
+        let run = |lines: &[&str], key: &str| -> Vec<String> {
+            let mut d = Doc::untitled(1, 1);
+            d.lines = lines.iter().map(|s| s.to_string()).collect();
+            d.select_all();
+            let out = macro_sakura::record_to_mac(&[RecEvent::Command { cmd: key.into(), key: Some(key.into()) }]);
+            run_mac(&mut d, &out.text, 4).unwrap();
+            d.lines
+        };
+        assert_eq!(run(&["Hello Wörld"], "Control+F6"), ["hello wörld"]);
+        assert_eq!(run(&["Hello Wörld"], "Control+F7"), ["HELLO WÖRLD"]);
+        assert_eq!(run(&["b", "c", "a"], "Alt+a"), ["a", "b", "c"]);
+        assert_eq!(run(&["b", "c", "a"], "Alt+d"), ["c", "b", "a"]);
+        assert_eq!(run(&["  x  ", "\ty "], "Alt+l"), ["x  ", "y "]);
+        assert_eq!(run(&["  x  ", "\ty "], "Alt+r"), ["  x", "\ty"]);
+        assert_eq!(run(&["\tb"], "Control+Alt+F5"), ["    b"], "行首 Tab 按 tab 宽度展开成空格");
+    }
+
+    #[test]
+    fn exported_document_keeps_a_comment_header_and_still_parses() {
+        let out = rec_to_mac(&[RecEv::Edit("insert-text".into(), Some("hi".into())), RecEv::Edit("new-line".into(), None), RecEv::Nav("ArrowLeft".into(), false, false)]);
+        let (text, n) = mac_document(&out);
+        assert!(text.starts_with("/* 键盘录制 */\n"));
+        assert_eq!(n, 3);
+        assert_eq!(macro_sakura::plan(&text).expect("带注释头的宏仍能被解析").len(), n);
+    }
+
+    #[test]
+    fn steps_without_an_s_function_are_reported_not_written() {
+        let steps = vec![RecEv::Edit("insert-text".into(), Some("a".into())), RecEv::Edit("no-such-edit".into(), None), RecEv::Nav("ArrowUp".into(), true, true)];
+        let out = rec_to_mac(&steps);
+        assert!(out.text.starts_with("S_InsText(\"a\");"));
+        assert_eq!(out.skipped, ["no-such-edit"]);
+        assert!(!out.text.contains("no-such-edit"));
     }
 
     #[test]
