@@ -79,6 +79,20 @@ impl Version {
     }
 }
 
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.core.0, self.core.1, self.core.2)?;
+        for (i, id) in self.pre.iter().enumerate() {
+            f.write_str(if i == 0 { "-" } else { "." })?;
+            match id {
+                Ident::Num(n) => write!(f, "{n}")?,
+                Ident::Alpha(a) => f.write_str(a)?,
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Ord for Version {
     fn cmp(&self, o: &Self) -> Ordering {
         self.core.cmp(&o.core).then_with(|| match (self.pre.is_empty(), o.pre.is_empty()) {
@@ -218,6 +232,51 @@ pub fn parse_sums(text: &str) -> HashMap<String, String> {
         }
     }
     m
+}
+
+/// 签名清单的第一行: `version: X.Y.Z[-pre] channel: stable|dev` (字面量, 冒号后各一个空格, 两段之间一个空格, 行尾可有回车符)。
+/// 版本串必须是裸 semver (没有 `v` / `dev-` 前缀, 没有 `+build`); 通道必须和版本一致 (带预发布号 = dev, 否则 = stable)。
+/// 任何偏差 = None。这一行在签名覆盖范围内, 所以它把清单绑定到具体的版本和通道 (防回滚, 见 docs/UPDATE.md)。
+#[derive(Clone, PartialEq, Debug)]
+pub struct SumsHeader {
+    pub version: Version,
+    /// 清单里的版本原文 (资产文件名必须包含它)
+    pub version_str: String,
+    pub channel: Channel,
+}
+
+pub fn parse_sums_header(text: &str) -> Option<SumsHeader> {
+    let line = text.split('\n').next()?;
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    let rest = line.strip_prefix("version: ")?;
+    let (vs, ch) = rest.split_once(" channel: ")?;
+    if !vs.starts_with(|c: char| c.is_ascii_digit()) || vs.contains(['+', ' ']) {
+        return None;
+    }
+    let version = Version::parse(vs)?;
+    let channel = Channel::from_code(ch)?;
+    if (channel == Channel::Dev) != version.is_prerelease() {
+        return None;
+    }
+    Some(SumsHeader { version, version_str: vs.to_string(), channel })
+}
+
+/// 资产文件名里要有清单版本串, 且是完整的一段: 前面不能紧挨数字 / `.`, 后面不能紧挨数字 (`1.2.3` 不匹配 `1.2.30`);
+/// 正式版后面还不能接预发布标记 (`-dev.` / `-rc` / `-alpha` / `-beta` / `-pre`, 即 `1.2.3` 不匹配 `1.2.3-dev.1`)。
+/// 文件名里常见的 `-windows-x64` 之类不受影响; msi 的四段版本 `1.2.3.0` 允许 (后面跟 `.`)
+pub fn name_has_version(name: &str, ver: &str) -> bool {
+    let pre = ver.contains('-');
+    name.match_indices(ver).any(|(i, _)| {
+        let before = name[..i].chars().next_back();
+        let rest = &name[i + ver.len()..];
+        let after_ok = match rest.chars().next() {
+            None => true,
+            Some(c) if c.is_ascii_digit() => false,
+            Some('-') if !pre => !["dev.", "rc", "alpha", "beta", "pre"].iter().any(|m| rest[1..].to_ascii_lowercase().starts_with(m)),
+            Some(_) => true,
+        };
+        before.is_none_or(|c| !(c.is_ascii_digit() || c == '.')) && after_ok
+    })
 }
 
 /// 校验失败的原因

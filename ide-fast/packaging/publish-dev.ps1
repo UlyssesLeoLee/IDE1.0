@@ -5,7 +5,7 @@
 #   tag      v<workspace 版本>-dev.<yyyyMMdd>.<N>      (合法 semver 预发布号, 低于同号正式版)
 #   资产     ide-fast-<tag 去掉 v>-windows-x64.exe  (便携版)
 #            IDE1.0-Fast_<版本>_x64.msi             (build-msi.ps1 产出)
-#            SHA256SUMS.txt                         (更新功能必须有, 缺了会拒绝安装)
+#            SHA256SUMS.txt                         (更新功能必须有, 缺了会拒绝安装; 第一行 "version: <版本> channel: dev" 绑定版本与通道)
 #            SHA256SUMS.txt.sig                     (ed25519 分离签名, 必须有; 私钥路径来自环境变量 IDE_FAST_SIGN_KEY, 见 sign-release.ps1)
 param(
     [Parameter(Mandatory = $true)][string]$Target,
@@ -31,10 +31,15 @@ $portable = Join-Path $Out "ide-fast-$assetVer-windows-x64.exe"
 Move-Item -Force $portableOld $portable
 $msi = Get-ChildItem $Out -Filter "IDE1.0-Fast_*_x64.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $msi) { throw "没找到 msi" }
+# msi 文件名也要带完整 dev 版本串 (客户端验签后要求资产名含清单版本; 原名只有四段数字版本 x.y.z.0)
+$msiNew = Join-Path $Out "IDE1.0-Fast_${assetVer}_x64.msi"
+Move-Item -Force $msi.FullName $msiNew
+$msi = Get-Item $msiNew
 
 # 3. SHA256SUMS.txt: 每行 "<小写 hex>  <文件名>"
 $sums = Join-Path $Out "SHA256SUMS.txt"
-$lines = foreach ($f in @($portable, $msi.FullName)) {
+$lines = @("version: $assetVer channel: dev")   # 第一行: 签名覆盖的版本 / 通道绑定 (客户端验签后核对, 防回滚)
+$lines += foreach ($f in @($portable, $msi.FullName)) {
     $h = (Get-FileHash -Algorithm SHA256 $f).Hash.ToLower()
     "$h  $(Split-Path -Leaf $f)"
 }
@@ -43,7 +48,7 @@ Get-Content $sums
 
 # 3b. 签名 (私钥在仓库之外, 由 IDE_FAST_SIGN_KEY 指向; 没设就拒绝发布 —— 没有 .sig 的 Release 更新功能一律不安装)
 $sig = "$sums.sig"
-& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "sign-release.ps1") -Sums $sums -Out $sig
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "sign-release.ps1") -Sums $sums -Out $sig -Version $assetVer -Channel dev
 if ($LASTEXITCODE -ne 0) { throw "sign-release.ps1 失败" }
 
 # 4. 创建预发布 (--prerelease: 稳定通道看不到它; 开发通道能看到)

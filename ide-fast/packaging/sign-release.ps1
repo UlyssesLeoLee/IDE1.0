@@ -1,7 +1,8 @@
 # 给 SHA256SUMS.txt 做 ed25519 分离签名 (SHA256SUMS.txt.sig, 原始 64 字节) —— 更新功能要求每个 Release 都带它。
 # 私钥路径只从参数或环境变量 IDE_FAST_SIGN_KEY 读, 私钥文件**必须在仓库之外** (脚本会拒绝仓库内的路径)。不会自动运行。
 # 用法 (在仓库根):
-#   powershell -ExecutionPolicy Bypass -File ide-fast/packaging/sign-release.ps1 -Sums <SHA256SUMS.txt> [-KeyFile <私钥文件>] [-Out <输出.sig>]
+#   powershell -ExecutionPolicy Bypass -File ide-fast/packaging/sign-release.ps1 -Sums <SHA256SUMS.txt> -Version <X.Y.Z[-pre]> -Channel <stable|dev> [-KeyFile <私钥文件>] [-Out <输出.sig>]
+#     清单第一行必须是 "version: <版本> channel: <通道>" (签名工具会核对, 不符就拒绝签名), 见 docs/UPDATE.md
 #   powershell -ExecutionPolicy Bypass -File ide-fast/packaging/sign-release.ps1 -GenKey -KeyFile <新私钥文件>     # 所有者一次性生成密钥对, 并打印要粘进 updkey.rs 的公钥
 #   powershell -ExecutionPolicy Bypass -File ide-fast/packaging/sign-release.ps1 -PubKey [-KeyFile <私钥文件>]      # 重新打印公钥数组
 # 签名由 `cargo run --example sign-sums` (ide-fast/examples/sign-sums.rs, ed25519-dalek) 完成; 细节见 ide-fast/docs/UPDATE.md。
@@ -9,6 +10,8 @@ param(
     [string]$Sums,
     [string]$KeyFile = $env:IDE_FAST_SIGN_KEY,
     [string]$Out,
+    [string]$Version,
+    [ValidateSet("stable", "dev", "")][string]$Channel,
     [switch]$GenKey,
     [switch]$PubKey
 )
@@ -44,6 +47,8 @@ if ($GenKey) {
 if ($PubKey) { Invoke-Tool @("pubkey", $keyFull); return }
 
 if (-not $Sums) { throw "没给 -Sums <SHA256SUMS.txt>" }
+if (-not $Version) { throw "没给 -Version <X.Y.Z[-pre]> (清单必须绑定版本, 防回滚)" }
+if (-not $Channel) { throw "没给 -Channel <stable|dev> (清单必须绑定通道)" }
 if (-not $Out) { $Out = "$Sums.sig" }
-Invoke-Tool @("sign", $keyFull, (Resolve-Path $Sums).Path, [System.IO.Path]::GetFullPath($Out))
+Invoke-Tool @("sign", $keyFull, (Resolve-Path $Sums).Path, [System.IO.Path]::GetFullPath($Out), "--version", $Version, "--channel", $Channel)
 Write-Host "签名写到 $Out —— 它必须和 SHA256SUMS.txt 一起作为 Release 资产上传 (名字必须是 SHA256SUMS.txt.sig)"

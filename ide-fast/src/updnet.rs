@@ -34,6 +34,23 @@ pub enum UpdErr {
     SigBad,
     /// 文件头不是预期的安装包格式 (msi = OLE 复合文档, exe = `MZ`)
     BadFormat(String),
+    /// 签名清单的版本 / 通道绑定不满足 (回滚 / 降级 / 串通道 / 文件名不含版本)
+    Manifest(ManifestErr),
+}
+
+/// 清单绑定检查失败的原因 (全部发生在验签之后、下载之前)
+#[derive(Clone, PartialEq, Debug)]
+pub enum ManifestErr {
+    /// 第一行不是 `version: X.Y.Z channel: stable|dev`
+    Malformed,
+    /// 清单版本 != Release 版本 (旧清单挂在新 Release 页上)
+    ReleaseMismatch { manifest: String, release: String },
+    /// 清单版本不高于当前版本 (回滚 / 降级 / 同版本重装)
+    NotNewer { manifest: String, current: String },
+    /// 清单通道与用户所选通道不符
+    Channel { manifest: String, selected: String },
+    /// 安装包文件名不含清单版本串
+    AssetName(String),
 }
 
 impl UpdErr {
@@ -51,6 +68,11 @@ impl UpdErr {
             UpdErr::SigMissing => tr("upd.e-sigmissing").to_string(),
             UpdErr::SigBad => tr("upd.e-sigbad").to_string(),
             UpdErr::BadFormat(n) => trf("upd.e-format", &[n]),
+            UpdErr::Manifest(ManifestErr::Malformed) => tr("upd.e-mf-bad").to_string(),
+            UpdErr::Manifest(ManifestErr::ReleaseMismatch { manifest, release }) => trf("upd.e-mf-rel", &[manifest, release]),
+            UpdErr::Manifest(ManifestErr::NotNewer { manifest, current }) => trf("upd.e-mf-old", &[manifest, current]),
+            UpdErr::Manifest(ManifestErr::Channel { manifest, selected }) => trf("upd.e-mf-chan", &[manifest, selected]),
+            UpdErr::Manifest(ManifestErr::AssetName(n)) => trf("upd.e-mf-name", &[n]),
             UpdErr::Io(e) => format!("{}: {e}", tr("upd.e-io")),
         }
     }
@@ -121,6 +143,9 @@ pub struct Candidate {
     pub sums: Option<AssetInfo>,
     pub sig: Option<AssetInfo>,
     pub kind: InstallKind,
+    /// 用户选的通道和检查时的当前版本: 验签后拿来核对清单的版本 / 通道绑定
+    pub channel: Channel,
+    pub current: Version,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -135,7 +160,7 @@ pub fn check(f: &dyn Fetch, src: &Source, ch: Channel, current: &Version, kind: 
     let releases = update::parse_releases(&json, src).map_err(UpdErr::Parse)?;
     Ok(match update::select(&releases, ch, current) {
         None => Outcome::UpToDate,
-        Some(r) => Outcome::Available(Box::new(Candidate { asset: update::pick_asset(r, kind).cloned(), sums: update::pick_sums(r).cloned(), sig: update::pick_sig(r).cloned(), release: r.clone(), kind })),
+        Some(r) => Outcome::Available(Box::new(Candidate { asset: update::pick_asset(r, kind).cloned(), sums: update::pick_sums(r).cloned(), sig: update::pick_sig(r).cloned(), release: r.clone(), kind, channel: ch, current: current.clone() })),
     })
 }
 
@@ -189,6 +214,7 @@ pub fn stage(f: &dyn Fetch, c: &Candidate, key: &[u8; 32], tmp_dir: &Path, new_e
     let sig_bytes = f.get(&sig.url, MAX_SIG)?;
     verify_sums_sig(key, &sums_bytes, &sig_bytes)?;
     let text = String::from_utf8_lossy(&sums_bytes).into_owned();
+    check_binding(&text, c, &asset.name)?;
     let table = update::parse_sums(&text);
     if !table.contains_key(&asset.name) {
         return Err(UpdErr::Hash(HashError::Missing(asset.name.clone())));
@@ -212,6 +238,26 @@ pub fn stage(f: &dyn Fetch, c: &Candidate, key: &[u8; 32], tmp_dir: &Path, new_e
         return Err(UpdErr::Io(e.to_string()));
     }
     Ok(Staged { path: new_exe.to_path_buf(), kind: c.kind, sha256: sha })
+}
+
+/// 验签之后的绑定检查 (签名只证明清单出自发布者, 不证明它属于这个版本): 第一行的版本 / 通道必须
+/// (a) 等于 Release 的版本, (b) 高于当前版本, (c) 与用户所选通道相容, (d) 安装包文件名含该版本串。
+/// 通道相容 = 相同, 或「开发通道接受正式版清单」(开发通道本来就包含正式版; 稳定通道绝不接受 dev 清单)。
+fn check_binding(text: &str, c: &Candidate, asset_name: &str) -> Result<(), UpdErr> {
+    let h = update::parse_sums_header(text).ok_or(UpdErr::Manifest(ManifestErr::Malformed))?;
+    if h.version != c.release.version {
+        return Err(UpdErr::Manifest(ManifestErr::ReleaseMismatch { manifest: h.version_str, release: c.release.tag.clone() }));
+    }
+    if h.version <= c.current {
+        return Err(UpdErr::Manifest(ManifestErr::NotNewer { manifest: h.version_str, current: c.current.to_string() }));
+    }
+    if h.channel != c.channel && !(c.channel == Channel::Dev && h.channel == Channel::Stable) {
+        return Err(UpdErr::Manifest(ManifestErr::Channel { manifest: h.channel.code().into(), selected: c.channel.code().into() }));
+    }
+    if !update::name_has_version(asset_name, &h.version_str) {
+        return Err(UpdErr::Manifest(ManifestErr::AssetName(asset_name.to_string())));
+    }
+    Ok(())
 }
 
 fn download_checked(f: &dyn Fetch, a: &AssetInfo, kind: InstallKind, table: &std::collections::HashMap<String, String>, tmp: &Path) -> Result<String, UpdErr> {
@@ -296,11 +342,16 @@ mod tests {
         let sums = AssetInfo { name: update::SUMS_NAME.into(), size: 10, url: "https://x/sums".into() };
         let release = Release { tag: "v9.9.9".into(), version: Version::parse("9.9.9").unwrap(), prerelease: false, page: "https://x/page".into(), notes: String::new(), assets: vec![] };
         let sig = AssetInfo { name: update::SIG_NAME.into(), size: 64, url: "https://x/sig".into() };
-        Candidate { release, asset: Some(asset), sums: with_sums.then_some(sums), sig: with_sums.then_some(sig), kind: InstallKind::Portable }
+        Candidate { release, asset: Some(asset), sums: with_sums.then_some(sums), sig: with_sums.then_some(sig), kind: InstallKind::Portable, channel: Channel::Stable, current: Version::parse("0.3.1").unwrap() }
     }
 
+    const HDR: &str = "version: 9.9.9 channel: stable\n";
+
+    fn sums_with(header: &str, name: &str, bytes: &[u8]) -> Vec<u8> {
+        format!("{header}{}  {name}\n", editcore::plugin_host::sha256_hex(bytes)).into_bytes()
+    }
     fn sums_for(name: &str, bytes: &[u8]) -> Vec<u8> {
-        format!("{}  {name}\n", editcore::plugin_host::sha256_hex(bytes)).into_bytes()
+        sums_with(HDR, name, bytes)
     }
 
     #[test]
@@ -351,8 +402,8 @@ mod tests {
         let d = tmpdir("bad");
         let new_exe = d.join("ide-fast.exe.new");
         let k = sk("main");
-        let f = fake_with(&k, b"tampered!!!!!!!!", &sums_for("a.exe", EXE));
-        let e = stage(&f, &cand("a.exe", 16, true), &pk(&k), &d, &new_exe).unwrap_err();
+        let f = fake_with(&k, b"tampered!!!!!!!!", &sums_for("a-9.9.9.exe", EXE));
+        let e = stage(&f, &cand("a-9.9.9.exe", 16, true), &pk(&k), &d, &new_exe).unwrap_err();
         assert!(matches!(e, UpdErr::Hash(HashError::Mismatch { .. })), "{e:?}");
         assert!(!new_exe.exists());
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0, "临时文件已删");
@@ -366,12 +417,12 @@ mod tests {
         // SHA256SUMS 里没有这个文件
         let k = sk("main");
         let f = fake_with(&k, EXE, &sums_for("other.exe", EXE));
-        let e = stage(&f, &cand("a.exe", EXE.len() as u64, true), &pk(&k), &d, &new_exe).unwrap_err();
-        assert_eq!(e, UpdErr::Hash(HashError::Missing("a.exe".into())));
+        let e = stage(&f, &cand("a-9.9.9.exe", EXE.len() as u64, true), &pk(&k), &d, &new_exe).unwrap_err();
+        assert_eq!(e, UpdErr::Hash(HashError::Missing("a-9.9.9.exe".into())));
         assert_eq!(f.downloads.get(), 0, "校验清单不全 = 根本不下载");
         // Release 没带 SHA256SUMS.txt
         let f = Fake::new(&[("https://x/a", EXE)]);
-        assert!(matches!(stage(&f, &cand("a.exe", 1, false), &pk(&k), &d, &new_exe), Err(UpdErr::Hash(HashError::Missing(_)))));
+        assert!(matches!(stage(&f, &cand("a-9.9.9.exe", 1, false), &pk(&k), &d, &new_exe), Err(UpdErr::Hash(HashError::Missing(_)))));
         assert_eq!((f.gets.get(), f.downloads.get()), (0, 0));
         assert!(!new_exe.exists());
         let _ = std::fs::remove_dir_all(&d);
@@ -382,12 +433,12 @@ mod tests {
         let d = tmpdir("size");
         let new_exe = d.join("x.new");
         let k = sk("main");
-        let f = fake_with(&k, EXE, &sums_for("a.exe", EXE));
-        let e = stage(&f, &cand("a.exe", MAX_BINARY + 1, true), &pk(&k), &d, &new_exe).unwrap_err();
+        let f = fake_with(&k, EXE, &sums_for("a-9.9.9.exe", EXE));
+        let e = stage(&f, &cand("a-9.9.9.exe", MAX_BINARY + 1, true), &pk(&k), &d, &new_exe).unwrap_err();
         assert!(matches!(e, UpdErr::TooBig(_)));
         assert_eq!((f.gets.get(), f.downloads.get()), (0, 0), "声明就超限: 不联网");
         // 声明大小和实际不符
-        let e = stage(&f, &cand("a.exe", EXE.len() as u64 + 5, true), &pk(&k), &d, &new_exe).unwrap_err();
+        let e = stage(&f, &cand("a-9.9.9.exe", EXE.len() as u64 + 5, true), &pk(&k), &d, &new_exe).unwrap_err();
         assert!(matches!(e, UpdErr::Size { .. }), "{e:?}");
         assert!(!new_exe.exists() && std::fs::read_dir(&d).unwrap().count() == 0);
         let _ = std::fs::remove_dir_all(&d);
@@ -410,7 +461,7 @@ mod tests {
     #[test]
     fn signature_valid_accepted_tampered_sums_wrong_key_rejected() {
         let (k, other) = (sk("main"), sk("other"));
-        let sums = sums_for("a.exe", EXE);
+        let sums = sums_for("a-9.9.9.exe", EXE);
         assert_eq!(verify_sums_sig(&pk(&k), &sums, &sig_of(&k, &sums)), Ok(()));
         // 清单被改动一个字节 (比如换成别的文件的哈希)
         let mut t = sums.clone();
@@ -434,23 +485,23 @@ mod tests {
         let d = tmpdir("sig-bad");
         let (k, evil) = (sk("main"), sk("evil"));
         let new_exe = d.join("x.new");
-        let sums = sums_for("a.exe", EXE);
+        let sums = sums_for("a-9.9.9.exe", EXE);
         // 攻击者换了清单 (哈希指向恶意文件) 但沿用旧签名
         let evil_exe = b"MZ evil";
-        let evil_sums = sums_for("a.exe", evil_exe);
+        let evil_sums = sums_for("a-9.9.9.exe", evil_exe);
         let f = Fake::new(&[("https://x/a", evil_exe), ("https://x/sums", &evil_sums), ("https://x/sig", &sig_of(&k, &sums))]);
-        let e = stage(&f, &cand("a.exe", evil_exe.len() as u64, true), &pk(&k), &d, &new_exe).unwrap_err();
+        let e = stage(&f, &cand("a-9.9.9.exe", evil_exe.len() as u64, true), &pk(&k), &d, &new_exe).unwrap_err();
         assert_eq!(e, UpdErr::SigBad);
         assert_eq!(f.downloads.get(), 0, "验签不过 = 不下载");
         // 攻击者用自己的密钥重签
         let f = fake_with(&evil, evil_exe, &evil_sums);
-        assert_eq!(stage(&f, &cand("a.exe", evil_exe.len() as u64, true), &pk(&k), &d, &new_exe), Err(UpdErr::SigBad));
+        assert_eq!(stage(&f, &cand("a-9.9.9.exe", evil_exe.len() as u64, true), &pk(&k), &d, &new_exe), Err(UpdErr::SigBad));
         assert_eq!(f.downloads.get(), 0);
         // 垃圾 / 截断的 .sig
         let good = sig_of(&k, &sums);
         for junk in [&b"garbage"[..], &[0u8; 64][..], &good[..40]] {
             let f = Fake::new(&[("https://x/a", EXE), ("https://x/sums", &sums), ("https://x/sig", junk)]);
-            assert_eq!(stage(&f, &cand("a.exe", EXE.len() as u64, true), &pk(&k), &d, &new_exe), Err(UpdErr::SigBad));
+            assert_eq!(stage(&f, &cand("a-9.9.9.exe", EXE.len() as u64, true), &pk(&k), &d, &new_exe), Err(UpdErr::SigBad));
             assert_eq!(f.downloads.get(), 0);
         }
         assert!(!new_exe.exists() && std::fs::read_dir(&d).unwrap().count() == 0);
@@ -462,16 +513,16 @@ mod tests {
         let d = tmpdir("sig-missing");
         let k = sk("main");
         let new_exe = d.join("x.new");
-        let sums = sums_for("a.exe", EXE);
+        let sums = sums_for("a-9.9.9.exe", EXE);
         // Release 没有 .sig 资产
-        let mut c = cand("a.exe", EXE.len() as u64, true);
+        let mut c = cand("a-9.9.9.exe", EXE.len() as u64, true);
         c.sig = None;
         let f = fake_with(&k, EXE, &sums);
         assert_eq!(stage(&f, &c, &pk(&k), &d, &new_exe), Err(UpdErr::SigMissing));
         assert_eq!((f.gets.get(), f.downloads.get()), (0, 0));
         // 资产列出了但服务器上取不到 (404)
         let f = Fake::new(&[("https://x/a", EXE), ("https://x/sums", &sums)]);
-        assert!(matches!(stage(&f, &cand("a.exe", EXE.len() as u64, true), &pk(&k), &d, &new_exe), Err(UpdErr::Net(_))));
+        assert!(matches!(stage(&f, &cand("a-9.9.9.exe", EXE.len() as u64, true), &pk(&k), &d, &new_exe), Err(UpdErr::Net(_))));
         assert_eq!(f.downloads.get(), 0);
         assert!(!new_exe.exists() && std::fs::read_dir(&d).unwrap().count() == 0);
         let _ = std::fs::remove_dir_all(&d);
@@ -481,16 +532,16 @@ mod tests {
     fn placeholder_key_refuses_everything_without_touching_the_network() {
         let d = tmpdir("nokey");
         let k = sk("main");
-        let sums = sums_for("a.exe", EXE);
+        let sums = sums_for("a-9.9.9.exe", EXE);
         let f = fake_with(&k, EXE, &sums);
         let zero = [0u8; 32];
         assert!(!crate::updkey::is_configured(&zero));
-        assert_eq!(stage(&f, &cand("a.exe", EXE.len() as u64, true), &zero, &d, &d.join("x.new")), Err(UpdErr::NoKey));
+        assert_eq!(stage(&f, &cand("a-9.9.9.exe", EXE.len() as u64, true), &zero, &d, &d.join("x.new")), Err(UpdErr::NoKey));
         assert_eq!((f.gets.get(), f.downloads.get()), (0, 0));
         assert_eq!(verify_sums_sig(&zero, &sums, &sig_of(&k, &sums)), Err(UpdErr::NoKey));
         // 发行版代码路径用的常量: 占位时必须拒绝
         if !crate::updkey::is_configured(&crate::updkey::UPDATE_PUBKEY) {
-            assert_eq!(stage(&f, &cand("a.exe", EXE.len() as u64, true), &crate::updkey::UPDATE_PUBKEY, &d, &d.join("x.new")), Err(UpdErr::NoKey));
+            assert_eq!(stage(&f, &cand("a-9.9.9.exe", EXE.len() as u64, true), &crate::updkey::UPDATE_PUBKEY, &d, &d.join("x.new")), Err(UpdErr::NoKey));
         }
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
         let _ = std::fs::remove_dir_all(&d);
@@ -509,16 +560,147 @@ mod tests {
         let d = tmpdir("magic");
         let k = sk("main");
         let junk: &[u8] = b"<html>not an installer</html>";
-        let f = fake_with(&k, junk, &sums_for("a.exe", junk));
-        let e = stage(&f, &cand("a.exe", junk.len() as u64, true), &pk(&k), &d, &d.join("x.new")).unwrap_err();
-        assert_eq!(e, UpdErr::BadFormat("a.exe".into()));
+        let f = fake_with(&k, junk, &sums_for("a-9.9.9.exe", junk));
+        let e = stage(&f, &cand("a-9.9.9.exe", junk.len() as u64, true), &pk(&k), &d, &d.join("x.new")).unwrap_err();
+        assert_eq!(e, UpdErr::BadFormat("a-9.9.9.exe".into()));
         // msi 位置放了 exe (MZ) 也拒绝
-        let f = fake_with(&k, EXE, &sums_for("b.msi", EXE));
-        let mut c = cand("b.msi", EXE.len() as u64, true);
+        let f = fake_with(&k, EXE, &sums_for("b-9.9.9.msi", EXE));
+        let mut c = cand("b-9.9.9.msi", EXE.len() as u64, true);
         c.kind = InstallKind::Msi;
-        assert_eq!(stage(&f, &c, &pk(&k), &d, &d.join("x.new")), Err(UpdErr::BadFormat("b.msi".into())));
+        assert_eq!(stage(&f, &c, &pk(&k), &d, &d.join("x.new")), Err(UpdErr::BadFormat("b-9.9.9.msi".into())));
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 用 `hdr` 作清单第一行 (合法签名) 跑 stage, 返回结果和下载次数
+    fn stage_with(hdr: &str, tweak: impl FnOnce(&mut Candidate)) -> (Result<Staged, UpdErr>, u32) {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let d = tmpdir(&format!("bind{}", N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+        let k = sk("main");
+        let name = "ide-fast-9.9.9-windows-x64.exe";
+        let f = fake_with(&k, EXE, &sums_with(hdr, name, EXE));
+        let mut c = cand(name, EXE.len() as u64, true);
+        tweak(&mut c);
+        let r = stage(&f, &c, &pk(&k), &d, &d.join("x.new"));
+        assert!(r.is_ok() || std::fs::read_dir(&d).unwrap().count() == 0, "失败不留文件");
+        let _ = std::fs::remove_dir_all(&d);
+        (r, f.downloads.get())
+    }
+    fn mf(e: ManifestErr) -> Result<Staged, UpdErr> {
+        Err(UpdErr::Manifest(e))
+    }
+
+    #[test]
+    fn manifest_binding_happy_path_accepted() {
+        assert!(stage_with(HDR, |_| {}).0.is_ok());
+        // CRLF 行尾也行
+        assert!(stage_with("version: 9.9.9 channel: stable\r\n", |_| {}).0.is_ok());
+        // 开发通道接受正式版清单
+        assert!(stage_with(HDR, |c| c.channel = Channel::Dev).0.is_ok());
+        // dev 清单 + dev 通道 + 带预发布版本的文件名
+        let d = tmpdir("bind-dev");
+        let k = sk("main");
+        let name = "ide-fast-9.9.9-dev.20261103.1-windows-x64.exe";
+        let f = fake_with(&k, EXE, &sums_with("version: 9.9.9-dev.20261103.1 channel: dev\n", name, EXE));
+        let mut c = cand(name, EXE.len() as u64, true);
+        c.channel = Channel::Dev;
+        c.release.version = Version::parse("9.9.9-dev.20261103.1").unwrap();
+        assert!(stage(&f, &c, &pk(&k), &d, &d.join("x.new")).is_ok());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn old_manifest_and_old_sig_on_a_new_release_page_is_rejected() {
+        // 攻击者: 旧版本 (0.3.0) 的签名清单 + 签名 + 旧安装包, 挂到 9.9.9 的 Release 页上
+        let r = stage_with("version: 0.3.0 channel: stable\n", |_| {});
+        assert_eq!(r.0, mf(ManifestErr::ReleaseMismatch { manifest: "0.3.0".into(), release: "v9.9.9".into() }));
+        assert_eq!(r.1, 0, "不下载");
+    }
+
+    #[test]
+    fn equal_or_lower_version_is_rejected() {
+        // Release 页 / 清单 / 当前版本都是 9.9.9: 同版本不装
+        let r = stage_with(HDR, |c| c.current = Version::parse("9.9.9").unwrap());
+        assert_eq!(r.0, mf(ManifestErr::NotNewer { manifest: "9.9.9".into(), current: "9.9.9".into() }));
+        assert_eq!(r.1, 0);
+        // 清单与 Release 页一致但都低于当前 (整套旧版本重放)
+        let r = stage_with(HDR, |c| c.current = Version::parse("10.0.0").unwrap());
+        assert!(matches!(r.0, Err(UpdErr::Manifest(ManifestErr::NotNewer { .. }))));
+        // 预发布低于同号正式版: 当前 9.9.9 时 9.9.9-dev.1 是降级
+        let d = tmpdir("bind-pre");
+        let k = sk("main");
+        let name = "ide-fast-9.9.9-dev.1-windows-x64.exe";
+        let f = fake_with(&k, EXE, &sums_with("version: 9.9.9-dev.1 channel: dev\n", name, EXE));
+        let mut c = cand(name, EXE.len() as u64, true);
+        c.channel = Channel::Dev;
+        c.release.version = Version::parse("9.9.9-dev.1").unwrap();
+        c.current = Version::parse("9.9.9").unwrap();
+        assert!(matches!(stage(&f, &c, &pk(&k), &d, &d.join("x.new")), Err(UpdErr::Manifest(ManifestErr::NotNewer { .. }))));
+        assert_eq!(f.downloads.get(), 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn wrong_channel_is_rejected() {
+        // 稳定通道不接受 dev 清单 (即使版本、Release 页都对得上)
+        let d = tmpdir("bind-chan");
+        let k = sk("main");
+        let name = "ide-fast-9.9.9-dev.1-windows-x64.exe";
+        let f = fake_with(&k, EXE, &sums_with("version: 9.9.9-dev.1 channel: dev\n", name, EXE));
+        let mut c = cand(name, EXE.len() as u64, true);
+        c.release.version = Version::parse("9.9.9-dev.1").unwrap();
+        let r = stage(&f, &c, &pk(&k), &d, &d.join("x.new"));
+        assert_eq!(r, mf(ManifestErr::Channel { manifest: "dev".into(), selected: "stable".into() }));
+        assert_eq!(f.downloads.get(), 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn asset_name_without_the_exact_version_is_rejected() {
+        for bad in ["ide-fast-windows-x64.exe", "ide-fast-9.9.90-windows-x64.exe", "ide-fast-19.9.9-windows-x64.exe", "ide-fast-9.9.9-dev.1-windows-x64.exe"] {
+            let d = tmpdir("bind-name");
+            let k = sk("main");
+            let f = fake_with(&k, EXE, &sums_for(bad, EXE));
+            let r = stage(&f, &cand(bad, EXE.len() as u64, true), &pk(&k), &d, &d.join("x.new"));
+            assert_eq!(r, mf(ManifestErr::AssetName(bad.into())), "{bad}");
+            assert_eq!(f.downloads.get(), 0);
+            let _ = std::fs::remove_dir_all(&d);
+        }
+        assert!(update::name_has_version("IDE1.0-Fast_9.9.9.0_x64.msi", "9.9.9"), "msi 四段版本允许");
+    }
+
+    #[test]
+    fn asset_missing_from_signed_table_is_rejected() {
+        let d = tmpdir("bind-missing");
+        let k = sk("main");
+        let f = fake_with(&k, EXE, &sums_for("ide-fast-9.9.9-other.exe", EXE));
+        let r = stage(&f, &cand("ide-fast-9.9.9-windows-x64.exe", EXE.len() as u64, true), &pk(&k), &d, &d.join("x.new"));
+        assert_eq!(r, Err(UpdErr::Hash(HashError::Missing("ide-fast-9.9.9-windows-x64.exe".into()))));
+        assert_eq!(f.downloads.get(), 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn malformed_or_missing_version_line_is_rejected() {
+        for hdr in ["", "version: 9.9.9\n", "version:9.9.9 channel: stable\n", "version: v9.9.9 channel: stable\n", "version: 9.9.9+b channel: stable\n", "version: 9.9.9 channel: beta\n", "version: 9.9.9 channel: dev\n", "version: 9.9.9-dev.1 channel: stable\n", " version: 9.9.9 channel: stable\n", "\n\nversion: 9.9.9 channel: stable\n", "version: 9.9.9  channel: stable\n"] {
+            let r = stage_with(hdr, |_| {});
+            assert_eq!(r.0, mf(ManifestErr::Malformed), "{hdr:?}");
+            assert_eq!(r.1, 0);
+        }
+    }
+
+    #[test]
+    fn manifest_errors_have_all_three_languages() {
+        let es = [
+            UpdErr::Manifest(ManifestErr::Malformed),
+            UpdErr::Manifest(ManifestErr::ReleaseMismatch { manifest: "1".into(), release: "2".into() }),
+            UpdErr::Manifest(ManifestErr::NotNewer { manifest: "1".into(), current: "2".into() }),
+            UpdErr::Manifest(ManifestErr::Channel { manifest: "dev".into(), selected: "stable".into() }),
+            UpdErr::Manifest(ManifestErr::AssetName("n".into())),
+        ];
+        for e in &es {
+            assert!(!e.describe().is_empty() && !e.describe().contains("upd.e-"), "{e:?}");
+        }
     }
 
     #[test]
@@ -566,12 +748,17 @@ mod tests {
 
     /// 在 mock 服务器上放一个 Release (带便携 exe + SHA256SUMS), `sums_hash_of` = 清单里写的内容 (用来造哈希不符)
     fn mock_release(exe: &[u8], sums_hash_of: &[u8], signer: Option<&SigningKey>) -> Source {
+        mock_release_hdr(HDR, exe, sums_hash_of, signer)
+    }
+
+    /// `hdr` = 清单第一行 (用来造「旧清单挂新页」)
+    fn mock_release_hdr(hdr: &str, exe: &[u8], sums_hash_of: &[u8], signer: Option<&SigningKey>) -> Source {
         // 端口要先知道才能写 JSON: 先 bind 拿端口, 路由表造好后再交给服务器线程
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://127.0.0.1:{}/", l.local_addr().unwrap().port());
         let name = "ide-fast-9.9.9-windows-x64.exe";
         let asset = |n: &str, size: usize| serde_json::json!({ "name": n, "size": size, "browser_download_url": format!("{base}o/r/dl/{n}") });
-        let sums = format!("{}  {name}\n", editcore::plugin_host::sha256_hex(sums_hash_of));
+        let sums = format!("{hdr}{}  {name}\n", editcore::plugin_host::sha256_hex(sums_hash_of));
         let mut assets = vec![asset(name, exe.len()), asset(update::SUMS_NAME, sums.len())];
         if signer.is_some() {
             assets.push(asset(update::SIG_NAME, 64));
@@ -632,6 +819,17 @@ mod tests {
         let Outcome::Available(unsigned) = check(&Curl, &unsigned, Channel::Stable, &cur, InstallKind::Portable).unwrap() else { panic!() };
         assert!(unsigned.sig.is_none());
         assert_eq!(stage(&Curl, &unsigned, &pk(&k), &d2, &d2.join("x.new")), Err(UpdErr::SigMissing));
+        assert_eq!(std::fs::read_dir(&d2).unwrap().count(), 0);
+        // 5. 回滚: 旧版本 (0.3.0) 的清单 (密钥对、签名有效) 挂在 9.9.9 的 Release 页上 -> 验签通过但绑定失败, 不留文件
+        let old = mock_release_hdr("version: 0.3.0 channel: stable
+", EXE, EXE, Some(&k));
+        let Outcome::Available(old) = check(&Curl, &old, Channel::Stable, &cur, InstallKind::Portable).unwrap() else { panic!() };
+        assert!(matches!(stage(&Curl, &old, &pk(&k), &d2, &d2.join("x.new")), Err(UpdErr::Manifest(ManifestErr::ReleaseMismatch { .. }))));
+        // 稳定通道遇到 dev 清单 -> 通道不符
+        let devm = mock_release_hdr("version: 9.9.9-dev.1 channel: dev
+", EXE, EXE, Some(&k));
+        let Outcome::Available(devm) = check(&Curl, &devm, Channel::Stable, &cur, InstallKind::Portable).unwrap() else { panic!() };
+        assert!(matches!(stage(&Curl, &devm, &pk(&k), &d2, &d2.join("x.new")), Err(UpdErr::Manifest(_))));
         assert_eq!(std::fs::read_dir(&d2).unwrap().count(), 0);
         let _ = (std::fs::remove_dir_all(&d), std::fs::remove_dir_all(&d2));
     }

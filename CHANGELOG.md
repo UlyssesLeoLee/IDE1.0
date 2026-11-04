@@ -6,6 +6,9 @@
 - **检查更新…** (帮助菜单 / 命令面板): 直连 GitHub Releases, 稳定 / 开发两个通道 (首选项里选), 可选「每天启动时检查一次」(默认关, 首帧之后才做); 下载后必须通过 `SHA256SUMS.txt` 的 SHA-256 校验才能 "安装并重启" (msi 走 `msiexec /passive`, 便携版自行换文件), 失败保留当前版本。设计见 `ide-fast/docs/UPDATE.md`。
 - **更新包验签**: `SHA256SUMS.txt` 必须带发布者的 ed25519 分离签名 `SHA256SUMS.txt.sig` (原始 64 字节), 先验签再信任清单里的哈希; 缺签名 / 验签失败 = 拒绝并删除下载物; 安装前再粗检文件头 (msi 的 OLE 头、exe 的 `MZ`)。公钥内置在 `ide-fast/src/updkey.rs`, **目前是全 0 占位 = 未配置**, 此时更新窗口提示"更新签名密钥未配置"、"安装并重启"保持禁用、只给发布页链接 (发行版里没有任何环境变量可以绕过)。附签名工具 `ide-fast/packaging/sign-release.ps1` + `examples/sign-sums.rs`, 密钥生成 / 保管 / 轮换见 `ide-fast/docs/UPDATE.md`。新增依赖 `ed25519-dalek` (仅验证, 关掉全部默认特性), release exe 体积无可测增长。
 
+### 高速版安全修复
+- **更新清单绑定版本与通道, 防回滚**: 此前 ed25519 签名只覆盖 `SHA256SUMS.txt` 的内容, 不覆盖它属于哪个版本, 攻击者可把旧版本的签名清单 + `.sig` + 旧安装包挂到新 Release 页上诱导降级。现在签名清单第一行必须是 `version: X.Y.Z channel: stable|dev`, 验签后、下载前客户端要求 (a) 清单版本 = Release 版本, (b) 清单版本 > 当前版本, (c) 清单通道与所选通道相符 (开发通道也接受正式版清单), (d) 安装包文件名含该版本串且在已签名的表中; 任何一项不满足 = 拒绝并删除下载物, 中 / 日 / 英提示。`examples/sign-sums.rs` 的 `sign` 现在要求 `--version` / `--channel` 并核对清单首行 (不符拒绝签名), `sign-release.ps1` 对应 `-Version` / `-Channel`, `publish-dev.ps1` 自动写版本行并把 msi 改名带完整 dev 版本。**发布方需注意**: 没有版本行的旧格式清单会被新客户端拒绝。语法与流程见 `ide-fast/docs/UPDATE.md`。
+
 ## 0.3.1 — 2026-11-03
 
 ### 修复
