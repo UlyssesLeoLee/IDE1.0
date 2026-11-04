@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "editcore"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "encoding_rs",
  "fancy-regex",
@@ -3104,7 +3104,7 @@ checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
 name = "ide-cli"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aci-emitter",
  "anyhow",
@@ -3116,7 +3116,7 @@ dependencies = [
 
 [[package]]
 name = "ide-fast"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -3132,7 +3132,7 @@ dependencies = [
 
 [[package]]
 name = "ide-kernel"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "editcore",
  "serde",
@@ -3141,11 +3141,11 @@ dependencies = [
 
 [[package]]
 name = "ide-kernel-core"
-version = "0.3.7"
+version = "0.3.8"
 
 [[package]]
 name = "ide-shell"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aci-emitter",
  "anyhow",
@@ -3160,7 +3160,7 @@ dependencies = [
 
 [[package]]
 name = "ide-shell-desktop"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -3181,7 +3181,7 @@ dependencies = [
 
 [[package]]
 name = "ide-shell-protocol"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3200,7 +3200,7 @@ dependencies = [
 
 [[package]]
 name = "ide-shell-web"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aci-emitter",
  "crossterm",

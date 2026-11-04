@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.8 — 2026-11-04
+
+### 高速版移植补齐 (Tauri → 高速版) 第七批: 窗口一览、关键字帮助、宏里剩下能做的函数
+- **通用选择列表** (`pick.rs`): 过滤框 + 方向键 / 回车 / Esc / 点击的小窗口, 命令面板同款手感; 过滤有两种 —— 模糊匹配 (分数高的在前) 和「每个词都出现」(保持原顺序, 帮助检索用)。下面几项都建在它上面, 以后再要「从一列里选一个」不用重写。
+- **窗口一览** (窗口 > 窗口一览… / 命令面板 `app.window-list`, 同 Tauri `window-list`): 列出全部标签, ▶ 是当前、● 是有未保存修改, 右侧灰字是路径; 输入文字过滤, 回车切过去。
+- **关键字帮助** (帮助菜单 / 命令面板, 同 Tauri `wiki` / `help-search` / `ext-help` / `toggle-key-search`, 默认键也同 Tauri):
+  - 帮助手册 (F1): 开成只读标签「帮助手册.txt」, 已开着就刷新并切过去。手册 = `help.txt` 的正文 + 「命令一览」(从命令表现场生成, 用的是此刻的标签和键位, 不会和实际脱节)。
+  - 关键字帮助检索… (Alt+Shift+F1): 在手册里查词, 每个空格分开的词都要出现 (不分大小写); 选中一行就跳到手册里那一行。
+  - 关键字帮助: 光标处的词 (Ctrl+F1): 带着光标下的词直接打开检索 (含中日文字); 光标处没有单词就只在状态栏提示。
+  - 关键字帮助自动显示 (帮助菜单里的勾选项, 设置里记 `key_search`): 光标换到新的单词上时, 状态栏提示显示手册里第一处提到它的行; 词至少 2 个字符 (一个字母几乎每行都命中, 提示没有意义); 先查正文, 正文里没有再查命令一览。
+  - 和 Tauri 一样只查内置文本, 没有外部 `.hlp` / `.chm` 帮助文件。
+- **宏里 15 个原本「不执行」的 `S_` 函数改成真执行**: `S_WinList` / `S_DlgWinList` (窗口一览)、`S_HelpContents` (手册)、`S_ExtHelp1` / `S_ExtHtmlHelp` (光标处的词)、`S_HelpSearch`、`S_ToggleKeySearch`、`S_FileUsedRecently` (最近的文件)、`S_Favorite` (收藏夹 = 最近的文件 + 最近的文件夹)、`S_InsFileUsedRecently` / `S_InsFolderUsedRecently` (插入最近的路径)、`S_ChgCharset` (指定字符集)、`S_FileReopen` (指定字符集重新打开)、`S_Outline` / `S_FileTree` (侧栏切到大纲 / 文件页)。268 个函数现在是 **142 个在文档上执行 / 118 个转交 App / 8 个明确不执行** (层叠、两种平铺、两种 SQL*Plus、JS 宏、IME 再変換、标签栏开关 `S_ShowTab`, 都写着原因)。
+  - 注意: 这几个函数在宏里只是**打开**列表 / 切页, 宏不会停下来等人选, 后面的步骤接着跑 (和已有的 `S_GrepDialog` 一样)。
+- **新命令** (都在命令面板里, 能绑键): `app.window-list` / `app.pick-recent` / `app.pick-folders` / `app.pick-favorite` / `app.ins-recent-file` / `app.ins-recent-dir` / `app.pick-charset` / `app.pick-reopen` / `app.help` / `app.help-search` / `app.ext-help` / `app.key-search` / `app.pane-outline` / `app.pane-files`; 中 / 日 / 英标签都补了。
+- **验证**: 本批新增 27 项单测 (ide-fast 482 通过; 失败的 3 项仍是写死 `C:\` / `D:\` 的 Windows 路径断言, 改动前就是这样)。其中两项真的跑了 egui 帧: 选择列表单独跑一帧、以及整个界面 (`ui_main`) 里开窗口一览 → 上移 → 回车切标签 → 回车没漏进编辑区 → Esc 关闭。**没在真窗口里验证**: 窗口一览 / 检索窗口的外观、帮助菜单的新项、状态栏提示的实际显示 (本环境没有 Windows)。
+
 ## 0.3.7 — 2026-11-04
 
 ### 高速版移植补齐 (Tauri → 高速版) 第六批: 宏

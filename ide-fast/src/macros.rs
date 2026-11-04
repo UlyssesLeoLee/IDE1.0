@@ -165,6 +165,10 @@ const APP_FUNCS: &[(&str, &str)] = &[
     ("TmpWrapNoWrap", "app.wrap-none"), ("TmpWrapSetting", "app.wrap-col"), ("TmpWrapWindow", "app.wrap-window"), ("WrapWindowWidth", "app.wrap-window"),
     ("Base64Decode", "app.base64"), ("UUDecode", "app.uudecode"), ("CopyAddCRLF", "app.copy-wrapped"), ("CopyColorHtml", "app.copy-html"), ("CopyColorHtmlLineNumber", "app.copy-html-ln"),
     ("CopyTag", "app.copy-tag"), ("CtrlCodeDialog", "app.ctrl-codes"), ("WinOutput", "c.terminal"),
+    ("WinList", "app.window-list"), ("DlgWinList", "app.window-list"),
+    ("HelpContents", "app.help"), ("ExtHelp1", "app.ext-help"), ("ExtHtmlHelp", "app.ext-help"), ("HelpSearch", "app.help-search"), ("ToggleKeySearch", "app.key-search"),
+    ("Favorite", "app.pick-favorite"), ("FileUsedRecently", "app.pick-recent"), ("InsFileUsedRecently", "app.ins-recent-file"), ("InsFolderUsedRecently", "app.ins-recent-dir"),
+    ("ChgCharset", "app.pick-charset"), ("FileReopen", "app.pick-reopen"), ("Outline", "app.pane-outline"), ("FileTree", "app.pane-files"),
 ];
 
 /// 高速版明确不做的 `S_` 函数, 和原因 (不做 ≠ 漏做: 都是有意的取舍或这里做不到)
@@ -172,26 +176,11 @@ const NOT_APPLICABLE: &[(&str, &str)] = &[
     ("Cascade", "层叠窗口: 本应用是单窗口多标签 (有意偏差)"),
     ("TileH", "平铺窗口: 本应用是单窗口多标签 (有意偏差)"),
     ("TileV", "平铺窗口: 本应用是单窗口多标签 (有意偏差)"),
-    ("WinList", "窗口一览: 用标签栏 (有意偏差)"),
-    ("DlgWinList", "窗口一览: 用标签栏 (有意偏差)"),
     ("ActivateSQLPlus", "SQL*Plus 刻意不做"),
     ("PLSQLCompileOnSQLPlus", "SQL*Plus 刻意不做"),
-    ("HelpContents", "外部帮助文件没有移植"),
-    ("ExtHelp1", "外部帮助文件没有移植"),
-    ("ExtHtmlHelp", "外部帮助文件没有移植"),
-    ("HelpSearch", "关键字帮助没有移植"),
-    ("ToggleKeySearch", "关键字帮助没有移植"),
     ("Reconvert", "IME 再変換: egui 没有触发 TSF 的接口"),
     ("ExecExtMacro", "JS 宏没有移植 (高速版只运行 Sakura .mac 和 PPA)"),
-    ("Favorite", "历史管理: 用最近文件 / 最近文件夹"),
-    ("FileUsedRecently", "最近的文件: 在文件菜单里选"),
-    ("InsFileUsedRecently", "插入最近的文件路径: 在「编辑 > 插入」菜单里选"),
-    ("InsFolderUsedRecently", "插入最近的文件夹路径: 在「编辑 > 插入」菜单里选"),
-    ("ChgCharset", "字符集对话框: 在状态栏里改"),
-    ("FileReopen", "字符集对话框: 在状态栏里改, 或用 S_FileReopenUTF8 这类函数"),
-    ("ShowTab", "标签栏常驻, 不能开关"),
-    ("Outline", "大纲: 用侧栏的大纲页"),
-    ("FileTree", "文件树: 用侧栏的文件页"),
+    ("ShowTab", "标签栏随文档个数和界面样式自动显示, 没有单独的开关"),
 ];
 
 /// 一步该由谁执行
@@ -705,7 +694,7 @@ mod tests {
         assert!(unexplained.is_empty(), "这些函数既跑不了又没登记原因: {unexplained:?}");
         assert_eq!(doc_n + app_n + no_n, macro_sakura::command_names().len());
         // 实测: 268 个函数 = 142 在文档上跑 + 103 转交 App + 23 明确不执行
-        assert!(doc_n >= 140 && app_n >= 100 && no_n <= 23, "文档上能跑 {doc_n}, 转交 App {app_n}, 不执行 {no_n}");
+        assert!(doc_n >= 140 && app_n >= 118 && no_n <= 8, "文档上能跑 {doc_n}, 转交 App {app_n}, 不执行 {no_n}");
         let names = macro_sakura::command_names();
         for (name, why) in NOT_APPLICABLE {
             assert!(!why.is_empty() && names.contains(name), "不适用表里的 {name} 不在宏函数表里 (过期的登记)");

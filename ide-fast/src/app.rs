@@ -33,6 +33,7 @@ mod statusbar;
 mod titlebar;
 mod welcome;
 mod textcmds;
+mod picks;
 mod ghopts;
 mod updateui;
 mod aichat;
@@ -1308,6 +1309,7 @@ impl App {
                         if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                     }
                 });
+                if ui.button(Self::app_label(KApp::WindowList, "窗口一览…")).clicked() { self.run_app(KApp::WindowList, ctx); ui.close(); }
                 ui.menu_button(tr("sub.winlist"), |ui| {
                     let mut pick = None;
                     for (i, d) in self.docs.iter().enumerate() {
@@ -1373,6 +1375,11 @@ impl App {
                 if menuui::mbtn(ui, lk("c.palette", "")).clicked() { ui.close(); self.run_app(KApp::Palette, ctx); }
                 if menuui::mbtn(ui, lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
                 if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
+                ui.separator();
+                for (zh, a) in [("帮助手册", KApp::Help), ("关键字帮助检索…", KApp::HelpSearch), ("关键字帮助: 光标处的词", KApp::ExtHelp)] {
+                    if ui.button(Self::app_label(a, zh)).clicked() { ui.close(); self.run_app(a, ctx); }
+                }
+                if menu_check(ui, &tc, self.cfg.view.key_search, Self::app_label(KApp::KeySearch, "关键字帮助自动显示")).clicked() { ui.close(); self.run_app(KApp::KeySearch, ctx); }
                 ui.separator();
                 if menuui::mbtn(ui, lk("c.check-update", "")).clicked() { ui.close(); self.upd_open(); }
                 if menuui::mbtn(ui, lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
@@ -2017,6 +2024,8 @@ impl App {
             KApp::ColDelete | KApp::ColReplace | KApp::SelMode | KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake | KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack
             | KApp::Base64Decode | KApp::UuDecode | KApp::CopyHtml | KApp::CopyHtmlLn | KApp::ClipHistory | KApp::CtrlCodes | KApp::InsDate | KApp::InsTime | KApp::InsStamp | KApp::StampCfg
             | KApp::WrapCol | KApp::WrapWindow | KApp::WrapNone => self.run_extra(a, ctx),
+            KApp::WindowList | KApp::PickRecent | KApp::PickFolders | KApp::PickFavorite | KApp::InsRecentFile | KApp::InsRecentDir | KApp::PickCharset | KApp::PickReopen
+            | KApp::Help | KApp::HelpSearch | KApp::ExtHelp | KApp::KeySearch | KApp::PaneOutline | KApp::PaneFiles => self.run_pick(a),
             KApp::Palette => {
                 self.cmdui.toggle_palette();
                 self.pal_plugins = Self::plugin_cmds();
@@ -2967,6 +2976,8 @@ impl App {
         if self.props.is_some() { self.props_window(ctx); }
         self.cmd_windows(ctx);
         self.tools_windows(ctx);
+        self.pick_window(ctx);
+        self.key_search_tick();
         self.tag_windows(ctx);
         self.print_windows(ctx);
         if self.split_on {
@@ -3324,6 +3335,26 @@ EDITED".into())), ..Default::default() };
         a.run_mac_src("S_InsText(\"x\");\nS_Cascade();", 0, &ctx);
         assert_eq!(a.docs[0].lines, [""], "整份宏都没执行");
         assert!(a.docs[0].tip.contains("宏未执行") && a.docs[0].tip.contains("第 2 行") && a.docs[0].tip.contains("层叠窗口"), "{}", a.docs[0].tip);
+    }
+
+    #[test]
+    fn macro_steps_for_window_list_help_and_panes_run_through_the_app() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.side.open = false;
+        a.run_mac_src("S_Outline();\nS_WinList();", 0, &ctx);
+        assert!(a.side.open && a.side.tab == Tab::Outline, "S_Outline 切到大纲页");
+        assert_eq!(a.tools.pick.as_ref().map(|p| p.kind), Some(crate::pick::Kind::Windows), "S_WinList 打开窗口一览");
+        a.tools.pick = None;
+        a.run_mac_src("S_FileTree();\nS_ToggleKeySearch();\nS_HelpContents();", 0, &ctx);
+        assert!(a.side.tab == Tab::Files && a.cfg.view.key_search, "S_FileTree 切文件页, S_ToggleKeySearch 打开自动显示");
+        assert_eq!(a.cur().name, crate::help::MANUAL_NAME, "S_HelpContents 开手册");
+        a.run_mac_src("S_ChgCharset();", 0, &ctx);
+        assert_eq!(a.tools.pick.as_ref().map(|p| p.kind), Some(crate::pick::Kind::Charset));
+        a.run_mac_src("S_FileReopen();", 0, &ctx);
+        assert_eq!(a.tools.pick.as_ref().map(|p| p.kind), Some(crate::pick::Kind::Reopen), "后开的列表替换先开的");
+        a.run_mac_src("S_ShowTab();", 0, &ctx);
+        assert!(a.cur().tip.contains("宏未执行") && a.cur().tip.contains("开关"), "ShowTab 仍然明确拒绝: {}", a.cur().tip);
     }
 
     #[test]

@@ -43,6 +43,8 @@ mod tabs;
 mod view;
 mod textconv;
 mod tools;
+mod pick;
+mod help;
 mod tagjump;
 mod kinsoku;
 mod icons;

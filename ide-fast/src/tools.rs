@@ -24,6 +24,11 @@ pub struct Tools {
     wrap_text: String,
     pub col_open: bool,
     col_text: String,
+    /// 通用选择列表 (窗口一览 / 最近的文件 / 字符集 / 帮助检索…); 画窗口和处理选中在 `app/picks.rs`
+    pub pick: Option<crate::pick::Pick>,
+    /// 关键字帮助自动显示: 上一次提示过的词, 和上一次看过的 (文档, 光标) —— 光标没动就不再查
+    pub key_word: String,
+    pub key_pos: Option<(u64, [usize; 2])>,
 }
 
 /// 窗口里点出来的动作, 由 `App` 去改文档 / 剪贴板

@@ -29,6 +29,8 @@ pub enum App {
     IsFwd, IsBack, IsRegexFwd, IsRegexBack, IsMigemoFwd, IsMigemoBack,
     Base64Decode, UuDecode, CopyHtml, CopyHtmlLn, ClipHistory, CtrlCodes, InsDate, InsTime, InsStamp, StampCfg,
     WrapCol, WrapWindow, WrapNone,
+    WindowList, PickRecent, PickFolders, PickFavorite, InsRecentFile, InsRecentDir, PickCharset, PickReopen,
+    Help, HelpSearch, ExtHelp, KeySearch, PaneOutline, PaneFiles,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -175,6 +177,14 @@ fn build() -> Vec<Entry> {
         z("app.ins-stamp", "插入戳记", "", "menu.edit", InsStamp), z("app.stamp-cfg", "戳记设置…", "", "menu.edit", StampCfg),
         z("app.wrap-col", "按指定列数折行…", "Ctrl+Alt+S", "menu.view", WrapCol), z("app.wrap-window", "按窗口宽度折行", "Ctrl+Alt+W", "menu.view", WrapWindow),
         z("app.wrap-none", "不折行", "Ctrl+Alt+X", "menu.view", WrapNone),
+        z("app.window-list", "窗口一览…", "", "menu.window", WindowList),
+        z("app.pick-recent", "最近的文件…", "", "menu.file", PickRecent), z("app.pick-folders", "最近的文件夹…", "", "menu.file", PickFolders),
+        z("app.pick-favorite", "收藏夹 (最近的文件和文件夹)…", "", "menu.file", PickFavorite),
+        z("app.ins-recent-file", "插入最近的文件路径…", "", "menu.edit", InsRecentFile), z("app.ins-recent-dir", "插入最近的文件夹路径…", "", "menu.edit", InsRecentDir),
+        z("app.pick-charset", "指定字符集…", "", "menu.file", PickCharset), z("app.pick-reopen", "指定字符集重新打开…", "", "menu.file", PickReopen),
+        z("app.help", "帮助手册", "F1", "menu.help", Help), z("app.help-search", "关键字帮助检索…", "Alt+Shift+F1", "menu.help", HelpSearch),
+        z("app.ext-help", "关键字帮助: 光标处的词", "Ctrl+F1", "menu.help", ExtHelp), z("app.key-search", "关键字帮助自动显示", "", "menu.help", KeySearch),
+        z("app.pane-outline", "显示大纲", "", "menu.view", PaneOutline), z("app.pane-files", "显示文件树", "", "menu.view", PaneFiles),
     ];
     for e in &mut v {
         match e.run {
@@ -470,6 +480,7 @@ mod tests {
         for (id, key) in [
             ("c.close-tab", "Ctrl+F4"), ("c.open-folder", "Ctrl+Alt+O"), ("c.print-setup", "Ctrl+Alt+P"), ("c.exit", "Ctrl+Alt+F4"), ("c.close-others", "Alt+Shift+F4"),
             ("c.toolbar", "Ctrl+1"), ("c.funckey", "Ctrl+2"), ("app.macro-save", "Ctrl+M"), ("app.exec-cmd", "Ctrl+F5"), ("app.open-hc", "Ctrl+Shift+C"),
+            ("app.help", "F1"), ("app.ext-help", "Ctrl+F1"), ("app.help-search", "Alt+Shift+F1"),
         ] {
             let e = entry_by_id(id).unwrap_or_else(|| panic!("找不到命令 {id}"));
             assert!(e.default.split('|').any(|k| k == key), "{id} 应绑 {key}, 实际 {}", e.default);

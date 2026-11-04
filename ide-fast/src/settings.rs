@@ -275,13 +275,15 @@ pub struct ViewState {
     /// 戳记: 内容 (0 日期 / 1 时间 / 2 日期+时间) 与位置 (0 行首 / 1 光标处), 见 `textconv::StampKind`
     pub stamp_kind: u8,
     pub stamp_pos: u8,
+    /// 关键字帮助自动显示: 光标停在单词上时, 状态栏提示里显示手册中第一处提到它的行 (同 Tauri `keysearch`)
+    pub key_search: bool,
     /// 页面设置 (打印 / 预览)
     pub print: crate::print::PageSetup,
 }
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, ai_w: 340.0, md_w: 420.0, side_collapsed: false, right_collapsed: false, bottom_collapsed: false, md_preview: false, md_overlay: true, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, hang: false, stamp_kind: 2, stamp_pos: 0, print: Default::default() }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, ai_w: 340.0, md_w: 420.0, side_collapsed: false, right_collapsed: false, bottom_collapsed: false, md_preview: false, md_overlay: true, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, hang: false, stamp_kind: 2, stamp_pos: 0, key_search: false, print: Default::default() }
     }
 }
 
@@ -439,6 +441,7 @@ impl Settings {
         }
         if let Some(n) = w["stamp_kind"].as_u64() { self.view.stamp_kind = n.min(2) as u8; }
         if let Some(n) = w["stamp_pos"].as_u64() { self.view.stamp_pos = n.min(1) as u8; }
+        if let Some(b) = w["key_search"].as_bool() { self.view.key_search = b; }
         if let Some(f) = w["side_w"].as_f64() { self.view.side_w = (f as f32).clamp(120.0, 900.0); }
         if let Some(f) = w["term_h"].as_f64() { self.view.term_h = crate::panels::clamp_size(crate::panels::Dock::Bottom, f as f32); }
         if let Some(f) = w["ai_w"].as_f64() { self.view.ai_w = crate::panels::clamp_size(crate::panels::Dock::Right, f as f32); }
@@ -479,7 +482,7 @@ impl Settings {
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
         o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_preview": w.md_preview, "geom": geom,
             "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "md_overlay": w.md_overlay, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
-            "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "hang": w.hang, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos,
+            "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "hang": w.hang, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos, "key_search": w.key_search,
             "print": { "paper": w.print.paper.code(), "landscape": w.print.landscape, "font_pt": w.print.font_pt, "margin_mm": w.print.margin_mm, "line_numbers": w.print.line_numbers, "header": w.print.header, "footer": w.print.footer } }));
         v
     }
@@ -693,7 +696,7 @@ mod tests {
         s.macro_slots[2] = MacroSlot { name: "转大写".into(), kind: "mac".into(), code: "S_ToUpper();\n".into() };
         s.macro_slots[19] = MacroSlot { name: "p".into(), kind: "ppa".into(), code: "x".into() };
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None, wrap_col: Some(66) }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, ai_w: 360.0, md_w: 480.0, side_collapsed: true, right_collapsed: true, bottom_collapsed: true, md_preview: true, md_overlay: false, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, hang: true, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, ai_w: 360.0, md_w: 480.0, side_collapsed: true, right_collapsed: true, bottom_collapsed: true, md_preview: true, md_overlay: false, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, hang: true, stamp_kind: 1, stamp_pos: 1, key_search: true, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉
