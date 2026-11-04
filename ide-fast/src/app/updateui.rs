@@ -188,7 +188,7 @@ impl App {
                                 }
                                 Phase::Ready(_, s) => {
                                     ui.label(trf("upd.verified", &[&s.sha256[..12]]));
-                                    if ui.button(tr("upd.install")).on_hover_text(tr("upd.install-tip")).clicked() { install = Some(s.clone()); }
+                                    if ui.button(tr("upd.install")).tip(tr("upd.install-tip")).clicked() { install = Some(s.clone()); }
                                 }
                                 _ => {}
                             }
@@ -203,7 +203,7 @@ impl App {
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.add_enabled(!busy, egui::Button::new(tr("upd.check"))).clicked() { check = true; }
-                if ui.link(tr("upd.page")).on_hover_text(&self.upd.page).clicked() { page = true; }
+                if ui.link(tr("upd.page")).tip(&self.upd.page).clicked() { page = true; }
             });
         });
         if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {

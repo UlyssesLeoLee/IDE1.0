@@ -28,6 +28,31 @@ pub fn mnemonic(menu_key: &str) -> char {
     }
 }
 
+/// 所有可能当助记字母的键 (A..Z)
+pub const MNEMONIC_KEYS: [egui::Key; 26] = {
+    use egui::Key::*;
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z]
+};
+
+/// 助记字母对应的键 (Alt+字母)
+pub fn mnemonic_key(menu_key: &str) -> Option<egui::Key> {
+    let m = mnemonic(menu_key);
+    if m == ' ' { None } else { egui::Key::from_name(&m.to_string()) }
+}
+
+/// 这次按键 (只按了 Alt, 没有 Ctrl / Shift) 对应的顶层菜单下标
+pub fn menu_for_key(keys: &[&str], mods: egui::Modifiers, key: egui::Key) -> Option<usize> {
+    if !mods.alt || mods.ctrl || mods.shift || mods.command { return None; }
+    keys.iter().position(|k| mnemonic_key(k) == Some(key))
+}
+
+/// 顶层菜单按钮, 并把它的弹出层 id 记下来 (给 Alt+助记字母用)
+pub fn top<R>(ui: &mut Ui, mids: &mut Vec<(&'static str, egui::Id)>, key: &'static str, title: egui::text::LayoutJob, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
+    let r = ui.menu_button(title, content);
+    mids.push((key, egui::Popup::default_response_id(&r.response)));
+    r
+}
+
 /// 菜单按钮文字: 菜单名 (13px, 随悬停变色) + 6px 间隔 + 带下划线的助记字母 (11px, 弱前景; `' '` = 不画, 窄窗口用)
 pub fn menu_title(tc: &ThemeColors, label: &str, mn: char) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
@@ -154,6 +179,20 @@ mod tests {
     #[test]
     fn tauri_letters_are_kept_for_the_shared_menus() {
         assert_eq!((mnemonic("menu.file"), mnemonic("menu.edit"), mnemonic("menu.search"), mnemonic("menu.view"), mnemonic("menu.setting"), mnemonic("menu.window"), mnemonic("menu.help")), ('F', 'E', 'S', 'V', 'C', 'W', 'H'));
+    }
+
+    #[test]
+    fn alt_letter_picks_the_menu_with_that_mnemonic() {
+        let keys = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.tool", "menu.help"];
+        let alt = egui::Modifiers::ALT;
+        for (i, k) in keys.iter().enumerate() {
+            let key = mnemonic_key(k).expect("字母键");
+            assert_eq!(menu_for_key(&keys, alt, key), Some(i), "{k}");
+        }
+        assert_eq!(menu_for_key(&keys, alt, egui::Key::Q), None, "Q 没有对应菜单");
+        assert_eq!(menu_for_key(&keys, egui::Modifiers::NONE, egui::Key::F), None, "不按 Alt 不开菜单");
+        assert_eq!(menu_for_key(&keys, egui::Modifiers::ALT | egui::Modifiers::SHIFT, egui::Key::F), None, "Alt+Shift+F 留给命令");
+        assert_eq!(menu_for_key(&keys, egui::Modifiers::ALT | egui::Modifiers::CTRL, egui::Key::F), None);
     }
 
     #[test]

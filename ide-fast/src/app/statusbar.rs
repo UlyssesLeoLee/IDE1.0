@@ -77,7 +77,7 @@ impl App {
                 // 位置: 点一下 = 转到行; 悬停给总行数和字符列
                 ui.add_space(8.0);
                 let tip = format!("{}\n{}\n{}", trf("st.lines", &[&d.lines.len().to_string()]), tr("st.goto-hint"), trf("st.char-col", &[&(d.cursor[1] + 1).to_string()]));
-                if ui.add(egui::Label::new(pos_label(row, d.cursor[1], dcol)).sense(Sense::click())).on_hover_text(tip).clicked() { st_cmd = Some(StatusCmd::Goto); }
+                if ui.add(egui::Label::new(pos_label(row, d.cursor[1], dcol)).sense(Sense::click())).tip(tip).clicked() { st_cmd = Some(StatusCmd::Goto); }
                 ui.add_space(8.0);
                 sep(ui, on);
                 if d.rec.is_some() { item(ui, on, egui::RichText::new("● REC").color(Color32::from_rgb(255, 120, 120))); }
@@ -104,7 +104,7 @@ impl App {
                 sep(ui, on);
                 if d.mixed_eol {
                     ui.add_space(8.0);
-                    ui.colored_label(Color32::from_rgb(255, 200, 90), tr("st.mixed-eol")).on_hover_text(tr("st.mixed-eol-tip"));
+                    ui.colored_label(Color32::from_rgb(255, 200, 90), tr("st.mixed-eol")).tip(tr("st.mixed-eol-tip"));
                     ui.add_space(8.0);
                     sep(ui, on);
                 }

@@ -1,6 +1,7 @@
 //! Markdown 预览的画法: 把 `markdown.rs` 解析出的块用 egui 画出来 (表格对齐、提示块、嵌套 / 任务列表、
 //! 围栏代码块带语法着色、本地 PNG 图片、链接可点)。解析在 `markdown.rs`, 这里只管样式和交互。
 
+use crate::ui_ext::TipExt;
 use crate::markdown::{callout_label, inline, Align, Block, Item, Parsed};
 use crate::view::ThemeColors;
 use eframe::egui::{self, Color32, FontId, RichText, Sense};
@@ -360,16 +361,41 @@ pub fn open_url(url: &str) -> Result<(), String> {
 }
 
 /// 画整篇预览 (放在滚动区里)
-pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCache, scroll_line: Option<usize>) -> MdEvent {
+/// 排版选项: 停靠在右侧 (`DOCKED`) 或覆盖在编辑区上 (`OVERLAY`, 对应 Tauri 的 `#md-preview` + `.md-body-view`)
+#[derive(Clone, Copy)]
+pub struct MdOpts {
+    /// 正文最宽 (Tauri `.md-body-view { max-width: 860px; margin: 0 auto }`), 超出就居中
+    pub max_w: f32,
+    /// 滚动区内左右留白 (Tauri `#md-preview { padding: 12px 24px }`); 滚动条仍贴滚动区右缘
+    pub pad_x: f32,
+    pub pad_y: f32,
+    /// 点一个块 = 就地编辑它 (覆盖模式下源码被盖住, 跳转没意义); 否则点块 = 编辑区跳到那一行
+    pub click_edits: bool,
+}
+
+impl MdOpts {
+    pub const DOCKED: MdOpts = MdOpts { max_w: f32::INFINITY, pad_x: 0.0, pad_y: 0.0, click_edits: false };
+    pub const OVERLAY: MdOpts = MdOpts { max_w: 860.0, pad_x: 24.0, pad_y: 12.0, click_edits: true };
+
+    /// 正文列宽
+    pub fn body_w(&self, avail: f32) -> f32 { (avail - 2.0 * self.pad_x).max(40.0).min(self.max_w) }
+}
+
+pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCache, scroll_line: Option<usize>, opts: MdOpts) -> MdEvent {
     let target = scroll_line.and_then(|l| block_at(blocks, l));
     let mut ev = MdEvent::default();
-    let w = ui.available_width();
+    let w = opts.body_w(ui.available_width());
     if (cache.width - w).abs() > 1.0 {
         cache.width = w;
         cache.heights.clear();
     }
     cache.heights.resize(blocks.len(), 40.0);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, view| {
+        ui.add_space(opts.pad_y);
+        let avail = ui.available_width();
+        let left = ui.cursor().min.x + ((avail - w) / 2.0).max(0.0);
+        let col = egui::Rect::from_min_max(egui::pos2(left, ui.cursor().min.y), egui::pos2(left + w, f32::INFINITY));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(col), |ui| {
         let origin = ui.cursor().min.y;
         for (n, b) in blocks.iter().enumerate() {
             let y = ui.cursor().min.y - origin;
@@ -465,18 +491,19 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                 ui.scroll_to_rect(r.rect, Some(egui::Align::TOP));
             }
             if click_block && ev.link.is_none() && r.interact(Sense::click()).clicked() {
-                ev.jump = Some(b.line);
+                if opts.click_edits { ev.edit_req = Some(n); } else { ev.jump = Some(b.line); }
             }
             // 鼠标在块上时右上角出现 ✎: 就地编辑这一块的源码
             if cache.edit.is_none() && ui.rect_contains_pointer(egui::Rect::from_min_max(r.rect.min, egui::pos2(ui.max_rect().right(), r.rect.bottom().max(r.rect.top() + 18.0)))) {
                 let hot = egui::Rect::from_min_size(egui::pos2(ui.max_rect().right() - 24.0, r.rect.top()), egui::vec2(22.0, 18.0));
                 let resp = ui.interact(hot, egui::Id::new(("md-edit", n)), Sense::click());
                 ui.painter().text(hot.center(), egui::Align2::CENTER_CENTER, "✎", FontId::proportional(13.0), if resp.hovered() { cx.tc.fg } else { cx.tc.fg_dim });
-                if resp.on_hover_text(crate::i18n::tr("md.edit-block")).clicked() { ev.edit_req = Some(n); }
+                if resp.tip(crate::i18n::tr("md.edit-block")).clicked() { ev.edit_req = Some(n); }
             }
             ui.add_space(6.0);
             cache.heights[n] = ui.cursor().min.y - before;
         }
+        });
     });
     ev
 }
@@ -484,6 +511,14 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlay_body_is_860_wide_and_centred_with_24px_gutters() {
+        assert_eq!(MdOpts::OVERLAY.body_w(1400.0), 860.0);
+        assert_eq!(MdOpts::OVERLAY.body_w(600.0), 552.0, "窄窗口: 两边各留 24");
+        assert_eq!(MdOpts::DOCKED.body_w(420.0), 420.0, "停靠模式铺满");
+        assert!(MdOpts::OVERLAY.click_edits && !MdOpts::DOCKED.click_edits);
+    }
 
     #[test]
     fn local_image_targets_resolve_against_the_document_dir() {

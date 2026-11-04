@@ -34,7 +34,7 @@ impl App {
     pub(super) fn dock_wanted(&self, d: Dock) -> bool {
         match d {
             Dock::Side => self.side.open,
-            Dock::Right => self.ai.open || self.md_preview,
+            Dock::Right => self.ai.open || (self.md_preview && !self.cfg.view.md_overlay),
             Dock::Bottom => self.term.open,
         }
     }
@@ -83,7 +83,7 @@ impl App {
         let txt = egui::RichText::new(trz(word)).size(11.0).color(self.tc.fg_dim);
         let edge = if self.tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
         let btn = egui::Button::new(txt).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, edge)).corner_radius(5.0);
-        if ui.add(btn).on_hover_text(trz(panels::tip(d, collapsed))).clicked() {
+        if ui.add(btn).tip(trz(panels::tip(d, collapsed))).clicked() {
             self.collapse_dock(d);
         }
     }
@@ -100,7 +100,7 @@ impl App {
                 p.resizable(false).exact_size(panels::STRIP).frame(egui::Frame::NONE.fill(tc.bg_rail)).show(root, |ui| {
                     let w = ui.available_width();
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, panels::STRIP_BTN_H), Sense::click());
-                    let resp = resp.on_hover_text(trz(panels::tip(d, collapsed)));
+                    let resp = resp.tip(trz(panels::tip(d, collapsed)));
                     if resp.hovered() { ui.painter().rect_filled(rect, 0.0, tc.bg_hover); }
                     let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
                     ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, panels::chevron(d, collapsed), egui::FontId::proportional(16.0), col);
@@ -150,7 +150,7 @@ impl App {
                 self.dock_chevron(ui, Dock::Bottom);
                 let txt = egui::RichText::new(format!("+ {}", trz("新建终端"))).size(11.0).color(tc.fg_dim);
                 let b = egui::Button::new(txt).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, edge)).corner_radius(5.0);
-                if ui.add(b).on_hover_text(trz("新建终端 (Ctrl+`)")).clicked() {
+                if ui.add(b).tip(trz("新建终端 (Ctrl+`)")).clicked() {
                     self.sys.bottom = BottomTab::Terminal;
                     if self.dock_collapsed(Dock::Bottom) || !self.term.open { self.term.open = true; self.expand_dock(Dock::Bottom); }
                     self.term.restart();
@@ -254,8 +254,11 @@ mod tests {
         assert!(a.cfg.view.right_collapsed);
         a.ai.open = false;
         a.md_preview = true;
+        a.cfg.view.md_overlay = true;
+        assert!(!a.dock_wanted(Dock::Right), "覆盖模式的预览不占右侧停靠区");
+        a.cfg.view.md_overlay = false;
         a.normalize_docks();
-        assert!(a.cfg.view.right_collapsed, "预览还开着: 折叠标记保留");
+        assert!(a.cfg.view.right_collapsed, "停靠模式的预览还开着: 折叠标记保留");
     }
 
     #[test]

@@ -112,6 +112,7 @@ pub const T: &[Row] = &[
     ("menu.file", ["文件", "ファイル", "File"]),
     ("menu.edit", ["编辑", "編集", "Edit"]),
     ("menu.search", ["查找", "検索", "Search"]),
+    ("menu.md-overlay", ["Markdown 预览覆盖编辑区", "Markdown プレビューをエディタに重ねる", "Markdown preview over the editor"]),
     ("menu.fold", ["折叠", "折りたたみ", "Folding"]),
     ("menu.plugin", ["插件", "プラグイン", "Plugins"]),
     ("menu.setting", ["设置", "設定", "Settings"]),

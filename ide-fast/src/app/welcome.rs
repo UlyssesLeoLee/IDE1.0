@@ -141,7 +141,7 @@ impl App {
             let txt = p.layout_no_wrap(trz("打开文件夹").to_string(), FontId::proportional(13.0), tc.fg);
             p.galley(btn.center() - txt.size() / 2.0, txt, tc.fg);
         }
-        if resp.on_hover_text(trz("打开文件夹 (Ctrl+K O)")).clicked() { self.open_folder_dialog(); }
+        if resp.tip(trz("打开文件夹 (Ctrl+K O)")).clicked() { self.open_folder_dialog(); }
         y += btn_size.y + GAP;
         let kbd_bg = if tc.dark { Color32::from_gray(51) } else { Color32::from_gray(238) };
         let kbd_edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };

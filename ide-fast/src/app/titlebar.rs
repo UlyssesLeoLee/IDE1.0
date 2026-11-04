@@ -207,7 +207,7 @@ impl App {
                             let txt = egui::RichText::new(format!(">_ {}", trz("终端"))).size(12.0).color(tc.fg);
                             let edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
                             let b = egui::Button::new(txt).fill(tc.bg_hover).stroke(egui::Stroke::new(1.0, edge)).corner_radius(4.0).min_size(Vec2::new(TERM_W - 12.0, 22.0));
-                            if ui.add(b).on_hover_text(tip).clicked() { run = Some(i); }
+                            if ui.add(b).tip(tip).clicked() { run = Some(i); }
                         }
                     }
                 });
@@ -241,7 +241,7 @@ impl App {
             Dock::Right => "折叠 / 展开右侧面板",
             Dock::Bottom => "折叠 / 展开底部面板",
         });
-        resp.on_hover_text(tip).clicked()
+        resp.tip(tip).clicked()
     }
 
     /// 窗口边缘的缩放把手 + 自绘窗口的 1 像素外框; 每帧末尾调一次
@@ -295,7 +295,7 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn) -> egui::Response {
             p.line_segment([egui::pos2(c.x + 5.0, c.y - 5.0), egui::pos2(c.x - 5.0, c.y + 5.0)], st);
         }
     }
-    resp.on_hover_text(trz(match kind {
+    resp.tip(trz(match kind {
         WinBtn::Minimize => "最小化",
         WinBtn::Maximize => "最大化",
         WinBtn::Restore => "还原",

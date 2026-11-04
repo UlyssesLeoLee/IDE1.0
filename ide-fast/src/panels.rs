@@ -61,8 +61,8 @@ pub fn normalize(open: bool, collapsed: bool) -> bool {
 }
 
 /// 右侧停靠区这一帧有没有东西可画
-pub fn right_visible(ai_open: bool, md_preview: bool, is_md: bool) -> bool {
-    ai_open || (md_preview && is_md)
+pub fn right_visible(ai_open: bool, md_preview: bool, is_md: bool, overlay: bool) -> bool {
+    ai_open || (md_preview && is_md && !overlay)
 }
 
 /// 面板尺寸夹到合法范围 (设置文件里读到的值不可信)
@@ -153,10 +153,12 @@ mod tests {
 
     #[test]
     fn right_dock_needs_chat_or_a_markdown_preview() {
-        assert!(!right_visible(false, false, true));
-        assert!(!right_visible(false, true, false), "预览开着但当前不是 md");
-        assert!(right_visible(false, true, true));
-        assert!(right_visible(true, false, false));
+        assert!(!right_visible(false, false, true, false));
+        assert!(!right_visible(false, true, false, false), "预览开着但当前不是 md");
+        assert!(!right_visible(false, true, true, true), "覆盖模式预览不占右侧停靠区");
+        assert!(right_visible(true, true, true, true));
+        assert!(right_visible(false, true, true, false));
+        assert!(right_visible(true, false, false, false));
     }
 
     #[test]

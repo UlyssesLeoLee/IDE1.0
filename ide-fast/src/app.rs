@@ -1,5 +1,6 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
+use crate::ui_ext::TipExt;
 use crate::ckbox::CheckExt;
 use crate::doc::Doc;
 use crate::kinsoku::{expand_wrap, Wrap};
@@ -634,8 +635,8 @@ impl App {
                         let col = match c.letter() { 'M' => tc.yellow, 'A' | 'U' => tc.green, 'D' => tc.red, _ => tc.blue };
                         ui.label(egui::RichText::new(c.letter().to_string()).monospace().color(col));
                         if ui.small_button(trz("差异")).clicked() { act = Some((c.path.clone(), 1)); }
-                        if staged { if ui.small_button("-").on_hover_text(trz("取消暂存")).clicked() { act = Some((c.path.clone(), 3)); } }
-                        else if ui.small_button("+").on_hover_text(trz("暂存")).clicked() { act = Some((c.path.clone(), 2)); }
+                        if staged { if ui.small_button("-").tip(trz("取消暂存")).clicked() { act = Some((c.path.clone(), 3)); } }
+                        else if ui.small_button("+").tip(trz("暂存")).clicked() { act = Some((c.path.clone(), 2)); }
                         if ui.selectable_label(false, &c.path).clicked() { act = Some((c.path.clone(), 0)); }
                     });
                 }
@@ -1106,7 +1107,7 @@ impl App {
         for r in &rows {
             ui.horizontal(|ui| {
                 if !r.commands.is_empty() || r.script_only {
-                    if ui.check(&mut r.enabled.clone(), "").on_hover_text(tr("ui.plugin-enabled")).clicked() {
+                    if ui.check(&mut r.enabled.clone(), "").tip(tr("ui.plugin-enabled")).clicked() {
                         let _ = plugins::set_enabled(&r.id, !r.enabled);
                         self.md10.invalidate();
                         if r.enabled { self.plug.unload(&r.id); }
@@ -1152,8 +1153,9 @@ impl App {
         let tc = self.tc;
         let hide = self.sys.mn_hide;
         let mn = move |k: &str| if hide { ' ' } else { menuui::mnemonic(k) };
+        let mut mids: Vec<(&'static str, egui::Id)> = Vec::new();
         egui::MenuBar::new().style(menuui::bar_style(tc)).config(egui::containers::menu::MenuConfig::new().style(menuui::style(tc))).ui(ui, |ui| {
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.file"), mn("menu.file")), |ui| menuui::scroll(ui, |ui| {
+            menuui::top(ui, &mut mids, "menu.file", menuui::menu_title(&tc, tr("menu.file"), mn("menu.file")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
                 if menuui::mbtn(ui, lk("c.open-file", "Ctrl+O")).clicked() { ui.close(); self.open_dialog(); }
                 if menuui::mbtn(ui, lk("c.open-folder", "")).clicked() { ui.close(); self.open_folder_dialog(); }
@@ -1201,7 +1203,7 @@ impl App {
                 ui.separator();
                 if menuui::mbtn(ui, lk("c.exit", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             }));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.edit"), mn("menu.edit")), |ui| menuui::scroll(ui, |ui| {
+            menuui::top(ui, &mut mids, "menu.edit", menuui::menu_title(&tc, tr("menu.edit"), mn("menu.edit")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
                 if menuui::mbtn(ui, lk("c.redo", "Ctrl+Y")).clicked() { self.cur().redo(); ui.close(); }
                 ui.separator();
@@ -1222,7 +1224,7 @@ impl App {
                     if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
             }));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.search"), mn("menu.search")), |ui| menuui::scroll(ui, |ui| {
+            menuui::top(ui, &mut mids, "menu.search", menuui::menu_title(&tc, tr("menu.search"), mn("menu.search")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace", "Ctrl+H / Ctrl+R")).clicked() { self.open_find(true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.grep", "Ctrl+G")).clicked() { self.focus_grep(); ui.close(); }
@@ -1242,12 +1244,12 @@ impl App {
                     if ui.button(trz("清除比较")).clicked() { self.diff = None; self.diff_list_open = false; ui.close(); }
                 });
             }));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.fold"), mn("menu.fold")), |ui| {
+            menuui::top(ui, &mut mids, "menu.fold", menuui::menu_title(&tc, tr("menu.fold"), mn("menu.fold")), |ui| {
                 if menuui::mbtn(ui, lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
                 if menuui::mbtn(ui, lk("c.unfold-all", "Ctrl+Shift+]")).clicked() { self.cur().folds.clear(); ui.close(); }
             });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.plugin"), mn("menu.plugin")), |ui| self.plugin_panel(ui));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")), |ui| menuui::scroll(ui, |ui| {
+            menuui::top(ui, &mut mids, "menu.plugin", menuui::menu_title(&tc, tr("menu.plugin"), mn("menu.plugin")), |ui| self.plugin_panel(ui));
+            menuui::top(ui, &mut mids, "menu.setting", menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
                 ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
                 ui.menu_button(tr("sub.uilang"), |ui| {
@@ -1269,7 +1271,7 @@ impl App {
                 ui.separator();
                 if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
             }));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.bookmark"), mn("menu.bookmark")), |ui| {
+            menuui::top(ui, &mut mids, "menu.bookmark", menuui::menu_title(&tc, tr("menu.bookmark"), mn("menu.bookmark")), |ui| {
                 if menuui::mbtn(ui, lk("c.bookmark-toggle", "Ctrl+F2")).clicked() { self.cur().bookmark("toggle"); ui.close(); }
                 if menuui::mbtn(ui, lk("c.bookmark-next", "F2")).clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
                 if menuui::mbtn(ui, lk("c.bookmark-prev", "Shift+F2")).clicked() { self.jump_mark(); self.cur().bookmark("prev"); ui.close(); }
@@ -1281,7 +1283,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.hist-next", "Alt+N")).clicked() { self.jump_go(1); ui.close(); }
                 if menuui::mbtn(ui, lk("c.hist-mark", "")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
             });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")), |ui| menuui::scroll(ui, |ui| {
+            menuui::top(ui, &mut mids, "menu.window", menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
                 if menuui::mbtn(ui, lk("c.split-rows", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Rows); ui.close(); }
                 if menuui::mbtn(ui, lk("c.split-quad", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Quad); ui.close(); }
@@ -1308,12 +1310,13 @@ impl App {
                 if menu_check(ui, &tc, self.fullscreen, lk("c.fullscreen", "F11")).clicked() { self.toggle_fullscreen(ctx); ui.close(); }
                 if menu_check(ui, &tc, self.topmost, lk("c.topmost", "")).clicked() { self.toggle_topmost(ctx); ui.close(); }
             }));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.macro"), mn("menu.macro")), |ui| self.macro_items(ui));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.view"), mn("menu.view")), |ui| menuui::scroll(ui, |ui| {
+            menuui::top(ui, &mut mids, "menu.macro", menuui::menu_title(&tc, tr("menu.macro"), mn("menu.macro")), |ui| self.macro_items(ui));
+            menuui::top(ui, &mut mids, "menu.view", menuui::menu_title(&tc, tr("menu.view"), mn("menu.view")), |ui| menuui::scroll(ui, |ui| {
                 if menu_check(ui, &tc, self.split_on, lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
                 if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`")).clicked() { self.term.open = !self.term.open; }
                 if menu_check(ui, &tc, self.ai.open, lk("c.ai-chat", "Ctrl+Alt+L")).clicked() { self.ai_toggle(); ui.close(); }
                 if menu_check(ui, &tc, self.md_preview, lk("c.md-preview", "Ctrl+Shift+V")).clicked() { self.md_preview = !self.md_preview; }
+                if menu_check(ui, &tc, self.cfg.view.md_overlay, tr("menu.md-overlay")).clicked() { self.cfg.view.md_overlay = !self.cfg.view.md_overlay; }
                 if menu_check(ui, &tc, self.dark, lk("c.dark", "")).clicked() { self.dark = !self.dark; ui.close(); }
                 if menu_check(ui, &tc, self.highlight, lk("c.highlight", "")).clicked() { self.highlight = !self.highlight; }
                 if menu_check(ui, &tc, self.wrap, lk("c.wrap", "Alt+Z")).clicked() { self.wrap = !self.wrap; }
@@ -1354,8 +1357,8 @@ impl App {
                 if menuui::mbtn(ui, lk("c.zoom-out", "Ctrl+-")).clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
                 if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() { self.font_px = DEFAULT_FONT_PX; }
             }));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.tool"), mn("menu.tool")), |ui| menuui::scroll(ui, |ui| self.tool_items(ui, ctx)));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.help"), mn("menu.help")), |ui| {
+            menuui::top(ui, &mut mids, "menu.tool", menuui::menu_title(&tc, tr("menu.tool"), mn("menu.tool")), |ui| menuui::scroll(ui, |ui| self.tool_items(ui, ctx)));
+            menuui::top(ui, &mut mids, "menu.help", menuui::menu_title(&tc, tr("menu.help"), mn("menu.help")), |ui| {
                 if menuui::mbtn(ui, lk("c.palette", "")).clicked() { ui.close(); self.run_app(KApp::Palette, ctx); }
                 if menuui::mbtn(ui, lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
                 if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
@@ -1364,6 +1367,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
             });
         });
+        self.sys.menu_ids = mids;
     }
 
     /// 宏菜单的内容 (「宏」和「工具 > 宏」共用)
@@ -1486,7 +1490,7 @@ impl App {
     fn term_ui(&mut self, ui: &mut egui::Ui) {
         Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
             if ui.button(trz("清屏")).clicked() { self.term.clear(); }
-            if ui.button(trz("重启")).on_hover_text(trz("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)")).clicked() { self.term.restart(); }
+            if ui.button(trz("重启")).tip(trz("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)")).clicked() { self.term.restart(); }
             ui.check(&mut self.term.persistent, trz("常驻会话"));
             ui.check(&mut self.term_stdin, trz("选区作标准输入"));
             ui.check(&mut self.term_replace, trz("输出替换选区"));
@@ -1535,7 +1539,7 @@ impl App {
     }
 
     /// Markdown 预览: 块按 (文档, 版本) 缓存解析; 点块 = 编辑区跳到那一行, 点链接 = 打开 / 跳到标题
-    fn md_ui(&mut self, ui: &mut egui::Ui) {
+    fn md_ui(&mut self, ui: &mut egui::Ui, overlay: bool) {
         let ai = self.active.min(self.docs.len() - 1);
         let key = (self.docs[ai].id, self.docs[ai].rev);
         if self.md_parsed.as_ref().map(|p| p.0) != Some(key) {
@@ -1544,13 +1548,13 @@ impl App {
         let blocks = self.md_parsed.take().expect("刚刚填好");
         if self.md_cache.edit.as_ref().is_some_and(|e| e.doc != self.docs[ai].id || e.rev != self.docs[ai].rev) { self.md_cache.edit = None; } // 文档在别处改过: 放弃就地编辑
         self.md10.sync_theme(self.dark, &self.theme_id);
-        self.md_toolbar(ui);
+        if !overlay { self.md_toolbar(ui); }
         self.md_poll_fences(&ui.ctx().clone());
         let fence_langs = self.md10.langs();
         let theme = self.tc.syntax_theme();
         let base = self.docs[ai].path.as_ref().and_then(|p| p.parent()).map(|p| p.to_path_buf());
         let cx = crate::md_view::MdCtx { base: base.as_deref(), registry: &self.registry, theme: &theme, tc: self.tc, fence_langs: &fence_langs, fences: &self.md10.fences };
-        let ev = crate::md_view::show(ui, &blocks.1, &cx, &mut self.md_cache, self.md_scroll_to.take());
+        let ev = crate::md_view::show(ui, &blocks.1, &cx, &mut self.md_cache, self.md_scroll_to.take(), if overlay { crate::md_view::MdOpts::OVERLAY } else { crate::md_view::MdOpts::DOCKED });
         if let Some(l) = ev.jump { self.docs[ai].goto(l, 0); }
         self.md_handle(ai, &blocks.1, &ev);
         if let Some(link) = ev.link {
@@ -1629,6 +1633,7 @@ impl App {
             if keymap::entries()[idx].needs_diff && self.diff.is_none() { continue; }
             if cmd(ctx, m, k) { self.run_entry(idx, ctx); }
         }
+        self.menu_mnemonics(ctx);
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
         // 菜单 / 弹出层开着时 Esc 只关它 (这里若先把 Esc 吃掉, 菜单永远收不起来)
         if ctx.input(|i| i.key_pressed(Key::Escape)) && egui::Popup::is_any_open(ctx) {
@@ -1640,6 +1645,33 @@ impl App {
             else if self.find.open { self.find.open = false; }
             else if self.cur().sel_mode { self.cur().sel_mode = false; self.cur().tip = trz("范围选择模式: 关").into(); }
             else { let d = self.cur(); d.box_sel = None; d.extra.clear(); }
+        }
+    }
+
+    /// Alt+助记字母: 打开对应的顶层菜单 (命令绑定了同一个 Alt+字母时命令优先, 已经在上面分发过了)。
+    /// 打开后的上下键 / 回车 / Esc 走 egui 菜单自带的焦点导航和关闭逻辑
+    fn menu_mnemonics(&mut self, ctx: &egui::Context) {
+        let keys: Vec<&str> = self.sys.menu_ids.iter().map(|m| m.0).collect();
+        let hit = ctx.input_mut(|i| {
+            let m = i.modifiers;
+            let k = menuui::MNEMONIC_KEYS.iter().copied().find(|k| i.key_pressed(*k))?;
+            let n = menuui::menu_for_key(&keys, m, k)?;
+            i.consume_key(m, k);
+            // Alt+字母 winit 还会补一条 Text 事件: 不吃掉的话字母会被打进文档
+            i.events.retain(|e| !matches!(e, egui::Event::Text(t) if t.eq_ignore_ascii_case(k.name())));
+            Some(n)
+        });
+        if let Some(n) = hit {
+            let id = self.sys.menu_ids[n].1;
+            egui::Popup::close_all(ctx);
+            egui::Popup::open_id(ctx, id);
+            // 编辑区占着焦点而且锁着上下键: 放掉它, 过两帧 (菜单项登记完) 再把焦点送到第一项, 之后 ↑ ↓ ← → / 回车 / Esc 走 egui 自带的菜单导航
+            ctx.memory_mut(|m| if let Some(f) = m.focused() { m.surrender_focus(f); });
+            self.sys.mn_focus = 2;
+        } else if self.sys.mn_focus > 0 {
+            self.sys.mn_focus -= 1;
+            if self.sys.mn_focus == 0 && egui::Popup::is_any_open(ctx) { ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::Next)); }
+            ctx.request_repaint();
         }
     }
 
@@ -2723,15 +2755,15 @@ impl App {
         };
         self.ai_poll(ctx);
         self.dock_strip(root, Dock::Right); // 右细条常驻 (最外层), Chat / 预览停靠在它左边
-        match self.dock_mode(Dock::Right, crate::panels::right_visible(self.ai.open, self.md_preview, is_md)) {
+        match self.dock_mode(Dock::Right, crate::panels::right_visible(self.ai.open, self.md_preview, is_md, self.cfg.view.md_overlay)) {
             Mode::Full => {
                 let settled = !ctx.input(|i| i.pointer.any_down());
                 if self.ai.open && right_room(root.available_width()) {
                     let r = egui::Panel::right("aichat").resizable(true).default_size(self.cfg.view.ai_w).max_size(right_cap(root.available_width())).show(root, |ui| self.ai_ui(ui));
                     if settled { self.cfg.view.ai_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
                 }
-                if self.md_preview && is_md && right_room(root.available_width()) {
-                    let r = egui::Panel::right("mdprev").resizable(true).default_size(self.cfg.view.md_w).max_size(right_cap(root.available_width())).show(root, |ui| self.md_ui(ui));
+                if self.md_preview && is_md && !self.cfg.view.md_overlay && right_room(root.available_width()) {
+                    let r = egui::Panel::right("mdprev").resizable(true).default_size(self.cfg.view.md_w).max_size(right_cap(root.available_width())).show(root, |ui| self.md_ui(ui, false));
                     if settled { self.cfg.view.md_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
                 }
             }
@@ -2739,6 +2771,7 @@ impl App {
             Mode::Hidden => {}
         }
         self.tab_bar(root, ctx);
+        self.md_bar(root, ctx, is_md);
         use crate::split::SplitKind as SK;
         let fill = ctx.global_style().visuals.extreme_bg_color;
         let kind = self.panes.kind;
@@ -2757,6 +2790,7 @@ impl App {
             else {
                 let area = ui.max_rect();
                 self.editor_pane(ui, ctx, find_focus, 0);
+                if self.md_preview && is_md && self.cfg.view.md_overlay && !self.welcome_visible() { self.md_overlay(ctx, area); }
                 if self.welcome_visible() { self.welcome(ui, area); }
             }
         });

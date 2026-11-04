@@ -1,6 +1,7 @@
 //! 首选项对话框的页面: 画的是一份草稿 (`Settings` 的拷贝), 按 OK 才并进运行状态 (见 app.rs 的 `prefs_commit`)。
 //! 页签对应 Tauri 版「共通設定」的分组: 常规 / 编辑 / 文件 / 字体与颜色 / 文件类型 / 查找。
 
+use crate::ui_ext::TipExt;
 use crate::ckbox::CheckExt;
 use crate::i18n::{tr, Lang};
 use crate::settings::{self, Settings, TypePref};
@@ -73,7 +74,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.check(&mut d.dark, tr("pf.dark"));
             ui.check(&mut d.highlight, tr("pf.highlight"));
             ui.check(&mut d.wrap, tr("pf.wrap"));
-            ui.check(&mut d.glass_blur, tr("pf.glass-blur")).on_hover_text(tr("pf.glass-note"));
+            ui.check(&mut d.glass_blur, tr("pf.glass-blur")).tip(tr("pf.glass-note"));
             ui.horizontal(|ui| { ui.label(tr("pf.font-size")); ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0)); });
             ui.horizontal(|ui| { ui.label(tr("pf.tab-width")); ui.add(egui::Slider::new(&mut d.tab_width, 1..=16)); });
             ui.separator();
@@ -84,7 +85,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     for c in crate::update::Channel::ALL { if ui.selectable_label(c == cur, tr(c.label_key())).clicked() { d.update_channel = c.code().into(); } }
                 });
             });
-            ui.check(&mut d.update_daily, tr("pf.update-daily")).on_hover_text(tr("pf.update-daily-tip"));
+            ui.check(&mut d.update_daily, tr("pf.update-daily")).tip(tr("pf.update-daily-tip"));
         }
         PrefsTab::Edit => {
             ui.check(&mut d.auto_indent, tr("pf.auto-indent"));
@@ -109,7 +110,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                 ui.check(&mut d.auto_backup, tr("pf.auto-backup"));
                 ui.add_enabled(d.auto_backup, egui::DragValue::new(&mut d.auto_backup_min).range(crate::backup::MIN_INTERVAL..=crate::backup::MAX_INTERVAL).suffix(tr("pf.minutes")));
             });
-            ui.check(&mut d.file_lock, tr("pf.file-lock")).on_hover_text(tr("pf.file-lock-tip"));
+            ui.check(&mut d.file_lock, tr("pf.file-lock")).tip(tr("pf.file-lock-tip"));
             ui.check(&mut d.check_external, tr("pf.check-external"));
             ui.check(&mut d.restore_session, tr("pf.restore-session"));
             ui.check(&mut d.confirm_close, tr("pf.confirm-close"));
@@ -186,7 +187,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     let mut won = t.wrap_col.is_some();
                     let mut wc = t.wrap_col.filter(|c| *c > 0).unwrap_or(80);
                     ui.horizontal(|ui| {
-                        if ui.check(&mut won, "").on_hover_text(tr("pf.wrap-col-tip")).changed() { t.wrap_col = if won { Some(wc) } else { None }; }
+                        if ui.check(&mut won, "").tip(tr("pf.wrap-col-tip")).changed() { t.wrap_col = if won { Some(wc) } else { None }; }
                         if won && ui.add(egui::DragValue::new(&mut wc).range(10..=crate::tools::WRAP_COL_MAX)).changed() { t.wrap_col = Some(wc); }
                     });
                     if ui.small_button(tr("pf.type-remove")).clicked() { remove = Some(i); }

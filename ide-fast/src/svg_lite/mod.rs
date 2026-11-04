@@ -3,6 +3,7 @@
 //! 安全: 只认下面这些图元, `<script>` / `<foreignObject>` / 外部引用一律忽略 (等价于 Tauri 版的白名单净化)。
 //! 不支持 (如 mermaid 的复杂图) 的图元被跳过, 整张图一个都画不出来时调用方改显示数据文本。
 
+use crate::ui_ext::TipExt;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -439,7 +440,7 @@ pub fn show(ui: &mut egui::Ui, svg: &Svg, text_override: Option<Color32>) -> Opt
     if let (Some(l), Some(h)) = (hot, hover) {
         if let Some(tip) = svg.items.iter().find(|it| it.line == Some(l) && it.tip.is_some()).and_then(|it| it.tip.clone()) {
             let _ = h;
-            resp.clone().on_hover_text(tip);
+            resp.clone().tip(tip);
         }
     }
     if resp.clicked() { hot } else { None }

@@ -14,6 +14,16 @@ const FENCE_MAX_BYTES: usize = 64 * 1024;
 const FENCE_CACHE: usize = 64;
 const FENCE_JOBS: usize = 6;
 
+/// 工具条按钮 (editor.html `MD_BTNS`; 分组之间一条竖线): (按钮字, 编辑命令, 提示)
+const MD_BAR: &[&[(&str, &str, &str)]] = &[
+    &[("B", "md-bold", "粗体 (Ctrl+B)"), ("I", "md-italic", "斜体 (Ctrl+I)"), ("S", "md-strike", "删除线 (Ctrl+Shift+X)"), ("==", "md-highlight", "高亮 ==文字=="), ("`", "md-code", "行内代码 (Ctrl+E)")],
+    &[("H1", "md-h1", "标题 1 (Ctrl+Alt+1)"), ("H2", "md-h2", "标题 2 (Ctrl+Alt+2)"), ("H3", "md-h3", "标题 3 (Ctrl+Alt+3)"), ("H4", "md-h4", "标题 4")],
+    &[("• 列表", "md-ul", "无序列表"), ("1. 列表", "md-ol", "有序列表"), ("☑ 任务", "md-task", "任务列表"), ("❝ 引用", "md-quote", "引用")],
+    &[("链接", "md-link", "链接 (Ctrl+Shift+K)"), ("图片", "md-image", "图片"), ("表格", "md-table", "表格 3×3"), ("{ } 代码块", "md-codeblock", "围栏代码块 (自动选安全围栏)")],
+    &[("↑ 章节", "md-section-up", "把光标所在章节(含子章节)上移一格"), ("↓ 章节", "md-section-down", "把光标所在章节(含子章节)下移一格")],
+    &[("分隔线", "md-hr", "分隔线"), ("Callout", "md-callout", "Obsidian callout"), ("Mermaid", "md-mermaid", "Mermaid 图 (需要渲染插件才能在预览里出图)")],
+];
+
 #[derive(Default)]
 pub(super) struct MdState {
     pub fences: HashMap<u64, FenceRes>,
@@ -184,12 +194,84 @@ impl App {
     }
 
     /// 预览顶部的小工具条
+    /// Tauri 的 `#md-bar`: md 文档上方一条工具条 (2px 6px 内边距, bg_bar 底, 下边线, 横向可滚), 左边是格式按钮, 右边是 预览 开关;
+    /// 按钮 11px、透明底 + 透明边、圆角 3, 悬停 bg_hover + 描边, 开着的预览按钮 bg_active。再加 ide-fast 自己的 检查 / 导出 两个按钮
+    pub(super) fn md_bar(&mut self, root: &mut egui::Ui, ctx: &egui::Context, is_md: bool) {
+        if !is_md || !self.cfg.view.md_overlay { return; }
+        let tc = self.tc;
+        let on = self.md_preview;
+        let mut cmd: Option<&'static str> = None;
+        let mut toggle = false;
+        let (mut lint, mut export) = (false, false);
+        let frame = egui::Frame::NONE.fill(tc.bg_bar).inner_margin(egui::Margin::symmetric(6, 2)).stroke(egui::Stroke::NONE);
+        let r = egui::Panel::top("mdbar").frame(frame).show_separator_line(false).show(root, |ui| {
+            let v = ui.visuals_mut();
+            for w in [&mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active] {
+                w.weak_bg_fill = egui::Color32::TRANSPARENT;
+                w.bg_stroke = egui::Stroke::NONE;
+                w.corner_radius = 3.0.into();
+                w.fg_stroke.color = tc.fg;
+            }
+            v.widgets.hovered.weak_bg_fill = tc.bg_hover;
+            v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, tc.border);
+            v.widgets.active.weak_bg_fill = tc.bg_active;
+            ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
+            ui.spacing_mut().button_padding = egui::vec2(8.0, 1.0);
+            let sep = |ui: &mut egui::Ui| {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(9.0, 18.0), egui::Sense::hover());
+                ui.painter().vline(r.center().x, r.y_range(), egui::Stroke::new(1.0, tc.border));
+            };
+            // 预览开关钉在最右 (Tauri 它在条尾, 窄窗口里要横向滚才够得着; 这里不让它滚出去)
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut b = egui::Button::new(egui::RichText::new(trz("预览")).size(11.0));
+                if on { b = b.fill(tc.bg_active).stroke(egui::Stroke::new(1.0, tc.border)); }
+                if ui.add(b).tip(trz("源码 / 渲染预览切换 (Ctrl+Shift+V)")).clicked() { toggle = true; }
+                sep(ui);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    egui::ScrollArea::horizontal().id_salt("mdbar-scroll").auto_shrink([false, true]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for g in MD_BAR {
+                                for (label, c, tip) in *g {
+                                    if ui.add(egui::Button::new(egui::RichText::new(*label).size(11.0))).tip(trz(tip)).clicked() { cmd = Some(*c); }
+                                }
+                                sep(ui);
+                            }
+                            if ui.add(egui::Button::new(egui::RichText::new(tr("md.lint")).size(11.0))).tip(tr("md.lint-tip")).clicked() { lint = true; }
+                            if ui.add(egui::Button::new(egui::RichText::new(tr("md.export-html")).size(11.0))).tip(tr("md.export-tip")).clicked() { export = true; }
+                        });
+                    });
+                });
+            });
+        });
+        let rc = r.response.rect;
+        root.painter().hline(rc.x_range(), rc.bottom() - 0.5, egui::Stroke::new(1.0, tc.border));
+        if let Some(c) = cmd {
+            if let Some(clip) = self.cur().edit(c, None) { self.put_clip(ctx, clip); }
+        }
+        if toggle { self.md_preview = !self.md_preview; }
+        if lint { self.md_lint_now(); }
+        if export { self.md_export_now(); }
+    }
+
+    /// Tauri 的 `#md-preview`: 盖在编辑区 (位置 = 中央区) 上的整块预览, 编辑区底色, 正文最宽 860 居中; 点一个块就地编辑。
+    /// 画在 `Order::Background` 的独立层里: 盖住编辑区, 但查找对话框 / 菜单这些更高层照常在它上面
+    pub(super) fn md_overlay(&mut self, ctx: &egui::Context, area: egui::Rect) {
+        let fill = ctx.global_style().visuals.extreme_bg_color;
+        egui::Area::new(egui::Id::new("md-overlay")).order(egui::Order::Background).fixed_pos(area.min).constrain(false).show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(area.size(), egui::Sense::click_and_drag());
+            ui.painter().rect_filled(rect, 0.0, fill);
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            child.set_clip_rect(rect);
+            self.md_ui(&mut child, true);
+        });
+    }
+
     pub(super) fn md_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.small_button(tr("md.lint")).on_hover_text(tr("md.lint-tip")).clicked() {
+            if ui.small_button(tr("md.lint")).tip(tr("md.lint-tip")).clicked() {
                 self.md_lint_now();
             }
-            if ui.small_button(tr("md.export-html")).on_hover_text(tr("md.export-tip")).clicked() {
+            if ui.small_button(tr("md.export-html")).tip(tr("md.export-tip")).clicked() {
                 self.md_export_now();
             }
         });

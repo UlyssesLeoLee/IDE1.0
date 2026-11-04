@@ -2,6 +2,7 @@
 //! 查找语义全在 `Doc` (-> `editcore::search_ops`, 和 Tauri 版同一套): F3、增量查找、强调用的是同一个 `step` / `hits`,
 //! 所以三者落在同一处。这里只管状态和那两排控件, 不碰文档内部。
 
+use crate::ui_ext::TipExt;
 use crate::ckbox::CheckExt;
 use crate::doc::Doc;
 use eframe::egui::{self, Key};
@@ -267,7 +268,7 @@ impl Find {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.scope(|ui| {
                             crate::btnstyle::outline(ui);
-                            if ui.add(egui::Button::new("×").min_size(egui::Vec2::new(28.0, 24.0))).on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; self.isearch = None; }
+                            if ui.add(egui::Button::new("×").min_size(egui::Vec2::new(28.0, 24.0))).tip(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; self.isearch = None; }
                         });
                     });
                 });
@@ -310,8 +311,8 @@ impl Find {
     fn isearch_body(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         let fwd = self.isearch.unwrap_or(true);
         ui.horizontal(|ui| {
-            if ui.selectable_label(fwd, "↓").on_hover_text(crate::i18n::trz("向后")).clicked() && !fwd { self.isearch = Some(true); self.last = None; }
-            if ui.selectable_label(!fwd, "↑").on_hover_text(crate::i18n::trz("向前")).clicked() && fwd { self.isearch = Some(false); self.last = None; }
+            if ui.selectable_label(fwd, "↓").tip(crate::i18n::trz("向后")).clicked() && !fwd { self.isearch = Some(true); self.last = None; }
+            if ui.selectable_label(!fwd, "↑").tip(crate::i18n::trz("向前")).clicked() && fwd { self.isearch = Some(false); self.last = None; }
         });
         let r = self.needle_box(ui);
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -353,7 +354,7 @@ impl Find {
             ui.check(&mut self.opts.word, crate::i18n::trz("单词单位"));
             ui.check(&mut self.opts.regex, crate::i18n::trz("正则"));
             ui.check(&mut self.opts.wrap, crate::i18n::trz("折返"));
-            ui.check(&mut self.opts.migemo, "Migemo").on_hover_text(crate::i18n::trz("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク"));
+            ui.check(&mut self.opts.migemo, "Migemo").tip(crate::i18n::trz("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク"));
             ui.check(&mut self.marks, crate::i18n::trz("全部强调"));
         });
         if self.replace {
@@ -368,7 +369,7 @@ impl Find {
                 r.request_focus();
             }
             ui.horizontal_wrapped(|ui| {
-                if ui.button(crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("置换当前命中并找下一个")).clicked() { self.replace_one(d); }
+                if ui.button(crate::i18n::trz("置换")).tip(crate::i18n::trz("置换当前命中并找下一个")).clicked() { self.replace_one(d); }
                 if ui.button(crate::i18n::trz("全部置换")).clicked() { self.replace_all(d); }
                 ui.check(&mut self.in_sel, crate::i18n::trz("仅选区"));
             });
@@ -379,13 +380,13 @@ impl Find {
     /// 底部按钮: 左 = 置换开关, 右 = `↑ 上一个 / ↓ 下一个 / 关闭`
     fn full_footer(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         ui.horizontal(|ui| {
-            if ui.selectable_label(self.replace, crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
+            if ui.selectable_label(self.replace, crate::i18n::trz("置换")).tip(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
                 self.replace = !self.replace;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button(crate::i18n::trz("关闭")).clicked() { self.open = false; }
-                if ui.button(format!("↓ {}", crate::i18n::trz("下一个"))).on_hover_text("F3").clicked() { self.next(d, true); }
-                if ui.button(format!("↑ {}", crate::i18n::trz("上一个"))).on_hover_text("Shift+F3").clicked() { self.next(d, false); }
+                if ui.button(format!("↓ {}", crate::i18n::trz("下一个"))).tip("F3").clicked() { self.next(d, true); }
+                if ui.button(format!("↑ {}", crate::i18n::trz("上一个"))).tip("Shift+F3").clicked() { self.next(d, false); }
             });
         });
     }

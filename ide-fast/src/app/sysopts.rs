@@ -31,6 +31,10 @@ pub(super) struct SysState {
     pub decor: bool,
     /// 菜单栏太窄时不画助记字母 (标题栏每帧按宽度定)
     pub mn_hide: bool,
+    /// 上一帧画出的顶层菜单: (菜单名键, 弹出层 id); Alt+助记字母据此打开菜单
+    pub menu_ids: Vec<(&'static str, egui::Id)>,
+    /// Alt+助记字母打开菜单后, 还要等几帧再把焦点送进菜单 (0 = 不用)
+    pub mn_focus: u8,
     /// 列标尺占的高度 (标尺开着时 = 一行高, 否则 0); 欢迎页让出这一条
     pub ruler_h: f32,
     /// 自绘标题栏里的应用图标 (第一次画时才建纹理)

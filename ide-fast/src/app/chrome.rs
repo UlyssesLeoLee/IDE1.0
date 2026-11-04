@@ -40,7 +40,7 @@ impl App {
                 let e = &keymap::entries()[i];
                 let tip = crate::i18n::lk_for(e);
                 // 有图标的命令用画笔图标按钮 (不靠图标字体), 没有的仍是文字按钮
-                let clicked = if crate::icons::has_icon(id) { crate::icons::icon_button(ui, id, tip).clicked() } else { ui.small_button(e.label.text()).on_hover_text(tip).clicked() };
+                let clicked = if crate::icons::has_icon(id) { crate::icons::icon_button(ui, id, tip).clicked() } else { ui.small_button(e.label.text()).tip(tip).clicked() };
                 if clicked { run = Some(i); }
             }
         });
@@ -57,7 +57,7 @@ impl App {
                     None => ("", String::new()),
                 };
                 let b = ui.add_enabled(c.is_some(), egui::Button::new(format!("F{} {}", n + 1, label)).small());
-                if c.is_some() && b.on_hover_text(tip).clicked() { run = *c; }
+                if c.is_some() && b.tip(tip).clicked() { run = *c; }
             }
         });
         if let Some(i) = run { self.run_entry(i, ctx); }
@@ -86,7 +86,7 @@ impl App {
                     let bar = if tc.dark { Color32::from_rgb(0x00, 0x7a, 0xcc) } else { Color32::from_rgb(0x00, 0x5f, 0xb8) };
                     p.rect_filled(Rect::from_center_size(egui::pos2(edge + 1.5, rect.center().y), Vec2::new(3.0, RAIL_BTN * 0.6)), 2.0, bar);
                 }
-                if resp.on_hover_text(trz(tip)).clicked() { hit = Some(*t); }
+                if resp.tip(trz(tip)).clicked() { hit = Some(*t); }
             }
         });
         if let Some(t) = hit {

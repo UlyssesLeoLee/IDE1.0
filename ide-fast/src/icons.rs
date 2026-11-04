@@ -1,6 +1,7 @@
 //! 工具栏图标: 用 egui 画笔直接画线条 / 矩形 / 圆, 不依赖图标字体 (字体里缺字就会显示成方块)。
 //! 每个图标画在一个 16x16 的坐标系里 (`u(x, y)` 换算到按钮矩形), 线条颜色跟主题文字色走。没有图标的命令回退成文字按钮。
 
+use crate::ui_ext::TipExt;
 use eframe::egui::{epaint::PathStroke, pos2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
 
 /// 按钮边长 (点)
@@ -102,7 +103,7 @@ pub fn icon_button(ui: &mut Ui, id: &str, tip: String) -> Response {
         let col = w.fg_stroke.color;
         paint(ui, rect, id, col);
     }
-    resp.on_hover_text(tip)
+    resp.tip(tip)
 }
 
 #[cfg(test)]

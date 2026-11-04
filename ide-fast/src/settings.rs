@@ -170,6 +170,8 @@ pub struct ViewState {
     pub right_collapsed: bool,
     pub bottom_collapsed: bool,
     pub md_preview: bool,
+    /// Markdown 预览盖在编辑区上 (Tauri 同款, 默认); false = 停靠在右侧
+    pub md_overlay: bool,
     pub geom: Option<WinGeom>,
     /// 视图开关: 行号 / 状态栏 / 空白符标记 / 列标尺 / 当前行下划线 / 小地图
     pub line_numbers: bool,
@@ -197,7 +199,7 @@ pub struct ViewState {
 
 impl Default for ViewState {
     fn default() -> Self {
-        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, ai_w: 340.0, md_w: 420.0, side_collapsed: false, right_collapsed: false, bottom_collapsed: false, md_preview: false, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, hang: false, stamp_kind: 2, stamp_pos: 0, print: Default::default() }
+        ViewState { side_open: true, side_w: 250.0, term_open: false, term_h: 180.0, ai_w: 340.0, md_w: 420.0, side_collapsed: false, right_collapsed: false, bottom_collapsed: false, md_preview: false, md_overlay: true, geom: None, line_numbers: true, status_bar: true, whitespace: false, ruler: false, cur_line: true, minimap: false, toolbar: false, funckey: false, rail: false, wrap_col: 0, kinsoku: true, hang: false, stamp_kind: 2, stamp_pos: 0, print: Default::default() }
     }
 }
 
@@ -333,7 +335,7 @@ impl Settings {
         let w = &v["view"];
         b_of(w, "side_open", &mut self.view.side_open); b_of(w, "term_open", &mut self.view.term_open); b_of(w, "md_preview", &mut self.view.md_preview);
         b_of(w, "line_numbers", &mut self.view.line_numbers); b_of(w, "status_bar", &mut self.view.status_bar); b_of(w, "whitespace", &mut self.view.whitespace);
-        b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap);
+        b_of(w, "ruler", &mut self.view.ruler); b_of(w, "cur_line", &mut self.view.cur_line); b_of(w, "minimap", &mut self.view.minimap); b_of(w, "md_overlay", &mut self.view.md_overlay);
         b_of(w, "side_collapsed", &mut self.view.side_collapsed); b_of(w, "right_collapsed", &mut self.view.right_collapsed); b_of(w, "bottom_collapsed", &mut self.view.bottom_collapsed);
         b_of(w, "toolbar", &mut self.view.toolbar); b_of(w, "funckey", &mut self.view.funckey); b_of(w, "rail", &mut self.view.rail);
         if let Some(b) = w["kinsoku"].as_bool() { self.view.kinsoku = b; }
@@ -387,7 +389,7 @@ impl Settings {
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
         o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_preview": w.md_preview, "geom": geom,
-            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
+            "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "md_overlay": w.md_overlay, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
             "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "hang": w.hang, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos,
             "print": { "paper": w.print.paper.code(), "landscape": w.print.landscape, "font_pt": w.print.font_pt, "margin_mm": w.print.margin_mm, "line_numbers": w.print.line_numbers, "header": w.print.header, "footer": w.print.footer } }));
         v
@@ -599,7 +601,7 @@ mod tests {
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None, wrap_col: Some(66) }];
-        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, ai_w: 360.0, md_w: 480.0, side_collapsed: true, right_collapsed: true, bottom_collapsed: true, md_preview: true, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, hang: true, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
+        s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, ai_w: 360.0, md_w: 480.0, side_collapsed: true, right_collapsed: true, bottom_collapsed: true, md_preview: true, md_overlay: false, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, hang: true, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
         s.save();
         assert_eq!(Settings::load(), s, "新增的键全部落盘后原样读回");
         // 超范围的值被夹回合法范围; 不合理的窗口位置丢掉

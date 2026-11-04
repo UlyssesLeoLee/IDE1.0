@@ -366,7 +366,7 @@ impl App {
             ui.set_min_height(30.0);
             ui.label(egui::RichText::new("Chat").monospace().size(11.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(boxed("×").min_size(Vec2::new(26.0, 26.0))).on_hover_text(trz("折叠 (Ctrl+Alt+L)")).clicked() { self.ai.open = false; }
+                if ui.add(boxed("×").min_size(Vec2::new(26.0, 26.0))).tip(trz("折叠 (Ctrl+Alt+L)")).clicked() { self.ai.open = false; }
                 if ui.add(boxed(tr("ai.clear"))).clicked() { act = Some(Act::Clear); }
                 ui.add(egui::Checkbox::new(&mut self.ai.use_ctx, egui::RichText::new(tr("ai.ctx")).size(11.0)));
             });

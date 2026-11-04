@@ -1,6 +1,7 @@
 //! Grep: 条件 -> 引擎选项, 分片后台任务 (流式、可取消、5000 上限), 结果文本 (Sakura 格式) 与结果行解析, 侧栏里的那一页控件。
 //! 搜索语义全在 `editcore::grep_engine` (和 Tauri 版同一套); 这里只管"怎么跑、怎么给人看"。
 
+use crate::ui_ext::TipExt;
 use crate::ckbox::CheckExt;
 use eframe::egui;
 use editcore::grep_engine::{self, ReplaceOptions, SearchOptions, SearchResult, SKIP_DIRS};
@@ -529,7 +530,7 @@ impl Grep {
             } else if ui.button(crate::i18n::trz("搜索")).clicked() {
                 ev.push(Ev::Start);
             }
-            if ui.button(crate::i18n::trz("结果开成标签")).on_hover_text(crate::i18n::trz("把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转")).clicked() {
+            if ui.button(crate::i18n::trz("结果开成标签")).tip(crate::i18n::trz("把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转")).clicked() {
                 ev.push(Ev::ResultDoc);
             }
         });
