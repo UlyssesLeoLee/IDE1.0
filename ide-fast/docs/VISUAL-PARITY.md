@@ -196,10 +196,10 @@ Tauri: 全部 inline SVG, `viewBox 0 0 24 24`, `fill none; stroke currentColor; 
 
 ## 6. 仍有差异 (第六轮之后的现状, 只列真正做不到的)
 
-- 单独按 Alt (不带字母) 把焦点放到菜单栏、再用方向键在菜单名之间走 (Tauri `altArmed`): egui 的菜单栏没有「焦点在菜单栏上」这个状态, 要自己重画整条菜单栏的焦点模型, 收益只有这一个手势; 保留 Alt+字母开菜单 (打开后方向键 / 回车 / Esc / 左右切换都可用)。
+- 单独按 Alt (不带字母) 把焦点放到菜单栏 (Alt+字母开菜单后的 ↑ ↓ ← → / Enter / Esc 已在第七轮做完)、再用方向键在菜单名之间走 (Tauri `altArmed`): egui 的菜单栏没有「焦点在菜单栏上」这个状态, 要自己重画整条菜单栏的焦点模型, 收益只有这一个手势; 保留 Alt+字母开菜单 (打开后方向键 / 回车 / Esc / 左右切换都可用)。
 - 工具条 / 菜单里 Tauri 用的彩色 emoji 图标 (👁 🔗 🖼 ☑ ❝ 💡 ◇ 🔎): egui 自带字体没有这些字形, 画出来是豆腐块, 所以 ide-fast 的按钮用纯文字 (功能一致)。要画就得内置彩色 emoji 字体 (几 MB, 违背启动 / 体积预算)。
 - Markdown 工具条的「🔎 结构」(结构化搜索): ide-fast 没有对应的功能 (不是样式问题), 按钮不列。
-- 玻璃主题的「模糊背景」(`glass_blur`): 切换已经可以运行中生效 (见第 8 节第六轮), 但本机 (Windows 11 10.0.26300) 上 `window-vibrancy::apply_blur` 加上去后背后是纯黑而不是模糊的桌面, 启动时就加模糊的旧路径同样如此; 关掉「模糊背景」(首选项) 则是真透明。这是系统调用 (`SetWindowCompositionAttribute` 的 BLURBEHIND) 在这台机器上的表现, 不是 egui / 切换方式的问题; 没在别的 Windows 版本上验证。
+- 玻璃主题的「模糊背景」: 原先的 `apply_blur` 在本机 (Windows 11 10.0.26300) 背后是纯黑, 第七轮改用 `apply_acrylic` (`DWMWA_SYSTEMBACKDROP_TYPE`), 截图验证有真模糊 (`parity-shots/fast7-glass-acrylic.png`; 旧效果 `fast7-glass-blur-black-old.png`)。Mica 只取壁纸色不模糊窗口; 全部失败时回到纯 alpha 透明 (`IDE_FAST_BACKDROP=none` 同效果)。没在别的 Windows 版本上验证。
 
 ## 7. 有意保留的结构 / 功能差异 (不是样式问题, 也不是「做不到」)
 
@@ -261,3 +261,11 @@ Tauri: 全部 inline SVG, `viewBox 0 0 24 24`, `fill none; stroke currentColor; 
 2. **工具提示** (`ui_ext.rs::TipExt::tip`): 自己画的 `Order::Tooltip` 层, #333 底 / 白字 / 圆角 3 / 内边距 4x8 / 11px / 最宽 400 / 贴控件下方 4px (放不下翻到上方) / 立即出现 (Tauri `#tip` 是 mouseover 立即显示, 没有延迟), 不碰全局弹出框样式, 窗口 / 对话框 / 菜单样式不变。全部 `on_hover_text` 已换成 `.tip(..)`。
 3. **菜单助记字母** (`app.rs::menu_mnemonics`, `menuui::{menu_for_key, top}`): Alt+F / E / S / O / P / C / B / W / M / V / T / H 打开对应顶层菜单 (已开着别的菜单就切过去), 先于命令键 (同 Tauri 捕获阶段), 打开时放掉编辑区焦点、两帧后把焦点送到第一项, 之后 ↑ ↓ 回车 Esc ← → 走 egui 菜单导航; 所有「只按 Alt + 字母」的组合不再把字母漏进文档。单测覆盖映射 (含 Alt+Shift / Alt+Ctrl 不触发); 真窗口里 Alt+E / V / C / P 逐个按过。
 4. **玻璃主题运行中切换, 去掉「立即重启」**: 原来的结论是「窗口是否透明建窗口时就定了」。重新验证: 窗口一律以透明建 (`with_transparent(true)`, WGL 像素格式带合成标志), 不透明主题把清屏色设成不透明 (面板本来就铺满, 画面不变, 截图逐像素与之前一致); 切到 / 离开半透明主题时只需要 `window_vibrancy::apply_blur / clear_blur` (它们接受 `HasWindowHandle`, 直接作用在现有 HWND 上, 没有 unsafe) 和清屏色 (`app/sysopts.rs::glass_sync`)。真窗口里: 不透明启动 -> 插件菜单选「透明玻璃」-> 窗口当场透出背后的窗口; 选回「内置主题」-> 当场变回不透明。首帧中位数 243 ms (旧 303 ms, 同机同轮, 噪声内), PE 子系统仍是 2 (GUI)。删掉了重启对话框和 `relaunch` 里的「立即重启」请求 (只留自更新用的 `--relaunch` 开关)。
+
+## 第七轮 (核对第六轮未确认项, 截图 `parity-shots/fast7-*.png`)
+
+1. **菜单方向键**: `app/menunav.rs` 的纯状态机 + `raw_input_hook` 截键 (8 个单测)。真窗口 (keybd_event 发 Alt+E 等): ↓ 一次 = 「撤销」, ↓x4 = 「复制」 (`fast7-menu-alt-arrows.png`), Alt+E → 落到「查找」第一项, ← ↑ = 「文件」最后一项「退出」, Enter 激活「复制」(状态栏「已复制行」, 菜单关闭, 编辑区无多余字符)。
+2. **Markdown 覆盖层**: 真窗口点段落 -> 编辑框 (`fast7-md-edit-in-place-dark.png`); 键入 7 + 点框外 = 应用 (标签变脏), Ctrl+Z 一步还原; 键入 7 + Esc = 放弃 (文档不脏)。浅色主题和第二个 Markdown 标签 (`fast7-md-overlay-light-tab2.png`) 渲染正常; 与 `web-min-light-12-md-preview.png` 对照: 工具条、居中正文、标题下细线一致, 差别仅在 Tauri 预览用等宽字体 (有意不同)。单测 `markdown_block_click_edits_in_place_and_apply_is_one_undo_step`、`edit_ends_by_button_key_or_click_away`。
+3. **Esc 同帧杂字母**: `menunav::scrub` 单测覆盖 (同帧 / 晚一帧 / 仅 Esc / 正常键入不受影响)。真窗口里 Alt+V Esc Alt+V Esc 后编辑区没有 `v`; 但同一个事件批里的竞态用键盘注入难以稳定重现, 靠单测保证。
+4. **模糊背景黑屏**: 在彩色条纹窗口上逐个试: blur = 近乎纯黑, acrylic = 真模糊, mica = 壁纸色, none = 纯透明条纹。默认改 Acrylic。
+5. **首帧 p90**: 见 `PERF.md` 「第七轮」: 尾部全在 `window builder -> GL ready` (驱动 / winit), 我们的代码 p90 合计约 3 ms。

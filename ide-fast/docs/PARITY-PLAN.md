@@ -58,6 +58,7 @@
 | 决策 A1-A3 (JS 引擎 / SVG) | done | rquickjs; 自带 `svg_lite` 代替 resvg |
 | 决策 A5 玻璃主题 | partial (批次 10) | 见上; 切换主题当场生效 (无重启), 亮度只读系统明暗 (不做截屏采样) |
 | 外观对标第六轮: Markdown 预览覆盖编辑区 / Tauri 工具提示 / Alt+助记字母开菜单 / 玻璃主题免重启 | done (Unreleased) | 见 `VISUAL-PARITY.md` 第六轮; 仍做不到的只剩单按 Alt 聚焦菜单栏、彩色 emoji 图标、「结构搜索」按钮 (无对应功能) 与本机 DWM 模糊发黑 (`VISUAL-PARITY.md` 第 6 节) |
+| 外观对标第七轮: 菜单方向键状态机 / Esc 同帧杂字母 / Markdown 就地编辑 (点框外应用, Esc 放弃) / 玻璃背景改 Acrylic / 首帧尾部归因 | done (Unreleased) | 见 `VISUAL-PARITY.md` 第七轮与 `PERF.md`; 单独按 Alt 聚焦菜单栏仍未做 |
 | 检查更新 (Tauri 版没有同名功能, 高速版自带) | done (Unreleased) | `updnet.rs` / `update.rs`: 帮助菜单, 直连 GitHub Releases, 稳定 / 开发通道, SHA-256 校验, msi 与便携版安装并重启, 可选每日检查 (默认关), **清单 ed25519 验签 (`updkey.rs` 公钥目前是占位 = 未配置, 窗口提示并禁用安装, 待所有者生成密钥后启用)**。已有 363 项单测 + 本机模拟服务测试; 真窗口里验证过更新窗口能打开并进入「正在检查」状态; **msiexec 安装与便携版 .new 替换没有真机跑过** (安装包是 per-machine, 需管理员), 见 `UPDATE.md` / `MSI-TEST.md` |
 | 决策 A6 i18n | done | 中 / 日 / 英 |
 | 决策 A7 scm 逻辑 | done | 在 `ide-fast/src/scm.rs` 里自带, 没有动 Tauri 版 |
