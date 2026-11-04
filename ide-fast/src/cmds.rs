@@ -35,6 +35,8 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "行", label: "复制行 (含换行)", keys: "", action: Edit("copy-lines") },
     Cmd { group: "行", label: "复制当前行", keys: "Ctrl+D", action: Edit("duplicate-line") },
     Cmd { group: "行", label: "删除当前行", keys: "Ctrl+Shift+K", action: Edit("delete-line") },
+    Cmd { group: "行", label: "删除上方行", keys: "", action: Edit("delete-line-up") },
+    Cmd { group: "行", label: "删除下方行", keys: "", action: Edit("delete-line-down") },
     Cmd { group: "行", label: "与上一行合并", keys: "", action: Edit("join-with-prev") },
     Cmd { group: "行", label: "在上方插入空行", keys: "Ctrl+Shift+Enter", action: Edit("add-line-above") },
     Cmd { group: "行", label: "在下方插入空行", keys: "Ctrl+Enter", action: Edit("add-line-below") },
@@ -165,6 +167,21 @@ pub fn lines_op(kind: &str, lines: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_line_above_and_below_remove_the_neighbour_not_the_current_line() {
+        let mut d = crate::doc::Doc::untitled(1, 1);
+        d.lines = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        d.goto(2, 1);
+        d.edit("delete-line-up", None);
+        assert_eq!(d.lines, ["a", "c", "d"], "删掉光标行上面那一行 (b)");
+        d.goto(0, 0);
+        d.edit("delete-line-down", None);
+        assert_eq!(d.lines, ["a", "d"], "删掉光标行下面那一行 (c)");
+        for label in ["删除上方行", "删除下方行"] {
+            assert!(CMDS.iter().any(|c| c.label == label), "命令表里要有「{label}」");
+        }
+    }
 
     #[test]
     fn every_edit_command_exists_in_editcore() {

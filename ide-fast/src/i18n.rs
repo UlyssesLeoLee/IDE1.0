@@ -604,6 +604,8 @@ pub const CMD_T: &[Row] = &[
     ("复制行 (含换行)", ["复制行 (含换行)", "行をコピー (改行含む)", "Copy Lines (with EOL)"]),
     ("复制当前行", ["复制当前行", "現在行を複製", "Duplicate Line"]),
     ("删除当前行", ["删除当前行", "現在行を削除", "Delete Line"]),
+    ("删除上方行", ["删除上方行", "上の行を削除", "Delete Line Above"]),
+    ("删除下方行", ["删除下方行", "下の行を削除", "Delete Line Below"]),
     ("与上一行合并", ["与上一行合并", "前の行と結合", "Join with Previous Line"]),
     ("在上方插入空行", ["在上方插入空行", "上に空行を挿入", "Insert Line Above"]),
     ("在下方插入空行", ["在下方插入空行", "下に空行を挿入", "Insert Line Below"]),

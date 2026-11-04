@@ -291,6 +291,34 @@ pub fn stamp_line_start(line: &str, stamp: &str) -> (String, usize) {
     (format!("{indent}{ins}{}", &line[indent.len()..]), n)
 }
 
+/// 「复制路径与光标位置」的文字: `路径(行,列)`, 行列从 1 数 (同 Tauri `copy-tag`; 没存盘的文档用文档名)
+pub fn path_pos_tag(path_or_name: &str, cursor: [usize; 2]) -> String {
+    format!("{}({},{})", path_or_name, cursor[0] + 1, cursor[1] + 1)
+}
+
+/// 「在折行处加换行复制」: 每一行按字符数 `cols` 切开, 切口和原有的换行都写成 CRLF; 空行保持空行 (同 Tauri `copy-addcrlf`)
+pub fn wrap_with_crlf(text: &str, cols: usize) -> String {
+    let cols = cols.max(1);
+    text.split('\n')
+        .map(|line| {
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            let cs: Vec<char> = line.chars().collect();
+            cs.chunks(cols).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join("\r\n")
+        })
+        .collect::<Vec<_>>()
+        .join("\r\n")
+}
+
+/// 「打开同名 C/C++ 头 / 源文件」的候选路径, 按尝试顺序: 源文件 (c cpp cc cxx) 找头文件 (h hpp hh hxx), 头文件找源文件, 其它扩展名当作源文件找头文件
+/// (同 Tauri `open-hc`); 没有扩展名 = 没有候选
+pub fn hc_counterparts(path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    const SRC: [&str; 4] = ["c", "cpp", "cc", "cxx"];
+    const HDR: [&str; 4] = ["h", "hpp", "hh", "hxx"];
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else { return vec![] };
+    let want = if HDR.contains(&ext.to_ascii_lowercase().as_str()) { SRC } else { HDR };
+    want.iter().map(|e| path.with_extension(e)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,5 +442,31 @@ mod tests {
         assert_eq!(stamp_line_start("  \tfoo", "T"), ("  \t[T] foo".to_string(), 4));
         assert_eq!(stamp_line_start("", "T"), ("[T] ".to_string(), 4));
         assert_eq!(stamp_line_start("日本", "T").0, "[T] 日本");
+    }
+
+    #[test]
+    fn path_and_position_tag_is_one_based() {
+        assert_eq!(path_pos_tag("C:\\src\\a.rs", [0, 0]), "C:\\src\\a.rs(1,1)");
+        assert_eq!(path_pos_tag("无标题", [11, 4]), "无标题(12,5)");
+    }
+
+    #[test]
+    fn wrapping_copy_cuts_by_characters_and_uses_crlf() {
+        assert_eq!(wrap_with_crlf("abcdefg", 3), "abc\r\ndef\r\ng");
+        assert_eq!(wrap_with_crlf("ab\n\ncd", 3), "ab\r\n\r\ncd", "原有的换行和空行保持");
+        assert_eq!(wrap_with_crlf("日本語テキスト", 3), "日本語\r\nテキス\r\nト", "按字符数切, 不按字节");
+        assert_eq!(wrap_with_crlf("abcd\r\nef", 2), "ab\r\ncd\r\nef", "已有的 CRLF 不重复");
+        assert_eq!(wrap_with_crlf("abc", 0), "a\r\nb\r\nc", "列数为 0 当作 1, 不死循环");
+    }
+
+    #[test]
+    fn header_and_source_counterparts() {
+        use std::path::{Path, PathBuf};
+        let p = |v: &[&str]| v.iter().map(PathBuf::from).collect::<Vec<_>>();
+        assert_eq!(hc_counterparts(Path::new("d/foo.cpp")), p(&["d/foo.h", "d/foo.hpp", "d/foo.hh", "d/foo.hxx"]));
+        assert_eq!(hc_counterparts(Path::new("d/foo.H")), p(&["d/foo.c", "d/foo.cpp", "d/foo.cc", "d/foo.cxx"]), "扩展名不分大小写");
+        assert_eq!(hc_counterparts(Path::new("foo.hpp"))[0], PathBuf::from("foo.c"));
+        assert_eq!(hc_counterparts(Path::new("a.b/foo.txt"))[0], PathBuf::from("a.b/foo.h"), "其它扩展名当作源文件");
+        assert!(hc_counterparts(Path::new("Makefile")).is_empty());
     }
 }

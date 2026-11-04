@@ -704,6 +704,27 @@ impl Doc {
         }
     }
 
+    /// 选到下一个 / 上一个改动块 (Sakura 的 (选择) 下一个 / 上一个变更行): 光标走到改动块起始行, 选区从原来的锚点 (没有选区就是原光标) 拉到那里
+    pub fn step_changed_sel(&mut self, forward: bool) -> bool {
+        let anchor = self.anchor.filter(|_| self.sel.is_some()).unwrap_or(self.cursor);
+        if !self.step_changed(forward) {
+            return false;
+        }
+        let to = self.cursor;
+        self.cursor = anchor;
+        self.anchor = Some(anchor);
+        self.move_to(to[0], to[1], true);
+        true
+    }
+
+    /// 选区文字, 没有选区 = 当前行 (复制类命令用)
+    pub fn selection_or_line(&self) -> String {
+        match self.sel {
+            Some(r) => range_text(&self.lines, r),
+            None => self.lines[self.cursor[0].min(self.lines.len() - 1)].clone(),
+        }
+    }
+
     pub fn select_all(&mut self) {
         self.sel_mode = false;
         let last = self.lines.len() - 1;
@@ -1577,6 +1598,38 @@ b
         d.goto(1, 0);
         d.select_para(false);
         assert_eq!(d.sel, Some([0, 0, 1, 0]), "向上到文首");
+    }
+
+    #[test]
+    fn modified_line_selecting_extends_from_the_anchor() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = (0..10).map(|i| format!("l{i}")).collect();
+        d.base = d.lines.clone();
+        d.lines[2] = "x".into();
+        d.lines[7] = "z".into();
+        d.rev += 1;
+        d.goto(0, 0);
+        assert!(d.step_changed_sel(true));
+        assert_eq!((d.cursor, d.sel), ([2, 0], Some([0, 0, 2, 0])), "从原光标选到第一个改动块首");
+        assert!(d.step_changed_sel(true));
+        assert_eq!((d.cursor, d.sel), ([7, 0], Some([0, 0, 7, 0])), "继续按: 锚点不动, 选区接着拉长");
+        assert!(!d.step_changed_sel(true), "后面没有了: 选区保持");
+        assert_eq!(d.sel, Some([0, 0, 7, 0]));
+        assert!(d.step_changed_sel(false));
+        assert_eq!((d.cursor, d.sel), ([2, 0], Some([0, 0, 2, 0])), "往回按: 选区收缩");
+        d.goto(9, 0);
+        assert!(d.step_changed_sel(false));
+        assert_eq!(d.sel, Some([7, 0, 9, 0]), "从下往上选: 选区按先后排好");
+    }
+
+    #[test]
+    fn selection_or_line_falls_back_to_the_current_line() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["abc".into(), "def".into(), "ghi".into()];
+        d.goto(1, 1);
+        assert_eq!(d.selection_or_line(), "def");
+        d.sel = Some([0, 1, 1, 2]);
+        assert_eq!(d.selection_or_line(), "bc\nde");
     }
 
     #[test]

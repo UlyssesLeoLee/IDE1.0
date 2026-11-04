@@ -1220,7 +1220,7 @@ impl App {
                 self.cmd_menu(ui, ctx);
                 ui.separator();
                 for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("范围选择模式 (开始 / 结束)", KApp::SelMode), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath),
-                               ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
+                               ("复制路径与光标位置", KApp::CopyTag), ("在折行处加换行复制", KApp::CopyWrapped), ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
                     if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.separator();
@@ -1238,7 +1238,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
-                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext)] {
+                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext), ("(选择) 上一处改动", KApp::ModPrevSel), ("(选择) 下一处改动", KApp::ModNextSel), ("打开同名 C/C++ 头 / 源文件", KApp::OpenHc)] {
                     if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.menu_button(trz("比较"), |ui| {
@@ -1911,6 +1911,11 @@ impl App {
             KApp::MacroLoad => self.macro_load(),
             KApp::MacroRecMac => self.macro_rec_mac(),
             KApp::FuncNext => self.step_function(true),
+            KApp::CopyTag => self.copy_tag(ctx),
+            KApp::CopyWrapped => self.copy_wrapped(ctx),
+            KApp::OpenHc => self.open_counterpart(),
+            KApp::ModNextSel => self.step_modified_sel(true),
+            KApp::ModPrevSel => self.step_modified_sel(false),
             KApp::FuncPrev => self.step_function(false),
             KApp::MacroToMac => self.macro_to_mac(),
             KApp::About => self.about_open = true,
@@ -1933,6 +1938,12 @@ impl App {
             Some(t) => { self.put_clip(ctx, t.clone()); trf("dlg.copied-name", &[&t]) }
             None => tr("dlg.no-path").into(),
         };
+    }
+
+    /// (选择) 下一处 / 上一处改动: 选区从原来的位置拉到改动块首
+    fn step_modified_sel(&mut self, fwd: bool) {
+        self.jump_mark();
+        if !self.cur().step_changed_sel(fwd) { self.cur().tip = tr("dlg.no-more-changes").into(); }
     }
 
     fn step_modified(&mut self, fwd: bool) {
@@ -3065,6 +3076,44 @@ EDITED".into())), ..Default::default() };
         a.step_function(true);
         assert_eq!(a.docs[0].cursor, [0, 0], "没有大纲的文件: 不动");
         assert!(a.docs[0].tip.contains("没有函数标记"), "{}", a.docs[0].tip);
+    }
+
+    #[test]
+    fn copy_commands_put_the_expected_text_on_the_clipboard_history() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.docs[0].name = "n.txt".into();
+        a.docs[0].lines = vec!["abcdefghij".into()];
+        a.docs[0].cursor = [0, 3];
+        a.copy_tag(&ctx);
+        assert_eq!(a.tools.clip.first().map(String::as_str), Some("n.txt(1,4)"), "没存盘的文档用文档名, 行列从 1 数");
+        a.cfg.view.wrap_col = 4;
+        a.copy_wrapped(&ctx);
+        assert_eq!(a.tools.clip.first().map(String::as_str), Some("abcd\r\nefgh\r\nij"), "无选区 = 当前行, 每 4 字符切一刀");
+        a.docs[0].sel = Some([0, 2, 0, 8]);
+        a.copy_wrapped(&ctx);
+        assert_eq!(a.tools.clip.first().map(String::as_str), Some("cdef\r\nGH".to_lowercase().as_str()), "有选区 = 只复制选区");
+    }
+
+    #[test]
+    fn open_counterpart_switches_between_header_and_source() {
+        let dir = std::env::temp_dir().join(format!("idefast-hc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (c, h) = (dir.join("foo.c"), dir.join("foo.hpp"));
+        std::fs::write(&c, "int main(){}\n").unwrap();
+        std::fs::write(&h, "#pragma once\n").unwrap();
+        let (mut a, _g) = app(Settings::default());
+        a.open_path(&c);
+        assert_eq!(a.cur().path.as_deref(), Some(c.as_path()));
+        a.open_counterpart();
+        assert_eq!(a.cur().path.as_deref(), Some(h.as_path()), "foo.c -> foo.hpp (foo.h 不存在, 按顺序找下一个)");
+        a.open_counterpart();
+        assert_eq!(a.cur().path.as_deref(), Some(c.as_path()), "再按回到 foo.c, 不重复开标签");
+        let before = a.docs.len();
+        std::fs::remove_file(&h).unwrap();
+        a.open_counterpart();
+        assert_eq!((a.docs.len(), a.cur().tip.contains("没有找到")), (before, true), "对应文件不存在: 只提示");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

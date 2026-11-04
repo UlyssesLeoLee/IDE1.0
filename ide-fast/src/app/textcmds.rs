@@ -154,6 +154,34 @@ impl App {
         }
     }
 
+    /// 复制路径与光标位置 (同 Tauri `copy-tag`): `路径(行,列)`, 没存盘的文档用文档名
+    pub(super) fn copy_tag(&mut self, ctx: &egui::Context) {
+        let d = self.cur();
+        let who = d.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| d.name.clone());
+        let text = textconv::path_pos_tag(&who, d.cursor);
+        d.tip = format!("已复制 {text}");
+        self.put_clip(ctx, text);
+    }
+
+    /// 在折行处加换行复制 (同 Tauri `copy-addcrlf`): 选区 (没有 = 当前行) 按折行列数切开, 切口写成 CRLF; 折行列数按窗口宽度时用当前窗口能放的列数
+    pub(super) fn copy_wrapped(&mut self, ctx: &egui::Context) {
+        let name = self.cur().name.clone();
+        let wcol = self.cfg.wrap_col_for(&name, self.cfg.view.wrap_col);
+        let cols = if wcol > 0 { wcol } else { self.max_cols.max(10) };
+        let text = textconv::wrap_with_crlf(&self.cur().selection_or_line(), cols);
+        self.cur().tip = format!("已在折行位置 (每 {cols} 字符) 加换行后复制");
+        self.put_clip(ctx, text);
+    }
+
+    /// 打开同名 C/C++ 头 / 源文件 (同 Tauri `open-hc`): 按 `hc_counterparts` 的顺序找第一个存在的
+    pub(super) fn open_counterpart(&mut self) {
+        let Some(path) = self.cur().path.clone() else { self.cur().tip = "这个文档还没有保存, 没有同名文件可找".into(); return };
+        match textconv::hc_counterparts(&path).into_iter().find(|c| c.is_file()) {
+            Some(c) => self.open_path(&c),
+            None => self.cur().tip = "没有找到对应的 C/C++ 头 / 源文件".into(),
+        }
+    }
+
     /// 列块删除 (同 Tauri `column-delete`): 把矩形选区整块挖空, 光标回到矩形左上角; 没有列块选区就提示怎么建立
     pub(super) fn column_delete(&mut self) {
         let d = self.cur();
