@@ -1,6 +1,0 @@
-[ProjectRoot::default] test_root = None
-ide-shell-desktop starting (tauri 0.1.8, target unknown)
-[ide-diag] ide-shell-desktop setup: tauri=0.1.8, target=unknown
-[ide-diag] wrote to E:\Temp\ide-shell-desktop-diag.log
-[ide-diag] ide-shell-desktop env: IDE_SHELL_DESKTOP_TEST_ROOT=None, IDE_LOG_FILE=None
-[ide-diag] wrote to E:\Temp\ide-shell-desktop-diag.log
