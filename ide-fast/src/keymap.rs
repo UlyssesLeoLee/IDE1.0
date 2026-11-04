@@ -24,7 +24,7 @@ pub enum App {
     Terminal, AiChat, MdPreview, Dark, Highlight, Wrap, Sidebar, LineNumbers, StatusBar, Whitespace, Ruler, CurLine, Minimap, MinimalMode, FullMode, ZoomIn, ZoomOut, ZoomReset,
     Prefs, ExportCfg, ImportCfg, ImportSakura, ResetCfg, KeyConfig, KeyList, Palette,
     CopyFname, CopyPath, SelParaPrev, SelParaNext, ModNext, ModPrev, MacroSave, MacroLoad, MacroRecMac, MacroToMac, FuncNext, FuncPrev, ColDelete, ColReplace, CopyTag, CopyWrapped, OpenHc, ModNextSel, ModPrevSel,
-    GroupNext, GroupPrev, TabSeparate, TabJointNext, TabJointPrev, BindWindow, GroupClose, SpaceIndent, SpaceUnindent, CurCenter, BackupNow, SelCountMode, FindMarks, FindStart, About, CheckUpdate,
+    GroupNext, GroupPrev, TabSeparate, TabJointNext, TabJointPrev, BindWindow, GroupClose, SpaceIndent, SpaceUnindent, CurCenter, BackupNow, SelCountMode, FindMarks, FindStart, ExecCmd, About, CheckUpdate,
     SelMode, TagJump, TagBack, TagKeyword, TagsMake,
     IsFwd, IsBack, IsRegexFwd, IsRegexBack, IsMigemoFwd, IsMigemoBack,
     Base64Decode, UuDecode, CopyHtml, CopyHtmlLn, ClipHistory, CtrlCodes, InsDate, InsTime, InsStamp, StampCfg,
@@ -98,12 +98,12 @@ pub fn action_id(a: Action) -> String {
 fn build() -> Vec<Entry> {
     use App::*;
     let mut v: Vec<Entry> = vec![
-        t("c.new-file", "Ctrl+N", "menu.file", NewDoc), t("c.open-file", "Ctrl+O", "menu.file", OpenFile), t("c.open-folder", "", "menu.file", OpenFolder),
+        t("c.new-file", "Ctrl+N", "menu.file", NewDoc), t("c.open-file", "Ctrl+O", "menu.file", OpenFile), t("c.open-folder", "Ctrl+Alt+O", "menu.file", OpenFolder),
         t("c.save", "Ctrl+S", "menu.file", Save), t("c.save-as", "Ctrl+Shift+S", "menu.file", SaveAs), t("c.save-all", "Ctrl+Alt+Shift+S", "menu.file", SaveAll),
-        t("c.save-close", "", "menu.file", SaveClose), t("c.close-tab", "Ctrl+W", "menu.file", CloseTab), t("c.close-all", "Ctrl+Shift+W", "menu.file", CloseAll),
+        t("c.save-close", "", "menu.file", SaveClose), t("c.close-tab", "Ctrl+W|Ctrl+F4", "menu.file", CloseTab), t("c.close-all", "Ctrl+Shift+W", "menu.file", CloseAll),
         t("c.close-open", "Ctrl+Shift+F4", "menu.file", CloseOpen), t("c.reload", "", "menu.file", Reload), t("c.recent-clear", "", "menu.file", RecentClear),
-        t("c.print", "Ctrl+P", "menu.file", Print), t("c.print-setup", "", "menu.file", PrintSetup), t("c.print-preview", "", "menu.file", PrintPreview), t("c.browse", "", "menu.file", Browse), t("c.file-properties", "Alt+Enter", "menu.file", Props),
-        t("c.new-window", "", "menu.file", NewWindow), t("c.exit", "", "menu.file", Exit),
+        t("c.print", "Ctrl+P", "menu.file", Print), t("c.print-setup", "Ctrl+Alt+P", "menu.file", PrintSetup), t("c.print-preview", "", "menu.file", PrintPreview), t("c.browse", "", "menu.file", Browse), t("c.file-properties", "Alt+Enter", "menu.file", Props),
+        t("c.new-window", "", "menu.file", NewWindow), t("c.exit", "Ctrl+Alt+F4", "menu.file", Exit),
         t("c.undo", "Ctrl+Z", "menu.edit", Undo), t("c.redo", "Ctrl+Y", "menu.edit", Redo),
         t("c.cut", "Ctrl+X", "menu.edit", Cut), t("c.copy", "Ctrl+C", "menu.edit", Copy), t("c.paste", "Ctrl+V", "menu.edit", Paste),
         t("c.select-all", "Ctrl+A", "menu.edit", SelectAll),
@@ -122,13 +122,13 @@ fn build() -> Vec<Entry> {
         t("c.hist-mark", "", "menu.bookmark", HistMark),
         t("c.split", "Ctrl+\\", "menu.window", Split), t("c.split-rows", "", "menu.window", SplitRows), t("c.split-quad", "", "menu.window", SplitQuad), t("c.next-tab", "Ctrl+Tab", "menu.window", NextTab), t("c.prev-tab", "Ctrl+Shift+Tab", "menu.window", PrevTab),
         t("c.tab-move-left", "", "menu.window", TabLeft), t("c.tab-move-right", "", "menu.window", TabRight),
-        t("c.close-others", "", "menu.window", CloseOthers), t("c.close-left", "", "menu.window", CloseLeft), t("c.close-right", "", "menu.window", CloseRight),
+        t("c.close-others", "Alt+Shift+F4", "menu.window", CloseOthers), t("c.close-left", "", "menu.window", CloseLeft), t("c.close-right", "", "menu.window", CloseRight),
         t("c.minimize-window", "", "menu.window", Minimize), t("c.maximize", "", "menu.window", Maximize), t("c.fullscreen", "F11", "menu.window", Fullscreen), t("c.topmost", "", "menu.window", Topmost),
         t("c.macro-start", "Ctrl+Shift+M", "menu.macro", MacroToggle), t("c.macro-play", "Ctrl+Shift+L", "menu.macro", MacroPlay),
         t("c.macro-run-doc", "", "menu.macro", MacroRunDoc), t("c.macro-run-file", "", "menu.macro", MacroRunFile), t("c.macro-run-ppa", "", "menu.macro", MacroRunPpa),
         t("c.terminal", "Ctrl+`", "menu.view", Terminal), t("c.ai-chat", "Ctrl+Alt+L", "menu.view", AiChat), t("c.md-preview", "Ctrl+Shift+V", "menu.view", MdPreview), t("c.dark", "", "menu.view", Dark), t("c.highlight", "", "menu.view", Highlight),
         t("c.wrap", "Alt+Z", "menu.view", Wrap), t("c.sidebar", "Ctrl+B", "menu.view", Sidebar), t("c.line-numbers", "", "menu.view", LineNumbers), t("c.status-bar", "", "menu.view", StatusBar),
-        t("c.whitespace", "", "menu.view", Whitespace), t("c.ruler", "", "menu.view", Ruler), t("c.cur-line", "", "menu.view", CurLine), t("c.minimap", "", "menu.view", Minimap), t("c.toolbar", "", "menu.view", ToolbarToggle), t("c.funckey", "", "menu.view", FunckeyToggle), t("c.rail", "", "menu.view", RailToggle),
+        t("c.whitespace", "", "menu.view", Whitespace), t("c.ruler", "", "menu.view", Ruler), t("c.cur-line", "", "menu.view", CurLine), t("c.minimap", "", "menu.view", Minimap), t("c.toolbar", "Ctrl+1", "menu.view", ToolbarToggle), t("c.funckey", "Ctrl+2", "menu.view", FunckeyToggle), t("c.rail", "", "menu.view", RailToggle),
         z("app.side-collapse", "折叠 / 展开左侧栏", "Ctrl+Alt+H", "menu.view", SideCollapse), z("app.right-collapse", "折叠 / 展开右侧面板", "Ctrl+Alt+J", "menu.view", RightCollapse), z("app.bottom-collapse", "折叠 / 展开底部面板", "Ctrl+Alt+K", "menu.view", BottomCollapse),
         z("app.system-titlebar", "使用系统标题栏", "", "menu.view", SystemTitleBar),
         t("c.minimal-mode", "", "menu.view", MinimalMode), t("c.full-mode", "", "menu.view", FullMode), t("c.zoom-in", "Ctrl+=", "menu.view", ZoomIn), t("c.zoom-out", "Ctrl+-", "menu.view", ZoomOut), t("c.zoom-reset", "Ctrl+0", "menu.view", ZoomReset),
@@ -140,7 +140,7 @@ fn build() -> Vec<Entry> {
         z("app.copy-fname", "复制文件名", "", "menu.edit", CopyFname), z("app.copy-path", "复制完整路径", "", "menu.edit", CopyPath),
         z("app.sel-para-prev", "选到上一段落", "", "menu.edit", SelParaPrev), z("app.sel-para-next", "选到下一段落", "", "menu.edit", SelParaNext),
         z("app.mod-next", "下一处改动", "", "menu.search", ModNext), z("app.mod-prev", "上一处改动", "", "menu.search", ModPrev),
-        z("app.macro-save", "保存键盘宏…", "", "menu.macro", MacroSave), z("app.macro-load", "载入键盘宏…", "", "menu.macro", MacroLoad),
+        z("app.macro-save", "保存键盘宏…", "Ctrl+M", "menu.macro", MacroSave), z("app.macro-load", "载入键盘宏…", "", "menu.macro", MacroLoad),
         z("app.func-next", "下一个函数", "", "menu.search", FuncNext), z("app.func-prev", "上一个函数", "", "menu.search", FuncPrev),
         z("app.copy-tag", "复制路径与光标位置", "", "menu.edit", CopyTag), z("app.copy-wrapped", "在折行处加换行复制", "", "menu.edit", CopyWrapped),
         z("app.open-hc", "打开同名 C/C++ 头 / 源文件", "Ctrl+Shift+C", "menu.search", OpenHc),
@@ -150,6 +150,7 @@ fn build() -> Vec<Entry> {
         z("app.bind-window", "合并为一组", "", "menu.window", BindWindow), z("app.group-close", "关闭当前分组", "", "menu.window", GroupClose),
         z("app.space-indent", "SPACE 缩进", "", "menu.edit", SpaceIndent), z("app.space-unindent", "SPACE 反缩进", "", "menu.edit", SpaceUnindent),
         z("app.cur-center", "光标行居中", "", "menu.edit", CurCenter), z("app.sel-count-mode", "切换选区统计方式 (字符 / 字节 / 行)", "", "menu.edit", SelCountMode),
+        z("app.exec-cmd", "执行外部命令 (终端)", "Ctrl+F5", "menu.tool", ExecCmd),
         z("app.backup-now", "立即备份", "", "menu.tool", BackupNow),
         z("app.find-marks", "切换查找标记 (全部强调)", "", "menu.search", FindMarks), z("app.find-start", "回到查找起点", "", "menu.search", FindStart),
         z("app.col-delete", "列块删除", "", "menu.edit", ColDelete), z("app.col-replace", "列块替换…", "", "menu.edit", ColReplace),
@@ -446,6 +447,25 @@ mod tests {
         for &k in Key::ALL {
             let spec = format_combo(Modifiers::COMMAND | Modifiers::SHIFT, k);
             assert_eq!(parse_combo(&spec), Some((Modifiers::COMMAND | Modifiers::SHIFT, k)), "{spec}");
+        }
+    }
+
+    /// Tauri 版的 Sakura 默认键里, 高速版有对应命令的都得绑上 (这张表按 Tauri `KEYMAP` 逐项核对过)
+    #[test]
+    fn tauri_default_keys_are_bound_to_the_matching_commands() {
+        let by_label = |l: &str| entries().iter().find(|e| matches!(e.label, Label::Zh(z) if z == l)).unwrap_or_else(|| panic!("找不到命令 {l}"));
+        for (label, key) in [
+            ("升序排序", "Alt+A"), ("降序排序", "Alt+D"), ("去除行首空白", "Alt+L"), ("去除行尾空白", "Alt+R"), ("复制当前行", "Shift+F10"), ("复制 (行尾统一 CRLF)", "Shift+F8"),
+            ("删除单词", "Ctrl+Shift+D"), ("转为大写", "Ctrl+F7"), ("转为小写", "Ctrl+F6"), ("Tab → 空格", "Ctrl+Alt+F5"), ("行首空格 → Tab", "Ctrl+Alt+Shift+F5"),
+        ] {
+            assert!(by_label(label).default.split('|').any(|k| k == key), "{label} 应绑 {key}");
+        }
+        for (id, key) in [
+            ("c.close-tab", "Ctrl+F4"), ("c.open-folder", "Ctrl+Alt+O"), ("c.print-setup", "Ctrl+Alt+P"), ("c.exit", "Ctrl+Alt+F4"), ("c.close-others", "Alt+Shift+F4"),
+            ("c.toolbar", "Ctrl+1"), ("c.funckey", "Ctrl+2"), ("app.macro-save", "Ctrl+M"), ("app.exec-cmd", "Ctrl+F5"), ("app.open-hc", "Ctrl+Shift+C"),
+        ] {
+            let e = entry_by_id(id).unwrap_or_else(|| panic!("找不到命令 {id}"));
+            assert!(e.default.split('|').any(|k| k == key), "{id} 应绑 {key}, 实际 {}", e.default);
         }
     }
 

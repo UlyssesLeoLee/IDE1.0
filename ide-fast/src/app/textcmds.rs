@@ -206,16 +206,22 @@ impl App {
         self.active = self.active.min(self.docs.len() - 1);
     }
 
-    /// SPACE 缩进 / 反缩进 (按首选项里的 Tab 宽度)
+    /// SPACE 缩进 / 反缩进
     pub(super) fn space_indent_cmd(&mut self, reverse: bool) {
-        let tab = self.tab;
-        self.cur().space_indent(tab, reverse);
+        self.cur().space_indent(reverse);
     }
 
     /// 光标行居中 (同 Tauri `cur-line-center`): 下一帧把光标所在行放到编辑区正中
     pub(super) fn center_cursor(&mut self) {
         self.center_once = true;
         self.cur().reveal = true;
+    }
+
+    /// 执行外部命令 (同 Tauri `exec-cmd`): 打开底部面板的终端页, 命令在那里输入、执行
+    pub(super) fn open_exec_terminal(&mut self) {
+        self.sys.bottom = sysopts::BottomTab::Terminal;
+        self.term.open = true;
+        self.expand_dock(crate::panels::Dock::Bottom);
     }
 
     /// 立即备份 (同 Tauri 的「立即备份」)

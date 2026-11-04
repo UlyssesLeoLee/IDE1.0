@@ -637,6 +637,7 @@ pub const CMD_T: &[Row] = &[
     // 整理行
     ("升序排序", ["升序排序", "昇順に並べ替え", "Sort Ascending"]),
     ("降序排序", ["降序排序", "降順に並べ替え", "Sort Descending"]),
+    ("合并连续重复行", ["合并连续重复行", "連続する重複行を結合", "Merge Consecutive Duplicate Lines"]),
     ("去重 (保留首次出现)", ["去重 (保留首次出现)", "重複を削除 (最初を残す)", "Remove Duplicates (keep first)"]),
     ("反转行顺序", ["反转行顺序", "行の順序を反転", "Reverse Lines"]),
     ("去除行尾空白", ["去除行尾空白", "行末の空白を削除", "Trim Trailing Whitespace"]),

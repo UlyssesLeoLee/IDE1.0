@@ -21,8 +21,12 @@
 | 批次 3 把菜单整体重写成 MENU_DEF 式生成 | partial | 快捷键、面板、提示共用注册表; 菜单本身仍是手写结构 (只是提示由注册表生成)。完全生成需要给每项配分组 / 分隔符 / 勾选状态, 收益小 |
 | 批次 3 编辑区原生处理的键 (剪切 / 复制 / 粘贴、Ctrl+退格 等) 可改键 | not done | 它们由编辑区直接吃事件, 键位表里标成「系统键」, 只显示不能改 (改了会和文本输入路径打架) |
 | 批次 4 标签命令 / 文件菜单 / 编码·换行改写 / 状态栏点击 / 全屏·置顶 / 移动履历 / 括弧 / 书签列表 | done | |
+| 批次 4 Sakura 默认键 (Tauri `KEYMAP` 逐项核对) | done (移植补齐 第四批) | 20 个键补绑, 见 CHANGELOG 0.3.5; 单测 `tauri_default_keys_are_bound_to_the_matching_commands`。没绑的及原因同 CHANGELOG |
+| 批次 4 合并连续重复行 (uniq-consecutive) / 执行外部命令 (exec-cmd, Ctrl+F5) | done (移植补齐 第四批) | `cmds::lines_op` 走 `editcore::edit_ops::transform_lines`; `open_exec_terminal` |
+| 批次 4 整理行 / 文本变换改用 editcore (Sakura 实测) | done (移植补齐 第四批) | `cmds::lines_op` / `cmds::transform` 不再自己抄: 排序 (UTF-16 序)、去行首 / 行尾空白 (只去空格和 Tab)、Tab ↔ 空格 (按制表位)、大小写 |
+| 批次 7 Sakura 宏运行: 带命令 id 的 `S_` 函数 | partial (移植补齐 第四批) | `macros::doc_command`: 只动文档本身的 (SPACE 缩进、假名 / 英数转换、段落选择、改动行 / 函数步进、插入日期时间、只读、换行符、编码转换、editcore 编辑命令) 能跑; 窗口 / 标签 / 分组 / 对话框 / 剪贴板类 (关标签、新窗口、复制 HTML 等) 明确报错。带命令 id 的 85 个里能跑的从 2 个增加到 21 个 (逐个实测); 单测 `document_level_sakura_functions_run_and_window_level_ones_fail_loudly` 守住这批 |
 | 批次 4 标签分组命令 (next-group / prev-group / tab-separate / tab-joint-* / bind-window / group-close) | done (移植补齐 第三批) | 窗口 > 标签分组 + 命令面板; `tabs::groups` / `neighbour_group` / `new_group` 是纯逻辑 (有单测); 分组 = 标签右键菜单的 6 种颜色分组 (`Doc.group`, 0 = 无分组)。差别: 切分组回到最靠左的标签 (Tauri 回到最近用过的) |
-| 批次 4 SPACE 缩进 / 反缩进 (indent-space / unindent-space) | done (移植补齐 第三批) | `Doc::space_indent`: 行首加 / 去 Tab 宽度个空格, 反缩进不碰 Tab |
+| 批次 4 SPACE 缩进 / 反缩进 (indent-space / unindent-space) | done (移植补齐 第三批, 第四批改正语义) | `Doc::space_indent` 调 `editcore::edit_ops::transform_lines` (Sakura 实测): 行首加 / 去 1 个空格, 空行不动, 反缩进不碰 Tab; 有选区缩进后仍选着。第三批曾误写成加 Tab 宽度个空格 |
 | 批次 4 光标行居中 / 选区统计方式 / 切换查找标记 / 回到查找起点 | done (移植补齐 第三批) | `center_cursor` (复用首帧居中机制)、状态栏选区字数可点 (字符 / 字节 / 行, `sys.sel_count`)、`toggle_find_marks`、`jump_find_start` (`Find::start_pos`); 后两个没有默认键 (Ctrl+F3 / Ctrl+Shift+F3 已是查找当前词) |
 | 批次 4 立即备份 (auto-backup) | done (移植补齐 第三批) | 工具菜单 / 命令面板, `AutoBackup::flush_now`: 现在就写所有有未保存修改的文档的备份 |
 | 批次 4 删除上方行 / 下方行 (delete-line-up / down) | done (移植补齐 第二批) | 编辑 > 行 两个新菜单项 + 命令面板; 命令本来就在 editcore, 之前没有入口 |
