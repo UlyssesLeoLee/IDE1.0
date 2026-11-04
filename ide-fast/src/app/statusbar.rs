@@ -11,6 +11,7 @@ pub(super) enum StatusCmd {
     Reopen(Charset),
     Bom,
     Eol(Eol),
+    SelCount,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -72,7 +73,16 @@ impl App {
                 if d.box_sel.is_some() { item(ui, on, egui::RichText::new(tr("st.box"))); }
                 if let Some(sel) = d.sel {
                     let (n, l) = crate::view::sel_stats(&d.lines, sel);
-                    item(ui, on, egui::RichText::new(trf("st.selected", &[&n.to_string(), &l.to_string()])));
+                    let text = match self.sys.sel_count {
+                        1 => trf("st.selected-bytes", &[&crate::doc::range_text(&d.lines, sel).len().to_string(), &l.to_string()]),
+                        2 => trf("st.selected-lines", &[&l.to_string()]),
+                        _ => trf("st.selected", &[&n.to_string(), &l.to_string()]),
+                    };
+                    ui.add_space(8.0);
+                    // 点一下换统计方式 (字符 / 字节 / 行), 同 Tauri `#s-sel`
+                    if ui.add(egui::Label::new(egui::RichText::new(text)).sense(Sense::click())).tip(tr("st.sel-hint").to_string()).clicked() { st_cmd = Some(StatusCmd::SelCount); }
+                    ui.add_space(8.0);
+                    sep(ui, on);
                 }
                 // 位置: 点一下 = 转到行; 悬停给总行数和字符列
                 ui.add_space(8.0);
@@ -139,6 +149,7 @@ impl App {
             Some(StatusCmd::Reopen(cs)) => self.reopen_as(cs),
             Some(StatusCmd::Bom) => self.cur().toggle_bom(),
             Some(StatusCmd::Eol(e)) => self.cur().set_eol(e),
+            Some(StatusCmd::SelCount) => self.cycle_sel_count(),
             None => {}
         }
     }

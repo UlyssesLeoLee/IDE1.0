@@ -80,6 +80,32 @@ impl JumpHist {
     }
 }
 
+/// 现有的分组编号 (升序、去重); 传各标签的分组号
+pub fn groups(values: impl IntoIterator<Item = u8>) -> Vec<u8> {
+    let mut g: Vec<u8> = values.into_iter().collect();
+    g.sort_unstable();
+    g.dedup();
+    g
+}
+
+/// 从分组 `cur` 往后 / 往前走一个, 到头绕回另一端 (同 Tauri `switchGroup` / `tab-joint-*`); 不足两个分组 = None
+pub fn neighbour_group(groups: &[u8], cur: u8, fwd: bool) -> Option<u8> {
+    if groups.len() < 2 {
+        return None;
+    }
+    let (i, n) = (groups.iter().position(|&g| g == cur).unwrap_or(0), groups.len());
+    Some(groups[if fwd { (i + 1) % n } else { (i + n - 1) % n }])
+}
+
+/// 「移到新分组」用的编号: 比现有最大的大一; 编号 (0 是「无分组」, 1..`limit` 是颜色分组) 用完了就取最小的没人用的; 都有人用 = None
+pub fn new_group(groups: &[u8], limit: u8) -> Option<u8> {
+    let next = groups.iter().copied().max().unwrap_or(0).saturating_add(1);
+    if next < limit {
+        return Some(next);
+    }
+    (1..limit).find(|g| !groups.contains(g))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +162,20 @@ mod tests {
         assert_eq!(h.list.len(), JUMP_MAX);
         h.forget(7);
         assert!(h.go(-1, (1, 0, 0)).is_none());
+    }
+
+    #[test]
+    fn group_helpers_wrap_and_pick_free_numbers() {
+        assert_eq!(groups([2, 0, 2, 1, 0]), [0, 1, 2]);
+        assert_eq!(neighbour_group(&[0, 2, 4], 2, true), Some(4));
+        assert_eq!(neighbour_group(&[0, 2, 4], 4, true), Some(0), "最后一个再往后绕回第一个");
+        assert_eq!(neighbour_group(&[0, 2, 4], 0, false), Some(4), "第一个再往前绕回最后一个");
+        assert_eq!(neighbour_group(&[3], 3, true), None, "只有一个分组");
+        assert_eq!(neighbour_group(&[0, 2], 7, true), Some(2), "当前分组不在列表里: 当作第一个");
+        assert_eq!(new_group(&[0], 6), Some(1));
+        assert_eq!(new_group(&[0, 1, 3], 6), Some(4), "比最大的大一");
+        assert_eq!(new_group(&[0, 1, 5], 6), Some(2), "编号用到头: 取最小的没人用的");
+        assert_eq!(new_group(&[1, 2, 3, 4, 5], 6), None, "颜色分组全被占用");
+        assert_eq!(new_group(&[255], 6), Some(1), "不会溢出");
     }
 }

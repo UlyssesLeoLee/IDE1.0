@@ -21,6 +21,10 @@
 | 批次 3 把菜单整体重写成 MENU_DEF 式生成 | partial | 快捷键、面板、提示共用注册表; 菜单本身仍是手写结构 (只是提示由注册表生成)。完全生成需要给每项配分组 / 分隔符 / 勾选状态, 收益小 |
 | 批次 3 编辑区原生处理的键 (剪切 / 复制 / 粘贴、Ctrl+退格 等) 可改键 | not done | 它们由编辑区直接吃事件, 键位表里标成「系统键」, 只显示不能改 (改了会和文本输入路径打架) |
 | 批次 4 标签命令 / 文件菜单 / 编码·换行改写 / 状态栏点击 / 全屏·置顶 / 移动履历 / 括弧 / 书签列表 | done | |
+| 批次 4 标签分组命令 (next-group / prev-group / tab-separate / tab-joint-* / bind-window / group-close) | done (移植补齐 第三批) | 窗口 > 标签分组 + 命令面板; `tabs::groups` / `neighbour_group` / `new_group` 是纯逻辑 (有单测); 分组 = 标签右键菜单的 6 种颜色分组 (`Doc.group`, 0 = 无分组)。差别: 切分组回到最靠左的标签 (Tauri 回到最近用过的) |
+| 批次 4 SPACE 缩进 / 反缩进 (indent-space / unindent-space) | done (移植补齐 第三批) | `Doc::space_indent`: 行首加 / 去 Tab 宽度个空格, 反缩进不碰 Tab |
+| 批次 4 光标行居中 / 选区统计方式 / 切换查找标记 / 回到查找起点 | done (移植补齐 第三批) | `center_cursor` (复用首帧居中机制)、状态栏选区字数可点 (字符 / 字节 / 行, `sys.sel_count`)、`toggle_find_marks`、`jump_find_start` (`Find::start_pos`); 后两个没有默认键 (Ctrl+F3 / Ctrl+Shift+F3 已是查找当前词) |
+| 批次 4 立即备份 (auto-backup) | done (移植补齐 第三批) | 工具菜单 / 命令面板, `AutoBackup::flush_now`: 现在就写所有有未保存修改的文档的备份 |
 | 批次 4 删除上方行 / 下方行 (delete-line-up / down) | done (移植补齐 第二批) | 编辑 > 行 两个新菜单项 + 命令面板; 命令本来就在 editcore, 之前没有入口 |
 | 批次 4 复制路径与光标位置 / 在折行处加换行复制 (copy-tag / copy-addcrlf) | done (移植补齐 第二批) | `textconv::path_pos_tag` / `wrap_with_crlf` (按字符数切, 切口 CRLF), `textcmds.rs` 的 `copy_tag` / `copy_wrapped` |
 | 批次 4 打开同名 C/C++ 头 / 源文件 (open-hc) | done (移植补齐 第二批) | `textconv::hc_counterparts` + `open_counterpart`, Ctrl+Shift+C (Tauri 同键) |

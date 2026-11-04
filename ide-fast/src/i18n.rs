@@ -242,6 +242,9 @@ pub const T: &[Row] = &[
     ("c.minimal-mode", ["极简布局 (仅编辑区)", "ミニマル表示 (編集領域のみ)", "Minimal Layout (editor only)"]),
     ("st.char-col", ["字符列 {}", "文字位置 {}", "Character column {}"]),
     ("st.selected", ["已选 {} 字符 / {} 行", "{} 文字 / {} 行選択", "{} chars / {} lines selected"]),
+    ("st.selected-bytes", ["已选 {} 字节 (UTF-8) / {} 行", "{} バイト (UTF-8) / {} 行選択", "{} bytes (UTF-8) / {} lines selected"]),
+    ("st.selected-lines", ["已选 {} 行", "{} 行選択", "{} lines selected"]),
+    ("st.sel-hint", ["点击切换统计方式: 字符 / 字节 / 行", "クリックで切り替え: 文字 / バイト / 行", "Click to switch: chars / bytes / lines"]),
     ("st.plain", ["纯文本", "テキスト", "Plain Text"]),
     // ---- 帮助
     ("ui.about", ["IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)", "IDE1.0 高速版 — ネイティブ Rust (egui)\n編集の挙動は editcore を再利用 (Tauri 版と同一)", "IDE1.0 Fast — native Rust (egui)\nEditing semantics reuse editcore (same as the Tauri build)"]),

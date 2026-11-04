@@ -110,6 +110,18 @@ impl AutoBackup {
             return Some(left);
         }
         self.last = Some(now);
+        let jobs = self.collect_jobs(docs);
+        if !jobs.is_empty() {
+            if let Some(dir) = dir() {
+                let _ = std::thread::Builder::new().name("autosave".into()).spawn(move || write_all(&dir, &jobs));
+            }
+        }
+        Some(Duration::from_secs(clamp_interval(interval_min) as u64 * 60))
+    }
+
+    /// 该备份的文档 → 要写的备份: 只收有未保存修改的 (不含 Grep 结果页), 这一版已经备份过的跳过, 太大的跳过; 收下的记为「已备份这一版」
+    fn collect_jobs(&mut self, docs: &[Doc]) -> Vec<Job> {
+        let dirty = |d: &&Doc| d.dirty && !d.grep_result;
         let jobs: Vec<Job> = docs
             .iter()
             .filter(dirty)
@@ -127,12 +139,24 @@ impl AutoBackup {
         for d in docs.iter().filter(dirty) {
             self.done.insert(d.id, d.rev);
         }
-        if !jobs.is_empty() {
-            if let Some(dir) = dir() {
-                let _ = std::thread::Builder::new().name("autosave".into()).spawn(move || write_all(&dir, &jobs));
-            }
+        jobs
+    }
+
+    /// 立即备份 (Tauri 的「立即备份」): 不等定时器, 把所有有未保存修改的文档现在就写进备份目录 (已备份过的这一版也重写); 返回写了几份
+    pub fn flush_now(&mut self, docs: &[Doc]) -> Result<usize, String> {
+        let dir = dir().ok_or("找不到备份目录")?;
+        Ok(self.flush_to(docs, &dir))
+    }
+
+    fn flush_to(&mut self, docs: &[Doc], dir: &Path) -> usize {
+        for d in docs {
+            self.done.remove(&d.id);
         }
-        Some(Duration::from_secs(clamp_interval(interval_min) as u64 * 60))
+        let jobs = self.collect_jobs(docs);
+        if !jobs.is_empty() {
+            write_all(dir, &jobs);
+        }
+        jobs.len()
     }
 
     /// 保存 / 关闭后: 删掉这个文档的备份, 下次改动重新备份
@@ -363,5 +387,28 @@ mod tests {
             assert!(locks.sync(true, std::slice::from_ref(&d)).is_empty(), "不每帧重试");
         }
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn collect_jobs_takes_only_dirty_new_versions_and_flush_forces_a_rewrite() {
+        let mut a = AutoBackup::default();
+        let mut d1 = Doc::untitled(1, 1);
+        d1.lines = vec!["x".into(), "y".into()];
+        d1.dirty = true;
+        let d2 = Doc::untitled(2, 2); // 没改过
+        let mut d3 = Doc::untitled(3, 3); // Grep 结果页
+        d3.dirty = true;
+        d3.grep_result = true;
+        let docs = vec![d1, d2, d3];
+        let jobs = a.collect_jobs(&docs);
+        assert_eq!(jobs.len(), 1, "只有改过的普通文档");
+        assert_eq!(jobs[0].text, "x\r\ny", "按文档的换行符拼");
+        assert!(a.collect_jobs(&docs).is_empty(), "同一版不重复备份");
+        let dir = tmp("flush");
+        assert_eq!(a.flush_to(&docs, &dir), 1, "立即备份: 这一版虽然备份过, 也重写");
+        let written = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).count();
+        assert_eq!(written, 1);
+        assert_eq!(a.flush_to(&[Doc::untitled(9, 9)], &dir), 0, "没有未保存修改的文档: 不写");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -539,6 +539,27 @@ impl Doc {
         self.tip = format!("已处理 {} 行", r1 - r0 + 1);
     }
 
+    /// SPACE 缩进 / 反缩进 (同 Tauri `indent-space` / `unindent-space`): 选中的行 (没有选区 = 光标所在行) 行首加 `n` 个空格;
+    /// 反向则去掉最多 `n` 个行首空格 (只认空格, 不动 Tab)。光标留在原来那一行, 列随缩进量移动
+    pub fn space_indent(&mut self, n: usize, reverse: bool) {
+        if self.readonly {
+            self.tip = "只读: 不能修改 (编辑 → 只读 可以关掉)".into();
+            return;
+        }
+        let n = n.max(1);
+        let (r0, r1) = self.selected_rows().unwrap_or((self.cursor[0], self.cursor[0]));
+        let r1 = r1.min(self.lines.len() - 1);
+        let removed = |l: &str| if reverse { l.chars().take_while(|&c| c == ' ').count().min(n) } else { 0 };
+        let new: Vec<String> = self.lines[r0..=r1]
+            .iter()
+            .map(|l| if reverse { l.chars().skip(removed(l)).collect() } else { format!("{}{l}", " ".repeat(n)) })
+            .collect();
+        let [row, col] = self.cursor;
+        let col = if reverse { col.saturating_sub(removed(&self.lines[row.clamp(r0, r1)])) } else { col + n };
+        self.replace_rows(r0, r1 - r0 + 1, new, [row, col]);
+        self.tip = format!("SPACE {}缩进 {} 行", if reverse { "反" } else { "" }, r1 - r0 + 1);
+    }
+
     /// 选区文字变换 (大小写 / 全半角 / Tab 与空格); 没有选区什么也不做
     pub fn transform_sel(&mut self, kind: &str, tab: usize) {
         if self.sel.is_none() {
@@ -1598,6 +1619,31 @@ b
         d.goto(1, 0);
         d.select_para(false);
         assert_eq!(d.sel, Some([0, 0, 1, 0]), "向上到文首");
+    }
+
+    #[test]
+    fn space_indent_adds_and_removes_leading_spaces_only() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["a".into(), "  b".into(), "\tc".into(), "".into()];
+        d.goto(1, 3);
+        d.space_indent(4, false);
+        assert_eq!(d.lines[1], "      b", "没有选区: 只动光标行");
+        assert_eq!(d.cursor, [1, 7], "光标列跟着缩进量走");
+        d.space_indent(4, true);
+        assert_eq!(d.lines[1], "  b");
+        assert_eq!(d.cursor, [1, 3]);
+        d.space_indent(4, true);
+        assert_eq!(d.lines[1], "b", "最多去掉实际有的空格");
+        d.sel = Some([0, 0, 2, 1]);
+        d.anchor = Some([0, 0]);
+        d.space_indent(2, false);
+        assert_eq!(&d.lines[..3], ["  a", "  b", "  \tc"], "选中的每一行都缩进");
+        d.sel = Some([0, 0, 2, 1]);
+        d.space_indent(2, true);
+        assert_eq!(&d.lines[..3], ["a", "b", "\tc"], "反缩进不碰 Tab");
+        d.readonly = true;
+        d.space_indent(2, false);
+        assert_eq!(d.lines[0], "a", "只读: 不改");
     }
 
     #[test]

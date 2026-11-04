@@ -1220,7 +1220,7 @@ impl App {
                 self.cmd_menu(ui, ctx);
                 ui.separator();
                 for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("范围选择模式 (开始 / 结束)", KApp::SelMode), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath),
-                               ("复制路径与光标位置", KApp::CopyTag), ("在折行处加换行复制", KApp::CopyWrapped), ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
+                               ("SPACE 缩进", KApp::SpaceIndent), ("SPACE 反缩进", KApp::SpaceUnindent), ("光标行居中", KApp::CurCenter), ("切换选区统计方式 (字符 / 字节 / 行)", KApp::SelCountMode), ("复制路径与光标位置", KApp::CopyTag), ("在折行处加换行复制", KApp::CopyWrapped), ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
                     if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.separator();
@@ -1238,7 +1238,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
-                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext), ("(选择) 上一处改动", KApp::ModPrevSel), ("(选择) 下一处改动", KApp::ModNextSel), ("打开同名 C/C++ 头 / 源文件", KApp::OpenHc)] {
+                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext), ("(选择) 上一处改动", KApp::ModPrevSel), ("(选择) 下一处改动", KApp::ModNextSel), ("打开同名 C/C++ 头 / 源文件", KApp::OpenHc), ("切换查找标记 (全部强调)", KApp::FindMarks), ("回到查找起点", KApp::FindStart)] {
                     if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.menu_button(trz("比较"), |ui| {
@@ -1302,6 +1302,11 @@ impl App {
                     if menuui::mbtn(ui, lk("c.close-others", "")).clicked() { self.close_many(CloseKind::Others); ui.close(); }
                     if menuui::mbtn(ui, lk("c.close-left", "")).clicked() { self.close_many(CloseKind::Left); ui.close(); }
                     if menuui::mbtn(ui, lk("c.close-right", "")).clicked() { self.close_many(CloseKind::Right); ui.close(); }
+                });
+                ui.menu_button(trz("标签分组"), |ui| {
+                    for (z, a) in [("下一个分组", KApp::GroupNext), ("上一个分组", KApp::GroupPrev), ("移到新分组", KApp::TabSeparate), ("移到下一个分组", KApp::TabJointNext), ("移到上一个分组", KApp::TabJointPrev), ("合并为一组", KApp::BindWindow), ("关闭当前分组", KApp::GroupClose)] {
+                        if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
+                    }
                 });
                 ui.menu_button(tr("sub.winlist"), |ui| {
                     let mut pick = None;
@@ -1423,6 +1428,7 @@ impl App {
         if menuui::mbtn(ui, lk("c.import-config", "")).clicked() { ui.close(); self.import_settings(); }
         ui.separator();
         if ui.button(tr("c.open-autosave")).clicked() { ui.close(); self.open_autosave(); }
+        if ui.button(trz("立即备份")).clicked() { ui.close(); self.backup_now(); }
         if ui.button(trz("文件加锁…")).clicked() { self.open_prefs(); ui.close(); }
         ui.separator();
         ui.menu_button(tr("menu.macro"), |ui| self.macro_items(ui));
@@ -1912,6 +1918,20 @@ impl App {
             KApp::MacroRecMac => self.macro_rec_mac(),
             KApp::FuncNext => self.step_function(true),
             KApp::CopyTag => self.copy_tag(ctx),
+            KApp::GroupNext => self.group_switch(true),
+            KApp::GroupPrev => self.group_switch(false),
+            KApp::TabSeparate => self.group_separate(),
+            KApp::TabJointNext => self.group_joint(true),
+            KApp::TabJointPrev => self.group_joint(false),
+            KApp::BindWindow => self.group_bind_all(),
+            KApp::GroupClose => self.group_close(),
+            KApp::SpaceIndent => self.space_indent_cmd(false),
+            KApp::SpaceUnindent => self.space_indent_cmd(true),
+            KApp::CurCenter => self.center_cursor(),
+            KApp::BackupNow => self.backup_now(),
+            KApp::SelCountMode => self.cycle_sel_count(),
+            KApp::FindMarks => self.toggle_find_marks(),
+            KApp::FindStart => self.jump_find_start(),
             KApp::CopyWrapped => self.copy_wrapped(ctx),
             KApp::OpenHc => self.open_counterpart(),
             KApp::ModNextSel => self.step_modified_sel(true),
@@ -3114,6 +3134,68 @@ EDITED".into())), ..Default::default() };
         a.open_counterpart();
         assert_eq!((a.docs.len(), a.cur().tip.contains("没有找到")), (before, true), "对应文件不存在: 只提示");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn tab_group_commands_switch_move_merge_and_close() {
+        let (mut a, _g) = app(Settings::default());
+        a.new_doc();
+        a.new_doc();
+        a.new_doc();
+        for (d, g) in a.docs.iter_mut().zip([0u8, 2, 2, 4]) { d.group = g; }
+        a.active = 0;
+        a.group_switch(true);
+        assert_eq!(a.active, 1, "下一个分组 (2) 里最靠左的标签");
+        a.group_switch(true);
+        assert_eq!(a.active, 3);
+        a.group_switch(true);
+        assert_eq!(a.active, 0, "最后一个分组再往后绕回第一个");
+        a.group_switch(false);
+        assert_eq!(a.active, 3, "往前绕回最后一个");
+        a.group_joint(false);
+        assert_eq!(a.docs[3].group, 2, "当前标签移到上一个分组");
+        a.active = 0;
+        a.group_separate();
+        assert_eq!(a.docs[0].group, 3, "新分组 = 现有最大编号 + 1");
+        a.group_bind_all();
+        assert!(a.docs.iter().all(|d| d.group == 0), "合并为一组 = 都回到无分组");
+        a.group_switch(true);
+        assert!(a.cur().tip.contains("只有一个分组"), "{}", a.cur().tip);
+        a.docs[1].group = 2;
+        a.docs[2].group = 2;
+        a.active = 1;
+        a.group_close();
+        assert_eq!(a.docs.len(), 2, "当前分组里的两个标签关掉了");
+        assert!(a.docs.iter().all(|d| d.group == 0) && a.active < a.docs.len());
+    }
+
+    #[test]
+    fn small_view_and_search_commands_update_their_state() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].lines = vec!["abc".into(), "def".into()];
+        a.center_cursor();
+        assert!(a.center_once && a.docs[0].reveal, "光标行居中: 下一帧居中并滚到光标");
+        assert_eq!(a.sys.sel_count, 0);
+        a.cycle_sel_count();
+        a.cycle_sel_count();
+        assert_eq!(a.sys.sel_count, 2);
+        assert!(a.cur().tip.contains("行数"), "{}", a.cur().tip);
+        a.cycle_sel_count();
+        assert_eq!(a.sys.sel_count, 0, "字符 -> 字节 -> 行 -> 回到字符");
+        let m = a.find.marks;
+        a.toggle_find_marks();
+        assert_eq!(a.find.marks, !m);
+        a.jump_find_start();
+        assert!(a.cur().tip.contains("还没有查找起点"), "没查找过: 只提示");
+        a.find.needle = "e".into();
+        a.docs[0].goto(1, 2);
+        a.jump_find_start();
+        assert_eq!(a.docs[0].cursor, [0, 0], "回到查找开始时的位置");
+        a.docs[0].goto(1, 1);
+        a.space_indent_cmd(false);
+        assert_eq!(a.docs[0].lines[1], "    def", "按 Tab 宽度缩进当前行");
+        a.space_indent_cmd(true);
+        assert_eq!(a.docs[0].lines[1], "def");
     }
 
     #[test]

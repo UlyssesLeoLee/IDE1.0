@@ -154,6 +154,104 @@ impl App {
         }
     }
 
+    /// 分组在提示里的名字 (沿用标签右键菜单的分组名)
+    fn group_label(g: u8) -> &'static str {
+        tr(GROUP_KEYS[(g as usize).min(GROUP_KEYS.len() - 1)])
+    }
+
+    /// 下一个 / 上一个分组 (同 Tauri `next-group` / `prev-group`): 切到那个分组里最靠左的标签; 只有一个分组就提示
+    pub(super) fn group_switch(&mut self, fwd: bool) {
+        let a = self.active.min(self.docs.len() - 1);
+        let gs = crate::tabs::groups(self.docs.iter().map(|d| d.group));
+        let Some(g) = crate::tabs::neighbour_group(&gs, self.docs[a].group, fwd) else { self.cur().tip = "只有一个分组".into(); return };
+        if let Some(i) = self.docs.iter().position(|d| d.group == g) {
+            self.select_tab(i);
+            self.cur().tip = format!("分组: {}", Self::group_label(g));
+        }
+    }
+
+    /// 移到新分组 (同 Tauri `tab-separate`): 当前标签换到一个还没人用的分组编号
+    pub(super) fn group_separate(&mut self) {
+        let gs = crate::tabs::groups(self.docs.iter().map(|d| d.group));
+        match crate::tabs::new_group(&gs, GROUP_KEYS.len() as u8) {
+            Some(g) => { let d = self.cur(); d.group = g; d.tip = format!("已移到分组: {}", Self::group_label(g)); }
+            None => self.cur().tip = "颜色分组都已经有标签在用".into(),
+        }
+    }
+
+    /// 移到下一个 / 上一个分组 (同 Tauri `tab-joint-next` / `tab-joint-prev`)
+    pub(super) fn group_joint(&mut self, fwd: bool) {
+        let a = self.active.min(self.docs.len() - 1);
+        let gs = crate::tabs::groups(self.docs.iter().map(|d| d.group));
+        match crate::tabs::neighbour_group(&gs, self.docs[a].group, fwd) {
+            Some(g) => { let d = self.cur(); d.group = g; d.tip = format!("已移到分组: {}", Self::group_label(g)); }
+            None => self.cur().tip = "只有一个分组".into(),
+        }
+    }
+
+    /// 合并为一组 (同 Tauri `bind-window`): 全部标签回到「无分组」
+    pub(super) fn group_bind_all(&mut self) {
+        for d in &mut self.docs { d.group = 0; }
+        self.cur().tip = "全部标签已合并为一组".into();
+    }
+
+    /// 关闭当前分组 (同 Tauri `group-close`): 这个分组里的标签逐个关, 有未保存的会问, 选了取消就停在那里
+    pub(super) fn group_close(&mut self) {
+        let g = self.cur().group;
+        let ids: Vec<u64> = self.docs.iter().filter(|d| d.group == g).map(|d| d.id).collect();
+        for id in ids {
+            let Some(i) = self.docs.iter().position(|d| d.id == id) else { continue };
+            if !self.close_tab(i) { break; }
+        }
+        self.active = self.active.min(self.docs.len() - 1);
+    }
+
+    /// SPACE 缩进 / 反缩进 (按首选项里的 Tab 宽度)
+    pub(super) fn space_indent_cmd(&mut self, reverse: bool) {
+        let tab = self.tab;
+        self.cur().space_indent(tab, reverse);
+    }
+
+    /// 光标行居中 (同 Tauri `cur-line-center`): 下一帧把光标所在行放到编辑区正中
+    pub(super) fn center_cursor(&mut self) {
+        self.center_once = true;
+        self.cur().reveal = true;
+    }
+
+    /// 立即备份 (同 Tauri 的「立即备份」)
+    pub(super) fn backup_now(&mut self) {
+        let r = self.sys.backup.flush_now(&self.docs);
+        self.cur().tip = match r {
+            Ok(0) => "没有需要备份的未保存修改".into(),
+            Ok(n) => format!("已备份 {n} 个文档"),
+            Err(e) => format!("备份失败: {e}"),
+        };
+    }
+
+    /// 切换状态栏的选区统计方式: 字符 -> 字节 (UTF-8) -> 行 (同 Tauri `select-count-mode`)
+    pub(super) fn cycle_sel_count(&mut self) {
+        self.sys.sel_count = (self.sys.sel_count + 1) % 3;
+        let name = ["字符数", "字节数 (UTF-8)", "行数"][self.sys.sel_count as usize];
+        self.cur().tip = format!("选区统计: {name}");
+    }
+
+    /// 切换查找标记 (同 Tauri `search-clearmark`): 就是查找栏里的「全部强调」
+    pub(super) fn toggle_find_marks(&mut self) {
+        self.find.marks = !self.find.marks;
+        self.cur().tip = format!("全部强调: {}", if self.find.marks { "开" } else { "关" });
+    }
+
+    /// 回到查找起点 (同 Tauri `jump-srchstart`)
+    pub(super) fn jump_find_start(&mut self) {
+        let Some([r, c]) = self.find.start_pos() else { self.cur().tip = "还没有查找起点 (先查找一次)".into(); return };
+        self.jump_mark();
+        let d = self.cur();
+        let row = r.min(d.lines.len() - 1);
+        d.sel = None;
+        d.anchor = None;
+        d.goto(row, c);
+    }
+
     /// 复制路径与光标位置 (同 Tauri `copy-tag`): `路径(行,列)`, 没存盘的文档用文档名
     pub(super) fn copy_tag(&mut self, ctx: &egui::Context) {
         let d = self.cur();

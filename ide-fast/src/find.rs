@@ -223,6 +223,11 @@ impl Find {
     }
 
     /// 当前文档的全部命中 (供编辑区画底色); 查找栏没开 / 没勾强调 / 查找串空 = None。同一 (版本, 查找串, 条件) 只算一次
+    /// 「回到查找起点」: 现在这次查找开始时的光标位置 (同 Tauri `jump-srchstart`); 还没查找过 = None
+    pub fn start_pos(&self) -> Option<[usize; 2]> {
+        (!self.needle.is_empty()).then_some(self.start)
+    }
+
     pub fn marks_for(&mut self, d: &Doc) -> Option<Arc<Vec<Hit>>> {
         if !self.open || !self.marks || self.needle.is_empty() || self.err.is_some() || d.lines.len() > MARK_MAX_ROWS {
             self.cache.clear();
@@ -450,6 +455,15 @@ mod tests {
         f3.opts.regex = true;
         f3.open_with(&d3, false);
         assert_eq!(f3.needle, "a\\.b");
+    }
+
+    #[test]
+    fn start_pos_is_only_available_after_a_search_began() {
+        let mut f = Find::new();
+        assert_eq!(f.start_pos(), None);
+        f.needle = "x".into();
+        f.start = [4, 2];
+        assert_eq!(f.start_pos(), Some([4, 2]));
     }
 
     #[test]

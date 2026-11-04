@@ -19,6 +19,8 @@ const LOG_MAX: usize = 300;
 #[derive(Default)]
 pub(super) struct SysState {
     pub backup: AutoBackup,
+    /// 状态栏选区统计方式: 0 字符数, 1 字节数 (UTF-8), 2 行数 (同 Tauri `select-count-mode`, 不落盘)
+    pub sel_count: u8,
     pub locks: FileLocks,
     /// 当前主题是半透明主题 (窗口建出来就是透明的, 这时只决定清屏色 / 要不要加模糊)
     pub theme_glass: bool,
