@@ -33,5 +33,11 @@ rquickjs = { version = "0.9", default-features = false }
 window-vibrancy = { version = "0.8", default-features = false }
 raw-window-handle = "0.6"
 
+# Linux 平台 GUI 后端与文件对话框后端支持 (WBS-03 O1.2)
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.37", default-features = false, features = ["x11", "wayland"] }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
+raw-window-handle = "0.6"
+
 [lints]
 workspace = true

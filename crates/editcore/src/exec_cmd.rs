@@ -152,7 +152,7 @@ mod tests {
         let r = run(&tmp(), "echo hello", None, None).unwrap();
         assert_eq!(r.code, Some(0));
         assert!(r.stdout.contains("hello") && !r.timed_out && !r.truncated, "{r:?}");
-        let r = run(&tmp(), if cfg!(windows) { "exit 3" } else { "exit 3" }, None, None).unwrap();
+        let r = run(&tmp(), "exit 3", None, None).unwrap();
         assert_eq!(r.code, Some(3));
     }
 

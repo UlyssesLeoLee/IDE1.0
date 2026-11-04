@@ -258,6 +258,7 @@ pub fn plan_checked(src: &str) -> Result<Vec<MacroStep>, String> {
 }
 
 /// 只在一份文档上执行宏 (没有 App 可以转交): 要转交 App 的步骤整体报错。测试和不带窗口的场合用
+#[allow(dead_code)]
 pub fn run_mac(doc: &mut Doc, src: &str, tab: usize) -> Result<usize, String> {
     let steps = plan_checked(src)?;
     for s in &steps {

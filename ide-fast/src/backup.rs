@@ -70,7 +70,7 @@ pub fn leftovers_in(dir: &Path) -> Vec<Leftover> {
         let shown = name.strip_suffix(".autosave").and_then(|r| r.rsplit_once('.')).map(|(a, _)| a.to_string()).unwrap_or(name);
         v.push((mt, Leftover { path, name: shown, size: m.len(), age_secs: now.duration_since(mt).ok().map(|d| d.as_secs()) }));
     }
-    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v.sort_by_key(|a| std::cmp::Reverse(a.0));
     v.into_iter().take(MAX_LEFTOVERS).map(|x| x.1).collect()
 }
 

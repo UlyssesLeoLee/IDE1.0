@@ -1152,7 +1152,7 @@ mod tests {
         set(Lang::En);
         for e in crate::keymap::entries() {
             let t = e.label.text();
-            if has_han(&t) { bad.push(format!("{} ({})", t, e.id)); }
+            if has_han(t) { bad.push(format!("{} ({})", t, e.id)); }
         }
         set(Lang::Zh);
         assert!(bad.is_empty(), "命令标签缺翻译: {bad:?}");

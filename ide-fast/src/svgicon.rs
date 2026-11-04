@@ -129,7 +129,7 @@ pub fn flatten(d: &str) -> Vec<Sub> {
             b'M' | b'L' => {
                 let (Some(x), Some(y)) = (number(b, &mut i), number(b, &mut i)) else { break };
                 cur = pos2(ox + x, oy + y);
-                if cmd.to_ascii_uppercase() == b'M' {
+                if cmd == b'M' || cmd == b'm' {
                     start = cur;
                     subs.push(Sub { pts: vec![cur], closed: false });
                     cmd = if rel { b'l' } else { b'L' }; // M 后面多余的坐标对是 L
@@ -174,6 +174,7 @@ pub fn paint(p: &Painter, center: Pos2, size: f32, paths: &[PathDef], color: Col
 }
 
 /// 图标占据的外接矩形 (测试用)
+#[allow(dead_code)]
 pub fn bounds(paths: &[PathDef]) -> Rect {
     let mut r = Rect::NOTHING;
     for (d, _) in paths { for s in flatten(d) { for q in s.pts { r.extend_with(q); } } }

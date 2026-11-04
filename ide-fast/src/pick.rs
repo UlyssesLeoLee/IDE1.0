@@ -287,7 +287,7 @@ mod tests {
     fn the_window_draws_and_reads_keys_through_egui() {
         let ctx = egui::Context::default();
         let mut p = Pick::new(Kind::Windows, "窗口一览", Match::Fuzzy, rows());
-        let mut frame = |p: &mut Pick, events: Vec<egui::Event>| {
+        let frame = |p: &mut Pick, events: Vec<egui::Event>| {
             let mut out = Outcome::Open;
             let mut full = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| { out = p.window(ui.ctx()); });
             full.textures_delta.clear();

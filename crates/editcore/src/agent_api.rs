@@ -124,7 +124,7 @@ pub fn call(name: &str, args: &Value) -> Result<Value, String> {
                 .iter()
                 .map(|v| v.as_str().map(String::from).ok_or_else(|| "insert 的元素必须是字符串".to_string()))
                 .collect::<Result<_, _>>()?;
-            if start > total || start.checked_add(remove).is_none_or(|e| e > total) {
+            if start > total || start.checked_add(remove).map_or(true, |e| e > total) {
                 return Err(format!("补丁范围越界: start={start} remove={remove} 文档共 {total} 行"));
             }
             if insert.len().max(remove) > MAX_PATCH_LINES {

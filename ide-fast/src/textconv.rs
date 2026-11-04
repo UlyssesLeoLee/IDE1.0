@@ -8,6 +8,7 @@ use editcore::type_config::TypeConfig;
 // ---------------------------------------------------------------- codecnv-*
 
 /// (命令后缀, 菜单文字): 和 Tauri 版 / Sakura 的「コード変換」同名同序
+#[allow(dead_code)]
 pub const CODECNV: &[(&str, &str)] = &[
     ("auto2sjis", "自动判别 → SJIS"),
     ("email", "邮件 (JIS) → SJIS"),
@@ -163,7 +164,7 @@ pub fn color_html(lines: &[String], first_no: usize, numbers: bool, cfg: Option<
         }
         let chars: Vec<char> = line.chars().collect();
         let mut at = 0usize;
-        let mut span = |from: usize, to: usize, color: [u8; 3], out: &mut String| {
+        let span = |from: usize, to: usize, color: [u8; 3], out: &mut String| {
             if to > from {
                 let seg: String = chars[from..to].iter().collect();
                 out.push_str(&format!("<span style=\"color:{}\">", hex(color)));

@@ -52,7 +52,7 @@ pub fn find(text: &str, kind: &str, query: &str) -> Result<Vec<Hit>, String> {
         match kind {
             "heading" => {
                 let h = l.chars().take_while(|&c| c == '#').count();
-                if (1..=6).contains(&h) && l[h..].starts_with(' ') && level.is_none_or(|lv| lv == h) {
+                if (1..=6).contains(&h) && l[h..].starts_with(' ') && level.map_or(true, |lv| lv == h) {
                     let title = l[h + 1..].trim().trim_end_matches('#').trim();
                     if ok(title) {
                         out.push(Hit { line: no, kind: "heading", text: title.to_string(), detail: format!("H{h}") });

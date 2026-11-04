@@ -525,6 +525,7 @@ fn canonical_or_lexical(p: &Path) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 /// 枚举候选文件 (含「フォルダー」栏解析 / 目录排除), 返回 (文件, 包含项, 排除项).
+#[allow(clippy::type_complexity)]
 fn collect_candidates(
     root: &Path,
     opts: &SearchOptions,

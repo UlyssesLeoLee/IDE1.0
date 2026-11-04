@@ -265,8 +265,8 @@ pub fn parse(src: &str) -> Result<Vec<Statement>, MacroError> {
             loop {
                 lx.skip_ws()?;
                 match lx.peek() {
-                    Some(q @ ('"' | '\'')) => args.push(MacroArg::Str(lx.string(q).map_err(&with_func)?)),
-                    Some(ch) if ch.is_ascii_digit() || ch == '-' => args.push(MacroArg::Int(lx.int().map_err(&with_func)?)),
+                    Some(q @ ('"' | '\'')) => args.push(MacroArg::Str(lx.string(q).map_err(with_func)?)),
+                    Some(ch) if ch.is_ascii_digit() || ch == '-' => args.push(MacroArg::Int(lx.int().map_err(with_func)?)),
                     _ => return Err(with_func(lx.err("expected an argument"))),
                 }
                 lx.skip_ws()?;

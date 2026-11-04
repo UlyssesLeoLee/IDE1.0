@@ -19,7 +19,7 @@ fn pick_png(ico: &[u8], want: u32) -> Option<&[u8]> {
         let Some(data) = off.checked_add(size).and_then(|end| ico.get(off..end)) else { continue };
         if size > MAX_FRAME || !data.starts_with(b"\x89PNG") { continue; }
         let d = side.abs_diff(want);
-        if best.is_none_or(|(bd, _)| d < bd) { best = Some((d, data)); }
+        if best.map_or(true, |(bd, _)| d < bd) { best = Some((d, data)); }
     }
     best.map(|b| b.1)
 }

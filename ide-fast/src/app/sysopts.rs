@@ -34,6 +34,7 @@ pub(super) struct SysState {
     /// 上一帧画出的顶层菜单: (菜单名键, 弹出层 id); Alt+助记字母据此打开菜单
     pub menu_ids: Vec<(&'static str, egui::Id)>,
     /// Alt+助记字母打开菜单后, 还要等几帧再把焦点送进菜单 (0 = 不用)
+    #[allow(dead_code)]
     pub mn_focus: u8,
     /// 菜单开着时 raw_input_hook 截下的方向键 (egui 自己的焦点导航看不到它们), 下一次 shortcuts 处理
     pub nav_q: Vec<super::menunav::NavKey>,
@@ -131,7 +132,7 @@ impl App {
                 for (i, l) in self.sys.restore.iter().enumerate() {
                     ui.horizontal(|ui| {
                         if ui.small_button(tr("sys.restore-open")).clicked() { open_one = Some(i); }
-                        ui.label(format!("{}  ({} KB, {})", l.name, (l.size + 1023) / 1024, Self::age_text(l.age_secs)));
+                        ui.label(format!("{}  ({} KB, {})", l.name, l.size.div_ceil(1024), Self::age_text(l.age_secs)));
                     });
                 }
             });

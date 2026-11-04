@@ -630,6 +630,7 @@ fn atomic_write_inner(path: &Path, bytes: &[u8], opts: AtomicWriteOpts, fail_aft
             let _ = std::fs::set_permissions(&tmp, m.permissions());
         } else {
             let mut p = m.permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
             p.set_readonly(false);
             if let Err(e) = std::fs::set_permissions(path, p) {
                 return Err(cleanup(io("clear-readonly")(e)));

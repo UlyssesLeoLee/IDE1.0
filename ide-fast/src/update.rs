@@ -275,7 +275,7 @@ pub fn name_has_version(name: &str, ver: &str) -> bool {
             Some('-') if !pre => !["dev.", "rc", "alpha", "beta", "pre"].iter().any(|m| rest[1..].to_ascii_lowercase().starts_with(m)),
             Some(_) => true,
         };
-        before.is_none_or(|c| !(c.is_ascii_digit() || c == '.')) && after_ok
+        before.map_or(true, |c| !(c.is_ascii_digit() || c == '.')) && after_ok
     })
 }
 

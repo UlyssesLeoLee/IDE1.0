@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_detect_utf8() {
         let bytes = "hello 世界".as_bytes();
-        assert_eq!(detect_encoding(&bytes), EncodingKind::Utf8);
+        assert_eq!(detect_encoding(bytes), EncodingKind::Utf8);
     }
 
     #[test]

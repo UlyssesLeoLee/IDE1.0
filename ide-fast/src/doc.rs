@@ -228,7 +228,7 @@ impl Doc {
         // 光标处和前一个字符都不是括弧就不用交行 (括弧强调每次光标一动都会问, 要便宜)
         const BR: &str = "()[]{}<>（）「」『』【】［］｛｝〈〉《》〔〕";
         let line = self.lines.get(r)?;
-        let here = line.chars().nth(c).map_or(false, |ch| BR.contains(ch)) || c.checked_sub(1).and_then(|p| line.chars().nth(p)).map_or(false, |ch| BR.contains(ch));
+        let here = line.chars().nth(c).is_some_and(|ch| BR.contains(ch)) || c.checked_sub(1).and_then(|p| line.chars().nth(p)).is_some_and(|ch| BR.contains(ch));
         if !here { return None; }
         // 只交上光标上下一段行 (editcore 本身最多扫 30000 个字符)
         let (a, b) = (r.saturating_sub(1500), (r + 1500).min(self.lines.len()));
@@ -433,7 +433,7 @@ impl Doc {
             let old = self.lines.clone();
             let before = (self.cursor, self.sel);
             let mut ps = patches;
-            ps.sort_by(|a, b| b.0.cmp(&a.0));
+            ps.sort_by_key(|a| std::cmp::Reverse(a.0));
             for (s, n, ins) in ps {
                 self.splice(s, n, ins);
             }
@@ -507,7 +507,7 @@ impl Doc {
         if self.readonly {
             return Err("只读文档, 插件的修改已忽略".into());
         }
-        if start.checked_add(remove).is_none_or(|e| e > self.lines.len()) {
+        if start.checked_add(remove).map_or(true, |e| e > self.lines.len()) {
             return Err("插件返回的修改越界, 已拒绝".into());
         }
         if insert.len() > PATCH_MAX_LINES {

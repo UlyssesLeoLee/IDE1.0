@@ -905,30 +905,48 @@ nTabSpace=2
 
     #[test]
     fn session_roundtrips_and_refuses_unsafe_paths() {
+        let (p1, p2) = if cfg!(windows) {
+            ("C:\\work\\a.txt", "D:\\b.md")
+        } else {
+            ("/work/a.txt", "/var/b.md")
+        };
         let mut s = Settings::default();
-        s.session = vec!["C:\\work\\a.txt".into(), "D:\\b.md".into()];
+        s.session = vec![p1.into(), p2.into()];
         s.session_active = 1;
         let mut back = Settings::default();
         back.apply_json(&s.to_json(), true);
         assert_eq!(back.session, s.session);
         assert_eq!(back.session_active, 1);
         assert!(back.restore_session, "默认开启");
-        assert!(!session_path_ok("\\\\evil\\share\\x.txt"), "UNC");
+        assert!(!session_path_ok(r"\\evil\share\x.txt"), "UNC");
         assert!(!session_path_ok("//evil/share/x.txt"));
-        assert!(!session_path_ok("relative\\x.txt"));
+        assert!(!session_path_ok(r"relative\x.txt"));
+        assert!(!session_path_ok("relative/x.txt"));
         assert!(!session_path_ok(""));
-        assert!(!session_path_ok(&format!("C:\\{}", "a".repeat(2000))));
+        let long_path = if cfg!(windows) {
+            format!("C:\\{}", "a".repeat(2000))
+        } else {
+            format!("/{}", "a".repeat(2000))
+        };
+        assert!(!session_path_ok(&long_path));
         let mut t = Settings::default();
-        let many: Vec<String> = (0..100).map(|i| format!("C:\\f{i}.txt")).collect();
+        let many: Vec<String> = (0..100).map(|i| {
+            if cfg!(windows) {
+                format!("C:\\f{i}.txt")
+            } else {
+                format!("/tmp/f{i}.txt")
+            }
+        }).collect();
         t.apply_json(&json!({ "session": many, "session_active": 9999, "restore_session": false }), true);
         assert_eq!(t.session.len(), 20, "封顶");
         assert_eq!(t.session_active, 20);
         assert!(!t.restore_session);
         // 导入别人的配置 (state = false) 不带会话
+        let sample = if cfg!(windows) { "C:\\x.txt" } else { "/tmp/x.txt" };
         let mut u = Settings::default();
-        u.apply_json(&json!({ "session": ["C:\\x.txt"] }), false);
+        u.apply_json(&json!({ "session": [sample] }), false);
         assert!(u.session.is_empty());
-        // 恢复默认 / 草稿合并不丢会话
+        // 恢复默认 / 草稿合并保留会话
         t.reset_prefs();
         assert_eq!(t.session.len(), 20);
         t.adopt_prefs(&Settings::default());

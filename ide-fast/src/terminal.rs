@@ -319,6 +319,7 @@ impl Terminal {
     }
 
     /// 需要持续刷新界面 (有会话或有命令在跑)
+    #[allow(dead_code)]
     pub fn busy(&self) -> bool {
         self.rx.is_some() || self.session.is_some()
     }

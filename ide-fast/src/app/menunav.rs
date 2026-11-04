@@ -215,7 +215,7 @@ mod tests {
         ] {
             let mut t = AltTap::default();
             t.feed(&[mc(true, false)]);
-            t.feed(&[ev.clone()]);
+            t.feed(std::slice::from_ref(&ev));
             assert!(!t.feed(&[mc(false, false)]), "{ev:?}");
         }
         // 按键和 Alt 按下在同一帧也不算

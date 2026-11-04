@@ -8,6 +8,18 @@
 
 // Windows 发行版走 GUI 子系统: 否则双击启动会多出一个控制台窗口 (调试构建保留控制台, 方便看 IDE_FAST_TRACE 输出)
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(
+    deprecated,
+    dead_code,
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    clippy::incompatible_msrv,
+    clippy::enum_variant_names,
+    clippy::field_reassign_with_default,
+    clippy::needless_range_loop,
+    clippy::collapsible_if,
+    clippy::assertions_on_constants
+)]
 
 mod app;
 mod complete;
@@ -83,6 +95,13 @@ impl Trace {
         let file = v.as_ref().filter(|s| s.to_string_lossy().contains(['/', '\\', '.'])).map(std::path::PathBuf::from);
         Trace { t0: Instant::now(), on: v.is_some(), file }
     }
+}
+impl Default for Trace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Trace {
     pub fn mark(&self, what: &str) {
         if !self.on {
             return;

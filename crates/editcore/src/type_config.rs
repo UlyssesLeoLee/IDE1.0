@@ -348,12 +348,10 @@ impl TypeConfig {
         let mut i = 0;
         // 下标全程是**字符**下标 (不是字节): 老写法用 `line[i..]` 按字节切片, 一遇到中日文就在字符边界中间 panic
         let starts_at = |at: usize, pat: &str| -> bool {
-            let mut k = at;
-            for pc in pat.chars() {
+            for (k, pc) in (at..).zip(pat.chars()) {
                 if chars.get(k) != Some(&pc) {
                     return false;
                 }
-                k += 1;
             }
             true
         };

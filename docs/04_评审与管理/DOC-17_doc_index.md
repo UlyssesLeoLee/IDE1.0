@@ -10,7 +10,7 @@
 > - **準拠標準:** IPA 共通フレーム2013 §3 / §5 / §6 / §7
 > - **ステータス:** Draft
 
-## 📚 全ドキュメント (24 件)
+## 📚 全ドキュメント (29 件)
 
 | ID | 名称 | ファイル | バージョン | 状態 | 最終更新 |
 |---|---|---|---|---|---|
@@ -39,6 +39,11 @@
 | - | テンプレート | [common/doc-template.md](../common/doc-template.md) | v1.0.0 | Active | 2026-10-09 |
 | - | 编号規則 | [common/numbering-system.md](../common/numbering-system.md) | v1.0.0 | Active | 2026-10-09 |
 | - | 用語集 | [common/glossary.md](../common/glossary.md) | v1.0.0 | Active | 2026-10-09 |
+| WBS-01 | 機能対比一覧 (Feature Parity) | [WBS-01_feature-parity.md](../06_功能对标/WBS-01_feature-parity.md) | v0.3.0 | Active | 2026-10-28 |
+| WBS-02 | 高速版機能移植計画 (Next Steps) | [WBS-02_next-steps.md](../06_功能对标/WBS-02_next-steps.md) | v0.3.0 | Active | 2026-10-28 |
+| WBS-03 | 高速版最適化・工程品質計画 | [WBS-03_优化计划.md](../06_功能对标/WBS-03_优化计划.md) | v0.3.9 | Active | 2026-11-04 |
+| HANDOFF-01 | 高速版現状・引き継ぎ書 | [HANDOFF-01_高速版交接.md](../06_功能对标/HANDOFF-01_高速版交接.md) | v0.3.9 | Active | 2026-11-04 |
+| QA-003 | 高速版0.3.9品質審査と未確認課題 | [QA-003_高速版0.3.9质量审查与待确认问题.md](QA-003_高速版0.3.9质量审查与待确认问题.md) | v0.3.9 | Active | 2026-11-04 |
 
 ## 関連ドキュメント
 

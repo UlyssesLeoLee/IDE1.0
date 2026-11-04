@@ -311,7 +311,7 @@ fn official_grep_cmdline_case_sensitive() {
 /// GrepCommandLineTest.FileOnly 相当 — ファイルごと 1 件
 #[test]
 fn official_grep_cmdline_file_only() {
-    use editcore::encoding_io::{write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
+    use editcore::encoding_io::{write_with_encoding_compat, EncodingKind};
     use editcore::grep::grep_in_file;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

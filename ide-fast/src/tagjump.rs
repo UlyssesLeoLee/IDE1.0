@@ -50,7 +50,12 @@ pub fn find_tags_file(from: &Path) -> Option<PathBuf> {
 
 /// tags 文件里的相对路径是否可信: 非空、不是绝对 / UNC / 带盘符、不含 `..`
 pub fn safe_rel(rel: &str) -> bool {
-    if rel.is_empty() || rel.starts_with("\\\\") || rel.starts_with("//") || rel.contains('\0') {
+    if rel.is_empty() || rel.starts_with(r"\\") || rel.starts_with("//") || rel.contains('\0') {
+        return false;
+    }
+    // 跨平台盘符检查: 无论是在 Windows 还是 Unix，形如 "C:..." 都不应视为安全相对路径
+    let bytes = rel.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
         return false;
     }
     let p = Path::new(rel);
@@ -312,9 +317,11 @@ mod tests {
         assert!(safe_rel("./a.rs"));
         assert!(!safe_rel("../a.rs"));
         assert!(!safe_rel("a/../../b"));
-        assert!(!safe_rel("\\\\host\\share\\a"));
+        assert!(!safe_rel(r"\\host\share\a"));
         assert!(!safe_rel("//host/share/a"));
-        assert!(!safe_rel("C:\\x"));
+        assert!(!safe_rel(r"C:\x"));
+        assert!(!safe_rel("C:/x"));
+        assert!(!safe_rel("/abs/path"));
         assert!(!safe_rel(""));
     }
 

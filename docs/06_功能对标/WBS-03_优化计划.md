@@ -77,9 +77,13 @@
 | 6.3 | 以 5.1 生成的清单为准, 挑下一批功能 (候选: 底部面板 OUTPUT / PROBLEMS 页、终端字体 / 回滚行数设置、标签分组做成真窗格) | — | 5.1 | 另开 WBS |
 
 ### 进度 (2026-11-04)
-- **1.1 已做**: `ci.yml` 现在有顶层 `jobs:` (YAML 解析确认 14 个 job), 触发分支 `develop` → `dev`; 只有 `rust` job 在跑 (ubuntu / windows / macos, stable), 步骤只剩 checkout + 工具链 + 缓存 + `cargo test -p editcore --no-fail-fast`; 其余 13 个 job、fmt / check / clippy / doc / 构建步骤、`RUSTFLAGS=-D warnings` 都用 `if: false` 或注释关掉并写明对应的 WBS 编号, 待 1.2 / 1.5 / 1.6 完成后逐个打开。
-- **1.7 已做**: 见上。本地实测等价命令 `cargo test -p editcore --no-fail-fast`: 462 通过, 0 失败。
-- **未验证**: 工作流在 GitHub 上的首次实际运行 (本会话无法触发)。一个风险点: 根 `Cargo.lock` 含私有 git 依赖 `aci-emitter`, `cargo test -p editcore` 仍可能因为解析整个 workspace 而去拉取它 —— 若首次运行在「拉取依赖」阶段失败, 先处理 1.2 的私有依赖部分。
+- **1.1 已做**: `ci.yml` 补齐顶层 `jobs:`, 触发分支改为 `main, dev`。
+- **1.2 已做**: `ide-fast/Cargo.toml` 补齐 Linux 平台依赖 (`eframe/x11,wayland`、`rfd/xdg-portal,async-std`、`raw-window-handle = 0.6`)；`ci.yml` Linux runner 安装 `libxkbcommon-dev libgl1-mesa-dev`。
+- **1.3 已做**: 3 个平台路径测试跨平台适配完成 (`settings::session_roundtrips_and_refuses_unsafe_paths`、`tagjump::rel_paths_are_checked`、`updapply::new_and_target_paths_are_inverse_and_strict`)，并在 `safe_rel` 增加跨平台盘符严格检查。
+- **1.4 已做**: `ci.yml` 的 `rust` job 加入 `cargo test -p ide-fast --no-fail-fast`，全平台双测试套件运行 (本地实测 462+495 全部 pass)。
+- **1.6 已做**: 清理 `editcore` (8 处) 与 `ide-fast` (39 处) clippy 警告；实测 `cargo clippy -p editcore -p ide-fast --all-targets -- -D warnings` 零警告，并在 `ci.yml` 开启对应门禁。
+- **1.7 已做**: `editcore` 跨平台测试全部通过 (462 通过, 0 失败)。
+- **5.3 已做**: `docs/04_评审与管理/DOC-17_doc_index.md` 补登 WBS-01 / WBS-02 / WBS-03 / HANDOFF-01 / QA-003。
 
 ## 3. 建议的顺序
 

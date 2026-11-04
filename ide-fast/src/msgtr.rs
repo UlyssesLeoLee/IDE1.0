@@ -313,7 +313,7 @@ fn index() -> &'static [Tpl] {
                 Tpl { weight: pieces.iter().map(|p| p.len()).sum(), pieces, ja, en }
             })
             .collect();
-        v.sort_by(|a, b| b.weight.cmp(&a.weight));
+        v.sort_by_key(|a| std::cmp::Reverse(a.weight));
         v
     })
 }

@@ -3509,7 +3509,7 @@ EDITED".into())), ..Default::default() };
         a.docs[1].name = "y.txt".into();
         a.sync_doc_prefs();
         assert_eq!((a.docs[0].auto_indent, a.docs[0].smart_indent, a.docs[0].insert_spaces), (false, true, true), ".py 的 Tab 插入空格被覆盖为开");
-        assert_eq!(a.docs[1].insert_spaces, false);
+        assert!(!a.docs[1].insert_spaces);
         assert_eq!(a.eff("x.py"), (2, true, true));
         assert_eq!(a.eff("y.txt"), (4, false, false));
     }

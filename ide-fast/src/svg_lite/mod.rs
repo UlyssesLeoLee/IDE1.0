@@ -331,10 +331,8 @@ pub fn parse_with(svg: &str, overrides: &[(&str, String)]) -> Result<Svg, String
                 };
                 title_for = first;
             }
-            "title" => {
-                if !selfclose {
-                    in_title = true;
-                }
+            "title" if !selfclose => {
+                in_title = true;
             }
             _ => {}
         }

@@ -40,7 +40,7 @@ fn check_version_line(text: &str, ver: &str, ch: &str) -> Result<(), String> {
         let parts: Vec<&str> = core.split('.').collect();
         parts.len() == 3
             && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
-            && pre.is_none_or(|p| p.split('.').all(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')))
+            && pre.map_or(true, |p| p.split('.').all(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')))
     };
     if !bare_semver {
         return Err(format!("--version 不是裸 semver (X.Y.Z 或 X.Y.Z-pre.N, 不带 v 前缀 / +build): {ver}"));

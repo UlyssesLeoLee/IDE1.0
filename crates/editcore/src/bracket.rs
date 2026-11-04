@@ -72,9 +72,9 @@ fn find_from(req: &BracketReq, row: usize, col: usize) -> Option<[usize; 2]> {
         c = if dir > 0 {
             0
         } else {
-            match line_of(r as usize) {
-                Some(l) => l.len() as isize - 1,
-                None => return None,
+            {
+                let l = line_of(r as usize)?;
+                l.len() as isize - 1
             }
         };
     }

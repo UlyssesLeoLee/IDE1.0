@@ -87,7 +87,7 @@ fn words(s: &str) -> Vec<(String, usize)> {
             while i < cs.len() {
                 if is_ident_char(cs[i]) || cs[i] == '~' {
                     i += 1;
-                } else if cs[i] == ':' && cs.get(i + 1) == Some(&':') && cs.get(i + 2).map_or(false, |c| is_ident_char(*c) || *c == '~') {
+                } else if cs[i] == ':' && cs.get(i + 1) == Some(&':') && cs.get(i + 2).is_some_and(|c| is_ident_char(*c) || *c == '~') {
                     i += 2;
                 } else {
                     break;
@@ -159,11 +159,10 @@ pub fn brace_outline(text: &str, lang: &str) -> Vec<OutlineEntry> {
                 '}' => {
                     stack.pop();
                 }
-                ';' => {
-                    if stack.iter().all(|x| x.container) {
+                ';'
+                    if stack.iter().all(|x| x.container) => {
                         pending = false;
                     }
-                }
                 _ => {}
             }
         }
@@ -231,7 +230,7 @@ fn detect_function(s: &str, ws: &[(String, usize)], clean: &[String], no: usize,
         while j < clean.len() && clean[j].trim().is_empty() {
             j += 1;
         }
-        clean.get(j).map_or(false, |l| l.trim_start().starts_with('{')) && !after.ends_with(',')
+        clean.get(j).is_some_and(|l| l.trim_start().starts_with('{')) && !after.ends_with(',')
     };
     let tail_ok = after.is_empty()
         || after.starts_with('{')

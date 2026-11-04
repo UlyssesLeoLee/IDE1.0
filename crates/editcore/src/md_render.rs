@@ -183,7 +183,7 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
     if depth > MAX_DEPTH {
         return format!("<p>{}</p>", esc(src));
     }
-    let src = if src.len() > MAX_INPUT { &src[..src.floor_char_boundary(MAX_INPUT)] } else { src };
+    let src = if src.len() > MAX_INPUT { { let mut b = MAX_INPUT; while b > 0 && !src.is_char_boundary(b) { b -= 1; } &src[..b] } } else { src };
     let text = src.replace("\r\n", "\n");
     let mut lines: Vec<&str> = text.split('\n').collect();
     let mut out = String::new();
@@ -204,7 +204,7 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
             i += 1;
         } else if let Some(fence) = l.trim_start().strip_prefix("```").map(|_| l.trim_start().chars().take_while(|&c| c == '`').count()) {
             let marks = "`".repeat(fence);
-            let lang = l.trim_start()[fence..].trim().split_whitespace().next().unwrap_or("");
+            let lang = l.trim_start()[fence..].split_whitespace().next().unwrap_or("");
             let mut body = Vec::new();
             i += 1;
             while i < lines.len() && !lines[i].trim_start().starts_with(&marks) {
@@ -297,7 +297,7 @@ fn tag_block(out: &mut String, from: usize, a: usize, b: usize) {
     if !tail.starts_with('<') {
         return;
     }
-    if let Some(p) = tail.find(|c: char| c == ' ' || c == '>') {
+    if let Some(p) = tail.find([' ', '>']) {
         out.insert_str(from + p, &format!(" data-l=\"{a}-{b}\""));
     }
 }

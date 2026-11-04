@@ -90,7 +90,7 @@ fn fence_open(l: &str) -> Option<(char, usize, String)> {
     let t = l.trim_start();
     let c = t.chars().next().filter(|c| *c == '`' || *c == '~')?;
     let n = t.chars().take_while(|&x| x == c).count();
-    (n >= 3).then(|| (c, n, t[n..].trim().split_whitespace().next().unwrap_or("").to_string()))
+    (n >= 3).then(|| (c, n, t[n..].split_whitespace().next().unwrap_or("").to_string()))
 }
 
 pub fn parse(lines: &[String]) -> Vec<Parsed> {
@@ -276,7 +276,7 @@ fn parse_inline(cs: &[char], st: &Span, out: &mut Vec<Span>) {
                         flush(&mut plain, out);
                         let label = &cs[o + 1..close];
                         let url: String = cs[close + 2..pe].iter().collect();
-                        let url = url.trim().split_whitespace().next().unwrap_or("").trim_matches(|c| c == '<' || c == '>').to_string();
+                        let url = url.split_whitespace().next().unwrap_or("").trim_matches(|c| c == '<' || c == '>').to_string();
                         if image {
                             out.push(Span { text: label.iter().collect(), link: Some(url), image: true, ..st.clone() });
                         } else {

@@ -307,7 +307,7 @@ mod tests {
                     break;
                 }
             }
-            let head = format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n");
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n";
             let _ = s.write_all(head.as_bytes());
             let _ = s.write_all(reply.as_bytes());
             let _ = s.flush();

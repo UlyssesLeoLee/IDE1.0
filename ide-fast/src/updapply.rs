@@ -34,6 +34,7 @@ pub fn request(a: Apply) {
 pub fn cancel() {
     *REQUEST.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
+#[allow(dead_code)]
 pub fn requested() -> bool {
     REQUEST.lock().unwrap_or_else(|e| e.into_inner()).is_some()
 }
@@ -77,8 +78,16 @@ fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
 /// 窗口关完后执行 (不等子进程)。失败由调用方忽略: 旧版文件原样没动, 用户重开即可
 pub fn launch(a: &Apply) -> std::io::Result<()> {
     match a {
-        Apply::Msi(file) => no_window(&mut std::process::Command::new(msiexec_path()).args(msi_args(file))).spawn().map(|_| ()),
-        Apply::Swap(new_exe) => no_window(&mut std::process::Command::new(new_exe).arg(APPLY_FLAG)).spawn().map(|_| ()),
+        Apply::Msi(file) => {
+            let mut cmd = std::process::Command::new(msiexec_path());
+            cmd.args(msi_args(file));
+            no_window(&mut cmd).spawn().map(|_| ())
+        }
+        Apply::Swap(new_exe) => {
+            let mut cmd = std::process::Command::new(new_exe);
+            cmd.arg(APPLY_FLAG);
+            no_window(&mut cmd).spawn().map(|_| ())
+        }
     }
 }
 
@@ -104,7 +113,9 @@ pub fn run_apply() {
         std::thread::sleep(RETRY_GAP);
     }
     // 单实例端口文件可能还指着刚退出的旧进程: 带 --relaunch 直接当第一个实例
-    let _ = no_window(&mut std::process::Command::new(&target).arg(crate::relaunch::FLAG)).spawn();
+    let mut cmd = std::process::Command::new(&target);
+    cmd.arg(crate::relaunch::FLAG);
+    let _ = no_window(&mut cmd).spawn();
 }
 
 /// 上次更新留下的 `.new` / `.upd` (正在以 `.new` 身份运行的帮手不会走到这里: 它只跑 `run_apply`)。启动后惰性清一次, 失败无所谓
@@ -124,11 +135,20 @@ mod tests {
 
     #[test]
     fn new_and_target_paths_are_inverse_and_strict() {
-        let exe = Path::new(r"D:\tools\ide-fast.exe");
+        let (exe, expected_new) = if cfg!(windows) {
+            (Path::new(r"D:\tools\ide-fast.exe"), Path::new(r"D:\tools\ide-fast.exe.new"))
+        } else {
+            (Path::new("/tools/ide-fast"), Path::new("/tools/ide-fast.new"))
+        };
         let new = new_path_of(exe);
-        assert_eq!(new, Path::new(r"D:\tools\ide-fast.exe.new"));
+        assert_eq!(new, expected_new);
         assert_eq!(target_of(&new).as_deref(), Some(exe));
-        for bad in [r"D:\tools\ide-fast.exe", r"D:\tools\.new", "x.new.exe", ""] {
+        let bad_list = if cfg!(windows) {
+            vec![r"D:\tools\ide-fast.exe", r"D:\tools\.new", "x.new.exe", ""]
+        } else {
+            vec!["/tools/ide-fast", "/tools/.new", "x.new.exe", ""]
+        };
+        for bad in bad_list {
             assert_eq!(target_of(Path::new(bad)), None, "{bad:?}");
         }
     }

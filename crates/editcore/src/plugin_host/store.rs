@@ -709,6 +709,7 @@ mod tests {
     #[test]
     fn package_install_is_strict() {
         let root = tmp("pkg-strict");
+        #[allow(clippy::no_effect_replace)]
         let m = MANI.replace("o/hello", "o/hello");
         // 一层顶层目录可以; 全新 id 的包可以装
         let ok = make_zip(&[("hello/manifest.json", m.as_bytes()), ("hello/main.js", b"a")]);
