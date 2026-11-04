@@ -189,11 +189,12 @@ impl App {
     /// 底部面板: 页签条 + 当前页
     pub(super) fn bottom_ui(&mut self, ui: &mut egui::Ui) {
         self.bottom_head(ui);
-        match self.sys.bottom {
+        // 面板外框没有内边距: 正文自己留 8px 左右边, 免得「终端」二字贴着窗口边
+        egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 0)).show(ui, |ui| match self.sys.bottom {
             BottomTab::Terminal => self.term_ui(ui),
             BottomTab::Output => self.output_ui(ui),
             BottomTab::Problems => self.problems_ui(ui),
-        }
+        });
     }
 
     fn output_ui(&mut self, ui: &mut egui::Ui) {

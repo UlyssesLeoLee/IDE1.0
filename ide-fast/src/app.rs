@@ -1578,7 +1578,11 @@ impl App {
             if cmd(ctx, m, k) { self.run_entry(idx, ctx); }
         }
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
-        if cmd(ctx, Modifiers::NONE, Key::Escape) {
+        // 菜单 / 弹出层开着时 Esc 只关它 (这里若先把 Esc 吃掉, 菜单永远收不起来)
+        if ctx.input(|i| i.key_pressed(Key::Escape)) && egui::Popup::is_any_open(ctx) {
+            egui::Popup::close_all(ctx);
+            cmd(ctx, Modifiers::NONE, Key::Escape);
+        } else if cmd(ctx, Modifiers::NONE, Key::Escape) {
             if self.text_drag.as_ref().is_some_and(|t| t.started && !t.cancelled) { if let Some(t) = self.text_drag.as_mut() { t.cancelled = true; t.drop = None; } self.cur().tip = trz("已取消拖放").into(); }
             else if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
             else if self.find.open { self.find.open = false; }
@@ -2421,6 +2425,11 @@ enum TabCmd {
     Group(usize, u8),
 }
 
+/// 右侧停靠区 (Chat / 预览) 的宽度上限: 窄窗口里同时开侧栏 + 预览 + Chat 时, 至少给编辑区留 240px (不然编辑区被挤成 0 宽, 整块消失)
+fn right_cap(avail: f32) -> f32 { (avail - 240.0).max(100.0) }
+/// 剩余宽度够不够再放一个右侧停靠区 (编辑区 240 + 停靠区最小 160); 不够就不画, 免得压在编辑区上
+fn right_room(avail: f32) -> bool { avail - 240.0 >= 160.0 }
+
 fn tree(ui: &mut egui::Ui, side: &mut Sidebar, dir: &std::path::Path, open: &mut Option<(PathBuf, usize)>, op: &mut Option<FileOp>) {
     for e in side.children_of(dir) {
         if e.is_dir {
@@ -2678,7 +2687,11 @@ impl App {
         if self.cfg.view.rail { egui::Panel::left("rail").resizable(false).exact_size(chrome::RAIL_W).frame(egui::Frame::NONE.fill(self.tc.bg_rail)).show(root, |ui| self.activity_rail(ui)); }
         match self.dock_mode(Dock::Side, self.side.open) {
             Mode::Full => {
-                let r = egui::Panel::left("side").resizable(true).default_size(self.cfg.view.side_w).show(root, |ui| self.side_ui(ui));
+                let r = egui::Panel::left("side").resizable(true).default_size(self.cfg.view.side_w).show(root, |ui| {
+                    // 内容窄 (Git 页 / 空文件页) 时面板不能缩成内容宽: 撑满当前面板宽, 宽度才不会被内容带着越缩越窄
+                    ui.set_min_width(ui.available_width());
+                    self.side_ui(ui)
+                });
                 // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
                 if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.side_w = crate::panels::clamp_size(Dock::Side, r.response.rect.width().round()); }
             }
@@ -2723,12 +2736,12 @@ impl App {
         match self.dock_mode(Dock::Right, crate::panels::right_visible(self.ai.open, self.md_preview, is_md)) {
             Mode::Full => {
                 let settled = !ctx.input(|i| i.pointer.any_down());
-                if self.ai.open {
-                    let r = egui::Panel::right("aichat").resizable(true).default_size(self.cfg.view.ai_w).show(root, |ui| self.ai_ui(ui));
+                if self.ai.open && right_room(root.available_width()) {
+                    let r = egui::Panel::right("aichat").resizable(true).default_size(self.cfg.view.ai_w).max_size(right_cap(root.available_width())).show(root, |ui| self.ai_ui(ui));
                     if settled { self.cfg.view.ai_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
                 }
-                if self.md_preview && is_md {
-                    let r = egui::Panel::right("mdprev").resizable(true).default_size(self.cfg.view.md_w).show(root, |ui| self.md_ui(ui));
+                if self.md_preview && is_md && right_room(root.available_width()) {
+                    let r = egui::Panel::right("mdprev").resizable(true).default_size(self.cfg.view.md_w).max_size(right_cap(root.available_width())).show(root, |ui| self.md_ui(ui));
                     if settled { self.cfg.view.md_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
                 }
             }
@@ -2872,6 +2885,13 @@ mod tests {
         next.reset_prefs();
         a.apply_settings(&next);
         assert_eq!((a.tab, a.cfg.font_family.as_str(), a.recent.clone()), (4, "", vec!["keep.txt".to_string()]));
+    }
+
+    #[test]
+    fn right_dock_cap_leaves_editor_room() {
+        assert_eq!(right_cap(900.0), 660.0);
+        assert_eq!(right_cap(300.0), 100.0, "窗口再窄也不会把上限压到 0");
+        assert!(right_room(560.0) && !right_room(399.0));
     }
 
     #[test]

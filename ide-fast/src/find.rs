@@ -284,7 +284,7 @@ impl Find {
     }
 
     fn needle_box(&mut self, ui: &mut egui::Ui) -> egui::Response {
-        let r = ui.add(egui::TextEdit::singleline(&mut self.needle).desired_width(f32::INFINITY));
+        let r = ui.add(egui::TextEdit::singleline(&mut self.needle).hint_text(crate::i18n::trz("查找内容")).desired_width(f32::INFINITY));
         if self.focus == Focus::Find {
             r.request_focus();
             self.focus = Focus::None;
