@@ -69,6 +69,11 @@ pub struct Settings {
     pub glass_blur: bool,
     /// 用系统标题栏 (默认 false = 自绘标题栏: 菜单 / 快捷按钮 / 窗口按钮都在里面)
     pub system_title_bar: bool,
+    /// 更新通道 (`update::Channel` 的代码: stable / dev) 与「每天启动时检查一次」(默认关)
+    pub update_channel: String,
+    pub update_daily: bool,
+    /// 上次检查更新的时间 (Unix 秒; 状态, 不进导出的偏好)
+    pub update_last_check: u64,
 }
 
 impl Default for Settings {
@@ -79,6 +84,7 @@ impl Default for Settings {
             save_backup: false, check_external: true, confirm_close: true, max_file_mb: 4, mru_files: 12, font_family: String::new(), line_height: 1.0,
             colors: Colors::default(), file_types: vec![], view: ViewState::default(), keys: vec![], restore_session: true, session: vec![], session_active: 0,
             auto_backup: false, auto_backup_min: 5, file_lock: false, term_font_px: 13.0, term_scrollback: 5000, term_fg: None, term_bg: None, glass_blur: true, system_title_bar: false,
+            update_channel: "stable".into(), update_daily: false, update_last_check: 0,
         }
     }
 }
@@ -283,7 +289,9 @@ impl Settings {
         b("auto_indent", &mut self.auto_indent); b("smart_indent", &mut self.smart_indent); b("insert_spaces", &mut self.insert_spaces);
         b("restore_session", &mut self.restore_session);
         b("save_backup", &mut self.save_backup); b("check_external", &mut self.check_external); b("confirm_close", &mut self.confirm_close);
-        b("auto_backup", &mut self.auto_backup); b("file_lock", &mut self.file_lock); b("glass_blur", &mut self.glass_blur); b("system_title_bar", &mut self.system_title_bar);
+        b("auto_backup", &mut self.auto_backup); b("file_lock", &mut self.file_lock); b("glass_blur", &mut self.glass_blur); b("system_title_bar", &mut self.system_title_bar); b("update_daily", &mut self.update_daily);
+        if let Some(c) = v["update_channel"].as_str() { if crate::update::Channel::from_code(c).is_some() { self.update_channel = c.to_string(); } }
+        if state { if let Some(n) = v["update_last_check"].as_u64() { self.update_last_check = n; } }
         if let Some(n) = v["auto_backup_min"].as_u64() { self.auto_backup_min = crate::backup::clamp_interval(n.min(u32::MAX as u64) as u32); }
         if let Some(f) = v["term_font_px"].as_f64() { self.term_font_px = (f as f32).clamp(8.0, 32.0); }
         if let Some(n) = v["term_scrollback"].as_u64() { self.term_scrollback = (n as usize).clamp(crate::terminal::MIN_SCROLLBACK, crate::terminal::MAX_SCROLLBACK); }
@@ -360,7 +368,7 @@ impl Settings {
                 "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
                 "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
                 "colors": self.colors.to_json(),
-                "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar,
+                "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar, "update_channel": self.update_channel, "update_daily": self.update_daily,
                 "term_font_px": self.term_font_px, "term_scrollback": self.term_scrollback, "term_fg": self.term_fg.map(hex), "term_bg": self.term_bg.map(hex),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces, "wrap_col": t.wrap_col })).collect::<Vec<_>>(),
                 "search": self.search.to_json(),
@@ -374,6 +382,7 @@ impl Settings {
         o.insert("recent_dirs".into(), json!(self.recent_dirs));
         o.insert("session".into(), json!(self.session));
         o.insert("session_active".into(), json!(self.session_active));
+        o.insert("update_last_check".into(), json!(self.update_last_check));
         o.insert("positions".into(), json!(self.positions.iter().map(|(p, r, c)| json!([p, r, c])).collect::<Vec<_>>()));
         let w = &self.view;
         let geom = w.geom.map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
@@ -406,7 +415,7 @@ impl Settings {
 
     /// 偏好恢复默认 (最近文件 / 光标位置 / 查找条件 / 界面状态保留)
     pub fn reset_prefs(&mut self) {
-        let keep = Settings { recent: std::mem::take(&mut self.recent), recent_dirs: std::mem::take(&mut self.recent_dirs), positions: std::mem::take(&mut self.positions), search: self.search.clone(), view: self.view.clone(), lang: self.lang.clone(), session: std::mem::take(&mut self.session), session_active: self.session_active, ..Settings::default() };
+        let keep = Settings { recent: std::mem::take(&mut self.recent), recent_dirs: std::mem::take(&mut self.recent_dirs), positions: std::mem::take(&mut self.positions), search: self.search.clone(), view: self.view.clone(), lang: self.lang.clone(), session: std::mem::take(&mut self.session), session_active: self.session_active, update_last_check: self.update_last_check, ..Settings::default() };
         *self = keep;
     }
 
@@ -496,7 +505,7 @@ impl Settings {
         let keep = (std::mem::take(&mut self.recent), std::mem::take(&mut self.recent_dirs), std::mem::take(&mut self.positions), self.view.clone(), std::mem::take(&mut self.keys));
         let (session, session_active) = (std::mem::take(&mut self.session), self.session_active);
         // 键位不在首选项草稿里改 (有自己的对话框, 改了立刻生效): 草稿开着期间改过的键位不能被旧草稿盖回去
-        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, keys: keep.4, session, session_active, search, ..o.clone() };
+        *self = Settings { recent: keep.0, recent_dirs: keep.1, positions: keep.2, view: keep.3, keys: keep.4, session, session_active, search, update_last_check: self.update_last_check, ..o.clone() };
         self.recent.truncate(self.mru_files.max(1));
     }
 
@@ -585,7 +594,7 @@ mod tests {
         let f = dir.join("s.json");
         std::env::set_var("IDE_FAST_SETTINGS", &f);
         let mut s = Settings::default();
-        s.system_title_bar = true; s.lang = "ja".into(); s.auto_indent = false; s.smart_indent = true; s.insert_spaces = true;
+        s.system_title_bar = true; s.update_channel = "dev".into(); s.update_daily = true; s.update_last_check = 1_700_000_000; s.lang = "ja".into(); s.auto_indent = false; s.smart_indent = true; s.insert_spaces = true;
         s.default_encoding = "UTF-16LE".into(); s.default_eol = "LF".into(); s.save_backup = true; s.check_external = false; s.confirm_close = false;
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);

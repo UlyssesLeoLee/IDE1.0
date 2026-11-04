@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### 高速版新增
+- **检查更新…** (帮助菜单 / 命令面板): 直连 GitHub Releases, 稳定 / 开发两个通道 (首选项里选), 可选「每天启动时检查一次」(默认关, 首帧之后才做); 下载后必须通过 `SHA256SUMS.txt` 的 SHA-256 校验才能 "安装并重启" (msi 走 `msiexec /passive`, 便携版自行换文件), 失败保留当前版本。设计见 `ide-fast/docs/UPDATE.md`。
+
 ## 0.3.1 — 2026-11-03
 
 ### 修复

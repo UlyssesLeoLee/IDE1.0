@@ -28,3 +28,13 @@ powershell -ExecutionPolicy Bypass -File ide-fast/packaging/build-msi.ps1 -Targe
 - 已验证: msi 能构建; 管理映像解包 (`msiexec /a`) 得到的 exe 与构建产物逐字节一致; 便携 exe 能启动、渲染、接收输入、剪贴板可用。
 - 未验证: 交互式安装 / 卸载 / 升级覆盖安装 (每机安装需要 UAC, 自动化里点不了)。**发布前请在真机上装一次。**
 - 没有做: 代码签名 (SignPath 申请进行中, 见仓库根的签名说明); 文件关联与「用 IDE1.0 Fast 打开」右键菜单。
+
+## 自更新对 Release 的要求
+
+「检查更新…」(见 `docs/UPDATE.md`) 只认下面的资产名, 并且**必须有 `SHA256SUMS.txt`** (每行 `<hex>  <文件名>`, 含便携 exe 与 msi), 缺了会拒绝安装:
+
+- `ide-fast-<版本>-windows-x64.exe` (便携)
+- `IDE1.0-Fast_<版本>_x64.msi` (安装包)
+- `SHA256SUMS.txt`
+
+开发预发布用 `publish-dev.ps1` (tag 形如 `v0.3.2-dev.20261103.1`, `gh release create --prerelease`); 它只是文档化的脚本, 不会被自动运行。

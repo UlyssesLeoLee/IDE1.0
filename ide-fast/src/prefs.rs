@@ -76,6 +76,15 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.check(&mut d.glass_blur, tr("pf.glass-blur")).on_hover_text(tr("pf.glass-note"));
             ui.horizontal(|ui| { ui.label(tr("pf.font-size")); ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0)); });
             ui.horizontal(|ui| { ui.label(tr("pf.tab-width")); ui.add(egui::Slider::new(&mut d.tab_width, 1..=16)); });
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label(tr("pf.update-channel"));
+                let cur = crate::update::Channel::from_code(&d.update_channel).unwrap_or_default();
+                egui::ComboBox::from_id_salt("pf-upd-ch").selected_text(tr(cur.label_key())).show_ui(ui, |ui| {
+                    for c in crate::update::Channel::ALL { if ui.selectable_label(c == cur, tr(c.label_key())).clicked() { d.update_channel = c.code().into(); } }
+                });
+            });
+            ui.check(&mut d.update_daily, tr("pf.update-daily")).on_hover_text(tr("pf.update-daily-tip"));
         }
         PrefsTab::Edit => {
             ui.check(&mut d.auto_indent, tr("pf.auto-indent"));

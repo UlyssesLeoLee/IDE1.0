@@ -13,6 +13,11 @@ fn temp_path(path: &Path) -> PathBuf {
     path.with_file_name(format!(".{name}.{}.{}.tmp", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)))
 }
 
+/// 同目录下唯一的临时文件路径 `<stem>.<进程号>.<序号>.<ext>` (下载更新包用; 不创建文件, 调用方负责写入和清理)
+pub fn unique_temp(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+    dir.join(format!("{stem}.{}.{}.{ext}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)))
+}
+
 /// 原子写。`private` = 内容含密钥, unix 上文件权限 0600 (Windows 靠用户目录的 ACL)。
 pub fn atomic_write(path: &Path, bytes: &[u8], private: bool) -> std::io::Result<()> {
     let tmp = temp_path(path);
@@ -69,6 +74,13 @@ mod tests {
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1, "临时文件应被清掉");
         assert!(atomic_write(&d.join("no/such/dir/f"), b"x", false).is_err());
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn unique_temp_names_differ_and_keep_the_extension() {
+        let (a, b) = (unique_temp(Path::new("/d"), "upd", "msi"), unique_temp(Path::new("/d"), "upd", "msi"));
+        assert_ne!(a, b);
+        assert!(a.to_string_lossy().ends_with(".msi") && a.starts_with("/d"));
     }
 
     #[test]

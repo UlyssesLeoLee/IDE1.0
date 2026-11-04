@@ -455,6 +455,37 @@ Not signature-verified; install only plugins you trust. Install?"]),
     ("pf.file-lock", ["打开文件时加锁 (别的程序可读不可写)", "開いたファイルをロック (他のプログラムは読み取りのみ)", "Lock opened files (other programs can read, not write)"]),
     ("pf.file-lock-tip", ["Windows: 共享读、禁止写; 保存时自动短暂放开。别的程序正在写的文件会提示锁不上", "Windows: 共有読み取り・書き込み禁止。保存時は一時的に解除", "Windows: shared-read, write-deny; released briefly while saving. Files another program is writing cannot be locked"]),
     ("pf.glass-blur", ["半透明主题: 窗口背后加模糊 (Windows)", "半透明テーマ: ウィンドウ背面をぼかす (Windows)", "Translucent themes: blur behind the window (Windows)"]),
+    ("c.check-update", ["检查更新…", "アップデートを確認…", "Check for Updates…"]),
+    ("pf.update-channel", ["更新通道", "アップデートチャンネル", "Update channel"]),
+    ("pf.update-daily", ["每天启动时检查一次更新", "起動時に1日1回アップデートを確認", "Check for updates once a day at startup"]),
+    ("pf.update-daily-tip", ["默认关。开启后只在首帧之后后台联网一次,绝不阻塞启动;也可随时用 帮助 > 检查更新 手动检查。", "既定はオフ。最初の描画後にバックグラウンドで1回だけ通信し、起動をブロックしません。ヘルプ > アップデートを確認 からいつでも手動確認できます。", "Off by default. Runs once in the background after the first frame and never blocks startup; Help > Check for Updates is always available."]),
+    ("upd.ch-stable", ["稳定版 (正式发布)", "安定版 (正式リリース)", "Stable (releases)"]),
+    ("upd.ch-dev", ["开发版 (含预发布)", "開発版 (プレリリース含む)", "Dev (includes pre-releases)"]),
+    ("upd.title", ["检查更新", "アップデートの確認", "Check for Updates"]),
+    ("upd.note", ["只在你点按钮 (或开启了每日检查) 时联网: 仅 https、有大小上限;安装包必须通过 SHA-256 校验才会安装。", "ボタンを押したとき (または毎日の確認を有効にした場合) のみ通信します。https のみ・サイズ上限あり。SHA-256 検証に通ったものだけをインストールします。", "Network is used only when you click (or daily check is on): https only, size-capped; packages are installed only after SHA-256 verification."]),
+    ("upd.current", ["当前版本 {} · 通道: {}", "現在のバージョン {} ・チャンネル: {}", "Current version {} · channel: {}"]),
+    ("upd.check", ["检查更新", "確認", "Check now"]),
+    ("upd.checking", ["正在检查更新…", "アップデートを確認中…", "Checking for updates…"]),
+    ("upd.uptodate", ["已是最新版本 ({})", "最新バージョンです ({})", "You are up to date ({})"]),
+    ("upd.available", ["发现新版本 {} (当前 {})", "新しいバージョン {} があります (現在 {})", "New version {} available (current {})"]),
+    ("upd.notes", ["更新说明", "リリースノート", "Release notes"]),
+    ("upd.asset", ["安装包: {} ({} MB)", "パッケージ: {} ({} MB)", "Package: {} ({} MB)"]),
+    ("upd.no-asset", ["这个版本没有适用于本机安装方式的安装包,请到发布页手动下载。", "このバージョンには、この環境向けのパッケージがありません。リリースページから手動で入手してください。", "This release has no package for this installation; download it from the release page."]),
+    ("upd.download", ["下载并校验", "ダウンロードして検証", "Download and verify"]),
+    ("upd.downloading", ["正在下载并校验 SHA-256…", "ダウンロードして SHA-256 を検証中…", "Downloading and verifying SHA-256…"]),
+    ("upd.verified", ["已下载并通过 SHA-256 校验 ({})。", "ダウンロードと SHA-256 検証が完了しました ({})。", "Downloaded and SHA-256 verified ({})."]),
+    ("upd.install", ["安装并重启", "インストールして再起動", "Install and restart"]),
+    ("upd.install-tip", ["会先走正常的关闭流程 (有未保存的修改会先问你),关闭后才开始安装。", "通常の終了処理を行い (未保存の変更があれば確認します)、終了後にインストールを開始します。", "Uses the normal close flow (unsaved changes are asked about first); installation starts after the window closes."]),
+    ("upd.page", ["打开发布页面", "リリースページを開く", "Open release page"]),
+    ("upd.failed", ["更新失败,当前版本保持不变:{}", "アップデートに失敗しました。現在のバージョンのままです: {}", "Update failed; the current version is unchanged: {}"]),
+    ("upd.tip-found", ["发现新版本 {} (帮助 > 检查更新)", "新しいバージョン {} があります (ヘルプ > アップデートを確認)", "New version {} available (Help > Check for Updates)"]),
+    ("upd.e-net", ["联网失败: {}", "通信に失敗しました: {}", "Network error: {}"]),
+    ("upd.e-parse", ["无法解析发布信息: {}", "リリース情報を解析できません: {}", "Cannot parse release info: {}"]),
+    ("upd.e-big", ["文件超过大小上限,已拒绝: {}", "サイズ上限を超えたため拒否しました: {}", "File exceeds the size limit, refused: {}"]),
+    ("upd.e-size", ["下载大小不符: {} (应为 {} 字节,实际 {} 字节)", "ダウンロードサイズが一致しません: {} (期待 {} バイト、実際 {} バイト)", "Downloaded size mismatch: {} (expected {} bytes, got {})"]),
+    ("upd.e-nosum", ["发布的 SHA256SUMS.txt 里没有 {} 的校验值,已拒绝安装", "SHA256SUMS.txt に {} のハッシュがないため、インストールを拒否しました", "SHA256SUMS.txt has no hash for {}; refusing to install"]),
+    ("upd.e-mismatch", ["SHA-256 校验不一致,已拒绝并删除下载的文件: {}", "SHA-256 が一致しないため拒否し、ダウンロードしたファイルを削除しました: {}", "SHA-256 mismatch; refused and deleted the download: {}"]),
+    ("upd.e-io", ["文件操作失败", "ファイル操作に失敗しました", "File operation failed"]),
     ("pf.glass-note", ["半透明主题需要重启后才能透出桌面; 关掉模糊 = 只做颜色叠加", "半透明テーマは再起動後に反映されます", "Translucent themes take effect after a restart; off = colour overlay only"]),
     ("pf.term-font", ["终端字号", "ターミナルのフォントサイズ", "Terminal font size"]),
     ("pf.term-scrollback", ["终端保留行数", "ターミナルの保持行数", "Terminal scrollback lines"]),
@@ -798,7 +829,7 @@ mod tests {
     /// 代码里用到的每个 `tr("...")` / `lk("...")` / `trf("...")` 键都得在表里
     #[test]
     fn every_key_used_in_source_exists() {
-        let srcs = [include_str!("app.rs"), include_str!("find.rs"), include_str!("sidebar.rs"), include_str!("terminal.rs"), include_str!("cmdui.rs"), include_str!("keymap.rs")];
+        let srcs = [include_str!("app.rs"), include_str!("find.rs"), include_str!("sidebar.rs"), include_str!("terminal.rs"), include_str!("cmdui.rs"), include_str!("keymap.rs"), include_str!("prefs.rs"), include_str!("updnet.rs"), include_str!("app/updateui.rs")];
         let idx = index();
         let mut n = 0;
         for src in srcs {

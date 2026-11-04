@@ -57,6 +57,9 @@ mod mdtools;
 mod panels;
 mod rowview;
 mod relaunch;
+mod update;
+mod updnet;
+mod updapply;
 
 use std::time::Instant;
 
@@ -101,6 +104,11 @@ fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
 fn main() -> eframe::Result<()> {
     let trace = Trace::new();
     trace.mark("main enter");
+    // 便携版自更新的帮手模式: 本进程是校验过的 `<exe>.new`, 只负责覆盖旧 exe 并启动新版 (不开窗口、不碰单实例)
+    if std::env::args().nth(1).as_deref() == Some(updapply::APPLY_FLAG) {
+        updapply::run_apply();
+        return Ok(());
+    }
     let (force_new, args) = split_new_flag(std::env::args().skip(1).collect());
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
@@ -173,6 +181,10 @@ fn main() -> eframe::Result<()> {
     // 「立即重启」: 窗口已经关完、设置已经落盘, 再拉起新进程 (带着现在打开的文件)
     if let Some(paths) = relaunch::take() {
         let _ = relaunch::spawn(&paths, st.restore_session);
+    }
+    // 「安装并重启」(自更新): 窗口已经关完、设置已经落盘; msi 交给 msiexec, 便携版运行 `<exe>.new` 完成替换
+    if let Some(a) = updapply::take() {
+        let _ = updapply::launch(&a);
     }
     result
 }

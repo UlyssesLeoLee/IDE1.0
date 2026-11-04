@@ -32,6 +32,7 @@ mod titlebar;
 mod welcome;
 mod textcmds;
 mod ghopts;
+mod updateui;
 mod aichat;
 mod mdopts;
 mod printui;
@@ -45,6 +46,7 @@ pub struct App {
     sys: sysopts::SysState,
     md10: mdopts::MdState,
     gh: ghopts::GhState,
+    upd: updateui::UpdState,
     ai: aichat::AiState,
     docs: Vec<Doc>,
     active: usize,
@@ -163,7 +165,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, shown: false, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), ai: Default::default(), print_ui: Default::default(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, shown: false, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), upd: Default::default(), ai: Default::default(), print_ui: Default::default(),
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -1358,6 +1360,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
                 if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
                 ui.separator();
+                if menuui::mbtn(ui, lk("c.check-update", "")).clicked() { ui.close(); self.upd_open(); }
                 if menuui::mbtn(ui, lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
             });
         });
@@ -1776,6 +1779,7 @@ impl App {
             KApp::MacroSave => self.macro_save(),
             KApp::MacroLoad => self.macro_load(),
             KApp::About => self.about_open = true,
+            KApp::CheckUpdate => self.upd_open(),
             KApp::SelMode | KApp::TagJump | KApp::TagBack | KApp::TagKeyword | KApp::TagsMake | KApp::IsFwd | KApp::IsBack | KApp::IsRegexFwd | KApp::IsRegexBack | KApp::IsMigemoFwd | KApp::IsMigemoBack
             | KApp::Base64Decode | KApp::UuDecode | KApp::CopyHtml | KApp::CopyHtmlLn | KApp::ClipHistory | KApp::CtrlCodes | KApp::InsDate | KApp::InsTime | KApp::InsStamp | KApp::StampCfg
             | KApp::WrapCol | KApp::WrapWindow | KApp::WrapNone => self.run_extra(a, ctx),
@@ -1858,6 +1862,7 @@ impl App {
         if let Some(tip) = self.cmdui.keylist_window(ctx) { self.cur().tip = tip; }
         if self.about_open { self.about_window(ctx); }
         self.gh_window(ctx);
+        self.upd_window(ctx);
         self.ai_windows(ctx);
     }
 
@@ -2619,7 +2624,7 @@ impl App {
                     if !self.close_tab(i) { all = false; break; }
                 } else { i += 1; }
             }
-            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; crate::relaunch::cancel(); }
+            if all { self.confirm_exit = true; ctx.send_viewport_cmd(egui::ViewportCommand::Close); } else { self.exit_session = None; crate::relaunch::cancel(); crate::updapply::cancel(); }
         }
         // 拖文件进窗口: 打开
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
