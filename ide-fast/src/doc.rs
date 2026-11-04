@@ -853,6 +853,11 @@ impl Doc {
         self.find_at(needle, o, forward, start, false)
     }
 
+    #[cfg(test)]
+    pub fn undo_is_empty(&self) -> bool {
+        self.undo.is_empty()
+    }
+
     pub fn undo(&mut self) {
         let Some(u) = self.undo.pop() else {
             self.tip = "没有可撤销的操作".into();

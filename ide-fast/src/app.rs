@@ -31,6 +31,8 @@ mod mdopts;
 mod printui;
 mod sysopts;
 mod tagops;
+#[cfg(test)]
+mod perf_bench;
 
 pub struct App {
     /// 批次 10: 自动备份 / 文件锁 / 玻璃窗口 / 底部页签 (`app/sysopts.rs`)、Markdown 预览扩展 (`app/mdopts.rs`)、GitHub 插件窗口 (`app/ghopts.rs`)

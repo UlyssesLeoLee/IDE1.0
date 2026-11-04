@@ -55,17 +55,34 @@ mod relaunch;
 
 use std::time::Instant;
 
+/// 启动耗时追踪。`IDE_FAST_TRACE=1` 打到 stderr; 值是文件路径 (含 `/` `\` 或 `.`) 就追加写到该文件
+/// (发行版是 GUI 子系统没有控制台, 基准脚本 `tests/perf.ps1` 用文件)。不设变量时 `mark` 只是一次布尔判断。
+#[derive(Clone)]
 pub struct Trace {
     t0: Instant,
     on: bool,
+    file: Option<std::path::PathBuf>,
 }
 impl Trace {
     pub fn new() -> Self {
-        Trace { t0: Instant::now(), on: std::env::var_os("IDE_FAST_TRACE").is_some() }
+        let v = std::env::var_os("IDE_FAST_TRACE");
+        let file = v.as_ref().filter(|s| s.to_string_lossy().contains(['/', '\\', '.'])).map(std::path::PathBuf::from);
+        Trace { t0: Instant::now(), on: v.is_some(), file }
     }
     pub fn mark(&self, what: &str) {
-        if self.on {
-            eprintln!("[fast +{}ms] {what}", self.t0.elapsed().as_millis());
+        if !self.on {
+            return;
+        }
+        // 微秒精度: 取整到毫秒会把 <1ms 的阶段吞掉
+        let line = format!("[fast +{:.1}ms] {what}", self.t0.elapsed().as_secs_f64() * 1000.0);
+        match &self.file {
+            Some(p) => {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+                    let _ = writeln!(f, "{line}");
+                }
+            }
+            None => eprintln!("{line}"),
         }
     }
 }
@@ -90,6 +107,7 @@ fn main() -> eframe::Result<()> {
     let inbox = if force_new { None } else { instance::listen() };
     // 上次的窗口位置 / 大小 / 最大化状态 (没有就用默认的 1100x720)
     let st = settings::Settings::load();
+    trace.mark("settings loaded");
     let font_file = st.font_family.clone();
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
@@ -107,8 +125,21 @@ fn main() -> eframe::Result<()> {
         depth_buffer: 0,
         stencil_buffer: 0,
         persist_window: false,
+        // 细分「进程入口 -> 窗口就绪」的几百毫秒: 事件循环建好 / 窗口即将创建 (winit 窗口 + GL 上下文都在这之后、`window + GL context ready` 之前)
+        event_loop_builder: Some({
+            let t = trace.clone();
+            Box::new(move |_| t.mark("event loop builder"))
+        }),
+        window_builder: Some({
+            let t = trace.clone();
+            Box::new(move |vb| {
+                t.mark("window builder (window + GL creation starts)");
+                vb
+            })
+        }),
         ..Default::default()
     };
+    trace.mark("before run_native");
     let result = eframe::run_native(
         "IDE1.0 Fast",
         options,
@@ -123,7 +154,10 @@ fn main() -> eframe::Result<()> {
             }
             #[cfg(not(windows))]
             let _ = blur;
-            Ok(Box::new(app::App::new(args, inbox, trace)))
+            let t = trace.clone();
+            let app = app::App::new(args, inbox, trace);
+            t.mark("App::new done");
+            Ok(Box::new(app))
         }),
     );
     // 「立即重启」: 窗口已经关完、设置已经落盘, 再拉起新进程 (带着现在打开的文件)
