@@ -548,10 +548,10 @@ impl App {
         let Some(p) = self.side.pending.as_mut() else { return };
         let name_of = |f: &std::path::Path| f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let (title, needs_text) = match &p.op {
-            FileOp::NewFile(_) => ("新建文件".to_string(), true),
-            FileOp::NewDir(_) => ("新建文件夹".to_string(), true),
-            FileOp::Rename(f) => (format!("重命名 {}", name_of(f)), true),
-            FileOp::Delete(f) => (format!("确定删除 {} ?", name_of(f)), false),
+            FileOp::NewFile(_) => (trz("新建文件").to_string(), true),
+            FileOp::NewDir(_) => (trz("新建文件夹").to_string(), true),
+            FileOp::Rename(f) => (crate::msgtr::msg(&format!("重命名 {}", name_of(f))).into_owned(), true),
+            FileOp::Delete(f) => (crate::msgtr::msg(&format!("确定删除 {} ?", name_of(f))).into_owned(), false),
         };
         let mut go = false;
         let mut cancel = false;
@@ -809,7 +809,7 @@ impl App {
         if o.pattern.is_empty() { self.side.grep.msg = "请输入要搜索的内容".into(); return; }
         let dirty: Vec<String> = self.docs.iter().filter(|d| d.dirty).filter_map(|d| d.path.as_ref().map(|p| p.to_string_lossy().into_owned())).collect();
         let text = format!("把「{}」置换为「{}」\n范围: {}\n会改写磁盘上所有命中的文件 (原文件另存为 .bak)。继续吗?", o.pattern, o.repl, root.display());
-        if rfd::MessageDialog::new().set_title("Grep 置换").set_description(text).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
+        if rfd::MessageDialog::new().set_title(trz("Grep 置换")).set_description(crate::msgtr::msg(&text).into_owned()).set_buttons(rfd::MessageButtons::YesNo).show() != rfd::MessageDialogResult::Yes { return; }
         let (msg, written) = grep::replace(&root, &o, dirty);
         // 已打开且没有未保存修改的标签: 重新读盘, 免得显示旧内容、之后又存回去
         let mut reloaded = 0;
@@ -828,7 +828,7 @@ impl App {
             None => {
                 let id = self.id();
                 let mut d = Doc::untitled(id, 0);
-                d.name = "Grep 结果".into();
+                d.name = trz("Grep 结果").into();
                 d.readonly = true;
                 d.grep_result = true;
                 self.docs.push(d);
@@ -1103,7 +1103,7 @@ impl App {
         let Some(text) = self.props.clone() else { return };
         let mut open = true;
         egui::Window::new(tr("dlg.props-title")).open(&mut open).collapsible(false).resizable(false).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
-            ui.add(egui::Label::new(egui::RichText::new(&text).monospace()).selectable(true));
+            ui.add(egui::Label::new(egui::RichText::new(crate::msgtr::msg(&text).as_ref()).monospace()).selectable(true));
             if ui.button(trz("复制")).clicked() { ctx.copy_text(text.clone()); }
         });
         if !open || ctx.input(|i| i.key_pressed(Key::Escape)) { self.props = None; }
@@ -1412,7 +1412,7 @@ impl App {
             let mut any = false;
             for (i, s) in self.cfg.macro_slots.iter().enumerate().filter(|(_, s)| !s.is_empty()) {
                 any = true;
-                if ui.button(format!("{}: {}", i + 1, if s.name.is_empty() { "(无名)" } else { &s.name })).clicked() { run_slot = Some(i); ui.close(); }
+                if ui.button(format!("{}: {}", i + 1, if s.name.is_empty() { crate::msgtr::msg("(无名)") } else { std::borrow::Cow::Borrowed(s.name.as_str()) })).clicked() { run_slot = Some(i); ui.close(); }
             }
             if !any { ui.label(tr("ui.none")); }
             ui.separator();
@@ -1607,7 +1607,7 @@ impl App {
                     let dim = self.tc.fg_dim;
                     ui.add_space((h * 0.3).max(4.0));
                     ui.vertical_centered(|ui| {
-                        ui.label(egui::RichText::new("No terminal session — 暂无终端会话").monospace().size(tpx).color(dim));
+                        ui.label(egui::RichText::new(if crate::i18n::cur() == Lang::Zh { "No terminal session — 暂无终端会话".to_string() } else { format!("No terminal session — {}", crate::msgtr::msg("暂无终端会话")) }).monospace().size(tpx).color(dim));
                         ui.label(egui::RichText::new(trz("输入命令按 Enter 启动 shell, 或点「+ 新建终端」")).monospace().size(tpx).color(dim));
                     });
                     return;
@@ -2089,7 +2089,7 @@ impl App {
         if n == 0 { self.cur().tip = format!("没有可写成 .mac 的操作{skipped}"); return; }
         let id = self.id();
         let mut d = Doc::untitled(id, 0);
-        d.name = "录制的宏.mac".into();
+        d.name = trz("录制的宏.mac").into();
         d.lines = text.trim_end_matches('\n').split('\n').map(str::to_string).collect();
         d.dirty = true;
         d.tip = format!("已生成 {n} 条宏语句{skipped} — 保存为 .mac 后可用「运行当前文档 (Sakura .mac)」回放");
@@ -2206,7 +2206,7 @@ impl App {
 
     /// 选一个 zip -> 给确认框 (名称 / 版本 / 权限) -> 安装
     fn import_plugin_zip(&mut self) {
-        let Some(path) = rfd::FileDialog::new().add_filter("插件包", &["zip"]).pick_file() else { return };
+        let Some(path) = rfd::FileDialog::new().add_filter(trz("插件包"), &["zip"]).pick_file() else { return };
         let bytes = match std::fs::read(&path) { Ok(b) => b, Err(e) => { self.cur().tip = format!("读不了 {}: {e}", path.display()); return; } };
         let msg = match plugins::inspect_zip(&bytes) {
             Err(e) => { rfd::MessageDialog::new().set_title(tr("dlg.cant-import")).set_description(e).show(); return; }

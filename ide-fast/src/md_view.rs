@@ -227,7 +227,7 @@ fn inline_ui(ui: &mut egui::Ui, text: &str, cx: &MdCtx, cache: &mut MdCache, siz
 
 fn image_ui(ui: &mut egui::Ui, alt: &str, target: &str, cx: &MdCtx, cache: &mut MdCache) {
     let Some(path) = resolve_local(cx.base, target) else {
-        ui.weak(format!("[图片 {alt}: {target}]"));
+        ui.weak(crate::msgtr::msg(&format!("[图片 {alt}: {target}]")).as_ref());
         return;
     };
     let ctx = ui.ctx().clone();
@@ -240,7 +240,7 @@ fn image_ui(ui: &mut egui::Ui, alt: &str, target: &str, cx: &MdCtx, cache: &mut 
             ui.add(egui::Image::new((t.id(), sz * k)));
         }
         None => {
-            ui.weak(format!("[图片 {alt}: {} (只支持本地 PNG)]", path.display()));
+            ui.weak(crate::msgtr::msg(&format!("[图片 {alt}: {} (只支持本地 PNG)]", path.display())).as_ref());
         }
     }
 }
@@ -457,6 +457,8 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                 }
                 Block::Callout { kind, title, text } => {
                     let (icon, name) = callout_label(kind);
+                    let name = crate::msgtr::msg(name);
+                    let name: &str = name.as_ref();
                     let accent = match kind.as_str() {
                         "warning" | "caution" => cx.tc.yellow,
                         "danger" | "error" | "bug" => cx.tc.red,
@@ -487,7 +489,7 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
                         .inner_margin(egui::Margin::symmetric(10, 8))
                         .show(ui, |ui| {
                             if lang == "mermaid" {
-                                ui.weak("Mermaid 图只在 Tauri 版里渲染, 这里显示源码");
+                                ui.weak(crate::msgtr::msg("Mermaid 图只在 Tauri 版里渲染, 这里显示源码").as_ref());
                             } else if !lang.is_empty() {
                                 ui.weak(lang);
                             }

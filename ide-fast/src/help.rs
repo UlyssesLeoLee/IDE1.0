@@ -14,11 +14,27 @@ pub const AUTO_MIN_CHARS: usize = 2;
 /// 提示里最多显示这么多字符
 const TIP_MAX_CHARS: usize = 120;
 
-const BODY: &str = include_str!("help.txt");
+const BODY_ZH: &str = include_str!("help.txt");
+const BODY_JA: &str = include_str!("help_ja.txt");
+const BODY_EN: &str = include_str!("help_en.txt");
 
-/// 正文, 换行统一成 LF (Windows 上 git 的 autocrlf 会把 help.txt 检出成 CRLF, include_str! 原样带进来)
+/// 当前界面语言的正文, 换行统一成 LF (Windows 上 git 的 autocrlf 会把 help*.txt 检出成 CRLF, include_str! 原样带进来)
 fn body() -> String {
-    BODY.replace("\r\n", "\n")
+    match crate::i18n::cur() {
+        crate::i18n::Lang::Zh => BODY_ZH,
+        crate::i18n::Lang::Ja => BODY_JA,
+        crate::i18n::Lang::En => BODY_EN,
+    }
+    .replace("\r\n", "\n")
+}
+
+/// 命令一览的标题和表头 (中 / 日 / 英)
+fn list_heading() -> &'static str {
+    match crate::i18n::cur() {
+        crate::i18n::Lang::Zh => "[11] 命令一览\n-------------\n名称\t键\t[命令 id]\t分类\n",
+        crate::i18n::Lang::Ja => "[11] コマンド一覧\n-----------------\n名前\tキー\t[コマンド id]\t分類\n",
+        crate::i18n::Lang::En => "[11] Command List\n-----------------\nName\tKey\t[Command id]\tCategory\n",
+    }
 }
 
 /// 命令一览: 每个命令一行 `名称 <TAB> 键 <TAB> [id] <TAB> 分类`; 没有键的写 `-`
@@ -36,7 +52,9 @@ pub fn command_lines() -> Vec<String> {
 /// 整本手册
 pub fn manual() -> String {
     let mut out = body().trim_end_matches('\n').to_string();
-    out.push_str("\n\n[11] 命令一览\n-------------\n名称\t键\t[命令 id]\t分类\n");
+    out.push('\n');
+    out.push('\n');
+    out.push_str(list_heading());
     for l in command_lines() {
         out.push_str(&l);
         out.push('\n');
@@ -96,9 +114,40 @@ pub fn tip_for(word: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{set, Lang, TEST_LOCK};
+
+    /// 手册随界面语言变: 测试期间把语言锁在中文 (语言是全局量)
+    fn zh() -> std::sync::MutexGuard<'static, ()> {
+        let g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set(Lang::Zh);
+        g
+    }
+
+    /// 三种语言的手册结构一致: 同样的章节号、同样多的行, 命令一览用各自语言的标题
+    #[test]
+    fn the_three_manuals_have_the_same_shape() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let sections = |t: &str| -> Vec<String> { t.lines().filter_map(|l| l.strip_prefix('[')).filter_map(|r| r.split(']').next()).map(str::to_string).collect() };
+        let mut shapes = vec![];
+        for l in [Lang::Zh, Lang::Ja, Lang::En] {
+            set(l);
+            let b = body();
+            shapes.push((sections(&b), b.lines().count()));
+            let m = manual();
+            assert!(m.contains("[11]") && m.contains("[c.palette]"), "{l:?}: 命令一览在");
+            assert!(!m.contains('\r'));
+        }
+        set(Lang::Zh);
+        assert_eq!(shapes[0].0, shapes[1].0, "中 / 日章节号一致");
+        assert_eq!(shapes[0].0, shapes[2].0, "中 / 英章节号一致");
+        assert_eq!(shapes[0].1, shapes[1].1, "中 / 日行数一致");
+        assert_eq!(shapes[0].1, shapes[2].1, "中 / 英行数一致");
+        assert!(BODY_JA.contains("コマンド") && BODY_EN.contains("command"));
+    }
 
     #[test]
     fn manual_has_the_prose_and_every_command_once() {
+        let _g = zh();
         let m = manual();
         assert!(m.starts_with("IDE1.0 高速版"), "正文在前");
         let ids: Vec<String> = keymap::entries().iter().map(|e| format!("[{}]", e.id)).collect();
@@ -110,6 +159,7 @@ mod tests {
 
     #[test]
     fn rows_skip_blank_lines_and_carry_the_line_number() {
+        let _g = zh();
         let rs = rows("甲\n\n  乙\t丙  \n");
         assert_eq!(rs.len(), 2);
         assert_eq!((rs[0].label.as_str(), rs[0].value.as_str()), ("甲", "1"));
@@ -118,6 +168,7 @@ mod tests {
 
     #[test]
     fn rows_of_the_real_manual_point_at_their_own_text() {
+        let _g = zh();
         let m = manual();
         let lines: Vec<&str> = m.lines().collect();
         for r in rows(&m) {
@@ -128,6 +179,7 @@ mod tests {
 
     #[test]
     fn word_at_handles_edges_and_cjk() {
+        let _g = zh();
         assert_eq!(word_at("let foo_bar = 1;", 5), "foo_bar");
         assert_eq!(word_at("let foo_bar = 1;", 3), "let", "光标在单词末尾也算");
         assert_eq!(word_at("let foo_bar = 1;", 4), "foo_bar", "光标在单词开头");
@@ -141,12 +193,14 @@ mod tests {
 
     #[test]
     fn crlf_in_the_prose_is_normalized() {
+        let _g = zh();
         assert!(!manual().contains('\r'));
         assert!(!body().contains('\r'));
     }
 
     #[test]
     fn first_hit_is_case_insensitive_and_takes_the_earliest_line() {
+        let _g = zh();
         let m = "alpha\n  Beta Gamma\ngamma again\n";
         assert_eq!(first_hit(m, "GAMMA"), Some((2, "Beta Gamma".into())));
         assert_eq!(first_hit(m, "zeta"), None);
@@ -155,6 +209,7 @@ mod tests {
 
     #[test]
     fn auto_tip_ignores_one_letter_words_and_truncates_long_lines() {
+        let _g = zh();
         let long = format!("宏 {}", "长".repeat(300));
         assert_eq!(auto_tip(&long, "宏"), None, "一个字符的词不提示");
         let t2 = auto_tip(&format!("宏函数 {}", "长".repeat(300)), "宏函数").unwrap();
@@ -164,6 +219,7 @@ mod tests {
 
     #[test]
     fn tip_for_prefers_the_prose_and_falls_back_to_the_command_list() {
+        let _g = zh();
         assert!(tip_for("窗口一览").is_some_and(|t| t.starts_with("帮助: ")));
         assert!(tip_for("app.pick-reopen").is_some_and(|t| t.contains("[app.pick-reopen]")), "正文里没有的词查命令一览");
         assert_eq!(tip_for("zzqqxx-no-such-word"), None);
@@ -172,6 +228,7 @@ mod tests {
 
     #[test]
     fn the_prose_mentions_the_things_the_menus_actually_have() {
+        let _g = zh();
         let m = manual();
         for w in ["窗口一览", "关键字帮助", "标签跳转", "宏登记", "命令面板"] {
             assert!(first_hit(&m, w).is_some(), "手册里应该讲到 {w}");

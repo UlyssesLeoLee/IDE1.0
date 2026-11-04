@@ -607,6 +607,181 @@ Not signature-verified; install only plugins you trust. Install?"]),
 
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
+    // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
+    ("查找内容", ["查找内容", "検索内容", "Find what"]),
+    ("剪贴板历史", ["剪贴板历史", "クリップボード履歴", "Clipboard History"]),
+    ("还没有复制过内容 (只记录本程序里的复制 / 剪切)", ["还没有复制过内容 (只记录本程序里的复制 / 剪切)", "まだコピーした内容がありません (このアプリ内のコピー / 切り取りのみ記録)", "Nothing copied yet (only copy / cut inside this app is recorded)"]),
+    ("粘贴", ["粘贴", "貼り付け", "Paste"]),
+    ("字符", ["字符", "文字", "chars"]),
+    ("清空", ["清空", "クリア", "Clear"]),
+    ("控制字符", ["控制字符", "制御文字", "Control Characters"]),
+    ("点要插入的控制字符", ["点要插入的控制字符", "挿入する制御文字をクリック", "Click a control character to insert"]),
+    ("戳记设置", ["戳记设置", "スタンプ設定", "Stamp Settings"]),
+    ("日期 (YYYY/MM/DD)", ["日期 (YYYY/MM/DD)", "日付 (YYYY/MM/DD)", "Date (YYYY/MM/DD)"]),
+    ("时间 (HH:MM:SS)", ["时间 (HH:MM:SS)", "時刻 (HH:MM:SS)", "Time (HH:MM:SS)"]),
+    ("日期 + 时间", ["日期 + 时间", "日付 + 時刻", "Date + time"]),
+    ("行首 (缩进之后, 写成 [戳记] )", ["行首 (缩进之后, 写成 [戳记] )", "行頭 (インデントの後, [スタンプ] 形式)", "Line start (after indent, as [stamp] )"]),
+    ("光标处", ["光标处", "カーソル位置", "At cursor"]),
+    ("预览:", ["预览:", "プレビュー:", "Preview:"]),
+    ("按指定列数折行", ["按指定列数折行", "指定桁で折り返し", "Wrap at Column"]),
+    ("列数 (半角字符数; 0 = 按窗口宽度)", ["列数 (半角字符数; 0 = 按窗口宽度)", "桁数 (半角文字数; 0 = ウィンドウ幅)", "Columns (half-width chars; 0 = window width)"]),
+    ("列块替换", ["列块替换", "矩形置換", "Column Replace"]),
+    ("列块替换为 (多行用换行分隔)", ["列块替换为 (多行用换行分隔)", "矩形を次に置換 (複数行は改行区切り)", "Replace the column block with (separate lines with newlines)"]),
+    ("应用", ["应用", "適用", "Apply"]),
+    ("未打开项目", ["未打开项目", "プロジェクト未オープン", "No project open"]),
+    ("点工具栏「打开文件夹」导入项目", ["点工具栏「打开文件夹」导入项目", "ツールバーの「フォルダーを開く」でプロジェクトを読み込み", "Use “Open Folder” on the toolbar to import a project"]),
+    ("插入", ["插入", "挿入", "Insert"]),
+    ("标签分组", ["标签分组", "タブグループ", "Tab Groups"]),
+    ("折行方式", ["折行方式", "折り返し方法", "Word Wrap"]),
+    ("把刚录的键盘宏转成 .mac", ["把刚录的键盘宏转成 .mac", "録画したキーボードマクロを .mac に変換", "Convert the Recorded Key Macro to .mac"]),
+    ("宏登记", ["宏登记", "マクロ登録", "Macro Slots"]),
+    ("把当前文档 / 选区登记为宏", ["把当前文档 / 选区登记为宏", "現在の文書 / 選択範囲をマクロとして登録", "Register Current Document / Selection as a Macro"]),
+    ("立即备份", ["立即备份", "今すぐバックアップ", "Back Up Now"]),
+    ("范围选择模式: 关", ["范围选择模式: 关", "範囲選択モード: オフ", "Range selection mode: off"]),
+    ("新建终端", ["新建终端", "新しいターミナル", "New Terminal"]),
+    ("新建终端 (Ctrl+`)", ["新建终端 (Ctrl+`)", "新しいターミナル (Ctrl+`)", "New Terminal (Ctrl+`)"]),
+    ("折叠 (Ctrl+Alt+L)", ["折叠 (Ctrl+Alt+L)", "折りたたむ (Ctrl+Alt+L)", "Collapse (Ctrl+Alt+L)"]),
+    ("未设置模型", ["未设置模型", "モデル未設定", "No model set"]),
+    ("模型设置", ["模型设置", "モデル設定", "Model Settings"]),
+    ("范围选择", ["范围选择", "範囲選択", "Range"]),
+    ("预览", ["预览", "プレビュー", "Preview"]),
+    ("源码 / 渲染预览切换 (Ctrl+Shift+V)", ["源码 / 渲染预览切换 (Ctrl+Shift+V)", "ソース / レンダリング表示の切り替え (Ctrl+Shift+V)", "Toggle source / rendered preview (Ctrl+Shift+V)"]),
+    ("最近的文件路径", ["最近的文件路径", "最近使ったファイルのパス", "Recent File Paths"]),
+    ("最近的文件夹路径", ["最近的文件夹路径", "最近使ったフォルダーのパス", "Recent Folder Paths"]),
+    ("打开文件夹", ["打开文件夹", "フォルダーを開く", "Open Folder"]),
+    ("打开文件夹 (Ctrl+K O)", ["打开文件夹 (Ctrl+K O)", "フォルダーを開く (Ctrl+K O)", "Open Folder (Ctrl+K O)"]),
+    ("页面设置", ["页面设置", "ページ設定", "Page Setup"]),
+    ("纸张", ["纸张", "用紙", "Paper"]),
+    ("横向", ["横向", "横向き", "Landscape"]),
+    ("字号 (pt)", ["字号 (pt)", "フォントサイズ (pt)", "Font size (pt)"]),
+    ("页边距 (mm)", ["页边距 (mm)", "余白 (mm)", "Margins (mm)"]),
+    ("打印行号", ["打印行号", "行番号を印刷", "Print line numbers"]),
+    ("页眉 (文件名)", ["页眉 (文件名)", "ヘッダー (ファイル名)", "Header (file name)"]),
+    ("页脚 (页码)", ["页脚 (页码)", "フッター (ページ番号)", "Footer (page number)"]),
+    ("打印预览…", ["打印预览…", "印刷プレビュー…", "Print Preview…"]),
+    ("打印预览", ["打印预览", "印刷プレビュー", "Print Preview"]),
+    ("页面设置…", ["页面设置…", "ページ設定…", "Page Setup…"]),
+    ("打印…", ["打印…", "印刷…", "Print…"]),
+    ("折叠 / 展开左侧栏", ["折叠 / 展开左侧栏", "左サイドバーの折りたたみ / 展開", "Collapse / Expand Left Sidebar"]),
+    ("折叠 / 展开右侧面板", ["折叠 / 展开右侧面板", "右パネルの折りたたみ / 展開", "Collapse / Expand Right Panel"]),
+    ("折叠 / 展开底部面板", ["折叠 / 展开底部面板", "下パネルの折りたたみ / 展開", "Collapse / Expand Bottom Panel"]),
+    ("折叠左侧栏", ["折叠左侧栏", "左サイドバーを折りたたむ", "Collapse Left Sidebar"]),
+    ("折叠右侧面板", ["折叠右侧面板", "右パネルを折りたたむ", "Collapse Right Panel"]),
+    ("折叠底部面板", ["折叠底部面板", "下パネルを折りたたむ", "Collapse Bottom Panel"]),
+    ("使用系统标题栏", ["使用系统标题栏", "システムのタイトルバーを使う", "Use System Title Bar"]),
+    ("下一个函数", ["下一个函数", "次の関数", "Next Function"]),
+    ("上一个函数", ["上一个函数", "前の関数", "Previous Function"]),
+    ("复制路径与光标位置", ["复制路径与光标位置", "パスとカーソル位置をコピー", "Copy Path and Cursor Position"]),
+    ("在折行处加换行复制", ["在折行处加换行复制", "折り返し位置に改行を入れてコピー", "Copy with Line Breaks at Wraps"]),
+    ("打开同名 C/C++ 头 / 源文件", ["打开同名 C/C++ 头 / 源文件", "同名の C/C++ ヘッダー / ソースを開く", "Open Matching C/C++ Header / Source"]),
+    ("(选择) 下一处改动", ["(选择) 下一处改动", "(選択) 次の変更箇所", "(Select) Next Change"]),
+    ("(选择) 上一处改动", ["(选择) 上一处改动", "(選択) 前の変更箇所", "(Select) Previous Change"]),
+    ("下一个分组", ["下一个分组", "次のグループ", "Next Group"]),
+    ("上一个分组", ["上一个分组", "前のグループ", "Previous Group"]),
+    ("移到新分组", ["移到新分组", "新しいグループへ移動", "Move to New Group"]),
+    ("移到下一个分组", ["移到下一个分组", "次のグループへ移動", "Move to Next Group"]),
+    ("移到上一个分组", ["移到上一个分组", "前のグループへ移動", "Move to Previous Group"]),
+    ("合并为一组", ["合并为一组", "1 つのグループに統合", "Merge into One Group"]),
+    ("关闭当前分组", ["关闭当前分组", "現在のグループを閉じる", "Close Current Group"]),
+    ("SPACE 缩进", ["SPACE 缩进", "SPACE インデント", "SPACE Indent"]),
+    ("SPACE 反缩进", ["SPACE 反缩进", "SPACE 逆インデント", "SPACE Unindent"]),
+    ("光标行居中", ["光标行居中", "カーソル行を中央へ", "Center Cursor Line"]),
+    ("切换选区统计方式 (字符 / 字节 / 行)", ["切换选区统计方式 (字符 / 字节 / 行)", "選択範囲の集計方式を切り替え (文字 / バイト / 行)", "Cycle Selection Count (chars / bytes / lines)"]),
+    ("代码补全", ["代码补全", "コード補完", "Code Completion"]),
+    ("转到定义 (本文件)", ["转到定义 (本文件)", "定義へジャンプ (このファイル)", "Go to Definition (this file)"]),
+    ("切换查找标记 (全部强调)", ["切换查找标记 (全部强调)", "検索マークの切り替え (すべて強調)", "Toggle Find Marks (highlight all)"]),
+    ("回到查找起点", ["回到查找起点", "検索開始位置へ戻る", "Back to Find Start"]),
+    ("列块删除", ["列块删除", "矩形削除", "Column Delete"]),
+    ("列块替换…", ["列块替换…", "矩形置換…", "Column Replace…"]),
+    ("宏录制 (.mac): 开始 / 停止并生成", ["宏录制 (.mac): 开始 / 停止并生成", "マクロ記録 (.mac): 開始 / 停止して生成", "Record Macro (.mac): Start / Stop and Generate"]),
+    ("宏录制 (.mac)", ["宏录制 (.mac)", "マクロ記録 (.mac)", "Record Macro (.mac)"]),
+    ("停止录制并生成 .mac", ["停止录制并生成 .mac", "記録を停止して .mac を生成", "Stop Recording and Generate .mac"]),
+    ("范围选择模式 (开始 / 结束)", ["范围选择模式 (开始 / 结束)", "範囲選択モード (開始 / 終了)", "Range Selection Mode (start / end)"]),
+    ("标签跳转", ["标签跳转", "タグジャンプ", "Tag Jump"]),
+    ("标签跳转: 返回", ["标签跳转: 返回", "タグジャンプ: 戻る", "Tag Jump: Back"]),
+    ("指定关键字的标签跳转…", ["指定关键字的标签跳转…", "キーワード指定のタグジャンプ…", "Tag Jump to Keyword…"]),
+    ("生成标签文件 (tags)", ["生成标签文件 (tags)", "タグファイル (tags) を作成", "Make Tags File (tags)"]),
+    ("增量查找: 向后", ["增量查找: 向后", "インクリメンタル検索: 下へ", "Incremental Search: Forward"]),
+    ("增量查找: 向前", ["增量查找: 向前", "インクリメンタル検索: 上へ", "Incremental Search: Backward"]),
+    ("增量查找: 正则 向后", ["增量查找: 正则 向后", "インクリメンタル検索: 正規表現 下へ", "Incremental Search: Regex Forward"]),
+    ("增量查找: 正则 向前", ["增量查找: 正则 向前", "インクリメンタル検索: 正規表現 上へ", "Incremental Search: Regex Backward"]),
+    ("增量查找: Migemo 向后", ["增量查找: Migemo 向后", "インクリメンタル検索: Migemo 下へ", "Incremental Search: Migemo Forward"]),
+    ("增量查找: Migemo 向前", ["增量查找: Migemo 向前", "インクリメンタル検索: Migemo 上へ", "Incremental Search: Migemo Backward"]),
+    ("Base64 解码", ["Base64 解码", "Base64 デコード", "Base64 Decode"]),
+    ("uudecode 解码", ["uudecode 解码", "uudecode デコード", "uudecode Decode"]),
+    ("复制为彩色 HTML", ["复制为彩色 HTML", "色付き HTML としてコピー", "Copy as Colored HTML"]),
+    ("复制为彩色 HTML (带行号)", ["复制为彩色 HTML (带行号)", "色付き HTML としてコピー (行番号付き)", "Copy as Colored HTML (with line numbers)"]),
+    ("剪贴板历史…", ["剪贴板历史…", "クリップボード履歴…", "Clipboard History…"]),
+    ("插入控制字符…", ["插入控制字符…", "制御文字を挿入…", "Insert Control Character…"]),
+    ("插入日期", ["插入日期", "日付を挿入", "Insert Date"]),
+    ("插入时间", ["插入时间", "時刻を挿入", "Insert Time"]),
+    ("插入戳记", ["插入戳记", "スタンプを挿入", "Insert Stamp"]),
+    ("戳记设置…", ["戳记设置…", "スタンプ設定…", "Stamp Settings…"]),
+    ("按指定列数折行…", ["按指定列数折行…", "指定桁で折り返し…", "Wrap at Column…"]),
+    ("按窗口宽度折行", ["按窗口宽度折行", "ウィンドウ幅で折り返し", "Wrap at Window Width"]),
+    ("不折行", ["不折行", "折り返さない", "No Wrap"]),
+    ("展开", ["展开", "展開", "Expand"]),
+    ("折叠", ["折叠", "折りたたむ", "Collapse"]),
+    ("最小化", ["最小化", "最小化", "Minimize"]),
+    ("最大化", ["最大化", "最大化", "Maximize"]),
+    ("还原", ["还原", "元に戻す", "Restore"]),
+    ("展开导航 / 文件", ["展开导航 / 文件", "ナビ / ファイルを展開", "Expand Navigation / Files"]),
+    ("折叠导航 / 文件", ["折叠导航 / 文件", "ナビ / ファイルを折りたたむ", "Collapse Navigation / Files"]),
+    ("展开 Chat", ["展开 Chat", "チャットを展開", "Expand Chat"]),
+    ("折叠 Chat", ["折叠 Chat", "チャットを折りたたむ", "Collapse Chat"]),
+    ("展开底部面板", ["展开底部面板", "下パネルを展開", "Expand Bottom Panel"]),
+    ("粗体 (Ctrl+B)", ["粗体 (Ctrl+B)", "太字 (Ctrl+B)", "Bold (Ctrl+B)"]),
+    ("斜体 (Ctrl+I)", ["斜体 (Ctrl+I)", "斜体 (Ctrl+I)", "Italic (Ctrl+I)"]),
+    ("删除线 (Ctrl+Shift+X)", ["删除线 (Ctrl+Shift+X)", "取り消し線 (Ctrl+Shift+X)", "Strikethrough (Ctrl+Shift+X)"]),
+    ("高亮 ==文字==", ["高亮 ==文字==", "ハイライト ==文字==", "Highlight ==text=="]),
+    ("行内代码 (Ctrl+E)", ["行内代码 (Ctrl+E)", "インラインコード (Ctrl+E)", "Inline code (Ctrl+E)"]),
+    ("标题 1 (Ctrl+Alt+1)", ["标题 1 (Ctrl+Alt+1)", "見出し 1 (Ctrl+Alt+1)", "Heading 1 (Ctrl+Alt+1)"]),
+    ("标题 2 (Ctrl+Alt+2)", ["标题 2 (Ctrl+Alt+2)", "見出し 2 (Ctrl+Alt+2)", "Heading 2 (Ctrl+Alt+2)"]),
+    ("标题 3 (Ctrl+Alt+3)", ["标题 3 (Ctrl+Alt+3)", "見出し 3 (Ctrl+Alt+3)", "Heading 3 (Ctrl+Alt+3)"]),
+    ("• 列表", ["• 列表", "• リスト", "• List"]),
+    ("1. 列表", ["1. 列表", "1. 番号付きリスト", "1. List"]),
+    ("链接 (Ctrl+Shift+K)", ["链接 (Ctrl+Shift+K)", "リンク (Ctrl+Shift+K)", "Link (Ctrl+Shift+K)"]),
+    ("表格 3×3", ["表格 3×3", "表 3×3", "Table 3×3"]),
+    ("{ } 代码块", ["{ } 代码块", "{ } コードブロック", "{ } Code block"]),
+    ("围栏代码块 (自动选安全围栏)", ["围栏代码块 (自动选安全围栏)", "フェンスコードブロック (安全なフェンスを自動選択)", "Fenced code block (picks a safe fence)"]),
+    ("↑ 章节", ["↑ 章节", "↑ 章", "↑ Section"]),
+    ("把光标所在章节(含子章节)上移一格", ["把光标所在章节(含子章节)上移一格", "カーソル位置の章 (子章を含む) を 1 つ上へ", "Move the section at the cursor (with subsections) up one"]),
+    ("↓ 章节", ["↓ 章节", "↓ 章", "↓ Section"]),
+    ("把光标所在章节(含子章节)下移一格", ["把光标所在章节(含子章节)下移一格", "カーソル位置の章 (子章を含む) を 1 つ下へ", "Move the section at the cursor (with subsections) down one"]),
+    ("Mermaid 图 (需要渲染插件才能在预览里出图)", ["Mermaid 图 (需要渲染插件才能在预览里出图)", "Mermaid 図 (プレビュー表示にはレンダリングプラグインが必要)", "Mermaid diagram (needs a rendering plugin to show in the preview)"]),
+    ("新建文件", ["新建文件", "新規ファイル", "New File"]),
+    ("新建文件夹", ["新建文件夹", "新規フォルダー", "New Folder"]),
+    ("Grep 置换", ["Grep 置换", "Grep 置換", "Grep Replace"]),
+    ("Grep 结果", ["Grep 结果", "Grep 結果", "Grep Results"]),
+    ("录制的宏.mac", ["录制的宏.mac", "記録したマクロ.mac", "Recorded macro.mac"]),
+    ("插件包", ["插件包", "プラグインパッケージ", "Plugin package"]),
+    ("保存 ·", ["保存 ·", "保存 ·", "Save ·"]),
+    ("终端 ·", ["终端 ·", "ターミナル ·", "Terminal ·"]),
+    ("帮助", ["帮助", "ヘルプ", "Help"]),
+    ("运行宏 1", ["运行宏 1", "マクロ 1 を実行", "Run Macro 1"]),
+    ("运行宏 2", ["运行宏 2", "マクロ 2 を実行", "Run Macro 2"]),
+    ("运行宏 3", ["运行宏 3", "マクロ 3 を実行", "Run Macro 3"]),
+    ("运行宏 4", ["运行宏 4", "マクロ 4 を実行", "Run Macro 4"]),
+    ("运行宏 5", ["运行宏 5", "マクロ 5 を実行", "Run Macro 5"]),
+    ("运行宏 6", ["运行宏 6", "マクロ 6 を実行", "Run Macro 6"]),
+    ("运行宏 7", ["运行宏 7", "マクロ 7 を実行", "Run Macro 7"]),
+    ("运行宏 8", ["运行宏 8", "マクロ 8 を実行", "Run Macro 8"]),
+    ("运行宏 9", ["运行宏 9", "マクロ 9 を実行", "Run Macro 9"]),
+    ("运行宏 10", ["运行宏 10", "マクロ 10 を実行", "Run Macro 10"]),
+    ("运行宏 11", ["运行宏 11", "マクロ 11 を実行", "Run Macro 11"]),
+    ("运行宏 12", ["运行宏 12", "マクロ 12 を実行", "Run Macro 12"]),
+    ("运行宏 13", ["运行宏 13", "マクロ 13 を実行", "Run Macro 13"]),
+    ("运行宏 14", ["运行宏 14", "マクロ 14 を実行", "Run Macro 14"]),
+    ("运行宏 15", ["运行宏 15", "マクロ 15 を実行", "Run Macro 15"]),
+    ("运行宏 16", ["运行宏 16", "マクロ 16 を実行", "Run Macro 16"]),
+    ("运行宏 17", ["运行宏 17", "マクロ 17 を実行", "Run Macro 17"]),
+    ("运行宏 18", ["运行宏 18", "マクロ 18 を実行", "Run Macro 18"]),
+    ("运行宏 19", ["运行宏 19", "マクロ 19 を実行", "Run Macro 19"]),
+    ("运行宏 20", ["运行宏 20", "マクロ 20 を実行", "Run Macro 20"]),
+    ("新", ["新", "新", "N"]),
+    ("开", ["开", "開", "O"]),
+    ("存", ["存", "保", "S"]),
+    ("找", ["找", "検", "F"]),
     // 选择列表 / 关键字帮助 (0.3.8)
     ("窗口一览…", ["窗口一览…", "ウィンドウ一覧…", "Window List…"]),
     ("窗口一览", ["窗口一览", "ウィンドウ一覧", "Window List"]),
@@ -920,4 +1095,118 @@ mod tests {
         }
         assert!(n > 50, "应当扫到不少键 (实际 {n})");
     }
+    // ---------------------------------------------------------------- 翻译覆盖 (以后新增文字忘了补翻译会在这里红)
+
+    fn has_han(s: &str) -> bool {
+        s.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+    }
+
+    /// 把源码里的字符串字面量还原成运行时的样子 (只处理这里用到的几种转义)
+    fn unescape(s: &str) -> String {
+        s.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\")
+    }
+
+    /// 读 `from` 开头的字面量 (`from` 之后紧跟的第一个 `"` 起, 到没被转义的下一个 `"` 止)
+    fn literal_after(src: &str, at: usize) -> Option<String> {
+        let rest = &src[at..];
+        let open = rest.find('"')?;
+        let body = &rest[open + 1..];
+        let mut esc = false;
+        for (i, c) in body.char_indices() {
+            if esc { esc = false; continue; }
+            if c == '\\' { esc = true; continue; }
+            if c == '"' { return Some(unescape(&body[..i])); }
+        }
+        None
+    }
+
+    /// 所有非测试源码 (去掉每个文件 `#[cfg(test)]` 之后的部分)
+    fn sources() -> Vec<(String, String)> {
+        fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+            for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let p = e.path();
+                if p.is_dir() { walk(&p, out); continue; }
+                if p.extension().is_some_and(|x| x == "rs") {
+                    let s = std::fs::read_to_string(&p).unwrap_or_default();
+                    let live = s.split("#[cfg(test)]").next().unwrap_or("").to_string();
+                    out.push((p.display().to_string(), live));
+                }
+            }
+        }
+        let mut v = vec![];
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut v);
+        v
+    }
+
+    /// 命令表里每个命令的标签, 在日 / 英界面都不能还是中文
+    #[test]
+    fn every_registry_label_is_translated_in_every_language() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut bad = vec![];
+        set(Lang::En);
+        for e in crate::keymap::entries() {
+            let t = e.label.text();
+            if has_han(&t) { bad.push(format!("{} ({})", t, e.id)); }
+        }
+        set(Lang::Zh);
+        assert!(bad.is_empty(), "命令标签缺翻译: {bad:?}");
+    }
+
+    /// 代码里每个 `trz("中文")` / `app_label(KApp::X, "中文")` 都得在翻译表里
+    #[test]
+    fn every_trz_literal_exists_in_the_table() {
+        let mut missing = vec![];
+        for (file, src) in sources() {
+            if file.ends_with("i18n.rs") { continue; }
+            for pat in ["trz(\"", "app_label(KApp::"] {
+                let mut from = 0;
+                while let Some(p) = src[from..].find(pat) {
+                    let at = from + p;
+                    from = at + pat.len();
+                    let before = src[..at].chars().last();
+                    if before.is_some_and(|c| c.is_alphanumeric() || c == '_') { continue; }
+                    // app_label 的字面量在逗号之后; trz 的紧跟在括号后
+                    let start = if pat.starts_with("trz") { at + pat.len() - 1 } else { match src[at..].find(',') { Some(c) => at + c, None => continue } };
+                    let Some(lit) = literal_after(&src, start) else { continue };
+                    if has_han(&lit) && !zh_index().contains_key(lit.as_str()) { missing.push(format!("{}: {lit}", file.rsplit('/').next().unwrap_or(&file))); }
+                }
+            }
+        }
+        missing.sort();
+        missing.dedup();
+        assert!(missing.is_empty(), "这些中文没有翻译表条目: {missing:#?}");
+    }
+
+    /// 代码里每条直接写进 `tip` 的中文提示 (含 `format!` 的模板) 都得能被 msgtr 翻成日 / 英
+    #[test]
+    fn every_literal_status_tip_has_a_message_template() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut missing = vec![];
+        for (file, src) in sources() {
+            if file.ends_with("i18n.rs") || file.ends_with("msgtr.rs") { continue; }
+            let mut from = 0;
+            while let Some(p) = src[from..].find("tip = ") {
+                let at = from + p + "tip = ".len();
+                from = at;
+                let head = src[at..].trim_start();
+                let lit_from = if head.starts_with("format!(") { at + src[at..].find("format!(").unwrap_or(0) } else if head.starts_with('"') { at } else { continue };
+                let Some(lit) = literal_after(&src, lit_from) else { continue };
+                if !has_han(&lit) { continue; }
+                // `{}` / `{name}` / `{n:>3}` 都当成一个占位
+                let mut sample = String::new();
+                let mut depth = 0;
+                for c in lit.chars() {
+                    match c { '{' => { depth += 1; if depth == 1 { sample.push('x'); } } '}' => depth = (depth - 1).max(0), _ if depth == 0 => sample.push(c), _ => {} }
+                }
+                set(Lang::En);
+                let out = crate::msgtr::msg(&sample).into_owned();
+                set(Lang::Zh);
+                if has_han(&out) { missing.push(format!("{}: {lit}", file.rsplit('/').next().unwrap_or(&file))); }
+            }
+        }
+        missing.sort();
+        missing.dedup();
+        assert!(missing.is_empty(), "这些状态栏提示没有 msgtr 模板: {missing:#?}");
+    }
+
 }

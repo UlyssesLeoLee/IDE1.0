@@ -103,7 +103,7 @@ impl App {
         let font = FontId::proportional(12.0);
         let mut job = egui::text::LayoutJob::default();
         if let Some(c) = gcol { job.append("● ", 0.0, egui::TextFormat::simple(font.clone(), c)); }
-        job.append(&doc.name, 0.0, egui::TextFormat::simple(font.clone(), fg));
+        job.append(crate::msgtr::msg(&doc.name).as_ref(), 0.0, egui::TextFormat::simple(font.clone(), fg));
         job.wrap = egui::text::TextWrapping { max_width: TAB_MAX_W - PAD_L - PAD_R, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
         let galley = ui.painter().layout_job(job);
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(tab_width(galley.size().x), TAB_H), Sense::click());
