@@ -1,0 +1,508 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mE:/IDE1.0/gemarc-5d-atlas-v10.0[39m
+
+TAP version 13
+# Subtest: 每个节点的 role 都是合法功能角色（否则 3D 几何退化）
+ok 1 - 每个节点的 role 都是合法功能角色（否则 3D 几何退化）
+  ---
+  duration_ms: 3.0117
+  type: 'test'
+  ...
+# Subtest: 每个节点都有 3D 偏移与宝石映射（缺失会在 3D 中被静默跳过）
+ok 2 - 每个节点都有 3D 偏移与宝石映射（缺失会在 3D 中被静默跳过）
+  ---
+  duration_ms: 4.5221
+  type: 'test'
+  ...
+# Subtest: 节点的端口与父容器都真实存在
+ok 3 - 节点的端口与父容器都真实存在
+  ---
+  duration_ms: 0.4301
+  type: 'test'
+  ...
+# Subtest: 规则的 edgeId 全部指向真实边，且端点与边一致
+ok 4 - 规则的 edgeId 全部指向真实边，且端点与边一致
+  ---
+  duration_ms: 0.3899
+  type: 'test'
+  ...
+# Subtest: Case 引用的节点/边/证据全部存在
+ok 5 - Case 引用的节点/边/证据全部存在
+  ---
+  duration_ms: 0.3654
+  type: 'test'
+  ...
+# Subtest: 5D 预设的目标与基线 Case 都真实存在（否则退化为 UNKNOWN）
+ok 6 - 5D 预设的目标与基线 Case 都真实存在（否则退化为 UNKNOWN）
+  ---
+  duration_ms: 0.1603
+  type: 'test'
+  ...
+# Subtest: Prompt 的四类引用 ID 全部可解析（1D 校验是硬错误）
+ok 7 - Prompt 的四类引用 ID 全部可解析（1D 校验是硬错误）
+  ---
+  duration_ms: 0.3502
+  type: 'test'
+  ...
+# Subtest: 需求的证据引用全部存在
+ok 8 - 需求的证据引用全部存在
+  ---
+  duration_ms: 0.2833
+  type: 'test'
+  ...
+# Subtest: 原型工作区具备多标签、预置控件与 Action（不是只有 Konva 图形）
+ok 9 - 原型工作区具备多标签、预置控件与 Action（不是只有 Konva 图形）
+  ---
+  duration_ms: 0.4227
+  type: 'test'
+  ...
+# Subtest: 同一 Case 两次执行得到完全相同的事件轨迹（确定性）
+ok 10 - 同一 Case 两次执行得到完全相同的事件轨迹（确定性）
+  ---
+  duration_ms: 4.0759
+  type: 'test'
+  ...
+# Subtest: 事件序号与逻辑时间严格升序
+ok 11 - 事件序号与逻辑时间严格升序
+  ---
+  duration_ms: 0.5318
+  type: 'test'
+  ...
+# Subtest: 全部 Case 都能真实执行，无异常抛出
+ok 12 - 全部 Case 都能真实执行，无异常抛出
+  ---
+  duration_ms: 1.7835
+  type: 'test'
+  ...
+# Subtest: 守卫缺少变量时判否（缺标比错标安全）
+ok 13 - 守卫缺少变量时判否（缺标比错标安全）
+  ---
+  duration_ms: 0.1342
+  type: 'test'
+  ...
+# Subtest: 预算上限生效：超限抛 BudgetExceeded 而不是静默截断
+ok 14 - 预算上限生效：超限抛 BudgetExceeded 而不是静默截断
+  ---
+  duration_ms: 1.4734
+  type: 'test'
+  ...
+# Subtest: 越界路径场景下 DocStore 不被进入（沙箱与存储守卫双重拦截）
+ok 15 - 越界路径场景下 DocStore 不被进入（沙箱与存储守卫双重拦截）
+  ---
+  duration_ms: 0.1744
+  type: 'test'
+  ...
+# Subtest: 未知 RPC 方法不改变任何内核状态（零状态转移是预期语义）
+ok 16 - 未知 RPC 方法不改变任何内核状态（零状态转移是预期语义）
+  ---
+  duration_ms: 0.1086
+  type: 'test'
+  ...
+# Subtest: 干预目标不存在时返回 UNKNOWN 而不是 NO_DIFFERENCE
+ok 17 - 干预目标不存在时返回 UNKNOWN 而不是 NO_DIFFERENCE
+  ---
+  duration_ms: 0.588
+  type: 'test'
+  ...
+# Subtest: 禁用沙箱节点后越界请求仍被存储边守卫挡住（守门点是守卫条件）
+ok 18 - 禁用沙箱节点后越界请求仍被存储边守卫挡住（守门点是守卫条件）
+  ---
+  duration_ms: 1.9293
+  type: 'test'
+  ...
+# Subtest: 插入元素必须真正把 A→B 改写为 A→X→B，旧边从模型中移除并留痕
+ok 19 - 插入元素必须真正把 A→B 改写为 A→X→B，旧边从模型中移除并留痕
+  ---
+  duration_ms: 1.4636
+  type: 'test'
+  ...
+# Subtest: 干预只作用于副本，正式事实图不被修改
+ok 20 - 干预只作用于副本，正式事实图不被修改
+  ---
+  duration_ms: 1.3432
+  type: 'test'
+  ...
+# Subtest: 超时干预真实改变终态（Failed ↔ Completed）
+ok 21 - 超时干预真实改变终态（Failed ↔ Completed）
+  ---
+  duration_ms: 1.9258
+  type: 'test'
+  ...
+# Subtest: 全部 5D 预设都能产出解释（不得抛异常）
+ok 22 - 全部 5D 预设都能产出解释（不得抛异常）
+  ---
+  duration_ms: 17.1311
+  type: 'test'
+  ...
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mvalidate.js · 记录校验[2m > [22m缺必填字段必须报错[32m 2[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mvalidate.js · 记录校验[2m > [22m类型不符必须报错[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mvalidate.js · 记录校验[2m > [22m枚举值必须被接受/拒绝[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mvalidate.js · 记录校验[2m > [22m全模型集合校验应通过（不得有悬空字段）[32m 2[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22m必须支持平行边 (MultiEdge)[32m 4[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22m必须支持自环 (SelfLoop)[32m 1[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22m必须能检出有向环[32m 1[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22mfindPath 必须给出路径；不可达时返回 null[32m 1[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22mancestors / descendants 必须沿有向边计算[32m 1[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22mfindImpactSubgraph 必须返回受影响子图[32m 1[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mgraph.js · 图底座能力[2m > [22m真实模型必须能被图底座加载且无重复 ID[32m 1[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mengine.js · 4D 离散事件引擎[2m > [22m必须能运行一个真实 Case 并产生事件[32m 11[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mengine.js · 4D 离散事件引擎[2m > [22m确定性：同 seed 同输入 ⇒ 同轨迹[32m 0[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mengine.js · 4D 离散事件引擎[2m > [22m预算超限必须抛 BudgetExceeded，不得静默截断[32m 5[2mms[22m[39m
+[31m   → expected [Function] to throw error matching /maxEvents/ but got 'unknown case: CASE-VAULT-WRITE-NORMAL'[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mengine.js · 4D 离散事件引擎[2m > [22m守卫求值：equals / not / and / or 必须按语义[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mengine.js · 4D 离散事件引擎[2m > [22m未知 guard 类型必须判否（缺标比错标安全）[32m 0[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mengine.js · 4D 离散事件引擎[2m > [22m事件序列号必须严格递增[32m 0[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22m干预存在但对该 Case 无影响时必须给 NO_DIFFERENCE，不得伪造分支[32m 1[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22m干预目标不存在时必须给 UNKNOWN（不是 NO_DIFFERENCE）[32m 0[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22mDisableNode 必须改变轨迹并报 DIVERGED[32m 0[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22mInsertElement 必须真正重写 Edge（旧边移出生效边集，新边成对出现）[32m 2[2mms[22m[39m
+[31m   → expected 'target edge not found: E-005' to be undefined[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22m正式事实图不得被干预修改[32m 3[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22m干预目标不存在时必须给 UNKNOWN 而不是猜测[32m 1[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mcausal.js · 5D 因果实验[2m > [22mDisableNode 指向不存在的节点时必须给 UNKNOWN（不得误报 NO_DIFFERENCE）[32m 1[2mms[22m[39m
+[31m   → unknown case: CASE-VAULT-WRITE-NORMAL[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22mprompt.js · 1D Prompt[2m > [22m合法 Prompt 必须通过校验[32m 4[2mms[22m[39m
+[31m   → expected false to be true // Object.is equality[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mprompt.js · 1D Prompt[2m > [22m未知 ID 必须报错（不得放行）[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mprompt.js · 1D Prompt[2m > [22m缺 objective 必须报错[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mprompt.js · 1D Prompt[2m > [22m版本差分必须报告变化的字段[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mprompt.js · 1D Prompt[2m > [22m渲染必须包含全部 schema 段[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mdiagrams.js · 2D 工程图渲染器[2m > [22m必须实现全部 14 种 diagramType[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mdiagrams.js · 2D 工程图渲染器[2m > [22m每种图种都必须渲染出非空 SVG[32m 12[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mdiagrams.js · 2D 工程图渲染器[2m > [22m未知 diagramType 必须显式失败，不得退化成 Sequence[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mdiagrams.js · 2D 工程图渲染器[2m > [22m必须转义 HTML 特殊字符（不得注入）[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22mdiagrams.js · 2D 工程图渲染器[2m > [22mER 图必须带基数标注，UML_Sequence 必须带生命线[32m 1[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m每个 Case 都必须至少产生一次 Transition（不得出现零转移 Case）[32m 4[2mms[22m[39m
+[31m   → expected [ 'C-RPC-UNKNOWN-METHOD', …(2) ] to deeply equal [][39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m守卫引用的变量若未提供，守卫必须判否（缺标比错标安全）[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m拒绝类规则必须排在同边的接受类规则之前[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m所有 id 必须唯一（node / edge / rule / case / evidence / stateMachine）[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m边与规则必须能解析到真实节点（无悬空引用）[32m 1[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m每条规则的 when 必须等于其源节点在可达状态机中的状态[32m 1[2mms[22m[39m
+[31m   → expected [ …(3) ] to deeply equal [][39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22mevalGuard 对缺失变量必须判否（直接断言算子语义，不依赖任何 Case 数据）[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22mevalGuard 必须区分「缺失」与「合法 falsy 值」[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22mwhen 不满足时规则不得触发（动态防线：把 whenSatisfied 改成恒真会被此条抓住）[32m 0[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22m真实 Case 里 when 不满足的规则确实未触发[32m 1[2mms[22m[39m
+[31m   → Cannot read properties of undefined (reading 'id')[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22mfindCycles 必须分别检出多个不同的自环[32m 2[2mms[22m[39m
+[31m   → Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs[39m
+ [32m✓[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22mvalidate 必须逐个校验数组元素类型[32m 2[2mms[22m[39m
+ [31m×[39m tests/unit/core.test.mjs[2m > [22m对抗式审核回归防线[2m > [22mInsertElement 改写后旧边不得再触发（真正改写，不是新旧并联）[32m 2[2mms[22m[39m
+[31m   → expected 'target edge not found: E-005' to be undefined[39m
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/atlas.test.mjs [ tests/unit/atlas.test.mjs ]
+Error: No test suite found in file E:/IDE1.0/gemarc-5d-atlas-v10.0/tests/unit/atlas.test.mjs
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/24]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 23 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > 必须支持平行边 (MultiEdge)
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > 必须支持自环 (SelfLoop)
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > 必须能检出有向环
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > findPath 必须给出路径；不可达时返回 null
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > ancestors / descendants 必须沿有向边计算
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > findImpactSubgraph 必须返回受影响子图
+ FAIL  tests/unit/core.test.mjs > graph.js · 图底座能力 > 真实模型必须能被图底座加载且无重复 ID
+ FAIL  tests/unit/core.test.mjs > 对抗式审核回归防线 > findCycles 必须分别检出多个不同的自环
+Error: Cannot find module 'graphology'
+Require stack:
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js
+- E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs
+ ❯ getGraphology src/graph.js:17:64
+ ❯ Object.createGraph src/graph.js:26:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'MODULE_NOT_FOUND', requireStack: [ 'E:\IDE1.0\gemarc-5d-atlas-v10.0\src\graph.js', 'E:\IDE1.0\gemarc-5d-atlas-v10.0\tests\unit\core.test.mjs' ] }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > engine.js · 4D 离散事件引擎 > 必须能运行一个真实 Case 并产生事件
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ tests/unit/core.test.mjs:137:24
+    135| 
+    136|   it("必须能运行一个真实 Case 并产生事件", () => {
+    137|     const run = engine.run("CASE-VAULT-WRITE-NORMAL", { seed: 1, input…
+       |                        ^
+    138|     expect(run.eventCount).toBeGreaterThan(0);
+    139|     expect(run.events.every((e) => typeof e.sequence === "number")).to…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > engine.js · 4D 离散事件引擎 > 确定性：同 seed 同输入 ⇒ 同轨迹
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ tests/unit/core.test.mjs:144:22
+    142| 
+    143|   it("确定性：同 seed 同输入 ⇒ 同轨迹", () => {
+    144|     const a = engine.run("CASE-VAULT-WRITE-NORMAL", { seed: 7, inputs:…
+       |                      ^
+    145|     const b = engine.run("CASE-VAULT-WRITE-NORMAL", { seed: 7, inputs:…
+    146|     expect(JSON.stringify(a.events)).toBe(JSON.stringify(b.events));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > engine.js · 4D 离散事件引擎 > 预算超限必须抛 BudgetExceeded，不得静默截断
+AssertionError: expected [Function] to throw error matching /maxEvents/ but got 'unknown case: CASE-VAULT-WRITE-NORMAL'
+
+- Expected: 
+/maxEvents/
+
++ Received: 
+"unknown case: CASE-VAULT-WRITE-NORMAL"
+
+ ❯ tests/unit/core.test.mjs:152:8
+    150|     const tiny = EngineLib.createEngine(model, { maxEvents: 1 });
+    151|     expect(() => tiny.run("CASE-VAULT-WRITE-NORMAL", { seed: 1, inputs…
+    152|       .toThrowError(/maxEvents/);
+       |        ^
+    153|   });
+    154| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > engine.js · 4D 离散事件引擎 > 事件序列号必须严格递增
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ tests/unit/core.test.mjs:170:24
+    168| 
+    169|   it("事件序列号必须严格递增", () => {
+    170|     const run = engine.run("CASE-VAULT-WRITE-NORMAL", { seed: 1, input…
+       |                        ^
+    171|     for (let i = 1; i < run.events.length; i++) {
+    172|       expect(run.events[i].sequence).toBeGreaterThan(run.events[i - 1]…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > causal.js · 5D 因果实验 > 干预存在但对该 Case 无影响时必须给 NO_DIFFERENCE，不得伪造分支
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ Object.compare src/causal.js:256:18
+ ❯ tests/unit/core.test.mjs:189:25
+    187|     // E-007 = N-API-ROUTER → N-REPO-STORE：CASE-VAULT-WRITE-NORMAL 不会走…
+    188|     // 因此改它的守卫对该 Case 无影响 → 应报 NO_DIFFERENCE（而不是编造分歧）
+    189|     const c = CausalLib.compare(engine, "CASE-VAULT-WRITE-NORMAL",
+       |                         ^
+    190|       { id: "IV0", kind: "ChangeGuard", targetId: "E-007", params: { g…
+    191|       { seed: 1, inputs });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > causal.js · 5D 因果实验 > 干预目标不存在时必须给 UNKNOWN（不是 NO_DIFFERENCE）
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ Object.compare src/causal.js:256:18
+ ❯ tests/unit/core.test.mjs:197:25
+    195| 
+    196|   it("干预目标不存在时必须给 UNKNOWN（不是 NO_DIFFERENCE）", () => {
+    197|     const c = CausalLib.compare(engine, "CASE-VAULT-WRITE-NORMAL",
+       |                         ^
+    198|       { id: "IV1", kind: "ChangeGuard", targetId: "E-999-NOT-EXIST", p…
+    199|       { seed: 1, inputs });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > causal.js · 5D 因果实验 > DisableNode 必须改变轨迹并报 DIVERGED
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ Object.compare src/causal.js:256:18
+ ❯ tests/unit/core.test.mjs:205:25
+    203| 
+    204|   it("DisableNode 必须改变轨迹并报 DIVERGED", () => {
+    205|     const c = CausalLib.compare(engine, "CASE-VAULT-WRITE-NORMAL",
+       |                         ^
+    206|       { id: "IV2", kind: "DisableNode", targetId: "N-VAULT-FILE", para…
+    207|       { seed: 1, inputs });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > causal.js · 5D 因果实验 > InsertElement 必须真正重写 Edge（旧边移出生效边集，新边成对出现）
+AssertionError: expected 'target edge not found: E-005' to be undefined
+
+- Expected: 
+undefined
+
++ Received: 
+"target edge not found: E-005"
+
+ ❯ tests/unit/core.test.mjs:218:27
+    216|       params: { nodeId: "X-CACHE", name: "Vault Cache", kind: "Process…
+    217|     });
+    218|     expect(applied.error).toBeUndefined();
+       |                           ^
+    219|     // 旧边必须从生效边集里消失（只打 removed 标记而留着 = 并联，不是改写）
+    220|     expect(applied.model.edges.some((e) => e.id === "E-005")).toBe(fal…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > causal.js · 5D 因果实验 > 干预目标不存在时必须给 UNKNOWN 而不是猜测
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ Object.compare src/causal.js:256:18
+ ❯ tests/unit/core.test.mjs:238:25
+    236| 
+    237|   it("干预目标不存在时必须给 UNKNOWN 而不是猜测", () => {
+    238|     const c = CausalLib.compare(engine, "CASE-VAULT-WRITE-NORMAL",
+       |                         ^
+    239|       { id: "IV5", kind: "InsertElement", targetId: "E-DOES-NOT-EXIST"…
+    240|       { seed: 1, inputs });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > causal.js · 5D 因果实验 > DisableNode 指向不存在的节点时必须给 UNKNOWN（不得误报 NO_DIFFERENCE）
+Error: unknown case: CASE-VAULT-WRITE-NORMAL
+ ❯ Object.run src/engine.js:225:24
+ ❯ Object.compare src/causal.js:256:18
+ ❯ tests/unit/core.test.mjs:246:25
+    244| 
+    245|   it("DisableNode 指向不存在的节点时必须给 UNKNOWN（不得误报 NO_DIFFERENCE）", () => {
+    246|     const c = CausalLib.compare(engine, "CASE-VAULT-WRITE-NORMAL",
+       |                         ^
+    247|       { id: "IV6", kind: "DisableNode", targetId: "N-DOES-NOT-EXIST", …
+    248|       { seed: 1, inputs });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > prompt.js · 1D Prompt > 合法 Prompt 必须通过校验
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/core.test.mjs:269:18
+    267|     });
+    268|     const r = PromptLib.validate(p, model);
+    269|     expect(r.ok).toBe(true);
+       |                  ^
+    270|     expect(r.errors).toEqual([]);
+    271|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > 对抗式审核回归防线 > 每个 Case 都必须至少产生一次 Transition（不得出现零转移 Case）
+AssertionError: expected [ 'C-RPC-UNKNOWN-METHOD', …(2) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "C-RPC-UNKNOWN-METHOD",
++   "C-E2E-CLICK-WEBVIEW2",
++   "C-COMBINED-BREACH",
++ ]
+
+ ❯ tests/unit/core.test.mjs:364:18
+    362|       if (transitions.length === 0) zero.push(c.id);
+    363|     }
+    364|     expect(zero).toEqual([]);
+       |                  ^
+    365|   });
+    366| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > 对抗式审核回归防线 > 每条规则的 when 必须等于其源节点在可达状态机中的状态
+AssertionError: expected [ …(3) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "R-FE2-WB source has no state machine: N-FE-CLIENT2",
++   "R-TERM-WB source has no state machine: N-WB-TERMINAL",
++   "R-DOCIO-BACKUP source has no state machine: N-EC-DOCIO",
++ ]
+
+ ❯ tests/unit/core.test.mjs:439:17
+    437|       }
+    438|     }
+    439|     expect(bad).toEqual([]);
+       |                 ^
+    440|   });
+    441| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > 对抗式审核回归防线 > 真实 Case 里 when 不满足的规则确实未触发
+TypeError: Cannot read properties of undefined (reading 'id')
+ ❯ tests/unit/core.test.mjs:493:27
+    491|     const eng = EngineLib.createEngine(model);
+    492|     const c = CASES.cases.find((x) => x.id === "CASE-VAULT-WRITE-EMPTY…
+    493|     const run = eng.run(c.id, { seed: c.seed || 1, inputs: Object.assi…
+       |                           ^
+    494|     const fired = run.events.filter((e) => e.kind === "Transition").ma…
+    495|     expect(fired).toContain("R-VAULT-REJECT-EMPTY");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/24]⎯
+
+ FAIL  tests/unit/core.test.mjs > 对抗式审核回归防线 > InsertElement 改写后旧边不得再触发（真正改写，不是新旧并联）
+AssertionError: expected 'target edge not found: E-005' to be undefined
+
+- Expected: 
+undefined
+
++ Received: 
+"target edge not found: E-005"
+
+ ❯ tests/unit/core.test.mjs:538:27
+    536|       params: { nodeId: "X-CACHE", name: "Vault Cache", kind: "Process…
+    537|     });
+    538|     expect(applied.error).toBeUndefined();
+       |                           ^
+    539|     // 旧边必须从生效边集里消失
+    540|     expect(applied.model.edges.some((e) => e.id === "E-005")).toBe(fal…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/24]⎯
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m23 failed[39m[22m[2m | [22m[1m[32m24 passed[39m[22m[90m (47)[39m
+[2m   Start at [22m 20:59:29
+[2m   Duration [22m 891ms[2m (transform 75ms, setup 0ms, collect 130ms, tests 76ms, environment 0ms, prepare 287ms)[22m
+

@@ -1,0 +1,1467 @@
+{
+  "schema": "ide1-5d-atlas/cases/v10.0",
+  "version": "ide1.0-factgraph-2026-10-23",
+  "note": "4D Case 集合。origin 严格区分：ObservedReplay = 有文档/测试轨迹证据的既有行为；DesignedSimulation = 本图集按真实代码结构建立的模拟；HypotheticalExperiment = 尚未实装能力的设计性实验。",
+  "caseClasses": [
+    "Normal",
+    "Abnormal",
+    "Boundary",
+    "Concurrent",
+    "Timeout",
+    "Retry",
+    "Recovery",
+    "Compensation",
+    "Combined",
+    "Environment"
+  ],
+  "cases": [
+    {
+      "id": "C-NORMAL-EDIT",
+      "name": "正常打开文件并编辑（含 undo 快照写入）",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "前端 editor.html 发起 /api/doc/open",
+          "HTTP 分发器先做 token/Origin/Host 校验",
+          "路径沙箱校验项目根、大小与编码",
+          "DocStore 打开文档并交给 Document",
+          "Document 绑定到 editcore 行存储，编辑写入 Ope 缓冲"
+        ],
+        "documentation": "UAT 手工验证记录：文件打开、树展开、标签切替、编辑、Undo/Redo 均 ✅"
+      },
+      "expected": [
+        "链路全程无 GuardBlocked",
+        "Document 与 Buffer 终态为 Completed",
+        "撤销栈已写入一条 Ope 记录"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-WB-AUTH",
+        "N-WB-PATHSAFETY",
+        "N-KN-DOCSTORE",
+        "N-KN-DOCUMENT",
+        "N-EC-BUFFER",
+        "N-EC-UNDO"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-AUTH",
+        "E-AUTH-TO-WB",
+        "E-WB-TO-SANDBOX",
+        "E-SANDBOX-TO-WB",
+        "E-WB-TO-STORE",
+        "E-STORE-TO-DOCUMENT",
+        "E-DOCUMENT-TO-BUFFER",
+        "E-BUFFER-TO-UNDO",
+        "E-UNDO-TO-DOCUMENT"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0013",
+        "EV-CODE-0020",
+        "EV-CODE-0016"
+      ],
+      "linkedTestIds": [
+        "UAT-E2E-EDITOR-01",
+        "UAT-E2E-EDITOR-02",
+        "UT-EDITCORE-UNDO-01"
+      ]
+    },
+    {
+      "id": "C-AUTH-REJECT",
+      "name": "恶意网页直连 127.0.0.1 被令牌校验拒绝",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "任意第三方网页对 http://127.0.0.1:8123/api/... 发起 fetch",
+          "缺少或错误的 x-ide-token",
+          "Host / Origin 校验不通过"
+        ],
+        "documentation": "auth.rs 顶部明确写明该威胁模型；测试覆盖 token 猜测失败与 evil.com Origin 拒绝"
+      },
+      "expected": [
+        "链路在认证边被阻断",
+        "不会进入 DocStore（无文件被打开）",
+        "错误码语义对应鉴权失败"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": false,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-WB-AUTH"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-AUTH",
+        "E-WB-TO-SANDBOX",
+        "E-WB-TO-STORE"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026"
+      ],
+      "linkedTestIds": [
+        "UT-WEB-AUTH-01"
+      ]
+    },
+    {
+      "id": "C-PATH-ESCAPE",
+      "name": "访问项目根外的路径被沙箱拒绝",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "请求读取项目根之外的路径",
+          "沙箱判定 pathWithinRoot = false",
+          "存储边守卫同时拒绝"
+        ],
+        "documentation": "CR-03 + NFR-05；path_safety 12 个单测；E004 路径不正"
+      },
+      "expected": [
+        "沙箱边被阻断",
+        "DocStore 不被进入",
+        "无任何文件内容外泄"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": false,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-WB-PATHSAFETY"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-AUTH",
+        "E-WB-TO-SANDBOX",
+        "E-WB-TO-STORE"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0004",
+        "EV-DOC-0014",
+        "EV-DOC-0008"
+      ],
+      "linkedTestIds": [
+        "UT-WEB-PATHSAFETY-04"
+      ]
+    },
+    {
+      "id": "C-SIZE-LIMIT",
+      "name": "超过 4MB 的文件被拒绝",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "请求读取 4MB 以上文件",
+          "sizeOk = false"
+        ],
+        "documentation": "NFR-06 + E002 サイズ超過"
+      },
+      "expected": [
+        "存储边被阻断",
+        "DocStore 不被进入"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": false,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-KN-DOCSTORE"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-STORE"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0008",
+        "EV-DOC-0014"
+      ],
+      "linkedTestIds": [
+        "UT-WEB-PATHSAFETY-02"
+      ]
+    },
+    {
+      "id": "C-ENCODING-REJECT",
+      "name": "非 UTF-8 内容被拒绝",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "请求读取非 UTF-8 编码文件",
+          "utf8Ok = false"
+        ],
+        "documentation": "NFR-07 / CR-04 + E003 エンコード不正"
+      },
+      "expected": [
+        "存储边被阻断",
+        "不进入解码路径"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": false,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-KN-DOCSTORE"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-STORE"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0008",
+        "EV-CODE-0044"
+      ],
+      "linkedTestIds": [
+        "UT-WEB-PATHSAFETY-03"
+      ]
+    },
+    {
+      "id": "C-FILE-NOT-FOUND",
+      "name": "打开不存在的文件",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "请求打开不存在的文件",
+          "fileExists = false"
+        ],
+        "documentation": "E001 ファイル未発見"
+      },
+      "expected": [
+        "Document 边被阻断",
+        "不会创建空文档掩盖错误"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": false,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-KN-DOCSTORE",
+        "N-KN-DOCUMENT"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-STORE",
+        "E-STORE-TO-DOCUMENT"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0008",
+        "EV-CODE-0016"
+      ],
+      "linkedTestIds": [
+        "IT-WEB-API-01"
+      ]
+    },
+    {
+      "id": "C-RPC-NORMAL",
+      "name": "JSON-RPC 正常调用（buffer 存在，方法已知）",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "客户端发 JSON-RPC 2.0 请求",
+          "handle_rpc 分派到 Kernel 方法"
+        ],
+        "documentation": "ide-shell-protocol 20 个已实现方法"
+      },
+      "expected": [
+        "RPC 进入 Kernel",
+        "未注册 provider 时不进入 AI 路径"
+      ],
+      "entryNodeId": "N-PT-RPC",
+      "entryNodes": [
+        "N-PT-RPC"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-PT-RPC",
+        "N-PT-KERNEL"
+      ],
+      "edgeIds": [
+        "E-RPC-TO-KERNEL",
+        "E-KERNEL-TO-AI"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0010",
+        "EV-CODE-0011"
+      ],
+      "linkedTestIds": [
+        "UT-PROTOCOL-RPC-01"
+      ]
+    },
+    {
+      "id": "C-RPC-UNKNOWN-METHOD",
+      "name": "调用未实现的方法返回 METHOD_NOT_FOUND",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "请求方法名不在已实现的 20 个方法内",
+          "handle_rpc 返回 -32601"
+        ],
+        "documentation": "JSON-RPC 标准错误码 -32601"
+      },
+      "expected": [
+        "不进入 Kernel",
+        "内核状态不被改动（因此本 Case 没有任何状态转移 —— 这是预期语义，不是覆盖缺口）",
+        "返回 -32601"
+      ],
+      "entryNodeId": "N-PT-RPC",
+      "entryNodes": [
+        "N-PT-RPC"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": false,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-PT-RPC"
+      ],
+      "edgeIds": [
+        "E-RPC-TO-KERNEL"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0008",
+        "EV-CODE-0011"
+      ],
+      "linkedTestIds": [
+        "UT-PROTOCOL-RPC-02"
+      ]
+    },
+    {
+      "id": "C-RPC-BUFFER-NOT-FOUND",
+      "name": "对不存在的 buffer 操作返回 BUFFER_NOT_FOUND",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "请求针对不存在的 buffer_id",
+          "Kernel 返回 -32001"
+        ],
+        "documentation": "自定义错误码区 -32000~-32099"
+      },
+      "expected": [
+        "RPC 进入 Failed 终态",
+        "对应错误码 -32001"
+      ],
+      "entryNodeId": "N-PT-RPC",
+      "entryNodes": [
+        "N-PT-RPC"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": false,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-PT-RPC",
+        "N-PT-KERNEL"
+      ],
+      "edgeIds": [
+        "E-RPC-ERR-BUFFER",
+        "E-RPC-TO-KERNEL"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0008"
+      ],
+      "linkedTestIds": [
+        "UT-PROTOCOL-RPC-03"
+      ]
+    },
+    {
+      "id": "C-AI-COMPLETE",
+      "name": "已注册 provider 时的 AI 补全路径",
+      "origin": "HypotheticalExperiment",
+      "scenario": {
+        "steps": [
+          "providerRegistered = true",
+          "Kernel 调用 AiProvider::complete"
+        ],
+        "documentation": "AiProvider trait 已定义但无生产实现 —— 本 Case 是对既定契约的设计性实验"
+      },
+      "expected": [
+        "进入 AI Provider 节点",
+        "该节点终态 Completed"
+      ],
+      "entryNodeId": "N-PT-RPC",
+      "entryNodes": [
+        "N-PT-RPC"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": true,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-PT-RPC",
+        "N-PT-KERNEL",
+        "N-PT-AIPROVIDER"
+      ],
+      "edgeIds": [
+        "E-RPC-TO-KERNEL",
+        "E-KERNEL-TO-AI"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0009",
+        "EV-CODE-0036"
+      ],
+      "linkedTestIds": [
+        "UT-PROTOCOL-AI-01"
+      ]
+    },
+    {
+      "id": "C-TERMINAL-PS",
+      "name": "桌面端真实拉起 PowerShell 并回显",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "invoke terminal_create",
+          "spawn powershell.exe (CREATE_NO_WINDOW)",
+          "stdin pipe 写入命令",
+          "reader 线程回传 stdout"
+        ],
+        "documentation": "UAT：Write-Host / Get-Date / Get-Location 全部实测有输出"
+      },
+      "expected": [
+        "powershell.exe 进入 Running 后 Completed",
+        "终端层回传桌面外壳"
+      ],
+      "entryNodeId": "N-DT-TAURI",
+      "entryNodes": [
+        "N-DT-TAURI"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": true,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": true
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-DT-TAURI",
+        "N-DT-TERMINAL",
+        "N-OS-PWSH"
+      ],
+      "edgeIds": [
+        "E-DT-TO-TERMINAL",
+        "E-TERM-TO-PSH",
+        "E-PSH-TO-TERM",
+        "E-TERM-TO-DT"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0013",
+        "EV-CODE-0029"
+      ],
+      "linkedTestIds": [
+        "UAT-E2E-TERMINAL-01"
+      ]
+    },
+    {
+      "id": "C-TERMINAL-MISSING",
+      "name": "环境缺少 powershell.exe（Linux CI）",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "CI 环境无 powershell.exe",
+          "终端创建请求被拒绝"
+        ],
+        "documentation": "DOC-11：terminal spec 5 case 在 Linux skip"
+      },
+      "expected": [
+        "终端边被阻断",
+        "桌面外壳状态不推进"
+      ],
+      "entryNodeId": "N-DT-TAURI",
+      "entryNodes": [
+        "N-DT-TAURI"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": false,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": false,
+        "webModeAvailable": false,
+        "desktopModeAvailable": true,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": true
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-DT-TAURI",
+        "N-DT-TERMINAL"
+      ],
+      "edgeIds": [
+        "E-DT-TO-TERMINAL"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0012"
+      ],
+      "linkedTestIds": [
+        "UAT-E2E-TERMINAL-02"
+      ]
+    },
+    {
+      "id": "C-SEARCH-RG",
+      "name": "工程搜索走 ripgrep",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "invoke search_cmd",
+          "rg 可用 → 直接调用"
+        ],
+        "documentation": "search.rs 主路径 + test_search_works_without_rg_binary 覆盖回落"
+      },
+      "expected": [
+        "rg 被调用并回传结果",
+        "回落边被阻断（守卫为 not rgAvailable）"
+      ],
+      "entryNodeId": "N-DT-SEARCH",
+      "entryNodes": [
+        "N-DT-SEARCH"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-DT-SEARCH",
+        "N-EXT-RG",
+        "N-EC-GREPENGINE"
+      ],
+      "edgeIds": [
+        "E-SEARCH-TO-RG",
+        "E-RG-TO-SEARCH",
+        "E-SEARCH-FALLBACK-TO-GREPENGINE"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ],
+      "linkedTestIds": [
+        "IT-DESKTOP-SEARCH-01"
+      ]
+    },
+    {
+      "id": "C-SEARCH-FALLBACK",
+      "name": "rg 缺失时回落内置搜索",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "rg 不在 PATH",
+          "search_fallback 接管",
+          "内置 grep_engine 执行"
+        ],
+        "documentation": "test_search_works_without_rg_binary"
+      },
+      "expected": [
+        "回落边生效",
+        "内置搜索引擎被进入",
+        "rg 边被阻断"
+      ],
+      "entryNodeId": "N-DT-SEARCH",
+      "entryNodes": [
+        "N-DT-SEARCH"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": false,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-DT-SEARCH",
+        "N-EC-GREPENGINE",
+        "N-EXT-RG"
+      ],
+      "edgeIds": [
+        "E-SEARCH-FALLBACK-TO-GREPENGINE",
+        "E-SEARCH-TO-RG"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0031",
+        "EV-CODE-0042"
+      ],
+      "linkedTestIds": [
+        "IT-DESKTOP-SEARCH-02"
+      ]
+    },
+    {
+      "id": "C-SCM-COMMIT",
+      "name": "在 git 仓库内执行状态查询",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "invoke scm_status",
+          "run_git 调外部 git",
+          "porcelain 输出解析"
+        ],
+        "documentation": "scm.rs + integration_status_in_real_repo 测试"
+      },
+      "expected": [
+        "git 被调用并回传",
+        "SCM 层终态 Completed"
+      ],
+      "entryNodeId": "N-DT-SCM",
+      "entryNodes": [
+        "N-DT-SCM"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-DT-SCM",
+        "N-EXT-GIT"
+      ],
+      "edgeIds": [
+        "E-SCM-TO-GIT",
+        "E-GIT-TO-SCM"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ],
+      "linkedTestIds": [
+        "IT-DESKTOP-SCM-01"
+      ]
+    },
+    {
+      "id": "C-GIT-NOT-REPO",
+      "name": "在非 git 目录执行 SCM 操作",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "is_git_repo 为 false",
+          "SCM 进入失败态"
+        ],
+        "documentation": "is_git_repo_detects_current_repo 测试"
+      },
+      "expected": [
+        "SCM 终态为 Failed",
+        "不会误判为已提交状态"
+      ],
+      "entryNodeId": "N-DT-SCM",
+      "entryNodes": [
+        "N-DT-SCM"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": false,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-DT-SCM",
+        "N-EXT-GIT"
+      ],
+      "edgeIds": [
+        "E-SCM-TO-GIT"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ],
+      "linkedTestIds": [
+        "IT-DESKTOP-SCM-02"
+      ]
+    },
+    {
+      "id": "C-PLUGIN-TIMEOUT",
+      "name": "wasm 插件执行超时并重试后恢复",
+      "origin": "DesignedSimulation",
+      "scenario": {
+        "steps": [
+          "桌面外壳 invoke plugin_load",
+          "wasm 插件执行",
+          "耗时 500ms 超过 100ms 时限",
+          "失败后按 retry.max=2 退避重试",
+          "自环边进入 Recovered"
+        ],
+        "documentation": "超时阈值与重试参数为设计值 —— 项目文档未记录插件超时门槛"
+      },
+      "expected": [
+        "插件节点先进入 Failed",
+        "出现 Retry 事件",
+        "最终经自环进入 Recovered"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": true,
+        "docRequested": false,
+        "pluginRequested": true,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-DT-TAURI",
+        "N-DT-PLUGIN"
+      ],
+      "edgeIds": [
+        "E-FE-TO-DT",
+        "E-DT-TO-PLUGIN",
+        "E-PLUGIN-TO-DT",
+        "E-PLUGIN-RETRY"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0032"
+      ],
+      "linkedTestIds": []
+    },
+    {
+      "id": "C-E2E-CLICK-WEBVIEW2",
+      "name": "CI Linux 环境程序化点击不触发 DOM 事件",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "Playwright page.click() 在 WebView2/CI 环境下不派发 DOM 事件",
+          "Tauri invoke 从未被调用",
+          "按钮逻辑完全不执行"
+        ],
+        "documentation": "DOC-11.B.2：11 个 fail 的根因分析（UIA 检测到 button=0；SendInput 到不了 webview 内部）"
+      },
+      "expected": [
+        "前端到桌面端的边被阻断",
+        "Rust 侧无任何状态变化",
+        "测试标记为环境限制而非代码缺陷"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": false,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": false,
+        "webModeAvailable": false,
+        "desktopModeAvailable": true,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-DT-TAURI"
+      ],
+      "edgeIds": [
+        "E-FE-TO-DT"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0012"
+      ],
+      "linkedTestIds": [
+        "UAT-E2E-UI-01"
+      ]
+    },
+    {
+      "id": "C-UNDO-REDO",
+      "name": "撤销/重做栈（Rust 化后）",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "编辑写入 Buffer",
+          "Ope 缓冲记录操作",
+          "Document 可 undo/redo"
+        ],
+        "documentation": "HEAD commit 76c4e8f：editcore::history 按标签页补丁栈；test_buffer_insert_undo_redo"
+      },
+      "expected": [
+        "撤销栈被写入",
+        "Document 与 Buffer 回到一致状态"
+      ],
+      "entryNodeId": "N-KN-DOCUMENT",
+      "entryNodes": [
+        "N-KN-DOCUMENT"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-KN-DOCUMENT",
+        "N-EC-BUFFER",
+        "N-EC-UNDO"
+      ],
+      "edgeIds": [
+        "E-DOCUMENT-TO-BUFFER",
+        "E-BUFFER-TO-UNDO",
+        "E-UNDO-TO-DOCUMENT"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0040",
+        "EV-CODE-0039",
+        "EV-DOC-0014"
+      ],
+      "linkedTestIds": [
+        "UT-EDITCORE-UNDO-01"
+      ]
+    },
+    {
+      "id": "C-AUTO-BACKUP",
+      "name": "自动备份周期触发",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "文档 IO 完成一次写入",
+          "5 分钟后自动备份触发",
+          "保留最近 10 世代"
+        ],
+        "documentation": "FR-15：auto_backup.rs 5 分周期 / 10 世代"
+      },
+      "expected": [
+        "备份节点终态 Completed",
+        "不干扰前台编辑链路"
+      ],
+      "entryNodeId": "N-EC-DOCIO",
+      "entryNodes": [
+        "N-EC-DOCIO"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-EC-DOCIO",
+        "N-EC-AUTOBACKUP"
+      ],
+      "edgeIds": [
+        "E-DOCIO-TO-AUTOBACKUP"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0045",
+        "EV-DOC-0001"
+      ],
+      "linkedTestIds": []
+    },
+    {
+      "id": "C-CONCURRENT-TABS",
+      "name": "两个客户端同时操作同一本地服务",
+      "origin": "DesignedSimulation",
+      "scenario": {
+        "steps": [
+          "客户端 A 发起打开请求",
+          "客户端 B 几乎同时发起请求",
+          "单例 HTTP 服务按事件队列串行处理",
+          "令牌校验对两个客户端分别成立"
+        ],
+        "documentation": "本地服务为单实例 + 每请求令牌校验（auth.rs）；两个客户端并存是模型推演，项目文档未覆盖该并发场景"
+      },
+      "expected": [
+        "两个客户端的请求都被串行处理而非互相覆盖",
+        "会话状态不出现交叉污染"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML",
+        "N-FE-CLIENT2"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-FE-CLIENT2",
+        "N-WB-SERVER"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-FE2-TO-WB"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026"
+      ],
+      "linkedTestIds": []
+    },
+    {
+      "id": "C-COMBINED-BREACH",
+      "name": "越界 + 超限 + 非 UTF-8 + 文件不存在 四重失败叠加",
+      "origin": "DesignedSimulation",
+      "scenario": {
+        "steps": [
+          "路径越界",
+          "文件超过 4MB",
+          "内容非 UTF-8",
+          "目标文件不存在",
+          "四道判定同时失败"
+        ],
+        "documentation": "E001/E002/E003/E004 四条错误码的叠加场景；文档未组合测试，本 Case 为模型推演"
+      },
+      "expected": [
+        "链路在最早一道守卫处停止",
+        "没有任何一层被误放行"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": false,
+        "sizeOk": false,
+        "utf8Ok": false,
+        "fileExists": false,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": false,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-WB-PATHSAFETY",
+        "N-KN-DOCSTORE"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-SANDBOX",
+        "E-WB-TO-STORE",
+        "E-STORE-TO-DOCUMENT"
+      ],
+      "evidenceIds": [
+        "EV-DOC-0008"
+      ],
+      "linkedTestIds": []
+    },
+    {
+      "id": "C-DESKTOP-INVOKE",
+      "name": "桌面端 Tauri invoke 正常打开文档",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "WebView2 内的前端调用 Tauri invoke",
+          "doc_open 命令进入 DocStore",
+          "Document 绑定行存储并写入撤销快照"
+        ],
+        "documentation": "IR-01；desktop doc_* command 实测存在（EV-CODE-0028）"
+      },
+      "expected": [
+        "桌面链路全程无阻断",
+        "Document 与 Buffer 终态 Completed"
+      ],
+      "entryNodeId": "N-FE-EDITORHTML",
+      "entryNodes": [
+        "N-FE-EDITORHTML"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": false,
+        "desktopModeAvailable": true,
+        "docRequested": true,
+        "pluginRequested": false,
+        "terminalRequested": false
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-DT-TAURI",
+        "N-KN-DOCSTORE",
+        "N-KN-DOCUMENT",
+        "N-EC-BUFFER",
+        "N-EC-UNDO"
+      ],
+      "edgeIds": [
+        "E-FE-TO-DT",
+        "E-DT-TO-STORE",
+        "E-STORE-TO-DOCUMENT",
+        "E-DOCUMENT-TO-BUFFER",
+        "E-BUFFER-TO-UNDO",
+        "E-UNDO-TO-DOCUMENT"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0028",
+        "EV-CODE-0016"
+      ],
+      "linkedTestIds": [
+        "IT-DESKTOP-CMDS-01"
+      ]
+    },
+    {
+      "id": "C-TERMINAL-WEB",
+      "name": "Web 端终端（HTTP 轮询）拉起 PowerShell",
+      "origin": "ObservedReplay",
+      "scenario": {
+        "steps": [
+          "POST /api/terminal_create",
+          "spawn powershell.exe",
+          "轮询 /api/terminal_output?id=",
+          "输入经 /api/terminal_input 回灌"
+        ],
+        "documentation": "EV-CODE-0021 的 5 条终端路由"
+      },
+      "expected": [
+        "终端层进入并回传分发器",
+        "输出可被前端轮询取回"
+      ],
+      "entryNodeId": "N-WB-SERVER",
+      "entryNodes": [
+        "N-WB-SERVER"
+      ],
+      "entryState": "Running",
+      "inputs": {
+        "tokenValid": true,
+        "pathWithinRoot": true,
+        "sizeOk": true,
+        "utf8Ok": true,
+        "fileExists": true,
+        "methodKnown": true,
+        "bufferExists": true,
+        "providerRegistered": false,
+        "powershellAvailable": true,
+        "rgAvailable": true,
+        "isGitRepo": true,
+        "webview2Available": true,
+        "webModeAvailable": true,
+        "desktopModeAvailable": false,
+        "docRequested": false,
+        "pluginRequested": false,
+        "terminalRequested": true
+      },
+      "seed": 1,
+      "nodeIds": [
+        "N-WB-SERVER",
+        "N-WB-TERMINAL",
+        "N-OS-PWSH"
+      ],
+      "edgeIds": [
+        "E-WB-TO-TERMINAL",
+        "E-TERM-TO-PSH",
+        "E-PSH-TO-TERM",
+        "E-TERM-TO-WB"
+      ],
+      "evidenceIds": [
+        "EV-CODE-0021"
+      ],
+      "linkedTestIds": []
+    }
+  ],
+  "coverageNote": "coverage 字段由 .tooling/verify-cases.mjs 真实执行全部 Case 后回写（含真实分母、规则命中数、死边统计），不预填。",
+  "coverage": {
+    "casesTotal": 24,
+    "zeroTransitionCases": 3,
+    "zeroTransitionDetail": [
+      {
+        "id": "C-RPC-UNKNOWN-METHOD",
+        "reason": "预期零转移：未知方法必须不改动任何内核状态（-32601 只返回错误）"
+      },
+      {
+        "id": "C-E2E-CLICK-WEBVIEW2",
+        "reason": "预期零转移：WebView2 缺失时 invoke 从未被调用，Rust 侧零状态变化"
+      },
+      {
+        "id": "C-COMBINED-BREACH",
+        "reason": "预期零转移：四道守卫同时失败，链路在最早一道（路径沙箱）即停止，没有任何状态转移"
+      }
+    ],
+    "unjustifiedZeroTransition": [],
+    "rulesTotal": 32,
+    "rulesFiredBySomeCase": 32,
+    "edgesTotal": 63,
+    "edgesWithRules": 31,
+    "deadEdges": 32,
+    "caseClassesCovered": [
+      "Normal",
+      "Abnormal",
+      "Boundary",
+      "Concurrent",
+      "Timeout",
+      "Retry",
+      "Recovery",
+      "Compensation",
+      "Combined",
+      "Environment"
+    ],
+    "caseClassesNotCovered": [],
+    "declaredButNotFired": [],
+    "note": "由 .tooling/verify-cases.mjs 真实执行全部 Case 后回写"
+  }
+}

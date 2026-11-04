@@ -1,0 +1,23 @@
+{
+  "name": "gemarc-atlas-vendor-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Build-only toolchain for inlining offline browser dependencies into docs/gemarc-5d-atlas-v10.0/vendor/. Not a deliverable.",
+  "scripts": {
+    "build:vendor": "node build.mjs",
+    "verify:vendor": "node verify.mjs"
+  },
+  "dependencies": {
+    "dagre": "0.8.5",
+    "graphology": "0.26.0",
+    "konva": "10.9.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "acorn": "^8.19.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.50.0",
+    "vitest": "^3.0.0"
+  }
+}

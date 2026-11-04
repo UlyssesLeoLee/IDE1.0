@@ -1,0 +1,1389 @@
+{
+  "dataModelNature": {
+    "kind": "in_memory_buffer",
+    "statement": "Neither DD-02 nor DD-04 describes an RDBMS. DD-02 models Session / Transaction / Buffer as in-memory Rust structures held in DashMap / Arc<RwLock> indexes (DD-02 §6.3.1, §7.3.1, §8.4.1) and defines exactly three durable artefacts: (a) a Write-Ahead Journal / SessionPersistence log appended as JSON Lines (or bincode - both still 【TBD】) with file mode 0600 and fsync on every state transition, (b) periodic Snapshots (threshold 【TBD】, default stated as 64 KiB of WAL accumulation), and (c) pre-commit file snapshots used to restore the Workspace on rollback. Outbox entries are described as an 'Outbox Table' but are explicitly stored in a file on the same filesystem as the Journal tail, not in a database. DD-04 §5.1 states for MOD-API-001: '使用数据 | 内存：无；持久化：无（仅 Session/Txn 间接访问）', and DD-04 §6.2 describes an 'idempotency_store' KV keyed by actor + idempotency_key with an undecided TTL. DD-04 §7.8 mentions Tantivy / redb as candidate index backends. Consequently the atlas must render ER-style diagrams over in-memory structs plus a WAL/Snapshot file, and must NOT invent SQL tables, foreign keys to a relational schema, or SCD policies; there are none.",
+    "evidenceIds": ["EV-DD24-0001", "EV-DD24-0005", "EV-DD24-0013", "EV-DD24-0016", "EV-DD24-0029"]
+  },
+  "tables": [
+    {
+      "id": "T-SESSION",
+      "name": "Session",
+      "kind": "struct",
+      "columns": [
+        {"name": "session_id", "type": "SessionId", "nullable": false, "key": "PK", "references": "", "note": "UUID v7 per DD-02 §6.4.1 P-006 (generator 【TBD】); DD-04 §7.4 S-005 says ULID - unresolved conflict."},
+        {"name": "workspace_id", "type": "WorkspaceId", "nullable": false, "key": "FK", "references": "", "note": "Logical FK to a Workspace entity that neither DD-02 nor DD-04 defines."},
+        {"name": "worktree_id", "type": "Option<WorktreeId>", "nullable": true, "key": "FK", "references": "", "note": "Invariant: 1 Session = 1 Worktree, multiple binds forbidden (DD-02 §6.7)."},
+        {"name": "actor", "type": "Actor", "nullable": false, "key": "none", "references": "", "note": "Actor = Human / LangGraph / Agent / CI / Plugin / Automation (DD-02 §2)."},
+        {"name": "permissions", "type": "PermissionSet", "nullable": false, "key": "FK", "references": "T-PERMISSION-SET", "note": ""},
+        {"name": "path_policy", "type": "PathPolicy", "nullable": false, "key": "FK", "references": "T-PATH-POLICY", "note": ""},
+        {"name": "resource_budget", "type": "ResourceBudget", "nullable": false, "key": "none", "references": "", "note": "CPU / Memory / Context Token / Disk IO budget (MOD-SM-003); field layout not specified."},
+        {"name": "context_budget", "type": "ContextBudget", "nullable": false, "key": "none", "references": "", "note": "Field layout not specified."},
+        {"name": "active_buffers", "type": "BTreeSet<DocumentId>", "nullable": false, "key": "FK", "references": "T-BUFFER", "note": "Cardinality 1 Session : N Buffers. Default cap 64 per session (DD-02 §6.7)."},
+        {"name": "active_transaction", "type": "Option<TransactionId>", "nullable": true, "key": "FK", "references": "T-TRANSACTION", "note": "Invariant: at most 1 active Transaction per Session; setting a second returns ERR-SES-005 (DD-02 §6.3.2)."},
+        {"name": "created_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "last_activity_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": "Drives the idle_timeout guard (idle threshold default 30 min)."},
+        {"name": "state", "type": "SessionState", "nullable": false, "key": "none", "references": "", "note": "Enum: New, Active, Suspended, Terminated, Failed."},
+        {"name": "metadata", "type": "SessionMetadata", "nullable": false, "key": "none", "references": "", "note": "Field layout not specified."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 273,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0005", "EV-DD24-0008"]
+    },
+    {
+      "id": "T-SESSION-MGR",
+      "name": "SessionManager",
+      "kind": "struct",
+      "columns": [
+        {"name": "sessions", "type": "Arc<DashMap<SessionId, Session>>", "nullable": false, "key": "PK", "references": "T-SESSION", "note": "In-memory index of Active and Suspended sessions only."},
+        {"name": "idempotency_index", "type": "Arc<DashMap<(ActorId, WorkspaceId), SessionId>>", "nullable": false, "key": "none", "references": "T-SESSION", "note": "Idempotency key = actor + workspace_id [+ worktree_id] (DD-02 §9.3)."},
+        {"name": "quota", "type": "Arc<SessionQuota>", "nullable": false, "key": "none", "references": "", "note": "Session count / TTL / idle timeout control (MOD-SM-005)."},
+        {"name": "worktree", "type": "Arc<WorktreeBinding>", "nullable": false, "key": "none", "references": "", "note": "Workspace Worktree binding (MOD-SM-004)."},
+        {"name": "event_bus", "type": "Arc<EventBus>", "nullable": false, "key": "none", "references": "", "note": "Publishes SessionCreated / SessionActivated / SessionTerminated."},
+        {"name": "persistence", "type": "Arc<SessionPersistence>", "nullable": false, "key": "none", "references": "T-JOURNAL", "note": "WAL + Snapshot persistence for Session state."},
+        {"name": "perm_eval", "type": "Arc<PermissionEvaluator>", "nullable": false, "key": "none", "references": "T-PERMISSION-SET", "note": ""},
+        {"name": "audit", "type": "Arc<AuditLog>", "nullable": false, "key": "none", "references": "T-AUDIT-RECORD", "note": ""},
+        {"name": "seq", "type": "AtomicU64", "nullable": false, "key": "none", "references": "", "note": "Monotonic session sequence number."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 228,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0004"]
+    },
+    {
+      "id": "T-PERMISSION-SET",
+      "name": "PermissionSet",
+      "kind": "struct",
+      "columns": [
+        {"name": "workspace_read", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "workspace_write", "type": "bool", "nullable": false, "key": "none", "references": "", "note": "False causes ERR-SES-002 on file.patch."},
+        {"name": "filesystem_read", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "filesystem_write", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "process_spawn", "type": "ProcessSpawnPolicy", "nullable": false, "key": "FK", "references": "T-PATH-POLICY", "note": "ProcessSpawnPolicy { enabled, executable_allowlist, working_directory, timeout_secs, environment_filter } (DD-02 §6.3.3)."},
+        {"name": "network", "type": "NetworkPermission", "nullable": false, "key": "none", "references": "", "note": "Field layout not specified."},
+        {"name": "git", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "ai_local", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "ai_remote", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "secrets", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""}
+      ],
+      "cardinality": "1:1",
+      "docLine": 321,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0006"]
+    },
+    {
+      "id": "T-PATH-POLICY",
+      "name": "PathPolicy",
+      "kind": "struct",
+      "columns": [
+        {"name": "workspace_id", "type": "WorkspaceId", "nullable": false, "key": "FK", "references": "", "note": ""},
+        {"name": "allowed_paths", "type": "Vec<PathPattern>", "nullable": false, "key": "none", "references": "", "note": "Pattern matching algorithm 【TBD】 (glob first, then Trie) - DD-02 §13.6."},
+        {"name": "read_only_paths", "type": "Vec<PathPattern>", "nullable": false, "key": "none", "references": "", "note": "Write to these returns ERR-SES-004 PathReadOnly."},
+        {"name": "write_paths", "type": "Vec<PathPattern>", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "blocked_paths", "type": "Vec<PathPattern>", "nullable": false, "key": "none", "references": "", "note": "Violation returns ERR-SES-003 PathNotAllowed."}
+      ],
+      "cardinality": "1:1",
+      "docLine": 334,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0006"]
+    },
+    {
+      "id": "T-TRANSACTION",
+      "name": "Transaction",
+      "kind": "struct",
+      "columns": [
+        {"name": "transaction_id", "type": "TransactionId", "nullable": false, "key": "PK", "references": "", "note": ""},
+        {"name": "session_id", "type": "SessionId", "nullable": false, "key": "FK", "references": "T-SESSION", "note": "Cardinality: 1 Session : 0..1 active Transaction; 1 Transaction : N FileChange."},
+        {"name": "description", "type": "String", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "status", "type": "TransactionStatus", "nullable": false, "key": "none", "references": "", "note": "Enum: New, Active, Validating, Committing, Committed, RollingBack, RolledBack, Failed { reason, at }."},
+        {"name": "changes", "type": "Vec<FileChange>", "nullable": false, "key": "FK", "references": "T-FILEPATCH", "note": "Frozen after Committed (DD-02 §7.4 invariant)."},
+        {"name": "savepoints", "type": "BTreeMap<SavepointId, Savepoint>", "nullable": false, "key": "none", "references": "", "note": "Savepoint struct fields are not enumerated in the document; only 'snapshot of the current Undo Stack' is described (DD-02 §7.5.5)."},
+        {"name": "created_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "updated_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "begin_lsn", "type": "Lsn", "nullable": false, "key": "FK", "references": "T-JOURNAL", "note": "Reserved at Begin."},
+        {"name": "commit_lsn", "type": "Option<Lsn>", "nullable": true, "key": "FK", "references": "T-JOURNAL", "note": ""},
+        {"name": "rollback_lsn", "type": "Option<Lsn>", "nullable": true, "key": "FK", "references": "T-JOURNAL", "note": ""},
+        {"name": "metadata", "type": "TransactionMetadata", "nullable": false, "key": "none", "references": "", "note": "Field layout not specified."},
+        {"name": "changes[].change_id", "type": "ChangeId", "nullable": false, "key": "PK", "references": "", "note": "FileChange sub-structure: change_id, path, operation, before_hash, after_hash (optional), before_version, after_version (optional), applied_at."},
+        {"name": "changes[].operation", "type": "FileOperation", "nullable": false, "key": "none", "references": "", "note": "Enum: Patch(FilePatch), Create { content_hash }, Delete, Rename { from, to }."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 683,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0011", "EV-DD24-0014"]
+    },
+    {
+      "id": "T-TRANSACTION-MGR",
+      "name": "TransactionManager",
+      "kind": "struct",
+      "columns": [
+        {"name": "transactions", "type": "Arc<DashMap<TransactionId, Transaction>>", "nullable": false, "key": "PK", "references": "T-TRANSACTION", "note": "Entries are removed from the in-memory index on Committed or RolledBack (DD-02 §7.5.3 P-013, §7.5.4 P-009)."},
+        {"name": "active_by_session", "type": "Arc<DashMap<SessionId, TransactionId>>", "nullable": false, "key": "none", "references": "T-SESSION", "note": "Enforces the single-active-transaction rule; duplicate returns ERR-TXN-001."},
+        {"name": "journal", "type": "Arc<Journal>", "nullable": false, "key": "FK", "references": "T-JOURNAL", "note": ""},
+        {"name": "conflict", "type": "Arc<ConflictDetector>", "nullable": false, "key": "FK", "references": "T-CONFLICT", "note": ""},
+        {"name": "buffer_engine", "type": "Arc<BufferEngine>", "nullable": false, "key": "FK", "references": "T-BUFFER-ENGINE", "note": ""},
+        {"name": "session_manager", "type": "Arc<SessionManager>", "nullable": false, "key": "FK", "references": "T-SESSION-MGR", "note": ""},
+        {"name": "outbox", "type": "Arc<Outbox>", "nullable": false, "key": "FK", "references": "T-OUTBOX", "note": ""},
+        {"name": "event_bus", "type": "Arc<EventBus>", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "audit", "type": "Arc<AuditLog>", "nullable": false, "key": "FK", "references": "T-AUDIT-RECORD", "note": ""},
+        {"name": "clock", "type": "Arc<dyn Clock>", "nullable": false, "key": "none", "references": "", "note": "Injectable clock for deterministic timeouts and replay."},
+        {"name": "seq", "type": "AtomicU64", "nullable": false, "key": "none", "references": "", "note": ""}
+      ],
+      "cardinality": "1:N",
+      "docLine": 647,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0010"]
+    },
+    {
+      "id": "T-FILEPATCH",
+      "name": "FilePatch",
+      "kind": "struct",
+      "columns": [
+        {"name": "document", "type": "DocumentId", "nullable": false, "key": "FK", "references": "T-BUFFER", "note": ""},
+        {"name": "path", "type": "PathBuf", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "range", "type": "Option<TextRange>", "nullable": true, "key": "none", "references": "", "note": "None = full-file rewrite, which REQ-001 §18 Patch-First forbids."},
+        {"name": "before_hash", "type": "ContentHash", "nullable": false, "key": "none", "references": "", "note": "Obtained from the Buffer Engine; compared in ConflictDetector."},
+        {"name": "expected_version", "type": "DocumentVersion", "nullable": false, "key": "none", "references": "", "note": "Optimistic concurrency token."},
+        {"name": "change", "type": "PatchChange", "nullable": false, "key": "none", "references": "", "note": "Enum: Insert { offset, text }, Delete { range }, Replace { range, text }, JsonPatch(Vec<JsonPatchOp>) - JsonPatch adoption is 【TBD】."},
+        {"name": "after_hash", "type": "Option<ContentHash>", "nullable": true, "key": "none", "references": "", "note": "Recomputed by the Buffer Engine after apply."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 735,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0012", "EV-DD24-0015"]
+    },
+    {
+      "id": "T-JOURNAL",
+      "name": "Journal",
+      "kind": "buffer",
+      "columns": [
+        {"name": "file", "type": "Arc<Mutex<File>>", "nullable": false, "key": "PK", "references": "", "note": "Append-only WAL opened with mode 0600 (SD-001 §1.1 THREAT-008). Format JSON Lines vs bincode is 【TBD】."},
+        {"name": "current_lsn", "type": "AtomicU64", "nullable": false, "key": "none", "references": "", "note": "Monotonic log sequence number, referenced by Transaction.begin_lsn / commit_lsn / rollback_lsn."},
+        {"name": "rotation", "type": "JournalRotation", "nullable": false, "key": "none", "references": "", "note": "JournalRotation { max_file_bytes (default 64 MiB, 【TBD】), max_files (default 8, 【TBD】), compression }."},
+        {"name": "fsync_policy", "type": "FsyncPolicy", "nullable": false, "key": "none", "references": "", "note": "Enum: Always | Batch { interval_ms } (interval 【TBD】)."},
+        {"name": "entries[].TransactionBegin", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, session_id, lsn, ts, desc."},
+        {"name": "entries[].PatchApplied", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, change (FileChangeRef), lsn, ts."},
+        {"name": "entries[].Savepoint", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, savepoint_id, lsn, ts."},
+        {"name": "entries[].TransactionValidating", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, lsn, ts."},
+        {"name": "entries[].TransactionCommitting", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, lsn, ts."},
+        {"name": "entries[].TransactionCommitted", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, lsn, ts, change_count (u32)."},
+        {"name": "entries[].TransactionRollingBack", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, lsn, ts, reason."},
+        {"name": "entries[].TransactionRolledBack", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, lsn, ts."},
+        {"name": "entries[].TransactionFailed", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: txn_id, lsn, ts, reason."},
+        {"name": "entries[].SnapshotPointer", "type": "JournalEntry", "nullable": false, "key": "none", "references": "", "note": "Fields: snapshot_id, lsn, ts."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 758,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0013", "EV-DD24-0017"]
+    },
+    {
+      "id": "T-OUTBOX",
+      "name": "Outbox",
+      "kind": "buffer",
+      "columns": [
+        {"name": "storage", "type": "Arc<dyn OutboxStorage>", "nullable": false, "key": "none", "references": "", "note": "Default is an Outbox file on the same filesystem as the Journal tail - not a database table."},
+        {"name": "pending", "type": "Arc<DashMap<OutboxId, OutboxEntry>>", "nullable": false, "key": "PK", "references": "", "note": "OutboxEntry is an embedded value structure of T-OUTBOX (columns entries[*] below), not a separate table."},
+        {"name": "delivery_state", "type": "Arc<DashMap<OutboxId, DeliveryState>>", "nullable": false, "key": "PK", "references": "", "note": "DeliveryState is an embedded value structure of T-OUTBOX (column delivery_state values below)."},
+        {"name": "entries[].id", "type": "OutboxId", "nullable": false, "key": "PK", "references": "", "note": ""},
+        {"name": "entries[].txn_id", "type": "TransactionId", "nullable": false, "key": "FK", "references": "T-TRANSACTION", "note": "Cardinality 1 Transaction : N OutboxEntry."},
+        {"name": "entries[].event", "type": "DurableEvent", "nullable": false, "key": "none", "references": "", "note": "Structured durable event."},
+        {"name": "entries[].created_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "entries[].attempts", "type": "u32", "nullable": false, "key": "none", "references": "", "note": "Retry attempt counter; no maximum is specified anywhere in the document."},
+        {"name": "entries[].next_retry_at", "type": "Option<Instant>", "nullable": true, "key": "none", "references": "", "note": ""},
+        {"name": "entries[].last_error", "type": "Option<String>", "nullable": true, "key": "none", "references": "", "note": ""},
+        {"name": "delivery_state values", "type": "DeliveryState", "nullable": false, "key": "none", "references": "", "note": "Enum: Pending | InFlight { sent_at } | Delivered { acked_at } | FailedPermanent { reason }."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 1019,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0016"]
+    },
+    {
+      "id": "T-BUFFER",
+      "name": "Buffer",
+      "kind": "buffer",
+      "columns": [
+        {"name": "document_id", "type": "DocumentId", "nullable": false, "key": "PK", "references": "", "note": ""},
+        {"name": "file_path", "type": "PathBuf", "nullable": false, "key": "FK", "references": "", "note": "Uniquely indexed by T-BUFFER-ENGINE.by_path (path -> doc_id)."},
+        {"name": "encoding", "type": "Encoding", "nullable": false, "key": "FK", "references": "T-CODEC", "note": ""},
+        {"name": "line_ending", "type": "LineEnding", "nullable": false, "key": "none", "references": "", "note": "LF / CRLF / CR detected and preserved."},
+        {"name": "has_bom", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "state", "type": "BufferState", "nullable": false, "key": "none", "references": "", "note": "Enum: Loaded, Dirty, Saving, Saved, Closed."},
+        {"name": "piece_table", "type": "PieceTable", "nullable": false, "key": "FK", "references": "T-PIECE-TABLE", "note": "Cardinality 1 Buffer : 1 PieceTable."},
+        {"name": "version", "type": "DocumentVersion", "nullable": false, "key": "none", "references": "", "note": "Incremented on every applied patch; starts at 0 on open; used for optimistic concurrency."},
+        {"name": "undo_stack", "type": "UndoStack", "nullable": false, "key": "none", "references": "", "note": "Entries = Inverse Patch + previous Version; max depth default 1000 (【TBD】); oldest entries are discarded when exceeded."},
+        {"name": "redo_stack", "type": "RedoStack", "nullable": false, "key": "none", "references": "", "note": "Cleared on every new patch."},
+        {"name": "savepoints", "type": "BTreeMap<SavepointId, BufferSavepoint>", "nullable": false, "key": "none", "references": "", "note": "Buffer-level savepoints, independent of Transaction savepoints."},
+        {"name": "created_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "updated_at", "type": "Instant", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "last_saved_at", "type": "Option<Instant>", "nullable": true, "key": "none", "references": "", "note": ""},
+        {"name": "storage", "type": "BufferStorage", "nullable": false, "key": "none", "references": "", "note": "Enum: InMemory | Chunked { chunk_count, total_bytes } | Mmap { mapped_bytes }."},
+        {"name": "memory_estimate", "type": "AtomicU64", "nullable": false, "key": "none", "references": "", "note": "Budget per buffer default 200 MiB (【TBD】); excess returns ERR-BIZ-006."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 1317,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0020", "EV-DD24-0023"]
+    },
+    {
+      "id": "T-BUFFER-ENGINE",
+      "name": "BufferEngine",
+      "kind": "struct",
+      "columns": [
+        {"name": "buffers", "type": "Arc<DashMap<DocumentId, Arc<RwLock<Buffer>>>>", "nullable": false, "key": "PK", "references": "T-BUFFER", "note": "One RwLock per DocumentId; reads share, patch/undo/redo/save take the write lock."},
+        {"name": "by_path", "type": "Arc<DashMap<PathBuf, DocumentId>>", "nullable": false, "key": "none", "references": "T-BUFFER", "note": "path -> doc_id index; a hit reuses the existing DocumentId."},
+        {"name": "by_session", "type": "Arc<DashMap<SessionId, BTreeSet<DocumentId>>>", "nullable": false, "key": "none", "references": "T-SESSION", "note": "Session isolation index; every Buffer access must validate sid + doc_id against it."},
+        {"name": "codec", "type": "Arc<CodecRegistry>", "nullable": false, "key": "FK", "references": "T-CODEC", "note": ""},
+        {"name": "line_ending", "type": "Arc<LineEndingDetector>", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "persistence", "type": "Arc<BufferPersistence>", "nullable": false, "key": "none", "references": "", "note": "Atomic save / reload / snapshot (MOD-BE-009)."},
+        {"name": "memory_budget", "type": "Arc<MemoryBudget>", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "config", "type": "Arc<BufferConfig>", "nullable": false, "key": "none", "references": "", "note": "BufferConfig { large_file_threshold_bytes (default 100 MiB 【TBD】), chunk_size_bytes (default 64 KiB 【TBD】), max_undo_depth (default 1000 【TBD】), memory_budget_per_buffer_bytes (default 200 MiB 【TBD】), enable_mmap (default true), save_atomic_rename (default true) }."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 1273,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0019"]
+    },
+    {
+      "id": "T-PIECE-TABLE",
+      "name": "PieceTable",
+      "kind": "struct",
+      "columns": [
+        {"name": "original", "type": "Arc<OriginalBuffer>", "nullable": false, "key": "none", "references": "", "note": "Immutable pre-edit content."},
+        {"name": "adds", "type": "Arc<AddBuffer>", "nullable": false, "key": "none", "references": "", "note": "AddBuffer { chunks: Vec<Arc<Vec<u8>>> (64 KiB chunk), total_bytes: AtomicU64 }."},
+        {"name": "pieces", "type": "Vec<Piece>", "nullable": false, "key": "PK", "references": "", "note": "Piece { source: PieceSource, start: u32, length: u32 }; PieceSource = Original | Add(AddId)."},
+        {"name": "line_index", "type": "LineIndex", "nullable": false, "key": "none", "references": "", "note": "Cumulative byte offset index; fenwick tree vs rope index selection is 【TBD】."}
+      ],
+      "cardinality": "1:1",
+      "docLine": 1355,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0021"]
+    },
+    {
+      "id": "T-CODEC",
+      "name": "CodecRegistry",
+      "kind": "struct",
+      "columns": [
+        {"name": "codecs", "type": "HashMap<Encoding, Arc<dyn Codec>>", "nullable": false, "key": "PK", "references": "", "note": "Cardinality 1 CodecRegistry : N Codec. Codec trait { name, detect, decode, encode }."},
+        {"name": "Encoding values", "type": "Encoding", "nullable": false, "key": "none", "references": "", "note": "Enum: Utf8, Utf16LE, Utf16BE, ShiftJis, EucJp, Gbk, Binary."},
+        {"name": "DetectionResult.confidence", "type": "f32", "nullable": false, "key": "none", "references": "", "note": "0.0-1.0."},
+        {"name": "DetectionResult.encoding", "type": "Encoding", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "DetectionResult.has_bom", "type": "bool", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "DetectionResult.suggested", "type": "bool", "nullable": false, "key": "none", "references": "", "note": "Whether the detection is an auto-accept candidate."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 1387,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0022"]
+    },
+    {
+      "id": "T-CONFLICT",
+      "name": "Conflict",
+      "kind": "struct",
+      "columns": [
+        {"name": "VersionConflict", "type": "Conflict", "nullable": false, "key": "none", "references": "", "note": "{ expected: DocumentVersion, current: DocumentVersion, path: PathBuf } -> ERR-TXN-002 (409)."},
+        {"name": "HashMismatch", "type": "Conflict", "nullable": false, "key": "none", "references": "", "note": "{ expected: ContentHash, current: ContentHash, path: PathBuf } -> ERR-TXN-003 (409)."},
+        {"name": "FileMissing", "type": "Conflict", "nullable": false, "key": "none", "references": "", "note": "{ path: PathBuf }."},
+        {"name": "ReadOnlyPath", "type": "Conflict", "nullable": false, "key": "none", "references": "", "note": "{ path: PathBuf } -> ERR-TTN-004 equivalent ERR-TXN-004 (403)."},
+        {"name": "PathBlocked", "type": "Conflict", "nullable": false, "key": "none", "references": "", "note": "{ path: PathBuf } -> ERR-TXN-004 (403)."}
+      ],
+      "cardinality": "1:1",
+      "docLine": 965,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0015"]
+    },
+    {
+      "id": "T-AUDIT-RECORD",
+      "name": "AuditLog record (structured JSON)",
+      "kind": "buffer",
+      "columns": [
+        {"name": "timestamp", "type": "String (ISO-8601, e.g. 2026-09-14T10:00:00Z)", "nullable": false, "key": "none", "references": "", "note": "Append-only structured JSON, written for every Session / Transaction / Buffer operation."},
+        {"name": "audit_id", "type": "uuid", "nullable": false, "key": "PK", "references": "", "note": ""},
+        {"name": "session_id", "type": "String", "nullable": false, "key": "FK", "references": "T-SESSION", "note": ""},
+        {"name": "actor", "type": "String", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "operation", "type": "String", "nullable": false, "key": "none", "references": "", "note": "One of session.create | session.terminate | session.suspend | session.permission_check | session.path_check (DD-02 §6.9); §9.2 additionally lists transaction.commit, transaction.rollback, buffer.save, buffer.patch."},
+        {"name": "target", "type": "String", "nullable": false, "key": "none", "references": "", "note": "workspace_id or command_name or path."},
+        {"name": "result", "type": "String", "nullable": false, "key": "none", "references": "", "note": "allowed | denied | ok | error."},
+        {"name": "details", "type": "object", "nullable": false, "key": "none", "references": "", "note": "Secret masking applies: only path / size / hash are recorded, never buffer content."},
+        {"name": "trace_id", "type": "trace-uuid", "nullable": false, "key": "none", "references": "", "note": ""},
+        {"name": "correlation_id", "type": "corr-uuid", "nullable": false, "key": "none", "references": "", "note": "correlation_id = transaction_id for Transaction-scoped events."}
+      ],
+      "cardinality": "1:N",
+      "docLine": 566,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0024"]
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "API-1",
+      "method": "INTERNAL",
+      "path": "IF-CMD-001",
+      "purpose": "Command Dispatch - the single unified Command entry point (Adapter -> MOD-API-001 -> Application Service -> Command Bus -> Capability Provider). Processing order P-001..P-014.",
+      "request": {"name": "CommandRequest", "fields": [
+        {"name": "name", "type": "String", "required": true},
+        {"name": "version", "type": "u32", "required": true},
+        {"name": "arguments", "type": "serde_json::Value", "required": true},
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "execution_id", "type": "Option<ExecutionId>", "required": false},
+        {"name": "actor", "type": "ActorRef", "required": true},
+        {"name": "timeout_ms", "type": "Option<u32>", "required": false},
+        {"name": "idempotency_key", "type": "Option<String>", "required": false},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": false},
+        {"name": "cancellation", "type": "CancellationToken", "required": false}
+      ]},
+      "response": {"name": "CommandResponse", "fields": [
+        {"name": "status", "type": "CommandStatus (Ok | PartialOk | Failed)", "required": true},
+        {"name": "data", "type": "Option<serde_json::Value>", "required": false},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": true},
+        {"name": "side_effects", "type": "Vec<SideEffectRecord>", "required": true},
+        {"name": "next_cursor", "type": "Option<Cursor>", "required": false},
+        {"name": "error", "type": "Option<WireError>", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-VAL-001", "when": "P-002 Serde deserialization failed", "httpStatus": 400},
+        {"code": "ERR-VAL-007", "when": "P-003 Schema validation failed", "httpStatus": 400},
+        {"code": "ERR-BIZ-001", "when": "P-004 Session does not exist", "httpStatus": 404},
+        {"code": "ERR-AUTH-001", "when": "P-005 Credential missing", "httpStatus": 401},
+        {"code": "ERR-AUTHZ-001", "when": "P-006 RBAC decision deny", "httpStatus": 403},
+        {"code": "ERR-BIZ-004", "when": "P-007 idempotency key hit on a completed request", "httpStatus": 200},
+        {"code": "ERR-SYS-006", "when": "P-008 command not found in the Command Registry", "httpStatus": 500},
+        {"code": "ERR-BIZ-008", "when": "CancellationToken triggered", "httpStatus": 499}
+      ],
+      "auth": "IF-AUTH-001 (authenticate + authorize) per P-005 / P-006",
+      "docLine": 294,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-2",
+      "method": "INTERNAL",
+      "path": "IF-EVT-001 (publish)",
+      "purpose": "Event Publish - Provider -> Event Bus -> Subscribers. Steps E-001..E-006; Durable events are persisted to the WAL.",
+      "request": {"name": "EventPublishRequest", "fields": [
+        {"name": "event_type", "type": "String", "required": true},
+        {"name": "payload", "type": "serde_json::Value", "required": true},
+        {"name": "level", "type": "EventLevel (Transient | Durable)", "required": true},
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "session_id", "type": "Option<SessionId>", "required": false},
+        {"name": "execution_id", "type": "Option<ExecutionId>", "required": false},
+        {"name": "actor", "type": "Option<ActorRef>", "required": false},
+        {"name": "trace_id", "type": "TraceId", "required": true}
+      ]},
+      "response": {"name": "EventEnvelope", "fields": [
+        {"name": "event_id", "type": "Uuid", "required": true},
+        {"name": "sequence", "type": "u64", "required": true},
+        {"name": "type_", "type": "String", "required": true},
+        {"name": "timestamp", "type": "DateTime<Utc>", "required": true},
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "session_id", "type": "Option<SessionId>", "required": false},
+        {"name": "execution_id", "type": "Option<ExecutionId>", "required": false},
+        {"name": "actor", "type": "Option<ActorRef>", "required": false},
+        {"name": "payload", "type": "serde_json::Value", "required": true},
+        {"name": "trace_id", "type": "TraceId", "required": true},
+        {"name": "causation_id", "type": "Option<Uuid>", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-VAL-007", "when": "E-001 payload schema validation failed", "httpStatus": 400},
+        {"code": "ERR-AUTHZ-001", "when": "E-002 actor != session.owner for an actor event", "httpStatus": 403},
+        {"code": "ERR-DB-001", "when": "E-004 Durable event WAL persistence failed", "httpStatus": 503}
+      ],
+      "auth": "actor == session.owner check at E-002; system events need no auth",
+      "docLine": 481,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0031"]
+    },
+    {
+      "id": "API-3",
+      "method": "INTERNAL",
+      "path": "IF-EVT-001 (subscribe)",
+      "purpose": "Event Subscribe - long-lived subscription stream with filter, replay from_sequence and backpressure.",
+      "request": {"name": "EventSubscribeRequest", "fields": [
+        {"name": "subscriber_id", "type": "SubscriberId", "required": true},
+        {"name": "filter", "type": "EventFilter (topic prefix / type / workspace / session)", "required": true},
+        {"name": "from_sequence", "type": "Option<u64>", "required": false},
+        {"name": "buffer_size", "type": "u32", "required": true},
+        {"name": "cancellation", "type": "CancellationToken", "required": false}
+      ]},
+      "response": {"name": "EventEnvelope", "fields": [
+        {"name": "event_id", "type": "Uuid", "required": true},
+        {"name": "sequence", "type": "u64", "required": true},
+        {"name": "type_", "type": "String", "required": true},
+        {"name": "timestamp", "type": "DateTime<Utc>", "required": true},
+        {"name": "payload", "type": "serde_json::Value", "required": true},
+        {"name": "trace_id", "type": "TraceId", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-008", "when": "CancellationToken triggered - stream ends gracefully with SubscriptionClosed", "httpStatus": 499}
+      ],
+      "auth": "session / workspace scope carried in the EventFilter",
+      "docLine": 511,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0031"]
+    },
+    {
+      "id": "API-4",
+      "method": "INTERNAL",
+      "path": "IF-CAP-001",
+      "purpose": "Capability Resolve / Invoke - Caller -> Router -> Provider, with version filtering, routing policy, cache and circuit breaker. Steps I-001..I-010.",
+      "request": {"name": "CapabilityInvokeRequest", "fields": [
+        {"name": "capability_id", "type": "String", "required": true},
+        {"name": "version", "type": "Option<String>", "required": false},
+        {"name": "arguments", "type": "serde_json::Value", "required": true},
+        {"name": "routing_policy", "type": "RoutingPolicy (Performance | Priority | Cost | Specific(provider_id))", "required": true},
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "execution_id", "type": "Option<ExecutionId>", "required": false},
+        {"name": "timeout_ms", "type": "Option<u32>", "required": false},
+        {"name": "cancellation", "type": "CancellationToken", "required": false}
+      ]},
+      "response": {"name": "CapabilityInvokeResponse", "fields": [
+        {"name": "result", "type": "serde_json::Value", "required": true},
+        {"name": "provider_id", "type": "ProviderId", "required": true},
+        {"name": "provider_version", "type": "String", "required": true},
+        {"name": "latency_ms", "type": "u64", "required": true},
+        {"name": "cache_hit", "type": "bool", "required": true},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-VAL-005", "when": "I-001 invalid capability_id format", "httpStatus": 400},
+        {"code": "ERR-BIZ-001", "when": "I-002 session check failed", "httpStatus": 404},
+        {"code": "ERR-AUTHZ-002", "when": "I-003 session lacks the capability permission", "httpStatus": 403},
+        {"code": "ERR-SYS-006", "when": "I-004 no provider available", "httpStatus": 500},
+        {"code": "ERR-EXT-007", "when": "I-008 IPC channel closed", "httpStatus": 502},
+        {"code": "ERR-EXT-008", "when": "I-008 provider worker crashed", "httpStatus": 502},
+        {"code": "ERR-EXT-009", "when": "I-008 provider worker timeout", "httpStatus": 504},
+        {"code": "ERR-EXT-010", "when": "I-008 WASM trap", "httpStatus": 502}
+      ],
+      "auth": "IF-AUTH-001 authorize at I-003",
+      "docLine": 592,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-5",
+      "method": "INTERNAL",
+      "path": "IF-SES-001 (create)",
+      "purpose": "Session Lifecycle Create - Caller -> Session Manager -> SessionStore (in-memory + optional persistence). Steps S-001..S-008.",
+      "request": {"name": "SessionCreateRequest", "fields": [
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "actor", "type": "ActorRef", "required": true},
+        {"name": "initial_permissions", "type": "Vec<Capability>", "required": true},
+        {"name": "resource_budget", "type": "ResourceBudget", "required": true},
+        {"name": "context_budget", "type": "Option<TokenBudget>", "required": false},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": false},
+        {"name": "client_info", "type": "ClientInfo", "required": true}
+      ]},
+      "response": {"name": "SessionInfo", "fields": [
+        {"name": "session_id", "type": "SessionId (ULID per DD-04 S-005)", "required": true},
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "actor", "type": "ActorRef", "required": true},
+        {"name": "permissions", "type": "Vec<Capability>", "required": true},
+        {"name": "resource_budget", "type": "ResourceBudget", "required": true},
+        {"name": "context_budget", "type": "Option<TokenBudget>", "required": false},
+        {"name": "state", "type": "SessionState (Active | Suspended | Closed)", "required": true},
+        {"name": "created_at", "type": "DateTime<Utc>", "required": true},
+        {"name": "last_active_at", "type": "DateTime<Utc>", "required": true},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-001", "when": "S-001 workspace does not exist", "httpStatus": 404},
+        {"code": "ERR-AUTHZ-003", "when": "S-001 workspace path not in allowed_paths", "httpStatus": 403},
+        {"code": "ERR-AUTH-001", "when": "S-002 credential missing", "httpStatus": 401},
+        {"code": "ERR-AUTH-002", "when": "S-002 token expired", "httpStatus": 401},
+        {"code": "ERR-AUTHZ-001", "when": "S-003 initial permission computation denied", "httpStatus": 403},
+        {"code": "ERR-BIZ-006", "when": "S-004 resource_budget exceeds the workspace limit", "httpStatus": 429},
+        {"code": "ERR-DB-001", "when": "S-006 SessionRecord persistence failed", "httpStatus": 503},
+        {"code": "ERR-BIZ-004", "when": "duplicate client_info.request_id detected", "httpStatus": 200}
+      ],
+      "auth": "IF-AUTH-001 authenticate at S-002, RBAC at S-003",
+      "docLine": 711,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0032"]
+    },
+    {
+      "id": "API-6",
+      "method": "INTERNAL",
+      "path": "IF-SES-001 (suspend / resume / close)",
+      "purpose": "Session Lifecycle Suspend / Resume / Close - suspend cancels active subscriptions and sets state=Suspended; close drains in-flight commands and sets state=Closed.",
+      "request": {"name": "(not specified - session_id only)", "fields": [
+        {"name": "session_id", "type": "SessionId", "required": true}
+      ]},
+      "response": {"name": "SessionInfo", "fields": [
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "state", "type": "SessionState (Active | Suspended | Closed)", "required": true},
+        {"name": "last_active_at", "type": "DateTime<Utc>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-001", "when": "session not found on close", "httpStatus": 404},
+        {"code": "ERR-BIZ-003", "when": "illegal state transition", "httpStatus": 409}
+      ],
+      "auth": "session-scoped; repeat calls in the same state return 200 (idempotent)",
+      "docLine": 788,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0032"]
+    },
+    {
+      "id": "API-7",
+      "method": "INTERNAL",
+      "path": "IF-TXN-001 (begin)",
+      "purpose": "Transaction Lifecycle Begin - Caller -> Txn Manager -> participants. Steps T-001..T-005.",
+      "request": {"name": "TxnBeginRequest", "fields": [
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "isolation", "type": "TxnIsolation (Snapshot | Serializable)", "required": true},
+        {"name": "participants", "type": "Vec<ParticipantId>", "required": true},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": false},
+        {"name": "timeout_ms", "type": "Option<u32>", "required": false}
+      ]},
+      "response": {"name": "TxnInfo", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "state", "type": "TxnState (New | Active | Validating | Committed | RollingBack | RolledBack | Failed)", "required": true},
+        {"name": "operations_count", "type": "u32", "required": true},
+        {"name": "participants", "type": "Vec<ParticipantId>", "required": true},
+        {"name": "started_at", "type": "DateTime<Utc>", "required": true},
+        {"name": "committed_at", "type": "Option<DateTime<Utc>>", "required": false},
+        {"name": "rolled_back_at", "type": "Option<DateTime<Utc>>", "required": false},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-001", "when": "T-001 session does not exist", "httpStatus": 404},
+        {"code": "ERR-AUTHZ-001", "when": "T-001 session lacks write permission", "httpStatus": 403},
+        {"code": "ERR-BIZ-003", "when": "T-002 the session already has an active transaction", "httpStatus": 409},
+        {"code": "ERR-DB-001", "when": "T-004 WAL begin record write failed", "httpStatus": 503}
+      ],
+      "auth": "session write permission checked at T-001",
+      "docLine": 843,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0033"]
+    },
+    {
+      "id": "API-8",
+      "method": "INTERNAL",
+      "path": "IF-TXN-001 (add_op)",
+      "purpose": "Transaction Lifecycle AddOp - stage a BufferPatch / FileWrite / IndexUpdate / PluginCall operation, optionally with a compensating operation.",
+      "request": {"name": "TxnAddOpRequest", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "op", "type": "TxnOp (BufferPatch | FileWrite | IndexUpdate | PluginCall)", "required": true},
+        {"name": "compensating_op", "type": "Option<TxnOp>", "required": false}
+      ]},
+      "response": {"name": "(not specified - returns Result<()> / TxnInfo)", "fields": []},
+      "errors": [
+        {"code": "ERR-BIZ-003", "when": "the transaction is not in state Active", "httpStatus": 409}
+      ],
+      "auth": "inherits the session's write authorization from Begin",
+      "docLine": 870,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0033"]
+    },
+    {
+      "id": "API-9",
+      "method": "INTERNAL",
+      "path": "IF-TXN-001 (commit)",
+      "purpose": "Transaction Lifecycle Commit - two-phase commit over all participants (T-C01..T-C07): validate, prepare, WAL prepare record, commit, WAL commit record.",
+      "request": {"name": "TxnCommitRequest", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "finalize", "type": "bool (true = physical flush to disk)", "required": true}
+      ]},
+      "response": {"name": "TxnInfo", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "state", "type": "TxnState", "required": true},
+        {"name": "committed_at", "type": "Option<DateTime<Utc>>", "required": false},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-003", "when": "T-C01 transaction is not Active", "httpStatus": 409},
+        {"code": "ERR-BIZ-005", "when": "T-C03 pre-commit check fails (version / constraint / resource)", "httpStatus": 409},
+        {"code": "ERR-BIZ-007", "when": "T-C03 a participant's business rule check failed", "httpStatus": 422},
+        {"code": "ERR-DB-001", "when": "T-C04/T-C05/T-C06/T-C07 WAL or participant storage failure", "httpStatus": 503},
+        {"code": "ERR-DB-002", "when": "T-C04 storage deadlock", "httpStatus": 503},
+        {"code": "ERR-DB-004", "when": "T-C04 constraint violation", "httpStatus": 409}
+      ],
+      "auth": "session write permission; repeat commit on an already Committed transaction returns 200 (no-op)",
+      "docLine": 876,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0033", "EV-DD24-0027"]
+    },
+    {
+      "id": "API-10",
+      "method": "INTERNAL",
+      "path": "IF-TXN-001 (rollback)",
+      "purpose": "Transaction Lifecycle Rollback - undo staged operations and return the Workspace to the pre-Begin state.",
+      "request": {"name": "TxnRollbackRequest", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "reason", "type": "String", "required": true}
+      ]},
+      "response": {"name": "TxnInfo", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "state", "type": "TxnState", "required": true},
+        {"name": "rolled_back_at", "type": "Option<DateTime<Utc>>", "required": false},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-003", "when": "the transaction state does not permit rollback", "httpStatus": 409}
+      ],
+      "auth": "session write permission; repeat rollback on an already RolledBack transaction returns 200 (no-op)",
+      "docLine": 881,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0033"]
+    },
+    {
+      "id": "API-11",
+      "method": "INTERNAL",
+      "path": "IF-INTERNAL-BUFFER-001 (read)",
+      "purpose": "Buffer Read - Caller -> Buffer Engine -> FS Adapter. Returns decoded text, encoding, current version, content hash and line count.",
+      "request": {"name": "BufferReadRequest", "fields": [
+        {"name": "buffer_id", "type": "BufferId", "required": true},
+        {"name": "range", "type": "Option<Range<Position>>", "required": false},
+        {"name": "encoding", "type": "Option<Encoding>", "required": false},
+        {"name": "version", "type": "Option<u64>", "required": false}
+      ]},
+      "response": {"name": "BufferReadResponse", "fields": [
+        {"name": "buffer_id", "type": "BufferId", "required": true},
+        {"name": "content", "type": "String", "required": true},
+        {"name": "encoding", "type": "Encoding", "required": true},
+        {"name": "version", "type": "u64", "required": true},
+        {"name": "content_hash", "type": "ContentHash", "required": true},
+        {"name": "line_count", "type": "u32", "required": true},
+        {"name": "next_cursor", "type": "Option<Cursor>", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-001", "when": "B-001 buffer does not exist", "httpStatus": 404},
+        {"code": "ERR-AUTHZ-001", "when": "B-001 session write permission check failed", "httpStatus": 403},
+        {"code": "ERR-VAL-004", "when": "B-004 range out of bounds", "httpStatus": 400},
+        {"code": "ERR-VAL-008", "when": "B-004 path outside the workspace root", "httpStatus": 400}
+      ],
+      "auth": "IF-AUTH-001 / session permission set",
+      "docLine": 1009,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0034"]
+    },
+    {
+      "id": "API-12",
+      "method": "INTERNAL",
+      "path": "IF-INTERNAL-BUFFER-001 (patch)",
+      "purpose": "Buffer Patch - optimistic-lock checked patch application. Steps B-001..B-009; transactional patches join an existing transaction, non-transactional patches apply directly.",
+      "request": {"name": "BufferPatchRequest", "fields": [
+        {"name": "buffer_id", "type": "BufferId", "required": true},
+        {"name": "expected_version", "type": "u64", "required": true},
+        {"name": "before_hash", "type": "Option<ContentHash>", "required": false},
+        {"name": "patches", "type": "Vec<Patch>", "required": true},
+        {"name": "transaction_id", "type": "Option<TransactionId>", "required": false},
+        {"name": "session_id", "type": "SessionId", "required": true}
+      ]},
+      "response": {"name": "BufferPatchResponse", "fields": [
+        {"name": "buffer_id", "type": "BufferId", "required": true},
+        {"name": "new_version", "type": "u64", "required": true},
+        {"name": "new_content_hash", "type": "ContentHash", "required": true},
+        {"name": "diff_summary", "type": "DiffSummary", "required": true},
+        {"name": "warnings", "type": "Vec<Diagnostic>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-001", "when": "B-001 buffer does not exist", "httpStatus": 404},
+        {"code": "ERR-AUTHZ-001", "when": "B-001 session write permission failed", "httpStatus": 403},
+        {"code": "ERR-BIZ-005", "when": "B-002 expected_version != current version", "httpStatus": 409},
+        {"code": "ERR-BIZ-009", "when": "B-003 before_hash != current content hash", "httpStatus": 409},
+        {"code": "ERR-VAL-004", "when": "B-004 patch range invalid", "httpStatus": 400},
+        {"code": "ERR-VAL-008", "when": "B-004 path outside the workspace root", "httpStatus": 400},
+        {"code": "ERR-BIZ-007", "when": "B-006 patch merge conflict", "httpStatus": 422}
+      ],
+      "auth": "session write permission; conflict errors (ERR-BIZ-005 / ERR-BIZ-009) require a client re-read and retry",
+      "docLine": 1034,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0034"]
+    },
+    {
+      "id": "API-13",
+      "method": "INTERNAL",
+      "path": "IF-FS-001 (read / stat)",
+      "purpose": "File System Internal API read and stat - path is always relative to the workspace root and is canonicalized before evaluation.",
+      "request": {"name": "FsReadRequest / FsStatRequest", "fields": [
+        {"name": "path", "type": "WorkspacePath", "required": true},
+        {"name": "offset", "type": "Option<u64>", "required": false},
+        {"name": "length", "type": "Option<u64>", "required": false},
+        {"name": "encoding", "type": "Option<Encoding>", "required": false},
+        {"name": "follow_symlinks", "type": "bool (default false)", "required": false}
+      ]},
+      "response": {"name": "FsStat", "fields": [
+        {"name": "(not specified - FsStat shape is only shown in the sequence diagram)", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-VAL-008", "when": "F-W01 path resolves outside the workspace root", "httpStatus": 400},
+        {"code": "ERR-AUTHZ-003", "when": "F-W01/F-W03 path not in allowed_paths / write_paths", "httpStatus": 403}
+      ],
+      "auth": "IF-AUTH-001; read is idempotent",
+      "docLine": 1133,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035"]
+    },
+    {
+      "id": "API-14",
+      "method": "INTERNAL",
+      "path": "IF-FS-001 (write)",
+      "purpose": "File System Internal API write - sandbox-checked, quota-checked, atomic (tmp file + rename) write. Steps F-W01..F-W06.",
+      "request": {"name": "FsWriteRequest", "fields": [
+        {"name": "path", "type": "WorkspacePath", "required": true},
+        {"name": "content", "type": "Bytes", "required": true},
+        {"name": "mode", "type": "WriteMode (Create | Overwrite | Append)", "required": true},
+        {"name": "create_parents", "type": "bool", "required": true},
+        {"name": "transaction_id", "type": "Option<TransactionId>", "required": false}
+      ]},
+      "response": {"name": "FsStat", "fields": [
+        {"name": "(not specified - FsStat shape is only shown in the sequence diagram)", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-VAL-008", "when": "F-W01 path outside the workspace root", "httpStatus": 400},
+        {"code": "ERR-AUTHZ-003", "when": "F-W02/F-W03 write permission or path policy denied", "httpStatus": 403},
+        {"code": "ERR-BIZ-006", "when": "F-W04 disk quota exceeded", "httpStatus": 429},
+        {"code": "ERR-DB-001", "when": "F-W06 storage write failure", "httpStatus": 503},
+        {"code": "ERR-SYS-005", "when": "F-W06 disk full / schema mismatch on write", "httpStatus": 500}
+      ],
+      "auth": "IF-AUTH-001 write permission; write is NOT idempotent - must use a transaction or idempotency_key",
+      "docLine": 1159,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035"]
+    },
+    {
+      "id": "API-15",
+      "method": "INTERNAL",
+      "path": "IF-FS-001 (watch)",
+      "purpose": "File System Internal API watch - subscribe to filesystem change notifications under the workspace.",
+      "request": {"name": "FsWatchRequest", "fields": [
+        {"name": "paths", "type": "Vec<WorkspacePath>", "required": true},
+        {"name": "recursive", "type": "bool", "required": true},
+        {"name": "event_mask", "type": "WatchEventMask (Create | Modify | Delete | Rename)", "required": true}
+      ]},
+      "response": {"name": "(not specified - event stream shape not given)", "fields": []},
+      "errors": [
+        {"code": "ERR-AUTHZ-003", "when": "watched path not inside the workspace root", "httpStatus": 403}
+      ],
+      "auth": "IF-AUTH-001",
+      "docLine": 1171,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035"]
+    },
+    {
+      "id": "API-16",
+      "method": "INTERNAL",
+      "path": "IF-IDX-001 (update)",
+      "purpose": "Index Internal API update - content-hash keyed indexing; identical hash is skipped (naturally idempotent). Steps I-U01..I-U05.",
+      "request": {"name": "IndexUpdateRequest", "fields": [
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "document_id", "type": "DocumentId", "required": true},
+        {"name": "content_hash", "type": "ContentHash", "required": true},
+        {"name": "text", "type": "String", "required": true},
+        {"name": "language", "type": "Option<String>", "required": false},
+        {"name": "transaction_id", "type": "Option<TransactionId>", "required": false}
+      ]},
+      "response": {"name": "(not specified)", "fields": []},
+      "errors": [
+        {"code": "ERR-EXT-011", "when": "I-U03 embedding / inference failed", "httpStatus": 502},
+        {"code": "ERR-DB-001", "when": "I-U04 index backend write failed", "httpStatus": 503},
+        {"code": "ERR-DB-002", "when": "I-U04 index backend deadlock", "httpStatus": 503}
+      ],
+      "auth": "session / workspace scoped; IndexUpdated event publication degrades to WARN on failure",
+      "docLine": 1255,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-17",
+      "method": "INTERNAL",
+      "path": "IF-IDX-001 (query)",
+      "purpose": "Index Internal API query - text / regex / symbol / semantic search with cursor pagination (default limit 100).",
+      "request": {"name": "IndexQueryRequest", "fields": [
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "query", "type": "IndexQuery (TextQuery | RegexQuery | SymbolQuery | SemanticQuery)", "required": true},
+        {"name": "limit", "type": "u32 (default 100)", "required": false},
+        {"name": "cursor", "type": "Option<Cursor>", "required": false}
+      ]},
+      "response": {"name": "IndexQueryResponse", "fields": [
+        {"name": "hits", "type": "(not enumerated - only next_cursor is shown in the sequence diagram)", "required": false},
+        {"name": "next_cursor", "type": "Option<Cursor>", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-DB-001", "when": "index backend unavailable - client may degrade to streaming search", "httpStatus": 503}
+      ],
+      "auth": "workspace scoped",
+      "docLine": 1265,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-18",
+      "method": "INTERNAL",
+      "path": "IF-IDX-001 (invalidate)",
+      "purpose": "Index Internal API invalidate - triggered by the Buffer Engine after a patch (B-008); only executes when the content hash matches.",
+      "request": {"name": "IndexInvalidateRequest", "fields": [
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "document_id", "type": "DocumentId", "required": true},
+        {"name": "content_hash", "type": "ContentHash (old hash, confirms the entry still needs invalidation)", "required": true}
+      ]},
+      "response": {"name": "(not specified)", "fields": []},
+      "errors": [
+        {"code": "ERR-DB-001", "when": "index backend unavailable", "httpStatus": 503}
+      ],
+      "auth": "workspace scoped; failure degrades to WARN and does not fail the patch",
+      "docLine": 1272,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030", "EV-DD24-0034"]
+    },
+    {
+      "id": "API-19",
+      "method": "INTERNAL",
+      "path": "IF-INTERNAL-PLUGIN-001 (load)",
+      "purpose": "Plugin Manager Internal API load - signature verification, permission check, resource budget check, runtime load, capability reconcile, registry registration. Steps PL-001..PL-007.",
+      "request": {"name": "PluginLoadRequest", "fields": [
+        {"name": "plugin_id", "type": "PluginId", "required": true},
+        {"name": "manifest", "type": "PluginManifest", "required": true},
+        {"name": "runtime", "type": "PluginRuntime (Wasm | NativeWorker)", "required": true},
+        {"name": "signature", "type": "Option<Signature>", "required": false},
+        {"name": "session_id", "type": "SessionId", "required": true}
+      ]},
+      "response": {"name": "PluginInfo", "fields": [
+        {"name": "plugin_id", "type": "PluginId", "required": true},
+        {"name": "state", "type": "PluginState (Active)", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-AUTH-003", "when": "PL-001 manifest signature verification failed", "httpStatus": 401},
+        {"code": "ERR-AUTHZ-001", "when": "PL-002 session lacks the install capability", "httpStatus": 403},
+        {"code": "ERR-BIZ-006", "when": "PL-003 CPU / RAM / disk budget exceeded", "httpStatus": 429},
+        {"code": "ERR-EXT-007", "when": "PL-004 IPC channel closed during load", "httpStatus": 502},
+        {"code": "ERR-EXT-008", "when": "PL-004 worker crashed during load", "httpStatus": 502},
+        {"code": "ERR-EXT-010", "when": "PL-004 WASM trap during load", "httpStatus": 502},
+        {"code": "ERR-SYS-006", "when": "PL-005 reported capabilities do not match the manifest / missing dependency", "httpStatus": 500},
+        {"code": "ERR-BIZ-002", "when": "PL-006 duplicate plugin_id in the registry", "httpStatus": 409}
+      ],
+      "auth": "IF-AUTH-001 + install capability; PluginLoaded event publication degrades to WARN",
+      "docLine": 1327,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-20",
+      "method": "INTERNAL",
+      "path": "IF-INTERNAL-PLUGIN-001 (unload)",
+      "purpose": "Plugin Manager Internal API unload - stop accepting new work, drain in-flight tasks up to drain_timeout_ms, unregister capabilities.",
+      "request": {"name": "PluginUnloadRequest", "fields": [
+        {"name": "plugin_id", "type": "PluginId", "required": true},
+        {"name": "drain_timeout_ms", "type": "u32", "required": true},
+        {"name": "force", "type": "bool (true = force cancel)", "required": true}
+      ]},
+      "response": {"name": "(not specified)", "fields": []},
+      "errors": [
+        {"code": "ERR-BIZ-011", "when": "drain timed out and active tasks were force-cancelled", "httpStatus": 503}
+      ],
+      "auth": "IF-AUTH-001; repeat load of the same ID returns ERR-BIZ-002, retry after unload is OK",
+      "docLine": 1353,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-21",
+      "method": "INTERNAL",
+      "path": "IF-INTERNAL-PLUGIN-001 (hot_swap)",
+      "purpose": "Plugin Manager Internal API hot swap - replace a loaded plugin instance, optionally migrating state.",
+      "request": {"name": "PluginHotSwapRequest", "fields": [
+        {"name": "plugin_id", "type": "PluginId", "required": true},
+        {"name": "new_manifest", "type": "PluginManifest", "required": true},
+        {"name": "state_migration", "type": "Option<StateMigrationSpec>", "required": false}
+      ]},
+      "response": {"name": "PluginInfo", "fields": [
+        {"name": "plugin_id", "type": "PluginId", "required": true},
+        {"name": "state", "type": "PluginState", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-011", "when": "the plugin ends in the FAILED state", "httpStatus": 503}
+      ],
+      "auth": "IF-AUTH-001; detailed state machine is delegated to DD-03 §8",
+      "docLine": 1359,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-22",
+      "method": "INTERNAL",
+      "path": "IF-SCH-001 (submit)",
+      "purpose": "Scheduler Internal API submit - priority + deadline queue with DAG dependencies. Steps SC-001..SC-006.",
+      "request": {"name": "TaskSubmitRequest", "fields": [
+        {"name": "task_id", "type": "Option<TaskId>", "required": false},
+        {"name": "kind", "type": "TaskKind (Indexing | Embedding | Build | Test | Search | Custom)", "required": true},
+        {"name": "priority", "type": "Priority (Low | Normal | High | Critical)", "required": true},
+        {"name": "payload", "type": "serde_json::Value", "required": true},
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "dependencies", "type": "Vec<TaskId>", "required": true},
+        {"name": "deadline", "type": "Option<DateTime<Utc>>", "required": false},
+        {"name": "cancellation", "type": "CancellationToken", "required": false}
+      ]},
+      "response": {"name": "TaskInfo", "fields": [
+        {"name": "task_id", "type": "TaskId", "required": true},
+        {"name": "state", "type": "TaskState (Queued)", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-006", "when": "SC-001 session resource budget exceeded", "httpStatus": 429},
+        {"code": "ERR-BIZ-001", "when": "SC-002 a declared dependency does not exist", "httpStatus": 404}
+      ],
+      "auth": "session-scoped; submit is idempotent when the client supplies task_id",
+      "docLine": 1447,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-23",
+      "method": "INTERNAL",
+      "path": "IF-SCH-001 (cancel)",
+      "purpose": "Scheduler Internal API cancel - cancel a queued or running task; the deadline expiry path auto-cancels.",
+      "request": {"name": "TaskCancelRequest", "fields": [
+        {"name": "task_id", "type": "TaskId", "required": true},
+        {"name": "reason", "type": "String", "required": true}
+      ]},
+      "response": {"name": "TaskInfo", "fields": [
+        {"name": "task_id", "type": "TaskId", "required": true},
+        {"name": "state", "type": "TaskState", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-008", "when": "the cancelled Execution observes the CancellationToken", "httpStatus": 499}
+      ],
+      "auth": "session-scoped; cancel is idempotent",
+      "docLine": 1476,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0030"]
+    },
+    {
+      "id": "API-24",
+      "method": "INTERNAL",
+      "path": "IF-AUTH-001 (authenticate)",
+      "purpose": "Internal Auth Pipeline authenticate - extract credential, verify format, validate signature/expiry, parse claims, return Principal. Steps AU-001..AU-005.",
+      "request": {"name": "AuthRequest", "fields": [
+        {"name": "credential", "type": "Credential (Bearer token | mTLS | API key)", "required": true},
+        {"name": "requested_session", "type": "Option<SessionId>", "required": false},
+        {"name": "requested_workspace", "type": "Option<WorkspaceId>", "required": false},
+        {"name": "client_info", "type": "ClientInfo", "required": true}
+      ]},
+      "response": {"name": "Principal", "fields": [
+        {"name": "actor", "type": "(not enumerated)", "required": false},
+        {"name": "role", "type": "(not enumerated)", "required": false},
+        {"name": "scope", "type": "(not enumerated)", "required": false},
+        {"name": "session_candidates", "type": "(not enumerated)", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-AUTH-001", "when": "AU-001/AU-002 credential missing or malformed", "httpStatus": 401},
+        {"code": "ERR-AUTH-002", "when": "AU-003 token expired", "httpStatus": 401},
+        {"code": "ERR-AUTH-003", "when": "AU-003/AU-004 signature invalid or claims invalid", "httpStatus": 401},
+        {"code": "ERR-AUTH-004", "when": "AU-003 credential revoked", "httpStatus": 401},
+        {"code": "ERR-AUTH-005", "when": "session binding mismatch between session id and token", "httpStatus": 401}
+      ],
+      "auth": "this IS the authentication step",
+      "docLine": 1843,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0036"]
+    },
+    {
+      "id": "API-25",
+      "method": "INTERNAL",
+      "path": "IF-AUTH-001 (authorize)",
+      "purpose": "Internal Auth Pipeline authorize - load RBAC policy, map action to required capabilities, check path allowlist and network/process policies. Steps AZ-001..AZ-004.",
+      "request": {"name": "AuthorizeRequest", "fields": [
+        {"name": "principal", "type": "Principal", "required": true},
+        {"name": "action", "type": "Action (capability id or command name)", "required": true},
+        {"name": "target", "type": "Option<Target> (path / buffer / resource)", "required": false},
+        {"name": "context", "type": "AuthorizeContext (session / time / network / process)", "required": true}
+      ]},
+      "response": {"name": "Decision (Allow / Deny)", "fields": [
+        {"name": "decision", "type": "Allow | Deny", "required": true},
+        {"name": "policy_id", "type": "(not enumerated)", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-DB-001", "when": "AZ-001 policy store load failed", "httpStatus": 503},
+        {"code": "ERR-AUTHZ-003", "when": "AZ-003 target path not in allowed_paths", "httpStatus": 403},
+        {"code": "ERR-AUTHZ-004", "when": "AZ-004 network policy denies the target host", "httpStatus": 403},
+        {"code": "ERR-AUTHZ-005", "when": "AZ-004 process executable not in the allowlist", "httpStatus": 403},
+        {"code": "ERR-AUTHZ-001", "when": "RBAC decision is Deny", "httpStatus": 403}
+      ],
+      "auth": "this IS the authorization step; every decision is re-evaluated (no caching)",
+      "docLine": 1868,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0036"]
+    },
+    {
+      "id": "API-26",
+      "method": "POST",
+      "path": "/v1/commands",
+      "purpose": "IF-REST-002 REST Adapter -> Core. The documented REST route table (DD-04 §7.11) is: GET /v1/system/health (health check, bypasses IF-AUTH-001); GET /v1/system/info (IF-CMD-001 'system.info'); POST /v1/commands (IF-CMD-001); GET /v1/commands/{id} (IF-CMD-001 'command.get'); GET /v1/capabilities (IF-CAP-001 'capability.list'); POST /v1/capabilities/{id}/invoke (IF-CAP-001); POST/GET/DELETE /v1/sessions (IF-SES-001); POST /v1/transactions (IF-TXN-001); GET /v1/events (IF-EVT-001, upgraded to SSE); POST/GET on /v1/files, /v1/buffers, /v1/symbols, /v1/search, /v1/diagnostics, /v1/context, /v1/tasks, /v1/plugins (corresponding IF). This entry documents the POST /v1/commands row; the other rows are listed verbatim in the purpose text. Middleware chain order: TraceID injection -> Rate Limit -> CORS -> Body Size Limit -> Authentication extraction -> coarse Authorization -> Timeout injection -> Request Logging -> MOD-API-001 -> Response serialization -> Audit Log -> HTTP response.",
+      "request": {"name": "CommandRequest", "fields": [
+        {"name": "name", "type": "String", "required": true},
+        {"name": "version", "type": "u32", "required": true},
+        {"name": "arguments", "type": "serde_json::Value", "required": true},
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "execution_id", "type": "Option<ExecutionId>", "required": false},
+        {"name": "actor", "type": "ActorRef", "required": true},
+        {"name": "timeout_ms", "type": "Option<u32>", "required": false},
+        {"name": "idempotency_key", "type": "Option<String>", "required": false},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": false}
+      ]},
+      "response": {"name": "CommandResponse", "fields": [
+        {"name": "status", "type": "CommandStatus (Ok | PartialOk | Failed)", "required": true},
+        {"name": "data", "type": "Option<serde_json::Value>", "required": false},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": true},
+        {"name": "side_effects", "type": "Vec<SideEffectRecord>", "required": true},
+        {"name": "next_cursor", "type": "Option<Cursor>", "required": false},
+        {"name": "error", "type": "Option<WireError>", "required": false}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-006", "when": "R-002 rate limit exceeded (token bucket per IP / per session)", "httpStatus": 429},
+        {"code": "ERR-VAL-003", "when": "R-003 body size over the limit", "httpStatus": 413},
+        {"code": "ERR-AUTH-001", "when": "R-004 Authorization header missing or invalid", "httpStatus": 401},
+        {"code": "ERR-VAL-001", "when": "R-005 body deserialization failed", "httpStatus": 400},
+        {"code": "ERR-BIZ-008", "when": "R-006 the HTTP client disconnected and the CancellationToken fired", "httpStatus": 499},
+        {"code": "ERR-SYS-004", "when": "server-side configuration error", "httpStatus": 500}
+      ],
+      "auth": "Authorization header (Bearer) processed by IF-AUTH-001; trace_id read from X-Request-Id or generated",
+      "docLine": 1547,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035", "EV-DD24-0043"]
+    },
+    {
+      "id": "API-27",
+      "method": "GET",
+      "path": "/v1/events",
+      "purpose": "IF-SSE-001 SSE Stream - GET /v1/events upgrades to a continuous Server-Sent Events subscription filtered by EventFilter; the companion POST /v1/commands with Accept: text/event-stream streams one command's progress. Event frame format: 'id: <sequence>' / 'event: <EventType>' / 'data: <JSON payload>'.",
+      "request": {"name": "EventSubscribeRequest (over SSE query parameters)", "fields": [
+        {"name": "filter", "type": "EventFilter (topic prefix / type / workspace / session)", "required": true},
+        {"name": "from_sequence", "type": "Option<u64> (also via the Last-Event-Id header)", "required": false}
+      ]},
+      "response": {"name": "EventEnvelope (SSE frames)", "fields": [
+        {"name": "id", "type": "u64 (sequence)", "required": true},
+        {"name": "event", "type": "String (EventType)", "required": true},
+        {"name": "data", "type": "serde_json::Value (JSON payload)", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-008", "when": "client disconnect triggers the CancellationToken", "httpStatus": 499},
+        {"code": "ERR-AUTH-001", "when": "Authorization missing on the SSE upgrade", "httpStatus": 401}
+      ],
+      "auth": "IF-AUTH-001; reconnect uses Last-Event-Id to resume from from_sequence",
+      "docLine": 1710,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035", "EV-DD24-0031"]
+    },
+    {
+      "id": "API-28",
+      "method": "JSONRPC",
+      "path": "stdio (JSON-RPC 2.0)",
+      "purpose": "IF-JSONRPC-001 stdio JSON-RPC Adapter -> IF-CMD-001. Line-delimited JSON over stdin/stdout, single connection / single request-response model, no streaming by default. Steps JR-001..JR-006.",
+      "request": {"name": "JSON-RPC 2.0 request envelope", "fields": [
+        {"name": "jsonrpc", "type": "String (\"2.0\")", "required": true},
+        {"name": "id", "type": "String", "required": true},
+        {"name": "method", "type": "String (e.g. \"command.dispatch\")", "required": true},
+        {"name": "params", "type": "CommandRequest fields (name, arguments, session_id, ...)", "required": true}
+      ]},
+      "response": {"name": "JSON-RPC 2.0 response envelope", "fields": [
+        {"name": "jsonrpc", "type": "String (\"2.0\")", "required": true},
+        {"name": "id", "type": "String", "required": true},
+        {"name": "result", "type": "CommandResponse (status, data, ...)", "required": false},
+        {"name": "error", "type": "JSON-RPC error object", "required": false}
+      ]},
+      "errors": [
+        {"code": "-32700", "when": "JR-001 parse error (wraps ERR-VAL-001)", "httpStatus": 400},
+        {"code": "-32600", "when": "JR-002 invalid JSON-RPC request", "httpStatus": 400},
+        {"code": "-32601", "when": "method not found (ERR-SYS-006)", "httpStatus": 500},
+        {"code": "-32602", "when": "JR-003 invalid params (ERR-VAL-001 / ERR-VAL-002 / ERR-VAL-007)", "httpStatus": 400},
+        {"code": "-32603", "when": "JR-005 internal error (ERR-SYS-001 / ERR-SYS-002)", "httpStatus": 500},
+        {"code": "-32000 ～ -32099", "when": "server-defined custom errors", "httpStatus": 500}
+      ],
+      "auth": "token passed through by the LangGraph Adapter; the adapter injects it",
+      "docLine": 1615,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035", "EV-DD24-0042"]
+    },
+    {
+      "id": "API-29",
+      "method": "JSONRPC",
+      "path": "stdio (MCP tools/call)",
+      "purpose": "IF-MCP-001 MCP Adapter - Model Context Protocol tool definitions derived from the Rust types via JSON Schema; tool handlers route to IF-CMD-001. Steps MC-001..MC-005.",
+      "request": {"name": "MCP tools/call request", "fields": [
+        {"name": "name", "type": "String (tool name, e.g. \"file.read\")", "required": true},
+        {"name": "inputSchema", "type": "object (JSON Schema derived from the Rust type)", "required": true},
+        {"name": "arguments", "type": "object (tool arguments)", "required": false}
+      ]},
+      "response": {"name": "MCP CallToolResult", "fields": [
+        {"name": "content", "type": "array (MC-004 wraps the response into an MCP content array)", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-VAL-001", "when": "MC-001 malformed tools/call request", "httpStatus": 400},
+        {"code": "ERR-SYS-006", "when": "MC-002 no matching command for the tool", "httpStatus": 500}
+      ],
+      "auth": "session_id / token passed through from the MCP client",
+      "docLine": 1781,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035"]
+    },
+    {
+      "id": "API-30",
+      "method": "POST",
+      "path": "/v1/transactions",
+      "purpose": "IF-TXN-001 exposed over REST. The request/response DTOs are the TxnBeginRequest / TxnInfo structures; DD-04 does not state whether add_op / commit / rollback are sub-paths of this route or additional verbs, and the route table only lists POST /v1/transactions.",
+      "request": {"name": "TxnBeginRequest", "fields": [
+        {"name": "session_id", "type": "SessionId", "required": true},
+        {"name": "workspace_id", "type": "WorkspaceId", "required": true},
+        {"name": "isolation", "type": "TxnIsolation (Snapshot | Serializable)", "required": true},
+        {"name": "participants", "type": "Vec<ParticipantId>", "required": true},
+        {"name": "metadata", "type": "BTreeMap<String, String>", "required": false},
+        {"name": "timeout_ms", "type": "Option<u32>", "required": false}
+      ]},
+      "response": {"name": "TxnInfo", "fields": [
+        {"name": "transaction_id", "type": "TransactionId", "required": true},
+        {"name": "state", "type": "TxnState", "required": true},
+        {"name": "operations_count", "type": "u32", "required": true},
+        {"name": "participants", "type": "Vec<ParticipantId>", "required": true},
+        {"name": "started_at", "type": "DateTime<Utc>", "required": true},
+        {"name": "diagnostics", "type": "Vec<Diagnostic>", "required": true}
+      ]},
+      "errors": [
+        {"code": "ERR-BIZ-001", "when": "session does not exist", "httpStatus": 404},
+        {"code": "ERR-AUTHZ-001", "when": "session lacks write permission", "httpStatus": 403},
+        {"code": "ERR-BIZ-003", "when": "the session already has an active transaction", "httpStatus": 409},
+        {"code": "ERR-DB-001", "when": "WAL begin record write failed", "httpStatus": 503}
+      ],
+      "auth": "IF-AUTH-001 (Authorization header) + session RBAC",
+      "docLine": 1556,
+      "impl": {"path": "", "startLine": 0, "endLine": 0, "status": "Designed"},
+      "evidenceIds": ["EV-DD24-0035", "EV-DD24-0033"]
+    }
+  ],
+  "stateMachines": [
+    {
+      "id": "SM-SESSION",
+      "name": "SessionState (DD-02 §6.3.2 / §6.5)",
+      "initial": "New",
+      "states": ["New", "Active", "Suspended", "Terminated", "Failed"],
+      "terminalStates": ["Terminated", "Failed"],
+      "transitions": [
+        {"from": "(none)", "to": "New", "event": "create()", "guard": "Quota 未超過 / Workspace 存在", "timeoutMs": 5000, "retryMax": null, "docLine": 303},
+        {"from": "New", "to": "Active", "event": "activate()", "guard": "permission 評価 OK", "timeoutMs": null, "retryMax": null, "docLine": 304},
+        {"from": "New", "to": "Failed", "event": "validation_error", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 414},
+        {"from": "Active", "to": "Suspended", "event": "suspend()", "guard": "なし (ActiveBuffer 保持 / ActiveTxn はそのまま)", "timeoutMs": null, "retryMax": null, "docLine": 305},
+        {"from": "Active", "to": "Suspended", "event": "idle_timeout", "guard": "now - last_activity > idle_threshold (既定 30 分 = 1800000 ms)", "timeoutMs": 1800000, "retryMax": null, "docLine": 307},
+        {"from": "Active", "to": "Terminated", "event": "terminate()", "guard": "なし (force=true で ActiveTxn 強制 ROLLBACK)", "timeoutMs": 10000, "retryMax": null, "docLine": 308},
+        {"from": "Active", "to": "Failed", "event": "internal_error", "guard": "なし (ActiveTxn ROLLBACK / SessionFailed Event)", "timeoutMs": null, "retryMax": null, "docLine": 310},
+        {"from": "Suspended", "to": "Active", "event": "resume()", "guard": "expires_at 未超過", "timeoutMs": null, "retryMax": null, "docLine": 306},
+        {"from": "Suspended", "to": "Terminated", "event": "ttl_expired", "guard": "now > expires_at (Human 8h / Agent・LangGraph 24h / Plugin 接続期間中 / CI 1h)", "timeoutMs": null, "retryMax": null, "docLine": 309},
+        {"from": "Suspended", "to": "Terminated", "event": "terminate()", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 419},
+        {"from": "Suspended", "to": "Failed", "event": "internal_error", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 420},
+        {"from": "Terminated", "to": "(deleted)", "event": "gc()", "guard": "grace_period 経過 (WAL エントリ compact)", "timeoutMs": null, "retryMax": null, "docLine": 311},
+        {"from": "Failed", "to": "(deleted)", "event": "after cleanup", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 422}
+      ],
+      "evidenceIds": ["EV-DD24-0007", "EV-DD24-0008", "EV-DD24-0026"]
+    },
+    {
+      "id": "SM-TRANSACTION",
+      "name": "TransactionStatus (DD-02 §7.4)",
+      "initial": "New",
+      "states": ["New", "Active", "Validating", "Committing", "Committed", "RollingBack", "RolledBack", "Failed"],
+      "terminalStates": ["Committed", "RolledBack", "Failed"],
+      "transitions": [
+        {"from": "(none)", "to": "New", "event": "begin()", "guard": "Session.state == Active かつ ActiveTxn 未設定", "timeoutMs": 5000, "retryMax": null, "docLine": 794},
+        {"from": "New", "to": "Active", "event": "journal.append(Begin)", "guard": "なし (Session.active_transaction = Some(txn_id))", "timeoutMs": null, "retryMax": null, "docLine": 795},
+        {"from": "Active", "to": "Active", "event": "apply_patch / savepoint", "guard": "status == Active (以外なら ERR-TXN-008)", "timeoutMs": 30000, "retryMax": null, "docLine": 796},
+        {"from": "Active", "to": "Validating", "event": "validate() 開始", "guard": "なし (WAL 書込必須)", "timeoutMs": null, "retryMax": null, "docLine": 797},
+        {"from": "Validating", "to": "Active", "event": "validate_failed (戻り)", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 798},
+        {"from": "Validating", "to": "Committing", "event": "validate_ok", "guard": "全 FileChange の version / hash 再検証通過", "timeoutMs": null, "retryMax": null, "docLine": 799},
+        {"from": "Committing", "to": "Committed", "event": "journal.append(Committed) + fsync", "guard": "物理書込 (atomic write: write-temp + fsync + rename) 全件成功", "timeoutMs": 60000, "retryMax": null, "docLine": 800},
+        {"from": "Committing", "to": "RollingBack", "event": "write_failed / conflict", "guard": "なし (既書込変更は退避 Snapshot から復元)", "timeoutMs": null, "retryMax": null, "docLine": 801},
+        {"from": "Active", "to": "RollingBack", "event": "rollback() / force_rollback()", "guard": "なし", "timeoutMs": 30000, "retryMax": null, "docLine": 802},
+        {"from": "Validating", "to": "RollingBack", "event": "conflict / timeout", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 803},
+        {"from": "RollingBack", "to": "RolledBack", "event": "journal.append(RolledBack)", "guard": "Undo Stack 逆順 Undo 完了", "timeoutMs": null, "retryMax": null, "docLine": 804},
+        {"from": "Active", "to": "Failed", "event": "internal_error", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 805},
+        {"from": "Validating", "to": "Failed", "event": "internal_error", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 806},
+        {"from": "Committing", "to": "Failed", "event": "unrecoverable_io", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 807},
+        {"from": "RollingBack", "to": "Failed", "event": "unrecoverable_io", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 808}
+      ],
+      "evidenceIds": ["EV-DD24-0014", "EV-DD24-0025", "EV-DD24-0027"]
+    },
+    {
+      "id": "SM-TRANSACTION-DD04",
+      "name": "TxnState (DD-04 §7.5) - divergent variant of SM-TRANSACTION",
+      "initial": "New",
+      "states": ["New", "Active", "Validating", "Committed", "RollingBack", "RolledBack", "Failed"],
+      "terminalStates": ["Committed", "RolledBack", "Failed"],
+      "transitions": [
+        {"from": "(none)", "to": "New", "event": "(initial state)", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 906},
+        {"from": "New", "to": "Active", "event": "begin", "guard": "T-001/T-002 (session exists, write permission, no active txn)", "timeoutMs": null, "retryMax": null, "docLine": 907},
+        {"from": "Active", "to": "Active", "event": "add_op", "guard": "transaction_id が Active", "timeoutMs": null, "retryMax": null, "docLine": 908},
+        {"from": "Active", "to": "Validating", "event": "commit", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 909},
+        {"from": "Validating", "to": "Committed", "event": "finalize", "guard": "participants の prepare が全件成功", "timeoutMs": null, "retryMax": null, "docLine": 910},
+        {"from": "Validating", "to": "RollingBack", "event": "validate_fail", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 911},
+        {"from": "Active", "to": "RollingBack", "event": "rollback / timeout / cancel", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 912},
+        {"from": "RollingBack", "to": "RolledBack", "event": "complete", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 913},
+        {"from": "RollingBack", "to": "Failed", "event": "compensate_fail", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 914}
+      ],
+      "evidenceIds": ["EV-DD24-0033"]
+    },
+    {
+      "id": "SM-BUFFER",
+      "name": "BufferState (DD-02 §8.3 / §8.4.2)",
+      "initial": "Loaded",
+      "states": ["Loaded", "Dirty", "Saving", "Saved", "Closed"],
+      "terminalStates": ["Closed"],
+      "transitions": [
+        {"from": "(none)", "to": "Loaded", "event": "open()", "guard": "Session.state == Active / PathPolicy OK; Version=0, Undo/Redo Stack 初期化", "timeoutMs": 1000, "retryMax": null, "docLine": 1449},
+        {"from": "Loaded", "to": "Dirty", "event": "apply_patch()", "guard": "Buffer.state ∈ {Loaded, Dirty, Saved} かつ before_hash / expected_version 検証 OK", "timeoutMs": 30000, "retryMax": null, "docLine": 1461},
+        {"from": "Saved", "to": "Dirty", "event": "apply_patch()", "guard": "同上", "timeoutMs": null, "retryMax": null, "docLine": 1461},
+        {"from": "Dirty", "to": "Dirty", "event": "apply_patch()", "guard": "同上", "timeoutMs": null, "retryMax": null, "docLine": 1461},
+        {"from": "Dirty", "to": "Dirty", "event": "undo() / redo()", "guard": "Undo/Redo Stack 非空", "timeoutMs": null, "retryMax": null, "docLine": 1495},
+        {"from": "Dirty", "to": "Saving", "event": "save()", "guard": "Buffer.state == Dirty かつ PathPolicy write OK", "timeoutMs": 30000, "retryMax": null, "docLine": 1518},
+        {"from": "Saving", "to": "Saved", "event": "atomic write 成功 (tmp + fsync + rename + fsync(parent_dir))", "guard": "なし", "timeoutMs": null, "retryMax": null, "docLine": 1532},
+        {"from": "Loaded", "to": "Closed", "event": "close()", "guard": "なし (Buffer 解放)", "timeoutMs": null, "retryMax": null, "docLine": 1305},
+        {"from": "Dirty", "to": "Closed", "event": "close()", "guard": "なし (Buffer 解放)", "timeoutMs": null, "retryMax": null, "docLine": 1305},
+        {"from": "Saved", "to": "Closed", "event": "close()", "guard": "なし (Buffer 解放)", "timeoutMs": null, "retryMax": null, "docLine": 1305}
+      ],
+      "evidenceIds": ["EV-DD24-0020", "EV-DD24-0025", "EV-DD24-0028"]
+    }
+  ],
+  "errorCodes": [
+    {"code": "ERR-VAL-001", "meaning": "JSON / Serde deserialization failure ('Invalid request payload')", "httpStatus": 400, "source": "DD-04", "docLine": 186, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-VAL-006", "meaning": "Invalid text encoding (UTF-8 / BOM missing) - 'Invalid text encoding'", "httpStatus": 400, "source": "DD-04", "docLine": 191, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-VAL-006", "meaning": "EncodingDetectionFailed - DD-02 uses the same code for a different condition and a different HTTP status (422). CONFLICT: DD-02 §8.9 vs DD-04 §6.2.", "httpStatus": 422, "source": "DD-02", "docLine": 1705, "evidenceIds": ["EV-DD24-0023", "EV-DD24-0029"]},
+    {"code": "ERR-VAL-008", "meaning": "Path outside the workspace root ('Path is outside workspace')", "httpStatus": 400, "source": "DD-04", "docLine": 193, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-AUTH-001", "meaning": "Credential missing ('Authentication required')", "httpStatus": 401, "source": "DD-04", "docLine": 194, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-AUTHZ-001", "meaning": "RBAC decision deny ('Permission denied')", "httpStatus": 403, "source": "DD-04", "docLine": 199, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-AUTHZ-003", "meaning": "Workspace path not in allowed_paths ('Access to path not allowed')", "httpStatus": 403, "source": "DD-04", "docLine": 201, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-BIZ-001", "meaning": "Resource does not exist ('Resource not found'). NOTE: DD-02 §8.9 additionally reuses ERR-BIZ-001 for six unrelated conditions (FileNotFound, BufferNotOpen, UndoStackEmpty, RedoStackEmpty, SavepointNotFound, BufferClosed) with HTTP 404 / 409 / 410.", "httpStatus": 404, "source": "DD-04", "docLine": 204, "evidenceIds": ["EV-DD24-0029", "EV-DD24-0023"]},
+    {"code": "ERR-BIZ-003", "meaning": "Illegal state-machine transition ('Invalid state transition')", "httpStatus": 409, "source": "DD-04", "docLine": 206, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-BIZ-005", "meaning": "Optimistic lock conflict - expected_version mismatch ('Concurrent modification detected'). DD-02 uses ERR-TXN-002 for the same condition.", "httpStatus": 409, "source": "DD-04", "docLine": 208, "evidenceIds": ["EV-DD24-0029", "EV-DD24-0018"]},
+    {"code": "ERR-BIZ-008", "meaning": "Operation cancelled by CancellationToken ('Operation cancelled')", "httpStatus": 499, "source": "DD-04", "docLine": 211, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-BIZ-009", "meaning": "Patch base hash mismatch ('Patch base hash mismatch'). DD-02 §8.6.2 labels the same code 'VersionConflict' and DD-02 §7.6 uses ERR-TXN-003 for a hash mismatch.", "httpStatus": 409, "source": "DD-04", "docLine": 212, "evidenceIds": ["EV-DD24-0029", "EV-DD24-0023"]},
+    {"code": "ERR-DB-001", "meaning": "Storage connection failure ('Storage unavailable')", "httpStatus": 503, "source": "DD-04", "docLine": 215, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-SYS-006", "meaning": "Required dependency missing / command or capability not found ('Required dependency missing')", "httpStatus": 500, "source": "DD-04", "docLine": 237, "evidenceIds": ["EV-DD24-0029"]},
+    {"code": "ERR-SES-002", "meaning": "Permission denied (RBAC decision on the Session's PermissionSet)", "httpStatus": 403, "source": "DD-02", "docLine": 586, "evidenceIds": ["EV-DD24-0009"]},
+    {"code": "ERR-SES-003", "meaning": "Path Not Allowed (path outside allowed_paths / blocked by PathPolicy)", "httpStatus": 403, "source": "DD-02", "docLine": 587, "evidenceIds": ["EV-DD24-0009"]},
+    {"code": "ERR-SES-005", "meaning": "ActiveTransactionExists (a second active transaction was set on the session)", "httpStatus": 409, "source": "DD-02", "docLine": 589, "evidenceIds": ["EV-DD24-0009", "EV-DD24-0005"]},
+    {"code": "ERR-SES-101", "meaning": "WorkspaceNotFound", "httpStatus": 404, "source": "DD-02", "docLine": 597, "evidenceIds": ["EV-DD24-0009"]},
+    {"code": "ERR-SES-102", "meaning": "QuotaExceeded (concurrent active Session limit reached)", "httpStatus": 429, "source": "DD-02", "docLine": 598, "evidenceIds": ["EV-DD24-0009", "EV-DD24-0026"]},
+    {"code": "ERR-TXN-001", "meaning": "ActiveTransactionExists on transaction begin", "httpStatus": 409, "source": "DD-02", "docLine": 1173, "evidenceIds": ["EV-DD24-0018"]},
+    {"code": "ERR-TXN-002", "meaning": "VersionConflict (expected_version does not match the buffer version)", "httpStatus": 409, "source": "DD-02", "docLine": 1174, "evidenceIds": ["EV-DD24-0018", "EV-DD24-0015"]},
+    {"code": "ERR-TXN-003", "meaning": "HashMismatch (before_hash does not match the buffer content hash)", "httpStatus": 409, "source": "DD-02", "docLine": 1175, "evidenceIds": ["EV-DD24-0018", "EV-DD24-0015"]},
+    {"code": "ERR-TXN-006", "meaning": "PatchApplyError (patch application failed, e.g. encoding error)", "httpStatus": 422, "source": "DD-02", "docLine": 1178, "evidenceIds": ["EV-DD24-0018"]},
+    {"code": "ERR-TXN-008", "meaning": "InvalidTransactionState (operation attempted in a state that does not allow it, e.g. patching while RollingBack)", "httpStatus": 409, "source": "DD-02", "docLine": 1180, "evidenceIds": ["EV-DD24-0018", "EV-DD24-0014"]},
+    {"code": "ERR-TXN-011", "meaning": "JournalAppendError (WAL append failed - FATAL, degrade to degraded mode)", "httpStatus": 500, "source": "DD-02", "docLine": 1183, "evidenceIds": ["EV-DD24-0018", "EV-DD24-0013"]}
+  ],
+  "transactionSemantics": {
+    "isolation": "DD-04 §7.5 makes isolation an explicit Begin parameter (TxnIsolation = Snapshot | Serializable) with 'Snapshot (default) / Serializable', delegating the implementation to DD-02 §7. DD-02 §7.6 does NOT define classic isolation levels; it defines optimistic concurrency: BOTH before_hash == buffer.content_hash AND expected_version == buffer.version must match, otherwise the patch is rejected (ERR-TXN-003 / ERR-TXN-002). Conflict detection order is stated in prose as 'Path -> Hash -> Version' (DD-02 §7.6) but the code sketch in the same section checks hash -> version -> path policy, an internal contradiction. Per-Buffer locking is a whole-buffer RwLock (read shared, patch/undo/redo/save exclusive); Range Lock is deferred to P1. Cross-session writes to the same buffer are serialised only by the optimistic version/hash check. DD-02 does not define multi-version or snapshot-read semantics beyond the TxnIsolation enum name.",
+    "durability": "Write-Ahead Log first: every state transition (Begin / PatchApplied / Savepoint / Validating / Committing / Committed / RollingBack / RolledBack / Failed / SnapshotPointer) is appended to the Journal and fsynced before the corresponding effect. Journal file mode is 0600. The WAL record format (JSON Lines vs bincode) is still 【TBD】 in DD-02 §6.8 / §13.6; snapshots are generated asynchronously once the WAL exceeds 64 KiB (threshold 【TBD】). Physical commit writes the workspace via atomic write: write temp file -> fsync -> rename -> fsync(parent_dir); a pre-commit snapshot is kept so a partial commit can be restored. Recovery is deterministic: the Journal is replayed per transaction and a Committing record without a Committed/RolledBack record is resolved by checking whether the workspace files match the patch after-state (all reflected => Committed, partially => RolledBack from the snapshot, IO unavailable => ERR-TXN-101 UnrecoverableOnStartup and manual recovery). NFR-D-002 requires RPO = 0 and NFR-D-001 requires RTO <= 10 s. Outbox delivery is at-least-once with consumer-side idempotency for effectively-once effects.",
+    "idempotency": "Session create is the only idempotent Session operation, keyed by 'actor + workspace_id [+ worktree_id]' via the SessionManager.idempotency_index; a hit returns the existing SessionId, a mismatched key returns ERR-SES-104 IdempotencyKeyConflict. Transaction Begin is explicitly NOT idempotent (the caller manages reuse). Patch idempotency is carried by version/hash: a repeated patch either conflicts (ERR-TXN-002 / ERR-TXN-003, retryable after re-read) or, for an idempotent command, is re-executed through the version check. Buffer Save is idempotent (atomic write, same result when repeated). At the API layer, IF-CMD-001 accepts an idempotency_key for side_effect ∈ {WORKSPACE_MUTATION, PROCESS_EXECUTION, NETWORK, DESTRUCTIVE} and stores it in an idempotency_store (KV indexed by actor + key, TTL 【TBD】, suggested 24h); a hit on a completed request returns the original response with error.code = ERR-BIZ-004 and HTTP 200; a concurrent second request with the same key gets 409 + retry_after.",
+    "ordering": "Physical write order at commit preserves the order of the FileChange list so that dependent patches keep their before/after relation (DD-02 §7.5.3 P-006c). Event ordering: the Event Bus assigns a monotonically increasing sequence per workspace and guarantees at-least-once delivery with ordering within a single subscriber; (workspace_id, sequence) is unique. Durable event persistence writes to the same WAL as transactions (DD-04 §7.2 E-004). Trace correlation: trace_id is seeded from session_id and correlation_id = transaction_id, so all patches inside a transaction form one series.",
+    "compensation": "DD-02 §7.7 defines Saga / Compensation (MOD-TM-006) for cross-Session / cross-Plugin flows. The P0 decision is the Outbox pattern (MOD-TM-007): after commit a Durable Event is written to the Outbox and a separate worker publishes it through the Event Bus, giving at-least-once delivery plus consumer-side idempotency for effectively-once effects. A minimal Saga (Orchestration) inside TransactionManager is implemented, but a single transaction never calls across plugins; plugin-side events trigger plugin-local work instead. Compensation execution itself is the Plugin's responsibility - the Kernel only exposes a compensation command API 'txn.compensate { reason, target_change_id }'. DD-04 adds a per-operation compensating_op: Option<TxnOp> on TxnAddOpRequest and a RollingBack -> Failed 'compensate_fail' transition. DD-02 §7.5.4 P-004 compensates already-written changes by restoring the pre-commit snapshot.",
+    "docLines": [791, 812, 955, 997, 999, 1041, 1043, 1066, 1760, 1766, 1768, 1780],
+    "evidenceIds": ["EV-DD24-0014", "EV-DD24-0015", "EV-DD24-0016", "EV-DD24-0017", "EV-DD24-0025", "EV-DD24-0027", "EV-DD24-0028", "EV-DD24-0033", "EV-DD24-0034"]
+  },
+  "diagramsToRender": [
+    {"id": "DG-ER1", "diagramType": "ER", "title": "Session / Transaction / Buffer in-memory model (DD-02 §6-§8) - structs and indexes, no RDBMS", "basedOn": ["T-SESSION", "T-SESSION-MGR", "T-TRANSACTION", "T-TRANSACTION-MGR", "T-FILEPATCH", "T-BUFFER", "T-BUFFER-ENGINE"], "evidenceIds": ["EV-DD24-0004", "EV-DD24-0005", "EV-DD24-0010", "EV-DD24-0011", "EV-DD24-0012", "EV-DD24-0019", "EV-DD24-0020"]},
+    {"id": "DG-ER2", "diagramType": "ER", "title": "Durability structures: Journal (WAL), Outbox and AuditLog record", "basedOn": ["T-JOURNAL", "T-OUTBOX", "T-AUDIT-RECORD"], "evidenceIds": ["EV-DD24-0013", "EV-DD24-0016", "EV-DD24-0024"]},
+    {"id": "DG-ER3", "diagramType": "ER", "title": "Buffer internals: Buffer / PieceTable / CodecRegistry / Conflict", "basedOn": ["T-BUFFER", "T-PIECE-TABLE", "T-CODEC", "T-CONFLICT", "T-PERMISSION-SET", "T-PATH-POLICY"], "evidenceIds": ["EV-DD24-0006", "EV-DD24-0020", "EV-DD24-0021", "EV-DD24-0022", "EV-DD24-0015"]},
+    {"id": "DG-ST1", "diagramType": "UML_State", "title": "SessionState lifecycle (New / Active / Suspended / Terminated / Failed)", "basedOn": ["SM-SESSION"], "evidenceIds": ["EV-DD24-0007", "EV-DD24-0008"]},
+    {"id": "DG-ST2", "diagramType": "UML_State", "title": "TransactionStatus lifecycle per DD-02 (includes the Committing state)", "basedOn": ["SM-TRANSACTION"], "evidenceIds": ["EV-DD24-0014"]},
+    {"id": "DG-ST3", "diagramType": "UML_State", "title": "TxnState lifecycle per DD-04 (divergent - no Committing state)", "basedOn": ["SM-TRANSACTION-DD04"], "evidenceIds": ["EV-DD24-0033"]},
+    {"id": "DG-ST4", "diagramType": "UML_State", "title": "BufferState lifecycle (Loaded / Dirty / Saving / Saved / Closed)", "basedOn": ["SM-BUFFER"], "evidenceIds": ["EV-DD24-0020", "EV-DD24-0028"]},
+    {"id": "DG-SQ1", "diagramType": "UML_Sequence", "title": "SQ-SM-001 CreateSession (normal path, DD-02 §6.6.1)", "basedOn": ["T-SESSION", "T-SESSION-MGR"], "evidenceIds": ["EV-DD24-0005"]},
+    {"id": "DG-SQ2", "diagramType": "UML_Sequence", "title": "SQ-SM-002 TerminateSession with forced rollback of the active transaction", "basedOn": ["T-SESSION", "T-TRANSACTION"], "evidenceIds": ["EV-DD24-0005"]},
+    {"id": "DG-SQ3", "diagramType": "UML_Sequence", "title": "SQ-TXN-001 Commit (Validating -> Committing -> Committed -> Outbox)", "basedOn": ["T-TRANSACTION", "T-JOURNAL", "T-OUTBOX"], "evidenceIds": ["EV-DD24-0027"]},
+    {"id": "DG-SQ4", "diagramType": "UML_Sequence", "title": "SQ-TXN-003 Crash Recovery while Committing (deterministic Committed vs RolledBack)", "basedOn": ["T-JOURNAL", "T-TRANSACTION"], "evidenceIds": ["EV-DD24-0017"]},
+    {"id": "DG-SQ5", "diagramType": "UML_Sequence", "title": "SQ-BE-002 Patch application with ConflictDetector hash / version check", "basedOn": ["T-BUFFER", "T-CONFLICT"], "evidenceIds": ["EV-DD24-0015", "EV-DD24-0021"]},
+    {"id": "DG-SQ6", "diagramType": "UML_Sequence", "title": "IF-CMD-001 Command Dispatch end-to-end (Adapter -> Gateway -> Auth -> Command Bus -> Domain -> Repository)", "basedOn": ["T-AUDIT-RECORD"], "evidenceIds": ["EV-DD24-0030"]},
+    {"id": "DG-CLS1", "diagramType": "UML_Class", "title": "Internal API request / response DTO set (IF-CMD-001, IF-SES-001, IF-TXN-001, IF-INTERNAL-BUFFER-001)", "basedOn": ["T-SESSION", "T-TRANSACTION", "T-BUFFER", "T-FILEPATCH"], "evidenceIds": ["EV-DD24-0030", "EV-DD24-0032", "EV-DD24-0033", "EV-DD24-0034"]},
+    {"id": "DG-ACT1", "diagramType": "UML_Activity", "title": "Commit / Rollback decision flow including crash-recovery replay", "basedOn": ["SM-TRANSACTION", "T-JOURNAL"], "evidenceIds": ["EV-DD24-0017", "EV-DD24-0027"]}
+  ],
+  "evidence": [
+    {"id": "EV-DD24-0001", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 metadata: DD-02-2026-0914, version 1.0, targets Session Manager (MOD-SM-001) / Transaction Manager (MOD-TM-001) / Buffer Engine (MOD-BE-001); declares the crate layout crates/kernel-session, crates/kernel-transaction, crates/kernel-buffer.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1, "endLine": 160},
+    {"id": "EV-DD24-0002", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 metadata: version 0.1 (Draft), 内部 API（Core ↔ Plugin / Adapter ↔ Core / Core 内部模块间）+ Error 体系主表; declares 15 internal interfaces.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 1, "endLine": 121},
+    {"id": "EV-DD24-0003", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "ide-kernel-core is an explicit PLACEHOLDER: '完整 microkernel / session / transaction buffer / search / plugin loader / TUI / txn 实装待后续 brief (per DD-01 ... DD-02 Session Transaction Buffer Engine 详细设计书 ...)'; kernel_status() returns \"placeholder\".", "path": "crates/ide-kernel-core/src/lib.rs", "startLine": 1, "endLine": 43},
+    {"id": "EV-DD24-0004", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.3.1 CLS-SM-001 SessionManager struct with the sessions / idempotency_index / quota / worktree / event_bus / persistence / perm_eval / audit / seq fields, plus SM-M-001..SM-M-013.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 224, "endLine": 267},
+    {"id": "EV-DD24-0005", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.3.2 CLS-SM-002 Session struct (13 fields) and SessionState enum New/Active/Suspended/Terminated/Failed.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 269, "endLine": 314},
+    {"id": "EV-DD24-0006", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.3.3 CLS-SM-003 PermissionSet, PathPolicy and ProcessSpawnPolicy structs plus the 5-step permission evaluation order.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 315, "endLine": 360},
+    {"id": "EV-DD24-0007", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.5 Session State Machine mermaid stateDiagram-v2 and the three stated invariants (ActiveTxn only in Active; ActiveBuffer kept on Suspend; session_id reuse forbidden after Failed/Terminated).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 408, "endLine": 430},
+    {"id": "EV-DD24-0008", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.3.2 SessionState transition table (From / Event / To / Guard / Action) and the ActiveTxn single-transaction constraint (ERR-SES-005).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 299, "endLine": 314},
+    {"id": "EV-DD24-0009", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.10 ERR-SES-XXX error table: codes, trigger condition, HTTP equivalent, retry policy, log level and recovery guidance for ERR-SES-001..012 and ERR-SES-101..105.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 581, "endLine": 602},
+    {"id": "EV-DD24-0010", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.3.1 CLS-TM-001 TransactionManager struct (transactions / active_by_session / journal / conflict / buffer_engine / session_manager / outbox / event_bus / audit / clock / seq) and TM-M-001..TM-M-011.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 643, "endLine": 678},
+    {"id": "EV-DD24-0011", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.3.2 CLS-TM-002 Transaction struct, TransactionStatus enum (New/Active/Validating/Committing/Committed/RollingBack/RolledBack/Failed) and FileChange / FileOperation definitions.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 679, "endLine": 727},
+    {"id": "EV-DD24-0012", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.3.3 CLS-TM-003 FilePatch (document, path, range, before_hash, expected_version, change, after_hash) and PatchChange enum.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 729, "endLine": 753},
+    {"id": "EV-DD24-0013", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.3.4 CLS-TM-004 Journal (WAL) struct, the 10 JournalEntry variants, FsyncPolicy and JournalRotation.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 754, "endLine": 789},
+    {"id": "EV-DD24-0014", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.4 Transaction Status state diagram and the invariants (Committed freezes changes; RollingBack rejects new patches with ERR-TXN-008; Failed is audit-only and removed from memory immediately).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 790, "endLine": 820},
+    {"id": "EV-DD24-0015", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.6 ConflictDetector struct, Conflict enum (VersionConflict / HashMismatch / FileMissing / ReadOnlyPath / PathBlocked), check_pre_apply code sketch and the version/hash equivalence policy.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 955, "endLine": 998},
+    {"id": "EV-DD24-0016", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.7 Saga / Compensation candidate comparison and the P0 Outbox decision, with Outbox / OutboxEntry / DeliveryState structs.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 999, "endLine": 1042},
+    {"id": "EV-DD24-0017", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.8 Recovery (Replay) steps R-001..R-006 and the deterministic decision rules (all patches reflected => Committed, partially => RolledBack, IO unavailable => ERR-TXN-101).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1043, "endLine": 1068},
+    {"id": "EV-DD24-0018", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.10 ERR-TXN-XXX error table: ERR-TXN-001..012 and ERR-TXN-101 with HTTP equivalents, retry flags, log levels and recovery guidance.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1169, "endLine": 1187},
+    {"id": "EV-DD24-0019", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §8.4.1 CLS-BE-001 BufferEngine struct (buffers / by_path / by_session / codec / line_ending / persistence / memory_budget / config) and BufferConfig with the documented default values.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1269, "endLine": 1312},
+    {"id": "EV-DD24-0020", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §8.4.2 CLS-BE-002 Buffer struct (16 fields), BufferState enum and BufferStorage enum (InMemory / Chunked / Mmap).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1313, "endLine": 1350},
+    {"id": "EV-DD24-0021", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §8.4.3 CLS-BE-003 PieceTable, Piece, PieceSource and AddBuffer structs; §8.2.2 records the recommended storage tiers (100 MiB / 1 GiB thresholds, 64 KiB chunks).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1225, "endLine": 1382},
+    {"id": "EV-DD24-0022", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §8.4.5 CodecRegistry, Encoding enum (Utf8/Utf16LE/Utf16BE/ShiftJis/EucJp/Gbk/Binary), Codec trait, DetectionResult and the 4-step encoding detection order.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1383, "endLine": 1423},
+    {"id": "EV-DD24-0023", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §8.9 Buffer error table (ERR-BIZ / ERR-VAL / ERR-AUTHZ / ERR-DB) - note ERR-BIZ-001 is reused for six different conditions and ERR-BIZ-006 is given HTTP 507 here.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1700, "endLine": 1719},
+    {"id": "EV-DD24-0024", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.9 Session audit record as structured JSON (timestamp, audit_id, session_id, actor, operation, target, result, details, trace_id, correlation_id); §9.2 adds the transaction/buffer audit operations.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 561, "endLine": 579},
+    {"id": "EV-DD24-0025", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §9.3 Error/Retry/Idempotency table per subsystem and §9.4 Timeout table (Session create 5s, terminate 10s, Txn begin 5s, Apply Patch 30s, commit 60s, rollback 30s, Buffer open small 1s / large 5s, save 30s).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1760, "endLine": 1781},
+    {"id": "EV-DD24-0026", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §6.7 Session quota / capacity rules: concurrent active session cap (KERNEL_SESSION_MAX, 【TBD】), TTL per actor kind (Human 8h, Agent 24h, CI 1h), idle timeout 30 min, 1 worktree per session, 64 active buffers, strictly 1 active transaction.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 520, "endLine": 532},
+    {"id": "EV-DD24-0027", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §7.5.3 TM-M-006 Commit: P-001..P-013 including the Validating -> Committing transition, the pre-commit snapshot, atomic flush, Outbox enqueue and the crash-recovery connection.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 879, "endLine": 914},
+    {"id": "EV-DD24-0028", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §8.5.4 BE-M-006 SaveBuffer: atomic write (tmp file .kernel-save.<doc_id>.tmp -> fsync -> rename -> fsync(parent_dir)), BOM restore, and the failure-safety notes; §8.5.2 Undo stack push strategy with max_undo_depth 1000.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1484, "endLine": 1542},
+    {"id": "EV-DD24-0029", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §6.1 error namespace table (ERR-VAL/AUTH/AUTHZ/BIZ/DB/EXT/SYS with default HTTP status, retryability and log level) and §6.2 the full Error Code master table; §6.3 CoreError skeleton and §6.4 Wire JSON shape.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 163, "endLine": 286},
+    {"id": "EV-DD24-0030", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.1 IF-CMD-001 Command Dispatch: CommandRequest / CommandResponse schemas, processing steps P-001..P-014, HTTP status mapping, four sequence diagrams and the Idempotency / Retry / Timeout rules.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 294, "endLine": 478},
+    {"id": "EV-DD24-0031", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.2 IF-EVT-001 Event Publish / Subscribe: EventPublishRequest, EventSubscribeRequest, EventEnvelope, steps E-001..E-006, at-least-once and ordering guarantees, backpressure buffer default 1024.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 481, "endLine": 589},
+    {"id": "EV-DD24-0032", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.4 IF-SES-001 Session Lifecycle: SessionCreateRequest / SessionInfo schemas, steps S-001..S-008, create / suspend-resume / close sequence diagrams and the idempotency rules.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 711, "endLine": 840},
+    {"id": "EV-DD24-0033", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.5 IF-TXN-001 Transaction Lifecycle: TxnBeginRequest / TxnAddOpRequest / TxnCommitRequest / TxnRollbackRequest / TxnInfo, the TxnState mermaid state diagram, steps T-001..T-005 and T-C01..T-C07, and the isolation statement (Snapshot default / Serializable).", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 843, "endLine": 1006},
+    {"id": "EV-DD24-0034", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.6 IF-INTERNAL-BUFFER-001 Buffer Read / Patch: BufferReadRequest / BufferPatchRequest / BufferReadResponse / BufferPatchResponse, steps B-001..B-009 with ERR-BIZ-005 on expected_version and ERR-BIZ-009 on before_hash.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 1009, "endLine": 1130},
+    {"id": "EV-DD24-0035", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.11 IF-REST-002 route table (GET /v1/system/health ... POST/GET /v1/plugins), the order-sensitive middleware chain and steps R-001..R-008; §7.12 JSON-RPC error code map; §7.13 SSE; §7.14 MCP tool schema.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 1530, "endLine": 1841},
+    {"id": "EV-DD24-0036", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §7.15 IF-AUTH-001 Internal Auth Pipeline: AuthRequest / AuthorizeRequest schemas, steps AU-001..AU-005 and AZ-001..AZ-004, and the rule that every authorization decision is re-evaluated.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 1843, "endLine": 1930},
+    {"id": "EV-DD24-0037", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §9 consolidated TBD table TBD-04-01..TBD-04-14 (idempotency TTL 24h, command timeout 30s, publish timeout 100ms, circuit breaker N=3/30s, rename backoff 100/200/400ms, session TTL 1h, drain 5s, body 16 MiB, SSE heartbeat 30s, auth cache TTL, provider timeout 60s, backpressure 5s).", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 1963, "endLine": 1981},
+    {"id": "EV-DD24-0038", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "The only Session type in the workspace is ide_kernel::Session - a multi-tab editor session (docs HashMap<u64, Document>, order, active, next_id) with activate/close/next_tab/prev_tab/dirty_tabs. It has no workspace_id, actor, permissions, budgets, active_buffers or active_transaction, and therefore is NOT the DD-02 Session.", "path": "crates/ide-kernel/src/session.rs", "startLine": 11, "endLine": 191},
+    {"id": "EV-DD24-0039", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "ide_kernel::Document - the real single-document buffer: mgr (editcore::DocLineMgr), undo (editcore::OpeBuf), selection, extra_cursors, line_ending, encoding, path, replace_pending. No piece_table, no DocumentVersion, no ContentHash, no BufferState, and undo depth is the constant UNDO_DEPTH = 1000.", "path": "crates/ide-kernel/src/document.rs", "startLine": 176, "endLine": 210},
+    {"id": "EV-DD24-0040", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "editcore::buffer::DocLineMgr - the actual text container: Vec<DocLine> plus next_seq, saved_at_seq, last_modified_seq and caret. There is no PieceTable, no AddBuffer, no LineIndex, so the DD-02 §8.4.3 data structure is not implemented.", "path": "crates/editcore/src/buffer.rs", "startLine": 113, "endLine": 136},
+    {"id": "EV-DD24-0041", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "editcore::undo::OpeBuf - the real undo/redo stack: blocks Vec<OpeBlk>, cursor, no_modified_index, max_len (oldest entries dropped when over max_len). This is the analogue of the DD-02 UndoStack/RedoStack but stores Ope operations rather than inverse Patches with versions.", "path": "crates/editcore/src/undo.rs", "startLine": 126, "endLine": 240},
+    {"id": "EV-DD24-0042", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "ide-shell-protocol: a working JSON-RPC 2.0 stdio transport with Buffer { id, name, path, lines, cursor, mode, dirty, language, undo_stack, redo_stack, cmd_text }, BufferSnapshot, RpcRequest / RpcResponse / RpcError and codes {-32700,-32600,-32601,-32602,-32603,-32001 BUFFER_NOT_FOUND,-32002 READ_ONLY}, and dispatch methods kernel_info / open_buffer / close_buffer / list_buffers / set_active_buffer / active_buffer_id / get_buffer / set_buffer_lines / insert_at_cursor / key_event / set_cursor / execute_command / set_cmd_text / get_cmd_text / complete_at_cursor / edit_via_provider / chat / register_provider / unregister_provider / list_providers - a completely different method set from DD-04 IF-CMD-001.", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 25, "endLine": 300},
+    {"id": "EV-DD24-0043", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "ide-shell-web implements its own HTTP server on std::net::TcpListener with a hand-written HTTP/1.1 parser ('极简实现: std::net::TcpListener + 手写 HTTP/1.1 解析 (避免拉 axum 等大依赖)') and dispatches ~70 '/api/...' routes (e.g. POST /api/doc/undo, POST /api/doc/insert, GET /api/doc/export, POST /api/read_file, POST /api/write_file). No /v1/... route exists.", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 1, "endLine": 1400},
+    {"id": "EV-DD24-0044", "kind": "Code", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "ide-shell-web::auth implements a static bearer-token scheme (X-IDE-Token header, 32-byte CSPRNG hex token, constant-time compare, Host + Origin allowlist for DNS-rebinding defence) - a single shared token, not the per-actor credential / RBAC / session-binding model of DD-04 IF-AUTH-001.", "path": "crates/ide-shell-web/src/auth.rs", "startLine": 1, "endLine": 220},
+    {"id": "EV-DD24-0045", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "INC-07 error mapping table: 25 ERR-* occurrences in DD-02 were rewritten to the ERR-BIZ / ERR-VAL / ERR-AUTHZ / ERR-DB namespaces with 0 residual; the mapping covers only ERR-CB-*, ERR-EB-*, ERR-CR-* and ERR-BE-*, so the ERR-SES-* and ERR-TXN-* namespaces introduced by DD-02 were left outside the unified taxonomy.", "path": "INC-07_error_mapping.md", "startLine": 1, "endLine": 29},
+    {"id": "EV-DD24-0046", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-04 §4 ID corrections: IF-BUF-001 renamed to IF-INTERNAL-BUFFER-001 and IF-PLG-001 to IF-INTERNAL-PLUGIN-001; IF-FS-001 / IF-IDX-001 / IF-SCH-001 / IF-AUTH-001 are explicitly provisional local IDs with no IFD-001 counterpart; the note also lists IFD-001 interfaces still not covered by this document.", "path": "DD-04_Internal_API_詳細設計書.md", "startLine": 106, "endLine": 122},
+    {"id": "EV-DD24-0047", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §13 traceability matrix - the method-ID mapping in §13.2 and §13.3 contradicts the method definitions in §7.3.1 and §8.4.1 (e.g. §13.2 maps TM-M-003 to commit() and TM-M-005 to savepoint::create(), but §7.3.1 defines TM-M-003 as savepoint, TM-M-004 as rollback_to_savepoint, TM-M-005 as validate, TM-M-006 as commit, TM-M-007 as rollback; §13.3 maps BE-M-003..BE-M-007 to undo/redo/save/savepoint/patch_apply while §8.4.1 defines BE-M-003 as patch and BE-M-007 as reload).", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 1995, "endLine": 2041},
+    {"id": "EV-DD24-0048", "kind": "Document", "status": "Implemented", "sourceRevisionId": "76c4e8f", "summary": "DD-02 §13.6 residual TBD list (UUID v7 generator, WAL format, snapshot threshold, PathPattern algorithm, savepoint auto-marker, active buffer count 64, max_undo_depth 1000, Session TTL default 24h, quarantine queue) and §13.5 cross-review checklist.", "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md", "startLine": 2066, "endLine": 2079}
+  ],
+  "gaps": [
+    {"id": "GAP-DD24-1", "type": "GAP_SOURCE_DOCUMENT", "summary": "The three crates DD-02 specifies do not exist. DD-02 §5.1 defines crates/kernel-session, crates/kernel-transaction and crates/kernel-buffer; the workspace contains editcore, ide-cli, ide-kernel, ide-kernel-core, ide-shell, ide-shell-desktop, ide-shell-protocol and ide-shell-web. crates/ide-kernel-core/src/lib.rs:3 explicitly marks 'session / transaction buffer engine' as pending work under DD-02. Consequence: every DD-02 table, state machine and method in this file is Designed, never Implemented.", "relatedEvidence": ["EV-DD24-0001", "EV-DD24-0003"]},
+    {"id": "GAP-DD24-2", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-04 §6.2 declares itself the master table of ALL Core error codes, but the ERR-SES-* (17 codes) and ERR-TXN-* (13 codes) namespaces defined in DD-02 are absent from it, and INC-07 lists no mapping for them. The two documents therefore describe two disjoint error taxonomies for the same subsystems.", "relatedEvidence": ["EV-DD24-0029", "EV-DD24-0009", "EV-DD24-0018", "EV-DD24-0045"]},
+    {"id": "GAP-DD24-3", "type": "GAP_SOURCE_DOCUMENT", "summary": "ERR-VAL-006 has two different meanings and two different HTTP statuses: DD-02 §8.9 uses it for EncodingDetectionFailed (422) and for BinaryFile (422), while DD-04 §6.2 uses it for '编码非法 (UTF-8 / BOM 缺失)' (400). The atlas cannot pick one without a decision.", "relatedEvidence": ["EV-DD24-0023", "EV-DD24-0029"]},
+    {"id": "GAP-DD24-4", "type": "GAP_SOURCE_DOCUMENT", "summary": "ERR-BIZ-006 is used for MemoryBudgetExceeded with HTTP 507 in DD-02 §8.9 and for '资源耗尽 (Budget 超限)' with HTTP 429 in DD-04 §6.2 - the same code, different status and different meaning.", "relatedEvidence": ["EV-DD24-0023", "EV-DD24-0029"]},
+    {"id": "GAP-DD24-5", "type": "GAP_SOURCE_DOCUMENT", "summary": "The two optimistic-concurrency failures have two code sets. Version conflict: DD-02 uses ERR-TXN-002 (409) and DD-04 uses ERR-BIZ-005 (409). Hash mismatch: DD-02 uses ERR-TXN-003 (409) and DD-04 uses ERR-BIZ-009 (409). Worse, DD-02 §8.6.2 step 4 calls ERR-BIZ-009 'VersionConflict' while §7.6 assigns ERR-TXN-002 to the same condition - the same document contradicts itself.", "relatedEvidence": ["EV-DD24-0015", "EV-DD24-0018", "EV-DD24-0029", "EV-DD24-0023"]},
+    {"id": "GAP-DD24-6", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-02 §8.9 reuses ERR-BIZ-001 for six semantically different conditions with three different HTTP statuses: FileNotFound (404), BufferNotOpen (409), UndoStackEmpty (409), RedoStackEmpty (409), SavepointNotFound (404), BufferClosed (410). DD-04 §6.2 defines ERR-BIZ-001 as 404 resource-not-found. A single ER/error diagram cannot represent this.", "relatedEvidence": ["EV-DD24-0023", "EV-DD24-0029"]},
+    {"id": "GAP-DD24-7", "type": "GAP_SOURCE_DOCUMENT", "summary": "The Transaction state machine is specified twice with incompatible content. DD-02 §7.4 requires a Committing state (Validating -> Committing -> Committed, with a WAL record per state) and Crash detection keyed on TransactionCommitting. DD-04 §7.5 goes Validating -> Committed directly with no Committing state and no failure transition out of Validating other than validate_fail. DD-04 §7.5 also adds RollingBack -> Failed (compensate_fail), which DD-02 does not have.", "relatedEvidence": ["EV-DD24-0014", "EV-DD24-0033"]},
+    {"id": "GAP-DD24-8", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-02 §7.6 states the conflict check order as 'Path -> Hash -> Version' in prose, but the check_pre_apply sketch in the same section evaluates hash, then version, then path policy. The documented order is therefore ambiguous.", "relatedEvidence": ["EV-DD24-0015"]},
+    {"id": "GAP-DD24-9", "type": "GAP_SOURCE_DOCUMENT", "summary": "The Session state enum has no cross-document mapping. DD-02 §6.3.2 uses New / Active / Suspended / Terminated / Failed; DD-04 §7.4 SessionInfo.state uses Active | Suspended | Closed. There is no rule for how Terminated or Failed map onto Closed, and DD-02 has no Closed state at all.", "relatedEvidence": ["EV-DD24-0005", "EV-DD24-0032"]},
+    {"id": "GAP-DD24-10", "type": "GAP_SOURCE_DOCUMENT", "summary": "Session id format is contradictory: DD-02 §6.4.1 P-006 requires UUID v7 (generator 【TBD】) and DD-02 §13.6 lists the generator selection as an open item, while DD-04 §7.4 S-005 generates a ULID '含时间序'. The atlas must not pick one silently.", "relatedEvidence": ["EV-DD24-0048", "EV-DD24-0032"]},
+    {"id": "GAP-DD24-11", "type": "GAP_SOURCE_DOCUMENT", "summary": "Session TTL is stated three different ways: DD-02 §6.7 gives per-actor defaults (Human 8h, Agent/LangGraph 24h, CI 1h), DD-02 §13.6 says '24h 既定' as the resolution, and DD-04 TBD-04-06 defines a 1h forced reclaim on close failure. These are different mechanisms (idle/TTL expiry vs forced reclaim) and the relationship is not stated.", "relatedEvidence": ["EV-DD24-0026", "EV-DD24-0048", "EV-DD24-0037"]},
+    {"id": "GAP-DD24-12", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-04 §4 note says 'IFD-001 v1.0 が定義しているが本書が実装層へ落としていない IF が 6 件ある' and then lists ten IDs (IF-CMD-002, IF-CMD-003, IF-EVT-002, IF-CAP-002, IF-SES-002, IF-TXN-002, IF-TXN-003, IF-REST-001, IF-PLUGIN-WASM-001, IF-PLUGIN-WORKER-001). The count and the list disagree, so the uncovered surface is not determinable.", "relatedEvidence": ["EV-DD24-0046"]},
+    {"id": "GAP-DD24-13", "type": "GAP_SOURCE_DOCUMENT", "summary": "The entire documented HTTP surface is absent from the code. DD-04 §7.11 specifies an axum server exposing /v1/system/health, /v1/system/info, /v1/commands, /v1/commands/{id}, /v1/capabilities, /v1/capabilities/{id}/invoke, /v1/sessions, /v1/transactions, /v1/events and eight more paths. The implementation is a hand-written HTTP/1.1 server (explicitly avoiding axum) serving ~70 '/api/...' routes such as /api/doc/undo and /api/write_file. No /v1 route, no IF-CMD-001 dispatch, no SSE upgrade, no MCP endpoint exists.", "relatedEvidence": ["EV-DD24-0035", "EV-DD24-0043"]},
+    {"id": "GAP-DD24-14", "type": "GAP_SOURCE_DOCUMENT", "summary": "The durability model is entirely unimplemented. There is no Journal / WAL / LSN / Snapshot / Outbox / Transaction anywhere in the crates (grep for PieceTable, ContentHash, Journal, WAL, TransactionId, SessionState, IdempotencyKey returns nothing), and every file write is a plain std::fs::write with no temp file, no fsync and no rename - e.g. crates/editcore/src/document_io.rs:460 and crates/ide-shell/src/app.rs:198. The documented atomic write (DD-02 §8.5.4) and crash recovery (§7.8) do not exist.", "relatedEvidence": ["EV-DD24-0028", "EV-DD24-0017", "EV-DD24-0043"]},
+    {"id": "GAP-DD24-15", "type": "GAP_SOURCE_DOCUMENT", "summary": "The whole security / audit / observability layer is unimplemented: grep across all crates for audit, trace_id, correlation_id, quota, permission, rbac and allowlist returns no matches. DD-04 IF-AUTH-001 (RBAC, capability policies, session binding, policy store), DD-02 MOD-SM-002/005/007 and the audit record schema therefore have no counterpart. The only implemented authentication is a single shared static token in crates/ide-shell-web/src/auth.rs (X-IDE-Token + Host/Origin allowlist).", "relatedEvidence": ["EV-DD24-0036", "EV-DD24-0024", "EV-DD24-0044"]},
+    {"id": "GAP-DD24-16", "type": "GAP_SOURCE_DOCUMENT", "summary": "The implemented buffer is a different architecture, not an unfinished one. The code stores text as Vec<DocLine> in editcore::DocLineMgr with OpeBuf undo blocks (crates/editcore/src/buffer.rs:115, crates/editcore/src/undo.rs:168), whereas DD-02 mandates a Piece Table with Original + Add piece columns, a LineIndex and ContentHash / DocumentVersion optimistic concurrency (DD-02 §8.2.2, §8.4.3). No content hash or document version exists in the code, so the optimistic-concurrency contract cannot be satisfied without a redesign.", "relatedEvidence": ["EV-DD24-0021", "EV-DD24-0040", "EV-DD24-0041", "EV-DD24-0039"]},
+    {"id": "GAP-DD24-17", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-02's own traceability matrix contradicts its own method definitions. §13.2 maps TM-M-003 to commit() and TM-M-005 to savepoint::create(), but §7.3.1 defines TM-M-003 = savepoint, TM-M-004 = rollback_to_savepoint, TM-M-005 = validate, TM-M-006 = commit, TM-M-007 = rollback. §13.3 maps BE-M-003..BE-M-007 to undo/redo/save/savepoint/patch_apply while §8.4.1 defines BE-M-003 = patch, BE-M-004 = undo, BE-M-005 = redo, BE-M-006 = save, BE-M-007 = reload. Any requirement traceability diagram built from §13 would be wrong.", "relatedEvidence": ["EV-DD24-0047"]},
+    {"id": "GAP-DD24-18", "type": "GAP_SOURCE_DOCUMENT", "summary": "The REST body-size limit is specified as 【TBD: 默认 16 MiB】 (DD-04 §7.11 R-003, TBD-04-08) but the implemented limit is MAX_BODY_BYTES = 8 MiB (crates/ide-shell-web/src/lib.rs:49), with MAX_HEADER_BYTES = 16 KiB. No document records the 8 MiB value.", "relatedEvidence": ["EV-DD24-0035", "EV-DD24-0043"]},
+    {"id": "GAP-DD24-19", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-02 §7.5.5 P-005 requires a 'SavepointRollback' Journal entry but marks it 【TBD：Journal エントリ追加要否】, and the JournalEntry enum in §7.3.4 has no such variant - so rollback-to-savepoint has no defined durable record.", "relatedEvidence": ["EV-DD24-0013", "EV-DD24-0011"]},
+    {"id": "GAP-DD24-20", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-02 §6.7 marks the concurrent active Session cap as 【TBD：環境変数 KERNEL_SESSION_MAX】 and leaves Quarantine queueing as 【TBD：採用するか否か】, while DD-02 §13.6 says v1.0 will implement immediate rejection only. The atlas therefore cannot render a numeric Session capacity limit.", "relatedEvidence": ["EV-DD24-0026", "EV-DD24-0048"]}
+  ],
+  "unknowns": [
+    "SessionId generator is not fixed: DD-02 §6.4.1 P-006 requires UUID v7 (generator 【TBD】, §13.6), DD-04 §7.4 S-005 requires a ULID. No reconciliation exists in either document.",
+    "DD-02 §6.8 / §13.6: the WAL record format (JSON Lines vs bincode) and the Snapshot trigger threshold (default stated as 64 KiB of WAL, 【TBD】) are undecided, so the on-disk Journal schema cannot be rendered.",
+    "DD-02 §8.2.2 / §13.6: the chunk size (64 KiB vs 256 KiB), the 100 MiB large-file threshold, the LineIndex implementation (fenwick tree vs rope index) and the mmap OS support matrix are all 【TBD】.",
+    "DD-02 §13.6: the PathPattern matching algorithm (glob first, then a Trie) is 【TBD】, so PathPolicy semantics cannot be specified precisely.",
+    "DD-02 §7.5.5 P-006: whether a savepoint is created automatically on every patch (patch_apply_undo_point) or only explicitly is 【TBD】; §13.6 plans v1.0 = explicit only.",
+    "DD-02 §7.3.2 / §8.4.2: the field layouts of SessionMetadata, TransactionMetadata, ResourceBudget, ContextBudget, Savepoint and BufferSavepoint are never enumerated.",
+    "DD-04 §7.1: the idempotency_store backend is unselected and its TTL is 【TBD】 (TBD-04-01, suggested 24h); the concurrency rule says a second concurrent request with the same key returns 409 + retry_after, but the wait timeout for the in-flight case is not stated.",
+    "DD-04 §7.1 / §7.3 / §7.11: the hard timeout ceilings (command 30s, provider 60s, REST 30s), the publish timeout (100ms), the circuit-breaker threshold (N=3, duration 30s) and the backpressure wait (5s) are all 【TBD】 (TBD-04-02/03/04/09/13/14).",
+    "DD-04 §6.2: ERR-BIZ-004 (idempotency hit) is mapped to HTTP 200 with the original result, but the wire representation of an 'error code returned with a success status' is not defined in the §6.4 Wire JSON shape.",
+    "No numeric retry count is given anywhere. Every Retry column in DD-02 §6.10 / §7.10 / §8.9 and DD-04 §6.2 is a Yes/No flag; OutboxEntry.attempts has no documented maximum.",
+    "DD-04 §7.4: no request DTO is defined for suspend / resume / close (only session_id is implied), and the shape of the GET /v1/sessions list response is not given.",
+    "DD-04 §7.11: the route table lists /v1/sessions with POST, GET and DELETE on the same path but does not say how a specific session is addressed for GET or DELETE (no {id} form), and the DELETE semantics (soft close vs hard delete) are undefined.",
+    "DD-04 §7.13: the SSE event frame is given as plain text (id / event / data) and not as a typed DTO; the heartbeat interval of 30s is 【TBD】 (TBD-04-11).",
+    "DD-04 §7.14: only the file.read MCP tool schema is exemplified; no other tool schemas are derived, and the MCP error response shape is not specified.",
+    "DD-04 §7.7 / §7.8 / §7.9: the FsStat response shape, the IndexQueryResponse hit list shape and the PluginInfo field list are referenced in sequence diagrams but never enumerated.",
+    "DD-02 §6.7: the maximum concurrent active Session count (KERNEL_SESSION_MAX) and the decision to adopt a Quarantine waiting queue are 【TBD】.",
+    "DD-02 §9.1: trace_id is seeded from session_id and correlation_id from transaction_id, but DD-04 §6.4 shows ULID-style trace_id / request_id values; the two id schemes are not reconciled.",
+    "The 'Outbox Table' of DD-02 §7.7 is described as a file, not a database table, and its storage format, index and consumer ownership are not specified."
+  ]
+}

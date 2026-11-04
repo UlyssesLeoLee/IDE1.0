@@ -1,0 +1,10 @@
+### C3 rAF/render loop accumulation ###
+  single 3D visit: renders/1s=0 ctxCreated=2 ctxLost=0 scenes=1
+  after 3D->5D->3D: renders/1s=0 ctxCreated=6 ctxLost=0 scenes=3
+  after 4 more 3D->5D->3D cycles: renders/1s=0 ctxCreated=22 ctxLost=0 scenes=11
+  VERDICT: renders/1s 0 -> 0 -> 0  stable
+
+### WebGL context exhaustion: is the LIVE canvas ever context-lost? ###
+  {"canvases":1,"ctxCreated":123,"ctxLost":61,"liveCanvasHasGL":true,"liveSize":"544x665","lastLostWasLive":false,"lostCanvasStillInDoc":false}
+  live scene pixels: {"canvas":true,"gl":true,"centerPixels":[0,0,0,0,0,0,0,0,0,0,0,0]}
+  console errors: 0

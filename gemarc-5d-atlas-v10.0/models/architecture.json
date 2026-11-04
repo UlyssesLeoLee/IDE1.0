@@ -1,0 +1,5285 @@
+{
+  "schema": "ide1-5d-atlas/architecture/v10.0",
+  "version": "ide1.0-factgraph-2026-10-23",
+  "sourceRevisionId": "REV-IDE1",
+  "note": "IDE1.0 正式事实图（FactGraph）。每条节点的 verification 依据 implementation_gate：只有代码中真实存在的实现才标 Implemented；仅有设计文档的标 Designed。",
+  "semantics": {
+    "database": "IDE1.0 无关系型数据库。持久态是磁盘文件 + 内存 Document/DocStore/Session 状态；任何「已实现的关系型 Schema」都不存在于本项目，图集中不虚构 ER 表。",
+    "transport": "四类通道：Tauri invoke（desktop↔webview）、本地 HTTP fetch（web）、JSON-RPC 2.0（stdio/HTTP/WS）、进程管道（powershell.exe / git / rg）。",
+    "wireProtocols": [
+      "Tauri IPC",
+      "HTTP/1.1 + JSON body",
+      "JSON-RPC 2.0",
+      "stdin/stdout pipe",
+      "git porcelain v1",
+      "ripgrep JSON"
+    ]
+  },
+  "containers": [
+    {
+      "id": "SYS-IDE1",
+      "kind": "System",
+      "name": "IDE1.0 IDE Shell",
+      "parentId": null,
+      "semantic": "纯 Rust AI Native CLI Development Kernel（MIT OR Apache-2.0）",
+      "evidenceIds": [
+        "EV-DOC-0024",
+        "EV-CODE-0050"
+      ]
+    },
+    {
+      "id": "BLD-FRONTEND",
+      "kind": "Building",
+      "name": "Frontend Layer (vanilla JS)",
+      "parentId": "SYS-IDE1",
+      "semantic": "编辑器外壳：Activity Bar / Side Bar / Editor / Bottom Panel / Status Bar。零框架（CR-01）。",
+      "evidenceIds": [
+        "EV-DOC-0017",
+        "EV-DOC-0004"
+      ]
+    },
+    {
+      "id": "FLR-EDITOR",
+      "kind": "Floor",
+      "name": "编辑器外壳层",
+      "parentId": "BLD-FRONTEND",
+      "semantic": "单页外壳与编辑区域",
+      "evidenceIds": [
+        "EV-DOC-0017"
+      ]
+    },
+    {
+      "id": "RM-ACTIVITYBAR",
+      "kind": "Room",
+      "name": "Activity Bar (5 项)",
+      "parentId": "FLR-EDITOR",
+      "semantic": "左侧活动栏切换入口",
+      "evidenceIds": [
+        "EV-DOC-0017"
+      ]
+    },
+    {
+      "id": "RM-SIDEBAR",
+      "kind": "Room",
+      "name": "Side Bar (Explorer/Outline/SCM/Extensions)",
+      "parentId": "FLR-EDITOR",
+      "semantic": "项目树 / 大纲 / 版本控制 / 扩展",
+      "evidenceIds": [
+        "EV-DOC-0017"
+      ]
+    },
+    {
+      "id": "RM-EDITAREA",
+      "kind": "Room",
+      "name": "Editor (Tabs + Gutter + Content)",
+      "parentId": "FLR-EDITOR",
+      "semantic": "多标签编辑区",
+      "evidenceIds": [
+        "EV-DOC-0017"
+      ]
+    },
+    {
+      "id": "RM-BOTTOMPANEL",
+      "kind": "Room",
+      "name": "Bottom Panel (Terminal/Output/Problems)",
+      "parentId": "FLR-EDITOR",
+      "semantic": "单层标签切换（ADR-005）",
+      "evidenceIds": [
+        "EV-DOC-0010"
+      ]
+    },
+    {
+      "id": "RM-STATUSBAR",
+      "kind": "Room",
+      "name": "Status Bar (Mode/Pos/File/Tip/Lang)",
+      "parentId": "FLR-EDITOR",
+      "semantic": "状态显示栏",
+      "evidenceIds": [
+        "EV-DOC-0017",
+        "EV-DOC-0013"
+      ]
+    },
+    {
+      "id": "BLD-BACKEND",
+      "kind": "Building",
+      "name": "Backend Layer (Rust)",
+      "parentId": "SYS-IDE1",
+      "semantic": "8 个 crate 构成的 Rust 后端",
+      "evidenceIds": [
+        "EV-CODE-0050"
+      ]
+    },
+    {
+      "id": "FLR-DESKTOP",
+      "kind": "Floor",
+      "name": "桌面外观层",
+      "parentId": "BLD-BACKEND",
+      "semantic": "Tauri 2 桌面进程",
+      "evidenceIds": [
+        "EV-DOC-0017",
+        "EV-DOC-0009"
+      ]
+    },
+    {
+      "id": "RM-TAURI",
+      "kind": "Room",
+      "name": "Tauri Invoke 路由",
+      "parentId": "FLR-DESKTOP",
+      "semantic": "WebView2 ↔ Rust command 注册表",
+      "evidenceIds": [
+        "EV-CODE-0028"
+      ]
+    },
+    {
+      "id": "RM-PSH",
+      "kind": "Room",
+      "name": "PowerShell 进程室",
+      "parentId": "FLR-DESKTOP",
+      "semantic": "powershell.exe 子进程与管道",
+      "evidenceIds": [
+        "EV-CODE-0029",
+        "EV-DOC-0021"
+      ]
+    },
+    {
+      "id": "RM-GIT",
+      "kind": "Room",
+      "name": "Git 进程室",
+      "parentId": "FLR-DESKTOP",
+      "semantic": "外部 git 命令调用",
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "RM-RG",
+      "kind": "Room",
+      "name": "Ripgrep 进程室",
+      "parentId": "FLR-DESKTOP",
+      "semantic": "rg 优先、内置回落",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "FLR-WEB",
+      "kind": "Floor",
+      "name": "Web 外观层",
+      "parentId": "BLD-BACKEND",
+      "semantic": "本地 HTTP 服务（手写分发，非 axum）",
+      "evidenceIds": [
+        "EV-CODE-0019",
+        "EV-CODE-0027"
+      ]
+    },
+    {
+      "id": "RM-HTTP",
+      "kind": "Room",
+      "name": "HTTP 分发室",
+      "parentId": "FLR-WEB",
+      "semantic": "(\"METHOD\", \"/api/...\") 匹配分发",
+      "evidenceIds": [
+        "EV-CODE-0019",
+        "EV-CODE-0020"
+      ]
+    },
+    {
+      "id": "RM-AUTH",
+      "kind": "Room",
+      "name": "认证与来源校验室",
+      "parentId": "FLR-WEB",
+      "semantic": "CSPRNG token + Origin/Host 校验",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026"
+      ]
+    },
+    {
+      "id": "RM-SANDBOX",
+      "kind": "Room",
+      "name": "路径沙箱室",
+      "parentId": "FLR-WEB",
+      "semantic": "项目根约束 + 4MB 上限 + UTF-8 校验",
+      "evidenceIds": [
+        "EV-DOC-0014",
+        "EV-DOC-0008"
+      ]
+    },
+    {
+      "id": "FLR-PROTOCOL",
+      "kind": "Floor",
+      "name": "协议层",
+      "parentId": "BLD-BACKEND",
+      "semantic": "headless 内核 + JSON-RPC 2.0",
+      "evidenceIds": [
+        "EV-CODE-0006",
+        "EV-CODE-0010"
+      ]
+    },
+    {
+      "id": "RM-RPC",
+      "kind": "Room",
+      "name": "JSON-RPC 分发室",
+      "parentId": "FLR-PROTOCOL",
+      "semantic": "handle_rpc 方法表",
+      "evidenceIds": [
+        "EV-CODE-0010",
+        "EV-CODE-0011"
+      ]
+    },
+    {
+      "id": "RM-AI",
+      "kind": "Room",
+      "name": "AI Provider 扩展室",
+      "parentId": "FLR-PROTOCOL",
+      "semantic": "AiProvider trait 三件套契约",
+      "evidenceIds": [
+        "EV-CODE-0009",
+        "EV-CODE-0036"
+      ]
+    },
+    {
+      "id": "FLR-KERNEL",
+      "kind": "Floor",
+      "name": "内核状态层",
+      "parentId": "BLD-BACKEND",
+      "semantic": "文档/标签页会话状态（ide-kernel）",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0017"
+      ]
+    },
+    {
+      "id": "RM-DOC",
+      "kind": "Room",
+      "name": "Document 模型室",
+      "parentId": "FLR-KERNEL",
+      "semantic": "Document/Selection/Encoding/LineEnding",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0013",
+        "EV-CODE-0014"
+      ]
+    },
+    {
+      "id": "RM-SESSION",
+      "kind": "Room",
+      "name": "Session 标签室",
+      "parentId": "FLR-KERNEL",
+      "semantic": "Session/TabState 多标签状态",
+      "evidenceIds": [
+        "EV-CODE-0017"
+      ]
+    },
+    {
+      "id": "FLR-EDITCORE",
+      "kind": "Floor",
+      "name": "编辑内核层",
+      "parentId": "BLD-BACKEND",
+      "semantic": "editcore 40 模块（CR-02 零重型依赖）",
+      "evidenceIds": [
+        "EV-CODE-0004",
+        "EV-CODE-0005"
+      ]
+    },
+    {
+      "id": "RM-BUFFER",
+      "kind": "Room",
+      "name": "缓冲区室",
+      "parentId": "FLR-EDITCORE",
+      "semantic": "DocLine/DocLineMgr 逻辑行与字符光标",
+      "evidenceIds": [
+        "EV-CODE-0038"
+      ]
+    },
+    {
+      "id": "RM-UNDO",
+      "kind": "Room",
+      "name": "历史与撤销室",
+      "parentId": "FLR-EDITCORE",
+      "semantic": "Ope/OpeBuf 与 per-tab 补丁栈",
+      "evidenceIds": [
+        "EV-CODE-0039",
+        "EV-CODE-0040"
+      ]
+    },
+    {
+      "id": "RM-LEXER",
+      "kind": "Room",
+      "name": "语法与高亮室",
+      "parentId": "FLR-EDITCORE",
+      "semantic": "TypeConfig/TypeRegistry + 19 语言",
+      "evidenceIds": [
+        "EV-CODE-0041"
+      ]
+    },
+    {
+      "id": "RM-SEARCH",
+      "kind": "Room",
+      "name": "检索室",
+      "parentId": "FLR-EDITCORE",
+      "semantic": "grep/grep_engine/search_ops/migemo",
+      "evidenceIds": [
+        "EV-CODE-0042",
+        "EV-CODE-0043",
+        "EV-CODE-0046"
+      ]
+    },
+    {
+      "id": "RM-IO",
+      "kind": "Room",
+      "name": "文件 IO 与编码室",
+      "parentId": "FLR-EDITCORE",
+      "semantic": "document_io/encoding_io/auto_backup",
+      "evidenceIds": [
+        "EV-CODE-0044",
+        "EV-CODE-0045"
+      ]
+    },
+    {
+      "id": "BLD-OS",
+      "kind": "Building",
+      "name": "OS Layer (Windows 10+)",
+      "parentId": "SYS-IDE1",
+      "semantic": "Windows 10 1909+ / PowerShell 5.1+ / WebView2 100+",
+      "evidenceIds": [
+        "EV-DOC-0019"
+      ]
+    },
+    {
+      "id": "FLR-OS",
+      "kind": "Floor",
+      "name": "操作系统层",
+      "parentId": "BLD-OS",
+      "semantic": "宿主能力",
+      "evidenceIds": [
+        "EV-DOC-0019"
+      ]
+    },
+    {
+      "id": "RM-FS",
+      "kind": "Room",
+      "name": "文件系统",
+      "parentId": "FLR-OS",
+      "semantic": "项目目录读写",
+      "evidenceIds": [
+        "EV-CODE-0024"
+      ]
+    },
+    {
+      "id": "RM-WEBVIEW2",
+      "kind": "Room",
+      "name": "WebView2 Runtime",
+      "parentId": "FLR-OS",
+      "semantic": "Tauri 前端宿主；CI Linux 环境下不可用",
+      "evidenceIds": [
+        "EV-DOC-0012",
+        "EV-DOC-0019"
+      ]
+    },
+    {
+      "id": "BLD-EXT",
+      "kind": "Building",
+      "name": "External Tooling",
+      "parentId": "SYS-IDE1",
+      "semantic": "外部进程与外部 crate",
+      "evidenceIds": [
+        "EV-CODE-0030",
+        "EV-CODE-0031",
+        "EV-CODE-0003"
+      ]
+    },
+    {
+      "id": "FLR-EXT",
+      "kind": "Floor",
+      "name": "外部依赖层",
+      "parentId": "BLD-EXT",
+      "semantic": "外部可执行文件与 git 依赖",
+      "evidenceIds": [
+        "EV-CODE-0003"
+      ]
+    },
+    {
+      "id": "RM-ACI",
+      "kind": "Room",
+      "name": "ACI 事件输出",
+      "parentId": "FLR-EXT",
+      "semantic": "aci-emitter（git rev df28c56）输出结构化断言",
+      "evidenceIds": [
+        "EV-CODE-0003"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "N-FE-EDITORHTML",
+      "kind": "Interface",
+      "name": "editor.html 外壳",
+      "qualifiedName": "ide_shell_web::editor.html",
+      "role": "Interface",
+      "domainId": "Interaction",
+      "parentId": "RM-EDITAREA",
+      "portIds": [
+        "P-FE-FETCHAPI"
+      ],
+      "properties": {
+        "language": "vanilla JS",
+        "framework": "none",
+        "cr": "CR-01",
+        "lines": 10054,
+        "purpose": "渲染编辑器外壳并把用户事件转成后端调用",
+        "activityBar": [
+          "资源管理器",
+          "搜索",
+          "源代码管理",
+          "大纲",
+          "扩展"
+        ],
+        "note": "真实结构：Activity Bar 5 项 + Side Bar 5 面板 + Breadcrumb + Bottom Panel 单层（ADR-005）；minimap 在真实实现中为 false（FR-13 仍是将来扩展）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0052",
+        "EV-DOC-0010",
+        "EV-CODE-0054"
+      ]
+    },
+    {
+      "id": "N-FE-JSENGINE",
+      "kind": "Processor",
+      "name": "前端 JS 编辑引擎",
+      "qualifiedName": "ide_shell_web::editor.html#jsEngine",
+      "role": "Processor",
+      "domainId": "Interaction",
+      "parentId": "RM-EDITAREA",
+      "portIds": [],
+      "properties": {
+        "migrationState": "in-progress",
+        "note": "仅在 ide-shell-web/Cargo.toml 的注释中被提及为「并行迁移中」；无独立模块与实现代码，故按 Designed 记录",
+        "purpose": "与 Rust 内核并行的前端编辑实现（迁移中）",
+        "implementationState": "not-evidenced-in-code"
+      },
+      "verification": "Designed",
+      "evidenceIds": [
+        "EV-CODE-0053"
+      ]
+    },
+    {
+      "id": "N-WB-SERVER",
+      "kind": "Interface",
+      "name": "ide-shell-web HTTP 服务",
+      "qualifiedName": "ide_shell_web::handle_http",
+      "role": "Interface",
+      "domainId": "Core",
+      "parentId": "RM-HTTP",
+      "portIds": [
+        "P-HTTP-",
+        "P-HTTP-API-BOOKMARK",
+        "P-HTTP-API-BRACKET-PAIR",
+        "P-HTTP-API-CLEAR-THEME-VARS",
+        "P-HTTP-API-CLEAR-THEME-VARS-2",
+        "P-HTTP-API-DESKTOP-LUMINANCE",
+        "P-HTTP-API-DESKTOP-LUMINANCE-2",
+        "P-HTTP-API-DOC-ACTIVATE",
+        "P-HTTP-API-DOC-ACTIVE",
+        "P-HTTP-API-DOC-ADD-CURSOR",
+        "P-HTTP-API-DOC-BACKSPACE",
+        "P-HTTP-API-DOC-CARET",
+        "P-HTTP-API-DOC-CLEAR-CURSORS",
+        "P-HTTP-API-DOC-CLEAR-SELECTION",
+        "P-HTTP-API-DOC-CLOSE",
+        "P-HTTP-API-DOC-DELETE",
+        "P-HTTP-API-DOC-DELETE-RANGE",
+        "P-HTTP-API-DOC-ENCODING",
+        "P-HTTP-API-DOC-EXPORT",
+        "P-HTTP-API-DOC-FIND",
+        "P-HTTP-API-DOC-FIND-ALL",
+        "P-HTTP-API-DOC-INSERT",
+        "P-HTTP-API-DOC-INSERT-ALL",
+        "P-HTTP-API-DOC-LINE-ENDING",
+        "P-HTTP-API-DOC-MARK-SAVED",
+        "P-HTTP-API-DOC-NEW-TAB",
+        "P-HTTP-API-DOC-NEWLINE",
+        "P-HTTP-API-DOC-OPEN",
+        "P-HTTP-API-DOC-REDO",
+        "P-HTTP-API-DOC-REPLACE-ALL",
+        "P-HTTP-API-DOC-SELECT-ALL",
+        "P-HTTP-API-DOC-TABS",
+        "P-HTTP-API-DOC-TYPE",
+        "P-HTTP-API-DOC-UNDO",
+        "P-HTTP-API-EDIT-CMD",
+        "P-HTTP-API-EDIT-LINES",
+        "P-HTTP-API-EDIT-TEXT",
+        "P-HTTP-API-EVENT",
+        "P-HTTP-API-FRAME",
+        "P-HTTP-API-HELP-WIKI",
+        "P-HTTP-API-HISTORY",
+        "P-HTTP-API-KERNEL-BANNER",
+        "P-HTTP-API-KERNEL-BANNER-2",
+        "P-HTTP-API-KEY",
+        "P-HTTP-API-LIST-DIR",
+        "P-HTTP-API-MIGEMO-PATTERNS",
+        "P-HTTP-API-MOUSE",
+        "P-HTTP-API-NAV-STEP",
+        "P-HTTP-API-OPEN-PROJECT",
+        "P-HTTP-API-OUTLINE",
+        "P-HTTP-API-PICK-FOLDER",
+        "P-HTTP-API-PICK-FOLDER-2",
+        "P-HTTP-API-PLUGIN-LOAD",
+        "P-HTTP-API-READ-FILE",
+        "P-HTTP-API-REINTERPRET-TEXT",
+        "P-HTTP-API-RESET",
+        "P-HTTP-API-SCM-COMMIT",
+        "P-HTTP-API-SCM-DIFF",
+        "P-HTTP-API-SCM-LOG",
+        "P-HTTP-API-SCM-STAGE",
+        "P-HTTP-API-SCM-STATUS",
+        "P-HTTP-API-SCM-UNSTAGE",
+        "P-HTTP-API-SEARCH",
+        "P-HTTP-API-SEARCH-TEXT",
+        "P-HTTP-API-TERMINAL-CLOSE",
+        "P-HTTP-API-TERMINAL-CREATE",
+        "P-HTTP-API-TERMINAL-INPUT",
+        "P-HTTP-API-TERMINAL-LIST",
+        "P-HTTP-API-TERMINAL-OUTPUT",
+        "P-HTTP-API-WRITE-FILE",
+        "P-HTTP-DOC-ACTIVATE",
+        "P-HTTP-DOC-ACTIVE",
+        "P-HTTP-DOC-BACKSPACE",
+        "P-HTTP-DOC-CARET",
+        "P-HTTP-DOC-CLOSE",
+        "P-HTTP-DOC-DELETE",
+        "P-HTTP-DOC-DELETERANGE",
+        "P-HTTP-DOC-ENCODING",
+        "P-HTTP-DOC-EXPORT",
+        "P-HTTP-DOC-FIND",
+        "P-HTTP-DOC-FINDALL",
+        "P-HTTP-DOC-INSERT",
+        "P-HTTP-DOC-LINEENDING",
+        "P-HTTP-DOC-MARKSAVED",
+        "P-HTTP-DOC-NEWLINE",
+        "P-HTTP-DOC-NEWTAB",
+        "P-HTTP-DOC-OPEN",
+        "P-HTTP-DOC-REDO",
+        "P-HTTP-DOC-REPLACEALL",
+        "P-HTTP-DOC-SELECTALL",
+        "P-HTTP-DOC-TABS",
+        "P-HTTP-DOC-TYPE",
+        "P-HTTP-DOC-UNDO",
+        "P-HTTP-EDITOR",
+        "P-HTTP-EVENT",
+        "P-HTTP-FRAME",
+        "P-HTTP-INDEX-HTML",
+        "P-HTTP-KEY",
+        "P-HTTP-LISTDIR",
+        "P-HTTP-MOUSE",
+        "P-HTTP-OPENPROJECT",
+        "P-HTTP-OUTLINE",
+        "P-HTTP-PLUGINLOAD",
+        "P-HTTP-READFILE",
+        "P-HTTP-SCM-COMMIT",
+        "P-HTTP-SCM-DIFF",
+        "P-HTTP-SCM-LOG",
+        "P-HTTP-SCM-STAGE",
+        "P-HTTP-SCM-STATUS",
+        "P-HTTP-SCM-UNSTAGE",
+        "P-HTTP-SEARCH",
+        "P-HTTP-TERM-CLOSE",
+        "P-HTTP-TERM-CREATE",
+        "P-HTTP-TERM-INPUT",
+        "P-HTTP-TERM-LIST",
+        "P-HTTP-TERM-OUTPUT",
+        "P-HTTP-WRITEFILE"
+      ],
+      "properties": {
+        "router": "hand-rolled match dispatch",
+        "axum": false,
+        "bind": "127.0.0.1:8123",
+        "routeCount": 70,
+        "purpose": "手写 (METHOD, path) 匹配分发器，承载约 70 条 /api 路由"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0019",
+        "EV-CODE-0020",
+        "EV-CODE-0021",
+        "EV-CODE-0022",
+        "EV-CODE-0023",
+        "EV-CODE-0024",
+        "EV-DOC-0018"
+      ]
+    },
+    {
+      "id": "N-WB-AUTH",
+      "kind": "Security",
+      "name": "auth 令牌校验",
+      "qualifiedName": "ide_shell_web::auth::Auth",
+      "role": "Security",
+      "domainId": "Security",
+      "parentId": "RM-AUTH",
+      "portIds": [
+        "P-AUTH-CHECK"
+      ],
+      "properties": {
+        "tokenSource": "getrandom (OS CSPRNG)",
+        "threatModel": "任意恶意网页可 fetch 本地 8123 端口",
+        "header": "x-ide-token",
+        "purpose": "每次启动生成 CSPRNG token，校验 x-ide-token + Host + Origin"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026",
+        "EV-CODE-0027"
+      ]
+    },
+    {
+      "id": "N-WB-PATHSAFETY",
+      "kind": "Security",
+      "name": "path_safety 沙箱",
+      "qualifiedName": "ide_shell_web::path_safety",
+      "role": "Security",
+      "domainId": "Security",
+      "parentId": "RM-SANDBOX",
+      "portIds": [
+        "P-SANDBOX-GUARD"
+      ],
+      "properties": {
+        "maxBytes": 4194304,
+        "encoding": "UTF-8 only",
+        "tests": 12,
+        "coverage": "93.94%",
+        "purpose": "剥除 \\\\?\\ 前缀、展开 8.3 短路径、判定是否在项目根内、限制 4MB、校验 UTF-8"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-DOC-0014",
+        "EV-DOC-0015",
+        "EV-DOC-0008"
+      ]
+    },
+    {
+      "id": "N-WB-TERMINAL",
+      "kind": "Processor",
+      "name": "Web 终端会话",
+      "qualifiedName": "ide_shell_web::terminal",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-PSH",
+      "portIds": [],
+      "properties": {
+        "shell": "powershell.exe",
+        "io": "stdin pipe + reader 线程",
+        "sessions": 1,
+        "purpose": "HTTP 轮询式终端：create/input/output/close/list"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0021",
+        "EV-DOC-0021"
+      ]
+    },
+    {
+      "id": "N-DT-TAURI",
+      "kind": "Interface",
+      "name": "Tauri 2 桌面外壳",
+      "qualifiedName": "ide_shell_desktop::lib",
+      "role": "Interface",
+      "domainId": "Core",
+      "parentId": "RM-TAURI",
+      "portIds": [
+        "P-TAURI-BOOKMARK",
+        "P-TAURI-BRACKET-PAIR",
+        "P-TAURI-CLEAR-THEME-VARS",
+        "P-TAURI-DESKTOP-LUMINANCE",
+        "P-TAURI-DOC-ACTIVATE",
+        "P-TAURI-DOC-ACTIVE",
+        "P-TAURI-DOC-ADD-CURSOR",
+        "P-TAURI-DOC-BACKSPACE",
+        "P-TAURI-DOC-CARET",
+        "P-TAURI-DOC-CLEAR-CURSORS",
+        "P-TAURI-DOC-CLEAR-SELECTION",
+        "P-TAURI-DOC-CLOSE",
+        "P-TAURI-DOC-DELETE",
+        "P-TAURI-DOC-DELETE-RANGE",
+        "P-TAURI-DOC-ENCODING",
+        "P-TAURI-DOC-EXPORT",
+        "P-TAURI-DOC-FIND",
+        "P-TAURI-DOC-FIND-ALL",
+        "P-TAURI-DOC-INSERT",
+        "P-TAURI-DOC-INSERT-ALL",
+        "P-TAURI-DOC-LINE-ENDING",
+        "P-TAURI-DOC-MARK-SAVED",
+        "P-TAURI-DOC-NEW-TAB",
+        "P-TAURI-DOC-NEWLINE",
+        "P-TAURI-DOC-NEWTAB",
+        "P-TAURI-DOC-OPEN",
+        "P-TAURI-DOC-REDO",
+        "P-TAURI-DOC-REPLACE-ALL",
+        "P-TAURI-DOC-REPLACEALL",
+        "P-TAURI-DOC-SELECT-ALL",
+        "P-TAURI-DOC-TABS",
+        "P-TAURI-DOC-TYPE",
+        "P-TAURI-DOC-UNDO",
+        "P-TAURI-EDIT-CMD",
+        "P-TAURI-EDIT-LINES",
+        "P-TAURI-EDIT-TEXT",
+        "P-TAURI-FRAME",
+        "P-TAURI-GET-MODE",
+        "P-TAURI-HELP-WIKI",
+        "P-TAURI-HISTORY",
+        "P-TAURI-KERNEL-BANNER",
+        "P-TAURI-KEY",
+        "P-TAURI-LIST-DIR",
+        "P-TAURI-LUMINANCE",
+        "P-TAURI-MIGEMO-PATTERNS",
+        "P-TAURI-MOUSE",
+        "P-TAURI-NAV-STEP",
+        "P-TAURI-OPEN-PROJECT",
+        "P-TAURI-OUTLINE",
+        "P-TAURI-PICK-FOLDER",
+        "P-TAURI-PLUGIN-LOAD",
+        "P-TAURI-PLUGINLOAD",
+        "P-TAURI-READ-FILE",
+        "P-TAURI-REINTERPRET-TEXT",
+        "P-TAURI-RESET",
+        "P-TAURI-SCM-COMMIT",
+        "P-TAURI-SCM-DIFF",
+        "P-TAURI-SCM-LOG",
+        "P-TAURI-SCM-STAGE",
+        "P-TAURI-SCM-STATUS",
+        "P-TAURI-SCM-UNSTAGE",
+        "P-TAURI-SEARCH",
+        "P-TAURI-SEARCH-CMD",
+        "P-TAURI-SEARCH-TEXT",
+        "P-TAURI-TERM-CLOSE",
+        "P-TAURI-TERM-CREATE",
+        "P-TAURI-TERM-INPUT",
+        "P-TAURI-TERM-LIST",
+        "P-TAURI-TERMINAL-CLOSE",
+        "P-TAURI-TERMINAL-CREATE",
+        "P-TAURI-TERMINAL-INPUT",
+        "P-TAURI-TERMINAL-LIST",
+        "P-TAURI-THEMEVARS",
+        "P-TAURI-WRITE-FILE"
+      ],
+      "properties": {
+        "framework": "Tauri 2",
+        "adr": "ADR-001",
+        "webview": "WebView2",
+        "binary": "2.88 MiB MSI / 8.45MB 理由记录",
+        "purpose": "WebView2 ↔ Rust command 注册表，30+ 个 #[tauri::command]"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0028",
+        "EV-DOC-0009",
+        "EV-DOC-0010"
+      ]
+    },
+    {
+      "id": "N-DT-TERMINAL",
+      "kind": "Processor",
+      "name": "桌面终端管理",
+      "qualifiedName": "ide_shell_desktop::terminal",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-PSH",
+      "portIds": [
+        "P-TERM-CLOSE",
+        "P-TERM-CREATE",
+        "P-TERM-INPUT",
+        "P-TERM-LIST"
+      ],
+      "properties": {
+        "shell": "powershell.exe",
+        "windowFlag": "CREATE_NO_WINDOW",
+        "verified": "Write-Host / Get-Date / Get-Location 实测通过",
+        "purpose": "启动 powershell.exe（CREATE_NO_WINDOW）并做管道 I/O"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0029",
+        "EV-DOC-0013"
+      ]
+    },
+    {
+      "id": "N-DT-SCM",
+      "kind": "Processor",
+      "name": "SCM（git 封装）",
+      "qualifiedName": "ide_shell_desktop::scm",
+      "role": "Processor",
+      "domainId": "Operations",
+      "parentId": "RM-GIT",
+      "portIds": [
+        "P-SCM-COMMIT",
+        "P-SCM-DIFF",
+        "P-SCM-LOG",
+        "P-SCM-STAGE",
+        "P-SCM-STATUS",
+        "P-SCM-UNSTAGE"
+      ],
+      "properties": {
+        "protocol": "git porcelain v1",
+        "rootDetection": "find_git_root 向上回溯",
+        "purpose": "调外部 git：status/stage/unstage/diff/diff_cached/commit/log"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "N-DT-SEARCH",
+      "kind": "Processor",
+      "name": "工程搜索",
+      "qualifiedName": "ide_shell_desktop::search",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-RG",
+      "portIds": [
+        "P-SEARCH-FALLBACK",
+        "P-SEARCH-RG"
+      ],
+      "properties": {
+        "primary": "ripgrep",
+        "fallback": "内置实现",
+        "fallbackTest": "test_search_works_without_rg_binary",
+        "purpose": "优先调用 rg，rg 不可用时回落内置实现"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "N-DT-PLUGIN",
+      "kind": "Agent",
+      "name": "wasm 插件加载",
+      "qualifiedName": "ide_shell_desktop::plugin",
+      "role": "Agent",
+      "domainId": "Intelligence",
+      "parentId": "RM-TAURI",
+      "portIds": [
+        "P-PLUGIN-LOAD"
+      ],
+      "properties": {
+        "runtime": "wasm",
+        "security": "仅加载并运行，无签名校验证据",
+        "purpose": "加载并执行 wasm 插件，返回 PluginRunResult"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0032",
+        "EV-CODE-0048"
+      ]
+    },
+    {
+      "id": "N-DT-OUTLINE",
+      "kind": "Processor",
+      "name": "大纲解析",
+      "qualifiedName": "ide_shell_desktop::outline",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-TAURI",
+      "portIds": [],
+      "properties": {
+        "resultType": "OutlineResult",
+        "purpose": "从文件内容抽取符号大纲"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0033"
+      ]
+    },
+    {
+      "id": "N-PT-KERNEL",
+      "kind": "Processor",
+      "name": "headless 内核",
+      "qualifiedName": "ide_shell_protocol::Kernel",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-RPC",
+      "portIds": [],
+      "properties": {
+        "buffers": "HashMap<u32, Buffer>",
+        "modes": "Normal/Insert/Command",
+        "undoLimit": 200,
+        "purpose": "多 buffer + 三态 mode + per-buffer undo/redo + provider registry，无 UI 依赖"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0006",
+        "EV-CODE-0010"
+      ]
+    },
+    {
+      "id": "N-PT-RPC",
+      "kind": "Interface",
+      "name": "JSON-RPC 2.0 分发器",
+      "qualifiedName": "ide_shell_protocol::Kernel::handle_rpc",
+      "role": "Interface",
+      "domainId": "Core",
+      "parentId": "RM-RPC",
+      "portIds": [
+        "P-RPC-ACTIVEBUFFERID",
+        "P-RPC-CHAT",
+        "P-RPC-CLOSE-BUFFER",
+        "P-RPC-CLOSEBUFFER",
+        "P-RPC-COMPLETE-AT-CURSOR",
+        "P-RPC-COMPLETEATCURSOR",
+        "P-RPC-EDIT-VIA-PROVIDER",
+        "P-RPC-EDITVIAPROVIDER",
+        "P-RPC-EXECUTE-COMMAND",
+        "P-RPC-EXECUTECOMMAND",
+        "P-RPC-GET-CMD-TEXT",
+        "P-RPC-GETBUFFER",
+        "P-RPC-GETCMDTEXT",
+        "P-RPC-INSERT-AT-CURSOR",
+        "P-RPC-INSERTCURSOR",
+        "P-RPC-KERNELINFO",
+        "P-RPC-KEY-EVENT",
+        "P-RPC-KEYEVENT",
+        "P-RPC-LISTBUFFERS",
+        "P-RPC-LISTPROVIDERS",
+        "P-RPC-OPEN-BUFFER",
+        "P-RPC-OPENBUFFER",
+        "P-RPC-REGISTERPROVIDER",
+        "P-RPC-SET-ACTIVE-BUFFER",
+        "P-RPC-SET-BUFFER-LINES",
+        "P-RPC-SET-CMD-TEXT",
+        "P-RPC-SET-CURSOR",
+        "P-RPC-SETACTIVEBUFFER",
+        "P-RPC-SETBUFFERLINES",
+        "P-RPC-SETCMDTEXT",
+        "P-RPC-SETCURSOR",
+        "P-RPC-UNREGISTERPROVIDER"
+      ],
+      "properties": {
+        "methodCount": 20,
+        "errorCodes": "-32700/-32600/-32601/-32602/-32603/-32001/-32002",
+        "transports": "stdio / HTTP / WebSocket",
+        "purpose": "解析请求并分派到 20 个方法，返回 JSON-RPC 响应或错误码"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0007",
+        "EV-CODE-0008",
+        "EV-CODE-0010",
+        "EV-CODE-0011"
+      ]
+    },
+    {
+      "id": "N-PT-AIPROVIDER",
+      "kind": "Interface",
+      "name": "AiProvider 契约",
+      "qualifiedName": "ide_shell_protocol::AiProvider",
+      "role": "Interface",
+      "domainId": "Intelligence",
+      "parentId": "RM-AI",
+      "portIds": [
+        "P-AI-CHAT",
+        "P-AI-COMPLETE",
+        "P-AI-EDIT"
+      ],
+      "properties": {
+        "methods": 3,
+        "productionImpl": false,
+        "placeholder": "ide_shell::PlaceholderAi",
+        "purpose": "AI agent 注入点：complete / edit / chat 三方法（async）"
+      },
+      "verification": "Designed",
+      "evidenceIds": [
+        "EV-CODE-0009",
+        "EV-CODE-0036"
+      ]
+    },
+    {
+      "id": "N-KN-DOCUMENT",
+      "kind": "Storage",
+      "name": "Document 文档模型",
+      "qualifiedName": "ide_kernel::document::Document",
+      "role": "Storage",
+      "domainId": "Core",
+      "parentId": "RM-DOC",
+      "portIds": [
+        "P-DOC-DELETE",
+        "P-DOC-INSERT",
+        "P-DOC-REDO",
+        "P-DOC-SELECTALL",
+        "P-DOC-UNDO"
+      ],
+      "properties": {
+        "selection": "anchor/head 双锚点",
+        "counting": "字符计（非字节）",
+        "encoding": "Encoding 枚举",
+        "purpose": "承载行集合、光标/选区、换行与编码、dirty 标志、撤销历史"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0013",
+        "EV-CODE-0014"
+      ]
+    },
+    {
+      "id": "N-KN-DOCSTORE",
+      "kind": "Storage",
+      "name": "DocStore 文档仓库",
+      "qualifiedName": "ide_kernel::doc_store::DocStore",
+      "role": "Storage",
+      "domainId": "Core",
+      "parentId": "RM-DOC",
+      "portIds": [
+        "P-STORE-ACTIVATE",
+        "P-STORE-CLOSE",
+        "P-STORE-EXPORT",
+        "P-STORE-FIND",
+        "P-STORE-INSERT",
+        "P-STORE-MARKSAVED",
+        "P-STORE-NEWTAB",
+        "P-STORE-OPEN",
+        "P-STORE-REDO",
+        "P-STORE-REPLACEALL",
+        "P-STORE-TABS",
+        "P-STORE-UNDO"
+      ],
+      "properties": {
+        "view": "DocView",
+        "dirtyTabs": "dirty_tabs()",
+        "purpose": "多文档打开/激活/关闭 + 编辑动作，产出 DocView 投影供前端与桌面端消费"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0015",
+        "EV-CODE-0016"
+      ]
+    },
+    {
+      "id": "N-KN-SESSION",
+      "kind": "Storage",
+      "name": "Session 会话",
+      "qualifiedName": "ide_kernel::session::Session",
+      "role": "Storage",
+      "domainId": "Core",
+      "parentId": "RM-SESSION",
+      "portIds": [
+        "P-SESSION-ACTIVATE",
+        "P-SESSION-CLOSE",
+        "P-SESSION-DIRTY",
+        "P-SESSION-NEWTAB",
+        "P-SESSION-NEXT",
+        "P-SESSION-PREV"
+      ],
+      "properties": {
+        "tabId": "u64 递增",
+        "purpose": "标签页序列、激活项、脏标签集合"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0017"
+      ]
+    },
+    {
+      "id": "N-KN-TEXTOPS",
+      "kind": "Processor",
+      "name": "查找替换运算",
+      "qualifiedName": "ide_kernel::text_ops",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-SEARCH",
+      "portIds": [],
+      "properties": {
+        "options": "FindOptions（方向/大小写/正则与否）",
+        "purpose": "纯函数式 find_from/find_next/find_prev/find_all/replace_current/replace_all"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0018"
+      ]
+    },
+    {
+      "id": "N-EC-BUFFER",
+      "kind": "Storage",
+      "name": "Buffer 行存储",
+      "qualifiedName": "editcore::buffer::DocLineMgr",
+      "role": "Storage",
+      "domainId": "Data",
+      "parentId": "RM-BUFFER",
+      "portIds": [
+        "P-EC-BUFFER-CURSOR",
+        "P-EC-BUFFER-LINES",
+        "P-EC-BUFFER-TEXT"
+      ],
+      "properties": {
+        "lines": 430,
+        "parity": "参考实现行快照对比",
+        "purpose": "逻辑行/物理行分离的行存储，字符级光标定位"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0038",
+        "EV-CODE-0004"
+      ]
+    },
+    {
+      "id": "N-EC-UNDO",
+      "kind": "Storage",
+      "name": "Ope 操作缓冲",
+      "qualifiedName": "editcore::undo::OpeBuf",
+      "role": "Storage",
+      "domainId": "Data",
+      "parentId": "RM-UNDO",
+      "portIds": [
+        "P-EC-REDO",
+        "P-EC-UNDO"
+      ],
+      "properties": {
+        "serializable": "JSON",
+        "ops": "Insert/Delete/Replace/MoveCaret",
+        "purpose": "Insert/Delete/Replace/MoveCaret 操作缓冲，撤销重做的数据结构"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0039"
+      ]
+    },
+    {
+      "id": "N-EC-HISTORY",
+      "kind": "Storage",
+      "name": "按标签补丁栈",
+      "qualifiedName": "editcore::history",
+      "role": "Storage",
+      "domainId": "Data",
+      "parentId": "RM-UNDO",
+      "portIds": [
+        "P-EC-HISTORY"
+      ],
+      "properties": {
+        "introducedIn": "76c4e8f",
+        "boundary": "前端只保留上一个边界的行快照",
+        "purpose": "按标签页保存补丁栈，取代前端行快照；HEAD commit 76c4e8f 引入"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0040"
+      ]
+    },
+    {
+      "id": "N-EC-TYPECONFIG",
+      "kind": "Processor",
+      "name": "TypeConfig 语法配置",
+      "qualifiedName": "editcore::type_config::TypeRegistry",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-LEXER",
+      "portIds": [],
+      "properties": {
+        "heavyDeps": false,
+        "purpose": "行级 token 扫描与语法配置加载"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0041"
+      ]
+    },
+    {
+      "id": "N-EC-TYPES",
+      "kind": "Processor",
+      "name": "19 语言工厂",
+      "qualifiedName": "editcore::types",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-LEXER",
+      "portIds": [],
+      "properties": {
+        "languages": 19,
+        "detection": "扩展名",
+        "purpose": "按扩展名判别语言并提供高亮函数"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0041",
+        "EV-DOC-0011"
+      ]
+    },
+    {
+      "id": "N-EC-GREP",
+      "kind": "Processor",
+      "name": "文件枚举",
+      "qualifiedName": "editcore::grep",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-SEARCH",
+      "portIds": [],
+      "properties": {
+        "scope": "项目根内",
+        "purpose": "walk_dir 递归枚举项目文件"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0042"
+      ]
+    },
+    {
+      "id": "N-EC-GREPENGINE",
+      "kind": "Processor",
+      "name": "内容搜索引擎",
+      "qualifiedName": "editcore::grep_engine",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-SEARCH",
+      "portIds": [],
+      "properties": {
+        "lines": 1801,
+        "algorithm": "Boyer-Moore-Horspool（设计声明）",
+        "purpose": "自实现内容搜索（不使用 regex crate）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0042",
+        "EV-CODE-0004"
+      ]
+    },
+    {
+      "id": "N-EC-SEARCHOPS",
+      "kind": "Processor",
+      "name": "Rust 侧查找替换",
+      "qualifiedName": "editcore::search_ops",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-SEARCH",
+      "portIds": [],
+      "properties": {
+        "introducedIn": "56b4ea4",
+        "purpose": "文档内查找/替换操作（承接原 C++ Find/Replace）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0043"
+      ]
+    },
+    {
+      "id": "N-EC-EDITCMD",
+      "kind": "Processor",
+      "name": "编辑命令层",
+      "qualifiedName": "editcore::edit_cmd",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-BUFFER",
+      "portIds": [],
+      "properties": {
+        "lines": 614,
+        "purpose": "命令执行层（614 行）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0047"
+      ]
+    },
+    {
+      "id": "N-EC-MACRO",
+      "kind": "Processor",
+      "name": "宏机制",
+      "qualifiedName": "editcore::{js_macro,key_macro,ppa_macro}",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-BUFFER",
+      "portIds": [],
+      "properties": {
+        "variants": 3,
+        "decision": "ADR-011 记录为以 mini interpreter 规避重依赖",
+        "purpose": "js / key / ppa 三种宏机制；js_macro 以 mini interpreter 替代 rquickjs/boa"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0047",
+        "EV-DOC-0010"
+      ]
+    },
+    {
+      "id": "N-EC-ENCODING",
+      "kind": "Security",
+      "name": "编码读写",
+      "qualifiedName": "editcore::encoding_io",
+      "role": "Security",
+      "domainId": "Security",
+      "parentId": "RM-IO",
+      "portIds": [
+        "P-EC-ENCODING"
+      ],
+      "properties": {
+        "constraint": "CR-04 UTF-8 only",
+        "purpose": "按编码读写文件，UTF-8 为唯一受支持编码"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0044",
+        "EV-DOC-0004"
+      ]
+    },
+    {
+      "id": "N-EC-DOCIO",
+      "kind": "Processor",
+      "name": "文档 IO",
+      "qualifiedName": "editcore::document_io",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-IO",
+      "portIds": [
+        "P-EC-DOCIO"
+      ],
+      "properties": {
+        "lines": 498,
+        "purpose": "文档读写与格式处理"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0005"
+      ]
+    },
+    {
+      "id": "N-EC-AUTOBACKUP",
+      "kind": "Storage",
+      "name": "自动备份",
+      "qualifiedName": "editcore::auto_backup",
+      "role": "Storage",
+      "domainId": "Data",
+      "parentId": "RM-IO",
+      "portIds": [],
+      "properties": {
+        "intervalMin": 5,
+        "generations": 10,
+        "purpose": "周期自动备份并按世代滚动保留"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0045",
+        "EV-DOC-0001"
+      ]
+    },
+    {
+      "id": "N-EC-MIGEMO",
+      "kind": "Processor",
+      "name": "romaji 搜索",
+      "qualifiedName": "editcore::migemo",
+      "role": "Processor",
+      "domainId": "Data",
+      "parentId": "RM-SEARCH",
+      "portIds": [],
+      "properties": {
+        "lines": 578,
+        "purpose": "日语假名/罗马字检索"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0046"
+      ]
+    },
+    {
+      "id": "N-EC-NAV",
+      "kind": "Processor",
+      "name": "导航与移动",
+      "qualifiedName": "editcore::nav",
+      "role": "Processor",
+      "domainId": "Core",
+      "parentId": "RM-BUFFER",
+      "portIds": [],
+      "properties": {
+        "purpose": "光标移动与导航辅助"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0005"
+      ]
+    },
+    {
+      "id": "N-EC-PLUGIN",
+      "kind": "Interface",
+      "name": "插件接口",
+      "qualifiedName": "editcore::plugin",
+      "role": "Interface",
+      "domainId": "Intelligence",
+      "parentId": "RM-BUFFER",
+      "portIds": [],
+      "properties": {
+        "purpose": "插件加载接口定义"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0048"
+      ]
+    },
+    {
+      "id": "N-EC-DAEMON",
+      "kind": "Processor",
+      "name": "后台守护",
+      "qualifiedName": "editcore::daemon",
+      "role": "Processor",
+      "domainId": "Operations",
+      "parentId": "RM-BUFFER",
+      "portIds": [],
+      "properties": {
+        "purpose": "后台任务能力"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0049"
+      ]
+    },
+    {
+      "id": "N-CLI",
+      "kind": "Interface",
+      "name": "ide-cli（占位）",
+      "qualifiedName": "ide_cli::run",
+      "role": "Interface",
+      "domainId": "Infrastructure",
+      "parentId": "RM-HTTP",
+      "portIds": [],
+      "properties": {
+        "status": "placeholder",
+        "planned": "session/txn/config/plugin 子命令",
+        "purpose": "仅实现 --version / --aci-emit / --help 三个 flag"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0002"
+      ]
+    },
+    {
+      "id": "N-KERNELCORE",
+      "kind": "Interface",
+      "name": "ide-kernel-core（占位）",
+      "qualifiedName": "ide_kernel_core::kernel_status",
+      "role": "Interface",
+      "domainId": "Core",
+      "parentId": "RM-DOC",
+      "portIds": [],
+      "properties": {
+        "status": "placeholder",
+        "planned": "DD-01 microkernel / DD-02 transaction buffer",
+        "purpose": "仅 version() 与 kernel_status()（返回 \"placeholder\"）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0001"
+      ]
+    },
+    {
+      "id": "N-SHELL-TUI",
+      "kind": "Interface",
+      "name": "ide-shell TUI App",
+      "qualifiedName": "ide_shell::App",
+      "role": "Interface",
+      "domainId": "Core",
+      "parentId": "RM-HTTP",
+      "portIds": [],
+      "properties": {
+        "renderer": "ratatui_render.rs + web.rs 双后端",
+        "ai": "PlaceholderAi",
+        "purpose": "ratatui+crossterm 终端外壳状态机：mode/buffer/history/quit/AI 建议"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0034",
+        "EV-CODE-0035",
+        "EV-CODE-0036",
+        "EV-CODE-0037"
+      ]
+    },
+    {
+      "id": "N-OS-PWSH",
+      "kind": "Actor",
+      "name": "powershell.exe",
+      "qualifiedName": "OS::powershell.exe",
+      "role": "Actor",
+      "domainId": "External",
+      "parentId": "RM-PSH",
+      "portIds": [],
+      "properties": {
+        "minVersion": "5.1",
+        "createNoWindow": true,
+        "purpose": "宿主终端 shell"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0029",
+        "EV-DOC-0019"
+      ]
+    },
+    {
+      "id": "N-OS-FS",
+      "kind": "Actor",
+      "name": "文件系统",
+      "qualifiedName": "OS::FileSystem",
+      "role": "Actor",
+      "domainId": "External",
+      "parentId": "RM-FS",
+      "portIds": [],
+      "properties": {
+        "scope": "项目根内（CR-03）",
+        "purpose": "项目目录持久化"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0024",
+        "EV-DOC-0004"
+      ]
+    },
+    {
+      "id": "N-OS-WEBVIEW2",
+      "kind": "Actor",
+      "name": "WebView2 Runtime",
+      "qualifiedName": "OS::WebView2",
+      "role": "Actor",
+      "domainId": "External",
+      "parentId": "RM-WEBVIEW2",
+      "portIds": [],
+      "properties": {
+        "minVersion": "100.0+",
+        "ciStatus": "Linux CI 无 WebView2 + 无 powershell",
+        "purpose": "Tauri 前端宿主；Linux CI 环境不可用导致 11 个 e2e 失败"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-DOC-0012",
+        "EV-DOC-0019"
+      ]
+    },
+    {
+      "id": "N-EXT-GIT",
+      "kind": "Actor",
+      "name": "git",
+      "qualifiedName": "OS::git",
+      "role": "Actor",
+      "domainId": "External",
+      "parentId": "RM-GIT",
+      "portIds": [],
+      "properties": {
+        "purpose": "版本控制外部命令"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "N-EXT-RG",
+      "kind": "Actor",
+      "name": "ripgrep (rg)",
+      "qualifiedName": "OS::rg",
+      "role": "Actor",
+      "domainId": "External",
+      "parentId": "RM-RG",
+      "portIds": [],
+      "properties": {
+        "purpose": "工程搜索外部命令（缺失时回落内置实现）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "N-EXT-ACI",
+      "kind": "Actor",
+      "name": "aci-emitter",
+      "qualifiedName": "aci_emitter::AciEmitter",
+      "role": "Actor",
+      "domainId": "Operations",
+      "parentId": "RM-ACI",
+      "portIds": [],
+      "properties": {
+        "dep": "git rev df28c56",
+        "purpose": "结构化断言事件输出（git rev df28c56）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0003"
+      ]
+    },
+    {
+      "id": "N-FE-CLIENT2",
+      "kind": "Interface",
+      "name": "第二客户端窗口",
+      "qualifiedName": "ide_shell_web::editor.html#client2",
+      "role": "Interface",
+      "domainId": "Interaction",
+      "parentId": "RM-EDITAREA",
+      "portIds": [],
+      "properties": {
+        "purpose": "并发场景的真实来源：两个客户端同时打同一个 127.0.0.1:8123",
+        "note": "事实依据：本地服务单例 + 令牌校验（EV-CODE-0025）"
+      },
+      "verification": "Inferred",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0052"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "E-FE-TO-DT",
+      "sourceId": "N-FE-EDITORHTML",
+      "targetId": "N-DT-TAURI",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "ipc",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "channel": "Tauri invoke",
+        "note": "inTauri 时走 invoke，否则走 fetch"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0052",
+        "EV-DOC-0003"
+      ]
+    },
+    {
+      "id": "E-FE-TO-WB",
+      "sourceId": "N-FE-EDITORHTML",
+      "targetId": "N-WB-SERVER",
+      "sourcePortId": "P-FE-FETCHAPI",
+      "targetPortId": null,
+      "type": "http",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "base": "http://127.0.0.1:8123",
+        "note": "fetchApi(\"/api/\" + name)"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0052",
+        "EV-CODE-0020"
+      ]
+    },
+    {
+      "id": "E-WB-TO-AUTH",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-WB-AUTH",
+      "sourcePortId": null,
+      "targetPortId": "P-AUTH-CHECK",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "每个请求先做 token/Origin/Host 校验"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026"
+      ]
+    },
+    {
+      "id": "E-WB-TO-SANDBOX",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-WB-PATHSAFETY",
+      "sourcePortId": null,
+      "targetPortId": "P-SANDBOX-GUARD",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "文件类路由必须过沙箱"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-DOC-0008",
+        "EV-DOC-0014"
+      ]
+    },
+    {
+      "id": "E-WB-TO-STORE",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-KN-DOCSTORE",
+      "sourcePortId": "P-HTTP-DOC-OPEN",
+      "targetPortId": "P-STORE-OPEN",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "/api/doc/* → DocStore"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0020",
+        "EV-CODE-0016"
+      ]
+    },
+    {
+      "id": "E-WB-TO-TERMINAL",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-WB-TERMINAL",
+      "sourcePortId": "P-HTTP-TERM-CREATE",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0021"
+      ]
+    },
+    {
+      "id": "E-WB-TO-SCM",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-DT-SCM",
+      "sourcePortId": "P-HTTP-SCM-STATUS",
+      "targetPortId": "P-SCM-STATUS",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0022",
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "E-WB-TO-SEARCH",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-DT-SEARCH",
+      "sourcePortId": "P-HTTP-SEARCH",
+      "targetPortId": "P-SEARCH-RG",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "E-WB-TO-OUTLINE",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-DT-OUTLINE",
+      "sourcePortId": "P-HTTP-OUTLINE",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0033"
+      ]
+    },
+    {
+      "id": "E-WB-TO-PLUGIN",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-DT-PLUGIN",
+      "sourcePortId": "P-HTTP-PLUGINLOAD",
+      "targetPortId": "P-PLUGIN-LOAD",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0032"
+      ]
+    },
+    {
+      "id": "E-WB-TO-FS",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-OS-FS",
+      "sourcePortId": "P-HTTP-READFILE",
+      "targetPortId": null,
+      "type": "file_io",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "constraint": "CR-03 项目根内"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0024"
+      ]
+    },
+    {
+      "id": "E-WB-TO-SHELL",
+      "sourceId": "N-WB-SERVER",
+      "targetId": "N-SHELL-TUI",
+      "sourcePortId": "P-HTTP-EVENT",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "/api/key /api/mouse → App::on_key / on_mouse"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0023",
+        "EV-CODE-0034"
+      ]
+    },
+    {
+      "id": "E-DT-TO-TERMINAL",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-DT-TERMINAL",
+      "sourcePortId": "P-TAURI-TERM-CREATE",
+      "targetPortId": "P-TERM-CREATE",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0029"
+      ]
+    },
+    {
+      "id": "E-DT-TO-SCM",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-DT-SCM",
+      "sourcePortId": "P-TAURI-SCM-STATUS",
+      "targetPortId": "P-SCM-STATUS",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "E-DT-TO-SEARCH",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-DT-SEARCH",
+      "sourcePortId": "P-TAURI-SEARCH",
+      "targetPortId": "P-SEARCH-RG",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "fallback": "rg 不可用时回落内置"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "E-DT-TO-PLUGIN",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-DT-PLUGIN",
+      "sourcePortId": "P-TAURI-PLUGINLOAD",
+      "targetPortId": "P-PLUGIN-LOAD",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0032"
+      ]
+    },
+    {
+      "id": "E-DT-TO-OUTLINE",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-DT-OUTLINE",
+      "sourcePortId": "P-TAURI-OUTLINE",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0033"
+      ]
+    },
+    {
+      "id": "E-DT-TO-STORE",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-KN-DOCSTORE",
+      "sourcePortId": "P-TAURI-DOC-OPEN",
+      "targetPortId": "P-STORE-OPEN",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0028",
+        "EV-CODE-0016"
+      ]
+    },
+    {
+      "id": "E-DT-TO-WEBVIEW2",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-OS-WEBVIEW2",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "runtime",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "failureMode": "CI Linux 无 WebView2 → 11 e2e fail"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-DOC-0012",
+        "EV-DOC-0019"
+      ]
+    },
+    {
+      "id": "E-TERM-TO-PSH",
+      "sourceId": "N-DT-TERMINAL",
+      "targetId": "N-OS-PWSH",
+      "sourcePortId": "P-TERM-CREATE",
+      "targetPortId": null,
+      "type": "subprocess",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "flag": "CREATE_NO_WINDOW",
+        "io": "stdin pipe + reader 线程"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0029",
+        "EV-DOC-0021"
+      ]
+    },
+    {
+      "id": "E-WBTERM-TO-PSH",
+      "sourceId": "N-WB-TERMINAL",
+      "targetId": "N-OS-PWSH",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "subprocess",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0021"
+      ]
+    },
+    {
+      "id": "E-SCM-TO-GIT",
+      "sourceId": "N-DT-SCM",
+      "targetId": "N-EXT-GIT",
+      "sourcePortId": "P-SCM-STATUS",
+      "targetPortId": null,
+      "type": "subprocess",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "protocol": "porcelain v1"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "E-SEARCH-TO-RG",
+      "sourceId": "N-DT-SEARCH",
+      "targetId": "N-EXT-RG",
+      "sourcePortId": "P-SEARCH-RG",
+      "targetPortId": null,
+      "type": "subprocess",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "fallback": "P-SEARCH-FALLBACK → N-EC-GREPENGINE"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "E-SEARCH-FALLBACK-TO-GREPENGINE",
+      "sourceId": "N-DT-SEARCH",
+      "targetId": "N-EC-GREPENGINE",
+      "sourcePortId": "P-SEARCH-FALLBACK",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "guard": "rg 不可用"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031",
+        "EV-CODE-0042"
+      ]
+    },
+    {
+      "id": "E-CLI-TO-ACI",
+      "sourceId": "N-CLI",
+      "targetId": "N-EXT-ACI",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "command": "--aci-emit"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0003"
+      ]
+    },
+    {
+      "id": "E-RPC-TO-KERNEL",
+      "sourceId": "N-PT-RPC",
+      "targetId": "N-PT-KERNEL",
+      "sourcePortId": "P-RPC-OPENBUFFER",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "methods": 20
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0011"
+      ]
+    },
+    {
+      "id": "E-KERNEL-TO-AI",
+      "sourceId": "N-PT-KERNEL",
+      "targetId": "N-PT-AIPROVIDER",
+      "sourcePortId": null,
+      "targetPortId": "P-AI-COMPLETE",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "provider 未注册时返回错误而非静默成功"
+      },
+      "verification": "Designed",
+      "evidenceIds": [
+        "EV-CODE-0009"
+      ]
+    },
+    {
+      "id": "E-KERNEL-TO-BUFFER",
+      "sourceId": "N-PT-KERNEL",
+      "targetId": "N-EC-BUFFER",
+      "sourcePortId": null,
+      "targetPortId": "P-EC-BUFFER-TEXT",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "protocol crate 自带 Buffer 实现（非 editcore）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0006",
+        "EV-CODE-0038"
+      ]
+    },
+    {
+      "id": "E-RPC-ERR-BUFFER",
+      "sourceId": "N-PT-RPC",
+      "targetId": "N-PT-KERNEL",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "error",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "code": "-32001 BUFFER_NOT_FOUND / -32002 READ_ONLY",
+        "selfLoop": true
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0008"
+      ]
+    },
+    {
+      "id": "E-STORE-TO-DOCUMENT",
+      "sourceId": "N-KN-DOCSTORE",
+      "targetId": "N-KN-DOCUMENT",
+      "sourcePortId": "P-STORE-OPEN",
+      "targetPortId": "P-DOC-INSERT",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0016",
+        "EV-CODE-0012"
+      ]
+    },
+    {
+      "id": "E-SESSION-TO-DOCUMENT",
+      "sourceId": "N-KN-SESSION",
+      "targetId": "N-KN-DOCUMENT",
+      "sourcePortId": "P-SESSION-ACTIVATE",
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0017"
+      ]
+    },
+    {
+      "id": "E-DOCUMENT-TO-BUFFER",
+      "sourceId": "N-KN-DOCUMENT",
+      "targetId": "N-EC-BUFFER",
+      "sourcePortId": null,
+      "targetPortId": "P-EC-BUFFER-LINES",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0038"
+      ]
+    },
+    {
+      "id": "E-DOCUMENT-TO-UNDO",
+      "sourceId": "N-KN-DOCUMENT",
+      "targetId": "N-EC-UNDO",
+      "sourcePortId": "P-DOC-UNDO",
+      "targetPortId": "P-EC-UNDO",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0039"
+      ]
+    },
+    {
+      "id": "E-DOCUMENT-TO-TYPECONFIG",
+      "sourceId": "N-KN-DOCUMENT",
+      "targetId": "N-EC-TYPECONFIG",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0041"
+      ]
+    },
+    {
+      "id": "E-TEXTOPS-TO-SEARCHOPS",
+      "sourceId": "N-KN-TEXTOPS",
+      "targetId": "N-EC-SEARCHOPS",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0018",
+        "EV-CODE-0043"
+      ]
+    },
+    {
+      "id": "E-SEARCHOPS-TO-BUFFER",
+      "sourceId": "N-EC-SEARCHOPS",
+      "targetId": "N-EC-BUFFER",
+      "sourcePortId": null,
+      "targetPortId": "P-EC-BUFFER-CURSOR",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0043",
+        "EV-CODE-0038"
+      ]
+    },
+    {
+      "id": "E-EDITCMD-TO-UNDO",
+      "sourceId": "N-EC-EDITCMD",
+      "targetId": "N-EC-UNDO",
+      "sourcePortId": null,
+      "targetPortId": "P-EC-UNDO",
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0047",
+        "EV-CODE-0039"
+      ]
+    },
+    {
+      "id": "E-EDITCMD-TO-MACRO",
+      "sourceId": "N-EC-EDITCMD",
+      "targetId": "N-EC-MACRO",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0047"
+      ]
+    },
+    {
+      "id": "E-HISTORY-TO-UNDO",
+      "sourceId": "N-EC-HISTORY",
+      "targetId": "N-EC-UNDO",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "按标签页补丁栈"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0040"
+      ]
+    },
+    {
+      "id": "E-TYPECONFIG-TO-TYPES",
+      "sourceId": "N-EC-TYPECONFIG",
+      "targetId": "N-EC-TYPES",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0041"
+      ]
+    },
+    {
+      "id": "E-GREP-TO-GREPENGINE",
+      "sourceId": "N-EC-GREP",
+      "targetId": "N-EC-GREPENGINE",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "calls",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0042"
+      ]
+    },
+    {
+      "id": "E-DOCIO-TO-ENCODING",
+      "sourceId": "N-EC-DOCIO",
+      "targetId": "N-EC-ENCODING",
+      "sourcePortId": null,
+      "targetPortId": "P-EC-ENCODING",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0044"
+      ]
+    },
+    {
+      "id": "E-DOCIO-TO-FS",
+      "sourceId": "N-EC-DOCIO",
+      "targetId": "N-OS-FS",
+      "sourcePortId": "P-EC-DOCIO",
+      "targetPortId": null,
+      "type": "file_io",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0005"
+      ]
+    },
+    {
+      "id": "E-PLUGIN-TO-ECPLUGIN",
+      "sourceId": "N-DT-PLUGIN",
+      "targetId": "N-EC-PLUGIN",
+      "sourcePortId": "P-PLUGIN-LOAD",
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0032",
+        "EV-CODE-0048"
+      ]
+    },
+    {
+      "id": "E-NAV-TO-BUFFER",
+      "sourceId": "N-EC-NAV",
+      "targetId": "N-EC-BUFFER",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0005"
+      ]
+    },
+    {
+      "id": "E-MIGEMO-TO-SEARCHOPS",
+      "sourceId": "N-EC-MIGEMO",
+      "targetId": "N-EC-SEARCHOPS",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {},
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0046"
+      ]
+    },
+    {
+      "id": "E-SHELL-TO-KERNELCORE",
+      "sourceId": "N-SHELL-TUI",
+      "targetId": "N-KERNELCORE",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "kernel_banner 字符串来源"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0034",
+        "EV-CODE-0001"
+      ]
+    },
+    {
+      "id": "E-KERNELCORE-SELF",
+      "sourceId": "N-KERNELCORE",
+      "targetId": "N-KERNELCORE",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "self_loop",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "DD-01 的 process supervisor 设计位 —— 当前为 placeholder"
+      },
+      "verification": "Designed",
+      "evidenceIds": [
+        "EV-CODE-0001",
+        "EV-DOC-0025"
+      ]
+    },
+    {
+      "id": "E-DT-TO-SANDBOX",
+      "sourceId": "N-DT-TAURI",
+      "targetId": "N-WB-PATHSAFETY",
+      "sourcePortId": null,
+      "targetPortId": "P-SANDBOX-GUARD",
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "Tauri 侧同样有 path_safety 集成测试"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-DOC-0014"
+      ]
+    },
+    {
+      "id": "E-FE-TO-SHELL",
+      "sourceId": "N-FE-EDITORHTML",
+      "targetId": "N-SHELL-TUI",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "depends_on",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "web 渲染后端与前端共享 App 状态"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0037",
+        "EV-CODE-0027"
+      ]
+    },
+    {
+      "id": "E-AUTH-TO-WB",
+      "sourceId": "N-WB-AUTH",
+      "targetId": "N-WB-SERVER",
+      "sourcePortId": "P-AUTH-CHECK",
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "校验通过后把控制权交还分发器（通过即继续，越权即阻断）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026"
+      ]
+    },
+    {
+      "id": "E-SANDBOX-TO-WB",
+      "sourceId": "N-WB-PATHSAFETY",
+      "targetId": "N-WB-SERVER",
+      "sourcePortId": "P-SANDBOX-GUARD",
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "沙箱判定结果回传分发器"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-DOC-0008",
+        "EV-DOC-0014"
+      ]
+    },
+    {
+      "id": "E-BUFFER-TO-UNDO",
+      "sourceId": "N-EC-BUFFER",
+      "targetId": "N-EC-UNDO",
+      "sourcePortId": null,
+      "targetPortId": "P-EC-UNDO",
+      "type": "snapshot",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "编辑动作写入 Ope 缓冲以支持撤销"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0039",
+        "EV-DOC-0014"
+      ]
+    },
+    {
+      "id": "E-UNDO-TO-DOCUMENT",
+      "sourceId": "N-EC-UNDO",
+      "targetId": "N-KN-DOCUMENT",
+      "sourcePortId": "P-EC-UNDO",
+      "targetPortId": "P-DOC-UNDO",
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "undo/redo 结果回到文档模型"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0039"
+      ]
+    },
+    {
+      "id": "E-TERM-TO-WB",
+      "sourceId": "N-WB-TERMINAL",
+      "targetId": "N-WB-SERVER",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "终端输出经轮询接口回到前端"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0021"
+      ]
+    },
+    {
+      "id": "E-PSH-TO-TERM",
+      "sourceId": "N-OS-PWSH",
+      "targetId": "N-DT-TERMINAL",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "stdout/stderr 回流到终端会话"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0029",
+        "EV-DOC-0013"
+      ]
+    },
+    {
+      "id": "E-RG-TO-SEARCH",
+      "sourceId": "N-EXT-RG",
+      "targetId": "N-DT-SEARCH",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "rg 命中结果返回搜索层；rg 缺失则走回落边"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0031"
+      ]
+    },
+    {
+      "id": "E-GIT-TO-SCM",
+      "sourceId": "N-EXT-GIT",
+      "targetId": "N-DT-SCM",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "git porcelain 输出回流给 SCM 层"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0030"
+      ]
+    },
+    {
+      "id": "E-PLUGIN-TO-DT",
+      "sourceId": "N-DT-PLUGIN",
+      "targetId": "N-DT-TAURI",
+      "sourcePortId": "P-PLUGIN-LOAD",
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "插件执行结果回传 invoke 调用方"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0032"
+      ]
+    },
+    {
+      "id": "E-DOCIO-TO-AUTOBACKUP",
+      "sourceId": "N-EC-DOCIO",
+      "targetId": "N-EC-AUTOBACKUP",
+      "sourcePortId": "P-EC-DOCIO",
+      "targetPortId": null,
+      "type": "snapshot",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "周期备份触发点（5 分钟 / 10 世代）"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0045",
+        "EV-DOC-0001"
+      ]
+    },
+    {
+      "id": "E-TERM-TO-DT",
+      "sourceId": "N-DT-TERMINAL",
+      "targetId": "N-DT-TAURI",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "returns",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "桌面端终端会话结果回传 invoke 调用方"
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0029"
+      ]
+    },
+    {
+      "id": "E-PLUGIN-RETRY",
+      "sourceId": "N-DT-PLUGIN",
+      "targetId": "N-DT-PLUGIN",
+      "sourcePortId": null,
+      "targetPortId": null,
+      "type": "self_loop",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "插件执行失败后的恢复自环（retry → Recovered）",
+        "selfLoop": true
+      },
+      "verification": "Implemented",
+      "evidenceIds": [
+        "EV-CODE-0032"
+      ]
+    },
+    {
+      "id": "E-FE2-TO-WB",
+      "sourceId": "N-FE-CLIENT2",
+      "targetId": "N-WB-SERVER",
+      "sourcePortId": "P-FE-FETCHAPI",
+      "targetPortId": null,
+      "type": "http",
+      "directed": true,
+      "guardId": null,
+      "properties": {
+        "note": "第二客户端走同一条 HTTP 通道（服务端串行处理）"
+      },
+      "verification": "Inferred",
+      "evidenceIds": [
+        "EV-CODE-0025"
+      ]
+    }
+  ],
+  "ports": [
+    {
+      "id": "P-HTTP-API-PLUGIN-LOAD",
+      "name": "POST /api/plugin_load",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/plugin_load"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-OPEN",
+      "name": "POST /api/doc/open",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/open"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-ACTIVE",
+      "name": "GET /api/doc/active",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/doc/active"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-TABS",
+      "name": "GET /api/doc/tabs",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/doc/tabs"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-ACTIVATE",
+      "name": "POST /api/doc/activate",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/activate"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-CLOSE",
+      "name": "POST /api/doc/close",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/close"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-NEW-TAB",
+      "name": "POST /api/doc/new_tab",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/new_tab"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-INSERT",
+      "name": "POST /api/doc/insert",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/insert"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-TYPE",
+      "name": "POST /api/doc/type",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/type"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-NEWLINE",
+      "name": "POST /api/doc/newline",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/newline"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-BACKSPACE",
+      "name": "POST /api/doc/backspace",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/backspace"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-DELETE",
+      "name": "POST /api/doc/delete",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/delete"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-DELETE-RANGE",
+      "name": "POST /api/doc/delete_range",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/delete_range"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-CARET",
+      "name": "POST /api/doc/caret",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/caret"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-SELECT-ALL",
+      "name": "POST /api/doc/select_all",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/select_all"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-CLEAR-SELECTION",
+      "name": "POST /api/doc/clear_selection",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/clear_selection"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-UNDO",
+      "name": "POST /api/doc/undo",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/undo"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-REDO",
+      "name": "POST /api/doc/redo",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/redo"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-ADD-CURSOR",
+      "name": "POST /api/doc/add_cursor",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/add_cursor"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-CLEAR-CURSORS",
+      "name": "POST /api/doc/clear_cursors",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/clear_cursors"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-INSERT-ALL",
+      "name": "POST /api/doc/insert_all",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/insert_all"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-FIND",
+      "name": "POST /api/doc/find",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/find"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-FIND-ALL",
+      "name": "POST /api/doc/find_all",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/find_all"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-REPLACE-ALL",
+      "name": "POST /api/doc/replace_all",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/replace_all"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-LINE-ENDING",
+      "name": "POST /api/doc/line_ending",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/line_ending"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-ENCODING",
+      "name": "POST /api/doc/encoding",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/encoding"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-EXPORT",
+      "name": "GET /api/doc/export",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/doc/export"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DOC-MARK-SAVED",
+      "name": "POST /api/doc/mark_saved",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/doc/mark_saved"
+      }
+    },
+    {
+      "id": "P-HTTP-API-MIGEMO-PATTERNS",
+      "name": "POST /api/migemo_patterns",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/migemo_patterns"
+      }
+    },
+    {
+      "id": "P-HTTP-API-EDIT-CMD",
+      "name": "POST /api/edit_cmd",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/edit_cmd"
+      }
+    },
+    {
+      "id": "P-HTTP-API-BRACKET-PAIR",
+      "name": "POST /api/bracket_pair",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/bracket_pair"
+      }
+    },
+    {
+      "id": "P-HTTP-API-BOOKMARK",
+      "name": "POST /api/bookmark",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/bookmark"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SEARCH-TEXT",
+      "name": "POST /api/search_text",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/search_text"
+      }
+    },
+    {
+      "id": "P-HTTP-API-HISTORY",
+      "name": "POST /api/history",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/history"
+      }
+    },
+    {
+      "id": "P-HTTP-API-NAV-STEP",
+      "name": "POST /api/nav_step",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/nav_step"
+      }
+    },
+    {
+      "id": "P-HTTP-API-EDIT-TEXT",
+      "name": "POST /api/edit_text",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/edit_text"
+      }
+    },
+    {
+      "id": "P-HTTP-API-EDIT-LINES",
+      "name": "POST /api/edit_lines",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/edit_lines"
+      }
+    },
+    {
+      "id": "P-HTTP-API-REINTERPRET-TEXT",
+      "name": "POST /api/reinterpret_text",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/reinterpret_text"
+      }
+    },
+    {
+      "id": "P-HTTP-API-OUTLINE",
+      "name": "POST /api/outline",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/outline"
+      }
+    },
+    {
+      "id": "P-HTTP-API-TERMINAL-CREATE",
+      "name": "POST /api/terminal_create",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/terminal_create"
+      }
+    },
+    {
+      "id": "P-HTTP-API-TERMINAL-INPUT",
+      "name": "POST /api/terminal_input",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/terminal_input"
+      }
+    },
+    {
+      "id": "P-HTTP-API-TERMINAL-CLOSE",
+      "name": "POST /api/terminal_close",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/terminal_close"
+      }
+    },
+    {
+      "id": "P-HTTP-API-TERMINAL-OUTPUT",
+      "name": "GET /api/terminal_output",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/terminal_output"
+      }
+    },
+    {
+      "id": "P-HTTP-API-TERMINAL-LIST",
+      "name": "GET /api/terminal_list",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/terminal_list"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SCM-STATUS",
+      "name": "POST /api/scm_status",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/scm_status"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SCM-STAGE",
+      "name": "POST /api/scm_stage",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/scm_stage"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SCM-UNSTAGE",
+      "name": "POST /api/scm_unstage",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/scm_unstage"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SCM-DIFF",
+      "name": "POST /api/scm_diff",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/scm_diff"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SCM-COMMIT",
+      "name": "POST /api/scm_commit",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/scm_commit"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SCM-LOG",
+      "name": "POST /api/scm_log",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/scm_log"
+      }
+    },
+    {
+      "id": "P-HTTP-API-SEARCH",
+      "name": "POST /api/search",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/search"
+      }
+    },
+    {
+      "id": "P-HTTP-",
+      "name": "GET /",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/"
+      }
+    },
+    {
+      "id": "P-HTTP-INDEX-HTML",
+      "name": "GET /index.html",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/index.html"
+      }
+    },
+    {
+      "id": "P-HTTP-API-FRAME",
+      "name": "GET /api/frame",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/frame"
+      }
+    },
+    {
+      "id": "P-HTTP-API-EVENT",
+      "name": "POST /api/event",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/event"
+      }
+    },
+    {
+      "id": "P-HTTP-API-RESET",
+      "name": "POST /api/reset",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/reset"
+      }
+    },
+    {
+      "id": "P-HTTP-EDITOR",
+      "name": "GET /editor",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/editor"
+      }
+    },
+    {
+      "id": "P-HTTP-API-KEY",
+      "name": "POST /api/key",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/key"
+      }
+    },
+    {
+      "id": "P-HTTP-API-MOUSE",
+      "name": "POST /api/mouse",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/mouse"
+      }
+    },
+    {
+      "id": "P-HTTP-API-KERNEL-BANNER",
+      "name": "GET /api/kernel_banner",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/kernel_banner"
+      }
+    },
+    {
+      "id": "P-HTTP-API-KERNEL-BANNER-2",
+      "name": "POST /api/kernel_banner",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/kernel_banner"
+      }
+    },
+    {
+      "id": "P-HTTP-API-HELP-WIKI",
+      "name": "GET /api/help_wiki",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/help_wiki"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DESKTOP-LUMINANCE",
+      "name": "POST /api/desktop_luminance",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/desktop_luminance"
+      }
+    },
+    {
+      "id": "P-HTTP-API-DESKTOP-LUMINANCE-2",
+      "name": "GET /api/desktop_luminance",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/desktop_luminance"
+      }
+    },
+    {
+      "id": "P-HTTP-API-CLEAR-THEME-VARS",
+      "name": "POST /api/clear_theme_vars",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/clear_theme_vars"
+      }
+    },
+    {
+      "id": "P-HTTP-API-CLEAR-THEME-VARS-2",
+      "name": "GET /api/clear_theme_vars",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/clear_theme_vars"
+      }
+    },
+    {
+      "id": "P-HTTP-API-PICK-FOLDER",
+      "name": "GET /api/pick_folder",
+      "direction": "in",
+      "type": "HTTP GET",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "GET",
+        "path": "/api/pick_folder"
+      }
+    },
+    {
+      "id": "P-HTTP-API-PICK-FOLDER-2",
+      "name": "POST /api/pick_folder",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/pick_folder"
+      }
+    },
+    {
+      "id": "P-HTTP-API-OPEN-PROJECT",
+      "name": "POST /api/open_project",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/open_project"
+      }
+    },
+    {
+      "id": "P-HTTP-API-LIST-DIR",
+      "name": "POST /api/list_dir",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/list_dir"
+      }
+    },
+    {
+      "id": "P-HTTP-API-READ-FILE",
+      "name": "POST /api/read_file",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/read_file"
+      }
+    },
+    {
+      "id": "P-HTTP-API-WRITE-FILE",
+      "name": "POST /api/write_file",
+      "direction": "in",
+      "type": "HTTP POST",
+      "nodeId": "N-WB-SERVER",
+      "properties": {
+        "source": "crates/ide-shell-web/src/lib.rs",
+        "method": "POST",
+        "path": "/api/write_file"
+      }
+    },
+    {
+      "id": "P-TAURI-DESKTOP-LUMINANCE",
+      "name": "desktop_luminance",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "desktop_luminance"
+      }
+    },
+    {
+      "id": "P-TAURI-CLEAR-THEME-VARS",
+      "name": "clear_theme_vars",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "clear_theme_vars"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-ACTIVE",
+      "name": "doc_active",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_active"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-TABS",
+      "name": "doc_tabs",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_tabs"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-OPEN",
+      "name": "doc_open",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_open"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-NEW-TAB",
+      "name": "doc_new_tab",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_new_tab"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-ACTIVATE",
+      "name": "doc_activate",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_activate"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-CLOSE",
+      "name": "doc_close",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_close"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-INSERT",
+      "name": "doc_insert",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_insert"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-TYPE",
+      "name": "doc_type",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_type"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-NEWLINE",
+      "name": "doc_newline",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_newline"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-BACKSPACE",
+      "name": "doc_backspace",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_backspace"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-DELETE",
+      "name": "doc_delete",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_delete"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-DELETE-RANGE",
+      "name": "doc_delete_range",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_delete_range"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-CARET",
+      "name": "doc_caret",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_caret"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-SELECT-ALL",
+      "name": "doc_select_all",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_select_all"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-CLEAR-SELECTION",
+      "name": "doc_clear_selection",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_clear_selection"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-UNDO",
+      "name": "doc_undo",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_undo"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-REDO",
+      "name": "doc_redo",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_redo"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-ADD-CURSOR",
+      "name": "doc_add_cursor",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_add_cursor"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-CLEAR-CURSORS",
+      "name": "doc_clear_cursors",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_clear_cursors"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-INSERT-ALL",
+      "name": "doc_insert_all",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_insert_all"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-FIND",
+      "name": "doc_find",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_find"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-FIND-ALL",
+      "name": "doc_find_all",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_find_all"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-REPLACE-ALL",
+      "name": "doc_replace_all",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_replace_all"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-LINE-ENDING",
+      "name": "doc_line_ending",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_line_ending"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-ENCODING",
+      "name": "doc_encoding",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_encoding"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-EXPORT",
+      "name": "doc_export",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_export"
+      }
+    },
+    {
+      "id": "P-TAURI-DOC-MARK-SAVED",
+      "name": "doc_mark_saved",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "doc_mark_saved"
+      }
+    },
+    {
+      "id": "P-TAURI-FRAME",
+      "name": "frame",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "frame"
+      }
+    },
+    {
+      "id": "P-TAURI-RESET",
+      "name": "reset",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "reset"
+      }
+    },
+    {
+      "id": "P-TAURI-KEY",
+      "name": "key",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "key"
+      }
+    },
+    {
+      "id": "P-TAURI-MOUSE",
+      "name": "mouse",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "mouse"
+      }
+    },
+    {
+      "id": "P-TAURI-KERNEL-BANNER",
+      "name": "kernel_banner",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "kernel_banner"
+      }
+    },
+    {
+      "id": "P-TAURI-GET-MODE",
+      "name": "get_mode",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "get_mode"
+      }
+    },
+    {
+      "id": "P-TAURI-PICK-FOLDER",
+      "name": "pick_folder",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "pick_folder"
+      }
+    },
+    {
+      "id": "P-TAURI-OPEN-PROJECT",
+      "name": "open_project",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "open_project"
+      }
+    },
+    {
+      "id": "P-TAURI-LIST-DIR",
+      "name": "list_dir",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "list_dir"
+      }
+    },
+    {
+      "id": "P-TAURI-READ-FILE",
+      "name": "read_file",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "read_file"
+      }
+    },
+    {
+      "id": "P-TAURI-WRITE-FILE",
+      "name": "write_file",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "write_file"
+      }
+    },
+    {
+      "id": "P-TAURI-HELP-WIKI",
+      "name": "help_wiki",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "help_wiki"
+      }
+    },
+    {
+      "id": "P-TAURI-TERMINAL-CREATE",
+      "name": "terminal_create",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "terminal_create"
+      }
+    },
+    {
+      "id": "P-TAURI-TERMINAL-INPUT",
+      "name": "terminal_input",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "terminal_input"
+      }
+    },
+    {
+      "id": "P-TAURI-TERMINAL-CLOSE",
+      "name": "terminal_close",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "terminal_close"
+      }
+    },
+    {
+      "id": "P-TAURI-TERMINAL-LIST",
+      "name": "terminal_list",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "terminal_list"
+      }
+    },
+    {
+      "id": "P-TAURI-SCM-STATUS",
+      "name": "scm_status",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "scm_status"
+      }
+    },
+    {
+      "id": "P-TAURI-SCM-STAGE",
+      "name": "scm_stage",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "scm_stage"
+      }
+    },
+    {
+      "id": "P-TAURI-SCM-UNSTAGE",
+      "name": "scm_unstage",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "scm_unstage"
+      }
+    },
+    {
+      "id": "P-TAURI-SCM-DIFF",
+      "name": "scm_diff",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "scm_diff"
+      }
+    },
+    {
+      "id": "P-TAURI-SCM-COMMIT",
+      "name": "scm_commit",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "scm_commit"
+      }
+    },
+    {
+      "id": "P-TAURI-SCM-LOG",
+      "name": "scm_log",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "scm_log"
+      }
+    },
+    {
+      "id": "P-TAURI-SEARCH-CMD",
+      "name": "search_cmd",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "search_cmd"
+      }
+    },
+    {
+      "id": "P-TAURI-OUTLINE",
+      "name": "outline",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "outline"
+      }
+    },
+    {
+      "id": "P-TAURI-REINTERPRET-TEXT",
+      "name": "reinterpret_text",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "reinterpret_text"
+      }
+    },
+    {
+      "id": "P-TAURI-EDIT-TEXT",
+      "name": "edit_text",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "edit_text"
+      }
+    },
+    {
+      "id": "P-TAURI-EDIT-LINES",
+      "name": "edit_lines",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "edit_lines"
+      }
+    },
+    {
+      "id": "P-TAURI-NAV-STEP",
+      "name": "nav_step",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "nav_step"
+      }
+    },
+    {
+      "id": "P-TAURI-HISTORY",
+      "name": "history",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "history"
+      }
+    },
+    {
+      "id": "P-TAURI-SEARCH-TEXT",
+      "name": "search_text",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "search_text"
+      }
+    },
+    {
+      "id": "P-TAURI-BOOKMARK",
+      "name": "bookmark",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "bookmark"
+      }
+    },
+    {
+      "id": "P-TAURI-BRACKET-PAIR",
+      "name": "bracket_pair",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "bracket_pair"
+      }
+    },
+    {
+      "id": "P-TAURI-EDIT-CMD",
+      "name": "edit_cmd",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "edit_cmd"
+      }
+    },
+    {
+      "id": "P-TAURI-MIGEMO-PATTERNS",
+      "name": "migemo_patterns",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "migemo_patterns"
+      }
+    },
+    {
+      "id": "P-TAURI-PLUGIN-LOAD",
+      "name": "plugin_load",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI",
+      "properties": {
+        "source": "crates/ide-shell-desktop/src/lib.rs (generate_handler!)",
+        "command": "plugin_load"
+      }
+    },
+    {
+      "id": "P-RPC-KERNELINFO",
+      "name": "kernel_info",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "kernel_info"
+      }
+    },
+    {
+      "id": "P-RPC-OPEN-BUFFER",
+      "name": "open_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "open_buffer"
+      }
+    },
+    {
+      "id": "P-RPC-CLOSE-BUFFER",
+      "name": "close_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "close_buffer"
+      }
+    },
+    {
+      "id": "P-RPC-LISTBUFFERS",
+      "name": "list_buffers",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "list_buffers"
+      }
+    },
+    {
+      "id": "P-RPC-SET-ACTIVE-BUFFER",
+      "name": "set_active_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "set_active_buffer"
+      }
+    },
+    {
+      "id": "P-RPC-ACTIVEBUFFERID",
+      "name": "active_buffer_id",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "active_buffer_id"
+      }
+    },
+    {
+      "id": "P-RPC-GETBUFFER",
+      "name": "get_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "get_buffer"
+      }
+    },
+    {
+      "id": "P-RPC-SET-BUFFER-LINES",
+      "name": "set_buffer_lines",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "set_buffer_lines"
+      }
+    },
+    {
+      "id": "P-RPC-INSERT-AT-CURSOR",
+      "name": "insert_at_cursor",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "insert_at_cursor"
+      }
+    },
+    {
+      "id": "P-RPC-KEY-EVENT",
+      "name": "key_event",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "key_event"
+      }
+    },
+    {
+      "id": "P-RPC-SET-CURSOR",
+      "name": "set_cursor",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "set_cursor"
+      }
+    },
+    {
+      "id": "P-RPC-EXECUTE-COMMAND",
+      "name": "execute_command",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "execute_command"
+      }
+    },
+    {
+      "id": "P-RPC-SET-CMD-TEXT",
+      "name": "set_cmd_text",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "set_cmd_text"
+      }
+    },
+    {
+      "id": "P-RPC-GET-CMD-TEXT",
+      "name": "get_cmd_text",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "get_cmd_text"
+      }
+    },
+    {
+      "id": "P-RPC-COMPLETE-AT-CURSOR",
+      "name": "complete_at_cursor",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "complete_at_cursor"
+      }
+    },
+    {
+      "id": "P-RPC-EDIT-VIA-PROVIDER",
+      "name": "edit_via_provider",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "edit_via_provider"
+      }
+    },
+    {
+      "id": "P-RPC-CHAT",
+      "name": "chat",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "source": "crates/ide-shell-protocol/src/lib.rs (handle_rpc)",
+        "method": "chat"
+      }
+    },
+    {
+      "id": "P-RPC-REGISTERPROVIDER",
+      "name": "register_provider",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "register_provider"
+      }
+    },
+    {
+      "id": "P-RPC-UNREGISTERPROVIDER",
+      "name": "unregister_provider",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "unregister_provider"
+      }
+    },
+    {
+      "id": "P-RPC-LISTPROVIDERS",
+      "name": "list_providers",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC",
+      "properties": {
+        "method": "list_providers"
+      }
+    },
+    {
+      "id": "P-FE-FETCHAPI",
+      "name": "fetchApi",
+      "direction": "out",
+      "type": "HTTP POST JSON",
+      "nodeId": "N-FE-EDITORHTML"
+    },
+    {
+      "id": "P-AUTH-CHECK",
+      "name": "Auth::check",
+      "direction": "in",
+      "type": "fn(headers) -> Result<(), String>",
+      "nodeId": "N-WB-AUTH"
+    },
+    {
+      "id": "P-SANDBOX-GUARD",
+      "name": "path_within_root / size / utf8",
+      "direction": "in",
+      "type": "fn(path, bytes) -> Result<(), E00x>",
+      "nodeId": "N-WB-PATHSAFETY"
+    },
+    {
+      "id": "P-TERM-CREATE",
+      "name": "terminal_create",
+      "direction": "in",
+      "type": "fn -> Result<TerminalInfo, String>",
+      "nodeId": "N-DT-TERMINAL"
+    },
+    {
+      "id": "P-TERM-INPUT",
+      "name": "terminal_input",
+      "direction": "in",
+      "type": "fn(id, data)",
+      "nodeId": "N-DT-TERMINAL"
+    },
+    {
+      "id": "P-TERM-CLOSE",
+      "name": "terminal_close",
+      "direction": "in",
+      "type": "fn(id) -> Result<(), String>",
+      "nodeId": "N-DT-TERMINAL"
+    },
+    {
+      "id": "P-TERM-LIST",
+      "name": "terminal_list",
+      "direction": "in",
+      "type": "fn -> Result<Vec<TerminalInfo>, String>",
+      "nodeId": "N-DT-TERMINAL"
+    },
+    {
+      "id": "P-SCM-STATUS",
+      "name": "status",
+      "direction": "in",
+      "type": "fn(cwd) -> Result<(Vec<FileStatus>, String), ScmError>",
+      "nodeId": "N-DT-SCM"
+    },
+    {
+      "id": "P-SCM-STAGE",
+      "name": "stage",
+      "direction": "in",
+      "type": "fn(cwd, paths)",
+      "nodeId": "N-DT-SCM"
+    },
+    {
+      "id": "P-SCM-UNSTAGE",
+      "name": "unstage",
+      "direction": "in",
+      "type": "fn(cwd, paths)",
+      "nodeId": "N-DT-SCM"
+    },
+    {
+      "id": "P-SCM-DIFF",
+      "name": "diff / diff_cached",
+      "direction": "in",
+      "type": "fn(cwd, path) -> Result<String, ScmError>",
+      "nodeId": "N-DT-SCM"
+    },
+    {
+      "id": "P-SCM-COMMIT",
+      "name": "commit",
+      "direction": "in",
+      "type": "fn(cwd, message) -> Result<String, ScmError>",
+      "nodeId": "N-DT-SCM"
+    },
+    {
+      "id": "P-SCM-LOG",
+      "name": "log",
+      "direction": "in",
+      "type": "fn(cwd, n) -> Result<Vec<CommitEntry>, ScmError>",
+      "nodeId": "N-DT-SCM"
+    },
+    {
+      "id": "P-SEARCH-RG",
+      "name": "search (rg)",
+      "direction": "in",
+      "type": "fn(cwd, opts) -> Result<Vec<SearchResult>, String>",
+      "nodeId": "N-DT-SEARCH"
+    },
+    {
+      "id": "P-SEARCH-FALLBACK",
+      "name": "search_fallback",
+      "direction": "in",
+      "type": "fn(cwd, opts) -> Result<Vec<SearchResult>, String>",
+      "nodeId": "N-DT-SEARCH"
+    },
+    {
+      "id": "P-PLUGIN-LOAD",
+      "name": "plugin_load",
+      "direction": "in",
+      "type": "fn(path, input) -> PluginRunResult",
+      "nodeId": "N-DT-PLUGIN"
+    },
+    {
+      "id": "P-AI-COMPLETE",
+      "name": "AiProvider::complete",
+      "direction": "in",
+      "type": "async fn(CompletionRequest) -> Result<Vec<CompletionItem>, String>",
+      "nodeId": "N-PT-AIPROVIDER"
+    },
+    {
+      "id": "P-AI-EDIT",
+      "name": "AiProvider::edit",
+      "direction": "in",
+      "type": "async fn(EditRequest) -> Result<EditResponse, String>",
+      "nodeId": "N-PT-AIPROVIDER"
+    },
+    {
+      "id": "P-AI-CHAT",
+      "name": "AiProvider::chat",
+      "direction": "in",
+      "type": "async fn(ChatRequest) -> Result<ChatResponse, String>",
+      "nodeId": "N-PT-AIPROVIDER"
+    },
+    {
+      "id": "P-STORE-OPEN",
+      "name": "DocStore::open",
+      "direction": "in",
+      "type": "fn(path, text) -> DocView",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-TABS",
+      "name": "DocStore::tabs",
+      "direction": "in",
+      "type": "fn -> Vec<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-ACTIVATE",
+      "name": "DocStore::activate",
+      "direction": "in",
+      "type": "fn(id) -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-CLOSE",
+      "name": "DocStore::close",
+      "direction": "in",
+      "type": "fn(id) -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-NEWTAB",
+      "name": "DocStore::new_tab",
+      "direction": "in",
+      "type": "fn -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-INSERT",
+      "name": "DocStore::insert / type_char / newline",
+      "direction": "in",
+      "type": "fn(row, col, s) -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-UNDO",
+      "name": "DocStore::undo",
+      "direction": "in",
+      "type": "fn -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-REDO",
+      "name": "DocStore::redo",
+      "direction": "in",
+      "type": "fn -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-FIND",
+      "name": "DocStore::find / find_all",
+      "direction": "in",
+      "type": "fn(opts) -> Vec<FindHit>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-REPLACEALL",
+      "name": "DocStore::replace_all",
+      "direction": "in",
+      "type": "fn -> Option<ReplaceStat>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-EXPORT",
+      "name": "DocStore::export",
+      "direction": "in",
+      "type": "fn -> Option<(Option<String>, String)>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-STORE-MARKSAVED",
+      "name": "DocStore::mark_saved",
+      "direction": "in",
+      "type": "fn -> Option<DocView>",
+      "nodeId": "N-KN-DOCSTORE"
+    },
+    {
+      "id": "P-SESSION-NEWTAB",
+      "name": "Session::new_tab",
+      "direction": "in",
+      "type": "fn -> u64",
+      "nodeId": "N-KN-SESSION"
+    },
+    {
+      "id": "P-SESSION-ACTIVATE",
+      "name": "Session::activate",
+      "direction": "in",
+      "type": "fn(id) -> bool",
+      "nodeId": "N-KN-SESSION"
+    },
+    {
+      "id": "P-SESSION-NEXT",
+      "name": "Session::next_tab",
+      "direction": "in",
+      "type": "fn -> Option<u64>",
+      "nodeId": "N-KN-SESSION"
+    },
+    {
+      "id": "P-SESSION-PREV",
+      "name": "Session::prev_tab",
+      "direction": "in",
+      "type": "fn -> Option<u64>",
+      "nodeId": "N-KN-SESSION"
+    },
+    {
+      "id": "P-SESSION-CLOSE",
+      "name": "Session::close",
+      "direction": "in",
+      "type": "fn(id) -> Option<TabState>",
+      "nodeId": "N-KN-SESSION"
+    },
+    {
+      "id": "P-SESSION-DIRTY",
+      "name": "Session::dirty_tabs",
+      "direction": "in",
+      "type": "fn -> Vec<u64>",
+      "nodeId": "N-KN-SESSION"
+    },
+    {
+      "id": "P-DOC-INSERT",
+      "name": "Document::insert",
+      "direction": "in",
+      "type": "fn(Pos, &str) -> Pos",
+      "nodeId": "N-KN-DOCUMENT"
+    },
+    {
+      "id": "P-DOC-DELETE",
+      "name": "Document::delete_range",
+      "direction": "in",
+      "type": "fn(LogicRange) -> Pos",
+      "nodeId": "N-KN-DOCUMENT"
+    },
+    {
+      "id": "P-DOC-SELECTALL",
+      "name": "Document::select_all",
+      "direction": "in",
+      "type": "fn()",
+      "nodeId": "N-KN-DOCUMENT"
+    },
+    {
+      "id": "P-DOC-UNDO",
+      "name": "Document::undo",
+      "direction": "in",
+      "type": "fn -> bool",
+      "nodeId": "N-KN-DOCUMENT"
+    },
+    {
+      "id": "P-DOC-REDO",
+      "name": "Document::redo",
+      "direction": "in",
+      "type": "fn -> bool",
+      "nodeId": "N-KN-DOCUMENT"
+    },
+    {
+      "id": "P-EC-BUFFER-TEXT",
+      "name": "Buffer::text",
+      "direction": "out",
+      "type": "fn -> String",
+      "nodeId": "N-EC-BUFFER"
+    },
+    {
+      "id": "P-EC-BUFFER-LINES",
+      "name": "DocLineMgr::lines",
+      "direction": "out",
+      "type": "fn -> &[DocLine]",
+      "nodeId": "N-EC-BUFFER"
+    },
+    {
+      "id": "P-EC-BUFFER-CURSOR",
+      "name": "LogicPos / LogicRange",
+      "direction": "in",
+      "type": "struct",
+      "nodeId": "N-EC-BUFFER"
+    },
+    {
+      "id": "P-EC-UNDO",
+      "name": "OpeBuf::undo",
+      "direction": "in",
+      "type": "fn -> bool",
+      "nodeId": "N-EC-UNDO"
+    },
+    {
+      "id": "P-EC-REDO",
+      "name": "OpeBuf::redo",
+      "direction": "in",
+      "type": "fn -> bool",
+      "nodeId": "N-EC-UNDO"
+    },
+    {
+      "id": "P-EC-HISTORY",
+      "name": "history stack API",
+      "direction": "in",
+      "type": "fn (per-tab patch stack)",
+      "nodeId": "N-EC-HISTORY"
+    },
+    {
+      "id": "P-EC-ENCODING",
+      "name": "encoding_io read/write",
+      "direction": "in",
+      "type": "fn(path, Encoding)",
+      "nodeId": "N-EC-ENCODING"
+    },
+    {
+      "id": "P-EC-DOCIO",
+      "name": "document_io read/write",
+      "direction": "in",
+      "type": "fn(path)",
+      "nodeId": "N-EC-DOCIO"
+    },
+    {
+      "id": "P-HTTP-DOC-OPEN",
+      "name": "POST /api/doc/open",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-TABS",
+      "name": "GET /api/doc/tabs",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-ACTIVE",
+      "name": "GET /api/doc/active",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-ACTIVATE",
+      "name": "POST /api/doc/activate",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-CLOSE",
+      "name": "POST /api/doc/close",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-NEWTAB",
+      "name": "POST /api/doc/new_tab",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-INSERT",
+      "name": "POST /api/doc/insert",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-TYPE",
+      "name": "POST /api/doc/type",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-NEWLINE",
+      "name": "POST /api/doc/newline",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-BACKSPACE",
+      "name": "POST /api/doc/backspace",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-DELETE",
+      "name": "POST /api/doc/delete",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-DELETERANGE",
+      "name": "POST /api/doc/delete_range",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-CARET",
+      "name": "POST /api/doc/caret",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-SELECTALL",
+      "name": "POST /api/doc/select_all",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-UNDO",
+      "name": "POST /api/doc/undo",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-REDO",
+      "name": "POST /api/doc/redo",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-FIND",
+      "name": "POST /api/doc/find",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-FINDALL",
+      "name": "POST /api/doc/find_all",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-REPLACEALL",
+      "name": "POST /api/doc/replace_all",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-LINEENDING",
+      "name": "POST /api/doc/line_ending",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-ENCODING",
+      "name": "POST /api/doc/encoding",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-EXPORT",
+      "name": "GET /api/doc/export",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-DOC-MARKSAVED",
+      "name": "POST /api/doc/mark_saved",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-TERM-CREATE",
+      "name": "POST /api/terminal_create",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-TERM-INPUT",
+      "name": "POST /api/terminal_input",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-TERM-CLOSE",
+      "name": "POST /api/terminal_close",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-TERM-OUTPUT",
+      "name": "GET /api/terminal_output",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-TERM-LIST",
+      "name": "GET /api/terminal_list",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SCM-STATUS",
+      "name": "POST /api/scm_status",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SCM-STAGE",
+      "name": "POST /api/scm_stage",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SCM-UNSTAGE",
+      "name": "POST /api/scm_unstage",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SCM-DIFF",
+      "name": "POST /api/scm_diff",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SCM-COMMIT",
+      "name": "POST /api/scm_commit",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SCM-LOG",
+      "name": "POST /api/scm_log",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-SEARCH",
+      "name": "POST /api/search",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-OUTLINE",
+      "name": "POST /api/outline",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-FRAME",
+      "name": "GET /api/frame",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-EVENT",
+      "name": "POST /api/event",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-KEY",
+      "name": "POST /api/key",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-MOUSE",
+      "name": "POST /api/mouse",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-OPENPROJECT",
+      "name": "POST /api/open_project",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-LISTDIR",
+      "name": "POST /api/list_dir",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-READFILE",
+      "name": "POST /api/read_file",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-WRITEFILE",
+      "name": "POST /api/write_file",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-HTTP-PLUGINLOAD",
+      "name": "POST /api/plugin_load",
+      "direction": "in",
+      "type": "HTTP",
+      "nodeId": "N-WB-SERVER"
+    },
+    {
+      "id": "P-TAURI-DOC-NEWTAB",
+      "name": "doc_new_tab",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-DOC-REPLACEALL",
+      "name": "doc_replace_all",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-TERM-CREATE",
+      "name": "terminal_create",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-TERM-INPUT",
+      "name": "terminal_input",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-TERM-CLOSE",
+      "name": "terminal_close",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-TERM-LIST",
+      "name": "terminal_list",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-SEARCH",
+      "name": "search_cmd",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-PLUGINLOAD",
+      "name": "plugin_load",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-LUMINANCE",
+      "name": "desktop_luminance",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-TAURI-THEMEVARS",
+      "name": "clear_theme_vars",
+      "direction": "in",
+      "type": "Tauri command",
+      "nodeId": "N-DT-TAURI"
+    },
+    {
+      "id": "P-RPC-OPENBUFFER",
+      "name": "open_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-CLOSEBUFFER",
+      "name": "close_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-SETACTIVEBUFFER",
+      "name": "set_active_buffer",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-SETBUFFERLINES",
+      "name": "set_buffer_lines",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-INSERTCURSOR",
+      "name": "insert_at_cursor",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-KEYEVENT",
+      "name": "key_event",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-SETCURSOR",
+      "name": "set_cursor",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-EXECUTECOMMAND",
+      "name": "execute_command",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-SETCMDTEXT",
+      "name": "set_cmd_text",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-GETCMDTEXT",
+      "name": "get_cmd_text",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-COMPLETEATCURSOR",
+      "name": "complete_at_cursor",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    },
+    {
+      "id": "P-RPC-EDITVIAPROVIDER",
+      "name": "edit_via_provider",
+      "direction": "in",
+      "type": "JSON-RPC 2.0 method",
+      "nodeId": "N-PT-RPC"
+    }
+  ],
+  "spatialRefs": {
+    "note": "3D 空间投影见 models/spatial.json；每个 Node 的 roomId 即 spatial.rooms[key].nodes 成员。",
+    "storageRooms": [
+      "RM-DOC",
+      "RM-SESSION",
+      "RM-BUFFER",
+      "RM-UNDO",
+      "RM-IO"
+    ]
+  }
+}

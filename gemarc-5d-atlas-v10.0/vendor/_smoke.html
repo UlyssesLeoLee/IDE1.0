@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SMOKE_PENDING</title>
+<style>
+  body { font-family: system-ui, "Segoe UI", Consolas, monospace; margin: 1.5rem; color: #16181d; background: #fff; }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1rem; margin: 1.5rem 0 .4rem; }
+  p.lede { margin: 0 0 1rem; color: #555; }
+  table { border-collapse: collapse; font-size: .85rem; margin-bottom: .5rem; }
+  th, td { border: 1px solid #ccd; padding: .25rem .6rem; text-align: left; vertical-align: top; }
+  th { background: #f2f4f8; }
+  #verdict { font-size: 1.1rem; font-weight: 700; padding: .5rem .75rem; border-radius: 4px; display: inline-block; }
+  #verdict.pass { background: #e3f6e8; color: #14532d; border: 1px solid #86cfa0; }
+  #verdict.fail { background: #fdeaea; color: #7f1d1d; border: 1px solid #e79c9c; }
+  .pass { color: #14532d; font-weight: 700; }
+  .fail { color: #7f1d1d; font-weight: 700; }
+  .obs  { color: #8a5b00; font-weight: 700; }
+  pre { background: #f7f8fa; border: 1px solid #dde; padding: .6rem; overflow-x: auto; font-size: .8rem; }
+</style>
+</head>
+<body>
+<h1>Offline vendor bundle smoke test</h1>
+<p class="lede">Opened directly from <code>file://</code> &mdash; no server, no network. Every value below is written by the page at runtime, not a placeholder.</p>
+
+<div id="verdict">running&hellip;</div>
+
+<h2>1. Global API assertions</h2>
+<table id="assertions">
+  <thead><tr><th>#</th><th>Assertion</th><th>Expected</th><th>Actual (runtime value)</th><th>Result</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2>2. Functional probes (globals are usable, not just present)</h2>
+<table id="functional">
+  <thead><tr><th>#</th><th>Probe</th><th>Actual (runtime value)</th><th>Result</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2>3. Runtime residue probes (instrumented BEFORE the bundles load)</h2>
+<table id="probes">
+  <thead><tr><th>#</th><th>Instrumented API</th><th>Calls observed at load</th><th>Result</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2>4. Environment</h2>
+<pre id="env"></pre>
+
+<h2>5. Plain-text assertion log</h2>
+<pre id="out">running&hellip;</pre>
+
+<!--
+  PROBE INSTRUMENTATION.
+  Must execute BEFORE the three <script src> bundles so that any load-time
+  call to fetch / XMLHttpRequest / WebSocket / Worker / eval / Function is
+  observed. Each wrapper delegates to the original implementation.
+-->
+<script>
+(function () {
+  var P = {
+    fetchCalls: [], xhrCalls: [], wsCalls: [], workerCalls: [],
+    evalCalls: [], functionCalls: [], errors: []
+  };
+  window.__SMOKE_PROBE__ = P;
+
+  try {
+    var of = window.fetch;
+    if (typeof of === 'function') {
+      window.fetch = function () {
+        P.fetchCalls.push(String(arguments[0]));
+        return of.apply(this, arguments);
+      };
+    }
+  } catch (e) { P.errors.push('fetch trap: ' + e.message); }
+
+  try {
+    var oF = window.Function;
+    window.Function = function () {
+      P.functionCalls.push(Array.prototype.map.call(arguments, function (a) {
+        return String(a).slice(0, 120);
+      }).join(' | '));
+      return oF.apply(this, arguments);
+    };
+    window.Function.prototype = oF.prototype;
+  } catch (e) { P.errors.push('Function trap: ' + e.message); }
+
+  try {
+    var oE = window.eval;
+    window.eval = function () {
+      P.evalCalls.push(String(arguments[0]).slice(0, 120));
+      return oE.apply(this, arguments);
+    };
+  } catch (e) { P.errors.push('eval trap: ' + e.message); }
+
+  try {
+    var oX = window.XMLHttpRequest;
+    if (typeof oX === 'function') {
+      window.XMLHttpRequest = function () {
+        P.xhrCalls.push('new XMLHttpRequest');
+        return new oX();
+      };
+      window.XMLHttpRequest.prototype = oX.prototype;
+    }
+  } catch (e) { P.errors.push('XMLHttpRequest trap: ' + e.message); }
+
+  try {
+    var oW = window.WebSocket;
+    if (typeof oW === 'function') {
+      window.WebSocket = function () {
+        P.wsCalls.push('new WebSocket(' + String(arguments[0]) + ')');
+        return new oW(arguments[0], arguments[1]);
+      };
+      window.WebSocket.prototype = oW.prototype;
+    }
+  } catch (e) { P.errors.push('WebSocket trap: ' + e.message); }
+
+  try {
+    var oK = window.Worker;
+    if (typeof oK === 'function') {
+      window.Worker = function () {
+        P.workerCalls.push('new Worker(' + String(arguments[0]) + ')');
+        return new oK(arguments[0]);
+      };
+      window.Worker.prototype = oK.prototype;
+    }
+  } catch (e) { P.errors.push('Worker trap: ' + e.message); }
+
+  window.addEventListener('error', function (e) {
+    P.errors.push('window.onerror: ' + (e.message || '') + ' @' + (e.filename || '') + ':' + (e.lineno || ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    P.errors.push('unhandledrejection: ' + ((r && r.message) ? r.message : String(r)));
+  });
+})();
+</script>
+
+<script src="three.bundle.js"></script>
+<script src="konva.bundle.js"></script>
+<script src="graph.bundle.js"></script>
+
+<script>
+(function () {
+  var P = window.__SMOKE_PROBE__ || { fetchCalls: [], xhrCalls: [], wsCalls: [], workerCalls: [], evalCalls: [], functionCalls: [], errors: [] };
+  var failures = [];
+  var logLines = [];
+
+  function G(name) {
+    try { return (typeof window !== 'undefined') ? window[name] : undefined; }
+    catch (e) { return undefined; }
+  }
+
+  // ---- 1. global API assertions -------------------------------------------
+  var assertions = [
+    ['typeof THREE.REVISION', 'string (non-empty)', function () {
+      var t = G('THREE');
+      if (!t) return 'THREE_UNDEFINED';
+      return typeof t.REVISION + ' ("' + t.REVISION + '")';
+    }, function (v) { return /^string \(.+\)$/.test(v); }],
+    ['typeof THREE.WebGLRenderer', 'function', function () {
+      var t = G('THREE');
+      if (!t) return 'THREE_UNDEFINED';
+      return typeof t.WebGLRenderer;
+    }, function (v) { return v === 'function'; }],
+    ['typeof Konva.Stage', 'function', function () {
+      var k = G('Konva');
+      if (!k) return 'Konva_UNDEFINED';
+      return typeof k.Stage;
+    }, function (v) { return v === 'function'; }],
+    ['typeof Graphology.Graph', 'function', function () {
+      var g = G('Graphology');
+      if (!g) return 'Graphology_UNDEFINED';
+      return typeof g.Graph;
+    }, function (v) { return v === 'function'; }],
+    ['typeof Dagre.graphlib', 'object', function () {
+      var d = G('Dagre');
+      if (!d) return 'Dagre_UNDEFINED';
+      return typeof d.graphlib;
+    }, function (v) { return v === 'object'; }]
+  ];
+
+  var atb = document.querySelector('#assertions tbody');
+  assertions.forEach(function (a, i) {
+    var actual, ok;
+    try { actual = a[2](); } catch (e) { actual = 'THREW: ' + (e && e.message ? e.message : String(e)); }
+    try { ok = a[3](actual); } catch (e) { ok = false; }
+    if (!ok) failures.push(a[0] + ' -> ' + actual);
+    logLines.push(a[0] + ' = ' + actual + '  [' + (ok ? 'PASS' : 'FAIL') + ']');
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + (i + 1) + '</td><td><code>' + a[0] + '</code></td><td>' + a[1] +
+      '</td><td><code>' + actual + '</code></td><td class="' + (ok ? 'pass' : 'fail') + '">' + (ok ? 'PASS' : 'FAIL') + '</td>';
+    atb.appendChild(tr);
+  });
+
+  // ---- 2. functional probes ------------------------------------------------
+  var functional = [
+    ['THREE: new THREE.Scene() + PerspectiveCamera + add', function () {
+      try {
+        var s = new THREE.Scene();
+        var c = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+        c.position.set(0, 0, 5);
+        s.add(c);
+        return 'ok, scene.children=' + s.children.length + ', REVISION=' + THREE.REVISION;
+      } catch (e) { return 'THREW ' + (e && e.message); }
+    }],
+    ['Konva: new Konva.Stage(container) + Layer + Rect', function () {
+      try {
+        var host = document.createElement('div');
+        host.style.width = '120px';
+        host.style.height = '80px';
+        document.body.appendChild(host);
+        var stage = new Konva.Stage({ container: host, width: 120, height: 80 });
+        var layer = new Konva.Layer();
+        var rect = new Konva.Rect({ x: 5, y: 5, width: 40, height: 20 });
+        layer.add(rect);
+        stage.add(layer);
+        var n = stage.getLayers().length;
+        stage.destroy();
+        host.parentNode.removeChild(host);
+        return 'ok, layers=' + n + ', version=' + (Konva.version || 'n/a');
+      } catch (e) { return 'THREW ' + (e && e.message); }
+    }],
+    ['Graphology: new Graphology.Graph() + directed edge', function () {
+      try {
+        var g = new Graphology.Graph();
+        g.addNode('x');
+        g.addNode('y');
+        g.addDirectedEdge('x', 'y');
+        return 'ok, order=' + g.order + ', size=' + g.size + ', hasDirectedEdge=' + g.hasDirectedEdge('x', 'y');
+      } catch (e) { return 'THREW ' + (e && e.message); }
+    }],
+    ['Dagre: graphlib.Graph + dagre.layout()', function () {
+      try {
+        var g = new Dagre.graphlib.Graph();
+        g.setGraph({ rankdir: 'LR' });
+        g.setDefaultEdgeLabel(function () { return {}; });
+        g.setNode('a', { width: 50, height: 30 });
+        g.setNode('b', { width: 50, height: 30 });
+        g.setEdge('a', 'b');
+        Dagre.layout(g);
+        return 'ok, nodes=' + g.nodes().length + ', edge(a,b)=' + JSON.stringify(g.edge('a', 'b'));
+      } catch (e) { return 'THREW ' + (e && e.message); }
+    }],
+    ['Disclosed loader API surface (present but NOT invoked): THREE.FileLoader / THREE.ImageBitmapLoader', function () {
+      var t = G('THREE');
+      if (!t) return 'THREE_UNDEFINED';
+      return 'FileLoader=' + typeof t.FileLoader + ', ImageBitmapLoader=' + typeof t.ImageBitmapLoader +
+        ' (these contain the 2 fetch() call sites; not called by this page)';
+    }]
+  ];
+
+  var ftb = document.querySelector('#functional tbody');
+  functional.forEach(function (fn, i) {
+    var actual, ok = true;
+    try { actual = fn[1](); } catch (e) { actual = 'THREW ' + (e && e.message); }
+    if (/^THREW/.test(actual)) { ok = false; failures.push(fn[0] + ' -> ' + actual); }
+    logLines.push(fn[0] + ' = ' + actual + '  [' + (ok ? 'PASS' : 'FAIL') + ']');
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + (i + 1) + '</td><td><code>' + fn[0] + '</code></td><td><code>' + actual +
+      '</code></td><td class="' + (ok ? 'pass' : 'fail') + '">' + (ok ? 'PASS' : 'FAIL') + '</td>';
+    ftb.appendChild(tr);
+  });
+
+  // ---- 3. runtime residue probes -------------------------------------------
+  var probes = [
+    ['window.fetch(...)', P.fetchCalls.length, P.fetchCalls],
+    ['new XMLHttpRequest()', P.xhrCalls.length, P.xhrCalls],
+    ['new WebSocket(...)', P.wsCalls.length, P.wsCalls],
+    ['new Worker(...)', P.workerCalls.length, P.workerCalls],
+    ['eval(...)', P.evalCalls.length, P.evalCalls],
+    ['Function(...)  [CSP unsafe-eval capable]', P.functionCalls.length, P.functionCalls]
+  ];
+  var ptb = document.querySelector('#probes tbody');
+  probes.forEach(function (p, i) {
+    var ok = p[1] === 0;
+    if (!ok) failures.push(p[0] + ' observed ' + p[1] + ' call(s) at load time');
+    logLines.push(p[0] + ' calls at load = ' + p[1] + '  [' + (ok ? 'PASS' : 'FAIL') + ']');
+    var detail = p[2] && p[2].length ? ' ' + p[2].join('; ').slice(0, 200) : '';
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + (i + 1) + '</td><td><code>' + p[0] + '</code></td><td><code>' + p[1] + '</code>' +
+      (detail ? '<br><small>' + detail + '</small>' : '') + '</td><td class="' + (ok ? 'pass' : 'fail') + '">' +
+      (ok ? 'PASS' : 'FAIL') + '</td>';
+    ptb.appendChild(tr);
+  });
+
+  // ---- 4. environment ------------------------------------------------------
+  var scriptSrcs = Array.prototype.map.call(document.querySelectorAll('script[src]'), function (s) {
+    return s.getAttribute('src');
+  });
+  var resources = [];
+  try {
+    resources = performance.getEntriesByType('resource').map(function (e) { return e.name; });
+  } catch (e) { resources = ['<performance API unavailable: ' + e.message + '>']; }
+  var remoteResources = resources.filter(function (r) { return /^https?:/i.test(r); });
+
+  var env = [
+    'location.href        = ' + location.href,
+    'protocol             = ' + location.protocol,
+    'userAgent            = ' + navigator.userAgent,
+    'script[src] elements = ' + JSON.stringify(scriptSrcs),
+    'performance resources = ' + JSON.stringify(resources),
+    'remote resources      = ' + JSON.stringify(remoteResources) + ' (must be empty)',
+    'probe runtime errors  = ' + JSON.stringify(P.errors)
+  ].join('\n');
+  document.getElementById('env').textContent = env;
+  if (remoteResources.length) failures.push('remote resources requested: ' + remoteResources.join(', '));
+  if (P.errors.length) failures.push('runtime errors: ' + P.errors.join(' / '));
+
+  // ---- verdict -------------------------------------------------------------
+  var pass = failures.length === 0;
+  var verdict = document.getElementById('verdict');
+  verdict.className = pass ? 'pass' : 'fail';
+  verdict.textContent = pass
+    ? 'SMOKE_PASS — 5/5 global assertions, 5/5 functional probes, 6/6 residue probes, 0 remote requests'
+    : 'SMOKE_FAIL — ' + failures.length + ' failure(s): ' + failures.join(' | ');
+
+  document.getElementById('out').textContent = logLines.join('\n');
+  document.title = (pass ? 'SMOKE_PASS ' : 'SMOKE_FAIL ') +
+    'THREE=' + (G('THREE') ? G('THREE').REVISION : 'UNDEFINED') +
+    ' Konva=' + (G('Konva') ? (G('Konva').version || 'UNDEFINED') : 'UNDEFINED') +
+    ' Graphology=' + (G('Graphology') ? 'present' : 'UNDEFINED') +
+    ' Dagre=' + (G('Dagre') ? 'present' : 'UNDEFINED');
+
+  document.body.setAttribute('data-smoke', pass ? 'pass' : 'fail');
+  document.body.setAttribute('data-smoke-detail', verdict.textContent);
+})();
+</script>
+</body>
+</html>

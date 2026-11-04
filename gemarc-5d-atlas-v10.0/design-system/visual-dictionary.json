@@ -1,0 +1,107 @@
+{
+  "schema": "ide1-5d-atlas/visual-dictionary/v10.0",
+  "purpose": "空间视觉字典 —— 宝石角色形状、领域配色、运行状态环、独占语义通道。3D 的视觉表达必须服从本字典，不得自由发挥。",
+  "source": "v10.0 spatial_visual_standard",
+
+  "gemstone_roles": {
+    "Actor": { "shape": "放射圆形", "note": "外部参与者；非 3D Node 的字段/连线不得使用本形状" },
+    "Input": { "shape": "水滴切割" },
+    "Processor": { "shape": "六棱柱" },
+    "Decision": { "shape": "双锥八面体" },
+    "Storage": { "shape": "阶梯矩形" },
+    "Message": { "shape": "橄榄梭形" },
+    "Interface": { "shape": "三角晶体" },
+    "Security": { "shape": "盾形" },
+    "Agent": { "shape": "五角晶体" },
+    "Composition": { "shape": "皇冠晶体" },
+    "Output": { "shape": "梯形切割" }
+  },
+
+  "gemstone_scope": "只有进入 3D 空间投影（spatial.json 的 nodeOffsets）的节点才使用宝石；前端 UI 层节点（editor.html / 第二客户端 / 原型示范屏）不进入 3D，不宝石化。",
+
+  "exclusive_semantics": {
+    "shape": "功能角色",
+    "color": "业务领域",
+    "facet": "角色子类",
+    "ring": "运行状态",
+    "size": "有证据的数量指标",
+    "edge_style": "工程关系",
+    "animation": "事件/时间",
+    "causal_overlay": "A/B 分歧或合流"
+  },
+
+  "domain_palette": {
+    "Core": "#4C83FF",
+    "Interaction": "#19AFA3",
+    "Data": "#32B67A",
+    "Security": "#E8B34F",
+    "Intelligence": "#A276E8",
+    "Infrastructure": "#8397B7",
+    "External": "#38A6D6",
+    "Operations": "#D87792",
+    "Unknown": "#81909F"
+  },
+
+  "ring_states": [
+    { "state": "Idle", "visual": "静态低亮外环", "semantics": "未参与本次 Case" },
+    { "state": "Running", "visual": "与 Event ID 对应的边脉冲 + 节点外环", "semantics": "当前事件处理中" },
+    { "state": "Waiting", "visual": "稳定等待标记", "semantics": "等待外部输入/超时窗口，可查询队列与逻辑时间" },
+    { "state": "Completed", "visual": "完成环", "semantics": "正常路径完成" },
+    { "state": "Failed", "visual": "断裂环/图标/文字组合（非仅红色）", "semantics": "规则命中失败分支" },
+    { "state": "Recovered", "visual": "恢复环", "semantics": "失败后经 Recovery 规则复原" },
+    { "state": "Blocked", "visual": "琥珀 #F0BA63 阻断环", "semantics": "路径在合法 Guard 或故障边界被阻断（SM-API 终态）" },
+    { "state": "Authorized", "visual": "success #74CA9D 认证通过环", "semantics": "鉴权专用环：凭据校验通过（SM-AUTH 终态）" },
+    { "state": "Rejected", "visual": "failure #F08886 认证拒绝环", "semantics": "鉴权专用环：凭据校验被拒（SM-AUTH 终态）" },
+    { "state": "Unknown", "visual": "灰色 Unknown 领域色", "semantics": "无证据判定（保留态：当前状态机未使用）" }
+  ],
+
+  "edge_styles": {
+    "Directed": "实线 + 箭头（沿 Edge 方向）",
+    "Undirected": "实线无箭头",
+    "Dependency": "虚线（工程依赖）",
+    "DataFlow": "点线（数据流）",
+    "FailurePropagation": "断裂箭头（故障传播）",
+    "Compensation": "反向实线箭头（补偿，使用实际补偿 Edge）",
+    "CausalDivergence": "分叉双色（5D A/B 首次分歧）",
+    "CausalConvergence": "合流双色（等价断言成立时视觉合流，保留历史差异）"
+  },
+
+  "geometry_requirements": [
+    "真实 mesh 有轮廓、切面、法线、深度",
+    "正/顶/侧/45度可辨",
+    "24/32/48px 简化轮廓依然明确",
+    "禁用 Bloom 和 Transmission 后仍能辨识",
+    "不将字段/连线/关系符号宝石化"
+  ],
+
+  "labels": {
+    "node": "多角度自动面向相机；显示完整名优先，拥挤时缩略，悬停/选择可完整查看",
+    "edge": "独立名称与关系类型；沿 Edge 方向排布但文字不得倒置，避免透视遮挡",
+    "modes": ["Smart", "All", "RelatedOnly"],
+    "priority": "Selected > DirectlyRelated > Context > Unrelated",
+    "noLayoutJump": "调整缩放、角度时无布局跳动"
+  },
+
+  "motion_grammar": {
+    "idle": "静态、低亮度，无装饰动画",
+    "running": "与实际 Event ID 对应的边脉冲和节点状态外环",
+    "waiting": "稳定等待标记、可查询队列和逻辑时间",
+    "timeout": "与规则时限一致的失效标志及传播暂停",
+    "retry": "可计数的有限循环，带退避和终止条件",
+    "failure": "断裂环/图标/文字组合，不仅靠红色",
+    "blocking": "路径在合法 Guard 或故障边界停止",
+    "compensation": "使用实际补偿 Edge，不把原动画简单倒放",
+    "branching": "在首次真正差异处生成双世界轨迹",
+    "convergence": "满足等价断言才视觉合流，但不删历史差异",
+    "no_difference": "没有差异就不伪造分支"
+  },
+
+  "animation_restrictions": [
+    "无随机虚假粒子",
+    "Bloom 有上限",
+    "动效可中断",
+    "Reduced Motion 下仍有文本和符号解释"
+  ],
+
+  "ui_separation": "宝石仅用于 3D Node；普通 UI 不使用宝石装饰（html_design_system.geometry 约束）"
+}

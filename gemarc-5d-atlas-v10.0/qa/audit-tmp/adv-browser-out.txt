@@ -1,0 +1,57 @@
+################ C3 : 重复切换 / 监听器 / WebGL 上下文 ################
+2D node count (baseline) = 46
+baseline: {"viewRootChildren":1,"totalEls":906,"ctxCreated":0,"ctxLost":0,"scenes":0,"canvases":0,"canvasesInDoc":""}
+after 12 full cycles (72 view switches): {"viewRootChildren":1,"totalEls":515,"ctxCreated":72,"ctxLost":22,"scenes":36,"canvases":1,"canvasesInDoc":"403x649"}
+  total DOM elements: 906 -> 515  (delta -391)
+  WebGL contexts created: 0 -> 72; lost: 22; scenes created: 36
+  render() calls in 1s [after 1 visit to 3D] = 0
+  render() calls in 1s [after 3D->5D->3D] = 0
+  render() calls in 1s [after 4 more 3D->5D->3D cycles] = 0
+  rAF/render loop growth: 0 -> 0 -> 0  no growth
+2D node count after cycles = 46 (baseline 46) ok
+console errors: 0
+remote requests: 0
+
+################ C5 : 左手语义 -> 右手渲染 (toThree) ################
+  camera world (Three) = {"x":0,"y":2.867944151886782,"z":148.1120834208195}  => semantic (toSemantic) = {"x":0,"y":2.867944151886782,"z":-148.1120834208195}
+  toThree([1,2,3]) = [object Object]
+   RM-EDITAREA: semX -3.6 (N-FE-EDITORHTML) screenX=420.8  ->  semX 3.6 (N-FE-JSENGINE) screenX=465.5  monotonic=true
+   RM-HTTP: semX -3.6 (N-WB-SERVER) screenX=119.8  ->  semX 3.6 (N-CLI) screenX=187.6  monotonic=true
+   RM-PSH: semX -3.6 (N-WB-TERMINAL) screenX=365.8  ->  semX 3.6 (N-DT-TERMINAL) screenX=433.7  monotonic=true
+   RM-TAURI: semX -3.6 (N-DT-TAURI) screenX=106.4  ->  semX 3.6 (N-DT-PLUGIN) screenX=180.4  monotonic=true
+   RM-GIT: semX -3.6 (N-DT-SCM) screenX=137.0  ->  semX 3.6 (N-EXT-GIT) screenX=197.0  monotonic=true
+   RM-RG: semX -3.6 (N-DT-SEARCH) screenX=348.4  ->  semX 3.6 (N-EXT-RG) screenX=404.4  monotonic=true
+   RM-RPC: semX -3.6 (N-PT-KERNEL) screenX=241.4  ->  semX 3.6 (N-PT-RPC) screenX=301.9  monotonic=true
+   RM-DOC: semX -3.6 (N-KN-DOCUMENT) screenX=243.6  ->  semX 3.6 (N-KN-DOCSTORE) screenX=299.9  monotonic=true
+   RM-SEARCH: semX -7.2 (N-KN-TEXTOPS) screenX=62.0  ->  semX 7.2 (N-EC-GREPENGINE) screenX=153.1  monotonic=true
+   RM-BUFFER: semX -7.2 (N-EC-BUFFER) screenX=26.8  ->  semX 7.2 (N-EC-DAEMON) screenX=134.3  monotonic=true
+   RM-UNDO: semX -3.6 (N-EC-UNDO) screenX=245.4  ->  semX 3.6 (N-EC-HISTORY) screenX=298.1  monotonic=true
+   RM-LEXER: semX -3.6 (N-EC-TYPECONFIG) screenX=437.5  ->  semX 3.6 (N-EC-TYPES) screenX=486.8  monotonic=true
+  ALL pairs: larger semantic +X appears further RIGHT = true
+  camera sits at semantic z=-148.1120834208195 (scene front is semantic +Z); camera looks toward +Z
+
+################ C6 : WebGL 不可用 -> DEGRADED + 可交互 2D ################
+  .g-degraded banners: ["DEGRADED · WebGL 初始化失败：THREE.WebGLRenderer: Error creating WebGL context."]
+  #s3dStatus = "DEGRADED · THREE.WebGLRenderer: Error creating WebGL context."
+  fallback svg=true circles=46 elements with data-node=0 canvas=0 img=0
+  computed perspective on stage = "none"
+  fallback click -> inspector changed? false (clicked=true)
+  2D view still interactive: nodes=46 inspector-updates-on-click=true
+  console errors (no-webgl): 1
+   ! THREE.WebGLRenderer: THREE.WebGLRenderer: Error creating WebGL context.
+
+################ C12 : 390px 检查器与 5D 因果结论 ################
+  causalInfo text = "DIVERGED首次分歧序号5受影响节点N-WB-SERVER, N-WB-PATHSAFETY传播路径N-WB-SERVER → N-WB-SERVER → N-WB-SERVER终态差异—阻断 / 反馈 / 恢复 / 补偿— / — / — / —规则R-FE-DT, R-FE-WB, R-WB-AUTH, R-AUTH-WB, R-WB-SANDBOX, R-WB-STORE, R-WB-TERM"
+  causalInfo visibility = {"exists":true,"display":"block","visibility":"visible","opacity":"1","w":65,"h":812,"top":639,"left":12,"overflowX":0}
+  #right (inspector panel) = {"exists":false}
+  #rightBody = {"exists":true,"display":"block","visibility":"visible","opacity":"1","w":389,"h":237,"top":900,"left":1,"overflowX":0}
+  inspector text = "未选择对象。在 2D 画布或 3D 场景中点击 Node / Edge / Port。图统计节点46边63有向环9"
+  horizontal overflow = 0px
+  console errors: 0
+
+################ C10 : 原型 DOM 预览可输入 / 序列化含 actions+guards+state+fixtures ################
+  proto tabs: SC-EDITOR,SC-TERMINAL,SC-SCM,SC-OUTLINE
+  DOM preview controls: 6 -> BUTTON:button,BUTTON:button,BUTTON:button,TEXTAREA:textarea,INPUT:text,INPUT:text
+  textarea accepted input: "fn main(){ /*audit*/ }"
+  preview button click changed prototype JSON: false
+  serialise(): {"keys":["format","screenId","revision","widgets","variables","stateTable","fixtures"],"widgets":10,"actions":9,"guards":0,"stateTable":true,"fixtures":0,"sample":"{\"id\":\"W-ACTIVITY-EXPLORER\",\"kind\":\"Button\",\"x\":30,\"y\":30,\"width\":0,\"height\":0,\"text\":\"资源管理器\",\"name\":\"资源管理器\",\"state\":\"\",\"actions\":[{\"type\":\"SetState\",\"target\":\"status\",\"value\":\"Running\"}],\"guards\":null,\"hotspot\":null}"}

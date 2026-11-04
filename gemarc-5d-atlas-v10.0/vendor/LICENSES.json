@@ -1,0 +1,634 @@
+{
+  "generatedAt": "2026-10-22T02:51:42.345Z",
+  "source": "D:\\GitGit\\docs\\gemarc-5d-atlas-v10.0\\.tooling\\node_modules",
+  "note": "The \"license\" field of every entry was read verbatim from that package's own package.json inside the source node_modules tree; no legal interpretation, SPDX normalisation or guesswork was applied. \"reviewRequired\" is a purely mechanical comparison against the fixed permissive allow-list [MIT, ISC, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD, Unlicense, CC0-1.0] and is not a legal opinion. \"licenseFile\"/\"sha256\" locate and fingerprint the actual licence text shipped inside each package; paths are relative to vendor/.",
+  "generator": {
+    "dependencyTreeSource": "npm ls --all --json (run in .tooling/), reconciled against the installed node_modules on disk; closure follows dependencies + optionalDependencies + peerDependencies and keeps only packages actually installed",
+    "closureRoots": [
+      "dagre",
+      "graphology",
+      "konva",
+      "three"
+    ],
+    "devClosureRoots": [
+      "acorn",
+      "esbuild",
+      "playwright",
+      "vitest"
+    ],
+    "sha256Algorithm": "node:crypto sha256 over raw file bytes"
+  },
+  "summary": {
+    "runtimePackageCount": 8,
+    "runtimeLicenseDistribution": {
+      "MIT": 8
+    },
+    "reviewRequiredCount": 0,
+    "toolchainPackageCount": 54,
+    "toolchainLicenseDistribution": {
+      "MIT": 48,
+      "Apache-2.0": 3,
+      "ISC": 2,
+      "BSD-3-Clause": 1
+    },
+    "toolchainReviewRequiredCount": 0
+  },
+  "bundles": [
+    {
+      "file": "three.bundle.js",
+      "bytes": 743322,
+      "sha256": "5349d20e75182856df40864110ad8612d0237f99cdb02077fc14d0be399746b5",
+      "globalExport": "THREE",
+      "sourcePackages": [
+        "three"
+      ]
+    },
+    {
+      "file": "konva.bundle.js",
+      "bytes": 194210,
+      "sha256": "43a53d79571682e6785538917489ab56ddc5241ea5a77428f0fdb03c42205e93",
+      "globalExport": "Konva",
+      "sourcePackages": [
+        "konva"
+      ]
+    },
+    {
+      "file": "graph.bundle.js",
+      "bytes": 154475,
+      "sha256": "004fbe9919478e8e162faf55fab9bc671f438b7fe5231302565ed14ddb7a53af",
+      "globalExport": "Graphology, Dagre",
+      "sourcePackages": [
+        "graphology",
+        "dagre",
+        "graphlib",
+        "lodash",
+        "events"
+      ],
+      "typesOnlyPackagesInClosure": [
+        "graphology-types"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "name": "dagre",
+      "version": "0.8.5",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/dagre/LICENSE",
+      "sha256": "6a349742a6cb219d5a2fc8d0844f6d89a6efc62e20c664450d884fc7ff2d6015",
+      "role": "Layered graph layout engine. Inlined into vendor/graph.bundle.js, exported as global `Dagre` (=== Graphology.dagre).",
+      "reviewRequired": false
+    },
+    {
+      "name": "events",
+      "version": "3.3.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/events/LICENSE",
+      "sha256": "631987b7616a325a5b97566c232418481ddf7dbb5ecadefb991e791876cc2599",
+      "role": "Node-compatible EventEmitter consumed by graphology. Inlined into vendor/graph.bundle.js.",
+      "reviewRequired": false
+    },
+    {
+      "name": "graphlib",
+      "version": "2.1.8",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/graphlib/LICENSE",
+      "sha256": "6a349742a6cb219d5a2fc8d0844f6d89a6efc62e20c664450d884fc7ff2d6015",
+      "role": "Graph primitives consumed by dagre (Graph / alg / json). Inlined into vendor/graph.bundle.js.",
+      "reviewRequired": false
+    },
+    {
+      "name": "graphology",
+      "version": "0.26.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/graphology/LICENSE.txt",
+      "sha256": "9d396b4882c329077f32861c0d6822dcee48f2d0ff6196d8459af70844196275",
+      "role": "Graph data-structure library. Inlined into vendor/graph.bundle.js, exported as global `Graphology`.",
+      "reviewRequired": false
+    },
+    {
+      "name": "graphology-types",
+      "version": "0.24.8",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/graphology-types/LICENSE.txt",
+      "sha256": "ccd21f75fe569cc7c87f7b5c34c3263bfa123d565bfae1ac475814e0dcbf9f9c",
+      "role": "TypeScript type declarations for graphology (types-only package, zero runtime code). NOT inlined into any bundle; present in the tree as an installed peer dependency of graphology.",
+      "reviewRequired": false
+    },
+    {
+      "name": "konva",
+      "version": "10.9.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/konva/LICENSE",
+      "sha256": "7190132c82df30243dc2ba512c9509ea3b629329b4266e9f2c3b5dbd04029613",
+      "role": "2D canvas scene-graph library. Inlined into vendor/konva.bundle.js, exported as global `Konva`.",
+      "reviewRequired": false
+    },
+    {
+      "name": "lodash",
+      "version": "4.18.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/lodash/LICENSE",
+      "sha256": "f71e8ed126b46346494aad5486874cd8f0aafe95092ed67d2e3cb6110f939abc",
+      "role": "General utility library consumed by dagre + graphlib. Inlined into vendor/graph.bundle.js.",
+      "reviewRequired": false
+    },
+    {
+      "name": "three",
+      "version": "0.186.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/three/LICENSE",
+      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc",
+      "role": "3D rendering core (REVISION 186). Inlined into vendor/three.bundle.js, exported as global `THREE`.",
+      "reviewRequired": false
+    }
+  ],
+  "toolchainPackages": [
+    {
+      "name": "@esbuild/win32-x64",
+      "version": "0.25.12",
+      "license": "MIT",
+      "licenseFile": null,
+      "sha256": null,
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@jridgewell/sourcemap-codec",
+      "version": "1.6.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@jridgewell/sourcemap-codec/LICENSE",
+      "sha256": "769d154fbde32a915af110b1123650bc79f4cbe675acc66e005265bf069c6c6c",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-gnu",
+      "version": "4.64.12",
+      "license": "MIT",
+      "licenseFile": null,
+      "sha256": null,
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@rollup/rollup-win32-x64-msvc",
+      "version": "4.64.12",
+      "license": "MIT",
+      "licenseFile": null,
+      "sha256": null,
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@types/chai",
+      "version": "5.2.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@types/chai/LICENSE",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@types/deep-eql",
+      "version": "4.0.2",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@types/deep-eql/LICENSE",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@types/estree",
+      "version": "1.0.9",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@types/estree/LICENSE",
+      "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/expect",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/expect/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/mocker",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/mocker/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/pretty-format",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/pretty-format/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/runner",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/runner/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/snapshot",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/snapshot/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/spy",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/spy/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "@vitest/utils",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/@vitest/utils/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "acorn",
+      "version": "8.19.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/acorn/LICENSE",
+      "sha256": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "assertion-error",
+      "version": "2.0.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/assertion-error/LICENSE",
+      "sha256": "2130216d5ab4c02134f8247f32999feda0abe1eaf028218baeac445c19ce4cea",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "cac",
+      "version": "6.7.14",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/cac/LICENSE",
+      "sha256": "709131d7af352b81204ada2a3d812e245a83576e327b364f92ba24c578ba9408",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "chai",
+      "version": "5.3.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/chai/LICENSE",
+      "sha256": "b181da80336ff9dd1043fc8be1a764d7382363433319aa872e4d2cb5ce2a3066",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "check-error",
+      "version": "2.1.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/check-error/LICENSE",
+      "sha256": "e5aee0714b6ecc416454b968d1017570ef609f20d8722ab84b07acd550b78198",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "debug",
+      "version": "4.4.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/debug/LICENSE",
+      "sha256": "3a61c6c96caf5c1d9b623fb9b04c822b783dfcb78aa7e49c76a3f643e6ed7f95",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "deep-eql",
+      "version": "5.0.2",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/deep-eql/LICENSE",
+      "sha256": "e5aee0714b6ecc416454b968d1017570ef609f20d8722ab84b07acd550b78198",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "es-module-lexer",
+      "version": "1.7.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/es-module-lexer/LICENSE",
+      "sha256": "fecc38b5e10d889686b3862e7ade17e8b3e5c94b24b7256b05a354d8524b3274",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "esbuild",
+      "version": "0.25.12",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/esbuild/LICENSE.md",
+      "sha256": "b40ec5baec7bb34fa5b1c09521fa3cd52d5fad7adafed74932a2010d3612a681",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "estree-walker",
+      "version": "3.0.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/estree-walker/LICENSE",
+      "sha256": "8a6dcbabe7179f9c8489c08a7d874d0f1e093ae7449e03756ccf87cb9d0e296e",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "expect-type",
+      "version": "1.4.0",
+      "license": "Apache-2.0",
+      "licenseFile": "../.tooling/node_modules/expect-type/LICENSE",
+      "sha256": "7c6cc83c84eaa249a85bf12fe3eedd831bb50c696e8890b5248223ae68c7b408",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "fdir",
+      "version": "6.5.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/fdir/LICENSE",
+      "sha256": "9a39f2aadab11a3697edd668ff2d8ad885b649737b7ab4d3bf12b34e5ada0c86",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "js-tokens",
+      "version": "9.0.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/js-tokens/LICENSE",
+      "sha256": "33038d552d766f4501d8da25b66053ed217c61274ffce1c6bee413bb037c259c",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "loupe",
+      "version": "3.2.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/loupe/LICENSE",
+      "sha256": "592141f7b861426ceeff937d85ad04ada5f66e386c5a8696ed1bd680f2cdb552",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "magic-string",
+      "version": "0.30.21",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/magic-string/LICENSE",
+      "sha256": "1cbe51b907662f6cb1492b16c359384a595180bf0e4d101603ed525e75c4e484",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "ms",
+      "version": "2.1.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/ms/license.md",
+      "sha256": "1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "nanoid",
+      "version": "3.3.20",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/nanoid/LICENSE",
+      "sha256": "da4db1480d9beea3483a2eda5c53b22238d0827d57da162b48f122e04d2d9987",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "pathe",
+      "version": "2.0.3",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/pathe/LICENSE",
+      "sha256": "52e92576851154bad7737e90cc72818936f43665cb0e3f7428ed8edc8cc5709b",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "pathval",
+      "version": "2.0.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/pathval/LICENSE",
+      "sha256": "5d45910e7ed82fecc3e29b40a5b3a17ceb609fda19f860aa2ec180d87f4f9d4a",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "picocolors",
+      "version": "1.1.1",
+      "license": "ISC",
+      "licenseFile": "../.tooling/node_modules/picocolors/LICENSE",
+      "sha256": "6582629e2979466878f6014313dcc2f3756c9616148682227ce3063dde310750",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "picomatch",
+      "version": "4.0.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/picomatch/LICENSE",
+      "sha256": "d0cd141b0c322fded5dfad1d4645bb2fedfc05b7321fe1009469638190d59ef9",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "playwright",
+      "version": "1.64.1",
+      "license": "Apache-2.0",
+      "licenseFile": "../.tooling/node_modules/playwright/LICENSE",
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "playwright-core",
+      "version": "1.64.1",
+      "license": "Apache-2.0",
+      "licenseFile": "../.tooling/node_modules/playwright-core/LICENSE",
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "postcss",
+      "version": "8.5.31",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/postcss/LICENSE",
+      "sha256": "5be1f3465bba68a626777f984878814aaf35e7ef8e9fd314d469bcf887050fb8",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "rollup",
+      "version": "4.64.12",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/rollup/LICENSE.md",
+      "sha256": "fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "siginfo",
+      "version": "2.0.0",
+      "license": "ISC",
+      "licenseFile": "../.tooling/node_modules/siginfo/LICENSE",
+      "sha256": "3bdddf0b9b08aaa2fe4365b803fc958ed32c0597ca0bd727be8d9fcb8b248d18",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "source-map-js",
+      "version": "1.2.2",
+      "license": "BSD-3-Clause",
+      "licenseFile": "../.tooling/node_modules/source-map-js/LICENSE",
+      "sha256": "6cb0631f71c7749763fd3dd1d5bee52dd1070ec17f2edc1710079ad070bd2fbd",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "stackback",
+      "version": "0.0.2",
+      "license": "MIT",
+      "licenseFile": null,
+      "sha256": null,
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "std-env",
+      "version": "3.10.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/std-env/LICENCE",
+      "sha256": "a6f36438e46fb911859f3b9c4cad045ba64e1af3d8f4512c60258fa2d7552d28",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "strip-literal",
+      "version": "3.1.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/strip-literal/LICENSE",
+      "sha256": "af32efdd008a371c77b13eef5010c81d6c5c2f67c054b6bb74317e13ac38c171",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "tinybench",
+      "version": "2.9.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/tinybench/LICENSE",
+      "sha256": "cebc084d54e6dd99e53292ddb4bc1cdb63d9bfcd9ce438fe3aa6eb106d79e2ea",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "tinyexec",
+      "version": "0.3.2",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/tinyexec/LICENSE",
+      "sha256": "f95f668fe64081ddb4153b322e34fdd719b991285ed08177d5ad7133b7988d92",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "tinyglobby",
+      "version": "0.2.17",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/tinyglobby/LICENSE",
+      "sha256": "22c68811e174cbbfb3813d4135918df4f540959c14d872e601d9abe83d3cde8f",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "tinypool",
+      "version": "1.1.1",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/tinypool/LICENSE",
+      "sha256": "0d506ca1b2adc4ee63a9e2384a85d6cf9f014b4cf3d00c162cd60216450324fa",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "tinyrainbow",
+      "version": "2.0.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/tinyrainbow/LICENCE",
+      "sha256": "cebc084d54e6dd99e53292ddb4bc1cdb63d9bfcd9ce438fe3aa6eb106d79e2ea",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "tinyspy",
+      "version": "4.0.6",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/tinyspy/LICENCE",
+      "sha256": "cebc084d54e6dd99e53292ddb4bc1cdb63d9bfcd9ce438fe3aa6eb106d79e2ea",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "vite",
+      "version": "7.3.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/vite/LICENSE.md",
+      "sha256": "a77a1c089806b39ad339535bdf3677f636c91d96693e8ad7b11fe733f650ea64",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "vite-node",
+      "version": "3.2.4",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/vite-node/LICENSE",
+      "sha256": "ddc110f3b89cc397cee99d3d64c4f746928b7a3bac02fed15101eb4d367079f6",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "vitest",
+      "version": "3.2.7",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/vitest/LICENSE.md",
+      "sha256": "6b861d7554fbc8488a08ee59e613bd488785a2e27bd87b80142e5125abec6f4c",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    },
+    {
+      "name": "why-is-node-running",
+      "version": "2.3.0",
+      "license": "MIT",
+      "licenseFile": "../.tooling/node_modules/why-is-node-running/LICENSE",
+      "sha256": "6a134e51aa31496c15a741592fc5d782b2dbf8d8b6b8524e15c8520ae0cd6374",
+      "role": "Build/test toolchain only — NOT bundled into any vendor/ deliverable.",
+      "reviewRequired": false
+    }
+  ]
+}

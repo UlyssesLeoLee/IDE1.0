@@ -1,0 +1,847 @@
+{
+  "document": {
+    "path": "DD-01_Microkernel_Core詳細設計書.md",
+    "lines": 1551,
+    "sections": [
+      "DD-01 Microkernel Core 詳細設計書 — line 1",
+      "Command Bus / Event Bus / Capability Registry — line 2",
+      "文档元数据 — line 6",
+      "1. ドキュメント情報・目的・用語 — line 21",
+      "2. 全体アーキテクチャと内部境界 — line 74",
+      "3. MOD-CB-001 Command Bus 設計 — line 105",
+      "4. MOD-EB-001 Event Bus 設計 — line 435",
+      "5. MOD-CR-001 Capability Registry 設計 — line 715",
+      "6. 統合 Sequence Diagram — line 976",
+      "7. 状態遷移設計 — line 1146",
+      "8. Error 設計 — line 1199",
+      "9. 設定・Secrets・構成管理 — line 1259",
+      "10. 故障回復設計 — line 1297",
+      "11. セキュリティ統合 — line 1313",
+      "12. テスト観点導出表 — line 1336",
+      "13. Traceability マトリクス — line 1417",
+      "14. 未決事項一覧 (TBD) — line 1467",
+      "15. 上位設計への確認事項 — line 1484",
+      "16. 設計 Review (自己審査) — line 1497",
+      "17. 変更履歴 — line 1543"
+    ]
+  },
+  "components": [
+    {
+      "id": "DD01-C1",
+      "name": "CommandBus",
+      "qualifiedName": "kernel_core::command::CommandBus (CLS-CB-001, §13.1 実装オブジェクト列)",
+      "kind": "class",
+      "role": "Command パイプラインのオーケストレーション (Singleton, Kernel 起動時生成)。期待実装モジュール crates/ide-kernel-core/src/command.rs — 実装欠落。",
+      "docLine": 128,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0003", "EV-DD01-0033"]
+    },
+    {
+      "id": "DD01-C2",
+      "name": "InflightEntry",
+      "qualifiedName": "kernel_core::command::InflightEntry (CLS-CB-002)",
+      "kind": "struct",
+      "role": "実行中 Command のライフサイクル管理 (cmd_id / session_id / cancel_tx / abort_handle / started_at / priority)。期待実装 crates/ide-kernel-core/src/command.rs — 実装欠落。",
+      "docLine": 142,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0003"]
+    },
+    {
+      "id": "DD01-C3",
+      "name": "CommandResultMapper",
+      "qualifiedName": "kernel_core::command::CommandResultMapper (CLS-CB-003)",
+      "kind": "class",
+      "role": "Provider 戻り値 (ProviderOutput) → CommandResult への変換。期待実装 crates/ide-kernel-core/src/command.rs — 実装欠落。",
+      "docLine": 152,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0003"]
+    },
+    {
+      "id": "DD01-C4",
+      "name": "EventBus",
+      "qualifiedName": "kernel_core::event::EventBus (CLS-EB-001, §13.1 実装オブジェクト列)",
+      "kind": "class",
+      "role": "Event 発行・配信・Replay の中央制御 (Singleton)。期待実装 crates/ide-kernel-core/src/event.rs — 実装欠落。",
+      "docLine": 458,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0010", "EV-DD01-0033"]
+    },
+    {
+      "id": "DD01-C5",
+      "name": "EventEnvelope",
+      "qualifiedName": "kernel_core::event::EventEnvelope (CLS-EB-002)",
+      "kind": "struct",
+      "role": "Event 共通ヘッダ (event_id / sequence / event_type / timestamp / workspace_id / trace_id / payload / durability)。期待実装 crates/ide-kernel-core/src/event.rs — 実装欠落。",
+      "docLine": 470,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0010", "EV-DD01-0015"]
+    },
+    {
+      "id": "DD01-C6",
+      "name": "Subscriber",
+      "qualifiedName": "kernel_core::event::Subscriber (CLS-EB-003)",
+      "kind": "class",
+      "role": "Event 配信先 (in-process チャネル / SSE / WebSocket)。buffer_size / dropped_count / slow_warn_emitted を保持。期待実装 crates/ide-kernel-core/src/event.rs — 実装欠落。",
+      "docLine": 479,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0010", "EV-DD01-0013"]
+    },
+    {
+      "id": "DD01-C7",
+      "name": "EventTypeRegistry",
+      "qualifiedName": "kernel_core::event::EventTypeRegistry (CLS-EB-004)",
+      "kind": "class",
+      "role": "標準 Event 集合のスキーマ管理 (types: HashMap<EventType, EventSchema>)。期待実装 crates/ide-kernel-core/src/event.rs — 実装欠落。",
+      "docLine": 489,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0010", "EV-DD01-0015"]
+    },
+    {
+      "id": "DD01-C8",
+      "name": "CapabilityRegistry",
+      "qualifiedName": "kernel_core::capability::CapabilityRegistry (CLS-CR-001, §13.1 実装オブジェクト列)",
+      "kind": "class",
+      "role": "Capability の登録管理と Provider 選択 (Priority ベースルーティング)。Singleton。期待実装 crates/ide-kernel-core/src/capability.rs — 実装欠落。",
+      "docLine": 738,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0017", "EV-DD01-0033"]
+    },
+    {
+      "id": "DD01-C9",
+      "name": "ProviderEntry",
+      "qualifiedName": "kernel_core::capability::ProviderEntry (CLS-CR-002)",
+      "kind": "struct",
+      "role": "Capability に紐づく Provider 実装のメタ情報 (provider_id / required_permissions / priority / availability / policy_tag / registered_at / last_health_check)。期待実装 crates/ide-kernel-core/src/capability.rs — 実装欠落。",
+      "docLine": 750,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0017"]
+    },
+    {
+      "id": "DD01-C10",
+      "name": "RoutingPolicy",
+      "qualifiedName": "kernel_core::capability::RoutingPolicy (CLS-CR-003)",
+      "kind": "struct",
+      "role": "Provider 選択規則 (priority / availability_required / policy_tags / fallback_strategy: NextPriority | FailFast | LoadBalance)。期待実装 crates/ide-kernel-core/src/capability.rs — 実装欠落。",
+      "docLine": 759,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0017", "EV-DD01-0020"]
+    },
+    {
+      "id": "DD01-C11",
+      "name": "CommandProvider",
+      "qualifiedName": "kernel_core::provider::CommandProvider (trait, Box<dyn CommandProvider> / Arc<dyn CommandProvider>)",
+      "kind": "trait",
+      "role": "Capability を実装する Plugin 側実行器の trait (is_available() / execute(command))。モジュールパスは文書未指定 — 実装欠落。",
+      "docLine": 48,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0002", "EV-DD01-0017"]
+    },
+    {
+      "id": "DD01-C12",
+      "name": "DurableLog",
+      "qualifiedName": "kernel_core::storage::DurableLog (trait, Arc<dyn DurableLog>)",
+      "kind": "trait",
+      "role": "Durable Event 永続化 sink (append / seq 範囲取得)。実装は DD-04 Storage に委譲。workspace 内に trait も実装も不在 — 実装欠落。",
+      "docLine": 99,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0001", "EV-DD01-0010"]
+    },
+    {
+      "id": "DD01-C13",
+      "name": "EventSink",
+      "qualifiedName": "kernel_core::event::EventSink (trait, Box<dyn EventSink>)",
+      "kind": "trait",
+      "role": "Subscriber がイベントを配信する先 (in-process channel / SSE / WebSocket)。実装欠落。",
+      "docLine": 486,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0010", "EV-DD01-0011"]
+    },
+    {
+      "id": "DD01-C14",
+      "name": "SessionManager",
+      "qualifiedName": "kernel_core::session::SessionManager (DD-02 MOD-SM-001 依存)",
+      "kind": "class",
+      "role": "Session 解決 (get / permissions / resource_budget / status=EXPIRED) を提供する DD-02 側コンポーネント。workspace 内に DD-02 実装は不在 — 実装欠落。",
+      "docLine": 119,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0002", "EV-DD01-0005"]
+    },
+    {
+      "id": "DD01-C15",
+      "name": "PermissionChecker",
+      "qualifiedName": "kernel_core::security::PermissionChecker (DD-04 / SD-001 依存)",
+      "kind": "class",
+      "role": "check_permission / check_network_access による認可判定 (SD-001 §2.3 / §5)。実装欠落。",
+      "docLine": 119,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0002", "EV-DD01-0005"]
+    },
+    {
+      "id": "DD01-C16",
+      "name": "AuditLog",
+      "qualifiedName": "kernel_core::audit::AuditLog (SD-001 §7 依存)",
+      "kind": "class",
+      "role": "確定結果・Permission 拒否・Capability 登録/解除・availability 変更の記録先 (Hash chain, SD-001 §7)。実装欠落。",
+      "docLine": 176,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0004", "EV-DD01-0025"]
+    },
+    {
+      "id": "DD01-C17",
+      "name": "Adapter / Transport 層",
+      "qualifiedName": "DD-04 (REST / JSON-RPC / MCP Adapter) — kernel_core 外",
+      "kind": "service",
+      "role": "JSON-RPC / REST / In-Process から Command を受信し parse_http() → Command へ変換する境界 (DD-04 担当)。本 DD のスコープ外 — 実装欠落 (workspace に DD-04 実装なし)。",
+      "docLine": 294,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0004", "EV-DD01-0025"]
+    },
+    {
+      "id": "DD01-C18",
+      "name": "TUI/Agent (外部クライアント)",
+      "qualifiedName": "外部 — kernel_core 外 (TUI / Agent / Monitoring System)",
+      "kind": "service",
+      "role": "Command を発行し Event を購読する外部利用者 (Subscriber 側)。本 DD のスコープ外 — 実装欠落。",
+      "docLine": 171,
+      "impl": { "path": "", "startLine": 0, "endLine": 0, "status": "Absent" },
+      "evidenceIds": ["EV-DD01-0004", "EV-DD01-0025"]
+    },
+    {
+      "id": "DD01-C19",
+      "name": "ide-kernel-core crate (placeholder skeleton)",
+      "qualifiedName": "ide-kernel-core::version / ide-kernel-core::kernel_status",
+      "kind": "module",
+      "role": "DD-01 の 3 機構が入るべき器。現状は placeholder のみ (version() と kernel_status()=\"placeholder\")、ランタイム依存 0。",
+      "docLine": 17,
+      "impl": { "path": "crates/ide-kernel-core/src/lib.rs", "startLine": 1, "endLine": 43, "status": "Implemented" },
+      "evidenceIds": ["EV-DD01-0035", "EV-DD01-0036"]
+    },
+    {
+      "id": "DD01-C20",
+      "name": "Event (IDE Shell kernel event enum)",
+      "qualifiedName": "ide_shell_protocol::Event",
+      "kind": "struct",
+      "role": "IDE Shell RPC facade のカーネル状態通知 enum (BufferOpened/BufferChanged/ModeChanged/ProviderRegistered 等)。DD-01 の EventEnvelope とは別スコープの簡易イベント — 参考対照のみ。",
+      "docLine": 621,
+      "impl": { "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 421, "endLine": 449, "status": "Inferred" },
+      "evidenceIds": ["EV-DD01-0037", "EV-DD01-0015"]
+    },
+    {
+      "id": "DD01-C21",
+      "name": "AiProvider",
+      "qualifiedName": "ide_shell_protocol::AiProvider",
+      "kind": "trait",
+      "role": "IDE Shell の AI プロバイダ trait (complete/edit/chat)。DD-01 の CommandProvider (is_available/execute) とは契約が異なる — 参考対照のみ。",
+      "docLine": 48,
+      "impl": { "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 310, "endLine": 316, "status": "Inferred" },
+      "evidenceIds": ["EV-DD01-0038"]
+    },
+    {
+      "id": "DD01-C22",
+      "name": "Kernel (IDE Shell RPC facade)",
+      "qualifiedName": "ide_shell_protocol::Kernel",
+      "kind": "class",
+      "role": "IDE Shell の headless RPC facade。providers: RwLock<HashMap<String, Arc<dyn AiProvider>>> と subscribers: RwLock<Vec<UnboundedSender<Event>>> を持つが、DD-01 の CommandBus / EventBus / CapabilityRegistry とは別設計 — 参考対照のみ。",
+      "docLine": 90,
+      "impl": { "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 406, "endLine": 419, "status": "Inferred" },
+      "evidenceIds": ["EV-DD01-0040"]
+    },
+    {
+      "id": "DD01-C23",
+      "name": "Session (IDE Kernel タブセッション)",
+      "qualifiedName": "ide_kernel::Session",
+      "kind": "struct",
+      "role": "ide-kernel の複数タブ + Document 管理。DD-01 が前提とする permissions / resource_budget / status(EXPIRED) を持たず SessionManager 相当の権限解決は不可 — 参考対照のみ。",
+      "docLine": 119,
+      "impl": { "path": "crates/ide-kernel/src/session.rs", "startLine": 23, "endLine": 45, "status": "Inferred" },
+      "evidenceIds": ["EV-DD01-0039"]
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "DD01-I1",
+      "name": "CommandBus::execute",
+      "direction": "in",
+      "type": "method — execute(&self, cmd: Command) -> Result<CommandResult>",
+      "providerComponentId": "DD01-C1",
+      "consumerComponentIds": ["DD01-C17", "DD01-C18"],
+      "docLine": 164,
+      "evidenceIds": ["EV-DD01-0004"]
+    },
+    {
+      "id": "DD01-I2",
+      "name": "CommandBus::cancel",
+      "direction": "in",
+      "type": "method — cancel(&self, cmd_id) -> Result<CancelAck { status, remaining_work }>",
+      "providerComponentId": "DD01-C1",
+      "consumerComponentIds": ["DD01-C18"],
+      "docLine": 181,
+      "evidenceIds": ["EV-DD01-0004"]
+    },
+    {
+      "id": "DD01-I3",
+      "name": "CommandBus::discover",
+      "direction": "in",
+      "type": "method — discover(&self, filter: CommandFilter) -> Vec<CommandDescriptor>",
+      "providerComponentId": "DD01-C1",
+      "consumerComponentIds": ["DD01-C18"],
+      "docLine": 198,
+      "evidenceIds": ["EV-DD01-0004"]
+    },
+    {
+      "id": "DD01-I4",
+      "name": "CapabilityRegistry::route",
+      "direction": "out",
+      "type": "method — route(&self, capability_id: CapabilityName, session: &Session, hint?: RoutingHint) -> Result<Arc<dyn CommandProvider>>",
+      "providerComponentId": "DD01-C8",
+      "consumerComponentIds": ["DD01-C1"],
+      "docLine": 786,
+      "evidenceIds": ["EV-DD01-0018", "EV-DD01-0020"]
+    },
+    {
+      "id": "DD01-I5",
+      "name": "EventBus::emit",
+      "direction": "out",
+      "type": "method — emit(&self, event: Event | EventEnvelope) -> Result<EventReceipt { event_id, sequence }>",
+      "providerComponentId": "DD01-C4",
+      "consumerComponentIds": ["DD01-C1", "DD01-C8"],
+      "docLine": 500,
+      "evidenceIds": ["EV-DD01-0011", "EV-DD01-0012"]
+    },
+    {
+      "id": "DD01-I6",
+      "name": "EventBus::subscribe",
+      "direction": "out",
+      "type": "method — subscribe(&self, filter: EventFilter, sink: Box<dyn EventSink>) -> Result<SubscriptionId>",
+      "providerComponentId": "DD01-C4",
+      "consumerComponentIds": ["DD01-C17", "DD01-C18"],
+      "docLine": 517,
+      "evidenceIds": ["EV-DD01-0011"]
+    },
+    {
+      "id": "DD01-I7",
+      "name": "EventBus::replay",
+      "direction": "out",
+      "type": "method — replay(&self, range: SequenceRange { since, until?, limit, filter? }) -> Result<Vec<EventEnvelope>>",
+      "providerComponentId": "DD01-C4",
+      "consumerComponentIds": ["DD01-C16"],
+      "docLine": 533,
+      "evidenceIds": ["EV-DD01-0011", "EV-DD01-0016"]
+    },
+    {
+      "id": "DD01-I8",
+      "name": "CapabilityRegistry::register",
+      "direction": "out",
+      "type": "method — register(&self, capability: Capability) -> Result<ProviderId>",
+      "providerComponentId": "DD01-C8",
+      "consumerComponentIds": [],
+      "docLine": 770,
+      "evidenceIds": ["EV-DD01-0018", "EV-DD01-0019"]
+    },
+    {
+      "id": "DD01-I9",
+      "name": "CapabilityRegistry::set_availability",
+      "direction": "out",
+      "type": "method — set_availability(&self, provider_id: ProviderId, availability: Availability) -> Result<()>",
+      "providerComponentId": "DD01-C8",
+      "consumerComponentIds": [],
+      "docLine": 802,
+      "evidenceIds": ["EV-DD01-0018", "EV-DD01-0021"]
+    },
+    {
+      "id": "DD01-I10",
+      "name": "CapabilityRegistry::list",
+      "direction": "out",
+      "type": "method — list(&self, filter: CapabilityFilter) -> Vec<CapabilityDescriptor>",
+      "providerComponentId": "DD01-C8",
+      "consumerComponentIds": ["DD01-C1"],
+      "docLine": 818,
+      "evidenceIds": ["EV-DD01-0018"]
+    },
+    {
+      "id": "DD01-I11",
+      "name": "CommandProvider::execute",
+      "direction": "out",
+      "type": "trait method — provider.execute(command).await -> ProviderOutput (併せて is_available() -> bool)",
+      "providerComponentId": "DD01-C11",
+      "consumerComponentIds": ["DD01-C1"],
+      "docLine": 230,
+      "evidenceIds": ["EV-DD01-0005", "EV-DD01-0020"]
+    },
+    {
+      "id": "DD01-I12",
+      "name": "DurableLog::append",
+      "direction": "out",
+      "type": "trait method — durable_log.append(envelope).await (Durable Event のみ)",
+      "providerComponentId": "DD01-C12",
+      "consumerComponentIds": ["DD01-C4"],
+      "docLine": 555,
+      "evidenceIds": ["EV-DD01-0012", "EV-DD01-0013"]
+    },
+    {
+      "id": "DD01-I13",
+      "name": "EventSink::send",
+      "direction": "out",
+      "type": "trait method — subscriber.sink.send(envelope) (try_send ベース・非ブロッキング)",
+      "providerComponentId": "DD01-C13",
+      "consumerComponentIds": ["DD01-C6"],
+      "docLine": 557,
+      "evidenceIds": ["EV-DD01-0012", "EV-DD01-0013"]
+    },
+    {
+      "id": "DD01-I14",
+      "name": "SessionManager::get",
+      "direction": "out",
+      "type": "method — SessionManager.get(session_id) -> Session (存在しなければ ERR-CB-002)",
+      "providerComponentId": "DD01-C14",
+      "consumerComponentIds": ["DD01-C1"],
+      "docLine": 223,
+      "evidenceIds": ["EV-DD01-0005"]
+    },
+    {
+      "id": "DD01-I15",
+      "name": "PermissionChecker::check_permission",
+      "direction": "out",
+      "type": "method — check_permission(session, command) (Network アクセス Command は check_network_access を追加呼出)",
+      "providerComponentId": "DD01-C15",
+      "consumerComponentIds": ["DD01-C1"],
+      "docLine": 224,
+      "evidenceIds": ["EV-DD01-0005", "EV-DD01-0030"]
+    }
+  ],
+  "sequences": [
+    {
+      "id": "DD01-S1",
+      "title": "6.1 正常系 — TUI → Command Bus → Capability → Plugin → Event Bus",
+      "participants": [
+        { "name": "TUI/Agent", "componentId": "DD01-C18" },
+        { "name": "Adapter (DD-04)", "componentId": "DD01-C17" },
+        { "name": "Command Bus (MOD-CB-001)", "componentId": "DD01-C1" },
+        { "name": "Session Manager (DD-02)", "componentId": "DD01-C14" },
+        { "name": "Permission Checker", "componentId": "DD01-C15" },
+        { "name": "Capability Registry (MOD-CR-001)", "componentId": "DD01-C8" },
+        { "name": "Plugin Provider", "componentId": "DD01-C11" },
+        { "name": "Event Bus (MOD-EB-001)", "componentId": "DD01-C4" },
+        { "name": "Durable Log", "componentId": "DD01-C12" },
+        { "name": "Audit Log", "componentId": "DD01-C16" }
+      ],
+      "steps": [
+        { "order": 1, "from": "TUI/Agent", "to": "Adapter (DD-04)", "message": "command.execute(file.read, args)", "docLine": 994 },
+        { "order": 2, "from": "Adapter (DD-04)", "to": "Command Bus (MOD-CB-001)", "message": "execute(Command)", "docLine": 995 },
+        { "order": 3, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-001 Deserialize + P-CB-002 Trace", "docLine": 996 },
+        { "order": 4, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-003 Schema validate", "docLine": 997 },
+        { "order": 5, "from": "Command Bus (MOD-CB-001)", "to": "Session Manager (DD-02)", "message": "get(session_id)", "docLine": 998 },
+        { "order": 6, "from": "Session Manager (DD-02)", "to": "Command Bus (MOD-CB-001)", "message": "Session", "docLine": 999 },
+        { "order": 7, "from": "Command Bus (MOD-CB-001)", "to": "Permission Checker", "message": "check_permission(session, command)", "docLine": 1000 },
+        { "order": 8, "from": "Permission Checker", "to": "Command Bus (MOD-CB-001)", "message": "Ok", "docLine": 1001 },
+        { "order": 9, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-007 Budget check", "docLine": 1002 },
+        { "order": 10, "from": "Command Bus (MOD-CB-001)", "to": "Capability Registry (MOD-CR-001)", "message": "route(\"file.read\", &session)", "docLine": 1003 },
+        { "order": 11, "from": "Capability Registry (MOD-CR-001)", "to": "Command Bus (MOD-CB-001)", "message": "Arc<dyn CommandProvider>", "docLine": 1004 },
+        { "order": 12, "from": "Command Bus (MOD-CB-001)", "to": "Event Bus (MOD-EB-001)", "message": "emit(CommandStarted) [Transient]", "docLine": 1005 },
+        { "order": 13, "from": "Event Bus (MOD-EB-001)", "to": "Durable Log", "message": "(skip - Transient)", "docLine": 1006 },
+        { "order": 14, "from": "Event Bus (MOD-EB-001)", "to": "TUI/Agent", "message": "(delivered to subscriber)", "docLine": 1007 },
+        { "order": 15, "from": "Command Bus (MOD-CB-001)", "to": "Plugin Provider", "message": "provider.execute(command)", "docLine": 1008 },
+        { "order": 16, "from": "Plugin Provider", "to": "Command Bus (MOD-CB-001)", "message": "ProviderOutput", "docLine": 1009 },
+        { "order": 17, "from": "Command Bus (MOD-CB-001)", "to": "Event Bus (MOD-EB-001)", "message": "emit(CommandCompleted) [Transient]", "docLine": 1010 },
+        { "order": 18, "from": "Command Bus (MOD-CB-001)", "to": "Audit Log", "message": "AuditLog { cmd_id, status=ok, duration }", "docLine": 1011 },
+        { "order": 19, "from": "Command Bus (MOD-CB-001)", "to": "Adapter (DD-04)", "message": "CommandResult{status=ok, data}", "docLine": 1012 },
+        { "order": 20, "from": "Adapter (DD-04)", "to": "TUI/Agent", "message": "HTTP 200 / JSON-RPC result", "docLine": 1013 }
+      ],
+      "evidenceIds": ["EV-DD01-0025"]
+    },
+    {
+      "id": "DD01-S2",
+      "title": "6.2 Validation 失敗 (Schema)",
+      "participants": [
+        { "name": "TUI/Agent", "componentId": "DD01-C18" },
+        { "name": "Adapter (DD-04)", "componentId": "DD01-C17" },
+        { "name": "Command Bus (MOD-CB-001)", "componentId": "DD01-C1" }
+      ],
+      "steps": [
+        { "order": 1, "from": "TUI/Agent", "to": "Adapter (DD-04)", "message": "command.execute(file.read, {path: 123})  # type mismatch", "docLine": 1025 },
+        { "order": 2, "from": "Adapter (DD-04)", "to": "Command Bus (MOD-CB-001)", "message": "execute(Command)", "docLine": 1026 },
+        { "order": 3, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-001 Deserialize (Ok)", "docLine": 1027 },
+        { "order": 4, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-003 Schema validate", "docLine": 1028 },
+        { "order": 5, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "arguments.path != string → fail", "docLine": 1029 },
+        { "order": 6, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-015 Audit Log (validation_failed)", "docLine": 1030 },
+        { "order": 7, "from": "Command Bus (MOD-CB-001)", "to": "Adapter (DD-04)", "message": "Err(ERR-CB-07)", "docLine": 1031 },
+        { "order": 8, "from": "Adapter (DD-04)", "to": "TUI/Agent", "message": "HTTP 400 INVALID_ARGUMENT", "docLine": 1032 }
+      ],
+      "evidenceIds": ["EV-DD01-0026"]
+    },
+    {
+      "id": "DD01-S3",
+      "title": "6.3 Authorization 失敗",
+      "participants": [
+        { "name": "TUI/Agent", "componentId": "DD01-C18" },
+        { "name": "Adapter (DD-04)", "componentId": "DD01-C17" },
+        { "name": "Command Bus (MOD-CB-001)", "componentId": "DD01-C1" },
+        { "name": "Session Manager (DD-02)", "componentId": "DD01-C14" },
+        { "name": "Permission Checker", "componentId": "DD01-C15" }
+      ],
+      "steps": [
+        { "order": 1, "from": "TUI/Agent", "to": "Adapter (DD-04)", "message": "command.execute(file.patch, ...)", "docLine": 1046 },
+        { "order": 2, "from": "Adapter (DD-04)", "to": "Command Bus (MOD-CB-001)", "message": "execute(Command)", "docLine": 1047 },
+        { "order": 3, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "P-CB-001..005 (ok)", "docLine": 1048 },
+        { "order": 4, "from": "Command Bus (MOD-CB-001)", "to": "Session Manager (DD-02)", "message": "get(session_id)", "docLine": 1049 },
+        { "order": 5, "from": "Session Manager (DD-02)", "to": "Command Bus (MOD-CB-001)", "message": "Session (workspace_write=false)", "docLine": 1050 },
+        { "order": 6, "from": "Command Bus (MOD-CB-001)", "to": "Permission Checker", "message": "check_permission", "docLine": 1051 },
+        { "order": 7, "from": "Permission Checker", "to": "Command Bus (MOD-CB-001)", "message": "Err(MissingPermission(workspace_write))", "docLine": 1052 },
+        { "order": 8, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "emit(CommandFailed{code:ERR-CB-003}) [Transient]", "docLine": 1053 },
+        { "order": 9, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "Audit (denied)", "docLine": 1054 },
+        { "order": 10, "from": "Command Bus (MOD-CB-001)", "to": "Adapter (DD-04)", "message": "Err(ERR-CB-003)", "docLine": 1055 },
+        { "order": 11, "from": "Adapter (DD-04)", "to": "TUI/Agent", "message": "HTTP 403 PERMISSION_DENIED", "docLine": 1056 }
+      ],
+      "evidenceIds": ["EV-DD01-0027"]
+    },
+    {
+      "id": "DD01-S4",
+      "title": "6.5 全 Provider Unavailable (Hot Swap 中)",
+      "participants": [
+        { "name": "Command Bus (MOD-CB-001)", "componentId": "DD01-C1" },
+        { "name": "Capability Registry (MOD-CR-001)", "componentId": "DD01-C8" },
+        { "name": "Event Bus (MOD-EB-001)", "componentId": "DD01-C4" }
+      ],
+      "steps": [
+        { "order": 1, "from": "Command Bus (MOD-CB-001)", "to": "Capability Registry (MOD-CR-001)", "message": "route(\"language.definition\", &session)", "docLine": 1081 },
+        { "order": 2, "from": "Capability Registry (MOD-CR-001)", "to": "Capability Registry (MOD-CR-001)", "message": "P-CR-102..103 (全 provider is_available=false)", "docLine": 1082 },
+        { "order": 3, "from": "Capability Registry (MOD-CR-001)", "to": "Command Bus (MOD-CB-001)", "message": "Err(NoProviderAvailable)", "docLine": 1083 },
+        { "order": 4, "from": "Command Bus (MOD-CB-001)", "to": "Event Bus (MOD-EB-001)", "message": "emit(CapabilityUnavailable{name})", "docLine": 1084 },
+        { "order": 5, "from": "Command Bus (MOD-CB-001)", "to": "Caller", "message": "Err(ERR-CB-009)", "docLine": 1085 }
+      ],
+      "evidenceIds": ["EV-DD01-0028"]
+    },
+    {
+      "id": "DD01-S5",
+      "title": "6.6 Cancellation",
+      "participants": [
+        { "name": "TUI/Agent", "componentId": "DD01-C18" },
+        { "name": "Command Bus (MOD-CB-001)", "componentId": "DD01-C1" },
+        { "name": "Plugin Provider", "componentId": "DD01-C11" },
+        { "name": "Event Bus (MOD-EB-001)", "componentId": "DD01-C4" }
+      ],
+      "steps": [
+        { "order": 1, "from": "TUI/Agent", "to": "Command Bus (MOD-CB-001)", "message": "execute(command)", "docLine": 1099 },
+        { "order": 2, "from": "Command Bus (MOD-CB-001)", "to": "Plugin Provider", "message": "provider.execute (long-running)", "docLine": 1100 },
+        { "order": 3, "from": "TUI/Agent", "to": "Command Bus (MOD-CB-001)", "message": "cancel(command_id)", "docLine": 1101 },
+        { "order": 4, "from": "Command Bus (MOD-CB-001)", "to": "Plugin Provider", "message": "cancel_token.cancel()", "docLine": 1102 },
+        { "order": 5, "from": "Plugin Provider", "to": "Plugin Provider", "message": "cleanup()", "docLine": 1103 },
+        { "order": 6, "from": "Plugin Provider", "to": "Command Bus (MOD-CB-001)", "message": "Err(Cancelled)", "docLine": 1104 },
+        { "order": 7, "from": "Command Bus (MOD-CB-001)", "to": "Event Bus (MOD-EB-001)", "message": "emit(CommandCancelled)", "docLine": 1105 },
+        { "order": 8, "from": "Command Bus (MOD-CB-001)", "to": "TUI/Agent", "message": "Result{status=cancelled}", "docLine": 1106 }
+      ],
+      "evidenceIds": ["EV-DD01-0029"]
+    },
+    {
+      "id": "DD01-S6",
+      "title": "6.7 Provider Panic → 隔離",
+      "participants": [
+        { "name": "Command Bus (MOD-CB-001)", "componentId": "DD01-C1" },
+        { "name": "Plugin Provider", "componentId": "DD01-C11" },
+        { "name": "Event Bus (MOD-EB-001)", "componentId": "DD01-C4" }
+      ],
+      "steps": [
+        { "order": 1, "from": "Command Bus (MOD-CB-001)", "to": "Plugin Provider", "message": "provider.execute", "docLine": 1118 },
+        { "order": 2, "from": "Plugin Provider", "to": "Plugin Provider", "message": "panic!", "docLine": 1119 },
+        { "order": 3, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "catch_unwind catches panic", "docLine": 1120 },
+        { "order": 4, "from": "Command Bus (MOD-CB-001)", "to": "Event Bus (MOD-EB-001)", "message": "emit(CommandFailed{code:ERR-CB-005, kind=PROVIDER_PANIC})", "docLine": 1121 },
+        { "order": 5, "from": "Command Bus (MOD-CB-001)", "to": "Command Bus (MOD-CB-001)", "message": "Audit (provider_panic)", "docLine": 1122 },
+        { "order": 6, "from": "Command Bus (MOD-CB-001)", "to": "Caller", "message": "Err(ERR-CB-005)", "docLine": 1123 }
+      ],
+      "evidenceIds": ["EV-DD01-0030"]
+    }
+  ],
+  "stateMachines": [
+    {
+      "id": "DD01-SM1",
+      "name": "Command の実行状態 (§7.1)",
+      "initial": "Received",
+      "states": ["Received", "Validating", "Authenticated", "Routed", "InFlight", "Completed", "Failed", "Cancelled"],
+      "terminalStates": ["Completed", "Failed", "Cancelled"],
+      "transitions": [
+        { "from": "[*]", "to": "Received", "event": "(start)", "guard": "", "docLine": 1152 },
+        { "from": "Received", "to": "Validating", "event": "P-CB-001..003", "guard": "", "docLine": 1153 },
+        { "from": "Validating", "to": "Authenticated", "event": "P-CB-005..006 OK", "guard": "", "docLine": 1154 },
+        { "from": "Authenticated", "to": "Routed", "event": "P-CB-008 OK", "guard": "", "docLine": 1155 },
+        { "from": "Routed", "to": "InFlight", "event": "P-CB-010", "guard": "", "docLine": 1156 },
+        { "from": "InFlight", "to": "Completed", "event": "Provider Ok + P-CB-013", "guard": "", "docLine": 1157 },
+        { "from": "InFlight", "to": "Failed", "event": "Provider Err", "guard": "", "docLine": 1158 },
+        { "from": "InFlight", "to": "Cancelled", "event": "cancel or timeout", "guard": "", "docLine": 1159 },
+        { "from": "Validating", "to": "Failed", "event": "validation_err", "guard": "", "docLine": 1160 },
+        { "from": "Authenticated", "to": "Failed", "event": "permission_denied / budget_exhausted", "guard": "", "docLine": 1161 },
+        { "from": "Routed", "to": "Failed", "event": "no_provider_available", "guard": "", "docLine": 1162 },
+        { "from": "Completed", "to": "[*]", "event": "(end)", "guard": "", "docLine": 1163 },
+        { "from": "Failed", "to": "[*]", "event": "(end)", "guard": "", "docLine": 1164 },
+        { "from": "Cancelled", "to": "[*]", "event": "(end)", "guard": "", "docLine": 1165 }
+      ],
+      "evidenceIds": ["EV-DD01-0031"]
+    },
+    {
+      "id": "DD01-SM2",
+      "name": "Capability Provider の可用性 (§7.2)",
+      "initial": "Available",
+      "states": ["Available", "Degraded", "Unavailable"],
+      "terminalStates": ["[*]"],
+      "transitions": [
+        { "from": "[*]", "to": "Available", "event": "register", "guard": "", "docLine": 1172 },
+        { "from": "Available", "to": "Degraded", "event": "set_availability(Degraded)", "guard": "", "docLine": 1173 },
+        { "from": "Available", "to": "Unavailable", "event": "set_availability(Unavailable) / heartbeat timeout", "guard": "", "docLine": 1174 },
+        { "from": "Degraded", "to": "Available", "event": "recovery", "guard": "", "docLine": 1175 },
+        { "from": "Degraded", "to": "Unavailable", "event": "persistent failure", "guard": "", "docLine": 1176 },
+        { "from": "Unavailable", "to": "Available", "event": "recovery (health check)", "guard": "", "docLine": 1177 },
+        { "from": "Available", "to": "[*]", "event": "unregister", "guard": "", "docLine": 1178 },
+        { "from": "Unavailable", "to": "[*]", "event": "unregister", "guard": "", "docLine": 1179 },
+        { "from": "Degraded", "to": "[*]", "event": "unregister", "guard": "", "docLine": 1180 }
+      ],
+      "evidenceIds": ["EV-DD01-0031", "EV-DD01-0021"]
+    },
+    {
+      "id": "DD01-SM3",
+      "name": "Event の状態 (§7.3)",
+      "initial": "Constructed",
+      "states": ["Constructed", "DurablePersisted", "TransientDelivered", "Distributed", "Failed"],
+      "terminalStates": ["Distributed", "Failed"],
+      "transitions": [
+        { "from": "[*]", "to": "Constructed", "event": "envelope 構築", "guard": "", "docLine": 1187 },
+        { "from": "Constructed", "to": "DurablePersisted", "event": "Durable + DL append OK", "guard": "durability == Durable", "docLine": 1188 },
+        { "from": "Constructed", "to": "TransientDelivered", "event": "Transient", "guard": "durability == Transient", "docLine": 1189 },
+        { "from": "DurablePersisted", "to": "Distributed", "event": "Subscriber 配信", "guard": "", "docLine": 1190 },
+        { "from": "TransientDelivered", "to": "Distributed", "event": "(Subscriber 配信)", "guard": "", "docLine": 1191 },
+        { "from": "Distributed", "to": "[*]", "event": "(end)", "guard": "", "docLine": 1192 },
+        { "from": "Constructed", "to": "Failed", "event": "DL append error", "guard": "Durable only", "docLine": 1193 },
+        { "from": "Failed", "to": "[*]", "event": "(end)", "guard": "", "docLine": 1194 }
+      ],
+      "evidenceIds": ["EV-DD01-0031"]
+    }
+  ],
+  "errorTimeoutRetry": [
+    {
+      "id": "DD01-ER1",
+      "surface": "Command Bus",
+      "errorCode": "ERR-CB-002",
+      "errorKind": "Session not found / expired",
+      "timeoutMs": null,
+      "retry": { "max": 0, "backoff": "No (§8.2 Retry 列) — Recovery: 再認証" },
+      "docLine": 1213,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0005"]
+    },
+    {
+      "id": "DD01-ER2",
+      "surface": "Command Bus",
+      "errorCode": "ERR-CB-003",
+      "errorKind": "Permission denied",
+      "timeoutMs": 20,
+      "retry": { "max": 0, "backoff": "No (§8.2) — Recovery: 権限付与。Permission 検証 タイムアウト既定 20 ms (§3.6.2)" },
+      "docLine": 1214,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0006"]
+    },
+    {
+      "id": "DD01-ER3",
+      "surface": "Command Bus",
+      "errorCode": "ERR-CB-007",
+      "errorKind": "Schema validation failed",
+      "timeoutMs": 50,
+      "retry": { "max": 0, "backoff": "No (§8.2) — Recovery: Caller 修正。Schema 検証 タイムアウト既定 50 ms (§3.6.2)" },
+      "docLine": 1218,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0006"]
+    },
+    {
+      "id": "DD01-ER4",
+      "surface": "Command Bus",
+      "errorCode": "ERR-CB-015",
+      "errorKind": "Timeout",
+      "timeoutMs": 30000,
+      "retry": { "max": null, "backoff": "Yes (§8.2 Recovery: Retry or extend timeout)。Command 全体 既定 30 秒 (IF-CMD-001 既定)、上限 cmd.timeout_ms ≤ 600_000、範囲 100 ~ 600_000" },
+      "docLine": 1226,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0006", "EV-DD01-0007"]
+    },
+    {
+      "id": "DD01-ER5",
+      "surface": "Command Bus (Retry ポリシー §3.6.3)",
+      "errorCode": "(Transient エラー: timeout, unavailable)",
+      "errorKind": "Idempotent (READ_ONLY) Command の自動再試行",
+      "timeoutMs": null,
+      "retry": { "max": 3, "backoff": "Exponential Backoff 100ms→200ms→400ms + Jitter ±20%。条件: Transient エラー (timeout, unavailable) のみ。Non-idempotent Command は再試行しない。Caller 指定 retry パラメータは Caller 責任" },
+      "docLine": 282,
+      "evidenceIds": ["EV-DD01-0006"]
+    },
+    {
+      "id": "DD01-ER6",
+      "surface": "Command Bus",
+      "errorCode": "ERR-CB-005",
+      "errorKind": "Provider execution failed (Provider Panic は kind=PROVIDER_PANIC)",
+      "timeoutMs": null,
+      "retry": { "max": null, "backoff": "Maybe (§8.2) — Recovery: Provider log 確認。Provider Panic は catch_unwind で捕捉し Audit 記録、Kernel 継続 (§3.6.4)" },
+      "docLine": 1216,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0006"]
+    },
+    {
+      "id": "DD01-ER7",
+      "surface": "Command Bus (Event 発行失敗)",
+      "errorCode": "ERR-CB-011",
+      "errorKind": "Event emit failed (non-fatal)",
+      "timeoutMs": null,
+      "retry": { "max": 0, "backoff": "— (§8.2 Retry 列は空欄)。WARN ログ + メトリクス event_emit_failure_total 増加、業務結果は返却する (Kernel 可用性優先, NFR-R-001)" },
+      "docLine": 1222,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0006"]
+    },
+    {
+      "id": "DD01-ER8",
+      "surface": "Command Bus (Idempotency)",
+      "errorCode": "ERR-CB-010",
+      "errorKind": "Duplicate idempotency key in-flight",
+      "timeoutMs": null,
+      "retry": { "max": 0, "backoff": "No (§8.2) — Recovery: 既存 request 完了待ち。IdempotencyStore 保存 TTL は 24h" },
+      "docLine": 1221,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0009"]
+    },
+    {
+      "id": "DD01-ER9",
+      "surface": "Event Bus",
+      "errorCode": "ERR-EB-003",
+      "errorKind": "Durable Log append failed",
+      "timeoutMs": 5000,
+      "retry": { "max": null, "backoff": "Yes (Caller 依存, §8.3) — Recovery: DL 復旧。Durable Log Append タイムアウト既定 5 秒 (§4.6.1)。Append 失敗は Event 全体失敗し Caller (CommandBus) は WARN 扱いで継続" },
+      "docLine": 1235,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0013"]
+    },
+    {
+      "id": "DD01-ER10",
+      "surface": "Capability Registry",
+      "errorCode": "ERR-CR-006",
+      "errorKind": "No provider available",
+      "timeoutMs": null,
+      "retry": { "max": null, "backoff": "Yes (§8.4) — Recovery: Hot Swap / restart。route() が全候補不適で FallbackStrategy 適用後も候補なしの場合。Command Bus 側は ERR-CB-009 を返却し Kernel は継続" },
+      "docLine": 1251,
+      "evidenceIds": ["EV-DD01-0032", "EV-DD01-0020"]
+    }
+  ],
+  "invariants": [
+    { "id": "DD01-INV1", "text": "各 BUS/Registry は独立した非同期タスクではなく、`Arc` 共有 + 内部 `RwLock`/`Mutex` による In-Process コンポーネントとして実装する (AD-001 §2.2 準拠)。プロセス間通信は DD-04 の Adapter 層に委譲する。", "docLine": 90, "evidenceIds": ["EV-DD01-0001"] },
+    { "id": "DD01-INV2", "text": "`event_seq` は Kernel プロセス全体で単調増加を保証する (Atomic)。", "docLine": 675, "evidenceIds": ["EV-DD01-0016"] },
+    { "id": "DD01-INV3", "text": "同一 Subscriber への配信は `envelope.sequence` 昇順を維持する (in-process チャネルの性質上)。", "docLine": 676, "evidenceIds": ["EV-DD01-0016"] },
+    { "id": "DD01-INV4", "text": "複数 Subscriber 間での厳密な同時配信順序はベストエフォート (Durable Log の seq で replay 時に再構築可能)。", "docLine": 677, "evidenceIds": ["EV-DD01-0016"] },
+    { "id": "DD01-INV5", "text": "Durable Log は append-only + seq index により replay 順序を保証する。", "docLine": 678, "evidenceIds": ["EV-DD01-0016"] },
+    { "id": "DD01-INV6", "text": "Validation 順序 (P-CB-001 → P-CB-003 → P-CB-005 → P-CB-006 → P-CB-007 → P-CB-008 → P-CB-009 → P-CB-012) の各段階で失敗時は即時 short-circuit し、後続段階を実行しない。例外は P-CB-011/P-CB-014 の Event 発行失敗 (WARN 継続)。", "docLine": 367, "evidenceIds": ["EV-DD01-0008"] },
+    { "id": "DD01-INV7", "text": "Event の Validation 失敗は Event 単位で完結し、後続 Event には影響しない。", "docLine": 671, "evidenceIds": ["EV-DD01-0010"] },
+    { "id": "DD01-INV8", "text": "CommandBus 自体は Transaction を持たない。Provider が `transaction.begin/patch/commit` を発行する場合のみ DD-02 (MOD-TM-001) の Transaction Manager を使用する。", "docLine": 371, "evidenceIds": ["EV-DD01-0009"] },
+    { "id": "DD01-INV9", "text": "Provider 実行中に外部 API 呼び出しが含まれる場合の Transaction 境界は Provider 責任。", "docLine": 371, "evidenceIds": ["EV-DD01-0009"] },
+    { "id": "DD01-INV10", "text": "inflight 登録は `DashMap` の sharded lock で並行実行を許容する。同一 Session 内での Workspace Mutex 取得は Provider 責務で、Kernel 側は Session 単位の直列化を強制しない (NFR-C-020 の 10 Session 同時実行を満たすため)。", "docLine": 373, "evidenceIds": ["EV-DD01-0009"] },
+    { "id": "DD01-INV11", "text": "`idempotency_key` 指定時、`IdempotencyStore` (in-memory LRU + Disk WAL) に保存し、HIT 時は保存済み結果を返却する (24h TTL)。同一 key で in-flight 中は ERR-CB-010。", "docLine": 377, "evidenceIds": ["EV-DD01-0009"] },
+    { "id": "DD01-INV12", "text": "READ_ONLY Command は暗黙の冪等性を仮定し、key 不要でも Retry 可能。", "docLine": 379, "evidenceIds": ["EV-DD01-0009"] },
+    { "id": "DD01-INV13", "text": "Provider 実装側は `select! { _ = ct.cancelled() => cleanup(), result = provider.run() => ... }` パターンを必須とする (`tokio_util::sync::CancellationToken` 採用)。", "docLine": 262, "evidenceIds": ["EV-DD01-0006"] },
+    { "id": "DD01-INV14", "text": "Hard Cancel (5 秒タイムアウト後) は `JoinHandle::abort()` を実行する。", "docLine": 264, "evidenceIds": ["EV-DD01-0006"] },
+    { "id": "DD01-INV15", "text": "Cleanup 失敗時は Provider に対し ERR-CB-012 を記録し、Kernel は継続する (Plugin Crash 隔離、NFR-R-001 準拠)。", "docLine": 265, "evidenceIds": ["EV-DD01-0006"] },
+    { "id": "DD01-INV16", "text": "EventBus emit 失敗は WARN ログ + メトリクス `event_emit_failure_total` 増加のみとし、業務結果は返却する (Event Bus 障害で Command 自体を失敗させない、Kernel 可用性優先、NFR-R-001)。", "docLine": 291, "evidenceIds": ["EV-DD01-0006"] },
+    { "id": "DD01-INV17", "text": "Provider が `is_available() == false` を返したら次候補へ進み、すべて不可なら ERR-CB-009 を返却する。", "docLine": 292, "evidenceIds": ["EV-DD01-0006"] },
+    { "id": "DD01-INV18", "text": "Subscriber は内部チャネル容量 `buffer_size` を持ち (既定 1024、IF-EVT-001 準拠)、満杯時は `try_send` で失敗を即時判定し drop + WARN とする。**Block しない** (Producer を巻き込まない)。", "docLine": 598, "evidenceIds": ["EV-DD01-0013"] },
+    { "id": "DD01-INV19", "text": "`slow_warn_emitted` フラグで 100 件毎に 1 回 WARN ログを出す (DoS 防止)。", "docLine": 601, "evidenceIds": ["EV-DD01-0013"] },
+    { "id": "DD01-INV20", "text": "Error Code は領域プレフィクス + 連番の形式 (`ERR-CB-XXX`, `ERR-EB-XXX`, `ERR-CR-XXX`)。`retryable` フラグで Client の retry 可能性を明示する。", "docLine": 1203, "evidenceIds": ["EV-DD01-0032"] },
+    { "id": "DD01-INV21", "text": "`details` には内部情報 (path, version, hash) を含めない (SD-001 §7)。外部公開時、message から内部実装情報 (path, version, hash) は除外する。", "docLine": 1205, "evidenceIds": ["EV-DD01-0032"] },
+    { "id": "DD01-INV22", "text": "execute の Preconditions: (1) Kernel が起動済み (2) SessionManager / Registry / EventBus が health (3) cmd.timeout_ms ≤ 600_000。", "docLine": 174, "evidenceIds": ["EV-DD01-0004"] },
+    { "id": "DD01-INV23", "text": "Command 入力: `timeout_ms` は u32、範囲 100 ~ 600_000、Default 30000、`metadata` は size ≤ 4 KB、`idempotency_key` は ≤ 128 chars、`name` は ^[a-z][a-z0-9_.]{0,63}$。", "docLine": 319, "evidenceIds": ["EV-DD01-0007"] },
+    { "id": "DD01-INV24", "text": "Event 入力: `payload` は size ≤ 64 KB。Durable/Transient の判定は `durability ∈ {Transient, Durable}` のみ。", "docLine": 613, "evidenceIds": ["EV-DD01-0014"] },
+    { "id": "DD01-INV25", "text": "Capability 入力: `id` は ^[a-z][a-z0-9_.]{0,63}$、`priority` は i32 で範囲 -1000 ~ 1000、`policy_tag` は ≤ 64 chars。", "docLine": 891, "evidenceIds": ["EV-DD01-0022"] },
+    { "id": "DD01-INV26", "text": "CommandBus / EventBus / CapabilityRegistry はいずれも Kernel 起動時に Singleton として 1 個生成され、Kernel 終了まで生存する。", "docLine": 135, "evidenceIds": ["EV-DD01-0003", "EV-DD01-0010", "EV-DD01-0017"] },
+    { "id": "DD01-INV27", "text": "Trace ID は `UUIDv4` で受信時に付与し、無ければ生成する。Correlation ID は `Command.metadata.correlation_id` (Agent Task 単位) を Log Span に継承する。", "docLine": 395, "evidenceIds": ["EV-DD01-0004"] },
+    { "id": "DD01-INV28", "text": "Durable Event のみ「Durable Log append + Subscriber enqueue」を sequential に実行する。Subscriber 配信失敗は WARN (Reason §4.6)。", "docLine": 515, "evidenceIds": ["EV-DD01-0011"] },
+    { "id": "DD01-INV29", "text": "Hot Swap: 新 provider を `register()` すると同 capability の Priority 順で並ぶ。古い provider は `unregister()` で除去し、Agent 視点では透過である。", "docLine": 882, "evidenceIds": ["EV-DD01-0021"] },
+    { "id": "DD01-INV30", "text": "重複時のポリシー: 同 `(capability_id, provider_id)` 重複は既存エントリ更新 (Hot Reload 用途)、同 `capability_id` で別 `provider_id` は既存リストに追加 (Multi-Provider)、別 Manifest 由来の `provider_id` は Priority 比較し必要なら上書き (要 Plugin 承認)。", "docLine": 930, "evidenceIds": ["EV-DD01-0023"] },
+    { "id": "DD01-INV31", "text": "`capabilities` map は `tokio::sync::RwLock` で保護し、登録・解除は write lock、route は read lock とする。Lock 取得順は必ず `capabilities → provider_index` の順。", "docLine": 936, "evidenceIds": ["EV-DD01-0024"] },
+    { "id": "DD01-INV32", "text": "重い処理 (例: `provider.is_available()` の非同期呼び出し) は lock を取得した状態で await しない。一旦候補リストを clone してから lock を解放し is_available を後で評価する。", "docLine": 939, "evidenceIds": ["EV-DD01-0024"] },
+    { "id": "DD01-INV33", "text": "DD-01 が直接扱う Secret はない。Capability Provider が Secret を使う場合は Secret API を経由し、`std::env::var` を直接呼ばない (SD-001 §6 整合)。", "docLine": 1284, "evidenceIds": ["EV-DD01-0009"] },
+    { "id": "DD01-INV34", "text": "Kernel Config (TOML) の既定値: command_bus.default_timeout_ms = 30000, max_timeout_ms = 600000, schema_cache_size = 1024, inflight_shards = 32【TBD】/ event_bus.subscriber_buffer_size = 1024, slow_subscriber_threshold_ms = 100, durable_log_fsync = \"batch\"【TBD】/ capability_registry.max_providers_per_capability = 16, default_priority = 50。", "docLine": 1264, "evidenceIds": ["EV-DD01-0033"] }
+  ],
+  "diagramsToRender": [
+    { "id": "DD01-DG1", "diagramType": "UML_Class", "title": "MOD-CB-001 Command Bus クラス図 (CommandBus / InflightEntry / CommandResultMapper)", "basedOn": ["DD01-C1", "DD01-C2", "DD01-C3"], "docLine": 126, "evidenceIds": ["EV-DD01-0003"] },
+    { "id": "DD01-DG2", "diagramType": "UML_Class", "title": "MOD-EB-001 Event Bus クラス図 (EventBus / EventEnvelope / Subscriber / EventTypeRegistry)", "basedOn": ["DD01-C4", "DD01-C5", "DD01-C6", "DD01-C7"], "docLine": 456, "evidenceIds": ["EV-DD01-0010"] },
+    { "id": "DD01-DG3", "diagramType": "UML_Class", "title": "MOD-CR-001 Capability Registry クラス図 (CapabilityRegistry / ProviderEntry / RoutingPolicy)", "basedOn": ["DD01-C8", "DD01-C9", "DD01-C10"], "docLine": 736, "evidenceIds": ["EV-DD01-0017"] },
+    { "id": "DD01-DG4", "diagramType": "UML_Component", "title": "Microkernel Core 内部境界と所有権 (Command Bus / Event Bus / Capability Registry / Session Manager)", "basedOn": ["DD01-C1", "DD01-C4", "DD01-C8", "DD01-C14"], "docLine": 78, "evidenceIds": ["EV-DD01-0001"] },
+    { "id": "DD01-DG5", "diagramType": "UML_Sequence", "title": "6.1 正常系 — TUI → Command Bus → Capability → Plugin → Event Bus", "basedOn": ["DD01-C1", "DD01-C8", "DD01-C11", "DD01-C4"], "docLine": 978, "evidenceIds": ["EV-DD01-0025"] },
+    { "id": "DD01-DG6", "diagramType": "UML_Sequence", "title": "6.6 Cancellation (協調キャンセル → cleanup → CommandCancelled)", "basedOn": ["DD01-C1", "DD01-C11", "DD01-C4"], "docLine": 1089, "evidenceIds": ["EV-DD01-0029"] },
+    { "id": "DD01-DG7", "diagramType": "UML_Sequence", "title": "6.7 Provider Panic → 隔離 (catch_unwind → ERR-CB-005)", "basedOn": ["DD01-C1", "DD01-C11", "DD01-C4"], "docLine": 1109, "evidenceIds": ["EV-DD01-0030"] },
+    { "id": "DD01-DG8", "diagramType": "UML_State", "title": "Command の実行状態 (§7.1)", "basedOn": ["DD01-C1", "DD01-C2"], "docLine": 1148, "evidenceIds": ["EV-DD01-0031"] },
+    { "id": "DD01-DG9", "diagramType": "UML_State", "title": "Capability Provider の可用性 (§7.2)", "basedOn": ["DD01-C8", "DD01-C9"], "docLine": 1168, "evidenceIds": ["EV-DD01-0031"] },
+    { "id": "DD01-DG10", "diagramType": "UML_State", "title": "Event の状態 (§7.3)", "basedOn": ["DD01-C4", "DD01-C5"], "docLine": 1183, "evidenceIds": ["EV-DD01-0031"] },
+    { "id": "DD01-DG11", "diagramType": "UML_Activity", "title": "Command 実行パイプライン P-CB-001 〜 P-CB-016", "basedOn": ["DD01-C1"], "docLine": 217, "evidenceIds": ["EV-DD01-0005"] },
+    { "id": "DD01-DG12", "diagramType": "UML_Activity", "title": "Event 発行フロー P-EB-001 〜 P-EB-008 / Capability route フロー P-CR-101 〜 P-CR-105", "basedOn": ["DD01-C4", "DD01-C8"], "docLine": 550, "evidenceIds": ["EV-DD01-0012", "EV-DD01-0019"] }
+  ],
+  "evidence": [
+    { "id": "EV-DD01-0001", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§2.1 Kernel 起動時の依存関係 flowchart と §2.2 所有権と可視性表 (capabilities/event_seq/subscribers/durable_log/command_id_seq/inflight の共有方式と排他)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 74, "endLine": 101 },
+    { "id": "EV-DD01-0002", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.1 MOD-CB-001 モジュール属性表 (責務 (a)〜(h)、入力/出力、依存、状態、Error ERR-CB-001〜099) および §1.3 用語表の Provider = `Box<dyn CommandProvider>` 定義", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 107, "endLine": 124 },
+    { "id": "EV-DD01-0003", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.2 Class/Component 設計 — CLS-CB-001 CommandBus (Field/State: command_id_seq, inflight, schema_index) / CLS-CB-002 InflightEntry / CLS-CB-003 CommandResultMapper", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 126, "endLine": 160 },
+    { "id": "EV-DD01-0004", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.3 Core Method 設計 — M-CB-001 execute (Preconditions/Postconditions/Error/Side Effect)、M-CB-002 cancel (5 秒 watchdog)、M-CB-003 discover", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 162, "endLine": 213 },
+    { "id": "EV-DD01-0005", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.4 処理フロー P-CB-001 〜 P-CB-016 (受信・逆シリアライズ / Trace / Schema 検証 / Idempotency / Session 解決 / Permission / Budget / Capability 解決 / Timeout セットアップ / Inflight 登録 / CommandStarted / Provider 実行 / Result マッピング / CommandCompleted / Cleanup / 返却)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 215, "endLine": 234 },
+    { "id": "EV-DD01-0006", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.6 取消・タイムアウト・故障回復 — 3.6.1 Cancellation (CancellationToken, Hard Cancel 5 秒), 3.6.2 Timeout 表 (Command 全体 30 秒 / Schema 50 ms / Permission 20 ms), 3.6.3 Retry 表, 3.6.4 故障回復 (catch_unwind, EventBus emit 失敗, Registry 不整合)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 258, "endLine": 292 },
+    { "id": "EV-DD01-0007", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.8 入力設計 (Command) — 11 フィールドの型/必須/範囲/Default/Validation/Error 列 (timeout_ms 100~600_000 default 30000, metadata ≤ 4 KB, name regex)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 308, "endLine": 322 },
+    { "id": "EV-DD01-0008", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.10 Validation 順序 — 8 段階の順序表と short-circuit ルール (Event 発行失敗のみ WARN 継続)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 354, "endLine": 367 },
+    { "id": "EV-DD01-0009", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§3.11 Transaction / 排他 / Idempotency — Transaction 境界は Provider 責任、DashMap sharded lock、Session 単位直列化なし、IdempotencyStore (in-memory LRU + Disk WAL, TTL 24h)、Secret は Secret API 経由 (SD-001 §6)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 369, "endLine": 379 },
+    { "id": "EV-DD01-0010", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.2 Class/Component 設計 — CLS-EB-001 EventBus (event_seq, subscribers, filter_index, slow_subscriber_threshold_ms) / CLS-EB-002 EventEnvelope / CLS-EB-003 Subscriber / CLS-EB-004 EventTypeRegistry", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 456, "endLine": 496 },
+    { "id": "EV-DD01-0011", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.3 Core Method 設計 — M-EB-001 emit (Preconditions: event_type が EventTypeRegistry に登録済み、Transaction: Durable Log append + Subscriber enqueue を sequential)、M-EB-002 subscribe、M-EB-003 replay", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 498, "endLine": 546 },
+    { "id": "EV-DD01-0012", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.4 処理フロー P-EB-001 〜 P-EB-008 (Type 解決 / Envelope 構築 event_seq.fetch_add(1) / Durability 判定 / Durable Log Append / Subscriber 検索 filter_index / 配信 try_send / Metrics / 返却)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 548, "endLine": 559 },
+    { "id": "EV-DD01-0013", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.6 故障回復・Backpressure・タイムアウト — 4.6.1 タイムアウト表 (Durable Log Append 5 秒, Subscriber.send 100 ms, replay 10 秒), 4.6.2 Backpressure 方針 (buffer_size 1024, try_send, Block しない, 100 件毎に 1 回 WARN), 4.6.3 Durable Log 障害 (seq 連番 retry queue は【TBD】)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 586, "endLine": 606 },
+    { "id": "EV-DD01-0014", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.7 入力設計 (Event) — event_type / payload (≤ 64 KB) / workspace_id / session_id / execution_id / actor / correlation_id / durability の型・範囲・Validation・Error 列", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 608, "endLine": 619 },
+    { "id": "EV-DD01-0015", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.8 出力設計 (EventEnvelope) の JSON 例 と 標準 Event 集合 16 種 (WorkspaceOpened/FileOpened/FileSaved/BufferChanged/TransactionStarted/TransactionCommitted/TransactionRolledBack = Durable、CommandStarted/CommandCompleted/CommandFailed/CommandCancelled/PluginLoaded/PluginActivated/PluginUnloaded/DiagnosticEmitted/CursorMoved の Durability 別表)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 621, "endLine": 660 },
+    { "id": "EV-DD01-0016", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§4.10 順序保証 — event_seq プロセス全体単調増加 / 同一 Subscriber の sequence 昇順 / 複数 Subscriber 間はベストエフォート / Durable Log は append-only + seq index", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 673, "endLine": 678 },
+    { "id": "EV-DD01-0017", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.2 Class/Component 設計 — CLS-CR-001 CapabilityRegistry (capabilities RwLock, provider_index DashMap) / CLS-CR-002 ProviderEntry / CLS-CR-003 RoutingPolicy (fallback_strategy: NextPriority | FailFast | LoadBalance)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 736, "endLine": 766 },
+    { "id": "EV-DD01-0018", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.3 Core Method 設計 — M-CR-001 register / M-CR-002 route / M-CR-003 set_availability / M-CR-004 list の Input/Output/Preconditions/Processing/Error 定義", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 768, "endLine": 831 },
+    { "id": "EV-DD01-0019", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.4 処理フロー — register フロー P-CR-001 〜 P-CR-007 (Event `CapabilityRegistered` Durable 発行) と route フロー P-CR-101 〜 P-CR-105", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 833, "endLine": 855 },
+    { "id": "EV-DD01-0020", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.5 分岐条件 — route の疑似コード (availability → permission 包含 → policy_tag → is_available() の 4 段階 CONTINUE と、LoadBalance 時の round_robin_pick、無候補時 Err(NoProviderAvailable) = ERR-CR-006)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 857, "endLine": 878 },
+    { "id": "EV-DD01-0021", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.6 Hot Swap・可用性管理 — Hot Swap (FR-004-03) の透明性、Plugin Manager による LOADED→ACTIVE/SUSPENDED/FAILED 遷移時の set_availability、Worker Health Watchdog の heartbeat 検知、Graceful Degradation (ERR-CB-009 + Kernel 継続)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 880, "endLine": 885 },
+    { "id": "EV-DD01-0022", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.7 入力設計 (Capability) — id regex / version semver / provider non-null / permissions / priority -1000~1000 / availability enum / policy_tag ≤ 64 chars の各列", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 887, "endLine": 897 },
+    { "id": "EV-DD01-0023", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.9 Validation 順序 と 重複時のポリシー (同 (capability_id, provider_id) は既存エントリ更新 / 別 provider_id は追加 / 別 Manifest 由来は Priority 比較で必要なら上書き)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 918, "endLine": 932 },
+    { "id": "EV-DD01-0024", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§5.10 排他制御 — capabilities は tokio::sync::RwLock、登録/解除は write lock・route は read lock、lock 取得順 capabilities → provider_index、重い処理は lock 保持中に await しない", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 934, "endLine": 939 },
+    { "id": "EV-DD01-0025", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§6.1 統合 Sequence Diagram 正常系 (mermaid sequenceDiagram, 10 participants, 20 メッセージ: TUI→Adapter→CB→SM/PC→CR→Provider→EB→DL/AL)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 978, "endLine": 1014 },
+    { "id": "EV-DD01-0026", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§6.2 Sequence Diagram Validation 失敗 (Schema) — P-CB-001 Deserialize Ok → P-CB-003 Schema validate → Audit Log (validation_failed) → Err(ERR-CB-07) → HTTP 400 INVALID_ARGUMENT", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1016, "endLine": 1033 },
+    { "id": "EV-DD01-0027", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§6.3 Sequence Diagram Authorization 失敗 — check_permission → Err(MissingPermission(workspace_write)) → emit(CommandFailed{code:ERR-CB-003}) → Audit (denied) → HTTP 403 PERMISSION_DENIED", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1035, "endLine": 1057 },
+    { "id": "EV-DD01-0028", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§6.5 Sequence Diagram 全 Provider Unavailable (Hot Swap 中) — route → P-CR-102..103 → Err(NoProviderAvailable) → emit(CapabilityUnavailable{name}) → Err(ERR-CB-009)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1073, "endLine": 1087 },
+    { "id": "EV-DD01-0029", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§6.6 Sequence Diagram Cancellation — cancel(command_id) → cancel_token.cancel() → cleanup() → Err(Cancelled) → emit(CommandCancelled) → Result{status=cancelled}", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1089, "endLine": 1107 },
+    { "id": "EV-DD01-0030", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§6.7 Sequence Diagram Provider Panic → 隔離 — panic! → catch_unwind catches panic → emit(CommandFailed{code:ERR-CB-005, kind=PROVIDER_PANIC}) → Audit (provider_panic) → Err(ERR-CB-005) / Kernel は継続 (NFR-R-001)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1109, "endLine": 1125 },
+    { "id": "EV-DD01-0031", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§7.1/§7.2/§7.3 状態遷移設計 — Command 実行状態 (Received→Validating→Authenticated→Routed→InFlight→{Completed|Failed|Cancelled})、Provider 可用性 (Available/Degraded/Unavailable)、Event 状態 (Constructed→DurablePersisted|TransientDelivered→Distributed, Constructed→Failed)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1146, "endLine": 1195 },
+    { "id": "EV-DD01-0032", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§8 Error 設計 — 8.1 共通ポリシー (領域プレフィクス + 連番, retryable, details に内部情報禁止) と 8.2/8.3/8.4 のエラー体系表 (ERR-CB-001〜016 / ERR-EB-001〜008 / ERR-CR-001〜010 の Condition・HTTP・Retry・Log Level・Recovery)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1199, "endLine": 1255 },
+    { "id": "EV-DD01-0033", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§13.1 DD → BD → REQ Traceability の「実装オブジェクト」列 — kernel_core::command::CommandBus, kernel_core::event::EventBus, kernel_core::capability::CapabilityRegistry, thiserror enum (エラーシステム)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1419, "endLine": 1440 },
+    { "id": "EV-DD01-0034", "kind": "Document", "status": "Designed", "sourceRevisionId": "REV-IDE1", "summary": "§14 未決事項一覧 (TBD) — TBD-DD01-001 〜 TBD-DD01-010 (inflight シャード数, Backoff jitter/最大 retry, DL 障害時 seq 連番, fsync 戦略, max_execution_ms, schema cache 容量, subscriber 切断通知, load balancing 詳細, Audit hash chain, set_availability 連携)", "path": "DD-01_Microkernel_Core詳細設計書.md", "startLine": 1467, "endLine": 1480 },
+    { "id": "EV-DD01-0035", "kind": "Source", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "crates/ide-kernel-core/src/lib.rs は placeholder skeleton。公開 API は `version()` と `kernel_status()` (=\"placeholder\") の 2 関数のみ。CommandBus / EventBus / CapabilityRegistry に対応する型・trait・メソッドは 0 件。doc comment 自身が「完整 microkernel / session / transaction buffer / search / plugin loader / TUI / txn 実装待后续 brief (per DD-01 ... 详细设计书)」と明記。", "path": "crates/ide-kernel-core/src/lib.rs", "startLine": 1, "endLine": 43 },
+    { "id": "EV-DD01-0036", "kind": "Source", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "crates/ide-kernel-core/Cargo.toml は description に「placeholder ... 完整实现待 DD-01」と明記し、[dependencies] は空。コメントのみで tokio (异步 runtime) / rusqlite (transaction buffer storage) / serde + serde_json (session state serialization) を「待 DD-01 brief」として列挙 — DD-01 が要求する非同期ランタイム依存が未導入。", "path": "crates/ide-kernel-core/Cargo.toml", "startLine": 1, "endLine": 17 },
+    { "id": "EV-DD01-0037", "kind": "Source", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "crates/ide-shell-protocol/src/lib.rs の `pub enum Event` — BufferOpened / BufferChanged / BufferClosed / ModeChanged / ActiveBufferChanged / ProviderRegistered / ProviderUnregistered の 7 種。DD-01 の EventEnvelope (event_id / sequence / trace_id / durability) とは構造が異なり、Durability 概念・sequence 連番・EventTypeRegistry を持たない (参考対照)。", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 421, "endLine": 449 },
+    { "id": "EV-DD01-0038", "kind": "Source", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "crates/ide-shell-protocol/src/lib.rs の `pub trait AiProvider: Send + Sync` — name() / complete() / edit() / chat()。DD-01 の CommandProvider (is_available() / execute(command) → ProviderOutput) とは契約が異なる。Provider trait 実装として workspace 内で唯一の実装済みトレイト (参考対照)。", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 310, "endLine": 316 },
+    { "id": "EV-DD01-0039", "kind": "Source", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "crates/ide-kernel/src/session.rs の `pub struct Session` — docs: HashMap<u64, Document> / order / active / next_id のタブセッション。DD-01 が前提とする permissions / resource_budget / status(EXPIRED) を持たないため SessionManager (DD-02) の代替にはならない (参考対照)。", "path": "crates/ide-kernel/src/session.rs", "startLine": 23, "endLine": 45 },
+    { "id": "EV-DD01-0040", "kind": "Source", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "crates/ide-shell-protocol/src/lib.rs の `pub struct Kernel` / `KernelInner` — buffers: RwLock<HashMap<u32, Buffer>>, providers: RwLock<HashMap<String, Arc<dyn AiProvider>>>, subscribers: RwLock<Vec<UnboundedSender<Event>>>。subscribers は filter_index / buffer_size / dropped_count を持たず Unbounded チャネルで Backpressure 設計 (drop + WARN) を含まない (参考対照)。", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 406, "endLine": 419 }
+  ],
+  "gaps": [
+    { "id": "GAP-DD01-1", "type": "GAP_SOURCE_DOCUMENT", "summary": "DD-01 の中核 3 機構 (CommandBus / EventBus / CapabilityRegistry) に対応する Rust 実装が workspace に存在しない。crates/ide-kernel-core は src/lib.rs 66 行の placeholder (version() / kernel_status() のみ、ランタイム依存 0)。§13.1 の「実装オブジェクト」列が示す kernel_core::command::CommandBus / kernel_core::event::EventBus / kernel_core::capability::CapabilityRegistry はいずれも不在。", "relatedEvidence": ["EV-DD01-0033", "EV-DD01-0035", "EV-DD01-0036"] },
+    { "id": "GAP-DD01-2", "type": "GAP_SOURCE_DOCUMENT", "summary": "`Box<dyn CommandProvider>` / `Arc<dyn CommandProvider>` (CLS-CB-001 依存, Provider 実行の核) の trait 定義が workspace に存在しない。最も近いのは ide_shell_protocol::AiProvider (complete/edit/chat) だが Command / CommandResult 契約ではなく is_available() / execute(command) を持たない。", "relatedEvidence": ["EV-DD01-0002", "EV-DD01-0038"] },
+    { "id": "GAP-DD01-3", "type": "GAP_SOURCE_DOCUMENT", "summary": "`Arc<dyn DurableLog>` trait および Durable Log の永続化実装が workspace に存在しない。Event Bus の Durable 経路 (P-EB-004 append, replay の seq 範囲取得, append-only + seq index 順序保証) は実装対象が未確定。", "relatedEvidence": ["EV-DD01-0012", "EV-DD01-0016"] },
+    { "id": "GAP-DD01-4", "type": "GAP_SOURCE_DOCUMENT", "summary": "`Box<dyn EventSink>` trait と Subscriber 機構 (filter_index / buffer_size / dropped_count / slow_warn_emitted) が未実装。ide-shell-protocol は UnboundedSender<Event> の simple fan-out で、filter_index・buffer_size・Backpressure (drop + WARN)・slow warn 抑制のいずれも持たない。", "relatedEvidence": ["EV-DD01-0010", "EV-DD01-0013", "EV-DD01-0040"] },
+    { "id": "GAP-DD01-5", "type": "GAP_SOURCE_DOCUMENT", "summary": "SessionManager (DD-02 MOD-SM-001) の実装が workspace に存在しない。最も近い ide_kernel::Session はタブ/ドキュメント管理のみで permissions / resource_budget / status=EXPIRED を欠き、P-CB-005 (Session 解決) / P-CB-006 (権限判定) / P-CB-007 (予算判定) / 分岐表の session.status == \"EXPIRED\" の前提を満たさない。", "relatedEvidence": ["EV-DD01-0005", "EV-DD01-0039"] },
+    { "id": "GAP-DD01-6", "type": "GAP_SOURCE_DOCUMENT", "summary": "PermissionChecker (SD-001 §2.3 check_permission / §5 check_network_access) と AuditLog (SD-001 §7 Hash chain) の実装が workspace に存在しない。", "relatedEvidence": ["EV-DD01-0005", "EV-DD01-0025"] },
+    { "id": "GAP-DD01-7", "type": "GAP_SOURCE_DOCUMENT", "summary": "§13.1 が「thiserror enum」とする ERR-CB-001〜016 / ERR-EB-001〜008 / ERR-CR-001〜010 の error enum が未実装。最も近いのは ide_shell_protocol::ProtocolError (Io / Json / InvalidRequest) で、ERR-* コード体系・HTTP 対応・retryable フラグを欠く。", "relatedEvidence": ["EV-DD01-0032", "EV-DD01-0033"] },
+    { "id": "GAP-DD01-8", "type": "GAP_SOURCE_DOCUMENT", "summary": "IdempotencyStore (in-memory LRU + Disk WAL, TTL 24h) と SchemaIndex / JSON Schema 検証 (P-CB-003, 50 ms) が未実装。§3.13 は「Schema cache 容量」「IdempotencyStore の LRU 容量」を性能検証必要項目として未確定のまま。", "relatedEvidence": ["EV-DD01-0009", "EV-DD01-0005"] },
+    { "id": "GAP-DD01-9", "type": "GAP_SOURCE_DOCUMENT", "summary": "Kernel 起動時に CommandBus / EventBus / CapabilityRegistry の 3 Singleton を生成する wiring (Arc 注入) が存在しない。§2.1 の依存グラフ (Plugin Manager → register_capability, Session Manager → session lookup) に対応する起動コードなし。", "relatedEvidence": ["EV-DD01-0001", "EV-DD01-0035"] },
+    { "id": "GAP-DD01-10", "type": "GAP_SOURCE_DOCUMENT", "summary": "文書内部の不整合: §3.6.2 Timeout 表は Command 全体タイムアウトを「ERR-CB-005 (TIMEOUT) 返却」とするが、§8.2 は Timeout を ERR-CB-015 として定義し §12.1 T-CB-010 も ERR-CB-015 を期待値とする。ERR-CB-005 は §8.2 で「Provider execution failed」であり二重定義になっている。", "relatedEvidence": ["EV-DD01-0006", "EV-DD01-0032"] },
+    { "id": "GAP-DD01-11", "type": "GAP_SOURCE_DOCUMENT", "summary": "文書内部の不整合: Command 完了系 Event の Durability が §3.4 P-CB-014 で「Durable」、§4.8 標準 Event 集合表と §6.1 シーケンスで「Transient」と記載されている (CommandStarted は両者とも Transient)。", "relatedEvidence": ["EV-DD01-0015", "EV-DD01-0025"] },
+    { "id": "GAP-DD01-12", "type": "GAP_SOURCE_DOCUMENT", "summary": "上位設計の不整合が未解決のまま: QA-DD01-001 (Permission 判定を Command Bus 入口のみか Registry route 内も行うか)、QA-DD01-002 (Event Stream (SSE/WebSocket) を DD-01 が持つべきか DD-04 Adapter 層か)、QA-DD01-003 (replay の容量上限と 90 日 DL 容量/ローテーション)、QA-DD01-004 (Session 単位のリソース隔離上限値)。", "relatedEvidence": ["EV-DD01-0034"] },
+    { "id": "GAP-DD01-13", "type": "GAP_SOURCE_DOCUMENT", "summary": "文書が前提とする DD-03 (Plugin Manager) の詳細設計書がリポジトリに存在しない (ルートには DD-01 / DD-02 / DD-04 のみ)。DD-01 は DD-03 を Plugin Manager / Manifest 整合確認 (P-CR-002) / set_availability 呼び出し元 (§5.6, TBD-DD01-010) の根拠として参照しているが参照先が存在しない。", "relatedEvidence": ["EV-DD01-0021", "EV-DD01-0034"] },
+    { "id": "GAP-DD01-14", "type": "ATLAS_FAIL", "summary": "DD-01 の全 3 機構が未実装のため、Atlas は DD-01 について Implemented Been のコード参照付きシーケンス/状態機械を生成できない。生成可能なのは Designed ベースの設計図 (class / sequence / state / activity) に限られる。実装 status の凡例表示が必要。", "relatedEvidence": ["EV-DD01-0035", "EV-DD01-0033"] },
+    { "id": "GAP-DD01-15", "type": "GAP_SOURCE_DOCUMENT", "summary": "文書内の typo: §6.2 シーケンス (line 1031) はエラーを `Err(ERR-CB-07)` と表記しているが、§3.4 P-CB-003 / §8.2 / §12.1 T-CB-002・T-CB-003 の正準コードは `ERR-CB-007`。本 facts は原文表記のまま引用しており、正準コードとの差異を明記する。", "relatedEvidence": ["EV-DD01-0026", "EV-DD01-0032"] }
+  ],
+  "unknowns": [
+    "evidence の sourceRevisionId は仕様書の指定どおり固定トークン \"REV-IDE1\" を使用しており、実際の git コミット (HEAD=76c4e8f, branch=dev) に置換していない。",
+    "上位文档 (AD-001 基本設計書, REQ-001 要件定義書, NFR-001, IFD-001 接口设计书, SD-001 安全性設計書) と DD-02 / DD-04 は本タスクの読み取り対象外のため未読。AD-001 §2.2/2.3/2.4 の責務記述、SD-001 §2.3/§5/§7 の仕様は本 DD の記述のみを根拠とした。",
+    "文書が参照する DD-03 (Plugin Manager 詳細設計書) はリポジトリに存在しない (GAP-DD01-13)。",
+    "SessionManager / PermissionChecker / AuditLog / DurableLog / Adapter は DD-02 / DD-03 / DD-04 に属する外部コンポーネントとして扱い、qualifiedName は kernel_core 内の配置を仮定した推論である (§13.1 に実装オブジェクト列の記載は CommandBus / EventBus / CapabilityRegistry と thiserror enum のみ)。",
+    "CommandProvider / DurableLog / EventSink の正確なモジュールパスは文書に定義されていない (kernel_core::provider / kernel_core::storage / kernel_core::event は推論)。",
+    "§3.5 分岐表が参照する session.status == \"EXPIRED\" の状態遷移は DD-01 内に定義がなく、DD-02 前提。本 DD からは決定不能。",
+    "§3.6.2 の【TBD】「Provider 個別タイムアウトは Provider Manifest の max_execution_ms で下限のみ課す」の最終数値は未確定 (TBD-DD01-005)。",
+    "§3.6.3 / TBD-DD01-002: Backoff のジッタ計算式と最大リトライ回数の最終値は Performance Test で確定予定。文書記載値 (3 回, 100ms→200ms→400ms, Jitter ±20%) は暫定。",
+    "§3.13 / TBD-DD01-001: inflight map の DashMap シャード数は未確定 (推奨 available_parallelism * 4、config では inflight_shards = 32 と併記)。",
+    "§3.13 / TBD-DD01-006: Schema cache 容量上限と eviction 戦略、IdempotencyStore の LRU 容量は未確定。",
+    "§4.6.3 / TBD-DD01-003: Durable Log 障害復旧時の seq 連番保証戦略 (retry queue) は【TBD】。MVP では失敗 Event の Audit 記録のみ。",
+    "§4.6.1 / TBD-DD01-004: Durable Log の fsync 戦略 (batch vs always) は未確定。config は \"batch\" を既定として併記。",
+    "TBD-DD01-007: Subscriber 切断時の自動 EventBus 通知 Event の仕様は未定義。",
+    "TBD-DD01-008: Provider 検索結果の load balancing 戦略は現状 Round-Robin のみの詳細が未確定。",
+    "TBD-DD01-009: Audit Log への hash chain 実装詳細が未確定 (SD-001 §7 と整合待ち)。",
+    "§6.4 (Capability Not Found) と §6.8 (Transaction Commit 時の Event 連鎖) の Sequence は 6 件上限のため sequences には含めず、evidence (EV-DD01-0025 等) と §6 の章情報からのみ参照した。",
+    "§12 のテスト観点 T-CB-001〜019 / T-EB-001〜015 / T-CR-001〜016 / T-INT-001〜005 は設計文書上の導出であり、実装对应的 test は workspace 内に存在しない (未検証)。"
+  ]
+}
