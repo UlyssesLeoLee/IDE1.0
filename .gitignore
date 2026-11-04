@@ -51,6 +51,7 @@ tests/uat/fixtures/sample-project/uat-cmd-*.txt
 
 # 安装包不入源码库: 只在发布时按版本构建, 作为 Release 资产单独上传 (见 docs/05_实装与运维/RELEASE.md)
 /dist/
+/dist-fast/
 *.msi
 *.dmg
 *.AppImage

@@ -49,6 +49,48 @@ jobs:
           path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
           retention-days: 30
 
+  fast-msi:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - name: Build Fast MSI and Portable EXE
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File ide-fast/packaging/build-msi.ps1
+
+      - name: Upload unsigned Fast artifacts
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ide-fast-unsigned
+          path: |
+            dist-fast/*.msi
+            dist-fast/*.exe
+            dist-fast/SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Attach Fast artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID == ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" dist-fast/*.msi dist-fast/*.exe dist-fast/SHA256SUMS.txt --clobber
+
   sign:
     # 只有配置了 SignPath (Variables: SIGNPATH_ORGANIZATION_ID; Secrets: SIGNPATH_API_TOKEN) 才执行
     if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
