@@ -16,12 +16,18 @@ const TIP_MAX_CHARS: usize = 120;
 
 const BODY: &str = include_str!("help.txt");
 
+/// 正文, 换行统一成 LF (Windows 上 git 的 autocrlf 会把 help.txt 检出成 CRLF, include_str! 原样带进来)
+fn body() -> String {
+    BODY.replace("\r\n", "\n")
+}
+
 /// 命令一览: 每个命令一行 `名称 <TAB> 键 <TAB> [id] <TAB> 分类`; 没有键的写 `-`
 pub fn command_lines() -> Vec<String> {
     keymap::entries()
         .iter()
         .map(|e| {
-            let k = keymap::display(&e.id).filter(|k| !k.is_empty()).unwrap_or_else(|| "-".into());
+            let k = keymap::display_entry(e);
+            let k = if k.is_empty() { "-".to_string() } else { k };
             format!("{}\t{}\t[{}]\t{}", e.label.text(), k, e.id, e.cat.text())
         })
         .collect()
@@ -29,7 +35,7 @@ pub fn command_lines() -> Vec<String> {
 
 /// 整本手册
 pub fn manual() -> String {
-    let mut out = String::from(BODY.trim_end_matches('\n'));
+    let mut out = body().trim_end_matches('\n').to_string();
     out.push_str("\n\n[11] 命令一览\n-------------\n名称\t键\t[命令 id]\t分类\n");
     for l in command_lines() {
         out.push_str(&l);
@@ -38,36 +44,25 @@ pub fn manual() -> String {
     out
 }
 
-/// 手册里每个非空行一行 (显示文字去掉首尾空白, 右侧灰字写 `L行号`, 行号从 1 数)
+/// 手册里每个非空行一行: 显示文字去掉首尾空白, 右侧灰字写 `L行号`, 值 (`Row::value`) 是行号 (从 1 数)
 pub fn rows(manual: &str) -> Vec<Row> {
     manual
         .lines()
         .enumerate()
         .filter(|(_, l)| !l.trim().is_empty())
-        .map(|(i, l)| Row::new(l.trim().replace('\t', "  "), format!("L{}", i + 1)))
+        .map(|(i, l)| Row::new(l.trim().replace('\t', "  "), format!("L{}", i + 1)).with_value((i + 1).to_string()))
         .collect()
 }
 
-/// `rows()` 里右侧灰字的行号 → 手册里的行号 (从 1 数)
-pub fn line_of(row: &Row) -> Option<usize> {
-    row.detail.strip_prefix('L')?.parse().ok().filter(|&n| n > 0)
-}
-
-fn is_word(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-/// 光标处的单词 (字母 / 数字 / 下划线, 含中日文字); 光标在单词末尾也算; 没有 = 空串
+/// 光标处的单词, 按 Sakura 的词模型 (`editcore::word::word_run`: 漢字 / ひらがな / カタカナ / 英数 各自成词);
+/// 光标在单词末尾也算; 空白和记号不是词; 没有 = 空串
 pub fn word_at(line: &str, col: usize) -> String {
+    use editcore::word::{char_kind, word_run, CharKind};
     let cs: Vec<char> = line.chars().collect();
     let col = col.min(cs.len());
-    let (mut a, mut b) = (col, col);
-    while a > 0 && is_word(cs[a - 1]) {
-        a -= 1;
-    }
-    while b < cs.len() && is_word(cs[b]) {
-        b += 1;
-    }
+    let wordy = |i: usize| cs.get(i).is_some_and(|&c| !matches!(char_kind(c), CharKind::Space | CharKind::ZenSpace | CharKind::Kigo));
+    let at = if wordy(col) { col } else if col > 0 && wordy(col - 1) { col - 1 } else { return String::new() };
+    let (a, b) = word_run(&cs, at);
     cs[a..b].iter().collect()
 }
 
@@ -95,7 +90,7 @@ pub fn auto_tip(manual: &str, word: &str) -> Option<String> {
 
 /// 状态栏自动提示用: 先查正文, 正文里没有再查命令一览 (命令一览要现场生成, 比较贵, 能不生成就不生成)
 pub fn tip_for(word: &str) -> Option<String> {
-    auto_tip(BODY, word).or_else(|| auto_tip(&command_lines().join("\n"), word))
+    auto_tip(&body(), word).or_else(|| auto_tip(&command_lines().join("\n"), word))
 }
 
 #[cfg(test)]
@@ -117,10 +112,8 @@ mod tests {
     fn rows_skip_blank_lines_and_carry_the_line_number() {
         let rs = rows("甲\n\n  乙\t丙  \n");
         assert_eq!(rs.len(), 2);
-        assert_eq!((rs[0].label.as_str(), line_of(&rs[0])), ("甲", Some(1)));
-        assert_eq!((rs[1].label.as_str(), line_of(&rs[1])), ("乙  丙", Some(3)), "空行占行号, TAB 变两个空格");
-        assert_eq!(line_of(&Row::new("x", "")), None);
-        assert_eq!(line_of(&Row::new("x", "L0")), None, "行号从 1 数");
+        assert_eq!((rs[0].label.as_str(), rs[0].value.as_str()), ("甲", "1"));
+        assert_eq!((rs[1].label.as_str(), rs[1].value.as_str(), rs[1].detail.as_str()), ("乙  丙", "3", "L3"), "空行占行号, TAB 变两个空格");
     }
 
     #[test]
@@ -128,7 +121,7 @@ mod tests {
         let m = manual();
         let lines: Vec<&str> = m.lines().collect();
         for r in rows(&m) {
-            let n = line_of(&r).expect("每一行都有行号");
+            let n: usize = r.value.parse().expect("每一行的值都是行号");
             assert_eq!(lines[n - 1].trim().replace('\t', "  "), r.label);
         }
     }
@@ -142,6 +135,14 @@ mod tests {
         assert_eq!(word_at("再変換 mode", 1), "再変換");
         assert_eq!(word_at("abc", 99), "abc", "列号越界不 panic");
         assert_eq!(word_at("", 0), "");
+        assert_eq!(word_at("これは漢字です", 4), "漢字", "Sakura 的词: 漢字和ひらがな分开");
+        assert_eq!(word_at("x = (y)", 4), "", "记号上不算词");
+    }
+
+    #[test]
+    fn crlf_in_the_prose_is_normalized() {
+        assert!(!manual().contains('\r'));
+        assert!(!body().contains('\r'));
     }
 
     #[test]

@@ -42,11 +42,20 @@ pub struct Row {
     pub label: String,
     /// 右侧的灰字 (路径 / 来源 / 键)
     pub detail: String,
+    /// 选中后真正要用的值 (标签 id / 路径 / 手册行号…), 默认就是 `label`。
+    /// App 按它找目标, 不按行号回头去查当前的列表 —— 列表开着期间标签 / 最近文件都可能变
+    pub value: String,
 }
 
 impl Row {
     pub fn new(label: impl Into<String>, detail: impl Into<String>) -> Self {
-        Row { label: label.into(), detail: detail.into() }
+        let label = label.into();
+        Row { value: label.clone(), label, detail: detail.into() }
+    }
+
+    pub fn with_value(mut self, v: impl Into<String>) -> Self {
+        self.value = v.into();
+        self
     }
 }
 
@@ -79,6 +88,8 @@ pub struct Pick {
     pub kind: Kind,
     pub title: String,
     pub mode: Match,
+    /// 这个列表是替哪个文档开的 (字符集 / 插入路径): 选中时作用在它上面, 不是选中那一刻的活动标签
+    pub target: Option<u64>,
     rows: Vec<Row>,
     query: String,
     sel: usize,
@@ -98,7 +109,12 @@ pub enum Outcome {
 
 impl Pick {
     pub fn new(kind: Kind, title: impl Into<String>, mode: Match, rows: Vec<Row>) -> Self {
-        Pick { kind, title: title.into(), mode, rows, query: String::new(), sel: 0, moved: true }
+        Pick { kind, title: title.into(), mode, target: None, rows, query: String::new(), sel: 0, moved: true }
+    }
+
+    pub fn for_doc(mut self, id: u64) -> Self {
+        self.target = Some(id);
+        self
     }
 
     /// 打开时高亮这一行 (行号不在范围内就当没设)
@@ -131,12 +147,18 @@ impl Pick {
     }
 
     /// 方向键 / Enter / Esc 的纯逻辑 (窗口只负责把按键事件翻成这些参数): 返回选中或关闭
+    #[cfg(test)]
     pub fn key(&mut self, down: bool, up: bool, enter: bool, esc: bool) -> Option<Outcome> {
+        let vis = self.visible();
+        self.step(&vis, down, up, enter, esc)
+    }
+
+    /// `key` 的本体, 过滤结果由调用方给 (窗口一帧只过滤一次)。选中行只在画出来的前 `MAX_ROWS` 行里移动
+    fn step(&mut self, vis: &[usize], down: bool, up: bool, enter: bool, esc: bool) -> Option<Outcome> {
         if esc {
             return Some(Outcome::Closed);
         }
-        let vis = self.visible();
-        let last = vis.len().saturating_sub(1);
+        let last = vis.len().min(MAX_ROWS).saturating_sub(1);
         if down { self.sel = (self.sel + 1).min(last); self.moved = true; }
         if up { self.sel = self.sel.saturating_sub(1); self.moved = true; }
         self.sel = self.sel.min(last);
@@ -149,10 +171,10 @@ impl Pick {
     /// 画窗口 (过滤框拿着焦点, 编辑区在这期间不吃键盘)
     pub fn window(&mut self, ctx: &egui::Context) -> Outcome {
         let (down, up, enter, esc) = ctx.input_mut(|i| (i.consume_key(Modifiers::NONE, Key::ArrowDown), i.consume_key(Modifiers::NONE, Key::ArrowUp), i.consume_key(Modifiers::NONE, Key::Enter), i.consume_key(Modifiers::NONE, Key::Escape)));
-        if let Some(o) = self.key(down, up, enter, esc) {
+        let vis = self.visible();
+        if let Some(o) = self.step(&vis, down, up, enter, esc) {
             return o;
         }
-        let vis = self.visible();
         let mut picked: Option<usize> = None;
         let mut open = true;
         egui::Window::new(self.title.clone()).open(&mut open).collapsible(false).resizable(true).default_width(560.0).default_height(340.0).anchor(egui::Align2::CENTER_TOP, [0.0, 56.0]).show(ctx, |ui| {
@@ -231,6 +253,21 @@ mod tests {
         assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(2)), "选中的是原列表里的第 2 行, 不是过滤后的第 0 行");
         let mut none = Pick::new(Kind::Recent, "t", Match::Fuzzy, rows()).with_query("qqqq");
         assert_eq!(none.key(false, false, true, false), None, "没有匹配时 Enter 什么也不选");
+    }
+
+    #[test]
+    fn selection_stays_within_the_rows_that_are_drawn() {
+        let many: Vec<Row> = (0..MAX_ROWS + 50).map(|i| Row::new(format!("r{i}"), "")).collect();
+        let mut p = Pick::new(Kind::Help, "t", Match::Words, many);
+        for _ in 0..MAX_ROWS + 40 { p.key(true, false, false, false); }
+        assert_eq!(p.key(false, false, true, false), Some(Outcome::Picked(MAX_ROWS - 1)), "最多到画出来的最后一行");
+    }
+
+    #[test]
+    fn value_defaults_to_the_label_and_can_be_replaced() {
+        assert_eq!(Row::new("C:/a.txt", "").value, "C:/a.txt");
+        assert_eq!(Row::new("▶ a.txt", "").with_value("7").value, "7");
+        assert_eq!(Pick::new(Kind::Charset, "t", Match::Fuzzy, rows()).for_doc(3).target, Some(3));
     }
 
     #[test]

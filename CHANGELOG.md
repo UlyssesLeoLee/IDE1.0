@@ -14,7 +14,15 @@
 - **宏里 15 个原本「不执行」的 `S_` 函数改成真执行**: `S_WinList` / `S_DlgWinList` (窗口一览)、`S_HelpContents` (手册)、`S_ExtHelp1` / `S_ExtHtmlHelp` (光标处的词)、`S_HelpSearch`、`S_ToggleKeySearch`、`S_FileUsedRecently` (最近的文件)、`S_Favorite` (收藏夹 = 最近的文件 + 最近的文件夹)、`S_InsFileUsedRecently` / `S_InsFolderUsedRecently` (插入最近的路径)、`S_ChgCharset` (指定字符集)、`S_FileReopen` (指定字符集重新打开)、`S_Outline` / `S_FileTree` (侧栏切到大纲 / 文件页)。268 个函数现在是 **142 个在文档上执行 / 118 个转交 App / 8 个明确不执行** (层叠、两种平铺、两种 SQL*Plus、JS 宏、IME 再変換、标签栏开关 `S_ShowTab`, 都写着原因)。
   - 注意: 这几个函数在宏里只是**打开**列表 / 切页, 宏不会停下来等人选, 后面的步骤接着跑 (和已有的 `S_GrepDialog` 一样)。
 - **新命令** (都在命令面板里, 能绑键): `app.window-list` / `app.pick-recent` / `app.pick-folders` / `app.pick-favorite` / `app.ins-recent-file` / `app.ins-recent-dir` / `app.pick-charset` / `app.pick-reopen` / `app.help` / `app.help-search` / `app.ext-help` / `app.key-search` / `app.pane-outline` / `app.pane-files`; 中 / 日 / 英标签都补了。
-- **验证**: 本批新增 27 项单测 (ide-fast 482 通过; 失败的 3 项仍是写死 `C:\` / `D:\` 的 Windows 路径断言, 改动前就是这样)。其中两项真的跑了 egui 帧: 选择列表单独跑一帧、以及整个界面 (`ui_main`) 里开窗口一览 → 上移 → 回车切标签 → 回车没漏进编辑区 → Esc 关闭。**没在真窗口里验证**: 窗口一览 / 检索窗口的外观、帮助菜单的新项、状态栏提示的实际显示 (本环境没有 Windows)。
+- **代码审查后的修正** (同一版本内):
+  - 宏里**带参数**的 `S_ChgCharset(code, bom)` / `S_FileReopen(code, …)` 直接在文档上执行 (号码按 Sakura 的文字コード 0–8: SJIS / JIS / EUC / Unicode / UTF-8 / UTF-7 / UnicodeBE / CESU-8 / Latin1; `bom` 只对 UTF-8 有效); `99` (自動判別) 等不支持的号码整份宏明确拒绝。不带参数的才打开选择列表 —— 之前会忽略参数、打开列表后接着往下跑, 后面的 `S_FileSave` 会用旧编码保存。
+  - 分割视图里, 从选择列表切换 / 新开的标签不再被同一帧的「活动标签 = 焦点窗格的文档」盖回去。
+  - 选中的行按行里记下的值 (文档 id / 路径 / 手册行号) 找目标, 不再按行号回头查当前的列表 (列表开着期间关掉标签不会切错); 字符集 / 插入路径作用在打开列表时的那个文档上。
+  - 重开手册时整份换新 (撤销栈 / 修改标记 / 只读都复位)。
+  - 手册正文的换行统一成 LF (Windows 上 git autocrlf 会把 `help.txt` 检出成 CRLF)。
+  - 光标处的词改用 `editcore::word` 的 Sakura 词模型 (漢字 / ひらがな / カタカナ 各自成词)。
+  - 方向键只在画出来的前 200 行里移动; 命令一览生成从 O(N²) 降到 O(N) (`keymap::display_entry`); 选择列表每帧只过滤一次。
+- **验证**: 本批新增 32 项单测 (ide-fast 487 通过; 失败的 3 项仍是写死 `C:\` / `D:\` 的 Windows 路径断言, 改动前就是这样)。其中两项真的跑了 egui 帧: 选择列表单独跑一帧、以及整个界面 (`ui_main`) 里开窗口一览 → 上移 → 回车切标签 → 回车没漏进编辑区 → Esc 关闭。**没在真窗口里验证**: 窗口一览 / 检索窗口的外观、帮助菜单的新项、状态栏提示的实际显示 (本环境没有 Windows)。
 
 ## 0.3.7 — 2026-11-04
 

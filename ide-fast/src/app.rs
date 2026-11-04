@@ -665,16 +665,21 @@ impl App {
         }
     }
 
-    /// 把一段文字开成新的只读标签 (Git 差异 / 文档比较结果)
+    /// 把一段文字开成新的只读标签 (Git 差异 / 文档比较结果 / 帮助手册)
     fn open_text_doc(&mut self, name: &str, text: &str) {
         let id = self.id();
+        self.docs.push(Self::text_doc(id, name, text));
+        self.active = self.docs.len() - 1;
+    }
+
+    /// 只读的文字文档 (没有路径、没有修改、撤销栈为空)
+    fn text_doc(id: u64, name: &str, text: &str) -> Doc {
         let mut d = Doc::untitled(id, 0);
         d.name = name.to_string();
         d.lines = text.trim_end_matches('\n').split('\n').map(str::to_string).collect();
         d.base = d.lines.clone();
         d.readonly = true;
-        self.docs.push(d);
-        self.active = self.docs.len() - 1;
+        d
     }
 
     /// 比较当前标签 (左) 和第 `other` 个标签 (右)
@@ -2976,14 +2981,15 @@ impl App {
         if self.props.is_some() { self.props_window(ctx); }
         self.cmd_windows(ctx);
         self.tools_windows(ctx);
-        self.pick_window(ctx);
-        self.key_search_tick();
         self.tag_windows(ctx);
         self.print_windows(ctx);
         if self.split_on {
             self.panes.clamp(self.docs.len());
             self.active = self.panes.focused_doc();
         }
+        // 选择列表在这一步之后: 它切过去 / 新开的标签要盖过焦点窗格, 再由标签栏同步回窗格 (放在前面会被上面那句盖回去)
+        self.pick_window(ctx);
+        self.key_search_tick();
         self.shortcuts(ctx);
         self.top_bar(root, ctx);
         if self.cfg.view.toolbar { egui::Panel::top("toolbar").show(root, |ui| self.toolbar(ui, ctx)); }

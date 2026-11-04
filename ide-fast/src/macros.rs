@@ -6,7 +6,7 @@
 use crate::doc::{Doc, RecEv};
 use crate::find::FindOpts;
 use editcore::document_io::Charset;
-use editcore::macro_sakura::{self, Action, MacroStep};
+use editcore::macro_sakura::{self, Action, MacroArg, MacroStep};
 
 /// 一次宏运行的环境
 pub struct MacroEnv {
@@ -64,6 +64,43 @@ enum DocOp {
     /// 光标移到下一 / 上一个段落边界 (不选)
     ParaMove(bool),
     Reopen(Charset),
+    /// `S_ChgCharset(code, bom)`: 改保存时的字符集; `Some(b)` = 第二个参数给了 BOM 开关 (只对 UTF-8 有意义)
+    SetCharset(Charset, Option<bool>),
+}
+
+/// Sakura 的文字コード番号 (ECodeType: SJIS 0 / JIS 1 / EUC 2 / Unicode 3 / UTF-8 4 / UTF-7 5 / UnicodeBE 6 / CESU-8 7 / Latin1 8);
+/// 99 (自動判別) 和别的号码高速版不支持
+pub fn sakura_charset(code: i64) -> Option<Charset> {
+    Some(match code {
+        0 => Charset::ShiftJis,
+        1 => Charset::Iso2022Jp,
+        2 => Charset::EucJp,
+        3 => Charset::Utf16Le,
+        4 => Charset::Utf8,
+        5 => Charset::Utf7,
+        6 => Charset::Utf16Be,
+        7 => Charset::Cesu8,
+        8 => Charset::Latin1,
+        _ => return None,
+    })
+}
+
+/// 带了文字コード参数的 `S_ChgCharset(code, bom)` / `S_FileReopen(code, …)`: 直接在文档上做 (不带参数的才转交 App 打开列表)。
+/// `None` = 不是这两个函数或没带参数; `Some(Err)` = 号码不支持
+fn charset_call(name: &str, args: &[MacroArg]) -> Option<Result<DocOp, String>> {
+    if !matches!(name, "ChgCharset" | "FileReopen") {
+        return None;
+    }
+    let code = match args.first()? {
+        MacroArg::Int(n) => *n,
+        MacroArg::Str(s) => return Some(Err(format!("字符集参数应当是数字, 实际是 \"{s}\""))),
+    };
+    let Some(cs) = sakura_charset(code) else { return Some(Err(format!("字符集代码 {code} 高速版不支持 (支持 0–8)"))) };
+    Some(Ok(if name == "ChgCharset" {
+        DocOp::SetCharset(cs, match args.get(1) { Some(MacroArg::Int(b)) => Some(*b != 0), _ => None })
+    } else {
+        DocOp::Reopen(cs)
+    }))
 }
 
 fn doc_op(name: &str) -> Option<DocOp> {
@@ -185,8 +222,13 @@ const NOT_APPLICABLE: &[(&str, &str)] = &[
 
 /// 一步该由谁执行
 pub fn route(step: &MacroStep) -> Route {
-    let Action::Command { id, cmd, key, .. } = &step.action else { return Route::Doc };
+    let Action::Command { id, cmd, key, args } = &step.action else { return Route::Doc };
     let name = step.name.strip_prefix("S_").unwrap_or(&step.name);
+    match charset_call(name, args) {
+        Some(Ok(_)) => return Route::Doc,
+        Some(Err(why)) => return Route::No(why),
+        None => {}
+    }
     if doc_op(name).is_some() {
         return Route::Doc;
     }
@@ -239,9 +281,9 @@ pub fn run_step(doc: &mut Doc, s: &MacroStep, env: &mut MacroEnv) -> Result<Opti
     }
     let tab = env.tab;
     match &s.action {
-        Action::Command { id, cmd, key, .. } => {
+        Action::Command { id, cmd, key, args } => {
             let name = s.name.strip_prefix("S_").unwrap_or(&s.name);
-            if let Some(op) = doc_op(name) {
+            if let Some(op) = charset_call(name, args).and_then(Result::ok).or_else(|| doc_op(name)) {
                 run_op(doc, op, env).map_err(|e| format!("第 {} 行 {}: {e}", s.line, s.name))?;
             } else if let Some(c) = cmd {
                 if !doc_command(doc, c, tab) {
@@ -321,6 +363,12 @@ fn run_op(doc: &mut Doc, op: DocOp, env: &mut MacroEnv) -> Result<(), String> {
                 return Err("有未保存的修改: 不能按别的编码重新打开".into());
             }
             doc.reopen_as(cs)?;
+        }
+        DocOp::SetCharset(cs, bom) => {
+            doc.set_charset(cs);
+            if let Some(b) = bom {
+                if cs == Charset::Utf8 && (doc.bom == editcore::document_io::Bom::Utf8) != b { doc.toggle_bom(); }
+            }
         }
     }
     Ok(())
@@ -735,6 +783,28 @@ mod tests {
         assert_eq!(run_step(&mut d, &step_of("SearchNext"), &mut env), Ok(Some("c.find-next")));
         assert_eq!(d.lines, ["keep"]);
         assert_eq!(route(&step_of("FileSave")), Route::App("c.save"));
+    }
+
+    #[test]
+    fn chg_charset_and_file_reopen_with_a_code_run_on_the_document_without_one_open_the_list() {
+        let step = |src: &str| macro_sakura::plan(src).unwrap().remove(0);
+        assert_eq!(route(&step("S_ChgCharset();")), Route::App("app.pick-charset"), "不带参数 = 打开列表");
+        assert_eq!(route(&step("S_FileReopen();")), Route::App("app.pick-reopen"));
+        assert_eq!(route(&step("S_ChgCharset(4, 1);")), Route::Doc, "带文字コード = 直接改");
+        assert_eq!(route(&step("S_FileReopen(0, 0);")), Route::Doc);
+        assert!(matches!(route(&step("S_ChgCharset(99, 0);")), Route::No(w) if w.contains("99")), "自動判別不支持, 明确拒绝");
+        let mut d = Doc::untitled(1, 0);
+        d.set_charset(Charset::ShiftJis);
+        run_mac(&mut d, "S_ChgCharset(4, 1);", 4).unwrap();
+        assert_eq!((d.charset, d.bom), (Charset::Utf8, editcore::document_io::Bom::Utf8), "UTF-8 + BOM");
+        run_mac(&mut d, "S_ChgCharset(4, 0);", 4).unwrap();
+        assert_eq!(d.bom, editcore::document_io::Bom::None, "第二个参数 0 = 不带 BOM");
+        run_mac(&mut d, "S_ChgCharset(2);", 4).unwrap();
+        assert_eq!(d.charset, Charset::EucJp);
+        assert!(run_mac(&mut d, "S_ChgCharset(4, 0);\nS_ChgCharset(99, 0);", 4).is_err());
+        assert_eq!(d.charset, Charset::EucJp, "有一步跑不了, 整份宏都不执行");
+        d.dirty = true;
+        assert!(run_mac(&mut d, "S_FileReopen(4, 0);", 4).unwrap_err().contains("未保存"), "有修改时不重新打开");
     }
 
     #[test]

@@ -386,17 +386,16 @@ pub fn bound() -> Vec<(usize, Modifiers, Key)> {
     STATE.with(|s| s.borrow().bound.clone())
 }
 
-/// 命令 `id` 当前生效的键串 (备选用 `|` 分隔; 解除绑定 = 空串)
-pub fn keys_of(id: &str) -> String {
-    STATE.with(|s| entry_by_id(id).map(|e| effective(&s.borrow().ov, e).to_string())).unwrap_or_default()
-}
-
 /// 菜单里显示的快捷键提示; `None` = 不是注册表里的命令 (调用方用自己的写法)
 pub fn display(id: &str) -> Option<String> {
     // 宏菜单项在录制 / 停止之间换标签, 键是同一个
     let id = if id == "c.macro-stop" { "c.macro-start" } else { id };
-    entry_by_id(id)?;
-    Some(keys_of(id).split('|').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" / "))
+    entry_by_id(id).map(display_entry)
+}
+
+/// 同 `display`, 给已经拿着 `Entry` 的调用方 (省掉按 id 再查一遍; 一次列出全部命令时是 O(N) 而不是 O(N²))
+pub fn display_entry(e: &Entry) -> String {
+    STATE.with(|s| effective(&s.borrow().ov, e).split('|').filter(|k| !k.is_empty()).collect::<Vec<_>>().join(" / "))
 }
 
 /// 键位一览的文本 (命令面板同款顺序): "分类\t命令\t键" 每行一条, 只列有键的
