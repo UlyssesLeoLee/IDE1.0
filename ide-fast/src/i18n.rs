@@ -119,6 +119,7 @@ pub const T: &[Row] = &[
     ("menu.window", ["窗口", "ウィンドウ", "Window"]),
     ("menu.macro", ["宏", "マクロ", "Macro"]),
     ("menu.view", ["视图", "表示", "View"]),
+    ("menu.tool", ["工具", "ツール", "Tools"]),
     ("menu.help", ["帮助", "ヘルプ", "Help"]),
     // ---- 文件
     ("c.new-file", ["新建", "新規作成", "New"]),
@@ -683,6 +684,9 @@ pub const CMD_T: &[Row] = &[
     ("新建文件…", ["新建文件…", "新規ファイル…", "New File..."]),
     ("新建文件夹…", ["新建文件夹…", "新規フォルダー…", "New Folder..."]),
     ("刷新", ["刷新", "更新", "Refresh"]),
+    ("输入命令按 Enter 启动 shell, 或点「+ 新建终端」", ["输入命令按 Enter 启动 shell, 或点「+ 新建终端」", "コマンドを入力して Enter でシェルを起動、または「+ 新しいターミナル」", "Type a command and press Enter to start a shell, or click \"+ New terminal\""]),
+    ("文件加锁…", ["文件加锁…", "ファイルのロック…", "File locking…"]),
+    ("执行外部命令 (终端)", ["执行外部命令 (终端)", "外部コマンドを実行 (ターミナル)", "Run external command (terminal)"]),
     ("(没有可显示的大纲)", ["(没有可显示的大纲)", "(表示できるアウトラインがありません)", "(no outline to show)"]),
     ("确定", ["确定", "OK", "OK"]),
     ("取消", ["取消", "キャンセル", "Cancel"]),

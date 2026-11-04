@@ -118,7 +118,7 @@ pub fn max_inset(system_title_bar: bool, maximized: bool, fullscreen: bool) -> f
 }
 
 /// 菜单栏上的菜单 (与 `App::menu` 里的顺序一致)
-pub const MENU_KEYS: [&str; 11] = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.help"];
+pub const MENU_KEYS: [&str; 12] = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.tool", "menu.help"];
 
 impl App {
     pub(super) fn maximized_inset(&self, ctx: &egui::Context) -> f32 {

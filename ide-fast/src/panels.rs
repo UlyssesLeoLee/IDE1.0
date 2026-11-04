@@ -33,6 +33,15 @@ pub fn mode(open: bool, collapsed: bool) -> Mode {
     }
 }
 
+/// 底部面板这一帧怎么画: 完整界面里「没开」也留一条 28px 的头 (Tauri 默认带 TERMINAL / OUTPUT / PROBLEMS 头), 不启动 shell;
+/// 极简界面没开就整个不画
+pub fn bottom_mode(open: bool, collapsed: bool, full_ui: bool) -> Mode {
+    match mode(open, collapsed) {
+        Mode::Hidden if full_ui => Mode::Strip,
+        m => m,
+    }
+}
+
 /// 折叠命令 / 箭头按钮: 显示着就翻转折叠; 没显示就先展开显示出来。返回新的 (open, collapsed)
 pub fn toggle_collapse(open: bool, collapsed: bool) -> (bool, bool) {
     if open { (true, !collapsed) } else { (true, false) }
@@ -102,6 +111,14 @@ pub fn tip(dock: Dock, collapsed: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bottom_keeps_its_head_in_the_full_ui_even_when_closed() {
+        assert_eq!(bottom_mode(false, false, true), Mode::Strip);
+        assert_eq!(bottom_mode(false, false, false), Mode::Hidden);
+        assert_eq!(bottom_mode(true, false, true), Mode::Full);
+        assert_eq!(bottom_mode(true, true, false), Mode::Strip);
+    }
+
     use super::*;
 
     #[test]

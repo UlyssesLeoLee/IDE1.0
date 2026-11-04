@@ -198,11 +198,11 @@ impl App {
     }
 
     fn output_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if ui.small_button(tr("bt.clear")).clicked() {
+        Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
+            if ui.button(tr("bt.clear")).clicked() {
                 self.sys.log.clear();
             }
-            if ui.small_button("×").clicked() {
+            if ui.button("×").clicked() {
                 self.term.open = false;
             }
         });
@@ -218,14 +218,14 @@ impl App {
 
     fn problems_ui(&mut self, ui: &mut egui::Ui) {
         let mut jump: Option<usize> = None;
-        ui.horizontal(|ui| {
-            if ui.small_button(tr("md.lint")).clicked() {
+        Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
+            if ui.button(tr("md.lint")).clicked() {
                 self.md_lint_now();
             }
-            if ui.small_button(tr("bt.clear")).clicked() {
+            if ui.button(tr("bt.clear")).clicked() {
                 self.sys.problems.clear();
             }
-            if ui.small_button("×").clicked() {
+            if ui.button("×").clicked() {
                 self.term.open = false;
             }
         });

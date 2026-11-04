@@ -6,6 +6,8 @@ use super::*;
 
 /// 条高 (不含下边线)
 const TAB_H: f32 = 28.0;
+/// 面包屑条高 (不含下边线)
+const CRUMB_H: f32 = 22.0;
 /// 标签最宽
 const TAB_MAX_W: f32 = 200.0;
 /// 文字左 / 右内边距 (右边为关闭钮留位)
@@ -25,7 +27,37 @@ pub fn bar_visible(docs: usize, full_ui: bool) -> bool {
     docs > 1 || full_ui
 }
 
+/// 面包屑的各段 (Tauri `renderBreadcrumb`): 路径按分隔符拆开、去掉盘符; 没有路径的无标题文档就是它的名字
+pub fn crumb_parts(path: Option<&std::path::Path>, name: &str) -> Vec<String> {
+    let Some(p) = path else { return vec![name.to_string()] };
+    let mut parts: Vec<String> = p.to_string_lossy().split(['\\', '/']).filter(|s| !s.is_empty()).map(str::to_string).collect();
+    if parts.first().is_some_and(|s| s.ends_with(':')) { parts.remove(0); }
+    parts
+}
+
 impl App {
+    /// 面包屑条 (Tauri `#breadcrumb`): 22px、`bg_bar` 底、下边线, 11px 弱前景, 段间 `›`, 当前文件名用前景色; 欢迎页时留空
+    fn crumb_bar(&self, root: &mut egui::Ui) {
+        let tc = self.tc;
+        let d = &self.docs[self.active.min(self.docs.len() - 1)];
+        let parts = if self.welcome_visible() { vec![] } else { crumb_parts(d.path.as_deref(), &d.name) };
+        egui::Panel::top("crumb").exact_size(CRUMB_H + 1.0).frame(egui::Frame::NONE.fill(tc.bg_bar)).show(root, |ui| {
+            let bar = ui.max_rect();
+            ui.painter().hline(bar.x_range(), bar.bottom() - 0.5, egui::Stroke::new(1.0, tc.border));
+            ui.allocate_ui_with_layout(Vec2::new(bar.width(), CRUMB_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.add_space(8.0);
+                let n = parts.len();
+                for (i, p) in parts.iter().enumerate() {
+                    if i > 0 { ui.add_space(2.0); ui.label(egui::RichText::new("›").size(11.0).color(tc.fg_dim)); ui.add_space(2.0); }
+                    ui.add_space(4.0);
+                    ui.add(egui::Label::new(egui::RichText::new(p).size(11.0).color(if i + 1 == n { tc.fg } else { tc.fg_dim })).truncate());
+                    ui.add_space(4.0);
+                }
+            });
+        });
+    }
+
     pub(super) fn tab_bar(&mut self, root: &mut egui::Ui, ctx: &egui::Context) {
         let mut tab_cmd: Option<TabCmd> = None;
         if bar_visible(self.docs.len(), self.cfg.view.rail) {
@@ -39,10 +71,14 @@ impl App {
                 egui::ScrollArea::horizontal().auto_shrink([false, true]).scroll_source(egui::scroll_area::ScrollSource::ALL).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
-                        for i in 0..self.docs.len() { self.tab_item(ui, ctx, i, scroll_active, &mut tab_cmd); }
+                        // 欢迎页显示时 (唯一的空白无标题文档) Tauri 没有任何标签: 条还在, 标签不画
+                        if !self.welcome_visible() {
+                            for i in 0..self.docs.len() { self.tab_item(ui, ctx, i, scroll_active, &mut tab_cmd); }
+                        }
                     });
                 });
             });
+            if self.cfg.view.rail { self.crumb_bar(root); }
         }
         self.last_active = self.active;
         match tab_cmd {
@@ -111,6 +147,13 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crumbs_split_the_path_and_drop_the_drive() {
+        let p = std::path::Path::new(r"E:\IDE1.0\src\main.rs");
+        assert_eq!(crumb_parts(Some(p), "main.rs"), vec!["IDE1.0", "src", "main.rs"]);
+        assert_eq!(crumb_parts(None, "无标题"), vec!["无标题"]);
+    }
 
     #[test]
     fn tab_width_adds_padding_and_caps_at_200() {

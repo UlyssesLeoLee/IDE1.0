@@ -37,6 +37,13 @@ pub struct ThemeColors {
     pub retro16: bool,
 }
 
+/// Tauri 的字符标尺: 从第 `first` 列 (从 1 数) 起 `n` 列。10 的倍数写十位数字 (10 -> `1`, 100 -> `0`), 5 的倍数 `+`, 其余 `.`
+pub fn ruler_text(first: usize, n: usize) -> String {
+    (first..first + n)
+        .map(|c| if c % 10 == 0 { char::from_digit(((c / 10) % 10) as u32, 10).unwrap_or('0') } else if c % 5 == 0 { '+' } else { '.' })
+        .collect()
+}
+
 fn luminance(c: Color32) -> f32 {
     (0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32) / 255.0
 }
@@ -296,6 +303,13 @@ pub fn is_diff_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ruler_text_matches_the_tauri_string() {
+        assert_eq!(ruler_text(1, 20), "....+....1....+....2");
+        assert_eq!(ruler_text(96, 8), "....0...", "100 列写十位数字 0");
+        assert_eq!(ruler_text(1, 0), "");
+    }
+
     use super::*;
     #[test]
     fn diff_lines_get_colours_by_their_first_characters() {

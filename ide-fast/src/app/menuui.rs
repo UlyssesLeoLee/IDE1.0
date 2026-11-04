@@ -22,6 +22,7 @@ pub fn mnemonic(menu_key: &str) -> char {
         "menu.window" => 'W',
         "menu.macro" => 'M',
         "menu.view" => 'V',
+        "menu.tool" => 'T',
         "menu.help" => 'H',
         _ => ' ',
     }
@@ -86,6 +87,18 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
     }
 }
 
+/// 菜单正文放进竖向滚动区: 窗口矮于菜单时 (700 高的「视图」) 末尾几项不被裁掉, 改成滚动
+pub fn scroll(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    let max = menu_max_height(ui.ctx().content_rect().bottom(), ui.cursor().top());
+    ui.set_max_height(max); // 弹出层的可用高度默认只有上一帧内容那么高, 先放开到窗口底
+    egui::ScrollArea::vertical().max_height(max).auto_shrink([true, true]).show(ui, add);
+}
+
+/// 菜单正文最高多少: 从菜单顶到窗口底, 留 12px 边
+pub fn menu_max_height(window_bottom: f32, menu_top: f32) -> f32 {
+    (window_bottom - menu_top - 12.0).max(120.0)
+}
+
 /// 一行带勾选标记的菜单项: 选中时行首(左边距 7px 处)画一个 `✓`, 文字位置不变; 勾选和单选都用它
 /// 菜单项文字「名字  键」拆成 (名字, 键): `lk` 用两个空格隔开, 键靠右对齐显示 (Tauri 菜单的样子)
 pub fn split_keys(s: &str) -> (&str, &str) {
@@ -116,6 +129,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn menu_body_is_capped_to_the_window_but_never_collapses() {
+        assert_eq!(menu_max_height(700.0, 40.0), 648.0);
+        assert_eq!(menu_max_height(100.0, 90.0), 120.0);
+    }
+
+    #[test]
     fn menu_text_splits_name_and_keys() {
         assert_eq!(split_keys("新建  Ctrl+N"), ("新建", "Ctrl+N"));
         assert_eq!(split_keys("打开文件夹"), ("打开文件夹", ""));
@@ -123,7 +142,7 @@ mod tests {
 
     #[test]
     fn every_menu_has_a_distinct_mnemonic() {
-        let keys = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.help"];
+        let keys = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.tool", "menu.help"];
         let mut seen = std::collections::HashSet::new();
         for k in keys {
             let m = mnemonic(k);

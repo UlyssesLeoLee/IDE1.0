@@ -1,6 +1,7 @@
 //! Grep: 条件 -> 引擎选项, 分片后台任务 (流式、可取消、5000 上限), 结果文本 (Sakura 格式) 与结果行解析, 侧栏里的那一页控件。
 //! 搜索语义全在 `editcore::grep_engine` (和 Tauri 版同一套); 这里只管"怎么跑、怎么给人看"。
 
+use crate::ckbox::CheckExt;
 use eframe::egui;
 use editcore::grep_engine::{self, ReplaceOptions, SearchOptions, SearchResult, SKIP_DIRS};
 use editcore::search_ops::{self, SearchReq};
@@ -507,12 +508,12 @@ impl Grep {
             });
         });
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.o.case, crate::i18n::trz("区分大小写"));
-            ui.checkbox(&mut self.o.word, crate::i18n::trz("单词单位"));
-            ui.checkbox(&mut self.o.regex, crate::i18n::trz("正则"));
-            ui.checkbox(&mut self.o.sub, crate::i18n::trz("子文件夹"));
-            ui.checkbox(&mut self.o.outside, crate::i18n::trz("项目外"));
-            ui.checkbox(&mut self.o.this_file, crate::i18n::trz("仅当前文件"));
+            ui.check(&mut self.o.case, crate::i18n::trz("区分大小写"));
+            ui.check(&mut self.o.word, crate::i18n::trz("单词单位"));
+            ui.check(&mut self.o.regex, crate::i18n::trz("正则"));
+            ui.check(&mut self.o.sub, crate::i18n::trz("子文件夹"));
+            ui.check(&mut self.o.outside, crate::i18n::trz("项目外"));
+            ui.check(&mut self.o.this_file, crate::i18n::trz("仅当前文件"));
         });
         ui.horizontal(|ui| {
             ui.label(crate::i18n::trz("输出"));

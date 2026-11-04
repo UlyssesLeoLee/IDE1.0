@@ -1,6 +1,7 @@
 //! 首选项对话框的页面: 画的是一份草稿 (`Settings` 的拷贝), 按 OK 才并进运行状态 (见 app.rs 的 `prefs_commit`)。
 //! 页签对应 Tauri 版「共通設定」的分组: 常规 / 编辑 / 文件 / 字体与颜色 / 文件类型 / 查找。
 
+use crate::ckbox::CheckExt;
 use crate::i18n::{tr, Lang};
 use crate::settings::{self, Settings, TypePref};
 use eframe::egui;
@@ -69,17 +70,17 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     for l in Lang::ALL { if ui.selectable_label(l == cur, l.native()).clicked() { d.lang = l.code().into(); } }
                 });
             });
-            ui.checkbox(&mut d.dark, tr("pf.dark"));
-            ui.checkbox(&mut d.highlight, tr("pf.highlight"));
-            ui.checkbox(&mut d.wrap, tr("pf.wrap"));
-            ui.checkbox(&mut d.glass_blur, tr("pf.glass-blur")).on_hover_text(tr("pf.glass-note"));
+            ui.check(&mut d.dark, tr("pf.dark"));
+            ui.check(&mut d.highlight, tr("pf.highlight"));
+            ui.check(&mut d.wrap, tr("pf.wrap"));
+            ui.check(&mut d.glass_blur, tr("pf.glass-blur")).on_hover_text(tr("pf.glass-note"));
             ui.horizontal(|ui| { ui.label(tr("pf.font-size")); ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0)); });
             ui.horizontal(|ui| { ui.label(tr("pf.tab-width")); ui.add(egui::Slider::new(&mut d.tab_width, 1..=16)); });
         }
         PrefsTab::Edit => {
-            ui.checkbox(&mut d.auto_indent, tr("pf.auto-indent"));
-            ui.checkbox(&mut d.smart_indent, tr("pf.smart-indent"));
-            ui.checkbox(&mut d.insert_spaces, tr("pf.insert-spaces"));
+            ui.check(&mut d.auto_indent, tr("pf.auto-indent"));
+            ui.check(&mut d.smart_indent, tr("pf.smart-indent"));
+            ui.check(&mut d.insert_spaces, tr("pf.insert-spaces"));
             ui.horizontal(|ui| {
                 ui.label(tr("pf.default-enc"));
                 egui::ComboBox::from_id_salt("pf-enc").selected_text(d.default_encoding.clone()).show_ui(ui, |ui| {
@@ -94,15 +95,15 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             });
         }
         PrefsTab::Files => {
-            ui.checkbox(&mut d.save_backup, tr("pf.save-backup"));
+            ui.check(&mut d.save_backup, tr("pf.save-backup"));
             ui.horizontal(|ui| {
-                ui.checkbox(&mut d.auto_backup, tr("pf.auto-backup"));
+                ui.check(&mut d.auto_backup, tr("pf.auto-backup"));
                 ui.add_enabled(d.auto_backup, egui::DragValue::new(&mut d.auto_backup_min).range(crate::backup::MIN_INTERVAL..=crate::backup::MAX_INTERVAL).suffix(tr("pf.minutes")));
             });
-            ui.checkbox(&mut d.file_lock, tr("pf.file-lock")).on_hover_text(tr("pf.file-lock-tip"));
-            ui.checkbox(&mut d.check_external, tr("pf.check-external"));
-            ui.checkbox(&mut d.restore_session, tr("pf.restore-session"));
-            ui.checkbox(&mut d.confirm_close, tr("pf.confirm-close"));
+            ui.check(&mut d.file_lock, tr("pf.file-lock")).on_hover_text(tr("pf.file-lock-tip"));
+            ui.check(&mut d.check_external, tr("pf.check-external"));
+            ui.check(&mut d.restore_session, tr("pf.restore-session"));
+            ui.check(&mut d.confirm_close, tr("pf.confirm-close"));
             ui.horizontal(|ui| { ui.label(tr("pf.max-file")); ui.add(egui::Slider::new(&mut d.max_file_mb, 1..=32)); });
             ui.horizontal(|ui| { ui.label(tr("pf.mru")); ui.add(egui::Slider::new(&mut d.mru_files, 1..=36)); });
         }
@@ -168,7 +169,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     let mut on = t.tab_width.is_some();
                     let mut w = t.tab_width.unwrap_or(4);
                     ui.horizontal(|ui| {
-                        if ui.checkbox(&mut on, "").changed() { t.tab_width = if on { Some(w) } else { None }; }
+                        if ui.check(&mut on, "").changed() { t.tab_width = if on { Some(w) } else { None }; }
                         if on && ui.add(egui::DragValue::new(&mut w).range(1..=16)).changed() { t.tab_width = Some(w); }
                     });
                     tri_combo(ui, ("pf-wrap", i), &mut t.wrap);
@@ -176,7 +177,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     let mut won = t.wrap_col.is_some();
                     let mut wc = t.wrap_col.filter(|c| *c > 0).unwrap_or(80);
                     ui.horizontal(|ui| {
-                        if ui.checkbox(&mut won, "").on_hover_text(tr("pf.wrap-col-tip")).changed() { t.wrap_col = if won { Some(wc) } else { None }; }
+                        if ui.check(&mut won, "").on_hover_text(tr("pf.wrap-col-tip")).changed() { t.wrap_col = if won { Some(wc) } else { None }; }
                         if won && ui.add(egui::DragValue::new(&mut wc).range(10..=crate::tools::WRAP_COL_MAX)).changed() { t.wrap_col = Some(wc); }
                     });
                     if ui.small_button(tr("pf.type-remove")).clicked() { remove = Some(i); }
@@ -191,10 +192,10 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             });
         }
         PrefsTab::Search => {
-            ui.checkbox(&mut d.search.find_case, tr("pf.find-case"));
-            ui.checkbox(&mut d.search.find_regex, tr("pf.find-regex"));
-            ui.checkbox(&mut d.search.find_word, tr("pf.find-word"));
-            ui.checkbox(&mut d.search.find_wrap, tr("pf.find-wrap"));
+            ui.check(&mut d.search.find_case, tr("pf.find-case"));
+            ui.check(&mut d.search.find_regex, tr("pf.find-regex"));
+            ui.check(&mut d.search.find_word, tr("pf.find-word"));
+            ui.check(&mut d.search.find_wrap, tr("pf.find-wrap"));
         }
     }
 }

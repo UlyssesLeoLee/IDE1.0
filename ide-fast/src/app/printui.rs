@@ -39,16 +39,16 @@ impl App {
             egui::ComboBox::from_label(trz("纸张")).selected_text(ps.paper.code()).show_ui(ui, |ui| {
                 for p in [Paper::A4, Paper::Letter, Paper::A3] { ui.selectable_value(&mut ps.paper, p, p.code()); }
             });
-            ui.checkbox(&mut ps.landscape, trz("横向"));
+            ui.check(&mut ps.landscape, trz("横向"));
             ui.horizontal(|ui| {
                 ui.label(trz("字号 (pt)"));
                 ui.add(egui::DragValue::new(&mut ps.font_pt).range(6.0..=24.0).speed(0.2));
                 ui.label(trz("页边距 (mm)"));
                 ui.add(egui::DragValue::new(&mut ps.margin_mm).range(5.0..=40.0).speed(0.2));
             });
-            ui.checkbox(&mut ps.line_numbers, trz("打印行号"));
-            ui.checkbox(&mut ps.header, trz("页眉 (文件名)"));
-            ui.checkbox(&mut ps.footer, trz("页脚 (页码)"));
+            ui.check(&mut ps.line_numbers, trz("打印行号"));
+            ui.check(&mut ps.header, trz("页眉 (文件名)"));
+            ui.check(&mut ps.footer, trz("页脚 (页码)"));
             if ui.button(trz("打印预览…")).clicked() { self.print_ui.preview = Some(0); }
         });
         if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) { self.print_ui.setup_open = false; }

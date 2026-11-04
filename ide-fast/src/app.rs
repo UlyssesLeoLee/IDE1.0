@@ -1,5 +1,6 @@
 //! 应用外壳: 菜单 / 标签 / 编辑区 / 查找条 / 状态栏。编辑语义都在 `doc.rs` (-> editcore), 这里只管画和收输入。
 
+use crate::ckbox::CheckExt;
 use crate::doc::Doc;
 use crate::kinsoku::{expand_wrap, Wrap};
 use crate::rowview::RowView;
@@ -26,6 +27,7 @@ mod chrome;
 mod docks;
 mod menuui;
 mod tabbar;
+mod statusbar;
 mod titlebar;
 mod welcome;
 mod textcmds;
@@ -496,7 +498,7 @@ impl App {
                             if ui.small_button(trz("刷新")).clicked() { self.side.refresh(); }
                         });
                         self.pending_ui(ui);
-                        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| tree(ui, &mut self.side, &root, &mut open, &mut op));
+                        crate::scrollx::show(ui, egui::ScrollArea::both().auto_shrink([false, false]), |ui| tree(ui, &mut self.side, &root, &mut open, &mut op));
                         if let Some(o) = op { self.begin_file_op(o); }
                     }
                 }
@@ -506,7 +508,7 @@ impl App {
                 let d = &self.docs[ai];
                 self.side.update_outline(d.id, d.rev, &d.name, &d.lines);
                 let mut jump: Option<usize> = None;
-                egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                crate::scrollx::show(ui, egui::ScrollArea::both().auto_shrink([false, false]), |ui| {
                     if self.side.outline.is_empty() { ui.label(trz("(没有可显示的大纲)")); }
                     for e in &self.side.outline {
                         ui.horizontal(|ui| {
@@ -528,7 +530,7 @@ impl App {
                 for ev in evs { self.grep_event(ev); }
             }
             Tab::Scm => self.scm_ui(ui, &mut open),
-            Tab::Plugins => { egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.plugin_panel(ui)); }
+            Tab::Plugins => { crate::scrollx::show(ui, egui::ScrollArea::vertical().auto_shrink([false, false]), |ui| self.plugin_panel(ui)); }
         }
         if let Some((p, l)) = open { self.open_at(&p, l, 0); }
     }
@@ -1102,7 +1104,7 @@ impl App {
         for r in &rows {
             ui.horizontal(|ui| {
                 if !r.commands.is_empty() || r.script_only {
-                    if ui.checkbox(&mut r.enabled.clone(), "").on_hover_text(tr("ui.plugin-enabled")).clicked() {
+                    if ui.check(&mut r.enabled.clone(), "").on_hover_text(tr("ui.plugin-enabled")).clicked() {
                         let _ = plugins::set_enabled(&r.id, !r.enabled);
                         self.md10.invalidate();
                         if r.enabled { self.plug.unload(&r.id); }
@@ -1149,7 +1151,7 @@ impl App {
         let hide = self.sys.mn_hide;
         let mn = move |k: &str| if hide { ' ' } else { menuui::mnemonic(k) };
         egui::MenuBar::new().style(menuui::bar_style(tc)).config(egui::containers::menu::MenuConfig::new().style(menuui::style(tc))).ui(ui, |ui| {
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.file"), mn("menu.file")), |ui| {
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.file"), mn("menu.file")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
                 if menuui::mbtn(ui, lk("c.open-file", "Ctrl+O")).clicked() { ui.close(); self.open_dialog(); }
                 if menuui::mbtn(ui, lk("c.open-folder", "")).clicked() { ui.close(); self.open_folder_dialog(); }
@@ -1196,8 +1198,8 @@ impl App {
                 if menuui::mbtn(ui, lk("c.new-window", "")).clicked() { ui.close(); self.new_window(); }
                 ui.separator();
                 if menuui::mbtn(ui, lk("c.exit", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
-            });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.edit"), mn("menu.edit")), |ui| {
+            }));
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.edit"), mn("menu.edit")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
                 if menuui::mbtn(ui, lk("c.redo", "Ctrl+Y")).clicked() { self.cur().redo(); ui.close(); }
                 ui.separator();
@@ -1217,8 +1219,8 @@ impl App {
                 for (z, a) in [("Base64 解码", KApp::Base64Decode), ("uudecode 解码", KApp::UuDecode)] {
                     if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
-            });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.search"), mn("menu.search")), |ui| {
+            }));
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.search"), mn("menu.search")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace", "Ctrl+H / Ctrl+R")).clicked() { self.open_find(true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.grep", "Ctrl+G")).clicked() { self.focus_grep(); ui.close(); }
@@ -1237,24 +1239,15 @@ impl App {
                     if ui.button(trz("上一处差异 (Alt+↑)")).clicked() { self.diff_step(false); ui.close(); }
                     if ui.button(trz("清除比较")).clicked() { self.diff = None; self.diff_list_open = false; ui.close(); }
                 });
-            });
+            }));
             ui.menu_button(menuui::menu_title(&tc, tr("menu.fold"), mn("menu.fold")), |ui| {
                 if menuui::mbtn(ui, lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
                 if menuui::mbtn(ui, lk("c.unfold-all", "Ctrl+Shift+]")).clicked() { self.cur().folds.clear(); ui.close(); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.plugin"), mn("menu.plugin")), |ui| self.plugin_panel(ui));
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")), |ui| {
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
-                ui.menu_button(trz("语法类型"), |ui| {
-                    let i = self.active.min(self.docs.len() - 1);
-                    let cur = self.docs[i].syntax.clone();
-                    if menu_check(ui, &tc, cur.is_none(), trz("自动 (按扩展名)")).clicked() { self.docs[i].syntax = None; ui.close(); }
-                    ui.separator();
-                    let names: Vec<String> = self.registry.all().iter().map(|t| t.name.clone()).collect();
-                    for n in names {
-                        if menu_check(ui, &tc, cur.as_deref() == Some(n.as_str()), &n).clicked() { self.docs[i].syntax = Some(n); ui.close(); }
-                    }
-                });
+                ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
                 ui.menu_button(tr("sub.uilang"), |ui| {
                     for l in Lang::ALL {
                         if menu_check(ui, &tc, crate::i18n::cur() == l, l.native()).clicked() {
@@ -1273,7 +1266,7 @@ impl App {
                 if ui.button(tr("c.open-autosave")).clicked() { ui.close(); self.open_autosave(); }
                 ui.separator();
                 if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
-            });
+            }));
             ui.menu_button(menuui::menu_title(&tc, tr("menu.bookmark"), mn("menu.bookmark")), |ui| {
                 if menuui::mbtn(ui, lk("c.bookmark-toggle", "Ctrl+F2")).clicked() { self.cur().bookmark("toggle"); ui.close(); }
                 if menuui::mbtn(ui, lk("c.bookmark-next", "F2")).clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
@@ -1286,7 +1279,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.hist-next", "Alt+N")).clicked() { self.jump_go(1); ui.close(); }
                 if menuui::mbtn(ui, lk("c.hist-mark", "")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
             });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")), |ui| {
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")), |ui| menuui::scroll(ui, |ui| {
                 if menuui::mbtn(ui, lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
                 if menuui::mbtn(ui, lk("c.split-rows", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Rows); ui.close(); }
                 if menuui::mbtn(ui, lk("c.split-quad", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Quad); ui.close(); }
@@ -1312,20 +1305,9 @@ impl App {
                 if menuui::mbtn(ui, lk("c.maximize", "")).clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
                 if menu_check(ui, &tc, self.fullscreen, lk("c.fullscreen", "F11")).clicked() { self.toggle_fullscreen(ctx); ui.close(); }
                 if menu_check(ui, &tc, self.topmost, lk("c.topmost", "")).clicked() { self.toggle_topmost(ctx); ui.close(); }
-            });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.macro"), mn("menu.macro")), |ui| {
-                let rec = self.cur().rec.is_some();
-                if menuui::mbtn(ui, lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
-                if menuui::mbtn(ui, lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
-                ui.separator();
-                if ui.button(trz("保存键盘宏…")).clicked() { ui.close(); self.macro_save(); }
-                if ui.button(trz("载入键盘宏…")).clicked() { ui.close(); self.macro_load(); }
-                ui.separator();
-                if menuui::mbtn(ui, lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
-                if menuui::mbtn(ui, lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
-                if menuui::mbtn(ui, lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
-            });
-            ui.menu_button(menuui::menu_title(&tc, tr("menu.view"), mn("menu.view")), |ui| {
+            }));
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.macro"), mn("menu.macro")), |ui| self.macro_items(ui));
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.view"), mn("menu.view")), |ui| menuui::scroll(ui, |ui| {
                 if menu_check(ui, &tc, self.split_on, lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
                 if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`")).clicked() { self.term.open = !self.term.open; }
                 if menu_check(ui, &tc, self.ai.open, lk("c.ai-chat", "Ctrl+Alt+L")).clicked() { self.ai_toggle(); ui.close(); }
@@ -1340,8 +1322,8 @@ impl App {
                     let label = if col > 0 { format!("{} ({col})", Self::app_label(KApp::WrapCol, "按指定列数折行…")) } else { Self::app_label(KApp::WrapCol, "按指定列数折行…") };
                     if menu_check(ui, &tc, self.wrap && col > 0, label).clicked() { self.run_app(KApp::WrapCol, ctx); ui.close(); }
                     ui.separator();
-                    ui.add_enabled(col > 0, egui::Checkbox::new(&mut self.cfg.view.kinsoku, trz("行头 / 行尾禁则 (指定列数折行时)")));
-                    ui.add_enabled(col > 0 && self.cfg.view.kinsoku, egui::Checkbox::new(&mut self.cfg.view.hang, trz("句读挂在行尾 (ぶら下げ)")));
+                    ui.add_enabled(col > 0, crate::ckbox::Check::new(&mut self.cfg.view.kinsoku, trz("行头 / 行尾禁则 (指定列数折行时)")));
+                    ui.add_enabled(col > 0 && self.cfg.view.kinsoku, crate::ckbox::Check::new(&mut self.cfg.view.hang, trz("句读挂在行尾 (ぶら下げ)")));
                 });
                 if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B")).clicked() { self.side.open = !self.side.open; }
                 for (a, zh, on) in [(KApp::SideCollapse, "折叠左侧栏", self.cfg.view.side_collapsed), (KApp::RightCollapse, "折叠右侧面板", self.cfg.view.right_collapsed), (KApp::BottomCollapse, "折叠底部面板", self.cfg.view.bottom_collapsed)] {
@@ -1369,7 +1351,8 @@ impl App {
                 if menuui::mbtn(ui, lk("c.zoom-in", "Ctrl+=")).clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
                 if menuui::mbtn(ui, lk("c.zoom-out", "Ctrl+-")).clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
                 if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() { self.font_px = DEFAULT_FONT_PX; }
-            });
+            }));
+            ui.menu_button(menuui::menu_title(&tc, tr("menu.tool"), mn("menu.tool")), |ui| menuui::scroll(ui, |ui| self.tool_items(ui, ctx)));
             ui.menu_button(menuui::menu_title(&tc, tr("menu.help"), mn("menu.help")), |ui| {
                 if menuui::mbtn(ui, lk("c.palette", "")).clicked() { ui.close(); self.run_app(KApp::Palette, ctx); }
                 if menuui::mbtn(ui, lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
@@ -1378,6 +1361,62 @@ impl App {
                 if menuui::mbtn(ui, lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
             });
         });
+    }
+
+    /// 宏菜单的内容 (「宏」和「工具 > 宏」共用)
+    fn macro_items(&mut self, ui: &mut egui::Ui) {
+        let rec = self.cur().rec.is_some();
+        if menuui::mbtn(ui, lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
+        if menuui::mbtn(ui, lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
+        ui.separator();
+        if ui.button(trz("保存键盘宏…")).clicked() { ui.close(); self.macro_save(); }
+        if ui.button(trz("载入键盘宏…")).clicked() { ui.close(); self.macro_load(); }
+        ui.separator();
+        if menuui::mbtn(ui, lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
+        if menuui::mbtn(ui, lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
+        if menuui::mbtn(ui, lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
+    }
+
+    /// 语法类型子菜单的内容 (「设置」和「工具」共用)
+    fn syntax_items(&mut self, ui: &mut egui::Ui) {
+        let tc = self.tc;
+        use menuui::menu_check;
+        let i = self.active.min(self.docs.len() - 1);
+        let cur = self.docs[i].syntax.clone();
+        if menu_check(ui, &tc, cur.is_none(), trz("自动 (按扩展名)")).clicked() { self.docs[i].syntax = None; ui.close(); }
+        ui.separator();
+        let names: Vec<String> = self.registry.all().iter().map(|t| t.name.clone()).collect();
+        for n in names {
+            if menu_check(ui, &tc, cur.as_deref() == Some(n.as_str()), &n).clicked() { self.docs[i].syntax = Some(n); ui.close(); }
+        }
+    }
+
+    /// 「工具」菜单 (Tauri `MENU_DEF` 的 tool): 大纲 / 语法 / 类型别设定 / 设置导出导入 / 自动备份 / 文件加锁 / 宏 / 插件 / 执行外部命令,
+    /// 每项接到 ide-fast 已有的功能 (Tauri 的 SQL*Plus 与「历史管理」ide-fast 没有对应功能, 不列)
+    fn tool_items(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context) {
+        if ui.button(tr("sd.outline")).clicked() {
+            self.side.open = true;
+            self.side.tab = crate::sidebar::Tab::Outline;
+            self.expand_dock(crate::panels::Dock::Side);
+            ui.close();
+        }
+        ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
+        if menuui::mbtn(ui, lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
+        if menuui::mbtn(ui, lk("c.export-config", "")).clicked() { ui.close(); self.export_settings(); }
+        if menuui::mbtn(ui, lk("c.import-config", "")).clicked() { ui.close(); self.import_settings(); }
+        ui.separator();
+        if ui.button(tr("c.open-autosave")).clicked() { ui.close(); self.open_autosave(); }
+        if ui.button(trz("文件加锁…")).clicked() { self.open_prefs(); ui.close(); }
+        ui.separator();
+        ui.menu_button(tr("menu.macro"), |ui| self.macro_items(ui));
+        ui.menu_button(tr("menu.plugin"), |ui| self.plugin_panel(ui));
+        ui.separator();
+        if ui.button(trz("执行外部命令 (终端)")).clicked() {
+            self.sys.bottom = sysopts::BottomTab::Terminal;
+            self.term.open = true;
+            self.expand_dock(crate::panels::Dock::Bottom);
+            ui.close();
+        }
     }
 
     /// 把当前文档的文本当 Sakura 宏运行 (作用在上一份活动的另一个文档上; 只有一份就作用在自己上)
@@ -1442,23 +1481,33 @@ impl App {
 
     /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
     fn term_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.strong(trz("终端"));
-            if ui.small_button(trz("清屏")).clicked() { self.term.clear(); }
-            if ui.small_button(trz("重启")).on_hover_text(trz("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)")).clicked() { self.term.restart(); }
-            ui.checkbox(&mut self.term.persistent, trz("常驻会话"));
-            if ui.small_button("×").clicked() { self.term.open = false; }
-            ui.checkbox(&mut self.term_stdin, trz("选区作标准输入"));
-            ui.checkbox(&mut self.term_replace, trz("输出替换选区"));
+        Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
+            if ui.button(trz("清屏")).clicked() { self.term.clear(); }
+            if ui.button(trz("重启")).on_hover_text(trz("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)")).clicked() { self.term.restart(); }
+            ui.check(&mut self.term.persistent, trz("常驻会话"));
+            ui.check(&mut self.term_stdin, trz("选区作标准输入"));
+            ui.check(&mut self.term_replace, trz("输出替换选区"));
             if self.term.running() { ui.label(trz("运行中…")); }
+            if ui.button("×").clicked() { self.term.open = false; }
         });
         let h = (ui.available_height() - 28.0).max(30.0);
         self.term.set_scrollback(self.cfg.term_scrollback);
         let (tfg, tbg) = (self.cfg.term_fg.map(|c| Color32::from_rgb(c[0], c[1], c[2])), self.cfg.term_bg.map(|c| Color32::from_rgb(c[0], c[1], c[2])));
         let tpx = self.cfg.term_font_px;
         egui::Frame::NONE.fill(tbg.unwrap_or(Color32::TRANSPARENT)).show(ui, |ui| {
-            egui::ScrollArea::vertical().max_height(h).stick_to_bottom(true).auto_shrink([false, false]).show(ui, |ui| {
-                let mut t = egui::RichText::new(self.term.display()).monospace().size(tpx);
+            crate::scrollx::show(ui, egui::ScrollArea::vertical().max_height(h).stick_to_bottom(true).auto_shrink([false, false]), |ui| {
+                let shown = self.term.display();
+                if shown.trim().is_empty() && !self.term.running() {
+                    // 没有会话输出时的空状态 (Tauri: No terminal session / 暂无终端会话)
+                    let dim = self.tc.fg_dim;
+                    ui.add_space((h * 0.3).max(4.0));
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("No terminal session — 暂无终端会话").monospace().size(tpx).color(dim));
+                        ui.label(egui::RichText::new(trz("输入命令按 Enter 启动 shell, 或点「+ 新建终端」")).monospace().size(tpx).color(dim));
+                    });
+                    return;
+                }
+                let mut t = egui::RichText::new(shown).monospace().size(tpx);
                 if let Some(c) = tfg { t = t.color(c); }
                 ui.add(egui::Label::new(t).selectable(true));
             });
@@ -2334,18 +2383,15 @@ impl App {
             let rp = ui.painter_at(rr);
             rp.rect_filled(rr, 0.0, tc.bg_bar);
             rp.line_segment([rr.left_bottom(), rr.right_bottom()], egui::Stroke::new(1.0, tc.border));
-            let small = FontId::new((self.font_px * 0.7).max(8.0), crate::fonts::editor_family());
+            let ruler_font = FontId::new(self.font_px, crate::fonts::editor_family());
             let origin = rr.min.x + gutter + pad - out.state.clamped_offset().x;
             let cur_col = { let d = &self.docs[ai]; crate::view::display_col(&d.lines[d.cursor[0].min(d.lines.len() - 1)], d.cursor[1], tab) };
             let cols = ((rr.width() + out.state.clamped_offset().x) / char_w) as usize + 1;
-            for cell in editcore::ruler::render(&editcore::ruler::RulerConfig { start: 1, end: cols.max(10), major_tick: 10, minor_tick: 5 }) {
-                let cx = origin + (cell.col - 1) as f32 * char_w;
-                if cx < rr.min.x + gutter - char_w || cx > rr.max.x { continue; }
-                match cell.kind {
-                    editcore::ruler::RulerMark::Major => { rp.text(Pos2::new(cx + char_w, rr.center().y), egui::Align2::RIGHT_CENTER, format!("{}", cell.col), small.clone(), tc.fg_dim); }
-                    editcore::ruler::RulerMark::Minor => { rp.text(Pos2::new(cx + char_w / 2.0, rr.center().y), egui::Align2::CENTER_CENTER, editcore::ruler::marker_for(cell), small.clone(), tc.fg_dim); }
-                    editcore::ruler::RulerMark::Plain => {}
-                }
+            // Tauri 的标尺是一串字符 `....+....1....+....2`: 每列一个字, 等宽对齐正文
+            let first = (((rr.min.x + gutter - char_w - origin) / char_w).floor().max(0.0) as usize) + 1;
+            if cols >= first {
+                let text = crate::view::ruler_text(first, cols - first + 1);
+                rp.text(Pos2::new(origin + (first - 1) as f32 * char_w, rr.center().y), egui::Align2::LEFT_CENTER, text, ruler_font, tc.fg_dim);
             }
             let cx = origin + (cur_col - 1) as f32 * char_w;
             rp.rect_filled(Rect::from_min_size(Pos2::new(cx, rr.min.y), Vec2::new(char_w, rr.height())), 0.0, Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 70));
@@ -2406,15 +2452,6 @@ impl App {
 /// 标签分组名的翻译键 (顺序 = 分组编号)
 const GROUP_KEYS: [&str; 6] = ["grp.0", "grp.1", "grp.2", "grp.3", "grp.4", "grp.5"];
 const GROUP_COLORS: [Option<Color32>; 6] = [None, Some(Color32::from_rgb(230, 80, 80)), Some(Color32::from_rgb(235, 150, 50)), Some(Color32::from_rgb(80, 190, 110)), Some(Color32::from_rgb(80, 150, 235)), Some(Color32::from_rgb(170, 110, 225))];
-
-/// 状态栏里点出来的命令
-enum StatusCmd {
-    Goto,
-    Charset(Charset),
-    Reopen(Charset),
-    Bom,
-    Eol(Eol),
-}
 
 /// 标签栏里点出来的命令 (画完再执行, 免得画的时候改 docs)
 enum TabCmd {
@@ -2615,59 +2652,7 @@ impl App {
         if self.cfg.view.toolbar { egui::Panel::top("toolbar").show(root, |ui| self.toolbar(ui, ctx)); }
         use crate::panels::{Dock, Mode};
         self.normalize_docks();
-        let mut st_cmd: Option<StatusCmd> = None;
-        if self.cfg.view.status_bar { egui::Panel::bottom("status").frame(egui::Frame::new().fill(self.tc.bg_status).inner_margin(egui::Margin::symmetric(8, 2))).show(root, |ui| {
-            status_bar_style(ui, self.tc.on_status());
-            let d = &self.docs[self.active.min(self.docs.len() - 1)];
-            let lang = self.type_of(d).map(|c| c.name.clone());
-            let dcol = crate::view::display_col(&d.lines[d.cursor[0].min(d.lines.len() - 1)], d.cursor[1], self.tab);
-            ui.horizontal(|ui| {
-                // 位置: 点一下 = 转到行
-                if ui.add(egui::Label::new(format!("Ln {}, Col {}", d.cursor[0] + 1, dcol)).sense(Sense::click())).on_hover_text(format!("{}
-{}", tr("st.goto-hint"), trf("st.char-col", &[&(d.cursor[1] + 1).to_string()]))).clicked() { st_cmd = Some(StatusCmd::Goto); }
-                ui.separator();
-                // 编码 / 换行符 / BOM: 点开菜单改 (改保存时的格式, 或按别的编码重新打开)
-                ui.menu_button(d.charset.label(), |ui| {
-                    ui.label(tr("st.charset-save"));
-                    for cs in Charset::ALL {
-                        if ui.selectable_label(cs == d.charset, cs.label()).clicked() { st_cmd = Some(StatusCmd::Charset(cs)); ui.close(); }
-                    }
-                    ui.separator();
-                    ui.menu_button(tr("st.reopen-as"), |ui| {
-                        for cs in Charset::ALL { if ui.button(cs.label()).clicked() { st_cmd = Some(StatusCmd::Reopen(cs)); ui.close(); } }
-                    });
-                    if ui.button(if d.bom == editcore::document_io::Bom::None { tr("st.add-bom") } else { tr("st.rm-bom") }).clicked() { st_cmd = Some(StatusCmd::Bom); ui.close(); }
-                });
-                ui.menu_button(d.eol.label(), |ui| {
-                    for e in [Eol::Crlf, Eol::Lf, Eol::Cr] {
-                        if ui.selectable_label(e == d.eol, e.label()).clicked() { st_cmd = Some(StatusCmd::Eol(e)); ui.close(); }
-                    }
-                });
-                if d.mixed_eol { ui.colored_label(Color32::from_rgb(230, 160, 40), tr("st.mixed-eol")).on_hover_text(tr("st.mixed-eol-tip")); }
-                ui.label(trf("st.lines", &[&d.lines.len().to_string()]));
-                if let Some(sel) = d.sel {
-                    let (n, l) = crate::view::sel_stats(&d.lines, sel);
-                    ui.label(trf("st.selected", &[&n.to_string(), &l.to_string()]));
-                }
-                ui.label(lang.unwrap_or_else(|| tr("st.plain").to_string()));
-                ui.label(if d.overwrite { "OVR" } else { "INS" });
-                if d.readonly { ui.label(tr("st.readonly")); }
-                if d.rec.is_some() { ui.colored_label(Color32::from_rgb(230, 70, 70), "● REC"); }
-                if d.box_sel.is_some() { ui.label(tr("st.box")); }
-                if d.sel_mode { ui.colored_label(Color32::from_rgb(230, 160, 40), trz("范围选择")); }
-                if !d.extra.is_empty() { ui.label(trf("st.cursors", &[&(d.extra.len() + 1).to_string()])); }
-                ui.separator();
-                ui.label(crate::msgtr::msg(&d.tip).as_ref());
-            });
-        }); }
-        match st_cmd {
-            Some(StatusCmd::Goto) => { self.goto_open = true; self.goto_text.clear(); }
-            Some(StatusCmd::Charset(cs)) => self.cur().set_charset(cs),
-            Some(StatusCmd::Reopen(cs)) => self.reopen_as(cs),
-            Some(StatusCmd::Bom) => self.cur().toggle_bom(),
-            Some(StatusCmd::Eol(e)) => self.cur().set_eol(e),
-            None => {}
-        }
+        self.status_panel(root);
         if self.cfg.view.funckey { egui::Panel::bottom("funckey").show(root, |ui| self.funckey_bar(ui, ctx)); }
         if self.find.open {
             let i = self.active.min(self.docs.len() - 1);

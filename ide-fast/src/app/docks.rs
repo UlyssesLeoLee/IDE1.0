@@ -78,7 +78,7 @@ impl App {
 
     /// 底部面板头部右端的文字钮 (Tauri 的 `.bottom-toggle`: 展开时写「折叠」, 折叠时写「展开」, 11px, 圆角 5, 1px 边)
     pub(super) fn dock_chevron(&mut self, ui: &mut egui::Ui, d: Dock) {
-        let collapsed = self.dock_collapsed(d);
+        let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
         let word = if collapsed { "展开" } else { "折叠" };
         let txt = egui::RichText::new(trz(word)).size(11.0).color(self.tc.fg_dim);
         let edge = if self.tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
@@ -138,7 +138,11 @@ impl App {
                 let col = if on || resp.hovered() { tc.fg } else { tc.fg_dim };
                 ui.painter().galley(egui::pos2(rect.left() + 8.0, rect.center().y - g.size().y / 2.0), g, col);
                 if on { ui.painter().rect_filled(Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max), 0.0, tc.blue); }
-                if resp.clicked() { self.sys.bottom = t; }
+                if resp.clicked() {
+                    self.sys.bottom = t;
+                    // 头条状态 (折叠 / 完整界面里还没开) 点页签 = 展开面板
+                    if self.dock_mode(Dock::Bottom, self.term.open) != Mode::Full { self.term.open = true; self.expand_dock(Dock::Bottom); }
+                }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -155,8 +159,24 @@ impl App {
         });
     }
 
+    /// 底部面板正文顶上的工具行 (终端 / 输出 / 问题共用): 11px、弱前景、描边小按钮, 与头条里「+ 新建终端」同款
+    pub(super) fn bottom_toolbar(dim: Color32, ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+        ui.scope(|ui| {
+            crate::btnstyle::outline(ui);
+            let st = ui.style_mut();
+            st.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(11.0));
+            st.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(11.0));
+            st.spacing.button_padding = Vec2::new(8.0, 2.0);
+            st.visuals.override_text_color = Some(dim);
+            ui.add_space(4.0);
+            ui.horizontal(|ui| { ui.spacing_mut().item_spacing.x = 4.0; add(ui); });
+            ui.add_space(2.0);
+        });
+    }
+
     /// 一个停靠区这一帧怎么画
     pub(super) fn dock_mode(&self, d: Dock, visible: bool) -> Mode {
+        if d == Dock::Bottom { return panels::bottom_mode(visible, self.dock_collapsed(d), self.cfg.view.rail); }
         panels::mode(visible, self.dock_collapsed(d))
     }
 }
@@ -169,6 +189,18 @@ mod tests {
     fn app() -> (App, std::sync::MutexGuard<'static, ()>) {
         let g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         (App::build(vec![], None, Trace::new(), Settings::default(), false), g)
+    }
+
+    #[test]
+    fn full_ui_shows_the_bottom_head_without_opening_the_terminal() {
+        let (mut a, _g) = app();
+        assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Hidden, "极简界面: 不画");
+        a.cfg.view.rail = true;
+        assert!(!a.term.open);
+        assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Strip, "完整界面: 只有头条");
+        assert!(!a.term.running(), "头条状态不启动 shell");
+        a.collapse_dock(Dock::Bottom);
+        assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Full, "点展开 = 打开面板");
     }
 
     #[test]
