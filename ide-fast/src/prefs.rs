@@ -17,6 +17,7 @@ pub enum PrefsTab {
     Types,
     Search,
     Terminal,
+    Toolbar,
 }
 
 pub struct Prefs {
@@ -58,6 +59,37 @@ fn tri_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, v: &
 
 fn label_of(file: &str) -> String {
     file.rsplit_once('.').map(|(s, _)| s).unwrap_or(file).to_string()
+}
+
+/// 工具栏列表里第 `i` 项往上 / 往下挪一格; 挪成了返回 true
+pub fn toolbar_move(list: &mut [String], i: usize, up: bool) -> bool {
+    let j = if up { i.checked_sub(1) } else { (i + 1 < list.len()).then_some(i + 1) };
+    match j {
+        Some(j) if i < list.len() => { list.swap(i, j); true }
+        _ => false,
+    }
+}
+
+/// 往工具栏末尾加一项: 命令 (注册表里有、列表里还没有) 或分隔线 (`id` 为空, 且上一项不是分隔线); 加成了返回 true
+pub fn toolbar_add(list: &mut Vec<String>, id: &str) -> bool {
+    if list.len() >= settings::TOOLBAR_MAX {
+        return false;
+    }
+    let ok = if id.is_empty() { list.last().is_some_and(|l| !l.is_empty()) } else { !list.iter().any(|x| x == id) && crate::keymap::entry_by_id(id).is_some() };
+    if ok { list.push(id.to_string()); }
+    ok
+}
+
+/// 能放进工具栏的全部命令: (id, 当前语言的名字), 按名字排序
+pub fn toolbar_candidates() -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = crate::keymap::entries().iter().map(|e| (e.id.clone(), e.label.text().to_string())).collect();
+    v.sort_by(|a, b| a.1.cmp(&b.1));
+    v
+}
+
+fn toolbar_name(id: &str) -> String {
+    if id.is_empty() { return tr("pf.toolbar-sepline").to_string(); }
+    crate::keymap::entry_by_id(id).map(|e| e.label.text().to_string()).unwrap_or_else(|| id.to_string())
 }
 
 pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
@@ -201,6 +233,38 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                 if (ui.button(tr("pf.type-add")).clicked() || enter) && add_type(d, &p.new_ext) { p.new_ext.clear(); }
             });
         }
+        PrefsTab::Toolbar => {
+            ui.small(tr("pf.toolbar-hint"));
+            ui.add_space(4.0);
+            let mut act: Option<(usize, u8)> = None; // (下标, 0 上移 / 1 下移 / 2 删除)
+            for (i, id) in d.toolbar_cmds.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.label(toolbar_name(id));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("✕").clicked() { act = Some((i, 2)); }
+                        if ui.small_button("▼").clicked() { act = Some((i, 1)); }
+                        if ui.small_button("▲").clicked() { act = Some((i, 0)); }
+                    });
+                });
+            }
+            match act {
+                Some((i, 0)) => { toolbar_move(&mut d.toolbar_cmds, i, true); }
+                Some((i, 1)) => { toolbar_move(&mut d.toolbar_cmds, i, false); }
+                Some((i, _)) => { d.toolbar_cmds.remove(i); }
+                None => {}
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("pf-toolbar-add").selected_text(tr("pf.toolbar-add")).height(280.0).show_ui(ui, |ui| {
+                    for (id, name) in toolbar_candidates() {
+                        let used = d.toolbar_cmds.contains(&id);
+                        if ui.add_enabled(!used, egui::Button::selectable(false, name)).clicked() { toolbar_add(&mut d.toolbar_cmds, &id); }
+                    }
+                });
+                if ui.button(tr("pf.toolbar-sep")).clicked() { toolbar_add(&mut d.toolbar_cmds, ""); }
+                if ui.button(tr("pf.toolbar-reset")).clicked() { d.toolbar_cmds = settings::DEFAULT_TOOLBAR.iter().map(|s| s.to_string()).collect(); }
+            });
+        }
         PrefsTab::Search => {
             ui.check(&mut d.search.find_case, tr("pf.find-case"));
             ui.check(&mut d.search.find_regex, tr("pf.find-regex"));
@@ -236,5 +300,33 @@ mod tests {
     fn font_labels_drop_the_extension() {
         assert_eq!(label_of("consola.ttf"), "consola");
         assert_eq!(label_of("noext"), "noext");
+    }
+
+    #[test]
+    fn toolbar_editing_helpers() {
+        let mut l: Vec<String> = ["c.save", "c.find", "c.palette"].iter().map(|s| s.to_string()).collect();
+        assert!(toolbar_move(&mut l, 1, true) && l == ["c.find", "c.save", "c.palette"]);
+        assert!(toolbar_move(&mut l, 1, false) && l == ["c.find", "c.palette", "c.save"]);
+        assert!(!toolbar_move(&mut l, 0, true), "第一项不能再往上");
+        assert!(!toolbar_move(&mut l, 2, false), "最后一项不能再往下");
+        assert!(!toolbar_move(&mut l, 9, true), "下标越界: 什么也不做");
+        assert!(!toolbar_add(&mut l, "c.save"), "已经在列表里的命令不重复加");
+        assert!(!toolbar_add(&mut l, "no.such.command"), "注册表里没有的命令不加");
+        assert!(toolbar_add(&mut l, "c.undo") && l.last().map(String::as_str) == Some("c.undo"));
+        assert!(toolbar_add(&mut l, "") && !toolbar_add(&mut l, ""), "分隔线不连着加两条");
+        let mut e: Vec<String> = vec![];
+        assert!(!toolbar_add(&mut e, ""), "空列表开头不加分隔线");
+        let mut full: Vec<String> = (0..settings::TOOLBAR_MAX).map(|_| String::new()).collect();
+        assert!(!toolbar_add(&mut full, "c.save"), "封顶");
+    }
+
+    #[test]
+    fn toolbar_candidates_are_registry_commands_sorted_by_name() {
+        let c = toolbar_candidates();
+        assert!(c.iter().any(|(id, _)| id == "c.save") && c.iter().any(|(id, _)| id == "app.completion"));
+        assert!(c.windows(2).all(|w| w[0].1 <= w[1].1), "按名字排序");
+        for (id, _) in &c { assert!(crate::keymap::entry_by_id(id).is_some()); }
+        assert_eq!(toolbar_name(""), tr("pf.toolbar-sepline"));
+        assert_eq!(toolbar_name("zzz"), "zzz", "未知命令: 原样显示 id");
     }
 }

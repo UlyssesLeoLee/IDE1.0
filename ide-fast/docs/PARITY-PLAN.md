@@ -21,6 +21,10 @@
 | 批次 3 把菜单整体重写成 MENU_DEF 式生成 | partial | 快捷键、面板、提示共用注册表; 菜单本身仍是手写结构 (只是提示由注册表生成)。完全生成需要给每项配分组 / 分隔符 / 勾选状态, 收益小 |
 | 批次 3 编辑区原生处理的键 (剪切 / 复制 / 粘贴、Ctrl+退格 等) 可改键 | not done | 它们由编辑区直接吃事件, 键位表里标成「系统键」, 只显示不能改 (改了会和文本输入路径打架) |
 | 批次 4 标签命令 / 文件菜单 / 编码·换行改写 / 状态栏点击 / 全屏·置顶 / 移动履历 / 括弧 / 书签列表 | done | |
+| 批次 6 代码补全 (completion, Ctrl+Space) | done (移植补齐 第五批) | `complete.rs` (纯逻辑, 有单测) + `textcmds.rs` 的浮层: 关键字 > 内建名 > 文件标识符, 前缀不分大小写, 最多 40; ↑↓ / Enter / Tab / Esc / 点击; 接受是一步撤销。Tauri 的 Ctrl+N / P 换候选没移植 (和新建 / 打印冲突) |
+| 批次 6 转到定义 (goto-def, 本文件) | done (移植补齐 第五批) | `complete::find_definition`: `fn / struct / class / let…` 加名字的行, 退化成首次出现; 跨文件仍靠 F12 标签跳转 |
+| 批次 8 工具栏按钮可自定义 (Tauri「快捷按钮」/ PREFS.qab) | done (移植补齐 第五批) | 设置 `toolbar_cmds` (读入时清洗) + 首选项 > 工具栏页 (添加 / 排序 / 删除 / 分隔线 / 恢复默认)。没做: 放插件命令和宏槽 (Tauri 可以) |
+| 批次 10 AI 推理强度档位 (下拉 / 从供应商获取 / 自定义) | done (移植补齐 第五批) | `ai/efforts.rs`: 默认档位、按形状从模型接口返回里找档位、`/models/<模型>` 再 `/models`; 界面在 AI 面板设置里。只在本机假服务器上验证过联网部分 |
 | 批次 4 Sakura 默认键 (Tauri `KEYMAP` 逐项核对) | done (移植补齐 第四批) | 20 个键补绑, 见 CHANGELOG 0.3.5; 单测 `tauri_default_keys_are_bound_to_the_matching_commands`。没绑的及原因同 CHANGELOG |
 | 批次 4 合并连续重复行 (uniq-consecutive) / 执行外部命令 (exec-cmd, Ctrl+F5) | done (移植补齐 第四批) | `cmds::lines_op` 走 `editcore::edit_ops::transform_lines`; `open_exec_terminal` |
 | 批次 4 整理行 / 文本变换改用 editcore (Sakura 实测) | done (移植补齐 第四批) | `cmds::lines_op` / `cmds::transform` 不再自己抄: 排序 (UTF-16 序)、去行首 / 行尾空白 (只去空格和 Tab)、Tab ↔ 空格 (按制表位)、大小写 |

@@ -286,6 +286,97 @@ impl App {
         }
     }
 
+    /// 代码补全 (同 Tauri `completion`, Ctrl+Space): 按光标左边的前缀列出候选 —— 当前文件类型的关键字 > 内建名 > 文件里出现过的标识符
+    pub(super) fn show_completion(&mut self) {
+        let i = self.active.min(self.docs.len() - 1);
+        let (kws, ty_name) = match self.type_of(&self.docs[i]) {
+            Some(t) => (t.keywords.iter().chain(t.type_keywords.iter()).cloned().collect::<Vec<_>>(), t.name.clone()),
+            None => (vec![], String::new()),
+        };
+        let d = &mut self.docs[i];
+        let [row, col] = d.cursor;
+        let prefix = crate::complete::prefix_before(&d.lines[row.min(d.lines.len() - 1)], col);
+        let items = crate::complete::candidates(&kws, crate::complete::builtins(&ty_name), &d.lines, &prefix);
+        if items.is_empty() {
+            d.tip = format!("无补全候选 (前缀: {})", if prefix.is_empty() { "空" } else { &prefix });
+            self.sys.complete = None;
+            return;
+        }
+        self.sys.complete = Some(crate::complete::Popup { items, idx: 0, doc_id: d.id, rev: d.rev, cursor: d.cursor, scroll: true });
+    }
+
+    /// 浮层里换候选 (到头绕回)
+    pub(super) fn complete_move(&mut self, delta: i32) {
+        if let Some(p) = self.sys.complete.as_mut() {
+            let n = p.items.len() as i32;
+            p.idx = (p.idx as i32 + delta).rem_euclid(n) as usize;
+            p.scroll = true;
+        }
+    }
+
+    /// 接受当前候选: 把光标左边的前缀换成它 (一步撤销), 关掉浮层
+    pub(super) fn accept_completion(&mut self) {
+        let Some(p) = self.sys.complete.take() else { return };
+        let Some(cand) = p.items.get(p.idx).cloned() else { return };
+        let d = self.cur();
+        if d.id != p.doc_id || d.rev != p.rev || d.cursor != p.cursor || d.readonly {
+            return;
+        }
+        let [row, col] = d.cursor;
+        let (line, ncol) = crate::complete::apply(&d.lines[row], col, &cand);
+        d.replace_rows(row, 1, vec![line], [row, ncol]);
+    }
+
+    /// 补全浮层: 贴在光标行下面; 文档 / 修订号 / 光标任何一样变了 (打字、移动、点别处) 就关掉
+    pub(super) fn completion_popup(&mut self, ctx: &egui::Context) {
+        let Some(mut p) = self.sys.complete.take() else { return };
+        let d = &self.docs[self.active.min(self.docs.len() - 1)];
+        if p.doc_id != d.id || p.rev != d.rev || p.cursor != d.cursor {
+            return;
+        }
+        let Some(pos) = self.sys.caret_screen else { self.sys.complete = Some(p); return };
+        let (mut clicked, mut hovered) = (None, None);
+        let moved = ctx.input(|i| i.pointer.is_moving());
+        #[allow(deprecated)]
+        let area_id = egui::Id::new("completion-popup");
+        egui::Area::new(area_id).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(140.0);
+                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                    for (i, it) in p.items.iter().enumerate() {
+                        let r = ui.selectable_label(i == p.idx, it);
+                        if i == p.idx && p.scroll { r.scroll_to_me(None); }
+                        if r.clicked() { clicked = Some(i); } else if moved && r.hovered() { hovered = Some(i); }
+                    }
+                });
+            });
+        });
+        p.scroll = false;
+        if let Some(i) = hovered { p.idx = i; }
+        if let Some(i) = clicked {
+            p.idx = i;
+            self.sys.complete = Some(p);
+            self.accept_completion();
+        } else {
+            self.sys.complete = Some(p);
+        }
+    }
+
+    /// 转到定义 (本文件, 同 Tauri `goto-def`): 光标处标识符的定义行 (`fn / struct / class / let… 名字`), 没有就跳到它的首次出现
+    pub(super) fn goto_definition(&mut self) {
+        let d = self.cur();
+        let [row, col] = d.cursor;
+        let Some(sym) = crate::complete::identifier_at(&d.lines[row.min(d.lines.len() - 1)], col) else { d.tip = "光标处无标识符".into(); return };
+        let Some(def) = crate::complete::find_definition(&d.lines, &sym) else { d.tip = format!("未找到 {sym} 的定义"); return };
+        self.jump_mark();
+        let d = self.cur();
+        d.sel = None;
+        d.anchor = None;
+        d.goto(def.row, def.col);
+        let shown: String = d.lines[def.row].trim().chars().take(50).collect();
+        d.tip = if def.exact { format!("定义 @ Ln {}: {shown}", def.row + 1) } else { format!("首次出现 @ Ln {}", def.row + 1) };
+    }
+
     /// 列块删除 (同 Tauri `column-delete`): 把矩形选区整块挖空, 光标回到矩形左上角; 没有列块选区就提示怎么建立
     pub(super) fn column_delete(&mut self) {
         let d = self.cur();

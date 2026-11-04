@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod complete;
 mod glassfx;
 mod ui_ext;
 mod ckbox;

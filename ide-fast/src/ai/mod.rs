@@ -6,12 +6,14 @@
 //! - 有连接 / 总时长 / 低速超时和响应字节上限; 取消 = 杀掉 curl 子进程。
 
 mod config;
+mod efforts;
 mod prompt;
 mod sse;
 mod tools;
 mod transport;
 
 pub use config::*;
+pub use efforts::*;
 pub use prompt::*;
 pub use sse::*;
 pub use tools::*;

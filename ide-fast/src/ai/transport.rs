@@ -164,6 +164,57 @@ fn run_request(cfg: &AiConfig, messages: &[Value], tools: &[Value], h: &Handle, 
     turn
 }
 
+/// 模型接口的响应最多读这么多字节
+const MODELS_MAX: usize = 2 * 1024 * 1024;
+
+/// GET 一个 JSON 接口 (查模型信息用)。密钥和请求头走 curl 配置的标准输入, 不进命令行; 返回 (HTTP 状态码, JSON);
+/// 状态码不是 2xx 时不解析响应体 (JSON 给 Null)。错误信息里的密钥会打码。
+pub fn get_json(cfg: &AiConfig, url: &str) -> Result<(u16, Value), String> {
+    let run = || -> Result<(u16, Value), String> {
+        if cfg.key.contains(|c: char| c.is_control()) {
+            return Err("密钥含控制字符".into());
+        }
+        let conf = format!(
+            "header = {}\nheader = {}\nheader = \"anthropic-version: 2023-06-01\"\nheader = \"Accept: application/json\"\nheader = \"User-Agent: IDE1.0-fast\"\n",
+            cfg_quote(&format!("Authorization: Bearer {}", cfg.key)),
+            cfg_quote(&format!("x-api-key: {}", cfg.key)),
+        );
+        let proto = if url.starts_with("https://") { "=https" } else { "=http" };
+        let mut cmd = crate::curlx::curl_command();
+        cmd.args(["-sS", "--proto", proto, "--max-redirs", "0", "--connect-timeout", "15", "--max-time", "30", "--max-filesize", &MODELS_MAX.to_string(), "-K", "-", "-w", "\n%{http_code}", "--", url])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| format!("无法运行 curl ({e}): 请确认系统自带 curl 可用"))?;
+        if let Some(mut si) = child.stdin.take() {
+            let _ = si.write_all(conf.as_bytes());
+        }
+        let mut out = Vec::new();
+        if let Some(o) = child.stdout.take() {
+            let _ = o.take(MODELS_MAX as u64 + 64).read_to_end(&mut out);
+        }
+        let mut err = String::new();
+        if let Some(e) = child.stderr.take() {
+            let _ = e.take(4096).read_to_string(&mut err);
+        }
+        let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+        let text = String::from_utf8_lossy(&out).to_string();
+        let Some((body, code)) = text.rsplit_once('\n') else {
+            return Err(if err.trim().is_empty() { "接口没有返回内容".to_string() } else { err.trim().to_string() });
+        };
+        let status: u16 = code.trim().parse().map_err(|_| if ok { "读不到 HTTP 状态码".to_string() } else { err.trim().to_string() })?;
+        if status == 0 {
+            // curl 没拿到任何响应 (连不上 / 超时 / 证书不对…): 状态码是 000, 真正的原因在 stderr
+            return Err(if err.trim().is_empty() { "连不上接口".to_string() } else { err.trim().to_string() });
+        }
+        if !(200..300).contains(&status) {
+            return Ok((status, Value::Null));
+        }
+        serde_json::from_str::<Value>(body).map(|j| (status, j)).map_err(|_| "接口返回的不是 JSON".to_string())
+    };
+    run().map_err(|e| redact(&e, &cfg.key))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,7 +277,7 @@ mod tests {
 
     #[test]
     fn config_roundtrip_and_quote() {
-        let c = AiConfig { base_url: "https://x/v1".into(), model: "m".into(), key: "k".into(), effort: "high".into(), consent: true };
+        let c = AiConfig { base_url: "https://x/v1".into(), model: "m".into(), key: "k".into(), effort: "high".into(), efforts: vec![], consent: true };
         assert_eq!(AiConfig::from_json(&c.to_json()), c);
         assert_eq!(AiConfig::from_json(&json!({})).base_url, PRESETS[0].1);
         let cfgtxt = curl_config("k\"ey", "{\"a\":\"b\\n\"}").unwrap();
@@ -293,6 +344,56 @@ mod tests {
         assert!(req.contains("Authorization: Bearer sk-test-key-xyz"), "{req}");
         assert!(req.starts_with("POST /v1/chat/completions"), "{req}");
         assert!(req.contains("\"stream\":true") && req.contains("你好"));
+    }
+
+    #[test]
+    fn fetches_effort_levels_from_a_local_models_endpoint() {
+        let (url, srv) = mock(r#"{"data":[{"id":"other","reasoning_effort":["low"]},{"id":"m","reasoning_effort":["high","low","minimal"]}]}"#, false);
+        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        assert_eq!(crate::ai::fetch_efforts(&cfg).unwrap(), ["minimal", "low", "high"], "只取这个模型自己那一项, 按强弱排序");
+        let req = srv.join().unwrap();
+        assert!(req.starts_with("GET /v1/models/m "), "先查这个模型自己的地址: {req}");
+        assert!(req.contains("Authorization: Bearer sk-test-key-xyz") && req.contains("x-api-key: sk-test-key-xyz"), "{req}");
+    }
+
+    /// 本机模拟服务: 连着接 `n` 个请求, 每个都回同一段 JSON
+    fn mock_json_n(reply: &'static str, n: usize) -> String {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for _ in 0..n {
+                let Ok((mut s, _)) = l.accept() else { return };
+                let mut req = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !String::from_utf8_lossy(&req).contains("\r\n\r\n") {
+                    let k = s.read(&mut buf).unwrap_or(0);
+                    if k == 0 { break; }
+                    req.extend_from_slice(&buf[..k]);
+                }
+                let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{reply}").as_bytes());
+                let _ = s.flush();
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn effort_fetch_reports_an_unreachable_endpoint_instead_of_http_0() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1", l.local_addr().unwrap());
+        drop(l); // 端口空着: 连接被拒
+        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        let e = crate::ai::fetch_efforts(&cfg).unwrap_err();
+        assert!(!e.contains("HTTP 0") && e.contains("手动填写") && !e.contains("sk-test-key-xyz"), "{e}");
+    }
+
+    #[test]
+    fn effort_fetch_reports_a_model_missing_from_the_list_without_leaking_the_key() {
+        let url = mock_json_n(r#"{"data":[{"id":"other","reasoning_effort":["low"]}]}"#, 2);
+        let cfg = AiConfig { base_url: url, model: "m".into(), key: "sk-test-key-xyz".into(), ..Default::default() };
+        let e = crate::ai::fetch_efforts(&cfg).unwrap_err();
+        assert!(e.contains("接口列表里没有模型 m") && e.contains("手动填写"), "两个地址都返回了列表却没有这个模型: {e}");
+        assert!(!e.contains("sk-test-key-xyz"), "错误信息不带密钥: {e}");
     }
 
     #[test]

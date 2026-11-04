@@ -378,7 +378,7 @@ impl App {
         let mut open = true;
         egui::Window::new(tr("pf.title")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search"), (PrefsTab::Terminal, "pf.tab.terminal")] {
+                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search"), (PrefsTab::Terminal, "pf.tab.terminal"), (PrefsTab::Toolbar, "pf.tab.toolbar")] {
                     ui.selectable_value(&mut p.tab, t, tr(key));
                 }
             });
@@ -1220,7 +1220,7 @@ impl App {
                 self.cmd_menu(ui, ctx);
                 ui.separator();
                 for (z, a) in [("选到上一段落", KApp::SelParaPrev), ("选到下一段落", KApp::SelParaNext), ("范围选择模式 (开始 / 结束)", KApp::SelMode), ("复制文件名", KApp::CopyFname), ("复制完整路径", KApp::CopyPath),
-                               ("SPACE 缩进", KApp::SpaceIndent), ("SPACE 反缩进", KApp::SpaceUnindent), ("光标行居中", KApp::CurCenter), ("切换选区统计方式 (字符 / 字节 / 行)", KApp::SelCountMode), ("复制路径与光标位置", KApp::CopyTag), ("在折行处加换行复制", KApp::CopyWrapped), ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
+                               ("代码补全", KApp::Completion), ("SPACE 缩进", KApp::SpaceIndent), ("SPACE 反缩进", KApp::SpaceUnindent), ("光标行居中", KApp::CurCenter), ("切换选区统计方式 (字符 / 字节 / 行)", KApp::SelCountMode), ("复制路径与光标位置", KApp::CopyTag), ("在折行处加换行复制", KApp::CopyWrapped), ("列块删除", KApp::ColDelete), ("列块替换…", KApp::ColReplace), ("复制为彩色 HTML", KApp::CopyHtml), ("复制为彩色 HTML (带行号)", KApp::CopyHtmlLn), ("剪贴板历史…", KApp::ClipHistory)] {
                     if ui.button(Self::app_label(a, z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.separator();
@@ -1238,7 +1238,7 @@ impl App {
                 if menuui::mbtn(ui, lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
                 if menuui::mbtn(ui, lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
                 if menuui::mbtn(ui, lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
-                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext), ("(选择) 上一处改动", KApp::ModPrevSel), ("(选择) 下一处改动", KApp::ModNextSel), ("打开同名 C/C++ 头 / 源文件", KApp::OpenHc), ("切换查找标记 (全部强调)", KApp::FindMarks), ("回到查找起点", KApp::FindStart)] {
+                for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext), ("上一个函数", KApp::FuncPrev), ("下一个函数", KApp::FuncNext), ("(选择) 上一处改动", KApp::ModPrevSel), ("(选择) 下一处改动", KApp::ModNextSel), ("打开同名 C/C++ 头 / 源文件", KApp::OpenHc), ("切换查找标记 (全部强调)", KApp::FindMarks), ("回到查找起点", KApp::FindStart), ("转到定义 (本文件)", KApp::GotoDef)] {
                     if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
                 ui.menu_button(trz("比较"), |ui| {
@@ -1924,6 +1924,8 @@ impl App {
             KApp::SpaceUnindent => self.space_indent_cmd(true),
             KApp::CurCenter => self.center_cursor(),
             KApp::BackupNow => self.backup_now(),
+            KApp::Completion => self.show_completion(),
+            KApp::GotoDef => self.goto_definition(),
             KApp::ExecCmd => self.open_exec_terminal(),
             KApp::SelCountMode => self.cycle_sel_count(),
             KApp::FindMarks => self.toggle_find_marks(),
@@ -2308,12 +2310,33 @@ impl App {
 
         let text_drop: Option<[usize; 2]> = self.text_drag.filter(|t| t.started).and_then(|t| t.drop);
         let mut drag_end: Option<Pos2> = None;
+        let mut caret_screen: Option<Pos2> = None;
         // ---- 键盘 (查找框有焦点时不抢) ----
         let mut clip_out: Option<String> = None;
         let mut preedit_now = self.preedit.clone();
         let mut jump_row: Option<usize> = None; // Grep 结果文档里 Enter 的那一行
+        let mut accept_completion = false;
         if !find_has_focus && self.pane_keys {
             let mut events = ctx.input(|i| i.events.clone());
+            if self.sys.complete.is_some() {
+                // 补全浮层开着: ↑ ↓ 换候选, Enter / Tab 接受, Esc 关闭 (这些键不再交给编辑区)
+                let mut rest = Vec::with_capacity(events.len());
+                for ev in events {
+                    if let egui::Event::Key { key, pressed: true, modifiers, .. } = &ev {
+                        if !modifiers.ctrl && !modifiers.command && !modifiers.alt && !modifiers.shift {
+                            match key {
+                                Key::ArrowDown => { self.complete_move(1); continue; }
+                                Key::ArrowUp => { self.complete_move(-1); continue; }
+                                Key::Enter | Key::Tab => { accept_completion = true; continue; }
+                                Key::Escape => { self.sys.complete = None; continue; }
+                                _ => {}
+                            }
+                        }
+                    }
+                    rest.push(ev);
+                }
+                events = rest;
+            }
             if wrap {
                 // 自动换行下 ↑ ↓ Home End 按显示行走 (按真实排版取位置); 带修饰键的仍交给 editcore
                 let mut rest = Vec::with_capacity(events.len());
@@ -2358,6 +2381,7 @@ impl App {
                 }
             }
         }
+        if accept_completion { self.accept_completion(); }
         if let Some(c) = clip_out { self.put_clip(ctx, c); }
         if let Some(r) = jump_row { self.jump_req = Some((self.docs[ai].id, r)); }
         self.preedit = preedit_now;
@@ -2532,6 +2556,7 @@ impl App {
                 if reveal {
                     ui.scroll_to_rect(Rect::from_min_size(Pos2::new(cx - 8.0, cy), Vec2::new(40.0, row_h * 2.0)), if center { Some(egui::Align::Center) } else { None });
                 }
+                caret_screen = Some(Pos2::new(cx, cy + row_h)); // 补全浮层贴在光标行下面
                 ui.ctx().output_mut(|o| {
                     o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect, cursor_rect: Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)), should_interrupt_composition: false });
                 });
@@ -2594,6 +2619,7 @@ impl App {
         }
         if let Some(id) = ed_id { if !self.editor_ids.contains(&id) { self.editor_ids.push(id); } }
         self.max_cols = widest;
+        self.sys.caret_screen = caret_screen;
         if let Some((p, shift, dragging, ended)) = drag_end.map(|p| (p, false, true, true)).or(clicked.map(|(p, s, d)| (p, s, d, false))) {
             let rel_y = (p.y - rect.min.y).max(0.0);
             let d = &mut self.docs[ai];
@@ -2857,6 +2883,7 @@ impl App {
         self.was_focused = focused;
         if self.prefs.is_some() { self.prefs_window(ctx); }
         if self.goto_open { self.goto_window(ctx); }
+        self.completion_popup(ctx);
         if self.sys.mdq.open { self.md_struct_window(ctx); }
         if self.bm_open { self.bookmark_window(ctx); }
         self.diff_refresh();
@@ -3130,6 +3157,76 @@ EDITED".into())), ..Default::default() };
         a.open_counterpart();
         assert_eq!((a.docs.len(), a.cur().tip.contains("没有找到")), (before, true), "对应文件不存在: 只提示");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn completion_lists_candidates_cycles_and_accepts_as_one_undo_step() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].name = "x.rs".into();
+        a.docs[0].lines = vec!["fn main() {".into(), "    let counter = 1;".into(), "    cou + 1".into()];
+        a.docs[0].goto(2, 7);
+        a.show_completion();
+        let p = a.sys.complete.as_ref().expect("前缀 cou 有候选");
+        assert_eq!(p.items, ["counter"], "文件里出现过的标识符; 关键字里没有以 cou 开头的");
+        a.docs[0].goto(1, 7);
+        a.show_completion();
+        assert!(a.sys.complete.is_none(), "前缀就是 let 本身: 没有更长的候选, 不弹浮层");
+        // 前缀 "l": 关键字 let / loop 排在文件标识符前面; 上下键到头绕回
+        a.docs[0].lines[2] = "    l".into();
+        a.docs[0].goto(2, 5);
+        a.show_completion();
+        let n = a.sys.complete.as_ref().unwrap().items.len();
+        assert!(n >= 2 && a.sys.complete.as_ref().unwrap().items[0].starts_with('l'));
+        a.complete_move(-1);
+        assert_eq!(a.sys.complete.as_ref().unwrap().idx, n - 1, "第一项再往上绕回最后一项");
+        a.complete_move(1);
+        assert_eq!(a.sys.complete.as_ref().unwrap().idx, 0);
+        // 接受第一项: 前缀换成候选, 光标到候选末尾, 一步撤销
+        let first = a.sys.complete.as_ref().unwrap().items[0].clone();
+        a.accept_completion();
+        assert!(a.sys.complete.is_none());
+        assert_eq!(a.docs[0].lines[2], format!("    {first}"));
+        assert_eq!(a.docs[0].cursor, [2, 4 + first.chars().count()]);
+        a.docs[0].undo();
+        assert_eq!(a.docs[0].lines[2], "    l", "一步撤销回到补全前");
+    }
+
+    #[test]
+    fn completion_reports_when_there_is_nothing_and_closes_when_stale() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].lines = vec!["zq".into()];
+        a.docs[0].goto(0, 2);
+        a.show_completion();
+        assert!(a.sys.complete.is_none() && a.docs[0].tip.contains("无补全候选"), "{}", a.docs[0].tip);
+        a.docs[0].lines = vec!["alpha_one alpha_two al".into()];
+        a.docs[0].goto(0, 22);
+        a.show_completion();
+        assert!(a.sys.complete.is_some());
+        a.docs[0].goto(0, 3); // 光标挪走: 浮层该关
+        a.completion_popup(&egui::Context::default());
+        assert!(a.sys.complete.is_none(), "光标变了就关掉浮层");
+        a.docs[0].goto(0, 22);
+        a.show_completion();
+        a.docs[0].type_text("x"); // 打字: 修订号变了
+        a.completion_popup(&egui::Context::default());
+        assert!(a.sys.complete.is_none(), "文档变了就关掉浮层");
+    }
+
+    #[test]
+    fn goto_definition_jumps_to_the_definition_line_and_reports_misses() {
+        let (mut a, _g) = app(Settings::default());
+        a.docs[0].lines = vec!["main();".into(), "fn helper() {}".into(), "helper();".into(), "  + ".into()];
+        a.docs[0].goto(2, 3);
+        a.goto_definition();
+        assert_eq!(a.docs[0].cursor, [1, 3], "跳到 fn helper 的 helper 上");
+        assert!(a.docs[0].tip.contains("定义 @ Ln 2"), "{}", a.docs[0].tip);
+        a.docs[0].goto(3, 3);
+        a.goto_definition();
+        assert!(a.docs[0].tip.contains("光标处无标识符"), "{}", a.docs[0].tip);
+        a.docs[0].lines[3] = "unknown_sym".into();
+        a.docs[0].goto(3, 4);
+        a.goto_definition();
+        assert_eq!(a.docs[0].cursor, [3, 0], "只出现这一次: 首次出现就是自己");
     }
 
     #[test]
