@@ -95,7 +95,7 @@ IDE1.0 集成 [`aci-emitter v0.1.0`](https://github.com/UlyssesLeoLee/aci-emitte
 - **4 状态**: `PASS`, `FAIL`, `WARN`, `SKIP`
 - **17 expect_value_types**: `response_within_ms`, `response_status_2xx`, `field_equals`, ...
 
-详细字段语义见 [`.aci.json`](./.aci.json).
+详细字段语义见 [`.aci.json`](.aci.json).
 
 ### 3.1 CLI emit 示例输出
 
@@ -160,7 +160,7 @@ IDE1.0 当前 4 个详细设计书 (设计阶段, **未实装**):
 | DD-02 | Session Transaction Buffer Engine 详细設計書 | 设计 (实装待 ULYS-191 后续 brief) |
 | DD-04 | Plugin Loader / Search / TUI | 设计 (实装待 ULYS-191 后续 brief) |
 
-Stage 3.0 集成设计见 [`docs/architecture/aci-integration.md`](./docs/architecture/aci-integration.md).
+Stage 3.0 集成设计见 [`docs/01_基本设计/architecture/aci-integration.md`](docs/01_基本设计/architecture/aci-integration.md).
 
 ## §5 守门合规 (13 项, per AGENTS.md §4)
 
@@ -187,7 +187,17 @@ Stage 3.0 集成设计见 [`docs/architecture/aci-integration.md`](./docs/archit
 
 ## §7 License
 
-MIT OR Apache-2.0 (dual), per workspace.
+GNU Affero General Public License v3.0 (`AGPL-3.0-only`), 见 [LICENSE](LICENSE)。
+
+随程序打包的第三方组件保留各自的许可: 默认插件 Pele (MIT, `crates/editcore/plugins/pele/LICENSE`); `editcore` 中沿用上游 Sakura Editor 的部分为 Zlib 许可。
+
+## §7.1 Code signing policy / 隐私声明
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). *(申请中: 通过之前发布的 Windows 安装包尚未签名。)*
+
+- **Authors / Reviewers / Approvers**: [@UlyssesLeoLee](https://github.com/UlyssesLeoLee) (当前为单人维护; 有第二位维护者加入后在此分开列出)。
+- 只签名由本仓库源码经自动化工作流 ([`release-windows.yml`](.github/workflows/release-windows.yml)) 构建的二进制; 每次发布在签名前都需要人工批准。
+- **隐私**: IDE1.0 在本机运行, 没有遥测。除非你主动要求, 程序不会向其它联网系统发送信息: 「扩展」面板的"检查更新 / 安装"只在你点击时访问 GitHub (`api.github.com`、Release 资产); Chat 面板 / "让 AI 给出改善方案"只在你确认后, 把你选定的文字 (选中内容或当前章节) 发往**你自己配置的** AI 端点, API Key 只保存在本机并只发给该端点。
 
 ## §8 IDE Shell 骨架 (ULYS-191 §3)
 

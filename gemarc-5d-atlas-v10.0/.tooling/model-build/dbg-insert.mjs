@@ -1,0 +1,13 @@
+import fs from "node:fs"; import vm from "node:vm";
+const ROOT = "E:/IDE1.0/gemarc-5d-atlas-v10.0";
+const rd = (f) => JSON.parse(fs.readFileSync(ROOT + "/models/" + f, "utf8"));
+const arch = rd("architecture.json"), rules = rd("causal-rules.json"), cases = rd("cases.json");
+const ctx = { console, setTimeout, clearTimeout, Date, Math, JSON }; ctx.globalThis = ctx; vm.createContext(ctx);
+for (const f of ["engine.js", "causal.js"]) vm.runInContext(fs.readFileSync(ROOT + "/src/" + f, "utf8"), ctx, { filename: f });
+const eng = ctx.GemArcEngine.createEngine({ version: arch.version, nodes: arch.nodes, edges: arch.edges, rules: rules.rules, stateMachines: rules.stateMachines, cases: cases.cases });
+const r = ctx.GemArcCausal.applyIntervention(eng.model, { kind: "InsertElement", targetId: "E-WB-TO-STORE", params: { nodeId: "X-VALIDATOR", name: "Injected Validator", kind: "Processor", role: "Processor" }, id: "SD-TEST", caseId: "C-NORMAL-EDIT" });
+console.log("ops:", JSON.stringify(r.delta.operations, null, 1));
+console.log("removed:", JSON.stringify(r.delta.operations[0].removedEdgeIds));
+console.log("newEdges:", JSON.stringify(r.delta.operations[0].newEdgeIds));
+console.log("oldGone:", !r.model.edges.some((e) => e.id === "E-WB-TO-STORE"), "hasX:", r.model.nodes.some((n) => n.id === "X-VALIDATOR"));
+console.log("edges with prefix:", r.model.edges.filter((e) => e.id.indexOf("E-WB-TO-STORE") === 0).map((e) => e.id));

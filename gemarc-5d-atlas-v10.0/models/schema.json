@@ -1,0 +1,628 @@
+{
+  "schema": "ide1-5d-atlas/engineering-model/v10.0",
+  "description": "Canonical engineering model — 记录类型、字段、枚举、图能力要求与查询 API。本文件是数据契约，同时被 src/validate.js 的轻量校验器消费（不依赖 ajv，file:// 可用）。",
+  "enumerations": {
+    "existence_0d": [
+      "Present",
+      "Absent",
+      "Unknown"
+    ],
+    "implementation": [
+      "Implemented",
+      "Designed",
+      "Inferred",
+      "Absent",
+      "Unknown"
+    ],
+    "evidence_kind": [
+      "SourceCode",
+      "TestTrace",
+      "RuntimeLog",
+      "Document",
+      "PublicObservation",
+      "UserRequirement"
+    ],
+    "scenario_origin": [
+      "ObservedReplay",
+      "DesignedSimulation",
+      "HypotheticalExperiment"
+    ],
+    "gap_type": [
+      "GAP_SOURCE_DOCUMENT",
+      "GAP_BUSINESS_DECISION",
+      "ATLAS_FAIL",
+      "NOT_APPLICABLE"
+    ],
+    "qa_status": [
+      "PASS",
+      "FAIL",
+      "NOT_TESTED",
+      "DEGRADED",
+      "BLOCKED",
+      "FLAKY_UNRESOLVED"
+    ]
+  },
+  "implementation_gate": {
+    "rule": "Implemented 必须有目标工程中落实相应行为的代码 path:startLine-endLine 和 revision",
+    "insufficient_evidence": [
+      "依赖声明",
+      "目录结构",
+      "接口定义",
+      "DTO",
+      "Mock",
+      "TODO",
+      "注释",
+      "文档描述"
+    ],
+    "no_source_rule": "仅公开网站不能证明私有后端事实；没有源码不能把 Unknown 判成 Absent",
+    "observed_note": "Observed 属于证据类型（evidence_kind / scenario_origin），不混用为实现状态"
+  },
+  "records": {
+    "SourceRevision": {
+      "required": [
+        "id",
+        "repo",
+        "branch",
+        "sha",
+        "capturedAt"
+      ],
+      "optional": [
+        "remote",
+        "dirty",
+        "note"
+      ],
+      "types": {
+        "id": "string",
+        "repo": "string",
+        "branch": "string",
+        "sha": "string",
+        "capturedAt": "string",
+        "remote": "string?",
+        "dirty": "boolean?",
+        "note": "string?"
+      }
+    },
+    "Evidence": {
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "sourceRevisionId",
+        "summary"
+      ],
+      "optional": [
+        "path",
+        "startLine",
+        "endLine",
+        "revision",
+        "note"
+      ],
+      "types": {
+        "id": "string",
+        "kind": "evidence_kind",
+        "status": "implementation",
+        "sourceRevisionId": "string",
+        "summary": "string",
+        "path": "string?",
+        "startLine": "integer?",
+        "endLine": "integer?",
+        "revision": "string?",
+        "note": "string?"
+      }
+    },
+    "Requirement": {
+      "required": [
+        "id",
+        "intent",
+        "measurableAcceptance",
+        "provenance",
+        "evidenceIds",
+        "affectedDimensions",
+        "linkedTestIds"
+      ],
+      "optional": [
+        "nonGoals",
+        "status",
+        "owner"
+      ],
+      "types": {
+        "id": "string",
+        "intent": "string",
+        "measurableAcceptance": "string[]",
+        "nonGoals": "string[]?",
+        "provenance": "string",
+        "evidenceIds": "string[]",
+        "affectedDimensions": "string[]",
+        "linkedTestIds": "string[]",
+        "status": "string?",
+        "owner": "string?"
+      }
+    },
+    "Prompt": {
+      "required": [
+        "promptId",
+        "version",
+        "objective",
+        "requirementIds",
+        "nodeEdgeIds",
+        "caseIds",
+        "inputs",
+        "constraints",
+        "outputs",
+        "acceptance",
+        "evidenceIds"
+      ],
+      "optional": [
+        "notes"
+      ],
+      "types": {
+        "promptId": "string",
+        "version": "integer",
+        "objective": "string",
+        "requirementIds": "string[]",
+        "nodeEdgeIds": "string[]",
+        "caseIds": "string[]",
+        "inputs": "string[]",
+        "constraints": "string[]",
+        "outputs": "string[]",
+        "acceptance": "string[]",
+        "evidenceIds": "string[]",
+        "notes": "string?"
+      }
+    },
+    "Decision": {
+      "required": [
+        "id",
+        "question",
+        "decision",
+        "rationale",
+        "evidenceIds"
+      ],
+      "optional": [
+        "alternatives",
+        "status",
+        "decidedBy",
+        "decidedAt"
+      ],
+      "types": {
+        "id": "string",
+        "question": "string",
+        "decision": "string",
+        "rationale": "string",
+        "alternatives": "string[]?",
+        "evidenceIds": "string[]",
+        "status": "string?",
+        "decidedBy": "string?",
+        "decidedAt": "string?"
+      }
+    },
+    "Node": {
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "qualifiedName",
+        "role",
+        "domainId",
+        "parentId",
+        "portIds",
+        "properties",
+        "verification",
+        "evidenceIds"
+      ],
+      "optional": [],
+      "types": {
+        "id": "string",
+        "kind": "string",
+        "name": "string",
+        "qualifiedName": "string",
+        "role": "string",
+        "domainId": "string",
+        "parentId": "string|null",
+        "portIds": "string[]",
+        "properties": "object",
+        "verification": "implementation",
+        "evidenceIds": "string[]"
+      }
+    },
+    "Edge": {
+      "required": [
+        "id",
+        "sourceId",
+        "targetId",
+        "sourcePortId",
+        "targetPortId",
+        "type",
+        "directed",
+        "guardId",
+        "properties",
+        "verification",
+        "evidenceIds"
+      ],
+      "optional": [],
+      "types": {
+        "id": "string",
+        "sourceId": "string",
+        "targetId": "string",
+        "sourcePortId": "string|null",
+        "targetPortId": "string|null",
+        "type": "string",
+        "directed": "boolean",
+        "guardId": "string|null",
+        "properties": "object",
+        "verification": "implementation",
+        "evidenceIds": "string[]"
+      }
+    },
+    "Port": {
+      "required": [
+        "id",
+        "name",
+        "direction",
+        "type",
+        "nodeId"
+      ],
+      "optional": [
+        "properties"
+      ],
+      "types": {
+        "id": "string",
+        "name": "string",
+        "direction": "in|out",
+        "type": "string",
+        "nodeId": "string",
+        "properties": "object?"
+      }
+    },
+    "Container": {
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "parentId",
+        "semantic"
+      ],
+      "optional": [
+        "properties"
+      ],
+      "types": {
+        "id": "string",
+        "kind": "System|Building|Floor|Room",
+        "name": "string",
+        "parentId": "string|null",
+        "semantic": "string",
+        "properties": "object?"
+      }
+    },
+    "Diagram": {
+      "required": [
+        "id",
+        "diagramType",
+        "title",
+        "elements",
+        "evidenceIds"
+      ],
+      "optional": [
+        "nodeIds",
+        "edgeIds",
+        "notes"
+      ],
+      "types": {
+        "id": "string",
+        "diagramType": "string",
+        "title": "string",
+        "elements": "object[]",
+        "nodeIds": "string[]?",
+        "edgeIds": "string[]?",
+        "evidenceIds": "string[]",
+        "notes": "string?"
+      }
+    },
+    "Screen": {
+      "required": [
+        "id",
+        "name",
+        "route",
+        "sourceRevisionId",
+        "evidenceIds"
+      ],
+      "optional": [
+        "components",
+        "actions",
+        "notes"
+      ],
+      "types": {
+        "id": "string",
+        "name": "string",
+        "route": "string",
+        "components": "string[]?",
+        "actions": "string[]?",
+        "sourceRevisionId": "string",
+        "evidenceIds": "string[]",
+        "notes": "string?"
+      }
+    },
+    "Component": {
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "screenIds"
+      ],
+      "optional": [
+        "props",
+        "states"
+      ],
+      "types": {
+        "id": "string",
+        "name": "string",
+        "kind": "string",
+        "screenIds": "string[]",
+        "props": "object?",
+        "states": "string[]?"
+      }
+    },
+    "Workflow": {
+      "required": [
+        "id",
+        "name",
+        "steps",
+        "version"
+      ],
+      "optional": [
+        "semantics",
+        "evidenceIds"
+      ],
+      "types": {
+        "id": "string",
+        "name": "string",
+        "steps": "object[]",
+        "version": "string",
+        "semantics": "string?",
+        "evidenceIds": "string[]?"
+      }
+    },
+    "StateMachine": {
+      "required": [
+        "id",
+        "initial",
+        "states",
+        "transitions"
+      ],
+      "optional": [
+        "evidenceIds"
+      ],
+      "types": {
+        "id": "string",
+        "initial": "string",
+        "states": "string[]",
+        "transitions": "object[]",
+        "evidenceIds": "string[]?"
+      }
+    },
+    "EventRule": {
+      "required": [
+        "id",
+        "when",
+        "then",
+        "sourceNodeId",
+        "targetNodeId"
+      ],
+      "optional": [
+        "guardAst",
+        "timeoutMs",
+        "retry",
+        "errorRules",
+        "evidenceIds"
+      ],
+      "types": {
+        "id": "string",
+        "when": "string",
+        "then": "string",
+        "sourceNodeId": "string",
+        "targetNodeId": "string",
+        "guardAst": "object?",
+        "timeoutMs": "integer?",
+        "retry": "object?",
+        "errorRules": "object[]?",
+        "evidenceIds": "string[]?"
+      }
+    },
+    "EventTrace": {
+      "required": [
+        "eventId",
+        "caseId",
+        "logicalTime",
+        "sequence",
+        "sourceNodeId",
+        "targetNodeId",
+        "edgeId",
+        "previousState",
+        "nextState",
+        "ruleId",
+        "evidenceIds"
+      ],
+      "optional": [],
+      "types": {
+        "id": "string",
+        "eventId": "string",
+        "caseId": "string",
+        "logicalTime": "integer",
+        "sequence": "integer",
+        "sourceNodeId": "string",
+        "targetNodeId": "string",
+        "edgeId": "string",
+        "previousState": "string",
+        "nextState": "string",
+        "ruleId": "string",
+        "evidenceIds": "string[]"
+      }
+    },
+    "Case": {
+      "required": [
+        "id",
+        "name",
+        "origin",
+        "scenario",
+        "expected"
+      ],
+      "optional": [
+        "nodeIds",
+        "edgeIds",
+        "evidenceIds",
+        "linkedTestIds"
+      ],
+      "types": {
+        "id": "string",
+        "name": "string",
+        "origin": "scenario_origin",
+        "scenario": "object",
+        "expected": "string[]",
+        "nodeIds": "string[]?",
+        "edgeIds": "string[]?",
+        "evidenceIds": "string[]?",
+        "linkedTestIds": "string[]?"
+      }
+    },
+    "Intervention": {
+      "required": [
+        "id",
+        "kind",
+        "targetId",
+        "appliedAt"
+      ],
+      "optional": [
+        "params",
+        "rationale"
+      ],
+      "types": {
+        "id": "string",
+        "kind": "string",
+        "targetId": "string",
+        "appliedAt": "integer",
+        "params": "object?",
+        "rationale": "string?"
+      }
+    },
+    "ScenarioGraphDelta": {
+      "required": [
+        "id",
+        "baseScenarioId",
+        "operations",
+        "mutates"
+      ],
+      "optional": [
+        "note"
+      ],
+      "types": {
+        "id": "string",
+        "baseScenarioId": "string",
+        "operations": "object[]",
+        "mutates": "boolean",
+        "note": "string?"
+      }
+    },
+    "CausalExplanation": {
+      "required": [
+        "id",
+        "baselineConditions",
+        "intervention",
+        "ruleIds",
+        "firstDivergence",
+        "affectedNodes",
+        "affectedEdges",
+        "propagationPath",
+        "recovery",
+        "compensation",
+        "terminalDiff",
+        "assumptions",
+        "evidenceIds"
+      ],
+      "optional": [
+        "blocking",
+        "feedback",
+        "outcome"
+      ],
+      "types": {
+        "id": "string",
+        "baselineConditions": "object",
+        "intervention": "object",
+        "ruleIds": "string[]",
+        "firstDivergence": "object|null",
+        "affectedNodes": "string[]",
+        "affectedEdges": "string[]",
+        "propagationPath": "string[]",
+        "recovery": "string|null",
+        "compensation": "string|null",
+        "terminalDiff": "string",
+        "assumptions": "string[]",
+        "evidenceIds": "string[]",
+        "blocking": "object?",
+        "feedback": "object?",
+        "outcome": "string?"
+      }
+    },
+    "Test": {
+      "required": [
+        "id",
+        "kind",
+        "target",
+        "assertion",
+        "linkedRequirementIds"
+      ],
+      "optional": [
+        "command",
+        "result",
+        "status",
+        "evidenceIds"
+      ],
+      "types": {
+        "id": "string",
+        "kind": "UT|IT|ST|UAT|E2E",
+        "target": "string",
+        "assertion": "string",
+        "linkedRequirementIds": "string[]",
+        "command": "string?",
+        "result": "string?",
+        "status": "qa_status?",
+        "evidenceIds": "string[]?"
+      }
+    }
+  },
+  "graph_requirements": [
+    "MultiEdge",
+    "SelfLoop",
+    "Directed",
+    "Undirected",
+    "TypedPorts",
+    "StableIDs",
+    "SubgraphProjection",
+    "Cycles",
+    "DependencyPaths",
+    "ImpactTraversal"
+  ],
+  "queries": [
+    "getNode",
+    "getEdge",
+    "neighbors",
+    "inEdges",
+    "outEdges",
+    "ancestors",
+    "descendants",
+    "subgraph",
+    "findPath",
+    "findCycles",
+    "findImpactSubgraph"
+  ],
+  "split_models": {
+    "FactGraph": "正式事实图，只读",
+    "DiagramModel": "图定义，独立版本化",
+    "SpatialProjection": "System→Building→Floor→Room→Node/Edge 投影",
+    "RuntimeSnapshot": "4D 运行态快照",
+    "EventQueue": "离散事件队列",
+    "ScenarioGraphDelta": "5D 实验差异，不写回 FactGraph",
+    "VisualState": "视觉状态，与模型分离"
+  },
+  "split_models_rule": "分开版本化，互不擅改",
+  "semantics": "没有真实/明确 Designed 数据库 Schema 时不得凭空生成目标已实现 ER；来源不足用 Unknown、TBD 和显式假设。"
+}

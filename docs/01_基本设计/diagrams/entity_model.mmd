@@ -1,0 +1,50 @@
+erDiagram
+    DOCUMENT_SESSION ||--o{ STRUCTURE_NODE : indexes
+    DOCUMENT_SESSION ||--o{ EDIT_PROPOSAL : reviews
+    DOCUMENT_SESSION ||--o{ REFERENCE_EDGE : owns
+    STRUCTURE_NODE ||--o{ REFERENCE_EDGE : from
+    PLUGIN_MANIFEST ||--o{ TOOL_DEFINITION : contributes
+    TOOL_DEFINITION }o--|| COMMAND_DEFINITION : invokes
+    COMMAND_DEFINITION ||--o{ EDIT_PROPOSAL : mayCreate
+    DOCUMENT_SESSION {
+        string sessionId PK
+        string workspaceId
+        string path
+        int version
+        string encoding
+        string eol
+        bool dirty
+    }
+    STRUCTURE_NODE {
+        string nodeId PK
+        string type
+        int startByte
+        int endByte
+        string headingPath
+    }
+    REFERENCE_EDGE {
+        string edgeId PK
+        string sourceNodeId
+        string targetUri
+        string kind
+    }
+    PLUGIN_MANIFEST {
+        string pluginId PK
+        string version
+        string permissions
+    }
+    TOOL_DEFINITION {
+        string toolId PK
+        string commandId FK
+        string groupId
+    }
+    COMMAND_DEFINITION {
+        string commandId PK
+        string capability
+    }
+    EDIT_PROPOSAL {
+        string proposalId PK
+        int expectedVersion
+        string affectedRanges
+        string status
+    }

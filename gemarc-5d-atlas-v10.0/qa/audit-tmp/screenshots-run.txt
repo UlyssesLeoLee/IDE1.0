@@ -1,0 +1,13 @@
+  desktop-1440   1D  overflow=0 inspector=true timeline=false clipped=8 → 1d-prompt-desktop-1440.png
+  desktop-1440   2D  overflow=0 inspector=true timeline=false clipped=0 → 2d-canvas-desktop-1440.png
+  desktop-1440   3D  overflow=0 inspector=true timeline=false clipped=0 → 3d-scene-desktop-1440.png
+  desktop-1440   4D  overflow=0 inspector=true timeline=true clipped=0 → 4d-timeline-desktop-1440.png
+  desktop-1440   5D  overflow=0 inspector=true timeline=true clipped=0 → 5d-lab-desktop-1440.png
+  desktop-1440   P   overflow=0 inspector=true timeline=false clipped=0 → prototype-desktop-1440.png
+  narrow-390     1D  overflow=0 inspector=true timeline=false clipped=0 → 1d-prompt-narrow-390.png
+  narrow-390     2D  overflow=0 inspector=true timeline=false clipped=0 → 2d-canvas-narrow-390.png
+  narrow-390     3D  overflow=0 inspector=true timeline=false clipped=0 → 3d-scene-narrow-390.png
+  narrow-390     4D  overflow=0 inspector=true timeline=true clipped=0 → 4d-timeline-narrow-390.png
+  narrow-390     5D  overflow=0 inspector=true timeline=true clipped=0 → 5d-lab-narrow-390.png
+  narrow-390     P   overflow=0 inspector=true timeline=false clipped=0 → prototype-narrow-390.png
+screenshots written: 12

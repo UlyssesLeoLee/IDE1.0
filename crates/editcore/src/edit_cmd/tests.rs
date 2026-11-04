@@ -289,3 +289,25 @@ fn every_listed_command_is_known_and_unlisted_ones_are_not() {
     }
     assert!(run(&req("nope", 0, 0)).is_none());
 }
+
+#[test]
+fn toggle_line_comment_adds_then_removes_and_skips_blank_lines() {
+    let mut r = req("toggle-line-comment", 0, 0).with_doc(&["fn a() {", "", "    x();", "}"]);
+    r.text = Some("//".into());
+    r.sel = Some([0, 0, 3, 1]);
+    let res = run(&r).unwrap();
+    assert_eq!(res.insert, ["// fn a() {", "", "    // x();", "// }"], "缩进之后加注释符, 空行不动");
+    // 再来一次 (全部已注释) -> 去掉
+    let mut r2 = req("toggle-line-comment", 0, 0).with_doc(&["// fn a() {", "", "    // x();", "// }"]);
+    r2.text = Some("//".into());
+    r2.sel = Some([0, 0, 3, 1]);
+    assert_eq!(run(&r2).unwrap().insert, ["fn a() {", "", "    x();", "}"]);
+    // 只有一部分已注释 -> 统一加上
+    let mut r3 = req("toggle-line-comment", 0, 0).with_doc(&["// a", "b"]);
+    r3.text = Some("//".into());
+    r3.sel = Some([0, 0, 1, 1]);
+    assert_eq!(run(&r3).unwrap().insert, ["// // a", "// b"]);
+    // 没有注释符 / 全是空行 = 不改
+    let r4 = req("toggle-line-comment", 0, 0).with_doc(&["a"]);
+    assert!(!run(&r4).unwrap().changed);
+}

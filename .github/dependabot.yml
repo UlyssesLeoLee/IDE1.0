@@ -1,0 +1,7 @@
+# 第三方 GitHub Action 固定在提交 SHA 上 (供应链加固); 新版本由 Dependabot 提 PR, 审核后合并
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

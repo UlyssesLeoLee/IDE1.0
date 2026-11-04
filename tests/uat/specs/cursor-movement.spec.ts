@@ -1,5 +1,5 @@
 // tests/uat/specs/cursor-movement.spec.ts
-// Sakura 光标移动命令集 (docs/SPA-02 §3.1, 对标 HLP000220~HLP000263)
+// Sakura 光标移动命令集 (docs/06_功能对标/SPA-02 §3.1, 对标 HLP000220~HLP000263)
 //
 // 覆盖 M-01 ~ M-11:
 //   M-01 単語の左端 / M-02 単語の右端      M-07 整页上下 / M-08 半页上下

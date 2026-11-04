@@ -55,7 +55,7 @@ const chunks = [];
 for (let i = 0; i < MAP.length; i += CHUNK) chunks.push(MAP.slice(i, i + CHUNK));
 
 test('映射表覆盖 SPA-03 附录 A 的全部命令 ID', () => {
-  const doc = fs.readFileSync(path.resolve(import.meta.dirname, '../../../../docs/SPA-03_v1-gap-design.md'), 'utf8');
+  const doc = fs.readFileSync(path.resolve(import.meta.dirname, '../../../../docs/06_功能对标/SPA-03_v1-gap-design.md'), 'utf8');
   const ids = [...doc.matchAll(/^\| (?:✅|🟡|⚪|⬜) \| `(F_[A-Za-z0-9_]+)`/gm)].map((m) => m[1]);
   const mapped = new Set(MAP.map((m) => m[0]));
   const missing = [...new Set(ids)].filter((x) => !mapped.has(x));

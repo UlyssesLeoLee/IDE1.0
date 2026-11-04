@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> PlainText: 非 Markdown 文件
+    [*] --> MdSource: Markdown 文件
+    PlainText --> MdSource: 手动启用Markdown
+    MdSource --> PlainText: 手动禁用/扩展故障
+    MdSource --> MdSplit: 打开预览
+    MdSplit --> MdSource: 关闭预览
+    MdSplit --> MdImmediate: 开启即时渲染(P1)
+    MdImmediate --> MdSplit: 退出即时渲染
+    MdSource --> MdSource: 解析失败则源码可用
+    MdSplit --> MdSource: 预览初始化失败
+    MdImmediate --> MdSource: 保真风险降级

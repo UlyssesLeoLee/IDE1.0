@@ -7,34 +7,38 @@ import { fill } from '../../lib/harness.mjs';
 const box = (page, sel) => page.evaluate((s) => { const e = document.querySelector(s); if (!e) return null; const cs = getComputedStyle(e); if (cs.display === 'none') return 'hidden'; const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)]; }, sel);
 const cmd = (page, c) => page.evaluate((x) => dispatchCommand(x), c);
 
-test('默认全关; 工具栏 / 功能键栏 / 标尺 打开后各占自己的一行, 编辑区不被盖住', () =>
-  withMocks({ name: 'vo', portOffset: 170 }, async ({ page, press }) => {
+test('快捷按钮在标题栏 (默认显示, 可关); 功能键栏 / 标尺 默认关, 打开后各占自己的一行', () =>
+  withMocks({ name: 'vo', portOffset: 170 }, async ({ page }) => {
     await page.locator('#ed-content').click();
-    for (const s of ['#toolbar', '#ruler', '#funckeys']) assert.equal(await box(page, s), 'hidden', s + ' 默认隐藏');
+    for (const s of ['#ruler', '#funckeys']) assert.equal(await box(page, s), 'hidden', s + ' 默认隐藏');
+    const tb0 = await box(page, '#toolbar'), mb = await box(page, '#menubar');
+    assert.ok(Array.isArray(tb0) && tb0[3] <= mb[3], '快捷按钮默认在最顶端的标题栏里, 不占编辑区上方');
     const ed0 = await box(page, '#editor');
-    await cmd(page, 'toggle-toolbar'); await cmd(page, 'toggle-ruler'); await cmd(page, 'toggle-funckey');
-    const tb = await box(page, '#toolbar'), rl = await box(page, '#ruler'), fk = await box(page, '#funckeys'), ed = await box(page, '#editor');
-    assert.ok(Array.isArray(tb) && Array.isArray(rl) && Array.isArray(fk));
-    assert.ok(tb[3] <= rl[1] + 1 && rl[3] <= ed[1] + 1, '工具栏 → 标尺 → 编辑区 自上而下');
+    await cmd(page, 'toggle-toolbar'); assert.equal(await box(page, '#toolbar'), 'hidden', '再点一次关掉');
+    await cmd(page, 'toggle-toolbar');
+    await cmd(page, 'toggle-ruler'); await cmd(page, 'toggle-funckey');
+    const rl = await box(page, '#ruler'), fk = await box(page, '#funckeys'), ed = await box(page, '#editor');
+    assert.ok(Array.isArray(rl) && Array.isArray(fk));
+    assert.ok(rl[3] <= ed[1] + 1, '标尺在编辑区之上');
     assert.ok(ed[3] <= fk[1] + 1, '功能键栏在编辑区之下');
     assert.ok(ed[3] - ed[1] > 100, '编辑区仍有高度');
-    assert.ok((await page.evaluate(() => document.querySelectorAll('#toolbar .tb-btn').length)) >= 10);
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('#toolbar .tb-btn')].map((b) => b.dataset.cmd)), ['grep'], '默认只有 Grep 搜索一个快捷按钮');
     assert.equal(await page.evaluate(() => document.querySelectorAll('#funckeys .fk').length), 12);
     assert.match(await page.evaluate(() => document.querySelector('#ruler .rl-in').textContent), /^\.{4}\+\.{4}\d/);
-    // 关回去, 编辑区回到原位
-    await cmd(page, 'toggle-toolbar'); await cmd(page, 'toggle-ruler'); await cmd(page, 'toggle-funckey');
+    await cmd(page, 'toggle-ruler'); await cmd(page, 'toggle-funckey');
     assert.deepEqual(await box(page, '#editor'), ed0);
   }));
 
 test('工具栏按钮 / 功能键栏按钮 真的执行命令; 开关跨重载保留', () =>
   withMocks({ name: 'vo', portOffset: 171 }, async ({ page, snap, press }) => {
     await fill(page, 'abc');
-    await cmd(page, 'toggle-toolbar'); await cmd(page, 'toggle-funckey');
+    await page.evaluate(() => setQab(['grep', 'cut', 'undo']));
+    await cmd(page, 'toggle-funckey');
     await press('Control+a');
     await page.locator('#funckeys .fk', { hasText: 'コピー' }).click();
-    await page.locator('#toolbar .tb-btn', { hasText: '切り取り' }).click(); await page.evaluate(() => window.__editIdle());
+    await page.locator('#toolbar .tb-btn[data-cmd="cut"]').click(); await page.evaluate(() => window.__editIdle());
     assert.equal((await snap()).lines[0], '');
-    await page.locator('#toolbar .tb-btn', { hasText: '元に戻す' }).click(); await page.evaluate(() => window.__editIdle());
+    await page.locator('#toolbar .tb-btn[data-cmd="undo"]').click(); await page.evaluate(() => window.__editIdle());
     assert.equal((await snap()).lines[0], 'abc');
     await page.reload(); await page.waitForTimeout(600);
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-v-toolbar')), 'on');

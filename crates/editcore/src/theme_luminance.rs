@@ -127,17 +127,16 @@ impl DesktopLuminance {
     /// 壁纸上仍差 0.26。要严格 AA 需 70%, 但那已接近实心。
     pub fn glass_tint(self) -> &'static str {
         match self {
-            // 亮背景: 压一层**白** —— 文字是黑的, 底越亮对比越高.
-            Self::Light => "rgba(255, 255, 255, 0.55)",
-            // 暗背景: 压一层**黑** —— 文字是白的, 底越暗对比越高.
-            // (这里原先错写成白色遮罩, 会把白字压在浅色底上, 对比度掉到 1.0:1)
-            Self::Dark => "rgba(0, 0, 0, 0.55)",
+            // 亮背景: 压一层通透白
+            Self::Light => "rgba(255, 255, 255, 0.45)",
+            // 暗背景: 压一层晶莹黑
+            Self::Dark => "rgba(0, 0, 0, 0.38)",
         }
     }
 
     /// 遮罩强度 (0.0 ~ 1.0), 供测试与前端调节使用。
     pub fn tint_strength(self) -> f64 {
-        0.55
+        0.38
     }
 
     /// 强调色 (蓝) 之上的文字色 —— 状态栏/主按钮用蓝底, 上面必须是白字.
@@ -223,16 +222,16 @@ pub fn build_clear_theme_vars() -> serde_json::Value {
     // 否则它们盖不住壁纸, 里面的文字照样看不清。
     let (hover, active, input, rail) = match l {
         DesktopLuminance::Light => (
-            "rgba(0,0,0,0.08)",
-            "rgba(0,0,0,0.14)",
-            "rgba(0,0,0,0.72)",
-            "rgba(255,255,255,0.55)",
+            "rgba(0,0,0,0.06)",
+            "rgba(0,0,0,0.12)",
+            "rgba(0,0,0,0.60)",
+            "rgba(255,255,255,0.40)",
         ),
         DesktopLuminance::Dark => (
-            "rgba(255,255,255,0.12)",
-            "rgba(255,255,255,0.20)",
-            "rgba(0,0,0,0.72)",
-            "rgba(0,0,0,0.55)",
+            "rgba(255,255,255,0.15)",
+            "rgba(255,255,255,0.24)",
+            "rgba(0,0,0,0.60)",
+            "rgba(0,0,0,0.38)",
         ),
     };
     serde_json::json!({

@@ -90,3 +90,38 @@ pub(super) fn new_line(cx: &Ctx) -> EditRes {
     let (insert, pad_len) = split_line_at(&cx.line, cx.col, cx.req.auto_indent, cx.req.smart_indent);
     EditRes::splice(cx.row, 1, insert, [cx.row + 1, pad_len])
 }
+
+/// 行コメントの挿入 / 削除 (类型别设置里的「行注释」): `req.text` = 注释符 (如 `//`、`#`)。
+/// 选区各行 (没有选区就是光标行) 的非空行**都**以注释符开头 (缩进之后) -> 全部去掉 (连同后面的一个空格); 否则全部在缩进之后加上 `注释符 `。
+/// 空行不动。全部是空行 = 什么也不做。
+pub(super) fn toggle_line_comment(cx: &Ctx) -> EditRes {
+    let Some(mark) = cx.req.text.as_deref().map(str::trim).filter(|m| !m.is_empty()) else {
+        return cx.nothing("这个类型没有设置行注释符 (类型别设置 → 行注释)");
+    };
+    let (r0, r1) = cx.sel.map(|s| (s[0], if s[3] == 0 && s[2] > s[0] { s[2] - 1 } else { s[2] })).unwrap_or((cx.row, cx.row));
+    let lines: Vec<String> = (r0..=r1).map(|r| cx.line(r).iter().collect()).collect();
+    let body = |l: &str| l.trim_start().to_string();
+    let non_empty: Vec<&String> = lines.iter().filter(|l| !l.trim().is_empty()).collect();
+    if non_empty.is_empty() {
+        return cx.nothing("");
+    }
+    let all_commented = non_empty.iter().all(|l| body(l).starts_with(mark));
+    let out: Vec<String> = lines
+        .iter()
+        .map(|l| {
+            if l.trim().is_empty() {
+                return l.clone();
+            }
+            let ind = l.len() - l.trim_start().len();
+            let (indent, rest) = l.split_at(ind);
+            if all_commented {
+                let r = &rest[mark.len()..];
+                format!("{indent}{}", r.strip_prefix(' ').unwrap_or(r))
+            } else {
+                format!("{indent}{mark} {rest}")
+            }
+        })
+        .collect();
+    let last = out.last().map(|s| s.chars().count()).unwrap_or(0);
+    EditRes::splice(r0, r1 - r0 + 1, out, [r1, last]).tip(if all_commented { "已取消行注释" } else { "已加行注释" })
+}

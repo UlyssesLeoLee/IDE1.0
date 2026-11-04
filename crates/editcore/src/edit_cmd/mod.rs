@@ -13,6 +13,7 @@
 //! | `box_ops` | box-insert box-enter box-backspace box-delete box-cut box-copy box-replace |
 //! | `multi_cursor` | multi-insert multi-backspace |
 //! | `fold` | fold-range fold-all |
+//! | `md_ops` | md-bold md-italic md-strike md-code md-highlight md-h1..h6 md-quote md-ul md-ol md-task md-link md-image md-codeblock md-mermaid md-table md-hr md-callout |
 //!
 //! 共用: `req_res` (请求 / 响应 DTO 与响应构造器), `ctx` (执行环境: 预先算好的光标行 / 列 / 选区与取行)。
 
@@ -21,6 +22,7 @@ mod clipboard;
 mod ctx;
 mod fold;
 mod line_ops;
+mod md_ops;
 mod multi_cursor;
 mod req_res;
 mod text_ops;
@@ -67,6 +69,7 @@ fn dispatch(cx: &Ctx) -> Option<EditRes> {
         "duplicate-line" => line_ops::duplicate_line(cx),
         "add-line-above" => line_ops::add_line(cx, true),
         "add-line-below" => line_ops::add_line(cx, false),
+        "toggle-line-comment" => line_ops::toggle_line_comment(cx),
         "new-line" => line_ops::new_line(cx),
         // 剪贴板
         "copy" => clipboard::copy(cx),
@@ -93,7 +96,8 @@ fn dispatch(cx: &Ctx) -> Option<EditRes> {
         // 折叠
         "fold-range" => fold::run(cx, false),
         "fold-all" => fold::run(cx, true),
-        _ => return None,
+        // Markdown 便捷编辑 (md-*); 不是 md 命令就是未知命令
+        _ => return md_ops::run(cx),
     })
 }
 
@@ -101,7 +105,7 @@ fn dispatch(cx: &Ctx) -> Option<EditRes> {
 #[cfg(test)]
 pub(crate) const ALL_COMMANDS: &[&str] = &[
     "backspace", "delete", "delete-word-start", "delete-word-end", "word-cut", "word-delete", "cut-line-start", "delete-line-to-start", "delete-line-to-end", "line-cut-to-end", "insert-text", "select-word",
-    "cut-line", "delete-line", "delete-line-up", "delete-line-down", "join-with-prev", "move-line-up", "move-line-down", "duplicate-line", "add-line-above", "add-line-below", "new-line",
+    "cut-line", "delete-line", "delete-line-up", "delete-line-down", "join-with-prev", "move-line-up", "move-line-down", "duplicate-line", "add-line-above", "add-line-below", "new-line", "toggle-line-comment",
     "copy", "cut", "paste", "paste-box", "copy-lines", "copy-passage", "copy-linenum", "copy-crlf",
     "box-insert", "box-enter", "box-backspace", "box-delete", "box-cut", "box-copy", "box-replace",
     "multi-insert", "multi-backspace", "fold-range", "fold-all",

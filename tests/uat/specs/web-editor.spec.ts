@@ -3,6 +3,15 @@
 // 项目根 = webServer env IDE_SHELL_WEB_TEST_ROOT (fixtures/sample-project).
 import { test, expect, type Page } from "@playwright/test";
 
+// 页面里的确认 / 输入对话框是主题化的 modal (uiConfirm / uiPrompt); 这份 spec 的断言基于浏览器原生 dialog 事件,
+// 所以让页面把它们接给原生 window.confirm / prompt (主题化对话框本身由 tests/mock 的 themed-dialogs 用例覆盖)
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__uiDialogHook = { confirm: (m: string) => window.confirm(m), prompt: (m: string, d?: string) => window.prompt(m, d) };
+  });
+});
+
+
 async function boot(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -69,9 +78,16 @@ test.describe("web /editor (ULYS-251)", () => {
     await expect(page.locator("#grep-input")).toBeVisible();
     await page.locator("#grep-input").fill("fn main");
     await page.locator("#grep-input").press("Enter");
-    const hit = page.locator('#grep-results .grep-hit[data-grep-path*="main.rs"]').first();   // 命中行 (组头只负责折叠)
-    await expect(hit).toBeVisible();
-    await hit.click();
+    // Grep 结果是主编辑区里的一个新标签 (Sakura 格式的文本); Enter 在命中行上跳到那个文件
+    await expect(page.locator(".tab.active")).toContainText("Grep: fn main");
+    await page.waitForFunction(() => (window as any).getActiveTab().lines.some((l: string) => /main\.rs\(\d+,\d+\): /.test(l)));
+    await page.evaluate(() => {
+      const t = (window as any).getActiveTab();
+      t.cursor = { row: t.lines.findIndex((l: string) => /main\.rs\(\d+,\d+\): /.test(l)), col: 0 };
+      (window as any).renderVim(t);
+    });
+    await page.locator("#ed-content").focus();
+    await page.keyboard.press("Enter");
     await expect(page.locator(".tab.active")).toContainText("main.rs");
     expect(errors).toEqual([]);
   });

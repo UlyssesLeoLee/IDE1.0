@@ -1,0 +1,999 @@
+{
+  "schema": "ide1-5d-atlas/evidence/v10.0",
+  "note": "IDE1.0 事实证据链。每条证据必须能落到 path:startLine-endLine。implementation 状态遵循 implementation_gate：只有代码里真实存在的实现才可标 Implemented。",
+  "sourceRevisions": [
+    {
+      "id": "REV-IDE1",
+      "repo": "E:\\IDE1.0",
+      "branch": "dev",
+      "sha": "76c4e8f9ff4775119d1c98e6403eecb020a905fe",
+      "capturedAt": "2026-10-23T15:25:00-07:00",
+      "remote": "https://github.com/UlyssesLeoLee/IDE1.0.git",
+      "dirty": true,
+      "note": "HEAD = feat(arch-01): 撤销/重做栈迁到 Rust。工作树存在未跟踪的临时文件（'99'、'bar'、'(0' 等），未纳入本次图集事实范围。图集不修改、不提交目标仓库。"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "EV-CODE-0001",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-kernel-core 仅提供 version() 与 kernel_status()，kernel_status() 硬编码返回 \"placeholder\" —— 文档所述 microkernel core 尚未实装。",
+      "path": "crates/ide-kernel-core/src/lib.rs",
+      "startLine": 25,
+      "endLine": 43,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0002",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-cli 的 run() 只分发 --version/-V、--aci-emit、--help/-h 四个 flag；未知 flag 返回退出码 2。完整 subcommand（session/txn/config/plugin）为文档计划，未实装。",
+      "path": "crates/ide-cli/src/lib.rs",
+      "startLine": 53,
+      "endLine": 75,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0003",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "run_aci_emit 用 aci-emitter 构造一条 Layer::It 的 ACI assertion 并输出 JSON，与 .aci.json v0.1 对齐。",
+      "path": "crates/ide-cli/src/lib.rs",
+      "startLine": 80,
+      "endLine": 126,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0004",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore 头文件声明设计目标：0 重型依赖（无 regex crate、无 tree-sitter WASM）、行级 token 化、Boyer-Moore-Horspool grep、O(1) undo/redo cursor。",
+      "path": "crates/editcore/src/lib.rs",
+      "startLine": 1,
+      "endLine": 40,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0005",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore 暴露 40 个 pub mod：auto_backup/bookmark/bracket/buffer/control_code/cursor/cursor_persistence/daemon/document_io/edit_cmd/edit_ops/encoding_io/file_lock/font_manager/grep/grep_engine/history/incremental_search/js_macro/key_macro/keyword_set/matching_paren/migemo/nav/outline_extended/outline_langs/plugin/ppa_macro/ruler/sdi/search_highlight/search_ops/split_quad/syntax_styling/tag_jump/theme_luminance/type_config/types/undo/zenkaku_hankaku。",
+      "path": "crates/editcore/src/lib.rs",
+      "startLine": 42,
+      "endLine": 90,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0006",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell-protocol::Buffer —— lines/cursor/mode/dirty/undo_stack/redo_stack/cmd_text 的单缓冲结构，mode 为 Normal/Insert/Command 三态。",
+      "path": "crates/ide-shell-protocol/src/lib.rs",
+      "startLine": 36,
+      "endLine": 48,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0007",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "RpcRequest/RpcResponse/RpcError 为 JSON-RPC 2.0 信封；id 为 null 表示 notification。",
+      "path": "crates/ide-shell-protocol/src/lib.rs",
+      "startLine": 240,
+      "endLine": 265,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0008",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "RPC 错误码表：-32700 PARSE_ERROR / -32600 INVALID_REQUEST / -32601 METHOD_NOT_FOUND / -32602 INVALID_PARAMS / -32603 INTERNAL_ERROR，自定义区 -32001 BUFFER_NOT_FOUND / -32002 READ_ONLY。",
+      "path": "crates/ide-shell-protocol/src/lib.rs",
+      "startLine": 291,
+      "endLine": 300,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0009",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "AiProvider trait 定义三件套：complete(CompletionRequest) / edit(EditRequest) / chat(ChatRequest)，全部 async，供 AI agent 注入。",
+      "path": "crates/ide-shell-protocol/src/lib.rs",
+      "startLine": 311,
+      "endLine": 316,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0010",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "handle_rpc 解析 JSON-RPC 请求并分发到 Kernel 方法；未知方法返回 METHOD_NOT_FOUND。",
+      "path": "crates/ide-shell-protocol/src/lib.rs",
+      "startLine": 930,
+      "endLine": 977,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0011",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "实际实现的 JSON-RPC 方法共 20 个：kernel_info/open_buffer/close_buffer/list_buffers/set_active_buffer/active_buffer_id/get_buffer/set_buffer_lines/insert_at_cursor/key_event/set_cursor/execute_command/set_cmd_text/get_cmd_text/complete_at_cursor/edit_via_provider/chat/register_provider/unregister_provider/list_providers。与文档 ADR-004 所述「22 メソッド」名称集不同。",
+      "path": "crates/ide-shell-protocol/src/lib.rs",
+      "startLine": 978,
+      "endLine": 1145,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0012",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-kernel::Document 持有 editcore 的 DocLineMgr 句柄、caret/selection、line_ending/encoding、dirty 标志与撤销重做历史。",
+      "path": "crates/ide-kernel/src/document.rs",
+      "startLine": 165,
+      "endLine": 196,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0013",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "LineEnding 枚举负责换行符 detect/label；Encoding 枚举覆盖 UTF-8 及其他编码并提供 is_multibyte。",
+      "path": "crates/ide-kernel/src/document.rs",
+      "startLine": 26,
+      "endLine": 163,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0014",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "Selection 为 anchor/head 双锚点模型，提供 normalized() 与 len_in_chars()（按字符而非字节计数）。",
+      "path": "crates/ide-kernel/src/document.rs",
+      "startLine": 65,
+      "endLine": 100,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0015",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DocView 是发给前端/桌面端的文档投影（id/name/path/lines/caret/dirty/selection/language/undo 可用性等）。",
+      "path": "crates/ide-kernel/src/doc_store.rs",
+      "startLine": 24,
+      "endLine": 59,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0016",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DocStore 提供 open/activate/close/insert/type_char/newline/backspace/delete/delete_range/set_caret/select_all/undo/redo/add_cursor/find/replace_all/find_all/set_line_ending/set_encoding/export/mark_saved/new_tab/dirty_tabs —— 与 /api/doc/* 路由一一对应。",
+      "path": "crates/ide-kernel/src/doc_store.rs",
+      "startLine": 61,
+      "endLine": 356,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0017",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "Session 与 TabState：多标签页会话模型，支持 new_tab/open_text/activate/next_tab/prev_tab/close/active/dirty_tabs/tab_states。",
+      "path": "crates/ide-kernel/src/session.rs",
+      "startLine": 13,
+      "endLine": 177,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0018",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-kernel::text_ops 提供 find_from/find_from_start/find_next/find_prev/find_all 与 replace_current/replace_all，纯函数式文档查找替换运算。",
+      "path": "crates/ide-kernel/src/text_ops.rs",
+      "startLine": 114,
+      "endLine": 320,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0019",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell-web 的 HTTP 分发是手写 match（(\"POST\", \"/api/...\") => …），不是 axum Router；Cargo.toml 也未声明 axum 依赖（仅 workspace 层面存在 axum）。",
+      "path": "crates/ide-shell-web/src/lib.rs",
+      "startLine": 370,
+      "endLine": 400,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0020",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "/api/doc/* 路由族共 24 条：open/active/tabs/activate/close/new_tab/insert/type/newline/backspace/delete/delete_range/caret/select_all/clear_selection/undo/redo/add_cursor/clear_cursors/insert_all/find/find_all/replace_all/line_ending/encoding/export/mark_saved。",
+      "path": "crates/ide-shell-web/src/lib.rs",
+      "startLine": 400,
+      "endLine": 669,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0021",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "终端路由族 /api/terminal_create、/api/terminal_input、/api/terminal_close、/api/terminal_output(?id=)、/api/terminal_list。",
+      "path": "crates/ide-shell-web/src/lib.rs",
+      "startLine": 855,
+      "endLine": 931,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0022",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "SCM 路由族 /api/scm_status、/api/scm_stage、/api/scm_unstage、/api/scm_diff、/api/scm_commit、/api/scm_log。",
+      "path": "crates/ide-shell-web/src/lib.rs",
+      "startLine": 931,
+      "endLine": 1047,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0023",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "按键与鼠标事件注入路由 /api/key、/api/mouse，配合 /api/frame（渲染帧）、/api/event、/api/reset 构成 web 端的事件循环。",
+      "path": "crates/ide-shell-web/src/lib.rs",
+      "startLine": 1147,
+      "endLine": 1233,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0024",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "文件与工程路由 /api/open_project、/api/list_dir、/api/read_file、/api/write_file，配合 /api/pick_folder 与 /api/plugin_load。",
+      "path": "crates/ide-shell-web/src/lib.rs",
+      "startLine": 1279,
+      "endLine": 1360,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0025",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "auth.rs 的威胁模型：任意恶意网页都可直接 fetch(\"http://127.0.0.1:8123/api/...\")，因此需要 token + Origin/Host 校验。",
+      "path": "crates/ide-shell-web/src/auth.rs",
+      "startLine": 1,
+      "endLine": 40,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0026",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "auth.rs 用 x-ide-token 头 + Host 规则校验；对非 127.0.0.1/localhost 的 Host 与非本地 Origin 拒绝。测试含 x-ide-token 猜测失败、evil.com Origin 拒绝等用例。",
+      "path": "crates/ide-shell-web/src/auth.rs",
+      "startLine": 160,
+      "endLine": 320,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0027",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell-web 依赖 ide-shell（core: mode/input/keymap/app + web render）、ide-kernel-core（banner）、ide-kernel（/api/doc/* 会话状态）、editcore、aci-emitter、crossterm、getrandom；未声明 axum 依赖。",
+      "path": "crates/ide-shell-web/Cargo.toml",
+      "startLine": 12,
+      "endLine": 30,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0028",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "桌面端 doc_* 系列 Tauri command 共 22 个（doc_active/doc_tabs/doc_open/doc_new_tab/doc_activate/doc_close/doc_insert/doc_type/doc_newline/doc_backspace/doc_delete/doc_delete_range/doc_caret/doc_select_all/doc_clear_selection/doc_undo/doc_redo/doc_add_cursor/doc_clear_cursors/doc_insert_all/doc_find/doc_find_all/doc_replace_all/doc_line_ending/doc_encoding/doc_export/doc_mark_saved），统一返回 R<DocView>。",
+      "path": "crates/ide-shell-desktop/src/doc.rs",
+      "startLine": 64,
+      "endLine": 272,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0029",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "桌面端 terminal_create/terminal_input/terminal_close/terminal_list：启动 powershell.exe（CREATE_NO_WINDOW）并以 pipe + reader 线程做 I/O。",
+      "path": "crates/ide-shell-desktop/src/terminal.rs",
+      "startLine": 61,
+      "endLine": 197,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0030",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "scm.rs 用 run_git 调外部 git，支持 status/stage/unstage/diff/diff_cached/commit/log，并实现 find_git_root 与 is_git_repo。",
+      "path": "crates/ide-shell-desktop/src/scm.rs",
+      "startLine": 66,
+      "endLine": 210,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0031",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "search.rs 有 search 与 search_fallback 两条路径：优先 rg，不可用时回落到内置实现（测试 test_search_works_without_rg_binary 覆盖回落）。",
+      "path": "crates/ide-shell-desktop/src/search.rs",
+      "startLine": 19,
+      "endLine": 50,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0032",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "desktop plugin_load 通过 load_and_run 执行 wasm 插件并返回 PluginRunResult。",
+      "path": "crates/ide-shell-desktop/src/plugin.rs",
+      "startLine": 21,
+      "endLine": 45,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0033",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "outline.rs 的 outline_file 解析内容产出 OutlineResult，供 /api/outline 使用。",
+      "path": "crates/ide-shell-desktop/src/outline.rs",
+      "startLine": 16,
+      "endLine": 50,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0034",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell::App 是 TUI 侧的应用状态：mode/buffer/cmd_buffer/active_buffer/history/kernel_banner/should_quit，并提供 on_key/on_mouse/tick/open_file/save_file/run_command。",
+      "path": "crates/ide-shell/src/app.rs",
+      "startLine": 30,
+      "endLine": 230,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0035",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "keymap.rs 定义 Action 枚举并提供 map_key(event, mode) —— 键位到动作的映射按模式分派。",
+      "path": "crates/ide-shell/src/keymap.rs",
+      "startLine": 16,
+      "endLine": 148,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0036",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell::mode 定义三态模式；ai.rs 提供 AiError 与 PlaceholderAi（AI 接入的占位实现）。",
+      "path": "crates/ide-shell/src/ai.rs",
+      "startLine": 9,
+      "endLine": 47,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0037",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell/src/render/web.rs（367 行）是 web 版渲染后端，与 render/ratatui_render.rs 并列实现同一 App 的两种渲染。",
+      "path": "crates/ide-shell/src/render/web.rs",
+      "startLine": 1,
+      "endLine": 367,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0038",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::buffer 提供 DocLine 与 DocLineMgr —— 逻辑行/物理行分离、基于字符（而非字节）的光标定位。",
+      "path": "crates/editcore/src/buffer.rs",
+      "startLine": 1,
+      "endLine": 430,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0039",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::undo 实现 Ope / OpeBlk / OpeBuf（Insert/Delete/Replace/MoveCaret）并可 JSON 序列化 —— 撤销重做的基础数据结构。",
+      "path": "crates/editcore/src/undo.rs",
+      "startLine": 1,
+      "endLine": 390,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0040",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::history 是按标签页的补丁栈（HEAD commit 76c4e8f 引入，取代前端行快照），/api/history 路由对应它。",
+      "path": "crates/editcore/src/history.rs",
+      "startLine": 1,
+      "endLine": 134,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0041",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::type_config 提供 TypeConfig + TokenKind + TypeRegistry（行级扫描器），types.rs 为 19 种语言提供工厂函数。",
+      "path": "crates/editcore/src/type_config.rs",
+      "startLine": 1,
+      "endLine": 945,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0042",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::grep 负责文件枚举（walk_dir），grep_engine.rs（1801 行）为内容搜索引擎（自实现，未使用 regex crate）。",
+      "path": "crates/editcore/src/grep.rs",
+      "startLine": 1,
+      "endLine": 208,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0043",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::search_ops 是 Rust 侧查找/替换运算（HEAD commit 56b4ea4 引入，承接原 C++ 实现的 Find/Replace）。",
+      "path": "crates/editcore/src/search_ops.rs",
+      "startLine": 1,
+      "endLine": 334,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0044",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::encoding_io 负责编码读写（UTF-8 约束与多字节处理）。",
+      "path": "crates/editcore/src/encoding_io.rs",
+      "startLine": 1,
+      "endLine": 408,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0045",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::auto_backup 实现周期自动备份（文档规定 5 分钟一次、保留 10 世代）。",
+      "path": "crates/editcore/src/auto_backup.rs",
+      "startLine": 1,
+      "endLine": 218,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0046",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::migemo（578 行）实现日语 romaji 输入搜索。",
+      "path": "crates/editcore/src/migemo.rs",
+      "startLine": 1,
+      "endLine": 578,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0047",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::edit_cmd（614 行）是编辑命令执行层；js_macro/key_macro/ppa_macro 提供三种宏机制。",
+      "path": "crates/editcore/src/edit_cmd.rs",
+      "startLine": 1,
+      "endLine": 614,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0048",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::plugin 定义插件接口，desktop 侧 plugin_load 通过它加载并运行 wasm 插件。",
+      "path": "crates/editcore/src/plugin.rs",
+      "startLine": 1,
+      "endLine": 89,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0049",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editcore::daemon 提供后台守护能力。",
+      "path": "crates/editcore/src/daemon.rs",
+      "startLine": 1,
+      "endLine": 121,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0050",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "Cargo.toml 工作区成员为 8 个 crate：ide-kernel-core / ide-kernel / ide-cli / ide-shell / ide-shell-web / ide-shell-desktop / ide-shell-protocol / editcore。",
+      "path": "Cargo.toml",
+      "startLine": 1,
+      "endLine": 12,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0051",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "全工作区启用 #![forbid(unsafe_code)]（unsafe_code = \"forbid\"），clippy all = warn。",
+      "path": "Cargo.toml",
+      "startLine": 28,
+      "endLine": 34,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0052",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "前端 editor.html 通过 fetchApi(\"/api/\" + name, {method:\"POST\"}) 调用后端；Tauri 环境下改走 invoke。",
+      "path": "crates/ide-shell-web/src/editor.html",
+      "startLine": 2060,
+      "endLine": 2070,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0001",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "FR-01..FR-15 功能要件表：文件打开/文件树/标签切替/三态编辑/Undo-Redo/搜索替换/Grep/大纲/终端/19 语言高亮/自动缩进/折叠/（迷你地图·矩形选择为将来扩展）/自动备份。",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 48,
+      "endLine": 62,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0002",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "NFR-01..NFR-14 非功能需求表，含实测值：bench 56,971 ops/s（目标 ≥50,000）、CI 成功率 88.9%、测试数 253、覆盖率 66.25%、MSI 2.88 MiB。",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 82,
+      "endLine": 95,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0003",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "IR-01 Tauri invoke / IR-02 HTTP REST / IR-03 JSON-RPC stdio+HTTP+WS / IR-04 AI Provider trait 四条接口需求。",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 99,
+      "endLine": 104,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0004",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "CR-01 前端 vanilla JS 0 框架 / CR-02 editcore 0 重型依赖 / CR-03 项目根内文件访问 / CR-04 UTF-8 only / CR-05 禁用 vim·Cursor·VSCode 命名。",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 108,
+      "endLine": 114,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0005",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04 规定的 editcore API 表（Buffer::new / insert_char / delete / undo / redo / Cursor::move_word_fwd/bwd / Grep::walk_dir / grep_in_files / TypeConfig::load / Outline::dispatch）。方法名与 editcore 现有实现不完全一致（例如 Cursor 实际为 cursor.rs 的 LogicPos/LogicRange，Outline 为 outline_langs/outline_extended），故整体标 Designed。",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 34,
+      "endLine": 46,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0006",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04 列出 ide-shell-protocol 的 22 个方法（connect/disconnect/ping/open_file/close_file/get_buffer/set_buffer/cursor_move/cursor_set/insert_text/delete_range/undo/redo/search/replace/grep/list_dir/read_file/write_file/terminal_*/ai_completion/ai_action）。实际实现为 20 个不同名的方法（见 EV-CODE-0011），文档方法集未实装。",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 50,
+      "endLine": 62,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0007",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04 列出 ide-shell-web 的 13 个 HTTP endpoint（/healthz /info /editor /api/files /api/file /api/search /api/grep /api/outline /api/terminal_* /api/wiki）。实际路由族远多于 13 条（见 EV-CODE-0020~0024），文档清单已过时。",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 66,
+      "endLine": 79,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0008",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "错误码表 E001 文件未找到 / E002 大小超 4MB / E003 编码非 UTF-8 / E004 路径越界 / E005 终端未找到 / E006 内部错误。",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 99,
+      "endLine": 106,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0009",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ADR-001..ADR-011 决策一览：Tauri 2 采用 / editcore 0 重型依赖 / 19 语言 / protocol 22 方法 / Bottom Panel 单层 / 命名规则 / IPA 标准文档 / PowerShell 终端 / PR --merge 策略 / editor.html 完全重写 / 功能 100% 覆盖目标。",
+      "path": "docs/DOC-16_decision_log.md",
+      "startLine": 36,
+      "endLine": 46,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0010",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ADR 细节：ADR-001 理由为 8.45MB 二进制 + Rust 核心共享；ADR-002 结果 64 tests；ADR-006 命名违规 0 件（commit c61682e）；ADR-011 功能覆盖 76.9%→83.7%→90.4%→100.0%。",
+      "path": "docs/DOC-16_decision_log.md",
+      "startLine": 50,
+      "endLine": 142,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0011",
+      "kind": "TestTrace",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "UAT 验收基准表：全功能正常 100%、性能 56,971 ops/s、PowerShell 实动作、19 语言高亮、命名违规 0 件、IPA 文档 21 件 —— 全部标记 ✅。",
+      "path": "docs/DOC-11_uat_report.md",
+      "startLine": 34,
+      "endLine": 42,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0012",
+      "kind": "TestTrace",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "Playwright e2e 72 case：editor 18/18、syntax 10/10、panels 6/6、terminal 5/5(skip Linux)、outline 8/8、ui 17/25；合计 56 pass / 5 skip / 11 fail。11 个失败为 WebView2 (CI Linux) 下 page.click() 不触发 DOM 事件，与代码质量无关。",
+      "path": "docs/DOC-11_uat_report.md",
+      "startLine": 44,
+      "endLine": 71,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0013",
+      "kind": "TestTrace",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "Windows 11 手工验证 21 项全部 ✅（启动 desktop 1.5s / web 0.8s、终端 Write-Host·Get-Date·Get-Location、i18n 切换、Bottom Panel 单层、Status Bar、data-tip tooltip）。",
+      "path": "docs/DOC-11_uat_report.md",
+      "startLine": 73,
+      "endLine": 97,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0014",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "单体测试规格 253 件分布：editcore 64（editor_parity 36）、ide-shell-web 13（path_safety 12）、ide-shell-desktop 28、ide-shell-protocol 20、ide-cli 18、ide-kernel-core 12、ide-shell 6、aci-emitter 4。",
+      "path": "docs/DOC-10_unit_test_spec.md",
+      "startLine": 42,
+      "endLine": 106,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0015",
+      "kind": "TestTrace",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "UT 合格基准：测试数 253 ≥ 200 ✅、合格率 100% ✅、警告 0 ✅、editcore 覆盖率 65%（目标 80%，标注「要改善」）、path_safety 覆盖率 93.94% ✅。",
+      "path": "docs/DOC-10_unit_test_spec.md",
+      "startLine": 125,
+      "endLine": 133,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0016",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "风险登记 R-01..R-11。R-11 为「商標名使用による紛争リスク」，影响 高 / 可能性 中 / 对策 高 —— 参考实现的名称曾被用于 crate 名、标识符、文件名与散文。",
+      "path": "docs/DOC-14_risk_register.md",
+      "startLine": 37,
+      "endLine": 47,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0017",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "系统架构图：Frontend Layer (editor.html) ↔ Backend Layer (ide-shell-desktop / ide-shell-web / ide-shell-protocol / editcore) ↔ OS Layer (powershell.exe / file system / WebView2)。",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 39,
+      "endLine": 68,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0018",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "部署形态：MSI installer IDE1.0_0.1.9_x64_en-US.msi（2.88 MiB，GitHub Releases）、Web 単体 ide-shell-web.exe（846 KB，127.0.0.1:8123）、源码 9 crates + Cargo.toml。",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 102,
+      "endLine": 108,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0019",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "环境要求：Windows 10 1909+（推荐 Win11）、WebView2 runtime 100.0+、PowerShell 5.1+、内存 4GB+、磁盘 50MB+。",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 110,
+      "endLine": 118,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0020",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-03 的 crate 表写 9 个 crate（含 aci-emitter）与「ide-shell-web = Axum」；实际工作区 8 个 crate，ide-shell-web 为手写 HTTP 分发（见 EV-CODE-0019）。此处为文档与代码的已知冲突。",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 70,
+      "endLine": 100,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0021",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "终端规格：shell = powershell.exe、CREATE_NO_WINDOW 启动、stdin pipe + stdout/stderr reader 线程、UTF-8、当前仅 1 个会话（多会话为计划）。",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 71,
+      "endLine": 76,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0022",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "搜索/置換具体规格：前向/后向、大小写敏感/不敏感、历史最近 10 件、置換单发/全件/确认、正则表达式为将来计划。",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 64,
+      "endLine": 69,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0023",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "INC-07 错误映射说明：错误码与触发条件的集中映射表。",
+      "path": "INC-07_error_mapping.md",
+      "startLine": 1,
+      "endLine": 40,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0024",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README：项目定位为纯 Rust AI Native CLI Development Kernel，MIT OR Apache-2.0，仓库 github.com/UlyssesLeoLee/IDE1.0。",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 60,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0025",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DD-01 Microkernel Core 詳細設計書 描述 process supervisor、signal handling、graceful shutdown 等 microkernel 能力；当前唯一对应 crate ide-kernel-core 为 placeholder（EV-CODE-0001），属「文档已设计、代码未实装」。",
+      "path": "DD-01_Microkernel_Core詳細設計書.md",
+      "startLine": 1,
+      "endLine": 120,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0026",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DD-02 Session Transaction Buffer Engine 詳細設計書 描述 session/transaction buffer 引擎；实际实装位置是 ide-kernel::session + editcore::undo/OpeBuf + editcore::history，事务缓冲与乐观并发语义尚未按文档落地。",
+      "path": "DD-02_Session_Transaction_Buffer_Engine詳細設計書.md",
+      "startLine": 1,
+      "endLine": 120,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-DOC-0027",
+      "kind": "Document",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DD-04 Internal API 詳細設計書 描述内部 API 契约；与 DOC-04 的 13 endpoint / 22 method 清单同源，实际 HTTP 面已达 ~70 路由、RPC 面 20 方法（EV-CODE-0011/0020）。",
+      "path": "DD-04_Internal_API_詳細設計書.md",
+      "startLine": 1,
+      "endLine": 120,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0053",
+      "kind": "SourceCode",
+      "status": "Designed",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "ide-shell-web/Cargo.toml 的依赖注释写明「/api/doc/* 的会话状态与编辑语义（与 web 前端 JS 引擎并行迁移中）」。代码树中没有独立的 JS 编辑引擎模块，因此该能力按 Designed 记录，不按 Implemented。",
+      "path": "crates/ide-shell-web/Cargo.toml",
+      "startLine": 25,
+      "endLine": 30,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0054",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editor.html 的 Activity Bar 实际为 5 个按钮（data-pane=explorer/search/scm/outline/extensions，data-tip=资源管理器/搜索/源代码管理/大纲/扩展），Side Bar 面板随之 5 个；编辑器区含 tabs/breadcrumb/gutter/content。文档里「Activity Bar (4 panels)」的描述已过时。",
+      "path": "crates/ide-shell-web/src/editor.html",
+      "startLine": 1445,
+      "endLine": 1449,
+      "revision": "76c4e8f"
+    },
+    {
+      "id": "EV-CODE-0055",
+      "kind": "SourceCode",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "editor.html 实际 10054 行（ADR-010 记录的「1348 行」是当时重写后的快照，已随后续功能增长而过时；注意按空行计的真实行数为 10054）。",
+      "path": "crates/ide-shell-web/src/editor.html",
+      "startLine": 1,
+      "endLine": 10054,
+      "revision": "76c4e8f"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "GAP-SRC-PLACEHOLDER",
+      "type": "GAP_SOURCE_DOCUMENT",
+      "summary": "ide-kernel-core 与 ide-cli 当前为占位实现（kernel_status() 返回 \"placeholder\"，CLI 仅 3 个 flag）。DD-01/DD-02/DD-04 所定义的能力尚未落地，图集中相关节点标 Designed 而非 Implemented。",
+      "relatedEvidence": [
+        "EV-CODE-0001",
+        "EV-CODE-0002",
+        "EV-DOC-0025",
+        "EV-DOC-0026",
+        "EV-DOC-0027"
+      ]
+    },
+    {
+      "id": "GAP-SRC-API-DRIFT",
+      "type": "GAP_SOURCE_DOCUMENT",
+      "summary": "文档与实现的 API 面漂移：DOC-04/ADR-004 写 22 方法 + 13 endpoint，代码实为 20 个 JSON-RPC 方法 + 约 70 条 HTTP 路由。文档未随实现更新，属源文档缺口，不是图集失败。",
+      "relatedEvidence": [
+        "EV-DOC-0006",
+        "EV-DOC-0007",
+        "EV-CODE-0011",
+        "EV-CODE-0020"
+      ]
+    },
+    {
+      "id": "GAP-SRC-AXUM-MISMATCH",
+      "type": "GAP_SOURCE_DOCUMENT",
+      "summary": "DOC-03/ADF 称 ide-shell-web 基于 Axum，代码为手写 match 分发且 Cargo.toml 无 axum 依赖。图集按代码事实记录。",
+      "relatedEvidence": [
+        "EV-DOC-0020",
+        "EV-CODE-0019",
+        "EV-CODE-0027"
+      ]
+    },
+    {
+      "id": "GAP-SRC-COVERAGE",
+      "type": "GAP_SOURCE_DOCUMENT",
+      "summary": "editcore 代码覆盖率实测 65%，低于自定目标 80%（DOC-10 明确标注「要改善」）。覆盖率数字取自文档记录，非本次重测。",
+      "relatedEvidence": [
+        "EV-DOC-0015",
+        "EV-DOC-0002"
+      ]
+    },
+    {
+      "id": "GAP-SRC-E2E-FAIL",
+      "type": "GAP_SOURCE_DOCUMENT",
+      "summary": "72 个 Playwright e2e 中 11 个 fail（WebView2 + CI Linux 环境 page.click() 不触发 DOM 事件），文档记录为环境限制而非代码缺陷；本图集不重跑该套件。",
+      "relatedEvidence": [
+        "EV-DOC-0012"
+      ]
+    },
+    {
+      "id": "GAP-SRC-PY-DEMO",
+      "type": "GAP_SOURCE_DOCUMENT",
+      "summary": "DOC-04 §5 注记：ide-shell-protocol 的 Python 客户端 demo「予定（未着手）」，故 AI agent 集成示例无参考实现。",
+      "relatedEvidence": [
+        "EV-DOC-0006"
+      ]
+    },
+    {
+      "id": "GAP-BIZ-AI-PROVIDER",
+      "type": "GAP_BUSINESS_DECISION",
+      "summary": "AiProvider trait 已有契约但没有生产实现（ide-shell::PlaceholderAi 为占位）。补全/内联编辑/对话三个能力的真实供应商、计费与隐私策略尚待产品决策。",
+      "relatedEvidence": [
+        "EV-CODE-0009",
+        "EV-CODE-0036"
+      ]
+    },
+    {
+      "id": "GAP-BIZ-TXN-BUFFER",
+      "type": "GAP_BUSINESS_DECISION",
+      "summary": "DD-02 定义的 transaction buffer 语义（并发写、乐观锁、冲突解决）在当前实装中只有 Ope 缓冲与 per-tab 补丁栈，事务边界与冲突策略待决策。",
+      "relatedEvidence": [
+        "EV-DOC-0026",
+        "EV-CODE-0039",
+        "EV-CODE-0040"
+      ]
+    }
+  ]
+}

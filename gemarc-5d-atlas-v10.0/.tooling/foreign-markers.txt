@@ -1,0 +1,27 @@
+# 外部项目事实标记表（对抗式审核用）
+#
+# 本文件刻意把这些标记集中放在 .tooling/ 下：
+# 交付内容（src/ models/ docs/ reports/）里**不得出现**这些字符串，
+# 这样"参考仓库事实污染"检查可以覆盖整个交付物而不被检查器自身的文本误伤。
+#
+# 规则：交付内容中命中任一标记 → HIGH（事实污染）。
+#
+# 刻意**不**列入的标识符（它们不是任何项目的业务事实）：
+#   - 引擎内部命名空间 window.GemArc* 与 CSS 类 .gemarc-node-label
+#     → 自研 5D 引擎的内部标识符，理由见 docs/ja-JP/DESIGN_DECISIONS.md 的 DD-15
+#   - 输出目录名 gemarc-5d-atlas-v10.0
+#     → 任务规范给定的输出目录名（output.directory）
+
+gitgit
+gm-console
+gmDesktop
+FileVault
+filevault
+filvault
+凭据保险柜
+/vault
+/vault/
+/api/vault
+/api/repos
+repos/:name
+/rate_limit

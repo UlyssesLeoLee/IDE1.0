@@ -67,3 +67,194 @@ mod tests {
         assert_eq!(v["changed"], true);
     }
 }
+
+/// 标准 base64 解码 (插件包经 JSON 传进来; 自己写 20 行比多一个依赖轻)
+fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' | b'\n' | b'\r' | b' ' => continue,
+            _ => return Err("插件包数据不是合法的 base64".into()),
+        };
+        acc = (acc << 6) | v as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
+/// Markdown 预览: 文本 -> 已转义的 HTML (只读, 不写回)
+pub fn md_render(req: &MdRenderReq) -> Value {
+    json!({ "html": if req.lines { crate::md_render::render_with_lines(&req.text) } else { crate::md_render::render(&req.text) } })
+}
+
+#[derive(serde::Deserialize)]
+pub struct MdRenderReq {
+    pub text: String,
+    /// 预览要块的原文行范围 (data-l); 导出 HTML 不要
+    #[serde(default)]
+    pub lines: bool,
+}
+
+// ---------- 插件 (docs/01_基本设计/PLUGIN-SYSTEM.md) ----------
+
+/// 插件操作。网络类 (inspect / install / check_updates) 只在用户点按钮时才会发来, 没有后台轮询
+#[derive(serde::Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum PluginReq {
+    List,
+    /// 读插件文件 (入口脚本等), 文本
+    Asset { id: String, file: String },
+    Toggle { id: String, enabled: bool },
+    Remove { id: String },
+    /// 恢复被删掉的内置插件
+    RestoreBundled { id: String },
+    /// 插件包 (.zip, base64): 先看 (清单 / 权限 / 哈希 / 兼容问题), 再装
+    InspectPackage { data: String },
+    InstallPackage { data: String, approved: Vec<String> },
+    Inspect { repo: String },
+    Install { repo: String, approved: Vec<String> },
+    CheckUpdates,
+    /// 插件与内建功能同一能力位冲突时选谁 (docs §8.1)
+    Resolve { has_native: bool, has_plugin: bool, prefer: Option<crate::plugin_host::Prefer>, smart_active: bool },
+    /// 不匹配时给大模型的提示词 (只含事实, 不含 Key)
+    MismatchPrompt { repo: String },
+}
+
+pub fn plugins(req: &PluginReq) -> Result<Value, String> {
+    use crate::plugin_host::{self as ph, store};
+    let root = store::default_root();
+    let app = env!("CARGO_PKG_VERSION");
+    Ok(match req {
+        PluginReq::List => json!({ "plugins": store::list(&root), "removed": store::removed_bundled(&root).into_iter().map(|(id, name, version)| json!({ "id": id, "name": name, "version": version })).collect::<Vec<_>>(), "host_api": ph::HOST_API_VERSION, "app_version": app }),
+        PluginReq::RestoreBundled { id } => {
+            store::restore_bundled(&root, id)?;
+            json!({ "ok": true })
+        }
+        PluginReq::InspectPackage { data } => to_json(&store::inspect_package(&root, &b64_decode(data)?, app)?),
+        PluginReq::InstallPackage { data, approved } => to_json(&store::install_package(&root, &b64_decode(data)?, app, approved)?),
+        PluginReq::Asset { id, file } => {
+            let b = store::read_asset(&root, id, file)?;
+            json!({ "text": String::from_utf8(b).map_err(|_| "插件文件不是 UTF-8 文本".to_string())? })
+        }
+        PluginReq::Toggle { id, enabled } => {
+            store::set_enabled(&root, id, *enabled)?;
+            json!({ "ok": true })
+        }
+        PluginReq::Remove { id } => {
+            store::remove(&root, id)?;
+            json!({ "ok": true })
+        }
+        PluginReq::Inspect { repo } => to_json(&store::inspect(&store::CurlHttp, &root, repo, app)?),
+        PluginReq::Install { repo, approved } => to_json(&store::install(&store::CurlHttp, &root, repo, app, approved)?),
+        PluginReq::CheckUpdates => {
+            let rows: Vec<Value> = store::check_updates(&store::CurlHttp, &root, app)
+                .into_iter()
+                .map(|(id, r)| match r {
+                    Ok(i) => json!({ "id": id, "update_available": i.update_available, "latest": i.report.manifest.map(|m| m.version), "ok": i.report.ok, "problems": i.report.problems }),
+                    Err(e) => json!({ "id": id, "error": e }),
+                })
+                .collect();
+            json!({ "updates": rows })
+        }
+        PluginReq::Resolve { has_native, has_plugin, prefer, smart_active } => json!({ "choice": ph::resolve_conflict(*has_native, *has_plugin, *prefer, *smart_active) }),
+        PluginReq::MismatchPrompt { repo } => {
+            let ins = store::inspect(&store::CurlHttp, &root, repo, app)?;
+            json!({ "prompt": ph::mismatch_prompt(&ins.release.repo, &ins.release.tag, &ins.release.assets.iter().map(|a| a.name.clone()).collect::<Vec<_>>(), &ins.report, app) })
+        }
+    })
+}
+
+// ---------- Agent API (给内建对话 / 外部 LangGraph, 见 agent_api) ----------
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum AgentReq {
+    /// 工具表 (OpenAI tools 格式)
+    Tools,
+    Call { name: String, #[serde(default)] args: Value },
+}
+
+pub fn agent(req: &AgentReq) -> Result<Value, String> {
+    match req {
+        AgentReq::Tools => Ok(json!({ "tools": crate::agent_api::tools_json() })),
+        AgentReq::Call { name, args } => crate::agent_api::call(name, args),
+    }
+}
+
+// ---------- Sakura 宏 (.mac) 计划 ----------
+
+#[derive(serde::Deserialize)]
+pub struct MacroPlanReq {
+    pub src: String,
+}
+
+/// 解析并规划一份 Sakura 宏: 返回逐步动作; 语法错误 / 未知函数整体失败 (不执行一半), 错误文字带行号
+pub fn macro_plan(req: &MacroPlanReq) -> Result<Value, String> {
+    crate::macro_sakura::plan(&req.src).map(|steps| json!({ "steps": steps })).map_err(|e| e.to_string())
+}
+
+/// 录制到的命令级事件 -> `.mac` 文本 (WBS-02 4.2)
+#[derive(serde::Deserialize)]
+pub struct MacroRecordReq {
+    pub events: Vec<crate::macro_sakura::RecEvent>,
+}
+
+pub fn macro_record(req: &MacroRecordReq) -> Value {
+    to_json(&crate::macro_sakura::record_to_mac(&req.events))
+}
+
+// ---------- 设置落盘 (settings_store) ----------
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum SettingsReq {
+    /// 全部设置 (前端启动时读一次)
+    All,
+    Set { key: String, value: String },
+    Remove { key: String },
+    /// 导入一份导出的 JSON (合并)
+    Import { json: String },
+    /// 导出成 JSON 文本 (可携带)
+    Export,
+}
+
+pub fn settings(req: &SettingsReq) -> Result<Value, String> {
+    use crate::settings_store as st;
+    // IDE_SETTINGS_FILE=off: 关闭落盘 (读出来是空, 写入忽略) —— 多个页面共用一个服务进程的测试环境用
+    if std::env::var("IDE_SETTINGS_FILE").is_ok_and(|v| v == "off") {
+        return Ok(match req {
+            SettingsReq::All => json!({ "settings": {}, "path": "off" }),
+            SettingsReq::Export => json!({ "json": "{}" }),
+            SettingsReq::Import { .. } => json!({ "imported": 0, "skipped": 0 }),
+            _ => json!({ "ok": true }),
+        });
+    }
+    let path = st::default_path();
+    Ok(match req {
+        SettingsReq::All => json!({ "settings": st::load(&path), "path": path.to_string_lossy() }),
+        SettingsReq::Set { key, value } => {
+            st::set(&path, key, Some(value))?;
+            json!({ "ok": true })
+        }
+        SettingsReq::Remove { key } => {
+            st::set(&path, key, None)?;
+            json!({ "ok": true })
+        }
+        SettingsReq::Import { json: text } => {
+            let (ok, skipped) = st::import(&path, text)?;
+            json!({ "imported": ok, "skipped": skipped })
+        }
+        SettingsReq::Export => json!({ "json": serde_json::to_string_pretty(&st::load(&path)).unwrap_or_default() }),
+    })
+}

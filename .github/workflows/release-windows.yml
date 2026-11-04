@@ -1,0 +1,86 @@
+# Windows 发布构建: 从源码自动构建 .msi, 作为 artifact 上传; 配置了 SignPath 之后交给 SignPath 签名 (发布前需人工批准)。
+# SignPath Foundation 要求: 二进制由本仓库源码经可验证的自动化流程构建; 每次发布签名前人工批准 (在 SignPath 签名策略里设置)。
+# 注意: 这份工作流还没有在 GitHub 上跑过 (需要先申请通过并配置下面的 Secrets / Variables)。
+name: release-windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+# 默认最小权限: 构建任务只读; 只有挂 Release 的 sign 任务单独给 contents: write
+permissions:
+  contents: read
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false   # 构建步骤不需要仓库写令牌
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Install Tauri CLI
+        working-directory: tools
+        run: npm ci --no-audit --no-fund   # 严格按 package-lock.json 安装
+
+      - name: Build Windows .msi
+        working-directory: crates/ide-shell-desktop
+        run: ../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json
+
+      - name: Upload unsigned .msi
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ide-msi-unsigned
+          path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
+          retention-days: 30
+
+  sign:
+    # 只有配置了 SignPath (Variables: SIGNPATH_ORGANIZATION_ID; Secrets: SIGNPATH_API_TOKEN) 才执行
+    if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    needs: msi
+    runs-on: windows-latest
+    permissions:
+      contents: write   # 只有这一个任务需要: 把签名后的 .msi 挂到 Release
+      actions: read     # SignPath action 读取上一步的 artifact
+    steps:
+      - name: Submit signing request to SignPath (release 签名策略需要人工批准)
+        id: sign
+        uses: signpath/github-action-submit-signing-request@ced31329c0317e779dad2eec2a7c3bb46ea1343e # v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ide1-0
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ needs.msi.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Upload signed .msi
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ide-msi-signed
+          path: signed/*.msi
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" signed/*.msi --clobber
+
+# 备注: 第三方 action 已固定到提交 SHA (行尾注释是对应的版本); 更新由 .github/dependabot.yml 提 PR, 审核后再合并。

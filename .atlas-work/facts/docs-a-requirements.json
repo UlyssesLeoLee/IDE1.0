@@ -1,0 +1,1918 @@
+{
+  "requirements": [
+    {
+      "id": "FR-01",
+      "intent": "ファイルオープン: ネイティブダイアログで選択してファイルを開く (DOC-02 実装列: doOpenFolder)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: スクリーンショット + UAT)",
+        "DOC-11.C.1 手動検証: ファイルオープン (rfd dialog) ✅ 30s race timeout 付き"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:48; docs/DOC-09_system_test_report.md:36; docs/DOC-11_uat_report.md:79",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["スクリーンショット + UAT"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-02",
+      "intent": "ファイルツリー: プロジェクト階層を表示する (DOC-02 実装列: renderTree())",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT 5 case)",
+        "DOC-11.C.1 手動検証: ツリー展開 ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:49; docs/DOC-09_system_test_report.md:37; docs/DOC-11_uat_report.md:80",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT 5 case"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-03",
+      "intent": "タブ切替: 複数ファイルを同時に編集する (DOC-02 実装列: switchTab())",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT 3 case)",
+        "DOC-11.C.1 手動検証: タブ切替 ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:50; docs/DOC-09_system_test_report.md:38; docs/DOC-11_uat_report.md:81",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT 3 case"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-04",
+      "intent": "編集 (NORMAL/INSERT/VISUAL): 3 態モードで編集する (DOC-02 実装列: editcore)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT 4 case + SUT)",
+        "DOC-06.C.1 状態遷移表: NORMAL/INSERT/VISUAL/COMMAND の遷移定義",
+        "DOC-11.C.1 手動検証: 編集 (INSERT mode) ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:51; docs/DOC-09_system_test_report.md:39; docs/DOC-06_software_detail_design.md:150-180",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT 4 case + SUT", "test_cursor_word_fwd_bwd"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-05",
+      "intent": "Undo/Redo: 任意回数、元に戻す/やり直しを行う (DOC-02 実装列: editcore)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: 28 UT)",
+        "SIT-09: editor.html + editcore で undo 連続 100 回 → 状態一致",
+        "DOC-11.C.1 手動検証: Undo/Redo ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:52; docs/DOC-09_system_test_report.md:40; docs/DOC-08_integration_test_spec.md:54",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["28 UT", "SIT-09", "test_buffer_insert_undo_redo"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-06",
+      "intent": "検索/置換: 文字列ベースで検索・置換する (DOC-02 実装列: editcore)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT 2 case)",
+        "DOC-02.A.2 仕様: 検索方向 前方/後方 / 大文字小文字区別/区別なし / 検索履歴 直近 10 件 / 置換 単発/全件/確認",
+        "DOC-02.A.2: 正規表現 は (将来, 計画)"
+      ],
+      "nonGoals": ["正規表現検索 (DOC-02.A.2: 将来, 計画)"],
+      "provenance": "docs/DOC-02_system_requirements.md:53; docs/DOC-09_system_test_report.md:41; docs/DOC-02_system_requirements.md:64-69",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT 2 case"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-07",
+      "intent": "Grep: 複数ファイルを横断して検索する (DOC-02 実装列: editcore)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: 36 editor_parity)",
+        "DOC-06.B.1 Grep::walk_dir: 拡張子フィルタ (.rs .py .js .ts .go ...), バイナリ判定は初期 8KB に null バイトがあればスキップ, 計算量 O(n) where n = ファイル数",
+        "DOC-06.B.1 Grep::grep_in_files: 部分文字列検索 (正規表現なし, str::contains), 計算量 O(file_size) per file"
+      ],
+      "nonGoals": ["正規表現 (editcore は正規表現なし, DOC-06.B.1)"],
+      "provenance": "docs/DOC-02_system_requirements.md:54; docs/DOC-09_system_test_report.md:42; docs/DOC-06_software_detail_design.md:102-117",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["36 editor_parity", "test_grep_walk_dir"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-08",
+      "intent": "アウトライン: 関数一覧 (アウトライン項目) を抽出・表示する (DOC-02 実装列: editcore)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT + SUT)",
+        "DOC-06.B.1 Outline::dispatch: 対応言語 rust / python / js / ts / go / c / cpp / java / csharp / bash / yaml / toml / sql / plain",
+        "DOC-11.C.1 手動検証: アウトライン ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:55; docs/DOC-09_system_test_report.md:43; docs/DOC-06_software_detail_design.md:119-128",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT + SUT", "test_outline_rust"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-09",
+      "intent": "ターミナル: PowerShell を実行する (DOC-02 実装列: terminal.rs)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT PowerShell 実測)",
+        "DOC-02.A.3 仕様: シェル powershell.exe (Windows 標準) / 起動 CREATE_NO_WINDOW フラグ / I/O stdin pipe + stdout/stderr thread reader / 文字エンコード UTF-8 / 終了 セッション ID 管理 (現状 1 セッション)",
+        "DOC-11.C.1 手動検証: ターミナル起動 ✅ powershell.exe spawn, Write-Host 'Hello' ✅ \"Hello\" 出力, Get-Date ✅ 現在日時, Get-Location ✅ パス"
+      ],
+      "nonGoals": ["完全なデバッガ (DOC-01.A.1 スコープ OUT / DOC-12.A.1 OUT)"],
+      "provenance": "docs/DOC-02_system_requirements.md:56; docs/DOC-09_system_test_report.md:44; docs/DOC-02_system_requirements.md:71-76",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT PowerShell 実測", "SIT-06", "SIT-12"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-10",
+      "intent": "19 言語ハイライト: rust/python/js/... 19 言語の構文ハイライト (DOC-02 実装列: syntax.js)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT 10 case)",
+        "SIT-10: editor.html + syntax.js で 19 言語切替 → ハイライト正常",
+        "DOC-06.C.2: 19 言語 (rust, python, javascript, typescript, go, c, cpp, java, csharp, bash, yaml, toml, sql, plain, dockerfile, html, css, json, markdown), 認識方法は拡張子で判別"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:57; docs/DOC-09_system_test_report.md:45; docs/DOC-08_integration_test_spec.md:55",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT 10 case", "SIT-10"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-11",
+      "intent": "自動インデント: Tab → 2 スペース (DOC-02 実装列: editor.html)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: UAT)"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:58; docs/DOC-09_system_test_report.md:46",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["UAT"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-12",
+      "intent": "折り畳み: zc コマンドで折り畳み (DOC-02 実装列: editcore)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (証跡: editor_parity)",
+        "DOC-06.C.1: NORMAL `zc` → 折り畳み, `zo` → 展開"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:59; docs/DOC-09_system_test_report.md:47; docs/DOC-06_software_detail_design.md:171-172",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["editor_parity"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-13",
+      "intent": "ミニマップ (DOC-02 説明: 将来拡張, 実装列は -)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 🟡 (将来拡張) (証跡: 計画のみ)",
+        "DOC-09.B.3 既知の制限: ミニマップ未実装 / 影響 UX 制限 / 回避策 計画中 (DOC-19)"
+      ],
+      "nonGoals": ["本リリースでは対象外 (DOC-09.B.3: 計画中 DOC-19)"],
+      "provenance": "docs/DOC-02_system_requirements.md:60; docs/DOC-09_system_test_report.md:48; docs/DOC-09_system_test_report.md:107",
+      "status": "🟡 (将来拡張) / DOC-09.B.3: 未実装・計画中 (DOC-19)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["計画のみ"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-14",
+      "intent": "矩形選択 (DOC-02 説明: 将来拡張, 実装列は -)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 🟡 (将来拡張) (証跡: 計画のみ)"
+      ],
+      "nonGoals": ["本リリースでは対象外 (DOC-02.A.1 🟡 将来拡張)"],
+      "provenance": "docs/DOC-02_system_requirements.md:61; docs/DOC-09_system_test_report.md:49",
+      "status": "🟡 (将来拡張)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["計画のみ"],
+      "category": "functional"
+    },
+    {
+      "id": "FR-15",
+      "intent": "自動バックアップ: 5 分毎, 10 世代 (DOC-02 実装列: auto_backup.rs)",
+      "measurableAcceptance": [
+        "DOC-09.A.1 テスト結果 ✅ (Phase 1) (証跡: auto_backup.rs)",
+        "DOC-09.B.3 既知の制限: 自動バックアップ未実装 / 影響 データ保護 / 回避策 計画中 (DOC-19) — DOC-02/DOC-09.A.1 と矛盾"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:62; docs/DOC-09_system_test_report.md:50; docs/DOC-09_system_test_report.md:108",
+      "status": "✅ (DOC-02 / DOC-09.A.1: Phase 1) だが DOC-09.B.3 は「未実装・計画中 (DOC-19)」— 記載が矛盾",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["auto_backup.rs"],
+      "category": "functional"
+    },
+    {
+      "id": "NFR-01",
+      "intent": "性能: editcore bench (DOC-02 カテゴリ: 性能)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≥ 50,000 ops/s",
+        "DOC-09.A.2 実測: 56,971",
+        "DOC-01.B.1 目標: 56,971 ops/s",
+        "README:436 コマンド: cargo run -p editcore --example bench (insert_str 10000 ops 175ms)"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:82; docs/DOC-09_system_test_report.md:56; docs/DOC-01_project_charter.md:65",
+      "status": "✅ (56,971)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["editcore bench"],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "NFR-02",
+      "intent": "性能: 4MB ファイル読み込み (DOC-02 カテゴリ: 性能)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≤ 100ms",
+        "DOC-09.A.2 実測: ~50ms"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:83; docs/DOC-09_system_test_report.md:57",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "NFR-03",
+      "intent": "性能: desktop 起動時間 (DOC-02 カテゴリ: 性能)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≤ 2 秒",
+        "DOC-09.A.2 実測: ~1.5s",
+        "DOC-11.C.1 手動検証: 起動 (desktop) ✅ 1.5s / 起動 (web) ✅ 0.8s"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:84; docs/DOC-09_system_test_report.md:58; docs/DOC-11_uat_report.md:77-78",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "NFR-04",
+      "intent": "可用性: CI 成功率 (DOC-02 カテゴリ: 可用性)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≥ 88%",
+        "DOC-09.A.2 実測: 8/9 (88.9%)",
+        "DOC-01.B.1 目標: 8/9 (1 限定的)",
+        "DOC-09.B.1: job 8 tauri desktop 🟡 (UAT skip), job 9 UAT 🟡 (56/72) — 残り 2 job は 🟡"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:85; docs/DOC-09_system_test_report.md:59; docs/DOC-09_system_test_report.md:82-85",
+      "status": "✅ (8/9 = 88.9%)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["CI 9 jobs"],
+      "category": "quality"
+    },
+    {
+      "id": "NFR-05",
+      "intent": "セキュリティ: ファイルアクセスはプロジェクトルートのみ (DOC-02 実装列: path_safety)",
+      "measurableAcceptance": [
+        "DOC-09.A.2 実測: 100%",
+        "SIT-07: path_safety + Windows verbatim で `\\\\?\\C:\\foo` 入力 → 正規化成功",
+        "SIT-08: path_safety + 8.3 短パスで `PROGRA~1` 入力 → 展開成功",
+        "DOC-06.B.1 PathSafety::path_within: 絶対パス化 → verbatim `\\\\?\\` 剥除 → 8.3 短パス展開 (フォールバック) → target.starts_with(root) 判定"
+      ],
+      "nonGoals": ["プロジェクトルート外へのアクセス (DOC-02.D CR-03)"],
+      "provenance": "docs/DOC-02_system_requirements.md:86; docs/DOC-09_system_test_report.md:60; docs/DOC-08_integration_test_spec.md:52-53",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["SIT-07", "SIT-08", "test_path_within_root", "test_strip_verbatim_prefix", "test_8_3_short_path"],
+      "category": "security"
+    },
+    {
+      "id": "NFR-06",
+      "intent": "セキュリティ: ファイルサイズ上限 (DOC-02 カテゴリ: セキュリティ)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: 4 MB",
+        "DOC-09.A.2 実測: 100%",
+        "SIT-03: ide-shell-web + axum で GET /api/file?q=large_file → 4MB 超過 拒否",
+        "DOC-04.C.1 エラーコード E002 サイズ超過 (4MB 越え)"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:87; docs/DOC-09_system_test_report.md:61; docs/DOC-08_integration_test_spec.md:48",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["SIT-03", "test_size_limit_4mb"],
+      "category": "security"
+    },
+    {
+      "id": "NFR-07",
+      "intent": "セキュリティ: 文字エンコードは UTF-8 のみ (DOC-02 カテゴリ: セキュリティ)",
+      "measurableAcceptance": [
+        "DOC-09.A.2 実測: 100%",
+        "DOC-04.C.1 エラーコード E003 エンコード不正 (UTF-8 以外)",
+        "DOC-04.B.1: 全 API は UTF-8 のみ受付"
+      ],
+      "nonGoals": ["UTF-8 以外の文字エンコード (DOC-02.D CR-04)"],
+      "provenance": "docs/DOC-02_system_requirements.md:88; docs/DOC-09_system_test_report.md:62; docs/DOC-04_software_requirements.md:91-95",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["test_utf8_only"],
+      "category": "security"
+    },
+    {
+      "id": "NFR-08",
+      "intent": "保守性: RUSTFLAGS = -D warnings (DOC-02 カテゴリ: 保守性)",
+      "measurableAcceptance": [
+        "DOC-09.A.2 実測: 0",
+        "DOC-07.A.1: 警告ゼロは RUSTFLAGS=-D warnings 必須",
+        "DOC-07.C.1: cargo clippy --all -- -D warnings → 警告 0 件"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:89; docs/DOC-09_system_test_report.md:63; docs/DOC-07_implementation_report.md:75-80",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "quality"
+    },
+    {
+      "id": "NFR-09",
+      "intent": "保守性: テスト数 (DOC-02 カテゴリ: 保守性)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≥ 200",
+        "DOC-09.A.2 実測: 253",
+        "DOC-01.B.1 目標: 253/253 (100%)",
+        "DOC-10.C.2 合格基準: テスト数 ≥ 200 → 253 ✅, 合格率 100% → 100% ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:90; docs/DOC-09_system_test_report.md:64; docs/DOC-10_unit_test_spec.md:125-133",
+      "status": "✅ (253)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["cargo test --workspace"],
+      "category": "quality"
+    },
+    {
+      "id": "NFR-10",
+      "intent": "保守性: カバレッジ (DOC-02 カテゴリ: 保守性)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≥ 60%",
+        "DOC-09.A.2 実測: 66.25%",
+        "DOC-09.B.2: path_safety.rs 93.94% (target ≥ 90%), app_integration.rs 80.83%, ide_kernel_core 75.50%, ide_shell 72.00%, editcore 65.00%, editor.html (JS) 60.00% (manual e2e)",
+        "DOC-10.C.2: カバレッジ (editcore) ≥ 80% → 65% (要改善), カバレッジ (path_safety) ≥ 90% → 93.94% ✅"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:91; docs/DOC-09_system_test_report.md:65; docs/DOC-09_system_test_report.md:87-99",
+      "status": "✅ (66.25%) — ただし editcore 単体カバレッジ 65% は DOC-10.C.2 で「要改善」",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["cargo test --workspace"],
+      "category": "quality"
+    },
+    {
+      "id": "NFR-11",
+      "intent": "移植性: Web 版でも同一機能 (DOC-02 カテゴリ: 移植性)",
+      "measurableAcceptance": [
+        "DOC-09.A.2 実測: OK",
+        "DOC-03.A.4.i: MSI は フル機能 + ネイティブダイアログ + 起動アイコン / Web は 軽量 + ブラウザベース + PowerShell ローカル spawn"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:92; docs/DOC-09_system_test_report.md:66; docs/DOC-03_system_hld.md:154-156",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "NFR-12",
+      "intent": "i18n: 中国語/英語 の切替 (DOC-02 カテゴリ: i18n)",
+      "measurableAcceptance": [
+        "DOC-09.A.2 実測: OK",
+        "DOC-11.C.1 手動検証: i18n 切替 (zh ↔ en) ✅"
+      ],
+      "nonGoals": ["多言語 UI (英中のみ) (DOC-12.A.1 OUT)"],
+      "provenance": "docs/DOC-02_system_requirements.md:93; docs/DOC-09_system_test_report.md:67; docs/DOC-12_project_plan.md:41",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "quality"
+    },
+    {
+      "id": "NFR-13",
+      "intent": "配布: MSI サイズ (DOC-02 カテゴリ: 配布)",
+      "measurableAcceptance": [
+        "DOC-02 要求値: ≤ 5 MB",
+        "DOC-09.A.2 実測: 2.88 MiB",
+        "DOC-01.B.1 目標: 2.88 MiB",
+        "DOC-07.A.2: IDE1.0_0.1.9_x64_en-US.msi 2.88 MiB"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:94; docs/DOC-09_system_test_report.md:68; docs/DOC-07_implementation_report.md:55",
+      "status": "✅ (2.88 MiB)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "NFR-14",
+      "intent": "配布: 起動 OS は Windows 10+ (DOC-02 カテゴリ: 配布)",
+      "measurableAcceptance": [
+        "DOC-09.A.2 実測: OK",
+        "DOC-03.A.5 環境要件: OS 最小 Windows 10 1909 / 推奨 Windows 11, WebView2 runtime 100.0+ / 120.0+, PowerShell 5.1 / 7.x, メモリ 4 GB / 8 GB, ディスク 50 MB / 100 MB"
+      ],
+      "nonGoals": ["Windows MSI + macOS DMG は後続 brief (README:410 — Windows runner + Apple Developer ID 必要)"],
+      "provenance": "docs/DOC-02_system_requirements.md:95; docs/DOC-09_system_test_report.md:69; docs/DOC-03_system_hld.md:110-118",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "IR-01",
+      "intent": "インターフェース要件: 内部 IPC は Tauri invoke (desktop ↔ webview)",
+      "measurableAcceptance": [
+        "SIT-11: ide-shell-desktop + Tauri で 起動 → WebView2 ロード → window 表示",
+        "SIT-12: ide-shell-desktop + terminal で PowerShell spawn → 出力 → thread 正常"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:101; docs/DOC-08_integration_test_spec.md:56-57",
+      "status": "✅ (SIT-11, SIT-12)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["SIT-11", "SIT-12"],
+      "category": "functional"
+    },
+    {
+      "id": "IR-02",
+      "intent": "インターフェース要件: HTTP API は REST (13 endpoint) (web mode)",
+      "measurableAcceptance": [
+        "DOC-04.A.3 13 endpoints: GET /healthz, GET /info, GET /editor, GET /api/files, GET /api/file, POST /api/file, GET /api/search, POST /api/grep, POST /api/outline, POST /api/terminal_create, POST /api/terminal_input, GET /api/terminal_output (?id=), GET /api/wiki",
+        "SIT-01: editcore + ide-shell-web で Buffer 作成 → HTTP API 経由取得 → JSON 一致",
+        "SIT-02: ide-shell-web + axum で POST /api/file → ファイル書き込み → 200 OK",
+        "SIT-03: GET /api/file?q=large_file → 4MB 超過 拒否",
+        "SIT-13: ide-shell-web + wiki_data で GET /api/wiki → 200 + テキスト"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:102; docs/DOC-04_software_requirements.md:64-79",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["SIT-01", "SIT-02", "SIT-03", "SIT-13"],
+      "category": "functional"
+    },
+    {
+      "id": "IR-03",
+      "intent": "インターフェース要件: JSON-RPC (stdio/HTTP/WS) — ide-shell-protocol",
+      "measurableAcceptance": [
+        "DOC-04.A.2 22 メソッド: 接続 (connect/disconnect/ping), エディタ (open_file/close_file/get_buffer/set_buffer), カーソル (cursor_move/cursor_set), 編集 (insert_text/delete_range), Undo (undo/redo), 検索 (search/replace/grep), ファイル (list_dir/read_file/write_file), ターミナル (terminal_create/terminal_input/terminal_output), AI (ai_completion/ai_action)",
+        "SIT-04: ide-shell-protocol + WebSocket で chat メソッド送受信 → ws_id 対応",
+        "SIT-05: ide-shell-protocol + stdio で JSON-RPC 起動/終了 → clean exit",
+        "SIT-14: ide-shell-protocol + Python client で demo 実行 → 全 RPC 動作"
+      ],
+      "nonGoals": ["プラグイン API 完全公開 (DOC-12.A.1 OUT)"],
+      "provenance": "docs/DOC-02_system_requirements.md:103; docs/DOC-04_software_requirements.md:48-62",
+      "status": "✅ (SIT-04, SIT-05, SIT-14)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["SIT-04", "SIT-05", "SIT-14", "test_rpc_chat", "test_ws_roundtrip", "test_stdio_handshake"],
+      "category": "functional"
+    },
+    {
+      "id": "IR-04",
+      "intent": "インターフェース要件: AI Provider は trait (拡張性)",
+      "measurableAcceptance": [
+        "DOC-10.A: test_ai_provider_trait — 拡張性"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:104; docs/DOC-10_unit_test_spec.md:102",
+      "status": "✅ (trait 定義・UT 記載あり)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["test_ai_provider_trait"],
+      "category": "functional"
+    },
+    {
+      "id": "CR-01",
+      "intent": "制約: フロントエンドは vanilla JS, 0 フレームワーク",
+      "measurableAcceptance": [
+        "DOC-03.A.1: Frontend Layer (vanilla JS) — editor.html"
+      ],
+      "nonGoals": [],
+      "provenance": "docs/DOC-02_system_requirements.md:110; docs/DOC-03_system_hld.md:43-51",
+      "status": "✅ (構成・文書ともに vanilla JS)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "CR-02",
+      "intent": "制約: editcore は 0 重型依存 (no tree-sitter WASM, no regex crate)",
+      "measurableAcceptance": [
+        "DOC-05.A.1.i: editcore は tree-sitter WASM, regex crate 等を一切使用しない — 自作 line-based token scanner / 自作 単語境界判定 (Unicode カテゴリ)",
+        "DOC-06.A.1.i: editcore は外部 crate を 1 つも持たない — regex → 自作 line scanner, tree-sitter → 自作 line-based トークナイザ, memmap → 標準 Vec<char> のみ"
+      ],
+      "nonGoals": ["tree-sitter WASM / regex crate / memmap 等の重型依存 (DOC-05.A.1.i, DOC-06.A.1.i)"],
+      "provenance": "docs/DOC-02_system_requirements.md:111; docs/DOC-05_software_design.md:142-146; docs/DOC-06_software_detail_design.md:238-243",
+      "status": "✅ (設計で明記)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": [],
+      "category": "nonfunctional"
+    },
+    {
+      "id": "CR-03",
+      "intent": "制約: ファイル読み書きはプロジェクトルートのみ",
+      "measurableAcceptance": [
+        "DOC-04.B.1: プロジェクトルート外はアクセス拒否",
+        "DOC-04.C.1: E004 パス不正 (プロジェクトルート外)"
+      ],
+      "nonGoals": ["プロジェクトルート外へのファイルアクセス (DOC-02.D / DOC-04.B.1)"],
+      "provenance": "docs/DOC-02_system_requirements.md:112; docs/DOC-04_software_requirements.md:90-106",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["SIT-07", "SIT-08", "test_path_within_root"],
+      "category": "security"
+    },
+    {
+      "id": "CR-04",
+      "intent": "制約: 文字エンコードは UTF-8 のみ",
+      "measurableAcceptance": [
+        "DOC-04.B.1: 全 API は UTF-8 のみ受付",
+        "DOC-04.C.1: E003 エンコード不正 (UTF-8 以外)"
+      ],
+      "nonGoals": ["UTF-8 以外の文字エンコード (DOC-02.D / DOC-04.C.1)"],
+      "provenance": "docs/DOC-02_system_requirements.md:113; docs/DOC-04_software_requirements.md:90-106",
+      "status": "✅",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["test_utf8_only"],
+      "category": "security"
+    },
+    {
+      "id": "CR-05",
+      "intent": "制約: 命名は vim/Cursor/VSCode 禁止",
+      "measurableAcceptance": [
+        "DOC-11.A.1 受け入れ基準: 命名規則遵守 vim/Cursor/VSCode 0 件 → 0 ✅",
+        "DOC-07.C.2.i: vim/Cursor/VSCode 命名 0 件 (commit c61682e で検証)",
+        "DOC-11.C.1.i: 全 UI テキスト, ドキュメント, コードコメントに vim / Cursor / VSCode 命名 0 件 (commit c61682e で一括クリーンアップ)"
+      ],
+      "nonGoals": ["vim / Cursor / VSCode の名称使用 (DOC-02.D / DOC-11.C.1.i)"],
+      "provenance": "docs/DOC-02_system_requirements.md:114; docs/DOC-11_uat_report.md:41; docs/DOC-07_implementation_report.md:109-110",
+      "status": "✅ (0 件)",
+      "owner": "Hermes Agent",
+      "linkedTestIds": ["test_wiki_no_vim_cursor_vscode"],
+      "category": "quality"
+    }
+  ],
+  "systemContext": {
+    "boundary": "IDE1.0 IDE Shell は Windows 10+ (デスクトップ) と Web (127.0.0.1:8123) で提供される、AI agent 統合可能な軽量 Rust ベース IDE である。システム境界は 9 crates (ide-cli / ide-kernel-core / ide-shell / ide-shell-desktop / ide-shell-web / ide-shell-protocol / editcore / aci-emitter) と vanilla JS frontend (editor.html) からなり、frontend ↔ backend は Tauri invoke / HTTP(REST 13 endpoints) / WebSocket / JSON-RPC stdio の経路で接続される。backend は OS Layer (powershell.exe / file system / WebView2 runtime) に依存し、ファイルアクセスはプロジェクトルート内・4 MB 上限・UTF-8 のみに制限される。スコープ OUT は 言語サーバ (LSP) 完全対応 / 完全なデバッガ / マーケットプレース / プラグイン API 完全公開 / 多言語 UI (英中のみ) / フル機能マクロ (将来) である。",
+    "actors": [
+      {
+        "name": "個人開発者 (利用者)",
+        "kind": "user",
+        "responsibility": "エディタを実際に使用する一般利用者。ファイルオープン/編集/検索/ターミナル操作を行う (DOC-01.A.2)",
+        "provenance": "docs/DOC-01_project_charter.md:55-58"
+      },
+      {
+        "name": "AI agent 統合者",
+        "kind": "agent",
+        "responsibility": "JSON-RPC (IR-03) / HTTP (IR-02) / Tauri invoke (IR-01) 経由で IDE buffer を制御する外部 AI agent (DOC-01.A.2, DOC-02 IR-03)",
+        "provenance": "docs/DOC-01_project_charter.md:55-58; docs/DOC-02_system_requirements.md:103"
+      },
+      {
+        "name": "Ulysses (プロジェクトマネージャ / アーキテクト / reviewer)",
+        "kind": "user",
+        "responsibility": "PM・architect・review を兼務。承認と手動 UAT 検証を担当 (DOC-12.D.1)",
+        "provenance": "docs/DOC-12_project_plan.md:94-102"
+      },
+      {
+        "name": "Hermes Agent (主開発者)",
+        "kind": "agent",
+        "responsibility": "全 DOC-01〜DOC-12 の作成者 (改訂履歴 担当) 兼 主開発者 (30h/週) (DOC-12.D.1)",
+        "provenance": "docs/DOC-12_project_plan.md:94-102; docs/DOC-02_system_requirements.md:140-145"
+      },
+      {
+        "name": "Browser (Chromium / Edge)",
+        "kind": "external_system",
+        "responsibility": "Web 版 editor.html の描画と Playwright e2e (UAT) の実行環境 (DOC-08.A.1, DOC-08.B.2)",
+        "provenance": "docs/DOC-08_integration_test_spec.md:34-40; docs/DOC-08_integration_test_spec.md:61-70"
+      },
+      {
+        "name": "powershell.exe (Windows 5.1+ / 7.x)",
+        "kind": "external_system",
+        "responsibility": "ターミナル機能の実体。CREATE_NO_WINDOW で spawn、stdin pipe + stdout/stderr thread reader で I/O (DOC-02.A.3, DOC-06.B.1)",
+        "provenance": "docs/DOC-02_system_requirements.md:71-76; docs/DOC-06_software_detail_design.md:130-139"
+      },
+      {
+        "name": "File system (プロジェクトルート内のみ)",
+        "kind": "external_system",
+        "responsibility": "ファイル読み書きの実体。4 MB 上限・UTF-8 のみ・ルート外アクセス拒否 (NFR-05/06/07)",
+        "provenance": "docs/DOC-02_system_requirements.md:86-88; docs/DOC-03_system_hld.md:61-66"
+      },
+      {
+        "name": "WebView2 runtime (100.0+ / 推奨 120.0+)",
+        "kind": "external_system",
+        "responsibility": "Tauri 2 desktop の webview 実行環境 (DOC-03.A.5)",
+        "provenance": "docs/DOC-03_system_hld.md:61-66; docs/DOC-03_system_hld.md:110-118"
+      },
+      {
+        "name": "Tauri 2 (2.12.1)",
+        "kind": "external_system",
+        "responsibility": "desktop アプリの-window 管理と IPC (invoke_handler)  제공 프레임워크 (DOC-03.A.3, DOC-08.B.2)",
+        "provenance": "docs/DOC-03_system_hld.md:84-94; docs/DOC-08_integration_test_spec.md:61-70"
+      },
+      {
+        "name": "AI Provider (trait)",
+        "kind": "external_system",
+        "responsibility": "ai_completion / ai_action を実装する拡張点。trait として抽象化し差し替え可能にする (IR-04)",
+        "provenance": "docs/DOC-02_system_requirements.md:104; docs/DOC-10_unit_test_spec.md:102"
+      },
+      {
+        "name": "GitHub Actions CI (9 jobs)",
+        "kind": "external_system",
+        "responsibility": "fmt / clippy / build / test / coverage / integration / web build / tauri desktop / UAT の 9 job を実行する検証基盤 (DOC-09.B.1)",
+        "provenance": "docs/DOC-09_system_test_report.md:71-85"
+      }
+    ],
+    "components": [
+      {
+        "id": "SC-1",
+        "name": "Frontend Layer (editor.html, vanilla JS)",
+        "responsibility": "Activity Bar (4 panels) / Side Bar (Explorer, Outline, SCM, Extensions) / Editor (Tabs + Gutter + Content) / Bottom Panel (Terminal, Output, Problems) / Status Bar (Mode, Pos, File, Tip, Lang) を描画する 1348 行の単一 HTML + JS。0 フレームワーク (CR-01)",
+        "provenance": "docs/DOC-03_system_hld.md:43-51; docs/DOC-05_software_design.md:60"
+      },
+      {
+        "id": "SC-2",
+        "name": "ide-shell-desktop (Tauri 2 デスクトップ, ~3,500 行)",
+        "responsibility": "Tauri 2 エントリ (main.rs)、Tauri commands + wiki test (lib.rs)、PowerShell 起動 (terminal.rs)、wiki.rs、search.rs、scm.rs、outline.rs。desktop 配布形態 (MSI 2.88 MiB)",
+        "provenance": "docs/DOC-03_system_hld.md:77; docs/DOC-05_software_design.md:65-80"
+      },
+      {
+        "id": "SC-3",
+        "name": "ide-shell-web (Axum ウェブエディタ, ~3,000 行)",
+        "responsibility": "axum HTTP server (main.rs) と 13 endpoint dispatcher (lib.rs)、path_safety サンドボックス検証、terminal.rs (PowerShell + HTTP polling)、wiki_data.rs、editor.html 同梱。Web 単体 846 KB, 127.0.0.1:8123",
+        "provenance": "docs/DOC-03_system_hld.md:78; docs/DOC-05_software_design.md:50-63"
+      },
+      {
+        "id": "SC-4",
+        "name": "ide-shell-protocol (JSON-RPC 22 メソッド, ~2,500 行)",
+        "responsibility": "stdio / HTTP / WebSocket の 3 プロトコルで 22 メソッド (接続・エディタ・カーソル・編集・Undo・検索・ファイル・ターミナル・AI) を提供する。外部 AI agent 統合の入口",
+        "provenance": "docs/DOC-03_system_hld.md:79; docs/DOC-04_software_requirements.md:48-62"
+      },
+      {
+        "id": "SC-5",
+        "name": "editcore (Pure Rust 編集内核, ~1,800 行)",
+        "responsibility": "0 重型依存 (tree-sitter WASM / regex crate なし) の編集内核。Buffer / Cursor / Undo-Redo / TypeConfig / Grep / Outline / Pos / Match を提供し、examples/bench.rs で 56,971 ops/s",
+        "provenance": "docs/DOC-03_system_hld.md:80; docs/DOC-05_software_design.md:33-48; docs/DOC-06_software_detail_design.md:32-78"
+      },
+      {
+        "id": "SC-6",
+        "name": "aci-emitter (構造化イベント出力, ~200 行)",
+        "responsibility": "ACI v0.1 スキーマ (10 必填字段, 4 layer, 5 severity, 4 status, 17 expect_value_types) に従った構造化 assertion を出力する emitter",
+        "provenance": "docs/DOC-03_system_hld.md:81; README.md:87-98"
+      },
+      {
+        "id": "SC-7",
+        "name": "ide-cli (4 モジュール CLI, ~1,200 行)",
+        "responsibility": "CLI バイナリ。--version / --aci-emit 等のサブコマンドを提供し aci-emitter と統合する",
+        "provenance": "docs/DOC-03_system_hld.md:74; README.md:74-85"
+      },
+      {
+        "id": "SC-8",
+        "name": "ide-kernel-core (コア層 4 モジュール, ~800 行)",
+        "responsibility": "version / kernel_status 等のカーネル情報を提供し、ide-shell と ide-cli が共有するコア層",
+        "provenance": "docs/DOC-03_system_hld.md:75; README.md:200-208"
+      },
+      {
+        "id": "SC-9",
+        "name": "ide-shell (シェル, ~600 行)",
+        "responsibility": "cluster_switch 等のシェル層。keymap / app 状態機の骨組みを持ち、desktop と web の双方から利用される",
+        "provenance": "docs/DOC-03_system_hld.md:76; docs/common/glossary.md:100-108"
+      },
+      {
+        "id": "SC-10",
+        "name": "terminal.rs (PowerShell セッション管理)",
+        "responsibility": "powershell.exe の spawn (CREATE_NO_WINDOW)、stdin pipe、stdout/stderr の thread reader、セッション ID 授与・出力取得を担当",
+        "provenance": "docs/DOC-05_software_design.md:58; docs/DOC-05_software_design.md:72; docs/DOC-06_software_detail_design.md:130-139"
+      },
+      {
+        "id": "SC-11",
+        "name": "path_safety.rs (サンドボックス検証)",
+        "responsibility": "全ファイルアクセスに対するプロジェクトルート内判定。絶対パス化・verbatim `\\\\?\\` 剥除・8.3 短パス展開・starts_with 判定 (tests/path_safety.rs 12 tests)",
+        "provenance": "docs/DOC-05_software_design.md:57; docs/DOC-06_software_detail_design.md:141-148"
+      },
+      {
+        "id": "SC-12",
+        "name": "wiki (wiki.rs / wiki_data.rs ドキュメントテキスト)",
+        "responsibility": "日本語 Wiki テキストと IPA wiki 必須項目をカバーする文書データ。desktop 側は wiki.rs + wiki テスト、web 側は wiki_data.rs + GET /api/wiki",
+        "provenance": "docs/DOC-05_software_design.md:59; docs/DOC-05_software_design.md:73; docs/DOC-04_software_requirements.md:79"
+      },
+      {
+        "id": "SC-13",
+        "name": "syntax.js (19 言語 lexer)",
+        "responsibility": "拡張子ベースで言語を判別し 19 言語 (rust/python/javascript/typescript/go/c/cpp/java/csharp/bash/yaml/toml/sql/plain/dockerfile/html/css/json/markdown) のハイライトを行う",
+        "provenance": "docs/DOC-06_software_detail_design.md:182-205; docs/DOC-02_system_requirements.md:57"
+      },
+      {
+        "id": "SC-14",
+        "name": "OS Layer (Windows 10+: powershell.exe / file system / WebView2 runtime)",
+        "responsibility": "ホスト OS の実行環境。PowerShell 5.1 (推奨 7.x)、ファイルシステム、WebView2 runtime 100.0+ (推奨 120.0+) を提供し、メモリ 4 GB / ディスク 50 MB が最小要件",
+        "provenance": "docs/DOC-03_system_hld.md:61-66; docs/DOC-03_system_hld.md:110-118"
+      }
+    ],
+    "interfaces": [
+      {
+        "from": "SC-1",
+        "to": "SC-2",
+        "kind": "ipc",
+        "description": "Tauri invoke (IR-01) で desktop ↔ webview を結ぶ。desktop 側は lib.rs root の private commands + invoke_handler! (README §10.3: frame / reset / key / mouse / kernel_banner / get_mode)",
+        "provenance": "docs/DOC-03_system_hld.md:52; docs/DOC-02_system_requirements.md:101; README.md:372-381"
+      },
+      {
+        "from": "SC-1",
+        "to": "SC-3",
+        "kind": "api",
+        "description": "REST 13 endpoints (IR-02) で web 版バックエンドを呼ぶ。GET /healthz /info /editor, GET /api/files /api/file /api/search /api/terminal_output, POST /api/file /api/grep /api/outline /api/terminal_create /api/terminal_input, GET /api/wiki",
+        "provenance": "docs/DOC-04_software_requirements.md:64-79; docs/DOC-02_system_requirements.md:102"
+      },
+      {
+        "from": "SC-1",
+        "to": "SC-13",
+        "kind": "file",
+        "description": "editor.html が syntax.js を読み込み、拡張子判定による 19 言語ハイライトを実行する",
+        "provenance": "docs/DOC-06_software_detail_design.md:182-205; docs/DOC-06_software_detail_design.md:256-260"
+      },
+      {
+        "from": "SC-4",
+        "to": "SC-3",
+        "kind": "api",
+        "description": "JSON-RPC 22 メソッドを HTTP / WebSocket で公開 (IR-03)。SIT-04 は WebSocket chat 送受信、SIT-05 は stdio 起動/終了を検証",
+        "provenance": "docs/DOC-04_software_requirements.md:48-62; docs/DOC-08_integration_test_spec.md:49-50"
+      },
+      {
+        "from": "SC-4",
+        "to": "SC-1",
+        "kind": "api",
+        "description": "外部 AI agent から IDE buffer への操作経路 (open_file / get_buffer / insert_text / chat 等)。Python client demo は stdio/HTTP/WS 経由",
+        "provenance": "docs/DOC-04_software_requirements.md:48-62; README.md:422-426"
+      },
+      {
+        "from": "SC-3",
+        "to": "SC-5",
+        "kind": "api",
+        "description": "HTTP endpoint dispatcher が editcore の Buffer / Cursor / Grep / Outline / TypeConfig API を呼び出す (SIT-01: Buffer 作成 → HTTP API 経由取得 → JSON 一致)",
+        "provenance": "docs/DOC-05_software_design.md:56; docs/DOC-04_software_requirements.md:32-46; docs/DOC-08_integration_test_spec.md:46"
+      },
+      {
+        "from": "SC-2",
+        "to": "SC-5",
+        "kind": "api",
+        "description": "desktop の search.rs / scm.rs / outline.rs / lib.rs が editcore API を呼び出して編集・検索・アウトラインを提供する",
+        "provenance": "docs/DOC-05_software_design.md:70-77; docs/DOC-04_software_requirements.md:32-46"
+      },
+      {
+        "from": "SC-3",
+        "to": "SC-11",
+        "kind": "api",
+        "description": "全ファイルアクセス (GET/POST /api/file, /api/files) を path_safety.rs で検証してから許可する",
+        "provenance": "docs/DOC-05_software_design.md:57; docs/DOC-08_integration_test_spec.md:39"
+      },
+      {
+        "from": "SC-2",
+        "to": "SC-11",
+        "kind": "api",
+        "description": "desktop 側の Tauri 経由ファイルアクセスも path 検証を経由する (test_path_safety_integration)",
+        "provenance": "docs/DOC-10_unit_test_spec.md:89; docs/DOC-02_system_requirements.md:86"
+      },
+      {
+        "from": "SC-3",
+        "to": "SC-10",
+        "kind": "api",
+        "description": "terminal_create / terminal_input / terminal_output (?id=) を HTTP polling (setInterval 100ms) で往復する",
+        "provenance": "docs/DOC-05_software_design.md:58; docs/DOC-05_software_design.md:93-105; docs/DOC-05_software_design.md:137"
+      },
+      {
+        "from": "SC-2",
+        "to": "SC-10",
+        "kind": "api",
+        "description": "desktop の terminal.rs が PowerShell セッションを起動し出力を取得する (SIT-12)",
+        "provenance": "docs/DOC-05_software_design.md:72; docs/DOC-08_integration_test_spec.md:57"
+      },
+      {
+        "from": "SC-10",
+        "to": "SC-14",
+        "kind": "ipc",
+        "description": "powershell.exe を CREATE_NO_WINDOW フラグで spawn し、Stdio::piped() で stdin/stdout/stderr を接続、stdout/stderr を別 thread で読み込む (UTF-8)",
+        "provenance": "docs/DOC-06_software_detail_design.md:130-139; docs/DOC-02_system_requirements.md:71-76; docs/DOC-08_integration_test_spec.md:38"
+      },
+      {
+        "from": "SC-3",
+        "to": "SC-12",
+        "kind": "api",
+        "description": "GET /api/wiki が wiki_data.rs の日本語ドキュメントテキストを返す (SIT-13: 200 + テキスト)",
+        "provenance": "docs/DOC-04_software_requirements.md:79; docs/DOC-08_integration_test_spec.md:58"
+      },
+      {
+        "from": "SC-2",
+        "to": "SC-12",
+        "kind": "api",
+        "description": "desktop の wiki.rs が日本語 Wiki テキストを保持し、lib.rs の wiki テスト (IPA 必須項目) が内容を検証する",
+        "provenance": "docs/DOC-05_software_design.md:73; docs/DOC-04_software_requirements.md:83-89; docs/DOC-10_unit_test_spec.md:86"
+      },
+      {
+        "from": "SC-7",
+        "to": "SC-6",
+        "kind": "api",
+        "description": "ide-cli --aci-emit が aci-emitter v0.1 で ACI v0.1 準拠の assertion JSON を生成し出力する (10 必填字段 / sort_keys)",
+        "provenance": "README.md:87-98; README.md:100-132; docs/DOC-03_system_hld.md:81"
+      },
+      {
+        "from": "SC-8",
+        "to": "SC-9",
+        "kind": "api",
+        "description": "ide-shell が ide-kernel-core の version / kernel_status を再利用する (SC-9 は SC-8 に依存して kernel banner を出力)",
+        "provenance": "README.md:200-208; README.md:266-272; docs/DOC-03_system_hld.md:74-76"
+      }
+    ]
+  },
+  "implementationStatus": {
+    "implemented": [
+      {
+        "item": "8 crate の release ビルド成功・警告 0 (ide-cli, ide-kernel-core, ide-shell, ide-shell-desktop, ide-shell-web, ide-shell-protocol, editcore, aci-emitter)、workspace 合計 ~4m",
+        "provenance": "docs/DOC-07_implementation_report.md:32-44"
+      },
+      {
+        "item": "ビルド成果物: ide-shell-desktop.exe 8.45 MB, ide-shell-web.exe 846 KB, ide-shell-protocol-server.exe 1.2 MB, IDE1.0_0.1.9_x64_en-US.msi 2.88 MiB",
+        "provenance": "docs/DOC-07_implementation_report.md:48-55"
+      },
+      {
+        "item": "単体テスト: test result: ok. 253 passed; 0 failed; 0 ignored (内訳: ide-cli 18 / ide-kernel-core 12 / ide-shell 6 / ide-shell-desktop 28 / ide-shell-web 13 / ide-shell-protocol 20 / editcore 64 / aci-emitter 4)",
+        "provenance": "docs/DOC-07_implementation_report.md:57-73"
+      },
+      {
+        "item": "clippy: cargo clippy --all -- -D warnings → 警告 0 件",
+        "provenance": "docs/DOC-07_implementation_report.md:75-80"
+      },
+      {
+        "item": "rustfmt: cargo fmt --all -- --check → 全ファイル compliance",
+        "provenance": "docs/DOC-07_implementation_report.md:82-87"
+      },
+      {
+        "item": "コード品質指標: LOC Rust ~13,600 / テスト LOC ~4,500 / 比率 0.33 / cargo doc 警告 0 / 関数平均 12 行 / ファイル平均 240 行",
+        "provenance": "docs/DOC-07_implementation_report.md:89-98"
+      },
+      {
+        "item": "editor_parity 回帰テスト 36 件 (主要 API の回帰保証, 機能カバレッジ ~76% = 72/95)",
+        "provenance": "docs/DOC-07_implementation_report.md:105-107; docs/DOC-10_unit_test_spec.md:48"
+      },
+      {
+        "item": "命名規則遵守: vim/Cursor/VSCode 命名 0 件 (commit c61682e で検証)",
+        "provenance": "docs/DOC-07_implementation_report.md:109-110"
+      },
+      {
+        "item": "結合テスト 14 ケース (SIT-01~SIT-14) 全 pass, エラー 0, クラッシュ 0, データロス 0",
+        "provenance": "docs/DOC-08_integration_test_spec.md:42-59; docs/DOC-08_integration_test_spec.md:72-79"
+      },
+      {
+        "item": "CI 9 jobs うち 8 ✅ (合格率 8/9 = 88.9%), カバレッジ 66.25%",
+        "provenance": "docs/DOC-09_system_test_report.md:71-99"
+      },
+      {
+        "item": "Playwright UAT 72 case 中 56 pass / 5 skip / 11 fail (editor 18/18, syntax 10/10, panels 6/6, terminal 5/5 Windows, outline 8/8, ui 17/25)",
+        "provenance": "docs/DOC-11_uat_report.md:44-59"
+      },
+      {
+        "item": "Windows 11 ローカル手動検証 20 操作すべて ✅ (起動 1.5s / web 0.8s / PowerShell Write-Host・Get-Date・Get-Location 実出力 / 19 言語 / i18n 切替)",
+        "provenance": "docs/DOC-11_uat_report.md:73-98; docs/DOC-11_uat_report.md:99-118"
+      },
+      {
+        "item": "機能カバレッジ 72/95 (~76%) と回帰テスト editor_parity の体制整備 (新機能追加時に PARITY 更新 + テスト追加を必須化)",
+        "provenance": "docs/DOC-10_unit_test_spec.md:140-141; docs/DOC-11_uat_report.md:125-130"
+      }
+    ],
+    "notImplemented": [
+      {
+        "item": "機能カバレッジ 100% 達成 (95 機能中 72 実装 = ~76%)",
+        "reason": "DOC-12.B.1 Stage 6.1 が「~76% → 100%, 未達成」と明記",
+        "provenance": "docs/DOC-12_project_plan.md:76; docs/DOC-11_uat_report.md:125-126"
+      },
+      {
+        "item": "FR-13 ミニマップ",
+        "reason": "DOC-02 で 🟡 (将来拡張), DOC-09.B.3 が「ミニマップ未実装 / 影響 UX 制限 / 回避策 計画中 (DOC-19)」と明記",
+        "provenance": "docs/DOC-02_system_requirements.md:60; docs/DOC-09_system_test_report.md:107"
+      },
+      {
+        "item": "FR-14 矩形選択",
+        "reason": "DOC-02 で 🟡 (将来拡張)、DOC-09.A.1 証跡は「計画のみ」",
+        "provenance": "docs/DOC-02_system_requirements.md:61; docs/DOC-09_system_test_report.md:49"
+      },
+      {
+        "item": "FR-15 自動バックアップ (5 分毎, 10 世代)",
+        "reason": "DOC-09.B.3 が「自動バックアップ未実装 / 影響 データ保護 / 回避策 計画中 (DOC-19)」と明記 — DOC-02.A.1 / DOC-09.A.1 の ✅ と矛盾",
+        "provenance": "docs/DOC-09_system_test_report.md:108; docs/DOC-02_system_requirements.md:62"
+      },
+      {
+        "item": "Python クライアント (crates/ide-shell-protocol/ 直下の client_demo.py)",
+        "reason": "DOC-04.A.2.i が「予定 (未着手)」と明記、DOC-08.C.2 のコマンド注記も「ファイル未着手」",
+        "provenance": "docs/DOC-04_software_requirements.md:110-112; docs/DOC-08_integration_test_spec.md:87-88"
+      },
+      {
+        "item": "CI 9 job のうち job 8 (tauri desktop) の UAT 実行",
+        "reason": "🟡 ビルド成功, UAT skip (powershell なし) — Linux CI に powershell.exe が存在しない",
+        "provenance": "docs/DOC-09_system_test_report.md:82"
+      },
+      {
+        "item": "CI 9 job のうち job 9 (UAT) の全 72 case 合格",
+        "reason": "🟡 56/72 (5 skip + 11 programmatic click fail)",
+        "provenance": "docs/DOC-09_system_test_report.md:83"
+      },
+      {
+        "item": "Playwright ui.spec.ts の 11 case (programmatic click)",
+        "reason": "WebView2 (CI Linux 環境) では page.click() が DOM event を発火しない (UIA 経由は button=0 検出、SendInput 経由は webview 内部に到達せず)。対策: CI では test.skip(linux, ...) でマーク、将来 webdriver-bidi 移行検討",
+        "provenance": "docs/DOC-11_uat_report.md:53; docs/DOC-11_uat_report.md:61-71; docs/DOC-09_system_test_report.md:106"
+      },
+      {
+        "item": "Linux CI での PowerShell 依存テスト (terminal.spec.ts 5 case)",
+        "reason": "skip 5 (Linux 環境, powershell 不在)",
+        "provenance": "docs/DOC-11_uat_report.md:51; docs/DOC-11_uat_report.md:58"
+      },
+      {
+        "item": "editcore 単体カバレッジ ≥ 80%",
+        "reason": "DOC-10.C.2 合格基準が「65% (要改善)」と記載 (workspace 全体 66.25% は達成済)",
+        "provenance": "docs/DOC-10_unit_test_spec.md:132"
+      },
+      {
+        "item": "微細設計 DD-01 (Microkernel Core) / DD-02 (Session Transaction Buffer Engine) / DD-04 (Plugin Loader / Search / TUI) の実装",
+        "reason": "README §4 は 3 冊を「設計 (実装待 ULYS-191 后续 brief)」と明記 — 全文 microkernel / session / transaction buffer / search / plugin loader / TUI / txn の実装は未着手",
+        "provenance": "README.md:153-163; README.md:3-5"
+      },
+      {
+        "item": "IDE Shell Stage 4+ 項目: 実 LLM 接入 (Anthropic / OpenAI / MiniMax), 行内補完 ghost text, 履歴命令補完 (Up/Down), 多行 buffer (現僅単行), PowerShell 真解析 (現僅 shell 兜底), PSReadLine 插件形態 entry",
+        "reason": "README §8.5「不在本笔范围 (Stage 4+)」および §6 缺口 G-SHELL-01",
+        "provenance": "README.md:275-282; README.md:186"
+      },
+      {
+        "item": "跨言語 emitter の TS 実装 (≥4 種のうち TS のみ未実装)",
+        "reason": "README §6 缺口 G-ACI-03: Python ✅ / Bash ✅ / Rust ✅ / TS ⏳ ULYS-191.7",
+        "provenance": "README.md:183"
+      },
+      {
+        "item": "グリッドパネル / カスタムメニュー",
+        "reason": "用語集が両方とも「(未实现 - 计划 DOC-19 / DOC-15)」と記載",
+        "provenance": "docs/common/glossary.md:84-85"
+      },
+      {
+        "item": "言語認識の shebang 検出・内容ヒューリスティック",
+        "reason": "DOC-06.C.2.i: 現状は拡張子のみ、shebang (#!/usr/bin/env python) 検出と内容ヒューリスティックは将来",
+        "provenance": "docs/DOC-06_software_detail_design.md:244-247"
+      },
+      {
+        "item": "macOS DMG と Windows MSI 以降の配布ビルド (CI は tauri-build-linux job で .deb + .AppImage)",
+        "reason": "README §10.5: Windows MSI + macOS DMG は後続 brief (Windows runner + Apple Developer ID 必要)",
+        "provenance": "README.md:410"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "id": "SIT-01",
+      "kind": "IT",
+      "target": "editcore + ide-shell-web",
+      "assertion": "Buffer 作成 → HTTP API 経由取得 → JSON 一致",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:46",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-02",
+      "kind": "IT",
+      "target": "ide-shell-web + axum",
+      "assertion": "POST /api/file → ファイル書き込み → 200 OK",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:47",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-03",
+      "kind": "IT",
+      "target": "ide-shell-web + axum",
+      "assertion": "GET /api/file?q=large_file → 4MB 超過 拒否",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:48",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-04",
+      "kind": "IT",
+      "target": "ide-shell-protocol + WebSocket",
+      "assertion": "chat メソッド送受信 → ws_id 対応",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:49",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-05",
+      "kind": "IT",
+      "target": "ide-shell-protocol + stdio",
+      "assertion": "JSON-RPC 起動/終了 → clean exit",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:50",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-06",
+      "kind": "IT",
+      "target": "terminal.rs + powershell",
+      "assertion": "起動 → Write-Host → 出力取得 → 文字列一致",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:51",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-07",
+      "kind": "IT",
+      "target": "path_safety + Windows verbatim",
+      "assertion": "`\\\\?\\C:\\foo` 入力 → 正規化成功",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:52",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-08",
+      "kind": "IT",
+      "target": "path_safety + 8.3 短パス",
+      "assertion": "`PROGRA~1` 入力 → 展開成功",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:53",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-09",
+      "kind": "IT",
+      "target": "editor.html + editcore",
+      "assertion": "undo 連続 100 回 → 状態一致",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:54",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-10",
+      "kind": "IT",
+      "target": "editor.html + syntax.js",
+      "assertion": "19 言語切替 → ハイライト正常",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:55",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-11",
+      "kind": "IT",
+      "target": "ide-shell-desktop + Tauri",
+      "assertion": "起動 → WebView2 ロード → window 表示",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:56",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-12",
+      "kind": "IT",
+      "target": "ide-shell-desktop + terminal",
+      "assertion": "PowerShell spawn → 出力 → thread 正常",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:57",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-13",
+      "kind": "IT",
+      "target": "ide-shell-web + wiki_data",
+      "assertion": "GET /api/wiki → 200 + テキスト",
+      "command": "cargo test --workspace --tests",
+      "result": "✅ (DOC-08.C.1: SIT 全ケース pass 14/14 ✅)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:58",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "SIT-14",
+      "kind": "IT",
+      "target": "ide-shell-protocol + Python client",
+      "assertion": "demo 実行 → 全 RPC 動作",
+      "command": "cargo test --workspace --tests (Python 部分は未着手: python crates/ide-shell-protocol/client_demo.py # 注: ファイル未着手)",
+      "result": "✅ (DOC-08.B.1 状態列 ✅) — ただし DOC-04.A.2.i と DOC-08.C.2 は同 client_demo.py を「未着手」と記載 (矛盾)",
+      "status": "PASS",
+      "provenance": "docs/DOC-08_integration_test_spec.md:59; docs/DOC-08_integration_test_spec.md:87-88",
+      "evidenceIds": ["EV-DOCA-0034", "EV-DOCA-0035"]
+    },
+    {
+      "id": "test_buffer_insert_undo_redo",
+      "kind": "UT",
+      "target": "editcore — buffer.rs",
+      "assertion": "挿入 → undo → redo で同一状態",
+      "command": "cargo test -p editcore test_buffer_insert_undo_redo",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 合格率 100% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:57",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_grep_walk_dir",
+      "kind": "UT",
+      "target": "editcore — grep.rs",
+      "assertion": "再帰的ファイル走査",
+      "command": "cargo test -p editcore",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 合格率 100% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:58",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_outline_rust",
+      "kind": "UT",
+      "target": "editcore — outline.rs",
+      "assertion": "Rust 関数抽出",
+      "command": "cargo test -p editcore",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 合格率 100% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:59",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_cursor_word_fwd_bwd",
+      "kind": "UT",
+      "target": "editcore — cursor.rs",
+      "assertion": "単語移動 (fwd/bwd)",
+      "command": "cargo test -p editcore",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 合格率 100% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:60",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_type_config_load",
+      "kind": "UT",
+      "target": "editcore — type_config.rs",
+      "assertion": "JSON ロード",
+      "command": "cargo test -p editcore",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 合格率 100% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:61",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_strip_verbatim_prefix",
+      "kind": "UT",
+      "target": "ide-shell-web — tests/path_safety.rs",
+      "assertion": "`\\\\?\\C:\\foo` 剥除",
+      "command": "cargo test -p ide-shell-web",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 カバレッジ (path_safety) 93.94% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:71",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_8_3_short_path",
+      "kind": "UT",
+      "target": "ide-shell-web — tests/path_safety.rs",
+      "assertion": "8.3 短パス展開",
+      "command": "cargo test -p ide-shell-web",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 カバレッジ (path_safety) 93.94% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:72",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_path_within_root",
+      "kind": "UT",
+      "target": "ide-shell-web — tests/path_safety.rs",
+      "assertion": "プロジェクトルート配下判定",
+      "command": "cargo test -p ide-shell-web",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 カバレッジ (path_safety) 93.94% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:73",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_size_limit_4mb",
+      "kind": "UT",
+      "target": "ide-shell-web — tests/path_safety.rs",
+      "assertion": "サイズ上限 4MB",
+      "command": "cargo test -p ide-shell-web",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 カバレッジ (path_safety) 93.94% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:74",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "test_utf8_only",
+      "kind": "UT",
+      "target": "ide-shell-web — tests/path_safety.rs",
+      "assertion": "エンコード検証 (UTF-8 のみ)",
+      "command": "cargo test -p ide-shell-web",
+      "result": "PASS (スイート単位の記載: DOC-07.B.1 test result: ok. 253 passed; 0 failed; 0 ignored / DOC-10.C.2 カバレッジ (path_safety) 93.94% ✅ — 個別テスト結果行は無い)",
+      "status": "PASS",
+      "provenance": "docs/DOC-10_unit_test_spec.md:75",
+      "evidenceIds": ["EV-DOCA-0039", "EV-DOCA-0032"]
+    },
+    {
+      "id": "editor.spec.ts",
+      "kind": "UAT",
+      "target": "tests/uat/specs/editor.spec.ts (基本操作 18 case)",
+      "assertion": "基本操作 (ページロード / mode 切替 / Vim 鍵位 / 編集) の e2e",
+      "command": "npx playwright test (per README.md:320: IDE_SHELL_WEB_BIN=../../target/debug/ide-shell-web npx playwright test)",
+      "result": "18/18 ✅",
+      "status": "PASS",
+      "provenance": "docs/DOC-11_uat_report.md:48; docs/DOC-11_uat_report.md:143",
+      "evidenceIds": ["EV-DOCA-0040"]
+    },
+    {
+      "id": "syntax.spec.ts",
+      "kind": "UAT",
+      "target": "tests/uat/specs/syntax.spec.ts (言語高亮 10 case)",
+      "assertion": "19 言語ハイライトの表示",
+      "command": "npx playwright test (per README.md:320)",
+      "result": "10/10 ✅",
+      "status": "PASS",
+      "provenance": "docs/DOC-11_uat_report.md:49; docs/DOC-11_uat_report.md:144",
+      "evidenceIds": ["EV-DOCA-0040"]
+    },
+    {
+      "id": "panels.spec.ts",
+      "kind": "UAT",
+      "target": "tests/uat/specs/panels.spec.ts (Side Bar 6 case)",
+      "assertion": "Side Bar パネル操作",
+      "command": "npx playwright test (per README.md:320)",
+      "result": "6/6 ✅",
+      "status": "PASS",
+      "provenance": "docs/DOC-11_uat_report.md:50; docs/DOC-11_uat_report.md:145",
+      "evidenceIds": ["EV-DOCA-0040"]
+    },
+    {
+      "id": "terminal.spec.ts",
+      "kind": "UAT",
+      "target": "tests/uat/specs/terminal.spec.ts (PowerShell 5 case)",
+      "assertion": "PowerShell  spawning と出力取得",
+      "command": "npx playwright test (per README.md:320)",
+      "result": "5/5 ✅ (Windows), skip (Linux)",
+      "status": "DEGRADED",
+      "provenance": "docs/DOC-11_uat_report.md:51; docs/DOC-11_uat_report.md:146",
+      "evidenceIds": ["EV-DOCA-0040"]
+    },
+    {
+      "id": "outline.spec.ts",
+      "kind": "UAT",
+      "target": "tests/uat/specs/outline.spec.ts (アウトライン 8 case)",
+      "assertion": "アウトライン表示とジャンプ",
+      "command": "npx playwright test (per README.md:320)",
+      "result": "8/8 ✅",
+      "status": "PASS",
+      "provenance": "docs/DOC-11_uat_report.md:52; docs/DOC-11_uat_report.md:147",
+      "evidenceIds": ["EV-DOCA-0040"]
+    },
+    {
+      "id": "ui.spec.ts",
+      "kind": "UAT",
+      "target": "tests/uat/specs/ui.spec.ts (UI 操作 25 case)",
+      "assertion": "UI 操作 (programmatic click 経由)",
+      "command": "npx playwright test (per README.md:320)",
+      "result": "17/25 ⚠️ (11 fail: programmatic click 失敗 — WebView2 環境依存 / ローカル Windows + Edge では全 11 case pass)",
+      "status": "FLAKY_UNRESOLVED",
+      "provenance": "docs/DOC-11_uat_report.md:53; docs/DOC-11_uat_report.md:61-71; docs/DOC-11_uat_report.md:148",
+      "evidenceIds": ["EV-DOCA-0040"]
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Stage 1 企画 (Planning)",
+      "scope": "1 週 / 2026-09-15 ~ 2026-09-22 / commits (ulys-191-1, 3) — WBS 1. 企画・要件: 企画書 (DOC-01), システム要件 (DOC-02), ソフトウェア要件 (DOC-04)",
+      "status": "shipped",
+      "provenance": "docs/DOC-12_project_plan.md:85; docs/DOC-12_project_plan.md:47-50"
+    },
+    {
+      "id": "M2",
+      "name": "Stage 2 設計 (System/Software Design)",
+      "scope": "1 週 / 2026-09-22 ~ 2026-09-29 / commits ulys-191-4, 5 — WBS 2. 設計: システム HLD (DOC-03), ソフトウェア SDD (DOC-05), 詳細設計 (DOC-06)",
+      "status": "shipped",
+      "provenance": "docs/DOC-12_project_plan.md:86; docs/DOC-12_project_plan.md:52-55"
+    },
+    {
+      "id": "M3",
+      "name": "Stage 3 実装 (Implementation)",
+      "scope": "2 週 / 2026-09-29 ~ 2026-10-09 / commits ulys-191-6 ~ 30 — WBS 3. 実装: editcore コア, ide-shell-web, ide-shell-desktop, ide-shell-protocol, Terminal",
+      "status": "shipped",
+      "provenance": "docs/DOC-12_project_plan.md:87; docs/DOC-12_project_plan.md:57-62"
+    },
+    {
+      "id": "M4",
+      "name": "Stage 4 検証 (Verification)",
+      "scope": "並行 / 2026-10-01 ~ 2026-10-09 / commits ulys-191-21, 22, 31 — WBS 4. 検証: 単体テスト (DOC-10), 結合テスト (DOC-08), システムテスト (DOC-09), UAT (DOC-11)",
+      "status": "shipped",
+      "provenance": "docs/DOC-12_project_plan.md:88; docs/DOC-12_project_plan.md:64-68"
+    },
+    {
+      "id": "M5",
+      "name": "Stage 5 配布 (Release)",
+      "scope": "1 日 / 2026-10-09 ~ 2026-10-09 / PR #13 → main — WBS 5. 配布: MSI パッケージ, Web リリース, GitHub Release",
+      "status": "shipped",
+      "provenance": "docs/DOC-12_project_plan.md:89; docs/DOC-12_project_plan.md:70-73"
+    },
+    {
+      "id": "M6",
+      "name": "Stage 6 拡張 (Extension)",
+      "scope": "進行中 / 2026-10-09 ~ - / commit ulys-191-34 — WBS 6. 拡張: 機能カバレッジ (~76% → 100%, 未達成), IPA ドキュメント (21 件), ベンチマーク公開",
+      "status": "in_progress",
+      "provenance": "docs/DOC-12_project_plan.md:90; docs/DOC-12_project_plan.md:75-78"
+    },
+    {
+      "id": "M7",
+      "name": "IDE Shell 骨格 (ULYS-191 §3, 同产品双外观)",
+      "scope": "crates/ide-shell 骨格 — TUI (ratatui) + AI bridge (PlaceholderAi) + Vim normal/insert/command + 鼠标 (crossterm EnableMouseCapture), 30 UT / PR #6 (f0753ab) ✅ MERGED; crates/ide-shell-web は同内核 web 渲染 + HTTP server",
+      "status": "shipped",
+      "provenance": "README.md:18; README.md:192-208"
+    },
+    {
+      "id": "M8",
+      "name": "四层测试矩阵 (UT/IT/ST/UAT)",
+      "scope": "UT (61 Rust) + IT (跨 crate 10) + ST (cli_smoke + 26 Python mock) + UAT (Playwright e2e 40 case) / PR #9 (本笔) — 状態 🟡 OPEN (README §0)",
+      "status": "in_progress",
+      "provenance": "README.md:20; README.md:284-294"
+    }
+  ],
+  "glossary": [
+    {
+      "term": "IDE Shell",
+      "definition": "IDE1.0 仓承载的 IDE 外观层 — crates/ide-shell 内做 PowerShell 替代/增强内核的 TUI + AI + Vim + 鼠标 骨架。两种外观 (全壳替代 vs PSReadLine 插件) 共用 ide-shell 内核 (同产品双外观, 内核相通)",
+      "provenance": "README.md:192-196; docs/common/glossary.md:105-108"
+    },
+    {
+      "term": "三態键位 (Tri-state keymap)",
+      "definition": "NORMAL / INSERT / VISUAL の 3 態モード。UI 表示は「NORMAL/INSERT/VISUAL」、内部 enum は Mode::Normal | Insert | Visual",
+      "provenance": "docs/common/glossary.md:80; docs/DOC-05_software_design.md:147-149"
+    },
+    {
+      "term": "プロジェクトルート (Project Root)",
+      "definition": "ファイルアクセスを制限する基準ディレクトリ。環境変数 IDE_SHELL_WEB_TEST_ROOT で識別される",
+      "provenance": "docs/common/glossary.md:79"
+    },
+    {
+      "term": "単層ペイン (Single-layer Panel)",
+      "definition": "Bottom Panel (Terminal / Output / Problems) — 複数パネルではなく単層",
+      "provenance": "docs/common/glossary.md:81"
+    },
+    {
+      "term": "ファイルツリー (File Tree)",
+      "definition": "Explorer side bar に表示するプロジェクト階層のファイル一覧 (renderTree())",
+      "provenance": "docs/common/glossary.md:82; docs/DOC-02_system_requirements.md:49"
+    },
+    {
+      "term": "アウトラインパネル (Outline Panel)",
+      "definition": "editcore の outline_dispatch で抽出した OutlineItem (kind: Function | Class | Module | Variable, name, range) を表示するパネル",
+      "provenance": "docs/common/glossary.md:83; docs/DOC-06_software_detail_design.md:56-61"
+    },
+    {
+      "term": "グリッドパネル (Grid Panel)",
+      "definition": "多面板栅格 — 未实现 (计划 DOC-19)",
+      "provenance": "docs/common/glossary.md:84"
+    },
+    {
+      "term": "カスタムメニュー (Custom Menu)",
+      "definition": "自定义菜单 — 未实现 (计划 DOC-15)",
+      "provenance": "docs/common/glossary.md:85"
+    },
+    {
+      "term": "editcore",
+      "definition": "Pure Rust 編集内核 (参考実装の Win32 エディタ機能を Rust で再実装)。外部 crate 0 個 — regex/tree-sitter/memmap を不使用で自作 line scanner / line-based トークナイザ / Vec<char> のみで実装。bench 56,971 ops/s",
+      "provenance": "docs/common/glossary.md:100-108; docs/DOC-06_software_detail_design.md:238-243; docs/DOC-05_software_design.md:47"
+    },
+    {
+      "term": "aci-emitter / ACI (Assertion Container Interface)",
+      "definition": "構造化イベント出力。.aci.json schema v0.1 — 10 必填字段 (assertion_id, aci_version, layer, scope, expect, actual, status, severity, reasoning, captured_at), 4 测试层 (ut/it/st/e2e), 5 严重度 (critical/high/medium/low/info), 4 状态 (PASS/FAIL/WARN/SKIP), 17 expect_value_types",
+      "provenance": "README.md:87-98; docs/common/glossary.md:101"
+    },
+    {
+      "term": "editor_parity",
+      "definition": "参考実装の機能対比を保証する回帰テスト群 (crates/editcore/tests/editor_parity.rs, 36 件)。新機能追加時に PARITY 更新 + テスト追加を必須化",
+      "provenance": "docs/DOC-10_unit_test_spec.md:48; docs/DOC-10_unit_test_spec.md:140-141; docs/DOC-07_implementation_report.md:105-107"
+    },
+    {
+      "term": "V 字モデル (V-model)",
+      "definition": "IPA 推奨プロセスモデル。要件定義 → 方式設計 → 詳細設計 → 実装 → 結合 → 検証 と対応 (DOC-02 SRS / DOC-04 SRS-soft / DOC-05 SDD / DOC-06 DDD / DOC-07 実装 と DOC-09 ST / DOC-08 SIT / DOC-10 SUT / DOC-11 UAT が対向)",
+      "provenance": "docs/DOC-01_project_charter.md:75; docs/common/numbering-system.md:55-63"
+    },
+    {
+      "term": "カバレッジ (Coverage)",
+      "definition": "ワークスペース全体 66.25% (4 層テスト UT/IT/ST/UAT すべてを含む、editcore 単体では ≥ 80% 目標に対し 65% で要改善)。path_safety.rs 93.94%, app_integration.rs 80.83%, ide_kernel_core 75.50%, ide_shell 72.00%, editcore 65.00%, editor.html (JS) 60.00% (manual e2e)",
+      "provenance": "docs/common/glossary.md:114; docs/DOC-09_system_test_report.md:87-99"
+    },
+    {
+      "term": "4 層テストマトリクス",
+      "definition": "UT (単体) / IT (結合) / ST (システム) / UAT (受入) の 4 層。DOC-08 = 結合テスト (SIT), DOC-09 = システムテスト (ST), DOC-10 = 単体テスト (SUT), DOC-11 = 受入テスト (UAT)",
+      "provenance": "docs/common/glossary.md:87-94; docs/common/numbering-system.md:55-63"
+    },
+    {
+      "term": "4 階層構造 (CF2013 番号体系)",
+      "definition": "プロセス (Process) → アクティビティ (Activity) → タスク (Task) → 注記 (Note)。番号フォーマットは DOC-NN / DOC-NN.A / DOC-NN.A.B / DOC-NN.A.B.C",
+      "provenance": "docs/common/numbering-system.md:7-27"
+    }
+  ],
+  "projectIdentity": {
+    "name": "IDE1.0 — IDE Shell (純 Rust AI Native CLI Development Kernel)",
+    "purpose": "AI agent 統合可能な軽量 Rust ベース IDE の構築 (DOC-01.A.1)。README §1 は「IDE1.0 = 純 Rust AI Native CLI Development Kernel (per 需求规格书)」と定義。同一製品で 2 外観 (全壳替代 TUI / PSReadLine 插件形態) を提供し、内核は共通",
+    "license": "MIT OR Apache-2.0 (dual, per workspace) — README §7。DOC-12.D.3.i は「全て MIT ライセンス (予定)。外部依存 crate は MIT / Apache 2.0 のみ」と記載 (表記の揺れあり)",
+    "runtime": "Windows 10 1909+ (推奨 Windows 11) / WebView2 runtime 100.0+ (推奨 120.0+) / PowerShell 5.1 (推奨 7.x) / メモリ 4 GB (推奨 8 GB) / ディスク 50 MB (推奨 100 MB)。Web 版は 127.0.0.1:8123、desktop は MSI installer (2.88 MiB) / Web 単体 (846 KB) / ソース (9 crates, 13,600 行)。CI は ubuntu-latest (Rust + UAT Playwright chromium) + Windows (MSI)",
+    "language": "Rust (Cargo workspace, 9 crates) + vanilla JS frontend (0 フレームワーク) + Tauri 2 + axum + Playwright/TypeScript (UAT) + Python (unittest / mock_switch)",
+    "provenance": "README.md:31-53; README.md:188-190; docs/DOC-01_project_charter.md:49-53; docs/DOC-03_system_hld.md:70-82; docs/DOC-03_system_hld.md:102-118"
+  },
+  "evidence": [
+    {
+      "id": "EV-DOCA-0001",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README ヘッダ — Stage 3.0 最小骨架 + IDE Shell 骨格、完整 microkernel / session / transaction buffer / search / plugin loader / TUI / txn 实装待后续 brief",
+      "path": "README.md",
+      "startLine": 1,
+      "endLine": 5
+    },
+    {
+      "id": "EV-DOCA-0002",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §0 三阶段累计交付表 (Stage 1/2/3.0, §4.4 L1-L3, IDE Shell, Lint 全清, 四层测试矩阵) と本机测试矩阵数值",
+      "path": "README.md",
+      "startLine": 7,
+      "endLine": 29
+    },
+    {
+      "id": "EV-DOCA-0003",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §1 简介 — 純 Rust AI Native CLI Development Kernel の定義と 4 crates / IT / ST / CI の現状",
+      "path": "README.md",
+      "startLine": 31,
+      "endLine": 53
+    },
+    {
+      "id": "EV-DOCA-0004",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §3 ACI 接口 — .aci.json schema v0.1 の 10 必填字段 / 4 layer / 5 severity / 4 status / 17 expect_value_types",
+      "path": "README.md",
+      "startLine": 87,
+      "endLine": 98
+    },
+    {
+      "id": "EV-DOCA-0005",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §4 架构 — DD-01 / DD-02 / DD-04 は設計段階 (実装待 ULYS-191 后续 brief)",
+      "path": "README.md",
+      "startLine": 153,
+      "endLine": 163
+    },
+    {
+      "id": "EV-DOCA-0006",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §6 已知缺口 4 項 (G-ACI-03/07/08, G-SHELL-01) と §7 License (MIT OR Apache-2.0)",
+      "path": "README.md",
+      "startLine": 181,
+      "endLine": 190
+    },
+    {
+      "id": "EV-DOCA-0007",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §8 IDE Shell 骨格 — 設計目標表 + crates/ide-shell / ide-shell-web のモジュール分层 (mode/input/keymap/ai/render/app)",
+      "path": "README.md",
+      "startLine": 192,
+      "endLine": 242
+    },
+    {
+      "id": "EV-DOCA-0008",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §8.5 不在本笔范围 (Stage 4+) と §9 四层测试矩阵 (UT 61+26 / IT 3+7 / ST 4 step / UAT 40 case)",
+      "path": "README.md",
+      "startLine": 275,
+      "endLine": 294
+    },
+    {
+      "id": "EV-DOCA-0009",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "README §10 Tauri Desktop 打包 — アーキテクチャ, モジュール構造, 6 commands, 打包跑法, §10.5 検証結果 (69 テスト, 2.7 MB MSI), Phase 3-6 累计交付",
+      "path": "README.md",
+      "startLine": 325,
+      "endLine": 451
+    },
+    {
+      "id": "EV-DOCA-0010",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-01.A.1 背景・目的・スコープ定義 (IN: デスクトップ/Windows + Web 編集, 参考実装の Win32 エディタ機能 再実装 / OUT: LSP 完全対応, フルデバッガ) と DOC-01.A.2 ステークホルダー識別",
+      "path": "docs/DOC-01_project_charter.md",
+      "startLine": 44,
+      "endLine": 58
+    },
+    {
+      "id": "EV-DOCA-0011",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-01.B.1 成功基準 (Acceptance Criteria) — 機能 75% カバー (~76%, 72/95), bench ≥ 50,000 ops/s (56,971), cargo test ≥ 95% (253/253), CI 9 jobs ≥ 8 PASS (8/9), MSI ≤ 5 MB (2.88 MiB), IPA 準拠 21 文档",
+      "path": "docs/DOC-01_project_charter.md",
+      "startLine": 60,
+      "endLine": 69
+    },
+    {
+      "id": "EV-DOCA-0012",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-02.A.1 機能要件 (FR) 15 件の表 (ID / 名称 / 説明 / 実装 / 状態)",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 44,
+      "endLine": 62
+    },
+    {
+      "id": "EV-DOCA-0013",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-02.A.2 検索/置換の具体的仕様 と DOC-02.A.3 ターミナル仕様 (powershell.exe, CREATE_NO_WINDOW, stdin pipe, UTF-8, 1 セッション)",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 64,
+      "endLine": 76
+    },
+    {
+      "id": "EV-DOCA-0014",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-02.B.1 非機能要件 (NFR) 14 件の表 (ID / カテゴリ / 要件 / 値 / 状態)",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 78,
+      "endLine": 95
+    },
+    {
+      "id": "EV-DOCA-0015",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-02.C インターフェース要件 (IR-01~IR-04) と DOC-02.D 制約 (CR-01~CR-05)",
+      "path": "docs/DOC-02_system_requirements.md",
+      "startLine": 97,
+      "endLine": 114
+    },
+    {
+      "id": "EV-DOCA-0016",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-03.A.1 システムアーキテクチャ図 — Frontend Layer (vanilla JS) / Backend Layer (Rust 4 crate) / OS Layer (Windows 10+) と Tauri invoke・HTTP・WebSocket の経路",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 37,
+      "endLine": 68
+    },
+    {
+      "id": "EV-DOCA-0017",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-03.A.2 Crate 構成 9 個 (役割 + 行数, 合計 13,600 行)",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 70,
+      "endLine": 82
+    },
+    {
+      "id": "EV-DOCA-0018",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-03.A.3 コンポーネント関係 — ide-shell-desktop (tauri 2.x, terminal.rs, lib.rs, wiki.rs) と ide-shell-web (axum 13 endpoints, terminal.rs, editor.html)",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 84,
+      "endLine": 100
+    },
+    {
+      "id": "EV-DOCA-0019",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-03.A.4 デプロイメント構成 (MSI 2.88 MiB / Web 846 KB / ソース 13,600 行) と DOC-03.A.5 環境要件 (OS, WebView2, PowerShell, メモリ, ディスク)",
+      "path": "docs/DOC-03_system_hld.md",
+      "startLine": 102,
+      "endLine": 118
+    },
+    {
+      "id": "EV-DOCA-0020",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04.A.1 editcore API 契約 (Buffer / Cursor / Grep / TypeConfig / Outline の関数・入力・出力)",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 32,
+      "endLine": 46
+    },
+    {
+      "id": "EV-DOCA-0021",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04.A.2 ide-shell-protocol JSON-RPC 22 メソッド (カテゴリ別一覧)",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 48,
+      "endLine": 62
+    },
+    {
+      "id": "EV-DOCA-0022",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04.A.3 ide-shell-web 13 HTTP endpoints と DOC-04.A.4 ide-shell-desktop 4 モジュール",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 64,
+      "endLine": 88
+    },
+    {
+      "id": "EV-DOCA-0023",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-04.B.1 API 契約の原則 (UTF-8 のみ, 絶対パス, ≤ 4 MB, ルート外拒否, Result/HTTP 500) と DOC-04.C.1 エラーコード E001~E006",
+      "path": "docs/DOC-04_software_requirements.md",
+      "startLine": 90,
+      "endLine": 106
+    },
+    {
+      "id": "EV-DOCA-0024",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-05.A.1 editcore モジュール構成 (lib/buffer/cursor/undo/type_config/types/grep/examples bench)",
+      "path": "docs/DOC-05_software_design.md",
+      "startLine": 33,
+      "endLine": 48
+    },
+    {
+      "id": "EV-DOCA-0025",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-05.A.2 ide-shell-web 構成 (main/lib/path_safety/terminal/wiki_data/editor.html 1348 行) と DOC-05.A.3 ide-shell-desktop 構成 (7 モジュール + dist + tauri.conf.json 0.1.9)",
+      "path": "docs/DOC-05_software_design.md",
+      "startLine": 50,
+      "endLine": 80
+    },
+    {
+      "id": "EV-DOCA-0026",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-05.B.1 データフロー (ファイルオープン) と DOC-05.B.2 データフロー (ターミナル)",
+      "path": "docs/DOC-05_software_design.md",
+      "startLine": 82,
+      "endLine": 105
+    },
+    {
+      "id": "EV-DOCA-0027",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-05.C.1 三態键位状態モデルと DOC-05.D.1 並行性モデル (tokio / std::thread / setInterval 100ms / 同期)",
+      "path": "docs/DOC-05_software_design.md",
+      "startLine": 107,
+      "endLine": 138
+    },
+    {
+      "id": "EV-DOCA-0028",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-06.A.1 データ構造 (Buffer / Cursor / Pos / OutlineItem / Match / Edit)",
+      "path": "docs/DOC-06_software_detail_design.md",
+      "startLine": 32,
+      "endLine": 78
+    },
+    {
+      "id": "EV-DOCA-0029",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-06.B.1 主要関数仕様 (insert_char / move_word_fwd / walk_dir / grep_in_files / Outline::dispatch / Terminal::spawn / PathSafety::path_within) — 目的・アルゴリズム・計算量・エラー",
+      "path": "docs/DOC-06_software_detail_design.md",
+      "startLine": 80,
+      "endLine": 148
+    },
+    {
+      "id": "EV-DOCA-0030",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-06.C.1 状態遷移表 (詳細) — NORMAL/INSERT/VISUAL/COMMAND の 26 遷移と副作用",
+      "path": "docs/DOC-06_software_detail_design.md",
+      "startLine": 150,
+      "endLine": 180
+    },
+    {
+      "id": "EV-DOCA-0031",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-06.C.2 19 言語 lexer 仕様 と DOC-06.C.3 Undo/Redo スタック実装",
+      "path": "docs/DOC-06_software_detail_design.md",
+      "startLine": 182,
+      "endLine": 234
+    },
+    {
+      "id": "EV-DOCA-0032",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-07 実装報告書 — ビルド結果 (全 crate ✅, 警告 0), 成果物サイズ, UT 結果 (253 passed / 0 failed / 0 ignored), clippy, rustfmt, コード品質指標",
+      "path": "docs/DOC-07_implementation_report.md",
+      "startLine": 32,
+      "endLine": 98
+    },
+    {
+      "id": "EV-DOCA-0033",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-08.A.1 結合ポイント 8 箇所 (editcore↔ide-shell-web↔axum↔Browser, protocol↔WS/HTTP/stdio, desktop↔Tauri↔webview2, terminal↔powershell, path_safety↔全ファイルアクセス)",
+      "path": "docs/DOC-08_integration_test_spec.md",
+      "startLine": 32,
+      "endLine": 40
+    },
+    {
+      "id": "EV-DOCA-0034",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-08.B.1 結合テストケース SIT-01~SIT-14 (対象 / シナリオ / 期待結果 / 状態) と DOC-08.B.2 結合テスト環境",
+      "path": "docs/DOC-08_integration_test_spec.md",
+      "startLine": 42,
+      "endLine": 70
+    },
+    {
+      "id": "EV-DOCA-0035",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-08.C.1 合格基準 (SIT 14/14 pass, エラー 0, クラッシュ 0, データロス 0) と DOC-08.C.2 実施コマンド (Python client_demo.py は未着手)",
+      "path": "docs/DOC-08_integration_test_spec.md",
+      "startLine": 72,
+      "endLine": 92
+    },
+    {
+      "id": "EV-DOCA-0036",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-09.A.1 機能要件テスト結果 (FR-01~FR-15 の結果と証跡)",
+      "path": "docs/DOC-09_system_test_report.md",
+      "startLine": 32,
+      "endLine": 50
+    },
+    {
+      "id": "EV-DOCA-0037",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-09.A.2 非機能要件テスト結果 (NFR-01~NFR-14 の期待値と実測値)",
+      "path": "docs/DOC-09_system_test_report.md",
+      "startLine": 52,
+      "endLine": 69
+    },
+    {
+      "id": "EV-DOCA-0038",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-09.B.1 CI 9 jobs 結果 (8 ✅ + 2 🟡 判定), DOC-09.B.2 カバレッジ分析 66.25%, DOC-09.B.3 既知の制限 4 項",
+      "path": "docs/DOC-09_system_test_report.md",
+      "startLine": 71,
+      "endLine": 108
+    },
+    {
+      "id": "EV-DOCA-0039",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-10 単体テスト仕様書 — テストフレームワーク, crate 別 UT 一覧 (253 件) と主要テストケース名, 実施コマンド, 合格基準 (合格率 100%, editcore カバレッジ 65% 要改善)",
+      "path": "docs/DOC-10_unit_test_spec.md",
+      "startLine": 42,
+      "endLine": 133
+    },
+    {
+      "id": "EV-DOCA-0040",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-11 受入テスト — 受け入れ基準 7 項 ✅, Playwright 72 case 結果 (56 pass / 5 skip / 11 fail), 失敗分析 (WebView2 programmatic click), Windows 手動検証 20 操作 ✅",
+      "path": "docs/DOC-11_uat_report.md",
+      "startLine": 32,
+      "endLine": 98
+    },
+    {
+      "id": "EV-DOCA-0041",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-12.A.1 スコープ (IN / OUT 6 項目)",
+      "path": "docs/DOC-12_project_plan.md",
+      "startLine": 33,
+      "endLine": 42
+    },
+    {
+      "id": "EV-DOCA-0042",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-12.B.1 WBS — Stage 1~6 の作業分解 (1. 企画・要件 / 2. 設計 / 3. 実装 / 4. 検証 / 5. 配布 / 6. 拡張)",
+      "path": "docs/DOC-12_project_plan.md",
+      "startLine": 44,
+      "endLine": 79
+    },
+    {
+      "id": "EV-DOCA-0043",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "DOC-12.C.1 スケジュール・マイルストーン (Stage 1~6, 期間・開始・完了・コミット・状態) と DOC-12.D.1 リソース 5 ロール",
+      "path": "docs/DOC-12_project_plan.md",
+      "startLine": 81,
+      "endLine": 102
+    },
+    {
+      "id": "EV-DOCA-0044",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "docs/common/glossary.md — IDE1.0 固有术语 7 項 (プロジェクトルート, 三態键位, 単層ペイン, ファイルツリー, アウトラインパネル, グリッドパネル, カスタムメニュー) と テスト层级 4 層の数量",
+      "path": "docs/common/glossary.md",
+      "startLine": 75,
+      "endLine": 94
+    },
+    {
+      "id": "EV-DOCA-0045",
+      "kind": "Document",
+      "status": "Implemented",
+      "sourceRevisionId": "REV-IDE1",
+      "summary": "docs/common/numbering-system.md — CF2013 4 階層構造と番号フォーマット, DOC-01~DOC-21 プロセス ID 一覧, V 字モデル対応",
+      "path": "docs/common/numbering-system.md",
+      "startLine": 7,
+      "endLine": 53
+    }
+  ],
+  "unknowns": [
+    "ULYS-191 / ULYS-224 / ulys-191-N / G-ACI-03 / G-ACI-07 / G-ACI-08 / G-SHELL-01 / DD-01 / DD-02 / DD-04 は brief・commit・gap・設計書への参照 ID であり、docs/DOC-01..DOC-12 に該当 ID の要件定義文は存在しないため、要件 ID としては生成していない。",
+    "DOC-09.A.1 の証跡列は「UAT 5 case」「28 UT」「36 editor_parity」「計画のみ」など説明トークンでありテスト ID ではない。該当要件の linkedTestIds には原文トークンをそのまま保持し、テスト ID が明示されている箇所 (SIT-xx, test_xxx, *.spec.ts) のみ併記した。",
+    "DOC-10 は主要テストケースを関数名で列挙するが個別の結果行は持たない。tests[] の UT 10 件は DOC-07.B.1 の 'test result: ok. 253 passed; 0 failed; 0 ignored' と DOC-10.C.2 の '合格率 100% ✅' (スイート単位) に基づく。個別結果の記載は無い。",
+    "volume cap (10–30 tests) により DOC-10.B.1 の主要テストケースのうち未収録のものがある: test_wiki_covers_required_sections, test_wiki_no_vim_cursor_vscode, test_terminal_spawn, test_path_safety_integration, test_rpc_chat, test_ws_roundtrip, test_stdio_handshake, test_ai_provider_trait (いずれも DOC-10_unit_test_spec.md:86-102)。",
+    "ST 層に実テスト ID が存在しない: README §9 は ST を tests/st/cli_smoke.sh の '4 step' とするが 1 ケースずつに ID を付けず、用語集は ST = 26 (Python mock) + 4 (cli_smoke) と集計している。DOC-09 システムテスト報告書は ST ケースを列挙していない。ID を捏造せず unknowns とした。",
+    "DOC-09.B.1 の CI 9 job にも個別の job ID が無い (1. fmt / 2. clippy / 3. build / 4. test / 5. coverage / 6. integration / 7. web build / 8. tauri desktop / 9. UAT)。evidence のみで記録し test ID としては作っていない。",
+    "README §0/§9 のテスト数値 (UT 61 Rust + 26 Python, IT 3+7, ST 4 step, UAT 40/40 PASS, 9 jobs) と DOC-07/DOC-09/DOC-10/DOC-11 の数値 (UT 253 passed, SIT 14, UAT 56/72) が一致しない。README §0 は 4-crate 最小骨格期 (§1〜§9) の記述で、9-crate / Phase 3-6 期の DOC-01〜DOC-12 (2026-10-09) に更新されていない。",
+    "DOC-07.B.1 内部の不整合: 'running 277+ tests' / '253 passed' と内訳合計 ~277 (editcore 64 と 196 editcore の表記も相違)。",
+    "DOC-10.B.1 の crate 別枚数合計は 165 だが表題は 253 件。",
+    "用語集のテスト層数量 (IT 31 Rust / ST 26 Python mock + 4 / UAT 56/72) と DOC-08 の SIT 14 件・DOC-09 の CI 14 integration tests が整合しない。",
+    "FR-15 自動バックアップの記載矛盾: DOC-02.A.1 = ✅, DOC-09.A.1 = ✅ (Phase 1) だが DOC-09.B.3 = 「自動バックアップ未実装 / 計画中 (DOC-19)」。",
+    "SIT-14 (Python client) は DOC-08.B.1 で ✅ だが DOC-04.A.2.i と DOC-08.C.2 は crates/ide-shell-protocol/client_demo.py を「未着手」と記載。README は Phase 4.1 で examples/python_client_demo.py (別パス) の delivery を示す。",
+    "要件 owners は DOC-02/DOC-04 に per-requirement 割当が無い。本 file の owner は各 doc の改訂履歴『担当』欄 (Hermes Agent) を採用し、PM/アーキテクト = Ulysses, 主開発者 = Hermes (DOC-12.D.1) は evidence EV-DOCA-0043 を参照。",
+    "DOC-01.B.1 の成功基準 6 項目 (75% カバー / 50,000 ops/s / 95% pass / 8 of 9 CI / ≤5 MB MSI / 21 文档) には ID が無いため独立要件として作らず、対応する FR/NFR の measurableAcceptance に組み込んだ。",
+    "docs/DOC-11 の表題は「統合テスト報告書 (UAT)」だが numbering-system.md は DOC-11 を「ソフトウェア適格性確認テスト = 驗收」として対応付けており、用語集は DOC-11 を System Test Report と英訳している。文書名と内容の対応が揺れている。",
+    "Stage 番号の衝突: README の 'Stage 1/2/3.0' (aci-emitter tracks) と DOC-12 の 'Stage 1〜6' (IPA プロセス段階) は別体系。milestones では DOC-12 を M1〜M6、README 由来の 2 件を M7/M8 として分離した。",
+    "DD-01 / DD-02 / DD-04 (詳細設計書) は本 file の対象外だが、README §4 により『設計段階・未実装』であることは implementationStatus に記録した (他 agent 所有スコープ)。",
+    "4 層テストマトリクス自体 (UT/IT/ST/UAT を揃えること) は DOC-02 に要件 ID として定義されておらず、README §9 と DOC-12.B.1 Stage 4 にのみ現れる。よって独立要件 ID としては生成していない。"
+  ]
+}

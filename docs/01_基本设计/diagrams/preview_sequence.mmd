@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    actor User as 用户
+    participant SES as DocumentSession
+    participant SI as MarkdownIndex
+    participant PM as PreviewManager
+    participant WB as IsolatedPreview
+    User->>PM: 打开预览
+    PM->>SES: snapshot(content,version)
+    PM->>SI: 解析或读取最新有效索引
+    SI-->>PM: block nodes + source spans
+    PM->>PM: sanitize HTML/CSP/resource policy
+    PM->>WB: lazy init + render(version)
+    opt 出现 Mermaid 且用户启用图表显示
+      WB->>WB: load bundled Mermaid in isolated document
+    end
+    SES-->>PM: dirtyRanges(version+1)
+    PM->>PM: debounce + cancel stale job
+    PM->>WB: patch changed blocks(if same session)
+    User->>PM: 关闭预览
+    PM->>WB: dispose and release resources

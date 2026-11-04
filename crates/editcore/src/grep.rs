@@ -10,7 +10,6 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -91,18 +90,27 @@ pub struct Match {
 }
 
 /// 简单字符串搜索 (case-sensitive).
-/// 返回每行匹配位置.
+/// 返回每行匹配位置. 文件按其编码解码 (BOM / UTF-8 / SJIS / EUC-JP / JIS / UTF-16 自动判别).
 pub fn grep_in_file(path: &Path, needle: &str) -> Result<Vec<Match>, std::io::Error> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
+    grep_in_file_with(path, needle, None)
+}
+
+/// 同 [`grep_in_file`], 但可显式指定字符集 (`None` / `"auto"` = 自动). 未知字符集名 => `InvalidInput`.
+pub fn grep_in_file_with(
+    path: &Path,
+    needle: &str,
+    charset: Option<&str>,
+) -> Result<Vec<Match>, std::io::Error> {
+    let cs = crate::grep_engine::parse_charset_label(charset)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let text = crate::grep_engine::read_text_for_grep(path, cs)?;
     let mut out = Vec::new();
-    for (i, line) in reader.lines().enumerate() {
-        let line = line?;
+    for (i, line) in text.lines().enumerate() {
         if line.contains(needle) {
             out.push(Match {
                 path: path.to_path_buf(),
                 line: i as u64 + 1,
-                text: line,
+                text: line.to_string(),
             });
         }
     }
@@ -126,16 +134,14 @@ pub fn grep_in_files(files: &[FileEntry], needle: &str) -> Vec<Match> {
 /// 简单 case-insensitive 搜索 (lowercase needle + lowercase line).
 pub fn grep_in_file_ci(path: &Path, needle: &str) -> Result<Vec<Match>, std::io::Error> {
     let needle_lc = needle.to_lowercase();
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
+    let text = crate::grep_engine::read_text_for_grep(path, None)?;
     let mut out = Vec::new();
-    for (i, line) in reader.lines().enumerate() {
-        let line = line?;
+    for (i, line) in text.lines().enumerate() {
         if line.to_lowercase().contains(&needle_lc) {
             out.push(Match {
                 path: path.to_path_buf(),
                 line: i as u64 + 1,
-                text: line,
+                text: line.to_string(),
             });
         }
     }
@@ -215,6 +221,29 @@ mod tests {
         assert_eq!(matches.len(), 3); // a.txt (2) + sub/c.txt (1)
         let paths: std::collections::HashSet<_> = matches.iter().map(|m| m.path.clone()).collect();
         assert_eq!(paths.len(), 2);
+    }
+
+    #[test]
+    fn grep_in_file_decodes_sjis_and_utf16() {
+        let dir = tempfile_lite::TempDir::new("sakura-rs-grep-enc");
+        let (sj, _, _) = encoding_rs::SHIFT_JIS.encode("一行目
+日本語の行
+");
+        std::fs::write(dir.path().join("s.txt"), &*sj).unwrap();
+        let mut u16 = vec![0xFF, 0xFE];
+        for u in "abc
+日本語
+".encode_utf16() {
+            u16.extend_from_slice(&u.to_le_bytes());
+        }
+        std::fs::write(dir.path().join("u.txt"), &u16).unwrap();
+        let m = grep_in_file(&dir.path().join("s.txt"), "日本語").unwrap();
+        assert_eq!((m.len(), m[0].line, m[0].text.as_str()), (1, 2, "日本語の行"));
+        let m = grep_in_file(&dir.path().join("u.txt"), "日本語").unwrap();
+        assert_eq!((m.len(), m[0].line), (1, 2));
+        // 强制 UTF-8 去读 SJIS 文件: 找不到
+        assert!(grep_in_file_with(&dir.path().join("s.txt"), "日本語", Some("utf-8")).unwrap().is_empty());
+        assert!(grep_in_file_with(&dir.path().join("s.txt"), "x", Some("nope")).is_err());
     }
 
     #[test]

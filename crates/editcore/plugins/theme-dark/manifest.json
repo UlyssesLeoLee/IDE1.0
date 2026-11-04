@@ -1,0 +1,47 @@
+{
+  "id": "theme-dark",
+  "name": "深色主题",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.2",
+  "license": "MIT",
+  "description": "现代 IDE 经典深色沉浸主题，低眼压同色不同明度层次",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": [],
+  "contributes": {
+    "theme": {
+      "id": "dark",
+      "name": "深色",
+      "label": "深色",
+      "translucent": false,
+      "vars": {
+        "--bg-bar": "#252526",
+        "--bg-side": "#1e1e1e",
+        "--bg-edit": "#1e1e1e",
+        "--bg-rail": "#333333",
+        "--bg-bottom": "#252526",
+        "--bg-status": "#007acc",
+        "--bg-chrome": "#2a2a2a",
+        "--bg-raised": "#2d2d2d",
+        "--bg-hover": "rgba(255,255,255,0.08)",
+        "--bg-active": "rgba(255,255,255,0.14)",
+        "--bg-input": "#3c3c3c",
+        "--border": "#333333",
+        "--border-strong": "#454545",
+        "--fg": "#d4d4d4",
+        "--fg-muted": "#9d9d9d",
+        "--fg-dim": "#6a6a6a",
+        "--fg-on-accent": "#ffffff",
+        "--blue": "#569cd6",
+        "--green": "#4ec9b0",
+        "--yellow": "#dcdcaa",
+        "--red": "#f48771",
+        "--orange": "#ce9178",
+        "--focus-ring": "0 0 0 1px var(--bg-edit), 0 0 0 3px rgba(86,156,214,0.85)",
+        "--pill-mix": "62%",
+        "--accent-text": "#4a9eff"
+      }
+    }
+  }
+}

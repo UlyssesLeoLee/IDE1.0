@@ -1,0 +1,3 @@
+Lightweight IDE plain-text regression fixture
+No Markdown renderer required.
+日本語入力テスト、中文输入与 Emoji 😀

@@ -18,6 +18,10 @@ encoding_rs = "0.8"
 memchr = "2.7"
 # 文档内查找 / 置換 (search_ops) 的正则; 已在 Cargo.lock 里且已被编译 (不新增下载)
 regex = "1"
+# 环视 / 反向引用 (Sakura 的 BREGEXP 有, `regex` 没有): 只在 `regex` 编译不了这类模式时才用 (WBS-02 2.1)
+fancy-regex = "0.14"
+# 插件包 (Release 里的 plugin-<id>-<版本>.zip) 解包 (只要 deflate, 不带加密 / bzip2 / zstd)
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # 读 Windows 注册表 AppsUseLightTheme 判断桌面明暗 (纯 safe Rust)
 windows-registry = { version = "0.3", features = ["std"] }
 

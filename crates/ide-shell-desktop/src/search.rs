@@ -5,7 +5,7 @@
 //! # 为什么不 shell out 到外部 rg
 //!
 //! 本文件原先是 `Command::new("rg")` + 缺 rg 时退到一份手写 walk, 违反
-//! docs/SPA-01_sakura_parity.md §3 原则 3「Rust 优先」, 且两端行为会漂移:
+//! docs/06_功能对标/SPA-01_parity.md §3 原则 3「Rust 优先」, 且两端行为会漂移:
 //! web 端已经是内置引擎, 桌面端还在调外部 rg, 同一份搜索条件在两个壳里结果可能不同。
 //! 现在两端共用 `sakura-rs::grep_engine` 一份实现。
 
@@ -40,6 +40,17 @@ pub fn search_cmd(
     let project = guard.clone().ok_or("project root not set")?;
     drop(guard);
     search(&project, &options)
+}
+
+/// Grep 置换 (web 版 /api/grep_replace 同一语义)
+#[tauri::command]
+pub fn grep_replace_cmd(
+    state: State<'_, crate::ProjectRoot>,
+    mut options: editcore::grep_engine::ReplaceOptions,
+) -> Result<editcore::grep_engine::ReplaceReport, String> {
+    let project = state.get().ok_or("project root not set")?;
+    options.search.allow_outside_root = Some(false); // 写操作不允许离开项目根
+    editcore::grep_engine::grep_replace(&project, &options)
 }
 
 #[cfg(test)]

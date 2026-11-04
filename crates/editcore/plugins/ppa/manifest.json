@@ -1,0 +1,17 @@
+{
+  "id": "ppa",
+  "name": "PPA 宏子集 (Pascal 风格脚本)",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "AGPL-3.0-only",
+  "description": "Sakura PPA 宏的常用子集: 变量 / if / while / for / repeat / 过程与函数 / 字符串函数 / S_GetSelectedString·S_GetLineStr·S_GetFileName·S_InsText 等编辑函数。在虚拟文档上运行, 结果一步撤销写回; 禁用它不影响任何编辑功能",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": ["editor.read", "editor.write"],
+  "contributes": {
+    "command": [
+      { "id": "run", "title": "运行 PPA 脚本 (选中部分, 无选中则用当前文档)" }
+    ]
+  }
+}

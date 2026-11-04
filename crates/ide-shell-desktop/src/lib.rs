@@ -29,6 +29,7 @@
 
 pub mod backdrop;
 pub mod doc;
+pub mod grants;
 pub mod outline;
 pub mod plugin;
 pub mod scm;
@@ -79,6 +80,8 @@ use ide_shell::{App, AppConfig, Mode};
 use tauri::Emitter;
 /// 单文件读取上限 (4 MB) — 保持轻量, 大文件/二进制请走 Shell 面板外部工具.
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// 用户在首选项里主动调高后的绝对上限 (WBS-02 5.9): 默认仍是 4MB, 保持轻量
+pub const LARGE_FILE_CAP: u64 = 32 * 1024 * 1024;
 
 /// Tauri managed state wrapper — 单用户 demo, App 由 Tauri runtime 持有.
 pub struct ShellState(pub Mutex<App>);
@@ -348,6 +351,20 @@ fn get_mode(state: tauri::State<'_, ShellState>) -> Result<String, String> {
 
 // ===== 项目导入 / 文件树 / 文件读写 (ULYS-191 §5 Cursor 风格 UI) =====
 
+/// 启动耗时追踪 (设了环境变量 IDE_STARTUP_TRACE=1 才写, 平时零开销): 记「距 run() 入口多少毫秒」, 页面脚本也能通过 startup_mark 打点。
+/// 用来找启动慢在哪一段 (进程 -> 窗口 -> 页面加载 -> 脚本 -> 首帧), 而不是凭感觉优化。
+static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+pub fn startup_trace(msg: &str) {
+    let t0 = *START.get_or_init(std::time::Instant::now);
+    if std::env::var_os("IDE_STARTUP_TRACE").is_some() {
+        diag_log(&format!("[startup +{}ms] {msg}", t0.elapsed().as_millis()));
+    }
+}
+#[tauri::command]
+fn startup_mark(name: String) {
+    startup_trace(&format!("page: {}", name.chars().take(60).collect::<String>()));
+}
+
 /// 诊断: 写一行到 IDE_LOG_FILE 文件 (默认 %TEMP%/ide-shell-desktop-diag.log)
 /// 桌面 GUI 没 console, 但 eprintln 用户看不到, 所以 log 到文件.
 pub fn diag_log(msg: &str) {
@@ -489,16 +506,32 @@ pub fn read_file_pub(root: &Path, path: &str) -> Result<FileContent, String> {
 
 /// 同上, `encoding` = 指定编码重新打开 (F_FILE_REOPEN_*).
 pub fn read_file_enc_pub(root: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
+    read_file_enc_max_pub(root, path, encoding, None)
+}
+
+/// 同上, `max_bytes` = 用户在首选项里允许的上限, 夹在 [4MB, 32MB]
+pub fn read_file_enc_max_pub(root: &Path, path: &str, encoding: Option<&str>, max_bytes: Option<u64>) -> Result<FileContent, String> {
     let target = resolve_in_project_pub(root, path)?;
+    read_resolved_max(&target, path, encoding, max_bytes)
+}
+
+/// 读一个已经确认可以访问的文件 (项目内, 或用户在系统对话框里选定的)
+pub fn read_resolved(target: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
+    read_resolved_max(target, path, encoding, None)
+}
+
+pub fn read_resolved_max(target: &Path, path: &str, encoding: Option<&str>, max_bytes: Option<u64>) -> Result<FileContent, String> {
+    let limit = max_bytes.unwrap_or(MAX_FILE_BYTES).clamp(MAX_FILE_BYTES, LARGE_FILE_CAP);
+    let target = target.to_path_buf();
     if !target.is_file() {
         return Err(format!("不是文件: {path}"));
     }
     let size = std::fs::metadata(&target)
         .map_err(|e| format!("读取元数据失败: {e}"))?
         .len();
-    if size > MAX_FILE_BYTES {
+    if size > limit {
         return Err(format!(
-            "文件过大 ({size} bytes > {MAX_FILE_BYTES} bytes) — 保持轻量, 请用外部工具处理"
+            "文件过大 ({size} bytes > {limit} bytes) — 保持轻量, 请用外部工具处理"
         ));
     }
     let d = editcore::document_io::read_doc(&target, encoding)?;
@@ -520,13 +553,18 @@ pub fn read_file_enc_pub(root: &Path, path: &str, encoding: Option<&str>) -> Res
 #[tauri::command]
 fn read_file(
     state: tauri::State<'_, ProjectRoot>,
+    grants: tauri::State<'_, grants::Grants>,
     path: String,
     encoding: Option<String>,
+    max_bytes: Option<u64>,
 ) -> Result<FileContent, String> {
+    if let Some(t) = grants.granted(&path) {
+        return read_resolved_max(&t, &path, encoding.as_deref(), max_bytes); // 用户在系统对话框里选定的文件 (可以在项目外)
+    }
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    read_file_enc_pub(&root, &path, encoding.as_deref())
+    read_file_enc_max_pub(&root, &path, encoding.as_deref(), max_bytes)
 }
 
 /// 写文件 — 限项目根内. 返回写入字节数.
@@ -543,25 +581,46 @@ pub fn write_file_spec_pub(
     spec: &editcore::document_io::WriteSpec,
 ) -> Result<usize, String> {
     let target = resolve_in_project_pub(root, path)?;
-    editcore::document_io::write_doc(&target, content, spec).map_err(|e| {
+    write_resolved(&target, path, content, spec)
+}
+
+/// 写一个已经确认可以访问的文件 (项目内, 或用户在系统对话框里选定的)
+pub fn write_resolved(target: &Path, path: &str, content: &str, spec: &editcore::document_io::WriteSpec) -> Result<usize, String> {
+    editcore::document_io::write_doc(target, content, spec).map_err(|e| {
         if e.starts_with("UNMAPPABLE:") { e } else { format!("写入失败 {path}: {e}") }
     })
+}
+
+/// 文件指纹 (web 版 /api/stat_file 同一语义): 外部改动检测
+#[tauri::command]
+fn stat_file(state: tauri::State<'_, ProjectRoot>, grants: tauri::State<'_, grants::Grants>, path: String) -> Result<editcore::document_io::FileStamp, String> {
+    if let Some(t) = grants.granted(&path) {
+        return Ok(editcore::document_io::file_stamp(&t));
+    }
+    let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
+    let target = resolve_in_project_pub(&root, &path)?;
+    Ok(editcore::document_io::file_stamp(&target))
 }
 
 #[tauri::command]
 fn write_file(
     state: tauri::State<'_, ProjectRoot>,
+    grants: tauri::State<'_, grants::Grants>,
     path: String,
     content: String,
     encoding: Option<String>,
     bom: Option<String>,
     eol: Option<String>,
     force: Option<bool>,
+    backup: Option<bool>,
 ) -> Result<usize, String> {
+    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false), backup: backup.unwrap_or(false) };
+    if let Some(t) = grants.granted(&path) {
+        return write_resolved(&t, &path, &content, &spec); // 用户在系统「另存为 / 打开」里选定的文件 (可以在项目外, 也不需要先打开项目)
+    }
     let root = state
         .get()
         .ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
-    let spec = editcore::document_io::WriteSpec { encoding, bom, eol, force: force.unwrap_or(false) };
     write_file_spec_pub(&root, &path, &content, &spec)
 }
 
@@ -581,13 +640,38 @@ pub fn help_wiki_text() -> &'static str {
 /// Tauri app entry — 注册 state + commands + 启动.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    startup_trace("run() enter");
     // 强制 tauri::generate_context! 重展开 — cargo proc-macro 按 lib.rs 改时重生成 token stream.
     // 注意: 这只重 build 这一条函数. assets embed 走 build script (tauri-build) — 那条链通过
     // conf + dist mtime 触发. build script 走 frontendDist + cargo:rerun-if-changed.
     let _ = std::env::current_dir();
     tauri::Builder::default()
+        // 单实例 (WBS-02 1.8): 第二次启动不开新进程, 把它的命令行文件交给已运行的窗口并把窗口提到前台
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            use tauri::{Emitter, Manager};
+            let args: Vec<String> = argv.into_iter().skip(1).collect();
+            let files = grants::launch_files_from(&args, &app.state::<grants::Grants>());
+            let _ = app.emit("second-instance", files);
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
+        // 文件拖进窗口 (WBS-02 5.6): 用户亲手拖进来的文件视同授权, 交给前端按"打开这些文件"处理 (和单实例转发同一个事件)
+        .on_window_event(|window, event| {
+            use tauri::{Emitter, Manager};
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                let args: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                let app = window.app_handle();
+                let files = grants::launch_files_from(&args, &app.state::<grants::Grants>());
+                if !files.is_empty() {
+                    let _ = app.emit("second-instance", files);
+                }
+            }
+        })
         .manage(ShellState::default())
         .manage(ProjectRoot::default())
+        .manage(grants::Grants::default())
         .manage(terminal::TerminalState::new())
         .manage(doc::DocState::default())
         .invoke_handler(tauri::generate_handler![
@@ -631,6 +715,7 @@ pub fn run() {
             list_dir,
             read_file,
             write_file,
+            stat_file,
             help_wiki,
             terminal::terminal_create,
             terminal::terminal_input,
@@ -643,6 +728,8 @@ pub fn run() {
             scm::scm_commit,
             scm::scm_log,
             search::search_cmd,
+            search::grep_replace_cmd,
+            macro_plan,
             outline::outline,
             reinterpret_text,
             edit_text,
@@ -650,13 +737,26 @@ pub fn run() {
             nav_step,
             history,
             search_text,
+            md_render,
+            plugins,
+            agent,
+            set_window_theme,
+            grants::native_open_file,
+            grants::launch_files,
+            startup_mark,
+            grants::native_save_as,
+            exec_cmd,
+            settings,
+            macro_record,
             bookmark,
             bracket_pair,
             edit_cmd,
             migemo_patterns,
             plugin::plugin_load,
         ])
+        .on_page_load(|_w, payload| startup_trace(&format!("page {:?}", payload.event())))
         .setup(|app_handle| {
+            startup_trace("setup");
             eprintln!(
                 "ide-shell-desktop starting (tauri {}, target {})",
                 env!("CARGO_PKG_VERSION"),
@@ -690,8 +790,12 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running ide-shell-desktop");
+        .build(tauri::generate_context!())
+        .map(|app| {
+            startup_trace("built (window + webview created)");
+            app.run(|_, _| {});
+        })
+        .expect("error while building ide-shell-desktop");
 }
 
 
@@ -752,6 +856,61 @@ fn bookmark(options: editcore::bookmark::BmReq) -> Result<serde_json::Value, Str
 #[tauri::command]
 fn search_text(options: editcore::search_ops::SearchReq) -> Result<serde_json::Value, String> {
     editcore::pure_api::search_text(&options)
+}
+
+/// 插件 (web 版 /api/plugins 同一语义)
+#[tauri::command]
+fn plugins(options: editcore::pure_api::PluginReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::plugins(&options)
+}
+
+/// 外部命令执行并捕获输出 (web 版 /api/exec_cmd 同一语义)
+#[tauri::command]
+fn exec_cmd(
+    state: tauri::State<'_, ProjectRoot>,
+    command: String,
+    stdin: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<editcore::exec_cmd::ExecOut, String> {
+    let root = state.get().ok_or_else(|| "尚未打开项目 — 先点「打开文件夹」导入项目".to_string())?;
+    editcore::exec_cmd::run(&root, &command, stdin.as_deref(), timeout_ms)
+}
+
+/// 设置落盘 (web 版 /api/settings 同一语义)
+#[tauri::command]
+fn settings(options: editcore::pure_api::SettingsReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::settings(&options)
+}
+
+/// 录制事件 -> .mac 文本 (web 版 /api/macro_record 同一语义)
+#[tauri::command]
+fn macro_record(options: editcore::pure_api::MacroRecordReq) -> serde_json::Value {
+    editcore::pure_api::macro_record(&options)
+}
+
+/// Sakura 宏计划 (web 版 /api/macro_plan 同一语义)
+#[tauri::command]
+fn macro_plan(options: editcore::pure_api::MacroPlanReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::macro_plan(&options)
+}
+
+/// 让原生窗口标题栏跟着应用主题走 (深色 / 浅色)。前端在主题或透明主题的明暗变化时调用; 只用 Tauri 的安全接口,
+/// 不直接调 DWM (工作区禁用 unsafe)。
+#[tauri::command]
+fn set_window_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
+    window.set_theme(Some(if dark { tauri::Theme::Dark } else { tauri::Theme::Light })).map_err(|e| e.to_string())
+}
+
+/// 智能功能 API (web 版 /api/agent 同一语义)
+#[tauri::command]
+fn agent(options: editcore::pure_api::AgentReq) -> Result<serde_json::Value, String> {
+    editcore::pure_api::agent(&options)
+}
+
+/// Markdown 预览 (web 版 /api/md_render 同一语义)
+#[tauri::command]
+fn md_render(options: editcore::pure_api::MdRenderReq) -> Result<serde_json::Value, String> {
+    Ok(editcore::pure_api::md_render(&options))
 }
 
 /// 撤销 / 重做栈 (web 版 /api/history 同一语义)

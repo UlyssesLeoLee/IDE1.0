@@ -1,0 +1,1942 @@
+{
+  "schema": "ide1-5d-atlas/diagram-definitions/v10.0",
+  "version": "ide1.0-factgraph-2026-10-23",
+  "note": "2D 独立专业工程图。每个图种使用对应渲染器的真实元素契约；不把所有图当时序图，也不把字段/连线宝石化。",
+  "rendererPolicy": {
+    "engine": "src/diagrams.js — 自研 SVG 渲染器（14 种图型）",
+    "whyNotMermaid": "mermaid 的 UML/ER 子集无法表达基数、Guard、Port、alt/opt/loop/par 分支；自研渲染器保证 DiagramModel 为唯一真源，且运行时零外部依赖。",
+    "semanticsRule": "正式 UML/ER/BPMN 符号不得被宝石或示意箭头替代；未知 diagramType 必须显式失败而不是退化成时序图。"
+  },
+  "coverageHonesty": "本图集只画 IDE1.0 真实存在或真实设计过的结构；IDE1.0 无关系型数据库，故 ER 图表达的是会话/文档内存模型与磁盘文件，而非臆造的业务表。",
+  "diagrams": [
+    {
+      "id": "DG-UML-COMPONENT-CRATES",
+      "diagramType": "UML_Component",
+      "title": "IDE1.0 crate 组件分解（8 个工作区成员）",
+      "evidenceIds": [
+        "EV-CODE-0050",
+        "EV-DOC-0020"
+      ],
+      "components": [
+        {
+          "name": "ide-shell-web",
+          "stereotype": "executable",
+          "provided": [
+            "/api/* 路由",
+            "editor.html"
+          ],
+          "required": [
+            "ide-kernel",
+            "ide-shell",
+            "editcore"
+          ]
+        },
+        {
+          "name": "ide-shell-desktop",
+          "stereotype": "executable",
+          "provided": [
+            "Tauri commands",
+            "MSI"
+          ],
+          "required": [
+            "ide-kernel",
+            "editcore"
+          ]
+        },
+        {
+          "name": "ide-shell-protocol",
+          "stereotype": "library",
+          "provided": [
+            "JSON-RPC 2.0",
+            "AiProvider"
+          ],
+          "required": [
+            "tokio",
+            "serde"
+          ]
+        },
+        {
+          "name": "ide-kernel",
+          "stereotype": "library",
+          "provided": [
+            "Document",
+            "DocStore",
+            "Session"
+          ],
+          "required": [
+            "editcore"
+          ]
+        },
+        {
+          "name": "editcore",
+          "stereotype": "library",
+          "provided": [
+            "Buffer",
+            "OpeBuf",
+            "19 语言"
+          ],
+          "required": [
+            "0 重型依赖"
+          ]
+        },
+        {
+          "name": "ide-shell",
+          "stereotype": "library",
+          "provided": [
+            "App 状态机",
+            "双渲染后端"
+          ],
+          "required": [
+            "ide-kernel",
+            "ratatui"
+          ]
+        },
+        {
+          "name": "ide-cli",
+          "stereotype": "executable",
+          "provided": [
+            "--aci-emit"
+          ],
+          "required": [
+            "aci-emitter"
+          ]
+        },
+        {
+          "name": "ide-kernel-core",
+          "stereotype": "library",
+          "provided": [
+            "version()",
+            "kernel_status()"
+          ],
+          "required": [
+            "0 依赖（占位）"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "x1": 210,
+          "y1": 95,
+          "x2": 260,
+          "y2": 95,
+          "label": "调用"
+        },
+        {
+          "x1": 430,
+          "y1": 95,
+          "x2": 480,
+          "y2": 95,
+          "label": "调用"
+        },
+        {
+          "x1": 260,
+          "y1": 140,
+          "x2": 430,
+          "y2": 140,
+          "label": "编辑语义"
+        },
+        {
+          "x1": 125,
+          "y1": 185,
+          "x2": 125,
+          "y2": 245,
+          "label": "复用"
+        },
+        {
+          "x1": 345,
+          "y1": 140,
+          "x2": 345,
+          "y2": 245,
+          "label": "行存储"
+        },
+        {
+          "x1": 345,
+          "y1": 245,
+          "x2": 480,
+          "y2": 245,
+          "label": "共享 App"
+        },
+        {
+          "x1": 125,
+          "y1": 395,
+          "x2": 125,
+          "y2": 330,
+          "label": "banner"
+        }
+      ],
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-DT-TAURI",
+        "N-PT-RPC",
+        "N-KN-DOCSTORE",
+        "N-EC-BUFFER",
+        "N-CLI",
+        "N-KERNELCORE",
+        "N-SHELL-TUI"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-STORE",
+        "E-DT-TO-STORE",
+        "E-RPC-TO-KERNEL",
+        "E-STORE-TO-DOCUMENT",
+        "E-CLI-TO-ACI"
+      ]
+    },
+    {
+      "id": "DG-UML-PACKAGE-EDITCORE",
+      "diagramType": "UML_Package",
+      "title": "editcore 模块分组（40 个 pub mod）",
+      "evidenceIds": [
+        "EV-CODE-0005"
+      ],
+      "packages": [
+        {
+          "name": "行存储与光标",
+          "children": [
+            "buffer",
+            "cursor",
+            "ruler",
+            "sdi",
+            "split_quad",
+            "tag_jump"
+          ]
+        },
+        {
+          "name": "历史与编辑",
+          "children": [
+            "undo",
+            "history",
+            "edit_ops",
+            "edit_cmd",
+            "auto_backup",
+            "cursor_persistence"
+          ]
+        },
+        {
+          "name": "语法与高亮",
+          "children": [
+            "type_config",
+            "types",
+            "syntax_styling",
+            "keyword_set",
+            "outline_langs",
+            "outline_extended"
+          ]
+        },
+        {
+          "name": "检索",
+          "children": [
+            "grep",
+            "grep_engine",
+            "search_ops",
+            "search_highlight",
+            "incremental_search",
+            "migemo"
+          ]
+        },
+        {
+          "name": "文件与编码",
+          "children": [
+            "document_io",
+            "encoding_io",
+            "file_lock",
+            "font_manager",
+            "theme_luminance"
+          ]
+        },
+        {
+          "name": "宏与扩展",
+          "children": [
+            "js_macro",
+            "key_macro",
+            "ppa_macro",
+            "plugin",
+            "daemon",
+            "bracket",
+            "matching_paren",
+            "bookmark",
+            "control_code",
+            "nav",
+            "font_manager"
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "x1": 240,
+          "y1": 190,
+          "x2": 240,
+          "y2": 220
+        },
+        {
+          "x1": 470,
+          "y1": 190,
+          "x2": 470,
+          "y2": 220
+        },
+        {
+          "x1": 700,
+          "y1": 120,
+          "x2": 700,
+          "y2": 220
+        }
+      ],
+      "nodeIds": [
+        "N-EC-BUFFER",
+        "N-EC-UNDO",
+        "N-EC-HISTORY",
+        "N-EC-TYPECONFIG",
+        "N-EC-TYPES",
+        "N-EC-GREP",
+        "N-EC-GREPENGINE",
+        "N-EC-SEARCHOPS",
+        "N-EC-ENCODING",
+        "N-EC-DOCIO",
+        "N-EC-AUTOBACKUP",
+        "N-EC-MIGEMO",
+        "N-EC-NAV",
+        "N-EC-PLUGIN",
+        "N-EC-DAEMON",
+        "N-EC-MACRO",
+        "N-EC-EDITCMD"
+      ],
+      "edgeIds": [
+        "E-BUFFER-TO-UNDO",
+        "E-HISTORY-TO-UNDO",
+        "E-TYPECONFIG-TO-TYPES",
+        "E-GREP-TO-GREPENGINE",
+        "E-SEARCHOPS-TO-BUFFER",
+        "E-DOCIO-TO-ENCODING",
+        "E-DOCIO-TO-FS",
+        "E-DOCIO-TO-AUTOBACKUP",
+        "E-EDITCMD-TO-UNDO",
+        "E-EDITCMD-TO-MACRO",
+        "E-NAV-TO-BUFFER",
+        "E-MIGEMO-TO-SEARCHOPS",
+        "E-PLUGIN-TO-ECPLUGIN"
+      ]
+    },
+    {
+      "id": "DG-UML-CLASS-DOCUMENT",
+      "diagramType": "UML_Class",
+      "title": "ide-kernel 文档模型：Document / Selection / DocView",
+      "evidenceIds": [
+        "EV-CODE-0012",
+        "EV-CODE-0014",
+        "EV-CODE-0015"
+      ],
+      "classes": [
+        {
+          "name": "Document",
+          "attributes": [
+            {
+              "text": "mgr: DocLineMgr",
+              "kind": ""
+            },
+            {
+              "text": "caret: Pos",
+              "kind": ""
+            },
+            {
+              "text": "selection: Option<Selection>",
+              "kind": ""
+            },
+            {
+              "text": "line_ending: LineEnding",
+              "kind": ""
+            },
+            {
+              "text": "encoding: Encoding",
+              "kind": ""
+            },
+            {
+              "text": "dirty: bool",
+              "kind": ""
+            }
+          ],
+          "methods": [
+            {
+              "text": "insert(at: Pos, s: &str) -> Pos"
+            },
+            {
+              "text": "delete_range(range: LogicRange) -> Pos"
+            },
+            {
+              "text": "undo() -> bool"
+            },
+            {
+              "text": "redo() -> bool"
+            },
+            {
+              "text": "snapshot() -> DocumentSnapshot"
+            },
+            {
+              "text": "export_text() -> String"
+            }
+          ],
+          "ports": [
+            {
+              "direction": "in",
+              "name": "edit"
+            },
+            {
+              "direction": "out",
+              "name": "view"
+            }
+          ]
+        },
+        {
+          "name": "Selection",
+          "attributes": [
+            {
+              "text": "anchor: Pos",
+              "kind": ""
+            },
+            {
+              "text": "head: Pos",
+              "kind": ""
+            }
+          ],
+          "methods": [
+            {
+              "text": "is_empty() -> bool"
+            },
+            {
+              "text": "normalized() -> LogicRange"
+            },
+            {
+              "text": "len_in_chars(mgr) -> usize"
+            }
+          ],
+          "ports": [
+            {
+              "direction": "in",
+              "name": "set"
+            }
+          ]
+        },
+        {
+          "name": "DocView",
+          "attributes": [
+            {
+              "text": "id: u64",
+              "kind": "PK"
+            },
+            {
+              "text": "name: String",
+              "kind": ""
+            },
+            {
+              "text": "path: Option<String>",
+              "kind": ""
+            },
+            {
+              "text": "lines: Vec<String>",
+              "kind": ""
+            },
+            {
+              "text": "dirty: bool",
+              "kind": ""
+            },
+            {
+              "text": "language: String",
+              "kind": ""
+            }
+          ],
+          "methods": [
+            {
+              "text": "（前端/桌面端消费的投影）"
+            }
+          ],
+          "ports": [
+            {
+              "direction": "out",
+              "name": "json"
+            }
+          ]
+        }
+      ],
+      "relations": [],
+      "nodeIds": [
+        "N-KN-DOCUMENT",
+        "N-KN-DOCSTORE",
+        "N-EC-BUFFER"
+      ],
+      "edgeIds": [
+        "E-STORE-TO-DOCUMENT",
+        "E-DOCUMENT-TO-BUFFER"
+      ]
+    },
+    {
+      "id": "DG-UML-CLASS-RPC",
+      "diagramType": "UML_Class",
+      "title": "JSON-RPC 2.0 信封与错误码",
+      "evidenceIds": [
+        "EV-CODE-0007",
+        "EV-CODE-0008"
+      ],
+      "classes": [
+        {
+          "name": "RpcRequest",
+          "attributes": [
+            {
+              "text": "jsonrpc: String = \"2.0\"",
+              "kind": ""
+            },
+            {
+              "text": "id: Option<Value> (null=notification)",
+              "kind": "PK"
+            },
+            {
+              "text": "method: String",
+              "kind": ""
+            },
+            {
+              "text": "params: Value",
+              "kind": ""
+            }
+          ],
+          "methods": [],
+          "ports": [
+            {
+              "direction": "in",
+              "name": "stdin/http/ws"
+            }
+          ]
+        },
+        {
+          "name": "RpcResponse",
+          "attributes": [
+            {
+              "text": "jsonrpc: String",
+              "kind": ""
+            },
+            {
+              "text": "id: Value",
+              "kind": "PK"
+            },
+            {
+              "text": "result: Option<Value>",
+              "kind": ""
+            },
+            {
+              "text": "error: Option<RpcError>",
+              "kind": ""
+            }
+          ],
+          "methods": [
+            {
+              "text": "ok(id, result)"
+            },
+            {
+              "text": "err(id, code, message)"
+            }
+          ],
+          "ports": [
+            {
+              "direction": "out",
+              "name": "stdin/http/ws"
+            }
+          ]
+        },
+        {
+          "name": "RpcError",
+          "attributes": [
+            {
+              "text": "code: i32",
+              "kind": "PK"
+            },
+            {
+              "text": "message: String",
+              "kind": ""
+            },
+            {
+              "text": "data: Option<Value>",
+              "kind": ""
+            }
+          ],
+          "methods": [],
+          "ports": []
+        }
+      ],
+      "relations": [],
+      "nodeIds": [
+        "N-PT-RPC",
+        "N-PT-KERNEL"
+      ],
+      "edgeIds": [
+        "E-RPC-TO-KERNEL",
+        "E-RPC-ERR-BUFFER"
+      ]
+    },
+    {
+      "id": "DG-UML-SEQUENCE-OPEN",
+      "diagramType": "UML_Sequence",
+      "title": "打开文件：前端 → HTTP 分发 → 会话层 → 行存储",
+      "evidenceIds": [
+        "EV-CODE-0052",
+        "EV-CODE-0020",
+        "EV-CODE-0016"
+      ],
+      "lifelines": [
+        {
+          "name": "editor.html"
+        },
+        {
+          "name": "ide-shell-web"
+        },
+        {
+          "name": "ide-kernel"
+        }
+      ],
+      "messages": [
+        {
+          "from": 0,
+          "to": 1,
+          "label": "POST /api/doc/open",
+          "kind": "sync",
+          "activation": true
+        },
+        {
+          "from": 1,
+          "to": 1,
+          "label": "auth: 校验 x-ide-token + Host + Origin",
+          "kind": "sync",
+          "activation": true,
+          "guard": "token 有效"
+        },
+        {
+          "from": 1,
+          "to": 1,
+          "label": "path_safety: 项目根 + 4MB + UTF-8",
+          "kind": "sync",
+          "activation": true,
+          "guard": "路径合法"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "label": "DocStore::open(path, text)",
+          "kind": "sync",
+          "activation": true
+        },
+        {
+          "from": 2,
+          "to": 2,
+          "label": "Document::from_text → DocLineMgr",
+          "kind": "sync",
+          "activation": true
+        },
+        {
+          "from": 2,
+          "to": 1,
+          "label": "DocView",
+          "kind": "return"
+        },
+        {
+          "from": 1,
+          "to": 0,
+          "label": "DocView JSON",
+          "kind": "return"
+        }
+      ],
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-WB-AUTH",
+        "N-WB-PATHSAFETY",
+        "N-KN-DOCSTORE",
+        "N-KN-DOCUMENT"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-AUTH",
+        "E-AUTH-TO-WB",
+        "E-WB-TO-SANDBOX",
+        "E-SANDBOX-TO-WB",
+        "E-WB-TO-STORE",
+        "E-STORE-TO-DOCUMENT"
+      ]
+    },
+    {
+      "id": "DG-UML-SEQUENCE-TERMINAL",
+      "diagramType": "UML_Sequence",
+      "title": "终端命令往返（桌面端）",
+      "evidenceIds": [
+        "EV-CODE-0029",
+        "EV-DOC-0021"
+      ],
+      "lifelines": [
+        {
+          "name": "editor.html"
+        },
+        {
+          "name": "terminal.rs"
+        },
+        {
+          "name": "powershell.exe"
+        }
+      ],
+      "messages": [
+        {
+          "from": 0,
+          "to": 1,
+          "label": "terminal_create",
+          "kind": "sync"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "label": "spawn (CREATE_NO_WINDOW)",
+          "kind": "sync",
+          "activation": true
+        },
+        {
+          "from": 0,
+          "to": 1,
+          "label": "terminal_input(\"Get-Location\")",
+          "kind": "sync"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "label": "stdin 写入",
+          "kind": "sync"
+        },
+        {
+          "from": 2,
+          "to": 1,
+          "label": "stdout (reader 线程)",
+          "kind": "async"
+        },
+        {
+          "from": 1,
+          "to": 0,
+          "label": "terminal_output(id)",
+          "kind": "return"
+        }
+      ],
+      "nodeIds": [
+        "N-DT-TAURI",
+        "N-DT-TERMINAL",
+        "N-OS-PWSH",
+        "N-WB-TERMINAL"
+      ],
+      "edgeIds": [
+        "E-DT-TO-TERMINAL",
+        "E-TERM-TO-PSH",
+        "E-PSH-TO-TERM",
+        "E-TERM-TO-DT",
+        "E-WB-TO-TERMINAL",
+        "E-TERM-TO-WB"
+      ]
+    },
+    {
+      "id": "DG-UML-STATE-MODE",
+      "diagramType": "UML_State",
+      "title": "三态编辑模式状态机（ide-shell / protocol）",
+      "evidenceIds": [
+        "EV-CODE-0006",
+        "EV-CODE-0035"
+      ],
+      "states": [
+        {
+          "name": "NORMAL",
+          "x": 60,
+          "y": 60,
+          "w": 150,
+          "h": 46,
+          "initial": true
+        },
+        {
+          "name": "INSERT",
+          "x": 260,
+          "y": 60,
+          "w": 150,
+          "h": 46
+        },
+        {
+          "name": "COMMAND",
+          "x": 460,
+          "y": 60,
+          "w": 150,
+          "h": 46
+        },
+        {
+          "name": "VISUAL / SELECT",
+          "x": 160,
+          "y": 180,
+          "w": 150,
+          "h": 46
+        },
+        {
+          "name": "等待（provider）",
+          "x": 360,
+          "y": 180,
+          "w": 150,
+          "h": 46
+        }
+      ],
+      "transitions": [
+        {
+          "from": 0,
+          "to": 1,
+          "label": "i",
+          "guard": "set_mode(Insert) 触发 push_undo"
+        },
+        {
+          "from": 1,
+          "to": 0,
+          "label": "Esc"
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "label": ":"
+        },
+        {
+          "from": 2,
+          "to": 0,
+          "label": "Enter / Esc"
+        },
+        {
+          "from": 0,
+          "to": 3,
+          "label": "v"
+        },
+        {
+          "from": 3,
+          "to": 0,
+          "label": "Esc"
+        },
+        {
+          "from": 1,
+          "to": 4,
+          "label": "complete_at_cursor"
+        }
+      ],
+      "nodeIds": [
+        "N-PT-KERNEL",
+        "N-SHELL-TUI"
+      ],
+      "edgeIds": [
+        "E-RPC-TO-KERNEL"
+      ]
+    },
+    {
+      "id": "DG-UML-STATE-DOCUMENT",
+      "diagramType": "UML_State",
+      "title": "文档生命周期（Session / DocStore / Document）",
+      "evidenceIds": [
+        "EV-CODE-0016",
+        "EV-CODE-0017"
+      ],
+      "states": [
+        {
+          "name": "未打开",
+          "x": 60,
+          "y": 60,
+          "w": 150,
+          "h": 46,
+          "initial": true
+        },
+        {
+          "name": "已打开 (clean)",
+          "x": 260,
+          "y": 60,
+          "w": 150,
+          "h": 46
+        },
+        {
+          "name": "已修改 (dirty)",
+          "x": 460,
+          "y": 60,
+          "w": 150,
+          "h": 46
+        },
+        {
+          "name": "已保存",
+          "x": 260,
+          "y": 180,
+          "w": 150,
+          "h": 46
+        },
+        {
+          "name": "已关闭",
+          "x": 60,
+          "y": 180,
+          "w": 150,
+          "h": 46,
+          "final": true
+        }
+      ],
+      "transitions": [
+        {
+          "from": 0,
+          "to": 1,
+          "label": "open"
+        },
+        {
+          "from": 1,
+          "to": 2,
+          "label": "insert / delete",
+          "guard": "dirty = true"
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "label": "mark_saved / write_file"
+        },
+        {
+          "from": 3,
+          "to": 2,
+          "label": "再次编辑"
+        },
+        {
+          "from": 1,
+          "to": 4,
+          "label": "close"
+        },
+        {
+          "from": 3,
+          "to": 4,
+          "label": "close"
+        }
+      ],
+      "nodeIds": [
+        "N-KN-DOCUMENT",
+        "N-KN-DOCSTORE",
+        "N-KN-SESSION"
+      ],
+      "edgeIds": [
+        "E-STORE-TO-DOCUMENT",
+        "E-SESSION-TO-DOCUMENT",
+        "E-DOCUMENT-TO-BUFFER"
+      ]
+    },
+    {
+      "id": "DG-UML-ACTIVITY-OPEN",
+      "diagramType": "UML_Activity",
+      "title": "打开文件活动图（含失败分支）",
+      "evidenceIds": [
+        "EV-CODE-0020",
+        "EV-DOC-0008"
+      ],
+      "activities": [
+        {
+          "name": "start",
+          "x": 60,
+          "y": 60,
+          "w": 170,
+          "h": 52,
+          "type": "start"
+        },
+        {
+          "name": "选择文件",
+          "x": 280,
+          "y": 60,
+          "w": 170,
+          "h": 52
+        },
+        {
+          "name": "通过全部守卫?",
+          "x": 500,
+          "y": 60,
+          "w": 170,
+          "h": 52,
+          "type": "decision"
+        },
+        {
+          "name": "DocStore::open",
+          "x": 500,
+          "y": 190,
+          "w": 170,
+          "h": 52
+        },
+        {
+          "name": "写入撤销缓冲",
+          "x": 280,
+          "y": 190,
+          "w": 170,
+          "h": 52
+        },
+        {
+          "name": "返回错误码",
+          "x": 60,
+          "y": 190,
+          "w": 170,
+          "h": 52
+        },
+        {
+          "name": "end",
+          "x": 60,
+          "y": 320,
+          "w": 170,
+          "h": 52,
+          "type": "end"
+        }
+      ],
+      "flows": [
+        {
+          "x1": 230,
+          "y1": 86,
+          "x2": 280,
+          "y2": 86
+        },
+        {
+          "x1": 450,
+          "y1": 86,
+          "x2": 500,
+          "y2": 86
+        },
+        {
+          "x1": 585,
+          "y1": 112,
+          "x2": 585,
+          "y2": 190,
+          "label": "是"
+        },
+        {
+          "x1": 500,
+          "y1": 86,
+          "x2": 145,
+          "y2": 190,
+          "label": "否 (E001~E004)"
+        },
+        {
+          "x1": 500,
+          "y1": 216,
+          "x2": 450,
+          "y2": 216
+        },
+        {
+          "x1": 280,
+          "y1": 216,
+          "x2": 145,
+          "y2": 216
+        },
+        {
+          "x1": 145,
+          "y1": 242,
+          "x2": 145,
+          "y2": 320
+        }
+      ],
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-WB-AUTH",
+        "N-WB-PATHSAFETY",
+        "N-KN-DOCSTORE",
+        "N-KN-DOCUMENT"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-AUTH",
+        "E-WB-TO-SANDBOX",
+        "E-WB-TO-STORE",
+        "E-STORE-TO-DOCUMENT"
+      ]
+    },
+    {
+      "id": "DG-UML-DEPLOYMENT-RUNTIME",
+      "diagramType": "UML_Deployment",
+      "title": "运行形态：MSI 桌面端 / 本地 Web 端 / 外部进程",
+      "evidenceIds": [
+        "EV-DOC-0018",
+        "EV-DOC-0019",
+        "EV-CODE-0029"
+      ],
+      "nodes": [
+        {
+          "x": 60,
+          "y": 70,
+          "w": 170,
+          "h": 110,
+          "name": "ide-shell-desktop.exe",
+          "stereotype": "node",
+          "nested": [
+            "WebView2",
+            "ide-kernel",
+            "editcore",
+            "terminal.rs"
+          ]
+        },
+        {
+          "x": 300,
+          "y": 70,
+          "w": 170,
+          "h": 110,
+          "name": "ide-shell-web.exe",
+          "stereotype": "node",
+          "nested": [
+            "HTTP :8123",
+            "editor.html",
+            "ide-kernel",
+            "aci-emitter"
+          ]
+        },
+        {
+          "x": 540,
+          "y": 70,
+          "w": 140,
+          "h": 110,
+          "name": "powershell.exe",
+          "stereotype": "process",
+          "nested": [
+            "stdin pipe"
+          ]
+        },
+        {
+          "x": 60,
+          "y": 250,
+          "w": 170,
+          "h": 90,
+          "name": "git / rg",
+          "stereotype": "process",
+          "nested": [
+            "porcelain",
+            "--json"
+          ]
+        },
+        {
+          "x": 300,
+          "y": 250,
+          "w": 170,
+          "h": 90,
+          "name": "项目目录",
+          "stereotype": "storage",
+          "nested": [
+            "≤4MB",
+            "UTF-8 only"
+          ]
+        },
+        {
+          "x": 540,
+          "y": 250,
+          "w": 140,
+          "h": 90,
+          "name": "浏览器",
+          "stereotype": "client",
+          "nested": [
+            "fetch /api/*"
+          ]
+        }
+      ],
+      "paths": [
+        {
+          "x1": 230,
+          "y1": 125,
+          "x2": 300,
+          "y2": 125,
+          "label": "互为外观"
+        },
+        {
+          "x1": 470,
+          "y1": 125,
+          "x2": 540,
+          "y2": 125,
+          "label": "spawn"
+        },
+        {
+          "x1": 610,
+          "y1": 180,
+          "x2": 610,
+          "y2": 250,
+          "label": "I/O"
+        },
+        {
+          "x1": 300,
+          "y1": 295,
+          "x2": 230,
+          "y2": 295,
+          "label": "读写"
+        },
+        {
+          "x1": 680,
+          "y1": 250,
+          "x2": 680,
+          "y2": 180,
+          "label": "HTTP",
+          "arrow": true
+        },
+        {
+          "x1": 145,
+          "y1": 180,
+          "x2": 145,
+          "y2": 250,
+          "label": "调用"
+        }
+      ],
+      "nodeIds": [
+        "N-DT-TAURI",
+        "N-WB-SERVER",
+        "N-DT-TERMINAL",
+        "N-OS-PWSH",
+        "N-EXT-GIT",
+        "N-EXT-RG",
+        "N-OS-FS",
+        "N-OS-WEBVIEW2",
+        "N-FE-EDITORHTML"
+      ],
+      "edgeIds": [
+        "E-DT-TO-TERMINAL",
+        "E-TERM-TO-PSH",
+        "E-SCM-TO-GIT",
+        "E-SEARCH-TO-RG",
+        "E-WB-TO-FS",
+        "E-DT-TO-WEBVIEW2"
+      ]
+    },
+    {
+      "id": "DG-UML-USECASE-SHELL",
+      "diagramType": "UML_UseCase",
+      "title": "IDE1.0 Shell 用例",
+      "evidenceIds": [
+        "EV-DOC-0001",
+        "EV-DOC-0013"
+      ],
+      "actors": [
+        {
+          "name": "开发者",
+          "x": 60,
+          "y": 90
+        },
+        {
+          "name": "AI 代理",
+          "x": 60,
+          "y": 300
+        }
+      ],
+      "useCases": [
+        {
+          "name": "打开/编辑文件"
+        },
+        {
+          "name": "搜索与替换"
+        },
+        {
+          "name": "工程 Grep"
+        },
+        {
+          "name": "运行 PowerShell"
+        },
+        {
+          "name": "版本控制操作"
+        },
+        {
+          "name": "大纲跳转"
+        },
+        {
+          "name": "AI 补全 / 内联编辑"
+        }
+      ],
+      "relations": [
+        {
+          "x1": 75,
+          "y1": 130,
+          "x2": 190,
+          "y2": 86,
+          "kind": ""
+        },
+        {
+          "x1": 75,
+          "y1": 130,
+          "x2": 190,
+          "y2": 196,
+          "kind": ""
+        },
+        {
+          "x1": 75,
+          "y1": 130,
+          "x2": 190,
+          "y2": 306,
+          "kind": ""
+        },
+        {
+          "x1": 75,
+          "y1": 130,
+          "x2": 410,
+          "y2": 86,
+          "kind": ""
+        },
+        {
+          "x1": 75,
+          "y1": 130,
+          "x2": 410,
+          "y2": 196,
+          "kind": ""
+        },
+        {
+          "x1": 75,
+          "y1": 340,
+          "x2": 410,
+          "y2": 416,
+          "kind": ""
+        },
+        {
+          "x1": 75,
+          "y1": 340,
+          "x2": 190,
+          "y2": 416,
+          "kind": "extend"
+        },
+        {
+          "x1": 75,
+          "y1": 340,
+          "x2": 410,
+          "y2": 306,
+          "kind": ""
+        }
+      ],
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-DT-TAURI",
+        "N-KN-DOCSTORE",
+        "N-DT-SEARCH",
+        "N-DT-SCM",
+        "N-DT-TERMINAL",
+        "N-DT-OUTLINE",
+        "N-PT-AIPROVIDER"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-FE-TO-DT",
+        "E-WB-TO-SEARCH",
+        "E-WB-TO-SCM",
+        "E-WB-TO-OUTLINE"
+      ]
+    },
+    {
+      "id": "DG-ER-SESSION",
+      "diagramType": "ER",
+      "title": "会话与文档模型（内存态 + 磁盘文件，无关系型数据库）",
+      "evidenceIds": [
+        "EV-CODE-0015",
+        "EV-CODE-0016",
+        "EV-CODE-0017"
+      ],
+      "disclaimer": "IDE1.0 无关系型数据库。本图表达的是 DocStore/Session 的内存结构与磁盘文件的关系，不得据此建表。",
+      "entities": [
+        {
+          "id": "ENT-SESSION",
+          "name": "Session",
+          "attributes": [
+            {
+              "name": "active_id",
+              "kind": "PK"
+            },
+            {
+              "name": "tab_ids",
+              "kind": ""
+            }
+          ]
+        },
+        {
+          "id": "ENT-TABSTATE",
+          "name": "TabState",
+          "attributes": [
+            {
+              "name": "id",
+              "kind": "PK"
+            },
+            {
+              "name": "path",
+              "kind": ""
+            },
+            {
+              "name": "dirty",
+              "kind": ""
+            }
+          ]
+        },
+        {
+          "id": "ENT-DOCVIEW",
+          "name": "DocView",
+          "attributes": [
+            {
+              "name": "id",
+              "kind": "PK"
+            },
+            {
+              "name": "lines",
+              "kind": ""
+            },
+            {
+              "name": "language",
+              "kind": ""
+            }
+          ]
+        },
+        {
+          "id": "ENT-DOCSTORE",
+          "name": "DocStore",
+          "attributes": [
+            {
+              "name": "docs",
+              "kind": ""
+            },
+            {
+              "name": "active",
+              "kind": ""
+            }
+          ]
+        },
+        {
+          "id": "ENT-OPEBUF",
+          "name": "OpeBuf",
+          "attributes": [
+            {
+              "name": "ops",
+              "kind": ""
+            },
+            {
+              "name": "undo_len",
+              "kind": ""
+            },
+            {
+              "name": "redo_len",
+              "kind": ""
+            }
+          ]
+        },
+        {
+          "id": "ENT-FILE",
+          "name": "磁盘文件",
+          "attributes": [
+            {
+              "name": "path",
+              "kind": "PK"
+            },
+            {
+              "name": "bytes(≤4MB)",
+              "kind": ""
+            },
+            {
+              "name": "encoding(UTF-8)",
+              "kind": ""
+            }
+          ]
+        }
+      ],
+      "relations": [
+        {
+          "from": "ENT-SESSION",
+          "to": "ENT-TABSTATE",
+          "fromCardinality": "1",
+          "toCardinality": "0..N",
+          "label": "owns"
+        },
+        {
+          "from": "ENT-SESSION",
+          "to": "ENT-DOCSTORE",
+          "fromCardinality": "1",
+          "toCardinality": "1",
+          "label": "holds"
+        },
+        {
+          "from": "ENT-DOCSTORE",
+          "to": "ENT-DOCVIEW",
+          "fromCardinality": "1",
+          "toCardinality": "0..N",
+          "label": "projects"
+        },
+        {
+          "from": "ENT-DOCVIEW",
+          "to": "ENT-OPEBUF",
+          "fromCardinality": "1",
+          "toCardinality": "0..1",
+          "label": "history"
+        },
+        {
+          "from": "ENT-DOCVIEW",
+          "to": "ENT-FILE",
+          "fromCardinality": "1",
+          "toCardinality": "0..1",
+          "label": "export/mark_saved"
+        }
+      ],
+      "nodeIds": [
+        "N-KN-SESSION",
+        "N-KN-DOCSTORE",
+        "N-KN-DOCUMENT",
+        "N-EC-UNDO",
+        "N-EC-DOCIO",
+        "N-EC-BUFFER"
+      ],
+      "edgeIds": [
+        "E-SESSION-TO-DOCUMENT",
+        "E-STORE-TO-DOCUMENT",
+        "E-BUFFER-TO-UNDO",
+        "E-UNDO-TO-DOCUMENT",
+        "E-DOCIO-TO-FS"
+      ]
+    },
+    {
+      "id": "DG-DFD-OPEN-FILE",
+      "diagramType": "DFD",
+      "title": "打开文件的数据流",
+      "evidenceIds": [
+        "EV-CODE-0020",
+        "EV-CODE-0024"
+      ],
+      "processes": [
+        {
+          "name": "HTTP 分发",
+          "x": 300,
+          "y": 90
+        },
+        {
+          "name": "会话状态",
+          "x": 300,
+          "y": 250
+        }
+      ],
+      "externals": [
+        {
+          "name": "editor.html",
+          "x": 80,
+          "y": 90
+        },
+        {
+          "name": "文件系统",
+          "x": 540,
+          "y": 250
+        }
+      ],
+      "stores": [
+        {
+          "name": "DocStore 内存态",
+          "x": 300,
+          "y": 400
+        }
+      ],
+      "flows": [
+        {
+          "x1": 130,
+          "y1": 90,
+          "x2": 258,
+          "y2": 90,
+          "label": "POST /api/doc/open"
+        },
+        {
+          "x1": 342,
+          "y1": 90,
+          "x2": 342,
+          "y2": 208,
+          "label": "open()"
+        },
+        {
+          "x1": 300,
+          "y1": 292,
+          "x2": 490,
+          "y2": 292,
+          "label": "读文件"
+        },
+        {
+          "x1": 300,
+          "y1": 292,
+          "x2": 300,
+          "y2": 358,
+          "label": "文本 + 视图"
+        },
+        {
+          "x1": 258,
+          "y1": 250,
+          "x2": 130,
+          "y2": 120,
+          "label": "DocView"
+        }
+      ],
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-WB-SERVER",
+        "N-KN-DOCSTORE",
+        "N-OS-FS"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-WB-TO-STORE",
+        "E-STORE-TO-DOCUMENT",
+        "E-DOCIO-TO-FS"
+      ]
+    },
+    {
+      "id": "DG-BPMN-AUTH",
+      "diagramType": "BPMN",
+      "title": "本地服务鉴权与会话失效",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026"
+      ],
+      "pools": [
+        {
+          "name": "ide-shell-web",
+          "lanes": [
+            {
+              "name": "请求方"
+            },
+            {
+              "name": "鉴权层"
+            }
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "x": 120,
+          "y": 80,
+          "name": "请求到达",
+          "type": "event",
+          "eventType": "message"
+        },
+        {
+          "x": 260,
+          "y": 80,
+          "name": "校验 Token",
+          "type": "task"
+        },
+        {
+          "x": 400,
+          "y": 80,
+          "name": "通过?",
+          "type": "gateway",
+          "gatewayType": "exclusive"
+        },
+        {
+          "x": 540,
+          "y": 80,
+          "name": "拒绝 401",
+          "type": "event",
+          "eventType": "end"
+        },
+        {
+          "x": 400,
+          "y": 160,
+          "name": "进入业务路由",
+          "type": "subprocess"
+        }
+      ],
+      "sequenceFlows": [
+        {
+          "x1": 133,
+          "y1": 80,
+          "x2": 218,
+          "y2": 80
+        },
+        {
+          "x1": 302,
+          "y1": 80,
+          "x2": 385,
+          "y2": 80
+        },
+        {
+          "x1": 415,
+          "y1": 80,
+          "x2": 527,
+          "y2": 80,
+          "label": "否"
+        },
+        {
+          "x1": 400,
+          "y1": 95,
+          "x2": 400,
+          "y2": 160,
+          "label": "是"
+        }
+      ],
+      "nodeIds": [
+        "N-WB-SERVER",
+        "N-WB-AUTH"
+      ],
+      "edgeIds": [
+        "E-WB-TO-AUTH",
+        "E-AUTH-TO-WB"
+      ]
+    },
+    {
+      "id": "DG-SECURITY-BOUNDARY",
+      "diagramType": "Security",
+      "title": "安全边界与已知缺口",
+      "evidenceIds": [
+        "EV-CODE-0025",
+        "EV-CODE-0026",
+        "EV-DOC-0004",
+        "EV-DOC-0014"
+      ],
+      "boundaries": [
+        {
+          "x": 220,
+          "y": 50,
+          "w": 440,
+          "h": 300,
+          "label": "本地服务信任边界（127.0.0.1:8123）"
+        },
+        {
+          "x": 60,
+          "y": 180,
+          "w": 140,
+          "h": 120,
+          "label": "任意网页"
+        }
+      ],
+      "assets": [
+        {
+          "name": "项目文件内容",
+          "x": 300,
+          "y": 140
+        },
+        {
+          "name": "会话令牌",
+          "x": 460,
+          "y": 140
+        },
+        {
+          "name": "终端命令执行",
+          "x": 580,
+          "y": 240
+        },
+        {
+          "name": "插件执行",
+          "x": 380,
+          "y": 260
+        }
+      ],
+      "attackVectors": [
+        {
+          "x1": 150,
+          "y1": 220,
+          "x2": 290,
+          "y2": 160,
+          "label": "DNS rebinding / 直接 fetch"
+        },
+        {
+          "x1": 150,
+          "y1": 280,
+          "x2": 560,
+          "y2": 260,
+          "label": "伪造 Origin"
+        }
+      ],
+      "controls": [
+        {
+          "x": 250,
+          "y": 350,
+          "w": 130,
+          "h": 26,
+          "label": "CSPRNG 令牌"
+        },
+        {
+          "x": 400,
+          "y": 350,
+          "w": 130,
+          "h": 26,
+          "label": "Host/Origin 校验"
+        },
+        {
+          "x": 550,
+          "y": 350,
+          "w": 130,
+          "h": 26,
+          "label": "项目根沙箱"
+        }
+      ],
+      "nodeIds": [
+        "N-WB-AUTH",
+        "N-WB-PATHSAFETY",
+        "N-WB-SERVER",
+        "N-OS-FS",
+        "N-DT-PLUGIN"
+      ],
+      "edgeIds": [
+        "E-WB-TO-AUTH",
+        "E-WB-TO-SANDBOX",
+        "E-WB-TO-STORE",
+        "E-DT-TO-PLUGIN"
+      ]
+    },
+    {
+      "id": "DG-NETWORK-LOCAL",
+      "diagramType": "Network",
+      "title": "运行期网络形态（全部本地，无对外监听）",
+      "evidenceIds": [
+        "EV-DOC-0018",
+        "EV-CODE-0025"
+      ],
+      "subnets": [
+        {
+          "x": 40,
+          "y": 60,
+          "w": 300,
+          "h": 300,
+          "label": "Loopback 127.0.0.1"
+        },
+        {
+          "x": 380,
+          "y": 60,
+          "w": 300,
+          "h": 300,
+          "label": "宿主进程"
+        }
+      ],
+      "nodes": [
+        {
+          "x": 120,
+          "y": 150,
+          "name": "浏览器",
+          "type": "default"
+        },
+        {
+          "x": 250,
+          "y": 260,
+          "name": "ide-shell-web :8123",
+          "type": "server"
+        },
+        {
+          "x": 460,
+          "y": 150,
+          "name": "WebView2",
+          "type": "router"
+        },
+        {
+          "x": 600,
+          "y": 260,
+          "name": "powershell.exe",
+          "type": "server"
+        },
+        {
+          "x": 460,
+          "y": 300,
+          "name": "外部访问尝试",
+          "type": "firewall"
+        }
+      ],
+      "links": [
+        {
+          "x1": 120,
+          "y1": 170,
+          "x2": 250,
+          "y2": 260,
+          "label": "fetch /api/*"
+        },
+        {
+          "x1": 460,
+          "y1": 170,
+          "x2": 250,
+          "y2": 280,
+          "label": "invoke"
+        },
+        {
+          "x1": 460,
+          "y1": 150,
+          "x2": 600,
+          "y2": 260,
+          "label": "spawn"
+        },
+        {
+          "x1": 460,
+          "y1": 320,
+          "x2": 250,
+          "y2": 300,
+          "label": "被防火墙拒绝"
+        }
+      ],
+      "nodeIds": [
+        "N-FE-EDITORHTML",
+        "N-FE-CLIENT2",
+        "N-WB-SERVER",
+        "N-DT-TAURI",
+        "N-OS-WEBVIEW2",
+        "N-DT-TERMINAL"
+      ],
+      "edgeIds": [
+        "E-FE-TO-WB",
+        "E-FE2-TO-WB",
+        "E-FE-TO-DT",
+        "E-DT-TO-WEBVIEW2",
+        "E-DT-TO-TERMINAL"
+      ]
+    },
+    {
+      "id": "DG-DATAFLOW-EDIT",
+      "diagramType": "DataFlow",
+      "title": "编辑动作的数据流（含撤销缓冲）",
+      "evidenceIds": [
+        "EV-CODE-0039",
+        "EV-CODE-0040",
+        "EV-CODE-0043"
+      ],
+      "stores": [
+        {
+          "name": "DocLineMgr 行存储",
+          "x": 120,
+          "y": 100
+        },
+        {
+          "name": "OpeBuf 撤销缓冲",
+          "x": 380,
+          "y": 100
+        },
+        {
+          "name": "per-tab 补丁栈",
+          "x": 620,
+          "y": 100
+        },
+        {
+          "name": "磁盘文件",
+          "x": 380,
+          "y": 300
+        }
+      ],
+      "flows": [
+        {
+          "x1": 120,
+          "y1": 120,
+          "x2": 380,
+          "y2": 120,
+          "label": "编辑操作",
+          "dataLabel": "Insert/Delete/Replace/MoveCaret"
+        },
+        {
+          "x1": 380,
+          "y1": 140,
+          "x2": 620,
+          "y2": 140,
+          "label": "按标签归档",
+          "dataLabel": "JSON 序列化"
+        },
+        {
+          "x1": 380,
+          "y1": 180,
+          "x2": 120,
+          "y2": 180,
+          "label": "undo / redo",
+          "dataLabel": "逆操作回放"
+        },
+        {
+          "x1": 120,
+          "y1": 220,
+          "x2": 380,
+          "y2": 300,
+          "label": "mark_saved",
+          "dataLabel": "≤4MB · UTF-8"
+        }
+      ],
+      "nodeIds": [
+        "N-EC-BUFFER",
+        "N-EC-UNDO",
+        "N-EC-HISTORY",
+        "N-EC-DOCIO",
+        "N-EC-AUTOBACKUP"
+      ],
+      "edgeIds": [
+        "E-BUFFER-TO-UNDO",
+        "E-HISTORY-TO-UNDO",
+        "E-DOCIO-TO-AUTOBACKUP",
+        "E-DOCIO-TO-FS"
+      ]
+    }
+  ]
+}

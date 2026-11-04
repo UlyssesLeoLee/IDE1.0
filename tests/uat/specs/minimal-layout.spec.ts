@@ -22,6 +22,15 @@
 //  11. 首帧无闪 / localStorage 不可用 (隐私模式) 也能启动
 //  12. 完整布局 (只注入 layout=full, 不带 vim 键) 的编辑方式跟随缺省值
 import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
+
+// 页面里的确认 / 输入对话框是主题化的 modal (uiConfirm / uiPrompt); 这份 spec 的断言基于浏览器原生 dialog 事件,
+// 所以让页面把它们接给原生 window.confirm / prompt (主题化对话框本身由 tests/mock 的 themed-dialogs 用例覆盖)
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__uiDialogHook = { confirm: (m: string) => window.confirm(m), prompt: (m: string, d?: string) => window.prompt(m, d) };
+  });
+});
+
 import * as fs from "fs";
 import * as path from "path";
 import { resetShell } from "./helpers";
@@ -109,7 +118,7 @@ async function expectTiled(page: Page, label = "") {
       iw: innerWidth, ih: innerHeight, sl: document.body.scrollLeft, sw: document.documentElement.scrollWidth,
       rows: ["#menubar", "#editor-area", "#bottom-panel", "#status"].map(rect),
       // 让位式布局下 min 与 full 的并排结构相同; 折叠的列是 display:none -> rect 返回 null
-      cols: ["#left-strip", "#activity-bar", "#side-bar", "#editor-area"].map(rect),
+      cols: ["#left-strip", "#activity-bar", "#side-bar", "#editor-area", "#right-strip", "#chat-dock"].map(rect),
     };
   });
   const rows = r.rows.filter(Boolean) as { l: number; t: number; r: number; b: number }[];
@@ -1139,7 +1148,7 @@ test("按「最近」重排: 后展开的占整行/整列, 先展开的让位 (�
   expect(side.b, "先展开的左抽屉让位, 不压到底抽屉").toBeLessThanOrEqual(panel.t + 1);
   expect(await ownerAt(page, 100, body.t + 20), "左下角归底抽屉").toBe("bottom");
 
-  await page.mouse.click(100, (await rectOf(page, "#menubar")).b + 60);   // 在左抽屉里按一下 -> 它成为最近的, 整列归它
+  await page.mouse.click(100, (await rectOf(page, "#menubar")).b + 200);   // 在左抽屉里按一下 -> 它成为最近的, 整列归它
   expect((await drawerState(page)).top).toBe("left");
   side = await rectOf(page, "#side-bar"); panel = await rectOf(page, "#bottom-panel");
   expect(panel.l, "底抽屉让位到左抽屉右侧").toBeGreaterThanOrEqual(side.r - 1);
@@ -1192,7 +1201,7 @@ test("Esc: 抽屉里按 Esc 折叠它并把焦点还给编辑区; 编辑区里�
   const errors = await boot(page);
   const focusId = () => page.evaluate(() => (document.activeElement as HTMLElement).id);
   await page.locator("#left-strip-btn").click();
-  await page.locator('.side-tab[data-side-tab="search"]').click();
+  await page.evaluate(() => showSidePane('search'));
   expect(await focusId(), "搜索框在抽屉里拿到焦点").toBe("search-input");
   await page.keyboard.press("Escape"); await page.evaluate(() => (window as any).__editIdle());
   expect(await shown(page, "#side-bar")).toBe(false);
@@ -1336,7 +1345,7 @@ test("预设来回切: 完整布局下区域并排停靠 (不是绝对定位, �
 test("Esc 遇到打开的菜单只关菜单, 不连带折叠抽屉 (焦点在抽屉里时也一样)", async ({ page }) => {
   const errors = await boot(page);
   await bothOpen(page);
-  await page.locator('.side-tab[data-side-tab="search"]').click();       // 焦点在抽屉里的搜索框
+  await page.evaluate(() => showSidePane('search'));       // 焦点在抽屉里的搜索框
   expect(await page.evaluate(() => document.activeElement!.id)).toBe("search-input");
   await page.keyboard.press("Alt+f"); await page.evaluate(() => (window as any).__editIdle());                                     // 打开文件菜单
   expect(await page.locator(".menu-item.open").count()).toBe(1);

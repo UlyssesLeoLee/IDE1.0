@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    actor User as 用户
+    participant REG as PluginRegistry
+    participant POL as PermissionHost
+    participant W as Isolated Worker
+    participant CMD as CommandBus
+    User->>REG: 安装 Manifest
+    REG->>REG: 验证 schema/id/version/签名策略
+    REG-->>User: 显示工具元数据(未加载执行体)
+    User->>REG: 点击插件工具
+    REG->>POL: 授权核查
+    alt 不授权
+        POL-->>User: 拒绝并记录
+    else 已授权
+        REG->>W: 按需启动(受限权限)
+        W->>CMD: 提交受控command/patch提案
+        CMD->>CMD: 重检范围与版本
+        CMD-->>User: 应用事务或报告失败
+        REG->>W: 无任务时关闭/可配置闲置策略
+    end

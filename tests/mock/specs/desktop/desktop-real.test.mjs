@@ -18,8 +18,8 @@ test('桌面版 Grep: 命中正常显示, 没有 undefined', opts, async () => {
     await page.fill('#grep-input', 'hello');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(2500);
-    const text = await page.evaluate(() => (document.getElementById('grep-status') || {}).innerText + '\n' + ((document.getElementById('grep-results') || {}).innerText || ''));
-    assert.match(text, /命中/);
+    const text = await page.evaluate(() => { const t = getActiveTab(); return (t && t.grep ? t.lines.join('\n') : '') + '\n' + document.getElementById('s-tip').textContent; });
+    assert.match(text, /個が検索されました|命中/);
     assert.doesNotMatch(text, /undefined/);
     assert.deepEqual(d.errors, []);
   } finally { await d.close(); }

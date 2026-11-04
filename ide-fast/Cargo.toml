@@ -1,0 +1,37 @@
+[package]
+name = "ide-fast"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "IDE1.0 高速版 — 原生 Rust (egui) 的 Sakura 风格文本编辑器: 不依赖 WebView2, 复用 editcore 的全部编辑语义; 和 Tauri 版并行, 独立安装包"
+
+[[bin]]
+name = "ide-fast"
+path = "src/main.rs"
+
+[dependencies]
+editcore = { path = "../crates/editcore" }
+# 原生 GUI: 只要 glow (OpenGL) 后端 + 自带字体, 不拉 wgpu / accesskit / 网页相关 (启动快、体积小)
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "clipboard"] }
+# 系统打开 / 另存为对话框
+rfd = { version = "0.15", default-features = false }
+serde_json = "1"
+# 本地时间 (插入日期 / 时间 / 戳记); 工作区已有, 只开 clock 特性
+chrono.workspace = true
+# Markdown 预览里的本地 PNG 图片
+png = { version = "0.17", default-features = false }
+# 更新包验签: 只用验证 (default-features 全关: 无 rand / 无签名 / 无预计算大表), 纯 Rust
+ed25519-dalek = { version = "2", default-features = false }
+# 脚本插件宿主 (惰性创建, 启动时不加载): QuickJS, 带内存上限 + 墙钟中断
+rquickjs = { version = "0.9", default-features = false }
+
+# 半透明 (玻璃) 主题: Windows 的 DWM 模糊背景 (内部有 unsafe, 由依赖承担; 本 crate 仍 forbid unsafe)。Tauri 版同一个版本, 已在锁文件里
+[target.'cfg(windows)'.dependencies]
+window-vibrancy = { version = "0.8", default-features = false }
+raw-window-handle = "0.6"
+
+[lints]
+workspace = true

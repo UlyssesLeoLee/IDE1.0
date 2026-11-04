@@ -25,11 +25,8 @@ pub(super) fn run(cx: &Ctx, all: bool) -> EditRes {
             folds.push([cx.row, e + first]);
         }
     }
-    let tip = if folds.is_empty() { Some("这里没有可折叠的块") } else { None };
-    let mut res = EditRes::nothing([cx.row, cx.col], "");
-    res.tip = tip.map(String::from);
-    res.folds = Some(folds);
-    res
+    let tip = folds.is_empty().then(|| "这里没有可折叠的块".to_string());
+    EditRes { cursor: [cx.row, cx.col], folds: Some(folds), tip, ..Default::default() }
 }
 
 /// 一行里 `c` ('{' 或 '}') 的个数, 跳过字符串 "..." / 字符 '{' / 行注释 // 里的 (它们不开块也不收块)

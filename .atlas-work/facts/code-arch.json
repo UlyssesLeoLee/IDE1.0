@@ -1,0 +1,548 @@
+{
+  "sourceRevisions": [
+    {
+      "id": "REV-IDE1",
+      "repo": "https://github.com/UlyssesLeoLee/IDE1.0",
+      "branch": "dev",
+      "sha": "76c4e8f9ff4775119d1c98e6403eecb020a905fe",
+      "capturedAt": "2026-10-24T09:33:16Z",
+      "remote": "https://github.com/UlyssesLeoLee/IDE1.0.git",
+      "dirty": true,
+      "note": "worktree has untracked files"
+    }
+  ],
+  "crates": [
+    {
+      "id": "C-EDITCORE",
+      "name": "editcore",
+      "path": "crates/editcore",
+      "role": "Low-level text-editor kernel: line buffer, undo/redo operation log, char-based cursor, per-language type config, grep engine, encoding/EOL IO, macros and outline parsing (a Rust port of sakura-editor architecture).",
+      "summary": "editcore is a dependency-light (serde + serde_json + encoding_rs + memchr + regex + optional wasmtime) editor kernel with 40 public modules. It exposes a char-semantics document model (DocLineMgr / LogicPos / LogicRange) and an operation-based undo system (Ope / OpeBlk / OpeBuf), plus stateless request/response 'command' modules (history, search_ops, edit_cmd, nav, bracket, bookmark) that the web and desktop shells call directly. It is the only crate in the workspace that owns real editing primitives; every other crate either wraps it or re-exports it.",
+      "publicModules": [
+        {"name": "editcore::buffer", "path": "crates/editcore/src/buffer.rs", "startLine": 20, "endLine": 430, "summary": "Document model core: DocLine (char/byte length, insert/remove range, slice) and DocLineMgr (logical+physical line store, caret, insert_str/remove_range/backspace/delete, extract_text)."},
+        {"name": "editcore::cursor", "path": "crates/editcore/src/cursor.rs", "startLine": 15, "endLine": 152, "summary": "LogicPos / LogicRange char-based position types with ZERO const, compare and normalize."},
+        {"name": "editcore::undo", "path": "crates/editcore/src/undo.rs", "startLine": 25, "endLine": 390, "summary": "Undo/redo group: EOpeCode enum, Ope (apply/undo against DocLineMgr), OpeBlk, and OpeBuf (bounded stack, push/undo/redo/mark_saved, history_json/from_json serialization)."},
+        {"name": "editcore::history", "path": "crates/editcore/src/history.rs", "startLine": 15, "endLine": 134, "summary": "Stateless undo/redo-stack query API: Patch, HistReq, Apply, HistRes structs plus pub fn run(req) -> Option<HistRes>."},
+        {"name": "editcore::search_ops", "path": "crates/editcore/src/search_ops.rs", "startLine": 15, "endLine": 334, "summary": "Stateless in-document find/replace API: SearchReq, Hit, SearchRes plus pub fn run(req) -> Option<SearchRes>; regex-backed via the regex crate."},
+        {"name": "editcore::grep", "path": "crates/editcore/src/grep.rs", "startLine": 20, "endLine": 208, "summary": "File enumeration (walk_dir) plus content search (grep_in_file / grep_in_files / grep_in_file_ci) and ext filtering."},
+        {"name": "editcore::grep_engine", "path": "crates/editcore/src/grep_engine.rs", "startLine": 38, "endLine": 1801, "summary": "Larger project-search engine: SearchResult/SearchOptions, glob_to_regex/glob_match, walk, search, search_fallback, and a hand-written MiniRegex matcher."},
+        {"name": "editcore::type_config", "path": "crates/editcore/src/type_config.rs", "startLine": 20, "endLine": 945, "summary": "TokenKind enum, OutlineEntry, StringDelim, TypeConfig builder (keywords/comments/delim/outline fn) with highlight_line tokenizer, and TypeRegistry with detect/register/unregister/color_classes."},
+        {"name": "editcore::types", "path": "crates/editcore/src/types.rs", "startLine": 11, "endLine": 959, "summary": "Per-language TypeConfig factory functions for ~20 languages (Rust, Python, C++, JS/TS, Go, Java, C#, Ruby, Bash, HTML, CSS, JSON, MD, YAML, TOML, SQL, Dockerfile, Makefile) plus python_outline / rust_outline."},
+        {"name": "editcore::document_io", "path": "crates/editcore/src/document_io.rs", "startLine": 11, "endLine": 498, "summary": "Encoding/EOL/BOM document IO: Charset (12 variants), Bom, Eol, DocFile, detect_charset, decode_document/encode_document, read_doc, write_doc, WriteSpec, reinterpret_text."},
+        {"name": "editcore::encoding_io", "path": "crates/editcore/src/encoding_io.rs", "startLine": 13, "endLine": 408, "summary": "EncodingKind/BomKind with encoding_rs mapping, detect_encoding_with_bom, read_auto/read_with_encoding, write_with_encoding and *_compat variants."},
+        {"name": "editcore::edit_ops", "path": "crates/editcore/src/edit_ops.rs", "startLine": 49, "endLine": 334, "summary": "Pure text transforms: kana/zenkaku conversions, ascii_to_full/full_to_ascii, tabs_to_spaces/spaces_to_tabs, and the dispatchers transform_text / transform_lines."},
+        {"name": "editcore::edit_cmd", "path": "crates/editcore/src/edit_cmd.rs", "startLine": 10, "endLine": 614, "summary": "Line-oriented edit commands (delete/cut/copy line classes) via EditReq/EditRes + pub fn run(req) -> Option<EditRes>."},
+        {"name": "editcore::nav", "path": "crates/editcore/src/nav.rs", "startLine": 12, "endLine": 288, "summary": "Cursor navigation primitives: NavReq/NavRes, is_word_char, word_right/word_left/first_word_col, and pub fn step(req) -> Option<NavRes>."},
+        {"name": "editcore::bracket", "path": "crates/editcore/src/bracket.rs", "startLine": 27, "endLine": 125, "summary": "Bracket pair matching: BracketReq/BracketRes plus pub fn find_pair(req) -> Option<BracketRes>."},
+        {"name": "editcore::matching_paren", "path": "crates/editcore/src/matching_paren.rs", "startLine": 9, "endLine": 152, "summary": "BraceKind enum and pub fn find_matching(text, pos) -> Option<JumpResult>."},
+        {"name": "editcore::bookmark", "path": "crates/editcore/src/bookmark.rs", "startLine": 8, "endLine": 96, "summary": "Bookmark toggle/next/prev via Bm/BmReq/BmRes + pub fn run(req) -> Option<BmRes>."},
+        {"name": "editcore::migemo", "path": "crates/editcore/src/migemo.rs", "startLine": 260, "endLine": 578, "summary": "Romaji incremental-search support: expand_pattern(roma) -> Vec<String> and migemo_search(text, roma) -> Vec<usize>."},
+        {"name": "editcore::incremental_search", "path": "crates/editcore/src/incremental_search.rs", "startLine": 8, "endLine": 159, "summary": "SearchOptions/SearchHit plus incremental_search(...) incremental-match API."},
+        {"name": "editcore::search_highlight", "path": "crates/editcore/src/search_highlight.rs", "startLine": 7, "endLine": 144, "summary": "HighlightManager with highlight_all / highlight_all_case_insensitive and segment accessors."},
+        {"name": "editcore::outline_extended", "path": "crates/editcore/src/outline_extended.rs", "startLine": 14, "endLine": 195, "summary": "OutlineKind enum, OutlineNode, and OutlineTree::parse(text) generic outline builder."},
+        {"name": "editcore::outline_langs", "path": "crates/editcore/src/outline_langs.rs", "startLine": 104, "endLine": 340, "summary": "Language-specific outline extraction: brace_outline(text, lang) and markdown_outline(text)."},
+        {"name": "editcore::syntax_styling", "path": "crates/editcore/src/syntax_styling.rs", "startLine": 9, "endLine": 176, "summary": "Color/Style/TokenStyle/Theme color model with dark and light default themes keyed by TokenKind."},
+        {"name": "editcore::keyword_set", "path": "crates/editcore/src/keyword_set.rs", "startLine": 18, "endLine": 206, "summary": "KeywordSet and KeywordSetRegistry with add/get/find_sets plus rust_default_sets / python_default_sets presets."},
+        {"name": "editcore::theme_luminance", "path": "crates/editcore/src/theme_luminance.rs", "startLine": 40, "endLine": 254, "summary": "Desktop light/dark detection: DesktopLuminance enum with palette accessors, apply_backdrop_sample, detect() (Windows registry) and build_clear_theme_vars()."},
+        {"name": "editcore::font_manager", "path": "crates/editcore/src/font_manager.rs", "startLine": 10, "endLine": 129, "summary": "FontWeight / FontConfig with to_css and mono/japanese/compact presets."},
+        {"name": "editcore::ruler", "path": "crates/editcore/src/ruler.rs", "startLine": 8, "endLine": 113, "summary": "RulerConfig/RulerCell/RulerMark plus render(config) -> Vec<RulerCell> and marker_for(cell)."},
+        {"name": "editcore::file_lock", "path": "crates/editcore/src/file_lock.rs", "startLine": 16, "endLine": 185, "summary": "FileLock with try_lock(target, wait), unlock, lock_path_for and Drop cleanup."},
+        {"name": "editcore::auto_backup", "path": "crates/editcore/src/auto_backup.rs", "startLine": 18, "endLine": 218, "summary": "BackupConfig / AutoBackup with should_backup, backup_file, restore_from and BackupError."},
+        {"name": "editcore::cursor_persistence", "path": "crates/editcore/src/cursor_persistence.rs", "startLine": 12, "endLine": 145, "summary": "CursorState / CursorPersistence storing per-file cursor positions under a project root (save/load/clear/clear_all)."},
+        {"name": "editcore::daemon", "path": "crates/editcore/src/daemon.rs", "startLine": 12, "endLine": 121, "summary": "Daemon thread wrapper with start(interval, tick), stop, is_running and Drop join."},
+        {"name": "editcore::control_code", "path": "crates/editcore/src/control_code.rs", "startLine": 8, "endLine": 97, "summary": "ControlCodeDisplay options with visualize_char / visualize / is_control."},
+        {"name": "editcore::zenkaku_hankaku", "path": "crates/editcore/src/zenkaku_hankaku.rs", "startLine": 7, "endLine": 245, "summary": "CharCategory enum, categorize(c), to_halfwidth and to_fullwidth width conversion."},
+        {"name": "editcore::js_macro", "path": "crates/editcore/src/js_macro.rs", "startLine": 18, "endLine": 217, "summary": "JsMacroEngine with execute_transform(script, input) -> Result<String, JsError> and a JsError enum."},
+        {"name": "editcore::key_macro", "path": "crates/editcore/src/key_macro.rs", "startLine": 8, "endLine": 165, "summary": "MacroCmd enum, KeyMacro recorder (start_record/stop_record/record/to_script) and MacroRegistry."},
+        {"name": "editcore::ppa_macro", "path": "crates/editcore/src/ppa_macro.rs", "startLine": 8, "endLine": 116, "summary": "PpaCmd enum and PpaMacro with add/commands/execute(input) -> String."},
+        {"name": "editcore::tag_jump", "path": "crates/editcore/src/tag_jump.rs", "startLine": 10, "endLine": 223, "summary": "TagKind / Tag / TagDb with add/find/find_by_kind and extract_tags(content, file)."},
+        {"name": "editcore::plugin", "path": "crates/editcore/src/plugin.rs", "startLine": 15, "endLine": 89, "summary": "PluginError enum and load_and_run(wasm_path, input) backed by wasmtime; without the optional 'wasm' feature it returns PluginError::WasmUnavailable. PluginManager with load/names."},
+        {"name": "editcore::split_quad", "path": "crates/editcore/src/split_quad.rs", "startLine": 9, "endLine": 138, "summary": "Pane enum (4-way), QuadView and SplitQuadManager for quad-pane window layout state."},
+        {"name": "editcore::sdi", "path": "crates/editcore/src/sdi.rs", "startLine": 9, "endLine": 123, "summary": "WindowId / SdiWindow / SdiManager — single-document-interface multi-window manager (open/activate/close/active/windows)."},
+        {"name": "editcore::plugin_placeholder", "path": "crates/editcore/src/lib.rs", "startLine": 37, "endLine": 105, "summary": "Crate root: 40 pub mod declarations, version() and KernelInfo::current() api listing."}
+      ],
+      "deps": [],
+      "ports": [
+        {"id": "P-EDITCORE-1", "name": "editcore::buffer::DocLineMgr", "direction": "out", "type": "Rust struct", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-2", "name": "editcore::undo::OpeBuf", "direction": "out", "type": "Rust struct", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-3", "name": "editcore::cursor::LogicPos / LogicRange", "direction": "out", "type": "Rust struct", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-4", "name": "editcore::type_config::TypeRegistry", "direction": "out", "type": "Rust struct", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-5", "name": "editcore::grep_engine::search", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-6", "name": "editcore::history::run", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-7", "name": "editcore::search_ops::run", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-8", "name": "editcore::edit_cmd::run", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-9", "name": "editcore::nav::step", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-10", "name": "editcore::document_io::read_doc / write_doc", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-11", "name": "editcore::theme_luminance::detect", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"},
+        {"id": "P-EDITCORE-12", "name": "editcore::plugin::load_and_run", "direction": "out", "type": "Rust fn", "nodeId": "C-EDITCORE"}
+      ],
+      "evidenceIds": ["EV-CODE-0001", "EV-CODE-0002", "EV-CODE-0003", "EV-CODE-0004", "EV-CODE-0005"]
+    },
+    {
+      "id": "C-IDEEKERNEL",
+      "name": "ide-kernel",
+      "path": "crates/ide-kernel",
+      "role": "Session-level editing kernel that aggregates editcore's Buffer/Undo/Cursor into a single Document plus a multi-tab Session and a DocStore facade.",
+      "summary": "ide-kernel is the declared 'single source of truth' for editing semantics across the web, desktop and TUI shells. Document wraps editcore's DocLineMgr and OpeBuf to provide char-semantics insert/delete/backspace/newline, selection, multi-cursor, find/replace, encoding and line-ending handling, with every mutation routed through undo. DocStore is the tabbed multi-document facade used directly by both the web HTTP layer and the Tauri desktop commands.",
+      "publicModules": [
+        {"name": "ide_kernel::document", "path": "crates/ide-kernel/src/document.rs", "startLine": 19, "endLine": 613, "summary": "Core document model: Pos (= LogicPos), LineEnding, Selection, Encoding, DocumentSnapshot, and the Document type (apply-style edits, caret/selection/multi-cursor, undo/redo, export_text, history_json)."},
+        {"name": "ide_kernel::doc_store", "path": "crates/ide-kernel/src/doc_store.rs", "startLine": 24, "endLine": 441, "summary": "Tabbed document facade: DocView, DocStore (open/active/tabs/activate/close, insert/type/newline/backspace/delete/delete_range, caret/select_all/clear_selection, undo/redo, add_cursor/clear_cursors/insert_all_cursors, find/find_all/replace_all, line_ending/encoding/export/mark_saved/new_tab/dirty_tabs) plus FindHit and ReplaceStat."},
+        {"name": "ide_kernel::session", "path": "crates/ide-kernel/src/session.rs", "startLine": 1, "endLine": 168, "summary": "Session and TabState: multi-tab window state above the document layer."},
+        {"name": "ide_kernel::text_ops", "path": "crates/ide-kernel/src/text_ops.rs", "startLine": 12, "endLine": 305, "summary": "FindOptions / FindResult / ReplaceOutcome with char-position line matching; deliberately no cross-line matching."}
+      ],
+      "deps": ["C-EDITCORE"],
+      "ports": [
+        {"id": "P-IDEEKERNEL-1", "name": "ide_kernel::Document", "direction": "out", "type": "Rust struct", "nodeId": "C-IDEEKERNEL"},
+        {"id": "P-IDEEKERNEL-2", "name": "ide_kernel::DocStore", "direction": "out", "type": "Rust struct", "nodeId": "C-IDEEKERNEL"},
+        {"id": "P-IDEEKERNEL-3", "name": "ide_kernel::Session", "direction": "out", "type": "Rust struct", "nodeId": "C-IDEEKERNEL"},
+        {"id": "P-IDEEKERNEL-4", "name": "ide_kernel::document::LineEnding / Encoding / Pos", "direction": "out", "type": "Rust struct", "nodeId": "C-IDEEKERNEL"},
+        {"id": "P-IDEEKERNEL-5", "name": "ide_kernel::text_ops::FindOptions", "direction": "out", "type": "Rust struct", "nodeId": "C-IDEEKERNEL"},
+        {"id": "P-IDEEKERNEL-6", "name": "ide_kernel::KERNEL_VERSION", "direction": "out", "type": "Rust const", "nodeId": "C-IDEEKERNEL"}
+      ],
+      "evidenceIds": ["EV-CODE-0006", "EV-CODE-0007", "EV-CODE-0008"]
+    },
+    {
+      "id": "C-IDEEKERNELCORE",
+      "name": "ide-kernel-core",
+      "path": "crates/ide-kernel-core",
+      "role": "Declared microkernel core; in the current tree it is only a zero-dependency placeholder exposing version() and kernel_status().",
+      "summary": "ide-kernel-core contains exactly two public functions and no dependencies. Its own module docs state it is a Stage 3.0 placeholder with the real microkernel (process supervisor, session transaction buffer, search index, plugin loader) deferred to design books DD-01..DD-04. Both ide-shell and ide-shell-web call it only to build a version/status banner string.",
+      "publicModules": [
+        {"name": "ide_kernel_core", "path": "crates/ide-kernel-core/src/lib.rs", "startLine": 25, "endLine": 43, "summary": "pub fn version() -> &'static str and pub fn kernel_status() -> &'static str (returns the literal \"placeholder\")."}
+      ],
+      "deps": [],
+      "ports": [
+        {"id": "P-IDEEKERNELCORE-1", "name": "ide_kernel_core::version", "direction": "out", "type": "Rust fn", "nodeId": "C-IDEEKERNELCORE"},
+        {"id": "P-IDEEKERNELCORE-2", "name": "ide_kernel_core::kernel_status", "direction": "out", "type": "Rust fn", "nodeId": "C-IDEEKERNELCORE"}
+      ],
+      "evidenceIds": ["EV-CODE-0009"]
+    },
+    {
+      "id": "C-IDESHELL",
+      "name": "ide-shell",
+      "path": "crates/ide-shell",
+      "role": "Headless-able shell core: vim-like mode state machine, keymap, input buffer, AI backend trait and render backends (ratatui + web) shared by the TUI, web and desktop shells.",
+      "summary": "ide-shell exposes App/AppConfig, which holds a command-line InputBuffer plus an optional ide_kernel::Document for real file editing. App::on_key and App::on_mouse drive the vim mode machine and return a keep-going flag that each shell host interprets (TUI exits the process, web returns false to Playwright). The crate also hosts the render backends: ratatui_render::render for the terminal and render::web::render producing a serializable WebFrame used by both the web HTTP server and the Tauri desktop app.",
+      "publicModules": [
+        {"name": "ide_shell::app", "path": "crates/ide-shell/src/app.rs", "startLine": 14, "endLine": 615, "summary": "AppConfig, App (mode/buffer/cmd_buffer/history/document/ai/quit_requested), on_key, on_mouse, tick, open_file (4 MB limit), save_file, run_command, and the module-level handle_event dispatcher."},
+        {"name": "ide_shell::mode", "path": "crates/ide-shell/src/mode.rs", "startLine": 15, "endLine": 40, "summary": "Mode enum (Normal / Insert / Command) shared with ide-shell-protocol."},
+        {"name": "ide_shell::keymap", "path": "crates/ide-shell/src/keymap.rs", "startLine": 16, "endLine": 148, "summary": "Action enum plus map_key(event: KeyEvent, mode: Mode) -> Action, the key-to-action dispatch table."},
+        {"name": "ide_shell::input", "path": "crates/ide-shell/src/input.rs", "startLine": 7, "endLine": 131, "summary": "InputBuffer: char-vector edit buffer with cursor, insert_char/backspace/delete/move/clear."},
+        {"name": "ide_shell::ai", "path": "crates/ide-shell/src/ai.rs", "startLine": 9, "endLine": 47, "summary": "AiBackend trait, AiError enum and a PlaceholderAi implementation (no real model integration)."},
+        {"name": "ide_shell::render", "path": "crates/ide-shell/src/render/mod.rs", "startLine": 7, "endLine": 8, "summary": "Render backend module: ratatui_render and web."},
+        {"name": "ide_shell::render::web", "path": "crates/ide-shell/src/render/web.rs", "startLine": 20, "endLine": 367, "summary": "WebCell / WebStyle / WebFrame serialization model plus pub fn render(app: &App) -> WebFrame, the shared render used by web HTTP and Tauri."},
+        {"name": "ide_shell::render::ratatui_render", "path": "crates/ide-shell/src/render/ratatui_render.rs", "startLine": 13, "endLine": 69, "summary": "pub fn render(f: &mut Frame, app: &App) terminal renderer."},
+        {"name": "ide_shell::bin::ide-shell", "path": "crates/ide-shell/src/bin/ide-shell.rs", "startLine": 18, "endLine": 64, "summary": "TUI binary: crossterm raw mode + alternate screen + ratatui Terminal loop calling app.on_key / app.on_mouse / app.tick."}
+      ],
+      "deps": ["C-IDEEKERNEL", "C-IDEEKERNELCORE"],
+      "ports": [
+        {"id": "P-IDESHELL-1", "name": "ide_shell::App", "direction": "out", "type": "Rust struct", "nodeId": "C-IDESHELL"},
+        {"id": "P-IDESHELL-2", "name": "ide_shell::App::on_key / on_mouse", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELL"},
+        {"id": "P-IDESHELL-3", "name": "ide_shell::render::web::render", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELL"},
+        {"id": "P-IDESHELL-4", "name": "ide_shell::keymap::map_key", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELL"},
+        {"id": "P-IDESHELL-5", "name": "ide_shell::ai::AiBackend", "direction": "in", "type": "Rust trait", "nodeId": "C-IDESHELL"}
+      ],
+      "evidenceIds": ["EV-CODE-0010", "EV-CODE-0011", "EV-CODE-0012"]
+    },
+    {
+      "id": "C-IDESHELLWEB",
+      "name": "ide-shell-web",
+      "path": "crates/ide-shell-web",
+      "role": "Hand-rolled HTTP/1.1 server (std::net::TcpListener, no axum) exposing the shell frame and a large /api/* route table to a browser, with token auth and a project-root path sandbox.",
+      "summary": "ide-shell-web owns a single ShellState holding one App, one DocStore and one optional project root. handle_request parses HTTP manually and dispatches on a (method, path) match table covering HTML pages, /api/doc/* session editing, stateless editcore command endpoints, terminal, SCM, search and file IO. Auth is enforced before body allocation (Auth::check), CORS is origin-echo only, and all file access is sandboxed to the project root via path_safety.",
+      "publicModules": [
+        {"name": "ide_shell_web", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 23, "endLine": 1458, "summary": "Crate root: pub mod auth/doc_api/path_safety/wiki_data plus private outline/scm/search/terminal; ShellState, KeyRequest/MouseRequest, handle_request_pub, serve(addr), and the full (method, path) route table."},
+        {"name": "ide_shell_web::auth", "path": "crates/ide-shell-web/src/auth.rs", "startLine": 37, "endLine": 391, "summary": "AuthError, Headers, Auth (from_env/with_token/token/check/origin_is_allowed) and random_token() using OS CSPRNG."},
+        {"name": "ide_shell_web::path_safety", "path": "crates/ide-shell-web/src/path_safety.rs", "startLine": 15, "endLine": 306, "summary": "Sandbox helpers: MAX_FILE_BYTES (4 MB), strip_verbatim, safe_canonicalize, path_within, resolve_in_project, list_dir, read_file, read_file_enc, write_file, write_file_spec."},
+        {"name": "ide_shell_web::doc_api", "path": "crates/ide-shell-web/src/doc_api.rs", "startLine": 1, "endLine": 20, "summary": "Thin adapter: re-exports ide_kernel::doc_store::{DocStore, DocView, FindHit, ReplaceStat} and provides doc_pos() JSON position parsing."},
+        {"name": "ide_shell_web::wiki_data", "path": "crates/ide-shell-web/src/wiki_data.rs", "startLine": 8, "endLine": 133, "summary": "pub const APP_WIKI: &str — the built-in manual served by /api/help_wiki (same source as the desktop help_wiki command)."},
+        {"name": "ide_shell_web::outline (private)", "path": "crates/ide-shell-web/src/outline.rs", "startLine": 15, "endLine": 86, "summary": "OutlineResult and outline_file(path, content) using editcore::type_config outline dispatch."},
+        {"name": "ide_shell_web::scm (private)", "path": "crates/ide-shell-web/src/scm.rs", "startLine": 14, "endLine": 146, "summary": "Git-backed SCM facade: resolve_repo, status, stage, unstage, diff, commit, log."},
+        {"name": "ide_shell_web::search (private)", "path": "crates/ide-shell-web/src/search.rs", "startLine": 14, "endLine": 27, "summary": "Re-export of editcore::grep_engine::{search, search_fallback, SearchOptions, SearchResult}."},
+        {"name": "ide_shell_web::terminal (private)", "path": "crates/ide-shell-web/src/terminal.rs", "startLine": 23, "endLine": 289, "summary": "TerminalInfo and process-backed terminal: create/input/close/list/drain_output/shell_cmd/cwd/counter/resolve_shell."},
+        {"name": "ide_shell_web::bin::ide-shell-web", "path": "crates/ide-shell-web/src/bin/ide-shell-web.rs", "startLine": 1, "endLine": 6, "summary": "Thin binary that calls the crate's serve() entry point."}
+      ],
+      "deps": ["C-IDESHELL", "C-IDEEKERNEL", "C-IDEEKERNELCORE", "C-EDITCORE"],
+      "ports": [
+        {"id": "P-IDESHELLWEB-1", "name": "GET / and /index.html", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-2", "name": "GET /editor", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-3", "name": "GET /api/frame", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-4", "name": "POST /api/event", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-5", "name": "POST /api/reset", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-6", "name": "POST /api/key", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-7", "name": "POST /api/mouse", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-8", "name": "GET /api/kernel_banner", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-9", "name": "GET /api/help_wiki", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-10", "name": "POST /api/pick_folder", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-11", "name": "POST /api/open_project", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-12", "name": "POST /api/list_dir", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-13", "name": "POST /api/read_file", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-14", "name": "POST /api/write_file", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-15", "name": "GET|POST /api/desktop_luminance", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-16", "name": "GET|POST /api/clear_theme_vars", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-17", "name": "GET /api/doc/active and /api/doc/tabs and /api/doc/export", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-18", "name": "POST /api/doc/* (open, new_tab, activate, close, insert, type, newline, backspace, delete, delete_range, caret, select_all, clear_selection, undo, redo, add_cursor, clear_cursors, insert_all, find, find_all, replace_all, line_ending, encoding, mark_saved)", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-19", "name": "POST /api/edit_cmd, /api/bracket_pair, /api/bookmark, /api/search_text, /api/history, /api/nav_step, /api/edit_text, /api/edit_lines, /api/reinterpret_text, /api/migemo_patterns", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-20", "name": "POST /api/outline, /api/search, /api/plugin_load", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-21", "name": "POST /api/terminal_create, /api/terminal_input, /api/terminal_close and GET /api/terminal_output, /api/terminal_list", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-22", "name": "POST /api/scm_status, /api/scm_stage, /api/scm_unstage, /api/scm_diff, /api/scm_commit, /api/scm_log", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-23", "name": "OPTIONS (preflight) and default 404", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLWEB"},
+        {"id": "P-IDESHELLWEB-24", "name": "ide_shell_web::serve(addr)", "direction": "in", "type": "Rust fn", "nodeId": "C-IDESHELLWEB"}
+      ],
+      "evidenceIds": ["EV-CODE-0013", "EV-CODE-0014", "EV-CODE-0015", "EV-CODE-0016", "EV-CODE-0017"]
+    },
+    {
+      "id": "C-IDESHELLDESKTOP",
+      "name": "ide-shell-desktop",
+      "path": "crates/ide-shell-desktop",
+      "role": "Tauri 2 desktop application host: registers ~65 #[tauri::command] endpoints over a managed ShellState/ProjectRoot/DocState/TerminalState and mirrors the web route table over IPC.",
+      "summary": "ide-shell-desktop reuses ide_shell::App for the shell panel and ide_kernel::DocStore for document tabs, then exposes them as Tauri commands (doc_*, scm_*, terminal_*, search_cmd, outline, plugin_load) plus stateless editcore commands (edit_cmd, bracket_pair, bookmark, search_text, history, nav_step, edit_text, edit_lines, reinterpret_text). Path access is constrained to the managed ProjectRoot via local safe_canonicalize/path_within helpers, and desktop light/dark detection shells out to editcore::theme_luminance with a real backdrop-luma sample.",
+      "publicModules": [
+        {"name": "ide_shell_desktop", "path": "crates/ide-shell-desktop/src/lib.rs", "startLine": 30, "endLine": 877, "summary": "Crate root: pub mod backdrop/doc/outline/plugin/scm/search/terminal plus the inline theme_luminance module; ProjectRoot state, ShellState, run() builder with tauri::generate_handler![...] command table, and the stateless editcore-backed commands."},
+        {"name": "ide_shell_desktop::doc", "path": "crates/ide-shell-desktop/src/doc.rs", "startLine": 18, "endLine": 273, "summary": "DocState (DocStore) + 26 doc_* Tauri commands (doc_active, doc_tabs, doc_open, doc_new_tab, doc_activate, doc_close, doc_insert, doc_type, doc_newline, doc_backspace, doc_delete, doc_delete_range, doc_caret, doc_select_all, doc_clear_selection, doc_undo, doc_redo, doc_add_cursor, doc_clear_cursors, doc_insert_all, doc_find, doc_find_all, doc_replace_all, doc_line_ending, doc_encoding, doc_export, doc_mark_saved) over ide_kernel::doc_store."},
+        {"name": "ide_shell_desktop::scm", "path": "crates/ide-shell-desktop/src/scm.rs", "startLine": 93, "endLine": 304, "summary": "Git SCM implementation (run_git, status, stage, unstage, diff, diff_cached, commit, log, is_git_repo, find_git_root) plus 6 scm_* Tauri commands."},
+        {"name": "ide_shell_desktop::terminal", "path": "crates/ide-shell-desktop/src/terminal.rs", "startLine": 55, "endLine": 259, "summary": "TerminalState plus terminal_create / terminal_input / terminal_close / terminal_list Tauri commands backed by spawned shell processes."},
+        {"name": "ide_shell_desktop::search", "path": "crates/ide-shell-desktop/src/search.rs", "startLine": 16, "endLine": 60, "summary": "Re-export of editcore::grep_engine plus search_cmd Tauri command."},
+        {"name": "ide_shell_desktop::outline", "path": "crates/ide-shell-desktop/src/outline.rs", "startLine": 5, "endLine": 56, "summary": "outline_file(path, content) via editcore::type_config::outline_dispatch plus the outline Tauri command."},
+        {"name": "ide_shell_desktop::plugin", "path": "crates/ide-shell-desktop/src/plugin.rs", "startLine": 21, "endLine": 37, "summary": "load_and_run wrapper over editcore::plugin::load_and_run plus the plugin_load Tauri command."},
+        {"name": "ide_shell_desktop::backdrop", "path": "crates/ide-shell-desktop/src/backdrop.rs", "startLine": 15, "endLine": 54, "summary": "sample_backdrop_luma(window) — samples real window backdrop color for transparent-theme luminance detection."},
+        {"name": "ide_shell_desktop::bin::ide-shell-desktop", "path": "crates/ide-shell-desktop/src/main.rs", "startLine": 14, "endLine": 26, "summary": "Desktop binary that calls the crate's run() entry point."}
+      ],
+      "deps": ["C-IDESHELL", "C-IDEEKERNEL", "C-IDEEKERNELCORE", "C-EDITCORE"],
+      "ports": [
+        {"id": "P-IDESHELLDESKTOP-1", "name": "frame / reset / key / mouse / get_mode / kernel_banner", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-2", "name": "pick_folder / open_project / list_dir / read_file / write_file / help_wiki", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-3", "name": "doc_* (26 Tauri commands over ide_kernel::DocStore)", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-4", "name": "scm_status / scm_stage / scm_unstage / scm_diff / scm_commit / scm_log", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-5", "name": "terminal_create / terminal_input / terminal_close / terminal_list", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-6", "name": "search_cmd / outline / plugin_load", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-7", "name": "edit_cmd / bracket_pair / bookmark / search_text / history / nav_step / edit_text / edit_lines / reinterpret_text / migemo_patterns", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"},
+        {"id": "P-IDESHELLDESKTOP-8", "name": "theme_luminance::desktop_luminance / clear_theme_vars", "direction": "out", "type": "Rust fn", "nodeId": "C-IDESHELLDESKTOP"}
+      ],
+      "evidenceIds": ["EV-CODE-0018", "EV-CODE-0019", "EV-CODE-0020", "EV-CODE-0021"]
+    },
+    {
+      "id": "C-IDESHELLPROTOCOL",
+      "name": "ide-shell-protocol",
+      "path": "crates/ide-shell-protocol",
+      "role": "Headless vim-like RPC kernel exposed over HTTP, WebSocket and newline-delimited stdio JSON-RPC 2.0, with an injectable AI provider trait.",
+      "summary": "ide-shell-protocol implements its own Buffer/Kernel types (Vec<String> lines plus a cursor, per-buffer undo/redo snapshot stacks) rather than reusing editcore or ide-kernel. Kernel::handle_rpc parses a JSON-RPC 2.0 request and dispatches on method name across 21 methods; events are pushed to subscribers over tokio mpsc. The crate's binary wires axum routes /healthz, /info, /rpc, /ws and /rpcws onto one Kernel and registers a built-in MockProvider.",
+      "publicModules": [
+        {"name": "ide_shell_protocol", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 25, "endLine": 1106, "summary": "Crate root: Mode, Buffer/Cursor/BufferSnapshot, RpcRequest/RpcResponse/RpcError + codes module, AiProvider trait with completion/edit/chat request-response types, Kernel (buffer management, key_event, execute_command, provider registry, subscribe), Event enum, KernelInfo, ProtocolError, handle_rpc and dispatch."},
+        {"name": "ide_shell_protocol::codes", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 291, "endLine": 300, "summary": "JSON-RPC compatible error codes plus custom BUFFER_NOT_FOUND (-32001) and READ_ONLY (-32002)."},
+        {"name": "ide_shell_protocol::AiProvider", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 310, "endLine": 316, "summary": "async trait with name/complete/edit/chat — the AI injection point for completion, inline edit and agent chat."},
+        {"name": "ide_shell_protocol::Kernel", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 406, "endLine": 874, "summary": "Multi-buffer container with provider registry and event subscribers: open/close/list/activate buffers, set_buffer_lines, insert_at_cursor, key_event (vim h/j/k/l + insert editing), set_cursor, execute_command (:w/:q/:e/:buffer/:buffers/:providers/:complete), set/get_cmd_text, complete_at_cursor, edit_via_provider, chat, register/unregister/list_provider, subscribe."},
+        {"name": "ide_shell_protocol::dispatch", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 972, "endLine": 1155, "summary": "Private method-name dispatch table: kernel_info, open_buffer, close_buffer, list_buffers, set_active_buffer, active_buffer_id, get_buffer, set_buffer_lines, insert_at_cursor, key_event, set_cursor, execute_command, set_cmd_text, get_cmd_text, complete_at_cursor, edit_via_provider, chat, register_provider, unregister_provider, list_providers."},
+        {"name": "ide_shell_protocol::bin::ide-shell-protocol-server", "path": "crates/ide-shell-protocol/src/bin/ide-shell-protocol-server.rs", "startLine": 38, "endLine": 290, "summary": "clap CLI (stdio / http --addr / both --addr) plus the axum Router route table, stdio newline-delimited JSON-RPC loop, and the MockProvider implementation."},
+        {"name": "ide_shell_protocol::tests", "path": "crates/ide-shell-protocol/src/tests.rs", "startLine": 1, "endLine": 246, "summary": "In-crate unit tests for buffer ops, key events, commands and provider registration."}
+      ],
+      "deps": [],
+      "ports": [
+        {"id": "P-IDESHELLPROTOCOL-1", "name": "GET /healthz", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-2", "name": "GET /info", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-3", "name": "POST /rpc", "direction": "out", "type": "HTTP", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-4", "name": "GET /ws", "direction": "out", "type": "HTTP (WebSocket)", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-5", "name": "GET /rpcws", "direction": "out", "type": "HTTP (WebSocket)", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-6", "name": "stdio newline-delimited JSON-RPC 2.0", "direction": "out", "type": "stdio", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-7", "name": "ide_shell_protocol::Kernel::handle_rpc", "direction": "in", "type": "Rust fn", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-8", "name": "ide_shell_protocol::AiProvider", "direction": "in", "type": "Rust trait", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-9", "name": "ide_shell_protocol::Kernel::register_provider", "direction": "in", "type": "Rust fn", "nodeId": "C-IDESHELLPROTOCOL"},
+        {"id": "P-IDESHELLPROTOCOL-10", "name": "ide_shell_protocol::Event (buffer/mode/provider events)", "direction": "out", "type": "Rust struct", "nodeId": "C-IDESHELLPROTOCOL"}
+      ],
+      "evidenceIds": ["EV-CODE-0022", "EV-CODE-0023", "EV-CODE-0024", "EV-CODE-0025"]
+    },
+    {
+      "id": "C-IDECLI",
+      "name": "ide-cli",
+      "path": "crates/ide-cli",
+      "role": "Minimal CLI binary that prints a version, emits one ACI assertion and prints help; explicitly a placeholder for the DD-02/DD-04 CLI.",
+      "summary": "ide-cli's run() dispatches on argv[1] with exactly four arms — --version/-V, --aci-emit [ID], --help/-h, and an unknown-flag fallback that exits with code 2. The --aci-emit path builds a real aci-emitter assertion (Layer::It, Scope, ExpectActual, Status::Pass) and prints it as pretty JSON. The crate declares no path dependency on any other workspace crate, so the CLI is not yet wired to the kernel.",
+      "publicModules": [
+        {"name": "ide_cli", "path": "crates/ide-cli/src/lib.rs", "startLine": 48, "endLine": 146, "summary": "pub fn run() -> ExitCode with the argv dispatch table, private run_aci_emit(aid) and private print_help()."},
+        {"name": "ide_cli::bin::ide-cli", "path": "crates/ide-cli/src/main.rs", "startLine": 1, "endLine": 6, "summary": "Binary entry point delegating to ide_cli::run()."}
+      ],
+      "deps": [],
+      "ports": [
+        {"id": "P-IDECLI-1", "name": "ide-cli --version / -V", "direction": "out", "type": "stdio", "nodeId": "C-IDECLI"},
+        {"id": "P-IDECLI-2", "name": "ide-cli --aci-emit [ID]", "direction": "out", "type": "stdio", "nodeId": "C-IDECLI"},
+        {"id": "P-IDECLI-3", "name": "ide-cli --help / -h", "direction": "out", "type": "stdio", "nodeId": "C-IDECLI"}
+      ],
+      "evidenceIds": ["EV-CODE-0026", "EV-CODE-0027"]
+    }
+  ],
+  "callEdges": [
+    {
+      "sourceId": "C-IDEEKERNEL",
+      "targetId": "C-EDITCORE",
+      "type": "depends_on",
+      "note": "ide_kernel::document imports editcore's DocLineMgr, LogicPos/LogicRange and the Ope/OpeBlk/OpeBuf undo types, making editcore the only owner of editing primitives (crates/ide-kernel/src/document.rs:13-15).",
+      "evidenceIds": ["EV-CODE-0006"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDEEKERNEL",
+      "targetId": "C-EDITCORE",
+      "type": "calls",
+      "note": "Document::insert/delete_range/backspace/delete_forward/newline/type_char and undo/redo delegate to the editcore DocLineMgr and OpeBuf; doc_store.rs:166 also constructs editcore::cursor::LogicRange directly.",
+      "evidenceIds": ["EV-CODE-0006", "EV-CODE-0007"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELL",
+      "targetId": "C-IDEEKERNEL",
+      "type": "calls",
+      "note": "ide_shell::App holds an Option<ide_kernel::document::Document> (crates/ide-shell/src/app.rs:12, :40); open_file builds it via Document::new/set_text/set_path/set_caret (:177-187) and save_file reads doc.export_text() (:197).",
+      "evidenceIds": ["EV-CODE-0010"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELL",
+      "targetId": "C-IDEEKERNELCORE",
+      "type": "calls",
+      "note": "AppConfig::default formats the banner from ide_kernel_core::version() and ide_kernel_core::kernel_status() (crates/ide-shell/src/app.rs:21-25).",
+      "evidenceIds": ["EV-CODE-0011"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELL",
+      "targetId": "C-EDITCORE",
+      "type": "shared_type",
+      "note": "ide-shell has zero direct editcore references (recursive grep over crates/ide-shell/src returns none); it reaches editing semantics only through ide-kernel. Documented as intended at crates/ide-shell/Cargo.toml.",
+      "evidenceIds": ["EV-CODE-0012"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-IDESHELL",
+      "type": "calls",
+      "note": "The web server imports ide_shell::render::web::{render as render_web, WebFrame} and ide_shell::{App, AppConfig} (crates/ide-shell-web/src/lib.rs:38-39); ShellState::frame() calls render_web(&app) (:92), key() calls app.on_key (:146) and mouse() calls app.on_mouse (:165).",
+      "evidenceIds": ["EV-CODE-0013"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-IDEEKERNEL",
+      "type": "calls",
+      "note": "ide_shell_web::doc_api re-exports ide_kernel::doc_store::{DocStore, DocView, FindHit, ReplaceStat} (crates/ide-shell-web/src/doc_api.rs:10) and lib.rs:42 imports ide_kernel::document::LineEnding; the /api/doc/* route arms (lib.rs:400-668) operate on that DocStore.",
+      "evidenceIds": ["EV-CODE-0014"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-EDITCORE",
+      "type": "calls",
+      "note": "Stateless editcore command endpoints in the route table: edit_cmd::run (lib.rs:684), bracket::find_pair (:699), bookmark::run (:709), search_ops::run (:719), history::run (:729), nav::step (:739), edit_ops::transform_text (:757), edit_ops::transform_lines (:776), document_io::reinterpret_text (:797), theme_luminance::detect (:1259).",
+      "evidenceIds": ["EV-CODE-0015"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-IDEEKERNELCORE",
+      "type": "calls",
+      "note": "ShellState::kernel_banner() composes the string from ide_kernel_core::version() and ide_kernel_core::kernel_status() (crates/ide-shell-web/src/lib.rs:189-195), surfaced by GET /api/kernel_banner (lib.rs:1233).",
+      "evidenceIds": ["EV-CODE-0016"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-EDITCORE",
+      "type": "calls",
+      "note": "File IO path: path_safety::read_file_enc calls editcore::document_io::read_doc (crates/ide-shell-web/src/path_safety.rs:171) and write_file_spec calls editcore::document_io::write_doc (path_safety.rs:199).",
+      "evidenceIds": ["EV-CODE-0017"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-EDITCORE",
+      "type": "subprocess",
+      "note": "Two outbound process edges: the SCM facade shells out to git (crates/ide-shell-web/src/scm.rs) and terminal::create spawns a shell process (crates/ide-shell-web/src/terminal.rs:46). These are runtime process edges, not Rust call edges.",
+      "evidenceIds": ["EV-CODE-0015"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLDESKTOP",
+      "targetId": "C-IDESHELL",
+      "type": "calls",
+      "note": "The desktop crate imports ide_shell::render::web::{render as render_web, WebFrame} and ide_shell::{App, AppConfig, Mode} (crates/ide-shell-desktop/src/lib.rs:76-77); the frame/reset/key/mouse Tauri commands drive that same App.",
+      "evidenceIds": ["EV-CODE-0018"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLDESKTOP",
+      "targetId": "C-IDEEKERNEL",
+      "type": "calls",
+      "note": "ide_shell_desktop::doc imports ide_kernel::doc_store::{DocStore, DocView, FindHit, ReplaceStat} (crates/ide-shell-desktop/src/doc.rs:18) and ide_kernel::document::{LineEnding, Encoding} (:231, :246); the 26 doc_* Tauri commands are thin wrappers over that DocStore.",
+      "evidenceIds": ["EV-CODE-0019"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLDESKTOP",
+      "targetId": "C-EDITCORE",
+      "type": "calls",
+      "note": "Stateless desktop commands call editcore directly: edit_cmd::run (lib.rs:736), bracket::find_pair (:744), bookmark::run (:753), search_ops::run (:761), history::run (:769), nav::step (:777), edit_ops::transform_text (:794), transform_lines (:808), migemo::expand_pattern (:821), document_io::reinterpret_text (:726-727), theme_luminance::apply_backdrop_sample (:54), grep_engine::search (search.rs:20), plugin::load_and_run (plugin.rs:22).",
+      "evidenceIds": ["EV-CODE-0020"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLDESKTOP",
+      "targetId": "C-EDITCORE",
+      "type": "subprocess",
+      "note": "The desktop SCM module shells out to git via run_git (crates/ide-shell-desktop/src/scm.rs:66) and the terminal module spawns shell processes (crates/ide-shell-desktop/src/terminal.rs:224 spawn_reader).",
+      "evidenceIds": ["EV-CODE-0020"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLPROTOCOL",
+      "targetId": "C-IDEEKERNELCORE",
+      "type": "depends_on",
+      "note": "Cargo.toml declares ide-kernel-core as a path dependency (crates/ide-shell-protocol/Cargo.toml), but a recursive grep over crates/ide-shell-protocol/src finds zero source references to ide_kernel_core. The declared edge is not exercised by code.",
+      "evidenceIds": ["EV-CODE-0022"],
+      "implemented": false
+    },
+    {
+      "sourceId": "C-IDESHELLPROTOCOL",
+      "targetId": "C-EDITCORE",
+      "type": "depends_on",
+      "note": "ide-shell-protocol does NOT depend on editcore: it implements its own Buffer type over Vec<String> lines with its own undo_stack/redo_stack of BufferSnapshot (crates/ide-shell-protocol/src/lib.rs:36-48, :196-235). The protocol kernel and the product kernel are separate editing semantics.",
+      "evidenceIds": ["EV-CODE-0023"],
+      "implemented": false
+    },
+    {
+      "sourceId": "C-IDESHELLPROTOCOL",
+      "targetId": "C-IDESHELLPROTOCOL",
+      "type": "calls",
+      "note": "The server binary consumes the library: ide_shell_protocol::Kernel is constructed at bin/ide-shell-protocol-server.rs:70 and Kernel::handle_rpc is invoked from the stdio loop (:106), the HTTP handler (:152), the one-way WS (:189) and the bidirectional WS (:231).",
+      "evidenceIds": ["EV-CODE-0024"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLPROTOCOL",
+      "targetId": "C-IDESHELLPROTOCOL",
+      "type": "sse",
+      "note": "Event push path: Kernel::emit (lib.rs:474) fans an Event out to every subscriber; handle_ws (:164-181) and handle_rpc_ws (:211-243) serialize each Event to the socket as JSON. This is a WebSocket push, not SSE — recorded here as the closest available edge type.",
+      "evidenceIds": ["EV-CODE-0024"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLPROTOCOL",
+      "targetId": "C-IDESHELLPROTOCOL",
+      "type": "rpc",
+      "note": "AI injection: Kernel::register_provider (:849) stores an Arc<dyn AiProvider>; complete_at_cursor (:768), edit_via_provider (:796) and chat (:835) call the first registered provider. The RPC surface cannot register a provider — dispatch returns the error \"register_provider is in-process only\" (lib.rs:1130-1133).",
+      "evidenceIds": ["EV-CODE-0025"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDECLI",
+      "targetId": "C-IDECLI",
+      "type": "depends_on",
+      "note": "ide-cli depends on the aci-emitter git dependency (rev df28c56, declared at Cargo.toml:46) and uses AciEmitter::new(Layer::It), em.build(...) and em.to_json(...) at crates/ide-cli/src/lib.rs:81, :101, :116.",
+      "evidenceIds": ["EV-CODE-0026"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELL",
+      "targetId": "C-IDESHELL",
+      "type": "depends_on",
+      "note": "ide-shell also depends on aci-emitter and emits a smoke assertion in App::help_text (crates/ide-shell/src/app.rs:510-530). The built assertion is discarded (`let _ = assertion;` at :531), so it proves the bridge is callable but produces no emitted artifact.",
+      "evidenceIds": ["EV-CODE-0027"],
+      "implemented": true
+    },
+    {
+      "sourceId": "C-IDESHELLWEB",
+      "targetId": "C-IDESHELLWEB",
+      "type": "shared_type",
+      "note": "ide-shell-web declares aci-emitter as a workspace dependency but has zero source references to it (recursive grep over crates/ide-shell-web/src). The dependency is declared and unused — unlike ide-cli and ide-shell, which really do emit.",
+      "evidenceIds": ["EV-CODE-0027"],
+      "implemented": false
+    }
+  ],
+  "keyTypes": [
+    {"name": "editcore::buffer::DocLineMgr", "path": "crates/editcore/src/buffer.rs", "startLine": 115, "endLine": 374, "summary": "The physical/logical line store: owns DocLine entries plus a caret LogicPos, and provides insert_str / remove_range / backspace / delete / extract_text as the only mutation primitives.", "evidenceId": "EV-CODE-0001"},
+    {"name": "editcore::undo::OpeBuf", "path": "crates/editcore/src/undo.rs", "startLine": 168, "endLine": 268, "summary": "Bounded undo/redo stack over OpeBlk blocks with cursor(), can_undo/can_redo, is_modified, mark_saved, push, undo, redo and JSON history serialization.", "evidenceId": "EV-CODE-0002"},
+    {"name": "editcore::cursor::LogicPos / LogicRange", "path": "crates/editcore/src/cursor.rs", "startLine": 15, "endLine": 152, "summary": "Char-based (not byte-based) position and range types — the shared currency of every position value across editcore, ide-kernel and the shells.", "evidenceId": "EV-CODE-0003"},
+    {"name": "editcore::type_config::TypeConfig / TypeRegistry", "path": "crates/editcore/src/type_config.rs", "startLine": 150, "endLine": 730, "summary": "Per-language keyword/comment/delim configuration with a line tokenizer (highlight_line) and a registry that detects a language from a file path (detect).", "evidenceId": "EV-CODE-0004"},
+    {"name": "editcore::document_io::Charset / Bom / Eol / WriteSpec", "path": "crates/editcore/src/document_io.rs", "startLine": 11, "endLine": 498, "summary": "The encoding/BOM/EOL model plus read_doc / write_doc / decode_document / encode_document / reinterpret_text — the only sanctioned file-read path in the workspace.", "evidenceId": "EV-CODE-0005"},
+    {"name": "ide_kernel::document::Document", "path": "crates/ide-kernel/src/document.rs", "startLine": 181, "endLine": 613, "summary": "Session-level single document wrapping DocLineMgr + OpeBuf: caret/selection/multi-cursor, insert/delete/backspace/newline/type_char, find-replace options, encoding and line-ending, undo/redo and export_text.", "evidenceId": "EV-CODE-0006"},
+    {"name": "ide_kernel::doc_store::DocStore", "path": "crates/ide-kernel/src/doc_store.rs", "startLine": 61, "endLine": 357, "summary": "Multi-tab document facade used identically by the web HTTP layer and the Tauri desktop commands; every method returns Option<DocView> (None = no active document).", "evidenceId": "EV-CODE-0007"},
+    {"name": "ide_kernel::text_ops::FindOptions / FindResult", "path": "crates/ide-kernel/src/text_ops.rs", "startLine": 12, "endLine": 47, "summary": "Char-position find options (case_sensitive, regex, wrap, within_selection) and the match range type; regex mode currently degrades to literal matching by design.", "evidenceId": "EV-CODE-0008"},
+    {"name": "ide_shell::app::App", "path": "crates/ide-shell/src/app.rs", "startLine": 30, "endLine": 535, "summary": "Top-level shell state: vim mode, a command InputBuffer, an optional kernel Document, command history, an AI backend and a quit flag; on_key/on_mouse are the shared entry points for TUI, web and desktop.", "evidenceId": "EV-CODE-0010"},
+    {"name": "ide_shell::render::web::WebFrame", "path": "crates/ide-shell/src/render/web.rs", "startLine": 62, "endLine": 367, "summary": "Serializable frame model (cells, styles, mode) produced by render(app) — the single render output consumed by both the web HTTP /api/frame route and the Tauri frame command.", "evidenceId": "EV-CODE-0011"},
+    {"name": "ide_shell_web::ShellState", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 51, "endLine": 196, "summary": "The web server's single-user state: Mutex<App>, Auth, Mutex<DocStore> and an optional project root; frame/key/mouse/reset/project_root_set are the state operations the route table drives.", "evidenceId": "EV-CODE-0012"},
+    {"name": "ide_shell_web::auth::Auth", "path": "crates/ide-shell-web/src/auth.rs", "startLine": 60, "endLine": 205, "summary": "Per-boot CSPRNG token with host/origin allow-listing; Auth::check runs before any request body is allocated, and origin_is_allowed drives the echo-only CORS policy.", "evidenceId": "EV-CODE-0013"},
+    {"name": "ide_shell_protocol::Buffer / Kernel", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 36, "endLine": 874, "summary": "The protocol crate's own parallel editing model: Vec<String> lines, char cursor, per-buffer undo_stack/redo_stack of BufferSnapshot, and a Kernel owning buffers, providers and event subscribers.", "evidenceId": "EV-CODE-0022"},
+    {"name": "ide_shell_protocol::AiProvider", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 310, "endLine": 316, "summary": "The AI integration trait (complete / edit / chat), async, implemented by the binary's MockProvider and injectable only in-process.", "evidenceId": "EV-CODE-0023"},
+    {"name": "ide_shell_protocol::RpcRequest / RpcResponse / RpcError", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 239, "endLine": 288, "summary": "JSON-RPC 2.0 envelope shared by stdio, HTTP POST /rpc and both WebSocket endpoints; a null id marks a notification and suppresses the reply.", "evidenceId": "EV-CODE-0024"},
+    {"name": "ide_shell_protocol::Event", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 421, "endLine": 449, "summary": "Tagged event enum (BufferOpened/Changed/Closed, ModeChanged, ActiveBufferChanged, ProviderRegistered/Unregistered) pushed to subscribers and serialized to WebSocket clients.", "evidenceId": "EV-CODE-0025"},
+    {"name": "ide_shell_desktop::ProjectRoot", "path": "crates/ide-shell-desktop/src/lib.rs", "startLine": 87, "endLine": 126, "summary": "Tauri-managed state holding the currently opened project root, which bounds every file operation performed by the list_dir / read_file / write_file commands.", "evidenceId": "EV-CODE-0018"},
+    {"name": "ide_shell_desktop::doc::DocState", "path": "crates/ide-shell-desktop/src/doc.rs", "startLine": 20, "endLine": 62, "summary": "Tauri-managed wrapper around ide_kernel::doc_store::DocStore — the desktop counterpart of the web crate's doc_api DocStore instance.", "evidenceId": "EV-CODE-0019"}
+  ],
+  "errorAndRetry": [
+    {"surface": "ide-shell-web HTTP request handling", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 314, "errorKind": "HTTP 431 Request Header Fields Too Large (header byte budget MAX_HEADER_BYTES = 16 KB)", "retryPolicy": "None — server rejects and closes the connection; client must not blindly retry.", "evidenceId": "EV-CODE-0013"},
+    {"surface": "ide-shell-web HTTP request handling", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 341, "errorKind": "AuthError from auth.check (bad token / disallowed Host / disallowed Origin), returned as the error status with a JSON {\"error\": ...} body", "retryPolicy": "None — a rejected auth is terminal; retrying with the same credentials cannot succeed.", "evidenceId": "EV-CODE-0013"},
+    {"surface": "ide-shell-web HTTP request handling", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 354, "errorKind": "HTTP 413 Payload Too Large (body byte budget MAX_BODY_BYTES = 8 MB)", "retryPolicy": "None — reject; a smaller request is required.", "evidenceId": "EV-CODE-0013"},
+    {"surface": "ide-shell-web error responses", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 235, "errorKind": "send_error_json wraps every business failure as application/json {\"error\": reason} so clients can always call .json()", "retryPolicy": "Uniform error contract — no per-endpoint retry hint is emitted.", "evidenceId": "EV-CODE-0013"},
+    {"surface": "ide-shell-web /api/doc/* responses", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 275, "errorKind": "doc_respond maps a None result to HTTP 404 with {\"ok\": false, \"error\": \"no active document\"}", "retryPolicy": "Caller must open a document first; retrying unchanged yields the same 404.", "evidenceId": "EV-CODE-0013"},
+    {"surface": "ide-shell-web path sandbox", "path": "crates/ide-shell-web/src/path_safety.rs", "startLine": 65, "errorKind": "path_within / resolve_in_project reject targets escaping the project root; write failures are prefixed \"写入失败\"", "retryPolicy": "None — sandbox violation is deterministic.", "evidenceId": "EV-CODE-0017"},
+    {"surface": "ide-shell-web server loop", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 1394, "errorKind": "READ_TIMEOUT_SECS = 15 read timeout guarding a half-open connection on the single-threaded hand-written server", "retryPolicy": "Server-side disconnect after 15s of an incomplete request; client may retry the whole request.", "evidenceId": "EV-CODE-0017"},
+    {"surface": "ide-shell-protocol JSON-RPC dispatch", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 930, "errorKind": "codes::PARSE_ERROR (-32700) on malformed JSON, codes::INVALID_REQUEST (-32600) when jsonrpc != \"2.0\"", "retryPolicy": "None — the request itself is malformed.", "evidenceId": "EV-CODE-0024"},
+    {"surface": "ide-shell-protocol JSON-RPC dispatch", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 959, "errorKind": "Error-code mapping from the error string: \"not found\" -> BUFFER_NOT_FOUND (-32001), \"method\" -> METHOD_NOT_FOUND (-32601), otherwise INVALID_PARAMS (-32602)", "retryPolicy": "String-substring based classification — brittle but explicit; no automatic retry.", "evidenceId": "EV-CODE-0024"},
+    {"surface": "ide-shell-protocol provider calls", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 806, "errorKind": "\"no provider registered\" / \"no provider\" when the provider registry is empty", "retryPolicy": "None until a provider is registered in-process.", "evidenceId": "EV-CODE-0025"},
+    {"surface": "ide-shell-protocol RPC provider registration", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 1130, "errorKind": "\"register_provider is in-process only. Use setup() to bind a provider at startup.\"", "retryPolicy": "Not retryable over RPC — provider must be bound by the embedding process.", "evidenceId": "EV-CODE-0025"},
+    {"surface": "ide-shell-protocol ProtocolError", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 918, "errorKind": "ProtocolError enum: Io(#[from] std::io::Error), Json(#[from] serde_json::Error), InvalidRequest(String)", "retryPolicy": "Declared error type for the crate; no retry policy is encoded.", "evidenceId": "EV-CODE-0022"},
+    {"surface": "ide-kernel Document editing", "path": "crates/ide-kernel/src/document.rs", "startLine": 404, "errorKind": "Mutation methods clamp the target position (clamp_pos) instead of failing, so out-of-range edits are silently corrected rather than rejected", "retryPolicy": "n/a — edits always succeed with a clamped caret.", "evidenceId": "EV-CODE-0006"},
+    {"surface": "ide-kernel DocStore facade", "path": "crates/ide-kernel/src/doc_store.rs", "startLine": 86, "errorKind": "Every mutating method returns Option<DocView>; None signals 'no active document' or 'unknown tab id'", "retryPolicy": "Caller must open/activate a tab first.", "evidenceId": "EV-CODE-0007"},
+    {"surface": "ide-shell App file IO", "path": "crates/ide-shell/src/app.rs", "startLine": 164, "errorKind": "open_file rejects files over 4 MB and non-UTF-8 content with \"读取失败 (仅支持 UTF-8)\"; save_file reports \"没有打开的文件\" / \"文档没有路径\" / \"写入失败: {e}\"", "retryPolicy": "None — the size and encoding limits are deterministic.", "evidenceId": "EV-CODE-0010"},
+    {"surface": "editcore plugin loader", "path": "crates/editcore/src/plugin.rs", "startLine": 80, "errorKind": "PluginError::WasmUnavailable when the optional 'wasm' feature is off (the workspace default)", "retryPolicy": "Not retryable at runtime — requires recompiling with the wasm feature.", "evidenceId": "EV-CODE-0005"},
+    {"surface": "editcore auto backup", "path": "crates/editcore/src/auto_backup.rs", "startLine": 145, "errorKind": "BackupError enum with Display + Error impls and a From<std::io::Error> conversion", "retryPolicy": "Declared error type; no retry policy encoded.", "evidenceId": "EV-CODE-0005"},
+    {"surface": "editcore file lock", "path": "crates/editcore/src/file_lock.rs", "startLine": 30, "errorKind": "io::Result from try_lock(target, wait) — lock contention surfaces as an io error; the optional wait duration governs the retry window", "retryPolicy": "try_lock accepts an explicit wait Duration, which is the only retry knob in the workspace.", "evidenceId": "EV-CODE-0005"},
+    {"surface": "ide-cli ACI emission", "path": "crates/ide-cli/src/lib.rs", "startLine": 101, "errorKind": "aci-emitter build validation error printed as \"validation error: {e}\" with exit code 2; a serde serialization failure prints \"serialize error: {e}\"", "retryPolicy": "None — the emitted assertion is a fixed placeholder payload.", "evidenceId": "EV-CODE-0026"}
+  ],
+  "evidence": [
+    {"id": "EV-CODE-0001", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "editcore::buffer exposes DocLine (20) and DocLineMgr (115) with real insert_str/remove_range/backspace/delete/extract_text implementations operating on char positions.", "path": "crates/editcore/src/buffer.rs", "startLine": 20, "endLine": 374, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0002", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "editcore::undo implements EOpeCode (25), Ope with apply/undo (40, 68, 94), OpeBlk (128) and OpeBuf with push/undo/redo/history_json/from_json (168-268).", "path": "crates/editcore/src/undo.rs", "startLine": 25, "endLine": 268, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0003", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "editcore::cursor defines LogicPos (15) and LogicRange (47) as char-based position types with ZERO const, compare and normalize.", "path": "crates/editcore/src/cursor.rs", "startLine": 15, "endLine": 152, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0004", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "editcore::type_config defines TokenKind (20), OutlineEntry (97), TypeConfig (150) with highlight_line (345), and TypeRegistry (456) with detect (561) and register/unregister (594, 604).", "path": "crates/editcore/src/type_config.rs", "startLine": 20, "endLine": 730, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0005", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "editcore::document_io implements detect_charset (204), decode_document (309), encode_document (332), read_doc (436), write_doc (458) and reinterpret_text (490) over the Charset/Bom/Eol model.", "path": "crates/editcore/src/document_io.rs", "startLine": 11, "endLine": 498, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0006", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_kernel::document imports editcore::buffer::DocLineMgr, editcore::cursor::{LogicPos, LogicRange} and editcore::undo::{EOpeCode, Ope, OpeBlk, OpeBuf} and implements Document (181) on top of them.", "path": "crates/ide-kernel/src/document.rs", "startLine": 13, "endLine": 613, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0007", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_kernel::doc_store::DocStore (61) implements the tabbed facade: open/active/tabs/activate/close, insert/type/newline/backspace/delete/delete_range, caret/selection, undo/redo, multi-cursor, find/find_all/replace_all, line_ending/encoding/export/mark_saved.", "path": "crates/ide-kernel/src/doc_store.rs", "startLine": 24, "endLine": 357, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0008", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_kernel::text_ops defines FindOptions (12) and FindResult (36) and matches within a single line by char position; the regex option explicitly degrades to literal matching (comment at :59).", "path": "crates/ide-kernel/src/text_ops.rs", "startLine": 12, "endLine": 47, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0009", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide-kernel-core implements only version() (29) and kernel_status() (41, returning the literal \"placeholder\"); its module docs mark the crate a Stage 3.0 placeholder pending DD-01..DD-04.", "path": "crates/ide-kernel-core/src/lib.rs", "startLine": 25, "endLine": 43, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0010", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell::App holds Option<ide_kernel::document::Document> (40); open_file (164) constructs and positions it, save_file (194) exports it via doc.export_text().", "path": "crates/ide-shell/src/app.rs", "startLine": 12, "endLine": 199, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0011", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell::render::web defines WebCell (20), WebStyle (26), WebFrame (62) and pub fn render(app) -> WebFrame (240) — the shared render for web HTTP and Tauri.", "path": "crates/ide-shell/src/render/web.rs", "startLine": 20, "endLine": 367, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0012", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_web::ShellState (51) owns Mutex<App>, auth::Auth, Mutex<doc_api::DocStore> and an optional project root; frame/key/mouse/reset/project_root_set are implemented methods on it.", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 51, "endLine": 196, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0013", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_web::auth implements Auth::from_env (76), with_token (93), token (104), check (111) and origin_is_allowed (158), with random_token (206) drawing from the OS CSPRNG.", "path": "crates/ide-shell-web/src/auth.rs", "startLine": 37, "endLine": 391, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0014", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_web::doc_api is a 20-line adapter that re-exports ide_kernel::doc_store::{DocStore, DocView, FindHit, ReplaceStat} and provides doc_pos(); the implementation lives in the kernel, not in the web crate.", "path": "crates/ide-shell-web/src/doc_api.rs", "startLine": 1, "endLine": 20, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0015", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "The web crate's route table is a match on (method, path) beginning at line 369, with arms for /api/plugin_load (370), /api/doc/* (400-668), the stateless editcore endpoints (669-808), /api/outline (809), /api/terminal_* (855-930), /api/scm_* (931-1047), /api/search (1048), the HTML pages (1138, 1190) and /api/frame, /api/event, /api/reset, /api/key, /api/mouse (1147-1232).", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 369, "endLine": 1388, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0016", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_web::ShellState::kernel_banner (189) formats ide-kernel-core version and status; the /api/kernel_banner route arm is at lib.rs:1233.", "path": "crates/ide-shell-web/src/lib.rs", "startLine": 189, "endLine": 195, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0017", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_web::path_safety implements safe_canonicalize (34), path_within (65), resolve_in_project (89), list_dir (128), read_file (153), read_file_enc (158, calling editcore read_doc at :171), write_file (187) and write_file_spec (192, calling editcore write_doc at :199), bounded by MAX_FILE_BYTES = 4 MB.", "path": "crates/ide-shell-web/src/path_safety.rs", "startLine": 15, "endLine": 306, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0018", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "The Tauri command table is registered via tauri::generate_handler![...] at ide-shell-desktop/src/lib.rs:593-658, listing 65 commands; the desktop crate imports ide_shell::{App, AppConfig, Mode} and ide_shell::render::web at :76-77.", "path": "crates/ide-shell-desktop/src/lib.rs", "startLine": 76, "endLine": 658, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0019", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_desktop::doc implements 26 #[tauri::command] functions (doc_active at :65 through doc_mark_saved at :270) over ide_kernel::doc_store::DocStore, imported at :18.", "path": "crates/ide-shell-desktop/src/doc.rs", "startLine": 18, "endLine": 273, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0020", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "The desktop crate calls editcore directly from its stateless commands: edit_cmd::run (:736), bracket::find_pair (:744), bookmark::run (:753), search_ops::run (:761), history::run (:769), nav::step (:777), edit_ops::transform_text (:794), transform_lines (:808), migemo::expand_pattern (:821), document_io::reinterpret_text (:726) and theme_luminance::apply_backdrop_sample (:54).", "path": "crates/ide-shell-desktop/src/lib.rs", "startLine": 723, "endLine": 822, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0021", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_desktop::backdrop::sample_backdrop_luma samples the real backdrop luminance of a Tauri webview window, feeding editcore::theme_luminance::apply_backdrop_sample for transparent-theme light/dark decision.", "path": "crates/ide-shell-desktop/src/backdrop.rs", "startLine": 15, "endLine": 54, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0022", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide-shell-protocol implements its own Buffer (36) and Kernel (407) with per-buffer undo_stack/redo_stack of BufferSnapshot (196-235) and a 21-method API surface listed in KernelInfo::current (886-915).", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 36, "endLine": 874, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0023", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell_protocol::AiProvider is declared at line 310-316 with async complete/edit/chat; the only implementation in the workspace is MockProvider in the server binary (line 248-289).", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 310, "endLine": 316, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0024", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "The protocol server binary registers the axum routes /healthz (124), /info (125), POST /rpc (126), GET /ws (127), GET /rpcws (128) and drives Kernel::handle_rpc from the stdio loop (106), the HTTP handler (152), the one-way WS (189) and the bidirectional WS (231).", "path": "crates/ide-shell-protocol/src/bin/ide-shell-protocol-server.rs", "startLine": 106, "endLine": 243, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0025", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "Kernel::register_provider (849) stores providers in-process; complete_at_cursor (768), edit_via_provider (796) and chat (835) call the first registered provider. The RPC dispatch arm for register_provider (1130-1133) deliberately returns an in-process-only error.", "path": "crates/ide-shell-protocol/src/lib.rs", "startLine": 768, "endLine": 867, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0026", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide-cli::run dispatches on argv[1] with arms --version/-V (60), --aci-emit (64), --help/-h (65) and an unknown-flag fallback (69) exiting with code 2; run_aci_emit (80) uses aci_emitter::AciEmitter::new(Layer::It) and em.build(...).", "path": "crates/ide-cli/src/lib.rs", "startLine": 53, "endLine": 126, "revision": "76c4e8f"},
+    {"id": "EV-CODE-0027", "kind": "SourceCode", "status": "Implemented", "sourceRevisionId": "REV-IDE1", "summary": "ide_shell::App::help_text emits an aci-emitter assertion (AciEmitter::new(Layer::St) at :510, em.build at :512) but discards the result with `let _ = assertion;` at :531 — the bridge call is real, the emitted artifact is not persisted.", "path": "crates/ide-shell/src/app.rs", "startLine": 508, "endLine": 533, "revision": "76c4e8f"}
+  ],
+  "notes": [
+    "Unknown: the exact count of total #[tauri::command] functions in ide-shell-desktop. The generate_handler! table lists 65 entries (lib.rs:593-658) but grep finds additional #[tauri::command] attributes in scm.rs, terminal.rs, search.rs, outline.rs and plugin.rs that are all referenced in that table; a per-file command count was not independently reconciled.",
+    "Unknown: whether the ide-shell-web HTTP route table and the ide-shell-desktop Tauri command table are intentionally kept in sync. Both expose doc_*/scm_*/terminal_* equivalents, but no test or generation script proving parity was located in the read scope.",
+    "Not implemented / stub: editcore::plugin::load_and_run returns PluginError::WasmUnavailable unless the optional 'wasm' feature is enabled (default is off). Even with the feature on, the implementation returns the literal string \"WASM result\" (plugin.rs:77) rather than the plugin's actual output — the WASM plugin path is a placeholder.",
+    "Not implemented / stub: ide-kernel-core is an explicit placeholder — kernel_status() returns the constant \"placeholder\" (lib.rs:42) and the crate has zero dependencies. It is only ever used to build a banner string.",
+    "Not implemented / stub: ide-cli is an explicit placeholder (its own module doc says so). It has only three flags and declares no dependency on any workspace crate, so it cannot currently reach the kernel or the shells.",
+    "Not implemented / stub: ide-shell::ai::PlaceholderAi is the only AiBackend implementation in the workspace; there is no real model integration behind ide_shell's :ai command.",
+    "Not implemented / stub: ide-shell-protocol's `write` command (`:w`) returns {\"saved\": true} without writing anything to disk (lib.rs:718), and the `Mode::Command` Enter key handler has an empty body with the comment \"server 处理命令\" (lib.rs:660-661).",
+    "Not implemented / stub: in ide-shell-protocol's WS handler, inbound RPC responses are parsed but deliberately not sent back (lib.rs:189-191, comment \"简化: 不回 — 单向 RPC. 完整双向用 /rpcws\"); the bidirectional path is /rpcws.",
+    "Declared-but-unused dependency: ide-shell-web declares aci-emitter in Cargo.toml but has zero source references to it. Only ide-cli and ide-shell actually emit ACI assertions.",
+    "Declared-but-unused dependency: ide-shell-protocol declares ide-kernel-core in Cargo.toml but has zero source references to it.",
+    "Architectural split: two independent editing semantics exist. ide-kernel (over editcore's DocLineMgr/OpeBuf, char-based) backs the web and desktop product path; ide-shell-protocol implements its own Buffer over Vec<String> lines with snapshot-based undo and is used by none of the product shells. The two are not reconciled in the code read.",
+    "Architectural split: the web and desktop crates call editcore's stateless command modules directly (search_ops, history, edit_cmd, nav, bracket, bookmark, edit_ops) in addition to going through ide-kernel's DocStore. The 'single source of truth' claim in ide-kernel's docs therefore applies only to the stateful document path, not to the stateless command endpoints.",
+    "The editcore crate's own module doc (lib.rs:6) claims 'no regex crate', but Cargo.toml declares regex = \"1\" and search_ops uses it. The doc comment is stale.",
+    "The web server is a hand-written single-threaded HTTP/1.1 implementation (no axum), with a 15s read timeout, a 16 KB header cap and an 8 MB body cap; the protocol server uses axum instead. The two HTTP servers have completely different routing models (match on (method, path) vs axum Router).",
+    "IDE_SHELL_WEB_NO_AUTH (auth.rs:69) is the documented escape hatch that disables authentication; any deployment using it exposes /api/terminal_* which is an RCE surface.",
+    "All cargo build/test commands were deliberately NOT run per task scope, so 'Implemented' in this file means 'a real implementation body exists at the cited lines', not 'the crate compiles'.",
+    "The worktree at capture time contained many untracked files with shell-mangled names (e.g. '99', 'bar', '(0', 'len)') at the repository root, plus untracked .atlas-work/ and .serena/ directories. These are untracked and are not part of REV-IDE1."
+  ]
+}

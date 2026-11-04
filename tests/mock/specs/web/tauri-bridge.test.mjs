@@ -9,8 +9,8 @@ test('Tauri: Grep 条件被包成 {options}, 裸数组结果被正确读取 (不
     assert.equal(await page.evaluate(() => inTauri), true);
     await page.locator('#ed-content').click();
     await press('Control+g'); await page.fill('#grep-input', 'hello'); await press('Enter');
-    await page.waitForSelector('#grep-results .grep-hit', { timeout: 8000 }).catch(() => {});
-    const text = await page.evaluate(() => document.getElementById('grep-results') ? document.getElementById('grep-results').innerText : document.getElementById('md-body').innerText);
+    await page.waitForFunction(() => { const t = getActiveTab(); return t && t.grep && t.lines.some((l) => /hello/.test(l) && /\(\d+,\d+\): /.test(l)); }, null, { timeout: 8000 }).catch(() => {});
+    const text = await page.evaluate(() => { const t = getActiveTab(); return t && t.grep ? t.lines.join('\n') : document.getElementById('md-body').innerText; });
     assert.match(text, /hello/);
     assert.doesNotMatch(text, /undefined/);
     const ipc = await m.tauri.ipc();
@@ -23,7 +23,7 @@ test('Tauri: invoke 失败 reject 字符串时, 界面显示真实原因而不�
     // 不打开项目 → 后端报「尚未打开项目」(字符串 reject)
     await page.locator('#ed-content').click();
     await press('Control+g'); await page.fill('#grep-input', 'x'); await press('Enter'); await page.waitForTimeout(1200);
-    const status = await page.evaluate(() => (document.getElementById('grep-status') || document.getElementById('md-body')).innerText);
+    const status = await page.evaluate(() => { const t = getActiveTab(); return (t && t.grep ? t.lines.join('\n') + '\n' : '') + document.getElementById('s-tip').textContent + '\n' + ((document.getElementById('md-body') || {}).innerText || ''); });
     assert.doesNotMatch(status, /undefined/);
   }));
 

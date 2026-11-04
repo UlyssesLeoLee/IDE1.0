@@ -40,7 +40,7 @@ use ide_shell::{App, AppConfig};
 use serde::{Deserialize, Serialize};
 
 use ide_kernel::document::LineEnding;
-use path_safety::{list_dir, read_file_enc, write_file_spec, DirEntry, FileContent};
+use path_safety::{list_dir, read_file_enc_max, stat_file, write_file_spec, DirEntry, FileContent};
 
 /// 单用户 demo 状态。
 /// 请求头大小上限 (防 header 放大攻击).
@@ -711,6 +711,61 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 文档内查找 / 置換 (含正文镜像); 无状态纯计算
             respond_pure::<editcore::search_ops::SearchReq>(stream, &body, "查找请求无效", editcore::pure_api::search_text);
         }
+        ("POST", "/api/plugins") => {
+            // 插件: 列表 / 读文件 / 启停 / 卸载 / 检查 / 安装更新 / 冲突仲裁 (网络类只在用户点按钮时才会被调用)
+            respond_pure::<editcore::pure_api::PluginReq>(stream, &body, "插件请求无效", editcore::pure_api::plugins);
+        }
+        ("POST", "/api/exec_cmd") => {
+            // 外部命令执行并捕获输出 (Sakura 的 外部コマンド実行): 在已打开的项目根下运行, 有超时和输出上限
+            let Some(root) = state.project_root_get() else {
+                send_error_json(stream, "400 Bad Request", "尚未打开项目");
+                return;
+            };
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let command = req.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            let stdin = req.get("stdin").and_then(|v| v.as_str());
+            let timeout = req.get("timeout_ms").and_then(|v| v.as_u64());
+            match editcore::exec_cmd::run(&root, command, stdin, timeout) {
+                Ok(out) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&out).unwrap_or_default()),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
+            }
+        }
+        ("POST", "/api/settings") => {
+            // 设置落盘: 全部 / 设置 / 删除 / 导入 / 导出 (前端把 ide10.* 的本地设置镜像到一个 JSON 文件)
+            respond_pure::<editcore::pure_api::SettingsReq>(stream, &body, "设置请求无效", editcore::pure_api::settings);
+        }
+        ("POST", "/api/macro_record") => {
+            respond_pure::<editcore::pure_api::MacroRecordReq>(stream, &body, "宏录制请求无效", |r| Ok(editcore::pure_api::macro_record(r)));
+        }
+        ("POST", "/api/macro_plan") => {
+            respond_pure::<editcore::pure_api::MacroPlanReq>(stream, &body, "宏请求无效", editcore::pure_api::macro_plan);
+        }
+        ("POST", "/api/grep_replace") => {
+            // Grep 置换: 检索条件同 /api/search, 另带 replacement / backup / skip_paths; 按原编码 / BOM / 逐行换行原子写回
+            // 写操作: 只在已打开的项目根内 (和 write_file 同一道闸), 且不允许请求自己放开"搜索项目外"
+            let Some(root) = state.project_root_get() else {
+                send_error_json(stream, "400 Bad Request", "尚未打开项目");
+                return;
+            };
+            match serde_json::from_slice::<editcore::grep_engine::ReplaceOptions>(&body) {
+                Ok(mut opts) => {
+                    opts.search.allow_outside_root = Some(false);
+                    match editcore::grep_engine::grep_replace(&root, &opts) {
+                        Ok(rep) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&rep).unwrap_or_default()),
+                        Err(e) => send_error_json(stream, "400 Bad Request", &e),
+                    }
+                }
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("置换请求无效: {e}")),
+            }
+        }
+        ("POST", "/api/agent") => {
+            // 智能功能 API: 工具表 / 调用工具 (写类工具只产出补丁提案); 没人调用就零开销
+            respond_pure::<editcore::pure_api::AgentReq>(stream, &body, "Agent 请求无效", editcore::pure_api::agent);
+        }
+        ("POST", "/api/md_render") => {
+            // Markdown 预览: 文本 -> 已转义 HTML (只读)
+            respond_pure::<editcore::pure_api::MdRenderReq>(stream, &body, "Markdown 预览请求无效", |r| Ok(editcore::pure_api::md_render(r)));
+        }
         ("POST", "/api/history") => {
             // 撤销 / 重做栈; 按标签页 id 分开的进程内登记
             respond_pure::<editcore::history::HistReq>(stream, &body, "历史请求无效", editcore::pure_api::history);
@@ -780,6 +835,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         ("POST", "/api/outline") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let file_path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            // 带了正文 (未保存的修改 / 无标题文档): 直接按正文分析, 不读盘 (WBS-02 5.10)
+            if let Some(text) = req.get("text").and_then(|v| v.as_str()) {
+                let result = outline::outline_file(file_path, text);
+                send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&result).unwrap_or_default());
+                return;
+            }
             // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug
             let root = state.project_root_get();
             let root_path = match root {
@@ -1019,92 +1080,20 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             }
         },
         ("POST", "/api/search") => {
-            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let pattern = req
-                .get("pattern")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let case_sensitive = req.get("case_sensitive").and_then(|v| v.as_bool());
-            let regex = req.get("regex").and_then(|v| v.as_bool());
-            let max_results = req
-                .get("max_results")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as usize);
-            let include_globs = req
-                .get("include_globs")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                });
-            // 排除项原来硬编码 None —— 前端 Sakura 式文件模式解析出来的 !glob / !dir/**
-            // 全被静默丢弃, 「#target 排除子文件夹」这类设置完全没生效.
-            let exclude_globs = req
-                .get("exclude_globs")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                });
-            // 取字符串数组的通用闭包 —— 新增的 フォルダー / 除外ファイル / 除外フォルダー
-            // 三栏都走它 (Sakura 的五个输入框对应五个字段).
-            let strs = |key: &str| -> Option<Vec<String>> {
-                req.get(key)
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|x| x.as_str().map(String::from))
-                            .collect::<Vec<_>>()
-                    })
-            };
-            let opts = search::SearchOptions {
-                pattern,
-                case_sensitive,
-                regex,
-                whole_word: req.get("whole_word").and_then(|v| v.as_bool()),
-                include_globs,
-                exclude_globs,
-                include_files: strs("include_files"),
-                exclude_files: strs("exclude_files"),
-                exclude_folders: strs("exclude_folders"),
-                // フォルダー 栏: 空/缺省 = 整个项目.
-                // allow_outside_root = true 时放行项目根之外的路径 (全盘/跨盘搜索).
-                search_folders: strs("search_folders"),
-                allow_outside_root: req.get("allow_outside_root").and_then(|v| v.as_bool()),
-                subfolders: req.get("subfolders").and_then(|v| v.as_bool()),
-                max_results,
-            };
-            let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-            // search 已是纯 Rust 内置实现, 不再 shell out 到外部 rg;
-            // 或_else 只是兜底 IO 错误 (如根目录不可读), 不再是「rg 缺失」的降级路径.
-            let result = search::search(&cwd, &opts);
-            match result {
-                Ok(results) => {
-                    let resp = serde_json::json!({ "results": results });
-                    send_response(
-                        stream,
-                        "200 OK",
-                        "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default(),
-                    );
+            // 项目内检索 / Grep: 请求直接反序列化成 SearchOptions (含 charset 等可选字段, 不再手工逐字段取)
+            match serde_json::from_slice::<search::SearchOptions>(&body) {
+                Ok(opts) => {
+                    let cwd = std::env::var("IDE_SHELL_WEB_TEST_ROOT")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+                    match search::search(&cwd, &opts) {
+                        Ok(results) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({ "results": results })).unwrap_or_default()),
+                        // 搜索条件非法 (例如「フォルダー」栏全部越出项目根) 必须报错, 不能回 200 + 空结果:
+                        // 那样前端只看到「无匹配」, 用户不知道自己写的目录被拒了。
+                        Err(e) => send_response(stream, "400 Bad Request", "application/json", &serde_json::to_vec(&serde_json::json!({ "results": [], "error": e })).unwrap_or_default()),
+                    }
                 }
-                Err(e) => {
-                    // 搜索条件非法 (例如「フォルダー」栏全部越出项目根) 必须报错,
-                    // 不能回 200 + 空结果 —— 那样前端只看到「无匹配」, 用户完全不知道
-                    // 自己写的目录被拒了。错误走 400 + error 字段。
-                    let resp = serde_json::json!({ "results": [], "error": e });
-                    send_response(
-                        stream,
-                        "400 Bad Request",
-                        "application/json",
-                        &serde_json::to_vec(&resp).unwrap_or_default(),
-                    );
-                }
+                Err(e) => send_error_json(stream, "400 Bad Request", &format!("搜索请求无效: {e}")),
             }
         }
 
@@ -1353,7 +1342,8 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let enc = req.get("encoding").and_then(|v| v.as_str());
-            let resp: Result<FileContent, String> = read_file_enc(&root, path, enc);
+            let max = req.get("max_bytes").and_then(|v| v.as_u64());
+            let resp: Result<FileContent, String> = read_file_enc_max(&root, path, enc, max);
             match resp {
                 Ok(fc) => send_response(
                     stream,
@@ -1361,6 +1351,18 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                     "application/json",
                     &serde_json::to_vec(&fc).unwrap_or_default(),
                 ),
+                Err(e) => send_error_json(stream, "400 Bad Request", &e),
+            }
+        }
+        ("POST", "/api/stat_file") => {
+            // 文件指纹 (外部改动检测)
+            let Some(root) = state.project_root_get() else {
+                send_error_json(stream, "400 Bad Request", "尚未打开项目");
+                return;
+            };
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            match stat_file(&root, req.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
+                Ok(s) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&s).unwrap_or_default()),
                 Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
@@ -1380,6 +1382,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 bom: req.get("bom").and_then(|v| v.as_str()).map(String::from),
                 eol: req.get("eol").and_then(|v| v.as_str()).map(String::from),
                 force: req.get("force").and_then(|v| v.as_bool()).unwrap_or(false),
+                backup: req.get("backup").and_then(|v| v.as_bool()).unwrap_or(false),
             };
             let resp: Result<usize, String> = write_file_spec(&root, path, content, &spec);
             match resp {

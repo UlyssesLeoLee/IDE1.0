@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MSIX 清单模板 (Microsoft Store)。{{...}} 由 build-msix.ps1 替换; Identity 三项来自 Partner Center 里预留应用名之后给出的值 -->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap rescap">
+  <Identity Name="{{IDENTITY_NAME}}" Publisher="{{PUBLISHER}}" Version="{{VERSION}}" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>IDE1.0</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us" />
+    <Resource Language="zh-cn" />
+    <Resource Language="ja-jp" />
+  </Resources>
+  <Applications>
+    <Application Id="IDE10" Executable="ide-shell-desktop.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="IDE1.0"
+                          Description="轻量、快速、对标 Sakura Editor 的编辑器 (Rust / Tauri): Markdown 工具、沙箱插件、可选的 AI 对话"
+                          BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png"
+                          Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <!-- 桌面程序 (Tauri) 以完全信任运行; 商店允许, 需要在提交时说明理由: 编辑器要读写用户选择的任意文件 / 启动终端 -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
