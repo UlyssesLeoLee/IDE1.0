@@ -91,6 +91,8 @@ pub struct App {
     max_cols: usize,
     trace: Trace,
     first_frame: bool,
+    /// 隐藏创建的窗口是否已经显示 (第一帧画完后显示)
+    shown: bool,
     confirm_exit: bool,
     /// 输入法正在组字的文字 (还没提交): 画在光标处, 不进文档
     preedit: String,
@@ -155,7 +157,7 @@ impl App {
         let mut app = App {
             docs: vec![], active: 0, next_id: 1, untitled_n: 0,
             find: Find::new(),
-            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), ai: Default::default(), print_ui: Default::default(),
+            dark: true, font_px: 15.0, tab: 4, highlight: true, recent: vec![], saved: Settings::default(), registry: TypeRegistry::default_registry(), side: Sidebar::new(), term: Terminal::new(), goto_open: false, was_focused: true, goto_text: String::new(), theme_id: String::new(), theme_visuals: None, theme_vars: None, tc: crate::view::ThemeColors::builtin(true), split_on: false, panes: Default::default(),   pane_keys: true, term_stdin: false, term_replace: false, md_preview: false, wrap: false, goal_x: None, inbox, prefs: None, persist: true, cfg: Settings::default(), applied_font: String::new(), geom_now: None, maximized_now: false, wrap_cache: None, max_cols: 80, trace, first_frame: true, shown: false, confirm_exit: false, preedit: String::new(), center_once: false, grep_doc: None, jump_req: None, plug: Default::default(), editor_ids: vec![], jump: JumpHist::default(), props: None, bm_open: false, fullscreen: false, topmost: false, recent_dirs: vec![], positions: vec![], bracket_cache: None, last_active: usize::MAX, md_cache: Default::default(), md_parsed: None, md_scroll_to: None, diff: None, diff_list_open: false, diff_pick: false, cmdui: CmdUi::default(), pal_plugins: vec![], about_open: false, exit_session: None, tools: Default::default(), tags: Default::default(), text_drag: None, sys: Default::default(), md10: Default::default(), gh: Default::default(), ai: Default::default(), print_ui: Default::default(),
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -2730,6 +2732,12 @@ impl App {
         self.window_grips(ctx);
         self.persist_if_changed();
         ctx.request_repaint_after(std::time::Duration::from_millis(550)); // 光标闪烁
+        if !self.shown {
+            // 窗口创建时是隐藏的 (见 main.rs): 第一帧画完才显示, 用户永远看不到未绘制的空白 / 白闪窗口
+            self.shown = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            self.trace.mark("window shown");
+        }
     }
 }
 

@@ -109,10 +109,12 @@ fn main() -> eframe::Result<()> {
     let st = settings::Settings::load();
     trace.mark("settings loaded");
     let font_file = st.font_family.clone();
+    // 字体文件 (几十 MB) 在后台读, 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
+    let fonts_job = fonts::prefetch(&font_file);
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
-    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0])
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_visible(false).with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0])
         .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
     if let Some(icon) = appicon::window_icon() { viewport = viewport.with_icon(std::sync::Arc::new(icon)); }
     if let Some(g) = st.view.geom {
@@ -145,7 +147,10 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             trace.mark("window + GL context ready");
-            fonts::install(&cc.egui_ctx, &font_file);
+            match fonts_job.map(|h| h.join()) {
+                Some(Ok(loaded)) => fonts::install_loaded(&cc.egui_ctx, loaded),
+                _ => fonts::install(&cc.egui_ctx, &font_file), // 线程没起来 / 读取线程 panic: 同步读
+            }
             trace.mark("fonts installed");
             #[cfg(windows)]
             if blur {

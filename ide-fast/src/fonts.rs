@@ -37,33 +37,55 @@ fn is_font_file(name: &str) -> bool {
     l.ends_with(".ttf") || l.ends_with(".otf")
 }
 
-/// `editor_file` = 编辑器字体的文件名 (空 = 默认等宽); 读不到文件就当没选
-pub fn install(ctx: &egui::Context, editor_file: &str) {
-    let mut defs = FontDefinitions::default();
+/// 已从磁盘读出的字体字节: (CJK fallback 的 (文件名, TTC 序号, 字节), 编辑器字体字节)
+pub struct Loaded {
+    fallbacks: Vec<(&'static str, u32, Vec<u8>)>,
+    editor: Option<Vec<u8>>,
+}
+
+/// 读磁盘上的字体文件 (几十 MB, 冷缓存时是启动里最慢的一段 I/O): 和窗口 / OpenGL 初始化并行, 在后台线程里跑
+pub fn load(editor_file: &str) -> Loaded {
     let dir = fonts_dir();
-    let mut added = 0;
+    let mut fallbacks = vec![];
     for (file, index) in CANDIDATES {
         let Ok(bytes) = std::fs::read(dir.join(file)) else { continue };
+        fallbacks.push((*file, *index, bytes));
+        if fallbacks.len() >= 2 {
+            break; // 两个就够覆盖中日文; 再多只会拖慢启动
+        }
+    }
+    // 文件名只取最后一段, 免得设置文件里写个 ..\ 去读别处的文件
+    let safe = std::path::Path::new(editor_file).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let editor = if !safe.is_empty() && is_font_file(&safe) { std::fs::read(dir.join(&safe)).ok() } else { None };
+    Loaded { fallbacks, editor }
+}
+
+/// 后台读字体; `install_loaded` 之前 join。线程起不来 (几乎不可能) 就返回 None, 调用方退回同步读取
+pub fn prefetch(editor_file: &str) -> Option<std::thread::JoinHandle<Loaded>> {
+    let f = editor_file.to_string();
+    std::thread::Builder::new().name("font-prefetch".into()).spawn(move || load(&f)).ok()
+}
+
+/// `editor_file` = 编辑器字体的文件名 (空 = 默认等宽); 读不到文件就当没选
+pub fn install(ctx: &egui::Context, editor_file: &str) {
+    install_loaded(ctx, load(editor_file));
+}
+
+pub fn install_loaded(ctx: &egui::Context, loaded: Loaded) {
+    let mut defs = FontDefinitions::default();
+    for (file, index, bytes) in loaded.fallbacks {
         let name = format!("sys-{file}");
         let mut data = FontData::from_owned(bytes);
-        data.index = *index;
+        data.index = index;
         defs.font_data.insert(name.clone(), Arc::new(data));
         for fam in [FontFamily::Monospace, FontFamily::Proportional] {
             defs.families.entry(fam).or_default().push(name.clone());
         }
-        added += 1;
-        if added >= 2 {
-            break; // 两个就够覆盖中日文; 再多只会拖慢启动
-        }
     }
     let mut editor: Vec<String> = vec![];
-    // 文件名只取最后一段, 免得设置文件里写个 ..\ 去读别处的文件
-    let safe = std::path::Path::new(editor_file).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    if !safe.is_empty() && is_font_file(&safe) {
-        if let Ok(bytes) = std::fs::read(dir.join(&safe)) {
-            defs.font_data.insert("editor-font".into(), Arc::new(FontData::from_owned(bytes)));
-            editor.push("editor-font".into());
-        }
+    if let Some(bytes) = loaded.editor {
+        defs.font_data.insert("editor-font".into(), Arc::new(FontData::from_owned(bytes)));
+        editor.push("editor-font".into());
     }
     editor.extend(defs.families.get(&FontFamily::Monospace).cloned().unwrap_or_default());
     defs.families.insert(editor_family(), editor);

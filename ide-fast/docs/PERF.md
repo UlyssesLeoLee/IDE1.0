@@ -67,3 +67,21 @@ eframe 没有在这两步之间暴露钩子, 无法再细分窗口创建和 GL �
 - 扫描进程加载的 77 个模块, 含这句话的只有 `C:\WINDOWS\system32\SogouPY.ime` 和 `SogouTSF.ime` (搜狗拼音输入法, 窗口一建立就被注入并加载自己的皮肤 PNG)。
 - 发行版是 GUI 子系统, 没有控制台, 这些输出看不到; 只有重定向 stderr 时才会出现。
 要让它消失只能对窗口关闭输入法 (`with_ime_allowed(false)`), 那样中日文输入就废了, 所以不改。
+
+## 优化日志
+
+每步 N=10 冷启动 (`perf.ps1`), 与基线 exe 交替跑两轮取一致的结果 (机器噪声约 ±15 ms)。
+
+### 步骤 1: 字体后台读取 + 窗口先隐藏、首帧后显示 (perf(ide-fast): ...)
+
+- `fonts::prefetch`: 设置读出后立刻在线程里读 CJK fallback / 编辑器字体文件 (几十 MB), 与窗口 + OpenGL 创建 (约 230 ms) 并行; 创建回调里只 join + `set_fonts`。
+  `window + GL ready -> fonts installed` 从 约 10 ms 降到 0.2 ms。冷磁盘缓存时收益更大 (读文件本来在关键路径上)。
+- 窗口以 `with_visible(false)` 创建, `ui_main` 第一帧画完后 `ViewportCommand::Visible(true)`: 用户看不到未绘制的空白窗口。新追踪点 `window shown`。
+- 结果 (两轮): 首帧中位数 258.0 / 258.2 -> 236.8 / 245.0 ms (约 -5% ~ -8%); 外部墙钟 299 / 313.6 -> 285.2 / 284.5 ms。
+- 内存 / 线程 / 空闲 CPU 不变 (134.8 MB, 17 线程, 0 %)。
+
+### 试了没采用: 发行配置 lto="fat" + strip + opt-level=3
+
+- 完整重编 5 分 52 秒 (thin 约 3 分钟量级), exe 16.5 MB -> 15.8 MB (-4.2%); 启动首帧 256 -> 258.5 ms (噪声内), 空闲内存 / 线程 / CPU 无变化。
+  启动 95% 在驱动 / winit / GL 里, 我们的代码在其中不起作用 -> 不值得更慢的构建, 已还原。
+- `panic=abort` 没试: 后台线程 (grep / AI / curl / 字体预读) 现在 panic 只会让那个线程结束, 改 abort 会让整个编辑器直接崩溃并丢掉未保存内容, 属于功能降级。保持 unwind。
