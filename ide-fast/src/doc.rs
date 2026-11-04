@@ -563,7 +563,7 @@ impl Doc {
             self.anchor = Some([r0, 0]);
             self.cursor = [r1, end];
         }
-        self.tip = format!("SPACE {}缩进 {} 行", if reverse { "反" } else { "" }, r1 - r0 + 1);
+        self.tip = format!("SPACE {} {} 行", if reverse { "反缩进" } else { "缩进" }, r1 - r0 + 1);
     }
 
     /// 下一个 / 上一个函数 (按大纲条目所在行, 到头绕回): 宏里的 `S_FuncListNext` 用; 没有函数标记返回 false

@@ -1,0 +1,76 @@
+IDE1.0 Fast Edition — Built-in Manual
+=====================================
+
+[1] Introduction
+----------------
+The fast edition is a native Rust (egui) text editor in the Sakura style: no WebView2, fast to start, small in memory.
+Editing / movement / search behave like the desktop edition because they come from the same core (editcore), so key semantics match Sakura.
+Menus, shortcuts, the command palette, the toolbar, macros and key settings all use one command table; the "Command List" at the end of this manual is that table.
+
+[2] Finding a command
+---------------------
+Command palette: type a few letters to fuzzy-find a command and run it (the "Command Palette" row in the Command List shows its key).
+Key list: lists every command that has a key.
+Key settings (Help menu): change the key of any command; if the new key is taken, you are asked whether to take it over.
+Keyword help: "Keyword Help Search" in the Help menu looks a word up in this manual; with the cursor on a word, that word is filled in for you.
+Auto-show keyword help: when on, with the cursor resting on a word, the status bar tip shows the first line in this manual that mentions it.
+
+[3] Tabs and windows
+--------------------
+One window holds many tabs. The Window menu has: previous / next tab, move tab, close others / left / right, tab groups.
+Window List: lists every tab (● = unsaved changes, ▶ = current tab); type to filter, Enter to switch.
+Tab groups: tabs are grouped by color; "Move to New Group", "Move to Next / Previous Group", "Switch Group", "Close Group".
+Split window: left-right, top-bottom, four-way.
+No cascade / tile: this is a single-window, many-tab app; the window list and the tab bar already cover those uses.
+
+[4] Selecting and editing
+-------------------------
+Column selection: drag with Alt held; typing, Backspace, Delete, copy and cut then act on the whole rectangle.
+Range selection: once started, the arrow keys extend the selection; run the same command again to end it.
+Selection transforms: case, full / half width, Tab <-> spaces, SPACE indent, sort, de-duplicate, trim leading / trailing whitespace.
+Code conversion: convert the selection between SJIS / EUC / JIS / UTF-7 / UTF-8 / Unicode.
+Insert: date, time, stamp, control characters, recent file paths, recent folder paths.
+
+[5] Find, replace and Grep
+--------------------------
+Find bar: case, regex, whole word, wrap-around, highlight all; results show which match out of how many.
+Incremental search: jumps to a match as you type; regex or Migemo are available.
+Grep: search inside folders; the results open as a tab you can jump from.
+Document compare: lines up two tabs line by line, with previous / next difference.
+Tag jump (tags): jump to a definition through a tags file made by ctags, and jump back.
+Go to definition: finds the definition line of the identifier at the cursor in this file.
+Code completion: the identifier left of the cursor is the prefix; candidates come from keywords, built-in names and identifiers in the file.
+Jump history: positions before and after big jumps are remembered, so you can go forward and back.
+
+[6] Bookmarks and folding
+-------------------------
+Bookmarks: set / clear, previous / next, bookmark list.
+Folding: fold and unfold by indentation.
+
+[7] Macros
+----------
+Key macros: record a series of keystrokes and play it back; it can be saved to a file and loaded again.
+Sakura macros (.mac): run the current document or a .mac file; a recorded key macro can be converted to .mac.
+Macro functions (starting with S_) end in one of three ways: run directly on the document, handed to the app (save, open, find, split, ...), or explicitly refused with a reason.
+The whole macro is checked first; if one step cannot run, no step runs.
+Macro slots: 20 slots, each holding a Sakura macro or a PPA script, and each can be bound to a key.
+
+[8] Files and encodings
+-----------------------
+On open, the encoding, BOM and line endings are detected automatically; click the encoding or line ending in the status bar to change them.
+"Reopen with Character Set" reinterprets this file with the encoding you pick.
+Saving is atomic and never silently replaces characters that cannot be represented.
+Auto backup: documents with unsaved changes are written to the backup folder periodically; you can also back up immediately.
+
+[9] Settings
+------------
+Preferences: General, Edit, Files, Font, Toolbar, Macro, and other pages.
+Toolbar: add any command, reorder, add separators, restore the default.
+Keys: the key settings page beside the command palette.
+Theme and UI language: 中文 / 日本語 / English.
+
+[10] Not ported
+---------------
+Reconversion (IME): egui has no way to trigger TSF reconversion.
+JavaScript macros, Vim mode, SQL*Plus: left out by decision.
+External help files (.hlp / .chm): this manual replaces them.

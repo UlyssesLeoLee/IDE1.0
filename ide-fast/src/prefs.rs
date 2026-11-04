@@ -238,7 +238,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.small(tr("pf.macro-hint"));
             ui.add_space(4.0);
             for (i, s) in d.macro_slots.iter_mut().enumerate() {
-                let title = if s.is_empty() { format!("{}  {}", i + 1, tr("pf.macro-empty")) } else { format!("{}  {}", i + 1, if s.name.is_empty() { "(无名)" } else { s.name.as_str() }) };
+                let title = if s.is_empty() { format!("{}  {}", i + 1, tr("pf.macro-empty")) } else { format!("{}  {}", i + 1, if s.name.is_empty() { crate::msgtr::msg("(无名)") } else { std::borrow::Cow::Borrowed(s.name.as_str()) }) };
                 egui::CollapsingHeader::new(title).id_salt(("pf-macro", i)).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(tr("pf.macro-name"));

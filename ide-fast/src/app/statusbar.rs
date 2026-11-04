@@ -122,7 +122,7 @@ impl App {
                 if d.sel_mode { item(ui, on, egui::RichText::new(trz("范围选择")).color(Color32::from_rgb(255, 200, 90))); }
                 if !d.extra.is_empty() { item(ui, on, egui::RichText::new(trf("st.cursors", &[&(d.extra.len() + 1).to_string()]))); }
                 // 文件名 (最宽 40%, 超出 …)
-                let name = if welcome { "无活动".to_string() } else { format!("{}{}", if d.dirty { "● " } else { "" }, d.name) };
+                let name = if welcome { crate::msgtr::msg("无活动").into_owned() } else { format!("{}{}", if d.dirty { "● " } else { "" }, crate::msgtr::msg(&d.name)) };
                 ui.add_space(8.0);
                 let w = (total_w * 0.4).min(text_w(ui, &name) + 1.0);
                 ui.allocate_ui_with_layout(Vec2::new(w, ui.available_height()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
