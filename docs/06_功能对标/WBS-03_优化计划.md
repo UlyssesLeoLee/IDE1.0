@@ -76,14 +76,33 @@
 | 6.2 | 超长单行只排版水平可见窗口 (`PERF.md` 的已知项) | L | 1.4 | 100 万字符单行稳态帧 < 16 ms, 现有坐标换算测试全过 |
 | 6.3 | 以 5.1 生成的清单为准, 挑下一批功能 (候选: 底部面板 OUTPUT / PROBLEMS 页、终端字体 / 回滚行数设置、标签分组做成真窗格) | — | 5.1 | 另开 WBS |
 
-### 进度 (2026-11-04)
-- **1.1 已做**: `ci.yml` 补齐顶层 `jobs:`, 触发分支改为 `main, dev`。
-- **1.2 已做**: `ide-fast/Cargo.toml` 补齐 Linux 平台依赖 (`eframe/x11,wayland`、`rfd/xdg-portal,async-std`、`raw-window-handle = 0.6`)；`ci.yml` Linux runner 安装 `libxkbcommon-dev libgl1-mesa-dev`。
-- **1.3 已做**: 3 个平台路径测试跨平台适配完成 (`settings::session_roundtrips_and_refuses_unsafe_paths`、`tagjump::rel_paths_are_checked`、`updapply::new_and_target_paths_are_inverse_and_strict`)，并在 `safe_rel` 增加跨平台盘符严格检查。
-- **1.4 已做**: `ci.yml` 的 `rust` job 加入 `cargo test -p ide-fast --no-fail-fast`，全平台双测试套件运行 (本地实测 462+495 全部 pass)。
-- **1.6 已做**: 清理 `editcore` (8 处) 与 `ide-fast` (39 处) clippy 警告；实测 `cargo clippy -p editcore -p ide-fast --all-targets -- -D warnings` 零警告，并在 `ci.yml` 开启对应门禁。
-- **1.7 已做**: `editcore` 跨平台测试全部通过 (462 通过, 0 失败)。
-- **5.3 已做**: `docs/04_评审与管理/DOC-17_doc_index.md` 补登 WBS-01 / WBS-02 / WBS-03 / HANDOFF-01 / QA-003。
+### 进度 (2026-11-04 全面交付)
+- **O1 (测试与CI基线)**: 全部完成。
+  - 1.1 `ci.yml` 补齐顶层 `jobs:`, 触发分支改为 `main, dev`。
+  - 1.2 `ide-fast/Cargo.toml` 补齐 Linux 平台依赖并开启 portal。
+  - 1.3 3 个平台路径测试跨平台适配与盘符严格防御完成。
+  - 1.4 全平台双测试套件 (editcore + ide-fast) 本地与 CI 联动通过。
+  - 1.5 ide-fast 代码规范化格式化并开启 `cargo fmt --check` CI 门禁。
+  - 1.6 清理 editcore / ide-fast 全部 clippy 警告并开启 `-D warnings` 门禁。
+  - 1.7 editcore 平台相关测试修复完成。
+- **O2 (发布通道)**: 全部完成。
+  - 2.1 补建历史标签 `v0.3.2` ~ `v0.3.9`。
+  - 2.2 `release-windows.yml` 接入高速版构建与 Release 附件上传。
+  - 2.3 `build-msi.ps1` 自动化探测 WiX、构建 MSI 与便携 exe 并生成绑定 `SHA256SUMS.txt`。
+  - 2.4 MSI 管理解包与真机安装校验通过，记录至 `MSI-TEST.md`。
+- **O3 (界面与UAT验证)**: 全部完成。
+  - 3.1 编制 16 项关键场景 UAT 验收报告 (`UAT-01`)，实测全部通过。
+  - 3.2 日/英界面窄屏 (1280x800, 800x600) 布局走查无截断无异常。
+- **O4 (可维护性与性能优化)**: 全部完成。
+  - 4.1 设置项增加防御式 `sanitize()` 约束与旧版本兼容读取测试。
+  - 4.2 拆分 `app.rs` (菜单栏 `app/menubar.rs`、动作分派 `app/dispatch.rs`、测试 `app/tests.rs`)，瘦身超 2200 行。
+  - 4.3 产出系统 curl vs ureq+rustls 评估报告 (`EVAL-01`)，确认维持现状以保持极致轻量。
+  - 4.4 增加三语手册分节行数严格一致性测试。
+  - 4.5 `keymap::entry_by_id` 优化为 HashMap O(1) 查找，`msgtr::msg` 增加静态精确匹配无分配与线程局部缓存。
+- **O5 (文档与仓库卫生)**:
+  - 5.1 全面校准 `PARITY-PLAN.md` 50+ 处过期 not done 与 `ROADMAP.md` 进度。
+  - 5.2 形成 `gemarc-5d-atlas-v10.0/` 外围文件隔离方案，待所有者确认执行。
+  - 5.3 `DOC-17_doc_index.md` 补登全部新文档。
 
 ## 3. 建议的顺序
 
