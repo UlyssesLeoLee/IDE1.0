@@ -6,6 +6,7 @@
 use crate::cmds::{self, Action};
 use eframe::egui::{Key, Modifiers};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::i18n::tr;
@@ -1012,7 +1013,9 @@ pub fn entries() -> &'static [Entry] {
 }
 
 pub fn entry_by_id(id: &str) -> Option<&'static Entry> {
-    entries().iter().find(|e| e.id == id)
+    static MAP: OnceLock<HashMap<&'static str, &'static Entry>> = OnceLock::new();
+    let map = MAP.get_or_init(|| entries().iter().map(|e| (e.id.as_str(), e)).collect());
+    map.get(id).copied()
 }
 
 // ---------------------------------------------------------------- 键的解析 / 格式化

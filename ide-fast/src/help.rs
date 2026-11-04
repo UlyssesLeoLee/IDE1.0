@@ -175,6 +175,43 @@ mod tests {
         assert_eq!(shapes[0].0, shapes[2].0, "中 / 英章节号一致");
         assert_eq!(shapes[0].1, shapes[1].1, "中 / 日行数一致");
         assert_eq!(shapes[0].1, shapes[2].1, "中 / 英行数一致");
+
+        // O4.4: 严格断言手册三份之间每节行数完全一致
+        let section_counts = |t: &str| -> Vec<(String, usize)> {
+            let mut res = Vec::new();
+            let mut cur_sec = None;
+            let mut cur_count = 0;
+            for l in t.lines() {
+                if l.starts_with('[') && l.contains(']') {
+                    let tag = &l[1..l.find(']').unwrap()];
+                    if tag.chars().all(|c| c.is_ascii_digit()) {
+                        if let Some(sec) = cur_sec.take() {
+                            res.push((sec, cur_count));
+                        }
+                        cur_sec = Some(tag.to_string());
+                        cur_count = 0;
+                        continue;
+                    }
+                }
+                if cur_sec.is_some() {
+                    cur_count += 1;
+                }
+            }
+            if let Some(sec) = cur_sec {
+                res.push((sec, cur_count));
+            }
+            res
+        };
+        assert_eq!(
+            section_counts(BODY_ZH),
+            section_counts(BODY_JA),
+            "中 / 日每节行数严格一致"
+        );
+        assert_eq!(
+            section_counts(BODY_ZH),
+            section_counts(BODY_EN),
+            "中 / 英每节行数严格一致"
+        );
         assert!(BODY_JA.contains("コマンド") && BODY_EN.contains("command"));
     }
 

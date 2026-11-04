@@ -5,6 +5,8 @@
 
 use crate::i18n::{cur, Lang};
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// (中文模板, 日文模板, 英文模板); `{}` 依次对应
@@ -358,7 +360,30 @@ fn fill(tpl: &str, caps: &[String]) -> String {
     out
 }
 
+fn exact_table() -> &'static HashMap<&'static str, (&'static str, &'static str)> {
+    static EXACT: OnceLock<HashMap<&'static str, (&'static str, &'static str)>> = OnceLock::new();
+    EXACT.get_or_init(|| {
+        let mut m = HashMap::new();
+        for &(zh, ja, en) in MSG_T {
+            if !zh.contains("{}") {
+                m.insert(zh, (ja, en));
+            }
+        }
+        m
+    })
+}
+
+thread_local! {
+    static CACHE: RefCell<Vec<(Lang, String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
 fn translate(s: &str, depth: u8) -> Option<String> {
+    if let Some(&(ja, en)) = exact_table().get(s) {
+        return Some(match cur() {
+            Lang::Ja => ja.to_string(),
+            _ => en.to_string(),
+        });
+    }
     for t in index() {
         let Some(caps) = capture(&t.pieces, s) else {
             continue;
@@ -380,11 +405,37 @@ fn translate(s: &str, depth: u8) -> Option<String> {
 
 /// 把一条中文消息翻成当前界面语言; 中文界面 / 没有模板 = 原样返回
 pub fn msg(s: &str) -> Cow<'_, str> {
-    if cur() == Lang::Zh || s.is_empty() {
+    let c = cur();
+    if c == Lang::Zh || s.is_empty() {
         return Cow::Borrowed(s);
     }
+    // 优先查精确匹配表: 无分配直接借用静态字面量
+    if let Some(&(ja, en)) = exact_table().get(s) {
+        return Cow::Borrowed(if c == Lang::Ja { ja } else { en });
+    }
+    // 命中线程局部缓存
+    let cached = CACHE.with(|cell| {
+        let cache = cell.borrow();
+        cache
+            .iter()
+            .find(|(l, src, _)| *l == c && src == s)
+            .map(|(_, _, dst)| dst.clone())
+    });
+    if let Some(t) = cached {
+        return Cow::Owned(t);
+    }
+
     match translate(s, 0) {
-        Some(t) => Cow::Owned(t),
+        Some(t) => {
+            CACHE.with(|cell| {
+                let mut cache = cell.borrow_mut();
+                if cache.len() >= 64 {
+                    cache.remove(0);
+                }
+                cache.push((c, s.to_string(), t.clone()));
+            });
+            Cow::Owned(t)
+        }
         None => Cow::Borrowed(s),
     }
 }
@@ -441,5 +492,19 @@ mod tests {
         assert_eq!(capture(&["", " 处"], "5 处命中"), None);
         assert_eq!(capture(&["a", "b", "c"], "a1b2c"), Some(vec!["1", "2"]));
         assert_eq!(capture(&["无标题"], "无标题 2"), None);
+    }
+
+    #[test]
+    fn exact_table_and_cache_accelerate_translations() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set(Lang::En);
+        // 精确匹配项无分配返回 Cow::Borrowed
+        let m1 = msg("没有对应的括弧");
+        assert!(matches!(m1, Cow::Borrowed("No matching bracket")));
+        // 动态项被缓存
+        let m2 = msg("已保存 42 个文件");
+        assert_eq!(m2, "Saved 42 file(s)");
+        let m3 = msg("已保存 42 个文件");
+        assert_eq!(m3, "Saved 42 file(s)");
     }
 }
