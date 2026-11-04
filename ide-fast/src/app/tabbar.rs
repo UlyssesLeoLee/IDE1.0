@@ -22,6 +22,12 @@ pub fn tab_width(text_w: f32) -> f32 {
     (text_w + PAD_L + PAD_R).min(TAB_MAX_W)
 }
 
+/// 标签 / 状态栏上显示的文档名: 只有还没存过的「无标题 N」要随界面语言翻译; 磁盘上的文件名原样显示
+/// (文件名叫「开」「注意」之类时, 不能被当成提示文字译掉; 也省得每帧每个标签都跑一遍模板匹配)
+pub(super) fn doc_label(d: &crate::doc::Doc) -> std::borrow::Cow<'_, str> {
+    if d.path.is_none() { crate::msgtr::msg(&d.name) } else { std::borrow::Cow::Borrowed(d.name.as_str()) }
+}
+
 /// 标签栏要不要画: 多个文档, 或者开了活动栏 (完整界面, Tauri 的 `tabs: true`)
 pub fn bar_visible(docs: usize, full_ui: bool) -> bool {
     docs > 1 || full_ui
@@ -103,7 +109,7 @@ impl App {
         let font = FontId::proportional(12.0);
         let mut job = egui::text::LayoutJob::default();
         if let Some(c) = gcol { job.append("● ", 0.0, egui::TextFormat::simple(font.clone(), c)); }
-        job.append(crate::msgtr::msg(&doc.name).as_ref(), 0.0, egui::TextFormat::simple(font.clone(), fg));
+        job.append(doc_label(doc).as_ref(), 0.0, egui::TextFormat::simple(font.clone(), fg));
         job.wrap = egui::text::TextWrapping { max_width: TAB_MAX_W - PAD_L - PAD_R, max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
         let galley = ui.painter().layout_job(job);
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(tab_width(galley.size().x), TAB_H), Sense::click());
@@ -146,6 +152,19 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    /// 磁盘上的文件名原样显示; 只有没存过的「无标题」随语言译
+    #[test]
+    fn only_untitled_documents_are_translated_in_labels() {
+        let _g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::i18n::set(crate::i18n::Lang::En);
+        let mut d = crate::doc::Doc::untitled(1, 0);
+        assert_eq!(doc_label(&d), "Untitled");
+        d.name = "开".into();
+        d.path = Some(std::path::PathBuf::from("开"));
+        assert_eq!(doc_label(&d), "开", "叫「开」的文件不能被译成 on");
+        crate::i18n::set(crate::i18n::Lang::Zh);
+    }
+
     use super::*;
 
     #[test]
