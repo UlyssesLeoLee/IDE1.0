@@ -778,10 +778,6 @@ pub const CMD_T: &[Row] = &[
     ("运行宏 18", ["运行宏 18", "マクロ 18 を実行", "Run Macro 18"]),
     ("运行宏 19", ["运行宏 19", "マクロ 19 を実行", "Run Macro 19"]),
     ("运行宏 20", ["运行宏 20", "マクロ 20 を実行", "Run Macro 20"]),
-    ("新", ["新", "新", "N"]),
-    ("开", ["开", "開", "O"]),
-    ("存", ["存", "保", "S"]),
-    ("找", ["找", "検", "F"]),
     // 选择列表 / 关键字帮助 (0.3.8)
     ("窗口一览…", ["窗口一览…", "ウィンドウ一覧…", "Window List…"]),
     ("窗口一览", ["窗口一览", "ウィンドウ一覧", "Window List"]),
@@ -1103,7 +1099,17 @@ mod tests {
 
     /// 把源码里的字符串字面量还原成运行时的样子 (只处理这里用到的几种转义)
     fn unescape(s: &str) -> String {
-        s.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\")
+        let mut out = String::new();
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            if c != '\\' { out.push(c); continue; }
+            match it.next() {
+                Some('n') => out.push('\n'),
+                Some(o) => out.push(o),
+                None => out.push('\\'),
+            }
+        }
+        out
     }
 
     /// 读 `from` 开头的字面量 (`from` 之后紧跟的第一个 `"` 起, 到没被转义的下一个 `"` 止)
