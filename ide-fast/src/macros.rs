@@ -13,7 +13,7 @@ pub fn run_mac(doc: &mut Doc, src: &str, tab: usize) -> Result<usize, String> {
         match s.action {
             Action::Command { id, cmd, key, .. } => {
                 if let Some(c) = cmd {
-                    if !doc.try_edit(&c) {
+                    if !doc_command(doc, &c, tab) {
                         return Err(format!("第 {} 行 {}: 未支持的命令 {c}", s.line, s.name));
                     }
                 } else if !key.as_deref().is_some_and(|k| key_action(doc, k, tab)) {
@@ -63,7 +63,7 @@ const TRANSFORM_KEYS: &[(&str, &str)] = &[
 ];
 
 /// 同上, 整理行 (选中的行; 没有选区 = 全文): 排序 / 去行首、行尾空白
-const LINES_KEYS: &[(&str, &str)] = &[("Alt+a", "sort-asc"), ("Alt+d", "sort-desc"), ("Alt+l", "trim-start"), ("Alt+r", "trim-end")];
+const LINES_KEYS: &[(&str, &str)] = &[("Alt+a", "sort-asc"), ("Alt+d", "sort-desc"), ("Alt+l", "trim-start"), ("Alt+r", "trim-end"), ("Alt+m", "uniq-consecutive")];
 
 fn edit_for_key(key: &str) -> Option<&'static str> {
     EDIT_KEYS.iter().find(|(k, _)| *k == key).map(|(_, c)| *c)
@@ -71,6 +71,35 @@ fn edit_for_key(key: &str) -> Option<&'static str> {
 
 fn key_for_edit(cmd: &str) -> Option<&'static str> {
     EDIT_KEYS.iter().find(|(_, c)| *c == cmd).map(|(k, _)| *k)
+}
+
+/// 宏里带命令 id 的 `S_` 函数: 只动这一个文档的在这里执行 —— editcore 编辑命令、`editcore::edit_ops` 的文本变换、SPACE 缩进、按段落选择、
+/// 改动行 / 函数步进、插入日期时间、只读切换、换行符改写、编码转换。窗口 / 标签 / 对话框 / 剪贴板类命令不属于「作用在一个文档上的宏」,
+/// 返回 false (调用方报「不支持」, 不静默跳过)。
+fn doc_command(doc: &mut Doc, c: &str, tab: usize) -> bool {
+    use editcore::document_io::Eol;
+    match c {
+        "indent-space" => doc.space_indent(false),
+        "unindent-space" => doc.space_indent(true),
+        "sel-para-next" => doc.select_para(true),
+        "sel-para-prev" => doc.select_para(false),
+        "modify-next" => { doc.step_changed(true); }
+        "modify-prev" => { doc.step_changed(false); }
+        "modify-next-sel" => { doc.step_changed_sel(true); }
+        "modify-prev-sel" => { doc.step_changed_sel(false); }
+        "funclist-next" => { doc.step_function(true); }
+        "funclist-prev" => { doc.step_function(false); }
+        "insert-time" => doc.type_text(&crate::textconv::local_now().time()),
+        "insert-date" => doc.type_text(&crate::textconv::local_now().date()),
+        "toggle-readonly" => doc.readonly = !doc.readonly,
+        "eol-crlf" => doc.set_eol(Eol::Crlf),
+        "eol-lf" => doc.set_eol(Eol::Lf),
+        "eol-cr" => doc.set_eol(Eol::Cr),
+        _ if c.starts_with("codecnv-") => { doc.convert_selection(|t| crate::textconv::codecnv(&c["codecnv-".len()..], t)); }
+        _ if editcore::edit_ops::transform_text(c, "", tab).is_some() => doc.transform_sel(c, tab),
+        _ => return doc.try_edit(c),
+    }
+    true
 }
 
 /// 只有默认键、没有命令名的 `S_` 函数: 按它的默认键 (DOM 写法, 如 `Control+Shift+ArrowLeft`) 在高速版里执行。
@@ -281,6 +310,44 @@ mod tests {
     }
 
     /// 只运行不录制的键 (选区变换 / 整理行): 键要对得上 Sakura 的 S_ 函数, 并且真的改了文档
+    /// 带命令 id 的 S_ 函数里, 只动文档本身的那些高速版都能运行 (以前报「这条命令高速版还不支持」); 窗口类的仍然明确报错
+    #[test]
+    fn document_level_sakura_functions_run_and_window_level_ones_fail_loudly() {
+        let fresh = |lines: &[&str]| { let mut d = Doc::untitled(1, 1); d.lines = lines.iter().map(|s| s.to_string()).collect(); d };
+        for name in [
+            "IndentSpace", "UnindentSpace", "ToHanEi", "ToHankata", "ToZenEi", "GoNextParagraph_Sel", "GoPrevParagraph_Sel", "InsTime", "ModifyLineNext", "ModifyLinePrev",
+            "ModifyLineNext_Sel", "ModifyLinePrev_Sel", "FuncListNext", "FuncListPrev", "ViewMode", "ChgmodEOLCR", "ChgmodEOLCRLF", "ChgmodEOLLF", "CodeCnvUNICODEBEtoSJIS",
+        ] {
+            let mut d = fresh(&["abc def", "", "xyz"]);
+            d.select_all();
+            run_mac(&mut d, &format!("S_{name}();"), 4).unwrap_or_else(|e| panic!("S_{name}: {e}"));
+        }
+        let mut d = fresh(&["a", "", "b"]);
+        d.select_all();
+        run_mac(&mut d, "S_IndentSpace();", 4).unwrap();
+        assert_eq!(d.lines, [" a", "", " b"], "SPACE 缩进: 1 个空格, 空行不动 (Sakura 实测)");
+        run_mac(&mut d, "S_UnindentSpace();", 4).unwrap();
+        assert_eq!(d.lines, ["a", "", "b"]);
+        let mut d = fresh(&["x"]);
+        run_mac(&mut d, "S_ViewMode();", 4).unwrap();
+        assert!(d.readonly);
+        run_mac(&mut d, "S_ChgmodEOLLF();", 4).unwrap();
+        assert_eq!(d.eol, editcore::document_io::Eol::Lf);
+        let mut d = fresh(&["fn a() {}", "", "fn b() {", "}"]);
+        d.name = "x.rs".into();
+        run_mac(&mut d, "S_FuncListNext();", 4).unwrap();
+        assert_eq!(d.cursor[0], 2, "下一个函数");
+        run_mac(&mut d, "S_FuncListPrev();", 4).unwrap();
+        assert_eq!(d.cursor[0], 0);
+        let mut d = fresh(&["a", "", "b", "c"]);
+        run_mac(&mut d, "S_GoNextParagraph_Sel();", 4).unwrap();
+        assert!(d.sel.is_some(), "按段落选择");
+        let mut d = fresh(&["x"]);
+        let e = run_mac(&mut d, "S_NextGroup();", 4).unwrap_err();
+        assert!(e.contains("next-group") || e.contains("不支持"), "窗口 / 标签类命令: 明确报错, 不静默跳过: {e}");
+        assert_eq!(d.lines, ["x"]);
+    }
+
     #[test]
     fn run_only_keys_resolve_to_s_functions_and_act() {
         use macro_sakura::RecEvent;
@@ -303,6 +370,8 @@ mod tests {
         assert_eq!(run(&["b", "c", "a"], "Alt+a"), ["a", "b", "c"]);
         assert_eq!(run(&["b", "c", "a"], "Alt+d"), ["c", "b", "a"]);
         assert_eq!(run(&["  x  ", "\ty "], "Alt+l"), ["x  ", "y "]);
+        assert_eq!(run(&["\u{3000}x"], "Alt+l"), ["\u{3000}x"], "只去空格和 Tab, 不去全角空格 (Sakura 实测)");
+        assert_eq!(run(&["a", "a", "b", "a"], "Alt+m"), ["a", "b", "a"], "合并连续重复行");
         assert_eq!(run(&["  x  ", "\ty "], "Alt+r"), ["  x", "\ty"]);
         assert_eq!(run(&["\tb"], "Control+Alt+F5"), ["    b"], "行首 Tab 按 tab 宽度展开成空格");
     }

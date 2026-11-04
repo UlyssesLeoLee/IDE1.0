@@ -1434,12 +1434,7 @@ impl App {
         ui.menu_button(tr("menu.macro"), |ui| self.macro_items(ui));
         ui.menu_button(tr("menu.plugin"), |ui| self.plugin_panel(ui));
         ui.separator();
-        if ui.button(trz("执行外部命令 (终端)")).clicked() {
-            self.sys.bottom = sysopts::BottomTab::Terminal;
-            self.term.open = true;
-            self.expand_dock(crate::panels::Dock::Bottom);
-            ui.close();
-        }
+        if menuui::mbtn(ui, Self::app_label(KApp::ExecCmd, "执行外部命令 (终端)")).clicked() { self.open_exec_terminal(); ui.close(); }
     }
 
     /// 把当前文档的文本当 Sakura 宏运行 (作用在上一份活动的另一个文档上; 只有一份就作用在自己上)
@@ -1929,6 +1924,7 @@ impl App {
             KApp::SpaceUnindent => self.space_indent_cmd(true),
             KApp::CurCenter => self.center_cursor(),
             KApp::BackupNow => self.backup_now(),
+            KApp::ExecCmd => self.open_exec_terminal(),
             KApp::SelCountMode => self.cycle_sel_count(),
             KApp::FindMarks => self.toggle_find_marks(),
             KApp::FindStart => self.jump_find_start(),
@@ -3193,7 +3189,7 @@ EDITED".into())), ..Default::default() };
         assert_eq!(a.docs[0].cursor, [0, 0], "回到查找开始时的位置");
         a.docs[0].goto(1, 1);
         a.space_indent_cmd(false);
-        assert_eq!(a.docs[0].lines[1], "    def", "按 Tab 宽度缩进当前行");
+        assert_eq!(a.docs[0].lines[1], " def", "缩进当前行 1 个空格");
         a.space_indent_cmd(true);
         assert_eq!(a.docs[0].lines[1], "def");
     }

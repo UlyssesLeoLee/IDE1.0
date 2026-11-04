@@ -174,6 +174,16 @@ impl Sidebar {
 
 }
 
+/// 文档的大纲条目所在行 (升序、去重; 0 起算), 按文件名判断类型; 没有大纲 = 空
+pub fn outline_rows(name: &str, lines: &[String]) -> Vec<usize> {
+    let registry = editcore::type_config::TypeRegistry::default_registry();
+    let ty = registry.detect(name).map(|t| t.name.clone()).unwrap_or_else(|| "Plain".into());
+    let mut rows: Vec<usize> = editcore::type_config::TypeConfig::outline_dispatch(&ty, &lines.join("\n")).iter().map(|e| e.line.max(0) as usize).collect();
+    rows.sort_unstable();
+    rows.dedup();
+    rows
+}
+
 /// 函数列表的「下一个 / 上一个」: `rows` 是大纲条目所在行 (升序、去重), `cur` 是光标所在行。
 /// 向前找第一个比 `cur` 大的行, 向后找最后一个比 `cur` 小的行, 到头了绕回另一端 (同 Tauri 的 funclistStep); 没有条目返回 None。
 pub fn step_row(rows: &[usize], cur: usize, fwd: bool) -> Option<usize> {

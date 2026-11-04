@@ -33,7 +33,7 @@ use Action::*;
 pub const CMDS: &[Cmd] = &[
     Cmd { group: "行", label: "剪切行", keys: "Ctrl+L", action: Edit("cut-line") },
     Cmd { group: "行", label: "复制行 (含换行)", keys: "", action: Edit("copy-lines") },
-    Cmd { group: "行", label: "复制当前行", keys: "Ctrl+D", action: Edit("duplicate-line") },
+    Cmd { group: "行", label: "复制当前行", keys: "Ctrl+D|Shift+F10", action: Edit("duplicate-line") },
     Cmd { group: "行", label: "删除当前行", keys: "Ctrl+Shift+K", action: Edit("delete-line") },
     Cmd { group: "行", label: "删除上方行", keys: "", action: Edit("delete-line-up") },
     Cmd { group: "行", label: "删除下方行", keys: "", action: Edit("delete-line-down") },
@@ -48,13 +48,13 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "行", label: "删除到行首", keys: "", action: Edit("delete-line-to-start") },
     Cmd { group: "单词", label: "选择当前单词", keys: "", action: Edit("select-word") },
     Cmd { group: "单词", label: "剪切单词", keys: "", action: Edit("word-cut") },
-    Cmd { group: "单词", label: "删除单词", keys: "", action: Edit("word-delete") },
-    Cmd { group: "复制", label: "复制 (行尾统一 CRLF)", keys: "", action: Edit("copy-crlf") },
+    Cmd { group: "单词", label: "删除单词", keys: "Ctrl+Shift+D", action: Edit("word-delete") },
+    Cmd { group: "复制", label: "复制 (行尾统一 CRLF)", keys: "Shift+F8", action: Edit("copy-crlf") },
     Cmd { group: "复制", label: "复制 (带行号)", keys: "", action: Edit("copy-linenum") },
     Cmd { group: "复制", label: "复制引用 (> 前缀)", keys: "", action: Edit("copy-passage") },
     Cmd { group: "复制", label: "矩形粘贴", keys: "", action: Edit("paste-box") },
-    Cmd { group: "转换", label: "转为大写", keys: "Ctrl+Shift+U", action: Transform("upper") },
-    Cmd { group: "转换", label: "转为小写", keys: "Ctrl+U", action: Transform("lower") },
+    Cmd { group: "转换", label: "转为大写", keys: "Ctrl+Shift+U|Ctrl+F7", action: Transform("upper") },
+    Cmd { group: "转换", label: "转为小写", keys: "Ctrl+U|Ctrl+F6", action: Transform("lower") },
     Cmd { group: "转换", label: "半角 → 全角", keys: "", action: Transform("full") },
     Cmd { group: "转换", label: "全角 → 半角", keys: "", action: Transform("half") },
     Cmd { group: "转换", label: "半角 → 全角 (含假名)", keys: "Ctrl+F9", action: Transform("to-zenkaku") },
@@ -65,14 +65,15 @@ pub const CMDS: &[Cmd] = &[
     Cmd { group: "转换", label: "半角假名 → 全角平假名", keys: "Ctrl+F12", action: Transform("hankata-to-zenhira") },
     Cmd { group: "转换", label: "半角英数 → 全角英数", keys: "", action: Transform("to-zenei") },
     Cmd { group: "转换", label: "全角英数 → 半角英数", keys: "", action: Transform("to-hanei") },
-    Cmd { group: "转换", label: "Tab → 空格", keys: "", action: Transform("tab2space") },
-    Cmd { group: "转换", label: "行首空格 → Tab", keys: "", action: Transform("space2tab") },
-    Cmd { group: "整理行", label: "升序排序", keys: "", action: Lines("sort-asc") },
-    Cmd { group: "整理行", label: "降序排序", keys: "", action: Lines("sort-desc") },
+    Cmd { group: "转换", label: "Tab → 空格", keys: "Ctrl+Alt+F5", action: Transform("tab2space") },
+    Cmd { group: "转换", label: "行首空格 → Tab", keys: "Ctrl+Alt+Shift+F5", action: Transform("space2tab") },
+    Cmd { group: "整理行", label: "升序排序", keys: "Alt+A", action: Lines("sort-asc") },
+    Cmd { group: "整理行", label: "降序排序", keys: "Alt+D", action: Lines("sort-desc") },
     Cmd { group: "整理行", label: "去重 (保留首次出现)", keys: "", action: Lines("unique") },
     Cmd { group: "整理行", label: "反转行顺序", keys: "", action: Lines("reverse") },
-    Cmd { group: "整理行", label: "去除行尾空白", keys: "", action: Lines("trim-end") },
-    Cmd { group: "整理行", label: "去除行首空白", keys: "", action: Lines("trim-start") },
+    Cmd { group: "整理行", label: "去除行尾空白", keys: "Alt+R", action: Lines("trim-end") },
+    Cmd { group: "整理行", label: "去除行首空白", keys: "Alt+L", action: Lines("trim-start") },
+    Cmd { group: "整理行", label: "合并连续重复行", keys: "", action: Lines("uniq-consecutive") },
     Cmd { group: "整理行", label: "删除空行", keys: "", action: Lines("drop-empty") },
     Cmd { group: "缩进", label: "增加缩进", keys: "", action: Indent },
     Cmd { group: "缩进", label: "减少缩进", keys: "Shift+Tab", action: Outdent },
@@ -117,48 +118,28 @@ pub const CMDS: &[Cmd] = &[
 
 pub fn transform(kind: &str, text: &str, tab: usize) -> String {
     match kind {
-        "upper" => text.to_uppercase(),
-        "lower" => text.to_lowercase(),
         "full" => editcore::zenkaku_hankaku::to_fullwidth(text),
         "half" => editcore::zenkaku_hankaku::to_halfwidth(text),
-        // 假名 / 英数的全半角互转: 语义在 editcore::edit_ops (Sakura 实测), 这里不再抄第二份
-        "to-zenkaku" | "to-halfwidth" | "to-zenhira" | "to-hankata" | "hankata-to-zenkata" | "hankata-to-zenhira" | "to-zenei" | "to-hanei" => {
-            editcore::edit_ops::transform_text(kind, text, tab).unwrap_or_else(|| text.to_string())
+        // 大小写 / 假名 / 英数 / Tab 与空格: 语义都在 editcore::edit_ops (Sakura 实测), 这里不再抄第二份; 这边的老名字对到 editcore 的名字
+        k => {
+            let core = match k { "upper" => "to-upper", "lower" => "to-lower", "tab2space" => "tab-to-space", "space2tab" => "space-to-tab", other => other };
+            editcore::edit_ops::transform_text(core, text, tab).unwrap_or_else(|| text.to_string())
         }
-        "tab2space" => text.replace('\t', &" ".repeat(tab.max(1))),
-        "space2tab" => text
-            .split('\n')
-            .map(|l| {
-                let lead = l.chars().take_while(|c| *c == ' ').count();
-                let tabs = lead / tab.max(1);
-                format!("{}{}", "\t".repeat(tabs), &l[tabs * tab.max(1)..])
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => text.to_string(),
     }
 }
 
 pub fn lines_op(kind: &str, lines: Vec<String>) -> Vec<String> {
+    // 排序 / 去行首行尾空白 / 合并连续重复行 / SPACE 缩进: 语义在 editcore::edit_ops (Sakura 实测; 去空白只去空格和 Tab, 排序按 UTF-16 顺序)
+    let core = match kind { "trim-start" => "ltrim-lines", "trim-end" => "rtrim-lines", other => other };
+    if let Some(v) = editcore::edit_ops::transform_lines(core, &lines) {
+        return v;
+    }
     match kind {
-        "sort-asc" => {
-            let mut v = lines;
-            v.sort();
-            v
-        }
-        "sort-desc" => {
-            let mut v = lines;
-            v.sort();
-            v.reverse();
-            v
-        }
         "unique" => {
             let mut seen = std::collections::HashSet::new();
             lines.into_iter().filter(|l| seen.insert(l.clone())).collect()
         }
         "reverse" => lines.into_iter().rev().collect(),
-        "trim-end" => lines.into_iter().map(|l| l.trim_end().to_string()).collect(),
-        "trim-start" => lines.into_iter().map(|l| l.trim_start().to_string()).collect(),
         "drop-empty" => lines.into_iter().filter(|l| !l.trim().is_empty()).collect(),
         _ => lines,
     }
@@ -196,7 +177,9 @@ mod tests {
     #[test]
     fn transforms_and_line_ops() {
         assert_eq!(transform("upper", "aBc", 4), "ABC");
-        assert_eq!(transform("tab2space", "a\tb", 2), "a  b");
+        assert_eq!(transform("tab2space", "a\tb", 2), "a b", "Tab 展开到下一个制表位 (Sakura 实测), 不是固定换成 N 个空格");
+        assert_eq!(transform("tab2space", "a\tb", 4), "a   b");
+        assert_eq!(transform("lower", "ÀB", 4), "àb");
         assert_eq!(transform("space2tab", "    x\n  y", 4), "\tx\n  y");
         assert_eq!(transform("full", "ab1", 4), "ａｂ１");
         // 假名互转走 editcore::edit_ops
