@@ -31,6 +31,8 @@ pub(super) struct SysState {
     pub decor: bool,
     /// 菜单栏太窄时不画助记字母 (标题栏每帧按宽度定)
     pub mn_hide: bool,
+    /// 列标尺占的高度 (标尺开着时 = 一行高, 否则 0); 欢迎页让出这一条
+    pub ruler_h: f32,
     /// 自绘标题栏里的应用图标 (第一次画时才建纹理)
     pub title_icon: Option<egui::TextureHandle>,
     /// 欢迎页的大徽标 (第一次画欢迎页时才解码建纹理)

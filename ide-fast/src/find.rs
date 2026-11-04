@@ -264,7 +264,7 @@ impl Find {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(crate::i18n::trz(if isearch { "增量查找" } else { "查找" })).size(15.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(egui::Button::new("✕").frame(false)).on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; self.isearch = None; }
+                        if ui.add(egui::Button::new("×").frame(false)).on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; self.isearch = None; }
                     });
                 });
             });

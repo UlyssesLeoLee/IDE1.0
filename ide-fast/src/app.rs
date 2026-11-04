@@ -381,7 +381,7 @@ impl App {
                 if ui.button(tr("pf.ok")).clicked() { ok = true; }
                 if ui.button(tr("pf.cancel")).clicked() { cancel = true; }
                 if ui.button(tr("pf.apply")).clicked() { apply = true; }
-                if ui.button(lk("c.reset-settings", "")).clicked() { reset = true; }
+                if menuui::mbtn(ui, lk("c.reset-settings", "")).clicked() { reset = true; }
             });
             ui.small(trf("pf.file", &[&crate::settings::path().map(|p| p.display().to_string()).unwrap_or_else(|| tr("pf.file-off").into())]));
         });
@@ -1150,9 +1150,9 @@ impl App {
         let mn = move |k: &str| if hide { ' ' } else { menuui::mnemonic(k) };
         egui::MenuBar::new().style(menuui::bar_style(tc)).config(egui::containers::menu::MenuConfig::new().style(menuui::style(tc))).ui(ui, |ui| {
             ui.menu_button(menuui::menu_title(&tc, tr("menu.file"), mn("menu.file")), |ui| {
-                if ui.button(lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
-                if ui.button(lk("c.open-file", "Ctrl+O")).clicked() { ui.close(); self.open_dialog(); }
-                if ui.button(lk("c.open-folder", "")).clicked() { ui.close(); self.open_folder_dialog(); }
+                if menuui::mbtn(ui, lk("c.new-file", "Ctrl+N")).clicked() { self.new_doc(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.open-file", "Ctrl+O")).clicked() { ui.close(); self.open_dialog(); }
+                if menuui::mbtn(ui, lk("c.open-folder", "")).clicked() { ui.close(); self.open_folder_dialog(); }
                 ui.menu_button(tr("sub.recent"), |ui| {
                     if self.recent.is_empty() { ui.label(tr("ui.none")); }
                     let mut pick: Option<String> = None;
@@ -1161,7 +1161,7 @@ impl App {
                     }
                     if let Some(r) = pick { self.open_path(std::path::Path::new(&r)); }
                     ui.separator();
-                    if ui.button(lk("c.recent-clear", "")).clicked() { self.clear_recent(); ui.close(); }
+                    if menuui::mbtn(ui, lk("c.recent-clear", "")).clicked() { self.clear_recent(); ui.close(); }
                 });
                 ui.menu_button(tr("sub.recent-dirs"), |ui| {
                     if self.recent_dirs.is_empty() { ui.label(tr("ui.none")); }
@@ -1172,39 +1172,39 @@ impl App {
                     if let Some(r) = pick { self.open_folder(PathBuf::from(r)); }
                 });
                 ui.separator();
-                if ui.button(lk("c.save", "Ctrl+S")).clicked() { ui.close(); self.save(false); }
-                if ui.button(lk("c.save-as", "Ctrl+Shift+S")).clicked() { ui.close(); self.save(true); }
-                if ui.button(lk("c.save-all", "Ctrl+Alt+Shift+S")).clicked() { ui.close(); self.save_all(); }
-                if ui.button(lk("c.save-close", "")).clicked() { ui.close(); self.save_close(); }
+                if menuui::mbtn(ui, lk("c.save", "Ctrl+S")).clicked() { ui.close(); self.save(false); }
+                if menuui::mbtn(ui, lk("c.save-as", "Ctrl+Shift+S")).clicked() { ui.close(); self.save(true); }
+                if menuui::mbtn(ui, lk("c.save-all", "Ctrl+Alt+Shift+S")).clicked() { ui.close(); self.save_all(); }
+                if menuui::mbtn(ui, lk("c.save-close", "")).clicked() { ui.close(); self.save_close(); }
                 ui.separator();
-                if ui.button(lk("c.close-tab", "Ctrl+W")).clicked() { ui.close(); let a = self.active; self.close_tab(a); }
-                if ui.button(lk("c.close-all", "Ctrl+Shift+W")).clicked() { ui.close(); self.close_many(CloseKind::All); }
-                if ui.button(lk("c.close-open", "Ctrl+Shift+F4")).clicked() { ui.close(); self.close_open(); }
+                if menuui::mbtn(ui, lk("c.close-tab", "Ctrl+W")).clicked() { ui.close(); let a = self.active; self.close_tab(a); }
+                if menuui::mbtn(ui, lk("c.close-all", "Ctrl+Shift+W")).clicked() { ui.close(); self.close_many(CloseKind::All); }
+                if menuui::mbtn(ui, lk("c.close-open", "Ctrl+Shift+F4")).clicked() { ui.close(); self.close_open(); }
                 ui.separator();
-                if ui.button(lk("c.reload", "")).clicked() { ui.close(); self.reload_current(); }
+                if menuui::mbtn(ui, lk("c.reload", "")).clicked() { ui.close(); self.reload_current(); }
                 ui.menu_button(tr("sub.reopen"), |ui| {
                     for cs in Charset::ALL {
                         if ui.button(cs.label()).clicked() { ui.close(); self.reopen_as(cs); }
                     }
                 });
                 ui.separator();
-                if ui.button(lk("c.print", "Ctrl+P")).clicked() { ui.close(); self.print_cur(); }
-                if ui.button(lk("c.print-setup", "")).clicked() { ui.close(); self.print_ui.setup_open = true; }
-                if ui.button(lk("c.print-preview", "")).clicked() { ui.close(); self.print_ui.preview = Some(0); }
-                if ui.button(lk("c.browse", "")).clicked() { ui.close(); self.browse_current(); }
-                if ui.button(lk("c.file-properties", "Alt+Enter")).clicked() { ui.close(); self.props = Some(self.cur().properties()); }
-                if ui.button(lk("c.new-window", "")).clicked() { ui.close(); self.new_window(); }
+                if menuui::mbtn(ui, lk("c.print", "Ctrl+P")).clicked() { ui.close(); self.print_cur(); }
+                if menuui::mbtn(ui, lk("c.print-setup", "")).clicked() { ui.close(); self.print_ui.setup_open = true; }
+                if menuui::mbtn(ui, lk("c.print-preview", "")).clicked() { ui.close(); self.print_ui.preview = Some(0); }
+                if menuui::mbtn(ui, lk("c.browse", "")).clicked() { ui.close(); self.browse_current(); }
+                if menuui::mbtn(ui, lk("c.file-properties", "Alt+Enter")).clicked() { ui.close(); self.props = Some(self.cur().properties()); }
+                if menuui::mbtn(ui, lk("c.new-window", "")).clicked() { ui.close(); self.new_window(); }
                 ui.separator();
-                if ui.button(lk("c.exit", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
+                if menuui::mbtn(ui, lk("c.exit", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.edit"), mn("menu.edit")), |ui| {
-                if ui.button(lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
-                if ui.button(lk("c.redo", "Ctrl+Y")).clicked() { self.cur().redo(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.undo", "Ctrl+Z")).clicked() { self.cur().undo(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.redo", "Ctrl+Y")).clicked() { self.cur().redo(); ui.close(); }
                 ui.separator();
-                if ui.button(lk("c.cut", "Ctrl+X")).clicked() { if let Some(c) = self.cur().edit("cut", None) { self.put_clip(ctx, c); } ui.close(); }
-                if ui.button(lk("c.copy", "Ctrl+C")).clicked() { if let Some(c) = self.cur().edit("copy", None) { self.put_clip(ctx, c); } ui.close(); }
-                if ui.button(lk("c.paste", "Ctrl+V")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste); ui.close(); }
-                if ui.button(lk("c.select-all", "Ctrl+A")).clicked() { self.cur().select_all(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.cut", "Ctrl+X")).clicked() { if let Some(c) = self.cur().edit("cut", None) { self.put_clip(ctx, c); } ui.close(); }
+                if menuui::mbtn(ui, lk("c.copy", "Ctrl+C")).clicked() { if let Some(c) = self.cur().edit("copy", None) { self.put_clip(ctx, c); } ui.close(); }
+                if menuui::mbtn(ui, lk("c.paste", "Ctrl+V")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste); ui.close(); }
+                if menuui::mbtn(ui, lk("c.select-all", "Ctrl+A")).clicked() { self.cur().select_all(); ui.close(); }
                 ui.separator();
                 self.cmd_menu(ui, ctx);
                 ui.separator();
@@ -1219,13 +1219,13 @@ impl App {
                 }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.search"), mn("menu.search")), |ui| {
-                if ui.button(lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
-                if ui.button(lk("c.replace", "Ctrl+H / Ctrl+R")).clicked() { self.open_find(true); ui.close(); }
-                if ui.button(lk("c.grep", "Ctrl+G")).clicked() { self.focus_grep(); ui.close(); }
-                if ui.button(lk("c.find-next", "F3")).clicked() { self.find_next(true); ui.close(); }
-                if ui.button(lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
-                if ui.button(lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
-                if ui.button(lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
+                if menuui::mbtn(ui, lk("c.find", "Ctrl+F")).clicked() { self.open_find(false); ui.close(); }
+                if menuui::mbtn(ui, lk("c.replace", "Ctrl+H / Ctrl+R")).clicked() { self.open_find(true); ui.close(); }
+                if menuui::mbtn(ui, lk("c.grep", "Ctrl+G")).clicked() { self.focus_grep(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.find-next", "F3")).clicked() { self.find_next(true); ui.close(); }
+                if menuui::mbtn(ui, lk("c.find-prev", "Shift+F3")).clicked() { self.find_next(false); ui.close(); }
+                if menuui::mbtn(ui, lk("c.find-word", "Ctrl+F3")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.word_search(&mut self.docs[i], true); ui.close(); }
+                if menuui::mbtn(ui, lk("c.replace-all", "Ctrl+Alt+R")).clicked() { let i = self.active.min(self.docs.len() - 1); self.find.replace_all(&mut self.docs[i]); ui.close(); }
                 for (z, a) in [("上一处改动", KApp::ModPrev), ("下一处改动", KApp::ModNext)] {
                     if ui.button(trz(z)).clicked() { self.run_app(a, ctx); ui.close(); }
                 }
@@ -1239,12 +1239,12 @@ impl App {
                 });
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.fold"), mn("menu.fold")), |ui| {
-                if ui.button(lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
-                if ui.button(lk("c.unfold-all", "Ctrl+Shift+]")).clicked() { self.cur().folds.clear(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() { let d = self.cur(); let r = d.cursor[0]; d.toggle_fold(r); ui.close(); }
+                if menuui::mbtn(ui, lk("c.unfold-all", "Ctrl+Shift+]")).clicked() { self.cur().folds.clear(); ui.close(); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.plugin"), mn("menu.plugin")), |ui| self.plugin_panel(ui));
             ui.menu_button(menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")), |ui| {
-                if ui.button(lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.common-config", "")).clicked() { self.open_prefs(); ui.close(); }
                 ui.menu_button(trz("语法类型"), |ui| {
                     let i = self.active.min(self.docs.len() - 1);
                     let cur = self.docs[i].syntax.clone();
@@ -1266,39 +1266,39 @@ impl App {
                     }
                 });
                 ui.separator();
-                if ui.button(lk("c.export-config", "")).clicked() { ui.close(); self.export_settings(); }
-                if ui.button(lk("c.import-config", "")).clicked() { ui.close(); self.import_settings(); }
-                if ui.button(lk("c.import-sakura", "")).clicked() { ui.close(); self.import_sakura(); }
-                if ui.button(lk("c.reset-settings", "")).clicked() { ui.close(); self.reset_settings(); }
+                if menuui::mbtn(ui, lk("c.export-config", "")).clicked() { ui.close(); self.export_settings(); }
+                if menuui::mbtn(ui, lk("c.import-config", "")).clicked() { ui.close(); self.import_settings(); }
+                if menuui::mbtn(ui, lk("c.import-sakura", "")).clicked() { ui.close(); self.import_sakura(); }
+                if menuui::mbtn(ui, lk("c.reset-settings", "")).clicked() { ui.close(); self.reset_settings(); }
                 if ui.button(tr("c.open-autosave")).clicked() { ui.close(); self.open_autosave(); }
                 ui.separator();
-                if ui.button(lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
+                if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.bookmark"), mn("menu.bookmark")), |ui| {
-                if ui.button(lk("c.bookmark-toggle", "Ctrl+F2")).clicked() { self.cur().bookmark("toggle"); ui.close(); }
-                if ui.button(lk("c.bookmark-next", "F2")).clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
-                if ui.button(lk("c.bookmark-prev", "Shift+F2")).clicked() { self.jump_mark(); self.cur().bookmark("prev"); ui.close(); }
-                if ui.button(lk("c.bookmark-view", "Alt+F2")).clicked() { self.bm_open = true; ui.close(); }
-                if ui.button(lk("c.bookmark-reset", "Ctrl+Shift+F2")).clicked() { self.cur().bookmarks.clear(); self.cur().tip = tr("dlg.bm-cleared").into(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.bookmark-toggle", "Ctrl+F2")).clicked() { self.cur().bookmark("toggle"); ui.close(); }
+                if menuui::mbtn(ui, lk("c.bookmark-next", "F2")).clicked() { self.jump_mark(); self.cur().bookmark("next"); ui.close(); }
+                if menuui::mbtn(ui, lk("c.bookmark-prev", "Shift+F2")).clicked() { self.jump_mark(); self.cur().bookmark("prev"); ui.close(); }
+                if menuui::mbtn(ui, lk("c.bookmark-view", "Alt+F2")).clicked() { self.bm_open = true; ui.close(); }
+                if menuui::mbtn(ui, lk("c.bookmark-reset", "Ctrl+Shift+F2")).clicked() { self.cur().bookmarks.clear(); self.cur().tip = tr("dlg.bm-cleared").into(); ui.close(); }
                 ui.separator();
-                if ui.button(lk("c.bracket-jump", "Ctrl+[")).clicked() { self.bracket_jump(); ui.close(); }
-                if ui.button(lk("c.hist-prev", "Alt+P")).clicked() { self.jump_go(-1); ui.close(); }
-                if ui.button(lk("c.hist-next", "Alt+N")).clicked() { self.jump_go(1); ui.close(); }
-                if ui.button(lk("c.hist-mark", "")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.bracket-jump", "Ctrl+[")).clicked() { self.bracket_jump(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.hist-prev", "Alt+P")).clicked() { self.jump_go(-1); ui.close(); }
+                if menuui::mbtn(ui, lk("c.hist-next", "Alt+N")).clicked() { self.jump_go(1); ui.close(); }
+                if menuui::mbtn(ui, lk("c.hist-mark", "")).clicked() { self.jump_mark(); self.cur().tip = tr("dlg.hist-marked").into(); ui.close(); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")), |ui| {
-                if ui.button(lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
-                if ui.button(lk("c.split-rows", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Rows); ui.close(); }
-                if ui.button(lk("c.split-quad", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Quad); ui.close(); }
+                if menuui::mbtn(ui, lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.split-rows", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Rows); ui.close(); }
+                if menuui::mbtn(ui, lk("c.split-quad", "")).clicked() { self.toggle_split_kind(crate::split::SplitKind::Quad); ui.close(); }
                 ui.separator();
-                if ui.button(lk("c.next-tab", "Ctrl+Tab")).clicked() { self.next_tab(true); ui.close(); }
-                if ui.button(lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() { self.next_tab(false); ui.close(); }
+                if menuui::mbtn(ui, lk("c.next-tab", "Ctrl+Tab")).clicked() { self.next_tab(true); ui.close(); }
+                if menuui::mbtn(ui, lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() { self.next_tab(false); ui.close(); }
                 ui.menu_button(tr("sub.tabops"), |ui| {
-                    if ui.button(lk("c.tab-move-left", "")).clicked() { self.move_active_tab(true); ui.close(); }
-                    if ui.button(lk("c.tab-move-right", "")).clicked() { self.move_active_tab(false); ui.close(); }
-                    if ui.button(lk("c.close-others", "")).clicked() { self.close_many(CloseKind::Others); ui.close(); }
-                    if ui.button(lk("c.close-left", "")).clicked() { self.close_many(CloseKind::Left); ui.close(); }
-                    if ui.button(lk("c.close-right", "")).clicked() { self.close_many(CloseKind::Right); ui.close(); }
+                    if menuui::mbtn(ui, lk("c.tab-move-left", "")).clicked() { self.move_active_tab(true); ui.close(); }
+                    if menuui::mbtn(ui, lk("c.tab-move-right", "")).clicked() { self.move_active_tab(false); ui.close(); }
+                    if menuui::mbtn(ui, lk("c.close-others", "")).clicked() { self.close_many(CloseKind::Others); ui.close(); }
+                    if menuui::mbtn(ui, lk("c.close-left", "")).clicked() { self.close_many(CloseKind::Left); ui.close(); }
+                    if menuui::mbtn(ui, lk("c.close-right", "")).clicked() { self.close_many(CloseKind::Right); ui.close(); }
                 });
                 ui.menu_button(tr("sub.winlist"), |ui| {
                     let mut pick = None;
@@ -1308,22 +1308,22 @@ impl App {
                     if let Some(i) = pick { self.select_tab(i); }
                 });
                 ui.separator();
-                if ui.button(lk("c.minimize-window", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
-                if ui.button(lk("c.maximize", "")).clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
+                if menuui::mbtn(ui, lk("c.minimize-window", "")).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); ui.close(); }
+                if menuui::mbtn(ui, lk("c.maximize", "")).clicked() { let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false)); ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m)); ui.close(); }
                 if menu_check(ui, &tc, self.fullscreen, lk("c.fullscreen", "F11")).clicked() { self.toggle_fullscreen(ctx); ui.close(); }
                 if menu_check(ui, &tc, self.topmost, lk("c.topmost", "")).clicked() { self.toggle_topmost(ctx); ui.close(); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.macro"), mn("menu.macro")), |ui| {
                 let rec = self.cur().rec.is_some();
-                if ui.button(lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
-                if ui.button(lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
+                if menuui::mbtn(ui, lk(if rec { "c.macro-stop" } else { "c.macro-start" }, "Ctrl+Shift+M")).clicked() { self.cur().macro_toggle(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.macro-play", "Ctrl+Shift+L")).clicked() { self.cur().macro_play(); ui.close(); }
                 ui.separator();
                 if ui.button(trz("保存键盘宏…")).clicked() { ui.close(); self.macro_save(); }
                 if ui.button(trz("载入键盘宏…")).clicked() { ui.close(); self.macro_load(); }
                 ui.separator();
-                if ui.button(lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
-                if ui.button(lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
-                if ui.button(lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
+                if menuui::mbtn(ui, lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
+                if menuui::mbtn(ui, lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
+                if menuui::mbtn(ui, lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.view"), mn("menu.view")), |ui| {
                 if menu_check(ui, &tc, self.split_on, lk("c.split", "Ctrl+\\")).clicked() { self.toggle_split(); ui.close(); }
@@ -1358,24 +1358,24 @@ impl App {
                 if menu_check(ui, &tc, self.cfg.view.toolbar, lk("c.toolbar", "")).clicked() { self.cfg.view.toolbar = !self.cfg.view.toolbar; }
                 if menu_check(ui, &tc, self.cfg.view.funckey, lk("c.funckey", "")).clicked() { self.cfg.view.funckey = !self.cfg.view.funckey; }
                 if menu_check(ui, &tc, self.cfg.view.rail, lk("c.rail", "")).clicked() { self.cfg.view.rail = !self.cfg.view.rail; }
-                if ui.button(lk("c.full-mode", "")).clicked() { self.set_full(); ui.close(); }
-                if ui.button(lk("c.minimal-mode", "")).clicked() { self.set_minimal(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.full-mode", "")).clicked() { self.set_full(); ui.close(); }
+                if menuui::mbtn(ui, lk("c.minimal-mode", "")).clicked() { self.set_minimal(); ui.close(); }
                 ui.separator();
                 ui.menu_button(tr("sub.tabwidth"), |ui| {
                     for w in [2usize, 3, 4, 8] {
                         if menu_check(ui, &tc, self.tab == w, format!("{w}")).clicked() { self.tab = w; ui.close(); }
                     }
                 });
-                if ui.button(lk("c.zoom-in", "Ctrl+=")).clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
-                if ui.button(lk("c.zoom-out", "Ctrl+-")).clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
-                if ui.button(lk("c.zoom-reset", "Ctrl+0")).clicked() { self.font_px = DEFAULT_FONT_PX; }
+                if menuui::mbtn(ui, lk("c.zoom-in", "Ctrl+=")).clicked() { self.font_px = (self.font_px + 1.0).min(40.0); }
+                if menuui::mbtn(ui, lk("c.zoom-out", "Ctrl+-")).clicked() { self.font_px = (self.font_px - 1.0).max(8.0); }
+                if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() { self.font_px = DEFAULT_FONT_PX; }
             });
             ui.menu_button(menuui::menu_title(&tc, tr("menu.help"), mn("menu.help")), |ui| {
-                if ui.button(lk("c.palette", "")).clicked() { ui.close(); self.run_app(KApp::Palette, ctx); }
-                if ui.button(lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
-                if ui.button(lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
+                if menuui::mbtn(ui, lk("c.palette", "")).clicked() { ui.close(); self.run_app(KApp::Palette, ctx); }
+                if menuui::mbtn(ui, lk("c.key-list", "")).clicked() { ui.close(); self.cmdui.open_keylist(); }
+                if menuui::mbtn(ui, lk("c.key-config", "")).clicked() { ui.close(); self.cmdui.open_keycfg(); }
                 ui.separator();
-                if ui.button(lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
+                if menuui::mbtn(ui, lk("c.about", "")).clicked() { ui.close(); self.about_open = true; }
             });
         });
     }
@@ -1833,6 +1833,7 @@ impl App {
         self.cfg.view.side_collapsed = false;
         self.cfg.view.status_bar = true;
         self.cfg.view.rail = true;
+        self.cfg.view.ruler = true;
     }
 
     /// 极简布局 (Sakura 风格的单个文本框): 收起侧栏 / 终端 / 预览 / 分割, 只留编辑区和状态栏
@@ -2119,6 +2120,7 @@ impl App {
         let mut widest = max_cols;
         if !self.docs[ai].grep_result { let _ = self.docs[ai].changed(); }  // 修改行标记: 按 rev 缓存, 绘制时只读
         // 列标尺: 固定在编辑区上方, 横向跟着滚动 (滚动量在 ScrollArea 返回后才知道, 先占位)
+        self.sys.ruler_h = if vw.ruler { row_h } else { 0.0 };
         let ruler_rect = if vw.ruler { Some(ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::hover()).0) } else { None };
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行

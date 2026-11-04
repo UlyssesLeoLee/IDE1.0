@@ -82,7 +82,10 @@ impl App {
                 if on { p.rect_filled(rect, 6.0, act_bg); } else if resp.hovered() { p.rect_filled(rect, 6.0, tc.bg_hover); }
                 let col = if on { act_fg } else if resp.hovered() { tc.fg } else { tc.fg_dim };
                 crate::svgicon::paint(p, rect.center(), 18.0, icon, col, 1.8);
-                if on { p.rect_filled(Rect::from_center_size(egui::pos2(edge + 1.0, rect.center().y), Vec2::new(2.0, RAIL_BTN * 0.6)), 1.0, tc.fg); }
+                if on {
+                    let bar = if tc.dark { Color32::from_rgb(0x00, 0x7a, 0xcc) } else { Color32::from_rgb(0x00, 0x5f, 0xb8) };
+                    p.rect_filled(Rect::from_center_size(egui::pos2(edge + 1.5, rect.center().y), Vec2::new(3.0, RAIL_BTN * 0.6)), 2.0, bar);
+                }
                 if resp.on_hover_text(trz(tip)).clicked() { hit = Some(*t); }
             }
         });

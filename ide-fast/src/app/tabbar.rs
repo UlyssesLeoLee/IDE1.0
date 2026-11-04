@@ -97,8 +97,8 @@ impl App {
             if ui.button(tr("c.close-left-s")).clicked() { *cmd = Some(TabCmd::Many(i, CloseKind::Left)); ui.close(); }
             if ui.button(tr("c.close-right-s")).clicked() { *cmd = Some(TabCmd::Many(i, CloseKind::Right)); ui.close(); }
             ui.separator();
-            if ui.button(lk("c.tab-move-left", "")).clicked() { *cmd = Some(TabCmd::Move(i, true)); ui.close(); }
-            if ui.button(lk("c.tab-move-right", "")).clicked() { *cmd = Some(TabCmd::Move(i, false)); ui.close(); }
+            if menuui::mbtn(ui, lk("c.tab-move-left", "")).clicked() { *cmd = Some(TabCmd::Move(i, true)); ui.close(); }
+            if menuui::mbtn(ui, lk("c.tab-move-right", "")).clicked() { *cmd = Some(TabCmd::Move(i, false)); ui.close(); }
             if ui.button(tr("c.copy-path")).clicked() { if let Some(p) = &doc.path { ctx.copy_text(p.display().to_string()); } ui.close(); }
             ui.separator();
             for (g, name) in GROUP_KEYS.iter().enumerate() {

@@ -87,8 +87,24 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
 }
 
 /// 一行带勾选标记的菜单项: 选中时行首(左边距 7px 处)画一个 `✓`, 文字位置不变; 勾选和单选都用它
+/// 菜单项文字「名字  键」拆成 (名字, 键): `lk` 用两个空格隔开, 键靠右对齐显示 (Tauri 菜单的样子)
+pub fn split_keys(s: &str) -> (&str, &str) {
+    s.rsplit_once("  ").unwrap_or((s, ""))
+}
+
+/// 菜单里的一项: 名字靠左, 快捷键靠右 (弱色)
+pub fn mbtn(ui: &mut Ui, text: impl AsRef<str>) -> Response {
+    let (name, keys) = split_keys(text.as_ref());
+    let mut b = egui::Button::new(name);
+    if !keys.is_empty() { b = b.shortcut_text(keys); }
+    ui.add(b)
+}
+
 pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
-    let r = ui.add(egui::Button::new(label.as_ref()).fill(Color32::TRANSPARENT));
+    let (name, keys) = split_keys(label.as_ref());
+    let mut b = egui::Button::new(name).fill(Color32::TRANSPARENT);
+    if !keys.is_empty() { b = b.shortcut_text(keys); }
+    let r = ui.add(b);
     if on {
         ui.painter().text(egui::pos2(r.rect.left() + 7.0, r.rect.center().y), Align2::LEFT_CENTER, "✓", FontId::proportional(12.0), tc.fg);
     }
@@ -98,6 +114,12 @@ pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_text_splits_name_and_keys() {
+        assert_eq!(split_keys("新建  Ctrl+N"), ("新建", "Ctrl+N"));
+        assert_eq!(split_keys("打开文件夹"), ("打开文件夹", ""));
+    }
 
     #[test]
     fn every_menu_has_a_distinct_mnemonic() {
