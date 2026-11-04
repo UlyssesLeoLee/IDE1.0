@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod glassfx;
 mod ui_ext;
 mod ckbox;
 mod scrollx;
@@ -170,7 +171,7 @@ fn main() -> eframe::Result<()> {
             #[cfg(windows)]
             if blur {
                 // 窗口背后加 DWM 模糊; 失败 (旧系统 / 驱动) 就只剩 alpha 叠色, 不影响使用
-                let _ = window_vibrancy::apply_blur(cc, Some((0, 0, 0, 1)));
+                let _ = glassfx::apply(cc);
             }
             #[cfg(not(windows))]
             let _ = blur;

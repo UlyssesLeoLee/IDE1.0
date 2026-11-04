@@ -32,6 +32,10 @@ pub struct MdEdit {
     pub start: usize,
     pub end: usize,
     pub buf: String,
+    /// 开始编辑时的原文 (判断有没有改动)
+    pub orig: String,
+    /// 编辑框已经画过一帧 (第一帧抢焦点、不处理点击)
+    pub shown: bool,
     /// 开始编辑时的文档 id / 修订号: 之后文档在别处被改过就放弃这次编辑 (行范围可能已经不对)
     pub doc: u64,
     pub rev: u64,
@@ -296,21 +300,40 @@ fn table_ui(ui: &mut egui::Ui, id: usize, rows: &[Vec<String>], aligns: &[Align]
 }
 
 /// 源码第 `line` 行 (0 起) 落在哪个块: 起始行不超过它的最后一个块
-/// 就地编辑框: 多行文本 + 应用 / 取消
+/// 就地编辑怎么收场
+#[derive(Debug, PartialEq, Eq)]
+pub enum EditEnd { Keep, Apply, Cancel }
+
+/// 「应用」钮 = 应用; 「取消」钮 / Esc = 放弃; 点编辑框外 = 有改动就应用, 没改动就直接收起
+pub fn edit_end(changed: bool, apply_btn: bool, cancel_btn: bool, esc: bool, click_away: bool) -> EditEnd {
+    if apply_btn { EditEnd::Apply }
+    else if cancel_btn || esc { EditEnd::Cancel }
+    else if click_away { if changed { EditEnd::Apply } else { EditEnd::Cancel } }
+    else { EditEnd::Keep }
+}
+
+/// 就地编辑框: 多行文本 + 应用 / 取消 (点框外 = 应用, Esc = 取消; 应用只落一次补丁 = 一步撤销)
 fn edit_ui(ui: &mut egui::Ui, cache: &mut MdCache, ev: &mut MdEvent) {
     let Some(e) = cache.edit.as_mut() else { return };
     let rows = e.buf.lines().count().clamp(3, 14);
-    ui.add(egui::TextEdit::multiline(&mut e.buf).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY).desired_rows(rows).code_editor());
+    let first = !e.shown;
+    e.shown = true;
+    let top = ui.cursor().min;
+    let te = ui.add(egui::TextEdit::multiline(&mut e.buf).font(egui::TextStyle::Monospace).desired_width(f32::INFINITY).desired_rows(rows).code_editor());
+    if first { te.request_focus(); }
     let (mut apply, mut cancel) = (false, false);
-    ui.horizontal(|ui| {
+    let row = ui.horizontal(|ui| {
         apply = ui.button(crate::i18n::tr("md.apply")).clicked();
-        cancel = ui.button(crate::i18n::tr("md.cancel")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
+        cancel = ui.button(crate::i18n::tr("md.cancel")).clicked();
     });
-    if apply {
-        ev.apply = Some((e.start, e.end, e.buf.clone()));
-        cache.edit = None;
-    } else if cancel {
-        cache.edit = None;
+    let area = egui::Rect::from_min_max(top, egui::pos2(te.rect.right(), row.response.rect.bottom()));
+    let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    let away = !first && ui.input(|i| i.pointer.primary_clicked() && i.pointer.interact_pos().is_some_and(|p| !area.contains(p)));
+    let changed = e.buf != e.orig;
+    match edit_end(changed, apply, cancel, esc, away) {
+        EditEnd::Apply => { ev.apply = Some((e.start, e.end, e.buf.clone())); cache.edit = None; }
+        EditEnd::Cancel => cache.edit = None,
+        EditEnd::Keep => {}
     }
 }
 
@@ -516,6 +539,17 @@ pub fn show(ui: &mut egui::Ui, blocks: &[Parsed], cx: &MdCtx, cache: &mut MdCach
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edit_ends_by_button_key_or_click_away() {
+        use EditEnd::*;
+        assert_eq!(edit_end(false, true, false, false, false), Apply);
+        assert_eq!(edit_end(true, false, true, false, false), Cancel);
+        assert_eq!(edit_end(true, false, false, true, false), Cancel, "Esc 放弃改动");
+        assert_eq!(edit_end(true, false, false, false, true), Apply, "点框外 = 应用改动");
+        assert_eq!(edit_end(false, false, false, false, true), Cancel, "没改动点框外 = 收起");
+        assert_eq!(edit_end(true, false, false, false, false), Keep);
+    }
 
     #[test]
     fn overlay_body_is_860_wide_and_centred_with_24px_gutters() {

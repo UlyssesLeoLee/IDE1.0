@@ -122,10 +122,11 @@ impl App {
                 }
             }
         }
-        if let Some(n) = ev.edit_req {
+        // 点另一个块等于「点框外」: 先应用, 这次点击不再开新编辑 (块的行号已经变了)
+        if let Some(n) = ev.edit_req.filter(|_| ev.apply.is_none()) {
             let d = &self.docs[ai];
             if let Some((start, end)) = mdtools::block_span(blocks, n, &d.lines) {
-                self.md_cache.edit = Some(MdEdit { start, end, buf: d.lines[start..end].join("\n"), doc: d.id, rev: d.rev });
+                self.md_cache.edit = Some(MdEdit { start, end, buf: d.lines[start..end].join("\n"), orig: d.lines[start..end].join("\n"), shown: false, doc: d.id, rev: d.rev });
             }
         }
         if let Some((start, end, text)) = &ev.apply {

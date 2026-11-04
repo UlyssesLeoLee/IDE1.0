@@ -27,6 +27,7 @@ use std::path::PathBuf;
 mod chrome;
 mod docks;
 mod menuui;
+mod menunav;
 mod tabbar;
 mod statusbar;
 mod titlebar;
@@ -1640,6 +1641,8 @@ impl App {
         if ctx.input(|i| i.key_pressed(Key::Escape)) && egui::Popup::is_any_open(ctx) {
             egui::Popup::close_all(ctx);
             cmd(ctx, Modifiers::NONE, Key::Escape);
+        } else if self.md_cache.edit.is_some() {
+            // 预览里就地编辑开着: Esc 留给编辑框 (取消), 这里不吃
         } else if cmd(ctx, Modifiers::NONE, Key::Escape) {
             if self.text_drag.as_ref().is_some_and(|t| t.started && !t.cancelled) { if let Some(t) = self.text_drag.as_mut() { t.cancelled = true; t.drop = None; } self.cur().tip = trz("已取消拖放").into(); }
             else if self.side.grep.running() { self.side.grep.cancel(); self.side.grep.msg = format!("已停止, {} 处命中", self.side.grep.results.len()); }
@@ -1668,12 +1671,36 @@ impl App {
             let id = self.sys.menu_ids[n].1;
             egui::Popup::close_all(ctx);
             egui::Popup::open_id(ctx, id);
-            // 编辑区占着焦点而且锁着上下键: 放掉它, 过两帧 (菜单项登记完) 再把焦点送到第一项, 之后 ↑ ↓ ← → / 回车 / Esc 走 egui 自带的菜单导航
+            // 编辑区占着焦点而且锁着方向键: 放掉它; 之后 ↑ ↓ ← → 由 raw_input_hook 截下、在 `menu_arrows` 里按状态机处理 (第一次 ↓ 高亮第一项)
             ctx.memory_mut(|m| if let Some(f) = m.focused() { m.surrender_focus(f); });
-            self.sys.mn_focus = 2;
-        } else if self.sys.mn_focus > 0 {
-            self.sys.mn_focus -= 1;
-            if self.sys.mn_focus == 0 && egui::Popup::is_any_open(ctx) { ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::Next)); }
+            self.sys.nav_q.clear();
+        }
+        self.menu_arrows(ctx);
+    }
+
+    /// 当前开着的顶层菜单下标
+    fn open_top_menu(&self, ctx: &egui::Context) -> Option<usize> {
+        self.sys.menu_ids.iter().position(|m| egui::Popup::is_id_open(ctx, m.1))
+    }
+
+    /// 菜单开着时的方向键: ← → 切顶层菜单, ↑ ↓ 在项间移动 (焦点即高亮), Enter / Esc 走 egui 自带逻辑
+    fn menu_arrows(&mut self, ctx: &egui::Context) {
+        let keys = std::mem::take(&mut self.sys.nav_q);
+        for k in keys {
+            let Some(menu) = self.open_top_menu(ctx) else { break };
+            let layer = egui::LayerId::new(egui::Order::Foreground, self.sys.menu_ids[menu].1);
+            let mut items: Vec<(egui::Id, egui::Rect)> = ctx.viewport(|v| v.prev_pass.widgets.get_layer(layer).filter(|w| w.enabled && w.sense.is_focusable()).map(|w| (w.id, w.rect)).collect());
+            items.sort_by(|a, b| a.1.top().total_cmp(&b.1.top()).then(a.1.left().total_cmp(&b.1.left())));
+            let focused = ctx.memory(|m| m.focused());
+            let cur = items.iter().position(|i| Some(i.0) == focused);
+            let (nm, ni) = menunav::step(menu, cur, self.sys.menu_ids.len(), items.len(), k);
+            if nm != menu {
+                egui::Popup::open_id(ctx, self.sys.menu_ids[nm].1);
+                ctx.memory_mut(|m| if let Some(f) = m.focused() { m.surrender_focus(f); });
+            } else if let Some(i) = ni {
+                let id = items[i].0;
+                ctx.memory_mut(|m| m.request_focus(id));
+            }
             ctx.request_repaint();
         }
     }
@@ -2588,6 +2615,28 @@ impl eframe::App for App {
         if self.sys.theme_glass { [0.0; 4] } else { Color32::from_rgb(12, 12, 12).to_normalized_gamma_f32() }
     }
 
+    /// 菜单开着时截下方向键 (egui 的空间焦点导航会乱跳), 并清洗 Alt+字母 / Esc 同帧的 Text 事件
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let menu = self.open_top_menu(ctx);
+        menunav::scrub(&mut raw.events, &mut self.sys.swallow, menu.is_some() || egui::Popup::is_any_open(ctx));
+        let Some(menu) = menu else { return };
+        // 焦点在子菜单里 (不是顶层菜单那一层) 就让 egui 自己处理
+        let top = egui::LayerId::new(egui::Order::Foreground, self.sys.menu_ids[menu].1);
+        if let Some(f) = ctx.memory(|m| m.focused()) {
+            let in_top = ctx.viewport(|v| v.prev_pass.widgets.get_layer(top).any(|w| w.id == f));
+            let on_bar = ctx.viewport(|v| v.prev_pass.widgets.get(f).is_some_and(|w| w.layer_id != top && w.layer_id.order != egui::Order::Foreground));
+            if !in_top && !on_bar { return; }
+            // 焦点在会展开子菜单的项上: → 留给 egui 开子菜单
+            if in_top && egui::Popup::is_id_open(ctx, egui::containers::menu::SubMenu::id_from_widget_id(f)) { return; }
+        }
+        let q = &mut self.sys.nav_q;
+        raw.events.retain(|e| match e {
+            egui::Event::Key { key, pressed: true, modifiers, .. } => match menunav::nav_key(*key, *modifiers) { Some(k) => { q.push(k); false } None => true },
+            egui::Event::Key { key, pressed: false, modifiers, .. } => menunav::nav_key(*key, *modifiers).is_none(),
+            _ => true,
+        });
+    }
+
     fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.glass_sync(frame);
         // 自绘标题栏 + 最大化: Windows 把无边框的最大化窗口放大出屏幕 8 点 (可调大小的窗口框), 内容缩进这么多才不会被裁掉
@@ -2820,6 +2869,33 @@ mod tests {
     fn app(st: Settings) -> (App, std::sync::MutexGuard<'static, ()>) {
         let g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         (App::build(vec![], None, Trace::new(), st, false), g)
+    }
+
+    #[test]
+    fn markdown_block_click_edits_in_place_and_apply_is_one_undo_step() {
+        let (mut a, _g) = app(Settings::default());
+        a.new_doc();
+        let ai = a.active;
+        let orig: Vec<String> = ["# Title", "", "first para", "", "second para"].iter().map(|s| s.to_string()).collect();
+        a.docs[ai].lines = orig.clone();
+        let blocks = crate::markdown::parse(&a.docs[ai].lines);
+        let n = blocks.iter().position(|b| b.line == 2).expect("段落块");
+        // 点块 -> 进入就地编辑, 编辑框装着该块原文
+        a.md_handle(ai, &blocks, &crate::md_view::MdEvent { edit_req: Some(n), ..Default::default() });
+        let e = a.md_cache.edit.as_ref().expect("进入编辑");
+        assert_eq!((e.start, e.end, e.buf.as_str()), (2, 3, "first para"));
+        // 点框外 (有改动) = 应用: 一个补丁, 撤销一次就回到原文
+        let ev = crate::md_view::MdEvent { apply: Some((2, 3, "first
+EDITED".into())), ..Default::default() };
+        a.md_handle(ai, &blocks, &ev);
+        assert_eq!(a.docs[ai].lines[2..4], ["first".to_string(), "EDITED".to_string()]);
+        a.docs[ai].undo();
+        assert_eq!(a.docs[ai].lines, orig, "一次撤销还原整个就地编辑");
+        // 同一帧既应用又点了另一块: 不开新编辑 (行号已变)
+        a.md_cache.edit = None;
+        let ev = crate::md_view::MdEvent { apply: Some((2, 3, "x".into())), edit_req: Some(0), ..Default::default() };
+        a.md_handle(ai, &blocks, &ev);
+        assert!(a.md_cache.edit.is_none());
     }
 
     #[test]

@@ -31,6 +31,7 @@ rquickjs = { version = "0.9", default-features = false }
 # 半透明 (玻璃) 主题: Windows 的 DWM 模糊背景 (内部有 unsafe, 由依赖承担; 本 crate 仍 forbid unsafe)。Tauri 版同一个版本, 已在锁文件里
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = { version = "0.8", default-features = false }
+raw-window-handle = "0.6"
 
 [lints]
 workspace = true

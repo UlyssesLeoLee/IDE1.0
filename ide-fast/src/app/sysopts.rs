@@ -30,6 +30,10 @@ pub(super) struct SysState {
     pub menu_ids: Vec<(&'static str, egui::Id)>,
     /// Alt+助记字母打开菜单后, 还要等几帧再把焦点送进菜单 (0 = 不用)
     pub mn_focus: u8,
+    /// 菜单开着时 raw_input_hook 截下的方向键 (egui 自己的焦点导航看不到它们), 下一次 shortcuts 处理
+    pub nav_q: Vec<super::menunav::NavKey>,
+    /// Alt+字母附带的 Text 事件还要吃几帧
+    pub swallow: Option<(char, u8)>,
     /// 窗口背后现在有没有 DWM 模糊 (玻璃主题 + 「模糊背景」设置)
     pub blur_on: bool,
     /// 列标尺占的高度 (标尺开着时 = 一行高, 否则 0); 欢迎页让出这一条
@@ -87,7 +91,7 @@ impl App {
         self.sys.blur_on = want;
         #[cfg(windows)]
         {
-            let _ = if want { window_vibrancy::apply_blur(frame, Some((0, 0, 0, 1))) } else { window_vibrancy::clear_blur(frame) };
+            if want { let _ = crate::glassfx::apply(frame); } else { crate::glassfx::clear(frame); }
         }
         #[cfg(not(windows))]
         let _ = frame;
