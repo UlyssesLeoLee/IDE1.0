@@ -24,7 +24,7 @@ pub enum App {
     Terminal, AiChat, MdPreview, Dark, Highlight, Wrap, Sidebar, LineNumbers, StatusBar, Whitespace, Ruler, CurLine, Minimap, MinimalMode, FullMode, ZoomIn, ZoomOut, ZoomReset,
     Prefs, ExportCfg, ImportCfg, ImportSakura, ResetCfg, KeyConfig, KeyList, Palette,
     CopyFname, CopyPath, SelParaPrev, SelParaNext, ModNext, ModPrev, MacroSave, MacroLoad, MacroRecMac, MacroToMac, FuncNext, FuncPrev, ColDelete, ColReplace, CopyTag, CopyWrapped, OpenHc, ModNextSel, ModPrevSel,
-    GroupNext, GroupPrev, TabSeparate, TabJointNext, TabJointPrev, BindWindow, GroupClose, SpaceIndent, SpaceUnindent, CurCenter, BackupNow, SelCountMode, FindMarks, FindStart, ExecCmd, Completion, GotoDef, About, CheckUpdate,
+    GroupNext, GroupPrev, TabSeparate, TabJointNext, TabJointPrev, BindWindow, GroupClose, SpaceIndent, SpaceUnindent, CurCenter, BackupNow, SelCountMode, FindMarks, FindStart, ExecCmd, Completion, GotoDef, MacroRegister, MacroSlot(u8), About, CheckUpdate,
     SelMode, TagJump, TagBack, TagKeyword, TagsMake,
     IsFwd, IsBack, IsRegexFwd, IsRegexBack, IsMigemoFwd, IsMigemoBack,
     Base64Decode, UuDecode, CopyHtml, CopyHtmlLn, ClipHistory, CtrlCodes, InsDate, InsTime, InsStamp, StampCfg,
@@ -151,6 +151,12 @@ fn build() -> Vec<Entry> {
         z("app.space-indent", "SPACE 缩进", "", "menu.edit", SpaceIndent), z("app.space-unindent", "SPACE 反缩进", "", "menu.edit", SpaceUnindent),
         z("app.cur-center", "光标行居中", "", "menu.edit", CurCenter), z("app.sel-count-mode", "切换选区统计方式 (字符 / 字节 / 行)", "", "menu.edit", SelCountMode),
         z("app.completion", "代码补全", "Ctrl+Space|Alt+/", "menu.edit", Completion), z("app.goto-def", "转到定义 (本文件)", "", "menu.search", GotoDef),
+        z("app.macro-register", "把当前文档 / 选区登记为宏", "", "menu.macro", MacroRegister),
+        z("app.macro-slot-1", "运行宏 1", "", "menu.macro", MacroSlot(0)), z("app.macro-slot-2", "运行宏 2", "", "menu.macro", MacroSlot(1)), z("app.macro-slot-3", "运行宏 3", "", "menu.macro", MacroSlot(2)), z("app.macro-slot-4", "运行宏 4", "", "menu.macro", MacroSlot(3)), 
+        z("app.macro-slot-5", "运行宏 5", "", "menu.macro", MacroSlot(4)), z("app.macro-slot-6", "运行宏 6", "", "menu.macro", MacroSlot(5)), z("app.macro-slot-7", "运行宏 7", "", "menu.macro", MacroSlot(6)), z("app.macro-slot-8", "运行宏 8", "", "menu.macro", MacroSlot(7)), 
+        z("app.macro-slot-9", "运行宏 9", "", "menu.macro", MacroSlot(8)), z("app.macro-slot-10", "运行宏 10", "", "menu.macro", MacroSlot(9)), z("app.macro-slot-11", "运行宏 11", "", "menu.macro", MacroSlot(10)), z("app.macro-slot-12", "运行宏 12", "", "menu.macro", MacroSlot(11)), 
+        z("app.macro-slot-13", "运行宏 13", "", "menu.macro", MacroSlot(12)), z("app.macro-slot-14", "运行宏 14", "", "menu.macro", MacroSlot(13)), z("app.macro-slot-15", "运行宏 15", "", "menu.macro", MacroSlot(14)), z("app.macro-slot-16", "运行宏 16", "", "menu.macro", MacroSlot(15)), 
+        z("app.macro-slot-17", "运行宏 17", "", "menu.macro", MacroSlot(16)), z("app.macro-slot-18", "运行宏 18", "", "menu.macro", MacroSlot(17)), z("app.macro-slot-19", "运行宏 19", "", "menu.macro", MacroSlot(18)), z("app.macro-slot-20", "运行宏 20", "", "menu.macro", MacroSlot(19)),
         z("app.exec-cmd", "执行外部命令 (终端)", "Ctrl+F5", "menu.tool", ExecCmd),
         z("app.backup-now", "立即备份", "", "menu.tool", BackupNow),
         z("app.find-marks", "切换查找标记 (全部强调)", "", "menu.search", FindMarks), z("app.find-start", "回到查找起点", "", "menu.search", FindStart),
@@ -468,6 +474,17 @@ mod tests {
             let e = entry_by_id(id).unwrap_or_else(|| panic!("找不到命令 {id}"));
             assert!(e.default.split('|').any(|k| k == key), "{id} 应绑 {key}, 实际 {}", e.default);
         }
+    }
+
+    #[test]
+    fn every_macro_slot_has_its_own_command() {
+        for n in 1..=crate::settings::MACRO_SLOTS {
+            let e = entry_by_id(&format!("app.macro-slot-{n}")).unwrap_or_else(|| panic!("缺少 app.macro-slot-{n}"));
+            assert!(matches!(e.run, Run::App(App::MacroSlot(i)) if i as usize == n - 1), "宏槽 {n} 的命令要对应槽号 {}", n - 1);
+            assert_eq!(e.default, "", "宏槽命令默认不绑键 (用户自己在键位设置里绑)");
+        }
+        assert!(entry_by_id("app.macro-register").is_some());
+        assert!(entry_by_id(&format!("app.macro-slot-{}", crate::settings::MACRO_SLOTS + 1)).is_none());
     }
 
     #[test]

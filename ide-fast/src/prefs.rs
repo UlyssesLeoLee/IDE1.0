@@ -18,6 +18,7 @@ pub enum PrefsTab {
     Search,
     Terminal,
     Toolbar,
+    Macro,
 }
 
 pub struct Prefs {
@@ -232,6 +233,25 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                 let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if (ui.button(tr("pf.type-add")).clicked() || enter) && add_type(d, &p.new_ext) { p.new_ext.clear(); }
             });
+        }
+        PrefsTab::Macro => {
+            ui.small(tr("pf.macro-hint"));
+            ui.add_space(4.0);
+            for (i, s) in d.macro_slots.iter_mut().enumerate() {
+                let title = if s.is_empty() { format!("{}  {}", i + 1, tr("pf.macro-empty")) } else { format!("{}  {}", i + 1, if s.name.is_empty() { "(无名)" } else { s.name.as_str() }) };
+                egui::CollapsingHeader::new(title).id_salt(("pf-macro", i)).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(tr("pf.macro-name"));
+                        ui.add(egui::TextEdit::singleline(&mut s.name).char_limit(64).desired_width(160.0));
+                        egui::ComboBox::from_id_salt(("pf-macro-kind", i)).width(150.0).selected_text(if s.kind == "ppa" { tr("pf.macro-ppa") } else { tr("pf.macro-mac") }).show_ui(ui, |ui| {
+                            ui.selectable_value(&mut s.kind, "mac".to_string(), tr("pf.macro-mac"));
+                            ui.selectable_value(&mut s.kind, "ppa".to_string(), tr("pf.macro-ppa"));
+                        });
+                    });
+                    ui.add(egui::TextEdit::multiline(&mut s.code).code_editor().desired_rows(6).desired_width(f32::INFINITY));
+                    if ui.button(tr("pf.macro-clear")).clicked() { *s = settings::MacroSlot::default(); }
+                });
+            }
         }
         PrefsTab::Toolbar => {
             ui.small(tr("pf.toolbar-hint"));

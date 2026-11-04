@@ -378,7 +378,7 @@ impl App {
         let mut open = true;
         egui::Window::new(tr("pf.title")).open(&mut open).collapsible(false).resizable(false).default_width(460.0).default_pos(egui::pos2(24.0, 56.0)).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search"), (PrefsTab::Terminal, "pf.tab.terminal"), (PrefsTab::Toolbar, "pf.tab.toolbar")] {
+                for (t, key) in [(PrefsTab::General, "pf.tab.general"), (PrefsTab::Edit, "pf.tab.edit"), (PrefsTab::Files, "pf.tab.files"), (PrefsTab::Font, "pf.tab.font"), (PrefsTab::Types, "pf.tab.types"), (PrefsTab::Search, "pf.tab.search"), (PrefsTab::Terminal, "pf.tab.terminal"), (PrefsTab::Toolbar, "pf.tab.toolbar"), (PrefsTab::Macro, "pf.tab.macro")] {
                     ui.selectable_value(&mut p.tab, t, tr(key));
                 }
             });
@@ -1394,8 +1394,21 @@ impl App {
         if ui.button(trz(if rec_mac { "停止录制并生成 .mac" } else { "宏录制 (.mac)" })).clicked() { ui.close(); self.macro_rec_mac(); }
         if ui.button(trz("把刚录的键盘宏转成 .mac")).clicked() { ui.close(); self.macro_to_mac(); }
         ui.separator();
-        if menuui::mbtn(ui, lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(); }
-        if menuui::mbtn(ui, lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(); }
+        let ctx = ui.ctx().clone();
+        let mut run_slot: Option<usize> = None;
+        ui.menu_button(trz("宏登记"), |ui| {
+            let mut any = false;
+            for (i, s) in self.cfg.macro_slots.iter().enumerate().filter(|(_, s)| !s.is_empty()) {
+                any = true;
+                if ui.button(format!("{}: {}", i + 1, if s.name.is_empty() { "(无名)" } else { &s.name })).clicked() { run_slot = Some(i); ui.close(); }
+            }
+            if !any { ui.label(tr("ui.none")); }
+            ui.separator();
+            if ui.button(trz("把当前文档 / 选区登记为宏")).clicked() { self.register_macro_doc(); ui.close(); }
+        });
+        if let Some(i) = run_slot { self.run_macro_slot(i, &ctx); }
+        if menuui::mbtn(ui, lk("c.macro-run-doc", "")).clicked() { ui.close(); self.run_mac_doc(&ctx); }
+        if menuui::mbtn(ui, lk("c.macro-run-file", "")).clicked() { ui.close(); self.run_mac_file(&ctx); }
         if menuui::mbtn(ui, lk("c.macro-run-ppa", "")).clicked() { ui.close(); self.run_ppa_doc(); }
     }
 
@@ -1438,10 +1451,10 @@ impl App {
     }
 
     /// 把当前文档的文本当 Sakura 宏运行 (作用在上一份活动的另一个文档上; 只有一份就作用在自己上)
-    fn run_mac_doc(&mut self) {
+    fn run_mac_doc(&mut self, ctx: &egui::Context) {
         let src = self.cur().text_lf();
         let target = if self.docs.len() > 1 { (0..self.docs.len()).rev().find(|&i| i != self.active) } else { Some(self.active) };
-        self.run_mac_src(&src, target.unwrap_or(self.active));
+        self.run_mac_src(&src, target.unwrap_or(self.active), ctx);
     }
 
     /// 点了插件菜单里的命令: 按权限取文档参数, 交给脚本宿主异步跑 (结果在 `ui()` 里轮询)
@@ -1483,19 +1496,80 @@ impl App {
         self.docs[self.active].tip = trf("dlg.plugin-running", &["PPA"]);
     }
 
-    fn run_mac_file(&mut self) {
+    /// 运行宏登记槽 `n` (0 起): Sakura 宏作用在活动文档上; PPA 脚本交给插件宿主
+    fn run_macro_slot(&mut self, n: usize, ctx: &egui::Context) {
+        let slot = self.cfg.macro_slots.get(n).cloned().unwrap_or_default();
+        if slot.is_empty() {
+            self.cur().tip = format!("宏 {} 是空的 (首选项 > 宏 里登记)", n + 1);
+            return;
+        }
+        if slot.kind == "ppa" {
+            let Some(row) = plugins::rows().into_iter().find(|r| r.id == "ppa" && r.enabled) else { self.cur().tip = tr("dlg.ppa-off").into(); return };
+            let t = self.active.min(self.docs.len() - 1);
+            self.plug.start("ppa", &row.perms, "run", "PPA", &self.docs[t], Some(serde_json::json!({ "script": slot.code })));
+            self.docs[t].tip = trf("dlg.plugin-running", &["PPA"]);
+        } else {
+            let a = self.active;
+            self.run_mac_src(&slot.code, a, ctx);
+        }
+    }
+
+    /// 把当前文档 (有选区就只登记选区) 登记到第一个空宏槽 (同 Tauri `macro-register-doc`); .ppa 文档登记成 PPA, 其它当 Sakura 宏
+    fn register_macro_doc(&mut self) {
+        let (code, name, lower) = {
+            let d = self.cur();
+            let sel = crate::plugin_ui::selection_text(d);
+            (if sel.is_empty() { d.text_lf() } else { sel }, d.name.rsplit_once('.').map(|(s, _)| s).unwrap_or(&d.name).to_string(), d.name.to_lowercase())
+        };
+        if code.trim().is_empty() { self.cur().tip = "没有可登记的内容".into(); return; }
+        if lower.ends_with(".js") { self.cur().tip = "高速版不运行 JS 宏, 没有登记".into(); return; }
+        let kind = if lower.ends_with(".ppa") { "ppa" } else { "mac" };
+        self.cur().tip = match crate::settings::register_macro(&mut self.cfg.macro_slots, &name, kind, &code) {
+            Some(i) => format!("已登记到宏 {}: {name}", i + 1),
+            None => format!("{} 个宏槽都满了 (首选项 > 宏 里清空一个)", crate::settings::MACRO_SLOTS),
+        };
+    }
+
+    fn run_mac_file(&mut self, ctx: &egui::Context) {
         let Some(p) = rfd::FileDialog::new().add_filter("Sakura 宏", &["mac"]).pick_file() else { return };
         match editcore::document_io::read_doc(&p, None) {
-            Ok(d) => { let a = self.active; self.run_mac_src(&d.content, a); }
+            Ok(d) => { let a = self.active; self.run_mac_src(&d.content, a, ctx); }
             Err(e) => self.cur().tip = format!("读取宏失败: {e}"),
         }
     }
 
-    fn run_mac_src(&mut self, src: &str, target: usize) {
+    /// 运行一份 Sakura 宏: 先整体预检 (有一步跑不了就一步都不执行), 再按顺序逐步执行 ——
+    /// 只动文档的步骤在目标文档上跑, 窗口 / 文件 / 查找这类步骤按命令表里的命令转交 `run_entry` (作用在宏的目标文档上);
+    /// 转交后活动标签可能变了 (新建、切换、关闭), 之后的步骤就跟着活动标签走。宏里的剪贴板最后同步回系统剪贴板
+    pub(super) fn run_mac_src(&mut self, src: &str, target: usize, ctx: &egui::Context) {
         let last = self.docs.len() - 1;
-        let tab = self.tab;
-        let d = &mut self.docs[target.min(last)];
-        d.tip = match crate::macros::run_mac(d, src, tab) { Ok(n) => format!("宏已执行 ({n} 步)"), Err(e) => format!("宏未执行: {e}") };
+        let steps = match crate::macros::plan_checked(src) {
+            Ok(s) => s,
+            Err(e) => { self.docs[target.min(last)].tip = format!("宏未执行: {e}"); return; }
+        };
+        let mut tid = self.docs[target.min(last)].id;
+        let mut env = crate::macros::MacroEnv::new(self.tab, self.tools.clip.first().cloned().unwrap_or_default());
+        let (mut done, mut failure) = (0usize, None::<String>);
+        for s in &steps {
+            let Some(i) = self.docs.iter().position(|d| d.id == tid) else { failure = Some("宏的目标文档已经关了".into()); break };
+            match crate::macros::run_step(&mut self.docs[i], s, &mut env) {
+                Ok(None) => done += 1,
+                Ok(Some(id)) => {
+                    let Some(idx) = chrome::index_of(id) else { failure = Some(format!("命令表里没有 {id}")); break };
+                    self.active = i;
+                    self.run_entry(idx, ctx);
+                    tid = self.docs[self.active.min(self.docs.len() - 1)].id;
+                    done += 1;
+                }
+                Err(e) => { failure = Some(e); break; }
+            }
+        }
+        if env.clip_changed { self.put_clip(ctx, env.clip.clone()); }
+        let i = self.docs.iter().position(|d| d.id == tid).unwrap_or(self.active.min(self.docs.len() - 1));
+        self.docs[i].tip = match failure {
+            None => format!("宏已执行 ({done} 步)"),
+            Some(e) => format!("宏在第 {} 步停下 (已执行 {done} 步): {e}", done + 1),
+        };
     }
 
     /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
@@ -1867,8 +1941,8 @@ impl App {
             KApp::Topmost => self.toggle_topmost(ctx),
             KApp::MacroToggle => self.cur().macro_toggle(),
             KApp::MacroPlay => self.cur().macro_play(),
-            KApp::MacroRunDoc => self.run_mac_doc(),
-            KApp::MacroRunFile => self.run_mac_file(),
+            KApp::MacroRunDoc => self.run_mac_doc(ctx),
+            KApp::MacroRunFile => self.run_mac_file(ctx),
             KApp::MacroRunPpa => self.run_ppa_doc(),
             KApp::Terminal => self.toggle_dock_open(crate::panels::Dock::Bottom),
             KApp::AiChat => self.ai_toggle(),
@@ -1925,6 +1999,8 @@ impl App {
             KApp::CurCenter => self.center_cursor(),
             KApp::BackupNow => self.backup_now(),
             KApp::Completion => self.show_completion(),
+            KApp::MacroRegister => self.register_macro_doc(),
+            KApp::MacroSlot(n) => self.run_macro_slot(n as usize, ctx),
             KApp::GotoDef => self.goto_definition(),
             KApp::ExecCmd => self.open_exec_terminal(),
             KApp::SelCountMode => self.cycle_sel_count(),
@@ -3227,6 +3303,71 @@ EDITED".into())), ..Default::default() };
         a.docs[0].goto(3, 4);
         a.goto_definition();
         assert_eq!(a.docs[0].cursor, [3, 0], "只出现这一次: 首次出现就是自己");
+    }
+
+    #[test]
+    fn macro_runs_document_and_window_steps_in_order_and_follows_the_new_active_tab() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.run_mac_src("S_InsText(\"first\");\nS_FileNew();\nS_InsText(\"second\");", 0, &ctx);
+        assert_eq!(a.docs.len(), 2, "S_FileNew 开了新标签");
+        assert_eq!(a.docs[0].lines, ["first"], "新建之前的文字在原来的文档里");
+        assert_eq!(a.docs[1].lines, ["second"], "新建之后的步骤跟着新的活动标签走");
+        assert_eq!(a.active, 1);
+        assert!(a.cur().tip.contains("宏已执行 (3 步)"), "{}", a.cur().tip);
+    }
+
+    #[test]
+    fn macro_with_an_unrunnable_step_does_nothing_and_says_why() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.run_mac_src("S_InsText(\"x\");\nS_Cascade();", 0, &ctx);
+        assert_eq!(a.docs[0].lines, [""], "整份宏都没执行");
+        assert!(a.docs[0].tip.contains("宏未执行") && a.docs[0].tip.contains("第 2 行") && a.docs[0].tip.contains("层叠窗口"), "{}", a.docs[0].tip);
+    }
+
+    #[test]
+    fn macro_clipboard_reaches_the_app_clipboard_history() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.docs[0].lines = vec!["alpha".into(), "beta".into()];
+        a.docs[0].goto(1, 0);
+        a.run_mac_src("S_Copy();\nS_GoFileTop();\nS_Paste();", 0, &ctx);
+        assert_eq!(a.tools.clip.first().map(String::as_str), Some("beta\n"), "宏里复制的整行同步进了剪贴板历史");
+        assert_eq!(a.docs[0].lines, ["beta", "alpha", "beta"], "宏里粘贴用的是宏自己的剪贴板");
+    }
+
+    #[test]
+    fn macro_slots_run_register_and_report_empty_or_full() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.run_macro_slot(0, &ctx);
+        assert!(a.cur().tip.contains("宏 1 是空的"), "{}", a.cur().tip);
+        a.cfg.macro_slots[3] = crate::settings::MacroSlot { name: "加头".into(), kind: "mac".into(), code: "S_InsText(\"> \");".into() };
+        a.docs[0].lines = vec!["body".into()];
+        a.docs[0].goto(0, 0);
+        a.run_macro_slot(3, &ctx);
+        assert_eq!(a.docs[0].lines, ["> body"], "槽里的 Sakura 宏作用在活动文档上");
+        // 登记: 选区优先, 否则整份文档; .js 不登记
+        a.docs[0].name = "tidy.mac".into();
+        a.docs[0].lines = vec!["S_Undo();".into()];
+        a.register_macro_doc();
+        let tip = a.cur().tip.clone();
+        assert_eq!((a.cfg.macro_slots[0].name.as_str(), a.cfg.macro_slots[0].kind.as_str(), a.cfg.macro_slots[0].code.trim()), ("tidy", "mac", "S_Undo();"), "{tip}");
+        assert!(tip.contains("已登记到宏 1"), "{tip}");
+        a.docs[0].name = "x.ppa".into();
+        a.register_macro_doc();
+        assert_eq!(a.cfg.macro_slots[1].kind, "ppa", ".ppa 文档登记成 PPA");
+        a.docs[0].name = "m.js".into();
+        a.register_macro_doc();
+        assert!(a.cur().tip.contains("不运行 JS 宏") && a.cfg.macro_slots[2].is_empty(), "{}", a.cur().tip);
+        a.docs[0].name = "full.mac".into();
+        for i in 0..crate::settings::MACRO_SLOTS { if a.cfg.macro_slots[i].is_empty() { a.cfg.macro_slots[i].code = "S_Undo();".into(); } }
+        a.register_macro_doc();
+        assert!(a.cur().tip.contains("宏槽都满了"), "{}", a.cur().tip);
+        a.docs[0].lines = vec!["  ".into()];
+        a.register_macro_doc();
+        assert!(a.cur().tip.contains("没有可登记的内容") || a.cur().tip.contains("宏槽都满了"), "{}", a.cur().tip);
     }
 
     #[test]

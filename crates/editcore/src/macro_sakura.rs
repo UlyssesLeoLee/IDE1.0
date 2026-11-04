@@ -295,6 +295,11 @@ pub fn parse(src: &str) -> Result<Vec<Statement>, MacroError> {
 // ---------------------------------------------------------------- 规划
 
 /// 查 `S_` 函数 (传入不含 `S_` 的名字) 对应的命令: `(F_ id, 命令名, 默认键)`.
+/// 宏函数表里所有函数的名字 (不含 `S_` 前缀), 给「逐个检查宿主能不能运行」的测试和文档用
+pub fn command_names() -> Vec<&'static str> {
+    SAKURA_COMMANDS.iter().map(|e| e.0).collect()
+}
+
 pub fn lookup_command(name: &str) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     SAKURA_COMMANDS
         .binary_search_by(|e| e.0.cmp(name))
@@ -907,6 +912,20 @@ mod tests {
         }
         // 整体拼成一个宏也可以
         assert_eq!(plan(&sn.join("\n")).unwrap().len(), sn.len());
+    }
+
+    #[test]
+    fn command_names_lists_every_table_row_once_and_each_one_plans() {
+        let names = command_names();
+        assert!(names.len() > 250, "{}", names.len());
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), names.len(), "函数名不重复");
+        for n in names {
+            let steps = plan(&format!("S_{n}();")).unwrap_or_else(|e| panic!("S_{n}: {e}"));
+            assert_eq!(steps.len(), 1, "{n}");
+        }
     }
 
     #[test]

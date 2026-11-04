@@ -794,6 +794,19 @@ impl Doc {
         self.cursor = [row, col];
     }
 
+    /// 键盘扩展矩形选区 (Sakura 的 `*_BoxSel` 系列): 锚点是现有矩形的起点 (没有矩形就是光标), 光标按 `key` 走 `times` 步 (`ctrl` = 按词 / 到文首文末 / 半页),
+    /// 矩形从锚点拉到新光标处。列按字符数算
+    pub fn box_nav(&mut self, key: &str, ctrl: bool, times: usize) {
+        let anchor = self.box_sel.map(|b| [b[0], b[1]]).unwrap_or(self.cursor);
+        for _ in 0..times.max(1) {
+            self.nav(key, ctrl, false, 20);
+        }
+        let [r, c] = self.cursor;
+        self.box_start(anchor[0], anchor[1]);
+        self.box_drag(r, c);
+        self.cursor = [r, c];
+    }
+
     pub fn box_drag(&mut self, row: usize, col: usize) {
         if let Some(b) = self.box_sel.as_mut() {
             b[2] = row.min(self.lines.len() - 1);

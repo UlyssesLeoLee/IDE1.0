@@ -74,8 +74,59 @@ pub struct Settings {
     pub update_daily: bool,
     /// 上次检查更新的时间 (Unix 秒; 状态, 不进导出的偏好)
     pub update_last_check: u64,
+    /// 宏登记槽 (同 Tauri 的「宏登记」): 固定 20 个, 名字 + 种类 + 代码; 命令 `app.macro-slot-N` 运行, 可以在键位设置里绑键
+    pub macro_slots: Vec<MacroSlot>,
     /// 「视图 > 工具栏」里的按钮: 命令 id 的列表, 空串 = 分隔线 (同 Tauri 的「快捷按钮」: 自己增减、排序; 首选项 > 工具栏里改)
     pub toolbar_cmds: Vec<String>,
+}
+
+/// 宏登记槽的个数
+pub const MACRO_SLOTS: usize = 20;
+const SLOT_NAME_MAX: usize = 64;
+const SLOT_CODE_MAX: usize = 200_000;
+
+/// 一个宏登记槽: `kind` 是 "mac" (Sakura 宏) 或 "ppa" (PPA 脚本)。高速版不运行 JS 宏, 所以没有 "js"
+#[derive(Clone, Debug, PartialEq)]
+pub struct MacroSlot {
+    pub name: String,
+    pub kind: String,
+    pub code: String,
+}
+
+impl Default for MacroSlot {
+    /// 空槽的种类也是 "mac" (存盘读回来会被规整成这个, 内存里的空槽得和它一样)
+    fn default() -> Self {
+        MacroSlot { name: String::new(), kind: "mac".into(), code: String::new() }
+    }
+}
+
+impl MacroSlot {
+    pub fn is_empty(&self) -> bool {
+        self.code.trim().is_empty()
+    }
+}
+
+/// 宏槽列表按不可信数据清洗, 结果恒为 `MACRO_SLOTS` 个: 多的丢掉、少的补空槽, 名字去掉控制字符并封顶, 种类只认 mac / ppa, 代码封顶
+pub fn sanitize_slots(list: Vec<MacroSlot>) -> Vec<MacroSlot> {
+    let mut out: Vec<MacroSlot> = list
+        .into_iter()
+        .take(MACRO_SLOTS)
+        .map(|mut s| {
+            s.name = s.name.chars().filter(|c| !c.is_control()).take(SLOT_NAME_MAX).collect();
+            if s.kind != "ppa" { s.kind = "mac".into(); }
+            if s.code.chars().count() > SLOT_CODE_MAX { s.code = s.code.chars().take(SLOT_CODE_MAX).collect(); }
+            s
+        })
+        .collect();
+    out.resize(MACRO_SLOTS, MacroSlot::default());
+    out
+}
+
+/// 把一份宏登记到第一个空槽; 返回槽号 (0 起), 20 个槽都满了返回 None
+pub fn register_macro(slots: &mut [MacroSlot], name: &str, kind: &str, code: &str) -> Option<usize> {
+    let i = slots.iter().position(MacroSlot::is_empty)?;
+    slots[i] = sanitize_slots(vec![MacroSlot { name: name.into(), kind: kind.into(), code: code.into() }]).remove(0);
+    Some(i)
 }
 
 /// 工具栏默认的按钮 (命令 id; 空串 = 分隔线)
@@ -115,6 +166,7 @@ impl Default for Settings {
             auto_backup: false, auto_backup_min: 5, file_lock: false, term_font_px: 13.0, term_scrollback: 5000, term_fg: None, term_bg: None, glass_blur: true, system_title_bar: false,
             update_channel: "stable".into(), update_daily: false, update_last_check: 0,
             toolbar_cmds: DEFAULT_TOOLBAR.iter().map(|s| s.to_string()).collect(),
+            macro_slots: sanitize_slots(vec![]),
         }
     }
 }
@@ -326,6 +378,10 @@ impl Settings {
         if state { if let Some(n) = v["update_last_check"].as_u64() { self.update_last_check = n; } }
         if let Some(n) = v["auto_backup_min"].as_u64() { self.auto_backup_min = crate::backup::clamp_interval(n.min(u32::MAX as u64) as u32); }
         if let Some(f) = v["term_font_px"].as_f64() { self.term_font_px = (f as f32).clamp(8.0, 32.0); }
+        if let Some(a) = v["macro_slots"].as_array() {
+            let get = |x: &Value, k: &str| x[k].as_str().unwrap_or("").to_string();
+            self.macro_slots = sanitize_slots(a.iter().map(|x| MacroSlot { name: get(x, "name"), kind: get(x, "kind"), code: get(x, "code") }).collect());
+        }
         if let Some(a) = v["toolbar_cmds"].as_array() { self.toolbar_cmds = sanitize_toolbar(a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()); }
         if let Some(n) = v["term_scrollback"].as_u64() { self.term_scrollback = (n as usize).clamp(crate::terminal::MIN_SCROLLBACK, crate::terminal::MAX_SCROLLBACK); }
         if v.get("term_fg").is_some() { self.term_fg = v["term_fg"].as_str().and_then(parse_hex); }
@@ -403,6 +459,7 @@ impl Settings {
                 "colors": self.colors.to_json(),
                 "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar, "update_channel": self.update_channel, "update_daily": self.update_daily,
                 "toolbar_cmds": self.toolbar_cmds,
+                "macro_slots": self.macro_slots.iter().map(|s| json!({ "name": s.name, "kind": s.kind, "code": s.code })).collect::<Vec<_>>(),
                 "term_font_px": self.term_font_px, "term_scrollback": self.term_scrollback, "term_fg": self.term_fg.map(hex), "term_bg": self.term_bg.map(hex),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces, "wrap_col": t.wrap_col })).collect::<Vec<_>>(),
                 "search": self.search.to_json(),
@@ -633,6 +690,8 @@ mod tests {
         s.max_file_mb = 16; s.mru_files = 20; s.font_family = "Consolas".into(); s.line_height = 1.4;
         s.colors.text = Some([1, 2, 3]); s.colors.keyword = Some([255, 0, 128]);
         s.toolbar_cmds = vec!["c.save".into(), "".into(), "c.find".into(), "c.palette".into()];
+        s.macro_slots[2] = MacroSlot { name: "转大写".into(), kind: "mac".into(), code: "S_ToUpper();\n".into() };
+        s.macro_slots[19] = MacroSlot { name: "p".into(), kind: "ppa".into(), code: "x".into() };
         s.file_types = vec![TypePref { ext: "md".into(), tab_width: Some(2), wrap: Some(true), insert_spaces: None, wrap_col: Some(66) }];
         s.view = ViewState { side_open: false, side_w: 300.0, term_open: true, term_h: 222.0, ai_w: 360.0, md_w: 480.0, side_collapsed: true, right_collapsed: true, bottom_collapsed: true, md_preview: true, md_overlay: false, geom: Some(WinGeom { x: 10.0, y: 20.0, w: 900.0, h: 600.0, maximized: true }), line_numbers: false, status_bar: false, whitespace: true, ruler: true, cur_line: false, minimap: true, toolbar: true, funckey: true, rail: true, wrap_col: 72, kinsoku: false, hang: true, stamp_kind: 1, stamp_pos: 1, print: crate::print::PageSetup { paper: crate::print::Paper::Letter, landscape: true, font_pt: 12.0, margin_mm: 20.0, line_numbers: false, header: false, footer: false } };
         s.save();
@@ -764,6 +823,36 @@ nTabSpace=2
         assert_eq!(parse_hex("#12345"), None);
         assert_eq!(parse_hex("#gggggg"), None);
         assert_eq!(hex([1, 2, 255]), "#0102ff");
+    }
+
+    #[test]
+    fn macro_slots_are_normalised_registered_and_roundtrip() {
+        let d = Settings::default();
+        assert_eq!(d.macro_slots.len(), MACRO_SLOTS);
+        assert!(d.macro_slots.iter().all(MacroSlot::is_empty));
+        // 登记到第一个空槽; 名字 / 种类 / 代码按规矩清洗
+        let mut slots = sanitize_slots(vec![]);
+        assert_eq!(register_macro(&mut slots, "a\u{7}b", "js", "S_Undo();"), Some(0));
+        assert_eq!((slots[0].name.as_str(), slots[0].kind.as_str()), ("ab", "mac"), "控制字符去掉; 种类只认 mac / ppa, 其它当 mac");
+        assert_eq!(register_macro(&mut slots, "p", "ppa", "x"), Some(1));
+        slots[0] = MacroSlot::default();
+        assert_eq!(register_macro(&mut slots, "again", "mac", "S_Redo();"), Some(0), "空出来的槽先被用");
+        for i in 2..MACRO_SLOTS { slots[i].code = "c".into(); }
+        assert_eq!(register_macro(&mut slots, "x", "mac", "y"), None, "20 个槽都满了");
+        // 读入: 多的丢掉、少的补齐、过长的代码封顶、空白代码算空槽
+        let many = vec![MacroSlot { name: "n".into(), kind: "mac".into(), code: "S_Undo();".into() }; 30];
+        assert_eq!(sanitize_slots(many).len(), MACRO_SLOTS);
+        let big = sanitize_slots(vec![MacroSlot { name: "n".repeat(200), kind: "ppa".into(), code: "z".repeat(SLOT_CODE_MAX + 5) }]);
+        assert_eq!((big[0].name.chars().count(), big[0].code.chars().count()), (SLOT_NAME_MAX, SLOT_CODE_MAX));
+        assert!(MacroSlot { code: "  \n".into(), ..Default::default() }.is_empty());
+        let mut s = Settings::default();
+        s.apply_json(&json!({ "macro_slots": [ { "name": "一", "kind": "ppa", "code": "c1" }, 7, { "name": 5, "code": "c3" } ] }), false);
+        assert_eq!(s.macro_slots.len(), MACRO_SLOTS);
+        assert_eq!((s.macro_slots[0].name.as_str(), s.macro_slots[0].kind.as_str()), ("一", "ppa"));
+        assert!(s.macro_slots[1].is_empty() && s.macro_slots[2].name.is_empty() && s.macro_slots[2].code == "c3", "不是对象 / 字段类型不对: 当作空字段");
+        s.apply_json(&json!({ "macro_slots": "bad" }), false);
+        assert_eq!(s.macro_slots[0].code, "c1", "类型不对: 保持原值");
+        assert_eq!(s.prefs_json()["macro_slots"].as_array().map(Vec::len), Some(MACRO_SLOTS), "导出的偏好带宏槽");
     }
 
     #[test]
