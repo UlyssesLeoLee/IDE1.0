@@ -24,11 +24,13 @@ pub enum App {
     Terminal, AiChat, MdPreview, Dark, Highlight, Wrap, Sidebar, LineNumbers, StatusBar, Whitespace, Ruler, CurLine, Minimap, MinimalMode, FullMode, ZoomIn, ZoomOut, ZoomReset,
     Prefs, ExportCfg, ImportCfg, ImportSakura, ResetCfg, KeyConfig, KeyList, Palette,
     CopyFname, CopyPath, SelParaPrev, SelParaNext, ModNext, ModPrev, MacroSave, MacroLoad, MacroRecMac, MacroToMac, FuncNext, FuncPrev, ColDelete, ColReplace, CopyTag, CopyWrapped, OpenHc, ModNextSel, ModPrevSel,
-    GroupNext, GroupPrev, TabSeparate, TabJointNext, TabJointPrev, BindWindow, GroupClose, SpaceIndent, SpaceUnindent, CurCenter, BackupNow, SelCountMode, FindMarks, FindStart, ExecCmd, About, CheckUpdate,
+    GroupNext, GroupPrev, TabSeparate, TabJointNext, TabJointPrev, BindWindow, GroupClose, SpaceIndent, SpaceUnindent, CurCenter, BackupNow, SelCountMode, FindMarks, FindStart, ExecCmd, Completion, GotoDef, MacroRegister, MacroSlot(u8), About, CheckUpdate,
     SelMode, TagJump, TagBack, TagKeyword, TagsMake,
     IsFwd, IsBack, IsRegexFwd, IsRegexBack, IsMigemoFwd, IsMigemoBack,
     Base64Decode, UuDecode, CopyHtml, CopyHtmlLn, ClipHistory, CtrlCodes, InsDate, InsTime, InsStamp, StampCfg,
     WrapCol, WrapWindow, WrapNone,
+    WindowList, PickRecent, PickFolders, PickFavorite, InsRecentFile, InsRecentDir, PickCharset, PickReopen,
+    Help, HelpSearch, ExtHelp, KeySearch, PaneOutline, PaneFiles,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -150,6 +152,13 @@ fn build() -> Vec<Entry> {
         z("app.bind-window", "合并为一组", "", "menu.window", BindWindow), z("app.group-close", "关闭当前分组", "", "menu.window", GroupClose),
         z("app.space-indent", "SPACE 缩进", "", "menu.edit", SpaceIndent), z("app.space-unindent", "SPACE 反缩进", "", "menu.edit", SpaceUnindent),
         z("app.cur-center", "光标行居中", "", "menu.edit", CurCenter), z("app.sel-count-mode", "切换选区统计方式 (字符 / 字节 / 行)", "", "menu.edit", SelCountMode),
+        z("app.completion", "代码补全", "Ctrl+Space|Alt+/", "menu.edit", Completion), z("app.goto-def", "转到定义 (本文件)", "", "menu.search", GotoDef),
+        z("app.macro-register", "把当前文档 / 选区登记为宏", "", "menu.macro", MacroRegister),
+        z("app.macro-slot-1", "运行宏 1", "", "menu.macro", MacroSlot(0)), z("app.macro-slot-2", "运行宏 2", "", "menu.macro", MacroSlot(1)), z("app.macro-slot-3", "运行宏 3", "", "menu.macro", MacroSlot(2)), z("app.macro-slot-4", "运行宏 4", "", "menu.macro", MacroSlot(3)), 
+        z("app.macro-slot-5", "运行宏 5", "", "menu.macro", MacroSlot(4)), z("app.macro-slot-6", "运行宏 6", "", "menu.macro", MacroSlot(5)), z("app.macro-slot-7", "运行宏 7", "", "menu.macro", MacroSlot(6)), z("app.macro-slot-8", "运行宏 8", "", "menu.macro", MacroSlot(7)), 
+        z("app.macro-slot-9", "运行宏 9", "", "menu.macro", MacroSlot(8)), z("app.macro-slot-10", "运行宏 10", "", "menu.macro", MacroSlot(9)), z("app.macro-slot-11", "运行宏 11", "", "menu.macro", MacroSlot(10)), z("app.macro-slot-12", "运行宏 12", "", "menu.macro", MacroSlot(11)), 
+        z("app.macro-slot-13", "运行宏 13", "", "menu.macro", MacroSlot(12)), z("app.macro-slot-14", "运行宏 14", "", "menu.macro", MacroSlot(13)), z("app.macro-slot-15", "运行宏 15", "", "menu.macro", MacroSlot(14)), z("app.macro-slot-16", "运行宏 16", "", "menu.macro", MacroSlot(15)), 
+        z("app.macro-slot-17", "运行宏 17", "", "menu.macro", MacroSlot(16)), z("app.macro-slot-18", "运行宏 18", "", "menu.macro", MacroSlot(17)), z("app.macro-slot-19", "运行宏 19", "", "menu.macro", MacroSlot(18)), z("app.macro-slot-20", "运行宏 20", "", "menu.macro", MacroSlot(19)),
         z("app.exec-cmd", "执行外部命令 (终端)", "Ctrl+F5", "menu.tool", ExecCmd),
         z("app.backup-now", "立即备份", "", "menu.tool", BackupNow),
         z("app.find-marks", "切换查找标记 (全部强调)", "", "menu.search", FindMarks), z("app.find-start", "回到查找起点", "", "menu.search", FindStart),
@@ -168,6 +177,14 @@ fn build() -> Vec<Entry> {
         z("app.ins-stamp", "插入戳记", "", "menu.edit", InsStamp), z("app.stamp-cfg", "戳记设置…", "", "menu.edit", StampCfg),
         z("app.wrap-col", "按指定列数折行…", "Ctrl+Alt+S", "menu.view", WrapCol), z("app.wrap-window", "按窗口宽度折行", "Ctrl+Alt+W", "menu.view", WrapWindow),
         z("app.wrap-none", "不折行", "Ctrl+Alt+X", "menu.view", WrapNone),
+        z("app.window-list", "窗口一览…", "", "menu.window", WindowList),
+        z("app.pick-recent", "最近的文件…", "", "menu.file", PickRecent), z("app.pick-folders", "最近的文件夹…", "", "menu.file", PickFolders),
+        z("app.pick-favorite", "收藏夹 (最近的文件和文件夹)…", "", "menu.file", PickFavorite),
+        z("app.ins-recent-file", "插入最近的文件路径…", "", "menu.edit", InsRecentFile), z("app.ins-recent-dir", "插入最近的文件夹路径…", "", "menu.edit", InsRecentDir),
+        z("app.pick-charset", "指定字符集…", "", "menu.file", PickCharset), z("app.pick-reopen", "指定字符集重新打开…", "", "menu.file", PickReopen),
+        z("app.help", "帮助手册", "F1", "menu.help", Help), z("app.help-search", "关键字帮助检索…", "Alt+Shift+F1", "menu.help", HelpSearch),
+        z("app.ext-help", "关键字帮助: 光标处的词", "Ctrl+F1", "menu.help", ExtHelp), z("app.key-search", "关键字帮助自动显示", "", "menu.help", KeySearch),
+        z("app.pane-outline", "显示大纲", "", "menu.view", PaneOutline), z("app.pane-files", "显示文件树", "", "menu.view", PaneFiles),
     ];
     for e in &mut v {
         match e.run {
@@ -369,17 +386,16 @@ pub fn bound() -> Vec<(usize, Modifiers, Key)> {
     STATE.with(|s| s.borrow().bound.clone())
 }
 
-/// 命令 `id` 当前生效的键串 (备选用 `|` 分隔; 解除绑定 = 空串)
-pub fn keys_of(id: &str) -> String {
-    STATE.with(|s| entry_by_id(id).map(|e| effective(&s.borrow().ov, e).to_string())).unwrap_or_default()
-}
-
 /// 菜单里显示的快捷键提示; `None` = 不是注册表里的命令 (调用方用自己的写法)
 pub fn display(id: &str) -> Option<String> {
     // 宏菜单项在录制 / 停止之间换标签, 键是同一个
     let id = if id == "c.macro-stop" { "c.macro-start" } else { id };
-    entry_by_id(id)?;
-    Some(keys_of(id).split('|').filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" / "))
+    entry_by_id(id).map(display_entry)
+}
+
+/// 同 `display`, 给已经拿着 `Entry` 的调用方 (省掉按 id 再查一遍; 一次列出全部命令时是 O(N) 而不是 O(N²))
+pub fn display_entry(e: &Entry) -> String {
+    STATE.with(|s| effective(&s.borrow().ov, e).split('|').filter(|k| !k.is_empty()).collect::<Vec<_>>().join(" / "))
 }
 
 /// 键位一览的文本 (命令面板同款顺序): "分类\t命令\t键" 每行一条, 只列有键的
@@ -463,10 +479,22 @@ mod tests {
         for (id, key) in [
             ("c.close-tab", "Ctrl+F4"), ("c.open-folder", "Ctrl+Alt+O"), ("c.print-setup", "Ctrl+Alt+P"), ("c.exit", "Ctrl+Alt+F4"), ("c.close-others", "Alt+Shift+F4"),
             ("c.toolbar", "Ctrl+1"), ("c.funckey", "Ctrl+2"), ("app.macro-save", "Ctrl+M"), ("app.exec-cmd", "Ctrl+F5"), ("app.open-hc", "Ctrl+Shift+C"),
+            ("app.help", "F1"), ("app.ext-help", "Ctrl+F1"), ("app.help-search", "Alt+Shift+F1"),
         ] {
             let e = entry_by_id(id).unwrap_or_else(|| panic!("找不到命令 {id}"));
             assert!(e.default.split('|').any(|k| k == key), "{id} 应绑 {key}, 实际 {}", e.default);
         }
+    }
+
+    #[test]
+    fn every_macro_slot_has_its_own_command() {
+        for n in 1..=crate::settings::MACRO_SLOTS {
+            let e = entry_by_id(&format!("app.macro-slot-{n}")).unwrap_or_else(|| panic!("缺少 app.macro-slot-{n}"));
+            assert!(matches!(e.run, Run::App(App::MacroSlot(i)) if i as usize == n - 1), "宏槽 {n} 的命令要对应槽号 {}", n - 1);
+            assert_eq!(e.default, "", "宏槽命令默认不绑键 (用户自己在键位设置里绑)");
+        }
+        assert!(entry_by_id("app.macro-register").is_some());
+        assert!(entry_by_id(&format!("app.macro-slot-{}", crate::settings::MACRO_SLOTS + 1)).is_none());
     }
 
     #[test]

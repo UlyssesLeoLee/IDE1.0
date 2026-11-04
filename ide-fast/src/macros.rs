@@ -1,45 +1,377 @@
-//! Sakura `.mac` 宏: 解析 / 规划交给 `editcore::macro_sakura::plan` (和 Tauri 版同一套), 这里把每一步动作执行在 `Doc` 上。
-//! 能直接对应到 editcore 编辑命令的 `S_` 函数照常执行; 没有对应命令的 (只有默认键的) 明确报「未支持」, 不静默跳过。
+//! Sakura `.mac` 宏: 解析 / 规划交给 `editcore::macro_sakura::plan` (和 Tauri 版同一套), 这里决定每一步由谁执行、并执行它。
+//! 每个 `S_` 函数只有三种结局 (`route`): 在这份 `Doc` 上直接执行; 转交 App 去执行 (保存、打开、查找下一个、拆分窗口这类要动窗口的);
+//! 或者**明确报错并说明原因** (层叠窗口、SQL*Plus、外部帮助这类高速版不做的)。不静默跳过, 也不让宏做到一半才发现跑不了:
+//! `plan_checked` 先把每一步都过一遍, 有一步跑不了整份宏都不执行。
 
 use crate::doc::{Doc, RecEv};
 use crate::find::FindOpts;
-use editcore::macro_sakura::{self, Action};
+use editcore::document_io::Charset;
+use editcore::macro_sakura::{self, Action, MacroArg, MacroStep};
 
-/// 执行一份宏文本; 返回执行了多少步。语法错误 / 未知函数整体失败, 文档不会被改一半。
-pub fn run_mac(doc: &mut Doc, src: &str, tab: usize) -> Result<usize, String> {
+/// 一次宏运行的环境
+pub struct MacroEnv {
+    /// Tab 宽度 (Tab 与空格的转换、缩进用)
+    pub tab: usize,
+    /// 宏里的剪贴板: `S_Cut` / `S_Copy` 写它, `S_Paste` 读它; 开始时是应用剪贴板历史里最新的一条
+    pub clip: String,
+    /// 宏运行中改过它 (运行完要同步回系统剪贴板)
+    pub clip_changed: bool,
+}
+
+impl MacroEnv {
+    pub fn new(tab: usize, clip: String) -> Self {
+        MacroEnv { tab, clip, clip_changed: false }
+    }
+}
+
+/// 一步由谁来执行
+#[derive(Debug, PartialEq, Eq)]
+pub enum Route {
+    /// 在宏的目标文档上直接执行
+    Doc,
+    /// 转交 App: 命令表里的命令 id (`keymap::entry_by_id`), 由 App 按顺序执行
+    App(&'static str),
+    /// 高速版不执行; 附原因
+    No(String),
+}
+
+/// 只动文档本身的 `S_` 函数 (按函数名)
+#[derive(Clone, Copy)]
+enum DocOp {
+    Undo,
+    Redo,
+    SelectAll,
+    Nop,
+    /// editcore 编辑命令, 不碰剪贴板
+    Edit(&'static str),
+    /// editcore 编辑命令, 结果写进宏剪贴板 (剪切 / 复制类)
+    EditClip(&'static str),
+    /// 用宏剪贴板的内容执行编辑命令 (粘贴类)
+    Paste(&'static str),
+    IndentTab(bool),
+    InsDate,
+    ToggleIns,
+    BeginSelect,
+    BeginBox,
+    Cancel,
+    Bookmark(&'static str),
+    BookmarkClear,
+    CodeCnv(&'static str),
+    /// 键盘扩展矩形选区: (移动键, 带 Ctrl, 步数)
+    BoxNav(&'static str, bool, usize),
+    /// 光标移动若干步 (不选)
+    Nav(&'static str, usize),
+    /// 光标移到下一 / 上一个段落边界 (不选)
+    ParaMove(bool),
+    Reopen(Charset),
+    /// `S_ChgCharset(code, bom)`: 改保存时的字符集; `Some(b)` = 第二个参数给了 BOM 开关 (只对 UTF-8 有意义)
+    SetCharset(Charset, Option<bool>),
+}
+
+/// Sakura 的文字コード番号 (ECodeType: SJIS 0 / JIS 1 / EUC 2 / Unicode 3 / UTF-8 4 / UTF-7 5 / UnicodeBE 6 / CESU-8 7 / Latin1 8);
+/// 99 (自動判別) 和别的号码高速版不支持
+pub fn sakura_charset(code: i64) -> Option<Charset> {
+    Some(match code {
+        0 => Charset::ShiftJis,
+        1 => Charset::Iso2022Jp,
+        2 => Charset::EucJp,
+        3 => Charset::Utf16Le,
+        4 => Charset::Utf8,
+        5 => Charset::Utf7,
+        6 => Charset::Utf16Be,
+        7 => Charset::Cesu8,
+        8 => Charset::Latin1,
+        _ => return None,
+    })
+}
+
+/// 带了文字コード参数的 `S_ChgCharset(code, bom)` / `S_FileReopen(code, …)`: 直接在文档上做 (不带参数的才转交 App 打开列表)。
+/// `None` = 不是这两个函数或没带参数; `Some(Err)` = 号码不支持
+fn charset_call(name: &str, args: &[MacroArg]) -> Option<Result<DocOp, String>> {
+    if !matches!(name, "ChgCharset" | "FileReopen") {
+        return None;
+    }
+    let code = match args.first()? {
+        MacroArg::Int(n) => *n,
+        MacroArg::Str(s) => return Some(Err(format!("字符集参数应当是数字, 实际是 \"{s}\""))),
+    };
+    let Some(cs) = sakura_charset(code) else { return Some(Err(format!("字符集代码 {code} 高速版不支持 (支持 0–8)"))) };
+    Some(Ok(if name == "ChgCharset" {
+        DocOp::SetCharset(cs, match args.get(1) { Some(MacroArg::Int(b)) => Some(*b != 0), _ => None })
+    } else {
+        DocOp::Reopen(cs)
+    }))
+}
+
+fn doc_op(name: &str) -> Option<DocOp> {
+    use DocOp::*;
+    Some(match name {
+        "Undo" => Undo,
+        "Redo" => Redo,
+        "SelectAll" => SelectAll,
+        "Redraw" => Nop,
+        "Cut" => EditClip("cut"),
+        "Copy" => EditClip("copy"),
+        "CopyCRLF" => EditClip("copy-crlf"),
+        "Paste" => Paste("paste"),
+        "PasteBox" => Paste("paste-box"),
+        "CutLine" => EditClip("cut-line"),
+        "DeleteLine" => Edit("delete-line"),
+        "LineCutToStart" => EditClip("cut-line-start"),
+        "LineDeleteToEnd" => Edit("delete-line-to-end"),
+        "LineDeleteToStart" => Edit("delete-line-to-start"),
+        "CopyLinesAsPassage" => EditClip("copy-passage"),
+        "IndentTab" => IndentTab(false),
+        "UnindentTab" => IndentTab(true),
+        "InsDate" => InsDate,
+        "ChgmodINS" => ToggleIns,
+        "BeginSelect" => BeginSelect,
+        "BeginBoxSelect" => BeginBox,
+        "CancelMode" => Cancel,
+        "BookmarkSet" => Bookmark("toggle"),
+        "BookmarkNext" => Bookmark("next"),
+        "BookmarkPrev" => Bookmark("prev"),
+        "BookmarkReset" => BookmarkClear,
+        "CodeCnvAUTOtoSJIS" => CodeCnv("auto2sjis"),
+        "CodeCnvEMAIL" => CodeCnv("email"),
+        "CodeCnvEUCtoSJIS" => CodeCnv("euc2sjis"),
+        "CodeCnvSJIStoEUC" => CodeCnv("sjis2euc"),
+        "CodeCnvSJIStoJIS" => CodeCnv("sjis2jis"),
+        "CodeCnvSJIStoUTF7" => CodeCnv("sjis2utf7"),
+        "CodeCnvSJIStoUTF8" => CodeCnv("sjis2utf8"),
+        "CodeCnvUNICODEtoSJIS" => CodeCnv("unicode2sjis"),
+        "CodeCnvUTF7toSJIS" => CodeCnv("utf72sjis"),
+        "CodeCnvUTF8toSJIS" => CodeCnv("utf82sjis"),
+        "Up2" => Nav("ArrowUp", 2),
+        "Down2" => Nav("ArrowDown", 2),
+        "GoNextParagraph" => ParaMove(true),
+        "GoPrevParagraph" => ParaMove(false),
+        "Left_BoxSel" => BoxNav("ArrowLeft", false, 1),
+        "Right_BoxSel" => BoxNav("ArrowRight", false, 1),
+        "Up_BoxSel" => BoxNav("ArrowUp", false, 1),
+        "Down_BoxSel" => BoxNav("ArrowDown", false, 1),
+        "Up2_BoxSel" => BoxNav("ArrowUp", false, 2),
+        "Down2_BoxSel" => BoxNav("ArrowDown", false, 2),
+        "WordLeft_BoxSel" => BoxNav("ArrowLeft", true, 1),
+        "WordRight_BoxSel" => BoxNav("ArrowRight", true, 1),
+        "GoLineTop_BoxSel" | "GoLogicalLineTop_BoxSel" => BoxNav("Home", false, 1),
+        "GoLineEnd_BoxSel" => BoxNav("End", false, 1),
+        "GoFileTop_BoxSel" => BoxNav("Home", true, 1),
+        "GoFileEnd_BoxSel" => BoxNav("End", true, 1),
+        "1PageUp_BoxSel" => BoxNav("PageUp", false, 1),
+        "1PageDown_BoxSel" => BoxNav("PageDown", false, 1),
+        "HalfPageUp_BoxSel" => BoxNav("PageUp", true, 1),
+        "HalfPageDown_BoxSel" => BoxNav("PageDown", true, 1),
+        "FileReopenEUC" => Reopen(Charset::EucJp),
+        "FileReopenJIS" => Reopen(Charset::Iso2022Jp),
+        "FileReopenSJIS" => Reopen(Charset::ShiftJis),
+        "FileReopenUNICODE" => Reopen(Charset::Utf16Le),
+        "FileReopenUNICODEBE" => Reopen(Charset::Utf16Be),
+        "FileReopenUTF7" => Reopen(Charset::Utf7),
+        "FileReopenUTF8" => Reopen(Charset::Utf8),
+        "FileReopenCESU8" => Reopen(Charset::Cesu8),
+        "FileReopenLatin1" => Reopen(Charset::Latin1),
+        _ => return None,
+    })
+}
+
+/// 要动窗口 / 文件 / 查找状态的 `S_` 函数 → 命令表里对应命令的 id (按函数名); 宏运行器把它们按顺序转交 App
+const APP_FUNCS: &[(&str, &str)] = &[
+    ("About", "c.about"), ("Browse", "c.browse"), ("CopyFilename", "app.copy-fname"), ("CopyPath", "app.copy-path"), ("CreateKeyBindList", "c.key-list"),
+    ("ExecCommandDialog", "app.exec-cmd"), ("ExitAll", "c.exit"), ("ExitAllEditors", "c.exit"),
+    ("FileClose", "c.close-tab"), ("FileCloseOpen", "c.close-open"), ("FileNew", "c.new-file"), ("FileNewNewWindow", "c.new-window"), ("FileOpen", "c.open-file"),
+    ("FileSave", "c.save"), ("FileSaveAs", "c.save-as"), ("FileSaveAll", "c.save-all"), ("FileSaveClose", "c.save-close"),
+    ("WinClose", "c.close-tab"), ("WinCloseAll", "c.close-all"), ("TabCloseLeft", "c.close-left"), ("TabCloseOther", "c.close-others"), ("TabCloseRight", "c.close-right"),
+    ("TabMoveLeft", "c.tab-move-left"), ("TabMoveRight", "c.tab-move-right"), ("NextWindow", "c.next-tab"), ("PrevWindow", "c.prev-tab"),
+    ("NextGroup", "app.group-next"), ("PrevGroup", "app.group-prev"), ("TabSeparate", "app.tab-separate"), ("TabJointNext", "app.tab-joint-next"), ("TabJointPrev", "app.tab-joint-prev"),
+    ("BindWindow", "app.bind-window"), ("GroupClose", "app.group-close"),
+    ("Font", "c.common-config"), ("Option", "c.common-config"), ("OptionType", "c.common-config"), ("TypeList", "c.common-config"),
+    ("GrepDialog", "c.grep"), ("GrepReplaceDialog", "c.grep"), ("ReplaceDialog", "c.replace"), ("SearchDialog", "c.find"), ("SearchNext", "c.find-next"), ("SearchPrev", "c.find-prev"),
+    ("SearchClearMark", "app.find-marks"), ("JumpSrchStartPos", "app.find-start"), ("JumpDialog", "goto-line"), ("JumpHistNext", "c.hist-next"), ("JumpHistPrev", "c.hist-prev"),
+    ("JumpHistSet", "c.hist-mark"), ("BracketPair", "c.bracket-jump"), ("CurLineCenter", "app.cur-center"), ("Hokan", "app.completion"),
+    ("ISearchNext", "app.is-fwd"), ("ISearchPrev", "app.is-back"), ("ISearchRegexpNext", "app.is-regex-fwd"), ("ISearchRegexpPrev", "app.is-regex-back"),
+    ("ISearchMigemoNext", "app.is-migemo-fwd"), ("ISearchMigemoPrev", "app.is-migemo-back"),
+    ("BookmarkView", "c.bookmark-view"), ("Compare", "app.diff-tab"), ("DiffDialog", "app.diff-list"), ("DiffNext", "app.diff-next"), ("DiffPrev", "app.diff-prev"), ("DiffReset", "app.diff-clear"),
+    ("ExecKeyMacro", "c.macro-play"), ("RecKeyMacro", "c.macro-start"), ("SaveKeyMacro", "app.macro-save"), ("LoadKeyMacro", "app.macro-load"),
+    ("MaximizeH", "c.maximize"), ("MaximizeV", "c.maximize"), ("MinimizeAll", "c.minimize-window"), ("TopMost", "c.topmost"),
+    ("MenuAllFunc", "c.palette"), ("OpenHfromtoC", "app.open-hc"),
+    ("Print", "c.print"), ("PrintPageSetup", "c.print-setup"), ("PrintPreview", "c.print-preview"), ("PropertyFile", "c.file-properties"),
+    ("ShowFuncKey", "c.funckey"), ("ShowStatusbar", "c.status-bar"), ("ShowToolbar", "c.toolbar"), ("ShowMiniMap", "c.minimap"), ("SelectCountMode", "app.sel-count-mode"),
+    ("SplitH", "c.split-rows"), ("SplitV", "c.split"), ("SplitVH", "c.split-quad"),
+    ("TagJump", "app.tag-jump"), ("DirectTagJump", "app.tag-jump"), ("TagJumpBack", "app.tag-back"), ("TagJumpKeyword", "app.tag-keyword"), ("TagsMake", "app.tags-make"),
+    ("TmpWrapNoWrap", "app.wrap-none"), ("TmpWrapSetting", "app.wrap-col"), ("TmpWrapWindow", "app.wrap-window"), ("WrapWindowWidth", "app.wrap-window"),
+    ("Base64Decode", "app.base64"), ("UUDecode", "app.uudecode"), ("CopyAddCRLF", "app.copy-wrapped"), ("CopyColorHtml", "app.copy-html"), ("CopyColorHtmlLineNumber", "app.copy-html-ln"),
+    ("CopyTag", "app.copy-tag"), ("CtrlCodeDialog", "app.ctrl-codes"), ("WinOutput", "c.terminal"),
+    ("WinList", "app.window-list"), ("DlgWinList", "app.window-list"),
+    ("HelpContents", "app.help"), ("ExtHelp1", "app.ext-help"), ("ExtHtmlHelp", "app.ext-help"), ("HelpSearch", "app.help-search"), ("ToggleKeySearch", "app.key-search"),
+    ("Favorite", "app.pick-favorite"), ("FileUsedRecently", "app.pick-recent"), ("InsFileUsedRecently", "app.ins-recent-file"), ("InsFolderUsedRecently", "app.ins-recent-dir"),
+    ("ChgCharset", "app.pick-charset"), ("FileReopen", "app.pick-reopen"), ("Outline", "app.pane-outline"), ("FileTree", "app.pane-files"),
+];
+
+/// 高速版明确不做的 `S_` 函数, 和原因 (不做 ≠ 漏做: 都是有意的取舍或这里做不到)
+const NOT_APPLICABLE: &[(&str, &str)] = &[
+    ("Cascade", "层叠窗口: 本应用是单窗口多标签 (有意偏差)"),
+    ("TileH", "平铺窗口: 本应用是单窗口多标签 (有意偏差)"),
+    ("TileV", "平铺窗口: 本应用是单窗口多标签 (有意偏差)"),
+    ("ActivateSQLPlus", "SQL*Plus 刻意不做"),
+    ("PLSQLCompileOnSQLPlus", "SQL*Plus 刻意不做"),
+    ("Reconvert", "IME 再変換: egui 没有触发 TSF 的接口"),
+    ("ExecExtMacro", "JS 宏没有移植 (高速版只运行 Sakura .mac 和 PPA)"),
+    ("ShowTab", "标签栏随文档个数和界面样式自动显示, 没有单独的开关"),
+];
+
+/// 一步该由谁执行
+pub fn route(step: &MacroStep) -> Route {
+    let Action::Command { id, cmd, key, args } = &step.action else { return Route::Doc };
+    let name = step.name.strip_prefix("S_").unwrap_or(&step.name);
+    match charset_call(name, args) {
+        Some(Ok(_)) => return Route::Doc,
+        Some(Err(why)) => return Route::No(why),
+        None => {}
+    }
+    if doc_op(name).is_some() {
+        return Route::Doc;
+    }
+    if let Some((_, app)) = APP_FUNCS.iter().find(|(n, _)| *n == name) {
+        return Route::App(app);
+    }
+    if let Some((_, why)) = NOT_APPLICABLE.iter().find(|(n, _)| *n == name) {
+        return Route::No((*why).to_string());
+    }
+    match (cmd, key) {
+        (Some(c), _) if doc_command_known(c) => Route::Doc,
+        (Some(c), _) => Route::No(format!("未支持的命令 {c}")),
+        (None, Some(k)) if key_known(k) => Route::Doc,
+        _ => Route::No(format!("这条命令高速版还不支持 ({id})")),
+    }
+}
+
+/// 解析并整体预检: 解析错误、或有一步 `route` 是 `No`, 整份宏都不执行
+pub fn plan_checked(src: &str) -> Result<Vec<MacroStep>, String> {
     let steps = macro_sakura::plan(src).map_err(|e| e.to_string())?;
-    let n = steps.len();
-    for s in steps {
-        match s.action {
-            Action::Command { id, cmd, key, .. } => {
-                if let Some(c) = cmd {
-                    if !doc_command(doc, &c, tab) {
-                        return Err(format!("第 {} 行 {}: 未支持的命令 {c}", s.line, s.name));
-                    }
-                } else if !key.as_deref().is_some_and(|k| key_action(doc, k, tab)) {
-                    return Err(format!("第 {} 行 {}: 这条命令高速版还不支持 ({id})", s.line, s.name));
+    for s in &steps {
+        if let Route::No(why) = route(s) {
+            return Err(format!("第 {} 行 {}: {why}", s.line, s.name));
+        }
+    }
+    Ok(steps)
+}
+
+/// 只在一份文档上执行宏 (没有 App 可以转交): 要转交 App 的步骤整体报错。测试和不带窗口的场合用
+pub fn run_mac(doc: &mut Doc, src: &str, tab: usize) -> Result<usize, String> {
+    let steps = plan_checked(src)?;
+    for s in &steps {
+        if let Route::App(id) = route(s) {
+            return Err(format!("第 {} 行 {}: 这条命令要由应用窗口执行 ({id}), 这里不支持", s.line, s.name));
+        }
+    }
+    let mut env = MacroEnv::new(tab, String::new());
+    for s in &steps {
+        run_step(doc, s, &mut env)?;
+    }
+    Ok(steps.len())
+}
+
+/// 执行一步。`Ok(None)` = 已在 `doc` 上执行完; `Ok(Some(id))` = 这一步要由 App 执行命令 `id` (这里什么也没做); `Err` = 跑不了或出错
+pub fn run_step(doc: &mut Doc, s: &MacroStep, env: &mut MacroEnv) -> Result<Option<&'static str>, String> {
+    match route(s) {
+        Route::App(id) => return Ok(Some(id)),
+        Route::No(why) => return Err(format!("第 {} 行 {}: {why}", s.line, s.name)),
+        Route::Doc => {}
+    }
+    let tab = env.tab;
+    match &s.action {
+        Action::Command { id, cmd, key, args } => {
+            let name = s.name.strip_prefix("S_").unwrap_or(&s.name);
+            if let Some(op) = charset_call(name, args).and_then(Result::ok).or_else(|| doc_op(name)) {
+                run_op(doc, op, env).map_err(|e| format!("第 {} 行 {}: {e}", s.line, s.name))?;
+            } else if let Some(c) = cmd {
+                if !doc_command(doc, c, tab) {
+                    return Err(format!("第 {} 行 {}: 未支持的命令 {c}", s.line, s.name));
+                }
+            } else if !key.as_deref().is_some_and(|k| key_action(doc, k, tab)) {
+                return Err(format!("第 {} 行 {}: 这条命令高速版还不支持 ({id})", s.line, s.name));
+            }
+        }
+        Action::InsText { text } => doc.type_text(text),
+        Action::Char { code } => {
+            if *code == 13 { doc.edit("new-line", None); } else if let Some(c) = char::from_u32(*code) { doc.type_text(&c.to_string()); }
+        }
+        Action::MoveCursor { row, col, select } | Action::MoveCursorLayout { row, col, select } => doc.move_to(*row, *col, *select),
+        Action::Jump { line, .. } => doc.goto((((*line).max(1)) as usize) - 1, 0),
+        Action::SearchNext { text, flags } => { let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(*flags)); doc.find_step(text, o, true).map_err(|e| e.to_string())?; }
+        Action::SearchPrev { text, flags } => { let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(*flags)); doc.find_step(text, o, false).map_err(|e| e.to_string())?; }
+        Action::ReplaceAll { search, replace, flags } => {
+            let f = macro_sakura::SearchFlags::from_bits(*flags);
+            doc.replace_all(search, replace, FindOpts::from_flags(&f), f.in_selection).map_err(|e| e.to_string())?;
+        }
+        Action::ReplaceNext { search, replace, flags } => {
+            // 先找到下一处, 再按 "置换" 的语义换掉它 (正则下 $1 \1 $& 会展开) 并停在再下一处
+            let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(*flags));
+            if doc.find_step(search, o, true).map_err(|e| e.to_string())? { doc.replace_one(search, replace, o).map_err(|e| e.to_string())?; }
+        }
+    }
+    Ok(None)
+}
+
+fn run_op(doc: &mut Doc, op: DocOp, env: &mut MacroEnv) -> Result<(), String> {
+    match op {
+        DocOp::Undo => doc.undo(),
+        DocOp::Redo => doc.redo(),
+        DocOp::SelectAll => doc.select_all(),
+        DocOp::Nop => {}
+        DocOp::Edit(c) => { doc.edit(c, None); }
+        DocOp::EditClip(c) => {
+            if let Some(t) = doc.edit(c, None) {
+                if !t.is_empty() {
+                    env.clip = t;
+                    env.clip_changed = true;
                 }
             }
-            Action::InsText { text } => doc.type_text(&text),
-            Action::Char { code } => {
-                if code == 13 { doc.edit("new-line", None); } else if let Some(c) = char::from_u32(code) { doc.type_text(&c.to_string()); }
+        }
+        DocOp::Paste(c) => {
+            if !env.clip.is_empty() {
+                doc.edit(c, Some(env.clip.clone()));
             }
-            Action::MoveCursor { row, col, select } | Action::MoveCursorLayout { row, col, select } => doc.move_to(row, col, select),
-            Action::Jump { line, .. } => doc.goto((line.max(1) as usize) - 1, 0),
-            Action::SearchNext { text, flags } => { let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(flags)); doc.find_step(&text, o, true).map_err(|e| e.to_string())?; }
-            Action::SearchPrev { text, flags } => { let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(flags)); doc.find_step(&text, o, false).map_err(|e| e.to_string())?; }
-            Action::ReplaceAll { search, replace, flags } => {
-                let f = macro_sakura::SearchFlags::from_bits(flags);
-                doc.replace_all(&search, &replace, FindOpts::from_flags(&f), f.in_selection).map_err(|e| e.to_string())?;
+        }
+        DocOp::IndentTab(outdent) => doc.indent(outdent, env.tab),
+        DocOp::InsDate => doc.type_text(&crate::textconv::local_now().date()),
+        DocOp::ToggleIns => doc.overwrite = !doc.overwrite,
+        DocOp::BeginSelect => doc.toggle_sel_mode(),
+        DocOp::BeginBox => { let [r, c] = doc.cursor; doc.box_start(r, c); }
+        DocOp::Cancel => {
+            doc.sel = None;
+            doc.anchor = None;
+            doc.box_sel = None;
+            doc.extra.clear();
+            doc.sel_mode = false;
+        }
+        DocOp::Bookmark(op) => doc.bookmark(op),
+        DocOp::BookmarkClear => doc.bookmarks.clear(),
+        DocOp::CodeCnv(id) => { doc.convert_selection(|t| crate::textconv::codecnv(id, t)); }
+        DocOp::BoxNav(key, ctrl, times) => doc.box_nav(key, ctrl, times),
+        DocOp::Nav(key, times) => { for _ in 0..times { doc.nav(key, false, false, 20); } }
+        DocOp::ParaMove(fwd) => {
+            doc.select_para(fwd);
+            let c = doc.cursor;
+            doc.sel = None;
+            doc.anchor = None;
+            doc.cursor = c;
+        }
+        DocOp::Reopen(cs) => {
+            if doc.dirty {
+                return Err("有未保存的修改: 不能按别的编码重新打开".into());
             }
-            Action::ReplaceNext { search, replace, flags } => {
-                // 先找到下一处, 再按 "置换" 的语义换掉它 (正则下 $1 \1 $& 会展开) 并停在再下一处
-                let o = FindOpts::from_flags(&macro_sakura::SearchFlags::from_bits(flags));
-                if doc.find_step(&search, o, true).map_err(|e| e.to_string())? { doc.replace_one(&search, &replace, o).map_err(|e| e.to_string())?; }
+            doc.reopen_as(cs)?;
+        }
+        DocOp::SetCharset(cs, bom) => {
+            doc.set_charset(cs);
+            if let Some(b) = bom {
+                if cs == Charset::Utf8 && (doc.bom == editcore::document_io::Bom::Utf8) != b { doc.toggle_bom(); }
             }
         }
     }
-    Ok(n)
+    Ok(())
 }
 
 /// 录出来的 `.mac` 要开成新文档时的文字: 一行注释头 + 宏语句; 返回 (文字, 语句条数)
@@ -100,6 +432,41 @@ fn doc_command(doc: &mut Doc, c: &str, tab: usize) -> bool {
         _ => return doc.try_edit(c),
     }
     true
+}
+
+/// `doc_command` 认不认这条命令 (预检用: 不执行, 只判断)。和 `doc_command` 的分支一一对应
+fn doc_command_known(c: &str) -> bool {
+    matches!(
+        c,
+        "indent-space" | "unindent-space" | "sel-para-next" | "sel-para-prev" | "modify-next" | "modify-prev" | "modify-next-sel" | "modify-prev-sel" | "funclist-next" | "funclist-prev"
+            | "insert-time" | "insert-date" | "toggle-readonly" | "eol-crlf" | "eol-lf" | "eol-cr"
+    ) || c.strip_prefix("codecnv-").is_some_and(codecnv_known)
+        || editcore::edit_ops::transform_text(c, "", 4).is_some()
+        || editcore::edit_cmd::run(&editcore::edit_cmd::EditReq { cmd: c.into(), row: 0, col: 0, total_rows: 1, rows: vec![(0, String::new())], ..Default::default() }).is_some()
+}
+
+/// 编码转换 id 存在吗 (对空文本转换会因为「自动判别不出」而失败, 所以只看是不是「未知的编码转换」)
+fn codecnv_known(id: &str) -> bool {
+    !matches!(crate::textconv::codecnv(id, ""), Err(e) if e.starts_with("未知的编码转换"))
+}
+
+/// `key_action` 认不认这个默认键 (预检用)
+fn key_known(key: &str) -> bool {
+    if edit_for_key(key).is_some() || TRANSFORM_KEYS.iter().any(|(k, _)| *k == key) || LINES_KEYS.iter().any(|(k, _)| *k == key) {
+        return true;
+    }
+    let mut alt = false;
+    let mut ctrl = false;
+    let mut base = "";
+    for part in key.split('+') {
+        match part {
+            "Control" | "Ctrl" => ctrl = true,
+            "Shift" => {}
+            "Alt" => alt = true,
+            other => base = other,
+        }
+    }
+    !alt && (matches!(base, "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End" | "PageUp" | "PageDown" | "Backspace" | "Delete") || (base == "Enter" && !ctrl))
 }
 
 /// 只有默认键、没有命令名的 `S_` 函数: 按它的默认键 (DOM 写法, 如 `Control+Shift+ArrowLeft`) 在高速版里执行。
@@ -346,6 +713,182 @@ mod tests {
         let e = run_mac(&mut d, "S_NextGroup();", 4).unwrap_err();
         assert!(e.contains("next-group") || e.contains("不支持"), "窗口 / 标签类命令: 明确报错, 不静默跳过: {e}");
         assert_eq!(d.lines, ["x"]);
+    }
+
+    fn step_of(name: &str) -> MacroStep {
+        macro_sakura::plan(&format!("S_{name}();")).unwrap_or_else(|e| panic!("S_{name}: {e}")).remove(0)
+    }
+
+    /// 宏函数表里的每一个函数都有明确的结局: 在文档上跑 / 转交 App (命令 id 真实存在) / 不执行且登记了原因
+    #[test]
+    fn every_sakura_function_is_runnable_handed_to_the_app_or_explained() {
+        let (mut doc_n, mut app_n, mut no_n) = (0, 0, 0);
+        let mut unexplained = vec![];
+        for n in macro_sakura::command_names() {
+            match route(&step_of(n)) {
+                Route::Doc => doc_n += 1,
+                Route::App(id) => {
+                    app_n += 1;
+                    assert!(crate::keymap::entry_by_id(id).is_some(), "S_{n} 转交的命令 {id} 不在命令表里");
+                }
+                Route::No(_) => {
+                    no_n += 1;
+                    if !NOT_APPLICABLE.iter().any(|(m, _)| *m == n) {
+                        unexplained.push(n);
+                    }
+                }
+            }
+        }
+        assert!(unexplained.is_empty(), "这些函数既跑不了又没登记原因: {unexplained:?}");
+        assert_eq!(doc_n + app_n + no_n, macro_sakura::command_names().len());
+        // 实测: 268 个函数 = 142 在文档上跑 + 103 转交 App + 23 明确不执行
+        assert!(doc_n >= 140 && app_n >= 118 && no_n <= 8, "文档上能跑 {doc_n}, 转交 App {app_n}, 不执行 {no_n}");
+        let names = macro_sakura::command_names();
+        for (name, why) in NOT_APPLICABLE {
+            assert!(!why.is_empty() && names.contains(name), "不适用表里的 {name} 不在宏函数表里 (过期的登记)");
+        }
+        for (name, _) in APP_FUNCS {
+            assert!(names.contains(name), "转交表里的 {name} 不在宏函数表里");
+        }
+    }
+
+    /// 路由到「文档上执行」的函数, 在一份普通文档上都真的跑得通 (只有重开编码要有文件路径, 在这里会报错)
+    #[test]
+    fn every_doc_routed_function_actually_runs() {
+        for n in macro_sakura::command_names() {
+            let s = step_of(n);
+            if route(&s) != Route::Doc {
+                continue;
+            }
+            let mut d = Doc::untitled(1, 1);
+            d.lines = vec!["abc def".into(), "".into(), "xyz".into(), "".into(), "end".into()];
+            d.select_all();
+            let mut env = MacroEnv::new(4, "clip".into());
+            let r = run_step(&mut d, &s, &mut env);
+            if n.starts_with("FileReopen") {
+                assert!(r.is_err(), "没有保存过的文档不能重开: S_{n}");
+            } else {
+                assert_eq!(r, Ok(None), "S_{n} 在文档上执行失败");
+            }
+        }
+    }
+
+    #[test]
+    fn window_level_functions_are_handed_to_the_app_in_order_and_touch_nothing_here() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["keep".into()];
+        let mut env = MacroEnv::new(4, String::new());
+        assert_eq!(run_step(&mut d, &step_of("FileSave"), &mut env), Ok(Some("c.save")));
+        assert_eq!(run_step(&mut d, &step_of("SplitV"), &mut env), Ok(Some("c.split")));
+        assert_eq!(run_step(&mut d, &step_of("SearchNext"), &mut env), Ok(Some("c.find-next")));
+        assert_eq!(d.lines, ["keep"]);
+        assert_eq!(route(&step_of("FileSave")), Route::App("c.save"));
+    }
+
+    #[test]
+    fn chg_charset_and_file_reopen_with_a_code_run_on_the_document_without_one_open_the_list() {
+        let step = |src: &str| macro_sakura::plan(src).unwrap().remove(0);
+        assert_eq!(route(&step("S_ChgCharset();")), Route::App("app.pick-charset"), "不带参数 = 打开列表");
+        assert_eq!(route(&step("S_FileReopen();")), Route::App("app.pick-reopen"));
+        assert_eq!(route(&step("S_ChgCharset(4, 1);")), Route::Doc, "带文字コード = 直接改");
+        assert_eq!(route(&step("S_FileReopen(0, 0);")), Route::Doc);
+        assert!(matches!(route(&step("S_ChgCharset(99, 0);")), Route::No(w) if w.contains("99")), "自動判別不支持, 明确拒绝");
+        let mut d = Doc::untitled(1, 0);
+        d.set_charset(Charset::ShiftJis);
+        run_mac(&mut d, "S_ChgCharset(4, 1);", 4).unwrap();
+        assert_eq!((d.charset, d.bom), (Charset::Utf8, editcore::document_io::Bom::Utf8), "UTF-8 + BOM");
+        run_mac(&mut d, "S_ChgCharset(4, 0);", 4).unwrap();
+        assert_eq!(d.bom, editcore::document_io::Bom::None, "第二个参数 0 = 不带 BOM");
+        run_mac(&mut d, "S_ChgCharset(2);", 4).unwrap();
+        assert_eq!(d.charset, Charset::EucJp);
+        assert!(run_mac(&mut d, "S_ChgCharset(4, 0);\nS_ChgCharset(99, 0);", 4).is_err());
+        assert_eq!(d.charset, Charset::EucJp, "有一步跑不了, 整份宏都不执行");
+        d.dirty = true;
+        assert!(run_mac(&mut d, "S_FileReopen(4, 0);", 4).unwrap_err().contains("未保存"), "有修改时不重新打开");
+    }
+
+    #[test]
+    fn one_unrunnable_step_stops_the_whole_macro_before_anything_changes() {
+        let e = plan_checked("S_InsText(\"x\");\nS_Cascade();").unwrap_err();
+        assert!(e.contains("第 2 行") && e.contains("层叠窗口"), "{e}");
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["keep".into()];
+        assert!(run_mac(&mut d, "S_InsText(\"x\");\nS_Reconvert();", 4).is_err());
+        assert_eq!(d.lines, ["keep"], "整份宏都没执行");
+        let e = run_mac(&mut d, "S_InsText(\"x\");\nS_FileSave();", 4).unwrap_err();
+        assert!(e.contains("c.save") && e.contains("不支持"), "只能在文档上跑的入口遇到窗口类步骤: {e}");
+        assert_eq!(d.lines, ["keep"]);
+    }
+
+    #[test]
+    fn macro_clipboard_connects_cut_copy_and_paste() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["one".into(), "two".into(), "three".into()];
+        d.goto(1, 0);
+        let mut env = MacroEnv::new(4, String::new());
+        run_step(&mut d, &step_of("Copy"), &mut env).unwrap();
+        assert_eq!((env.clip.as_str(), env.clip_changed), ("two\n", true), "没有选区的复制 = 整行 (带换行)");
+        d.goto(0, 0);
+        run_step(&mut d, &step_of("Paste"), &mut env).unwrap();
+        assert_eq!(d.lines, ["two", "one", "two", "three"], "整行粘贴到光标处");
+        d.goto(3, 0);
+        run_step(&mut d, &step_of("CutLine"), &mut env).unwrap();
+        assert_eq!((env.clip.as_str(), d.lines.len()), ("three", 3), "剪切整行: 行没了, 行文字进宏剪贴板 (editcore 的 Sakura 语义: 不带换行)");
+        let mut env2 = MacroEnv::new(4, "ZZ".into());
+        d.goto(0, 0);
+        run_step(&mut d, &step_of("Paste"), &mut env2).unwrap();
+        assert!(d.lines[0].starts_with("ZZ"), "{:?}", d.lines);
+        assert!(!env2.clip_changed, "只粘贴不改剪贴板");
+    }
+
+    #[test]
+    fn box_selection_grows_from_the_keyboard_and_other_document_functions_behave() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["abcdef".into(), "ghijkl".into(), "mnopqr".into()];
+        d.goto(0, 1);
+        let mut env = MacroEnv::new(4, String::new());
+        for name in ["Right_BoxSel", "Right_BoxSel", "Down_BoxSel"] {
+            run_step(&mut d, &step_of(name), &mut env).unwrap();
+        }
+        assert_eq!((d.box_sel, d.cursor), (Some([0, 1, 1, 3]), [1, 3]), "矩形从起点拉到光标");
+        run_step(&mut d, &step_of("Left_BoxSel"), &mut env).unwrap();
+        assert_eq!(d.box_sel, Some([0, 1, 1, 2]), "往回按: 矩形缩小, 起点不动");
+        run_step(&mut d, &step_of("CancelMode"), &mut env).unwrap();
+        assert!(d.box_sel.is_none() && d.sel.is_none());
+        // 书签 / 缩进 / 段落 / 向下两行 / 插入模式
+        d.lines = vec!["a".into(), "".into(), "b".into(), "c".into(), "d".into()];
+        d.goto(0, 0);
+        run_step(&mut d, &step_of("BookmarkSet"), &mut env).unwrap();
+        assert_eq!(d.bookmarks.len(), 1, "书签设上了");
+        run_step(&mut d, &step_of("BookmarkReset"), &mut env).unwrap();
+        assert!(d.bookmarks.is_empty());
+        run_step(&mut d, &step_of("Down2"), &mut env).unwrap();
+        assert_eq!(d.cursor[0], 2);
+        run_step(&mut d, &step_of("GoNextParagraph"), &mut env).unwrap();
+        assert!(d.sel.is_none(), "只移动光标, 不选");
+        let was = d.overwrite;
+        run_step(&mut d, &step_of("ChgmodINS"), &mut env).unwrap();
+        assert_eq!(d.overwrite, !was);
+        d.goto(0, 0);
+        run_step(&mut d, &step_of("IndentTab"), &mut env).unwrap();
+        assert!(d.lines[0].starts_with(' ') || d.lines[0].starts_with('\t'), "{:?}", d.lines[0]);
+        run_step(&mut d, &step_of("Undo"), &mut env).unwrap();
+        assert_eq!(d.lines[0], "a", "撤销");
+        run_step(&mut d, &step_of("Redo"), &mut env).unwrap();
+        assert_ne!(d.lines[0], "a", "重做");
+    }
+
+    #[test]
+    fn code_conversion_functions_convert_the_selection() {
+        let mut d = Doc::untitled(1, 1);
+        d.lines = vec!["abc".into()];
+        d.select_all();
+        let mut env = MacroEnv::new(4, String::new());
+        run_step(&mut d, &step_of("CodeCnvSJIStoUTF8"), &mut env).unwrap();
+        assert_eq!(d.lines, ["abc"], "纯 ASCII 转换后不变, 但函数能跑");
+        for id in ["auto2sjis", "email", "euc2sjis", "sjis2euc", "sjis2jis", "sjis2utf7", "sjis2utf8", "unicode2sjis", "utf72sjis", "utf82sjis"] {
+            assert!(codecnv_known(id), "编码转换 id {id} 不存在");
+        }
     }
 
     #[test]

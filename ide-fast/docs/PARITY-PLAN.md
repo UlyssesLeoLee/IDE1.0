@@ -21,10 +21,16 @@
 | 批次 3 把菜单整体重写成 MENU_DEF 式生成 | partial | 快捷键、面板、提示共用注册表; 菜单本身仍是手写结构 (只是提示由注册表生成)。完全生成需要给每项配分组 / 分隔符 / 勾选状态, 收益小 |
 | 批次 3 编辑区原生处理的键 (剪切 / 复制 / 粘贴、Ctrl+退格 等) 可改键 | not done | 它们由编辑区直接吃事件, 键位表里标成「系统键」, 只显示不能改 (改了会和文本输入路径打架) |
 | 批次 4 标签命令 / 文件菜单 / 编码·换行改写 / 状态栏点击 / 全屏·置顶 / 移动履历 / 括弧 / 书签列表 | done | |
+| 批次 6 代码补全 (completion, Ctrl+Space) | done (移植补齐 第五批) | `complete.rs` (纯逻辑, 有单测) + `textcmds.rs` 的浮层: 关键字 > 内建名 > 文件标识符, 前缀不分大小写, 最多 40; ↑↓ / Enter / Tab / Esc / 点击; 接受是一步撤销。Tauri 的 Ctrl+N / P 换候选没移植 (和新建 / 打印冲突) |
+| 批次 6 转到定义 (goto-def, 本文件) | done (移植补齐 第五批) | `complete::find_definition`: `fn / struct / class / let…` 加名字的行, 退化成首次出现; 跨文件仍靠 F12 标签跳转 |
+| 批次 8 工具栏按钮可自定义 (Tauri「快捷按钮」/ PREFS.qab) | done (移植补齐 第五批) | 设置 `toolbar_cmds` (读入时清洗) + 首选项 > 工具栏页 (添加 / 排序 / 删除 / 分隔线 / 恢复默认)。没做: 放插件命令和宏槽 (Tauri 可以) |
+| 批次 10 AI 推理强度档位 (下拉 / 从供应商获取 / 自定义) | done (移植补齐 第五批) | `ai/efforts.rs`: 默认档位、按形状从模型接口返回里找档位、`/models/<模型>` 再 `/models`; 界面在 AI 面板设置里。只在本机假服务器上验证过联网部分 |
 | 批次 4 Sakura 默认键 (Tauri `KEYMAP` 逐项核对) | done (移植补齐 第四批) | 20 个键补绑, 见 CHANGELOG 0.3.5; 单测 `tauri_default_keys_are_bound_to_the_matching_commands`。没绑的及原因同 CHANGELOG |
 | 批次 4 合并连续重复行 (uniq-consecutive) / 执行外部命令 (exec-cmd, Ctrl+F5) | done (移植补齐 第四批) | `cmds::lines_op` 走 `editcore::edit_ops::transform_lines`; `open_exec_terminal` |
 | 批次 4 整理行 / 文本变换改用 editcore (Sakura 实测) | done (移植补齐 第四批) | `cmds::lines_op` / `cmds::transform` 不再自己抄: 排序 (UTF-16 序)、去行首 / 行尾空白 (只去空格和 Tab)、Tab ↔ 空格 (按制表位)、大小写 |
-| 批次 7 Sakura 宏运行: 带命令 id 的 `S_` 函数 | partial (移植补齐 第四批) | `macros::doc_command`: 只动文档本身的 (SPACE 缩进、假名 / 英数转换、段落选择、改动行 / 函数步进、插入日期时间、只读、换行符、编码转换、editcore 编辑命令) 能跑; 窗口 / 标签 / 分组 / 对话框 / 剪贴板类 (关标签、新窗口、复制 HTML 等) 明确报错。带命令 id 的 85 个里能跑的从 2 个增加到 21 个 (逐个实测); 单测 `document_level_sakura_functions_run_and_window_level_ones_fail_loudly` 守住这批 |
+| 批次 7 Sakura 宏运行: 全部 268 个 `S_` 函数 | done (移植补齐 第六、七批) | `macros::route` 给每个函数一个结局: 142 个在文档上执行 (`DocOp` / `doc_command` / `key_action`)、118 个转交 App (`APP_FUNCS`: 函数名 -> 命令表 id, 由 `App::run_mac_src` 逐步转交 `run_entry`; 第七批把窗口一览 / 帮助 / 最近的文件 / 字符集 / 大纲 / 文件树等 15 个从「不执行」改成真执行 —— 打开列表或切页后宏继续往下跑, 不会等用户选)、8 个明确不执行 (`NOT_APPLICABLE`, 带原因: 层叠 / 平铺、SQL*Plus、JS 宏、IME 再変換、标签栏开关)。整份宏先预检 (`plan_checked`), 有一步跑不了就一步都不执行; 宏有自己的剪贴板 (`MacroEnv`), 跑完同步回系统。单测 `every_sakura_function_is_runnable_handed_to_the_app_or_explained` 逐个函数核对 |
+| 批次 7 矩形选择的键盘扩展 (`S_*_BoxSel`) | done (移植补齐 第六批, 只在宏里) | `Doc::box_nav`; 键位上 Alt+方向键仍是上移 / 下移一行, 不冲突 |
+| 批次 7 宏登记槽 (Tauri「宏登记」/ PREFS.macroSlots) | done (移植补齐 第六批) | 设置 `macro_slots` (恒 20 个, 读入时清洗) + 首选项「宏」页 + 宏 > 宏登记 + 命令 `app.macro-slot-N` / `app.macro-register`。没做: JS 宏 |
 | 批次 4 标签分组命令 (next-group / prev-group / tab-separate / tab-joint-* / bind-window / group-close) | done (移植补齐 第三批) | 窗口 > 标签分组 + 命令面板; `tabs::groups` / `neighbour_group` / `new_group` 是纯逻辑 (有单测); 分组 = 标签右键菜单的 6 种颜色分组 (`Doc.group`, 0 = 无分组)。差别: 切分组回到最靠左的标签 (Tauri 回到最近用过的) |
 | 批次 4 SPACE 缩进 / 反缩进 (indent-space / unindent-space) | done (移植补齐 第三批, 第四批改正语义) | `Doc::space_indent` 调 `editcore::edit_ops::transform_lines` (Sakura 实测): 行首加 / 去 1 个空格, 空行不动, 反缩进不碰 Tab; 有选区缩进后仍选着。第三批曾误写成加 Tab 宽度个空格 |
 | 批次 4 光标行居中 / 选区统计方式 / 切换查找标记 / 回到查找起点 | done (移植补齐 第三批) | `center_cursor` (复用首帧居中机制)、状态栏选区字数可点 (字符 / 字节 / 行, `sys.sel_count`)、`toggle_find_marks`、`jump_find_start` (`Find::start_pos`); 后两个没有默认键 (Ctrl+F3 / Ctrl+Shift+F3 已是查找当前词) |
@@ -80,8 +86,9 @@
 | 决策 A7 scm 逻辑 | done | 在 `ide-fast/src/scm.rs` 里自带, 没有动 Tauri 版 |
 | 决策 A8 Vim 模式 / SQL*Plus | not done (按决策排除) | editcore 里没有对应语义 |
 | 再変換 (reconvert, F_RECONVERT) | not done | Tauri 版也只是把选区交给浏览器、等用户按 IME 的「変換」键; egui 没有触发 TSF 再変換的接口, 高速版没有对应入口 |
-| 关键字帮助 (help-search / ext-help / toggle-key-search) | not done | Tauri 版在前端 (`editor.html` 的 `helpSearch`) 里实现; 高速版还没有对应入口, 优先级低 |
-| 窗口一览 / 层叠 / 平铺 (window-list / cascade / tile-*) | not done (有意偏差) | 按 `docs/06_功能对标/WBS-02_next-steps.md` 第 3 节: 本应用是单窗口多标签, MDI 窗口命令记为有意偏差 |
+| 关键字帮助 (help-search / ext-help / toggle-key-search) | done (移植补齐 第七批) | `help.rs` + `help.txt`: 内置手册 + 现场生成的命令一览; 帮助 > 关键字帮助检索 (Alt+Shift+F1, 带入光标处的词) / 光标处的词 (Ctrl+F1) / 自动显示 (状态栏提示第一处提到该词的行, 设置 `key_search`) / 帮助手册 (F1)。和 Tauri 一样只查内置文本, 没有外部 .hlp / .chm 帮助文件; 自动显示要求词至少 2 个字符 |
+| 窗口一览 (window-list) | done (移植补齐 第七批) | 窗口 > 窗口一览… (命令 `app.window-list`): 通用选择列表 `pick.rs`, ▶ 当前 / ● 未保存, 输入过滤, 方向键 + 回车切换 |
+| 层叠 / 平铺 (cascade / tile-*) | not done (有意偏差) | Tauri 版也没有这几条命令; 本应用是单窗口多标签, 按 `docs/06_功能对标/WBS-02_next-steps.md` 第 3 节记为有意偏差 |
 
 
 # ide-fast Parity Implementation Plan (merged from 6 area audits)

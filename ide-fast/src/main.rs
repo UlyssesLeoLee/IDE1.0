@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod complete;
 mod glassfx;
 mod ui_ext;
 mod ckbox;
@@ -42,6 +43,8 @@ mod tabs;
 mod view;
 mod textconv;
 mod tools;
+mod pick;
+mod help;
 mod tagjump;
 mod kinsoku;
 mod icons;

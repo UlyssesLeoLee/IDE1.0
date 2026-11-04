@@ -5,15 +5,6 @@ use crate::panels::Dock;
 use crate::sidebar::Tab;
 use egui::Key;
 
-/// 工具栏按钮: 命令 id; 空串 = 分隔线
-const TOOLBAR: &[&str] = &[
-    "c.new-file", "c.open-file", "c.save", "",
-    "c.undo", "c.redo", "",
-    "c.cut", "c.copy", "c.paste", "",
-    "c.find", "c.replace", "c.grep", "",
-    "c.split", "c.terminal", "c.palette",
-];
-
 const FKEYS: [Key; 12] = [Key::F1, Key::F2, Key::F3, Key::F4, Key::F5, Key::F6, Key::F7, Key::F8, Key::F9, Key::F10, Key::F11, Key::F12];
 
 /// 命令 id 在注册表里的下标
@@ -33,14 +24,15 @@ pub fn function_key_cmds(bound: &[(usize, egui::Modifiers, Key)]) -> [Option<usi
 impl App {
     pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let mut run: Option<usize> = None;
+        let cmds = self.cfg.toolbar_cmds.clone(); // 首选项 > 工具栏里自定义的按钮
         ui.horizontal_wrapped(|ui| {
-            for id in TOOLBAR {
+            for id in &cmds {
                 if id.is_empty() { ui.separator(); continue; }
                 let Some(i) = index_of(id) else { continue };
                 let e = &keymap::entries()[i];
                 let tip = crate::i18n::lk_for(e);
                 // 有图标的命令用画笔图标按钮 (不靠图标字体), 没有的仍是文字按钮
-                let clicked = if crate::icons::has_icon(id) { crate::icons::icon_button(ui, id, tip).clicked() } else { ui.small_button(e.label.text()).tip(tip).clicked() };
+                let clicked = if crate::icons::has_icon(id) { crate::icons::icon_button(ui, id.as_str(), tip).clicked() } else { ui.small_button(e.label.text()).tip(tip).clicked() };
                 if clicked { run = Some(i); }
             }
         });
@@ -139,9 +131,11 @@ mod tests {
 
     #[test]
     fn toolbar_commands_all_exist_in_the_registry() {
-        for id in TOOLBAR.iter().filter(|s| !s.is_empty()) {
+        for id in crate::settings::DEFAULT_TOOLBAR.iter().filter(|s| !s.is_empty()) {
             assert!(index_of(id).is_some(), "工具栏命令 {id} 不在注册表里");
         }
+        let d: Vec<String> = crate::settings::DEFAULT_TOOLBAR.iter().map(|s| s.to_string()).collect();
+        assert_eq!(crate::settings::sanitize_toolbar(d.clone()), d, "默认工具栏清洗后原样");
     }
 
     #[test]

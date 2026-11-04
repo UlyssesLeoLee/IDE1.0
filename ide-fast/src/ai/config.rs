@@ -9,6 +9,8 @@ pub struct AiConfig {
     pub model: String,
     pub key: String,
     pub effort: String,
+    /// 推理强度可选的档位 (从供应商获取到的, 或自己手填的); 空 = 用通用默认 `efforts::DEFAULT`
+    pub efforts: Vec<String>,
     /// 用户已同意把选中内容 / 当前章节发给端点 (一次同意, 之后不再问; 和 Tauri 版 CHAT_CONSENT_KEY 一致)
     pub consent: bool,
 }
@@ -37,14 +39,14 @@ impl AiConfig {
     }
     pub fn from_json(v: &Value) -> Self {
         let s = |k: &str| v[k].as_str().unwrap_or("").to_string();
-        let mut c = AiConfig { base_url: s("baseUrl"), model: s("model"), key: s("key"), effort: s("effort"), consent: v["consent"].as_bool().unwrap_or(false) };
+        let mut c = AiConfig { base_url: s("baseUrl"), model: s("model"), key: s("key"), effort: s("effort"), efforts: super::efforts::clean_list(v["efforts"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default()), consent: v["consent"].as_bool().unwrap_or(false) };
         if c.base_url.is_empty() {
             c.base_url = PRESETS[0].1.into();
         }
         c
     }
     pub fn to_json(&self) -> Value {
-        json!({ "baseUrl": self.base_url, "model": self.model, "key": self.key, "effort": self.effort, "consent": self.consent })
+        json!({ "baseUrl": self.base_url, "model": self.model, "key": self.key, "effort": self.effort, "efforts": self.efforts, "consent": self.consent })
     }
     pub fn load() -> Self {
         config_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok()).map(|v| Self::from_json(&v)).unwrap_or_else(Self::default_cfg)
@@ -72,8 +74,13 @@ fn is_loopback(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "[::1]")
 }
 
-/// 校验接口地址, 返回 chat/completions 的完整 URL。https 限定 (回环地址可 http); 不许内嵌账号口令 / 换行 / UNC 样式
+/// 校验接口地址, 返回 chat/completions 的完整 URL
 pub fn endpoint(base: &str) -> Result<String, String> {
+    Ok(format!("{}/chat/completions", checked_base(base)?))
+}
+
+/// 校验接口地址, 返回去掉尾部斜杠的地址。https 限定 (回环地址可 http); 不许内嵌账号口令 / 换行 / UNC 样式
+pub fn checked_base(base: &str) -> Result<String, String> {
     let b = base.trim().trim_end_matches('/');
     if b.contains(|c: char| c.is_control() || c.is_whitespace() || c == '\\') {
         return Err("接口地址含非法字符".into());
@@ -90,7 +97,7 @@ pub fn endpoint(base: &str) -> Result<String, String> {
     if b.contains(['?', '#']) {
         return Err("接口地址不要带查询参数".into());
     }
-    Ok(format!("{b}/chat/completions"))
+    Ok(b.to_string())
 }
 
 #[cfg(test)]

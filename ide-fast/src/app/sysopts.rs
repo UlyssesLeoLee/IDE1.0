@@ -21,6 +21,9 @@ pub(super) struct SysState {
     pub backup: AutoBackup,
     /// 状态栏选区统计方式: 0 字符数, 1 字节数 (UTF-8), 2 行数 (同 Tauri `select-count-mode`, 不落盘)
     pub sel_count: u8,
+    /// 代码补全浮层 (打开时才有); 光标所在的屏幕位置每帧由编辑区画光标时记下, 浮层贴在它下面
+    pub complete: Option<crate::complete::Popup>,
+    pub caret_screen: Option<egui::Pos2>,
     pub locks: FileLocks,
     /// 当前主题是半透明主题 (窗口建出来就是透明的, 这时只决定清屏色 / 要不要加模糊)
     pub theme_glass: bool,

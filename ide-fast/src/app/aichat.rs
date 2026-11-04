@@ -56,6 +56,12 @@ pub(super) struct AiState {
     run: Option<Run>,
     /// 等用户同意发送上下文的提问
     ask: Option<String>,
+    /// 设置里「自定义档位」输入框的文字 (打开设置后第一次画时从配置里填)
+    efforts_text: Option<String>,
+    /// 正在向供应商获取 effort 档位 (后台线程把结果送回这里)
+    fetch: Option<Receiver<Result<Vec<String>, String>>>,
+    /// 获取档位的结果 / 错误说明
+    fetch_msg: String,
 }
 
 enum Act {
@@ -373,7 +379,7 @@ impl App {
         });
         if self.ai.settings {
             ui.separator();
-            let cfg = self.ai_cfg();
+            let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
             ui.horizontal_wrapped(|ui| {
                 for (name, url) in ai::PRESETS {
                     if ui.small_button(*name).clicked() { cfg.base_url = (*url).to_string(); }
@@ -390,9 +396,56 @@ impl App {
                 ui.add(egui::TextEdit::singleline(&mut cfg.key).password(true).desired_width(220.0));
                 ui.end_row();
                 ui.label(tr("ai.effort"));
-                ui.add(egui::TextEdit::singleline(&mut cfg.effort).hint_text("low / medium / high").desired_width(220.0));
+                // 档位下拉: 默认 (不指定) + 获取到 / 手填的档位 (没有就用通用默认); 当前值不在列表里也照样显示
+                let opts = ai::options(cfg);
+                let shown = if cfg.effort.is_empty() { tr("ai.effort-default").to_string() } else { cfg.effort.clone() };
+                egui::ComboBox::from_id_salt("ai-effort").width(220.0).selected_text(shown).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut cfg.effort, String::new(), tr("ai.effort-default"));
+                    for o in &opts { ui.selectable_value(&mut cfg.effort, o.clone(), o); }
+                });
+                ui.end_row();
+                ui.label(tr("ai.effort-custom"));
+                let text = self.ai.efforts_text.get_or_insert_with(|| cfg.efforts.join(","));
+                if ui.add(egui::TextEdit::singleline(text).hint_text("low,medium,high,xhigh").desired_width(220.0)).changed() {
+                    cfg.efforts = ai::parse_custom(text);
+                }
                 ui.end_row();
             });
+            // 从供应商获取档位: 点了才联网, 后台线程查模型接口 (密钥只发给上面填的接口地址)
+            ui.horizontal(|ui| {
+                let busy = self.ai.fetch.is_some();
+                if ui.add_enabled(!busy, egui::Button::new(tr("ai.effort-fetch"))).clicked() {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let snapshot = cfg.clone();
+                    let ctx = ui.ctx().clone();
+                    let _ = std::thread::Builder::new().name("ai-efforts".into()).spawn(move || {
+                        let _ = tx.send(ai::fetch_efforts(&snapshot));
+                        ctx.request_repaint();
+                    });
+                    self.ai.fetch = Some(rx);
+                    self.ai.fetch_msg = tr("ai.effort-fetching").to_string();
+                }
+                if busy { ui.spinner(); }
+            });
+            if let Some(rx) = &self.ai.fetch {
+                match rx.try_recv() {
+                    Ok(res) => {
+                        self.ai.fetch = None;
+                        self.ai.fetch_msg = match res {
+                            Ok(list) => {
+                                let msg = trf("ai.effort-got", &[&list.len().to_string(), &list.join(", ")]);
+                                self.ai.efforts_text = Some(list.join(","));
+                                cfg.efforts = list;
+                                msg
+                            }
+                            Err(e) => e,
+                        };
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(150)),
+                    Err(_) => self.ai.fetch = None,
+                }
+            }
+            if !self.ai.fetch_msg.is_empty() { ui.weak(self.ai.fetch_msg.as_str()); }
             if let Err(e) = ai::endpoint(&cfg.base_url) { ui.colored_label(Color32::LIGHT_RED, e); }
             ui.weak(tr("ai.key-note"));
             if ui.button(tr("ai.save")).clicked() { act = Some(Act::Save); }
