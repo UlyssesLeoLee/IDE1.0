@@ -29,13 +29,13 @@
 ### O1 — 让 CI 真的跑起来, 测试基线可信 (P0)
 | WBS | 工作包 | 估时 | 依赖 | 验收 |
 |---|---|---|---|---|
-| 1.1 | `ci.yml` 补顶层 `jobs:` 并把现有各 job 缩进进去; 触发分支 `develop` → `dev`; 先只保留 `rust` job 的 `cargo test`, 其余 job 暂时 `if: false` 并注明原因 | S | — | PR 页面出现真实的 Actions 运行; 故意弄坏一个测试时 PR 变红 |
+| 1.1 | **[done 2026-11-04, 待 PR 上首次运行确认]** `ci.yml` 补顶层 `jobs:` 并把现有各 job 缩进进去; 触发分支 `develop` → `dev`; 先只保留 `rust` job 的 `cargo test`, 其余 job 暂时 `if: false` 并注明原因 | S | — | PR 页面出现真实的 Actions 运行; 故意弄坏一个测试时 PR 变红 |
 | 1.2 | ide-fast 跨平台依赖: `[target.'cfg(target_os = "linux")'.dependencies]` 给 `eframe` 加 `x11` / `wayland`、给 `rfd` 加 `xdg-portal`; 私有依赖 `aci-emitter` 改为 feature 或在 CI 里提供凭据 | M | 1.1 | `ubuntu-latest` 上 `cargo test -p ide-fast` 能编译 |
 | 1.3 | 3 个 Windows 路径测试改为跨平台断言或加 `#[cfg(windows)]` (保留 Windows 上的原断言) | S | — | Linux 上 `cargo test -p ide-fast` 0 失败; Windows 上同样 0 失败 |
 | 1.4 | 加 `windows-latest` 上的 `cargo test -p ide-fast`, 外加 `perf_bench` 编辑基准 (`--ignored`, 只报告数字不阻断) | S | 1.1 | 两个平台各自出结果 |
 | 1.5 | 一次性 `cargo fmt` (单独提交, 不夹带逻辑改动), 之后打开 `fmt --check` 门禁 | S | 1.1 | 门禁打开后 CI 绿 |
 | 1.6 | 清掉 rustc 21 条警告 (含 egui `Id::new` 弃用 5 处) 和 clippy 62 条, 再打开 `-D warnings` | M | 1.5 | `RUSTFLAGS=-D warnings` 下 CI 绿 |
-| 1.7 | `editcore` 的已知失败 `grep_engine::tests::replace_backup_and_skip_list` 定位修复 | S | — | editcore 0 失败 |
+| 1.7 | **[done 2026-11-04]** `editcore` 的已知失败 `grep_engine::tests::replace_backup_and_skip_list` 定位修复: 根因是测试假定 Windows 的路径比较不分大小写 (`norm_key` 在非 Windows 上区分大小写是对的), 改测试按平台选文件名, 代码不动 | S | — | editcore 0 失败 (实测 Linux: 462 + 集成测试全绿) |
 
 ### O2 — 发布通道 (P0)
 | WBS | 工作包 | 估时 | 依赖 | 验收 |
@@ -75,6 +75,11 @@
 | 6.1 | 宏里打开列表 / 对话框的函数 (`S_WinList`、`S_ChgCharset` 无参数等) 可选「等用户选完再继续」 | M | — | 带对话框的宏能按 Sakura 的方式暂停 |
 | 6.2 | 超长单行只排版水平可见窗口 (`PERF.md` 的已知项) | L | 1.4 | 100 万字符单行稳态帧 < 16 ms, 现有坐标换算测试全过 |
 | 6.3 | 以 5.1 生成的清单为准, 挑下一批功能 (候选: 底部面板 OUTPUT / PROBLEMS 页、终端字体 / 回滚行数设置、标签分组做成真窗格) | — | 5.1 | 另开 WBS |
+
+### 进度 (2026-11-04)
+- **1.1 已做**: `ci.yml` 现在有顶层 `jobs:` (YAML 解析确认 14 个 job), 触发分支 `develop` → `dev`; 只有 `rust` job 在跑 (ubuntu / windows / macos, stable), 步骤只剩 checkout + 工具链 + 缓存 + `cargo test -p editcore --no-fail-fast`; 其余 13 个 job、fmt / check / clippy / doc / 构建步骤、`RUSTFLAGS=-D warnings` 都用 `if: false` 或注释关掉并写明对应的 WBS 编号, 待 1.2 / 1.5 / 1.6 完成后逐个打开。
+- **1.7 已做**: 见上。本地实测等价命令 `cargo test -p editcore --no-fail-fast`: 462 通过, 0 失败。
+- **未验证**: 工作流在 GitHub 上的首次实际运行 (本会话无法触发)。一个风险点: 根 `Cargo.lock` 含私有 git 依赖 `aci-emitter`, `cargo test -p editcore` 仍可能因为解析整个 workspace 而去拉取它 —— 若首次运行在「拉取依赖」阶段失败, 先处理 1.2 的私有依赖部分。
 
 ## 3. 建议的顺序
 

@@ -59,7 +59,7 @@
 | crate | 通过 | 失败 | 说明 |
 |---|---|---|---|
 | `ide-fast` | 491 | 3 | 失败的 3 个是测试里写死 `C:\` / `D:\` 的 Windows 路径断言 (`settings::session_roundtrips_and_refuses_unsafe_paths`、`tagjump::rel_paths_are_checked`、`updapply::new_and_target_paths_are_inverse_and_strict`), 在 Linux 上必然失败, 由来已久 |
-| `editcore` | 461 | 1 | `grep_engine::tests::replace_backup_and_skip_list`, 已知的大小写问题 |
+| `editcore` | 462 (+ 集成测试) | 0 | 原先失败的 `grep_engine::tests::replace_backup_and_skip_list` 已修 (测试假定了 Windows 的大小写不敏感路径) |
 
 编译警告: `ide-fast` 21 条 (rustc), clippy 48 条; `editcore` clippy 14 条 (实测)。
 
@@ -79,7 +79,7 @@
 
 | # | 问题 | 依据 | 影响 |
 |---|---|---|---|
-| R1 | **CI 实际没有在跑**: `.github/workflows/ci.yml` 没有顶层 `jobs:` 键 (各 job 直接写在根上), GitHub 会判定工作流无效; 触发分支写的是 `develop`, 实际分支叫 `dev` | 实测 (YAML 解析结果没有 `jobs`) | PR 上「CI 通过」不代表跑过任何测试 |
+| R1 | **(2026-11-04 已改, 待首次运行确认)** **CI 实际没有在跑**: `.github/workflows/ci.yml` 没有顶层 `jobs:` 键 (各 job 直接写在根上), GitHub 会判定工作流无效; 触发分支写的是 `develop`, 实际分支叫 `dev` | 实测 (YAML 解析结果没有 `jobs`) | PR 上「CI 通过」不代表跑过任何测试 |
 | R2 | 即使修好结构, CI 会立即红: `cargo fmt --check` (仓库没按 rustfmt 格式化, ide-fast 约 1700 处差异)、`clippy -D warnings`、`RUSTFLAGS=-D warnings`、Linux runner 编不过 ide-fast、私有依赖 `aci-emitter` | 实测 | 需要分步收紧, 见 WBS-03 O1 |
 | R3 | **新 UI 都没在真窗口里验证**: 0.3.2 起每批的菜单项、首选项页、补全浮层、选择列表外观、帮助菜单、AI 设置、日 / 英界面的排版 | 云端会话没有 Windows | 可能有布局 / 交互问题 |
 | R4 | 0.3.2 – 0.3.9 没有标签、没有安装包, 应用内「检查更新」看不到这些版本 | 实测 | 用户拿不到 |

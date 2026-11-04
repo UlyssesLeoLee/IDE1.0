@@ -1,5 +1,11 @@
 # Changelog
 
+## 未发布
+
+### 工程 (WBS-03 O1.1 / O1.7)
+- **CI 工作流修复**: `.github/workflows/ci.yml` 之前没有顶层 `jobs:` 键、触发分支写成 `develop`, GitHub 判定无效, 从没真正运行过。现在结构有效、触发分支改为 `dev`; 只启用 `cargo test -p editcore` (三个平台), 其余 job 和 fmt / clippy / `-D warnings` 暂时关闭并注明对应 WBS 编号, 待逐项验证后再打开。
+- **`editcore` 测试修复**: `grep_engine::tests::replace_backup_and_skip_list` 在 Linux 上失败, 根因是测试假定 Windows 的路径比较不分大小写; 代码行为是对的, 改测试按平台选文件名。editcore 现在 Linux 上 0 失败。
+
 ## 0.3.9 — 2026-11-04
 
 ### 高速版: 中 / 日 / 英三语补全

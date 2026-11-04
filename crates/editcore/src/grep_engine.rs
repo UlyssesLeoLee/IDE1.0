@@ -2946,7 +2946,9 @@ mod tests {
         fs::write(p.join("none.txt"), "zzz\n").unwrap();
         let mut o = rep(opts("old"), "new");
         o.backup = Some(true);
-        o.skip_paths = Some(vec![p.join("OPEN.txt").to_string_lossy().replace('\\', "/")]);
+        // Windows 的路径比较不分大小写 (`norm_key`), 其它平台分: 只有 Windows 上才故意写成大写
+        let skip_name = if cfg!(windows) { "OPEN.txt" } else { "open.txt" };
+        o.skip_paths = Some(vec![p.join(skip_name).to_string_lossy().replace('\\', "/")]);
         let r = grep_replace(p, &o).unwrap();
         assert_eq!((r.files_changed, r.files_skipped, r.files_failed), (1, 1, 0), "{r:#?}");
         assert_eq!(r.files.len(), 2, "没命中的文件不进报告");
