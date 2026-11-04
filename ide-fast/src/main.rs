@@ -58,6 +58,7 @@ mod panels;
 mod rowview;
 mod relaunch;
 mod update;
+mod updkey;
 mod updnet;
 mod updapply;
 

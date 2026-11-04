@@ -36,5 +36,6 @@ powershell -ExecutionPolicy Bypass -File ide-fast/packaging/build-msi.ps1 -Targe
 - `ide-fast-<版本>-windows-x64.exe` (便携)
 - `IDE1.0-Fast_<版本>_x64.msi` (安装包)
 - `SHA256SUMS.txt`
+- `SHA256SUMS.txt.sig` (对 `SHA256SUMS.txt` 的 ed25519 分离签名, 原始 64 字节; 用 `sign-release.ps1` 生成, 私钥在仓库之外; 缺了或验不过会拒绝安装)
 
 开发预发布用 `publish-dev.ps1` (tag 形如 `v0.3.2-dev.20261103.1`, `gh release create --prerelease`); 它只是文档化的脚本, 不会被自动运行。

@@ -6,6 +6,7 @@
 #   资产     ide-fast-<tag 去掉 v>-windows-x64.exe  (便携版)
 #            IDE1.0-Fast_<版本>_x64.msi             (build-msi.ps1 产出)
 #            SHA256SUMS.txt                         (更新功能必须有, 缺了会拒绝安装)
+#            SHA256SUMS.txt.sig                     (ed25519 分离签名, 必须有; 私钥路径来自环境变量 IDE_FAST_SIGN_KEY, 见 sign-release.ps1)
 param(
     [Parameter(Mandatory = $true)][string]$Target,
     [Parameter(Mandatory = $true)][string]$Out,
@@ -40,8 +41,13 @@ $lines = foreach ($f in @($portable, $msi.FullName)) {
 [System.IO.File]::WriteAllText($sums, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
 Get-Content $sums
 
+# 3b. 签名 (私钥在仓库之外, 由 IDE_FAST_SIGN_KEY 指向; 没设就拒绝发布 —— 没有 .sig 的 Release 更新功能一律不安装)
+$sig = "$sums.sig"
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "sign-release.ps1") -Sums $sums -Out $sig
+if ($LASTEXITCODE -ne 0) { throw "sign-release.ps1 失败" }
+
 # 4. 创建预发布 (--prerelease: 稳定通道看不到它; 开发通道能看到)
-$ghArgs = @("release", "create", $tag, $portable, $msi.FullName, $sums, "--prerelease", "--title", "IDE1.0 Fast $tag", "--notes", $Notes, "--target", "dev")
+$ghArgs = @("release", "create", $tag, $portable, $msi.FullName, $sums, $sig, "--prerelease", "--title", "IDE1.0 Fast $tag", "--notes", $Notes, "--target", "dev")
 if ($DryRun) { Write-Host "[DryRun] gh $($ghArgs -join ' ')"; return }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }

@@ -190,6 +190,8 @@ impl InstallKind {
 }
 
 pub const SUMS_NAME: &str = "SHA256SUMS.txt";
+/// `SHA256SUMS.txt` 的分离签名: **原始 64 字节** ed25519 签名 (不是 base64 / hex), 见 `docs/UPDATE.md`
+pub const SIG_NAME: &str = "SHA256SUMS.txt.sig";
 
 /// 该安装方式对应的资产 (别的平台 / 没发布 = None, 界面只给 Release 页面链接)
 pub fn pick_asset(r: &Release, kind: InstallKind) -> Option<&AssetInfo> {
@@ -198,6 +200,10 @@ pub fn pick_asset(r: &Release, kind: InstallKind) -> Option<&AssetInfo> {
 
 pub fn pick_sums(r: &Release) -> Option<&AssetInfo> {
     r.assets.iter().find(|a| a.name.eq_ignore_ascii_case(SUMS_NAME))
+}
+
+pub fn pick_sig(r: &Release) -> Option<&AssetInfo> {
+    r.assets.iter().find(|a| a.name.eq_ignore_ascii_case(SIG_NAME))
 }
 
 /// `SHA256SUMS.txt`: 每行 `<64 位十六进制>  <文件名>` (或 `<hex> *<文件名>`), 空行忽略; 哈希统一小写, 文件名精确匹配

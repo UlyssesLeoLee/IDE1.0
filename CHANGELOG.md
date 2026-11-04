@@ -4,6 +4,7 @@
 
 ### 高速版新增
 - **检查更新…** (帮助菜单 / 命令面板): 直连 GitHub Releases, 稳定 / 开发两个通道 (首选项里选), 可选「每天启动时检查一次」(默认关, 首帧之后才做); 下载后必须通过 `SHA256SUMS.txt` 的 SHA-256 校验才能 "安装并重启" (msi 走 `msiexec /passive`, 便携版自行换文件), 失败保留当前版本。设计见 `ide-fast/docs/UPDATE.md`。
+- **更新包验签**: `SHA256SUMS.txt` 必须带发布者的 ed25519 分离签名 `SHA256SUMS.txt.sig` (原始 64 字节), 先验签再信任清单里的哈希; 缺签名 / 验签失败 = 拒绝并删除下载物; 安装前再粗检文件头 (msi 的 OLE 头、exe 的 `MZ`)。公钥内置在 `ide-fast/src/updkey.rs`, **目前是全 0 占位 = 未配置**, 此时更新窗口提示"更新签名密钥未配置"、"安装并重启"保持禁用、只给发布页链接 (发行版里没有任何环境变量可以绕过)。附签名工具 `ide-fast/packaging/sign-release.ps1` + `examples/sign-sums.rs`, 密钥生成 / 保管 / 轮换见 `ide-fast/docs/UPDATE.md`。新增依赖 `ed25519-dalek` (仅验证, 关掉全部默认特性), release exe 体积无可测增长。
 
 ## 0.3.1 — 2026-11-03
 

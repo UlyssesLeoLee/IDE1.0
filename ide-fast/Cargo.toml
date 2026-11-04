@@ -23,6 +23,8 @@ serde_json = "1"
 chrono.workspace = true
 # Markdown 预览里的本地 PNG 图片
 png = { version = "0.17", default-features = false }
+# 更新包验签: 只用验证 (default-features 全关: 无 rand / 无签名 / 无预计算大表), 纯 Rust
+ed25519-dalek = { version = "2", default-features = false }
 # 脚本插件宿主 (惰性创建, 启动时不加载): QuickJS, 带内存上限 + 墙钟中断
 rquickjs = { version = "0.9", default-features = false }
 

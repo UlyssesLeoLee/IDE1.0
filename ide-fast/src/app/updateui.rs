@@ -81,7 +81,7 @@ impl App {
             let r = match std::env::current_exe() {
                 Ok(exe) => {
                     let dir = if c.kind == InstallKind::Msi { std::env::temp_dir() } else { exe.parent().map(|p| p.to_path_buf()).unwrap_or_else(std::env::temp_dir) };
-                    updnet::stage(&Curl, &c, &dir, &updapply::new_path_of(&exe))
+                    updnet::stage(&Curl, &c, &crate::updkey::UPDATE_PUBKEY, &dir, &updapply::new_path_of(&exe))
                 }
                 Err(e) => Err(UpdErr::Io(e.to_string())),
             };
@@ -169,7 +169,14 @@ impl App {
                         ui.label(tr("upd.notes"));
                         egui::ScrollArea::vertical().max_height(160.0).id_salt("upd-notes").show(ui, |ui| { ui.label(notes); });
                     }
+                    let signed = crate::updkey::is_configured(&crate::updkey::UPDATE_PUBKEY);
                     match &c.asset {
+                        Some(a) if !signed => {
+                            // 公钥还是占位: 不下载、不安装, 只给发布页链接 (安装按钮保留但禁用, 让人看到为什么)
+                            ui.label(trf("upd.asset", &[&a.name, &format!("{:.1}", a.size as f64 / 1_048_576.0)]));
+                            ui.colored_label(self.tc.red, tr("upd.nokey"));
+                            ui.add_enabled(false, egui::Button::new(tr("upd.install")));
+                        }
                         Some(a) => {
                             ui.label(trf("upd.asset", &[&a.name, &format!("{:.1}", a.size as f64 / 1_048_576.0)]));
                             match &self.upd.phase {

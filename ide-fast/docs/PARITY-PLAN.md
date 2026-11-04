@@ -57,7 +57,7 @@
 | 批次 8 AI Chat 面板 (A4) | done (批次 10) | 右侧面板 (Ctrl+Alt+L): 接口 / 模型 / 密钥存 ai.json, 流式回复 (系统 curl, 密钥走 stdin), 工具往返 (6 轮; 模型点名的插件工具须在清单 `contributes["agent.tool"]` 里声明且名字合法, 否则回「unknown tool」), 补丁提案应用 / 拒绝, 插入编辑器, 取消; 仅 https (回环可 http), 4MB 上限, 超时; 流式回复按行解码不会切坏多字节字符; 密钥明文存放, 设置页有一行提示; 保存失败会显示; 联网只在点发送 (含首次同意) 时发生; 本机模拟服务测试。联网与原子写盘分别在 `curlx.rs` / `fsx.rs`, 与 GitHub 插件共用 |
 | 决策 A1-A3 (JS 引擎 / SVG) | done | rquickjs; 自带 `svg_lite` 代替 resvg |
 | 决策 A5 玻璃主题 | partial (批次 10) | 见上; 切换主题后须重启, 亮度只读系统明暗 (不做截屏采样) |
-| 检查更新 (Tauri 版没有同名功能, 高速版自带) | done (Unreleased) | `updnet.rs` / `update.rs`: 帮助菜单, 直连 GitHub Releases, 稳定 / 开发通道, SHA-256 校验, msi 与便携版安装并重启, 可选每日检查 (默认关)。已有 357 项单测 + 本机模拟服务测试; 真窗口里验证过更新窗口能打开并进入「正在检查」状态; **msiexec 安装与便携版 .new 替换没有真机跑过** (安装包是 per-machine, 需管理员), 见 `UPDATE.md` / `MSI-TEST.md` |
+| 检查更新 (Tauri 版没有同名功能, 高速版自带) | done (Unreleased) | `updnet.rs` / `update.rs`: 帮助菜单, 直连 GitHub Releases, 稳定 / 开发通道, SHA-256 校验, msi 与便携版安装并重启, 可选每日检查 (默认关), **清单 ed25519 验签 (`updkey.rs` 公钥目前是占位 = 未配置, 窗口提示并禁用安装, 待所有者生成密钥后启用)**。已有 363 项单测 + 本机模拟服务测试; 真窗口里验证过更新窗口能打开并进入「正在检查」状态; **msiexec 安装与便携版 .new 替换没有真机跑过** (安装包是 per-machine, 需管理员), 见 `UPDATE.md` / `MSI-TEST.md` |
 | 决策 A6 i18n | done | 中 / 日 / 英 |
 | 决策 A7 scm 逻辑 | done | 在 `ide-fast/src/scm.rs` 里自带, 没有动 Tauri 版 |
 | 决策 A8 Vim 模式 / SQL*Plus | not done (按决策排除) | editcore 里没有对应语义 |
