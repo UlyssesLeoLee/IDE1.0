@@ -294,6 +294,8 @@ impl Find {
 
     fn full_bar(&mut self, ui: &mut egui::Ui, d: &mut Doc) {
         ui.horizontal_wrapped(|ui| {
+            // 关闭钮放最前: 放在行尾时窗口一窄就被折到第二行, 压在「置换」上
+            if ui.button("×").on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; }
             if ui.selectable_label(self.replace, crate::i18n::trz("置换")).on_hover_text(crate::i18n::trz("显示 / 隐藏置换行 (Ctrl+H)")).clicked() {
                 self.replace = !self.replace;
             }
@@ -323,7 +325,6 @@ impl Find {
                 if !n.is_empty() { ui.weak(n); }
                 ui.label(crate::msgtr::msg(&self.msg).as_ref());
             }
-            if ui.button("×").on_hover_text(crate::i18n::trz("关闭 Esc")).clicked() { self.open = false; }
         });
         if self.replace {
             ui.horizontal_wrapped(|ui| {

@@ -19,7 +19,11 @@ pub enum Mode {
 }
 
 /// 细条的粗细 (逻辑点): 左右两侧是宽, 底部是高
-pub const STRIP: f32 = 22.0;
+pub const STRIP: f32 = 16.0;
+/// 细条里展开 / 折叠按钮的高 (撑满细条宽)
+pub const STRIP_BTN_H: f32 = 40.0;
+/// 底部面板头的高度 (折叠后头条保留)
+pub const BOTTOM_HEAD: f32 = 28.0;
 
 pub fn mode(open: bool, collapsed: bool) -> Mode {
     match (open, collapsed) {
@@ -72,15 +76,27 @@ pub fn default_size(dock: Dock) -> f32 {
     }
 }
 
-/// 展开按钮 / 折叠按钮上的箭头
+/// 左右细条按钮上的箭头 (Tauri 的 `‹` U+2039 / `›` U+203A): 箭头指向「点下去面板会往哪走」
 pub fn chevron(dock: Dock, collapsed: bool) -> &'static str {
     match (dock, collapsed) {
-        (Dock::Side, false) => "\u{25C0}",
-        (Dock::Side, true) => "\u{25B6}",
-        (Dock::Right, false) => "\u{25B6}",
-        (Dock::Right, true) => "\u{25C0}",
+        (Dock::Side, false) => "\u{2039}",
+        (Dock::Side, true) => "\u{203A}",
+        (Dock::Right, false) => "\u{203A}",
+        (Dock::Right, true) => "\u{2039}",
         (Dock::Bottom, false) => "\u{25BC}",
         (Dock::Bottom, true) => "\u{25B2}",
+    }
+}
+
+/// 按钮提示 / 无障碍文案: 随状态变 (折叠时说「展开」, 展开时说「折叠」)
+pub fn tip(dock: Dock, collapsed: bool) -> &'static str {
+    match (dock, collapsed) {
+        (Dock::Side, true) => "展开导航 / 文件",
+        (Dock::Side, false) => "折叠导航 / 文件",
+        (Dock::Right, true) => "展开 Chat",
+        (Dock::Right, false) => "折叠 Chat",
+        (Dock::Bottom, true) => "展开底部面板",
+        (Dock::Bottom, false) => "折叠底部面板",
     }
 }
 
@@ -132,6 +148,15 @@ mod tests {
         assert_eq!(clamp_size(Dock::Side, 5000.0), 900.0);
         assert_eq!(clamp_size(Dock::Bottom, f32::NAN), 180.0);
         assert_eq!(clamp_size(Dock::Right, 400.0), 400.0);
+    }
+
+    #[test]
+    fn tips_follow_the_state() {
+        for d in [Dock::Side, Dock::Right, Dock::Bottom] {
+            assert_ne!(tip(d, true), tip(d, false));
+            assert!(tip(d, true).starts_with('展') && tip(d, false).starts_with('折'));
+        }
+        assert_eq!(STRIP, 16.0);
     }
 
     #[test]

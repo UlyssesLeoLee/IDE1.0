@@ -2,6 +2,7 @@
 
 use crate::doc::Doc;
 use crate::kinsoku::{expand_wrap, Wrap};
+use crate::rowview::RowView;
 use crate::cmds::{self, Action};
 use crate::cmdui::{CmdUi, Item, PluginCmd};
 use crate::keymap::{self, App as KApp, Run};
@@ -454,7 +455,6 @@ impl App {
             for (t, name) in [(Tab::Files, "文件"), (Tab::Outline, "大纲"), (Tab::Search, "搜索"), (Tab::Scm, "Git")] {
                 if ui.selectable_label(self.side.tab == t, trz(name)).clicked() { self.side.tab = t; }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, crate::panels::Dock::Side));
         });
         ui.separator();
         let mut open: Option<(PathBuf, usize)> = None;
@@ -2078,7 +2078,10 @@ impl App {
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
         let mut ed_id: Option<egui::Id> = None;
+        let mut view_x: Option<(f32, f32)> = None; // 不折行时视口的行内 x 范围 (长行只排版这一段, 点击取列也用同一段)
         let out = egui::ScrollArea::both().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+            if !wrap { view_x = Some((viewport.min.x - gutter - pad, viewport.max.x - gutter - pad)); }
+            let vx = view_x;
             let width = (widest as f32 * char_w + gutter + pad * 2.0 + 40.0).max(ui.available_width());
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
             ed_id = Some(resp.id);
@@ -2097,16 +2100,18 @@ impl App {
             for row in first..last {
                 if d.is_hidden(row) { continue; }
                 let y = rect.min.y + top(row);
-                let (disp, map) = expand_wrap(&d.lines[row], tab, kcols);
-                widest = widest.max(disp.chars().count());
+                let rv = RowView::build(&d.lines[row], tab, kcols, vx, char_w);
+                widest = widest.max(rv.ncols);
                 let row_c = if is_diff { crate::view::diff_line_color(&d.lines[row], &tc).unwrap_or(text_color) } else { text_color };
-                let mut job = highlight_job(&d.lines[row], &disp, &map, if is_diff { None } else { cfg.as_ref() }, &theme, &font, row_c, row_h);
+                let ident: Vec<usize>;
+                let (hl_line, hl_map): (&str, &[usize]) = if rv.sliced { ident = (0..=rv.len).collect(); (&rv.disp, &ident) } else { (&d.lines[row], &rv.map) };
+                let mut job = highlight_job(hl_line, &rv.disp, hl_map, if is_diff { None } else { cfg.as_ref() }, &theme, &font, row_c, row_h);
                 if wrap { job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true; }
                 let galley = painter.layout_job(job);
                 // 选区 / 查找命中的底色都走这一个函数: 一段 [c0, c1) 列 (自动换行时逐字符取排版位置, 否则一整块)
                 let span = |c0: usize, c1: usize, extend: bool, color: Color32| {
                     if wrap {
-                        let (ds, de) = (map[c0.min(map.len() - 1)], map[c1.min(map.len() - 1)]);
+                        let (ds, de) = (rv.idx(c0.min(rv.tail())), rv.idx(c1.min(rv.tail())));
                         for k in ds..de {
                             let a = galley.pos_from_cursor(egui::text::CCursor::new(k)).min;
                             let b = galley.pos_from_cursor(egui::text::CCursor::new(k + 1)).min;
@@ -2114,8 +2119,9 @@ impl App {
                             painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + a.x, y + a.y), Pos2::new(x0 + xe, y + a.y + row_h)), 0.0, color);
                         }
                     } else {
-                        let xa = x_of(&painter, &disp, &map, c0, &font, text_color);
-                        let mut xb = x_of(&painter, &disp, &map, c1.min(map.len() - 1), &font, text_color);
+                        if !rv.touches(c0, c1) { return; }
+                        let xa = rv.x_of(&painter, c0, &font, text_color);
+                        let mut xb = rv.x_of(&painter, c1.min(rv.tail()), &font, text_color);
                         if extend { xb += char_w * 0.6; } // 跨行的行尾多画一点, 表示换行也被选中
                         painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xa, y), Pos2::new(x0 + xb, y + row_h)), 0.0, color);
                     }
@@ -2130,15 +2136,15 @@ impl App {
                 if let Some(s) = d.sel {
                     if row >= s[0] && row <= s[2] {
                         let c0 = if row == s[0] { s[1] } else { 0 };
-                        let c1 = if row == s[2] { s[3] } else { d.lines[row].chars().count() };
+                        let c1 = if row == s[2] { s[3] } else if rv.sliced { rv.ncols } else { d.lines[row].chars().count() };
                         span(c0, c1, row != s[2], sel_bg);
                     }
                 }
                 if let Some(b) = d.box_sel {
                     let (r0, r1, c0, c1) = (b[0].min(b[2]), b[0].max(b[2]), b[1].min(b[3]), b[1].max(b[3]));
                     if row >= r0 && row <= r1 && c1 > c0 {
-                        let tail = map.len().saturating_sub(1);
-                        let xx = |c: usize| x_of(&painter, &disp, &map, c.min(tail), &font, text_color) + char_w * c.saturating_sub(tail) as f32;
+                        let tail = rv.tail();
+                        let xx = |c: usize| rv.x_of(&painter, c.min(tail), &font, text_color) + char_w * c.saturating_sub(tail) as f32;
                         painter.rect_filled(Rect::from_min_max(Pos2::new(x0 + xx(c0), y), Pos2::new(x0 + xx(c1), y + row_h)), 0.0, sel_bg);
                     }
                 }
@@ -2150,20 +2156,21 @@ impl App {
                     let faint = Color32::from_rgba_unmultiplied(tc.fg_dim.r(), tc.fg_dim.g(), tc.fg_dim.b(), 110);
                     let at = |col: usize| -> (f32, f32) {
                         if wrap {
-                            let p = galley.pos_from_cursor(egui::text::CCursor::new(map[col.min(map.len() - 1)])).min;
+                            let p = galley.pos_from_cursor(egui::text::CCursor::new(rv.idx(col.min(rv.tail())))).min;
                             (p.x, p.y)
-                        } else { (x_of(&painter, &disp, &map, col.min(map.len() - 1), &font, text_color), 0.0) }
+                        } else { (rv.x_of(&painter, col.min(rv.tail()), &font, text_color), 0.0) }
                     };
-                    for (c, ch) in crate::view::whitespace_marks(&d.lines[row]) {
-                        let (px, py) = at(c);
+                    let marks_src = if rv.sliced { &rv.disp } else { &d.lines[row] };
+                    for (c, ch) in crate::view::whitespace_marks(marks_src) {
+                        let (px, py) = at(c + rv.col0);
                         painter.text(Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, ch, font.clone(), faint);
                     }
                     if row + 1 < d.lines.len() {
-                        let (px, py) = at(d.lines[row].chars().count());
+                        let (px, py) = at(if rv.sliced { rv.ncols } else { d.lines[row].chars().count() });
                         painter.text(Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0), egui::Align2::LEFT_TOP, '↵', font.clone(), faint);
                     }
                 }
-                painter.galley(Pos2::new(x0, y), galley, text_color);
+                painter.galley(Pos2::new(x0 + rv.x_off(), y), galley, text_color);
                 if d.changed_cache.as_ref().map(|c| c.1.get(row).copied().unwrap_or(false)).unwrap_or(false) {
                     painter.rect_filled(Rect::from_min_size(Pos2::new(rect.min.x + gutter - 5.0, y), Vec2::new(3.0, row_h)), 0.0, tc.yellow);
                 }
@@ -2205,15 +2212,15 @@ impl App {
             // 光标
             let [cr, cc] = d.cursor;
             if cr < d.lines.len() {
-                let (disp, map) = expand_wrap(&d.lines[cr], tab, kcols);
+                let rv = RowView::build(&d.lines[cr], tab, kcols, vx, char_w);
                 let (cx, cy) = if wrap {
-                    let mut job = highlight_job(&d.lines[cr], &disp, &map, None, &theme, &font, text_color, row_h);
+                    let mut job = highlight_job(&d.lines[cr], &rv.disp, &rv.map, None, &theme, &font, text_color, row_h);
                     job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true;
                     let g = painter.layout_job(job);
-                    let p = g.pos_from_cursor(egui::text::CCursor::new(map[cc.min(map.len() - 1)])).min;
+                    let p = g.pos_from_cursor(egui::text::CCursor::new(rv.idx(cc.min(rv.tail())))).min;
                     (x0 + p.x, rect.min.y + top(cr) + p.y)
                 } else {
-                    (x0 + x_of(&painter, &disp, &map, cc.min(map.len() - 1), &font, text_color), rect.min.y + cr as f32 * row_h)
+                    (x0 + rv.x_of(&painter, cc.min(rv.tail()), &font, text_color), rect.min.y + cr as f32 * row_h)
                 };
                 let blink = ui.input(|i| (i.time * 1000.0) as u64 % 1100 < 700);
                 if !preedit.is_empty() {
@@ -2236,24 +2243,24 @@ impl App {
             if let Some(dr) = text_drop {
                 // 拖放文字的落点: 一根蓝色竖线
                 if dr[0] >= first && dr[0] < last && dr[0] < d.lines.len() {
-                    let (disp, map) = expand_wrap(&d.lines[dr[0]], tab, kcols);
-                    let c = dr[1].min(map.len() - 1);
+                    let rv = RowView::build(&d.lines[dr[0]], tab, kcols, vx, char_w);
+                    let c = dr[1].min(rv.tail());
                     let (dx, dy) = if wrap {
-                        let mut job = highlight_job(&d.lines[dr[0]], &disp, &map, None, &theme, &font, text_color, row_h);
+                        let mut job = highlight_job(&d.lines[dr[0]], &rv.disp, &rv.map, None, &theme, &font, text_color, row_h);
                         job.wrap.max_width = wrap_w; job.wrap.break_anywhere = true;
                         let g = painter.layout_job(job);
-                        let p = g.pos_from_cursor(egui::text::CCursor::new(map[c])).min;
+                        let p = g.pos_from_cursor(egui::text::CCursor::new(rv.idx(c))).min;
                         (x0 + p.x, rect.min.y + top(dr[0]) + p.y)
                     } else {
-                        (x0 + x_of(&painter, &disp, &map, c, &font, text_color), rect.min.y + dr[0] as f32 * row_h)
+                        (x0 + rv.x_of(&painter, c, &font, text_color), rect.min.y + dr[0] as f32 * row_h)
                     };
                     painter.rect_filled(Rect::from_min_size(Pos2::new(dx, dy), Vec2::new(2.0, row_h)), 0.0, tc.blue);
                 }
             }
             for ec in &d.extra {
                 if ec[0] >= first && ec[0] < last {
-                    let (disp, map) = expand_wrap(&d.lines[ec[0]], tab, kcols);
-                    let ex = x0 + x_of(&painter, &disp, &map, ec[1].min(map.len() - 1), &font, text_color);
+                    let rv = RowView::build(&d.lines[ec[0]], tab, kcols, vx, char_w);
+                    let ex = x0 + rv.x_of(&painter, ec[1].min(rv.tail()), &font, text_color);
                     painter.rect_filled(Rect::from_min_size(Pos2::new(ex, rect.min.y + top(ec[0])), Vec2::new(2.0, row_h)), 0.0, text_color);
                 }
             }
@@ -2303,9 +2310,9 @@ impl App {
                 d.toggle_fold(row);
                 return;
             }
-            let (disp, map) = expand_wrap(&d.lines[row], tab, kcols);
+            let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
             let want = (p.x - x0).max(0.0);
-            let col = col_at(ctx, &disp, &map, want, rel_y - top(row), &font, wrap_w);
+            let col = rv.col_at(ctx, want, rel_y - top(row), &font, wrap_w);
             let (alt, ctrl) = ctx.input(|i| (i.modifiers.alt, i.modifiers.command || i.modifiers.ctrl));
             let in_sel = d.sel.is_some_and(|s| (row, col) >= (s[0], s[1]) && (row, col) < (s[2], s[3]));
             if ended {
@@ -2424,18 +2431,8 @@ fn highlight_job(line: &str, disp: &str, map: &[usize], cfg: Option<&TypeConfig>
     job
 }
 
-/// 第 col 个字符前缘的 x (按真实排版量, 全角 / 变宽字体都准)
-fn x_of(painter: &egui::Painter, disp: &str, map: &[usize], col: usize, font: &FontId, color: Color32) -> f32 {
-    let di = map.get(col).copied().unwrap_or_else(|| *map.last().unwrap_or(&0));
-    if di == 0 {
-        return 0.0;
-    }
-    let prefix: String = disp.chars().take(di).collect();
-    painter.layout_no_wrap(prefix, font.clone(), color).size().x
-}
-
 /// 点在 x 处 -> 字符列 (取离得最近的字符边界)
-fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: &FontId, wrap_w: f32) -> usize {
+pub(crate) fn col_at(ctx: &egui::Context, disp: &str, map: &[usize], x: f32, y: f32, font: &FontId, wrap_w: f32) -> usize {
     let mut job = egui::text::LayoutJob::simple(disp.to_string(), font.clone(), Color32::WHITE, wrap_w);
     job.wrap.break_anywhere = true;
     let galley = ctx.fonts_mut(|f| f.layout_job(job));
@@ -2470,11 +2467,24 @@ impl eframe::App for App {
     }
 }
 
+/// 状态栏里的控件样式: 蓝底白字 (字色由底色亮度定), 按钮 / 菜单钮不带底色, 悬停叠一层白
+fn status_bar_style(ui: &mut egui::Ui, text: Color32) {
+    ui.spacing_mut().interact_size.y = 16.0;
+    ui.spacing_mut().button_padding = Vec2::new(4.0, 0.0);
+    let v = ui.visuals_mut();
+    v.override_text_color = Some(text);
+    v.widgets.noninteractive.bg_stroke.color = Color32::from_white_alpha(50);
+    for w in [&mut v.widgets.inactive, &mut v.widgets.open] { w.weak_bg_fill = Color32::TRANSPARENT; w.bg_fill = Color32::TRANSPARENT; w.bg_stroke = egui::Stroke::NONE; w.fg_stroke.color = text; }
+    v.widgets.hovered.weak_bg_fill = Color32::from_white_alpha(36);
+    v.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+    v.widgets.hovered.fg_stroke.color = text;
+}
+
 impl App {
     fn ui_main(&mut self, root: &mut egui::Ui) {
         let ctx = &root.ctx().clone();
         self.tc = match &self.theme_vars { Some(v) if self.theme_visuals.is_some() => crate::view::ThemeColors::from_vars(v), _ => crate::view::ThemeColors::builtin(self.dark) };
-        let mut vis = match &self.theme_visuals { Some(v) => v.clone(), None => if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() } };
+        let mut vis = match &self.theme_visuals { Some(v) => v.clone(), None => self.tc.visuals() };
         if let Some(c) = self.cfg.colors.bg { vis.extreme_bg_color = Color32::from_rgb(c[0], c[1], c[2]); } // 编辑区背景覆盖
         ctx.set_visuals(vis);
         if self.cfg.font_family != self.applied_font {
@@ -2534,7 +2544,8 @@ impl App {
         // 标签栏: 只有一个标签时整条收起; 标签多了横向滚动 (滚轮 / Shift+滚轮 / 拖动), 活动标签变了就滚进可见范围
         let mut tab_cmd: Option<TabCmd> = None;
         if self.docs.len() > 1 {
-            egui::Panel::top("tabs").show(root, |ui| {
+            egui::Panel::top("tabs").frame(egui::Frame::new().fill(self.tc.bg_chrome).inner_margin(egui::Margin::symmetric(4, 2))).show(root, |ui| {
+                { let (e, f) = (self.tc.bg_edit, self.tc.fg); let v = ui.visuals_mut(); v.selection.bg_fill = e; v.selection.stroke = egui::Stroke::new(1.0, f); v.widgets.hovered.weak_bg_fill = self.tc.bg_hover; v.widgets.hovered.bg_fill = self.tc.bg_hover; }
                 let scroll_active = self.last_active != self.active;
                 let wheel = ui.input(|i| i.smooth_scroll_delta);
                 if ui.rect_contains_pointer(ui.max_rect()) && wheel.y != 0.0 && wheel.x == 0.0 { ui.scroll_with_delta(Vec2::new(wheel.y, 0.0)); }
@@ -2548,6 +2559,7 @@ impl App {
                             if tab_resp.clicked() { tab_cmd = Some(TabCmd::Select(i)); }
                             if tab_resp.middle_clicked() { tab_cmd = Some(TabCmd::Close(i)); }
                             if scroll_active && i == self.active { tab_resp.scroll_to_me(None); }
+                            if i == self.active { let r = tab_resp.rect; ui.painter().hline(r.x_range(), r.bottom() + 1.0, egui::Stroke::new(2.0, self.tc.blue)); }
                             tab_resp.context_menu(|ui| {
                                 if ui.button(tr("c.close")).clicked() { tab_cmd = Some(TabCmd::Close(i)); ui.close(); }
                                 if ui.button(tr("c.close-others-s")).clicked() { tab_cmd = Some(TabCmd::Many(i, CloseKind::Others)); ui.close(); }
@@ -2562,7 +2574,7 @@ impl App {
                                     if ui.selectable_label(self.docs[i].group as usize == g, tr(name)).clicked() { self.docs[i].group = g as u8; ui.close(); }
                                 }
                             });
-                            if ui.small_button("×").clicked() { tab_cmd = Some(TabCmd::Close(i)); }
+                            if ui.add(egui::Button::new(egui::RichText::new("×").color(self.tc.fg_dim)).frame(false).small()).clicked() { tab_cmd = Some(TabCmd::Close(i)); }
                             ui.add_space(6.0);
                         }
                     });
@@ -2580,6 +2592,7 @@ impl App {
         if self.split_on {
             self.panes.docs[self.panes.focus] = self.active;
         }
+        if self.dock_mode(crate::panels::Dock::Side, self.side.open) != crate::panels::Mode::Hidden { self.dock_strip(root, crate::panels::Dock::Side); }
         if self.cfg.view.rail { egui::Panel::left("rail").resizable(false).exact_size(64.0).show(root, |ui| self.activity_rail(ui)); }
         self.normalize_docks();
         use crate::panels::{Dock, Mode};
@@ -2589,7 +2602,7 @@ impl App {
                 // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
                 if !ctx.input(|i| i.pointer.any_down()) { self.cfg.view.side_w = crate::panels::clamp_size(Dock::Side, r.response.rect.width().round()); }
             }
-            Mode::Strip => self.dock_strip(root, Dock::Side),
+            Mode::Strip => {}
             Mode::Hidden => {}
         }
         self.side.grep.poll();
@@ -2615,7 +2628,8 @@ impl App {
             }
         }
         let mut st_cmd: Option<StatusCmd> = None;
-        if self.cfg.view.status_bar { egui::Panel::bottom("status").frame(egui::Frame::new().fill(self.tc.bg_status).inner_margin(egui::Margin::symmetric(8, 3)).stroke(egui::Stroke::new(1.0, self.tc.border))).show(root, |ui| {
+        if self.cfg.view.status_bar { egui::Panel::bottom("status").frame(egui::Frame::new().fill(self.tc.bg_status).inner_margin(egui::Margin::symmetric(8, 2))).show(root, |ui| {
+            status_bar_style(ui, self.tc.on_status());
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
             let lang = self.type_of(d).map(|c| c.name.clone());
             let dcol = crate::view::display_col(&d.lines[d.cursor[0].min(d.lines.len() - 1)], d.cursor[1], self.tab);
@@ -2695,6 +2709,7 @@ impl App {
             n.ends_with(".md") || n.ends_with(".markdown")
         };
         self.ai_poll(ctx);
+        self.dock_strip(root, Dock::Right); // 右细条常驻 (最外层), Chat / 预览停靠在它左边
         match self.dock_mode(Dock::Right, crate::panels::right_visible(self.ai.open, self.md_preview, is_md)) {
             Mode::Full => {
                 let settled = !ctx.input(|i| i.pointer.any_down());
@@ -2707,7 +2722,7 @@ impl App {
                     if settled { self.cfg.view.md_w = crate::panels::clamp_size(Dock::Right, r.response.rect.width().round()); }
                 }
             }
-            Mode::Strip => self.dock_strip(root, Dock::Right),
+            Mode::Strip => {}
             Mode::Hidden => {}
         }
         use crate::split::SplitKind as SK;
@@ -3014,5 +3029,21 @@ mod tests {
         app.exit_session = None;
         assert_eq!(app.current_settings().session.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 100 万字符的单行: 一帧能画完, 光标在行中间 / 选区 / 查找命中都不 panic, 撑宽用整行长度
+    #[test]
+    fn a_million_char_single_line_renders_with_caret_selection_and_marks() {
+        let (mut a, _g) = app(Settings::default());
+        let ctx = egui::Context::default();
+        a.docs[0].lines = vec!["word ".repeat(200_000)];
+        a.docs[0].goto(0, 500_000);
+        a.docs[0].sel = Some([0, 499_990, 0, 500_010]);
+        for _ in 0..3 {
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0))), ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| a.ui_main(ui));
+            out.textures_delta.clear();
+        }
+        assert!(a.max_cols >= 1_000_000, "横向滚动区按整行长度撑开, 不是按窗口");
     }
 }

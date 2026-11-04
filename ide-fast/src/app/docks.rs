@@ -71,50 +71,51 @@ impl App {
         self.set_dock_collapsed(d, collapsed);
     }
 
-    /// 面板头部的箭头按钮: 点一下折成细条
+    /// 底部面板头部右端的文字钮 (Tauri 的 `.bottom-toggle`: 展开时写「折叠」, 折叠时写「展开」, 11px, 圆角 5, 1px 边)
     pub(super) fn dock_chevron(&mut self, ui: &mut egui::Ui, d: Dock) {
-        let tip = trz(match d {
-            Dock::Side => "折叠左侧栏",
-            Dock::Right => "折叠右侧面板",
-            Dock::Bottom => "折叠底部面板",
-        });
-        if ui.small_button(panels::chevron(d, false)).on_hover_text(tip).clicked() {
+        let collapsed = self.dock_collapsed(d);
+        let word = if collapsed { "展开" } else { "折叠" };
+        let txt = egui::RichText::new(trz(word)).size(11.0).color(self.tc.fg_dim);
+        let edge = if self.tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
+        let btn = egui::Button::new(txt).fill(Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0, edge)).corner_radius(5.0);
+        if ui.add(btn).on_hover_text(trz(panels::tip(d, collapsed))).clicked() {
             self.collapse_dock(d);
         }
     }
 
-    /// 折叠后的细条: 只有一个展开按钮 (底部的再带上当前页签名)
+    /// 细条: 左 / 右是常驻的 16px 竖条 (rail 底色, 顶部一个撑满宽、高 40 的无框 `›` / `‹` 按钮);
+    /// 底部是 28px 的面板头 (折叠时保留页签名, 右端文字钮「展开」)
     pub(super) fn dock_strip(&mut self, root: &mut egui::Ui, d: Dock) {
-        let label = match d {
-            Dock::Side => "折叠左侧栏",
-            Dock::Right => "折叠右侧面板",
-            Dock::Bottom => "折叠底部面板",
-        };
-        let mut expand = false;
-        let tip = format!("{} ({})", trz(label), trz("点击展开"));
-        let frame = egui::Frame::side_top_panel(root.style()).inner_margin(egui::Margin::symmetric(2, 2));
+        let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
+        let mut toggle = false;
+        let tc = self.tc;
         match d {
             Dock::Side | Dock::Right => {
                 let p = if d == Dock::Side { egui::Panel::left("side_strip") } else { egui::Panel::right("right_strip") };
-                p.resizable(false).exact_size(panels::STRIP).frame(frame).show(root, |ui| {
-                    expand = ui.small_button(panels::chevron(d, true)).on_hover_text(tip).clicked();
+                p.resizable(false).exact_size(panels::STRIP).frame(egui::Frame::NONE.fill(tc.bg_rail)).show(root, |ui| {
+                    let w = ui.available_width();
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, panels::STRIP_BTN_H), Sense::click());
+                    let resp = resp.on_hover_text(trz(panels::tip(d, collapsed)));
+                    if resp.hovered() { ui.painter().rect_filled(rect, 0.0, tc.bg_hover); }
+                    let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
+                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, panels::chevron(d, collapsed), egui::FontId::proportional(16.0), col);
+                    toggle = resp.clicked();
                 });
             }
             Dock::Bottom => {
-                egui::Panel::bottom("bottom_strip").resizable(false).exact_size(panels::STRIP).frame(frame).show(root, |ui| {
-                    ui.horizontal(|ui| {
-                        expand = ui.small_button(panels::chevron(d, true)).on_hover_text(tip).clicked();
-                        ui.weak(match self.sys.bottom {
-                            BottomTab::Terminal => tr("bt.terminal"),
-                            BottomTab::Output => tr("bt.output"),
-                            BottomTab::Problems => tr("bt.problems"),
-                        });
+                let frame = egui::Frame::NONE.fill(tc.bg_bar).inner_margin(egui::Margin::symmetric(8, 2));
+                egui::Panel::bottom("bottom_strip").resizable(false).exact_size(panels::BOTTOM_HEAD).frame(frame).show(root, |ui| {
+                    ui.horizontal_centered(|ui| {
+                        for (t, key) in [(BottomTab::Terminal, "bt.terminal"), (BottomTab::Output, "bt.output"), (BottomTab::Problems, "bt.problems")] {
+                            if ui.selectable_label(self.sys.bottom == t, tr(key)).clicked() { self.sys.bottom = t; }
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, Dock::Bottom));
                     });
                 });
             }
         }
-        if expand {
-            self.set_dock_collapsed(d, false);
+        if toggle {
+            self.collapse_dock(d);
         }
     }
 

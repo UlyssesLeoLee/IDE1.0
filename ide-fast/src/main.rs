@@ -51,6 +51,7 @@ mod split;
 mod appicon;
 mod mdtools;
 mod panels;
+mod rowview;
 mod relaunch;
 
 use std::time::Instant;

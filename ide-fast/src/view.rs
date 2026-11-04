@@ -3,7 +3,7 @@
 //! 所以六套内置主题 (dark / light / hc / clear / crystal / retro16) 在两个前端里取的是同一组颜色。
 
 use crate::plugins::parse_color;
-use eframe::egui::Color32;
+use eframe::egui::{self, Color32};
 use editcore::syntax_styling::{Color, Style, Theme, TokenStyle};
 use editcore::type_config::TokenKind;
 use std::collections::BTreeMap;
@@ -23,6 +23,14 @@ pub struct ThemeColors {
     pub yellow: Color32,
     pub red: Color32,
     pub orange: Color32,
+    /// 侧栏 / 面板底色 (Tauri `--bg-side`)
+    pub bg_side: Color32,
+    /// 活动栏 / 折叠细条底色 (`--bg-rail`)
+    pub bg_rail: Color32,
+    /// 标签栏底色 (`--bg-chrome`)
+    pub bg_chrome: Color32,
+    /// 悬停叠色 (`--bg-hover`), 半透明
+    pub bg_hover: Color32,
 }
 
 fn luminance(c: Color32) -> f32 {
@@ -44,11 +52,49 @@ impl ThemeColors {
     /// 内置深 / 浅色 (没选主题插件时)
     pub fn builtin(dark: bool) -> Self {
         let g = Color32::from_gray;
+        let rgb = Color32::from_rgb;
+        // 取值来自 Tauri 版 editor.html 的 :root / THEMES (见 docs/VISUAL-PARITY.md 第 2 节)
         if dark {
-            ThemeColors { dark, bg_edit: g(27), bg_status: g(32), bg_bar: g(37), fg: g(210), fg_dim: g(140), border: g(60), blue: Color32::from_rgb(86, 156, 214), green: Color32::from_rgb(106, 190, 120), yellow: Color32::from_rgb(220, 200, 90), red: Color32::from_rgb(230, 90, 90), orange: Color32::from_rgb(214, 150, 80) }
+            ThemeColors { dark, bg_edit: g(30), bg_status: rgb(0, 122, 204), bg_bar: rgb(37, 37, 38), fg: g(212), fg_dim: g(157), border: g(51), blue: rgb(86, 156, 214), green: rgb(106, 190, 120), yellow: rgb(220, 200, 90), red: rgb(230, 90, 90), orange: rgb(214, 150, 80), bg_side: g(30), bg_rail: g(51), bg_chrome: g(42), bg_hover: Color32::from_white_alpha(20) }
         } else {
-            ThemeColors { dark, bg_edit: g(255), bg_status: g(240), bg_bar: g(245), fg: g(30), fg_dim: g(120), border: g(200), blue: Color32::from_rgb(0, 90, 180), green: Color32::from_rgb(20, 130, 50), yellow: Color32::from_rgb(150, 110, 0), red: Color32::from_rgb(190, 40, 40), orange: Color32::from_rgb(180, 90, 0) }
+            ThemeColors { dark, bg_edit: g(255), bg_status: rgb(0, 95, 184), bg_bar: g(248), fg: g(31), fg_dim: g(95), border: g(229), blue: rgb(0, 95, 184), green: rgb(20, 130, 50), yellow: rgb(150, 110, 0), red: rgb(190, 40, 40), orange: rgb(180, 90, 0), bg_side: g(255), bg_rail: g(240), bg_chrome: g(242), bg_hover: Color32::from_black_alpha(10) }
         }
+    }
+
+    /// 状态栏上的字色: 底色深就用白, 浅就用前景 (Tauri 是 `--fg-on-accent` 白字, 主题自定义浅色状态栏时不能白字白底)
+    pub fn on_status(&self) -> Color32 {
+        if luminance(self.bg_status) < 0.5 { Color32::WHITE } else { self.fg }
+    }
+
+    /// 没选主题插件时的 egui 外观: 在 egui 深 / 浅基底上套 Tauri 的颜色令牌 (面板 / 编辑区 / 控件填充 / 选区 / 圆角)
+    pub fn visuals(&self) -> egui::Visuals {
+        let mut v = if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+        let g = Color32::from_gray;
+        v.panel_fill = self.bg_side;
+        v.window_fill = if self.dark { g(45) } else { Color32::WHITE };
+        v.extreme_bg_color = self.bg_edit;
+        v.faint_bg_color = if self.dark { g(37) } else { g(246) };
+        v.override_text_color = Some(self.fg);
+        v.widgets.noninteractive.fg_stroke.color = self.fg_dim;
+        v.widgets.noninteractive.bg_stroke.color = self.border;
+        v.window_stroke = egui::Stroke::new(1.0, if self.dark { g(69) } else { g(204) });
+        let (w0, w1, w2) = if self.dark { (g(50), g(66), g(80)) } else { (g(238), g(228), g(214)) };
+        v.widgets.inactive.weak_bg_fill = w0;
+        v.widgets.inactive.bg_fill = w0;
+        v.widgets.hovered.weak_bg_fill = w1;
+        v.widgets.hovered.bg_fill = w1;
+        v.widgets.active.weak_bg_fill = w2;
+        v.widgets.active.bg_fill = w2;
+        v.selection.bg_fill = Color32::from_rgba_unmultiplied(self.blue.r(), self.blue.g(), self.blue.b(), 90);
+        v.hyperlink_color = self.blue;
+        let r = egui::CornerRadius::same(3);
+        v.widgets.noninteractive.corner_radius = r;
+        v.widgets.inactive.corner_radius = r;
+        v.widgets.hovered.corner_radius = r;
+        v.widgets.active.corner_radius = r;
+        v.menu_corner_radius = egui::CornerRadius::same(2);
+        v.window_corner_radius = egui::CornerRadius::same(8);
+        v
     }
 
     /// 从主题变量取色; 缺的 / 认不出的 (`transparent` `var(..)`) 用深 / 浅基底补, 基底由 `--bg-edit` 的亮度定
@@ -61,6 +107,13 @@ impl ThemeColors {
         let pick = |k: &str, slot: &mut Color32| { if let Some(c) = get(k) { *slot = over(c, base); } };
         pick("--bg-status", &mut t.bg_status);
         pick("--bg-bar", &mut t.bg_bar);
+        pick("--bg-side", &mut t.bg_side);
+        pick("--bg-rail", &mut t.bg_rail);
+        pick("--bg-chrome", &mut t.bg_chrome);
+        // 主题没给的底色跟着它自己的菜单栏 / 编辑区走, 不混入内置深浅色
+        if get("--bg-rail").is_none() { t.bg_rail = t.bg_bar; }
+        if get("--bg-chrome").is_none() { t.bg_chrome = t.bg_bar; }
+        if get("--bg-side").is_none() { t.bg_side = t.bg_edit; }
         pick("--fg", &mut t.fg);
         pick("--fg-dim", &mut t.fg_dim);
         pick("--border", &mut t.border);

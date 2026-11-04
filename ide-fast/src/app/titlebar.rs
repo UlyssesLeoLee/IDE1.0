@@ -96,14 +96,14 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(self.sys.decor));
         }
         match bar_mode(self.cfg.system_title_bar, self.fullscreen) {
-            BarMode::System | BarMode::MenuOnly => { egui::Panel::top("menu").show(root, |ui| self.menu(ui, ctx)); }
+            BarMode::System | BarMode::MenuOnly => { egui::Panel::top("menu").frame(egui::Frame::new().fill(self.tc.bg_bar).inner_margin(egui::Margin::symmetric(4, 2))).show(root, |ui| self.menu(ui, ctx)); }
             BarMode::Full => self.title_bar(root, ctx),
         }
     }
 
     fn title_bar(&mut self, root: &mut egui::Ui, ctx: &egui::Context) {
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-        let fill = ctx.global_style().visuals.panel_fill;
+        let fill = self.tc.bg_bar;
         if self.sys.title_icon.is_none() {
             self.sys.title_icon = crate::appicon::window_icon().map(|ic| ctx.load_texture("title-icon", egui::ColorImage::from_rgba_unmultiplied([ic.width as usize, ic.height as usize], &ic.rgba), Default::default()));
         }
@@ -111,6 +111,7 @@ impl App {
         let mut run: Option<usize> = None;
         egui::Panel::top("titlebar").exact_size(BAR_H).frame(egui::Frame::new().fill(fill)).show(root, |ui| {
             let rect = ui.max_rect();
+            ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, egui::Stroke::new(1.0, self.tc.border));
             // 先登记整条栏的拖动 / 双击区, 后面的按钮压在它上面 (egui 里后加的控件优先)
             let drag = ui.interact(rect, ui.make_persistent_id("titlebar-drag"), Sense::click_and_drag());
             if drag.double_clicked() {
@@ -134,11 +135,11 @@ impl App {
             });
             if quick_w > 0.0 {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(mid).layout(lay), |ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
+                    ui.spacing_mut().item_spacing.x = 4.0;
                     for (id, glyph) in QUICK {
                         let Some(i) = chrome::index_of(id) else { continue };
                         let e = &keymap::entries()[i];
-                        if ui.add(egui::Button::new(*glyph).small().frame(false)).on_hover_text(crate::i18n::lk_for(e)).clicked() { run = Some(i); }
+                        if ui.add(egui::Button::new(*glyph).small().frame(false).min_size(Vec2::new(20.0, 22.0))).on_hover_text(crate::i18n::lk_for(e)).clicked() { run = Some(i); }
                     }
                     ui.separator();
                     for d in [Dock::Side, Dock::Bottom, Dock::Right] {

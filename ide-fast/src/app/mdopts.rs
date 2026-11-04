@@ -192,7 +192,6 @@ impl App {
             if ui.small_button(tr("md.export-html")).on_hover_text(tr("md.export-tip")).clicked() {
                 self.md_export_now();
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.dock_chevron(ui, crate::panels::Dock::Right));
         });
     }
 }
