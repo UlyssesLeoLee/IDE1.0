@@ -11,10 +11,21 @@
 
 pub mod coordinator;
 pub mod identity;
+pub mod ledger;
+pub mod outbox;
 pub mod parser;
 pub mod patch;
 
-pub use coordinator::{CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState, TaskStatus};
+pub use coordinator::{
+    CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState, TaskStatus,
+};
 pub use identity::{SemanticUnit, SupportedLanguage};
+pub use ledger::{
+    CommitRecord, LedgerError, LedgerStore, MemoryLedgerStore, OutboxRecord, OutboxStatus,
+};
+pub use outbox::{
+    BroadcastPubSubAdapter, DispatchBatchReport, DispatchResult, InMemoryPubSubAdapter,
+    OutboxDispatchError, OutboxDispatcher, OutboxPubSubAdapter, RetryPolicy,
+};
 pub use parser::SemanticParser;
 pub use patch::{PatchEngine, PatchError, PatchProposal, PatchResult};
