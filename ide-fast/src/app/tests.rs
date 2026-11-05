@@ -985,3 +985,24 @@ fn a_million_char_single_line_renders_with_caret_selection_and_marks() {
         "横向滚动区按整行长度撑开, 不是按窗口"
     );
 }
+
+#[test]
+fn test_open_review_doc_tab_and_structure() {
+    let (mut a, _g) = app(Settings::default());
+    assert_eq!(a.docs.len(), 1);
+
+    // 打开多 AI 协同审查看板
+    a.open_review_doc();
+    assert_eq!(a.docs.len(), 2);
+    let cur = a.cur();
+    assert_eq!(cur.name, "🛡️ 协同审查");
+    assert!(cur.readonly);
+    assert!(cur.lines.iter().any(|l| l.contains("多 AI 协同审查与统筹验收看板")));
+    assert!(cur.lines.iter().any(|l| l.contains("阶段 1: 最初规划与指引看板")));
+    assert!(cur.lines.iter().any(|l| l.contains("阶段 2: 实时协同巡航与动态指引")));
+    assert!(cur.lines.iter().any(|l| l.contains("阶段 3: 终局统筹审查与验收裁决")));
+
+    // 再次调用应该复用同一个标签页，不会重复创建
+    a.open_review_doc();
+    assert_eq!(a.docs.len(), 2);
+}

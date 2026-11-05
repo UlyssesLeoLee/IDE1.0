@@ -1011,5 +1011,10 @@ impl App {
             self.open_exec_terminal();
             ui.close();
         }
+        ui.separator();
+        if ui.button(trz("多AI协同审查看板…")).clicked() {
+            self.open_review_doc();
+            ui.close();
+        }
     }
 }

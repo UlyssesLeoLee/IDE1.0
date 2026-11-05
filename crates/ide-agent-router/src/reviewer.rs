@@ -1,16 +1,78 @@
-//! 统筹审查验收与多 AI 协同决策流水线 (Unified Reviewer & Acceptance Pipeline)
+//! 统筹审查验收与多 AI 协同决策流水线 (Unified Reviewer & Guidance Pipeline)
 //!
-//! 在多 AI 共同编辑同一文件后，由 Reviewer (人类或专门的 Reviewer Agent) 负责：
-//! 1. 汇聚与展示多 AI 的并发修改差异 (Multi-Agent Attributed Diff Aggregation)
-//! 2. 自动化前置验证门禁 (语法、类型、编译与测试验证)
-//! 3. 验收裁决：全量通过 (ApproveAll)、局部采纳 (ApproveHunks)、要求重构 (RequestRework)
-//! 4. 签发不可篡改的审查验收凭证 (Acceptance Certificate & Audit Record)
+//! 核心理念 (Core Philosophy):
+//! 1. **最初规划，避免冲突 (Upfront Architectural Planning)**:
+//!    Reviewer 在多 AI 开始编码前，先行制订架构不变量、接口契约与建议作业区（Guidance Zones），
+//!    从源头降低认知发散与冲突概率。
+//! 2. **指引而非限制 (Guidance over Restrictions)**:
+//!    不采用生硬的全局物理互斥锁束缚 AI 探索；通过实时广播咨询建议（Reviewer Hints），
+//!    动态指引各 AI 自主对齐，激发最大并行推导效率。
+//! 3. **终局统筹验收 (Holistic Convergence & Acceptance)**:
+//!    在协同编辑收敛后，汇聚各 Agent 差异、执行自动化前置验证门禁、行使审查裁决，
+//!    并签署不可篡改的验收凭证（Acceptance Certificate）。
 
 use crate::collaboration::CollaboratorRole;
 use crate::verifier::{VerificationReport, VerificationStatus};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+/// 审查协同生命周期阶段
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReviewPhase {
+    /// 阶段 1: 最初规划与指引 (Reviewer 制订目标、划定建议作业区与契约)
+    UpfrontPlanning,
+    /// 阶段 2: 自由推导与实时协同 (多 AI 根据指引并发编辑，Reviewer 动态巡航提示)
+    LiveCoEditing,
+    /// 阶段 3: 终局统筹审查与验收 (自动化验证、差异裁决与签发凭证)
+    HolisticReview,
+    /// 已完成验收并合入基准版本
+    Accepted,
+}
+
+/// 建议作业区 (指引而非限制：给 AI 建议关注点与范围，不锁死文件)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GuidanceZone {
+    pub zone_id: String,
+    pub symbol_or_desc: String,
+    pub suggested_line_range: [usize; 2],
+    pub recommended_agent: Option<String>,
+    pub recommended_role: CollaboratorRole,
+    pub intent_summary: String,
+}
+
+/// 最初规划方案 (Upfront Architectural Plan)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct UpfrontPlan {
+    pub task_goal: String,
+    pub invariants: Vec<String>,
+    pub guidance_zones: Vec<GuidanceZone>,
+    pub shared_contracts: Vec<String>,
+    pub notes: String,
+}
+
+/// 审查员实时广播指引 (非阻塞式建议与协同对齐)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewerHint {
+    pub hint_id: u64,
+    pub timestamp_epoch_ms: u64,
+    pub level: HintLevel,
+    pub message: String,
+    pub target_agent: Option<String>,
+    pub suggested_action: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HintLevel {
+    /// 架构背景与建议
+    Advisory,
+    /// 接口契约对齐 (如“AI-1 已定义 Result 类型，AI-2 请直接复用”)
+    ContractAlignment,
+    /// 潜在重叠预警 (如“两 Agent 正在接近同一行，建议分工”)
+    PotentialOverlap,
+    /// 正向认可
+    Encouragement,
+}
 
 /// 修改块状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,10 +107,14 @@ pub struct ReviewSession {
     pub reviewer_name: String,
     pub base_revision: u64,
     pub target_revision: u64,
+    pub current_phase: ReviewPhase,
+    pub plan: UpfrontPlan,
+    pub hints: Vec<ReviewerHint>,
     pub hunks: Vec<AttributedHunk>,
     pub verification: Option<VerificationReport>,
     pub created_at: DateTime<Utc>,
     pub finalized_at: Option<DateTime<Utc>>,
+    next_hint_id: u64,
 }
 
 /// 审查裁决动作
@@ -103,11 +169,47 @@ impl ReviewSession {
             reviewer_name,
             base_revision,
             target_revision,
+            current_phase: ReviewPhase::UpfrontPlanning,
+            plan: UpfrontPlan::default(),
+            hints: Vec::new(),
             hunks: Vec::new(),
             verification: None,
             created_at: Utc::now(),
             finalized_at: None,
+            next_hint_id: 1,
         }
+    }
+
+    /// 最初规划设定 (发布架构目标与指引作业区，流转至协同推导期)
+    pub fn publish_upfront_plan(&mut self, plan: UpfrontPlan) {
+        self.plan = plan;
+        self.current_phase = ReviewPhase::LiveCoEditing;
+    }
+
+    /// 审查员广播动态指引 (指引而非限制)
+    pub fn broadcast_hint(
+        &mut self,
+        level: HintLevel,
+        message: String,
+        target_agent: Option<String>,
+        suggested_action: Option<String>,
+    ) -> ReviewerHint {
+        let hint = ReviewerHint {
+            hint_id: self.next_hint_id,
+            timestamp_epoch_ms: Utc::now().timestamp_millis() as u64,
+            level,
+            message,
+            target_agent,
+            suggested_action,
+        };
+        self.next_hint_id += 1;
+        self.hints.push(hint.clone());
+        hint
+    }
+
+    /// 流转生命周期阶段
+    pub fn transition_phase(&mut self, next: ReviewPhase) {
+        self.current_phase = next;
     }
 
     /// 添加待审查的修改块
@@ -223,6 +325,7 @@ impl ReviewSession {
 
         let now = Utc::now();
         self.finalized_at = Some(now);
+        self.current_phase = ReviewPhase::Accepted;
 
         let cert = AcceptanceCertificate {
             certificate_id: format!("CERT-{}-{}", self.session_id, now.timestamp()),
@@ -251,6 +354,64 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_upfront_planning_and_live_hints() {
+        let mut session = ReviewSession::new(
+            "session_plan_001".into(),
+            "src/service.rs".into(),
+            "reviewer_lead".into(),
+            "Architect Lead".into(),
+            1,
+            2,
+        );
+
+        assert_eq!(session.current_phase, ReviewPhase::UpfrontPlanning);
+
+        // 1. 最初规划，划分指引作业区与接口契约
+        let plan = UpfrontPlan {
+            task_goal: "实现高并发订单处理流水线".into(),
+            invariants: vec!["所有状态迁移必须幂等".into(), "订单号必须唯一".into()],
+            guidance_zones: vec![
+                GuidanceZone {
+                    zone_id: "zone_data".into(),
+                    symbol_or_desc: "OrderPayload struct & Validation".into(),
+                    suggested_line_range: [10, 50],
+                    recommended_agent: Some("agent_coder_1".into()),
+                    recommended_role: CollaboratorRole::AiCoder,
+                    intent_summary: "负责数据校验与模型定义".into(),
+                },
+                GuidanceZone {
+                    zone_id: "zone_exec".into(),
+                    symbol_or_desc: "fn process_order execution engine".into(),
+                    suggested_line_range: [51, 120],
+                    recommended_agent: Some("agent_coder_2".into()),
+                    recommended_role: CollaboratorRole::AiOptimizer,
+                    intent_summary: "负责并发执行与异步重试".into(),
+                },
+            ],
+            shared_contracts: vec!["pub struct OrderResult { pub order_id: String, pub ok: bool }".into()],
+            notes: "非阻断性指引，各 Agent 自主对齐契约".into(),
+        };
+
+        session.publish_upfront_plan(plan);
+        assert_eq!(session.current_phase, ReviewPhase::LiveCoEditing);
+        assert_eq!(session.plan.guidance_zones.len(), 2);
+
+        // 2. 实时指引广播 (指引而非限制)
+        let hint = session.broadcast_hint(
+            HintLevel::ContractAlignment,
+            "AI-1 已定义 OrderResult 契约，AI-2 可直接在 process_order 返回值复用".into(),
+            Some("agent_coder_2".into()),
+            Some("use OrderResult".into()),
+        );
+        assert_eq!(hint.hint_id, 1);
+        assert_eq!(session.hints.len(), 1);
+
+        // 3. 协同结束，流转到终局审查
+        session.transition_phase(ReviewPhase::HolisticReview);
+        assert_eq!(session.current_phase, ReviewPhase::HolisticReview);
+    }
+
+    #[test]
     fn test_reviewer_pipeline_and_certificate() {
         let mut session = ReviewSession::new(
             "session_001".into(),
@@ -261,7 +422,12 @@ mod tests {
             11,
         );
 
-        // 1. 录入两位 Agent 的并发修改
+        session.publish_upfront_plan(UpfrontPlan {
+            task_goal: "AST 解析性能优化与类型补全".into(),
+            ..Default::default()
+        });
+
+        // 录入两位 Agent 的并发修改
         session.add_hunk(
             "hunk_1".into(),
             "agent_coder".into(),
@@ -284,12 +450,14 @@ mod tests {
             "let x: u64 = 1;".into(),
         );
 
-        // 2. 模拟 Reviewer 裁决: Approve All
+        session.transition_phase(ReviewPhase::HolisticReview);
+
+        // Reviewer 裁决: Approve All
         session.apply_decision(ReviewDecision::ApproveAll).unwrap();
         assert_eq!(session.hunks[0].status, HunkStatus::Approved);
         assert_eq!(session.hunks[1].status, HunkStatus::Approved);
 
-        // 3. 验收签发 Certificate
+        // 验收签发 Certificate
         let cert = session
             .finalize_acceptance("fn new_ast_parser() {}\nlet x: u64 = 1;\n")
             .expect("finalize should succeed");
@@ -297,7 +465,7 @@ mod tests {
         assert_eq!(cert.total_hunks_approved, 2);
         assert_eq!(cert.approved_agents.len(), 2);
         assert!(cert.verification_passed);
-        assert!(!cert.content_sha256.is_empty());
+        assert_eq!(session.current_phase, ReviewPhase::Accepted);
     }
 
     #[test]

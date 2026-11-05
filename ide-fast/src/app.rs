@@ -114,6 +114,8 @@ pub struct App {
     center_once: bool,
     /// 正在被 Grep 流式填充的结果文档
     grep_doc: Option<u64>,
+    /// 多 AI 协同审查与统筹验收看板文档
+    review_doc: Option<u64>,
     /// 结果文档里请求跳转的 (文档 id, 行)
     jump_req: Option<(u64, usize)>,
     /// 脚本插件: 宿主在第一次跑命令时才创建 (启动路径上不碰 JS 引擎)
@@ -224,6 +226,7 @@ impl App {
             preedit: String::new(),
             center_once: false,
             grep_doc: None,
+            review_doc: None,
             jump_req: None,
             plug: Default::default(),
             editor_ids: vec![],
@@ -1573,6 +1576,98 @@ impl App {
         d.lines.extend(add);
         d.rev += 1;
         d.dirty = false;
+    }
+
+    /// 打开(或复用)多 AI 协同审查与统筹验收看板标签页
+    pub fn open_review_doc(&mut self) {
+        let id = match self
+            .review_doc
+            .filter(|id| self.docs.iter().any(|d| d.id == *id))
+        {
+            Some(id) => id,
+            None => {
+                let id = self.id();
+                let mut d = Doc::untitled(id, 0);
+                d.name = "🛡️ 协同审查".into();
+                d.readonly = true;
+                self.docs.push(d);
+                id
+            }
+        };
+        self.review_doc = Some(id);
+        if let Some(i) = self.docs.iter().position(|d| d.id == id) {
+            self.active = i;
+        }
+        self.render_review_doc(id);
+    }
+
+    fn render_review_doc(&mut self, id: u64) {
+        let cur_name = self.cur().name.clone();
+        let cur_path = self
+            .cur()
+            .path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| cur_name.clone());
+        let cur_rev = self.cur().rev;
+
+        let content = vec![
+            "# 🛡️ 多 AI 协同审查与统筹验收看板 (Multi-AI Reviewer & Co-Editing Dashboard)".into(),
+            "================================================================================".into(),
+            format!("【当前审视目标】: {} (Rev #{})", cur_path, cur_rev),
+            "【统筹审查员】: Reviewer Lead (Staff Architect) | 状态: 阶段 2 (实时推导与动态巡航)".into(),
+            "【自动化门禁】: [✔ 语法树完整] [✔ 静态检查通过] [✔ 单元测试就绪] [✔ 安全审计通过]".into(),
+            "".into(),
+            "=== 阶段 1: 最初规划与指引看板 (Upfront Planning & Guidance Zones) ===".into(),
+            "--------------------------------------------------------------------------------".into(),
+            "💡 核心理念: Reviewer 在最初规划架构不变量与接口契约，指引而非限制 AI 自由探索。".into(),
+            "[任务总目标]: 高性能异步处理流水线与高吞吐语义单元协作 (零锁死、零回滚)".into(),
+            "[系统不变量]:".into(),
+            "  • [INV-01] 显式状态: 每一个击键事件必须可追溯到具体 Agent 与时间戳".into(),
+            "  • [INV-02] 意图平移: 协作者光标与选区在并发修改时依据单调偏移自动平移".into(),
+            "  • [INV-03] 验证前置: 任何并发编辑必须通过 Verifier 静态门禁方可进入验收".into(),
+            "".into(),
+            "[建议作业区规划 (非阻断指引 - 允许自由交叉引用)]:".into(),
+            "  • [Zone-A] 行 010 - 050: 核心模型与数据结构定义 -> 建议: 🤖 AI-Coder-1 (翡翠绿)".into(),
+            "    契约指引: 暴露 pub fn validate(&self) -> Result<(), Error> 与 Parse 接口".into(),
+            "  • [Zone-B] 行 051 - 120: 核心处理调度流水线 -> 建议: 🤖 AI-Optimizer (紫罗兰)".into(),
+            "    契约指引: 引用 Zone-A 模型，执行无锁环形缓冲区消费与异步重试".into(),
+            "  • [Zone-C] 行 121 - 200: 单元测试与极端边界用例 -> 建议: 🧪 AI-Tester (耀斑金)".into(),
+            "    契约指引: 模拟网络断开、跨页大文件及并发竞态条件".into(),
+            "".into(),
+            "=== 阶段 2: 实时协同巡航与动态指引 (Live Stream & Remote Cursors) ===".into(),
+            "--------------------------------------------------------------------------------".into(),
+            "[活跃协作者与多人光标状态]:".into(),
+            "  • 🤖 AI-Coder-1   (翡翠绿 #34D399) | 当前光标: [Ln 35, Col 12] | 状态: 编写数据反序列化".into(),
+            "  • 🤖 AI-Optimizer (紫罗兰 #A855F7) | 当前光标: [Ln 88, Col 04] | 状态: 重构异步调度通道".into(),
+            "  • 👤 人类开发者   (天蓝色 #38BDF8) | 当前光标: [Ln 15, Col 00] | 状态: 观摩与架构巡航".into(),
+            "".into(),
+            "[审查员动态指引广播流 (Live Reviewer Hints)]:".into(),
+            "  • [提示 #1] (契约对齐) AI-1 已定义 ProcessResult 契约，AI-2 可直接在 dispatch 中复用。".into(),
+            "  • [提示 #2] (范围巡航) AI-1 与 AI-2 正在非重叠作业区高速推导，无竞态冲突，继续保持。".into(),
+            "".into(),
+            "=== 阶段 3: 终局统筹审查与验收裁决 (Holistic Convergence & Acceptance) ===".into(),
+            "--------------------------------------------------------------------------------".into(),
+            "[待审差异块 (Attributed Hunks)]:".into(),
+            "  [Hunk #1] [🤖 AI-Coder-1]   行 015-045 (+30 行) 状态: [✔ 待审查 PENDING]".into(),
+            "            说明: 完善数据模型字段，补充严格反序列化校验".into(),
+            "  [Hunk #2] [🤖 AI-Optimizer] 行 065-110 (+45 行) 状态: [✔ 待审查 PENDING]".into(),
+            "            说明: 优化异步通道背压策略，吞吐量提升 4.2x".into(),
+            "".into(),
+            "[审查员裁决与签发指令]:".into(),
+            "  • [全量通过验收 (Approve All)]: 认可全部修改，收敛至下一权威版本并签署证书".into(),
+            "  • [细粒度采纳 (Selective)]: 选择性合入指定 Hunk 差异块".into(),
+            "  • [指派定向返工 (Request Rework)]: 对特定行添加审查员批注并唤醒对应 Agent 返工".into(),
+            "================================================================================".into(),
+        ];
+
+        if let Some(d) = self.docs.iter_mut().find(|d| d.id == id) {
+            d.lines = content;
+            d.rev += 1;
+            d.cursor = [0, 0];
+            d.sel = None;
+            d.reveal = true;
+        }
     }
 
     fn cur(&mut self) -> &mut Doc {

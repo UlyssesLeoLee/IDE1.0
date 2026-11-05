@@ -5,7 +5,7 @@
 //! - 文件级路由 (File-level Routing)
 //! - 文件内部语义单元级并行作业 (Semantic Unit Parallel Tasks)
 //! - 逐字击键广播与远程多人光标跟踪 (Keystroke Streaming & Remote Cursors)
-//! - 多 AI 协同后的统筹审查验收流水线 (Reviewer & Acceptance Pipeline)
+//! - 最初规划、实时指引与多 AI 统筹审查验收流水线 (Reviewer Upfront Plan & Acceptance Pipeline)
 //! - Patch 级提交 (Structured Node Patch)
 //! - 文件级一致性协调 (CAS + Fencing + Outbox Event Ledger)
 
@@ -40,7 +40,8 @@ pub use outbox::{
 pub use parser::SemanticParser;
 pub use patch::{PatchEngine, PatchError, PatchProposal, PatchResult};
 pub use reviewer::{
-    AcceptanceCertificate, AttributedHunk, HunkStatus, ReviewDecision, ReviewSession,
+    AcceptanceCertificate, AttributedHunk, GuidanceZone, HintLevel, HunkStatus, ReviewDecision,
+    ReviewPhase, ReviewSession, ReviewerHint, UpfrontPlan,
 };
 pub use sandbox::{SandboxEnvironment, SandboxError, SimulationResult, WorkerSandbox};
 pub use verifier::{

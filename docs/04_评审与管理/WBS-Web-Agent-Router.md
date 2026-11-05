@@ -49,6 +49,10 @@
 | **WBS-09** | **完整 PPA (Pascal-like) 宏脚本语言解释器** | | | | |
 | WBS-09.1 | PPA 词法语法解析器 (AST: var, if/else, while, proc, expr) | `crates/editcore/src/ppa_engine.rs` | `MACRO-PPA-01` | Leo | **完成 (Done)** |
 | WBS-09.2 | PPA 运行时求值器、内置函数绑定与回归测试 | `crates/editcore/tests/ppa_engine_tests.rs` | `MACRO-PPA-02` | Leo | **完成 (Done)** |
+| **WBS-COEDIT** | **多 AI 共同编辑、逐字击键广播与 Reviewer 最初规划及统筹验收** | | | | |
+| WBS-COEDIT.1 | 逐字击键流式广播与远程多人光标状态机 | `crates/ide-agent-router/src/collaboration.rs` | `REQ-COEDIT-01` | Staff | **完成 (Done)** |
+| WBS-COEDIT.2 | Reviewer 最初规划、指引而非限制与终局统筹验收流水线 | `crates/ide-agent-router/src/reviewer.rs` | `REQ-COEDIT-02` | Staff | **完成 (Done)** |
+| WBS-COEDIT.3 | 多 AI 协同审查与验收专用标签页与交互看板 | `ide-fast/src/app.rs`, `ide-fast/src/app/menubar.rs` | `REQ-COEDIT-03` | Staff | **完成 (Done)** |
 
 ---
 

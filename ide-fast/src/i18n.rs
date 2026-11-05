@@ -633,6 +633,8 @@ Not signature-verified; install only plugins you trust. Install?"]),
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
     // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
+    ("多AI协同审查看板…", ["多AI协同审查看板…", "マルチAI共同レビューダッシュボード…", "Multi-AI Review Dashboard…"]),
+    ("协同审查", ["协同审查", "共同レビュー", "Co-Edit Review"]),
     ("查找内容", ["查找内容", "検索内容", "Find what"]),
     (
         "剪贴板历史",
