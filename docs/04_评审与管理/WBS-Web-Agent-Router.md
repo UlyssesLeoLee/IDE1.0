@@ -34,11 +34,11 @@
 | WBS-04.3 | 多 Agent 并发与冲突自动化验证 | `crates/ide-agent-router/tests/` (7/7项全绿) | `NFR-CONC-*` | Mavis | **完成 (Done)** |
 | WBS-04.4 | 全局文档与 GitHub README 升级 | `README.md`, `CHANGELOG.md` (v0.4.0) | `NRP-02` | Mavis | **完成 (Done)** |
 | **WBS-05** | **Postgres 分布式账本与 Outbox 异步派发器** | | | | |
-| WBS-05.1 | `LedgerStore` Trait 与内存/SQL 适配实现 | `crates/ide-agent-router/src/ledger.rs` | `REQ-DB-01~05` | Ulysses | **进行中 (Lane 1)** |
-| WBS-05.2 | Transactional Outbox 轮询与异步事件派发 | `crates/ide-agent-router/src/outbox.rs` | `REQ-COORD-04` | Ulysses | **进行中 (Lane 1)** |
+| WBS-05.1 | `LedgerStore` Trait 与内存/SQL 适配实现 | `crates/ide-agent-router/src/ledger.rs` | `REQ-DB-01~05` | Ulysses | **完成 (Done)** |
+| WBS-05.2 | Transactional Outbox 轮询与异步事件派发 | `crates/ide-agent-router/src/outbox.rs` | `REQ-COORD-04` | Ulysses | **完成 (Done)** |
 | **WBS-06** | **Worker 隔离沙盒环境与差异验证驱动** | | | | |
-| WBS-06.1 | `WorkerSandbox` 隔离文件系统驱动与临时工作区 | `crates/ide-agent-router/src/sandbox.rs` | `REQ-EXEC-01` | Mavis | **进行中 (Lane 2)** |
-| WBS-06.2 | 编译/测试验证引擎与 Patch 验证流水线 | `crates/ide-agent-router/src/verifier.rs` | `REQ-EXEC-02` | Mavis | **进行中 (Lane 2)** |
+| WBS-06.1 | `WorkerSandbox` 隔离文件系统驱动与临时工作区 | `crates/ide-agent-router/src/sandbox.rs` | `REQ-EXEC-01` | Mavis | **完成 (Done)** |
+| WBS-06.2 | 编译/测试验证引擎与 Patch 验证流水线 | `crates/ide-agent-router/src/verifier.rs` | `REQ-EXEC-02` | Mavis | **完成 (Done)** |
 
 ---
 
@@ -48,4 +48,4 @@
 - **门禁 G2 (Rust 核心单元测试)**: **已通过 (Passed)** — 基础单测与并发验证 100% 覆盖。
 - **门禁 G3 (并发冲突仲裁与恢复验证)**: **已通过 (Passed)** — 100 个并发补丁无损合并、1000 任务批量调度、漂移防御测试全绿。
 - **门禁 G4 (Vercel 云端部署与端点)**: **已通过 (Passed)** — `https://ide1-0.vercel.app` 生产上线并接入。
-- **门禁 G5 (分布式持久化与沙盒驱动)**: **开发中 (In Progress)** — 当前并行 Lane 1 与 Lane 2 正在交付。
+- **门禁 G5 (分布式持久化与沙盒驱动)**: **已通过 (Passed)** — WBS-05 与 WBS-06 经双 Worktree 并行开发与 Rebase 集成，20 项全套单测 100% 通过。
