@@ -903,7 +903,7 @@ jobs:
       - name: Build release binaries (all platforms via matrix)
         # This would typically be done by re-running the platform-specific build jobs
         # For now, download the artifacts from previous jobs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: ide-shell-desktop-*
           path: dist/
