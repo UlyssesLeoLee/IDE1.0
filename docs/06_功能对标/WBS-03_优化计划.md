@@ -101,7 +101,7 @@
   - 4.5 `keymap::entry_by_id` 优化为 HashMap O(1) 查找，`msgtr::msg` 增加静态精确匹配无分配与线程局部缓存。
 - **O5 (文档与仓库卫生)**:
   - 5.1 全面校准 `PARITY-PLAN.md` 50+ 处过期 not done 与 `ROADMAP.md` 进度。
-  - 5.2 形成 `gemarc-5d-atlas-v10.0/` 外围文件隔离方案，待所有者确认执行。
+  - 5.2 **[已完成 2026-11-05]** 成功剥离 `gemarc-5d-atlas-v10.0/` (141个文件)、`_upstream/`、`refs/`、`req.jsonl`，并加入 `.gitignore`，瘦身 5 万余行无用资产。
   - 5.3 `DOC-17_doc_index.md` 补登全部新文档。
 
 ## 3. 建议的顺序
