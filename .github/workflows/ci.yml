@@ -51,7 +51,7 @@ jobs:
         rust: [stable]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0  # Full history for git-based versioning
@@ -206,7 +206,7 @@ jobs:
     timeout-minutes: 45
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -260,7 +260,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -295,7 +295,7 @@ jobs:
     timeout-minutes: 60
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -407,7 +407,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -462,7 +462,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run markdownlint
         uses: DavidAnson/markdownlint-cli2-action@v19
         with:
@@ -486,7 +486,7 @@ jobs:
     # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
     if: false && (github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'linux' || github.event.inputs.target_platform == 'all')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -563,7 +563,7 @@ jobs:
     # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
     if: false && (github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'windows' || github.event.inputs.target_platform == 'all')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -626,7 +626,7 @@ jobs:
     timeout-minutes: 45
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -712,7 +712,7 @@ jobs:
     # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
     if: false && (github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'macos' || github.event.inputs.target_platform == 'all')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -778,7 +778,7 @@ jobs:
     timeout-minutes: 30
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -817,7 +817,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -845,7 +845,7 @@ jobs:
     timeout-minutes: 30
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install system deps for Tauri
         run: |
@@ -885,7 +885,7 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
