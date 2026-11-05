@@ -21,6 +21,7 @@
 //! 4. **100% 纯 Safe Rust**:
 //!    - 严格遵循 `#![forbid(unsafe_code)]`，跨平台且无系统 mmap 的虚假映射崩溃隐患。
 
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -142,6 +143,39 @@ impl InnerState {
         }
         Ok(None)
     }
+}
+
+
+/// 自动拆页分页信息
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageInfo {
+    /// 当前页索引 (0-based)
+    pub page_index: usize,
+    /// 总页数 (>= 1)
+    pub total_pages: usize,
+    /// 每页行数 (例如 10,000 行)
+    pub page_size: usize,
+    /// 当前页起始全局逻辑行 (0-based)
+    pub start_line: usize,
+    /// 当前页结束全局逻辑行 (exclusive, 0-based)
+    pub end_line: usize,
+    /// 文件总逻辑行数
+    pub total_lines: usize,
+}
+
+/// 跨页查询命中项
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MmapMatch {
+    /// 全局逻辑行号 (0-based)
+    pub global_line: usize,
+    /// 所在分页索引 (0-based)
+    pub page_index: usize,
+    /// 在当前分页内的行号 (0-based)
+    pub line_in_page: usize,
+    /// 匹配处列号 (0-based 字符偏移)
+    pub col: usize,
+    /// 所在行的完整文本 (已去 EOL)
+    pub text: String,
 }
 
 /// 超大文件虚拟内存分块与稀疏行索引缓冲区
@@ -369,4 +403,209 @@ impl MmapBuffer {
 
         None
     }
+
+    /// 默认分页大小: 10,000 行
+    pub const DEFAULT_PAGE_SIZE: usize = 10_000;
+
+    /// 计算指定分页大小下的总页数 (>= 1)
+    #[inline]
+    pub fn page_count(&self, page_size: usize) -> usize {
+        let size = page_size.max(1);
+        if self.total_lines == 0 {
+            1
+        } else {
+            (self.total_lines + size - 1) / size
+        }
+    }
+
+    /// 获取指定分页的元信息
+    pub fn page_info(&self, page_index: usize, page_size: usize) -> PageInfo {
+        let total_pages = self.page_count(page_size);
+        let p_idx = page_index.min(total_pages.saturating_sub(1));
+        let size = page_size.max(1);
+        let start_line = p_idx * size;
+        let end_line = (start_line + size).min(self.total_lines);
+        PageInfo {
+            page_index: p_idx,
+            total_pages,
+            page_size: size,
+            start_line,
+            end_line,
+            total_lines: self.total_lines,
+        }
+    }
+
+    /// 读取指定分页的所有行与分页元信息 (开箱即用)
+    pub fn get_page(&self, page_index: usize, page_size: usize) -> (Vec<String>, PageInfo) {
+        let info = self.page_info(page_index, page_size);
+        let count = info.end_line.saturating_sub(info.start_line);
+        let lines = self.get_lines_range(info.start_line, count);
+        (lines, info)
+    }
+
+    /// 根据全局逻辑行号计算所在分页索引 (0-based)
+    #[inline]
+    pub fn page_for_line(&self, line: usize, page_size: usize) -> usize {
+        let size = page_size.max(1);
+        line / size
+    }
+
+    /// 将绝对字节偏移映射到全局逻辑行号 (0-based)
+    ///
+    /// 算法: 基于 checkpoints 二分查找定位最近检查点 (O(log N)),
+    /// 随后在 64KB 块内借助 SIMD 快速扫描跳过至多 255 个换行符。微秒级完成。
+    pub fn offset_to_line(&self, byte_offset: u64) -> usize {
+        if self.checkpoints.is_empty() || byte_offset == 0 {
+            return 0;
+        }
+        let target = byte_offset.min(self.file_size);
+        let cp_idx = match self.checkpoints.binary_search(&target) {
+            Ok(idx) => idx,
+            Err(idx) => idx.saturating_sub(1),
+        };
+        let mut line = cp_idx * SPARSE_INTERVAL;
+        let mut cur_offset = self.checkpoints[cp_idx];
+
+        let mut inner = match self.inner.lock() {
+            Ok(g) => g,
+            Err(_) => return line,
+        };
+
+        while cur_offset < target {
+            match inner.find_next_newline(cur_offset, self.file_size) {
+                Ok(Some(nl_pos)) if nl_pos < target => {
+                    line += 1;
+                    cur_offset = nl_pos + 1;
+                }
+                _ => break,
+            }
+        }
+        line.min(self.total_lines.saturating_sub(1))
+    }
+
+    /// 将全局逻辑行号映射到绝对起始字节偏移
+    pub fn line_to_offset(&self, line: usize) -> Option<u64> {
+        if line >= self.total_lines {
+            return None;
+        }
+        let cp_idx = line / SPARSE_INTERVAL;
+        if cp_idx >= self.checkpoints.len() {
+            return None;
+        }
+        let mut cur_offset = self.checkpoints[cp_idx];
+        let step = line % SPARSE_INTERVAL;
+        let mut inner = self.inner.lock().ok()?;
+
+        for _ in 0..step {
+            match inner.find_next_newline(cur_offset, self.file_size) {
+                Ok(Some(nl)) => cur_offset = nl + 1,
+                _ => return None,
+            }
+        }
+        Some(cur_offset)
+    }
+
+    /// 大小写敏感 / 不敏感关键字搜索
+    pub fn find_next_case(&self, query: &str, from_offset: u64, case_sensitive: bool) -> Option<u64> {
+        if query.is_empty() {
+            return if from_offset <= self.file_size {
+                Some(from_offset)
+            } else {
+                None
+            };
+        }
+        if case_sensitive {
+            return self.find_next(query.as_bytes(), from_offset);
+        }
+
+        if from_offset >= self.file_size {
+            return None;
+        }
+
+        let q_lower = query.to_lowercase();
+        let q_bytes = q_lower.as_bytes();
+        if (self.file_size - from_offset) < q_bytes.len() as u64 {
+            return None;
+        }
+
+        let overlap = q_bytes.len().saturating_sub(1);
+        let buffer_size = (CHUNK_SIZE as usize).max(q_bytes.len() * 2);
+        let mut cur_offset = from_offset;
+        let mut inner = self.inner.lock().ok()?;
+
+        while cur_offset < self.file_size {
+            let remaining = (self.file_size - cur_offset) as usize;
+            let read_len = remaining.min(buffer_size);
+            if read_len < q_bytes.len() {
+                break;
+            }
+
+            let data = inner.read_bytes(cur_offset, read_len, self.file_size).ok()?;
+            let s = String::from_utf8_lossy(&data).to_lowercase();
+            if let Some(byte_pos) = s.find(&q_lower) {
+                return Some(cur_offset + byte_pos as u64);
+            }
+
+            let advance = read_len.saturating_sub(overlap);
+            if advance == 0 {
+                break;
+            }
+            cur_offset += advance as u64;
+        }
+
+        None
+    }
+
+    /// 超大文件跨页流式高速查询
+    ///
+    /// 无需将全部行或文本装入内存，通过 SIMD 滑窗匹配和稀疏索引反查，
+    /// 精确定位每一个匹配项的全局行号、分页编号与分页内行号。
+    pub fn search_matches(
+        &self,
+        query: &str,
+        page_size: usize,
+        case_sensitive: bool,
+        max_matches: usize,
+    ) -> Vec<MmapMatch> {
+        if query.is_empty() || max_matches == 0 {
+            return Vec::new();
+        }
+        let size = page_size.max(1);
+        let mut matches = Vec::new();
+        let mut cur_offset = 0u64;
+
+        while let Some(hit_offset) = self.find_next_case(query, cur_offset, case_sensitive) {
+            let global_line = self.offset_to_line(hit_offset);
+            let line_text = self.get_line(global_line).unwrap_or_default();
+            let line_start = self.line_to_offset(global_line).unwrap_or(hit_offset);
+            let byte_in_line = (hit_offset.saturating_sub(line_start)) as usize;
+            let col = line_text
+                .char_indices()
+                .take_while(|(b, _)| *b < byte_in_line)
+                .count();
+
+            let page_index = global_line / size;
+            let line_in_page = global_line % size;
+
+            matches.push(MmapMatch {
+                global_line,
+                page_index,
+                line_in_page,
+                col,
+                text: line_text,
+            });
+
+            if matches.len() >= max_matches {
+                break;
+            }
+
+            cur_offset = hit_offset.saturating_add(query.len().max(1) as u64);
+            if cur_offset >= self.file_size {
+                break;
+            }
+        }
+
+        matches
+    }
+
 }

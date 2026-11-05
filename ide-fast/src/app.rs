@@ -774,7 +774,12 @@ impl App {
         if p.is_file() && !self.docs.iter().any(|d| d.path.as_deref() == Some(p)) {
             return;
         }
-        self.cur().goto(line.saturating_sub(1), col);
+        let row = line.saturating_sub(1);
+        if self.cur().is_paginated() {
+            self.cur().goto_global_line(row, col);
+        } else {
+            self.cur().goto(row, col);
+        }
     }
 
     /// 侧栏内容: 文件树 / 大纲 / Grep / Git
@@ -1422,17 +1427,25 @@ impl App {
             return;
         };
         if self.side.grep.o.this_file {
-            let (label, lines) = {
+            let (label, path_opt, is_paginated, page_size) = {
                 let d = self.cur();
                 (
                     d.path
                         .as_ref()
                         .map(|p| p.to_string_lossy().into_owned())
                         .unwrap_or_else(|| d.name.clone()),
-                    d.lines.clone(),
+                    d.path.clone(),
+                    d.is_paginated(),
+                    d.pagination.as_ref().map(|p| p.page_size).unwrap_or(editcore::MmapBuffer::DEFAULT_PAGE_SIZE),
                 )
             };
-            self.side.grep.start_text(root.clone(), &label, &lines);
+            if is_paginated && path_opt.is_some() {
+                let file_path = path_opt.unwrap();
+                self.side.grep.start_mmap_file(root.clone(), &file_path, &label, page_size);
+            } else {
+                let lines = self.cur().lines.clone();
+                self.side.grep.start_text(root.clone(), &label, &lines);
+            }
         } else {
             self.side.grep.start(root.clone());
         }
@@ -3657,6 +3670,15 @@ impl App {
                             _ => None,
                         };
                         if modifiers.alt && !ctrl {
+                            if key == Key::PageUp {
+                                if d.prev_page() {
+                                    continue;
+                                }
+                            } else if key == Key::PageDown {
+                                if d.next_page() {
+                                    continue;
+                                }
+                            }
                             continue;
                         }
                         if let Some(k) = nav {

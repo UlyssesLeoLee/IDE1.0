@@ -42,6 +42,7 @@
 | **WBS-07** | **超大文件 (GB 级) 内存映射与惰性分段加载引擎** | | | | |
 | WBS-07.1 | `MmapBuffer` 虚拟内存分块映射与分段行索引 | `crates/editcore/src/mmap_buffer.rs` | `CORE-PERF-01` | Ulysses | **完成 (Done)** |
 | WBS-07.2 | 跨平台文件切片读取与大文件集成测试 | `crates/editcore/tests/mmap_buffer_tests.rs` | `CORE-PERF-02` | Ulysses | **完成 (Done)** |
+| WBS-07.3 | 大文件自动拆页、分页切换与既存 Grep 跨页定位 | `crates/editcore/src/mmap_buffer.rs`, `ide-fast/src/doc.rs`, `ide-fast/src/grep.rs` | `CORE-PERF-03` | Ulysses | **完成 (Done)** |
 | **WBS-08** | **深度 18 页共通与类型别设置及 INI 映射体系** | | | | |
 | WBS-08.1 | Sakura 18 页配置数据模型与 INI 序列化解析 | `crates/editcore/src/sakura_settings.rs` | `CONFIG-DEEP-01` | Mavis | **完成 (Done)** |
 | WBS-08.2 | 避头尾禁则文字集与 24 个自定义用户菜单持久化 | `crates/editcore/tests/sakura_settings_tests.rs` | `CONFIG-DEEP-02` | Mavis | **完成 (Done)** |

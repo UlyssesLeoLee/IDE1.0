@@ -100,7 +100,7 @@ pub mod undo;
 pub mod word;
 pub mod zenkaku_hankaku;
 
-pub use mmap_buffer::MmapBuffer;
+pub use mmap_buffer::{MmapBuffer, MmapMatch, PageInfo};
 pub use ppa_engine::{DefaultMacroContext, MacroContext, PpaError, PpaInterpreter, PpaProgram, PpaValue};
 
 /// 当前 crate 版本 + meta 信息 (对标参考实现的版本结构体).

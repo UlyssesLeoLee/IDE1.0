@@ -643,6 +643,49 @@ impl Grep {
         }
     }
 
+    /// 跨页搜索大文件 (基于 MmapBuffer 全文跨页搜索, 结果包含页码与全局行号)
+    pub fn start_mmap_file(&mut self, root: PathBuf, file_path: &Path, label: &str, page_size: usize) {
+        self.cancel();
+        self.results.clear();
+        self.rendered = 0;
+        self.last = Some((self.o.clone(), root));
+        let Ok(mmap) = editcore::MmapBuffer::open(file_path) else {
+            let err = format!("无法以内存映射打开文件: {}", file_path.display());
+            self.msg = err.clone();
+            self.end = Some(End {
+                error: Some(err),
+                ..Default::default()
+            });
+            self.finished = self.end.clone();
+            return;
+        };
+        let matches = mmap.search_matches(&self.o.pattern, page_size, self.o.case, CAP);
+        let capped = matches.len() >= CAP;
+        let mut results: Vec<SearchResult> = Vec::with_capacity(matches.len());
+        for m in matches {
+            let line_num = m.global_line as u64 + 1;
+            if results.last().map(|r| r.line == line_num).unwrap_or(false) {
+                continue;
+            }
+            results.push(SearchResult {
+                path: label.to_string(),
+                line: line_num,
+                text: format!("[第 {} 页] {}", m.page_index + 1, m.text),
+            });
+        }
+        self.msg = if capped {
+            format!("{} 处命中 (已达上限 {})", results.len(), CAP)
+        } else {
+            format!("{} 处命中", results.len())
+        };
+        self.results = results;
+        self.end = Some(End {
+            capped,
+            ..Default::default()
+        });
+        self.finished = self.end.clone();
+    }
+
     pub fn cancel(&mut self) {
         if let Some(j) = self.job.take() {
             j.cancel.store(true, Ordering::Relaxed);
@@ -1182,6 +1225,44 @@ mod tests {
         }
         assert_eq!((g.results.len(), g.results[0].line), (1, 2), "{}", g.msg);
         assert!(g.finished.is_some());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn test_start_mmap_file_cross_page_search() {
+        use std::io::Write;
+        let d = tmp("mmap_grep");
+        let f = d.join("big.log");
+        {
+            let mut file = std::fs::File::create(&f).unwrap();
+            for i in 0..25_000 {
+                if i == 120 {
+                    writeln!(file, "Line {:06}: TARGET_TOKEN on page 1", i).unwrap();
+                } else if i == 15_300 {
+                    writeln!(file, "Line {:06}: TARGET_TOKEN on page 2", i).unwrap();
+                } else if i == 24_100 {
+                    writeln!(file, "Line {:06}: TARGET_TOKEN on page 3", i).unwrap();
+                } else {
+                    writeln!(file, "Line {:06}: normal payload row", i).unwrap();
+                }
+            }
+            file.flush().unwrap();
+        }
+
+        let mut g = Grep::new();
+        g.o.pattern = "TARGET_TOKEN".into();
+        g.start_mmap_file(d.clone(), &f, "big.log", 10_000);
+
+        assert_eq!(g.results.len(), 3, "应该检索到跨3页的全部3处命中");
+        assert_eq!(g.results[0].line, 121);
+        assert!(g.results[0].text.contains("[第 1 页]"));
+
+        assert_eq!(g.results[1].line, 15_301);
+        assert!(g.results[1].text.contains("[第 2 页]"));
+
+        assert_eq!(g.results[2].line, 24_101);
+        assert!(g.results[2].text.contains("[第 3 页]"));
+
         let _ = std::fs::remove_dir_all(&d);
     }
 }

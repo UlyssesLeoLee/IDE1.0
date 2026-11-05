@@ -12,6 +12,9 @@ pub(super) enum StatusCmd {
     Bom,
     Eol(Eol),
     SelCount,
+    PrevPage,
+    NextPage,
+    CrossPageGrep,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -218,6 +221,49 @@ impl App {
                         egui::RichText::new(trf("st.cursors", &[&(d.extra.len() + 1).to_string()])),
                     );
                 }
+                if let Some(p) = &d.pagination {
+                    ui.add_space(4.0);
+                    if ui
+                        .small_button("◀")
+                        .on_hover_text("上一页 (Alt+PageUp)")
+                        .clicked()
+                    {
+                        st_cmd = Some(StatusCmd::PrevPage);
+                    }
+                    let page_text = format!("第 {}/{} 页", p.current_page + 1, p.total_pages);
+                    let p_hint = format!(
+                        "超大文件自动拆页:\n当前第 {} 页 / 共 {} 页\n每页 {} 行 / 全文共 {} 行\n[Alt+PageUp] 上一页 / [Alt+PageDown] 下一页\n点击 [跨页查询] 可在全文跨页检索并直达对应页",
+                        p.current_page + 1,
+                        p.total_pages,
+                        p.page_size,
+                        p.total_lines
+                    );
+                    ui.add_space(2.0);
+                    ui.add(egui::Label::new(
+                        egui::RichText::new(page_text)
+                            .color(Color32::from_rgb(100, 200, 255))
+                            .strong(),
+                    ))
+                    .on_hover_text(p_hint);
+                    ui.add_space(2.0);
+                    if ui
+                        .small_button("▶")
+                        .on_hover_text("下一页 (Alt+PageDown)")
+                        .clicked()
+                    {
+                        st_cmd = Some(StatusCmd::NextPage);
+                    }
+                    ui.add_space(2.0);
+                    if ui
+                        .small_button("跨页查询")
+                        .on_hover_text("在全文跨页搜索 (Grep 定位分页)")
+                        .clicked()
+                    {
+                        st_cmd = Some(StatusCmd::CrossPageGrep);
+                    }
+                    ui.add_space(4.0);
+                    sep(ui, on);
+                }
                 // 文件名 (最宽 40%, 超出 …)
                 let name = if welcome {
                     crate::msgtr::msg("无活动").into_owned()
@@ -266,6 +312,19 @@ impl App {
             Some(StatusCmd::Bom) => self.cur().toggle_bom(),
             Some(StatusCmd::Eol(e)) => self.cur().set_eol(e),
             Some(StatusCmd::SelCount) => self.cycle_sel_count(),
+            Some(StatusCmd::PrevPage) => {
+                self.cur().prev_page();
+            }
+            Some(StatusCmd::NextPage) => {
+                self.cur().next_page();
+            }
+            Some(StatusCmd::CrossPageGrep) => {
+                self.side.open = true;
+                self.side.tab = Tab::Search;
+                self.side.grep.o.this_file = true;
+                self.side.grep.focus_pattern = true;
+                self.cur().tip = "已打开跨页 Grep 搜索: 输入关键词回车即可定位到分页与行号".into();
+            }
             None => {}
         }
     }

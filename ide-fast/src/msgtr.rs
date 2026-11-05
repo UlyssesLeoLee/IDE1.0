@@ -69,6 +69,10 @@ const MSG_T: &[Row] = &[
     ("没有更新的移动履历", "これより後の移動履歴はありません", "No later jump history"),
     ("文件超过 8 MB", "ファイルが 8 MB を超えています", "File is larger than 8 MB"),
     ("文件太大 ({} MB, 上限 {} MB): 高速版把整篇载入内存, 请用专门的大文件查看器", "ファイルが大きすぎます ({} MB, 上限 {} MB): 高速版は全体をメモリに読み込みます。大容量ファイル用ビューアを使ってください", "File too large ({} MB, limit {} MB): the fast edition loads the whole file into memory; use a dedicated large-file viewer"),
+    ("超大文件 ({} MB) 自动拆页: 第 1/{} 页 (每页 {} 行, 全文 {} 行) [Alt+PageDown 翻页]", "超大ファイル ({} MB) 自動ページ分割: 1/{} ページ (1ページ {} 行, 全 {} 行) [Alt+PageDown ページ送り]", "Large file ({} MB) paginated: page 1/{} ({} lines/page, {} lines total) [Alt+PageDown for next]"),
+    ("已切换到第 {}/{} 页 (行 {}-{}, 全文 {} 行)", "第 {}/{} ページに切り替えました ({}〜{} 行, 全 {} 行)", "Switched to page {}/{} (lines {}-{}, {} lines total)"),
+    ("第 {}/{} 页 (全局行 {}, 全文 {} 行)", "第 {}/{} ページ (全体行 {}, 全 {} 行)", "Page {}/{} (global line {}, {} lines total)"),
+    ("已打开跨页 Grep 搜索: 输入关键词回车即可定位到分页与行号", "ページ間 Grep 検索を開きました: キーワードを入力して Enter でページと行へ移動", "Cross-page Grep opened: enter keyword and press Enter to jump to page and line"),
     ("看起来是二进制文件 (含 NUL 字节), 不按文本打开", "バイナリファイルのようです (NUL バイトを含む)。テキストとしては開きません", "Looks like a binary file (contains NUL bytes); not opened as text"),
     // ---- 比较 / 宏 / 预览
     ("{}: 没有可显示的差异 (未跟踪文件?)", "{}: 表示できる差分がありません (未追跡ファイル?)", "{}: no differences to show (untracked file?)"),

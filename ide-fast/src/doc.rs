@@ -79,6 +79,17 @@ pub struct Doc {
     pub changed_cache: Option<(u64, Vec<bool>)>,
     /// F6 范围选择模式: 开着时方向键 / 翻页键都在扩大选区 (不用按 Shift)
     pub sel_mode: bool,
+    /// 大文件自动拆页状态 (None = 普通文档整篇载入; Some = MmapBuffer 分页文档)
+    pub pagination: Option<PaginationState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaginationState {
+    pub page_size: usize,
+    pub current_page: usize,
+    pub total_pages: usize,
+    pub total_lines: usize,
+    pub file_size: u64,
 }
 
 /// 插件补丁一次最多插入的行数 (和 Tauri 版 applyPluginEdit 相同)
@@ -157,6 +168,7 @@ impl Doc {
             base: vec![String::new()],
             changed_cache: None,
             sel_mode: false,
+            pagination: None,
         }
     }
 
@@ -169,16 +181,19 @@ impl Doc {
         let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         if size > HARD_LIMIT {
             if let Ok(mmap) = editcore::MmapBuffer::open(path) {
-                let total_lines = mmap.line_count();
-                let load_count = total_lines.min(50_000);
-                let mut lines = mmap.get_lines_range(0, load_count);
-                if lines.is_empty() {
-                    lines.push(String::new());
-                }
+                let page_size = editcore::MmapBuffer::DEFAULT_PAGE_SIZE;
+                let (lines, pinfo) = mmap.get_page(0, page_size);
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "?".into());
+                let page_state = PaginationState {
+                    page_size: pinfo.page_size,
+                    current_page: pinfo.page_index,
+                    total_pages: pinfo.total_pages,
+                    total_lines: pinfo.total_lines,
+                    file_size: size,
+                };
                 return Ok(Doc {
                     id,
                     syntax: None,
@@ -199,10 +214,11 @@ impl Doc {
                     undo: vec![],
                     redo: vec![],
                     tip: format!(
-                        "超大文件 ({} MB) 已通过 MmapBuffer 分块加载前 {} 行 (共 {} 行)",
+                        "超大文件 ({} MB) 自动拆页: 第 1/{} 页 (每页 {} 行, 全文 {} 行) [Alt+PageDown 翻页]",
                         size / 1024 / 1024,
-                        load_count,
-                        total_lines
+                        page_state.total_pages,
+                        page_state.page_size,
+                        page_state.total_lines
                     ),
                     reveal: true,
                     rev: 0,
@@ -221,6 +237,7 @@ impl Doc {
                     auto_indent: true,
                     smart_indent: false,
                     insert_spaces: false,
+                    pagination: Some(page_state),
                 });
             }
             return Err(format!(
@@ -287,6 +304,7 @@ impl Doc {
             auto_indent: true,
             smart_indent: false,
             insert_spaces: false,
+            pagination: None,
         })
     }
 
@@ -536,10 +554,120 @@ impl Doc {
             .collect()
     }
 
+    /// 是否为 MmapBuffer 自动拆页的超大文件
+    pub fn is_paginated(&self) -> bool {
+        self.pagination.is_some()
+    }
+
+    /// 切换到指定页 (0-based)
+    pub fn goto_page(&mut self, target_page: usize) -> bool {
+        let Some(pinfo) = &self.pagination else {
+            return false;
+        };
+        let page_size = pinfo.page_size;
+        let total_pages = pinfo.total_pages;
+        if target_page >= total_pages {
+            return false;
+        }
+        let Some(path) = &self.path else {
+            return false;
+        };
+        let Ok(mmap) = editcore::MmapBuffer::open(path) else {
+            return false;
+        };
+        let (new_lines, new_pinfo) = mmap.get_page(target_page, page_size);
+        self.lines = new_lines;
+        self.base = self.lines.clone();
+        self.changed_cache = None;
+        self.cursor = [0, 0];
+        self.sel = None;
+        self.anchor = None;
+        self.goal_col = None;
+        self.reveal = true;
+        self.rev += 1;
+        self.pagination = Some(PaginationState {
+            page_size: new_pinfo.page_size,
+            current_page: new_pinfo.page_index,
+            total_pages: new_pinfo.total_pages,
+            total_lines: new_pinfo.total_lines,
+            file_size: mmap.file_size(),
+        });
+        self.tip = format!(
+            "已切换到第 {}/{} 页 (行 {}-{}, 全文 {} 行)",
+            new_pinfo.page_index + 1,
+            new_pinfo.total_pages,
+            new_pinfo.start_line + 1,
+            new_pinfo.end_line,
+            new_pinfo.total_lines
+        );
+        true
+    }
+
+    /// 下一页 (Alt+PageDown)
+    pub fn next_page(&mut self) -> bool {
+        if let Some(p) = &self.pagination {
+            let next = p.current_page + 1;
+            if next < p.total_pages {
+                return self.goto_page(next);
+            }
+        }
+        false
+    }
+
+    /// 上一页 (Alt+PageUp)
+    pub fn prev_page(&mut self) -> bool {
+        if let Some(p) = &self.pagination {
+            if p.current_page > 0 {
+                return self.goto_page(p.current_page - 1);
+            }
+        }
+        false
+    }
+
+    /// 跨页定位全局行 (0-based global line number)
+    pub fn goto_global_line(&mut self, global_line: usize, col: usize) -> bool {
+        let Some(p) = self.pagination.clone() else {
+            self.goto(global_line, col);
+            return true;
+        };
+        let page_size = p.page_size;
+        let target_page = global_line / page_size;
+        let line_in_page = global_line % page_size;
+        if target_page != p.current_page {
+            if !self.goto_page(target_page) {
+                return false;
+            }
+        }
+        self.sel_mode = false;
+        let max_r = self.lines.len().saturating_sub(1);
+        self.cursor = [line_in_page.min(max_r), col];
+        self.clamp();
+        self.sel = None;
+        self.anchor = None;
+        self.goal_col = None;
+        self.reveal = true;
+        if let Some(p_now) = &self.pagination {
+            self.tip = format!(
+                "第 {}/{} 页 (全局行 {}, 全文 {} 行)",
+                p_now.current_page + 1,
+                p_now.total_pages,
+                global_line + 1,
+                p_now.total_lines
+            );
+        }
+        true
+    }
+
     /// 光标跳到 (行, 列) 并滚到可见处 (大纲 / Grep 结果 / 书签用)
     pub fn goto(&mut self, row: usize, col: usize) {
+        if let Some(p) = &self.pagination {
+            if row >= self.lines.len() || row >= p.page_size {
+                self.goto_global_line(row, col);
+                return;
+            }
+        }
         self.sel_mode = false;
-        self.cursor = [row.min(self.lines.len() - 1), col];
+        self.cursor = [row.min(self.lines.len().saturating_sub(1)), col];
         self.clamp();
         self.sel = None;
         self.anchor = None;
@@ -2396,5 +2524,76 @@ b
         // 选取第 0 行后半部分至第 1 行前半部分
         d.sel = Some([0, 6, 1, 11]);
         assert_eq!(d.selected_text(), "Host 'Line 1'\nGet-Process");
+    }
+
+    #[test]
+    fn test_doc_pagination_and_cross_page_navigation() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("test_doc_paginated_{}.txt", std::process::id()));
+        {
+            let mut file = std::fs::File::create(&path).expect("create file");
+            for i in 0..25_000 {
+                writeln!(file, "Line {:06}: Data row for testing pagination", i).unwrap();
+            }
+            file.flush().unwrap();
+        }
+
+        let mmap = editcore::MmapBuffer::open(&path).expect("open mmap");
+        let (lines, pinfo) = mmap.get_page(0, 10_000);
+        let mut d = Doc::untitled(100, 1);
+        d.path = Some(path.clone());
+        d.lines = lines;
+        d.base = d.lines.clone();
+        d.pagination = Some(PaginationState {
+            page_size: pinfo.page_size,
+            current_page: pinfo.page_index,
+            total_pages: pinfo.total_pages,
+            total_lines: pinfo.total_lines,
+            file_size: mmap.file_size(),
+        });
+
+        assert!(d.is_paginated());
+        assert_eq!(d.pagination.as_ref().unwrap().current_page, 0);
+        assert_eq!(d.pagination.as_ref().unwrap().total_pages, 3);
+        assert_eq!(d.lines.len(), 10_000);
+        assert!(d.lines[0].starts_with("Line 000000:"));
+
+        // 翻到下一页 (Page 1: 10,000..19,999)
+        assert!(d.next_page());
+        assert_eq!(d.pagination.as_ref().unwrap().current_page, 1);
+        assert_eq!(d.lines.len(), 10_000);
+        assert!(d.lines[0].starts_with("Line 010000:"));
+
+        // 翻到下一页 (Page 2: 20,000..24,999)
+        assert!(d.next_page());
+        assert_eq!(d.pagination.as_ref().unwrap().current_page, 2);
+        assert_eq!(d.lines.len(), 5_000);
+        assert!(d.lines[0].starts_with("Line 020000:"));
+
+        // 最后一页再 next 应该返回 false
+        assert!(!d.next_page());
+
+        // 上一页 (Page 1)
+        assert!(d.prev_page());
+        assert_eq!(d.pagination.as_ref().unwrap().current_page, 1);
+
+        // 跨页定位全局行: 跳到全局第 23,450 行 (在第 2 页，第 3,450 行)
+        assert!(d.goto_global_line(23_450, 4));
+        assert_eq!(d.pagination.as_ref().unwrap().current_page, 2);
+        assert_eq!(d.cursor, [3450, 4]);
+        assert!(d.lines[3450].starts_with("Line 023450:"));
+
+        // 通过 Doc::goto 进行跨页跳转 (行号 500: 在第 0 页)
+        d.goto(500, 2);
+        assert_eq!(d.cursor, [500, 2]);
+
+        // 通过 Doc::goto 传入全局大行号 (15,230: 在第 1 页，行 5,230)
+        d.goto(15_230, 3);
+        assert_eq!(d.pagination.as_ref().unwrap().current_page, 1);
+        assert_eq!(d.cursor, [5230, 3]);
+        assert!(d.lines[5230].starts_with("Line 015230:"));
+
+        let _ = std::fs::remove_file(path);
     }
 }
