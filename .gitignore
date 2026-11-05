@@ -68,3 +68,9 @@ tools/msix/out/
 .vercel/
 **/.vercel/
 
+
+# 外围已剥离项目与非核心参考
+gemarc-5d-atlas-v10.0/
+_upstream/
+refs/
+req.jsonl
