@@ -14,6 +14,7 @@
 //! - [`types`]: 各语言工厂函数 (Rust / Python / C++ / JS / TS / Go / Java / C# / Ruby / Bash / HTML / CSS / JSON / MD / YAML / TOML / SQL / Dockerfile / Makefile).
 //! - [`grep`]: 文件枚举 (`walk_dir`) + 内容搜索 (`grep_in_files`).
 //! - [`cursor`]: `LogicPos` + `LogicRange` (对标参考实现的 `CLogicPoint`).
+//! - [`mmap_buffer`]: `MmapBuffer` 超大文件 (GB 级) 虚拟分块与分段行索引引擎.
 //!
 //! ## 集成示例
 //!
@@ -66,6 +67,7 @@ pub mod md_struct;
 pub mod agent_api;
 pub mod matching_paren;
 pub mod migemo;
+pub mod mmap_buffer;
 pub mod nav;
 pub mod outline_extended;
 pub mod outline_langs;
@@ -87,6 +89,8 @@ pub mod types;
 pub mod undo;
 pub mod word;
 pub mod zenkaku_hankaku;
+
+pub use mmap_buffer::MmapBuffer;
 
 /// 当前 crate 版本 + meta 信息 (对标参考实现的版本结构体).
 pub fn version() -> &'static str {
