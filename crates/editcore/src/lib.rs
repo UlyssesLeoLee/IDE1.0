@@ -75,6 +75,15 @@ pub mod plugin;
 pub mod ppa_macro;
 pub mod pure_api;
 pub mod ruler;
+pub mod sakura_settings;
+pub use sakura_settings::{
+    AssistConfig, ColorPaletteConfig, CustomMenuConfig, CustomMenuItem, CustomMenuSlot,
+    EditConfig, ExecCmdConfig, ExternalCmdSlot, FileConfig, FontConfig, FormatConfig,
+    IniParseError, KeySearchConfig, KinsokuChars, MacroConfig, MacroSlot, MacroTrigger,
+    MainMenuConfig, PaletteColor, PluginConfig, PrintConfig, PrintOrientation,
+    SakuraCommonSettings, SearchConfig, StatusBarConfig, TabBarConfig, TabDoubleClickAction,
+    TabPosition, ToolbarConfig, WindowConfig, WrapMode,
+};
 pub mod search_ops;
 pub mod sdi;
 pub mod search_highlight;
