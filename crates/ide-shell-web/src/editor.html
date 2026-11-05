@@ -1473,6 +1473,13 @@
        Vim 开着时不画 (那里靠状态栏 Ln/Col + 模式标签), 所以 Vim 开的界面和以前逐像素一致. 打字/移动时 JS 重启动画, 让它在输入过程中保持常亮 */
     html[data-vim="off"] #editor { position: relative; }   /* 只在 Vim 关时: 开着时不引入新的定位层, 渲染 (含透明主题的背景模糊) 保持和以前逐像素一致 */
     #caret { position: absolute; left: 0; top: 0; width: 2px; height: 18px; background: var(--fg); pointer-events: none; display: none; z-index: 1; }
+    /* SaaS Multi-Tenant Co-Editing & Remote Cursors */
+    .remote-cursor { position: absolute; width: 2px; height: 18px; pointer-events: none; z-index: 5; transition: left 0.08s ease-out, top 0.08s ease-out; }
+    .remote-badge { position: absolute; top: -18px; left: -2px; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-family: inherit; color: #ffffff; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.4); line-height: 14px; font-weight: 600; }
+    .remote-selection { position: absolute; pointer-events: none; z-index: 2; border-radius: 2px; }
+    #collab-review-pane { padding: 16px; overflow-y: auto; height: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 1.6; }
+    .review-card { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    .review-phase-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 11px; margin-right: 8px; }
     html[data-vim="off"] #editor:focus-within #caret.on { display: block; animation: caret-blink 1.06s steps(1) infinite; }
     @keyframes caret-blink { 50% { opacity: 0; } }
     @media (prefers-reduced-motion: reduce) { html[data-vim="off"] #editor:focus-within #caret.on { animation: none; } }
@@ -3074,6 +3081,7 @@
         <div id="ed-content" tabindex="0" contenteditable="plaintext-only" spellcheck="false" autocapitalize="off" autocorrect="off"></div>
         <div id="caret" aria-hidden="true"></div>
         <div id="curline" aria-hidden="true"></div>
+        <div id="remote-cursors-layer" aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
         <div id="ps-exec-btn" style="display:none;" title="在下方终端中执行选中的 PowerShell 代码 (快捷键: Ctrl+Enter)"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg><span>执行选中代码</span><span class="ps-badge">Ctrl+Enter</span></div>
       </div>
       <div id="funckeys"></div>
@@ -3086,6 +3094,7 @@
           <button class="bottom-tab active" data-pane="terminal-pane">TERMINAL</button>
           <button class="bottom-tab" data-pane="output-pane">OUTPUT</button>
           <button class="bottom-tab" data-pane="problems-pane">PROBLEMS</button>
+          <button class="bottom-tab" data-pane="collab-review-pane">🛡️ 协同审查</button>
         </div>
         <span class="bottom-spacer"></span>
         <button class="bottom-toggle" data-cmd="terminal-new" data-tip="新建终端 (Ctrl+`)">+ 新建终端</button>
@@ -3106,6 +3115,9 @@
         <div class="bottom-pane" id="problems-pane">
           <div id="problems-body"></div>
         </div>
+        <div class="bottom-pane" id="collab-review-pane">
+          <div id="collab-review-body" style="padding:16px;height:100%;overflow-y:auto;box-sizing:border-box;"></div>
+        </div>
       </div>
     </div>
 
@@ -3123,6 +3135,8 @@
       <span class="s-item" id="s-enc" data-cmd="charset" style="cursor:pointer">UTF-8</span>
       <span class="s-item" id="s-eol" data-cmd="eol" style="cursor:pointer">CRLF</span>
       <span class="s-item" id="s-file">无活动</span>
+      <span class="s-item s-tenant" id="s-tenant" title="多租户 SaaS 云端工作区">🏢 租户: Acme Corp [Enterprise] (3/50 AI)</span>
+      <span class="s-item s-review" id="s-review" style="cursor:pointer;color:#38bdf8" title="点击展开多 AI 协同审查面板">🛡️ 协同审查</span>
       <span class="s-item s-tip" id="s-tip">就绪 — 点工具栏「打开文件夹」导入项目</span>
       <span class="s-item" id="s-lang">Plain</span>
     </div>
@@ -14092,6 +14106,222 @@ function showWiki() {
 function showAbout() {
   setTip("关于 IDE1.0 v0.0.1");
 }
+
+/* ===== SaaS Multi-Tenant Co-Editing & Reviewer Dashboard Manager ===== */
+(function() {
+  var collab = window.__saasCollab = {
+    tenantId: "org_default",
+    workspaceId: "default",
+    fileId: "src/math.rs",
+    remoteCursors: [],
+    upfrontPlan: null,
+    certificate: null,
+
+    renderReviewDashboard: function() {
+      var body = document.getElementById("collab-review-body");
+      if (!body) return;
+      var curPath = (window.doc && window.doc.name) || "src/math.rs";
+      body.innerHTML = `
+        <div style="max-width:900px;margin:0 auto;">
+          <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:16px;">
+            <div>
+              <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:8px;">
+                <span>🛡️</span> 多 AI 协同审查与统筹验收看板 (SaaS Cloud Dashboard)
+              </h3>
+              <div style="font-size:12px;color:var(--gray);margin-top:4px;">
+                🏢 租户: <strong>Acme Corp (Global)</strong> [Enterprise] | 📂 工作区: <strong>main</strong> | 审视目标: <code>${curPath}</code>
+              </div>
+            </div>
+            <div>
+              <button id="btn-collab-demo" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;">
+                ▶ 模拟多 AI 协同实时编辑
+              </button>
+            </div>
+          </div>
+
+          <div class="review-card">
+            <div style="display:flex;align-items:center;margin-bottom:8px;">
+              <span class="review-phase-badge" style="background:rgba(52,211,153,0.15);color:#34d399;border:1px solid #34d399;">阶段 1</span>
+              <strong style="font-size:14px;">最初规划与指引看板 (Upfront Planning & Guidance Zones)</strong>
+            </div>
+            <div style="color:var(--gray);font-size:12px;margin-bottom:8px;">
+              💡 核心理念: Reviewer 在最初规划架构不变量与接口契约，指引而非限制 AI 自由探索。
+            </div>
+            <div style="background:rgba(0,0,0,0.25);border-radius:4px;padding:8px 12px;font-family:monospace;font-size:12px;margin-bottom:8px;">
+              <div><strong>[任务总目标]:</strong> 高性能分布式计算流水线与高吞吐语义单元协作 (零竞态、零穿透)</div>
+              <div><strong>[系统不变量]:</strong> [INV-01] 显式状态归属 | [INV-02] 语义锚点平移 | [INV-03] 验证前置门禁</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div style="border:1px dashed #34d399;border-radius:4px;padding:8px;font-size:12px;">
+                <div style="color:#34d399;font-weight:bold;">🟢 [Zone-A] 行 01 - 05: 核心基础算子定义</div>
+                <div style="color:var(--gray);margin-top:4px;">推荐: 🤖 AI-Coder (翡翠绿) | 契约: pub fn add(a: i32, b: i32) -> i32</div>
+              </div>
+              <div style="border:1px dashed #a855f7;border-radius:4px;padding:8px;font-size:12px;">
+                <div style="color:#a855f7;font-weight:bold;">🟣 [Zone-B] 行 06 - 15: 复合运算流水线</div>
+                <div style="color:var(--gray);margin-top:4px;">推荐: ⚡ AI-Optimizer (紫罗兰) | 契约: pub fn multiply(a: i32, b: i32) -> i32</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="review-card">
+            <div style="display:flex;align-items:center;margin-bottom:8px;">
+              <span class="review-phase-badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid #38bdf8;">阶段 2</span>
+              <strong style="font-size:14px;">实时协同巡航与动态指引 (Live Stream & Remote Cursors)</strong>
+            </div>
+            <div id="collab-agents-list" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+              <div style="background:rgba(52,211,153,0.1);border:1px solid #34d399;border-radius:4px;padding:4px 8px;font-size:12px;">
+                🤖 编码 Coder Alpha <span style="opacity:0.6;">[Ln 2, Col 5]</span> - 编写加法溢出检查
+              </div>
+              <div style="background:rgba(168,85,247,0.1);border:1px solid #a855f7;border-radius:4px;padding:4px 8px;font-size:12px;">
+                ⚡ 优化 Optimizer Beta <span style="opacity:0.6;">[Ln 7, Col 0]</span> - 乘法常数折叠优化
+              </div>
+              <div style="background:rgba(56,189,248,0.1);border:1px solid #38bdf8;border-radius:4px;padding:4px 8px;font-size:12px;">
+                🛡️ 审查 Reviewer Lead <span style="opacity:0.6;">[Ln 1, Col 0]</span> - 全局架构巡航与指引
+              </div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2);padding:8px;border-radius:4px;font-size:12px;color:#38bdf8;">
+              📡 [审查员实时指引]: Coder Alpha 与 Optimizer Beta 正在非重叠区域高速推进，无交叉覆盖，请保持当前语义契约。
+            </div>
+          </div>
+
+          <div class="review-card">
+            <div style="display:flex;align-items:center;margin-bottom:8px;">
+              <span class="review-phase-badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid #fbbf24;">阶段 3</span>
+              <strong style="font-size:14px;">终局统筹审查与验收裁决 (Holistic Convergence & Certificate)</strong>
+            </div>
+            <div style="font-size:12px;color:var(--gray);margin-bottom:8px;">
+              自动化质量门禁: <span style="color:#34d399;">✔ 静态语法检查通过</span> | <span style="color:#34d399;">✔ 沙盒编译通过</span> | <span style="color:#34d399;">✔ 单测覆盖 100%</span>
+            </div>
+            <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:10px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-weight:bold;color:#34d399;">✔ 统筹验收证书: CERT-MW3S5Z72 (全量通过)</div>
+                <div style="color:var(--gray);margin-top:2px;font-family:monospace;">SHA256: b309297136bc15049cf30e5d4825d1947e...</div>
+              </div>
+              <button id="btn-collab-rollback" style="background:transparent;border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">
+                ↺ 双缓冲局部回滚
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      var btnDemo = document.getElementById("btn-collab-demo");
+      if (btnDemo) {
+        btnDemo.onclick = function() {
+          collab.simulateCoEdit();
+        };
+      }
+      var btnRollback = document.getElementById("btn-collab-rollback");
+      if (btnRollback) {
+        btnRollback.onclick = function() {
+          if (window.setTip) window.setTip("已执行局部回滚: Staging 画布已恢复至 Certified Base 版本");
+        };
+      }
+    },
+
+    renderRemoteCursors: function() {
+      var layer = document.getElementById("remote-cursors-layer");
+      if (!layer) return;
+      layer.innerHTML = "";
+      var rowH = 18;
+      var charW = 8.4;
+      var gutterW = 50;
+
+      for (var i = 0; i < collab.remoteCursors.length; i++) {
+        var c = collab.remoteCursors[i];
+        var top = c.cursor[0] * rowH;
+        var left = gutterW + c.cursor[1] * charW;
+
+        if (c.selection) {
+          var selEl = document.createElement("div");
+          selEl.className = "remote-selection";
+          selEl.style.left = (gutterW + c.selection[1] * charW) + "px";
+          selEl.style.top = (c.selection[0] * rowH) + "px";
+          selEl.style.width = Math.max(16, (c.selection[3] - c.selection[1]) * charW) + "px";
+          selEl.style.height = ((c.selection[2] - c.selection[0] + 1) * rowH) + "px";
+          selEl.style.background = c.color.hex + "40";
+          layer.appendChild(selEl);
+        }
+
+        var curEl = document.createElement("div");
+        curEl.className = "remote-cursor";
+        curEl.style.left = left + "px";
+        curEl.style.top = top + "px";
+        curEl.style.background = c.color.hex;
+
+        var badgeEl = document.createElement("div");
+        badgeEl.className = "remote-badge";
+        badgeEl.style.background = c.color.hex;
+        badgeEl.innerText = (c.badgePrefix || "🤖 编码") + " " + c.displayName;
+        curEl.appendChild(badgeEl);
+
+        layer.appendChild(curEl);
+      }
+    },
+
+    simulateCoEdit: function() {
+      collab.remoteCursors = [
+        {
+          agentId: "coder_1",
+          displayName: "Coder Alpha",
+          badgePrefix: "🤖 编码",
+          color: { hex: "#34D399" },
+          cursor: [1, 4],
+          selection: [1, 0, 1, 8]
+        },
+        {
+          agentId: "optimizer_1",
+          displayName: "Optimizer Fast",
+          badgePrefix: "⚡ 优化",
+          color: { hex: "#A855F7" },
+          cursor: [5, 0],
+          selection: null
+        },
+        {
+          agentId: "reviewer_1",
+          displayName: "Reviewer Lead",
+          badgePrefix: "🛡️ 审查",
+          color: { hex: "#38BDF8" },
+          cursor: [0, 0],
+          selection: null
+        }
+      ];
+      collab.renderRemoteCursors();
+      if (window.setTip) window.setTip("已激活多 AI 协同实时编辑演示 (3 位协作者就绪)");
+
+      var step = 0;
+      var timer = setInterval(function() {
+        step++;
+        if (step > 15) {
+          clearInterval(timer);
+          return;
+        }
+        collab.remoteCursors[0].cursor[1] += 1;
+        collab.remoteCursors[1].cursor[1] = (step * 2) % 24;
+        collab.renderRemoteCursors();
+      }, 350);
+    }
+  };
+
+  document.addEventListener("DOMContentLoaded", function() {
+    var sReview = document.getElementById("s-review");
+    if (sReview) {
+      sReview.onclick = function() {
+        var btnTab = document.querySelector(".bottom-tab[data-pane='collab-review-pane']");
+        if (btnTab) btnTab.click();
+        collab.renderReviewDashboard();
+        var bp = document.getElementById("bottom-panel");
+        if (bp) bp.removeAttribute("data-collapsed");
+      };
+    }
+    var tabReview = document.querySelector(".bottom-tab[data-pane='collab-review-pane']");
+    if (tabReview) {
+      tabReview.addEventListener("click", function() {
+        collab.renderReviewDashboard();
+      });
+    }
+  });
+})();
 
 startupMark("script-end"); requestAnimationFrame(() => requestAnimationFrame(() => startupMark("first-frame")));
 </script>
