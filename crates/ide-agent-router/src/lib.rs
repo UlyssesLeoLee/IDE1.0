@@ -15,6 +15,8 @@ pub mod ledger;
 pub mod outbox;
 pub mod parser;
 pub mod patch;
+pub mod sandbox;
+pub mod verifier;
 
 pub use coordinator::{
     CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState, TaskStatus,
@@ -29,3 +31,7 @@ pub use outbox::{
 };
 pub use parser::SemanticParser;
 pub use patch::{PatchEngine, PatchError, PatchProposal, PatchResult};
+pub use sandbox::{SandboxEnvironment, SandboxError, SimulationResult, WorkerSandbox};
+pub use verifier::{
+    IssueSeverity, PatchVerifier, VerificationIssue, VerificationReport, VerificationStatus,
+};
