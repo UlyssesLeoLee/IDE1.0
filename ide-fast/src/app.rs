@@ -1670,6 +1670,53 @@ impl App {
         }
     }
 
+    /// 模拟多 AI 协同实时编辑 (在当前文档注入演示协同光标、选区与逐字击键)
+    pub fn trigger_coedit_demo(&mut self) {
+        use ide_agent_router::{CollaboratorColor, CollaboratorRole, RemoteCursor};
+        let cur_idx = self.active.min(self.docs.len().saturating_sub(1));
+        let d = &mut self.docs[cur_idx];
+
+        // 注入 AI 编码协作者
+        let coder = RemoteCursor {
+            agent_id: "agent_coder_1".into(),
+            display_name: "Coder Alpha".into(),
+            role: CollaboratorRole::AiCoder,
+            color: CollaboratorColor::from_id("agent_coder_1"),
+            cursor: [1.min(d.lines.len().saturating_sub(1)), 4],
+            selection: if d.lines.len() > 2 {
+                Some([1, 0, 2, 8])
+            } else {
+                None
+            },
+            active_symbol: Some("fn parse_request".into()),
+            last_active_epoch_ms: 1000,
+        };
+        // 注入 AI 优化协作者
+        let optimizer = RemoteCursor {
+            agent_id: "agent_optimizer_2".into(),
+            display_name: "Optimizer Fast".into(),
+            role: CollaboratorRole::AiOptimizer,
+            color: CollaboratorColor::from_id("agent_optimizer_2"),
+            cursor: [3.min(d.lines.len().saturating_sub(1)), 0],
+            selection: None,
+            active_symbol: Some("struct FastPipeline".into()),
+            last_active_epoch_ms: 1000,
+        };
+        // 注入 统筹审查员
+        let reviewer = RemoteCursor {
+            agent_id: "agent_reviewer_lead".into(),
+            display_name: "Reviewer Lead".into(),
+            role: CollaboratorRole::Reviewer,
+            color: CollaboratorColor::from_id("agent_reviewer_lead"),
+            cursor: [0, 0],
+            selection: None,
+            active_symbol: None,
+            last_active_epoch_ms: 1000,
+        };
+
+        d.remote_cursors = vec![coder, optimizer, reviewer];
+    }
+
     fn cur(&mut self) -> &mut Doc {
         let i = self.active.min(self.docs.len() - 1);
         &mut self.docs[i]
@@ -3975,6 +4022,24 @@ impl App {
                             span(c0, c1, row != s[2], sel_bg);
                         }
                     }
+                    for rc in &d.remote_cursors {
+                        if let Some(s) = rc.selection {
+                            if row >= s[0] && row <= s[2] {
+                                let c0 = if row == s[0] { s[1] } else { 0 };
+                                let c1 = if row == s[2] {
+                                    s[3]
+                                } else if rv.sliced {
+                                    rv.ncols
+                                } else {
+                                    d.lines[row].chars().count()
+                                };
+                                let rc_sel_bg = Color32::from_rgba_unmultiplied(
+                                    rc.color.r, rc.color.g, rc.color.b, 64,
+                                );
+                                span(c0, c1, row != s[2], rc_sel_bg);
+                            }
+                        }
+                    }
                     if let Some(b) = d.box_sel {
                         let (r0, r1, c0, c1) = (
                             b[0].min(b[2]),
@@ -4311,6 +4376,35 @@ impl App {
                             ),
                             0.0,
                             text_color,
+                        );
+                    }
+                }
+                for rc in &d.remote_cursors {
+                    if rc.cursor[0] >= first && rc.cursor[0] < last && rc.cursor[0] < d.lines.len() {
+                        let rv = RowView::build(&d.lines[rc.cursor[0]], tab, kcols, vx, char_w);
+                        let rx = x0 + rv.x_of(&painter, rc.cursor[1].min(rv.tail()), &font, text_color);
+                        let ry = rect.min.y + top(rc.cursor[0]);
+                        let cursor_col = Color32::from_rgb(rc.color.r, rc.color.g, rc.color.b);
+                        // 1. 绘制 2px 宽的远程光标竖线
+                        painter.rect_filled(
+                            Rect::from_min_size(Pos2::new(rx, ry), Vec2::new(2.0, row_h)),
+                            0.0,
+                            cursor_col,
+                        );
+                        // 2. 绘制悬浮名牌胶囊 (Floating Capsule Badge)
+                        let badge_text = format!("{} {}", rc.role.badge_prefix(), rc.display_name);
+                        let badge_font = egui::FontId::proportional(10.0);
+                        let text_galley = painter.layout_no_wrap(badge_text, badge_font, Color32::WHITE);
+                        let text_size = text_galley.size();
+                        let badge_rect = Rect::from_min_size(
+                            Pos2::new(rx - 2.0, (ry - text_size.y - 2.0).max(rect.min.y)),
+                            Vec2::new(text_size.x + 8.0, text_size.y + 2.0),
+                        );
+                        painter.rect_filled(badge_rect, 3.0, cursor_col);
+                        painter.galley(
+                            Pos2::new(badge_rect.min.x + 4.0, badge_rect.min.y + 1.0),
+                            text_galley,
+                            Color32::WHITE,
                         );
                     }
                 }

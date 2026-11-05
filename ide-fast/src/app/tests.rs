@@ -1006,3 +1006,51 @@ fn test_open_review_doc_tab_and_structure() {
     a.open_review_doc();
     assert_eq!(a.docs.len(), 2);
 }
+
+#[test]
+fn test_trigger_coedit_demo_and_remote_cursors() {
+    let (mut a, _g) = app(Settings::default());
+    // 当前文档预设多行内容
+    a.cur().lines = vec![
+        "// Live co-editing file".into(),
+        "fn calculate_metrics() -> usize {".into(),
+        "    let mut total = 0;".into(),
+        "    total".into(),
+        "}".into(),
+    ];
+    a.cur().base = a.cur().lines.clone();
+
+    // 触发协同编辑演示
+    a.trigger_coedit_demo();
+    assert_eq!(a.cur().remote_cursors.len(), 3);
+    assert_eq!(a.cur().remote_cursors[0].display_name, "Coder Alpha");
+    assert_eq!(a.cur().remote_cursors[0].role, ide_agent_router::CollaboratorRole::AiCoder);
+    assert!(a.cur().remote_cursors[0].selection.is_some());
+    assert_eq!(a.cur().remote_cursors[1].display_name, "Optimizer Fast");
+    assert_eq!(a.cur().remote_cursors[2].display_name, "Reviewer Lead");
+}
+
+#[test]
+fn test_doc_section_level_rollback() {
+    let (mut a, _g) = app(Settings::default());
+    a.cur().lines = vec![
+        "line 0: original".into(),
+        "line 1: original".into(),
+        "line 2: original".into(),
+        "line 3: original".into(),
+    ];
+    a.cur().base = a.cur().lines.clone();
+
+    // AI 篡改了 line 1 和 line 2
+    a.cur().lines[1] = "line 1: modified by rogue ai".into();
+    a.cur().lines[2] = "line 2: modified by rogue ai".into();
+    let d = a.cur();
+    assert!(d.lines != d.base);
+
+    // 针对 [1, 2] 区域执行 Staging -> Base 局部回滚
+    let ok = a.cur().rollback_zone(1, 2);
+    assert!(ok);
+    let d = a.cur();
+    assert_eq!(d.lines, d.base);
+    assert!(!d.dirty);
+}

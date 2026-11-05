@@ -1016,5 +1016,9 @@ impl App {
             self.open_review_doc();
             ui.close();
         }
+        if ui.button(trz("多AI协同实时编辑演示…")).clicked() {
+            self.trigger_coedit_demo();
+            ui.close();
+        }
     }
 }

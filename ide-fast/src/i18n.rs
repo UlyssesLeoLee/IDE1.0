@@ -634,6 +634,7 @@ Not signature-verified; install only plugins you trust. Install?"]),
 pub const CMD_T: &[Row] = &[
     // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
     ("多AI协同审查看板…", ["多AI协同审查看板…", "マルチAI共同レビューダッシュボード…", "Multi-AI Review Dashboard…"]),
+    ("多AI协同实时编辑演示…", ["多AI协同实时编辑演示…", "マルチAI共同編集デモ…", "Multi-AI Co-Editing Demo…"]),
     ("协同审查", ["协同审查", "共同レビュー", "Co-Edit Review"]),
     ("查找内容", ["查找内容", "検索内容", "Find what"]),
     (

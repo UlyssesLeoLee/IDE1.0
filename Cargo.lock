@@ -3224,6 +3224,7 @@ dependencies = [
  "ed25519-dalek",
  "editcore",
  "eframe",
+ "ide-agent-router",
  "png 0.17.16",
  "raw-window-handle",
  "rfd",

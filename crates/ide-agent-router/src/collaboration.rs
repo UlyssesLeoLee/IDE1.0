@@ -146,6 +146,92 @@ pub struct KeystrokeBroadcast {
     pub timestamp_epoch_ms: u64,
 }
 
+/// 语义指导区锚点 (ZoneAnchor)
+/// 记录某个特定区域（如函数、类定义）在初始规划时的基准起始行号，
+/// 以及随协同编辑期间上方区域增删行所产生的累积偏移量 `line_delta`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZoneAnchor {
+    pub zone_id: String,
+    pub base_start_line: usize,
+    pub line_delta: i64,
+}
+
+impl ZoneAnchor {
+    pub fn new(zone_id: impl Into<String>, base_start_line: usize) -> Self {
+        Self {
+            zone_id: zone_id.into(),
+            base_start_line,
+            line_delta: 0,
+        }
+    }
+
+    /// 当前实际计算所得起始行（保证不小于 0）
+    pub fn current_start_line(&self) -> usize {
+        let line = self.base_start_line as i64 + self.line_delta;
+        if line < 0 {
+            0
+        } else {
+            line as usize
+        }
+    }
+}
+
+/// 语义锚点偏移表 (AnchorOffsetTable)
+/// 当多 AI 在不同指导区并发增删代码时，各区域的起始行通过本表进行坐标映射，
+/// 避免下方 Agent 的编辑位置因为上方 Agent 增加换行而发生坐标失步。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnchorOffsetTable {
+    pub anchors: Vec<ZoneAnchor>,
+}
+
+impl AnchorOffsetTable {
+    pub fn new() -> Self {
+        Self {
+            anchors: Vec::new(),
+        }
+    }
+
+    /// 注册或更新区域基准行
+    pub fn register_zone(&mut self, zone_id: &str, start_line: usize) {
+        if let Some(anchor) = self.anchors.iter_mut().find(|a| a.zone_id == zone_id) {
+            anchor.base_start_line = start_line;
+        } else {
+            self.anchors.push(ZoneAnchor::new(zone_id, start_line));
+        }
+        // 保持按基准起始行递增排序
+        self.anchors.sort_by_key(|a| a.base_start_line);
+    }
+
+    /// 当某个区域发生行数变化时，更新该区域并通知下方所有区域累计平移
+    pub fn apply_zone_delta(&mut self, zone_id: &str, delta_lines: i64) {
+        if delta_lines == 0 {
+            return;
+        }
+        let target_base = self
+            .anchors
+            .iter()
+            .find(|a| a.zone_id == zone_id)
+            .map(|a| a.base_start_line);
+
+        if let Some(target_base) = target_base {
+            for anchor in self.anchors.iter_mut() {
+                if anchor.base_start_line > target_base {
+                    anchor.line_delta += delta_lines;
+                }
+            }
+        }
+    }
+
+    /// 将区域内相对行号解析为全局实时绝对行号
+    pub fn resolve_line(&self, zone_id: &str, rel_line: usize) -> usize {
+        if let Some(anchor) = self.anchors.iter().find(|a| a.zone_id == zone_id) {
+            anchor.current_start_line() + rel_line
+        } else {
+            rel_line
+        }
+    }
+}
+
 /// 协同会话状态
 pub struct CollaborationSession {
     pub file_id: String,
@@ -153,6 +239,8 @@ pub struct CollaborationSession {
     pub collaborators: HashMap<String, RemoteCursor>,
     /// 行归属矩阵: 每行的最后编辑作者与时间戳 (0-based 行号 -> (AgentId, Timestamp))
     pub line_attributions: HashMap<usize, (String, u64)>,
+    /// 语义锚点偏移映射表
+    pub anchor_table: AnchorOffsetTable,
     next_broadcast_id: u64,
     history: Vec<KeystrokeBroadcast>,
 }
@@ -164,6 +252,7 @@ impl CollaborationSession {
             current_revision: base_revision,
             collaborators: HashMap::new(),
             line_attributions: HashMap::new(),
+            anchor_table: AnchorOffsetTable::new(),
             next_broadcast_id: 1,
             history: Vec::new(),
         }
@@ -371,5 +460,27 @@ mod tests {
         let attr = session.attribution_for_line(10);
         assert!(attr.is_some());
         assert_eq!(attr.unwrap().0, "coder_1");
+    }
+
+    #[test]
+    fn test_anchor_offset_table_shifting() {
+        let mut table = AnchorOffsetTable::new();
+        table.register_zone("zone_header", 0);
+        table.register_zone("zone_parse_fn", 20);
+        table.register_zone("zone_tests", 80);
+
+        assert_eq!(table.resolve_line("zone_header", 5), 5);
+        assert_eq!(table.resolve_line("zone_parse_fn", 3), 23);
+        assert_eq!(table.resolve_line("zone_tests", 2), 82);
+
+        // 在 zone_parse_fn 中插入了 15 行新代码
+        table.apply_zone_delta("zone_parse_fn", 15);
+
+        // zone_header 位于上方，不受影响
+        assert_eq!(table.resolve_line("zone_header", 5), 5);
+        // zone_parse_fn 自身基准未变
+        assert_eq!(table.resolve_line("zone_parse_fn", 3), 23);
+        // zone_tests 位于下方，自动下移 15 行！
+        assert_eq!(table.resolve_line("zone_tests", 2), 97);
     }
 }

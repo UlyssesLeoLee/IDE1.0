@@ -81,6 +81,8 @@ pub struct Doc {
     pub sel_mode: bool,
     /// 大文件自动拆页状态 (None = 普通文档整篇载入; Some = MmapBuffer 分页文档)
     pub pagination: Option<PaginationState>,
+    /// 协同编辑远程协作者/AI光标与选区状态
+    pub remote_cursors: Vec<ide_agent_router::RemoteCursor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,6 +171,7 @@ impl Doc {
             changed_cache: None,
             sel_mode: false,
             pagination: None,
+            remote_cursors: vec![],
         }
     }
 
@@ -238,6 +241,7 @@ impl Doc {
                     smart_indent: false,
                     insert_spaces: false,
                     pagination: Some(page_state),
+                    remote_cursors: vec![],
                 });
             }
             return Err(format!(
@@ -305,6 +309,7 @@ impl Doc {
             smart_indent: false,
             insert_spaces: false,
             pagination: None,
+            remote_cursors: vec![],
         })
     }
 
@@ -524,6 +529,45 @@ impl Doc {
             ));
         }
         &self.changed_cache.as_ref().expect("刚算过").1
+    }
+
+    /// 双缓冲区域级回滚 (Staging -> Certified Base)
+    /// 将指定行范围 [start_line, end_line] 恢复为基线版本 (base) 中的内容，
+    /// 若超出基线版本行数，则用基线版本对应范围替换。
+    pub fn rollback_zone(&mut self, start_line: usize, end_line: usize) -> bool {
+        if start_line > end_line {
+            return false;
+        }
+        let base_len = self.base.len();
+        let curr_len = self.lines.len();
+        if start_line >= base_len && start_line >= curr_len {
+            return false;
+        }
+
+        let actual_start = start_line.min(curr_len);
+        let actual_end = end_line.min(curr_len.saturating_sub(1));
+
+        let base_slice: Vec<String> = if start_line < base_len {
+            let base_end = end_line.min(base_len.saturating_sub(1));
+            self.base[start_line..=base_end].to_vec()
+        } else {
+            vec![]
+        };
+
+        if actual_start <= actual_end && actual_end < curr_len {
+            self.lines.splice(actual_start..=actual_end, base_slice);
+        } else if actual_start == curr_len {
+            self.lines.extend(base_slice);
+        }
+
+        if self.lines.is_empty() {
+            self.lines.push(String::new());
+        }
+
+        self.dirty = self.lines != self.base;
+        self.rev += 1;
+        self.changed_cache = None;
+        true
     }
 
     pub fn row_len(&self, r: usize) -> usize {

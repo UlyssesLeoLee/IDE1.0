@@ -23,8 +23,8 @@ pub mod sandbox;
 pub mod verifier;
 
 pub use collaboration::{
-    CollaborationHub, CollaborationSession, CollaboratorColor, CollaboratorRole, KeystrokeBroadcast,
-    KeystrokeOp, RemoteCursor,
+    AnchorOffsetTable, CollaborationHub, CollaborationSession, CollaboratorColor, CollaboratorRole,
+    KeystrokeBroadcast, KeystrokeOp, RemoteCursor, ZoneAnchor,
 };
 pub use coordinator::{
     CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState, TaskStatus,

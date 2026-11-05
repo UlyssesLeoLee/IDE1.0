@@ -53,6 +53,8 @@
 | WBS-COEDIT.1 | 逐字击键流式广播与远程多人光标状态机 | `crates/ide-agent-router/src/collaboration.rs` | `REQ-COEDIT-01` | Staff | **完成 (Done)** |
 | WBS-COEDIT.2 | Reviewer 最初规划、指引而非限制与终局统筹验收流水线 | `crates/ide-agent-router/src/reviewer.rs` | `REQ-COEDIT-02` | Staff | **完成 (Done)** |
 | WBS-COEDIT.3 | 多 AI 协同审查与验收专用标签页与交互看板 | `ide-fast/src/app.rs`, `ide-fast/src/app/menubar.rs` | `REQ-COEDIT-03` | Staff | **完成 (Done)** |
+| WBS-COEDIT.4 | 语义锚点偏移映射 (`AnchorOffsetTable`) 与实时坐标平移 | `crates/ide-agent-router/src/collaboration.rs` | `REQ-COEDIT-04` | Staff | **完成 (Done)** |
+| WBS-COEDIT.5 | 远程光标、选区高亮与名牌胶囊画布渲染及局部回滚 | `ide-fast/src/app.rs`, `ide-fast/src/doc.rs` | `REQ-COEDIT-05` | Staff | **完成 (Done)** |
 
 ---
 
@@ -64,3 +66,4 @@
 - **门禁 G4 (Vercel 云端部署与端点)**: **已通过 (Passed)** — `https://ide1-0.vercel.app` 生产上线并接入。
 - **门禁 G5 (分布式持久化与沙盒驱动)**: **已通过 (Passed)** — WBS-05 与 WBS-06 经双 Worktree 并行开发与 Rebase 集成，20 项全套单测 100% 通过。
 - **门禁 G6 (Sakura 终极差距补全)**: **已通过 (Passed)** — WBS-07、WBS-08、WBS-09 三路 Lane 经 Worktree 并行开发、Rebase 合并与全量测试验证，23 项专项测试 100% 通过，无回归。
+- **门禁 G7 (多 AI 协同实时编辑与统筹验收)**: **已通过 (Passed)** — 逐字击键广播、语义锚点偏移表、远程多人光标与名牌胶囊绘制、三阶段审查流看板与局部回滚验证全绿 (ide-fast 504 项单测与 ide-agent-router 26 项单测全部 100% 通过)。
