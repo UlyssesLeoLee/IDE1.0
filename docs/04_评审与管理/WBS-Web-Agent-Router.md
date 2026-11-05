@@ -40,14 +40,14 @@
 | WBS-06.1 | `WorkerSandbox` 隔离文件系统驱动与临时工作区 | `crates/ide-agent-router/src/sandbox.rs` | `REQ-EXEC-01` | Mavis | **完成 (Done)** |
 | WBS-06.2 | 编译/测试验证引擎与 Patch 验证流水线 | `crates/ide-agent-router/src/verifier.rs` | `REQ-EXEC-02` | Mavis | **完成 (Done)** |
 | **WBS-07** | **超大文件 (GB 级) 内存映射与惰性分段加载引擎** | | | | |
-| WBS-07.1 | `MmapBuffer` 虚拟内存分块映射与分段行索引 | `crates/editcore/src/mmap_buffer.rs` | `CORE-PERF-01` | Ulysses | **进行中 (Lane A)** |
-| WBS-07.2 | 跨平台文件切片读取与大文件集成测试 | `crates/editcore/tests/mmap_buffer_tests.rs` | `CORE-PERF-02` | Ulysses | **进行中 (Lane A)** |
+| WBS-07.1 | `MmapBuffer` 虚拟内存分块映射与分段行索引 | `crates/editcore/src/mmap_buffer.rs` | `CORE-PERF-01` | Ulysses | **完成 (Done)** |
+| WBS-07.2 | 跨平台文件切片读取与大文件集成测试 | `crates/editcore/tests/mmap_buffer_tests.rs` | `CORE-PERF-02` | Ulysses | **完成 (Done)** |
 | **WBS-08** | **深度 18 页共通与类型别设置及 INI 映射体系** | | | | |
-| WBS-08.1 | Sakura 18 页配置数据模型与 INI 序列化解析 | `crates/editcore/src/sakura_settings.rs` | `CONFIG-DEEP-01` | Mavis | **进行中 (Lane B)** |
-| WBS-08.2 | 避头尾禁则文字集与 24 个自定义用户菜单持久化 | `crates/editcore/tests/sakura_settings_tests.rs` | `CONFIG-DEEP-02` | Mavis | **进行中 (Lane B)** |
+| WBS-08.1 | Sakura 18 页配置数据模型与 INI 序列化解析 | `crates/editcore/src/sakura_settings.rs` | `CONFIG-DEEP-01` | Mavis | **完成 (Done)** |
+| WBS-08.2 | 避头尾禁则文字集与 24 个自定义用户菜单持久化 | `crates/editcore/tests/sakura_settings_tests.rs` | `CONFIG-DEEP-02` | Mavis | **完成 (Done)** |
 | **WBS-09** | **完整 PPA (Pascal-like) 宏脚本语言解释器** | | | | |
-| WBS-09.1 | PPA 词法语法解析器 (AST: var, if/else, while, proc, expr) | `crates/editcore/src/ppa_engine.rs` | `MACRO-PPA-01` | Leo | **进行中 (Lane C)** |
-| WBS-09.2 | PPA 运行时求值器、内置函数绑定与回归测试 | `crates/editcore/tests/ppa_engine_tests.rs` | `MACRO-PPA-02` | Leo | **进行中 (Lane C)** |
+| WBS-09.1 | PPA 词法语法解析器 (AST: var, if/else, while, proc, expr) | `crates/editcore/src/ppa_engine.rs` | `MACRO-PPA-01` | Leo | **完成 (Done)** |
+| WBS-09.2 | PPA 运行时求值器、内置函数绑定与回归测试 | `crates/editcore/tests/ppa_engine_tests.rs` | `MACRO-PPA-02` | Leo | **完成 (Done)** |
 
 ---
 
@@ -58,4 +58,4 @@
 - **门禁 G3 (并发冲突仲裁与恢复验证)**: **已通过 (Passed)** — 100 个并发补丁无损合并、1000 任务批量调度、漂移防御测试全绿。
 - **门禁 G4 (Vercel 云端部署与端点)**: **已通过 (Passed)** — `https://ide1-0.vercel.app` 生产上线并接入。
 - **门禁 G5 (分布式持久化与沙盒驱动)**: **已通过 (Passed)** — WBS-05 与 WBS-06 经双 Worktree 并行开发与 Rebase 集成，20 项全套单测 100% 通过。
-- **门禁 G6 (Sakura 终极差距补全)**: **开发中 (In Progress)** — WBS-07、WBS-08、WBS-09 三路 Lane 并行推进中。
+- **门禁 G6 (Sakura 终极差距补全)**: **已通过 (Passed)** — WBS-07、WBS-08、WBS-09 三路 Lane 经 Worktree 并行开发、Rebase 合并与全量测试验证，23 项专项测试 100% 通过，无回归。
