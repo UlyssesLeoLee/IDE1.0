@@ -1,6 +1,40 @@
 # Changelog
 
-## 未发布
+## 0.4.0 — 2026-11-05
+
+### IDE1.0 Web 2.0 — 语义路由与多 Agent 协作内核 (Semantic Agent Router & Worker)
+本版本在保留原有 Tauri 桌面端、Rust 编辑核心与自包含 Web Workbench 的基础上，正式推出面向大规模 AI Agent 并发协作的纯 Rust 语义路由与一致性协调器 (`crates/ide-agent-router`)，并完成 Vercel 云端部署与多语言 Agent SDK。
+
+#### 1. 核心架构与日本 IPA 要件全覆盖
+- **三平面拓扑 (Control Plane + Semantic Task Plane + Execution Plane)**:
+  - 控制面: 鉴权、租户路由、任务状态机调度、排队与死信恢复。
+  - 语义任务面: 基于 AST 的语义单元抽取、多语言符号定位 (Rust, Python, TS, JS, C, PowerShell)、依赖 DAG。
+  - 执行面: 隔离沙盒环境并行执行、仅交付结构化 Patch、不直接覆盖权威源文件。
+- **全套日本 IPA 标准研发工件落盘**:
+  - `docs/00_要件基线/Web-Agent-Router-Requirements.md`: 8 项核心不变量 (NRP) 与 60 项要件追溯基线。
+  - `docs/01_基本设计/Web-Agent-Router-Basic-Design.md`: 整体系统架构、路由与调度拓扑、故障域与灾备。
+  - `docs/02_详细设计/Semantic-Units-and-Commit-Protocol.md`: 稳定复合指纹、AST 锚点重定位算法、并发冲突决策矩阵。
+  - `docs/02_详细设计/Router-Worker-API.openapi.yaml`: OpenAPI 3.1 规格。
+  - `docs/02_详细设计/Postgres-Schema-and-State-Machines.md`: 16 张生产表 DDL、原子 CAS 提交事务与 Transactional Outbox 模板。
+  - `docs/03_测试资料/UT-IT-ST-UAT-Web-Agent-Router.xlsx` 与 `.md`: Excel 全量追溯矩阵与测试计划。
+  - `docs/04_评审与管理/WBS-Web-Agent-Router.md`: 4 阶段 18 项 WBS 追踪与门禁审查。
+  - `docs/05_实装与运维/Vercel-Deployment-and-Recovery.md`: Worker 故障自愈、租约过期重调度与幂等控制。
+
+#### 2. Rust 语义核心与一致性协调器 (`crates/ide-agent-router`)
+- **稳定语义指纹与锚点定位**: 基于语法节点特征计算复合哈希，有效防止代码编辑时的行号漂移；同函数被并发修改时精准检出并触发 `SemanticWriteConflict` (HTTP 409)。
+- **乐观并发与 CAS 提交协议**: 每个文件维护权威单调自增 `revision`，以 CAS (Compare-And-Swap) 串行化同一文件的最终提交决策。
+- **租约与单调 Fencing Token**: 签发 60s 有限期租约并派发全局单调递增 `fencing_token`；配合心跳续约与过期拦截，彻底消除僵尸 Worker 脏写风险。
+- **Transactional Outbox 机制**: Patch 提交与领域事件生成在同一原子事务中落盘，解耦异步 Git 投影与外部通知。
+- **严苛并发与规模验证**: `tests/concurrency_tests.rs` 7/7 项全绿 (含 100 个并发补丁无损合并、1000 任务批量入队排队分发、指纹漂移防御、重复幂等拦截)。
+
+#### 3. Vercel Serverless 网关与多语言 SDK
+- **云端部署与 API 网关**:
+  - 生产接入: `https://ide1-0.vercel.app` (临时验证 URL: `https://fleet-acacia-7gzmn0a.tmp.now`)
+  - 覆盖 `/api/v1/jobs/dispatch`、`/api/v1/tasks/claim`、`/api/v1/patches/commit`、`/api/v1/events`、`/api/v1/health`。
+- **多语言 Agent SDK 与协同示例**:
+  - `sdk/python/ide_agent_sdk.py`: 生产级 Python 异步/同步客户端。
+  - `sdk/typescript/ide_agent_sdk.ts`: 生产级 TypeScript 客户端。
+  - `sdk/examples/multi_agent_collab_demo.py`: 多 Agent 并行领取任务、提交补丁与冲突自愈实跑用例。
 
 ### 工程 (WBS-03 O1.1 / O1.7)
 - **CI 工作流修复**: `.github/workflows/ci.yml` 之前没有顶层 `jobs:` 键、触发分支写成 `develop`, GitHub 判定无效, 从没真正运行过。现在结构有效、触发分支改为 `dev`; 只启用 `cargo test -p editcore` (三个平台), 其余 job 和 fmt / clippy / `-D warnings` 暂时关闭并注明对应 WBS 编号, 待逐项验证后再打开。

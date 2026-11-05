@@ -63,3 +63,8 @@ tests/uat/fixtures/sample-project/uat-cmd-*.txt
 
 # MSIX 打包产物
 tools/msix/out/
+
+# Vercel deployment cache
+.vercel/
+**/.vercel/
+

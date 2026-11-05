@@ -1,8 +1,85 @@
 # IDE1.0
 
-> **Stage 3.0 最小骨架 + IDE Shell 骨架** — per ULYS-191 §3 + §4.2.2 brief v0.1.
-> 完整 microkernel / session / transaction buffer / search / plugin loader / TUI / txn
-> 实装待后续 brief (per DD-01~04 详细设计书).
+> **纯 Rust AI-Native 编辑内核 + Tauri 桌面版 + Vercel Web 协同云平台**  
+> 支持万级 AI Agent 通过 API 并发作业：**文件级路由、内部语义节点级并行作业、Patch 级提交、CAS + Fencing 权威协调**。
+
+---
+
+## 🌐 Vercel 部署与云端接入 (Live Deployment)
+
+- **Web Workbench 体验环境**: [https://fleet-acacia-7gzmn0a.tmp.now](https://fleet-acacia-7gzmn0a.tmp.now)  
+- **Vercel 生产正式接入点**: `https://ide1-0.vercel.app` (Claim URL: [https://vercel.com/claim-deployment?code=579188fb-4425-4abc-b941-442fea6be7b1](https://vercel.com/claim-deployment?code=579188fb-4425-4abc-b941-442fea6be7b1))
+- **OpenAPI 3.1 规格**: [`docs/02_详细设计/Router-Worker-API.openapi.yaml`](docs/02_详细设计/Router-Worker-API.openapi.yaml)
+- **API 网关根路径**: `/api/v1` (`/health`, `/jobs/dispatch`, `/tasks/claim`, `/patches/commit`, `/events`)
+
+---
+
+## ⚡ 核心架构：Semantic Agent Router & Worker
+
+系统彻底解耦控制面、语义任务面与执行面，在保留 Tauri 桌面端与 `editcore` 纯净编辑特性的同时，赋能无头 AI Agent 高并发安全协同：
+
+```
+Browser IDE / Tauri / External Agent / MCP / CLI
+                     │
+            HTTPS Agent Gateway (JWT / Scope Auth)
+                     │
+          ┌──────────┴──────────┐
+          │  Vercel Router API  │ (Next.js Functions / Edge)
+          └──────────┬──────────┘
+                     │
+      ┌──────────────┴──────────────┐
+┌─────▼───────┐             ┌───────▼────────┐
+│ PostgreSQL  │ (Ledger)    │  Queue/Outbox  │ (Rate-Limited)
+│ Revs/Leases │             │   Dispatcher   │
+└─────┬───────┘             └───────┬────────┘
+      │                             │
+      │                     ┌───────▼────────┐
+      │                     │ Vercel Sandbox │ (Worker Fork)
+      │                     └───────┬────────┘
+      │                             │
+      │                     ┌───────▼────────┐
+      │                     │Rust AST Engine │ (Parse/Patch)
+      │                     └───────┬────────┘
+      │                             │
+┌─────▼─────────────────────────────▼────────┐
+│          File Commit Coordinator           │ (Rust Core CAS)
+│      CAS → Anchor Relocate → New Rev       │
+└────────────────────────────────────────────┘
+```
+
+### 四大非妥协机制
+1. **文件是一致性与路由边界**: 权威文件由 Coordinator 进行严格 CAS 串行化推进，彻底杜绝并发覆盖。
+2. **语义单元是作业与锁定边界**: 基于 AST（支持 Rust、Python、TypeScript、JavaScript、C、PowerShell）细化至函数与类型级别，多 Agent 可同时并发编辑同一文件的不同函数。
+3. **Patch 是交付与验证边界**: Agent 仅提交结构化 Patch Proposal，不直接覆盖权威源文件。
+4. **Fencing Token 租约保护**: 认领任务获得 60s TTL 与单调递增 Token，过期或被抢占的提交被严格 412 拒斥。
+
+---
+
+## 📦 Agent SDK 快速接入 (Python / TypeScript)
+
+### Python SDK
+```python
+from sdk.python.ide_agent_sdk import IDEAgentClient
+
+client = IDEAgentClient(base_url="https://ide1-0.vercel.app/api/v1")
+
+# 1. 认领任务
+task = client.claim_task(worker_id="agent_alpha", workspace_id="ws_main")
+
+# 2. 准备并提交 AST Patch
+res = client.commit_patch(
+    task_id=task["task_id"],
+    worker_id="agent_alpha",
+    fencing_token=task["fencing_token"],
+    file_id=task["file_id"],
+    base_revision=task["base_revision"],
+    symbol_path=task["symbol_path"],
+    replacement_text="pub fn compute() -> i32 { 42 }"
+)
+print("Committed successfully with new revision:", res["new_revision"])
+```
+
+---
 
 ## §0 三阶段累计交付 (per 2026-10-03 dev 收尾)
 

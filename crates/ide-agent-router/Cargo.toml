@@ -1,0 +1,21 @@
+[package]
+name = "ide-agent-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IDE1.0 Web — Semantic Agent Router, Worker Dispatcher & Commit Coordinator"
+
+[dependencies]
+editcore = { path = "../editcore" }
+ide-kernel = { path = "../ide-kernel" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true }

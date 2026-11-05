@@ -3189,6 +3189,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
+name = "ide-agent-router"
+version = "0.3.9"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "editcore",
+ "ide-kernel",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "ide-cli"
 version = "0.3.9"
 dependencies = [
