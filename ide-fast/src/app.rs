@@ -4715,6 +4715,7 @@ impl App {
             _ => crate::view::ThemeColors::builtin(self.dark),
         };
         self.tc.retro16 = self.theme_id == "theme-retro16";
+        self.tc.comic = self.theme_id == "theme-comic";
         let mut vis = match &self.theme_visuals {
             Some(v) => v.clone(),
             None => self.tc.visuals(),

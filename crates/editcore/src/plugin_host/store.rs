@@ -31,6 +31,8 @@ const BUNDLED: &[(&str, &str, &[u8])] = &[
     ("theme-light", "main.js", include_bytes!("../../plugins/theme-light/main.js")),
     ("theme-hc", "manifest.json", include_bytes!("../../plugins/theme-hc/manifest.json")),
     ("theme-hc", "main.js", include_bytes!("../../plugins/theme-hc/main.js")),
+    ("theme-comic", "manifest.json", include_bytes!("../../plugins/theme-comic/manifest.json")),
+    ("theme-comic", "main.js", include_bytes!("../../plugins/theme-comic/main.js")),
 ];
 
 pub trait Http {

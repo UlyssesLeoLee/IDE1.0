@@ -1,0 +1,47 @@
+{
+  "id": "theme-comic",
+  "name": "美漫 3渲2 主题",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.2",
+  "license": "MIT",
+  "description": "美漫赛璐珞描边与波普高饱和色 (3D-to-2D Cel-Shaded Comic)",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": [],
+  "contributes": {
+    "theme": {
+      "id": "comic",
+      "name": "美漫 3渲2",
+      "label": "美漫 3渲2",
+      "translucent": false,
+      "vars": {
+        "--bg-bar": "#1f2230",
+        "--bg-side": "#161822",
+        "--bg-edit": "#12131a",
+        "--bg-rail": "#1a1c27",
+        "--bg-bottom": "#1c1e2b",
+        "--bg-status": "#ffcc00",
+        "--bg-chrome": "#252838",
+        "--bg-raised": "#2a2d40",
+        "--bg-hover": "rgba(255, 204, 0, 0.16)",
+        "--bg-active": "rgba(255, 204, 0, 0.28)",
+        "--bg-input": "#1a1c27",
+        "--border": "#000000",
+        "--border-strong": "#ffcc00",
+        "--fg": "#f4f5f8",
+        "--fg-muted": "#9ba3bf",
+        "--fg-dim": "#636c88",
+        "--fg-on-accent": "#000000",
+        "--blue": "#00b4d8",
+        "--green": "#00f59b",
+        "--yellow": "#ffcc00",
+        "--red": "#ff3366",
+        "--orange": "#ff8800",
+        "--accent-text": "#ffcc00",
+        "--focus-ring": "0 0 0 2px #000000, 0 0 0 4px #ffcc00",
+        "--pill-mix": "85%"
+      }
+    }
+  }
+}

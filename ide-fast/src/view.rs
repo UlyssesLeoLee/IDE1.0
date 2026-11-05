@@ -35,6 +35,8 @@ pub struct ThemeColors {
     pub bg_active: Color32,
     /// retro16 主题 (语法色用它自己的霓虹色); 由 App 按主题 id 设置
     pub retro16: bool,
+    /// comic 主题 (美漫 3渲2: 赛璐珞波普高饱和色); 由 App 按主题 id 设置
+    pub comic: bool,
 }
 
 /// Tauri 的字符标尺: 从第 `first` 列 (从 1 数) 起 `n` 列。10 的倍数写十位数字 (10 -> `1`, 100 -> `0`), 5 的倍数 `+`, 其余 `.`
@@ -97,6 +99,7 @@ impl ThemeColors {
                 bg_hover: Color32::from_white_alpha(20),
                 bg_active: Color32::from_white_alpha(36),
                 retro16: false,
+                comic: false,
             }
         } else {
             ThemeColors {
@@ -118,6 +121,7 @@ impl ThemeColors {
                 bg_hover: Color32::from_black_alpha(10),
                 bg_active: Color32::from_black_alpha(20),
                 retro16: false,
+                comic: false,
             }
         }
     }
@@ -228,7 +232,7 @@ impl ThemeColors {
         } else {
             Theme::light()
         };
-        let p = syntax_palette(self.dark, self.retro16);
+        let p = syntax_palette(self.dark, self.retro16, self.comic);
         let conv = |c: [u8; 3]| Color(c[0], c[1], c[2]);
         let fg = Color(self.fg.r(), self.fg.g(), self.fg.b());
         let mut put = |k: TokenKind, c: [u8; 3], style: Style| {
@@ -238,7 +242,7 @@ impl ThemeColors {
         put(
             TokenKind::Keyword,
             p.keyword,
-            if self.retro16 {
+            if self.retro16 || self.comic {
                 Style::bold()
             } else {
                 Style::default()
@@ -247,7 +251,7 @@ impl ThemeColors {
         put(
             TokenKind::Type,
             p.ty,
-            if self.retro16 {
+            if self.retro16 || self.comic {
                 Style::bold()
             } else {
                 Style::default()
@@ -288,9 +292,18 @@ pub struct SyntaxPalette {
 }
 
 /// Tauri 的 `.tk-keyword #569cd6 / .tk-type #4ec9b0 / .tk-string #ce9178 / .tk-comment #6a9955 / .tk-num #b5cea8 / .tk-annot #dcdcaa`;
-/// 浅色 `#0000ff / #267f99 / #a31515 / #1c7a1c / #098658 / #795e26`; retro16 `#ff2a85 / #b366ff / #00ff66 / #637094 / #ffd700`
-pub fn syntax_palette(dark: bool, retro16: bool) -> SyntaxPalette {
-    if retro16 {
+/// 浅色 `#0000ff / #267f99 / #a31515 / #1c7a1c / #098658 / #795e26`; retro16 `#ff2a85 / #b366ff / #00ff66 / #637094 / #ffd700`; comic `#ff3366 / #00b4d8 / #00f59b / #7a889b / #ffaa00`
+pub fn syntax_palette(dark: bool, retro16: bool, comic: bool) -> SyntaxPalette {
+    if comic {
+        SyntaxPalette {
+            keyword: [0xff, 0x33, 0x66],
+            ty: [0x00, 0xb4, 0xd8],
+            string: [0x00, 0xf5, 0x9b],
+            number: [0xff, 0xaa, 0x00],
+            comment: [0x7a, 0x88, 0x9b],
+            function: [0xff, 0xcc, 0x00],
+        }
+    } else if retro16 {
         SyntaxPalette {
             keyword: [0xff, 0x2a, 0x85],
             ty: [0xb3, 0x66, 0xff],
@@ -645,10 +658,16 @@ mod tests {
             r.syntax_theme().get(TokenKind::Keyword).fg,
             Color(0xff, 0x2a, 0x85)
         );
+        let mut cm = t;
+        cm.comic = true;
+        assert_eq!(
+            cm.syntax_theme().get(TokenKind::Keyword).fg,
+            Color(0xff, 0x33, 0x66)
+        );
     }
 
     #[test]
-    fn all_six_bundled_themes_give_a_distinct_readable_palette() {
+    fn all_bundled_themes_give_a_distinct_readable_palette() {
         let _g = crate::i18n::TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -663,6 +682,7 @@ mod tests {
             "theme-clear",
             "theme-crystal",
             "theme-retro16",
+            "theme-comic",
         ] {
             let spec = rows
                 .iter()
