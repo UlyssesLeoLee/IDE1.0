@@ -347,6 +347,34 @@
     #ed-content .sel-active { background: #264f78; }
     #ed-content .col-sel-active { background: #7a3e9d; }
     #ed-content .caret-mark { color: var(--blue); font-weight: bold; }
+#ps-exec-btn {
+  position: absolute;
+  display: none;
+  z-index: 100;
+  background: #0078d4;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.4;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+#ps-exec-btn:hover {
+  background: #106ebe;
+  transform: translateY(-1px);
+}
+#ps-exec-btn:active {
+  background: #005a9e;
+  transform: translateY(0);
+}
     #completion-popup {
       position: absolute; z-index: var(--z-popup); min-width: 160px; max-height: 220px; overflow: auto;
       background: var(--bg-raised); color: var(--fg); border: 1px solid var(--border-strong); border-radius: var(--r-md);
@@ -2713,6 +2741,7 @@
         <div id="ed-content" tabindex="0" contenteditable="plaintext-only" spellcheck="false" autocapitalize="off" autocorrect="off"></div>
         <div id="caret" aria-hidden="true"></div>
         <div id="curline" aria-hidden="true"></div>
+        <div id="ps-exec-btn" style="display:none;" title="在下方终端中执行选中的 PowerShell 代码"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg><span>执行选中代码</span></div>
       </div>
       <div id="funckeys"></div>
     </div>
@@ -3749,7 +3778,7 @@ async function termSubmit() {
   TERM.pending = line;
   termPaintInput();
   terminalBody.scrollTop = terminalBody.scrollHeight;
-  await sendTerminal(line + "\r");
+  await sendTerminal(line + "\r\n");
 }
 function termHistory(dir) {
   if (!TERM.hist.length) return;
@@ -4200,6 +4229,19 @@ function dispatchCommand(cmd) {
 }
 
 // 终端的键盘输入: 一个看不见的 textarea 抢焦点 (输入法 / 粘贴 / 可见字符都从它的 input 事件来, 和 xterm.js 同一做法)
+const psBtn = document.getElementById("ps-exec-btn");
+if (psBtn) {
+  psBtn.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
+  psBtn.addEventListener("click", async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const t = getActiveTab();
+    if (!t || !selNonEmpty(t)) return;
+    const code = selectionText(t);
+    await executePowerShellCode(code);
+  });
+}
+window.addEventListener("scroll", () => { if (document.getElementById("ps-exec-btn")) updatePsFloatingButton(); }, true);
+
 const termIn = document.getElementById("term-input");
 function termFocus() { if (termIn) termIn.focus({ preventScroll: true }); else terminalBody.focus(); }
 if (termIn) {
@@ -4277,6 +4319,7 @@ if (termIn) {
     "lua": "lua", "pl": "perl", "r": "r",
     "hs": "haskell", "ex": "elixir", "exs": "elixir", "erl": "erlang",
     "scala": "scala", "clj": "clojure", "dart": "dart",
+    "ps1": "powershell", "psm1": "powershell", "psd1": "powershell",
     "txt": "plain", "text": "plain", "log": "plain",
   };
 
@@ -4306,7 +4349,7 @@ if (termIn) {
       sql: "SQL", dockerfile: "Dockerfile", diff: "Diff", vim: "Vim Script",
       lua: "Lua", perl: "Perl", r: "R", haskell: "Haskell", elixir: "Elixir",
       erlang: "Erlang", scala: "Scala", clojure: "Clojure", dart: "Dart",
-      makefile: "Makefile", cmake: "CMake", plain: "Plain",
+      makefile: "Makefile", cmake: "CMake", powershell: "PowerShell", plain: "Plain",
     };
     return labels[lang] || lang;
   }
@@ -4557,6 +4600,33 @@ if (termIn) {
       ],
     },
 
+    powershell: {
+      lineComment: "#",
+      blockComment: ["<#", "#>"],
+      strings: [
+        { open: '"', close: '"', escape: "`" },
+        { open: "'", close: "'", escape: null },
+      ],
+      keywords: new Set([
+        "begin", "break", "catch", "class", "clean", "continue", "data", "default", "define",
+        "do", "dynamicparam", "else", "elseif", "end", "enum", "exit", "filter", "finally",
+        "for", "foreach", "from", "function", "if", "in", "inlinescript", "interface",
+        "module", "namespace", "param", "process", "return", "switch", "throw", "trap",
+        "try", "until", "using", "var", "while", "workflow", "parallel", "sequence"
+      ]),
+      types: new Set([
+        "int", "string", "bool", "array", "hashtable", "xml", "datetime", "byte",
+        "char", "decimal", "double", "float", "single", "long", "sbyte", "psobject",
+        "void", "switch", "regex", "scriptblock"
+      ]),
+      extraRules: [
+        { pattern: RE_NUMBER, cls: "num" },
+        { pattern: String.raw`\$[A-Za-z0-9_:]+`, cls: "special" },
+        { pattern: String.raw`\b[A-Za-z]+-[A-Za-z0-9]+\b`, cls: "keyword" },
+        { pattern: String.raw`-(?:eq|ne|gt|ge|lt|le|like|notlike|match|notmatch|contains|notcontains|in|notin|replace|split|join|and|or|not|xor|band|bor|bxor)\b`, cls: "op" },
+        { pattern: String.raw`\b(?:true|false|null)\b`, cls: "bool" },
+      ],
+    },
     plain: { lineComment: null, strings: [], keywords: new Set(), extraRules: [] },
   };
 
@@ -11036,7 +11106,71 @@ function selCountText(t) {
   if (SELCOUNT.mode === "lines") return "選択 " + (text.split("\n").length) + " 行";
   return "選択 " + [...text].length + " 文字";
 }
-function updateSelCount() { const el = document.getElementById("s-sel"); if (el) el.textContent = selCountText(getActiveTab()); }
+async function executePowerShellCode(code) {
+  if (!code || !code.trim()) return;
+  switchBottomPane("terminal-pane");
+  if (!terminalId) {
+    await createTerminal();
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const cleanCode = code.replace(/\r\n?/g, "\n");
+  const firstLine = cleanCode.split("\n")[0].trim();
+  termEnsureLine();
+  TERM.outEl.textContent = "[PS 执行] ";
+  TERM.inEl.textContent = firstLine + (cleanCode.includes("\n") ? " ..." : "");
+  TERM.lineEl = null;
+  TERM.out = "";
+  termPaintInput();
+  terminalBody.scrollTop = terminalBody.scrollHeight;
+  await sendTerminal(cleanCode + "\r\n");
+  setTip("已在终端中执行 PowerShell 选区 (" + cleanCode.split("\n").length + " 行)");
+  setTimeout(termFocus, 100);
+}
+
+function updatePsFloatingButton() {
+  const btn = document.getElementById("ps-exec-btn");
+  if (!btn) return;
+  const t = getActiveTab();
+  if (!t) { btn.style.display = "none"; return; }
+  const lang = (t.language || Syntax.detectLanguage(t.path || t.name || "")).toLowerCase();
+  const isPs = lang === "powershell" || /\.ps[m|d]?1$/i.test(t.path || t.name || "");
+  if (!isPs || !selNonEmpty(t)) {
+    btn.style.display = "none";
+    return;
+  }
+  let x = 0, y = 0;
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) {
+      x = rect.right - 130;
+      y = rect.top - 34;
+    }
+  }
+  if (!x && !y) {
+    const c = caretRect(t);
+    if (c) {
+      x = c.left + 15;
+      y = c.top - 34;
+    }
+  }
+  if (!x && !y) {
+    const edBox = edContent.getBoundingClientRect();
+    x = edBox.right - 150;
+    y = edBox.top + 10;
+  }
+  x = Math.max(10, Math.min(x, window.innerWidth - 160));
+  y = Math.max(10, Math.min(y, window.innerHeight - 50));
+  btn.style.left = x + "px";
+  btn.style.top = y + "px";
+  btn.style.display = "flex";
+}
+
+function updateSelCount() {
+  const el = document.getElementById("s-sel");
+  if (el) el.textContent = selCountText(getActiveTab());
+  try { updatePsFloatingButton(); } catch (_) {}
+}
 {
   const _rv = renderVim;
   renderVim = function (t) { const r = _rv.apply(this, arguments); try { updateSelCount(); } catch (_) {} return r; };
