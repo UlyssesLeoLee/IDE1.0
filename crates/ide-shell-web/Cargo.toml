@@ -27,6 +27,8 @@ crossterm = { workspace = true }
 editcore = { path = "../editcore" }
 # 编辑内核 — /api/doc/* 的会话状态与编辑语义 (与 web 前端 JS 引擎并行迁移中)
 ide-kernel = { path = "../ide-kernel" }
+# 多租户协同路由与统筹审查引擎 (SaaS Cloud IDE)
+ide-agent-router = { path = "../ide-agent-router" }
 
 [lints]
 workspace = true

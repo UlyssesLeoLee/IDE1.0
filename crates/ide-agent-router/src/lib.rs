@@ -20,6 +20,7 @@ pub mod parser;
 pub mod patch;
 pub mod reviewer;
 pub mod sandbox;
+pub mod tenant;
 pub mod verifier;
 
 pub use collaboration::{
@@ -44,6 +45,10 @@ pub use reviewer::{
     ReviewPhase, ReviewSession, ReviewerHint, UpfrontPlan,
 };
 pub use sandbox::{SandboxEnvironment, SandboxError, SimulationResult, WorkerSandbox};
+pub use tenant::{
+    MultiTenantCollaborationHub, MultiTenantSession, TenantContext, TenantError, TenantQuota,
+    TenantTier,
+};
 pub use verifier::{
     IssueSeverity, PatchVerifier, VerificationIssue, VerificationReport, VerificationStatus,
 };

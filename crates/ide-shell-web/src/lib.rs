@@ -60,6 +60,8 @@ pub struct ShellState {
     docs: std::sync::Mutex<doc_api::DocStore>,
     /// 当前打开的项目根 (单 user, 安全沙箱 = 限此根内访问文件).
     project_root: Mutex<Option<PathBuf>>,
+    /// 多租户 SaaS 协同总枢纽 (纯 Rust 协同编辑与统筹验收)
+    pub collab: std::sync::Arc<ide_agent_router::MultiTenantCollaborationHub>,
 }
 
 impl ShellState {
@@ -74,6 +76,7 @@ impl ShellState {
             project_root: Mutex::new(None),
             auth: auth::Auth::from_env(port),
             docs: Mutex::new(doc_api::DocStore::new()),
+            collab: std::sync::Arc::new(ide_agent_router::MultiTenantCollaborationHub::new()),
         }
     }
 
@@ -84,6 +87,7 @@ impl ShellState {
             project_root: Mutex::new(None),
             auth: a,
             docs: Mutex::new(doc_api::DocStore::new()),
+            collab: std::sync::Arc::new(ide_agent_router::MultiTenantCollaborationHub::new()),
         }
     }
 
@@ -384,6 +388,75 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
+        // ---------- 多租户 SaaS 协同与统筹审查 API (Pure Rust) ----------
+        ("GET", "/api/tenant/context") => {
+            let tenant_id = path_full
+                .split_once('?')
+                .and_then(|(_, q)| {
+                    q.split('&')
+                        .find(|p| p.starts_with("tenant_id="))
+                        .map(|p| &p["tenant_id=".len()..])
+                })
+                .unwrap_or("org_default");
+            if let Some(ctx) = state.collab.get_tenant_context(tenant_id) {
+                let j = serde_json::to_vec(&ctx).unwrap_or_default();
+                send_response(stream, "200 OK", "application/json", &j);
+            } else {
+                send_response(
+                    stream,
+                    "404 Not Found",
+                    "application/json",
+                    br#"{"error":"tenant-not-found"}"#,
+                );
+            }
+        }
+        ("POST", "/api/collab/presence") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let tenant_id = req.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("org_default");
+            let workspace_id = req.get("workspace_id").and_then(|v| v.as_str()).unwrap_or("default");
+            let file_id = req.get("file_id").and_then(|v| v.as_str()).unwrap_or("src/lib.rs");
+            let agent_id = req.get("agent_id").and_then(|v| v.as_str()).unwrap_or("anonymous");
+            let display_name = req.get("display_name").and_then(|v| v.as_str()).unwrap_or(agent_id);
+            let role = match req.get("role").and_then(|v| v.as_str()).unwrap_or("AiCoder") {
+                "Human" => ide_agent_router::CollaboratorRole::Human,
+                "AiOptimizer" => ide_agent_router::CollaboratorRole::AiOptimizer,
+                "AiTester" => ide_agent_router::CollaboratorRole::AiTester,
+                "Reviewer" => ide_agent_router::CollaboratorRole::Reviewer,
+                _ => ide_agent_router::CollaboratorRole::AiCoder,
+            };
+            let cursor = req.get("cursor").and_then(|v| v.as_array()).map(|arr| {
+                [
+                    arr.get(0).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                    arr.get(1).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                ]
+            }).unwrap_or([0, 0]);
+
+            match state.collab.register_presence(
+                tenant_id,
+                workspace_id,
+                file_id,
+                agent_id,
+                display_name,
+                role,
+                cursor,
+                None,
+                None,
+            ) {
+                Ok(rc) => {
+                    let j = serde_json::to_vec(&rc).unwrap_or_default();
+                    send_response(stream, "200 OK", "application/json", &j);
+                }
+                Err(e) => {
+                    let err_json = serde_json::json!({ "error": e.to_string() });
+                    send_response(
+                        stream,
+                        "400 Bad Request",
+                        "application/json",
+                        &serde_json::to_vec(&err_json).unwrap_or_default(),
+                    );
+                }
+            }
+        }
         ("POST", "/api/plugin_load") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
