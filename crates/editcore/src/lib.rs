@@ -72,6 +72,7 @@ pub mod nav;
 pub mod outline_extended;
 pub mod outline_langs;
 pub mod plugin;
+pub mod ppa_engine;
 pub mod ppa_macro;
 pub mod pure_api;
 pub mod ruler;
@@ -100,6 +101,7 @@ pub mod word;
 pub mod zenkaku_hankaku;
 
 pub use mmap_buffer::MmapBuffer;
+pub use ppa_engine::{DefaultMacroContext, MacroContext, PpaError, PpaInterpreter, PpaProgram, PpaValue};
 
 /// 当前 crate 版本 + meta 信息 (对标参考实现的版本结构体).
 pub fn version() -> &'static str {
