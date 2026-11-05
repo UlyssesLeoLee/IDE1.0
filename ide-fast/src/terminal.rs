@@ -248,19 +248,41 @@ fn pump(mut r: impl Read + Send + 'static, tx: std::sync::mpsc::Sender<Vec<u8>>)
 impl Session {
     fn start(cwd: &std::path::Path) -> Result<Session, String> {
         #[cfg(windows)]
-        let mut c = Command::new("cmd.exe");
-        #[cfg(not(windows))]
-        let mut c = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
-        c.current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
+        let spawn_res = {
             use std::os::windows::process::CommandExt;
-            c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        let mut child = c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?;
+            let mut c = Command::new("powershell.exe");
+            c.args(&["-NoLogo", "-ExecutionPolicy", "Bypass"]);
+            c.current_dir(cwd)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .creation_flags(0x0800_0000);
+            c.spawn()
+        };
+        #[cfg(windows)]
+        let mut child = match spawn_res {
+            Ok(child) => child,
+            Err(_) => {
+                use std::os::windows::process::CommandExt;
+                let mut c = Command::new("cmd.exe");
+                c.current_dir(cwd)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .creation_flags(0x0800_0000);
+                c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?
+            }
+        };
+        #[cfg(not(windows))]
+        let mut child = {
+            let mut c = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
+            c.current_dir(cwd)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?
+        };
+
         let (tx, rx) = channel();
         pump(child.stdout.take().ok_or("没有标准输出")?, tx.clone());
         pump(child.stderr.take().ok_or("没有标准错误")?, tx);
@@ -275,11 +297,13 @@ impl Session {
 
     fn send_line(&mut self, line: &str) -> bool {
         let nl: &[u8] = if cfg!(windows) { b"\r\n" } else { b"\n" };
-        self.stdin
-            .write_all(line.as_bytes())
-            .and_then(|_| self.stdin.write_all(nl))
-            .and_then(|_| self.stdin.flush())
-            .is_ok()
+        let clean = line.replace("\r\n", "\n").replace('\r', "\n");
+        for sub in clean.split('\n') {
+            if self.stdin.write_all(sub.as_bytes()).is_err() || self.stdin.write_all(nl).is_err() {
+                return false;
+            }
+        }
+        self.stdin.flush().is_ok()
     }
 
     /// 取已到的输出并解码 (UTF-8 被切断的尾巴留到下一块; 其余走 editcore 的自动判别)
@@ -441,6 +465,15 @@ impl Terminal {
         if self.session.take().is_some() {
             self.buf.feed("\n[会话已重启]\n");
         }
+    }
+
+    /// 向活动终端会话发送脚本代码并立即执行 (如 PowerShell 选区一键执行)
+    pub fn execute_script(&mut self, cwd: &std::path::Path, code: &str) {
+        let trimmed = code.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.session_send(cwd, trimmed);
     }
 
     fn session_send(&mut self, cwd: &std::path::Path, cmd: &str) {
@@ -681,5 +714,13 @@ mod tests {
         }
         assert!(b.text().len() <= MAX_KEEP, "{}", b.text().len());
         assert!(b.text().ends_with(&line));
+    }
+
+    #[test]
+    fn test_execute_script_sends_to_terminal() {
+        let mut t = Terminal::new();
+        t.execute_script(&PathBuf::from("."), "Write-Host 'hello from powershell'");
+        assert!(t.busy());
+        assert!(t.display().contains("Write-Host 'hello from powershell'"));
     }
 }

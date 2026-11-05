@@ -240,6 +240,7 @@ const MSG_T: &[Row] = &[
     ("[图片 {}: {}]", "[画像 {}: {}]", "[image {}: {}]"),
     ("[图片 {}: {} (只支持本地 PNG)]", "[画像 {}: {} (ローカルの PNG のみ対応)]", "[image {}: {} (local PNG only)]"),
     ("暂无终端会话", "ターミナルセッションなし", "No terminal session"),
+    ("已在 PowerShell 终端执行选区 ({} 行)", "PowerShell ターミナルで選択範囲を実行しました ({} 行)", "Executed selection in PowerShell terminal ({} lines)"),
     ("(无名)", "(名前なし)", "(unnamed)"),
     ("无活动", "アクティブなし", "No activity"),
     ("无标题", "無題", "Untitled"),

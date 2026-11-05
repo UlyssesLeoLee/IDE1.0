@@ -297,6 +297,25 @@ impl App {
         self.expand_dock(crate::panels::Dock::Bottom);
     }
 
+    /// 在底端 PowerShell 终端执行当前选区中的 PowerShell 代码 (对齐 Tauri/Web 行为)
+    pub(super) fn execute_selected_powershell(&mut self) {
+        let code = self.cur().selected_text();
+        if code.trim().is_empty() {
+            return;
+        }
+        let line_count = code.lines().count();
+        self.open_exec_terminal();
+        let cwd = self
+            .cur()
+            .path
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        self.term.execute_script(&cwd, &code);
+        self.cur().tip = format!("已在 PowerShell 终端执行选区 ({line_count} 行)");
+    }
+
     /// 立即备份 (同 Tauri 的「立即备份」)
     pub(super) fn backup_now(&mut self) {
         let r = self.sys.backup.flush_now(&self.docs);

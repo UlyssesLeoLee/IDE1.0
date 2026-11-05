@@ -168,6 +168,61 @@ impl Doc {
     pub fn open_with(id: u64, path: &Path, forced: Option<&str>) -> Result<Self, String> {
         let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         if size > HARD_LIMIT {
+            if let Ok(mmap) = editcore::MmapBuffer::open(path) {
+                let total_lines = mmap.line_count();
+                let load_count = total_lines.min(50_000);
+                let mut lines = mmap.get_lines_range(0, load_count);
+                if lines.is_empty() {
+                    lines.push(String::new());
+                }
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "?".into());
+                return Ok(Doc {
+                    id,
+                    syntax: None,
+                    path: Some(path.to_path_buf()),
+                    name,
+                    base: lines.clone(),
+                    changed_cache: None,
+                    sel_mode: false,
+                    lines,
+                    cursor: [0, 0],
+                    sel: None,
+                    anchor: None,
+                    goal_col: None,
+                    dirty: false,
+                    charset: Charset::Utf8,
+                    bom: Bom::None,
+                    eol: Eol::Lf,
+                    undo: vec![],
+                    redo: vec![],
+                    tip: format!(
+                        "超大文件 ({} MB) 已通过 MmapBuffer 分块加载前 {} 行 (共 {} 行)",
+                        size / 1024 / 1024,
+                        load_count,
+                        total_lines
+                    ),
+                    reveal: true,
+                    rev: 0,
+                    bookmarks: vec![],
+                    box_sel: None,
+                    extra: vec![],
+                    rec: None,
+                    last_macro: vec![],
+                    folds: vec![],
+                    group: 0,
+                    overwrite: false,
+                    readonly: true,
+                    grep_result: false,
+                    stamp: None,
+                    mixed_eol: false,
+                    auto_indent: true,
+                    smart_indent: false,
+                    insert_spaces: false,
+                });
+            }
             return Err(format!(
                 "文件太大 ({} MB, 上限 {} MB): 高速版把整篇载入内存, 请用专门的大文件查看器",
                 size / 1024 / 1024,
@@ -313,6 +368,41 @@ impl Doc {
         } else {
             "保存时不带 BOM".into()
         };
+    }
+
+    /// 当前文档是否为 PowerShell 脚本 (.ps1, .psm1, .psd1 或语法标记)
+    pub fn is_powershell(&self) -> bool {
+        let name = self.name.to_ascii_lowercase();
+        name.ends_with(".ps1")
+            || name.ends_with(".psm1")
+            || name.ends_with(".psd1")
+            || self
+                .syntax
+                .as_deref()
+                .map(|s| s.eq_ignore_ascii_case("powershell"))
+                .unwrap_or(false)
+    }
+
+    /// 获取当前选中的纯文本 (若无选区则返回空字符串)
+    pub fn selected_text(&self) -> String {
+        let Some(s) = self.sel else {
+            return String::new();
+        };
+        let (r0, c0, r1, c1) = (s[0], s[1], s[2], s[3]);
+        if r0 >= self.lines.len() {
+            return String::new();
+        }
+        let mut out = Vec::new();
+        for r in r0..=r1.min(self.lines.len() - 1) {
+            let line = &self.lines[r];
+            let chars: Vec<char> = line.chars().collect();
+            let start = if r == r0 { c0.min(chars.len()) } else { 0 };
+            let end = if r == r1 { c1.min(chars.len()) } else { chars.len() };
+            if start <= end {
+                out.push(chars[start..end].iter().collect::<String>());
+            }
+        }
+        out.join("\n")
     }
 
     /// 文件属性 (给「文件属性」对话框)
@@ -2280,5 +2370,31 @@ b
         assert!(d.step_changed(false));
         assert_eq!(d.cursor[0], 2);
         assert!(!d.step_changed(false));
+    }
+
+    #[test]
+    fn powershell_file_detection_and_selection_text() {
+        let mut d = Doc::untitled(1, 1);
+        d.name = "deploy.ps1".into();
+        assert!(d.is_powershell());
+
+        d.name = "module.psm1".into();
+        assert!(d.is_powershell());
+
+        d.name = "test.txt".into();
+        assert!(!d.is_powershell());
+        d.syntax = Some("PowerShell".into());
+        assert!(d.is_powershell());
+
+        d.lines = vec![
+            "Write-Host 'Line 1'".into(),
+            "Get-Process | Where-Object CPU -gt 10".into(),
+            "Stop-Service foo".into(),
+        ];
+        assert_eq!(d.selected_text(), "");
+
+        // 选取第 0 行后半部分至第 1 行前半部分
+        d.sel = Some([0, 6, 1, 11]);
+        assert_eq!(d.selected_text(), "Host 'Line 1'\nGet-Process");
     }
 }

@@ -2047,13 +2047,6 @@ impl App {
 
     /// PPA: 脚本 = 选区 (没有选区就是当前 .ppa 文档), 作用在最近活动的另一份文档上 (有选区且只有一份文档就作用在自己上)
     fn run_ppa_doc(&mut self) {
-        let Some(row) = plugins::rows()
-            .into_iter()
-            .find(|r| r.id == "ppa" && r.enabled)
-        else {
-            self.cur().tip = tr("dlg.ppa-off").into();
-            return;
-        };
         let sel = crate::plugin_ui::selection_text(self.cur());
         let script = if !sel.is_empty() {
             sel
@@ -2075,6 +2068,23 @@ impl App {
             self.cur().tip = tr("dlg.ppa-no-target").into();
             return;
         }
+
+        let Some(row) = plugins::rows()
+            .into_iter()
+            .find(|r| r.id == "ppa" && r.enabled)
+        else {
+            // 原生纯 Rust PPA 解释引擎就地执行 (WBS-09 对齐)
+            let mut interp = editcore::PpaInterpreter::new();
+            match interp.eval(&script) {
+                Ok(_) => {
+                    self.docs[self.active].tip = "原生 PPA 宏执行完成".into();
+                }
+                Err(e) => {
+                    self.docs[self.active].tip = format!("PPA 宏执行失败: {e}");
+                }
+            }
+            return;
+        };
         self.plug.start(
             "ppa",
             &row.perms,
@@ -2098,7 +2108,15 @@ impl App {
                 .into_iter()
                 .find(|r| r.id == "ppa" && r.enabled)
             else {
-                self.cur().tip = tr("dlg.ppa-off").into();
+                let mut interp = editcore::PpaInterpreter::new();
+                match interp.eval(&slot.code) {
+                    Ok(_) => {
+                        self.cur().tip = "原生 PPA 宏执行完成".into();
+                    }
+                    Err(e) => {
+                        self.cur().tip = format!("PPA 宏执行失败: {e}");
+                    }
+                }
                 return;
             };
             let t = self.active.min(self.docs.len() - 1);
@@ -2562,6 +2580,35 @@ impl App {
             }
             if cmd(ctx, m, k) {
                 self.run_entry(idx, ctx);
+            }
+        }
+        // Ctrl+1 ~ Ctrl+9: 快速选择并切换标签 (例如 Ctrl+4 快速选中第 4 个文件标签)
+        for (num_idx, num_key) in [
+            (0, Key::Num1),
+            (1, Key::Num2),
+            (2, Key::Num3),
+            (3, Key::Num4),
+            (4, Key::Num5),
+            (5, Key::Num6),
+            (6, Key::Num7),
+            (7, Key::Num8),
+            (8, Key::Num9),
+        ] {
+            if cmd(ctx, Modifiers::CTRL, num_key) {
+                if num_idx < self.docs.len() {
+                    self.active = num_idx;
+                    self.jump_mark();
+                    self.cur().reveal = true;
+                }
+            }
+        }
+        // Ctrl+Enter: 在 PowerShell 选区激活时直接在终端执行选中内容
+        if cmd(ctx, Modifiers::CTRL, Key::Enter) {
+            let is_ps = self.cur().is_powershell();
+            let has_sel = self.cur().sel.is_some()
+                && self.cur().sel.map(|s| (s[0], s[1]) != (s[2], s[3])).unwrap_or(false);
+            if is_ps && has_sel {
+                self.execute_selected_powershell();
             }
         }
         // Esc: 先停掉正在跑的 Grep, 再关查找栏, 最后才是清矩形选区 / 多光标
@@ -4316,6 +4363,47 @@ impl App {
             }
         }
         let _ = max_cols;
+        // PowerShell 选区浮动执行胶囊 (对齐 Tauri/Web 体验: 浮现执行按钮 + Ctrl+Enter)
+        let is_ps = self.docs[ai].is_powershell();
+        let has_sel = self.docs[ai].sel.is_some()
+            && self.docs[ai].sel.map(|s| (s[0], s[1]) != (s[2], s[3])).unwrap_or(false);
+        if is_ps && has_sel {
+            if let Some(pos) = self.sys.caret_screen {
+                let btn_pos = egui::pos2(
+                    (pos.x + 8.0).min(ui.available_rect_before_wrap().max.x - 180.0),
+                    (pos.y - 34.0).max(rect.min.y + 4.0),
+                );
+                let area_id = egui::Id::new("ps-floating-exec-btn");
+                let mut exec_clicked = false;
+                egui::Area::new(area_id)
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(btn_pos)
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .fill(tc.blue)
+                            .corner_radius(egui::CornerRadius::same(5))
+                            .stroke(egui::Stroke::new(1.0, Color32::from_white_alpha(180)))
+                            .inner_margin(egui::Margin::symmetric(8, 4))
+                            .show(ui, |ui| {
+                                let btn = ui.add(
+                                    egui::Button::new(
+                                        egui::RichText::new("▶ 执行选中代码 (Ctrl+Enter)")
+                                            .color(Color32::WHITE)
+                                            .size(11.0)
+                                            .strong(),
+                                    )
+                                    .frame(false),
+                                );
+                                if btn.clicked() {
+                                    exec_clicked = true;
+                                }
+                            });
+                    });
+                if exec_clicked {
+                    self.execute_selected_powershell();
+                }
+            }
+        }
         if self.first_frame {
             self.first_frame = false;
             self.trace.mark("first frame");
