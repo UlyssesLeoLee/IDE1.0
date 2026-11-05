@@ -225,6 +225,23 @@
        Ctrl+` 会 toggle status-active, 结果展开时反被隐藏. */
     #bottom-panel[data-collapsed="true"] #bottom-body { display: none; }
 
+        /* ===== Modern Sleek Scrollbars ===== */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(130, 130, 130, 0.28);
+      border-radius: 4px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+      transition: background 0.2s ease;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(160, 160, 160, 0.5);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    * { scrollbar-width: thin; scrollbar-color: rgba(130,130,130,0.28) transparent; }
+
     /* ===== Syntax token classes (tk-* 前缀) ===== */
     #ed-content .tk-keyword { color: #569cd6; }
     #ed-content .tk-type { color: #4ec9b0; }
@@ -351,29 +368,43 @@
   position: absolute;
   display: none;
   z-index: 100;
-  background: #0078d4;
+  background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 6px;
+  padding: 4px 10px;
   font-size: 12px;
   font-family: var(--font-ui, system-ui, sans-serif);
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.42), 0 0 12px rgba(0, 120, 212, 0.38);
   user-select: none;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   line-height: 1.4;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: all 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 #ps-exec-btn:hover {
-  background: #106ebe;
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #106ebe 0%, #1682c9 100%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.52), 0 0 16px rgba(16, 110, 190, 0.6);
+  transform: translateY(-2px) scale(1.02);
 }
 #ps-exec-btn:active {
   background: #005a9e;
-  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transform: translateY(0) scale(0.98);
+}
+#ps-exec-btn .ps-badge {
+  font-size: 10px;
+  opacity: 0.88;
+  background: rgba(0, 0, 0, 0.32);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-family: var(--font-ui, monospace);
+  letter-spacing: 0.02em;
 }
     #completion-popup {
       position: absolute; z-index: var(--z-popup); min-width: 160px; max-height: 220px; overflow: auto;
@@ -448,7 +479,8 @@
     .output-empty { padding: 20px; text-align: center; color: var(--fg-muted); }
 
     /* ===== Status Bar ===== */
-    .s-item { padding: 0 8px; border-right: 1px solid color-mix(in srgb, var(--fg-on-accent) 20%, transparent); }
+    .s-item { padding: 0 8px; border-right: 1px solid color-mix(in srgb, var(--fg-on-accent) 20%, transparent); transition: background var(--dur-fast) var(--ease); }
+    .s-item:hover { background: rgba(255, 255, 255, 0.12); }
     .s-mode { font-weight: bold; }
     /* pill = accent darkened to 62% so the status text colour reads on it (white on the light accents was 2.0-3.0:1); THEMES.hc raises --pill-mix because its status text is black */
     .s-mode[data-mode="NORMAL"] { background: color-mix(in srgb, var(--blue) var(--pill-mix, 62%), #000); padding: 0 8px; }
@@ -1048,7 +1080,7 @@
       transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
     }
     .tab:hover { background: var(--bg-hover); color: var(--fg); }
-    .tab.active { background: var(--bg-edit); color: var(--fg); }
+    .tab.active { background: var(--bg-edit); color: var(--fg); box-shadow: inset 0 2px 0 0 var(--blue); }
     .tab-dirty::after { content: "●"; color: var(--fg); margin-left: var(--sp-1); }
     .tab-close {
       width: 18px; height: 18px; border-radius: var(--r-sm);
@@ -2741,7 +2773,7 @@
         <div id="ed-content" tabindex="0" contenteditable="plaintext-only" spellcheck="false" autocapitalize="off" autocorrect="off"></div>
         <div id="caret" aria-hidden="true"></div>
         <div id="curline" aria-hidden="true"></div>
-        <div id="ps-exec-btn" style="display:none;" title="在下方终端中执行选中的 PowerShell 代码"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg><span>执行选中代码</span></div>
+        <div id="ps-exec-btn" style="display:none;" title="在下方终端中执行选中的 PowerShell 代码 (快捷键: Ctrl+Enter)"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg><span>执行选中代码</span><span class="ps-badge">Ctrl+Enter</span></div>
       </div>
       <div id="funckeys"></div>
     </div>
@@ -6145,6 +6177,15 @@ if (edContent) edContent.addEventListener("keydown", (e) => {
   if (t && mode === "INSERT" && !e.altKey && !e.metaKey && !t.colSel && handleEditNavKey(e, t, vim)) return;
 
   if (e.ctrlKey) {
+    if (e.key === "Enter") {
+      const isPs = (t.language || Syntax.detectLanguage(t.path || t.name || "")).toLowerCase() === "powershell" || /\.ps[m|d]?1$/i.test(t.path || t.name || "");
+      if (isPs && selNonEmpty(t)) {
+        e.preventDefault();
+        const code = selectionText(t);
+        executePowerShellCode(code);
+        return;
+      }
+    }
     const k = e.key.toLowerCase();
     if (k === "s") { e.preventDefault(); saveByKey(e); return; }
     if (k === "n") {
