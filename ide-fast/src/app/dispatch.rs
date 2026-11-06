@@ -118,7 +118,13 @@ impl App {
             KApp::MacroRunPpa => self.run_ppa_doc(),
             KApp::Terminal => self.toggle_dock_open(crate::panels::Dock::Bottom),
             KApp::AiChat => self.ai_toggle(),
-            KApp::MdPreview => self.md_preview = !self.md_preview,
+            KApp::MdPreview => {
+                if super::nemaopts::is_nema_doc(&self.docs[ai]) {
+                    self.nema_preview = !self.nema_preview;
+                } else {
+                    self.md_preview = !self.md_preview;
+                }
+            }
             KApp::NemaConvert => self.nema_convert(),
             KApp::Dark => self.dark = !self.dark,
             KApp::Highlight => self.highlight = !self.highlight,

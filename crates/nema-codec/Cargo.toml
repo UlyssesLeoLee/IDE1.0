@@ -1,0 +1,17 @@
+[package]
+name = "nema-codec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "NEMA v1.5 lossless structured text parser, token-aware transport codec (.nema / .nemat), graph layout engine, and IME1.0 lease arbitrator"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

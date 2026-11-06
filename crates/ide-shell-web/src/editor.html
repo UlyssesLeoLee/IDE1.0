@@ -13612,7 +13612,9 @@ function mdCommand(cmd) {
   return runEdit(cmd);
 }
 function toggleMdPreview() {
-  const t = getActiveTab(); if (!t || !isMdTab(t)) { setTip("当前文档不是 Markdown"); return; }
+  const t = getActiveTab();
+  if (t && isNemaTab(t)) return toggleNemaPreview();
+  if (!t || !isMdTab(t)) { setTip("当前文档不是 Markdown"); return; }
   t.mdPreview = !t.mdPreview;
   mdRefresh();
   if (!t.mdPreview) edContent.focus({ preventScroll: true });
@@ -13776,12 +13778,54 @@ const NEMA_BTNS = [
   ["$ 词典", "nema-insert-dict", "在文档顶部声明或插入共享字典 (\\t$N)"],
   ["^ 引用", "nema-insert-ref", "插入 ^0 词典引用原子"],
   "|",
-  ["⚡ 自动转换", "nema-convert", "执行 NEMA 编码/解码与无损校验 (Ctrl+Shift+M)"],
+  ["⚡ 自动转换", "nema-convert", "执行 NEMA 编码/解码与无损校验 (Ctrl+Alt+M)"],
   ["◈ 字典候选", "nema-candidates", "扫描并查看文档内高频词典候选词"],
   ["🔒 锁定字典", "nema-lock-dict", "固化当前高频候选词并生成 ^N 引用"],
-  ["Token 对照", "nema-token-diff", "查看 Native vs Nemat Token 节省率与对比"],
+  ["📍 复用位置", "nema-show-reused", "显示字典引用与高频复用词位置"],
+  ["Token 对照", "nema-token-diff", "查看 Native vs Nemat Token 节省率与对比 (字节启发不等同于计费 Token)"],
 ];
-const NEMA = { built: false, timer: 0, view: "table" };
+const NEMA = {
+  built: false,
+  timer: 0,
+  view: "table",
+  epoch: 1,
+  mode: "observer",
+  lastKey: "",
+  lastResult: "",
+};
+
+function nemaHash(text) {
+  let h = 0x811c9dc5 | 0;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+function nemaRequestLease(sourceHash, revision) {
+  const key = sourceHash + ":" + revision;
+  if (NEMA.lastKey === key && NEMA.lastResult) {
+    return { epoch: NEMA.epoch, key, cached: NEMA.lastResult };
+  }
+  NEMA.epoch += 1;
+  NEMA.mode = "converting";
+  return { epoch: NEMA.epoch, key, cached: null };
+}
+
+function nemaReleaseLease(lease, outText) {
+  if (lease && lease.epoch === NEMA.epoch && outText != null) {
+    NEMA.lastKey = lease.key;
+    NEMA.lastResult = outText;
+  }
+  NEMA.mode = "observer";
+}
+
+function isProtectedCodeTab(t) {
+  if (!t) return false;
+  const p = String(t.path || t.name || "").toLowerCase();
+  if (/\.(nema|nemat|txt|csv|tsv|md|markdown)$/.test(p)) return false;
+  if (/\.(rs|ts|tsx|js|jsx|py|go|c|cc|cpp|h|hpp|java|cs|toml|json|yaml|yml|html|css|sh|ps1|sql|diff|patch|xml|lock)$/.test(p)) return true;
+  const lang = String(t.language || "").toLowerCase();
+  return ["rust", "typescript", "javascript", "python", "c", "cpp", "go", "java", "json", "html", "css", "diff", "toml", "yaml", "sql", "shell"].includes(lang);
+}
 
 function isNemaTab(t) {
   if (!t) return false;
@@ -13815,6 +13859,7 @@ function nemaCommand(cmd) {
   if (cmd === "nema-convert") return nemaConvert(t);
   if (cmd === "nema-candidates") return nemaShowCandidates(t);
   if (cmd === "nema-lock-dict") return nemaLockDictionary(t);
+  if (cmd === "nema-show-reused") return nemaShowReused(t);
   if (cmd === "nema-token-diff") return nemaTokenDiff(t);
   if (cmd === "nema-toggle-header") return nemaToggleHeader(t);
   if (cmd === "nema-add-row") return nemaAddRow(t);
@@ -13849,7 +13894,65 @@ function nemaRefresh() {
   }
 }
 
-/* NEMA JS 规范解析器 (与 Python 参考实现 core.py 1:1 对齐) */
+/* NEMA JS 规范解析与分词器 (与 Python core.py & crates/nema-codec 1:1 对齐) */
+function nemaUnescapeOpaque(text) {
+  let out = "", i = 0;
+  while (i < text.length) {
+    if (text[i] === "\\" && i + 1 < text.length && "\\.^".includes(text[i + 1])) {
+      out += text[i + 1];
+      i += 2;
+    } else {
+      out += text[i];
+      i += 1;
+    }
+  }
+  return out;
+}
+
+function nemaIsCjkChar(ch) {
+  if (!ch) return false;
+  const cp = ch.codePointAt(0);
+  return (cp >= 0x3400 && cp <= 0x4dbf) || (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3040 && cp <= 0x30ff) || (cp >= 0xac00 && cp <= 0xd7af);
+}
+
+function renderNemaText(token) {
+  const raw = nemaUnescapeOpaque(String(token || ""));
+  if (!raw) return "";
+  if (/^(https?:\/\/|\/|[A-Za-z]:\\)/.test(raw)) return raw;
+  const parts = [];
+  const re = /[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|[0-9]+(?:\.[0-9]+)*|[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+|[^A-Za-z0-9\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) parts.push(m[0]);
+  if (!parts.length) return raw;
+  let out = parts[0];
+  for (let i = 1; i < parts.length; i++) {
+    const prev = parts[i - 1], cur = parts[i];
+    const prevAscii = /^[A-Za-z0-9]+$/.test(prev), curAscii = /^[A-Za-z0-9]+$/.test(cur);
+    if (prevAscii && curAscii) out += " " + cur;
+    else out += cur;
+  }
+  return out;
+}
+
+function joinNemaCell(chunks, dict) {
+  if (!chunks || !chunks.length) return "";
+  const expanded = chunks.map((part) => {
+    let s = String(part || "").replace(/\^([0-9]+)/g, (_, idx) => {
+      const ix = parseInt(idx, 10);
+      return dict && dict[ix] != null ? dict[ix] : "^" + ix;
+    });
+    return renderNemaText(s);
+  }).filter(Boolean);
+  if (!expanded.length) return "";
+  let out = expanded[0];
+  for (let i = 1; i < expanded.length; i++) {
+    const prevLast = out[out.length - 1], curFirst = expanded[i][0];
+    if (nemaIsCjkChar(prevLast) && nemaIsCjkChar(curFirst)) out += expanded[i];
+    else out += " " + expanded[i];
+  }
+  return out;
+}
+
 function parseNemaSource(source) {
   let s = String(source || "").replace(/\r\n?/g, "\n");
   while (s.endsWith("\n\n\n\n")) s = s.slice(0, -1);
@@ -13888,13 +13991,12 @@ function parseNemaSource(source) {
       continue;
     }
     if (!current) {
-      // 缺省 Table 域头容错
       current = { id: "1", revision: 1, mode: "table", columns: [], explicit_header: false, records: [] };
       domains.push(current);
     }
     // 表头精确判断: \\ 开头
     if (current.mode === "table" && current.records.length === 0 && !current.explicit_header && line.startsWith("\\ ")) {
-      const names = line.slice(2).split(" ").filter(Boolean);
+      const names = line.slice(2).split(" ").filter(Boolean).map(renderNemaText);
       if (names.length) {
         current.columns = names;
         current.explicit_header = true;
@@ -13902,7 +14004,6 @@ function parseNemaSource(source) {
       continue;
     }
     if (line.startsWith(" ")) {
-      // 纵向意群续接行
       if (current.records.length > 0) {
         const lead = line.length - line.trimStart().length;
         const col = lead - 1;
@@ -13912,18 +14013,18 @@ function parseNemaSource(source) {
         rec.cells[col].push(part);
       }
     } else {
-      // 记录行
       let emptyTail = false;
       let clean = line;
       if (clean.endsWith(" .") && !clean.endsWith(" \\.")) {
         emptyTail = true;
         clean = clean.slice(0, -2);
       }
-      const rawCells = clean.split(" ");
+      const rawCells = clean ? clean.split(" ") : [];
       const rec = { cells: [], tail_empty: emptyTail };
       for (let j = 0; j < rawCells.length; j++) {
-        rec.cells.push([rawCells[j]]);
+        rec.cells.push(rawCells[j] === "" ? [] : [rawCells[j]]);
       }
+      if (emptyTail) rec.cells.push([]);
       current.records.push(rec);
     }
     if (current.mode === "table") {
@@ -13938,29 +14039,43 @@ function parseNemaSource(source) {
   return { dictionary, domains };
 }
 
-/* 渲染单格意群文本, 支持词典原子 ^N 与 CamelCase 分词 */
+/* 渲染单格意群文本, 支持词典原子 ^N 徽标与 CamelCase 分词 */
 function renderNemaCell(parts, dict) {
   if (!parts || !parts.length) return "";
   const out = [];
   for (const p of parts) {
-    let s = p;
-    // 替换 ^N 为药丸徽标
-    s = s.replace(/\^([0-9]+)/g, (_, idx) => {
-      const ix = parseInt(idx, 10);
-      const val = dict && dict[ix] ? dict[ix] : "^" + ix;
-      return `<span class="nema-pill" title="词典 [${ix}]: ${escapeHtml(val)}">^${ix} (${escapeHtml(val)})</span>`;
-    });
-    // 转义反斜杠
-    s = s.replace(/\\\./g, ".").replace(/\\\^/g, "^").replace(/\\\\/g, "\\");
-    out.push(s);
+    if (!p) continue;
+    const segs = String(p).split(/(\^[0-9]+)/g);
+    let lineHtml = "";
+    for (const seg of segs) {
+      if (!seg) continue;
+      const m = seg.match(/^\^([0-9]+)$/);
+      if (m) {
+        const ix = parseInt(m[1], 10);
+        const rawVal = dict && dict[ix] != null ? dict[ix] : "^" + ix;
+        const disp = renderNemaText(rawVal);
+        lineHtml += `<span class="nema-pill" title="词典 [${ix}]: ${escapeHtml(rawVal)}">^${ix} (${escapeHtml(disp)})</span>`;
+      } else {
+        lineHtml += escapeHtml(renderNemaText(seg));
+      }
+    }
+    if (lineHtml) out.push(lineHtml);
   }
   return out.join("<br>");
 }
 
-/* NEMA Graph 确定性多有向图布局 (1:1 移植自官方 website/graph.js) */
-function layoutNemaGraph(domain) {
+/* NEMA Graph 确定性多有向图布局 (1:1 移植自官方 website/graph.js, 含矩形边界锚点 borderPoint) */
+function layoutNemaGraph(domain, dict) {
   const WIDTH = 680, HEIGHT = 420, NODE_WIDTH = 110, NODE_HEIGHT = 50;
   const point = (x, y) => ({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+  const borderPoint = (center, target) => {
+    const dx = target.x - center.x, dy = target.y - center.y;
+    if (dx === 0 && dy === 0) return point(center.x, center.y);
+    const sx = (NODE_WIDTH / 2) / Math.max(Math.abs(dx), 0.0001);
+    const sy = (NODE_HEIGHT / 2) / Math.max(Math.abs(dy), 0.0001);
+    const s = Math.min(sx, sy);
+    return point(center.x + dx * s, center.y + dy * s);
+  };
   const nodes = [], edges = [];
   const EDGE_RE = /^([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)$/;
 
@@ -13972,16 +14087,16 @@ function layoutNemaGraph(domain) {
       const a = m[1], op = m[2], eid = m[3], b = m[5];
       let from = a, to = b, dir = op === "=" ? "undirected" : "directed";
       if (op === "<") { from = b; to = a; }
-      const rel = (rec.cells[1] || []).join(" ");
-      const desc = rec.cells.slice(2).map(c => c.join(" ")).join(" · ");
+      const rel = joinNemaCell(rec.cells[1] || [], dict);
+      const desc = rec.cells.slice(2).map(c => joinNemaCell(c, dict)).filter(Boolean).join(" · ");
       edges.push({ id: eid, from, to, direction: dir, relation: rel, description: desc });
     } else {
-      const name = (rec.cells[1] || []).join(" ");
-      nodes.push({ id: spec, name });
+      const name = joinNemaCell(rec.cells[1] || [], dict);
+      const desc = rec.cells.slice(2).map(c => joinNemaCell(c, dict)).filter(Boolean).join(" · ");
+      nodes.push({ id: spec, name, description: desc });
     }
   }
 
-  // 计算节点环状分布
   const pos = {};
   const n = nodes.length;
   nodes.forEach((node, i) => {
@@ -13994,7 +14109,6 @@ function layoutNemaGraph(domain) {
     node.x = pos[node.id].x; node.y = pos[node.id].y;
   });
 
-  // 计算边路径与碰撞规避
   const graphEdges = [];
   const grouped = new Map();
   for (const e of edges) {
@@ -14021,8 +14135,8 @@ function layoutNemaGraph(domain) {
         const canonical = e.from < e.to ? 1 : -1;
         const lane = (index - (total - 1) / 2) * 36;
         const ctrl = point((a.x + b.x) / 2 - uy * lane * canonical * 1.5, (a.y + b.y) / 2 + ux * lane * canonical * 1.5);
-        start = point(a.x + ux * (NODE_WIDTH / 2), a.y + uy * (NODE_HEIGHT / 2));
-        end = point(b.x - ux * (NODE_WIDTH / 2), b.y - uy * (NODE_HEIGHT / 2));
+        start = borderPoint(a, ctrl);
+        end = borderPoint(b, ctrl);
         path = `M ${start.x} ${start.y} Q ${ctrl.x} ${ctrl.y} ${end.x} ${end.y}`;
         label = point((start.x + end.x + 2 * ctrl.x) / 4, (start.y + end.y + 2 * ctrl.y) / 4 - 12);
       }
@@ -14037,13 +14151,19 @@ function renderNemaPreview() {
   const pv = document.getElementById("nema-preview");
   const t = getActiveTab();
   if (!pv || !t) return;
-  const parsed = parseNemaSource(t.lines.join("\n"));
+  const rawText = t.lines.join("\n");
+  let sourceForRender = rawText;
+  if (rawText.startsWith("\t$")) {
+    try { sourceForRender = nemaDecode(rawText); } catch (_) { sourceForRender = rawText; }
+  }
+  const parsed = parseNemaSource(sourceForRender);
+  const dict = rawText.startsWith("\t$") ? parseNemaSource(rawText).dictionary : parsed.dictionary;
 
   pv.replaceChildren();
   const wrap = document.createElement("div");
   wrap.className = "nema-body-view";
 
-  // 顶部视图切换栏 (Table / 5W1H / Graph)
+  // 顶部视图切换栏 (Table / 5W1H / Graph) + 仲裁状态
   const tabs = document.createElement("div");
   tabs.className = "nema-view-tabs";
   const views = [["table", "▦ Table 默认"], ["5w1h", "? 5W1H 语义"], ["graph", "> Graph 拓扑"]];
@@ -14054,28 +14174,30 @@ function renderNemaPreview() {
     btn.addEventListener("click", () => { NEMA.view = vid; renderNemaPreview(); });
     tabs.appendChild(btn);
   });
+  const leaseInfo = document.createElement("span");
+  leaseInfo.style.cssText = "margin-left:auto;font-size:11px;color:var(--fg-muted);align-self:center;";
+  leaseInfo.textContent = `仲裁: ${NEMA.mode} · Epoch #${NEMA.epoch}`;
+  tabs.appendChild(leaseInfo);
   wrap.appendChild(tabs);
 
   // 词典显式清单
-  if (parsed.dictionary && parsed.dictionary.length) {
+  if (dict && dict.length) {
     const dictBox = document.createElement("div");
     dictBox.className = "nema-group-label";
-    dictBox.textContent = "共享词典: " + parsed.dictionary.map((w, idx) => `^${idx}=${w}`).join("  |  ");
+    dictBox.textContent = "共享词典: " + dict.map((w, idx) => `^${idx}=${w}`).join("  |  ");
     wrap.appendChild(dictBox);
   }
 
   // 渲染主体
   if (NEMA.view === "graph") {
-    // Graph 模式
     let graphDomain = parsed.domains.find(d => d.mode === "graph") || parsed.domains[0];
     if (graphDomain) {
-      const layout = layoutNemaGraph(graphDomain);
+      const layout = layoutNemaGraph(graphDomain, dict);
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg");
       svg.setAttribute("viewBox", `0 0 ${layout.width} ${layout.height}`);
       svg.setAttribute("class", "nema-graph-svg");
 
-      // Arrow Marker
       const defs = document.createElementNS(ns, "defs");
       const marker = document.createElementNS(ns, "marker");
       marker.setAttribute("id", "nema-arrow");
@@ -14094,14 +14216,13 @@ function renderNemaPreview() {
 
       const detail = document.createElement("div");
       detail.className = "nema-edge-detail";
-      detail.innerHTML = "<strong>Edge 详情</strong>: 点击下方任意边或节点查看详细说明";
+      detail.innerHTML = "<strong>Edge 详情</strong>: 点击下方任意边或说明标签查看独立 Edge ID 与完整语义说明";
 
       function selectEdge(edge) {
         svg.querySelectorAll(".nema-edge").forEach(el => el.classList.toggle("selected", el.dataset.edgeId === edge.id));
         detail.innerHTML = `<strong>Edge [${escapeHtml(edge.id)}]</strong>: <code>${escapeHtml(edge.from)}</code> ${edge.direction === "undirected" ? "—" : "→"} <code>${escapeHtml(edge.to)}</code> | 关系: <b>${escapeHtml(edge.relation || "关联")}</b> ${edge.description ? `<br><small style="color:var(--fg-muted)">详细描述: ${escapeHtml(edge.description)}</small>` : ""}`;
       }
 
-      // Edges
       for (const e of layout.edges) {
         const path = document.createElementNS(ns, "path");
         path.setAttribute("d", e.path);
@@ -14121,7 +14242,6 @@ function renderNemaPreview() {
         svg.appendChild(lbl);
       }
 
-      // Nodes
       for (const node of layout.nodes) {
         const g = document.createElementNS(ns, "g");
         g.setAttribute("class", "nema-node");
@@ -14146,7 +14266,6 @@ function renderNemaPreview() {
       wrap.appendChild(svg);
       wrap.appendChild(detail);
 
-      // Edge 列表项
       const edgeList = document.createElement("div");
       edgeList.className = "nema-edge-list";
       for (const e of layout.edges) {
@@ -14157,9 +14276,9 @@ function renderNemaPreview() {
         edgeList.appendChild(item);
       }
       wrap.appendChild(edgeList);
+      if (layout.edges.length) selectEdge(layout.edges[0]);
     }
   } else if (NEMA.view === "5w1h") {
-    // 5W1H 模式
     const axes = ["What (事物/动作)", "Why (原因/目标)", "How (途径/方法)", "Who (执行/对象)", "When (时机/条件)", "Where (环境/范围)"];
     const domain = parsed.domains.find(d => d.mode === "5w1h") || parsed.domains[0];
     if (domain) {
@@ -14175,7 +14294,7 @@ function renderNemaPreview() {
         for (let j = 0; j < 6; j++) {
           const f = document.createElement("div");
           f.className = "nema-card-field";
-          f.innerHTML = `<b>${axes[j]}:</b> ${renderNemaCell(rec.cells[j], parsed.dictionary) || "<span style='color:var(--fg-muted)'>—</span>"}`;
+          f.innerHTML = `<b>${axes[j]}:</b> ${renderNemaCell(rec.cells[j], dict) || "<span style='color:var(--fg-muted)'>—</span>"}`;
           card.appendChild(f);
         }
         grid.appendChild(card);
@@ -14183,11 +14302,21 @@ function renderNemaPreview() {
       wrap.appendChild(grid);
     }
   } else {
-    // Table 默认模式
     parsed.domains.forEach(d => {
       const lbl = document.createElement("div");
       lbl.className = "nema-group-label";
-      lbl.textContent = `域 ${d.id} · ${d.mode.toUpperCase()} (修订 ${d.revision})${d.explicit_header ? " · 显式表头" : " · 自动列名"}`;
+      lbl.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
+      const span = document.createElement("span");
+      span.textContent = `域 ${d.id} · ${d.mode.toUpperCase()} (修订 ${d.revision})${d.explicit_header ? " · 显式表头 (\\\\ )" : " · 默认列名 (column1...)"}`;
+      lbl.appendChild(span);
+      if (d.mode === "table") {
+        const hBtn = document.createElement("button");
+        hBtn.className = "tb-btn";
+        hBtn.textContent = d.explicit_header ? "取消表头" : "设置为表头 (\\\\ )";
+        hBtn.title = "首行前插入或移除 \\\\ 表头前缀 (支持 Ctrl+Z 撤销恢复原始字节)";
+        hBtn.addEventListener("click", () => nemaToggleHeader(t));
+        lbl.appendChild(hBtn);
+      }
       wrap.appendChild(lbl);
 
       const table = document.createElement("table");
@@ -14207,7 +14336,7 @@ function renderNemaPreview() {
         const tr = document.createElement("tr");
         d.columns.forEach((_, colIdx) => {
           const td = document.createElement("td");
-          td.innerHTML = renderNemaCell(rec.cells[colIdx], parsed.dictionary) || "<span style='color:var(--fg-muted)'>—</span>";
+          td.innerHTML = renderNemaCell(rec.cells[colIdx], dict) || "<span style='color:var(--fg-muted)'>—</span>";
           tr.appendChild(td);
         });
         tbody.appendChild(tr);
@@ -14218,9 +14347,10 @@ function renderNemaPreview() {
   }
 
   pv.appendChild(wrap);
+  try { fixContrast(pv); } catch (_) {}
 }
 
-/* 核心 Codec 与候选词典算法 (1:1 对应 Python transport.py) */
+/* 核心 Codec、RLE 与候选词典算法 (1:1 对应 Python transport.py & crates/nema-codec) */
 function nemaExtractCandidates(lines, maxEntries = 32) {
   const counts = new Map();
   const re = /[A-Za-z][A-Za-z0-9_]{3,}|[\u3400-\u9fff\u3040-\u30ff]{4,}/g;
@@ -14241,70 +14371,166 @@ function nemaExtractCandidates(lines, maxEntries = 32) {
     const gain = (count - 1) * w.length - count * 3 - 5;
     if (gain > 3) scored.push({ word: w, count, gain });
   }
-  return scored.sort((a, b) => b.gain - a.gain).slice(0, maxEntries);
+  return scored.sort((a, b) => b.gain - a.gain || (a.word < b.word ? -1 : 1)).slice(0, maxEntries);
+}
+
+function nemaEncodeRow(line, dictMap) {
+  if (line.startsWith("\t")) return line;
+  const esc = (s) => s.replace(/\\/g, "\\\\").replace(/\^/g, "\\^");
+  const keys = [...dictMap.keys()].sort((a, b) => b.length - a.length || (a < b ? -1 : 1));
+  const out = [];
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    let rep = 1;
+    while (i + rep < line.length && line[i + rep] === ch) rep++;
+    if (rep >= 4 && rep <= 100000 && ch !== "\n" && ch !== "\r") {
+      const enc = /^[0-9]$/.test(ch) ? `\\${rep}\\${ch}` : `\\${rep}${ch}`;
+      if (enc.length < esc(ch).length * rep) {
+        out.push(enc);
+        i += rep;
+        continue;
+      }
+    }
+    let matched = false;
+    for (const word of keys) {
+      if (line.startsWith(word, i)) {
+        out.push("^" + dictMap.get(word));
+        i += word.length;
+        matched = true;
+        break;
+      }
+    }
+    if (matched) continue;
+    if (ch === "\\") out.push("\\\\");
+    else if (ch === "^") out.push("\\^");
+    else out.push(ch);
+    i += 1;
+  }
+  return out.join("");
+}
+
+function nemaDecodeRow(line, words) {
+  if (line.startsWith("\t")) return line;
+  const out = [];
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === "\\") {
+      if (i + 1 >= line.length) throw new Error("NEMA-E006: 行末存在不完整的转义符");
+      const nxt = line[i + 1];
+      if (nxt === "\\" || nxt === "^") {
+        out.push(nxt);
+        i += 2;
+        continue;
+      }
+      if (/^[0-9]$/.test(nxt)) {
+        let j = i + 1;
+        while (j < line.length && /^[0-9]$/.test(line[j])) j++;
+        const count = parseInt(line.slice(i + 1, j), 10);
+        if (!(count >= 4 && count <= 100000)) throw new Error("NEMA-E006: RLE 计数超出范围 (4..100000)");
+        if (j >= line.length) throw new Error("NEMA-E006: RLE 缺少目标字符");
+        if (line[j] === "\\" && j + 1 < line.length && /^[0-9]$/.test(line[j + 1])) {
+          out.push(line[j + 1].repeat(count));
+          i = j + 2;
+        } else {
+          out.push(line[j].repeat(count));
+          i = j + 1;
+        }
+        continue;
+      }
+      out.push("\\");
+      i += 1;
+      continue;
+    }
+    if (ch === "^") {
+      let j = i + 1;
+      while (j < line.length && /^[0-9]$/.test(line[j])) j++;
+      if (j === i + 1) throw new Error("NEMA-E007: ^ 引用缺少数字下标");
+      const idx = parseInt(line.slice(i + 1, j), 10);
+      if (idx < 0 || idx >= words.length) throw new Error(`NEMA-E007: 词典下标越界 ^${idx}`);
+      out.push(words[idx]);
+      i = j;
+      continue;
+    }
+    out.push(ch);
+    i += 1;
+  }
+  return out.join("");
 }
 
 function nemaEncode(source) {
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  let clean = String(source || "").replace(/\r\n?/g, "\n");
+  while (clean.endsWith("\n\n\n\n")) clean = clean.slice(0, -1);
+  if (!clean.endsWith("\n\n\n")) clean += "\n\n\n";
+  const body = clean.slice(0, -3);
+  const lines = body.split("\n");
   const candidates = nemaExtractCandidates(lines);
   const words = candidates.map(c => c.word);
-  const encoded = [];
-  let inHeader = true;
-
-  for (const line of lines) {
-    if (line.startsWith("\t") && inHeader) { encoded.push(line); continue; }
-    inHeader = false;
-    let row = line;
-    for (let idx = 0; idx < words.length; idx++) {
-      const w = words[idx];
-      row = row.split(w).join("^" + idx);
-    }
-    encoded.push(row);
-  }
-  const manifest = ["\t$" + words.length, ...words];
-  const nemat = manifest.concat(encoded).join("\n");
-  const origLen = source.length, newLen = nemat.length;
-  const saving = origLen ? Math.max(0, Math.round((1 - newLen / origLen) * 100)) : 0;
+  const dictMap = new Map(words.map((w, idx) => [w, idx]));
+  const encodedBody = lines.map(line => nemaEncodeRow(line, dictMap)).join("\n");
+  const nemat = ["\t$" + words.length, ...words, encodedBody].join("\n") + "\n\n\n";
+  const enc = new TextEncoder();
+  const origBytes = enc.encode(clean).length;
+  const newBytes = enc.encode(nemat).length;
+  const useNemat = newBytes < origBytes;
+  const saving = origBytes ? Math.max(0, Math.round((1 - Math.min(origBytes, newBytes) / origBytes) * 100)) : 0;
   return {
-    format: newLen < origLen && words.length > 0 ? "nemat" : "nema",
-    text: newLen < origLen && words.length > 0 ? nemat : source,
+    format: useNemat ? "nemat" : "nema",
+    text: useNemat ? nemat : clean,
     savingPercent: saving,
+    origBytes,
+    newBytes: Math.min(origBytes, newBytes),
     words
   };
 }
 
 function nemaDecode(text) {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
-  if (!lines[0] || !lines[0].startsWith("\t$")) throw new Error("缺少 \\t$N 传输字典清单");
-  const n = parseInt(lines[0].slice(2), 10);
-  const words = lines.slice(1, 1 + n);
-  const body = lines.slice(1 + n);
-  const out = [];
-  for (const line of body) {
-    let row = line;
-    for (let idx = words.length - 1; idx >= 0; idx--) {
-      row = row.split("^" + idx).join(words[idx]);
-    }
-    out.push(row);
+  let clean = String(text || "").replace(/\r\n?/g, "\n");
+  if (!clean.startsWith("\t$")) {
+    parseNemaSource(clean);
+    return clean;
   }
-  return out.join("\n");
+  while (clean.endsWith("\n\n\n\n")) clean = clean.slice(0, -1);
+  if (!clean.endsWith("\n\n\n")) clean += "\n\n\n";
+  const lines = clean.slice(0, -3).split("\n");
+  const m = lines[0].match(/^\t\$([0-9]+)$/);
+  if (!m) throw new Error("NEMA-E001: 缺少合法的 \\t$N 传输字典清单头");
+  const n = parseInt(m[1], 10);
+  if (lines.length < 1 + n) throw new Error("NEMA-E001: 传输字典行数不足");
+  const words = lines.slice(1, 1 + n);
+  const body = lines.slice(1 + n).map(line => nemaDecodeRow(line, words)).join("\n") + "\n\n\n";
+  parseNemaSource(body); // 校验后再交给渲染器 (IDE-07)
+  return body;
 }
 
 function nemaConvert(t) {
   t = t || getActiveTab();
   if (!t) return;
-  snapshot(t);
   const text = t.lines.join("\n");
+  const hash = nemaHash(text);
+  const lease = nemaRequestLease(hash, t.hver || 1);
   const isNema = isNemaTab(t) || text.includes("\t\\") || text.includes("\t?") || text.includes("\t>");
   if (!isNema) {
-    // 转换为 NEMA 格式
     const rows = t.lines.filter(l => l.trim().length > 0);
     const nemaRows = ["\t\\1"];
     for (const r of rows) {
       const parts = r.split(/[\t,]+/).map(s => s.trim()).filter(Boolean);
       if (parts.length) nemaRows.push(parts.join(" "));
     }
-    t.lines = nemaRows.concat(["", "", ""]);
+    const outLines = nemaRows.concat(["", "", ""]);
+    const outText = outLines.join("\n");
+    nemaReleaseLease(lease, outText);
+    if (isProtectedCodeTab(t)) {
+      const id = "t" + (++maxTabId);
+      const baseName = (t.name || "doc").replace(/\.[^.]+$/, "");
+      TABS.set(id, { id, path: "", name: baseName + ".nema", untitled: true, cursor: { row: 0, col: 0 }, dirty: true, lines: outLines, undo: [], redo: [], encoding: "UTF-8", bom: "none", eol: "lf", language: "nema", nemaPreview: true });
+      setActiveTab(id);
+      setTip("代码文件受保护 (IDE-08): 已在新标签生成 " + baseName + ".nema");
+      return;
+    }
+    snapshot(t);
+    t.lines = outLines;
     t.language = "nema";
     t.dirty = true;
     renderVim(t);
@@ -14315,28 +14541,64 @@ function nemaConvert(t) {
   try {
     if (text.startsWith("\t$")) {
       const decoded = nemaDecode(text);
+      nemaReleaseLease(lease, decoded);
+      snapshot(t);
       t.lines = decoded.split("\n");
       t.language = "nema";
       t.dirty = true;
       renderVim(t);
       nemaRefresh();
-      setTip("已解码为 NEMA 原生格式 (Round-trip verified)");
+      setTip(`已解码为 NEMA 原生格式 (Round-trip 校验通过 · Epoch #${lease.epoch})`);
     } else {
       const choice = nemaEncode(text);
       if (choice.format === "nemat") {
+        const roundtrip = nemaDecode(choice.text);
+        if (roundtrip.replace(/\n+$/, "") !== text.replace(/\r\n?/g, "\n").replace(/\n+$/, "")) {
+          throw new Error("Round-trip 字节校验不一致，拒绝覆盖");
+        }
+        nemaReleaseLease(lease, choice.text);
+        snapshot(t);
         t.lines = choice.text.split("\n");
         t.language = "nema";
         t.dirty = true;
         renderVim(t);
         nemaRefresh();
-        setTip(`已转换为 .nemat 传输格式 (节省 ${choice.savingPercent}%, 往返校验通过)`);
+        setTip(`已转换为 .nemat 传输格式 (节省 ${choice.savingPercent}%, 往返校验通过 · Epoch #${lease.epoch})`);
       } else {
-        setTip("当前文档体积较小或复用词少，原生 .nema 已是最优");
+        nemaReleaseLease(lease, text);
+        setTip("当前文档体积较小或复用词少，原生 .nema 已是最优 (Epoch #" + lease.epoch + ")");
       }
     }
   } catch (err) {
+    nemaReleaseLease(lease, null);
     setTip("NEMA 转换失败: " + err.message);
   }
+}
+
+function nemaShowReused(t) {
+  t = t || getActiveTab();
+  if (!t) return;
+  const cands = nemaExtractCandidates(t.lines, 8);
+  const refs = [];
+  t.lines.forEach((line, idx) => {
+    const m = line.match(/\^[0-9]+/g);
+    if (m) refs.push(`Ln ${idx + 1}: ${m.join(", ")}`);
+  });
+  if (!cands.length && !refs.length) {
+    setTip("当前文档暂无 ^N 引用或满足条件的高频复用原子");
+    return;
+  }
+  const summary = [];
+  if (refs.length) summary.push("已引用位置: " + refs.slice(0, 4).join(" | "));
+  if (cands.length) {
+    const loc = cands.slice(0, 4).map(c => {
+      const rows = [];
+      t.lines.forEach((l, r) => { if (!l.startsWith("\t") && l.includes(c.word)) rows.push("Ln" + (r + 1)); });
+      return `${c.word}[${rows.join(",")}]`;
+    }).join("; ");
+    summary.push("复用词位置: " + loc);
+  }
+  setTip(summary.join(" · "));
 }
 
 function nemaToggleHeader(t) {
@@ -14346,10 +14608,10 @@ function nemaToggleHeader(t) {
     if (l.startsWith("\t")) continue;
     if (l.startsWith("\\ ")) {
       t.lines[i] = l.slice(2);
-      setTip("已取消表头行 (转为自动 column1...)");
+      setTip("已取消表头行 (转为自动 column1... · Ctrl+Z 可恢复原始字节)");
     } else {
       t.lines[i] = "\\ " + l;
-      setTip("已将首行设置为显式表头 (\\ )");
+      setTip("已将首行设置为显式表头 (\\  · Ctrl+Z 可恢复原始字节)");
     }
     break;
   }
@@ -14414,7 +14676,7 @@ function nemaInsertRef(t) {
 function nemaShowCandidates(t) {
   const cands = nemaExtractCandidates(t.lines);
   if (!cands.length) { setTip("未发现满足频次 (>=3) 且长度 (>=4) 的词典候选原子"); return; }
-  const top = cands.slice(0, 5).map(c => `${c.word} (${c.count}次, 预计节省${c.gain}字符)`).join("; ");
+  const top = cands.slice(0, 5).map(c => `${c.word} (${c.count}次, 净收益+${c.gain})`).join("; ");
   setTip("词典候选词: " + top);
 }
 
@@ -14423,25 +14685,22 @@ function nemaLockDictionary(t) {
   const cands = nemaExtractCandidates(t.lines);
   if (!cands.length) { setTip("没有可锁定的候选词典原子"); return; }
   const words = cands.slice(0, 8).map(c => c.word);
-  for (let idx = 0; idx < words.length; idx++) {
-    const w = words[idx];
-    for (let i = 0; i < t.lines.length; i++) {
-      if (t.lines[i].startsWith("\t")) continue;
-      t.lines[i] = t.lines[i].split(w).join("^" + idx);
-    }
+  const dictMap = new Map(words.map((w, idx) => [w, idx]));
+  for (let i = 0; i < t.lines.length; i++) {
+    if (t.lines[i].startsWith("\t")) continue;
+    t.lines[i] = nemaEncodeRow(t.lines[i], dictMap);
   }
   t.lines.unshift("\t$" + words.length, ...words);
   t.dirty = true; renderVim(t); nemaRefresh();
-  setTip(`已锁定 ${words.length} 个词典原子并替换为 ^N 引用`);
+  setTip(`已锁定 ${words.length} 个词典原子并生成 ^N 引用`);
 }
 
 function nemaTokenDiff(t) {
   const text = t.lines.join("\n");
-  const bytes = (new TextEncoder()).encode(text).length;
   const choice = nemaEncode(text);
-  const nematBytes = (new TextEncoder()).encode(choice.text).length;
-  const saving = bytes ? Math.round((1 - nematBytes / bytes) * 100) : 0;
-  setTip(`Native: ${bytes} 字节 -> Nemat: ${nematBytes} 字节 (体积节省: ${saving}% · 往返严格可逆)`);
+  const estTokOrig = Math.max(1, Math.ceil(choice.origBytes / 4));
+  const estTokNew = Math.max(1, Math.ceil(choice.newBytes / 4));
+  setTip(`[启发式字节估算 != 计费 Token] Native: ${choice.origBytes}B (~${estTokOrig} tok) -> Best(${choice.format}): ${choice.newBytes}B (~${estTokNew} tok) · 节省 ${choice.savingPercent}%`);
 }
 
 function mdRefresh() {

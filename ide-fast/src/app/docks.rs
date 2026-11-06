@@ -30,11 +30,19 @@ impl App {
         self.set_dock_collapsed(d, false);
     }
 
-    /// 这个停靠区「想显示」吗 (右侧: AI 对话开着, 或 Markdown 预览开着)
+    /// 这个停靠区「想显示」吗 (右侧: AI 对话开着, 或 Markdown 预览开着, 或 NEMA 预览开着)
     pub(super) fn dock_wanted(&self, d: Dock) -> bool {
         match d {
             Dock::Side => self.side.open,
-            Dock::Right => self.ai.open || (self.md_preview && !self.cfg.view.md_overlay),
+            Dock::Right => {
+                let is_nema = self
+                    .docs
+                    .get(self.active.min(self.docs.len().saturating_sub(1)))
+                    .is_some_and(nemaopts::is_nema_doc);
+                self.ai.open
+                    || (self.md_preview && !self.cfg.view.md_overlay)
+                    || (self.nema_preview && is_nema)
+            }
             Dock::Bottom => self.term.open,
         }
     }

@@ -10,6 +10,7 @@ members = [
   "crates/ide-shell-protocol",
   "crates/editcore",
   "crates/ide-agent-router",
+  "crates/nema-codec",
   "ide-fast",
 ]
 
@@ -53,6 +54,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tokio-tungstenite = "0.24"
 async-trait = "0.1"
+nema-codec = { path = "crates/nema-codec" }
 
 [profile.release]
 lto = "thin"

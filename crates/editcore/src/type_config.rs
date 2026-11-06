@@ -336,6 +336,7 @@ impl TypeConfig {
             "Rust" => crate::types::rust_outline(text),
             "C++" | "JavaScript" | "TypeScript" | "Go" | "Java" | "C#" => crate::outline_langs::brace_outline(text, name),
             "Markdown" => crate::outline_langs::markdown_outline(text),
+            "NEMA" => crate::types::nema_outline(text),
             _ => Vec::new(),
         }
     }
@@ -561,6 +562,7 @@ impl TypeRegistry {
                 types::sql(),
                 types::dockerfile(),
                 types::makefile(),
+                types::nema(),
             ],
         }
     }
@@ -675,6 +677,7 @@ fn is_builtin_type(name: &str) -> bool {
         "SQL",
         "Dockerfile",
         "Makefile",
+        "NEMA",
     ];
     BUILTIN.contains(&name)
 }

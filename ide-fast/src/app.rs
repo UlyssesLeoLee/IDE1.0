@@ -89,6 +89,7 @@ pub struct App {
     md_preview: bool,
     nema_preview: bool,
     nema_view_mode: usize,
+    nema: nemaopts::NemaUiState,
     wrap: bool,
     goal_x: Option<f32>,
     inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
@@ -213,6 +214,7 @@ impl App {
             md_preview: false,
             nema_preview: false,
             nema_view_mode: 0,
+            nema: Default::default(),
             wrap: false,
             goal_x: None,
             inbox,
@@ -356,6 +358,9 @@ impl App {
                 }
                 self.docs.push(d);
                 self.active = self.docs.len() - 1;
+                if nemaopts::is_nema_doc(&self.docs[self.active]) {
+                    self.nema_preview = true;
+                }
                 if let Some((r, c)) = self
                     .positions
                     .iter()
@@ -5206,6 +5211,10 @@ impl App {
                 .to_lowercase();
             n.ends_with(".md") || n.ends_with(".markdown")
         };
+        let is_nema = {
+            let d = &self.docs[self.active.min(self.docs.len() - 1)];
+            nemaopts::is_nema_doc(d)
+        };
         self.ai_poll(ctx);
         self.dock_strip(root, Dock::Right); // 右细条常驻 (最外层), Chat / 预览停靠在它左边
         match self.dock_mode(
@@ -5215,7 +5224,7 @@ impl App {
                 self.md_preview,
                 is_md,
                 self.cfg.view.md_overlay,
-            ),
+            ) || (self.nema_preview && is_nema),
         ) {
             Mode::Full => {
                 let settled = !ctx.input(|i| i.pointer.any_down());
@@ -5245,16 +5254,23 @@ impl App {
                             crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
                     }
                 }
+                if self.nema_preview && is_nema && right_room(root.available_width()) {
+                    let r = egui::Panel::right("nemaprev")
+                        .resizable(true)
+                        .default_size(self.cfg.view.md_w.max(420.0))
+                        .max_size(right_cap(root.available_width()))
+                        .show(root, |ui| self.nema_ui(ui));
+                    if settled {
+                        self.cfg.view.md_w =
+                            crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                    }
+                }
             }
             Mode::Strip => {}
             Mode::Hidden => {}
         }
         self.tab_bar(root, ctx);
         self.md_bar(root, ctx, is_md);
-        let is_nema = {
-            let d = &self.docs[self.active.min(self.docs.len() - 1)];
-            nemaopts::is_nema_doc(d)
-        };
         self.nema_bar(root, ctx, is_nema);
         use crate::split::SplitKind as SK;
         let fill = ctx.global_style().visuals.extreme_bg_color;
