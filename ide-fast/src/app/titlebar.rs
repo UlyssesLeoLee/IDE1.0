@@ -40,7 +40,6 @@ pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
     pub term: bool,
-    pub docks: bool,
     pub quick: usize,
 }
 
@@ -59,7 +58,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     };
     let term = take(TERM_W);
     let title = take(title_w.min(TITLE_MAX) + 8.0);
-    let docks = take(DOCKS_W);
     let mut quick = 0;
     while quick < QUICK.len() && take(QUICK_BTN) {
         quick += 1;
@@ -68,7 +66,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
         mnemonics,
         title,
         term,
-        docks,
         quick,
     }
 }
@@ -275,7 +272,6 @@ impl App {
                 let plan = plan_bar(rect.width(), mw, mp, tw);
                 self.sys.mn_hide = !plan.mnemonics;
                 let mid_w = if plan.term { TERM_W } else { 0.0 }
-                    + if plan.docks { DOCKS_W } else { 0.0 }
                     + plan.quick as f32 * QUICK_BTN;
                 let right = Rect::from_min_max(
                     egui::pos2(rect.right() - BTN_W * 3.0, rect.top()),
@@ -320,16 +316,7 @@ impl App {
                                 run = Some(i);
                             }
                         }
-                        if plan.docks {
-                            if plan.quick > 0 {
-                                ui.separator();
-                            }
-                            for d in [Dock::Side, Dock::Bottom, Dock::Right] {
-                                if self.dock_toggle_icon(ui, d) {
-                                    self.collapse_dock(d);
-                                }
-                            }
-                        }
+
                         if plan.term {
                             ui.add_space(4.0);
                             if let Some(i) = chrome::index_of("c.terminal") {
@@ -639,7 +626,6 @@ mod tests {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
             let mid = if p.term { TERM_W } else { 0.0 }
-                + if p.docks { DOCKS_W } else { 0.0 }
                 + p.quick as f32 * QUICK_BTN;
             let title = if p.title { 58.0 } else { 0.0 };
             assert!(
@@ -653,7 +639,7 @@ mod tests {
     fn the_plan_drops_things_progressively_as_the_window_narrows() {
         let wide = plan_bar(1600.0, MW, MP, 50.0);
         assert!(
-            wide.mnemonics && wide.title && wide.term && wide.docks && wide.quick == QUICK.len()
+            wide.mnemonics && wide.title && wide.term && wide.quick == QUICK.len()
         );
         let mid = plan_bar(900.0, MW, MP, 50.0);
         assert!(
@@ -665,7 +651,7 @@ mod tests {
             "900: 快捷钮已被撤掉几个, 不压菜单"
         );
         let narrow = plan_bar(580.0, MW, MP, 50.0);
-        assert!(!narrow.mnemonics && !narrow.docks && narrow.quick == 0);
+        assert!(!narrow.mnemonics && narrow.quick == 0);
     }
 
     #[test]

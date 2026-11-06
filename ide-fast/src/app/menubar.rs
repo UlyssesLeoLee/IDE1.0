@@ -367,221 +367,176 @@ impl App {
                     menuui::menu_title(&tc, tr("menu.view"), mn("menu.view")),
                     |ui| {
                         menuui::scroll(ui, |ui| {
-                            if menu_check(ui, &tc, self.split_on, lk("c.split", "Ctrl+\\"))
-                                .clicked()
-                            {
-                                self.toggle_split();
-                                ui.close();
-                            }
-                            if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`"))
-                                .clicked()
-                            {
-                                self.term.open = !self.term.open;
-                            }
-                            if menu_check(ui, &tc, self.ai.open, lk("c.ai-chat", "Ctrl+Alt+L"))
-                                .clicked()
-                            {
-                                self.ai_toggle();
-                                ui.close();
-                            }
-                            if menu_check(
-                                ui,
-                                &tc,
-                                self.md_preview,
-                                lk("c.md-preview", "Ctrl+Shift+V"),
-                            )
-                            .clicked()
-                            {
-                                self.md_preview = !self.md_preview;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.md_overlay, tr("menu.md-overlay"))
-                                .clicked()
-                            {
-                                self.cfg.view.md_overlay = !self.cfg.view.md_overlay;
-                            }
-                            ui.menu_button(tr("menu.fold"), |ui| {
-                                if menuui::mbtn(ui, lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() {
-                                    let d = self.cur();
-                                    let r = d.cursor[0];
-                                    d.toggle_fold(r);
+                            // 1. 界面布局 (Layout)
+                            ui.menu_button(tr("sub.layout"), |ui| {
+                                if menuui::mbtn(ui, lk("c.full-mode", "")).clicked() {
+                                    self.set_full();
                                     ui.close();
                                 }
-                                if menuui::mbtn(ui, lk("c.unfold-all", "Ctrl+Shift+]")).clicked() {
-                                    self.cur().folds.clear();
-                                    ui.close();
-                                }
-                            });
-                            if menu_check(ui, &tc, self.highlight, lk("c.highlight", "")).clicked()
-                            {
-                                self.highlight = !self.highlight;
-                            }
-                            if menu_check(ui, &tc, self.wrap, lk("c.wrap", "Alt+Z")).clicked() {
-                                self.wrap = !self.wrap;
-                            }
-                            ui.menu_button(trz("折行方式"), |ui| {
-                                let col = self.cfg.view.wrap_col;
-                                if menu_check(
-                                    ui,
-                                    &tc,
-                                    !self.wrap,
-                                    Self::app_label(KApp::WrapNone, "不折行"),
-                                )
-                                .clicked()
-                                {
-                                    self.run_app(KApp::WrapNone, ctx);
-                                    ui.close();
-                                }
-                                if menu_check(
-                                    ui,
-                                    &tc,
-                                    self.wrap && col == 0,
-                                    Self::app_label(KApp::WrapWindow, "按窗口宽度折行"),
-                                )
-                                .clicked()
-                                {
-                                    self.run_app(KApp::WrapWindow, ctx);
-                                    ui.close();
-                                }
-                                let label = if col > 0 {
-                                    format!(
-                                        "{} ({col})",
-                                        Self::app_label(KApp::WrapCol, "按指定列数折行…")
-                                    )
-                                } else {
-                                    Self::app_label(KApp::WrapCol, "按指定列数折行…")
-                                };
-                                if menu_check(ui, &tc, self.wrap && col > 0, label).clicked() {
-                                    self.run_app(KApp::WrapCol, ctx);
+                                if menuui::mbtn(ui, lk("c.minimal-mode", "")).clicked() {
+                                    self.set_minimal();
                                     ui.close();
                                 }
                                 ui.separator();
-                                ui.add_enabled(
-                                    col > 0,
-                                    crate::ckbox::Check::new(
-                                        &mut self.cfg.view.kinsoku,
-                                        trz("行头 / 行尾禁则 (指定列数折行时)"),
-                                    ),
-                                );
-                                ui.add_enabled(
-                                    col > 0 && self.cfg.view.kinsoku,
-                                    crate::ckbox::Check::new(
-                                        &mut self.cfg.view.hang,
-                                        trz("句读挂在行尾 (ぶら下げ)"),
-                                    ),
-                                );
-                            });
-                            if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B"))
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.cfg.system_title_bar,
+                                    Self::app_label(KApp::SystemTitleBar, "使用系统标题栏"),
+                                )
                                 .clicked()
-                            {
-                                self.side.open = !self.side.open;
-                            }
-                            for (a, zh, on) in [
-                                (
-                                    KApp::SideCollapse,
-                                    "折叠左侧栏",
-                                    self.cfg.view.side_collapsed,
-                                ),
-                                (
-                                    KApp::RightCollapse,
-                                    "折叠右侧面板",
-                                    self.cfg.view.right_collapsed,
-                                ),
-                                (
-                                    KApp::BottomCollapse,
-                                    "折叠底部面板",
-                                    self.cfg.view.bottom_collapsed,
-                                ),
-                            ] {
-                                if menu_check(ui, &tc, on, Self::app_label(a, zh)).clicked() {
-                                    self.run_app(a, ctx);
+                                {
+                                    self.run_app(KApp::SystemTitleBar, ctx);
                                     ui.close();
                                 }
-                            }
-                            if menu_check(
-                                ui,
-                                &tc,
-                                self.cfg.system_title_bar,
-                                Self::app_label(KApp::SystemTitleBar, "使用系统标题栏"),
-                            )
-                            .clicked()
-                            {
-                                self.run_app(KApp::SystemTitleBar, ctx);
-                                ui.close();
-                            }
-                            ui.separator();
-                            if menu_check(
-                                ui,
-                                &tc,
-                                self.cfg.view.line_numbers,
-                                lk("c.line-numbers", ""),
-                            )
-                            .clicked()
-                            {
-                                self.cfg.view.line_numbers = !self.cfg.view.line_numbers;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.status_bar, lk("c.status-bar", ""))
-                                .clicked()
-                            {
-                                self.cfg.view.status_bar = !self.cfg.view.status_bar;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.whitespace, lk("c.whitespace", ""))
-                                .clicked()
-                            {
-                                self.cfg.view.whitespace = !self.cfg.view.whitespace;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.ruler, lk("c.ruler", "")).clicked()
-                            {
-                                self.cfg.view.ruler = !self.cfg.view.ruler;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.cur_line, lk("c.cur-line", ""))
-                                .clicked()
-                            {
-                                self.cfg.view.cur_line = !self.cfg.view.cur_line;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.minimap, lk("c.minimap", ""))
-                                .clicked()
-                            {
-                                self.cfg.view.minimap = !self.cfg.view.minimap;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.toolbar, lk("c.toolbar", ""))
-                                .clicked()
-                            {
-                                self.cfg.view.toolbar = !self.cfg.view.toolbar;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.funckey, lk("c.funckey", ""))
-                                .clicked()
-                            {
-                                self.cfg.view.funckey = !self.cfg.view.funckey;
-                            }
-                            if menu_check(ui, &tc, self.cfg.view.rail, lk("c.rail", "")).clicked() {
-                                self.cfg.view.rail = !self.cfg.view.rail;
-                            }
-                            if menuui::mbtn(ui, lk("c.full-mode", "")).clicked() {
-                                self.set_full();
-                                ui.close();
-                            }
-                            if menuui::mbtn(ui, lk("c.minimal-mode", "")).clicked() {
-                                self.set_minimal();
-                                ui.close();
-                            }
-                            ui.separator();
-                            ui.menu_button(tr("sub.tabwidth"), |ui| {
-                                for w in [2usize, 3, 4, 8] {
-                                    if menu_check(ui, &tc, self.tab == w, format!("{w}")).clicked()
-                                    {
-                                        self.tab = w;
+                            });
+
+                            // 2. 面板与折叠 (Panels & Docks)
+                            ui.menu_button(tr("sub.dock-panels"), |ui| {
+                                if menu_check(ui, &tc, self.cfg.view.rail, lk("c.rail", "")).clicked() {
+                                    self.cfg.view.rail = !self.cfg.view.rail;
+                                }
+                                if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B")).clicked() {
+                                    self.side.open = !self.side.open;
+                                }
+                                if menu_check(ui, &tc, self.ai.open, lk("c.ai-chat", "")).clicked() {
+                                    self.ai.open = !self.ai.open;
+                                }
+                                if menu_check(ui, &tc, self.term.open, lk("c.terminal", "")).clicked() {
+                                    self.term.open = !self.term.open;
+                                }
+                                ui.separator();
+                                for (a, zh, on) in [
+                                    (KApp::SideCollapse, "折叠左侧栏", self.cfg.view.side_collapsed),
+                                    (KApp::RightCollapse, "折叠右侧面板", self.cfg.view.right_collapsed),
+                                    (KApp::BottomCollapse, "折叠底部面板", self.cfg.view.bottom_collapsed),
+                                ] {
+                                    if menu_check(ui, &tc, on, Self::app_label(a, zh)).clicked() {
+                                        self.run_app(a, ctx);
                                         ui.close();
                                     }
                                 }
                             });
-                            if menuui::mbtn(ui, lk("c.zoom-in", "Ctrl+=")).clicked() {
-                                self.font_px = (self.font_px + 1.0).min(40.0);
-                            }
-                            if menuui::mbtn(ui, lk("c.zoom-out", "Ctrl+-")).clicked() {
-                                self.font_px = (self.font_px - 1.0).max(8.0);
-                            }
-                            if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() {
-                                self.font_px = DEFAULT_FONT_PX;
+
+                            // 3. 界面元素 (UI Elements)
+                            ui.menu_button(tr("sub.ui-bars"), |ui| {
+                                if menu_check(ui, &tc, self.cfg.view.status_bar, lk("c.status-bar", "")).clicked() {
+                                    self.cfg.view.status_bar = !self.cfg.view.status_bar;
+                                }
+                                if menu_check(ui, &tc, self.cfg.view.line_numbers, lk("c.line-numbers", "")).clicked() {
+                                    self.cfg.view.line_numbers = !self.cfg.view.line_numbers;
+                                }
+                                if menu_check(ui, &tc, self.cfg.view.minimap, lk("c.minimap", "")).clicked() {
+                                    self.cfg.view.minimap = !self.cfg.view.minimap;
+                                }
+                                if menu_check(ui, &tc, self.cfg.view.ruler, lk("c.ruler", "")).clicked() {
+                                    self.cfg.view.ruler = !self.cfg.view.ruler;
+                                }
+                                if menu_check(ui, &tc, self.cfg.view.funckey, lk("c.funckey", "")).clicked() {
+                                    self.cfg.view.funckey = !self.cfg.view.funckey;
+                                }
+                                if menu_check(ui, &tc, self.cfg.view.toolbar, lk("c.toolbar", "")).clicked() {
+                                    self.cfg.view.toolbar = !self.cfg.view.toolbar;
+                                }
+                            });
+
+                            // 4. 文本显示 (Text Display)
+                            ui.menu_button(tr("sub.text-view"), |ui| {
+                                if menu_check(ui, &tc, self.wrap, lk("c.wrap", "Alt+Z")).clicked() {
+                                    self.wrap = !self.wrap;
+                                }
+                                let col = self.cfg.view.wrap_col;
+                                ui.menu_button(tr("sub.wrap-rules"), |ui| {
+                                    if menu_check(
+                                        ui,
+                                        &tc,
+                                        !self.wrap,
+                                        Self::app_label(KApp::WrapNone, "不折行"),
+                                    )
+                                    .clicked()
+                                    {
+                                        self.run_app(KApp::WrapNone, ctx);
+                                        ui.close();
+                                    }
+                                    if menu_check(
+                                        ui,
+                                        &tc,
+                                        self.wrap && col == 0,
+                                        Self::app_label(KApp::WrapWindow, "按窗口宽度折行"),
+                                    )
+                                    .clicked()
+                                    {
+                                        self.run_app(KApp::WrapWindow, ctx);
+                                        ui.close();
+                                    }
+                                    let label = if col > 0 {
+                                        format!(
+                                            "{} ({col})",
+                                            Self::app_label(KApp::WrapCol, "按指定列数折行…")
+                                        )
+                                    } else {
+                                        Self::app_label(KApp::WrapCol, "按指定列数折行…")
+                                    };
+                                    if menu_check(ui, &tc, self.wrap && col > 0, label).clicked() {
+                                        self.run_app(KApp::WrapCol, ctx);
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                    ui.add_enabled(
+                                        col > 0,
+                                        crate::ckbox::Check::new(
+                                            &mut self.cfg.view.kinsoku,
+                                            trz("行头 / 行尾禁则 (指定列数折行时)"),
+                                        ),
+                                    );
+                                    ui.add_enabled(
+                                        col > 0 && self.cfg.view.kinsoku,
+                                        crate::ckbox::Check::new(
+                                            &mut self.cfg.view.hang,
+                                            trz("句读挂在行尾 (ぶら下げ)"),
+                                        ),
+                                    );
+                                });
+                                ui.separator();
+                                if menu_check(ui, &tc, self.cfg.view.whitespace, lk("c.whitespace", "")).clicked() {
+                                    self.cfg.view.whitespace = !self.cfg.view.whitespace;
+                                }
+                                if menu_check(ui, &tc, self.cfg.view.cur_line, lk("c.cur-line", "")).clicked() {
+                                    self.cfg.view.cur_line = !self.cfg.view.cur_line;
+                                }
+                                let ro = self.cur().readonly;
+                                if menu_check(ui, &tc, ro, trz("只读模式")).clicked() {
+                                    if let Some(d) = self.docs.get_mut(self.active) { d.readonly = !ro; }
+                                    ui.close();
+                                }
+                            });
+
+                            // 5. 缩放 (Zoom)
+                            ui.menu_button(tr("sub.zoom"), |ui| {
+                                if menuui::mbtn(ui, lk("c.zoom-in", "Ctrl+=")).clicked() {
+                                    self.font_px = (self.font_px + 1.0).min(40.0);
+                                }
+                                if menuui::mbtn(ui, lk("c.zoom-out", "Ctrl+-")).clicked() {
+                                    self.font_px = (self.font_px - 1.0).max(8.0);
+                                }
+                                if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() {
+                                    self.font_px = DEFAULT_FONT_PX;
+                                }
+                                ui.separator();
+                                ui.menu_button(tr("sub.tabwidth"), |ui| {
+                                    for w in [2usize, 3, 4, 8] {
+                                        if menu_check(ui, &tc, self.tab == w, format!("{w}")).clicked() {
+                                            self.tab = w;
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            });
+
+                            ui.separator();
+                            if menuui::mbtn(ui, lk("c.redraw", "F5")).clicked() {
+                                ctx.request_repaint();
+                                ui.close();
                             }
                         })
                     },

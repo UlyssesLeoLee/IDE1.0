@@ -196,6 +196,14 @@ pub const T: &[Row] = &[
     ("sub.plugin-restore", ["恢复内置插件", "内蔵プラグインを復元", "Restore Bundled Plugins"]),
     // ---- 设置
     ("c.common-config", ["首选项…", "共通設定…", "Preferences…"]),
+    ("sub.layout", ["界面布局", "レイアウト", "Layout"]),
+    ("sub.dock-panels", ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"]),
+    ("sub.ui-bars", ["界面元素", "UIバー", "UI Elements"]),
+    ("sub.text-view", ["文本显示", "テキスト表示", "Text Display"]),
+    ("sub.zoom", ["缩放", "拡大・縮小", "Zoom"]),
+    ("sub.wrap-rules", ["折行规则", "折り返しルール", "Wrap Rules"]),
+    ("c.completion", ["代码补全", "コード補完", "Code Completion"]),
+    ("c.goto-def", ["跳转到定义", "定義へジャンプ", "Go to Definition"]),
     ("sub.theme", ["主题", "テーマ", "Theme"]),
     ("c.theme-select", ["主题…", "テーマ選択…", "Theme…"]),
     ("c.theme-crystal", ["水晶透明", "クリスタル透明", "Crystal"]),
@@ -650,6 +658,16 @@ pub const CMD_T: &[Row] = &[
     ("复古 16-Bit", ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"]),
     ("美漫 3渲2", ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"]),
     ("移动履历", ["移动履历", "移動履歴", "Jump History"]),
+    ("只读模式", ["只读模式", "読み取り専用モード", "Read-Only Mode"]),
+
+    ("面板与折叠", ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"]),
+    ("界面元素", ["界面元素", "UIバー", "UI Elements"]),
+    ("文本显示", ["文本显示", "テキスト表示", "Text Display"]),
+    ("折行规则", ["折行规则", "折り返しルール", "Wrap Rules"]),
+    ("重置缩放 (100%)", ["重置缩放 (100%)", "拡大率をリセット (100%)", "Reset Zoom (100%)"]),
+    ("跳转到定义", ["跳转到定义", "定義へジャンプ", "Go to Definition"]),
+    ("界面布局", ["界面布局", "レイアウト", "Layout"]),
+
     // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
     ("多AI协同审查看板…", ["多AI协同审查看板…", "マルチAI共同レビューダッシュボード…", "Multi-AI Review Dashboard…"]),
     ("多AI协同实时编辑演示…", ["多AI协同实时编辑演示…", "マルチAI共同編集デモ…", "Multi-AI Co-Editing Demo…"]),

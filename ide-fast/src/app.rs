@@ -3943,6 +3943,15 @@ impl App {
                     } else {
                         (&d.lines[row], &rv.map)
                     };
+                    let char_bg = if self.tc.is_translucent() {
+                        Some(if self.tc.dark {
+                            Color32::from_black_alpha(85)
+                        } else {
+                            Color32::from_white_alpha(110)
+                        })
+                    } else {
+                        None
+                    };
                     let mut job = highlight_job(
                         hl_line,
                         &rv.disp,
@@ -3952,6 +3961,7 @@ impl App {
                         &font,
                         row_c,
                         row_h,
+                        char_bg,
                     );
                     if wrap {
                         job.wrap.max_width = wrap_w;
@@ -4123,6 +4133,14 @@ impl App {
                             );
                         }
                     }
+                    if self.tc.is_translucent() {
+                        let shadow_col = if self.tc.dark {
+                            Color32::from_black_alpha(180)
+                        } else {
+                            Color32::from_white_alpha(200)
+                        };
+                        painter.galley(Pos2::new(x0 + rv.x_off() + 1.0, y + 1.0), galley.clone(), shadow_col);
+                    }
                     painter.galley(Pos2::new(x0 + rv.x_off(), y), galley, text_color);
                     if d.changed_cache
                         .as_ref()
@@ -4268,6 +4286,7 @@ impl App {
                             &font,
                             text_color,
                             row_h,
+                            None,
                         );
                         job.wrap.max_width = wrap_w;
                         job.wrap.break_anywhere = true;
@@ -4348,6 +4367,7 @@ impl App {
                                 &font,
                                 text_color,
                                 row_h,
+                                None,
                             );
                             job.wrap.max_width = wrap_w;
                             job.wrap.break_anywhere = true;
@@ -4725,6 +4745,7 @@ fn highlight_job(
     font: &FontId,
     default: Color32,
     line_h: f32,
+    per_char_bg: Option<Color32>,
 ) -> egui::text::LayoutJob {
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
@@ -4732,6 +4753,7 @@ fn highlight_job(
         font_id: font.clone(),
         color: c,
         line_height: Some(line_h),
+        background: per_char_bg.unwrap_or(Color32::TRANSPARENT),
         ..Default::default()
     };
     let Some(cfg) = cfg else {
@@ -4929,6 +4951,8 @@ impl App {
         };
         self.tc.retro16 = self.theme_id == "theme-retro16";
         self.tc.comic = self.theme_id == "theme-comic";
+        self.tc.crystal = self.theme_id == "theme-crystal";
+        self.tc.clear = self.theme_id == "theme-clear";
         let mut vis = match &self.theme_visuals {
             Some(v) => v.clone(),
             None => self.tc.visuals(),
@@ -5084,12 +5108,7 @@ impl App {
             Mode::Strip => self.dock_strip(root, Dock::Bottom),
             Mode::Hidden => {}
         }
-        if !self.cfg.view.rail
-            && self.dock_mode(crate::panels::Dock::Side, self.side.open)
-                != crate::panels::Mode::Hidden
-        {
-            self.dock_strip(root, crate::panels::Dock::Side);
-        }
+        self.dock_strip(root, crate::panels::Dock::Side); // 左细条常驻 (最外层), 活动栏 / 侧栏停靠在它右边
         if self.cfg.view.rail {
             egui::Panel::left("rail")
                 .resizable(false)

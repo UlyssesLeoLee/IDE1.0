@@ -37,6 +37,16 @@ pub struct ThemeColors {
     pub retro16: bool,
     /// comic 主题 (美漫 3渲2: 赛璐珞波普高饱和色); 由 App 按主题 id 设置
     pub comic: bool,
+    /// crystal 主题 (水晶透明)
+    pub crystal: bool,
+    /// clear 主题 (透明玻璃)
+    pub clear: bool,
+}
+
+impl ThemeColors {
+    pub fn is_translucent(&self) -> bool {
+        self.crystal || self.clear
+    }
 }
 
 /// Tauri 的字符标尺: 从第 `first` 列 (从 1 数) 起 `n` 列。10 的倍数写十位数字 (10 -> `1`, 100 -> `0`), 5 的倍数 `+`, 其余 `.`
@@ -100,6 +110,8 @@ impl ThemeColors {
                 bg_active: Color32::from_white_alpha(36),
                 retro16: false,
                 comic: false,
+                crystal: false,
+                clear: false,
             }
         } else {
             ThemeColors {
@@ -122,6 +134,8 @@ impl ThemeColors {
                 bg_active: Color32::from_black_alpha(20),
                 retro16: false,
                 comic: false,
+                crystal: false,
+                clear: false,
             }
         }
     }
