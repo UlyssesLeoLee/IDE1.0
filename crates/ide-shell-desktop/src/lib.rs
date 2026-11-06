@@ -248,6 +248,88 @@ pub struct FileContent {
     pub lossy: bool,
 }
 
+pub struct CollabState(pub std::sync::Arc<ide_agent_router::MultiTenantCollaborationHub>);
+
+impl Default for CollabState {
+    fn default() -> Self {
+        Self(std::sync::Arc::new(ide_agent_router::MultiTenantCollaborationHub::new()))
+    }
+}
+
+#[tauri::command]
+fn tenant_context(
+    collab: tauri::State<'_, CollabState>,
+    tenant_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let t_id = tenant_id.unwrap_or_else(|| "org_default".into());
+    let ctx = collab.0.get_tenant_context(&t_id).ok_or_else(|| "Tenant not found".to_string())?;
+    serde_json::to_value(&ctx).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn collab_presence(
+    collab: tauri::State<'_, CollabState>,
+    tenant_id: Option<String>,
+    workspace_id: Option<String>,
+    file_id: Option<String>,
+    agent_id: String,
+    display_name: Option<String>,
+    role: Option<String>,
+    cursor: [usize; 2],
+    selection: Option<[usize; 4]>,
+    active_symbol: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let t_id = tenant_id.unwrap_or_else(|| "org_default".into());
+    let w_id = workspace_id.unwrap_or_else(|| "default".into());
+    let f_id = file_id.unwrap_or_else(|| "src/lib.rs".into());
+    let d_name = display_name.unwrap_or_else(|| agent_id.clone());
+    let r = match role.as_deref().unwrap_or("AiCoder") {
+        "Human" => ide_agent_router::CollaboratorRole::Human,
+        "AiOptimizer" => ide_agent_router::CollaboratorRole::AiOptimizer,
+        "AiTester" => ide_agent_router::CollaboratorRole::AiTester,
+        "Reviewer" => ide_agent_router::CollaboratorRole::Reviewer,
+        _ => ide_agent_router::CollaboratorRole::AiCoder,
+    };
+    let rc = collab
+        .0
+        .register_presence(
+            &t_id,
+            &w_id,
+            &f_id,
+            &agent_id,
+            &d_name,
+            r,
+            cursor,
+            selection,
+            active_symbol,
+        )
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(&rc).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn collab_keystroke(
+    collab: tauri::State<'_, CollabState>,
+    tenant_id: Option<String>,
+    workspace_id: Option<String>,
+    file_id: Option<String>,
+    agent_id: String,
+    op: serde_json::Value,
+    cursor_after: [usize; 2],
+    selection_after: Option<[usize; 4]>,
+) -> Result<serde_json::Value, String> {
+    let t_id = tenant_id.unwrap_or_else(|| "org_default".into());
+    let w_id = workspace_id.unwrap_or_else(|| "default".into());
+    let f_id = file_id.unwrap_or_else(|| "src/lib.rs".into());
+    let k_op: ide_agent_router::KeystrokeOp =
+        serde_json::from_value(op).map_err(|e| e.to_string())?;
+    let bcast = collab
+        .0
+        .apply_keystroke(&t_id, &w_id, &f_id, &agent_id, k_op, cursor_after, selection_after)
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(&bcast).map_err(|e| e.to_string())
+}
+
 // ===== Tauri commands =====
 // 不写 `pub` (Tauri 2.12 macro private 限制), invoke_handler 在同 module 引用即可.
 
@@ -674,9 +756,13 @@ pub fn run() {
         .manage(grants::Grants::default())
         .manage(terminal::TerminalState::new())
         .manage(doc::DocState::default())
+        .manage(CollabState::default())
         .invoke_handler(tauri::generate_handler![
             theme_luminance::desktop_luminance,
             theme_luminance::clear_theme_vars,
+            tenant_context,
+            collab_presence,
+            collab_keystroke,
             doc::doc_active,
             doc::doc_tabs,
             doc::doc_open,

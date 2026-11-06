@@ -3268,6 +3268,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "editcore",
+ "ide-agent-router",
  "ide-kernel",
  "ide-kernel-core",
  "ide-shell",

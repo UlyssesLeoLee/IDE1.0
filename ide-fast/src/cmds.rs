@@ -15,6 +15,8 @@ pub enum Action {
     GotoLine,
     ToggleOverwrite,
     ToggleReadonly,
+    OpenReviewDoc,
+    TriggerCoeditDemo,
     /// 选区 (没有 = 整篇) 的编码内容转换, 后缀见 `textconv::CODECNV`
     CodeCnv(&'static str),
 }
@@ -516,6 +518,18 @@ pub const CMDS: &[Cmd] = &[
         label: "提示块",
         keys: "",
         action: Edit("md-callout"),
+    },
+    Cmd {
+        group: "AI 协同",
+        label: "协同审查看板",
+        keys: "Ctrl+Shift+R",
+        action: OpenReviewDoc,
+    },
+    Cmd {
+        group: "AI 协同",
+        label: "模拟多 AI 协同编辑",
+        keys: "",
+        action: TriggerCoeditDemo,
     },
 ];
 

@@ -1529,6 +1529,7 @@ pub const CMD_T: &[Row] = &[
     ("转换", ["转换", "変換", "Convert"]),
     ("整理行", ["整理行", "行の整理", "Tidy Lines"]),
     ("缩进", ["缩进", "インデント", "Indent"]),
+    ("AI 协同", ["AI 协同", "AI 協調", "AI Collaboration"]),
     ("Markdown", ["Markdown", "Markdown", "Markdown"]),
     // 行
     ("剪切行", ["剪切行", "行を切り取り", "Cut Line"]),
@@ -1728,6 +1729,14 @@ pub const CMD_T: &[Row] = &[
     ("表格", ["表格", "表", "Table"]),
     ("分隔线", ["分隔线", "区切り線", "Horizontal Rule"]),
     ("提示块", ["提示块", "コールアウト", "Callout"]),
+    (
+        "协同审查看板",
+        ["协同审查看板", "レビューボード", "Co-edit Review Dashboard"],
+    ),
+    (
+        "模拟多 AI 协同编辑",
+        ["模拟多 AI 协同编辑", "複数AI協調デモ", "Simulate Multi-AI Co-edit"],
+    ),
     (
         "复制文件名",
         ["复制文件名", "ファイル名をコピー", "Copy File Name"],

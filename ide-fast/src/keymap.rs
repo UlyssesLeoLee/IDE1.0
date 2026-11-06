@@ -266,6 +266,8 @@ pub fn action_id(a: Action) -> String {
         Action::ToggleOverwrite => "overwrite".into(),
         Action::ToggleReadonly => "readonly".into(),
         Action::CodeCnv(k) => format!("codecnv.{k}"),
+        Action::OpenReviewDoc => "coedit-review".into(),
+        Action::TriggerCoeditDemo => "coedit-demo".into(),
     }
 }
 

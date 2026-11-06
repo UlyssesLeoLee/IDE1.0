@@ -15,6 +15,7 @@ pub(super) enum StatusCmd {
     PrevPage,
     NextPage,
     CrossPageGrep,
+    ReviewDoc,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -285,6 +286,16 @@ impl App {
                 );
                 ui.add_space(8.0);
                 sep(ui, on);
+                ui.add_space(4.0);
+                if ui
+                    .small_button("🛡️ 协同审查")
+                    .on_hover_text("打开多 AI 协同审查与统筹验收看板 (Ctrl+Shift+R)")
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::ReviewDoc);
+                }
+                ui.add_space(4.0);
+                sep(ui, on);
                 // 提示撑满剩下的宽, 语法名靠右
                 let lang_w = text_w(ui, &lang) + 16.0;
                 let tip_w = (right - ui.cursor().left() - lang_w - 1.0).max(0.0);
@@ -324,6 +335,9 @@ impl App {
                 self.side.grep.o.this_file = true;
                 self.side.grep.focus_pattern = true;
                 self.cur().tip = "已打开跨页 Grep 搜索: 输入关键词回车即可定位到分页与行号".into();
+            }
+            Some(StatusCmd::ReviewDoc) => {
+                self.open_review_doc();
             }
             None => {}
         }

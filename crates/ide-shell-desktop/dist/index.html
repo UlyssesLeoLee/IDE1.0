@@ -3670,7 +3670,7 @@ async function fetchApi(path, opts) {
 // Tauri command 名与 web HTTP 端点名的差异表.
 // 桌面版注册的是 #[tauri::command] fn search_cmd, 而 HTTP 端点是 /api/search;
 // 其余同名. 新增命令时在这里补一行即可, 免得两端命名漂移.
-const TAURI_CMD_ALIAS = { search: "search_cmd" };
+const TAURI_CMD_ALIAS = { search: "search_cmd", "collab/presence": "collab_presence", "collab/keystroke": "collab_keystroke", "tenant/context": "tenant_context" };
 
 // Tauri command 的参数是「函数形参名 -> 值」: search_cmd(options: SearchOptions) 要 {options:{...}},
 // 而 HTTP 端点直接收平铺的条件. 返回值也不同: Tauri 返回裸数组, HTTP 返回 {results:[...]}.
@@ -4412,6 +4412,8 @@ function dispatchCommand(cmd) {
   switch (cmd) {
     // 文件
     case "new-file":         createNewFile(); break;
+    case "coedit-review":    openReviewDoc(); break;
+    case "coedit-demo":      if (window.__saasCollab) window.__saasCollab.simulateCoEdit(); break;
     case "open-folder":      openFolder(); break;
     case "open-file":        promptOpenFile(); break;
     case "save":             saveActive(); break;
@@ -5653,6 +5655,86 @@ function untitledName() {
 function createUntitledDoc() {
   const id = "t" + (++maxTabId);
   const t = { id, path: "", name: untitledName(), untitled: true, cursor: { row: 0, col: 0 }, dirty: false, lines: [""], undo: [], redo: [], encoding: PREFS.defaultEncoding || "UTF-8", bom: "none", eol: PREFS.defaultEol || "crlf" };
+  TABS.set(id, t);
+  setActiveTab(id);
+  return t;
+}
+
+function openReviewDoc() {
+  for (const [id, tab] of TABS.entries()) {
+    if (tab.name === "🛡️ 协同审查") {
+      setActiveTab(id);
+      return tab;
+    }
+  }
+  const curTab = getActiveTab();
+  const curPath = (curTab && curTab.path) || (curTab && curTab.name) || "src/math.rs";
+  const id = "t" + (++maxTabId);
+  const lines = [
+    "# 🛡️ 多 AI 协同审查与统筹验收看板 (Multi-AI Reviewer & Co-Editing Dashboard)",
+    "================================================================================",
+    "【当前审视目标】: " + curPath,
+    "【统筹审查员】: Reviewer Lead (Staff Architect) | 状态: 阶段 2 (实时推导与动态巡航)",
+    "【自动化门禁】: [✔ 语法树完整] [✔ 静态检查通过] [✔ 单元测试就绪] [✔ 安全审计通过]",
+    "",
+    "=== 阶段 1: 最初规划与指引看板 (Upfront Planning & Guidance Zones) ===",
+    "--------------------------------------------------------------------------------",
+    "💡 核心理念: Reviewer 在最初规划架构不变量与接口契约，指引而非限制 AI 自由探索。",
+    "[任务总目标]: 高性能异步处理流水线与高吞吐语义单元协作 (零锁死、零回滚)",
+    "[系统不变量]:",
+    "  • [INV-01] 显式状态: 每一个击键事件必须可追溯到具体 Agent 与时间戳",
+    "  • [INV-02] 意图平移: 协作者光标与选区在并发修改时依据单调偏移自动平移",
+    "  • [INV-03] 验证前置: 任何并发编辑必须通过 Verifier 静态门禁方可进入验收",
+    "",
+    "[建议作业区规划 (非阻断指引 - 允许自由交叉引用)]:",
+    "  • [Zone-A] 行 010 - 050: 核心模型与数据结构定义 -> 建议: 🤖 AI-Coder-1 (翡翠绿)",
+    "    契约指引: 暴露 pub fn validate(&self) -> Result<(), Error> 与 Parse 接口",
+    "  • [Zone-B] 行 051 - 120: 核心处理调度流水线 -> 建议: 🤖 AI-Optimizer (紫罗兰)",
+    "    契约指引: 引用 Zone-A 模型，执行无锁环形缓冲区消费与异步重试",
+    "  • [Zone-C] 行 121 - 200: 单元测试与极端边界用例 -> 建议: 🧪 AI-Tester (耀斑金)",
+    "    契约指引: 模拟网络断开、跨页大文件及并发竞态条件",
+    "",
+    "=== 阶段 2: 实时协同巡航与动态指引 (Live Stream & Remote Cursors) ===",
+    "--------------------------------------------------------------------------------",
+    "[活跃协作者与多人光标状态]:",
+    "  • 🤖 AI-Coder-1   (翡翠绿 #34D399) | 当前光标: [Ln 35, Col 12] | 状态: 编写数据反序列化",
+    "  • 🤖 AI-Optimizer (紫罗兰 #A855F7) | 当前光标: [Ln 88, Col 04] | 状态: 重构异步调度通道",
+    "  • 👤 人类开发者   (天蓝色 #38BDF8) | 当前光标: [Ln 15, Col 00] | 状态: 观摩与架构巡航",
+    "",
+    "[审查员动态指引广播流 (Live Reviewer Hints)]:",
+    "  • [提示 #1] (契约对齐) AI-1 已定义 ProcessResult 契约，AI-2 可直接在 dispatch 中复用。",
+    "  • [提示 #2] (范围巡航) AI-1 与 AI-2 正在非重叠作业区高速推导，无竞态冲突，继续保持。",
+    "",
+    "=== 阶段 3: 终局统筹审查与验收裁决 (Holistic Convergence & Acceptance) ===",
+    "--------------------------------------------------------------------------------",
+    "[待审差异块 (Attributed Hunks)]:",
+    "  [Hunk #1] [🤖 AI-Coder-1]   行 015-045 (+30 行) 状态: [✔ 待审查 PENDING]",
+    "            说明: 完善数据模型字段，补充严格反序列化校验",
+    "  [Hunk #2] [🤖 AI-Optimizer] 行 065-110 (+45 行) 状态: [✔ 待审查 PENDING]",
+    "            说明: 优化异步通道背压策略，吞吐量提升 4.2x",
+    "",
+    "[审查员裁决与签发指令]:",
+    "  • [全量通过验收 (Approve All)]: 认可全部修改，收敛至下一权威版本并签署证书",
+    "  • [细粒度采纳 (Selective)]: 选择性合入指定 Hunk 差异块",
+    "  • [指派定向返工 (Request Rework)]: 对特定行添加审查员批注并唤醒对应 Agent 返工",
+    "================================================================================"
+  ];
+  const t = {
+    id: id,
+    path: "",
+    name: "🛡️ 协同审查",
+    untitled: true,
+    cursor: { row: 0, col: 0 },
+    dirty: false,
+    readonly: true,
+    lines: lines,
+    undo: [],
+    redo: [],
+    encoding: "UTF-8",
+    bom: "none",
+    eol: "lf",
+    language: "markdown"
+  };
   TABS.set(id, t);
   setActiveTab(id);
   return t;
@@ -14260,6 +14342,19 @@ function showAbout() {
     },
 
     simulateCoEdit: function() {
+      if (typeof invoke === "function") {
+        invoke("collab/presence", {
+          tenant_id: collab.tenantId,
+          workspace_id: collab.workspaceId,
+          file_id: collab.fileId,
+          agent_id: "agent_coder_1",
+          display_name: "Coder Alpha",
+          role: "AiCoder",
+          cursor: [1, 4],
+          selection: [1, 0, 1, 8]
+        }).catch(function(e) { console.warn("collab_presence:", e); });
+      }
+
       collab.remoteCursors = [
         {
           agentId: "coder_1",
@@ -14307,6 +14402,7 @@ function showAbout() {
     var sReview = document.getElementById("s-review");
     if (sReview) {
       sReview.onclick = function() {
+        if (typeof openReviewDoc === "function") openReviewDoc();
         var btnTab = document.querySelector(".bottom-tab[data-pane='collab-review-pane']");
         if (btnTab) btnTab.click();
         collab.renderReviewDashboard();

@@ -14,6 +14,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # 编辑内核 — doc_* command 共用 web 端同一份 DocStore
 ide-kernel = { path = "../ide-kernel" }
+# 多租户协同路由与统筹审查引擎 (Multi-AI Co-Editing & Reviewer)
+ide-agent-router = { path = "../ide-agent-router" }
 # Workspace 共享 deps
 serde = { workspace = true }
 serde_json = { workspace = true }

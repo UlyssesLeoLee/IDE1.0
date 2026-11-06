@@ -3437,6 +3437,8 @@ impl App {
                     "已取消只读".into()
                 };
             }
+            Action::OpenReviewDoc => self.open_review_doc(),
+            Action::TriggerCoeditDemo => self.trigger_coedit_demo(),
         }
     }
 
