@@ -582,10 +582,16 @@ impl App {
 
     /// 打开首选项: 草稿 = 当前设置的拷贝
     fn open_prefs(&mut self) {
-        if self.prefs.is_none() {
+        self.open_prefs_tab(PrefsTab::General);
+    }
+
+    pub(super) fn open_prefs_tab(&mut self, tab: PrefsTab) {
+        if let Some(p) = self.prefs.as_mut() {
+            p.tab = tab;
+        } else {
             self.prefs = Some(Box::new(Prefs {
                 draft: self.current_settings(),
-                tab: PrefsTab::General,
+                tab,
                 new_ext: String::new(),
                 fonts: crate::fonts::system_fonts(),
             }));
@@ -2749,7 +2755,7 @@ impl App {
             (7, Key::Num8),
             (8, Key::Num9),
         ] {
-            if cmd(ctx, Modifiers::CTRL, num_key) {
+            if cmd(ctx, Modifiers::ALT, num_key) {
                 if num_idx < self.docs.len() {
                     self.active = num_idx;
                     self.jump_mark();

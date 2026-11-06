@@ -16,6 +16,7 @@ pub(super) enum StatusCmd {
     NextPage,
     CrossPageGrep,
     ReviewDoc,
+    Language,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -310,7 +311,13 @@ impl App {
                 );
                 sep(ui, on);
                 ui.add_space(8.0);
-                ui.label(lang);
+                if ui
+                    .add(egui::Label::new(egui::RichText::new(&lang)).sense(Sense::click()))
+                    .on_hover_text("选择语言 (Ctrl+4)")
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::Language);
+                }
             });
         });
         match st_cmd {
@@ -339,6 +346,7 @@ impl App {
             Some(StatusCmd::ReviewDoc) => {
                 self.open_review_doc();
             }
+            Some(StatusCmd::Language) => self.open_syntax_pick(),
             None => {}
         }
     }

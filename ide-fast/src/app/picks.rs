@@ -65,6 +65,7 @@ impl App {
             KApp::InsRecentDir => self.open_path_pick(Kind::InsDir),
             KApp::PickCharset => self.open_charset_pick(Kind::Charset),
             KApp::PickReopen => self.open_charset_pick(Kind::Reopen),
+            KApp::PickSyntax => self.open_syntax_pick(),
             KApp::Help => self.open_manual(None),
             KApp::HelpSearch => self.open_help_search(String::new()),
             KApp::ExtHelp => {
@@ -173,6 +174,48 @@ impl App {
         );
     }
 
+    pub(super) fn open_syntax_pick(&mut self) {
+        let (cur, doc_id) = {
+            let d = self.cur();
+            (d.syntax.clone(), d.id)
+        };
+        let mut rows = Vec::new();
+        let auto_label = trz("自动 (按扩展名)");
+        let cur_label = trz("当前");
+        rows.push(
+            Row::new(
+                format!("{} {}", if cur.is_none() { "▶" } else { "　" }, auto_label),
+                if cur.is_none() { cur_label } else { "" },
+            )
+            .with_value(""),
+        );
+        let mut at = 0;
+        for (idx, t) in self.registry.all().iter().enumerate() {
+            let is_cur = cur.as_deref() == Some(&t.name);
+            if is_cur {
+                at = idx + 1;
+            }
+            let detail = if is_cur {
+                format!("{} ({})", cur_label, t.exts.join(", "))
+            } else {
+                t.exts.join(", ")
+            };
+            rows.push(
+                Row::new(
+                    format!("{} {}", if is_cur { "▶" } else { "　" }, &t.name),
+                    detail,
+                )
+                .with_value(t.name.clone()),
+            );
+        }
+        let title = format!("{} (Ctrl+4)", trz("选择语言 (类型一览)"));
+        self.tools.pick = Some(
+            Pick::new(Kind::Syntax, title, Match::Fuzzy, rows)
+                .start_at(at)
+                .for_doc(doc_id),
+        );
+    }
+
     /// 手册开成(或刷新)只读标签; `line` 从 1 数, 有就跳过去
     pub(super) fn open_manual(&mut self, line: Option<usize>) {
         let text = help::manual();
@@ -260,6 +303,21 @@ impl App {
                 }
             }
             Kind::Help => self.open_manual(row.value.parse().ok()),
+            Kind::Syntax => {
+                let i = target_ix.unwrap_or(self.active);
+                let lang_name = if row.value.is_empty() {
+                    None
+                } else {
+                    Some(row.value.clone())
+                };
+                self.docs[i].syntax = lang_name.clone();
+                let tip = format!(
+                    "{}: {}",
+                    trz("语言"),
+                    lang_name.as_deref().unwrap_or(trz("自动 (按扩展名)"))
+                );
+                self.docs[i].tip = tip;
+            }
         }
     }
 

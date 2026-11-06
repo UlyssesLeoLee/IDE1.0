@@ -555,8 +555,20 @@ impl App {
                     menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")),
                     |ui| {
                         menuui::scroll(ui, |ui| {
-                            if menuui::mbtn(ui, lk("c.common-config", "")).clicked() {
+                            if menuui::mbtn(ui, lk("c.common-config", "Ctrl+6")).clicked() {
                                 self.open_prefs();
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.type-config", "Ctrl+5")).clicked() {
+                                self.open_prefs_tab(crate::prefs::PrefsTab::Types);
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.font", "Ctrl+7")).clicked() {
+                                self.open_prefs_tab(crate::prefs::PrefsTab::Font);
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.language", "Ctrl+4")).clicked() {
+                                self.open_syntax_pick();
                                 ui.close();
                             }
                             ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
@@ -938,7 +950,11 @@ menuui::top(
             ui.close();
         }
         ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
-        if menuui::mbtn(ui, lk("c.common-config", "")).clicked() {
+        if menuui::mbtn(ui, lk("c.type-config", "Ctrl+5")).clicked() {
+            self.open_prefs_tab(crate::prefs::PrefsTab::Types);
+            ui.close();
+        }
+        if menuui::mbtn(ui, lk("c.common-config", "Ctrl+6")).clicked() {
             self.open_prefs();
             ui.close();
         }

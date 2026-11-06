@@ -3131,7 +3131,7 @@
       <span class="s-item s-tenant" id="s-tenant" title="多租户 SaaS 云端工作区">🏢 租户: Acme Corp [Enterprise] (3/50 AI)</span>
       <span class="s-item s-review" id="s-review" style="cursor:pointer;color:#38bdf8" title="点击展开多 AI 协同审查面板">🛡️ 协同审查</span>
       <span class="s-item s-tip" id="s-tip">就绪 — 点工具栏「打开文件夹」导入项目</span>
-      <span class="s-item" id="s-lang">Plain</span>
+      <span class="s-item" id="s-lang" data-cmd="language" style="cursor:pointer" title="当前文件语言 (点击选择: Ctrl+4)">Plain</span>
     </div>
 
     <!-- Tooltip & Modal -->
@@ -3273,8 +3273,18 @@ const SETTINGS = {
     items: () => [12, 13, 14, 15, 16, 18, 20].map((n) => ({ label: n + " px", cmd: "font-set:" + n })),
   },
   language: {
-    title: "当前文件语言",
-    items: () => (window.Syntax ? Syntax.LANGUAGES : []).map((l) => ({ label: Syntax.languageLabel(l), cmd: "setlang:" + l })),
+    title: "当前文件语言 (选语言)",
+    items: () => {
+      const t = getActiveTab();
+      const cur = t ? (t.language || "") : "";
+      const res = [{ label: "自动 (按扩展名)" + (!cur ? " (当前)" : ""), cmd: "setlang:auto" }];
+      if (window.Syntax && Syntax.LANGUAGES) {
+        Syntax.LANGUAGES.forEach((l) => {
+          res.push({ label: Syntax.languageLabel(l) + (cur === l ? " (当前)" : ""), cmd: "setlang:" + l });
+        });
+      }
+      return res;
+    },
   },
   keymap: {
     title: "键映射 (编辑器三态)",
@@ -5344,6 +5354,12 @@ function insertTemplate(lang, t) {
 function setTabLanguage(lang, t) {
   t = t || getActiveTab();
   if (!t) return false;
+  if (!lang || lang === "auto") {
+    delete t.language;
+    renderVim(t);
+    setTip("语言: 自动 (按扩展名)");
+    return true;
+  }
   const id = String(lang || "").toLowerCase();
   if (Syntax.LANGUAGES.indexOf(id) < 0) {
     setTip("未知语言: " + id);
@@ -11814,7 +11830,7 @@ const EXTRA_KEYS = {
   "C-.": "copy-passage", "C-\\": "copy-path", "F6": "begin-sel",
   "F4": "split-v", "S-F4": "split-h", "C-S-;": "split-quad", "C-:": "split-quad", "C-;": "split-quad", "C-S--": "split-v", "C-S-\\": "split-h",
   "C-Tab": "next-tab", "C-S-Tab": "prev-tab", "C-q": "keybind-list", "S-F1": "all-commands",
-  "C-4": "type-config", "C-5": "type-config", "C-6": "common-config", "C-7": "font",
+  "C-4": "language", "C-5": "type-config", "C-6": "common-config", "C-7": "font",
   "C-A-s": "tmp-wrap", "C-A-w": "wrap-window-width", "C-A-u": "wrap-window-width", "C-A-x": "wrap-none",
   "S-A-F4": "exit-all", "C-S-A-s": "save-all", "C-3": "toggle-status",
 };

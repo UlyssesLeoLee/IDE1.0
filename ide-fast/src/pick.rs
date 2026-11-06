@@ -26,6 +26,8 @@ pub enum Kind {
     Reopen,
     /// 帮助检索: 行 = 手册里的一行
     Help,
+    /// 选择语言 (类型一览, Ctrl+4)
+    Syntax,
 }
 
 /// 怎么按查询串过滤

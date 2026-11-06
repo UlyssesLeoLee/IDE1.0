@@ -196,6 +196,9 @@ pub const T: &[Row] = &[
     ("sub.plugin-restore", ["恢复内置插件", "内蔵プラグインを復元", "Restore Bundled Plugins"]),
     // ---- 设置
     ("c.common-config", ["首选项…", "共通設定…", "Preferences…"]),
+    ("c.language", ["当前文件语言…", "ファイルの言語 (タイプ別設定一覧)…", "File Language…"]),
+    ("c.type-config", ["类型别设置…", "タイプ別設定…", "Type Settings…"]),
+    ("c.font", ["字体设置…", "フォント設定…", "Font Settings…"]),
     ("sub.layout", ["界面布局", "レイアウト", "Layout"]),
     ("sub.dock-panels", ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"]),
     ("sub.ui-bars", ["界面元素", "UIバー", "UI Elements"]),
@@ -672,6 +675,8 @@ pub const CMD_T: &[Row] = &[
     ("多AI协同审查看板…", ["多AI协同审查看板…", "マルチAI共同レビューダッシュボード…", "Multi-AI Review Dashboard…"]),
     ("多AI协同实时编辑演示…", ["多AI协同实时编辑演示…", "マルチAI共同編集デモ…", "Multi-AI Co-Editing Demo…"]),
     ("协同审查", ["协同审查", "共同レビュー", "Co-Edit Review"]),
+    ("选择语言 (类型一览)", ["选择语言 (类型一览)", "言語選択 (タイプ別一覧)", "Select Language (Type List)"]),
+    ("语言", ["语言", "言語", "Language"]),
     ("查找内容", ["查找内容", "検索内容", "Find what"]),
     (
         "剪贴板历史",
