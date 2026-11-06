@@ -641,6 +641,47 @@
     .ui-dlg-msg { white-space: pre-wrap; line-height: 1.6; max-width: 520px; margin-bottom: 8px; }
     .md-btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
     textarea.md-input { width: 100%; box-sizing: border-box; font-family: inherit; }
+    /* ===== NEMA 工具条 / 预览 ===== */
+    #nema-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
+    html[data-nema="on"] #viewbars-top { display: block; }
+    html[data-nema="on"] #nema-bar { display: flex; }
+    #nema-bar .tb-btn { border: 1px solid transparent; background: transparent; color: var(--fg); padding: 1px 8px; font-size: var(--fs-xs); border-radius: 3px; cursor: pointer; }
+    #nema-bar .tb-btn:hover { background: var(--bg-hover); border-color: var(--border); }
+    #nema-bar .tb-btn.on { background: var(--bg-active); border-color: var(--border-strong); }
+    #nema-bar .tb-sep { width: 1px; background: var(--border); margin: 2px 4px; }
+    #nema-preview { display: none; position: absolute; inset: 0; overflow: auto; background: var(--bg-edit); z-index: 3; padding: 12px 24px; }
+    html[data-nema-preview="on"] #nema-preview { display: block; }
+    html[data-nema-preview="on"] :is(#ed-content, #gutter, #caret, #curline, #minimap) { visibility: hidden; }
+    [data-theme="clear"] #nema-preview { background: var(--mat-edit); -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%); }
+    .nema-view-tabs { display: flex; gap: 6px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .nema-tab-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 3px 12px; border-radius: 4px; font-size: var(--fs-xs); cursor: pointer; }
+    .nema-tab-btn:hover { background: var(--bg-hover); }
+    .nema-tab-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .nema-body-view { max-width: 960px; margin: 0 auto; line-height: 1.6; font-size: var(--fs-sm); color: var(--fg); }
+    .nema-group-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--fg-muted); letter-spacing: 0.05em; margin: 12px 0 6px; }
+    .nema-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: var(--fs-sm); }
+    .nema-table th { background: var(--bg-raised); border: 1px solid var(--border); padding: 6px 10px; text-align: left; font-weight: 600; }
+    .nema-table td { border: 1px solid var(--border); padding: 6px 10px; vertical-align: top; }
+    .nema-table tr:hover { background: color-mix(in srgb, var(--blue, #569cd6) 5%, transparent); }
+    .nema-pill { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 11px; font-family: var(--font-mono, monospace); background: color-mix(in srgb, var(--blue, #569cd6) 20%, transparent); color: var(--blue, #569cd6); border: 1px solid color-mix(in srgb, var(--blue, #569cd6) 40%, transparent); margin: 0 2px; }
+    .nema-graph-svg { width: 100%; min-height: 400px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-raised); }
+    .nema-node rect { fill: var(--bg-bar); stroke: var(--border-strong); stroke-width: 1.5; rx: 8; ry: 8; }
+    .nema-node:hover rect { stroke: var(--blue); fill: var(--bg-hover); }
+    .nema-node text.id { fill: var(--fg); font-weight: 600; font-size: 13px; text-anchor: middle; }
+    .nema-node text.name { fill: var(--fg-muted); font-size: 11px; text-anchor: middle; }
+    .nema-edge { fill: none; stroke: #d29922; stroke-width: 1.8; cursor: pointer; transition: stroke 0.2s; }
+    .nema-edge:hover, .nema-edge.selected { stroke: #58a6ff; stroke-width: 2.6; }
+    .nema-edge-label { fill: var(--fg); font-size: 10px; cursor: pointer; user-select: none; paint-order: stroke; stroke: var(--bg-edit); stroke-width: 3px; stroke-linejoin: round; }
+    .nema-edge-detail { margin-top: 10px; padding: 8px 12px; border-radius: 4px; background: var(--bg-raised); border-left: 3px solid var(--blue); font-size: 12px; }
+    .nema-edge-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-height: 180px; overflow-y: auto; }
+    .nema-edge-item { display: flex; align-items: center; gap: 8px; text-align: left; padding: 4px 8px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg-bar); color: var(--fg); font-size: 11px; cursor: pointer; }
+    .nema-edge-item:hover { border-color: var(--blue); background: var(--bg-hover); }
+    .nema-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .nema-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--bg-raised); }
+    .nema-card-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--blue); }
+    .nema-card-field { margin: 3px 0; font-size: 12px; }
+    .nema-card-field b { color: var(--fg-muted); font-weight: 500; margin-right: 4px; }
+
     /* ===== Markdown 工具条 / 预览 ===== */
     #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
     html[data-md="on"] #viewbars-top { display: block; }
@@ -4405,6 +4446,7 @@ async function sendTerminal(data) {
 function dispatchCommand(cmd) {
   if (!cmd) return;
   if (cmd.startsWith("md-")) return cmd === "md-preview" ? toggleMdPreview() : mdCommand(cmd);
+  if (cmd.startsWith("nema-")) return cmd === "nema-preview" ? toggleNemaPreview() : nemaCommand(cmd);
   if (cmd.startsWith("plugin:")) return plugRunCommand(cmd);
   if (VIEW_CMDS[cmd]) { VIEW_CMDS[cmd](); return; }
   if (CFG_CMDS[cmd]) return CFG_CMDS[cmd]();
@@ -4672,6 +4714,7 @@ if (termIn) {
     "html": "html", "htm": "html", "xml": "xml",
     "css": "css", "scss": "css", "less": "css",
     "json": "json", "jsonc": "json", "json5": "json",
+    "nema": "nema", "nemat": "nema",
     "md": "markdown", "markdown": "markdown",
     "yaml": "yaml", "yml": "yaml",
     "toml": "toml", "ini": "ini", "cfg": "ini",
@@ -4707,7 +4750,7 @@ if (termIn) {
       go: "Go", c: "C", cpp: "C++", java: "Java", ruby: "Ruby", php: "PHP",
       csharp: "C#", swift: "Swift", kotlin: "Kotlin", objc: "Objective-C",
       bash: "Shell", html: "HTML", xml: "XML", css: "CSS", json: "JSON",
-      markdown: "Markdown", yaml: "YAML", toml: "TOML", ini: "INI",
+      nema: "NEMA", markdown: "Markdown", yaml: "YAML", toml: "TOML", ini: "INI",
       sql: "SQL", dockerfile: "Dockerfile", diff: "Diff", vim: "Vim Script",
       lua: "Lua", perl: "Perl", r: "R", haskell: "Haskell", elixir: "Elixir",
       erlang: "Erlang", scala: "Scala", clojure: "Clojure", dart: "Dart",
@@ -4726,6 +4769,23 @@ if (termIn) {
   // 每个 lexer = { lineComment, blockComment, strings: [{open, close, escape}], keywords: Set, types?: Set,
   //                extraRules?: [{pattern, cls}], numbers?: bool }
   const LANGS = {
+    nema: {
+      lineComment: null,
+      blockComment: null,
+      strings: [],
+      keywords: new Set(["What", "Why", "How", "Who", "When", "Where", "Table", "5W1H", "Graph"]),
+      types: new Set(["table", "5w1h", "graph"]),
+      extraRules: [
+        { pattern: String.raw`^\t[\\?\>][1-9][0-9]*(?: [1-9][0-9]*)?$`, cls: "attr" },
+        { pattern: String.raw`^\t\$[0-9]+$`, cls: "attr" },
+        { pattern: String.raw`^\\ .*$`, cls: "keyword" },
+        { pattern: String.raw`\^[0-9]+`, cls: "tag" },
+        { pattern: String.raw`\\[0-9]+(?:\\?[A-Za-z0-9])`, cls: "special" },
+        { pattern: String.raw`[A-Za-z0-9_.-]+[><=][A-Za-z0-9_.-]+[><=][A-Za-z0-9_.-]+`, cls: "link" },
+        { pattern: String.raw`\s\.$`, cls: "dim" },
+      ],
+    },
+
     rust: {
       lineComment: "//",
       blockComment: ["/*", "*/"],
@@ -10169,7 +10229,8 @@ const VIEWOPT = (() => {
 })();
 function saveViewOpt() { try { localStorage.setItem("ide10.view", JSON.stringify(VIEWOPT)); } catch (_) {} }
 
-const TOOLBAR_ITEMS = [          // [Sakura 的名字 (悬停提示), 命令, 图标]
+const TOOLBAR_ITEMS = [
+  ["NEMA", "nema-convert", "⇥\\"],          // [Sakura 的名字 (悬停提示), 命令, 图标]
   ["新規", "new-file", "🗎"], ["開く", "open-file", "📂"], ["保存", "save", "💾"], "|",
   ["切り取り", "cut", "✂"], ["コピー", "copy", "⧉"], ["貼り付け", "paste", "📋"], "|",
   ["元に戻す", "undo", "↶"], ["やり直し", "redo", "↷"], "|",
@@ -10177,6 +10238,7 @@ const TOOLBAR_ITEMS = [          // [Sakura 的名字 (悬停提示), 命令, �
   ["ブックマーク", "bookmark-toggle", "★"], ["前へ", "bookmark-prev", "▲"], ["次へ", "bookmark-next", "▼"],
 ];
 const TB_ICONS = {
+  "nema-convert": '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/><line x1="1.5" y1="6.5" x2="14.5" y2="6.5"/><polyline points="8.5 9.5 10.5 11.5 13 8.5"/></svg>',
   "new-file": '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 1H4a1.5 1.5 0 0 0-1.5 1.5v11A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5V5.5L9 1z"/><polyline points="9 1 9 5.5 13.5 5.5"/><line x1="8" y1="8.5" x2="8" y2="12.5"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></svg>',
   "open-file": '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v1.5H3.5a1 1 0 0 0-.95.68L1 12V4z"/><path d="M2.55 13h11.9a1 1 0 0 0 .95-1.32l-1.5-4.5A1 1 0 0 0 13 6.5H3.5a1 1 0 0 0-.95.68L1 12.5a.7.7 0 0 0 .65.5h.9z"/></svg>',
   "save": '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 15H3a1.5 1.5 0 0 1-1.5-1.5v-11A1.5 1.5 0 0 1 3 1h8l3 3v9.5a1.5 1.5 0 0 1-1.5 1.5z"/><polyline points="11 15 11 9 5 9 5 15"/><polyline points="4 1 4 4 10 4"/></svg>',
@@ -10200,7 +10262,7 @@ const FUNCKEYS = [
 ];
 /* 右上角快捷按钮 (仿 Office 的快速访问工具栏): 用户自己增减、排序, 存在首选项 PREFS.qab (命令 id 的数组)。
    默认只放 Grep 搜索; 任何命令 (菜单里的、插件贡献的) 都能加进来。按钮就是 data-cmd, 点击走全局命令分发。 */
-const QAB_DEFAULT = ["grep"];
+const QAB_DEFAULT = ["grep", "nema-convert"];
 const qabList = () => (Array.isArray(PREFS.qab) ? PREFS.qab.filter((c) => typeof c === "string" && c) : QAB_DEFAULT.slice());
 function setQab(list) {
   PREFS.qab = [...new Set(list.filter((c) => typeof c === "string" && c))];
@@ -11830,7 +11892,8 @@ const EXTRA_KEYS = {
   "C-.": "copy-passage", "C-\\": "copy-path", "F6": "begin-sel",
   "F4": "split-v", "S-F4": "split-h", "C-S-;": "split-quad", "C-:": "split-quad", "C-;": "split-quad", "C-S--": "split-v", "C-S-\\": "split-h",
   "C-Tab": "next-tab", "C-S-Tab": "prev-tab", "C-q": "keybind-list", "S-F1": "all-commands",
-  "C-4": "language", "C-5": "type-config", "C-6": "common-config", "C-7": "font",
+  "C-4": "language",
+  "C-A-m": "nema-convert", "C-5": "type-config", "C-6": "common-config", "C-7": "font",
   "C-A-s": "tmp-wrap", "C-A-w": "wrap-window-width", "C-A-u": "wrap-window-width", "C-A-x": "wrap-none",
   "S-A-F4": "exit-all", "C-S-A-s": "save-all", "C-3": "toggle-status",
 };
@@ -13700,12 +13763,694 @@ function scheduleMdPreview() {
   MD.timer = setTimeout(() => { MD.timer = 0; renderMdPreview(); }, 200);
 }
 // 活动文档变了 / 内容变了: 刷新工具条显示和预览 (只做廉价判断)
+
+/* ===== NEMA v1.5 工具条 + 预览 (Table / 5W1H / Graph 拓扑) ===== */
+const NEMA_BTNS = [
+  ["▦ 表头", "nema-toggle-header", "切换 / 插入 \\\\ 表头行 (精确 \\\\ 表头判断)"],
+  ["+ 行", "nema-add-row", "插入新记录行"],
+  ["+ 续接意群", "nema-add-cont", "插入空格缩进续接行 (延续上一行当前列 X(N-1))"],
+  "|",
+  ["? 5W1H", "nema-insert-5w1h", "插入 5W1H 模板 (What/Why/How/Who/When/Where)"],
+  ["> 节点边", "nema-insert-graph", "插入 Graph 拓扑节点与边模板 (A>E1>B 独立ID与说明)"],
+  "|",
+  ["$ 词典", "nema-insert-dict", "在文档顶部声明或插入共享字典 (\\t$N)"],
+  ["^ 引用", "nema-insert-ref", "插入 ^0 词典引用原子"],
+  "|",
+  ["⚡ 自动转换", "nema-convert", "执行 NEMA 编码/解码与无损校验 (Ctrl+Shift+M)"],
+  ["◈ 字典候选", "nema-candidates", "扫描并查看文档内高频词典候选词"],
+  ["🔒 锁定字典", "nema-lock-dict", "固化当前高频候选词并生成 ^N 引用"],
+  ["Token 对照", "nema-token-diff", "查看 Native vs Nemat Token 节省率与对比"],
+];
+const NEMA = { built: false, timer: 0, view: "table" };
+
+function isNemaTab(t) {
+  if (!t) return false;
+  const n = String(t.path || t.name || "").toLowerCase();
+  return /\.(nema|nemat)$/.test(n) || t.language === "nema";
+}
+
+function buildNemaBar() {
+  if (NEMA.built) return;
+  NEMA.built = true;
+  const host = document.getElementById("viewbars-top");
+  const bar = document.createElement("div");
+  bar.id = "nema-bar";
+  bar.innerHTML = NEMA_BTNS.map((b) => b === "|" ? '<span class="tb-sep"></span>' :
+    '<button class="tb-btn" data-nema="' + b[1] + '" title="' + b[2] + '">' + escapeHtml(b[0]) + "</button>").join("") +
+    '<span class="tb-sep"></span><button class="tb-btn nema-toggle" data-nema="preview" title="源码 / 渲染预览切换 (Ctrl+Shift+V)">👁 预览</button>';
+  bar.addEventListener("mousedown", (e) => { if (e.target.closest("button")) e.preventDefault(); });
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-nema]"); if (!b) return;
+    if (b.dataset.nema === "preview") toggleNemaPreview();
+    else { nemaCommand(b.dataset.nema); edContent.focus({ preventScroll: true }); }
+  });
+  host.appendChild(bar);
+  const pv = document.createElement("div");
+  pv.id = "nema-preview"; pv.setAttribute("aria-label", "NEMA 可视化预览 (Table / 5W1H / Graph)");
+  document.getElementById("editor").appendChild(pv);
+}
+
+function nemaCommand(cmd) {
+  const t = getActiveTab(); if (!t || !isNemaTab(t)) return;
+  if (cmd === "nema-convert") return nemaConvert(t);
+  if (cmd === "nema-candidates") return nemaShowCandidates(t);
+  if (cmd === "nema-lock-dict") return nemaLockDictionary(t);
+  if (cmd === "nema-token-diff") return nemaTokenDiff(t);
+  if (cmd === "nema-toggle-header") return nemaToggleHeader(t);
+  if (cmd === "nema-add-row") return nemaAddRow(t);
+  if (cmd === "nema-add-cont") return nemaAddContinuation(t);
+  if (cmd === "nema-insert-5w1h") return nemaInsert5w1h(t);
+  if (cmd === "nema-insert-graph") return nemaInsertGraph(t);
+  if (cmd === "nema-insert-dict") return nemaInsertDict(t);
+  if (cmd === "nema-insert-ref") return nemaInsertRef(t);
+}
+
+function toggleNemaPreview() {
+  const t = getActiveTab(); if (!t || !isNemaTab(t)) { setTip("当前文档不是 NEMA"); return; }
+  t.nemaPreview = !t.nemaPreview;
+  nemaRefresh();
+  if (!t.nemaPreview) edContent.focus({ preventScroll: true });
+}
+
+function scheduleNemaPreview() {
+  if (NEMA.timer) return;
+  NEMA.timer = setTimeout(() => { NEMA.timer = 0; renderNemaPreview(); }, 150);
+}
+
+function nemaRefresh() {
+  const t = getActiveTab(), nema = isNemaTab(t);
+  if (nema) buildNemaBar();
+  document.documentElement.setAttribute("data-nema", nema ? "on" : "off");
+  document.documentElement.setAttribute("data-nema-preview", nema && t.nemaPreview ? "on" : "off");
+  if (nema && NEMA.built) {
+    const b = document.querySelector("#nema-bar .nema-toggle");
+    if (b) b.classList.toggle("on", !!t.nemaPreview);
+    if (t.nemaPreview) scheduleNemaPreview();
+  }
+}
+
+/* NEMA JS 规范解析器 (与 Python 参考实现 core.py 1:1 对齐) */
+function parseNemaSource(source) {
+  let s = String(source || "").replace(/\r\n?/g, "\n");
+  while (s.endsWith("\n\n\n\n")) s = s.slice(0, -1);
+  if (!s.endsWith("\n\n\n")) s += "\n\n\n";
+  const lines = s.slice(0, -3).split("\n");
+  let dictionary = [];
+  let i = 0;
+  const dictMatch = lines[0] ? lines[0].match(/^\t\$([0-9]+)$/) : null;
+  if (dictMatch) {
+    const n = parseInt(dictMatch[1], 10);
+    i = 1;
+    dictionary = lines.slice(i, i + n);
+    i += n;
+  }
+  const domains = [];
+  let current = null;
+  const HEADER_RE = /^\t([\\?>])([1-9][0-9]*)(?: ([1-9][0-9]*))?$/;
+  const MODES = { "\\": "table", "?": "5w1h", ">": "graph" };
+  const AXES = ["What", "Why", "How", "Who", "When", "Where"];
+
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    const h = line.match(HEADER_RE);
+    if (h) {
+      current = {
+        id: h[2],
+        revision: parseInt(h[3] || "1", 10),
+        mode: MODES[h[1]] || "table",
+        columns: [],
+        explicit_header: false,
+        records: []
+      };
+      if (current.mode === "5w1h") current.columns = AXES.slice();
+      if (current.mode === "graph") current.columns = ["Element", "Relation", "Description"];
+      domains.push(current);
+      continue;
+    }
+    if (!current) {
+      // 缺省 Table 域头容错
+      current = { id: "1", revision: 1, mode: "table", columns: [], explicit_header: false, records: [] };
+      domains.push(current);
+    }
+    // 表头精确判断: \\ 开头
+    if (current.mode === "table" && current.records.length === 0 && !current.explicit_header && line.startsWith("\\ ")) {
+      const names = line.slice(2).split(" ").filter(Boolean);
+      if (names.length) {
+        current.columns = names;
+        current.explicit_header = true;
+      }
+      continue;
+    }
+    if (line.startsWith(" ")) {
+      // 纵向意群续接行
+      if (current.records.length > 0) {
+        const lead = line.length - line.trimStart().length;
+        const col = lead - 1;
+        const part = line.trimStart();
+        const rec = current.records[current.records.length - 1];
+        while (rec.cells.length <= col) rec.cells.push([]);
+        rec.cells[col].push(part);
+      }
+    } else {
+      // 记录行
+      let emptyTail = false;
+      let clean = line;
+      if (clean.endsWith(" .") && !clean.endsWith(" \\.")) {
+        emptyTail = true;
+        clean = clean.slice(0, -2);
+      }
+      const rawCells = clean.split(" ");
+      const rec = { cells: [], tail_empty: emptyTail };
+      for (let j = 0; j < rawCells.length; j++) {
+        rec.cells.push([rawCells[j]]);
+      }
+      current.records.push(rec);
+    }
+    if (current.mode === "table") {
+      const lastRec = current.records[current.records.length - 1];
+      if (lastRec) {
+        while (current.columns.length < lastRec.cells.length) {
+          current.columns.push("column" + (current.columns.length + 1));
+        }
+      }
+    }
+  }
+  return { dictionary, domains };
+}
+
+/* 渲染单格意群文本, 支持词典原子 ^N 与 CamelCase 分词 */
+function renderNemaCell(parts, dict) {
+  if (!parts || !parts.length) return "";
+  const out = [];
+  for (const p of parts) {
+    let s = p;
+    // 替换 ^N 为药丸徽标
+    s = s.replace(/\^([0-9]+)/g, (_, idx) => {
+      const ix = parseInt(idx, 10);
+      const val = dict && dict[ix] ? dict[ix] : "^" + ix;
+      return `<span class="nema-pill" title="词典 [${ix}]: ${escapeHtml(val)}">^${ix} (${escapeHtml(val)})</span>`;
+    });
+    // 转义反斜杠
+    s = s.replace(/\\\./g, ".").replace(/\\\^/g, "^").replace(/\\\\/g, "\\");
+    out.push(s);
+  }
+  return out.join("<br>");
+}
+
+/* NEMA Graph 确定性多有向图布局 (1:1 移植自官方 website/graph.js) */
+function layoutNemaGraph(domain) {
+  const WIDTH = 680, HEIGHT = 420, NODE_WIDTH = 110, NODE_HEIGHT = 50;
+  const point = (x, y) => ({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+  const nodes = [], edges = [];
+  const EDGE_RE = /^([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)$/;
+
+  for (const rec of domain.records) {
+    if (!rec.cells.length || !rec.cells[0].length) continue;
+    const spec = rec.cells[0][0];
+    const m = spec.match(EDGE_RE);
+    if (m && m[2] === m[4]) {
+      const a = m[1], op = m[2], eid = m[3], b = m[5];
+      let from = a, to = b, dir = op === "=" ? "undirected" : "directed";
+      if (op === "<") { from = b; to = a; }
+      const rel = (rec.cells[1] || []).join(" ");
+      const desc = rec.cells.slice(2).map(c => c.join(" ")).join(" · ");
+      edges.push({ id: eid, from, to, direction: dir, relation: rel, description: desc });
+    } else {
+      const name = (rec.cells[1] || []).join(" ");
+      nodes.push({ id: spec, name });
+    }
+  }
+
+  // 计算节点环状分布
+  const pos = {};
+  const n = nodes.length;
+  nodes.forEach((node, i) => {
+    if (n === 1) pos[node.id] = point(WIDTH / 2, HEIGHT / 2);
+    else if (n === 2) pos[node.id] = point(i === 0 ? 200 : 480, HEIGHT / 2);
+    else {
+      const ang = -Math.PI / 2 + Math.PI * 2 * i / n;
+      pos[node.id] = point(WIDTH / 2 + 220 * Math.cos(ang), HEIGHT / 2 + 120 * Math.sin(ang));
+    }
+    node.x = pos[node.id].x; node.y = pos[node.id].y;
+  });
+
+  // 计算边路径与碰撞规避
+  const graphEdges = [];
+  const grouped = new Map();
+  for (const e of edges) {
+    if (!pos[e.from] || !pos[e.to]) continue;
+    const key = [e.from, e.to].sort().join("::");
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(e);
+  }
+
+  for (const list of grouped.values()) {
+    const total = list.length;
+    list.forEach((e, index) => {
+      const a = pos[e.from], b = pos[e.to];
+      let path, start, end, label;
+      if (e.from === e.to) {
+        const lift = 65 + index * 24;
+        start = point(a.x + NODE_WIDTH * 0.25, a.y - NODE_HEIGHT / 2);
+        end = point(a.x - NODE_WIDTH * 0.25, a.y - NODE_HEIGHT / 2);
+        path = `M ${start.x} ${start.y} C ${a.x + 80} ${a.y - lift} ${a.x - 80} ${a.y - lift} ${end.x} ${end.y}`;
+        label = point(a.x, a.y - lift * 0.85);
+      } else {
+        const dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy) || 1;
+        const ux = dx / dist, uy = dy / dist;
+        const canonical = e.from < e.to ? 1 : -1;
+        const lane = (index - (total - 1) / 2) * 36;
+        const ctrl = point((a.x + b.x) / 2 - uy * lane * canonical * 1.5, (a.y + b.y) / 2 + ux * lane * canonical * 1.5);
+        start = point(a.x + ux * (NODE_WIDTH / 2), a.y + uy * (NODE_HEIGHT / 2));
+        end = point(b.x - ux * (NODE_WIDTH / 2), b.y - uy * (NODE_HEIGHT / 2));
+        path = `M ${start.x} ${start.y} Q ${ctrl.x} ${ctrl.y} ${end.x} ${end.y}`;
+        label = point((start.x + end.x + 2 * ctrl.x) / 4, (start.y + end.y + 2 * ctrl.y) / 4 - 12);
+      }
+      graphEdges.push({ ...e, path, label });
+    });
+  }
+  return { width: WIDTH, height: HEIGHT, nodes, edges: graphEdges };
+}
+
+/* 渲染 NEMA 预览面板 */
+function renderNemaPreview() {
+  const pv = document.getElementById("nema-preview");
+  const t = getActiveTab();
+  if (!pv || !t) return;
+  const parsed = parseNemaSource(t.lines.join("\n"));
+
+  pv.replaceChildren();
+  const wrap = document.createElement("div");
+  wrap.className = "nema-body-view";
+
+  // 顶部视图切换栏 (Table / 5W1H / Graph)
+  const tabs = document.createElement("div");
+  tabs.className = "nema-view-tabs";
+  const views = [["table", "▦ Table 默认"], ["5w1h", "? 5W1H 语义"], ["graph", "> Graph 拓扑"]];
+  views.forEach(([vid, label]) => {
+    const btn = document.createElement("button");
+    btn.className = "nema-tab-btn" + (NEMA.view === vid ? " active" : "");
+    btn.textContent = label;
+    btn.addEventListener("click", () => { NEMA.view = vid; renderNemaPreview(); });
+    tabs.appendChild(btn);
+  });
+  wrap.appendChild(tabs);
+
+  // 词典显式清单
+  if (parsed.dictionary && parsed.dictionary.length) {
+    const dictBox = document.createElement("div");
+    dictBox.className = "nema-group-label";
+    dictBox.textContent = "共享词典: " + parsed.dictionary.map((w, idx) => `^${idx}=${w}`).join("  |  ");
+    wrap.appendChild(dictBox);
+  }
+
+  // 渲染主体
+  if (NEMA.view === "graph") {
+    // Graph 模式
+    let graphDomain = parsed.domains.find(d => d.mode === "graph") || parsed.domains[0];
+    if (graphDomain) {
+      const layout = layoutNemaGraph(graphDomain);
+      const ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("viewBox", `0 0 ${layout.width} ${layout.height}`);
+      svg.setAttribute("class", "nema-graph-svg");
+
+      // Arrow Marker
+      const defs = document.createElementNS(ns, "defs");
+      const marker = document.createElementNS(ns, "marker");
+      marker.setAttribute("id", "nema-arrow");
+      marker.setAttribute("viewBox", "0 0 10 10");
+      marker.setAttribute("markerWidth", "8");
+      marker.setAttribute("markerHeight", "8");
+      marker.setAttribute("refX", "8");
+      marker.setAttribute("refY", "5");
+      marker.setAttribute("orient", "auto");
+      const mpath = document.createElementNS(ns, "path");
+      mpath.setAttribute("d", "M 0 1 L 9 5 L 0 9 Z");
+      mpath.setAttribute("fill", "#d29922");
+      marker.appendChild(mpath);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+
+      const detail = document.createElement("div");
+      detail.className = "nema-edge-detail";
+      detail.innerHTML = "<strong>Edge 详情</strong>: 点击下方任意边或节点查看详细说明";
+
+      function selectEdge(edge) {
+        svg.querySelectorAll(".nema-edge").forEach(el => el.classList.toggle("selected", el.dataset.edgeId === edge.id));
+        detail.innerHTML = `<strong>Edge [${escapeHtml(edge.id)}]</strong>: <code>${escapeHtml(edge.from)}</code> ${edge.direction === "undirected" ? "—" : "→"} <code>${escapeHtml(edge.to)}</code> | 关系: <b>${escapeHtml(edge.relation || "关联")}</b> ${edge.description ? `<br><small style="color:var(--fg-muted)">详细描述: ${escapeHtml(edge.description)}</small>` : ""}`;
+      }
+
+      // Edges
+      for (const e of layout.edges) {
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", e.path);
+        path.setAttribute("class", "nema-edge");
+        path.dataset.edgeId = e.id;
+        if (e.direction === "directed") path.setAttribute("marker-end", "url(#nema-arrow)");
+        path.addEventListener("click", () => selectEdge(e));
+        svg.appendChild(path);
+
+        const lbl = document.createElementNS(ns, "text");
+        lbl.setAttribute("x", e.label.x);
+        lbl.setAttribute("y", e.label.y);
+        lbl.setAttribute("class", "nema-edge-label");
+        lbl.setAttribute("text-anchor", "middle");
+        lbl.textContent = `${e.id}·${e.relation || "Edge"}`;
+        lbl.addEventListener("click", () => selectEdge(e));
+        svg.appendChild(lbl);
+      }
+
+      // Nodes
+      for (const node of layout.nodes) {
+        const g = document.createElementNS(ns, "g");
+        g.setAttribute("class", "nema-node");
+        g.setAttribute("transform", `translate(${node.x - 55}, ${node.y - 25})`);
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("width", "110");
+        rect.setAttribute("height", "50");
+        const tid = document.createElementNS(ns, "text");
+        tid.setAttribute("class", "id");
+        tid.setAttribute("x", "55");
+        tid.setAttribute("y", "22");
+        tid.textContent = node.id;
+        const tname = document.createElementNS(ns, "text");
+        tname.setAttribute("class", "name");
+        tname.setAttribute("x", "55");
+        tname.setAttribute("y", "38");
+        tname.textContent = node.name ? node.name.slice(0, 16) : "";
+        g.appendChild(rect); g.appendChild(tid); g.appendChild(tname);
+        svg.appendChild(g);
+      }
+
+      wrap.appendChild(svg);
+      wrap.appendChild(detail);
+
+      // Edge 列表项
+      const edgeList = document.createElement("div");
+      edgeList.className = "nema-edge-list";
+      for (const e of layout.edges) {
+        const item = document.createElement("button");
+        item.className = "nema-edge-item";
+        item.innerHTML = `<b>${escapeHtml(e.id)}</b>: ${escapeHtml(e.from)} ${e.direction === "undirected" ? "—" : "→"} ${escapeHtml(e.to)} · <i>${escapeHtml(e.relation)}</i> ${e.description ? "— " + escapeHtml(e.description) : ""}`;
+        item.addEventListener("click", () => selectEdge(e));
+        edgeList.appendChild(item);
+      }
+      wrap.appendChild(edgeList);
+    }
+  } else if (NEMA.view === "5w1h") {
+    // 5W1H 模式
+    const axes = ["What (事物/动作)", "Why (原因/目标)", "How (途径/方法)", "Who (执行/对象)", "When (时机/条件)", "Where (环境/范围)"];
+    const domain = parsed.domains.find(d => d.mode === "5w1h") || parsed.domains[0];
+    if (domain) {
+      const grid = document.createElement("div");
+      grid.className = "nema-card-grid";
+      domain.records.forEach((rec, idx) => {
+        const card = document.createElement("div");
+        card.className = "nema-card";
+        const title = document.createElement("div");
+        title.className = "nema-card-title";
+        title.textContent = `记录 #${idx + 1}` + (rec.tail_empty ? " [末尾省略 .]" : "");
+        card.appendChild(title);
+        for (let j = 0; j < 6; j++) {
+          const f = document.createElement("div");
+          f.className = "nema-card-field";
+          f.innerHTML = `<b>${axes[j]}:</b> ${renderNemaCell(rec.cells[j], parsed.dictionary) || "<span style='color:var(--fg-muted)'>—</span>"}`;
+          card.appendChild(f);
+        }
+        grid.appendChild(card);
+      });
+      wrap.appendChild(grid);
+    }
+  } else {
+    // Table 默认模式
+    parsed.domains.forEach(d => {
+      const lbl = document.createElement("div");
+      lbl.className = "nema-group-label";
+      lbl.textContent = `域 ${d.id} · ${d.mode.toUpperCase()} (修订 ${d.revision})${d.explicit_header ? " · 显式表头" : " · 自动列名"}`;
+      wrap.appendChild(lbl);
+
+      const table = document.createElement("table");
+      table.className = "nema-table";
+      const thead = document.createElement("thead");
+      const trh = document.createElement("tr");
+      d.columns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      d.records.forEach(rec => {
+        const tr = document.createElement("tr");
+        d.columns.forEach((_, colIdx) => {
+          const td = document.createElement("td");
+          td.innerHTML = renderNemaCell(rec.cells[colIdx], parsed.dictionary) || "<span style='color:var(--fg-muted)'>—</span>";
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+    });
+  }
+
+  pv.appendChild(wrap);
+}
+
+/* 核心 Codec 与候选词典算法 (1:1 对应 Python transport.py) */
+function nemaExtractCandidates(lines, maxEntries = 32) {
+  const counts = new Map();
+  const re = /[A-Za-z][A-Za-z0-9_]{3,}|[\u3400-\u9fff\u3040-\u30ff]{4,}/g;
+  for (const line of lines) {
+    if (line.startsWith("\t")) continue;
+    let m;
+    while ((m = re.exec(line)) !== null) {
+      const w = m[0];
+      const low = w.toLowerCase();
+      if (low.includes("password") || low.includes("secret") || low.includes("credential")) continue;
+      if (w.length > 48) continue;
+      counts.set(w, (counts.get(w) || 0) + 1);
+    }
+  }
+  const scored = [];
+  for (const [w, count] of counts.entries()) {
+    if (count < 3) continue;
+    const gain = (count - 1) * w.length - count * 3 - 5;
+    if (gain > 3) scored.push({ word: w, count, gain });
+  }
+  return scored.sort((a, b) => b.gain - a.gain).slice(0, maxEntries);
+}
+
+function nemaEncode(source) {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const candidates = nemaExtractCandidates(lines);
+  const words = candidates.map(c => c.word);
+  const encoded = [];
+  let inHeader = true;
+
+  for (const line of lines) {
+    if (line.startsWith("\t") && inHeader) { encoded.push(line); continue; }
+    inHeader = false;
+    let row = line;
+    for (let idx = 0; idx < words.length; idx++) {
+      const w = words[idx];
+      row = row.split(w).join("^" + idx);
+    }
+    encoded.push(row);
+  }
+  const manifest = ["\t$" + words.length, ...words];
+  const nemat = manifest.concat(encoded).join("\n");
+  const origLen = source.length, newLen = nemat.length;
+  const saving = origLen ? Math.max(0, Math.round((1 - newLen / origLen) * 100)) : 0;
+  return {
+    format: newLen < origLen && words.length > 0 ? "nemat" : "nema",
+    text: newLen < origLen && words.length > 0 ? nemat : source,
+    savingPercent: saving,
+    words
+  };
+}
+
+function nemaDecode(text) {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  if (!lines[0] || !lines[0].startsWith("\t$")) throw new Error("缺少 \\t$N 传输字典清单");
+  const n = parseInt(lines[0].slice(2), 10);
+  const words = lines.slice(1, 1 + n);
+  const body = lines.slice(1 + n);
+  const out = [];
+  for (const line of body) {
+    let row = line;
+    for (let idx = words.length - 1; idx >= 0; idx--) {
+      row = row.split("^" + idx).join(words[idx]);
+    }
+    out.push(row);
+  }
+  return out.join("\n");
+}
+
+function nemaConvert(t) {
+  t = t || getActiveTab();
+  if (!t) return;
+  snapshot(t);
+  const text = t.lines.join("\n");
+  const isNema = isNemaTab(t) || text.includes("\t\\") || text.includes("\t?") || text.includes("\t>");
+  if (!isNema) {
+    // 转换为 NEMA 格式
+    const rows = t.lines.filter(l => l.trim().length > 0);
+    const nemaRows = ["\t\\1"];
+    for (const r of rows) {
+      const parts = r.split(/[\t,]+/).map(s => s.trim()).filter(Boolean);
+      if (parts.length) nemaRows.push(parts.join(" "));
+    }
+    t.lines = nemaRows.concat(["", "", ""]);
+    t.language = "nema";
+    t.dirty = true;
+    renderVim(t);
+    nemaRefresh();
+    setTip("已自动转换为 NEMA 表格格式 (.nema)");
+    return;
+  }
+  try {
+    if (text.startsWith("\t$")) {
+      const decoded = nemaDecode(text);
+      t.lines = decoded.split("\n");
+      t.language = "nema";
+      t.dirty = true;
+      renderVim(t);
+      nemaRefresh();
+      setTip("已解码为 NEMA 原生格式 (Round-trip verified)");
+    } else {
+      const choice = nemaEncode(text);
+      if (choice.format === "nemat") {
+        t.lines = choice.text.split("\n");
+        t.language = "nema";
+        t.dirty = true;
+        renderVim(t);
+        nemaRefresh();
+        setTip(`已转换为 .nemat 传输格式 (节省 ${choice.savingPercent}%, 往返校验通过)`);
+      } else {
+        setTip("当前文档体积较小或复用词少，原生 .nema 已是最优");
+      }
+    }
+  } catch (err) {
+    setTip("NEMA 转换失败: " + err.message);
+  }
+}
+
+function nemaToggleHeader(t) {
+  snapshot(t);
+  for (let i = 0; i < t.lines.length; i++) {
+    const l = t.lines[i];
+    if (l.startsWith("\t")) continue;
+    if (l.startsWith("\\ ")) {
+      t.lines[i] = l.slice(2);
+      setTip("已取消表头行 (转为自动 column1...)");
+    } else {
+      t.lines[i] = "\\ " + l;
+      setTip("已将首行设置为显式表头 (\\ )");
+    }
+    break;
+  }
+  t.dirty = true; renderVim(t); nemaRefresh();
+}
+
+function nemaAddRow(t) {
+  snapshot(t);
+  const row = t.cursor ? t.cursor.row : t.lines.length - 1;
+  t.lines.splice(row + 1, 0, "RecordField1 Field2 Field3");
+  t.cursor = { row: row + 1, col: 0 };
+  t.dirty = true; renderVim(t); nemaRefresh();
+  setTip("已插入新记录行");
+}
+
+function nemaAddContinuation(t) {
+  snapshot(t);
+  const row = t.cursor ? t.cursor.row : t.lines.length - 1;
+  t.lines.splice(row + 1, 0, "   ContinuationGroup");
+  t.cursor = { row: row + 1, col: 3 };
+  t.dirty = true; renderVim(t); nemaRefresh();
+  setTip("已插入纵向意群续接行 (空格缩进)");
+}
+
+function nemaInsert5w1h(t) {
+  snapshot(t);
+  const tmpl = ["\t?1", "BuildProject MaintainQuality Rust CoreEngineer WhenReady InWorkspace .", "", "", ""];
+  t.lines = t.lines.concat(tmpl);
+  t.dirty = true; renderVim(t); nemaRefresh();
+  setTip("已追加 5W1H 语义模板");
+}
+
+function nemaInsertGraph(t) {
+  snapshot(t);
+  const tmpl = [
+    "\t>1",
+    "A ClientApp FrontEnd",
+    "B Gateway ProxyService",
+    "C AuthAPI OAuth2",
+    "A>X>B Sends RequestPayload",
+    "B>Y>C Forwards TokenHeader",
+    "B<Z<A Returns HTTP200OK",
+    "", "", ""
+  ];
+  t.lines = t.lines.concat(tmpl);
+  t.dirty = true; renderVim(t); nemaRefresh();
+  setTip("已追加 Graph 拓扑节点与边模板");
+}
+
+function nemaInsertDict(t) {
+  snapshot(t);
+  t.lines.unshift("\t$1", "APIKey");
+  t.dirty = true; renderVim(t); nemaRefresh();
+  setTip("已在文首插入共享词典条目");
+}
+
+function nemaInsertRef(t) {
+  runEdit("insert-text", { text: "^0" });
+  setTip("已插入词典引用 ^0");
+}
+
+function nemaShowCandidates(t) {
+  const cands = nemaExtractCandidates(t.lines);
+  if (!cands.length) { setTip("未发现满足频次 (>=3) 且长度 (>=4) 的词典候选原子"); return; }
+  const top = cands.slice(0, 5).map(c => `${c.word} (${c.count}次, 预计节省${c.gain}字符)`).join("; ");
+  setTip("词典候选词: " + top);
+}
+
+function nemaLockDictionary(t) {
+  snapshot(t);
+  const cands = nemaExtractCandidates(t.lines);
+  if (!cands.length) { setTip("没有可锁定的候选词典原子"); return; }
+  const words = cands.slice(0, 8).map(c => c.word);
+  for (let idx = 0; idx < words.length; idx++) {
+    const w = words[idx];
+    for (let i = 0; i < t.lines.length; i++) {
+      if (t.lines[i].startsWith("\t")) continue;
+      t.lines[i] = t.lines[i].split(w).join("^" + idx);
+    }
+  }
+  t.lines.unshift("\t$" + words.length, ...words);
+  t.dirty = true; renderVim(t); nemaRefresh();
+  setTip(`已锁定 ${words.length} 个词典原子并替换为 ^N 引用`);
+}
+
+function nemaTokenDiff(t) {
+  const text = t.lines.join("\n");
+  const bytes = (new TextEncoder()).encode(text).length;
+  const choice = nemaEncode(text);
+  const nematBytes = (new TextEncoder()).encode(choice.text).length;
+  const saving = bytes ? Math.round((1 - nematBytes / bytes) * 100) : 0;
+  setTip(`Native: ${bytes} 字节 -> Nemat: ${nematBytes} 字节 (体积节省: ${saving}% · 往返严格可逆)`);
+}
+
 function mdRefresh() {
   if (typeof typeApply === "function") typeApply();   // 当前类型的 Tab 宽度
   const t = getActiveTab(), md = isMdTab(t);
   if (md) buildMdBar();
   document.documentElement.setAttribute("data-md", md ? "on" : "off");
   document.documentElement.setAttribute("data-md-preview", md && t.mdPreview ? "on" : "off");
+  try { nemaRefresh(); } catch (_) {}
   try { syncSideExtras(); } catch (_) {}      // md 文档在侧栏有自己的「目录」标签 (没有 md 文档时侧栏不画横向标签条)
   if (md && MD.built) {
     const b = document.querySelector("#md-bar .md-toggle");
@@ -13721,7 +14466,7 @@ function mdRefresh() {
 }
 // 快捷键见 MD_KEYMAP (并入全局 KEYMAP, 可重新分配)
 // 工具条按钮的提示里写出 Sakura 的快捷键 (REQ: 顶部要有和 Sakura 一样的功能快捷键)
-const SAKURA_TB_KEYS = { "new-file": "Ctrl+N", "open-file": "Ctrl+O", save: "Ctrl+S", cut: "Ctrl+X", copy: "Ctrl+C", paste: "Ctrl+V", undo: "Ctrl+Z", redo: "Ctrl+Y", find: "Ctrl+F", replace: "Ctrl+R", grep: "Ctrl+G", "goto-line": "Ctrl+J", "bookmark-toggle": "Ctrl+F2", "bookmark-prev": "Shift+F2", "bookmark-next": "F2" };
+const SAKURA_TB_KEYS = { "nema-convert": "Ctrl+Alt+M", "new-file": "Ctrl+N", "open-file": "Ctrl+O", save: "Ctrl+S", cut: "Ctrl+X", copy: "Ctrl+C", paste: "Ctrl+V", undo: "Ctrl+Z", redo: "Ctrl+Y", find: "Ctrl+F", replace: "Ctrl+R", grep: "Ctrl+G", "goto-line": "Ctrl+J", "bookmark-toggle": "Ctrl+F2", "bookmark-prev": "Shift+F2", "bookmark-next": "F2" };
 function titleSakuraToolbar() {
   for (const b of document.querySelectorAll("#toolbar .tb-btn[data-cmd]")) {
     const k = SAKURA_TB_KEYS[b.dataset.cmd]; if (k) b.title = (b.dataset.label || b.textContent) + " (" + k + ")";

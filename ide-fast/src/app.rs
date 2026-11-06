@@ -30,6 +30,7 @@ mod dispatch;
 mod docks;
 mod ghopts;
 mod mdopts;
+mod nemaopts;
 mod mdstruct;
 mod menubar;
 mod menunav;
@@ -86,6 +87,8 @@ pub struct App {
     term_stdin: bool,
     term_replace: bool,
     md_preview: bool,
+    nema_preview: bool,
+    nema_view_mode: usize,
     wrap: bool,
     goal_x: Option<f32>,
     inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
@@ -208,6 +211,8 @@ impl App {
             term_stdin: false,
             term_replace: false,
             md_preview: false,
+            nema_preview: false,
+            nema_view_mode: 0,
             wrap: false,
             goal_x: None,
             inbox,
@@ -5246,6 +5251,11 @@ impl App {
         }
         self.tab_bar(root, ctx);
         self.md_bar(root, ctx, is_md);
+        let is_nema = {
+            let d = &self.docs[self.active.min(self.docs.len() - 1)];
+            nemaopts::is_nema_doc(d)
+        };
+        self.nema_bar(root, ctx, is_nema);
         use crate::split::SplitKind as SK;
         let fill = ctx.global_style().visuals.extreme_bg_color;
         let kind = self.panes.kind;

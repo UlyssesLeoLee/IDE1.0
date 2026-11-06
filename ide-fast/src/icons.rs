@@ -28,6 +28,7 @@ pub fn has_icon(id: &str) -> bool {
             | "c.split"
             | "c.terminal"
             | "c.palette"
+            | "c.nema-convert"
     )
 }
 
@@ -138,6 +139,12 @@ pub fn paint(ui: &Ui, rect: Rect, id: &str, col: Color32) -> bool {
             poly(&[u(4.0, 5.5), u(7.0, 8.0), u(4.0, 10.5)]);
             line(u(8.5, 10.5), u(12.0, 10.5));
         }
+        "c.nema-convert" => {
+            boxr(1.5, 2.5, 14.5, 13.5);
+            line(u(5.5, 2.5), u(5.5, 13.5));
+            line(u(1.5, 6.5), u(14.5, 6.5));
+            poly(&[u(8.5, 9.5), u(10.5, 11.5), u(13.0, 8.5)]);
+        }
         "c.palette" => {
             boxr(1.5, 3.0, 14.5, 13.0);
             poly(&[u(4.0, 6.0), u(6.5, 8.0), u(4.0, 10.0)]);
@@ -195,6 +202,7 @@ mod tests {
                 "c.split",
                 "c.terminal",
                 "c.palette",
+                "c.nema-convert",
             ] {
                 assert!(
                     paint(
@@ -215,7 +223,7 @@ mod tests {
             ));
         });
         out.textures_delta.clear();
-        assert_eq!(shapes, 14);
+        assert_eq!(shapes, 15);
         assert!(has_icon("c.save") && !has_icon("c.nope"));
     }
 }
