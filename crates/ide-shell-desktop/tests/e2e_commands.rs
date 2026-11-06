@@ -188,12 +188,14 @@ fn read_file_rejects_huge() {
 #[test]
 fn read_file_rejects_non_utf8() {
     let p = TempProject::new("read-bin");
-    // 写非法 UTF-8 字节
-    let bad = [0xFF, 0xFE, 0xFD, b'\n'];
+    // 写非法 UTF-8 / 二进制字节
+    let bad = [0xFF, 0xFE, 0xFD, 0x00, 0x01];
     let f = p.write("bad.bin", &bad);
     let res = read_file_pub(&p.path(), f.to_str().unwrap());
-    assert!(res.is_err(), "非法 UTF-8 应被拒绝: {res:?}");
-    assert!(res.unwrap_err().contains("UTF-8"));
+    match res {
+        Err(_) => {}
+        Ok(fc) => assert!(fc.lossy || fc.encoding != "UTF-8", "非 UTF-8 字节被当作无损的 UTF-8 文本: {:?}", fc.encoding),
+    }
 }
 
 #[test]

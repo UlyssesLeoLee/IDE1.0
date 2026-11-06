@@ -168,19 +168,15 @@ pub fn max_inset(system_title_bar: bool, maximized: bool, fullscreen: bool) -> f
     }
 }
 
-/// 菜单栏上的菜单 (与 `App::menu` 里的顺序一致)
-pub const MENU_KEYS: [&str; 12] = [
+/// 菜单栏上的菜单 (与 `App::menu` 里的顺序一致, 完全对齐 Tauri 版 8 个菜单)
+pub const MENU_KEYS: [&str; 8] = [
     "menu.file",
     "menu.edit",
     "menu.search",
-    "menu.fold",
-    "menu.plugin",
-    "menu.setting",
-    "menu.bookmark",
-    "menu.window",
-    "menu.macro",
     "menu.view",
     "menu.tool",
+    "menu.setting",
+    "menu.window",
     "menu.help",
 ];
 
@@ -633,13 +629,13 @@ mod tests {
         }
     }
 
-    /// 菜单宽度取真实值的量级: 11 个菜单, 带助记字母约 55 / 个, 不带约 42 / 个
-    const MW: f32 = 11.0 * 55.0;
-    const MP: f32 = 11.0 * 42.0;
+    /// 菜单宽度取真实值的量级: 8 个菜单, 带助记字母约 55 / 个, 不带约 42 / 个
+    const MW: f32 = 8.0 * 55.0;
+    const MP: f32 = 8.0 * 42.0;
 
     #[test]
     fn the_plan_never_lets_the_menu_overflow_at_any_width() {
-        for w in [700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
+        for w in [580.0, 700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
             let mid = if p.term { TERM_W } else { 0.0 }
@@ -659,16 +655,16 @@ mod tests {
         assert!(
             wide.mnemonics && wide.title && wide.term && wide.docks && wide.quick == QUICK.len()
         );
-        let mid = plan_bar(1100.0, MW, MP, 50.0);
+        let mid = plan_bar(900.0, MW, MP, 50.0);
         assert!(
             mid.mnemonics && mid.term,
-            "1100: 菜单 (带助记) 和终端钮都在"
+            "900: 菜单 (带助记) 和终端钮都在"
         );
         assert!(
             mid.quick < QUICK.len(),
-            "1100: 快捷钮已被撤掉几个, 不压菜单"
+            "900: 快捷钮已被撤掉几个, 不压菜单"
         );
-        let narrow = plan_bar(700.0, MW, MP, 50.0);
+        let narrow = plan_bar(580.0, MW, MP, 50.0);
         assert!(!narrow.mnemonics && !narrow.docks && narrow.quick == 0);
     }
 

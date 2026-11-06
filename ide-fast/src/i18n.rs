@@ -196,12 +196,22 @@ pub const T: &[Row] = &[
     ("sub.plugin-restore", ["恢复内置插件", "内蔵プラグインを復元", "Restore Bundled Plugins"]),
     // ---- 设置
     ("c.common-config", ["首选项…", "共通設定…", "Preferences…"]),
+    ("sub.theme", ["主题", "テーマ", "Theme"]),
+    ("c.theme-select", ["主题…", "テーマ選択…", "Theme…"]),
+    ("c.theme-crystal", ["水晶透明", "クリスタル透明", "Crystal"]),
+    ("c.theme-clear", ["透明玻璃", "透明ガラス", "Clear Glass"]),
+    ("c.theme-dark", ["深色", "ダーク", "Dark"]),
+    ("c.theme-light", ["浅色", "ライト", "Light"]),
+    ("c.theme-high-contrast", ["高对比度", "ハイコントラスト", "High Contrast"]),
+    ("c.theme-retro16", ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"]),
+    ("c.theme-comic", ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"]),
     ("sub.uilang", ["界面语言 / 言語 / Language", "表示言語 / 言語 / Language", "Display Language / 言語 / 语言"]),
     ("c.export-config", ["导出配置…", "設定のエクスポート…", "Export Settings…"]),
     ("c.import-config", ["导入配置…", "設定のインポート…", "Import Settings…"]),
     ("c.import-sakura", ["导入 sakura.ini…", "sakura.ini をインポート…", "Import sakura.ini…"]),
     ("c.reset-settings", ["恢复默认设置", "初期設定に戻す", "Reset to Defaults"]),
     // ---- 书签
+    ("sub.bookmark", ["书签", "ブックマーク", "Bookmarks"]),
     ("c.bookmark-toggle", ["设置 / 取消", "設定 / 解除", "Toggle"]),
     ("c.bookmark-next", ["下一个", "次のブックマーク", "Next"]),
     ("c.bookmark-prev", ["上一个", "前のブックマーク", "Previous"]),
@@ -632,6 +642,14 @@ Not signature-verified; install only plugins you trust. Install?"]),
 
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
+    ("水晶透明", ["水晶透明", "クリスタル透明", "Crystal"]),
+    ("透明玻璃", ["透明玻璃", "透明ガラス", "Clear Glass"]),
+    ("深色", ["深色", "ダーク", "Dark"]),
+    ("浅色", ["浅色", "ライト", "Light"]),
+    ("高对比度", ["高对比度", "ハイコントラスト", "High Contrast"]),
+    ("复古 16-Bit", ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"]),
+    ("美漫 3渲2", ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"]),
+    ("移动履历", ["移动履历", "移動履歴", "Jump History"]),
     // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
     ("多AI协同审查看板…", ["多AI协同审查看板…", "マルチAI共同レビューダッシュボード…", "Multi-AI Review Dashboard…"]),
     ("多AI协同实时编辑演示…", ["多AI协同实时编辑演示…", "マルチAI共同編集デモ…", "Multi-AI Co-Editing Demo…"]),

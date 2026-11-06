@@ -743,11 +743,35 @@ pub fn run() {
         .on_window_event(|window, event| {
             use tauri::{Emitter, Manager};
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-                let args: Vec<String> = paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
                 let app = window.app_handle();
-                let files = grants::launch_files_from(&args, &app.state::<grants::Grants>());
-                if !files.is_empty() {
-                    let _ = app.emit("second-instance", files);
+                let zips: Vec<&std::path::PathBuf> = paths.iter()
+                    .filter(|p| p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false))
+                    .collect();
+                if !zips.is_empty() {
+                    let mut pkgs = Vec::new();
+                    for z in zips {
+                        if let Ok(bytes) = std::fs::read(z) {
+                            let name = z.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                            pkgs.push(plugin::PickedZip {
+                                name,
+                                path: z.to_string_lossy().into_owned(),
+                                data: plugin::b64_encode(&bytes),
+                            });
+                        }
+                    }
+                    if !pkgs.is_empty() {
+                        let _ = app.emit("plugin-import-packages", pkgs);
+                    }
+                }
+                let rest: Vec<String> = paths.iter()
+                    .filter(|p| !p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("zip")).unwrap_or(false))
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                if !rest.is_empty() {
+                    let files = grants::launch_files_from(&rest, &app.state::<grants::Grants>());
+                    if !files.is_empty() {
+                        let _ = app.emit("second-instance", files);
+                    }
                 }
             }
         })
@@ -839,6 +863,7 @@ pub fn run() {
             edit_cmd,
             migemo_patterns,
             plugin::plugin_load,
+            plugin::native_pick_plugin_zip,
         ])
         .on_page_load(|_w, payload| startup_trace(&format!("page {:?}", payload.event())))
         .setup(|app_handle| {

@@ -312,260 +312,53 @@ impl App {
                                     ui.close();
                                 }
                             });
+                            ui.separator();
+                            if menuui::mbtn(ui, lk("c.bracket-jump", "Ctrl+[")).clicked() {
+                                self.bracket_jump();
+                                ui.close();
+                            }
+                            ui.menu_button(tr("sub.bookmark"), |ui| {
+                                if menuui::mbtn(ui, lk("c.bookmark-toggle", "Ctrl+F2")).clicked() {
+                                    self.cur().bookmark("toggle");
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.bookmark-next", "F2")).clicked() {
+                                    self.jump_mark();
+                                    self.cur().bookmark("next");
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.bookmark-prev", "Shift+F2")).clicked() {
+                                    self.jump_mark();
+                                    self.cur().bookmark("prev");
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.bookmark-view", "Alt+F2")).clicked() {
+                                    self.bm_open = true;
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.bookmark-reset", "Ctrl+Shift+F2")).clicked() {
+                                    self.cur().bookmarks.clear();
+                                    self.cur().tip = tr("dlg.bm-cleared").into();
+                                    ui.close();
+                                }
+                            });
+                            ui.menu_button(trz("移动履历"), |ui| {
+                                if menuui::mbtn(ui, lk("c.hist-prev", "Alt+P")).clicked() {
+                                    self.jump_go(-1);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.hist-next", "Alt+N")).clicked() {
+                                    self.jump_go(1);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.hist-mark", "")).clicked() {
+                                    self.jump_mark();
+                                    self.cur().tip = tr("dlg.hist-marked").into();
+                                    ui.close();
+                                }
+                            });
                         })
                     },
-                );
-                menuui::top(
-                    ui,
-                    &mut mids,
-                    "menu.fold",
-                    menuui::menu_title(&tc, tr("menu.fold"), mn("menu.fold")),
-                    |ui| {
-                        if menuui::mbtn(ui, lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() {
-                            let d = self.cur();
-                            let r = d.cursor[0];
-                            d.toggle_fold(r);
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.unfold-all", "Ctrl+Shift+]")).clicked() {
-                            self.cur().folds.clear();
-                            ui.close();
-                        }
-                    },
-                );
-                menuui::top(
-                    ui,
-                    &mut mids,
-                    "menu.plugin",
-                    menuui::menu_title(&tc, tr("menu.plugin"), mn("menu.plugin")),
-                    |ui| self.plugin_panel(ui),
-                );
-                menuui::top(
-                    ui,
-                    &mut mids,
-                    "menu.setting",
-                    menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")),
-                    |ui| {
-                        menuui::scroll(ui, |ui| {
-                            if menuui::mbtn(ui, lk("c.common-config", "")).clicked() {
-                                self.open_prefs();
-                                ui.close();
-                            }
-                            ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
-                            ui.menu_button(tr("sub.uilang"), |ui| {
-                                for l in Lang::ALL {
-                                    if menu_check(ui, &tc, crate::i18n::cur() == l, l.native())
-                                        .clicked()
-                                    {
-                                        let mut n = self.current_settings();
-                                        n.lang = l.code().into();
-                                        self.apply_settings(&n);
-                                        ui.close();
-                                    }
-                                }
-                            });
-                            ui.separator();
-                            if menuui::mbtn(ui, lk("c.export-config", "")).clicked() {
-                                ui.close();
-                                self.export_settings();
-                            }
-                            if menuui::mbtn(ui, lk("c.import-config", "")).clicked() {
-                                ui.close();
-                                self.import_settings();
-                            }
-                            if menuui::mbtn(ui, lk("c.import-sakura", "")).clicked() {
-                                ui.close();
-                                self.import_sakura();
-                            }
-                            if menuui::mbtn(ui, lk("c.reset-settings", "")).clicked() {
-                                ui.close();
-                                self.reset_settings();
-                            }
-                            if ui.button(tr("c.open-autosave")).clicked() {
-                                ui.close();
-                                self.open_autosave();
-                            }
-                            ui.separator();
-                            if menuui::mbtn(ui, lk("c.key-config", "")).clicked() {
-                                ui.close();
-                                self.cmdui.open_keycfg();
-                            }
-                        })
-                    },
-                );
-                menuui::top(
-                    ui,
-                    &mut mids,
-                    "menu.bookmark",
-                    menuui::menu_title(&tc, tr("menu.bookmark"), mn("menu.bookmark")),
-                    |ui| {
-                        if menuui::mbtn(ui, lk("c.bookmark-toggle", "Ctrl+F2")).clicked() {
-                            self.cur().bookmark("toggle");
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.bookmark-next", "F2")).clicked() {
-                            self.jump_mark();
-                            self.cur().bookmark("next");
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.bookmark-prev", "Shift+F2")).clicked() {
-                            self.jump_mark();
-                            self.cur().bookmark("prev");
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.bookmark-view", "Alt+F2")).clicked() {
-                            self.bm_open = true;
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.bookmark-reset", "Ctrl+Shift+F2")).clicked() {
-                            self.cur().bookmarks.clear();
-                            self.cur().tip = tr("dlg.bm-cleared").into();
-                            ui.close();
-                        }
-                        ui.separator();
-                        if menuui::mbtn(ui, lk("c.bracket-jump", "Ctrl+[")).clicked() {
-                            self.bracket_jump();
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.hist-prev", "Alt+P")).clicked() {
-                            self.jump_go(-1);
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.hist-next", "Alt+N")).clicked() {
-                            self.jump_go(1);
-                            ui.close();
-                        }
-                        if menuui::mbtn(ui, lk("c.hist-mark", "")).clicked() {
-                            self.jump_mark();
-                            self.cur().tip = tr("dlg.hist-marked").into();
-                            ui.close();
-                        }
-                    },
-                );
-                menuui::top(
-                    ui,
-                    &mut mids,
-                    "menu.window",
-                    menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")),
-                    |ui| {
-                        menuui::scroll(ui, |ui| {
-                            if menuui::mbtn(ui, lk("c.split", "Ctrl+\\")).clicked() {
-                                self.toggle_split();
-                                ui.close();
-                            }
-                            if menuui::mbtn(ui, lk("c.split-rows", "")).clicked() {
-                                self.toggle_split_kind(crate::split::SplitKind::Rows);
-                                ui.close();
-                            }
-                            if menuui::mbtn(ui, lk("c.split-quad", "")).clicked() {
-                                self.toggle_split_kind(crate::split::SplitKind::Quad);
-                                ui.close();
-                            }
-                            ui.separator();
-                            if menuui::mbtn(ui, lk("c.next-tab", "Ctrl+Tab")).clicked() {
-                                self.next_tab(true);
-                                ui.close();
-                            }
-                            if menuui::mbtn(ui, lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() {
-                                self.next_tab(false);
-                                ui.close();
-                            }
-                            ui.menu_button(tr("sub.tabops"), |ui| {
-                                if menuui::mbtn(ui, lk("c.tab-move-left", "")).clicked() {
-                                    self.move_active_tab(true);
-                                    ui.close();
-                                }
-                                if menuui::mbtn(ui, lk("c.tab-move-right", "")).clicked() {
-                                    self.move_active_tab(false);
-                                    ui.close();
-                                }
-                                if menuui::mbtn(ui, lk("c.close-others", "")).clicked() {
-                                    self.close_many(CloseKind::Others);
-                                    ui.close();
-                                }
-                                if menuui::mbtn(ui, lk("c.close-left", "")).clicked() {
-                                    self.close_many(CloseKind::Left);
-                                    ui.close();
-                                }
-                                if menuui::mbtn(ui, lk("c.close-right", "")).clicked() {
-                                    self.close_many(CloseKind::Right);
-                                    ui.close();
-                                }
-                            });
-                            ui.menu_button(trz("标签分组"), |ui| {
-                                for (z, a) in [
-                                    ("下一个分组", KApp::GroupNext),
-                                    ("上一个分组", KApp::GroupPrev),
-                                    ("移到新分组", KApp::TabSeparate),
-                                    ("移到下一个分组", KApp::TabJointNext),
-                                    ("移到上一个分组", KApp::TabJointPrev),
-                                    ("合并为一组", KApp::BindWindow),
-                                    ("关闭当前分组", KApp::GroupClose),
-                                ] {
-                                    if ui.button(Self::app_label(a, z)).clicked() {
-                                        self.run_app(a, ctx);
-                                        ui.close();
-                                    }
-                                }
-                            });
-                            if ui
-                                .button(Self::app_label(KApp::WindowList, "窗口一览…"))
-                                .clicked()
-                            {
-                                self.run_app(KApp::WindowList, ctx);
-                                ui.close();
-                            }
-                            ui.menu_button(tr("sub.winlist"), |ui| {
-                                let mut pick = None;
-                                for (i, d) in self.docs.iter().enumerate() {
-                                    if ui
-                                        .selectable_label(
-                                            i == self.active,
-                                            format!(
-                                                "{}{}",
-                                                if d.dirty { "● " } else { "" },
-                                                d.name
-                                            ),
-                                        )
-                                        .clicked()
-                                    {
-                                        pick = Some(i);
-                                        ui.close();
-                                    }
-                                }
-                                if let Some(i) = pick {
-                                    self.select_tab(i);
-                                }
-                            });
-                            ui.separator();
-                            if menuui::mbtn(ui, lk("c.minimize-window", "")).clicked() {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                                ui.close();
-                            }
-                            if menuui::mbtn(ui, lk("c.maximize", "")).clicked() {
-                                let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m));
-                                ui.close();
-                            }
-                            if menu_check(ui, &tc, self.fullscreen, lk("c.fullscreen", "F11"))
-                                .clicked()
-                            {
-                                self.toggle_fullscreen(ctx);
-                                ui.close();
-                            }
-                            if menu_check(ui, &tc, self.topmost, lk("c.topmost", "")).clicked() {
-                                self.toggle_topmost(ctx);
-                                ui.close();
-                            }
-                        })
-                    },
-                );
-                menuui::top(
-                    ui,
-                    &mut mids,
-                    "menu.macro",
-                    menuui::menu_title(&tc, tr("menu.macro"), mn("menu.macro")),
-                    |ui| self.macro_items(ui),
                 );
                 menuui::top(
                     ui,
@@ -606,10 +399,18 @@ impl App {
                             {
                                 self.cfg.view.md_overlay = !self.cfg.view.md_overlay;
                             }
-                            if menu_check(ui, &tc, self.dark, lk("c.dark", "")).clicked() {
-                                self.dark = !self.dark;
-                                ui.close();
-                            }
+                            ui.menu_button(tr("menu.fold"), |ui| {
+                                if menuui::mbtn(ui, lk("c.fold-toggle", "Ctrl+Shift+[")).clicked() {
+                                    let d = self.cur();
+                                    let r = d.cursor[0];
+                                    d.toggle_fold(r);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.unfold-all", "Ctrl+Shift+]")).clicked() {
+                                    self.cur().folds.clear();
+                                    ui.close();
+                                }
+                            });
                             if menu_check(ui, &tc, self.highlight, lk("c.highlight", "")).clicked()
                             {
                                 self.highlight = !self.highlight;
@@ -793,6 +594,211 @@ impl App {
                     |ui| menuui::scroll(ui, |ui| self.tool_items(ui, ctx)),
                 );
                 menuui::top(
+                    ui,
+                    &mut mids,
+                    "menu.setting",
+                    menuui::menu_title(&tc, tr("menu.setting"), mn("menu.setting")),
+                    |ui| {
+                        menuui::scroll(ui, |ui| {
+                            if menuui::mbtn(ui, lk("c.common-config", "")).clicked() {
+                                self.open_prefs();
+                                ui.close();
+                            }
+                            ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
+                            ui.menu_button(tr("sub.theme"), |ui| {
+                                if menuui::mbtn(ui, lk("c.theme-select", "")).clicked() {
+                                    self.open_prefs();
+                                    ui.close();
+                                }
+                                ui.separator();
+                                for (id, label_key) in [
+                                    ("theme-crystal", "c.theme-crystal"),
+                                    ("theme-clear", "c.theme-clear"),
+                                    ("theme-dark", "c.theme-dark"),
+                                    ("theme-light", "c.theme-light"),
+                                    ("theme-high-contrast", "c.theme-high-contrast"),
+                                    ("theme-retro16", "c.theme-retro16"),
+                                    ("theme-comic", "c.theme-comic"),
+                                ] {
+                                    let active = if self.theme_id.is_empty() {
+                                        if self.dark { id == "theme-dark" } else { id == "theme-light" }
+                                    } else {
+                                        self.theme_id == id
+                                    };
+                                    if menu_check(ui, &tc, active, tr(label_key)).clicked() {
+                                        if id == "theme-dark" {
+                                            self.dark = true;
+                                            self.set_theme_plugin(id);
+                                        } else if id == "theme-light" {
+                                            self.dark = false;
+                                            self.set_theme_plugin(id);
+                                        } else {
+                                            self.set_theme_plugin(id);
+                                        }
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.menu_button(tr("sub.uilang"), |ui| {
+                                for l in Lang::ALL {
+                                    if menu_check(ui, &tc, crate::i18n::cur() == l, l.native())
+                                        .clicked()
+                                    {
+                                        let mut n = self.current_settings();
+                                        n.lang = l.code().into();
+                                        self.apply_settings(&n);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.separator();
+                            if menuui::mbtn(ui, lk("c.export-config", "")).clicked() {
+                                self.export_settings();
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.import-config", "")).clicked() {
+                                self.import_settings();
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.import-sakura", "")).clicked() {
+                                self.import_sakura();
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.reset-settings", "")).clicked() {
+                                self.reset_settings();
+                                ui.close();
+                            }
+                            if ui.button(tr("c.open-autosave")).clicked() {
+                                self.open_autosave();
+                                ui.close();
+                            }
+                            ui.separator();
+                            if menuui::mbtn(ui, lk("c.key-config", "")).clicked() {
+                                self.cmdui.open_keycfg();
+                                ui.close();
+                            }
+                        })
+                    },
+                );
+menuui::top(
+                    ui,
+                    &mut mids,
+                    "menu.window",
+                    menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")),
+                    |ui| {
+                        menuui::scroll(ui, |ui| {
+                            if menuui::mbtn(ui, lk("c.split", "Ctrl+\\")).clicked() {
+                                self.toggle_split();
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.split-rows", "")).clicked() {
+                                self.toggle_split_kind(crate::split::SplitKind::Rows);
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.split-quad", "")).clicked() {
+                                self.toggle_split_kind(crate::split::SplitKind::Quad);
+                                ui.close();
+                            }
+                            ui.separator();
+                            if menuui::mbtn(ui, lk("c.next-tab", "Ctrl+Tab")).clicked() {
+                                self.next_tab(true);
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.prev-tab", "Ctrl+Shift+Tab")).clicked() {
+                                self.next_tab(false);
+                                ui.close();
+                            }
+                            ui.menu_button(tr("sub.tabops"), |ui| {
+                                if menuui::mbtn(ui, lk("c.tab-move-left", "")).clicked() {
+                                    self.move_active_tab(true);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.tab-move-right", "")).clicked() {
+                                    self.move_active_tab(false);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.close-others", "")).clicked() {
+                                    self.close_many(CloseKind::Others);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.close-left", "")).clicked() {
+                                    self.close_many(CloseKind::Left);
+                                    ui.close();
+                                }
+                                if menuui::mbtn(ui, lk("c.close-right", "")).clicked() {
+                                    self.close_many(CloseKind::Right);
+                                    ui.close();
+                                }
+                            });
+                            ui.menu_button(trz("标签分组"), |ui| {
+                                for (z, a) in [
+                                    ("下一个分组", KApp::GroupNext),
+                                    ("上一个分组", KApp::GroupPrev),
+                                    ("移到新分组", KApp::TabSeparate),
+                                    ("移到下一个分组", KApp::TabJointNext),
+                                    ("移到上一个分组", KApp::TabJointPrev),
+                                    ("合并为一组", KApp::BindWindow),
+                                    ("关闭当前分组", KApp::GroupClose),
+                                ] {
+                                    if ui.button(Self::app_label(a, z)).clicked() {
+                                        self.run_app(a, ctx);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            if ui
+                                .button(Self::app_label(KApp::WindowList, "窗口一览…"))
+                                .clicked()
+                            {
+                                self.run_app(KApp::WindowList, ctx);
+                                ui.close();
+                            }
+                            ui.menu_button(tr("sub.winlist"), |ui| {
+                                let mut pick = None;
+                                for (i, d) in self.docs.iter().enumerate() {
+                                    if ui
+                                        .selectable_label(
+                                            i == self.active,
+                                            format!(
+                                                "{}{}",
+                                                if d.dirty { "● " } else { "" },
+                                                d.name
+                                            ),
+                                        )
+                                        .clicked()
+                                    {
+                                        pick = Some(i);
+                                        ui.close();
+                                    }
+                                }
+                                if let Some(i) = pick {
+                                    self.select_tab(i);
+                                }
+                            });
+                            ui.separator();
+                            if menuui::mbtn(ui, lk("c.minimize-window", "")).clicked() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                                ui.close();
+                            }
+                            if menuui::mbtn(ui, lk("c.maximize", "")).clicked() {
+                                let m = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!m));
+                                ui.close();
+                            }
+                            if menu_check(ui, &tc, self.fullscreen, lk("c.fullscreen", "F11"))
+                                .clicked()
+                            {
+                                self.toggle_fullscreen(ctx);
+                                ui.close();
+                            }
+                            if menu_check(ui, &tc, self.topmost, lk("c.topmost", "")).clicked() {
+                                self.toggle_topmost(ctx);
+                                ui.close();
+                            }
+                        })
+                    },
+                );
+menuui::top(
                     ui,
                     &mut mids,
                     "menu.help",

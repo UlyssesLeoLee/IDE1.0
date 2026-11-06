@@ -256,14 +256,10 @@ mod tests {
             "menu.file",
             "menu.edit",
             "menu.search",
-            "menu.fold",
-            "menu.plugin",
-            "menu.setting",
-            "menu.bookmark",
-            "menu.window",
-            "menu.macro",
             "menu.view",
             "menu.tool",
+            "menu.setting",
+            "menu.window",
             "menu.help",
         ];
         let mut seen = std::collections::HashSet::new();
@@ -282,11 +278,12 @@ mod tests {
                 mnemonic("menu.edit"),
                 mnemonic("menu.search"),
                 mnemonic("menu.view"),
+                mnemonic("menu.tool"),
                 mnemonic("menu.setting"),
                 mnemonic("menu.window"),
                 mnemonic("menu.help")
             ),
-            ('F', 'E', 'S', 'V', 'C', 'W', 'H')
+            ('F', 'E', 'S', 'V', 'T', 'C', 'W', 'H')
         );
     }
 
@@ -296,14 +293,10 @@ mod tests {
             "menu.file",
             "menu.edit",
             "menu.search",
-            "menu.fold",
-            "menu.plugin",
-            "menu.setting",
-            "menu.bookmark",
-            "menu.window",
-            "menu.macro",
             "menu.view",
             "menu.tool",
+            "menu.setting",
+            "menu.window",
             "menu.help",
         ];
         let alt = egui::Modifiers::ALT;
