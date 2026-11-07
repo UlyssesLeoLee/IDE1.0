@@ -146,6 +146,7 @@ pub struct SemanticUnit {
 IDE1.0/
 ├── crates/
 │   ├── editcore/            # [复用] 核心字符缓冲区、行管理、编码与撤销重做
+│   ├── nema-codec/          # [新增核心] .nema/.nemat 多维结构化语义解析、共享词典、RLE 与租约仲裁
 │   ├── ide-kernel/          # [复用] 权威文档状态管理、Session 与只读快照
 │   ├── ide-shell-protocol/  # [复用] 协议底座、JSON-RPC / REST 基础
 │   ├── ide-shell-web/       # [复用] Web Shell 静态资产与编辑器界面
@@ -156,10 +157,15 @@ IDE1.0/
 │       │   ├── identity/    # 语义单元稳定身份哈希与指纹算法
 │       │   ├── patch/       # AST-aware 补丁应用、重定位与冲突检测
 │       │   ├── coordinator/ # CAS 判定、Fencing Token 租约机与事务内存
+│       │   ├── reviewer/    # 最初规划、实时指引与统筹审查验收证书 (AcceptanceCertificate)
+│       │   ├── verifier/    # 构建/测试/质量/规范四级自动验证门禁
 │       │   ├── ledger/      # PostgreSQL Schema 映射与 Outbox 事件
 │       │   └── api/         # OpenAPI 路由处理与 Axum / Edge 适配器
+├── ide-fast/                # [复用+增强] 原生高速版 (含 NEMA Table/5W1H/Graph 实时交互面板)
 ├── web/                     # Vercel Next.js 控制面与 Workbench 前端增强
 ├── docs/                    # 日本 IPA 规约文档全集
+│   ├── 01_基本设计/BD-002_Multi-Agent-NEMA-Collab-Platform.md
+│   └── 02_详细设计/DD-002_NEMA-Aggregator-Git-Verify-Pipeline.md
 └── vercel.json              # Vercel Serverless / Edge 路由部署配置
 ```
 
