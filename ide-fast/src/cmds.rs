@@ -17,6 +17,7 @@ pub enum Action {
     ToggleReadonly,
     OpenReviewDoc,
     TriggerCoeditDemo,
+    RunCollabPipeline,
     /// 选区 (没有 = 整篇) 的编码内容转换, 后缀见 `textconv::CODECNV`
     CodeCnv(&'static str),
 }
@@ -530,6 +531,12 @@ pub const CMDS: &[Cmd] = &[
         label: "模拟多 AI 协同编辑",
         keys: "",
         action: TriggerCoeditDemo,
+    },
+    Cmd {
+        group: "AI 协同",
+        label: "运行四阶段协同流水线",
+        keys: "",
+        action: RunCollabPipeline,
     },
 ];
 

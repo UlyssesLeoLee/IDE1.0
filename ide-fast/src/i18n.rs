@@ -1810,6 +1810,14 @@ pub const CMD_T: &[Row] = &[
         ["模拟多 AI 协同编辑", "複数AI協調デモ", "Simulate Multi-AI Co-edit"],
     ),
     (
+        "运行四阶段协同流水线",
+        [
+            "运行四阶段协同流水线",
+            "4段階協調パイプライン実行",
+            "Run 4-Stage Collab Pipeline",
+        ],
+    ),
+    (
         "复制文件名",
         ["复制文件名", "ファイル名をコピー", "Copy File Name"],
     ),

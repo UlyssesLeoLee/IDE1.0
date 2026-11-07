@@ -272,6 +272,7 @@ pub fn action_id(a: Action) -> String {
         Action::CodeCnv(k) => format!("codecnv.{k}"),
         Action::OpenReviewDoc => "coedit-review".into(),
         Action::TriggerCoeditDemo => "coedit-demo".into(),
+        Action::RunCollabPipeline => "collab-pipeline".into(),
     }
 }
 

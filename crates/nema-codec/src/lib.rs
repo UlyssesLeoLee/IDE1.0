@@ -247,7 +247,7 @@ pub struct NemaDomain {
 }
 
 /// 解析后的权威 `NemaDocument`（保留原始 span、column 与每列 `Vec<Vec<SemanticChunk>>`）
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct NemaDocument {
     pub span: TextSpan,
     pub dictionary: Vec<String>,
