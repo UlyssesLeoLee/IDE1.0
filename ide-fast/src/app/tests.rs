@@ -1054,3 +1054,70 @@ fn test_doc_section_level_rollback() {
     assert_eq!(d.lines, d.base);
     assert!(!d.dirty);
 }
+
+#[test]
+fn test_file_lock_action_toggles_readonly_and_tip() {
+    let (mut a, _g) = app(Settings::default());
+    assert!(!a.cur().readonly);
+
+    // 模拟菜单中的文件加锁逻辑
+    let ro = a.cur().readonly;
+    a.cur().readonly = !ro;
+    a.cur().tip = tr(if a.cur().readonly { "dlg.file-locked" } else { "dlg.file-unlocked" }).into();
+    assert!(a.cur().readonly);
+    assert!(a.cur().tip.contains("已加锁") || a.cur().tip.contains("Locked"));
+
+    // 再次切换，解锁
+    let ro = a.cur().readonly;
+    a.cur().readonly = !ro;
+    a.cur().tip = tr(if a.cur().readonly { "dlg.file-locked" } else { "dlg.file-unlocked" }).into();
+    assert!(!a.cur().readonly);
+    assert!(a.cur().tip.contains("已解锁") || a.cur().tip.contains("Unlocked"));
+}
+
+#[test]
+fn test_charset_and_eol_setting_mutations() {
+    let (mut a, _g) = app(Settings::default());
+    // EOL 切换
+    a.cur().set_eol(editcore::document_io::Eol::Lf);
+    assert_eq!(a.cur().eol, editcore::document_io::Eol::Lf);
+    a.cur().set_eol(editcore::document_io::Eol::Cr);
+    assert_eq!(a.cur().eol, editcore::document_io::Eol::Cr);
+
+    // Charset 切换
+    a.cur().set_charset(editcore::document_io::Charset::Gbk);
+    assert_eq!(a.cur().charset, editcore::document_io::Charset::Gbk);
+}
+
+#[test]
+fn test_split_window_modes_and_split_off() {
+    let (mut a, _g) = app(Settings::default());
+    assert!(!a.split_on);
+
+    a.toggle_split();
+    assert!(a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Cols);
+
+    a.toggle_split_kind(crate::split::SplitKind::Rows);
+    assert!(a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Rows);
+
+    a.toggle_split_kind(crate::split::SplitKind::Quad);
+    assert!(a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Quad);
+
+    a.end_split();
+    assert!(!a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Off);
+}
+
+#[test]
+fn test_menubar_renders_without_panics() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        a.menu(ui, &ctx);
+    });
+    out.textures_delta.clear();
+    assert!(!a.sys.menu_ids.is_empty(), "MenuBar 应成功注册所有一级菜单项 ID");
+}

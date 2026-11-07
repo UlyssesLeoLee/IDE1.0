@@ -268,6 +268,44 @@ impl App {
                                 self.find.replace_all(&mut self.docs[i]);
                                 ui.close();
                             }
+                            if menuui::mbtn(ui, lk("c.goto-line", "Ctrl+J")).clicked() {
+                                self.goto_open = true;
+                                self.goto_text.clear();
+                                ui.close();
+                            }
+                            ui.separator();
+                            ui.menu_button(tr("sub.isearch"), |ui| {
+                                for (z, a) in [
+                                    ("增量查找: 向后", KApp::IsFwd),
+                                    ("增量查找: 向前", KApp::IsBack),
+                                    ("增量查找: 正则 向后", KApp::IsRegexFwd),
+                                    ("增量查找: 正则 向前", KApp::IsRegexBack),
+                                    ("增量查找: Migemo 向后", KApp::IsMigemoFwd),
+                                    ("增量查找: Migemo 向前", KApp::IsMigemoBack),
+                                ] {
+                                    if ui.button(Self::app_label(a, z)).clicked() {
+                                        self.run_app(a, ctx);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.menu_button(tr("sub.tags"), |ui| {
+                                for (z, a) in [
+                                    ("标签跳转", KApp::TagJump),
+                                    ("标签跳转: 返回", KApp::TagBack),
+                                    ("指定关键字的标签跳转…", KApp::TagKeyword),
+                                    ("生成标签文件 (tags)", KApp::TagsMake),
+                                    ("打开同名 C/C++ 头 / 源文件", KApp::OpenHc),
+                                    ("上一个函数", KApp::FuncPrev),
+                                    ("下一个函数", KApp::FuncNext),
+                                ] {
+                                    if ui.button(Self::app_label(a, z)).clicked() {
+                                        self.run_app(a, ctx);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.separator();
                             for (z, a) in [
                                 ("上一处改动", KApp::ModPrev),
                                 ("下一处改动", KApp::ModNext),
@@ -280,7 +318,7 @@ impl App {
                                 ("回到查找起点", KApp::FindStart),
                                 ("转到定义 (本文件)", KApp::GotoDef),
                             ] {
-                                if ui.button(trz(z)).clicked() {
+                                if ui.button(Self::app_label(a, z)).clicked() {
                                     self.run_app(a, ctx);
                                     ui.close();
                                 }
@@ -619,6 +657,29 @@ impl App {
                                 }
                             });
                             ui.separator();
+                            ui.menu_button(tr("sub.charset"), |ui| {
+                                let cur_cs = self.cur().charset;
+                                for cs in editcore::document_io::Charset::ALL {
+                                    if menu_check(ui, &tc, cur_cs == cs, cs.label()).clicked() {
+                                        self.cur().set_charset(cs);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.menu_button(tr("sub.eolmode"), |ui| {
+                                let cur_eol = self.cur().eol;
+                                for e in [
+                                    editcore::document_io::Eol::Crlf,
+                                    editcore::document_io::Eol::Lf,
+                                    editcore::document_io::Eol::Cr,
+                                ] {
+                                    if menu_check(ui, &tc, cur_eol == e, e.label()).clicked() {
+                                        self.cur().set_eol(e);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                            ui.separator();
                             if menuui::mbtn(ui, lk("c.export-config", "")).clicked() {
                                 self.export_settings();
                                 ui.close();
@@ -654,17 +715,44 @@ menuui::top(
                     menuui::menu_title(&tc, tr("menu.window"), mn("menu.window")),
                     |ui| {
                         menuui::scroll(ui, |ui| {
-                            if menuui::mbtn(ui, lk("c.split", "Ctrl+\\")).clicked() {
+                            if menu_check(
+                                ui,
+                                &tc,
+                                self.panes.kind == crate::split::SplitKind::Cols,
+                                lk("c.split", "Ctrl+\\"),
+                            )
+                            .clicked()
+                            {
                                 self.toggle_split();
                                 ui.close();
                             }
-                            if menuui::mbtn(ui, lk("c.split-rows", "")).clicked() {
+                            if menu_check(
+                                ui,
+                                &tc,
+                                self.panes.kind == crate::split::SplitKind::Rows,
+                                lk("c.split-rows", ""),
+                            )
+                            .clicked()
+                            {
                                 self.toggle_split_kind(crate::split::SplitKind::Rows);
                                 ui.close();
                             }
-                            if menuui::mbtn(ui, lk("c.split-quad", "")).clicked() {
+                            if menu_check(
+                                ui,
+                                &tc,
+                                self.panes.kind == crate::split::SplitKind::Quad,
+                                lk("c.split-quad", ""),
+                            )
+                            .clicked()
+                            {
                                 self.toggle_split_kind(crate::split::SplitKind::Quad);
                                 ui.close();
+                            }
+                            if self.split_on {
+                                if menuui::mbtn(ui, lk("c.split-off", "")).clicked() {
+                                    self.end_split();
+                                    ui.close();
+                                }
                             }
                             ui.separator();
                             if menuui::mbtn(ui, lk("c.next-tab", "Ctrl+Tab")).clicked() {
@@ -806,6 +894,10 @@ menuui::top(
                             self.run_app(KApp::KeySearch, ctx);
                         }
                         ui.separator();
+                        if menuui::mbtn(ui, lk("c.wiki", "")).clicked() {
+                            ui.close();
+                            let _ = crate::md_view::open_url("https://github.com/UlyssesLeoLee/IDE1.0/wiki");
+                        }
                         if menuui::mbtn(ui, lk("c.check-update", "")).clicked() {
                             ui.close();
                             self.upd_open();
@@ -975,8 +1067,16 @@ menuui::top(
             ui.close();
             self.backup_now();
         }
-        if ui.button(trz("文件加锁…")).clicked() {
-            self.open_prefs();
+        let ro = self.cur().readonly;
+        if menuui::menu_check(ui, &self.tc, ro, tr("c.file-lock-toggle")).clicked() {
+            let d = self.cur();
+            d.readonly = !ro;
+            d.tip = tr(if d.readonly {
+                "dlg.file-locked"
+            } else {
+                "dlg.file-unlocked"
+            })
+            .into();
             ui.close();
         }
         ui.separator();
@@ -995,6 +1095,10 @@ menuui::top(
         }
         if ui.button(trz("多AI协同实时编辑演示…")).clicked() {
             self.trigger_coedit_demo();
+            ui.close();
+        }
+        if ui.button(trz("运行四阶段协同流水线")).clicked() {
+            self.run_collab_pipeline();
             ui.close();
         }
     }
