@@ -172,7 +172,7 @@ fn main() -> eframe::Result<()> {
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
     let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_visible(false)
+        .with_visible(true)
         .with_title("IDE1.0 Fast")
         .with_inner_size([1100.0, 720.0])
         .with_min_inner_size([480.0, 320.0])
