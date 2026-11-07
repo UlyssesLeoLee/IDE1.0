@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload docs as artifact
         if: false && (matrix.os == 'ubuntu-latest' && matrix.rust == 'stable')  # WBS-03 O1.2
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rust-docs
           path: target/doc/
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload binaries (Linux)
         if: false && (runner.os == 'Linux')  # WBS-03 O1.2: 对应的构建步骤已关闭
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-linux
           path: |
@@ -175,7 +175,7 @@ jobs:
 
       - name: Upload binaries (Windows)
         if: false && (runner.os == 'Windows')  # WBS-03 O1.2: 对应的构建步骤已关闭
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-windows
           path: |
@@ -186,7 +186,7 @@ jobs:
 
       - name: Upload binaries (macOS)
         if: false && (runner.os == 'macOS')  # WBS-03 O1.2: 对应的构建步骤已关闭
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-macos
           path: |
@@ -383,7 +383,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: tests/uat/playwright-report/
@@ -391,7 +391,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-test-results
           path: tests/uat/test-results/
@@ -539,14 +539,14 @@ jobs:
         run: ../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
 
       - name: Upload .deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ide-shell-desktop-deb
           path: crates/ide-shell-desktop/target/release/bundle/deb/*.deb
           retention-days: 30
 
       - name: Upload .AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ide-shell-desktop-appimage
           path: crates/ide-shell-desktop/target/release/bundle/appimage/*.AppImage
@@ -604,7 +604,7 @@ jobs:
         run: ../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json
 
       - name: Upload .msi
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ide-shell-desktop-msi
           path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
@@ -693,7 +693,7 @@ jobs:
 
       - name: Upload desktop diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-uat-diagnostics
           path: |
@@ -761,7 +761,7 @@ jobs:
         run: ../../tools/node_modules/.bin/tauri build --bundles dmg --config ./tauri.conf.json
 
       - name: Upload .dmg
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ide-shell-desktop-dmg
           path: crates/ide-shell-desktop/target/release/bundle/dmg/*.dmg
