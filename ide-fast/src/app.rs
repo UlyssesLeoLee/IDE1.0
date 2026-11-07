@@ -5495,13 +5495,17 @@ impl App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        crate::instance::cleanup();
+        if self.inbox.is_some() {
+            crate::instance::cleanup();
+        }
     }
 }
 
 impl Drop for App {
     fn drop(&mut self) {
-        crate::instance::cleanup();
+        if self.inbox.is_some() {
+            crate::instance::cleanup();
+        }
     }
 }
 

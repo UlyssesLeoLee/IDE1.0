@@ -29,7 +29,7 @@ pub fn forward_to_running(args: &[String]) -> bool {
     }
     let Ok(mut s) = TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-        std::time::Duration::from_millis(25),
+        std::time::Duration::from_millis(100),
     ) else {
         // 连不上 = 上一次异常退出留下的死端口文件，立即清理，避免后续启动产生 TCP 握手超时
         let _ = std::fs::remove_file(&pf);
