@@ -15271,93 +15271,285 @@ function showAbout() {
     upfrontPlan: null,
     certificate: null,
 
+    getProfiles: function() {
+      try {
+        var raw = localStorage.getItem("ide10.agentProfiles");
+        if (raw) return JSON.parse(raw);
+      } catch(e) {}
+      return {
+        Router: { model: "claude-3-7-sonnet-20250219", effort: "High", thinking: "Enabled", budget: 16384 },
+        AgentA1: { model: "claude-3-7-sonnet-20250219", effort: "Medium", thinking: "Auto", budget: 4096 },
+        AgentA2: { model: "deepseek-r1", effort: "Medium", thinking: "Auto", budget: 4096 },
+        AgentB1: { model: "gemini-2.5-flash", effort: "Low", thinking: "Auto", budget: 2048 },
+        AgentB2: { model: "gemini-2.5-flash", effort: "Low", thinking: "Auto", budget: 2048 },
+        Aggregator: { model: "claude-3-7-sonnet-20250219", effort: "Max", thinking: "Interleaved", budget: 32768 },
+        Verify: { model: "claude-3-7-sonnet-20250219", effort: "High", thinking: "Interleaved", budget: 8192 }
+      };
+    },
+
+    saveProfiles: function(profiles) {
+      try {
+        localStorage.setItem("ide10.agentProfiles", JSON.stringify(profiles));
+      } catch(e) {}
+    },
+
     renderReviewDashboard: function() {
       var body = document.getElementById("collab-review-body");
       if (!body) return;
-      var curPath = (window.doc && window.doc.name) || "src/math.rs";
+      var curPath = (window.doc && window.doc.name) || "specs/File_A.nema";
+      var profiles = collab.getProfiles();
+
       body.innerHTML = `
-        <div style="max-width:900px;margin:0 auto;">
+        <div style="max-width:960px;margin:0 auto;">
           <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:16px;">
             <div>
               <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:8px;">
-                <span>🛡️</span> 多 AI 协同审查与统筹验收看板 (SaaS Cloud Dashboard)
+                <span>🛡️</span> IDE1.0 多智能体协同开发平台 (.nema 原生协作 × 统筹转换 × Git 版本管理)
               </h3>
               <div style="font-size:12px;color:var(--gray);margin-top:4px;">
-                🏢 租户: <strong>Acme Corp (Global)</strong> [Enterprise] | 📂 工作区: <strong>main</strong> | 审视目标: <code>${curPath}</code>
+                🏢 租户: <strong>Acme Corp (Global)</strong> [Enterprise] | 📂 工作区: <strong>main</strong> | 规约目标: <code>${curPath}</code> &harr; <code>src/a.rs</code>
               </div>
             </div>
-            <div>
-              <button id="btn-collab-demo" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;">
-                ▶ 模拟多 AI 协同实时编辑
+            <div style="display:flex;gap:8px;">
+              <button id="btn-collab-pipeline" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;">
+                ▶ 运行四阶段完整流水线
+              </button>
+              <button id="btn-collab-profiles" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 12px;font-size:12px;cursor:pointer;font-weight:600;">
+                ⚙️ 独立模型与思考配置
+              </button>
+              <button id="btn-collab-demo" style="background:var(--card-bg, #334155);color:#fff;border:1px solid var(--border);border-radius:4px;padding:6px 10px;font-size:12px;cursor:pointer;">
+                ▶ 实时协同光标
               </button>
             </div>
           </div>
 
-          <div class="review-card">
-            <div style="display:flex;align-items:center;margin-bottom:8px;">
-              <span class="review-phase-badge" style="background:rgba(52,211,153,0.15);color:#34d399;border:1px solid #34d399;">阶段 1</span>
-              <strong style="font-size:14px;">最初规划与指引看板 (Upfront Planning & Guidance Zones)</strong>
+          <!-- 各智能体独立模型与思考模式配置区 -->
+          <div id="collab-profiles-container" style="display:none;background:rgba(0,0,0,0.2);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <strong style="font-size:13px;color:#38bdf8;">⚙️ 智能体独立模型、Effort 与思考模式配置 (Per-Agent Model Profile Registry)</strong>
+              <span style="font-size:11px;color:var(--gray);">修改后自动持久化至 localStorage["ide10.agentProfiles"]</span>
             </div>
-            <div style="color:var(--gray);font-size:12px;margin-bottom:8px;">
-              💡 核心理念: Reviewer 在最初规划架构不变量与接口契约，指引而非限制 AI 自由探索。
+            <div style="overflow-x:auto;">
+              <table style="width:100%;font-size:12px;border-collapse:collapse;text-align:left;">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--gray);">
+                    <th style="padding:6px;">智能体槽位</th>
+                    <th style="padding:6px;">分配分支 / 角色</th>
+                    <th style="padding:6px;">底层模型 (Model)</th>
+                    <th style="padding:6px;">推理强度 (Effort)</th>
+                    <th style="padding:6px;">思考模式 (Thinking)</th>
+                    <th style="padding:6px;">思考预算 (Tokens)</th>
+                  </tr>
+                </thead>
+                <tbody id="collab-profiles-tbody"></tbody>
+              </table>
             </div>
-            <div style="background:rgba(0,0,0,0.25);border-radius:4px;padding:8px 12px;font-family:monospace;font-size:12px;margin-bottom:8px;">
-              <div><strong>[任务总目标]:</strong> 高性能分布式计算流水线与高吞吐语义单元协作 (零竞态、零穿透)</div>
-              <div><strong>[系统不变量]:</strong> [INV-01] 显式状态归属 | [INV-02] 语义锚点平移 | [INV-03] 验证前置门禁</div>
+          </div>
+
+          <!-- ① 路由拆解 -->
+          <div class="review-card" style="margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="review-phase-badge" style="background:rgba(52,211,153,0.15);color:#34d399;border:1px solid #34d399;">阶段 ①</span>
+                <strong style="font-size:14px;">路由智能体 (Router Agent) — 任务拆解与编组规划</strong>
+              </div>
+              <span id="badge-stage-1" style="font-size:11px;color:#34d399;background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:4px;">✔ 路由完成</span>
+            </div>
+            <div style="display:flex;gap:16px;background:rgba(0,0,0,0.25);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:8px;">
+              <div><strong>任务输入:</strong> <span style="color:#38bdf8;">[✓ 功能开发]</span> [缺陷修复] [模块优化] [重构升级]</div>
+              <div><strong>运行代号:</strong> <code>epoch-10-run-001</code></div>
+              <div><strong>DAG 依赖:</strong> <code>feat/A1 &rarr; feat/A2</code> (结构依赖) | <code>feat/A1 &rarr; feat/B1</code> (跨模块)</div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
               <div style="border:1px dashed #34d399;border-radius:4px;padding:8px;font-size:12px;">
-                <div style="color:#34d399;font-weight:bold;">🟢 [Zone-A] 行 01 - 05: 核心基础算子定义</div>
-                <div style="color:var(--gray);margin-top:4px;">推荐: 🤖 AI-Coder (翡翠绿) | 契约: pub fn add(a: i32, b: i32) -> i32</div>
+                <div style="color:#34d399;font-weight:bold;">👥 协同编辑组 A (共同编辑同一文件)</div>
+                <div style="color:var(--gray);margin-top:4px;">
+                  &bull; <strong>File A.nema</strong> &harr; <code>Agent A1 @ feat/A1</code> (域 \\1, ?2) + <code>Agent A2 @ feat/A2</code> (域 >3)
+                </div>
               </div>
               <div style="border:1px dashed #a855f7;border-radius:4px;padding:8px;font-size:12px;">
-                <div style="color:#a855f7;font-weight:bold;">🟣 [Zone-B] 行 06 - 15: 复合运算流水线</div>
-                <div style="color:var(--gray);margin-top:4px;">推荐: ⚡ AI-Optimizer (紫罗兰) | 契约: pub fn multiply(a: i32, b: i32) -> i32</div>
+                <div style="color:#a855f7;font-weight:bold;">📦 独立编辑组 B (各自编辑独立文件)</div>
+                <div style="color:var(--gray);margin-top:4px;">
+                  &bull; <strong>File B.nema</strong> &harr; <code>Agent B1 @ feat/B1</code> | <strong>File C.nema</strong> &harr; <code>Agent B2 @ feat/B2</code>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="review-card">
-            <div style="display:flex;align-items:center;margin-bottom:8px;">
-              <span class="review-phase-badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid #38bdf8;">阶段 2</span>
-              <strong style="font-size:14px;">实时协同巡航与动态指引 (Live Stream & Remote Cursors)</strong>
+          <!-- ② 并行协作 (.nema) -->
+          <div class="review-card" style="margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="review-phase-badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;border:1px solid #38bdf8;">阶段 ②</span>
+                <strong style="font-size:14px;">.nema 原生并行协作 (低 Token · 结构化语义传输)</strong>
+              </div>
+              <span id="badge-stage-2" style="font-size:11px;color:#38bdf8;background:rgba(56,189,248,0.1);padding:2px 6px;border-radius:4px;">✔ 协同完成</span>
             </div>
-            <div id="collab-agents-list" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+            <div id="collab-agents-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
               <div style="background:rgba(52,211,153,0.1);border:1px solid #34d399;border-radius:4px;padding:4px 8px;font-size:12px;">
-                🤖 编码 Coder Alpha <span style="opacity:0.6;">[Ln 2, Col 5]</span> - 编写加法溢出检查
+                🤖 Agent A1 <span style="opacity:0.6;">[feat/A1]</span> - Table \\1 类型契约与 5W1H ?2 契约生成
               </div>
               <div style="background:rgba(168,85,247,0.1);border:1px solid #a855f7;border-radius:4px;padding:4px 8px;font-size:12px;">
-                ⚡ 优化 Optimizer Beta <span style="opacity:0.6;">[Ln 7, Col 0]</span> - 乘法常数折叠优化
+                ⚡ Agent A2 <span style="opacity:0.6;">[feat/A2]</span> - Graph >3 模块拓扑与状态机边声明
               </div>
-              <div style="background:rgba(56,189,248,0.1);border:1px solid #38bdf8;border-radius:4px;padding:4px 8px;font-size:12px;">
-                🛡️ 审查 Reviewer Lead <span style="opacity:0.6;">[Ln 1, Col 0]</span> - 全局架构巡航与指引
+              <div style="background:rgba(251,191,36,0.1);border:1px solid #fbbf24;border-radius:4px;padding:4px 8px;font-size:12px;">
+                📦 Agent B1 <span style="opacity:0.6;">[feat/B1]</span> - File B.nema 辅助通信协议独占编辑
+              </div>
+              <div style="background:rgba(236,72,153,0.1);border:1px solid #ec4899;border-radius:4px;padding:4px 8px;font-size:12px;">
+                🚀 Agent B2 <span style="opacity:0.6;">[feat/B2]</span> - File C.nema 遥测与事件分发独占编辑
               </div>
             </div>
-            <div style="background:rgba(0,0,0,0.2);padding:8px;border-radius:4px;font-size:12px;color:#38bdf8;">
-              📡 [审查员实时指引]: Coder Alpha 与 Optimizer Beta 正在非重叠区域高速推进，无交叉覆盖，请保持当前语义契约。
+            <div style="background:rgba(0,0,0,0.2);padding:6px 10px;border-radius:4px;font-size:11px;color:#38bdf8;display:flex;justify-content:space-between;">
+              <span>📡 [NEMA 协议优化率]: 相比传输常规 Rust 代码节省约 <strong>78.4% Token</strong></span>
+              <span>🔒 [CAS 租约一致性]: Fencing Token #1001-#1004 往返校验通过</span>
             </div>
           </div>
 
-          <div class="review-card">
-            <div style="display:flex;align-items:center;margin-bottom:8px;">
-              <span class="review-phase-badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid #fbbf24;">阶段 3</span>
-              <strong style="font-size:14px;">终局统筹审查与验收裁决 (Holistic Convergence & Certificate)</strong>
-            </div>
-            <div style="font-size:12px;color:var(--gray);margin-bottom:8px;">
-              自动化质量门禁: <span style="color:#34d399;">✔ 静态语法检查通过</span> | <span style="color:#34d399;">✔ 沙盒编译通过</span> | <span style="color:#34d399;">✔ 单测覆盖 100%</span>
-            </div>
-            <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:10px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
-              <div>
-                <div style="font-weight:bold;color:#34d399;">✔ 统筹验收证书: CERT-MW3S5Z72 (全量通过)</div>
-                <div style="color:var(--gray);margin-top:2px;font-family:monospace;">SHA256: b309297136bc15049cf30e5d4825d1947e...</div>
+          <!-- ③ 汇总统筹 & 转换 (Aggregator) -->
+          <div class="review-card" style="margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="review-phase-badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid #fbbf24;">阶段 ③</span>
+                <strong style="font-size:14px;">统筹智能体 (Aggregator) — 语义合并与 .nema &rarr; Rust 降维转换</strong>
               </div>
-              <button id="btn-collab-rollback" style="background:transparent;border:1px solid var(--border);color:var(--fg);border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;">
-                ↺ 双缓冲局部回滚
-              </button>
+              <span id="badge-stage-3" style="font-size:11px;color:#fbbf24;background:rgba(251,191,36,0.1);padding:2px 6px;border-radius:4px;">✔ 转换完成</span>
+            </div>
+            <div style="font-size:12px;margin-bottom:8px;line-height:1.7;">
+              <div>① <strong>汇总多分支变更:</strong> 汇聚 <code>feat/A1 + feat/A2 + feat/B1 + feat/B2</code></div>
+              <div>② <strong>语义合并与冲突消解:</strong> 共享词典归一重排 (<code>\\t$N</code>)，域级/记录级三方合流，检测并消解 <strong>0 处单元格冲突</strong></div>
+              <div>③ <strong>.nema &rarr; Rust 转换:</strong> 结构化降维生成常规 Rust 代码：<code>A.rs</code> (核心网关), <code>B.rs</code> (协议), <code>C.rs</code> (遥测)</div>
+            </div>
+            <div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:4px;padding:6px 10px;font-size:11px;display:flex;justify-content:space-between;">
+              <span>🗺️ <strong>NemaRustSourceMap:</strong> 建立双向精确定位映射 (含 AST 防手改漂移守卫)</span>
+              <span>🛡️ <strong>代码规范:</strong> 强制注入 <code>#![forbid(unsafe_code)]</code></span>
+            </div>
+          </div>
+
+          <!-- ④ Git 管理 & 验证输出 & 闭环 -->
+          <div class="review-card" style="margin-bottom:8px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="review-phase-badge" style="background:rgba(168,85,247,0.15);color:#a855f7;border:1px solid #a855f7;">阶段 ④</span>
+                <strong style="font-size:14px;">Git 版本管理 (文件级) & 验证智能体 (Verify Agent) & 持续优化闭环</strong>
+              </div>
+              <span id="badge-stage-4" style="font-size:11px;color:#34d399;background:rgba(52,211,153,0.1);padding:2px 6px;border-radius:4px;">✔ 验证全绿</span>
+            </div>
+            <div style="font-size:12px;margin-bottom:8px;">
+              <strong>四级质量门禁流水线:</strong>
+              <span style="color:#34d399;margin-left:8px;">✔ 1. 构建验证 (cargo check)</span> |
+              <span style="color:#34d399;margin-left:8px;">✔ 2. 单元/集成测试 (cargo test)</span> |
+              <span style="color:#34d399;margin-left:8px;">✔ 3. 质量检查 (clippy)</span> |
+              <span style="color:#34d399;margin-left:8px;">✔ 4. 规范校验 (Spec)</span>
+            </div>
+            <div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:8px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-weight:bold;color:#34d399;">✔ 统筹验收证书: CERT-EPOCH-10 (已原子 Merge 合入 main 分支)</div>
+                <div style="color:var(--gray);margin-top:2px;font-size:11px;">
+                  📦 <strong>输出成果:</strong> <code>A.rs</code>, <code>B.rs</code>, <code>C.rs</code> 生产源码与已构建发布二进制
+                </div>
+              </div>
+              <div style="text-align:right;">
+                <span style="font-size:11px;color:#38bdf8;">🔄 反馈与迭代闭环: 就绪</span>
+              </div>
             </div>
           </div>
         </div>
       `;
+
+      // 渲染各智能体配置表格
+      var tbody = document.getElementById("collab-profiles-tbody");
+      if (tbody) {
+        var slots = [
+          { id: "Router", label: "① 路由智能体", branch: "main / 规划", role: "任务拆解/依赖DAG" },
+          { id: "AgentA1", label: "② 协同组 A · A1", branch: "feat/A1", role: "File A Table & 5W1H" },
+          { id: "AgentA2", label: "② 协同组 A · A2", branch: "feat/A2", role: "File A Graph 拓扑" },
+          { id: "AgentB1", label: "② 独立组 B · B1", branch: "feat/B1", role: "File B 独立编辑" },
+          { id: "AgentB2", label: "② 独立组 B · B2", branch: "feat/B2", role: "File C 独立编辑" },
+          { id: "Aggregator", label: "③ 统筹智能体", branch: "agg/epoch-10", role: "语义合并 / 降维生成" },
+          { id: "Verify", label: "④ 验证智能体", branch: "main / 质检", role: "四级门禁与闭环反查" }
+        ];
+
+        var models = [
+          "claude-3-7-sonnet-20250219", "gpt-5", "claude-opus-4-6", "gemini-2.5-pro",
+          "gemini-2.5-flash", "gpt-5-mini", "deepseek-r1", "o3-pro"
+        ];
+        var efforts = ["Inherit", "ProviderDefault", "Low", "Medium", "High", "XHigh", "Max"];
+        var thinkings = ["Inherit", "Disabled", "Auto", "Enabled", "Interleaved"];
+        var budgets = [2048, 4096, 8192, 16384, 32768, 65536];
+
+        var rowsHtml = "";
+        slots.forEach(function(s) {
+          var p = profiles[s.id] || { model: "claude-3-7-sonnet-20250219", effort: "Medium", thinking: "Auto", budget: 4096 };
+          rowsHtml += `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);" data-slot="${s.id}">
+              <td style="padding:6px;font-weight:600;color:#38bdf8;">${s.label}</td>
+              <td style="padding:6px;color:var(--gray);"><code style="color:#e2e8f0;">${s.branch}</code></td>
+              <td style="padding:6px;">
+                <select class="profile-model-select" data-slot="${s.id}" style="background:var(--card-bg, #1e293b);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-size:11px;">
+                  ${models.map(m => `<option value="${m}" ${p.model === m ? "selected" : ""}>${m}</option>`).join("")}
+                </select>
+              </td>
+              <td style="padding:6px;">
+                <select class="profile-effort-select" data-slot="${s.id}" style="background:var(--card-bg, #1e293b);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-size:11px;">
+                  ${efforts.map(e => `<option value="${e}" ${p.effort === e ? "selected" : ""}>${e}</option>`).join("")}
+                </select>
+              </td>
+              <td style="padding:6px;">
+                <select class="profile-thinking-select" data-slot="${s.id}" style="background:var(--card-bg, #1e293b);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-size:11px;">
+                  ${thinkings.map(t => `<option value="${t}" ${p.thinking === t ? "selected" : ""}>${t}</option>`).join("")}
+                </select>
+              </td>
+              <td style="padding:6px;">
+                <select class="profile-budget-select" data-slot="${s.id}" style="background:var(--card-bg, #1e293b);color:var(--fg);border:1px solid var(--border);border-radius:3px;padding:2px 4px;font-size:11px;">
+                  ${budgets.map(b => `<option value="${b}" ${p.budget === b ? "selected" : ""}>${b}</option>`).join("")}
+                </select>
+              </td>
+            </tr>
+          `;
+        });
+        tbody.innerHTML = rowsHtml;
+
+        // 绑定修改即存
+        var updateSlotProfile = function(slot, key, val) {
+          var cur = collab.getProfiles();
+          if (!cur[slot]) cur[slot] = {};
+          cur[slot][key] = val;
+          collab.saveProfiles(cur);
+          if (window.setTip) window.setTip(`已保存智能体 [${slot}] 配置: ${key} = ${val}`);
+        };
+
+        tbody.querySelectorAll(".profile-model-select").forEach(el => {
+          el.onchange = () => updateSlotProfile(el.dataset.slot, "model", el.value);
+        });
+        tbody.querySelectorAll(".profile-effort-select").forEach(el => {
+          el.onchange = () => updateSlotProfile(el.dataset.slot, "effort", el.value);
+        });
+        tbody.querySelectorAll(".profile-thinking-select").forEach(el => {
+          el.onchange = () => updateSlotProfile(el.dataset.slot, "thinking", el.value);
+        });
+        tbody.querySelectorAll(".profile-budget-select").forEach(el => {
+          el.onchange = () => updateSlotProfile(el.dataset.slot, "budget", parseInt(el.value, 10));
+        });
+      }
+
+      // 切换配置面板折叠
+      var btnProfiles = document.getElementById("btn-collab-profiles");
+      if (btnProfiles) {
+        btnProfiles.onclick = function() {
+          var container = document.getElementById("collab-profiles-container");
+          if (container) {
+            container.style.display = container.style.display === "none" ? "block" : "none";
+          }
+        };
+      }
+
+      // 一键运行流水线模拟
+      var btnPipeline = document.getElementById("btn-collab-pipeline");
+      if (btnPipeline) {
+        btnPipeline.onclick = function() {
+          collab.simulatePipeline();
+        };
+      }
 
       var btnDemo = document.getElementById("btn-collab-demo");
       if (btnDemo) {
@@ -15365,12 +15557,42 @@ function showAbout() {
           collab.simulateCoEdit();
         };
       }
-      var btnRollback = document.getElementById("btn-collab-rollback");
-      if (btnRollback) {
-        btnRollback.onclick = function() {
-          if (window.setTip) window.setTip("已执行局部回滚: Staging 画布已恢复至 Certified Base 版本");
-        };
-      }
+    },
+
+    simulatePipeline: function() {
+      if (window.setTip) window.setTip("🚀 已启动多智能体协作流水线: ① 路由拆解中...");
+      var b1 = document.getElementById("badge-stage-1");
+      var b2 = document.getElementById("badge-stage-2");
+      var b3 = document.getElementById("badge-stage-3");
+      var b4 = document.getElementById("badge-stage-4");
+
+      if (b1) b1.innerText = "⏳ 规划中...";
+      if (b2) b2.innerText = "⏳ 等待";
+      if (b3) b3.innerText = "⏳ 等待";
+      if (b4) b4.innerText = "⏳ 等待";
+
+      setTimeout(function() {
+        if (b1) b1.innerText = "✔ 路由完成 (DAG 2条边)";
+        if (b2) b2.innerText = "⏳ 并行协作中 (4分支)...";
+        if (window.setTip) window.setTip("⚡ ② 协同组 A 与独立组 B 并行编辑中 (Token 节省 78.4%)...");
+      }, 500);
+
+      setTimeout(function() {
+        if (b2) b2.innerText = "✔ 协作校验通过";
+        if (b3) b3.innerText = "⏳ Aggregator 统筹合并中...";
+        if (window.setTip) window.setTip("📦 ③ 词典重编号 & 3-way 语义合并 & 降维生成 A.rs, B.rs, C.rs...");
+      }, 1100);
+
+      setTimeout(function() {
+        if (b3) b3.innerText = "✔ 降维生成完成 (SourceMap已建)";
+        if (b4) b4.innerText = "⏳ 验证智能体 4级门禁测试中...";
+        if (window.setTip) window.setTip("🛡️ ④ cargo check/test & 规范校验中...");
+      }, 1700);
+
+      setTimeout(function() {
+        if (b4) b4.innerText = "✔ 四道门禁全绿";
+        if (window.setTip) window.setTip("🎉 统筹验收证书 CERT-EPOCH-10 签发！已原子合入 main 分支，流水线圆满完成！");
+      }, 2300);
     },
 
     renderRemoteCursors: function() {

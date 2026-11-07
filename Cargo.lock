@@ -3197,6 +3197,7 @@ dependencies = [
  "chrono",
  "editcore",
  "ide-kernel",
+ "nema-codec",
  "serde",
  "serde_json",
  "sha2",
