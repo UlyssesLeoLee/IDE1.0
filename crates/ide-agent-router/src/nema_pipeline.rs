@@ -253,6 +253,82 @@ pub struct NemaMergeOutcome {
     pub conflicts: Vec<NemaSemanticConflict>,
 }
 
+/// 将任意输入字符串清洗为符合 Rust 规范的合法标识符
+pub fn sanitize_rust_ident(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return "AnonymousEntity".to_string();
+    }
+    let mut ident = String::new();
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            ident.push(ch);
+        } else {
+            ident.push('_');
+        }
+    }
+    while ident.contains("__") {
+        ident = ident.replace("__", "_");
+    }
+    let ident = ident.trim_matches('_');
+    if ident.is_empty() {
+        return "AnonymousEntity".to_string();
+    }
+    if ident.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        format!("_{ident}")
+    } else {
+        ident.to_string()
+    }
+}
+
+/// 扫描字符串中的 `^N` 字典引用并按映射表重排新索引
+fn remap_caret_tokens(raw: &str, remap: &std::collections::HashMap<usize, usize>) -> String {
+    let mut out = String::new();
+    let chars: Vec<char> = raw.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+            out.push(chars[i]);
+            out.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        if chars[i] == '^' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+            let mut j = i + 1;
+            let mut num_str = String::new();
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                num_str.push(chars[j]);
+                j += 1;
+            }
+            if let Ok(old_idx) = num_str.parse::<usize>() {
+                if let Some(&new_idx) = remap.get(&old_idx) {
+                    out.push('^');
+                    out.push_str(&new_idx.to_string());
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// 重排单个 Domain 下所有记录的 `^N` 字典索引引用
+fn remap_domain_caret_tokens(
+    dom: &mut nema_codec::NemaDomain,
+    remap: &std::collections::HashMap<usize, usize>,
+) {
+    for rec in &mut dom.records {
+        for col in &mut rec.cells {
+            for chunk in col {
+                chunk.raw = remap_caret_tokens(&chunk.raw, remap);
+            }
+        }
+    }
+}
+
 /// 统筹智能体三方语义合并器
 #[derive(Debug, Default)]
 pub struct NemaSemanticMerger;
@@ -291,13 +367,37 @@ impl NemaSemanticMerger {
         }
         let merged_dict: Vec<String> = unified_dict_set.into_iter().collect();
 
+        // 建立各分支旧词典到新归一化词典的精准重映射表
+        let mut remap_a = std::collections::HashMap::new();
+        for (i, word) in doc_a.dictionary.iter().enumerate() {
+            if let Some(pos) = merged_dict.iter().position(|w| w == word) {
+                remap_a.insert(i, pos);
+            }
+        }
+        let mut remap_b = std::collections::HashMap::new();
+        for (i, word) in doc_b.dictionary.iter().enumerate() {
+            if let Some(pos) = merged_dict.iter().position(|w| w == word) {
+                remap_b.insert(i, pos);
+            }
+        }
+
+        // 对分支 A 与 B 的 AST 记录预先执行 ^N 字典索引重映射
+        let mut doc_a_remapped = doc_a.clone();
+        for dom in &mut doc_a_remapped.domains {
+            remap_domain_caret_tokens(dom, &remap_a);
+        }
+        let mut doc_b_remapped = doc_b.clone();
+        for dom in &mut doc_b_remapped.domains {
+            remap_domain_caret_tokens(dom, &remap_b);
+        }
+
         // Step 2 & 3: 域级与记录级三方合并
         let mut merged_domains = Vec::new();
         let mut all_domain_ids = BTreeSet::new();
-        for dom in &doc_a.domains {
+        for dom in &doc_a_remapped.domains {
             all_domain_ids.insert(dom.id.clone());
         }
-        for dom in &doc_b.domains {
+        for dom in &doc_b_remapped.domains {
             all_domain_ids.insert(dom.id.clone());
         }
         for dom in &base_doc.domains {
@@ -307,8 +407,8 @@ impl NemaSemanticMerger {
         let mut conflicts = Vec::new();
 
         for dom_id in all_domain_ids {
-            let in_a = doc_a.domains.iter().find(|d| d.id == dom_id);
-            let in_b = doc_b.domains.iter().find(|d| d.id == dom_id);
+            let in_a = doc_a_remapped.domains.iter().find(|d| d.id == dom_id);
+            let in_b = doc_b_remapped.domains.iter().find(|d| d.id == dom_id);
 
             match (in_a, in_b) {
                 // 仅分支 A 拥有该域 -> 直接接纳 A
@@ -401,10 +501,22 @@ impl NemaSemanticMerger {
             for rec in &dom.records {
                 if let Some(edge) = &rec.graph_edge {
                     let op = match edge.direction {
-                        EdgeDirection::Directed => edge.raw_operator,
+                        EdgeDirection::Directed => '>',
                         EdgeDirection::Undirected => '=',
                     };
-                    rendered.push_str(&format!("{}{}{}{}{} Description\n", edge.from, op, edge.id, op, edge.to));
+                    let desc_words = rec
+                        .cells
+                        .iter()
+                        .skip(1)
+                        .flat_map(|col| col.iter().map(|c| c.raw.as_str()))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let desc = if desc_words.is_empty() {
+                        "Description".to_string()
+                    } else {
+                        desc_words
+                    };
+                    rendered.push_str(&format!("{}{}{}{}{} {}\n", edge.from, op, edge.id, op, edge.to, desc));
                 } else if let Some(node_id) = &rec.graph_node_id {
                     let desc = rec.raw_groups().into_iter().flatten().skip(1).collect::<Vec<_>>().join(" ");
                     if desc.is_empty() {
@@ -426,11 +538,15 @@ impl NemaSemanticMerger {
                 }
             }
         }
-        rendered.push_str("\n\n\n");
+
+        // 严格保证以正好 3 个物理 LF 终止 (对应 2 个空物理行，满足 NEMA v1.5 不变量)
+        let trimmed = rendered.trim_end_matches('\n');
+        let mut final_rendered = trimmed.to_string();
+        final_rendered.push_str("\n\n\n");
 
         Ok(NemaMergeOutcome {
             file_path: file_path.to_string(),
-            rendered_nema_source: rendered,
+            rendered_nema_source: final_rendered,
             remapped_dictionary: merged_dict,
             conflicts,
         })
@@ -510,12 +626,13 @@ impl NemaToRustLowering {
                 DomainMode::Table => {
                     // Table 域 -> 生成 Rust Struct 或 Enum
                     for record in &domain.records {
-                        let type_name = record
+                        let raw_type = record
                             .cells
                             .first()
                             .and_then(|c| c.first())
                             .map(|c| c.raw.trim().to_string())
                             .unwrap_or_else(|| format!("EntityDomain{}", domain.id));
+                        let type_name = sanitize_rust_ident(&raw_type);
 
                         let start_line = current_line;
                         rust_code.push_str("/// Data entity lowered from NEMA Table Domain \\");
@@ -528,7 +645,8 @@ impl NemaToRustLowering {
                         // 填充字段
                         for (idx, col) in record.cells.iter().enumerate().skip(1) {
                             let field_val = col.iter().map(|c| c.raw.as_str()).collect::<Vec<_>>().join(" ");
-                            let field_name = format!("field_{idx}");
+                            let raw_field_name = format!("field_{idx}");
+                            let field_name = sanitize_rust_ident(&raw_field_name);
                             rust_code.push_str(&format!("    /// Spec: {field_val}\n"));
                             rust_code.push_str(&format!("    pub {field_name}: String,\n"));
                             current_line += 2;
@@ -558,12 +676,13 @@ impl NemaToRustLowering {
                 DomainMode::FiveWOneH => {
                     // 5W1H 域 -> 生成 Rust 函数与不变量契约
                     for record in &domain.records {
-                        let fn_name = record
+                        let raw_fn = record
                             .cells
                             .first()
                             .and_then(|c| c.first())
                             .map(|c| c.raw.trim().to_string())
                             .unwrap_or_else(|| format!("action_fn_{}", domain.id));
+                        let fn_name = sanitize_rust_ident(&raw_fn);
 
                         let why = record.cells.get(1).map(|c| c.iter().map(|x| x.raw.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
                         let how = record.cells.get(2).map(|c| c.iter().map(|x| x.raw.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
@@ -600,16 +719,19 @@ impl NemaToRustLowering {
                 }
                 DomainMode::Graph => {
                     // Graph 域 -> 生成模块依赖 use 声明与拓扑状态机
+                    let safe_dom_id = sanitize_rust_ident(&domain.id);
                     let start_line = current_line;
                     rust_code.push_str(&format!("/// State transitions lowered from Graph Domain >{}\n", domain.id));
                     rust_code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]\n");
-                    rust_code.push_str(&format!("pub enum StateMachineDomain{} {{\n", domain.id));
+                    rust_code.push_str(&format!("pub enum StateMachineDomain{safe_dom_id} {{\n"));
                     current_line += 3;
 
                     for record in &domain.records {
                         if let Some(edge) = &record.graph_edge {
+                            let safe_edge_id = sanitize_rust_ident(&edge.id);
+                            let safe_to = sanitize_rust_ident(&edge.to);
                             rust_code.push_str(&format!("    /// Edge {}: {} -> {}\n", edge.id, edge.from, edge.to));
-                            rust_code.push_str(&format!("    Transition{}_{},\n", edge.id, edge.to));
+                            rust_code.push_str(&format!("    Transition{safe_edge_id}_{safe_to},\n"));
                             current_line += 2;
                         }
                     }
