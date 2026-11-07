@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.1 — 2026-11-06
+
+### 多智能体流水线红绿加固与 NEMA 核心改善 (Multi-Agent Pipeline Hardening & Codec Invariants)
+本补丁版本针对红绿测试（TDD / Edge-Case Matrix）中暴露的 4 项关键边界与隐蔽缺陷进行彻底改善与修复，保证全链路流水线严格满足生产级不变量与规范标准。
+
+#### 1. 语义合并与 NEMA 格式无损互通加固 (crates/ide-agent-router)
+- **严格换行终结守护**: 修复 NemaSemanticMerger::merge 因连续 
+ 产生的 
+
+
+
+ (4 LF) 缺陷，强制规范化为精确 3 个物理 LF（对应 2 个空物理行），彻底解决二次解析时的 BadTermination 错误。
+- **AST 级 ^N 字典索引重映射**: 针对多分支并行生成的独立词典，在字母序归一化重排后，自动建立旧索引到新索引的映射表，递归重写所有 AST 记录中的 ^N 引用，彻底杜绝词条语义错位。
+- **Graph 拓扑边业务语义保全与方向规范化**:
+  - 修复渲染时硬编码丢弃说明文本的缺陷，完整保留各边在 
+ec.cells 中的原始业务描述。
+  - 规范化有向边为标准 rom > id > to 格式，杜绝反向操作符 < 引起的 180 度方向翻转。
+
+#### 2. Rust AST 降维生成合规清洗 (NemaToRustLowering)
+- 新增 sanitize_rust_ident 标识符清洗器：
+  - 自动将短横线、空格、点号等非法符号规范化为下划线，并自动压缩连续下划线。
+  - 数字开头的标识符自动补齐前缀 _（如 123-Payment-Gateway → _123_Payment_Gateway），保证生成的 Rust 结构体与函数 100% 语法合规。
+
+#### 3. 红绿测试矩阵落地
+- 新增专用红绿测试套件 crates/ide-agent-router/tests/nema_pipeline_redgreen_tests.rs，覆盖无损解析回环、图拓扑保真、词典重排、语法清洗与断路器重复错误指纹熔断 5 大严苛断言，全量转绿通过。
+
 ## 0.5.0 — 2026-11-06
 
 ### IDE1.0 × NEMA v1.5 多智能体协同开发平台 (Multi-Agent NEMA Collaborative Development Platform)
