@@ -245,3 +245,132 @@ pub struct IterationFeedbackTicket {
      2. 查询 `NemaRustSourceMap` 反查出对应的 `(nema_file, domain_id, record_key, responsible_branch, responsible_agent)`；
      3. 生成 `IterationFeedbackTicket` 并自动注入阶段 ① **任务输入 (`DefectRepair` / `ModuleOptimization`)**；
      4. `Router Agent` 仅唤醒受影响的责任分支（如 `feat/A2`）执行增量 `.nema` 修正，无需重跑已通过且无依赖变更的分支，形成低成本、确定性的持续优化闭环。
+
+---
+
+## 5. 异构智能体独立配置模型、协议映射与运行时分派详细设计
+
+### 5.1 核心配置数据结构 (`AgentModelProfile` & `MultiAgentProfileRegistry`)
+
+为支持四阶段架构中的 7 个标准智能体槽位（以及动态扩展槽位）各自独立配置大模型、推理强度 (`effort`)、思考模式 (`thinking_mode` + `budget_tokens`) 与端点凭据，定义如下 Rust 强类型契约：
+
+```rust
+use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+
+/// 四阶段流水线标准智能体槽位标识
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum AgentSlotId {
+    /// ① 路由智能体 (Router: 任务拆解 / 文件分配 / 协作策略 / 依赖分析)
+    Router,
+    /// ② 协同编辑组 A · Agent A1 (分支: feat/A1, 共同编辑 File A.nema)
+    AgentA1,
+    /// ② 协同编辑组 A · Agent A2 (分支: feat/A2, 共同编辑 File A.nema)
+    AgentA2,
+    /// ② 独立编辑组 B · Agent B1 (分支: feat/B1, 独立编辑 File B.nema)
+    AgentB1,
+    /// ② 独立编辑组 B · Agent B2 (分支: feat/B2, 独立编辑 File C.nema)
+    AgentB2,
+    /// ③ 统筹智能体 (Aggregator: 汇总多分支变更 / 语义合并 / .nema → Rust 转换)
+    Aggregator,
+    /// ④ 验证智能体 (Verify: 构建验证 / 测试 / 质量检查 / 规范校验 / 逆向反馈)
+    Verify,
+    /// 动态扩展智能体槽位
+    Custom(String),
+}
+
+/// 推理强度档位 (Reasoning Effort)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ReasoningEffort {
+    /// 继承全局或角色组默认档位
+    #[default]
+    Inherit,
+    /// 不显式传递 reasoning_effort，由模型使用自身默认行为
+    ProviderDefault,
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    XHigh,
+    Max,
+    /// 供应商自定义档位 (例如特定网关扩展档位)
+    Custom(String),
+}
+
+/// 思考模式与 Token 预算 (Thinking Mode & Budget)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ThinkingMode {
+    /// 继承全局默认思考模式
+    #[default]
+    Inherit,
+    /// 显式关闭思考链 (极低延迟，适合独立编辑组常规转换任务)
+    Disabled,
+    /// 模型自适应决定是否启用思考链
+    Auto,
+    /// 强制开启深度思考链，并限定最大思考 Token 预算 (如 4096 / 16384 / 32768)
+    Enabled { budget_tokens: u32 },
+    /// 工具调用交错思考模式 (Interleaved Thinking: 在每次 AST 解析/构建测试工具调用之间交错推理)
+    Interleaved { budget_tokens: u32 },
+}
+
+/// 单个智能体的独立模型与推理配置
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentModelProfile {
+    pub slot_id: AgentSlotId,
+    pub display_name: String,
+    pub git_branch: Option<String>,
+    /// 独立接口地址覆盖 (None = 继承全局 base_url)
+    pub base_url_override: Option<String>,
+    /// 独立模型名称 (空或 None = 继承全局 model)
+    pub model_override: Option<String>,
+    /// 独立凭据引用 (仅保存 SecretRef 标识，绝不明文落入日志或 Git)
+    pub secret_ref: Option<String>,
+    /// 独立推理强度 (Reasoning Effort)
+    pub effort: ReasoningEffort,
+    /// 独立思考模式 (Thinking Mode)
+    pub thinking_mode: ThinkingMode,
+    /// 采样温度 (注意: 当启用 Enabled/Interleaved 思考且模型要求锁定温度时自动规整为 None 或 1.0)
+    pub temperature: Option<f32>,
+    /// 单次响应最大输出 Token 上限
+    pub max_output_tokens: Option<u32>,
+}
+```
+
+### 5.2 三级配置继承解析算法 (`resolve_effective_profile`)
+
+当调度器或编辑器准备调用某个智能体 $S \in \text{AgentSlotId}$ 时，按以下纯函数规则计算最终生效配置 `EffectiveAgentConfig`：
+
+1. **Endpoint & Key 解析**：
+   - $\text{base\_url} = S.\text{base\_url\_override}.\text{unwrap\_or}(\text{Global}.\text{base\_url})$
+   - $\text{api\_key} = \text{SecretStore}::\text{resolve}(S.\text{secret\_ref}).\text{unwrap\_or}(\text{Global}.\text{key})$
+2. **Model 解析**：
+   - $\text{model} = S.\text{model\_override}.\text{filter}(|\text{m}| !\text{m.is\_empty}()).\text{unwrap\_or}(\text{Global}.\text{model})$
+3. **Effort 解析**：
+   - 若 $S.\text{effort} \neq \text{Inherit}$，取 $S.\text{effort}$；否则取角色组默认或全局 `Global.effort`。
+4. **ThinkingMode 解析**：
+   - 若 $S.\text{thinking\_mode} \neq \text{Inherit}$，取 $S.\text{thinking\_mode}$；否则取全局 `Global.thinking_mode`。
+
+### 5.3 跨厂商模型网关请求协议归一化映射 (`Wire-Protocol Normalization`)
+
+不同大模型厂商对 `effort` 与 `thinking_mode` 的 JSON 字段定义不同，协议适配层按以下矩阵生成请求体与 Header：
+
+| 配置项 | OpenAI / o-series / GPT-5 兼容接口 | Anthropic Claude 3.7 / 4.x 兼容接口 | Gemini / DeepSeek / 通用聚合网关 |
+|:---|:---|:---|:---|
+| **`effort` = `Low / Medium / High / XHigh`** | `"reasoning_effort": "low" \| "medium" \| "high" \| "xhigh"` | 映射为对应预算或透传 `"reasoning_effort"` | `"reasoning_effort": "<level>"` |
+| **`thinking_mode` = `Disabled`** | 不传或 `"reasoning_effort": "none"` | `"thinking": { "type": "disabled" }` | `"thinking": { "type": "disabled" }` |
+| **`thinking_mode` = `Auto`** | 默认自适应推理 | 不强制指定 budget，交由模型自适应 | `"thinking": { "type": "auto" }` |
+| **`thinking_mode` = `Enabled { budget }`** | `"max_completion_tokens"` 预留思考余量 + `"reasoning_effort"` | `"thinking": { "type": "enabled", "budget_tokens": budget }`（同时自动省略不兼容的 `temperature`） | `"thinking": { "type": "enabled", "budget_tokens": budget }` |
+| **`thinking_mode` = `Interleaved { budget }`** | 多轮 Tool Call 保留 reasoning items | Header 注入 `anthropic-beta: interleaved-thinking-2025-05-14` + `"thinking": { "type": "enabled", "budget_tokens": budget }` | `"thinking": { "type": "interleaved", "budget_tokens": budget }` |
+
+### 5.4 UI 与持久化落盘设计
+
+1. **Web / Tauri 端 (`crates/ide-shell-web/src/editor.html` & `crates/ide-shell-desktop/dist/index.html`)**：
+   - **持久化键**：`localStorage["ide10.ai"]`（全局默认含 `thinkingMode` / `thinkingBudget`）与 `localStorage["ide10.agentProfiles"]`（按 `router` / `agent-a1` / `agent-a2` / `agent-b1` / `agent-b2` / `aggregator` / `verify` 存储各智能体独立配置）。
+   - **交互入口**：
+     - **「首选项 → AI」**：配置全局默认接口、模型、Key、Effort、思考模式（`默认 / 关闭 / 自动 / 开启深度思考 / 交错思考`）及思考预算 Token，并提供「展开各智能体独立模型/Effort/思考配置」入口；
+     - **「Chat 面板」**：顶栏同时支持切换当前对话所用的智能体角色、推理强度 `effort` 与思考模式 `thinking`；
+     - **「多 AI 协同审查与统筹验收看板 (`#collab-review-body`)」**：在四阶段看板中直接展示并支持在线调整 `Router`、`Agent A1/A2`、`Agent B1/B2`、`Aggregator`、`Verify` 每个智能体的专属模型、Effort 与思考模式。
+2. **原生高速版 (`ide-fast`)**：
+   - 在 `ide-fast/src/ai/config.rs` 的 `AiConfig` 中新增 `thinking_mode: String`、`thinking_budget: u32` 与 `agent_profiles: BTreeMap<String, AgentProfileConfig>`，原子持久化至 `ai.json`，并在 `aichat.rs` 顶栏与设置区提供一致的选择器。
+

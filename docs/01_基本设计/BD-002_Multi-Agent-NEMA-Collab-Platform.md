@@ -116,7 +116,30 @@ flowchart LR
 
 ---
 
-## 4. 核心系统不变量 (System Invariants)
+## 4. 异构智能体独立模型、Effort 与思考模式架构 (Per-Agent Heterogeneous Model, Effort & Thinking Profiles)
+
+在四阶段流水线中，不同智能体的认知负荷、延迟敏感度与工具调用深度截然不同（例如 `Router` 与 `Aggregator` 需要深度全局推理与冲突裁决，而并行编辑组 `Agent A1/A2/B1/B2` 更追求高吞吐与低延迟结构化生成）。因此，系统支持**每个智能体独立配置底层大模型 (`model`)、推理强度 (`effort`)、思考模式 (`thinking_mode` + `thinking_budget_tokens`)、采样参数及独立供应商端点 (`base_url` / `SecretRef`)**。
+
+### 4.1 智能体角色画像与差异化推荐配置矩阵
+
+| 阶段 | 智能体标识 (`agent_id`) | 角色与分支绑定 | 推荐模型层级 | 推荐推理强度 (`effort`) | 推荐思考模式 (`thinking_mode`) | 思考预算 (`budget_tokens`) | 设计理由与权衡 |
+|:---|:---|:---|:---|:---|:---|:---|:---|
+| **① 路由拆解** | `router` | **路由智能体 (Router)** | 旗舰架构模型<br>*(Claude Opus 4.6 / GPT-5 / Gemini 2.5 Pro)* | `high` / `xhigh` | `enabled`<br>*(显式深度思考链)* | `16,384` | 负责全局任务拆解、依赖 DAG 拓扑分析与协同/独立编组决策，一步规划失误会放大至下游所有分支。 |
+| **② 并行协作** | `agent-a1` | **协同编辑组 A · Agent A1**<br>*(分支 `feat/A1` → `File A.nema`)* | 高速编码模型<br>*(Claude Sonnet 4.6 / GPT-5-mini)* | `medium` | `auto` / `enabled` | `4,096` | 同文件多域协同需严格遵守 `GuidanceZone` 锚点边界与 `.nema` 语法，中等思考预算兼顾并发吞吐与边界精度。 |
+| **② 并行协作** | `agent-a2` | **协同编辑组 A · Agent A2**<br>*(分支 `feat/A2` → `File A.nema`)* | 高速编码模型<br>*(Claude Sonnet 4.6 / DeepSeek-R1)* | `medium` | `auto` / `enabled` | `4,096` | 与 `A1` 并行演进同一 `.nema` 文件的不同语义域（如 Graph 拓扑边），支持与 `A1` 使用异构厂商模型交叉互补。 |
+| **② 并行协作** | `agent-b1` | **独立编辑组 B · Agent B1**<br>*(分支 `feat/B1` → `File B.nema`)* | 高吞吐低延迟模型<br>*(Gemini 2.5 Flash / Sonnet / 本地 vLLM)* | `low` / `medium` | `auto` / `disabled` | `0` ~ `2,048` | 独占独立文件 `File B.nema`，无同文件写集争用，可关闭或自适应思考以获得极致并发生成速度与最低 Token 成本。 |
+| **② 并行协作** | `agent-b2` | **独立编辑组 B · Agent B2**<br>*(分支 `feat/B2` → `File C.nema`)* | 高吞吐低延迟模型<br>*(Gemini 2.5 Flash / GPT-5-mini)* | `low` / `medium` | `auto` / `disabled` | `0` ~ `2,048` | 独占独立文件 `File C.nema`，与 `B1` 完全并行推进。 |
+| **③ 汇总统筹** | `aggregator` | **统筹智能体 (Aggregator)**<br>*(`A1+A2+B1+B2` 合并 + `.nema → Rust`)* | 旗舰推理与代码生成模型<br>*(Claude Opus 4.6 / o3-pro / GPT-5)* | `xhigh` / `max` | `interleaved`<br>*(工具交错思考模式)* | `32,768` | 需同时处理多分支语义冲突消解与 `.nema → A.rs/B.rs/C.rs` 确定性类型降维，交错思考可在每次 AST 校验之间深度推理。 |
+| **④ 验证输出** | `verify` | **验证智能体 (Verify)**<br>*(构建/测试/质量/规范 + 逆向回流)* | 诊断分析与工具模型<br>*(Claude Sonnet 4.6 / GPT-5)* | `high` | `interleaved`<br>*(工具交错思考模式)* | `8,192` | 在执行 `cargo build`、`cargo test`、`clippy` 与反查 `NemaRustSourceMap` 多步工具调用之间交错推理，精准定位根因分支。 |
+
+### 4.2 三级配置继承与回退机制 (`Fallback & Inheritance Hierarchy`)
+1. **实例级独立配置 (`Instance Override`)**：针对单个智能体（如 `aggregator` 或 `agent-a1`）显式指定的 `base_url`、`model`、`effort`、`thinking_mode`、`thinking_budget_tokens`、`temperature`。
+2. **角色组默认配置 (`Role Group Default`)**：协同编辑组 A 或独立编辑组 B 的组级默认参数。
+3. **全局默认配置 (`Global Baseline`)**：当某智能体的字段留空或设为 `inherit` 时，自动回退继承「首选项 → AI」中的全局默认模型、端点、Key 与 Effort，确保零配置即可开箱即用，同时支持按需精细化调优。
+
+---
+
+## 5. 核心系统不变量 (System Invariants)
 
 | 编号 | 不变量名称 | 形式化约束描述 |
 |:---|:---|:---|
@@ -126,3 +149,4 @@ flowchart LR
 | **INV-04** | **同文件协同零静默覆盖** | 协同编辑组 A（`feat/A1` + `feat/A2`）合并 `File A.nema` 时，若写足迹相交且语义不等价，必须显式进入 `Aggregator` 冲突消解状态机，禁止后写覆盖先写。 |
 | **INV-05** | **未验证不入主干 (`Verify Gate`)** | 未获得 `Verify Agent` 签发的 `AcceptanceCertificate`（含构建、测试、质量、规范四项全绿证明）的任何 PR 严禁 Merge 进入 `main` 分支。 |
 | **INV-06** | **反馈闭环可逆可追溯** | 每个生成的 `.rs` 符号必须通过 `NemaRustSourceMap` 双向关联至 `.nema` 的 `(domain_id, record_idx)` 与 Git 分支 `feat/*`，确保验证失败可精确回流定位。 |
+| **INV-07** | **智能体配置隔离与凭据安全** | 每个智能体的 `AgentModelProfile` 独立序列化与审计；API Key 仅以 `SecretRef` 形式引用，严禁明文出现在 `.nema` 词典、Git Commit Trailer 或前端日志中。 |
