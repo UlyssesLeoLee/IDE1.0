@@ -1,9 +1,12 @@
 # IDE1.0
-![Uploading ダウンロード.gif…]()
+
 
 > **Stage 3.0 最小骨架 + IDE Shell 骨架** — per ULYS-191 §3 + §4.2.2 brief v0.1.
 > 完整 microkernel / session / transaction buffer / search / plugin loader / TUI / txn
 > 实装待后续 brief (per DD-01~04 详细设计书).
+
+![Uploading ダウンロード.gif…]()
+
 
 ## §0 三阶段累计交付 (per 2026-10-03 dev 收尾)
 
