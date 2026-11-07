@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0 — 2026-11-07
+
+### IDE1.0 × NEMA 交互图拓扑渲染器、基准实验室与新解释器规范对齐
+
+本版本为 IDE1.0 重大里程碑版本，全面对齐 .NEMA 官方参考实现与最新解释器演进规范，引入交互式拓扑图渲染引擎、实时 Benchmark Lab 监控中心，并完成全工作区严格的静态安全自审与 Clippy 零警告加固。
+
+#### 1. .NEMA 官方规范与交互式拓扑渲染器 (Graph Canvas)
+- **拓扑图渲染 (Graph Domain Visualizer)**: 深度对齐 .NEMA 官方规范（v1.2 Release R7 及最新解释器），实时解析 ` >G` 领域中的节点 (`n id label [props]`) 与边 (`e src dst [type]`)，支持双向交互、节点选中高亮、边类型标识与动态布局。
+- **实时 Benchmark Lab**: 内置与官方基准测试实验室同构的实时分析器，精准测算 .NEMA 与 JSON/YAML/XML 的体积压缩比（Token 节约率高达 70%+）、AST 解析延迟与内存分配开销。
+- **三端统一交付**: 网页端 (ide-shell-web)、Tauri 桌面端 (ide-shell-desktop) 与极速桌面端 (ide-fast) 体验保持一致，工具栏底栏一键展开。
+
+#### 2. .NEMA 新解释器规范演进与兼容性支持
+- **单空格领域头语法兼容**: 紧跟 `E:\.NEMA\website\download.html` 及官方核心提交，兼容支持单空格前缀领域头（` ?`、` `、` >`）与隐式/显式 Table 结构。
+- **全角字符严格拒绝**: 遵循安全与格式一致性原则，严格拒绝 U+3000 全角空格。
+- **往返无损保真 (Roundtrip 100%)**: 官方测试用例（`test_v15.py`）及 60+ 官方示例往返还原度 100%。
+
+#### 3. 严格安全自审与代码质量加固 (Clippy Clean & Safe Rust)
+- **Clippy 全量零警告**: 全工作区（All targets, tests, benches）在 `-- -D warnings` 严苛模式下 0 警告退出。
+- **内存安全保证**: 核心 crate 严格禁止 unsafe 代码（`#![forbid(unsafe_code)]`），确保内存安全与并发无数据竞争。
+- **全量自动化测试套件通过**: 1227+ 项单元测试、集成测试、基准测试与并发测试 100% 通过（ide-fast 518 项、editcore 610 项、ide-shell-web 99 项全绿灯）。
+
+#### 4. 高性能二进制交付
+- **发布产物**: `dist-fast/ide-fast.exe`（Release 构建优化，体积 18.53 MB）。
+- **完整性校验**: SHA256 哈希值 `7A04ADE84EAEEA003CD6FE6435E634BC2E487062DC7EC8F6E44AB69A65A0344D`。
+
 ## 0.3.2 — 2026-11-06
 
 ### IDE1.0 × NEMA v1.5 多智能体协同开发平台与流水线加固
