@@ -3,6 +3,8 @@
 //! 严格对应 `E:\.NEMA\codec\core.py` 与 `E:\.NEMA\codec\transport.py` 的全部语法不变量、
 //! 字典候选增益算法、RLE 上下界 (`4..=100_000`)、错误码及测试向量。
 
+#![forbid(unsafe_code)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -643,9 +645,7 @@ pub fn render_text(raw: &str, dictionary: &[String]) -> Result<String, NemaError
     let items = mixed_atoms(raw, dictionary)?;
     let mut out = Vec::with_capacity(items.len());
     for item in items {
-        if item.opaque_dict_index.is_some() {
-            out.push(item.text);
-        } else if contains_cjk(&item.text) {
+        if item.opaque_dict_index.is_some() || contains_cjk(&item.text) {
             out.push(item.text);
         } else {
             let pieces = split_english_pieces(&item.text);
@@ -955,9 +955,11 @@ pub fn join_intents<S: AsRef<str>>(chunks: &[S], language: &str, exact_name: boo
             let first_ch = atom.chars().next().expect("non-empty atom");
             let last_part = parts.last_mut().expect("non-empty parts");
             let prev_ch = last_part.chars().last().expect("non-empty part");
-            if ",.;:!?、。！？）]}'’\"".contains(first_ch) || matches!(prev_ch, '\'' | '’') {
-                last_part.push_str(&atom);
-            } else if is_cjk_v12_char(prev_ch) || is_cjk_v12_char(first_ch) {
+            if ",.;:!?、。！？）]}'’\"".contains(first_ch)
+                || matches!(prev_ch, '\'' | '’')
+                || is_cjk_v12_char(prev_ch)
+                || is_cjk_v12_char(first_ch)
+            {
                 last_part.push_str(&atom);
             } else {
                 parts.push(atom);
@@ -1194,11 +1196,11 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         if current.is_v12 {
             if pending_v12_mode {
                 pending_v12_mode = false;
-                if line.starts_with('\t') {
-                    if line.starts_with("\t\t") {
+                if let Some(rest) = line.strip_prefix('\t') {
+                    if rest.starts_with('\t') {
                         return Err(NemaError::TabInBody);
                     }
-                    let labels = split_x_v12(&line[1..])?;
+                    let labels = split_x_v12(rest)?;
                     if labels.is_empty() || labels.iter().any(|v| v.is_empty()) {
                         return Err(NemaError::InvalidTableHeaderName);
                     }
@@ -3340,6 +3342,7 @@ impl NemaLeaseArbitrator {
     }
 
     /// 1. `request_lease(source_hash, revision)`
+    ///
     /// 若同一 `(source_hash, revision)` 已提交过，直接返回缓存的幂等结果。
     pub fn request_lease(&mut self, source_hash: u64, revision: u64) -> (u64, Option<EncodedChoice>) {
         if let Some(cached) = &self.last_commit {

@@ -528,7 +528,7 @@ impl Lexer {
                 // 检查浮点数小数点 (注意: 排除 1..10 这种情况)
                 let is_float = if self.peek() == Some('.')
                     && self.peek_ahead(1) != Some('.')
-                    && self.peek_ahead(1).map_or(false, |c| c.is_ascii_digit())
+                    && self.peek_ahead(1).is_some_and(|c| c.is_ascii_digit())
                 {
                     num_buf.push(self.advance().unwrap());
                     while let Some(c) = self.peek() {
@@ -1467,8 +1467,8 @@ impl Environment {
     pub fn set(&mut self, name: &str, value: PpaValue) {
         let lower = name.to_ascii_lowercase();
         for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(&lower) {
-                scope.insert(lower, value);
+            if let Some(slot) = scope.get_mut(&lower) {
+                *slot = value;
                 return;
             }
         }

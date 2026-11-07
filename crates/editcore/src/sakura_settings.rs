@@ -906,7 +906,7 @@ impl Default for PrintConfig {
 // 组合设置：SakuraCommonSettings
 // ============================================================================
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct SakuraCommonSettings {
     pub window: WindowConfig,
     pub tab_bar: TabBarConfig,
@@ -928,30 +928,7 @@ pub struct SakuraCommonSettings {
     pub print: PrintConfig,
 }
 
-impl Default for SakuraCommonSettings {
-    fn default() -> Self {
-        Self {
-            window: WindowConfig::default(),
-            tab_bar: TabBarConfig::default(),
-            edit: EditConfig::default(),
-            file: FileConfig::default(),
-            search: SearchConfig::default(),
-            format: FormatConfig::default(),
-            assist: AssistConfig::default(),
-            macro_cfg: MacroConfig::default(),
-            status_bar: StatusBarConfig::default(),
-            plugin: PluginConfig::default(),
-            toolbar: ToolbarConfig::default(),
-            key_search: KeySearchConfig::default(),
-            exec_cmd: ExecCmdConfig::default(),
-            color_palette: ColorPaletteConfig::default(),
-            custom_menu: CustomMenuConfig::default(),
-            main_menu: MainMenuConfig::default(),
-            font: FontConfig::default(),
-            print: PrintConfig::default(),
-        }
-    }
-}
+
 
 // ============================================================================
 // INI 存储与双向映射实现

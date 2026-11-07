@@ -267,7 +267,7 @@ impl App {
                                     });
                                     if ui
                                         .add(ws_btn)
-                                        .tip(trz("源码 / 渲染预览切换 (Ctrl+Shift+V)"))
+                                        .tip(trz("显示空白符"))
                                         .clicked()
                                     {
                                         action = Some("toggle_ws");

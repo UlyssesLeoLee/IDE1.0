@@ -349,7 +349,7 @@ impl MmapBuffer {
     /// 读取任意起始字节偏移与长度的二进制切片
     pub fn read_slice(&self, byte_offset: u64, len: usize) -> io::Result<Vec<u8>> {
         let mut inner = self.inner.lock().map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Mutex poison error: {}", e))
+            io::Error::other(format!("Mutex poison error: {}", e))
         })?;
         inner.read_bytes(byte_offset, len, self.file_size)
     }
@@ -414,7 +414,7 @@ impl MmapBuffer {
         if self.total_lines == 0 {
             1
         } else {
-            (self.total_lines + size - 1) / size
+            self.total_lines.div_ceil(size)
         }
     }
 
