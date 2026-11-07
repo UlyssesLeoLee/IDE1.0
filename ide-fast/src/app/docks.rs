@@ -85,11 +85,12 @@ impl App {
         self.set_dock_collapsed(d, collapsed);
     }
 
-    /// 底部面板头部右端的文字钮 (Tauri 的 `.bottom-toggle`: 展开时写「折叠」, 折叠时写「展开」, 11px, 圆角 5, 1px 边)
+    /// 底部面板头部右端的文字钮 (Tauri 的 `.bottom-toggle`: 展开时写「▼ 折叠」, 折叠时写「▲ 展开」, 11px, 圆角 5, 1px 边)
     pub(super) fn dock_chevron(&mut self, ui: &mut egui::Ui, d: Dock) {
         let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
         let word = if collapsed { "展开" } else { "折叠" };
-        let txt = egui::RichText::new(trz(word))
+        let label = format!("{} {}", panels::chevron(d, collapsed), trz(word));
+        let txt = egui::RichText::new(label)
             .size(11.0)
             .color(self.tc.fg_dim);
         let btn = if self.tc.is_translucent() {
@@ -168,8 +169,8 @@ impl App {
         }
     }
 
-    /// 底部面板头 (Tauri `#bottom-head`, 28px): 左 = TERMINAL / OUTPUT / PROBLEMS 三个大写页签 (11px 等宽, 当前页 2px 蓝色下划线),
-    /// 右 = 「+ 新建终端」和「折叠 / 展开」两个带边的小按钮。展开和折叠两种状态共用这一条
+    /// 底部面板头 (Tauri `#bottom-head`, 28px): 左 = TERMINAL / OUTPUT / PROBLEMS / 🛡️ 协同审查 四个页签 (当前页 2px 蓝色下划线),
+    /// 右 = 「+ 新建终端」和「▲ 展开 / ▼ 折叠」两个带边的小按钮。展开和折叠两种状态共用这一条
     pub(super) fn bottom_head(&mut self, ui: &mut egui::Ui) {
         let tc = self.tc;
         let edge = if tc.dark {
@@ -192,25 +193,33 @@ impl App {
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
+                let collab_lbl = trz("🛡️ 协同审查");
                 for (t, name) in [
                     (BottomTab::Terminal, "TERMINAL"),
                     (BottomTab::Output, "OUTPUT"),
                     (BottomTab::Problems, "PROBLEMS"),
+                    (BottomTab::CollabReview, collab_lbl),
                 ] {
                     let mut label = name.to_string();
                     if t == BottomTab::Problems && !self.sys.problems.is_empty() {
                         label = format!("{label} ({})", self.sys.problems.len());
                     }
                     let on = self.sys.bottom == t;
+                    let font = if t == BottomTab::CollabReview {
+                        egui::FontId::proportional(11.0)
+                    } else {
+                        egui::FontId::monospace(11.0)
+                    };
                     let g = ui.painter().layout_no_wrap(
                         label,
-                        egui::FontId::monospace(11.0),
+                        font,
                         if on { tc.fg } else { tc.fg_dim },
                     );
                     let (rect, resp) = ui.allocate_exact_size(
                         Vec2::new(g.size().x + 16.0, panels::BOTTOM_HEAD),
                         Sense::click(),
                     );
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     let col = if on || resp.hovered() {
                         tc.fg
                     } else {
@@ -232,11 +241,16 @@ impl App {
                         );
                     }
                     if resp.clicked() {
-                        self.sys.bottom = t;
-                        // 头条状态 (折叠 / 完整界面里还没开) 点页签 = 展开面板
+                        // 头条状态 (折叠 / 还没开) 点页签 = 切换到该页签并展开面板;
+                        // 已展开时点其他页签 = 切换页签, 点当前页签 = 折叠面板
                         if self.dock_mode(Dock::Bottom, self.term.open) != Mode::Full {
+                            self.sys.bottom = t;
                             self.term.open = true;
                             self.expand_dock(Dock::Bottom);
+                        } else if self.sys.bottom == t {
+                            self.collapse_dock(Dock::Bottom);
+                        } else {
+                            self.sys.bottom = t;
                         }
                     }
                 }
@@ -252,12 +266,7 @@ impl App {
                         .stroke(egui::Stroke::new(1.0, edge))
                         .corner_radius(5.0);
                     if ui.add(b).tip(trz("新建终端 (Ctrl+`)")).clicked() {
-                        self.sys.bottom = BottomTab::Terminal;
-                        if self.dock_collapsed(Dock::Bottom) || !self.term.open {
-                            self.term.open = true;
-                            self.expand_dock(Dock::Bottom);
-                        }
-                        self.term.restart();
+                        self.new_terminal_session();
                     }
                 });
             },
@@ -313,8 +322,8 @@ mod tests {
         let (mut a, _g) = app();
         assert_eq!(
             a.dock_mode(Dock::Bottom, a.term.open),
-            Mode::Hidden,
-            "极简界面: 不画"
+            Mode::Strip,
+            "极简界面: 也常驻 28px 底部终端/面板头条"
         );
         a.cfg.view.rail = true;
         assert!(!a.term.open);

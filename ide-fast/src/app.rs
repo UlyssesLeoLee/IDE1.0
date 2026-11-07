@@ -2527,9 +2527,41 @@ impl App {
         };
     }
 
+    pub(super) fn term_cwd(&self) -> PathBuf {
+        self.side
+            .root
+            .clone()
+            .or_else(|| {
+                self.docs[self.active.min(self.docs.len() - 1)]
+                    .path
+                    .as_ref()
+                    .and_then(|p| p.parent().map(|x| x.to_path_buf()))
+            })
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// 新建/重置一个交互式 PowerShell 终端会话, 展开底部终端栏并聚焦命令输入框
+    pub(super) fn new_terminal_session(&mut self) {
+        self.sys.bottom = sysopts::BottomTab::Terminal;
+        if self.dock_collapsed(crate::panels::Dock::Bottom) || !self.term.open {
+            self.term.open = true;
+            self.expand_dock(crate::panels::Dock::Bottom);
+        }
+        let cwd = self.term_cwd();
+        self.term.start_session(&cwd);
+    }
+
     /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
     fn term_ui(&mut self, ui: &mut egui::Ui) {
+        let mut want_new = false;
         Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
+            if ui
+                .button(format!("+ {}", trz("新建终端")))
+                .tip(trz("立即启动或重置常驻 PowerShell 会话"))
+                .clicked()
+            {
+                want_new = true;
+            }
             if ui.button(trz("清屏")).clicked() {
                 self.term.clear();
             }
@@ -2550,6 +2582,9 @@ impl App {
                 self.term.open = false;
             }
         });
+        if want_new {
+            self.new_terminal_session();
+        }
         let h = (ui.available_height() - 28.0).max(30.0);
         self.term.set_scrollback(self.cfg.term_scrollback);
         let (tfg, tbg) = (
@@ -2561,6 +2596,7 @@ impl App {
                 .map(|c| Color32::from_rgb(c[0], c[1], c[2])),
         );
         let tpx = self.cfg.term_font_px;
+        let mut empty_start = false;
         egui::Frame::NONE
             .fill(tbg.unwrap_or(Color32::TRANSPARENT))
             .show(ui, |ui| {
@@ -2572,10 +2608,10 @@ impl App {
                         .auto_shrink([false, false]),
                     |ui| {
                         let shown = self.term.display();
-                        if shown.trim().is_empty() && !self.term.running() {
+                        if shown.trim().is_empty() && !self.term.running() && !self.term.has_session() {
                             // 没有会话输出时的空状态 (Tauri: No terminal session / 暂无终端会话)
                             let dim = self.tc.fg_dim;
-                            ui.add_space((h * 0.3).max(4.0));
+                            ui.add_space((h * 0.25).max(4.0));
                             ui.vertical_centered(|ui| {
                                 ui.label(
                                     egui::RichText::new(if crate::i18n::cur() == Lang::Zh {
@@ -2598,6 +2634,10 @@ impl App {
                                     .size(tpx)
                                     .color(dim),
                                 );
+                                ui.add_space(4.0);
+                                if ui.button(trz("+ 启动 PowerShell 终端会话")).clicked() {
+                                    empty_start = true;
+                                }
                             });
                             return;
                         }
@@ -2609,12 +2649,18 @@ impl App {
                     },
                 );
             });
+        if empty_start {
+            self.new_terminal_session();
+        }
         let r = ui.add(
             egui::TextEdit::singleline(&mut self.term.input)
                 .font(egui::TextStyle::Monospace)
                 .hint_text(trz("输入命令, Enter 执行"))
                 .desired_width(f32::INFINITY),
         );
+        if std::mem::take(&mut self.term.focus_input) {
+            r.request_focus();
+        }
         if r.has_focus() {
             if self.term.input.is_empty()
                 && ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C))
@@ -2629,17 +2675,7 @@ impl App {
             }
         }
         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            let cwd = self
-                .side
-                .root
-                .clone()
-                .or_else(|| {
-                    self.docs[self.active.min(self.docs.len() - 1)]
-                        .path
-                        .as_ref()
-                        .and_then(|p| p.parent().map(|x| x.to_path_buf()))
-                })
-                .unwrap_or_else(|| PathBuf::from("."));
+            let cwd = self.term_cwd();
             let (want_in, want_rep) = (self.term_stdin, self.term_replace);
             let (stdin, rdoc) = if want_in || want_rep {
                 let d = self.cur();

@@ -2320,6 +2320,98 @@ pub const CMD_T: &[Row] = &[
         "SJIS → UTF-7",
         ["SJIS → UTF-7", "SJIS → UTF-7", "SJIS → UTF-7"],
     ),
+    (
+        "🛡️ 协同审查",
+        ["🛡️ 协同审查", "🛡️ 協調レビュー", "🛡️ Collab Review"],
+    ),
+    (
+        "+ 新建终端会话 (PowerShell)",
+        [
+            "+ 新建终端会话 (PowerShell)",
+            "+ 新規ターミナルセッション (PowerShell)",
+            "+ New Terminal Session (PowerShell)",
+        ],
+    ),
+    (
+        "▶ 运行四阶段完整流水线",
+        [
+            "▶ 运行四阶段完整流水线",
+            "▶ 4段階パイプライン実行",
+            "▶ Run 4-Stage Pipeline",
+        ],
+    ),
+    (
+        "▶ 实时协同光标",
+        [
+            "▶ 实时协同光标",
+            "▶ リアルタイム協調カーソル",
+            "▶ Live Co-Edit Cursors",
+        ],
+    ),
+    (
+        "📄 独立标签页报告",
+        [
+            "📄 独立标签页报告",
+            "📄 別タブでレポートを開く",
+            "📄 Open Report in Tab",
+        ],
+    ),
+    (
+        "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+        [
+            "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+            "🛡️ マルチ AI 協調編集 & 独立レビュー基盤 (Multi-AI Co-Edit & Review)",
+            "🛡️ Multi-AI Co-Edit & Independent Review Platform",
+        ],
+    ),
+    (
+        "立即启动或重置常驻 PowerShell 会话",
+        [
+            "立即启动或重置常驻 PowerShell 会话",
+            "常駐 PowerShell セッションを即座に起動またはリセット",
+            "Start or reset persistent PowerShell session immediately",
+        ],
+    ),
+    (
+        "+ 启动 PowerShell 终端会话",
+        [
+            "+ 启动 PowerShell 终端会话",
+            "+ PowerShell ターミナルを起動",
+            "+ Start PowerShell Terminal Session",
+        ],
+    ),
+    (
+        "底部: 终端 (TERMINAL)",
+        [
+            "底部: 终端 (TERMINAL)",
+            "下部: ターミナル (TERMINAL)",
+            "Bottom: Terminal (TERMINAL)",
+        ],
+    ),
+    (
+        "底部: 输出 (OUTPUT)",
+        [
+            "底部: 输出 (OUTPUT)",
+            "下部: 出力 (OUTPUT)",
+            "Bottom: Output (OUTPUT)",
+        ],
+    ),
+    (
+        "底部: 问题 (PROBLEMS)",
+        [
+            "底部: 问题 (PROBLEMS)",
+            "下部: 問題 (PROBLEMS)",
+            "Bottom: Problems (PROBLEMS)",
+        ],
+    ),
+    (
+        "底部: 🛡️ 协同审查",
+        [
+            "底部: 🛡️ 协同审查",
+            "下部: 🛡️ 協調レビュー",
+            "Bottom: 🛡️ Collab Review",
+        ],
+    ),
 ];
 
 #[cfg(test)]

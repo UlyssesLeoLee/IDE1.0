@@ -338,6 +338,8 @@ impl Drop for Session {
 pub struct Terminal {
     pub open: bool,
     pub input: String,
+    /// 请求下一帧把键盘焦点放进终端输入框 (点「+ 新建终端」等触发)
+    pub focus_input: bool,
     /// 一次性命令的输出 (会话输出在 `buf` 里, 显示用 `display()`)
     pub output: String,
     pub history: Vec<String>,
@@ -359,6 +361,7 @@ impl Terminal {
         Terminal {
             open: false,
             input: String::new(),
+            focus_input: false,
             output: String::new(),
             history: vec![],
             hist_pos: None,
@@ -376,6 +379,11 @@ impl Terminal {
     /// 一次性命令在跑
     pub fn running(&self) -> bool {
         self.rx.is_some()
+    }
+
+    /// 常驻 shell 会话是否已建立
+    pub fn has_session(&self) -> bool {
+        self.session.is_some()
     }
 
     /// 下一次界面刷新间隔 (毫秒); None = 不用刷新
@@ -464,6 +472,29 @@ impl Terminal {
     pub fn restart(&mut self) {
         if self.session.take().is_some() {
             self.buf.feed("\n[会话已重启]\n");
+        }
+    }
+
+    /// 新建或重启常驻 shell 会话并聚焦输入框 (点「+ 新建终端」触发)
+    pub fn start_session(&mut self, cwd: &std::path::Path) {
+        let had = self.session.take().is_some();
+        self.persistent = true;
+        self.focus_input = true;
+        match Session::start(cwd) {
+            Ok(s) => {
+                self.session = Some(s);
+                if had {
+                    self.buf
+                        .feed(&format!("\n[已新建终端会话] PS {}>\n", cwd.display()));
+                } else {
+                    self.buf
+                        .feed(&format!("[终端会话已就绪] PS {}>\n", cwd.display()));
+                }
+                self.heat();
+            }
+            Err(e) => {
+                self.buf.feed(&format!("[{e}]\n"));
+            }
         }
     }
 

@@ -11,6 +11,7 @@ pub(super) enum BottomTab {
     Terminal,
     Output,
     Problems,
+    CollabReview,
 }
 
 /// 输出页最多留的条数
@@ -242,7 +243,75 @@ impl App {
                 BottomTab::Terminal => self.term_ui(ui),
                 BottomTab::Output => self.output_ui(ui),
                 BottomTab::Problems => self.problems_ui(ui),
+                BottomTab::CollabReview => self.collab_review_ui(ui),
             });
+    }
+
+    fn collab_review_ui(&mut self, ui: &mut egui::Ui) {
+        let mut run_pipe = false;
+        let mut run_demo = false;
+        let mut open_doc = false;
+        Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
+            if ui.button(trz("▶ 运行四阶段完整流水线")).clicked() {
+                run_pipe = true;
+            }
+            if ui.button(trz("▶ 实时协同光标")).clicked() {
+                run_demo = true;
+            }
+            if ui.button(trz("📄 独立标签页报告")).clicked() {
+                open_doc = true;
+            }
+            if ui.button("×").clicked() {
+                self.term.open = false;
+            }
+        });
+        let fg = self.tc.fg;
+        let dim = self.tc.fg_dim;
+        let blue = self.tc.blue;
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(trz(
+                        "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+                    ))
+                    .strong()
+                    .color(fg),
+                );
+                ui.add_space(4.0);
+                for (stage, detail) in [
+                    (
+                        "阶段 ① 路由智能体 (Router Agent)",
+                        "任务分析 → 子任务 DAG 拆解 → 槽位能力画像匹配 → .nema Section 独占/追加锁分配",
+                    ),
+                    (
+                        "阶段 ② .nema 原生并行协作 (Parallel Execution)",
+                        "各槽位仅在授权 Section 内并发生成代码，行级 LWW + 锚点偏移自动收敛，零锁竞争",
+                    ),
+                    (
+                        "阶段 ③ 统筹智能体 (Aggregator Agent)",
+                        "全局 AST 符号表一致性校验 → 跨模块依赖拓扑排序 → 边界粘合代码合成",
+                    ),
+                    (
+                        "阶段 ④ 文件级 Git 与四级门禁 (4-Gate Verification)",
+                        "语法树校验 → 跨文件类型检查 → 沙箱测试套件 → 独立异构 Reviewer (Claude 4.6) 终审",
+                    ),
+                ] {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(egui::RichText::new(trz(stage)).strong().color(blue));
+                        ui.label(egui::RichText::new(trz(detail)).color(dim));
+                    });
+                }
+            });
+        if run_pipe {
+            self.run_collab_pipeline();
+        }
+        if run_demo {
+            self.trigger_coedit_demo();
+        }
+        if open_doc {
+            self.open_review_doc();
+        }
     }
 
     fn output_ui(&mut self, ui: &mut egui::Ui) {

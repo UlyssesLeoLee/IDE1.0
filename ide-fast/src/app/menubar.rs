@@ -440,7 +440,7 @@ impl App {
                                 if menu_check(ui, &tc, self.ai.open, lk("c.ai-chat", "")).clicked() {
                                     self.ai.open = !self.ai.open;
                                 }
-                                if menu_check(ui, &tc, self.term.open, lk("c.terminal", "")).clicked() {
+                                if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`")).clicked() {
                                     self.term.open = !self.term.open;
                                 }
                                 ui.separator();
@@ -453,6 +453,25 @@ impl App {
                                         self.run_app(a, ctx);
                                         ui.close();
                                     }
+                                }
+                                ui.separator();
+                                for (t, zh) in [
+                                    (super::sysopts::BottomTab::Terminal, "底部: 终端 (TERMINAL)"),
+                                    (super::sysopts::BottomTab::Output, "底部: 输出 (OUTPUT)"),
+                                    (super::sysopts::BottomTab::Problems, "底部: 问题 (PROBLEMS)"),
+                                    (super::sysopts::BottomTab::CollabReview, "底部: 🛡️ 协同审查"),
+                                ] {
+                                    let on = self.term.open && !self.cfg.view.bottom_collapsed && self.sys.bottom == t;
+                                    if menu_check(ui, &tc, on, trz(zh)).clicked() {
+                                        self.sys.bottom = t;
+                                        self.term.open = true;
+                                        self.expand_dock(crate::panels::Dock::Bottom);
+                                        ui.close();
+                                    }
+                                }
+                                if menuui::mbtn(ui, trz("+ 新建终端会话 (PowerShell)")).clicked() {
+                                    self.new_terminal_session();
+                                    ui.close();
                                 }
                             });
 

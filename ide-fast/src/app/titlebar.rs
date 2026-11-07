@@ -39,6 +39,7 @@ const TITLE_MAX: f32 = 220.0;
 pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
+    pub docks: bool,
     pub quick: usize,
 }
 
@@ -56,6 +57,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
         }
     };
     let title = take(title_w.min(TITLE_MAX) + 8.0);
+    let docks = take(DOCKS_W);
     let mut quick = 0;
     while quick < QUICK.len() && take(QUICK_BTN) {
         quick += 1;
@@ -63,6 +65,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     BarPlan {
         mnemonics,
         title,
+        docks,
         quick,
     }
 }
@@ -222,6 +225,7 @@ impl App {
         }
         let icon = self.sys.title_icon.clone();
         let mut run: Option<usize> = None;
+        let mut dock_toggle: Option<Dock> = None;
         egui::Panel::top("titlebar")
             .exact_size(BAR_H)
             .frame(egui::Frame::new().fill(fill))
@@ -272,7 +276,7 @@ impl App {
                 };
                 let plan = plan_bar(rect.width(), mw, mp, tw);
                 self.sys.mn_hide = !plan.mnemonics;
-                let mid_w = plan.quick as f32 * QUICK_BTN;
+                let mid_w = plan.quick as f32 * QUICK_BTN + if plan.docks { DOCKS_W } else { 0.0 };
                 let right = Rect::from_min_max(
                     egui::pos2(rect.right() - BTN_W * 3.0, rect.top()),
                     rect.max,
@@ -316,8 +320,13 @@ impl App {
                                 run = Some(i);
                             }
                         }
-
-
+                        if plan.docks {
+                            for d in [Dock::Side, Dock::Bottom, Dock::Right] {
+                                if self.dock_toggle_icon(ui, d) {
+                                    dock_toggle = Some(d);
+                                }
+                            }
+                        }
                     });
                 }
                 ui.scope_builder(egui::UiBuilder::new().max_rect(right).layout(lay), |ui| {
@@ -344,6 +353,9 @@ impl App {
             });
         if let Some(i) = run {
             self.run_entry(i, ctx);
+        }
+        if let Some(d) = dock_toggle {
+            self.collapse_dock(d);
         }
     }
 
@@ -604,7 +616,7 @@ mod tests {
         for w in [580.0, 700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
-            let mid = p.quick as f32 * QUICK_BTN;
+            let mid = p.quick as f32 * QUICK_BTN + if p.docks { DOCKS_W } else { 0.0 };
             let title = if p.title { 58.0 } else { 0.0 };
             assert!(
                 LEFT_FIXED + title + menu + mid + BTN_W * 3.0 <= w,
