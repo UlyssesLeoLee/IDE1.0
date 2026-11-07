@@ -28,7 +28,7 @@ pub fn from_name(s: &str) -> Option<Backdrop> {
 /// 尝试顺序: 环境变量强制 > 默认顺序 (见 `DEFAULT_ORDER`)
 /// Blur (`ACCENT_ENABLE_BLURBEHIND`) 在 Windows 11 10.0.26300 上背后是纯黑, 所以不进默认顺序; Acrylic (Win11 22523+ 走 `DWMWA_SYSTEMBACKDROP_TYPE`, 之前走 SWCA 的 ACRYLICBLURBEHIND) 在这台机器上截图验证有真模糊。
 /// Mica 只取桌面壁纸色, 不模糊背后的窗口。全部失败 = 只剩 alpha 透明。
-pub const DEFAULT_ORDER: [Backdrop; 1] = [Backdrop::Acrylic];
+pub const DEFAULT_ORDER: [Backdrop; 2] = [Backdrop::Acrylic, Backdrop::Mica];
 
 pub fn order() -> Vec<Backdrop> {
     match std::env::var("IDE_FAST_BACKDROP") {

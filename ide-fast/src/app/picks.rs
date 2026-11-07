@@ -202,7 +202,7 @@ impl App {
             };
             rows.push(
                 Row::new(
-                    format!("{} {}", if is_cur { "▶" } else { "　" }, &t.name),
+                    format!("{} {}", if is_cur { "▶" } else { "　" }, t.name),
                     detail,
                 )
                 .with_value(t.name.clone()),

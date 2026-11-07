@@ -18,6 +18,14 @@ pub struct ThemeColors {
     pub fg: Color32,
     pub fg_dim: Color32,
     pub border: Color32,
+    /// 强对比边框 / 高光棱边 (Tauri --border-strong)
+    pub border_strong: Color32,
+    /// 水晶棱镜青色散高光 (--mat-prism-cyan)
+    pub mat_prism_cyan: Color32,
+    /// 水晶棱镜粉色散光泽 (--mat-prism-pink)
+    pub mat_prism_pink: Color32,
+    /// 强调文字 / 图标色 (--accent-text)
+    pub accent_text: Color32,
     pub blue: Color32,
     pub green: Color32,
     pub yellow: Color32,
@@ -45,7 +53,7 @@ pub struct ThemeColors {
 
 impl ThemeColors {
     pub fn is_translucent(&self) -> bool {
-        self.crystal || self.clear
+        self.crystal || self.clear || self.bg_edit.a() < 255
     }
 }
 
@@ -98,6 +106,10 @@ impl ThemeColors {
                 fg: g(212),
                 fg_dim: g(157),
                 border: g(51),
+                border_strong: g(80),
+                mat_prism_cyan: rgb(0, 240, 255),
+                mat_prism_pink: rgb(255, 105, 180),
+                accent_text: rgb(86, 156, 214),
                 blue: rgb(86, 156, 214),
                 green: rgb(106, 190, 120),
                 yellow: rgb(220, 200, 90),
@@ -122,6 +134,10 @@ impl ThemeColors {
                 fg: g(31),
                 fg_dim: g(95),
                 border: g(229),
+                border_strong: g(180),
+                mat_prism_cyan: rgb(0, 150, 200),
+                mat_prism_pink: rgb(220, 80, 140),
+                accent_text: rgb(0, 95, 184),
                 blue: rgb(0, 95, 184),
                 green: rgb(20, 130, 50),
                 yellow: rgb(150, 110, 0),
@@ -195,45 +211,100 @@ impl ThemeColors {
         v
     }
 
-    /// 从主题变量取色; 缺的 / 认不出的 (`transparent` `var(..)`) 用深 / 浅基底补, 基底由 `--bg-edit` 的亮度定
+    /// 从主题变量取色; 缺的 / 认不出的 (`transparent` `var(..)`) 用深 / 浅基底补, 基底由 `--bg-edit` 的亮度定;
+    /// 半透明 (水晶 / 玻璃) 主题保留原始透明度 (alpha < 255), 不铺死到底色上, 保持桌面材质透射
     pub fn from_vars(vars: &BTreeMap<String, String>) -> Self {
         let get = |k: &str| vars.get(k).and_then(|v| parse_color(v));
+        let is_trans = vars
+            .get("--bg-edit")
+            .map(|s| s.trim().eq_ignore_ascii_case("transparent"))
+            .unwrap_or(false)
+            || vars
+                .get("translucent")
+                .map(|s| s.trim().eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+            || vars.get("--mat-prism-cyan").is_some();
         let dark = get("--bg-edit")
             .map(|c| c.a() == 0 || luminance(c) < 0.5)
             .unwrap_or(true);
         let mut t = Self::builtin(dark);
-        if let Some(c) = get("--bg-edit").filter(|c| c.a() > 0) {
-            t.bg_edit = over(c, t.bg_edit);
-        }
-        let base = t.bg_edit;
-        let pick = |k: &str, slot: &mut Color32| {
-            if let Some(c) = get(k) {
-                *slot = over(c, base);
+        if is_trans {
+            t.crystal = vars.get("--mat-prism-cyan").is_some()
+                || vars
+                    .get("--theme-name")
+                    .is_some_and(|s| s.contains("crystal"));
+            t.clear = !t.crystal;
+            t.bg_edit = get("--bg-edit").unwrap_or(Color32::TRANSPARENT);
+            let pick = |k: &str, slot: &mut Color32| {
+                if let Some(c) = get(k) {
+                    *slot = c;
+                }
+            };
+            pick("--bg-status", &mut t.bg_status);
+            pick("--bg-bar", &mut t.bg_bar);
+            pick("--bg-side", &mut t.bg_side);
+            pick("--bg-rail", &mut t.bg_rail);
+            pick("--bg-chrome", &mut t.bg_chrome);
+            pick("--bg-hover", &mut t.bg_hover);
+            pick("--bg-active", &mut t.bg_active);
+            if get("--bg-rail").is_none() {
+                t.bg_rail = t.bg_bar;
             }
-        };
-        pick("--bg-status", &mut t.bg_status);
-        pick("--bg-bar", &mut t.bg_bar);
-        pick("--bg-side", &mut t.bg_side);
-        pick("--bg-rail", &mut t.bg_rail);
-        pick("--bg-chrome", &mut t.bg_chrome);
-        // 主题没给的底色跟着它自己的菜单栏 / 编辑区走, 不混入内置深浅色
-        if get("--bg-rail").is_none() {
-            t.bg_rail = t.bg_bar;
+            if get("--bg-chrome").is_none() {
+                t.bg_chrome = t.bg_bar;
+            }
+            if get("--bg-side").is_none() {
+                t.bg_side = t.bg_bar;
+            }
+            pick("--fg", &mut t.fg);
+            pick("--fg-dim", &mut t.fg_dim);
+            pick("--border", &mut t.border);
+            pick("--border-strong", &mut t.border_strong);
+            pick("--mat-prism-cyan", &mut t.mat_prism_cyan);
+            pick("--mat-prism-pink", &mut t.mat_prism_pink);
+            pick("--accent-text", &mut t.accent_text);
+            pick("--blue", &mut t.blue);
+            pick("--green", &mut t.green);
+            pick("--yellow", &mut t.yellow);
+            pick("--red", &mut t.red);
+            pick("--orange", &mut t.orange);
+        } else {
+            if let Some(c) = get("--bg-edit").filter(|c| c.a() > 0) {
+                t.bg_edit = over(c, t.bg_edit);
+            }
+            let base = t.bg_edit;
+            let pick = |k: &str, slot: &mut Color32| {
+                if let Some(c) = get(k) {
+                    *slot = over(c, base);
+                }
+            };
+            pick("--bg-status", &mut t.bg_status);
+            pick("--bg-bar", &mut t.bg_bar);
+            pick("--bg-side", &mut t.bg_side);
+            pick("--bg-rail", &mut t.bg_rail);
+            pick("--bg-chrome", &mut t.bg_chrome);
+            pick("--bg-hover", &mut t.bg_hover);
+            pick("--bg-active", &mut t.bg_active);
+            if get("--bg-rail").is_none() {
+                t.bg_rail = t.bg_bar;
+            }
+            if get("--bg-chrome").is_none() {
+                t.bg_chrome = t.bg_bar;
+            }
+            if get("--bg-side").is_none() {
+                t.bg_side = t.bg_edit;
+            }
+            pick("--fg", &mut t.fg);
+            pick("--fg-dim", &mut t.fg_dim);
+            pick("--border", &mut t.border);
+            pick("--border-strong", &mut t.border_strong);
+            pick("--accent-text", &mut t.accent_text);
+            pick("--blue", &mut t.blue);
+            pick("--green", &mut t.green);
+            pick("--yellow", &mut t.yellow);
+            pick("--red", &mut t.red);
+            pick("--orange", &mut t.orange);
         }
-        if get("--bg-chrome").is_none() {
-            t.bg_chrome = t.bg_bar;
-        }
-        if get("--bg-side").is_none() {
-            t.bg_side = t.bg_edit;
-        }
-        pick("--fg", &mut t.fg);
-        pick("--fg-dim", &mut t.fg_dim);
-        pick("--border", &mut t.border);
-        pick("--blue", &mut t.blue);
-        pick("--green", &mut t.green);
-        pick("--yellow", &mut t.yellow);
-        pick("--red", &mut t.red);
-        pick("--orange", &mut t.orange);
         t
     }
 
@@ -632,13 +703,14 @@ mod tests {
                 Color32::from_rgb(0, 0, 255)
             )
         );
-        // 透明背景 (crystal) 不是「亮」: 当深色基底处理, 半透明的状态栏铺到基底上
+        // 透明背景 (crystal) 不是「亮」: 当深色基底处理, 半透明的状态栏保留 alpha 通透
         let c = ThemeColors::from_vars(&vars(&[
             ("--bg-edit", "transparent"),
             ("--bg-status", "rgba(255,255,255,0.12)"),
         ]));
         assert!(c.dark);
-        assert!(c.bg_status.r() > c.bg_edit.r() && c.bg_status.a() == 255);
+        assert!(c.is_translucent());
+        assert!(c.bg_status.a() > 0 && c.bg_status.a() < 255);
     }
 
     #[test]
@@ -715,5 +787,42 @@ mod tests {
         assert!(seen.len() >= 5, "六套主题的配色不该几乎一样");
         std::env::remove_var("IDE_PLUGIN_DIR");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_crystal_and_clear_translucent_fidelity() {
+        let crystal_vars = vars(&[
+            ("--bg-edit", "transparent"),
+            ("--bg-bar", "rgba(255, 255, 255, 0.08)"),
+            ("--bg-status", "rgba(255, 255, 255, 0.12)"),
+            ("--border", "rgba(255, 255, 255, 0.45)"),
+            ("--border-strong", "rgba(255, 255, 255, 0.70)"),
+            ("--mat-prism-cyan", "#00f0ff"),
+            ("--mat-prism-pink", "#ff69b4"),
+            ("--blue", "#00f0ff"),
+        ]);
+        let tc = ThemeColors::from_vars(&crystal_vars);
+        assert!(tc.is_translucent(), "crystal must be translucent");
+        assert!(tc.crystal, "must recognize crystal theme");
+        assert_eq!(tc.bg_edit, Color32::TRANSPARENT);
+        assert!(tc.bg_bar.a() > 0 && tc.bg_bar.a() < 255, "bg_bar must retain alpha");
+        assert!(tc.bg_status.a() > 0 && tc.bg_status.a() < 255, "bg_status must retain alpha");
+        assert_eq!(tc.mat_prism_cyan, Color32::from_rgb(0, 240, 255));
+        assert_eq!(tc.mat_prism_pink, Color32::from_rgb(255, 105, 180));
+
+        let clear_vars = vars(&[
+            ("--bg-edit", "transparent"),
+            ("--bg-bar", "rgba(0, 0, 0, 0.38)"),
+            ("--bg-status", "rgba(0, 0, 0, 0.42)"),
+            ("--border", "rgba(255, 255, 255, 0.34)"),
+            ("--blue", "#8ab4f8"),
+            ("translucent", "true"),
+        ]);
+        let clr = ThemeColors::from_vars(&clear_vars);
+        assert!(clr.is_translucent(), "clear must be translucent");
+        assert!(clr.clear, "must recognize clear glass theme");
+        assert_eq!(clr.bg_edit, Color32::TRANSPARENT);
+        assert!(clr.bg_bar.a() > 0 && clr.bg_bar.a() < 255);
+        assert_eq!(clr.blue, Color32::from_rgb(138, 180, 248));
     }
 }

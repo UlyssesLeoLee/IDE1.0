@@ -251,7 +251,7 @@ impl Session {
         let spawn_res = {
             use std::os::windows::process::CommandExt;
             let mut c = Command::new("powershell.exe");
-            c.args(&["-NoLogo", "-ExecutionPolicy", "Bypass"]);
+            c.args(["-NoLogo", "-ExecutionPolicy", "Bypass"]);
             c.current_dir(cwd)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())

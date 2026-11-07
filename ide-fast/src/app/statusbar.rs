@@ -82,6 +82,9 @@ impl App {
             .fill(self.tc.bg_status)
             .inner_margin(egui::Margin::symmetric(0, 3));
         egui::Panel::bottom("status").frame(frame).show(root, |ui| {
+            if self.tc.is_translucent() {
+                super::glass_render::paint_facet_borders(ui.painter(), ui.max_rect(), &self.tc);
+            }
             status_bar_style(ui, on);
             ui.spacing_mut().item_spacing.x = 0.0;
             // Tauri 状态栏是 11px 等宽字
@@ -154,11 +157,37 @@ impl App {
                 if !welcome {
                     item(ui, on, egui::RichText::new(code_label(&d.lines, d.cursor)));
                 }
-                item(
-                    ui,
-                    on,
-                    egui::RichText::new(if d.overwrite { "上書" } else { "挿入" }),
-                );
+                if self.tc.is_translucent() {
+                    let text = if d.overwrite { "上書" } else { "挿入" };
+                    let (fill, border, glow) = if self.tc.crystal {
+                        (
+                            Color32::from_rgba_unmultiplied(0, 240, 255, 45),
+                            Color32::from_rgba_unmultiplied(0, 240, 255, 180),
+                            Some(Color32::from_rgba_unmultiplied(0, 240, 255, 90)),
+                        )
+                    } else {
+                        (
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 38),
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 140),
+                            Some(Color32::from_rgba_unmultiplied(56, 189, 248, 65)),
+                        )
+                    };
+                    let (pill_rect, _) = ui.allocate_exact_size(Vec2::new(32.0, 16.0), Sense::hover());
+                    super::glass_render::paint_glowing_pill(ui.painter(), pill_rect, 3.0, fill, border, glow);
+                    ui.painter().text(
+                        pill_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        text,
+                        FontId::monospace(10.5),
+                        Color32::WHITE,
+                    );
+                } else {
+                    item(
+                        ui,
+                        on,
+                        egui::RichText::new(if d.overwrite { "上書" } else { "挿入" }),
+                    );
+                }
                 // 编码 / 换行符 / BOM: 点开菜单改 (改保存时的格式, 或按别的编码重新打开)
                 ui.menu_button(d.charset.label(), |ui| {
                     ui.label(tr("st.charset-save"));

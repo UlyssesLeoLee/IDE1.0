@@ -92,15 +92,22 @@ impl App {
         let txt = egui::RichText::new(trz(word))
             .size(11.0)
             .color(self.tc.fg_dim);
-        let edge = if self.tc.dark {
-            Color32::from_gray(69)
+        let btn = if self.tc.is_translucent() {
+            egui::Button::new(txt)
+                .fill(Color32::from_white_alpha(24))
+                .stroke(egui::Stroke::new(1.0, self.tc.border))
+                .corner_radius(5.0)
         } else {
-            Color32::from_gray(204)
+            let edge = if self.tc.dark {
+                Color32::from_gray(69)
+            } else {
+                Color32::from_gray(204)
+            };
+            egui::Button::new(txt)
+                .fill(Color32::TRANSPARENT)
+                .stroke(egui::Stroke::new(1.0, edge))
+                .corner_radius(5.0)
         };
-        let btn = egui::Button::new(txt)
-            .fill(Color32::TRANSPARENT)
-            .stroke(egui::Stroke::new(1.0, edge))
-            .corner_radius(5.0);
         if ui.add(btn).tip(trz(panels::tip(d, collapsed))).clicked() {
             self.collapse_dock(d);
         }

@@ -236,27 +236,52 @@ impl App {
             se: 0,
         };
         if active {
-            p.rect_filled(rect, top_round, tc.bg_edit);
+            if tc.is_translucent() {
+                // 水晶与玻璃主题: 半透明磨砂晶面底色 + 顶部棱镜色散高光 (对齐 Tauri .tab.active)
+                let tab_fill = if tc.crystal {
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 36)
+                } else {
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 48)
+                };
+                p.rect_filled(rect, top_round, tab_fill);
+                let top_specular = if tc.crystal {
+                    tc.mat_prism_cyan
+                } else {
+                    tc.blue
+                };
+                // 顶部 2px 发光强调指示条
+                p.rect_filled(
+                    Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),
+                    top_round,
+                    top_specular,
+                );
+                // 顶沿 1px 晶面白光高光线
+                p.hline(
+                    rect.x_range(),
+                    rect.top() + 0.5,
+                    egui::Stroke::new(1.0, Color32::from_white_alpha(190)),
+                );
+            } else {
+                p.rect_filled(rect, top_round, tc.bg_edit);
+                p.rect_filled(
+                    Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),
+                    0.0,
+                    tc.bg_status,
+                );
+            }
         } else if hot {
             p.rect_filled(rect, top_round, tc.bg_hover);
-        }
-        if active {
-            p.rect_filled(
-                Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)),
-                0.0,
-                tc.bg_status,
-            );
         }
         p.vline(
             rect.right() - 0.5,
             rect.y_range(),
             egui::Stroke::new(1.0, tc.border),
         );
-        p.galley(
-            egui::pos2(rect.left() + PAD_L, rect.center().y - galley.size().y / 2.0),
-            galley,
-            fg,
-        );
+        let text_pos = egui::pos2(rect.left() + PAD_L, rect.center().y - galley.size().y / 2.0);
+        if tc.is_translucent() {
+            super::glass_render::paint_text_halo(p, text_pos, galley.clone(), &tc);
+        }
+        p.galley(text_pos, galley, fg);
         if doc.dirty {
             p.text(
                 egui::pos2(rect.left() + 4.0, rect.center().y),

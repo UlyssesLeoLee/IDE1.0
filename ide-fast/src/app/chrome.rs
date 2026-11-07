@@ -109,7 +109,24 @@ impl App {
                 let p = ui.painter();
                 let (act_bg, act_fg) = rail_active(tc.dark, tc.blue);
                 if on {
-                    p.rect_filled(rect, 6.0, act_bg);
+                    if tc.is_translucent() {
+                        let (act_fill, border, glow) = if tc.crystal {
+                            (
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 52),
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 150),
+                                Some(Color32::from_rgba_unmultiplied(0, 240, 255, 95)),
+                            )
+                        } else {
+                            (
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 42),
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 120),
+                                Some(Color32::from_rgba_unmultiplied(56, 189, 248, 65)),
+                            )
+                        };
+                        super::glass_render::paint_glowing_pill(p, rect, 6.0, act_fill, border, glow);
+                    } else {
+                        p.rect_filled(rect, 6.0, act_bg);
+                    }
                 } else if resp.hovered() {
                     p.rect_filled(rect, 6.0, tc.bg_hover);
                 }
@@ -122,11 +139,25 @@ impl App {
                 };
                 crate::svgicon::paint(p, rect.center(), 18.0, icon, col, 1.8);
                 if on {
-                    let bar = if tc.dark {
+                    let bar = if tc.crystal {
+                        tc.mat_prism_cyan
+                    } else if tc.clear {
+                        tc.blue
+                    } else if tc.dark {
                         Color32::from_rgb(0x00, 0x7a, 0xcc)
                     } else {
                         Color32::from_rgb(0x00, 0x5f, 0xb8)
                     };
+                    if tc.is_translucent() {
+                        p.rect_filled(
+                            Rect::from_center_size(
+                                egui::pos2(edge + 1.5, rect.center().y),
+                                Vec2::new(5.0, RAIL_BTN * 0.6 + 2.0),
+                            ),
+                            2.5,
+                            Color32::from_rgba_unmultiplied(bar.r(), bar.g(), bar.b(), 75),
+                        );
+                    }
                     p.rect_filled(
                         Rect::from_center_size(
                             egui::pos2(edge + 1.5, rect.center().y),

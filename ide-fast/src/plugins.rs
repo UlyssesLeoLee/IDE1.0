@@ -107,9 +107,12 @@ fn row_of(p: Installed) -> Row {
     }
 }
 
-/// `#rgb` `#rrggbb` `#rrggbbaa` `rgb(r,g,b)` `rgba(r,g,b,a)`
+/// `#rgb` `#rrggbb` `#rrggbbaa` `rgb(r,g,b)` `rgba(r,g,b,a)` `transparent`
 pub fn parse_color(s: &str) -> Option<Color32> {
     let s = s.trim();
+    if s.eq_ignore_ascii_case("transparent") {
+        return Some(Color32::TRANSPARENT);
+    }
     if let Some(h) = s.strip_prefix('#') {
         let n = |i: usize, w: usize| u8::from_str_radix(h.get(i..i + w)?, 16).ok();
         return match h.len() {
@@ -196,11 +199,13 @@ pub fn visuals(vars: &BTreeMap<String, String>) -> egui::Visuals {
 /// 编辑区用固定垫色 (`--bg-edit: transparent` 时), 弹出的菜单 / 窗口用接近不透明的底, 免得文字叠在桌面上看不清。
 pub fn visuals_glass(vars: &BTreeMap<String, String>, glass: bool) -> egui::Visuals {
     let get = |k: &str| vars.get(k).and_then(|v| parse_color(v));
-    let edit = get("--bg-edit").unwrap_or(if glass {
-        glass_edit_tint(vars)
-    } else {
-        Color32::from_gray(30)
-    });
+    let edit = get("--bg-edit")
+        .filter(|c| c.a() > 0)
+        .unwrap_or(if glass {
+            glass_edit_tint(vars)
+        } else {
+            Color32::from_gray(30)
+        });
     let dark_base = if glass {
         vars.get("--fg")
             .and_then(|v| parse_color(v))
@@ -264,11 +269,18 @@ pub fn visuals_glass(vars: &BTreeMap<String, String>, glass: bool) -> egui::Visu
         v.widgets.active.bg_fill = solid(c);
     }
     if glass {
-        // 菜单 / 弹窗叠在别的东西上, 底要几乎不透明 (面板那层 alpha 太低, 文字会糊在桌面上)
-        let base = if dark_base {
-            Color32::from_rgb(24, 26, 32)
+        let is_crystal = vars.get("--mat-prism-cyan").is_some();
+        let border = if is_crystal {
+            Color32::from_rgba_unmultiplied(255, 255, 255, 140)
         } else {
-            Color32::from_rgb(244, 245, 248)
+            Color32::from_rgba_unmultiplied(255, 255, 255, 100)
+        };
+        v.window_stroke = egui::Stroke::new(1.0, border);
+        // 菜单 / 弹窗叠在别的东西上, 底保留高质感半透明亚克力磨砂 (对齐 Tauri .menu-dropdown)
+        let base = if dark_base {
+            Color32::from_rgb(18, 22, 34)
+        } else {
+            Color32::from_rgb(240, 244, 250)
         };
         v.window_fill = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 238);
     }

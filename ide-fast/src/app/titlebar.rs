@@ -227,11 +227,15 @@ impl App {
             .frame(egui::Frame::new().fill(fill))
             .show(root, |ui| {
                 let rect = ui.max_rect();
-                ui.painter().hline(
-                    rect.x_range(),
-                    rect.bottom() - 0.5,
-                    egui::Stroke::new(1.0, self.tc.border),
-                );
+                if self.tc.is_translucent() {
+                    super::glass_render::paint_facet_borders(ui.painter(), rect, &self.tc);
+                } else {
+                    ui.painter().hline(
+                        rect.x_range(),
+                        rect.bottom() - 0.5,
+                        egui::Stroke::new(1.0, self.tc.border),
+                    );
+                }
                 // 先登记整条栏的拖动 / 双击区, 后面的按钮压在它上面 (egui 里后加的控件优先)
                 let drag = ui.interact(
                     rect,

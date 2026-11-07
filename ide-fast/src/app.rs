@@ -29,6 +29,7 @@ mod chrome;
 mod dispatch;
 mod docks;
 mod ghopts;
+mod glass_render;
 mod mdopts;
 mod nemaopts;
 mod mdstruct;
@@ -1468,8 +1469,7 @@ impl App {
                     d.pagination.as_ref().map(|p| p.page_size).unwrap_or(editcore::MmapBuffer::DEFAULT_PAGE_SIZE),
                 )
             };
-            if is_paginated && path_opt.is_some() {
-                let file_path = path_opt.unwrap();
+            if let (true, Some(file_path)) = (is_paginated, path_opt) {
                 self.side.grep.start_mmap_file(root.clone(), &file_path, &label, page_size);
             } else {
                 let lines = self.cur().lines.clone();
@@ -4203,14 +4203,28 @@ impl App {
                         }
                     }
                     if vw.cur_line && row == d.cursor[0] && !d.grep_result {
-                        let yb = rect.min.y + top(row + 1) - 1.0;
-                        painter.line_segment(
-                            [
-                                Pos2::new(rect.min.x + gutter, yb),
-                                Pos2::new(rect.max.x, yb),
-                            ],
-                            egui::Stroke::new(1.0, tc.border),
+                        let cur_rect = Rect::from_min_max(
+                            Pos2::new(rect.min.x + gutter, y),
+                            Pos2::new(rect.max.x, y + row_h),
                         );
+                        if tc.crystal {
+                            painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
+                            painter.line_segment(
+                                [cur_rect.left_bottom(), cur_rect.right_bottom()],
+                                egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 240, 255, 85)),
+                            );
+                        } else if tc.clear {
+                            painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
+                            painter.line_segment(
+                                [cur_rect.left_bottom(), cur_rect.right_bottom()],
+                                egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(56, 189, 248, 80)),
+                            );
+                        } else {
+                            painter.line_segment(
+                                [cur_rect.left_bottom(), cur_rect.right_bottom()],
+                                egui::Stroke::new(1.0, tc.border),
+                            );
+                        }
                     }
                     if vw.whitespace {
                         let faint = Color32::from_rgba_unmultiplied(
@@ -4261,12 +4275,7 @@ impl App {
                         }
                     }
                     if self.tc.is_translucent() {
-                        let shadow_col = if self.tc.dark {
-                            Color32::from_black_alpha(180)
-                        } else {
-                            Color32::from_white_alpha(200)
-                        };
-                        painter.galley(Pos2::new(x0 + rv.x_off() + 1.0, y + 1.0), galley.clone(), shadow_col);
+                        glass_render::paint_text_halo(&painter, Pos2::new(x0 + rv.x_off(), y), galley.clone(), &self.tc);
                     }
                     painter.galley(Pos2::new(x0 + rv.x_off(), y), galley, text_color);
                     if d.changed_cache
@@ -4449,10 +4458,24 @@ impl App {
                             egui::Stroke::new(1.0, text_color),
                         );
                     } else if blink {
+                        let caret_col = if self.tc.crystal {
+                            self.tc.mat_prism_cyan
+                        } else if self.tc.clear {
+                            self.tc.blue
+                        } else {
+                            text_color
+                        };
+                        if self.tc.is_translucent() {
+                            painter.rect_filled(
+                                Rect::from_min_size(Pos2::new(cx - 0.5, cy), Vec2::new(3.0, row_h)),
+                                1.0,
+                                Color32::from_rgba_unmultiplied(caret_col.r(), caret_col.g(), caret_col.b(), 100),
+                            );
+                        }
                         painter.rect_filled(
                             Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)),
                             0.0,
-                            text_color,
+                            caret_col,
                         );
                     }
                     if reveal {
@@ -5425,6 +5448,10 @@ impl App {
         egui::CentralPanel::default_margins()
             .frame(egui::Frame::NONE.fill(fill))
             .show(root, |ui| {
+                if self.tc.is_translucent() {
+                    let t = ctx.input(|i| i.time);
+                    glass_render::paint_caustic_backdrop(ui.painter(), ui.max_rect(), &self.tc, t);
+                }
                 if kind == SK::Quad {
                     ui.columns(2, |c| {
                         self.editor_pane(&mut c[0], ctx, find_focus, 0);
