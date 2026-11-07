@@ -374,3 +374,38 @@ pub struct AgentModelProfile {
 2. **原生高速版 (`ide-fast`)**：
    - 在 `ide-fast/src/ai/config.rs` 的 `AiConfig` 中新增 `thinking_mode: String`、`thinking_budget: u32` 与 `agent_profiles: BTreeMap<String, AgentProfileConfig>`，原子持久化至 `ai.json`，并在 `aichat.rs` 顶栏与设置区提供一致的选择器。
 
+---
+
+## 6. 自审加固设计：闭环熔断器、AST 漂移守卫与能力降级状态机
+
+本节针对架构自审（Self-Review）识别出的四个关键分布式与工程边界风险，在 [`crates/ide-agent-router/src/agent_profile.rs`](file:///e:/IDE1.0/crates/ide-agent-router/src/agent_profile.rs) 中落地强类型保护机制：
+
+### 6.1 风险 1：阶段 ④ $\to$ 阶段 ① 反馈闭环无限振荡 (`FeedbackLoopGuard`)
+- **问题界定**：当 `Verify Agent` 构建或测试失败并自动生成 `IterationFeedbackTicket` 回流至 `Router Agent` 时，若模型陷入局部死胡同反复产出相同的编译错误，会导致无限循环并耗尽 Token 预算。
+- **状态机与三重门限**：
+  1. **最大迭代轮数门限 (`max_rounds = 3`)**：超出轮数立即触发 `FeedbackDecision::CircuitBreak`。
+  2. **累计 Token 预算门限 (`max_token_budget = 250,000`)**：单次流水线累计消耗超出预算立即熔断。
+  3. **错误指纹去重门限 (`seen_error_fingerprints: BTreeSet<String>`)**：对每次失败的 `(error_code, rust_file, symbol_path)` 计算确定性指纹，一旦连续或跨轮出现重复指纹，立即中断自动回流并升级至人工审查看板（Human-in-the-Loop）。
+
+### 6.2 风险 2：思考预算超限与跨厂商参数冲突 (`EffectiveAgentConfig` 不变量规整)
+- **问题界定**：
+  1. 在 Anthropic / 聚合网关中，若 `thinking.budget_tokens >= max_tokens`，接口将直接返回 `400 Bad Request`；
+  2. 开启 `Enabled` 或 `Interleaved` 思考时，传入非 `1.0` 的 `temperature` 也会引发 `400` 拒绝；
+  3. 部分第三方 OpenAI 兼容端点不支持 `interleaved-thinking` 或 `thinking` 块。
+- **自愈与规整规则**：
+  - `MultiAgentProfileRegistry::resolve` 强制执行：
+    $$\text{max\_output\_tokens} = \max\bigl(\text{requested\_max},\; \text{clamp}(\text{budget\_tokens}, 1024, 131072) + 4096\bigr)$$
+  - `EffectiveAgentConfig::build_wire_parameters` 在 `Enabled / Interleaved` 模式下自动剥离冲突的自定义 `temperature`；
+  - `ThinkingMode::downgrade` 定义了确定性单向降级链：`Interleaved → Enabled → Auto → Disabled`，确保在异构模型端点上具备零崩溃回退能力。
+
+### 6.3 风险 3：人工修改 `*.rs` 被下一轮 `.nema → Rust` 覆盖 (`NemaRustDriftGuard`)
+- **问题界定**：`Aggregator` 将 `File A.nema` 转换为 `A.rs` 后，若人类工程师直接在 `main` 分支修改了 `A.rs`，下一轮 `Aggregator` 重新生成 `A.rs` 时可能造成静默覆盖（违反 `no_silent_corruption`）。
+- **防漂移机制**：
+  - `NemaRustSourceMapEntry` 持久化生成时的 `generated_rust_ast_hash`；
+  - 在覆盖任何 `*.rs` 符号前，先比对当前工作区 `*.rs` 的实时 AST 哈希与上次 `generated_rust_ast_hash`；若不一致，立即阻断自动覆盖并抛出 `HUMAN_EDIT_DRIFT` 冲突事件，提示先将人工修改反向同步回 `.nema` 规约层。
+
+### 6.4 风险 4：跨阶段并发 Epoch 穿透 (`Cross-Stage Epoch Barrier`)
+- **问题界定**：当 `Router` 发起新一轮拆解（`Epoch #N+1`）时，上一轮（`Epoch #N`）的慢速分支 Worker（如 `Agent B2`）延迟送达的提交可能污染新基线。
+- **遏制机制**：所有分支提交、统筹合并与验证证书均强制校验 `(pipeline_run_id, epoch, fencing_token)`，过期 Epoch 在协调器入口处以 `412 FENCING_STALE` 幂等拒斥。
+
+

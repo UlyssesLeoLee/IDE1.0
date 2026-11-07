@@ -150,3 +150,21 @@ flowchart LR
 | **INV-05** | **未验证不入主干 (`Verify Gate`)** | 未获得 `Verify Agent` 签发的 `AcceptanceCertificate`（含构建、测试、质量、规范四项全绿证明）的任何 PR 严禁 Merge 进入 `main` 分支。 |
 | **INV-06** | **反馈闭环可逆可追溯** | 每个生成的 `.rs` 符号必须通过 `NemaRustSourceMap` 双向关联至 `.nema` 的 `(domain_id, record_idx)` 与 Git 分支 `feat/*`，确保验证失败可精确回流定位。 |
 | **INV-07** | **智能体配置隔离与凭据安全** | 每个智能体的 `AgentModelProfile` 独立序列化与审计；API Key 仅以 `SecretRef` 形式引用，严禁明文出现在 `.nema` 词典、Git Commit Trailer 或前端日志中。 |
+| **INV-08** | **思考预算与输出上限恒成立** | 当智能体开启 `Enabled` 或 `Interleaved` 思考模式时，系统强制满足 `max_output_tokens >= thinking_budget_tokens + 4096`，并自动剥离与扩展思考冲突的自定义 `temperature`。 |
+| **INV-09** | **反馈闭环有限终止 (`Circuit Breaker`)** | 阶段 ④ $\to$ 阶段 ① 的自动反馈闭环受 `FeedbackLoopGuard` 硬性约束（默认最多 3 轮、单流水线最大 Token 预算上限、连续重复错误指纹立即熔断），严禁无界自激振荡。 |
+
+---
+
+## 6. 架构自审与故障收敛矩阵 (Architecture Self-Review & Fault-Containment Matrix)
+
+依据系统工程自审准则（`invariants_hold`、`failure_modes_covered`、`races_addressed`、`data_safe`、`operable_by_humans`、`minimal_for_intent`），对四阶段流水线的边界竞态与异常模式做如下防御闭环设计：
+
+| 自审维度 | 潜在故障 / 竞态场景 | 架构级遏制与自愈机制 |
+|:---|:---|:---|
+| **1. 跨阶段 Epoch 竞态**<br>*(Races Addressed)* | `Agent A1` 已完成提交，`Router` 因需求变更触发新 `Epoch #N+1`，而旧 `Aggregator (Epoch #N)` 仍在后台执行合并。 | **跨阶段 Epoch 屏障 (`Epoch Barrier`)**：所有分支 Commit Trailer、合并请求与验证报告均绑定 `(pipeline_run_id, epoch, base_main_oid)`；`Aggregator` 与 `FileCommitCoordinator` 拒绝任何低于当前最新 `epoch` 的提交（返回 `412 FENCING_STALE`）。 |
+| **2. 人工修改 `.rs` 漂移覆盖**<br>*(Data Safe / No Silent Corruption)* | 开发者在 `main` 分支直接手改了 `A.rs` 的某函数，下一轮 `Aggregator` 从 `File A.nema` 重新生成 `A.rs` 时可能冲掉人工修改。 | **双向 AST 漂移检测守卫 (`NemaRustDriftGuard`)**：`NemaRustSourceMap` 记录上次生成的 `rust_ast_hash`；重生成前若检测到 `main` 上 `A.rs` 的符号哈希偏离上次生成值，立即阻断盲目覆写，标记 `HUMAN_EDIT_DRIFT` 并将差异提升回 `File A.nema` 供确认。 |
+| **3. 异构模型思考参数不兼容**<br>*(Failure Modes Covered)* | 用户为某 Agent 配置了 `Interleaved` 思考或 `xhigh` Effort，但所填第三方兼容端点不支持该参数并返回 `400 Bad Request`。 | **能力自适应降级状态机 (`ThinkingMode::downgrade`)**：协议层首先在本地保证 `max_tokens > budget_tokens` 且剥离冲突 `temperature`；若远端仍拒绝思考参数，按 `Interleaved → Enabled → Auto → Disabled` 确定性降级重试一次，并缓存该端点能力位。 |
+| **4. 验证失败死循环风暴**<br>*(Finite Lifecycle / No Unbounded Growth)* | `Verify Agent` 运行 `cargo test` 失败后回流 `Router`，但 Agent 反复生成相同错误代码，导致无限循环消耗 Token。 | **闭环熔断器 (`FeedbackLoopGuard`)**：内置三重门限：① 最大迭代轮数 `max_rounds = 3`；② 累计 Token 预算上限；③ 错误指纹去重集合 `seen_error_fingerprints`（连续两轮出现同一 `(error_code, symbol_path)` 立即熔断并转交人工审查面板）。 |
+| **5. 同文件词典下标碰撞**<br>*(Consistency)* | `feat/A1` 定义 `^0=Gateway`，`feat/A2` 定义 `^0=AuthService`，合并 `File A.nema` 时直接拼接会导致 `^0` 语义错乱。 | **词典解引用重排 (`Dictionary Unification`)**：`Aggregator` 先将各分支的 `AtomChunk::DictionaryRef` 还原为字面值语义，构建全局统一词频表后重新分配 `\t$N` 与 `^N` 编号，再经 `StandardNemaCodec` 往返校验。 |
+| **6. 人类可操作与可干预性**<br>*(Operable by Humans)* | 全自动流水线黑盒运行，开发者无法中途微调某个智能体的模型或介入某条 `.nema` 拓扑边。 | **透明可视化与即时覆盖**：Web / Tauri / `ide-fast` 提供实时 `.nema`（`Table / 5W1H / Graph`）双栏编辑与多 AI 协同看板，随时可单步撤销（`Ctrl+Z`）、调整任意智能体的 `model / effort / thinking_mode` 或手动回滚到 `Certified Base`。 |
+

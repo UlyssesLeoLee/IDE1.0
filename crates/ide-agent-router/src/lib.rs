@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod agent_profile;
 pub mod collaboration;
 pub mod coordinator;
 pub mod identity;
@@ -23,6 +24,10 @@ pub mod sandbox;
 pub mod tenant;
 pub mod verifier;
 
+pub use agent_profile::{
+    AgentModelProfile, AgentSlotId, EffectiveAgentConfig, FeedbackDecision, FeedbackLoopGuard,
+    GlobalAiBaseline, MultiAgentProfileRegistry, ReasoningEffort, ThinkingMode,
+};
 pub use collaboration::{
     AnchorOffsetTable, CollaborationHub, CollaborationSession, CollaboratorColor, CollaboratorRole,
     KeystrokeBroadcast, KeystrokeOp, RemoteCursor, ZoneAnchor,
