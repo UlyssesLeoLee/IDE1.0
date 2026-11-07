@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.5.0 — 2026-11-06
+
+### IDE1.0 × NEMA v1.5 多智能体协同开发平台 (Multi-Agent NEMA Collaborative Development Platform)
+本版本正式发布基于 .nema 紧凑语义规范的多智能体协同开发平台与 NEMA v1.5 无损编解码内核，实现全流程四阶段流水线（路由拆解 → 并行协作 → 汇总统筹与代码转换 → Git 分支管理与验证输出），全面覆盖网页版 (ide-shell-web)、Tauri 桌面版 (ide-shell-desktop) 与高速版 (ide-fast) 三大宿主环境。
+
+#### 1. 四阶段多智能体协同流水线 (crates/ide-agent-router)
+- **① 路由拆解 (RouterEngine)**:
+  - 任务输入形态识别（功能开发 / 缺陷修复 / 模块优化 / 重构升级）。
+  - 基于拓扑依赖的 DAG 任务分解，自动划分协同群组：Group A（共编同一文件 File A.nema）与 Group B（独立编辑文件 File B.nema / File C.nema）。
+- **② 并行协作 (Co-editing .nema)**:
+  - 区域级 GuidanceZone 约束契约与单调递增 encing_token 防脏写。
+  - 基于 .nema 语义字典的高密度 Token 传输，显著降低多 Agent 交互开销。
+- **③ 汇总统筹与 Rust 代码转换 (Aggregator & NemaToRustLowering)**:
+  - **跨分支字典归一化 (DictionaryUnification)**: 自动消除各分支并行生成的临时字典键冲突，统一重映射 \t 与 ^N 原子索引用。
+  - **三路语义合并 (NemaSemanticMerger)**: 作用域级与字段级结构化合并，零代码文本乱序。
+  - **结构化代码生成与防漂移守护 (NemaRustDriftGuard)**: 将 .nema 领域与图关系降解为纯 Rust 结构体、枚举与状态机函数，双向关联源码位置映射，并通过 AST 语义哈希守护代码变更一致性。
+- **④ Git 分支管理与闭环验证 (GitBranchOrchestrator & VerifyPipeline)**:
+  - 文件级 Git 分支生命周期管理（eat/A1..B2、gg/epoch-N 与 main 稳定分支）。
+  - 4 重门禁严苛验证（构建验证、单元/集成测试、质量检查、规范校验），全通签发不可篡改的 AcceptanceCertificate，失败自动生成结构化反馈工单回流路由层重试。
+
+#### 2. 每个智能体独立大模型与思考配置 (Per-Agent Profiles)
+- 7 大智能体槽位（Router、Agent A1、Agent A2、Agent B1、Agent B2、Aggregator、Verify）均支持独立模型与推理配置：
+  - **大语言模型**: 可根据角色特性选配轻量快速模型或前沿大模型。
+  - **推理强度 (Reasoning Effort)**: 支持 Low / Medium / High / Max 4 档精细调节。
+  - **思考模式 (Thinking Mode)**: 支持 Adaptive 自适应、Extended 深度延展思考与 Off 快速响应模式。
+  - **Token 预算**: 支持槽位独立的上下文与生成预算配额。
+- 前端控制面板提供可视化即时配置，并自动持久化存储。
+
+#### 3. 三端全能力覆盖与高速版零开销启动
+- **网页版与桌面端**: 同步上线四阶段流水线可视化控制看板与协同评审中心（collab.renderReviewDashboard），保持双端代码与静态资源 100% 严格一致。
+- **高速版 (ide-fast) 零开销启动**:
+  - 全量内置纯 Rust 离线确定性协同引擎与四阶段流水线调度命令（Action::RunCollabPipeline）。
+  - **绝对零启动开销保证**: 在未配置/导入外部 AI 模型时，冷启动过程绝不读取 i.json、不初始化网络运行时、不派生多余线程，维持原版瞬时秒开；仅在明确导入 AI 并触发网络请求时按需激活。
+  - 完整接入中/日/英三语国际化字典，支持一键触发四阶段协同评审并展示确定性输出成果。
+
+#### 4. NEMA v1.5 无损编解码与租约仲裁内核 (crates/nema-codec)
+- 提供双向无损转换 trait NemaCodec（parse / encode / decode）。
+- 完整支持 Table、5W1H 与 Graph 可视化数据结构，支持图 Edge 独立 ID 保留与表头精准标注。
+- 支持 RLE 压缩 Token 字节流传输（.nemat）与分词器配置兼容 (TokenProfile)。
+- 与系统级输入法 (IME1.0) 共享无锁租约仲裁协议，杜绝冲突竞争。
+
 ## 0.4.0 — 2026-11-05
 
 ### IDE1.0 Web 2.0 — 语义路由与多 Agent 协作内核 (Semantic Agent Router & Worker)
