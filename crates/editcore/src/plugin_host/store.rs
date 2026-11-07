@@ -160,6 +160,9 @@ pub fn list(root: &Path) -> Vec<Installed> {
 
 /// 获取指定 id 的单个插件 (启动时按需查询目标主题插件清单, 避免扫描全部插件与解析无用 JSON)
 pub fn get(root: &Path, id: &str) -> Option<Installed> {
+    if !super::valid_id_pub(id) {
+        return None;
+    }
     let reg = load_registry(root);
     if reg.removed.contains(id) {
         return None;

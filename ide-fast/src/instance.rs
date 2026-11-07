@@ -45,7 +45,18 @@ pub fn forward_to_running(args: &[String]) -> bool {
         msg.push('\n');
     }
     msg.push_str("END\n");
-    s.write_all(msg.as_bytes()).is_ok()
+    if s.write_all(msg.as_bytes()).is_err() {
+        let _ = std::fs::remove_file(&pf);
+        return false;
+    }
+    let mut resp = String::new();
+    let mut reader = BufReader::new(s);
+    if reader.read_line(&mut resp).is_err() || resp.trim() != "OK" {
+        // 对方没有应答 OK (可能是占用该端口的其他服务): 判定转发失败，删除死端口
+        let _ = std::fs::remove_file(&pf);
+        return false;
+    }
+    true
 }
 
 /// 进程正常退出或关闭时清理残留端口文件
@@ -87,6 +98,7 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
                     paths.push(t);
                 }
             }
+            let _ = r.get_mut().write_all(b"OK\n");
             let _ = tx.send(paths);
         }
     });

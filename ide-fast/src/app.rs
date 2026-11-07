@@ -289,7 +289,6 @@ impl App {
         app.term.open = st.view.term_open;
         app.md_preview = st.view.md_preview;
         app.applied_font = st.font_family.clone();
-        app.saved = app.current_settings();
         for a in &args {
             app.open_spec(a);
         }
@@ -299,6 +298,8 @@ impl App {
         if app.docs.is_empty() {
             app.new_doc();
         }
+        // 初始化 saved 快照必须位于文档初始水合之后，避免第 1 帧误触发不必要的 settings.json 冗余写盘
+        app.saved = app.current_settings();
         if persist {
             // 遗留自动备份扫描推迟至首帧后执行，避免阻塞首帧渲染
         }
