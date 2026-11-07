@@ -29,8 +29,10 @@ impl StrictCurl {
             "=https",
             "--max-redirs",
             "5",
+            "--connect-timeout",
+            "5",
             "--max-time",
-            "60",
+            "30",
             "--max-filesize",
         ]
         .iter()
@@ -292,6 +294,7 @@ mod tests {
             "重定向也不许降到 http"
         );
         assert_eq!(a[pos("--max-filesize") + 1], MAX_DOWNLOAD.to_string());
+        assert_eq!(a[pos("--connect-timeout") + 1], "5");
         assert!(a.contains(&"--max-time".to_string()));
         assert_eq!(a[a.len() - 2], "--", "URL 在 -- 之后,不会被当成选项");
     }

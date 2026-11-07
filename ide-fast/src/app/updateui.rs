@@ -25,7 +25,6 @@ enum Msg {
     Staged(Result<Staged, UpdErr>),
 }
 
-#[derive(Default)]
 pub(super) struct UpdState {
     pub open: bool,
     phase: Phase,
@@ -33,8 +32,24 @@ pub(super) struct UpdState {
     /// 这次检查是启动时自动做的: 没有新版本 / 出错就不打扰
     silent: bool,
     auto_done: bool,
+    /// 启动时刻记录: 启动后 90 秒内绝对不发起后台更新请求, 确保记事本秒开秒关完全零网络
+    start_instant: std::time::Instant,
     /// 失败时给用户的页面 (有候选版本就是它的发布页)
     page: String,
+}
+
+impl Default for UpdState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            phase: Phase::Idle,
+            rx: None,
+            silent: false,
+            auto_done: false,
+            start_instant: std::time::Instant::now(),
+            page: String::new(),
+        }
+    }
 }
 
 fn unix_now() -> u64 {
@@ -51,6 +66,9 @@ fn install_kind() -> InstallKind {
 }
 
 impl App {
+    /// 自动更新检查延迟 (秒): 启动前 90 秒内绝对不发起任何后台网络请求, 确保记事本秒开秒关完全零网络交互
+    const AUTO_UPDATE_DELAY_SECS: u64 = 90;
+
     /// 菜单 / 命令面板: 打开窗口并立刻检查一次 (已经有结果在手就直接显示)
     pub(super) fn upd_open(&mut self) {
         self.upd.open = true;
@@ -58,11 +76,11 @@ impl App {
             self.upd.phase,
             Phase::Idle | Phase::UpToDate | Phase::Failed(_)
         ) {
-            self.upd_check(false);
+            self.upd_check(false, None);
         }
     }
 
-    fn upd_check(&mut self, silent: bool) {
+    fn upd_check(&mut self, silent: bool, ctx: Option<egui::Context>) {
         if self.upd.rx.is_some() {
             return;
         }
@@ -76,17 +94,21 @@ impl App {
         let _ = std::thread::Builder::new()
             .name("update-check".into())
             .spawn(move || {
-                let _ = tx.send(Msg::Checked(updnet::check(
+                let res = updnet::check(
                     &Curl,
                     &Source::github(),
                     ch,
                     &update::current_version(),
                     install_kind(),
-                )));
+                );
+                let _ = tx.send(Msg::Checked(res));
+                if let Some(c) = ctx {
+                    c.request_repaint();
+                }
             });
     }
 
-    fn upd_download(&mut self, c: Box<Candidate>) {
+    fn upd_download(&mut self, c: Box<Candidate>, ctx: Option<egui::Context>) {
         if self.upd.rx.is_some() {
             return;
         }
@@ -116,30 +138,29 @@ impl App {
                     Err(e) => Err(UpdErr::Io(e.to_string())),
                 };
                 let _ = tx.send(Msg::Staged(r));
+                if let Some(c) = ctx {
+                    c.request_repaint();
+                }
             });
     }
 
-    /// 每帧: 启动后的每日检查 (首帧之后才做) + 收后台结果。什么都没开时只是几个布尔判断
+    /// 每帧: 启动后的每日检查 (启动后延迟 90 秒才允许执行, 记事本模式零网络) + 收后台结果
     pub(super) fn upd_frame(&mut self, ctx: &egui::Context) {
-        if !self.upd.auto_done {
-            if self.first_frame {
-                if self.persist && self.cfg.update_daily {
-                    ctx.request_repaint_after(std::time::Duration::from_secs(3));
-                    // 空闲时也保证有第二帧来做检查
-                }
-            } else {
+        if !self.upd.auto_done && self.persist && self.cfg.update_daily {
+            // 记事本防护: 启动前 90 秒内绝不发起任何网络检查, 避免弱网或离线环境下抢占启动黄金时间
+            if self.upd.start_instant.elapsed().as_secs() >= Self::AUTO_UPDATE_DELAY_SECS {
                 self.upd.auto_done = true;
-                if self.persist {
-                    updapply::cleanup_stale();
-                    if self.cfg.update_daily && update::due(unix_now(), self.cfg.update_last_check)
-                    {
-                        self.upd_check(true);
-                    }
+                updapply::cleanup_stale();
+                if update::due(unix_now(), self.cfg.update_last_check) {
+                    self.upd_check(true, Some(ctx.clone()));
                 }
             }
         }
         let Some(rx) = &self.upd.rx else { return };
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        // 只有在手动打开更新弹窗且正在检查时才做低频重绘兜底; 静默检查完全由工作线程唤醒, 彻底杜绝 10Hz 轮询重绘风暴
+        if self.upd.open && !self.upd.silent {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
         let msg = match rx.try_recv() {
             Ok(m) => m,
             Err(TryRecvError::Empty) => return,
@@ -305,10 +326,10 @@ impl App {
             }
         }
         if check {
-            self.upd_check(false);
+            self.upd_check(false, Some(ctx.clone()));
         }
         if let Some(c) = download {
-            self.upd_download(c);
+            self.upd_download(c, Some(ctx.clone()));
         }
         if let Some(s) = install {
             // 和「立即重启」同一套: 登记请求, 走正常关闭流程 (有未保存修改照常先问; 取消关闭 = 请求作废), 关完由 main 执行

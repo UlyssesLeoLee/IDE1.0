@@ -16,8 +16,11 @@ fn port_file() -> Option<PathBuf> {
 
 /// 如果已有实例在运行: 把 `args` 交给它, 返回 true (调用方直接退出)
 pub fn forward_to_running(args: &[String]) -> bool {
-    if std::env::var_os("IDE_FAST_MULTI").is_some() {
-        return false; // 调试 / 测试: 允许多开
+    if std::env::var_os("IDE_FAST_MULTI").is_some()
+        || std::env::var_os("IDE_FAST_NO_NETWORK").is_some()
+        || std::env::var_os("IDE_FAST_OFFLINE").is_some()
+    {
+        return false; // 调试 / 测试 / 纯离线记事本模式: 允许跳过网络 IPC
     }
     let Some(pf) = port_file() else { return false };
     let Ok(port) = std::fs::read_to_string(&pf).map(|s| s.trim().parse::<u16>().unwrap_or(0))
@@ -29,7 +32,7 @@ pub fn forward_to_running(args: &[String]) -> bool {
     }
     let Ok(mut s) = TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-        std::time::Duration::from_millis(100),
+        std::time::Duration::from_millis(40),
     ) else {
         // 连不上 = 上一次异常退出留下的死端口文件，立即清理，避免后续启动产生 TCP 握手超时
         let _ = std::fs::remove_file(&pf);
@@ -68,7 +71,10 @@ pub fn cleanup() {
 
 /// 成为第一个实例: 开始监听, 返回收「别的实例转来的路径」的通道
 pub fn listen() -> Option<Receiver<Vec<String>>> {
-    if std::env::var_os("IDE_FAST_MULTI").is_some() {
+    if std::env::var_os("IDE_FAST_MULTI").is_some()
+        || std::env::var_os("IDE_FAST_NO_NETWORK").is_some()
+        || std::env::var_os("IDE_FAST_OFFLINE").is_some()
+    {
         return None;
     }
     let l = TcpListener::bind(("127.0.0.1", 0)).ok()?;
@@ -108,6 +114,14 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_env_skips_socket_binding_and_forwarding() {
+        std::env::set_var("IDE_FAST_OFFLINE", "1");
+        assert!(listen().is_none(), "离线模式下不绑定任何 TCP 监听");
+        assert!(!forward_to_running(&["test.txt".into()]), "离线模式不尝试网络转发");
+        std::env::remove_var("IDE_FAST_OFFLINE");
+    }
 
     #[test]
     fn second_instance_hands_paths_to_the_first() {

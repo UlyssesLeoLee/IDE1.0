@@ -13,7 +13,7 @@ pub const MAX_SUMS: u64 = 64 * 1024;
 pub const MAX_SIG: u64 = 1024;
 pub const MAX_BINARY: u64 = 120 * 1024 * 1024;
 /// 各类请求的总时长上限 (秒)
-const SECS_API: u64 = 30;
+const SECS_API: u64 = 15;
 const SECS_BINARY: u64 = 900;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -131,6 +131,8 @@ pub fn curl_args(
         proto,
         "--max-redirs",
         "5",
+        "--connect-timeout",
+        if api { "4" } else { "10" },
         "--max-time",
     ]
     .iter()
@@ -528,6 +530,7 @@ mod tests {
             "重定向也不许降到 http"
         );
         assert_eq!(a[pos("--max-filesize") + 1], MAX_API.to_string());
+        assert_eq!(a[pos("--connect-timeout") + 1], "4");
         assert_eq!(a[pos("--max-time") + 1], "30");
         assert_eq!(a[a.len() - 2], "--", "URL 在 -- 之后");
         assert!(a.iter().any(|s| s.starts_with("Accept:")) && !a.contains(&"-o".to_string()));
@@ -543,6 +546,10 @@ mod tests {
         assert!(
             !d.iter().any(|s| s.starts_with("Accept:")),
             "下载资产不带 API 的 Accept 头"
+        );
+        assert_eq!(
+            d[d.iter().position(|s| s == "--connect-timeout").unwrap() + 1],
+            "10"
         );
         assert_eq!(
             d[d.iter().position(|s| s == "-o").unwrap() + 1],
