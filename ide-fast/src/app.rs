@@ -300,8 +300,8 @@ impl App {
             app.new_doc();
         }
         if persist {
-            app.sys.restore = crate::backup::leftovers();
-        } // 只扫一次: 上次没正常退出留下的自动备份
+            // 遗留自动备份扫描推迟至首帧后执行，避免阻塞首帧渲染
+        }
         app
     }
 
@@ -330,6 +330,14 @@ impl App {
     }
 
     fn open_path(&mut self, p: &std::path::Path) {
+        self.open_path_internal(p, true);
+    }
+
+    fn open_path_no_save(&mut self, p: &std::path::Path) {
+        self.open_path_internal(p, false);
+    }
+
+    fn open_path_internal(&mut self, p: &std::path::Path, save: bool) {
         if let Some(i) = self.docs.iter().position(|d| d.path.as_deref() == Some(p)) {
             self.active = i;
             return;
@@ -380,12 +388,14 @@ impl App {
                 {
                     self.docs[self.active].goto(r, c); // 回到上次关掉时的光标位置
                 }
-                let mut st = self.current_settings();
-                st.push_recent(p);
-                self.recent = st.recent.clone();
-                self.saved = st.clone();
-                if self.persist {
-                    st.save();
+                if save {
+                    let mut st = self.current_settings();
+                    st.push_recent(p);
+                    self.recent = st.recent.clone();
+                    self.saved = st.clone();
+                    if self.persist {
+                        st.save();
+                    }
                 }
             }
             Err(e) => {
@@ -3291,7 +3301,7 @@ impl App {
             {
                 continue;
             }
-            self.open_path(path);
+            self.open_path_no_save(path);
             if i == st.session_active {
                 active = Some(self.active);
             }
@@ -3392,10 +3402,7 @@ impl App {
     /// 选主题插件 (空 id = 回到内置深 / 浅色)
     fn set_theme_plugin(&mut self, id: &str) {
         self.theme_id = id.to_string();
-        let spec = plugins::rows()
-            .into_iter()
-            .find(|r| r.id == id && r.enabled)
-            .and_then(|r| r.theme);
+        let spec = plugins::find_theme(id);
         self.sys.theme_glass = spec.as_ref().is_some_and(|t| t.translucent);
         // 玻璃主题声明 luminance=dynamic 时, 文字色按系统「应用主题」明暗取 (一次读取, 不轮询)
         let spec = spec.map(|mut t| {
@@ -5481,7 +5488,20 @@ impl App {
             self.shown = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             self.trace.mark("window shown");
+            if self.persist {
+                self.sys.restore = crate::backup::leftovers();
+            }
         }
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        crate::instance::cleanup();
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        crate::instance::cleanup();
     }
 }
 

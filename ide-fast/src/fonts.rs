@@ -229,6 +229,11 @@ fn get_cjk_candidates(custom_cjk: &str, lang: &str) -> Vec<(&'static str, u32)> 
 
 /// 并行读磁盘上的字体文件 (主字体与 CJK fallback 并行读取, 消除冷启动 I/O 串行阻塞)
 pub fn load(editor_file: &str, cjk_file: &str, lang: &str) -> Loaded {
+    load_ext(editor_file, cjk_file, lang, true)
+}
+
+/// 扩展加载接口: 支持指定是否需要粗体变体 (启动时若未开启粗体则跳过粗体文件扫描与读取)
+pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) -> Loaded {
     let dir = fonts_dir();
     let safe_editor = std::path::Path::new(editor_file)
         .file_name()
@@ -239,13 +244,17 @@ pub fn load(editor_file: &str, cjk_file: &str, lang: &str) -> Loaded {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
-    // 线程 1: 并行读取主字体与其粗体变体
+    // 线程 1: 并行读取主字体与其粗体变体 (不需要粗体时跳过磁盘搜索与读取)
     let dir_clone = dir.clone();
     let ed_handle = std::thread::spawn(move || {
         let (ed, ed_bold) = if !safe_editor.is_empty() && is_font_file(&safe_editor) {
-            let bold_file = find_bold_file(&dir_clone, &safe_editor);
             let b1 = std::fs::read(dir_clone.join(&safe_editor)).ok();
-            let b2 = bold_file.and_then(|f| std::fs::read(dir_clone.join(f)).ok());
+            let b2 = if need_bold {
+                let bold_file = find_bold_file(&dir_clone, &safe_editor);
+                bold_file.and_then(|f| std::fs::read(dir_clone.join(f)).ok())
+            } else {
+                None
+            };
             (b1, b2)
         } else {
             (None, None)
@@ -254,6 +263,7 @@ pub fn load(editor_file: &str, cjk_file: &str, lang: &str) -> Loaded {
     });
 
     // 线程 0 (当前线程): 并行读取 CJK Fallback 字体
+    // 首次冷启动加载 1 个核心字体 (如 NotoSansSC 或 msyh), 已覆盖中日英全量基础字形, 避免 30MB+ 冗余 I/O
     let cjk_cands = get_cjk_candidates(&safe_cjk, lang);
     let mut fallbacks = vec![];
     for (file, index) in cjk_cands {
@@ -261,8 +271,8 @@ pub fn load(editor_file: &str, cjk_file: &str, lang: &str) -> Loaded {
             continue;
         };
         fallbacks.push((file.to_string(), index, bytes));
-        if fallbacks.len() >= 2 {
-            break; // 两个字体已足够完整覆盖中日英文字形, 控制启动开销
+        if !fallbacks.is_empty() {
+            break; // 1 个核心 CJK 字体已足够覆盖中日英文字形, 控制首帧前 I/O 与图集构建开销
         }
     }
 
@@ -285,12 +295,22 @@ pub fn prefetch(
     cjk_file: &str,
     lang: &str,
 ) -> Option<std::thread::JoinHandle<Loaded>> {
+    prefetch_ext(editor_file, cjk_file, lang, true)
+}
+
+/// 扩展预读接口: 支持按需忽略粗体
+pub fn prefetch_ext(
+    editor_file: &str,
+    cjk_file: &str,
+    lang: &str,
+    need_bold: bool,
+) -> Option<std::thread::JoinHandle<Loaded>> {
     let ef = editor_file.to_string();
     let cf = cjk_file.to_string();
     let lg = lang.to_string();
     std::thread::Builder::new()
         .name("font-prefetch".into())
-        .spawn(move || load(&ef, &cf, &lg))
+        .spawn(move || load_ext(&ef, &cf, &lg, need_bold))
         .ok()
 }
 

@@ -65,8 +65,10 @@ pub fn logo() -> Option<eframe::egui::IconData> {
     decode(include_bytes!("../packaging/logo-256.png"))
 }
 
+static WINDOW_ICON: std::sync::OnceLock<Option<eframe::egui::IconData>> = std::sync::OnceLock::new();
+
 pub fn window_icon() -> Option<eframe::egui::IconData> {
-    decode(pick_png(ICO, WANT)?)
+    WINDOW_ICON.get_or_init(|| decode(pick_png(ICO, WANT)?)).clone()
 }
 
 #[cfg(test)]

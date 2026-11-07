@@ -157,7 +157,6 @@ fn main() -> eframe::Result<()> {
         trace.mark("handed over to the running instance");
         return Ok(());
     }
-    let inbox = if force_new { None } else { instance::listen() };
     // 上次的窗口位置 / 大小 / 最大化状态 (没有就用默认的 1100x720)
     let st = settings::Settings::load();
     trace.mark("settings loaded");
@@ -166,8 +165,9 @@ fn main() -> eframe::Result<()> {
     } else {
         st.font_family.clone()
     };
-    // 字体文件在后台双线程并行读 (主字体 + CJK fallback), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
-    let fonts_job = fonts::prefetch(&font_file, &st.font_cjk_fallback, &st.lang);
+    // 字体文件在后台双线程并行读 (主字体 + 核心 CJK fallback, 按需加载粗体), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
+    let fonts_job = fonts::prefetch_ext(&font_file, &st.font_cjk_fallback, &st.lang, st.font_bold);
+    let inbox = if force_new { None } else { instance::listen() };
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;

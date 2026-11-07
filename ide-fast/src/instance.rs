@@ -29,8 +29,10 @@ pub fn forward_to_running(args: &[String]) -> bool {
     }
     let Ok(mut s) = TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-        std::time::Duration::from_millis(300),
+        std::time::Duration::from_millis(25),
     ) else {
+        // 连不上 = 上一次异常退出留下的死端口文件，立即清理，避免后续启动产生 TCP 握手超时
+        let _ = std::fs::remove_file(&pf);
         return false;
     };
     let mut msg = String::from("IDE-FAST-OPEN\n");
@@ -44,6 +46,13 @@ pub fn forward_to_running(args: &[String]) -> bool {
     }
     msg.push_str("END\n");
     s.write_all(msg.as_bytes()).is_ok()
+}
+
+/// 进程正常退出或关闭时清理残留端口文件
+pub fn cleanup() {
+    if let Some(pf) = port_file() {
+        let _ = std::fs::remove_file(pf);
+    }
 }
 
 /// 成为第一个实例: 开始监听, 返回收「别的实例转来的路径」的通道

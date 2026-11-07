@@ -158,6 +158,50 @@ pub fn list(root: &Path) -> Vec<Installed> {
     out
 }
 
+/// 获取指定 id 的单个插件 (启动时按需查询目标主题插件清单, 避免扫描全部插件与解析无用 JSON)
+pub fn get(root: &Path, id: &str) -> Option<Installed> {
+    let reg = load_registry(root);
+    if reg.removed.contains(id) {
+        return None;
+    }
+    let installed = reg.plugins.get(id);
+    let bundled = if bundled_ids().contains(&id) {
+        bundled_manifest(id)
+    } else {
+        None
+    };
+    if let Some(e) = installed {
+        if let Some(im) = read_installed_manifest(root, id) {
+            if let Some(m) = &bundled {
+                if is_newer(&im.version, &m.version) || im.version == m.version {
+                    return Some(Installed {
+                        manifest: im,
+                        enabled: e.enabled,
+                        source: "installed",
+                        sha256: e.sha256.clone(),
+                    });
+                }
+            } else {
+                return Some(Installed {
+                    manifest: im,
+                    enabled: e.enabled,
+                    source: "installed",
+                    sha256: e.sha256.clone(),
+                });
+            }
+        }
+    }
+    if let Some(m) = bundled {
+        return Some(Installed {
+            manifest: m,
+            enabled: installed.map(|e| e.enabled).unwrap_or(true),
+            source: "bundled",
+            sha256: BTreeMap::new(),
+        });
+    }
+    None
+}
+
 fn read_installed_manifest(root: &Path, id: &str) -> Option<Manifest> {
     let mut m: Manifest = serde_json::from_slice(&std::fs::read(root.join(id).join("manifest.json")).ok()?).ok()?;
     if m.id != id {

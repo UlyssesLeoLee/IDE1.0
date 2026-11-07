@@ -167,12 +167,37 @@ pub fn apply_dynamic_luminance(
     vars.insert("--fg-dim".into(), l.text_dim().into());
 }
 
+/// 按需获取指定主题插件配置 (启动快路径: 只读目标清单, 避免扫描全部插件并解析无关 JSON)
+pub fn find_theme(id: &str) -> Option<ThemeSpec> {
+    if id.is_empty() {
+        return None;
+    }
+    let installed = store::get(&root(), id)?;
+    if !installed.enabled {
+        return None;
+    }
+    let r = row_of(installed);
+    r.theme
+}
+
 /// 启动时问一句: 这个主题插件是不是半透明的 (id 为空 = 内置深 / 浅色, 不碰插件仓库)
 pub fn is_translucent(id: &str) -> bool {
-    !id.is_empty()
-        && rows()
-            .into_iter()
-            .any(|r| r.id == id && r.enabled && r.theme.is_some_and(|t| t.translucent))
+    if id.is_empty() {
+        return false;
+    }
+    // Fast path: 内置半透明主题直接判定，0 磁盘 I/O，0 JSON 解析
+    if matches!(id, "theme-crystal" | "theme-clear") {
+        return true;
+    }
+    // 内置不透明主题直接返回 false
+    if matches!(
+        id,
+        "theme-dark" | "theme-light" | "theme-retro" | "theme-wood" | "theme-forest"
+    ) {
+        return false;
+    }
+    // 第三方外部主题只查目标清单，不扫描全部插件
+    find_theme(id).is_some_and(|t| t.translucent)
 }
 
 /// 玻璃主题里编辑区的垫色: 文字是浅色 (深色主题) 垫黑、否则垫白, 透明度固定, 保证透出桌面时文字仍然看得清

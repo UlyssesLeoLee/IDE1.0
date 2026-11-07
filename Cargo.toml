@@ -59,6 +59,7 @@ nema-codec = { path = "crates/nema-codec" }
 [profile.release]
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
 
 [profile.dev]
 opt-level = 0
