@@ -173,7 +173,17 @@ impl App {
         inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
         trace: Trace,
     ) -> Self {
-        Self::build(args, inbox, trace, Settings::load(), true)
+        Self::with_settings(args, inbox, trace, Settings::load())
+    }
+
+    /// 复用已加载好的 settings, 消除启动关键路径上的冗余磁盘 I/O
+    pub fn with_settings(
+        args: Vec<String>,
+        inbox: Option<std::sync::mpsc::Receiver<Vec<String>>>,
+        trace: Trace,
+        st: Settings,
+    ) -> Self {
+        Self::build(args, inbox, trace, st, true)
     }
 
     /// `persist` = 设置改了要不要落盘 (测试里关掉, 免得碰用户真实的设置文件)
@@ -3655,8 +3665,13 @@ impl App {
     }
 
     fn editor(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, find_has_focus: bool) {
-        let font = FontId::new(self.font_px, crate::fonts::editor_family());
-        let (base_h, char_w) = ctx.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0')));
+        let font_fam = if self.cfg.font_bold {
+            crate::fonts::editor_bold_family()
+        } else {
+            crate::fonts::editor_family()
+        };
+        let font = FontId::new(self.font_px, font_fam.clone());
+        let (base_h, char_w) = ctx.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0') + self.cfg.letter_spacing));
         // 行高倍数: 整行(含自动换行的每个显示行)都按这个高度排, 文字在行内居中
         let row_h = crate::view::row_height(base_h, self.cfg.line_height, self.font_px);
         let rgb = |c: [u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
@@ -3695,7 +3710,7 @@ impl App {
         // 行号栏: 12px 数字, 至少 40 宽 (Tauri `#gutter`), 正文左内边距 8 (`#ed-content padding 4px 8px`)
         let num_font = FontId::new(
             (self.font_px * 12.0 / 13.0).max(8.0),
-            crate::fonts::editor_family(),
+            font_fam,
         );
         let num_w = ctx.fonts_mut(|f| f.glyph_width(&num_font, '0'));
         let gutter = if vw.line_numbers {
@@ -3748,7 +3763,7 @@ impl App {
                 self.docs[ai].id,
                 self.docs[ai].rev,
                 wrap_w as i32 + fsig as i32 * 7,
-                (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000,
+                (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000 + if self.cfg.font_bold { 50000 } else { 0 } + (self.cfg.letter_spacing * 100.0) as i32,
                 tab + (wrap as usize) * 100 + kcols.cols * 1000 + kcols.hang as usize * 50,
             );
             if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
@@ -3771,6 +3786,8 @@ impl App {
                         job.wrap.break_anywhere = true;
                         for sec in &mut job.sections {
                             sec.format.line_height = Some(row_h);
+                            sec.format.italics = self.cfg.font_italic;
+                            sec.format.extra_letter_spacing = self.cfg.letter_spacing;
                         }
                         y += ctx.fonts_mut(|f| f.layout_job(job)).size().y.max(row_h);
                     } else {
@@ -4070,6 +4087,8 @@ impl App {
                         row_c,
                         row_h,
                         char_bg,
+                        self.cfg.font_italic,
+                        self.cfg.letter_spacing,
                     );
                     if wrap {
                         job.wrap.max_width = wrap_w;
@@ -4395,6 +4414,8 @@ impl App {
                             text_color,
                             row_h,
                             None,
+                            self.cfg.font_italic,
+                            self.cfg.letter_spacing,
                         );
                         job.wrap.max_width = wrap_w;
                         job.wrap.break_anywhere = true;
@@ -4476,6 +4497,8 @@ impl App {
                                 text_color,
                                 row_h,
                                 None,
+                                self.cfg.font_italic,
+                                self.cfg.letter_spacing,
                             );
                             job.wrap.max_width = wrap_w;
                             job.wrap.break_anywhere = true;
@@ -4854,6 +4877,8 @@ fn highlight_job(
     default: Color32,
     line_h: f32,
     per_char_bg: Option<Color32>,
+    font_italic: bool,
+    letter_spacing: f32,
 ) -> egui::text::LayoutJob {
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
@@ -4862,6 +4887,8 @@ fn highlight_job(
         color: c,
         line_height: Some(line_h),
         background: per_char_bg.unwrap_or(Color32::TRANSPARENT),
+        italics: font_italic,
+        extra_letter_spacing: letter_spacing,
         ..Default::default()
     };
     let Some(cfg) = cfg else {
@@ -5077,7 +5104,12 @@ impl App {
             ctx.global_style_mut(|s| s.spacing.scroll = tauri_scroll());
         }
         if self.cfg.font_family != self.applied_font {
-            crate::fonts::install(ctx, &self.cfg.font_family);
+            let eff_font = if self.cfg.font_family.is_empty() {
+                crate::fonts::theme_default_font(&self.theme_id).unwrap_or("")
+            } else {
+                &self.cfg.font_family
+            };
+            crate::fonts::install(ctx, eff_font, &self.cfg.font_cjk_fallback, &self.cfg.lang);
             self.applied_font = self.cfg.font_family.clone();
         }
         self.sync_doc_prefs();

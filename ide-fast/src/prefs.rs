@@ -240,16 +240,22 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             });
         }
         PrefsTab::Font => {
+            // 1. 主字体选择: 推荐免费商用字体 + 全部系统字体
             ui.horizontal(|ui| {
                 ui.label(tr("pf.font-family"));
                 let shown = if d.font_family.is_empty() {
                     tr("pf.font-default").to_string()
                 } else {
-                    label_of(&d.font_family)
+                    let label = label_of(&d.font_family);
+                    if let Some(rec) = crate::fonts::RECOMMENDED_FONTS.iter().find(|r| r.file.eq_ignore_ascii_case(&d.font_family)) {
+                        format!("{} [{}]", rec.name_zh, rec.license)
+                    } else {
+                        label
+                    }
                 };
                 egui::ComboBox::from_id_salt("pf-font")
                     .selected_text(shown)
-                    .width(220.0)
+                    .width(260.0)
                     .show_ui(ui, |ui| {
                         if ui
                             .selectable_label(d.font_family.is_empty(), tr("pf.font-default"))
@@ -257,8 +263,19 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                         {
                             d.font_family.clear();
                         }
+                        ui.separator();
+                        ui.label(egui::RichText::new(tr("pf.font-rec-header")).weak().size(11.0));
+                        for rec in crate::fonts::RECOMMENDED_FONTS {
+                            let label = format!("{} [{}]", rec.name_zh, rec.license);
+                            let on = d.font_family.eq_ignore_ascii_case(rec.file);
+                            if ui.selectable_label(on, label).clicked() {
+                                d.font_family = rec.file.to_string();
+                            }
+                        }
+                        ui.separator();
+                        ui.label(egui::RichText::new(tr("pf.font-all-header")).weak().size(11.0));
                         egui::ScrollArea::vertical()
-                            .max_height(260.0)
+                            .max_height(200.0)
                             .show(ui, |ui| {
                                 for f in &p.fonts {
                                     if ui
@@ -271,10 +288,94 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                             });
                     });
             });
+
+            // 2. 中日英 CJK Fallback 字体优先
+            ui.horizontal(|ui| {
+                ui.label(tr("pf.font-cjk-fallback"));
+                let shown_cjk = if d.font_cjk_fallback.is_empty() {
+                    tr("pf.font-cjk-auto").to_string()
+                } else {
+                    label_of(&d.font_cjk_fallback)
+                };
+                egui::ComboBox::from_id_salt("pf-cjk-fallback")
+                    .selected_text(shown_cjk)
+                    .width(260.0)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_label(d.font_cjk_fallback.is_empty(), tr("pf.font-cjk-auto")).clicked() {
+                            d.font_cjk_fallback.clear();
+                        }
+                        for (file, desc) in [
+                            ("NotoSansSC-VF.ttf", "思源黑体 (Noto Sans SC) [OFL 免费商用]"),
+                            ("NotoSansJP-VF.ttf", "思源黑体 日文 (Noto Sans JP) [OFL 免费商用]"),
+                            ("BIZ-UDGothicR.ttc", "BIZ UD Gothic (通用设计高可读) [OFL 免费商用]"),
+                            ("msyh.ttc", "微软雅黑 (Microsoft YaHei) [系统标准]"),
+                            ("YuGothM.ttc", "游黑体 (Yu Gothic) [日文标准]"),
+                            ("msgothic.ttc", "MS Gothic [经典等宽点阵]"),
+                        ] {
+                            if ui.selectable_label(d.font_cjk_fallback == file, desc).clicked() {
+                                d.font_cjk_fallback = file.to_string();
+                            }
+                        }
+                    });
+            });
+
+            // 3. 字号调整 + Sakura 常用标准字号快捷按钮
+            ui.horizontal(|ui| {
+                ui.label(tr("pf.font-size"));
+                ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0).step_by(0.5));
+                for (pt_label, px_val) in [("9pt", 12.0), ("10.5pt", 14.0), ("12pt", 16.0), ("14pt", 18.6), ("16pt", 21.3)] {
+                    if ui.small_button(pt_label).clicked() {
+                        d.font_px = px_val;
+                    }
+                }
+            });
+
+            // 4. 样式与字重 (Sakura: 粗体 / 斜体)
+            ui.horizontal(|ui| {
+                ui.check(&mut d.font_bold, tr("pf.font-bold"));
+                ui.check(&mut d.font_italic, tr("pf.font-italic"));
+                ui.check(&mut d.cjk_fixed_ratio, tr("pf.cjk-fixed-ratio"));
+            });
+
+            // 5. 排版间距 (Sakura: 行间距 / 字符间距)
             ui.horizontal(|ui| {
                 ui.label(tr("pf.line-height"));
                 ui.add(egui::Slider::new(&mut d.line_height, 0.8..=2.5).step_by(0.05));
             });
+            ui.horizontal(|ui| {
+                ui.label(tr("pf.letter-spacing"));
+                ui.add(egui::Slider::new(&mut d.letter_spacing, -2.0..=8.0).step_by(0.5).suffix(" px"));
+            });
+
+            // 6. Sakura 样式实时多语言混合效果预览框
+            ui.separator();
+            ui.label(egui::RichText::new(tr("pf.font-preview")).strong().size(12.0));
+            let prev_bg = if d.dark { egui::Color32::from_gray(24) } else { egui::Color32::from_gray(250) };
+            let prev_fg = if d.dark { egui::Color32::from_gray(220) } else { egui::Color32::from_gray(30) };
+            egui::Frame::canvas(ui.style())
+                .fill(prev_bg)
+                .stroke(egui::Stroke::new(1.0, if d.dark { egui::Color32::from_gray(60) } else { egui::Color32::from_gray(200) }))
+                .corner_radius(4.0)
+                .inner_margin(8.0)
+                .show(ui, |ui| {
+                    let fam = if d.font_bold { crate::fonts::editor_bold_family() } else { crate::fonts::editor_family() };
+                    let font_id = egui::FontId::new(d.font_px, fam);
+                    let mut job = egui::text::LayoutJob::default();
+                    let fmt = egui::text::TextFormat {
+                        font_id,
+                        color: prev_fg,
+                        line_height: Some(d.font_px * d.line_height * 1.35),
+                        italics: d.font_italic,
+                        extra_letter_spacing: d.letter_spacing,
+                        ..Default::default()
+                    };
+                    job.append("Cascadia & Noto CJK 1234567890 != >= <= =>
+", 0.0, fmt.clone());
+                    job.append("中文: 永和九年，岁在癸丑，暮春之初，会于会稽山阴之兰亭。
+", 0.0, fmt.clone());
+                    job.append("日本語: 吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。", 0.0, fmt);
+                    ui.label(job);
+                });
             ui.small(tr("pf.restart-note"));
             ui.separator();
             ui.label(tr("pf.colors"));

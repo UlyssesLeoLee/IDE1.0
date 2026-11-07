@@ -8,6 +8,7 @@
 
 // Windows 发行版走 GUI 子系统: 否则双击启动会多出一个控制台窗口 (调试构建保留控制台, 方便看 IDE_FAST_TRACE 输出)
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![recursion_limit = "256"]
 #![allow(
     deprecated,
     dead_code,
@@ -160,9 +161,13 @@ fn main() -> eframe::Result<()> {
     // 上次的窗口位置 / 大小 / 最大化状态 (没有就用默认的 1100x720)
     let st = settings::Settings::load();
     trace.mark("settings loaded");
-    let font_file = st.font_family.clone();
-    // 字体文件 (几十 MB) 在后台读, 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
-    let fonts_job = fonts::prefetch(&font_file);
+    let font_file = if st.font_family.is_empty() {
+        fonts::theme_default_font(&st.theme_plugin).unwrap_or("").to_string()
+    } else {
+        st.font_family.clone()
+    };
+    // 字体文件在后台双线程并行读 (主字体 + CJK fallback), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
+    let fonts_job = fonts::prefetch(&font_file, &st.font_cjk_fallback, &st.lang);
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
@@ -210,7 +215,7 @@ fn main() -> eframe::Result<()> {
             trace.mark("window + GL context ready");
             match fonts_job.map(|h| h.join()) {
                 Some(Ok(loaded)) => fonts::install_loaded(&cc.egui_ctx, loaded),
-                _ => fonts::install(&cc.egui_ctx, &font_file), // 线程没起来 / 读取线程 panic: 同步读
+                _ => fonts::install(&cc.egui_ctx, &font_file, &st.font_cjk_fallback, &st.lang), // 线程没起来 / 读取线程 panic: 同步读
             }
             trace.mark("fonts installed");
             #[cfg(windows)]
@@ -221,7 +226,8 @@ fn main() -> eframe::Result<()> {
             #[cfg(not(windows))]
             let _ = blur;
             let t = trace.clone();
-            let app = app::App::new(args, inbox, trace);
+            // 直接复用已读出的 st, 避免在 App::new 内部重复读盘解析 settings.json (启动提速)
+            let app = app::App::with_settings(args, inbox, trace, st);
             t.mark("App::new done");
             Ok(Box::new(app))
         }),

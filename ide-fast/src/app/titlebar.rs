@@ -30,17 +30,15 @@ const QUICK: &[(&str, &str)] = &[
 const LEFT_FIXED: f32 = 6.0 + 16.0 + 6.0;
 const QUICK_BTN: f32 = 26.0;
 const DOCKS_W: f32 = 3.0 * 30.0 + 10.0;
-const TERM_W: f32 = 92.0;
 const GAP: f32 = 10.0;
 const TITLE_MAX: f32 = 220.0;
 
 /// 标题栏怎么排: 菜单永远完整显示、绝不和右边的按钮重叠; 空间不够时按优先级一样样撤 ——
-/// 先撤快捷图标钮, 再撤面板开关, 再撤窗口标题文字, 再撤终端按钮, 最后撤菜单的助记字母
+/// 先撤快捷图标钮, 再撤面板开关, 再撤窗口标题文字, 最后撤菜单的助记字母
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
-    pub term: bool,
     pub quick: usize,
 }
 
@@ -57,7 +55,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
             false
         }
     };
-    let term = take(TERM_W);
     let title = take(title_w.min(TITLE_MAX) + 8.0);
     let mut quick = 0;
     while quick < QUICK.len() && take(QUICK_BTN) {
@@ -66,7 +63,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     BarPlan {
         mnemonics,
         title,
-        term,
         quick,
     }
 }
@@ -272,8 +268,7 @@ impl App {
                 };
                 let plan = plan_bar(rect.width(), mw, mp, tw);
                 self.sys.mn_hide = !plan.mnemonics;
-                let mid_w = if plan.term { TERM_W } else { 0.0 }
-                    + plan.quick as f32 * QUICK_BTN;
+                let mid_w = plan.quick as f32 * QUICK_BTN;
                 let right = Rect::from_min_max(
                     egui::pos2(rect.right() - BTN_W * 3.0, rect.top()),
                     rect.max,
@@ -318,28 +313,7 @@ impl App {
                             }
                         }
 
-                        if plan.term {
-                            ui.add_space(4.0);
-                            if let Some(i) = chrome::index_of("c.terminal") {
-                                let tip = crate::i18n::lk_for(&keymap::entries()[i]);
-                                let txt = egui::RichText::new(format!(">_ {}", trz("终端")))
-                                    .size(12.0)
-                                    .color(tc.fg);
-                                let edge = if tc.dark {
-                                    Color32::from_gray(69)
-                                } else {
-                                    Color32::from_gray(204)
-                                };
-                                let b = egui::Button::new(txt)
-                                    .fill(tc.bg_hover)
-                                    .stroke(egui::Stroke::new(1.0, edge))
-                                    .corner_radius(4.0)
-                                    .min_size(Vec2::new(TERM_W - 12.0, 22.0));
-                                if ui.add(b).tip(tip).clicked() {
-                                    run = Some(i);
-                                }
-                            }
-                        }
+
                     });
                 }
                 ui.scope_builder(egui::UiBuilder::new().max_rect(right).layout(lay), |ui| {
@@ -626,8 +600,7 @@ mod tests {
         for w in [580.0, 700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
-            let mid = if p.term { TERM_W } else { 0.0 }
-                + p.quick as f32 * QUICK_BTN;
+            let mid = p.quick as f32 * QUICK_BTN;
             let title = if p.title { 58.0 } else { 0.0 };
             assert!(
                 LEFT_FIXED + title + menu + mid + BTN_W * 3.0 <= w,
@@ -640,16 +613,16 @@ mod tests {
     fn the_plan_drops_things_progressively_as_the_window_narrows() {
         let wide = plan_bar(1600.0, MW, MP, 50.0);
         assert!(
-            wide.mnemonics && wide.title && wide.term && wide.quick == QUICK.len()
+            wide.mnemonics && wide.title && wide.quick == QUICK.len()
         );
-        let mid = plan_bar(900.0, MW, MP, 50.0);
+        let mid = plan_bar(700.0, MW, MP, 50.0);
         assert!(
-            mid.mnemonics && mid.term,
-            "900: 菜单 (带助记) 和终端钮都在"
+            mid.mnemonics,
+            "700: 菜单 (带助记) 在"
         );
         assert!(
             mid.quick < QUICK.len(),
-            "900: 快捷钮已被撤掉几个, 不压菜单"
+            "700: 快捷钮已被撤掉几个, 不压菜单"
         );
         let narrow = plan_bar(580.0, MW, MP, 50.0);
         assert!(!narrow.mnemonics && narrow.quick == 0);

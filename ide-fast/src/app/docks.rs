@@ -124,15 +124,19 @@ impl App {
                     .frame(egui::Frame::NONE.fill(tc.bg_rail))
                     .show(root, |ui| {
                         let w = ui.available_width();
+                        let h = ui.available_height();
                         let (rect, resp) = ui
-                            .allocate_exact_size(Vec2::new(w, panels::STRIP_BTN_H), Sense::click());
-                        let resp = resp.tip(trz(panels::tip(d, collapsed)));
+                            .allocate_exact_size(Vec2::new(w, h), Sense::click());
+                        let resp = resp
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .tip(trz(panels::tip(d, collapsed)));
                         if resp.hovered() {
                             ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
                         }
                         let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
+                        let chevron_pos = Pos2::new(rect.center().x, rect.top() + panels::STRIP_BTN_H * 0.5);
                         ui.painter().text(
-                            rect.center(),
+                            chevron_pos,
                             egui::Align2::CENTER_CENTER,
                             panels::chevron(d, collapsed),
                             egui::FontId::proportional(16.0),

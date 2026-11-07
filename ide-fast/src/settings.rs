@@ -44,6 +44,12 @@ pub struct Settings {
     /// 编辑器字体族 (空 = egui 默认等宽); 行高倍数
     pub font_family: String,
     pub line_height: f32,
+    /// Sakura 字体配置: 粗体 / 斜体 / 字符间距 (-2.0..=10.0 px) / 全角半角 1:2 等宽比率 / CJK fallback 字体优先
+    pub font_bold: bool,
+    pub font_italic: bool,
+    pub letter_spacing: f32,
+    pub cjk_fixed_ratio: bool,
+    pub font_cjk_fallback: String,
     pub colors: Colors,
     /// 按扩展名覆盖的设置
     pub file_types: Vec<TypePref>,
@@ -225,6 +231,11 @@ impl Default for Settings {
             mru_files: 12,
             font_family: String::new(),
             line_height: 1.0,
+            font_bold: false,
+            font_italic: false,
+            letter_spacing: 0.0,
+            cjk_fixed_ratio: true,
+            font_cjk_fallback: String::new(),
             colors: Colors::default(),
             file_types: vec![],
             view: ViewState::default(),
@@ -620,11 +631,24 @@ impl Settings {
         st("default_encoding", &mut self.default_encoding);
         st("default_eol", &mut self.default_eol);
         st("font_family", &mut self.font_family);
+        st("font_cjk_fallback", &mut self.font_cjk_fallback);
         if let Some(f) = v["font_px"].as_f64() {
             self.font_px = (f as f32).clamp(8.0, 40.0);
         }
         if let Some(f) = v["line_height"].as_f64() {
             self.line_height = (f as f32).clamp(0.8, 2.5);
+        }
+        if let Some(b) = v["font_bold"].as_bool() {
+            self.font_bold = b;
+        }
+        if let Some(b) = v["font_italic"].as_bool() {
+            self.font_italic = b;
+        }
+        if let Some(f) = v["letter_spacing"].as_f64() {
+            self.letter_spacing = (f as f32).clamp(-2.0, 10.0);
+        }
+        if let Some(b) = v["cjk_fixed_ratio"].as_bool() {
+            self.cjk_fixed_ratio = b;
         }
         if let Some(t) = v["tab_width"].as_u64() {
             self.tab_width = (t as usize).clamp(1, 16);
@@ -813,6 +837,7 @@ impl Settings {
     pub fn sanitize(&mut self) {
         self.font_px = self.font_px.clamp(8.0, 40.0);
         self.line_height = self.line_height.clamp(0.8, 2.5);
+        self.letter_spacing = self.letter_spacing.clamp(-2.0, 10.0);
         self.tab_width = self.tab_width.clamp(1, 16);
         self.max_file_mb = self.max_file_mb.clamp(1, 32);
         self.mru_files = self.mru_files.clamp(1, 36);
@@ -844,7 +869,7 @@ impl Settings {
         json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin,
                 "lang": self.lang, "restore_session": self.restore_session, "auto_indent": self.auto_indent, "smart_indent": self.smart_indent, "insert_spaces": self.insert_spaces,
                 "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
-                "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height,
+                "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height, "font_bold": self.font_bold, "font_italic": self.font_italic, "letter_spacing": self.letter_spacing, "cjk_fixed_ratio": self.cjk_fixed_ratio, "font_cjk_fallback": self.font_cjk_fallback,
                 "colors": self.colors.to_json(),
                 "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar, "update_channel": self.update_channel, "update_daily": self.update_daily,
                 "toolbar_cmds": self.toolbar_cmds,
@@ -944,6 +969,36 @@ impl Settings {
             let num = |k: &str| get(k).and_then(|v| v.parse::<i64>().ok());
             let flag = |k: &str| num(k).map(|x| x != 0);
             if section == "Common" {
+                if let Some(name) = get("szFontFace").or_else(|| get("szFontName")).or_else(|| get("szFont")) {
+                    if !name.trim().is_empty() {
+                        self.font_family = name.trim().to_string();
+                        n += 1;
+                    }
+                }
+                if let Some(sz) = num("nFontSize") {
+                    if sz > 0 {
+                        let px = if sz > 50 { (sz as f32 / 10.0) * 1.33 } else { sz as f32 };
+                        self.font_px = px.clamp(8.0, 40.0);
+                        n += 1;
+                    }
+                }
+                if let Some(f) = flag("bFontBold").or_else(|| flag("bBold")) {
+                    self.font_bold = f;
+                    n += 1;
+                }
+                if let Some(f) = flag("bFontItalic").or_else(|| flag("bItalic")) {
+                    self.font_italic = f;
+                    n += 1;
+                }
+                if let Some(ls) = num("nLineSpace") {
+                    let mult = 1.0 + (ls as f32 / 18.0).clamp(-0.2, 1.5);
+                    self.line_height = mult.clamp(0.8, 2.5);
+                    n += 1;
+                }
+                if let Some(cs) = num("nColumnSpace") {
+                    self.letter_spacing = (cs as f32).clamp(-2.0, 10.0);
+                    n += 1;
+                }
                 if let Some(x) = num("nMRUArrNum_MAX") {
                     self.mru_files = (x.clamp(1, 36)) as usize;
                     n += 1;
@@ -1802,5 +1857,51 @@ nTabSpace=2
         assert_eq!(s_bad.max_file_mb, 1);
         assert_eq!(s_bad.lang, "zh");
         assert_eq!(s_bad.update_channel, "stable");
+    }
+    #[test]
+    fn sakura_font_settings_roundtrip_and_ini_import() {
+        let mut s = Settings::default();
+        assert!(!s.font_bold);
+        assert!(!s.font_italic);
+        assert_eq!(s.letter_spacing, 0.0);
+        assert!(s.cjk_fixed_ratio);
+        assert!(s.font_cjk_fallback.is_empty());
+
+        let json_data = serde_json::json!({
+            "font_bold": true,
+            "font_italic": true,
+            "letter_spacing": 2.5,
+            "cjk_fixed_ratio": false,
+            "font_cjk_fallback": "BIZ-UDGothicR.ttc"
+        });
+        s.apply_json(&json_data, false);
+        assert!(s.font_bold);
+        assert!(s.font_italic);
+        assert_eq!(s.letter_spacing, 2.5);
+        assert!(!s.cjk_fixed_ratio);
+        assert_eq!(s.font_cjk_fallback, "BIZ-UDGothicR.ttc");
+
+        // Out-of-bounds letter spacing clamped
+        let bad = serde_json::json!({ "letter_spacing": 99.0 });
+        s.apply_json(&bad, false);
+        assert_eq!(s.letter_spacing, 10.0);
+
+        // Sakura INI import
+        let ini = r#"
+[Common]
+szFontName=Cascadia Code
+nFontSize=140
+bFontBold=1
+bFontItalic=1
+nLineSpace=6
+nColumnSpace=2
+"#;
+        let mut from_ini = Settings::default();
+        let imported = from_ini.import_sakura_ini(ini);
+        assert!(imported >= 5);
+        assert_eq!(from_ini.font_family, "Cascadia Code");
+        assert!(from_ini.font_bold);
+        assert!(from_ini.font_italic);
+        assert_eq!(from_ini.letter_spacing, 2.0);
     }
 }
