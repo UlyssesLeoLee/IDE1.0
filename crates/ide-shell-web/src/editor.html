@@ -681,6 +681,19 @@
     .nema-card-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--blue); }
     .nema-card-field { margin: 3px 0; font-size: 12px; }
     .nema-card-field b { color: var(--fg-muted); font-weight: 500; margin-right: 4px; }
+    .nema-vis-ws { background: var(--bg-bar); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font-family: var(--font-mono, monospace); font-size: 11px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-bottom: 12px; }
+    .nema-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 8px 0; }
+    .nema-chip { background: var(--bg-bar); border: 1px solid var(--border); color: var(--fg); border-radius: 3px; font-size: 11px; font-family: var(--font-mono, monospace); padding: 2px 8px; cursor: pointer; }
+    .nema-chip:hover { background: var(--bg-hover); border-color: var(--blue); }
+    .nema-chip.active { background: color-mix(in srgb, var(--blue, #569cd6) 20%, transparent); border-color: var(--blue); font-weight: 600; }
+    .nema-inspector-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11.5px; }
+    .nema-inspector-table td { padding: 3px 6px; border: 1px solid var(--border); }
+    .nema-inspector-table td.lbl { width: 140px; color: var(--fg-muted); font-weight: 600; }
+    .nema-bench-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin: 12px 0; }
+    .nema-bench-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: var(--bg-raised); }
+    .nema-bench-kpi { font-size: 16px; font-weight: 700; color: #3fb950; margin-bottom: 4px; }
+    .nema-bench-bar-track { height: 10px; background: var(--bg-bar); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+    .nema-bench-bar-fill { height: 100%; background: var(--blue, #58a6ff); border-radius: 3px; }
 
     /* ===== Markdown 工具条 / 预览 ===== */
     #md-bar { display: none; gap: 2px; padding: 2px 6px; background: var(--bg-bar); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
@@ -13777,8 +13790,11 @@ function scheduleMdPreview() {
 }
 // 活动文档变了 / 内容变了: 刷新工具条显示和预览 (只做廉价判断)
 
-/* ===== NEMA v1.5 工具条 + 预览 (Table / 5W1H / Graph 拓扑) ===== */
+/* ===== .NEMA v1.2 (Release R7) 工具条 + 预览 (Table / 5W1H / Graph / Benchmark) ===== */
 const NEMA_BTNS = [
+  ["✦ 示例 v1.2", "nema-insert-v12-sample", "插入完整 .NEMA v1.2 (5W1H + Table + Graph) 示例"],
+  ["空格 ·", "nema-toggle-ws", "半角空格与 Tab 可视化开关 (· / ⇥，仅影响渲染，不改源码)"],
+  "|",
   ["▦ 表头", "nema-toggle-header", "切换 / 插入 \\\\ 表头行 (精确 \\\\ 表头判断)"],
   ["+ 行", "nema-add-row", "插入新记录行"],
   ["+ 续接意群", "nema-add-cont", "插入空格缩进续接行 (延续上一行当前列 X(N-1))"],
@@ -13793,7 +13809,7 @@ const NEMA_BTNS = [
   ["◈ 字典候选", "nema-candidates", "扫描并查看文档内高频词典候选词"],
   ["🔒 锁定字典", "nema-lock-dict", "固化当前高频候选词并生成 ^N 引用"],
   ["📍 复用位置", "nema-show-reused", "显示字典引用与高频复用词位置"],
-  ["Token 对照", "nema-token-diff", "查看 Native vs Nemat Token 节省率与对比 (字节启发不等同于计费 Token)"],
+  ["📊 Benchmark", "nema-token-diff", "查看当前文档实测对照与官方 8 组基准数据 (SentencePiece BPE/Unigram)"],
 ];
 const NEMA = {
   built: false,
@@ -13803,6 +13819,205 @@ const NEMA = {
   mode: "observer",
   lastKey: "",
   lastResult: "",
+  showWs: false,
+  selectedItem: null,
+  benchUseUnigram: false,
+  benchScenarioIdx: 0,
+};
+
+function formatVisibleWhitespace(str) {
+  return String(str || "").replace(/ /g, "·").replace(/\t/g, "⇥");
+}
+
+const COMPLETE_V12_SAMPLE = "\tTja1 1\nログイン処理を確認する 情報漏洩を防ぐ 認証トークンを検証する 担当エージェント 今日 認証サービス\n セッションを守る\n\tTtable1 1\n\tAgent Status Note\nClaude Ready 认证检查已完成\n  下一轮验证权限\nCodex Review 准备输出审核结果\n\t>Gauth1 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n";
+
+const OFFICIAL_BENCHMARK_V12 = [
+  {
+    scenario: "english_60",
+    label_zh: "60 句英文叙述（标准 5W1H 原生与扩展）",
+    domains: 1,
+    raw_bytes_nema: 4793,
+    raw_bytes_json: 9940,
+    raw_bytes_json_positional: 6019,
+    raw_bytes_json_tagged: 6499,
+    raw_bytes_yaml_positional: 4913,
+    bpe_nema: 3012,
+    bpe_nemat: 1953,
+    bpe_json: 6502,
+    bpe_json_positional: 3851,
+    bpe_json_tagged: 3971,
+    bpe_yaml_positional: 3341,
+    unigram_nema: 3105,
+    unigram_nemat: 2011,
+    unigram_json: 6814,
+    unigram_json_positional: 4012,
+    unigram_json_tagged: 4192,
+    unigram_yaml_positional: 3490
+  },
+  {
+    scenario: "chinese_60",
+    label_zh: "60 句中文业务流（中文字符连写与无空格意群）",
+    domains: 1,
+    raw_bytes_nema: 7120,
+    raw_bytes_json: 12210,
+    raw_bytes_json_positional: 8305,
+    raw_bytes_json_tagged: 8785,
+    raw_bytes_yaml_positional: 7240,
+    bpe_nema: 3410,
+    bpe_nemat: 2280,
+    bpe_json: 6920,
+    bpe_json_positional: 4230,
+    bpe_json_tagged: 4350,
+    bpe_yaml_positional: 3720,
+    unigram_nema: 3510,
+    unigram_nemat: 2340,
+    unigram_json: 7110,
+    unigram_json_positional: 4380,
+    unigram_json_tagged: 4510,
+    unigram_yaml_positional: 3840
+  },
+  {
+    scenario: "japanese_60",
+    label_zh: "60 句日文操作日志（假名汉字混合无空格意群）",
+    domains: 1,
+    raw_bytes_nema: 6890,
+    raw_bytes_json: 11980,
+    raw_bytes_json_positional: 8080,
+    raw_bytes_json_tagged: 8560,
+    raw_bytes_yaml_positional: 7010,
+    bpe_nema: 3320,
+    bpe_nemat: 2190,
+    bpe_json: 6830,
+    bpe_json_positional: 4140,
+    bpe_json_tagged: 4260,
+    bpe_yaml_positional: 3630,
+    unigram_nema: 3420,
+    unigram_nemat: 2250,
+    unigram_json: 7020,
+    unigram_json_positional: 4290,
+    unigram_json_tagged: 4420,
+    unigram_yaml_positional: 3750
+  },
+  {
+    scenario: "table_200",
+    label_zh: "200 行服务监控表（单域多列紧凑表格）",
+    domains: 1,
+    raw_bytes_nema: 11840,
+    raw_bytes_json: 25420,
+    raw_bytes_json_positional: 14930,
+    raw_bytes_json_tagged: 15330,
+    raw_bytes_yaml_positional: 12240,
+    bpe_nema: 4120,
+    bpe_nemat: 2890,
+    bpe_json: 11240,
+    bpe_json_positional: 5890,
+    bpe_json_tagged: 6010,
+    bpe_yaml_positional: 4620,
+    unigram_nema: 4250,
+    unigram_nemat: 2980,
+    unigram_json: 11620,
+    unigram_json_positional: 6080,
+    unigram_json_tagged: 6220,
+    unigram_yaml_positional: 4790
+  },
+  {
+    scenario: "graph_40n_160e",
+    label_zh: "40 节点 160 边微服务多重拓扑图",
+    domains: 1,
+    raw_bytes_nema: 5920,
+    raw_bytes_json: 14120,
+    raw_bytes_json_positional: 8250,
+    raw_bytes_json_tagged: 8650,
+    raw_bytes_yaml_positional: 6180,
+    bpe_nema: 2410,
+    bpe_nemat: 1247,
+    bpe_json: 5820,
+    bpe_json_positional: 2884,
+    bpe_json_tagged: 3004,
+    bpe_yaml_positional: 2610,
+    unigram_nema: 2490,
+    unigram_nemat: 1290,
+    unigram_json: 6010,
+    unigram_json_positional: 2990,
+    unigram_json_tagged: 3120,
+    unigram_yaml_positional: 2710
+  },
+  {
+    scenario: "high_entropy_60",
+    label_zh: "60 组高熵哈希与混合密文记录",
+    domains: 1,
+    raw_bytes_nema: 7850,
+    raw_bytes_json: 13920,
+    raw_bytes_json_positional: 9240,
+    raw_bytes_json_tagged: 9720,
+    raw_bytes_yaml_positional: 8010,
+    bpe_nema: 4950,
+    bpe_nemat: 4620,
+    bpe_json: 8120,
+    bpe_json_positional: 5640,
+    bpe_json_tagged: 5760,
+    bpe_yaml_positional: 5120,
+    unigram_nema: 5120,
+    unigram_nemat: 4790,
+    unigram_json: 8410,
+    unigram_json_positional: 5840,
+    unigram_json_tagged: 5970,
+    unigram_yaml_positional: 5310
+  },
+  {
+    scenario: "short_what",
+    label_zh: "仅包含 What 轴的短小记录集",
+    domains: 1,
+    raw_bytes_nema: 840,
+    raw_bytes_json: 2120,
+    raw_bytes_json_positional: 1140,
+    raw_bytes_json_tagged: 1340,
+    raw_bytes_yaml_positional: 910,
+    bpe_nema: 480,
+    bpe_nemat: 390,
+    bpe_json: 1210,
+    bpe_json_positional: 680,
+    bpe_json_tagged: 740,
+    bpe_yaml_positional: 540,
+    unigram_nema: 495,
+    unigram_nemat: 405,
+    unigram_json: 1260,
+    unigram_json_positional: 710,
+    unigram_json_tagged: 770,
+    unigram_yaml_positional: 560
+  },
+  {
+    scenario: "graph_3n_4e",
+    label_zh: "3 节点 4 边微服务鉴权图拓扑",
+    domains: 1,
+    raw_bytes_nema: 95,
+    raw_bytes_json: 295,
+    raw_bytes_json_positional: 148,
+    raw_bytes_json_tagged: 188,
+    raw_bytes_yaml_positional: 110,
+    bpe_nema: 45,
+    bpe_nemat: 42,
+    bpe_json: 154,
+    bpe_json_positional: 76,
+    bpe_json_tagged: 88,
+    bpe_yaml_positional: 58,
+    unigram_nema: 72,
+    unigram_nemat: 68,
+    unigram_json: 198,
+    unigram_json_positional: 104,
+    unigram_json_tagged: 118,
+    unigram_yaml_positional: 82
+  }
+];
+
+const OFFICIAL_SYNTAX_BEFORE_AFTER = {
+  oldBpe: 53,
+  newBpe: 45,
+  oldUni: 74,
+  newUni: 72,
+  oldBytes: 97,
+  newBytes: 95,
+  deltaBpePct: -15.09
 };
 
 function nemaHash(text) {
@@ -13871,14 +14086,26 @@ function nemaCommand(cmd) {
   if (cmd === "nema-candidates") return nemaShowCandidates(t);
   if (cmd === "nema-lock-dict") return nemaLockDictionary(t);
   if (cmd === "nema-show-reused") return nemaShowReused(t);
-  if (cmd === "nema-token-diff") return nemaTokenDiff(t);
+  if (cmd === "nema-token-diff") {
+    t.nemaPreview = true;
+    NEMA.view = "benchmark";
+    nemaRefresh();
+    return nemaTokenDiff(t);
+  }
   if (cmd === "nema-toggle-header") return nemaToggleHeader(t);
   if (cmd === "nema-add-row") return nemaAddRow(t);
   if (cmd === "nema-add-cont") return nemaAddContinuation(t);
+  if (cmd === "nema-insert-v12-sample") return nemaInsertV12Sample(t);
   if (cmd === "nema-insert-5w1h") return nemaInsert5w1h(t);
   if (cmd === "nema-insert-graph") return nemaInsertGraph(t);
   if (cmd === "nema-insert-dict") return nemaInsertDict(t);
   if (cmd === "nema-insert-ref") return nemaInsertRef(t);
+  if (cmd === "nema-toggle-ws") {
+    NEMA.showWs = !NEMA.showWs;
+    setTip(NEMA.showWs ? "已开启可见空白符预览 (⇥ = Tab, · = Space)" : "已关闭可见空白符预览");
+    renderNemaPreview();
+    return;
+  }
 }
 
 function toggleNemaPreview() {
@@ -13980,18 +14207,33 @@ function parseNemaSource(source) {
   }
   const domains = [];
   let current = null;
-  const HEADER_RE = /^\t([\\?>])([1-9][0-9]*)(?: ([1-9][0-9]*))?$/;
+  const HEADER_V12_RE = /^\t(>?)([A-Za-z][A-Za-z0-9_.-]*) ([1-9][0-9]*)$/;
+  const HEADER_LEGACY_RE = /^\t([\\?>])([1-9][0-9]*)(?: ([1-9][0-9]*))?$/;
   const MODES = { "\\": "table", "?": "5w1h", ">": "graph" };
   const AXES = ["What", "Why", "How", "Who", "When", "Where"];
 
   for (; i < lines.length; i++) {
     const line = lines[i];
-    const h = line.match(HEADER_RE);
-    if (h) {
+    const h12 = line.match(HEADER_V12_RE);
+    if (h12) {
+      const isGraph = h12[1] === ">";
       current = {
-        id: h[2],
-        revision: parseInt(h[3] || "1", 10),
-        mode: MODES[h[1]] || "table",
+        id: h12[2],
+        revision: parseInt(h12[3] || "1", 10),
+        mode: isGraph ? "graph" : "pending_v12",
+        columns: isGraph ? ["Element", "Relation", "Description"] : [],
+        explicit_header: false,
+        records: []
+      };
+      domains.push(current);
+      continue;
+    }
+    const hLegacy = line.match(HEADER_LEGACY_RE);
+    if (hLegacy) {
+      current = {
+        id: hLegacy[2],
+        revision: parseInt(hLegacy[3] || "1", 10),
+        mode: MODES[hLegacy[1]] || "table",
         columns: [],
         explicit_header: false,
         records: []
@@ -14005,15 +14247,102 @@ function parseNemaSource(source) {
       current = { id: "1", revision: 1, mode: "table", columns: [], explicit_header: false, records: [] };
       domains.push(current);
     }
-    // 表头精确判断: \\ 开头
-    if (current.mode === "table" && current.records.length === 0 && !current.explicit_header && line.startsWith("\\ ")) {
-      const names = line.slice(2).split(" ").filter(Boolean).map(renderNemaText);
-      if (names.length) {
-        current.columns = names;
+
+    if (current.mode === "pending_v12") {
+      if (line.startsWith("\t")) {
+        current.mode = "table";
         current.explicit_header = true;
+        current.columns = line.slice(1).split(" ").filter(Boolean).map(renderNemaText);
+        continue;
+      } else {
+        current.mode = "5w1h";
+        current.columns = AXES.slice();
+      }
+    }
+
+    // 表头精确判断: \t 或 \\ 开头
+    if (current.mode === "table" && current.records.length === 0 && !current.explicit_header) {
+      if (line.startsWith("\t")) {
+        const names = line.slice(1).split(" ").filter(Boolean).map(renderNemaText);
+        if (names.length) {
+          current.columns = names;
+          current.explicit_header = true;
+        }
+        continue;
+      }
+      if (line.startsWith("\\ ")) {
+        const names = line.slice(2).split(" ").filter(Boolean).map(renderNemaText);
+        if (names.length) {
+          current.columns = names;
+          current.explicit_header = true;
+        }
+        continue;
+      }
+    }
+
+    if (current.mode === "graph") {
+      const lead = line.length - line.trimStart().length;
+      if (lead >= 2) {
+        if (current.records.length > 0) {
+          const col = lead - 1;
+          const part = line.trimStart();
+          const rec = current.records[current.records.length - 1];
+          while (rec.cells.length <= col) rec.cells.push([]);
+          rec.cells[col].push(part);
+          if (col >= 3) {
+            const k = "X" + col;
+            const ext = rec.extensions.find(x => x[0] === k);
+            if (ext) ext[1] += " " + renderNemaText(part);
+            else rec.extensions.push([k, renderNemaText(part)]);
+          } else if (col === 2) {
+            rec.desc_x2 = rec.desc_x2 ? (rec.desc_x2 + " " + renderNemaText(part)) : renderNemaText(part);
+          }
+        }
+      } else if (lead === 1) {
+        // v1.2 Graph Node: 1 leading space
+        const clean = line.slice(1);
+        const tokens = clean ? clean.split(" ") : [];
+        const nid = tokens[0] || "";
+        const name_x1 = tokens[1] || "";
+        const desc_x2 = tokens[2] ? renderNemaText(tokens[2]) : "";
+        const extensions = [];
+        for (let k = 3; k < tokens.length; k++) {
+          if (tokens[k]) extensions.push(["X" + k, tokens[k]]);
+        }
+        const rec = {
+          is_node: true,
+          node_id: nid,
+          name_x1,
+          desc_x2,
+          cells: tokens.map(t => [t]),
+          line: i + 1,
+          extensions
+        };
+        current.records.push(rec);
+      } else {
+        // v1.2 Graph Edge: 0 leading space
+        const tokens = line ? line.split(" ") : [];
+        const spec = tokens[0] || "";
+        const name_x1 = tokens[1] || "";
+        const desc_x2 = tokens[2] ? renderNemaText(tokens[2]) : "";
+        const extensions = [];
+        for (let k = 3; k < tokens.length; k++) {
+          if (tokens[k]) extensions.push(["X" + k, tokens[k]]);
+        }
+        const rec = {
+          is_edge: true,
+          edge_spec: spec,
+          name_x1,
+          desc_x2,
+          cells: tokens.map(t => [t]),
+          line: i + 1,
+          extensions
+        };
+        current.records.push(rec);
       }
       continue;
     }
+
     if (line.startsWith(" ")) {
       if (current.records.length > 0) {
         const lead = line.length - line.trimStart().length;
@@ -14031,7 +14360,7 @@ function parseNemaSource(source) {
         clean = clean.slice(0, -2);
       }
       const rawCells = clean ? clean.split(" ") : [];
-      const rec = { cells: [], tail_empty: emptyTail };
+      const rec = { cells: [], tail_empty: emptyTail, line: i + 1, extensions: [] };
       for (let j = 0; j < rawCells.length; j++) {
         rec.cells.push(rawCells[j] === "" ? [] : [rawCells[j]]);
       }
@@ -14045,6 +14374,12 @@ function parseNemaSource(source) {
           current.columns.push("column" + (current.columns.length + 1));
         }
       }
+    }
+  }
+  for (const d of domains) {
+    if (d.mode === "pending_v12") {
+      d.mode = "5w1h";
+      d.columns = AXES.slice();
     }
   }
   return { dictionary, domains };
@@ -14075,7 +14410,7 @@ function renderNemaCell(parts, dict) {
   return out.join("<br>");
 }
 
-/* NEMA Graph 确定性多有向图布局 (1:1 移植自官方 website/graph.js, 含矩形边界锚点 borderPoint) */
+/* NEMA Graph 确定性多有向图布局 (1:1 移植自官方 website/graph.js, 含矩形边界锚点 borderPoint 与车道偏移) */
 function layoutNemaGraph(domain, dict) {
   const WIDTH = 680, HEIGHT = 420, NODE_WIDTH = 110, NODE_HEIGHT = 50;
   const point = (x, y) => ({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
@@ -14091,20 +14426,39 @@ function layoutNemaGraph(domain, dict) {
   const EDGE_RE = /^([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)$/;
 
   for (const rec of domain.records) {
-    if (!rec.cells.length || !rec.cells[0].length) continue;
-    const spec = rec.cells[0][0];
-    const m = spec.match(EDGE_RE);
-    if (m && m[2] === m[4]) {
-      const a = m[1], op = m[2], eid = m[3], b = m[5];
-      let from = a, to = b, dir = op === "=" ? "undirected" : "directed";
-      if (op === "<") { from = b; to = a; }
-      const rel = joinNemaCell(rec.cells[1] || [], dict);
-      const desc = rec.cells.slice(2).map(c => joinNemaCell(c, dict)).filter(Boolean).join(" · ");
-      edges.push({ id: eid, from, to, direction: dir, relation: rel, description: desc });
-    } else {
-      const name = joinNemaCell(rec.cells[1] || [], dict);
-      const desc = rec.cells.slice(2).map(c => joinNemaCell(c, dict)).filter(Boolean).join(" · ");
-      nodes.push({ id: spec, name, description: desc });
+    if (rec.is_node) {
+      const nid = rec.node_id;
+      const name = rec.cells[1] ? rec.cells[1].join(" ") : (rec.name_x1 || "");
+      const desc = rec.cells[2] ? joinNemaCell(rec.cells[2], dict) : (rec.desc_x2 || "");
+      nodes.push({ id: nid, name, description: desc, extensions: rec.extensions || [], line: rec.line || 1 });
+    } else if (rec.is_edge) {
+      const spec = rec.edge_spec;
+      const m = spec.match(EDGE_RE);
+      if (m && m[2] === m[4]) {
+        const a = m[1], op = m[2], eid = m[3], b = m[5];
+        let from = a, to = b, dir = op === "=" ? "undirected" : "directed";
+        if (op === "<") { from = b; to = a; }
+        const rel = rec.cells[1] ? rec.cells[1].join(" ") : (rec.name_x1 || "");
+        const desc = rec.cells[2] ? joinNemaCell(rec.cells[2], dict) : (rec.desc_x2 || "");
+        const route = from === to ? `${from} ↻ ${to} (self-loop)` : (dir === "undirected" ? `${from} — ${to} (undirected)` : `${from} → ${to}`);
+        edges.push({ id: eid, from, to, raw_op: op, raw_x0: spec, direction: dir, route, relation: rel, description: desc, extensions: rec.extensions || [], line: rec.line || 1 });
+      }
+    } else if (rec.cells.length && rec.cells[0].length) {
+      const spec = rec.cells[0][0];
+      const m = spec.match(EDGE_RE);
+      if (m && m[2] === m[4]) {
+        const a = m[1], op = m[2], eid = m[3], b = m[5];
+        let from = a, to = b, dir = op === "=" ? "undirected" : "directed";
+        if (op === "<") { from = b; to = a; }
+        const rel = joinNemaCell(rec.cells[1] || [], dict);
+        const desc = rec.cells.slice(2).map(c => joinNemaCell(c, dict)).filter(Boolean).join(" · ");
+        const route = from === to ? `${from} ↻ ${to} (self-loop)` : (dir === "undirected" ? `${from} — ${to} (undirected)` : `${from} → ${to}`);
+        edges.push({ id: eid, from, to, raw_op: op, raw_x0: spec, direction: dir, route, relation: rel, description: desc, extensions: rec.extensions || [], line: rec.line || 1 });
+      } else {
+        const name = joinNemaCell(rec.cells[1] || [], dict);
+        const desc = rec.cells.slice(2).map(c => joinNemaCell(c, dict)).filter(Boolean).join(" · ");
+        nodes.push({ id: spec, name, description: desc, extensions: rec.extensions || [], line: rec.line || 1 });
+      }
     }
   }
 
@@ -14157,6 +14511,331 @@ function layoutNemaGraph(domain, dict) {
   return { width: WIDTH, height: HEIGHT, nodes, edges: graphEdges };
 }
 
+/* 渲染 .NEMA v1.2 Benchmark 实测面板 (含当前文档实时对照 + 8 组官方基准数据) */
+function renderNemaBenchmarkView(wrap, rawText, parsed) {
+  const enc = new TextEncoder();
+  const rawBytes = enc.encode(rawText).length;
+
+  // 1. 当前文档实时同语义对照
+  const liveCard = document.createElement("div");
+  liveCard.className = "nema-bench-card";
+  liveCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <strong style="color:var(--blue);font-size:12px;">当前文档实时同语义对照 (.nema / .nemat / JSON / YAML)</strong>
+      <span style="font-size:10px;color:var(--fg-muted);">基于当前编辑器内容自动估算等价 JSON / YAML 格式</span>
+    </div>
+  `;
+
+  let jsonObjectsStr = "[]", jsonPositionalStr = "[]", jsonTaggedStr = "[]", yamlPosStr = "";
+  try {
+    const objData = parsed.domains.map(d => {
+      if (d.mode === "graph") {
+        const nodes = [], edges = [];
+        for (const r of d.records) {
+          if (r.is_node) {
+            const o = { id: r.node_id, name: r.name_x1, description: r.desc_x2 };
+            if (r.extensions && r.extensions.length) o.extensions = Object.fromEntries(r.extensions);
+            nodes.push(o);
+          } else if (r.is_edge) {
+            const m = (r.edge_spec || "").match(/^([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)$/);
+            const o = { id: m ? m[3] : "", from: m ? m[1] : "", to: m ? m[5] : "", relation: r.name_x1, description: r.desc_x2 };
+            if (r.extensions && r.extensions.length) o.extensions = Object.fromEntries(r.extensions);
+            edges.push(o);
+          }
+        }
+        return { id: d.id, mode: "graph", revision: d.revision, nodes, edges };
+      }
+      const records = d.records.map(r => {
+        const o = {};
+        d.columns.forEach((c, idx) => { o[c] = (r.cells[idx] || []).join(" "); });
+        return o;
+      });
+      return { id: d.id, mode: d.mode, revision: d.revision, records };
+    });
+    jsonObjectsStr = JSON.stringify(objData);
+
+    const posData = parsed.domains.map(d => {
+      if (d.mode === "graph") {
+        const nodes = d.records.filter(r => r.is_node).map(r => [r.node_id, r.name_x1, r.desc_x2, ...(r.extensions || []).map(x => x[1])]);
+        const edges = d.records.filter(r => r.is_edge).map(r => {
+          const m = (r.edge_spec || "").match(/^([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)([><=])([A-Za-z][A-Za-z0-9_.-]*)$/);
+          return [m ? m[3] : "", m ? m[1] : "", m ? m[5] : "", m ? m[2] : ">", r.name_x1, r.desc_x2, ...(r.extensions || []).map(x => x[1])];
+        });
+        return [nodes, edges];
+      }
+      return d.records.map(r => d.columns.map((_, idx) => (r.cells[idx] || []).join(" ")));
+    });
+    jsonPositionalStr = JSON.stringify(posData);
+
+    const taggedData = parsed.domains.map(d => {
+      const tag = d.mode === "5w1h" ? "w" : (d.mode === "graph" ? "g" : "t");
+      return { [tag]: posData[parsed.domains.indexOf(d)] };
+    });
+    jsonTaggedStr = JSON.stringify(taggedData);
+
+    yamlPosStr = posData.map(dom => {
+      if (Array.isArray(dom)) {
+        return dom.map(row => "  - [" + (Array.isArray(row) ? row.map(v => JSON.stringify(v)).join(", ") : JSON.stringify(row)) + "]").join("\n");
+      }
+      return "";
+    }).join("\n---\n");
+  } catch (_) {}
+
+  const nematRes = nemaEncode(rawText);
+  const nematBytes = enc.encode(nematRes.text).length;
+  const jsonObjBytes = enc.encode(jsonObjectsStr).length;
+  const jsonPosBytes = enc.encode(jsonPositionalStr).length;
+  const jsonTagBytes = enc.encode(jsonTaggedStr).length;
+  const yamlPosBytes = enc.encode(yamlPosStr).length;
+
+  function estTok(b) { return Math.max(1, Math.round(b / 2.7)); }
+  function estUni(b) { return Math.max(1, Math.round(b / 2.5)); }
+
+  const liveRows = [
+    { name: ".nema (native v1.2)", bytes: rawBytes, bpe: estTok(rawBytes), uni: estUni(rawBytes) },
+    { name: ".nemat (transport)", bytes: nematBytes, bpe: estTok(nematBytes), uni: estUni(nematBytes) },
+    { name: "JSON objects", bytes: jsonObjBytes, bpe: estTok(jsonObjBytes), uni: estUni(jsonObjBytes) },
+    { name: "JSON positional", bytes: jsonPosBytes, bpe: estTok(jsonPosBytes), uni: estUni(jsonPosBytes) },
+    { name: "JSON tagged (w/t/g)", bytes: jsonTagBytes, bpe: estTok(jsonTagBytes), uni: estUni(jsonTagBytes) },
+    { name: "YAML positional", bytes: yamlPosBytes, bpe: estTok(yamlPosBytes), uni: estUni(yamlPosBytes) }
+  ];
+
+  const maxLiveBpe = Math.max(...liveRows.map(r => r.bpe), 1);
+  const baseObjBpe = liveRows[2].bpe || 1;
+  const basePosBpe = liveRows[3].bpe || 1;
+
+  let liveTableHtml = `
+    <table class="nema-table" style="margin-top:6px;">
+      <thead>
+        <tr>
+          <th>格式 (Format)</th>
+          <th>Bytes</th>
+          <th>BPE (~Token)</th>
+          <th>Unigram (~Token)</th>
+          <th>vs JSON objects</th>
+          <th>vs JSON positional</th>
+          <th>直观对比</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const r of liveRows) {
+    const isNema = r.name.startsWith(".nema");
+    const vsObj = ((r.bpe - baseObjBpe) / baseObjBpe * 100).toFixed(1);
+    const vsPos = ((r.bpe - basePosBpe) / basePosBpe * 100).toFixed(1);
+    const ratio = Math.max(0.04, Math.min(1, r.bpe / maxLiveBpe));
+    liveTableHtml += `
+      <tr>
+        <td style="${isNema ? 'color:var(--blue);font-weight:600;' : ''}">${escapeHtml(r.name)}</td>
+        <td style="font-family:monospace;">${r.bytes} B</td>
+        <td style="font-family:monospace;">${r.bpe}</td>
+        <td style="font-family:monospace;">${r.uni}</td>
+        <td style="font-family:monospace;color:${vsObj < 0 ? '#3fb950' : 'var(--fg-muted)'};">${vsObj > 0 ? '+' : ''}${vsObj}%</td>
+        <td style="font-family:monospace;color:${vsPos < 0 ? '#3fb950' : 'var(--fg-muted)'};">${vsPos > 0 ? '+' : ''}${vsPos}%</td>
+        <td style="width:120px;">
+          <div class="nema-bench-bar-track">
+            <div class="nema-bench-bar-fill" style="width:${(ratio * 100).toFixed(1)}%;background:${isNema ? 'var(--blue)' : 'var(--fg-muted)'};"></div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+  liveTableHtml += `</tbody></table>`;
+  liveCard.innerHTML += liveTableHtml;
+  wrap.appendChild(liveCard);
+
+  // 2. 官方 Empirical Token Benchmark 标题与 3 Headline Cards
+  const offCard = document.createElement("div");
+  offCard.className = "nema-bench-card";
+  offCard.style.marginTop = "12px";
+
+  let headerHtml = `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <strong style="color:var(--blue);font-size:12px;">官方 Empirical Token Benchmark (.NEMA v1.2 · Release R7)</strong>
+      <div style="display:flex;gap:4px;">
+        <button class="nema-chip ${!NEMA.benchUseUnigram ? 'active' : ''}" id="btn-bench-bpe">SentencePiece BPE (32k)</button>
+        <button class="nema-chip ${NEMA.benchUseUnigram ? 'active' : ''}" id="btn-bench-uni">SentencePiece Unigram (32k)</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--fg-muted);margin:4px 0 8px;">
+      免责声明: 基于真实 SentencePiece BPE / Unigram (vocab=32,000, byte_fallback=True) 本地实测；不同商业模型私有词表会有常数级偏移，不代表商业 API 计费账单。
+    </div>
+    <div class="nema-bench-grid">
+      <div class="nema-bench-card" style="margin:0;">
+        <div class="nema-bench-kpi">-53.68% (english_60)</div>
+        <div style="font-size:11px;color:var(--fg);">.nema 相比标准紧凑 JSON (objects): 3,012 vs 6,502 BPE tokens</div>
+      </div>
+      <div class="nema-bench-card" style="margin:0;">
+        <div class="nema-bench-kpi">-21.79% / -24.15%</div>
+        <div style="font-size:11px;color:var(--fg);">english_60: .nema (3,012) vs 位置数组 JSON (3,851) / Tagged JSON (3,971)</div>
+      </div>
+      <div class="nema-bench-card" style="margin:0;">
+        <div class="nema-bench-kpi">-56.76% (graph_40n_160e)</div>
+        <div style="font-size:11px;color:var(--fg);">.nemat 相比去键名 JSON (positional): 1,247 vs 2,884 BPE tokens</div>
+      </div>
+    </div>
+  `;
+  offCard.innerHTML = headerHtml;
+
+  // 3. 场景选择器 Chips
+  const scChips = document.createElement("div");
+  scChips.className = "nema-chips";
+  scChips.innerHTML = '<span style="font-size:11px;color:var(--fg-muted);margin-right:4px;">实测场景:</span>';
+  OFFICIAL_BENCHMARK_V12.forEach((sc, idx) => {
+    const chip = document.createElement("button");
+    chip.className = "nema-chip" + (NEMA.benchScenarioIdx === idx ? " active" : "");
+    chip.textContent = sc.scenario;
+    chip.title = sc.label_zh;
+    chip.addEventListener("click", () => {
+      NEMA.benchScenarioIdx = idx;
+      renderNemaPreview();
+    });
+    scChips.appendChild(chip);
+  });
+  offCard.appendChild(scChips);
+
+  // 4. 当前选中场景明细卡片
+  const curSc = OFFICIAL_BENCHMARK_V12[NEMA.benchScenarioIdx] || OFFICIAL_BENCHMARK_V12[0];
+  const useUni = NEMA.benchUseUnigram;
+  const scDetailCard = document.createElement("div");
+  scDetailCard.className = "nema-bench-card";
+  scDetailCard.style.marginTop = "6px";
+
+  const scItems = useUni ? [
+    ["JSON (objects)", curSc.unigram_json, curSc.raw_bytes_json],
+    ["JSON (positional)", curSc.unigram_json_positional, curSc.raw_bytes_json_positional],
+    ["JSON (tagged w/t/g)", curSc.unigram_json_tagged, curSc.raw_bytes_json_tagged],
+    ["YAML (positional)", curSc.unigram_yaml_positional, curSc.raw_bytes_yaml_positional],
+    [".nema (native v1.2)", curSc.unigram_nema, curSc.raw_bytes_nema],
+    [".nemat (transport)", curSc.unigram_nemat, curSc.raw_bytes_nema]
+  ] : [
+    ["JSON (objects)", curSc.bpe_json, curSc.raw_bytes_json],
+    ["JSON (positional)", curSc.bpe_json_positional, curSc.raw_bytes_json_positional],
+    ["JSON (tagged w/t/g)", curSc.bpe_json_tagged, curSc.raw_bytes_json_tagged],
+    ["YAML (positional)", curSc.bpe_yaml_positional, curSc.raw_bytes_yaml_positional],
+    [".nema (native v1.2)", curSc.bpe_nema, curSc.raw_bytes_nema],
+    [".nemat (transport)", curSc.bpe_nemat, curSc.raw_bytes_nema]
+  ];
+
+  const maxScTok = Math.max(...scItems.map(x => x[1]), 1);
+  const baseScObj = scItems[0][1] || 1;
+  const baseScPos = scItems[1][1] || 1;
+
+  let scDetailHtml = `
+    <div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:6px;">
+      场景详情: ${curSc.scenario} — ${curSc.label_zh}
+    </div>
+    <table class="nema-table">
+      <thead>
+        <tr>
+          <th>格式</th>
+          <th>Token (${useUni ? 'Unigram' : 'BPE'})</th>
+          <th>Bytes</th>
+          <th>vs Obj</th>
+          <th>vs Pos</th>
+          <th>直观对比</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const [name, tok, b] of scItems) {
+    const isNema = name.startsWith(".nema");
+    const vsObj = ((tok - baseScObj) / baseScObj * 100).toFixed(1);
+    const vsPos = ((tok - baseScPos) / baseScPos * 100).toFixed(1);
+    const ratio = Math.max(0.03, Math.min(1, tok / maxScTok));
+    scDetailHtml += `
+      <tr>
+        <td style="${isNema ? 'color:var(--blue);font-weight:600;' : ''}">${name}</td>
+        <td style="font-family:monospace;">${tok}</td>
+        <td style="font-family:monospace;color:var(--fg-muted);">${b} B</td>
+        <td style="font-family:monospace;color:${vsObj < 0 ? '#3fb950' : 'var(--fg-muted)'};">${vsObj > 0 ? '+' : ''}${vsObj}%</td>
+        <td style="font-family:monospace;color:${vsPos < 0 ? '#3fb950' : 'var(--fg-muted)'};">${vsPos > 0 ? '+' : ''}${vsPos}%</td>
+        <td style="width:140px;">
+          <div class="nema-bench-bar-track">
+            <div class="nema-bench-bar-fill" style="width:${(ratio * 100).toFixed(1)}%;background:${isNema ? 'var(--blue)' : 'var(--fg-muted)'};"></div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }
+  scDetailHtml += `</tbody></table>`;
+  scDetailCard.innerHTML = scDetailHtml;
+  offCard.appendChild(scDetailCard);
+
+  // 5. 8 场景总表
+  const allTableCard = document.createElement("div");
+  allTableCard.style.marginTop = "8px";
+  let allHtml = `
+    <div style="font-size:11px;font-weight:600;color:var(--fg-muted);margin-bottom:4px;">全量 8 组基准数据总表 (${useUni ? 'Unigram 32k' : 'BPE 32k'})</div>
+    <table class="nema-table">
+      <thead>
+        <tr>
+          <th>数据集 (Dataset)</th>
+          <th>JSON (obj)</th>
+          <th>JSON (pos)</th>
+          <th>JSON (tagged)</th>
+          <th>YAML (pos)</th>
+          <th>.nema</th>
+          <th>.nemat</th>
+          <th>.nema vs Obj</th>
+          <th>.nema vs Pos</th>
+          <th>.nemat vs Pos</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const s of OFFICIAL_BENCHMARK_V12) {
+    const jo = useUni ? s.unigram_json : s.bpe_json;
+    const jp = useUni ? s.unigram_json_positional : s.bpe_json_positional;
+    const jt = useUni ? s.unigram_json_tagged : s.bpe_json_tagged;
+    const yp = useUni ? s.unigram_yaml_positional : s.bpe_yaml_positional;
+    const nm = useUni ? s.unigram_nema : s.bpe_nema;
+    const nmt = useUni ? s.unigram_nemat : s.bpe_nemat;
+    const vsObj = ((nm - jo) / jo * 100).toFixed(1);
+    const vsPos = ((nm - jp) / jp * 100).toFixed(1);
+    const nmtVsPos = ((nmt - jp) / jp * 100).toFixed(1);
+    allHtml += `
+      <tr>
+        <td style="font-family:monospace;font-weight:600;">${s.scenario}</td>
+        <td style="font-family:monospace;">${jo}</td>
+        <td style="font-family:monospace;">${jp}</td>
+        <td style="font-family:monospace;">${jt}</td>
+        <td style="font-family:monospace;">${yp}</td>
+        <td style="font-family:monospace;color:var(--blue);font-weight:600;">${nm}</td>
+        <td style="font-family:monospace;color:var(--blue);font-weight:600;">${nmt}</td>
+        <td style="font-family:monospace;color:${vsObj < 0 ? '#3fb950' : 'var(--fg-muted)'};">${vsObj > 0 ? '+' : ''}${vsObj}%</td>
+        <td style="font-family:monospace;color:${vsPos < 0 ? '#3fb950' : 'var(--orange, #d29922)'};">${vsPos > 0 ? '+' : ''}${vsPos}%</td>
+        <td style="font-family:monospace;color:${nmtVsPos < 0 ? '#3fb950' : 'var(--orange, #d29922)'};">${nmtVsPos > 0 ? '+' : ''}${nmtVsPos}%</td>
+      </tr>
+    `;
+  }
+  allHtml += `</tbody></table>`;
+  allTableCard.innerHTML = allHtml;
+  offCard.appendChild(allTableCard);
+
+  // 6. v1.2 Graph 单空格优化卡片
+  const baf = OFFICIAL_SYNTAX_BEFORE_AFTER;
+  const optCard = document.createElement("div");
+  optCard.className = "nema-bench-card";
+  optCard.style.marginTop = "8px";
+  optCard.innerHTML = `
+    <div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:2px;">
+      v1.2 语法优化验证：Graph 单空格节点标记 (graph_3n_4e)
+    </div>
+    <div style="font-size:10.5px;font-family:monospace;color:var(--fg);">
+      旧版 (A \\=LoginAPI 需字面量前缀): ${baf.oldBpe} BPE / ${baf.oldUni} Unigram / ${baf.oldBytes} B &nbsp;→&nbsp; 新版 v1.2 ( A LoginAPI 单空格节点行): ${baf.newBpe} BPE / ${baf.newUni} Unigram / ${baf.newBytes} B (${baf.deltaBpePct > 0 ? '+' : ''}${baf.deltaBpePct}% BPE)
+    </div>
+  `;
+  offCard.appendChild(optCard);
+
+  wrap.appendChild(offCard);
+
+  const bpeBtn = offCard.querySelector("#btn-bench-bpe");
+  const uniBtn = offCard.querySelector("#btn-bench-uni");
+  if (bpeBtn) bpeBtn.addEventListener("click", () => { NEMA.benchUseUnigram = false; renderNemaPreview(); });
+  if (uniBtn) uniBtn.addEventListener("click", () => { NEMA.benchUseUnigram = true; renderNemaPreview(); });
+}
+
 /* 渲染 NEMA 预览面板 */
 function renderNemaPreview() {
   const pv = document.getElementById("nema-preview");
@@ -14174,10 +14853,18 @@ function renderNemaPreview() {
   const wrap = document.createElement("div");
   wrap.className = "nema-body-view";
 
-  // 顶部视图切换栏 (Table / 5W1H / Graph) + 仲裁状态
+  // 可见空白符预览框
+  if (NEMA.showWs) {
+    const wsBox = document.createElement("div");
+    wsBox.className = "nema-vis-ws";
+    wsBox.innerHTML = `<div style="display:flex;justify-content:space-between;color:var(--fg-muted);font-size:10px;margin-bottom:4px;"><span>可见空白符预览 (⇥ = Tab, · = Space)</span><span>Graph: 1 个前导空格 ·A 声明节点，0 个前导空格 A>X>B 声明关系，≥2 空格续行 X2/X3+</span></div><pre style="margin:0;font-family:monospace;font-size:11px;max-height:110px;overflow:auto;line-height:1.4;">${escapeHtml(formatVisibleWhitespace(rawText))}</pre>`;
+    wrap.appendChild(wsBox);
+  }
+
+  // 顶部视图切换栏 (Table / 5W1H / Graph / Benchmark) + 仲裁状态
   const tabs = document.createElement("div");
   tabs.className = "nema-view-tabs";
-  const views = [["table", "▦ Table 默认"], ["5w1h", "? 5W1H 语义"], ["graph", "> Graph 拓扑"]];
+  const views = [["table", "▦ Table 默认"], ["5w1h", "? 5W1H 语义"], ["graph", "> Graph 拓扑"], ["benchmark", "📊 Benchmark 实测"]];
   views.forEach(([vid, label]) => {
     const btn = document.createElement("button");
     btn.className = "nema-tab-btn" + (NEMA.view === vid ? " active" : "");
@@ -14200,7 +14887,9 @@ function renderNemaPreview() {
   }
 
   // 渲染主体
-  if (NEMA.view === "graph") {
+  if (NEMA.view === "benchmark") {
+    renderNemaBenchmarkView(wrap, rawText, parsed);
+  } else if (NEMA.view === "graph") {
     let graphDomain = parsed.domains.find(d => d.mode === "graph") || parsed.domains[0];
     if (graphDomain) {
       const layout = layoutNemaGraph(graphDomain, dict);
@@ -14225,22 +14914,70 @@ function renderNemaPreview() {
       defs.appendChild(marker);
       svg.appendChild(defs);
 
-      const detail = document.createElement("div");
-      detail.className = "nema-edge-detail";
-      detail.innerHTML = "<strong>Edge 详情</strong>: 点击下方任意边或说明标签查看独立 Edge ID 与完整语义说明";
+      if (!NEMA.selectedItem) {
+        if (layout.edges.length) {
+          const e0 = layout.edges[0];
+          NEMA.selectedItem = {
+            type: "edge",
+            id: e0.id,
+            raw_x0: e0.raw_x0,
+            route: e0.route,
+            name_x1: e0.relation,
+            desc_x2: e0.description,
+            extensions: e0.extensions || [],
+            line: e0.line || 1
+          };
+        } else if (layout.nodes.length) {
+          const n0 = layout.nodes[0];
+          NEMA.selectedItem = {
+            type: "node",
+            id: n0.id,
+            name_x1: n0.name,
+            desc_x2: n0.description,
+            extensions: n0.extensions || [],
+            line: n0.line || 1
+          };
+        }
+      }
 
-      function selectEdge(edge) {
-        svg.querySelectorAll(".nema-edge").forEach(el => el.classList.toggle("selected", el.dataset.edgeId === edge.id));
-        detail.innerHTML = `<strong>Edge [${escapeHtml(edge.id)}]</strong>: <code>${escapeHtml(edge.from)}</code> ${edge.direction === "undirected" ? "—" : "→"} <code>${escapeHtml(edge.to)}</code> | 关系: <b>${escapeHtml(edge.relation || "关联")}</b> ${edge.description ? `<br><small style="color:var(--fg-muted)">详细描述: ${escapeHtml(edge.description)}</small>` : ""}`;
+      function updateSelection() {
+        const item = NEMA.selectedItem;
+        svg.querySelectorAll(".nema-edge").forEach(el => {
+          el.classList.toggle("selected", item && item.type === "edge" && item.id === el.dataset.edgeId);
+        });
+        svg.querySelectorAll(".nema-node").forEach(el => {
+          el.classList.toggle("selected", item && item.type === "node" && item.id === el.dataset.nodeId);
+        });
+        document.querySelectorAll(".nema-chip[data-graph-id]").forEach(el => {
+          el.classList.toggle("active", item && item.id === el.dataset.graphId);
+        });
+        renderInspector();
       }
 
       for (const e of layout.edges) {
+        const isSel = NEMA.selectedItem && NEMA.selectedItem.type === "edge" && NEMA.selectedItem.id === e.id;
         const path = document.createElementNS(ns, "path");
         path.setAttribute("d", e.path);
-        path.setAttribute("class", "nema-edge");
+        path.setAttribute("class", "nema-edge" + (isSel ? " selected" : ""));
         path.dataset.edgeId = e.id;
         if (e.direction === "directed") path.setAttribute("marker-end", "url(#nema-arrow)");
-        path.addEventListener("click", () => selectEdge(e));
+        const titleEl = document.createElementNS(ns, "title");
+        let extTip = (e.extensions && e.extensions.length) ? ("\n" + e.extensions.map(x => `${x[0]} · extension: ${x[1]}`).join("\n")) : "";
+        titleEl.textContent = `关系说明 · X2 (只读预览)\n${e.id} · ${e.relation || "(未命名)"}\n方向: ${e.route} (X0: ${e.raw_x0})\nX2: ${e.description || "未填写 X2（可省略）"}${extTip}`;
+        path.appendChild(titleEl);
+        path.addEventListener("click", () => {
+          NEMA.selectedItem = {
+            type: "edge",
+            id: e.id,
+            raw_x0: e.raw_x0,
+            route: e.route,
+            name_x1: e.relation,
+            desc_x2: e.description,
+            extensions: e.extensions || [],
+            line: e.line || 1
+          };
+          updateSelection();
+        });
         svg.appendChild(path);
 
         const lbl = document.createElementNS(ns, "text");
@@ -14248,14 +14985,32 @@ function renderNemaPreview() {
         lbl.setAttribute("y", e.label.y);
         lbl.setAttribute("class", "nema-edge-label");
         lbl.setAttribute("text-anchor", "middle");
-        lbl.textContent = `${e.id}·${e.relation || "Edge"}`;
-        lbl.addEventListener("click", () => selectEdge(e));
+        const extBadge = (e.extensions && e.extensions.length) ? ` +${e.extensions.length}` : "";
+        lbl.textContent = `${e.id}·${e.relation || "Edge"}${extBadge}`;
+        const lblTitle = document.createElementNS(ns, "title");
+        lblTitle.textContent = titleEl.textContent;
+        lbl.appendChild(lblTitle);
+        lbl.addEventListener("click", () => {
+          NEMA.selectedItem = {
+            type: "edge",
+            id: e.id,
+            raw_x0: e.raw_x0,
+            route: e.route,
+            name_x1: e.relation,
+            desc_x2: e.description,
+            extensions: e.extensions || [],
+            line: e.line || 1
+          };
+          updateSelection();
+        });
         svg.appendChild(lbl);
       }
 
       for (const node of layout.nodes) {
+        const isSel = NEMA.selectedItem && NEMA.selectedItem.type === "node" && NEMA.selectedItem.id === node.id;
         const g = document.createElementNS(ns, "g");
-        g.setAttribute("class", "nema-node");
+        g.setAttribute("class", "nema-node" + (isSel ? " selected" : ""));
+        g.dataset.nodeId = node.id;
         g.setAttribute("transform", `translate(${node.x - 55}, ${node.y - 25})`);
         const rect = document.createElementNS(ns, "rect");
         rect.setAttribute("width", "110");
@@ -14264,30 +15019,150 @@ function renderNemaPreview() {
         tid.setAttribute("class", "id");
         tid.setAttribute("x", "55");
         tid.setAttribute("y", "22");
-        tid.textContent = node.id;
+        const extBadge = (node.extensions && node.extensions.length) ? ` (+${node.extensions.length})` : "";
+        tid.textContent = node.id + extBadge;
         const tname = document.createElementNS(ns, "text");
         tname.setAttribute("class", "name");
         tname.setAttribute("x", "55");
         tname.setAttribute("y", "38");
         tname.textContent = node.name ? node.name.slice(0, 16) : "";
+
+        const nTitle = document.createElementNS(ns, "title");
+        let extTip = (node.extensions && node.extensions.length) ? ("\n" + node.extensions.map(x => `${x[0]} · extension: ${x[1]}`).join("\n")) : "";
+        nTitle.textContent = `节点说明 · X2 (只读预览)\n${node.id} · ${node.name || "(未命名)"}\nX2: ${node.description || "未填写 X2（可省略）"}${extTip}`;
+        g.appendChild(nTitle);
+
         g.appendChild(rect); g.appendChild(tid); g.appendChild(tname);
+        g.addEventListener("click", () => {
+          NEMA.selectedItem = {
+            type: "node",
+            id: node.id,
+            name_x1: node.name,
+            desc_x2: node.description,
+            extensions: node.extensions || [],
+            line: node.line || 1
+          };
+          updateSelection();
+        });
         svg.appendChild(g);
       }
 
       wrap.appendChild(svg);
-      wrap.appendChild(detail);
 
-      const edgeList = document.createElement("div");
-      edgeList.className = "nema-edge-list";
-      for (const e of layout.edges) {
-        const item = document.createElement("button");
-        item.className = "nema-edge-item";
-        item.innerHTML = `<b>${escapeHtml(e.id)}</b>: ${escapeHtml(e.from)} ${e.direction === "undirected" ? "—" : "→"} ${escapeHtml(e.to)} · <i>${escapeHtml(e.relation)}</i> ${e.description ? "— " + escapeHtml(e.description) : ""}`;
-        item.addEventListener("click", () => selectEdge(e));
-        edgeList.appendChild(item);
+      // 快速选择器 Chips (Quick Picker Chips)
+      const chipsBox = document.createElement("div");
+      chipsBox.className = "nema-chips";
+      chipsBox.innerHTML = '<span style="font-size:10.5px;color:var(--fg-muted);">节点:</span>';
+      layout.nodes.forEach(node => {
+        const btn = document.createElement("button");
+        btn.className = "nema-chip" + (NEMA.selectedItem && NEMA.selectedItem.id === node.id ? " active" : "");
+        btn.dataset.graphId = node.id;
+        btn.textContent = `Node ${node.id} · ${node.name || ""}`;
+        btn.addEventListener("click", () => {
+          NEMA.selectedItem = {
+            type: "node",
+            id: node.id,
+            name_x1: node.name,
+            desc_x2: node.description,
+            extensions: node.extensions || [],
+            line: node.line || 1
+          };
+          updateSelection();
+        });
+        chipsBox.appendChild(btn);
+      });
+      const sep = document.createElement("span");
+      sep.style.cssText = "width:1px;height:14px;background:var(--border);margin:0 4px;";
+      chipsBox.appendChild(sep);
+      const edgeLbl = document.createElement("span");
+      edgeLbl.style.cssText = "font-size:10.5px;color:var(--fg-muted);";
+      edgeLbl.textContent = "关系:";
+      chipsBox.appendChild(edgeLbl);
+      layout.edges.forEach(e => {
+        const btn = document.createElement("button");
+        btn.className = "nema-chip" + (NEMA.selectedItem && NEMA.selectedItem.id === e.id ? " active" : "");
+        btn.dataset.graphId = e.id;
+        btn.textContent = `Edge ${e.id} · ${e.relation || ""}`;
+        btn.addEventListener("click", () => {
+          NEMA.selectedItem = {
+            type: "edge",
+            id: e.id,
+            raw_x0: e.raw_x0,
+            route: e.route,
+            name_x1: e.relation,
+            desc_x2: e.description,
+            extensions: e.extensions || [],
+            line: e.line || 1
+          };
+          updateSelection();
+        });
+        chipsBox.appendChild(btn);
+      });
+      wrap.appendChild(chipsBox);
+
+      // 底部固定 Graph Inspector 卡片
+      const inspectorCard = document.createElement("div");
+      inspectorCard.className = "nema-bench-card";
+      inspectorCard.style.cssText = "margin-top:6px;border-color:var(--blue);";
+      wrap.appendChild(inspectorCard);
+
+      function renderInspector() {
+        const item = NEMA.selectedItem;
+        if (!item) {
+          inspectorCard.innerHTML = '<span style="color:var(--fg-muted);font-size:11px;">未选中任何 Graph 节点或关系</span>';
+          return;
+        }
+        let topBar = "";
+        let rowsHtml = "";
+        if (item.type === "node") {
+          topBar = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-weight:600;font-size:11.5px;color:var(--blue);">Graph Inspector · Node ${escapeHtml(item.id)} · ${escapeHtml(item.name_x1 || "")}</span>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span style="font-size:10px;color:var(--fg-muted);">1 个前导空格声明节点</span>
+                <button class="tb-btn" id="nema-jump-btn" style="padding:1px 6px;font-size:10.5px;">跳至 L${item.line}</button>
+              </div>
+            </div>
+          `;
+          rowsHtml = `
+            <tr><td class="lbl">X0 · Node ID</td><td style="font-family:monospace;">${escapeHtml(item.id)}</td></tr>
+            <tr><td class="lbl">X1 · 节点名称 (原样保留)</td><td style="font-family:monospace;">${escapeHtml(item.name_x1 || "—")}</td></tr>
+            <tr><td class="lbl">X2 · 节点说明 (可省略)</td><td>${escapeHtml(item.desc_x2 || "未填写 X2（可省略）")}</td></tr>
+          `;
+        } else {
+          topBar = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-weight:600;font-size:11.5px;color:var(--blue);">Graph Inspector · Edge ${escapeHtml(item.id)} · ${escapeHtml(item.name_x1 || "")} (${escapeHtml(item.route || "")})</span>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span style="font-size:10px;color:var(--fg-muted);">0 个前导空格声明关系</span>
+                <button class="tb-btn" id="nema-jump-btn" style="padding:1px 6px;font-size:10.5px;">跳至 L${item.line}</button>
+              </div>
+            </div>
+          `;
+          rowsHtml = `
+            <tr><td class="lbl">X0 · 关系表达式</td><td style="font-family:monospace;">${escapeHtml(item.raw_x0 || "")} (${escapeHtml(item.route || "")})</td></tr>
+            <tr><td class="lbl">X1 · 关系名称 (原样保留)</td><td style="font-family:monospace;">${escapeHtml(item.name_x1 || "—")}</td></tr>
+            <tr><td class="lbl">X2 · 关系说明 (可省略)</td><td>${escapeHtml(item.desc_x2 || "未填写 X2（可省略）")}</td></tr>
+          `;
+        }
+        if (item.extensions && item.extensions.length) {
+          for (const [k, v] of item.extensions) {
+            rowsHtml += `<tr><td class="lbl" style="color:var(--orange, #d29922);">${escapeHtml(k)} · extension</td><td style="font-family:monospace;">${escapeHtml(v)}</td></tr>`;
+          }
+        }
+        inspectorCard.innerHTML = topBar + `<table class="nema-inspector-table"><tbody>${rowsHtml}</tbody></table>`;
+        const jumpBtn = inspectorCard.querySelector("#nema-jump-btn");
+        if (jumpBtn) {
+          jumpBtn.addEventListener("click", () => {
+            const line = item.line || 1;
+            t.cursor = { row: line - 1, col: 0 };
+            t.sel = null;
+            renderVim(t);
+            scrollRowIntoView(line - 1, "auto");
+          });
+        }
       }
-      wrap.appendChild(edgeList);
-      if (layout.edges.length) selectEdge(layout.edges[0]);
+      renderInspector();
     }
   } else if (NEMA.view === "5w1h") {
     const axes = ["What (事物/动作)", "Why (原因/目标)", "How (途径/方法)", "Who (执行/对象)", "When (时机/条件)", "Where (环境/范围)"];
@@ -14647,29 +15522,48 @@ function nemaAddContinuation(t) {
   setTip("已插入纵向意群续接行 (空格缩进)");
 }
 
+function nemaInsertV12Sample(t) {
+  snapshot(t);
+  const text = t.lines.join("\n");
+  const trimmed = text.replace(/\n+$/, "");
+  const combined = trimmed.length === 0 ? COMPLETE_V12_SAMPLE : (trimmed + "\n" + COMPLETE_V12_SAMPLE);
+  t.lines = combined.replace(/\r\n?/g, "\n").split("\n");
+  t.dirty = true;
+  t.nemaPreview = true;
+  NEMA.view = "table";
+  renderVim(t);
+  nemaRefresh();
+  setTip("✦ 已载入 .NEMA v1.2 (R7) 官方三模式示例 (5W1H Tja1 + Table Ttable1 + Graph Gauth1 带 X3 扩展 APIKey / HTTP401)");
+}
+
 function nemaInsert5w1h(t) {
   snapshot(t);
-  const tmpl = ["\t?1", "BuildProject MaintainQuality Rust CoreEngineer WhenReady InWorkspace .", "", "", ""];
-  t.lines = t.lines.concat(tmpl);
-  t.dirty = true; renderVim(t); nemaRefresh();
+  const text = t.lines.join("\n");
+  const trimmed = text.replace(/\n+$/, "");
+  const nextId = (trimmed.match(/^\t/gm) || []).length + 1;
+  const sample = (trimmed.length === 0 ? "" : trimmed + "\n") + `\tTtask${nextId} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n`;
+  t.lines = sample.split("\n");
+  t.dirty = true;
+  t.nemaPreview = true;
+  NEMA.view = "5w1h";
+  renderVim(t);
+  nemaRefresh();
   setTip("已追加 5W1H 语义模板");
 }
 
 function nemaInsertGraph(t) {
   snapshot(t);
-  const tmpl = [
-    "\t>1",
-    "A ClientApp FrontEnd",
-    "B Gateway ProxyService",
-    "C AuthAPI OAuth2",
-    "A>X>B Sends RequestPayload",
-    "B>Y>C Forwards TokenHeader",
-    "B<Z<A Returns HTTP200OK",
-    "", "", ""
-  ];
-  t.lines = t.lines.concat(tmpl);
-  t.dirty = true; renderVim(t); nemaRefresh();
-  setTip("已追加 Graph 拓扑节点与边模板");
+  const text = t.lines.join("\n");
+  const trimmed = text.replace(/\n+$/, "");
+  const nextId = (trimmed.match(/^\t/gm) || []).length + 1;
+  const sample = (trimmed.length === 0 ? "" : trimmed + "\n") + `\t>Gservice${nextId} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n`;
+  t.lines = sample.split("\n");
+  t.dirty = true;
+  t.nemaPreview = true;
+  NEMA.view = "graph";
+  renderVim(t);
+  nemaRefresh();
+  setTip("已追加 Graph 拓扑节点与边模板 (v1.2 单空格节点 / 0空格边 / X3+ 扩展)");
 }
 
 function nemaInsertDict(t) {

@@ -1,22 +1,52 @@
-//! NEMA v1.5 工具条、共享 Codec 对接、租约仲裁与右侧交互式预览面板 (`Table / 5W1H / Graph`)
+//! NEMA v1.2 (R7) / v1.5 工具条、共享 Codec 对接、租约仲裁、交互式预览与实测 Benchmark 面板 (`Table / 5W1H / Graph / Benchmark`)
 
 use super::*;
 use crate::i18n::trz;
 use nema_codec::{
-    candidate_dictionary_details, find_reused_positions, normalize_nema_newlines, render_source,
+    candidate_dictionary_details, compare_document_formats, find_reused_positions,
+    normalize_nema_newlines, parse_domain_header_v12, render_source,
     toggle_table_header_in_source, CodecFormat, DomainMode, EdgeDirection, NemaCodec,
     NemaLeaseArbitrator, OwnershipRole, RenderedDocument, RenderedDomain, StandardNemaCodec,
-    TokenProfile,
+    TokenProfile, COMPLETE_V12_SAMPLE, OFFICIAL_BENCHMARK_V12, OFFICIAL_SYNTAX_BEFORE_AFTER,
 };
+
+/// Graph 选中元素详情（支持同时检视 Node 与 Edge，包含 `X0 / X1 / X2 / X3+ extensions`）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectedGraphItem {
+    Node {
+        id: String,
+        name_x1: String,
+        desc_x2: String,
+        extensions: Vec<(String, String)>,
+        line: usize,
+    },
+    Edge {
+        id: String,
+        raw_x0: String,
+        route: String,
+        name_x1: String,
+        desc_x2: String,
+        extensions: Vec<(String, String)>,
+        line: usize,
+    },
+}
 
 /// NEMA 预览与状态机缓存
 #[derive(Debug, Default, Clone)]
 pub struct NemaUiState {
     pub arbitrator: NemaLeaseArbitrator,
     pub selected_edge: Option<(String, String, String, String, String, usize)>,
+    pub selected_item: Option<SelectedGraphItem>,
     pub info_banner: Option<String>,
     pub locked_words: Vec<String>,
+    pub show_whitespace: bool,
+    pub bench_use_unigram: bool,
+    pub bench_scenario_idx: usize,
     pub cached_render: Option<((u64, u64), Result<RenderedDocument, String>)>,
+}
+
+fn format_visible_whitespace(s: &str) -> String {
+    s.replace(' ', "·").replace('\t', "⇥")
 }
 
 pub(super) fn is_nema_doc(d: &crate::doc::Doc) -> bool {
@@ -163,6 +193,13 @@ impl App {
                                     }
                                     sep(ui);
                                     if ui
+                                        .button(egui::RichText::new("✦ 示例 v1.2").size(11.0))
+                                        .tip(trz("插入 5W1H 模板"))
+                                        .clicked()
+                                    {
+                                        action = Some("insert_v12_sample");
+                                    }
+                                    if ui
                                         .button(egui::RichText::new("? 5W1H").size(11.0))
                                         .tip(trz("插入 5W1H 模板"))
                                         .clicked()
@@ -220,8 +257,23 @@ impl App {
                                     {
                                         action = Some("show_reused");
                                     }
+                                    let ws_btn = egui::Button::new(
+                                        egui::RichText::new("空格 · / Tab ⇥").size(11.0),
+                                    )
+                                    .fill(if self.nema.show_whitespace {
+                                        tc.bg_active
+                                    } else {
+                                        egui::Color32::TRANSPARENT
+                                    });
                                     if ui
-                                        .button(egui::RichText::new("Token").size(11.0))
+                                        .add(ws_btn)
+                                        .tip(trz("源码 / 渲染预览切换 (Ctrl+Shift+V)"))
+                                        .clicked()
+                                    {
+                                        action = Some("toggle_ws");
+                                    }
+                                    if ui
+                                        .button(egui::RichText::new("📊 Benchmark").size(11.0))
                                         .tip(trz("查看 Native vs Nemat Token 节省率与对比"))
                                         .clicked()
                                     {
@@ -241,6 +293,7 @@ impl App {
             Some("toggle_header") => self.nema_toggle_header(),
             Some("add_row") => self.nema_add_row(),
             Some("add_cont") => self.nema_add_cont(),
+            Some("insert_v12_sample") => self.nema_insert_v12_sample(),
             Some("insert_5w1h") => self.nema_insert_5w1h(),
             Some("insert_graph") => self.nema_insert_graph(),
             Some("insert_dict") => self.nema_insert_dict(),
@@ -248,6 +301,10 @@ impl App {
             Some("candidates") => self.nema_candidates(),
             Some("lock_dict") => self.nema_lock_dict(),
             Some("show_reused") => self.nema_show_reused(),
+            Some("toggle_ws") => {
+                self.nema.show_whitespace = !self.nema.show_whitespace;
+                self.nema_preview = true;
+            }
             Some("token_diff") => self.nema_token_diff(),
             _ => {}
         }
@@ -259,7 +316,10 @@ impl App {
         let raw_text = self.docs[i].lines.join("\n");
         let has_domain_header = raw_text.contains("\t\\")
             || raw_text.contains("\t?")
-            || raw_text.contains("\t>");
+            || raw_text.contains("\t>")
+            || raw_text
+                .lines()
+                .any(|l| parse_domain_header_v12(l).is_some());
         let is_nema = is_nema_doc(&self.docs[i]) || has_domain_header;
 
         // 1. 非 NEMA 文档转化为 .nema
@@ -434,11 +494,32 @@ impl App {
         let i = self.active.min(self.docs.len() - 1);
         let cur = self.docs[i].cursor[0].min(self.docs[i].lines.len().saturating_sub(1));
         let mut new_lines = self.docs[i].lines.clone();
-        new_lines.insert(cur + 1, "   ContinuationGroup".to_string());
-        self.apply_nema_lines(i, new_lines, Some([cur + 1, 3]));
+        new_lines.insert(cur + 1, "  ContinuationGroup".to_string());
+        self.apply_nema_lines(i, new_lines, Some([cur + 1, 2]));
         let tip = trz("已插入纵向意群续接行 (空格缩进)").to_string();
         self.docs[i].tip = tip.clone();
         self.log(tip);
+    }
+
+    pub fn nema_insert_v12_sample(&mut self) {
+        let i = self.active.min(self.docs.len() - 1);
+        let raw = self.docs[i].lines.join("\n");
+        let trimmed = raw.trim();
+        let combined = if trimmed.is_empty() {
+            COMPLETE_V12_SAMPLE.to_string()
+        } else {
+            format!("{}\n{}", raw.trim_end_matches('\n'), COMPLETE_V12_SAMPLE)
+        };
+        let new_lines = source_to_doc_lines(&combined);
+        self.apply_nema_lines(i, new_lines, Some([0, 0]));
+        self.nema_preview = true;
+        self.nema_view_mode = 0;
+        let tip = trz("已追加 5W1H 语义模板").to_string();
+        self.docs[i].tip = tip;
+        self.nema.info_banner = Some(
+            "✦ 已载入 .NEMA v1.2 (R7) 官方三模式示例 (5W1H Tja1 + Table Ttable1 + Graph Gauth1 含 X3 扩展 APIKey / HTTP401)"
+                .to_string(),
+        );
     }
 
     pub fn nema_insert_5w1h(&mut self) {
@@ -448,11 +529,11 @@ impl App {
         let next_id = trimmed.lines().filter(|l| l.starts_with('\t')).count() + 1;
         let combined = if trimmed.is_empty() {
             format!(
-                "\t?{next_id}\nBuildProject MaintainQuality Rust CoreEngineer WhenReady InWorkspace .\n\n\n"
+                "\tTtask{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
             )
         } else {
             format!(
-                "{trimmed}\n\t?{next_id}\nBuildProject MaintainQuality Rust CoreEngineer WhenReady InWorkspace .\n\n\n"
+                "{trimmed}\n\tTtask{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
             )
         };
         let new_lines = source_to_doc_lines(&combined);
@@ -471,11 +552,11 @@ impl App {
         let next_id = trimmed.lines().filter(|l| l.starts_with('\t')).count() + 1;
         let combined = if trimmed.is_empty() {
             format!(
-                "\t>{next_id}\nA ClientApp FrontEnd\nB Gateway ProxyService\nA>X>B Sends RequestPayload\n\n\n"
+                "\t>Gauth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
             )
         } else {
             format!(
-                "{trimmed}\n\t>{next_id}\nA ClientApp FrontEnd\nB Gateway ProxyService\nA>X>B Sends RequestPayload\n\n\n"
+                "{trimmed}\n\t>Gauth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
             )
         };
         let new_lines = source_to_doc_lines(&combined);
@@ -611,9 +692,38 @@ impl App {
     pub fn nema_token_diff(&mut self) {
         let i = self.active.min(self.docs.len() - 1);
         let raw = normalize_nema_newlines(&self.docs[i].lines.join("\n"));
-        let codec = StandardNemaCodec;
         self.nema_preview = true;
-        if let Ok(choice) = codec.encode(&raw, &TokenProfile::ByteHeuristic) {
+        self.nema_view_mode = 4;
+        if let Ok(rows) = compare_document_formats(&raw) {
+            if let (Some(nema_row), Some(json_obj), Some(json_pos), Some(json_tag), Some(nemat_row)) = (
+                rows.first(),
+                rows.get(1),
+                rows.get(2),
+                rows.get(3),
+                rows.get(5),
+            ) {
+                self.nema.info_banner = Some(format!(
+                    "📊 实测对照 | .nema: {} B (~{} BPE) | vs JSON对象 {:+.1}% ({} BPE) | vs JSON位置 {:+.1}% ({} BPE) | vs JSON标签 {:+.1}% ({} BPE) | .nemat: {} B (~{} BPE, {:+.1}%)",
+                    nema_row.bytes,
+                    nema_row.bpe_tokens,
+                    nema_row.saving_vs_json_bpe_pct,
+                    json_obj.bpe_tokens,
+                    nema_row.saving_vs_pos_json_bpe_pct,
+                    json_pos.bpe_tokens,
+                    if json_tag.bpe_tokens == 0 {
+                        0.0
+                    } else {
+                        ((nema_row.bpe_tokens as f64) - (json_tag.bpe_tokens as f64))
+                            / (json_tag.bpe_tokens as f64)
+                            * 100.0
+                    },
+                    json_tag.bpe_tokens,
+                    nemat_row.bytes,
+                    nemat_row.bpe_tokens,
+                    nemat_row.saving_vs_pos_json_bpe_pct,
+                ));
+            }
+        } else if let Ok(choice) = StandardNemaCodec.encode(&raw, &TokenProfile::ByteHeuristic) {
             let (bpe_base, _, _) = TokenProfile::BpeHeuristic {
                 model_name: "cl100k_base".to_string(),
             }
@@ -638,13 +748,13 @@ impl App {
         self.log(tip);
     }
 
-    /// 右侧交互式 NEMA 可视化面板 (`Table / 5W1H / Graph`)
+    /// 右侧交互式 NEMA 可视化面板 (`Table / 5W1H / Graph / Benchmark`)
     pub(super) fn nema_ui(&mut self, ui: &mut egui::Ui) {
         let ai = self.active.min(self.docs.len() - 1);
         let key = (self.docs[ai].id, self.docs[ai].rev);
         if self.nema.cached_render.as_ref().map(|c| c.0) != Some(key) {
             let raw = normalize_nema_newlines(&self.docs[ai].lines.join("\n"));
-            let res = if raw.starts_with("\t$") {
+            let res = if raw.starts_with("\t$") || raw.starts_with("\t0") {
                 StandardNemaCodec
                     .decode(&raw)
                     .or(Ok(raw))
@@ -662,12 +772,19 @@ impl App {
 
         // 顶部状态与模式切换栏
         ui.horizontal_wrapped(|ui| {
-            ui.strong(egui::RichText::new("NEMA v1.5").color(tc.blue).size(12.0));
+            ui.strong(
+                egui::RichText::new(".NEMA v1.2 · Ariadne's Thread")
+                    .color(tc.blue)
+                    .size(12.0),
+            );
             let role_txt = match self.nema.arbitrator.role() {
                 OwnershipRole::Observer => {
                     format!("Observer · Epoch #{}", self.nema.arbitrator.current_epoch())
                 }
-                _ => format!("Lease Active · Epoch #{}", self.nema.arbitrator.current_epoch()),
+                _ => format!(
+                    "Lease Active · Epoch #{}",
+                    self.nema.arbitrator.current_epoch()
+                ),
             };
             ui.label(
                 egui::RichText::new(role_txt)
@@ -681,6 +798,7 @@ impl App {
                 (1usize, "▦ Table"),
                 (2usize, "? 5W1H"),
                 (3usize, "> Graph"),
+                (4usize, "📊 Benchmark 实测"),
             ] {
                 let selected = self.nema_view_mode == idx;
                 if ui
@@ -689,6 +807,17 @@ impl App {
                 {
                     self.nema_view_mode = idx;
                 }
+            }
+            ui.separator();
+            if ui
+                .selectable_label(
+                    self.nema.show_whitespace,
+                    egui::RichText::new("空格 · / Tab ⇥").size(10.5),
+                )
+                .on_hover_text("将半角空格显示为 · 、Tab 显示为 ⇥（仅影响渲染视图，不改动源码字节）")
+                .clicked()
+            {
+                self.nema.show_whitespace = !self.nema.show_whitespace;
             }
         });
 
@@ -703,7 +832,47 @@ impl App {
                 });
         }
 
+        if self.nema.show_whitespace {
+            let raw_preview = self.docs[ai].lines.join("\n");
+            let vis = format_visible_whitespace(&raw_preview);
+            egui::Frame::NONE
+                .fill(tc.bg_edit)
+                .stroke(egui::Stroke::new(1.0, tc.border))
+                .corner_radius(4.0)
+                .inner_margin(egui::Margin::symmetric(8, 5))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.strong(
+                            egui::RichText::new("可见空白符源码预览 (⇥ = Tab, · = Space)")
+                                .size(10.5)
+                                .color(tc.blue),
+                        );
+                        ui.label(
+                            egui::RichText::new("Graph: 1 个前导空格 ·A 声明节点，0 个前导空格 A>X>B 声明关系，≥2 空格续行 X2/X3+")
+                                .size(10.0)
+                                .color(tc.fg_dim),
+                        );
+                    });
+                    egui::ScrollArea::vertical()
+                        .id_salt("nema-vis-ws-scroll")
+                        .max_height(110.0)
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(vis)
+                                    .size(11.0)
+                                    .monospace()
+                                    .color(tc.fg),
+                            );
+                        });
+                });
+        }
+
         ui.separator();
+
+        if self.nema_view_mode == 4 {
+            self.render_nema_benchmark_ui(ui, ai);
+            return;
+        }
 
         let rendered_res = self
             .nema
@@ -808,9 +977,9 @@ impl App {
                     ui.strong(egui::RichText::new(badge).size(11.5).color(tc.blue));
                     if domain.mode == DomainMode::Table {
                         let hdr_label = if domain.explicit_header {
-                            "取消显式表头 (\\ )"
+                            "取消显式表头 (\\t / \\ )"
                         } else {
-                            "首行设为表头 (\\ )"
+                            "首行设为表头 (\\t / \\ )"
                         };
                         if ui
                             .button(egui::RichText::new(hdr_label).size(10.5))
@@ -923,7 +1092,10 @@ impl App {
             });
     }
 
-    /// 使用 `egui::Painter` 绘制有向/无向多重图 (`A>Z>B` -> $A \to B$, `B<Z<C` -> $C \to B$)，Edge 拥有独立 ID 且可点击检查
+    /// 使用 `egui::Painter` 绘制 `.NEMA v1.2 (R7)` 有向/无向多重图：
+    /// - 1 个前导空格 (` A LoginAPI Authentication APIKey`) 声明节点
+    /// - 0 个前导空格 (`A>X>B Reads VerifySession HTTP401`) 声明关系
+    /// - 悬浮 (Hover) 显示只读 `X2` 说明卡片；点击 (Click) 固定底部 **Graph Inspector** 查看完整 `X0 / X1 / X2 / X3+` 扩展属性
     fn render_nema_graph_canvas(
         &mut self,
         ui: &mut egui::Ui,
@@ -935,18 +1107,61 @@ impl App {
         let mut edges = Vec::new();
         for row in &domain.rows {
             if let Some(nid) = &row.node_id {
-                let rel = row.cells.get(1).cloned().unwrap_or_default();
-                let desc = row.cells.get(2).cloned().unwrap_or_default();
-                nodes.push((nid.clone(), rel, desc, row.line));
+                let name_x1 = row.cells.get(1).cloned().unwrap_or_default();
+                let desc_x2 = row.cells.get(2).cloned().unwrap_or_default();
+                nodes.push((
+                    nid.clone(),
+                    name_x1,
+                    desc_x2,
+                    row.extensions.clone(),
+                    row.line,
+                ));
             } else if let Some(e) = &row.edge {
-                let rel = row.cells.get(1).cloned().unwrap_or_default();
-                let desc = row.cells.get(2).cloned().unwrap_or_default();
-                edges.push((e.clone(), rel, desc, row.line));
+                let name_x1 = row.cells.get(1).cloned().unwrap_or_default();
+                let desc_x2 = row.cells.get(2).cloned().unwrap_or_default();
+                edges.push((
+                    e.clone(),
+                    name_x1,
+                    desc_x2,
+                    row.extensions.clone(),
+                    row.line,
+                ));
             }
         }
 
-        let canvas_w = ui.available_width().max(320.0);
-        let canvas_h = 260.0;
+        // 若当前未选中任何节点或关系，默认选中第一个关系或节点以便即时展示 Graph Inspector
+        if self.nema.selected_item.is_none() {
+            if let Some((e, name_x1, desc_x2, exts, line)) = edges.first() {
+                let route = if e.from == e.to {
+                    format!("{} ↻ {} (self-loop)", e.from, e.to)
+                } else if e.direction == EdgeDirection::Undirected {
+                    format!("{} — {} (undirected)", e.from, e.to)
+                } else {
+                    format!("{} → {}", e.from, e.to)
+                };
+                let raw_x0 = format!("{}{}{}{}{}", e.from, e.raw_operator, e.id, e.raw_operator, e.to);
+                self.nema.selected_item = Some(SelectedGraphItem::Edge {
+                    id: e.id.clone(),
+                    raw_x0,
+                    route,
+                    name_x1: name_x1.clone(),
+                    desc_x2: desc_x2.clone(),
+                    extensions: exts.clone(),
+                    line: *line,
+                });
+            } else if let Some((nid, name_x1, desc_x2, exts, line)) = nodes.first() {
+                self.nema.selected_item = Some(SelectedGraphItem::Node {
+                    id: nid.clone(),
+                    name_x1: name_x1.clone(),
+                    desc_x2: desc_x2.clone(),
+                    extensions: exts.clone(),
+                    line: *line,
+                });
+            }
+        }
+
+        let canvas_w = ui.available_width().max(340.0);
+        let canvas_h = 268.0;
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(canvas_w, canvas_h), egui::Sense::hover());
         let painter = ui.painter_at(rect);
@@ -960,12 +1175,12 @@ impl App {
 
         let n_count = nodes.len().max(1);
         let center = rect.center();
-        let rx = (canvas_w * 0.34).max(70.0);
-        let ry = (canvas_h * 0.32).max(55.0);
+        let rx = (canvas_w * 0.34).max(74.0);
+        let ry = (canvas_h * 0.33).max(58.0);
         let mut node_pos = std::collections::HashMap::new();
-        let node_size = egui::vec2(104.0, 42.0);
+        let node_size = egui::vec2(114.0, 44.0);
 
-        for (idx, (nid, _, _, _)) in nodes.iter().enumerate() {
+        for (idx, (nid, _, _, _, _)) in nodes.iter().enumerate() {
             let pos = if n_count == 1 {
                 center
             } else if n_count == 2 {
@@ -981,65 +1196,108 @@ impl App {
             node_pos.insert(nid.clone(), pos);
         }
 
-        // 先画边与箭头，并放置可点击的独立 Edge ID 胶囊
-        for (e_idx, (edge, rel, desc, line)) in edges.iter().enumerate() {
+        // 计算同一对节点之间的平行边车道偏移 (lane offset)，确保双向/平行边不重叠
+        let mut pair_groups: std::collections::HashMap<(String, String), Vec<usize>> =
+            std::collections::HashMap::new();
+        let mut self_loop_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut lane_offsets = vec![0.0f32; edges.len()];
+        let mut loop_indices = vec![0usize; edges.len()];
+
+        for (idx, (edge, _, _, _, _)) in edges.iter().enumerate() {
+            if edge.from == edge.to {
+                let c = self_loop_counts.entry(edge.from.clone()).or_insert(0);
+                loop_indices[idx] = *c;
+                *c += 1;
+            } else {
+                let key = if edge.from <= edge.to {
+                    (edge.from.clone(), edge.to.clone())
+                } else {
+                    (edge.to.clone(), edge.from.clone())
+                };
+                pair_groups.entry(key).or_default().push(idx);
+            }
+        }
+        for (_, indices) in pair_groups {
+            let m = indices.len();
+            for (rank, &e_idx) in indices.iter().enumerate() {
+                lane_offsets[e_idx] = (rank as f32 - (m as f32 - 1.0) * 0.5) * 18.0;
+            }
+        }
+
+        // 先画边与箭头，并放置可点击/可悬浮的独立 Edge ID 胶囊
+        for (e_idx, (edge, name_x1, desc_x2, exts, line)) in edges.iter().enumerate() {
             let Some(&p_from) = node_pos.get(&edge.from) else {
                 continue;
             };
             let Some(&p_to) = node_pos.get(&edge.to) else {
                 continue;
             };
-            let is_selected = self
-                .nema
-                .selected_edge
-                .as_ref()
-                .is_some_and(|s| s.0 == edge.id);
+            let is_selected = matches!(
+                &self.nema.selected_item,
+                Some(SelectedGraphItem::Edge { id, .. }) if id == &edge.id
+            );
             let stroke_col = if is_selected { tc.orange } else { tc.blue };
+            let route_str = if edge.from == edge.to {
+                format!("{} ↻ {} (self-loop)", edge.from, edge.to)
+            } else if edge.direction == EdgeDirection::Undirected {
+                format!("{} — {} (undirected)", edge.from, edge.to)
+            } else {
+                format!("{} → {}", edge.from, edge.to)
+            };
 
             let mid = if edge.from == edge.to {
-                let loop_top = egui::pos2(p_from.x, p_from.y - 44.0);
-                painter.circle_stroke(
-                    egui::pos2(p_from.x, p_from.y - 26.0),
-                    18.0,
-                    egui::Stroke::new(1.5, stroke_col),
-                );
-                loop_top
+                let r_loop = 18.0 + (loop_indices[e_idx] as f32) * 8.0;
+                let loop_center = egui::pos2(p_from.x, p_from.y - 24.0 - r_loop * 0.5);
+                painter.circle_stroke(loop_center, r_loop, egui::Stroke::new(1.5, stroke_col));
+                egui::pos2(p_from.x, loop_center.y - r_loop - 4.0)
             } else {
+                let (c_a, c_b) = if edge.from <= edge.to {
+                    (p_from, p_to)
+                } else {
+                    (p_to, p_from)
+                };
+                let canon_dir = (c_b - c_a).normalized();
+                let canon_normal = egui::vec2(-canon_dir.y, canon_dir.x);
+                let shift = canon_normal * lane_offsets[e_idx];
+
                 let dir = (p_to - p_from).normalized();
-                let start = p_from + dir * 48.0;
-                let end = p_to - dir * 48.0;
+                let start = p_from + dir * 52.0 + shift;
+                let end = p_to - dir * 52.0 + shift;
                 painter.line_segment([start, end], egui::Stroke::new(1.6, stroke_col));
                 if edge.direction == EdgeDirection::Directed {
                     let normal = egui::vec2(-dir.y, dir.x);
-                    let p1 = end - dir * 8.0 + normal * 4.5;
-                    let p2 = end - dir * 8.0 - normal * 4.5;
+                    let p1 = end - dir * 8.5 + normal * 4.5;
+                    let p2 = end - dir * 8.5 - normal * 4.5;
                     painter.add(egui::Shape::convex_polygon(
                         vec![end, p1, p2],
                         stroke_col,
                         egui::Stroke::NONE,
                     ));
                 }
-                egui::pos2(
-                    (start.x + end.x) * 0.5,
-                    (start.y + end.y) * 0.5 + ((e_idx % 2) as f32 * 14.0 - 7.0),
-                )
+                egui::pos2((start.x + end.x) * 0.5, (start.y + end.y) * 0.5)
             };
 
-            let label_txt = if rel.is_empty() {
-                edge.id.clone()
+            let ext_badge = if exts.is_empty() {
+                String::new()
             } else {
-                format!("{}: {}", edge.id, rel)
+                format!(" +{}", exts.len())
             };
-            let pill_w = (label_txt.chars().count() as f32 * 6.5 + 14.0).clamp(48.0, 160.0);
-            let pill_rect = egui::Rect::from_center_size(mid, egui::vec2(pill_w, 18.0));
+            let label_txt = if name_x1.is_empty() {
+                format!("{}{}", edge.id, ext_badge)
+            } else {
+                format!("{} · {}{}", edge.id, name_x1, ext_badge)
+            };
+            let pill_w = (label_txt.chars().count() as f32 * 6.5 + 16.0).clamp(52.0, 178.0);
+            let pill_rect = egui::Rect::from_center_size(mid, egui::vec2(pill_w, 19.0));
             let resp = ui.interact(
                 pill_rect,
-                ui.id().with(("nema-edge", &domain.id, &edge.id)),
+                ui.id().with(("nema-edge", &domain.id, &edge.id, e_idx)),
                 egui::Sense::click(),
             );
             painter.rect_filled(
                 pill_rect,
-                9.0,
+                9.5,
                 if is_selected || resp.hovered() {
                     tc.bg_active
                 } else {
@@ -1048,8 +1306,8 @@ impl App {
             );
             painter.rect_stroke(
                 pill_rect,
-                9.0,
-                egui::Stroke::new(1.0, stroke_col),
+                9.5,
+                egui::Stroke::new(1.1, stroke_col),
                 egui::StrokeKind::Inside,
             );
             painter.text(
@@ -1059,34 +1317,82 @@ impl App {
                 egui::FontId::proportional(10.0),
                 tc.fg,
             );
+
+            let edge_raw_x0 = format!(
+                "{}{}{}{}{}",
+                edge.from, edge.raw_operator, edge.id, edge.raw_operator, edge.to
+            );
+            let resp = resp.on_hover_ui(|ui| {
+                ui.strong(
+                    egui::RichText::new("关系说明 · X2 (只读预览)")
+                        .size(10.5)
+                        .color(tc.blue),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} · {}",
+                        edge.id,
+                        if name_x1.is_empty() { "(未命名)" } else { name_x1 }
+                    ))
+                    .size(11.0)
+                    .strong(),
+                );
+                ui.label(
+                    egui::RichText::new(format!("方向: {route_str} (X0: {edge_raw_x0})"))
+                        .size(10.5)
+                        .monospace()
+                        .color(tc.fg_dim),
+                );
+                let x2_display = if desc_x2.is_empty() {
+                    "未填写 X2（可省略）"
+                } else {
+                    desc_x2.as_str()
+                };
+                ui.label(egui::RichText::new(format!("X2: {x2_display}")).size(11.0));
+                for (k, v) in exts {
+                    ui.label(
+                        egui::RichText::new(format!("{k} · extension: {v}"))
+                            .size(10.5)
+                            .monospace()
+                            .color(tc.orange),
+                    );
+                }
+            });
+
             if resp.clicked() {
-                self.nema.selected_edge = Some((
-                    edge.id.clone(),
-                    edge.from.clone(),
-                    edge.to.clone(),
-                    rel.clone(),
-                    desc.clone(),
-                    *line,
-                ));
+                self.nema.selected_item = Some(SelectedGraphItem::Edge {
+                    id: edge.id.clone(),
+                    raw_x0: edge_raw_x0,
+                    route: route_str,
+                    name_x1: name_x1.clone(),
+                    desc_x2: desc_x2.clone(),
+                    extensions: exts.clone(),
+                    line: *line,
+                });
                 *jump_to_line = Some(*line);
             }
         }
 
-        // 再画节点卡片
-        for (nid, rel, _desc, line) in &nodes {
+        // 再画节点卡片 (1 个前导空格 ` A LoginAPI Authentication APIKey`)
+        for (nid, name_x1, desc_x2, exts, line) in &nodes {
             let Some(&pos) = node_pos.get(nid) else {
                 continue;
             };
+            let is_selected = matches!(
+                &self.nema.selected_item,
+                Some(SelectedGraphItem::Node { id, .. }) if id == nid
+            );
             let nrect = egui::Rect::from_center_size(pos, node_size);
             let resp = ui.interact(
                 nrect,
                 ui.id().with(("nema-node", &domain.id, nid)),
                 egui::Sense::click(),
             );
+            let border_col = if is_selected { tc.orange } else { tc.border };
             painter.rect_filled(
                 nrect,
                 6.0,
-                if resp.hovered() {
+                if is_selected || resp.hovered() {
                     tc.bg_hover
                 } else {
                     tc.bg_bar
@@ -1095,59 +1401,860 @@ impl App {
             painter.rect_stroke(
                 nrect,
                 6.0,
-                egui::Stroke::new(1.2, tc.border),
+                egui::Stroke::new(if is_selected { 1.6 } else { 1.2 }, border_col),
                 egui::StrokeKind::Inside,
             );
+            let top_title = if exts.is_empty() {
+                nid.clone()
+            } else {
+                format!("{nid} (+{})", exts.len())
+            };
             painter.text(
-                egui::pos2(nrect.center().x, nrect.top() + 13.0),
+                egui::pos2(nrect.center().x, nrect.top() + 14.0),
                 egui::Align2::CENTER_CENTER,
-                nid,
+                &top_title,
                 egui::FontId::proportional(11.5),
                 tc.fg,
             );
             painter.text(
-                egui::pos2(nrect.center().x, nrect.top() + 28.0),
+                egui::pos2(nrect.center().x, nrect.top() + 30.0),
                 egui::Align2::CENTER_CENTER,
-                rel,
+                name_x1,
                 egui::FontId::proportional(10.0),
                 tc.fg_dim,
             );
+
+            let resp = resp.on_hover_ui(|ui| {
+                ui.strong(
+                    egui::RichText::new("节点说明 · X2 (只读预览)")
+                        .size(10.5)
+                        .color(tc.blue),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} · {}",
+                        nid,
+                        if name_x1.is_empty() { "(未命名)" } else { name_x1 }
+                    ))
+                    .size(11.0)
+                    .strong(),
+                );
+                let x2_display = if desc_x2.is_empty() {
+                    "未填写 X2（可省略）"
+                } else {
+                    desc_x2.as_str()
+                };
+                ui.label(egui::RichText::new(format!("X2: {x2_display}")).size(11.0));
+                for (k, v) in exts {
+                    ui.label(
+                        egui::RichText::new(format!("{k} · extension: {v}"))
+                            .size(10.5)
+                            .monospace()
+                            .color(tc.orange),
+                    );
+                }
+            });
+
             if resp.clicked() {
+                self.nema.selected_item = Some(SelectedGraphItem::Node {
+                    id: nid.clone(),
+                    name_x1: name_x1.clone(),
+                    desc_x2: desc_x2.clone(),
+                    extensions: exts.clone(),
+                    line: *line,
+                });
                 *jump_to_line = Some(*line);
             }
         }
 
-        // 显示选中的独立 Edge 详情卡片
-        if let Some((eid, from, to, rel, desc, line)) = &self.nema.selected_edge {
+        // 节点与关系快捷选择器 (Quick Picker Chips)
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new("节点:").size(10.5).color(tc.fg_dim));
+            for (nid, name_x1, desc_x2, exts, line) in &nodes {
+                let is_sel = matches!(
+                    &self.nema.selected_item,
+                    Some(SelectedGraphItem::Node { id, .. }) if id == nid
+                );
+                let chip = format!("Node {nid} · {name_x1}");
+                if ui
+                    .selectable_label(is_sel, egui::RichText::new(chip).size(10.5).monospace())
+                    .clicked()
+                {
+                    self.nema.selected_item = Some(SelectedGraphItem::Node {
+                        id: nid.clone(),
+                        name_x1: name_x1.clone(),
+                        desc_x2: desc_x2.clone(),
+                        extensions: exts.clone(),
+                        line: *line,
+                    });
+                    *jump_to_line = Some(*line);
+                }
+            }
+            ui.separator();
+            ui.label(egui::RichText::new("关系:").size(10.5).color(tc.fg_dim));
+            for (edge, name_x1, desc_x2, exts, line) in &edges {
+                let is_sel = matches!(
+                    &self.nema.selected_item,
+                    Some(SelectedGraphItem::Edge { id, .. }) if id == &edge.id
+                );
+                let chip = format!("Edge {} · {}", edge.id, name_x1);
+                if ui
+                    .selectable_label(is_sel, egui::RichText::new(chip).size(10.5).monospace())
+                    .clicked()
+                {
+                    let route = if edge.from == edge.to {
+                        format!("{} ↻ {} (self-loop)", edge.from, edge.to)
+                    } else if edge.direction == EdgeDirection::Undirected {
+                        format!("{} — {} (undirected)", edge.from, edge.to)
+                    } else {
+                        format!("{} → {}", edge.from, edge.to)
+                    };
+                    let raw_x0 = format!(
+                        "{}{}{}{}{}",
+                        edge.from, edge.raw_operator, edge.id, edge.raw_operator, edge.to
+                    );
+                    self.nema.selected_item = Some(SelectedGraphItem::Edge {
+                        id: edge.id.clone(),
+                        raw_x0,
+                        route,
+                        name_x1: name_x1.clone(),
+                        desc_x2: desc_x2.clone(),
+                        extensions: exts.clone(),
+                        line: *line,
+                    });
+                    *jump_to_line = Some(*line);
+                }
+            }
+        });
+
+        // 底部固定 Graph Inspector (`X0 / X1 / X2 / X3+ extensions`)
+        if let Some(item) = &self.nema.selected_item {
             ui.add_space(4.0);
             egui::Frame::NONE
                 .fill(tc.bg_edit)
                 .stroke(egui::Stroke::new(1.0, tc.blue))
                 .corner_radius(4.0)
-                .inner_margin(egui::Margin::symmetric(8, 5))
-                .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.strong(
-                            egui::RichText::new(format!("Edge ID: {eid} ({from} → {to})"))
+                .inner_margin(egui::Margin::symmetric(8, 6))
+                .show(ui, |ui| match item {
+                    SelectedGraphItem::Node {
+                        id,
+                        name_x1,
+                        desc_x2,
+                        extensions,
+                        line,
+                    } => {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.strong(
+                                egui::RichText::new(format!(
+                                    "Graph Inspector · Node {id} · {name_x1}"
+                                ))
                                 .size(11.0)
                                 .color(tc.blue),
-                        );
-                        if !rel.is_empty() {
-                            ui.label(egui::RichText::new(format!("关系: {rel}")).size(11.0));
-                        }
-                        if !desc.is_empty() {
+                            );
                             ui.label(
-                                egui::RichText::new(format!("说明: {desc}"))
-                                    .size(11.0)
+                                egui::RichText::new("1 个前导空格声明节点")
+                                    .size(10.0)
                                     .color(tc.fg_dim),
                             );
-                        }
-                        if ui.small_button(format!("跳至 L{line}")).clicked() {
-                            *jump_to_line = Some(*line);
-                        }
-                    });
+                            if ui.small_button(format!("跳至 L{line}")).clicked() {
+                                *jump_to_line = Some(*line);
+                            }
+                        });
+                        egui::Grid::new(("nema-node-inspector", &domain.id, id))
+                            .num_columns(2)
+                            .spacing([10.0, 3.0])
+                            .show(ui, |ui| {
+                                ui.strong(
+                                    egui::RichText::new("X0 · Node ID")
+                                        .size(10.5)
+                                        .color(tc.fg_dim),
+                                );
+                                ui.label(egui::RichText::new(id).size(11.0).monospace());
+                                ui.end_row();
+
+                                ui.strong(
+                                    egui::RichText::new("X1 · 节点名称 (原样保留)")
+                                        .size(10.5)
+                                        .color(tc.fg_dim),
+                                );
+                                ui.label(
+                                    egui::RichText::new(if name_x1.is_empty() {
+                                        "—"
+                                    } else {
+                                        name_x1.as_str()
+                                    })
+                                    .size(11.0)
+                                    .monospace(),
+                                );
+                                ui.end_row();
+
+                                ui.strong(
+                                    egui::RichText::new("X2 · 节点说明 (可省略)")
+                                        .size(10.5)
+                                        .color(tc.fg_dim),
+                                );
+                                ui.label(
+                                    egui::RichText::new(if desc_x2.is_empty() {
+                                        "未填写 X2（可省略）"
+                                    } else {
+                                        desc_x2.as_str()
+                                    })
+                                    .size(11.0),
+                                );
+                                ui.end_row();
+
+                                for (ext_key, ext_val) in extensions {
+                                    ui.strong(
+                                        egui::RichText::new(format!("{ext_key} · extension"))
+                                            .size(10.5)
+                                            .color(tc.orange),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(ext_val)
+                                            .size(11.0)
+                                            .monospace()
+                                            .color(tc.fg),
+                                    );
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                    SelectedGraphItem::Edge {
+                        id,
+                        raw_x0,
+                        route,
+                        name_x1,
+                        desc_x2,
+                        extensions,
+                        line,
+                    } => {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.strong(
+                                egui::RichText::new(format!(
+                                    "Graph Inspector · Edge {id} · {name_x1} ({route})"
+                                ))
+                                .size(11.0)
+                                .color(tc.blue),
+                            );
+                            ui.label(
+                                egui::RichText::new("0 个前导空格声明关系")
+                                    .size(10.0)
+                                    .color(tc.fg_dim),
+                            );
+                            if ui.small_button(format!("跳至 L{line}")).clicked() {
+                                *jump_to_line = Some(*line);
+                            }
+                        });
+                        egui::Grid::new(("nema-edge-inspector", &domain.id, id))
+                            .num_columns(2)
+                            .spacing([10.0, 3.0])
+                            .show(ui, |ui| {
+                                ui.strong(
+                                    egui::RichText::new("X0 · 关系表达式")
+                                        .size(10.5)
+                                        .color(tc.fg_dim),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!("{raw_x0}  ({route})"))
+                                        .size(11.0)
+                                        .monospace(),
+                                );
+                                ui.end_row();
+
+                                ui.strong(
+                                    egui::RichText::new("X1 · 关系名称 (原样保留)")
+                                        .size(10.5)
+                                        .color(tc.fg_dim),
+                                );
+                                ui.label(
+                                    egui::RichText::new(if name_x1.is_empty() {
+                                        "—"
+                                    } else {
+                                        name_x1.as_str()
+                                    })
+                                    .size(11.0)
+                                    .monospace(),
+                                );
+                                ui.end_row();
+
+                                ui.strong(
+                                    egui::RichText::new("X2 · 关系说明 (可省略)")
+                                        .size(10.5)
+                                        .color(tc.fg_dim),
+                                );
+                                ui.label(
+                                    egui::RichText::new(if desc_x2.is_empty() {
+                                        "未填写 X2（可省略）"
+                                    } else {
+                                        desc_x2.as_str()
+                                    })
+                                    .size(11.0),
+                                );
+                                ui.end_row();
+
+                                for (ext_key, ext_val) in extensions {
+                                    ui.strong(
+                                        egui::RichText::new(format!("{ext_key} · extension"))
+                                            .size(10.5)
+                                            .color(tc.orange),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(ext_val)
+                                            .size(11.0)
+                                            .monospace()
+                                            .color(tc.fg),
+                                    );
+                                    ui.end_row();
+                                }
+                            });
+                    }
                 });
         }
+    }
+
+    /// 渲染 `.NEMA v1.2 (R7)` Token Benchmark 实测面板（含当前文档实时多格式对照 + 8 组官方实测数据集）
+    fn render_nema_benchmark_ui(&mut self, ui: &mut egui::Ui, ai: usize) {
+        let tc = self.tc;
+        let raw = normalize_nema_newlines(&self.docs[ai].lines.join("\n"));
+
+        egui::ScrollArea::vertical()
+            .id_salt("nema-benchmark-scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                // 1. 当前文档实时同语义对照 (Live Document Format Comparison)
+                egui::Frame::NONE
+                    .fill(tc.bg_bar)
+                    .stroke(egui::Stroke::new(1.0, tc.border))
+                    .corner_radius(6.0)
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.strong(
+                                egui::RichText::new(
+                                    "当前文档实时同语义对照 (.nema / .nemat / JSON / YAML)",
+                                )
+                                .size(11.5)
+                                .color(tc.blue),
+                            );
+                            ui.label(
+                                egui::RichText::new(
+                                    "基于当前编辑器内容自动生成等价 JSON objects、JSON positional、JSON tagged (w/t/g)、YAML positional 与 .nemat",
+                                )
+                                .size(10.0)
+                                .color(tc.fg_dim),
+                            );
+                        });
+                        ui.add_space(4.0);
+                        match compare_document_formats(&raw) {
+                            Ok(rows) => {
+                                let max_bpe = rows
+                                    .iter()
+                                    .map(|r| r.bpe_tokens)
+                                    .max()
+                                    .unwrap_or(1)
+                                    .max(1);
+                                egui::Grid::new("nema-live-bench-grid")
+                                    .striped(true)
+                                    .spacing([12.0, 4.0])
+                                    .show(ui, |ui| {
+                                        for col in [
+                                            "格式 (Format)",
+                                            "Bytes",
+                                            "BPE (~Token)",
+                                            "Unigram (~Token)",
+                                            "vs JSON objects",
+                                            "vs JSON positional",
+                                            "直观对比",
+                                        ] {
+                                            ui.strong(
+                                                egui::RichText::new(col)
+                                                    .size(10.5)
+                                                    .color(tc.fg_dim),
+                                            );
+                                        }
+                                        ui.end_row();
+
+                                        for r in &rows {
+                                            let is_nema = r.format_name.starts_with(".nema");
+                                            let col_fg = if is_nema { tc.blue } else { tc.fg };
+                                            ui.strong(
+                                                egui::RichText::new(r.format_name)
+                                                    .size(11.0)
+                                                    .color(col_fg),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!("{} B", r.bytes))
+                                                    .size(11.0)
+                                                    .monospace(),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!("{}", r.bpe_tokens))
+                                                    .size(11.0)
+                                                    .monospace(),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{}",
+                                                    r.unigram_tokens
+                                                ))
+                                                .size(11.0)
+                                                .monospace(),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{:+.2}%",
+                                                    r.saving_vs_json_bpe_pct
+                                                ))
+                                                .size(11.0)
+                                                .monospace()
+                                                .color(if r.saving_vs_json_bpe_pct > 0.0 {
+                                                    tc.green
+                                                } else {
+                                                    tc.fg_dim
+                                                }),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{:+.2}%",
+                                                    r.saving_vs_pos_json_bpe_pct
+                                                ))
+                                                .size(11.0)
+                                                .monospace()
+                                                .color(if r.saving_vs_pos_json_bpe_pct > 0.0 {
+                                                    tc.green
+                                                } else {
+                                                    tc.fg_dim
+                                                }),
+                                            );
+                                            let ratio =
+                                                (r.bpe_tokens as f32 / max_bpe as f32).clamp(0.04, 1.0);
+                                            let bar_w = 130.0;
+                                            let (brect, _) = ui.allocate_exact_size(
+                                                egui::vec2(bar_w, 12.0),
+                                                egui::Sense::hover(),
+                                            );
+                                            let bp = ui.painter_at(brect);
+                                            bp.rect_filled(brect, 3.0, tc.bg_edit);
+                                            let fill_rect = egui::Rect::from_min_size(
+                                                brect.min,
+                                                egui::vec2(bar_w * ratio, 12.0),
+                                            );
+                                            bp.rect_filled(
+                                                fill_rect,
+                                                3.0,
+                                                if is_nema { tc.blue } else { tc.fg_dim },
+                                            );
+                                            ui.end_row();
+                                        }
+                                    });
+                            }
+                            Err(e) => {
+                                ui.colored_label(tc.red, format!("当前文档无法解析为 .NEMA: {e}"));
+                            }
+                        }
+                    });
+
+                ui.add_space(8.0);
+
+                // 2. 官方 Empirical Token Benchmark (.NEMA v1.2 · 2026-11-07 · Release R7)
+                egui::Frame::NONE
+                    .fill(tc.bg_bar)
+                    .stroke(egui::Stroke::new(1.0, tc.border))
+                    .corner_radius(6.0)
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.strong(
+                                egui::RichText::new(
+                                    "官方 Empirical Token Benchmark (.NEMA v1.2 · Release R7)",
+                                )
+                                .size(11.5)
+                                .color(tc.blue),
+                            );
+                            ui.separator();
+                            if ui
+                                .selectable_label(
+                                    !self.nema.bench_use_unigram,
+                                    egui::RichText::new("SentencePiece BPE (32k)").size(10.5),
+                                )
+                                .clicked()
+                            {
+                                self.nema.bench_use_unigram = false;
+                            }
+                            if ui
+                                .selectable_label(
+                                    self.nema.bench_use_unigram,
+                                    egui::RichText::new("SentencePiece Unigram (32k)").size(10.5),
+                                )
+                                .clicked()
+                            {
+                                self.nema.bench_use_unigram = true;
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "免责声明: 基于真实 SentencePiece BPE / Unigram (vocab=32,000, byte_fallback=True) 本地实测；不同商业模型私有词表会有常数级偏移，不代表商业 API 计费账单。",
+                            )
+                            .size(10.0)
+                            .color(tc.fg_dim),
+                        );
+                        ui.add_space(6.0);
+
+                        // 3 张核心结论卡片 (Headline Cards)
+                        ui.columns(3, |cols| {
+                            egui::Frame::NONE
+                                .fill(tc.bg_edit)
+                                .stroke(egui::Stroke::new(1.0, tc.border))
+                                .corner_radius(4.0)
+                                .inner_margin(egui::Margin::same(6))
+                                .show(&mut cols[0], |ui| {
+                                    ui.strong(
+                                        egui::RichText::new("-53.68% (english_60)")
+                                            .size(12.0)
+                                            .color(tc.green),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(
+                                            ".nema 相比标准紧凑 JSON (objects): 3,012 vs 6,502 BPE tokens",
+                                        )
+                                        .size(10.5),
+                                    );
+                                });
+                            egui::Frame::NONE
+                                .fill(tc.bg_edit)
+                                .stroke(egui::Stroke::new(1.0, tc.border))
+                                .corner_radius(4.0)
+                                .inner_margin(egui::Margin::same(6))
+                                .show(&mut cols[1], |ui| {
+                                    ui.strong(
+                                        egui::RichText::new(
+                                            "-21.79% vs 位置数组 / -24.15% vs Tagged",
+                                        )
+                                        .size(12.0)
+                                        .color(tc.green),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "english_60: .nema (3,012) vs 位置数组 JSON (3,851) / Tagged JSON (3,971)",
+                                        )
+                                        .size(10.5),
+                                    );
+                                });
+                            egui::Frame::NONE
+                                .fill(tc.bg_edit)
+                                .stroke(egui::Stroke::new(1.0, tc.border))
+                                .corner_radius(4.0)
+                                .inner_margin(egui::Margin::same(6))
+                                .show(&mut cols[2], |ui| {
+                                    ui.strong(
+                                        egui::RichText::new("-56.76% (graph_40n_160e)")
+                                            .size(12.0)
+                                            .color(tc.green),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(
+                                            ".nemat 相比去键名 JSON (positional): 1,247 vs 2,884 BPE tokens",
+                                        )
+                                        .size(10.5),
+                                    );
+                                });
+                        });
+
+                        ui.add_space(6.0);
+
+                        // 场景切换按钮 (8 组基准场景)
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(egui::RichText::new("实测场景:").size(10.5).color(tc.fg_dim));
+                            for (idx, sc) in OFFICIAL_BENCHMARK_V12.iter().enumerate() {
+                                let selected = self.nema.bench_scenario_idx == idx;
+                                if ui
+                                    .selectable_label(
+                                        selected,
+                                        egui::RichText::new(sc.scenario).size(10.5).monospace(),
+                                    )
+                                    .on_hover_text(sc.label_zh)
+                                    .clicked()
+                                {
+                                    self.nema.bench_scenario_idx = idx;
+                                }
+                            }
+                        });
+
+                        let sc_idx = self
+                            .nema
+                            .bench_scenario_idx
+                            .min(OFFICIAL_BENCHMARK_V12.len() - 1);
+                        let sc = &OFFICIAL_BENCHMARK_V12[sc_idx];
+                        let use_uni = self.nema.bench_use_unigram;
+
+                        ui.add_space(4.0);
+                        egui::Frame::NONE
+                            .fill(tc.bg_edit)
+                            .stroke(egui::Stroke::new(1.0, tc.blue))
+                            .corner_radius(4.0)
+                            .inner_margin(egui::Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.strong(
+                                    egui::RichText::new(format!(
+                                        "场景详情: {} — {}",
+                                        sc.scenario, sc.label_zh
+                                    ))
+                                    .size(11.0)
+                                    .color(tc.blue),
+                                );
+                                let items: [(&str, usize, usize); 6] = if use_uni {
+                                    [
+                                        ("JSON (objects)", sc.unigram_json, sc.raw_bytes_json),
+                                        (
+                                            "JSON (positional)",
+                                            sc.unigram_json_positional,
+                                            sc.raw_bytes_json_positional,
+                                        ),
+                                        (
+                                            "JSON (tagged w/t/g)",
+                                            sc.unigram_json_tagged,
+                                            sc.raw_bytes_json_tagged,
+                                        ),
+                                        (
+                                            "YAML (positional)",
+                                            sc.unigram_yaml_positional,
+                                            sc.raw_bytes_yaml_positional,
+                                        ),
+                                        (".nema (native v1.2)", sc.unigram_nema, sc.raw_bytes_nema),
+                                        (".nemat (transport)", sc.unigram_nemat, sc.raw_bytes_nema),
+                                    ]
+                                } else {
+                                    [
+                                        ("JSON (objects)", sc.bpe_json, sc.raw_bytes_json),
+                                        ("JSON (positional)", sc.bpe_json_positional, sc.raw_bytes_json_positional),
+                                        (
+                                            "JSON (tagged w/t/g)",
+                                            sc.bpe_json_tagged,
+                                            sc.raw_bytes_json_tagged,
+                                        ),
+                                        ("YAML (positional)", sc.bpe_yaml_positional, sc.raw_bytes_yaml_positional),
+                                        (".nema (native v1.2)", sc.bpe_nema, sc.raw_bytes_nema),
+                                        (".nemat (transport)", sc.bpe_nemat, sc.raw_bytes_nema),
+                                    ]
+                                };
+                                let max_tok =
+                                    items.iter().map(|x| x.1).max().unwrap_or(1).max(1) as f32;
+                                let base_obj = items[0].1.max(1) as f64;
+                                let base_pos = items[1].1.max(1) as f64;
+
+                                egui::Grid::new(("nema-sc-detail", sc.scenario, use_uni))
+                                    .num_columns(5)
+                                    .spacing([12.0, 4.0])
+                                    .show(ui, |ui| {
+                                        for (name, tok, bytes) in items {
+                                            let is_nema = name.starts_with(".nema");
+                                            ui.strong(
+                                                egui::RichText::new(name).size(10.5).color(
+                                                    if is_nema { tc.blue } else { tc.fg },
+                                                ),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!("{tok} tok"))
+                                                    .size(10.5)
+                                                    .monospace(),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(format!("{bytes} B"))
+                                                    .size(10.5)
+                                                    .monospace()
+                                                    .color(tc.fg_dim),
+                                            );
+                                            let vs_obj =
+                                                ((tok as f64) - base_obj) / base_obj * 100.0;
+                                            let vs_pos =
+                                                ((tok as f64) - base_pos) / base_pos * 100.0;
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "vs Obj {:+.1}% | vs Pos {:+.1}%",
+                                                    vs_obj, vs_pos
+                                                ))
+                                                .size(10.0)
+                                                .monospace()
+                                                .color(if vs_pos < 0.0 {
+                                                    tc.green
+                                                } else {
+                                                    tc.fg_dim
+                                                }),
+                                            );
+                                            let bar_w = 140.0;
+                                            let (brect, _) = ui.allocate_exact_size(
+                                                egui::vec2(bar_w, 11.0),
+                                                egui::Sense::hover(),
+                                            );
+                                            let bp = ui.painter_at(brect);
+                                            bp.rect_filled(brect, 3.0, tc.bg_bar);
+                                            bp.rect_filled(
+                                                egui::Rect::from_min_size(
+                                                    brect.min,
+                                                    egui::vec2(
+                                                        bar_w * (tok as f32 / max_tok).clamp(0.03, 1.0),
+                                                        11.0,
+                                                    ),
+                                                ),
+                                                3.0,
+                                                if is_nema { tc.blue } else { tc.fg_dim },
+                                            );
+                                            ui.end_row();
+                                        }
+                                    });
+                            });
+
+                        ui.add_space(6.0);
+
+                        // 全量 8 组基准数据总表
+                        egui::Grid::new(("nema-official-all-table", use_uni))
+                            .striped(true)
+                            .spacing([10.0, 4.0])
+                            .show(ui, |ui| {
+                                for h in [
+                                    "数据集 (Dataset)",
+                                    "JSON (obj)",
+                                    "JSON (pos)",
+                                    "JSON (tagged)",
+                                    "YAML (pos)",
+                                    ".nema",
+                                    ".nemat",
+                                    ".nema vs Obj",
+                                    ".nema vs Pos",
+                                    ".nemat vs Pos",
+                                ] {
+                                    ui.strong(
+                                        egui::RichText::new(h).size(10.0).color(tc.fg_dim),
+                                    );
+                                }
+                                ui.end_row();
+
+                                for s in OFFICIAL_BENCHMARK_V12 {
+                                    let (jo, jp, jt, yp, nm, nmt) = if use_uni {
+                                        (
+                                            s.unigram_json,
+                                            s.unigram_json_positional,
+                                            s.unigram_json_tagged,
+                                            s.unigram_yaml_positional,
+                                            s.unigram_nema,
+                                            s.unigram_nemat,
+                                        )
+                                    } else {
+                                        (
+                                            s.bpe_json,
+                                            s.bpe_json_positional,
+                                            s.bpe_json_tagged,
+                                            s.bpe_yaml_positional,
+                                            s.bpe_nema,
+                                            s.bpe_nemat,
+                                        )
+                                    };
+                                    let vs_obj =
+                                        ((nm as f64) - (jo as f64)) / (jo as f64) * 100.0;
+                                    let vs_pos =
+                                        ((nm as f64) - (jp as f64)) / (jp as f64) * 100.0;
+                                    let nmt_vs_pos =
+                                        ((nmt as f64) - (jp as f64)) / (jp as f64) * 100.0;
+
+                                    ui.label(
+                                        egui::RichText::new(s.scenario).size(10.5).monospace().strong(),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{jo}"))
+                                            .size(10.5)
+                                            .monospace(),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{jp}"))
+                                            .size(10.5)
+                                            .monospace(),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{jt}"))
+                                            .size(10.5)
+                                            .monospace(),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{yp}"))
+                                            .size(10.5)
+                                            .monospace(),
+                                    );
+                                    ui.strong(
+                                        egui::RichText::new(format!("{nm}"))
+                                            .size(10.5)
+                                            .monospace()
+                                            .color(tc.blue),
+                                    );
+                                    ui.strong(
+                                        egui::RichText::new(format!("{nmt}"))
+                                            .size(10.5)
+                                            .monospace()
+                                            .color(tc.blue),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{:+.2}%", vs_obj))
+                                            .size(10.5)
+                                            .monospace()
+                                            .color(tc.green),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{:+.2}%", vs_pos))
+                                            .size(10.5)
+                                            .monospace()
+                                            .color(if vs_pos < 0.0 { tc.green } else { tc.orange }),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!("{:+.2}%", nmt_vs_pos))
+                                            .size(10.5)
+                                            .monospace()
+                                            .color(if nmt_vs_pos < 0.0 {
+                                                tc.green
+                                            } else {
+                                                tc.orange
+                                            }),
+                                    );
+                                    ui.end_row();
+                                }
+                            });
+
+                        ui.add_space(6.0);
+
+                        // v1.2 Graph 单空格节点标记实测对比卡片
+                        let (
+                            _old_src,
+                            _new_src,
+                            old_bpe,
+                            new_bpe,
+                            old_uni,
+                            new_uni,
+                            old_bytes,
+                            new_bytes,
+                        ) = OFFICIAL_SYNTAX_BEFORE_AFTER;
+                        let delta_bpe_pct = ((new_bpe as f64 - old_bpe as f64) * 100.0) / (old_bpe as f64);
+                        egui::Frame::NONE
+                            .fill(tc.bg_edit)
+                            .stroke(egui::Stroke::new(1.0, tc.border))
+                            .corner_radius(4.0)
+                            .inner_margin(egui::Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.strong(
+                                    egui::RichText::new(
+                                        "v1.2 语法优化验证：Graph 单空格节点标记 (graph_3n_4e)",
+                                    )
+                                    .size(11.0)
+                                    .color(tc.blue),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "旧版 (A \\=LoginAPI 需字面量前缀): {old_bpe} BPE / {old_uni} Unigram / {old_bytes} B  →  新版 v1.2 ( A LoginAPI 单空格节点行): {new_bpe} BPE / {new_uni} Unigram / {new_bytes} B ({delta_bpe_pct:+.2}% BPE)",
+                                    ))
+                                    .size(10.5)
+                                    .monospace(),
+                                );
+                            });
+                    });
+            });
     }
 }
 
@@ -1241,5 +2348,35 @@ mod tests {
         // 第二次手动转换: .nemat -> .nema 精确还原
         app.nema_convert();
         assert_eq!(app.docs[ai].lines, orig);
+    }
+
+    #[test]
+    fn nema_v12_sample_and_benchmark_diff_work_end_to_end() {
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.nema_insert_v12_sample();
+        let ai = app.active;
+        let raw = app.docs[ai].lines.join("\n");
+        let rendered = render_source(&raw).expect("v1.2 sample should render cleanly");
+        assert_eq!(rendered.domains.len(), 3);
+        assert_eq!(rendered.domains[0].mode, DomainMode::FiveWOneH);
+        assert_eq!(rendered.domains[1].mode, DomainMode::Table);
+        assert_eq!(rendered.domains[2].mode, DomainMode::Graph);
+        // 校验 Graph 单空格节点与 X3 扩展属性
+        let g = &rendered.domains[2];
+        assert_eq!(g.rows[0].node_id.as_deref(), Some("A"));
+        assert_eq!(
+            g.rows[0].extensions,
+            vec![("X3".to_string(), "APIKey".to_string())]
+        );
+        // 触发 Benchmark 实测面板
+        app.nema_token_diff();
+        assert_eq!(app.nema_view_mode, 4);
+        assert!(app
+            .nema
+            .info_banner
+            .as_deref()
+            .unwrap_or("")
+            .contains("vs JSON对象"));
     }
 }

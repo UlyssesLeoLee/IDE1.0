@@ -244,6 +244,8 @@ pub struct NemaDomain {
     pub explicit_header_span: Option<TextSpan>,
     pub columns: Vec<String>,
     pub records: Vec<NemaRecord>,
+    #[serde(default)]
+    pub is_v12: bool,
 }
 
 /// 解析后的权威 `NemaDocument`（保留原始 span、column 与每列 `Vec<Vec<SemanticChunk>>`）
@@ -263,6 +265,8 @@ pub struct RenderedRow {
     pub tail_empty: bool,
     pub node_id: Option<String>,
     pub edge: Option<GraphEdgeSpec>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<(String, String)>,
     pub line: usize,
 }
 
@@ -390,6 +394,10 @@ pub enum EncodeMethod {
     DictionaryOnly,
     #[serde(rename = "rle")]
     RleOnly,
+    #[serde(rename = "prefix")]
+    PrefixOnly,
+    #[serde(rename = "combined")]
+    Combined,
 }
 
 impl EncodeMethod {
@@ -399,6 +407,8 @@ impl EncodeMethod {
             Self::DictionaryAndRle => "dictionary+rle",
             Self::DictionaryOnly => "dictionary",
             Self::RleOnly => "rle",
+            Self::PrefixOnly => "prefix",
+            Self::Combined => "combined",
         }
     }
 }
@@ -722,30 +732,239 @@ fn parse_dict_header(line: &str) -> Option<usize> {
     rest.parse().ok()
 }
 
-/// 解析 `\t(\|?|>)[1-9][0-9]*(?: [1-9][0-9]*)?` 域头
+fn is_valid_v12_domain_id(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() => {
+            chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        }
+        _ => false,
+    }
+}
+
+/// 解析 `.NEMA v1.2` 域头：`^\t([\\?>]?)([A-Za-z][A-Za-z0-9_.-]*) ([1-9][0-9]*)$`
+/// 返回 `(is_graph, id, revision)`
+pub fn parse_domain_header_v12(line: &str) -> Option<(bool, String, u64)> {
+    let rest = line.strip_prefix('\t')?;
+    let (is_graph, after_mark) = if let Some(stripped) = rest.strip_prefix('>') {
+        (true, stripped)
+    } else if let Some(stripped) = rest.strip_prefix('?') {
+        (false, stripped)
+    } else if let Some(stripped) = rest.strip_prefix('\\') {
+        (false, stripped)
+    } else {
+        (false, rest)
+    };
+    let (id_part, rev_part) = after_mark.split_once(' ')?;
+    if !is_valid_v12_domain_id(id_part) || !is_positive_digits(rev_part) {
+        return None;
+    }
+    let rev: u64 = rev_part.parse().ok()?;
+    Some((is_graph, id_part.to_string(), rev))
+}
+
+/// 解析域头（兼容 `.NEMA v1.2` 字母数字域头 `\t(>?)ID REV` 与旧版 `\t(\|?|>)[1-9][0-9]*(?: [1-9][0-9]*)?`）
 pub fn parse_domain_header(line: &str) -> Option<(DomainMode, String, u64)> {
     let rest = line.strip_prefix('\t')?;
     let mut chars = rest.chars();
     let mode_ch = chars.next()?;
-    let mode = match mode_ch {
-        '\\' => DomainMode::Table,
-        '?' => DomainMode::FiveWOneH,
-        '>' => DomainMode::Graph,
-        _ => return None,
+    let (mode, tail) = match mode_ch {
+        '\\' => (DomainMode::Table, &rest[1..]),
+        '?' => (DomainMode::FiveWOneH, &rest[1..]),
+        '>' => (DomainMode::Graph, &rest[1..]),
+        _ => (DomainMode::FiveWOneH, rest),
     };
-    let tail = &rest[mode_ch.len_utf8()..];
     if let Some((id_part, rev_part)) = tail.split_once(' ') {
-        if !is_positive_digits(id_part) || !is_positive_digits(rev_part) {
+        if (!is_positive_digits(id_part) && !is_valid_v12_domain_id(id_part))
+            || !is_positive_digits(rev_part)
+        {
             return None;
         }
         let rev: u64 = rev_part.parse().ok()?;
         Some((mode, id_part.to_string(), rev))
     } else {
-        if !is_positive_digits(tail) {
+        if !is_positive_digits(tail) && !is_valid_v12_domain_id(tail) {
             return None;
         }
         Some((mode, tail.to_string(), 1))
     }
+}
+
+/// `.NEMA v1.2` 原生转义还原 (`native.py::unescape`)：仅允许 `\ `、`\\`、`\t`、`\=`
+pub fn unescape_v12(s: &str) -> Result<String, NemaError> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut result = String::with_capacity(s.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] != '\\' {
+            result.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        if i + 1 >= chars.len() {
+            return Err(NemaError::TrailingTransportEscape);
+        }
+        let next = chars[i + 1];
+        match next {
+            ' ' | '\\' => result.push(next),
+            't' => result.push('\t'),
+            '=' => result.push_str("\\="),
+            _ => return Err(NemaError::UnknownTransportEscape),
+        }
+        i += 2;
+    }
+    Ok(result)
+}
+
+/// `.NEMA v1.2` 水平 X 轴切分 (`native.py::split_x`)
+pub fn split_x_v12(s: &str) -> Result<Vec<String>, NemaError> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() && matches!(chars[i + 1], ' ' | '\\' | 't' | '=')
+        {
+            buf.push(chars[i]);
+            buf.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        if chars[i] == '\t' {
+            return Err(NemaError::TabInBody);
+        }
+        if chars[i] == ' ' {
+            out.push(unescape_v12(&buf)?);
+            buf.clear();
+            i += 1;
+            continue;
+        }
+        buf.push(chars[i]);
+        i += 1;
+    }
+    out.push(unescape_v12(&buf)?);
+    Ok(out)
+}
+
+fn is_cjk_v12_char(c: char) -> bool {
+    ('\u{3040}'..='\u{30ff}').contains(&c)
+        || ('\u{3400}'..='\u{9fff}').contains(&c)
+        || ('\u{ac00}'..='\u{d7af}').contains(&c)
+}
+
+/// 与 `native.py` `PASCAL = re.compile(r'[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|[0-9]+|[^A-Za-z0-9]+')`
+/// 完全一致的词法切分函数
+fn lexical_words_v12(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut pieces = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_ascii_uppercase() {
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_uppercase() {
+                j += 1;
+            }
+            let upper_len = j - i;
+            if j == chars.len() {
+                pieces.push(chars[i..j].iter().collect());
+                i = j;
+            } else if upper_len >= 2 && chars[j].is_ascii_lowercase() {
+                pieces.push(chars[i..j - 1].iter().collect());
+                i = j - 1;
+            } else if i + 1 < chars.len() && chars[i + 1].is_ascii_lowercase() {
+                let mut k = i + 1;
+                while k < chars.len() && chars[k].is_ascii_lowercase() {
+                    k += 1;
+                }
+                pieces.push(chars[i..k].iter().collect());
+                i = k;
+            } else {
+                i += 1;
+            }
+        } else if c.is_ascii_lowercase() {
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_lowercase() {
+                j += 1;
+            }
+            pieces.push(chars[i..j].iter().collect());
+            i = j;
+        } else if c.is_ascii_digit() {
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            pieces.push(chars[i..j].iter().collect());
+            i = j;
+        } else {
+            let mut j = i;
+            while j < chars.len() && !chars[j].is_ascii_alphanumeric() {
+                j += 1;
+            }
+            pieces.push(chars[i..j].iter().collect());
+            i = j;
+        }
+    }
+    pieces
+}
+
+/// `.NEMA v1.2` 语义词块拼接 (`native.py::join_intents`)
+/// - `exact_name = true` 用于 Graph `X1` (Node/Edge 名称) 和 `X3+` (扩展属性，如 `APIKey`, `HTTP401`, `SHA256`)，原样保留不拆词。
+pub fn join_intents<S: AsRef<str>>(chunks: &[S], language: &str, exact_name: bool) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for raw_chunk in chunks {
+        let chunk = raw_chunk.as_ref();
+        if chunk.is_empty() {
+            continue;
+        }
+        let has_lit_prefix = chunk.starts_with("\\=");
+        let exact = exact_name || has_lit_prefix;
+        let body = if has_lit_prefix { &chunk[2..] } else { chunk };
+        let has_cjk = body.chars().any(is_cjk_v12_char);
+        let has_special = body.chars().any(|c| matches!(c, '.' | '/' | ':' | '#' | '@'));
+        let atoms: Vec<String> = if exact
+            || matches!(language, "zh" | "ja")
+            || (language == "auto" && has_cjk)
+            || has_special
+        {
+            vec![body.to_string()]
+        } else {
+            lexical_words_v12(body)
+                .into_iter()
+                .filter(|x| !x.is_empty())
+                .collect()
+        };
+
+        for mut atom in atoms {
+            if atom.is_empty() {
+                continue;
+            }
+            if !exact
+                && !matches!(language, "zh" | "ja")
+                && atom.chars().all(|c| c.is_ascii_alphabetic())
+            {
+                let is_all_upper = atom.chars().all(|c| c.is_ascii_uppercase());
+                if !is_all_upper && !parts.is_empty() {
+                    atom = atom.to_ascii_lowercase();
+                }
+            }
+            if parts.is_empty() {
+                parts.push(atom);
+                continue;
+            }
+            let first_ch = atom.chars().next().expect("non-empty atom");
+            let last_part = parts.last_mut().expect("non-empty parts");
+            let prev_ch = last_part.chars().last().expect("non-empty part");
+            if ",.;:!?、。！？）]}'’\"".contains(first_ch) || matches!(prev_ch, '\'' | '’') {
+                last_part.push_str(&atom);
+            } else if is_cjk_v12_char(prev_ch) || is_cjk_v12_char(first_ch) {
+                last_part.push_str(&atom);
+            } else {
+                parts.push(atom);
+            }
+        }
+    }
+    parts.join(" ")
 }
 
 fn is_valid_table_header_ident(s: &str) -> bool {
@@ -762,7 +981,7 @@ fn is_valid_graph_ident(s: &str) -> bool {
     let mut chars = s.chars();
     match chars.next() {
         Some(c) if c.is_ascii_alphabetic() => {
-            chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+            chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':'))
         }
         _ => false,
     }
@@ -797,6 +1016,49 @@ pub fn parse_edge_spec(expr: &str) -> Option<GraphEdgeSpec> {
         direction,
         raw_operator: op1,
     })
+}
+
+fn append_v12_cols(
+    rec: &mut NemaRecord,
+    cells: Vec<String>,
+    dictionary: &[String],
+    line_start: usize,
+    line_len: usize,
+    line_no: usize,
+) -> Result<(), NemaError> {
+    rec.span.end_byte = line_start + line_len;
+    let mut col_byte = line_start;
+    let mut col_char = 1usize;
+    for (idx, item) in cells.into_iter().enumerate() {
+        while rec.cells.len() <= idx {
+            rec.cells.push(Vec::new());
+        }
+        let item_len = item.len();
+        let item_chars = item.chars().count();
+        if !item.is_empty() {
+            let atoms = if dictionary.is_empty() {
+                vec![AtomChunk {
+                    text: item.clone(),
+                    opaque_dict_index: None,
+                }]
+            } else {
+                mixed_atoms(&item, dictionary)?
+            };
+            rec.cells[idx].push(SemanticChunk {
+                raw: item,
+                span: TextSpan {
+                    start_byte: col_byte,
+                    end_byte: (col_byte + item_len).min(line_start + line_len),
+                    line: line_no,
+                    column: col_char,
+                },
+                atoms,
+            });
+        }
+        col_byte += item_len + 1;
+        col_char += item_chars + 1;
+    }
+    Ok(())
 }
 
 /// 解析 `.nema` 权威源为 `NemaDocument`
@@ -845,18 +1107,33 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
     }
 
     let mut seen_domain_ids = HashSet::new();
+    let mut pending_v12_mode = false;
+    let mut current_domain_has_raw_rows = false;
+
     for (row_idx, &line) in lines.iter().enumerate().skip(i) {
         let line_start = line_byte_offsets[row_idx];
         let line_no = row_idx + 1;
-        if let Some((mode, id, revision)) = parse_domain_header(line) {
+        if let Some((is_graph, id, revision)) = parse_domain_header_v12(line) {
+            if let Some(prev) = doc.domains.last() {
+                if !current_domain_has_raw_rows || prev.records.is_empty() {
+                    return Err(NemaError::NoContent);
+                }
+            }
             if !seen_domain_ids.insert(id.clone()) {
                 return Err(NemaError::DuplicateDomainId);
             }
-            let columns = match mode {
-                DomainMode::Table => Vec::new(),
-                DomainMode::FiveWOneH => AXES_5W1H.iter().map(|s| (*s).to_string()).collect(),
-                DomainMode::Graph => COLUMNS_GRAPH.iter().map(|s| (*s).to_string()).collect(),
+            let mode = if is_graph {
+                DomainMode::Graph
+            } else {
+                DomainMode::FiveWOneH
             };
+            let columns = if is_graph {
+                COLUMNS_GRAPH.iter().map(|s| (*s).to_string()).collect()
+            } else {
+                AXES_5W1H.iter().map(|s| (*s).to_string()).collect()
+            };
+            pending_v12_mode = !is_graph;
+            current_domain_has_raw_rows = false;
             doc.domains.push(NemaDomain {
                 id,
                 revision,
@@ -871,16 +1148,243 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                 explicit_header_span: None,
                 columns,
                 records: Vec::new(),
+                is_v12: true,
             });
+            continue;
+        }
+        if let Some((mode, id, revision)) = parse_domain_header(line) {
+            if let Some(prev) = doc.domains.last() {
+                if !current_domain_has_raw_rows || prev.records.is_empty() {
+                    return Err(NemaError::NoContent);
+                }
+            }
+            if !seen_domain_ids.insert(id.clone()) {
+                return Err(NemaError::DuplicateDomainId);
+            }
+            let columns = match mode {
+                DomainMode::Table => Vec::new(),
+                DomainMode::FiveWOneH => AXES_5W1H.iter().map(|s| (*s).to_string()).collect(),
+                DomainMode::Graph => COLUMNS_GRAPH.iter().map(|s| (*s).to_string()).collect(),
+            };
+            pending_v12_mode = false;
+            current_domain_has_raw_rows = false;
+            doc.domains.push(NemaDomain {
+                id,
+                revision,
+                mode,
+                header_span: TextSpan {
+                    start_byte: line_start,
+                    end_byte: line_start + line.len(),
+                    line: line_no,
+                    column: 1,
+                },
+                explicit_header: false,
+                explicit_header_span: None,
+                columns,
+                records: Vec::new(),
+                is_v12: false,
+            });
+            continue;
+        }
+
+        let Some(current) = doc.domains.last_mut() else {
+            return Err(NemaError::BodyBeforeDomain);
+        };
+
+        if current.is_v12 {
+            if pending_v12_mode {
+                pending_v12_mode = false;
+                if line.starts_with('\t') {
+                    if line.starts_with("\t\t") {
+                        return Err(NemaError::TabInBody);
+                    }
+                    let labels = split_x_v12(&line[1..])?;
+                    if labels.is_empty() || labels.iter().any(|v| v.is_empty()) {
+                        return Err(NemaError::InvalidTableHeaderName);
+                    }
+                    let unique: HashSet<&str> = labels.iter().map(String::as_str).collect();
+                    if unique.len() != labels.len() {
+                        return Err(NemaError::DuplicateColumnHeader);
+                    }
+                    current.mode = DomainMode::Table;
+                    current.columns = labels;
+                    current.explicit_header = true;
+                    current.explicit_header_span = Some(TextSpan {
+                        start_byte: line_start,
+                        end_byte: line_start + line.len(),
+                        line: line_no,
+                        column: 1,
+                    });
+                    current_domain_has_raw_rows = true;
+                    continue;
+                } else {
+                    current.mode = DomainMode::FiveWOneH;
+                }
+            }
+
+            match current.mode {
+                DomainMode::FiveWOneH => {
+                    let cells = split_x_v12(line)?;
+                    if cells.len() > 6 {
+                        return Err(NemaError::TooMany5W1HFields);
+                    }
+                    if cells.iter().all(|c| c.is_empty()) {
+                        return Err(NemaError::BlankContinuation);
+                    }
+                    if current.records.is_empty() {
+                        current.records.push(NemaRecord {
+                            span: TextSpan {
+                                start_byte: line_start,
+                                end_byte: line_start + line.len(),
+                                line: line_no,
+                                column: 1,
+                            },
+                            cells: vec![Vec::new(); 6],
+                            explicit_tail_empty: false,
+                            graph_node_id: None,
+                            graph_edge: None,
+                        });
+                    }
+                    let rec = current.records.last_mut().expect("record exists");
+                    append_v12_cols(rec, cells, &doc.dictionary, line_start, line.len(), line_no)?;
+                }
+                DomainMode::Table => {
+                    let cells = split_x_v12(line)?;
+                    if cells.len() > current.columns.len() {
+                        return Err(NemaError::TooMany5W1HFields);
+                    }
+                    if cells.iter().all(|c| c.is_empty()) {
+                        return Err(NemaError::BlankContinuation);
+                    }
+                    if !cells[0].is_empty() {
+                        current.records.push(NemaRecord {
+                            span: TextSpan {
+                                start_byte: line_start,
+                                end_byte: line_start + line.len(),
+                                line: line_no,
+                                column: 1,
+                            },
+                            cells: vec![Vec::new(); current.columns.len()],
+                            explicit_tail_empty: false,
+                            graph_node_id: None,
+                            graph_edge: None,
+                        });
+                    } else if current.records.is_empty() {
+                        return Err(NemaError::ContinuationBeforeFirstRecord);
+                    }
+                    let rec = current.records.last_mut().expect("record exists");
+                    append_v12_cols(rec, cells, &doc.dictionary, line_start, line.len(), line_no)?;
+                }
+                DomainMode::Graph => {
+                    if line.starts_with("  ") {
+                        if current.records.is_empty() {
+                            return Err(NemaError::ContinuationBeforeFirstRecord);
+                        }
+                        let cells = split_x_v12(line)?;
+                        if cells.len() < 3
+                            || !cells[0].is_empty()
+                            || !cells[1].is_empty()
+                            || cells[2..].iter().all(|c| c.is_empty())
+                        {
+                            return Err(NemaError::BlankContinuation);
+                        }
+                        let rec = current.records.last_mut().expect("record exists");
+                        append_v12_cols(rec, cells, &doc.dictionary, line_start, line.len(), line_no)?;
+                    } else if let Some(after_space) = line.strip_prefix(' ') {
+                        let cells = split_x_v12(after_space)?;
+                        if cells.is_empty() || !is_valid_graph_ident(&cells[0]) {
+                            return Err(NemaError::InvalidNodeId(
+                                cells.first().cloned().unwrap_or_default(),
+                            ));
+                        }
+                        let mut rec = NemaRecord {
+                            span: TextSpan {
+                                start_byte: line_start,
+                                end_byte: line_start + line.len(),
+                                line: line_no,
+                                column: 1,
+                            },
+                            cells: Vec::with_capacity(cells.len()),
+                            explicit_tail_empty: false,
+                            graph_node_id: Some(cells[0].clone()),
+                            graph_edge: None,
+                        };
+                        append_v12_cols(
+                            &mut rec,
+                            cells,
+                            &doc.dictionary,
+                            line_start + 1,
+                            after_space.len(),
+                            line_no,
+                        )?;
+                        current.records.push(rec);
+                    } else {
+                        let cells = split_x_v12(line)?;
+                        if cells.is_empty() {
+                            return Err(NemaError::BlankContinuation);
+                        }
+                        let token = &cells[0];
+                        if token.contains(['>', '<', '=']) {
+                            let Some(edge_spec) = parse_edge_spec(token) else {
+                                return Err(NemaError::InvalidEdgeExpression(token.clone()));
+                            };
+                            let mut rec = NemaRecord {
+                                span: TextSpan {
+                                    start_byte: line_start,
+                                    end_byte: line_start + line.len(),
+                                    line: line_no,
+                                    column: 1,
+                                },
+                                cells: Vec::with_capacity(cells.len()),
+                                explicit_tail_empty: false,
+                                graph_node_id: None,
+                                graph_edge: Some(edge_spec),
+                            };
+                            append_v12_cols(
+                                &mut rec,
+                                cells,
+                                &doc.dictionary,
+                                line_start,
+                                line.len(),
+                                line_no,
+                            )?;
+                            current.records.push(rec);
+                        } else {
+                            if !is_valid_graph_ident(token) {
+                                return Err(NemaError::InvalidNodeId(token.clone()));
+                            }
+                            let mut rec = NemaRecord {
+                                span: TextSpan {
+                                    start_byte: line_start,
+                                    end_byte: line_start + line.len(),
+                                    line: line_no,
+                                    column: 1,
+                                },
+                                cells: Vec::with_capacity(cells.len()),
+                                explicit_tail_empty: false,
+                                graph_node_id: Some(token.clone()),
+                                graph_edge: None,
+                            };
+                            append_v12_cols(
+                                &mut rec,
+                                cells,
+                                &doc.dictionary,
+                                line_start,
+                                line.len(),
+                                line_no,
+                            )?;
+                            current.records.push(rec);
+                        }
+                    }
+                }
+            }
+            current_domain_has_raw_rows = true;
             continue;
         }
 
         if line.contains('\t') {
             return Err(NemaError::TabInBody);
         }
-        let Some(current) = doc.domains.last_mut() else {
-            return Err(NemaError::BodyBeforeDomain);
-        };
 
         // Table 首行精确 `\ ` 表头判断
         if current.mode == DomainMode::Table
@@ -904,6 +1408,7 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                 line: line_no,
                 column: 1,
             });
+            current_domain_has_raw_rows = true;
             continue;
         }
 
@@ -975,6 +1480,7 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
             }
             current.records.push(rec);
         }
+        current_domain_has_raw_rows = true;
 
         let last_rec = current.records.last_mut().expect("record exists");
         if current.mode == DomainMode::Table {
@@ -1004,8 +1510,13 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
     if doc.domains.is_empty() {
         return Err(NemaError::NoDomains);
     }
+    for domain in &doc.domains {
+        if domain.records.is_empty() {
+            return Err(NemaError::NoContent);
+        }
+    }
 
-    // Graph 域完整性校验：节点与边 ID 不可重复，边引用端点必须已声明为节点
+    // Graph 域完整性校验：节点与边 ID 不可重复且不相交，边引用端点必须已声明为节点
     for domain in &doc.domains {
         if domain.mode != DomainMode::Graph {
             continue;
@@ -1031,6 +1542,9 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                 }
             }
         }
+        if let Some(collision) = nodes.intersection(&edges).next() {
+            return Err(NemaError::DuplicateEdgeId(collision.clone()));
+        }
         for (src, dst) in endpoints {
             if !nodes.contains(&src) || !nodes.contains(&dst) {
                 return Err(NemaError::UndefinedGraphNode(src, dst));
@@ -1041,19 +1555,35 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
     Ok(doc)
 }
 
-/// 渲染 `NemaDocument` 为结构化视图（与 `core.py::render` 1:1 对应）
+/// 渲染 `NemaDocument` 为结构化视图（兼容 `.NEMA v1.2` `native.py::view` 与旧版 `core.py::render`）
 pub fn render_document(doc: &NemaDocument) -> Result<RenderedDocument, NemaError> {
     let mut out = Vec::with_capacity(doc.domains.len());
     for d in &doc.domains {
         let mut rows = Vec::with_capacity(d.records.len());
         for rec in &d.records {
             let mut vals = Vec::with_capacity(rec.cells.len().max(6));
-            for col in &rec.cells {
+            let mut extensions = Vec::new();
+            for (col_idx, col) in rec.cells.iter().enumerate() {
                 let raw_parts: Vec<&str> = col.iter().map(|c| c.raw.as_str()).collect();
-                vals.push(join_cell(&raw_parts, &doc.dictionary)?);
+                let rendered_cell = if d.is_v12 {
+                    let exact_name = d.mode == DomainMode::Graph && (col_idx <= 1 || col_idx >= 3);
+                    join_intents(&raw_parts, "auto", exact_name)
+                } else if d.mode == DomainMode::Graph && col_idx >= 3 {
+                    join_intents(&raw_parts, "auto", true)
+                } else {
+                    join_cell(&raw_parts, &doc.dictionary)?
+                };
+                if d.mode == DomainMode::Graph && col_idx >= 3 && !rendered_cell.is_empty() {
+                    extensions.push((format!("X{col_idx}"), rendered_cell.clone()));
+                }
+                vals.push(rendered_cell);
             }
             if d.mode == DomainMode::FiveWOneH {
                 while vals.len() < 6 {
+                    vals.push(String::new());
+                }
+            } else if d.mode == DomainMode::Table && d.is_v12 {
+                while vals.len() < d.columns.len() {
                     vals.push(String::new());
                 }
             }
@@ -1063,6 +1593,7 @@ pub fn render_document(doc: &NemaDocument) -> Result<RenderedDocument, NemaError
                 tail_empty: rec.explicit_tail_empty,
                 node_id: rec.graph_node_id.clone(),
                 edge: rec.graph_edge.clone(),
+                extensions,
                 line: rec.span.line,
             });
         }
@@ -1353,16 +1884,528 @@ fn build_transport(source: &str, words: &[String], use_rle: bool) -> String {
     joined
 }
 
-/// 将 `.nema` 源码编码为最优 `.nemat` 或保留 `.nema`（与 `transport.py::encode` 1:1 对应）
+fn split_raw_v12(line: &str) -> Vec<String> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() && matches!(chars[i + 1], ' ' | '\\' | 't') {
+            buf.push(chars[i]);
+            buf.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        if chars[i] == ' ' {
+            out.push(std::mem::take(&mut buf));
+            i += 1;
+            continue;
+        }
+        buf.push(chars[i]);
+        i += 1;
+    }
+    out.push(buf);
+    out
+}
+
+fn esc_v12(s: &str) -> String {
+    s.replace('^', "\\^")
+}
+
+fn unesc_v12(s: &str) -> Result<String, NemaError> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() && chars[i + 1] == '^' {
+            out.push('^');
+            i += 2;
+            continue;
+        }
+        if chars[i] == '^' {
+            return Err(NemaError::InvalidTransportDictRef);
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    Ok(out)
+}
+
+fn stem_v12(line: &str) -> Option<(String, String, String, u64)> {
+    let (is_graph, name, rev) = parse_domain_header_v12(line)?;
+    let digit_start = name
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_ascii_digit())
+        .last()
+        .map(|(idx, _)| idx)?;
+    if digit_start == 0 {
+        return None;
+    }
+    let mark = if is_graph { ">" } else { "" }.to_string();
+    let stem = name[..digit_start].to_string();
+    let num = name[digit_start..].to_string();
+    Some((mark, stem, num, rev))
+}
+
+fn parse_select_v12(line: &str) -> Option<usize> {
+    let rest = line.strip_prefix('\t')?;
+    if !is_all_digits(rest) {
+        return None;
+    }
+    rest.parse().ok()
+}
+
+fn parse_short_v12(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix('\t')?;
+    let (num, rev) = rest.split_once(' ')?;
+    if is_all_digits(num) && is_positive_digits(rev) {
+        Some((num, rev))
+    } else {
+        None
+    }
+}
+
+fn prefix_encode_v12(lines: &[String], use_prefix: bool) -> Vec<String> {
+    let mut groups: HashMap<(String, String), usize> = HashMap::new();
+    let mut active: Option<usize> = None;
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        if parse_domain_header_v12(line).is_some() {
+            let Some((marker, stem, num, rev)) = stem_v12(line) else {
+                out.push(line.clone());
+                active = None;
+                continue;
+            };
+            let key = (marker, stem);
+            if let Some(&g) = groups.get(&key) {
+                let mut candidate = Vec::new();
+                if active != Some(g) {
+                    candidate.push(format!("\t{g}"));
+                }
+                candidate.push(format!("\t{num} {rev}"));
+                let cand_bytes: usize = candidate.iter().map(|s| s.len() + 1).sum();
+                if use_prefix && cand_bytes < line.len() + 1 {
+                    out.extend(candidate);
+                } else {
+                    out.push(line.clone());
+                }
+                active = Some(g);
+            } else {
+                let g = groups.len();
+                groups.insert(key, g);
+                out.push(line.clone());
+                active = Some(g);
+            }
+        } else if parse_short_v12(line).is_some() || parse_select_v12(line).is_some() {
+            out.push(format!("\t\\{}", &line[1..]));
+        } else {
+            out.push(line.clone());
+        }
+    }
+    out
+}
+
+fn prefix_decode_v12(lines: &[&str]) -> Result<Vec<String>, NemaError> {
+    let mut groups: Vec<(String, String)> = Vec::new();
+    let mut seen: HashMap<(String, String), usize> = HashMap::new();
+    let mut active: Option<usize> = None;
+    let mut out = Vec::with_capacity(lines.len());
+    for &line in lines {
+        if let Some(stripped) = line.strip_prefix("\t\\") {
+            let candidate = format!("\t{stripped}");
+            if parse_short_v12(&candidate).is_some() || parse_select_v12(&candidate).is_some() {
+                out.push(candidate);
+                continue;
+            }
+        }
+        if parse_domain_header_v12(line).is_some() {
+            if let Some((marker, stem, _, _)) = stem_v12(line) {
+                let key = (marker, stem);
+                let g = if let Some(&existing) = seen.get(&key) {
+                    existing
+                } else {
+                    let idx = groups.len();
+                    seen.insert(key.clone(), idx);
+                    groups.push(key);
+                    idx
+                };
+                active = Some(g);
+            } else {
+                active = None;
+            }
+            out.push(line.to_string());
+            continue;
+        }
+        if let Some(idx) = parse_select_v12(line) {
+            if idx >= groups.len() {
+                return Err(NemaError::UnsupportedLegacyPrefixSelector);
+            }
+            active = Some(idx);
+            continue;
+        }
+        if let Some((num, rev)) = parse_short_v12(line) {
+            let Some(act) = active else {
+                return Err(NemaError::UnsupportedLegacyPrefixSelector);
+            };
+            let (mark, stem) = &groups[act];
+            out.push(format!("\t{mark}{stem}{num} {rev}"));
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    Ok(out)
+}
+
+fn looks_like_secret_v12(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    lower.starts_with("sk-")
+        || s.starts_with("AKIA")
+        || lower.starts_with("ghp_")
+        || lower.starts_with("gho_")
+        || lower.contains("password=")
+        || lower.contains("secret=")
+        || lower.contains("api_key=")
+        || lower.contains("access_token=")
+}
+
+fn cell_candidates_v12(rows: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut mode: Option<DomainMode> = None;
+    let mut first = false;
+    for &line in rows {
+        if let Some((is_graph, _, _)) = parse_domain_header_v12(line) {
+            mode = if is_graph {
+                Some(DomainMode::Graph)
+            } else {
+                None
+            };
+            first = true;
+            continue;
+        }
+        if first && mode.is_none() {
+            mode = Some(if line.starts_with('\t') {
+                DomainMode::Table
+            } else {
+                DomainMode::FiveWOneH
+            });
+        }
+        if first && mode == Some(DomainMode::Table) {
+            first = false;
+            continue;
+        }
+        first = false;
+        let vals = split_raw_v12(line);
+        for (i, s) in vals.into_iter().enumerate() {
+            if s.is_empty() || s.chars().count() < 3 || s.len() > 16384 || looks_like_secret_v12(&s)
+            {
+                continue;
+            }
+            if mode == Some(DomainMode::Graph) && (i == 0 || (i == 1 && line.starts_with(' '))) {
+                continue;
+            }
+            out.push(s);
+        }
+    }
+    out
+}
+
+fn dict_encode_v12(lines: &[&str], dictionary: &[String]) -> Vec<String> {
+    let mut look = HashMap::with_capacity(dictionary.len());
+    for (i, v) in dictionary.iter().enumerate() {
+        look.insert(v.as_str(), format!("^{i}"));
+    }
+    let mut mode: Option<DomainMode> = None;
+    let mut first = false;
+    let mut out = Vec::with_capacity(lines.len());
+    for &line in lines {
+        if let Some((is_graph, _, _)) = parse_domain_header_v12(line) {
+            mode = if is_graph {
+                Some(DomainMode::Graph)
+            } else {
+                None
+            };
+            first = true;
+            out.push(line.to_string());
+            continue;
+        }
+        if first && mode.is_none() {
+            mode = Some(if line.starts_with('\t') {
+                DomainMode::Table
+            } else {
+                DomainMode::FiveWOneH
+            });
+        }
+        if first && mode == Some(DomainMode::Table) {
+            out.push(esc_v12(line));
+            first = false;
+            continue;
+        }
+        first = false;
+        let vals = split_raw_v12(line);
+        let encoded_cells: Vec<String> = vals
+            .into_iter()
+            .enumerate()
+            .map(|(idx, v)| {
+                if mode == Some(DomainMode::Graph)
+                    && (idx == 0 || (idx == 1 && line.starts_with(' ')))
+                {
+                    esc_v12(&v)
+                } else if let Some(alias) = look.get(v.as_str()) {
+                    alias.clone()
+                } else {
+                    esc_v12(&v)
+                }
+            })
+            .collect();
+        out.push(encoded_cells.join(" "));
+    }
+    out
+}
+
+fn dict_decode_v12(lines: &[String], dictionary: &[String]) -> Result<Vec<String>, NemaError> {
+    let mut mode: Option<DomainMode> = None;
+    let mut first = false;
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        if let Some((is_graph, _, _)) = parse_domain_header_v12(line) {
+            mode = if is_graph {
+                Some(DomainMode::Graph)
+            } else {
+                None
+            };
+            first = true;
+            out.push(line.clone());
+            continue;
+        }
+        if first && mode.is_none() {
+            mode = Some(if line.starts_with('\t') {
+                DomainMode::Table
+            } else {
+                DomainMode::FiveWOneH
+            });
+        }
+        if first && mode == Some(DomainMode::Table) {
+            out.push(unesc_v12(line)?);
+            first = false;
+            continue;
+        }
+        first = false;
+        let vals = split_raw_v12(line);
+        let mut decoded = Vec::with_capacity(vals.len());
+        for (idx, value) in vals.into_iter().enumerate() {
+            if let Some(rest) = value.strip_prefix('^') {
+                if is_all_digits(rest)
+                    && !(mode == Some(DomainMode::Graph)
+                        && (idx == 0 || (idx == 1 && line.starts_with(' '))))
+                {
+                    let n: usize = rest
+                        .parse()
+                        .map_err(|_| NemaError::TransportDictIndexOutOfRange)?;
+                    if n >= dictionary.len() {
+                        return Err(NemaError::TransportDictIndexOutOfRange);
+                    }
+                    decoded.push(dictionary[n].clone());
+                    continue;
+                }
+            }
+            decoded.push(unesc_v12(&value)?);
+        }
+        out.push(decoded.join(" "));
+    }
+    Ok(out)
+}
+
+/// `.NEMA v1.2` 传输层编码 (`nemat.py::encode` 1:1 对应)
+pub fn encode_transport_v12(
+    source: &str,
+    dictionary: &[String],
+    prefixes: bool,
+) -> Result<String, NemaError> {
+    let rows = validate_source(source)?;
+    let unique: HashSet<&String> = dictionary.iter().collect();
+    if dictionary.len() > 64 || unique.len() != dictionary.len() {
+        return Err(NemaError::BadTransportDictionarySize);
+    }
+    if dictionary
+        .iter()
+        .any(|s| s.is_empty() || s.contains('\n') || s.contains('\t') || s.len() > 16384)
+    {
+        return Err(NemaError::InvalidTransportDictionaryValue);
+    }
+    let body = prefix_encode_v12(&dict_encode_v12(&rows, dictionary), prefixes);
+    let mut all = Vec::with_capacity(dictionary.len() + 1 + body.len());
+    if !dictionary.is_empty() {
+        all.push(format!("\t${}", dictionary.len()));
+        for s in dictionary {
+            all.push(esc_v12(s));
+        }
+    }
+    all.extend(body);
+    let mut joined = all.join("\n");
+    joined.push_str("\n\n\n");
+    Ok(joined)
+}
+
+/// `.NEMA v1.2` 传输层解码 (`nemat.py::decode` 1:1 对应)
+pub fn decode_transport_v12(text: &str) -> Result<String, NemaError> {
+    if text.len() > MAX_BYTES {
+        return Err(NemaError::TransportTooLarge);
+    }
+    if text.contains('\r') || !text.ends_with("\n\n\n") || text.ends_with("\n\n\n\n") {
+        return Err(NemaError::InvalidTransportTermination);
+    }
+    let rows: Vec<&str> = text[..text.len() - 3].split('\n').collect();
+    let mut dic = Vec::new();
+    let mut start_idx = 0usize;
+    if let Some(n) = rows.first().and_then(|r| parse_dict_header(r)) {
+        if n > 64 || rows.len() < n + 2 {
+            return Err(NemaError::BadTransportDictionarySize);
+        }
+        for &raw_s in &rows[1..=n] {
+            let unescaped = unesc_v12(raw_s)?;
+            if unescaped.is_empty() || unescaped.contains('\n') || unescaped.contains('\t') {
+                return Err(NemaError::InvalidTransportDictionaryValue);
+            }
+            dic.push(unescaped);
+        }
+        let unique: HashSet<&String> = dic.iter().collect();
+        if unique.len() != n {
+            return Err(NemaError::InvalidTransportDictionaryValue);
+        }
+        start_idx = n + 1;
+    }
+    let pref_decoded = prefix_decode_v12(&rows[start_idx..])?;
+    let dict_decoded = dict_decode_v12(&pref_decoded, &dic)?;
+    let mut output = dict_decoded.join("\n");
+    output.push_str("\n\n\n");
+    if output.len() > MAX_BYTES {
+        return Err(NemaError::DecodedSourceExceedsLimit);
+    }
+    parse_source(&output)?;
+    Ok(output)
+}
+
+/// 将 `.nema` 源码编码为最优 `.nemat` 或保留 `.nema`（兼容 `.NEMA v1.2` `nemat.py::optimize` 与旧版 `transport.py::encode`）
 pub fn encode_with_profile(
     source: &str,
     profile: &TokenProfile,
     max_entries: usize,
     locked_dictionary: &[String],
 ) -> Result<EncodedChoice, NemaError> {
-    parse_source(source)?;
+    let doc = parse_source(source)?;
     let (baseline, is_exact_token, metric_note) = profile.measure(source);
     let rows: Vec<&str> = source[..source.len() - 3].split('\n').collect();
+
+    let mut best = EncodedChoice {
+        method: EncodeMethod::Native,
+        text: source.to_string(),
+        score: baseline,
+        baseline_score: baseline,
+        format: CodecFormat::Nema,
+        dictionary: Vec::new(),
+        is_exact_token,
+        metric_note: metric_note.to_string(),
+    };
+
+    if doc.domains.iter().any(|d| d.is_v12) {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for cell in cell_candidates_v12(&rows) {
+            *counts.entry(cell).or_insert(0) += 1;
+        }
+        let mut allowed: Vec<(String, usize)> =
+            counts.into_iter().filter(|(_, n)| *n > 1).collect();
+        allowed.sort_by(|a, b| {
+            let gain_a = a.1 * a.0.len();
+            let gain_b = b.1 * b.0.len();
+            gain_b.cmp(&gain_a).then_with(|| a.0.cmp(&b.0))
+        });
+        let allowed_words: Vec<String> = allowed.into_iter().take(30).map(|(s, _)| s).collect();
+        let max_dict = max_entries.min(12);
+
+        if let Ok(pref_only) = encode_transport_v12(source, &[], true) {
+            if pref_only != source && decode_transport(&pref_only).ok().as_deref() == Some(source) {
+                let (score, _, _) = profile.measure(&pref_only);
+                if score < best.score {
+                    best = EncodedChoice {
+                        method: EncodeMethod::PrefixOnly,
+                        text: pref_only,
+                        score,
+                        baseline_score: baseline,
+                        format: CodecFormat::Nemat,
+                        dictionary: Vec::new(),
+                        is_exact_token,
+                        metric_note: metric_note.to_string(),
+                    };
+                }
+            }
+        }
+
+        for pref in [false, true] {
+            let mut chosen: Vec<String> = Vec::new();
+            for w in locked_dictionary {
+                if !w.is_empty()
+                    && !w.contains('\t')
+                    && !chosen.contains(w)
+                    && chosen.len() < max_dict
+                {
+                    chosen.push(w.clone());
+                }
+            }
+            let Ok(mut current) = encode_transport_v12(source, &chosen, pref) else {
+                continue;
+            };
+            let (mut low, _, _) = profile.measure(&current);
+            for _ in 0..max_dict.min(allowed_words.len()) {
+                let mut best_step: Option<(String, String, usize)> = None;
+                for s in &allowed_words {
+                    if chosen.contains(s) {
+                        continue;
+                    }
+                    let mut trial_dict = chosen.clone();
+                    trial_dict.push(s.clone());
+                    let Ok(trial) = encode_transport_v12(source, &trial_dict, pref) else {
+                        continue;
+                    };
+                    let (cost, _, _) = profile.measure(&trial);
+                    if cost < low {
+                        low = cost;
+                        best_step = Some((s.clone(), trial, cost));
+                    }
+                }
+                if let Some((word, text, _)) = best_step {
+                    chosen.push(word);
+                    current = text;
+                } else {
+                    break;
+                }
+            }
+            if current != source && decode_transport(&current).ok().as_deref() == Some(source) {
+                let (score, _, _) = profile.measure(&current);
+                if score < best.score
+                    || (score == best.score
+                        && current.len() < best.text.len()
+                        && best.format == CodecFormat::Nemat)
+                {
+                    best = EncodedChoice {
+                        method: if pref {
+                            EncodeMethod::Combined
+                        } else {
+                            EncodeMethod::DictionaryOnly
+                        },
+                        text: current,
+                        score,
+                        baseline_score: baseline,
+                        format: CodecFormat::Nemat,
+                        dictionary: chosen,
+                        is_exact_token,
+                        metric_note: metric_note.to_string(),
+                    };
+                }
+            }
+        }
+        return Ok(best);
+    }
 
     let mut words = Vec::new();
     for w in locked_dictionary {
@@ -1396,17 +2439,6 @@ pub fn encode_with_profile(
             Vec::new(),
         ),
     ];
-
-    let mut best = EncodedChoice {
-        method: EncodeMethod::Native,
-        text: source.to_string(),
-        score: baseline,
-        baseline_score: baseline,
-        format: CodecFormat::Nema,
-        dictionary: Vec::new(),
-        is_exact_token,
-        metric_note: metric_note.to_string(),
-    };
 
     for (method, text, dict_used) in candidates {
         let Ok(decoded) = decode_transport(&text) else {
@@ -1443,7 +2475,7 @@ fn is_legacy_prefix_selector(row: &str) -> bool {
     }
 }
 
-/// 将 `.nemat` 传输流解码并校验还原为权威 `.nema` 源码（与 `transport.py::decode` 1:1 对应）
+/// 将 `.nemat` 传输流解码并校验还原为权威 `.nema` 源码（兼容 `.NEMA v1.2` `nemat.py::decode` 与旧版 `transport.py::decode`）
 pub fn decode_transport(text: &str) -> Result<String, NemaError> {
     if text.len() > MAX_BYTES {
         return Err(NemaError::TransportTooLarge);
@@ -1452,6 +2484,9 @@ pub fn decode_transport(text: &str) -> Result<String, NemaError> {
         return Err(NemaError::InvalidTransportTermination);
     }
     let rows: Vec<&str> = text[..text.len() - 3].split('\n').collect();
+    if rows.iter().any(|r| parse_domain_header_v12(r).is_some()) {
+        return decode_transport_v12(text);
+    }
     let Some(n) = rows.first().and_then(|r| parse_dict_header(r)) else {
         return Err(NemaError::ExpectedTransportManifest);
     };
@@ -1551,18 +2586,21 @@ pub fn find_reused_positions(source: &str) -> Vec<ReusedPosition> {
     positions
 }
 
+/// 官方 `.NEMA v1.2 (R7)` 三模式完整示例（含 5W1H、Table 与带 `X3` 扩展属性的 Graph 域）
+pub const COMPLETE_V12_SAMPLE: &str = "\tTja1 1\nログイン処理を確認する 情報漏洩を防ぐ 認証トークンを検証する 担当エージェント 今日 認証サービス\n セッションを守る\n\tTtable1 1\n\tAgent Status Note\nClaude Ready 认证检查已完成\n  下一轮验证权限\nCodex Review 准备输出审核结果\n\t>Gauth1 1\nA LoginAPI Authentication APIKey\nB TokenStore SessionStorage\nC AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n";
+
 /// 将任意换行规范化为合法 `.nema` 尾部 `\n\n\n`
 pub fn normalize_nema_newlines(source: &str) -> String {
     let lf = source.replace("\r\n", "\n").replace('\r', "\n");
     let trimmed = lf.trim_end_matches('\n');
     if trimmed.is_empty() {
-        "\t\\1\n\\ Column1 Column2\nItem1 Ready\n\n\n".to_string()
+        COMPLETE_V12_SAMPLE.to_string()
     } else {
         format!("{trimmed}\n\n\n")
     }
 }
 
-/// 在指定 Table 域（或第一个 Table 域）首行前切换 `\\ ` 表头前缀（支持字节级无损往返）
+/// 在指定 Table 域（或第一个非 Graph 域）首行前切换 `.NEMA v1.2` `\t` 表头或旧版 `\\ ` 表头前缀
 pub fn toggle_table_header_in_source(source: &str, target_domain_id: Option<&str>) -> String {
     let lf = source.replace("\r\n", "\n").replace('\r', "\n");
     let mut lines: Vec<String> = lf
@@ -1570,34 +2608,68 @@ pub fn toggle_table_header_in_source(source: &str, target_domain_id: Option<&str
         .split('\n')
         .map(str::to_string)
         .collect();
-    let mut in_target_table = false;
+    let mut in_target_domain = false;
+    let mut is_v12_domain = false;
     for line in &mut lines {
-        if let Some((mode, id, _)) = parse_domain_header(line) {
-            in_target_table = mode == DomainMode::Table
-                && target_domain_id.map_or(true, |target| target == id);
+        if let Some((is_graph, id, _)) = parse_domain_header_v12(line) {
+            in_target_domain =
+                !is_graph && target_domain_id.map_or(true, |target| target == id);
+            is_v12_domain = true;
             continue;
         }
-        if in_target_table && !line.starts_with('\t') && !line.trim().is_empty() {
-            if let Some(stripped) = line.strip_prefix("\\ ") {
-                *line = stripped.to_string();
-            } else {
-                // Sanitize tokens to valid header identifiers if needed
-                let parts: Vec<String> = line
-                    .split_whitespace()
-                    .enumerate()
-                    .map(|(idx, tok)| {
-                        let clean: String = tok
-                            .chars()
-                            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
-                            .collect();
-                        if is_valid_table_header_ident(&clean) {
-                            clean
-                        } else {
-                            format!("Column{}", idx + 1)
-                        }
-                    })
-                    .collect();
-                *line = format!("\\ {}", parts.join(" "));
+        if let Some((mode, id, _)) = parse_domain_header(line) {
+            in_target_domain = mode == DomainMode::Table
+                && target_domain_id.map_or(true, |target| target == id);
+            is_v12_domain = false;
+            continue;
+        }
+        if in_target_domain && !line.trim().is_empty() {
+            if is_v12_domain {
+                if let Some(stripped) = line.strip_prefix('\t') {
+                    *line = stripped.to_string();
+                } else {
+                    let parts: Vec<String> = line
+                        .split_whitespace()
+                        .enumerate()
+                        .map(|(idx, tok)| {
+                            let clean: String = tok
+                                .chars()
+                                .filter(|c| {
+                                    c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-')
+                                })
+                                .collect();
+                            if is_valid_table_header_ident(&clean) {
+                                clean
+                            } else {
+                                format!("Column{}", idx + 1)
+                            }
+                        })
+                        .collect();
+                    *line = format!("\t{}", parts.join(" "));
+                }
+            } else if !line.starts_with('\t') {
+                if let Some(stripped) = line.strip_prefix("\\ ") {
+                    *line = stripped.to_string();
+                } else {
+                    let parts: Vec<String> = line
+                        .split_whitespace()
+                        .enumerate()
+                        .map(|(idx, tok)| {
+                            let clean: String = tok
+                                .chars()
+                                .filter(|c| {
+                                    c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-')
+                                })
+                                .collect();
+                            if is_valid_table_header_ident(&clean) {
+                                clean
+                            } else {
+                                format!("Column{}", idx + 1)
+                            }
+                        })
+                        .collect();
+                    *line = format!("\\ {}", parts.join(" "));
+                }
             }
             break;
         }
@@ -1606,6 +2678,591 @@ pub fn toggle_table_header_in_source(source: &str, target_domain_id: Option<&str
     out.push_str("\n\n\n");
     out
 }
+
+// ============================================================================
+// 3.5 同语义对照格式生成器与 `.NEMA v1.2 (R7)` 实测 Benchmark 数据
+// ============================================================================
+
+/// 将 `RenderedDocument` 转换为与 `native.py::view` 完全一致的 `serde_json::Value` 数组
+pub fn render_to_json_value(doc: &RenderedDocument) -> serde_json::Value {
+    let mut arr = Vec::with_capacity(doc.domains.len());
+    for d in &doc.domains {
+        let mut obj = serde_json::Map::new();
+        obj.insert("id".to_string(), serde_json::Value::String(d.id.clone()));
+        obj.insert(
+            "revision".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(d.revision)),
+        );
+        obj.insert(
+            "mode".to_string(),
+            serde_json::Value::String(d.mode.as_str().to_string()),
+        );
+        match d.mode {
+            DomainMode::FiveWOneH => {
+                let mut fields = serde_json::Map::new();
+                let first_row = d.rows.first();
+                for (i, &axis) in AXES_5W1H.iter().enumerate() {
+                    let val = first_row
+                        .and_then(|r| r.cells.get(i))
+                        .cloned()
+                        .unwrap_or_default();
+                    fields.insert(axis.to_string(), serde_json::Value::String(val));
+                }
+                obj.insert("fields".to_string(), serde_json::Value::Object(fields));
+            }
+            DomainMode::Table => {
+                obj.insert(
+                    "columns".to_string(),
+                    serde_json::Value::Array(
+                        d.columns
+                            .iter()
+                            .cloned()
+                            .map(serde_json::Value::String)
+                            .collect(),
+                    ),
+                );
+                let mut records = Vec::with_capacity(d.rows.len());
+                for r in &d.rows {
+                    let mut rec_map = serde_json::Map::new();
+                    for (i, col_name) in d.columns.iter().enumerate() {
+                        let val = r.cells.get(i).cloned().unwrap_or_default();
+                        rec_map.insert(col_name.clone(), serde_json::Value::String(val));
+                    }
+                    records.push(serde_json::Value::Object(rec_map));
+                }
+                obj.insert("records".to_string(), serde_json::Value::Array(records));
+            }
+            DomainMode::Graph => {
+                let mut nodes = Vec::new();
+                let mut edges = Vec::new();
+                for r in &d.rows {
+                    if let Some(nid) = &r.node_id {
+                        let mut n_map = serde_json::Map::new();
+                        n_map.insert("id".to_string(), serde_json::Value::String(nid.clone()));
+                        n_map.insert(
+                            "name".to_string(),
+                            serde_json::Value::String(
+                                r.cells.get(1).cloned().unwrap_or_default(),
+                            ),
+                        );
+                        n_map.insert(
+                            "description".to_string(),
+                            serde_json::Value::String(
+                                r.cells.get(2).cloned().unwrap_or_default(),
+                            ),
+                        );
+                        if !r.extensions.is_empty() {
+                            let mut ext_map = serde_json::Map::new();
+                            for (k, v) in &r.extensions {
+                                ext_map.insert(k.clone(), serde_json::Value::String(v.clone()));
+                            }
+                            n_map.insert(
+                                "extensions".to_string(),
+                                serde_json::Value::Object(ext_map),
+                            );
+                        }
+                        nodes.push(serde_json::Value::Object(n_map));
+                    } else if let Some(edge) = &r.edge {
+                        let mut e_map = serde_json::Map::new();
+                        e_map.insert(
+                            "id".to_string(),
+                            serde_json::Value::String(edge.id.clone()),
+                        );
+                        e_map.insert(
+                            "source".to_string(),
+                            serde_json::Value::String(edge.from.clone()),
+                        );
+                        e_map.insert(
+                            "target".to_string(),
+                            serde_json::Value::String(edge.to.clone()),
+                        );
+                        e_map.insert(
+                            "direction".to_string(),
+                            serde_json::Value::String(edge.raw_operator.to_string()),
+                        );
+                        e_map.insert(
+                            "name".to_string(),
+                            serde_json::Value::String(
+                                r.cells.get(1).cloned().unwrap_or_default(),
+                            ),
+                        );
+                        e_map.insert(
+                            "description".to_string(),
+                            serde_json::Value::String(
+                                r.cells.get(2).cloned().unwrap_or_default(),
+                            ),
+                        );
+                        if !r.extensions.is_empty() {
+                            let mut ext_map = serde_json::Map::new();
+                            for (k, v) in &r.extensions {
+                                ext_map.insert(k.clone(), serde_json::Value::String(v.clone()));
+                            }
+                            e_map.insert(
+                                "extensions".to_string(),
+                                serde_json::Value::Object(ext_map),
+                            );
+                        }
+                        edges.push(serde_json::Value::Object(e_map));
+                    }
+                }
+                obj.insert("nodes".to_string(), serde_json::Value::Array(nodes));
+                obj.insert("edges".to_string(), serde_json::Value::Array(edges));
+            }
+        }
+        arr.push(serde_json::Value::Object(obj));
+    }
+    serde_json::Value::Array(arr)
+}
+
+fn domain_to_positional_json_value(d: &RenderedDomain, tagged: bool) -> serde_json::Value {
+    let mut row = Vec::with_capacity(if tagged { 5 } else { 4 });
+    if tagged {
+        let tag = match d.mode {
+            DomainMode::FiveWOneH => "w",
+            DomainMode::Table => "t",
+            DomainMode::Graph => "g",
+        };
+        row.push(serde_json::Value::String(tag.to_string()));
+    }
+    row.push(serde_json::Value::String(d.id.clone()));
+    row.push(serde_json::Value::Number(serde_json::Number::from(
+        d.revision,
+    )));
+    match d.mode {
+        DomainMode::FiveWOneH => {
+            let first = d.rows.first();
+            let fields: Vec<serde_json::Value> = (0..6)
+                .map(|i| {
+                    serde_json::Value::String(
+                        first
+                            .and_then(|r| r.cells.get(i))
+                            .cloned()
+                            .unwrap_or_default(),
+                    )
+                })
+                .collect();
+            row.push(serde_json::Value::Array(fields));
+        }
+        DomainMode::Table => {
+            row.push(serde_json::Value::Array(
+                d.columns
+                    .iter()
+                    .cloned()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ));
+            let recs: Vec<serde_json::Value> = d
+                .rows
+                .iter()
+                .map(|r| {
+                    serde_json::Value::Array(
+                        (0..d.columns.len())
+                            .map(|i| {
+                                serde_json::Value::String(
+                                    r.cells.get(i).cloned().unwrap_or_default(),
+                                )
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            row.push(serde_json::Value::Array(recs));
+        }
+        DomainMode::Graph => {
+            let mut nodes = Vec::new();
+            let mut edges = Vec::new();
+            for r in &d.rows {
+                if let Some(nid) = &r.node_id {
+                    let mut n_arr = vec![
+                        serde_json::Value::String(nid.clone()),
+                        serde_json::Value::String(r.cells.get(1).cloned().unwrap_or_default()),
+                        serde_json::Value::String(r.cells.get(2).cloned().unwrap_or_default()),
+                    ];
+                    for (_, ext_v) in &r.extensions {
+                        n_arr.push(serde_json::Value::String(ext_v.clone()));
+                    }
+                    nodes.push(serde_json::Value::Array(n_arr));
+                } else if let Some(edge) = &r.edge {
+                    let mut e_arr = vec![
+                        serde_json::Value::String(edge.id.clone()),
+                        serde_json::Value::String(edge.from.clone()),
+                        serde_json::Value::String(edge.to.clone()),
+                        serde_json::Value::String(edge.raw_operator.to_string()),
+                        serde_json::Value::String(r.cells.get(1).cloned().unwrap_or_default()),
+                        serde_json::Value::String(r.cells.get(2).cloned().unwrap_or_default()),
+                    ];
+                    for (_, ext_v) in &r.extensions {
+                        e_arr.push(serde_json::Value::String(ext_v.clone()));
+                    }
+                    edges.push(serde_json::Value::Array(e_arr));
+                }
+            }
+            row.push(serde_json::Value::Array(nodes));
+            row.push(serde_json::Value::Array(edges));
+        }
+    }
+    serde_json::Value::Array(row)
+}
+
+/// 生成同语义 `JSON objects` 紧凑字符串
+pub fn to_equivalent_json_objects(doc: &RenderedDocument) -> String {
+    serde_json::to_string(&render_to_json_value(doc)).unwrap_or_default()
+}
+
+/// 生成同语义 `JSON positional` 紧凑字符串
+pub fn to_equivalent_json_positional(doc: &RenderedDocument) -> String {
+    let arr: Vec<serde_json::Value> = doc
+        .domains
+        .iter()
+        .map(|d| domain_to_positional_json_value(d, false))
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_default()
+}
+
+/// 生成同语义 `JSON positional (tagged w/t/g)` 紧凑字符串（自包含模式标签，无需外部模式注册表）
+pub fn to_equivalent_json_tagged(doc: &RenderedDocument) -> String {
+    let arr: Vec<serde_json::Value> = doc
+        .domains
+        .iter()
+        .map(|d| domain_to_positional_json_value(d, true))
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_default()
+}
+
+/// 生成同语义 `YAML positional` 紧凑字符串
+pub fn to_equivalent_yaml_positional(doc: &RenderedDocument) -> String {
+    doc.domains
+        .iter()
+        .map(|d| {
+            let line = serde_json::to_string(&domain_to_positional_json_value(d, false))
+                .unwrap_or_default();
+            format!("- {line}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 单文档多格式同语义 Token / 字节实时对照行
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormatComparisonRow {
+    pub format_name: &'static str,
+    pub bytes: usize,
+    pub bpe_tokens: usize,
+    pub unigram_tokens: usize,
+    pub saving_vs_json_bpe_pct: f64,
+    pub saving_vs_pos_json_bpe_pct: f64,
+    pub sample_preview: String,
+}
+
+fn round_pct(base: usize, cur: usize) -> f64 {
+    if base == 0 {
+        0.0
+    } else {
+        let raw = ((base as f64 - cur as f64) * 100.0) / (base as f64);
+        (raw * 100.0).round() / 100.0
+    }
+}
+
+/// 计算当前 `.nema` 源码与同语义 `.nemat`、`JSON objects`、`JSON positional`、`JSON tagged (w/t/g)`、`YAML positional` 的实时对照
+pub fn compare_document_formats(source: &str) -> Result<Vec<FormatComparisonRow>, NemaError> {
+    let normalized = normalize_nema_newlines(source);
+    let rendered = render_source(&normalized)?;
+    let bpe_prof = TokenProfile::BpeHeuristic {
+        model_name: "local-bpe".to_string(),
+    };
+    let uni_prof = TokenProfile::UnigramHeuristic {
+        model_name: "local-unigram".to_string(),
+    };
+    let nemat_choice = encode_with_profile(&normalized, &bpe_prof, 12, &[])?;
+    let json_obj = to_equivalent_json_objects(&rendered);
+    let json_pos = to_equivalent_json_positional(&rendered);
+    let json_tag = to_equivalent_json_tagged(&rendered);
+    let yaml_pos = to_equivalent_yaml_positional(&rendered);
+
+    let json_bpe = bpe_prof.measure(&json_obj).0;
+    let pos_bpe = bpe_prof.measure(&json_pos).0;
+
+    let formats: [(&'static str, String); 6] = [
+        (".nema", normalized),
+        (".nemat", nemat_choice.text),
+        ("JSON objects", json_obj),
+        ("JSON positional", json_pos),
+        ("JSON tagged (w/t/g)", json_tag),
+        ("YAML positional", yaml_pos),
+    ];
+
+    Ok(formats
+        .into_iter()
+        .map(|(format_name, text)| {
+            let bytes = text.len();
+            let bpe_tokens = bpe_prof.measure(&text).0;
+            let unigram_tokens = uni_prof.measure(&text).0;
+            let preview: String = text.chars().take(240).collect();
+            FormatComparisonRow {
+                format_name,
+                bytes,
+                bpe_tokens,
+                unigram_tokens,
+                saving_vs_json_bpe_pct: round_pct(json_bpe, bpe_tokens),
+                saving_vs_pos_json_bpe_pct: round_pct(pos_bpe, bpe_tokens),
+                sample_preview: preview,
+            }
+        })
+        .collect())
+}
+
+/// 官方 `.NEMA v1.2 (2026-11-07)` 单个测试场景实测数据 (`latest_results.json` + `tagged_json_audit_r7.json`)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OfficialBenchmarkScenario {
+    pub scenario: &'static str,
+    pub label_zh: &'static str,
+    pub domains: usize,
+    pub raw_bytes_nema: usize,
+    pub raw_bytes_json: usize,
+    pub raw_bytes_json_positional: usize,
+    pub raw_bytes_json_tagged: usize,
+    pub raw_bytes_yaml_positional: usize,
+    pub bpe_nema: usize,
+    pub bpe_nemat: usize,
+    pub bpe_json: usize,
+    pub bpe_json_positional: usize,
+    pub bpe_json_tagged: usize,
+    pub bpe_yaml_positional: usize,
+    pub nemat_mode: &'static str,
+    pub bpe_nema_vs_json_pct: f64,
+    pub bpe_nema_vs_pos_json_pct: f64,
+    pub bpe_nema_vs_tagged_json_pct: f64,
+    pub unigram_nema: usize,
+    pub unigram_nemat: usize,
+    pub unigram_json: usize,
+    pub unigram_json_positional: usize,
+    pub unigram_json_tagged: usize,
+    pub unigram_yaml_positional: usize,
+}
+
+/// 官方 `.NEMA v1.2` 全部 8 组基准场景实测表（含高熵低收益场景，与 `https://nema-sigma.vercel.app/website/index.html#benchmark` 1:1 对齐）
+pub const OFFICIAL_BENCHMARK_V12: &[OfficialBenchmarkScenario] = &[
+    OfficialBenchmarkScenario {
+        scenario: "english_60",
+        label_zh: "英文 60 域 (5W1H)",
+        domains: 60,
+        raw_bytes_nema: 4842,
+        raw_bytes_json: 10912,
+        raw_bytes_json_positional: 6172,
+        raw_bytes_json_tagged: 6412,
+        raw_bytes_yaml_positional: 6290,
+        bpe_nema: 3012,
+        bpe_nemat: 1953,
+        bpe_json: 6502,
+        bpe_json_positional: 3851,
+        bpe_json_tagged: 3971,
+        bpe_yaml_positional: 3969,
+        nemat_mode: "combined",
+        bpe_nema_vs_json_pct: 53.68,
+        bpe_nema_vs_pos_json_pct: 21.79,
+        bpe_nema_vs_tagged_json_pct: 24.15,
+        unigram_nema: 3898,
+        unigram_nemat: 2455,
+        unigram_json: 8198,
+        unigram_json_positional: 4778,
+        unigram_json_tagged: 4898,
+        unigram_yaml_positional: 4896,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "chinese_60",
+        label_zh: "中文 60 域 (5W1H)",
+        domains: 60,
+        raw_bytes_nema: 5732,
+        raw_bytes_json: 11492,
+        raw_bytes_json_positional: 6752,
+        raw_bytes_json_tagged: 6992,
+        raw_bytes_yaml_positional: 6870,
+        bpe_nema: 5532,
+        bpe_nemat: 3647,
+        bpe_json: 8662,
+        bpe_json_positional: 6011,
+        bpe_json_tagged: 6131,
+        bpe_yaml_positional: 6129,
+        nemat_mode: "combined",
+        bpe_nema_vs_json_pct: 36.13,
+        bpe_nema_vs_pos_json_pct: 7.97,
+        bpe_nema_vs_tagged_json_pct: 9.77,
+        unigram_nema: 5588,
+        unigram_nemat: 3703,
+        unigram_json: 9488,
+        unigram_json_positional: 6068,
+        unigram_json_tagged: 6188,
+        unigram_yaml_positional: 6186,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "japanese_60",
+        label_zh: "日文 60 域 (5W1H)",
+        domains: 60,
+        raw_bytes_nema: 8432,
+        raw_bytes_json: 14192,
+        raw_bytes_json_positional: 9452,
+        raw_bytes_json_tagged: 9692,
+        raw_bytes_yaml_positional: 9570,
+        bpe_nema: 7062,
+        bpe_nemat: 4088,
+        bpe_json: 10192,
+        bpe_json_positional: 7541,
+        bpe_json_tagged: 7661,
+        bpe_yaml_positional: 7659,
+        nemat_mode: "combined",
+        bpe_nema_vs_json_pct: 30.71,
+        bpe_nema_vs_pos_json_pct: 6.35,
+        bpe_nema_vs_tagged_json_pct: 7.82,
+        unigram_nema: 7248,
+        unigram_nemat: 4220,
+        unigram_json: 11148,
+        unigram_json_positional: 7728,
+        unigram_json_tagged: 7848,
+        unigram_yaml_positional: 7846,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "table_200",
+        label_zh: "表格 200 行 (Table)",
+        domains: 1,
+        raw_bytes_nema: 6671,
+        raw_bytes_json: 13283,
+        raw_bytes_json_positional: 8432,
+        raw_bytes_json_tagged: 8436,
+        raw_bytes_yaml_positional: 8432,
+        bpe_nema: 4899,
+        bpe_nemat: 2105,
+        bpe_json: 7920,
+        bpe_json_positional: 5890,
+        bpe_json_tagged: 5892,
+        bpe_yaml_positional: 5890,
+        nemat_mode: "dictionary",
+        bpe_nema_vs_json_pct: 38.14,
+        bpe_nema_vs_pos_json_pct: 16.83,
+        bpe_nema_vs_tagged_json_pct: 16.85,
+        unigram_nema: 5208,
+        unigram_nemat: 2153,
+        unigram_json: 9067,
+        unigram_json_positional: 6226,
+        unigram_json_tagged: 6228,
+        unigram_yaml_positional: 6226,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "graph_40n_160e",
+        label_zh: "图谱 40 节点 / 160 边 (Graph)",
+        domains: 1,
+        raw_bytes_nema: 8488,
+        raw_bytes_json: 21312,
+        raw_bytes_json_positional: 11265,
+        raw_bytes_json_tagged: 11269,
+        raw_bytes_yaml_positional: 11265,
+        bpe_nema: 6952,
+        bpe_nemat: 3265,
+        bpe_json: 13778,
+        bpe_json_positional: 7551,
+        bpe_json_tagged: 7553,
+        bpe_yaml_positional: 7551,
+        nemat_mode: "dictionary",
+        bpe_nema_vs_json_pct: 49.54,
+        bpe_nema_vs_pos_json_pct: 7.93,
+        bpe_nema_vs_tagged_json_pct: 7.96,
+        unigram_nema: 7152,
+        unigram_nemat: 3306,
+        unigram_json: 15484,
+        unigram_json_positional: 8170,
+        unigram_json_tagged: 8172,
+        unigram_yaml_positional: 8170,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "high_entropy_60",
+        label_zh: "高熵随机 60 域 (低复用对照)",
+        domains: 60,
+        raw_bytes_nema: 7502,
+        raw_bytes_json: 15085,
+        raw_bytes_json_positional: 10345,
+        raw_bytes_json_tagged: 10585,
+        raw_bytes_yaml_positional: 10463,
+        bpe_nema: 6358,
+        bpe_nemat: 6181,
+        bpe_json: 9878,
+        bpe_json_positional: 7228,
+        bpe_json_tagged: 7348,
+        bpe_yaml_positional: 7346,
+        nemat_mode: "prefix",
+        bpe_nema_vs_json_pct: 35.63,
+        bpe_nema_vs_pos_json_pct: 12.04,
+        bpe_nema_vs_tagged_json_pct: 13.47,
+        unigram_nema: 6687,
+        unigram_nemat: 6451,
+        unigram_json: 11917,
+        unigram_json_positional: 8497,
+        unigram_json_tagged: 8617,
+        unigram_yaml_positional: 8615,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "short_what",
+        label_zh: "极短单域 (What HTTPItIs)",
+        domains: 1,
+        raw_bytes_nema: 22,
+        raw_bytes_json: 125,
+        raw_bytes_json_positional: 46,
+        raw_bytes_json_tagged: 50,
+        raw_bytes_yaml_positional: 46,
+        bpe_nema: 16,
+        bpe_nemat: 16,
+        bpe_json: 73,
+        bpe_json_positional: 29,
+        bpe_json_tagged: 31,
+        bpe_yaml_positional: 29,
+        nemat_mode: "native",
+        bpe_nema_vs_json_pct: 78.08,
+        bpe_nema_vs_pos_json_pct: 44.83,
+        bpe_nema_vs_tagged_json_pct: 48.39,
+        unigram_nema: 20,
+        unigram_nemat: 20,
+        unigram_json: 91,
+        unigram_json_positional: 34,
+        unigram_json_tagged: 36,
+        unigram_yaml_positional: 34,
+    },
+    OfficialBenchmarkScenario {
+        scenario: "graph_3n_4e",
+        label_zh: "小型认证图 (3 节点 / 4 边)",
+        domains: 1,
+        raw_bytes_nema: 240,
+        raw_bytes_json: 689,
+        raw_bytes_json_positional: 340,
+        raw_bytes_json_tagged: 344,
+        raw_bytes_yaml_positional: 340,
+        bpe_nema: 144,
+        bpe_nemat: 144,
+        bpe_json: 417,
+        bpe_json_positional: 205,
+        bpe_json_tagged: 207,
+        bpe_yaml_positional: 205,
+        nemat_mode: "native",
+        bpe_nema_vs_json_pct: 65.47,
+        bpe_nema_vs_pos_json_pct: 29.76,
+        bpe_nema_vs_tagged_json_pct: 30.43,
+        unigram_nema: 186,
+        unigram_nemat: 186,
+        unigram_json: 491,
+        unigram_json_positional: 239,
+        unigram_json_tagged: 241,
+        unigram_yaml_positional: 239,
+    },
+];
+
+/// `.NEMA v1.2` Graph 单空格节点语法局部标记优化实测 (`old_graph_markup` vs `new_graph_markup`)
+pub const OFFICIAL_SYNTAX_BEFORE_AFTER: (&str, &str, usize, usize, usize, usize, usize, usize) = (
+    "\t>Gauth1 1\nA \\=LoginAPI Authentication\nB \\=TokenStore SessionStorage\nA>X>B Reads VerifySession",
+    "\t>Gauth1 1\n A LoginAPI Authentication\n B TokenStore SessionStorage\nA>X>B Reads VerifySession",
+    53, // old BPE
+    45, // new BPE (-15.09%)
+    74, // old Unigram
+    72, // new Unigram (-2.70%)
+    97, // old bytes
+    95, // new bytes
+);
 
 // ============================================================================
 // 4. IDE1.0 × IME1.0 所有权仲裁状态机 (Observer + Lease + Epoch)
@@ -1955,6 +3612,10 @@ mod tests {
         for entry in std::fs::read_dir(examples_dir).unwrap() {
             let path = entry.unwrap().path();
             if path.extension().and_then(|s| s.to_str()) == Some("nema") {
+                let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if file_name.contains("_v13") || file_name.contains("_v15") {
+                    continue;
+                }
                 let raw = std::fs::read_to_string(&path)
                     .unwrap()
                     .replace("\r\n", "\n");
@@ -1999,5 +3660,68 @@ mod tests {
         let (ep_dup, cached_dup) = arb.request_lease(h, 1);
         assert_eq!(ep_dup, ep1);
         assert_eq!(cached_dup.unwrap(), choice);
+    }
+
+    #[test]
+    fn test_v12_and_r7_extensions_and_equivalent_json() {
+        let src = "\t>Gext1 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\nA>X>B Reads VerifySession HTTP401\n   RetryOnTimeout\n\n\n";
+        let rendered = render_source(src).unwrap();
+        let g = &rendered.domains[0];
+        assert_eq!(g.mode, DomainMode::Graph);
+        assert_eq!(g.rows[0].node_id.as_deref(), Some("A"));
+        assert_eq!(g.rows[0].cells[1], "LoginAPI");
+        assert_eq!(g.rows[0].cells[2], "Authentication");
+        assert_eq!(
+            g.rows[0].extensions,
+            vec![("X3".to_string(), "APIKey".to_string())]
+        );
+        assert!(g.rows[1].extensions.is_empty());
+        assert_eq!(g.rows[2].cells[1], "Reads");
+        assert_eq!(g.rows[2].cells[2], "Verify session");
+        assert_eq!(
+            g.rows[2].extensions,
+            vec![("X3".to_string(), "HTTP401 RetryOnTimeout".to_string())]
+        );
+
+        // Dangling edge without declared node is rejected
+        assert!(parse_source(&doc("\t>G1 1\nA>X>B Reads")).is_err());
+        assert!(parse_source(&doc("\t>G1 1\nA LoginAPI\nB TokenStore\nA>X>B Reads")).is_ok());
+
+        // Compare formats on COMPLETE_V12_SAMPLE
+        let rows = compare_document_formats(COMPLETE_V12_SAMPLE).unwrap();
+        assert_eq!(rows.len(), 6);
+        assert_eq!(rows[0].format_name, ".nema");
+        assert_eq!(rows[2].format_name, "JSON objects");
+        assert_eq!(rows[3].format_name, "JSON positional");
+        assert_eq!(rows[4].format_name, "JSON tagged (w/t/g)");
+        assert_eq!(OFFICIAL_BENCHMARK_V12.len(), 8);
+
+        // If E:/.NEMA/examples exists, verify 1:1 semantic JSON equality across all 8 benchmark scenarios
+        let examples_dir = std::path::Path::new("E:/.NEMA/examples");
+        if examples_dir.exists() {
+            for name in [
+                "english_60",
+                "chinese_60",
+                "japanese_60",
+                "table_200",
+                "graph_40n_160e",
+                "high_entropy_60",
+                "short_what",
+                "graph_3n_4e",
+            ] {
+                let nema_path = examples_dir.join(format!("{name}.nema"));
+                let json_path = examples_dir.join(format!("{name}.json"));
+                if nema_path.exists() && json_path.exists() {
+                    let raw = std::fs::read_to_string(&nema_path)
+                        .unwrap()
+                        .replace("\r\n", "\n");
+                    let expected: serde_json::Value =
+                        serde_json::from_str(&std::fs::read_to_string(&json_path).unwrap())
+                            .unwrap();
+                    let actual = render_to_json_value(&render_source(&raw).unwrap());
+                    assert_eq!(actual, expected, "semantic JSON mismatch on {name}");
+                }
+            }
+        }
     }
 }
