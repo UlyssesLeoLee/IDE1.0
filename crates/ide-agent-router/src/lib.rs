@@ -9,6 +9,7 @@
 //! - 异构智能体独立配置模型、Reasoning Effort、Thinking Mode 与自审加固防线
 
 #![forbid(unsafe_code)]
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 pub mod agent_profile;
 pub mod collaboration;

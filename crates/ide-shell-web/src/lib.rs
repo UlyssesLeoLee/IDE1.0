@@ -426,7 +426,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             };
             let cursor = req.get("cursor").and_then(|v| v.as_array()).map(|arr| {
                 [
-                    arr.get(0).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                    arr.first().and_then(|n| n.as_u64()).unwrap_or(0) as usize,
                     arr.get(1).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
                 ]
             }).unwrap_or([0, 0]);

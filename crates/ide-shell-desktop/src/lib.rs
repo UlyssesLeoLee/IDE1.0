@@ -22,7 +22,7 @@
 //! macro 是 private 不能跨 module. 所以 commands 必须放 lib.rs root 且不用 `pub`.
 //! invoke_handler 在同 module 引用.
 //!
-//! 测试:
+#![allow(clippy::too_many_arguments)]
 //! - UT 在 #[cfg(test)] mod (state 操作 + path 沙箱 + wiki)
 //! - IT 在 tests/e2e_commands.rs (纯函数 pub(crate 路径解析 + 沙箱 + 文件读写)
 //! - IT 在 tests/integration.rs (跨 crate, 真 Tauri managed state 模拟)

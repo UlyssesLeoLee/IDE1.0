@@ -1,3 +1,5 @@
+#![allow(clippy::cloned_ref_to_slice_refs)]
+
 use ide_agent_router::{
     CoordinatorError, FileCommitCoordinator, PatchError, PatchProposal,
     SemanticParser, SupportedLanguage,
