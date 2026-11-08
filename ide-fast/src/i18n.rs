@@ -673,6 +673,7 @@ Not signature-verified; install only plugins you trust. Install?"]),
 
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
+    ("⚡ 欢迎与安装向导…", ["⚡ 欢迎与安装向导…", "⚡ ようこそ・インストールウィザード…", "⚡ Welcome & Setup Wizard…"]),
     ("显示空白符", ["显示空白符", "空白文字を表示", "Show Whitespace"]),
     ("已完成 Native 与 Nemat 压缩效益分析", ["已完成 Native 与 Nemat 压缩效益分析", "Native と Nemat の圧縮効果分析が完了しました", "Completed Native vs Nemat compression efficiency analysis"]),
     ("已扫描并列出高频词典候选词", ["已扫描并列出高频词典候选词", "頻出辞書候補を一覧表示しました", "Scanned and listed frequent dictionary candidates"]),

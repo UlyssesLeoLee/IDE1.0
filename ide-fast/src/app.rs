@@ -31,6 +31,7 @@ mod dispatch;
 mod docks;
 mod ghopts;
 mod glass_render;
+mod installer_ui;
 mod mdopts;
 mod nemaopts;
 mod mdstruct;
@@ -58,6 +59,7 @@ pub struct App {
     upd: updateui::UpdState,
     ai: aichat::AiState,
     pub collab: collab::CollabState,
+    pub installer: installer_ui::InstallerState,
     docs: Vec<Doc>,
     active: usize,
     next_id: u64,
@@ -283,6 +285,7 @@ impl App {
             upd: Default::default(),
             ai: Default::default(),
             collab: Default::default(),
+            installer: Default::default(),
             print_ui: Default::default(),
             tray: if persist && st.tray_resident { crate::tray::Tray::build(st.tray_resident, false) } else { None },
             always_on_top: false,
@@ -5640,6 +5643,7 @@ impl App {
                 }
             });
         self.collab_window(ctx);
+        self.installer_window(ctx);
         self.restore_window(ctx);
         self.window_grips(ctx);
         self.persist_if_changed();

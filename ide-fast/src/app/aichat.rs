@@ -73,6 +73,7 @@ enum Act {
     Insert(String),
     Copy(String),
     Save,
+    OpenCollab(String),
 }
 
 impl App {
@@ -220,7 +221,12 @@ impl App {
         };
         run.stream = None;
         if let Some(e) = &turn.error {
-            self.ai.items.push(Item::Err(e.clone()));
+            let clean = if e.trim() == "HTTP 0" || e.trim() == "HTTP 000" {
+                "【网络连接失败】未收到 AI 服务端响应，请检查 Base URL 与网络连通性。".to_string()
+            } else {
+                e.clone()
+            };
+            self.ai.items.push(Item::Err(clean));
             self.ai.run = None;
             return;
         }
@@ -630,6 +636,15 @@ impl App {
                     match &self.ai.items[idx] {
                         Item::User(t) => {
                             ui.label(egui::RichText::new(format!("{} {t}", tr("ai.you"))).strong());
+                            let tl = t.to_lowercase();
+                            if tl.contains("agent") || tl.contains("派出") || tl.contains("协同") {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("💡 检测到多 Agent 调度任务:").size(11.0).color(Color32::from_rgb(0, 190, 255)));
+                                    if ui.small_button("🤖 打开多 Agent 协同工作台").clicked() {
+                                        act = Some(Act::OpenCollab(t.clone()));
+                                    }
+                                });
+                            }
                         }
                         Item::Ai(t) => {
                             ui.label(t.as_str());
@@ -750,6 +765,10 @@ impl App {
             Some(Act::Save) => {
                 self.ai_save_cfg();
                 self.ai.settings = false;
+            }
+            Some(Act::OpenCollab(prompt)) => {
+                self.collab.open = true;
+                self.collab.master_input = prompt;
             }
             None => {}
         }

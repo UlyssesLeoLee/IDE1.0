@@ -287,8 +287,16 @@ pub fn format_http_error(
             format!("【AI 服务端内部异常 (HTTP {st})】服务商返回: {msg}。服务商暂时不可用，请稍后重试。")
         }
         _ => {
+            if st == 0 {
+                return "【网络连接失败】网络连接失败或超时，未能与 AI 服务器建立连接。请检查 Base URL 设置或网络连通性。".to_string();
+            }
             if let Some(msg) = clean_detail.or(clean_err) {
-                format!("HTTP {st}: {msg}")
+                let msg_clean = if msg.trim() == "HTTP 0" || msg.trim() == "0" || msg.trim() == "000" {
+                    "网络连接中断，未收到服务商有效响应".to_string()
+                } else {
+                    msg
+                };
+                format!("HTTP {st}: {msg_clean}")
             } else {
                 format!("HTTP {st}")
             }

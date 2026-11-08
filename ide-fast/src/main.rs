@@ -142,6 +142,11 @@ fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
     (new, args.into_iter().filter(|a| a != "--new").collect())
 }
 
+fn split_installer_flag(args: Vec<String>) -> (bool, Vec<String>) {
+    let install = args.iter().any(|a| a == "--setup" || a == "--install");
+    (install, args.into_iter().filter(|a| a != "--setup" && a != "--install").collect())
+}
+
 fn main() -> eframe::Result<()> {
     let trace = Trace::new();
     trace.mark("main enter");
@@ -151,6 +156,7 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
     let (force_new, args) = split_new_flag(std::env::args().skip(1).collect());
+    let (open_installer, args) = split_installer_flag(args);
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
     // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
@@ -229,7 +235,10 @@ fn main() -> eframe::Result<()> {
             let _ = blur;
             let t = t_app.clone();
             // 直接复用已读出的 st, 避免在 App::new 内部重复读盘解析 settings.json (启动提速)
-            let app = app::App::with_settings(args, inbox, t_app, st);
+            let mut app = app::App::with_settings(args, inbox, t_app, st);
+            if open_installer {
+                app.installer.open = true;
+            }
             t.mark("App::new done");
             Ok(Box::new(app))
         }),
