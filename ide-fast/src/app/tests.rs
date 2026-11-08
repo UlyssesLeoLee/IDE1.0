@@ -1137,16 +1137,42 @@ fn test_adversarial_tray_toggle_and_new_doc() {
     // 2. ShowHide 托盘事件
     a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
 
-    // 3. Quit 托盘事件
-    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+    // 3. 窗口置顶切换事件
+    assert!(!a.always_on_top);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(a.always_on_top);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(!a.always_on_top);
 
-    // 4. 多语言字典完整性校验：Sakura 指示器与系统托盘提示
+    // 4. 常驻后台切换事件
+    let orig_res = a.cfg.tray_resident;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert_eq!(a.cfg.tray_resident, !orig_res);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert_eq!(a.cfg.tray_resident, orig_res);
+
+    // 5. 退出托盘常驻事件
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::DisableResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(a.tray.is_none());
+
+    // 6. Quit 退出事件
+    assert!(!a.force_exit);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+    assert!(a.force_exit);
+
+    // 7. 多语言字典完整性校验：系统托盘纯净提示（零 Sakura 独立品牌）
     for lang in [crate::i18n::Lang::Zh, crate::i18n::Lang::Ja, crate::i18n::Lang::En] {
         crate::i18n::set(lang);
-        let sakura_tip = crate::msgtr::msg("🌸 Sakura 常驻托盘已激活：亦可在 Windows 屏幕右下角任务栏时间旁边找到托盘图标快速唤起");
-        assert!(!sakura_tip.is_empty(), "Language {:?} must define Sakura tray message", lang);
-        assert!(sakura_tip.contains("Sakura") || sakura_tip.contains("サクラ") || sakura_tip.contains("🌸"));
+        let tip = crate::msgtr::msg("⚡ 系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理");
+        assert!(!tip.is_empty(), "Language {:?} must define tray message", lang);
+        assert!(!tip.contains("Sakura") && !tip.contains("サクラ") && !tip.contains("🌸"), "UI提示严禁出现 Sakura 字样");
     }
+
+    // 8. 字体消毒免疫测试：验证艺术/紧缩不可读字体被阻断
+    assert_eq!(crate::fonts::sanitize_font_family("BOD_PSTC.TTF", "theme-comic"), "CascadiaCode.ttf");
+    assert_eq!(crate::fonts::sanitize_font_family("Bodoni MT", "theme-comic"), "CascadiaCode.ttf");
+    assert_eq!(crate::fonts::sanitize_font_family("Consolas", "theme-comic"), "Consolas");
 }
 
 #[test]

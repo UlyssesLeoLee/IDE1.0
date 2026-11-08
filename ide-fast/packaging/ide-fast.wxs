@@ -3,7 +3,7 @@
      构建: packaging/build-msi.ps1 (它会先用 cargo 构建 release 版)。 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product Id="*" Name="IDE1.0 Fast" Language="1033" Version="$(var.Version)" Manufacturer="ide1" UpgradeCode="eeec6d8b-4609-4df9-999b-ddadc720c74e">
-    <Package InstallerVersion="450" Compressed="yes" InstallScope="perMachine" Description="IDE1.0 Fast - native Rust Sakura-style text editor" SummaryCodepage="1252" />
+    <Package InstallerVersion="450" Compressed="yes" InstallScope="perMachine" Description="IDE1.0 Fast - High-Performance Text and Code Editor" SummaryCodepage="1252" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of IDE1.0 Fast is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
@@ -30,7 +30,7 @@
     <!-- 开始菜单快捷方式: 单独一个组件, 以 HKCU 注册表项作 KeyPath (Windows Installer 对快捷方式的要求); 目标写成 [INSTALLFOLDER]ide-fast.exe 而不是 [#文件Id], 否则快捷方式与目标文件分属两个组件会触发 ICE69 -->
     <DirectoryRef Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Guid="*">
-        <Shortcut Id="IdeFastShortcut" Name="IDE1.0 Fast" Target="[INSTALLFOLDER]ide-fast.exe" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" Description="IDE1.0 Fast - 3D-to-2D Cel-Shaded Comic Text Editor (Sakura Style)" />
+        <Shortcut Id="IdeFastShortcut" Name="IDE1.0 Fast" Target="[INSTALLFOLDER]ide-fast.exe" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" Description="IDE1.0 Fast - High-Performance Text and Code Editor" />
         <RegistryValue Root="HKCU" Key="Software\ide1\IDE1.0 Fast" Name="shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>

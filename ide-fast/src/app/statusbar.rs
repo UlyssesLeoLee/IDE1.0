@@ -17,7 +17,7 @@ pub(super) enum StatusCmd {
     CrossPageGrep,
     ReviewDoc,
     Language,
-    SakuraInfo,
+    TrayToggle,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -328,9 +328,11 @@ impl App {
                 ui.add_space(4.0);
                 sep(ui, on);
                 // 提示撑满剩下的宽, 语法名靠右
-                let sakura_w = text_w(ui, "🌸 Sakura") + 18.0;
+                let tray_resident = self.cfg.tray_resident;
+                let tray_str = if tray_resident { "⚡ 常驻托盘" } else { "🖥️ 独立窗口" };
+                let tray_w = text_w(ui, tray_str) + 18.0;
                 let lang_w = text_w(ui, &lang) + 16.0;
-                let tip_w = (right - ui.cursor().left() - lang_w - sakura_w - 2.0).max(0.0);
+                let tip_w = (right - ui.cursor().left() - lang_w - tray_w - 2.0).max(0.0);
                 ui.allocate_ui_with_layout(
                     Vec2::new(tip_w, ui.available_height()),
                     egui::Layout::left_to_right(egui::Align::Center),
@@ -351,13 +353,22 @@ impl App {
                 }
                 sep(ui, on);
                 ui.add_space(6.0);
-                let sakura_label = egui::RichText::new("🌸 Sakura").color(Color32::from_rgb(255, 183, 197)).strong();
+                let tray_color = if tray_resident {
+                    Color32::from_rgb(96, 192, 255)
+                } else {
+                    Color32::from_rgb(160, 160, 160)
+                };
+                let tray_label = egui::RichText::new(tray_str).color(tray_color).strong();
                 if ui
-                    .add(egui::Label::new(sakura_label).sense(Sense::click()))
-                    .on_hover_text("Sakura 常驻托盘模式已就绪 (可直接在 Windows 任务栏右下角时间旁边点击 🌸 托盘图标唤出或管理)")
+                    .add(egui::Label::new(tray_label).sense(Sense::click()))
+                    .on_hover_text(if tray_resident {
+                        "系统托盘常驻已开启 (关闭窗口时隐藏到任务栏托盘；点击可切换)"
+                    } else {
+                        "系统托盘未常驻 (关闭窗口时直接退出；点击可切换)"
+                    })
                     .clicked()
                 {
-                    st_cmd = Some(StatusCmd::SakuraInfo);
+                    st_cmd = Some(StatusCmd::TrayToggle);
                 }
                 ui.add_space(6.0);
             });
@@ -392,8 +403,23 @@ impl App {
                 self.open_review_doc();
             }
             Some(StatusCmd::Language) => self.open_syntax_pick(),
-            Some(StatusCmd::SakuraInfo) => {
-                self.cur().tip = "🌸 Sakura 常驻托盘已激活：亦可在 Windows 屏幕右下角任务栏时间旁边找到托盘图标快速唤起".into();
+            Some(StatusCmd::TrayToggle) => {
+                self.cfg.tray_resident = !self.cfg.tray_resident;
+                if self.cfg.tray_resident {
+                    if self.tray.is_none() && self.persist {
+                        self.tray = crate::tray::Tray::build(true, self.always_on_top);
+                    }
+                    if let Some(t) = &self.tray {
+                        t.set_resident_checked(true);
+                    }
+                    self.cur().tip = "已开启系统托盘常驻 (关闭窗口将最小化到任务栏托盘)".into();
+                } else {
+                    if let Some(t) = &self.tray {
+                        t.set_resident_checked(false);
+                    }
+                    self.cur().tip = "已关闭系统托盘常驻 (关闭窗口将直接退出程序)".into();
+                }
+                if self.persist { self.cfg.save(); }
             }
             None => {}
         }

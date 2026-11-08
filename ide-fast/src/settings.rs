@@ -84,6 +84,8 @@ pub struct Settings {
     pub macro_slots: Vec<MacroSlot>,
     /// 「视图 > 工具栏」里的按钮: 命令 id 的列表, 空串 = 分隔线 (同 Tauri 的「快捷按钮」: 自己增减、排序; 首选项 > 工具栏里改)
     pub toolbar_cmds: Vec<String>,
+    /// 系统托盘常驻: 点击窗口关闭按钮时不退出进程，而是最小化隐藏到 Windows 任务栏系统托盘
+    pub tray_resident: bool,
 }
 
 /// 宏登记槽的个数
@@ -257,6 +259,7 @@ impl Default for Settings {
             update_last_check: 0,
             toolbar_cmds: DEFAULT_TOOLBAR.iter().map(|s| s.to_string()).collect(),
             macro_slots: sanitize_slots(vec![]),
+            tray_resident: true,
         }
     }
 }
@@ -549,6 +552,7 @@ impl Settings {
             return s;
         };
         s.apply_json(&v, true);
+        s.font_family = crate::fonts::sanitize_font_family(&s.font_family, &s.theme_plugin);
         s
     }
 
@@ -580,6 +584,7 @@ impl Settings {
         b("glass_blur", &mut self.glass_blur);
         b("system_title_bar", &mut self.system_title_bar);
         b("update_daily", &mut self.update_daily);
+        b("tray_resident", &mut self.tray_resident);
         if let Some(c) = v["update_channel"].as_str() {
             if crate::update::Channel::from_code(c).is_some() {
                 self.update_channel = c.to_string();
@@ -631,6 +636,7 @@ impl Settings {
         st("default_encoding", &mut self.default_encoding);
         st("default_eol", &mut self.default_eol);
         st("font_family", &mut self.font_family);
+        self.font_family = crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
         st("font_cjk_fallback", &mut self.font_cjk_fallback);
         if let Some(f) = v["font_px"].as_f64() {
             self.font_px = (f as f32).clamp(8.0, 40.0);
@@ -873,6 +879,7 @@ impl Settings {
                 "colors": self.colors.to_json(),
                 "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar, "update_channel": self.update_channel, "update_daily": self.update_daily,
                 "toolbar_cmds": self.toolbar_cmds,
+                "tray_resident": self.tray_resident,
                 "macro_slots": self.macro_slots.iter().map(|s| json!({ "name": s.name, "kind": s.kind, "code": s.code })).collect::<Vec<_>>(),
                 "term_font_px": self.term_font_px, "term_scrollback": self.term_scrollback, "term_fg": self.term_fg.map(hex), "term_bg": self.term_bg.map(hex),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces, "wrap_col": t.wrap_col })).collect::<Vec<_>>(),

@@ -83,6 +83,31 @@ pub const RECOMMENDED_FONTS: &[RecommendedFont] = &[
     },
 ];
 
+/// 过滤并校正明显影响阅读的紧缩装饰/艺术/标题字体 (如 Bodoni Poster Compressed 等)
+pub fn is_illegible_display_font(file_or_name: &str) -> bool {
+    let s = file_or_name.to_ascii_uppercase();
+    s.contains("BOD_PSTC")
+        || s.contains("BODONI")
+        || s.contains("PLAYBILL")
+        || s.contains("CHILLER")
+        || s.contains("CURLZ")
+        || s.contains("OLDENG")
+        || s.contains("FRAKTUR")
+        || s.contains("BLACKLETTER")
+        || s.contains("PAPYRUS")
+        || s.contains("SHOWG")
+        || s.contains("SNAP____")
+}
+
+/// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体
+pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
+    if font.is_empty() || is_illegible_display_font(font) {
+        theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
+    } else {
+        font.to_string()
+    }
+}
+
 /// 为各主题匹配最贴合风格的免费商用美观字体 (除 16 位像素主题外均挑选美观且高辨识度字体)
 pub fn theme_default_font(theme_id: &str) -> Option<&'static str> {
     match theme_id {

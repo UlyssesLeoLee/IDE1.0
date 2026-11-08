@@ -167,6 +167,8 @@ pub struct App {
     text_drag: Option<crate::textdrag::TextDrag>,
     print_ui: printui::PrintUi,
     tray: Option<crate::tray::Tray>,
+    pub always_on_top: bool,
+    pub force_exit: bool,
 }
 
 impl App {
@@ -277,7 +279,9 @@ impl App {
             upd: Default::default(),
             ai: Default::default(),
             print_ui: Default::default(),
-            tray: if persist { crate::tray::Tray::build() } else { None },
+            tray: if persist && st.tray_resident { crate::tray::Tray::build(st.tray_resident, false) } else { None },
+            always_on_top: false,
+            force_exit: false,
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -2465,7 +2469,7 @@ impl App {
 
     fn run_mac_file(&mut self, ctx: &egui::Context) {
         let Some(p) = rfd::FileDialog::new()
-            .add_filter("Sakura 宏", &["mac"])
+            .add_filter("宏脚本 (*.mac)", &["mac"])
             .pick_file()
         else {
             return;
@@ -5157,8 +5161,9 @@ impl App {
             crate::tray::TrayEvent::ShowHide => {
                 let is_min = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
                 let is_foc = ctx.input(|i| i.viewport().focused.unwrap_or(false));
-                if !is_min && is_foc {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                let is_vis = ctx.input(|i| i.viewport().visible().unwrap_or(true));
+                if is_vis && !is_min && is_foc {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -5171,7 +5176,32 @@ impl App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
+            crate::tray::TrayEvent::ToggleTopmost => {
+                self.always_on_top = !self.always_on_top;
+                let level = if self.always_on_top {
+                    egui::WindowLevel::AlwaysOnTop
+                } else {
+                    egui::WindowLevel::Normal
+                };
+                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+                if let Some(t) = &self.tray {
+                    t.set_topmost_checked(self.always_on_top);
+                }
+            }
+            crate::tray::TrayEvent::ToggleResident => {
+                self.cfg.tray_resident = !self.cfg.tray_resident;
+                if let Some(t) = &self.tray {
+                    t.set_resident_checked(self.cfg.tray_resident);
+                }
+                if self.persist { self.cfg.save(); }
+            }
+            crate::tray::TrayEvent::DisableResident => {
+                self.cfg.tray_resident = false;
+                self.tray = None;
+                if self.persist { self.cfg.save(); }
+            }
             crate::tray::TrayEvent::Quit => {
+                self.force_exit = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -5224,6 +5254,11 @@ impl App {
         self.sys_frame(ctx);
         self.track_geometry(ctx);
         if ctx.input(|i| i.viewport().close_requested()) {
+            if !self.force_exit && self.cfg.tray_resident && self.tray.is_some() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                return;
+            }
             if self.exit_session.is_none() {
                 self.exit_session = Some((self.session_paths(), self.session_active()));
             }

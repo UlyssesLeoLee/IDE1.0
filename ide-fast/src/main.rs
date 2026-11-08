@@ -162,9 +162,9 @@ fn main() -> eframe::Result<()> {
     let st = settings::Settings::load();
     trace.mark("settings loaded");
     let font_file = if st.font_family.is_empty() {
-        fonts::theme_default_font(&st.theme_plugin).unwrap_or("").to_string()
+        fonts::theme_default_font(&st.theme_plugin).unwrap_or("CascadiaCode.ttf").to_string()
     } else {
-        st.font_family.clone()
+        fonts::sanitize_font_family(&st.font_family, &st.theme_plugin)
     };
     // 字体文件在后台双线程并行读 (主字体 + 核心 CJK fallback, 按需加载粗体), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
     let fonts_job = fonts::prefetch_ext(&font_file, &st.font_cjk_fallback, &st.lang, st.font_bold);
