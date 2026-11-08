@@ -29,6 +29,8 @@ editcore = { path = "../editcore" }
 ide-kernel = { path = "../ide-kernel" }
 # 多租户协同路由与统筹审查引擎 (SaaS Cloud IDE)
 ide-agent-router = { path = "../ide-agent-router" }
+# NEMA 编解码与自适应解释器
+nema-codec = { path = "../nema-codec" }
 
 [lints]
 workspace = true

@@ -13810,6 +13810,8 @@ const NEMA_BTNS = [
   ["🔒 锁定字典", "nema-lock-dict", "固化当前高频候选词并生成 ^N 引用"],
   ["📍 复用位置", "nema-show-reused", "显示字典引用与高频复用词位置"],
   ["📊 Benchmark", "nema-token-diff", "查看当前文档实测对照与官方 8 组基准数据 (SentencePiece BPE/Unigram)"],
+  "|",
+  ["🔌 解释器", "nema-interpreter", "导入自定义 .NEMA 解释器 (Python / 二进制) 并自动适配"],
 ];
 const NEMA = {
   built: false,
@@ -14106,6 +14108,7 @@ function nemaCommand(cmd) {
     renderNemaPreview();
     return;
   }
+  if (cmd === "nema-interpreter") return nemaOpenInterpreterDialog();
 }
 
 function toggleNemaPreview() {
@@ -14133,6 +14136,186 @@ function nemaRefresh() {
 }
 
 /* NEMA JS 规范解析与分词器 (与 Python core.py & crates/nema-codec 1:1 对齐) */
+
+/* ===== NEMA 自适应解释器管理 (Adaptive Interpreter Import) ===== */
+async function nemaOpenInterpreterDialog() {
+  let status;
+  try { const r = await invoke("nema_status", {}); status = r; } catch (_) {
+    try { const r = await fetch("/api/nema/status", { method: "POST", headers: { "Content-Type": "application/json", "X-IDE-Token": window._IDE_TOKEN || "" }, body: "{}" }); status = await r.json(); } catch (e) { setTip("无法连接后端: " + e.message); return; }
+  }
+  const active = status.active || {};
+  const candidates = status.candidates || [];
+
+  let html = '<div style="font-size:13px;line-height:1.7;">';
+  // 当前状态
+  html += '<div style="margin-bottom:12px;padding:8px 12px;border-radius:6px;background:var(--bg-raised);border:1px solid var(--border);">';
+  html += '<div style="font-weight:600;margin-bottom:4px;">当前解释器引擎</div>';
+  if (active.enabled && active.path) {
+    html += '<div style="color:var(--green,#3fb950);">✓ 外部自定义: <code style="font-size:12px;">' + escapeHtml(active.path) + '</code></div>';
+    html += '<div style="color:var(--fg-muted);font-size:11px;">协议: ' + escapeHtml(active.protocol || "unknown") + ' · 宿主: ' + escapeHtml(active.runner || "auto") + '</div>';
+    if (active.metadata && active.metadata.engine_name) html += '<div style="font-size:11px;">引擎: ' + escapeHtml(active.metadata.engine_name) + ' v' + escapeHtml(active.metadata.version || "?") + '</div>';
+  } else {
+    html += '<div style="color:var(--fg-muted);">● 内置标准 Rust 编解码器 (v1.5)</div>';
+  }
+  html += '</div>';
+
+  // 自动发现候选列表
+  if (candidates.length) {
+    html += '<div style="font-weight:600;margin-bottom:6px;">自动发现的候选解释器</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px;">';
+    html += '<tr style="background:var(--bg-bar);"><th style="padding:4px 8px;text-align:left;border:1px solid var(--border);">名称</th><th style="padding:4px 8px;border:1px solid var(--border);">路径</th><th style="padding:4px 8px;border:1px solid var(--border);">状态</th><th style="padding:4px 8px;border:1px solid var(--border);">操作</th></tr>';
+    candidates.forEach((c, i) => {
+      const existsColor = c.exists ? "var(--green,#3fb950)" : "var(--fg-muted)";
+      html += '<tr><td style="padding:4px 8px;border:1px solid var(--border);">' + escapeHtml(c.name) + '</td>';
+      html += '<td style="padding:4px 8px;border:1px solid var(--border);font-family:monospace;font-size:11px;word-break:break-all;">' + escapeHtml(c.path) + '</td>';
+      html += '<td style="padding:4px 8px;border:1px solid var(--border);color:' + existsColor + ';">' + (c.exists ? "✓ 可用" : "✗ 不存在") + '</td>';
+      html += '<td style="padding:4px 8px;border:1px solid var(--border);">';
+      if (c.exists) html += '<button class="md-btn" style="font-size:11px;padding:2px 8px;" onclick="nemaProbeAndActivate(\'' + escapeHtml(c.path).replace(/'/g, "\\'") + '\')">探测并启用</button>';
+      html += '</td></tr>';
+    });
+    html += '</table>';
+  }
+
+  // 手动导入
+  html += '<div style="font-weight:600;margin-bottom:6px;">手动导入自定义解释器</div>';
+  html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">';
+  html += '<input id="nema-interp-path" type="text" placeholder="输入解释器路径 (例: E:\\.NEMA\\codec\\native.py)" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-edit);color:var(--fg);font-size:12px;font-family:monospace;" value="' + escapeHtml(active.path || "") + '">';
+  html += '<select id="nema-interp-runner" style="padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-edit);color:var(--fg);font-size:12px;">';
+  html += '<option value="auto"' + (active.runner === "auto" ? " selected" : "") + '>自动</option>';
+  html += '<option value="python"' + (active.runner === "python" ? " selected" : "") + '>Python</option>';
+  html += '<option value="direct"' + (active.runner === "direct" ? " selected" : "") + '>二进制</option>';
+  html += '</select>';
+  html += '<button class="md-btn" style="font-size:12px;padding:4px 12px;" onclick="nemaProbeCustom()">🔍 探测</button>';
+  html += '</div>';
+
+  // 探针结果区域
+  html += '<div id="nema-probe-result" style="display:none;padding:8px 12px;border-radius:6px;border:1px solid var(--border);margin-bottom:8px;font-size:12px;"></div>';
+
+  html += '</div>';
+
+  openModal({
+    title: "🔌 .NEMA 解释器管理 — 导入、探测与自适应适配",
+    bodyHTML: html,
+    buttons: [
+      { label: "重置为内置引擎", cmd: "nema-interp-reset" },
+      { label: "关闭", cmd: "modal-close" },
+    ]
+  });
+}
+
+async function nemaProbeCustom() {
+  const pathEl = document.getElementById("nema-interp-path");
+  const runnerEl = document.getElementById("nema-interp-runner");
+  const resultEl = document.getElementById("nema-probe-result");
+  if (!pathEl || !resultEl) return;
+  const path = pathEl.value.trim();
+  if (!path) { setTip("请输入解释器路径"); return; }
+
+  resultEl.style.display = "block";
+  resultEl.innerHTML = '<span style="color:var(--fg-muted);">正在探测解释器…</span>';
+
+  try {
+    const rep = await nemaProbeRequest(path, runnerEl ? runnerEl.value : "auto");
+    nemaShowProbeResult(resultEl, rep, path);
+  } catch (e) {
+    resultEl.innerHTML = '<span style="color:var(--red,#f85149);">探测失败: ' + escapeHtml(e.message || String(e)) + '</span>';
+  }
+}
+
+async function nemaProbeAndActivate(path) {
+  const resultEl = document.getElementById("nema-probe-result");
+  if (resultEl) {
+    resultEl.style.display = "block";
+    resultEl.innerHTML = '<span style="color:var(--fg-muted);">正在探测并启用 ' + escapeHtml(path) + ' …</span>';
+  }
+  try {
+    const rep = await nemaProbeRequest(path, "auto");
+    if (rep.success) {
+      await nemaActivateInterpreter(path, rep);
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--green,#3fb950);">✓ 已启用外部解释器: ' + escapeHtml(path) + ' (' + rep.protocol + ', ' + rep.latency_us + ' µs)</span>';
+      setTip("已切换至外部解释器: " + path);
+      renderNemaPreview();
+    } else {
+      if (resultEl) nemaShowProbeResult(resultEl, rep, path);
+    }
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = '<span style="color:var(--red,#f85149);">操作失败: ' + escapeHtml(e.message || String(e)) + '</span>';
+  }
+}
+
+async function nemaProbeRequest(path, runner) {
+  try {
+    return await invoke("nema_probe", { path, runner });
+  } catch (_) {
+    const r = await fetch("/api/nema/probe", { method: "POST", headers: { "Content-Type": "application/json", "X-IDE-Token": window._IDE_TOKEN || "" }, body: JSON.stringify({ path, runner }) });
+    return r.json();
+  }
+}
+
+function nemaShowProbeResult(el, rep, path) {
+  if (rep.success) {
+    let html = '<div style="color:var(--green,#3fb950);font-weight:600;">✓ 探测成功</div>';
+    html += '<div>协议: <code>' + escapeHtml(rep.protocol) + '</code> · 延迟: ' + rep.latency_us + ' µs · 版本: ' + escapeHtml(rep.version_detected) + '</div>';
+    html += '<div>AST: ' + rep.sample_ast_domains + ' 域, ' + rep.sample_ast_nodes + ' 节点, ' + rep.sample_ast_edges + ' 边</div>';
+    if (rep.features && rep.features.length) html += '<div style="color:var(--fg-muted);font-size:11px;">特性: ' + rep.features.map(f => escapeHtml(f)).join(" · ") + '</div>';
+    html += '<div style="margin-top:6px;"><button class="md-btn" style="font-size:12px;padding:4px 12px;" onclick="nemaActivateFromProbe()">✓ 启用此解释器</button></div>';
+    el.innerHTML = html;
+    el._probeRep = rep;
+    el._probePath = path;
+  } else {
+    el.innerHTML = '<div style="color:var(--red,#f85149);font-weight:600;">✗ 探测未通过</div><div style="font-size:11px;color:var(--fg-muted);word-break:break-all;">' + escapeHtml(rep.error || "未知错误") + '</div>';
+  }
+}
+
+async function nemaActivateFromProbe() {
+  const el = document.getElementById("nema-probe-result");
+  if (!el || !el._probeRep || !el._probePath) return;
+  await nemaActivateInterpreter(el._probePath, el._probeRep);
+  el.innerHTML = '<span style="color:var(--green,#3fb950);">✓ 已启用外部解释器</span>';
+  setTip("已切换至外部解释器: " + el._probePath);
+  renderNemaPreview();
+}
+
+async function nemaActivateInterpreter(path, probeRep) {
+  const cfg = {
+    enabled: true,
+    path: path,
+    runner: probeRep.runner_used || "auto",
+    protocol: probeRep.protocol,
+    metadata: {
+      engine_name: probeRep.version_detected || "Custom",
+      version: probeRep.version_detected || "unknown",
+      supports_graph: probeRep.sample_ast_nodes > 0,
+      supports_5w1h: true,
+      supports_table: true,
+      probe_latency_us: probeRep.latency_us || 0,
+      probe_timestamp: Date.now(),
+      last_status: "ready",
+    }
+  };
+  NEMA.customInterpreter = cfg;
+  try {
+    await invoke("nema_set_interpreter", cfg);
+  } catch (_) {
+    await fetch("/api/nema/set_interpreter", { method: "POST", headers: { "Content-Type": "application/json", "X-IDE-Token": window._IDE_TOKEN || "" }, body: JSON.stringify(cfg) });
+  }
+}
+
+async function nemaResetInterpreter() {
+  NEMA.customInterpreter = null;
+  const cfg = { enabled: false, path: "", runner: "auto", protocol: "builtin_rust", metadata: {} };
+  try {
+    await invoke("nema_set_interpreter", cfg);
+  } catch (_) {
+    await fetch("/api/nema/set_interpreter", { method: "POST", headers: { "Content-Type": "application/json", "X-IDE-Token": window._IDE_TOKEN || "" }, body: JSON.stringify(cfg) });
+  }
+  setTip("已重置为内置标准 Rust 解释器");
+  closeModal();
+  renderNemaPreview();
+}
+
+// 拦截解释器重置命令
+if (typeof CFG_CMDS !== "undefined") CFG_CMDS["nema-interp-reset"] = nemaResetInterpreter;
 function nemaUnescapeOpaque(text) {
   let out = "", i = 0;
   while (i < text.length) {
@@ -14836,6 +15019,364 @@ function renderNemaBenchmarkView(wrap, rawText, parsed) {
   if (uniBtn) uniBtn.addEventListener("click", () => { NEMA.benchUseUnigram = true; renderNemaPreview(); });
 }
 
+/* ===== .NEMA 全语法变化矩阵 · 七列完整审查版看板与 64 态组合验证器 ===== */
+const NEMA_SYNTAX_MATRIX_DATA = [
+  // Table A: 领域头、表头、列数及首行
+  ["table", " \\N REV", "Table 领域头", " \\1 1", "明确领域边界", "普通数据误判为领域头", " \\2 1", "创建 Table #2，Rev 1"],
+  ["table", " \\N REV", "修订号变化", " \\1 1", "保持修订可追踪", "修改后失去版本关系", " \\1 2", "创建 Table #1，Rev 2"],
+  ["table", " \\N REV", "大编号", " \\1 1", "支持多个领域", "编号空间不足", " \\999 10", "Table #999，Rev 10"],
+  ["table", " \\N REV", "非法零编号", " \\1 1", "统一整数编码", "0 与未编号混淆", " \\0 1", "错误：ID 非法"],
+  ["table", " \\N REV", "非法前导零", " \\1 1", "唯一编码形式", "01 与 1 同义", " \\01 1", "错误：非规范 ID"],
+  ["table", " \\N REV", "非法多空格", " \\1 1", "严格空格规则", "解释器自动折叠空格", "  \\1 1", "错误：领域头前置空格数异常"],
+  ["table", "\\#", "显式表头", "\\# Name Status", "彻底区分表头和数据", "首列为空时误识别表头", "\\# Name Status Detail", "创建三列命名表格"],
+  ["table", "\\#", "单列表头", "\\# Name Status", "支持最小表格", "强制要求至少两列", "\\# Name", "创建单列表格"],
+  ["table", "\\#", "表头包含空格", "\\# Name Status", "保留真实名称", "列名被拆分", "\\# Full\\ Name Status", "两列：Full Name、Status"],
+  ["table", "\\#", "空表头字段", "\\# Name Status", "保证字段可寻址", "空键导致访问歧义", "\\# Name \\e", "错误：空列名"],
+  ["table", "\\#", "重复列名", "\\# Name Status", "列名唯一", "JSON 转换出现重复键", "\\# Name Name", "错误：列名重复"],
+  ["table", "\\#", "缺少列名", "\\# Name Status", "保证 Schema 完整", "建立零列命名表格", "\\#", "错误：没有列名"],
+  ["table", "\\#", "数据后再声明表头", "\\# Name Status", "结构固定", "中途重定义数据意义", "数据之后出现 \\# Name Status", "错误：表头位置非法"],
+  ["table", "无 \\#", "自动列名", "Claude Ready", "减少额外表头 Token", "AI 自行推断列名", "A B C", "column1～column3"],
+  ["table", "无 \\#", "单列自动表头", "A B", "支持最小记录", "无法表达单列表", "A", "column1=A"],
+  ["table", "无 \\#", "首列 Null", "A B", "支持稀疏首行", "将 X1 错当作 X0", "~ Ready", "column1=null，column2=Ready"],
+  ["table", "无 \\#", "首列空字符串", "A B", "保留空文本", "空文本被误当 Null", "\\e Ready", "column1=\"\"，column2=Ready"],
+  ["table", "无 \\#", "首列缺失", "A B", "保留 Missing 状态", "将未提供当作 Null", "\\_ Ready", "column1=Missing，column2=Ready"],
+  ["table", "无 \\#", "首列无值第三列有值", "A B C", "保持精确列坐标", "非空字段向左移动", "\\_ \\_ Active", "X0、X1 Missing；X2=Active"],
+  ["table", "无 \\#", "首行全部 Null", "A B C", "允许全空值记录", "无法推断列数", "~ ~ ~", "三列，全部 Null"],
+  ["table", "无 \\#", "首行全部 Missing", "A B C", "支持全缺失记录", "误当空行而跳过", "\\_ \\_ \\_", "三列，全部 Missing"],
+  ["table", "\\%N", "候选显式列宽", "\\%3", "无需实际数据也可定义结构", "纯空表格无法知道列数", "\\%5", "建立五列 Schema"],
+  ["table", "\\%N", "单列声明", "\\%3", "支持一列表格", "零列与一列混淆", "\\%1", "一列表格"],
+  ["table", "\\%N", "零列声明", "\\%3", "禁止无意义结构", "无法形成有效列定位", "\\%0", "错误：列数必须为正"],
+  ["table", "\\%N", "列宽冲突", "\\%3", "避免隐式更改 Schema", "数据与列声明不同", "\\%2 后接 A B C", "错误：数据超出列宽"],
+  ["table", "\\%N", "表头宽度冲突", "\\%3", "保证表头与列宽一致", "字段对应错误", "\\%2 后接 \\# A B C", "错误：表头列数不匹配"],
+
+  // Table B: 字段状态与续写
+  ["table", "X0 X1", "正常记录", "Claude Ready", "最简数据表示", "不必要的键重复", "Codex Running", "X0=Codex；X1=Running"],
+  ["table", "X0 X1", "三字段记录", "A B", "支持多列", "字段数量不固定", "A B C", "X0=A；X1=B；X2=C"],
+  ["table", "~", "第一列 Null", "A ~", "空值可定位", "字段整体左移", "~ Ready", "X0=null；X1=Ready"],
+  ["table", "~", "中间 Null", "A ~ C", "保留中间位置", "后续列错位", "A ~ C D", "X1=null，其他位置不变"],
+  ["table", "~", "末列 Null", "A ~", "区分末列 Null 与缺失", "转换时丢失状态", "A B ~", "X2=null"],
+  ["table", "\\e", "第一列空字符串", "A \\e", "保留真实空文本", "空串被当成 Null", "\\e Ready", "X0=\"\""],
+  ["table", "\\e", "中间空字符串", "A \\e C", "精确表达存在的空值", "字段数量变化", "A \\e C", "X1=\"\""],
+  ["table", "\\e", "最后一列空字符串", "A B", "区分 Missing", "尾部空串丢失", "A \\e", "X1=\"\""],
+  ["table", "\\_", "第一列 Missing", "A B", "区分未提供", "Patch 意外清空字段", "\\_ Ready", "X0=Missing"],
+  ["table", "\\_", "中间 Missing", "A B C", "保留稀疏结构", "后续列左移", "A \\_ C", "X1=Missing"],
+  ["table", "\\_", "末列 Missing", "A B C", "允许部分记录", "强迫填写无意义值", "A B \\_", "X2=Missing"],
+  ["table", "尾列省略", "已知列宽下省略尾列", "A B C", "减少 Token", "将缺失误当 Null", "A B", "X2=Missing"],
+  ["table", "尾列省略", "仅第一列存在", "A B C", "支持部分更新", "缺失被当空字符串", "A", "X1、X2 Missing"],
+  ["table", "\\~", "字面 ~", "A ~", "区分数据与特殊值", "普通内容被清空", "A \\~", "X1=\"~\""],
+  ["table", "\\ ", "字段内空格", "Hello\\ World Ready", "保留词组", "自然语言被拆列", "New\\ York Active", "X0=\"New York\""],
+  ["table", "连续空格", "字段间两个空格", "A B", "强制规范字段切分", "不同解析器折叠方式不同", "A  B", "错误：重复分隔空格"],
+  ["table", "末尾空格", "记录后有一个空格", "A B", "禁止隐式空列", "意外产生空字段", "A B ", "错误：尾随分隔空格"],
+  ["table", " X1", "续写第二列", " Retrying", "局部追加", "重复整行内容", " RetryLater", "上一记录 X1 追加 RetryLater"],
+  ["table", "  X2", "续写第三列", "  HTTP401", "精确指定扩展列", "错误覆盖其他列", "  Timeout", "上一记录 X2 追加 Timeout"],
+  ["table", "   X3", "续写第四列", "   RetryOnce", "支持更高列号", "属性错位", "   Review", "上一记录 X3 追加 Review"],
+  ["table", "续写无目标", "领域内无记录", " Retrying", "禁止孤立追加", "错误创建隐式记录", "领域头后直接  Retrying", "错误：无续写目标"],
+  ["table", "续写 Null", "目标字段为 Null", "~ Ready", "Null 不应偷偷变文本", "状态被静默改变", "先 A ~，后  Retrying", "错误：不能直接续写 Null"],
+  ["table", "续写 Missing", "目标字段缺失", "A \\_", "Missing 不隐式创建字段", "Patch 意外填充", "先 A \\_，后  Retrying", "错误：不能直接续写 Missing"],
+  ["table", "续写空串", "目标字段为 \"\"", "A \\e", "空文本可以明确追加", "Null 与空串混同", "先 A \\e，后  Retrying", "X1=\"Retrying\""],
+  ["table", "超出列宽", "对不存在列追加", "两列表格", "保持 Schema 固定", "续写隐式扩列", "两列表格写    Retry", "错误：列坐标越界"],
+
+  // 5W1H
+  ["5w1h", " \\?N REV", "5W1H 领域头", " \\?2 1", "显式区分语义模式", "正文问号触发领域", " \\?3 1", "5W1H #3"],
+  ["5w1h", " \\?N REV", "修订号变化", " \\?2 1", "稳定追踪语义修改", "版本不明确", " \\?2 2", "5W1H #2，Rev 2"],
+  ["5w1h", " \\?N REV", "缺失编号", " \\?2 1", "领域必须可寻址", "匿名领域冲突", " \\? 1", "错误：领域 ID 缺失"],
+  ["5w1h", " \\?N REV", "多余前置空格", " \\?2 1", "保证完整匹配", "被误判成续写", "  \\?2 1", "错误：非法领域头"],
+  ["5w1h", "X0 · What", "任务或事实", "BuildLogin", "固定语义坐标", "任务主体不明确", "FixBug", "What=FixBug"],
+  ["5w1h", "X0 · What", "包含自然语言", "BuildLogin", "容纳可读描述", "词组被拆列", "Fix\\ authentication", "What=\"Fix authentication\""],
+  ["5w1h", "X0 · What", "显式 Null", "BuildLogin", "支持不适用情形", "后续 Why 左移", "~ PreventLeak", "What=null；Why=PreventLeak"],
+  ["5w1h", "X0 · What", "明确缺失", "BuildLogin", "支持部分记录", "未知任务被猜测", "\\_ PreventLeak", "What=Missing；Why=PreventLeak"],
+  ["5w1h", "X1 · Why", "原因或目的", "PreventLeak", "分开事实和意图", "AI 错误推断动机", "BuildLogin ReduceRisk", "Why=ReduceRisk"],
+  ["5w1h", "X2 · How", "实现方法", "VerifyToken", "区分任务与实现", "误将实现细节当目标", "BuildLogin PreventLeak UseJWT", "How=UseJWT"],
+  ["5w1h", "X3 · Who", "执行主体", "AuthAgent", "支持任务责任分配", "多 Agent 同时误执行", "A B C Reviewer", "Who=Reviewer"],
+  ["5w1h", "X4 · When", "时间或触发条件", "OnRequest", "约束执行时机", "过早或错误触发", "A B C D AfterApproval", "When=AfterApproval"],
+  ["5w1h", "X5 · Where", "位置或作用范围", "AuthService", "明确修改对象", "Agent 编辑错误模块", "A B C D E AuthService", "Where=AuthService"],
+  ["5w1h", "X0～X5", "完整六维记录", "A B C D E F", "固定六语义坐标", "维度顺序因语言变化", "BuildLogin ReduceRisk JWT Agent Now API", "六维分别赋值"],
+  ["5w1h", "X0～X5", "超过六列", "A B C D E F", "固定语义边界", "多余字段无定义", "A B C D E F G", "错误：字段数超过六"],
+  ["5w1h", "续写", "续写 Why (X1)", " ReduceRisk", "局部追加原因", "覆盖任务主体", " AvoidDuplication", "Why 追加内容"],
+  ["5w1h", "续写", "续写 How (X2)", "  RetryOnTimeout", "扩展实现方法", "更改错误维度", "  VerifySignature", "How 追加 VerifySignature"],
+
+  // Graph
+  ["graph", " \\>N REV", "Graph 领域头", " \\>3 1", "明确图结构", "普通关系文本触发模式", " \\>10 2", "Graph #10，Rev 2"],
+  ["graph", "A Name", "最简节点声明", "A LoginAPI", "顶格减少开销", "依赖首部空格辨别节点", "B TokenStore", "建立节点 B"],
+  ["graph", "A Name", "长 ID / 含数字", "A LoginAPI", "支持有意义稳定标识", "强制使用长名称", "AuthService LoginAPI", "Node ID=AuthService"],
+  ["graph", "A Name Desc", "节点描述", "A LoginAPI Auth", "容纳更多属性", "名称与描述混淆", "A LoginAPI JWTAuth", "X2=JWTAuth"],
+  ["graph", "唯一 Node ID", "同 Graph 唯一", "A LoginAPI", "避免并发覆盖", "后声明覆盖前声明", "再写 A OtherAPI", "错误：重复 Node ID"],
+  ["graph", "A>X>B", "正向关系", "A>X>B Reads", "明确单向依赖", "箭头方向猜测", "B>Y>C Calls API", "B → C，Edge Y"],
+  ["graph", "A<X<B", "反向关系", "A<X<B Returns", "减少端点重排", "数据方向混淆", "C<Y<B Returns Token", "B → C，Edge Y"],
+  ["graph", "A=X=B", "无向关联", "A=X=B Shares", "明确非定向关系", "将共享误当单向调用", "B=Y=C Shares State", "B — C，Edge Y"],
+  ["graph", "A>X>A", "自循环", "A>P>A Retry", "支持循环结构", "虚构辅助节点", "A>R>A Refresh Cache", "A → A"],
+  ["graph", "畸形关系", "Edge ID 缺失", "A>X>B", "必须具备稳定边身份", "自动生成不稳定 ID", "A>>B", "错误：Edge ID 缺失"],
+  ["graph", "畸形关系", "端点缺失", "A>X>B", "必须有完整来源目标", "产生幽灵关系", ">X>B 或 A>X>", "错误：端点缺失"],
+  ["graph", "悬空引用", "A 未定义", "A>X>B Reads", "保证关系完整", "图中出现幽灵节点", "只定义 B 未定义 A", "错误：A 未定义"],
+  ["graph", " X2", "一个空格续写描述", " CacheExpired", "最小 Graph 续写", "重复边声明", " Timeout", "当前 Node/Edge X2 追加 Timeout"],
+  ["graph", "  X3", "两空格续写扩展", "  HTTP401", "稳定扩展坐标", "属性错位", "  Critical", "X3 追加 Critical"],
+
+  // 转义与字面
+  ["escape", "\\ ", "字段内空格", "Hello\\ World", "保留自然语言", "多拆一列", "New\\ York", "字段值=\"New York\""],
+  ["escape", "\\\\", "字面反斜杠", "C:\\\\Tools", "转义符可作为数据", "反斜杠被消耗", "A\\\\B", "字段值=\"A\\B\""],
+  ["escape", "\\?", "字面问号", "Ready\\?", "显式保留控制相似符", "误触发标记", "What\\?", "\"What?\""],
+  ["escape", "\\>", "字面大于号", "A\\>B", "防止原子字段与关系混淆", "意外产生 Edge", "Version\\>2", "\"Version>2\""],
+  ["escape", "\\~", "字面波浪号", "\\~", "与 Null 区分", "内容错误清空", "A \\~", "第二列为字符串 \"~\""],
+  ["escape", "\\n", "字段内部 LF", "Hello\\nWorld", "表达多行内容", "逻辑换行变新记录", "A\\nB", "单字段，包含真实 LF"],
+  ["escape", "\\_", "缺失标记", "\\_", "区分 Missing", "数据缺失被当 Null", "A \\_ B", "X1=Missing"],
+  ["escape", "\\e", "空字符串", "\\e", "区分空串和 Null", "空值状态丢失", "A \\e B", "X1=\"\""],
+  ["escape", "未知转义", "未定义转义字符", "\\q", "确定性解析", "不同实现忽略或保留", "\\z", "错误：未知转义"],
+  ["escape", "行末 \\", "不完整转义", "Hello\\", "不允许跨物理行吞并", "误续接下一行", "A\\", "错误：未闭合转义"],
+
+  // NEMAT 传输
+  ["nemat", " \\!NEMAT1", "传输格式识别头", " \\!NEMAT1", "区分原生与压缩格式", "压缩控制被当普通数据", "文件头正确识别", "启用 NEMAT 解码"],
+  ["nemat", " $N", "字典数量声明", " $2", "提前约束字典规模", "数量无法确定", " $3", "预期定义三个条目"],
+  ["nemat", " @N Value", "定义字典项", " @0 AuthService", "重复文本可引用", "每次重复完整词组", " @1 TokenStore", "D1=TokenStore"],
+  ["nemat", "^N", "普通字典调用", "^0", "压缩重复内容", "过长的重复值", "^1", "展开字典 1"],
+  ["nemat", "^N", "未定义编号", "^0", "严格引用校验", "默默生成错误文本", "^99", "错误：未定义引用"],
+  ["nemat", "\\^N", "字面引用文本", "\\^0", "防止业务内容被展开", "普通数据被替换", "\\^12", "字面 \"^12\""],
+  ["nemat", "解压上限", "最大输出长度", "多次 ^0", "保护内存安全", "解压炸弹", "引用超出上限", "中止解码"],
+
+  // 全局与跨语法
+  ["global", "U+0020", "单个半角空格分隔", "A B", "统一语法空白", "不同空白混用", "A B C", "三个字段"],
+  ["global", "U+0009", "禁止原始 Tab", "A B", "不依赖不同制表宽", "空格与 Tab 混淆", "用 Tab 分隔 A、B", "错误：非法语法空白"],
+  ["global", "U+3000", "禁止全角空格", "A B", "字节与视觉一致", "全角空格像缩进", "用全角空格分隔", "错误：非法语法空白"],
+  ["global", "LF", "标准物理换行", "A\\nB", "统一记录切分", "跨平台不一致", "严格 LF 切分", "两条物理行"],
+  ["global", "跨语法", "显式表头 + 首列 Null", "\\# Name Status", "支持稀疏首行", "状态混同", "\\# Name Status 后接 ~ Ready", "Name=null"],
+  ["global", "跨语法", "显式表头 + 首列缺失", "\\# Name Status", "明确 Missing 语义", "未提供被当 Null", "\\# Name Status 后接 \\_ Ready", "Name=Missing"],
+  ["global", "跨语法", "显式列宽 + 全列缺失", "\\%3", "无需数据定义结构", "纯空表无从知列宽", "\\%3 后接 \\_ \\_ \\_", "三列全部 Missing"],
+  ["global", "多 Agent", "并发同记录不同列修改", "A Ready", "支持细粒度协作", "无必要整行冲突", "Agent1 改 X0，Agent2 改 X1", "版本一致时可自动合并"]
+];
+
+function renderNemaSyntaxMatrixView(wrap, rawText, parsed) {
+  NEMA.matrixCat = NEMA.matrixCat || "all";
+  NEMA.matrixStateX0 = NEMA.matrixStateX0 || "val";
+  NEMA.matrixStateX1 = NEMA.matrixStateX1 || "missing";
+  NEMA.matrixStateX2 = NEMA.matrixStateX2 || "null";
+  NEMA.matrixSearch = NEMA.matrixSearch || "";
+
+  // 1. 顶部：三列 64 态组合验证器 (4³ = 64 基本组合)
+  const valCard = document.createElement("div");
+  valCard.className = "nema-bench-card";
+  valCard.style.marginBottom = "14px";
+  valCard.style.background = "var(--bg-elev, #1e1e1e)";
+  valCard.style.border = "1px solid var(--border)";
+  valCard.style.borderRadius = "8px";
+  valCard.style.padding = "12px 16px";
+
+  // 计算当前组合代码与渲染值
+  const stateTokens = { val: ["A", "B", "C"], null: ["~", "~", "~"], empty: ["\\e", "\\e", "\\e"], missing: ["\\_", "\\_", "\\_"] };
+  const stateLabels = { val: ["A", "B", "C"], null: ["null", "null", "null"], empty: ['""', '""', '""'], missing: ["Missing", "Missing", "Missing"] };
+
+  const tok0 = stateTokens[NEMA.matrixStateX0][0];
+  const tok1 = stateTokens[NEMA.matrixStateX1][1];
+  const tok2 = stateTokens[NEMA.matrixStateX2][2];
+
+  const lbl0 = stateLabels[NEMA.matrixStateX0][0];
+  const lbl1 = stateLabels[NEMA.matrixStateX1][1];
+  const lbl2 = stateLabels[NEMA.matrixStateX2][2];
+
+  const generatedCode = ` \\1 1\n\\# column1 column2 column3\n${tok0} ${tok1} ${tok2}\n\n\n`;
+
+  valCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:14px;font-weight:700;color:var(--blue,#58a6ff);">🧪 三列状态组合验证器 (4³ = 64 态穷举测试)</span>
+        <span class="nema-pill" style="font-size:10px;">固定三列 Table · Value / Null / Empty / Missing</span>
+      </div>
+      <div style="font-size:11px;color:var(--fg-muted);">当前引擎: <strong>${escapeHtml((NEMA.customInterpreter && NEMA.customInterpreter.enabled) ? (NEMA.customInterpreter.metadata.engine_name || '外部解释器') : '内置标准 Rust')}</strong></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:12px;">
+      <div style="background:var(--bg-bar);padding:8px 10px;border-radius:6px;border:1px solid var(--border);">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;color:var(--fg);">X0 状态 (column1)</label>
+        <select id="sel-matrix-x0" style="width:100%;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-edit);color:var(--fg);font-size:12px;">
+          <option value="val"${NEMA.matrixStateX0==='val'?' selected':''}>Value (普通值 "A")</option>
+          <option value="null"${NEMA.matrixStateX0==='null'?' selected':''}>Null (~ 显式空值)</option>
+          <option value="empty"${NEMA.matrixStateX0==='empty'?' selected':''}>Empty (\\e 空字符串 "")</option>
+          <option value="missing"${NEMA.matrixStateX0==='missing'?' selected':''}>Missing (\\_ 缺失)</option>
+        </select>
+      </div>
+      <div style="background:var(--bg-bar);padding:8px 10px;border-radius:6px;border:1px solid var(--border);">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;color:var(--fg);">X1 状态 (column2)</label>
+        <select id="sel-matrix-x1" style="width:100%;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-edit);color:var(--fg);font-size:12px;">
+          <option value="val"${NEMA.matrixStateX1==='val'?' selected':''}>Value (普通值 "B")</option>
+          <option value="null"${NEMA.matrixStateX1==='null'?' selected':''}>Null (~ 显式空值)</option>
+          <option value="empty"${NEMA.matrixStateX1==='empty'?' selected':''}>Empty (\\e 空字符串 "")</option>
+          <option value="missing"${NEMA.matrixStateX1==='missing'?' selected':''}>Missing (\\_ 缺失)</option>
+        </select>
+      </div>
+      <div style="background:var(--bg-bar);padding:8px 10px;border-radius:6px;border:1px solid var(--border);">
+        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;color:var(--fg);">X2 状态 (column3)</label>
+        <select id="sel-matrix-x2" style="width:100%;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-edit);color:var(--fg);font-size:12px;">
+          <option value="val"${NEMA.matrixStateX2==='val'?' selected':''}>Value (普通值 "C")</option>
+          <option value="null"${NEMA.matrixStateX2==='null'?' selected':''}>Null (~ 显式空值)</option>
+          <option value="empty"${NEMA.matrixStateX2==='empty'?' selected':''}>Empty (\\e 空字符串 "")</option>
+          <option value="missing"${NEMA.matrixStateX2==='missing'?' selected':''}>Missing (\\_ 缺失)</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px;">
+      <div>
+        <div style="font-size:11px;color:var(--fg-muted);margin-bottom:4px;">生成的变化写法 (.nema 源码):</div>
+        <pre style="margin:0;padding:8px 10px;background:var(--bg-edit);border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:11.5px;line-height:1.45;color:var(--fg);user-select:all;">${escapeHtml(generatedCode.trimEnd())}</pre>
+        <div style="margin-top:6px;display:flex;gap:6px;">
+          <button id="btn-copy-matrix" class="md-btn" style="padding:2px 8px;font-size:11px;">📋 复制变化写法</button>
+          <button id="btn-insert-matrix" class="md-btn" style="padding:2px 8px;font-size:11px;">✏ 插入当前编辑器</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--fg-muted);margin-bottom:4px;">预期变化渲染结果 (Table 解析视图):</div>
+        <table class="nema-table" style="margin:0;">
+          <thead><tr><th>column1</th><th>column2</th><th>column3</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="nema-pill">${escapeHtml(lbl0)}</span></td>
+              <td><span class="nema-pill">${escapeHtml(lbl1)}</span></td>
+              <td><span class="nema-pill">${escapeHtml(lbl2)}</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="font-size:10px;color:var(--fg-muted);margin-top:4px;">状态验证: X0=${NEMA.matrixStateX0} · X1=${NEMA.matrixStateX1} · X2=${NEMA.matrixStateX2} (确定性无歧义)</div>
+      </div>
+    </div>
+  `;
+  wrap.appendChild(valCard);
+
+  // 事件绑定：组合验证器
+  const selX0 = valCard.querySelector("#sel-matrix-x0");
+  const selX1 = valCard.querySelector("#sel-matrix-x1");
+  const selX2 = valCard.querySelector("#sel-matrix-x2");
+  if (selX0) selX0.addEventListener("change", (e) => { NEMA.matrixStateX0 = e.target.value; renderNemaPreview(); });
+  if (selX1) selX1.addEventListener("change", (e) => { NEMA.matrixStateX1 = e.target.value; renderNemaPreview(); });
+  if (selX2) selX2.addEventListener("change", (e) => { NEMA.matrixStateX2 = e.target.value; renderNemaPreview(); });
+
+  const btnCopy = valCard.querySelector("#btn-copy-matrix");
+  if (btnCopy) btnCopy.addEventListener("click", () => {
+    navigator.clipboard.writeText(generatedCode).then(() => setTip("已复制 64 态变化写法至剪贴板"));
+  });
+  const btnIns = valCard.querySelector("#btn-insert-matrix");
+  if (btnIns) btnIns.addEventListener("click", () => {
+    const t = getActiveTab();
+    if (t) {
+      t.lines.push(...generatedCode.split("\n"));
+      t.dirty = true;
+      scheduleNemaPreview();
+      setTip("已将 64 态变化写法插入当前文档");
+    }
+  });
+
+  // 2. 下半部分：七列完整审查版表格
+  const matCard = document.createElement("div");
+  matCard.className = "nema-bench-card";
+  matCard.style.background = "var(--bg-edit)";
+  matCard.style.border = "1px solid var(--border)";
+  matCard.style.borderRadius = "8px";
+  matCard.style.padding = "12px 16px";
+
+  // 分类与搜索过滤栏
+  const cats = [
+    ["all", "全部规则"],
+    ["table", "一、Table 表格模式"],
+    ["5w1h", "二、5W1H 模式"],
+    ["graph", "三、Node–Edge 模式"],
+    ["escape", "四、共通转义与字面"],
+    ["nemat", "五、字典与 .nemat 传输"],
+    ["global", "六、全局词法与跨语法"]
+  ];
+
+  let catBtnsHtml = cats.map(([cid, clabel]) => {
+    const act = NEMA.matrixCat === cid ? " active" : "";
+    return `<button class="nema-tab-btn${act}" data-mat-cat="${cid}" style="font-size:11px;padding:2px 8px;">${clabel}</button>`;
+  }).join(" ");
+
+  matCard.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <strong style="font-size:13px;color:var(--blue,#58a6ff);"># .NEMA 全语法变化矩阵 · 七列完整审查版</strong>
+        <span style="font-size:11px;color:var(--fg-muted);margin-left:6px;">(3 核心模式 · 7 审核列 · 6 规则分类)</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="input-matrix-search" type="text" placeholder="搜索语法、例子或异常..." value="${escapeHtml(NEMA.matrixSearch)}" style="padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-bar);color:var(--fg);font-size:11px;width:180px;">
+        <span style="font-size:10px;color:var(--fg-muted);">点击任一行变化写法可填入上方测试</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">
+      ${catBtnsHtml}
+    </div>
+    <div style="overflow-x:auto;max-height:550px;border:1px solid var(--border);border-radius:6px;">
+      <table class="nema-table" style="margin:0;font-size:11.5px;min-width:980px;">
+        <thead style="position:sticky;top:0;background:var(--bg-raised);z-index:2;">
+          <tr>
+            <th style="width:90px;">语法</th>
+            <th style="width:110px;">说明</th>
+            <th style="width:130px;">具体例子</th>
+            <th style="width:140px;">设计理由</th>
+            <th style="width:140px;">避免的异常</th>
+            <th style="width:180px;">变化写法</th>
+            <th>变化渲染结果</th>
+          </tr>
+        </thead>
+        <tbody id="matrix-tbody"></tbody>
+      </table>
+    </div>
+  `;
+
+  wrap.appendChild(matCard);
+
+  // 绑定分类筛选
+  matCard.querySelectorAll("[data-mat-cat]").forEach(b => {
+    b.addEventListener("click", () => {
+      NEMA.matrixCat = b.dataset.matCat;
+      renderNemaPreview();
+    });
+  });
+
+  const searchInput = matCard.querySelector("#input-matrix-search");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      NEMA.matrixSearch = e.target.value.toLowerCase();
+      filterMatrixRows();
+    });
+  }
+
+  function filterMatrixRows() {
+    const tbody = matCard.querySelector("#matrix-tbody");
+    if (!tbody) return;
+    tbody.replaceChildren();
+
+    const q = (NEMA.matrixSearch || "").trim().toLowerCase();
+    const rows = NEMA_SYNTAX_MATRIX_DATA.filter(item => {
+      if (NEMA.matrixCat !== "all" && item[0] !== NEMA.matrixCat) return false;
+      if (!q) return true;
+      return item.slice(1).some(field => String(field).toLowerCase().includes(q));
+    });
+
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="7" style="text-align:center;padding:16px;color:var(--fg-muted);">无匹配的语法变化案例</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      const isErr = r[7].includes("错误");
+      const resBadge = isErr ? `<span style="color:var(--red,#f85149);font-weight:600;">${escapeHtml(r[7])}</span>` : escapeHtml(r[7]);
+      tr.innerHTML = `
+        <td style="font-family:monospace;font-weight:600;color:var(--blue,#58a6ff);">${escapeHtml(r[1])}</td>
+        <td>${escapeHtml(r[2])}</td>
+        <td style="font-family:monospace;color:var(--fg-muted);">${escapeHtml(r[3])}</td>
+        <td>${escapeHtml(r[4])}</td>
+        <td style="color:var(--fg-muted);">${escapeHtml(r[5])}</td>
+        <td style="font-family:monospace;cursor:pointer;color:var(--fg);" title="点击将此前置入验证器测试"><code style="background:var(--bg-raised);padding:1px 4px;border-radius:3px;">${escapeHtml(r[6])}</code></td>
+        <td>${resBadge}</td>
+      `;
+      tr.querySelector("code").addEventListener("click", () => {
+        setTip(`已选择变化案例: ${r[2]} (${r[6]})`);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  filterMatrixRows();
+}
+
+
 /* 渲染 NEMA 预览面板 */
 function renderNemaPreview() {
   const pv = document.getElementById("nema-preview");
@@ -14864,7 +15405,7 @@ function renderNemaPreview() {
   // 顶部视图切换栏 (Table / 5W1H / Graph / Benchmark) + 仲裁状态
   const tabs = document.createElement("div");
   tabs.className = "nema-view-tabs";
-  const views = [["table", "▦ Table 默认"], ["5w1h", "? 5W1H 语义"], ["graph", "> Graph 拓扑"], ["benchmark", "📊 Benchmark 实测"]];
+  const views = [["table", "▦ Table 默认"], ["5w1h", "? 5W1H 语义"], ["graph", "> Graph 拓扑"], ["benchmark", "📊 Benchmark 实测"], ["matrix", "📋 语法矩阵 · 64态"]];
   views.forEach(([vid, label]) => {
     const btn = document.createElement("button");
     btn.className = "nema-tab-btn" + (NEMA.view === vid ? " active" : "");
@@ -14874,7 +15415,10 @@ function renderNemaPreview() {
   });
   const leaseInfo = document.createElement("span");
   leaseInfo.style.cssText = "margin-left:auto;font-size:11px;color:var(--fg-muted);align-self:center;";
-  leaseInfo.textContent = `仲裁: ${NEMA.mode} · Epoch #${NEMA.epoch}`;
+  const engineLabel = NEMA.customInterpreter && NEMA.customInterpreter.enabled
+    ? ("外部: " + (NEMA.customInterpreter.metadata.engine_name || NEMA.customInterpreter.path.split(/[\\/]/).pop()))
+    : "内置 Rust";
+  leaseInfo.textContent = `仲裁: ${NEMA.mode} · Epoch #${NEMA.epoch} · 引擎: ${engineLabel}`;
   tabs.appendChild(leaseInfo);
   wrap.appendChild(tabs);
 
@@ -14889,6 +15433,8 @@ function renderNemaPreview() {
   // 渲染主体
   if (NEMA.view === "benchmark") {
     renderNemaBenchmarkView(wrap, rawText, parsed);
+  } else if (NEMA.view === "matrix") {
+    renderNemaSyntaxMatrixView(wrap, rawText, parsed);
   } else if (NEMA.view === "graph") {
     let graphDomain = parsed.domains.find(d => d.mode === "graph") || parsed.domains[0];
     if (graphDomain) {

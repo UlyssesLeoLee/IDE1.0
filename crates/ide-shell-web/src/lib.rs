@@ -839,6 +839,48 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // Markdown 预览: 文本 -> 已转义 HTML (只读)
             respond_pure::<editcore::pure_api::MdRenderReq>(stream, &body, "Markdown 预览请求无效", |r| Ok(editcore::pure_api::md_render(r)));
         }
+        ("POST", "/api/nema/probe") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let runner = req.get("runner").and_then(|v| v.as_str());
+            let report = nema_codec::probe_interpreter(path, runner);
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&report).unwrap_or_default());
+        }
+        ("POST", "/api/nema/set_interpreter") => {
+            let req: nema_codec::InterpreterConfig = match serde_json::from_slice(&body) {
+                Ok(c) => c,
+                Err(e) => {
+                    send_error_json(stream, "400 Bad Request", &format!("配置格式错误: {e}"));
+                    return;
+                }
+            };
+            nema_codec::set_active_interpreter(req.clone());
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
+                "ok": true,
+                "active": req
+            })).unwrap_or_default());
+        }
+        ("POST", "/api/nema/status") | ("GET", "/api/nema/status") => {
+            let active = nema_codec::get_active_interpreter();
+            let project_root = state.project_root_get();
+            let candidates = nema_codec::discover_candidates(project_root.as_deref());
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
+                "active": active,
+                "candidates": candidates
+            })).unwrap_or_default());
+        }
+        ("POST", "/api/nema/render") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let source = req.get("source").and_then(|v| v.as_str()).unwrap_or("");
+            let (ast, latency_us, engine_name, is_custom) = nema_codec::adaptive_render_view(source);
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
+                "ok": true,
+                "ast": ast,
+                "latency_us": latency_us,
+                "engine": engine_name,
+                "is_custom": is_custom
+            })).unwrap_or_default());
+        }
         ("POST", "/api/history") => {
             // 撤销 / 重做栈; 按标签页 id 分开的进程内登记
             respond_pure::<editcore::history::HistReq>(stream, &body, "历史请求无效", editcore::pure_api::history);

@@ -3316,6 +3316,7 @@ dependencies = [
  "ide-kernel",
  "ide-kernel-core",
  "ide-shell",
+ "nema-codec",
  "once_cell",
  "serde",
  "serde_json",

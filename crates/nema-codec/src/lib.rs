@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
+pub mod interpreter;
+pub use interpreter::*;
+
 /// 最大源码/传输字节上限 (16 MiB)
 pub const MAX_BYTES: usize = 16 * 1024 * 1024;
 /// 字典最大条目数
@@ -765,7 +768,14 @@ pub fn parse_domain_header_v12(line: &str) -> Option<(bool, String, u64)> {
 
 /// 解析域头（兼容 `.NEMA v1.2` 字母数字域头 `\t(>?)ID REV` 与旧版 `\t(\|?|>)[1-9][0-9]*(?: [1-9][0-9]*)?`）
 pub fn parse_domain_header(line: &str) -> Option<(DomainMode, String, u64)> {
-    let rest = line.strip_prefix('\t')?;
+    let rest = if let Some(r) = line.strip_prefix(' ') {
+        if r.starts_with(' ') {
+            return None;
+        }
+        r
+    } else {
+        line.strip_prefix('\t')?
+    };
     let mut chars = rest.chars();
     let mode_ch = chars.next()?;
     let (mode, tail) = match mode_ch {
@@ -1392,9 +1402,9 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         if current.mode == DomainMode::Table
             && current.records.is_empty()
             && !current.explicit_header
-            && line.starts_with("\\ ")
+            && (line.starts_with("\\ ") || line.starts_with("\\# "))
         {
-            let names: Vec<&str> = line[2..].split(' ').collect();
+            let raw_names = if let Some(stripped) = line.strip_prefix("\\# ") { stripped } else { &line[2..] }; let names: Vec<&str> = raw_names.split(' ').collect();
             if names.is_empty() || names.iter().any(|x| !is_valid_table_header_ident(x)) {
                 return Err(NemaError::InvalidTableHeaderName);
             }
