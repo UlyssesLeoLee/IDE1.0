@@ -139,7 +139,62 @@ flowchart LR
 
 ---
 
-## 5. 核心系统不变量 (System Invariants)
+## 5. 前端交互：多 Agent 协同工作台与双命令视窗架构 (Multi-Agent Collab Workspace & Dual Command Windows)
+
+### 5.1 架构演进：流水线退居底层后台，界面回归真实交互
+在早期版本中，界面的“四阶段协调流水线看板”和“模拟协同演示”过于死板，暴露了过多底层编排细节与虚假演示状态。本次架构重构明确了一项根本原则：
+> **四阶段协同（路由、协作、汇聚、门禁）是底层的事务编排逻辑，全面退居后台静默执行；界面彻底移除死板流水线与模拟演示，替换为轻量、真实、即时的「多 Agent 协同工作台」交互视窗。**
+
+```mermaid
+flowchart TD
+    TB["标题栏快捷按钮 (多 Agent 协同图标 · 运行态光斑)"] -->|点击切换| CW["多 Agent 协同工作台 (Collab Workspace)"]
+    
+    subgraph CW["多 Agent 协同工作台 (Collab Workspace)"]
+        CFG["顶部控制栏: 子 Agent 数量 (1~8 步进调节) · 运行态保护"]
+        TABS["Agent 标签栏 (Tab #1: 编码员 / Tab #2: 审查员 / Tab #3: 测试员...)"]
+        
+        subgraph PANE["当前激活 Agent 视窗 (垂直双视窗架构)"]
+            direction TB
+            subgraph TOP_WIN["🌐 统筹命令视窗 (Master Command Window)"]
+                M_HIST["全局广播历史 (汇总收集所有子 Agent 的并发产出)"]
+                M_IN["全局统筹指令输入框 + 广播下发按钮 (发送给全部 Agent)"]
+            end
+            DIV[--- 视窗垂直分隔栏 ---]
+            subgraph BOT_WIN["🎯 单独命令视窗 (Individual Command Window)"]
+                I_HIST["当前 Agent 独占私聊历史 (一对一针对性反馈与调优)"]
+                I_IN["私聊指令输入框 + 发送按钮 (仅对当前选中 Agent 有效)"]
+            end
+        end
+        
+        CFG --> TABS
+        TABS --> PANE
+    end
+
+    TOP_WIN -.->|并发广播下发| AGENTS[("Agent #1 .. Agent #N 并发执行")]
+    BOT_WIN -.->|单独指令下发| ACTIVE_AGENT[("当前选中的特定 Agent")]
+```
+
+### 5.2 核心交互设计规范
+1. **标题栏一键直达入口**：
+   - 位于标题栏右侧快捷功能区，采用多 Agent 头像互联的矢量拓扑图标。
+   - 当任意子 Agent 处于后台流式执行状态时，图标中心呼吸高亮绿色光斑（`#00f59b`），点击即可随时展开或隐藏协同视窗。
+2. **子 Agent 数量动态配置与标签伸缩**：
+   - 允许用户在任务空闲时通过数字步进器自由设置子 Agent 数量（`1 ..= 8`）。
+   - 数量增减时，标签栏动态新增或安全收缩子 Agent 标签页，并自动校准当前激活的 `active_tab`（`active_tab.min(len - 1)`），严禁越界 panic。
+3. **垂直双命令视窗（Dual Command Windows）分工**：
+   - **上部：🌐 统筹命令视窗 (`Master Command Window`)**：
+     - 面向全局任务规划，用户在此输入的指令会被注入各 Agent 的专属角色画像 Prompt（如 `Agent #1 编码员`、`Agent #2 审查员`、`Agent #3 架构师`），并并发分发至所有 Agent 执行。
+     - 各 Agent 的流式回复与最终产出均实时汇聚回统筹流中，方便用户纵览全局。
+   - **下部：🎯 单独命令视窗 (`Individual Command Window`)**：
+     - 面向局部调优与一对一私聊，每个 Agent 维护独立的上下文历史（`private_history`）。
+     - 用户在此发送的指令仅作用于当前选中的 Agent，用于修正代码、微调细节或专项提问。
+4. **非阻塞异步流式通信**：
+   - 主线程在 egui 帧循环中调用 `collab_poll(ctx)`，通过无锁 `Receiver::try_recv()` 非阻塞消费各 Agent 后台线程传回的事件（`Event::Text` / `Event::Done`）。
+   - 界面保持 60 FPS 极速刷新，支持流式打字机输出与一键取消。
+
+---
+
+## 6. 核心系统不变量 (System Invariants)
 
 | 编号 | 不变量名称 | 形式化约束描述 |
 |:---|:---|:---|
@@ -155,7 +210,7 @@ flowchart LR
 
 ---
 
-## 6. 架构自审与故障收敛矩阵 (Architecture Self-Review & Fault-Containment Matrix)
+## 7. 架构自审与故障收敛矩阵 (Architecture Self-Review & Fault-Containment Matrix)
 
 依据系统工程自审准则（`invariants_hold`、`failure_modes_covered`、`races_addressed`、`data_safe`、`operable_by_humans`、`minimal_for_intent`），对四阶段流水线的边界竞态与异常模式做如下防御闭环设计：
 
