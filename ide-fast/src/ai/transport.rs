@@ -222,10 +222,16 @@ fn run_request(
         turn.error = Some("已取消".into());
     } else if too_big {
         turn.error = Some("响应超过大小上限, 已中止".into());
-    } else if turn.error.is_none() && status.is_some_and(|s| !s.success()) {
-        turn.error = Some(stderr_text.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .or(Some("请求失败".into()));
+    } else if turn.http_status == Some(0)
+        || (turn.http_status.is_none() && turn.error.is_none())
+        || (status.is_some_and(|s| !s.success()) && turn.error.as_deref().map_or(true, |e| !e.contains('【')))
+    {
+        let detail = turn.error.as_deref();
+        turn.error = Some(super::sse::format_http_error(
+            turn.http_status,
+            detail,
+            Some(&stderr_text),
+        ));
     }
     if let Some(e) = turn.error.take() {
         turn.error = Some(redact(&e, &cfg.key));
@@ -308,11 +314,7 @@ pub fn get_json(cfg: &AiConfig, url: &str) -> Result<(u16, Value), String> {
         })?;
         if status == 0 {
             // curl 没拿到任何响应 (连不上 / 超时 / 证书不对…): 状态码是 000, 真正的原因在 stderr
-            return Err(if err.trim().is_empty() {
-                "连不上接口".to_string()
-            } else {
-                err.trim().to_string()
-            });
+            return Err(super::sse::format_http_error(Some(0), None, Some(&err)));
         }
         if !(200..300).contains(&status) {
             return Ok((status, Value::Null));
