@@ -249,7 +249,7 @@ impl App {
 
     fn collab_review_ui(&mut self, ui: &mut egui::Ui) {
         Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
-            if ui.button("🤖 打开多 Agent 协同工作台").clicked() {
+            if ui.button("打开多 Agent 协同工作台").clicked() {
                 self.collab.open = true;
             }
             if ui.button("×").clicked() {
@@ -261,7 +261,7 @@ impl App {
         ui.vertical_centered(|ui| {
             ui.add_space(16.0);
             ui.label(
-                egui::RichText::new("🤖 真实多 Agent 协同工作台就绪")
+                egui::RichText::new("多 Agent 协同工作台就绪")
                     .strong()
                     .size(14.0)
                     .color(blue),
@@ -272,7 +272,7 @@ impl App {
                     .color(dim),
             );
             ui.add_space(10.0);
-            if ui.button(egui::RichText::new("🚀 点击启动多 Agent 协同工作台").strong()).clicked() {
+            if ui.button(egui::RichText::new("点击启动多 Agent 协同工作台").strong()).clicked() {
                 self.collab.open = true;
             }
         });

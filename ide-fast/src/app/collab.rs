@@ -119,7 +119,7 @@ impl Default for CollabState {
             active_tab: 0,
             agents,
             master_history: vec![CollabMsg::system(
-                "🌐 多 Agent 统筹总控已就绪。在此处输入的指令将广播统筹调度所有协同子 Agent。",
+                "多 Agent 统筹总控已就绪。在此处输入的指令将广播统筹调度所有协同子 Agent。",
             )],
             master_input: String::new(),
         }
@@ -339,7 +339,7 @@ impl App {
         let mut stop_one_clicked = None;
         let active_tab = self.collab.active_tab;
 
-        egui::Window::new("🤖 多 Agent 协同工作台 (Multi-Agent Collab)")
+        egui::Window::new("多 Agent 协同工作台 (Multi-Agent Collab)")
             .open(&mut is_open)
             .default_size(Vec2::new(760.0, 560.0))
             .min_size(Vec2::new(520.0, 400.0))
@@ -348,7 +348,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("协同 Agent 数量:").strong());
                     let running = self.collab.any_running();
-                    if ui.add_enabled(!running && self.collab.agent_count > 1, egui::Button::new("➖")).clicked() {
+                    if ui.add_enabled(!running && self.collab.agent_count > 1, egui::Button::new("-")).clicked() {
                         self.collab.set_agent_count(self.collab.agent_count - 1);
                     }
                     ui.label(
@@ -356,19 +356,19 @@ impl App {
                             .strong()
                             .color(Color32::from_rgb(0, 190, 255)),
                     );
-                    if ui.add_enabled(!running && self.collab.agent_count < 8, egui::Button::new("➕")).clicked() {
+                    if ui.add_enabled(!running && self.collab.agent_count < 8, egui::Button::new("+")).clicked() {
                         self.collab.set_agent_count(self.collab.agent_count + 1);
                     }
                     if running {
-                        ui.label(egui::RichText::new("⚡ 协同执行中...").color(Color32::from_rgb(0, 220, 130)));
-                        if ui.button("⏹ 终止全员").clicked() {
+                        ui.label(egui::RichText::new("[执行中] 协同任务进行中...").color(Color32::from_rgb(0, 220, 130)));
+                        if ui.button("终止全员").clicked() {
                             stop_all_clicked = true;
                         }
                     } else {
-                        ui.label(egui::RichText::new("🟢 全员就绪").color(Color32::from_rgb(120, 200, 120)));
+                        ui.label(egui::RichText::new("[就绪] 全员就绪").color(Color32::from_rgb(120, 200, 120)));
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("🧹 清空统筹记录").clicked() {
+                        if ui.small_button("清空统筹记录").clicked() {
                             self.collab.master_history.clear();
                         }
                     });
@@ -381,8 +381,8 @@ impl App {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     for (i, a) in self.collab.agents.iter().enumerate() {
                         let is_active = i == active_tab;
-                        let status_marker = if a.is_running() { " ⚡" } else { "" };
-                        let label = format!("🤖 {}{}", a.name, status_marker);
+                        let status_marker = if a.is_running() { " (*)" } else { "" };
+                        let label = format!("[Agent] {}{}", a.name, status_marker);
                         if ui.selectable_label(is_active, label).clicked() {
                             self.collab.active_tab = i;
                         }
@@ -400,11 +400,11 @@ impl App {
                 let total_avail = ui.available_height();
                 let half_height = (total_avail * 0.48).max(160.0);
 
-                // --- 上部：🌐 统筹命令窗口 (全员广播与协调) ---
+                // --- 上部：统筹命令窗口 (全员广播与协调) ---
                 ui.group(|ui| {
                     ui.set_height(half_height);
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("🌐 统筹命令窗口 (全局广播调度全体 Agent)").strong().color(Color32::from_rgb(0, 190, 255)));
+                        ui.label(egui::RichText::new("【统筹命令窗口】(全局广播调度全体 Agent)").strong().color(Color32::from_rgb(0, 190, 255)));
                     });
 
                     // 统筹历史交互记录展示
@@ -426,10 +426,10 @@ impl App {
                                 .desired_width(ui.available_width() - 150.0),
                         );
                         let enter = re.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                        if (ui.button("🚀 全员统筹下发").clicked() || enter) && !self.collab.master_input.trim().is_empty() {
+                        if (ui.button("全员统筹下发").clicked() || enter) && !self.collab.master_input.trim().is_empty() {
                             master_send = Some(self.collab.master_input.clone());
                         }
-                        if self.collab.any_running() && ui.button("⏹ 停止").clicked() {
+                        if self.collab.any_running() && ui.button("停止").clicked() {
                             stop_all_clicked = true;
                         }
                     });
@@ -437,17 +437,17 @@ impl App {
 
                 ui.add_space(4.0);
 
-                // --- 下部：🎯 单独命令当前 Agent 窗口 ---
+                // --- 下部：单独命令当前 Agent 窗口 ---
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(format!("🎯 单独命令窗口 (仅针对 {})", cur_agent_name))
+                            egui::RichText::new(format!("【单独命令窗口】(针对 {})", cur_agent_name))
                                 .strong()
                                 .color(Color32::from_rgb(255, 180, 50)),
                         );
                         ui.weak(format!("职责: {}", cur_agent_role));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("🧹 清空私聊").clicked() {
+                            if ui.small_button("清空私聊").clicked() {
                                 if let Some(a) = self.collab.agents.get_mut(cur_idx) {
                                     a.private_history.clear();
                                 }
@@ -486,10 +486,10 @@ impl App {
                                     .desired_width(ui.available_width() - 140.0),
                             );
                             let enter = re.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                            if (ui.button("✉️ 单独发送").clicked() || enter) && !a.private_input.trim().is_empty() {
+                            if (ui.button("单独发送").clicked() || enter) && !a.private_input.trim().is_empty() {
                                 individual_send = Some((cur_idx, a.private_input.clone()));
                             }
-                            if cur_running && ui.button("⏹ 停止").clicked() {
+                            if cur_running && ui.button("停止").clicked() {
                                 stop_one_clicked = Some(cur_idx);
                             }
                         });

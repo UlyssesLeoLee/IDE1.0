@@ -4,7 +4,7 @@ use super::*;
 use crate::i18n::trz;
 use nema_codec::{
     candidate_dictionary_details, compare_document_formats, find_reused_positions,
-    normalize_nema_newlines, parse_domain_header_v12, render_source,
+    normalize_nema_newlines, parse_domain_header, parse_domain_header_v12, render_source,
     toggle_table_header_in_source, CodecFormat, DomainMode, EdgeDirection, NemaCodec,
     NemaLeaseArbitrator, OwnershipRole, RenderedDocument, RenderedDomain, StandardNemaCodec,
     TokenProfile, COMPLETE_V12_SAMPLE, OFFICIAL_BENCHMARK_V12, OFFICIAL_SYNTAX_BEFORE_AFTER,
@@ -314,17 +314,14 @@ impl App {
     pub fn nema_convert(&mut self) {
         let i = self.active.min(self.docs.len() - 1);
         let raw_text = self.docs[i].lines.join("\n");
-        let has_domain_header = raw_text.contains("\t\\")
-            || raw_text.contains("\t?")
-            || raw_text.contains("\t>")
-            || raw_text
-                .lines()
-                .any(|l| parse_domain_header_v12(l).is_some());
+        let has_domain_header = raw_text
+            .lines()
+            .any(|l| parse_domain_header(l).is_some() || parse_domain_header_v12(l).is_some());
         let is_nema = is_nema_doc(&self.docs[i]) || has_domain_header;
 
         // 1. 非 NEMA 文档转化为 .nema
         if !is_nema {
-            let mut body_lines = vec!["\t\\1".to_string()];
+            let mut body_lines = vec![" \\1 1".to_string()];
             for line in &self.docs[i].lines {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
@@ -526,14 +523,14 @@ impl App {
         let i = self.active.min(self.docs.len() - 1);
         let raw = self.docs[i].lines.join("\n");
         let trimmed = raw.trim_end_matches('\n');
-        let next_id = trimmed.lines().filter(|l| l.starts_with('\t')).count() + 1;
+        let next_id = trimmed.lines().filter(|l| parse_domain_header(l).is_some() || parse_domain_header_v12(l).is_some()).count() + 1;
         let combined = if trimmed.is_empty() {
             format!(
-                "\tTtask{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
+                " \\?task{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
             )
         } else {
             format!(
-                "{trimmed}\n\tTtask{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
+                "{trimmed}\n \\?task{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
             )
         };
         let new_lines = source_to_doc_lines(&combined);
@@ -549,14 +546,14 @@ impl App {
         let i = self.active.min(self.docs.len() - 1);
         let raw = self.docs[i].lines.join("\n");
         let trimmed = raw.trim_end_matches('\n');
-        let next_id = trimmed.lines().filter(|l| l.starts_with('\t')).count() + 1;
+        let next_id = trimmed.lines().filter(|l| parse_domain_header(l).is_some() || parse_domain_header_v12(l).is_some()).count() + 1;
         let combined = if trimmed.is_empty() {
             format!(
-                "\t>Gauth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
+                " \\>auth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
             )
         } else {
             format!(
-                "{trimmed}\n\t>Gauth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
+                "{trimmed}\n \\>auth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
             )
         };
         let new_lines = source_to_doc_lines(&combined);
@@ -2279,7 +2276,7 @@ mod tests {
         app.docs[ai].name = "demo.nema".to_string();
         app.docs[ai].syntax = Some("NEMA".to_string());
         let orig = vec![
-            "\t\\1".to_string(),
+            " \\1 1".to_string(),
             "Service Status Latency".to_string(),
             "Gateway Healthy 12ms".to_string(),
             "".to_string(),
@@ -2328,7 +2325,7 @@ mod tests {
         app.docs[ai].name = "services.nema".to_string();
         app.docs[ai].syntax = Some("NEMA".to_string());
         let orig = vec![
-            "\t\\1".to_string(),
+            " \\1 1".to_string(),
             "\\ ServiceOwner ServiceStatus RegionName".to_string(),
             "AuthenticationService HealthyStatus AsiaPacificEast".to_string(),
             "AuthenticationService HealthyStatus AsiaPacificEast".to_string(),

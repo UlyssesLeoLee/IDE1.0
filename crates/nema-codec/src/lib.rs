@@ -748,12 +748,26 @@ fn is_valid_v12_domain_id(s: &str) -> bool {
 /// 解析 `.NEMA v1.2` 域头：`^\t([\\?>]?)([A-Za-z][A-Za-z0-9_.-]*) ([1-9][0-9]*)$`
 /// 返回 `(is_graph, id, revision)`
 pub fn parse_domain_header_v12(line: &str) -> Option<(bool, String, u64)> {
-    let rest = line.strip_prefix('\t')?;
+    let rest = if let Some(r) = line.strip_prefix(' ') {
+        if r.starts_with(' ') {
+            return None;
+        }
+        if let Some(s) = r.strip_prefix('\\') {
+            s
+        } else {
+            r
+        }
+    } else {
+        let r = line.strip_prefix('\t')?;
+        if let Some(s) = r.strip_prefix('\\') {
+            s
+        } else {
+            r
+        }
+    };
     let (is_graph, after_mark) = if let Some(stripped) = rest.strip_prefix('>') {
         (true, stripped)
     } else if let Some(stripped) = rest.strip_prefix('?') {
-        (false, stripped)
-    } else if let Some(stripped) = rest.strip_prefix('\\') {
         (false, stripped)
     } else {
         (false, rest)
@@ -766,7 +780,6 @@ pub fn parse_domain_header_v12(line: &str) -> Option<(bool, String, u64)> {
     Some((is_graph, id_part.to_string(), rev))
 }
 
-/// 解析域头（兼容 `.NEMA v1.2` 字母数字域头 `\t(>?)ID REV` 与旧版 `\t(\|?|>)[1-9][0-9]*(?: [1-9][0-9]*)?`）
 pub fn parse_domain_header(line: &str) -> Option<(DomainMode, String, u64)> {
     let (mode, tail) = if let Some(r) = line.strip_prefix(' ') {
         if r.starts_with(' ') || !r.starts_with('\\') {
@@ -1913,7 +1926,7 @@ fn build_transport(source: &str, words: &[String], use_rle: bool) -> String {
         lines.push(esc_transport(w));
     }
     for row in rows {
-        if row.starts_with('\t') && parse_domain_header(row).is_some() {
+        if (row.starts_with('\t') || row.starts_with(' ')) && parse_domain_header(row).is_some() {
             lines.push(row.to_string());
         } else {
             lines.push(encode_row(row, words, use_rle));
@@ -2551,7 +2564,7 @@ pub fn decode_transport(text: &str) -> Result<String, NemaError> {
             return Err(NemaError::UnsupportedLegacyPrefixSelector);
         }
         let v = decode_row(row, &values)?;
-        if v.starts_with('\t') && parse_domain_header(&v).is_some() {
+        if (v.starts_with('\t') || v.starts_with(' ')) && parse_domain_header(&v).is_some() {
             return Err(NemaError::EncodedDomainHeaderNotPermitted);
         }
         out.push(v);
@@ -2580,7 +2593,7 @@ pub fn find_reused_positions(source: &str) -> Vec<ReusedPosition> {
     let mut positions = Vec::new();
 
     for (line_idx, &line) in lines.iter().enumerate() {
-        if line.starts_with('\t') {
+        if line.starts_with('\t') || parse_domain_header(line).is_some() || parse_domain_header_v12(line).is_some() {
             continue;
         }
         let chars: Vec<char> = line.chars().collect();
@@ -3762,5 +3775,21 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn test_space_domain_header_v12() {
+        // v1.2 字母域名头支持空格前缀与 \ 标记
+        assert_eq!(parse_domain_header_v12(r" \?task1 1"), Some((false, "task1".into(), 1)));
+        assert_eq!(parse_domain_header_v12(r" \>auth1 1"), Some((true, "auth1".into(), 1)));
+        assert_eq!(parse_domain_header_v12(r" >auth1 1"), Some((true, "auth1".into(), 1)));
+        assert_eq!(parse_domain_header_v12(r" ?task1 1"), Some((false, "task1".into(), 1)));
+        assert_eq!(parse_domain_header_v12("\t\\>auth1 1"), Some((true, "auth1".into(), 1)));
+        assert_eq!(parse_domain_header_v12("\t>Gauth1 1"), Some((true, "Gauth1".into(), 1)));
+        assert!(parse_domain_header_v12(r"  \>auth1 1").is_none(), "double space must be rejected as continuation line");
+
+        // 全局域头解析支持单空格数字域头
+        assert_eq!(parse_domain_header(r" \1 1"), Some((DomainMode::Table, "1".into(), 1)));
+        assert_eq!(parse_domain_header(r" \?2 1"), Some((DomainMode::FiveWOneH, "2".into(), 1)));
+        assert_eq!(parse_domain_header(r" \>3 1"), Some((DomainMode::Graph, "3".into(), 1)));
     }
 }

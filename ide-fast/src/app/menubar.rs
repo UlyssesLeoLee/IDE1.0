@@ -917,7 +917,7 @@ menuui::top(
                             ui.close();
                             let _ = crate::md_view::open_url("https://github.com/UlyssesLeoLee/IDE1.0/wiki");
                         }
-                        if ui.button(trz("⚡ 欢迎与安装向导…")).clicked() {
+                        if ui.button(trz("欢迎与安装向导…")).clicked() {
                             ui.close();
                             self.installer.open = true;
                         }
@@ -1112,7 +1112,7 @@ menuui::top(
             ui.close();
         }
         ui.separator();
-        if ui.button("🤖 多 Agent 协同工作台…").clicked() {
+        if ui.button("多 Agent 协同工作台…").clicked() {
             self.collab.open = true;
             ui.close();
         }

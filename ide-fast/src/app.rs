@@ -1288,6 +1288,13 @@ impl App {
         let tip = format!("比较 {} ↔ {}: {}", l.name, r.name, v.summary());
         self.diff = Some(v);
         self.cur().tip = tip;
+
+        // WinMerge 风格：自动开启左右分屏对比，左窗格为基准文档，右窗格为对比文档
+        self.panes.kind = crate::split::SplitKind::Cols;
+        self.panes.docs[0] = cur;
+        self.panes.docs[1] = other;
+        self.panes.focus = 0;
+        self.split_on = true;
     }
 
     /// 选一个文件打开成标签, 再和当前标签比较
@@ -4267,6 +4274,34 @@ impl App {
                             );
                         }
                     }
+                    // WinMerge 风格差异对比全行浅底色铺底与 Gap 断线
+                    if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
+                        use crate::diff::Mark;
+                        let line_rect = Rect::from_min_max(
+                            Pos2::new(rect.min.x + gutter, y),
+                            Pos2::new(rect.max.x, y + row_h),
+                        );
+                        match m {
+                            Mark::Added => {
+                                painter.rect_filled(line_rect, 0.0, Color32::from_rgba_unmultiplied(46, 204, 113, 38));
+                            }
+                            Mark::Changed => {
+                                painter.rect_filled(line_rect, 0.0, Color32::from_rgba_unmultiplied(241, 196, 15, 42));
+                            }
+                            Mark::Removed => {
+                                painter.rect_filled(line_rect, 0.0, Color32::from_rgba_unmultiplied(231, 76, 60, 42));
+                            }
+                            Mark::Gap => {
+                                let mid_y = y + row_h * 0.5;
+                                painter.line_segment(
+                                    [Pos2::new(rect.min.x + gutter, mid_y), Pos2::new(rect.max.x, mid_y)],
+                                    egui::Stroke::new(1.2, Color32::from_rgba_unmultiplied(231, 76, 60, 160)),
+                                );
+                            }
+                            Mark::Same => {}
+                        }
+                    }
+
                     if vw.cur_line && row == d.cursor[0] && !d.grep_result {
                         let cur_rect = Rect::from_min_max(
                             Pos2::new(rect.min.x + gutter, y),
@@ -4369,8 +4404,8 @@ impl App {
                         if h > 0.0 {
                             painter.rect_filled(
                                 Rect::from_min_size(
-                                    Pos2::new(rect.min.x + gutter - 9.0, y),
-                                    Vec2::new(3.0, h),
+                                    Pos2::new(rect.min.x + gutter - 8.0, y),
+                                    Vec2::new(4.0, h),
                                 ),
                                 0.0,
                                 c,

@@ -639,8 +639,8 @@ impl App {
                             let tl = t.to_lowercase();
                             if tl.contains("agent") || tl.contains("派出") || tl.contains("协同") {
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("💡 检测到多 Agent 调度任务:").size(11.0).color(Color32::from_rgb(0, 190, 255)));
-                                    if ui.small_button("🤖 打开多 Agent 协同工作台").clicked() {
+                                    ui.label(egui::RichText::new("[提示] 检测到多 Agent 调度任务:").size(11.0).color(Color32::from_rgb(0, 190, 255)));
+                                    if ui.small_button("打开多 Agent 协同工作台").clicked() {
                                         act = Some(Act::OpenCollab(t.clone()));
                                     }
                                 });
