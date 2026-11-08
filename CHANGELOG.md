@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.1 — 2026-11-07
+
+### 自适应解释器导入引擎、.NEMA 全语法变化矩阵与 64 态组合验证器
+
+本版本正式引入面向 .nema 活跃调试阶段的用户自定义解释器导入与自适应适配引擎，支持外部 Python 脚本、本地二进制与 CLI 驱动的即插即用，并全面落地《.NEMA 全语法变化矩阵 · 七列完整审查版》交互式看板与 4³ = 64 态穷举测试套件。
+
+#### 1. 自定义解释器导入与自适应适配引擎 (Adaptive Interpreter Engine)
+- **多源解释器接入与自动发现**: 自动检测并枚举可用候选（官方 Python 参考实现 `codec/native.py`、`codec/cli.py`、工作区 `.ide/nema_interpreter.py` 等），支持用户自定义文件路径与运行环境（Python / Binary / Node.js / Auto）。
+- **动态能力探针 (Adaptive Probing)**: 自动探测 5 种底层调用协议（`PythonNativeView`、`OfficialCliRender`、`GenericJsonAstStdin`、`GenericFileArg`、`BuiltinRust`），实时评测往返延迟与特性兼容性。
+- **全链路后端 API 与平滑降级**: 提供 `/api/nema/status`、`/api/nema/probe`、`/api/nema/set_interpreter`、`/api/nema/render` 接口；遇外部解释器语法或进程异常自动安全回退至内置纯 Rust 标准引擎。
+- **工具条解释器管理弹窗**: NEMA 工具栏新增 `[🔌 解释器]` 胶囊，点击即可一键管理、实时探测与热切换生效。
+
+#### 2. .NEMA 全语法变化矩阵 · 七列完整审查版交互看板
+- **权威规范基线落盘**: 在 `docs/06_功能对标/NEMA_SYNTAX_MATRIX_7COL.md` 建立固定 7 列架构基线（`语法 | 说明 | 具体例子 | 设计理由 | 避免的异常 | 变化写法 | 变化渲染结果`）。
+- **交互式 64 态组合验证器 (4³ = 64 Basic Combinations)**: 针对固定三列表格的 4 种基本状态（Value `A` / Null `~` / Empty `\e` / Missing `\_`），支持自由切换状态、实时生成变化写法代码，并由当前解释器实时渲染解析表格。
+- **分类筛选与实时检索**: 覆盖 Table、5W1H、Node–Edge、转义字面、NEMAT 传输、全局词法等核心规则，支持一键点击变化写法试算与插入编辑器。
+
+#### 3. 64 态全排列自动化测试套件
+- **穷举测试全绿**: 新增 `crates/nema-codec/tests/matrix_64_combinations_tests.rs`，100% 验证 64 种三列字段状态组合在原生引擎与自适应渲染中的确定性语义。
+- **边界与错误注入**: 严格校验零编号拒绝、超列拦截、畸形边解析与悬空端点引用。
+
 ## 0.6.0 — 2026-11-07
 
 ### IDE1.0 × NEMA 交互图拓扑渲染器、基准实验室与新解释器规范对齐
