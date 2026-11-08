@@ -305,6 +305,12 @@ impl ThemeColors {
             pick("--red", &mut t.red);
             pick("--orange", &mut t.orange);
         }
+        t.comic = vars
+            .get("--theme-name")
+            .is_some_and(|s| s.contains("comic"));
+        t.retro16 = vars
+            .get("--theme-name")
+            .is_some_and(|s| s.contains("retro16"));
         t
     }
 

@@ -14,6 +14,7 @@ type Row = (&'static str, &'static str, &'static str);
 
 const MSG_T: &[Row] = &[
     // ---- 文档 / 编辑
+    ("🌸 Sakura 常驻托盘已激活：亦可在 Windows 屏幕右下角任务栏时间旁边找到托盘图标快速唤起", "🌸 サクラ常駐トレイが有効化されました: Windows タスクバー右下の日付と時刻の隣のトレイアイコンからも素早く呼び出せます", "🌸 Sakura resident tray is active: click the tray icon next to the system clock on the bottom-right taskbar to restore"),
     ("已从磁盘重新载入", "ディスクから再読み込みしました", "Reloaded from disk"),
     ("已按 {} 重新打开", "{} で開き直しました", "Reopened as {}"),
     ("保存时的换行符: {}", "保存時の改行コード: {}", "Line ending on save: {}"),

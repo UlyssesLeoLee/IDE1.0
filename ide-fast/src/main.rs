@@ -73,6 +73,7 @@ mod terminal;
 mod textconv;
 mod textdrag;
 mod tools;
+mod tray;
 mod ui_ext;
 mod updapply;
 mod update;
@@ -208,16 +209,17 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     trace.mark("before run_native");
+    let t_app = trace.clone();
     let result = eframe::run_native(
         "IDE1.0 Fast",
         options,
         Box::new(move |cc| {
-            trace.mark("window + GL context ready");
+            t_app.mark("window + GL context ready");
             match fonts_job.map(|h| h.join()) {
                 Some(Ok(loaded)) => fonts::install_loaded(&cc.egui_ctx, loaded),
                 _ => fonts::install(&cc.egui_ctx, &font_file, &st.font_cjk_fallback, &st.lang), // 线程没起来 / 读取线程 panic: 同步读
             }
-            trace.mark("fonts installed");
+            t_app.mark("fonts installed");
             #[cfg(windows)]
             if blur {
                 // 窗口背后加 DWM 模糊; 失败 (旧系统 / 驱动) 就只剩 alpha 叠色, 不影响使用
@@ -225,9 +227,9 @@ fn main() -> eframe::Result<()> {
             }
             #[cfg(not(windows))]
             let _ = blur;
-            let t = trace.clone();
+            let t = t_app.clone();
             // 直接复用已读出的 st, 避免在 App::new 内部重复读盘解析 settings.json (启动提速)
-            let app = app::App::with_settings(args, inbox, trace, st);
+            let app = app::App::with_settings(args, inbox, t_app, st);
             t.mark("App::new done");
             Ok(Box::new(app))
         }),
@@ -236,6 +238,7 @@ fn main() -> eframe::Result<()> {
     if let Some(a) = updapply::take() {
         let _ = updapply::launch(&a);
     }
+    trace.mark(&format!("run_native returned: {result:?}"));
     result
 }
 

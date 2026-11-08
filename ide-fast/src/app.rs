@@ -166,6 +166,7 @@ pub struct App {
     /// 正在拖放选中文字 (按下时落在选区里才有)
     text_drag: Option<crate::textdrag::TextDrag>,
     print_ui: printui::PrintUi,
+    tray: Option<crate::tray::Tray>,
 }
 
 impl App {
@@ -276,6 +277,7 @@ impl App {
             upd: Default::default(),
             ai: Default::default(),
             print_ui: Default::default(),
+            tray: if persist { crate::tray::Tray::build() } else { None },
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -478,8 +480,13 @@ impl App {
     /// 把一份设置套到运行状态上 (启动、首选项 OK、恢复默认、导入配置都走这里)
     fn apply_settings(&mut self, st: &Settings) {
         self.dark = st.dark;
-        if st.theme_plugin != self.theme_id {
-            self.set_theme_plugin(&st.theme_plugin.clone());
+        let theme_to_apply = if st.theme_plugin.is_empty() {
+            "theme-comic"
+        } else {
+            &st.theme_plugin
+        };
+        if theme_to_apply != self.theme_id {
+            self.set_theme_plugin(theme_to_apply);
         }
         self.font_px = st.font_px;
         self.tab = st.tab_width;
@@ -5145,6 +5152,39 @@ fn status_bar_style(ui: &mut egui::Ui, text: Color32) {
 }
 
 impl App {
+    pub fn handle_tray_event(&mut self, ctx: &egui::Context, ev: crate::tray::TrayEvent) {
+        match ev {
+            crate::tray::TrayEvent::ShowHide => {
+                let is_min = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+                let is_foc = ctx.input(|i| i.viewport().focused.unwrap_or(false));
+                if !is_min && is_foc {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
+            }
+            crate::tray::TrayEvent::NewFile => {
+                self.new_doc();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            crate::tray::TrayEvent::Quit => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+    }
+
+    fn poll_tray(&mut self, ctx: &egui::Context) {
+        if let Some(tray) = &self.tray {
+            for ev in tray.poll() {
+                self.handle_tray_event(ctx, ev);
+            }
+        }
+    }
+
     fn ui_main(&mut self, root: &mut egui::Ui) {
         let ctx = &root.ctx().clone();
         self.tc = match &self.theme_vars {
@@ -5179,6 +5219,7 @@ impl App {
             crate::fonts::install(ctx, eff_font, &self.cfg.font_cjk_fallback, &self.cfg.lang);
             self.applied_font = self.cfg.font_family.clone();
         }
+        self.poll_tray(ctx);
         self.sync_doc_prefs();
         self.sys_frame(ctx);
         self.track_geometry(ctx);

@@ -4590,7 +4590,7 @@ function dispatchCommand(cmd) {
     case "font-smaller":     fontSmaller(); break;
     case "theme-crystal":    setTheme("crystal"); break;
     case "theme-clear":      setTheme("clear"); break;
-    case "theme-dark":       setTheme("dark"); break;
+    case "theme-dark":       setTheme("comic"); break;
     case "theme-light":      setTheme("light"); break;
     case "theme-high-contrast": setTheme("hc"); break;
     case "theme-retro16":    setTheme("retro16"); break;
@@ -7728,7 +7728,7 @@ function resetSettings() {
   VIEW_STATE.syntax = true;
   edContent.style.whiteSpace = "pre";
   gutter.style.display = "";
-  setTheme("dark");
+  setTheme("comic");
   setFontSize(14);
   setTip("已恢复默认设置");
 }
@@ -16396,6 +16396,7 @@ window.addEventListener("DOMContentLoaded", async function () {
   try {
     const saved = localStorage.getItem("ide10.theme");
     if (saved && THEMES[saved]) setTheme(saved);
+    else setTheme("comic"); // 首次启动默认美漫3渲2主题
   } catch (_) { /* private mode: 忽略 */ }
   // Default mode NORMAL
   setMode("NORMAL");

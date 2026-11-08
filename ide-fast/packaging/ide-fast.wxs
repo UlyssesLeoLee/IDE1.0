@@ -11,6 +11,8 @@
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
     <UIRef Id="WixUI_InstallDir" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.BannerBmp)" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.DialogBmp)" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
@@ -28,7 +30,7 @@
     <!-- 开始菜单快捷方式: 单独一个组件, 以 HKCU 注册表项作 KeyPath (Windows Installer 对快捷方式的要求); 目标写成 [INSTALLFOLDER]ide-fast.exe 而不是 [#文件Id], 否则快捷方式与目标文件分属两个组件会触发 ICE69 -->
     <DirectoryRef Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Guid="*">
-        <Shortcut Id="IdeFastShortcut" Name="IDE1.0 Fast" Target="[INSTALLFOLDER]ide-fast.exe" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" />
+        <Shortcut Id="IdeFastShortcut" Name="IDE1.0 Fast" Target="[INSTALLFOLDER]ide-fast.exe" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" Description="IDE1.0 Fast - 3D-to-2D Cel-Shaded Comic Text Editor (Sakura Style)" />
         <RegistryValue Root="HKCU" Key="Software\ide1\IDE1.0 Fast" Name="shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>

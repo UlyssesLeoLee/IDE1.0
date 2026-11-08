@@ -34,6 +34,11 @@ rquickjs = { version = "0.9", default-features = false }
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = { version = "0.8", default-features = false }
 raw-window-handle = "0.6"
+# 系统通知区域托盘图标（右下角时钟旁边）：复用锁文件已有的 0.25 版本（Tauri 拉入）
+tray-icon = { version = "0.25", default-features = false }
+
+[target.'cfg(windows)'.build-dependencies]
+tauri-winres = "0.3"
 
 # Linux 平台 GUI 后端与文件对话框后端支持 (WBS-03 O1.2)
 [target.'cfg(target_os = "linux")'.dependencies]

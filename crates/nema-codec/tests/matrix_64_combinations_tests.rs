@@ -78,3 +78,35 @@ fn test_candidates_and_adaptive_probe_flow() {
         assert!(rep.sample_ast_nodes >= 2);
     }
 }
+
+#[test]
+fn test_adversarial_space_headers_and_continuation_invariants() {
+    use nema_codec::{parse_domain_header, DomainMode};
+
+    // 1. 合法单空格领域头 (Table / 5W1H / Graph)
+    let h_tab = parse_domain_header(r" \1 1").expect(r" \1 1 must parse");
+    assert_eq!(h_tab, (DomainMode::Table, "1".to_string(), 1));
+
+    let h_5w1h = parse_domain_header(r" \?2 1").expect(r" \?2 1 must parse");
+    assert_eq!(h_5w1h, (DomainMode::FiveWOneH, "2".to_string(), 1));
+
+    let h_graph = parse_domain_header(r" \>3 1").expect(r" \>3 1 must parse");
+    assert_eq!(h_graph, (DomainMode::Graph, "3".to_string(), 1));
+
+    let h_big = parse_domain_header(r" \999 10").expect(r" \999 10 must parse");
+    assert_eq!(h_big, (DomainMode::Table, "999".to_string(), 10));
+
+    // 2. 意群续接行（以单空格或多空格缩进，绝不可误判为领域头）
+    assert!(parse_domain_header(" ログイン処理を確認する").is_none());
+    assert!(parse_domain_header(" セッションを守る").is_none());
+    assert!(parse_domain_header("  下一轮验证权限").is_none());
+    assert!(parse_domain_header(" ContinuationGroup").is_none());
+
+    // 3. 畸形/非法空格注入
+    assert!(parse_domain_header(r"  \1 1").is_none(), "Double space prefix must be rejected");
+    assert!(parse_domain_header(r" \0 1").is_none(), "Zero domain ID must be rejected");
+    assert!(parse_domain_header(r" \01 1").is_none(), "Leading zero ID must be rejected");
+    assert!(parse_domain_header(r" \ 1").is_none(), "Missing domain ID must be rejected");
+    assert!(parse_domain_header(r" \").is_none(), "Lone backslash must be rejected");
+    assert!(parse_domain_header(r" \1  1").is_none(), "Double space before rev must be rejected");
+}

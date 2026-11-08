@@ -17,6 +17,7 @@ pub(super) enum StatusCmd {
     CrossPageGrep,
     ReviewDoc,
     Language,
+    SakuraInfo,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -327,8 +328,9 @@ impl App {
                 ui.add_space(4.0);
                 sep(ui, on);
                 // 提示撑满剩下的宽, 语法名靠右
+                let sakura_w = text_w(ui, "🌸 Sakura") + 18.0;
                 let lang_w = text_w(ui, &lang) + 16.0;
-                let tip_w = (right - ui.cursor().left() - lang_w - 1.0).max(0.0);
+                let tip_w = (right - ui.cursor().left() - lang_w - sakura_w - 2.0).max(0.0);
                 ui.allocate_ui_with_layout(
                     Vec2::new(tip_w, ui.available_height()),
                     egui::Layout::left_to_right(egui::Align::Center),
@@ -347,6 +349,17 @@ impl App {
                 {
                     st_cmd = Some(StatusCmd::Language);
                 }
+                sep(ui, on);
+                ui.add_space(6.0);
+                let sakura_label = egui::RichText::new("🌸 Sakura").color(Color32::from_rgb(255, 183, 197)).strong();
+                if ui
+                    .add(egui::Label::new(sakura_label).sense(Sense::click()))
+                    .on_hover_text("Sakura 常驻托盘模式已就绪 (可直接在 Windows 任务栏右下角时间旁边点击 🌸 托盘图标唤出或管理)")
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::SakuraInfo);
+                }
+                ui.add_space(6.0);
             });
         });
         match st_cmd {
@@ -379,6 +392,9 @@ impl App {
                 self.open_review_doc();
             }
             Some(StatusCmd::Language) => self.open_syntax_pick(),
+            Some(StatusCmd::SakuraInfo) => {
+                self.cur().tip = "🌸 Sakura 常驻托盘已激活：亦可在 Windows 屏幕右下角任务栏时间旁边找到托盘图标快速唤起".into();
+            }
             None => {}
         }
     }

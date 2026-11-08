@@ -768,21 +768,49 @@ pub fn parse_domain_header_v12(line: &str) -> Option<(bool, String, u64)> {
 
 /// 解析域头（兼容 `.NEMA v1.2` 字母数字域头 `\t(>?)ID REV` 与旧版 `\t(\|?|>)[1-9][0-9]*(?: [1-9][0-9]*)?`）
 pub fn parse_domain_header(line: &str) -> Option<(DomainMode, String, u64)> {
-    let rest = if let Some(r) = line.strip_prefix(' ') {
-        if r.starts_with(' ') {
+    let (mode, tail) = if let Some(r) = line.strip_prefix(' ') {
+        if r.starts_with(' ') || !r.starts_with('\\') {
             return None;
         }
-        r
+        let sub = &r[1..];
+        if let Some(rest) = sub.strip_prefix('?') {
+            (DomainMode::FiveWOneH, rest)
+        } else if let Some(rest) = sub.strip_prefix('>') {
+            (DomainMode::Graph, rest)
+        } else if let Some(rest) = sub.strip_prefix('|') {
+            (DomainMode::Table, rest)
+        } else if let Some(rest) = sub.strip_prefix('T') {
+            (DomainMode::Table, rest)
+        } else {
+            (DomainMode::Table, sub)
+        }
     } else {
-        line.strip_prefix('\t')?
-    };
-    let mut chars = rest.chars();
-    let mode_ch = chars.next()?;
-    let (mode, tail) = match mode_ch {
-        '\\' => (DomainMode::Table, &rest[1..]),
-        '?' => (DomainMode::FiveWOneH, &rest[1..]),
-        '>' => (DomainMode::Graph, &rest[1..]),
-        _ => (DomainMode::FiveWOneH, rest),
+        let rest = line.strip_prefix('\t')?;
+        if let Some(sub) = rest.strip_prefix('\\') {
+            if let Some(s) = sub.strip_prefix('?') {
+                (DomainMode::FiveWOneH, s)
+            } else if let Some(s) = sub.strip_prefix('>') {
+                (DomainMode::Graph, s)
+            } else if let Some(s) = sub.strip_prefix('|') {
+                (DomainMode::Table, s)
+            } else if let Some(s) = sub.strip_prefix('T') {
+                (DomainMode::Table, s)
+            } else {
+                (DomainMode::Table, sub)
+            }
+        } else if let Some(s) = rest.strip_prefix('>') {
+            (DomainMode::Graph, s)
+        } else if let Some(s) = rest.strip_prefix('G') {
+            (DomainMode::Graph, s)
+        } else if let Some(s) = rest.strip_prefix('?') {
+            (DomainMode::FiveWOneH, s)
+        } else if let Some(s) = rest.strip_prefix('|') {
+            (DomainMode::Table, s)
+        } else if let Some(s) = rest.strip_prefix('T') {
+            (DomainMode::Table, s)
+        } else {
+            (DomainMode::FiveWOneH, rest)
+        }
     };
     if let Some((id_part, rev_part)) = tail.split_once(' ') {
         if (!is_positive_digits(id_part) && !is_valid_v12_domain_id(id_part))
@@ -3629,9 +3657,7 @@ mod tests {
                 if file_name.contains("_v13") || file_name.contains("_v15") {
                     continue;
                 }
-                let raw = std::fs::read_to_string(&path)
-                    .unwrap()
-                    .replace("\r\n", "\n");
+                let raw = normalize_nema_newlines(&std::fs::read_to_string(&path).unwrap());
                 let parsed = codec.parse(&raw).unwrap();
                 assert!(!parsed.domains.is_empty());
                 let ch = codec.encode(&raw, &profile).unwrap();

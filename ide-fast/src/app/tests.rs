@@ -1121,3 +1121,115 @@ fn test_menubar_renders_without_panics() {
     out.textures_delta.clear();
     assert!(!a.sys.menu_ids.is_empty(), "MenuBar 应成功注册所有一级菜单项 ID");
 }
+
+
+
+#[test]
+fn test_adversarial_tray_toggle_and_new_doc() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    let initial_docs = a.docs.len();
+
+    // 1. NewFile 托盘事件：新建文档并且请求前台激活
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::NewFile);
+    assert_eq!(a.docs.len(), initial_docs + 1, "NewFile 必须新增标签页");
+
+    // 2. ShowHide 托盘事件
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
+
+    // 3. Quit 托盘事件
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+
+    // 4. 多语言字典完整性校验：Sakura 指示器与系统托盘提示
+    for lang in [crate::i18n::Lang::Zh, crate::i18n::Lang::Ja, crate::i18n::Lang::En] {
+        crate::i18n::set(lang);
+        let sakura_tip = crate::msgtr::msg("🌸 Sakura 常驻托盘已激活：亦可在 Windows 屏幕右下角任务栏时间旁边找到托盘图标快速唤起");
+        assert!(!sakura_tip.is_empty(), "Language {:?} must define Sakura tray message", lang);
+        assert!(sakura_tip.contains("Sakura") || sakura_tip.contains("サクラ") || sakura_tip.contains("🌸"));
+    }
+}
+
+#[test]
+fn test_adversarial_comic_3d_to_2d_palette_contrast_invariants() {
+    use crate::view::ThemeColors;
+    use editcore::syntax_styling::Color;
+    use editcore::type_config::TokenKind;
+    use std::collections::BTreeMap;
+
+    // 1. 默认设置必须为美漫 3渲2 主题
+    let default_st = Settings::default();
+    assert_eq!(default_st.theme_plugin, "theme-comic", "默认主题必须是 theme-comic");
+
+    // 2. 构造 theme-comic 变量集
+    let mut vars = BTreeMap::new();
+    vars.insert("--theme-name".to_string(), "comic".to_string());
+    vars.insert("--bg-bar".to_string(), "#1f2230".to_string());
+    vars.insert("--bg-edit".to_string(), "#12131a".to_string());
+    vars.insert("--bg-status".to_string(), "#ffcc00".to_string());
+    vars.insert("--fg".to_string(), "#f4f5f8".to_string());
+    vars.insert("--fg-on-accent".to_string(), "#000000".to_string());
+    vars.insert("--red".to_string(), "#ff3366".to_string());
+    vars.insert("--yellow".to_string(), "#ffcc00".to_string());
+    vars.insert("--blue".to_string(), "#00b4d8".to_string());
+    vars.insert("--green".to_string(), "#00f59b".to_string());
+
+    let tc = ThemeColors::from_vars(&vars);
+    assert!(tc.comic, "ThemeColors 必须识别 --theme-name: comic 并置位 tc.comic");
+
+    // 3. 高饱和与极端对比度不变量（3渲2赛璐珞）
+    // 状态栏为鲜亮波普黄 (#ffcc00)
+    assert_eq!(tc.bg_status, egui::Color32::from_rgb(0xff, 0xcc, 0x00));
+    // 状态栏前景文字在黄色底上必须采用高对比深色/黑色，避免白底看不清
+    let fg_status = tc.on_status();
+    assert_ne!(fg_status, egui::Color32::WHITE, "高亮黄色状态栏上的文字绝不能是白色");
+
+    // 4. 语法高亮色盘验证 (Cel-Shaded 高饱和色)
+    let st = tc.syntax_theme();
+    let kw_style = st.styles.get(&TokenKind::Keyword).expect("Keyword style must exist");
+    assert_eq!(kw_style.fg, Color(0xff, 0x33, 0x66), "美漫主题关键字必须是赛璐珞粉红 #ff3366");
+}
+
+#[test]
+fn test_adversarial_installer_bmp_and_ico_headers() {
+    use std::path::Path;
+
+    let find_path = |sub: &str| {
+        let p1 = Path::new(sub).to_path_buf();
+        if p1.exists() { return p1; }
+        let p2 = Path::new("ide-fast").join(sub);
+        if p2.exists() { return p2; }
+        panic!("Path not found in {} or ide-fast/{}", sub, sub);
+    };
+
+    // 1. Banner BMP (493x58 24bpp)
+    let banner_path = find_path("packaging/banner.bmp");
+    let banner_bytes = std::fs::read(banner_path).expect("读取 banner.bmp");
+    assert!(banner_bytes.len() >= 54, "BMP 头部至少 54 字节");
+    assert_eq!(&banner_bytes[0..2], b"BM", "Magic number 必须为 BM");
+    let b_w = i32::from_le_bytes(banner_bytes[18..22].try_into().unwrap());
+    let b_h = i32::from_le_bytes(banner_bytes[22..26].try_into().unwrap());
+    let b_bpp = u16::from_le_bytes(banner_bytes[28..30].try_into().unwrap());
+    assert_eq!(b_w, 493, "Banner 宽度必须严格为 493px");
+    assert_eq!(b_h, 58, "Banner 高度必须严格为 58px");
+    assert_eq!(b_bpp, 24, "Banner 色深必须严格为 24bpp 无压缩");
+
+    // 2. Dialog BMP (493x312 24bpp)
+    let dialog_path = find_path("packaging/dialog.bmp");
+    let dialog_bytes = std::fs::read(dialog_path).expect("读取 dialog.bmp");
+    assert!(dialog_bytes.len() >= 54, "BMP 头部至少 54 字节");
+    assert_eq!(&dialog_bytes[0..2], b"BM", "Magic number 必须为 BM");
+    let d_w = i32::from_le_bytes(dialog_bytes[18..22].try_into().unwrap());
+    let d_h = i32::from_le_bytes(dialog_bytes[22..26].try_into().unwrap());
+    let d_bpp = u16::from_le_bytes(dialog_bytes[28..30].try_into().unwrap());
+    assert_eq!(d_w, 493, "Dialog 宽度必须严格为 493px");
+    assert_eq!(d_h, 312, "Dialog 高度必须严格为 312px");
+    assert_eq!(d_bpp, 24, "Dialog 色深必须严格为 24bpp 无压缩");
+
+    // 3. Multi-resolution ICO (包含 16..256 帧)
+    let ico_path = find_path("packaging/ide-fast.ico");
+    let ico_bytes = std::fs::read(ico_path).expect("读取 ide-fast.ico");
+    assert!(ico_bytes.len() >= 6, "ICO 头部至少 6 字节");
+    assert_eq!(&ico_bytes[0..4], &[0, 0, 1, 0], "ICO 签名必须为 00 00 01 00");
+    let frame_count = u16::from_le_bytes(ico_bytes[4..6].try_into().unwrap());
+    assert!(frame_count >= 5, "ICO 必须包含至少 5 个不同分辨率的图元帧");
+}

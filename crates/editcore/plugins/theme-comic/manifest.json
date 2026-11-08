@@ -16,6 +16,7 @@
       "label": "美漫 3渲2",
       "translucent": false,
       "vars": {
+        "--theme-name": "comic",
         "--bg-bar": "#1f2230",
         "--bg-side": "#161822",
         "--bg-edit": "#12131a",

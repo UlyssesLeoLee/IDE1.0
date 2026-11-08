@@ -37,7 +37,7 @@ $ver = (Select-String -Path "$root\Cargo.toml" -Pattern '^version = "([0-9.]+)"'
 $wixVer = "$ver.0"     # MSI 版本要四段
 $env:CARGO_TARGET_DIR = $Target
 Push-Location $root
-cargo build --release -p ide-fast
+cargo build --release -j 2 -p ide-fast
 if ($LASTEXITCODE) { Pop-Location; throw "cargo 构建失败" }
 Pop-Location
 $exe = Join-Path $Target "release\ide-fast.exe"
@@ -47,7 +47,12 @@ $rtf = Join-Path $Out "license.rtf"
 '{\rtf1\ansi IDE1.0 Fast is licensed under the GNU AGPL-3.0. See the LICENSE file in the source repository: https://github.com/UlyssesLeoLee/IDE1.0}' | Set-Content -Encoding ascii $rtf
 $wixobj = Join-Path $Out "ide-fast.wixobj"
 $icon = Join-Path $PSScriptRoot "ide-fast.ico"
-& "$wix\candle.exe" -nologo -arch x64 "-dVersion=$wixVer" "-dExePath=$exe" "-dIconPath=$icon" "-dLicenseRtf=$rtf" -out $wixobj "$PSScriptRoot\ide-fast.wxs"
+$banner = Join-Path $PSScriptRoot "banner.bmp"
+$dialog = Join-Path $PSScriptRoot "dialog.bmp"
+if (-not (Test-Path $banner) -or -not (Test-Path $dialog)) {
+    & python (Join-Path $PSScriptRoot "generate_comic_art.py")
+}
+& "$wix\candle.exe" -nologo -arch x64 "-dVersion=$wixVer" "-dExePath=$exe" "-dIconPath=$icon" "-dLicenseRtf=$rtf" "-dBannerBmp=$banner" "-dDialogBmp=$dialog" -out $wixobj "$PSScriptRoot\ide-fast.wxs"
 if ($LASTEXITCODE) { throw "candle 失败" }
 $msi = Join-Path $Out "IDE1.0-Fast_${ver}_x64.msi"
 & "$wix\light.exe" -nologo -ext WixUIExtension -cultures:en-us -sice:ICE91 -sice:ICE60 -out $msi $wixobj

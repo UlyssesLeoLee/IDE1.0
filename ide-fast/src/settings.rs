@@ -213,7 +213,7 @@ impl Default for Settings {
             tab_width: 4,
             highlight: true,
             wrap: false,
-            theme_plugin: String::new(),
+            theme_plugin: "theme-comic".to_string(),
             recent: vec![],
             recent_dirs: vec![],
             positions: vec![],
