@@ -73,20 +73,17 @@ pub struct SubAgent {
 
 impl SubAgent {
     pub fn new(index: usize) -> Self {
-        let (name, role) = match index {
-            0 => ("Agent #1 (编码员)", "负责核心代码生成、算法实现与模块架构落地"),
-            1 => ("Agent #2 (审查员)", "负责质量审查、边界校验、安全性与不变量审核"),
-            2 => ("Agent #3 (测试员)", "负责测试用例构建、异常模拟与回归验证"),
-            3 => ("Agent #4 (优化员)", "负责性能瓶颈排查、并发同步与系统资源优化"),
-            4 => ("Agent #5 (架构员)", "负责跨模块接口设计与契约约束"),
-            n => (
-                Box::leak(format!("Agent #{}", n + 1).into_boxed_str()) as &'static str,
-                "协同协作者",
-            ),
+        let (name, role): (String, &'static str) = match index {
+            0 => ("Agent #1 (编码员)".to_string(), "负责核心代码生成、算法实现与模块架构落地"),
+            1 => ("Agent #2 (审查员)".to_string(), "负责质量审查、边界校验、安全性与不变量审核"),
+            2 => ("Agent #3 (测试员)".to_string(), "负责测试用例构建、异常模拟与回归验证"),
+            3 => ("Agent #4 (优化员)".to_string(), "负责性能瓶颈排查、并发同步与系统资源优化"),
+            4 => ("Agent #5 (架构员)".to_string(), "负责跨模块接口设计与契约约束"),
+            n => (format!("Agent #{}", n + 1), "协同协作者"),
         };
         Self {
             id: format!("agent_{}", index + 1),
-            name: name.to_string(),
+            name: name.clone(),
             role: role.to_string(),
             private_history: vec![CollabMsg::system(&format!(
                 "{} 已就绪。\n职责定位: {}\n可在下方命令窗口向此 Agent 发送针对性指令。",
