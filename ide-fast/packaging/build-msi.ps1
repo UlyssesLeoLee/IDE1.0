@@ -37,7 +37,9 @@ $ver = (Select-String -Path "$root\Cargo.toml" -Pattern '^version = "([0-9.]+)"'
 $wixVer = "$ver.0"     # MSI 版本要四段
 $env:CARGO_TARGET_DIR = $Target
 Push-Location $root
-cargo build --release -j 2 -p ide-fast
+$cargoCmd = Get-Command cargo.exe -ErrorAction SilentlyContinue
+$cargoBin = if ($cargoCmd) { $cargoCmd.Source } elseif (Test-Path "C:\Users\leo19\.codex\toolchains\star-rustup\cargo-home\bin\cargo.exe") { "C:\Users\leo19\.codex\toolchains\star-rustup\cargo-home\bin\cargo.exe" } else { "cargo" }
+& $cargoBin build --release -j 2 -p ide-fast
 if ($LASTEXITCODE) { Pop-Location; throw "cargo 构建失败" }
 Pop-Location
 $exe = Join-Path $Target "release\ide-fast.exe"

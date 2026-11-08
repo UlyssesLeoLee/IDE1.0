@@ -248,70 +248,34 @@ impl App {
     }
 
     fn collab_review_ui(&mut self, ui: &mut egui::Ui) {
-        let mut run_pipe = false;
-        let mut run_demo = false;
-        let mut open_doc = false;
         Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
-            if ui.button(trz("▶ 运行四阶段完整流水线")).clicked() {
-                run_pipe = true;
-            }
-            if ui.button(trz("▶ 实时协同光标")).clicked() {
-                run_demo = true;
-            }
-            if ui.button(trz("📄 独立标签页报告")).clicked() {
-                open_doc = true;
+            if ui.button("🤖 打开多 Agent 协同工作台").clicked() {
+                self.collab.open = true;
             }
             if ui.button("×").clicked() {
                 self.term.open = false;
             }
         });
-        let fg = self.tc.fg;
-        let dim = self.tc.fg_dim;
         let blue = self.tc.blue;
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(trz(
-                        "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
-                    ))
+        let dim = self.tc.fg_dim;
+        ui.vertical_centered(|ui| {
+            ui.add_space(16.0);
+            ui.label(
+                egui::RichText::new("🤖 真实多 Agent 协同工作台就绪")
                     .strong()
-                    .color(fg),
-                );
-                ui.add_space(4.0);
-                for (stage, detail) in [
-                    (
-                        "阶段 ① 路由智能体 (Router Agent)",
-                        "任务分析 → 子任务 DAG 拆解 → 槽位能力画像匹配 → .nema Section 独占/追加锁分配",
-                    ),
-                    (
-                        "阶段 ② .nema 原生并行协作 (Parallel Execution)",
-                        "各槽位仅在授权 Section 内并发生成代码，行级 LWW + 锚点偏移自动收敛，零锁竞争",
-                    ),
-                    (
-                        "阶段 ③ 统筹智能体 (Aggregator Agent)",
-                        "全局 AST 符号表一致性校验 → 跨模块依赖拓扑排序 → 边界粘合代码合成",
-                    ),
-                    (
-                        "阶段 ④ 文件级 Git 与四级门禁 (4-Gate Verification)",
-                        "语法树校验 → 跨文件类型检查 → 沙箱测试套件 → 独立异构 Reviewer (Claude 4.6) 终审",
-                    ),
-                ] {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new(trz(stage)).strong().color(blue));
-                        ui.label(egui::RichText::new(trz(detail)).color(dim));
-                    });
-                }
-            });
-        if run_pipe {
-            self.run_collab_pipeline();
-        }
-        if run_demo {
-            self.trigger_coedit_demo();
-        }
-        if open_doc {
-            self.open_review_doc();
-        }
+                    .size(14.0)
+                    .color(blue),
+            );
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("协同流水线在后台作为核心调度逻辑运行，支持设置 Agent 数量、独立标签页、统筹命令与针对性私聊。")
+                    .color(dim),
+            );
+            ui.add_space(10.0);
+            if ui.button(egui::RichText::new("🚀 点击启动多 Agent 协同工作台").strong()).clicked() {
+                self.collab.open = true;
+            }
+        });
     }
 
     fn output_ui(&mut self, ui: &mut egui::Ui) {

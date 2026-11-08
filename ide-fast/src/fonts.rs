@@ -121,6 +121,14 @@ pub fn is_illegible_display_font(file_or_name: &str) -> bool {
         || s.contains("STENCIL")
         || s.contains("INFORMAL")
         || s.contains("CHANCERY")
+        || s.contains("WINGDINGS")
+        || s.contains("WEBDINGS")
+        || s.contains("SYMBOL")
+        || s.contains("MARLETT")
+        || s.contains("OUTLOOK")
+        || s.contains("MDL2")
+        || s.contains("HOLOMDL2")
+        || s.contains("MTEXTRA")
 }
 
 /// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体 (空字符串保持为空，代表主题默认)
@@ -299,7 +307,10 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
     // 线程 1: 并行读取主字体与其粗体变体 (不需要粗体时跳过磁盘搜索与读取)
     let dir_clone = dir.clone();
     let ed_handle = std::thread::spawn(move || {
-        let (mut ed, mut ed_bold) = if !safe_editor.is_empty() && is_font_file(&safe_editor) {
+        let (mut ed, mut ed_bold) = if !safe_editor.is_empty()
+            && is_font_file(&safe_editor)
+            && !is_illegible_display_font(&safe_editor)
+        {
             let b1 = std::fs::read(dir_clone.join(&safe_editor)).ok();
             let b2 = if need_bold {
                 let bold_file = find_bold_file(&dir_clone, &safe_editor);

@@ -84,7 +84,7 @@ impl App {
         }
     }
 
-    fn ai_cfg(&mut self) -> &mut AiConfig {
+    pub(super) fn ai_cfg(&mut self) -> &mut AiConfig {
         self.ai.cfg.get_or_insert_with(AiConfig::load)
     }
 

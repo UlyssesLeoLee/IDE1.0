@@ -1108,16 +1108,8 @@ menuui::top(
             ui.close();
         }
         ui.separator();
-        if ui.button(trz("多AI协同审查看板…")).clicked() {
-            self.open_review_doc();
-            ui.close();
-        }
-        if ui.button(trz("多AI协同实时编辑演示…")).clicked() {
-            self.trigger_coedit_demo();
-            ui.close();
-        }
-        if ui.button(trz("运行四阶段协同流水线")).clicked() {
-            self.run_collab_pipeline();
+        if ui.button("🤖 多 Agent 协同工作台…").clicked() {
+            self.collab.open = true;
             ui.close();
         }
     }

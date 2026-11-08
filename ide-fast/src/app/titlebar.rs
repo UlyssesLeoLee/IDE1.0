@@ -29,16 +29,18 @@ const QUICK: &[(&str, &str)] = &[
 const LEFT_FIXED: f32 = 6.0 + 16.0 + 6.0;
 const QUICK_BTN: f32 = 26.0;
 const DIFF_BTN_W: f32 = 30.0;
+const COLLAB_BTN_W: f32 = 30.0;
 const GAP: f32 = 10.0;
 const TITLE_MAX: f32 = 220.0;
 
 /// 标题栏怎么排: 菜单永远完整显示、绝不和右边的按钮重叠; 空间不够时按优先级一样样撤 ——
-/// 先撤快捷图标钮, 再撤 WinMerge 对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母
+/// 先撤快捷图标钮, 再撤协同与对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
     pub diff: bool,
+    pub collab: bool,
     pub quick: usize,
 }
 
@@ -65,6 +67,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     };
     let title = take(title_w.min(TITLE_MAX) + 8.0);
     let diff = take(DIFF_BTN_W);
+    let collab = take(COLLAB_BTN_W);
     let mut quick = 0;
     while quick < QUICK.len() && take(QUICK_BTN) {
         quick += 1;
@@ -73,6 +76,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
         mnemonics,
         title,
         diff,
+        collab,
         quick,
     }
 }
@@ -233,6 +237,7 @@ impl App {
         let icon = self.sys.title_icon.clone();
         let mut run: Option<usize> = None;
         let mut diff_action: Option<DiffAction> = None;
+        let mut collab_toggle = false;
         egui::Panel::top("titlebar")
             .exact_size(BAR_H)
             .frame(egui::Frame::new().fill(fill))
@@ -283,7 +288,7 @@ impl App {
                 };
                 let plan = plan_bar(rect.width(), mw, mp, tw);
                 self.sys.mn_hide = !plan.mnemonics;
-                let mid_w = plan.quick as f32 * QUICK_BTN + if plan.diff { DIFF_BTN_W } else { 0.0 };
+                let mid_w = plan.quick as f32 * QUICK_BTN + (if plan.diff { DIFF_BTN_W } else { 0.0 }) + (if plan.collab { COLLAB_BTN_W } else { 0.0 });
                 let right = Rect::from_min_max(
                     egui::pos2(rect.right() - BTN_W * 3.0, rect.top()),
                     rect.max,
@@ -327,6 +332,44 @@ impl App {
                                 run = Some(i);
                             }
                         }
+                        if plan.collab {
+                            let is_running = self.collab.any_running();
+                            let is_open = self.collab.open;
+                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(26.0, 22.0), Sense::click());
+                            let tip = if is_running {
+                                "多 Agent 协同工作台 (正在执行协同任务...)"
+                            } else {
+                                "多 Agent 协同工作台 (Multi-Agent Collab)"
+                            };
+                            let resp = resp.on_hover_text(tip);
+                            if resp.hovered() || is_open || is_running {
+                                let bg = if is_running {
+                                    Color32::from_rgba_unmultiplied(0, 220, 120, 45)
+                                } else if is_open {
+                                    Color32::from_rgba_unmultiplied(0, 160, 255, 45)
+                                } else {
+                                    ui.visuals().widgets.hovered.weak_bg_fill
+                                };
+                                ui.painter().rect_filled(rect.shrink(1.0), 3.0, bg);
+                                if is_open || is_running {
+                                    let border_col = if is_running {
+                                        Color32::from_rgb(0, 220, 120)
+                                    } else {
+                                        Color32::from_rgb(0, 170, 255)
+                                    };
+                                    ui.painter().rect_stroke(
+                                        rect.shrink(1.0),
+                                        3.0,
+                                        egui::Stroke::new(1.0, border_col),
+                                        egui::StrokeKind::Inside,
+                                    );
+                                }
+                            }
+                            paint_collab_icon(ui.painter(), rect, is_running, self.tc.fg);
+                            if resp.clicked() {
+                                collab_toggle = true;
+                            }
+                        }
                         if plan.diff {
                             if let Some(act) = self.winmerge_diff_button(ui) {
                                 diff_action = Some(act);
@@ -358,6 +401,9 @@ impl App {
             });
         if let Some(i) = run {
             self.run_entry(i, ctx);
+        }
+        if collab_toggle {
+            self.collab.open = !self.collab.open;
         }
         if let Some(act) = diff_action {
             match act {
@@ -688,7 +734,7 @@ mod tests {
         for w in [580.0, 700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
-            let mid = p.quick as f32 * QUICK_BTN + if p.diff { DIFF_BTN_W } else { 0.0 };
+            let mid = p.quick as f32 * QUICK_BTN + (if p.diff { DIFF_BTN_W } else { 0.0 }) + (if p.collab { COLLAB_BTN_W } else { 0.0 });
             let title = if p.title { 58.0 } else { 0.0 };
             assert!(
                 LEFT_FIXED + title + menu + mid + BTN_W * 3.0 <= w,
@@ -799,5 +845,38 @@ fn paint_winmerge_icon(painter: &egui::Painter, rect: Rect, is_active: bool, the
     // 活跃状态下，在两页之间绘制高亮对比连接点
     if is_active {
         painter.circle_filled(center, 1.5, Color32::from_rgb(0, 200, 255));
+    }
+}
+
+/// 绘制多 Agent 协同工作台图标 (两个微缩协同智能体头像，带网络连接与状态光斑)
+fn paint_collab_icon(painter: &egui::Painter, rect: Rect, is_running: bool, theme_fg: Color32) {
+    let center = rect.center();
+    let col = if is_running {
+        Color32::from_rgb(0, 220, 130)
+    } else {
+        theme_fg.gamma_multiply(0.85)
+    };
+
+    // 左上智能体与右下智能体两个小圆
+    let p1 = egui::pos2(center.x - 4.5, center.y - 3.5);
+    let p2 = egui::pos2(center.x + 4.5, center.y + 3.5);
+
+    painter.circle_filled(p1, 3.2, Color32::from_black_alpha(40));
+    painter.circle_stroke(p1, 3.2, egui::Stroke::new(1.0, col));
+
+    painter.circle_filled(p2, 3.2, Color32::from_black_alpha(40));
+    painter.circle_stroke(p2, 3.2, egui::Stroke::new(1.0, col));
+
+    // 智能体之间的协同链路
+    let link_col = if is_running {
+        Color32::from_rgb(0, 220, 130)
+    } else {
+        col.gamma_multiply(0.4)
+    };
+    painter.line_segment([p1, p2], egui::Stroke::new(1.0, link_col));
+
+    // 运行态光斑
+    if is_running {
+        painter.circle_filled(center, 1.8, Color32::from_rgb(0, 255, 180));
     }
 }

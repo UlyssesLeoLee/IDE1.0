@@ -26,6 +26,7 @@ use std::path::PathBuf;
 
 mod aichat;
 mod chrome;
+mod collab;
 mod dispatch;
 mod docks;
 mod ghopts;
@@ -56,6 +57,7 @@ pub struct App {
     gh: ghopts::GhState,
     upd: updateui::UpdState,
     ai: aichat::AiState,
+    pub collab: collab::CollabState,
     docs: Vec<Doc>,
     active: usize,
     next_id: u64,
@@ -280,6 +282,7 @@ impl App {
             gh: Default::default(),
             upd: Default::default(),
             ai: Default::default(),
+            collab: Default::default(),
             print_ui: Default::default(),
             tray: if persist && st.tray_resident { crate::tray::Tray::build(st.tray_resident, false) } else { None },
             always_on_top: false,
@@ -296,7 +299,8 @@ impl App {
         app.side.open = st.view.side_open;
         app.term.open = st.view.term_open;
         app.md_preview = st.view.md_preview;
-        app.applied_font = st.font_family.clone();
+        app.applied_font = crate::fonts::sanitize_font_family(&st.font_family, &st.theme_plugin);
+        app.cfg.font_family = app.applied_font.clone();
         for a in &args {
             app.open_spec(a);
         }
@@ -5179,6 +5183,24 @@ impl App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
+            crate::tray::TrayEvent::OpenFile => {
+                self.open_file_dialog();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            crate::tray::TrayEvent::OpenCollab => {
+                self.collab.open = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+            crate::tray::TrayEvent::OpenDiff => {
+                self.diff_with_file();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
             crate::tray::TrayEvent::ToggleTopmost => {
                 self.always_on_top = !self.always_on_top;
                 let level = if self.always_on_top {
@@ -5560,6 +5582,7 @@ impl App {
             ctx.request_repaint_after(std::time::Duration::from_millis(ms));
         }
         self.ai_poll(ctx);
+        self.collab_poll(ctx);
         self.tab_bar(root, ctx);
         self.md_bar(root, ctx, is_md);
         self.nema_bar(root, ctx, is_nema);
@@ -5616,6 +5639,7 @@ impl App {
                     }
                 }
             });
+        self.collab_window(ctx);
         self.restore_window(ctx);
         self.window_grips(ctx);
         self.persist_if_changed();

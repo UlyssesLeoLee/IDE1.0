@@ -33,6 +33,9 @@ mod imp {
         _icon: TrayIcon,
         mi_show: MenuItem,
         mi_new: MenuItem,
+        mi_open: MenuItem,
+        mi_collab: MenuItem,
+        mi_diff: MenuItem,
         mi_topmost: CheckMenuItem,
         mi_resident: CheckMenuItem,
         mi_disable: MenuItem,
@@ -50,22 +53,30 @@ mod imp {
             .ok()?;
 
             let mi_show = MenuItem::new("显示 / 隐藏 IDE", true, None);
-            let mi_new = MenuItem::new("新建空白文档", true, None);
+            let mi_new = MenuItem::new("新建空白文档 (Ctrl+N)", true, None);
+            let mi_open = MenuItem::new("打开文件… (Ctrl+O)", true, None);
+            let mi_collab = MenuItem::new("🤖 多 Agent 协同工作台…", true, None);
+            let mi_diff = MenuItem::new("WinMerge 差异对比…", true, None);
             let mi_topmost = CheckMenuItem::new("窗口置顶 (Always on Top)", true, topmost, None);
             let mi_resident = CheckMenuItem::new("常驻后台 (关闭窗口时隐藏到托盘)", true, resident, None);
             let mi_disable = MenuItem::new("退出托盘常驻", true, None);
             let sep1 = PredefinedMenuItem::separator();
             let sep2 = PredefinedMenuItem::separator();
+            let sep3 = PredefinedMenuItem::separator();
             let mi_quit = MenuItem::new("退出 IDE", true, None);
 
             let menu = Menu::new();
             let _ = menu.append(&mi_show);
             let _ = menu.append(&mi_new);
+            let _ = menu.append(&mi_open);
             let _ = menu.append(&sep1);
+            let _ = menu.append(&mi_collab);
+            let _ = menu.append(&mi_diff);
+            let _ = menu.append(&sep2);
             let _ = menu.append(&mi_topmost);
             let _ = menu.append(&mi_resident);
             let _ = menu.append(&mi_disable);
-            let _ = menu.append(&sep2);
+            let _ = menu.append(&sep3);
             let _ = menu.append(&mi_quit);
 
             let icon = TrayIconBuilder::new()
@@ -79,6 +90,9 @@ mod imp {
                 _icon: icon,
                 mi_show,
                 mi_new,
+                mi_open,
+                mi_collab,
+                mi_diff,
                 mi_topmost,
                 mi_resident,
                 mi_disable,
@@ -112,6 +126,12 @@ mod imp {
                     out.push(TrayEvent::ShowHide);
                 } else if ev.id == self.mi_new.id() {
                     out.push(TrayEvent::NewFile);
+                } else if ev.id == self.mi_open.id() {
+                    out.push(TrayEvent::OpenFile);
+                } else if ev.id == self.mi_collab.id() {
+                    out.push(TrayEvent::OpenCollab);
+                } else if ev.id == self.mi_diff.id() {
+                    out.push(TrayEvent::OpenDiff);
                 } else if ev.id == self.mi_topmost.id() {
                     out.push(TrayEvent::ToggleTopmost);
                 } else if ev.id == self.mi_resident.id() {
@@ -133,6 +153,12 @@ mod imp {
         ShowHide,
         /// 新建空白文件（等同 Ctrl+N）
         NewFile,
+        /// 打开文件对话框（等同 Ctrl+O）
+        OpenFile,
+        /// 打开多 Agent 协同工作台
+        OpenCollab,
+        /// 打开 WinMerge 差异对比
+        OpenDiff,
         /// 切换窗口置顶
         ToggleTopmost,
         /// 切换是否常驻系统托盘
@@ -170,6 +196,9 @@ impl Tray {
 pub enum TrayEvent {
     ShowHide,
     NewFile,
+    OpenFile,
+    OpenCollab,
+    OpenDiff,
     ToggleTopmost,
     ToggleResident,
     DisableResident,
