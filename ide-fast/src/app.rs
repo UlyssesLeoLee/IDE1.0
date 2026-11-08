@@ -127,6 +127,7 @@ pub struct App {
     plug: crate::plugin_ui::PlugState,
     /// 编辑区控件的 id (有别的输入框拿着焦点时, 编辑区不抢键盘; 编辑区自己拿着焦点不算)
     editor_ids: Vec<egui::Id>,
+    pub(super) last_opened_dock: crate::panels::Dock,
     /// 移动履历 (Alt+P / Alt+N)
     jump: JumpHist,
     /// 「文件属性」对话框的内容 (Some = 打开着)
@@ -251,6 +252,7 @@ impl App {
             jump_req: None,
             plug: Default::default(),
             editor_ids: vec![],
+            last_opened_dock: crate::panels::Dock::Side,
             jump: JumpHist::default(),
             props: None,
             bm_open: false,
@@ -498,6 +500,7 @@ impl App {
         self.wrap = st.wrap;
         crate::i18n::set_code(&st.lang);
         self.cfg = st.clone();
+        self.cfg.font_family = crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
         keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
         // 最近文件个数变小了要立刻截断
@@ -5241,12 +5244,11 @@ impl App {
             ctx.global_style_mut(|s| s.spacing.scroll = tauri_scroll());
         }
         if self.cfg.font_family != self.applied_font {
-            let eff_font = if self.cfg.font_family.is_empty() {
-                crate::fonts::theme_default_font(&self.theme_id).unwrap_or("")
-            } else {
-                &self.cfg.font_family
-            };
-            crate::fonts::install(ctx, eff_font, &self.cfg.font_cjk_fallback, &self.cfg.lang);
+            let sanitized = crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
+            if sanitized != self.cfg.font_family {
+                self.cfg.font_family = sanitized.clone();
+            }
+            crate::fonts::install(ctx, &sanitized, &self.cfg.font_cjk_fallback, &self.cfg.lang);
             self.applied_font = self.cfg.font_family.clone();
         }
         self.poll_tray(ctx);
@@ -5376,54 +5378,140 @@ impl App {
                 .memory(|m| m.focused())
                 .map(|f| !self.editor_ids.contains(&f))
                 .unwrap_or(false);
-        match self.dock_mode(Dock::Bottom, self.term.open) {
-            Mode::Full => {
-                let r = egui::Panel::bottom("term")
-                    .resizable(true)
-                    .default_size(self.cfg.view.term_h)
-                    .frame(egui::Frame::NONE.fill(self.tc.bg_edit))
-                    .show(root, |ui| self.bottom_ui(ui));
-                if !ctx.input(|i| i.pointer.any_down()) {
-                    self.cfg.view.term_h =
-                        crate::panels::clamp_size(Dock::Bottom, r.response.rect.height().round());
+        let is_md = {
+            let n = self.docs[self.active.min(self.docs.len() - 1)]
+                .name
+                .to_lowercase();
+            n.ends_with(".md") || n.ends_with(".markdown")
+        };
+        let is_nema = {
+            let d = &self.docs[self.active.min(self.docs.len() - 1)];
+            nemaopts::is_nema_doc(d)
+        };
+
+        // 停靠区协同布局 (对齐 Tauri 原版): 后打开的占整行/整列, 先打开的自动缩微并重新排版让位
+        let dock_bottom = |app: &mut Self, root: &mut egui::Ui| {
+            match app.dock_mode(Dock::Bottom, app.term.open) {
+                Mode::Full => {
+                    let max_h = (root.available_height() - 140.0 - 28.0).max(120.0);
+                    let r = egui::Panel::bottom("term")
+                        .resizable(true)
+                        .default_size(app.cfg.view.term_h)
+                        .max_size(max_h)
+                        .frame(egui::Frame::NONE.fill(app.tc.bg_edit))
+                        .show(root, |ui| app.bottom_ui(ui));
+                    if !ctx.input(|i| i.pointer.any_down()) {
+                        app.cfg.view.term_h =
+                            crate::panels::clamp_size(Dock::Bottom, r.response.rect.height().round().min(max_h));
+                    }
                 }
+                Mode::Strip => app.dock_strip(root, Dock::Bottom),
+                Mode::Hidden => {}
             }
-            Mode::Strip => self.dock_strip(root, Dock::Bottom),
-            Mode::Hidden => {}
-        }
-        self.dock_strip(root, crate::panels::Dock::Side); // 左细条常驻 (最外层), 活动栏 / 侧栏停靠在它右边
-        if self.cfg.view.rail {
-            egui::Panel::left("rail")
-                .resizable(false)
-                .exact_size(chrome::RAIL_W)
-                .frame(egui::Frame::NONE.fill(self.tc.bg_rail))
-                .show(root, |ui| self.activity_rail(ui));
-        }
-        match self.dock_mode(Dock::Side, self.side.open) {
-            Mode::Full => {
-                let r = egui::Panel::left("side")
-                    .resizable(true)
-                    .default_size(self.cfg.view.side_w)
-                    .show(root, |ui| {
-                        // 内容窄 (Git 页 / 空文件页) 时面板不能缩成内容宽: 撑满当前面板宽, 宽度才不会被内容带着越缩越窄
-                        ui.set_min_width(ui.available_width());
-                        self.side_ui(ui)
-                    });
-                // 拖动期间不记, 松手后取整记一次 (免得每帧都落盘)
-                if !ctx.input(|i| i.pointer.any_down()) {
-                    self.cfg.view.side_w =
-                        crate::panels::clamp_size(Dock::Side, r.response.rect.width().round());
+        };
+
+        let dock_side = |app: &mut Self, root: &mut egui::Ui| {
+            app.dock_strip(root, crate::panels::Dock::Side); // 左细条常驻 (最外层), 活动栏 / 侧栏停靠在它右边
+            if app.cfg.view.rail {
+                egui::Panel::left("rail")
+                    .resizable(false)
+                    .exact_size(chrome::RAIL_W)
+                    .frame(egui::Frame::NONE.fill(app.tc.bg_rail))
+                    .show(root, |ui| app.activity_rail(ui));
+            }
+            match app.dock_mode(Dock::Side, app.side.open) {
+                Mode::Full => {
+                    let max_w = (root.available_width() - 240.0).max(120.0);
+                    let r = egui::Panel::left("side")
+                        .resizable(true)
+                        .default_size(app.cfg.view.side_w)
+                        .max_size(max_w)
+                        .show(root, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            app.side_ui(ui)
+                        });
+                    if !ctx.input(|i| i.pointer.any_down()) {
+                        app.cfg.view.side_w =
+                            crate::panels::clamp_size(Dock::Side, r.response.rect.width().round().min(max_w));
+                    }
                 }
+                Mode::Strip => {}
+                Mode::Hidden => {}
             }
-            Mode::Strip => {}
-            Mode::Hidden => {}
+        };
+
+        let dock_right = |app: &mut Self, root: &mut egui::Ui, is_md: bool, is_nema: bool| {
+            app.dock_strip(root, Dock::Right); // 右细条常驻 (最外层), Chat / 预览停靠在它左边
+            match app.dock_mode(
+                Dock::Right,
+                crate::panels::right_visible(
+                    app.ai.open,
+                    app.md_preview,
+                    is_md,
+                    app.cfg.view.md_overlay,
+                ) || (app.nema_preview && is_nema),
+            ) {
+                Mode::Full => {
+                    let settled = !ctx.input(|i| i.pointer.any_down());
+                    let max_right = (root.available_width() - 240.0).max(160.0);
+                    if app.ai.open && right_room(root.available_width()) {
+                        let r = egui::Panel::right("aichat")
+                            .resizable(true)
+                            .default_size(app.cfg.view.ai_w)
+                            .max_size(right_cap(root.available_width()).min(max_right))
+                            .show(root, |ui| app.ai_ui(ui));
+                        if settled {
+                            app.cfg.view.ai_w =
+                                crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                        }
+                    }
+                    if app.md_preview
+                        && is_md
+                        && !app.cfg.view.md_overlay
+                        && right_room(root.available_width())
+                    {
+                        let r = egui::Panel::right("mdprev")
+                            .resizable(true)
+                            .default_size(app.cfg.view.md_w)
+                            .max_size(right_cap(root.available_width()).min(max_right))
+                            .show(root, |ui| app.md_ui(ui, false));
+                        if settled {
+                            app.cfg.view.md_w =
+                                crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                        }
+                    }
+                    if app.nema_preview && is_nema && right_room(root.available_width()) {
+                        let r = egui::Panel::right("nemaprev")
+                            .resizable(true)
+                            .default_size(app.cfg.view.md_w.max(420.0))
+                            .max_size(right_cap(root.available_width()).min(max_right))
+                            .show(root, |ui| app.nema_ui(ui));
+                        if settled {
+                            app.cfg.view.md_w =
+                                crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                        }
+                    }
+                }
+                Mode::Strip => {}
+                Mode::Hidden => {}
+            }
+        };
+
+        if self.last_opened_dock == Dock::Bottom {
+            dock_bottom(self, root);
+            dock_side(self, root);
+            dock_right(self, root, is_md, is_nema);
+        } else {
+            dock_side(self, root);
+            dock_right(self, root, is_md, is_nema);
+            dock_bottom(self, root);
         }
+
         self.side.grep.poll();
         self.sync_grep_doc();
         if self.side.grep.running() {
             ctx.request_repaint_after(std::time::Duration::from_millis(80));
         }
-        // 结果文档里 Enter / 双击命中行: 打开那个文件并把命中处放到窗口中央
         if let Some((id, row)) = self.jump_req.take() {
             let line = self
                 .docs
@@ -5439,7 +5527,6 @@ impl App {
                 None => self.cur().tip = "这一行不是命中行".into(),
             }
         }
-        // 脚本插件: 收结果 (补丁 / 提示 / 结果窗口); 点图里的节点跳到对应行
         self.plug.poll(&mut self.docs, self.active, ctx);
         if self.plug.win.is_some() {
             if let Some((id, row)) = self.plug.window(
@@ -5472,70 +5559,7 @@ impl App {
         if let Some(ms) = self.term.repaint_ms() {
             ctx.request_repaint_after(std::time::Duration::from_millis(ms));
         }
-        let is_md = {
-            let n = self.docs[self.active.min(self.docs.len() - 1)]
-                .name
-                .to_lowercase();
-            n.ends_with(".md") || n.ends_with(".markdown")
-        };
-        let is_nema = {
-            let d = &self.docs[self.active.min(self.docs.len() - 1)];
-            nemaopts::is_nema_doc(d)
-        };
         self.ai_poll(ctx);
-        self.dock_strip(root, Dock::Right); // 右细条常驻 (最外层), Chat / 预览停靠在它左边
-        match self.dock_mode(
-            Dock::Right,
-            crate::panels::right_visible(
-                self.ai.open,
-                self.md_preview,
-                is_md,
-                self.cfg.view.md_overlay,
-            ) || (self.nema_preview && is_nema),
-        ) {
-            Mode::Full => {
-                let settled = !ctx.input(|i| i.pointer.any_down());
-                if self.ai.open && right_room(root.available_width()) {
-                    let r = egui::Panel::right("aichat")
-                        .resizable(true)
-                        .default_size(self.cfg.view.ai_w)
-                        .max_size(right_cap(root.available_width()))
-                        .show(root, |ui| self.ai_ui(ui));
-                    if settled {
-                        self.cfg.view.ai_w =
-                            crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
-                    }
-                }
-                if self.md_preview
-                    && is_md
-                    && !self.cfg.view.md_overlay
-                    && right_room(root.available_width())
-                {
-                    let r = egui::Panel::right("mdprev")
-                        .resizable(true)
-                        .default_size(self.cfg.view.md_w)
-                        .max_size(right_cap(root.available_width()))
-                        .show(root, |ui| self.md_ui(ui, false));
-                    if settled {
-                        self.cfg.view.md_w =
-                            crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
-                    }
-                }
-                if self.nema_preview && is_nema && right_room(root.available_width()) {
-                    let r = egui::Panel::right("nemaprev")
-                        .resizable(true)
-                        .default_size(self.cfg.view.md_w.max(420.0))
-                        .max_size(right_cap(root.available_width()))
-                        .show(root, |ui| self.nema_ui(ui));
-                    if settled {
-                        self.cfg.view.md_w =
-                            crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
-                    }
-                }
-            }
-            Mode::Strip => {}
-            Mode::Hidden => {}
-        }
         self.tab_bar(root, ctx);
         self.md_bar(root, ctx, is_md);
         self.nema_bar(root, ctx, is_nema);

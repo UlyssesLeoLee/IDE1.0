@@ -83,7 +83,7 @@ pub const RECOMMENDED_FONTS: &[RecommendedFont] = &[
     },
 ];
 
-/// 过滤并校正明显影响阅读的紧缩装饰/艺术/标题字体 (如 Bodoni Poster Compressed 等)
+/// 过滤并校正明显影响阅读的紧缩装饰/艺术/标题/哥特/书法字体 (如 Old English, Bodoni Poster, Chiller, Castellar 等)
 pub fn is_illegible_display_font(file_or_name: &str) -> bool {
     let s = file_or_name.to_ascii_uppercase();
     s.contains("BOD_PSTC")
@@ -96,15 +96,33 @@ pub fn is_illegible_display_font(file_or_name: &str) -> bool {
         || s.contains("BLACKLETTER")
         || s.contains("PAPYRUS")
         || s.contains("SHOWG")
-        || s.contains("SNAP____")
+        || s.contains("SNAP")
+        || s.contains("ENGR")
+        || s.contains("CASTELAR")
+        || s.contains("EDWARDIAN")
+        || s.contains("KUNSTLER")
+        || s.contains("HARRINGTON")
+        || s.contains("JOKERMAN")
+        || s.contains("MATURA")
+        || s.contains("MAGNETO")
+        || s.contains("PRISTINA")
+        || s.contains("RAVIE")
+        || s.contains("VIVALDI")
+        || s.contains("VLADIMIR")
+        || s.contains("FREESCPT")
+        || s.contains("BRUSH")
+        || s.contains("COMIC")
 }
 
-/// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体
+/// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体 (空字符串保持为空，代表主题默认)
 pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
-    if font.is_empty() || is_illegible_display_font(font) {
+    let clean = font.trim();
+    if clean.is_empty() {
+        String::new()
+    } else if is_illegible_display_font(clean) {
         theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
     } else {
-        font.to_string()
+        clean.to_string()
     }
 }
 
@@ -150,13 +168,13 @@ fn fonts_dir() -> std::path::PathBuf {
         .unwrap_or_else(|| "C:/Windows/Fonts".into())
 }
 
-/// 系统字体目录里能直接用的字体文件名 (.ttf / .otf, 排序去重); 目录读不到 = 空
+/// 系统字体目录里能直接用的字体文件名 (.ttf / .otf, 排序去重并过滤掉不适宜编程阅读的艺术花体字); 目录读不到 = 空
 pub fn system_fonts() -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(fonts_dir())
         .map(|rd| {
             rd.filter_map(|e| e.ok())
                 .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| is_font_file(n))
+                .filter(|n| is_font_file(n) && !is_illegible_display_font(n))
                 .collect()
         })
         .unwrap_or_default();

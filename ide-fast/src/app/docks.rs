@@ -25,9 +25,31 @@ impl App {
         }
     }
 
+    /// 重新平衡并联动约束各停靠区尺寸 (对齐 Tauri 原版: 先开底后开侧自动压缩底, 先开侧后开底自适应限侧底)
+    pub(super) fn rebalance_dock_sizes(&mut self, opened: Dock, vw: f32, vh: f32) {
+        let side_full = self.dock_mode(Dock::Side, self.side.open) == Mode::Full;
+        let right_full = self.dock_mode(Dock::Right, self.dock_wanted(Dock::Right)) == Mode::Full;
+        let bottom_full = self.dock_mode(Dock::Bottom, self.term.open) == Mode::Full;
+
+        panels::rebalance_on_dock_open(
+            opened,
+            side_full,
+            &mut self.cfg.view.side_w,
+            right_full,
+            &mut self.cfg.view.ai_w,
+            bottom_full,
+            &mut self.cfg.view.term_h,
+            vw,
+            vh,
+        );
+    }
+
     /// 展开一个折叠成细条的停靠区 (活动栏点击用)
     pub(super) fn expand_dock(&mut self, d: Dock) {
         self.set_dock_collapsed(d, false);
+        self.last_opened_dock = d;
+        let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+        self.rebalance_dock_sizes(d, vw, vh);
     }
 
     /// 这个停靠区「想显示」吗 (右侧: AI 对话开着, 或 Markdown 预览开着, 或 NEMA 预览开着)
@@ -60,6 +82,9 @@ impl App {
         if d == Dock::Right && !self.dock_wanted(d) {
             self.ai_toggle(); // 右边什么都没开: 折叠命令 = 把 AI 对话展开显示出来
             self.set_dock_collapsed(d, false);
+            self.last_opened_dock = Dock::Right;
+            let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+            self.rebalance_dock_sizes(Dock::Right, vw, vh);
             return;
         }
         let (open, collapsed) =
@@ -72,6 +97,11 @@ impl App {
             }
         }
         self.set_dock_collapsed(d, collapsed);
+        if !collapsed {
+            self.last_opened_dock = d;
+            let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+            self.rebalance_dock_sizes(d, vw, vh);
+        }
     }
 
     /// 「显示 / 隐藏」命令 (Ctrl+B / Ctrl+`): 细条状态下先展开
@@ -83,6 +113,11 @@ impl App {
             Dock::Right => {}
         }
         self.set_dock_collapsed(d, collapsed);
+        if open && !collapsed {
+            self.last_opened_dock = d;
+            let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+            self.rebalance_dock_sizes(d, vw, vh);
+        }
     }
 
     /// 底部面板头部右端的文字钮 (Tauri 的 `.bottom-toggle`: 展开时写「▼ 折叠」, 折叠时写「▲ 展开」, 11px, 圆角 5, 1px 边)

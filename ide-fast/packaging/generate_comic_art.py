@@ -9,7 +9,7 @@ Design style:
 - Pop art high-saturation palette:
     Pop Yellow (#ffcc00), Comic Pink (#ff3366), Cyber Cyan (#00b4d8), Deep Ink (#12131a)
 - Halftone dot screen pattern (美漫半调网点)
-- 3D-to-2D extruded typography and Sakura 🌸 motif
+- 3D-to-2D extruded typography and Greek Golden Laurel motif
 """
 
 import math
@@ -23,18 +23,18 @@ def draw_halftone_dots(draw, x0, y0, x1, y1, dot_color, spacing=10, radius=2):
             if cx <= x1:
                 draw.ellipse([cx - radius, y - radius, cx + radius, y + radius], fill=dot_color)
 
-def draw_sakura_blossom(draw, cx, cy, radius, fill_color=(255, 183, 197), stroke_color=(0, 0, 0)):
-    # 5 petals
-    for i in range(5):
-        angle = i * (2 * math.pi / 5) - math.pi / 2
-        px = cx + radius * 0.75 * math.cos(angle)
-        py = cy + radius * 0.75 * math.sin(angle)
-        pr = radius * 0.55
-        # draw petal circle with black outline
-        draw.ellipse([px - pr, py - pr, px + pr, py + pr], fill=fill_color, outline=stroke_color, width=2)
-    # central pistil
-    draw.ellipse([cx - radius * 0.25, cy - radius * 0.25, cx + radius * 0.25, cy + radius * 0.25],
-                 fill=(255, 204, 0), outline=stroke_color, width=2)
+def draw_greek_laurel_leaf(draw, cx, cy, radius, angle_deg, fill_color=(255, 204, 0), stroke_color=(0, 0, 0)):
+    # Cel-shaded Greek golden laurel leaf
+    rad = math.radians(angle_deg)
+    cos_a = math.cos(rad)
+    sin_a = math.sin(rad)
+    # Leaf diamond/oval points
+    p0 = (cx - radius * cos_a, cy - radius * sin_a)
+    p1 = (cx - (radius * 0.4) * sin_a, cy + (radius * 0.4) * cos_a)
+    p2 = (cx + radius * 1.2 * cos_a, cy + radius * 1.2 * sin_a)
+    p3 = (cx + (radius * 0.4) * sin_a, cy - (radius * 0.4) * cos_a)
+    poly = [(int(x), int(y)) for (x, y) in [p0, p1, p2, p3]]
+    draw.polygon(poly, fill=fill_color, outline=stroke_color)
 
 def draw_cel_shaded_text(draw, pos, text, font, fill_color, stroke_color=(0, 0, 0), shadow_offset=(3, 3), stroke_width=2):
     x, y = pos
@@ -89,8 +89,22 @@ def create_banner():
     draw.rectangle([badge_x, badge_y, badge_x + badge_w, badge_y + badge_h], fill=(255, 51, 102), outline=(0, 0, 0), width=2)
     draw.text((badge_x + 8, badge_y + 4), "CEL-SHADED", font=font_badge, fill=(255, 255, 255), stroke_width=1, stroke_fill=(0, 0, 0))
 
-    # Sakura blossom on far right
-    draw_sakura_blossom(draw, 455, 29, 14, fill_color=(255, 183, 197), stroke_color=(0, 0, 0))
+    # Greek Golden Laurel Leaf Branch Motif (Minimalist Comic Style)
+    def draw_laurel_branch(cx, cy, scale=1.0, flip=False):
+        sign = -1 if flip else 1
+        # Stem arc
+        stem = [(cx + int(sign * 2 * i), cy - 20 + i * 5) for i in range(9)]
+        draw.line(stem, fill=(0, 0, 0), width=3)
+        draw.line([(x + sign, y) for (x, y) in stem], fill=(245, 158, 11), width=2)
+        # Leaves
+        for i, (lx, ly) in enumerate(stem[1:-1]):
+            leaf_dx = int(sign * (10 + (i % 2) * 4) * scale)
+            leaf_dy = int(-4 * scale)
+            leaf_poly = [(lx, ly), (lx + leaf_dx, ly + leaf_dy), (lx + leaf_dx * 1.3, ly), (lx + leaf_dx * 0.7, ly + 4)]
+            draw.polygon(leaf_poly, fill=(255, 204, 0), outline=(0, 0, 0))
+
+    draw_laurel_branch(450, 28, scale=0.9, flip=False)
+    draw_laurel_branch(462, 28, scale=0.9, flip=True)
 
     return img
 
@@ -136,10 +150,15 @@ def create_dialog():
     # Center Logo in Hero circle
     draw_cel_shaded_text(draw, (ray_origin[0] - 46, ray_origin[1] - 22), "IDE1.0", font_hero, (255, 204, 0), shadow_offset=(3, 3), stroke_width=2)
 
-    # Sakura blossoms dancing in the air
-    draw_sakura_blossom(draw, 35, 45, 12, fill_color=(255, 183, 197), stroke_color=(0, 0, 0))
-    draw_sakura_blossom(draw, 135, 140, 14, fill_color=(255, 183, 197), stroke_color=(0, 0, 0))
-    draw_sakura_blossom(draw, 45, 275, 16, fill_color=(255, 183, 197), stroke_color=(0, 0, 0))
+    # Greek golden laurel leaves ornamenting the hero circle
+    for deg in [-60, -30, 0, 30, 60]:
+        rad = math.radians(deg)
+        lx1 = int(ray_origin[0] - 68 * math.cos(rad))
+        ly1 = int(ray_origin[1] + 68 * math.sin(rad))
+        draw_greek_laurel_leaf(draw, lx1, ly1, 10, deg + 90, fill_color=(255, 204, 0))
+        lx2 = int(ray_origin[0] + 68 * math.cos(rad))
+        ly2 = int(ray_origin[1] + 68 * math.sin(rad))
+        draw_greek_laurel_leaf(draw, lx2, ly2, 10, -deg - 90, fill_color=(255, 204, 0))
 
     # Banner tags in left panel
     # Box 1: "FAST EDITION"
@@ -154,11 +173,11 @@ def create_dialog():
     draw.rectangle([b2_x, b2_y, b2_x + b2_w, b2_y + b2_h], fill=(255, 51, 102), outline=(0, 0, 0), width=2)
     draw.text((b2_x + 10, b2_y + 5), "3D-TO-2D COMIC", font=font_tag, fill=(255, 255, 255), stroke_width=1, stroke_fill=(0, 0, 0))
 
-    # Box 3: "SAKURA RESIDENT"
+    # Box 3: "RESIDENT TRAY"
     b3_x, b3_y, b3_w, b3_h = 16, 248, 132, 22
     draw.rectangle([b3_x + 2, b3_y + 2, b3_x + b3_w + 2, b3_y + b3_h + 2], fill=(0, 0, 0))
     draw.rectangle([b3_x, b3_y, b3_x + b3_w, b3_y + b3_h], fill=(0, 180, 216), outline=(0, 0, 0), width=2)
-    draw.text((b3_x + 8, b3_y + 3), "🌸 SAKURA TRAY", font=font_tag, fill=(0, 0, 0), stroke_width=1, stroke_fill=(0, 0, 0))
+    draw.text((b3_x + 8, b3_y + 3), "⚡ RESIDENT TRAY", font=font_tag, fill=(0, 0, 0), stroke_width=1, stroke_fill=(0, 0, 0))
 
     # Thick black divider line separating panels
     draw.line([(panel_w, 0), (panel_w, h)], fill=(0, 0, 0), width=3)

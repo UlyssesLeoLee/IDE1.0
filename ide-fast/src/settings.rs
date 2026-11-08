@@ -1196,6 +1196,7 @@ impl Settings {
             update_last_check: self.update_last_check,
             ..o.clone()
         };
+        self.font_family = crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
         self.recent.truncate(self.mru_files.max(1));
     }
 
