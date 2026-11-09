@@ -80,7 +80,7 @@ impl App {
                 p.text(
                     ver_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    "v0.6.4",
+                    concat!("v", env!("CARGO_PKG_VERSION")),
                     egui::FontId::proportional(11.0),
                     Color32::from_rgb(6, 182, 212),
                 );
