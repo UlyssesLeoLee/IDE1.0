@@ -4459,8 +4459,8 @@ impl App {
                     }
                 }
                 if vw.minimap && !d.lines.is_empty() {
-                    // 小地图: 贴在可见区右缘, 每个像素行代表一段源码行, 横条长度 = 该段最长行的长度
-                    let mw = 80.0f32;
+                    // 小地图: 贴在可见区右缘, 随不同主题呈现完全贴合风格的外观与透明度 (透明度仅玻璃和水晶生效)
+                    let mw = 84.0f32;
                     let vh = viewport.height();
                     let mrect = Rect::from_min_size(
                         Pos2::new(
@@ -4470,24 +4470,100 @@ impl App {
                         Vec2::new(mw, vh),
                     );
                     let mp = ui.painter_at(mrect.intersect(ui.clip_rect()));
-                    mp.rect_filled(
-                        mrect,
-                        0.0,
-                        Color32::from_rgba_unmultiplied(
-                            tc.bg_edit.r(),
-                            tc.bg_edit.g(),
-                            tc.bg_edit.b(),
-                            215,
-                        ),
-                    );
+
+                    // 1. 各主题专属风格分发 (透明度只和玻璃以及水晶主题有关)
+                    let (bg_col, border_stroke, bar_base_col, bar_accent_col, view_bg, view_stroke) = if tc.crystal {
+                        // 水晶主题: 纯净通透水晶质感 (透明度生效) + 青粉色散边缘高光 + 晶钻白微线
+                        (
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+                            Some(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 240, 255, 120))),
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 75),
+                            Color32::from_rgba_unmultiplied(0, 240, 255, 160),
+                            Color32::from_rgba_unmultiplied(0, 240, 255, 25),
+                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 240, 255, 180)),
+                        )
+                    } else if tc.clear {
+                        // 玻璃主题: 极简纯透毛玻璃 (透明度生效) + 柔白边缘反光
+                        (
+                            Color32::from_rgba_unmultiplied(255, 255, 255, 8),
+                            Some(egui::Stroke::new(1.0, Color32::from_white_alpha(35))),
+                            Color32::from_rgba_unmultiplied(tc.fg.r(), tc.fg.g(), tc.fg.b(), 70),
+                            Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 140),
+                            Color32::from_white_alpha(16),
+                            egui::Stroke::new(1.0, Color32::from_white_alpha(80)),
+                        )
+                    } else if tc.comic {
+                        // 美漫 3渲2 主题: 不透明深蓝黑分镜底板 (#141724) + 2.0px 纯黑墨水轮廓 + 波普黄高亮视口
+                        (
+                            Color32::from_rgb(20, 23, 36),
+                            Some(egui::Stroke::new(2.0, Color32::BLACK)),
+                            Color32::from_rgb(80, 95, 125),
+                            Color32::from_rgb(255, 204, 0),
+                            Color32::from_rgba_unmultiplied(255, 204, 0, 45),
+                            egui::Stroke::new(1.8, Color32::BLACK),
+                        )
+                    } else if tc.retro16 {
+                        // 复古 16-Bit: 不透明暗色 CRT 监视器绿黑底板 + 霓虹绿扫描线边缘 + 像素块
+                        (
+                            Color32::from_rgb(12, 16, 12),
+                            Some(egui::Stroke::new(1.5, Color32::from_rgb(0, 255, 102))),
+                            Color32::from_rgb(0, 180, 70),
+                            Color32::from_rgb(0, 255, 136),
+                            Color32::from_rgba_unmultiplied(0, 255, 255, 35),
+                            egui::Stroke::new(1.2, Color32::from_rgb(0, 255, 255)),
+                        )
+                    } else if self.theme_id == "theme-high-contrast" {
+                        // 高对比度: 不透明纯黑 + 纯白反差边框 + 亮青视口
+                        (
+                            Color32::BLACK,
+                            Some(egui::Stroke::new(2.0, Color32::WHITE)),
+                            Color32::WHITE,
+                            Color32::from_rgb(0, 255, 255),
+                            Color32::from_rgba_unmultiplied(0, 255, 255, 50),
+                            egui::Stroke::new(2.0, Color32::from_rgb(0, 255, 255)),
+                        )
+                    } else if !tc.dark {
+                        // 浅色主题 (Light / Sakura): 不透明柔白纸质底板 + 浅灰边框
+                        let bg = if self.theme_id.contains("sakura") {
+                            Color32::from_rgb(255, 246, 250)
+                        } else {
+                            Color32::from_rgb(246, 248, 250)
+                        };
+                        (
+                            bg,
+                            Some(egui::Stroke::new(1.0, tc.border)),
+                            Color32::from_rgb(155, 168, 182),
+                            tc.blue,
+                            Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 35),
+                            egui::Stroke::new(1.0, tc.blue),
+                        )
+                    } else {
+                        // 经典深色主题 (Dark): 不透明深色底板 + 细边框
+                        (
+                            Color32::from_rgb(26, 28, 33),
+                            Some(egui::Stroke::new(1.0, tc.border)),
+                            Color32::from_rgba_unmultiplied(tc.fg_dim.r(), tc.fg_dim.g(), tc.fg_dim.b(), 140),
+                            tc.blue,
+                            Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 45),
+                            egui::Stroke::new(1.0, tc.blue),
+                        )
+                    };
+
+                    // 绘制缩略图底色与分界线
+                    mp.rect_filled(mrect, 0.0, bg_col);
+                    if let Some(st) = border_stroke {
+                        mp.line_segment([mrect.left_top(), mrect.left_bottom()], st);
+                    }
+                    if tc.crystal {
+                        // 水晶主题专属粉色散折射边缘 (内侧 1px)
+                        mp.line_segment(
+                            [Pos2::new(mrect.left() + 1.0, mrect.top()), Pos2::new(mrect.left() + 1.0, mrect.bottom())],
+                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 105, 180, 50)),
+                        );
+                    }
+
                     let buckets = crate::view::minimap_rows(d.lines.len(), (vh / 2.0) as usize);
                     let bh = (vh / buckets.len().max(1) as f32).min(3.0); // 行很少时每行 3 像素, 不拉成大块
-                    let bar = Color32::from_rgba_unmultiplied(
-                        tc.fg_dim.r(),
-                        tc.fg_dim.g(),
-                        tc.fg_dim.b(),
-                        150,
-                    );
                     for (i, (a, b)) in buckets.iter().enumerate() {
                         let n = if b - a > 8 {
                             d.lines[*a].trim_end().chars().count()
@@ -4499,13 +4575,16 @@ impl App {
                                 .unwrap_or(0)
                         };
                         if n > 0 {
+                            let is_indent = d.lines[*a].starts_with(' ') || d.lines[*a].starts_with('\t');
+                            let bar_col = if is_indent { bar_base_col } else { bar_accent_col };
+                            let draw_w = (n as f32 * 0.7).min(mw - 10.0);
                             mp.rect_filled(
                                 Rect::from_min_size(
-                                    Pos2::new(mrect.min.x + 4.0, mrect.min.y + i as f32 * bh),
-                                    Vec2::new((n as f32 * 0.7).min(mw - 8.0), (bh - 0.5).max(1.0)),
+                                    Pos2::new(mrect.min.x + 5.0, mrect.min.y + i as f32 * bh),
+                                    Vec2::new(draw_w, (bh - 0.5).max(1.0)),
                                 ),
                                 0.0,
-                                bar,
+                                bar_col,
                             );
                         }
                     }
@@ -4515,17 +4594,15 @@ impl App {
                         (first as f32 / total).min(1.0),
                         (last as f32 / total).min(1.0),
                     );
-                    mp.rect_filled(
-                        Rect::from_min_max(
-                            Pos2::new(mrect.min.x, mrect.min.y + v0 * span_h),
-                            Pos2::new(
-                                mrect.max.x,
-                                mrect.min.y + (v1 * span_h).max(v0 * span_h + 4.0),
-                            ),
+                    let vrect = Rect::from_min_max(
+                        Pos2::new(mrect.min.x, mrect.min.y + v0 * span_h),
+                        Pos2::new(
+                            mrect.max.x,
+                            (mrect.min.y + (v1 * span_h).max(v0 * span_h + 6.0)).min(mrect.max.y),
                         ),
-                        0.0,
-                        Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 40),
                     );
+                    mp.rect_filled(vrect, 0.0, view_bg);
+                    mp.rect_stroke(vrect, 0.0, view_stroke, egui::StrokeKind::Inside);
                 }
                 // 光标
                 let [cr, cc] = d.cursor;
@@ -4798,6 +4875,18 @@ impl App {
             if p.x < rect.min.x + gutter - 6.0 && ctx.input(|i| i.pointer.any_pressed()) {
                 // 点行号左侧: 折叠 / 展开这一行
                 d.toggle_fold(row);
+                return;
+            }
+            if vw.minimap && !d.lines.is_empty() && p.x >= rect.min.x + out.state.clamped_offset().x + out.inner_rect.width() - 84.0 && ctx.input(|i| i.pointer.any_pressed()) {
+                // 点小地图区域: 直接跳到对应行并居中
+                let vh = out.inner_rect.height().max(1.0);
+                let rel_map_y = (p.y - (rect.min.y + out.state.clamped_offset().y)).clamp(0.0, vh);
+                let target_row = ((rel_map_y / vh) * d.lines.len() as f32) as usize;
+                let target_row = target_row.min(d.lines.len().saturating_sub(1));
+                d.cursor = [target_row, 0];
+                d.sel = None;
+                d.reveal = true;
+                self.center_once = true;
                 return;
             }
             let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);

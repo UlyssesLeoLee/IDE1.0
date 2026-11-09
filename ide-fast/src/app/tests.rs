@@ -1551,3 +1551,42 @@ fn test_md_and_nema_toolbar_collapse_and_restore_invariants() {
     });
     out_nema_col.textures_delta.clear();
 }
+
+#[test]
+fn test_minimap_themed_styling_and_translucency_invariants() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.cfg.view.minimap = true;
+    a.new_doc();
+    let idx = a.active;
+    a.docs[idx].name = "sample.rs".into();
+    a.docs[idx].lines = vec![
+        "fn main() {".into(),
+        "    println!(\"Hello World\");".into(),
+        "}".into(),
+    ];
+
+    let themes = [
+        ("theme-comic", false),
+        ("theme-crystal", true),
+        ("theme-clear", true),
+        ("theme-retro16", false),
+        ("theme-dark", false),
+        ("theme-light", false),
+        ("theme-high-contrast", false),
+    ];
+
+    for (theme_id, expect_translucent) in themes {
+        a.set_theme_plugin(theme_id);
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            a.ui_main(root);
+        });
+        out.textures_delta.clear();
+        assert_eq!(
+            a.tc.is_translucent(),
+            expect_translucent,
+            "主题 {} 的透明度不符合预期 (透明度只和玻璃以及水晶主题有关)",
+            theme_id
+        );
+    }
+}
