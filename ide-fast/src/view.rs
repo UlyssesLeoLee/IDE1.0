@@ -557,6 +557,91 @@ pub fn minimap_rows(n: usize, h: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// 各主题的差异对比配色 (行底色、侧边行号条、Gap 缺失线)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiffColors {
+    pub added_bg: Color32,
+    pub added_gutter: Color32,
+    pub changed_bg: Color32,
+    pub changed_gutter: Color32,
+    pub removed_bg: Color32,
+    pub removed_gutter: Color32,
+    pub gap_line: Color32,
+}
+
+impl ThemeColors {
+    /// 依据当前主题的视觉基调提供专门定制的差异对比色彩
+    pub fn diff_colors(&self) -> DiffColors {
+        if self.retro16 {
+            // Retro 16-Bit: 街机霓虹电光色彩
+            DiffColors {
+                added_bg: Color32::from_rgba_unmultiplied(0, 255, 128, 55),
+                added_gutter: Color32::from_rgb(0, 255, 102),
+                changed_bg: Color32::from_rgba_unmultiplied(255, 235, 59, 55),
+                changed_gutter: Color32::from_rgb(255, 215, 0),
+                removed_bg: Color32::from_rgba_unmultiplied(255, 0, 110, 55),
+                removed_gutter: Color32::from_rgb(255, 42, 133),
+                gap_line: Color32::from_rgba_unmultiplied(255, 0, 110, 200),
+            }
+        } else if self.comic {
+            // Comic 美漫: 赛璐珞波普高饱和色阶
+            DiffColors {
+                added_bg: Color32::from_rgba_unmultiplied(0, 245, 155, 48),
+                added_gutter: Color32::from_rgb(0, 245, 155),
+                changed_bg: Color32::from_rgba_unmultiplied(255, 170, 0, 48),
+                changed_gutter: Color32::from_rgb(255, 170, 0),
+                removed_bg: Color32::from_rgba_unmultiplied(255, 51, 102, 48),
+                removed_gutter: Color32::from_rgb(255, 51, 102),
+                gap_line: Color32::from_rgba_unmultiplied(255, 51, 102, 220),
+            }
+        } else if self.crystal {
+            // Crystal 水晶: 棱镜色散与冷光折射
+            DiffColors {
+                added_bg: Color32::from_rgba_unmultiplied(0, 240, 255, 45),
+                added_gutter: Color32::from_rgba_unmultiplied(0, 240, 255, 220),
+                changed_bg: Color32::from_rgba_unmultiplied(255, 215, 0, 45),
+                changed_gutter: Color32::from_rgba_unmultiplied(255, 215, 0, 220),
+                removed_bg: Color32::from_rgba_unmultiplied(255, 105, 180, 50),
+                removed_gutter: Color32::from_rgba_unmultiplied(255, 105, 180, 220),
+                gap_line: Color32::from_rgba_unmultiplied(0, 240, 255, 180),
+            }
+        } else if self.clear {
+            // Clear 玻璃: 气凝胶半透与冰霜通透色
+            DiffColors {
+                added_bg: Color32::from_rgba_unmultiplied(126, 226, 184, 42),
+                added_gutter: Color32::from_rgba_unmultiplied(126, 226, 184, 220),
+                changed_bg: Color32::from_rgba_unmultiplied(255, 200, 80, 42),
+                changed_gutter: Color32::from_rgba_unmultiplied(255, 200, 80, 220),
+                removed_bg: Color32::from_rgba_unmultiplied(255, 120, 120, 45),
+                removed_gutter: Color32::from_rgba_unmultiplied(255, 120, 120, 220),
+                gap_line: Color32::from_rgba_unmultiplied(255, 120, 120, 180),
+            }
+        } else if !self.dark {
+            // Light 浅色: 柔和粉彩与防眩目低对比底色
+            DiffColors {
+                added_bg: Color32::from_rgba_unmultiplied(39, 174, 96, 45),
+                added_gutter: Color32::from_rgb(20, 130, 50),
+                changed_bg: Color32::from_rgba_unmultiplied(243, 156, 18, 45),
+                changed_gutter: Color32::from_rgb(180, 90, 0),
+                removed_bg: Color32::from_rgba_unmultiplied(192, 57, 43, 45),
+                removed_gutter: Color32::from_rgb(190, 40, 40),
+                gap_line: Color32::from_rgba_unmultiplied(192, 57, 43, 190),
+            }
+        } else {
+            // Dark / 默认暗色
+            DiffColors {
+                added_bg: Color32::from_rgba_unmultiplied(46, 204, 113, 38),
+                added_gutter: self.green,
+                changed_bg: Color32::from_rgba_unmultiplied(241, 196, 15, 42),
+                changed_gutter: self.yellow,
+                removed_bg: Color32::from_rgba_unmultiplied(231, 76, 60, 42),
+                removed_gutter: self.red,
+                gap_line: Color32::from_rgba_unmultiplied(231, 76, 60, 160),
+            }
+        }
+    }
+}
+
 /// 统一差异 (`.diff` / `.patch`) 一行的着色: 文件头 / 块头蓝, 增绿, 删红; 其它行 None (用默认色)
 pub fn diff_line_color(line: &str, tc: &ThemeColors) -> Option<Color32> {
     if line.starts_with("+++")
@@ -607,6 +692,37 @@ mod tests {
         assert!(
             is_diff_name("Diff: a.rs.diff") && is_diff_name("x.PATCH") && !is_diff_name("diff.rs")
         );
+    }
+
+    #[test]
+    fn diff_colors_differ_per_theme() {
+        let dark = ThemeColors::builtin(true);
+        let light = ThemeColors::builtin(false);
+        let mut retro16 = dark;
+        retro16.retro16 = true;
+        let mut comic = dark;
+        comic.comic = true;
+        let mut crystal = dark;
+        crystal.crystal = true;
+        let mut clear = dark;
+        clear.clear = true;
+
+        let dc_dark = dark.diff_colors();
+        let dc_light = light.diff_colors();
+        let dc_retro = retro16.diff_colors();
+        let dc_comic = comic.diff_colors();
+        let dc_crystal = crystal.diff_colors();
+        let dc_clear = clear.diff_colors();
+
+        assert_ne!(dc_dark.added_bg, dc_retro.added_bg);
+        assert_ne!(dc_dark.added_bg, dc_comic.added_bg);
+        assert_ne!(dc_dark.added_bg, dc_crystal.added_bg);
+        assert_ne!(dc_dark.added_bg, dc_clear.added_bg);
+        assert_ne!(dc_dark.added_bg, dc_light.added_bg);
+
+        // 各主题的 Gutter 与断线也具备各自特征
+        assert_ne!(dc_retro.added_gutter, dc_comic.added_gutter);
+        assert_ne!(dc_crystal.gap_line, dc_comic.gap_line);
     }
 
     fn v(s: &[&str]) -> Vec<String> {

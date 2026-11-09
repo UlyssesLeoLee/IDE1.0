@@ -139,7 +139,7 @@ pub fn paint_facet_borders(p: &Painter, rect: Rect, tc: &ThemeColors) {
     }
 }
 
-/// 字符级全向轮廓高对比衬底光晕 (对齐 Tauri 的多重 text-shadow 4-way outline)
+/// 字符级通透光学折射光晕 (取代粗暴的大黑底涂抹，保持通透见底)
 pub fn paint_text_halo(
     p: &Painter,
     pos: Pos2,
@@ -149,24 +149,20 @@ pub fn paint_text_halo(
     if !tc.is_translucent() {
         return;
     }
-    let halo_col = if tc.dark {
-        Color32::from_rgba_unmultiplied(0, 0, 0, 225)
-    } else {
-        Color32::from_rgba_unmultiplied(255, 255, 255, 235)
-    };
-
-    // 4 向十字紧凑勾边: 即使文字下方是浅色图标或复杂壁纸边缘，每个字符都锐利清晰
-    p.galley(Pos2::new(pos.x - 1.0, pos.y), galley.clone(), halo_col);
-    p.galley(Pos2::new(pos.x + 1.0, pos.y), galley.clone(), halo_col);
-    p.galley(Pos2::new(pos.x, pos.y - 1.0), galley.clone(), halo_col);
-    p.galley(Pos2::new(pos.x, pos.y + 1.0), galley.clone(), halo_col);
-    // 右下阴影沉底
-    p.galley(Pos2::new(pos.x + 1.0, pos.y + 1.0), galley.clone(), halo_col);
-
-    // 水晶主题额外铺一层微弱的漫反射高透光晕 (提高深底透光晶莹感)
-    if tc.crystal && tc.dark {
-        let bloom_col = Color32::from_rgba_unmultiplied(0, 240, 255, 30);
-        p.galley(Pos2::new(pos.x, pos.y), galley, bloom_col);
+    // 水晶主题: 纯净折射色散微辉光，字形晶莹剔透，严禁黑块涂抹
+    if tc.crystal {
+        let prism_glow = Color32::from_rgba_unmultiplied(0, 240, 255, 30);
+        let pink_glow = Color32::from_rgba_unmultiplied(255, 105, 180, 20);
+        p.galley(Pos2::new(pos.x - 0.75, pos.y), galley.clone(), prism_glow);
+        p.galley(Pos2::new(pos.x + 0.75, pos.y), galley.clone(), pink_glow);
+    } else if tc.clear {
+        // 玻璃主题: 极细微高透环境阴影 (仅 14% 极低透明度)，柔和托底而不遮挡后方桌面
+        let soft_subtle = if tc.dark {
+            Color32::from_rgba_unmultiplied(0, 0, 0, 36)
+        } else {
+            Color32::from_rgba_unmultiplied(255, 255, 255, 45)
+        };
+        p.galley(Pos2::new(pos.x + 0.5, pos.y + 0.5), galley, soft_subtle);
     }
 }
 

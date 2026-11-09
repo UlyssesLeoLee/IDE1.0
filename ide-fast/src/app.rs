@@ -2111,13 +2111,18 @@ impl App {
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
     }
 
-    fn toggle_topmost(&mut self, ctx: &egui::Context) {
+    pub fn toggle_topmost(&mut self, ctx: &egui::Context) {
         self.topmost = !self.topmost;
-        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.topmost {
+        self.always_on_top = self.topmost;
+        let level = if self.topmost {
             egui::WindowLevel::AlwaysOnTop
         } else {
             egui::WindowLevel::Normal
-        }));
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+        if let Some(t) = &self.tray {
+            t.set_topmost_checked(self.topmost);
+        }
     }
 
     // ---------------------------------------------------------------- 移动履历 / 括弧
@@ -4142,15 +4147,12 @@ impl App {
                     } else {
                         (&d.lines[row], &rv.map)
                     };
-                    let char_bg = if self.tc.is_translucent() {
-                        Some(if self.tc.dark {
-                            Color32::from_black_alpha(85)
-                        } else {
-                            Color32::from_white_alpha(110)
-                        })
+                    let is_light_bg = if self.tc.is_translucent() {
+                        !self.tc.dark
                     } else {
-                        None
+                        !self.dark
                     };
+                    let char_bg = None;
                     let mut job = highlight_job(
                         hl_line,
                         &rv.disp,
@@ -4163,6 +4165,8 @@ impl App {
                         char_bg,
                         self.cfg.font_italic,
                         self.cfg.letter_spacing,
+                        self.tc.is_translucent(),
+                        is_light_bg,
                     );
                     if wrap {
                         job.wrap.max_width = wrap_w;
@@ -4276,28 +4280,29 @@ impl App {
                             );
                         }
                     }
-                    // 差异对比全行浅底色铺底与 Gap 断线
+                    // 差异对比全行浅底色铺底与 Gap 断线 (根据当前主题的专属差异配色系统)
                     if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
                         use crate::diff::Mark;
+                        let diff_c = self.tc.diff_colors();
                         let line_rect = Rect::from_min_max(
                             Pos2::new(rect.min.x + gutter, y),
                             Pos2::new(rect.max.x, y + row_h),
                         );
                         match m {
                             Mark::Added => {
-                                painter.rect_filled(line_rect, 0.0, Color32::from_rgba_unmultiplied(46, 204, 113, 38));
+                                painter.rect_filled(line_rect, 0.0, diff_c.added_bg);
                             }
                             Mark::Changed => {
-                                painter.rect_filled(line_rect, 0.0, Color32::from_rgba_unmultiplied(241, 196, 15, 42));
+                                painter.rect_filled(line_rect, 0.0, diff_c.changed_bg);
                             }
                             Mark::Removed => {
-                                painter.rect_filled(line_rect, 0.0, Color32::from_rgba_unmultiplied(231, 76, 60, 42));
+                                painter.rect_filled(line_rect, 0.0, diff_c.removed_bg);
                             }
                             Mark::Gap => {
                                 let mid_y = y + row_h * 0.5;
                                 painter.line_segment(
                                     [Pos2::new(rect.min.x + gutter, mid_y), Pos2::new(rect.max.x, mid_y)],
-                                    egui::Stroke::new(1.2, Color32::from_rgba_unmultiplied(231, 76, 60, 160)),
+                                    egui::Stroke::new(1.2, diff_c.gap_line),
                                 );
                             }
                             Mark::Same => {}
@@ -4396,11 +4401,12 @@ impl App {
                     }
                     if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
                         use crate::diff::Mark;
+                        let diff_c = self.tc.diff_colors();
                         let (c, h) = match m {
-                            Mark::Added => (tc.green, row_h),
-                            Mark::Changed => (tc.orange, row_h),
-                            Mark::Removed => (tc.red, row_h),
-                            Mark::Gap => (tc.red, 3.0),
+                            Mark::Added => (diff_c.added_gutter, row_h),
+                            Mark::Changed => (diff_c.changed_gutter, row_h),
+                            Mark::Removed => (diff_c.removed_gutter, row_h),
+                            Mark::Gap => (diff_c.gap_line, 3.0),
                             Mark::Same => (tc.fg, 0.0),
                         };
                         if h > 0.0 {
@@ -4527,6 +4533,8 @@ impl App {
                             None,
                             self.cfg.font_italic,
                             self.cfg.letter_spacing,
+                            false,
+                            false,
                         );
                         job.wrap.max_width = wrap_w;
                         job.wrap.break_anywhere = true;
@@ -4624,6 +4632,8 @@ impl App {
                                 None,
                                 self.cfg.font_italic,
                                 self.cfg.letter_spacing,
+                                false,
+                                false,
                             );
                             job.wrap.max_width = wrap_w;
                             job.wrap.break_anywhere = true;
@@ -4991,6 +5001,34 @@ fn icon_of(kind: &str) -> &'static str {
     }
 }
 
+/// 字符级背景自适应对比度反色 (在透明玻璃/水晶穿透桌面时生效，以字为单位反色，杜绝黑色涂抹)
+pub fn adapt_char_color(c: Color32, is_light_bg: bool) -> Color32 {
+    let luma = 0.2126 * (c.r() as f32 / 255.0) + 0.7152 * (c.g() as f32 / 255.0) + 0.0722 * (c.b() as f32 / 255.0);
+    if is_light_bg {
+        // 后方内容偏亮：字符以字为单位反转为深色高对比色阶
+        if luma > 0.45 {
+            Color32::from_rgb(
+                (c.r() as f32 * 0.22) as u8,
+                (c.g() as f32 * 0.22) as u8,
+                (c.b() as f32 * 0.32) as u8,
+            )
+        } else {
+            c
+        }
+    } else {
+        // 后方内容偏暗：字符以字为单位保持或提亮至清晰色阶
+        if luma < 0.45 {
+            Color32::from_rgb(
+                c.r().max(200),
+                c.g().max(200),
+                c.b().max(215),
+            )
+        } else {
+            c
+        }
+    }
+}
+
 /// 一行的带色排版: 词法由 editcore 的 `TypeConfig::highlight_line` 给 (按字符列), 这里换成显示列 (Tab 已展开) 再上色
 fn highlight_job(
     line: &str,
@@ -5004,12 +5042,21 @@ fn highlight_job(
     per_char_bg: Option<Color32>,
     font_italic: bool,
     letter_spacing: f32,
+    is_translucent: bool,
+    is_light_bg: bool,
 ) -> egui::text::LayoutJob {
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
+    let adapt = |c: Color32| -> Color32 {
+        if is_translucent {
+            adapt_char_color(c, is_light_bg)
+        } else {
+            c
+        }
+    };
     let fmt = |c: Color32| TextFormat {
         font_id: font.clone(),
-        color: c,
+        color: adapt(c),
         line_height: Some(line_h),
         background: per_char_bg.unwrap_or(Color32::TRANSPARENT),
         italics: font_italic,
@@ -5087,7 +5134,7 @@ pub(super) const DEFAULT_FONT_PX: f32 = 15.0;
 impl eframe::App for App {
     /// 半透明主题: 窗口是透明的,清屏色也要全透明,面板自己的 alpha 才能透出桌面 / 模糊材质
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        if self.sys.theme_glass {
+        if self.sys.theme_glass || self.tc.is_translucent() || self.tc.crystal || self.tc.clear {
             [0.0; 4]
         } else {
             Color32::from_rgb(12, 12, 12).to_normalized_gamma_f32()
@@ -5213,13 +5260,27 @@ impl App {
         self.tc.comic = self.theme_id == "theme-comic";
         self.tc.crystal = self.theme_id == "theme-crystal";
         self.tc.clear = self.theme_id == "theme-clear";
+        if self.tc.is_translucent() {
+            let luma = editcore::theme_luminance::detect();
+            let is_light = luma == editcore::theme_luminance::DesktopLuminance::Light;
+            self.tc.dark = !is_light;
+            if is_light {
+                self.tc.fg = Color32::from_rgb(26, 28, 30);
+                self.tc.fg_dim = Color32::from_rgba_unmultiplied(26, 28, 30, 175);
+            } else {
+                self.tc.fg = Color32::from_rgb(255, 255, 255);
+                self.tc.fg_dim = Color32::from_rgba_unmultiplied(255, 255, 255, 175);
+            }
+        }
         let mut vis = match &self.theme_visuals {
             Some(v) => v.clone(),
             None => self.tc.visuals(),
         };
         if let Some(c) = self.cfg.colors.bg {
-            vis.extreme_bg_color = Color32::from_rgb(c[0], c[1], c[2]);
-        } // 编辑区背景覆盖
+            if !self.tc.is_translucent() {
+                vis.extreme_bg_color = Color32::from_rgb(c[0], c[1], c[2]);
+            }
+        } // 编辑区背景覆盖 (半透明主题不被不透明覆盖打断)
         ctx.set_visuals(vis);
         if !ctx.data(|d| {
             d.get_temp::<bool>(egui::Id::new("tauri-scroll"))
@@ -5498,7 +5559,11 @@ impl App {
         self.md_bar(root, ctx, is_md);
         self.nema_bar(root, ctx, is_nema);
         use crate::split::SplitKind as SK;
-        let fill = ctx.global_style().visuals.extreme_bg_color;
+        let fill = if self.tc.is_translucent() {
+            Color32::TRANSPARENT
+        } else {
+            ctx.global_style().visuals.extreme_bg_color
+        };
         let kind = self.panes.kind;
         if matches!(kind, SK::Rows | SK::Quad) {
             egui::Panel::bottom("split_b")

@@ -9,10 +9,11 @@ impl App {
         if self.persist {
             if resident {
                 if self.tray.is_none() {
-                    self.tray = crate::tray::Tray::build(true, self.always_on_top);
+                    self.tray = crate::tray::Tray::build(true, self.topmost);
                 }
                 if let Some(t) = &self.tray {
                     t.set_resident_checked(true);
+                    t.set_topmost_checked(self.topmost);
                 }
             } else {
                 self.tray = None;
@@ -26,9 +27,8 @@ impl App {
         match ev {
             crate::tray::TrayEvent::ShowHide => {
                 let is_min = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-                let is_foc = ctx.input(|i| i.viewport().focused.unwrap_or(false));
                 let is_vis = ctx.input(|i| i.viewport().visible().unwrap_or(true));
-                if is_vis && !is_min && is_foc {
+                if is_vis && !is_min {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
@@ -37,65 +37,47 @@ impl App {
                 }
             }
             crate::tray::TrayEvent::NewFile => {
-                self.new_doc();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.new_doc();
             }
             crate::tray::TrayEvent::OpenFile => {
-                self.open_dialog();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.open_dialog();
             }
             crate::tray::TrayEvent::OpenCollab => {
-                self.collab.open = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.collab.open = true;
             }
             crate::tray::TrayEvent::OpenDiff => {
-                self.diff_with_file();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.diff_with_file();
             }
             crate::tray::TrayEvent::ToggleTopmost => {
-                self.always_on_top = !self.always_on_top;
-                let level = if self.always_on_top {
-                    egui::WindowLevel::AlwaysOnTop
-                } else {
-                    egui::WindowLevel::Normal
-                };
-                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
-                if let Some(t) = &self.tray {
-                    t.set_topmost_checked(self.always_on_top);
-                }
+                self.toggle_topmost(ctx);
             }
             crate::tray::TrayEvent::ToggleResident => {
-                self.cfg.tray_resident = !self.cfg.tray_resident;
-                if let Some(t) = &self.tray {
-                    t.set_resident_checked(self.cfg.tray_resident);
-                }
-                if !self.cfg.tray_resident {
+                let next = !self.cfg.tray_resident;
+                self.set_tray_resident(next);
+                if !next {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
-                if self.persist {
-                    self.cfg.save();
-                }
                 ctx.request_repaint();
             }
             crate::tray::TrayEvent::DisableResident => {
-                self.cfg.tray_resident = false;
-                self.tray = None;
+                self.set_tray_resident(false);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                if self.persist {
-                    self.cfg.save();
-                }
                 ctx.request_repaint();
             }
             crate::tray::TrayEvent::Quit => {

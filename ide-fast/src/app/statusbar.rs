@@ -404,20 +404,13 @@ impl App {
             }
             Some(StatusCmd::Language) => self.open_syntax_pick(),
             Some(StatusCmd::TrayToggle) => {
-                self.cfg.tray_resident = !self.cfg.tray_resident;
-                if self.cfg.tray_resident {
-                    if self.tray.is_none() && self.persist {
-                        self.tray = crate::tray::Tray::build(true, self.always_on_top);
-                    }
-                    if let Some(t) = &self.tray {
-                        t.set_resident_checked(true);
-                    }
-                    self.cur().tip = "已开启系统托盘常驻 (关闭窗口将最小化到任务栏托盘)".into();
+                let next = !self.cfg.tray_resident;
+                self.set_tray_resident(next);
+                self.cur().tip = if next {
+                    "已开启系统托盘常驻 (关闭窗口将最小化到任务栏托盘)".into()
                 } else {
-                    self.tray = None;
-                    self.cur().tip = "已关闭系统托盘常驻 (关闭窗口将直接退出程序)".into();
-                }
-                if self.persist { self.cfg.save(); }
+                    "已关闭系统托盘常驻 (关闭窗口将直接退出程序)".into()
+                };
             }
             None => {}
         }

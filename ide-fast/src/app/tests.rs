@@ -1289,3 +1289,50 @@ fn test_tray_residency_lifecycle_and_prefs_integration() {
     a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
     assert!(a.force_exit);
 }
+
+#[test]
+fn test_per_character_inverted_contrast_logic() {
+    // 1. 在亮色背景下（例如透明穿透白色窗口/网页/浅色壁纸）：亮色字符必须反色为深色高对比色阶
+    let white = Color32::WHITE;
+    let cyan = Color32::from_rgb(0, 240, 255);
+    let yellow = Color32::from_rgb(255, 215, 0);
+
+    let dark_on_light_white = adapt_char_color(white, true);
+    let dark_on_light_cyan = adapt_char_color(cyan, true);
+    let dark_on_light_yellow = adapt_char_color(yellow, true);
+
+    // 验证反色后亮度显著降低，文字不再发白融入背景
+    let luma = |c: Color32| 0.2126 * (c.r() as f32 / 255.0) + 0.7152 * (c.g() as f32 / 255.0) + 0.0722 * (c.b() as f32 / 255.0);
+    assert!(luma(dark_on_light_white) < 0.25, "白色在亮底上反色为深色字符");
+    assert!(luma(dark_on_light_cyan) < 0.35, "青色在亮底上反色为深青色字符");
+    assert!(luma(dark_on_light_yellow) < 0.35, "黄色在亮底上反色为深棕色字符");
+
+    // 2. 在暗色背景下（暗色壁纸/暗色桌面）：暗色字符必须被提亮以保证对比度
+    let very_dark = Color32::from_rgb(20, 24, 33);
+    let light_on_dark = adapt_char_color(very_dark, false);
+    assert!(luma(light_on_dark) > 0.70, "暗色字符在暗底上必须自适应提亮为高对比字符");
+
+    // 3. 原本就是高对比度的字符保持清晰
+    assert_eq!(adapt_char_color(white, false), white);
+    let already_dark = Color32::from_rgb(15, 23, 42);
+    assert_eq!(adapt_char_color(already_dark, true), already_dark);
+}
+
+#[test]
+fn test_tray_topmost_synchronization_with_menubar() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+
+    assert!(!a.topmost);
+    assert!(!a.always_on_top);
+
+    // 托盘置顶切换
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(a.topmost);
+    assert!(a.always_on_top);
+
+    // 菜单栏置顶切换
+    a.toggle_topmost(&ctx);
+    assert!(!a.topmost);
+    assert!(!a.always_on_top);
+}
