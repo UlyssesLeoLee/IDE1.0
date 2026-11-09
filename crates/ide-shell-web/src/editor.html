@@ -14390,8 +14390,8 @@ function parseNemaSource(source) {
   }
   const domains = [];
   let current = null;
-  const HEADER_V12_RE = /^\t(>?)([A-Za-z][A-Za-z0-9_.-]*) ([1-9][0-9]*)$/;
-  const HEADER_LEGACY_RE = /^\t([\\?>])([1-9][0-9]*)(?: ([1-9][0-9]*))?$/;
+  const HEADER_V12_RE = /^[\t ](?:\\)?(>?)([A-Za-z][A-Za-z0-9_.-]*) ([1-9][0-9]*)$/;
+  const HEADER_LEGACY_RE = /^[\t ](?:\\)?([\\?>])([1-9][0-9]*)(?: ([1-9][0-9]*))?$/;
   const MODES = { "\\": "table", "?": "5w1h", ">": "graph" };
   const AXES = ["What", "Why", "How", "Who", "When", "Where"];
 
@@ -14432,34 +14432,44 @@ function parseNemaSource(source) {
     }
 
     if (current.mode === "pending_v12") {
-      if (line.startsWith("\t")) {
-        current.mode = "table";
-        current.explicit_header = true;
-        current.columns = line.slice(1).split(" ").filter(Boolean).map(renderNemaText);
-        continue;
-      } else {
-        current.mode = "5w1h";
-        current.columns = AXES.slice();
+      let candidate = null;
+      if (line.startsWith("\t")) candidate = line.slice(1);
+      else if (line.startsWith(" \\ ")) candidate = line.slice(3);
+      else if (line.startsWith(" \\")) candidate = line.slice(2);
+      else if (line.startsWith("\\ ")) candidate = line.slice(2);
+      else if (line.startsWith(" ")) candidate = line.slice(1);
+
+      if (candidate && candidate.trim()) {
+        const parts = candidate.trim().split(" ").filter(Boolean);
+        const isAllIdents = parts.length > 0 && parts.every(p => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(p));
+        if (isAllIdents) {
+          current.mode = "table";
+          current.explicit_header = true;
+          current.columns = parts.map(renderNemaText);
+          continue;
+        }
       }
+      current.mode = "5w1h";
+      current.columns = AXES.slice();
     }
 
     // 表头精确判断: \t 或 \\ 开头
     if (current.mode === "table" && current.records.length === 0 && !current.explicit_header) {
-      if (line.startsWith("\t")) {
-        const names = line.slice(1).split(" ").filter(Boolean).map(renderNemaText);
-        if (names.length) {
+      let rawHdr = null;
+      if (line.startsWith("\t")) rawHdr = line.slice(1);
+      else if (line.startsWith(" \\# ")) rawHdr = line.slice(4);
+      else if (line.startsWith(" \\ ")) rawHdr = line.slice(3);
+      else if (line.startsWith("\\# ")) rawHdr = line.slice(3);
+      else if (line.startsWith("\\ ")) rawHdr = line.slice(2);
+      else if (line.startsWith(" ")) rawHdr = line.slice(1);
+
+      if (rawHdr && rawHdr.trim()) {
+        const names = rawHdr.trim().split(" ").filter(Boolean).map(renderNemaText);
+        if (names.length && names.every(p => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(p))) {
           current.columns = names;
           current.explicit_header = true;
+          continue;
         }
-        continue;
-      }
-      if (line.startsWith("\\ ")) {
-        const names = line.slice(2).split(" ").filter(Boolean).map(renderNemaText);
-        if (names.length) {
-          current.columns = names;
-          current.explicit_header = true;
-        }
-        continue;
       }
     }
 

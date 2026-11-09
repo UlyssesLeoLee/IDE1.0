@@ -32,6 +32,7 @@ mod docks;
 mod ghopts;
 mod glass_render;
 mod installer_ui;
+mod lifecycle;
 mod mdopts;
 mod nemaopts;
 mod mdstruct;
@@ -510,6 +511,7 @@ impl App {
         self.cfg.font_family = crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
         keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
+        self.set_tray_resident(st.tray_resident);
         // 最近文件个数变小了要立刻截断
         let n = st.mru_files.max(1);
         self.recent.truncate(n);
@@ -1289,7 +1291,7 @@ impl App {
         self.diff = Some(v);
         self.cur().tip = tip;
 
-        // WinMerge 风格：自动开启左右分屏对比，左窗格为基准文档，右窗格为对比文档
+        // 分屏差异对比：自动开启左右分屏，左窗格为基准文档，右窗格为对比文档
         self.panes.kind = crate::split::SplitKind::Cols;
         self.panes.docs[0] = cur;
         self.panes.docs[1] = other;
@@ -4274,7 +4276,7 @@ impl App {
                             );
                         }
                     }
-                    // WinMerge 风格差异对比全行浅底色铺底与 Gap 断线
+                    // 差异对比全行浅底色铺底与 Gap 断线
                     if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
                         use crate::diff::Mark;
                         let line_rect = Rect::from_min_max(
@@ -5201,83 +5203,6 @@ fn status_bar_style(ui: &mut egui::Ui, text: Color32) {
 }
 
 impl App {
-    pub fn handle_tray_event(&mut self, ctx: &egui::Context, ev: crate::tray::TrayEvent) {
-        match ev {
-            crate::tray::TrayEvent::ShowHide => {
-                let is_min = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-                let is_foc = ctx.input(|i| i.viewport().focused.unwrap_or(false));
-                let is_vis = ctx.input(|i| i.viewport().visible().unwrap_or(true));
-                if is_vis && !is_min && is_foc {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                } else {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                }
-            }
-            crate::tray::TrayEvent::NewFile => {
-                self.new_doc();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
-            crate::tray::TrayEvent::OpenFile => {
-                self.open_dialog();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
-            crate::tray::TrayEvent::OpenCollab => {
-                self.collab.open = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
-            crate::tray::TrayEvent::OpenDiff => {
-                self.diff_with_file();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
-            crate::tray::TrayEvent::ToggleTopmost => {
-                self.always_on_top = !self.always_on_top;
-                let level = if self.always_on_top {
-                    egui::WindowLevel::AlwaysOnTop
-                } else {
-                    egui::WindowLevel::Normal
-                };
-                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
-                if let Some(t) = &self.tray {
-                    t.set_topmost_checked(self.always_on_top);
-                }
-            }
-            crate::tray::TrayEvent::ToggleResident => {
-                self.cfg.tray_resident = !self.cfg.tray_resident;
-                if let Some(t) = &self.tray {
-                    t.set_resident_checked(self.cfg.tray_resident);
-                }
-                if self.persist { self.cfg.save(); }
-            }
-            crate::tray::TrayEvent::DisableResident => {
-                self.cfg.tray_resident = false;
-                self.tray = None;
-                if self.persist { self.cfg.save(); }
-            }
-            crate::tray::TrayEvent::Quit => {
-                self.force_exit = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-        }
-    }
-
-    fn poll_tray(&mut self, ctx: &egui::Context) {
-        if let Some(tray) = &self.tray {
-            for ev in tray.poll() {
-                self.handle_tray_event(ctx, ev);
-            }
-        }
-    }
-
     fn ui_main(&mut self, root: &mut egui::Ui) {
         let ctx = &root.ctx().clone();
         self.tc = match &self.theme_vars {
@@ -5315,50 +5240,8 @@ impl App {
         self.sync_doc_prefs();
         self.sys_frame(ctx);
         self.track_geometry(ctx);
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if !self.force_exit && self.cfg.tray_resident && self.tray.is_some() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                return;
-            }
-            if self.exit_session.is_none() {
-                self.exit_session = Some((self.session_paths(), self.session_active()));
-            }
-            for i in 0..self.docs.len() {
-                self.remember_pos(i);
-            }
-            self.cfg.view.geom = self.geom_now.map(|g| crate::settings::WinGeom {
-                maximized: self.maximized_now,
-                ..g
-            });
-        }
-        // 关窗口: 有未保存修改先问
-        if ctx.input(|i| i.viewport().close_requested())
-            && !self.confirm_exit
-            && self.cfg.confirm_close
-            && self.docs.iter().any(|d| d.dirty)
-        {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            let mut i = 0;
-            let mut all = true;
-            while i < self.docs.len() {
-                if self.docs[i].dirty {
-                    self.active = i;
-                    if !self.close_tab(i) {
-                        all = false;
-                        break;
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-            if all {
-                self.confirm_exit = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            } else {
-                self.exit_session = None;
-                crate::updapply::cancel();
-            }
+        if self.handle_window_close(ctx) {
+            return;
         }
         // 拖文件进窗口: 打开
         let dropped: Vec<PathBuf> = ctx.input(|i| {
@@ -5372,17 +5255,7 @@ impl App {
             self.open_path(&p);
         }
 
-        let forwarded: Vec<Vec<String>> = self
-            .inbox
-            .as_ref()
-            .map(|rx| rx.try_iter().collect())
-            .unwrap_or_default();
-        for paths in forwarded {
-            for a in &paths {
-                self.open_spec(a);
-            }
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        }
+        self.handle_forwarded_instances(ctx);
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         if focused && !self.was_focused && self.cfg.check_external {
             self.check_external();

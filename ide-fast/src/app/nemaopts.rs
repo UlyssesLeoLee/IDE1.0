@@ -31,6 +31,246 @@ pub enum SelectedGraphItem {
     },
 }
 
+/// 缓存的关系边拓扑与几何 (相对画布 rect.min)
+#[derive(Debug, Clone)]
+pub enum CachedEdgeGeometry {
+    Loop {
+        loop_center_rel: egui::Vec2,
+        r_loop: f32,
+    },
+    Line {
+        start_rel: egui::Vec2,
+        end_rel: egui::Vec2,
+        arrow: Option<[egui::Vec2; 3]>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedEdgeItem {
+    pub id: String,
+    pub route_str: String,
+    pub raw_x0: String,
+    pub name_x1: String,
+    pub desc_x2: String,
+    pub exts: Vec<(String, String)>,
+    pub line: usize,
+    pub geom: CachedEdgeGeometry,
+    pub pill_rect_rel: egui::Rect,
+    pub label_txt: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedNodeItem {
+    pub id: String,
+    pub name_x1: String,
+    pub desc_x2: String,
+    pub exts: Vec<(String, String)>,
+    pub line: usize,
+    pub center_rel: egui::Vec2,
+    pub rect_rel: egui::Rect,
+    pub top_title: String,
+}
+
+/// NEMA Graph 拓扑画布几何缓存，避免每帧重复三角函数排布与堆内存分配
+#[derive(Debug, Clone)]
+pub struct CachedGraphCanvas {
+    pub cache_key: (u64, u64, u32, u32), // (doc_id, doc_rev, (canvas_w * 10.0) as u32, (canvas_h * 10.0) as u32)
+    pub edges: Vec<CachedEdgeItem>,
+    pub nodes: Vec<CachedNodeItem>,
+}
+
+impl CachedGraphCanvas {
+    pub fn build(
+        cache_key: (u64, u64, u32, u32),
+        domain: &RenderedDomain,
+        canvas_w: f32,
+        canvas_h: f32,
+    ) -> Self {
+        let mut raw_nodes = Vec::new();
+        let mut raw_edges = Vec::new();
+        for row in &domain.rows {
+            if let Some(nid) = &row.node_id {
+                let name_x1 = row.cells.get(1).cloned().unwrap_or_default();
+                let desc_x2 = row.cells.get(2).cloned().unwrap_or_default();
+                raw_nodes.push((
+                    nid.clone(),
+                    name_x1,
+                    desc_x2,
+                    row.extensions.clone(),
+                    row.line,
+                ));
+            } else if let Some(e) = &row.edge {
+                let name_x1 = row.cells.get(1).cloned().unwrap_or_default();
+                let desc_x2 = row.cells.get(2).cloned().unwrap_or_default();
+                raw_edges.push((
+                    e.clone(),
+                    name_x1,
+                    desc_x2,
+                    row.extensions.clone(),
+                    row.line,
+                ));
+            }
+        }
+
+        let n_count = raw_nodes.len().max(1);
+        let center_rel = egui::vec2(canvas_w * 0.5, canvas_h * 0.5);
+        let rx = (canvas_w * 0.34).max(74.0);
+        let ry = (canvas_h * 0.33).max(58.0);
+        let mut node_pos = std::collections::HashMap::new();
+        let node_size = egui::vec2(114.0, 44.0);
+
+        for (idx, (nid, _, _, _, _)) in raw_nodes.iter().enumerate() {
+            let pos_rel = if n_count == 1 {
+                center_rel
+            } else if n_count == 2 {
+                egui::vec2(
+                    canvas_w * (0.26 + 0.48 * (idx as f32)),
+                    center_rel.y,
+                )
+            } else {
+                let angle = -std::f32::consts::FRAC_PI_2
+                    + 2.0 * std::f32::consts::PI * (idx as f32) / (n_count as f32);
+                egui::vec2(center_rel.x + rx * angle.cos(), center_rel.y + ry * angle.sin())
+            };
+            node_pos.insert(nid.clone(), pos_rel);
+        }
+
+        let mut pair_groups: std::collections::HashMap<(String, String), Vec<usize>> =
+            std::collections::HashMap::new();
+        let mut self_loop_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut lane_offsets = vec![0.0f32; raw_edges.len()];
+        let mut loop_indices = vec![0usize; raw_edges.len()];
+
+        for (idx, (edge, _, _, _, _)) in raw_edges.iter().enumerate() {
+            if edge.from == edge.to {
+                let c = self_loop_counts.entry(edge.from.clone()).or_insert(0);
+                loop_indices[idx] = *c;
+                *c += 1;
+            } else {
+                let key = if edge.from <= edge.to {
+                    (edge.from.clone(), edge.to.clone())
+                } else {
+                    (edge.to.clone(), edge.from.clone())
+                };
+                pair_groups.entry(key).or_default().push(idx);
+            }
+        }
+        for (_, indices) in pair_groups {
+            let m = indices.len();
+            for (rank, &e_idx) in indices.iter().enumerate() {
+                lane_offsets[e_idx] = (rank as f32 - (m as f32 - 1.0) * 0.5) * 18.0;
+            }
+        }
+
+        let mut edges = Vec::with_capacity(raw_edges.len());
+        for (e_idx, (edge, name_x1, desc_x2, exts, line)) in raw_edges.into_iter().enumerate() {
+            let Some(&p_from) = node_pos.get(&edge.from) else {
+                continue;
+            };
+            let Some(&p_to) = node_pos.get(&edge.to) else {
+                continue;
+            };
+            let route_str = if edge.from == edge.to {
+                format!("{} ↻ {} (self-loop)", edge.from, edge.to)
+            } else if edge.direction == EdgeDirection::Undirected {
+                format!("{} — {} (undirected)", edge.from, edge.to)
+            } else {
+                format!("{} → {}", edge.from, edge.to)
+            };
+
+            let (geom, mid_rel) = if edge.from == edge.to {
+                let r_loop = 18.0 + (loop_indices[e_idx] as f32) * 8.0;
+                let loop_center_rel = egui::vec2(p_from.x, p_from.y - 24.0 - r_loop * 0.5);
+                let mid_rel = egui::vec2(p_from.x, loop_center_rel.y - r_loop - 4.0);
+                (CachedEdgeGeometry::Loop { loop_center_rel, r_loop }, mid_rel)
+            } else {
+                let (c_a, c_b) = if edge.from <= edge.to {
+                    (p_from, p_to)
+                } else {
+                    (p_to, p_from)
+                };
+                let canon_dir = (c_b - c_a).normalized();
+                let canon_normal = egui::vec2(-canon_dir.y, canon_dir.x);
+                let shift = canon_normal * lane_offsets[e_idx];
+
+                let dir = (p_to - p_from).normalized();
+                let start_rel = p_from + dir * 52.0 + shift;
+                let end_rel = p_to - dir * 52.0 + shift;
+                let arrow = if edge.direction == EdgeDirection::Directed {
+                    let normal = egui::vec2(-dir.y, dir.x);
+                    let p1 = end_rel - dir * 8.5 + normal * 4.5;
+                    let p2 = end_rel - dir * 8.5 - normal * 4.5;
+                    Some([end_rel, p1, p2])
+                } else {
+                    None
+                };
+                let mid_rel = egui::vec2((start_rel.x + end_rel.x) * 0.5, (start_rel.y + end_rel.y) * 0.5);
+                (CachedEdgeGeometry::Line { start_rel, end_rel, arrow }, mid_rel)
+            };
+
+            let ext_badge = if exts.is_empty() {
+                String::new()
+            } else {
+                format!(" +{}", exts.len())
+            };
+            let label_txt = if name_x1.is_empty() {
+                format!("{}{}", edge.id, ext_badge)
+            } else {
+                format!("{} · {}{}", edge.id, name_x1, ext_badge)
+            };
+            let pill_w = (label_txt.chars().count() as f32 * 6.5 + 16.0).clamp(52.0, 178.0);
+            let pill_rect_rel = egui::Rect::from_center_size(mid_rel.to_pos2(), egui::vec2(pill_w, 19.0));
+            let raw_x0 = format!(
+                "{}{}{}{}{}",
+                edge.from, edge.raw_operator, edge.id, edge.raw_operator, edge.to
+            );
+
+            edges.push(CachedEdgeItem {
+                id: edge.id,
+                route_str,
+                raw_x0,
+                name_x1,
+                desc_x2,
+                exts,
+                line,
+                geom,
+                pill_rect_rel,
+                label_txt,
+            });
+        }
+
+        let mut nodes = Vec::with_capacity(raw_nodes.len());
+        for (nid, name_x1, desc_x2, exts, line) in raw_nodes {
+            let Some(&pos_rel) = node_pos.get(&nid) else {
+                continue;
+            };
+            let rect_rel = egui::Rect::from_center_size(pos_rel.to_pos2(), node_size);
+            let top_title = if exts.is_empty() {
+                nid.clone()
+            } else {
+                format!("{nid} (+{})", exts.len())
+            };
+            nodes.push(CachedNodeItem {
+                id: nid,
+                name_x1,
+                desc_x2,
+                exts,
+                line,
+                center_rel: pos_rel,
+                rect_rel,
+                top_title,
+            });
+        }
+
+        Self {
+            cache_key,
+            edges,
+            nodes,
+        }
+    }
+}
+
 /// NEMA 预览与状态机缓存
 #[derive(Debug, Default, Clone)]
 pub struct NemaUiState {
@@ -43,6 +283,7 @@ pub struct NemaUiState {
     pub bench_use_unigram: bool,
     pub bench_scenario_idx: usize,
     pub cached_render: Option<((u64, u64), Result<RenderedDocument, String>)>,
+    pub cached_graph: Option<CachedGraphCanvas>,
 }
 
 fn format_visible_whitespace(s: &str) -> String {
@@ -1093,6 +1334,7 @@ impl App {
     /// - 1 个前导空格 (` A LoginAPI Authentication APIKey`) 声明节点
     /// - 0 个前导空格 (`A>X>B Reads VerifySession HTTP401`) 声明关系
     /// - 悬浮 (Hover) 显示只读 `X2` 说明卡片；点击 (Click) 固定底部 **Graph Inspector** 查看完整 `X0 / X1 / X2 / X3+` 扩展属性
+    /// - 拓扑几何缓存 (`CachedGraphCanvas`) 避免 60fps 帧循环重复重算三角函数与点列
     fn render_nema_graph_canvas(
         &mut self,
         ui: &mut egui::Ui,
@@ -1100,65 +1342,49 @@ impl App {
         jump_to_line: &mut Option<usize>,
     ) {
         let tc = self.tc;
-        let mut nodes = Vec::new();
-        let mut edges = Vec::new();
-        for row in &domain.rows {
-            if let Some(nid) = &row.node_id {
-                let name_x1 = row.cells.get(1).cloned().unwrap_or_default();
-                let desc_x2 = row.cells.get(2).cloned().unwrap_or_default();
-                nodes.push((
-                    nid.clone(),
-                    name_x1,
-                    desc_x2,
-                    row.extensions.clone(),
-                    row.line,
-                ));
-            } else if let Some(e) = &row.edge {
-                let name_x1 = row.cells.get(1).cloned().unwrap_or_default();
-                let desc_x2 = row.cells.get(2).cloned().unwrap_or_default();
-                edges.push((
-                    e.clone(),
-                    name_x1,
-                    desc_x2,
-                    row.extensions.clone(),
-                    row.line,
-                ));
-            }
+        let ai = self.active.min(self.docs.len() - 1);
+        let doc_key = (self.docs[ai].id, self.docs[ai].rev);
+
+        let canvas_w = ui.available_width().max(340.0);
+        let canvas_h = 268.0;
+        let cache_key = (
+            doc_key.0,
+            doc_key.1,
+            (canvas_w * 10.0) as u32,
+            (canvas_h * 10.0) as u32,
+        );
+
+        if self.nema.cached_graph.as_ref().map(|cg| cg.cache_key) != Some(cache_key) {
+            self.nema.cached_graph = Some(CachedGraphCanvas::build(
+                cache_key, domain, canvas_w, canvas_h,
+            ));
         }
 
         // 若当前未选中任何节点或关系，默认选中第一个关系或节点以便即时展示 Graph Inspector
         if self.nema.selected_item.is_none() {
-            if let Some((e, name_x1, desc_x2, exts, line)) = edges.first() {
-                let route = if e.from == e.to {
-                    format!("{} ↻ {} (self-loop)", e.from, e.to)
-                } else if e.direction == EdgeDirection::Undirected {
-                    format!("{} — {} (undirected)", e.from, e.to)
-                } else {
-                    format!("{} → {}", e.from, e.to)
-                };
-                let raw_x0 = format!("{}{}{}{}{}", e.from, e.raw_operator, e.id, e.raw_operator, e.to);
-                self.nema.selected_item = Some(SelectedGraphItem::Edge {
-                    id: e.id.clone(),
-                    raw_x0,
-                    route,
-                    name_x1: name_x1.clone(),
-                    desc_x2: desc_x2.clone(),
-                    extensions: exts.clone(),
-                    line: *line,
-                });
-            } else if let Some((nid, name_x1, desc_x2, exts, line)) = nodes.first() {
-                self.nema.selected_item = Some(SelectedGraphItem::Node {
-                    id: nid.clone(),
-                    name_x1: name_x1.clone(),
-                    desc_x2: desc_x2.clone(),
-                    extensions: exts.clone(),
-                    line: *line,
-                });
+            if let Some(cg) = &self.nema.cached_graph {
+                if let Some(e) = cg.edges.first() {
+                    self.nema.selected_item = Some(SelectedGraphItem::Edge {
+                        id: e.id.clone(),
+                        raw_x0: e.raw_x0.clone(),
+                        route: e.route_str.clone(),
+                        name_x1: e.name_x1.clone(),
+                        desc_x2: e.desc_x2.clone(),
+                        extensions: e.exts.clone(),
+                        line: e.line,
+                    });
+                } else if let Some(n) = cg.nodes.first() {
+                    self.nema.selected_item = Some(SelectedGraphItem::Node {
+                        id: n.id.clone(),
+                        name_x1: n.name_x1.clone(),
+                        desc_x2: n.desc_x2.clone(),
+                        extensions: n.exts.clone(),
+                        line: n.line,
+                    });
+                }
             }
         }
 
-        let canvas_w = ui.available_width().max(340.0);
-        let canvas_h = 268.0;
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(canvas_w, canvas_h), egui::Sense::hover());
         let painter = ui.painter_at(rect);
@@ -1170,126 +1396,42 @@ impl App {
             egui::StrokeKind::Inside,
         );
 
-        let n_count = nodes.len().max(1);
-        let center = rect.center();
-        let rx = (canvas_w * 0.34).max(74.0);
-        let ry = (canvas_h * 0.33).max(58.0);
-        let mut node_pos = std::collections::HashMap::new();
-        let node_size = egui::vec2(114.0, 44.0);
+        let cur_selected = self.nema.selected_item.clone();
+        let mut new_selected: Option<SelectedGraphItem> = None;
 
-        for (idx, (nid, _, _, _, _)) in nodes.iter().enumerate() {
-            let pos = if n_count == 1 {
-                center
-            } else if n_count == 2 {
-                egui::pos2(
-                    rect.left() + canvas_w * (0.26 + 0.48 * (idx as f32)),
-                    center.y,
-                )
-            } else {
-                let angle = -std::f32::consts::FRAC_PI_2
-                    + 2.0 * std::f32::consts::PI * (idx as f32) / (n_count as f32);
-                egui::pos2(center.x + rx * angle.cos(), center.y + ry * angle.sin())
-            };
-            node_pos.insert(nid.clone(), pos);
-        }
+        let cg = self.nema.cached_graph.as_ref().unwrap();
 
-        // 计算同一对节点之间的平行边车道偏移 (lane offset)，确保双向/平行边不重叠
-        let mut pair_groups: std::collections::HashMap<(String, String), Vec<usize>> =
-            std::collections::HashMap::new();
-        let mut self_loop_counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-        let mut lane_offsets = vec![0.0f32; edges.len()];
-        let mut loop_indices = vec![0usize; edges.len()];
-
-        for (idx, (edge, _, _, _, _)) in edges.iter().enumerate() {
-            if edge.from == edge.to {
-                let c = self_loop_counts.entry(edge.from.clone()).or_insert(0);
-                loop_indices[idx] = *c;
-                *c += 1;
-            } else {
-                let key = if edge.from <= edge.to {
-                    (edge.from.clone(), edge.to.clone())
-                } else {
-                    (edge.to.clone(), edge.from.clone())
-                };
-                pair_groups.entry(key).or_default().push(idx);
-            }
-        }
-        for (_, indices) in pair_groups {
-            let m = indices.len();
-            for (rank, &e_idx) in indices.iter().enumerate() {
-                lane_offsets[e_idx] = (rank as f32 - (m as f32 - 1.0) * 0.5) * 18.0;
-            }
-        }
-
-        // 先画边与箭头，并放置可点击/可悬浮的独立 Edge ID 胶囊
-        for (e_idx, (edge, name_x1, desc_x2, exts, line)) in edges.iter().enumerate() {
-            let Some(&p_from) = node_pos.get(&edge.from) else {
-                continue;
-            };
-            let Some(&p_to) = node_pos.get(&edge.to) else {
-                continue;
-            };
+        // 1. 先画边与箭头，并放置可点击/可悬浮的独立 Edge ID 胶囊
+        for (e_idx, edge_item) in cg.edges.iter().enumerate() {
             let is_selected = matches!(
-                &self.nema.selected_item,
-                Some(SelectedGraphItem::Edge { id, .. }) if id == &edge.id
+                &cur_selected,
+                Some(SelectedGraphItem::Edge { id, .. }) if id == &edge_item.id
             );
             let stroke_col = if is_selected { tc.orange } else { tc.blue };
-            let route_str = if edge.from == edge.to {
-                format!("{} ↻ {} (self-loop)", edge.from, edge.to)
-            } else if edge.direction == EdgeDirection::Undirected {
-                format!("{} — {} (undirected)", edge.from, edge.to)
-            } else {
-                format!("{} → {}", edge.from, edge.to)
-            };
 
-            let mid = if edge.from == edge.to {
-                let r_loop = 18.0 + (loop_indices[e_idx] as f32) * 8.0;
-                let loop_center = egui::pos2(p_from.x, p_from.y - 24.0 - r_loop * 0.5);
-                painter.circle_stroke(loop_center, r_loop, egui::Stroke::new(1.5, stroke_col));
-                egui::pos2(p_from.x, loop_center.y - r_loop - 4.0)
-            } else {
-                let (c_a, c_b) = if edge.from <= edge.to {
-                    (p_from, p_to)
-                } else {
-                    (p_to, p_from)
-                };
-                let canon_dir = (c_b - c_a).normalized();
-                let canon_normal = egui::vec2(-canon_dir.y, canon_dir.x);
-                let shift = canon_normal * lane_offsets[e_idx];
-
-                let dir = (p_to - p_from).normalized();
-                let start = p_from + dir * 52.0 + shift;
-                let end = p_to - dir * 52.0 + shift;
-                painter.line_segment([start, end], egui::Stroke::new(1.6, stroke_col));
-                if edge.direction == EdgeDirection::Directed {
-                    let normal = egui::vec2(-dir.y, dir.x);
-                    let p1 = end - dir * 8.5 + normal * 4.5;
-                    let p2 = end - dir * 8.5 - normal * 4.5;
-                    painter.add(egui::Shape::convex_polygon(
-                        vec![end, p1, p2],
-                        stroke_col,
-                        egui::Stroke::NONE,
-                    ));
+            match &edge_item.geom {
+                CachedEdgeGeometry::Loop { loop_center_rel, r_loop } => {
+                    let loop_center = rect.min + *loop_center_rel;
+                    painter.circle_stroke(loop_center, *r_loop, egui::Stroke::new(1.5, stroke_col));
                 }
-                egui::pos2((start.x + end.x) * 0.5, (start.y + end.y) * 0.5)
-            };
+                CachedEdgeGeometry::Line { start_rel, end_rel, arrow } => {
+                    let start = rect.min + *start_rel;
+                    let end = rect.min + *end_rel;
+                    painter.line_segment([start, end], egui::Stroke::new(1.6, stroke_col));
+                    if let Some([e, p1, p2]) = arrow {
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![rect.min + *e, rect.min + *p1, rect.min + *p2],
+                            stroke_col,
+                            egui::Stroke::NONE,
+                        ));
+                    }
+                }
+            }
 
-            let ext_badge = if exts.is_empty() {
-                String::new()
-            } else {
-                format!(" +{}", exts.len())
-            };
-            let label_txt = if name_x1.is_empty() {
-                format!("{}{}", edge.id, ext_badge)
-            } else {
-                format!("{} · {}{}", edge.id, name_x1, ext_badge)
-            };
-            let pill_w = (label_txt.chars().count() as f32 * 6.5 + 16.0).clamp(52.0, 178.0);
-            let pill_rect = egui::Rect::from_center_size(mid, egui::vec2(pill_w, 19.0));
+            let pill_rect = edge_item.pill_rect_rel.translate(rect.min.to_vec2());
             let resp = ui.interact(
                 pill_rect,
-                ui.id().with(("nema-edge", &domain.id, &edge.id, e_idx)),
+                ui.id().with(("nema-edge", &domain.id, &edge_item.id, e_idx)),
                 egui::Sense::click(),
             );
             painter.rect_filled(
@@ -1310,15 +1452,18 @@ impl App {
             painter.text(
                 pill_rect.center(),
                 egui::Align2::CENTER_CENTER,
-                &label_txt,
+                &edge_item.label_txt,
                 egui::FontId::proportional(10.0),
                 tc.fg,
             );
 
-            let edge_raw_x0 = format!(
-                "{}{}{}{}{}",
-                edge.from, edge.raw_operator, edge.id, edge.raw_operator, edge.to
-            );
+            let edge_id = &edge_item.id;
+            let name_x1 = &edge_item.name_x1;
+            let desc_x2 = &edge_item.desc_x2;
+            let exts = &edge_item.exts;
+            let route_str = &edge_item.route_str;
+            let edge_raw_x0 = &edge_item.raw_x0;
+
             let resp = resp.on_hover_ui(|ui| {
                 ui.strong(
                     egui::RichText::new("关系说明 · X2 (只读预览)")
@@ -1328,7 +1473,7 @@ impl App {
                 ui.label(
                     egui::RichText::new(format!(
                         "{} · {}",
-                        edge.id,
+                        edge_id,
                         if name_x1.is_empty() { "(未命名)" } else { name_x1 }
                     ))
                     .size(11.0)
@@ -1357,32 +1502,29 @@ impl App {
             });
 
             if resp.clicked() {
-                self.nema.selected_item = Some(SelectedGraphItem::Edge {
-                    id: edge.id.clone(),
-                    raw_x0: edge_raw_x0,
-                    route: route_str,
-                    name_x1: name_x1.clone(),
-                    desc_x2: desc_x2.clone(),
-                    extensions: exts.clone(),
-                    line: *line,
+                new_selected = Some(SelectedGraphItem::Edge {
+                    id: edge_item.id.clone(),
+                    raw_x0: edge_item.raw_x0.clone(),
+                    route: edge_item.route_str.clone(),
+                    name_x1: edge_item.name_x1.clone(),
+                    desc_x2: edge_item.desc_x2.clone(),
+                    extensions: edge_item.exts.clone(),
+                    line: edge_item.line,
                 });
-                *jump_to_line = Some(*line);
+                *jump_to_line = Some(edge_item.line);
             }
         }
 
-        // 再画节点卡片 (1 个前导空格 ` A LoginAPI Authentication APIKey`)
-        for (nid, name_x1, desc_x2, exts, line) in &nodes {
-            let Some(&pos) = node_pos.get(nid) else {
-                continue;
-            };
+        // 2. 再画节点卡片 (1 个前导空格 ` A LoginAPI Authentication APIKey`)
+        for node_item in &cg.nodes {
+            let nrect = node_item.rect_rel.translate(rect.min.to_vec2());
             let is_selected = matches!(
-                &self.nema.selected_item,
-                Some(SelectedGraphItem::Node { id, .. }) if id == nid
+                &cur_selected,
+                Some(SelectedGraphItem::Node { id, .. }) if id == &node_item.id
             );
-            let nrect = egui::Rect::from_center_size(pos, node_size);
             let resp = ui.interact(
                 nrect,
-                ui.id().with(("nema-node", &domain.id, nid)),
+                ui.id().with(("nema-node", &domain.id, &node_item.id)),
                 egui::Sense::click(),
             );
             let border_col = if is_selected { tc.orange } else { tc.border };
@@ -1401,25 +1543,25 @@ impl App {
                 egui::Stroke::new(if is_selected { 1.6 } else { 1.2 }, border_col),
                 egui::StrokeKind::Inside,
             );
-            let top_title = if exts.is_empty() {
-                nid.clone()
-            } else {
-                format!("{nid} (+{})", exts.len())
-            };
             painter.text(
                 egui::pos2(nrect.center().x, nrect.top() + 14.0),
                 egui::Align2::CENTER_CENTER,
-                &top_title,
+                &node_item.top_title,
                 egui::FontId::proportional(11.5),
                 tc.fg,
             );
             painter.text(
                 egui::pos2(nrect.center().x, nrect.top() + 30.0),
                 egui::Align2::CENTER_CENTER,
-                name_x1,
+                &node_item.name_x1,
                 egui::FontId::proportional(10.0),
                 tc.fg_dim,
             );
+
+            let nid = &node_item.id;
+            let name_x1 = &node_item.name_x1;
+            let desc_x2 = &node_item.desc_x2;
+            let exts = &node_item.exts;
 
             let resp = resp.on_hover_ui(|ui| {
                 ui.strong(
@@ -1453,74 +1595,64 @@ impl App {
             });
 
             if resp.clicked() {
-                self.nema.selected_item = Some(SelectedGraphItem::Node {
-                    id: nid.clone(),
-                    name_x1: name_x1.clone(),
-                    desc_x2: desc_x2.clone(),
-                    extensions: exts.clone(),
-                    line: *line,
+                new_selected = Some(SelectedGraphItem::Node {
+                    id: node_item.id.clone(),
+                    name_x1: node_item.name_x1.clone(),
+                    desc_x2: node_item.desc_x2.clone(),
+                    extensions: node_item.exts.clone(),
+                    line: node_item.line,
                 });
-                *jump_to_line = Some(*line);
+                *jump_to_line = Some(node_item.line);
             }
         }
 
-        // 节点与关系快捷选择器 (Quick Picker Chips)
+        // 3. 节点与关系快捷选择器 (Quick Picker Chips)
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new("节点:").size(10.5).color(tc.fg_dim));
-            for (nid, name_x1, desc_x2, exts, line) in &nodes {
+            for node_item in &cg.nodes {
                 let is_sel = matches!(
-                    &self.nema.selected_item,
-                    Some(SelectedGraphItem::Node { id, .. }) if id == nid
+                    &cur_selected,
+                    Some(SelectedGraphItem::Node { id, .. }) if id == &node_item.id
                 );
-                let chip = format!("Node {nid} · {name_x1}");
+                let chip = format!("Node {} · {}", node_item.id, node_item.name_x1);
                 if ui
                     .selectable_label(is_sel, egui::RichText::new(chip).size(10.5).monospace())
                     .clicked()
                 {
-                    self.nema.selected_item = Some(SelectedGraphItem::Node {
-                        id: nid.clone(),
-                        name_x1: name_x1.clone(),
-                        desc_x2: desc_x2.clone(),
-                        extensions: exts.clone(),
-                        line: *line,
+                    new_selected = Some(SelectedGraphItem::Node {
+                        id: node_item.id.clone(),
+                        name_x1: node_item.name_x1.clone(),
+                        desc_x2: node_item.desc_x2.clone(),
+                        extensions: node_item.exts.clone(),
+                        line: node_item.line,
                     });
-                    *jump_to_line = Some(*line);
+                    *jump_to_line = Some(node_item.line);
                 }
             }
-            ui.separator();
+        });
+        ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new("关系:").size(10.5).color(tc.fg_dim));
-            for (edge, name_x1, desc_x2, exts, line) in &edges {
+            for edge_item in &cg.edges {
                 let is_sel = matches!(
-                    &self.nema.selected_item,
-                    Some(SelectedGraphItem::Edge { id, .. }) if id == &edge.id
+                    &cur_selected,
+                    Some(SelectedGraphItem::Edge { id, .. }) if id == &edge_item.id
                 );
-                let chip = format!("Edge {} · {}", edge.id, name_x1);
+                let chip = format!("Edge {} · {}", edge_item.id, edge_item.name_x1);
                 if ui
                     .selectable_label(is_sel, egui::RichText::new(chip).size(10.5).monospace())
                     .clicked()
                 {
-                    let route = if edge.from == edge.to {
-                        format!("{} ↻ {} (self-loop)", edge.from, edge.to)
-                    } else if edge.direction == EdgeDirection::Undirected {
-                        format!("{} — {} (undirected)", edge.from, edge.to)
-                    } else {
-                        format!("{} → {}", edge.from, edge.to)
-                    };
-                    let raw_x0 = format!(
-                        "{}{}{}{}{}",
-                        edge.from, edge.raw_operator, edge.id, edge.raw_operator, edge.to
-                    );
-                    self.nema.selected_item = Some(SelectedGraphItem::Edge {
-                        id: edge.id.clone(),
-                        raw_x0,
-                        route,
-                        name_x1: name_x1.clone(),
-                        desc_x2: desc_x2.clone(),
-                        extensions: exts.clone(),
-                        line: *line,
+                    new_selected = Some(SelectedGraphItem::Edge {
+                        id: edge_item.id.clone(),
+                        raw_x0: edge_item.raw_x0.clone(),
+                        route: edge_item.route_str.clone(),
+                        name_x1: edge_item.name_x1.clone(),
+                        desc_x2: edge_item.desc_x2.clone(),
+                        extensions: edge_item.exts.clone(),
+                        line: edge_item.line,
                     });
-                    *jump_to_line = Some(*line);
+                    *jump_to_line = Some(edge_item.line);
                 }
             }
         });
@@ -1707,6 +1839,10 @@ impl App {
                             });
                     }
                 });
+        }
+
+        if let Some(item) = new_selected {
+            self.nema.selected_item = Some(item);
         }
     }
 
@@ -2375,5 +2511,40 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("vs JSON对象"));
+    }
+
+    #[test]
+    fn cached_graph_canvas_builds_and_caches_correctly() {
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.nema_insert_v12_sample();
+        let ai = app.active;
+        let raw = app.docs[ai].lines.join("
+");
+        let rendered = render_source(&raw).expect("v1.2 sample should render cleanly");
+        let g = &rendered.domains[2];
+        assert_eq!(g.mode, DomainMode::Graph);
+
+        let key1 = (100, 1, 5000, 3000);
+        let cached1 = CachedGraphCanvas::build(key1, g, 500.0, 300.0);
+        assert_eq!(cached1.cache_key, key1);
+        assert!(!cached1.nodes.is_empty(), "节点不应为空");
+        assert!(!cached1.edges.is_empty(), "边不应为空");
+
+        // 验证节点矩形相对原点计算有效
+        for node in &cached1.nodes {
+            assert!(node.rect_rel.width() > 0.0);
+            assert!(node.rect_rel.height() > 0.0);
+        }
+
+        // 验证边说明胶囊尺寸有效
+        for edge in &cached1.edges {
+            assert!(edge.pill_rect_rel.width() > 0.0);
+            assert!(edge.pill_rect_rel.height() > 0.0);
+        }
+
+        // 尺寸变化时的键值区分
+        let key2 = (100, 1, 6000, 3000);
+        assert_ne!(key1, key2);
     }
 }

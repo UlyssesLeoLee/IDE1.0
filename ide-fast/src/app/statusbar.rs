@@ -414,9 +414,7 @@ impl App {
                     }
                     self.cur().tip = "已开启系统托盘常驻 (关闭窗口将最小化到任务栏托盘)".into();
                 } else {
-                    if let Some(t) = &self.tray {
-                        t.set_resident_checked(false);
-                    }
+                    self.tray = None;
                     self.cur().tip = "已关闭系统托盘常驻 (关闭窗口将直接退出程序)".into();
                 }
                 if self.persist { self.cfg.save(); }

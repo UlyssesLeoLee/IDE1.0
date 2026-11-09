@@ -1,4 +1,4 @@
-# IDE1.0 标题栏 WinMerge 对比与折叠联动详细设计书
+# IDE1.0 标题栏分屏对比与折叠联动详细设计书
 
 **文档编号**: DD-TITLEBAR-DIFF-REBALANCE-2026-V1.0  
 **制定组织**: IDE1.0 客户端核心组  
@@ -21,7 +21,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     // 优先级撤退顺序：
     // 1. 先撤快捷图标钮
     // 2. 再撤多 Agent 协同入口
-    // 3. 再撤 WinMerge 对比入口
+    // 3. 再撤差异对比入口
     // 4. 再撤窗口标题文字
     // 5. 最后撤菜单的助记快捷键字母
     let mnemonics = rest >= menu_mn;

@@ -371,7 +371,7 @@ impl App {
                             }
                         }
                         if plan.diff {
-                            if let Some(act) = self.winmerge_diff_button(ui) {
+                            if let Some(act) = self.diff_button(ui) {
                                 diff_action = Some(act);
                             }
                         }
@@ -420,16 +420,16 @@ impl App {
         }
     }
 
-    /// WinMerge 对比快捷入口按钮与弹出菜单
-    fn winmerge_diff_button(&self, ui: &mut egui::Ui) -> Option<DiffAction> {
+    /// 差异对比快捷入口按钮与弹出菜单
+    fn diff_button(&self, ui: &mut egui::Ui) -> Option<DiffAction> {
         let is_active = self.diff.is_some();
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(26.0, 22.0), Sense::click());
         let mut action = None;
 
         let tip = if let Some(v) = &self.diff {
-            format!("WinMerge 对比中: {} (点击展开对比菜单)", v.summary())
+            format!("差异对比中: {} (点击展开对比菜单)", v.summary())
         } else {
-            "WinMerge 对比 / 文件差异比对 (Diff)".to_string()
+            "文件差异对比 (Diff)".to_string()
         };
         let resp = resp.on_hover_text(tip);
 
@@ -453,13 +453,13 @@ impl App {
             }
         }
 
-        paint_winmerge_icon(ui.painter(), rect, is_active, self.tc.fg);
+        paint_diff_icon(ui.painter(), rect, is_active, self.tc.fg);
 
-        // 点击展开 WinMerge 风格差异比对菜单
+        // 点击展开差异比对菜单
         egui::Popup::menu(&resp).show(|ui| {
             ui.set_min_width(210.0);
             ui.spacing_mut().item_spacing.y = 4.0;
-            ui.label(egui::RichText::new("WinMerge 对比 (Diff)").strong());
+            ui.label(egui::RichText::new("文件差异对比 (Diff)").strong());
             ui.separator();
 
             if let Some(v) = &self.diff {
@@ -483,7 +483,7 @@ impl App {
                 ui.separator();
             }
 
-            if ui.button("与本地文件比较 (WinMerge)...").clicked() {
+            if ui.button("与本地文件比较...").clicked() {
                 action = Some(DiffAction::WithFile);
                 egui::Popup::close_all(ui.ctx());
             }
@@ -791,8 +791,8 @@ pub enum DiffAction {
     Clear,
 }
 
-/// 绘制 WinMerge 经典风格的“双文档差异对比”图标 (左右并排小文档，带标志性差异色条)
-fn paint_winmerge_icon(painter: &egui::Painter, rect: Rect, is_active: bool, theme_fg: Color32) {
+/// 绘制“双文档差异对比”图标 (左右并排小文档，带高亮差异色条)
+fn paint_diff_icon(painter: &egui::Painter, rect: Rect, is_active: bool, theme_fg: Color32) {
     let center = rect.center();
     let page_w = 7.0;
     let page_h = 11.0;
@@ -828,7 +828,7 @@ fn paint_winmerge_icon(painter: &egui::Painter, rect: Rect, is_active: bool, the
     painter.hline(left_rect.left() + 1.5..=left_rect.right() - 1.5, y1, normal_stroke);
     painter.hline(right_rect.left() + 1.5..=right_rect.right() - 1.5, y1, normal_stroke);
 
-    // WinMerge 标志性高亮差异行 (左暖黄，右亮绿/鲜红)
+    // 高亮差异行 (左暖黄，右亮绿/鲜红)
     let left_diff = Color32::from_rgb(255, 185, 30);
     let right_diff = if is_active {
         Color32::from_rgb(40, 220, 110)

@@ -63,7 +63,7 @@ def create_banner():
     pill_w, pill_h = 60, 20
     px, py = w - 76, 19
     draw.rectangle([px, py, px + pill_w, py + pill_h], fill=(30, 41, 59), outline=(6, 182, 212), width=1)
-    draw.text((px + 12, py + 3), "v0.6.3", font=font_ver, fill=(6, 182, 212))
+    draw.text((px + 12, py + 3), "v0.6.4", font=font_ver, fill=(6, 182, 212))
 
     # Bottom hairline border
     draw.line([(0, h - 1), (w, h - 1)], fill=(30, 41, 59), width=1)
@@ -97,7 +97,7 @@ def create_dialog():
 
     # Top-Right Controls & Version
     draw.rectangle([w - 110, 13, w - 50, 33], fill=(30, 41, 59), outline=(6, 182, 212), width=1)
-    draw.text((w - 98, 16), "v0.6.3", font=font_ver, fill=(6, 182, 212))
+    draw.text((w - 98, 16), "v0.6.4", font=font_ver, fill=(6, 182, 212))
 
     # Window control dots
     draw.ellipse([w - 40, 20, w - 32, 28], fill=(16, 185, 129)) # green

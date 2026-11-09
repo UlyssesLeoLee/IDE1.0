@@ -6,6 +6,25 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Mutex;
+
+static REPAINT_CTX: Mutex<Option<eframe::egui::Context>> = Mutex::new(None);
+
+/// 注册 egui 上下文，供后台 IPC 监听线程在接收到拉起信号时唤醒渲染事件循环
+pub fn set_repaint_context(ctx: eframe::egui::Context) {
+    if let Ok(mut lock) = REPAINT_CTX.lock() {
+        *lock = Some(ctx);
+    }
+}
+
+/// 唤醒渲染事件循环，确保即使窗口处于隐藏（Visible(false)）挂起状态也能立刻进入 App::update
+pub fn wake_instance_window() {
+    if let Ok(lock) = REPAINT_CTX.lock() {
+        if let Some(ctx) = lock.as_ref() {
+            ctx.request_repaint();
+        }
+    }
+}
 
 fn port_file() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")
@@ -32,12 +51,14 @@ pub fn forward_to_running(args: &[String]) -> bool {
     }
     let Ok(mut s) = TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-        std::time::Duration::from_millis(40),
+        std::time::Duration::from_millis(200),
     ) else {
         // 连不上 = 上一次异常退出留下的死端口文件，立即清理，避免后续启动产生 TCP 握手超时
         let _ = std::fs::remove_file(&pf);
         return false;
     };
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    let _ = s.set_write_timeout(Some(std::time::Duration::from_millis(500)));
     let mut msg = String::from("IDE-FAST-OPEN\n");
     for a in args {
         // 相对路径按「调用者」的当前目录解析成绝对路径再发
@@ -83,10 +104,23 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
     if let Some(d) = pf.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    std::fs::write(&pf, port.to_string()).ok()?;
+    let tmp_pf = pf.with_extension(format!("tmp.{}", std::process::id()));
+    if std::fs::write(&tmp_pf, port.to_string()).is_ok() {
+        if std::fs::rename(&tmp_pf, &pf).is_err() {
+            let _ = std::fs::remove_file(&pf);
+            if std::fs::rename(&tmp_pf, &pf).is_err() {
+                let _ = std::fs::write(&pf, port.to_string());
+                let _ = std::fs::remove_file(&tmp_pf);
+            }
+        }
+    } else {
+        std::fs::write(&pf, port.to_string()).ok()?;
+    }
     let (tx, rx) = channel();
     std::thread::spawn(move || {
         for conn in l.incoming().flatten() {
+            let _ = conn.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+            let _ = conn.set_write_timeout(Some(std::time::Duration::from_millis(500)));
             let mut r = BufReader::new(conn);
             let mut first = String::new();
             if r.read_line(&mut first).is_err() || first.trim() != "IDE-FAST-OPEN" {
@@ -105,7 +139,10 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
                 }
             }
             let _ = r.get_mut().write_all(b"OK\n");
-            let _ = tx.send(paths);
+            if tx.send(paths).is_err() {
+                break; // 主线程接收端已释放，停止监听线程
+            }
+            wake_instance_window();
         }
     });
     Some(rx)
@@ -114,9 +151,13 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn offline_env_skips_socket_binding_and_forwarding() {
+        let _g = ENV_LOCK.lock().unwrap();
         std::env::set_var("IDE_FAST_OFFLINE", "1");
         assert!(listen().is_none(), "离线模式下不绑定任何 TCP 监听");
         assert!(!forward_to_running(&["test.txt".into()]), "离线模式不尝试网络转发");
@@ -124,11 +165,24 @@ mod tests {
     }
 
     #[test]
-    fn second_instance_hands_paths_to_the_first() {
+    fn second_instance_hands_paths_and_empty_args_to_the_first() {
+        let _g = ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("ide-fast-inst-{}", std::process::id()));
         std::env::set_var("APPDATA", &dir);
         std::env::remove_var("IDE_FAST_MULTI");
+        std::env::remove_var("IDE_FAST_OFFLINE");
         let rx = listen().expect("first instance listens");
+        // 1. 无参数启动（纯点击启动应用，唤醒主窗口，不传递任何路径）
+        assert!(
+            forward_to_running(&[]),
+            "第二个实例无参数点击启动连得上"
+        );
+        let got_empty = rx
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .expect("first gets the wakeup signal");
+        assert_eq!(got_empty.len(), 0);
+
+        // 2. 带文件参数启动（传递路径并打开对应文档）
         assert!(
             forward_to_running(&["a.txt:3".to_string(), "C:\\x\\b.md".to_string()]),
             "第二个实例连得上"

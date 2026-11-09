@@ -1247,28 +1247,47 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         if current.is_v12 {
             if pending_v12_mode {
                 pending_v12_mode = false;
-                if let Some(rest) = line.strip_prefix('\t') {
+                let candidate_header = if let Some(rest) = line.strip_prefix('\t') {
                     if rest.starts_with('\t') {
                         return Err(NemaError::TabInBody);
                     }
-                    let labels = split_x_v12(rest)?;
-                    if labels.is_empty() || labels.iter().any(|v| v.is_empty()) {
-                        return Err(NemaError::InvalidTableHeaderName);
+                    Some(rest)
+                } else if let Some(rest) = line.strip_prefix(' ') {
+                    if let Some(stripped) = rest.strip_prefix('\\') {
+                        Some(stripped.trim_start())
+                    } else {
+                        Some(rest)
                     }
-                    let unique: HashSet<&str> = labels.iter().map(String::as_str).collect();
-                    if unique.len() != labels.len() {
-                        return Err(NemaError::DuplicateColumnHeader);
+                } else {
+                    line.strip_prefix('\\').map(str::trim_start)
+                };
+
+                let mut is_table_header = false;
+                if let Some(raw_header) = candidate_header {
+                    if !raw_header.is_empty() {
+                        if let Ok(labels) = split_x_v12(raw_header) {
+                            if !labels.is_empty()
+                                && labels.iter().all(|v| !v.is_empty() && is_valid_table_header_ident(v))
+                            {
+                                let unique: HashSet<&str> = labels.iter().map(String::as_str).collect();
+                                if unique.len() == labels.len() {
+                                    current.mode = DomainMode::Table;
+                                    current.columns = labels;
+                                    current.explicit_header = true;
+                                    current.explicit_header_span = Some(TextSpan {
+                                        start_byte: line_start,
+                                        end_byte: line_start + line.len(),
+                                        line: line_no,
+                                        column: 1,
+                                    });
+                                    current_domain_has_raw_rows = true;
+                                    is_table_header = true;
+                                }
+                            }
+                        }
                     }
-                    current.mode = DomainMode::Table;
-                    current.columns = labels;
-                    current.explicit_header = true;
-                    current.explicit_header_span = Some(TextSpan {
-                        start_byte: line_start,
-                        end_byte: line_start + line.len(),
-                        line: line_no,
-                        column: 1,
-                    });
-                    current_domain_has_raw_rows = true;
+                }
+                if is_table_header {
                     continue;
                 } else {
                     current.mode = DomainMode::FiveWOneH;
@@ -1439,30 +1458,41 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
             return Err(NemaError::TabInBody);
         }
 
-        // Table 首行精确 `\ ` 表头判断
+        // Table 首行精确表头判断
         if current.mode == DomainMode::Table
             && current.records.is_empty()
             && !current.explicit_header
-            && (line.starts_with("\\ ") || line.starts_with("\\# "))
         {
-            let raw_names = if let Some(stripped) = line.strip_prefix("\\# ") { stripped } else { &line[2..] }; let names: Vec<&str> = raw_names.split(' ').collect();
-            if names.is_empty() || names.iter().any(|x| !is_valid_table_header_ident(x)) {
-                return Err(NemaError::InvalidTableHeaderName);
+            let raw_hdr = if let Some(stripped) = line.strip_prefix("\\# ") {
+                Some(stripped)
+            } else if let Some(stripped) = line.strip_prefix("\\ ") {
+                Some(stripped)
+            } else if let Some(stripped) = line.strip_prefix(" \\# ") {
+                Some(stripped)
+            } else if let Some(stripped) = line.strip_prefix(" \\ ") {
+                Some(stripped)
+            } else {
+                line.strip_prefix('\t')
+            };
+            if let Some(raw_names) = raw_hdr {
+                let names: Vec<&str> = raw_names.split(' ').collect();
+                if !names.is_empty() && names.iter().all(|x| is_valid_table_header_ident(x)) {
+                    let unique: HashSet<&str> = names.iter().copied().collect();
+                    if unique.len() != names.len() {
+                        return Err(NemaError::DuplicateColumnHeader);
+                    }
+                    current.columns = names.into_iter().map(str::to_string).collect();
+                    current.explicit_header = true;
+                    current.explicit_header_span = Some(TextSpan {
+                        start_byte: line_start,
+                        end_byte: line_start + line.len(),
+                        line: line_no,
+                        column: 1,
+                    });
+                    current_domain_has_raw_rows = true;
+                    continue;
+                }
             }
-            let unique: HashSet<&str> = names.iter().copied().collect();
-            if unique.len() != names.len() {
-                return Err(NemaError::DuplicateColumnHeader);
-            }
-            current.columns = names.into_iter().map(str::to_string).collect();
-            current.explicit_header = true;
-            current.explicit_header_span = Some(TextSpan {
-                start_byte: line_start,
-                end_byte: line_start + line.len(),
-                line: line_no,
-                column: 1,
-            });
-            current_domain_has_raw_rows = true;
-            continue;
         }
 
         if line.starts_with(' ') {
@@ -3791,5 +3821,16 @@ mod tests {
         assert_eq!(parse_domain_header(r" \1 1"), Some((DomainMode::Table, "1".into(), 1)));
         assert_eq!(parse_domain_header(r" \?2 1"), Some((DomainMode::FiveWOneH, "2".into(), 1)));
         assert_eq!(parse_domain_header(r" \>3 1"), Some((DomainMode::Graph, "3".into(), 1)));
+
+        // 空格前缀的 Table 领域头及表头识别测试
+        let src_space_table = " Ttable1 1\n Agent Status Note\nClaude Ready 认证完成\n\n\n";
+        let doc_space = render_source(src_space_table).expect("space table parse");
+        assert_eq!(doc_space.domains[0].mode, DomainMode::Table);
+        assert_eq!(doc_space.domains[0].columns, vec!["Agent", "Status", "Note"]);
+
+        let src_slash_table = " \\table1 1\n \\ Agent Status Note\nClaude Ready 认证完成\n\n\n";
+        let doc_slash = render_source(src_slash_table).expect("slash table parse");
+        assert_eq!(doc_slash.domains[0].mode, DomainMode::Table);
+        assert_eq!(doc_slash.domains[0].columns, vec!["Agent", "Status", "Note"]);
     }
 }

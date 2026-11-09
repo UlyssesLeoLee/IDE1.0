@@ -1259,3 +1259,33 @@ fn test_adversarial_installer_bmp_and_ico_headers() {
     let frame_count = u16::from_le_bytes(ico_bytes[4..6].try_into().unwrap());
     assert!(frame_count >= 5, "ICO 必须包含至少 5 个不同分辨率的图元帧");
 }
+
+#[test]
+fn test_tray_residency_lifecycle_and_prefs_integration() {
+    let (mut a, _g) = app(Settings::default());
+    assert!(a.cfg.tray_resident);
+
+    // 1. 首选项中关闭常驻
+    a.open_prefs();
+    a.prefs.as_mut().unwrap().draft.tray_resident = false;
+    a.prefs_commit();
+    assert!(!a.cfg.tray_resident);
+    assert!(a.tray.is_none());
+
+    // 2. 首选项中重新打开常驻
+    a.open_prefs();
+    a.prefs.as_mut().unwrap().draft.tray_resident = true;
+    a.prefs_commit();
+    assert!(a.cfg.tray_resident);
+
+    // 3. 托盘取消常驻事件
+    let ctx = egui::Context::default();
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::DisableResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(a.tray.is_none());
+
+    // 4. 退出事件设置 force_exit
+    assert!(!a.force_exit);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+    assert!(a.force_exit);
+}

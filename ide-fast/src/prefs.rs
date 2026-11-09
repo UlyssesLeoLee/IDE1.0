@@ -154,6 +154,8 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.check(&mut d.wrap, tr("pf.wrap"));
             ui.check(&mut d.glass_blur, tr("pf.glass-blur"))
                 .tip(tr("pf.glass-note"));
+            ui.check(&mut d.tray_resident, tr("pf.tray-resident"))
+                .tip(tr("pf.tray-resident-tip"));
             ui.horizontal(|ui| {
                 ui.label(tr("pf.font-size"));
                 ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0));
@@ -230,6 +232,8 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.check(&mut d.check_external, tr("pf.check-external"));
             ui.check(&mut d.restore_session, tr("pf.restore-session"));
             ui.check(&mut d.confirm_close, tr("pf.confirm-close"));
+            ui.check(&mut d.tray_resident, tr("pf.tray-resident"))
+                .tip(tr("pf.tray-resident-tip"));
             ui.horizontal(|ui| {
                 ui.label(tr("pf.max-file"));
                 ui.add(egui::Slider::new(&mut d.max_file_mb, 1..=32));

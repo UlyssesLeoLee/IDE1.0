@@ -221,6 +221,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             t_app.mark("window + GL context ready");
+            crate::instance::set_repaint_context(cc.egui_ctx.clone());
             match fonts_job.map(|h| h.join()) {
                 Some(Ok(loaded)) => fonts::install_loaded(&cc.egui_ctx, loaded),
                 _ => fonts::install(&cc.egui_ctx, &font_file, &st.font_cjk_fallback, &st.lang), // 线程没起来 / 读取线程 panic: 同步读
