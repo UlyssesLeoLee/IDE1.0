@@ -5,6 +5,16 @@
 use eframe::egui::{self, FontData, FontDefinitions, FontFamily};
 use std::sync::Arc;
 
+/// 嵌入式 16-Bit 街机点阵全字形字体 (包含 31,753 字符，覆盖 ASCII、全量 CJK 汉字与假名及符号，免除外部字体文件依赖)
+pub const EMBEDDED_PIXEL_FONT: &[u8] =
+    include_bytes!("../../crates/ide-shell-web/src/PixelFontMulti-12.ttf");
+
+/// 判断是否为 16-Bit 像素字体
+pub fn is_pixel_font(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.contains("pixel")
+}
+
 /// 精选免费商用与高质量系统字体项
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RecommendedFont {
@@ -134,9 +144,27 @@ pub fn is_illegible_display_font(file_or_name: &str) -> bool {
 /// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体 (空字符串保持为空，代表主题默认)
 pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
     let clean = font.trim();
+    if theme_id == "theme-retro16" {
+        return "PixelFontMulti-12.ttf".to_string();
+    }
     if clean.is_empty() {
         String::new()
     } else if is_illegible_display_font(clean) {
+        theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
+    } else {
+        clean.to_string()
+    }
+}
+
+/// 计算各主题在当前运行环境下的最终有效主字体文件名
+/// - Retro 16-Bit (theme-retro16) 核心视觉语言强制使用 PixelFont 点阵像素字体
+/// - 其他主题若未指定字体或传入不可读艺术花体，则回退到该主题默认等宽编程字体
+pub fn effective_font_family(font_family: &str, theme_id: &str) -> String {
+    let clean = font_family.trim();
+    if theme_id == "theme-retro16" {
+        return "PixelFontMulti-12.ttf".to_string();
+    }
+    if clean.is_empty() || is_illegible_display_font(clean) {
         theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
     } else {
         clean.to_string()
@@ -234,11 +262,12 @@ fn find_bold_file(dir: &std::path::Path, file: &str) -> Option<String> {
     None
 }
 
-/// 已从磁盘读出的字体字节: (CJK fallback 的 (文件名, TTC 序号, 字节), 编辑器常规字体字节, 编辑器粗体字节)
+/// 已从磁盘读出的字体字节: (CJK fallback 的 (文件名, TTC 序号, 字节), 编辑器常规字体字节, 编辑器粗体字节, 是否为 Retro16 像素字体)
 pub struct Loaded {
     pub fallbacks: Vec<(String, u32, Vec<u8>)>,
     pub editor: Option<Vec<u8>>,
     pub editor_bold: Option<Vec<u8>>,
+    pub is_retro16: bool,
 }
 
 /// 根据语言环境获取最优 CJK 候选顺序
@@ -304,6 +333,8 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
 
+    let is_retro = is_pixel_font(&safe_editor);
+
     // 线程 1: 并行读取主字体与其粗体变体 (不需要粗体时跳过磁盘搜索与读取)
     let dir_clone = dir.clone();
     let ed_handle = std::thread::spawn(move || {
@@ -311,8 +342,27 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
             && is_font_file(&safe_editor)
             && !is_illegible_display_font(&safe_editor)
         {
-            let b1 = std::fs::read(dir_clone.join(&safe_editor)).ok();
-            let b2 = if need_bold {
+            let b1 = if is_pixel_font(&safe_editor) {
+                // 优先查找系统字体或同级目录，兜底使用内嵌的 16-Bit 街机点阵全字形字体 (保证无依赖立即可用)
+                if dir_clone.join(&safe_editor).is_file() {
+                    std::fs::read(dir_clone.join(&safe_editor)).ok()
+                } else if let Some(p) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&safe_editor))) {
+                    if p.is_file() {
+                        std::fs::read(p).ok()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+                .or_else(|| std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf").ok())
+                .or_else(|| std::fs::read("crates/ide-shell-desktop/dist/PixelFontMulti-12.ttf").ok())
+                .or_else(|| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf").ok())
+                .or_else(|| Some(EMBEDDED_PIXEL_FONT.to_vec()))
+            } else {
+                std::fs::read(dir_clone.join(&safe_editor)).ok()
+            };
+            let b2 = if need_bold && !is_pixel_font(&safe_editor) {
                 let bold_file = find_bold_file(&dir_clone, &safe_editor);
                 bold_file.and_then(|f| std::fs::read(dir_clone.join(f)).ok())
             } else {
@@ -357,6 +407,7 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
         fallbacks,
         editor,
         editor_bold,
+        is_retro16: is_retro,
     }
 }
 
@@ -434,6 +485,17 @@ pub fn install_loaded(ctx: &egui::Context, loaded: Loaded) {
     editor.extend(mono_fallbacks.clone());
     editor_bold.extend(mono_fallbacks);
 
+    if loaded.is_retro16 {
+        defs.families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .insert(0, "editor-font".into());
+        defs.families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .insert(0, "editor-font".into());
+    }
+
     defs.families.insert(editor_family(), editor);
     defs.families.insert(editor_bold_family(), editor_bold);
     ctx.set_fonts(defs);
@@ -462,6 +524,24 @@ mod tests {
         assert_eq!(theme_default_font("theme-light"), Some("CascadiaMono.ttf"));
         assert_eq!(theme_default_font("theme-comic"), Some("CascadiaCode.ttf"));
         assert_eq!(theme_default_font("unknown"), None);
+    }
+
+    #[test]
+    fn effective_font_family_retro16_invariant() {
+        assert_eq!(effective_font_family("", "theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-retro16"), "PixelFontMulti-12.ttf");
+
+        assert_eq!(effective_font_family("", "theme-comic"), "CascadiaCode.ttf");
+        assert_eq!(effective_font_family("Consolas", "theme-comic"), "Consolas");
+        assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-comic"), "CascadiaCode.ttf");
+    }
+
+    #[test]
+    fn embedded_pixel_font_loads_and_flags_retro16() {
+        let loaded = load_ext("PixelFontMulti-12.ttf", "", "zh", false);
+        assert!(loaded.editor.is_some(), "Embedded PixelFont bytes must load successfully");
+        assert!(loaded.is_retro16, "is_retro16 must be set for PixelFont");
     }
 
     #[test]

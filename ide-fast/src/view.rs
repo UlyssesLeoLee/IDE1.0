@@ -57,6 +57,12 @@ impl ThemeColors {
     }
 }
 
+impl Default for ThemeColors {
+    fn default() -> Self {
+        Self::builtin(true)
+    }
+}
+
 /// Tauri 的字符标尺: 从第 `first` 列 (从 1 数) 起 `n` 列。10 的倍数写十位数字 (10 -> `1`, 100 -> `0`), 5 的倍数 `+`, 其余 `.`
 pub fn ruler_text(first: usize, n: usize) -> String {
     (first..first + n)

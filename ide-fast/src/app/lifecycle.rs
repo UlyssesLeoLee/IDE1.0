@@ -6,18 +6,18 @@ impl App {
     /// 统一同步系统托盘常驻状态与托盘图标生命周期
     pub fn set_tray_resident(&mut self, resident: bool) {
         self.cfg.tray_resident = resident;
-        if self.persist {
-            if resident {
-                if self.tray.is_none() {
-                    self.tray = crate::tray::Tray::build(true, self.topmost);
-                }
-                if let Some(t) = &self.tray {
-                    t.set_resident_checked(true);
-                    t.set_topmost_checked(self.topmost);
-                }
-            } else {
-                self.tray = None;
+        if resident {
+            if self.tray.is_none() {
+                self.tray = crate::tray::Tray::build(true, self.topmost);
             }
+            if let Some(t) = &self.tray {
+                t.set_resident_checked(true);
+                t.set_topmost_checked(self.topmost);
+            }
+        } else {
+            self.tray = None;
+        }
+        if self.persist {
             self.cfg.save();
         }
     }
@@ -28,45 +28,58 @@ impl App {
             crate::tray::TrayEvent::ShowHide => {
                 let is_min = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
                 let is_vis = ctx.input(|i| i.viewport().visible().unwrap_or(true));
-                if is_vis && !is_min {
+                if !self.window_hidden && is_vis && !is_min {
+                    self.window_hidden = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 } else {
+                    self.window_hidden = false;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
+                ctx.request_repaint();
             }
             crate::tray::TrayEvent::NewFile => {
+                self.window_hidden = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 self.new_doc();
+                ctx.request_repaint();
             }
             crate::tray::TrayEvent::OpenFile => {
+                self.window_hidden = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 self.open_dialog();
+                ctx.request_repaint();
             }
             crate::tray::TrayEvent::OpenCollab => {
+                self.window_hidden = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 self.collab.open = true;
+                ctx.request_repaint();
             }
             crate::tray::TrayEvent::OpenDiff => {
+                self.window_hidden = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 self.diff_with_file();
+                ctx.request_repaint();
             }
             crate::tray::TrayEvent::ToggleTopmost => {
                 self.toggle_topmost(ctx);
+                ctx.request_repaint();
             }
             crate::tray::TrayEvent::ToggleResident => {
                 let next = !self.cfg.tray_resident;
                 self.set_tray_resident(next);
                 if !next {
+                    self.window_hidden = false;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -75,6 +88,7 @@ impl App {
             }
             crate::tray::TrayEvent::DisableResident => {
                 self.set_tray_resident(false);
+                self.window_hidden = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -82,6 +96,7 @@ impl App {
             }
             crate::tray::TrayEvent::Quit => {
                 if self.docs.iter().any(|d| d.dirty) && self.cfg.confirm_close {
+                    self.window_hidden = false;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -110,6 +125,7 @@ impl App {
             .map(|rx| rx.try_iter().collect())
             .unwrap_or_default();
         if !forwarded.is_empty() {
+            self.window_hidden = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -127,6 +143,7 @@ impl App {
     pub(super) fn handle_window_close(&mut self, ctx: &egui::Context) -> bool {
         if ctx.input(|i| i.viewport().close_requested()) {
             if !self.force_exit && self.cfg.tray_resident && self.tray.is_some() {
+                self.window_hidden = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 return true;

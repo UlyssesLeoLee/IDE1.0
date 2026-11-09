@@ -392,6 +392,9 @@ pub struct ViewState {
     pub stamp_pos: u8,
     /// 关键字帮助自动显示: 光标停在单词上时, 状态栏提示里显示手册中第一处提到它的行 (同 Tauri `keysearch`)
     pub key_search: bool,
+    /// Markdown 与 NEMA 文件工具条折叠到顶端
+    pub md_bar_collapsed: bool,
+    pub nema_bar_collapsed: bool,
     /// 页面设置 (打印 / 预览)
     pub print: crate::print::PageSetup,
 }
@@ -426,6 +429,8 @@ impl Default for ViewState {
             stamp_kind: 2,
             stamp_pos: 0,
             key_search: false,
+            md_bar_collapsed: false,
+            nema_bar_collapsed: false,
             print: Default::default(),
         }
     }
@@ -763,6 +768,8 @@ impl Settings {
         b_of(w, "side_collapsed", &mut self.view.side_collapsed);
         b_of(w, "right_collapsed", &mut self.view.right_collapsed);
         b_of(w, "bottom_collapsed", &mut self.view.bottom_collapsed);
+        b_of(w, "md_bar_collapsed", &mut self.view.md_bar_collapsed);
+        b_of(w, "nema_bar_collapsed", &mut self.view.nema_bar_collapsed);
         b_of(w, "toolbar", &mut self.view.toolbar);
         b_of(w, "funckey", &mut self.view.funckey);
         b_of(w, "rail", &mut self.view.rail);
@@ -907,7 +914,7 @@ impl Settings {
         let geom = w
             .geom
             .map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
-        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_preview": w.md_preview, "geom": geom,
+        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_bar_collapsed": w.md_bar_collapsed, "nema_bar_collapsed": w.nema_bar_collapsed, "md_preview": w.md_preview, "geom": geom,
             "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "md_overlay": w.md_overlay, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
             "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "hang": w.hang, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos, "key_search": w.key_search,
             "print": { "paper": w.print.paper.code(), "landscape": w.print.landscape, "font_pt": w.print.font_pt, "margin_mm": w.print.margin_mm, "line_numbers": w.print.line_numbers, "header": w.print.header, "footer": w.print.footer } }));
@@ -1350,6 +1357,8 @@ mod tests {
             side_collapsed: true,
             right_collapsed: true,
             bottom_collapsed: true,
+            md_bar_collapsed: true,
+            nema_bar_collapsed: true,
             md_preview: true,
             md_overlay: false,
             geom: Some(WinGeom {

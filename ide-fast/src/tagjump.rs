@@ -289,6 +289,7 @@ pub fn generate(root: &Path) -> Result<(usize, PathBuf), String> {
 pub struct TagState {
     pub pick: Option<Vec<Cand>>,
     pub kw_open: bool,
+    kw_focus: bool,
     kw_text: String,
     /// 跳转前的位置 (文档 id, 光标), 后进先出
     pub stack: Vec<(u64, [usize; 2])>,
@@ -313,6 +314,7 @@ impl TagState {
 
     pub fn open_keyword(&mut self) {
         self.kw_open = true;
+        self.kw_focus = true;
     }
 
     pub fn windows(&mut self, ctx: &eframe::egui::Context) -> Vec<Ev> {
@@ -329,7 +331,10 @@ impl TagState {
                 .show(ctx, |ui| {
                     let r =
                         ui.add(egui::TextEdit::singleline(&mut self.kw_text).desired_width(240.0));
-                    r.request_focus();
+                    if self.kw_focus {
+                        r.request_focus();
+                        self.kw_focus = false;
+                    }
                     if ui.input(|i| i.key_pressed(Key::Enter)) && !self.kw_text.trim().is_empty() {
                         evs.push(Ev::Lookup(self.kw_text.trim().to_string()));
                         self.kw_open = false;

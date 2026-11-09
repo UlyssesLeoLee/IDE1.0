@@ -443,6 +443,13 @@ impl App {
                                 if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`")).clicked() {
                                     self.term.open = !self.term.open;
                                 }
+                                if menu_check(ui, &tc, self.sticky_notes.open, lk("c.sticky-notes", "Ctrl+Alt+N")).clicked() {
+                                    self.sticky_notes.open = !self.sticky_notes.open;
+                                    if self.sticky_notes.open {
+                                        self.sticky_notes.focus_needed = true;
+                                    }
+                                    self.sticky_notes.mark_dirty();
+                                }
                                 ui.separator();
                                 for (a, zh, on) in [
                                     (KApp::SideCollapse, "折叠左侧栏", self.cfg.view.side_collapsed),
@@ -494,6 +501,15 @@ impl App {
                                 }
                                 if menu_check(ui, &tc, self.cfg.view.toolbar, lk("c.toolbar", "")).clicked() {
                                     self.cfg.view.toolbar = !self.cfg.view.toolbar;
+                                }
+                                ui.separator();
+                                if menu_check(ui, &tc, !self.cfg.view.md_bar_collapsed, trz("Markdown 工具条")).clicked() {
+                                    self.cfg.view.md_bar_collapsed = !self.cfg.view.md_bar_collapsed;
+                                    self.cfg.save();
+                                }
+                                if menu_check(ui, &tc, !self.cfg.view.nema_bar_collapsed, trz("NEMA 工具条")).clicked() {
+                                    self.cfg.view.nema_bar_collapsed = !self.cfg.view.nema_bar_collapsed;
+                                    self.cfg.save();
                                 }
                             });
 

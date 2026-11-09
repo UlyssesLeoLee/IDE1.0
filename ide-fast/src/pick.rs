@@ -111,6 +111,8 @@ pub struct Pick {
     sel: usize,
     /// 选中行刚被方向键改过: 这一帧要把它滚进可见范围
     moved: bool,
+    /// 仅在打开首帧请求一次焦点，避免每帧重复 request_focus 导致 Windows 输入法 (如搜狗拼音) 反复重置上下文并闪烁
+    focus_needed: bool,
 }
 
 /// 一帧里窗口的结果
@@ -134,6 +136,7 @@ impl Pick {
             query: String::new(),
             sel: 0,
             moved: true,
+            focus_needed: true,
         }
     }
 
@@ -235,7 +238,10 @@ impl Pick {
                         .hint_text(crate::i18n::trz("输入以过滤"))
                         .desired_width(f32::INFINITY),
                 );
-                r.request_focus();
+                if self.focus_needed {
+                    r.request_focus();
+                    self.focus_needed = false;
+                }
                 if r.changed() {
                     self.sel = 0;
                     self.moved = true;

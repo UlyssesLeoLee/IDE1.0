@@ -348,6 +348,75 @@ impl App {
             return;
         }
         let tc = self.tc;
+        if self.cfg.view.nema_bar_collapsed {
+            let frame = egui::Frame::NONE
+                .fill(tc.bg_bar)
+                .inner_margin(egui::Margin::symmetric(6, 1))
+                .stroke(egui::Stroke::NONE);
+            let r = egui::Panel::top("nemabar_collapsed")
+                .frame(frame)
+                .exact_size(if tc.comic { 18.0 } else { 15.0 })
+                .show_separator_line(false)
+                .show(root, |ui| {
+                    let w = ui.available_width();
+                    let h = ui.available_height();
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .tip(trz("展开 NEMA 工具条 (点击复原)"));
+                    if tc.comic {
+                        let p = ui.painter();
+                        let hovered = resp.hovered();
+                        let pressed = resp.is_pointer_button_down_on();
+                        let badge_w = 180.0;
+                        let badge_h = 14.0;
+                        let badge_rect = Rect::from_center_size(rect.center(), Vec2::new(badge_w, badge_h));
+                        let shadow_offset = if pressed { Vec2::ZERO } else { Vec2::new(1.0, 1.0) };
+                        if !pressed {
+                            p.rect_filled(badge_rect.translate(shadow_offset), 2.0, Color32::BLACK);
+                        }
+                        let draw_badge = if pressed { badge_rect.translate(Vec2::new(1.0, 1.0)) } else { badge_rect };
+                        let (bg, fg) = if hovered || pressed {
+                            (Color32::from_rgb(255, 204, 0), Color32::BLACK)
+                        } else {
+                            (Color32::from_rgb(36, 40, 58), Color32::from_rgb(255, 204, 0))
+                        };
+                        p.rect_filled(draw_badge, 2.0, bg);
+                        p.rect_stroke(draw_badge, 2.0, egui::Stroke::new(1.5, Color32::BLACK), egui::StrokeKind::Inside);
+                        p.text(
+                            draw_badge.center(),
+                            egui::Align2::CENTER_CENTER,
+                            trz("▼ 展开 NEMA 工具条"),
+                            egui::FontId::proportional(11.0),
+                            fg,
+                        );
+                    } else {
+                        if resp.hovered() {
+                            ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
+                        }
+                        let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            trz("▼ 展开 NEMA 工具条"),
+                            egui::FontId::proportional(11.0),
+                            col,
+                        );
+                    }
+                    if resp.clicked() {
+                        self.cfg.view.nema_bar_collapsed = false;
+                        self.cfg.save();
+                    }
+                });
+            let rc = r.response.rect;
+            root.painter().hline(
+                rc.x_range(),
+                rc.bottom() - 0.5,
+                egui::Stroke::new(if tc.comic { 2.0 } else { 1.0 }, if tc.comic { Color32::BLACK } else { tc.border }),
+            );
+            return;
+        }
+
         let on = self.nema_preview;
         let mut toggle = false;
         let mut action: Option<&'static str> = None;
@@ -357,7 +426,7 @@ impl App {
             .inner_margin(egui::Margin::symmetric(6, 2))
             .stroke(egui::Stroke::NONE);
 
-        egui::Panel::top("nemabar")
+        let r = egui::Panel::top("nemabar")
             .frame(frame)
             .show_separator_line(false)
             .show(root, |ui| {
@@ -385,8 +454,30 @@ impl App {
                         .vline(r.center().x, r.y_range(), egui::Stroke::new(1.0, tc.border));
                 };
 
-                // 预览开关钉在最右
+                // 右侧常驻功能区: 折叠按钮 + 预览开关
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let collapse_btn = if tc.comic {
+                        egui::Button::new(
+                            egui::RichText::new(trz("▲ 折叠")).size(11.0).color(Color32::WHITE),
+                        )
+                        .fill(Color32::from_rgb(32, 36, 52))
+                        .stroke(egui::Stroke::new(1.5, Color32::BLACK))
+                        .corner_radius(3.0)
+                    } else {
+                        egui::Button::new(
+                            egui::RichText::new(trz("▲ 折叠")).size(11.0),
+                        )
+                    };
+                    if ui
+                        .add(collapse_btn)
+                        .tip(trz("折叠 NEMA 工具条到顶端 (点击隐藏)"))
+                        .clicked()
+                    {
+                        self.cfg.view.nema_bar_collapsed = true;
+                        self.cfg.save();
+                    }
+                    sep(ui);
+
                     let mut b = egui::Button::new(egui::RichText::new(trz("预览")).size(11.0));
                     if on {
                         b = b
@@ -525,6 +616,13 @@ impl App {
                     });
                 });
             });
+
+        let rc = r.response.rect;
+        root.painter().hline(
+            rc.x_range(),
+            rc.bottom() - 0.5,
+            egui::Stroke::new(1.0, tc.border),
+        );
 
         if toggle {
             self.nema_preview = !self.nema_preview;

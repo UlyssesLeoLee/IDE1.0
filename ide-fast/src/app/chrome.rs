@@ -3,7 +3,7 @@
 use super::*;
 use crate::panels::Dock;
 use crate::sidebar::Tab;
-use egui::Key;
+use egui::{Key, Stroke};
 
 const FKEYS: [Key; 12] = [
     Key::F1,
@@ -52,7 +52,7 @@ impl App {
                 let tip = crate::i18n::lk_for(e);
                 // 有图标的命令用画笔图标按钮 (不靠图标字体), 没有的仍是文字按钮
                 let clicked = if crate::icons::has_icon(id) {
-                    crate::icons::icon_button(ui, id.as_str(), tip).clicked()
+                    crate::icons::icon_button_themed(ui, id.as_str(), tip, &self.tc).clicked()
                 } else {
                     ui.small_button(e.label.text()).tip(tip).clicked()
                 };
@@ -109,7 +109,11 @@ impl App {
                 let p = ui.painter();
                 let (act_bg, act_fg) = rail_active(tc.dark, tc.blue);
                 if on {
-                    if tc.is_translucent() {
+                    if tc.comic {
+                        p.rect_filled(rect.translate(Vec2::new(1.5, 1.5)), 3.0, Color32::BLACK);
+                        p.rect_filled(rect, 3.0, Color32::from_rgb(255, 204, 0));
+                        p.rect_stroke(rect, 3.0, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Inside);
+                    } else if tc.is_translucent() {
                         let (act_fill, border, glow) = if tc.crystal {
                             (
                                 Color32::from_rgba_unmultiplied(255, 255, 255, 52),
@@ -128,10 +132,19 @@ impl App {
                         p.rect_filled(rect, 6.0, act_bg);
                     }
                 } else if resp.hovered() {
-                    p.rect_filled(rect, 6.0, tc.bg_hover);
+                    if tc.comic {
+                        p.rect_filled(rect, 3.0, Color32::from_rgb(45, 48, 68));
+                        p.rect_stroke(rect, 3.0, Stroke::new(1.5, Color32::BLACK), egui::StrokeKind::Inside);
+                    } else {
+                        p.rect_filled(rect, 6.0, tc.bg_hover);
+                    }
                 }
                 let col = if on {
-                    act_fg
+                    if tc.comic {
+                        Color32::BLACK
+                    } else {
+                        act_fg
+                    }
                 } else if resp.hovered() {
                     tc.fg
                 } else {
@@ -139,33 +152,44 @@ impl App {
                 };
                 crate::svgicon::paint(p, rect.center(), 18.0, icon, col, 1.8);
                 if on {
-                    let bar = if tc.crystal {
-                        tc.mat_prism_cyan
-                    } else if tc.clear {
-                        tc.blue
-                    } else if tc.dark {
-                        Color32::from_rgb(0x00, 0x7a, 0xcc)
-                    } else {
-                        Color32::from_rgb(0x00, 0x5f, 0xb8)
-                    };
-                    if tc.is_translucent() {
+                    if tc.comic {
                         p.rect_filled(
                             Rect::from_center_size(
                                 egui::pos2(edge + 1.5, rect.center().y),
-                                Vec2::new(5.0, RAIL_BTN * 0.6 + 2.0),
+                                Vec2::new(3.5, RAIL_BTN * 0.7),
                             ),
-                            2.5,
-                            Color32::from_rgba_unmultiplied(bar.r(), bar.g(), bar.b(), 75),
+                            1.0,
+                            Color32::BLACK,
+                        );
+                    } else {
+                        let bar = if tc.crystal {
+                            tc.mat_prism_cyan
+                        } else if tc.clear {
+                            tc.blue
+                        } else if tc.dark {
+                            Color32::from_rgb(0x00, 0x7a, 0xcc)
+                        } else {
+                            Color32::from_rgb(0x00, 0x5f, 0xb8)
+                        };
+                        if tc.is_translucent() {
+                            p.rect_filled(
+                                Rect::from_center_size(
+                                    egui::pos2(edge + 1.5, rect.center().y),
+                                    Vec2::new(5.0, RAIL_BTN * 0.6 + 2.0),
+                                ),
+                                2.5,
+                                Color32::from_rgba_unmultiplied(bar.r(), bar.g(), bar.b(), 75),
+                            );
+                        }
+                        p.rect_filled(
+                            Rect::from_center_size(
+                                egui::pos2(edge + 1.5, rect.center().y),
+                                Vec2::new(3.0, RAIL_BTN * 0.6),
+                            ),
+                            2.0,
+                            bar,
                         );
                     }
-                    p.rect_filled(
-                        Rect::from_center_size(
-                            egui::pos2(edge + 1.5, rect.center().y),
-                            Vec2::new(3.0, RAIL_BTN * 0.6),
-                        ),
-                        2.0,
-                        bar,
-                    );
                 }
                 if resp.tip(trz(tip)).clicked() {
                     hit = Some(*t);

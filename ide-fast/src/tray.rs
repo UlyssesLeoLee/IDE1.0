@@ -3,8 +3,7 @@
 //! # 设计约束
 //! - `#![forbid(unsafe_code)]` 全项目生效; `tray-icon` crate 内部有 unsafe，由它自己承担。
 //! - 托盘菜单通过 `tray_icon::menu` 构造，不依赖 Win32 原生原始 API。
-//! - `TrayEvent` 通过 `tray_icon::TrayIconEvent::receiver()` 的无锁 channel 轮询，
-//!   在 egui 帧循环里调用 `poll()` 处理，不新建线程。
+//! - `TrayEvent` 通过通道与 `set_event_handler` 双轨安全轮询，在 egui 帧循环里调用 `poll()` 处理。
 //! - 托盘仅在 Windows 平台编译；Linux / macOS 平台留空存根，编译不报错。
 //!
 //! # 菜单项
@@ -12,20 +11,47 @@
 //! |---|---|
 //! | 显示 / 隐藏 IDE | 恢复最小化或隐藏的窗口；已可见且聚焦则最小化 |
 //! | 新建空白文档 | 给主进程发 open-new 命令（同 Ctrl+N）|
+//! | 打开文件… | 打开文件对话框（同 Ctrl+O）|
+//! | 多 Agent 协同工作台… | 唤起 Agent 协作侧栏/窗口 |
+//! | 差异对比… | 弹出差异对比文件选择对话框 |
 //! | 窗口置顶 | 切换是否总在最前 |
-//! | 常驻后台 (关闭窗口最小化) | 勾选时关闭窗口仅隐藏至托盘；不勾选则直接退出 |
+//! | 常驻后台 (关闭窗口隐藏) | 勾选时关闭窗口仅隐藏至托盘；不勾选则直接退出 |
 //! | 退出托盘常驻 | 移除托盘图标，恢复为普通窗口生命周期 |
-//! | 分隔线 | — |
 //! | 退出 IDE | 触发 App 的正常退出流程 |
 
 #[cfg(windows)]
 mod imp {
+    use std::sync::mpsc::{channel, Receiver, Sender};
+    use std::sync::{Mutex, OnceLock};
     use tray_icon::{
         menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
-        TrayIcon, TrayIconBuilder, TrayIconEvent,
+        MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
     };
 
     use crate::appicon;
+
+    static TRAY_EVENT_TX: OnceLock<Sender<TrayIconEvent>> = OnceLock::new();
+    static TRAY_EVENT_RX: Mutex<Option<Receiver<TrayIconEvent>>> = Mutex::new(None);
+
+    static MENU_EVENT_TX: OnceLock<Sender<MenuEvent>> = OnceLock::new();
+    static MENU_EVENT_RX: Mutex<Option<Receiver<MenuEvent>>> = Mutex::new(None);
+
+    fn ensure_channels_initialized() {
+        if TRAY_EVENT_TX.get().is_none() {
+            let (tx, rx) = channel();
+            let _ = TRAY_EVENT_TX.set(tx);
+            if let Ok(mut lock) = TRAY_EVENT_RX.lock() {
+                *lock = Some(rx);
+            }
+        }
+        if MENU_EVENT_TX.get().is_none() {
+            let (tx, rx) = channel();
+            let _ = MENU_EVENT_TX.set(tx);
+            if let Ok(mut lock) = MENU_EVENT_RX.lock() {
+                *lock = Some(rx);
+            }
+        }
+    }
 
     /// 托盘状态机，调用方持有生命周期
     pub struct Tray {
@@ -86,10 +112,32 @@ mod imp {
                 .build()
                 .ok()?;
 
-            TrayIconEvent::set_event_handler(Some(|_| {
+            ensure_channels_initialized();
+
+            // 清理遗留事件缓存
+            if let Ok(lock) = TRAY_EVENT_RX.lock() {
+                if let Some(rx) = lock.as_ref() {
+                    while rx.try_recv().is_ok() {}
+                }
+            }
+            if let Ok(lock) = MENU_EVENT_RX.lock() {
+                if let Some(rx) = lock.as_ref() {
+                    while rx.try_recv().is_ok() {}
+                }
+            }
+
+            // 注意：muda 与 tray-icon 设置 event_handler 后会覆盖其内部通道。
+            // 因此在闭包中先推入全局 channel，再唤醒渲染事件循环，确保 poll() 能 100% 收取执行。
+            TrayIconEvent::set_event_handler(Some(|ev| {
+                if let Some(tx) = TRAY_EVENT_TX.get() {
+                    let _ = tx.send(ev);
+                }
                 crate::instance::wake_instance_window();
             }));
-            MenuEvent::set_event_handler(Some(|_| {
+            MenuEvent::set_event_handler(Some(|ev| {
+                if let Some(tx) = MENU_EVENT_TX.get() {
+                    let _ = tx.send(ev);
+                }
                 crate::instance::wake_instance_window();
             }));
 
@@ -118,17 +166,38 @@ mod imp {
         /// 在 egui 帧回调里调用；返回本帧产生的事件列表
         pub fn poll(&self) -> Vec<TrayEvent> {
             let mut out = vec![];
-            // 托盘图标点击（左键单击 / 双击）→ 切换显示/隐藏
-            while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
+
+            // 1. 托盘图标左键单击 / 双击 → 切换显示/隐藏（右键仅用于弹出系统菜单，严禁误触发隐藏）
+            let mut handle_tray_ev = |ev: TrayIconEvent| {
                 match ev {
-                    TrayIconEvent::Click { .. } | TrayIconEvent::DoubleClick { .. } => {
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    }
+                    | TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => {
                         out.push(TrayEvent::ShowHide);
                     }
                     _ => {}
                 }
+            };
+
+            if let Ok(lock) = TRAY_EVENT_RX.lock() {
+                if let Some(rx) = lock.as_ref() {
+                    while let Ok(ev) = rx.try_recv() {
+                        handle_tray_ev(ev);
+                    }
+                }
             }
-            // 菜单项点击
-            while let Ok(ev) = MenuEvent::receiver().try_recv() {
+            while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
+                handle_tray_ev(ev);
+            }
+
+            // 2. 菜单项点击
+            let mut handle_menu_ev = |ev: MenuEvent| {
                 if ev.id == self.mi_show.id() {
                     out.push(TrayEvent::ShowHide);
                 } else if ev.id == self.mi_new.id() {
@@ -148,7 +217,19 @@ mod imp {
                 } else if ev.id == self.mi_quit.id() {
                     out.push(TrayEvent::Quit);
                 }
+            };
+
+            if let Ok(lock) = MENU_EVENT_RX.lock() {
+                if let Some(rx) = lock.as_ref() {
+                    while let Ok(ev) = rx.try_recv() {
+                        handle_menu_ev(ev);
+                    }
+                }
             }
+            while let Ok(ev) = MenuEvent::receiver().try_recv() {
+                handle_menu_ev(ev);
+            }
+
             out
         }
     }

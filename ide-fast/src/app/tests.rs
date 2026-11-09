@@ -1336,3 +1336,218 @@ fn test_tray_topmost_synchronization_with_menubar() {
     assert!(!a.topmost);
     assert!(!a.always_on_top);
 }
+#[test]
+fn test_tray_all_actions_and_visibility_state_invariants() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+
+    // 初始状态
+    assert!(!a.window_hidden);
+
+    // 1. ShowHide 隐藏
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
+    assert!(a.window_hidden, "First ShowHide when visible should set window_hidden = true");
+
+    // 2. ShowHide 显示
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
+    assert!(!a.window_hidden, "Second ShowHide should set window_hidden = false");
+
+    // 3. NewFile 确保唤醒并创建文件
+    a.window_hidden = true;
+    let initial_docs = a.docs.len();
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::NewFile);
+    assert!(!a.window_hidden, "NewFile must unhide window");
+    assert_eq!(a.docs.len(), initial_docs + 1, "NewFile must create a document");
+
+    // 4. OpenCollab 确保唤醒并打开协同工作台
+    a.window_hidden = true;
+    a.collab.open = false;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::OpenCollab);
+    assert!(!a.window_hidden, "OpenCollab must unhide window");
+    assert!(a.collab.open, "OpenCollab must open collab window");
+
+    // 5. 置顶同步与唤醒
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(a.topmost);
+    assert!(a.always_on_top);
+
+    // 7. ToggleResident 关闭时确保唤醒并清理托盘
+    a.window_hidden = true;
+    assert!(a.cfg.tray_resident);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(!a.window_hidden, "Disabling resident must unhide window");
+    assert!(a.tray.is_none());
+
+    // 8. 再次 ToggleResident 打开
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert!(a.cfg.tray_resident);
+    assert!(a.tray.is_some());
+
+    // 9. DisableResident 确保唤醒并禁用托盘
+    a.window_hidden = true;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::DisableResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(!a.window_hidden);
+    assert!(a.tray.is_none());
+}
+
+#[test]
+fn test_retro16_pixelfont_invariants() {
+    let (mut a, _g) = app(Settings::default());
+
+    // 默认主题是 comic, effective_font 是 CascadiaCode.ttf
+    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaCode.ttf");
+
+    // 切到 retro16 主题
+    a.set_theme_plugin("theme-retro16");
+    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "PixelFontMulti-12.ttf");
+
+    // 即使用户在首选项里设置了其他字体，Retro 16-Bit 主题仍强制使用 PixelFont
+    assert_eq!(crate::fonts::effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
+
+    // 切回 dark 主题，恢复为 CascadiaCode.ttf
+    a.set_theme_plugin("theme-dark");
+    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaCode.ttf");
+
+    // 切到 light 主题，恢复为 CascadiaMono.ttf
+    a.set_theme_plugin("theme-light");
+    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaMono.ttf");
+}
+
+
+#[test]
+fn test_themed_quick_and_window_buttons_styling_invariants() {
+    use egui::{pos2, vec2, Color32, Rect, Vec2};
+    let ctx = egui::Context::default();
+    let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(26.0, 22.0));
+
+    // 1. Retro 16-Bit
+    let mut tc_retro = crate::view::ThemeColors::builtin(true);
+    tc_retro.retro16 = true;
+
+    // Normal: rect 不位移, 颜色为普通前景色
+    let mut out1 = ctx.run_ui(Default::default(), |root| {
+        let painter = root.painter();
+        let (r_norm, col_norm) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, false, false);
+        assert_eq!(r_norm, rect);
+        assert_ne!(col_norm, Color32::from_rgb(255, 215, 0));
+
+        // Hovered: 高亮街机金
+        let (r_hov, col_hov) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, true, false, false);
+        assert_eq!(r_hov, rect);
+        assert_eq!(col_hov, Color32::from_rgb(255, 215, 0));
+
+        // Active: 1px 物理位移 (模拟街机微动下压)
+        let (r_act, col_act) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, true, false);
+        assert_eq!(r_act, rect.translate(Vec2::new(1.0, 1.0)));
+        assert_eq!(col_act, Color32::from_rgb(0, 240, 255));
+    });
+    out1.textures_delta.clear();
+
+    // 2. Comic 3渲2
+    let mut tc_comic = crate::view::ThemeColors::builtin(true);
+    tc_comic.comic = true;
+
+    let mut out2 = ctx.run_ui(Default::default(), |root| {
+        let painter = root.painter();
+        // Hovered: 黄底纯黑字, 超高对比波普风格
+        let (r_hov, col_hov) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, true, false, false);
+        assert_eq!(r_hov, rect);
+        assert_eq!(col_hov, Color32::BLACK);
+
+        // Active: 下沉 1.5px 消除投影
+        let (r_act, col_act) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, false, true, false);
+        assert_eq!(r_act, rect.translate(Vec2::new(1.5, 1.5)));
+        assert_eq!(col_act, Color32::BLACK);
+    });
+    out2.textures_delta.clear();
+
+    // 3. Crystal 水晶透明
+    let mut tc_crystal = crate::view::ThemeColors::builtin(true);
+    tc_crystal.crystal = true;
+    tc_crystal.mat_prism_cyan = Color32::from_rgb(0, 240, 255);
+    tc_crystal.mat_prism_pink = Color32::from_rgb(255, 105, 180);
+
+    let mut out3 = ctx.run_ui(Default::default(), |root| {
+        let painter = root.painter();
+        let (r_hov, col_hov) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, true, false, false);
+        assert_eq!(r_hov, rect);
+        assert_eq!(col_hov, Color32::WHITE);
+
+        let (r_act, col_act) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, false, true, false);
+        assert_eq!(r_act, rect);
+        assert_eq!(col_act, Color32::WHITE);
+    });
+    out3.textures_delta.clear();
+}
+
+#[test]
+fn test_md_and_nema_toolbar_collapse_and_restore_invariants() {
+    let (mut a, _g) = app(Settings::default());
+
+    // 1. 默认状态：工具条处于展开状态
+    assert!(!a.cfg.view.md_bar_collapsed);
+    assert!(!a.cfg.view.nema_bar_collapsed);
+
+    // 2. 状态序列化与反序列化持久性不变量
+    a.cfg.view.md_bar_collapsed = true;
+    a.cfg.view.nema_bar_collapsed = true;
+    let json_val = a.cfg.to_json();
+    let mut roundtrip_settings = Settings::default();
+    roundtrip_settings.apply_json(&json_val, true);
+    assert!(roundtrip_settings.view.md_bar_collapsed);
+    assert!(roundtrip_settings.view.nema_bar_collapsed);
+
+    // 展开复原测试
+    a.cfg.view.md_bar_collapsed = false;
+    a.cfg.view.nema_bar_collapsed = false;
+    let json_val2 = a.cfg.to_json();
+    let mut roundtrip_settings2 = Settings::default();
+    roundtrip_settings2.apply_json(&json_val2, true);
+    assert!(!roundtrip_settings2.view.md_bar_collapsed);
+    assert!(!roundtrip_settings2.view.nema_bar_collapsed);
+
+    // 3. UI 渲染生命周期测试：验证展开与折叠态均能正确布局且不崩溃
+    let ctx = egui::Context::default();
+
+    // 3.1 Markdown 工具条测试
+    a.new_doc();
+    let md_idx = a.active;
+    a.docs[md_idx].name = "document.md".into();
+    a.docs[md_idx].lines = vec!["# Title".into(), "content".into()];
+
+    // 展开态下渲染
+    a.cfg.view.md_bar_collapsed = false;
+    let mut out_md_exp = ctx.run_ui(Default::default(), |root| {
+        a.md_bar(root, &ctx, true);
+    });
+    out_md_exp.textures_delta.clear();
+
+    // 折叠态下渲染
+    a.cfg.view.md_bar_collapsed = true;
+    let mut out_md_col = ctx.run_ui(Default::default(), |root| {
+        a.md_bar(root, &ctx, true);
+    });
+    out_md_col.textures_delta.clear();
+
+    // 3.2 NEMA 工具条测试
+    a.new_doc();
+    let nema_idx = a.active;
+    a.docs[nema_idx].name = "data.nema".into();
+    a.docs[nema_idx].lines = vec!["\\ Domain Header".into(), "\\1 Record".into()];
+
+    // 展开态下渲染
+    a.cfg.view.nema_bar_collapsed = false;
+    let mut out_nema_exp = ctx.run_ui(Default::default(), |root| {
+        a.nema_bar(root, &ctx, true);
+    });
+    out_nema_exp.textures_delta.clear();
+
+    // 折叠态下渲染
+    a.cfg.view.nema_bar_collapsed = true;
+    let mut out_nema_col = ctx.run_ui(Default::default(), |root| {
+        a.nema_bar(root, &ctx, true);
+    });
+    out_nema_col.textures_delta.clear();
+}

@@ -478,11 +478,19 @@ impl App {
             Color32::from_gray(204)
         };
         let boxed = |t: &str| {
-            egui::Button::new(egui::RichText::new(t).size(12.0).color(tc.fg))
-                .fill(Color32::TRANSPARENT)
-                .stroke(egui::Stroke::new(1.0, edge))
-                .corner_radius(4.0)
-                .min_size(Vec2::new(0.0, 26.0))
+            if tc.comic {
+                egui::Button::new(egui::RichText::new(t).size(12.0).color(Color32::WHITE))
+                    .fill(Color32::from_rgb(32, 36, 52))
+                    .stroke(egui::Stroke::new(1.5, Color32::BLACK))
+                    .corner_radius(3.0)
+                    .min_size(Vec2::new(0.0, 26.0))
+            } else {
+                egui::Button::new(egui::RichText::new(t).size(12.0).color(tc.fg))
+                    .fill(Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, edge))
+                    .corner_radius(4.0)
+                    .min_size(Vec2::new(0.0, 26.0))
+            }
         };
         ui.horizontal(|ui| {
             ui.set_min_height(30.0);

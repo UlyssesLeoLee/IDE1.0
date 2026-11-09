@@ -311,6 +311,7 @@ pub const T: &[Row] = &[
     ("c.key-config", ["键位设置…", "キー設定…", "Key Bindings…"]),
     ("c.key-list", ["键位一览", "キー一覧", "Key List"]),
     ("c.palette", ["命令面板…", "コマンドパレット…", "Command Palette…"]),
+    ("c.sticky-notes", ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"]),
     ("pal.hint", ["输入命令名 (支持模糊匹配), Enter 执行, Esc 关闭", "コマンド名を入力 (あいまい検索), Enter で実行, Esc で閉じる", "Type a command (fuzzy match), Enter to run, Esc to close"]),
     ("pal.none", ["没有匹配的命令", "一致するコマンドがありません", "No matching command"]),
     ("pal.plugin", ["插件", "プラグイン", "Plugin"]),
@@ -675,6 +676,8 @@ Not signature-verified; install only plugins you trust. Install?"]),
 
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
+    ("便笺 (Sticky Notes)", ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"]),
+    ("打开命令面板 (Ctrl+Shift+P / Shift+F1)", ["打开命令面板 (Ctrl+Shift+P / Shift+F1)", "コマンドパレットを開く (Ctrl+Shift+P / Shift+F1)", "Open Command Palette (Ctrl+Shift+P / Shift+F1)"]),
     ("欢迎与安装向导…", ["欢迎与安装向导…", "⚡ ようこそ・インストールウィザード…", "⚡ Welcome & Setup Wizard…"]),
     ("显示空白符", ["显示空白符", "空白文字を表示", "Show Whitespace"]),
     ("已完成 Native 与 Nemat 压缩效益分析", ["已完成 Native 与 Nemat 压缩效益分析", "Native と Nemat の圧縮効果分析が完了しました", "Completed Native vs Nemat compression efficiency analysis"]),
@@ -1297,6 +1300,74 @@ pub const CMD_T: &[Row] = &[
     (
         "展开底部面板",
         ["展开底部面板", "下パネルを展開", "Expand Bottom Panel"],
+    ),
+    (
+        "▲ 折叠",
+        ["▲ 折叠", "▲ 折りたたむ", "▲ Collapse"],
+    ),
+    (
+        "折叠 Markdown 工具条到顶端 (点击隐藏)",
+        [
+            "折叠 Markdown 工具条到顶端 (点击隐藏)",
+            "Markdown ツールバーを上部に折りたたむ (クリックで非表示)",
+            "Collapse Markdown toolbar to top (Click to hide)",
+        ],
+    ),
+    (
+        "展开 Markdown 工具条 (点击复原)",
+        [
+            "展开 Markdown 工具条 (点击复原)",
+            "Markdown ツールバーを展開 (クリックで復元)",
+            "Expand Markdown toolbar (Click to restore)",
+        ],
+    ),
+    (
+        "折叠 NEMA 工具条到顶端 (点击隐藏)",
+        [
+            "折叠 NEMA 工具条到顶端 (点击隐藏)",
+            "NEMA ツールバーを上部に折りたたむ (クリックで非表示)",
+            "Collapse NEMA toolbar to top (Click to hide)",
+        ],
+    ),
+    (
+        "展开 NEMA 工具条 (点击复原)",
+        [
+            "展开 NEMA 工具条 (点击复原)",
+            "NEMA ツールバーを展開 (クリックで复元)",
+            "Expand NEMA toolbar (Click to restore)",
+        ],
+    ),
+    (
+        "▼ 展开 Markdown 工具条",
+        [
+            "▼ 展开 Markdown 工具条",
+            "▼ Markdown ツールバーを展開",
+            "▼ Expand Markdown Toolbar",
+        ],
+    ),
+    (
+        "▼ 展开 NEMA 工具条",
+        [
+            "▼ 展开 NEMA 工具条",
+            "▼ NEMA ツールバーを展開",
+            "▼ Expand NEMA Toolbar",
+        ],
+    ),
+    (
+        "Markdown 工具条",
+        [
+            "Markdown 工具条",
+            "Markdown ツールバー",
+            "Markdown Toolbar",
+        ],
+    ),
+    (
+        "NEMA 工具条",
+        [
+            "NEMA 工具条",
+            "NEMA ツールバー",
+            "NEMA Toolbar",
+        ],
     ),
     (
         "粗体 (Ctrl+B)",

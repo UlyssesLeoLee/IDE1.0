@@ -240,6 +240,13 @@ impl App {
                 self.cmdui.toggle_palette();
                 self.pal_plugins = Self::plugin_cmds();
             }
+            KApp::StickyNotes => {
+                self.sticky_notes.open = !self.sticky_notes.open;
+                if self.sticky_notes.open {
+                    self.sticky_notes.focus_needed = true;
+                }
+                self.sticky_notes.mark_dirty();
+            }
         }
     }
 }

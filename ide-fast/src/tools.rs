@@ -21,6 +21,7 @@ pub struct Tools {
     pub ctrl_open: bool,
     pub stamp_open: bool,
     pub wrap_open: bool,
+    wrap_focus: bool,
     wrap_text: String,
     pub col_open: bool,
     col_text: String,
@@ -64,6 +65,7 @@ impl Tools {
             "80".into()
         };
         self.wrap_open = true;
+        self.wrap_focus = true;
     }
 
     /// 打开「列块替换」输入框 (预填列块现在的内容)
@@ -199,7 +201,10 @@ impl Tools {
                     ui.label(trz("列数 (半角字符数; 0 = 按窗口宽度)"));
                     let r =
                         ui.add(egui::TextEdit::singleline(&mut self.wrap_text).desired_width(80.0));
-                    r.request_focus();
+                    if self.wrap_focus {
+                        r.request_focus();
+                        self.wrap_focus = false;
+                    }
                     if ui.input(|i| i.key_pressed(Key::Enter)) {
                         evs.push(Ev::WrapCol(parse_wrap_col(&self.wrap_text)));
                         self.wrap_open = false;

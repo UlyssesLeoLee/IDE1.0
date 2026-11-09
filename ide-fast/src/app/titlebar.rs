@@ -6,6 +6,7 @@
 
 use super::*;
 use egui::viewport::ResizeDirection as Dir;
+use egui::{pos2, Stroke, StrokeKind};
 
 /// 标题栏高度 (逻辑点)
 const BAR_H: f32 = 30.0;
@@ -14,13 +15,12 @@ const BTN_W: f32 = 44.0;
 /// 缩放把手的粗细 / 角上的边长
 const GRIP: f32 = 5.0;
 const CORNER: f32 = 12.0;
-/// 快捷按钮: (命令 id, 文字)。面板开关用画出来的小图标, 不在这里。
+/// 快捷按钮: (命令 id, 文字)。面板开关用画出来的小图标, 不在这里。命令面板已迁移至顶部居中输入栏 (Command Center)。
 const QUICK: &[(&str, &str)] = &[
     ("c.new-file", "新"),
     ("c.open-file", "开"),
     ("c.save", "存"),
     ("c.find", "找"),
-    ("c.palette", ">_"),
     ("c.split", "||"),
     ("c.nema-convert", "⇥\\"),
 ];
@@ -30,17 +30,19 @@ const LEFT_FIXED: f32 = 6.0 + 16.0 + 6.0;
 const QUICK_BTN: f32 = 26.0;
 const DIFF_BTN_W: f32 = 30.0;
 const COLLAB_BTN_W: f32 = 30.0;
+const STICKY_BTN_W: f32 = 30.0;
 const GAP: f32 = 10.0;
 const TITLE_MAX: f32 = 220.0;
 
 /// 标题栏怎么排: 菜单永远完整显示、绝不和右边的按钮重叠; 空间不够时按优先级一样样撤 ——
-/// 先撤快捷图标钮, 再撤协同与对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母
+/// 先撤快捷图标钮, 再撤协同、便笺与对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
     pub diff: bool,
     pub collab: bool,
+    pub sticky_notes: bool,
     pub quick: usize,
 }
 
@@ -68,6 +70,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     let title = take(title_w.min(TITLE_MAX) + 8.0);
     let diff = take(DIFF_BTN_W);
     let collab = take(COLLAB_BTN_W);
+    let sticky_notes = take(STICKY_BTN_W);
     let mut quick = 0;
     while quick < QUICK.len() && take(QUICK_BTN) {
         quick += 1;
@@ -77,6 +80,7 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
         title,
         diff,
         collab,
+        sticky_notes,
         quick,
     }
 }
@@ -238,6 +242,7 @@ impl App {
         let mut run: Option<usize> = None;
         let mut diff_action: Option<DiffAction> = None;
         let mut collab_toggle = false;
+        let mut sticky_notes_toggle = false;
         egui::Panel::top("titlebar")
             .exact_size(BAR_H)
             .frame(egui::Frame::new().fill(fill))
@@ -288,7 +293,10 @@ impl App {
                 };
                 let plan = plan_bar(rect.width(), mw, mp, tw);
                 self.sys.mn_hide = !plan.mnemonics;
-                let mid_w = plan.quick as f32 * QUICK_BTN + (if plan.diff { DIFF_BTN_W } else { 0.0 }) + (if plan.collab { COLLAB_BTN_W } else { 0.0 });
+                let mid_w = plan.quick as f32 * QUICK_BTN
+                    + (if plan.diff { DIFF_BTN_W } else { 0.0 })
+                    + (if plan.collab { COLLAB_BTN_W } else { 0.0 })
+                    + (if plan.sticky_notes { STICKY_BTN_W } else { 0.0 });
                 let right = Rect::from_min_max(
                     egui::pos2(rect.right() - BTN_W * 3.0, rect.top()),
                     rect.max,
@@ -297,7 +305,9 @@ impl App {
                     egui::pos2(right.left() - mid_w, rect.top()),
                     egui::pos2(right.left(), rect.bottom()),
                 );
-                let left = Rect::from_min_max(rect.min, egui::pos2(mid.left(), rect.bottom()));
+                let menu_w = if plan.mnemonics { mw } else { mp };
+                let left_w = LEFT_FIXED + menu_w + 10.0;
+                let left = Rect::from_min_max(rect.min, egui::pos2(left_w.min(mid.left() - 10.0), rect.bottom()));
                 let lay = egui::Layout::left_to_right(egui::Align::Center);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(left).layout(lay), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -305,20 +315,132 @@ impl App {
                     if let Some(t) = &icon {
                         ui.image((t.id(), Vec2::splat(16.0)));
                     }
-                    if plan.title {
-                        ui.add_space(2.0);
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(title.as_str()).size(12.0).strong(),
-                            )
-                            .truncate(),
-                        );
-                        ui.add_space(6.0);
-                    } else {
-                        ui.add_space(4.0);
-                    }
+                    ui.add_space(4.0);
                     self.menu(ui, ctx);
                 });
+
+                // VS Code 风格的顶部居中命令中心输入栏 (Command Center Bar)
+                let space_left = left.right();
+                let space_right = if mid_w > 0.0 { mid.left() } else { right.left() };
+                let center_available = (space_right - space_left).max(0.0);
+                if center_available >= 120.0 {
+                    let bar_w = center_available.min(380.0);
+                    let ideal_center_x = rect.center().x;
+                    let half_w = bar_w / 2.0;
+                    let min_x = space_left + 8.0;
+                    let max_x = space_right - 8.0;
+                    let actual_center_x = if min_x + bar_w > max_x {
+                        (min_x + max_x) / 2.0
+                    } else {
+                        ideal_center_x.clamp(min_x + half_w, max_x - half_w)
+                    };
+                    let bar_rect = Rect::from_center_size(
+                        egui::pos2(actual_center_x, rect.center().y),
+                        egui::vec2(bar_w, 22.0),
+                    );
+
+                    let is_open = self.cmdui.is_palette_open();
+                    let resp = ui.interact(
+                        bar_rect,
+                        ui.make_persistent_id("titlebar-cmd-center"),
+                        Sense::click(),
+                    );
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .tip(trz("打开命令面板 (Ctrl+Shift+P / Shift+F1)"));
+                    let is_hovered = resp.hovered();
+
+                    // 根据主题绘制风格一致的命令栏胶囊
+                    let text_col = if tc.retro16 {
+                        let outer_border = if is_open {
+                            Color32::from_rgb(0, 240, 255)
+                        } else if is_hovered {
+                            Color32::from_rgb(255, 215, 0)
+                        } else {
+                            Color32::from_rgb(45, 35, 84)
+                        };
+                        let bg = if is_open {
+                            Color32::from_rgb(30, 23, 58)
+                        } else if is_hovered {
+                            Color32::from_rgb(39, 30, 77)
+                        } else {
+                            Color32::from_rgb(21, 15, 43)
+                        };
+                        let fg = if is_open || is_hovered {
+                            Color32::from_rgb(255, 215, 0)
+                        } else {
+                            tc.fg_dim
+                        };
+                        ui.painter().rect_filled(bar_rect, 0.0, bg);
+                        ui.painter().rect_stroke(bar_rect, 0.0, Stroke::new(1.0, outer_border), egui::StrokeKind::Inside);
+                        fg
+                    } else if tc.comic {
+                        if !is_hovered && !is_open {
+                            ui.painter().rect_filled(bar_rect.translate(Vec2::new(1.5, 1.5)), 3.0, Color32::BLACK);
+                        }
+                        let bg = if is_hovered || is_open {
+                            Color32::from_rgb(255, 240, 100)
+                        } else {
+                            tc.bg_bar
+                        };
+                        let fg = Color32::BLACK;
+                        ui.painter().rect(bar_rect, 3.0, bg, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Inside);
+                        fg
+                    } else {
+                        let bg = if is_open {
+                            tc.bg_active
+                        } else if is_hovered {
+                            tc.bg_hover
+                        } else if tc.is_translucent() {
+                            Color32::from_white_alpha(18)
+                        } else if tc.dark {
+                            Color32::from_white_alpha(14)
+                        } else {
+                            Color32::from_black_alpha(10)
+                        };
+                        let stroke = if is_open {
+                            Stroke::new(1.0, tc.blue)
+                        } else if is_hovered {
+                            Stroke::new(1.0, tc.fg_dim)
+                        } else {
+                            Stroke::new(1.0, tc.border)
+                        };
+                        let fg = if is_open || is_hovered { tc.fg } else { tc.fg_dim };
+                        ui.painter().rect(bar_rect, 5.0, bg, stroke, egui::StrokeKind::Inside);
+                        fg
+                    };
+
+                    // 绘制左侧图标
+                    ui.painter().text(
+                        egui::pos2(bar_rect.left() + 9.0, bar_rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        "🔍",
+                        egui::FontId::proportional(11.0),
+                        text_col,
+                    );
+
+                    // 绘制标题与快捷键提示
+                    let display_title = if bar_w >= 260.0 {
+                        format!("{} (Ctrl+Shift+P)", title)
+                    } else {
+                        title.clone()
+                    };
+                    let galley = ui.painter().layout_no_wrap(
+                        display_title,
+                        egui::FontId::proportional(11.5),
+                        text_col,
+                    );
+                    let galley_x = (bar_rect.center().x - galley.size().x / 2.0).max(bar_rect.left() + 24.0);
+                    ui.painter().galley(
+                        egui::pos2(galley_x, bar_rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        text_col,
+                    );
+
+                    if resp.clicked() {
+                        self.cmdui.toggle_palette();
+                    }
+                }
                 if mid_w > 0.0 {
                     ui.scope_builder(egui::UiBuilder::new().max_rect(mid).layout(lay), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
@@ -328,46 +450,59 @@ impl App {
                             };
                             let e = &keymap::entries()[i];
                             let tip = crate::i18n::lk_for(e);
-                            if crate::icons::icon_button(ui, id, tip).clicked() {
+                            if crate::icons::icon_button_themed(ui, id, tip, &self.tc).clicked() {
                                 run = Some(i);
                             }
                         }
                         if plan.collab {
                             let is_running = self.collab.any_running();
                             let is_open = self.collab.open;
-                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(26.0, 22.0), Sense::click());
+                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(COLLAB_BTN_W, 22.0), Sense::click());
                             let tip = if is_running {
                                 "多 Agent 协同工作台 (正在执行协同任务...)"
                             } else {
                                 "多 Agent 协同工作台 (Multi-Agent Collab)"
                             };
                             let resp = resp.on_hover_text(tip);
-                            if resp.hovered() || is_open || is_running {
-                                let bg = if is_running {
-                                    Color32::from_rgba_unmultiplied(0, 220, 120, 45)
-                                } else if is_open {
-                                    Color32::from_rgba_unmultiplied(0, 160, 255, 45)
-                                } else {
-                                    ui.visuals().widgets.hovered.weak_bg_fill
-                                };
-                                ui.painter().rect_filled(rect.shrink(1.0), 3.0, bg);
-                                if is_open || is_running {
-                                    let border_col = if is_running {
-                                        Color32::from_rgb(0, 220, 120)
-                                    } else {
-                                        Color32::from_rgb(0, 170, 255)
-                                    };
-                                    ui.painter().rect_stroke(
-                                        rect.shrink(1.0),
-                                        3.0,
-                                        egui::Stroke::new(1.0, border_col),
-                                        egui::StrokeKind::Inside,
-                                    );
-                                }
-                            }
-                            paint_collab_icon(ui.painter(), rect, is_running, self.tc.fg);
+                            let is_hovered = resp.hovered();
+                            let is_active = resp.is_pointer_button_down_on();
+                            let is_highlighted = is_open || is_running;
+
+                            let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+                                ui.painter(),
+                                rect.shrink(1.0),
+                                &self.tc,
+                                is_hovered,
+                                is_active,
+                                is_highlighted,
+                            );
+
+                            paint_collab_icon(ui.painter(), content_rect, is_running, icon_col);
                             if resp.clicked() {
                                 collab_toggle = true;
+                            }
+                        }
+                        if plan.sticky_notes {
+                            let is_open = self.sticky_notes.open;
+                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(STICKY_BTN_W, 22.0), Sense::click());
+                            let tip = crate::i18n::tr("c.sticky-notes");
+                            let resp = resp.on_hover_text(tip);
+                            let is_hovered = resp.hovered();
+                            let is_active = resp.is_pointer_button_down_on();
+                            let is_highlighted = is_open;
+
+                            let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+                                ui.painter(),
+                                rect.shrink(1.0),
+                                &self.tc,
+                                is_hovered,
+                                is_active,
+                                is_highlighted,
+                            );
+
+                            paint_sticky_note_icon(ui.painter(), content_rect, is_open, icon_col, &self.tc);
+                            if resp.clicked() {
+                                sticky_notes_toggle = true;
                             }
                         }
                         if plan.diff {
@@ -379,7 +514,7 @@ impl App {
                 }
                 ui.scope_builder(egui::UiBuilder::new().max_rect(right).layout(lay), |ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    if win_button(ui, WinBtn::Minimize).clicked() {
+                    if win_button(ui, WinBtn::Minimize, &self.tc).clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     }
                     if win_button(
@@ -389,12 +524,13 @@ impl App {
                         } else {
                             WinBtn::Maximize
                         },
+                        &self.tc,
                     )
                     .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                     }
-                    if win_button(ui, WinBtn::Close).clicked() {
+                    if win_button(ui, WinBtn::Close, &self.tc).clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
@@ -404,6 +540,13 @@ impl App {
         }
         if collab_toggle {
             self.collab.open = !self.collab.open;
+        }
+        if sticky_notes_toggle {
+            self.sticky_notes.open = !self.sticky_notes.open;
+            if self.sticky_notes.open {
+                self.sticky_notes.focus_needed = true;
+            }
+            self.sticky_notes.mark_dirty();
         }
         if let Some(act) = diff_action {
             match act {
@@ -423,7 +566,7 @@ impl App {
     /// 差异对比快捷入口按钮与弹出菜单
     fn diff_button(&self, ui: &mut egui::Ui) -> Option<DiffAction> {
         let is_active = self.diff.is_some();
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(26.0, 22.0), Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(DIFF_BTN_W, 22.0), Sense::click());
         let mut action = None;
 
         let tip = if let Some(v) = &self.diff {
@@ -436,24 +579,20 @@ impl App {
         let popup_id = egui::Popup::default_response_id(&resp);
         let is_menu_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
 
-        if resp.hovered() || is_active || is_menu_open {
-            let bg = if is_active {
-                Color32::from_rgba_unmultiplied(0, 160, 255, 45)
-            } else {
-                ui.visuals().widgets.hovered.weak_bg_fill
-            };
-            ui.painter().rect_filled(rect.shrink(1.0), 3.0, bg);
-            if is_active {
-                ui.painter().rect_stroke(
-                    rect.shrink(1.0),
-                    3.0,
-                    egui::Stroke::new(1.0, Color32::from_rgb(0, 170, 255)),
-                    egui::StrokeKind::Inside,
-                );
-            }
-        }
+        let is_hovered = resp.hovered();
+        let is_pressed = resp.is_pointer_button_down_on();
+        let is_highlighted = is_active || is_menu_open;
 
-        paint_diff_icon(ui.painter(), rect, is_active, self.tc.fg);
+        let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+            ui.painter(),
+            rect.shrink(1.0),
+            &self.tc,
+            is_hovered,
+            is_pressed,
+            is_highlighted,
+        );
+
+        paint_diff_icon(ui.painter(), content_rect, is_active, icon_col);
 
         // 点击展开差异比对菜单
         egui::Popup::menu(&resp).show(|ui| {
@@ -567,27 +706,181 @@ enum WinBtn {
     Close,
 }
 
-fn win_button(ui: &mut egui::Ui, kind: WinBtn) -> egui::Response {
+fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(BTN_W, BAR_H), Sense::click());
-    if resp.hovered() {
-        let c = if kind == WinBtn::Close {
-            Color32::from_rgb(196, 43, 28)
-        } else {
-            ui.visuals().widgets.hovered.weak_bg_fill
-        };
-        ui.painter().rect_filled(rect, 0.0, c);
-    }
-    let col = if resp.hovered() && kind == WinBtn::Close {
-        Color32::WHITE
-    } else {
-        ui.visuals().widgets.inactive.fg_stroke.color
-    };
-    let st = egui::Stroke::new(1.2, col);
-    let c = rect.center();
+    let hovered = resp.hovered();
+    let active = resp.is_pointer_button_down_on();
     let p = ui.painter();
+
+    let (content_rect, col, stroke_w) = if tc.retro16 {
+        // Retro 16-Bit 街机矩形按键: 0px 像素倒角, 3D 棱角, 悬停金色/品红
+        let (bg, outer_border, (top_left, bot_right), icon_col) = if active {
+            let bg = if kind == WinBtn::Close {
+                Color32::from_rgb(180, 0, 75)
+            } else {
+                Color32::from_rgb(14, 11, 28)
+            };
+            (
+                bg,
+                Color32::BLACK,
+                (Color32::from_rgb(10, 7, 23), Color32::from_rgb(79, 62, 145)),
+                Color32::WHITE,
+            )
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgb(255, 42, 133),
+                    Color32::BLACK,
+                    (Color32::from_rgb(255, 105, 180), Color32::from_rgb(139, 0, 58)),
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgb(39, 30, 77),
+                    Color32::from_rgb(255, 215, 0),
+                    (Color32::from_rgb(255, 215, 0), Color32::from_rgb(22, 15, 46)),
+                    Color32::from_rgb(255, 215, 0),
+                )
+            }
+        } else {
+            (
+                Color32::from_rgb(22, 17, 45),
+                Color32::from_rgb(45, 35, 84),
+                (Color32::from_rgb(79, 62, 145), Color32::from_rgb(10, 7, 23)),
+                tc.fg.gamma_multiply(0.85),
+            )
+        };
+
+        p.rect_filled(rect, 0.0, bg);
+        p.rect_stroke(rect, 0.0, Stroke::new(1.0, outer_border), StrokeKind::Inside);
+
+        let inner = rect.shrink(1.0);
+        p.line_segment([inner.left_top(), inner.right_top()], Stroke::new(1.0, top_left));
+        p.line_segment([inner.left_top(), inner.left_bottom()], Stroke::new(1.0, top_left));
+        p.line_segment([inner.left_bottom(), inner.right_bottom()], Stroke::new(1.0, bot_right));
+        p.line_segment([inner.right_top(), inner.right_bottom()], Stroke::new(1.0, bot_right));
+
+        let offset = if active { Vec2::new(1.0, 1.0) } else { Vec2::ZERO };
+        (rect.translate(offset), icon_col, 1.5)
+    } else if tc.comic {
+        // Comic 3渲2: 美漫赛璐珞 2px 粗黑边框 + 实体纯黑硬边投影
+        let btn_rect = rect.shrink2(Vec2::new(3.0, 2.0));
+        let shadow_offset = if active { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+        if !active {
+            p.rect_filled(btn_rect.translate(shadow_offset), 2.0, Color32::BLACK);
+        }
+        let draw_rect = if active { btn_rect.translate(Vec2::new(1.5, 1.5)) } else { btn_rect };
+
+        let (bg, border_col, icon_col) = if active {
+            if kind == WinBtn::Close {
+                (Color32::from_rgb(204, 31, 72), Color32::BLACK, Color32::WHITE)
+            } else {
+                (Color32::from_rgb(255, 170, 0), Color32::BLACK, Color32::BLACK)
+            }
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (Color32::from_rgb(255, 51, 102), Color32::BLACK, Color32::WHITE)
+            } else {
+                (Color32::from_rgb(255, 204, 0), Color32::BLACK, Color32::BLACK)
+            }
+        } else {
+            (Color32::from_rgb(37, 40, 56), Color32::BLACK, tc.fg)
+        };
+
+        p.rect_filled(draw_rect, 2.0, bg);
+        p.rect_stroke(draw_rect, 2.0, Stroke::new(1.5, border_col), StrokeKind::Inside);
+        (draw_rect, icon_col, 2.0)
+    } else if tc.crystal {
+        // Crystal 水晶透明: 6px 晶钻胶囊 + 顶沿 1px 晶面白光切面反射
+        let btn_rect = rect.shrink2(Vec2::new(4.0, 3.0));
+        let round = 6.0;
+        let (bg, border_col, icon_col) = if active {
+            if kind == WinBtn::Close {
+                (Color32::from_rgba_unmultiplied(220, 40, 80, 200), tc.mat_prism_pink, Color32::WHITE)
+            } else {
+                (Color32::from_rgba_unmultiplied(255, 105, 180, 80), tc.mat_prism_pink, Color32::WHITE)
+            }
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (Color32::from_rgba_unmultiplied(255, 60, 100, 180), Color32::from_rgba_unmultiplied(255, 105, 180, 220), Color32::WHITE)
+            } else {
+                (Color32::from_rgba_unmultiplied(255, 255, 255, 55), tc.mat_prism_cyan, Color32::WHITE)
+            }
+        } else {
+            (Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 45), Color32::from_white_alpha(210))
+        };
+
+        p.rect_filled(btn_rect, round, bg);
+        p.rect_stroke(btn_rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+
+        let facet_col = if hovered || active { Color32::WHITE } else { Color32::from_white_alpha(150) };
+        let hline_min_x = btn_rect.left() + 4.0;
+        let hline_max_x = btn_rect.right() - 4.0;
+        if hline_max_x > hline_min_x {
+            p.line_segment(
+                [pos2(hline_min_x, btn_rect.top() + 1.0), pos2(hline_max_x, btn_rect.top() + 1.0)],
+                Stroke::new(1.0, facet_col),
+            );
+        }
+        (btn_rect, icon_col, 1.3)
+    } else if tc.clear {
+        // Clear 玻璃透明: 7px 磨砂圆角胶囊
+        let btn_rect = rect.shrink2(Vec2::new(3.0, 3.0));
+        let round = 7.0;
+        let (bg, border_col, icon_col) = if active {
+            if kind == WinBtn::Close {
+                (Color32::from_rgba_unmultiplied(200, 35, 35, 200), Color32::from_rgba_unmultiplied(255, 255, 255, 180), Color32::WHITE)
+            } else {
+                (Color32::from_rgba_unmultiplied(255, 255, 255, 100), Color32::from_rgba_unmultiplied(255, 255, 255, 180), Color32::WHITE)
+            }
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (Color32::from_rgba_unmultiplied(215, 45, 45, 180), Color32::from_rgba_unmultiplied(255, 255, 255, 140), Color32::WHITE)
+            } else {
+                (Color32::from_rgba_unmultiplied(255, 255, 255, 65), Color32::from_rgba_unmultiplied(255, 255, 255, 120), Color32::WHITE)
+            }
+        } else {
+            (Color32::from_rgba_unmultiplied(255, 255, 255, 12), Color32::from_rgba_unmultiplied(255, 255, 255, 30), Color32::from_white_alpha(190))
+        };
+
+        p.rect_filled(btn_rect, round, bg);
+        p.rect_stroke(btn_rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+        (btn_rect, icon_col, 1.2)
+    } else {
+        // Dark / Light / 现代默认
+        if hovered {
+            let c = if kind == WinBtn::Close {
+                Color32::from_rgb(196, 43, 28)
+            } else {
+                ui.visuals().widgets.hovered.weak_bg_fill
+            };
+            p.rect_filled(rect, 0.0, c);
+        } else if active {
+            let c = if kind == WinBtn::Close {
+                Color32::from_rgb(158, 35, 22)
+            } else {
+                ui.visuals().widgets.active.weak_bg_fill
+            };
+            p.rect_filled(rect, 0.0, c);
+        }
+
+        let col = if (hovered || active) && kind == WinBtn::Close {
+            Color32::WHITE
+        } else {
+            ui.visuals().widgets.inactive.fg_stroke.color
+        };
+        (rect, col, 1.2)
+    };
+
+    let st = egui::Stroke::new(stroke_w, col);
+    let c = content_rect.center();
     match kind {
         WinBtn::Minimize => {
-            p.line_segment([egui::pos2(c.x - 5.0, c.y), egui::pos2(c.x + 5.0, c.y)], st);
+            if tc.retro16 {
+                p.rect_filled(Rect::from_center_size(c, Vec2::new(10.0, 2.0)), 0.0, col);
+            } else {
+                p.line_segment([egui::pos2(c.x - 5.0, c.y), egui::pos2(c.x + 5.0, c.y)], st);
+            }
         }
         WinBtn::Maximize => {
             p.rect_stroke(
@@ -725,6 +1018,56 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_palette_not_in_quick_buttons_and_rendered_as_top_bar() {
+        // 验证右上角快捷按钮中不再包含 c.palette (已迁移至顶部居中命令中心搜索栏)
+        assert!(QUICK.iter().all(|(id, _)| *id != "c.palette"));
+
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut a = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            a.title_bar(root, &ctx);
+        });
+        out.textures_delta.clear();
+        drop(g);
+    }
+
+    #[test]
+    fn test_sticky_notes_titlebar_button_and_toggle() {
+        let p = plan_bar(1280.0, MW, MP, 50.0);
+        assert!(p.sticky_notes, "宽屏下包含常驻便笺快捷按钮");
+
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut a = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        assert!(!a.sticky_notes.open);
+        a.sticky_notes.open = true;
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            a.title_bar(root, &ctx);
+            a.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+        assert!(a.sticky_notes.open);
+        drop(g);
+    }
+
     /// 菜单宽度取真实值的量级: 8 个菜单, 带助记字母约 55 / 个, 不带约 42 / 个
     const MW: f32 = 8.0 * 55.0;
     const MP: f32 = 8.0 * 42.0;
@@ -734,7 +1077,10 @@ mod tests {
         for w in [580.0, 700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
-            let mid = p.quick as f32 * QUICK_BTN + (if p.diff { DIFF_BTN_W } else { 0.0 }) + (if p.collab { COLLAB_BTN_W } else { 0.0 });
+            let mid = p.quick as f32 * QUICK_BTN
+                + (if p.diff { DIFF_BTN_W } else { 0.0 })
+                + (if p.collab { COLLAB_BTN_W } else { 0.0 })
+                + (if p.sticky_notes { STICKY_BTN_W } else { 0.0 });
             let title = if p.title { 58.0 } else { 0.0 };
             assert!(
                 LEFT_FIXED + title + menu + mid + BTN_W * 3.0 <= w,
@@ -879,4 +1225,98 @@ fn paint_collab_icon(painter: &egui::Painter, rect: Rect, is_running: bool, them
     if is_running {
         painter.circle_filled(center, 1.8, Color32::from_rgb(0, 255, 180));
     }
+}
+
+/// 绘制便笺图标 (折角便笺本纸张，带有书写横线，自适应各主题画风)
+fn paint_sticky_note_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    is_open: bool,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
+    let center = rect.center();
+    let s = 6.0;
+    let note_rect = Rect::from_center_size(center, egui::vec2(s * 2.0, s * 2.0));
+    let fold = 3.5;
+
+    let paper_bg = if is_open {
+        if tc.comic {
+            Color32::from_rgb(255, 235, 75)
+        } else if tc.retro16 {
+            Color32::from_rgb(255, 215, 0)
+        } else {
+            Color32::from_rgb(255, 210, 60)
+        }
+    } else {
+        if tc.comic {
+            Color32::from_rgb(255, 248, 120)
+        } else if tc.dark {
+            Color32::from_white_alpha(35)
+        } else {
+            Color32::from_black_alpha(20)
+        }
+    };
+
+    let stroke_col = if tc.comic {
+        Color32::BLACK
+    } else if is_open {
+        Color32::from_rgb(255, 215, 0)
+    } else {
+        theme_fg.gamma_multiply(0.9)
+    };
+
+    let st = Stroke::new(if tc.comic { 1.5 } else { 1.1 }, stroke_col);
+
+    // 主多边形 (右下角切出折角)
+    let p_tl = note_rect.left_top();
+    let p_tr = note_rect.right_top();
+    let p_cut_r = pos2(note_rect.right(), note_rect.bottom() - fold);
+    let p_cut_b = pos2(note_rect.right() - fold, note_rect.bottom());
+    let p_bl = note_rect.left_bottom();
+
+    painter.add(egui::Shape::convex_polygon(
+        vec![p_tl, p_tr, p_cut_r, p_cut_b, p_bl],
+        paper_bg,
+        st,
+    ));
+
+    // 折角三角形小折页
+    let p_corner = pos2(note_rect.right() - fold, note_rect.bottom() - fold);
+    painter.add(egui::Shape::convex_polygon(
+        vec![p_cut_r, p_corner, p_cut_b],
+        if tc.comic {
+            Color32::from_rgb(255, 204, 0)
+        } else {
+            paper_bg.gamma_multiply(0.75)
+        },
+        st,
+    ));
+
+    // 内部三道微缩记事横线
+    let line_st = Stroke::new(
+        1.0,
+        if tc.comic {
+            Color32::BLACK
+        } else {
+            stroke_col.gamma_multiply(0.7)
+        },
+    );
+    let lx0 = note_rect.left() + 2.5;
+    let lx1 = note_rect.right() - 2.5;
+    painter.line_segment(
+        [pos2(lx0, note_rect.top() + 3.5), pos2(lx1, note_rect.top() + 3.5)],
+        line_st,
+    );
+    painter.line_segment(
+        [pos2(lx0, note_rect.top() + 6.5), pos2(lx1, note_rect.top() + 6.5)],
+        line_st,
+    );
+    painter.line_segment(
+        [
+            pos2(lx0, note_rect.top() + 9.5),
+            pos2(note_rect.right() - fold - 0.5, note_rect.top() + 9.5),
+        ],
+        line_st,
+    );
 }

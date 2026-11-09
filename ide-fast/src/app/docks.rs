@@ -5,6 +5,7 @@
 use super::sysopts::BottomTab;
 use super::*;
 use crate::panels::{self, Dock, Mode};
+use egui::{pos2, Stroke};
 
 impl App {
     pub(super) fn dock_collapsed(&self, d: Dock) -> bool {
@@ -120,10 +121,177 @@ impl App {
         }
     }
 
+    /// 美漫 3渲2 视觉风格左右停靠细条渲染:
+    /// 1. 2px 纯黑分镜边框 (Comic Panel Gutter);
+    /// 2. 本戴网点阵列 (Ben-Day Halftone Dots, 美漫四色胶印半色调网点);
+    /// 3. 美漫书签拉手 (Comic Pull-Tab Bookmark, 纯黑 2px 边框 + 实体硬边剪纸投影 + 波普高亮黄);
+    /// 4. 动感矢量速度箭头与破风线 (Action Chevrons & Speed Lines);
+    /// 5. 抓手防滑槽与底部分镜校准标印。
+    pub(super) fn paint_comic_dock_strip(
+        p: &egui::Painter,
+        rect: Rect,
+        d: Dock,
+        collapsed: bool,
+        hovered: bool,
+        pressed: bool,
+    ) {
+        // 1. 纯黑分镜墨线 (Panel Gutter Line)
+        match d {
+            Dock::Side => {
+                p.line_segment(
+                    [pos2(rect.right() - 1.0, rect.top()), pos2(rect.right() - 1.0, rect.bottom())],
+                    Stroke::new(2.0, Color32::BLACK),
+                );
+            }
+            Dock::Right => {
+                p.line_segment(
+                    [pos2(rect.left() + 1.0, rect.top()), pos2(rect.left() + 1.0, rect.bottom())],
+                    Stroke::new(2.0, Color32::BLACK),
+                );
+            }
+            Dock::Bottom => {}
+        }
+
+        let cx = rect.center().x;
+
+        // 2. 本戴印刷网点 (Ben-Day Halftone Dots: 复古美漫 4 色胶印点阵)
+        let dot_step = 16.0;
+        let mut dot_y = rect.top() + 66.0;
+        let max_dot_y = rect.bottom() - 36.0;
+        while dot_y < max_dot_y {
+            // 外圈墨黑微点
+            p.circle_filled(pos2(cx, dot_y), 1.3, Color32::from_black_alpha(140));
+            // 内圈波普黄高亮核心，形成逼真四色套印半色调网点
+            p.circle_filled(pos2(cx, dot_y), 0.65, Color32::from_rgb(255, 204, 0));
+            dot_y += dot_step;
+        }
+
+        // 3. 底部分镜校准标印 (Registration Mark / Comic Grip Notches)
+        let bot_y = rect.bottom() - 16.0;
+        let notch_w = 7.0;
+        let notch_x_range = (cx - notch_w * 0.5)..=(cx + notch_w * 0.5);
+        p.hline(notch_x_range.clone(), bot_y - 6.0, Stroke::new(1.2, Color32::BLACK));
+        p.hline(notch_x_range.clone(), bot_y - 2.0, Stroke::new(1.2, Color32::BLACK));
+        p.hline(notch_x_range, bot_y + 2.0, Stroke::new(1.2, Color32::BLACK));
+
+        // 4. 美漫书签拉手 (Comic Pull-Tab Bookmark)
+        let tab_w = 13.0;
+        let tab_h = 44.0;
+        let tab_rect = Rect::from_center_size(
+            pos2(cx, rect.top() + 6.0 + tab_h * 0.5),
+            Vec2::new(tab_w, tab_h),
+        );
+
+        let shadow_offset = if pressed { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+        if !pressed {
+            // 实体纯黑硬边剪纸投影
+            p.rect_filled(tab_rect.translate(shadow_offset), 2.5, Color32::BLACK);
+        }
+        let draw_tab = if pressed { tab_rect.translate(Vec2::new(1.5, 1.5)) } else { tab_rect };
+
+        let (tab_bg, arrow_col) = if pressed {
+            (Color32::from_rgb(255, 160, 0), Color32::BLACK)
+        } else if hovered {
+            (Color32::from_rgb(255, 204, 0), Color32::BLACK)
+        } else {
+            (Color32::from_rgb(32, 36, 52), Color32::from_rgb(255, 204, 0))
+        };
+
+        p.rect_filled(draw_tab, 2.5, tab_bg);
+        p.rect_stroke(draw_tab, 2.5, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Inside);
+
+        // 未悬停时顶部绘制波普黄色分镜书签标头
+        if !hovered && !pressed {
+            let head_h = 3.5;
+            let head_rect = Rect::from_min_size(draw_tab.min, Vec2::new(draw_tab.width(), head_h));
+            p.rect_filled(head_rect, 1.5, Color32::from_rgb(255, 204, 0));
+            p.hline(draw_tab.x_range(), draw_tab.top() + head_h, Stroke::new(1.0, Color32::BLACK));
+        }
+
+        // 抓手微型刻度防滑槽
+        let grip_col = if hovered || pressed {
+            Color32::from_black_alpha(180)
+        } else {
+            Color32::from_rgb(160, 170, 195)
+        };
+        let grip_x_range = (draw_tab.center().x - 3.0)..=(draw_tab.center().x + 3.0);
+        p.hline(grip_x_range.clone(), draw_tab.top() + 7.0, Stroke::new(1.2, grip_col));
+        p.hline(grip_x_range, draw_tab.bottom() - 7.0, Stroke::new(1.2, grip_col));
+
+        // 5. 动感矢量速度折角箭头与破风线 (Action Chevrons & Speed Lines)
+        let point_right = match d {
+            Dock::Side => collapsed,
+            Dock::Right => !collapsed,
+            _ => false,
+        };
+        let tcx = draw_tab.center().x;
+        let tcy = draw_tab.center().y;
+        let arrow_stroke = Stroke::new(2.0, arrow_col);
+        let speed_stroke = Stroke::new(1.5, arrow_col);
+
+        if point_right {
+            // 主速度箭头
+            p.line_segment([pos2(tcx - 1.5, tcy - 4.5), pos2(tcx + 2.5, tcy)], arrow_stroke);
+            p.line_segment([pos2(tcx - 1.5, tcy + 4.5), pos2(tcx + 2.5, tcy)], arrow_stroke);
+            // 副速度箭头
+            p.line_segment([pos2(tcx - 4.0, tcy - 3.5), pos2(tcx - 0.5, tcy)], speed_stroke);
+            p.line_segment([pos2(tcx - 4.0, tcy + 3.5), pos2(tcx - 0.5, tcy)], speed_stroke);
+            // 破风速度线
+            p.line_segment([pos2(tcx - 5.0, tcy - 1.8), pos2(tcx - 2.8, tcy - 1.8)], Stroke::new(1.0, arrow_col));
+            p.line_segment([pos2(tcx - 5.0, tcy + 1.8), pos2(tcx - 2.8, tcy + 1.8)], Stroke::new(1.0, arrow_col));
+        } else {
+            // 主速度箭头
+            p.line_segment([pos2(tcx + 1.5, tcy - 4.5), pos2(tcx - 2.5, tcy)], arrow_stroke);
+            p.line_segment([pos2(tcx + 1.5, tcy + 4.5), pos2(tcx - 2.5, tcy)], arrow_stroke);
+            // 副速度箭头
+            p.line_segment([pos2(tcx + 4.0, tcy - 3.5), pos2(tcx + 0.5, tcy)], speed_stroke);
+            p.line_segment([pos2(tcx + 4.0, tcy + 3.5), pos2(tcx + 0.5, tcy)], speed_stroke);
+            // 破风速度线
+            p.line_segment([pos2(tcx + 2.8, tcy - 1.8), pos2(tcx + 5.0, tcy - 1.8)], Stroke::new(1.0, arrow_col));
+            p.line_segment([pos2(tcx + 2.8, tcy + 1.8), pos2(tcx + 5.0, tcy + 1.8)], Stroke::new(1.0, arrow_col));
+        }
+    }
+
     /// 底部面板头部右端的文字钮 (Tauri 的 `.bottom-toggle`: 展开时写「▼ 折叠」, 折叠时写「▲ 展开」, 11px, 圆角 5, 1px 边)
     pub(super) fn dock_chevron(&mut self, ui: &mut egui::Ui, d: Dock) {
         let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
         let word = if collapsed { "展开" } else { "折叠" };
+        if self.tc.comic {
+            let font = egui::FontId::proportional(11.0);
+            let arrow = if collapsed { "▲" } else { "▼" };
+            let label = format!("{} {}", arrow, trz(word));
+            let galley = ui.painter().layout_no_wrap(label.clone(), font, Color32::BLACK);
+            let btn_size = Vec2::new(galley.size().x + 16.0, 20.0);
+            let (rect, resp) = ui.allocate_exact_size(btn_size, Sense::click());
+            let resp = resp
+                .tip(trz(panels::tip(d, collapsed)))
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let p = ui.painter();
+            let pressed = resp.is_pointer_button_down_on();
+            let hovered = resp.hovered();
+            let shadow_offset = if pressed { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+            if !pressed {
+                p.rect_filled(rect.translate(shadow_offset), 3.0, Color32::BLACK);
+            }
+            let draw_rect = if pressed { rect.translate(Vec2::new(1.5, 1.5)) } else { rect };
+            let (bg, fg) = if hovered || pressed {
+                (Color32::from_rgb(255, 204, 0), Color32::BLACK)
+            } else {
+                (Color32::from_rgb(32, 36, 52), Color32::WHITE)
+            };
+            p.rect_filled(draw_rect, 3.0, bg);
+            p.rect_stroke(draw_rect, 3.0, Stroke::new(1.5, Color32::BLACK), egui::StrokeKind::Inside);
+            let text_pos = pos2(
+                draw_rect.center().x - galley.size().x * 0.5,
+                draw_rect.center().y - galley.size().y * 0.5,
+            );
+            let draw_galley = ui.painter().layout_no_wrap(label, egui::FontId::proportional(11.0), fg);
+            p.galley(text_pos, draw_galley, fg);
+            if resp.clicked() {
+                self.collapse_dock(d);
+            }
+            return;
+        }
         let label = format!("{} {}", panels::chevron(d, collapsed), trz(word));
         let txt = egui::RichText::new(label)
             .size(11.0)
@@ -173,18 +341,29 @@ impl App {
                         let resp = resp
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .tip(trz(panels::tip(d, collapsed)));
-                        if resp.hovered() {
-                            ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
+                        if tc.comic {
+                            Self::paint_comic_dock_strip(
+                                ui.painter(),
+                                rect,
+                                d,
+                                collapsed,
+                                resp.hovered(),
+                                resp.is_pointer_button_down_on(),
+                            );
+                        } else {
+                            if resp.hovered() {
+                                ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
+                            }
+                            let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
+                            let chevron_pos = Pos2::new(rect.center().x, rect.top() + panels::STRIP_BTN_H * 0.5);
+                            ui.painter().text(
+                                chevron_pos,
+                                egui::Align2::CENTER_CENTER,
+                                panels::chevron(d, collapsed),
+                                egui::FontId::proportional(16.0),
+                                col,
+                            );
                         }
-                        let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
-                        let chevron_pos = Pos2::new(rect.center().x, rect.top() + panels::STRIP_BTN_H * 0.5);
-                        ui.painter().text(
-                            chevron_pos,
-                            egui::Align2::CENTER_CENTER,
-                            panels::chevron(d, collapsed),
-                            egui::FontId::proportional(16.0),
-                            col,
-                        );
                         toggle = resp.clicked();
                     });
             }
@@ -220,8 +399,8 @@ impl App {
         ui.painter().rect_filled(head, 0.0, tc.bg_bar);
         ui.painter().hline(
             head.x_range(),
-            head.top() + 0.5,
-            egui::Stroke::new(1.0, tc.border),
+            head.top() + if tc.comic { 1.0 } else { 0.5 },
+            egui::Stroke::new(if tc.comic { 2.0 } else { 1.0 }, if tc.comic { Color32::BLACK } else { tc.border }),
         );
         ui.allocate_ui_with_layout(
             head.size(),
@@ -266,14 +445,30 @@ impl App {
                         col,
                     );
                     if on {
-                        ui.painter().rect_filled(
-                            Rect::from_min_max(
-                                egui::pos2(rect.left(), rect.bottom() - 2.0),
-                                rect.max,
-                            ),
-                            0.0,
-                            tc.blue,
-                        );
+                        if tc.comic {
+                            ui.painter().rect_filled(
+                                Rect::from_min_max(
+                                    egui::pos2(rect.left(), rect.bottom() - 3.0),
+                                    rect.max,
+                                ),
+                                0.0,
+                                Color32::from_rgb(255, 204, 0),
+                            );
+                            ui.painter().hline(
+                                rect.x_range(),
+                                rect.bottom() - 3.0,
+                                egui::Stroke::new(1.0, Color32::BLACK),
+                            );
+                        } else {
+                            ui.painter().rect_filled(
+                                Rect::from_min_max(
+                                    egui::pos2(rect.left(), rect.bottom() - 2.0),
+                                    rect.max,
+                                ),
+                                0.0,
+                                tc.blue,
+                            );
+                        }
                     }
                     if resp.clicked() {
                         // 头条状态 (折叠 / 还没开) 点页签 = 切换到该页签并展开面板;
@@ -295,11 +490,18 @@ impl App {
                     self.dock_chevron(ui, Dock::Bottom);
                     let txt = egui::RichText::new(format!("+ {}", trz("新建终端")))
                         .size(11.0)
-                        .color(tc.fg_dim);
-                    let b = egui::Button::new(txt)
-                        .fill(Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::new(1.0, edge))
-                        .corner_radius(5.0);
+                        .color(if tc.comic { Color32::WHITE } else { tc.fg_dim });
+                    let b = if tc.comic {
+                        egui::Button::new(txt)
+                            .fill(Color32::from_rgb(32, 36, 52))
+                            .stroke(egui::Stroke::new(1.5, Color32::BLACK))
+                            .corner_radius(3.0)
+                    } else {
+                        egui::Button::new(txt)
+                            .fill(Color32::TRANSPARENT)
+                            .stroke(egui::Stroke::new(1.0, edge))
+                            .corner_radius(5.0)
+                    };
                     if ui.add(b).tip(trz("新建终端 (Ctrl+`)")).clicked() {
                         self.new_terminal_session();
                     }
@@ -491,5 +693,45 @@ mod tests {
         assert!(a.cfg.view.side_collapsed);
         a.run_app(KApp::SystemTitleBar, &ctx);
         assert!(a.cfg.system_title_bar);
+    }
+
+    #[test]
+    fn test_paint_comic_dock_strip_all_directions_and_states() {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            let rect = Rect::from_min_size(pos2(0.0, 0.0), Vec2::new(16.0, 500.0));
+            for d in [Dock::Side, Dock::Right] {
+                for collapsed in [false, true] {
+                    for hovered in [false, true] {
+                        for pressed in [false, true] {
+                            App::paint_comic_dock_strip(
+                                ui.painter(),
+                                rect,
+                                d,
+                                collapsed,
+                                hovered,
+                                pressed,
+                            );
+                        }
+                    }
+                }
+            }
+        });
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn test_comic_dock_chevron_rendering_and_toggle() {
+        let (mut a, _g) = app();
+        a.tc.comic = true;
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            a.dock_chevron(ui, Dock::Bottom);
+        });
+        out.textures_delta.clear();
+        // Collapse toggle
+        assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Strip);
+        a.collapse_dock(Dock::Bottom);
+        assert_eq!(a.dock_mode(Dock::Bottom, a.term.open), Mode::Full);
     }
 }

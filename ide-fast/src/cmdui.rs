@@ -51,6 +51,8 @@ struct PaletteState {
     sel: usize,
     /// 选中行刚被方向键改过: 这一帧要把它滚进可见范围
     moved: bool,
+    /// 仅在打开首帧请求一次焦点，避免每帧重复 request_focus 导致 Windows 输入法 (如搜狗拼音) 反复重置上下文并狂闪
+    focus_needed: bool,
 }
 
 struct Pending {
@@ -137,8 +139,14 @@ impl CmdUi {
                 query: String::new(),
                 sel: 0,
                 moved: true,
+                focus_needed: true,
             })
         };
+    }
+
+    /// 命令面板是否处于打开状态
+    pub fn is_palette_open(&self) -> bool {
+        self.palette.is_some()
     }
 
     pub fn open_keycfg(&mut self) {
@@ -198,7 +206,7 @@ impl CmdUi {
         egui::Window::new("cmd-palette")
             .title_bar(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_TOP, [0.0, 56.0])
+            .anchor(egui::Align2::CENTER_TOP, [0.0, 32.0])
             .fixed_size([580.0, 360.0])
             .show(ctx, |ui| {
                 let r = ui.add(
@@ -206,7 +214,10 @@ impl CmdUi {
                         .hint_text(tr("pal.hint"))
                         .desired_width(f32::INFINITY),
                 );
-                r.request_focus();
+                if st.focus_needed {
+                    r.request_focus();
+                    st.focus_needed = false;
+                }
                 if r.changed() {
                     st.sel = 0;
                     st.moved = true;
@@ -593,5 +604,33 @@ mod tests {
         assert!(!ui.capturing());
         ui.keycfg.as_mut().unwrap().capture = Some("c.save".into());
         assert!(ui.capturing());
+    }
+
+    #[test]
+    fn test_palette_focus_needed_single_shot_invariant() {
+        let mut ui = CmdUi::default();
+        assert!(!ui.is_palette_open());
+
+        // 打开命令面板：必须标记 focus_needed = true
+        ui.toggle_palette();
+        assert!(ui.is_palette_open());
+        assert!(ui.palette.as_ref().unwrap().focus_needed);
+
+        let ctx = egui::Context::default();
+        let mut out1 = ctx.run_ui(Default::default(), |_| {
+            let _ = ui.palette_window(&ctx, &[]);
+        });
+        out1.textures_delta.clear();
+
+        // 经过第一帧渲染后，focus_needed 必须被一次性消耗重置为 false，杜绝后续每帧反复 request_focus 导致搜狗拼音等 IME 狂闪
+        assert!(ui.is_palette_open());
+        assert!(!ui.palette.as_ref().unwrap().focus_needed);
+
+        // 第二帧渲染，仍然保持 false
+        let mut out2 = ctx.run_ui(Default::default(), |_| {
+            let _ = ui.palette_window(&ctx, &[]);
+        });
+        out2.textures_delta.clear();
+        assert!(!ui.palette.as_ref().unwrap().focus_needed);
     }
 }

@@ -44,6 +44,7 @@ mod perf_bench;
 mod picks;
 mod printui;
 mod statusbar;
+mod sticky_notes;
 mod sysopts;
 mod tabbar;
 mod tagops;
@@ -61,6 +62,7 @@ pub struct App {
     ai: aichat::AiState,
     pub collab: collab::CollabState,
     pub installer: installer_ui::InstallerState,
+    pub sticky_notes: sticky_notes::StickyNotesState,
     docs: Vec<Doc>,
     active: usize,
     next_id: u64,
@@ -76,6 +78,7 @@ pub struct App {
     side: Sidebar,
     term: Terminal,
     goto_open: bool,
+    goto_focus: bool,
     was_focused: bool,
     goto_text: String,
     /// 主题插件: 选中的 id 与换算好的外观
@@ -175,6 +178,7 @@ pub struct App {
     tray: Option<crate::tray::Tray>,
     pub always_on_top: bool,
     pub force_exit: bool,
+    pub window_hidden: bool,
 }
 
 impl App {
@@ -220,6 +224,7 @@ impl App {
             side: Sidebar::new(),
             term: Terminal::new(),
             goto_open: false,
+            goto_focus: false,
             was_focused: true,
             goto_text: String::new(),
             theme_id: String::new(),
@@ -287,10 +292,12 @@ impl App {
             ai: Default::default(),
             collab: Default::default(),
             installer: Default::default(),
+            sticky_notes: sticky_notes::StickyNotesState::load(),
             print_ui: Default::default(),
             tray: if persist && st.tray_resident { crate::tray::Tray::build(st.tray_resident, false) } else { None },
             always_on_top: false,
             force_exit: false,
+            window_hidden: false,
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -303,8 +310,8 @@ impl App {
         app.side.open = st.view.side_open;
         app.term.open = st.view.term_open;
         app.md_preview = st.view.md_preview;
-        app.applied_font = crate::fonts::sanitize_font_family(&st.font_family, &st.theme_plugin);
-        app.cfg.font_family = app.applied_font.clone();
+        app.applied_font = crate::fonts::effective_font_family(&st.font_family, &st.theme_plugin);
+        app.cfg.font_family = st.font_family.clone();
         for a in &args {
             app.open_spec(a);
         }
@@ -3612,6 +3619,7 @@ impl App {
             }
             Action::GotoLine => {
                 self.goto_open = true;
+                self.goto_focus = true;
                 self.goto_text.clear();
             }
             Action::CodeCnv(id) => self.run_codecnv(id),
@@ -3654,7 +3662,10 @@ impl App {
                         .hint_text(format!("1 – {total}"))
                         .desired_width(120.0),
                 );
-                r.request_focus();
+                if self.goto_focus {
+                    r.request_focus();
+                    self.goto_focus = false;
+                }
                 if ui.input(|i| i.key_pressed(Key::Enter)) {
                     go = self.goto_text.trim().parse::<usize>().ok();
                     if go.is_none() {
@@ -4602,17 +4613,19 @@ impl App {
                         );
                     }
                     caret_screen = Some(Pos2::new(cx, cy + row_h)); // 补全浮层贴在光标行下面
-                    ui.ctx().output_mut(|o| {
-                        o.ime = Some(egui::output::IMEOutput {
-                            purpose: egui::IMEPurpose::Normal,
-                            rect,
-                            cursor_rect: Rect::from_min_size(
-                                Pos2::new(cx, cy),
-                                Vec2::new(2.0, row_h),
-                            ),
-                            should_interrupt_composition: false,
+                    if !find_has_focus && self.pane_keys {
+                        ui.ctx().output_mut(|o| {
+                            o.ime = Some(egui::output::IMEOutput {
+                                purpose: egui::IMEPurpose::Normal,
+                                rect,
+                                cursor_rect: Rect::from_min_size(
+                                    Pos2::new(cx, cy),
+                                    Vec2::new(2.0, row_h),
+                                ),
+                                should_interrupt_composition: false,
+                            });
                         });
-                    });
+                    }
                 }
                 if let Some(dr) = text_drop {
                     // 拖放文字的落点: 一根蓝色竖线
@@ -5289,13 +5302,10 @@ impl App {
             ctx.data_mut(|d| d.insert_temp(egui::Id::new("tauri-scroll"), true));
             ctx.global_style_mut(|s| s.spacing.scroll = tauri_scroll());
         }
-        if self.cfg.font_family != self.applied_font {
-            let sanitized = crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
-            if sanitized != self.cfg.font_family {
-                self.cfg.font_family = sanitized.clone();
-            }
-            crate::fonts::install(ctx, &sanitized, &self.cfg.font_cjk_fallback, &self.cfg.lang);
-            self.applied_font = self.cfg.font_family.clone();
+        let effective_font = crate::fonts::effective_font_family(&self.cfg.font_family, &self.theme_id);
+        if effective_font != self.applied_font {
+            crate::fonts::install(ctx, &effective_font, &self.cfg.font_cjk_fallback, &self.cfg.lang);
+            self.applied_font = effective_font;
         }
         self.poll_tray(ctx);
         self.sync_doc_prefs();
@@ -5366,8 +5376,12 @@ impl App {
             let i = self.active.min(self.docs.len() - 1);
             self.find.window(ctx, &mut self.docs[i]);
         }
-        // 查找栏 / 侧栏输入框 / 对话框正在收键盘时, 编辑区不抢
+        // 查找栏 / 侧栏输入框 / 对话框 / 命令面板正在收键盘时, 编辑区不抢
         let find_focus = self.cmdui.capturing()
+            || self.cmdui.is_palette_open()
+            || self.tools.pick.is_some()
+            || self.goto_open
+            || (self.sticky_notes.open && self.sticky_notes.has_focus)
             || ctx
                 .memory(|m| m.focused())
                 .map(|f| !self.editor_ids.contains(&f))
@@ -5617,6 +5631,7 @@ impl App {
             });
         self.collab_window(ctx);
         self.installer_window(ctx);
+        self.sticky_notes_window(ctx);
         self.restore_window(ctx);
         self.window_grips(ctx);
         self.persist_if_changed();
