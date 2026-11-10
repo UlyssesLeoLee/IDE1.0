@@ -2,7 +2,7 @@
 //! 页签对应 Tauri 版「共通設定」的分组: 常规 / 编辑 / 文件 / 字体与颜色 / 文件类型 / 查找。
 
 use crate::ckbox::CheckExt;
-use crate::i18n::{tr, Lang};
+use crate::i18n::{tr, trz, Lang};
 use crate::settings::{self, Settings, TypePref};
 use crate::ui_ext::TipExt;
 use editcore::document_io::{Charset, Eol};
@@ -151,7 +151,49 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             });
             ui.check(&mut d.dark, tr("pf.dark"));
             ui.check(&mut d.highlight, tr("pf.highlight"));
-            ui.check(&mut d.wrap, tr("pf.wrap"));
+            ui.horizontal(|ui| {
+                ui.label(tr("sub.wrap-mode"));
+                let mut wrap_mode = if !d.wrap {
+                    0
+                } else if d.view.wrap_col == 0 {
+                    1
+                } else {
+                    2
+                };
+                let mode_labels = [
+                    tr("c.wrap-none"),
+                    tr("c.wrap-window"),
+                    tr("c.wrap-col"),
+                ];
+                egui::ComboBox::from_id_salt("pf-wrap-mode")
+                    .selected_text(mode_labels[wrap_mode])
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_value(&mut wrap_mode, 0, mode_labels[0]).clicked() {
+                            d.wrap = false;
+                        }
+                        if ui.selectable_value(&mut wrap_mode, 1, mode_labels[1]).clicked() {
+                            d.wrap = true;
+                            d.view.wrap_col = 0;
+                        }
+                        if ui.selectable_value(&mut wrap_mode, 2, mode_labels[2]).clicked() {
+                            d.wrap = true;
+                            if d.view.wrap_col == 0 {
+                                d.view.wrap_col = 80;
+                            }
+                        }
+                    });
+                if d.wrap && d.view.wrap_col > 0 {
+                    ui.add(egui::DragValue::new(&mut d.view.wrap_col).range(10..=1000).suffix(" 列"));
+                }
+            });
+            if d.wrap && d.view.wrap_col > 0 {
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.check(&mut d.view.kinsoku, trz("行头 / 行尾禁则 (指定列数折行时)"));
+                    ui.check(&mut d.view.hang, trz("句读挂在行尾 (ぶら下げ)"));
+                });
+            }
+            ui.check(&mut d.view.minimap, tr("c.minimap"));
             ui.check(&mut d.glass_blur, tr("pf.glass-blur"))
                 .tip(tr("pf.glass-note"));
             ui.check(&mut d.tray_resident, tr("pf.tray-resident"))

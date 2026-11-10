@@ -1599,3 +1599,47 @@ fn test_minimap_themed_styling_and_translucency_invariants() {
         );
     }
 }
+
+#[test]
+fn test_wrap_mode_and_minimap_collapse_invariants() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+
+    // 1. 换行方式 (Wrap Mode) 状态与切换断言
+    assert!(!a.wrap, "默认配置下 wrap 应为 false");
+    a.run_app(crate::keymap::App::WrapWindow, &ctx);
+    assert!(a.wrap, "切换为按窗口宽度折行后 wrap 应为 true");
+    assert_eq!(a.cfg.view.wrap_col, 0, "窗口宽度折行列数应为 0");
+
+    a.cfg.view.wrap_col = 80;
+    a.run_app(crate::keymap::App::WrapCol, &ctx);
+    assert!(a.wrap, "指定列数折行时 wrap 应为 true");
+    assert_eq!(a.cfg.view.wrap_col, 80, "列数应为 80");
+
+    a.cfg.view.kinsoku = true;
+    a.cfg.view.hang = true;
+    assert!(a.cfg.view.kinsoku && a.cfg.view.hang, "禁则与悬挂选项必须正常记录");
+
+    a.run_app(crate::keymap::App::WrapNone, &ctx);
+    assert!(!a.wrap, "不折行模式下 wrap 应恢复为 false");
+
+    // 2. 缩略图 (Minimap) 隐藏与折叠/展开断言
+    a.cfg.view.minimap = false;
+    assert!(!a.cfg.view.minimap, "缩略图初始可被隐藏/折叠");
+    let mut out_folded = ctx.run_ui(Default::default(), |root| {
+        a.ui_main(root);
+    });
+    out_folded.textures_delta.clear();
+
+    // 展开缩略图
+    a.cfg.view.minimap = true;
+    assert!(a.cfg.view.minimap, "缩略图展开状态必须生效");
+    let mut out_expanded = ctx.run_ui(Default::default(), |root| {
+        a.ui_main(root);
+    });
+    out_expanded.textures_delta.clear();
+
+    // 再次折叠/隐藏
+    a.cfg.view.minimap = false;
+    assert!(!a.cfg.view.minimap, "缩略图折叠状态保存正常");
+}

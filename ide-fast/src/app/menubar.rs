@@ -1,5 +1,6 @@
-use super::menuui;
+use super::menuui::{self, menu_check};
 use super::App;
+use crate::view::ThemeColors;
 use crate::i18n::{lk, tr, trz, Lang};
 use crate::keymap::App as KApp;
 use crate::tabs::CloseKind;
@@ -518,57 +519,8 @@ impl App {
                                 if menu_check(ui, &tc, self.wrap, lk("c.wrap", "Alt+Z")).clicked() {
                                     self.wrap = !self.wrap;
                                 }
-                                let col = self.cfg.view.wrap_col;
-                                ui.menu_button(tr("sub.wrap-rules"), |ui| {
-                                    if menu_check(
-                                        ui,
-                                        &tc,
-                                        !self.wrap,
-                                        Self::app_label(KApp::WrapNone, "不折行"),
-                                    )
-                                    .clicked()
-                                    {
-                                        self.run_app(KApp::WrapNone, ctx);
-                                        ui.close();
-                                    }
-                                    if menu_check(
-                                        ui,
-                                        &tc,
-                                        self.wrap && col == 0,
-                                        Self::app_label(KApp::WrapWindow, "按窗口宽度折行"),
-                                    )
-                                    .clicked()
-                                    {
-                                        self.run_app(KApp::WrapWindow, ctx);
-                                        ui.close();
-                                    }
-                                    let label = if col > 0 {
-                                        format!(
-                                            "{} ({col})",
-                                            Self::app_label(KApp::WrapCol, "按指定列数折行…")
-                                        )
-                                    } else {
-                                        Self::app_label(KApp::WrapCol, "按指定列数折行…")
-                                    };
-                                    if menu_check(ui, &tc, self.wrap && col > 0, label).clicked() {
-                                        self.run_app(KApp::WrapCol, ctx);
-                                        ui.close();
-                                    }
-                                    ui.separator();
-                                    ui.add_enabled(
-                                        col > 0,
-                                        crate::ckbox::Check::new(
-                                            &mut self.cfg.view.kinsoku,
-                                            trz("行头 / 行尾禁则 (指定列数折行时)"),
-                                        ),
-                                    );
-                                    ui.add_enabled(
-                                        col > 0 && self.cfg.view.kinsoku,
-                                        crate::ckbox::Check::new(
-                                            &mut self.cfg.view.hang,
-                                            trz("句读挂在行尾 (ぶら下げ)"),
-                                        ),
-                                    );
+                                ui.menu_button(tr("sub.wrap-mode"), |ui| {
+                                    self.wrap_mode_menu_items(ui, &tc, ctx);
                                 });
                                 ui.separator();
                                 if menu_check(ui, &tc, self.cfg.view.whitespace, lk("c.whitespace", "")).clicked() {
@@ -642,6 +594,14 @@ impl App {
                             }
                             if menuui::mbtn(ui, lk("c.language", "Ctrl+4")).clicked() {
                                 self.open_syntax_pick();
+                                ui.close();
+                            }
+                            ui.menu_button(tr("sub.wrap-mode"), |ui| {
+                                self.wrap_mode_menu_items(ui, &tc, ctx);
+                            });
+                            if menu_check(ui, &tc, self.cfg.view.minimap, tr("c.minimap")).clicked() {
+                                self.cfg.view.minimap = !self.cfg.view.minimap;
+                                self.cfg.save();
                                 ui.close();
                             }
                             ui.menu_button(trz("语法类型"), |ui| self.syntax_items(ui));
@@ -1130,6 +1090,80 @@ menuui::top(
         ui.separator();
         if ui.button("多 Agent 协同工作台…").clicked() {
             self.collab.open = true;
+            ui.close();
+        }
+    }
+
+    /// Sakura 风格换行方式子菜单项 (不折行、按窗口宽度、按指定列数、禁则、悬挂与详细设置)
+    pub(super) fn wrap_mode_menu_items(
+        &mut self,
+        ui: &mut egui::Ui,
+        tc: &ThemeColors,
+        ctx: &egui::Context,
+    ) {
+        let col = self.cfg.view.wrap_col;
+        if menu_check(
+            ui,
+            tc,
+            !self.wrap,
+            Self::app_label(KApp::WrapNone, "不折行"),
+        )
+        .clicked()
+        {
+            self.run_app(KApp::WrapNone, ctx);
+            ui.close();
+        }
+        if menu_check(
+            ui,
+            tc,
+            self.wrap && col == 0,
+            Self::app_label(KApp::WrapWindow, "按窗口宽度折行"),
+        )
+        .clicked()
+        {
+            self.run_app(KApp::WrapWindow, ctx);
+            ui.close();
+        }
+        let label = if col > 0 {
+            format!(
+                "{} ({col})",
+                Self::app_label(KApp::WrapCol, "按指定列数折行…")
+            )
+        } else {
+            Self::app_label(KApp::WrapCol, "按指定列数折行…")
+        };
+        if menu_check(ui, tc, self.wrap && col > 0, label).clicked() {
+            self.run_app(KApp::WrapCol, ctx);
+            ui.close();
+        }
+        ui.separator();
+        if ui
+            .add_enabled(
+                col > 0,
+                crate::ckbox::Check::new(
+                    &mut self.cfg.view.kinsoku,
+                    trz("行头 / 行尾禁则 (指定列数折行时)"),
+                ),
+            )
+            .clicked()
+        {
+            self.cfg.save();
+        }
+        if ui
+            .add_enabled(
+                col > 0 && self.cfg.view.kinsoku,
+                crate::ckbox::Check::new(
+                    &mut self.cfg.view.hang,
+                    trz("句读挂在行尾 (ぶら下げ)"),
+                ),
+            )
+            .clicked()
+        {
+            self.cfg.save();
+        }
+        ui.separator();
+        if menuui::mbtn(ui, tr("pf.wrap-col-setting")).clicked() {
+            self.open_prefs();
             ui.close();
         }
     }

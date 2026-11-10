@@ -4615,6 +4615,78 @@ impl App {
                     );
                     mp.rect_filled(vrect, 0.0, view_bg);
                     mp.rect_stroke(vrect, 0.0, view_stroke, egui::StrokeKind::Inside);
+
+                    // 折叠 / 隐藏按钮 (位于缩略图右上角)
+                    let col_btn_rect = Rect::from_min_size(
+                        Pos2::new(mrect.max.x - 18.0, mrect.min.y + 2.0),
+                        Vec2::new(16.0, 16.0),
+                    );
+                    let col_resp = ui
+                        .interact(col_btn_rect, egui::Id::new("col_btn"), egui::Sense::click())
+                        .on_hover_text(trz("折叠缩略图 (点击隐藏)"));
+                    let col_btn_hovered = col_resp.hovered();
+                    if col_resp.clicked() {
+                        self.cfg.view.minimap = false;
+                        self.cfg.save();
+                    }
+                    if col_btn_hovered {
+                        let btn_bg = if tc.comic {
+                            Color32::from_rgb(255, 204, 0)
+                        } else if tc.retro16 {
+                            Color32::from_rgb(0, 255, 136)
+                        } else {
+                            tc.bg_active
+                        };
+                        mp.rect_filled(col_btn_rect, 2.0, btn_bg);
+                    }
+                    let col_arrow_col = if col_btn_hovered {
+                        if tc.comic || tc.retro16 { Color32::BLACK } else { tc.fg }
+                    } else {
+                        tc.fg_dim
+                    };
+                    mp.text(
+                        col_btn_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "▶",
+                        egui::FontId::proportional(9.0),
+                        col_arrow_col,
+                    );
+                }
+                if !vw.minimap && !d.lines.is_empty() {
+                    // 缩略图处于隐藏/折叠状态时的展开手柄 (位于右上缘)
+                    let exp_tab_rect = Rect::from_min_size(
+                        Pos2::new(rect.min.x + viewport.max.x - 14.0, rect.min.y + viewport.min.y + 6.0),
+                        Vec2::new(14.0, 24.0),
+                    );
+                    let exp_resp = ui
+                        .interact(exp_tab_rect, egui::Id::new("exp_btn"), egui::Sense::click())
+                        .on_hover_text(trz("展开缩略图 (Minimap)"));
+                    let exp_hovered = exp_resp.hovered();
+                    if exp_resp.clicked() {
+                        self.cfg.view.minimap = true;
+                        self.cfg.save();
+                    }
+                    let exp_p = ui.painter_at(exp_tab_rect.intersect(ui.clip_rect()));
+                    let (tab_bg, tab_stroke, arrow_col) = if exp_hovered {
+                        if tc.comic {
+                            (Color32::from_rgb(255, 204, 0), egui::Stroke::new(1.5, Color32::BLACK), Color32::BLACK)
+                        } else if tc.retro16 {
+                            (Color32::from_rgb(0, 255, 136), egui::Stroke::new(1.0, Color32::from_rgb(0, 255, 102)), Color32::BLACK)
+                        } else {
+                            (tc.bg_active, egui::Stroke::new(1.0, tc.border), tc.fg)
+                        }
+                    } else {
+                        (tc.bg_bar, egui::Stroke::new(1.0, tc.border), tc.fg_dim)
+                    };
+                    exp_p.rect_filled(exp_tab_rect, egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 }, tab_bg);
+                    exp_p.rect_stroke(exp_tab_rect, egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 }, tab_stroke, egui::StrokeKind::Inside);
+                    exp_p.text(
+                        exp_tab_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "◀",
+                        egui::FontId::proportional(8.5),
+                        arrow_col,
+                    );
                 }
                 // 光标
                 let [cr, cc] = d.cursor;
@@ -4889,16 +4961,30 @@ impl App {
                 d.toggle_fold(row);
                 return;
             }
-            if vw.minimap && !d.lines.is_empty() && p.x >= rect.min.x + out.state.clamped_offset().x + out.inner_rect.width() - 84.0 && ctx.input(|i| i.pointer.any_pressed()) {
+            let m_right_x = rect.min.x + out.state.clamped_offset().x + out.inner_rect.width();
+            let m_top_y = rect.min.y + out.state.clamped_offset().y;
+            if vw.minimap && !d.lines.is_empty() && p.x >= m_right_x - 84.0 && ctx.input(|i| i.pointer.any_pressed()) {
+                // 点击缩略图右上角的折叠按钮 (20x20 区域)
+                if p.x >= m_right_x - 20.0 && p.y <= m_top_y + 20.0 {
+                    self.cfg.view.minimap = false;
+                    self.cfg.save();
+                    return;
+                }
                 // 点小地图区域: 直接跳到对应行并居中
                 let vh = out.inner_rect.height().max(1.0);
-                let rel_map_y = (p.y - (rect.min.y + out.state.clamped_offset().y)).clamp(0.0, vh);
+                let rel_map_y = (p.y - m_top_y).clamp(0.0, vh);
                 let target_row = ((rel_map_y / vh) * d.lines.len() as f32) as usize;
                 let target_row = target_row.min(d.lines.len().saturating_sub(1));
                 d.cursor = [target_row, 0];
                 d.sel = None;
                 d.reveal = true;
                 self.center_once = true;
+                return;
+            }
+            if !vw.minimap && !d.lines.is_empty() && p.x >= m_right_x - 16.0 && p.y <= m_top_y + 36.0 && ctx.input(|i| i.pointer.any_pressed()) {
+                // 点击折叠状态下的展开手柄
+                self.cfg.view.minimap = true;
+                self.cfg.save();
                 return;
             }
             let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
