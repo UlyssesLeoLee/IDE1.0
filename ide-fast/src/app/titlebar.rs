@@ -425,9 +425,10 @@ impl App {
                     } else {
                         title.clone()
                     };
+                    let font_px = if tc.retro16 { 12.0 } else { 11.5 };
                     let galley = ui.painter().layout_no_wrap(
                         display_title,
-                        egui::FontId::proportional(11.5),
+                        egui::FontId::proportional(font_px),
                         text_col,
                     );
                     let galley_x = (bar_rect.center().x - galley.size().x / 2.0).max(bar_rect.left() + 24.0);

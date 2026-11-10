@@ -93,11 +93,13 @@ pub fn top<R>(
 /// 菜单按钮文字: 菜单名 (13px, 随悬停变色) + 6px 间隔 + 带下划线的助记字母 (11px, 弱前景; `' '` = 不画, 窄窗口用)
 pub fn menu_title(tc: &ThemeColors, label: &str, mn: char) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
+    let font_sz = if tc.retro16 { 12.0 } else { MENU_FONT };
+    let sub_sz = if tc.retro16 { 12.0 } else { 11.0 };
     job.append(
         label,
         0.0,
         TextFormat {
-            font_id: FontId::proportional(MENU_FONT),
+            font_id: FontId::proportional(font_sz),
             color: Color32::PLACEHOLDER,
             ..Default::default()
         },
@@ -107,7 +109,7 @@ pub fn menu_title(tc: &ThemeColors, label: &str, mn: char) -> egui::text::Layout
             &mn.to_string(),
             6.0,
             TextFormat {
-                font_id: FontId::proportional(11.0),
+                font_id: FontId::proportional(sub_sz),
                 color: tc.fg_dim,
                 underline: Stroke::new(1.0, tc.fg_dim),
                 ..Default::default()
@@ -122,8 +124,9 @@ pub fn bar_style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + '
     move |s: &mut egui::Style| {
         s.spacing.button_padding = Vec2::new(MENU_PAD_X, 3.0);
         s.spacing.item_spacing = Vec2::new(0.0, 0.0);
+        let font_sz = if tc.retro16 { 12.0 } else { MENU_FONT };
         s.text_styles
-            .insert(egui::TextStyle::Button, FontId::proportional(MENU_FONT));
+            .insert(egui::TextStyle::Button, FontId::proportional(font_sz));
         let v = &mut s.visuals;
         v.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
         v.widgets.inactive.bg_fill = Color32::TRANSPARENT;
@@ -139,15 +142,22 @@ pub fn bar_style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + '
 
 /// 一个菜单按钮的宽度 (含内边距)
 pub fn title_width(ui: &Ui, label: &str, mn: char) -> f32 {
+    let font_sz = ui
+        .style()
+        .text_styles
+        .get(&egui::TextStyle::Button)
+        .map(|f| f.size)
+        .unwrap_or(MENU_FONT);
+    let sub_px = if (font_sz - 12.0).abs() < 0.1 { 12.0 } else { 11.0 };
     let f = |t: &str, px: f32| {
         ui.painter()
             .layout_no_wrap(t.to_string(), FontId::proportional(px), Color32::WHITE)
             .size()
             .x
     };
-    f(label, MENU_FONT)
+    f(label, font_sz)
         + if mn != ' ' {
-            6.0 + f(&mn.to_string(), 11.0)
+            6.0 + f(&mn.to_string(), sub_px)
         } else {
             0.0
         }

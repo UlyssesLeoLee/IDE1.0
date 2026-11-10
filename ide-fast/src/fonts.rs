@@ -144,7 +144,7 @@ pub fn is_illegible_display_font(file_or_name: &str) -> bool {
 /// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体 (空字符串保持为空，代表主题默认)
 pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
     let clean = font.trim();
-    if theme_id == "theme-retro16" {
+    if theme_id == "theme-retro16" || is_pixel_font(clean) {
         return "PixelFontMulti-12.ttf".to_string();
     }
     if clean.is_empty() {
@@ -157,11 +157,11 @@ pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
 }
 
 /// 计算各主题在当前运行环境下的最终有效主字体文件名
-/// - Retro 16-Bit (theme-retro16) 核心视觉语言强制使用 PixelFont 点阵像素字体
+/// - Retro 16-Bit (theme-retro16) 核心视觉语言强制使用 PixelFont 12 点阵像素字体
 /// - 其他主题若未指定字体或传入不可读艺术花体，则回退到该主题默认等宽编程字体
 pub fn effective_font_family(font_family: &str, theme_id: &str) -> String {
     let clean = font_family.trim();
-    if theme_id == "theme-retro16" {
+    if theme_id == "theme-retro16" || is_pixel_font(clean) {
         return "PixelFontMulti-12.ttf".to_string();
     }
     if clean.is_empty() || is_illegible_display_font(clean) {
@@ -230,7 +230,7 @@ pub fn system_fonts() -> Vec<String> {
 
 pub fn is_font_file(name: &str) -> bool {
     let l = name.to_lowercase();
-    l.ends_with(".ttf") || l.ends_with(".otf") || l.ends_with(".ttc")
+    l.ends_with(".ttf") || l.ends_with(".otf") || l.ends_with(".ttc") || is_pixel_font(name)
 }
 
 /// 查找指定字体对应的伴生粗体文件
@@ -346,6 +346,8 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
                 // 优先查找系统字体或同级目录，兜底使用内嵌的 16-Bit 街机点阵全字形字体 (保证无依赖立即可用)
                 if dir_clone.join(&safe_editor).is_file() {
                     std::fs::read(dir_clone.join(&safe_editor)).ok()
+                } else if dir_clone.join(format!("{safe_editor}.ttf")).is_file() {
+                    std::fs::read(dir_clone.join(format!("{safe_editor}.ttf"))).ok()
                 } else if let Some(p) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&safe_editor))) {
                     if p.is_file() {
                         std::fs::read(p).ok()
@@ -499,6 +501,35 @@ pub fn install_loaded(ctx: &egui::Context, loaded: Loaded) {
     defs.families.insert(editor_family(), editor);
     defs.families.insert(editor_bold_family(), editor_bold);
     ctx.set_fonts(defs);
+
+    if loaded.is_retro16 {
+        ctx.global_style_mut(|s| {
+            s.text_styles.insert(
+                egui::TextStyle::Small,
+                egui::FontId::new(12.0, FontFamily::Proportional),
+            );
+            s.text_styles.insert(
+                egui::TextStyle::Body,
+                egui::FontId::new(12.0, FontFamily::Proportional),
+            );
+            s.text_styles.insert(
+                egui::TextStyle::Button,
+                egui::FontId::new(12.0, FontFamily::Proportional),
+            );
+            s.text_styles.insert(
+                egui::TextStyle::Monospace,
+                egui::FontId::new(12.0, FontFamily::Monospace),
+            );
+            s.text_styles.insert(
+                egui::TextStyle::Heading,
+                egui::FontId::new(12.0, FontFamily::Proportional),
+            );
+        });
+    } else {
+        ctx.global_style_mut(|s| {
+            s.text_styles = egui::Style::default().text_styles;
+        });
+    }
 }
 
 #[cfg(test)]
@@ -531,10 +562,53 @@ mod tests {
         assert_eq!(effective_font_family("", "theme-retro16"), "PixelFontMulti-12.ttf");
         assert_eq!(effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
         assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(effective_font_family("PixelFont 12", "theme-comic"), "PixelFontMulti-12.ttf");
+        assert_eq!(effective_font_family("pixelfont", "theme-dark"), "PixelFontMulti-12.ttf");
 
         assert_eq!(effective_font_family("", "theme-comic"), "CascadiaCode.ttf");
         assert_eq!(effective_font_family("Consolas", "theme-comic"), "Consolas");
         assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-comic"), "CascadiaCode.ttf");
+    }
+
+    #[test]
+    fn pixel_font_detection_and_file_validity() {
+        assert!(is_pixel_font("PixelFont 12"));
+        assert!(is_pixel_font("pixelfont 12"));
+        assert!(is_pixel_font("PixelFontMulti-12.ttf"));
+        assert!(is_pixel_font("retro_pixel"));
+        assert!(!is_pixel_font("Consolas.ttf"));
+
+        assert!(is_font_file("PixelFont 12"));
+        assert!(is_font_file("PixelFontMulti-12.ttf"));
+    }
+
+    #[test]
+    fn retro16_global_text_styles_and_families_configured() {
+        let ctx = egui::Context::default();
+        let loaded = load_ext("PixelFontMulti-12.ttf", "", "zh", false);
+        assert!(loaded.is_retro16);
+        install_loaded(&ctx, loaded);
+
+        let s = ctx.global_style();
+        assert_eq!(s.text_styles.get(&egui::TextStyle::Small).unwrap().size, 12.0);
+        assert_eq!(s.text_styles.get(&egui::TextStyle::Body).unwrap().size, 12.0);
+        assert_eq!(s.text_styles.get(&egui::TextStyle::Button).unwrap().size, 12.0);
+        assert_eq!(s.text_styles.get(&egui::TextStyle::Monospace).unwrap().size, 12.0);
+        assert_eq!(s.text_styles.get(&egui::TextStyle::Heading).unwrap().size, 12.0);
+
+        // 切回普通主题 (例如 CascadiaCode)
+        let normal_loaded = Loaded {
+            fallbacks: vec![],
+            editor: Some(vec![]),
+            editor_bold: None,
+            is_retro16: false,
+        };
+        install_loaded(&ctx, normal_loaded);
+        let s2 = ctx.global_style();
+        assert_eq!(
+            s2.text_styles.get(&egui::TextStyle::Body).unwrap().size,
+            egui::Style::default().text_styles.get(&egui::TextStyle::Body).unwrap().size
+        );
     }
 
     #[test]

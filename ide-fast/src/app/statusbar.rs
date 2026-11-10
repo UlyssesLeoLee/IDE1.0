@@ -88,11 +88,12 @@ impl App {
             }
             status_bar_style(ui, on);
             ui.spacing_mut().item_spacing.x = 0.0;
-            // Tauri 状态栏是 11px 等宽字
+            // Tauri 状态栏是 11px 等宽字 (16位像素主题统一使用 12px 点阵)
+            let st_px = if self.tc.retro16 { 12.0 } else { 11.0 };
             for ts in [egui::TextStyle::Body, egui::TextStyle::Button] {
                 ui.style_mut()
                     .text_styles
-                    .insert(ts, FontId::monospace(11.0));
+                    .insert(ts, FontId::monospace(st_px));
             }
             let d = &self.docs[self.active.min(self.docs.len() - 1)];
             let lang = self

@@ -1,4 +1,4 @@
-use super::{App, DEFAULT_FONT_PX};
+use super::App;
 use crate::i18n::tr;
 use crate::keymap::App as KApp;
 use crate::tabs::CloseKind;
@@ -147,7 +147,7 @@ impl App {
             KApp::FullMode => self.set_full(),
             KApp::ZoomIn => self.font_px = (self.font_px + 1.0).min(40.0),
             KApp::ZoomOut => self.font_px = (self.font_px - 1.0).max(8.0),
-            KApp::ZoomReset => self.font_px = DEFAULT_FONT_PX,
+            KApp::ZoomReset => self.font_px = self.default_font_px(),
             KApp::Prefs => self.open_prefs(),
             KApp::PickSyntax => self.open_syntax_pick(),
             KApp::TypeConfig => self.open_prefs_tab(crate::prefs::PrefsTab::Types),

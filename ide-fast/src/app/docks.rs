@@ -419,7 +419,9 @@ impl App {
                         label = format!("{label} ({})", self.sys.problems.len());
                     }
                     let on = self.sys.bottom == t;
-                    let font = if t == BottomTab::CollabReview {
+                    let font = if self.tc.retro16 {
+                        egui::FontId::monospace(12.0)
+                    } else if t == BottomTab::CollabReview {
                         egui::FontId::proportional(11.0)
                     } else {
                         egui::FontId::monospace(11.0)

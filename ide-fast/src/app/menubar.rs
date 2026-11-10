@@ -1,5 +1,5 @@
 use super::menuui;
-use super::{App, DEFAULT_FONT_PX};
+use super::App;
 use crate::i18n::{lk, tr, trz, Lang};
 use crate::keymap::App as KApp;
 use crate::tabs::CloseKind;
@@ -593,7 +593,7 @@ impl App {
                                     self.font_px = (self.font_px - 1.0).max(8.0);
                                 }
                                 if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() {
-                                    self.font_px = DEFAULT_FONT_PX;
+                                    self.font_px = self.default_font_px();
                                 }
                                 ui.separator();
                                 ui.menu_button(tr("sub.tabwidth"), |ui| {

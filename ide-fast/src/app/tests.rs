@@ -1402,13 +1402,22 @@ fn test_retro16_pixelfont_invariants() {
     // 切到 retro16 主题
     a.set_theme_plugin("theme-retro16");
     assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "PixelFontMulti-12.ttf");
+    assert_eq!(a.font_px, 12.0, "Retro 16-Bit 主题默认字号必须为 12px");
+    assert_eq!(a.default_font_px(), 12.0, "Retro 16-Bit 缩放基准字号必须为 12px");
+
+    // 缩放与重置测试
+    a.font_px = 16.0;
+    a.font_px = a.default_font_px();
+    assert_eq!(a.font_px, 12.0, "重置缩放必须回到 12px");
 
     // 即使用户在首选项里设置了其他字体，Retro 16-Bit 主题仍强制使用 PixelFont
     assert_eq!(crate::fonts::effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
+    assert_eq!(crate::fonts::effective_font_family("PixelFont 12", "theme-comic"), "PixelFontMulti-12.ttf");
 
-    // 切回 dark 主题，恢复为 CascadiaCode.ttf
+    // 切回 dark 主题，恢复为 CascadiaCode.ttf 及默认 15px
     a.set_theme_plugin("theme-dark");
     assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaCode.ttf");
+    assert_eq!(a.default_font_px(), 15.0);
 
     // 切到 light 主题，恢复为 CascadiaMono.ttf
     a.set_theme_plugin("theme-light");

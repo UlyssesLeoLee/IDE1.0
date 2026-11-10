@@ -510,6 +510,9 @@ impl App {
             self.set_theme_plugin(theme_to_apply);
         }
         self.font_px = st.font_px;
+        if self.tc.retro16 && ((self.font_px - 13.0).abs() < 0.1 || (self.font_px - 15.0).abs() < 0.1) {
+            self.font_px = 12.0;
+        }
         self.tab = st.tab_width;
         self.highlight = st.highlight;
         self.wrap = st.wrap;
@@ -3480,7 +3483,16 @@ impl App {
 
     /// 选主题插件 (空 id = 回到内置深 / 浅色)
     fn set_theme_plugin(&mut self, id: &str) {
+        let prev_id = self.theme_id.clone();
         self.theme_id = id.to_string();
+        self.tc.retro16 = self.theme_id == "theme-retro16";
+        if self.tc.retro16 {
+            if (self.font_px - 13.0).abs() < 0.1 || (self.font_px - 15.0).abs() < 0.1 {
+                self.font_px = 12.0;
+            }
+        } else if prev_id == "theme-retro16" && (self.font_px - 12.0).abs() < 0.1 {
+            self.font_px = DEFAULT_FONT_PX;
+        }
         let spec = plugins::find_theme(id);
         self.sys.theme_glass = spec.as_ref().is_some_and(|t| t.translucent);
         // 玻璃主题声明 luminance=dynamic 时, 文字色按系统「应用主题」明暗取 (一次读取, 不轮询)
@@ -5232,6 +5244,16 @@ pub(crate) fn col_at(
 
 /// 缩放重置 (Ctrl+0) 回到的字号, 也是设置的默认字号
 pub(super) const DEFAULT_FONT_PX: f32 = 15.0;
+
+impl App {
+    pub(super) fn default_font_px(&self) -> f32 {
+        if self.tc.retro16 || self.theme_id == "theme-retro16" {
+            12.0
+        } else {
+            DEFAULT_FONT_PX
+        }
+    }
+}
 
 impl eframe::App for App {
     /// 半透明主题: 窗口是透明的,清屏色也要全透明,面板自己的 alpha 才能透出桌面 / 模糊材质
