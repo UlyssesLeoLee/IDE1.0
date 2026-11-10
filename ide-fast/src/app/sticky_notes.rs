@@ -893,23 +893,29 @@ impl App {
                         ui.add_space(6.0);
 
                         // 2.1 新建便笺按钮 (+)
-                        let new_resp = draw_header_btn(ui, "+", "新建便笺 (Ctrl+N)", &tc, &palette);
+                        let new_resp = draw_header_btn(
+                            ui,
+                            StickyHeaderIcon::New,
+                            "新建便笺 (Ctrl+N)",
+                            &tc,
+                            &palette,
+                        );
                         if new_resp.clicked() {
                             new_note_clicked = true;
                         }
 
-                        // 2.2 便笺列表抽屉按钮 (📑)
-                        let list_resp = draw_header_btn(
-                            ui,
-                            if show_list { "📝" } else { "📑" },
-                            if show_list {
-                                "返回编辑便笺"
-                            } else {
-                                "便笺列表 (Notes List - Ctrl+H)"
-                            },
-                            &tc,
-                            &palette,
-                        );
+                        // 2.2 便笺列表抽屉按钮 (📑 / 📝)
+                        let list_icon = if show_list {
+                            StickyHeaderIcon::BackToEdit
+                        } else {
+                            StickyHeaderIcon::List
+                        };
+                        let list_tip = if show_list {
+                            "返回编辑便笺"
+                        } else {
+                            "便笺列表 (Notes List - Ctrl+H)"
+                        };
+                        let list_resp = draw_header_btn(ui, list_icon, list_tip, &tc, &palette);
                         if list_resp.clicked() {
                             toggle_list_clicked = true;
                         }
@@ -946,7 +952,7 @@ impl App {
                             // 2.4 关闭按钮 (✕)
                             let close_resp = draw_header_btn(
                                 ui,
-                                "✕",
+                                StickyHeaderIcon::Close,
                                 "关闭便笺 (Ctrl+W，内容已自动保存)",
                                 &tc,
                                 &palette,
@@ -960,7 +966,7 @@ impl App {
                             if !show_list {
                                 let del_resp = draw_header_btn(
                                     ui,
-                                    "🗑️",
+                                    StickyHeaderIcon::Delete,
                                     "删除此便笺 (Ctrl+D)",
                                     &tc,
                                     &palette,
@@ -971,13 +977,18 @@ impl App {
                             }
 
                             // 2.6 置顶常驻按钮 (📌)
-                            let pin_label = if is_pinned { "📍" } else { "📌" };
                             let pin_tip = if is_pinned {
                                 "取消桌面置顶 (已常驻前端)"
                             } else {
                                 "桌面常驻置顶 (始终在最前)"
                             };
-                            let pin_resp = draw_header_btn(ui, pin_label, pin_tip, &tc, &palette);
+                            let pin_resp = draw_header_btn(
+                                ui,
+                                StickyHeaderIcon::Pin(is_pinned),
+                                pin_tip,
+                                &tc,
+                                &palette,
+                            );
                             if pin_resp.clicked() {
                                 toggle_pin_clicked = true;
                                 let next_pinned = !is_pinned;
@@ -991,8 +1002,13 @@ impl App {
                             }
 
                             // 2.7 调色盘按钮 (🎨)
-                            let pal_resp =
-                                draw_header_btn(ui, "🎨", "切换便笺纸张色彩", &tc, &palette);
+                            let pal_resp = draw_header_btn(
+                                ui,
+                                StickyHeaderIcon::Palette,
+                                "切换便笺纸张色彩",
+                                &tc,
+                                &palette,
+                            );
                             if pal_resp.clicked() {
                                 self.sticky_notes.color_picker_open =
                                     !self.sticky_notes.color_picker_open;
@@ -1189,12 +1205,21 @@ impl App {
                                                 Sense::click(),
                                             )
                                             .on_hover_text("删除此便笺");
-                                        row_p.text(
-                                            del_btn_rect.center(),
-                                            egui::Align2::CENTER_CENTER,
-                                            "🗑️",
-                                            FontId::proportional(11.0),
-                                            palette.fg,
+                                        let (c_del_rect, del_col) = paint_sticky_btn_frame(
+                                            row_p,
+                                            del_btn_rect,
+                                            &tc,
+                                            &note_pal,
+                                            del_btn_resp.hovered(),
+                                            del_btn_resp.is_pointer_button_down_on(),
+                                            false,
+                                        );
+                                        paint_sticky_header_icon(
+                                            row_p,
+                                            c_del_rect,
+                                            StickyHeaderIcon::Delete,
+                                            &tc,
+                                            del_col,
                                         );
                                         if del_btn_resp.clicked() {
                                             to_delete = Some(note.id.clone());
@@ -1290,44 +1315,44 @@ impl App {
                             ui.add_space(4.0);
 
                             // 粗体 (B)
-                            if draw_tool_btn(ui, "B", "粗体 (Ctrl+B)", &tc, &palette).clicked() {
+                            if draw_tool_btn(ui, StickyToolIcon::Bold, "粗体 (Ctrl+B)", &tc, &palette).clicked() {
                                 append_markdown = Some("**粗体文字**".to_string());
                             }
                             // 斜体 (I)
-                            if draw_tool_btn(ui, "I", "斜体 (Ctrl+I)", &tc, &palette).clicked() {
+                            if draw_tool_btn(ui, StickyToolIcon::Italic, "斜体 (Ctrl+I)", &tc, &palette).clicked() {
                                 append_markdown = Some("*斜体文字*".to_string());
                             }
                             // 下划线 (U)
-                            if draw_tool_btn(ui, "U", "下划线 (Ctrl+U)", &tc, &palette).clicked() {
+                            if draw_tool_btn(ui, StickyToolIcon::Underline, "下划线 (Ctrl+U)", &tc, &palette).clicked() {
                                 append_markdown = Some("<u>下划线</u>".to_string());
                             }
                             // 删除线 (S)
-                            if draw_tool_btn(ui, "S", "删除线 (Ctrl+T)", &tc, &palette).clicked() {
+                            if draw_tool_btn(ui, StickyToolIcon::Strikethrough, "删除线 (Ctrl+T)", &tc, &palette).clicked() {
                                 append_markdown = Some("~~删除线~~".to_string());
                             }
                             // 待办复选框 (☑)
-                            if draw_tool_btn(ui, "☑", "待办项 (Ctrl+Shift+L)", &tc, &palette)
+                            if draw_tool_btn(ui, StickyToolIcon::Checklist, "待办项 (Ctrl+Shift+L)", &tc, &palette)
                                 .clicked()
                             {
                                 append_markdown = Some("\n- [ ] 待办事项".to_string());
                             }
                             // 项目符号 (•)
-                            if draw_tool_btn(ui, "•", "项目符号 (- 列表)", &tc, &palette).clicked()
+                            if draw_tool_btn(ui, StickyToolIcon::BulletList, "项目符号 (- 列表)", &tc, &palette).clicked()
                             {
                                 append_markdown = Some("\n- 列表项".to_string());
                             }
                             // 时间戳 (🕒)
-                            if draw_tool_btn(ui, "🕒", "插入当前时间戳", &tc, &palette).clicked() {
+                            if draw_tool_btn(ui, StickyToolIcon::Timestamp, "插入当前时间戳", &tc, &palette).clicked() {
                                 append_markdown = Some(format!("\n[{}] ", current_timestamp()));
                             }
                             // 复制全部 (📋)
-                            if draw_tool_btn(ui, "📋", "一键复制便笺全文到剪贴板", &tc, &palette)
+                            if draw_tool_btn(ui, StickyToolIcon::Copy, "一键复制便笺全文到剪贴板", &tc, &palette)
                                 .clicked()
                             {
                                 copy_clicked = true;
                             }
                             // 清空 (🧹)
-                            if draw_tool_btn(ui, "🧹", "清空便笺内容", &tc, &palette).clicked() {
+                            if draw_tool_btn(ui, StickyToolIcon::Clear, "清空便笺内容", &tc, &palette).clicked() {
                                 clear_clicked = true;
                             }
 
@@ -1456,10 +1481,375 @@ impl App {
     }
 }
 
-/// 绘制便笺顶栏小按钮
+/// 便笺顶栏按钮图标类型
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum StickyHeaderIcon {
+    New,
+    List,
+    BackToEdit,
+    Palette,
+    Pin(bool),
+    Delete,
+    Close,
+}
+
+/// 便笺底栏格式化工具图标类型
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum StickyToolIcon {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+    Checklist,
+    BulletList,
+    Timestamp,
+    Copy,
+    Clear,
+}
+
+/// 绘制便笺按钮的主题底框 (支持美漫波普硬阴影/按压位移、复古街机3D切角、水晶切面白光与Fluent现代圆角)
+pub fn paint_sticky_btn_frame(
+    p: &egui::Painter,
+    rect: Rect,
+    tc: &crate::view::ThemeColors,
+    palette: &NotePalette,
+    hovered: bool,
+    active: bool,
+    highlighted: bool,
+) -> (Rect, Color32) {
+    if tc.retro16 {
+        // Retro 16-Bit: 街机微动开关 3D 棱角像素按键
+        let outer_border = if active {
+            Color32::from_rgb(0, 0, 0)
+        } else if hovered || highlighted {
+            palette.accent
+        } else {
+            palette.border.gamma_multiply(0.7)
+        };
+
+        let bg = if active {
+            palette.toolbar_bg
+        } else if hovered {
+            palette.header_bg
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        p.rect_filled(rect, 0.0, bg);
+        p.rect_stroke(rect, 0.0, Stroke::new(1.0, outer_border), StrokeKind::Inside);
+
+        // 3D Bevel 棱角线 (按下去时反向凹陷)
+        let (top_left_col, bot_right_col) = if active {
+            (Color32::from_rgb(10, 7, 23), palette.border)
+        } else if hovered {
+            (palette.accent, Color32::from_rgb(15, 10, 25))
+        } else {
+            (palette.border.gamma_multiply(0.8), Color32::from_rgb(15, 10, 25))
+        };
+
+        let inner = rect.shrink(1.0);
+        p.line_segment([inner.left_top(), inner.right_top()], Stroke::new(1.0, top_left_col));
+        p.line_segment([inner.left_top(), inner.left_bottom()], Stroke::new(1.0, top_left_col));
+        p.line_segment([inner.left_bottom(), inner.right_bottom()], Stroke::new(1.0, bot_right_col));
+        p.line_segment([inner.right_top(), inner.right_bottom()], Stroke::new(1.0, bot_right_col));
+
+        let content_rect = if active { rect.translate(Vec2::new(1.0, 1.0)) } else { rect };
+        let fg = if active || hovered || highlighted { palette.accent } else { palette.fg };
+        (content_rect, fg)
+    } else if tc.comic {
+        // Comic 3渲2: 2.0px 纯黑手绘墨线 + 实体硬波普投影
+        let shadow_offset = if active { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+        if hovered && !active {
+            p.rect_filled(rect.translate(shadow_offset), 2.0, Color32::BLACK);
+        }
+
+        let actual_rect = if active { rect.translate(Vec2::new(1.2, 1.2)) } else { rect };
+        let bg = if active {
+            Color32::from_rgb(255, 170, 0) // 按下深波普橙
+        } else if hovered {
+            Color32::from_rgb(255, 204, 0) // 悬停经典波普黄
+        } else if highlighted {
+            palette.accent.gamma_multiply(0.4)
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        let border_col = if hovered || active { Color32::BLACK } else { Color32::from_black_alpha(100) };
+        if bg != Color32::TRANSPARENT {
+            p.rect_filled(actual_rect, 2.0, bg);
+        }
+        if hovered || active {
+            p.rect_stroke(actual_rect, 2.0, Stroke::new(1.5, border_col), StrokeKind::Inside);
+        }
+
+        let fg = if active || hovered { Color32::BLACK } else { palette.fg };
+        (actual_rect, fg)
+    } else if tc.crystal || tc.clear {
+        // 水晶 / 玻璃: 晶钻圆角毛玻璃 + 切面反射
+        let round = 5.0;
+        let bg = if active {
+            Color32::from_rgba_unmultiplied(255, 105, 180, 80)
+        } else if hovered {
+            Color32::from_rgba_unmultiplied(255, 255, 255, 55)
+        } else if highlighted {
+            Color32::from_rgba_unmultiplied(0, 240, 255, 45)
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        let border_col = if active {
+            Color32::from_rgb(255, 105, 180)
+        } else if hovered {
+            Color32::from_rgba_unmultiplied(0, 240, 255, 200)
+        } else if highlighted {
+            Color32::from_rgba_unmultiplied(0, 240, 255, 150)
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        if bg != Color32::TRANSPARENT {
+            p.rect_filled(rect, round, bg);
+        }
+        if border_col != Color32::TRANSPARENT {
+            p.rect_stroke(rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+            // 顶沿微光折射
+            p.line_segment(
+                [pos2(rect.left() + 2.0, rect.top() + 1.0), pos2(rect.right() - 2.0, rect.top() + 1.0)],
+                Stroke::new(1.0, Color32::WHITE),
+            );
+        }
+
+        let fg = if active || hovered { Color32::WHITE } else { palette.fg };
+        (rect, fg)
+    } else {
+        // Fluent 现代深色/浅色: 柔和圆角
+        let round = 3.5;
+        let bg = if active {
+            palette.accent.gamma_multiply(0.35)
+        } else if hovered {
+            palette.accent.gamma_multiply(0.18)
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        if bg != Color32::TRANSPARENT {
+            p.rect_filled(rect, round, bg);
+            p.rect_stroke(rect, round, Stroke::new(1.0, palette.accent.gamma_multiply(0.6)), StrokeKind::Inside);
+        }
+
+        let fg = if active || hovered { palette.accent } else { palette.fg };
+        (rect, fg)
+    }
+}
+
+/// 绘制符合各主题专属画风的便笺顶栏矢量图标
+pub fn paint_sticky_header_icon(
+    p: &egui::Painter,
+    rect: Rect,
+    icon: StickyHeaderIcon,
+    tc: &crate::view::ThemeColors,
+    col: Color32,
+) {
+    let c = rect.center();
+    let stroke_w = if tc.comic { 1.8 } else { 1.2 };
+    let st = Stroke::new(stroke_w, col);
+
+    match icon {
+        StickyHeaderIcon::New => {
+            let r = 4.5;
+            p.line_segment([pos2(c.x - r, c.y), pos2(c.x + r, c.y)], st);
+            p.line_segment([pos2(c.x, c.y - r), pos2(c.x, c.y + r)], st);
+        }
+        StickyHeaderIcon::List => {
+            for dy in [-3.8, 0.0, 3.8] {
+                let y = c.y + dy;
+                if tc.retro16 {
+                    p.rect_filled(
+                        Rect::from_min_size(pos2(c.x - 5.5, y - 1.0), Vec2::splat(2.0)),
+                        0.0,
+                        col,
+                    );
+                } else {
+                    p.circle_filled(pos2(c.x - 4.5, y), 1.2, col);
+                }
+                let rx = if dy > 2.0 { c.x + 3.0 } else { c.x + 5.5 };
+                p.line_segment([pos2(c.x - 2.0, y), pos2(rx, y)], st);
+            }
+        }
+        StickyHeaderIcon::BackToEdit => {
+            let doc_rect = Rect::from_min_max(pos2(c.x - 5.5, c.y - 5.0), pos2(c.x + 1.5, c.y + 5.0));
+            p.rect_stroke(
+                doc_rect,
+                if tc.retro16 { 0.0 } else { 1.5 },
+                st,
+                StrokeKind::Inside,
+            );
+            // 笔杆与笔尖
+            p.line_segment(
+                [pos2(c.x + 5.5, c.y - 4.0), pos2(c.x, c.y + 2.0)],
+                Stroke::new(stroke_w * 1.1, col),
+            );
+            p.line_segment([pos2(c.x, c.y + 2.0), pos2(c.x - 1.0, c.y + 3.5)], st);
+        }
+        StickyHeaderIcon::Palette => {
+            let pal_rect = Rect::from_center_size(c, Vec2::new(12.0, 10.0));
+            if tc.retro16 {
+                p.rect_stroke(pal_rect, 0.0, st, StrokeKind::Inside);
+                p.rect_filled(Rect::from_min_size(pos2(c.x - 3.0, c.y - 2.5), Vec2::splat(1.5)), 0.0, col);
+                p.rect_filled(Rect::from_min_size(pos2(c.x + 1.5, c.y - 2.5), Vec2::splat(1.5)), 0.0, col);
+                p.rect_filled(Rect::from_min_size(pos2(c.x + 2.5, c.y + 1.0), Vec2::splat(1.5)), 0.0, col);
+                p.rect_stroke(Rect::from_min_size(pos2(c.x - 3.5, c.y + 1.0), Vec2::splat(2.0)), 0.0, st, StrokeKind::Inside);
+            } else {
+                p.rect_stroke(pal_rect, 4.0, st, StrokeKind::Inside);
+                p.circle_filled(pos2(c.x - 2.5, c.y - 2.0), 1.2, col);
+                p.circle_filled(pos2(c.x + 1.5, c.y - 2.0), 1.2, col);
+                p.circle_filled(pos2(c.x + 2.5, c.y + 1.5), 1.2, col);
+                p.circle_stroke(pos2(c.x - 2.2, c.y + 1.5), 1.2, st);
+            }
+        }
+        StickyHeaderIcon::Pin(is_pinned) => {
+            if is_pinned {
+                // 常驻置顶状态: 垂直钉入的图钉 (带实心高亮钉帽)
+                p.line_segment(
+                    [pos2(c.x - 4.5, c.y - 4.5), pos2(c.x + 4.5, c.y - 4.5)],
+                    Stroke::new(stroke_w * 1.3, col),
+                );
+                let body_rect = Rect::from_min_max(pos2(c.x - 2.5, c.y - 4.5), pos2(c.x + 2.5, c.y + 0.5));
+                p.rect_filled(body_rect, if tc.retro16 { 0.0 } else { 1.5 }, col);
+                p.line_segment([pos2(c.x, c.y + 0.5), pos2(c.x, c.y + 5.5)], Stroke::new(1.4, col));
+            } else {
+                // 未置顶状态: 斜向 45 度的图钉
+                p.line_segment(
+                    [pos2(c.x - 1.0, c.y - 5.0), pos2(c.x + 5.0, c.y + 1.0)],
+                    Stroke::new(stroke_w * 1.3, col),
+                );
+                p.line_segment(
+                    [pos2(c.x + 2.0, c.y - 2.0), pos2(c.x - 2.0, c.y + 2.0)],
+                    Stroke::new(stroke_w * 1.1, col),
+                );
+                p.line_segment([pos2(c.x - 2.0, c.y + 2.0), pos2(c.x - 5.0, c.y + 5.0)], Stroke::new(1.4, col));
+            }
+        }
+        StickyHeaderIcon::Delete => {
+            // 垃圾桶盖子与把手
+            p.line_segment([pos2(c.x - 5.0, c.y - 3.5), pos2(c.x + 5.0, c.y - 3.5)], st);
+            p.line_segment([pos2(c.x - 1.5, c.y - 5.2), pos2(c.x + 1.5, c.y - 5.2)], st);
+            // 桶身
+            p.line_segment([pos2(c.x - 4.0, c.y - 2.5), pos2(c.x - 3.2, c.y + 5.0)], st);
+            p.line_segment([pos2(c.x + 4.0, c.y - 2.5), pos2(c.x + 3.2, c.y + 5.0)], st);
+            p.line_segment([pos2(c.x - 3.2, c.y + 5.0), pos2(c.x + 3.2, c.y + 5.0)], st);
+            // 桶身垂直内肋条
+            p.line_segment(
+                [pos2(c.x - 1.2, c.y - 1.5), pos2(c.x - 1.2, c.y + 3.5)],
+                Stroke::new(1.0, col.gamma_multiply(0.8)),
+            );
+            p.line_segment(
+                [pos2(c.x + 1.2, c.y - 1.5), pos2(c.x + 1.2, c.y + 3.5)],
+                Stroke::new(1.0, col.gamma_multiply(0.8)),
+            );
+        }
+        StickyHeaderIcon::Close => {
+            let r = 4.0;
+            p.line_segment([pos2(c.x - r, c.y - r), pos2(c.x + r, c.y + r)], st);
+            p.line_segment([pos2(c.x + r, c.y - r), pos2(c.x - r, c.y + r)], st);
+        }
+    }
+}
+
+/// 绘制符合各主题专属画风的便笺底栏格式化工具矢量图标
+pub fn paint_sticky_tool_icon(
+    p: &egui::Painter,
+    rect: Rect,
+    icon: StickyToolIcon,
+    tc: &crate::view::ThemeColors,
+    col: Color32,
+) {
+    let c = rect.center();
+    let stroke_w = if tc.comic { 1.8 } else { 1.2 };
+    let st = Stroke::new(stroke_w, col);
+
+    match icon {
+        StickyToolIcon::Bold => {
+            let stem_w = if tc.comic { 2.4 } else { 1.8 };
+            p.line_segment([pos2(c.x - 3.5, c.y - 4.5), pos2(c.x - 3.5, c.y + 4.5)], Stroke::new(stem_w, col));
+            p.line_segment([pos2(c.x - 3.5, c.y - 4.5), pos2(c.x + 1.2, c.y - 4.5)], st);
+            p.line_segment([pos2(c.x - 3.5, c.y), pos2(c.x + 1.5, c.y)], st);
+            p.line_segment([pos2(c.x - 3.5, c.y + 4.5), pos2(c.x + 1.2, c.y + 4.5)], st);
+            p.line_segment([pos2(c.x + 1.2, c.y - 4.5), pos2(c.x + 3.2, c.y - 2.2)], st);
+            p.line_segment([pos2(c.x + 3.2, c.y - 2.2), pos2(c.x + 1.5, c.y)], st);
+            p.line_segment([pos2(c.x + 1.5, c.y), pos2(c.x + 3.4, c.y + 2.2)], st);
+            p.line_segment([pos2(c.x + 3.4, c.y + 2.2), pos2(c.x + 1.2, c.y + 4.5)], st);
+        }
+        StickyToolIcon::Italic => {
+            let stem_w = if tc.comic { 2.0 } else { 1.5 };
+            p.line_segment([pos2(c.x - 1.0, c.y - 4.5), pos2(c.x + 3.5, c.y - 4.5)], st);
+            p.line_segment([pos2(c.x - 3.5, c.y + 4.5), pos2(c.x + 1.0, c.y + 4.5)], st);
+            p.line_segment([pos2(c.x + 1.2, c.y - 4.5), pos2(c.x - 1.2, c.y + 4.5)], Stroke::new(stem_w, col));
+        }
+        StickyToolIcon::Underline => {
+            p.line_segment([pos2(c.x - 3.2, c.y - 4.5), pos2(c.x - 3.2, c.y + 0.8)], st);
+            p.line_segment([pos2(c.x + 3.2, c.y - 4.5), pos2(c.x + 3.2, c.y + 0.8)], st);
+            p.line_segment([pos2(c.x - 3.2, c.y + 0.8), pos2(c.x - 1.5, c.y + 2.2)], st);
+            p.line_segment([pos2(c.x - 1.5, c.y + 2.2), pos2(c.x + 1.5, c.y + 2.2)], st);
+            p.line_segment([pos2(c.x + 1.5, c.y + 2.2), pos2(c.x + 3.2, c.y + 0.8)], st);
+            p.line_segment([pos2(c.x - 4.5, c.y + 4.8), pos2(c.x + 4.5, c.y + 4.8)], Stroke::new(stroke_w * 1.1, col));
+        }
+        StickyToolIcon::Strikethrough => {
+            p.line_segment([pos2(c.x + 2.8, c.y - 3.5), pos2(c.x - 0.5, c.y - 4.5)], st);
+            p.line_segment([pos2(c.x - 0.5, c.y - 4.5), pos2(c.x - 3.0, c.y - 2.8)], st);
+            p.line_segment([pos2(c.x - 3.0, c.y - 2.8), pos2(c.x + 2.8, c.y + 1.0)], st);
+            p.line_segment([pos2(c.x + 2.8, c.y + 1.0), pos2(c.x + 3.0, c.y + 3.0)], st);
+            p.line_segment([pos2(c.x + 3.0, c.y + 3.0), pos2(c.x + 0.5, c.y + 4.5)], st);
+            p.line_segment([pos2(c.x + 0.5, c.y + 4.5), pos2(c.x - 2.8, c.y + 3.5)], st);
+            p.line_segment([pos2(c.x - 5.0, c.y), pos2(c.x + 5.0, c.y)], Stroke::new(stroke_w * 1.2, col));
+        }
+        StickyToolIcon::Checklist => {
+            let box_r = Rect::from_center_size(c, Vec2::splat(9.0));
+            p.rect_stroke(box_r, if tc.retro16 { 0.0 } else { 1.5 }, st, StrokeKind::Inside);
+            p.line_segment([pos2(c.x - 2.8, c.y - 0.2), pos2(c.x - 0.8, c.y + 2.2)], Stroke::new(stroke_w * 1.1, col));
+            p.line_segment([pos2(c.x - 0.8, c.y + 2.2), pos2(c.x + 3.0, c.y - 2.0)], Stroke::new(stroke_w * 1.1, col));
+        }
+        StickyToolIcon::BulletList => {
+            for dy in [-3.5, 0.0, 3.5] {
+                let y = c.y + dy;
+                if tc.retro16 {
+                    p.rect_filled(Rect::from_min_size(pos2(c.x - 4.8, y - 1.0), Vec2::splat(2.0)), 0.0, col);
+                } else {
+                    p.circle_filled(pos2(c.x - 4.0, y), 1.2, col);
+                }
+                p.line_segment([pos2(c.x - 1.5, y), pos2(c.x + 4.5, y)], st);
+            }
+        }
+        StickyToolIcon::Timestamp => {
+            p.circle_stroke(c, 4.5, st);
+            p.line_segment([c, pos2(c.x, c.y - 2.6)], st);
+            p.line_segment([c, pos2(c.x + 2.2, c.y)], st);
+        }
+        StickyToolIcon::Copy => {
+            let back_r = Rect::from_min_max(pos2(c.x - 4.0, c.y - 4.5), pos2(c.x + 1.5, c.y + 2.5));
+            let front_r = Rect::from_min_max(pos2(c.x - 1.5, c.y - 2.0), pos2(c.x + 4.0, c.y + 5.0));
+            let r_round = if tc.retro16 { 0.0 } else { 1.0 };
+            p.rect_stroke(back_r, r_round, Stroke::new(1.0, col.gamma_multiply(0.6)), StrokeKind::Inside);
+            p.rect_stroke(front_r, r_round, st, StrokeKind::Inside);
+        }
+        StickyToolIcon::Clear => {
+            let p1 = pos2(c.x - 3.5, c.y - 1.0);
+            let p2 = pos2(c.x + 1.0, c.y - 4.5);
+            let p3 = pos2(c.x + 4.5, c.y - 1.5);
+            let p4 = pos2(c.x, c.y + 2.5);
+            p.line_segment([p1, p2], st);
+            p.line_segment([p2, p3], st);
+            p.line_segment([p3, p4], st);
+            p.line_segment([p4, p1], st);
+            p.line_segment([pos2(c.x - 5.0, c.y + 4.5), pos2(c.x + 4.0, c.y + 4.5)], Stroke::new(1.0, col.gamma_multiply(0.6)));
+        }
+    }
+}
+
+/// 绘制便笺顶栏小按钮 (支持各主题自适应底框与自绘矢量图标)
 fn draw_header_btn(
     ui: &mut Ui,
-    icon: &str,
+    icon: StickyHeaderIcon,
     tip: &str,
     tc: &crate::view::ThemeColors,
     palette: &NotePalette,
@@ -1472,41 +1862,17 @@ fn draw_header_btn(
     let is_hovered = resp.hovered();
     let is_active = resp.is_pointer_button_down_on();
 
-    let bg = if is_active {
-        palette.accent.gamma_multiply(0.4)
-    } else if is_hovered {
-        palette.accent.gamma_multiply(0.2)
-    } else {
-        Color32::TRANSPARENT
-    };
-
-    let round = if tc.retro16 { 0.0 } else { 3.0 };
-    p.rect_filled(rect, round, bg);
-
-    if is_hovered || is_active {
-        p.rect_stroke(
-            rect,
-            round,
-            Stroke::new(1.0, palette.accent.gamma_multiply(0.8)),
-            StrokeKind::Inside,
-        );
-    }
-
-    p.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        icon,
-        FontId::proportional(11.5),
-        palette.fg,
-    );
+    let (content_rect, icon_col) =
+        paint_sticky_btn_frame(p, rect, tc, palette, is_hovered, is_active, false);
+    paint_sticky_header_icon(p, content_rect, icon, tc, icon_col);
 
     resp
 }
 
-/// 绘制便笺底栏格式化工具按钮
+/// 绘制便笺底栏格式化工具按钮 (支持各主题自适应底框与自绘矢量图标)
 fn draw_tool_btn(
     ui: &mut Ui,
-    text: &str,
+    icon: StickyToolIcon,
     tip: &str,
     tc: &crate::view::ThemeColors,
     palette: &NotePalette,
@@ -1519,33 +1885,9 @@ fn draw_tool_btn(
     let is_hovered = resp.hovered();
     let is_active = resp.is_pointer_button_down_on();
 
-    let bg = if is_active {
-        palette.accent.gamma_multiply(0.35)
-    } else if is_hovered {
-        palette.accent.gamma_multiply(0.18)
-    } else {
-        Color32::TRANSPARENT
-    };
-
-    let round = if tc.retro16 { 0.0 } else { 2.5 };
-    p.rect_filled(rect, round, bg);
-
-    if is_hovered {
-        p.rect_stroke(
-            rect,
-            round,
-            Stroke::new(1.0, palette.accent.gamma_multiply(0.6)),
-            StrokeKind::Inside,
-        );
-    }
-
-    p.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        text,
-        FontId::proportional(11.0),
-        palette.fg,
-    );
+    let (content_rect, icon_col) =
+        paint_sticky_btn_frame(p, rect, tc, palette, is_hovered, is_active, false);
+    paint_sticky_tool_icon(p, content_rect, icon, tc, icon_col);
 
     resp
 }
@@ -1704,5 +2046,73 @@ mod tests {
         });
         out.textures_delta.clear();
         assert!(app.sticky_notes.show_list);
+    }
+
+    #[test]
+    fn test_all_sticky_notes_themed_icons_and_frames() {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            let p = root.painter();
+            let rect = Rect::from_min_size(pos2(10.0, 10.0), Vec2::splat(22.0));
+
+            let mut tc_list = vec![
+                crate::view::ThemeColors::builtin(false),
+                crate::view::ThemeColors::builtin(true),
+            ];
+
+            let mut tc_comic = crate::view::ThemeColors::builtin(false);
+            tc_comic.comic = true;
+            tc_list.push(tc_comic);
+
+            let mut tc_retro = crate::view::ThemeColors::builtin(true);
+            tc_retro.retro16 = true;
+            tc_list.push(tc_retro);
+
+            let mut tc_crystal = crate::view::ThemeColors::builtin(false);
+            tc_crystal.crystal = true;
+            tc_list.push(tc_crystal);
+
+            let header_icons = [
+                StickyHeaderIcon::New,
+                StickyHeaderIcon::List,
+                StickyHeaderIcon::BackToEdit,
+                StickyHeaderIcon::Palette,
+                StickyHeaderIcon::Pin(false),
+                StickyHeaderIcon::Pin(true),
+                StickyHeaderIcon::Delete,
+                StickyHeaderIcon::Close,
+            ];
+
+            let tool_icons = [
+                StickyToolIcon::Bold,
+                StickyToolIcon::Italic,
+                StickyToolIcon::Underline,
+                StickyToolIcon::Strikethrough,
+                StickyToolIcon::Checklist,
+                StickyToolIcon::BulletList,
+                StickyToolIcon::Timestamp,
+                StickyToolIcon::Copy,
+                StickyToolIcon::Clear,
+            ];
+
+            for tc in &tc_list {
+                let pal = get_palette(0, tc);
+                for hovered in [false, true] {
+                    for active in [false, true] {
+                        let (c_rect, col) = paint_sticky_btn_frame(p, rect, tc, &pal, hovered, active, false);
+                        assert!(c_rect.width() > 0.0);
+                        assert_ne!(col, Color32::TRANSPARENT);
+
+                        for icon in &header_icons {
+                            paint_sticky_header_icon(p, c_rect, *icon, tc, col);
+                        }
+                        for icon in &tool_icons {
+                            paint_sticky_tool_icon(p, c_rect, *icon, tc, col);
+                        }
+                    }
+                }
+            }
+        });
+        out.textures_delta.clear();
     }
 }

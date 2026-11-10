@@ -477,7 +477,7 @@ impl App {
                                 is_highlighted,
                             );
 
-                            paint_collab_icon(ui.painter(), content_rect, is_running, icon_col);
+                            paint_collab_icon(ui.painter(), content_rect, is_running, icon_col, &self.tc);
                             if resp.clicked() {
                                 collab_toggle = true;
                             }
@@ -592,7 +592,7 @@ impl App {
             is_highlighted,
         );
 
-        paint_diff_icon(ui.painter(), content_rect, is_active, icon_col);
+        paint_diff_icon(ui.painter(), content_rect, is_active, icon_col, &self.tc);
 
         // 点击展开差异比对菜单
         egui::Popup::menu(&resp).show(|ui| {
@@ -1137,8 +1137,14 @@ pub enum DiffAction {
     Clear,
 }
 
-/// 绘制“双文档差异对比”图标 (左右并排小文档，带高亮差异色条)
-fn paint_diff_icon(painter: &egui::Painter, rect: Rect, is_active: bool, theme_fg: Color32) {
+/// 绘制“双文档差异对比”图标 (左右并排小文档，带高亮差异色条，自适应各主题画风)
+fn paint_diff_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    is_active: bool,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
     let center = rect.center();
     let page_w = 7.0;
     let page_h = 11.0;
@@ -1150,19 +1156,28 @@ fn paint_diff_icon(painter: &egui::Painter, rect: Rect, is_active: bool, theme_f
     let right_min = egui::pos2(center.x + page_gap * 0.5, center.y - page_h * 0.5);
     let right_rect = Rect::from_min_size(right_min, Vec2::new(page_w, page_h));
 
-    let stroke_color = if is_active {
+    let stroke_color = if tc.comic {
+        Color32::BLACK
+    } else if is_active {
         Color32::from_rgb(0, 190, 255)
     } else {
         theme_fg.gamma_multiply(0.85)
     };
-    let doc_stroke = egui::Stroke::new(1.0, stroke_color);
+    let stroke_w = if tc.comic { 1.5 } else { 1.0 };
+    let doc_stroke = egui::Stroke::new(stroke_w, stroke_color);
 
     // 绘制左右两个文档背景底板与边框
-    painter.rect_filled(left_rect, 1.0, Color32::from_black_alpha(40));
-    painter.rect_stroke(left_rect, 1.0, doc_stroke, egui::StrokeKind::Inside);
+    let round = if tc.retro16 { 0.0 } else { 1.0 };
+    let bg_fill = if tc.comic {
+        Color32::from_rgb(255, 255, 240)
+    } else {
+        Color32::from_black_alpha(40)
+    };
+    painter.rect_filled(left_rect, round, bg_fill);
+    painter.rect_stroke(left_rect, round, doc_stroke, egui::StrokeKind::Inside);
 
-    painter.rect_filled(right_rect, 1.0, Color32::from_black_alpha(40));
-    painter.rect_stroke(right_rect, 1.0, doc_stroke, egui::StrokeKind::Inside);
+    painter.rect_filled(right_rect, round, bg_fill);
+    painter.rect_stroke(right_rect, round, doc_stroke, egui::StrokeKind::Inside);
 
     // 文档内的代码行
     let y1 = left_rect.top() + 3.0;
@@ -1170,12 +1185,16 @@ fn paint_diff_icon(painter: &egui::Painter, rect: Rect, is_active: bool, theme_f
     let y3 = left_rect.top() + 8.5;
 
     // 普通代码行 (低透明度)
-    let normal_stroke = egui::Stroke::new(1.0, stroke_color.gamma_multiply(0.35));
+    let normal_stroke = egui::Stroke::new(1.0, stroke_color.gamma_multiply(if tc.comic { 0.55 } else { 0.35 }));
     painter.hline(left_rect.left() + 1.5..=left_rect.right() - 1.5, y1, normal_stroke);
     painter.hline(right_rect.left() + 1.5..=right_rect.right() - 1.5, y1, normal_stroke);
 
     // 高亮差异行 (左暖黄，右亮绿/鲜红)
-    let left_diff = Color32::from_rgb(255, 185, 30);
+    let left_diff = if tc.retro16 {
+        Color32::from_rgb(255, 215, 0)
+    } else {
+        Color32::from_rgb(255, 185, 30)
+    };
     let right_diff = if is_active {
         Color32::from_rgb(40, 220, 110)
     } else {
@@ -1190,14 +1209,29 @@ fn paint_diff_icon(painter: &egui::Painter, rect: Rect, is_active: bool, theme_f
 
     // 活跃状态下，在两页之间绘制高亮对比连接点
     if is_active {
-        painter.circle_filled(center, 1.5, Color32::from_rgb(0, 200, 255));
+        let dot_col = if tc.retro16 {
+            Color32::from_rgb(0, 255, 120)
+        } else if tc.comic {
+            Color32::BLACK
+        } else {
+            Color32::from_rgb(0, 200, 255)
+        };
+        painter.circle_filled(center, 1.5, dot_col);
     }
 }
 
-/// 绘制多 Agent 协同工作台图标 (两个微缩协同智能体头像，带网络连接与状态光斑)
-fn paint_collab_icon(painter: &egui::Painter, rect: Rect, is_running: bool, theme_fg: Color32) {
+/// 绘制多 Agent 协同工作台图标 (两个微缩协同智能体头像，带网络连接与状态光斑，自适应各主题画风)
+fn paint_collab_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    is_running: bool,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
     let center = rect.center();
-    let col = if is_running {
+    let col = if tc.comic {
+        Color32::BLACK
+    } else if is_running {
         Color32::from_rgb(0, 220, 130)
     } else {
         theme_fg.gamma_multiply(0.85)
@@ -1207,23 +1241,31 @@ fn paint_collab_icon(painter: &egui::Painter, rect: Rect, is_running: bool, them
     let p1 = egui::pos2(center.x - 4.5, center.y - 3.5);
     let p2 = egui::pos2(center.x + 4.5, center.y + 3.5);
 
-    painter.circle_filled(p1, 3.2, Color32::from_black_alpha(40));
-    painter.circle_stroke(p1, 3.2, egui::Stroke::new(1.0, col));
+    let avatar_bg = if tc.comic {
+        if is_running { Color32::from_rgb(180, 250, 180) } else { Color32::from_rgb(255, 235, 75) }
+    } else {
+        Color32::from_black_alpha(40)
+    };
+    let stroke_w = if tc.comic { 1.5 } else { 1.0 };
 
-    painter.circle_filled(p2, 3.2, Color32::from_black_alpha(40));
-    painter.circle_stroke(p2, 3.2, egui::Stroke::new(1.0, col));
+    painter.circle_filled(p1, 3.2, avatar_bg);
+    painter.circle_stroke(p1, 3.2, egui::Stroke::new(stroke_w, col));
+
+    painter.circle_filled(p2, 3.2, avatar_bg);
+    painter.circle_stroke(p2, 3.2, egui::Stroke::new(stroke_w, col));
 
     // 智能体之间的协同链路
     let link_col = if is_running {
-        Color32::from_rgb(0, 220, 130)
+        if tc.retro16 { Color32::from_rgb(0, 255, 120) } else { Color32::from_rgb(0, 220, 130) }
     } else {
-        col.gamma_multiply(0.4)
+        col.gamma_multiply(0.5)
     };
-    painter.line_segment([p1, p2], egui::Stroke::new(1.0, link_col));
+    painter.line_segment([p1, p2], egui::Stroke::new(if tc.comic { 1.4 } else { 1.0 }, link_col));
 
     // 运行态光斑
     if is_running {
-        painter.circle_filled(center, 1.8, Color32::from_rgb(0, 255, 180));
+        let spot_col = if tc.retro16 { Color32::from_rgb(0, 255, 200) } else { Color32::from_rgb(0, 255, 180) };
+        painter.circle_filled(center, 1.8, spot_col);
     }
 }
 

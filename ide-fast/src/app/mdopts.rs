@@ -510,6 +510,20 @@ impl App {
                         .fill(Color32::from_rgb(32, 36, 52))
                         .stroke(egui::Stroke::new(1.5, Color32::BLACK))
                         .corner_radius(3.0)
+                    } else if tc.retro16 {
+                        egui::Button::new(
+                            egui::RichText::new(trz("▲ 折叠")).size(11.0).color(Color32::from_rgb(255, 215, 0)),
+                        )
+                        .fill(Color32::from_rgb(21, 15, 43))
+                        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(255, 215, 0)))
+                        .corner_radius(0.0)
+                    } else if tc.crystal || tc.clear {
+                        egui::Button::new(
+                            egui::RichText::new(trz("▲ 折叠")).size(11.0).color(Color32::WHITE),
+                        )
+                        .fill(Color32::from_rgba_unmultiplied(255, 255, 255, 25))
+                        .stroke(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60)))
+                        .corner_radius(6.0)
                     } else {
                         egui::Button::new(
                             egui::RichText::new(trz("▲ 折叠")).size(11.0),

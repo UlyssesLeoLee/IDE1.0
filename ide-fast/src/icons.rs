@@ -34,23 +34,48 @@ pub fn has_icon(id: &str) -> bool {
 
 /// 在 `rect` 里画命令 `id` 的图标; 返回是否有这个图标
 pub fn paint(ui: &Ui, rect: Rect, id: &str, col: Color32) -> bool {
+    let tc = crate::view::ThemeColors::default();
+    paint_themed_icon(ui.painter(), rect, id, col, &tc)
+}
+
+/// 在 `rect` 里绘制具备主题专属风格 (Comic 手绘墨线 / Retro 像素对齐 / Crystal 色散微光) 的命令图标
+pub fn paint_themed_icon(
+    p: &eframe::egui::Painter,
+    rect: Rect,
+    id: &str,
+    col: Color32,
+    tc: &crate::view::ThemeColors,
+) -> bool {
     if !has_icon(id) {
         return false;
     }
-    let p = ui.painter();
     let s = rect.shrink2(Vec2::splat((rect.width() - 16.0).max(0.0) / 2.0)); // 居中的 16x16
     let u = |x: f32, y: f32| -> Pos2 { pos2(s.min.x + x, s.min.y + y) };
-    let st = Stroke::new(1.3, col);
+    let stroke_w = if tc.comic {
+        1.8 // 美漫 3渲2: 粗墨线波普手绘感
+    } else if tc.retro16 {
+        1.1 // Retro 16-Bit: 锐利像素网格对齐
+    } else {
+        1.3
+    };
+    let st = Stroke::new(stroke_w, col);
     let line = |a: Pos2, b: Pos2| {
         p.line_segment([a, b], st);
     };
     let poly = |pts: &[Pos2]| {
-        p.add(Shape::line(pts.to_vec(), PathStroke::new(1.3, col)));
+        p.add(Shape::line(pts.to_vec(), PathStroke::new(stroke_w, col)));
     };
     let boxr = |x0: f32, y0: f32, x1: f32, y1: f32| {
+        let round = if tc.retro16 {
+            0.0
+        } else if tc.comic {
+            1.5
+        } else {
+            1.0
+        };
         p.rect_stroke(
             Rect::from_min_max(u(x0, y0), u(x1, y1)),
-            1.0,
+            round,
             st,
             StrokeKind::Middle,
         );
@@ -418,7 +443,7 @@ pub fn icon_button_themed(
             is_active,
             false,
         );
-        paint(ui, content_rect, id, col);
+        paint_themed_icon(ui.painter(), content_rect, id, col, tc);
     }
     resp.tip(tip)
 }
@@ -472,6 +497,27 @@ mod tests {
                 Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(SIZE)),
                 "c.nope",
                 Color32::WHITE
+            ));
+
+            // 验证 paint_themed_icon 在不同主题 (Comic/Retro16/Crystal) 下均能正确绘制
+            let mut tc_comic = crate::view::ThemeColors::builtin(false);
+            tc_comic.comic = true;
+            assert!(paint_themed_icon(
+                ui.painter(),
+                Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(SIZE)),
+                "c.save",
+                Color32::BLACK,
+                &tc_comic
+            ));
+
+            let mut tc_retro = crate::view::ThemeColors::builtin(true);
+            tc_retro.retro16 = true;
+            assert!(paint_themed_icon(
+                ui.painter(),
+                Rect::from_min_size(pos2(0.0, 0.0), Vec2::splat(SIZE)),
+                "c.new-file",
+                Color32::from_rgb(255, 215, 0),
+                &tc_retro
             ));
         });
         out.textures_delta.clear();
