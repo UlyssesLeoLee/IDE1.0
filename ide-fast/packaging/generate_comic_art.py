@@ -26,7 +26,7 @@ def get_version():
             m = re.search(r'version\s*=\s*"([0-9.]+)"', f.read())
             if m:
                 return m.group(1)
-    return "0.6.6"
+    return "0.6.7"
 
 VERSION = get_version()
 

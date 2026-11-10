@@ -365,7 +365,7 @@ impl App {
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(
-                                egui::RichText::new("Release Notes v0.6.6 →")
+                                egui::RichText::new(concat!("Release Notes v", env!("CARGO_PKG_VERSION"), " →"))
                                     .size(10.0)
                                     .color(Color32::from_rgb(0, 240, 255)),
                             );
