@@ -14,7 +14,7 @@
 
 use super::*;
 use eframe::egui::{
-    self, pos2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, TextEdit, Ui, Vec2,
+    self, pos2, Color32, FontId, Rect, Sense, Stroke, StrokeKind, TextEdit, Ui, Vec2,
 };
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -663,22 +663,20 @@ pub fn current_timestamp() -> String {
 }
 
 impl App {
-    /// 渲染常驻便笺浮动窗口
+    /// 渲染常驻便笺独立桌面原生窗口 (Multi-Viewport OS Desktop Window)
+    ///
+    /// 全对标 Windows 自带便笺 (Microsoft Sticky Notes):
+    /// - 独立桌面窗口: 原生平滑拖拽移动、跨屏幕自由悬浮、OS 级窗口置顶 (Always On Top)
+    /// - 7 种经典便笺纸张色彩 + 主题全画风自适应 (美漫 3渲2 / 水晶透明 / 复古 16-Bit / 现代 Fluent)
+    /// - 便笺列表抽屉检索浏览 (Ctrl+H / Ctrl+F)、新建 (+ / Ctrl+N)、删除 (Ctrl+D)
+    /// - 底部富格式化工具栏 (粗体/斜体/下划线/删除线/待办复选框/项目符号/时间戳/剪贴板复制/字数统计)
+    /// - 右下角原生缩放手柄与边框缩放、位置与尺寸自动持久化保存
     pub(super) fn sticky_notes_window(&mut self, ctx: &egui::Context) {
         if !self.sticky_notes.open {
             return;
         }
 
-        let mut is_open = self.sticky_notes.open;
-        let mut new_note_clicked = false;
-        let mut delete_active_clicked = false;
-        let mut copy_clicked = false;
-        let mut clear_clicked = false;
-        let mut toggle_list_clicked = false;
-        let mut append_markdown = None;
-        let mut activate_note_id = None;
-        let mut select_color = None;
-
+        let viewport_id = egui::ViewportId::from_hash_of("ide_sticky_notes_independent_viewport");
         let cur_color_idx = self
             .sticky_notes
             .active_note()
@@ -691,588 +689,715 @@ impl App {
             .map(|n| n.pinned)
             .unwrap_or(false);
 
-        let default_size = Vec2::from(self.sticky_notes.win_size);
+        let mut builder = egui::ViewportBuilder::default()
+            .with_title("便笺 - Sticky Notes")
+            .with_inner_size(self.sticky_notes.win_size)
+            .with_min_inner_size([260.0, 220.0])
+            .with_decorations(false)
+            .with_transparent(true)
+            .with_resizable(true);
 
-        let mut win = egui::Window::new("sticky_notes_floating_window")
-            .id(egui::Id::new("sticky_notes_window_id"))
-            .title_bar(false)
-            .frame(egui::Frame::NONE)
-            .resizable(true)
-            .min_size(Vec2::new(260.0, 220.0))
-            .default_size(default_size);
-
-        if let Some(pos) = self.sticky_notes.win_pos {
-            win = win.default_pos(Pos2::from(pos));
-        }
-
-        // 常驻顶层控制
         if is_pinned {
-            win = win.order(egui::Order::Foreground);
+            builder = builder.with_always_on_top();
+        }
+        if let Some(pos) = self.sticky_notes.win_pos {
+            builder = builder.with_position(pos);
         }
 
         let tc = self.tc;
         let show_list = self.sticky_notes.show_list;
+        let mut close_requested = false;
+        let mut new_note_clicked = false;
+        let mut delete_active_clicked = false;
+        let mut copy_clicked = false;
+        let mut clear_clicked = false;
+        let mut toggle_list_clicked = false;
+        let mut toggle_pin_clicked = false;
+        let mut append_markdown = None;
+        let mut activate_note_id = None;
+        let mut select_color = None;
         let mut note_content_changed = false;
         let mut search_query_changed = false;
+        let mut new_win_pos = None;
+        let mut new_win_size = None;
+        let mut search_focus_requested = false;
 
-        win.show(ctx, |ui| {
-            let win_rect = ui.max_rect();
-
-            // 1. 自绘窗口阴影与背景
-            if tc.retro16 {
-                // Retro 16-Bit 街机微凹凸像素边框
-                ui.painter().rect_filled(win_rect, 0.0, palette.bg);
-                // 顶部/左侧高反差像素光边缘
-                ui.painter().line_segment(
-                    [win_rect.left_top(), win_rect.right_top()],
-                    Stroke::new(2.0, palette.border),
-                );
-                ui.painter().line_segment(
-                    [win_rect.left_top(), win_rect.left_bottom()],
-                    Stroke::new(2.0, palette.border),
-                );
-                // 底部/右侧阴影边
-                ui.painter().line_segment(
-                    [win_rect.left_bottom(), win_rect.right_bottom()],
-                    Stroke::new(2.0, Color32::from_rgb(15, 10, 25)),
-                );
-                ui.painter().line_segment(
-                    [win_rect.right_top(), win_rect.right_bottom()],
-                    Stroke::new(2.0, Color32::from_rgb(15, 10, 25)),
-                );
-            } else if tc.comic {
-                // Comic 3渲2: 纯黑实体硬边剪纸投影 (+4px, +4px) 与 2.5px 粗黑边框
-                ui.painter().rect_filled(
-                    win_rect.translate(Vec2::new(4.0, 4.0)),
-                    0.0,
-                    Color32::from_black_alpha(240),
-                );
-                ui.painter().rect_filled(win_rect, 0.0, palette.bg);
-                ui.painter().rect_stroke(
-                    win_rect,
-                    0.0,
-                    Stroke::new(2.5, Color32::BLACK),
-                    StrokeKind::Inside,
-                );
-            } else if tc.crystal || tc.is_translucent() {
-                // Crystal 水晶透明毛玻璃
-                ui.painter().rect_filled(win_rect, 8.0, palette.bg);
-                ui.painter().rect_stroke(
-                    win_rect,
-                    8.0,
-                    Stroke::new(1.0, palette.border),
-                    StrokeKind::Inside,
-                );
-                // 顶部切面微光反射
-                ui.painter().line_segment(
-                    [
-                        pos2(win_rect.left() + 10.0, win_rect.top() + 1.0),
-                        pos2(win_rect.right() - 10.0, win_rect.top() + 1.0),
-                    ],
-                    Stroke::new(1.0, Color32::from_white_alpha(180)),
-                );
-            } else {
-                // Fluent 现代浅色/深色
-                ui.painter().rect_filled(win_rect, 6.0, palette.bg);
-                ui.painter().rect_stroke(
-                    win_rect,
-                    6.0,
-                    Stroke::new(1.0, palette.border),
-                    StrokeKind::Inside,
-                );
+        ctx.show_viewport_immediate(viewport_id, builder, |vp_ctx, _class| {
+            // 响应操作系统或独立视窗关闭请求
+            if vp_ctx.input(|i| i.viewport().close_requested()) {
+                close_requested = true;
             }
 
-            // 2. 顶栏 (Header Bar - 高度 34px，兼具整体拖拽把手)
-            let header_h = 34.0;
-            let header_rect =
-                Rect::from_min_size(win_rect.min, Vec2::new(win_rect.width(), header_h));
-
-            if tc.retro16 {
-                ui.painter().rect_filled(header_rect, 0.0, palette.header_bg);
-                ui.painter().line_segment(
-                    [header_rect.left_bottom(), header_rect.right_bottom()],
-                    Stroke::new(1.0, palette.border),
-                );
-            } else if tc.comic {
-                ui.painter().rect_filled(header_rect, 0.0, palette.header_bg);
-                ui.painter().line_segment(
-                    [header_rect.left_bottom(), header_rect.right_bottom()],
-                    Stroke::new(2.0, Color32::BLACK),
-                );
-            } else if tc.crystal || tc.is_translucent() {
-                ui.painter().rect_filled(header_rect, 8.0, palette.header_bg);
-                ui.painter().line_segment(
-                    [header_rect.left_bottom(), header_rect.right_bottom()],
-                    Stroke::new(1.0, Color32::from_white_alpha(60)),
-                );
-            } else {
-                ui.painter().rect_filled(header_rect, 6.0, palette.header_bg);
-                ui.painter().line_segment(
-                    [header_rect.left_bottom(), header_rect.right_bottom()],
-                    Stroke::new(1.0, palette.border),
-                );
+            // 实时同步独立视窗在桌面上的实际物理位置与大小
+            if let Some(rect) = vp_ctx.input(|i| i.viewport().outer_rect) {
+                if rect.min.x > -10000.0 && rect.min.y > -10000.0 {
+                    new_win_pos = Some([rect.min.x, rect.min.y]);
+                }
+            }
+            if let Some(rect) = vp_ctx.input(|i| i.viewport().inner_rect) {
+                if rect.width() >= 150.0 && rect.height() >= 150.0 {
+                    new_win_size = Some([rect.width(), rect.height()]);
+                }
             }
 
-            // 顶栏拖动把手 (双击或按住任意空余区域拖移窗口)
-            let drag_resp = ui.interact(
-                header_rect,
-                ui.make_persistent_id("sticky-notes-drag-area"),
-                Sense::drag(),
-            );
-            if drag_resp.dragged() {
-                let delta = drag_resp.drag_delta();
-                let cur = self
-                    .sticky_notes
-                    .win_pos
-                    .unwrap_or([win_rect.min.x, win_rect.min.y]);
-                self.sticky_notes.win_pos = Some([cur[0] + delta.x, cur[1] + delta.y]);
-                self.sticky_notes.mark_dirty();
+            // 独立窗口内快捷键全映射 (对标 Windows 便笺)
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::N)) {
+                new_note_clicked = true;
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::W)) {
+                close_requested = true;
+                vp_ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::H)) {
+                toggle_list_clicked = true;
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::D)) {
+                delete_active_clicked = true;
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
+                search_focus_requested = true;
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::B)) {
+                append_markdown = Some("**粗体文字**".to_string());
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::I)) {
+                append_markdown = Some("*斜体文字*".to_string());
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::U)) {
+                append_markdown = Some("<u>下划线</u>".to_string());
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::T)) {
+                append_markdown = Some("~~删除线~~".to_string());
+            }
+            if vp_ctx.input_mut(|i| {
+                i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::L)
+            }) {
+                append_markdown = Some("\n- [ ] 待办事项".to_string());
             }
 
-            // 顶栏内容排版
-            ui.scope_builder(
-                egui::UiBuilder::new()
-                    .max_rect(header_rect)
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                |ui| {
-                    ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
-                    ui.add_space(6.0);
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(vp_ctx, |ui| {
+                let win_rect = ui.max_rect();
+                // 留出 3px 边缘给阴影与描边，防止被视窗物理边缘硬裁切
+                let card_rect = win_rect.shrink2(Vec2::new(3.0, 3.0));
 
-                    // 2.1 新建便笺按钮 (+)
-                    let new_resp = draw_header_btn(ui, "+", "新建便笺 (Ctrl+N)", &tc, &palette);
-                    if new_resp.clicked() {
-                        new_note_clicked = true;
-                    }
-
-                    // 2.2 便笺列表抽屉按钮 (📑)
-                    let list_resp = draw_header_btn(
-                        ui,
-                        if show_list { "📝" } else { "📑" },
-                        if show_list {
-                            "返回编辑"
-                        } else {
-                            "便笺列表 (Notes List)"
-                        },
-                        &tc,
-                        &palette,
+                // 1. 自绘窗口阴影与背景
+                if tc.retro16 {
+                    // Retro 16-Bit 街机微凹凸像素边框
+                    ui.painter().rect_filled(card_rect, 0.0, palette.bg);
+                    ui.painter().line_segment(
+                        [card_rect.left_top(), card_rect.right_top()],
+                        Stroke::new(2.0, palette.border),
                     );
-                    if list_resp.clicked() {
-                        toggle_list_clicked = true;
-                    }
-
-                    // 2.3 标题显示 (自适应显示当前便笺标题或便笺列表)
-                    let title_text = if show_list {
-                        format!("便笺列表 ({})", self.sticky_notes.notes.len())
-                    } else if let Some(n) = self.sticky_notes.active_note() {
-                        if n.title.is_empty() {
-                            "新建便笺".to_string()
-                        } else {
-                            n.title.chars().take(14).collect::<String>()
-                        }
-                    } else {
-                        "便笺".to_string()
-                    };
-
-                    let font = if tc.retro16 {
-                        FontId::monospace(12.0)
-                    } else {
-                        FontId::proportional(12.0)
-                    };
-                    ui.label(
-                        egui::RichText::new(title_text)
-                            .font(font)
-                            .color(palette.fg.gamma_multiply(0.85))
-                            .strong(),
+                    ui.painter().line_segment(
+                        [card_rect.left_top(), card_rect.left_bottom()],
+                        Stroke::new(2.0, palette.border),
                     );
+                    ui.painter().line_segment(
+                        [card_rect.left_bottom(), card_rect.right_bottom()],
+                        Stroke::new(2.0, Color32::from_rgb(15, 10, 25)),
+                    );
+                    ui.painter().line_segment(
+                        [card_rect.right_top(), card_rect.right_bottom()],
+                        Stroke::new(2.0, Color32::from_rgb(15, 10, 25)),
+                    );
+                } else if tc.comic {
+                    // Comic 3渲2: 纯黑实体硬边剪纸投影 (+3px, +3px) 与 2.5px 粗黑边框
+                    ui.painter().rect_filled(
+                        card_rect.translate(Vec2::new(3.0, 3.0)),
+                        0.0,
+                        Color32::from_black_alpha(230),
+                    );
+                    ui.painter().rect_filled(card_rect, 0.0, palette.bg);
+                    ui.painter().rect_stroke(
+                        card_rect,
+                        0.0,
+                        Stroke::new(2.5, Color32::BLACK),
+                        StrokeKind::Inside,
+                    );
+                } else if tc.crystal || tc.is_translucent() {
+                    // Crystal 水晶透明毛玻璃
+                    ui.painter().rect_filled(card_rect, 8.0, palette.bg);
+                    ui.painter().rect_stroke(
+                        card_rect,
+                        8.0,
+                        Stroke::new(1.0, palette.border),
+                        StrokeKind::Inside,
+                    );
+                    // 顶部切面微光反射
+                    ui.painter().line_segment(
+                        [
+                            pos2(card_rect.left() + 10.0, card_rect.top() + 1.0),
+                            pos2(card_rect.right() - 10.0, card_rect.top() + 1.0),
+                        ],
+                        Stroke::new(1.0, Color32::from_white_alpha(180)),
+                    );
+                } else {
+                    // Fluent 现代浅色/深色
+                    ui.painter().rect_filled(card_rect, 6.0, palette.bg);
+                    ui.painter().rect_stroke(
+                        card_rect,
+                        6.0,
+                        Stroke::new(1.0, palette.border),
+                        StrokeKind::Inside,
+                    );
+                }
 
-                    // 弹性撑开至右侧
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add_space(6.0);
+                // 2. 顶栏 (Header Bar - 高度 36px，兼具操作系统级原生平滑拖拽把手)
+                let header_h = 36.0;
+                let header_rect =
+                    Rect::from_min_size(card_rect.min, Vec2::new(card_rect.width(), header_h));
 
-                        // 2.4 关闭按钮 (✕)
-                        let close_resp = draw_header_btn(
-                            ui,
-                            "✕",
-                            "关闭便笺 (隐藏常驻窗，内容已自动保存)",
-                            &tc,
-                            &palette,
-                        );
-                        if close_resp.clicked() {
-                            is_open = false;
-                        }
+                if tc.retro16 {
+                    ui.painter().rect_filled(header_rect, 0.0, palette.header_bg);
+                    ui.painter().line_segment(
+                        [header_rect.left_bottom(), header_rect.right_bottom()],
+                        Stroke::new(1.0, palette.border),
+                    );
+                } else if tc.comic {
+                    ui.painter().rect_filled(header_rect, 0.0, palette.header_bg);
+                    ui.painter().line_segment(
+                        [header_rect.left_bottom(), header_rect.right_bottom()],
+                        Stroke::new(2.0, Color32::BLACK),
+                    );
+                } else if tc.crystal || tc.is_translucent() {
+                    ui.painter().rect_filled(header_rect, 8.0, palette.header_bg);
+                    ui.painter().line_segment(
+                        [header_rect.left_bottom(), header_rect.right_bottom()],
+                        Stroke::new(1.0, Color32::from_white_alpha(60)),
+                    );
+                } else {
+                    ui.painter().rect_filled(header_rect, 6.0, palette.header_bg);
+                    ui.painter().line_segment(
+                        [header_rect.left_bottom(), header_rect.right_bottom()],
+                        Stroke::new(1.0, palette.border),
+                    );
+                }
 
-                        // 2.5 删除按钮 (🗑️)
-                        if !show_list {
-                            let del_resp =
-                                draw_header_btn(ui, "🗑️", "删除此便笺 (Delete)", &tc, &palette);
-                            if del_resp.clicked() {
-                                delete_active_clicked = true;
-                            }
-                        }
-
-                        // 2.6 置顶常驻按钮 (📌)
-                        let pin_label = if is_pinned { "📍" } else { "📌" };
-                        let pin_tip = if is_pinned {
-                            "取消常驻置顶"
-                        } else {
-                            "常驻置顶 (始终在最前)"
-                        };
-                        let pin_resp = draw_header_btn(ui, pin_label, pin_tip, &tc, &palette);
-                        if pin_resp.clicked() {
-                            if let Some(n) = self.sticky_notes.active_note_mut() {
-                                n.pinned = !n.pinned;
-                            }
-                            self.sticky_notes.mark_dirty();
-                        }
-
-                        // 2.7 调色盘按钮 (🎨)
-                        let pal_resp = draw_header_btn(ui, "🎨", "切换便笺纸张色彩", &tc, &palette);
-                        if pal_resp.clicked() {
-                            self.sticky_notes.color_picker_open =
-                                !self.sticky_notes.color_picker_open;
-                        }
-                    });
-                },
-            );
-
-            // 3. 颜色选择悬浮下拉面板 (如果展开)
-            if self.sticky_notes.color_picker_open {
-                let picker_rect = Rect::from_min_size(
-                    pos2(win_rect.right() - 210.0, header_rect.bottom() + 4.0),
-                    Vec2::new(200.0, 32.0),
+                // 顶栏拖动把手 (调用 Windows DWM 原生 StartDrag，支持跨多显示器、分屏与无缝移动)
+                let drag_resp = ui.interact(
+                    header_rect,
+                    ui.make_persistent_id("sticky-notes-native-drag-handle"),
+                    Sense::drag(),
                 );
-                ui.painter().rect_filled(
-                    picker_rect,
-                    4.0,
-                    if tc.dark {
-                        Color32::from_rgb(30, 32, 40)
-                    } else {
-                        Color32::WHITE
-                    },
-                );
-                ui.painter().rect_stroke(
-                    picker_rect,
-                    4.0,
-                    Stroke::new(1.0, palette.border),
-                    StrokeKind::Inside,
-                );
+                if drag_resp.drag_started() || drag_resp.dragged() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
 
+                // 顶栏内容排版
                 ui.scope_builder(
                     egui::UiBuilder::new()
-                        .max_rect(picker_rect)
+                        .max_rect(header_rect)
                         .layout(egui::Layout::left_to_right(egui::Align::Center)),
                     |ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
-                        ui.add_space(4.0);
-                        for idx in 0..7 {
-                            let chip_pal = get_palette(idx, &tc);
-                            let (c_rect, c_resp) =
-                                ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
-                            let tip = COLOR_NAMES[idx];
-                            let c_resp = c_resp.on_hover_text(tip);
-                            let chip_p = ui.painter();
-                            let is_curr = cur_color_idx == idx;
-                            chip_p.rect_filled(c_rect, 3.0, chip_pal.bg);
-                            let st = if is_curr {
-                                Stroke::new(2.0, palette.accent)
-                            } else {
-                                Stroke::new(1.0, Color32::from_black_alpha(100))
-                            };
-                            chip_p.rect_stroke(c_rect, 3.0, st, StrokeKind::Inside);
-                            if c_resp.clicked() {
-                                select_color = Some(idx);
-                            }
-                        }
-                    },
-                );
-            }
-
-            // 4. 内容主体排版
-            let body_rect = Rect::from_min_max(
-                pos2(win_rect.left(), header_rect.bottom()),
-                pos2(
-                    win_rect.right(),
-                    win_rect.bottom() - if show_list { 0.0 } else { 32.0 },
-                ),
-            );
-
-            if show_list {
-                // ================= 便笺列表模式 (Notes List) =================
-                ui.scope_builder(
-                    egui::UiBuilder::new()
-                        .max_rect(body_rect)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                    |ui| {
                         ui.add_space(6.0);
-                        // 搜索输入栏
-                        ui.horizontal(|ui| {
-                            ui.add_space(8.0);
-                            let search_w = ui.available_width() - 16.0;
-                            let search_resp = ui.add_sized(
-                                [search_w, 24.0],
-                                TextEdit::singleline(&mut self.sticky_notes.search_query)
-                                    .hint_text("🔍 搜索便笺内容与标题..."),
+
+                        // 2.1 新建便笺按钮 (+)
+                        let new_resp = draw_header_btn(ui, "+", "新建便笺 (Ctrl+N)", &tc, &palette);
+                        if new_resp.clicked() {
+                            new_note_clicked = true;
+                        }
+
+                        // 2.2 便笺列表抽屉按钮 (📑)
+                        let list_resp = draw_header_btn(
+                            ui,
+                            if show_list { "📝" } else { "📑" },
+                            if show_list {
+                                "返回编辑便笺"
+                            } else {
+                                "便笺列表 (Notes List - Ctrl+H)"
+                            },
+                            &tc,
+                            &palette,
+                        );
+                        if list_resp.clicked() {
+                            toggle_list_clicked = true;
+                        }
+
+                        // 2.3 标题显示 (自适应显示当前便笺标题或便笺列表)
+                        let title_text = if show_list {
+                            format!("便笺列表 ({})", self.sticky_notes.notes.len())
+                        } else if let Some(n) = self.sticky_notes.active_note() {
+                            if n.title.is_empty() {
+                                "新建便笺".to_string()
+                            } else {
+                                n.title.chars().take(14).collect::<String>()
+                            }
+                        } else {
+                            "便笺".to_string()
+                        };
+
+                        let font = if tc.retro16 {
+                            FontId::monospace(12.0)
+                        } else {
+                            FontId::proportional(12.0)
+                        };
+                        ui.label(
+                            egui::RichText::new(title_text)
+                                .font(font)
+                                .color(palette.fg.gamma_multiply(0.85))
+                                .strong(),
+                        );
+
+                        // 弹性撑开至右侧
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(6.0);
+
+                            // 2.4 关闭按钮 (✕)
+                            let close_resp = draw_header_btn(
+                                ui,
+                                "✕",
+                                "关闭便笺 (Ctrl+W，内容已自动保存)",
+                                &tc,
+                                &palette,
                             );
-                            if search_resp.changed() {
-                                search_query_changed = true;
+                            if close_resp.clicked() {
+                                close_requested = true;
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+
+                            // 2.5 删除按钮 (🗑️)
+                            if !show_list {
+                                let del_resp = draw_header_btn(
+                                    ui,
+                                    "🗑️",
+                                    "删除此便笺 (Ctrl+D)",
+                                    &tc,
+                                    &palette,
+                                );
+                                if del_resp.clicked() {
+                                    delete_active_clicked = true;
+                                }
+                            }
+
+                            // 2.6 置顶常驻按钮 (📌)
+                            let pin_label = if is_pinned { "📍" } else { "📌" };
+                            let pin_tip = if is_pinned {
+                                "取消桌面置顶 (已常驻前端)"
+                            } else {
+                                "桌面常驻置顶 (始终在最前)"
+                            };
+                            let pin_resp = draw_header_btn(ui, pin_label, pin_tip, &tc, &palette);
+                            if pin_resp.clicked() {
+                                toggle_pin_clicked = true;
+                                let next_pinned = !is_pinned;
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                                    if next_pinned {
+                                        egui::WindowLevel::AlwaysOnTop
+                                    } else {
+                                        egui::WindowLevel::Normal
+                                    },
+                                ));
+                            }
+
+                            // 2.7 调色盘按钮 (🎨)
+                            let pal_resp =
+                                draw_header_btn(ui, "🎨", "切换便笺纸张色彩", &tc, &palette);
+                            if pal_resp.clicked() {
+                                self.sticky_notes.color_picker_open =
+                                    !self.sticky_notes.color_picker_open;
                             }
                         });
-
-                        ui.add_space(6.0);
-                        ui.separator();
-
-                        // 滚动列表项
-                        let q = self.sticky_notes.search_query.to_lowercase();
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
-                                let mut to_delete: Option<String> = None;
-                                let mut to_select = None;
-
-                                for note in &self.sticky_notes.notes {
-                                    if !q.is_empty()
-                                        && !note.title.to_lowercase().contains(&q)
-                                        && !note.content.to_lowercase().contains(&q)
-                                    {
-                                        continue;
-                                    }
-
-                                    let is_active = note.id == self.sticky_notes.active_id;
-                                    let (row_rect, row_resp) = ui.allocate_exact_size(
-                                        Vec2::new(ui.available_width() - 12.0, 48.0),
-                                        Sense::click(),
-                                    );
-                                    let row_p = ui.painter();
-
-                                    let note_pal = get_palette(note.color_idx, &tc);
-                                    let row_bg = if is_active {
-                                        note_pal.bg
-                                    } else if row_resp.hovered() {
-                                        palette.header_bg
-                                    } else {
-                                        Color32::from_black_alpha(15)
-                                    };
-
-                                    row_p.rect_filled(row_rect, 4.0, row_bg);
-                                    row_p.rect_stroke(
-                                        row_rect,
-                                        4.0,
-                                        Stroke::new(
-                                            1.0,
-                                            if is_active {
-                                                note_pal.accent
-                                            } else {
-                                                palette.border.gamma_multiply(0.5)
-                                            },
-                                        ),
-                                        StrokeKind::Inside,
-                                    );
-
-                                    // 左侧色彩标识色块
-                                    let badge_rect = Rect::from_min_size(
-                                        pos2(row_rect.left() + 6.0, row_rect.center().y - 12.0),
-                                        Vec2::new(6.0, 24.0),
-                                    );
-                                    row_p.rect_filled(badge_rect, 2.0, note_pal.accent);
-
-                                    // 标题
-                                    row_p.text(
-                                        pos2(row_rect.left() + 18.0, row_rect.top() + 14.0),
-                                        egui::Align2::LEFT_CENTER,
-                                        note.title.chars().take(22).collect::<String>(),
-                                        FontId::proportional(12.5),
-                                        palette.fg,
-                                    );
-
-                                    // 日期时间与简要片段
-                                    let snippet = note
-                                        .content
-                                        .lines()
-                                        .find(|l| !l.is_empty())
-                                        .unwrap_or("")
-                                        .chars()
-                                        .take(24)
-                                        .collect::<String>();
-                                    let sub_text = format!("{} · {}", note.updated_at, snippet);
-                                    row_p.text(
-                                        pos2(row_rect.left() + 18.0, row_rect.top() + 32.0),
-                                        egui::Align2::LEFT_CENTER,
-                                        sub_text,
-                                        FontId::proportional(10.0),
-                                        palette.fg.gamma_multiply(0.65),
-                                    );
-
-                                    let del_btn_rect = Rect::from_center_size(
-                                        pos2(row_rect.right() - 16.0, row_rect.center().y),
-                                        Vec2::splat(18.0),
-                                    );
-                                    let del_btn_resp = ui
-                                        .interact(
-                                            del_btn_rect,
-                                            ui.make_persistent_id(format!("del_note_{}", note.id)),
-                                            Sense::click(),
-                                        )
-                                        .on_hover_text("删除此便笺");
-                                    row_p.text(
-                                        del_btn_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        "🗑️",
-                                        FontId::proportional(11.0),
-                                        palette.fg,
-                                    );
-                                    if del_btn_resp.clicked() {
-                                        to_delete = Some(note.id.clone());
-                                    } else if row_resp.clicked() {
-                                        to_select = Some(note.id.clone());
-                                    }
-                                }
-
-                                if let Some(id) = to_select {
-                                    activate_note_id = Some(id);
-                                }
-                                if let Some(id) = to_delete {
-                                    self.sticky_notes.delete_note(&id);
-                                }
-                            });
                     },
                 );
-            } else {
-                // ================= 主便笺编辑模式 (Main Note Editor) =================
-                ui.scope_builder(
-                    egui::UiBuilder::new()
-                        .max_rect(body_rect)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                    |ui| {
-                        let active_id = self.sticky_notes.active_id.clone();
-                        if let Some(note) =
-                            self.sticky_notes.notes.iter_mut().find(|n| n.id == active_id)
-                        {
-                            ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-                            let font_id = if tc.retro16 {
-                                FontId::monospace(13.0)
-                            } else {
-                                FontId::proportional(13.0)
-                            };
+                // 3. 颜色选择悬浮下拉面板 (如果展开)
+                if self.sticky_notes.color_picker_open {
+                    let picker_rect = Rect::from_min_size(
+                        pos2(card_rect.right() - 210.0, header_rect.bottom() + 4.0),
+                        Vec2::new(200.0, 32.0),
+                    );
+                    ui.painter().rect_filled(
+                        picker_rect,
+                        4.0,
+                        if tc.dark {
+                            Color32::from_rgb(30, 32, 40)
+                        } else {
+                            Color32::WHITE
+                        },
+                    );
+                    ui.painter().rect_stroke(
+                        picker_rect,
+                        4.0,
+                        Stroke::new(1.0, palette.border),
+                        StrokeKind::Inside,
+                    );
 
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(picker_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                            ui.add_space(4.0);
+                            for idx in 0..7 {
+                                let chip_pal = get_palette(idx, &tc);
+                                let (c_rect, c_resp) =
+                                    ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+                                let tip = COLOR_NAMES[idx];
+                                let c_resp = c_resp.on_hover_text(tip);
+                                let chip_p = ui.painter();
+                                let is_curr = cur_color_idx == idx;
+                                chip_p.rect_filled(c_rect, 3.0, chip_pal.bg);
+                                let st = if is_curr {
+                                    Stroke::new(2.0, palette.accent)
+                                } else {
+                                    Stroke::new(1.0, Color32::from_black_alpha(100))
+                                };
+                                chip_p.rect_stroke(c_rect, 3.0, st, StrokeKind::Inside);
+                                if c_resp.clicked() {
+                                    select_color = Some(idx);
+                                }
+                            }
+                        },
+                    );
+                }
+
+                // 4. 内容主体排版
+                let body_rect = Rect::from_min_max(
+                    pos2(card_rect.left(), header_rect.bottom()),
+                    pos2(
+                        card_rect.right(),
+                        card_rect.bottom() - if show_list { 0.0 } else { 32.0 },
+                    ),
+                );
+
+                if show_list {
+                    // ================= 便笺列表模式 (Notes List) =================
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(body_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                        |ui| {
+                            ui.add_space(6.0);
+                            // 搜索输入栏
+                            ui.horizontal(|ui| {
+                                ui.add_space(8.0);
+                                let search_w = ui.available_width() - 16.0;
+                                let search_resp = ui.add_sized(
+                                    [search_w, 24.0],
+                                    TextEdit::singleline(&mut self.sticky_notes.search_query)
+                                        .hint_text("🔍 搜索便笺内容与标题 (Ctrl+F)..."),
+                                );
+                                if search_focus_requested {
+                                    search_resp.request_focus();
+                                }
+                                if search_resp.changed() {
+                                    search_query_changed = true;
+                                }
+                            });
+
+                            ui.add_space(6.0);
+                            ui.separator();
+
+                            // 滚动列表项
+                            let q = self.sticky_notes.search_query.to_lowercase();
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
-                                    ui.add_space(4.0);
-                                    let edit_resp = ui.add(
-                                        TextEdit::multiline(&mut note.content)
-                                            .font(font_id)
-                                            .text_color(palette.fg)
-                                            .desired_width(f32::INFINITY)
-                                            .frame(egui::Frame::NONE)
-                                            .hint_text("记下一些文字、备忘或 Markdown 待办..."),
-                                    );
+                                    ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
+                                    let mut to_delete: Option<String> = None;
+                                    let mut to_select = None;
 
-                                    // 单次聚焦逻辑 (避免 IME 闪烁)
-                                    if self.sticky_notes.focus_needed {
-                                        edit_resp.request_focus();
-                                        self.sticky_notes.focus_needed = false;
-                                    }
-                                    self.sticky_notes.has_focus = edit_resp.has_focus();
+                                    for note in &self.sticky_notes.notes {
+                                        if !q.is_empty()
+                                            && !note.title.to_lowercase().contains(&q)
+                                            && !note.content.to_lowercase().contains(&q)
+                                        {
+                                            continue;
+                                        }
 
-                                    if edit_resp.changed() {
-                                        note_content_changed = true;
-                                        note.updated_at = current_timestamp();
-                                        // 智能依据首行提炼标题
-                                        let first_line = note
+                                        let is_active = note.id == self.sticky_notes.active_id;
+                                        let (row_rect, row_resp) = ui.allocate_exact_size(
+                                            Vec2::new(ui.available_width() - 12.0, 48.0),
+                                            Sense::click(),
+                                        );
+                                        let row_p = ui.painter();
+
+                                        let note_pal = get_palette(note.color_idx, &tc);
+                                        let row_bg = if is_active {
+                                            note_pal.bg
+                                        } else if row_resp.hovered() {
+                                            palette.header_bg
+                                        } else {
+                                            Color32::from_black_alpha(15)
+                                        };
+
+                                        row_p.rect_filled(row_rect, 4.0, row_bg);
+                                        row_p.rect_stroke(
+                                            row_rect,
+                                            4.0,
+                                            Stroke::new(
+                                                1.0,
+                                                if is_active {
+                                                    note_pal.accent
+                                                } else {
+                                                    palette.border.gamma_multiply(0.5)
+                                                },
+                                            ),
+                                            StrokeKind::Inside,
+                                        );
+
+                                        // 左侧色彩标识色块
+                                        let badge_rect = Rect::from_min_size(
+                                            pos2(
+                                                row_rect.left() + 6.0,
+                                                row_rect.center().y - 12.0,
+                                            ),
+                                            Vec2::new(6.0, 24.0),
+                                        );
+                                        row_p.rect_filled(badge_rect, 2.0, note_pal.accent);
+
+                                        // 标题
+                                        row_p.text(
+                                            pos2(row_rect.left() + 18.0, row_rect.top() + 14.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            note.title.chars().take(22).collect::<String>(),
+                                            FontId::proportional(12.5),
+                                            palette.fg,
+                                        );
+
+                                        // 日期时间与简要片段
+                                        let snippet = note
                                             .content
                                             .lines()
-                                            .map(|l| l.trim().trim_start_matches('#').trim())
-                                            .find(|l| !l.is_empty());
-                                        if let Some(fl) = first_line {
-                                            note.title = fl.chars().take(24).collect();
+                                            .find(|l| !l.is_empty())
+                                            .unwrap_or("")
+                                            .chars()
+                                            .take(24)
+                                            .collect::<String>();
+                                        let sub_text = format!("{} · {}", note.updated_at, snippet);
+                                        row_p.text(
+                                            pos2(row_rect.left() + 18.0, row_rect.top() + 32.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            sub_text,
+                                            FontId::proportional(10.0),
+                                            palette.fg.gamma_multiply(0.65),
+                                        );
+
+                                        let del_btn_rect = Rect::from_center_size(
+                                            pos2(row_rect.right() - 16.0, row_rect.center().y),
+                                            Vec2::splat(18.0),
+                                        );
+                                        let del_btn_resp = ui
+                                            .interact(
+                                                del_btn_rect,
+                                                ui.make_persistent_id(format!(
+                                                    "del_note_{}",
+                                                    note.id
+                                                )),
+                                                Sense::click(),
+                                            )
+                                            .on_hover_text("删除此便笺");
+                                        row_p.text(
+                                            del_btn_rect.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            "🗑️",
+                                            FontId::proportional(11.0),
+                                            palette.fg,
+                                        );
+                                        if del_btn_resp.clicked() {
+                                            to_delete = Some(note.id.clone());
+                                        } else if row_resp.clicked() {
+                                            to_select = Some(note.id.clone());
                                         }
                                     }
+
+                                    if let Some(id) = to_select {
+                                        activate_note_id = Some(id);
+                                    }
+                                    if let Some(id) = to_delete {
+                                        self.sticky_notes.delete_note(&id);
+                                    }
                                 });
-                        }
-                    },
-                );
+                        },
+                    );
+                } else {
+                    // ================= 主便笺编辑模式 (Main Note Editor) =================
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(body_rect)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                        |ui| {
+                            let active_id = self.sticky_notes.active_id.clone();
+                            if let Some(note) =
+                                self.sticky_notes.notes.iter_mut().find(|n| n.id == active_id)
+                            {
+                                ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-                // 5. 底部快捷格式化工具栏 (Formatting Toolbar - 高度 32px，与 Windows 便笺完全一致)
-                let toolbar_rect = Rect::from_min_max(
-                    pos2(win_rect.left(), win_rect.bottom() - 32.0),
-                    win_rect.right_bottom(),
-                );
+                                let font_id = if tc.retro16 {
+                                    FontId::monospace(13.0)
+                                } else {
+                                    FontId::proportional(13.0)
+                                };
 
-                ui.painter().rect_filled(toolbar_rect, 0.0, palette.toolbar_bg);
-                ui.painter().line_segment(
-                    [toolbar_rect.left_top(), toolbar_rect.right_top()],
-                    Stroke::new(1.0, palette.border.gamma_multiply(0.6)),
-                );
+                                egui::ScrollArea::vertical()
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        ui.add_space(4.0);
+                                        let edit_resp = ui.add(
+                                            TextEdit::multiline(&mut note.content)
+                                                .font(font_id)
+                                                .text_color(palette.fg)
+                                                .desired_width(f32::INFINITY)
+                                                .frame(egui::Frame::NONE)
+                                                .hint_text("记下一些文字、备忘或 Markdown 待办..."),
+                                        );
 
-                ui.scope_builder(
-                    egui::UiBuilder::new()
-                        .max_rect(toolbar_rect)
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                    |ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
-                        ui.add_space(4.0);
+                                        // 单次聚焦逻辑 (避免 IME 闪烁)
+                                        if self.sticky_notes.focus_needed {
+                                            edit_resp.request_focus();
+                                            self.sticky_notes.focus_needed = false;
+                                        }
+                                        self.sticky_notes.has_focus = edit_resp.has_focus();
 
-                        // 粗体 (B)
-                        if draw_tool_btn(ui, "B", "粗体 (**文字**)", &tc, &palette).clicked() {
-                            append_markdown = Some("**粗体文字**".to_string());
-                        }
-                        // 斜体 (I)
-                        if draw_tool_btn(ui, "I", "斜体 (*文字*)", &tc, &palette).clicked() {
-                            append_markdown = Some("*斜体文字*".to_string());
-                        }
-                        // 下划线 (U)
-                        if draw_tool_btn(ui, "U", "下划线 (<u>文字</u>)", &tc, &palette).clicked() {
-                            append_markdown = Some("<u>下划线</u>".to_string());
-                        }
-                        // 删除线 (S)
-                        if draw_tool_btn(ui, "S", "删除线 (~~文字~~)", &tc, &palette).clicked() {
-                            append_markdown = Some("~~删除线~~".to_string());
-                        }
-                        // 代办复选框 (☑)
-                        if draw_tool_btn(ui, "☑", "待办项 (- [ ])", &tc, &palette).clicked() {
-                            append_markdown = Some("\n- [ ] 待办事项".to_string());
-                        }
-                        // 项目符号 (•)
-                        if draw_tool_btn(ui, "•", "项目符号 (- 列表)", &tc, &palette).clicked() {
-                            append_markdown = Some("\n- 列表项".to_string());
-                        }
-                        // 时间戳 (🕒)
-                        if draw_tool_btn(ui, "🕒", "插入当前时间戳", &tc, &palette).clicked() {
-                            append_markdown = Some(format!("\n[{}] ", current_timestamp()));
-                        }
-                        // 复制全部 (📋)
-                        if draw_tool_btn(ui, "📋", "一键复制便笺全文到剪贴板", &tc, &palette).clicked()
-                        {
-                            copy_clicked = true;
-                        }
-                        // 清空 (🧹)
-                        if draw_tool_btn(ui, "🧹", "清空便笺内容", &tc, &palette).clicked() {
-                            clear_clicked = true;
-                        }
-
-                        // 右侧字数与行数统计
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(8.0);
-                            if let Some(n) = self.sticky_notes.active_note() {
-                                let chars_cnt = n.content.chars().count();
-                                let lines_cnt = n.content.lines().count().max(1);
-                                let stats_text = format!("{} 字 · {} 行", chars_cnt, lines_cnt);
-                                ui.label(
-                                    egui::RichText::new(stats_text)
-                                        .font(FontId::proportional(10.0))
-                                        .color(palette.fg.gamma_multiply(0.6)),
-                                );
+                                        if edit_resp.changed() {
+                                            note_content_changed = true;
+                                            note.updated_at = current_timestamp();
+                                            // 智能依据首行提炼标题
+                                            let first_line = note
+                                                .content
+                                                .lines()
+                                                .map(|l| l.trim().trim_start_matches('#').trim())
+                                                .find(|l| !l.is_empty());
+                                            if let Some(fl) = first_line {
+                                                note.title = fl.chars().take(24).collect();
+                                            }
+                                        }
+                                    });
                             }
-                        });
-                    },
-                );
-            }
+                        },
+                    );
+
+                    // 5. 底部快捷格式化工具栏 (Formatting Toolbar - 高度 32px，与 Windows 便笺完全一致)
+                    let toolbar_rect = Rect::from_min_max(
+                        pos2(card_rect.left(), card_rect.bottom() - 32.0),
+                        card_rect.right_bottom(),
+                    );
+
+                    ui.painter().rect_filled(toolbar_rect, 0.0, palette.toolbar_bg);
+                    ui.painter().line_segment(
+                        [toolbar_rect.left_top(), toolbar_rect.right_top()],
+                        Stroke::new(1.0, palette.border.gamma_multiply(0.6)),
+                    );
+
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(toolbar_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+                            ui.add_space(4.0);
+
+                            // 粗体 (B)
+                            if draw_tool_btn(ui, "B", "粗体 (Ctrl+B)", &tc, &palette).clicked() {
+                                append_markdown = Some("**粗体文字**".to_string());
+                            }
+                            // 斜体 (I)
+                            if draw_tool_btn(ui, "I", "斜体 (Ctrl+I)", &tc, &palette).clicked() {
+                                append_markdown = Some("*斜体文字*".to_string());
+                            }
+                            // 下划线 (U)
+                            if draw_tool_btn(ui, "U", "下划线 (Ctrl+U)", &tc, &palette).clicked() {
+                                append_markdown = Some("<u>下划线</u>".to_string());
+                            }
+                            // 删除线 (S)
+                            if draw_tool_btn(ui, "S", "删除线 (Ctrl+T)", &tc, &palette).clicked() {
+                                append_markdown = Some("~~删除线~~".to_string());
+                            }
+                            // 待办复选框 (☑)
+                            if draw_tool_btn(ui, "☑", "待办项 (Ctrl+Shift+L)", &tc, &palette)
+                                .clicked()
+                            {
+                                append_markdown = Some("\n- [ ] 待办事项".to_string());
+                            }
+                            // 项目符号 (•)
+                            if draw_tool_btn(ui, "•", "项目符号 (- 列表)", &tc, &palette).clicked()
+                            {
+                                append_markdown = Some("\n- 列表项".to_string());
+                            }
+                            // 时间戳 (🕒)
+                            if draw_tool_btn(ui, "🕒", "插入当前时间戳", &tc, &palette).clicked() {
+                                append_markdown = Some(format!("\n[{}] ", current_timestamp()));
+                            }
+                            // 复制全部 (📋)
+                            if draw_tool_btn(ui, "📋", "一键复制便笺全文到剪贴板", &tc, &palette)
+                                .clicked()
+                            {
+                                copy_clicked = true;
+                            }
+                            // 清空 (🧹)
+                            if draw_tool_btn(ui, "🧹", "清空便笺内容", &tc, &palette).clicked() {
+                                clear_clicked = true;
+                            }
+
+                            // 右侧字数与行数统计
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.add_space(20.0); // 留给右下角缩放手柄空间
+                                if let Some(n) = self.sticky_notes.active_note() {
+                                    let chars_cnt = n.content.chars().count();
+                                    let lines_cnt = n.content.lines().count().max(1);
+                                    let stats_text = format!("{} 字 · {} 行", chars_cnt, lines_cnt);
+                                    ui.label(
+                                        egui::RichText::new(stats_text)
+                                            .font(FontId::proportional(10.0))
+                                            .color(palette.fg.gamma_multiply(0.6)),
+                                    );
+                                }
+                            });
+                        },
+                    );
+
+                    // 6. 右下角原生缩放把手 (Resize Grip Handle)
+                    let grip_rect = Rect::from_min_max(
+                        pos2(card_rect.right() - 16.0, card_rect.bottom() - 16.0),
+                        card_rect.right_bottom(),
+                    );
+                    let grip_resp = ui.interact(
+                        grip_rect,
+                        ui.make_persistent_id("sticky-notes-resize-grip"),
+                        Sense::drag(),
+                    );
+                    if grip_resp.hovered() || grip_resp.dragged() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+                    }
+                    if grip_resp.drag_started() || grip_resp.dragged() {
+                        ui.ctx().send_viewport_cmd(
+                            egui::ViewportCommand::BeginResize(egui::ResizeDirection::SouthEast),
+                        );
+                    }
+                    draw_resize_grip(ui, grip_rect, &tc, &palette);
+                }
+            });
         });
 
         // 外部状态副作用处理
-        self.sticky_notes.open = is_open;
+        if close_requested {
+            self.sticky_notes.open = false;
+        }
+
+        if let Some(pos) = new_win_pos {
+            if self.sticky_notes.win_pos != Some(pos) {
+                self.sticky_notes.win_pos = Some(pos);
+                self.sticky_notes.mark_dirty();
+            }
+        }
+
+        if let Some(size) = new_win_size {
+            if (self.sticky_notes.win_size[0] - size[0]).abs() > 1.0
+                || (self.sticky_notes.win_size[1] - size[1]).abs() > 1.0
+            {
+                self.sticky_notes.win_size = size;
+                self.sticky_notes.mark_dirty();
+            }
+        }
+
+        if toggle_pin_clicked {
+            if let Some(n) = self.sticky_notes.active_note_mut() {
+                n.pinned = !n.pinned;
+            }
+            self.sticky_notes.mark_dirty();
+        }
 
         if let Some(color_idx) = select_color {
             if let Some(n) = self.sticky_notes.active_note_mut() {
@@ -1425,6 +1550,42 @@ fn draw_tool_btn(
     resp
 }
 
+/// 绘制便笺右下角原生缩放把手 (Resize Grip Handle)
+fn draw_resize_grip(
+    ui: &mut Ui,
+    rect: Rect,
+    tc: &crate::view::ThemeColors,
+    palette: &NotePalette,
+) {
+    let p = ui.painter();
+    let col = palette.fg.gamma_multiply(0.35);
+    let r = rect.right() - 4.0;
+    let b = rect.bottom() - 4.0;
+
+    if tc.retro16 {
+        // Retro 16-Bit: 街机像素阶梯方块
+        let pts = [(2.0, 2.0), (6.0, 2.0), (2.0, 6.0), (10.0, 2.0), (6.0, 6.0), (2.0, 10.0)];
+        for (dx, dy) in pts {
+            p.rect_filled(
+                Rect::from_min_size(pos2(r - dx, b - dy), Vec2::splat(2.0)),
+                0.0,
+                col,
+            );
+        }
+    } else if tc.comic {
+        // Comic 3渲2: 纯黑实体斜向刻度划线
+        p.line_segment([pos2(r - 3.0, b), pos2(r, b - 3.0)], Stroke::new(1.8, Color32::BLACK));
+        p.line_segment([pos2(r - 7.0, b), pos2(r, b - 7.0)], Stroke::new(1.8, Color32::BLACK));
+        p.line_segment([pos2(r - 11.0, b), pos2(r, b - 11.0)], Stroke::new(1.8, Color32::BLACK));
+    } else {
+        // 现代 Fluent / Crystal 柔和圆点阵列
+        let pts = [(3.0, 3.0), (7.0, 3.0), (3.0, 7.0), (11.0, 3.0), (7.0, 7.0), (3.0, 11.0)];
+        for (dx, dy) in pts {
+            p.circle_filled(pos2(r - dx, b - dy), 1.2, col);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1492,5 +1653,56 @@ mod tests {
             let p = get_palette(idx, &tc);
             assert_ne!(p.bg, Color32::TRANSPARENT);
         }
+    }
+
+    #[test]
+    fn test_sticky_notes_independent_viewport_window_rendering() {
+        let mut app = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        app.sticky_notes.open = true;
+        let ctx = egui::Context::default();
+
+        // 1. 默认现代主题下独立视窗运行
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+        assert!(app.sticky_notes.open);
+
+        // 2. Comic 美漫 3渲2 主题下独立视窗渲染
+        app.tc.comic = true;
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+
+        // 3. Crystal 水晶毛玻璃主题下独立视窗渲染
+        app.tc.comic = false;
+        app.tc.crystal = true;
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+
+        // 4. Retro 16-Bit 街机主题下独立视窗渲染
+        app.tc.crystal = false;
+        app.tc.retro16 = true;
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+
+        // 5. 切换到列表模式并渲染
+        app.sticky_notes.show_list = true;
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+        assert!(app.sticky_notes.show_list);
     }
 }
