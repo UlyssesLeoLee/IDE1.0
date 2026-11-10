@@ -685,6 +685,8 @@ Not signature-verified; install only plugins you trust. Install?"]),
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
     ("便笺 (Sticky Notes)", ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"]),
+    ("更多快捷操作", ["更多快捷操作", "その他のショートカット", "More Quick Actions"]),
+    ("更多快捷操作 (折叠)", ["更多快捷操作 (折叠)", "その他のショートカット (折りたたみ)", "More Quick Actions (Collapsed)"]),
     ("打开命令面板 (Ctrl+Shift+P / Shift+F1)", ["打开命令面板 (Ctrl+Shift+P / Shift+F1)", "コマンドパレットを開く (Ctrl+Shift+P / Shift+F1)", "Open Command Palette (Ctrl+Shift+P / Shift+F1)"]),
     ("欢迎与安装向导…", ["欢迎与安装向导…", "⚡ ようこそ・インストールウィザード…", "⚡ Welcome & Setup Wizard…"]),
     ("显示空白符", ["显示空白符", "空白文字を表示", "Show Whitespace"]),
