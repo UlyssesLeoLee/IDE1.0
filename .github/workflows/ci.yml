@@ -930,7 +930,7 @@ jobs:
           sha256sum dist/* >> RELEASE_NOTES.md
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/ide-shell-desktop-*.deb
