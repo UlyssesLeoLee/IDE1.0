@@ -319,7 +319,7 @@ jobs:
           cache-dependency-path: tests/uat/package-lock.json
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-chromium-v${{ hashFiles('tests/uat/package-lock.json') }}
