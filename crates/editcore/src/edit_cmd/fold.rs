@@ -26,7 +26,12 @@ pub(super) fn run(cx: &Ctx, all: bool) -> EditRes {
         }
     }
     let tip = folds.is_empty().then(|| "这里没有可折叠的块".to_string());
-    EditRes { cursor: [cx.row, cx.col], folds: Some(folds), tip, ..Default::default() }
+    EditRes {
+        cursor: [cx.row, cx.col],
+        folds: Some(folds),
+        tip,
+        ..Default::default()
+    }
 }
 
 /// 一行里 `c` ('{' 或 '}') 的个数, 跳过字符串 "..." / 字符 '{' / 行注释 // 里的 (它们不开块也不收块)
@@ -57,7 +62,11 @@ fn count_braces(l: &[char], c: char) -> isize {
 /// 从第 `start` 行起的折叠块结束行 (含); 没有可折叠的块 = None
 fn fold_end(lines: &[Vec<char>], start: usize) -> Option<usize> {
     let line = lines.get(start)?;
-    let end = if count_braces(line, '{') > count_braces(line, '}') { brace_block_end(lines, start) } else { indent_block_end(lines, start)? };
+    let end = if count_braces(line, '{') > count_braces(line, '}') {
+        brace_block_end(lines, start)
+    } else {
+        indent_block_end(lines, start)?
+    };
     (end > start).then_some(end)
 }
 
@@ -106,7 +115,11 @@ mod tests {
         let l: Vec<char> = "let s = \"}\"; let c = '{'; // {".chars().collect();
         assert_eq!((count_braces(&l, '{'), count_braces(&l, '}')), (0, 0));
         let l: Vec<char> = "if (a) { b(\"\\\"}\") }".chars().collect();
-        assert_eq!((count_braces(&l, '{'), count_braces(&l, '}')), (1, 1), "转义的引号不结束字符串");
+        assert_eq!(
+            (count_braces(&l, '{'), count_braces(&l, '}')),
+            (1, 1),
+            "转义的引号不结束字符串"
+        );
     }
 
     #[test]
@@ -114,7 +127,11 @@ mod tests {
         let src = lines(&["fn a() {", "    if x {", "    }", "}", "tail"]);
         assert_eq!(fold_end(&src, 0), Some(3));
         assert_eq!(fold_end(&src, 1), Some(2));
-        assert_eq!(fold_end(&lines(&["if (a) {", "  b();"]), 0), Some(1), "配不上 = 到文档末尾");
+        assert_eq!(
+            fold_end(&lines(&["if (a) {", "  b();"]), 0),
+            Some(1),
+            "配不上 = 到文档末尾"
+        );
     }
 
     #[test]

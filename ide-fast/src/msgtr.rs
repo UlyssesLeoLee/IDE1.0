@@ -5,6 +5,8 @@
 
 use crate::i18n::{cur, Lang};
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// (中文模板, 日文模板, 英文模板); `{}` 依次对应
@@ -12,6 +14,10 @@ type Row = (&'static str, &'static str, &'static str);
 
 const MSG_T: &[Row] = &[
     // ---- 文档 / 编辑
+    ("安装向导首选配置已生效", "インストールウィザードの設定を適用しました", "Setup wizard preferences applied"),
+    ("⚡ 系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理", "⚡ システムトレイ常駐が有効です: タスクバー右下のトレイアイコンから呼び出せます", "⚡ System tray resident is active: use the tray icon next to the system clock to restore or manage"),
+    ("已开启系统托盘常驻 (关闭窗口将最小化到任务栏托盘)", "タスクトレイ常駐を有効にしました (閉じる時に最小化)", "Enabled system tray resident (minimize to tray on close)"),
+    ("已关闭系统托盘常驻 (关闭窗口将直接退出程序)", "タスクトレイ常駐を無効にしました (閉じる時に終了)", "Disabled system tray resident (exit application on close)"),
     ("已从磁盘重新载入", "ディスクから再読み込みしました", "Reloaded from disk"),
     ("已按 {} 重新打开", "{} で開き直しました", "Reopened as {}"),
     ("保存时的换行符: {}", "保存時の改行コード: {}", "Line ending on save: {}"),
@@ -67,6 +73,10 @@ const MSG_T: &[Row] = &[
     ("没有更新的移动履历", "これより後の移動履歴はありません", "No later jump history"),
     ("文件超过 8 MB", "ファイルが 8 MB を超えています", "File is larger than 8 MB"),
     ("文件太大 ({} MB, 上限 {} MB): 高速版把整篇载入内存, 请用专门的大文件查看器", "ファイルが大きすぎます ({} MB, 上限 {} MB): 高速版は全体をメモリに読み込みます。大容量ファイル用ビューアを使ってください", "File too large ({} MB, limit {} MB): the fast edition loads the whole file into memory; use a dedicated large-file viewer"),
+    ("超大文件 ({} MB) 自动拆页: 第 1/{} 页 (每页 {} 行, 全文 {} 行) [Alt+PageDown 翻页]", "超大ファイル ({} MB) 自動ページ分割: 1/{} ページ (1ページ {} 行, 全 {} 行) [Alt+PageDown ページ送り]", "Large file ({} MB) paginated: page 1/{} ({} lines/page, {} lines total) [Alt+PageDown for next]"),
+    ("已切换到第 {}/{} 页 (行 {}-{}, 全文 {} 行)", "第 {}/{} ページに切り替えました ({}〜{} 行, 全 {} 行)", "Switched to page {}/{} (lines {}-{}, {} lines total)"),
+    ("第 {}/{} 页 (全局行 {}, 全文 {} 行)", "第 {}/{} ページ (全体行 {}, 全 {} 行)", "Page {}/{} (global line {}, {} lines total)"),
+    ("已打开跨页 Grep 搜索: 输入关键词回车即可定位到分页与行号", "ページ間 Grep 検索を開きました: キーワードを入力して Enter でページと行へ移動", "Cross-page Grep opened: enter keyword and press Enter to jump to page and line"),
     ("看起来是二进制文件 (含 NUL 字节), 不按文本打开", "バイナリファイルのようです (NUL バイトを含む)。テキストとしては開きません", "Looks like a binary file (contains NUL bytes); not opened as text"),
     // ---- 比较 / 宏 / 预览
     ("{}: 没有可显示的差异 (未跟踪文件?)", "{}: 表示できる差分がありません (未追跡ファイル?)", "{}: no differences to show (untracked file?)"),
@@ -238,6 +248,7 @@ const MSG_T: &[Row] = &[
     ("[图片 {}: {}]", "[画像 {}: {}]", "[image {}: {}]"),
     ("[图片 {}: {} (只支持本地 PNG)]", "[画像 {}: {} (ローカルの PNG のみ対応)]", "[image {}: {} (local PNG only)]"),
     ("暂无终端会话", "ターミナルセッションなし", "No terminal session"),
+    ("已在 PowerShell 终端执行选区 ({} 行)", "PowerShell ターミナルで選択範囲を実行しました ({} 行)", "Executed selection in PowerShell terminal ({} lines)"),
     ("(无名)", "(名前なし)", "(unnamed)"),
     ("无活动", "アクティブなし", "No activity"),
     ("无标题", "無題", "Untitled"),
@@ -293,6 +304,41 @@ Read-only: {}"),
     ("成功", "成功", "Success"),
     ("疑问", "疑問", "Question"),
     ("引用", "引用", "Quote"),
+    (
+        "已回收 {} 个文件 Cookie, 释放 {}",
+        "{} 件のファイル Cookie を回収し、{} を解放しました",
+        "Pruned {} file cookies, freed {}",
+    ),
+    (
+        "{} 已完成并行区域写入",
+        "{} の並列リージョン書き込みが完了しました",
+        "{} completed parallel region write",
+    ),
+    (
+        "多 Agent 已并行写入 {} 处互不重叠区域",
+        "マルチ Agent が {} 箇所の非重複リージョンへ並列書き込みしました",
+        "Multi-Agent wrote {} non-overlapping regions in parallel",
+    ),
+    (
+        "多 Agent 已并行写入 {} 处区域",
+        "マルチ Agent が {} 箇所のリージョンへ並列書き込みしました",
+        "Multi-Agent wrote {} regions in parallel",
+    ),
+    (
+        "{} 已协同更新分配区域 ({} 处)",
+        "{} が割り当てリージョンを協調更新しました ({} 箇所)",
+        "{} collaboratively updated assigned region ({} place(s))",
+    ),
+    (
+        "{} 已完成容错本地协同写入",
+        "{} がフォールバックのローカル協調書き込みを完了しました",
+        "{} completed fallback local collaborative write",
+    ),
+    (
+        "多 Agent 已语法安全并行协同更新 {} 处 .nema 域记录",
+        "マルチ Agent が構文安全に {} 箇所の .nema ドメインレコードを並列協調更新しました",
+        "Multi-Agent syntax-safely updated {} .nema domain record(s) in parallel",
+    ),
 ];
 
 struct Tpl {
@@ -310,10 +356,15 @@ fn index() -> &'static [Tpl] {
             .iter()
             .map(|(zh, ja, en)| {
                 let pieces: Vec<&str> = zh.split("{}").collect();
-                Tpl { weight: pieces.iter().map(|p| p.len()).sum(), pieces, ja, en }
+                Tpl {
+                    weight: pieces.iter().map(|p| p.len()).sum(),
+                    pieces,
+                    ja,
+                    en,
+                }
             })
             .collect();
-        v.sort_by(|a, b| b.weight.cmp(&a.weight));
+        v.sort_by_key(|a| std::cmp::Reverse(a.weight));
         v
     })
 }
@@ -353,10 +404,44 @@ fn fill(tpl: &str, caps: &[String]) -> String {
     out
 }
 
+fn exact_table() -> &'static HashMap<&'static str, (&'static str, &'static str)> {
+    static EXACT: OnceLock<HashMap<&'static str, (&'static str, &'static str)>> = OnceLock::new();
+    EXACT.get_or_init(|| {
+        let mut m = HashMap::new();
+        for &(zh, ja, en) in MSG_T {
+            if !zh.contains("{}") {
+                m.insert(zh, (ja, en));
+            }
+        }
+        m
+    })
+}
+
+thread_local! {
+    static CACHE: RefCell<Vec<(Lang, String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
 fn translate(s: &str, depth: u8) -> Option<String> {
+    if let Some(&(ja, en)) = exact_table().get(s) {
+        return Some(match cur() {
+            Lang::Ja => ja.to_string(),
+            _ => en.to_string(),
+        });
+    }
     for t in index() {
-        let Some(caps) = capture(&t.pieces, s) else { continue };
-        let caps: Vec<String> = caps.iter().map(|c| if depth < 2 { translate(c, depth + 1).unwrap_or_else(|| (*c).to_string()) } else { (*c).to_string() }).collect();
+        let Some(caps) = capture(&t.pieces, s) else {
+            continue;
+        };
+        let caps: Vec<String> = caps
+            .iter()
+            .map(|c| {
+                if depth < 2 {
+                    translate(c, depth + 1).unwrap_or_else(|| (*c).to_string())
+                } else {
+                    (*c).to_string()
+                }
+            })
+            .collect();
         return Some(fill(if cur() == Lang::Ja { t.ja } else { t.en }, &caps));
     }
     None
@@ -364,11 +449,37 @@ fn translate(s: &str, depth: u8) -> Option<String> {
 
 /// 把一条中文消息翻成当前界面语言; 中文界面 / 没有模板 = 原样返回
 pub fn msg(s: &str) -> Cow<'_, str> {
-    if cur() == Lang::Zh || s.is_empty() {
+    let c = cur();
+    if c == Lang::Zh || s.is_empty() {
         return Cow::Borrowed(s);
     }
+    // 优先查精确匹配表: 无分配直接借用静态字面量
+    if let Some(&(ja, en)) = exact_table().get(s) {
+        return Cow::Borrowed(if c == Lang::Ja { ja } else { en });
+    }
+    // 命中线程局部缓存
+    let cached = CACHE.with(|cell| {
+        let cache = cell.borrow();
+        cache
+            .iter()
+            .find(|(l, src, _)| *l == c && src == s)
+            .map(|(_, _, dst)| dst.clone())
+    });
+    if let Some(t) = cached {
+        return Cow::Owned(t);
+    }
+
     match translate(s, 0) {
-        Some(t) => Cow::Owned(t),
+        Some(t) => {
+            CACHE.with(|cell| {
+                let mut cache = cell.borrow_mut();
+                if cache.len() >= 64 {
+                    cache.remove(0);
+                }
+                cache.push((c, s.to_string(), t.clone()));
+            });
+            Cow::Owned(t)
+        }
         None => Cow::Borrowed(s),
     }
 }
@@ -384,11 +495,21 @@ mod tests {
         set(Lang::En);
         assert_eq!(msg("已保存 3 个文件"), "Saved 3 file(s)");
         assert_eq!(msg("已停止, 12 处命中"), "Stopped, 12 hit(s)");
-        assert_eq!(msg("5 处命中 (已达 5000 上限)"), "5 hit(s) (limit 5000 reached)");
-        assert_eq!(msg("置换 4 处, 改写 2 个文件 (已备份为 .bak), 1 个失败"), "Replaced 4 in 2 file(s) (backed up as .bak), 1 failed");
+        assert_eq!(
+            msg("5 处命中 (已达 5000 上限)"),
+            "5 hit(s) (limit 5000 reached)"
+        );
+        assert_eq!(
+            msg("置换 4 处, 改写 2 个文件 (已备份为 .bak), 1 个失败"),
+            "Replaced 4 in 2 file(s) (backed up as .bak), 1 failed"
+        );
         assert_eq!(msg("1/9 (已折返)"), "1/9 (wrapped)");
         assert_eq!(msg("置换了 1 处; 1/3"), "Replaced 1; 1/3");
-        assert_eq!(msg("置换了 1 处; 没有找到: x"), "Replaced 1; Not found: x", "嵌套的提示也会翻译");
+        assert_eq!(
+            msg("置换了 1 处; 没有找到: x"),
+            "Replaced 1; Not found: x",
+            "嵌套的提示也会翻译"
+        );
         assert_eq!(msg("没有任何模板的文字"), "没有任何模板的文字");
         set(Lang::Ja);
         assert_eq!(msg("没有找到: abc"), "見つかりません: abc");
@@ -408,9 +529,26 @@ mod tests {
 
     #[test]
     fn matching_is_anchored_at_both_ends() {
-        assert_eq!(capture(&["打不开: ", ""], "打不开: x.txt"), Some(vec!["x.txt"]));
+        assert_eq!(
+            capture(&["打不开: ", ""], "打不开: x.txt"),
+            Some(vec!["x.txt"])
+        );
         assert_eq!(capture(&["", " 处"], "5 处命中"), None);
         assert_eq!(capture(&["a", "b", "c"], "a1b2c"), Some(vec!["1", "2"]));
         assert_eq!(capture(&["无标题"], "无标题 2"), None);
+    }
+
+    #[test]
+    fn exact_table_and_cache_accelerate_translations() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set(Lang::En);
+        // 精确匹配项无分配返回 Cow::Borrowed
+        let m1 = msg("没有对应的括弧");
+        assert!(matches!(m1, Cow::Borrowed("No matching bracket")));
+        // 动态项被缓存
+        let m2 = msg("已保存 42 个文件");
+        assert_eq!(m2, "Saved 42 file(s)");
+        let m3 = msg("已保存 42 个文件");
+        assert_eq!(m3, "Saved 42 file(s)");
     }
 }

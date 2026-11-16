@@ -7,8 +7,12 @@ use eframe::egui::{self, Color32, ScrollArea, Ui};
 /// 细滚动条: 10px, 无边距, 滑块半透明灰
 pub fn thin() -> egui::style::ScrollStyle {
     egui::style::ScrollStyle {
-        bar_width: 10.0, bar_inner_margin: 0.0, bar_outer_margin: 0.0,
-        dormant_handle_opacity: 0.45, active_handle_opacity: 0.45, interact_handle_opacity: 0.7,
+        bar_width: 10.0,
+        bar_inner_margin: 0.0,
+        bar_outer_margin: 0.0,
+        dormant_handle_opacity: 0.45,
+        active_handle_opacity: 0.45,
+        interact_handle_opacity: 0.7,
         ..egui::style::ScrollStyle::solid()
     }
 }
@@ -16,14 +20,29 @@ pub fn thin() -> egui::style::ScrollStyle {
 /// 滑块底色 (Tauri `rgba(127,127,127,.45)` 的 RGB 部分)
 pub const HANDLE: Color32 = Color32::from_rgb(127, 127, 127);
 
-pub fn show<R>(ui: &mut Ui, area: ScrollArea, add: impl FnOnce(&mut Ui) -> R) -> egui::scroll_area::ScrollAreaOutput<R> {
+pub fn show<R>(
+    ui: &mut Ui,
+    area: ScrollArea,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> egui::scroll_area::ScrollAreaOutput<R> {
     let orig = ui.style().clone();
     ui.scope(|ui| {
         ui.spacing_mut().scroll = thin();
         let v = ui.visuals_mut();
-        for w in [&mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active] { w.fg_stroke.color = HANDLE; w.bg_fill = HANDLE; }
-        area.show(ui, |ui| { ui.set_style(orig); add(ui) })
-    }).inner
+        for w in [
+            &mut v.widgets.inactive,
+            &mut v.widgets.hovered,
+            &mut v.widgets.active,
+        ] {
+            w.fg_stroke.color = HANDLE;
+            w.bg_fill = HANDLE;
+        }
+        area.show(ui, |ui| {
+            ui.set_style(orig);
+            add(ui)
+        })
+    })
+    .inner
 }
 
 #[cfg(test)]

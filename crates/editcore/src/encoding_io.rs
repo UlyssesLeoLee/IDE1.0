@@ -71,9 +71,9 @@ pub enum BomKind {
 /// 解码时的编码错误信息
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodingError {
-    pub position: usize,        // 字节位置
-    pub codepoint: char,        // 不可映射的字符
-    pub replacement: String,    // 实际写入的替换 (如 "&#128512;")
+    pub position: usize,     // 字节位置
+    pub codepoint: char,     // 不可映射的字符
+    pub replacement: String, // 实际写入的替换 (如 "&#128512;")
 }
 
 /// 有损编码错误 (写入时不可映射字符)
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_detect_utf8() {
         let bytes = "hello 世界".as_bytes();
-        assert_eq!(detect_encoding(&bytes), EncodingKind::Utf8);
+        assert_eq!(detect_encoding(bytes), EncodingKind::Utf8);
     }
 
     #[test]
@@ -385,7 +385,11 @@ mod tests {
         write_with_encoding(&path, content, EncodingKind::Utf16Le, BomKind::Utf16Le).unwrap();
         // 验证字节流真的是 UTF-16LE
         let bytes = fs::read(&path).unwrap();
-        assert!(bytes.starts_with(&[0xFF, 0xFE]), "UTF-16LE BOM missing: {:02X?}", &bytes[..4]);
+        assert!(
+            bytes.starts_with(&[0xFF, 0xFE]),
+            "UTF-16LE BOM missing: {:02X?}",
+            &bytes[..4]
+        );
         assert_eq!(bytes[2], 0x41); // 'A' = 0x0041 LE -> 41 00
         assert_eq!(bytes[3], 0x00);
         // 读回
@@ -427,7 +431,10 @@ mod tests {
         // "あ" 在 SJIS 可编码; emoji U+1F600 不在 SJIS 范围内
         let content = "a\u{1F600}b";
         let result = write_with_encoding(&path, content, EncodingKind::ShiftJis, BomKind::None);
-        assert!(result.is_err(), "Expected EncodingLossyError for unmappable emoji in Shift_JIS");
+        assert!(
+            result.is_err(),
+            "Expected EncodingLossyError for unmappable emoji in Shift_JIS"
+        );
         if let Err(e) = result {
             let err_str = e.to_string();
             assert!(err_str.contains("EncodingLossyError") || err_str.contains("不可映射"));

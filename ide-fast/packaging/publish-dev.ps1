@@ -1,17 +1,17 @@
-# 发布一个开发预发布 (dev channel) 到 GitHub Releases —— 只是把流程写成脚本, **不会自动运行**; 手动执行或接进 CI。
+﻿# 发布一个开发预发布 (dev channel) 到 GitHub Releases —— 只是把流程写成脚本, **不会自动运行**; 手动执行或接进 CI。
 # 用法 (在仓库根):
 #   powershell -ExecutionPolicy Bypass -File ide-fast/packaging/publish-dev.ps1 -Target <cargo 产物目录> -Out <输出目录> [-Build N] [-Notes "说明"] [-DryRun]
 # 产物与约定见 ide-fast/docs/UPDATE.md:
 #   tag      v<workspace 版本>-dev.<yyyyMMdd>.<N>      (合法 semver 预发布号, 低于同号正式版)
-#   资产     ide-fast-<tag 去掉 v>-windows-x64.exe  (便携版)
-#            IDE1.0-Fast_<版本>_x64.msi             (build-msi.ps1 产出)
+#   资产     IDE1.0-<tag 去掉 v>-windows-x64.exe    (便携版)
+#            IDE1.0_<版本>_x64.msi                   (build-msi.ps1 产出)
 #            SHA256SUMS.txt                         (更新功能必须有, 缺了会拒绝安装; 第一行 "version: <版本> channel: dev" 绑定版本与通道)
 #            SHA256SUMS.txt.sig                     (ed25519 分离签名, 必须有; 私钥路径来自环境变量 IDE_FAST_SIGN_KEY, 见 sign-release.ps1)
 param(
     [Parameter(Mandatory = $true)][string]$Target,
     [Parameter(Mandatory = $true)][string]$Out,
     [int]$Build = 1,
-    [string]$Notes = "IDE1.0 Fast 开发预发布 (dev channel)",
+    [string]$Notes = "IDE1.0 开发预发布 (dev channel)",
     [switch]$DryRun
 )
 $ErrorActionPreference = "Stop"
@@ -25,14 +25,14 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build-msi.ps1") -Target $Target -Out $Out
 if ($LASTEXITCODE -ne 0) { throw "build-msi.ps1 失败" }
 
-# 2. 便携 exe 改成带 dev 版本号的名字 (更新功能按 ide-fast-*-windows-x64.exe 认资产)
-$portableOld = Join-Path $Out "ide-fast-$ver-windows-x64.exe"
-$portable = Join-Path $Out "ide-fast-$assetVer-windows-x64.exe"
+# 2. 便携 exe 改成带 dev 版本号的名字 (更新功能按 IDE1.0-*-windows-x64.exe / ide-fast-*-windows-x64.exe 认资产)
+$portableOld = Join-Path $Out "IDE1.0-$ver-windows-x64.exe"
+$portable = Join-Path $Out "IDE1.0-$assetVer-windows-x64.exe"
 Move-Item -Force $portableOld $portable
-$msi = Get-ChildItem $Out -Filter "IDE1.0-Fast_*_x64.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$msi = Get-ChildItem $Out -Filter "IDE1.0_*_x64.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $msi) { throw "没找到 msi" }
 # msi 文件名也要带完整 dev 版本串 (客户端验签后要求资产名含清单版本; 原名只有四段数字版本 x.y.z.0)
-$msiNew = Join-Path $Out "IDE1.0-Fast_${assetVer}_x64.msi"
+$msiNew = Join-Path $Out "IDE1.0_${assetVer}_x64.msi"
 Move-Item -Force $msi.FullName $msiNew
 $msi = Get-Item $msiNew
 
@@ -52,7 +52,7 @@ $sig = "$sums.sig"
 if ($LASTEXITCODE -ne 0) { throw "sign-release.ps1 失败" }
 
 # 4. 创建预发布 (--prerelease: 稳定通道看不到它; 开发通道能看到)
-$ghArgs = @("release", "create", $tag, $portable, $msi.FullName, $sums, $sig, "--prerelease", "--title", "IDE1.0 Fast $tag", "--notes", $Notes, "--target", "dev")
+$ghArgs = @("release", "create", $tag, $portable, $msi.FullName, $sums, $sig, "--prerelease", "--title", "IDE1.0 $tag", "--notes", $Notes, "--target", "dev")
 if ($DryRun) { Write-Host "[DryRun] gh $($ghArgs -join ' ')"; return }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }

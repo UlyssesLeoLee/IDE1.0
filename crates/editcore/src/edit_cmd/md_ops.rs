@@ -36,7 +36,18 @@ pub(super) fn run(cx: &Ctx) -> Option<EditRes> {
 }
 
 fn sel_or_row(cx: &Ctx) -> (usize, usize) {
-    cx.sel.map(|s| (s[0], if s[3] == 0 && s[2] > s[0] { s[2] - 1 } else { s[2] })).unwrap_or((cx.row, cx.row))
+    cx.sel
+        .map(|s| {
+            (
+                s[0],
+                if s[3] == 0 && s[2] > s[0] {
+                    s[2] - 1
+                } else {
+                    s[2]
+                },
+            )
+        })
+        .unwrap_or((cx.row, cx.row))
 }
 
 fn is_word(c: char) -> bool {
@@ -67,28 +78,64 @@ fn inline(cx: &Ctx, mark: &str) -> EditRes {
     let last = cx.line(r1);
     if r0 == r1 {
         // 已被标记包住 -> 去掉 (标记在选区外, 或选区本身带着标记)
-        let outer = c0 >= n && c1 + n <= first.len() && first[c0 - n..c0] == m[..] && first[c1..c1 + n] == m[..];
+        let outer = c0 >= n
+            && c1 + n <= first.len()
+            && first[c0 - n..c0] == m[..]
+            && first[c1..c1 + n] == m[..];
         let inner = c1 - c0 >= 2 * n && first[c0..c0 + n] == m[..] && first[c1 - n..c1] == m[..];
         let s: String = first.iter().collect();
         if outer {
-            let new = format!("{}{}{}", slice(&first, 0, c0 - n), slice(&first, c0, c1), slice(&first, c1 + n, usize::MAX));
+            let new = format!(
+                "{}{}{}",
+                slice(&first, 0, c0 - n),
+                slice(&first, c0, c1),
+                slice(&first, c1 + n, usize::MAX)
+            );
             let _ = s;
             return EditRes::replace_line(r0, new, [r0, c1 - n]).tip("已取消格式");
         }
         if inner {
-            let new = format!("{}{}{}", slice(&first, 0, c0), slice(&first, c0 + n, c1 - n), slice(&first, c1, usize::MAX));
+            let new = format!(
+                "{}{}{}",
+                slice(&first, 0, c0),
+                slice(&first, c0 + n, c1 - n),
+                slice(&first, c1, usize::MAX)
+            );
             return EditRes::replace_line(r0, new, [r0, c1 - 2 * n]).tip("已取消格式");
         }
         if c0 == c1 {
             // 空处: 放一对标记, 光标在中间
-            let new = format!("{}{}{}{}", slice(&first, 0, c0), mark, mark, slice(&first, c1, usize::MAX));
+            let new = format!(
+                "{}{}{}{}",
+                slice(&first, 0, c0),
+                mark,
+                mark,
+                slice(&first, c1, usize::MAX)
+            );
             return EditRes::replace_line(r0, new, [r0, c0 + n]);
         }
-        let new = format!("{}{}{}{}{}", slice(&first, 0, c0), mark, slice(&first, c0, c1), mark, slice(&first, c1, usize::MAX));
+        let new = format!(
+            "{}{}{}{}{}",
+            slice(&first, 0, c0),
+            mark,
+            slice(&first, c0, c1),
+            mark,
+            slice(&first, c1, usize::MAX)
+        );
         return EditRes::replace_line(r0, new, [r0, c1 + 2 * n]);
     }
-    let a = format!("{}{}{}", slice(&first, 0, c0), mark, slice(&first, c0, usize::MAX));
-    let b = format!("{}{}{}", slice(&last, 0, c1), mark, slice(&last, c1, usize::MAX));
+    let a = format!(
+        "{}{}{}",
+        slice(&first, 0, c0),
+        mark,
+        slice(&first, c0, usize::MAX)
+    );
+    let b = format!(
+        "{}{}{}",
+        slice(&last, 0, c1),
+        mark,
+        slice(&last, c1, usize::MAX)
+    );
     let mut rows = vec![a];
     for r in r0 + 1..r1 {
         rows.push(cx.line(r).iter().collect());
@@ -103,7 +150,9 @@ fn is_quote(l: &str) -> bool {
     l.starts_with("> ") || l == ">"
 }
 fn is_task(l: &str) -> bool {
-    ["- [ ] ", "- [x] ", "- [X] "].iter().any(|p| l.starts_with(p))
+    ["- [ ] ", "- [x] ", "- [X] "]
+        .iter()
+        .any(|p| l.starts_with(p))
 }
 fn is_ul(l: &str) -> bool {
     !is_task(l) && (l.starts_with("- ") || l.starts_with("* ") || l.starts_with("+ "))
@@ -114,7 +163,11 @@ fn is_ol(l: &str) -> bool {
 }
 fn heading_level(l: &str) -> usize {
     let h = l.chars().take_while(|&c| c == '#').count();
-    if (1..=6).contains(&h) && l[h..].starts_with(' ') { h } else { 0 }
+    if (1..=6).contains(&h) && l[h..].starts_with(' ') {
+        h
+    } else {
+        0
+    }
 }
 /// 去掉行首的块前缀 (标题 / 引用 / 列表 / 任务), 返回 (缩进, 余下文本)
 fn strip_block(l: &str) -> (&str, &str) {
@@ -141,7 +194,11 @@ fn strip_block(l: &str) -> (&str, &str) {
 fn prefix_toggle(cx: &Ctx, make: impl Fn(usize) -> String, has: impl Fn(&str) -> bool) -> EditRes {
     let (r0, r1) = sel_or_row(cx);
     let lines: Vec<String> = (r0..=r1).map(|r| cx.line(r).iter().collect()).collect();
-    let all = lines.iter().filter(|l| !l.trim().is_empty()).all(|l| has(l.trim_start())) && lines.iter().any(|l| !l.trim().is_empty());
+    let all = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .all(|l| has(l.trim_start()))
+        && lines.iter().any(|l| !l.trim().is_empty());
     let mut idx = 0;
     let out: Vec<String> = lines
         .iter()
@@ -166,7 +223,10 @@ fn prefix_toggle(cx: &Ctx, make: impl Fn(usize) -> String, has: impl Fn(&str) ->
 fn heading(cx: &Ctx, level: usize) -> EditRes {
     let (r0, r1) = sel_or_row(cx);
     let lines: Vec<String> = (r0..=r1).map(|r| cx.line(r).iter().collect()).collect();
-    let all_same = lines.iter().filter(|l| !l.trim().is_empty()).all(|l| heading_level(l) == level);
+    let all_same = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .all(|l| heading_level(l) == level);
     let out: Vec<String> = lines
         .iter()
         .map(|l| {
@@ -174,7 +234,11 @@ fn heading(cx: &Ctx, level: usize) -> EditRes {
                 return l.clone();
             }
             let (_, rest) = strip_block(l);
-            if all_same { rest.to_string() } else { format!("{} {}", "#".repeat(level), rest) }
+            if all_same {
+                rest.to_string()
+            } else {
+                format!("{} {}", "#".repeat(level), rest)
+            }
         })
         .collect();
     let last = out.last().map(|s| s.chars().count()).unwrap_or(0);
@@ -185,7 +249,11 @@ fn heading(cx: &Ctx, level: usize) -> EditRes {
 
 /// 第 r 行是标题 (围栏代码块里的 # 不算) -> 层级
 fn heading_at(lines: &[String], fences: &[bool], r: usize) -> usize {
-    if fences[r] { 0 } else { heading_level(&lines[r]) }
+    if fences[r] {
+        0
+    } else {
+        heading_level(&lines[r])
+    }
 }
 
 fn section_move(cx: &Ctx, up: bool) -> EditRes {
@@ -206,15 +274,28 @@ fn section_move(cx: &Ctx, up: bool) -> EditRes {
         }
     }
     // 光标所在章节: 向上找最近的标题
-    let Some(s) = (0..=cx.row.min(n - 1)).rev().find(|&r| heading_at(&lines, &fences, r) > 0) else {
+    let Some(s) = (0..=cx.row.min(n - 1))
+        .rev()
+        .find(|&r| heading_at(&lines, &fences, r) > 0)
+    else {
         return cx.nothing("光标不在任何章节里");
     };
     let lvl = heading_at(&lines, &fences, s);
-    let section_end = |from: usize, level: usize| (from + 1..n).find(|&r| { let h = heading_at(&lines, &fences, r); h > 0 && h <= level }).unwrap_or(n);
+    let section_end = |from: usize, level: usize| {
+        (from + 1..n)
+            .find(|&r| {
+                let h = heading_at(&lines, &fences, r);
+                h > 0 && h <= level
+            })
+            .unwrap_or(n)
+    };
     let e = section_end(s, lvl);
     let (a_start, a_end, b_start, b_end) = if up {
         // 前一个同级章节: 向上找最近的层级 <= lvl 的标题, 必须正好同级
-        let Some(p) = (0..s).rev().find(|&r| { let h = heading_at(&lines, &fences, r); h > 0 && h <= lvl }) else {
+        let Some(p) = (0..s).rev().find(|&r| {
+            let h = heading_at(&lines, &fences, r);
+            h > 0 && h <= lvl
+        }) else {
             return cx.nothing("已是第一个章节");
         };
         if heading_at(&lines, &fences, p) != lvl {
@@ -231,8 +312,16 @@ fn section_move(cx: &Ctx, up: bool) -> EditRes {
     moved.extend_from_slice(&lines[a_start..a_end]);
     // 光标跟着章节走: 保持在章节内的相对行
     let off = cx.row - s;
-    let new_start = if up { a_start } else { a_start + (b_end - b_start) };
-    EditRes::splice(a_start, b_end - a_start, moved, [new_start + off, cx.col]).tip(if up { "章节已上移" } else { "章节已下移" })
+    let new_start = if up {
+        a_start
+    } else {
+        a_start + (b_end - b_start)
+    };
+    EditRes::splice(a_start, b_end - a_start, moved, [new_start + off, cx.col]).tip(if up {
+        "章节已上移"
+    } else {
+        "章节已下移"
+    })
 }
 
 // ---------- 块 ----------
@@ -245,9 +334,22 @@ fn link(cx: &Ctx, image: bool) -> EditRes {
     };
     let line = cx.line(row);
     let text = slice(&line, c0, c1);
-    let label = if text.is_empty() { if image { "alt" } else { "text" } } else { text.as_str() };
+    let label = if text.is_empty() {
+        if image {
+            "alt"
+        } else {
+            "text"
+        }
+    } else {
+        text.as_str()
+    };
     let ins = format!("{bang}[{label}](url)");
-    let new = format!("{}{}{}", slice(&line, 0, c0), ins, slice(&line, c1, usize::MAX));
+    let new = format!(
+        "{}{}{}",
+        slice(&line, 0, c0),
+        ins,
+        slice(&line, c1, usize::MAX)
+    );
     // 光标选中占位 "url" 的末尾 (用户直接粘贴 / 输入地址)
     EditRes::replace_line(row, new, [row, c0 + ins.chars().count() - 1])
 }
@@ -280,7 +382,12 @@ fn codeblock(cx: &Ctx, lang: &str) -> EditRes {
         }
         None => {
             let f = "```".to_string();
-            EditRes::splice(cx.row + 1, 0, vec![format!("{f}{lang}"), String::new(), f], [cx.row + 2, 0])
+            EditRes::splice(
+                cx.row + 1,
+                0,
+                vec![format!("{f}{lang}"), String::new(), f],
+                [cx.row + 2, 0],
+            )
         }
     }
 }
@@ -289,16 +396,40 @@ fn mermaid(cx: &Ctx) -> EditRes {
     if cx.sel.is_some() {
         return codeblock(cx, "mermaid");
     }
-    EditRes::splice(cx.row + 1, 0, vec!["```mermaid".into(), "graph TD".into(), "  A[开始] --> B[结束]".into(), "```".into()], [cx.row + 3, 0])
+    EditRes::splice(
+        cx.row + 1,
+        0,
+        vec![
+            "```mermaid".into(),
+            "graph TD".into(),
+            "  A[开始] --> B[结束]".into(),
+            "```".into(),
+        ],
+        [cx.row + 3, 0],
+    )
 }
 
 fn table(cx: &Ctx) -> EditRes {
     // text = "行x列" (含表头, 默认 3x3)
     let spec = cx.req.text.as_deref().unwrap_or("3x3");
-    let (r, c) = spec.split_once(['x', 'X']).and_then(|(a, b)| Some((a.trim().parse::<usize>().ok()?, b.trim().parse::<usize>().ok()?))).unwrap_or((3, 3));
+    let (r, c) = spec
+        .split_once(['x', 'X'])
+        .and_then(|(a, b)| {
+            Some((
+                a.trim().parse::<usize>().ok()?,
+                b.trim().parse::<usize>().ok()?,
+            ))
+        })
+        .unwrap_or((3, 3));
     let (r, c) = (r.clamp(2, 50), c.clamp(1, 20));
-    let row = |f: &dyn Fn(usize) -> String| format!("| {} |", (0..c).map(f).collect::<Vec<_>>().join(" | "));
-    let mut out = vec![String::new(), row(&|i| format!("列{}", i + 1)), row(&|_| "---".into())];
+    let row = |f: &dyn Fn(usize) -> String| {
+        format!("| {} |", (0..c).map(f).collect::<Vec<_>>().join(" | "))
+    };
+    let mut out = vec![
+        String::new(),
+        row(&|i| format!("列{}", i + 1)),
+        row(&|_| "---".into()),
+    ];
     for _ in 0..r - 1 {
         out.push(row(&|_| "   ".into()));
     }
@@ -307,7 +438,12 @@ fn table(cx: &Ctx) -> EditRes {
 }
 
 fn hr(cx: &Ctx) -> EditRes {
-    EditRes::splice(cx.row + 1, 0, vec![String::new(), "---".into(), String::new()], [cx.row + 3, 0])
+    EditRes::splice(
+        cx.row + 1,
+        0,
+        vec![String::new(), "---".into(), String::new()],
+        [cx.row + 3, 0],
+    )
 }
 
 fn callout(cx: &Ctx) -> EditRes {
@@ -328,7 +464,14 @@ fn callout(cx: &Ctx) -> EditRes {
 mod tests {
     use super::super::{run as run_cmd, EditReq};
 
-    fn go(cmd: &str, lines: &[&str], row: usize, col: usize, sel: Option<[usize; 4]>, text: Option<&str>) -> (Vec<String>, [usize; 2]) {
+    fn go(
+        cmd: &str,
+        lines: &[&str],
+        row: usize,
+        col: usize,
+        sel: Option<[usize; 4]>,
+        text: Option<&str>,
+    ) -> (Vec<String>, [usize; 2]) {
         let req = EditReq {
             cmd: cmd.into(),
             row,
@@ -336,7 +479,11 @@ mod tests {
             sel,
             total_rows: lines.len(),
             text: text.map(String::from),
-            rows: lines.iter().enumerate().map(|(i, l)| (i, l.to_string())).collect(),
+            rows: lines
+                .iter()
+                .enumerate()
+                .map(|(i, l)| (i, l.to_string()))
+                .collect(),
             ..Default::default()
         };
         let res = run_cmd(&req).expect("命令存在");
@@ -349,9 +496,23 @@ mod tests {
     fn bold_wraps_selection_and_toggles_off() {
         let (d, _) = go("md-bold", &["hello world"], 0, 5, Some([0, 0, 0, 5]), None);
         assert_eq!(d, ["**hello** world"]);
-        let (d, _) = go("md-bold", &["**hello** world"], 0, 7, Some([0, 2, 0, 7]), None);
+        let (d, _) = go(
+            "md-bold",
+            &["**hello** world"],
+            0,
+            7,
+            Some([0, 2, 0, 7]),
+            None,
+        );
         assert_eq!(d, ["hello world"], "标记在选区外 -> 取消");
-        let (d, _) = go("md-bold", &["**hello** world"], 0, 9, Some([0, 0, 0, 9]), None);
+        let (d, _) = go(
+            "md-bold",
+            &["**hello** world"],
+            0,
+            9,
+            Some([0, 0, 0, 9]),
+            None,
+        );
         assert_eq!(d, ["hello world"], "选区本身带标记 -> 取消");
     }
 
@@ -377,8 +538,16 @@ mod tests {
         assert_eq!(d, ["1. a", "2. b", "3. c"]);
         let (d, _) = go("md-ol", &["1. a", "2. b"], 0, 0, Some([0, 0, 1, 1]), None);
         assert_eq!(d, ["a", "b"]);
-        assert_eq!(go("md-task", &["  x"], 0, 0, None, None).0, ["  - [ ] x"], "保留缩进");
-        assert_eq!(go("md-quote", &["- a"], 0, 0, None, None).0, ["> a"], "换成另一类前缀");
+        assert_eq!(
+            go("md-task", &["  x"], 0, 0, None, None).0,
+            ["  - [ ] x"],
+            "保留缩进"
+        );
+        assert_eq!(
+            go("md-quote", &["- a"], 0, 0, None, None).0,
+            ["> a"],
+            "换成另一类前缀"
+        );
     }
 
     #[test]
@@ -393,32 +562,113 @@ mod tests {
     #[test]
     fn table_and_link_and_hr() {
         let (d, _) = go("md-table", &["x"], 0, 0, None, Some("3x2"));
-        assert_eq!(d, ["x", "", "| 列1 | 列2 |", "| --- | --- |", "|     |     |", "|     |     |", ""]);
-        assert_eq!(go("md-link", &["see docs"], 0, 8, Some([0, 4, 0, 8]), None).0, ["see [docs](url)"]);
+        assert_eq!(
+            d,
+            [
+                "x",
+                "",
+                "| 列1 | 列2 |",
+                "| --- | --- |",
+                "|     |     |",
+                "|     |     |",
+                ""
+            ]
+        );
+        assert_eq!(
+            go("md-link", &["see docs"], 0, 8, Some([0, 4, 0, 8]), None).0,
+            ["see [docs](url)"]
+        );
         assert_eq!(go("md-image", &["a"], 0, 1, None, None).0, ["a![alt](url)"]);
-        assert_eq!(go("md-hr", &["x"], 0, 0, None, None).0, ["x", "", "---", ""]);
+        assert_eq!(
+            go("md-hr", &["x"], 0, 0, None, None).0,
+            ["x", "", "---", ""]
+        );
     }
 
     #[test]
     fn section_move_swaps_siblings_with_children_and_follows_cursor() {
-        let doc = ["# A", "a1", "## A1", "x", "# B", "b1", "```", "# not heading", "```", "# C"];
+        let doc = [
+            "# A",
+            "a1",
+            "## A1",
+            "x",
+            "# B",
+            "b1",
+            "```",
+            "# not heading",
+            "```",
+            "# C",
+        ];
         let (d, cur) = go("md-section-up", &doc, 5, 1, None, None);
-        assert_eq!(d, ["# B", "b1", "```", "# not heading", "```", "# A", "a1", "## A1", "x", "# C"]);
+        assert_eq!(
+            d,
+            [
+                "# B",
+                "b1",
+                "```",
+                "# not heading",
+                "```",
+                "# A",
+                "a1",
+                "## A1",
+                "x",
+                "# C"
+            ]
+        );
         assert_eq!(cur, [1, 1], "光标仍在 B 章节的同一行");
         let (d, cur) = go("md-section-down", &doc, 1, 0, None, None);
-        assert_eq!(d, ["# B", "b1", "```", "# not heading", "```", "# A", "a1", "## A1", "x", "# C"]);
+        assert_eq!(
+            d,
+            [
+                "# B",
+                "b1",
+                "```",
+                "# not heading",
+                "```",
+                "# A",
+                "a1",
+                "## A1",
+                "x",
+                "# C"
+            ]
+        );
         assert_eq!(cur, [6, 0]);
         // 子章节不能越级: A1 上方是 A (上一级)
-        let req = EditReq { cmd: "md-section-up".into(), row: 3, total_rows: doc.len(), rows: doc.iter().enumerate().map(|(i, l)| (i, l.to_string())).collect(), ..Default::default() };
+        let req = EditReq {
+            cmd: "md-section-up".into(),
+            row: 3,
+            total_rows: doc.len(),
+            rows: doc
+                .iter()
+                .enumerate()
+                .map(|(i, l)| (i, l.to_string()))
+                .collect(),
+            ..Default::default()
+        };
         assert!(!run_cmd(&req).unwrap().changed);
         // 最后一个同级章节不能再下移
-        let req = EditReq { cmd: "md-section-down".into(), row: 9, total_rows: doc.len(), rows: doc.iter().enumerate().map(|(i, l)| (i, l.to_string())).collect(), ..Default::default() };
+        let req = EditReq {
+            cmd: "md-section-down".into(),
+            row: 9,
+            total_rows: doc.len(),
+            rows: doc
+                .iter()
+                .enumerate()
+                .map(|(i, l)| (i, l.to_string()))
+                .collect(),
+            ..Default::default()
+        };
         assert!(!run_cmd(&req).unwrap().changed);
     }
 
     #[test]
     fn unknown_md_command_is_none() {
-        let req = EditReq { cmd: "md-nope".into(), total_rows: 1, rows: vec![(0, String::new())], ..Default::default() };
+        let req = EditReq {
+            cmd: "md-nope".into(),
+            total_rows: 1,
+            rows: vec![(0, String::new())],
+            ..Default::default()
+        };
         assert!(run_cmd(&req).is_none());
     }
 }

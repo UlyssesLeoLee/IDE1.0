@@ -22,7 +22,11 @@ fn esc(s: &str) -> String {
 
 fn safe_url(u: &str) -> bool {
     let l = u.trim().to_ascii_lowercase();
-    if l.starts_with("http://") || l.starts_with("https://") || l.starts_with("mailto:") || l.starts_with('#') {
+    if l.starts_with("http://")
+        || l.starts_with("https://")
+        || l.starts_with("mailto:")
+        || l.starts_with('#')
+    {
         return true;
     }
     // 其余带 scheme (javascript: data: file: …) 一律拒绝; 相对路径放行
@@ -43,7 +47,10 @@ fn slug(s: &str) -> String {
 
 /// 找 `pat` 之后的下一个 `end`, 返回 (内部, 之后的下标)
 fn take_until<'a>(s: &'a str, from: usize, end: &str) -> Option<(&'a str, usize)> {
-    s[from..].find(end).filter(|&p| p > 0).map(|p| (&s[from..from + p], from + p + end.len()))
+    s[from..]
+        .find(end)
+        .filter(|&p| p > 0)
+        .map(|p| (&s[from..from + p], from + p + end.len()))
 }
 
 /// 嵌套深度上限: 超过就把剩下的当普通文字 (防止恶意文档靠无限嵌套的 `>` / `**` 把栈撑爆)
@@ -83,7 +90,10 @@ fn inline(src: &str, depth: usize) -> String {
                 continue; // 注释不显示
             }
         }
-        if two("**", "strong", &mut out, &mut i) || two("~~", "del", &mut out, &mut i) || two("==", "mark", &mut out, &mut i) {
+        if two("**", "strong", &mut out, &mut i)
+            || two("~~", "del", &mut out, &mut i)
+            || two("==", "mark", &mut out, &mut i)
+        {
             continue;
         }
         if rest.starts_with('*') && !rest.starts_with("**") {
@@ -98,7 +108,12 @@ fn inline(src: &str, depth: usize) -> String {
         if is_embed || wl {
             if let Some((inner, next)) = take_until(src, i + if is_embed { 3 } else { 2 }, "]]") {
                 let (target, alias) = inner.split_once('|').unwrap_or((inner, inner));
-                out.push_str(&format!("<a class=\"wikilink\" data-target=\"{}\" href=\"#\">{}{}</a>", esc(target), if is_embed { "⧉ " } else { "" }, esc(alias)));
+                out.push_str(&format!(
+                    "<a class=\"wikilink\" data-target=\"{}\" href=\"#\">{}{}</a>",
+                    esc(target),
+                    if is_embed { "⧉ " } else { "" },
+                    esc(alias)
+                ));
                 i = next;
                 continue;
             }
@@ -112,9 +127,17 @@ fn inline(src: &str, depth: usize) -> String {
                     let url = url.split_whitespace().next().unwrap_or("");
                     if safe_url(url) {
                         if img {
-                            out.push_str(&format!("<img alt=\"{}\" src=\"{}\" loading=\"lazy\">", esc(label), esc(url)));
+                            out.push_str(&format!(
+                                "<img alt=\"{}\" src=\"{}\" loading=\"lazy\">",
+                                esc(label),
+                                esc(url)
+                            ));
                         } else {
-                            out.push_str(&format!("<a href=\"{}\" rel=\"noopener noreferrer\">{}</a>", esc(url), inline(label, depth + 1)));
+                            out.push_str(&format!(
+                                "<a href=\"{}\" rel=\"noopener noreferrer\">{}</a>",
+                                esc(url),
+                                inline(label, depth + 1)
+                            ));
                         }
                     } else {
                         out.push_str(&esc(&src[i..next])); // 不安全的链接按普通文字显示
@@ -126,7 +149,10 @@ fn inline(src: &str, depth: usize) -> String {
         }
         // #tag (行首或空白之后)
         if rest.starts_with('#') && (i == 0 || b[i - 1] == b' ') {
-            let t: String = rest[1..].chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '/').collect();
+            let t: String = rest[1..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '/')
+                .collect();
             if !t.is_empty() && !t.chars().all(|c| c.is_ascii_digit()) {
                 out.push_str(&format!("<span class=\"tag\">#{}</span>", esc(&t)));
                 i += 1 + t.len();
@@ -142,7 +168,10 @@ fn inline(src: &str, depth: usize) -> String {
 
 fn is_hr(l: &str) -> bool {
     let t = l.trim();
-    t.len() >= 3 && (t.chars().all(|c| c == '-') || t.chars().all(|c| c == '*') || t.chars().all(|c| c == '_'))
+    t.len() >= 3
+        && (t.chars().all(|c| c == '-')
+            || t.chars().all(|c| c == '*')
+            || t.chars().all(|c| c == '_'))
 }
 fn table_sep(l: &str) -> bool {
     let t = l.trim();
@@ -155,7 +184,11 @@ fn cells(l: &str) -> Vec<String> {
 fn list_item(l: &str) -> Option<(usize, bool, &str)> {
     let ind = l.len() - l.trim_start().len();
     let b = l.trim_start();
-    if let Some(r) = b.strip_prefix("- ").or_else(|| b.strip_prefix("* ")).or_else(|| b.strip_prefix("+ ")) {
+    if let Some(r) = b
+        .strip_prefix("- ")
+        .or_else(|| b.strip_prefix("* "))
+        .or_else(|| b.strip_prefix("+ "))
+    {
         return Some((ind, false, r));
     }
     let d = b.chars().take_while(|c| c.is_ascii_digit()).count();
@@ -183,14 +216,28 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
     if depth > MAX_DEPTH {
         return format!("<p>{}</p>", esc(src));
     }
-    let src = if src.len() > MAX_INPUT { &src[..src.floor_char_boundary(MAX_INPUT)] } else { src };
+    let src = if src.len() > MAX_INPUT {
+        {
+            let mut b = MAX_INPUT;
+            while b > 0 && !src.is_char_boundary(b) {
+                b -= 1;
+            }
+            &src[..b]
+        }
+    } else {
+        src
+    };
     let text = src.replace("\r\n", "\n");
     let mut lines: Vec<&str> = text.split('\n').collect();
     let mut out = String::new();
     let mut base = 0usize; // lines[0] 在原文里的行号 (去掉 Front Matter 之后要加回来)
-    // Front Matter: 折叠显示, 不解析
+                           // Front Matter: 折叠显示, 不解析
     if lines.first().map(|l| l.trim_end()) == Some("---") {
-        if let Some(end) = lines.iter().skip(1).position(|l| l.trim_end() == "---" || l.trim_end() == "...") {
+        if let Some(end) = lines
+            .iter()
+            .skip(1)
+            .position(|l| l.trim_end() == "---" || l.trim_end() == "...")
+        {
             out.push_str(&format!("<details class=\"frontmatter\"><summary>Front Matter</summary><pre>{}</pre></details>", esc(&lines[1..=end].join("\n"))));
             lines.drain(..end + 2);
             base = end + 2;
@@ -202,9 +249,16 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
         let l = lines[i];
         if l.trim().is_empty() {
             i += 1;
-        } else if let Some(fence) = l.trim_start().strip_prefix("```").map(|_| l.trim_start().chars().take_while(|&c| c == '`').count()) {
+        } else if let Some(fence) = l
+            .trim_start()
+            .strip_prefix("```")
+            .map(|_| l.trim_start().chars().take_while(|&c| c == '`').count())
+        {
             let marks = "`".repeat(fence);
-            let lang = l.trim_start()[fence..].trim().split_whitespace().next().unwrap_or("");
+            let lang = l.trim_start()[fence..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
             let mut body = Vec::new();
             i += 1;
             while i < lines.len() && !lines[i].trim_start().starts_with(&marks) {
@@ -212,10 +266,20 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
                 i += 1;
             }
             i += 1;
-            out.push_str(&format!("<pre class=\"md-fence\" data-lang=\"{}\"><code>{}</code></pre>", esc(lang), esc(&body.join("\n"))));
-        } else if let Some(h) = Some(l.chars().take_while(|&c| c == '#').count()).filter(|&h| (1..=6).contains(&h) && l[h..].starts_with(' ')) {
+            out.push_str(&format!(
+                "<pre class=\"md-fence\" data-lang=\"{}\"><code>{}</code></pre>",
+                esc(lang),
+                esc(&body.join("\n"))
+            ));
+        } else if let Some(h) = Some(l.chars().take_while(|&c| c == '#').count())
+            .filter(|&h| (1..=6).contains(&h) && l[h..].starts_with(' '))
+        {
             let t = l[h + 1..].trim().trim_end_matches('#').trim();
-            out.push_str(&format!("<h{h} id=\"{}\">{}</h{h}>", esc(&slug(t)), inline(t, depth)));
+            out.push_str(&format!(
+                "<h{h} id=\"{}\">{}</h{h}>",
+                esc(&slug(t)),
+                inline(t, depth)
+            ));
             i += 1;
         } else if is_hr(l) {
             out.push_str("<hr>");
@@ -223,17 +287,32 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
         } else if l.starts_with('>') {
             let mut q = Vec::new();
             while i < lines.len() && lines[i].starts_with('>') {
-                q.push(lines[i].trim_start_matches('>').strip_prefix(' ').unwrap_or(lines[i].trim_start_matches('>')));
+                q.push(
+                    lines[i]
+                        .trim_start_matches('>')
+                        .strip_prefix(' ')
+                        .unwrap_or(lines[i].trim_start_matches('>')),
+                );
                 i += 1;
             }
             // callout: > [!type] 标题
             let first = q[0].trim();
             if let Some(r) = first.strip_prefix("[!").and_then(|r| r.split_once(']')) {
-                let kind: String = r.0.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
-                let title = if r.1.trim().is_empty() { r.0.to_string() } else { r.1.trim().to_string() };
+                let kind: String =
+                    r.0.chars()
+                        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                        .collect();
+                let title = if r.1.trim().is_empty() {
+                    r.0.to_string()
+                } else {
+                    r.1.trim().to_string()
+                };
                 out.push_str(&format!("<div class=\"callout callout-{}\"><div class=\"callout-title\">{}</div>{}</div>", esc(&kind.to_lowercase()), inline(&title, depth), render_depth(&q[1..].join("\n"), depth + 1)));
             } else {
-                out.push_str(&format!("<blockquote>{}</blockquote>", render_depth(&q.join("\n"), depth + 1)));
+                out.push_str(&format!(
+                    "<blockquote>{}</blockquote>",
+                    render_depth(&q.join("\n"), depth + 1)
+                ));
             }
         } else if i + 1 < lines.len() && l.contains('|') && table_sep(lines[i + 1]) {
             let head = cells(l);
@@ -257,13 +336,28 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
             let tag = if ordered { "ol" } else { "ul" };
             out.push_str(&format!("<{tag}>"));
             while i < lines.len() {
-                let Some((ind, ord, item)) = list_item(lines[i]) else { break };
+                let Some((ind, ord, item)) = list_item(lines[i]) else {
+                    break;
+                };
                 if ind < ind0 || ord != ordered {
                     break;
                 }
-                let (cls, body) = match (item.strip_prefix("[ ] "), item.strip_prefix("[x] ").or_else(|| item.strip_prefix("[X] "))) {
-                    (Some(r), _) => (" class=\"task\"", format!("<input type=\"checkbox\" disabled> {}", inline(r, depth))),
-                    (_, Some(r)) => (" class=\"task\"", format!("<input type=\"checkbox\" checked disabled> {}", inline(r, depth))),
+                let (cls, body) = match (
+                    item.strip_prefix("[ ] "),
+                    item.strip_prefix("[x] ")
+                        .or_else(|| item.strip_prefix("[X] ")),
+                ) {
+                    (Some(r), _) => (
+                        " class=\"task\"",
+                        format!("<input type=\"checkbox\" disabled> {}", inline(r, depth)),
+                    ),
+                    (_, Some(r)) => (
+                        " class=\"task\"",
+                        format!(
+                            "<input type=\"checkbox\" checked disabled> {}",
+                            inline(r, depth)
+                        ),
+                    ),
                     _ => ("", inline(item, depth)),
                 };
                 out.push_str(&format!("<li{cls}>{body}</li>"));
@@ -273,7 +367,14 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
         } else {
             let mut p = vec![l.trim()];
             i += 1;
-            while i < lines.len() && !lines[i].trim().is_empty() && !lines[i].starts_with('>') && !lines[i].trim_start().starts_with("```") && list_item(lines[i]).is_none() && !is_hr(lines[i]) && !lines[i].starts_with('#') {
+            while i < lines.len()
+                && !lines[i].trim().is_empty()
+                && !lines[i].starts_with('>')
+                && !lines[i].trim_start().starts_with("```")
+                && list_item(lines[i]).is_none()
+                && !is_hr(lines[i])
+                && !lines[i].starts_with('#')
+            {
                 p.push(lines[i].trim());
                 i += 1;
             }
@@ -285,7 +386,12 @@ fn render_inner(src: &str, depth: usize, mark: bool) -> String {
         // 顶层块带上它在原文里的行范围 (data-l="起-止", 0 起): 预览里点块就能回到对应的源码行就地编辑, 点目录也能滚到对应块
         if mark && depth == 0 && out.len() > before {
             // 没闭合的围栏会让 i 越过末行: 范围夹在文档最后一行内, 否则预览里点这个块会取到越界的行
-            tag_block(&mut out, before, base + start, base + i.min(lines.len()).max(start + 1) - 1);
+            tag_block(
+                &mut out,
+                before,
+                base + start,
+                base + i.min(lines.len()).max(start + 1) - 1,
+            );
         }
     }
     out
@@ -297,7 +403,7 @@ fn tag_block(out: &mut String, from: usize, a: usize, b: usize) {
     if !tail.starts_with('<') {
         return;
     }
-    if let Some(p) = tail.find(|c: char| c == ' ' || c == '>') {
+    if let Some(p) = tail.find([' ', '>']) {
         out.insert_str(from + p, &format!(" data-l=\"{a}-{b}\""));
     }
 }
@@ -309,7 +415,12 @@ mod tests {
     #[test]
     fn top_level_blocks_carry_their_source_line_range() {
         let h = render_with_lines("# T\n\npara one\ncontinues\n\n- a\n- b\n\n```js\nx\n```");
-        for want in ["<h1 data-l=\"0-0\" id=\"t\">", "<p data-l=\"2-3\">", "<ul data-l=\"5-6\">", "<pre data-l=\"8-10\" class=\"md-fence\""] {
+        for want in [
+            "<h1 data-l=\"0-0\" id=\"t\">",
+            "<p data-l=\"2-3\">",
+            "<ul data-l=\"5-6\">",
+            "<pre data-l=\"8-10\" class=\"md-fence\"",
+        ] {
             assert!(h.contains(want), "缺 {want}: {h}");
         }
         // Front Matter 之后行号要加回去
@@ -345,7 +456,20 @@ mod tests {
     #[test]
     fn basic_blocks() {
         let h = render("# Title\n\npara **b** *i* ~~s~~ ==m== `c<d>`\n\n- a\n- [x] done\n\n1. one\n2. two\n\n---\n\n| A | B |\n| --- | --- |\n| 1 | 2 |");
-        for want in ["id=\"title\">Title</h1>", "<strong>b</strong>", "<em>i</em>", "<del>s</del>", "<mark>m</mark>", "<code>c&lt;d&gt;</code>", "<ul", "checked disabled", "<ol", "<hr", "<th>A</th>", "<td>2</td>"] {
+        for want in [
+            "id=\"title\">Title</h1>",
+            "<strong>b</strong>",
+            "<em>i</em>",
+            "<del>s</del>",
+            "<mark>m</mark>",
+            "<code>c&lt;d&gt;</code>",
+            "<ul",
+            "checked disabled",
+            "<ol",
+            "<hr",
+            "<th>A</th>",
+            "<td>2</td>",
+        ] {
             assert!(h.contains(want), "缺 {want}: {h}");
         }
     }
@@ -370,9 +494,14 @@ mod tests {
 
     #[test]
     fn obsidian_syntax() {
-        let h = render("---\ntitle: x\n---\n\n> [!warning] 注意\n> 内容\n\n[[Note|别名]] #tag %%隐藏%% 文字");
+        let h = render(
+            "---\ntitle: x\n---\n\n> [!warning] 注意\n> 内容\n\n[[Note|别名]] #tag %%隐藏%% 文字",
+        );
         assert!(h.contains("<details class=\"frontmatter\">"), "{h}");
-        assert!(h.contains("callout callout-warning") && h.contains("注意"), "{h}");
+        assert!(
+            h.contains("callout callout-warning") && h.contains("注意"),
+            "{h}"
+        );
         assert!(h.contains("data-target=\"Note\"") && h.contains("别名"));
         assert!(h.contains("<span class=\"tag\">#tag</span>"));
         assert!(!h.contains("隐藏"), "注释不显示");
@@ -381,7 +510,10 @@ mod tests {
     #[test]
     fn fences_are_left_to_plugins_and_stay_verbatim() {
         let h = render("```mermaid\ngraph TD\n  A-->B\n```\n\n````\n```inner```\n````");
-        assert!(h.contains("data-lang=\"mermaid\"") && h.contains("A--&gt;B"), "{h}");
+        assert!(
+            h.contains("data-lang=\"mermaid\"") && h.contains("A--&gt;B"),
+            "{h}"
+        );
         assert!(h.contains("```inner```"), "长围栏里的短围栏原样: {h}");
     }
 }

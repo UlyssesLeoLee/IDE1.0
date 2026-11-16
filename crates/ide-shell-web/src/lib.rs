@@ -60,6 +60,8 @@ pub struct ShellState {
     docs: std::sync::Mutex<doc_api::DocStore>,
     /// 当前打开的项目根 (单 user, 安全沙箱 = 限此根内访问文件).
     project_root: Mutex<Option<PathBuf>>,
+    /// 多租户 SaaS 协同总枢纽 (纯 Rust 协同编辑与统筹验收)
+    pub collab: std::sync::Arc<ide_agent_router::MultiTenantCollaborationHub>,
 }
 
 impl ShellState {
@@ -74,6 +76,7 @@ impl ShellState {
             project_root: Mutex::new(None),
             auth: auth::Auth::from_env(port),
             docs: Mutex::new(doc_api::DocStore::new()),
+            collab: std::sync::Arc::new(ide_agent_router::MultiTenantCollaborationHub::new()),
         }
     }
 
@@ -84,6 +87,7 @@ impl ShellState {
             project_root: Mutex::new(None),
             auth: a,
             docs: Mutex::new(doc_api::DocStore::new()),
+            collab: std::sync::Arc::new(ide_agent_router::MultiTenantCollaborationHub::new()),
         }
     }
 
@@ -384,6 +388,75 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
 
     // 路由
     match (method, path) {
+        // ---------- 多租户 SaaS 协同与统筹审查 API (Pure Rust) ----------
+        ("GET", "/api/tenant/context") => {
+            let tenant_id = path_full
+                .split_once('?')
+                .and_then(|(_, q)| {
+                    q.split('&')
+                        .find(|p| p.starts_with("tenant_id="))
+                        .map(|p| &p["tenant_id=".len()..])
+                })
+                .unwrap_or("org_default");
+            if let Some(ctx) = state.collab.get_tenant_context(tenant_id) {
+                let j = serde_json::to_vec(&ctx).unwrap_or_default();
+                send_response(stream, "200 OK", "application/json", &j);
+            } else {
+                send_response(
+                    stream,
+                    "404 Not Found",
+                    "application/json",
+                    br#"{"error":"tenant-not-found"}"#,
+                );
+            }
+        }
+        ("POST", "/api/collab/presence") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let tenant_id = req.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("org_default");
+            let workspace_id = req.get("workspace_id").and_then(|v| v.as_str()).unwrap_or("default");
+            let file_id = req.get("file_id").and_then(|v| v.as_str()).unwrap_or("src/lib.rs");
+            let agent_id = req.get("agent_id").and_then(|v| v.as_str()).unwrap_or("anonymous");
+            let display_name = req.get("display_name").and_then(|v| v.as_str()).unwrap_or(agent_id);
+            let role = match req.get("role").and_then(|v| v.as_str()).unwrap_or("AiCoder") {
+                "Human" => ide_agent_router::CollaboratorRole::Human,
+                "AiOptimizer" => ide_agent_router::CollaboratorRole::AiOptimizer,
+                "AiTester" => ide_agent_router::CollaboratorRole::AiTester,
+                "Reviewer" => ide_agent_router::CollaboratorRole::Reviewer,
+                _ => ide_agent_router::CollaboratorRole::AiCoder,
+            };
+            let cursor = req.get("cursor").and_then(|v| v.as_array()).map(|arr| {
+                [
+                    arr.first().and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                    arr.get(1).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                ]
+            }).unwrap_or([0, 0]);
+
+            match state.collab.register_presence(
+                tenant_id,
+                workspace_id,
+                file_id,
+                agent_id,
+                display_name,
+                role,
+                cursor,
+                None,
+                None,
+            ) {
+                Ok(rc) => {
+                    let j = serde_json::to_vec(&rc).unwrap_or_default();
+                    send_response(stream, "200 OK", "application/json", &j);
+                }
+                Err(e) => {
+                    let err_json = serde_json::json!({ "error": e.to_string() });
+                    send_response(
+                        stream,
+                        "400 Bad Request",
+                        "application/json",
+                        &serde_json::to_vec(&err_json).unwrap_or_default(),
+                    );
+                }
+            }
+        }
         ("POST", "/api/plugin_load") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
@@ -765,6 +838,48 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         ("POST", "/api/md_render") => {
             // Markdown 预览: 文本 -> 已转义 HTML (只读)
             respond_pure::<editcore::pure_api::MdRenderReq>(stream, &body, "Markdown 预览请求无效", |r| Ok(editcore::pure_api::md_render(r)));
+        }
+        ("POST", "/api/nema/probe") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let runner = req.get("runner").and_then(|v| v.as_str());
+            let report = nema_codec::probe_interpreter(path, runner);
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&report).unwrap_or_default());
+        }
+        ("POST", "/api/nema/set_interpreter") => {
+            let req: nema_codec::InterpreterConfig = match serde_json::from_slice(&body) {
+                Ok(c) => c,
+                Err(e) => {
+                    send_error_json(stream, "400 Bad Request", &format!("配置格式错误: {e}"));
+                    return;
+                }
+            };
+            nema_codec::set_active_interpreter(req.clone());
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
+                "ok": true,
+                "active": req
+            })).unwrap_or_default());
+        }
+        ("POST", "/api/nema/status") | ("GET", "/api/nema/status") => {
+            let active = nema_codec::get_active_interpreter();
+            let project_root = state.project_root_get();
+            let candidates = nema_codec::discover_candidates(project_root.as_deref());
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
+                "active": active,
+                "candidates": candidates
+            })).unwrap_or_default());
+        }
+        ("POST", "/api/nema/render") => {
+            let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let source = req.get("source").and_then(|v| v.as_str()).unwrap_or("");
+            let (ast, latency_us, engine_name, is_custom) = nema_codec::adaptive_render_view(source);
+            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
+                "ok": true,
+                "ast": ast,
+                "latency_us": latency_us,
+                "engine": engine_name,
+                "is_custom": is_custom
+            })).unwrap_or_default());
         }
         ("POST", "/api/history") => {
             // 撤销 / 重做栈; 按标签页 id 分开的进程内登记
@@ -1160,7 +1275,6 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/PixelFontMulti-12.ttf") | ("GET", "/editor/PixelFontMulti-12.ttf") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/PixelFontMulti-12.ttf"))
                 .or_else(|_| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf"))
                 .or_else(|_| std::fs::read("PixelFontMulti-12.ttf"));
             if let Ok(b) = bytes {
@@ -1171,7 +1285,6 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/logo.png") | ("GET", "/editor/logo.png") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/logo.png")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/logo.png"))
                 .or_else(|_| std::fs::read("assets/logo/IDE1.0_Crystal_A_128x128.png"));
             if let Ok(b) = bytes {
                 send_response(stream, "200 OK", "image/png", &b);
@@ -1181,8 +1294,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/favicon.ico") | ("GET", "/editor/favicon.ico") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/favicon.ico")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/favicon.ico"))
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/icons/icon.ico"));
+                .or_else(|_| std::fs::read("ide-fast/packaging/ide-fast.ico"));
             if let Ok(b) = bytes {
                 send_response(stream, "200 OK", "image/x-icon", &b);
             } else {
@@ -1191,7 +1303,6 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/favicon.png") | ("GET", "/editor/favicon.png") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/favicon.png")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/favicon.png"))
                 .or_else(|_| std::fs::read("assets/logo/IDE1.0_Crystal_A_32x32.png"));
             if let Ok(b) = bytes {
                 send_response(stream, "200 OK", "image/png", &b);
@@ -1199,7 +1310,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 send_error_json(stream, "404 Not Found", "favicon not found");
             }
         }
-        // ===== editor.html 用端点 — 与 desktop Tauri command 同名 =====
+        // ===== editor.html 用端点 =====
         ("POST", "/api/key") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let code = req.get("code").and_then(|v| v.as_str()).unwrap_or("");

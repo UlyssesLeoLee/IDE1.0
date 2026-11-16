@@ -334,8 +334,11 @@ impl TypeConfig {
         match name {
             "Python" => crate::types::python_outline(text),
             "Rust" => crate::types::rust_outline(text),
-            "C++" | "JavaScript" | "TypeScript" | "Go" | "Java" | "C#" => crate::outline_langs::brace_outline(text, name),
+            "C++" | "JavaScript" | "TypeScript" | "Go" | "Java" | "C#" => {
+                crate::outline_langs::brace_outline(text, name)
+            }
             "Markdown" => crate::outline_langs::markdown_outline(text),
+            "NEMA" => crate::types::nema_outline(text),
             _ => Vec::new(),
         }
     }
@@ -348,16 +351,16 @@ impl TypeConfig {
         let mut i = 0;
         // 下标全程是**字符**下标 (不是字节): 老写法用 `line[i..]` 按字节切片, 一遇到中日文就在字符边界中间 panic
         let starts_at = |at: usize, pat: &str| -> bool {
-            let mut k = at;
-            for pc in pat.chars() {
+            for (k, pc) in (at..).zip(pat.chars()) {
                 if chars.get(k) != Some(&pc) {
                     return false;
                 }
-                k += 1;
             }
             true
         };
-        let find_from = |from: usize, pat: &str| -> Option<usize> { (from..=chars.len()).find(|&j| starts_at(j, pat)) };
+        let find_from = |from: usize, pat: &str| -> Option<usize> {
+            (from..=chars.len()).find(|&j| starts_at(j, pat))
+        };
 
         // 1. 行注释 (整行)
         if let Some(ref lc) = self.line_comment {
@@ -563,6 +566,7 @@ impl TypeRegistry {
                 types::sql(),
                 types::dockerfile(),
                 types::makefile(),
+                types::nema(),
             ],
         }
     }
@@ -677,6 +681,7 @@ fn is_builtin_type(name: &str) -> bool {
         "SQL",
         "Dockerfile",
         "Makefile",
+        "NEMA",
     ];
     BUILTIN.contains(&name)
 }
@@ -1054,15 +1059,27 @@ mod tests {
         let reg = TypeRegistry::default_registry();
         for name in ["a.rs", "a.js", "a.py", "a.md", "a.css", "a.json"] {
             if let Some(t) = reg.detect(name) {
-                for line in ["这是一个很长很长的中文句子 /* 注释 */ \"字符串\" fn 变量 = 1;", "日本語のテキスト // コメント", "/* 未闭合的块注释 漢字", "\"未闭合 中文"] {
+                for line in [
+                    "这是一个很长很长的中文句子 /* 注释 */ \"字符串\" fn 变量 = 1;",
+                    "日本語のテキスト // コメント",
+                    "/* 未闭合的块注释 漢字",
+                    "\"未闭合 中文",
+                ] {
                     let toks = t.highlight_line(line);
                     let n = line.chars().count() as i32;
-                    assert!(toks.iter().all(|(s, e, _)| *s >= 0 && s <= e && *e <= n), "{name}: {toks:?}");
+                    assert!(
+                        toks.iter().all(|(s, e, _)| *s >= 0 && s <= e && *e <= n),
+                        "{name}: {toks:?}"
+                    );
                 }
             }
         }
         let rs = reg.detect("a.rs").unwrap();
         let t = rs.highlight_line("let s = \"中文\"; /* 块 */ fn");
-        assert!(t.iter().any(|(_, _, k)| *k == TokenKind::String) && t.iter().any(|(_, _, k)| *k == TokenKind::Comment), "{t:?}");
+        assert!(
+            t.iter().any(|(_, _, k)| *k == TokenKind::String)
+                && t.iter().any(|(_, _, k)| *k == TokenKind::Comment),
+            "{t:?}"
+        );
     }
 }

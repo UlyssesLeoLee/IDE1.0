@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "IDE1.0 高速版 — 原生 Rust (egui) 的 Sakura 风格文本编辑器: 不依赖 WebView2, 复用 editcore 的全部编辑语义; 和 Tauri 版并行, 独立安装包"
+description = "IDE1.0 — 原生 Rust (egui) 的 Sakura 风格高性能文本与代码编辑器"
 
 [[bin]]
 name = "ide-fast"
@@ -14,6 +14,8 @@ path = "src/main.rs"
 
 [dependencies]
 editcore = { path = "../crates/editcore" }
+ide-agent-router = { path = "../crates/ide-agent-router" }
+nema-codec.workspace = true
 # 原生 GUI: 只要 glow (OpenGL) 后端 + 自带字体, 不拉 wgpu / accesskit / 网页相关 (启动快、体积小)
 eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "clipboard"] }
 # 系统打开 / 另存为对话框
@@ -31,6 +33,17 @@ rquickjs = { version = "0.9", default-features = false }
 # 半透明 (玻璃) 主题: Windows 的 DWM 模糊背景 (内部有 unsafe, 由依赖承担; 本 crate 仍 forbid unsafe)。Tauri 版同一个版本, 已在锁文件里
 [target.'cfg(windows)'.dependencies]
 window-vibrancy = { version = "0.8", default-features = false }
+raw-window-handle = "0.6"
+# 系统通知区域托盘图标（右下角时钟旁边）：复用锁文件已有的 0.25 版本（Tauri 拉入）
+tray-icon = { version = "0.25", default-features = false }
+
+[target.'cfg(windows)'.build-dependencies]
+tauri-winres = "0.3"
+
+# Linux 平台 GUI 后端与文件对话框后端支持 (WBS-03 O1.2)
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.37", default-features = false, features = ["x11", "wayland"] }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 raw-window-handle = "0.6"
 
 [lints]

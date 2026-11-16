@@ -35,7 +35,11 @@ pub(super) fn run(cx: &Ctx, op: MultiOp) -> EditRes {
     for (s, e) in contiguous_segments(&touched) {
         let rows: Vec<Vec<char>> = (s..=e).map(|r| cx.line(r)).collect();
         let (flat, starts) = flatten(&rows);
-        let offs: Vec<usize> = at.iter().filter(|c| c[0] >= s && c[0] <= e).map(|c| starts[c[0] - s] + c[1]).collect();
+        let offs: Vec<usize> = at
+            .iter()
+            .filter(|c| c[0] >= s && c[0] <= e)
+            .map(|c| starts[c[0] - s] + c[1])
+            .collect();
         let (edited, new_offs) = apply_op(&flat, &offs, op);
         let text: String = edited.iter().collect();
         let insert: Vec<String> = text.split('\n').map(String::from).collect();
@@ -51,9 +55,18 @@ pub(super) fn run(cx: &Ctx, op: MultiOp) -> EditRes {
     cursors.dedup();
     let tip = match op {
         MultiOp::Backspace => format!("{} 个光标删除", at.len()),
-        MultiOp::Insert(ins) => format!("{} 个光标插入 {}", at.len(), ins.iter().collect::<String>()),
+        MultiOp::Insert(ins) => {
+            format!("{} 个光标插入 {}", at.len(), ins.iter().collect::<String>())
+        }
     };
-    EditRes { changed: true, cursor: cursors[0], cursors: Some(cursors), patches: Some(patches), tip: Some(tip), ..Default::default() }
+    EditRes {
+        changed: true,
+        cursor: cursors[0],
+        cursors: Some(cursors),
+        patches: Some(patches),
+        tip: Some(tip),
+        ..Default::default()
+    }
 }
 
 /// 光标: 行夹进文档, 列夹进行长, 去重、升序。涉及的行没交全或不足两个光标 = Err(给用户的提示, 可为空) —— 什么也不做
@@ -137,7 +150,10 @@ fn apply_op(flat: &[char], offs: &[usize], op: MultiOp) -> (Vec<char>, Vec<usize
                 prev = d + 1;
             }
             out.extend_from_slice(&flat[prev..]);
-            new_offs.extend(offs.iter().map(|&o| o - dels.iter().filter(|&&d| d < o).count()));
+            new_offs.extend(
+                offs.iter()
+                    .map(|&o| o - dels.iter().filter(|&&d| d < o).count()),
+            );
         }
     }
     (out, new_offs)
@@ -161,7 +177,12 @@ fn offsets_to_cursors(lines: &[String], offs: &[usize], base: usize) -> Vec<[usi
 
 /// 补丁套上去之后和原来一样吗 (行数相同且每行文字相同)
 fn unchanged(cx: &Ctx, patches: &[RowPatch]) -> bool {
-    patches.iter().all(|(s, n, ins)| ins.len() == *n && (*s..*s + *n).zip(ins).all(|(r, l)| cx.line(r).iter().collect::<String>() == *l))
+    patches.iter().all(|(s, n, ins)| {
+        ins.len() == *n
+            && (*s..*s + *n)
+                .zip(ins)
+                .all(|(r, l)| cx.line(r).iter().collect::<String>() == *l)
+    })
 }
 
 #[cfg(test)]
@@ -174,7 +195,10 @@ mod tests {
 
     #[test]
     fn segments_group_consecutive_rows() {
-        assert_eq!(contiguous_segments(&[1, 2, 3, 7, 9, 10]), vec![(1, 3), (7, 7), (9, 10)]);
+        assert_eq!(
+            contiguous_segments(&[1, 2, 3, 7, 9, 10]),
+            vec![(1, 3), (7, 7), (9, 10)]
+        );
         assert!(contiguous_segments(&[]).is_empty());
     }
 
@@ -188,27 +212,44 @@ mod tests {
     #[test]
     fn flatten_records_row_starts() {
         let (flat, starts) = flatten(&[cs("ab"), cs(""), cs("cd")]);
-        assert_eq!((flat.iter().collect::<String>(), starts), ("ab\n\ncd".to_string(), vec![0, 3, 4]));
+        assert_eq!(
+            (flat.iter().collect::<String>(), starts),
+            ("ab\n\ncd".to_string(), vec![0, 3, 4])
+        );
     }
 
     #[test]
     fn insert_shifts_later_cursors_by_every_earlier_insert() {
         let ins = cs("QQ");
         let (out, offs) = apply_op(&cs("abcdef"), &[1, 3], MultiOp::Insert(&ins));
-        assert_eq!((out.iter().collect::<String>(), offs), ("aQQbcQQdef".to_string(), vec![3, 7]));
+        assert_eq!(
+            (out.iter().collect::<String>(), offs),
+            ("aQQbcQQdef".to_string(), vec![3, 7])
+        );
     }
 
     #[test]
     fn backspace_merges_lines_and_collapses_touching_cursors() {
         let (out, offs) = apply_op(&cs("abc\ndef"), &[3, 4], MultiOp::Backspace);
-        assert_eq!((out.iter().collect::<String>(), offs), ("abdef".to_string(), vec![2, 2]), "删 c 与换行后, 两个光标落在同一处");
+        assert_eq!(
+            (out.iter().collect::<String>(), offs),
+            ("abdef".to_string(), vec![2, 2]),
+            "删 c 与换行后, 两个光标落在同一处"
+        );
         let (same, none) = apply_op(&cs("ab"), &[0], MultiOp::Backspace);
-        assert_eq!((same.iter().collect::<String>(), none), ("ab".to_string(), vec![0]), "偏移 0 没有可删的");
+        assert_eq!(
+            (same.iter().collect::<String>(), none),
+            ("ab".to_string(), vec![0]),
+            "偏移 0 没有可删的"
+        );
     }
 
     #[test]
     fn offsets_map_back_to_rows_even_when_the_text_contains_newlines() {
         let lines: Vec<String> = ["ab", "", "cde"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(offsets_to_cursors(&lines, &[0, 2, 3, 4, 7], 10), vec![[10, 0], [10, 2], [11, 0], [12, 0], [12, 3]]);
+        assert_eq!(
+            offsets_to_cursors(&lines, &[0, 2, 3, 4, 7], 10),
+            vec![[10, 0], [10, 2], [11, 0], [12, 0], [12, 3]]
+        );
     }
 }

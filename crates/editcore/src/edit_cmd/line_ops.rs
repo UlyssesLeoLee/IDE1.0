@@ -9,7 +9,14 @@ pub(super) fn remove_current_row(cx: &Ctx) -> (Vec<String>, usize) {
     if cx.req.total_rows <= 1 {
         (vec![String::new()], 0)
     } else {
-        (vec![], if cx.row == cx.last_row { cx.row - 1 } else { cx.row })
+        (
+            vec![],
+            if cx.row == cx.last_row {
+                cx.row - 1
+            } else {
+                cx.row
+            },
+        )
     }
 }
 
@@ -24,7 +31,11 @@ pub(super) fn delete_line_up(cx: &Ctx) -> EditRes {
     if cx.row == 0 {
         return cx.nothing("已在首行, 上方无可删");
     }
-    let (insert, cur) = if cx.req.total_rows <= 1 { (vec![String::new()], [0, 0]) } else { (vec![], [cx.row - 1, 0]) };
+    let (insert, cur) = if cx.req.total_rows <= 1 {
+        (vec![String::new()], [0, 0])
+    } else {
+        (vec![], [cx.row - 1, 0])
+    };
     EditRes::splice(cx.row - 1, 1, insert, cur).tip("已删除上方行")
 }
 
@@ -53,8 +64,16 @@ pub(super) fn move_line(cx: &Ctx, up: bool) -> EditRes {
     let other_row = if up { row - 1 } else { row + 1 };
     let other: String = cx.line(other_row).iter().collect();
     let cur = cx.line_str();
-    let (start, insert) = if up { (row - 1, vec![cur, other]) } else { (row, vec![other, cur]) };
-    EditRes::splice(start, 2, insert, [other_row, cx.col]).tip(format!("移动行: Ln {} → Ln {}", row + 1, other_row + 1))
+    let (start, insert) = if up {
+        (row - 1, vec![cur, other])
+    } else {
+        (row, vec![other, cur])
+    };
+    EditRes::splice(start, 2, insert, [other_row, cx.col]).tip(format!(
+        "移动行: Ln {} → Ln {}",
+        row + 1,
+        other_row + 1
+    ))
 }
 
 /// 复制当前行到下面一行
@@ -73,13 +92,29 @@ pub(super) fn add_line(cx: &Ctx, above: bool) -> EditRes {
 
 /// 在 `col` 处把一行断成两行: 自动缩进沿用头部的缩进, 智能缩进在头部以 { [ ( 或空白结尾时再多一级。
 /// 返回 (断开后的两行, 新行的光标列)。回车和矩形里的回车共用。
-pub(super) fn split_line_at(line: &[char], col: usize, auto_indent: bool, smart_indent: bool) -> (Vec<String>, usize) {
+pub(super) fn split_line_at(
+    line: &[char],
+    col: usize,
+    auto_indent: bool,
+    smart_indent: bool,
+) -> (Vec<String>, usize) {
     let head = slice(line, 0, col);
     let tail = slice(line, col, usize::MAX);
     let hc: Vec<char> = head.chars().collect();
-    let indent = if auto_indent { slice(&hc, 0, indent_len(&hc)) } else { String::new() };
-    let ends_open = hc.last().map(|c| matches!(c, '{' | '[' | '(') || c.is_whitespace()).unwrap_or(false);
-    let extra = if auto_indent && smart_indent && ends_open { "  " } else { "" };
+    let indent = if auto_indent {
+        slice(&hc, 0, indent_len(&hc))
+    } else {
+        String::new()
+    };
+    let ends_open = hc
+        .last()
+        .map(|c| matches!(c, '{' | '[' | '(') || c.is_whitespace())
+        .unwrap_or(false);
+    let extra = if auto_indent && smart_indent && ends_open {
+        "  "
+    } else {
+        ""
+    };
     let pad = format!("{indent}{extra}");
     let pad_len = pad.chars().count();
     (vec![head, format!("{pad}{tail}")], pad_len)
@@ -87,7 +122,8 @@ pub(super) fn split_line_at(line: &[char], col: usize, auto_indent: bool, smart_
 
 /// 回车
 pub(super) fn new_line(cx: &Ctx) -> EditRes {
-    let (insert, pad_len) = split_line_at(&cx.line, cx.col, cx.req.auto_indent, cx.req.smart_indent);
+    let (insert, pad_len) =
+        split_line_at(&cx.line, cx.col, cx.req.auto_indent, cx.req.smart_indent);
     EditRes::splice(cx.row, 1, insert, [cx.row + 1, pad_len])
 }
 
@@ -95,10 +131,28 @@ pub(super) fn new_line(cx: &Ctx) -> EditRes {
 /// 选区各行 (没有选区就是光标行) 的非空行**都**以注释符开头 (缩进之后) -> 全部去掉 (连同后面的一个空格); 否则全部在缩进之后加上 `注释符 `。
 /// 空行不动。全部是空行 = 什么也不做。
 pub(super) fn toggle_line_comment(cx: &Ctx) -> EditRes {
-    let Some(mark) = cx.req.text.as_deref().map(str::trim).filter(|m| !m.is_empty()) else {
+    let Some(mark) = cx
+        .req
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+    else {
         return cx.nothing("这个类型没有设置行注释符 (类型别设置 → 行注释)");
     };
-    let (r0, r1) = cx.sel.map(|s| (s[0], if s[3] == 0 && s[2] > s[0] { s[2] - 1 } else { s[2] })).unwrap_or((cx.row, cx.row));
+    let (r0, r1) = cx
+        .sel
+        .map(|s| {
+            (
+                s[0],
+                if s[3] == 0 && s[2] > s[0] {
+                    s[2] - 1
+                } else {
+                    s[2]
+                },
+            )
+        })
+        .unwrap_or((cx.row, cx.row));
     let lines: Vec<String> = (r0..=r1).map(|r| cx.line(r).iter().collect()).collect();
     let body = |l: &str| l.trim_start().to_string();
     let non_empty: Vec<&String> = lines.iter().filter(|l| !l.trim().is_empty()).collect();
@@ -123,5 +177,9 @@ pub(super) fn toggle_line_comment(cx: &Ctx) -> EditRes {
         })
         .collect();
     let last = out.last().map(|s| s.chars().count()).unwrap_or(0);
-    EditRes::splice(r0, r1 - r0 + 1, out, [r1, last]).tip(if all_commented { "已取消行注释" } else { "已加行注释" })
+    EditRes::splice(r0, r1 - r0 + 1, out, [r1, last]).tip(if all_commented {
+        "已取消行注释"
+    } else {
+        "已加行注释"
+    })
 }

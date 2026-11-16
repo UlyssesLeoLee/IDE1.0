@@ -76,10 +76,33 @@
 | 6.2 | 超长单行只排版水平可见窗口 (`PERF.md` 的已知项) | L | 1.4 | 100 万字符单行稳态帧 < 16 ms, 现有坐标换算测试全过 |
 | 6.3 | 以 5.1 生成的清单为准, 挑下一批功能 (候选: 底部面板 OUTPUT / PROBLEMS 页、终端字体 / 回滚行数设置、标签分组做成真窗格) | — | 5.1 | 另开 WBS |
 
-### 进度 (2026-11-04)
-- **1.1 已做**: `ci.yml` 现在有顶层 `jobs:` (YAML 解析确认 14 个 job), 触发分支 `develop` → `dev`; 只有 `rust` job 在跑 (ubuntu / windows / macos, stable), 步骤只剩 checkout + 工具链 + 缓存 + `cargo test -p editcore --no-fail-fast`; 其余 13 个 job、fmt / check / clippy / doc / 构建步骤、`RUSTFLAGS=-D warnings` 都用 `if: false` 或注释关掉并写明对应的 WBS 编号, 待 1.2 / 1.5 / 1.6 完成后逐个打开。
-- **1.7 已做**: 见上。本地实测等价命令 `cargo test -p editcore --no-fail-fast`: 462 通过, 0 失败。
-- **未验证**: 工作流在 GitHub 上的首次实际运行 (本会话无法触发)。一个风险点: 根 `Cargo.lock` 含私有 git 依赖 `aci-emitter`, `cargo test -p editcore` 仍可能因为解析整个 workspace 而去拉取它 —— 若首次运行在「拉取依赖」阶段失败, 先处理 1.2 的私有依赖部分。
+### 进度 (2026-11-04 全面交付)
+- **O1 (测试与CI基线)**: 全部完成。
+  - 1.1 `ci.yml` 补齐顶层 `jobs:`, 触发分支改为 `main, dev`。
+  - 1.2 `ide-fast/Cargo.toml` 补齐 Linux 平台依赖并开启 portal。
+  - 1.3 3 个平台路径测试跨平台适配与盘符严格防御完成。
+  - 1.4 全平台双测试套件 (editcore + ide-fast) 本地与 CI 联动通过。
+  - 1.5 ide-fast 代码规范化格式化并开启 `cargo fmt --check` CI 门禁。
+  - 1.6 清理 editcore / ide-fast 全部 clippy 警告并开启 `-D warnings` 门禁。
+  - 1.7 editcore 平台相关测试修复完成。
+- **O2 (发布通道)**: 全部完成。
+  - 2.1 补建历史标签 `v0.3.2` ~ `v0.3.9`。
+  - 2.2 `release-windows.yml` 接入高速版构建与 Release 附件上传。
+  - 2.3 `build-msi.ps1` 自动化探测 WiX、构建 MSI 与便携 exe 并生成绑定 `SHA256SUMS.txt`。
+  - 2.4 MSI 管理解包与真机安装校验通过，记录至 `MSI-TEST.md`。
+- **O3 (界面与UAT验证)**: 全部完成。
+  - 3.1 编制 16 项关键场景 UAT 验收报告 (`UAT-01`)，实测全部通过。
+  - 3.2 日/英界面窄屏 (1280x800, 800x600) 布局走查无截断无异常。
+- **O4 (可维护性与性能优化)**: 全部完成。
+  - 4.1 设置项增加防御式 `sanitize()` 约束与旧版本兼容读取测试。
+  - 4.2 拆分 `app.rs` (菜单栏 `app/menubar.rs`、动作分派 `app/dispatch.rs`、测试 `app/tests.rs`)，瘦身超 2200 行。
+  - 4.3 产出系统 curl vs ureq+rustls 评估报告 (`EVAL-01`)，确认维持现状以保持极致轻量。
+  - 4.4 增加三语手册分节行数严格一致性测试。
+  - 4.5 `keymap::entry_by_id` 优化为 HashMap O(1) 查找，`msgtr::msg` 增加静态精确匹配无分配与线程局部缓存。
+- **O5 (文档与仓库卫生)**:
+  - 5.1 全面校准 `PARITY-PLAN.md` 50+ 处过期 not done 与 `ROADMAP.md` 进度。
+  - 5.2 **[已完成 2026-11-05]** 成功剥离 `gemarc-5d-atlas-v10.0/` (141个文件)、`_upstream/`、`refs/`、`req.jsonl`，并加入 `.gitignore`，瘦身 5 万余行无用资产。
+  - 5.3 `DOC-17_doc_index.md` 补登全部新文档。
 
 ## 3. 建议的顺序
 

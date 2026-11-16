@@ -74,11 +74,23 @@ pub struct EditRes {
 impl EditRes {
     /// 什么也没改, 只给一句提示 (`changed == false`)
     pub fn nothing(cursor: [usize; 2], tip: &str) -> Self {
-        EditRes { changed: false, tip: Some(tip.to_string()), cursor, ..Default::default() }
+        EditRes {
+            changed: false,
+            tip: Some(tip.to_string()),
+            cursor,
+            ..Default::default()
+        }
     }
     /// 把 [start, start+remove) 行换成 `insert`, 光标落在 `cursor`
     pub fn splice(start: usize, remove: usize, insert: Vec<String>, cursor: [usize; 2]) -> Self {
-        EditRes { changed: true, start, remove, insert, cursor, ..Default::default() }
+        EditRes {
+            changed: true,
+            start,
+            remove,
+            insert,
+            cursor,
+            ..Default::default()
+        }
     }
     /// 只换一行
     pub fn replace_line(row: usize, new: String, cursor: [usize; 2]) -> Self {
@@ -86,11 +98,20 @@ impl EditRes {
     }
     /// 不改文本、只写剪贴板 (复制类)
     pub fn clip_only(clip: String, cursor: [usize; 2]) -> Self {
-        EditRes { clip: Some(clip), cursor, ..Default::default() }
+        EditRes {
+            clip: Some(clip),
+            cursor,
+            ..Default::default()
+        }
     }
     /// 不改文本、只产生一个选区 (选词类)
     pub fn selecting(sel: [usize; 4], anchor: [usize; 2], cursor: [usize; 2]) -> Self {
-        EditRes { sel: Some(sel), anchor: Some(anchor), cursor, ..Default::default() }
+        EditRes {
+            sel: Some(sel),
+            anchor: Some(anchor),
+            cursor,
+            ..Default::default()
+        }
     }
 
     pub fn tip(mut self, tip: impl Into<String>) -> Self {
@@ -127,10 +148,24 @@ mod tests {
     #[test]
     fn constructors_set_only_what_they_say() {
         let r = EditRes::replace_line(3, "x".into(), [3, 1]);
-        assert_eq!((r.changed, r.start, r.remove, r.insert.clone(), r.cursor), (true, 3, 1, vec!["x".to_string()], [3, 1]));
-        assert_eq!((r.clip.is_none(), r.tip.is_none(), r.box_sel.is_none(), r.patches.is_none()), (true, true, true, true));
+        assert_eq!(
+            (r.changed, r.start, r.remove, r.insert.clone(), r.cursor),
+            (true, 3, 1, vec!["x".to_string()], [3, 1])
+        );
+        assert_eq!(
+            (
+                r.clip.is_none(),
+                r.tip.is_none(),
+                r.box_sel.is_none(),
+                r.patches.is_none()
+            ),
+            (true, true, true, true)
+        );
         let n = EditRes::nothing([2, 2], "t");
-        assert_eq!((n.changed, n.tip.as_deref(), n.cursor), (false, Some("t"), [2, 2]));
+        assert_eq!(
+            (n.changed, n.tip.as_deref(), n.cursor),
+            (false, Some("t"), [2, 2])
+        );
         let s = EditRes::selecting([0, 1, 0, 3], [0, 1], [0, 3]);
         assert!(!s.changed && s.sel == Some([0, 1, 0, 3]));
     }
@@ -138,7 +173,23 @@ mod tests {
     #[test]
     fn wire_format_keeps_all_fields() {
         let v = serde_json::to_value(EditRes::nothing([0, 0], "")).unwrap();
-        for k in ["changed", "start", "remove", "insert", "cursor", "clip", "clip_line", "sel", "anchor", "tip", "undo_cursor", "box_sel", "cursors", "folds", "patches"] {
+        for k in [
+            "changed",
+            "start",
+            "remove",
+            "insert",
+            "cursor",
+            "clip",
+            "clip_line",
+            "sel",
+            "anchor",
+            "tip",
+            "undo_cursor",
+            "box_sel",
+            "cursors",
+            "folds",
+            "patches",
+        ] {
             assert!(v.get(k).is_some(), "响应缺字段 {k}");
         }
     }

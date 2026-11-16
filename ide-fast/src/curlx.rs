@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub fn curl_path() -> PathBuf {
-    std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("curl.exe")).filter(|p| p.is_file()).unwrap_or_else(|| PathBuf::from("curl"))
+    std::env::var_os("SystemRoot")
+        .map(|r| PathBuf::from(r).join("System32").join("curl.exe"))
+        .filter(|p| p.is_file())
+        .unwrap_or_else(|| PathBuf::from("curl"))
 }
 
 /// curl 命令; Windows 下 GUI 进程里跑要加 CREATE_NO_WINDOW, 否则会弹控制台

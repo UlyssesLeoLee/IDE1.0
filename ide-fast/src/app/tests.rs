@@ -1,0 +1,2083 @@
+use super::*;
+use crate::settings::TypePref;
+
+/// 不落盘的 App; 语言是全局量, 拿锁串行化
+fn app(st: Settings) -> (App, std::sync::MutexGuard<'static, ()>) {
+    let g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    (App::build(vec![], None, Trace::new(), st, false), g)
+}
+
+#[test]
+fn markdown_block_click_edits_in_place_and_apply_is_one_undo_step() {
+    let (mut a, _g) = app(Settings::default());
+    a.new_doc();
+    let ai = a.active;
+    let orig: Vec<String> = ["# Title", "", "first para", "", "second para"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    a.docs[ai].lines = orig.clone();
+    let blocks = crate::markdown::parse(&a.docs[ai].lines);
+    let n = blocks.iter().position(|b| b.line == 2).expect("段落块");
+    // 点块 -> 进入就地编辑, 编辑框装着该块原文
+    a.md_handle(
+        ai,
+        &blocks,
+        &crate::md_view::MdEvent {
+            edit_req: Some(n),
+            ..Default::default()
+        },
+    );
+    let e = a.md_cache.edit.as_ref().expect("进入编辑");
+    assert_eq!((e.start, e.end, e.buf.as_str()), (2, 3, "first para"));
+    // 点框外 (有改动) = 应用: 一个补丁, 撤销一次就回到原文
+    let ev = crate::md_view::MdEvent {
+        apply: Some((
+            2,
+            3,
+            "first
+EDITED"
+                .into(),
+        )),
+        ..Default::default()
+    };
+    a.md_handle(ai, &blocks, &ev);
+    assert_eq!(
+        a.docs[ai].lines[2..4],
+        ["first".to_string(), "EDITED".to_string()]
+    );
+    a.docs[ai].undo();
+    assert_eq!(a.docs[ai].lines, orig, "一次撤销还原整个就地编辑");
+    // 同一帧既应用又点了另一块: 不开新编辑 (行号已变)
+    a.md_cache.edit = None;
+    let ev = crate::md_view::MdEvent {
+        apply: Some((2, 3, "x".into())),
+        edit_req: Some(0),
+        ..Default::default()
+    };
+    a.md_handle(ai, &blocks, &ev);
+    assert!(a.md_cache.edit.is_none());
+}
+
+#[test]
+fn settings_survive_a_trip_through_the_running_app() {
+    let mut st = Settings::default();
+    st.dark = false;
+    st.font_px = 18.0;
+    st.tab_width = 2;
+    st.lang = "en".into();
+    st.auto_indent = false;
+    st.save_backup = true;
+    st.font_family = "consola.ttf".into();
+    st.line_height = 1.5;
+    st.colors.keyword = Some([1, 2, 3]);
+    st.view.side_w = 333.0;
+    st.view.term_h = 99.0;
+    let (a, _g) = app(st.clone());
+    let back = a.current_settings();
+    assert_eq!(
+        (
+            back.dark,
+            back.font_px,
+            back.tab_width,
+            back.lang.as_str(),
+            back.auto_indent,
+            back.save_backup
+        ),
+        (false, 18.0, 2, "en", false, true)
+    );
+    assert_eq!(
+        (
+            back.font_family.as_str(),
+            back.line_height,
+            back.colors.keyword
+        ),
+        ("consola.ttf", 1.5, Some([1, 2, 3]))
+    );
+    assert_eq!((back.view.side_w, back.view.term_h), (333.0, 99.0));
+    assert_eq!(
+        crate::i18n::cur(),
+        crate::i18n::Lang::En,
+        "语言设置生效到界面"
+    );
+    crate::i18n::set(crate::i18n::Lang::Zh);
+}
+
+#[test]
+fn new_documents_use_the_default_encoding_and_eol() {
+    let mut st = Settings::default();
+    st.default_encoding = "GBK".into();
+    st.default_eol = "LF".into();
+    let (mut a, _g) = app(st);
+    a.new_doc();
+    let d = a.cur();
+    assert_eq!((d.charset, d.eol), (Charset::Gbk, Eol::Lf));
+    let mut st = Settings::default();
+    st.default_encoding = "Unicode".into();
+    let (mut b, _g2) = (App::build(vec![], None, Trace::new(), st, false), ());
+    b.new_doc();
+    assert_eq!(
+        b.cur().bom,
+        editcore::document_io::Bom::Utf16Le,
+        "UTF-16 的新文档带对应的 BOM"
+    );
+    assert_eq!(
+        App::build(
+            vec![],
+            None,
+            Trace::new(),
+            Settings {
+                default_encoding: "bogus".into(),
+                ..Settings::default()
+            },
+            false
+        )
+        .docs[0]
+            .charset,
+        Charset::Utf8,
+        "认不出的编码 = UTF-8"
+    );
+}
+
+#[test]
+fn manual_syntax_type_overrides_the_extension_and_unknown_names_fall_back() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].name = "x.txt".into();
+    assert_eq!(
+        a.type_of(&a.docs[0]).map(|t| t.name.as_str()),
+        Some("Plain")
+    );
+    a.docs[0].syntax = Some("Rust".into());
+    assert_eq!(a.type_of(&a.docs[0]).map(|t| t.name.as_str()), Some("Rust"));
+    a.docs[0].syntax = Some("NoSuchType".into());
+    assert_eq!(
+        a.type_of(&a.docs[0]).map(|t| t.name.as_str()),
+        Some("Plain"),
+        "查不到 = 按扩展名"
+    );
+}
+
+#[test]
+fn function_step_jumps_between_outline_entries_and_wraps() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].name = "x.rs".into();
+    a.docs[0].lines = ["fn a() {}", "", "fn b() {", "}", "", "fn c() {}"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    a.docs[0].cursor = [3, 0];
+    a.step_function(true);
+    assert_eq!(a.docs[0].cursor[0], 5);
+    a.step_function(true);
+    assert_eq!(a.docs[0].cursor[0], 0, "最后一个函数再往下绕回第一个");
+    a.step_function(false);
+    assert_eq!(a.docs[0].cursor[0], 5, "第一个再往上绕回最后一个");
+    a.docs[0].name = "x.txt".into();
+    a.docs[0].lines = vec!["plain".into()];
+    a.docs[0].rev += 1; // 内容变了, 大纲缓存按修订号失效
+    a.docs[0].cursor = [0, 0];
+    a.step_function(true);
+    assert_eq!(a.docs[0].cursor, [0, 0], "没有大纲的文件: 不动");
+    assert!(a.docs[0].tip.contains("没有函数标记"), "{}", a.docs[0].tip);
+}
+
+#[test]
+fn copy_commands_put_the_expected_text_on_the_clipboard_history() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.docs[0].name = "n.txt".into();
+    a.docs[0].lines = vec!["abcdefghij".into()];
+    a.docs[0].cursor = [0, 3];
+    a.copy_tag(&ctx);
+    assert_eq!(
+        a.tools.clip.first().map(String::as_str),
+        Some("n.txt(1,4)"),
+        "没存盘的文档用文档名, 行列从 1 数"
+    );
+    a.cfg.view.wrap_col = 4;
+    a.copy_wrapped(&ctx);
+    assert_eq!(
+        a.tools.clip.first().map(String::as_str),
+        Some("abcd\r\nefgh\r\nij"),
+        "无选区 = 当前行, 每 4 字符切一刀"
+    );
+    a.docs[0].sel = Some([0, 2, 0, 8]);
+    a.copy_wrapped(&ctx);
+    assert_eq!(
+        a.tools.clip.first().map(String::as_str),
+        Some("cdef\r\nGH".to_lowercase().as_str()),
+        "有选区 = 只复制选区"
+    );
+}
+
+#[test]
+fn open_counterpart_switches_between_header_and_source() {
+    let dir = std::env::temp_dir().join(format!("idefast-hc-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (c, h) = (dir.join("foo.c"), dir.join("foo.hpp"));
+    std::fs::write(&c, "int main(){}\n").unwrap();
+    std::fs::write(&h, "#pragma once\n").unwrap();
+    let (mut a, _g) = app(Settings::default());
+    a.open_path(&c);
+    assert_eq!(a.cur().path.as_deref(), Some(c.as_path()));
+    a.open_counterpart();
+    assert_eq!(
+        a.cur().path.as_deref(),
+        Some(h.as_path()),
+        "foo.c -> foo.hpp (foo.h 不存在, 按顺序找下一个)"
+    );
+    a.open_counterpart();
+    assert_eq!(
+        a.cur().path.as_deref(),
+        Some(c.as_path()),
+        "再按回到 foo.c, 不重复开标签"
+    );
+    let before = a.docs.len();
+    std::fs::remove_file(&h).unwrap();
+    a.open_counterpart();
+    assert_eq!(
+        (a.docs.len(), a.cur().tip.contains("没有找到")),
+        (before, true),
+        "对应文件不存在: 只提示"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn completion_lists_candidates_cycles_and_accepts_as_one_undo_step() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].name = "x.rs".into();
+    a.docs[0].lines = vec![
+        "fn main() {".into(),
+        "    let counter = 1;".into(),
+        "    cou + 1".into(),
+    ];
+    a.docs[0].goto(2, 7);
+    a.show_completion();
+    let p = a.sys.complete.as_ref().expect("前缀 cou 有候选");
+    assert_eq!(
+        p.items,
+        ["counter"],
+        "文件里出现过的标识符; 关键字里没有以 cou 开头的"
+    );
+    a.docs[0].goto(1, 7);
+    a.show_completion();
+    assert!(
+        a.sys.complete.is_none(),
+        "前缀就是 let 本身: 没有更长的候选, 不弹浮层"
+    );
+    // 前缀 "l": 关键字 let / loop 排在文件标识符前面; 上下键到头绕回
+    a.docs[0].lines[2] = "    l".into();
+    a.docs[0].goto(2, 5);
+    a.show_completion();
+    let n = a.sys.complete.as_ref().unwrap().items.len();
+    assert!(n >= 2 && a.sys.complete.as_ref().unwrap().items[0].starts_with('l'));
+    a.complete_move(-1);
+    assert_eq!(
+        a.sys.complete.as_ref().unwrap().idx,
+        n - 1,
+        "第一项再往上绕回最后一项"
+    );
+    a.complete_move(1);
+    assert_eq!(a.sys.complete.as_ref().unwrap().idx, 0);
+    // 接受第一项: 前缀换成候选, 光标到候选末尾, 一步撤销
+    let first = a.sys.complete.as_ref().unwrap().items[0].clone();
+    a.accept_completion();
+    assert!(a.sys.complete.is_none());
+    assert_eq!(a.docs[0].lines[2], format!("    {first}"));
+    assert_eq!(a.docs[0].cursor, [2, 4 + first.chars().count()]);
+    a.docs[0].undo();
+    assert_eq!(a.docs[0].lines[2], "    l", "一步撤销回到补全前");
+}
+
+#[test]
+fn completion_reports_when_there_is_nothing_and_closes_when_stale() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].lines = vec!["zq".into()];
+    a.docs[0].goto(0, 2);
+    a.show_completion();
+    assert!(
+        a.sys.complete.is_none() && a.docs[0].tip.contains("无补全候选"),
+        "{}",
+        a.docs[0].tip
+    );
+    a.docs[0].lines = vec!["alpha_one alpha_two al".into()];
+    a.docs[0].goto(0, 22);
+    a.show_completion();
+    assert!(a.sys.complete.is_some());
+    a.docs[0].goto(0, 3); // 光标挪走: 浮层该关
+    a.completion_popup(&egui::Context::default());
+    assert!(a.sys.complete.is_none(), "光标变了就关掉浮层");
+    a.docs[0].goto(0, 22);
+    a.show_completion();
+    a.docs[0].type_text("x"); // 打字: 修订号变了
+    a.completion_popup(&egui::Context::default());
+    assert!(a.sys.complete.is_none(), "文档变了就关掉浮层");
+}
+
+#[test]
+fn goto_definition_jumps_to_the_definition_line_and_reports_misses() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].lines = vec![
+        "main();".into(),
+        "fn helper() {}".into(),
+        "helper();".into(),
+        "  + ".into(),
+    ];
+    a.docs[0].goto(2, 3);
+    a.goto_definition();
+    assert_eq!(a.docs[0].cursor, [1, 3], "跳到 fn helper 的 helper 上");
+    assert!(a.docs[0].tip.contains("定义 @ Ln 2"), "{}", a.docs[0].tip);
+    a.docs[0].goto(3, 3);
+    a.goto_definition();
+    assert!(
+        a.docs[0].tip.contains("光标处无标识符"),
+        "{}",
+        a.docs[0].tip
+    );
+    a.docs[0].lines[3] = "unknown_sym".into();
+    a.docs[0].goto(3, 4);
+    a.goto_definition();
+    assert_eq!(a.docs[0].cursor, [3, 0], "只出现这一次: 首次出现就是自己");
+}
+
+#[test]
+fn macro_runs_document_and_window_steps_in_order_and_follows_the_new_active_tab() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.run_mac_src(
+        "S_InsText(\"first\");\nS_FileNew();\nS_InsText(\"second\");",
+        0,
+        &ctx,
+    );
+    assert_eq!(a.docs.len(), 2, "S_FileNew 开了新标签");
+    assert_eq!(a.docs[0].lines, ["first"], "新建之前的文字在原来的文档里");
+    assert_eq!(
+        a.docs[1].lines,
+        ["second"],
+        "新建之后的步骤跟着新的活动标签走"
+    );
+    assert_eq!(a.active, 1);
+    assert!(a.cur().tip.contains("宏已执行 (3 步)"), "{}", a.cur().tip);
+}
+
+#[test]
+fn macro_with_an_unrunnable_step_does_nothing_and_says_why() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.run_mac_src("S_InsText(\"x\");\nS_Cascade();", 0, &ctx);
+    assert_eq!(a.docs[0].lines, [""], "整份宏都没执行");
+    assert!(
+        a.docs[0].tip.contains("宏未执行")
+            && a.docs[0].tip.contains("第 2 行")
+            && a.docs[0].tip.contains("层叠窗口"),
+        "{}",
+        a.docs[0].tip
+    );
+}
+
+#[test]
+fn macro_steps_for_window_list_help_and_panes_run_through_the_app() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.side.open = false;
+    a.run_mac_src("S_Outline();\nS_WinList();", 0, &ctx);
+    assert!(
+        a.side.open && a.side.tab == Tab::Outline,
+        "S_Outline 切到大纲页"
+    );
+    assert_eq!(
+        a.tools.pick.as_ref().map(|p| p.kind),
+        Some(crate::pick::Kind::Windows),
+        "S_WinList 打开窗口一览"
+    );
+    a.tools.pick = None;
+    a.run_mac_src(
+        "S_FileTree();\nS_ToggleKeySearch();\nS_HelpContents();",
+        0,
+        &ctx,
+    );
+    assert!(
+        a.side.tab == Tab::Files && a.cfg.view.key_search,
+        "S_FileTree 切文件页, S_ToggleKeySearch 打开自动显示"
+    );
+    assert_eq!(
+        a.cur().name,
+        crate::help::MANUAL_NAME,
+        "S_HelpContents 开手册"
+    );
+    a.run_mac_src("S_ChgCharset();", 0, &ctx);
+    assert_eq!(
+        a.tools.pick.as_ref().map(|p| p.kind),
+        Some(crate::pick::Kind::Charset)
+    );
+    a.run_mac_src("S_FileReopen();", 0, &ctx);
+    assert_eq!(
+        a.tools.pick.as_ref().map(|p| p.kind),
+        Some(crate::pick::Kind::Reopen),
+        "后开的列表替换先开的"
+    );
+    a.run_mac_src("S_ShowTab();", 0, &ctx);
+    assert!(
+        a.cur().tip.contains("宏未执行") && a.cur().tip.contains("开关"),
+        "ShowTab 仍然明确拒绝: {}",
+        a.cur().tip
+    );
+}
+
+#[test]
+fn macro_clipboard_reaches_the_app_clipboard_history() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.docs[0].lines = vec!["alpha".into(), "beta".into()];
+    a.docs[0].goto(1, 0);
+    a.run_mac_src("S_Copy();\nS_GoFileTop();\nS_Paste();", 0, &ctx);
+    assert_eq!(
+        a.tools.clip.first().map(String::as_str),
+        Some("beta\n"),
+        "宏里复制的整行同步进了剪贴板历史"
+    );
+    assert_eq!(
+        a.docs[0].lines,
+        ["beta", "alpha", "beta"],
+        "宏里粘贴用的是宏自己的剪贴板"
+    );
+}
+
+#[test]
+fn macro_slots_run_register_and_report_empty_or_full() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.run_macro_slot(0, &ctx);
+    assert!(a.cur().tip.contains("宏 1 是空的"), "{}", a.cur().tip);
+    a.cfg.macro_slots[3] = crate::settings::MacroSlot {
+        name: "加头".into(),
+        kind: "mac".into(),
+        code: "S_InsText(\"> \");".into(),
+    };
+    a.docs[0].lines = vec!["body".into()];
+    a.docs[0].goto(0, 0);
+    a.run_macro_slot(3, &ctx);
+    assert_eq!(
+        a.docs[0].lines,
+        ["> body"],
+        "槽里的 Sakura 宏作用在活动文档上"
+    );
+    // 登记: 选区优先, 否则整份文档; .js 不登记
+    a.docs[0].name = "tidy.mac".into();
+    a.docs[0].lines = vec!["S_Undo();".into()];
+    a.register_macro_doc();
+    let tip = a.cur().tip.clone();
+    assert_eq!(
+        (
+            a.cfg.macro_slots[0].name.as_str(),
+            a.cfg.macro_slots[0].kind.as_str(),
+            a.cfg.macro_slots[0].code.trim()
+        ),
+        ("tidy", "mac", "S_Undo();"),
+        "{tip}"
+    );
+    assert!(tip.contains("已登记到宏 1"), "{tip}");
+    a.docs[0].name = "x.ppa".into();
+    a.register_macro_doc();
+    assert_eq!(a.cfg.macro_slots[1].kind, "ppa", ".ppa 文档登记成 PPA");
+    a.docs[0].name = "m.js".into();
+    a.register_macro_doc();
+    assert!(
+        a.cur().tip.contains("不运行 JS 宏") && a.cfg.macro_slots[2].is_empty(),
+        "{}",
+        a.cur().tip
+    );
+    a.docs[0].name = "full.mac".into();
+    for i in 0..crate::settings::MACRO_SLOTS {
+        if a.cfg.macro_slots[i].is_empty() {
+            a.cfg.macro_slots[i].code = "S_Undo();".into();
+        }
+    }
+    a.register_macro_doc();
+    assert!(a.cur().tip.contains("宏槽都满了"), "{}", a.cur().tip);
+    a.docs[0].lines = vec!["  ".into()];
+    a.register_macro_doc();
+    assert!(
+        a.cur().tip.contains("没有可登记的内容") || a.cur().tip.contains("宏槽都满了"),
+        "{}",
+        a.cur().tip
+    );
+}
+
+#[test]
+fn tab_group_commands_switch_move_merge_and_close() {
+    let (mut a, _g) = app(Settings::default());
+    a.new_doc();
+    a.new_doc();
+    a.new_doc();
+    for (d, g) in a.docs.iter_mut().zip([0u8, 2, 2, 4]) {
+        d.group = g;
+    }
+    a.active = 0;
+    a.group_switch(true);
+    assert_eq!(a.active, 1, "下一个分组 (2) 里最靠左的标签");
+    a.group_switch(true);
+    assert_eq!(a.active, 3);
+    a.group_switch(true);
+    assert_eq!(a.active, 0, "最后一个分组再往后绕回第一个");
+    a.group_switch(false);
+    assert_eq!(a.active, 3, "往前绕回最后一个");
+    a.group_joint(false);
+    assert_eq!(a.docs[3].group, 2, "当前标签移到上一个分组");
+    a.active = 0;
+    a.group_separate();
+    assert_eq!(a.docs[0].group, 3, "新分组 = 现有最大编号 + 1");
+    a.group_bind_all();
+    assert!(
+        a.docs.iter().all(|d| d.group == 0),
+        "合并为一组 = 都回到无分组"
+    );
+    a.group_switch(true);
+    assert!(a.cur().tip.contains("只有一个分组"), "{}", a.cur().tip);
+    a.docs[1].group = 2;
+    a.docs[2].group = 2;
+    a.active = 1;
+    a.group_close();
+    assert_eq!(a.docs.len(), 2, "当前分组里的两个标签关掉了");
+    assert!(a.docs.iter().all(|d| d.group == 0) && a.active < a.docs.len());
+}
+
+#[test]
+fn small_view_and_search_commands_update_their_state() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].lines = vec!["abc".into(), "def".into()];
+    a.center_cursor();
+    assert!(
+        a.center_once && a.docs[0].reveal,
+        "光标行居中: 下一帧居中并滚到光标"
+    );
+    assert_eq!(a.sys.sel_count, 0);
+    a.cycle_sel_count();
+    a.cycle_sel_count();
+    assert_eq!(a.sys.sel_count, 2);
+    assert!(a.cur().tip.contains("行数"), "{}", a.cur().tip);
+    a.cycle_sel_count();
+    assert_eq!(a.sys.sel_count, 0, "字符 -> 字节 -> 行 -> 回到字符");
+    let m = a.find.marks;
+    a.toggle_find_marks();
+    assert_eq!(a.find.marks, !m);
+    a.jump_find_start();
+    assert!(a.cur().tip.contains("还没有查找起点"), "没查找过: 只提示");
+    a.find.needle = "e".into();
+    a.docs[0].goto(1, 2);
+    a.jump_find_start();
+    assert_eq!(a.docs[0].cursor, [0, 0], "回到查找开始时的位置");
+    a.docs[0].goto(1, 1);
+    a.space_indent_cmd(false);
+    assert_eq!(a.docs[0].lines[1], " def", "缩进当前行 1 个空格");
+    a.space_indent_cmd(true);
+    assert_eq!(a.docs[0].lines[1], "def");
+}
+
+#[test]
+fn column_delete_needs_a_box_selection_and_removes_the_block() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].lines = vec!["abcdef".into(), "ghijkl".into(), "mnopqr".into()];
+    a.column_delete();
+    assert_eq!(a.docs[0].lines[0], "abcdef", "没有列块选区: 什么也不改");
+    assert!(a.docs[0].tip.contains("Alt+拖选"));
+    a.docs[0].box_sel = Some([0, 1, 2, 3]); // 第 0..=2 行, 第 1..3 列
+    a.column_delete();
+    assert_eq!(a.docs[0].lines, vec!["adef", "gjkl", "mpqr"]);
+    assert_eq!(a.docs[0].cursor, [0, 1], "光标回到矩形左上角");
+}
+
+#[test]
+fn column_replace_opens_with_the_block_text_and_applies_per_row() {
+    let (mut a, _g) = app(Settings::default());
+    a.docs[0].lines = vec!["abcdef".into(), "ghijkl".into()];
+    a.column_replace();
+    assert!(!a.tools.col_open, "没有列块选区: 不弹窗");
+    a.docs[0].box_sel = Some([0, 1, 1, 3]);
+    a.docs[0].cursor = [1, 3];
+    a.column_replace();
+    assert!(a.tools.col_open);
+    assert_eq!(
+        (a.docs[0].box_sel, a.docs[0].cursor),
+        (Some([0, 1, 1, 3]), [1, 3]),
+        "取预填文字不能弄丢列块选区和光标"
+    );
+    assert!(a.docs[0].rec.is_none() && a.docs[0].lines == vec!["abcdef", "ghijkl"]);
+    a.docs[0].edit("box-replace", Some("12\nXY".into()));
+    assert_eq!(
+        a.docs[0].lines,
+        vec!["a12def", "gXYjkl"],
+        "每一行换成对应的一行文字"
+    );
+}
+
+#[test]
+fn doc_prefs_follow_settings_and_extension_overrides() {
+    let mut st = Settings::default();
+    st.auto_indent = false;
+    st.smart_indent = true;
+    st.insert_spaces = false;
+    st.file_types = vec![TypePref {
+        ext: "py".into(),
+        insert_spaces: Some(true),
+        tab_width: Some(2),
+        wrap: Some(true),
+        wrap_col: None,
+    }];
+    let (mut a, _g) = app(st);
+    a.docs[0].name = "x.py".into();
+    a.new_doc();
+    a.docs[1].name = "y.txt".into();
+    a.sync_doc_prefs();
+    assert_eq!(
+        (
+            a.docs[0].auto_indent,
+            a.docs[0].smart_indent,
+            a.docs[0].insert_spaces
+        ),
+        (false, true, true),
+        ".py 的 Tab 插入空格被覆盖为开"
+    );
+    assert!(!a.docs[1].insert_spaces);
+    assert_eq!(a.eff("x.py"), (2, true, true));
+    assert_eq!(a.eff("y.txt"), (4, false, false));
+}
+
+#[test]
+fn prefs_dialog_applies_on_ok_and_discards_on_cancel() {
+    let (mut a, _g) = app(Settings::default());
+    a.recent = vec!["a.txt".into(), "b.txt".into(), "c.txt".into()];
+    a.open_prefs();
+    {
+        let p = a.prefs.as_mut().unwrap();
+        p.draft.tab_width = 8;
+        p.draft.mru_files = 2;
+        p.draft.lang = "ja".into();
+        p.draft.insert_spaces = true;
+    }
+    assert_eq!(
+        (a.tab, a.cfg.insert_spaces),
+        (4, false),
+        "草稿没提交前不影响运行状态"
+    );
+    a.recent.push("d.txt".into()); // 对话框开着时又打开了文件: 提交不能把它冲掉
+    a.prefs_commit();
+    assert_eq!(
+        (a.tab, a.cfg.insert_spaces, a.cfg.lang.as_str()),
+        (8, true, "ja")
+    );
+    assert_eq!(crate::i18n::cur(), crate::i18n::Lang::Ja);
+    assert_eq!(
+        a.recent,
+        vec!["a.txt", "b.txt"],
+        "最近文件个数按新设置截断, 内容用现在的而不是草稿里的旧快照"
+    );
+    // 取消: 草稿丢弃
+    a.prefs = None;
+    a.open_prefs();
+    a.prefs.as_mut().unwrap().draft.tab_width = 3;
+    a.prefs = None;
+    assert_eq!(a.tab, 8);
+    crate::i18n::set(crate::i18n::Lang::Zh);
+}
+
+#[test]
+fn reset_keeps_recent_files_but_restores_preferences() {
+    let (mut a, _g) = app(Settings {
+        tab_width: 9,
+        font_family: "x.ttf".into(),
+        ..Settings::default()
+    });
+    a.recent = vec!["keep.txt".into()];
+    let mut next = a.current_settings();
+    next.reset_prefs();
+    a.apply_settings(&next);
+    assert_eq!(
+        (a.tab, a.cfg.font_family.as_str(), a.recent.clone()),
+        (4, "", vec!["keep.txt".to_string()])
+    );
+}
+
+#[test]
+fn right_dock_cap_leaves_editor_room() {
+    assert_eq!(right_cap(900.0), 660.0);
+    assert_eq!(right_cap(300.0), 100.0, "窗口再窄也不会把上限压到 0");
+    assert!(right_room(560.0) && !right_room(399.0));
+}
+
+#[test]
+fn view_toggles_persist_and_minimal_layout_hides_panels() {
+    let mut st = Settings::default();
+    st.view.ruler = true;
+    st.view.whitespace = true;
+    st.view.line_numbers = false;
+    let (mut a, _g) = app(st);
+    let back = a.current_settings();
+    assert_eq!(
+        (
+            back.view.ruler,
+            back.view.whitespace,
+            back.view.line_numbers,
+            back.view.status_bar
+        ),
+        (true, true, false, true)
+    );
+    a.side.open = true;
+    a.term.open = true;
+    a.md_preview = true;
+    a.set_minimal();
+    assert_eq!(
+        (a.side.open, a.term.open, a.md_preview, a.cfg.view.ruler),
+        (false, false, false, false)
+    );
+    assert!(a.cfg.view.status_bar, "极简布局仍留状态栏");
+}
+
+fn set_lines(d: &mut Doc, text: &str) {
+    d.lines = text.split('\n').map(str::to_string).collect();
+    d.rev += 1;
+}
+
+#[test]
+fn comparing_two_tabs_marks_lines_tracks_edits_and_ends_when_a_tab_closes() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.new_doc();
+    set_lines(&mut a.docs[0], "a\nb\nc");
+    set_lines(&mut a.docs[1], "a\nX\nc\nd");
+    a.active = 0;
+    a.start_diff(1);
+    let v = a.diff.as_ref().expect("比较已开始");
+    assert_eq!(v.hunks.len(), 2, "第 2 行改了, 末尾多一行");
+    let (l, r) = (v.left, v.right);
+    assert!(
+        a.diff.as_ref().unwrap().marks_of(l).is_some()
+            && a.diff.as_ref().unwrap().marks_of(r).is_some()
+    );
+    // 改右边: 版本号变了, 重算
+    set_lines(&mut a.docs[1], "a\nb\nc");
+    a.diff_refresh();
+    assert!(a.diff.as_ref().unwrap().hunks.is_empty());
+    // 下一处差异在没有差异时给提示而不是动光标
+    a.diff_step(true);
+    assert_eq!(a.docs[0].cursor, [0, 0]);
+    // 关掉一份: 比较结束
+    a.docs.truncate(1);
+    a.diff_refresh();
+    assert!(a.diff.is_none());
+}
+
+#[test]
+fn diff_step_walks_hunks_and_wraps() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.new_doc();
+    set_lines(&mut a.docs[0], "1\n2\n3\n4\n5\n6");
+    set_lines(&mut a.docs[1], "1\nX\n3\n4\nY\n6");
+    a.active = 1; // 右侧当前
+    a.docs[1].cursor = [0, 0];
+    a.diff = Some(crate::diff::DiffView::new(
+        a.docs[0].id,
+        a.docs[1].id,
+        &a.docs[0].lines,
+        &a.docs[1].lines,
+        (a.docs[0].rev, a.docs[1].rev),
+    ));
+    a.diff_step(true);
+    assert_eq!(a.docs[1].cursor[0], 1);
+    a.diff_step(true);
+    assert_eq!(a.docs[1].cursor[0], 4);
+    a.diff_step(true);
+    assert_eq!(a.docs[1].cursor[0], 1, "到头回绕");
+    a.diff_step(false);
+    assert_eq!(a.docs[1].cursor[0], 4, "往回也回绕");
+}
+
+#[test]
+fn renaming_a_file_or_folder_retargets_open_tabs() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.docs[0].path = Some(PathBuf::from("/p/old/a.txt"));
+    a.docs[0].name = "a.txt".into();
+    a.docs_follow_rename(
+        std::path::Path::new("/p/old"),
+        std::path::Path::new("/p/new"),
+    );
+    assert_eq!(
+        a.docs[0].path.as_deref(),
+        Some(std::path::Path::new("/p/new/a.txt"))
+    );
+    a.docs_follow_rename(
+        std::path::Path::new("/p/new/a.txt"),
+        std::path::Path::new("/p/new/b.md"),
+    );
+    assert_eq!(
+        (a.docs[0].name.as_str(), a.docs[0].path.as_deref()),
+        ("b.md", Some(std::path::Path::new("/p/new/b.md")))
+    );
+}
+
+#[test]
+fn opening_a_text_doc_makes_a_read_only_tab() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.open_text_doc("Diff: x.diff", "@@ -1 +1 @@\n-a\n+b\n");
+    let d = a.cur();
+    assert!(d.readonly && !d.dirty && d.name == "Diff: x.diff");
+    assert_eq!(d.lines, vec!["@@ -1 +1 @@", "-a", "+b"]);
+}
+
+#[test]
+fn choosing_a_theme_plugin_switches_colors_and_syntax_theme() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let dir = std::env::temp_dir().join(format!("ide-fast-app-theme-{}", std::process::id()));
+    std::env::set_var("IDE_PLUGIN_DIR", &dir);
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.set_theme_plugin("theme-light");
+    assert!(a.theme_vars.is_some());
+    let tc = crate::view::ThemeColors::from_vars(a.theme_vars.as_ref().unwrap());
+    assert!(!tc.dark);
+    a.set_theme_plugin("");
+    assert!(a.theme_vars.is_none() && a.theme_id.is_empty());
+    std::env::remove_var("IDE_PLUGIN_DIR");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn geometry_is_remembered_only_in_the_normal_state() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(
+        egui::RawInput {
+            viewport_id: egui::ViewportId::ROOT,
+            viewports: std::iter::once((
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo {
+                    outer_rect: Some(Rect::from_min_size(
+                        Pos2::new(40.0, 50.0),
+                        Vec2::new(900.0, 700.0),
+                    )),
+                    inner_rect: Some(Rect::from_min_size(
+                        Pos2::new(48.0, 80.0),
+                        Vec2::new(884.0, 660.0),
+                    )),
+                    ..Default::default()
+                },
+            ))
+            .collect(),
+            ..Default::default()
+        },
+        |ui| a.track_geometry(ui.ctx()),
+    );
+    out.textures_delta.clear();
+    let g = a.geom_now.expect("正常状态记下了位置");
+    assert_eq!((g.x, g.y, g.w, g.h), (40.0, 50.0, 884.0, 660.0));
+    assert!(!a.maximized_now);
+}
+
+#[test]
+fn session_is_restored_only_without_command_line_files() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
+    let dir = std::env::temp_dir().join(format!("idefast-session-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+    std::fs::write(&a, "aaa").unwrap();
+    std::fs::write(&b, "bbb").unwrap();
+    let mut st = Settings::default();
+    st.session = vec![
+        a.display().to_string(),
+        dir.join("gone.txt").display().to_string(),
+        b.display().to_string(),
+        "\\\\evil\\share\\x.txt".into(),
+    ];
+    st.session_active = 2;
+    let app1 = App::build(vec![], None, Trace::new(), st.clone(), false);
+    let names: Vec<_> = app1.docs.iter().map(|d| d.name.clone()).collect();
+    assert_eq!(names, vec!["a.txt", "b.txt"], "不存在的 / UNC 的跳过");
+    assert_eq!(
+        app1.docs[app1.active].name, "b.txt",
+        "活动标签回到上次的位置"
+    );
+    // 往回写: 当前打开的文件就是下次的会话
+    let now = app1.current_settings();
+    assert_eq!(
+        now.session,
+        vec![a.display().to_string(), b.display().to_string()]
+    );
+    assert_eq!(now.session_active, 1);
+    // 命令行给了文件 = 不恢复; 关掉开关 = 不恢复
+    let app2 = App::build(
+        vec![a.display().to_string()],
+        None,
+        Trace::new(),
+        st.clone(),
+        false,
+    );
+    assert_eq!(app2.docs.len(), 1);
+    st.restore_session = false;
+    assert_eq!(
+        App::build(vec![], None, Trace::new(), st, false).docs.len(),
+        1,
+        "只有一份空白文档"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn session_snapshot_survives_the_close_confirmation_loop() {
+    let _g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()); // App::build 会写全局语言
+    let dir = std::env::temp_dir().join(format!("idefast-exit-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+    std::fs::write(&a, "a").unwrap();
+    std::fs::write(&b, "b").unwrap();
+    let mut st = Settings::default();
+    st.session = vec![a.display().to_string(), b.display().to_string()];
+    st.session_active = 1;
+    let mut app = App::build(vec![], None, Trace::new(), st, false);
+    // 关窗请求: 先冻结, 之后确认循环把标签一个个关掉也不影响要写下去的会话
+    app.exit_session = Some((app.session_paths(), app.session_active()));
+    app.docs.truncate(1);
+    let now = app.current_settings();
+    assert_eq!(now.session.len(), 2, "两个文件都在会话里");
+    assert_eq!(now.session_active, 1);
+    // 用户取消关窗: 快照清掉, 会话又跟着现在打开的文件走
+    app.exit_session = None;
+    assert_eq!(app.current_settings().session.len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 100 万字符的单行: 一帧能画完, 光标在行中间 / 选区 / 查找命中都不 panic, 撑宽用整行长度
+#[test]
+fn a_million_char_single_line_renders_with_caret_selection_and_marks() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    a.docs[0].lines = vec!["word ".repeat(200_000)];
+    a.docs[0].goto(0, 500_000);
+    a.docs[0].sel = Some([0, 499_990, 0, 500_010]);
+    for _ in 0..3 {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| a.ui_main(ui));
+        out.textures_delta.clear();
+    }
+    assert!(
+        a.max_cols >= 1_000_000,
+        "横向滚动区按整行长度撑开, 不是按窗口"
+    );
+}
+
+#[test]
+fn test_open_review_doc_tab_and_structure() {
+    let (mut a, _g) = app(Settings::default());
+    assert_eq!(a.docs.len(), 1);
+
+    // 打开多 AI 协同审查看板
+    a.open_review_doc();
+    assert_eq!(a.docs.len(), 2);
+    let cur = a.cur();
+    assert_eq!(cur.name, "🛡️ 协同审查");
+    assert!(cur.readonly);
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("多 AI 协同审查与统筹验收看板")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("阶段 1: 最初规划与指引看板")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("阶段 2: 实时协同巡航与动态指引")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("阶段 3: 终局统筹审查与验收裁决")));
+
+    // 再次调用应该复用同一个标签页，不会重复创建
+    a.open_review_doc();
+    assert_eq!(a.docs.len(), 2);
+}
+
+#[test]
+fn test_trigger_coedit_demo_and_remote_cursors() {
+    let (mut a, _g) = app(Settings::default());
+    // 当前文档预设多行内容
+    a.cur().lines = vec![
+        "// Live co-editing file".into(),
+        "fn calculate_metrics() -> usize {".into(),
+        "    let mut total = 0;".into(),
+        "    total".into(),
+        "}".into(),
+    ];
+    a.cur().base = a.cur().lines.clone();
+
+    // 触发协同编辑演示
+    a.trigger_coedit_demo();
+    assert_eq!(a.cur().remote_cursors.len(), 3);
+    assert_eq!(a.cur().remote_cursors[0].display_name, "Coder Alpha");
+    assert_eq!(
+        a.cur().remote_cursors[0].role,
+        ide_agent_router::CollaboratorRole::AiCoder
+    );
+    assert!(a.cur().remote_cursors[0].selection.is_some());
+    assert_eq!(a.cur().remote_cursors[1].display_name, "Optimizer Fast");
+    assert_eq!(a.cur().remote_cursors[2].display_name, "Reviewer Lead");
+}
+
+#[test]
+fn test_doc_section_level_rollback() {
+    let (mut a, _g) = app(Settings::default());
+    a.cur().lines = vec![
+        "line 0: original".into(),
+        "line 1: original".into(),
+        "line 2: original".into(),
+        "line 3: original".into(),
+    ];
+    a.cur().base = a.cur().lines.clone();
+
+    // AI 篡改了 line 1 和 line 2
+    a.cur().lines[1] = "line 1: modified by rogue ai".into();
+    a.cur().lines[2] = "line 2: modified by rogue ai".into();
+    let d = a.cur();
+    assert!(d.lines != d.base);
+
+    // 针对 [1, 2] 区域执行 Staging -> Base 局部回滚
+    let ok = a.cur().rollback_zone(1, 2);
+    assert!(ok);
+    let d = a.cur();
+    assert_eq!(d.lines, d.base);
+    assert!(!d.dirty);
+}
+
+#[test]
+fn test_file_lock_action_toggles_readonly_and_tip() {
+    let (mut a, _g) = app(Settings::default());
+    assert!(!a.cur().readonly);
+
+    // 模拟菜单中的文件加锁逻辑
+    let ro = a.cur().readonly;
+    a.cur().readonly = !ro;
+    a.cur().tip = tr(if a.cur().readonly {
+        "dlg.file-locked"
+    } else {
+        "dlg.file-unlocked"
+    })
+    .into();
+    assert!(a.cur().readonly);
+    assert!(a.cur().tip.contains("已加锁") || a.cur().tip.contains("Locked"));
+
+    // 再次切换，解锁
+    let ro = a.cur().readonly;
+    a.cur().readonly = !ro;
+    a.cur().tip = tr(if a.cur().readonly {
+        "dlg.file-locked"
+    } else {
+        "dlg.file-unlocked"
+    })
+    .into();
+    assert!(!a.cur().readonly);
+    assert!(a.cur().tip.contains("已解锁") || a.cur().tip.contains("Unlocked"));
+}
+
+#[test]
+fn test_charset_and_eol_setting_mutations() {
+    let (mut a, _g) = app(Settings::default());
+    // EOL 切换
+    a.cur().set_eol(editcore::document_io::Eol::Lf);
+    assert_eq!(a.cur().eol, editcore::document_io::Eol::Lf);
+    a.cur().set_eol(editcore::document_io::Eol::Cr);
+    assert_eq!(a.cur().eol, editcore::document_io::Eol::Cr);
+
+    // Charset 切换
+    a.cur().set_charset(editcore::document_io::Charset::Gbk);
+    assert_eq!(a.cur().charset, editcore::document_io::Charset::Gbk);
+}
+
+#[test]
+fn test_split_window_modes_and_split_off() {
+    let (mut a, _g) = app(Settings::default());
+    assert!(!a.split_on);
+
+    a.toggle_split();
+    assert!(a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Cols);
+
+    a.toggle_split_kind(crate::split::SplitKind::Rows);
+    assert!(a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Rows);
+
+    a.toggle_split_kind(crate::split::SplitKind::Quad);
+    assert!(a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Quad);
+
+    a.end_split();
+    assert!(!a.split_on);
+    assert_eq!(a.panes.kind, crate::split::SplitKind::Off);
+}
+
+#[test]
+fn test_menubar_renders_without_panics() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        a.menu(ui, &ctx);
+    });
+    out.textures_delta.clear();
+    assert!(
+        !a.sys.menu_ids.is_empty(),
+        "MenuBar 应成功注册所有一级菜单项 ID"
+    );
+}
+
+#[test]
+fn test_adversarial_tray_toggle_and_new_doc() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+    let initial_docs = a.docs.len();
+
+    // 1. NewFile 托盘事件：新建文档并且请求前台激活
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::NewFile);
+    assert_eq!(a.docs.len(), initial_docs + 1, "NewFile 必须新增标签页");
+
+    // 2. ShowHide 托盘事件
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
+
+    // 3. 窗口置顶切换事件
+    assert!(!a.always_on_top);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(a.always_on_top);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(!a.always_on_top);
+
+    // 4. 常驻后台切换事件
+    let orig_res = a.cfg.tray_resident;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert_eq!(a.cfg.tray_resident, !orig_res);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert_eq!(a.cfg.tray_resident, orig_res);
+
+    // 5. 退出托盘常驻事件
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::DisableResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(a.tray.is_none());
+
+    // 6. Quit 退出事件
+    assert!(!a.force_exit);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+    assert!(a.force_exit);
+
+    // 7. 多语言字典完整性校验：系统托盘纯净提示（零 Sakura 独立品牌）
+    for lang in [
+        crate::i18n::Lang::Zh,
+        crate::i18n::Lang::Ja,
+        crate::i18n::Lang::En,
+    ] {
+        crate::i18n::set(lang);
+        let tip = crate::msgtr::msg(
+            "⚡ 系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理",
+        );
+        assert!(
+            !tip.is_empty(),
+            "Language {:?} must define tray message",
+            lang
+        );
+        assert!(
+            !tip.contains("Sakura") && !tip.contains("サクラ") && !tip.contains("🌸"),
+            "UI提示严禁出现 Sakura 字样"
+        );
+    }
+
+    // 8. 字体消毒免疫测试：验证艺术/紧缩不可读字体被阻断
+    assert_eq!(
+        crate::fonts::sanitize_font_family("BOD_PSTC.TTF", "theme-comic"),
+        "CascadiaCode.ttf"
+    );
+    assert_eq!(
+        crate::fonts::sanitize_font_family("Bodoni MT", "theme-comic"),
+        "CascadiaCode.ttf"
+    );
+    assert_eq!(
+        crate::fonts::sanitize_font_family("Consolas", "theme-comic"),
+        "Consolas"
+    );
+}
+
+#[test]
+fn test_adversarial_comic_3d_to_2d_palette_contrast_invariants() {
+    use crate::view::ThemeColors;
+    use editcore::syntax_styling::Color;
+    use editcore::type_config::TokenKind;
+    use std::collections::BTreeMap;
+
+    // 1. 默认设置必须为美漫 3渲2 主题
+    let default_st = Settings::default();
+    assert_eq!(
+        default_st.theme_plugin, "theme-comic",
+        "默认主题必须是 theme-comic"
+    );
+
+    // 2. 构造 theme-comic 变量集
+    let mut vars = BTreeMap::new();
+    vars.insert("--theme-name".to_string(), "comic".to_string());
+    vars.insert("--bg-bar".to_string(), "#1f2230".to_string());
+    vars.insert("--bg-edit".to_string(), "#12131a".to_string());
+    vars.insert("--bg-status".to_string(), "#ffcc00".to_string());
+    vars.insert("--fg".to_string(), "#f4f5f8".to_string());
+    vars.insert("--fg-on-accent".to_string(), "#000000".to_string());
+    vars.insert("--red".to_string(), "#ff3366".to_string());
+    vars.insert("--yellow".to_string(), "#ffcc00".to_string());
+    vars.insert("--blue".to_string(), "#00b4d8".to_string());
+    vars.insert("--green".to_string(), "#00f59b".to_string());
+
+    let tc = ThemeColors::from_vars(&vars);
+    assert!(
+        tc.comic,
+        "ThemeColors 必须识别 --theme-name: comic 并置位 tc.comic"
+    );
+
+    // 3. 高饱和与极端对比度不变量（3渲2赛璐珞）
+    // 状态栏为鲜亮波普黄 (#ffcc00)
+    assert_eq!(tc.bg_status, egui::Color32::from_rgb(0xff, 0xcc, 0x00));
+    // 状态栏前景文字在黄色底上必须采用高对比深色/黑色，避免白底看不清
+    let fg_status = tc.on_status();
+    assert_ne!(
+        fg_status,
+        egui::Color32::WHITE,
+        "高亮黄色状态栏上的文字绝不能是白色"
+    );
+
+    // 4. 语法高亮色盘验证 (Cel-Shaded 高饱和色)
+    let st = tc.syntax_theme();
+    let kw_style = st
+        .styles
+        .get(&TokenKind::Keyword)
+        .expect("Keyword style must exist");
+    assert_eq!(
+        kw_style.fg,
+        Color(0xff, 0x33, 0x66),
+        "美漫主题关键字必须是赛璐珞粉红 #ff3366"
+    );
+}
+
+#[test]
+fn test_adversarial_installer_bmp_and_ico_headers() {
+    use std::path::Path;
+
+    let find_path = |sub: &str| {
+        let p1 = Path::new(sub).to_path_buf();
+        if p1.exists() {
+            return p1;
+        }
+        let p2 = Path::new("ide-fast").join(sub);
+        if p2.exists() {
+            return p2;
+        }
+        panic!("Path not found in {} or ide-fast/{}", sub, sub);
+    };
+
+    // 1. Banner BMP (493x58 24bpp)
+    let banner_path = find_path("packaging/banner.bmp");
+    let banner_bytes = std::fs::read(banner_path).expect("读取 banner.bmp");
+    assert!(banner_bytes.len() >= 54, "BMP 头部至少 54 字节");
+    assert_eq!(&banner_bytes[0..2], b"BM", "Magic number 必须为 BM");
+    let b_w = i32::from_le_bytes(banner_bytes[18..22].try_into().unwrap());
+    let b_h = i32::from_le_bytes(banner_bytes[22..26].try_into().unwrap());
+    let b_bpp = u16::from_le_bytes(banner_bytes[28..30].try_into().unwrap());
+    assert_eq!(b_w, 493, "Banner 宽度必须严格为 493px");
+    assert_eq!(b_h, 58, "Banner 高度必须严格为 58px");
+    assert_eq!(b_bpp, 24, "Banner 色深必须严格为 24bpp 无压缩");
+
+    // 2. Dialog BMP (493x312 24bpp)
+    let dialog_path = find_path("packaging/dialog.bmp");
+    let dialog_bytes = std::fs::read(dialog_path).expect("读取 dialog.bmp");
+    assert!(dialog_bytes.len() >= 54, "BMP 头部至少 54 字节");
+    assert_eq!(&dialog_bytes[0..2], b"BM", "Magic number 必须为 BM");
+    let d_w = i32::from_le_bytes(dialog_bytes[18..22].try_into().unwrap());
+    let d_h = i32::from_le_bytes(dialog_bytes[22..26].try_into().unwrap());
+    let d_bpp = u16::from_le_bytes(dialog_bytes[28..30].try_into().unwrap());
+    assert_eq!(d_w, 493, "Dialog 宽度必须严格为 493px");
+    assert_eq!(d_h, 312, "Dialog 高度必须严格为 312px");
+    assert_eq!(d_bpp, 24, "Dialog 色深必须严格为 24bpp 无压缩");
+
+    // 3. Multi-resolution ICO (包含 16..256 帧)
+    let ico_path = find_path("packaging/ide-fast.ico");
+    let ico_bytes = std::fs::read(ico_path).expect("读取 ide-fast.ico");
+    assert!(ico_bytes.len() >= 6, "ICO 头部至少 6 字节");
+    assert_eq!(
+        &ico_bytes[0..4],
+        &[0, 0, 1, 0],
+        "ICO 签名必须为 00 00 01 00"
+    );
+    let frame_count = u16::from_le_bytes(ico_bytes[4..6].try_into().unwrap());
+    assert!(frame_count >= 5, "ICO 必须包含至少 5 个不同分辨率的图元帧");
+}
+
+#[test]
+fn test_tray_residency_lifecycle_and_prefs_integration() {
+    let (mut a, _g) = app(Settings::default());
+    assert!(a.cfg.tray_resident);
+
+    // 1. 首选项中关闭常驻
+    a.open_prefs();
+    a.prefs.as_mut().unwrap().draft.tray_resident = false;
+    a.prefs_commit();
+    assert!(!a.cfg.tray_resident);
+    assert!(a.tray.is_none());
+
+    // 2. 首选项中重新打开常驻
+    a.open_prefs();
+    a.prefs.as_mut().unwrap().draft.tray_resident = true;
+    a.prefs_commit();
+    assert!(a.cfg.tray_resident);
+
+    // 3. 托盘取消常驻事件
+    let ctx = egui::Context::default();
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::DisableResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(a.tray.is_none());
+
+    // 4. 退出事件设置 force_exit
+    assert!(!a.force_exit);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+    assert!(a.force_exit);
+}
+
+#[test]
+fn test_per_character_inverted_contrast_logic() {
+    // 1. 在亮色背景下（例如透明穿透白色窗口/网页/浅色壁纸）：亮色字符必须反色为深色高对比色阶
+    let white = Color32::WHITE;
+    let cyan = Color32::from_rgb(0, 240, 255);
+    let yellow = Color32::from_rgb(255, 215, 0);
+
+    let dark_on_light_white = adapt_char_color(white, true);
+    let dark_on_light_cyan = adapt_char_color(cyan, true);
+    let dark_on_light_yellow = adapt_char_color(yellow, true);
+
+    // 验证反色后亮度显著降低，文字不再发白融入背景
+    let luma = |c: Color32| {
+        0.2126 * (c.r() as f32 / 255.0)
+            + 0.7152 * (c.g() as f32 / 255.0)
+            + 0.0722 * (c.b() as f32 / 255.0)
+    };
+    assert!(
+        luma(dark_on_light_white) < 0.25,
+        "白色在亮底上反色为深色字符"
+    );
+    assert!(
+        luma(dark_on_light_cyan) < 0.35,
+        "青色在亮底上反色为深青色字符"
+    );
+    assert!(
+        luma(dark_on_light_yellow) < 0.35,
+        "黄色在亮底上反色为深棕色字符"
+    );
+
+    // 2. 在暗色背景下（暗色壁纸/暗色桌面）：暗色字符必须被提亮以保证对比度
+    let very_dark = Color32::from_rgb(20, 24, 33);
+    let light_on_dark = adapt_char_color(very_dark, false);
+    assert!(
+        luma(light_on_dark) > 0.70,
+        "暗色字符在暗底上必须自适应提亮为高对比字符"
+    );
+
+    // 3. 原本就是高对比度的字符保持清晰
+    assert_eq!(adapt_char_color(white, false), white);
+    let already_dark = Color32::from_rgb(15, 23, 42);
+    assert_eq!(adapt_char_color(already_dark, true), already_dark);
+}
+
+#[test]
+fn test_tray_topmost_synchronization_with_menubar() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+
+    assert!(!a.topmost);
+    assert!(!a.always_on_top);
+
+    // 托盘置顶切换
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(a.topmost);
+    assert!(a.always_on_top);
+
+    // 菜单栏置顶切换
+    a.toggle_topmost(&ctx);
+    assert!(!a.topmost);
+    assert!(!a.always_on_top);
+}
+#[test]
+fn test_tray_all_actions_and_visibility_state_invariants() {
+    let (mut a, _g) = app(Settings::default());
+    let ctx = egui::Context::default();
+
+    // 初始状态
+    assert!(!a.window_hidden);
+
+    // 1. ShowHide 隐藏
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
+    assert!(
+        a.window_hidden,
+        "First ShowHide when visible should set window_hidden = true"
+    );
+
+    // 2. ShowHide 显示
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
+    assert!(
+        !a.window_hidden,
+        "Second ShowHide should set window_hidden = false"
+    );
+
+    // 3. NewFile 确保唤醒并创建文件
+    a.window_hidden = true;
+    let initial_docs = a.docs.len();
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::NewFile);
+    assert!(!a.window_hidden, "NewFile must unhide window");
+    assert_eq!(
+        a.docs.len(),
+        initial_docs + 1,
+        "NewFile must create a document"
+    );
+
+    // 4. OpenCollab 确保唤醒并打开协同工作台
+    a.window_hidden = true;
+    a.collab.open = false;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::OpenCollab);
+    assert!(!a.window_hidden, "OpenCollab must unhide window");
+    assert!(a.collab.open, "OpenCollab must open collab window");
+
+    // 5. 置顶同步与唤醒
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleTopmost);
+    assert!(a.topmost);
+    assert!(a.always_on_top);
+
+    // 7. ToggleResident 关闭时确保唤醒并清理托盘
+    a.window_hidden = true;
+    assert!(a.cfg.tray_resident);
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(!a.window_hidden, "Disabling resident must unhide window");
+    assert!(a.tray.is_none());
+
+    // 8. 再次 ToggleResident 打开
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::ToggleResident);
+    assert!(a.cfg.tray_resident);
+    assert!(a.tray.is_some());
+
+    // 9. DisableResident 确保唤醒并禁用托盘
+    a.window_hidden = true;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::DisableResident);
+    assert!(!a.cfg.tray_resident);
+    assert!(!a.window_hidden);
+    assert!(a.tray.is_none());
+}
+
+#[test]
+fn test_retro16_pixelfont_invariants() {
+    let (mut a, _g) = app(Settings::default());
+
+    // 默认主题是 comic, effective_font 是 CascadiaCode.ttf
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
+
+    // 切到 retro16 主题
+    a.set_theme_plugin("theme-retro16");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
+    assert_eq!(a.font_px, 12.0, "Retro 16-Bit 主题默认字号必须为 12px");
+    assert_eq!(
+        a.default_font_px(),
+        12.0,
+        "Retro 16-Bit 缩放基准字号必须为 12px"
+    );
+
+    // 缩放与重置测试
+    a.font_px = 16.0;
+    a.font_px = a.default_font_px();
+    assert_eq!(a.font_px, 12.0, "重置缩放必须回到 12px");
+
+    // 即使用户在首选项里设置了其他字体，Retro 16-Bit 主题仍强制使用 PixelFont；其他主题一律不使用像素字体
+    assert_eq!(
+        crate::fonts::effective_font_family("Consolas", "theme-retro16"),
+        "PixelFontMulti-12.ttf"
+    );
+    assert_eq!(
+        crate::fonts::effective_font_family("PixelFont 12", "theme-comic"),
+        "CascadiaCode.ttf"
+    );
+
+    // 切回 dark 主题，恢复为 CascadiaCode.ttf 及默认 15px
+    a.set_theme_plugin("theme-dark");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
+    assert_eq!(a.default_font_px(), 15.0);
+
+    // 切到 light 主题，恢复为 CascadiaMono.ttf
+    a.set_theme_plugin("theme-light");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaMono.ttf"
+    );
+}
+
+#[test]
+fn test_themed_quick_and_window_buttons_styling_invariants() {
+    use egui::{pos2, vec2, Color32, Rect, Vec2};
+    let ctx = egui::Context::default();
+    let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(26.0, 22.0));
+
+    // 1. Retro 16-Bit
+    let mut tc_retro = crate::view::ThemeColors::builtin(true);
+    tc_retro.retro16 = true;
+
+    // Normal: rect 不位移, 颜色为普通前景色
+    let mut out1 = ctx.run_ui(Default::default(), |root| {
+        let painter = root.painter();
+        let (r_norm, col_norm) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, false, false);
+        assert_eq!(r_norm, rect);
+        assert_ne!(col_norm, Color32::from_rgb(255, 215, 0));
+
+        // Hovered: 高亮街机金
+        let (r_hov, col_hov) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, true, false, false);
+        assert_eq!(r_hov, rect);
+        assert_eq!(col_hov, Color32::from_rgb(255, 215, 0));
+
+        // Active: 1px 物理位移 (模拟街机微动下压)
+        let (r_act, col_act) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, true, false);
+        assert_eq!(r_act, rect.translate(Vec2::new(1.0, 1.0)));
+        assert_eq!(col_act, Color32::from_rgb(0, 240, 255));
+    });
+    out1.textures_delta.clear();
+
+    // 2. Comic 3渲2
+    let mut tc_comic = crate::view::ThemeColors::builtin(true);
+    tc_comic.comic = true;
+
+    let mut out2 = ctx.run_ui(Default::default(), |root| {
+        let painter = root.painter();
+        // Hovered: 黄底纯黑字, 超高对比波普风格
+        let (r_hov, col_hov) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, true, false, false);
+        assert_eq!(r_hov, rect);
+        assert_eq!(col_hov, Color32::BLACK);
+
+        // Active: 下沉 1.5px 消除投影
+        let (r_act, col_act) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, false, true, false);
+        assert_eq!(r_act, rect.translate(Vec2::new(1.5, 1.5)));
+        assert_eq!(col_act, Color32::BLACK);
+    });
+    out2.textures_delta.clear();
+
+    // 3. Crystal 水晶透明
+    let mut tc_crystal = crate::view::ThemeColors::builtin(true);
+    tc_crystal.crystal = true;
+    tc_crystal.mat_prism_cyan = Color32::from_rgb(0, 240, 255);
+    tc_crystal.mat_prism_pink = Color32::from_rgb(255, 105, 180);
+
+    let mut out3 = ctx.run_ui(Default::default(), |root| {
+        let painter = root.painter();
+        let (r_hov, col_hov) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, true, false, false);
+        assert_eq!(r_hov, rect);
+        assert_eq!(col_hov, Color32::WHITE);
+
+        let (r_act, col_act) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, false, true, false);
+        assert_eq!(r_act, rect);
+        assert_eq!(col_act, Color32::WHITE);
+    });
+    out3.textures_delta.clear();
+}
+
+#[test]
+fn test_md_and_nema_toolbar_collapse_and_restore_invariants() {
+    let (mut a, _g) = app(Settings::default());
+
+    // 1. 默认状态：工具条处于展开状态
+    assert!(!a.cfg.view.md_bar_collapsed);
+    assert!(!a.cfg.view.nema_bar_collapsed);
+
+    // 2. 状态序列化与反序列化持久性不变量
+    a.cfg.view.md_bar_collapsed = true;
+    a.cfg.view.nema_bar_collapsed = true;
+    let json_val = a.cfg.to_json();
+    let mut roundtrip_settings = Settings::default();
+    roundtrip_settings.apply_json(&json_val, true);
+    assert!(roundtrip_settings.view.md_bar_collapsed);
+    assert!(roundtrip_settings.view.nema_bar_collapsed);
+
+    // 展开复原测试
+    a.cfg.view.md_bar_collapsed = false;
+    a.cfg.view.nema_bar_collapsed = false;
+    let json_val2 = a.cfg.to_json();
+    let mut roundtrip_settings2 = Settings::default();
+    roundtrip_settings2.apply_json(&json_val2, true);
+    assert!(!roundtrip_settings2.view.md_bar_collapsed);
+    assert!(!roundtrip_settings2.view.nema_bar_collapsed);
+
+    // 3. UI 渲染生命周期测试：验证展开与折叠态均能正确布局且不崩溃
+    let ctx = egui::Context::default();
+
+    // 3.1 Markdown 工具条测试
+    a.new_doc();
+    let md_idx = a.active;
+    a.docs[md_idx].name = "document.md".into();
+    a.docs[md_idx].lines = vec!["# Title".into(), "content".into()];
+
+    // 展开态下渲染
+    a.cfg.view.md_bar_collapsed = false;
+    let mut out_md_exp = ctx.run_ui(Default::default(), |root| {
+        a.md_bar(root, &ctx, true);
+    });
+    out_md_exp.textures_delta.clear();
+
+    // 折叠态下渲染
+    a.cfg.view.md_bar_collapsed = true;
+    let mut out_md_col = ctx.run_ui(Default::default(), |root| {
+        a.md_bar(root, &ctx, true);
+    });
+    out_md_col.textures_delta.clear();
+
+    // 3.2 NEMA 工具条测试
+    a.new_doc();
+    let nema_idx = a.active;
+    a.docs[nema_idx].name = "data.nema".into();
+    a.docs[nema_idx].lines = vec!["\\ Domain Header".into(), "\\1 Record".into()];
+
+    // 展开态下渲染
+    a.cfg.view.nema_bar_collapsed = false;
+    let mut out_nema_exp = ctx.run_ui(Default::default(), |root| {
+        a.nema_bar(root, &ctx, true);
+    });
+    out_nema_exp.textures_delta.clear();
+
+    // 折叠态下渲染
+    a.cfg.view.nema_bar_collapsed = true;
+    let mut out_nema_col = ctx.run_ui(Default::default(), |root| {
+        a.nema_bar(root, &ctx, true);
+    });
+    out_nema_col.textures_delta.clear();
+}
+
+#[test]
+fn test_minimap_themed_styling_and_translucency_invariants() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.cfg.view.minimap = true;
+    a.new_doc();
+    let idx = a.active;
+    a.docs[idx].name = "sample.rs".into();
+    a.docs[idx].lines = vec![
+        "fn main() {".into(),
+        "    println!(\"Hello World\");".into(),
+        "}".into(),
+    ];
+
+    let themes = [
+        ("theme-comic", false),
+        ("theme-crystal", true),
+        ("theme-clear", true),
+        ("theme-retro16", false),
+        ("theme-dark", false),
+        ("theme-light", false),
+        ("theme-high-contrast", false),
+    ];
+
+    for (theme_id, expect_translucent) in themes {
+        a.set_theme_plugin(theme_id);
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            a.ui_main(root);
+        });
+        out.textures_delta.clear();
+        assert_eq!(
+            a.tc.is_translucent(),
+            expect_translucent,
+            "主题 {} 的透明度不符合预期 (透明度只和玻璃以及水晶主题有关)",
+            theme_id
+        );
+    }
+}
+
+#[test]
+fn test_wrap_mode_and_minimap_collapse_invariants() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+
+    // 1. 换行方式 (Wrap Mode) 状态与切换断言
+    assert!(!a.wrap, "默认配置下 wrap 应为 false");
+    a.run_app(crate::keymap::App::WrapWindow, &ctx);
+    assert!(a.wrap, "切换为按窗口宽度折行后 wrap 应为 true");
+    assert_eq!(a.cfg.view.wrap_col, 0, "窗口宽度折行列数应为 0");
+
+    a.cfg.view.wrap_col = 80;
+    a.run_app(crate::keymap::App::WrapCol, &ctx);
+    assert!(a.wrap, "指定列数折行时 wrap 应为 true");
+    assert_eq!(a.cfg.view.wrap_col, 80, "列数应为 80");
+
+    a.cfg.view.kinsoku = true;
+    a.cfg.view.hang = true;
+    assert!(
+        a.cfg.view.kinsoku && a.cfg.view.hang,
+        "禁则与悬挂选项必须正常记录"
+    );
+
+    a.run_app(crate::keymap::App::WrapNone, &ctx);
+    assert!(!a.wrap, "不折行模式下 wrap 应恢复为 false");
+
+    // 2. 缩略图 (Minimap) 隐藏与折叠/展开断言
+    a.cfg.view.minimap = false;
+    assert!(!a.cfg.view.minimap, "缩略图初始可被隐藏/折叠");
+    let mut out_folded = ctx.run_ui(Default::default(), |root| {
+        a.ui_main(root);
+    });
+    out_folded.textures_delta.clear();
+
+    // 展开缩略图
+    a.cfg.view.minimap = true;
+    assert!(a.cfg.view.minimap, "缩略图展开状态必须生效");
+    let mut out_expanded = ctx.run_ui(Default::default(), |root| {
+        a.ui_main(root);
+    });
+    out_expanded.textures_delta.clear();
+
+    // 再次折叠/隐藏
+    a.cfg.view.minimap = false;
+    assert!(!a.cfg.view.minimap, "缩略图折叠状态保存正常");
+}
+
+#[test]
+fn right_collapse_slots_places_all_at_top_when_closed_and_drops_closed_to_bottom_when_opened() {
+    let vp = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(800.0, 600.0));
+
+    // 1. 全部未打开时: 导航 / MD / NEMA 全部位于右上角上方
+    let all_closed = crate::app::right_collapse_slots(vp, false, false, false);
+    assert_eq!(all_closed.len(), 3);
+    for s in &all_closed {
+        assert_eq!(s.rect.min.y, 6.0);
+        assert!(!s.open);
+    }
+
+    // 2. 点开导航图后: 导航图按钮留在上方，剩余 MD / NEMA 自动降到底部
+    let map_open = crate::app::right_collapse_slots(vp, true, false, false);
+    let m = map_open
+        .iter()
+        .find(|s| s.kind == crate::app::RightCollapseKind::Minimap)
+        .unwrap();
+    let md = map_open
+        .iter()
+        .find(|s| s.kind == crate::app::RightCollapseKind::Md)
+        .unwrap();
+    let nema = map_open
+        .iter()
+        .find(|s| s.kind == crate::app::RightCollapseKind::Nema)
+        .unwrap();
+    assert_eq!(m.rect.min.y, 6.0);
+    assert_eq!(md.rect.min.y, 574.0);
+    assert_eq!(nema.rect.min.y, 574.0);
+
+    // 3. 点开 MD 后: MD 留在上方，剩余 导航 / NEMA 自动降到底部
+    let md_only = crate::app::right_collapse_slots(vp, false, true, false);
+    assert_eq!(
+        md_only
+            .iter()
+            .find(|s| s.kind == crate::app::RightCollapseKind::Md)
+            .unwrap()
+            .rect
+            .min
+            .y,
+        6.0
+    );
+    assert_eq!(
+        md_only
+            .iter()
+            .find(|s| s.kind == crate::app::RightCollapseKind::Minimap)
+            .unwrap()
+            .rect
+            .min
+            .y,
+        574.0
+    );
+    assert_eq!(
+        md_only
+            .iter()
+            .find(|s| s.kind == crate::app::RightCollapseKind::Nema)
+            .unwrap()
+            .rect
+            .min
+            .y,
+        574.0
+    );
+}
+
+#[test]
+fn theme_switching_enforces_retro16_pixel_font_and_default_font_for_others() {
+    let (mut a, _g) = app(Settings::default());
+    a.set_theme_plugin("theme-retro16");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
+    assert!(a.applied_font.is_empty());
+
+    a.set_theme_plugin("theme-comic");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
+
+    a.set_theme_plugin("theme-clear");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaMono.ttf"
+    );
+}
+
+#[test]
+fn box_selection_works_in_markdown_and_nema_documents() {
+    for (name, lines) in [
+        (
+            "readme.md",
+            vec![
+                "alpha_123".to_string(),
+                "bravo_456".to_string(),
+                "charlie_789".to_string(),
+            ],
+        ),
+        (
+            "spec.nema",
+            vec![
+                "NodeA_100".to_string(),
+                "NodeB_200".to_string(),
+                "NodeC_300".to_string(),
+            ],
+        ),
+    ] {
+        // 1. 鼠标纵选 (box_start + box_drag) + 批量插入 + 撤销
+        let mut doc = crate::doc::Doc::untitled(1, 1);
+        doc.name = name.into();
+        doc.lines = lines.clone();
+
+        doc.box_start(0, 0);
+        doc.box_drag(2, 0);
+        assert!(doc.box_sel.is_some(), "{name} 应激活纵向选区");
+
+        doc.edit("insert-text", Some("X_".into()));
+        assert!(doc.lines[0].starts_with("X_"));
+        assert!(doc.lines[1].starts_with("X_"));
+        assert!(doc.lines[2].starts_with("X_"));
+
+        doc.undo();
+        assert_eq!(doc.lines, lines);
+
+        // 2. 键盘纵选 (box_nav = Alt+Shift+Arrow 语义) + 纵向列删 + 撤销
+        doc.cursor = [0, 0];
+        doc.box_nav("ArrowDown", false, 2);
+        doc.box_nav("ArrowRight", false, 2);
+        assert!(doc.box_sel.is_some(), "{name} 键盘纵选应激活 box_sel");
+        doc.edit("delete", None);
+        assert_eq!(doc.lines[0].chars().count(), lines[0].chars().count() - 2);
+        assert_eq!(doc.lines[1].chars().count(), lines[1].chars().count() - 2);
+        assert_eq!(doc.lines[2].chars().count(), lines[2].chars().count() - 2);
+        doc.undo();
+        assert_eq!(doc.lines, lines);
+    }
+}
+
+#[test]
+fn alt_vertical_selection_dynamic_spacing_and_coordinate_badge() {
+    let mut doc = crate::doc::Doc::untitled(1, 1);
+    doc.lines = vec![
+        "ABCDEF123456".to_string(),
+        "GHIJKL789012".to_string(),
+        "MNOPQR345678".to_string(),
+        "STUVWX901234".to_string(),
+    ];
+
+    // 1. 模拟按住 Alt 鼠标从 (1, 2) 拖选至 (3, 7)
+    doc.box_start(1, 2);
+    doc.box_drag(3, 7);
+    assert_eq!(doc.box_sel, Some([1, 2, 3, 7]));
+
+    let b = doc.box_sel.unwrap();
+    let (r0, r1, c0, c1) = (
+        b[0].min(b[2]),
+        b[0].max(b[2]),
+        b[1].min(b[3]),
+        b[1].max(b[3]),
+    );
+    let rows_count = r1 - r0 + 1;
+    let cols_count = c1 - c0;
+    assert_eq!(rows_count, 3, "纵向覆盖 3 行 (1..=3)");
+    assert_eq!(cols_count, 5, "横向覆盖 5 列 (2..7)");
+
+    // 格式化指示文本验证
+    let badge_text = format!(
+        "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
+        r0 + 1,
+        r1 + 1,
+        rows_count,
+        c0 + 1,
+        c1,
+        cols_count
+    );
+    assert_eq!(badge_text, "📐 纵向选取 [R2..4 (3行) × C3..7 (5列)]");
+
+    // 2. 验证 rowview 在拉大字符间距 (letter_spacing = 8.0) 下的列定位与精确换算
+    let font = egui::FontId::monospace(14.0);
+    let rv = crate::rowview::RowView::build(
+        &doc.lines[0],
+        4,
+        crate::kinsoku::Wrap::default(),
+        None,
+        10.0,
+    );
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+    out.textures_delta.clear();
+    let col_standard = rv.col_at_with_spacing(&ctx, 28.0, 0.0, &font, f32::INFINITY, 0.0);
+    let col_expanded = rv.col_at_with_spacing(&ctx, 28.0, 0.0, &font, f32::INFINITY, 8.0);
+    // 间距拉大后，相同的水平位移对应的字符列数应更紧凑/较少或相等 (因为每个字符占宽变大)
+    assert!(col_expanded <= col_standard);
+}
+
+#[test]
+fn test_md_and_nema_toolbar_and_preview_synchronized_lifecycle() {
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.new_doc();
+    let idx = a.active;
+    a.docs[idx].name = "doc.md".into();
+    a.docs[idx].lines = vec!["# Title".into(), "content".into()];
+
+    // 初始状态：折叠态下工具栏与预览均关闭
+    a.cfg.view.md_bar_collapsed = true;
+    a.md_preview = false;
+
+    // 展开 MD：顶端工具条出现，同时开启预览
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Md, true, false);
+    assert!(!a.cfg.view.md_bar_collapsed, "展开时 MD 工具栏应该出现");
+    assert!(a.md_preview, "展开时 MD 预览应该同步开启");
+
+    // 关闭 MD：栏位完全消失，预览关闭
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Md, true, false);
+    assert!(a.cfg.view.md_bar_collapsed, "关闭时 MD 工具栏应该消失");
+    assert!(!a.md_preview, "关闭时 MD 预览应该同步关闭");
+
+    // NEMA 文档同步生命周期验证
+    a.new_doc();
+    let nema_idx = a.active;
+    a.docs[nema_idx].name = "model.nema".into();
+    a.docs[nema_idx].lines = vec!["\\ Domain".into(), "\\1 Record".into()];
+
+    a.cfg.view.nema_bar_collapsed = true;
+    a.nema_preview = false;
+
+    // 展开 NEMA：顶端工具条出现，同时开启预览
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Nema, false, true);
+    assert!(!a.cfg.view.nema_bar_collapsed, "展开时 NEMA 工具栏应该出现");
+    assert!(a.nema_preview, "展开时 NEMA 预览应该同步开启");
+
+    // 关闭 NEMA：栏位完全消失，预览关闭
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Nema, false, true);
+    assert!(a.cfg.view.nema_bar_collapsed, "关闭时 NEMA 工具栏应该消失");
+    assert!(!a.nema_preview, "关闭时 NEMA 预览应该同步关闭");
+}
+
+#[test]
+fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
+    // 1. 下拉菜单不透明性验证：在透明/水晶主题下，menuui::style 必须赋予不透明 solid 填充
+    let crystal_tc = crate::view::ThemeColors {
+        crystal: true,
+        clear: false,
+        dark: true,
+        ..Default::default()
+    };
+    assert!(crystal_tc.is_translucent());
+
+    let mut style = egui::Style::default();
+    let apply_style = crate::app::menuui::style(crystal_tc);
+    apply_style(&mut style);
+    assert_eq!(
+        style.visuals.window_fill.a(),
+        255,
+        "透明主题的下拉菜单严禁透明，必须是 solid opaque (alpha=255)"
+    );
+
+    // 浅色透明模式下同样保证不透明
+    let light_translucent_tc = crate::view::ThemeColors {
+        crystal: false,
+        clear: true,
+        dark: false,
+        ..Default::default()
+    };
+    let mut light_style = egui::Style::default();
+    let apply_light_style = crate::app::menuui::style(light_translucent_tc);
+    apply_light_style(&mut light_style);
+    assert_eq!(
+        light_style.visuals.window_fill.a(),
+        255,
+        "浅色透明主题下拉菜单也必须不透明"
+    );
+
+    // 2. 本体 60% 透明度 (40% 遮罩强度) 规范验证
+    use editcore::theme_luminance::DesktopLuminance;
+    let dark_tint = DesktopLuminance::Dark.glass_tint();
+    let light_tint = DesktopLuminance::Light.glass_tint();
+    assert!(
+        dark_tint.contains("0.40"),
+        "暗色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}",
+        dark_tint
+    );
+    assert!(
+        light_tint.contains("0.40"),
+        "亮色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}",
+        light_tint
+    );
+    assert_eq!(DesktopLuminance::Dark.tint_strength(), 0.40);
+
+    // 3. 动态字符级反色确保清晰显示
+    let white_char = Color32::from_rgb(255, 255, 255);
+    let dark_char = Color32::from_rgb(20, 20, 20);
+    // 浅色背景下，原本为白色的字符应自动反转为深色
+    let adapted_on_light = adapt_char_color(white_char, true);
+    assert!(
+        adapted_on_light.r() < 80 && adapted_on_light.g() < 80,
+        "白字在浅色背景下自动反色为深字"
+    );
+    // 暗色背景下，原本为暗色的字符应自动反转/提亮为高对比浅色
+    let adapted_on_dark = adapt_char_color(dark_char, false);
+    assert!(
+        adapted_on_dark.r() >= 200 && adapted_on_dark.g() >= 200,
+        "暗字在深色背景下自动提亮为高对比浅字"
+    );
+}

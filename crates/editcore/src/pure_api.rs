@@ -15,32 +15,44 @@ fn to_json<T: Serialize>(v: &T) -> Value {
 
 /// 编辑命令 (删除 / 剪切 / 复制 / 粘贴 / 键入 / 矩形 / 多光标 / 折叠)
 pub fn edit_cmd(req: &edit_cmd::EditReq) -> Result<Value, String> {
-    edit_cmd::run(req).map(|r| to_json(&r)).ok_or_else(|| "未知的编辑命令".to_string())
+    edit_cmd::run(req)
+        .map(|r| to_json(&r))
+        .ok_or_else(|| "未知的编辑命令".to_string())
 }
 
 /// 对括弧; 没有对应括弧 = `{}`
 pub fn bracket_pair(req: &bracket::BracketReq) -> Value {
-    bracket::find_pair(req).map(|r| to_json(&r)).unwrap_or_else(|| json!({}))
+    bracket::find_pair(req)
+        .map(|r| to_json(&r))
+        .unwrap_or_else(|| json!({}))
 }
 
 /// ブックマーク 切り替え / 次へ / 前へ
 pub fn bookmark(req: &bookmark::BmReq) -> Result<Value, String> {
-    bookmark::run(req).map(|r| to_json(&r)).ok_or_else(|| "未知的书签操作".to_string())
+    bookmark::run(req)
+        .map(|r| to_json(&r))
+        .ok_or_else(|| "未知的书签操作".to_string())
 }
 
 /// 文档内查找 / 置換
 pub fn search_text(req: &search_ops::SearchReq) -> Result<Value, String> {
-    search_ops::run(req).map(|r| to_json(&r)).ok_or_else(|| "未知的查找操作".to_string())
+    search_ops::run(req)
+        .map(|r| to_json(&r))
+        .ok_or_else(|| "未知的查找操作".to_string())
 }
 
 /// 撤销 / 重做栈 (按标签页 id 分开的进程内登记)
 pub fn history(req: &history::HistReq) -> Result<Value, String> {
-    history::run(req).map(|r| to_json(&r)).ok_or_else(|| "未知的历史操作".to_string())
+    history::run(req)
+        .map(|r| to_json(&r))
+        .ok_or_else(|| "未知的历史操作".to_string())
 }
 
 /// 键盘光标移动 / 范围选择; 不处理的键 = `{}`
 pub fn nav_step(req: &nav::NavReq) -> Value {
-    nav::step(req).map(|r| to_json(&r)).unwrap_or_else(|| json!({}))
+    nav::step(req)
+        .map(|r| to_json(&r))
+        .unwrap_or_else(|| json!({}))
 }
 
 #[cfg(test)]
@@ -49,19 +61,33 @@ mod tests {
 
     #[test]
     fn unknown_commands_are_user_facing_errors() {
-        let e = edit_cmd(&edit_cmd::EditReq { cmd: "nope".into(), ..Default::default() }).unwrap_err();
+        let e = edit_cmd(&edit_cmd::EditReq {
+            cmd: "nope".into(),
+            ..Default::default()
+        })
+        .unwrap_err();
         assert_eq!(e, "未知的编辑命令");
     }
 
     #[test]
     fn no_result_is_an_empty_object_not_an_error() {
-        let r = nav_step(&nav::NavReq { key: "Escape".into(), ..Default::default() });
+        let r = nav_step(&nav::NavReq {
+            key: "Escape".into(),
+            ..Default::default()
+        });
         assert_eq!(r, json!({}));
     }
 
     #[test]
     fn known_commands_serialise_the_response() {
-        let req = edit_cmd::EditReq { cmd: "backspace".into(), row: 0, col: 1, total_rows: 1, rows: vec![(0, "ab".into())], ..Default::default() };
+        let req = edit_cmd::EditReq {
+            cmd: "backspace".into(),
+            row: 0,
+            col: 1,
+            total_rows: 1,
+            rows: vec![(0, "ab".into())],
+            ..Default::default()
+        };
         let v = edit_cmd(&req).unwrap();
         assert_eq!(v["insert"][0], "b");
         assert_eq!(v["changed"], true);
@@ -114,21 +140,48 @@ pub struct MdRenderReq {
 pub enum PluginReq {
     List,
     /// 读插件文件 (入口脚本等), 文本
-    Asset { id: String, file: String },
-    Toggle { id: String, enabled: bool },
-    Remove { id: String },
+    Asset {
+        id: String,
+        file: String,
+    },
+    Toggle {
+        id: String,
+        enabled: bool,
+    },
+    Remove {
+        id: String,
+    },
     /// 恢复被删掉的内置插件
-    RestoreBundled { id: String },
+    RestoreBundled {
+        id: String,
+    },
     /// 插件包 (.zip, base64): 先看 (清单 / 权限 / 哈希 / 兼容问题), 再装
-    InspectPackage { data: String },
-    InstallPackage { data: String, approved: Vec<String> },
-    Inspect { repo: String },
-    Install { repo: String, approved: Vec<String> },
+    InspectPackage {
+        data: String,
+    },
+    InstallPackage {
+        data: String,
+        approved: Vec<String>,
+    },
+    Inspect {
+        repo: String,
+    },
+    Install {
+        repo: String,
+        approved: Vec<String>,
+    },
     CheckUpdates,
     /// 插件与内建功能同一能力位冲突时选谁 (docs §8.1)
-    Resolve { has_native: bool, has_plugin: bool, prefer: Option<crate::plugin_host::Prefer>, smart_active: bool },
+    Resolve {
+        has_native: bool,
+        has_plugin: bool,
+        prefer: Option<crate::plugin_host::Prefer>,
+        smart_active: bool,
+    },
     /// 不匹配时给大模型的提示词 (只含事实, 不含 Key)
-    MismatchPrompt { repo: String },
+    MismatchPrompt {
+        repo: String,
+    },
 }
 
 pub fn plugins(req: &PluginReq) -> Result<Value, String> {
@@ -136,13 +189,22 @@ pub fn plugins(req: &PluginReq) -> Result<Value, String> {
     let root = store::default_root();
     let app = env!("CARGO_PKG_VERSION");
     Ok(match req {
-        PluginReq::List => json!({ "plugins": store::list(&root), "removed": store::removed_bundled(&root).into_iter().map(|(id, name, version)| json!({ "id": id, "name": name, "version": version })).collect::<Vec<_>>(), "host_api": ph::HOST_API_VERSION, "app_version": app }),
+        PluginReq::List => {
+            json!({ "plugins": store::list(&root), "removed": store::removed_bundled(&root).into_iter().map(|(id, name, version)| json!({ "id": id, "name": name, "version": version })).collect::<Vec<_>>(), "host_api": ph::HOST_API_VERSION, "app_version": app })
+        }
         PluginReq::RestoreBundled { id } => {
             store::restore_bundled(&root, id)?;
             json!({ "ok": true })
         }
-        PluginReq::InspectPackage { data } => to_json(&store::inspect_package(&root, &b64_decode(data)?, app)?),
-        PluginReq::InstallPackage { data, approved } => to_json(&store::install_package(&root, &b64_decode(data)?, app, approved)?),
+        PluginReq::InspectPackage { data } => {
+            to_json(&store::inspect_package(&root, &b64_decode(data)?, app)?)
+        }
+        PluginReq::InstallPackage { data, approved } => to_json(&store::install_package(
+            &root,
+            &b64_decode(data)?,
+            app,
+            approved,
+        )?),
         PluginReq::Asset { id, file } => {
             let b = store::read_asset(&root, id, file)?;
             json!({ "text": String::from_utf8(b).map_err(|_| "插件文件不是 UTF-8 文本".to_string())? })
@@ -155,8 +217,16 @@ pub fn plugins(req: &PluginReq) -> Result<Value, String> {
             store::remove(&root, id)?;
             json!({ "ok": true })
         }
-        PluginReq::Inspect { repo } => to_json(&store::inspect(&store::CurlHttp, &root, repo, app)?),
-        PluginReq::Install { repo, approved } => to_json(&store::install(&store::CurlHttp, &root, repo, app, approved)?),
+        PluginReq::Inspect { repo } => {
+            to_json(&store::inspect(&store::CurlHttp, &root, repo, app)?)
+        }
+        PluginReq::Install { repo, approved } => to_json(&store::install(
+            &store::CurlHttp,
+            &root,
+            repo,
+            app,
+            approved,
+        )?),
         PluginReq::CheckUpdates => {
             let rows: Vec<Value> = store::check_updates(&store::CurlHttp, &root, app)
                 .into_iter()
@@ -167,7 +237,14 @@ pub fn plugins(req: &PluginReq) -> Result<Value, String> {
                 .collect();
             json!({ "updates": rows })
         }
-        PluginReq::Resolve { has_native, has_plugin, prefer, smart_active } => json!({ "choice": ph::resolve_conflict(*has_native, *has_plugin, *prefer, *smart_active) }),
+        PluginReq::Resolve {
+            has_native,
+            has_plugin,
+            prefer,
+            smart_active,
+        } => {
+            json!({ "choice": ph::resolve_conflict(*has_native, *has_plugin, *prefer, *smart_active) })
+        }
         PluginReq::MismatchPrompt { repo } => {
             let ins = store::inspect(&store::CurlHttp, &root, repo, app)?;
             json!({ "prompt": ph::mismatch_prompt(&ins.release.repo, &ins.release.tag, &ins.release.assets.iter().map(|a| a.name.clone()).collect::<Vec<_>>(), &ins.report, app) })
@@ -182,7 +259,11 @@ pub fn plugins(req: &PluginReq) -> Result<Value, String> {
 pub enum AgentReq {
     /// 工具表 (OpenAI tools 格式)
     Tools,
-    Call { name: String, #[serde(default)] args: Value },
+    Call {
+        name: String,
+        #[serde(default)]
+        args: Value,
+    },
 }
 
 pub fn agent(req: &AgentReq) -> Result<Value, String> {
@@ -201,7 +282,9 @@ pub struct MacroPlanReq {
 
 /// 解析并规划一份 Sakura 宏: 返回逐步动作; 语法错误 / 未知函数整体失败 (不执行一半), 错误文字带行号
 pub fn macro_plan(req: &MacroPlanReq) -> Result<Value, String> {
-    crate::macro_sakura::plan(&req.src).map(|steps| json!({ "steps": steps })).map_err(|e| e.to_string())
+    crate::macro_sakura::plan(&req.src)
+        .map(|steps| json!({ "steps": steps }))
+        .map_err(|e| e.to_string())
 }
 
 /// 录制到的命令级事件 -> `.mac` 文本 (WBS-02 4.2)
@@ -221,10 +304,17 @@ pub fn macro_record(req: &MacroRecordReq) -> Value {
 pub enum SettingsReq {
     /// 全部设置 (前端启动时读一次)
     All,
-    Set { key: String, value: String },
-    Remove { key: String },
+    Set {
+        key: String,
+        value: String,
+    },
+    Remove {
+        key: String,
+    },
     /// 导入一份导出的 JSON (合并)
-    Import { json: String },
+    Import {
+        json: String,
+    },
     /// 导出成 JSON 文本 (可携带)
     Export,
 }
@@ -255,6 +345,8 @@ pub fn settings(req: &SettingsReq) -> Result<Value, String> {
             let (ok, skipped) = st::import(&path, text)?;
             json!({ "imported": ok, "skipped": skipped })
         }
-        SettingsReq::Export => json!({ "json": serde_json::to_string_pretty(&st::load(&path)).unwrap_or_default() }),
+        SettingsReq::Export => {
+            json!({ "json": serde_json::to_string_pretty(&st::load(&path)).unwrap_or_default() })
+        }
     })
 }

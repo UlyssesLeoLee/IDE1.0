@@ -6,10 +6,40 @@
 
 use crate::type_config::OutlineEntry;
 
-const CONTAINERS: &[&str] = &["class", "struct", "namespace", "interface", "enum", "union", "record"];
+const CONTAINERS: &[&str] = &[
+    "class",
+    "struct",
+    "namespace",
+    "interface",
+    "enum",
+    "union",
+    "record",
+];
 const NOT_FUNC: &[&str] = &[
-    "if", "for", "while", "switch", "return", "catch", "else", "sizeof", "new", "delete", "throw", "do", "typeof", "await", "using",
-    "foreach", "lock", "case", "default", "assert", "synchronized", "try", "defined", "function",
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "catch",
+    "else",
+    "sizeof",
+    "new",
+    "delete",
+    "throw",
+    "do",
+    "typeof",
+    "await",
+    "using",
+    "foreach",
+    "lock",
+    "case",
+    "default",
+    "assert",
+    "synchronized",
+    "try",
+    "defined",
+    "function",
 ];
 
 struct Scope {
@@ -87,7 +117,12 @@ fn words(s: &str) -> Vec<(String, usize)> {
             while i < cs.len() {
                 if is_ident_char(cs[i]) || cs[i] == '~' {
                     i += 1;
-                } else if cs[i] == ':' && cs.get(i + 1) == Some(&':') && cs.get(i + 2).map_or(false, |c| is_ident_char(*c) || *c == '~') {
+                } else if cs[i] == ':'
+                    && cs.get(i + 1) == Some(&':')
+                    && cs
+                        .get(i + 2)
+                        .is_some_and(|c| is_ident_char(*c) || *c == '~')
+                {
                     i += 2;
                 } else {
                     break;
@@ -122,15 +157,24 @@ pub fn brace_outline(text: &str, lang: &str) -> Vec<OutlineEntry> {
             for (k, (w, _)) in ws.iter().enumerate() {
                 if CONTAINERS.contains(&w.as_str()) {
                     let mut j = k + 1;
-                    if matches!(ws.get(j).map(|x| x.0.as_str()), Some("class") | Some("struct")) {
+                    if matches!(
+                        ws.get(j).map(|x| x.0.as_str()),
+                        Some("class") | Some("struct")
+                    ) {
                         j += 1; // enum class X
                     }
                     if let Some((name, st)) = ws.get(j) {
                         let after: String = s.chars().skip(st + name.chars().count()).collect();
                         let fwd = after.trim_start().starts_with(';');
                         let typedef = k > 0 && ws[k - 1].0 == "typedef";
-                        if !fwd && !typedef && !NOT_FUNC.contains(&name.as_str()) && name != "final" {
-                            entries.push(OutlineEntry { name: name.clone(), kind: w.clone(), line: no as i32, depth });
+                        if !fwd && !typedef && !NOT_FUNC.contains(&name.as_str()) && name != "final"
+                        {
+                            entries.push(OutlineEntry {
+                                name: name.clone(),
+                                kind: w.clone(),
+                                line: no as i32,
+                                depth,
+                            });
                             pending = true;
                             declared = true;
                         }
@@ -141,9 +185,15 @@ pub fn brace_outline(text: &str, lang: &str) -> Vec<OutlineEntry> {
         }
 
         // 函数 / 方法
-        let js_arrow = matches!(lang, "JavaScript" | "TypeScript") && (trimmed.contains("=>") || trimmed.contains("= function"));
-        if !declared && only_containers && !trimmed.is_empty() && (!trimmed.ends_with(';') || js_arrow) {
-            if let Some(entry) = detect_function(s, &ws, &clean, no, lang, depth, !stack.is_empty()) {
+        let js_arrow = matches!(lang, "JavaScript" | "TypeScript")
+            && (trimmed.contains("=>") || trimmed.contains("= function"));
+        if !declared
+            && only_containers
+            && !trimmed.is_empty()
+            && (!trimmed.ends_with(';') || js_arrow)
+        {
+            if let Some(entry) = detect_function(s, &ws, &clean, no, lang, depth, !stack.is_empty())
+            {
                 entries.push(entry);
             }
         }
@@ -159,10 +209,8 @@ pub fn brace_outline(text: &str, lang: &str) -> Vec<OutlineEntry> {
                 '}' => {
                     stack.pop();
                 }
-                ';' => {
-                    if stack.iter().all(|x| x.container) {
-                        pending = false;
-                    }
+                ';' if stack.iter().all(|x| x.container) => {
+                    pending = false;
                 }
                 _ => {}
             }
@@ -171,7 +219,15 @@ pub fn brace_outline(text: &str, lang: &str) -> Vec<OutlineEntry> {
     entries
 }
 
-fn detect_function(s: &str, ws: &[(String, usize)], clean: &[String], no: usize, lang: &str, depth: i32, in_container: bool) -> Option<OutlineEntry> {
+fn detect_function(
+    s: &str,
+    ws: &[(String, usize)],
+    clean: &[String],
+    no: usize,
+    lang: &str,
+    depth: i32,
+    in_container: bool,
+) -> Option<OutlineEntry> {
     let t = s.trim_start();
     // JS/TS: function name( / const name = (…) => / name = function
     if matches!(lang, "JavaScript" | "TypeScript") {
@@ -179,24 +235,56 @@ fn detect_function(s: &str, ws: &[(String, usize)], clean: &[String], no: usize,
         if let Some(p) = ww.iter().position(|w| *w == "function") {
             if let Some(n) = ww.get(p + 1) {
                 if s.contains('(') {
-                    return Some(OutlineEntry { name: (*n).to_string(), kind: "function".into(), line: no as i32, depth });
+                    return Some(OutlineEntry {
+                        name: (*n).to_string(),
+                        kind: "function".into(),
+                        line: no as i32,
+                        depth,
+                    });
                 }
             }
         }
-        if matches!(ww.first().copied(), Some("const") | Some("let") | Some("var") | Some("export")) && (s.contains("=>") || s.contains("= function")) {
-            let at = ww.iter().position(|w| matches!(*w, "const" | "let" | "var")).map(|p| p + 1)?;
-            return Some(OutlineEntry { name: ww.get(at)?.to_string(), kind: "function".into(), line: no as i32, depth });
+        if matches!(
+            ww.first().copied(),
+            Some("const") | Some("let") | Some("var") | Some("export")
+        ) && (s.contains("=>") || s.contains("= function"))
+        {
+            let at = ww
+                .iter()
+                .position(|w| matches!(*w, "const" | "let" | "var"))
+                .map(|p| p + 1)?;
+            return Some(OutlineEntry {
+                name: ww.get(at)?.to_string(),
+                kind: "function".into(),
+                line: no as i32,
+                depth,
+            });
         }
     }
     // Go: func name( / func (r T) name(
     if lang == "Go" {
         if let Some(rest) = t.strip_prefix("func ") {
             let rest = rest.trim_start();
-            let rest = if rest.starts_with('(') { rest.find(')').map(|i| rest[i + 1..].trim_start()).unwrap_or("") } else { rest };
+            let rest = if rest.starts_with('(') {
+                rest.find(')')
+                    .map(|i| rest[i + 1..].trim_start())
+                    .unwrap_or("")
+            } else {
+                rest
+            };
             let name: String = rest.chars().take_while(|c| is_ident_char(*c)).collect();
             if !name.is_empty() && rest[name.len()..].trim_start().starts_with('(') {
-                let kind = if t.starts_with("func (") { "method" } else { "function" };
-                return Some(OutlineEntry { name, kind: kind.into(), line: no as i32, depth });
+                let kind = if t.starts_with("func (") {
+                    "method"
+                } else {
+                    "function"
+                };
+                return Some(OutlineEntry {
+                    name,
+                    kind: kind.into(),
+                    line: no as i32,
+                    depth,
+                });
             }
         }
         return None;
@@ -210,16 +298,23 @@ fn detect_function(s: &str, ws: &[(String, usize)], clean: &[String], no: usize,
     }
     let name_tok = ws.iter().rev().find(|(_, st)| *st < open)?;
     let name = &name_tok.0;
-    if NOT_FUNC.contains(&name.as_str()) || name.chars().next().map_or(true, |c| c.is_ascii_digit()) {
+    if NOT_FUNC.contains(&name.as_str()) || name.chars().next().map_or(true, |c| c.is_ascii_digit())
+    {
         return None;
     }
-    if ws.iter().any(|(w, st)| *st < open && NOT_FUNC.contains(&w.as_str()) && w != name) {
+    if ws
+        .iter()
+        .any(|(w, st)| *st < open && NOT_FUNC.contains(&w.as_str()) && w != name)
+    {
         return None;
     }
     // 签名可能跨行: 把后续行并进来直到括号配平
     let mut joined = s.to_string();
     let mut last = no;
-    while joined.matches('(').count() > joined.matches(')').count() && last + 1 < clean.len() && last - no < 8 {
+    while joined.matches('(').count() > joined.matches(')').count()
+        && last + 1 < clean.len()
+        && last - no < 8
+    {
         last += 1;
         joined.push(' ');
         joined.push_str(clean[last].trim());
@@ -231,7 +326,10 @@ fn detect_function(s: &str, ws: &[(String, usize)], clean: &[String], no: usize,
         while j < clean.len() && clean[j].trim().is_empty() {
             j += 1;
         }
-        clean.get(j).map_or(false, |l| l.trim_start().starts_with('{')) && !after.ends_with(',')
+        clean
+            .get(j)
+            .is_some_and(|l| l.trim_start().starts_with('{'))
+            && !after.ends_with(',')
     };
     let tail_ok = after.is_empty()
         || after.starts_with('{')
@@ -247,7 +345,12 @@ fn detect_function(s: &str, ws: &[(String, usize)], clean: &[String], no: usize,
         return None;
     }
     let kind = if in_container { "method" } else { "function" };
-    Some(OutlineEntry { name: name.clone(), kind: kind.into(), line: no as i32, depth })
+    Some(OutlineEntry {
+        name: name.clone(),
+        kind: kind.into(),
+        line: no as i32,
+        depth,
+    })
 }
 
 pub fn markdown_outline(text: &str) -> Vec<OutlineEntry> {
@@ -266,7 +369,12 @@ pub fn markdown_outline(text: &str) -> Vec<OutlineEntry> {
         if (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') {
             let name = t[hashes..].trim().trim_end_matches('#').trim().to_string();
             if !name.is_empty() {
-                out.push(OutlineEntry { name, kind: "section".into(), line: no as i32, depth: hashes as i32 - 1 });
+                out.push(OutlineEntry {
+                    name,
+                    kind: "section".into(),
+                    line: no as i32,
+                    depth: hashes as i32 - 1,
+                });
             }
         }
     }
@@ -278,7 +386,9 @@ mod tests {
     use super::*;
 
     fn names(v: &[OutlineEntry]) -> Vec<(String, String, i32)> {
-        v.iter().map(|e| (e.name.clone(), e.kind.clone(), e.depth)).collect()
+        v.iter()
+            .map(|e| (e.name.clone(), e.kind.clone(), e.depth))
+            .collect()
     }
     fn t(n: &str, k: &str, d: i32) -> (String, String, i32) {
         (n.into(), k.into(), d)
@@ -330,7 +440,13 @@ int main(int argc, char** argv) { return 0; }
         let v = names(&brace_outline(src, "JavaScript"));
         assert_eq!(
             v,
-            vec![t("top", "function", 0), t("arrow", "function", 0), t("Foo", "class", 0), t("bar", "method", 1), t("main", "function", 0)],
+            vec![
+                t("top", "function", 0),
+                t("arrow", "function", 0),
+                t("Foo", "class", 0),
+                t("bar", "method", 1),
+                t("main", "function", 0)
+            ],
             "got {v:?}"
         );
     }
@@ -347,13 +463,29 @@ int main(int argc, char** argv) { return 0; }
     fn java_class_with_methods() {
         let src = "public class A {\n  private int f;\n  public void run(String s) {\n    System.out.println(s);\n  }\n  static class Inner {\n    int get() { return 1; }\n  }\n}\n";
         let v = names(&brace_outline(src, "Java"));
-        assert_eq!(v, vec![t("A", "class", 0), t("run", "method", 1), t("Inner", "class", 1), t("get", "method", 2)], "got {v:?}");
+        assert_eq!(
+            v,
+            vec![
+                t("A", "class", 0),
+                t("run", "method", 1),
+                t("Inner", "class", 1),
+                t("get", "method", 2)
+            ],
+            "got {v:?}"
+        );
     }
 
     #[test]
     fn markdown_headings_skip_code_fences() {
         let src = "# Title\ntext\n## Sub\n```\n# not heading\n```\n### Deep ###\n";
         let v = names(&markdown_outline(src));
-        assert_eq!(v, vec![t("Title", "section", 0), t("Sub", "section", 1), t("Deep", "section", 2)]);
+        assert_eq!(
+            v,
+            vec![
+                t("Title", "section", 0),
+                t("Sub", "section", 1),
+                t("Deep", "section", 2)
+            ]
+        );
     }
 }

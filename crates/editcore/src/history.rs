@@ -86,7 +86,11 @@ impl Registry {
         let h = self.tabs.entry(req.tab.clone()).or_default();
         h.used = tick;
         let apply = step(h, req);
-        let res = HistRes { apply, undo_len: h.undo.len(), redo_len: h.redo.len() };
+        let res = HistRes {
+            apply,
+            undo_len: h.undo.len(),
+            redo_len: h.redo.len(),
+        };
         if req.op == "clear" {
             self.tabs.remove(&req.tab);
         }
@@ -96,7 +100,12 @@ impl Registry {
     /// 页面重新载入时旧会话的标签不会再来清理, 登记数到上限就丢掉最久没用的, 内存不会无限涨
     fn evict_for_new_tab(&mut self, max_tabs: usize) {
         while self.tabs.len() >= max_tabs {
-            match self.tabs.iter().min_by_key(|(_, h)| h.used).map(|(k, _)| k.clone()) {
+            match self
+                .tabs
+                .iter()
+                .min_by_key(|(_, h)| h.used)
+                .map(|(k, _)| k.clone())
+            {
                 Some(oldest) => {
                     self.tabs.remove(&oldest);
                 }
@@ -121,7 +130,12 @@ fn step(h: &mut History, req: &HistReq) -> Option<Apply> {
         }
         "undo" => {
             let mut p = h.undo.pop()?;
-            let apply = Apply { start: p.start, remove: p.inserted.len(), insert: p.removed.clone(), cursor: p.cursor_before };
+            let apply = Apply {
+                start: p.start,
+                remove: p.inserted.len(),
+                insert: p.removed.clone(),
+                cursor: p.cursor_before,
+            };
             if let Some(c) = req.cursor {
                 p.cursor_after = c; // redo 回到 undo 发起时的光标
             }
@@ -130,7 +144,12 @@ fn step(h: &mut History, req: &HistReq) -> Option<Apply> {
         }
         "redo" => {
             let p = h.redo.pop()?;
-            let apply = Apply { start: p.start, remove: p.removed.len(), insert: p.inserted.clone(), cursor: p.cursor_after };
+            let apply = Apply {
+                start: p.start,
+                remove: p.removed.len(),
+                insert: p.inserted.clone(),
+                cursor: p.cursor_after,
+            };
             h.undo.push(p);
             Some(apply)
         }
@@ -159,38 +178,89 @@ mod tests {
     use super::*;
 
     fn patch(start: usize, removed: &[&str], inserted: &[&str], before: [usize; 2]) -> Patch {
-        Patch { start, removed: removed.iter().map(|s| s.to_string()).collect(), inserted: inserted.iter().map(|s| s.to_string()).collect(), cursor_before: before, cursor_after: [0, 0] }
+        Patch {
+            start,
+            removed: removed.iter().map(|s| s.to_string()).collect(),
+            inserted: inserted.iter().map(|s| s.to_string()).collect(),
+            cursor_before: before,
+            cursor_after: [0, 0],
+        }
     }
     fn req(tab: &str, op: &str, p: Option<Patch>, cursor: Option<[usize; 2]>) -> HistReq {
-        HistReq { tab: tab.into(), op: op.into(), patch: p, cursor }
+        HistReq {
+            tab: tab.into(),
+            op: op.into(),
+            patch: p,
+            cursor,
+        }
     }
 
     #[test]
     fn push_undo_redo_roundtrip() {
         let t = "t-roundtrip";
-        run(&req(t, "push", Some(patch(1, &["b"], &["B", "B2"], [1, 1])), None)).unwrap();
+        run(&req(
+            t,
+            "push",
+            Some(patch(1, &["b"], &["B", "B2"], [1, 1])),
+            None,
+        ))
+        .unwrap();
         let u = run(&req(t, "undo", None, Some([2, 0]))).unwrap();
-        assert_eq!(u.apply, Some(Apply { start: 1, remove: 2, insert: vec!["b".into()], cursor: [1, 1] }));
+        assert_eq!(
+            u.apply,
+            Some(Apply {
+                start: 1,
+                remove: 2,
+                insert: vec!["b".into()],
+                cursor: [1, 1]
+            })
+        );
         assert_eq!((u.undo_len, u.redo_len), (0, 1));
         let r = run(&req(t, "redo", None, None)).unwrap();
-        assert_eq!(r.apply, Some(Apply { start: 1, remove: 1, insert: vec!["B".into(), "B2".into()], cursor: [2, 0] })); // 回到 undo 发起时的光标
+        assert_eq!(
+            r.apply,
+            Some(Apply {
+                start: 1,
+                remove: 1,
+                insert: vec!["B".into(), "B2".into()],
+                cursor: [2, 0]
+            })
+        ); // 回到 undo 发起时的光标
         assert_eq!((r.undo_len, r.redo_len), (1, 0));
     }
     #[test]
     fn new_edit_clears_redo_and_caps_depth() {
         let t = "t-cap";
         for i in 0..205 {
-            run(&req(t, "push", Some(patch(0, &["a"], &["b"], [0, i % 3])), None)).unwrap();
+            run(&req(
+                t,
+                "push",
+                Some(patch(0, &["a"], &["b"], [0, i % 3])),
+                None,
+            ))
+            .unwrap();
         }
         assert_eq!(run(&req(t, "info", None, None)).unwrap().undo_len, 200);
         run(&req(t, "undo", None, None)).unwrap();
         assert_eq!(run(&req(t, "info", None, None)).unwrap().redo_len, 1);
-        run(&req(t, "push", Some(patch(0, &["x"], &["y"], [0, 0])), None)).unwrap();
+        run(&req(
+            t,
+            "push",
+            Some(patch(0, &["x"], &["y"], [0, 0])),
+            None,
+        ))
+        .unwrap();
         assert_eq!(run(&req(t, "info", None, None)).unwrap().redo_len, 0);
     }
     #[test]
     fn tabs_are_independent_and_empty_undo_is_noop() {
-        run(&req("t-a", "push", Some(patch(0, &[], &["x"], [0, 0])), None)).unwrap();
+        run(&req(
+            "t-a",
+            "push",
+            Some(patch(0, &[], &["x"], [0, 0])),
+            None,
+        ))
+        .unwrap();
         assert_eq!(run(&req("t-b", "undo", None, None)).unwrap().apply, None);
         let c = run(&req("t-a", "clear", None, None)).unwrap();
         assert_eq!((c.undo_len, c.redo_len), (0, 0));
@@ -200,7 +270,10 @@ mod tests {
     fn invalid_requests_leave_no_trace() {
         let mut r = Registry::default();
         assert!(r.run(&req("t-x", "nope", None, None), 8).is_none());
-        assert!(r.run(&req("t-x", "push", None, None), 8).is_none(), "push 没带补丁");
+        assert!(
+            r.run(&req("t-x", "push", None, None), 8).is_none(),
+            "push 没带补丁"
+        );
         assert!(r.tabs.is_empty());
         // info / undo / redo / clear 碰到没登记的标签页 = 空栈, 不占位置
         for op in ["info", "undo", "redo", "clear"] {
@@ -213,10 +286,18 @@ mod tests {
     fn the_least_recently_used_tab_is_evicted() {
         let mut r = Registry::default();
         for t in ["a", "b", "c"] {
-            r.run(&req(t, "push", Some(patch(0, &[], &["x"], [0, 0])), None), 3).unwrap();
+            r.run(
+                &req(t, "push", Some(patch(0, &[], &["x"], [0, 0])), None),
+                3,
+            )
+            .unwrap();
         }
         r.run(&req("a", "info", None, None), 3).unwrap(); // a 刚用过, b 变成最久没用的
-        r.run(&req("d", "push", Some(patch(0, &[], &["x"], [0, 0])), None), 3).unwrap();
+        r.run(
+            &req("d", "push", Some(patch(0, &[], &["x"], [0, 0])), None),
+            3,
+        )
+        .unwrap();
         let mut keys: Vec<&String> = r.tabs.keys().collect();
         keys.sort();
         assert_eq!(keys, ["a", "c", "d"]);
@@ -224,7 +305,11 @@ mod tests {
     #[test]
     fn clearing_a_tab_releases_its_slot() {
         let mut r = Registry::default();
-        r.run(&req("a", "push", Some(patch(0, &[], &["x"], [0, 0])), None), 3).unwrap();
+        r.run(
+            &req("a", "push", Some(patch(0, &[], &["x"], [0, 0])), None),
+            3,
+        )
+        .unwrap();
         r.run(&req("a", "clear", None, None), 3).unwrap();
         assert!(r.tabs.is_empty());
     }

@@ -53,7 +53,14 @@ pub fn apply_backdrop_sample(mean_luma: f64) -> DesktopLuminance {
     } else {
         prev
     };
-    SAMPLED.store(if next == DesktopLuminance::Light { 2 } else { 1 }, Ordering::Relaxed);
+    SAMPLED.store(
+        if next == DesktopLuminance::Light {
+            2
+        } else {
+            1
+        },
+        Ordering::Relaxed,
+    );
     next
 }
 
@@ -127,16 +134,16 @@ impl DesktopLuminance {
     /// 壁纸上仍差 0.26。要严格 AA 需 70%, 但那已接近实心。
     pub fn glass_tint(self) -> &'static str {
         match self {
-            // 亮背景: 压一层通透白
-            Self::Light => "rgba(255, 255, 255, 0.45)",
-            // 暗背景: 压一层晶莹黑
-            Self::Dark => "rgba(0, 0, 0, 0.38)",
+            // 亮背景: 压一层通透白 (60% 透明度，40% 不透明)
+            Self::Light => "rgba(255, 255, 255, 0.40)",
+            // 暗背景: 压一层晶莹黑 (60% 透明度，40% 不透明)
+            Self::Dark => "rgba(0, 0, 0, 0.40)",
         }
     }
 
-    /// 遮罩强度 (0.0 ~ 1.0), 供测试与前端调节使用。
+    /// 遮罩强度 (0.0 ~ 1.0), 供测试与前端调节使用 (60% 透明度 -> 0.40 遮罩强度)。
     pub fn tint_strength(self) -> f64 {
-        0.38
+        0.40
     }
 
     /// 强调色 (蓝) 之上的文字色 —— 状态栏/主按钮用蓝底, 上面必须是白字.
@@ -263,10 +270,22 @@ mod backdrop_tests {
     #[test]
     fn hysteresis_keeps_state_in_the_gray_zone() {
         assert_eq!(apply_backdrop_sample(0.90), DesktopLuminance::Light);
-        assert_eq!(apply_backdrop_sample(0.50), DesktopLuminance::Light, "中灰区不翻");
+        assert_eq!(
+            apply_backdrop_sample(0.50),
+            DesktopLuminance::Light,
+            "中灰区不翻"
+        );
         assert_eq!(apply_backdrop_sample(0.10), DesktopLuminance::Dark);
-        assert_eq!(apply_backdrop_sample(0.50), DesktopLuminance::Dark, "中灰区不翻");
-        assert_eq!(detect(), DesktopLuminance::Dark, "detect() 以最近一次采样为准");
+        assert_eq!(
+            apply_backdrop_sample(0.50),
+            DesktopLuminance::Dark,
+            "中灰区不翻"
+        );
+        assert_eq!(
+            detect(),
+            DesktopLuminance::Dark,
+            "detect() 以最近一次采样为准"
+        );
         assert_eq!(apply_backdrop_sample(0.60), DesktopLuminance::Light);
         assert_eq!(detect(), DesktopLuminance::Light);
     }

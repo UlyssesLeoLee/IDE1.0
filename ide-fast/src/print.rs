@@ -66,7 +66,15 @@ pub struct PageSetup {
 
 impl Default for PageSetup {
     fn default() -> Self {
-        PageSetup { paper: Paper::A4, landscape: false, font_pt: 10.0, margin_mm: 14.0, line_numbers: true, header: true, footer: true }
+        PageSetup {
+            paper: Paper::A4,
+            landscape: false,
+            font_pt: 10.0,
+            margin_mm: 14.0,
+            line_numbers: true,
+            header: true,
+            footer: true,
+        }
     }
 }
 
@@ -77,21 +85,37 @@ const MM_PT: f32 = 72.0 / 25.4;
 impl PageSetup {
     /// 把从文件里读到的不可信数值夹回合理范围
     pub fn clamped(mut self) -> Self {
-        self.font_pt = if self.font_pt.is_finite() { self.font_pt.clamp(6.0, 24.0) } else { 10.0 };
-        self.margin_mm = if self.margin_mm.is_finite() { self.margin_mm.clamp(5.0, 40.0) } else { 14.0 };
+        self.font_pt = if self.font_pt.is_finite() {
+            self.font_pt.clamp(6.0, 24.0)
+        } else {
+            10.0
+        };
+        self.margin_mm = if self.margin_mm.is_finite() {
+            self.margin_mm.clamp(5.0, 40.0)
+        } else {
+            14.0
+        };
         self
     }
 
     fn page_mm(&self) -> (f32, f32) {
         let (w, h) = self.paper.mm();
-        if self.landscape { (h, w) } else { (w, h) }
+        if self.landscape {
+            (h, w)
+        } else {
+            (w, h)
+        }
     }
 
     /// 一页能放的 (行数, 每行列数); 页眉 / 页脚各占两行
     pub fn capacity(&self) -> (usize, usize) {
         let (w, h) = self.page_mm();
-        let (cw, ch) = ((w - 2.0 * self.margin_mm).max(10.0) * MM_PT, (h - 2.0 * self.margin_mm).max(10.0) * MM_PT);
-        let rows = ((ch / (self.font_pt * LINE_H)) as usize).saturating_sub(2 * (self.header as usize + self.footer as usize));
+        let (cw, ch) = (
+            (w - 2.0 * self.margin_mm).max(10.0) * MM_PT,
+            (h - 2.0 * self.margin_mm).max(10.0) * MM_PT,
+        );
+        let rows = ((ch / (self.font_pt * LINE_H)) as usize)
+            .saturating_sub(2 * (self.header as usize + self.footer as usize));
         let cols = (cw / (self.font_pt * CHAR_W)) as usize;
         (rows.max(1), cols.max(8))
     }
@@ -99,7 +123,11 @@ impl PageSetup {
 
 /// 显示宽度 (CJK 记 2 列), 用来估计折行
 fn width_of(c: char) -> usize {
-    if c as u32 >= 0x1100 && !c.is_control() { 2 } else { 1 }
+    if c as u32 >= 0x1100 && !c.is_control() {
+        2
+    } else {
+        1
+    }
 }
 
 /// 一个逻辑行折成几个显示行 (每行 `cols` 列; Tab 按 4 列)
@@ -117,7 +145,11 @@ pub fn wrapped_rows(line: &str, cols: usize) -> usize {
 }
 
 /// 分页: 每页是 [起始行, 结束行) 的逻辑行区间; 不拆开一个逻辑行
-pub fn paginate(lines: &[String], rows_per_page: usize, cols: usize) -> Vec<std::ops::Range<usize>> {
+pub fn paginate(
+    lines: &[String],
+    rows_per_page: usize,
+    cols: usize,
+) -> Vec<std::ops::Range<usize>> {
     let (mut pages, mut start, mut used) = (vec![], 0, 0);
     for (i, l) in lines.iter().enumerate() {
         let r = wrapped_rows(l, cols);
@@ -179,13 +211,25 @@ pre{{font:{f}pt/{lh} Consolas,'Cascadia Mono',monospace;white-space:pre-wrap;wor
 pub fn open_for_print(name: &str, lines: &[String], ps: &PageSetup) -> Result<PathBuf, String> {
     let dir = std::env::temp_dir().join("ide-fast-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' }).collect();
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     let path = dir.join(format!("{safe}.html"));
     std::fs::write(&path, page_html(name, lines, ps, true)).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     let r = {
         use std::os::windows::process::CommandExt;
-        std::process::Command::new("cmd").args(["/C", "start", "", &path.display().to_string()]).creation_flags(0x0800_0000).spawn() // CREATE_NO_WINDOW
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path.display().to_string()])
+            .creation_flags(0x0800_0000)
+            .spawn() // CREATE_NO_WINDOW
     };
     #[cfg(not(windows))]
     let r = std::process::Command::new("xdg-open").arg(&path).spawn();
@@ -209,7 +253,12 @@ mod tests {
         assert!(h.contains("<title>a&lt;b&gt;.txt</title>"));
         assert!(h.contains("<span class=n>1</span>") && h.contains("<span class=n>2</span>"));
         assert!(h.contains("print()") && h.contains("1 / 1"));
-        let off = PageSetup { line_numbers: false, header: false, footer: false, ..PageSetup::default() };
+        let off = PageSetup {
+            line_numbers: false,
+            header: false,
+            footer: false,
+            ..PageSetup::default()
+        };
         let h2 = page_html("a", &lines, &off, false);
         assert!(!h2.contains("class=n>1") && !h2.contains("<footer>") && !h2.contains("<h1>"));
     }
@@ -219,7 +268,11 @@ mod tests {
         assert_eq!(paginate(&s(25), 10, 80), vec![0..10, 10..20, 20..25]);
         let long = vec!["x".repeat(200), "a".into(), "b".into()];
         assert_eq!(wrapped_rows(&long[0], 80), 3);
-        assert_eq!(paginate(&long, 3, 80), vec![0..1, 1..3], "折行后占满一页的长行自成一页");
+        assert_eq!(
+            paginate(&long, 3, 80),
+            vec![0..1, 1..3],
+            "折行后占满一页的长行自成一页"
+        );
         assert_eq!(paginate(&[], 10, 80), vec![0..0], "空文档也有一页");
         assert_eq!(wrapped_rows("中中中", 4), 2, "CJK 记两列");
     }
@@ -229,15 +282,39 @@ mod tests {
         let a4 = PageSetup::default();
         let (r, c) = a4.capacity();
         assert!(r > 40 && r < 80 && c > 70 && c < 120, "{r} {c}");
-        let land = PageSetup { landscape: true, ..a4.clone() };
+        let land = PageSetup {
+            landscape: true,
+            ..a4.clone()
+        };
         assert!(land.capacity().1 > c && land.capacity().0 < r);
-        assert!(PageSetup { font_pt: 20.0, ..a4.clone() }.capacity().0 < r);
-        assert_eq!(PageSetup { header: false, footer: false, ..a4 }.capacity().0, r + 4);
+        assert!(
+            PageSetup {
+                font_pt: 20.0,
+                ..a4.clone()
+            }
+            .capacity()
+            .0 < r
+        );
+        assert_eq!(
+            PageSetup {
+                header: false,
+                footer: false,
+                ..a4
+            }
+            .capacity()
+            .0,
+            r + 4
+        );
     }
 
     #[test]
     fn untrusted_setup_numbers_are_clamped() {
-        let p = PageSetup { font_pt: f32::NAN, margin_mm: 1e9, ..PageSetup::default() }.clamped();
+        let p = PageSetup {
+            font_pt: f32::NAN,
+            margin_mm: 1e9,
+            ..PageSetup::default()
+        }
+        .clamped();
         assert_eq!((p.font_pt, p.margin_mm), (10.0, 40.0));
         assert_eq!(Paper::from_code("???"), Paper::A4);
     }

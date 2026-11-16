@@ -12,7 +12,11 @@ pub struct Issue {
 }
 
 fn issue(line: usize, rule: &'static str, message: impl Into<String>) -> Issue {
-    Issue { line, rule, message: message.into() }
+    Issue {
+        line,
+        rule,
+        message: message.into(),
+    }
 }
 
 /// 规则: MD-H1 标题层级跳级 / MD-DUP 同级重复标题 / MD-FENCE 围栏未闭合 / MD-LINK 链接目标为空 / MD-IMG 图片缺 alt / MD-EMPTY-FENCE 空的 mermaid 围栏
@@ -44,7 +48,11 @@ pub fn lint(text: &str) -> Vec<Issue> {
         let h = l.chars().take_while(|&c| c == '#').count();
         if (1..=6).contains(&h) && l[h..].starts_with(' ') {
             if prev_level > 0 && h > prev_level + 1 {
-                out.push(issue(no, "MD-H1", format!("标题从 {} 级直接跳到 {} 级", prev_level, h)));
+                out.push(issue(
+                    no,
+                    "MD-H1",
+                    format!("标题从 {} 级直接跳到 {} 级", prev_level, h),
+                ));
             }
             prev_level = h;
             let title = l[h + 1..].trim().to_string();
@@ -77,7 +85,10 @@ mod tests {
 
     #[test]
     fn clean_document_has_no_issues() {
-        assert!(lint("# A\n\n## B\n\ntext [x](a.md) ![alt](i.png)\n\n```rust\nlet x = 1;\n```\n").is_empty());
+        assert!(
+            lint("# A\n\n## B\n\ntext [x](a.md) ![alt](i.png)\n\n```rust\nlet x = 1;\n```\n")
+                .is_empty()
+        );
     }
 
     #[test]

@@ -19,7 +19,11 @@ pub fn cell_width(c: char) -> usize {
     let wide = matches!(u,
         0x1100..=0x115F | 0x2E80..=0x303E | 0x3041..=0x33FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xA000..=0xA4CF
         | 0xAC00..=0xD7A3 | 0xF900..=0xFAFF | 0xFE30..=0xFE6F | 0xFF00..=0xFF60 | 0xFFE0..=0xFFE6 | 0x20000..=0x3FFFD);
-    if wide { 2 } else { 1 }
+    if wide {
+        2
+    } else {
+        1
+    }
 }
 
 /// 折行参数: `cols` = 一行最多几列 (0 = 不处理); `hang` = 允许句读挂在行尾 (ぶら下げ)
@@ -58,7 +62,10 @@ pub fn breaks_hang(chars: &[char], cols: usize, hang: bool) -> Vec<usize> {
             // 在 i 前折; 行头禁则 / 行尾禁则就往回退 (追い出し)
             let mut b = i;
             let mut back = 0;
-            while back < MAX_BACK && b > start + 1 && (NO_START.contains(chars[b]) || NO_END.contains(chars[b - 1])) {
+            while back < MAX_BACK
+                && b > start + 1
+                && (NO_START.contains(chars[b]) || NO_END.contains(chars[b - 1]))
+            {
                 b -= 1;
                 back += 1;
             }
@@ -147,38 +154,84 @@ mod tests {
 
     #[test]
     fn expand_wrap_inserts_newlines_and_shifts_map() {
-        let (s, m) = expand_wrap("abcdefgh", 4, Wrap { cols: 4, hang: false });
+        let (s, m) = expand_wrap(
+            "abcdefgh",
+            4,
+            Wrap {
+                cols: 4,
+                hang: false,
+            },
+        );
         assert_eq!(s, "abcd\nefgh");
         assert_eq!(m, vec![0, 1, 2, 3, 5, 6, 7, 8, 9]);
         // 不折时与 expand_tabs 一致
-        assert_eq!(expand_wrap("a\tb", 4, Wrap::default()), expand_tabs("a\tb", 4));
+        assert_eq!(
+            expand_wrap("a\tb", 4, Wrap::default()),
+            expand_tabs("a\tb", 4)
+        );
     }
 
     #[test]
     fn hanging_punctuation_stays_on_the_previous_row() {
         // 「あいう。え」 6 列: 不挂 = [2] (把う带下去); 挂 = 。 留在第一行末尾, え 换行
-        assert_eq!(breaks_hang(&"あいう。え".chars().collect::<Vec<_>>(), 6, true), vec![4]);
+        assert_eq!(
+            breaks_hang(&"あいう。え".chars().collect::<Vec<_>>(), 6, true),
+            vec![4]
+        );
         // 只挂句读: 闭括号仍走追い出し
-        assert_eq!(breaks_hang(&"あいう」え".chars().collect::<Vec<_>>(), 6, true), vec![2]);
+        assert_eq!(
+            breaks_hang(&"あいう」え".chars().collect::<Vec<_>>(), 6, true),
+            vec![2]
+        );
         // 每行最多挂一个: 连着两个句读时第二个走追い出し, 行宽不会超过 列数 + 2
-        let (s2, _) = expand_wrap("あいう。。えお", 4, Wrap { cols: 6, hang: true });
+        let (s2, _) = expand_wrap(
+            "あいう。。えお",
+            4,
+            Wrap {
+                cols: 6,
+                hang: true,
+            },
+        );
         for row in s2.split('\n') {
             assert!(row.chars().map(cell_width).sum::<usize>() <= 8, "{row}");
         }
-        let (s, m) = expand_wrap("あいう。え", 4, Wrap { cols: 6, hang: true });
-        assert_eq!(s, "あいう。
-え");
+        let (s, m) = expand_wrap(
+            "あいう。え",
+            4,
+            Wrap {
+                cols: 6,
+                hang: true,
+            },
+        );
+        assert_eq!(
+            s,
+            "あいう。
+え"
+        );
         assert_eq!(m.len(), 6);
     }
 
     #[test]
     fn every_row_fits_the_column() {
         let text = "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ、「何でも」薄暗い所で。";
-        let (s, _) = expand_wrap(text, 4, Wrap { cols: 20, hang: false });
+        let (s, _) = expand_wrap(
+            text,
+            4,
+            Wrap {
+                cols: 20,
+                hang: false,
+            },
+        );
         for row in s.split('\n') {
             let w: usize = row.chars().map(cell_width).sum();
             assert!(w <= 20, "row too wide: {row}");
-            assert!(!row.chars().next().map(|c| NO_START.contains(c)).unwrap_or(false) || w >= 1);
+            assert!(
+                !row.chars()
+                    .next()
+                    .map(|c| NO_START.contains(c))
+                    .unwrap_or(false)
+                    || w >= 1
+            );
         }
     }
 }

@@ -1,0 +1,554 @@
+openapi: 3.1.0
+info:
+  title: IDE1.0 Web Agent Router & Worker API
+  description: >-
+    High-concurrency Agent collaboration service API for IDE1.0.
+    Supports file-level routing, internal semantic unit parallel tasks,
+    optimistic concurrency control (CAS), and AST-aware patch commits.
+  version: 2.0.0
+servers:
+  - url: /api/v1
+    description: Production Vercel Serverless Gateway
+
+paths:
+  /jobs/dispatch:
+    post:
+      summary: Dispatch high-level goal into file & semantic tasks
+      operationId: dispatchJob
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobDispatchRequest'
+      responses:
+        '202':
+          description: Job accepted and tasks partitioned into queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDispatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tasks/claim:
+    post:
+      summary: Claim ready semantic task and acquire lease with fencing token
+      operationId: claimTask
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskClaimRequest'
+      responses:
+        '200':
+          description: Task successfully claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskClaimResponse'
+        '204':
+          description: No available tasks matching worker criteria
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tasks/{task_id}/heartbeat:
+    post:
+      summary: Renew task lease and verify fencing token validity
+      operationId: heartbeatTask
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: task_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        '200':
+          description: Lease renewed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+        '412':
+          description: Fencing token stale or lease preempted by another worker
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patches/prepare:
+    post:
+      summary: Validate a patch proposal and compute relocate suitability
+      operationId: preparePatch
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchPrepareRequest'
+      responses:
+        '200':
+          description: Patch validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchPrepareResponse'
+        '409':
+          description: Semantic conflict or non-relocatable modification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patches/commit:
+    post:
+      summary: Commit a patch through the File Commit Coordinator
+      operationId: commitPatch
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          required: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchCommitRequest'
+      responses:
+        '200':
+          description: Patch successfully committed with new revision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatchCommitResponse'
+        '409':
+          description: Revision conflict or write-set collision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '412':
+          description: Fencing token stale or lease expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /changesets:
+    post:
+      summary: Atomically commit multi-file changesets
+      operationId: commitChangeSet
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeSetRequest'
+      responses:
+        '200':
+          description: ChangeSet committed atomically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeSetResponse'
+        '409':
+          description: One or more files suffered conflicts; full rollback
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /files/{file_id}/semantic-units:
+    get:
+      summary: Query parsed AST semantic units and fingerprint metadata
+      operationId: getSemanticUnits
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: file_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: workspace_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of semantic units
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticUnitsResponse'
+
+  /events:
+    get:
+      summary: Stream or query outbox commit events
+      operationId: getEvents
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: after_cursor
+          schema:
+            type: integer
+        - in: query
+          name: workspace_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commit event feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsResponse'
+
+  /health:
+    get:
+      summary: System health and router status
+      operationId: getHealth
+      responses:
+        '200':
+          description: Healthy status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: 2.0.0
+                  engine:
+                    type: string
+                    example: ide-agent-router-rust
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Invalid request payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication credentials missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    JobDispatchRequest:
+      type: object
+      required:
+        - workspace_id
+        - goal
+      properties:
+        workspace_id:
+          type: string
+        goal:
+          type: string
+        target_files:
+          type: array
+          items:
+            type: string
+        priority:
+          type: integer
+          default: 100
+
+    JobDispatchResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        workspace_id:
+          type: string
+        task_count:
+          type: integer
+        status:
+          type: string
+          example: QUEUED
+
+    TaskClaimRequest:
+      type: object
+      required:
+        - worker_id
+        - workspace_id
+      properties:
+        worker_id:
+          type: string
+        workspace_id:
+          type: string
+        supported_languages:
+          type: array
+          items:
+            type: string
+
+    TaskClaimResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+        job_id:
+          type: string
+        workspace_id:
+          type: string
+        file_id:
+          type: string
+        symbol_path:
+          type: string
+        base_revision:
+          type: integer
+        fencing_token:
+          type: integer
+        lease_expires_at:
+          type: string
+          format: date-time
+        unit:
+          $ref: '#/components/schemas/SemanticUnit'
+
+    HeartbeatRequest:
+      type: object
+      required:
+        - worker_id
+        - fencing_token
+      properties:
+        worker_id:
+          type: string
+        fencing_token:
+          type: integer
+
+    HeartbeatResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: RENEWED
+        lease_expires_at:
+          type: string
+          format: date-time
+
+    PatchPrepareRequest:
+      type: object
+      required:
+        - workspace_id
+        - file_id
+        - base_revision
+        - symbol_path
+        - replacement_text
+      properties:
+        workspace_id:
+          type: string
+        file_id:
+          type: string
+        base_revision:
+          type: integer
+        symbol_path:
+          type: string
+        replacement_text:
+          type: string
+
+    PatchPrepareResponse:
+      type: object
+      properties:
+        can_fast_forward:
+          type: boolean
+        requires_relocation:
+          type: boolean
+        predicted_new_range:
+          type: array
+          items:
+            type: integer
+
+    PatchCommitRequest:
+      type: object
+      required:
+        - task_id
+        - worker_id
+        - fencing_token
+        - file_id
+        - base_revision
+        - symbol_path
+        - replacement_text
+      properties:
+        task_id:
+          type: string
+        worker_id:
+          type: string
+        fencing_token:
+          type: integer
+        workspace_id:
+          type: string
+        file_id:
+          type: string
+        base_revision:
+          type: integer
+        symbol_path:
+          type: string
+        expected_fingerprint:
+          type: string
+        replacement_text:
+          type: string
+
+    PatchCommitResponse:
+      type: object
+      properties:
+        commit_id:
+          type: string
+        file_id:
+          type: string
+        previous_revision:
+          type: integer
+        new_revision:
+          type: integer
+        status:
+          type: string
+          example: COMMITTED
+        relocated:
+          type: boolean
+
+    ChangeSetRequest:
+      type: object
+      required:
+        - workspace_id
+        - patches
+      properties:
+        workspace_id:
+          type: string
+        description:
+          type: string
+        patches:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatchCommitRequest'
+
+    ChangeSetResponse:
+      type: object
+      properties:
+        changeset_id:
+          type: string
+        status:
+          type: string
+          example: COMMITTED
+        committed_files:
+          type: array
+          items:
+            type: string
+
+    SemanticUnit:
+      type: object
+      properties:
+        workspace_id:
+          type: string
+        file_id:
+          type: string
+        language:
+          type: string
+        qualified_symbol_path:
+          type: string
+        node_kind:
+          type: string
+        signature_hash:
+          type: string
+        base_content_hash:
+          type: string
+        node_fingerprint:
+          type: string
+        start_byte:
+          type: integer
+        end_byte:
+          type: integer
+        start_line:
+          type: integer
+        end_line:
+          type: integer
+
+    SemanticUnitsResponse:
+      type: object
+      properties:
+        file_id:
+          type: string
+        revision:
+          type: integer
+        units:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticUnit'
+
+    EventsResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              event_id:
+                type: integer
+              event_type:
+                type: string
+              workspace_id:
+                type: string
+              file_id:
+                type: string
+              revision:
+                type: integer
+              created_at:
+                type: string
+                format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: SEMANTIC_WRITE_CONFLICT
+        message:
+          type: string
+        details:
+          type: object

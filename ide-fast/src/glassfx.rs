@@ -5,24 +5,37 @@ use raw_window_handle::HasWindowHandle;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Backdrop { Blur = 1, Acrylic = 2, Mica = 3, Tabbed = 4 }
+pub enum Backdrop {
+    Blur = 1,
+    Acrylic = 2,
+    Mica = 3,
+    Tabbed = 4,
+}
 
 /// 当前生效的材质 (0 = 没有)
 static APPLIED: AtomicU8 = AtomicU8::new(0);
 
 pub fn from_name(s: &str) -> Option<Backdrop> {
-    Some(match s.trim().to_ascii_lowercase().as_str() { "blur" => Backdrop::Blur, "acrylic" => Backdrop::Acrylic, "mica" => Backdrop::Mica, "tabbed" => Backdrop::Tabbed, _ => return None })
+    Some(match s.trim().to_ascii_lowercase().as_str() {
+        "blur" => Backdrop::Blur,
+        "acrylic" => Backdrop::Acrylic,
+        "mica" => Backdrop::Mica,
+        "tabbed" => Backdrop::Tabbed,
+        _ => return None,
+    })
 }
 
 /// 尝试顺序: 环境变量强制 > 默认顺序 (见 `DEFAULT_ORDER`)
-/// Blur (`ACCENT_ENABLE_BLURBEHIND`) 在 Windows 11 10.0.26300 上背后是纯黑, 所以不进默认顺序; Acrylic (Win11 22523+ 走 `DWMWA_SYSTEMBACKDROP_TYPE`, 之前走 SWCA 的 ACRYLICBLURBEHIND) 在这台机器上截图验证有真模糊。
-/// Mica 只取桌面壁纸色, 不模糊背后的窗口。全部失败 = 只剩 alpha 透明。
+/// Blur (`ACCENT_ENABLE_BLURBEHIND`) 在 Windows 11 上背后容易呈纯黑; Acrylic (`DWMWA_SYSTEMBACKDROP_TYPE` / `ACRYLICBLURBEHIND`) 支持模糊穿透背后窗口与桌面。
+/// 注意: Mica 仅采样桌面壁纸、会遮挡背后打开的其它窗口内容，因此默认不排在透明穿透顺序中。全部失败或不适用 = 纯真透明 (alpha see-through)。
 pub const DEFAULT_ORDER: [Backdrop; 1] = [Backdrop::Acrylic];
 
 pub fn order() -> Vec<Backdrop> {
     match std::env::var("IDE_FAST_BACKDROP") {
         Ok(v) if v.eq_ignore_ascii_case("none") => vec![],
-        Ok(v) => from_name(&v).map(|b| vec![b]).unwrap_or_else(|| DEFAULT_ORDER.to_vec()),
+        Ok(v) => from_name(&v)
+            .map(|b| vec![b])
+            .unwrap_or_else(|| DEFAULT_ORDER.to_vec()),
         Err(_) => DEFAULT_ORDER.to_vec(),
     }
 }
@@ -57,15 +70,22 @@ pub fn clear(w: &impl HasWindowHandle) {
 pub fn apply(w: &impl HasWindowHandle) -> Option<Backdrop> {
     clear(w);
     for b in order() {
-        if try_one(w, b) { APPLIED.store(b as u8, Ordering::Relaxed); return Some(b); }
+        if try_one(w, b) {
+            APPLIED.store(b as u8, Ordering::Relaxed);
+            return Some(b);
+        }
     }
     None
 }
 
 #[cfg(not(windows))]
-pub fn apply(_w: &impl HasWindowHandle) -> Option<Backdrop> { None }
+pub fn apply(_w: &impl HasWindowHandle) -> Option<Backdrop> {
+    None
+}
 #[cfg(not(windows))]
-pub fn clear(_w: &impl HasWindowHandle) { let _ = APPLIED.swap(0, Ordering::Relaxed); }
+pub fn clear(_w: &impl HasWindowHandle) {
+    let _ = APPLIED.swap(0, Ordering::Relaxed);
+}
 
 #[cfg(test)]
 mod tests {

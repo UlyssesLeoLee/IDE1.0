@@ -45,17 +45,25 @@ impl Panes {
 
     /// 同一个种类再按一次 = 取消分割
     pub fn toggle(&mut self, kind: SplitKind, active: usize, ndocs: usize) {
-        if self.kind == kind { self.kind = SplitKind::Off; } else { self.set(kind, active, ndocs); }
+        if self.kind == kind {
+            self.kind = SplitKind::Off;
+        } else {
+            self.set(kind, active, ndocs);
+        }
     }
 
     /// 文档数变了 / 关了标签: 把下标夹回范围, 焦点夹回窗格数
     pub fn clamp(&mut self, ndocs: usize) {
         let last = ndocs.max(1) - 1;
-        for d in self.docs.iter_mut() { *d = (*d).min(last); }
+        for d in self.docs.iter_mut() {
+            *d = (*d).min(last);
+        }
         self.focus = self.focus.min(self.kind.panes() - 1);
     }
 
-    pub fn focused_doc(&self) -> usize { self.docs[self.focus] }
+    pub fn focused_doc(&self) -> usize {
+        self.docs[self.focus]
+    }
 }
 
 #[cfg(test)]

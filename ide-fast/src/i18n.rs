@@ -20,14 +20,27 @@ pub enum Lang {
 impl Lang {
     pub const ALL: [Lang; 3] = [Lang::Zh, Lang::Ja, Lang::En];
     pub fn code(self) -> &'static str {
-        match self { Lang::Zh => "zh", Lang::Ja => "ja", Lang::En => "en" }
+        match self {
+            Lang::Zh => "zh",
+            Lang::Ja => "ja",
+            Lang::En => "en",
+        }
     }
     pub fn from_code(s: &str) -> Option<Lang> {
-        match s { "zh" => Some(Lang::Zh), "ja" => Some(Lang::Ja), "en" => Some(Lang::En), _ => None }
+        match s {
+            "zh" => Some(Lang::Zh),
+            "ja" => Some(Lang::Ja),
+            "en" => Some(Lang::En),
+            _ => None,
+        }
     }
     /// 语言自己的名字 (菜单里各语言都用本语言写, 看不懂当前界面也找得到)
     pub fn native(self) -> &'static str {
-        match self { Lang::Zh => "中文", Lang::Ja => "日本語", Lang::En => "English" }
+        match self {
+            Lang::Zh => "中文",
+            Lang::Ja => "日本語",
+            Lang::En => "English",
+        }
     }
 }
 
@@ -42,12 +55,20 @@ pub fn set_code(code: &str) {
 }
 
 pub fn cur() -> Lang {
-    match LANG.load(Ordering::Relaxed) { 1 => Lang::Ja, 2 => Lang::En, _ => Lang::Zh }
+    match LANG.load(Ordering::Relaxed) {
+        1 => Lang::Ja,
+        2 => Lang::En,
+        _ => Lang::Zh,
+    }
 }
 
 fn pick(row: &'static [&'static str; 3]) -> &'static str {
     let s = row[cur() as usize];
-    if s.is_empty() { row[0] } else { s }
+    if s.is_empty() {
+        row[0]
+    } else {
+        s
+    }
 }
 
 fn index() -> &'static HashMap<&'static str, &'static [&'static str; 3]> {
@@ -89,7 +110,11 @@ pub fn lk(key: &'static str, keys: &str) -> String {
     // 注册表里有的命令用当前生效的键 (改过键就跟着变); 没有的用调用处写的提示
     let shown = crate::keymap::display(key);
     let keys = shown.as_deref().unwrap_or(keys);
-    if keys.is_empty() { tr(key).to_string() } else { format!("{}  {}", tr(key), keys) }
+    if keys.is_empty() {
+        tr(key).to_string()
+    } else {
+        format!("{}  {}", tr(key), keys)
+    }
 }
 
 /// 注册表里一条命令的悬停提示: 名字 + 当前生效的键
@@ -159,6 +184,9 @@ pub const T: &[Row] = &[
     ("c.find-prev", ["上一个", "前を検索", "Find Previous"]),
     ("c.find-word", ["查找光标处的单词", "カーソル位置の単語を検索", "Find Word at Cursor"]),
     ("c.replace-all", ["全部置换", "すべて置換", "Replace All"]),
+    ("c.goto-line", ["转到行…", "指定行へ移動…", "Go to Line…"]),
+    ("sub.isearch", ["增量查找", "インクリメンタルサーチ", "Incremental Search"]),
+    ("sub.tags", ["标签与符号跳转", "ダイレクトタグジャンプ", "Tags & Symbol Jump"]),
     // ---- 折叠
     ("c.fold-toggle", ["折叠 / 展开当前行", "現在行を折りたたみ / 展開", "Fold / Unfold Current Line"]),
     ("c.unfold-all", ["全部展开", "すべて展開", "Unfold All"]),
@@ -171,12 +199,44 @@ pub const T: &[Row] = &[
     ("sub.plugin-restore", ["恢复内置插件", "内蔵プラグインを復元", "Restore Bundled Plugins"]),
     // ---- 设置
     ("c.common-config", ["首选项…", "共通設定…", "Preferences…"]),
+    ("c.language", ["当前文件语言…", "ファイルの言語 (タイプ別設定一覧)…", "File Language…"]),
+    ("c.type-config", ["类型别设置…", "タイプ別設定…", "Type Settings…"]),
+    ("c.font", ["字体设置…", "フォント設定…", "Font Settings…"]),
+    ("sub.layout", ["界面布局", "レイアウト", "Layout"]),
+    ("sub.dock-panels", ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"]),
+    ("sub.ui-bars", ["界面元素", "UIバー", "UI Elements"]),
+    ("sub.text-view", ["文本显示", "テキスト表示", "Text Display"]),
+    ("sub.zoom", ["缩放", "拡大・縮小", "Zoom"]),
+    ("sub.wrap-rules", ["折行规则", "折り返しルール", "Wrap Rules"]),
+    ("sub.wrap-mode", ["换行方式", "折り返し方法", "Wrap Mode"]),
+    ("c.wrap-none", ["不折行", "折り返さない", "Do Not Wrap"]),
+    ("c.wrap-window", ["按窗口宽度折行", "右端で折り返す", "Wrap at Window Width"]),
+    ("c.wrap-col", ["按指定列数折行…", "指定桁数で折り返す…", "Wrap at Column…"]),
+    ("pf.wrap-col-setting", ["详细换行设置…", "折り返し詳細設定…", "Wrap Settings…"]),
+    ("c.minimap-toggle", ["隐藏 / 显示缩略图", "ミニマップの表示/非表示", "Toggle Minimap"]),
+    ("c.minimap-collapse", ["折叠缩略图", "ミニマップを折りたたむ", "Collapse Minimap"]),
+    ("c.minimap-expand", ["展开缩略图", "ミニマップを展開", "Expand Minimap"]),
+    ("c.completion", ["代码补全", "コード補完", "Code Completion"]),
+    ("c.goto-def", ["跳转到定义", "定義へジャンプ", "Go to Definition"]),
+    ("sub.theme", ["主题", "テーマ", "Theme"]),
+    ("c.theme-select", ["主题…", "テーマ選択…", "Theme…"]),
+    ("c.theme-crystal", ["水晶透明", "クリスタル透明", "Crystal"]),
+    ("c.theme-clear", ["透明玻璃", "透明ガラス", "Clear Glass"]),
+    ("c.theme-dark", ["深色", "ダーク", "Dark"]),
+    ("c.theme-light", ["浅色", "ライト", "Light"]),
+    ("c.theme-high-contrast", ["高对比度", "ハイコントラスト", "High Contrast"]),
+    ("c.theme-retro16", ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"]),
+    ("c.theme-comic", ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"]),
     ("sub.uilang", ["界面语言 / 言語 / Language", "表示言語 / 言語 / Language", "Display Language / 言語 / 语言"]),
+    ("sub.eolmode", ["换行模式", "改行コード", "Line Endings"]),
+    ("sub.charset", ["字符编码", "文字コード", "Character Encoding"]),
+    ("c.file-lock-toggle", ["文件加锁 (只读)", "ファイルロック (読み取り専用)", "File Lock (Read-only)"]),
     ("c.export-config", ["导出配置…", "設定のエクスポート…", "Export Settings…"]),
     ("c.import-config", ["导入配置…", "設定のインポート…", "Import Settings…"]),
-    ("c.import-sakura", ["导入 sakura.ini…", "sakura.ini をインポート…", "Import sakura.ini…"]),
+    ("c.import-sakura", ["导入 ini 配置…", "ini 設定をインポート…", "Import ini settings…"]),
     ("c.reset-settings", ["恢复默认设置", "初期設定に戻す", "Reset to Defaults"]),
     // ---- 书签
+    ("sub.bookmark", ["书签", "ブックマーク", "Bookmarks"]),
     ("c.bookmark-toggle", ["设置 / 取消", "設定 / 解除", "Toggle"]),
     ("c.bookmark-next", ["下一个", "次のブックマーク", "Next"]),
     ("c.bookmark-prev", ["上一个", "前のブックマーク", "Previous"]),
@@ -195,6 +255,7 @@ pub const T: &[Row] = &[
     ("c.print-preview", ["打印预览…", "印刷プレビュー…", "Print Preview..."]),
     ("c.split-rows", ["分割窗口 (上下)", "ウィンドウ分割 (上下)", "Split Window (Top/Bottom)"]),
     ("c.split-quad", ["四分割窗口", "4分割", "Split Window (Quad)"]),
+    ("c.split-off", ["取消分割", "分割解除", "Unsplit Window"]),
     ("c.next-tab", ["下一个标签", "次のタブ", "Next Tab"]),
     ("c.prev-tab", ["上一个标签", "前のタブ", "Previous Tab"]),
     ("sub.tabops", ["标签操作", "タブ操作", "Tab Operations"]),
@@ -212,7 +273,7 @@ pub const T: &[Row] = &[
     ("c.macro-start", ["开始录制", "記録開始", "Start Recording"]),
     ("c.macro-stop", ["结束录制", "記録終了", "Stop Recording"]),
     ("c.macro-play", ["回放", "再生", "Play"]),
-    ("c.macro-run-doc", ["运行当前文档 (Sakura .mac)", "現在の文書を実行 (Sakura .mac)", "Run Current Document (Sakura .mac)"]),
+    ("c.macro-run-doc", ["运行当前文档 (宏脚本 .mac)", "現在の文書を実行 (マクロ .mac)", "Run Current Document (Macro .mac)"]),
     ("c.macro-run-ppa", ["运行当前文档 / 选区 (PPA)", "現在の文書/選択範囲を実行 (PPA)", "Run Document / Selection (PPA)"]),
     ("ui.plugin-enabled", ["启用 / 禁用", "有効 / 無効", "Enable / disable"]),
     ("dlg.plugin-off", ["插件 {} 未启用", "プラグイン {} は無効です", "Plugin {} is not enabled"]),
@@ -223,6 +284,7 @@ pub const T: &[Row] = &[
     ("c.macro-run-file", ["运行 .mac 文件…", ".mac ファイルを実行…", "Run .mac File…"]),
     // ---- 视图
     ("c.terminal", ["终端", "ターミナル", "Terminal"]),
+    ("c.nema-convert", ["自动转化 .nema", "NEMA 自動変換", "Auto Convert to NEMA"]),
     ("c.md-preview", ["Markdown 预览", "Markdown プレビュー", "Markdown Preview"]),
     ("c.dark", ["深色主题", "ダークテーマ", "Dark Theme"]),
     ("c.highlight", ["语法高亮", "構文ハイライト", "Syntax Highlighting"]),
@@ -237,7 +299,7 @@ pub const T: &[Row] = &[
     ("c.whitespace", ["显示空白符", "空白文字を表示", "Show Whitespace"]),
     ("c.ruler", ["列标尺", "桁ルーラー", "Column Ruler"]),
     ("c.cur-line", ["当前行下划线", "カーソル行に下線", "Current Line Underline"]),
-    ("c.minimap", ["小地图", "ミニマップ", "Minimap"]),
+    ("c.minimap", ["缩略图 (小地图)", "縮小マップ / ミニマップ", "Minimap / Thumbnail"]),
     ("c.full-mode", ["完整界面 (活动栏 + 侧栏 + 标签栏)", "フル表示 (アクティビティバー + サイドバー + タブ)", "Full Layout (rail + side bar + tabs)"]),
     ("c.minimal-mode", ["极简布局 (仅编辑区)", "ミニマル表示 (編集領域のみ)", "Minimal Layout (editor only)"]),
     ("st.char-col", ["字符列 {}", "文字位置 {}", "Character column {}"]),
@@ -247,7 +309,7 @@ pub const T: &[Row] = &[
     ("st.sel-hint", ["点击切换统计方式: 字符 / 字节 / 行", "クリックで切り替え: 文字 / バイト / 行", "Click to switch: chars / bytes / lines"]),
     ("st.plain", ["纯文本", "テキスト", "Plain Text"]),
     // ---- 帮助
-    ("ui.about", ["IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)", "IDE1.0 高速版 — ネイティブ Rust (egui)\n編集の挙動は editcore を再利用 (Tauri 版と同一)", "IDE1.0 Fast — native Rust (egui)\nEditing semantics reuse editcore (same as the Tauri build)"]),
+    ("ui.about", ["IDE1.0 — 原生 Rust (egui)\n编辑语义由 editcore 驱动", "IDE1.0 — ネイティブ Rust (egui)\n編集の挙動は editcore 駆動", "IDE1.0 — native Rust (egui)\nEditing semantics powered by editcore"]),
     // ---- 标签右键 / 分组
     ("c.close", ["关闭", "閉じる", "Close"]),
     ("c.close-others-s", ["关闭其它", "他を閉じる", "Close Others"]),
@@ -257,6 +319,7 @@ pub const T: &[Row] = &[
     ("c.key-config", ["键位设置…", "キー設定…", "Key Bindings…"]),
     ("c.key-list", ["键位一览", "キー一覧", "Key List"]),
     ("c.palette", ["命令面板…", "コマンドパレット…", "Command Palette…"]),
+    ("c.sticky-notes", ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"]),
     ("pal.hint", ["输入命令名 (支持模糊匹配), Enter 执行, Esc 关闭", "コマンド名を入力 (あいまい検索), Enter で実行, Esc で閉じる", "Type a command (fuzzy match), Enter to run, Esc to close"]),
     ("pal.none", ["没有匹配的命令", "一致するコマンドがありません", "No matching command"]),
     ("pal.plugin", ["插件", "プラグイン", "Plugin"]),
@@ -351,7 +414,7 @@ pub const T: &[Row] = &[
     ("pf.macro-hint", ["20 个宏槽: 名字 + 种类 + 代码。在「宏 > 宏登记」里点名字运行, 也可以在键位设置里给「运行宏 N」绑键; 「把当前文档 / 选区登记为宏」会存进第一个空槽。", "20 個のマクロスロット: 名前 + 種類 + コード。「マクロ > マクロ登録」から実行でき、キー設定で「マクロ N を実行」にキーを割り当てられます。", "20 macro slots: name + kind + code. Run them from Macro > Registered macros, or bind \"Run macro N\" in the key settings."]),
     ("pf.macro-empty", ["(空)", "(空)", "(empty)"]),
     ("pf.macro-name", ["名字", "名前", "Name"]),
-    ("pf.macro-mac", ["Sakura 宏 (.mac)", "Sakura マクロ (.mac)", "Sakura macro (.mac)"]),
+    ("pf.macro-mac", ["标准宏 (.mac)", "標準マクロ (.mac)", "Standard Macro (.mac)"]),
     ("pf.macro-ppa", ["PPA 脚本", "PPA スクリプト", "PPA script"]),
     ("pf.macro-clear", ["清空这个槽", "このスロットを空にする", "Clear this slot"]),
     ("pf.toolbar-hint", ["「视图 > 工具栏」打开后显示的按钮: 可以增减、排序 (像 Office 的快速访问工具栏)。", "「表示 > ツールバー」で表示されるボタン。追加・削除・並べ替えができます。", "Buttons shown when View > Toolbar is on. Add, remove and reorder them."]),
@@ -428,7 +491,7 @@ pub const T: &[Row] = &[
     ("ai.effort-fetch", ["从供应商获取档位", "プロバイダから段階を取得", "Fetch levels from provider"]),
     ("ai.effort-fetching", ["正在查询模型接口…", "モデル API を照会中…", "Querying the models endpoint…"]),
     ("ai.effort-got", ["获取到 {} 档: {}", "{} 段階を取得: {}", "Got {} levels: {}"]),
-    ("ai.key-note", ["密钥以明文保存在本机用户设置目录的 ai.json 中 (和 Tauri 版一样), 不写日志; 只在点发送时联网 (https)。", "キーは平文でこの PC のユーザー設定フォルダの ai.json に保存されます (Tauri 版と同じ)。ログには出ません。送信時のみ https で通信します。", "The API key is stored in plain text in ai.json in your per-user settings folder (same as the Tauri version), never logged; network is used only on Send (https)."]),
+    ("ai.key-note", ["密钥以明文保存在本机用户设置目录的 ai.json 中, 不写日志; 只在点发送时联网 (https)。", "キーは平文でこの PC のユーザー設定フォルダの ai.json に保存されます。ログには出ません。送信時のみ https で通信します。", "The API key is stored in plain text in ai.json in your per-user settings folder, never logged; network is used only on Send (https)."]),
     ("ai.save-failed", ["保存 AI 配置失败: {}", "AI 設定の保存に失敗しました: {}", "Failed to save AI settings: {}"]),
     ("ai.tool-unknown", ["未知工具: {}", "不明なツール: {}", "Unknown tool: {}"]),
     ("ai.save", ["保存", "保存", "Save"]),
@@ -531,6 +594,8 @@ Not signature-verified; install only plugins you trust. Install?"]),
     ("pf.term-fg", ["终端文字", "ターミナル文字色", "Terminal text"]),
     ("pf.term-bg", ["终端背景", "ターミナル背景", "Terminal background"]),
     ("pf.language", ["界面语言", "表示言語", "Language"]),
+    ("pf.tray-resident", ["系统托盘常驻守护 (关闭窗口时最小化到托盘)", "タスクトレイ常駐 (閉じる時に最小化)", "System tray residency (minimize to tray on close)"]),
+    ("pf.tray-resident-tip", ["开启后关闭窗口不退出程序，保持托盘常驻秒级热唤醒", "オンにすると閉じるボタンで終了せず、トレイに常駐して高速起動します", "Keep resident in system tray for instant hot-wakeup instead of exiting"]),
     ("pf.dark", ["深色主题", "ダークテーマ", "Dark theme"]),
     ("pf.highlight", ["语法高亮", "構文ハイライト", "Syntax highlighting"]),
     ("pf.wrap-col", ["折行列数", "折り返し桁数", "Wrap column"]),
@@ -543,11 +608,14 @@ Not signature-verified; install only plugins you trust. Install?"]),
     ("pf.insert-spaces", ["Tab 键插入空格", "Tab キーで空白を挿入", "Insert spaces for Tab"]),
     ("pf.default-enc", ["新文档的编码", "新規文書の文字コード", "Encoding for new documents"]),
     ("pf.default-eol", ["新文档的换行符", "新規文書の改行コード", "Line ending for new documents"]),
-    ("pf.save-backup", ["保存时备份旧文件 (.sakura-backup)", "保存時に旧ファイルをバックアップ (.sakura-backup)", "Back up the old file on save (.sakura-backup)"]),
+    ("pf.save-backup", ["保存时备份旧文件 (.backup)", "保存時に旧ファイルをバックアップ (.backup)", "Back up the old file on save (.backup)"]),
     ("pf.check-external", ["窗口获得焦点时检查外部修改", "ウィンドウ復帰時に外部変更を確認", "Check for external changes on focus"]),
     ("pf.restore-session", ["启动时恢复上次打开的文件", "起動時に前回開いていたファイルを復元", "Reopen last session's files on startup"]),
     ("c.about", ["关于…", "バージョン情報…", "About…"]),
-    ("dlg.about-title", ["关于 IDE1.0 高速版", "IDE1.0 高速版について", "About IDE1.0 Fast"]),
+    ("c.wiki", ["IDE1.0 官方 Wiki (在线文档)", "IDE1.0 公式 Wiki (オンラインマニュアル)", "IDE1.0 Official Wiki"]),
+    ("dlg.file-locked", ["文件锁: 已加锁 (只读)", "ファイルロック: ロック中 (読み取り専用)", "File Lock: Locked (Read-only)"]),
+    ("dlg.file-unlocked", ["文件锁: 已解锁", "ファイルロック: 解除", "File Lock: Unlocked"]),
+    ("dlg.about-title", ["关于 IDE1.0", "IDE1.0 について", "About IDE1.0"]),
     ("dlg.macro-saved", ["键盘宏已保存: {}", "キーボードマクロを保存しました: {}", "Key macro saved: {}"]),
     ("dlg.macro-loaded", ["已载入键盘宏 ({} 步), Ctrl+Shift+L 回放", "キーボードマクロを読み込みました ({} ステップ)。Ctrl+Shift+L で再生", "Key macro loaded ({} steps); Ctrl+Shift+L to play"]),
     ("dlg.macro-empty", ["还没有录下的宏, 没有可保存的内容", "記録したマクロがありません", "No recorded macro to save"]),
@@ -575,9 +643,18 @@ Not signature-verified; install only plugins you trust. Install?"]),
     ("pf.confirm-close", ["关闭有未保存修改的窗口前确认", "未保存の変更がある場合に終了前に確認", "Confirm before closing with unsaved changes"]),
     ("pf.max-file", ["打开前确认的文件大小 (MB)", "開く前に確認するファイルサイズ (MB)", "Confirm before opening files above (MB)"]),
     ("pf.mru", ["最近文件个数", "最近使ったファイルの数", "Recent files to remember"]),
-    ("pf.font-family", ["编辑器字体", "エディターのフォント", "Editor font"]),
-    ("pf.font-default", ["(默认等宽字体)", "(既定の等幅フォント)", "(default monospace)"]),
-    ("pf.line-height", ["行高", "行の高さ", "Line height"]),
+    ("pf.font-family", ["编辑器主字体", "エディター主フォント", "Editor font"]),
+    ("pf.font-default", ["(主题风格自适应默认字体)", "(テーマ適合の既定フォント)", "(theme adaptive default)"]),
+    ("pf.font-cjk-fallback", ["中日英字体优先 (CJK Fallback)", "CJKフォント優先", "CJK Fallback Font"]),
+    ("pf.font-cjk-auto", ["(智能最优匹配: 思源/UD/微黑)", "(自動最適: 思源/UD/游ゴシック)", "(Auto: Noto/UD/YaHei)"]),
+    ("pf.font-bold", ["粗体 (Bold / 太字)", "太字 (Bold)", "Bold"]),
+    ("pf.font-italic", ["斜体 (Italic)", "斜体 (Italic)", "Italic"]),
+    ("pf.letter-spacing", ["字符间距 (文字间距)", "文字間隔", "Letter spacing"]),
+    ("pf.cjk-fixed-ratio", ["全角/半角 1:2 网格对齐 (经典等宽)", "全角半角 1:2 等幅整列 (クラシック)", "CJK 1:2 Monospace Grid (Classic)"]),
+    ("pf.font-preview", ["效果实时预览 (经典代码)", "フォントプレビュー", "Live Font Preview"]),
+    ("pf.font-rec-header", ["⭐ 精选美观免费商用字体", "⭐ 厳選商用フリー美麗フォント", "⭐ Recommended Free Commercial Fonts"]),
+    ("pf.font-all-header", ["系统安装字体", "システムフォント一覧", "System Fonts"]),
+    ("pf.line-height", ["行间距 / 行高倍率", "行間・行送り倍率", "Line height / spacing"]),
     ("pf.colors", ["颜色覆盖 (留空 = 跟随主题)", "色の上書き (未設定 = テーマに従う)", "Color overrides (unset = follow theme)"]),
     ("pf.col.text", ["文字", "文字", "Text"]),
     ("pf.col.bg", ["背景", "背景", "Background"]),
@@ -607,154 +684,1111 @@ Not signature-verified; install only plugins you trust. Install?"]),
 
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
+    (
+        "便笺 (Sticky Notes)",
+        ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"],
+    ),
+    (
+        "更多快捷操作",
+        [
+            "更多快捷操作",
+            "その他のショートカット",
+            "More Quick Actions",
+        ],
+    ),
+    (
+        "更多快捷操作 (折叠)",
+        [
+            "更多快捷操作 (折叠)",
+            "その他のショートカット (折りたたみ)",
+            "More Quick Actions (Collapsed)",
+        ],
+    ),
+    (
+        "打开命令面板 (Ctrl+Shift+P / Shift+F1)",
+        [
+            "打开命令面板 (Ctrl+Shift+P / Shift+F1)",
+            "コマンドパレットを開く (Ctrl+Shift+P / Shift+F1)",
+            "Open Command Palette (Ctrl+Shift+P / Shift+F1)",
+        ],
+    ),
+    (
+        "欢迎与安装向导…",
+        [
+            "欢迎与安装向导…",
+            "⚡ ようこそ・インストールウィザード…",
+            "⚡ Welcome & Setup Wizard…",
+        ],
+    ),
+    (
+        "显示空白符",
+        ["显示空白符", "空白文字を表示", "Show Whitespace"],
+    ),
+    (
+        "已完成 Native 与 Nemat 压缩效益分析",
+        [
+            "已完成 Native 与 Nemat 压缩效益分析",
+            "Native と Nemat の圧縮効果分析が完了しました",
+            "Completed Native vs Nemat compression efficiency analysis",
+        ],
+    ),
+    (
+        "已扫描并列出高频词典候选词",
+        [
+            "已扫描并列出高频词典候选词",
+            "頻出辞書候補を一覧表示しました",
+            "Scanned and listed frequent dictionary candidates",
+        ],
+    ),
+    (
+        "显示字典与高频复用词位置",
+        [
+            "显示字典与高频复用词位置",
+            "辞書参照と頻出再利用位置を表示",
+            "Show dictionary & reused token positions",
+        ],
+    ),
+    (
+        "已高亮并列出文档内字典与复用位置",
+        [
+            "已高亮并列出文档内字典与复用位置",
+            "文書内の辞書参照と再利用位置を一覧表示しました",
+            "Listed dictionary references and reused positions",
+        ],
+    ),
+    (
+        "源代码文件已受保护：已在右侧新建 .nema 标签页，原文件未修改",
+        [
+            "源代码文件已受保护：已在右侧新建 .nema 标签页，原文件未修改",
+            "ソースコードを保護：新規 .nema タブを作成しました（元ファイルは未変更）",
+            "Source code file protected: opened converted .nema in a new tab",
+        ],
+    ),
+    (
+        "自动转化 / 编码为 NEMA (Ctrl+Alt+M)",
+        [
+            "自动转化 / 编码为 NEMA (Ctrl+Alt+M)",
+            "NEMA に自動変換 / エンコード (Ctrl+Alt+M)",
+            "Auto convert / encode to NEMA (Ctrl+Alt+M)",
+        ],
+    ),
+    (
+        "查看 Native vs Nemat Token 节省率与对比",
+        [
+            "查看 Native vs Nemat Token 节省率与对比",
+            "Native と Nemat の Token 比較を表示",
+            "View Native vs Nemat Token savings comparison",
+        ],
+    ),
+    (
+        "固化当前高频候选词并生成 ^N 引用",
+        [
+            "固化当前高频候选词并生成 ^N 引用",
+            "辞書候補を固定して ^N 参照を生成",
+            "Lock dictionary candidates and emit ^N references",
+        ],
+    ),
+    (
+        "扫描并查看文档内高频词典候选词",
+        [
+            "扫描并查看文档内高频词典候选词",
+            "頻出辞書候補スキャン",
+            "Scan and inspect dictionary candidates",
+        ],
+    ),
+    (
+        "自动转化 / 编码为 NEMA (Ctrl+Shift+M)",
+        [
+            "自动转化 / 编码为 NEMA (Ctrl+Shift+M)",
+            "NEMA に自動変換 / エンコード (Ctrl+Shift+M)",
+            "Auto convert / encode to NEMA (Ctrl+Shift+M)",
+        ],
+    ),
+    (
+        "插入 ^0 词典引用原子",
+        [
+            "插入 ^0 词典引用原子",
+            "辞書参照 ^0 を挿入",
+            "Insert ^0 dictionary reference atom",
+        ],
+    ),
+    (
+        "在文首插入共享词典条目 (\\t$N)",
+        [
+            "在文首插入共享词典条目 (\\t$N)",
+            "ファイル先頭に共有辞書エントリを挿入",
+            "Insert shared dictionary entry at top",
+        ],
+    ),
+    (
+        "插入 Graph 拓扑节点与边模板",
+        [
+            "插入 Graph 拓扑节点与边模板",
+            "Graph テンプレートを挿入",
+            "Insert Graph template",
+        ],
+    ),
+    (
+        "插入 5W1H 模板",
+        [
+            "插入 5W1H 模板",
+            "5W1H テンプレートを挿入",
+            "Insert 5W1H template",
+        ],
+    ),
+    (
+        "插入空格缩进续接行 (延续上一行当前列)",
+        [
+            "插入空格缩进续接行 (延续上一行当前列)",
+            "空白インデントの継続行を挿入",
+            "Insert space-indented continuation row",
+        ],
+    ),
+    (
+        "插入新记录行",
+        [
+            "插入新记录行",
+            "新規レコード行を挿入",
+            "Insert new record row",
+        ],
+    ),
+    (
+        "切换 / 插入 \\ 表头行",
+        [
+            "切换 / 插入 \\ 表头行",
+            "見出し行を切り替え / 挿入",
+            "Toggle / insert \\ header row",
+        ],
+    ),
+    (
+        "已插入词典引用 ^0",
+        [
+            "已插入词典引用 ^0",
+            "辞書参照 ^0 を挿入しました",
+            "Dictionary reference ^0 inserted",
+        ],
+    ),
+    (
+        "已在文首插入共享词典条目",
+        [
+            "已在文首插入共享词典条目",
+            "ファイル先頭に共有辞書エントリを挿入しました",
+            "Shared dictionary entry inserted at top",
+        ],
+    ),
+    (
+        "已追加 Graph 拓扑节点与边模板",
+        [
+            "已追加 Graph 拓扑节点与边模板",
+            "Graph ノード・エッジテンプレートを追加しました",
+            "Graph nodes and edges template appended",
+        ],
+    ),
+    (
+        "已追加 5W1H 语义模板",
+        [
+            "已追加 5W1H 语义模板",
+            "5W1H テンプレートを追加しました",
+            "5W1H template appended",
+        ],
+    ),
+    (
+        "已插入纵向意群续接行 (空格缩进)",
+        [
+            "已插入纵向意群续接行 (空格缩进)",
+            "縦方向の意味継続行を挿入しました (空白インデント)",
+            "Vertical continuation row inserted (space indented)",
+        ],
+    ),
+    (
+        "已插入列索引意群续接行 ( N value)",
+        [
+            "已插入列索引意群续接行 ( N value)",
+            "列インデックス付きの継続行 ( N value) を挿入しました",
+            "Column-indexed continuation row inserted ( N value)",
+        ],
+    ),
+    (
+        "已插入新记录行",
+        [
+            "已插入新记录行",
+            "新規レコード行を挿入しました",
+            "New record row inserted",
+        ],
+    ),
+    (
+        "已取消表头行 (转为自动 column1...)",
+        [
+            "已取消表头行 (转为自动 column1...)",
+            "ヘッダー行を解除しました (自動 column1...)",
+            "Header row removed (reverted to auto column1...)",
+        ],
+    ),
+    (
+        "已将首行设置为显式表头 (\\ )",
+        [
+            "已将首行设置为显式表头 (\\ )",
+            "先頭行を明示ヘッダーに設定しました (\\ )",
+            "First row set as explicit header (\\ )",
+        ],
+    ),
+    (
+        "已将首行设置为显式表头 (\\# )",
+        [
+            "已将首行设置为显式表头 (\\# )",
+            "先頭行を明示ヘッダー (\\# ) に設定しました",
+            "First row set as explicit header (\\# )",
+        ],
+    ),
+    (
+        "配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)",
+        [
+            "配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)",
+            ".NEMA 文法インタープリタプラグインを管理 / ホットリロード",
+            "Configure / hot-reload .NEMA grammar interpreter plugin (strict-parser.js / external)",
+        ],
+    ),
+    (
+        "当前文档体积较小或复用词少，原生 .nema 已是最优",
+        [
+            "当前文档体积较小或复用词少，原生 .nema 已是最优",
+            "サイズが小さいか重複語が少ないため、原生 .nema が最適です",
+            "Document is small or has few repeated words; native .nema is optimal",
+        ],
+    ),
+    (
+        "已转换为 .nemat 传输格式 (往返校验通过)",
+        [
+            "已转换为 .nemat 传输格式 (往返校验通过)",
+            "NEMA .nemat 転送形式に変換しました (可逆検証済み)",
+            "Converted to .nemat transport format (Round-trip verified)",
+        ],
+    ),
+    (
+        "已解码为 NEMA 原生格式 (Round-trip verified)",
+        [
+            "已解码为 NEMA 原生格式 (Round-trip verified)",
+            "NEMA 原生形式に復号しました (可逆検証済み)",
+            "Decoded to native NEMA (Round-trip verified)",
+        ],
+    ),
+    (
+        "已自动转换为 NEMA 表格格式 (.nema)",
+        [
+            "已自动转换为 NEMA 表格格式 (.nema)",
+            "NEMA テーブル形式に自動変換しました (.nema)",
+            "Auto-converted to NEMA table (.nema)",
+        ],
+    ),
+    (
+        "自动转化 .nema",
+        ["自动转化 .nema", "NEMA 自動変換", "Auto Convert to NEMA"],
+    ),
+    ("水晶透明", ["水晶透明", "クリスタル透明", "Crystal"]),
+    ("透明玻璃", ["透明玻璃", "透明ガラス", "Clear Glass"]),
+    ("深色", ["深色", "ダーク", "Dark"]),
+    ("浅色", ["浅色", "ライト", "Light"]),
+    (
+        "高对比度",
+        ["高对比度", "ハイコントラスト", "High Contrast"],
+    ),
+    (
+        "复古 16-Bit",
+        ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"],
+    ),
+    (
+        "美漫 3渲2",
+        ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"],
+    ),
+    ("移动履历", ["移动履历", "移動履歴", "Jump History"]),
+    (
+        "只读模式",
+        ["只读模式", "読み取り専用モード", "Read-Only Mode"],
+    ),
+    (
+        "面板与折叠",
+        ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"],
+    ),
+    ("界面元素", ["界面元素", "UIバー", "UI Elements"]),
+    ("文本显示", ["文本显示", "テキスト表示", "Text Display"]),
+    ("折行规则", ["折行规则", "折り返しルール", "Wrap Rules"]),
+    (
+        "重置缩放 (100%)",
+        [
+            "重置缩放 (100%)",
+            "拡大率をリセット (100%)",
+            "Reset Zoom (100%)",
+        ],
+    ),
+    (
+        "跳转到定义",
+        ["跳转到定义", "定義へジャンプ", "Go to Definition"],
+    ),
+    ("界面布局", ["界面布局", "レイアウト", "Layout"]),
     // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
+    (
+        "多AI协同审查看板…",
+        [
+            "多AI协同审查看板…",
+            "マルチAI共同レビューダッシュボード…",
+            "Multi-AI Review Dashboard…",
+        ],
+    ),
+    (
+        "多AI协同实时编辑演示…",
+        [
+            "多AI协同实时编辑演示…",
+            "マルチAI共同編集デモ…",
+            "Multi-AI Co-Editing Demo…",
+        ],
+    ),
+    ("协同审查", ["协同审查", "共同レビュー", "Co-Edit Review"]),
+    (
+        "选择语言 (类型一览)",
+        [
+            "选择语言 (类型一览)",
+            "言語選択 (タイプ別一覧)",
+            "Select Language (Type List)",
+        ],
+    ),
+    ("语言", ["语言", "言語", "Language"]),
     ("查找内容", ["查找内容", "検索内容", "Find what"]),
-    ("剪贴板历史", ["剪贴板历史", "クリップボード履歴", "Clipboard History"]),
-    ("还没有复制过内容 (只记录本程序里的复制 / 剪切)", ["还没有复制过内容 (只记录本程序里的复制 / 剪切)", "まだコピーした内容がありません (このアプリ内のコピー / 切り取りのみ記録)", "Nothing copied yet (only copy / cut inside this app is recorded)"]),
+    (
+        "剪贴板历史",
+        ["剪贴板历史", "クリップボード履歴", "Clipboard History"],
+    ),
+    (
+        "还没有复制过内容 (只记录本程序里的复制 / 剪切)",
+        [
+            "还没有复制过内容 (只记录本程序里的复制 / 剪切)",
+            "まだコピーした内容がありません (このアプリ内のコピー / 切り取りのみ記録)",
+            "Nothing copied yet (only copy / cut inside this app is recorded)",
+        ],
+    ),
     ("粘贴", ["粘贴", "貼り付け", "Paste"]),
     ("字符", ["字符", "文字", "chars"]),
     ("清空", ["清空", "クリア", "Clear"]),
     ("控制字符", ["控制字符", "制御文字", "Control Characters"]),
-    ("点要插入的控制字符", ["点要插入的控制字符", "挿入する制御文字をクリック", "Click a control character to insert"]),
+    (
+        "点要插入的控制字符",
+        [
+            "点要插入的控制字符",
+            "挿入する制御文字をクリック",
+            "Click a control character to insert",
+        ],
+    ),
     ("戳记设置", ["戳记设置", "スタンプ設定", "Stamp Settings"]),
-    ("日期 (YYYY/MM/DD)", ["日期 (YYYY/MM/DD)", "日付 (YYYY/MM/DD)", "Date (YYYY/MM/DD)"]),
-    ("时间 (HH:MM:SS)", ["时间 (HH:MM:SS)", "時刻 (HH:MM:SS)", "Time (HH:MM:SS)"]),
+    (
+        "日期 (YYYY/MM/DD)",
+        [
+            "日期 (YYYY/MM/DD)",
+            "日付 (YYYY/MM/DD)",
+            "Date (YYYY/MM/DD)",
+        ],
+    ),
+    (
+        "时间 (HH:MM:SS)",
+        ["时间 (HH:MM:SS)", "時刻 (HH:MM:SS)", "Time (HH:MM:SS)"],
+    ),
     ("日期 + 时间", ["日期 + 时间", "日付 + 時刻", "Date + time"]),
-    ("行首 (缩进之后, 写成 [戳记] )", ["行首 (缩进之后, 写成 [戳记] )", "行頭 (インデントの後, [スタンプ] 形式)", "Line start (after indent, as [stamp] )"]),
+    (
+        "行首 (缩进之后, 写成 [戳记] )",
+        [
+            "行首 (缩进之后, 写成 [戳记] )",
+            "行頭 (インデントの後, [スタンプ] 形式)",
+            "Line start (after indent, as [stamp] )",
+        ],
+    ),
     ("光标处", ["光标处", "カーソル位置", "At cursor"]),
     ("预览:", ["预览:", "プレビュー:", "Preview:"]),
-    ("按指定列数折行", ["按指定列数折行", "指定桁で折り返し", "Wrap at Column"]),
-    ("列数 (半角字符数; 0 = 按窗口宽度)", ["列数 (半角字符数; 0 = 按窗口宽度)", "桁数 (半角文字数; 0 = ウィンドウ幅)", "Columns (half-width chars; 0 = window width)"]),
+    (
+        "按指定列数折行",
+        ["按指定列数折行", "指定桁で折り返し", "Wrap at Column"],
+    ),
+    (
+        "列数 (半角字符数; 0 = 按窗口宽度)",
+        [
+            "列数 (半角字符数; 0 = 按窗口宽度)",
+            "桁数 (半角文字数; 0 = ウィンドウ幅)",
+            "Columns (half-width chars; 0 = window width)",
+        ],
+    ),
     ("列块替换", ["列块替换", "矩形置換", "Column Replace"]),
-    ("列块替换为 (多行用换行分隔)", ["列块替换为 (多行用换行分隔)", "矩形を次に置換 (複数行は改行区切り)", "Replace the column block with (separate lines with newlines)"]),
+    (
+        "列块替换为 (多行用换行分隔)",
+        [
+            "列块替换为 (多行用换行分隔)",
+            "矩形を次に置換 (複数行は改行区切り)",
+            "Replace the column block with (separate lines with newlines)",
+        ],
+    ),
     ("应用", ["应用", "適用", "Apply"]),
-    ("未打开项目", ["未打开项目", "プロジェクト未オープン", "No project open"]),
-    ("点工具栏「打开文件夹」导入项目", ["点工具栏「打开文件夹」导入项目", "ツールバーの「フォルダーを開く」でプロジェクトを読み込み", "Use “Open Folder” on the toolbar to import a project"]),
+    (
+        "未打开项目",
+        ["未打开项目", "プロジェクト未オープン", "No project open"],
+    ),
+    (
+        "点工具栏「打开文件夹」导入项目",
+        [
+            "点工具栏「打开文件夹」导入项目",
+            "ツールバーの「フォルダーを開く」でプロジェクトを読み込み",
+            "Use “Open Folder” on the toolbar to import a project",
+        ],
+    ),
     ("插入", ["插入", "挿入", "Insert"]),
     ("标签分组", ["标签分组", "タブグループ", "Tab Groups"]),
     ("折行方式", ["折行方式", "折り返し方法", "Word Wrap"]),
-    ("把刚录的键盘宏转成 .mac", ["把刚录的键盘宏转成 .mac", "録画したキーボードマクロを .mac に変換", "Convert the Recorded Key Macro to .mac"]),
+    (
+        "把刚录的键盘宏转成 .mac",
+        [
+            "把刚录的键盘宏转成 .mac",
+            "録画したキーボードマクロを .mac に変換",
+            "Convert the Recorded Key Macro to .mac",
+        ],
+    ),
     ("宏登记", ["宏登记", "マクロ登録", "Macro Slots"]),
-    ("把当前文档 / 选区登记为宏", ["把当前文档 / 选区登记为宏", "現在の文書 / 選択範囲をマクロとして登録", "Register Current Document / Selection as a Macro"]),
-    ("立即备份", ["立即备份", "今すぐバックアップ", "Back Up Now"]),
-    ("范围选择模式: 关", ["范围选择模式: 关", "範囲選択モード: オフ", "Range selection mode: off"]),
+    (
+        "把当前文档 / 选区登记为宏",
+        [
+            "把当前文档 / 选区登记为宏",
+            "現在の文書 / 選択範囲をマクロとして登録",
+            "Register Current Document / Selection as a Macro",
+        ],
+    ),
+    (
+        "立即备份",
+        ["立即备份", "今すぐバックアップ", "Back Up Now"],
+    ),
+    (
+        "范围选择模式: 关",
+        [
+            "范围选择模式: 关",
+            "範囲選択モード: オフ",
+            "Range selection mode: off",
+        ],
+    ),
     ("新建终端", ["新建终端", "新しいターミナル", "New Terminal"]),
-    ("新建终端 (Ctrl+`)", ["新建终端 (Ctrl+`)", "新しいターミナル (Ctrl+`)", "New Terminal (Ctrl+`)"]),
-    ("折叠 (Ctrl+Alt+L)", ["折叠 (Ctrl+Alt+L)", "折りたたむ (Ctrl+Alt+L)", "Collapse (Ctrl+Alt+L)"]),
+    (
+        "新建终端 (Ctrl+`)",
+        [
+            "新建终端 (Ctrl+`)",
+            "新しいターミナル (Ctrl+`)",
+            "New Terminal (Ctrl+`)",
+        ],
+    ),
+    (
+        "折叠 (Ctrl+Alt+L)",
+        [
+            "折叠 (Ctrl+Alt+L)",
+            "折りたたむ (Ctrl+Alt+L)",
+            "Collapse (Ctrl+Alt+L)",
+        ],
+    ),
     ("未设置模型", ["未设置模型", "モデル未設定", "No model set"]),
     ("模型设置", ["模型设置", "モデル設定", "Model Settings"]),
     ("范围选择", ["范围选择", "範囲選択", "Range"]),
     ("预览", ["预览", "プレビュー", "Preview"]),
-    ("源码 / 渲染预览切换 (Ctrl+Shift+V)", ["源码 / 渲染预览切换 (Ctrl+Shift+V)", "ソース / レンダリング表示の切り替え (Ctrl+Shift+V)", "Toggle source / rendered preview (Ctrl+Shift+V)"]),
-    ("最近的文件路径", ["最近的文件路径", "最近使ったファイルのパス", "Recent File Paths"]),
-    ("最近的文件夹路径", ["最近的文件夹路径", "最近使ったフォルダーのパス", "Recent Folder Paths"]),
-    ("打开文件夹", ["打开文件夹", "フォルダーを開く", "Open Folder"]),
-    ("打开文件夹 (Ctrl+K O)", ["打开文件夹 (Ctrl+K O)", "フォルダーを開く (Ctrl+K O)", "Open Folder (Ctrl+K O)"]),
+    (
+        "源码 / 渲染预览切换 (Ctrl+Shift+V)",
+        [
+            "源码 / 渲染预览切换 (Ctrl+Shift+V)",
+            "ソース / レンダリング表示の切り替え (Ctrl+Shift+V)",
+            "Toggle source / rendered preview (Ctrl+Shift+V)",
+        ],
+    ),
+    (
+        "最近的文件路径",
+        [
+            "最近的文件路径",
+            "最近使ったファイルのパス",
+            "Recent File Paths",
+        ],
+    ),
+    (
+        "最近的文件夹路径",
+        [
+            "最近的文件夹路径",
+            "最近使ったフォルダーのパス",
+            "Recent Folder Paths",
+        ],
+    ),
+    (
+        "打开文件夹",
+        ["打开文件夹", "フォルダーを開く", "Open Folder"],
+    ),
+    (
+        "打开文件夹 (Ctrl+K O)",
+        [
+            "打开文件夹 (Ctrl+K O)",
+            "フォルダーを開く (Ctrl+K O)",
+            "Open Folder (Ctrl+K O)",
+        ],
+    ),
     ("页面设置", ["页面设置", "ページ設定", "Page Setup"]),
     ("纸张", ["纸张", "用紙", "Paper"]),
     ("横向", ["横向", "横向き", "Landscape"]),
-    ("字号 (pt)", ["字号 (pt)", "フォントサイズ (pt)", "Font size (pt)"]),
+    (
+        "字号 (pt)",
+        ["字号 (pt)", "フォントサイズ (pt)", "Font size (pt)"],
+    ),
     ("页边距 (mm)", ["页边距 (mm)", "余白 (mm)", "Margins (mm)"]),
-    ("打印行号", ["打印行号", "行番号を印刷", "Print line numbers"]),
-    ("页眉 (文件名)", ["页眉 (文件名)", "ヘッダー (ファイル名)", "Header (file name)"]),
-    ("页脚 (页码)", ["页脚 (页码)", "フッター (ページ番号)", "Footer (page number)"]),
-    ("打印预览…", ["打印预览…", "印刷プレビュー…", "Print Preview…"]),
+    (
+        "打印行号",
+        ["打印行号", "行番号を印刷", "Print line numbers"],
+    ),
+    (
+        "页眉 (文件名)",
+        [
+            "页眉 (文件名)",
+            "ヘッダー (ファイル名)",
+            "Header (file name)",
+        ],
+    ),
+    (
+        "页脚 (页码)",
+        [
+            "页脚 (页码)",
+            "フッター (ページ番号)",
+            "Footer (page number)",
+        ],
+    ),
+    (
+        "打印预览…",
+        ["打印预览…", "印刷プレビュー…", "Print Preview…"],
+    ),
     ("打印预览", ["打印预览", "印刷プレビュー", "Print Preview"]),
     ("页面设置…", ["页面设置…", "ページ設定…", "Page Setup…"]),
     ("打印…", ["打印…", "印刷…", "Print…"]),
-    ("折叠 / 展开左侧栏", ["折叠 / 展开左侧栏", "左サイドバーの折りたたみ / 展開", "Collapse / Expand Left Sidebar"]),
-    ("折叠 / 展开右侧面板", ["折叠 / 展开右侧面板", "右パネルの折りたたみ / 展開", "Collapse / Expand Right Panel"]),
-    ("折叠 / 展开底部面板", ["折叠 / 展开底部面板", "下パネルの折りたたみ / 展開", "Collapse / Expand Bottom Panel"]),
-    ("折叠左侧栏", ["折叠左侧栏", "左サイドバーを折りたたむ", "Collapse Left Sidebar"]),
-    ("折叠右侧面板", ["折叠右侧面板", "右パネルを折りたたむ", "Collapse Right Panel"]),
-    ("折叠底部面板", ["折叠底部面板", "下パネルを折りたたむ", "Collapse Bottom Panel"]),
-    ("使用系统标题栏", ["使用系统标题栏", "システムのタイトルバーを使う", "Use System Title Bar"]),
+    (
+        "折叠 / 展开左侧栏",
+        [
+            "折叠 / 展开左侧栏",
+            "左サイドバーの折りたたみ / 展開",
+            "Collapse / Expand Left Sidebar",
+        ],
+    ),
+    (
+        "折叠 / 展开右侧面板",
+        [
+            "折叠 / 展开右侧面板",
+            "右パネルの折りたたみ / 展開",
+            "Collapse / Expand Right Panel",
+        ],
+    ),
+    (
+        "折叠 / 展开底部面板",
+        [
+            "折叠 / 展开底部面板",
+            "下パネルの折りたたみ / 展開",
+            "Collapse / Expand Bottom Panel",
+        ],
+    ),
+    (
+        "折叠左侧栏",
+        [
+            "折叠左侧栏",
+            "左サイドバーを折りたたむ",
+            "Collapse Left Sidebar",
+        ],
+    ),
+    (
+        "折叠右侧面板",
+        [
+            "折叠右侧面板",
+            "右パネルを折りたたむ",
+            "Collapse Right Panel",
+        ],
+    ),
+    (
+        "折叠底部面板",
+        [
+            "折叠底部面板",
+            "下パネルを折りたたむ",
+            "Collapse Bottom Panel",
+        ],
+    ),
+    (
+        "使用系统标题栏",
+        [
+            "使用系统标题栏",
+            "システムのタイトルバーを使う",
+            "Use System Title Bar",
+        ],
+    ),
     ("下一个函数", ["下一个函数", "次の関数", "Next Function"]),
-    ("上一个函数", ["上一个函数", "前の関数", "Previous Function"]),
-    ("复制路径与光标位置", ["复制路径与光标位置", "パスとカーソル位置をコピー", "Copy Path and Cursor Position"]),
-    ("在折行处加换行复制", ["在折行处加换行复制", "折り返し位置に改行を入れてコピー", "Copy with Line Breaks at Wraps"]),
-    ("打开同名 C/C++ 头 / 源文件", ["打开同名 C/C++ 头 / 源文件", "同名の C/C++ ヘッダー / ソースを開く", "Open Matching C/C++ Header / Source"]),
-    ("(选择) 下一处改动", ["(选择) 下一处改动", "(選択) 次の変更箇所", "(Select) Next Change"]),
-    ("(选择) 上一处改动", ["(选择) 上一处改动", "(選択) 前の変更箇所", "(Select) Previous Change"]),
+    (
+        "上一个函数",
+        ["上一个函数", "前の関数", "Previous Function"],
+    ),
+    (
+        "复制路径与光标位置",
+        [
+            "复制路径与光标位置",
+            "パスとカーソル位置をコピー",
+            "Copy Path and Cursor Position",
+        ],
+    ),
+    (
+        "在折行处加换行复制",
+        [
+            "在折行处加换行复制",
+            "折り返し位置に改行を入れてコピー",
+            "Copy with Line Breaks at Wraps",
+        ],
+    ),
+    (
+        "打开同名 C/C++ 头 / 源文件",
+        [
+            "打开同名 C/C++ 头 / 源文件",
+            "同名の C/C++ ヘッダー / ソースを開く",
+            "Open Matching C/C++ Header / Source",
+        ],
+    ),
+    (
+        "(选择) 下一处改动",
+        [
+            "(选择) 下一处改动",
+            "(選択) 次の変更箇所",
+            "(Select) Next Change",
+        ],
+    ),
+    (
+        "(选择) 上一处改动",
+        [
+            "(选择) 上一处改动",
+            "(選択) 前の変更箇所",
+            "(Select) Previous Change",
+        ],
+    ),
     ("下一个分组", ["下一个分组", "次のグループ", "Next Group"]),
-    ("上一个分组", ["上一个分组", "前のグループ", "Previous Group"]),
-    ("移到新分组", ["移到新分组", "新しいグループへ移動", "Move to New Group"]),
-    ("移到下一个分组", ["移到下一个分组", "次のグループへ移動", "Move to Next Group"]),
-    ("移到上一个分组", ["移到上一个分组", "前のグループへ移動", "Move to Previous Group"]),
-    ("合并为一组", ["合并为一组", "1 つのグループに統合", "Merge into One Group"]),
-    ("关闭当前分组", ["关闭当前分组", "現在のグループを閉じる", "Close Current Group"]),
-    ("SPACE 缩进", ["SPACE 缩进", "SPACE インデント", "SPACE Indent"]),
-    ("SPACE 反缩进", ["SPACE 反缩进", "SPACE 逆インデント", "SPACE Unindent"]),
-    ("光标行居中", ["光标行居中", "カーソル行を中央へ", "Center Cursor Line"]),
-    ("切换选区统计方式 (字符 / 字节 / 行)", ["切换选区统计方式 (字符 / 字节 / 行)", "選択範囲の集計方式を切り替え (文字 / バイト / 行)", "Cycle Selection Count (chars / bytes / lines)"]),
+    (
+        "上一个分组",
+        ["上一个分组", "前のグループ", "Previous Group"],
+    ),
+    (
+        "移到新分组",
+        ["移到新分组", "新しいグループへ移動", "Move to New Group"],
+    ),
+    (
+        "移到下一个分组",
+        ["移到下一个分组", "次のグループへ移動", "Move to Next Group"],
+    ),
+    (
+        "移到上一个分组",
+        [
+            "移到上一个分组",
+            "前のグループへ移動",
+            "Move to Previous Group",
+        ],
+    ),
+    (
+        "合并为一组",
+        ["合并为一组", "1 つのグループに統合", "Merge into One Group"],
+    ),
+    (
+        "关闭当前分组",
+        [
+            "关闭当前分组",
+            "現在のグループを閉じる",
+            "Close Current Group",
+        ],
+    ),
+    (
+        "SPACE 缩进",
+        ["SPACE 缩进", "SPACE インデント", "SPACE Indent"],
+    ),
+    (
+        "SPACE 反缩进",
+        ["SPACE 反缩进", "SPACE 逆インデント", "SPACE Unindent"],
+    ),
+    (
+        "光标行居中",
+        ["光标行居中", "カーソル行を中央へ", "Center Cursor Line"],
+    ),
+    (
+        "切换选区统计方式 (字符 / 字节 / 行)",
+        [
+            "切换选区统计方式 (字符 / 字节 / 行)",
+            "選択範囲の集計方式を切り替え (文字 / バイト / 行)",
+            "Cycle Selection Count (chars / bytes / lines)",
+        ],
+    ),
     ("代码补全", ["代码补全", "コード補完", "Code Completion"]),
-    ("转到定义 (本文件)", ["转到定义 (本文件)", "定義へジャンプ (このファイル)", "Go to Definition (this file)"]),
-    ("切换查找标记 (全部强调)", ["切换查找标记 (全部强调)", "検索マークの切り替え (すべて強調)", "Toggle Find Marks (highlight all)"]),
-    ("回到查找起点", ["回到查找起点", "検索開始位置へ戻る", "Back to Find Start"]),
+    (
+        "转到定义 (本文件)",
+        [
+            "转到定义 (本文件)",
+            "定義へジャンプ (このファイル)",
+            "Go to Definition (this file)",
+        ],
+    ),
+    (
+        "切换查找标记 (全部强调)",
+        [
+            "切换查找标记 (全部强调)",
+            "検索マークの切り替え (すべて強調)",
+            "Toggle Find Marks (highlight all)",
+        ],
+    ),
+    (
+        "回到查找起点",
+        ["回到查找起点", "検索開始位置へ戻る", "Back to Find Start"],
+    ),
     ("列块删除", ["列块删除", "矩形削除", "Column Delete"]),
     ("列块替换…", ["列块替换…", "矩形置換…", "Column Replace…"]),
-    ("宏录制 (.mac): 开始 / 停止并生成", ["宏录制 (.mac): 开始 / 停止并生成", "マクロ記録 (.mac): 開始 / 停止して生成", "Record Macro (.mac): Start / Stop and Generate"]),
-    ("宏录制 (.mac)", ["宏录制 (.mac)", "マクロ記録 (.mac)", "Record Macro (.mac)"]),
-    ("停止录制并生成 .mac", ["停止录制并生成 .mac", "記録を停止して .mac を生成", "Stop Recording and Generate .mac"]),
-    ("范围选择模式 (开始 / 结束)", ["范围选择模式 (开始 / 结束)", "範囲選択モード (開始 / 終了)", "Range Selection Mode (start / end)"]),
+    (
+        "宏录制 (.mac): 开始 / 停止并生成",
+        [
+            "宏录制 (.mac): 开始 / 停止并生成",
+            "マクロ記録 (.mac): 開始 / 停止して生成",
+            "Record Macro (.mac): Start / Stop and Generate",
+        ],
+    ),
+    (
+        "宏录制 (.mac)",
+        ["宏录制 (.mac)", "マクロ記録 (.mac)", "Record Macro (.mac)"],
+    ),
+    (
+        "停止录制并生成 .mac",
+        [
+            "停止录制并生成 .mac",
+            "記録を停止して .mac を生成",
+            "Stop Recording and Generate .mac",
+        ],
+    ),
+    (
+        "范围选择模式 (开始 / 结束)",
+        [
+            "范围选择模式 (开始 / 结束)",
+            "範囲選択モード (開始 / 終了)",
+            "Range Selection Mode (start / end)",
+        ],
+    ),
     ("标签跳转", ["标签跳转", "タグジャンプ", "Tag Jump"]),
-    ("标签跳转: 返回", ["标签跳转: 返回", "タグジャンプ: 戻る", "Tag Jump: Back"]),
-    ("指定关键字的标签跳转…", ["指定关键字的标签跳转…", "キーワード指定のタグジャンプ…", "Tag Jump to Keyword…"]),
-    ("生成标签文件 (tags)", ["生成标签文件 (tags)", "タグファイル (tags) を作成", "Make Tags File (tags)"]),
-    ("增量查找: 向后", ["增量查找: 向后", "インクリメンタル検索: 下へ", "Incremental Search: Forward"]),
-    ("增量查找: 向前", ["增量查找: 向前", "インクリメンタル検索: 上へ", "Incremental Search: Backward"]),
-    ("增量查找: 正则 向后", ["增量查找: 正则 向后", "インクリメンタル検索: 正規表現 下へ", "Incremental Search: Regex Forward"]),
-    ("增量查找: 正则 向前", ["增量查找: 正则 向前", "インクリメンタル検索: 正規表現 上へ", "Incremental Search: Regex Backward"]),
-    ("增量查找: Migemo 向后", ["增量查找: Migemo 向后", "インクリメンタル検索: Migemo 下へ", "Incremental Search: Migemo Forward"]),
-    ("增量查找: Migemo 向前", ["增量查找: Migemo 向前", "インクリメンタル検索: Migemo 上へ", "Incremental Search: Migemo Backward"]),
-    ("Base64 解码", ["Base64 解码", "Base64 デコード", "Base64 Decode"]),
-    ("uudecode 解码", ["uudecode 解码", "uudecode デコード", "uudecode Decode"]),
-    ("复制为彩色 HTML", ["复制为彩色 HTML", "色付き HTML としてコピー", "Copy as Colored HTML"]),
-    ("复制为彩色 HTML (带行号)", ["复制为彩色 HTML (带行号)", "色付き HTML としてコピー (行番号付き)", "Copy as Colored HTML (with line numbers)"]),
-    ("剪贴板历史…", ["剪贴板历史…", "クリップボード履歴…", "Clipboard History…"]),
-    ("插入控制字符…", ["插入控制字符…", "制御文字を挿入…", "Insert Control Character…"]),
+    (
+        "标签跳转: 返回",
+        ["标签跳转: 返回", "タグジャンプ: 戻る", "Tag Jump: Back"],
+    ),
+    (
+        "指定关键字的标签跳转…",
+        [
+            "指定关键字的标签跳转…",
+            "キーワード指定のタグジャンプ…",
+            "Tag Jump to Keyword…",
+        ],
+    ),
+    (
+        "生成标签文件 (tags)",
+        [
+            "生成标签文件 (tags)",
+            "タグファイル (tags) を作成",
+            "Make Tags File (tags)",
+        ],
+    ),
+    (
+        "增量查找: 向后",
+        [
+            "增量查找: 向后",
+            "インクリメンタル検索: 下へ",
+            "Incremental Search: Forward",
+        ],
+    ),
+    (
+        "增量查找: 向前",
+        [
+            "增量查找: 向前",
+            "インクリメンタル検索: 上へ",
+            "Incremental Search: Backward",
+        ],
+    ),
+    (
+        "增量查找: 正则 向后",
+        [
+            "增量查找: 正则 向后",
+            "インクリメンタル検索: 正規表現 下へ",
+            "Incremental Search: Regex Forward",
+        ],
+    ),
+    (
+        "增量查找: 正则 向前",
+        [
+            "增量查找: 正则 向前",
+            "インクリメンタル検索: 正規表現 上へ",
+            "Incremental Search: Regex Backward",
+        ],
+    ),
+    (
+        "增量查找: Migemo 向后",
+        [
+            "增量查找: Migemo 向后",
+            "インクリメンタル検索: Migemo 下へ",
+            "Incremental Search: Migemo Forward",
+        ],
+    ),
+    (
+        "增量查找: Migemo 向前",
+        [
+            "增量查找: Migemo 向前",
+            "インクリメンタル検索: Migemo 上へ",
+            "Incremental Search: Migemo Backward",
+        ],
+    ),
+    (
+        "Base64 解码",
+        ["Base64 解码", "Base64 デコード", "Base64 Decode"],
+    ),
+    (
+        "uudecode 解码",
+        ["uudecode 解码", "uudecode デコード", "uudecode Decode"],
+    ),
+    (
+        "复制为彩色 HTML",
+        [
+            "复制为彩色 HTML",
+            "色付き HTML としてコピー",
+            "Copy as Colored HTML",
+        ],
+    ),
+    (
+        "复制为彩色 HTML (带行号)",
+        [
+            "复制为彩色 HTML (带行号)",
+            "色付き HTML としてコピー (行番号付き)",
+            "Copy as Colored HTML (with line numbers)",
+        ],
+    ),
+    (
+        "剪贴板历史…",
+        ["剪贴板历史…", "クリップボード履歴…", "Clipboard History…"],
+    ),
+    (
+        "插入控制字符…",
+        [
+            "插入控制字符…",
+            "制御文字を挿入…",
+            "Insert Control Character…",
+        ],
+    ),
     ("插入日期", ["插入日期", "日付を挿入", "Insert Date"]),
     ("插入时间", ["插入时间", "時刻を挿入", "Insert Time"]),
     ("插入戳记", ["插入戳记", "スタンプを挿入", "Insert Stamp"]),
-    ("戳记设置…", ["戳记设置…", "スタンプ設定…", "Stamp Settings…"]),
-    ("按指定列数折行…", ["按指定列数折行…", "指定桁で折り返し…", "Wrap at Column…"]),
-    ("按窗口宽度折行", ["按窗口宽度折行", "ウィンドウ幅で折り返し", "Wrap at Window Width"]),
+    (
+        "戳记设置…",
+        ["戳记设置…", "スタンプ設定…", "Stamp Settings…"],
+    ),
+    (
+        "按指定列数折行…",
+        ["按指定列数折行…", "指定桁で折り返し…", "Wrap at Column…"],
+    ),
+    (
+        "按窗口宽度折行",
+        [
+            "按窗口宽度折行",
+            "ウィンドウ幅で折り返し",
+            "Wrap at Window Width",
+        ],
+    ),
     ("不折行", ["不折行", "折り返さない", "No Wrap"]),
     ("展开", ["展开", "展開", "Expand"]),
     ("折叠", ["折叠", "折りたたむ", "Collapse"]),
     ("最小化", ["最小化", "最小化", "Minimize"]),
     ("最大化", ["最大化", "最大化", "Maximize"]),
     ("还原", ["还原", "元に戻す", "Restore"]),
-    ("展开导航 / 文件", ["展开导航 / 文件", "ナビ / ファイルを展開", "Expand Navigation / Files"]),
-    ("折叠导航 / 文件", ["折叠导航 / 文件", "ナビ / ファイルを折りたたむ", "Collapse Navigation / Files"]),
+    (
+        "展开导航 / 文件",
+        [
+            "展开导航 / 文件",
+            "ナビ / ファイルを展開",
+            "Expand Navigation / Files",
+        ],
+    ),
+    (
+        "折叠导航 / 文件",
+        [
+            "折叠导航 / 文件",
+            "ナビ / ファイルを折りたたむ",
+            "Collapse Navigation / Files",
+        ],
+    ),
     ("展开 Chat", ["展开 Chat", "チャットを展開", "Expand Chat"]),
-    ("折叠 Chat", ["折叠 Chat", "チャットを折りたたむ", "Collapse Chat"]),
-    ("展开底部面板", ["展开底部面板", "下パネルを展開", "Expand Bottom Panel"]),
-    ("粗体 (Ctrl+B)", ["粗体 (Ctrl+B)", "太字 (Ctrl+B)", "Bold (Ctrl+B)"]),
-    ("斜体 (Ctrl+I)", ["斜体 (Ctrl+I)", "斜体 (Ctrl+I)", "Italic (Ctrl+I)"]),
-    ("删除线 (Ctrl+Shift+X)", ["删除线 (Ctrl+Shift+X)", "取り消し線 (Ctrl+Shift+X)", "Strikethrough (Ctrl+Shift+X)"]),
-    ("高亮 ==文字==", ["高亮 ==文字==", "ハイライト ==文字==", "Highlight ==text=="]),
-    ("行内代码 (Ctrl+E)", ["行内代码 (Ctrl+E)", "インラインコード (Ctrl+E)", "Inline code (Ctrl+E)"]),
-    ("标题 1 (Ctrl+Alt+1)", ["标题 1 (Ctrl+Alt+1)", "見出し 1 (Ctrl+Alt+1)", "Heading 1 (Ctrl+Alt+1)"]),
-    ("标题 2 (Ctrl+Alt+2)", ["标题 2 (Ctrl+Alt+2)", "見出し 2 (Ctrl+Alt+2)", "Heading 2 (Ctrl+Alt+2)"]),
-    ("标题 3 (Ctrl+Alt+3)", ["标题 3 (Ctrl+Alt+3)", "見出し 3 (Ctrl+Alt+3)", "Heading 3 (Ctrl+Alt+3)"]),
+    (
+        "折叠 Chat",
+        ["折叠 Chat", "チャットを折りたたむ", "Collapse Chat"],
+    ),
+    (
+        "展开底部面板",
+        ["展开底部面板", "下パネルを展開", "Expand Bottom Panel"],
+    ),
+    ("▲ 折叠", ["▲ 折叠", "▲ 折りたたむ", "▲ Collapse"]),
+    (
+        "折叠 Markdown 工具条到顶端 (点击隐藏)",
+        [
+            "折叠 Markdown 工具条到顶端 (点击隐藏)",
+            "Markdown ツールバーを上部に折りたたむ (クリックで非表示)",
+            "Collapse Markdown toolbar to top (Click to hide)",
+        ],
+    ),
+    (
+        "展开 Markdown 工具条 (点击复原)",
+        [
+            "展开 Markdown 工具条 (点击复原)",
+            "Markdown ツールバーを展開 (クリックで復元)",
+            "Expand Markdown toolbar (Click to restore)",
+        ],
+    ),
+    (
+        "折叠 NEMA 工具条到顶端 (点击隐藏)",
+        [
+            "折叠 NEMA 工具条到顶端 (点击隐藏)",
+            "NEMA ツールバーを上部に折りたたむ (クリックで非表示)",
+            "Collapse NEMA toolbar to top (Click to hide)",
+        ],
+    ),
+    (
+        "展开 NEMA 工具条 (点击复原)",
+        [
+            "展开 NEMA 工具条 (点击复原)",
+            "NEMA ツールバーを展開 (クリックで复元)",
+            "Expand NEMA toolbar (Click to restore)",
+        ],
+    ),
+    (
+        "▼ 展开 Markdown 工具条",
+        [
+            "▼ 展开 Markdown 工具条",
+            "▼ Markdown ツールバーを展開",
+            "▼ Expand Markdown Toolbar",
+        ],
+    ),
+    (
+        "▼ 展开 NEMA 工具条",
+        [
+            "▼ 展开 NEMA 工具条",
+            "▼ NEMA ツールバーを展開",
+            "▼ Expand NEMA Toolbar",
+        ],
+    ),
+    (
+        "Markdown 工具条",
+        ["Markdown 工具条", "Markdown ツールバー", "Markdown Toolbar"],
+    ),
+    (
+        "NEMA 工具条",
+        ["NEMA 工具条", "NEMA ツールバー", "NEMA Toolbar"],
+    ),
+    (
+        "粗体 (Ctrl+B)",
+        ["粗体 (Ctrl+B)", "太字 (Ctrl+B)", "Bold (Ctrl+B)"],
+    ),
+    (
+        "斜体 (Ctrl+I)",
+        ["斜体 (Ctrl+I)", "斜体 (Ctrl+I)", "Italic (Ctrl+I)"],
+    ),
+    (
+        "删除线 (Ctrl+Shift+X)",
+        [
+            "删除线 (Ctrl+Shift+X)",
+            "取り消し線 (Ctrl+Shift+X)",
+            "Strikethrough (Ctrl+Shift+X)",
+        ],
+    ),
+    (
+        "高亮 ==文字==",
+        ["高亮 ==文字==", "ハイライト ==文字==", "Highlight ==text=="],
+    ),
+    (
+        "行内代码 (Ctrl+E)",
+        [
+            "行内代码 (Ctrl+E)",
+            "インラインコード (Ctrl+E)",
+            "Inline code (Ctrl+E)",
+        ],
+    ),
+    (
+        "标题 1 (Ctrl+Alt+1)",
+        [
+            "标题 1 (Ctrl+Alt+1)",
+            "見出し 1 (Ctrl+Alt+1)",
+            "Heading 1 (Ctrl+Alt+1)",
+        ],
+    ),
+    (
+        "标题 2 (Ctrl+Alt+2)",
+        [
+            "标题 2 (Ctrl+Alt+2)",
+            "見出し 2 (Ctrl+Alt+2)",
+            "Heading 2 (Ctrl+Alt+2)",
+        ],
+    ),
+    (
+        "标题 3 (Ctrl+Alt+3)",
+        [
+            "标题 3 (Ctrl+Alt+3)",
+            "見出し 3 (Ctrl+Alt+3)",
+            "Heading 3 (Ctrl+Alt+3)",
+        ],
+    ),
     ("• 列表", ["• 列表", "• リスト", "• List"]),
     ("1. 列表", ["1. 列表", "1. 番号付きリスト", "1. List"]),
-    ("链接 (Ctrl+Shift+K)", ["链接 (Ctrl+Shift+K)", "リンク (Ctrl+Shift+K)", "Link (Ctrl+Shift+K)"]),
+    (
+        "链接 (Ctrl+Shift+K)",
+        [
+            "链接 (Ctrl+Shift+K)",
+            "リンク (Ctrl+Shift+K)",
+            "Link (Ctrl+Shift+K)",
+        ],
+    ),
     ("表格 3×3", ["表格 3×3", "表 3×3", "Table 3×3"]),
-    ("{ } 代码块", ["{ } 代码块", "{ } コードブロック", "{ } Code block"]),
-    ("围栏代码块 (自动选安全围栏)", ["围栏代码块 (自动选安全围栏)", "フェンスコードブロック (安全なフェンスを自動選択)", "Fenced code block (picks a safe fence)"]),
+    (
+        "{ } 代码块",
+        ["{ } 代码块", "{ } コードブロック", "{ } Code block"],
+    ),
+    (
+        "围栏代码块 (自动选安全围栏)",
+        [
+            "围栏代码块 (自动选安全围栏)",
+            "フェンスコードブロック (安全なフェンスを自動選択)",
+            "Fenced code block (picks a safe fence)",
+        ],
+    ),
     ("↑ 章节", ["↑ 章节", "↑ 章", "↑ Section"]),
-    ("把光标所在章节(含子章节)上移一格", ["把光标所在章节(含子章节)上移一格", "カーソル位置の章 (子章を含む) を 1 つ上へ", "Move the section at the cursor (with subsections) up one"]),
+    (
+        "把光标所在章节(含子章节)上移一格",
+        [
+            "把光标所在章节(含子章节)上移一格",
+            "カーソル位置の章 (子章を含む) を 1 つ上へ",
+            "Move the section at the cursor (with subsections) up one",
+        ],
+    ),
     ("↓ 章节", ["↓ 章节", "↓ 章", "↓ Section"]),
-    ("把光标所在章节(含子章节)下移一格", ["把光标所在章节(含子章节)下移一格", "カーソル位置の章 (子章を含む) を 1 つ下へ", "Move the section at the cursor (with subsections) down one"]),
-    ("Mermaid 图 (需要渲染插件才能在预览里出图)", ["Mermaid 图 (需要渲染插件才能在预览里出图)", "Mermaid 図 (プレビュー表示にはレンダリングプラグインが必要)", "Mermaid diagram (needs a rendering plugin to show in the preview)"]),
+    (
+        "把光标所在章节(含子章节)下移一格",
+        [
+            "把光标所在章节(含子章节)下移一格",
+            "カーソル位置の章 (子章を含む) を 1 つ下へ",
+            "Move the section at the cursor (with subsections) down one",
+        ],
+    ),
+    (
+        "Mermaid 图 (需要渲染插件才能在预览里出图)",
+        [
+            "Mermaid 图 (需要渲染插件才能在预览里出图)",
+            "Mermaid 図 (プレビュー表示にはレンダリングプラグインが必要)",
+            "Mermaid diagram (needs a rendering plugin to show in the preview)",
+        ],
+    ),
     ("新建文件", ["新建文件", "新規ファイル", "New File"]),
     ("新建文件夹", ["新建文件夹", "新規フォルダー", "New Folder"]),
     ("Grep 置换", ["Grep 置换", "Grep 置換", "Grep Replace"]),
     ("Grep 结果", ["Grep 结果", "Grep 結果", "Grep Results"]),
-    ("录制的宏.mac", ["录制的宏.mac", "記録したマクロ.mac", "Recorded macro.mac"]),
-    ("插件包", ["插件包", "プラグインパッケージ", "Plugin package"]),
+    (
+        "录制的宏.mac",
+        ["录制的宏.mac", "記録したマクロ.mac", "Recorded macro.mac"],
+    ),
+    (
+        "插件包",
+        ["插件包", "プラグインパッケージ", "Plugin package"],
+    ),
     ("保存 ·", ["保存 ·", "保存 ·", "Save ·"]),
     ("终端 ·", ["终端 ·", "ターミナル ·", "Terminal ·"]),
     ("帮助", ["帮助", "ヘルプ", "Help"]),
@@ -767,50 +1801,200 @@ pub const CMD_T: &[Row] = &[
     ("运行宏 7", ["运行宏 7", "マクロ 7 を実行", "Run Macro 7"]),
     ("运行宏 8", ["运行宏 8", "マクロ 8 を実行", "Run Macro 8"]),
     ("运行宏 9", ["运行宏 9", "マクロ 9 を実行", "Run Macro 9"]),
-    ("运行宏 10", ["运行宏 10", "マクロ 10 を実行", "Run Macro 10"]),
-    ("运行宏 11", ["运行宏 11", "マクロ 11 を実行", "Run Macro 11"]),
-    ("运行宏 12", ["运行宏 12", "マクロ 12 を実行", "Run Macro 12"]),
-    ("运行宏 13", ["运行宏 13", "マクロ 13 を実行", "Run Macro 13"]),
-    ("运行宏 14", ["运行宏 14", "マクロ 14 を実行", "Run Macro 14"]),
-    ("运行宏 15", ["运行宏 15", "マクロ 15 を実行", "Run Macro 15"]),
-    ("运行宏 16", ["运行宏 16", "マクロ 16 を実行", "Run Macro 16"]),
-    ("运行宏 17", ["运行宏 17", "マクロ 17 を実行", "Run Macro 17"]),
-    ("运行宏 18", ["运行宏 18", "マクロ 18 を実行", "Run Macro 18"]),
-    ("运行宏 19", ["运行宏 19", "マクロ 19 を実行", "Run Macro 19"]),
-    ("运行宏 20", ["运行宏 20", "マクロ 20 を実行", "Run Macro 20"]),
+    (
+        "运行宏 10",
+        ["运行宏 10", "マクロ 10 を実行", "Run Macro 10"],
+    ),
+    (
+        "运行宏 11",
+        ["运行宏 11", "マクロ 11 を実行", "Run Macro 11"],
+    ),
+    (
+        "运行宏 12",
+        ["运行宏 12", "マクロ 12 を実行", "Run Macro 12"],
+    ),
+    (
+        "运行宏 13",
+        ["运行宏 13", "マクロ 13 を実行", "Run Macro 13"],
+    ),
+    (
+        "运行宏 14",
+        ["运行宏 14", "マクロ 14 を実行", "Run Macro 14"],
+    ),
+    (
+        "运行宏 15",
+        ["运行宏 15", "マクロ 15 を実行", "Run Macro 15"],
+    ),
+    (
+        "运行宏 16",
+        ["运行宏 16", "マクロ 16 を実行", "Run Macro 16"],
+    ),
+    (
+        "运行宏 17",
+        ["运行宏 17", "マクロ 17 を実行", "Run Macro 17"],
+    ),
+    (
+        "运行宏 18",
+        ["运行宏 18", "マクロ 18 を実行", "Run Macro 18"],
+    ),
+    (
+        "运行宏 19",
+        ["运行宏 19", "マクロ 19 を実行", "Run Macro 19"],
+    ),
+    (
+        "运行宏 20",
+        ["运行宏 20", "マクロ 20 を実行", "Run Macro 20"],
+    ),
     // 选择列表 / 关键字帮助 (0.3.8)
-    ("窗口一览…", ["窗口一览…", "ウィンドウ一覧…", "Window List…"]),
+    (
+        "窗口一览…",
+        ["窗口一览…", "ウィンドウ一覧…", "Window List…"],
+    ),
     ("窗口一览", ["窗口一览", "ウィンドウ一覧", "Window List"]),
-    ("最近的文件…", ["最近的文件…", "最近使ったファイル…", "Recent Files…"]),
-    ("最近的文件", ["最近的文件", "最近使ったファイル", "Recent Files"]),
-    ("最近的文件夹…", ["最近的文件夹…", "最近使ったフォルダー…", "Recent Folders…"]),
-    ("最近的文件夹", ["最近的文件夹", "最近使ったフォルダー", "Recent Folders"]),
-    ("收藏夹 (最近的文件和文件夹)…", ["收藏夹 (最近的文件和文件夹)…", "お気に入り (最近のファイルとフォルダー)…", "Favorites (recent files and folders)…"]),
+    (
+        "最近的文件…",
+        ["最近的文件…", "最近使ったファイル…", "Recent Files…"],
+    ),
+    (
+        "最近的文件",
+        ["最近的文件", "最近使ったファイル", "Recent Files"],
+    ),
+    (
+        "最近的文件夹…",
+        ["最近的文件夹…", "最近使ったフォルダー…", "Recent Folders…"],
+    ),
+    (
+        "最近的文件夹",
+        ["最近的文件夹", "最近使ったフォルダー", "Recent Folders"],
+    ),
+    (
+        "收藏夹 (最近的文件和文件夹)…",
+        [
+            "收藏夹 (最近的文件和文件夹)…",
+            "お気に入り (最近のファイルとフォルダー)…",
+            "Favorites (recent files and folders)…",
+        ],
+    ),
     ("收藏夹", ["收藏夹", "お気に入り", "Favorites"]),
-    ("插入最近的文件路径…", ["插入最近的文件路径…", "最近使ったファイルのパスを挿入…", "Insert Recent File Path…"]),
-    ("插入最近的文件路径", ["插入最近的文件路径", "最近使ったファイルのパスを挿入", "Insert Recent File Path"]),
-    ("插入最近的文件夹路径…", ["插入最近的文件夹路径…", "最近使ったフォルダーのパスを挿入…", "Insert Recent Folder Path…"]),
-    ("插入最近的文件夹路径", ["插入最近的文件夹路径", "最近使ったフォルダーのパスを挿入", "Insert Recent Folder Path"]),
-    ("指定字符集…", ["指定字符集…", "文字コードセット指定…", "Set Character Set…"]),
-    ("指定字符集", ["指定字符集", "文字コードセット指定", "Set Character Set"]),
-    ("指定字符集重新打开…", ["指定字符集重新打开…", "文字コードセットを指定して開き直す…", "Reopen with Character Set…"]),
-    ("指定字符集重新打开", ["指定字符集重新打开", "文字コードセットを指定して開き直す", "Reopen with Character Set"]),
+    (
+        "插入最近的文件路径…",
+        [
+            "插入最近的文件路径…",
+            "最近使ったファイルのパスを挿入…",
+            "Insert Recent File Path…",
+        ],
+    ),
+    (
+        "插入最近的文件路径",
+        [
+            "插入最近的文件路径",
+            "最近使ったファイルのパスを挿入",
+            "Insert Recent File Path",
+        ],
+    ),
+    (
+        "插入最近的文件夹路径…",
+        [
+            "插入最近的文件夹路径…",
+            "最近使ったフォルダーのパスを挿入…",
+            "Insert Recent Folder Path…",
+        ],
+    ),
+    (
+        "插入最近的文件夹路径",
+        [
+            "插入最近的文件夹路径",
+            "最近使ったフォルダーのパスを挿入",
+            "Insert Recent Folder Path",
+        ],
+    ),
+    (
+        "指定字符集…",
+        ["指定字符集…", "文字コードセット指定…", "Set Character Set…"],
+    ),
+    (
+        "指定字符集",
+        ["指定字符集", "文字コードセット指定", "Set Character Set"],
+    ),
+    (
+        "指定字符集重新打开…",
+        [
+            "指定字符集重新打开…",
+            "文字コードセットを指定して開き直す…",
+            "Reopen with Character Set…",
+        ],
+    ),
+    (
+        "指定字符集重新打开",
+        [
+            "指定字符集重新打开",
+            "文字コードセットを指定して開き直す",
+            "Reopen with Character Set",
+        ],
+    ),
     ("帮助手册", ["帮助手册", "ヘルプマニュアル", "Help Manual"]),
-    ("关键字帮助检索…", ["关键字帮助检索…", "キーワードヘルプ検索…", "Keyword Help Search…"]),
-    ("关键字帮助检索", ["关键字帮助检索", "キーワードヘルプ検索", "Keyword Help Search"]),
-    ("关键字帮助: 光标处的词", ["关键字帮助: 光标处的词", "キーワードヘルプ: カーソル位置の語", "Keyword Help: Word at Cursor"]),
-    ("关键字帮助自动显示", ["关键字帮助自动显示", "キーワードヘルプの自動表示", "Auto-show Keyword Help"]),
-    ("显示大纲", ["显示大纲", "アウトラインを表示", "Show Outline"]),
-    ("显示文件树", ["显示文件树", "ファイルツリーを表示", "Show File Tree"]),
-    ("输入以过滤", ["输入以过滤", "入力して絞り込み", "Type to filter"]),
-    ("没有匹配的项", ["没有匹配的项", "一致する項目がありません", "No matches"]),
+    (
+        "关键字帮助检索…",
+        [
+            "关键字帮助检索…",
+            "キーワードヘルプ検索…",
+            "Keyword Help Search…",
+        ],
+    ),
+    (
+        "关键字帮助检索",
+        [
+            "关键字帮助检索",
+            "キーワードヘルプ検索",
+            "Keyword Help Search",
+        ],
+    ),
+    (
+        "关键字帮助: 光标处的词",
+        [
+            "关键字帮助: 光标处的词",
+            "キーワードヘルプ: カーソル位置の語",
+            "Keyword Help: Word at Cursor",
+        ],
+    ),
+    (
+        "关键字帮助自动显示",
+        [
+            "关键字帮助自动显示",
+            "キーワードヘルプの自動表示",
+            "Auto-show Keyword Help",
+        ],
+    ),
+    (
+        "显示大纲",
+        ["显示大纲", "アウトラインを表示", "Show Outline"],
+    ),
+    (
+        "显示文件树",
+        ["显示文件树", "ファイルツリーを表示", "Show File Tree"],
+    ),
+    (
+        "输入以过滤",
+        ["输入以过滤", "入力して絞り込み", "Type to filter"],
+    ),
+    (
+        "没有匹配的项",
+        ["没有匹配的项", "一致する項目がありません", "No matches"],
+    ),
     ("文件夹", ["文件夹", "フォルダー", "Folder"]),
     ("当前", ["当前", "現在", "Current"]),
     // 分组
     ("行", ["行", "行", "Lines"]),
     ("单词", ["单词", "単語", "Words"]),
     ("语法类型", ["语法类型", "構文タイプ", "Syntax type"]),
-    ("自动 (按扩展名)", ["自动 (按扩展名)", "自動 (拡張子で判定)", "Auto (by extension)"]),
+    (
+        "自动 (按扩展名)",
+        [
+            "自动 (按扩展名)",
+            "自動 (拡張子で判定)",
+            "Auto (by extension)",
+        ],
+    ),
     ("新增", ["新增", "追加", "Added"]),
     ("修改", ["修改", "変更", "Changed"]),
     ("删除", ["删除", "削除", "Deleted"]),
@@ -818,55 +2002,180 @@ pub const CMD_T: &[Row] = &[
     ("转换", ["转换", "変換", "Convert"]),
     ("整理行", ["整理行", "行の整理", "Tidy Lines"]),
     ("缩进", ["缩进", "インデント", "Indent"]),
+    ("AI 协同", ["AI 协同", "AI 協調", "AI Collaboration"]),
     ("Markdown", ["Markdown", "Markdown", "Markdown"]),
     // 行
     ("剪切行", ["剪切行", "行を切り取り", "Cut Line"]),
-    ("复制行 (含换行)", ["复制行 (含换行)", "行をコピー (改行含む)", "Copy Lines (with EOL)"]),
-    ("复制当前行", ["复制当前行", "現在行を複製", "Duplicate Line"]),
+    (
+        "复制行 (含换行)",
+        [
+            "复制行 (含换行)",
+            "行をコピー (改行含む)",
+            "Copy Lines (with EOL)",
+        ],
+    ),
+    (
+        "复制当前行",
+        ["复制当前行", "現在行を複製", "Duplicate Line"],
+    ),
     ("删除当前行", ["删除当前行", "現在行を削除", "Delete Line"]),
-    ("删除上方行", ["删除上方行", "上の行を削除", "Delete Line Above"]),
-    ("删除下方行", ["删除下方行", "下の行を削除", "Delete Line Below"]),
-    ("与上一行合并", ["与上一行合并", "前の行と結合", "Join with Previous Line"]),
-    ("在上方插入空行", ["在上方插入空行", "上に空行を挿入", "Insert Line Above"]),
-    ("在下方插入空行", ["在下方插入空行", "下に空行を挿入", "Insert Line Below"]),
+    (
+        "删除上方行",
+        ["删除上方行", "上の行を削除", "Delete Line Above"],
+    ),
+    (
+        "删除下方行",
+        ["删除下方行", "下の行を削除", "Delete Line Below"],
+    ),
+    (
+        "与上一行合并",
+        ["与上一行合并", "前の行と結合", "Join with Previous Line"],
+    ),
+    (
+        "在上方插入空行",
+        ["在上方插入空行", "上に空行を挿入", "Insert Line Above"],
+    ),
+    (
+        "在下方插入空行",
+        ["在下方插入空行", "下に空行を挿入", "Insert Line Below"],
+    ),
     ("上移一行", ["上移一行", "行を上へ移動", "Move Line Up"]),
     ("下移一行", ["下移一行", "行を下へ移動", "Move Line Down"]),
-    ("剪切到行尾", ["剪切到行尾", "行末まで切り取り", "Cut to End of Line"]),
-    ("剪切到行首", ["剪切到行首", "行頭まで切り取り", "Cut to Start of Line"]),
-    ("删除到行尾", ["删除到行尾", "行末まで削除", "Delete to End of Line"]),
-    ("删除到行首", ["删除到行首", "行頭まで削除", "Delete to Start of Line"]),
+    (
+        "剪切到行尾",
+        ["剪切到行尾", "行末まで切り取り", "Cut to End of Line"],
+    ),
+    (
+        "剪切到行首",
+        ["剪切到行首", "行頭まで切り取り", "Cut to Start of Line"],
+    ),
+    (
+        "删除到行尾",
+        ["删除到行尾", "行末まで削除", "Delete to End of Line"],
+    ),
+    (
+        "删除到行首",
+        ["删除到行首", "行頭まで削除", "Delete to Start of Line"],
+    ),
     // 单词
-    ("选择当前单词", ["选择当前单词", "現在の単語を選択", "Select Word"]),
+    (
+        "选择当前单词",
+        ["选择当前单词", "現在の単語を選択", "Select Word"],
+    ),
     ("剪切单词", ["剪切单词", "単語を切り取り", "Cut Word"]),
     ("删除单词", ["删除单词", "単語を削除", "Delete Word"]),
     // 复制
-    ("复制 (行尾统一 CRLF)", ["复制 (行尾统一 CRLF)", "コピー (改行を CRLF に統一)", "Copy (normalize to CRLF)"]),
-    ("复制 (带行号)", ["复制 (带行号)", "コピー (行番号付き)", "Copy (with line numbers)"]),
-    ("复制引用 (> 前缀)", ["复制引用 (> 前缀)", "引用としてコピー (> 付き)", "Copy as Quote (> prefix)"]),
+    (
+        "复制 (行尾统一 CRLF)",
+        [
+            "复制 (行尾统一 CRLF)",
+            "コピー (改行を CRLF に統一)",
+            "Copy (normalize to CRLF)",
+        ],
+    ),
+    (
+        "复制 (带行号)",
+        [
+            "复制 (带行号)",
+            "コピー (行番号付き)",
+            "Copy (with line numbers)",
+        ],
+    ),
+    (
+        "复制引用 (> 前缀)",
+        [
+            "复制引用 (> 前缀)",
+            "引用としてコピー (> 付き)",
+            "Copy as Quote (> prefix)",
+        ],
+    ),
     ("矩形粘贴", ["矩形粘贴", "矩形貼り付け", "Paste Rectangle"]),
     // 转换
     ("转为大写", ["转为大写", "大文字に変換", "To Uppercase"]),
     ("转为小写", ["转为小写", "小文字に変換", "To Lowercase"]),
-    ("半角 → 全角", ["半角 → 全角", "半角 → 全角", "Half-width → Full-width"]),
-    ("全角 → 半角", ["全角 → 半角", "全角 → 半角", "Full-width → Half-width"]),
+    (
+        "半角 → 全角",
+        ["半角 → 全角", "半角 → 全角", "Half-width → Full-width"],
+    ),
+    (
+        "全角 → 半角",
+        ["全角 → 半角", "全角 → 半角", "Full-width → Half-width"],
+    ),
     ("Tab → 空格", ["Tab → 空格", "Tab → 空白", "Tabs → Spaces"]),
-    ("行首空格 → Tab", ["行首空格 → Tab", "行頭の空白 → Tab", "Leading Spaces → Tabs"]),
+    (
+        "行首空格 → Tab",
+        [
+            "行首空格 → Tab",
+            "行頭の空白 → Tab",
+            "Leading Spaces → Tabs",
+        ],
+    ),
     // 整理行
     ("升序排序", ["升序排序", "昇順に並べ替え", "Sort Ascending"]),
-    ("降序排序", ["降序排序", "降順に並べ替え", "Sort Descending"]),
-    ("合并连续重复行", ["合并连续重复行", "連続する重複行を結合", "Merge Consecutive Duplicate Lines"]),
-    ("去重 (保留首次出现)", ["去重 (保留首次出现)", "重複を削除 (最初を残す)", "Remove Duplicates (keep first)"]),
-    ("反转行顺序", ["反转行顺序", "行の順序を反転", "Reverse Lines"]),
-    ("去除行尾空白", ["去除行尾空白", "行末の空白を削除", "Trim Trailing Whitespace"]),
-    ("去除行首空白", ["去除行首空白", "行頭の空白を削除", "Trim Leading Whitespace"]),
+    (
+        "降序排序",
+        ["降序排序", "降順に並べ替え", "Sort Descending"],
+    ),
+    (
+        "合并连续重复行",
+        [
+            "合并连续重复行",
+            "連続する重複行を結合",
+            "Merge Consecutive Duplicate Lines",
+        ],
+    ),
+    (
+        "去重 (保留首次出现)",
+        [
+            "去重 (保留首次出现)",
+            "重複を削除 (最初を残す)",
+            "Remove Duplicates (keep first)",
+        ],
+    ),
+    (
+        "反转行顺序",
+        ["反转行顺序", "行の順序を反転", "Reverse Lines"],
+    ),
+    (
+        "去除行尾空白",
+        [
+            "去除行尾空白",
+            "行末の空白を削除",
+            "Trim Trailing Whitespace",
+        ],
+    ),
+    (
+        "去除行首空白",
+        [
+            "去除行首空白",
+            "行頭の空白を削除",
+            "Trim Leading Whitespace",
+        ],
+    ),
     ("删除空行", ["删除空行", "空行を削除", "Delete Empty Lines"]),
     // 缩进
-    ("增加缩进", ["增加缩进", "インデントを増やす", "Increase Indent"]),
-    ("减少缩进", ["减少缩进", "インデントを減らす", "Decrease Indent"]),
+    (
+        "增加缩进",
+        ["增加缩进", "インデントを増やす", "Increase Indent"],
+    ),
+    (
+        "减少缩进",
+        ["减少缩进", "インデントを減らす", "Decrease Indent"],
+    ),
     // 其它
-    ("切换行注释", ["切换行注释", "行コメントの切り替え", "Toggle Line Comment"]),
+    (
+        "切换行注释",
+        ["切换行注释", "行コメントの切り替え", "Toggle Line Comment"],
+    ),
     ("转到行…", ["转到行…", "行へ移動…", "Go to Line…"]),
-    ("改写 / 插入模式", ["改写 / 插入模式", "上書き / 挿入モード", "Overwrite / Insert Mode"]),
+    (
+        "改写 / 插入模式",
+        [
+            "改写 / 插入模式",
+            "上書き / 挿入モード",
+            "Overwrite / Insert Mode",
+        ],
+    ),
     ("只读", ["只读", "読み取り専用", "Read-only"]),
     // Markdown
     ("粗体", ["粗体", "太字", "Bold"]),
@@ -886,85 +2195,339 @@ pub const CMD_T: &[Row] = &[
     ("链接", ["链接", "リンク", "Link"]),
     ("图片", ["图片", "画像", "Image"]),
     ("代码块", ["代码块", "コードブロック", "Code Block"]),
-    ("Mermaid 图", ["Mermaid 图", "Mermaid 図", "Mermaid Diagram"]),
+    (
+        "Mermaid 图",
+        ["Mermaid 图", "Mermaid 図", "Mermaid Diagram"],
+    ),
     ("表格", ["表格", "表", "Table"]),
     ("分隔线", ["分隔线", "区切り線", "Horizontal Rule"]),
     ("提示块", ["提示块", "コールアウト", "Callout"]),
-    ("复制文件名", ["复制文件名", "ファイル名をコピー", "Copy File Name"]),
-    ("复制完整路径", ["复制完整路径", "フルパスをコピー", "Copy Full Path"]),
-    ("选到上一段落", ["选到上一段落", "前の段落まで選択", "Select to Previous Paragraph"]),
-    ("选到下一段落", ["选到下一段落", "次の段落まで選択", "Select to Next Paragraph"]),
-    ("下一处改动", ["下一处改动", "次の変更箇所", "Next Modified Line"]),
-    ("上一处改动", ["上一处改动", "前の変更箇所", "Previous Modified Line"]),
-    ("保存键盘宏…", ["保存键盘宏…", "キーボードマクロを保存…", "Save Key Macro…"]),
-    ("载入键盘宏…", ["载入键盘宏…", "キーボードマクロを読み込み…", "Load Key Macro…"]),
-    ("向前查找当前词", ["向前查找当前词", "前方のカーソル語を検索", "Find Word Backward"]),
-    ("与其他标签比较…", ["与其他标签比较…", "他のタブと比較…", "Compare with Tab…"]),
-    ("与文件比较…", ["与文件比较…", "ファイルと比較…", "Compare with File…"]),
+    (
+        "协同审查看板",
+        ["协同审查看板", "レビューボード", "Co-edit Review Dashboard"],
+    ),
+    (
+        "智能体对话面板",
+        ["智能体对话面板", "AIチャットパネル", "Agent Chat Panel"],
+    ),
+    (
+        "多 Agent 并行协作台",
+        [
+            "多 Agent 并行协作台",
+            "マルチAgent並列コラボ",
+            "Multi-Agent Collab Bench",
+        ],
+    ),
+    (
+        "多 Agent 并行修改当前文件",
+        [
+            "多 Agent 并行修改当前文件",
+            "マルチAgent並列編集",
+            "Parallel Multi-Agent Edit",
+        ],
+    ),
+    (
+        "模拟多 AI 协同编辑",
+        [
+            "模拟多 AI 协同编辑",
+            "複数AI協調デモ",
+            "Simulate Multi-AI Co-edit",
+        ],
+    ),
+    (
+        "运行四阶段协同流水线",
+        [
+            "运行四阶段协同流水线",
+            "4段階協調パイプライン実行",
+            "Run 4-Stage Collab Pipeline",
+        ],
+    ),
+    (
+        "复制文件名",
+        ["复制文件名", "ファイル名をコピー", "Copy File Name"],
+    ),
+    (
+        "复制完整路径",
+        ["复制完整路径", "フルパスをコピー", "Copy Full Path"],
+    ),
+    (
+        "选到上一段落",
+        [
+            "选到上一段落",
+            "前の段落まで選択",
+            "Select to Previous Paragraph",
+        ],
+    ),
+    (
+        "选到下一段落",
+        [
+            "选到下一段落",
+            "次の段落まで選択",
+            "Select to Next Paragraph",
+        ],
+    ),
+    (
+        "下一处改动",
+        ["下一处改动", "次の変更箇所", "Next Modified Line"],
+    ),
+    (
+        "上一处改动",
+        ["上一处改动", "前の変更箇所", "Previous Modified Line"],
+    ),
+    (
+        "保存键盘宏…",
+        ["保存键盘宏…", "キーボードマクロを保存…", "Save Key Macro…"],
+    ),
+    (
+        "载入键盘宏…",
+        [
+            "载入键盘宏…",
+            "キーボードマクロを読み込み…",
+            "Load Key Macro…",
+        ],
+    ),
+    (
+        "向前查找当前词",
+        [
+            "向前查找当前词",
+            "前方のカーソル語を検索",
+            "Find Word Backward",
+        ],
+    ),
+    (
+        "与其他标签比较…",
+        ["与其他标签比较…", "他のタブと比較…", "Compare with Tab…"],
+    ),
+    (
+        "与文件比较…",
+        ["与文件比较…", "ファイルと比較…", "Compare with File…"],
+    ),
     ("差异列表", ["差异列表", "差分一覧", "Diff List"]),
     ("下一处差异", ["下一处差异", "次の差分", "Next Difference"]),
-    ("上一处差异", ["上一处差异", "前の差分", "Previous Difference"]),
+    (
+        "上一处差异",
+        ["上一处差异", "前の差分", "Previous Difference"],
+    ),
     ("清除比较", ["清除比较", "比較をクリア", "Clear Comparison"]),
-    ("句读挂在行尾 (ぶら下げ)", ["句读挂在行尾 (ぶら下げ)", "句読点をぶら下げる", "Hanging punctuation (burasage)"]),
-    ("行头 / 行尾禁则 (指定列数折行时)", ["行头 / 行尾禁则 (指定列数折行时)", "行頭・行末禁則 (桁指定の折り返し時)", "Line-start/end prohibition (fixed-column wrap)"]),
-    ("已取消拖放", ["已取消拖放", "ドラッグを取り消しました", "Drag cancelled"]),
+    (
+        "句读挂在行尾 (ぶら下げ)",
+        [
+            "句读挂在行尾 (ぶら下げ)",
+            "句読点をぶら下げる",
+            "Hanging punctuation (burasage)",
+        ],
+    ),
+    (
+        "行头 / 行尾禁则 (指定列数折行时)",
+        [
+            "行头 / 行尾禁则 (指定列数折行时)",
+            "行頭・行末禁則 (桁指定の折り返し時)",
+            "Line-start/end prohibition (fixed-column wrap)",
+        ],
+    ),
+    (
+        "已取消拖放",
+        ["已取消拖放", "ドラッグを取り消しました", "Drag cancelled"],
+    ),
     ("置换", ["置换", "置換", "Replace"]),
-    ("显示 / 隐藏置换行 (Ctrl+H)", ["显示 / 隐藏置换行 (Ctrl+H)", "置換行の表示 / 非表示 (Ctrl+H)", "Show / hide replace row (Ctrl+H)"]),
+    (
+        "显示 / 隐藏置换行 (Ctrl+H)",
+        [
+            "显示 / 隐藏置换行 (Ctrl+H)",
+            "置換行の表示 / 非表示 (Ctrl+H)",
+            "Show / hide replace row (Ctrl+H)",
+        ],
+    ),
     ("查找", ["查找", "検索", "Find"]),
     ("下一个 F3", ["下一个 F3", "次へ F3", "Next F3"]),
-    ("上一个 Shift+F3", ["上一个 Shift+F3", "前へ Shift+F3", "Previous Shift+F3"]),
-    ("区分大小写", ["区分大小写", "大文字小文字を区別", "Match case"]),
+    (
+        "上一个 Shift+F3",
+        ["上一个 Shift+F3", "前へ Shift+F3", "Previous Shift+F3"],
+    ),
+    (
+        "区分大小写",
+        ["区分大小写", "大文字小文字を区別", "Match case"],
+    ),
     ("单词单位", ["单词单位", "単語単位", "Whole word"]),
     ("正则", ["正则", "正規表現", "Regex"]),
     ("折返", ["折返", "先頭に戻って検索", "Wrap around"]),
-    ("用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク", ["用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク", "ローマ字で日本語を検索: kensaku で 検索 / けんさく / ケンサク も見つかる", "Find Japanese by romaji: kensaku also finds 検索 / けんさく / ケンサク"]),
+    (
+        "用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク",
+        [
+            "用罗马字找日文: kensaku 也能找到 検索 / けんさく / ケンサク",
+            "ローマ字で日本語を検索: kensaku で 検索 / けんさく / ケンサク も見つかる",
+            "Find Japanese by romaji: kensaku also finds 検索 / けんさく / ケンサク",
+        ],
+    ),
     ("全部强调", ["全部强调", "すべて強調", "Highlight all"]),
     ("关闭 Esc", ["关闭 Esc", "閉じる Esc", "Close Esc"]),
     ("下一个", ["下一个", "次へ", "Next"]),
     ("上一个", ["上一个", "前へ", "Previous"]),
     ("关闭", ["关闭", "閉じる", "Close"]),
-    ("置换当前命中并找下一个", ["置换当前命中并找下一个", "現在の一致を置換して次を検索", "Replace this match and find next"]),
+    (
+        "置换当前命中并找下一个",
+        [
+            "置换当前命中并找下一个",
+            "現在の一致を置換して次を検索",
+            "Replace this match and find next",
+        ],
+    ),
     ("全部置换", ["全部置换", "すべて置換", "Replace all"]),
     ("仅选区", ["仅选区", "選択範囲のみ", "Selection only"]),
-    ("搜索内容 (空 = 只按文件名找)", ["搜索内容 (空 = 只按文件名找)", "検索文字列 (空 = ファイル名のみ)", "Search text (empty = file names only)"]),
-    ("文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target", ["文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target", "ファイル: *.rs;*.toml  除外 !*.gen.rs  除外フォルダー #target", "Files: *.rs;*.toml  exclude !*.gen.rs  exclude dir #target"]),
-    ("文件夹 / 排除 / 字符集", ["文件夹 / 排除 / 字符集", "フォルダー / 除外 / 文字コード", "Folders / exclusions / charset"]),
-    ("文件夹 (留空 = 整个项目, 多个用 ; 分隔)", ["文件夹 (留空 = 整个项目, 多个用 ; 分隔)", "フォルダー (空 = プロジェクト全体, 複数は ; 区切り)", "Folders (empty = whole project, separate with ;)"]),
-    ("当前文件所在文件夹", ["当前文件所在文件夹", "現在のファイルのフォルダー", "Folder of current file"]),
-    ("排除文件, 如 *.min.js", ["排除文件, 如 *.min.js", "除外ファイル (例: *.min.js)", "Exclude files, e.g. *.min.js"]),
-    ("排除文件夹, 如 target;dist", ["排除文件夹, 如 target;dist", "除外フォルダー (例: target;dist)", "Exclude folders, e.g. target;dist"]),
+    (
+        "搜索内容 (空 = 只按文件名找)",
+        [
+            "搜索内容 (空 = 只按文件名找)",
+            "検索文字列 (空 = ファイル名のみ)",
+            "Search text (empty = file names only)",
+        ],
+    ),
+    (
+        "文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target",
+        [
+            "文件名: *.rs;*.toml  排除 !*.gen.rs  排除目录 #target",
+            "ファイル: *.rs;*.toml  除外 !*.gen.rs  除外フォルダー #target",
+            "Files: *.rs;*.toml  exclude !*.gen.rs  exclude dir #target",
+        ],
+    ),
+    (
+        "文件夹 / 排除 / 字符集",
+        [
+            "文件夹 / 排除 / 字符集",
+            "フォルダー / 除外 / 文字コード",
+            "Folders / exclusions / charset",
+        ],
+    ),
+    (
+        "文件夹 (留空 = 整个项目, 多个用 ; 分隔)",
+        [
+            "文件夹 (留空 = 整个项目, 多个用 ; 分隔)",
+            "フォルダー (空 = プロジェクト全体, 複数は ; 区切り)",
+            "Folders (empty = whole project, separate with ;)",
+        ],
+    ),
+    (
+        "当前文件所在文件夹",
+        [
+            "当前文件所在文件夹",
+            "現在のファイルのフォルダー",
+            "Folder of current file",
+        ],
+    ),
+    (
+        "排除文件, 如 *.min.js",
+        [
+            "排除文件, 如 *.min.js",
+            "除外ファイル (例: *.min.js)",
+            "Exclude files, e.g. *.min.js",
+        ],
+    ),
+    (
+        "排除文件夹, 如 target;dist",
+        [
+            "排除文件夹, 如 target;dist",
+            "除外フォルダー (例: target;dist)",
+            "Exclude folders, e.g. target;dist",
+        ],
+    ),
     ("字符集", ["字符集", "文字コード", "Charset"]),
     ("自动", ["自动", "自動", "Auto"]),
     ("子文件夹", ["子文件夹", "サブフォルダー", "Subfolders"]),
     ("项目外", ["项目外", "プロジェクト外", "Outside project"]),
-    ("仅当前文件", ["仅当前文件", "現在のファイルのみ", "Current file only"]),
+    (
+        "仅当前文件",
+        ["仅当前文件", "現在のファイルのみ", "Current file only"],
+    ),
     ("输出", ["输出", "出力", "Output"]),
     ("标准", ["标准", "標準", "Normal"]),
-    ("仅文件名", ["仅文件名", "ファイル名のみ", "File names only"]),
-    ("各文件命中数", ["各文件命中数", "ファイル別の件数", "Hits per file"]),
+    (
+        "仅文件名",
+        ["仅文件名", "ファイル名のみ", "File names only"],
+    ),
+    (
+        "各文件命中数",
+        ["各文件命中数", "ファイル別の件数", "Hits per file"],
+    ),
     ("停止  Esc", ["停止  Esc", "中止  Esc", "Stop  Esc"]),
     ("搜索", ["搜索", "検索", "Search"]),
-    ("结果开成标签", ["结果开成标签", "結果をタブで開く", "Open results in tab"]),
-    ("把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转", ["把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转", "結果を読み取り専用タブに出力: コピー・Ctrl+F 可, Enter / ダブルクリックでジャンプ", "Put results in a read-only tab: copy, Ctrl+F; Enter / double-click jumps"]),
-    ("置换为 (正则下可用 $1)", ["置换为 (正则下可用 $1)", "置換後 (正規表現では $1 が使える)", "Replace with (use $1 in regex mode)"]),
-    ("全部置换 (改写文件, 保留 .bak)", ["全部置换 (改写文件, 保留 .bak)", "すべて置換 (ファイルを書き換え, .bak を残す)", "Replace all (rewrites files, keeps .bak)"]),
+    (
+        "结果开成标签",
+        ["结果开成标签", "結果をタブで開く", "Open results in tab"],
+    ),
+    (
+        "把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转",
+        [
+            "把结果放进一个只读标签: 可复制、可 Ctrl+F, Enter / 双击命中行跳转",
+            "結果を読み取り専用タブに出力: コピー・Ctrl+F 可, Enter / ダブルクリックでジャンプ",
+            "Put results in a read-only tab: copy, Ctrl+F; Enter / double-click jumps",
+        ],
+    ),
+    (
+        "置换为 (正则下可用 $1)",
+        [
+            "置换为 (正则下可用 $1)",
+            "置換後 (正規表現では $1 が使える)",
+            "Replace with (use $1 in regex mode)",
+        ],
+    ),
+    (
+        "全部置换 (改写文件, 保留 .bak)",
+        [
+            "全部置换 (改写文件, 保留 .bak)",
+            "すべて置換 (ファイルを書き換え, .bak を残す)",
+            "Replace all (rewrites files, keeps .bak)",
+        ],
+    ),
     ("文件", ["文件", "ファイル", "Files"]),
     ("大纲", ["大纲", "アウトライン", "Outline"]),
     ("扩展", ["扩展", "拡張機能", "Extensions"]),
     ("资源管理器", ["资源管理器", "エクスプローラー", "Explorer"]),
     ("源代码管理", ["源代码管理", "ソース管理", "Source Control"]),
-    ("打开文件夹…", ["打开文件夹…", "フォルダーを開く…", "Open Folder..."]),
+    (
+        "打开文件夹…",
+        ["打开文件夹…", "フォルダーを開く…", "Open Folder..."],
+    ),
     ("新建文件…", ["新建文件…", "新規ファイル…", "New File..."]),
-    ("新建文件夹…", ["新建文件夹…", "新規フォルダー…", "New Folder..."]),
+    (
+        "新建文件夹…",
+        ["新建文件夹…", "新規フォルダー…", "New Folder..."],
+    ),
     ("刷新", ["刷新", "更新", "Refresh"]),
-    ("输入命令按 Enter 启动 shell, 或点「+ 新建终端」", ["输入命令按 Enter 启动 shell, 或点「+ 新建终端」", "コマンドを入力して Enter でシェルを起動、または「+ 新しいターミナル」", "Type a command and press Enter to start a shell, or click \"+ New terminal\""]),
-    ("文件加锁…", ["文件加锁…", "ファイルのロック…", "File locking…"]),
-    ("执行外部命令 (终端)", ["执行外部命令 (终端)", "外部コマンドを実行 (ターミナル)", "Run external command (terminal)"]),
-    ("(没有可显示的大纲)", ["(没有可显示的大纲)", "(表示できるアウトラインがありません)", "(no outline to show)"]),
+    (
+        "输入命令按 Enter 启动 shell, 或点「+ 新建终端」",
+        [
+            "输入命令按 Enter 启动 shell, 或点「+ 新建终端」",
+            "コマンドを入力して Enter でシェルを起動、または「+ 新しいターミナル」",
+            "Type a command and press Enter to start a shell, or click \"+ New terminal\"",
+        ],
+    ),
+    (
+        "文件加锁…",
+        ["文件加锁…", "ファイルのロック…", "File locking…"],
+    ),
+    (
+        "执行外部命令 (终端)",
+        [
+            "执行外部命令 (终端)",
+            "外部コマンドを実行 (ターミナル)",
+            "Run external command (terminal)",
+        ],
+    ),
+    (
+        "(没有可显示的大纲)",
+        [
+            "(没有可显示的大纲)",
+            "(表示できるアウトラインがありません)",
+            "(no outline to show)",
+        ],
+    ),
     ("确定", ["确定", "OK", "OK"]),
     ("取消", ["取消", "キャンセル", "Cancel"]),
     ("没有改动", ["没有改动", "変更なし", "No changes"]),
-    ("已暂存的更改", ["已暂存的更改", "ステージ済みの変更", "Staged changes"]),
+    (
+        "已暂存的更改",
+        ["已暂存的更改", "ステージ済みの変更", "Staged changes"],
+    ),
     ("更改", ["更改", "変更", "Changes"]),
     ("差异", ["差异", "差分", "Diff"]),
     ("取消暂存", ["取消暂存", "ステージ解除", "Unstage"]),
@@ -972,46 +2535,289 @@ pub const CMD_T: &[Row] = &[
     ("重命名…", ["重命名…", "名前の変更…", "Rename..."]),
     ("删除…", ["删除…", "削除…", "Delete..."]),
     ("比较", ["比较", "比較", "Compare"]),
-    ("下一处差异 (Alt+↓)", ["下一处差异 (Alt+↓)", "次の差分 (Alt+↓)", "Next Difference (Alt+↓)"]),
-    ("上一处差异 (Alt+↑)", ["上一处差异 (Alt+↑)", "前の差分 (Alt+↑)", "Previous Difference (Alt+↑)"]),
-    ("与哪个标签比较", ["与哪个标签比较", "比較するタブ", "Compare with which tab"]),
-    ("需要至少两个标签", ["需要至少两个标签", "タブが 2 つ以上必要です", "Needs at least two tabs"]),
-    ("没有进行中的比较", ["没有进行中的比较", "比較中のものはありません", "No comparison in progress"]),
+    (
+        "下一处差异 (Alt+↓)",
+        [
+            "下一处差异 (Alt+↓)",
+            "次の差分 (Alt+↓)",
+            "Next Difference (Alt+↓)",
+        ],
+    ),
+    (
+        "上一处差异 (Alt+↑)",
+        [
+            "上一处差异 (Alt+↑)",
+            "前の差分 (Alt+↑)",
+            "Previous Difference (Alt+↑)",
+        ],
+    ),
+    (
+        "与哪个标签比较",
+        ["与哪个标签比较", "比較するタブ", "Compare with which tab"],
+    ),
+    (
+        "需要至少两个标签",
+        [
+            "需要至少两个标签",
+            "タブが 2 つ以上必要です",
+            "Needs at least two tabs",
+        ],
+    ),
+    (
+        "没有进行中的比较",
+        [
+            "没有进行中的比较",
+            "比較中のものはありません",
+            "No comparison in progress",
+        ],
+    ),
     ("终端", ["终端", "ターミナル", "Terminal"]),
     ("清屏", ["清屏", "クリア", "Clear"]),
     ("重启", ["重启", "再起動", "Restart"]),
-    ("结束当前 shell, 下一条命令重新开一个 (Ctrl+C)", ["结束当前 shell, 下一条命令重新开一个 (Ctrl+C)", "現在のシェルを終了し, 次のコマンドで開き直す (Ctrl+C)", "End the current shell; the next command starts a new one (Ctrl+C)"]),
-    ("常驻会话", ["常驻会话", "常駐セッション", "Persistent session"]),
-    ("选区作标准输入", ["选区作标准输入", "選択範囲を標準入力に", "Selection as stdin"]),
-    ("输出替换选区", ["输出替换选区", "出力で選択範囲を置換", "Output replaces selection"]),
+    (
+        "结束当前 shell, 下一条命令重新开一个 (Ctrl+C)",
+        [
+            "结束当前 shell, 下一条命令重新开一个 (Ctrl+C)",
+            "現在のシェルを終了し, 次のコマンドで開き直す (Ctrl+C)",
+            "End the current shell; the next command starts a new one (Ctrl+C)",
+        ],
+    ),
+    (
+        "常驻会话",
+        ["常驻会话", "常駐セッション", "Persistent session"],
+    ),
+    (
+        "选区作标准输入",
+        [
+            "选区作标准输入",
+            "選択範囲を標準入力に",
+            "Selection as stdin",
+        ],
+    ),
+    (
+        "输出替换选区",
+        [
+            "输出替换选区",
+            "出力で選択範囲を置換",
+            "Output replaces selection",
+        ],
+    ),
     ("运行中…", ["运行中…", "実行中…", "Running..."]),
-    ("输入命令, Enter 执行", ["输入命令, Enter 执行", "コマンドを入力, Enter で実行", "Type a command, Enter to run"]),
+    (
+        "输入命令, Enter 执行",
+        [
+            "输入命令, Enter 执行",
+            "コマンドを入力, Enter で実行",
+            "Type a command, Enter to run",
+        ],
+    ),
     ("正则无效", ["正则无效", "正規表現が無効", "Invalid regex"]),
-    ("增量查找", ["增量查找", "インクリメンタル検索", "Incremental search"]),
+    (
+        "增量查找",
+        ["增量查找", "インクリメンタル検索", "Incremental search"],
+    ),
     ("向后", ["向后", "下方向", "Forward"]),
     ("向前", ["向前", "上方向", "Backward"]),
-    ("指定关键字的标签跳转", ["指定关键字的标签跳转", "キーワード指定タグジャンプ", "Tag jump by keyword"]),
-    ("选择跳转位置", ["选择跳转位置", "ジャンプ先を選択", "Choose a target"]),
-    ("半角 → 全角 (含假名)", ["半角 → 全角 (含假名)", "半角 → 全角 (かな含む)", "Half → Full-width (incl. Kana)"]),
-    ("全角 → 半角 (含假名)", ["全角 → 半角 (含假名)", "全角 → 半角 (かな含む)", "Full → Half-width (incl. Kana)"]),
-    ("转为全角平假名", ["转为全角平假名", "全角ひらがなへ", "To Full-width Hiragana"]),
-    ("转为半角片假名", ["转为半角片假名", "半角カタカナへ", "To Half-width Katakana"]),
-    ("半角假名 → 全角片假名", ["半角假名 → 全角片假名", "半角カナ → 全角カタカナ", "Half Kana → Full Katakana"]),
-    ("半角假名 → 全角平假名", ["半角假名 → 全角平假名", "半角カナ → 全角ひらがな", "Half Kana → Full Hiragana"]),
-    ("半角英数 → 全角英数", ["半角英数 → 全角英数", "半角英数 → 全角英数", "Half → Full-width Alphanumerics"]),
-    ("全角英数 → 半角英数", ["全角英数 → 半角英数", "全角英数 → 半角英数", "Full → Half-width Alphanumerics"]),
+    (
+        "指定关键字的标签跳转",
+        [
+            "指定关键字的标签跳转",
+            "キーワード指定タグジャンプ",
+            "Tag jump by keyword",
+        ],
+    ),
+    (
+        "选择跳转位置",
+        ["选择跳转位置", "ジャンプ先を選択", "Choose a target"],
+    ),
+    (
+        "半角 → 全角 (含假名)",
+        [
+            "半角 → 全角 (含假名)",
+            "半角 → 全角 (かな含む)",
+            "Half → Full-width (incl. Kana)",
+        ],
+    ),
+    (
+        "全角 → 半角 (含假名)",
+        [
+            "全角 → 半角 (含假名)",
+            "全角 → 半角 (かな含む)",
+            "Full → Half-width (incl. Kana)",
+        ],
+    ),
+    (
+        "转为全角平假名",
+        ["转为全角平假名", "全角ひらがなへ", "To Full-width Hiragana"],
+    ),
+    (
+        "转为半角片假名",
+        ["转为半角片假名", "半角カタカナへ", "To Half-width Katakana"],
+    ),
+    (
+        "半角假名 → 全角片假名",
+        [
+            "半角假名 → 全角片假名",
+            "半角カナ → 全角カタカナ",
+            "Half Kana → Full Katakana",
+        ],
+    ),
+    (
+        "半角假名 → 全角平假名",
+        [
+            "半角假名 → 全角平假名",
+            "半角カナ → 全角ひらがな",
+            "Half Kana → Full Hiragana",
+        ],
+    ),
+    (
+        "半角英数 → 全角英数",
+        [
+            "半角英数 → 全角英数",
+            "半角英数 → 全角英数",
+            "Half → Full-width Alphanumerics",
+        ],
+    ),
+    (
+        "全角英数 → 半角英数",
+        [
+            "全角英数 → 半角英数",
+            "全角英数 → 半角英数",
+            "Full → Half-width Alphanumerics",
+        ],
+    ),
     ("编码转换", ["编码转换", "コード変換", "Convert Encoding"]),
-    ("自动判别 → SJIS", ["自动判别 → SJIS", "自動判別 → SJIS", "Auto-detect → SJIS"]),
-    ("邮件 (JIS) → SJIS", ["邮件 (JIS) → SJIS", "E-Mail (JIS) → SJIS", "E-Mail (JIS) → SJIS"]),
+    (
+        "自动判别 → SJIS",
+        ["自动判别 → SJIS", "自動判別 → SJIS", "Auto-detect → SJIS"],
+    ),
+    (
+        "邮件 (JIS) → SJIS",
+        [
+            "邮件 (JIS) → SJIS",
+            "E-Mail (JIS) → SJIS",
+            "E-Mail (JIS) → SJIS",
+        ],
+    ),
     ("EUC → SJIS", ["EUC → SJIS", "EUC → SJIS", "EUC → SJIS"]),
-    ("Unicode → SJIS", ["Unicode → SJIS", "Unicode → SJIS", "Unicode → SJIS"]),
-    ("UnicodeBE → SJIS", ["UnicodeBE → SJIS", "UnicodeBE → SJIS", "UnicodeBE → SJIS"]),
-    ("UTF-8 → SJIS", ["UTF-8 → SJIS", "UTF-8 → SJIS", "UTF-8 → SJIS"]),
-    ("UTF-7 → SJIS", ["UTF-7 → SJIS", "UTF-7 → SJIS", "UTF-7 → SJIS"]),
+    (
+        "Unicode → SJIS",
+        ["Unicode → SJIS", "Unicode → SJIS", "Unicode → SJIS"],
+    ),
+    (
+        "UnicodeBE → SJIS",
+        ["UnicodeBE → SJIS", "UnicodeBE → SJIS", "UnicodeBE → SJIS"],
+    ),
+    (
+        "UTF-8 → SJIS",
+        ["UTF-8 → SJIS", "UTF-8 → SJIS", "UTF-8 → SJIS"],
+    ),
+    (
+        "UTF-7 → SJIS",
+        ["UTF-7 → SJIS", "UTF-7 → SJIS", "UTF-7 → SJIS"],
+    ),
     ("SJIS → JIS", ["SJIS → JIS", "SJIS → JIS", "SJIS → JIS"]),
     ("SJIS → EUC", ["SJIS → EUC", "SJIS → EUC", "SJIS → EUC"]),
-    ("SJIS → UTF-8", ["SJIS → UTF-8", "SJIS → UTF-8", "SJIS → UTF-8"]),
-    ("SJIS → UTF-7", ["SJIS → UTF-7", "SJIS → UTF-7", "SJIS → UTF-7"]),
+    (
+        "SJIS → UTF-8",
+        ["SJIS → UTF-8", "SJIS → UTF-8", "SJIS → UTF-8"],
+    ),
+    (
+        "SJIS → UTF-7",
+        ["SJIS → UTF-7", "SJIS → UTF-7", "SJIS → UTF-7"],
+    ),
+    (
+        "🛡️ 协同审查",
+        ["🛡️ 协同审查", "🛡️ 協調レビュー", "🛡️ Collab Review"],
+    ),
+    (
+        "+ 新建终端会话 (PowerShell)",
+        [
+            "+ 新建终端会话 (PowerShell)",
+            "+ 新規ターミナルセッション (PowerShell)",
+            "+ New Terminal Session (PowerShell)",
+        ],
+    ),
+    (
+        "▶ 运行四阶段完整流水线",
+        [
+            "▶ 运行四阶段完整流水线",
+            "▶ 4段階パイプライン実行",
+            "▶ Run 4-Stage Pipeline",
+        ],
+    ),
+    (
+        "▶ 实时协同光标",
+        [
+            "▶ 实时协同光标",
+            "▶ リアルタイム協調カーソル",
+            "▶ Live Co-Edit Cursors",
+        ],
+    ),
+    (
+        "📄 独立标签页报告",
+        [
+            "📄 独立标签页报告",
+            "📄 別タブでレポートを開く",
+            "📄 Open Report in Tab",
+        ],
+    ),
+    (
+        "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+        [
+            "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+            "🛡️ マルチ AI 協調編集 & 独立レビュー基盤 (Multi-AI Co-Edit & Review)",
+            "🛡️ Multi-AI Co-Edit & Independent Review Platform",
+        ],
+    ),
+    (
+        "立即启动或重置常驻 PowerShell 会话",
+        [
+            "立即启动或重置常驻 PowerShell 会话",
+            "常駐 PowerShell セッションを即座に起動またはリセット",
+            "Start or reset persistent PowerShell session immediately",
+        ],
+    ),
+    (
+        "+ 启动 PowerShell 终端会话",
+        [
+            "+ 启动 PowerShell 终端会话",
+            "+ PowerShell ターミナルを起動",
+            "+ Start PowerShell Terminal Session",
+        ],
+    ),
+    (
+        "底部: 终端 (TERMINAL)",
+        [
+            "底部: 终端 (TERMINAL)",
+            "下部: ターミナル (TERMINAL)",
+            "Bottom: Terminal (TERMINAL)",
+        ],
+    ),
+    (
+        "底部: 输出 (OUTPUT)",
+        [
+            "底部: 输出 (OUTPUT)",
+            "下部: 出力 (OUTPUT)",
+            "Bottom: Output (OUTPUT)",
+        ],
+    ),
+    (
+        "底部: 问题 (PROBLEMS)",
+        [
+            "底部: 问题 (PROBLEMS)",
+            "下部: 問題 (PROBLEMS)",
+            "Bottom: Problems (PROBLEMS)",
+        ],
+    ),
+    (
+        "底部: 🛡️ 协同审查",
+        [
+            "底部: 🛡️ 协同审查",
+            "下部: 🛡️ 協調レビュー",
+            "Bottom: 🛡️ Collab Review",
+        ],
+    ),
 ];
 
 #[cfg(test)]
@@ -1027,9 +2833,13 @@ mod tests {
             assert!(row.iter().all(|s| !s.is_empty()), "{k} 缺翻译");
             assert!(row.iter().all(|s| !s.contains('\u{FFFD}')), "{k} 含乱码");
         }
-        for (k, _) in T { assert!(seen.insert(*k), "重复的键 {k}"); }
+        for (k, _) in T {
+            assert!(seen.insert(*k), "重复的键 {k}");
+        }
         let mut seen = std::collections::HashSet::new();
-        for (k, _) in CMD_T { assert!(seen.insert(*k), "命令表重复的键 {k}"); }
+        for (k, _) in CMD_T {
+            assert!(seen.insert(*k), "命令表重复的键 {k}");
+        }
     }
 
     #[test]
@@ -1045,7 +2855,10 @@ mod tests {
         assert_eq!(trz("切换行注释"), "Toggle Line Comment");
         assert_eq!(trz("没收录的中文"), "没收录的中文");
         assert_eq!(trf("st.lines", &["12"]), "12 lines");
-        assert_eq!(trf("dlg.big-body", &["a.txt", "9"]), "a.txt\nAbout 9 MB; opening may be slow. Continue?");
+        assert_eq!(
+            trf("dlg.big-body", &["a.txt", "9"]),
+            "a.txt\nAbout 9 MB; opening may be slow. Continue?"
+        );
         assert_eq!(lk("c.save", "Ctrl+S"), "Save  Ctrl+S");
         set_code("ja");
         assert_eq!(cur(), Lang::Ja);
@@ -1056,22 +2869,44 @@ mod tests {
 
     #[test]
     fn language_codes_roundtrip() {
-        for l in Lang::ALL { assert_eq!(Lang::from_code(l.code()), Some(l)); }
+        for l in Lang::ALL {
+            assert_eq!(Lang::from_code(l.code()), Some(l));
+        }
     }
 
     /// 命令表里每个标签和分组都得有翻译, 以后加命令忘了补这里会在这儿红
     #[test]
     fn every_command_label_is_translated() {
         for c in crate::cmds::CMDS {
-            assert!(zh_index().contains_key(c.label), "命令标签缺翻译: {}", c.label);
-            if !c.group.is_empty() { assert!(zh_index().contains_key(c.group), "命令分组缺翻译: {}", c.group); }
+            assert!(
+                zh_index().contains_key(c.label),
+                "命令标签缺翻译: {}",
+                c.label
+            );
+            if !c.group.is_empty() {
+                assert!(
+                    zh_index().contains_key(c.group),
+                    "命令分组缺翻译: {}",
+                    c.group
+                );
+            }
         }
     }
 
     /// 代码里用到的每个 `tr("...")` / `lk("...")` / `trf("...")` 键都得在表里
     #[test]
     fn every_key_used_in_source_exists() {
-        let srcs = [include_str!("app.rs"), include_str!("find.rs"), include_str!("sidebar.rs"), include_str!("terminal.rs"), include_str!("cmdui.rs"), include_str!("keymap.rs"), include_str!("prefs.rs"), include_str!("updnet.rs"), include_str!("app/updateui.rs")];
+        let srcs = [
+            include_str!("app.rs"),
+            include_str!("find.rs"),
+            include_str!("sidebar.rs"),
+            include_str!("terminal.rs"),
+            include_str!("cmdui.rs"),
+            include_str!("keymap.rs"),
+            include_str!("prefs.rs"),
+            include_str!("updnet.rs"),
+            include_str!("app/updateui.rs"),
+        ];
         let idx = index();
         let mut n = 0;
         for src in srcs {
@@ -1081,7 +2916,12 @@ mod tests {
                     // 排除 xxx_tr(" 这类别的函数名
                     let before = rest[..p].chars().last();
                     rest = &rest[p + f.len()..];
-                    if before.map(|c| c.is_alphanumeric() || c == '_').unwrap_or(false) { continue; }
+                    if before
+                        .map(|c| c.is_alphanumeric() || c == '_')
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
                     let end = rest.find('"').unwrap();
                     let key = &rest[..end];
                     assert!(idx.contains_key(key), "代码里用了表里没有的键: {key}");
@@ -1102,7 +2942,10 @@ mod tests {
         let mut out = String::new();
         let mut it = s.chars();
         while let Some(c) = it.next() {
-            if c != '\\' { out.push(c); continue; }
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
             match it.next() {
                 Some('n') => out.push('\n'),
                 Some(o) => out.push(o),
@@ -1119,9 +2962,17 @@ mod tests {
         let body = &rest[open + 1..];
         let mut esc = false;
         for (i, c) in body.char_indices() {
-            if esc { esc = false; continue; }
-            if c == '\\' { esc = true; continue; }
-            if c == '"' { return Some(unescape(&body[..i])); }
+            if esc {
+                esc = false;
+                continue;
+            }
+            if c == '\\' {
+                esc = true;
+                continue;
+            }
+            if c == '"' {
+                return Some(unescape(&body[..i]));
+            }
         }
         None
     }
@@ -1131,7 +2982,10 @@ mod tests {
         fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
             for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
                 let p = e.path();
-                if p.is_dir() { walk(&p, out); continue; }
+                if p.is_dir() {
+                    walk(&p, out);
+                    continue;
+                }
                 if p.extension().is_some_and(|x| x == "rs") {
                     let s = std::fs::read_to_string(&p).unwrap_or_default();
                     let live = s.split("#[cfg(test)]").next().unwrap_or("").to_string();
@@ -1140,7 +2994,10 @@ mod tests {
             }
         }
         let mut v = vec![];
-        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut v);
+        walk(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut v,
+        );
         v
     }
 
@@ -1152,7 +3009,9 @@ mod tests {
         set(Lang::En);
         for e in crate::keymap::entries() {
             let t = e.label.text();
-            if has_han(&t) { bad.push(format!("{} ({})", t, e.id)); }
+            if has_han(t) {
+                bad.push(format!("{} ({})", t, e.id));
+            }
         }
         set(Lang::Zh);
         assert!(bad.is_empty(), "命令标签缺翻译: {bad:?}");
@@ -1163,18 +3022,36 @@ mod tests {
     fn every_trz_literal_exists_in_the_table() {
         let mut missing = vec![];
         for (file, src) in sources() {
-            if file.ends_with("i18n.rs") { continue; }
+            if file.ends_with("i18n.rs") {
+                continue;
+            }
             for pat in ["trz(\"", "app_label(KApp::"] {
                 let mut from = 0;
                 while let Some(p) = src[from..].find(pat) {
                     let at = from + p;
                     from = at + pat.len();
                     let before = src[..at].chars().last();
-                    if before.is_some_and(|c| c.is_alphanumeric() || c == '_') { continue; }
+                    if before.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                        continue;
+                    }
                     // app_label 的字面量在逗号之后; trz 的紧跟在括号后
-                    let start = if pat.starts_with("trz") { at + pat.len() - 1 } else { match src[at..].find(',') { Some(c) => at + c, None => continue } };
-                    let Some(lit) = literal_after(&src, start) else { continue };
-                    if has_han(&lit) && !zh_index().contains_key(lit.as_str()) { missing.push(format!("{}: {lit}", file.rsplit('/').next().unwrap_or(&file))); }
+                    let start = if pat.starts_with("trz") {
+                        at + pat.len() - 1
+                    } else {
+                        match src[at..].find(',') {
+                            Some(c) => at + c,
+                            None => continue,
+                        }
+                    };
+                    let Some(lit) = literal_after(&src, start) else {
+                        continue;
+                    };
+                    if has_han(&lit) && !zh_index().contains_key(lit.as_str()) {
+                        missing.push(format!(
+                            "{}: {lit}",
+                            file.rsplit('/').next().unwrap_or(&file)
+                        ));
+                    }
                 }
             }
         }
@@ -1189,30 +3066,59 @@ mod tests {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut missing = vec![];
         for (file, src) in sources() {
-            if file.ends_with("i18n.rs") || file.ends_with("msgtr.rs") { continue; }
+            if file.ends_with("i18n.rs") || file.ends_with("msgtr.rs") {
+                continue;
+            }
             let mut from = 0;
             while let Some(p) = src[from..].find("tip = ") {
                 let at = from + p + "tip = ".len();
                 from = at;
                 let head = src[at..].trim_start();
-                let lit_from = if head.starts_with("format!(") { at + src[at..].find("format!(").unwrap_or(0) } else if head.starts_with('"') { at } else { continue };
-                let Some(lit) = literal_after(&src, lit_from) else { continue };
-                if !has_han(&lit) { continue; }
+                let lit_from = if head.starts_with("format!(") {
+                    at + src[at..].find("format!(").unwrap_or(0)
+                } else if head.starts_with('"') {
+                    at
+                } else {
+                    continue;
+                };
+                let Some(lit) = literal_after(&src, lit_from) else {
+                    continue;
+                };
+                if !has_han(&lit) {
+                    continue;
+                }
                 // `{}` / `{name}` / `{n:>3}` 都当成一个占位
                 let mut sample = String::new();
                 let mut depth = 0;
                 for c in lit.chars() {
-                    match c { '{' => { depth += 1; if depth == 1 { sample.push('x'); } } '}' => depth = (depth - 1).max(0), _ if depth == 0 => sample.push(c), _ => {} }
+                    match c {
+                        '{' => {
+                            depth += 1;
+                            if depth == 1 {
+                                sample.push('x');
+                            }
+                        }
+                        '}' => depth = (depth - 1).max(0),
+                        _ if depth == 0 => sample.push(c),
+                        _ => {}
+                    }
                 }
                 set(Lang::En);
                 let out = crate::msgtr::msg(&sample).into_owned();
                 set(Lang::Zh);
-                if has_han(&out) { missing.push(format!("{}: {lit}", file.rsplit('/').next().unwrap_or(&file))); }
+                if has_han(&out) {
+                    missing.push(format!(
+                        "{}: {lit}",
+                        file.rsplit('/').next().unwrap_or(&file)
+                    ));
+                }
             }
         }
         missing.sort();
         missing.dedup();
-        assert!(missing.is_empty(), "这些状态栏提示没有 msgtr 模板: {missing:#?}");
+        assert!(
+            missing.is_empty(),
+            "这些状态栏提示没有 msgtr 模板: {missing:#?}"
+        );
     }
-
 }

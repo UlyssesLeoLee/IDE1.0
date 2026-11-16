@@ -34,6 +34,7 @@ pub fn request(a: Apply) {
 pub fn cancel() {
     *REQUEST.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
+#[allow(dead_code)]
 pub fn requested() -> bool {
     REQUEST.lock().unwrap_or_else(|e| e.into_inner()).is_some()
 }
@@ -62,7 +63,10 @@ pub fn msi_args(file: &Path) -> Vec<String> {
 }
 
 pub fn msiexec_path() -> PathBuf {
-    std::env::var_os("SystemRoot").map(|r| PathBuf::from(r).join("System32").join("msiexec.exe")).filter(|p| p.is_file()).unwrap_or_else(|| PathBuf::from("msiexec"))
+    std::env::var_os("SystemRoot")
+        .map(|r| PathBuf::from(r).join("System32").join("msiexec.exe"))
+        .filter(|p| p.is_file())
+        .unwrap_or_else(|| PathBuf::from("msiexec"))
 }
 
 fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
@@ -77,8 +81,16 @@ fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
 /// 窗口关完后执行 (不等子进程)。失败由调用方忽略: 旧版文件原样没动, 用户重开即可
 pub fn launch(a: &Apply) -> std::io::Result<()> {
     match a {
-        Apply::Msi(file) => no_window(&mut std::process::Command::new(msiexec_path()).args(msi_args(file))).spawn().map(|_| ()),
-        Apply::Swap(new_exe) => no_window(&mut std::process::Command::new(new_exe).arg(APPLY_FLAG)).spawn().map(|_| ()),
+        Apply::Msi(file) => {
+            let mut cmd = std::process::Command::new(msiexec_path());
+            cmd.args(msi_args(file));
+            no_window(&mut cmd).spawn().map(|_| ())
+        }
+        Apply::Swap(new_exe) => {
+            let mut cmd = std::process::Command::new(new_exe);
+            cmd.arg(APPLY_FLAG);
+            no_window(&mut cmd).spawn().map(|_| ())
+        }
     }
 }
 
@@ -95,7 +107,9 @@ pub fn swap_once(src: &Path, target: &Path) -> std::io::Result<()> {
 
 /// 帮手入口 (`main` 在最前面调用): 覆盖旧 exe 并启动新版。无论成败都会尽量把 (新的或原来的) 程序再拉起来, 不让用户落到「应用没了」
 pub fn run_apply() {
-    let Some(me) = std::env::current_exe().ok() else { return };
+    let Some(me) = std::env::current_exe().ok() else {
+        return;
+    };
     let Some(target) = target_of(&me) else { return };
     for _ in 0..RETRIES {
         if swap_once(&me, &target).is_ok() {
@@ -104,12 +118,16 @@ pub fn run_apply() {
         std::thread::sleep(RETRY_GAP);
     }
     // 单实例端口文件可能还指着刚退出的旧进程: 带 --relaunch 直接当第一个实例
-    let _ = no_window(&mut std::process::Command::new(&target).arg(crate::relaunch::FLAG)).spawn();
+    let mut cmd = std::process::Command::new(&target);
+    cmd.arg(crate::relaunch::FLAG);
+    let _ = no_window(&mut cmd).spawn();
 }
 
 /// 上次更新留下的 `.new` / `.upd` (正在以 `.new` 身份运行的帮手不会走到这里: 它只跑 `run_apply`)。启动后惰性清一次, 失败无所谓
 pub fn cleanup_stale() {
-    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
     let new = new_path_of(&exe);
     for p in [new.clone(), PathBuf::from(format!("{}.upd", exe.display()))] {
         if p.is_file() && p != exe {
@@ -124,20 +142,43 @@ mod tests {
 
     #[test]
     fn new_and_target_paths_are_inverse_and_strict() {
-        let exe = Path::new(r"D:\tools\ide-fast.exe");
+        let (exe, expected_new) = if cfg!(windows) {
+            (
+                Path::new(r"D:\tools\ide-fast.exe"),
+                Path::new(r"D:\tools\ide-fast.exe.new"),
+            )
+        } else {
+            (
+                Path::new("/tools/ide-fast"),
+                Path::new("/tools/ide-fast.new"),
+            )
+        };
         let new = new_path_of(exe);
-        assert_eq!(new, Path::new(r"D:\tools\ide-fast.exe.new"));
+        assert_eq!(new, expected_new);
         assert_eq!(target_of(&new).as_deref(), Some(exe));
-        for bad in [r"D:\tools\ide-fast.exe", r"D:\tools\.new", "x.new.exe", ""] {
+        let bad_list = if cfg!(windows) {
+            vec![r"D:\tools\ide-fast.exe", r"D:\tools\.new", "x.new.exe", ""]
+        } else {
+            vec!["/tools/ide-fast", "/tools/.new", "x.new.exe", ""]
+        };
+        for bad in bad_list {
             assert_eq!(target_of(Path::new(bad)), None, "{bad:?}");
         }
     }
 
     #[test]
     fn msi_command_is_a_passive_install_by_absolute_path() {
-        assert_eq!(msi_args(Path::new(r"C:\t\a b.msi")), ["/i", r"C:\t\a b.msi", "/passive"]);
+        assert_eq!(
+            msi_args(Path::new(r"C:\t\a b.msi")),
+            ["/i", r"C:\t\a b.msi", "/passive"]
+        );
         let p = msiexec_path();
-        assert!(p.to_string_lossy().to_ascii_lowercase().ends_with("msiexec.exe") || p == Path::new("msiexec"));
+        assert!(
+            p.to_string_lossy()
+                .to_ascii_lowercase()
+                .ends_with("msiexec.exe")
+                || p == Path::new("msiexec")
+        );
     }
 
     #[test]
@@ -147,7 +188,11 @@ mod tests {
         request(Apply::Msi("a.msi".into()));
         assert!(requested());
         cancel();
-        assert_eq!(take(), None, "关闭被取消 (用户在未保存提示里点了取消) = 更新请求也作废");
+        assert_eq!(
+            take(),
+            None,
+            "关闭被取消 (用户在未保存提示里点了取消) = 更新请求也作废"
+        );
         request(Apply::Swap("x.new".into()));
         assert_eq!(take(), Some(Apply::Swap("x.new".into())));
         assert!(!requested());
@@ -163,7 +208,10 @@ mod tests {
         std::fs::write(&target, b"old").unwrap();
         swap_once(&src, &target).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), b"new");
-        let mut names: Vec<_> = std::fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        let mut names: Vec<_> = std::fs::read_dir(&d)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
         names.sort();
         assert_eq!(names, ["ide-fast.exe", "ide-fast.exe.new"]);
         assert!(swap_once(&d.join("missing"), &target).is_err());

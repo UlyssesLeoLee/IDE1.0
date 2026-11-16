@@ -1,0 +1,29 @@
+{
+  "id": "nema-interpreter",
+  "name": ".NEMA Strict Grammar Interpreter",
+  "version": "1.6.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "MIT",
+  "description": "热插拔官方 .NEMA 严格语法解释器插件 (strict-parser.js)，支持运行时直接热更新语法规则而无需重新编译 IDE",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "scripts": ["strict-parser.js"],
+  "permissions": ["editor.read"],
+  "contributes": {
+    "nema.interpreter": {
+      "id": "nema-strict-js",
+      "label": ".NEMA Strict JS (strict-parser.js)",
+      "method": "render",
+      "parseMethod": "parse",
+      "scriptUrl": "https://nema-sigma.vercel.app/website/strict-parser.js",
+      "grammarUrl": "https://nema-sigma.vercel.app/website/grammar.html"
+    },
+    "command": [
+      {
+        "id": "validate",
+        "title": ".NEMA: 严格语法校验 (Strict Parser 插件)"
+      }
+    ]
+  }
+}

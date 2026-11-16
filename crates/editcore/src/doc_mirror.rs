@@ -58,7 +58,17 @@ pub fn put(id: &str, lines: Vec<String>) -> Arc<Vec<String>> {
     let mut s = store().lock().unwrap_or_else(|e| e.into_inner());
     s.tick += 1;
     let tick = s.tick;
-    insert_capped(&mut s, id, Entry { fp, n, lines: lines.clone(), tick }, MAX_DOCS);
+    insert_capped(
+        &mut s,
+        id,
+        Entry {
+            fp,
+            n,
+            lines: lines.clone(),
+            tick,
+        },
+        MAX_DOCS,
+    );
     lines
 }
 
@@ -66,7 +76,12 @@ pub fn put(id: &str, lines: Vec<String>) -> Arc<Vec<String>> {
 fn insert_capped(s: &mut Store, id: &str, e: Entry, max: usize) {
     s.docs.insert(id.to_string(), e);
     while s.docs.len() > max {
-        match s.docs.iter().min_by_key(|(_, e)| e.tick).map(|(k, _)| k.clone()) {
+        match s
+            .docs
+            .iter()
+            .min_by_key(|(_, e)| e.tick)
+            .map(|(k, _)| k.clone())
+        {
             Some(oldest) => {
                 s.docs.remove(&oldest);
             }
@@ -90,7 +105,11 @@ pub fn get(id: &str, fp: [u32; 2], n: usize) -> Option<Arc<Vec<String>>> {
 
 /// 标签关闭: 丢掉这份文档
 pub fn forget(id: &str) {
-    store().lock().unwrap_or_else(|e| e.into_inner()).docs.remove(id);
+    store()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .docs
+        .remove(id);
 }
 
 #[cfg(test)]
@@ -107,7 +126,11 @@ mod tests {
         assert_eq!(a, fingerprint(&doc(&["abc", "def"])));
         assert_ne!(a, fingerprint(&doc(&["abc", "deg"])));
         assert_ne!(a, fingerprint(&doc(&["abcdef"])), "行边界也算内容");
-        assert_ne!(fingerprint(&doc(&["a", ""])), fingerprint(&doc(&["a"])), "末尾空行也算内容");
+        assert_ne!(
+            fingerprint(&doc(&["a", ""])),
+            fingerprint(&doc(&["a"])),
+            "末尾空行也算内容"
+        );
         // 非 BMP 字符按两个 UTF-16 码元喂入 (前端 charCodeAt 就是这样)
         let mut h1 = 0x811C_9DC5u32;
         for u in [0xD83Du32, 0xDE00, 10] {
@@ -116,7 +139,10 @@ mod tests {
         assert_eq!(fingerprint(&doc(&["😀"]))[0], h1);
         // 与前端 docFingerprint 的已知值核对 (用前端算法在 node 里算出来的; tests/uat/specs/doc-mirror.spec.ts 里是同一组输入)
         assert_eq!(a, [2_700_757_720, 821_783_810]);
-        assert_eq!(fingerprint(&doc(&["日本語😀", "x"])), [2_129_295_297, 4_181_592_631]);
+        assert_eq!(
+            fingerprint(&doc(&["日本語😀", "x"])),
+            [2_129_295_297, 4_181_592_631]
+        );
     }
 
     #[test]
@@ -126,7 +152,10 @@ mod tests {
         assert!(get("t-doc-a", fp, 2).is_none(), "没登记过");
         put("t-doc-a", d.clone());
         assert_eq!(get("t-doc-a", fp, 2).as_deref(), Some(&d));
-        assert!(get("t-doc-a", [fp[0] ^ 1, fp[1]], 2).is_none(), "指纹对不上 = 前端改过");
+        assert!(
+            get("t-doc-a", [fp[0] ^ 1, fp[1]], 2).is_none(),
+            "指纹对不上 = 前端改过"
+        );
         assert!(get("t-doc-a", fp, 3).is_none(), "行数对不上");
         forget("t-doc-a");
         assert!(get("t-doc-a", fp, 2).is_none());
@@ -137,7 +166,17 @@ mod tests {
         // 用自己的 Store, 不碰进程里共用的那份 (别的测试并行在用)
         let mut st = Store::default();
         for i in 0..5u64 {
-            insert_capped(&mut st, &format!("d{i}"), Entry { fp: [0, 0], n: 0, lines: Arc::new(vec![]), tick: i }, 3);
+            insert_capped(
+                &mut st,
+                &format!("d{i}"),
+                Entry {
+                    fp: [0, 0],
+                    n: 0,
+                    lines: Arc::new(vec![]),
+                    tick: i,
+                },
+                3,
+            );
         }
         let mut ids: Vec<&String> = st.docs.keys().collect();
         ids.sort();

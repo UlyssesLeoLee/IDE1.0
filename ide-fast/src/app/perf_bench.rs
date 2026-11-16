@@ -71,23 +71,54 @@ fn perf_bench_open() {
         });
         report(label, ms);
     }
-    let p = tmp("l200k.txt", &(0..200_000).map(|i| code_line(i) + "\n").collect::<String>());
-    report("open_200k_lines_ms", median_ms(3, || assert_eq!(Doc::open(1, &p).unwrap().lines.len(), 200_001)));
+    let p = tmp(
+        "l200k.txt",
+        &(0..200_000)
+            .map(|i| code_line(i) + "\n")
+            .collect::<String>(),
+    );
+    report(
+        "open_200k_lines_ms",
+        median_ms(3, || {
+            assert_eq!(Doc::open(1, &p).unwrap().lines.len(), 200_001)
+        }),
+    );
     let one = "word ".repeat(1024 * 1024 / 5);
     let p = tmp("oneline.txt", &one);
-    report("open_1mb_single_line_ms", median_ms(3, || assert_eq!(Doc::open(1, &p).unwrap().lines.len(), 1)));
+    report(
+        "open_1mb_single_line_ms",
+        median_ms(3, || assert_eq!(Doc::open(1, &p).unwrap().lines.len(), 1)),
+    );
 }
 
 #[test]
 #[ignore]
 fn perf_bench_find_undo() {
-    let p = tmp("find200k.rs", &(0..200_000).map(|i| code_line(i) + "\n").collect::<String>());
+    let p = tmp(
+        "find200k.rs",
+        &(0..200_000)
+            .map(|i| code_line(i) + "\n")
+            .collect::<String>(),
+    );
     let d = Doc::open(1, &p).unwrap();
     let o = crate::find::FindOpts::default();
-    report("find_all_many_hits_200k_ms", median_ms(5, || assert!(d.find_hits("let y", o).unwrap().len() >= 5000)));
-    report("find_all_no_hit_200k_ms", median_ms(5, || assert!(d.find_hits("zzzq", o).unwrap().is_empty())));
+    report(
+        "find_all_many_hits_200k_ms",
+        median_ms(5, || {
+            assert!(d.find_hits("let y", o).unwrap().len() >= 5000)
+        }),
+    );
+    report(
+        "find_all_no_hit_200k_ms",
+        median_ms(5, || assert!(d.find_hits("zzzq", o).unwrap().is_empty())),
+    );
     let re = crate::find::FindOpts { regex: true, ..o };
-    report("find_all_regex_200k_ms", median_ms(5, || assert!(!d.find_hits(r"item_\d+7\(", re).unwrap().is_empty())));
+    report(
+        "find_all_regex_200k_ms",
+        median_ms(5, || {
+            assert!(!d.find_hits(r"item_\d+7\(", re).unwrap().is_empty())
+        }),
+    );
 
     // 撤销: 在大文档中间做 10k 次独立编辑 (撤销栈上限 5000, 实际可撤销步数见 PERF_undo_steps)
     let mut d = Doc::open(2, &p).unwrap();
@@ -97,7 +128,10 @@ fn perf_bench_find_undo() {
         d.goto(100_000 + i % 50, 3);
         d.type_text("a");
     }
-    report("type_10k_edits_200k_doc_ms", t.elapsed().as_secs_f64() * 1000.0);
+    report(
+        "type_10k_edits_200k_doc_ms",
+        t.elapsed().as_secs_f64() * 1000.0,
+    );
     let t = Instant::now();
     let mut steps = 0;
     while !d.undo_is_empty() {
@@ -116,13 +150,18 @@ fn perf_bench_find_undo() {
     while !s.undo_is_empty() {
         s.undo();
     }
-    report("type_undo_10k_small_doc_ms", t.elapsed().as_secs_f64() * 1000.0);
+    report(
+        "type_undo_10k_small_doc_ms",
+        t.elapsed().as_secs_f64() * 1000.0,
+    );
 }
 
 #[test]
 #[ignore]
 fn perf_bench_frames() {
-    let g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let g = crate::i18n::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
     let ctx = egui::Context::default();
     // 空文档的一帧 (界面本身的开销)
@@ -131,24 +170,41 @@ fn perf_bench_frames() {
     }
     report("frame_empty_ms", median_ms(20, || frame(&mut a, &ctx)));
 
-    let p = tmp("scroll200k.rs", &(0..200_000).map(|i| code_line(i) + "\n").collect::<String>());
+    let p = tmp(
+        "scroll200k.rs",
+        &(0..200_000)
+            .map(|i| code_line(i) + "\n")
+            .collect::<String>(),
+    );
     a.docs[0] = Doc::open(1, &p).unwrap();
     for _ in 0..3 {
         frame(&mut a, &ctx);
     }
-    report("frame_200k_steady_ms", median_ms(20, || frame(&mut a, &ctx)));
+    report(
+        "frame_200k_steady_ms",
+        median_ms(20, || frame(&mut a, &ctx)),
+    );
     // 滚动: 光标每帧跳到新位置 (reveal 把视口带过去), 量带排版的帧
     let mut row = 1000;
-    report("frame_200k_scroll_ms", median_ms(30, || {
-        row += 97;
-        a.docs[0].goto(row, 0);
-        frame(&mut a, &ctx);
-    }));
+    report(
+        "frame_200k_scroll_ms",
+        median_ms(30, || {
+            row += 97;
+            a.docs[0].goto(row, 0);
+            frame(&mut a, &ctx);
+        }),
+    );
 
     // 1 MB 单行: 一帧要排的是一行 100 万字符
     let p = tmp("one.txt", &"word ".repeat(1024 * 1024 / 5));
     a.docs[0] = Doc::open(2, &p).unwrap();
-    report("frame_1mb_single_line_first_ms", median_ms(1, || frame(&mut a, &ctx)));
-    report("frame_1mb_single_line_steady_ms", median_ms(5, || frame(&mut a, &ctx)));
+    report(
+        "frame_1mb_single_line_first_ms",
+        median_ms(1, || frame(&mut a, &ctx)),
+    );
+    report(
+        "frame_1mb_single_line_steady_ms",
+        median_ms(5, || frame(&mut a, &ctx)),
+    );
     drop(g);
 }

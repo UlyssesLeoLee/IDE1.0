@@ -40,7 +40,12 @@ fn position(lines: &[String], mut off: usize) -> [usize; 2] {
 /// 在 `lines` (从文档第 `base` 行起的一段, 必须覆盖选区和落点) 里把选区 `src` 移到 / 复制到 `drop`。
 /// 返回 (新的这一段行, 新文字所在的范围 [r1,c1,r2,c2], 行号相对这一段)。
 /// 移动时落点在选区内部 (含两端) = None (什么也不做); 选区为空 = None。
-pub fn drop_lines(lines: &[String], src: [usize; 4], drop: [usize; 2], copy: bool) -> Option<(Vec<String>, [usize; 4])> {
+pub fn drop_lines(
+    lines: &[String],
+    src: [usize; 4],
+    drop: [usize; 2],
+    copy: bool,
+) -> Option<(Vec<String>, [usize; 4])> {
     let s = offset(lines, [src[0], src[1]]);
     let e = offset(lines, [src[2], src[3]]);
     let d = offset(lines, drop);
@@ -91,12 +96,22 @@ impl Doc {
         }
         let Some(src) = self.sel else { return false };
         let last = self.lines.len() - 1;
-        let drop = [drop[0].min(last), drop[1].min(self.lines[drop[0].min(last)].chars().count())];
+        let drop = [
+            drop[0].min(last),
+            drop[1].min(self.lines[drop[0].min(last)].chars().count()),
+        ];
         let lo = src[0].min(drop[0]);
         let hi = src[2].max(drop[0]).min(last);
         let slice = self.lines[lo..=hi].to_vec();
         let rel = |p: [usize; 2]| [p[0] - lo, p[1]];
-        let Some((new_lines, range)) = drop_lines(&slice, [src[0] - lo, src[1], src[2] - lo, src[3]], rel(drop), copy) else { return false };
+        let Some((new_lines, range)) = drop_lines(
+            &slice,
+            [src[0] - lo, src[1], src[2] - lo, src[3]],
+            rel(drop),
+            copy,
+        ) else {
+            return false;
+        };
         let (a, b) = ([range[0] + lo, range[1]], [range[2] + lo, range[3]]);
         self.box_sel = None;
         self.extra.clear();

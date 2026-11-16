@@ -986,3 +986,61 @@ pub fn makefile() -> TypeConfig {
             "if", "else", "endif", "ifdef", "ifndef", "include", "define", "endef",
         ])
 }
+
+// ===== NEMA (v1.5 语义数据与传输格式) =====
+pub fn nema() -> TypeConfig {
+    TypeConfig::new("NEMA")
+        .exts(&["nema", "nemat"])
+        .keywords(&[
+            "What",
+            "Why",
+            "How",
+            "Who",
+            "When",
+            "Where",
+            "Element",
+            "Relation",
+            "Description",
+        ])
+        .type_keywords(&["table", "5w1h", "graph", "nema", "nemat"])
+        .outline(nema_outline)
+}
+
+/// NEMA 大纲：提取 `\t$N` 字典清单与 `\t(\|?|>)[1-9][0-9]*` 域头及显式表头
+pub fn nema_outline(text: &str) -> Vec<OutlineEntry> {
+    let mut entries = Vec::new();
+    for (line_no, line) in text.lines().enumerate() {
+        if let Some(rest) = line.strip_prefix("\t$") {
+            if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+                entries.push(OutlineEntry::new(
+                    format!("$dict ({rest})"),
+                    "module",
+                    line_no as i32,
+                ));
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('\t') {
+            let mut chars = rest.chars();
+            if let Some(mode_ch) = chars.next() {
+                let kind_label = match mode_ch {
+                    '\\' => Some("Table"),
+                    '?' => Some("5W1H"),
+                    '>' => Some("Graph"),
+                    _ => None,
+                };
+                if let Some(lbl) = kind_label {
+                    let tail = rest[mode_ch.len_utf8()..].trim();
+                    if !tail.is_empty() {
+                        entries.push(OutlineEntry::new(
+                            format!("{lbl} {mode_ch}{tail}"),
+                            "section",
+                            line_no as i32,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    entries
+}

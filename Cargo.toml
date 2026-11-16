@@ -6,14 +6,15 @@ members = [
   "crates/ide-cli",
   "crates/ide-shell",
   "crates/ide-shell-web",
-  "crates/ide-shell-desktop",
   "crates/ide-shell-protocol",
   "crates/editcore",
+  "crates/ide-agent-router",
+  "crates/nema-codec",
   "ide-fast",
 ]
 
 [workspace.package]
-version = "0.3.9"
+version = "0.6.9"
 edition = "2021"
 rust-version = "1.77"
 license = "AGPL-3.0-only"
@@ -52,10 +53,12 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tokio-tungstenite = "0.24"
 async-trait = "0.1"
+nema-codec = { path = "crates/nema-codec" }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
 
 [profile.dev]
 opt-level = 0

@@ -346,7 +346,7 @@ fn feature_6_6_outline_extended() {
 
 #[test]
 fn feature_7_1_utf8_io() {
-    use editcore::encoding_io::{read_auto, read_auto_compat, write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
+    use editcore::encoding_io::{read_auto_compat, write_with_encoding_compat, EncodingKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
@@ -362,7 +362,7 @@ fn feature_7_1_utf8_io() {
 
 #[test]
 fn feature_7_2_shift_jis() {
-    use editcore::encoding_io::{read_auto, read_auto_compat, write_with_encoding, write_with_encoding_compat, EncodingKind, BomKind};
+    use editcore::encoding_io::{read_auto_compat, write_with_encoding_compat, EncodingKind};
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);
@@ -377,7 +377,9 @@ fn feature_7_2_shift_jis() {
 
 #[test]
 fn feature_7_3_euc_jp() {
-    use editcore::encoding_io::{read_with_encoding_compat, write_with_encoding_compat, EncodingKind};
+    use editcore::encoding_io::{
+        read_with_encoding_compat, write_with_encoding_compat, EncodingKind,
+    };
     use std::sync::atomic::{AtomicUsize, Ordering};
     static CTR: AtomicUsize = AtomicUsize::new(0);
     let n = CTR.fetch_add(1, Ordering::SeqCst);

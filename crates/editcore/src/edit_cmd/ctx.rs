@@ -4,8 +4,8 @@
 //! 不要拿 [`Ctx::line`] 给的空行去改文档 (会把真实内容写没)。
 
 use super::req_res::{EditReq, EditRes};
-use crate::word::first_word_col;
 use crate::text_util::{chars_of, slice};
+use crate::word::first_word_col;
 use std::collections::HashMap;
 
 pub(super) struct Ctx<'a> {
@@ -29,10 +29,27 @@ impl<'a> Ctx<'a> {
         for (i, (r, _)) in req.rows.iter().enumerate() {
             idx.entry(*r).or_insert(i); // 重复行号: 第一个算数
         }
-        let mut cx = Ctx { req, idx, row: req.row, col: 0, last_row: req.total_rows.saturating_sub(1), line: Vec::new(), sel: None };
+        let mut cx = Ctx {
+            req,
+            idx,
+            row: req.row,
+            col: 0,
+            last_row: req.total_rows.saturating_sub(1),
+            line: Vec::new(),
+            sel: None,
+        };
         cx.line = cx.line(req.row);
         cx.col = req.col.min(cx.line.len());
-        cx.sel = req.sel.map(|s| if (s[2], s[3]) < (s[0], s[1]) { [s[2], s[3], s[0], s[1]] } else { s }).filter(|s| !(s[0] == s[2] && s[1] == s[3]));
+        cx.sel = req
+            .sel
+            .map(|s| {
+                if (s[2], s[3]) < (s[0], s[1]) {
+                    [s[2], s[3], s[0], s[1]]
+                } else {
+                    s
+                }
+            })
+            .filter(|s| !(s[0] == s[2] && s[1] == s[3]));
         cx
     }
 
@@ -42,7 +59,10 @@ impl<'a> Ctx<'a> {
     }
     /// 某一行的字符 (没交上来的行是空的, 先用 `has_row` 查)
     pub fn line(&self, r: usize) -> Vec<char> {
-        self.idx.get(&r).map(|&i| chars_of(&self.req.rows[i].1)).unwrap_or_default()
+        self.idx
+            .get(&r)
+            .map(|&i| chars_of(&self.req.rows[i].1))
+            .unwrap_or_default()
     }
     /// 光标行的文本
     pub fn line_str(&self) -> String {
@@ -71,7 +91,12 @@ impl<'a> Ctx<'a> {
         let first = self.line(s[0]);
         let head = slice(&first, 0, s[1]);
         let tail = slice(&self.line(s[2]), s[3], usize::MAX);
-        EditRes::splice(s[0], s[2] - s[0] + 1, vec![format!("{head}{tail}")], [s[0], s[1].min(first.len())])
+        EditRes::splice(
+            s[0],
+            s[2] - s[0] + 1,
+            vec![format!("{head}{tail}")],
+            [s[0], s[1].min(first.len())],
+        )
     }
     /// 剪切选区 (删除 + 选区文字进剪贴板)
     pub fn cut_sel(&self, s: [usize; 4]) -> EditRes {
@@ -82,16 +107,33 @@ impl<'a> Ctx<'a> {
     pub fn join_next(&self, r: usize, skip_leading: bool) -> EditRes {
         let cur = self.line(r);
         let next = self.line(r + 1);
-        let skip = if skip_leading { first_word_col(&next) } else { 0 };
-        let joined = format!("{}{}", cur.iter().collect::<String>(), slice(&next, skip, usize::MAX));
+        let skip = if skip_leading {
+            first_word_col(&next)
+        } else {
+            0
+        };
+        let joined = format!(
+            "{}{}",
+            cur.iter().collect::<String>(),
+            slice(&next, skip, usize::MAX)
+        );
         EditRes::splice(r, 2, vec![joined], [r, cur.len()])
     }
     /// 把光标行并到上一行末尾 (光标行必须不是第 0 行), 光标落在原来的上一行行尾; `trim` = 并入前去掉光标行开头的空白
     pub fn join_into_prev(&self, trim: bool) -> EditRes {
         let prev = self.line(self.row - 1);
         let cur = self.line_str();
-        let cur = if trim { cur.trim_start().to_string() } else { cur };
-        EditRes::splice(self.row - 1, 2, vec![format!("{}{}", prev.iter().collect::<String>(), cur)], [self.row - 1, prev.len()])
+        let cur = if trim {
+            cur.trim_start().to_string()
+        } else {
+            cur
+        };
+        EditRes::splice(
+            self.row - 1,
+            2,
+            vec![format!("{}{}", prev.iter().collect::<String>(), cur)],
+            [self.row - 1, prev.len()],
+        )
     }
 }
 
@@ -100,7 +142,14 @@ mod tests {
     use super::*;
 
     fn req(row: usize, col: usize, sel: Option<[usize; 4]>) -> EditReq {
-        EditReq { row, col, sel, total_rows: 3, rows: vec![(0, "ab".into()), (1, "cde".into()), (2, "f".into())], ..Default::default() }
+        EditReq {
+            row,
+            col,
+            sel,
+            total_rows: 3,
+            rows: vec![(0, "ab".into()), (1, "cde".into()), (2, "f".into())],
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -113,7 +162,10 @@ mod tests {
 
     #[test]
     fn reversed_and_empty_selections_are_normalised() {
-        assert_eq!(Ctx::new(&req(0, 0, Some([2, 1, 0, 1]))).sel, Some([0, 1, 2, 1]));
+        assert_eq!(
+            Ctx::new(&req(0, 0, Some([2, 1, 0, 1]))).sel,
+            Some([0, 1, 2, 1])
+        );
         assert_eq!(Ctx::new(&req(0, 0, Some([1, 2, 1, 2]))).sel, None);
     }
 
@@ -133,7 +185,10 @@ mod tests {
         let cx = Ctx::new(&r);
         assert_eq!(cx.sel_text([0, 1, 2, 1]), "b\ncde\nf");
         let j = cx.join_into_prev(false);
-        assert_eq!((j.insert, j.cursor, j.start, j.remove), (vec!["abcde".to_string()], [0, 2], 0, 2));
+        assert_eq!(
+            (j.insert, j.cursor, j.start, j.remove),
+            (vec!["abcde".to_string()], [0, 2], 0, 2)
+        );
         assert_eq!(cx.join_next(1, false).insert, vec!["cdef".to_string()]);
     }
 }

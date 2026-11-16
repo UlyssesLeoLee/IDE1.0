@@ -1,6 +1,140 @@
 # Changelog
 
-## 未发布
+## 0.6.2 — 2026-11-08
+
+### 美漫 3渲2 卡通渲染全端默认主题、WiX 安装包波普界面与 Sakura 🌸 常驻托盘
+
+本版本正式将全端默认主题统一为美漫 3渲2 (	heme-comic / comic)，注入 3D 挤出徽章与赛璐珞风格，全面升级 Windows WiX 安装包、原生 PE 多分辨率图标与右下角任务栏系统托盘。
+
+#### 1. 全端默认美漫 3渲2 主题 (3D-to-2D Cel-Shaded Comic)
+- **视觉风格**: 波普饱和黄 (#ffcc00) 状态栏、赛璐珞霓虹粉红 (#ff3366) 关键字高亮、青蓝 (#00e5ff) 行号高亮与粗描边。
+- **极端对比度抗眩光不变量**: 状态栏采用感知亮度对数模型，当底色亮度 >= 0.5 时文字强制采用 #000000 纯黑，杜绝黄白眩光与视力障碍。
+- **全端同步**: Web 端 (editor.html)、Desktop 壳 (index.html) 与极速原生版 (ide-fast) 首次启动与重置默认一致生效。
+
+#### 2. WiX MSI 安装包 3渲2 视觉重塑与 Windows PE 图标注入
+- **安装向导美漫图元**: 顶部横幅 Banner (493x58) 与向导背景 Dialog (493x312) 注入网点波普艺术与 3D 挤出立体徽章。
+- **多分辨率 PE 图标**: 内嵌 16x16、32x32、48x48、64x64、128x128、256x256 六帧清晰图标，开始菜单与高分屏任务栏告别模糊。
+
+#### 3. Windows 任务栏系统托盘 Sakura 🌸 常驻
+- **常驻系统托盘**: 运行后常驻 Windows 屏幕右下角时间旁边，支持左键单击一键最小化/还原置顶、右键菜单快捷唤起与退出。
+- **状态栏联动与多语言**: 状态栏最右侧呈现 🌸 Sakura 状态指示器与交互提示，中/日/英三语字典完整覆盖。
+
+#### 4. NEMA 语义解析对抗调优与红绿测试
+- **续接行防误判**: 严格区分单空格领域头 ( \1 1) 与 5W1H 自然语言续接行，阻断虚假领域分裂。
+- **完整测试矩阵**: 覆盖 64 态组合、调色板对比度不变量、安装包图元规格校验，测试集全绿，Clippy 零警告。
+
+## 0.6.1 — 2026-11-07
+
+### 自适应解释器导入引擎、.NEMA 全语法变化矩阵与 64 态组合验证器
+
+本版本正式引入面向 .nema 活跃调试阶段的用户自定义解释器导入与自适应适配引擎，支持外部 Python 脚本、本地二进制与 CLI 驱动的即插即用，并全面落地《.NEMA 全语法变化矩阵 · 七列完整审查版》交互式看板与 4³ = 64 态穷举测试套件。
+
+#### 1. 自定义解释器导入与自适应适配引擎 (Adaptive Interpreter Engine)
+- **多源解释器接入与自动发现**: 自动检测并枚举可用候选（官方 Python 参考实现 `codec/native.py`、`codec/cli.py`、工作区 `.ide/nema_interpreter.py` 等），支持用户自定义文件路径与运行环境（Python / Binary / Node.js / Auto）。
+- **动态能力探针 (Adaptive Probing)**: 自动探测 5 种底层调用协议（`PythonNativeView`、`OfficialCliRender`、`GenericJsonAstStdin`、`GenericFileArg`、`BuiltinRust`），实时评测往返延迟与特性兼容性。
+- **全链路后端 API 与平滑降级**: 提供 `/api/nema/status`、`/api/nema/probe`、`/api/nema/set_interpreter`、`/api/nema/render` 接口；遇外部解释器语法或进程异常自动安全回退至内置纯 Rust 标准引擎。
+- **工具条解释器管理弹窗**: NEMA 工具栏新增 `[🔌 解释器]` 胶囊，点击即可一键管理、实时探测与热切换生效。
+
+#### 2. .NEMA 全语法变化矩阵 · 七列完整审查版交互看板
+- **权威规范基线落盘**: 在 `docs/06_功能对标/NEMA_SYNTAX_MATRIX_7COL.md` 建立固定 7 列架构基线（`语法 | 说明 | 具体例子 | 设计理由 | 避免的异常 | 变化写法 | 变化渲染结果`）。
+- **交互式 64 态组合验证器 (4³ = 64 Basic Combinations)**: 针对固定三列表格的 4 种基本状态（Value `A` / Null `~` / Empty `\e` / Missing `\_`），支持自由切换状态、实时生成变化写法代码，并由当前解释器实时渲染解析表格。
+- **分类筛选与实时检索**: 覆盖 Table、5W1H、Node–Edge、转义字面、NEMAT 传输、全局词法等核心规则，支持一键点击变化写法试算与插入编辑器。
+
+#### 3. 64 态全排列自动化测试套件
+- **穷举测试全绿**: 新增 `crates/nema-codec/tests/matrix_64_combinations_tests.rs`，100% 验证 64 种三列字段状态组合在原生引擎与自适应渲染中的确定性语义。
+- **边界与错误注入**: 严格校验零编号拒绝、超列拦截、畸形边解析与悬空端点引用。
+
+## 0.6.0 — 2026-11-07
+
+### IDE1.0 × NEMA 交互图拓扑渲染器、基准实验室与新解释器规范对齐
+
+本版本为 IDE1.0 重大里程碑版本，全面对齐 .NEMA 官方参考实现与最新解释器演进规范，引入交互式拓扑图渲染引擎、实时 Benchmark Lab 监控中心，并完成全工作区严格的静态安全自审与 Clippy 零警告加固。
+
+#### 1. .NEMA 官方规范与交互式拓扑渲染器 (Graph Canvas)
+- **拓扑图渲染 (Graph Domain Visualizer)**: 深度对齐 .NEMA 官方规范（v1.2 Release R7 及最新解释器），实时解析 ` >G` 领域中的节点 (`n id label [props]`) 与边 (`e src dst [type]`)，支持双向交互、节点选中高亮、边类型标识与动态布局。
+- **实时 Benchmark Lab**: 内置与官方基准测试实验室同构的实时分析器，精准测算 .NEMA 与 JSON/YAML/XML 的体积压缩比（Token 节约率高达 70%+）、AST 解析延迟与内存分配开销。
+- **三端统一交付**: 网页端 (ide-shell-web)、Tauri 桌面端 (ide-shell-desktop) 与极速桌面端 (ide-fast) 体验保持一致，工具栏底栏一键展开。
+
+#### 2. .NEMA 新解释器规范演进与兼容性支持
+- **单空格领域头语法兼容**: 紧跟 `E:\.NEMA\website\download.html` 及官方核心提交，兼容支持单空格前缀领域头（` ?`、` `、` >`）与隐式/显式 Table 结构。
+- **全角字符严格拒绝**: 遵循安全与格式一致性原则，严格拒绝 U+3000 全角空格。
+- **往返无损保真 (Roundtrip 100%)**: 官方测试用例（`test_v15.py`）及 60+ 官方示例往返还原度 100%。
+
+#### 3. 严格安全自审与代码质量加固 (Clippy Clean & Safe Rust)
+- **Clippy 全量零警告**: 全工作区（All targets, tests, benches）在 `-- -D warnings` 严苛模式下 0 警告退出。
+- **内存安全保证**: 核心 crate 严格禁止 unsafe 代码（`#![forbid(unsafe_code)]`），确保内存安全与并发无数据竞争。
+- **全量自动化测试套件通过**: 1227+ 项单元测试、集成测试、基准测试与并发测试 100% 通过（ide-fast 518 项、editcore 610 项、ide-shell-web 99 项全绿灯）。
+
+#### 4. 高性能二进制交付
+- **发布产物**: `dist-fast/ide-fast.exe`（Release 构建优化，体积 18.53 MB）。
+- **完整性校验**: SHA256 哈希值 `7A04ADE84EAEEA003CD6FE6435E634BC2E487062DC7EC8F6E44AB69A65A0344D`。
+
+## 0.3.2 — 2026-11-06
+
+### IDE1.0 × NEMA v1.5 多智能体协同开发平台与流水线加固
+本版本正式发布面向生产级的 .nema 原生多智能体协同开发平台、NEMA v1.5 无损编解码内核与红绿测试加固，并合并全部 5 项 GitHub Actions 依赖安全升级 PR（#23..#27），全面覆盖网页版 (ide-shell-web)、Tauri 桌面版 (ide-shell-desktop) 与高速版 (ide-fast)。
+
+#### 1. 多智能体四阶段协同流水线 (crates/ide-agent-router)
+- **① 路由拆解 (RouterEngine)**: 输入形态智能分类（功能开发/缺陷修复/优化/重构），拓扑 DAG 自动规划，划分 Group A（同文件共编）与 Group B（独立文件并行）。
+- **② 并行协作 (Co-editing .nema)**: 细粒度 GuidanceZone 契约与单调递增 encing_token 防脏写，极简 Token 传输开销。
+- **③ 汇总统筹与代码转换 (Aggregator & NemaToRustLowering)**:
+  - **跨分支字典归一化与 ^N 索引重排**: 统一重排各分支独立词典并建立映射表，自动更新 AST 引用，消除语义漂移。
+  - **三路语义合并 (NemaSemanticMerger)**: 领域与记录级结构化合并，严格保证精确 3 个物理 LF（对应 2 个空物理行）的 NEMA 终结不变量。
+  - **结构化代码生成与防漂移守护 (NemaRustDriftGuard)**: 将 .nema 降解为标准 Rust 代码，结合 sanitize_rust_ident 自动清洗非法字符与数字前缀，双向关联 SourceMap。
+- **④ Git 分支管理与闭环验证 (GitBranchOrchestrator & VerifyPipeline)**:
+  - 文件级 Git 分支生命周期管理与原子 PR 合并。
+  - 4 重严苛门禁验证（构建、单测、质量、规范），通关签发 AcceptanceCertificate；失败自动逆向生成工单回流；断路器（CircuitBreak）防止同指纹错误死循环。
+
+#### 2. 智能体独立模型与思考配置 (Per-Agent Profiles)
+- 7 大智能体槽位（Router、Agent A1..B2、Aggregator、Verify）均支持独立模型、推理强度（Low/Medium/High/Max）、思考模式（Adaptive/Extended/Off）与 Token 预算配置，前端面板实时修改并自动持久化。
+
+#### 3. 三端全能力覆盖与高速版零开销启动
+- 网页版与 Tauri 桌面端协同看板 100% 字节级一致。
+- 高速版 (ide-fast) 内置纯 Rust 离线四阶段流水线调度（Action::RunCollabPipeline）与中/日/英三语国际化。
+- **⚡ 严格零启动开销保证**: 未配置外部 AI 时冷启动绝不读取 i.json、不初始化网络运行时、不派生后台线程。
+
+#### 4. GitHub Actions CI/CD 安全加固 (PR #23 ~ #27)
+- ctions/checkout 升级至 7
+- ctions/setup-node 升级至 7
+- ctions/setup-python 升级至 7
+- ctions/upload-artifact 升级至 7
+- ctions/download-artifact 升级至 8
+
+## 0.4.0 — 2026-11-05
+
+### IDE1.0 Web 2.0 — 语义路由与多 Agent 协作内核 (Semantic Agent Router & Worker)
+本版本在保留原有 Tauri 桌面端、Rust 编辑核心与自包含 Web Workbench 的基础上，正式推出面向大规模 AI Agent 并发协作的纯 Rust 语义路由与一致性协调器 (`crates/ide-agent-router`)，并完成 Vercel 云端部署与多语言 Agent SDK。
+
+#### 1. 核心架构与日本 IPA 要件全覆盖
+- **三平面拓扑 (Control Plane + Semantic Task Plane + Execution Plane)**:
+  - 控制面: 鉴权、租户路由、任务状态机调度、排队与死信恢复。
+  - 语义任务面: 基于 AST 的语义单元抽取、多语言符号定位 (Rust, Python, TS, JS, C, PowerShell)、依赖 DAG。
+  - 执行面: 隔离沙盒环境并行执行、仅交付结构化 Patch、不直接覆盖权威源文件。
+- **全套日本 IPA 标准研发工件落盘**:
+  - `docs/00_要件基线/Web-Agent-Router-Requirements.md`: 8 项核心不变量 (NRP) 与 60 项要件追溯基线。
+  - `docs/01_基本设计/Web-Agent-Router-Basic-Design.md`: 整体系统架构、路由与调度拓扑、故障域与灾备。
+  - `docs/02_详细设计/Semantic-Units-and-Commit-Protocol.md`: 稳定复合指纹、AST 锚点重定位算法、并发冲突决策矩阵。
+  - `docs/02_详细设计/Router-Worker-API.openapi.yaml`: OpenAPI 3.1 规格。
+  - `docs/02_详细设计/Postgres-Schema-and-State-Machines.md`: 16 张生产表 DDL、原子 CAS 提交事务与 Transactional Outbox 模板。
+  - `docs/03_测试资料/UT-IT-ST-UAT-Web-Agent-Router.xlsx` 与 `.md`: Excel 全量追溯矩阵与测试计划。
+  - `docs/04_评审与管理/WBS-Web-Agent-Router.md`: 4 阶段 18 项 WBS 追踪与门禁审查。
+  - `docs/05_实装与运维/Vercel-Deployment-and-Recovery.md`: Worker 故障自愈、租约过期重调度与幂等控制。
+
+#### 2. Rust 语义核心与一致性协调器 (`crates/ide-agent-router`)
+- **稳定语义指纹与锚点定位**: 基于语法节点特征计算复合哈希，有效防止代码编辑时的行号漂移；同函数被并发修改时精准检出并触发 `SemanticWriteConflict` (HTTP 409)。
+- **乐观并发与 CAS 提交协议**: 每个文件维护权威单调自增 `revision`，以 CAS (Compare-And-Swap) 串行化同一文件的最终提交决策。
+- **租约与单调 Fencing Token**: 签发 60s 有限期租约并派发全局单调递增 `fencing_token`；配合心跳续约与过期拦截，彻底消除僵尸 Worker 脏写风险。
+- **Transactional Outbox 机制**: Patch 提交与领域事件生成在同一原子事务中落盘，解耦异步 Git 投影与外部通知。
+- **严苛并发与规模验证**: `tests/concurrency_tests.rs` 7/7 项全绿 (含 100 个并发补丁无损合并、1000 任务批量入队排队分发、指纹漂移防御、重复幂等拦截)。
+
+#### 3. Vercel Serverless 网关与多语言 SDK
+- **云端部署与 API 网关**:
+  - 生产接入: `https://ide1-0.vercel.app` (临时验证 URL: `https://fleet-acacia-7gzmn0a.tmp.now`)
+  - 覆盖 `/api/v1/jobs/dispatch`、`/api/v1/tasks/claim`、`/api/v1/patches/commit`、`/api/v1/events`、`/api/v1/health`。
+- **多语言 Agent SDK 与协同示例**:
+  - `sdk/python/ide_agent_sdk.py`: 生产级 Python 异步/同步客户端。
+  - `sdk/typescript/ide_agent_sdk.ts`: 生产级 TypeScript 客户端。
+  - `sdk/examples/multi_agent_collab_demo.py`: 多 Agent 并行领取任务、提交补丁与冲突自愈实跑用例。
 
 ### 工程 (WBS-03 O1.1 / O1.7)
 - **CI 工作流修复**: `.github/workflows/ci.yml` 之前没有顶层 `jobs:` 键、触发分支写成 `develop`, GitHub 判定无效, 从没真正运行过。现在结构有效、触发分支改为 `dev`; 只启用 `cargo test -p editcore` (三个平台), 其余 job 和 fmt / clippy / `-D warnings` 暂时关闭并注明对应 WBS 编号, 待逐项验证后再打开。

@@ -339,7 +339,9 @@ fn katakana_to_halfwidth(s: &str) -> String {
             tmp.push(c);
         }
     }
-    crate::zenkaku_hankaku::to_halfwidth(&tmp).replace('\u{3099}', "\u{FF9E}").replace('\u{309A}', "\u{FF9F}")
+    crate::zenkaku_hankaku::to_halfwidth(&tmp)
+        .replace('\u{3099}', "\u{FF9E}")
+        .replace('\u{309A}', "\u{FF9F}")
 }
 
 /// 検索: テキスト内で パターン (複数候補) のいずれかにマッチする位置を返す

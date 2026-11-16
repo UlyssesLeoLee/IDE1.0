@@ -36,7 +36,13 @@ impl BoxView {
         let max_len = old.iter().map(Vec::len).max().unwrap_or(0);
         let c0 = b[1].min(b[3]).min(max_len);
         let c1 = b[1].max(b[3]).min(max_len).max(c0);
-        Some(BoxView { r0, r1, c0, c1, old })
+        Some(BoxView {
+            r0,
+            r1,
+            c0,
+            c1,
+            old,
+        })
     }
 
     fn n_rows(&self) -> usize {
@@ -67,7 +73,12 @@ impl BoxView {
     }
     /// 把矩形覆盖的各行换成 `rows`
     fn patch(&self, rows: Vec<Vec<char>>, cursor: [usize; 2]) -> EditRes {
-        EditRes::splice(self.r0, self.n_rows(), rows.into_iter().map(|v| v.into_iter().collect()).collect(), cursor)
+        EditRes::splice(
+            self.r0,
+            self.n_rows(),
+            rows.into_iter().map(|v| v.into_iter().collect()).collect(),
+            cursor,
+        )
     }
 }
 
@@ -76,27 +87,38 @@ fn rows_missing(cx: &Ctx) -> EditRes {
 }
 
 pub(super) fn copy(cx: &Ctx) -> EditRes {
-    let Some(b) = BoxView::new(cx) else { return rows_missing(cx) };
+    let Some(b) = BoxView::new(cx) else {
+        return rows_missing(cx);
+    };
     EditRes::clip_only(b.clip_text(), [cx.row, cx.col]).tip(format!("已复制列块 {} 行", b.n_rows()))
 }
 
 /// 退格和 Delete 一样 (Sakura 实测)
 pub(super) fn delete(cx: &Ctx) -> EditRes {
-    let Some(b) = BoxView::new(cx) else { return rows_missing(cx) };
+    let Some(b) = BoxView::new(cx) else {
+        return rows_missing(cx);
+    };
     let rows = b.hollowed_rows();
     let cursor = [b.r0, b.c0.min(rows[0].len())]; // Sakura: 删除后光标在矩形左上角
-    b.patch(rows, cursor).tip(format!("列块已删除 ({}行 ×{}列)", b.n_rows(), b.width()))
+    b.patch(rows, cursor)
+        .tip(format!("列块已删除 ({}行 ×{}列)", b.n_rows(), b.width()))
 }
 
 pub(super) fn cut(cx: &Ctx) -> EditRes {
-    let Some(b) = BoxView::new(cx) else { return rows_missing(cx) };
+    let Some(b) = BoxView::new(cx) else {
+        return rows_missing(cx);
+    };
     let rows = b.hollowed_rows();
-    b.patch(rows, [b.r0, b.c0]).tip("已剪切列块").clip(Some(b.clip_text()))
+    b.patch(rows, [b.r0, b.c0])
+        .tip("已剪切列块")
+        .clip(Some(b.clip_text()))
 }
 
 /// 回车: 先删矩形内容, 再在左上角换行 (复用普通回车的缩进规则)
 pub(super) fn enter(cx: &Ctx) -> EditRes {
-    let Some(b) = BoxView::new(cx) else { return rows_missing(cx) };
+    let Some(b) = BoxView::new(cx) else {
+        return rows_missing(cx);
+    };
     let mut rows = b.hollowed_rows();
     let c = b.c0.min(rows[0].len());
     let (mut insert, pad_len) = split_line_at(&rows[0], c, cx.req.auto_indent, cx.req.smart_indent);
@@ -106,7 +128,9 @@ pub(super) fn enter(cx: &Ctx) -> EditRes {
 
 /// 逐行替换矩形里的内容: 文本用 \n 分行; 不足宽度补空格, 超宽截断 (等宽替换)
 pub(super) fn replace(cx: &Ctx) -> EditRes {
-    let Some(b) = BoxView::new(cx) else { return rows_missing(cx) };
+    let Some(b) = BoxView::new(cx) else {
+        return rows_missing(cx);
+    };
     let text = cx.req.text.clone().unwrap_or_default();
     let parts: Vec<&str> = text.split('\n').collect();
     let rows: Vec<Vec<char>> = b
@@ -127,9 +151,17 @@ pub(super) fn replace(cx: &Ctx) -> EditRes {
 
 /// 键入 / 粘贴: 每一行同一份内容; 矩形有宽度时先挖掉里面选中的内容; 短行补空格对齐
 pub(super) fn insert(cx: &Ctx) -> EditRes {
-    let Some(b) = BoxView::new(cx) else { return rows_missing(cx) };
+    let Some(b) = BoxView::new(cx) else {
+        return rows_missing(cx);
+    };
     let text = cx.req.text.clone().unwrap_or_default();
-    let add: Vec<char> = text.split('\n').next().unwrap_or("").trim_end_matches('\r').chars().collect();
+    let add: Vec<char> = text
+        .split('\n')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('\r')
+        .chars()
+        .collect();
     if add.is_empty() {
         return cx.nothing("");
     }
@@ -137,7 +169,11 @@ pub(super) fn insert(cx: &Ctx) -> EditRes {
         .old
         .iter()
         .map(|l| {
-            let mut v = if b.width() > 0 { b.hollow(l) } else { l.clone() };
+            let mut v = if b.width() > 0 {
+                b.hollow(l)
+            } else {
+                l.clone()
+            };
             v.resize(v.len().max(b.c0), ' ');
             let tail = v.split_off(b.c0);
             v.extend_from_slice(&add);
@@ -146,7 +182,9 @@ pub(super) fn insert(cx: &Ctx) -> EditRes {
         })
         .collect();
     let to = b.c0 + add.len(); // 插入点右移「刚插入的字符数」列, 可以接着连续输入
-    b.patch(rows, [cx.row, cx.col]).box_sel(Some([b.r0, to, b.r1, to])).tip(format!("列块插入 {} 行", b.n_rows()))
+    b.patch(rows, [cx.row, cx.col])
+        .box_sel(Some([b.r0, to, b.r1, to]))
+        .tip(format!("列块插入 {} 行", b.n_rows()))
 }
 
 #[cfg(test)]
@@ -161,12 +199,19 @@ mod tests {
         let r = run_box("box-delete", 0, 0, [0, 3, 1, 9999], "", BX);
         assert_eq!(apply(BX, &r)[..2], ["abc".to_string(), "gh".into()]);
         // 反向矩形和正向一样
-        assert_eq!(run_box("box-copy", 2, 1, [2, 4, 0, 1], "", BX).clip.as_deref(), Some("bcd\nh\njkl\n"));
+        assert_eq!(
+            run_box("box-copy", 2, 1, [2, 4, 0, 1], "", BX)
+                .clip
+                .as_deref(),
+            Some("bcd\nh\njkl\n")
+        );
     }
 
     #[test]
     fn missing_rows_do_nothing_instead_of_blanking_real_lines() {
-        let mut req = req("box-insert", 0, 0).with_text("X").with_box([5, 0, 6, 0]);
+        let mut req = req("box-insert", 0, 0)
+            .with_text("X")
+            .with_box([5, 0, 6, 0]);
         req.total_rows = 3;
         req.rows = vec![(0, "abcdef".into()), (1, "gh".into())];
         assert!(!super::super::run(&req).unwrap().changed);
@@ -177,6 +222,13 @@ mod tests {
     #[test]
     fn enter_breaks_only_one_line_after_clearing_the_rectangle() {
         let r = run_box("box-enter", 2, 4, [0, 1, 2, 4], "", BX);
-        assert_eq!((apply(BX, &r), r.cursor, r.box_sel), (vec!["a".to_string(), "ef".into(), "g".into(), "imn".into()], [1, 0], None));
+        assert_eq!(
+            (apply(BX, &r), r.cursor, r.box_sel),
+            (
+                vec!["a".to_string(), "ef".into(), "g".into(), "imn".into()],
+                [1, 0],
+                None
+            )
+        );
     }
 }

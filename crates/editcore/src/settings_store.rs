@@ -18,17 +18,26 @@ pub fn default_path() -> PathBuf {
     if let Ok(p) = std::env::var("IDE_SETTINGS_FILE") {
         return PathBuf::from(p);
     }
-    let base = std::env::var("APPDATA").map(PathBuf::from).or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".local/share"))).unwrap_or_else(|_| PathBuf::from("."));
+    let base = std::env::var("APPDATA")
+        .map(PathBuf::from)
+        .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(|_| PathBuf::from("."));
     base.join("IDE1.0").join("settings.json")
 }
 
 /// 读; 文件不存在 / 损坏 = 空 (损坏的文件不会被默默覆盖: 下一次写之前先备份成 `.bad`, 见 [`write_all`])
 pub fn load(path: &Path) -> Settings {
-    std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 fn valid_key(k: &str) -> bool {
-    k.starts_with(KEY_PREFIX) && k.len() <= 128 && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':'))
+    k.starts_with(KEY_PREFIX)
+        && k.len() <= 128
+        && k.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':'))
 }
 
 fn write_all(path: &Path, all: &Settings) -> Result<(), String> {
@@ -40,7 +49,12 @@ fn write_all(path: &Path, all: &Settings) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| format!("无法创建设置目录: {e}"))?;
     }
     // 原来的文件如果读得出但内容不是合法设置 (被人改坏), 先留一份 .bad 再覆盖, 不默默丢用户的东西
-    if path.exists() && std::fs::read_to_string(path).ok().and_then(|s| serde_json::from_str::<Settings>(&s).ok()).is_none() {
+    if path.exists()
+        && std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
+            .is_none()
+    {
         let _ = std::fs::copy(path, path.with_extension("json.bad"));
     }
     let tmp = path.with_extension("json.tmp");
@@ -55,7 +69,13 @@ pub fn set(path: &Path, key: &str, value: Option<&str>) -> Result<(), String> {
     }
     let mut all = load(path);
     match value {
-        Some(v) if v.len() > MAX_VALUE_BYTES => return Err(format!("设置 {key} 的值太大 ({} > {} 字节)", v.len(), MAX_VALUE_BYTES)),
+        Some(v) if v.len() > MAX_VALUE_BYTES => {
+            return Err(format!(
+                "设置 {key} 的值太大 ({} > {} 字节)",
+                v.len(),
+                MAX_VALUE_BYTES
+            ))
+        }
         Some(v) => {
             all.insert(key.to_string(), v.to_string());
         }
@@ -68,7 +88,8 @@ pub fn set(path: &Path, key: &str, value: Option<&str>) -> Result<(), String> {
 
 /// 导入一份导出的 JSON: 合并进现有设置 (同键以导入的为准); 不合法的键跳过并报告个数
 pub fn import(path: &Path, json: &str) -> Result<(usize, usize), String> {
-    let incoming: Settings = serde_json::from_str(json).map_err(|e| format!("不是有效的设置 JSON: {e}"))?;
+    let incoming: Settings =
+        serde_json::from_str(json).map_err(|e| format!("不是有效的设置 JSON: {e}"))?;
     let mut all = load(path);
     let (mut ok, mut skipped) = (0, 0);
     for (k, v) in incoming {
@@ -109,8 +130,14 @@ mod tests {
     #[test]
     fn rejects_foreign_keys_and_oversize_values() {
         let p = tmp("bad");
-        assert!(set(&p, "other.key", Some("x")).is_err(), "只收 ide10. 开头的键");
-        assert!(set(&p, "ide10.bad key", Some("x")).is_err(), "键里不能有空格");
+        assert!(
+            set(&p, "other.key", Some("x")).is_err(),
+            "只收 ide10. 开头的键"
+        );
+        assert!(
+            set(&p, "ide10.bad key", Some("x")).is_err(),
+            "键里不能有空格"
+        );
         assert!(set(&p, "ide10.big", Some(&"x".repeat(MAX_VALUE_BYTES + 1))).is_err());
         assert!(!p.exists(), "被拒绝的写不留文件");
     }
@@ -122,7 +149,11 @@ mod tests {
         std::fs::write(&p, "{ not json").unwrap();
         assert!(load(&p).is_empty());
         set(&p, "ide10.a", Some("1")).unwrap();
-        assert_eq!(std::fs::read_to_string(p.with_extension("json.bad")).unwrap(), "{ not json", "坏文件留了一份");
+        assert_eq!(
+            std::fs::read_to_string(p.with_extension("json.bad")).unwrap(),
+            "{ not json",
+            "坏文件留了一份"
+        );
         assert_eq!(load(&p)["ide10.a"], "1");
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
     }
@@ -134,7 +165,10 @@ mod tests {
         let (ok, skipped) = import(&p, r#"{"ide10.a":"new","ide10.b":"2","evil":"x"}"#).unwrap();
         assert_eq!((ok, skipped), (2, 1));
         let all = load(&p);
-        assert_eq!((all["ide10.a"].as_str(), all["ide10.b"].as_str()), ("new", "2"));
+        assert_eq!(
+            (all["ide10.a"].as_str(), all["ide10.b"].as_str()),
+            ("new", "2")
+        );
         assert!(import(&p, "nope").is_err());
         let _ = std::fs::remove_dir_all(p.parent().unwrap());
     }

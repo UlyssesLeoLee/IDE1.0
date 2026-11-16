@@ -33,18 +33,22 @@ pub fn mode(open: bool, collapsed: bool) -> Mode {
     }
 }
 
-/// 底部面板这一帧怎么画: 完整界面里「没开」也留一条 28px 的头 (Tauri 默认带 TERMINAL / OUTPUT / PROBLEMS 头), 不启动 shell;
-/// 极简界面没开就整个不画
-pub fn bottom_mode(open: bool, collapsed: bool, full_ui: bool) -> Mode {
+/// 底部面板这一帧怎么画: 无论极简界面还是完整界面, 没展开时都常驻保留 28px 的底部面板头
+/// (对齐 Tauri `#bottom-head`: TERMINAL / OUTPUT / PROBLEMS / 协同审查 + 新建终端 + 展开/折叠), 头条状态不启动 shell
+pub fn bottom_mode(open: bool, collapsed: bool, _full_ui: bool) -> Mode {
     match mode(open, collapsed) {
-        Mode::Hidden if full_ui => Mode::Strip,
+        Mode::Hidden => Mode::Strip,
         m => m,
     }
 }
 
 /// 折叠命令 / 箭头按钮: 显示着就翻转折叠; 没显示就先展开显示出来。返回新的 (open, collapsed)
 pub fn toggle_collapse(open: bool, collapsed: bool) -> (bool, bool) {
-    if open { (true, !collapsed) } else { (true, false) }
+    if open {
+        (true, !collapsed)
+    } else {
+        (true, false)
+    }
 }
 
 /// 「显示 / 隐藏」命令 (Ctrl+B 等): 折成细条时先展开, 展开着才真正隐藏
@@ -85,6 +89,99 @@ pub fn default_size(dock: Dock) -> f32 {
     }
 }
 
+/// 自动协同重平衡折叠面板尺寸 (对齐 Tauri 原版行为):
+/// 当先打开下方折叠、再打开左侧或右侧折叠时 (或先打开侧栏再打开下方)，根据视口可用宽高与「让位原则」，
+/// 自动对先打开的面板以及新打开的面板做联动尺寸自适应计算，确保中央编辑区保持充足的可读面积与纵横比。
+pub fn rebalance_on_dock_open(
+    opened: Dock,
+    side_active: bool,
+    side_w: &mut f32,
+    right_active: bool,
+    right_w: &mut f32,
+    bottom_active: bool,
+    term_h: &mut f32,
+    viewport_w: f32,
+    viewport_h: f32,
+) {
+    let vw = if viewport_w.is_finite() && viewport_w > 200.0 {
+        viewport_w
+    } else {
+        1100.0
+    };
+    let vh = if viewport_h.is_finite() && viewport_h > 200.0 {
+        viewport_h
+    } else {
+        720.0
+    };
+
+    const MIN_EDITOR_W: f32 = 240.0;
+    const MIN_EDITOR_H: f32 = 140.0;
+
+    match opened {
+        Dock::Side | Dock::Right => {
+            // 后打开左侧或右侧折叠:
+            // 1. 若下方折叠当前已处于展开状态，由于主工作区水平宽度被侧栏挤压，
+            // 为了维持黄金可读视野与纵横比，先打开的下方折叠必须自动调整/收缩高度 (对齐 Tauri clamp(120px, 35vh, 240px))
+            if bottom_active {
+                let comfortable_h = (vh * 0.35).clamp(120.0, 240.0);
+                if *term_h > comfortable_h {
+                    *term_h = comfortable_h;
+                }
+                let max_h = (vh - MIN_EDITOR_H - BOTTOM_HEAD).max(120.0);
+                if *term_h > max_h {
+                    *term_h = max_h;
+                }
+            }
+
+            // 2. 水平总宽度约束: 保证中央编辑区至少保留 MIN_EDITOR_W
+            let mut total_w = 0.0;
+            if side_active {
+                total_w += *side_w;
+            }
+            if right_active {
+                total_w += *right_w;
+            }
+            let max_total_w = (vw - MIN_EDITOR_W).max(120.0);
+            if total_w > max_total_w {
+                let excess = total_w - max_total_w;
+                if opened == Dock::Side && right_active {
+                    // 后开左侧: 先开的右侧让位
+                    *right_w = (*right_w - excess).max(160.0);
+                } else if opened == Dock::Right && side_active {
+                    // 后开右侧: 先开的左侧让位
+                    *side_w = (*side_w - excess).max(120.0);
+                }
+            }
+        }
+        Dock::Bottom => {
+            // 后打开下方折叠:
+            // 1. 下方折叠高度不能盲目撑大，舒适比例取 35vh (不超过 240px)，
+            // 且绝对不超过可用高度减去最小编辑区保障高度
+            let comfortable_h = (vh * 0.35).clamp(120.0, 240.0);
+            if *term_h > comfortable_h {
+                *term_h = comfortable_h;
+            }
+            let max_h = (vh - MIN_EDITOR_H - BOTTOM_HEAD).max(120.0);
+            if *term_h > max_h {
+                *term_h = max_h;
+            }
+            // 2. 若左侧栏或右侧栏已在展开状态且过宽 (超过 35% 视口宽)，先打开的侧栏相应缩微让位
+            if side_active {
+                let max_side = (vw * 0.35).max(180.0);
+                if *side_w > max_side {
+                    *side_w = max_side;
+                }
+            }
+            if right_active {
+                let max_right = (vw * 0.40).max(220.0);
+                if *right_w > max_right {
+                    *right_w = max_right;
+                }
+            }
+        }
+    }
+}
+
 /// 左右细条按钮上的箭头 (Tauri 的 `‹` U+2039 / `›` U+203A): 箭头指向「点下去面板会往哪走」
 pub fn chevron(dock: Dock, collapsed: bool) -> &'static str {
     match (dock, collapsed) {
@@ -112,10 +209,11 @@ pub fn tip(dock: Dock, collapsed: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn bottom_keeps_its_head_in_the_full_ui_even_when_closed() {
+    fn bottom_keeps_its_head_in_both_minimal_and_full_ui_when_closed() {
         assert_eq!(bottom_mode(false, false, true), Mode::Strip);
-        assert_eq!(bottom_mode(false, false, false), Mode::Hidden);
+        assert_eq!(bottom_mode(false, false, false), Mode::Strip);
         assert_eq!(bottom_mode(true, false, true), Mode::Full);
+        assert_eq!(bottom_mode(true, false, false), Mode::Full);
         assert_eq!(bottom_mode(true, true, false), Mode::Strip);
     }
 
@@ -133,14 +231,22 @@ mod tests {
     fn collapse_flips_when_open_and_opens_when_hidden() {
         assert_eq!(toggle_collapse(true, false), (true, true));
         assert_eq!(toggle_collapse(true, true), (true, false));
-        assert_eq!(toggle_collapse(false, false), (true, false), "没显示: 先展开显示");
+        assert_eq!(
+            toggle_collapse(false, false),
+            (true, false),
+            "没显示: 先展开显示"
+        );
         assert_eq!(toggle_collapse(false, true), (true, false));
     }
 
     #[test]
     fn open_toggle_expands_a_strip_before_hiding() {
         assert_eq!(toggle_open(true, false), (false, false));
-        assert_eq!(toggle_open(true, true), (true, false), "细条状态下按 Ctrl+B = 展开");
+        assert_eq!(
+            toggle_open(true, true),
+            (true, false),
+            "细条状态下按 Ctrl+B = 展开"
+        );
         assert_eq!(toggle_open(false, false), (true, false));
     }
 
@@ -154,8 +260,14 @@ mod tests {
     #[test]
     fn right_dock_needs_chat_or_a_markdown_preview() {
         assert!(!right_visible(false, false, true, false));
-        assert!(!right_visible(false, true, false, false), "预览开着但当前不是 md");
-        assert!(!right_visible(false, true, true, true), "覆盖模式预览不占右侧停靠区");
+        assert!(
+            !right_visible(false, true, false, false),
+            "预览开着但当前不是 md"
+        );
+        assert!(
+            !right_visible(false, true, true, true),
+            "覆盖模式预览不占右侧停靠区"
+        );
         assert!(right_visible(true, true, true, true));
         assert!(right_visible(false, true, true, false));
         assert!(right_visible(true, false, false, false));
@@ -182,5 +294,67 @@ mod tests {
     fn chevrons_point_toward_where_the_panel_goes() {
         assert_ne!(chevron(Dock::Side, false), chevron(Dock::Side, true));
         assert_eq!(chevron(Dock::Side, false), chevron(Dock::Right, true));
+    }
+
+    #[test]
+    fn rebalance_coordinated_resizing_on_open() {
+        let mut side_w = 300.0;
+        let mut right_w = 340.0;
+        let mut term_h = 320.0;
+
+        // 1. 先打开下方折叠 (term_h=320.0)，后打开左侧折叠 (Dock::Side):
+        // 先打开的下方折叠尺寸自动适配收缩至舒适高度 clamp(120.0, 720*0.35=252->240, 240.0)
+        rebalance_on_dock_open(
+            Dock::Side,
+            true,
+            &mut side_w,
+            false,
+            &mut right_w,
+            true,
+            &mut term_h,
+            1100.0,
+            720.0,
+        );
+        assert_eq!(
+            term_h, 240.0,
+            "先打开的底部高度自动收缩至舒适比例 240px 以保全垂直可读视野"
+        );
+
+        // 2. 窄视口下双侧栏超宽让位:
+        let mut wide_side = 500.0;
+        let mut wide_right = 500.0;
+        let mut normal_term = 180.0;
+        rebalance_on_dock_open(
+            Dock::Side,
+            true,
+            &mut wide_side,
+            true,
+            &mut wide_right,
+            false,
+            &mut normal_term,
+            1000.0,
+            600.0,
+        );
+        assert!(
+            wide_side + wide_right <= 1000.0 - 240.0 + 1.0,
+            "中央编辑区宽度必须保证至少 240px"
+        );
+
+        // 3. 先打开侧栏，后打开下方折叠 (Dock::Bottom):
+        let mut large_side = 500.0;
+        let mut large_term = 400.0;
+        rebalance_on_dock_open(
+            Dock::Bottom,
+            true,
+            &mut large_side,
+            false,
+            &mut right_w,
+            true,
+            &mut large_term,
+            1000.0,
+            600.0,
+        );
+        assert!(large_term <= 210.0, "底部高度受限不超过 35vh");
+        assert!(large_side <= 350.0, "先打开的侧栏让位不超过 35% 视口宽");
     }
 }

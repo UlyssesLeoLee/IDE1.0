@@ -19,7 +19,9 @@ pub(super) fn copy(cx: &Ctx) -> EditRes {
             let n = t.chars().count();
             EditRes::clip_only(t, cursor).tip(format!("已复制 {n} 字符"))
         }
-        None => EditRes::clip_only(format!("{}\n", cx.line_str()), cursor).clip_line().tip("已复制行"),
+        None => EditRes::clip_only(format!("{}\n", cx.line_str()), cursor)
+            .clip_line()
+            .tip("已复制行"),
     }
 }
 
@@ -37,7 +39,10 @@ pub(super) fn cut(cx: &Ctx) -> EditRes {
     } else {
         cx.line(cx.row + 1).len()
     };
-    EditRes::splice(cx.row, 1, insert, [new_row, cx.col.min(below)]).clip(Some(format!("{}\n", cx.line_str()))).clip_line().tip("已剪切行")
+    EditRes::splice(cx.row, 1, insert, [new_row, cx.col.min(below)])
+        .clip(Some(format!("{}\n", cx.line_str())))
+        .clip_line()
+        .tip("已剪切行")
 }
 
 /// 粘贴: 整行模式的剪贴板插在当前行之前 (有选区时先删选区, 插在选区起点那一行之前; Sakura 实测); 否则替换选区 / 插在光标处
@@ -48,32 +53,53 @@ pub(super) fn paste(cx: &Ctx) -> EditRes {
         return cx.nothing("剪贴板为空");
     }
     if cx.req.line_mode && text.ends_with('\n') {
-        let mut rows: Vec<String> = text[..text.len() - 1].split('\n').map(String::from).collect();
+        let mut rows: Vec<String> = text[..text.len() - 1]
+            .split('\n')
+            .map(String::from)
+            .collect();
         let n = rows.len();
         return match cx.sel {
             None => EditRes::splice(row, 0, rows, [row + n, col]).tip("已粘贴行"),
             Some(s) => {
-                let joined = format!("{}{}", slice(&cx.line(s[0]), 0, s[1]), slice(&cx.line(s[2]), s[3], usize::MAX));
+                let joined = format!(
+                    "{}{}",
+                    slice(&cx.line(s[0]), 0, s[1]),
+                    slice(&cx.line(s[2]), s[3], usize::MAX)
+                );
                 rows.push(joined);
                 EditRes::splice(s[0], s[2] - s[0] + 1, rows, [s[0] + n, s[1]]).tip("已粘贴行")
             }
         };
     }
     let (r0, r1, head, tail) = match cx.sel {
-        Some(s) => (s[0], s[2], slice(&cx.line(s[0]), 0, s[1]), slice(&cx.line(s[2]), s[3], usize::MAX)),
-        None => (row, row, slice(&cx.line, 0, col), slice(&cx.line, col, usize::MAX)),
+        Some(s) => (
+            s[0],
+            s[2],
+            slice(&cx.line(s[0]), 0, s[1]),
+            slice(&cx.line(s[2]), s[3], usize::MAX),
+        ),
+        None => (
+            row,
+            row,
+            slice(&cx.line, 0, col),
+            slice(&cx.line, col, usize::MAX),
+        ),
     };
     let parts: Vec<&str> = text.split('\n').collect();
     let last = parts.len() - 1;
     let (insert, cursor) = if last == 0 {
-        (vec![format!("{head}{}{tail}", parts[0])], [r0, head.chars().count() + parts[0].chars().count()])
+        (
+            vec![format!("{head}{}{tail}", parts[0])],
+            [r0, head.chars().count() + parts[0].chars().count()],
+        )
     } else {
         let mut insert = vec![format!("{head}{}", parts[0])];
         insert.extend(parts[1..last].iter().map(|p| (*p).to_string()));
         insert.push(format!("{}{tail}", parts[last]));
         (insert, [r0 + last, parts[last].chars().count()])
     };
-    EditRes::splice(r0, r1 - r0 + 1, insert, cursor).tip(format!("已粘贴 {} 字符", text.chars().count()))
+    EditRes::splice(r0, r1 - r0 + 1, insert, cursor)
+        .tip(format!("已粘贴 {} 字符", text.chars().count()))
 }
 
 /// 矩形贴付: 每行贴到 (光标行+i, 光标列); 行不够长补空格, 文档不够长补行
@@ -88,7 +114,11 @@ pub(super) fn paste_box(cx: &Ctx) -> EditRes {
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let mut l = if row + i < cx.req.total_rows { cx.line(row + i) } else { Vec::new() };
+            let mut l = if row + i < cx.req.total_rows {
+                cx.line(row + i)
+            } else {
+                Vec::new()
+            };
             l.resize(l.len().max(col), ' ');
             format!("{}{}{}", slice(&l, 0, col), p, slice(&l, col, usize::MAX))
         })

@@ -5,8 +5,8 @@
 //! 命中判断 (`grip`) 是纯函数, 单测覆盖; 栏本身不增加空闲开销 (只在有输入事件时才重绘)。
 
 use super::*;
-use crate::panels::Dock;
 use egui::viewport::ResizeDirection as Dir;
+use egui::{pos2, Stroke, StrokeKind};
 
 /// 标题栏高度 (逻辑点)
 const BAR_H: f32 = 30.0;
@@ -15,45 +15,144 @@ const BTN_W: f32 = 44.0;
 /// 缩放把手的粗细 / 角上的边长
 const GRIP: f32 = 5.0;
 const CORNER: f32 = 12.0;
-/// 快捷按钮: (命令 id, 文字)。面板开关用画出来的小图标, 不在这里。
-const QUICK: &[(&str, &str)] = &[("c.new-file", "新"), ("c.open-file", "开"), ("c.save", "存"), ("c.find", "找"), ("c.palette", ">_"), ("c.split", "||")];
+/// 快捷按钮: (命令 id, 文字)。面板开关用画出来的小图标, 不在这里。命令面板已迁移至顶部居中输入栏 (Command Center)。
+const QUICK: &[(&str, &str)] = &[
+    ("c.new-file", "新"),
+    ("c.open-file", "开"),
+    ("c.save", "存"),
+    ("c.find", "找"),
+    ("c.split", "||"),
+    ("c.nema-convert", "⇥\\"),
+];
 
 /// 标题栏各块的宽度 (逻辑点): 左边距 + 图标 + 间隔、一个快捷图标钮 (含间隔)、面板开关三连 (含分隔线)、终端按钮、菜单与右区之间的余量、窗口标题文字的上限
 const LEFT_FIXED: f32 = 6.0 + 16.0 + 6.0;
 const QUICK_BTN: f32 = 26.0;
-const DOCKS_W: f32 = 3.0 * 30.0 + 10.0;
-const TERM_W: f32 = 92.0;
+const DIFF_BTN_W: f32 = 30.0;
+const COLLAB_BTN_W: f32 = 30.0;
+const STICKY_BTN_W: f32 = 30.0;
+const OVERFLOW_BTN_W: f32 = 26.0;
+const ITEM_SPACING: f32 = 4.0;
+const RIGHT_GAP: f32 = 6.0;
 const GAP: f32 = 10.0;
 const TITLE_MAX: f32 = 220.0;
 
 /// 标题栏怎么排: 菜单永远完整显示、绝不和右边的按钮重叠; 空间不够时按优先级一样样撤 ——
-/// 先撤快捷图标钮, 再撤面板开关, 再撤窗口标题文字, 再撤终端按钮, 最后撤菜单的助记字母
+/// 先撤快捷图标钮, 再撤协同、便笺与对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母;
+/// 无法在栏上直接完整显示的快捷按钮自动折叠为折叠按钮 (···), 点击展开下拉菜单
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
-    pub term: bool,
-    pub docks: bool,
+    pub diff: bool,
+    pub collab: bool,
+    pub sticky_notes: bool,
     pub quick: usize,
+    pub overflow: bool,
+}
+
+impl BarPlan {
+    /// 兼容旧版测试与属性访问
+    #[inline]
+    pub fn docks(&self) -> bool {
+        self.diff
+    }
+
+    /// 计算在标题栏中快捷区域的实际渲染物理总宽度 (包含所有按钮及它们之间的间距)
+    pub fn mid_width(&self) -> f32 {
+        let count = self.quick
+            + (if self.diff { 1 } else { 0 })
+            + (if self.collab { 1 } else { 0 })
+            + (if self.sticky_notes { 1 } else { 0 })
+            + (if self.overflow { 1 } else { 0 });
+        if count == 0 {
+            return 0.0;
+        }
+        let raw = self.quick as f32 * QUICK_BTN
+            + (if self.diff { DIFF_BTN_W } else { 0.0 })
+            + (if self.collab { COLLAB_BTN_W } else { 0.0 })
+            + (if self.sticky_notes { STICKY_BTN_W } else { 0.0 })
+            + (if self.overflow { OVERFLOW_BTN_W } else { 0.0 });
+        raw + (count - 1) as f32 * ITEM_SPACING
+    }
 }
 
 /// `total` = 栏宽, `menu_mn` / `menu_plain` = 菜单带 / 不带助记字母时的总宽, `title_w` = 标题文字宽
 pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarPlan {
-    let avail = total - BTN_W * 3.0 - LEFT_FIXED - GAP;
+    let avail = total - BTN_W * 3.0 - RIGHT_GAP - LEFT_FIXED - GAP;
     let mnemonics = menu_mn <= avail;
     let mut rem = avail - if mnemonics { menu_mn } else { menu_plain };
-    let mut take = |w: f32| if rem >= w { rem -= w; true } else { false };
-    let term = take(TERM_W);
+    let mut take = |w: f32| {
+        if rem >= w {
+            rem -= w;
+            true
+        } else {
+            false
+        }
+    };
     let title = take(title_w.min(TITLE_MAX) + 8.0);
-    let docks = take(DOCKS_W);
+
+    const ALL_BUTTONS_W: f32 =
+        6.0 * QUICK_BTN + DIFF_BTN_W + COLLAB_BTN_W + STICKY_BTN_W + 8.0 * ITEM_SPACING;
+    if rem >= ALL_BUTTONS_W {
+        return BarPlan {
+            mnemonics,
+            title,
+            diff: true,
+            collab: true,
+            sticky_notes: true,
+            quick: QUICK.len(),
+            overflow: false,
+        };
+    }
+
+    if rem < OVERFLOW_BTN_W {
+        return BarPlan {
+            mnemonics,
+            title,
+            diff: false,
+            collab: false,
+            sticky_notes: false,
+            quick: 0,
+            overflow: false,
+        };
+    }
+
+    let mut rem_btn = rem - OVERFLOW_BTN_W;
+    let mut take_btn = |w: f32| {
+        let needed = w + ITEM_SPACING;
+        if rem_btn >= needed {
+            rem_btn -= needed;
+            true
+        } else {
+            false
+        }
+    };
+    let diff = take_btn(DIFF_BTN_W);
+    let collab = take_btn(COLLAB_BTN_W);
+    let sticky_notes = take_btn(STICKY_BTN_W);
     let mut quick = 0;
-    while quick < QUICK.len() && take(QUICK_BTN) { quick += 1; }
-    BarPlan { mnemonics, title, term, docks, quick }
+    while quick < QUICK.len() && take_btn(QUICK_BTN) {
+        quick += 1;
+    }
+
+    BarPlan {
+        mnemonics,
+        title,
+        diff,
+        collab,
+        sticky_notes,
+        quick,
+        overflow: true,
+    }
 }
 
 /// 标题栏文字 (Tauri: 无文档「IDE1.0」, 有文档「文件名 - IDE1.0」)
 pub fn window_title(doc: Option<&str>) -> String {
-    match doc { Some(n) if !n.is_empty() => format!("{n} - IDE1.0"), _ => "IDE1.0".to_string() }
+    match doc {
+        Some(n) if !n.is_empty() => format!("{n} - IDE1.0"),
+        _ => "IDE1.0".to_string(),
+    }
 }
 
 /// 光标在窗口的哪个缩放把手上 (None = 不在边缘)。`edge` = 边的粗细, 角比边更宽
@@ -67,14 +166,30 @@ pub fn grip(pos: Pos2, win: Rect, edge: f32) -> Option<Dir> {
     let near_x_r = r < CORNER;
     let near_y_t = t < CORNER;
     let near_y_b = b < CORNER;
-    if l < edge && near_y_t || t < edge && near_x_l { return Some(Dir::NorthWest); }
-    if r < edge && near_y_t || t < edge && near_x_r { return Some(Dir::NorthEast); }
-    if l < edge && near_y_b || b < edge && near_x_l { return Some(Dir::SouthWest); }
-    if r < edge && near_y_b || b < edge && near_x_r { return Some(Dir::SouthEast); }
-    if t < edge { return Some(Dir::North); }
-    if b < edge { return Some(Dir::South); }
-    if l < edge { return Some(Dir::West); }
-    if r < edge { return Some(Dir::East); }
+    if l < edge && near_y_t || t < edge && near_x_l {
+        return Some(Dir::NorthWest);
+    }
+    if r < edge && near_y_t || t < edge && near_x_r {
+        return Some(Dir::NorthEast);
+    }
+    if l < edge && near_y_b || b < edge && near_x_l {
+        return Some(Dir::SouthWest);
+    }
+    if r < edge && near_y_b || b < edge && near_x_r {
+        return Some(Dir::SouthEast);
+    }
+    if t < edge {
+        return Some(Dir::North);
+    }
+    if b < edge {
+        return Some(Dir::South);
+    }
+    if l < edge {
+        return Some(Dir::West);
+    }
+    if r < edge {
+        return Some(Dir::East);
+    }
     None
 }
 
@@ -101,7 +216,13 @@ pub enum BarMode {
 }
 
 pub fn bar_mode(system_title_bar: bool, fullscreen: bool) -> BarMode {
-    if system_title_bar { BarMode::System } else if fullscreen { BarMode::MenuOnly } else { BarMode::Full }
+    if system_title_bar {
+        BarMode::System
+    } else if fullscreen {
+        BarMode::MenuOnly
+    } else {
+        BarMode::Full
+    }
 }
 
 /// 缩放把手生效吗: 只有自绘标题栏 + 非最大化 + 非全屏
@@ -114,15 +235,33 @@ pub const MAX_OVERSHOOT: f32 = 8.0;
 
 /// 内容缩进: 只有自绘标题栏 + 最大化 (非全屏) 才需要
 pub fn max_inset(system_title_bar: bool, maximized: bool, fullscreen: bool) -> f32 {
-    if !system_title_bar && maximized && !fullscreen && cfg!(windows) { MAX_OVERSHOOT } else { 0.0 }
+    if !system_title_bar && maximized && !fullscreen && cfg!(windows) {
+        MAX_OVERSHOOT
+    } else {
+        0.0
+    }
 }
 
-/// 菜单栏上的菜单 (与 `App::menu` 里的顺序一致)
-pub const MENU_KEYS: [&str; 12] = ["menu.file", "menu.edit", "menu.search", "menu.fold", "menu.plugin", "menu.setting", "menu.bookmark", "menu.window", "menu.macro", "menu.view", "menu.tool", "menu.help"];
+/// 菜单栏上的菜单 (与 `App::menu` 里的顺序一致, 完全对齐 Tauri 版 8 个菜单)
+pub const MENU_KEYS: [&str; 8] = [
+    "menu.file",
+    "menu.edit",
+    "menu.search",
+    "menu.view",
+    "menu.tool",
+    "menu.setting",
+    "menu.window",
+    "menu.help",
+];
 
 impl App {
     pub(super) fn maximized_inset(&self, ctx: &egui::Context) -> f32 {
-        let (m, f) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
+        let (m, f) = ctx.input(|i| {
+            (
+                i.viewport().maximized.unwrap_or(false),
+                i.viewport().fullscreen.unwrap_or(false),
+            )
+        });
         max_inset(self.cfg.system_title_bar, m, f)
     }
 
@@ -133,7 +272,15 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(self.sys.decor));
         }
         match bar_mode(self.cfg.system_title_bar, self.fullscreen) {
-            BarMode::System | BarMode::MenuOnly => { egui::Panel::top("menu").frame(egui::Frame::new().fill(self.tc.bg_bar).inner_margin(egui::Margin::symmetric(4, 2))).show(root, |ui| self.menu(ui, ctx)); }
+            BarMode::System | BarMode::MenuOnly => {
+                egui::Panel::top("menu")
+                    .frame(
+                        egui::Frame::new()
+                            .fill(self.tc.bg_bar)
+                            .inner_margin(egui::Margin::symmetric(4, 2)),
+                    )
+                    .show(root, |ui| self.menu(ui, ctx));
+            }
             BarMode::Full => self.title_bar(root, ctx),
         }
     }
@@ -142,119 +289,632 @@ impl App {
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let fill = self.tc.bg_bar;
         if self.sys.title_icon.is_none() {
-            self.sys.title_icon = crate::appicon::window_icon().map(|ic| ctx.load_texture("title-icon", egui::ColorImage::from_rgba_unmultiplied([ic.width as usize, ic.height as usize], &ic.rgba), Default::default()));
+            self.sys.title_icon = crate::appicon::window_icon().map(|ic| {
+                ctx.load_texture(
+                    "title-icon",
+                    egui::ColorImage::from_rgba_unmultiplied(
+                        [ic.width as usize, ic.height as usize],
+                        &ic.rgba,
+                    ),
+                    Default::default(),
+                )
+            });
         }
         let icon = self.sys.title_icon.clone();
         let mut run: Option<usize> = None;
-        egui::Panel::top("titlebar").exact_size(BAR_H).frame(egui::Frame::new().fill(fill)).show(root, |ui| {
-            let rect = ui.max_rect();
-            ui.painter().hline(rect.x_range(), rect.bottom() - 0.5, egui::Stroke::new(1.0, self.tc.border));
-            // 先登记整条栏的拖动 / 双击区, 后面的按钮压在它上面 (egui 里后加的控件优先)
-            let drag = ui.interact(rect, ui.make_persistent_id("titlebar-drag"), Sense::click_and_drag());
-            if drag.double_clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
-            } else if drag.drag_started_by(egui::PointerButton::Primary) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
-            }
-            // 三块固定位置: 左 = 图标 + 标题 + 菜单, 中 = 快捷按钮 + 面板开关 + 终端钮 (按宽度逐样撤, 见 `plan_bar`), 右 = 窗口按钮
-            let title = window_title({ let d = &self.docs[self.active.min(self.docs.len() - 1)]; d.path.is_some().then_some(d.name.as_str()) });
-            let tc = self.tc;
-            let (mw, mp, tw) = {
-                let keys = MENU_KEYS;
-                let (mut w1, mut w0) = (0.0, 0.0);
-                for k in keys { let l = tr(k); w1 += menuui::title_width(ui, l, menuui::mnemonic(k)); w0 += menuui::title_width(ui, l, ' '); }
-                (w1, w0, ui.painter().layout_no_wrap(title.clone(), egui::FontId::proportional(12.0), tc.fg).size().x)
-            };
-            let plan = plan_bar(rect.width(), mw, mp, tw);
-            self.sys.mn_hide = !plan.mnemonics;
-            let mid_w = if plan.term { TERM_W } else { 0.0 } + if plan.docks { DOCKS_W } else { 0.0 } + plan.quick as f32 * QUICK_BTN;
-            let right = Rect::from_min_max(egui::pos2(rect.right() - BTN_W * 3.0, rect.top()), rect.max);
-            let mid = Rect::from_min_max(egui::pos2(right.left() - mid_w, rect.top()), egui::pos2(right.left(), rect.bottom()));
-            let left = Rect::from_min_max(rect.min, egui::pos2(mid.left(), rect.bottom()));
-            let lay = egui::Layout::left_to_right(egui::Align::Center);
-            ui.scope_builder(egui::UiBuilder::new().max_rect(left).layout(lay), |ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                ui.add_space(6.0);
-                if let Some(t) = &icon { ui.image((t.id(), Vec2::splat(16.0))); }
-                if plan.title {
-                    ui.add_space(2.0);
-                    ui.add(egui::Label::new(egui::RichText::new(title.as_str()).size(12.0).strong()).truncate());
-                    ui.add_space(6.0);
+        let mut diff_action: Option<DiffAction> = None;
+        let mut collab_toggle = false;
+        let mut sticky_notes_toggle = false;
+        egui::Panel::top("titlebar")
+            .exact_size(BAR_H)
+            .frame(egui::Frame::new().fill(fill))
+            .show(root, |ui| {
+                let rect = ui.max_rect();
+                if self.tc.is_translucent() {
+                    super::glass_render::paint_facet_borders(ui.painter(), rect, &self.tc);
                 } else {
-                    ui.add_space(4.0);
+                    ui.painter().hline(
+                        rect.x_range(),
+                        rect.bottom() - 0.5,
+                        egui::Stroke::new(1.0, self.tc.border),
+                    );
                 }
-                self.menu(ui, ctx);
-            });
-            if mid_w > 0.0 {
-                ui.scope_builder(egui::UiBuilder::new().max_rect(mid).layout(lay), |ui| {
+                // 先登记整条栏的拖动 / 双击区, 后面的按钮压在它上面 (egui 里后加的控件优先)
+                let drag = ui.interact(
+                    rect,
+                    ui.make_persistent_id("titlebar-drag"),
+                    Sense::click_and_drag(),
+                );
+                if drag.double_clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                } else if drag.drag_started_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
+                // 三块固定位置: 左 = 图标 + 标题 + 菜单, 中 = 快捷按钮 + 面板开关 + 终端钮 (按宽度逐样撤, 见 `plan_bar`), 右 = 窗口按钮
+                let title = window_title({
+                    let d = &self.docs[self.active.min(self.docs.len() - 1)];
+                    d.path.is_some().then_some(d.name.as_str())
+                });
+                let tc = self.tc;
+                let (mw, mp, tw) = {
+                    let keys = MENU_KEYS;
+                    let (mut w1, mut w0) = (0.0, 0.0);
+                    for k in keys {
+                        let l = tr(k);
+                        w1 += menuui::title_width(ui, l, menuui::mnemonic(k));
+                        w0 += menuui::title_width(ui, l, ' ');
+                    }
+                    (
+                        w1,
+                        w0,
+                        ui.painter()
+                            .layout_no_wrap(title.clone(), egui::FontId::proportional(12.0), tc.fg)
+                            .size()
+                            .x,
+                    )
+                };
+                let plan = plan_bar(rect.width(), mw, mp, tw);
+                self.sys.mn_hide = !plan.mnemonics;
+                let mid_w = plan.mid_width();
+                let right = Rect::from_min_max(
+                    egui::pos2(rect.right() - BTN_W * 3.0, rect.top()),
+                    rect.max,
+                );
+                let mid_right = right.left() - RIGHT_GAP;
+                let mid = Rect::from_min_max(
+                    egui::pos2(mid_right - mid_w, rect.top()),
+                    egui::pos2(mid_right, rect.bottom()),
+                );
+                let menu_w = if plan.mnemonics { mw } else { mp };
+                let left_w = LEFT_FIXED + menu_w + 10.0;
+                let left = Rect::from_min_max(
+                    rect.min,
+                    egui::pos2(left_w.min(mid.left() - 10.0), rect.bottom()),
+                );
+                let lay = egui::Layout::left_to_right(egui::Align::Center);
+                ui.scope_builder(egui::UiBuilder::new().max_rect(left).layout(lay), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    for (id, _) in QUICK.iter().take(plan.quick) {
-                        let Some(i) = chrome::index_of(id) else { continue };
-                        let e = &keymap::entries()[i];
-                        let tip = crate::i18n::lk_for(e);
-                        if crate::icons::icon_button(ui, id, tip).clicked() { run = Some(i); }
+                    ui.add_space(6.0);
+                    if let Some(t) = &icon {
+                        ui.image((t.id(), Vec2::splat(16.0)));
                     }
-                    if plan.docks {
-                        if plan.quick > 0 { ui.separator(); }
-                        for d in [Dock::Side, Dock::Bottom, Dock::Right] {
-                            if self.dock_toggle_icon(ui, d) { self.collapse_dock(d); }
+                    ui.add_space(4.0);
+                    self.menu(ui, ctx);
+                });
+
+                // VS Code 风格的顶部居中命令中心输入栏 (Command Center Bar)
+                let space_left = left.right();
+                let space_right = if mid_w > 0.0 {
+                    mid.left()
+                } else {
+                    right.left() - RIGHT_GAP
+                };
+                let center_available = (space_right - space_left).max(0.0);
+                if center_available >= 120.0 {
+                    let bar_w = center_available.min(380.0);
+                    let ideal_center_x = rect.center().x;
+                    let half_w = bar_w / 2.0;
+                    let min_x = space_left + 8.0;
+                    let max_x = space_right - 8.0;
+                    let actual_center_x = if min_x + bar_w > max_x {
+                        (min_x + max_x) / 2.0
+                    } else {
+                        ideal_center_x.clamp(min_x + half_w, max_x - half_w)
+                    };
+                    let bar_rect = Rect::from_center_size(
+                        egui::pos2(actual_center_x, rect.center().y),
+                        egui::vec2(bar_w, 22.0),
+                    );
+
+                    let is_open = self.cmdui.is_palette_open();
+                    let resp = ui.interact(
+                        bar_rect,
+                        ui.make_persistent_id("titlebar-cmd-center"),
+                        Sense::click(),
+                    );
+                    let resp = resp
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .tip(trz("打开命令面板 (Ctrl+Shift+P / Shift+F1)"));
+                    let is_hovered = resp.hovered();
+
+                    // 根据主题绘制风格一致的命令栏胶囊
+                    let text_col = if tc.retro16 {
+                        let outer_border = if is_open {
+                            Color32::from_rgb(0, 240, 255)
+                        } else if is_hovered {
+                            Color32::from_rgb(255, 215, 0)
+                        } else {
+                            Color32::from_rgb(45, 35, 84)
+                        };
+                        let bg = if is_open {
+                            Color32::from_rgb(30, 23, 58)
+                        } else if is_hovered {
+                            Color32::from_rgb(39, 30, 77)
+                        } else {
+                            Color32::from_rgb(21, 15, 43)
+                        };
+                        let fg = if is_open || is_hovered {
+                            Color32::from_rgb(255, 215, 0)
+                        } else {
+                            tc.fg_dim
+                        };
+                        ui.painter().rect_filled(bar_rect, 0.0, bg);
+                        ui.painter().rect_stroke(
+                            bar_rect,
+                            0.0,
+                            Stroke::new(1.0, outer_border),
+                            egui::StrokeKind::Inside,
+                        );
+                        fg
+                    } else if tc.comic {
+                        if !is_hovered && !is_open {
+                            ui.painter().rect_filled(
+                                bar_rect.translate(Vec2::new(1.5, 1.5)),
+                                3.0,
+                                Color32::BLACK,
+                            );
                         }
+                        let bg = if is_hovered || is_open {
+                            Color32::from_rgb(255, 240, 100)
+                        } else {
+                            tc.bg_bar
+                        };
+                        let fg = Color32::BLACK;
+                        ui.painter().rect(
+                            bar_rect,
+                            3.0,
+                            bg,
+                            Stroke::new(2.0, Color32::BLACK),
+                            egui::StrokeKind::Inside,
+                        );
+                        fg
+                    } else {
+                        let bg = if is_open {
+                            tc.bg_active
+                        } else if is_hovered {
+                            tc.bg_hover
+                        } else if tc.is_translucent() {
+                            Color32::from_white_alpha(18)
+                        } else if tc.dark {
+                            Color32::from_white_alpha(14)
+                        } else {
+                            Color32::from_black_alpha(10)
+                        };
+                        let stroke = if is_open {
+                            Stroke::new(1.0, tc.blue)
+                        } else if is_hovered {
+                            Stroke::new(1.0, tc.fg_dim)
+                        } else {
+                            Stroke::new(1.0, tc.border)
+                        };
+                        let fg = if is_open || is_hovered {
+                            tc.fg
+                        } else {
+                            tc.fg_dim
+                        };
+                        ui.painter()
+                            .rect(bar_rect, 5.0, bg, stroke, egui::StrokeKind::Inside);
+                        fg
+                    };
+
+                    // 绘制左侧图标
+                    ui.painter().text(
+                        egui::pos2(bar_rect.left() + 9.0, bar_rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        "🔍",
+                        egui::FontId::proportional(11.0),
+                        text_col,
+                    );
+
+                    // 绘制标题与快捷键提示
+                    let display_title = if bar_w >= 260.0 {
+                        format!("{} (Ctrl+Shift+P)", title)
+                    } else {
+                        title.clone()
+                    };
+                    let font_px = if tc.retro16 { 12.0 } else { 11.5 };
+                    let galley = ui.painter().layout_no_wrap(
+                        display_title,
+                        egui::FontId::proportional(font_px),
+                        text_col,
+                    );
+                    let galley_x =
+                        (bar_rect.center().x - galley.size().x / 2.0).max(bar_rect.left() + 24.0);
+                    ui.painter().galley(
+                        egui::pos2(galley_x, bar_rect.center().y - galley.size().y / 2.0),
+                        galley,
+                        text_col,
+                    );
+
+                    if resp.clicked() {
+                        self.cmdui.toggle_palette();
                     }
-                    if plan.term {
-                        ui.add_space(4.0);
-                        if let Some(i) = chrome::index_of("c.terminal") {
-                            let tip = crate::i18n::lk_for(&keymap::entries()[i]);
-                            let txt = egui::RichText::new(format!(">_ {}", trz("终端"))).size(12.0).color(tc.fg);
-                            let edge = if tc.dark { Color32::from_gray(69) } else { Color32::from_gray(204) };
-                            let b = egui::Button::new(txt).fill(tc.bg_hover).stroke(egui::Stroke::new(1.0, edge)).corner_radius(4.0).min_size(Vec2::new(TERM_W - 12.0, 22.0));
-                            if ui.add(b).tip(tip).clicked() { run = Some(i); }
+                }
+                if mid_w > 0.0 {
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(mid).layout(lay), |ui| {
+                        ui.spacing_mut().item_spacing.x = ITEM_SPACING;
+                        for (id, _) in QUICK.iter().take(plan.quick) {
+                            let Some(i) = chrome::index_of(id) else {
+                                continue;
+                            };
+                            let e = &keymap::entries()[i];
+                            let tip = crate::i18n::lk_for(e);
+                            if crate::icons::icon_button_themed(ui, id, tip, &self.tc).clicked() {
+                                run = Some(i);
+                            }
                         }
+                        if plan.collab {
+                            let is_running = self.collab.any_running();
+                            let is_open = self.collab.open;
+                            let (rect, resp) = ui
+                                .allocate_exact_size(Vec2::new(COLLAB_BTN_W, 22.0), Sense::click());
+                            let tip = if is_running {
+                                "多 Agent 协同工作台 (正在执行协同任务...)"
+                            } else {
+                                "多 Agent 协同工作台 (Multi-Agent Collab)"
+                            };
+                            let resp = resp.on_hover_text(tip);
+                            let is_hovered = resp.hovered();
+                            let is_active = resp.is_pointer_button_down_on();
+                            let is_highlighted = is_open || is_running;
+
+                            let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+                                ui.painter(),
+                                rect.shrink(1.0),
+                                &self.tc,
+                                is_hovered,
+                                is_active,
+                                is_highlighted,
+                            );
+
+                            paint_collab_icon(
+                                ui.painter(),
+                                content_rect,
+                                is_running,
+                                icon_col,
+                                &self.tc,
+                            );
+                            if resp.clicked() {
+                                collab_toggle = true;
+                            }
+                        }
+                        if plan.sticky_notes {
+                            let is_open = self.sticky_notes.open;
+                            let (rect, resp) = ui
+                                .allocate_exact_size(Vec2::new(STICKY_BTN_W, 22.0), Sense::click());
+                            let tip = crate::i18n::tr("c.sticky-notes");
+                            let resp = resp.on_hover_text(tip);
+                            let is_hovered = resp.hovered();
+                            let is_active = resp.is_pointer_button_down_on();
+                            let is_highlighted = is_open;
+
+                            let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+                                ui.painter(),
+                                rect.shrink(1.0),
+                                &self.tc,
+                                is_hovered,
+                                is_active,
+                                is_highlighted,
+                            );
+
+                            paint_sticky_note_icon(
+                                ui.painter(),
+                                content_rect,
+                                is_open,
+                                icon_col,
+                                &self.tc,
+                            );
+                            if resp.clicked() {
+                                sticky_notes_toggle = true;
+                            }
+                        }
+                        if plan.diff {
+                            if let Some(act) = self.diff_button(ui) {
+                                diff_action = Some(act);
+                            }
+                        }
+                        if plan.overflow {
+                            let (rect, resp) = ui.allocate_exact_size(
+                                Vec2::new(OVERFLOW_BTN_W, 22.0),
+                                Sense::click(),
+                            );
+                            let tip = crate::i18n::trz("更多快捷操作 (折叠)");
+                            let resp = resp.on_hover_text(tip);
+
+                            let popup_id = egui::Popup::default_response_id(&resp);
+                            let is_menu_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+
+                            let is_hovered = resp.hovered();
+                            let is_active = resp.is_pointer_button_down_on();
+                            let is_highlighted = is_menu_open;
+
+                            let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+                                ui.painter(),
+                                rect.shrink(1.0),
+                                &self.tc,
+                                is_hovered,
+                                is_active,
+                                is_highlighted,
+                            );
+
+                            paint_overflow_icon(ui.painter(), content_rect, icon_col, &self.tc);
+
+                            egui::Popup::menu(&resp).show(|ui| {
+                                ui.set_min_width(200.0);
+                                ui.spacing_mut().item_spacing.y = 4.0;
+                                ui.label(
+                                    egui::RichText::new(crate::i18n::trz("更多快捷操作")).strong(),
+                                );
+                                ui.separator();
+
+                                // 渲染未在栏上显示的 QUICK 快捷项
+                                for (id, _) in QUICK.iter().skip(plan.quick) {
+                                    let Some(i) = chrome::index_of(id) else {
+                                        continue;
+                                    };
+                                    let e = &keymap::entries()[i];
+                                    let tip = crate::i18n::lk_for(e);
+                                    if menuui::mbtn(ui, tip).clicked() {
+                                        run = Some(i);
+                                        egui::Popup::close_all(ui.ctx());
+                                    }
+                                }
+
+                                // 渲染折叠的多 Agent 协同工作台
+                                if !plan.collab {
+                                    let collab_label = if self.collab.any_running() {
+                                        "多 Agent 协同工作台 (运行中...)"
+                                    } else if self.collab.open {
+                                        "关闭多 Agent 协同工作台"
+                                    } else {
+                                        "打开多 Agent 协同工作台"
+                                    };
+                                    if menuui::mbtn(ui, collab_label).clicked() {
+                                        collab_toggle = true;
+                                        egui::Popup::close_all(ui.ctx());
+                                    }
+                                }
+
+                                // 渲染折叠的便笺
+                                if !plan.sticky_notes {
+                                    let sticky_label = if self.sticky_notes.open {
+                                        "关闭桌面便笺"
+                                    } else {
+                                        "打开桌面便笺"
+                                    };
+                                    if menuui::mbtn(ui, sticky_label).clicked() {
+                                        sticky_notes_toggle = true;
+                                        egui::Popup::close_all(ui.ctx());
+                                    }
+                                }
+
+                                // 渲染折叠的 Diff 差异对比
+                                if !plan.diff {
+                                    if let Some(v) = &self.diff {
+                                        ui.separator();
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "差异对比中: {}",
+                                                v.summary()
+                                            ))
+                                            .color(Color32::from_rgb(0, 190, 255)),
+                                        );
+                                        if menuui::mbtn(ui, "下一处差异  F7").clicked() {
+                                            diff_action = Some(DiffAction::Next);
+                                            egui::Popup::close_all(ui.ctx());
+                                        }
+                                        if menuui::mbtn(ui, "上一处差异  Shift+F7").clicked() {
+                                            diff_action = Some(DiffAction::Prev);
+                                            egui::Popup::close_all(ui.ctx());
+                                        }
+                                        if menuui::mbtn(ui, "查看差异列表...").clicked() {
+                                            diff_action = Some(DiffAction::List);
+                                            egui::Popup::close_all(ui.ctx());
+                                        }
+                                        if menuui::mbtn(ui, "退出对比 (清除差异)").clicked()
+                                        {
+                                            diff_action = Some(DiffAction::Clear);
+                                            egui::Popup::close_all(ui.ctx());
+                                        }
+                                    } else if menuui::mbtn(ui, "文件差异对比 (Diff)...").clicked()
+                                    {
+                                        diff_action = Some(DiffAction::WithFile);
+                                        egui::Popup::close_all(ui.ctx());
+                                    }
+                                }
+                            });
+                        }
+                    });
+                }
+                ui.scope_builder(egui::UiBuilder::new().max_rect(right).layout(lay), |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    if win_button(ui, WinBtn::Minimize, &self.tc).clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
+                    if win_button(
+                        ui,
+                        if maximized {
+                            WinBtn::Restore
+                        } else {
+                            WinBtn::Maximize
+                        },
+                        &self.tc,
+                    )
+                    .clicked()
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                    }
+                    if win_button(ui, WinBtn::Close, &self.tc).clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
-            }
-            ui.scope_builder(egui::UiBuilder::new().max_rect(right).layout(lay), |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                if win_button(ui, WinBtn::Minimize).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)); }
-                if win_button(ui, if maximized { WinBtn::Restore } else { WinBtn::Maximize }).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized)); }
-                if win_button(ui, WinBtn::Close).clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Close); }
             });
-        });
-        if let Some(i) = run { self.run_entry(i, ctx); }
+        if let Some(i) = run {
+            self.run_entry(i, ctx);
+        }
+        if collab_toggle {
+            if self.ai.open && self.ai.collab_mode {
+                self.ai.open = false;
+                self.collab.open = false;
+            } else {
+                self.ai.open = true;
+                self.ai.collab_mode = true;
+                self.collab.open = true;
+                self.expand_dock(crate::panels::Dock::Right);
+            }
+        }
+        if sticky_notes_toggle {
+            self.sticky_notes.open = !self.sticky_notes.open;
+            if self.sticky_notes.open {
+                self.sticky_notes.focus_needed = true;
+            }
+            self.sticky_notes.mark_dirty();
+        }
+        if let Some(act) = diff_action {
+            match act {
+                DiffAction::WithFile => self.diff_with_file(),
+                DiffAction::WithTab(i) => self.start_diff(i),
+                DiffAction::Next => self.diff_step(true),
+                DiffAction::Prev => self.diff_step(false),
+                DiffAction::List => self.diff_list_open = true,
+                DiffAction::Clear => {
+                    self.diff = None;
+                    self.diff_list_open = false;
+                }
+            }
+        }
     }
 
-    /// 小图标: 一个矩形, 对应的那一块实心 = 该面板现在展开着
-    fn dock_toggle_icon(&self, ui: &mut egui::Ui, d: Dock) -> bool {
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(26.0, 22.0), Sense::click());
-        let vis = ui.style().interact(&resp);
-        if resp.hovered() { ui.painter().rect_filled(rect.shrink(1.0), 3.0, ui.visuals().widgets.hovered.weak_bg_fill); }
-        let r = Rect::from_center_size(rect.center(), Vec2::new(14.0, 11.0));
-        let expanded = self.dock_wanted(d) && !self.dock_collapsed(d);
-        let part = match d {
-            Dock::Side => Rect::from_min_max(r.min, egui::pos2(r.left() + 5.0, r.bottom())),
-            Dock::Right => Rect::from_min_max(egui::pos2(r.right() - 5.0, r.top()), r.max),
-            Dock::Bottom => Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 4.0), r.max),
+    /// 差异对比快捷入口按钮与弹出菜单
+    fn diff_button(&self, ui: &mut egui::Ui) -> Option<DiffAction> {
+        let is_active = self.diff.is_some();
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(DIFF_BTN_W, 22.0), Sense::click());
+        let mut action = None;
+
+        let tip = if let Some(v) = &self.diff {
+            format!("差异对比中: {} (点击展开对比菜单)", v.summary())
+        } else {
+            "文件差异对比 (Diff)".to_string()
         };
-        if expanded { ui.painter().rect_filled(part, 1.0, vis.fg_stroke.color); }
-        ui.painter().rect_stroke(r, 2.0, egui::Stroke::new(1.0, vis.fg_stroke.color), egui::StrokeKind::Inside);
-        let tip = trz(match d {
-            Dock::Side => "折叠 / 展开左侧栏",
-            Dock::Right => "折叠 / 展开右侧面板",
-            Dock::Bottom => "折叠 / 展开底部面板",
+        let resp = resp.on_hover_text(tip);
+
+        let popup_id = egui::Popup::default_response_id(&resp);
+        let is_menu_open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+
+        let is_hovered = resp.hovered();
+        let is_pressed = resp.is_pointer_button_down_on();
+        let is_highlighted = is_active || is_menu_open;
+
+        let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
+            ui.painter(),
+            rect.shrink(1.0),
+            &self.tc,
+            is_hovered,
+            is_pressed,
+            is_highlighted,
+        );
+
+        paint_diff_icon(ui.painter(), content_rect, is_active, icon_col, &self.tc);
+
+        // 点击展开差异比对菜单
+        egui::Popup::menu(&resp).show(|ui| {
+            ui.set_min_width(210.0);
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.label(egui::RichText::new("文件差异对比 (Diff)").strong());
+            ui.separator();
+
+            if let Some(v) = &self.diff {
+                ui.label(egui::RichText::new(v.summary()).color(Color32::from_rgb(0, 190, 255)));
+                if ui.button("下一处差异 (F7)").clicked() {
+                    action = Some(DiffAction::Next);
+                    egui::Popup::close_all(ui.ctx());
+                }
+                if ui.button("上一处差异 (Shift+F7)").clicked() {
+                    action = Some(DiffAction::Prev);
+                    egui::Popup::close_all(ui.ctx());
+                }
+                if ui.button("查看差异列表...").clicked() {
+                    action = Some(DiffAction::List);
+                    egui::Popup::close_all(ui.ctx());
+                }
+                if ui.button("退出对比 (清除差异)").clicked() {
+                    action = Some(DiffAction::Clear);
+                    egui::Popup::close_all(ui.ctx());
+                }
+                ui.separator();
+            }
+
+            if ui.button("与本地文件比较...").clicked() {
+                action = Some(DiffAction::WithFile);
+                egui::Popup::close_all(ui.ctx());
+            }
+
+            let cur = self.active.min(self.docs.len() - 1);
+            let other_docs: Vec<_> = self
+                .docs
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != cur)
+                .collect();
+
+            if !other_docs.is_empty() {
+                ui.separator();
+                ui.label(egui::RichText::new("与已打开标签页比较:").size(11.0));
+                for (i, d) in other_docs {
+                    let name = if d.name.is_empty() {
+                        "未命名"
+                    } else {
+                        &d.name
+                    };
+                    if ui.button(format!("  ↔ {name}")).clicked() {
+                        action = Some(DiffAction::WithTab(i));
+                        egui::Popup::close_all(ui.ctx());
+                    }
+                }
+            }
         });
-        resp.tip(tip).clicked()
+
+        action
     }
 
     /// 窗口边缘的缩放把手 + 自绘窗口的 1 像素外框; 每帧末尾调一次
     pub(super) fn window_grips(&mut self, ctx: &egui::Context) {
-        let (maximized, full) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
-        if !grips_active(self.cfg.system_title_bar, maximized, full) { return; }
+        let (maximized, full) = ctx.input(|i| {
+            (
+                i.viewport().maximized.unwrap_or(false),
+                i.viewport().fullscreen.unwrap_or(false),
+            )
+        });
+        if !grips_active(self.cfg.system_title_bar, maximized, full) {
+            return;
+        }
         let win = ctx.content_rect();
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::NULL.with("win-border")));
-        painter.rect_stroke(win, 0.0, egui::Stroke::new(1.0, ctx.global_style().visuals.widgets.noninteractive.bg_stroke.color), egui::StrokeKind::Inside);
-        let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::NULL.with("win-border"),
+        ));
+        painter.rect_stroke(
+            win,
+            0.0,
+            egui::Stroke::new(
+                1.0,
+                ctx.global_style()
+                    .visuals
+                    .widgets
+                    .noninteractive
+                    .bg_stroke
+                    .color,
+            ),
+            egui::StrokeKind::Inside,
+        );
+        let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else {
+            return;
+        };
         if let Some(d) = grip(pos, win, GRIP) {
             ctx.set_cursor_icon(cursor_for(d));
-            if ctx.input(|i| i.pointer.primary_pressed()) { ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(d)); }
+            if ctx.input(|i| i.pointer.primary_pressed()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(d));
+            }
         }
     }
 
@@ -272,27 +932,340 @@ enum WinBtn {
     Close,
 }
 
-fn win_button(ui: &mut egui::Ui, kind: WinBtn) -> egui::Response {
+fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(BTN_W, BAR_H), Sense::click());
-    if resp.hovered() {
-        let c = if kind == WinBtn::Close { Color32::from_rgb(196, 43, 28) } else { ui.visuals().widgets.hovered.weak_bg_fill };
-        ui.painter().rect_filled(rect, 0.0, c);
-    }
-    let col = if resp.hovered() && kind == WinBtn::Close { Color32::WHITE } else { ui.visuals().widgets.inactive.fg_stroke.color };
-    let st = egui::Stroke::new(1.2, col);
-    let c = rect.center();
+    let hovered = resp.hovered();
+    let active = resp.is_pointer_button_down_on();
     let p = ui.painter();
+
+    let (content_rect, col, stroke_w) = if tc.retro16 {
+        // Retro 16-Bit 街机矩形按键: 0px 像素倒角, 3D 棱角, 悬停金色/品红
+        let (bg, outer_border, (top_left, bot_right), icon_col) = if active {
+            let bg = if kind == WinBtn::Close {
+                Color32::from_rgb(180, 0, 75)
+            } else {
+                Color32::from_rgb(14, 11, 28)
+            };
+            (
+                bg,
+                Color32::BLACK,
+                (Color32::from_rgb(10, 7, 23), Color32::from_rgb(79, 62, 145)),
+                Color32::WHITE,
+            )
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgb(255, 42, 133),
+                    Color32::BLACK,
+                    (
+                        Color32::from_rgb(255, 105, 180),
+                        Color32::from_rgb(139, 0, 58),
+                    ),
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgb(39, 30, 77),
+                    Color32::from_rgb(255, 215, 0),
+                    (
+                        Color32::from_rgb(255, 215, 0),
+                        Color32::from_rgb(22, 15, 46),
+                    ),
+                    Color32::from_rgb(255, 215, 0),
+                )
+            }
+        } else {
+            (
+                Color32::from_rgb(22, 17, 45),
+                Color32::from_rgb(45, 35, 84),
+                (Color32::from_rgb(79, 62, 145), Color32::from_rgb(10, 7, 23)),
+                tc.fg.gamma_multiply(0.85),
+            )
+        };
+
+        p.rect_filled(rect, 0.0, bg);
+        p.rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.0, outer_border),
+            StrokeKind::Inside,
+        );
+
+        let inner = rect.shrink(1.0);
+        p.line_segment(
+            [inner.left_top(), inner.right_top()],
+            Stroke::new(1.0, top_left),
+        );
+        p.line_segment(
+            [inner.left_top(), inner.left_bottom()],
+            Stroke::new(1.0, top_left),
+        );
+        p.line_segment(
+            [inner.left_bottom(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right),
+        );
+        p.line_segment(
+            [inner.right_top(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right),
+        );
+
+        let offset = if active {
+            Vec2::new(1.0, 1.0)
+        } else {
+            Vec2::ZERO
+        };
+        (rect.translate(offset), icon_col, 1.5)
+    } else if tc.comic {
+        // Comic 3渲2: 美漫赛璐珞 2px 粗黑边框 + 实体纯黑硬边投影
+        let btn_rect = rect.shrink2(Vec2::new(3.0, 2.0));
+        let shadow_offset = if active {
+            Vec2::ZERO
+        } else {
+            Vec2::new(1.5, 1.5)
+        };
+        if !active {
+            p.rect_filled(btn_rect.translate(shadow_offset), 2.0, Color32::BLACK);
+        }
+        let draw_rect = if active {
+            btn_rect.translate(Vec2::new(1.5, 1.5))
+        } else {
+            btn_rect
+        };
+
+        let (bg, border_col, icon_col) = if active {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgb(204, 31, 72),
+                    Color32::BLACK,
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgb(255, 170, 0),
+                    Color32::BLACK,
+                    Color32::BLACK,
+                )
+            }
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgb(255, 51, 102),
+                    Color32::BLACK,
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgb(255, 204, 0),
+                    Color32::BLACK,
+                    Color32::BLACK,
+                )
+            }
+        } else {
+            (Color32::from_rgb(37, 40, 56), Color32::BLACK, tc.fg)
+        };
+
+        p.rect_filled(draw_rect, 2.0, bg);
+        p.rect_stroke(
+            draw_rect,
+            2.0,
+            Stroke::new(1.5, border_col),
+            StrokeKind::Inside,
+        );
+        (draw_rect, icon_col, 2.0)
+    } else if tc.crystal {
+        // Crystal 水晶透明: 6px 晶钻胶囊 + 顶沿 1px 晶面白光切面反射
+        let btn_rect = rect.shrink2(Vec2::new(4.0, 3.0));
+        let round = 6.0;
+        let (bg, border_col, icon_col) = if active {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgba_unmultiplied(220, 40, 80, 200),
+                    tc.mat_prism_pink,
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgba_unmultiplied(255, 105, 180, 80),
+                    tc.mat_prism_pink,
+                    Color32::WHITE,
+                )
+            }
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgba_unmultiplied(255, 60, 100, 180),
+                    Color32::from_rgba_unmultiplied(255, 105, 180, 220),
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 55),
+                    tc.mat_prism_cyan,
+                    Color32::WHITE,
+                )
+            }
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+                Color32::from_rgba_unmultiplied(255, 255, 255, 45),
+                Color32::from_white_alpha(210),
+            )
+        };
+
+        p.rect_filled(btn_rect, round, bg);
+        p.rect_stroke(
+            btn_rect,
+            round,
+            Stroke::new(1.0, border_col),
+            StrokeKind::Inside,
+        );
+
+        let facet_col = if hovered || active {
+            Color32::WHITE
+        } else {
+            Color32::from_white_alpha(150)
+        };
+        let hline_min_x = btn_rect.left() + 4.0;
+        let hline_max_x = btn_rect.right() - 4.0;
+        if hline_max_x > hline_min_x {
+            p.line_segment(
+                [
+                    pos2(hline_min_x, btn_rect.top() + 1.0),
+                    pos2(hline_max_x, btn_rect.top() + 1.0),
+                ],
+                Stroke::new(1.0, facet_col),
+            );
+        }
+        (btn_rect, icon_col, 1.3)
+    } else if tc.clear {
+        // Clear 玻璃透明: 7px 磨砂圆角胶囊
+        let btn_rect = rect.shrink2(Vec2::new(3.0, 3.0));
+        let round = 7.0;
+        let (bg, border_col, icon_col) = if active {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgba_unmultiplied(200, 35, 35, 200),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 100),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                    Color32::WHITE,
+                )
+            }
+        } else if hovered {
+            if kind == WinBtn::Close {
+                (
+                    Color32::from_rgba_unmultiplied(215, 45, 45, 180),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 140),
+                    Color32::WHITE,
+                )
+            } else {
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 65),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 120),
+                    Color32::WHITE,
+                )
+            }
+        } else {
+            (
+                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+                Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+                Color32::from_white_alpha(190),
+            )
+        };
+
+        p.rect_filled(btn_rect, round, bg);
+        p.rect_stroke(
+            btn_rect,
+            round,
+            Stroke::new(1.0, border_col),
+            StrokeKind::Inside,
+        );
+        (btn_rect, icon_col, 1.2)
+    } else {
+        // Dark / Light / 现代默认
+        if hovered {
+            let c = if kind == WinBtn::Close {
+                Color32::from_rgb(196, 43, 28)
+            } else {
+                ui.visuals().widgets.hovered.weak_bg_fill
+            };
+            p.rect_filled(rect, 0.0, c);
+        } else if active {
+            let c = if kind == WinBtn::Close {
+                Color32::from_rgb(158, 35, 22)
+            } else {
+                ui.visuals().widgets.active.weak_bg_fill
+            };
+            p.rect_filled(rect, 0.0, c);
+        }
+
+        let col = if (hovered || active) && kind == WinBtn::Close {
+            Color32::WHITE
+        } else {
+            ui.visuals().widgets.inactive.fg_stroke.color
+        };
+        (rect, col, 1.2)
+    };
+
+    let st = egui::Stroke::new(stroke_w, col);
+    let c = content_rect.center();
     match kind {
-        WinBtn::Minimize => { p.line_segment([egui::pos2(c.x - 5.0, c.y), egui::pos2(c.x + 5.0, c.y)], st); }
-        WinBtn::Maximize => { p.rect_stroke(Rect::from_center_size(c, Vec2::splat(10.0)), 0.0, st, egui::StrokeKind::Middle); }
+        WinBtn::Minimize => {
+            if tc.retro16 {
+                p.rect_filled(Rect::from_center_size(c, Vec2::new(10.0, 2.0)), 0.0, col);
+            } else {
+                p.line_segment([egui::pos2(c.x - 5.0, c.y), egui::pos2(c.x + 5.0, c.y)], st);
+            }
+        }
+        WinBtn::Maximize => {
+            p.rect_stroke(
+                Rect::from_center_size(c, Vec2::splat(10.0)),
+                0.0,
+                st,
+                egui::StrokeKind::Middle,
+            );
+        }
         WinBtn::Restore => {
-            p.rect_stroke(Rect::from_center_size(c + Vec2::new(-1.0, 1.0), Vec2::splat(8.0)), 0.0, st, egui::StrokeKind::Middle);
-            p.line_segment([egui::pos2(c.x - 2.0, c.y - 5.0), egui::pos2(c.x + 5.0, c.y - 5.0)], st);
-            p.line_segment([egui::pos2(c.x + 5.0, c.y - 5.0), egui::pos2(c.x + 5.0, c.y + 2.0)], st);
+            p.rect_stroke(
+                Rect::from_center_size(c + Vec2::new(-1.0, 1.0), Vec2::splat(8.0)),
+                0.0,
+                st,
+                egui::StrokeKind::Middle,
+            );
+            p.line_segment(
+                [
+                    egui::pos2(c.x - 2.0, c.y - 5.0),
+                    egui::pos2(c.x + 5.0, c.y - 5.0),
+                ],
+                st,
+            );
+            p.line_segment(
+                [
+                    egui::pos2(c.x + 5.0, c.y - 5.0),
+                    egui::pos2(c.x + 5.0, c.y + 2.0),
+                ],
+                st,
+            );
         }
         WinBtn::Close => {
-            p.line_segment([egui::pos2(c.x - 5.0, c.y - 5.0), egui::pos2(c.x + 5.0, c.y + 5.0)], st);
-            p.line_segment([egui::pos2(c.x + 5.0, c.y - 5.0), egui::pos2(c.x - 5.0, c.y + 5.0)], st);
+            p.line_segment(
+                [
+                    egui::pos2(c.x - 5.0, c.y - 5.0),
+                    egui::pos2(c.x + 5.0, c.y + 5.0),
+                ],
+                st,
+            );
+            p.line_segment(
+                [
+                    egui::pos2(c.x + 5.0, c.y - 5.0),
+                    egui::pos2(c.x - 5.0, c.y + 5.0),
+                ],
+                st,
+            );
         }
     }
     resp.tip(trz(match kind {
@@ -323,7 +1296,11 @@ mod tests {
         assert_eq!(g(799.0, 1.0), Some(Dir::NorthEast));
         assert_eq!(g(1.0, 599.0), Some(Dir::SouthWest));
         assert_eq!(g(799.0, 599.0), Some(Dir::SouthEast));
-        assert_eq!(g(10.0, 1.0), Some(Dir::NorthWest), "角比边宽: 离角 10 点的上边仍算角");
+        assert_eq!(
+            g(10.0, 1.0),
+            Some(Dir::NorthWest),
+            "角比边宽: 离角 10 点的上边仍算角"
+        );
         assert_eq!(g(1.0, 590.0), Some(Dir::SouthWest));
     }
 
@@ -339,7 +1316,11 @@ mod tests {
     #[test]
     fn bar_mode_depends_on_option_and_fullscreen() {
         assert_eq!(bar_mode(false, false), BarMode::Full);
-        assert_eq!(bar_mode(false, true), BarMode::MenuOnly, "全屏: 不画标题栏 / 窗口按钮, 留菜单行");
+        assert_eq!(
+            bar_mode(false, true),
+            BarMode::MenuOnly,
+            "全屏: 不画标题栏 / 窗口按钮, 留菜单行"
+        );
         assert_eq!(bar_mode(true, false), BarMode::System);
         assert_eq!(bar_mode(true, true), BarMode::System);
     }
@@ -354,7 +1335,10 @@ mod tests {
 
     #[test]
     fn only_a_maximized_custom_window_is_inset() {
-        assert_eq!(max_inset(false, true, false), if cfg!(windows) { MAX_OVERSHOOT } else { 0.0 });
+        assert_eq!(
+            max_inset(false, true, false),
+            if cfg!(windows) { MAX_OVERSHOOT } else { 0.0 }
+        );
         assert_eq!(max_inset(true, true, false), 0.0);
         assert_eq!(max_inset(false, false, false), 0.0);
         assert_eq!(max_inset(false, true, true), 0.0);
@@ -373,39 +1357,451 @@ mod tests {
         }
     }
 
-    /// 菜单宽度取真实值的量级: 11 个菜单, 带助记字母约 55 / 个, 不带约 42 / 个
-    const MW: f32 = 11.0 * 55.0;
-    const MP: f32 = 11.0 * 42.0;
+    #[test]
+    fn test_palette_not_in_quick_buttons_and_rendered_as_top_bar() {
+        // 验证右上角快捷按钮中不再包含 c.palette (已迁移至顶部居中命令中心搜索栏)
+        assert!(QUICK.iter().all(|(id, _)| *id != "c.palette"));
+
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut a = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            a.title_bar(root, &ctx);
+        });
+        out.textures_delta.clear();
+        drop(g);
+    }
+
+    #[test]
+    fn test_sticky_notes_titlebar_button_and_toggle() {
+        let p = plan_bar(1280.0, MW, MP, 50.0);
+        assert!(p.sticky_notes, "宽屏下包含常驻便笺快捷按钮");
+
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut a = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        assert!(!a.sticky_notes.open);
+        a.sticky_notes.open = true;
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |root| {
+            a.title_bar(root, &ctx);
+            a.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+        assert!(a.sticky_notes.open);
+        drop(g);
+    }
+
+    /// 菜单宽度取真实值的量级: 8 个菜单, 带助记字母约 55 / 个, 不带约 42 / 个
+    const MW: f32 = 8.0 * 55.0;
+    const MP: f32 = 8.0 * 42.0;
 
     #[test]
     fn the_plan_never_lets_the_menu_overflow_at_any_width() {
-        for w in [700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
+        for w in [580.0, 700.0, 760.0, 900.0, 1100.0, 1280.0, 1600.0, 2200.0] {
             let p = plan_bar(w, MW, MP, 50.0);
             let menu = if p.mnemonics { MW } else { MP };
-            let mid = if p.term { TERM_W } else { 0.0 } + if p.docks { DOCKS_W } else { 0.0 } + p.quick as f32 * QUICK_BTN;
+            let mid = p.mid_width();
             let title = if p.title { 58.0 } else { 0.0 };
-            assert!(LEFT_FIXED + title + menu + mid + BTN_W * 3.0 <= w, "宽 {w}: 排不下 {p:?}");
+            assert!(
+                LEFT_FIXED + title + menu + mid + RIGHT_GAP + BTN_W * 3.0 <= w,
+                "宽 {w}: 排不下 {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_overflow_button_and_dropdown_behavior() {
+        // 宽屏 (1600.0): 所有 9 个快捷工具全部直接展示在栏上, 不需要折叠按钮
+        let wide = plan_bar(1600.0, MW, MP, 50.0);
+        assert!(!wide.overflow);
+        assert_eq!(wide.quick, QUICK.len());
+        assert!(wide.diff && wide.collab && wide.sticky_notes);
+
+        // 中等宽度 (700.0): 空间不足以容纳所有快捷工具, 触发自适应折叠, overflow = true
+        let mid = plan_bar(700.0, MW, MP, 50.0);
+        assert!(mid.overflow, "中等宽度下应自动触发折叠按钮 (···)");
+        assert!(mid.mid_width() > 0.0);
+
+        // 验证各宽度下快捷按钮区与最小化按钮之间绝对保有净空 (>= RIGHT_GAP), 杜绝任何遮盖
+        for w in [580.0, 640.0, 700.0, 800.0, 1024.0, 1280.0, 1920.0] {
+            let p = plan_bar(w, MW, MP, 50.0);
+            let right_win_btn_left = w - BTN_W * 3.0;
+            let mid_w = p.mid_width();
+            let mid_right = right_win_btn_left - RIGHT_GAP;
+            let mid_left = mid_right - mid_w;
+            assert!(
+                mid_right <= right_win_btn_left - RIGHT_GAP,
+                "快捷区右边缘不能侵入最小化按钮区"
+            );
+            if mid_w > 0.0 {
+                assert!(mid_left < mid_right);
+            }
         }
     }
 
     #[test]
     fn the_plan_drops_things_progressively_as_the_window_narrows() {
         let wide = plan_bar(1600.0, MW, MP, 50.0);
-        assert!(wide.mnemonics && wide.title && wide.term && wide.docks && wide.quick == QUICK.len());
-        let mid = plan_bar(1100.0, MW, MP, 50.0);
-        assert!(mid.mnemonics && mid.term, "1100: 菜单 (带助记) 和终端钮都在");
-        assert!(mid.quick < QUICK.len(), "1100: 快捷钮已被撤掉几个, 不压菜单");
-        let narrow = plan_bar(700.0, MW, MP, 50.0);
-        assert!(!narrow.mnemonics && !narrow.docks && narrow.quick == 0);
+        assert!(wide.mnemonics && wide.title && wide.quick == QUICK.len());
+        let mid = plan_bar(700.0, MW, MP, 50.0);
+        assert!(mid.mnemonics, "700: 菜单 (带助记) 在");
+        assert!(mid.quick < QUICK.len(), "700: 快捷钮已被撤掉几个, 不压菜单");
+        let narrow = plan_bar(580.0, MW, MP, 50.0);
+        assert!(!narrow.mnemonics && narrow.quick == 0);
     }
 
     #[test]
     fn toggling_the_option_flips_the_setting() {
-        let g = crate::i18n::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut a = App::build(vec![], None, Trace::new(), crate::settings::Settings::default(), false);
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut a = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
         assert!(!a.cfg.system_title_bar, "默认自绘");
         a.toggle_system_title_bar();
         assert!(a.cfg.system_title_bar);
         drop(g);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiffAction {
+    WithFile,
+    WithTab(usize),
+    Next,
+    Prev,
+    List,
+    Clear,
+}
+
+/// 绘制“双文档差异对比”图标 (左右并排小文档，带高亮差异色条，自适应各主题画风)
+fn paint_diff_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    is_active: bool,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
+    let center = rect.center();
+    let page_w = 7.0;
+    let page_h = 11.0;
+    let page_gap = 3.0;
+
+    let left_min = egui::pos2(center.x - page_w - page_gap * 0.5, center.y - page_h * 0.5);
+    let left_rect = Rect::from_min_size(left_min, Vec2::new(page_w, page_h));
+
+    let right_min = egui::pos2(center.x + page_gap * 0.5, center.y - page_h * 0.5);
+    let right_rect = Rect::from_min_size(right_min, Vec2::new(page_w, page_h));
+
+    let stroke_color = if tc.comic {
+        Color32::BLACK
+    } else if is_active {
+        Color32::from_rgb(0, 190, 255)
+    } else {
+        theme_fg.gamma_multiply(0.85)
+    };
+    let stroke_w = if tc.comic { 1.5 } else { 1.0 };
+    let doc_stroke = egui::Stroke::new(stroke_w, stroke_color);
+
+    // 绘制左右两个文档背景底板与边框
+    let round = if tc.retro16 { 0.0 } else { 1.0 };
+    let bg_fill = if tc.comic {
+        Color32::from_rgb(255, 255, 240)
+    } else {
+        Color32::from_black_alpha(40)
+    };
+    painter.rect_filled(left_rect, round, bg_fill);
+    painter.rect_stroke(left_rect, round, doc_stroke, egui::StrokeKind::Inside);
+
+    painter.rect_filled(right_rect, round, bg_fill);
+    painter.rect_stroke(right_rect, round, doc_stroke, egui::StrokeKind::Inside);
+
+    // 文档内的代码行
+    let y1 = left_rect.top() + 3.0;
+    let y2 = left_rect.top() + 5.5;
+    let y3 = left_rect.top() + 8.5;
+
+    // 普通代码行 (低透明度)
+    let normal_stroke = egui::Stroke::new(
+        1.0,
+        stroke_color.gamma_multiply(if tc.comic { 0.55 } else { 0.35 }),
+    );
+    painter.hline(
+        left_rect.left() + 1.5..=left_rect.right() - 1.5,
+        y1,
+        normal_stroke,
+    );
+    painter.hline(
+        right_rect.left() + 1.5..=right_rect.right() - 1.5,
+        y1,
+        normal_stroke,
+    );
+
+    // 高亮差异行 (左暖黄，右亮绿/鲜红)
+    let left_diff = if tc.retro16 {
+        Color32::from_rgb(255, 215, 0)
+    } else {
+        Color32::from_rgb(255, 185, 30)
+    };
+    let right_diff = if is_active {
+        Color32::from_rgb(40, 220, 110)
+    } else {
+        Color32::from_rgb(255, 90, 90)
+    };
+
+    painter.hline(
+        left_rect.left() + 1.5..=left_rect.right() - 1.5,
+        y2,
+        egui::Stroke::new(1.2, left_diff),
+    );
+    painter.hline(
+        right_rect.left() + 1.5..=right_rect.right() - 1.5,
+        y2,
+        egui::Stroke::new(1.2, right_diff),
+    );
+
+    painter.hline(
+        left_rect.left() + 1.5..=left_rect.right() - 1.5,
+        y3,
+        normal_stroke,
+    );
+    painter.hline(
+        right_rect.left() + 1.5..=right_rect.right() - 1.5,
+        y3,
+        normal_stroke,
+    );
+
+    // 活跃状态下，在两页之间绘制高亮对比连接点
+    if is_active {
+        let dot_col = if tc.retro16 {
+            Color32::from_rgb(0, 255, 120)
+        } else if tc.comic {
+            Color32::BLACK
+        } else {
+            Color32::from_rgb(0, 200, 255)
+        };
+        painter.circle_filled(center, 1.5, dot_col);
+    }
+}
+
+/// 绘制多 Agent 协同工作台图标 (两个微缩协同智能体头像，带网络连接与状态光斑，自适应各主题画风)
+fn paint_collab_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    is_running: bool,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
+    let center = rect.center();
+    let col = if tc.comic {
+        Color32::BLACK
+    } else if is_running {
+        Color32::from_rgb(0, 220, 130)
+    } else {
+        theme_fg.gamma_multiply(0.85)
+    };
+
+    // 左上智能体与右下智能体两个小圆
+    let p1 = egui::pos2(center.x - 4.5, center.y - 3.5);
+    let p2 = egui::pos2(center.x + 4.5, center.y + 3.5);
+
+    let avatar_bg = if tc.comic {
+        if is_running {
+            Color32::from_rgb(180, 250, 180)
+        } else {
+            Color32::from_rgb(255, 235, 75)
+        }
+    } else {
+        Color32::from_black_alpha(40)
+    };
+    let stroke_w = if tc.comic { 1.5 } else { 1.0 };
+
+    painter.circle_filled(p1, 3.2, avatar_bg);
+    painter.circle_stroke(p1, 3.2, egui::Stroke::new(stroke_w, col));
+
+    painter.circle_filled(p2, 3.2, avatar_bg);
+    painter.circle_stroke(p2, 3.2, egui::Stroke::new(stroke_w, col));
+
+    // 智能体之间的协同链路
+    let link_col = if is_running {
+        if tc.retro16 {
+            Color32::from_rgb(0, 255, 120)
+        } else {
+            Color32::from_rgb(0, 220, 130)
+        }
+    } else {
+        col.gamma_multiply(0.5)
+    };
+    painter.line_segment(
+        [p1, p2],
+        egui::Stroke::new(if tc.comic { 1.4 } else { 1.0 }, link_col),
+    );
+
+    // 运行态光斑
+    if is_running {
+        let spot_col = if tc.retro16 {
+            Color32::from_rgb(0, 255, 200)
+        } else {
+            Color32::from_rgb(0, 255, 180)
+        };
+        painter.circle_filled(center, 1.8, spot_col);
+    }
+}
+
+/// 绘制便笺图标 (折角便笺本纸张，带有书写横线，自适应各主题画风)
+fn paint_sticky_note_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    is_open: bool,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
+    let center = rect.center();
+    let s = 6.0;
+    let note_rect = Rect::from_center_size(center, egui::vec2(s * 2.0, s * 2.0));
+    let fold = 3.5;
+
+    let paper_bg = if is_open {
+        if tc.comic {
+            Color32::from_rgb(255, 235, 75)
+        } else if tc.retro16 {
+            Color32::from_rgb(255, 215, 0)
+        } else {
+            Color32::from_rgb(255, 210, 60)
+        }
+    } else {
+        if tc.comic {
+            Color32::from_rgb(255, 248, 120)
+        } else if tc.dark {
+            Color32::from_white_alpha(35)
+        } else {
+            Color32::from_black_alpha(20)
+        }
+    };
+
+    let stroke_col = if tc.comic {
+        Color32::BLACK
+    } else if is_open {
+        Color32::from_rgb(255, 215, 0)
+    } else {
+        theme_fg.gamma_multiply(0.9)
+    };
+
+    let st = Stroke::new(if tc.comic { 1.5 } else { 1.1 }, stroke_col);
+
+    // 主多边形 (右下角切出折角)
+    let p_tl = note_rect.left_top();
+    let p_tr = note_rect.right_top();
+    let p_cut_r = pos2(note_rect.right(), note_rect.bottom() - fold);
+    let p_cut_b = pos2(note_rect.right() - fold, note_rect.bottom());
+    let p_bl = note_rect.left_bottom();
+
+    painter.add(egui::Shape::convex_polygon(
+        vec![p_tl, p_tr, p_cut_r, p_cut_b, p_bl],
+        paper_bg,
+        st,
+    ));
+
+    // 折角三角形小折页
+    let p_corner = pos2(note_rect.right() - fold, note_rect.bottom() - fold);
+    painter.add(egui::Shape::convex_polygon(
+        vec![p_cut_r, p_corner, p_cut_b],
+        if tc.comic {
+            Color32::from_rgb(255, 204, 0)
+        } else {
+            paper_bg.gamma_multiply(0.75)
+        },
+        st,
+    ));
+
+    // 内部三道微缩记事横线
+    let line_st = Stroke::new(
+        1.0,
+        if tc.comic {
+            Color32::BLACK
+        } else {
+            stroke_col.gamma_multiply(0.7)
+        },
+    );
+    let lx0 = note_rect.left() + 2.5;
+    let lx1 = note_rect.right() - 2.5;
+    painter.line_segment(
+        [
+            pos2(lx0, note_rect.top() + 3.5),
+            pos2(lx1, note_rect.top() + 3.5),
+        ],
+        line_st,
+    );
+    painter.line_segment(
+        [
+            pos2(lx0, note_rect.top() + 6.5),
+            pos2(lx1, note_rect.top() + 6.5),
+        ],
+        line_st,
+    );
+    painter.line_segment(
+        [
+            pos2(lx0, note_rect.top() + 9.5),
+            pos2(note_rect.right() - fold - 0.5, note_rect.top() + 9.5),
+        ],
+        line_st,
+    );
+}
+
+/// 绘制“更多快捷操作 / 折叠”图标 (三圆点 / 像素方块，自适应各主题画风)
+fn paint_overflow_icon(
+    painter: &egui::Painter,
+    rect: Rect,
+    theme_fg: Color32,
+    tc: &crate::view::ThemeColors,
+) {
+    let center = rect.center();
+    let dx = 4.5;
+    let xs = [center.x - dx, center.x, center.x + dx];
+
+    if tc.retro16 {
+        // 16位复古像素风: 2x2 方块像素点
+        let col = if theme_fg == Color32::WHITE {
+            Color32::from_rgb(0, 240, 255)
+        } else {
+            theme_fg
+        };
+        for &x in &xs {
+            let p = Rect::from_center_size(pos2(x, center.y), Vec2::splat(2.0));
+            painter.rect_filled(p, 0.0, col);
+        }
+    } else if tc.comic {
+        // 美漫风: 黑色描边明黄波普点
+        for &x in &xs {
+            let p = pos2(x, center.y);
+            painter.circle_filled(p, 1.8, Color32::from_rgb(255, 235, 75));
+            painter.circle_stroke(p, 1.8, Stroke::new(1.2, Color32::BLACK));
+        }
+    } else {
+        // 现代 / 水晶 / 玻璃 / 暗色 / 浅色: 柔和圆点
+        for &x in &xs {
+            painter.circle_filled(pos2(x, center.y), 1.5, theme_fg);
+        }
     }
 }

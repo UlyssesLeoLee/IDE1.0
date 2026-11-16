@@ -41,7 +41,12 @@ pub struct BracketRes {
 }
 
 fn find_from(req: &BracketReq, row: usize, col: usize) -> Option<[usize; 2]> {
-    let line_of = |r: usize| -> Option<Vec<char>> { req.rows.iter().find(|(i, _)| *i == r).map(|(_, s)| s.chars().collect()) };
+    let line_of = |r: usize| -> Option<Vec<char>> {
+        req.rows
+            .iter()
+            .find(|(i, _)| *i == r)
+            .map(|(_, s)| s.chars().collect())
+    };
     let cur = line_of(row)?;
     let ch = *cur.get(col)?;
     let (open, want) = if let Some((_, c)) = PAIRS.iter().find(|(o, _)| *o == ch) {
@@ -72,9 +77,9 @@ fn find_from(req: &BracketReq, row: usize, col: usize) -> Option<[usize; 2]> {
         c = if dir > 0 {
             0
         } else {
-            match line_of(r as usize) {
-                Some(l) => l.len() as isize - 1,
-                None => return None,
+            {
+                let l = line_of(r as usize)?;
+                l.len() as isize - 1
             }
         };
     }
@@ -83,7 +88,10 @@ fn find_from(req: &BracketReq, row: usize, col: usize) -> Option<[usize; 2]> {
 
 /// 先看光标所在字符, 再看光标前一个字符 (括弧强调 / 对括弧都是这个顺序)
 pub fn find_pair(req: &BracketReq) -> Option<BracketRes> {
-    for c in [Some(req.col), req.col.checked_sub(1)].into_iter().flatten() {
+    for c in [Some(req.col), req.col.checked_sub(1)]
+        .into_iter()
+        .flatten()
+    {
         if let Some(pair) = find_from(req, req.row, c) {
             return Some(BracketRes { at: c, pair });
         }
@@ -96,7 +104,16 @@ mod tests {
     use super::*;
 
     fn req(row: usize, col: usize, lines: &[&str]) -> BracketReq {
-        BracketReq { row, col, total_rows: lines.len(), rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect() }
+        BracketReq {
+            row,
+            col,
+            total_rows: lines.len(),
+            rows: lines
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (i, s.to_string()))
+                .collect(),
+        }
     }
     const DOC: &[&str] = &["a(b[c]{d}<e>)f", "x (a", "  [b]", ") y"];
 

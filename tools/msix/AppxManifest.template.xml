@@ -19,16 +19,16 @@
     <Resource Language="ja-jp" />
   </Resources>
   <Applications>
-    <Application Id="IDE10" Executable="ide-shell-desktop.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="IDE10" Executable="ide-fast.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements DisplayName="IDE1.0"
-                          Description="轻量、快速、对标 Sakura Editor 的编辑器 (Rust / Tauri): Markdown 工具、沙箱插件、可选的 AI 对话"
+                          Description="轻量、快速、对标 Sakura Editor 的编辑器 (原生 Rust / egui): Markdown 工具、沙箱插件、可选的 AI 对话"
                           BackgroundColor="transparent"
                           Square150x150Logo="Assets\Square150x150Logo.png"
                           Square44x44Logo="Assets\Square44x44Logo.png" />
     </Application>
   </Applications>
   <Capabilities>
-    <!-- 桌面程序 (Tauri) 以完全信任运行; 商店允许, 需要在提交时说明理由: 编辑器要读写用户选择的任意文件 / 启动终端 -->
+    <!-- 桌面程序 (IDE1.0) 以完全信任运行; 商店允许, 需要在提交时说明理由: 编辑器要读写用户选择的任意文件 / 启动终端 -->
     <rescap:Capability Name="runFullTrust" />
   </Capabilities>
 </Package>

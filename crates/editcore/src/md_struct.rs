@@ -17,13 +17,18 @@ pub struct Hit {
 /// heading 的 query 可写 `#2` / `#2 关键字` 限定层级; fence 的 query 是语言名
 pub fn find(text: &str, kind: &str, query: &str) -> Result<Vec<Hit>, String> {
     if !["heading", "link", "image", "fence", "task", "todo"].contains(&kind) {
-        return Err(format!("未知的节点类型: {kind} (可用 heading / link / image / fence / task / todo)"));
+        return Err(format!(
+            "未知的节点类型: {kind} (可用 heading / link / image / fence / task / todo)"
+        ));
     }
     let q = query.trim();
     let (level, needle) = match q.strip_prefix('#') {
         Some(rest) if kind == "heading" => {
             let d: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            (d.parse::<usize>().ok(), rest[d.len()..].trim().to_lowercase())
+            (
+                d.parse::<usize>().ok(),
+                rest[d.len()..].trim().to_lowercase(),
+            )
         }
         _ => (None, q.to_lowercase()),
     };
@@ -39,7 +44,16 @@ pub fn find(text: &str, kind: &str, query: &str) -> Result<Vec<Hit>, String> {
                 None => {
                     let lang = t.trim_start_matches('`').trim().to_string();
                     if kind == "fence" && ok(&lang) {
-                        out.push(Hit { line: no, kind: "fence", text: if lang.is_empty() { "(无语言)".into() } else { lang.clone() }, detail: lang.clone() });
+                        out.push(Hit {
+                            line: no,
+                            kind: "fence",
+                            text: if lang.is_empty() {
+                                "(无语言)".into()
+                            } else {
+                                lang.clone()
+                            },
+                            detail: lang.clone(),
+                        });
                     }
                     fence = Some((no, lang));
                 }
@@ -52,10 +66,18 @@ pub fn find(text: &str, kind: &str, query: &str) -> Result<Vec<Hit>, String> {
         match kind {
             "heading" => {
                 let h = l.chars().take_while(|&c| c == '#').count();
-                if (1..=6).contains(&h) && l[h..].starts_with(' ') && level.is_none_or(|lv| lv == h) {
+                if (1..=6).contains(&h)
+                    && l[h..].starts_with(' ')
+                    && level.map_or(true, |lv| lv == h)
+                {
                     let title = l[h + 1..].trim().trim_end_matches('#').trim();
                     if ok(title) {
-                        out.push(Hit { line: no, kind: "heading", text: title.to_string(), detail: format!("H{h}") });
+                        out.push(Hit {
+                            line: no,
+                            kind: "heading",
+                            text: title.to_string(),
+                            detail: format!("H{h}"),
+                        });
                     }
                 }
             }
@@ -70,7 +92,12 @@ pub fn find(text: &str, kind: &str, query: &str) -> Result<Vec<Hit>, String> {
                             let label = &rest[o + 1..p];
                             let url = &rest[p + 2..p + 2 + e];
                             if is_img == (kind == "image") && (ok(label) || ok(url)) {
-                                out.push(Hit { line: no, kind: if is_img { "image" } else { "link" }, text: label.to_string(), detail: url.to_string() });
+                                out.push(Hit {
+                                    line: no,
+                                    kind: if is_img { "image" } else { "link" },
+                                    text: label.to_string(),
+                                    detail: url.to_string(),
+                                });
                             }
                             rest = &rest[p + 2 + e + 1..];
                         }
@@ -83,7 +110,12 @@ pub fn find(text: &str, kind: &str, query: &str) -> Result<Vec<Hit>, String> {
                 let done = b.starts_with("- [x] ") || b.starts_with("- [X] ");
                 let open = b.starts_with("- [ ] ");
                 if (open || (done && kind == "task")) && ok(&b[6..]) {
-                    out.push(Hit { line: no, kind: "task", text: b[6..].trim().to_string(), detail: if done { "done".into() } else { "open".into() } });
+                    out.push(Hit {
+                        line: no,
+                        kind: "task",
+                        text: b[6..].trim().to_string(),
+                        detail: if done { "done".into() } else { "open".into() },
+                    });
                 }
             }
             _ => {}
@@ -114,7 +146,11 @@ mod tests {
     fn links_images_tasks_and_fences() {
         assert_eq!(find(DOC, "link", "").unwrap()[0].detail, "a.md");
         assert_eq!(find(DOC, "image", "").unwrap()[0].text, "logo");
-        assert_eq!(lines(find(DOC, "link", "").unwrap()), [4], "围栏里的链接不算");
+        assert_eq!(
+            lines(find(DOC, "link", "").unwrap()),
+            [4],
+            "围栏里的链接不算"
+        );
         assert_eq!(lines(find(DOC, "todo", "").unwrap()), [6]);
         assert_eq!(lines(find(DOC, "task", "").unwrap()), [6, 7]);
         assert_eq!(find(DOC, "fence", "rust").unwrap()[0].line, 9);

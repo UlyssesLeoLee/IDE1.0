@@ -56,21 +56,55 @@ impl std::error::Error for MacroError {}
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
     /// 走命令分发器: 有 `cmd` 用 cmd, 否则用 `key` 模拟按键. `args` 是宏里带的(多为占位的 0).
-    Command { id: String, cmd: Option<String>, key: Option<String>, args: Vec<MacroArg> },
+    Command {
+        id: String,
+        cmd: Option<String>,
+        key: Option<String>,
+        args: Vec<MacroArg>,
+    },
     /// `S_InsText("x")`: 在光标处插入文本 (有选区则替换).
-    InsText { text: String },
+    InsText {
+        text: String,
+    },
     /// `S_Char(code)`: 键入一个字符 (13 = 回车), 走键入路径.
-    Char { code: u32 },
+    Char {
+        code: u32,
+    },
     /// `S_MoveCursor(line, col, flag)`: 逻辑位置, 这里已转成 0 起; `select` = flag 的 bit0.
-    MoveCursor { row: usize, col: usize, select: bool },
+    MoveCursor {
+        row: usize,
+        col: usize,
+        select: bool,
+    },
     /// `S_MoveCursorLayout(line, col, flag)`: 同上, 但是折行后的物理位置.
-    MoveCursorLayout { row: usize, col: usize, select: bool },
+    MoveCursorLayout {
+        row: usize,
+        col: usize,
+        select: bool,
+    },
     /// `S_Jump(line, flag)`: 跳到行号 (1 起, 原样保留; 超出文件由前端夹到末行).
-    Jump { line: i64, flag: i64 },
-    SearchNext { text: String, flags: u32 },
-    SearchPrev { text: String, flags: u32 },
-    ReplaceAll { search: String, replace: String, flags: u32 },
-    ReplaceNext { search: String, replace: String, flags: u32 },
+    Jump {
+        line: i64,
+        flag: i64,
+    },
+    SearchNext {
+        text: String,
+        flags: u32,
+    },
+    SearchPrev {
+        text: String,
+        flags: u32,
+    },
+    ReplaceAll {
+        search: String,
+        replace: String,
+        flags: u32,
+    },
+    ReplaceNext {
+        search: String,
+        replace: String,
+        flags: u32,
+    },
 }
 
 /// 一步: 源码行 + 函数名 + 动作.
@@ -114,7 +148,12 @@ struct Lexer {
 
 impl Lexer {
     fn err(&self, msg: impl Into<String>) -> MacroError {
-        MacroError { line: self.line, col: self.col, func: None, message: msg.into() }
+        MacroError {
+            line: self.line,
+            col: self.col,
+            func: None,
+            message: msg.into(),
+        }
     }
     fn peek(&self) -> Option<char> {
         self.c.get(self.i).copied()
@@ -163,7 +202,12 @@ impl Lexer {
                                 self.bump();
                             }
                             (None, _) => {
-                                return Err(MacroError { line: l, col: c, func: None, message: "unterminated /* comment".into() })
+                                return Err(MacroError {
+                                    line: l,
+                                    col: c,
+                                    func: None,
+                                    message: "unterminated /* comment".into(),
+                                })
                             }
                         }
                     }
@@ -179,7 +223,12 @@ impl Lexer {
         loop {
             match self.bump() {
                 None | Some('\n') => {
-                    return Err(MacroError { line: l, col: c, func: None, message: "unterminated string literal".into() })
+                    return Err(MacroError {
+                        line: l,
+                        col: c,
+                        func: None,
+                        message: "unterminated string literal".into(),
+                    })
                 }
                 Some(ch) if ch == q => return Ok(s),
                 Some('\\') => match self.bump() {
@@ -194,7 +243,14 @@ impl Lexer {
                         s.push('\\');
                         s.push(o);
                     }
-                    _ => return Err(MacroError { line: l, col: c, func: None, message: "unterminated string literal".into() }),
+                    _ => {
+                        return Err(MacroError {
+                            line: l,
+                            col: c,
+                            func: None,
+                            message: "unterminated string literal".into(),
+                        })
+                    }
                 },
                 Some(ch) => s.push(ch),
             }
@@ -220,14 +276,20 @@ impl Lexer {
             }
         }
         let radix = if hex { 16 } else { 10 };
-        let v = i64::from_str_radix(&digits, radix).map_err(|_| self.err("invalid integer literal"))?;
+        let v =
+            i64::from_str_radix(&digits, radix).map_err(|_| self.err("invalid integer literal"))?;
         Ok(if neg { -v } else { v })
     }
 }
 
 /// 把 `.mac` 文本解析为语句列表. 不检查函数是否存在 (那是 [`plan`] 的事).
 pub fn parse(src: &str) -> Result<Vec<Statement>, MacroError> {
-    let mut lx = Lexer { c: src.chars().collect(), i: 0, line: 1, col: 1 };
+    let mut lx = Lexer {
+        c: src.chars().collect(),
+        i: 0,
+        line: 1,
+        col: 1,
+    };
     let mut out = Vec::new();
     loop {
         lx.skip_ws()?;
@@ -250,7 +312,12 @@ pub fn parse(src: &str) -> Result<Vec<Statement>, MacroError> {
             e
         };
         if !name.starts_with("S_") {
-            return Err(MacroError { line, col, func: Some(name.clone()), message: format!("'{name}' is not an S_ function") });
+            return Err(MacroError {
+                line,
+                col,
+                func: Some(name.clone()),
+                message: format!("'{name}' is not an S_ function"),
+            });
         }
         lx.skip_ws()?;
         if lx.peek() != Some('(') {
@@ -265,8 +332,12 @@ pub fn parse(src: &str) -> Result<Vec<Statement>, MacroError> {
             loop {
                 lx.skip_ws()?;
                 match lx.peek() {
-                    Some(q @ ('"' | '\'')) => args.push(MacroArg::Str(lx.string(q).map_err(&with_func)?)),
-                    Some(ch) if ch.is_ascii_digit() || ch == '-' => args.push(MacroArg::Int(lx.int().map_err(&with_func)?)),
+                    Some(q @ ('"' | '\'')) => {
+                        args.push(MacroArg::Str(lx.string(q).map_err(with_func)?))
+                    }
+                    Some(ch) if ch.is_ascii_digit() || ch == '-' => {
+                        args.push(MacroArg::Int(lx.int().map_err(with_func)?))
+                    }
                     _ => return Err(with_func(lx.err("expected an argument"))),
                 }
                 lx.skip_ws()?;
@@ -287,7 +358,12 @@ pub fn parse(src: &str) -> Result<Vec<Statement>, MacroError> {
             (None, _) | (Some('\n'), _) | (Some('/'), Some('/' | '*')) => {}
             _ => return Err(with_func(lx.err("missing ';'"))),
         }
-        out.push(Statement { name, args, line, col });
+        out.push(Statement {
+            name,
+            args,
+            line,
+            col,
+        });
     }
     Ok(out)
 }
@@ -300,15 +376,28 @@ pub fn command_names() -> Vec<&'static str> {
     SAKURA_COMMANDS.iter().map(|e| e.0).collect()
 }
 
-pub fn lookup_command(name: &str) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
+pub fn lookup_command(
+    name: &str,
+) -> Option<(&'static str, Option<&'static str>, Option<&'static str>)> {
     SAKURA_COMMANDS
         .binary_search_by(|e| e.0.cmp(name))
         .ok()
-        .map(|i| (SAKURA_COMMANDS[i].1, SAKURA_COMMANDS[i].2, SAKURA_COMMANDS[i].3))
+        .map(|i| {
+            (
+                SAKURA_COMMANDS[i].1,
+                SAKURA_COMMANDS[i].2,
+                SAKURA_COMMANDS[i].3,
+            )
+        })
 }
 
 fn bad(st: &Statement, msg: impl Into<String>) -> MacroError {
-    MacroError { line: st.line, col: st.col, func: Some(st.name.clone()), message: format!("{}: {}", st.name, msg.into()) }
+    MacroError {
+        line: st.line,
+        col: st.col,
+        func: Some(st.name.clone()),
+        message: format!("{}: {}", st.name, msg.into()),
+    }
 }
 fn int_at(st: &Statement, i: usize) -> Result<i64, MacroError> {
     match st.args.get(i) {
@@ -327,7 +416,11 @@ fn str_at(st: &Statement, i: usize) -> Result<String, MacroError> {
 fn count(st: &Statement, lo: usize, hi: usize) -> Result<(), MacroError> {
     let n = st.args.len();
     if n < lo || n > hi {
-        let want = if lo == hi { lo.to_string() } else { format!("{lo}..{hi}") };
+        let want = if lo == hi {
+            lo.to_string()
+        } else {
+            format!("{lo}..{hi}")
+        };
         return Err(bad(st, format!("expects {want} argument(s), got {n}")));
     }
     Ok(())
@@ -343,12 +436,17 @@ fn plan_one(st: &Statement) -> Result<Action, MacroError> {
         "Char" => {
             count(st, 1, 1)?;
             let v = int_at(st, 0)?;
-            let code = u32::try_from(v).ok().filter(|c| *c <= 0x10FFFF).ok_or_else(|| bad(st, "character code out of range"))?;
+            let code = u32::try_from(v)
+                .ok()
+                .filter(|c| *c <= 0x10FFFF)
+                .ok_or_else(|| bad(st, "character code out of range"))?;
             Action::Char { code }
         }
         "InsText" => {
             count(st, 1, 1)?;
-            Action::InsText { text: str_at(st, 0)? }
+            Action::InsText {
+                text: str_at(st, 0)?,
+            }
         }
         "MoveCursor" | "MoveCursorLayout" => {
             count(st, 3, 3)?;
@@ -364,7 +462,10 @@ fn plan_one(st: &Statement) -> Result<Action, MacroError> {
         "Jump" => {
             count(st, 1, 2)?;
             let flag = if st.args.len() > 1 { int_at(st, 1)? } else { 0 };
-            Action::Jump { line: int_at(st, 0)?, flag }
+            Action::Jump {
+                line: int_at(st, 0)?,
+                flag,
+            }
         }
         "SearchNext" | "SearchPrev" if !st.args.is_empty() => {
             count(st, 2, 2)?;
@@ -379,9 +480,17 @@ fn plan_one(st: &Statement) -> Result<Action, MacroError> {
             count(st, 3, 3)?;
             let (search, replace, flags) = (str_at(st, 0)?, str_at(st, 1)?, flags_at(st, 2)?);
             if short == "ReplaceAll" {
-                Action::ReplaceAll { search, replace, flags }
+                Action::ReplaceAll {
+                    search,
+                    replace,
+                    flags,
+                }
             } else {
-                Action::ReplaceNext { search, replace, flags }
+                Action::ReplaceNext {
+                    search,
+                    replace,
+                    flags,
+                }
             }
         }
         _ => match lookup_command(short) {
@@ -396,7 +505,10 @@ fn plan_one(st: &Statement) -> Result<Action, MacroError> {
                     line: st.line,
                     col: st.col,
                     func: Some(st.name.clone()),
-                    message: format!("unknown Sakura macro function {} (line {})", st.name, st.line),
+                    message: format!(
+                        "unknown Sakura macro function {} (line {})",
+                        st.name, st.line
+                    ),
                 })
             }
         },
@@ -407,7 +519,13 @@ fn plan_one(st: &Statement) -> Result<Action, MacroError> {
 pub fn plan(src: &str) -> Result<Vec<MacroStep>, MacroError> {
     parse(src)?
         .iter()
-        .map(|st| plan_one(st).map(|action| MacroStep { line: st.line, name: st.name.clone(), action }))
+        .map(|st| {
+            plan_one(st).map(|action| MacroStep {
+                line: st.line,
+                name: st.name.clone(),
+                action,
+            })
+        })
         .collect()
 }
 
@@ -702,9 +820,17 @@ mod tests {
 
     #[test]
     fn table_is_sorted_unique_and_complete() {
-        assert!(SAKURA_COMMANDS.windows(2).all(|w| w[0].0 < w[1].0), "must be strictly sorted");
+        assert!(
+            SAKURA_COMMANDS.windows(2).all(|w| w[0].0 < w[1].0),
+            "must be strictly sorted"
+        );
         assert_eq!(SAKURA_COMMANDS.len(), 268);
-        assert!(SAKURA_COMMANDS.iter().all(|e| e.2.is_some() || e.3.is_some()), "every entry is dispatchable");
+        assert!(
+            SAKURA_COMMANDS
+                .iter()
+                .all(|e| e.2.is_some() || e.3.is_some()),
+            "every entry is dispatchable"
+        );
         assert!(SAKURA_COMMANDS.iter().all(|e| e.1.starts_with("F_")));
     }
 
@@ -735,17 +861,57 @@ mod tests {
     fn primitives() {
         assert_eq!(one("S_Char(81);"), Action::Char { code: 81 });
         assert_eq!(one("S_Char(13);"), Action::Char { code: 13 });
-        assert_eq!(one("S_InsText(\"x\");"), Action::InsText { text: "x".into() });
-        assert_eq!(one("S_MoveCursor(3, 5, 0);"), Action::MoveCursor { row: 2, col: 4, select: false });
-        assert_eq!(one("S_MoveCursor(1,1,1);"), Action::MoveCursor { row: 0, col: 0, select: true });
-        assert_eq!(one("S_MoveCursorLayout(2, 2, 0);"), Action::MoveCursorLayout { row: 1, col: 1, select: false });
+        assert_eq!(
+            one("S_InsText(\"x\");"),
+            Action::InsText { text: "x".into() }
+        );
+        assert_eq!(
+            one("S_MoveCursor(3, 5, 0);"),
+            Action::MoveCursor {
+                row: 2,
+                col: 4,
+                select: false
+            }
+        );
+        assert_eq!(
+            one("S_MoveCursor(1,1,1);"),
+            Action::MoveCursor {
+                row: 0,
+                col: 0,
+                select: true
+            }
+        );
+        assert_eq!(
+            one("S_MoveCursorLayout(2, 2, 0);"),
+            Action::MoveCursorLayout {
+                row: 1,
+                col: 1,
+                select: false
+            }
+        );
         assert_eq!(one("S_Jump(99, 1);"), Action::Jump { line: 99, flag: 1 });
         assert_eq!(one("S_Jump(3);"), Action::Jump { line: 3, flag: 0 });
-        assert_eq!(one("S_SearchNext(\"foo\", 32);"), Action::SearchNext { text: "foo".into(), flags: 32 });
-        assert_eq!(one("S_SearchPrev(\"foo\", 2);"), Action::SearchPrev { text: "foo".into(), flags: 2 });
+        assert_eq!(
+            one("S_SearchNext(\"foo\", 32);"),
+            Action::SearchNext {
+                text: "foo".into(),
+                flags: 32
+            }
+        );
+        assert_eq!(
+            one("S_SearchPrev(\"foo\", 2);"),
+            Action::SearchPrev {
+                text: "foo".into(),
+                flags: 2
+            }
+        );
         assert_eq!(
             one("S_ReplaceAll(\"(f)(o+)\", \"[$2$1]\", 4);"),
-            Action::ReplaceAll { search: "(f)(o+)".into(), replace: "[$2$1]".into(), flags: 4 }
+            Action::ReplaceAll {
+                search: "(f)(o+)".into(),
+                replace: "[$2$1]".into(),
+                flags: 4
+            }
         );
         assert_eq!(cmd_id("S_SearchNext();"), "F_SEARCH_NEXT");
     }
@@ -759,16 +925,40 @@ mod tests {
 
     #[test]
     fn string_escapes() {
-        assert_eq!(one(r#"S_InsText("a\tb\r\nc\\d\"e\'f\0");"#), Action::InsText { text: "a\tb\r\nc\\d\"e'f\0".into() });
-        assert_eq!(one(r#"S_InsText('it\'s "q"');"#), Action::InsText { text: "it's \"q\"".into() });
+        assert_eq!(
+            one(r#"S_InsText("a\tb\r\nc\\d\"e\'f\0");"#),
+            Action::InsText {
+                text: "a\tb\r\nc\\d\"e'f\0".into()
+            }
+        );
+        assert_eq!(
+            one(r#"S_InsText('it\'s "q"');"#),
+            Action::InsText {
+                text: "it's \"q\"".into()
+            }
+        );
         // 未知转义保留反斜杠 (正则)
-        assert_eq!(one(r#"S_SearchNext("fo+\w*", 4);"#), Action::SearchNext { text: "fo+\\w*".into(), flags: 4 });
-        assert_eq!(one("S_InsText(\"日本語\");"), Action::InsText { text: "日本語".into() });
+        assert_eq!(
+            one(r#"S_SearchNext("fo+\w*", 4);"#),
+            Action::SearchNext {
+                text: "fo+\\w*".into(),
+                flags: 4
+            }
+        );
+        assert_eq!(
+            one("S_InsText(\"日本語\");"),
+            Action::InsText {
+                text: "日本語".into()
+            }
+        );
     }
 
     #[test]
     fn numbers() {
-        assert_eq!(one("S_Jump(-5, 0x10);"), Action::Jump { line: -5, flag: 16 });
+        assert_eq!(
+            one("S_Jump(-5, 0x10);"),
+            Action::Jump { line: -5, flag: 16 }
+        );
         assert!(plan("S_Char(-1);").is_err());
         assert!(plan("S_Char(1114112);").is_err());
         assert!(plan("S_Char(abc);").is_err());
@@ -787,9 +977,21 @@ mod tests {
         assert!(plan("  // only a comment").unwrap().is_empty());
         assert_eq!(plan("S_Copy()").unwrap().len(), 1);
         // 多行参数
-        assert_eq!(one("S_MoveCursor(\n 2,\n 3, // c\n 0\n);"), Action::MoveCursor { row: 1, col: 2, select: false });
+        assert_eq!(
+            one("S_MoveCursor(\n 2,\n 3, // c\n 0\n);"),
+            Action::MoveCursor {
+                row: 1,
+                col: 2,
+                select: false
+            }
+        );
         // 注释里的字符串/分号不干扰
-        assert_eq!(plan("S_InsText(\"// not a comment; /* nor this */\");").unwrap().len(), 1);
+        assert_eq!(
+            plan("S_InsText(\"// not a comment; /* nor this */\");")
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -814,7 +1016,10 @@ mod tests {
         let e = plan("S_Copy();\n\nS_NoSuchThing(1);").unwrap_err();
         assert_eq!(e.line, 3);
         assert_eq!(e.func.as_deref(), Some("S_NoSuchThing"));
-        assert!(e.message.contains("S_NoSuchThing") && e.message.contains("line 3"), "{e}");
+        assert!(
+            e.message.contains("S_NoSuchThing") && e.message.contains("line 3"),
+            "{e}"
+        );
         // 区分大小写
         assert!(plan("S_copy();").is_err());
         assert!(plan("s_Copy();").is_err());
@@ -930,13 +1135,25 @@ mod tests {
 
     #[test]
     fn sakura_diff_names_all_resolve() {
-        let mut names: Vec<String> = diff_snippets().iter().map(|s| s.split('(').next().unwrap().to_string()).collect();
+        let mut names: Vec<String> = diff_snippets()
+            .iter()
+            .map(|s| s.split('(').next().unwrap().to_string())
+            .collect();
         names.sort();
         names.dedup();
         assert!(names.len() > 70);
         for n in names {
             let short = &n[2..];
-            let primitive = ["Char", "InsText", "Jump", "MoveCursor", "ReplaceAll", "SearchNext", "SearchPrev"].contains(&short);
+            let primitive = [
+                "Char",
+                "InsText",
+                "Jump",
+                "MoveCursor",
+                "ReplaceAll",
+                "SearchNext",
+                "SearchPrev",
+            ]
+            .contains(&short);
             assert!(primitive || lookup_command(short).is_some(), "{n}");
         }
     }
@@ -949,9 +1166,17 @@ mod tests {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RecEvent {
     /// `key`: 这个命令默认绑定的键 (Sakura 写法, 例 `Control+i`); 命令没有直接对应的 `S_` 函数时靠它反查
-    Command { cmd: String, #[serde(default)] key: Option<String> },
-    Edit { cmd: String },
-    Text { text: String },
+    Command {
+        cmd: String,
+        #[serde(default)]
+        key: Option<String>,
+    },
+    Edit {
+        cmd: String,
+    },
+    Text {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -980,12 +1205,18 @@ fn mac_escape(s: &str) -> String {
 
 /// 命令 id (`duplicate-line` 这类) -> S_ 函数名 (不含 `S_`); 同一个命令有几个名字时取字节序最前的, 结果稳定
 fn s_name_for_cmd(cmd: &str) -> Option<&'static str> {
-    SAKURA_COMMANDS.iter().find(|e| e.2 == Some(cmd)).map(|e| e.0)
+    SAKURA_COMMANDS
+        .iter()
+        .find(|e| e.2 == Some(cmd))
+        .map(|e| e.0)
 }
 
 /// 默认键 -> S_ 函数名 (不分大小写; 同一个键有几个名字时取字节序最前的)
 fn s_name_for_key(key: &str) -> Option<&'static str> {
-    SAKURA_COMMANDS.iter().find(|e| e.3.is_some_and(|k| k.eq_ignore_ascii_case(key))).map(|e| e.0)
+    SAKURA_COMMANDS
+        .iter()
+        .find(|e| e.3.is_some_and(|k| k.eq_ignore_ascii_case(key)))
+        .map(|e| e.0)
 }
 
 /// 编辑命令 (键盘直接键入的): 没有命令 id 的几个基本操作
@@ -1016,7 +1247,9 @@ pub fn record_to_mac(events: &[RecEvent]) -> RecOut {
                 flush(&mut pending, &mut lines);
                 let line = match ev {
                     RecEvent::Edit { .. } => edit_to_line(cmd),
-                    RecEvent::Command { key, .. } => s_name_for_cmd(cmd).or_else(|| key.as_deref().and_then(s_name_for_key)).map(|n| format!("S_{n}();")),
+                    RecEvent::Command { key, .. } => s_name_for_cmd(cmd)
+                        .or_else(|| key.as_deref().and_then(s_name_for_key))
+                        .map(|n| format!("S_{n}();")),
                     RecEvent::Text { .. } => None,
                 };
                 match line {
@@ -1044,30 +1277,72 @@ mod record_tests {
 
     #[test]
     fn typed_text_is_merged_and_escaped() {
-        let r = record_to_mac(&[RecEvent::Text { text: "ab".into() }, RecEvent::Text { text: "c\"d\\".into() }, RecEvent::Edit { cmd: "new-line".into() }, RecEvent::Text { text: "x".into() }]);
-        assert_eq!(r.text, "S_InsText(\"abc\\\"d\\\\\");\nS_Char(13);\nS_InsText(\"x\");\n");
+        let r = record_to_mac(&[
+            RecEvent::Text { text: "ab".into() },
+            RecEvent::Text {
+                text: "c\"d\\".into(),
+            },
+            RecEvent::Edit {
+                cmd: "new-line".into(),
+            },
+            RecEvent::Text { text: "x".into() },
+        ]);
+        assert_eq!(
+            r.text,
+            "S_InsText(\"abc\\\"d\\\\\");\nS_Char(13);\nS_InsText(\"x\");\n"
+        );
         assert!(r.skipped.is_empty());
     }
 
     #[test]
     fn commands_map_back_to_s_functions_and_unknown_ones_are_reported() {
         let r = record_to_mac(&[
-            RecEvent::Command { cmd: "duplicate-line".into(), key: Some("Control+i".into()) },
-            RecEvent::Edit { cmd: "backspace".into() },
-            RecEvent::Command { cmd: "no-such-command".into(), key: None },
-            RecEvent::Command { cmd: "no-such-command".into(), key: Some("Control+Alt+Shift+F24".into()) },
+            RecEvent::Command {
+                cmd: "duplicate-line".into(),
+                key: Some("Control+i".into()),
+            },
+            RecEvent::Edit {
+                cmd: "backspace".into(),
+            },
+            RecEvent::Command {
+                cmd: "no-such-command".into(),
+                key: None,
+            },
+            RecEvent::Command {
+                cmd: "no-such-command".into(),
+                key: Some("Control+Alt+Shift+F24".into()),
+            },
         ]);
-        assert!(r.text.contains("S_DuplicateLine();"), "命令 id 反查不到时用默认键反查: {}", r.text);
+        assert!(
+            r.text.contains("S_DuplicateLine();"),
+            "命令 id 反查不到时用默认键反查: {}",
+            r.text
+        );
         assert!(r.text.contains("S_DeleteBack();"));
         assert_eq!(r.skipped, ["no-such-command"], "同一个未知命令只报一次");
     }
 
     #[test]
     fn recorded_macro_plans_back_into_the_same_actions() {
-        let ev = [RecEvent::Text { text: "héllo\tworld\n".into() }, RecEvent::Edit { cmd: "new-line".into() }, RecEvent::Edit { cmd: "delete".into() }];
+        let ev = [
+            RecEvent::Text {
+                text: "héllo\tworld\n".into(),
+            },
+            RecEvent::Edit {
+                cmd: "new-line".into(),
+            },
+            RecEvent::Edit {
+                cmd: "delete".into(),
+            },
+        ];
         let steps = plan(&record_to_mac(&ev).text).expect("录出来的宏必须能被自己的解析器接受");
         assert_eq!(steps.len(), 3);
-        assert_eq!(steps[0].action, Action::InsText { text: "héllo\tworld\n".into() });
+        assert_eq!(
+            steps[0].action,
+            Action::InsText {
+                text: "héllo\tworld\n".into()
+            }
+        );
         assert_eq!(steps[1].action, Action::Char { code: 13 });
     }
 }

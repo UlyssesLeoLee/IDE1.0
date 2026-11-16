@@ -77,7 +77,11 @@ fn read_capped(mut r: impl Read + Send + 'static) -> Capture {
 impl Capture {
     /// 正常结束: 等读完; 超时杀进程的情况: 最多再等一小会儿 (孙进程可能还攥着管道), 然后取走已读到的
     fn take(self, patient: bool) -> (Vec<u8>, bool) {
-        let _ = if patient { self.done.recv().ok() } else { self.done.recv_timeout(Duration::from_millis(400)).ok() };
+        let _ = if patient {
+            self.done.recv().ok()
+        } else {
+            self.done.recv_timeout(Duration::from_millis(400)).ok()
+        };
         let g = self.buf.lock().unwrap();
         (g.0.clone(), g.1)
     }
@@ -87,11 +91,17 @@ impl Capture {
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
     #[cfg(not(windows))]
     {
-        let _ = Command::new("pkill").args(["-KILL", "-P", &child.id().to_string()]).status();
+        let _ = Command::new("pkill")
+            .args(["-KILL", "-P", &child.id().to_string()])
+            .status();
     }
     let _ = child.kill();
 }
@@ -101,14 +111,27 @@ fn decode(bytes: &[u8]) -> String {
 }
 
 /// 运行命令。`stdin` = Some(文本) 时写进子进程标准输入后关闭。
-pub fn run(cwd: &Path, command: &str, stdin: Option<&str>, timeout_ms: Option<u64>) -> Result<ExecOut, String> {
+pub fn run(
+    cwd: &Path,
+    command: &str,
+    stdin: Option<&str>,
+    timeout_ms: Option<u64>,
+) -> Result<ExecOut, String> {
     if command.trim().is_empty() {
         return Err("命令是空的".into());
     }
-    let timeout = Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).clamp(100, MAX_TIMEOUT_MS));
+    let timeout = Duration::from_millis(
+        timeout_ms
+            .unwrap_or(DEFAULT_TIMEOUT_MS)
+            .clamp(100, MAX_TIMEOUT_MS),
+    );
     let mut child = shell(command)
         .current_dir(cwd)
-        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -136,7 +159,13 @@ pub fn run(cwd: &Path, command: &str, stdin: Option<&str>, timeout_ms: Option<u6
     };
     let (o, ot) = out_h.take(!timed_out);
     let (e, et) = err_h.take(!timed_out);
-    Ok(ExecOut { code, stdout: decode(&o), stderr: decode(&e), timed_out, truncated: ot || et })
+    Ok(ExecOut {
+        code,
+        stdout: decode(&o),
+        stderr: decode(&e),
+        timed_out,
+        truncated: ot || et,
+    })
 }
 
 #[cfg(test)]
@@ -151,21 +180,35 @@ mod tests {
     fn captures_stdout_and_exit_code() {
         let r = run(&tmp(), "echo hello", None, None).unwrap();
         assert_eq!(r.code, Some(0));
-        assert!(r.stdout.contains("hello") && !r.timed_out && !r.truncated, "{r:?}");
-        let r = run(&tmp(), if cfg!(windows) { "exit 3" } else { "exit 3" }, None, None).unwrap();
+        assert!(
+            r.stdout.contains("hello") && !r.timed_out && !r.truncated,
+            "{r:?}"
+        );
+        let r = run(&tmp(), "exit 3", None, None).unwrap();
         assert_eq!(r.code, Some(3));
     }
 
     #[test]
     fn stdin_is_piped_when_given() {
-        let cmd = if cfg!(windows) { "findstr /R \".\"" } else { "cat" };
+        let cmd = if cfg!(windows) {
+            "findstr /R \".\""
+        } else {
+            "cat"
+        };
         let r = run(&tmp(), cmd, Some("line one\nline two\n"), None).unwrap();
-        assert!(r.stdout.contains("line one") && r.stdout.contains("line two"), "{r:?}");
+        assert!(
+            r.stdout.contains("line one") && r.stdout.contains("line two"),
+            "{r:?}"
+        );
     }
 
     #[test]
     fn timeout_kills_the_child() {
-        let cmd = if cfg!(windows) { "ping -n 20 127.0.0.1 > nul" } else { "sleep 20" };
+        let cmd = if cfg!(windows) {
+            "ping -n 20 127.0.0.1 > nul"
+        } else {
+            "sleep 20"
+        };
         let t = Instant::now();
         let r = run(&tmp(), cmd, None, Some(300)).unwrap();
         assert!(r.timed_out && r.code.is_none(), "{r:?}");
@@ -175,8 +218,15 @@ mod tests {
     #[test]
     fn empty_command_is_an_error_and_stderr_is_separate() {
         assert!(run(&tmp(), "   ", None, None).is_err());
-        let cmd = if cfg!(windows) { "echo oops 1>&2" } else { "echo oops >&2" };
+        let cmd = if cfg!(windows) {
+            "echo oops 1>&2"
+        } else {
+            "echo oops >&2"
+        };
         let r = run(&tmp(), cmd, None, None).unwrap();
-        assert!(r.stderr.contains("oops") && !r.stdout.contains("oops"), "{r:?}");
+        assert!(
+            r.stderr.contains("oops") && !r.stdout.contains("oops"),
+            "{r:?}"
+        );
     }
 }

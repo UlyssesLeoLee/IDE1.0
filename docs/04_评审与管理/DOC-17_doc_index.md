@@ -10,7 +10,7 @@
 > - **準拠標準:** IPA 共通フレーム2013 §3 / §5 / §6 / §7
 > - **ステータス:** Draft
 
-## 📚 全ドキュメント (24 件)
+## 📚 全ドキュメント (37 件)
 
 | ID | 名称 | ファイル | バージョン | 状態 | 最終更新 |
 |---|---|---|---|---|---|
@@ -39,6 +39,22 @@
 | - | テンプレート | [common/doc-template.md](../common/doc-template.md) | v1.0.0 | Active | 2026-10-09 |
 | - | 编号規則 | [common/numbering-system.md](../common/numbering-system.md) | v1.0.0 | Active | 2026-10-09 |
 | - | 用語集 | [common/glossary.md](../common/glossary.md) | v1.0.0 | Active | 2026-10-09 |
+| WBS-01 | 機能対比一覧 (Feature Parity) | [WBS-01_feature-parity.md](../06_功能对标/WBS-01_feature-parity.md) | v0.3.0 | Active | 2026-10-28 |
+| WBS-02 | 高速版機能移植計画 (Next Steps) | [WBS-02_next-steps.md](../06_功能对标/WBS-02_next-steps.md) | v0.3.0 | Active | 2026-10-28 |
+| WBS-03 | 高速版最適化・工程品質計画 | [WBS-03_优化计划.md](../06_功能对标/WBS-03_优化计划.md) | v0.3.9 | Active | 2026-11-04 |
+| HANDOFF-01 | 高速版現状・引き継ぎ書 | [HANDOFF-01_高速版交接.md](../06_功能对标/HANDOFF-01_高速版交接.md) | v0.3.9 | Active | 2026-11-04 |
+| QA-003 | 高速版0.3.9品質審査と未確認課題 | [QA-003_高速版0.3.9质量审查与待确认问题.md](QA-003_高速版0.3.9质量审查与待确认问题.md) | v0.3.9 | Active | 2026-11-04 |
+| EVAL-01 | 高速版HTTPクライアント評価書 | [EVAL-01_HTTP客户端评估.md](../06_功能对标/EVAL-01_HTTP客户端评估.md) | v0.3.9 | Active | 2026-11-04 |
+| UAT-01 | 高速版0.3.9実機検証・UAT一覧 | [UAT-01_高速版0.3.9真机验证清单.md](../../ide-fast/docs/UAT-01_高速版0.3.9真机验证清单.md) | v0.3.9 | Active | 2026-11-04 |
+| WBS-ROUTER | Web Agent Router WBS (全量完成) | [WBS-Web-Agent-Router.md](WBS-Web-Agent-Router.md) | v2.1 | Approved | 2026-11-05 |
+| REQ-ROUTER | Web Agent Router 要件定義書 | [Web-Agent-Router-Requirements.md](../00_要件基线/Web-Agent-Router-Requirements.md) | v2.0 | Approved | 2026-11-05 |
+| HLD-ROUTER | Web Agent Router 基本設計書 | [Web-Agent-Router-Basic-Design.md](../01_基本设计/Web-Agent-Router-Basic-Design.md) | v2.0 | Approved | 2026-11-05 |
+| DDD-ROUTER | セマンティックユニット・協調詳細設計 | [Semantic-Units-and-Commit-Protocol.md](../02_详细设计/Semantic-Units-and-Commit-Protocol.md) | v2.0 | Approved | 2026-11-05 |
+| API-ROUTER | Router-Worker OpenAPI 3.1 規格 | [Router-Worker-API.openapi.yaml](../02_详细设计/Router-Worker-API.openapi.yaml) | v2.0 | Approved | 2026-11-05 |
+| DB-ROUTER  | Postgres スキーマ・状態遷移設計 | [Postgres-Schema-and-State-Machines.md](../02_详细设计/Postgres-Schema-and-State-Machines.md) | v2.0 | Approved | 2026-11-05 |
+| TEST-ROUTER| テスト仕様書・追跡マトリクス | [UT-IT-ST-UAT-Web-Agent-Router.md](../03_测试资料/UT-IT-ST-UAT-Web-Agent-Router.md) | v2.0 | Approved | 2026-11-05 |
+| OPS-ROUTER | Vercel デプロイ・運用回復手順書 | [Vercel-Deployment-and-Recovery.md](../05_实装与运维/Vercel-Deployment-and-Recovery.md) | v2.0 | Approved | 2026-11-05 |
+
 
 ## 関連ドキュメント
 

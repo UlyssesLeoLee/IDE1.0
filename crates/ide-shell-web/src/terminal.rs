@@ -70,7 +70,14 @@ pub fn create(shell: Option<String>, cwd: Option<String>) -> Option<String> {
     // 管道式 shell 的输入输出默认是系统 OEM 代码页 (中文系统 = GBK): 中文报错会变成 U+FFFD, 输入的中文也会乱。
     // 统一切到 UTF-8 (PowerShell 用 [Console]::*Encoding, cmd 用 chcp 65001), 下面按 UTF-8 解码。
     if shell_cmd.contains("powershell") {
-        cmd.args(["-NoLogo", "-NoExit", "-Command", "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = New-Object System.Text.UTF8Encoding $false"]);
+        cmd.args([
+            "-NoLogo",
+            "-NoExit",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = New-Object System.Text.UTF8Encoding $false",
+        ]);
     } else if shell_cmd.to_ascii_lowercase().contains("cmd") {
         cmd.args(["/K", "chcp 65001>nul"]);
     }

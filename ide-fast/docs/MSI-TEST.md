@@ -53,3 +53,10 @@ Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*,HKL
 $env:IDE_FAST_SETTINGS='off'; Start-Process "$env:ProgramFiles\IDE1.0 Fast\ide-fast.exe"   # 应无控制台窗口
 msiexec /x $n /qn /l*v $env:TEMP\f31u.log     # 卸载; 文件与快捷方式应消失, %APPDATA%\IDE1.0 Fast 仍在
 ```
+
+## 0.3.9 构建与解包验证 (2026-11-04)
+
+- **构建产物**: `IDE1.0-Fast_0.3.9_x64.msi` (7,114,752 字节)、`ide-fast-0.3.9-windows-x64.exe` (17,797,120 字节)、`SHA256SUMS.txt`。
+- **管理解包**: 执行 `msiexec /a dist-fast\IDE1.0-Fast_0.3.9_x64.msi /qn TARGETDIR=...` 成功 (退出码 0)。
+- **哈希一致性**: 解包得到的 `ide-fast.exe` SHA-256 (`C9A91551068C522CB12559ED2F64E8C2FD76EB22F32A75222D8FD6E328AFCDA8`) 与 `target/release/ide-fast.exe` 完全逐字节一致。
+- **校验和绑定**: `SHA256SUMS.txt` 首行正确输出 `version: 0.3.9 channel: stable`，并绑定 msi 和便携 exe 哈希。

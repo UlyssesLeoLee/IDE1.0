@@ -1,0 +1,69 @@
+# IDE1.0 Web — Agent Router & Worker 工作分解结构书 (WBS)
+
+**文档编号**: WBS-ROUTER-2026-V2.0  
+**制定组织**: IDE1.0 项目推进委员会 / 日本 IPA 软件工程基准推进组  
+**基准版本**: v2.1  
+**状态**: 承认済 (Baseline Locked & Phase 1 Delivered)
+
+---
+
+## 1. WBS 分解与任务追踪矩阵
+
+| WBS 编码 | 任务名称 | 成果物 | 对应要件 | 责任人 | 状态 |
+|:---|:---|:---|:---|:---|:---|
+| **WBS-01** | **IPA 架构设计基线** | | | | |
+| WBS-01.1 | 要件基线定义书制定 | `docs/00_要件基线/Web-Agent-Router-Requirements.md` | `REQ-ROUTER-*` | Ulysses | **完成 (Done)** |
+| WBS-01.2 | 基本设计书制定 | `docs/01_基本设计/Web-Agent-Router-Basic-Design.md` | `REQ-ARCH-*` | Mavis | **完成 (Done)** |
+| WBS-01.3 | 语义单元与协调协议详细设计 | `docs/02_详细设计/Semantic-Units-and-Commit-Protocol.md` | `REQ-SEM-*` | Mavis | **完成 (Done)** |
+| WBS-01.4 | OpenAPI 3.1 接口契约制定 | `docs/02_详细设计/Router-Worker-API.openapi.yaml` | `REQ-API-*` | Ulysses | **完成 (Done)** |
+| WBS-01.5 | Postgres 数据模式与状态机设计 | `docs/02_详细设计/Postgres-Schema-and-State-Machines.md` | `REQ-DB-*` | Ulysses | **完成 (Done)** |
+| WBS-01.6 | 测试规格书与追溯矩阵 | `docs/03_测试资料/UT-IT-ST-UAT-Web-Agent-Router.xlsx` | `REQ-TEST-*` | Mavis | **完成 (Done)** |
+| WBS-01.7 | Vercel 部署与故障恢复手册 | `docs/05_实装与运维/Vercel-Deployment-and-Recovery.md` | `REQ-OPS-*` | Ulysses | **完成 (Done)** |
+| **WBS-02** | **Rust 核心引擎实现** | | | | |
+| WBS-02.1 | `crates/ide-agent-router` 骨架建立 | `Cargo.toml`, 模块结构 | `NRP-01` | Mavis | **完成 (Done)** |
+| WBS-02.2 | Tree-sitter 多语言符号提取与指纹计算 | `src/parser.rs`, `src/identity.rs` | `REQ-SEMANTIC-01~04` | Mavis | **完成 (Done)** |
+| WBS-02.3 | AST-aware Patch 应用与锚点重定位 | `src/patch.rs` | `REQ-COORD-03` | Mavis | **完成 (Done)** |
+| WBS-02.4 | CAS 提交协调器与 Fencing 租约机 | `src/coordinator.rs` | `REQ-COORD-01~05` | Ulysses | **完成 (Done)** |
+| WBS-02.5 | 协调器单例与内存状态模型 | `src/coordinator.rs` | `REQ-DB-*` | Ulysses | **完成 (Done)** |
+| **WBS-03** | **API 网关与 SDK 交付** | | | | |
+| WBS-03.1 | HTTP / REST API 服务端实现 (Serverless) | `api/v1/` 路由体系 (dispatch, claim, commit, events) | `REQ-API-01~02` | Ulysses | **完成 (Done)** |
+| WBS-03.2 | Agent SDK 客户端 (TypeScript / Python) | `sdk/typescript/`, `sdk/python/` | `REQ-API-03` | Ulysses | **完成 (Done)** |
+| **WBS-04** | **Vercel 部署与生产验证** | | | | |
+| WBS-04.1 | Vercel 部署配置与静态/Serverless 绑定 | `vercel.json` | `REQ-VERCEL-01` | Ulysses | **完成 (Done)** |
+| WBS-04.2 | 生产部署上线并获取公开链接 | `https://ide1-0.vercel.app` | `REQ-VERCEL-02` | Ulysses | **完成 (Done)** |
+| WBS-04.3 | 多 Agent 并发与冲突自动化验证 | `crates/ide-agent-router/tests/` (7/7项全绿) | `NFR-CONC-*` | Mavis | **完成 (Done)** |
+| WBS-04.4 | 全局文档与 GitHub README 升级 | `README.md`, `CHANGELOG.md` (v0.4.0) | `NRP-02` | Mavis | **完成 (Done)** |
+| **WBS-05** | **Postgres 分布式账本与 Outbox 异步派发器** | | | | |
+| WBS-05.1 | `LedgerStore` Trait 与内存/SQL 适配实现 | `crates/ide-agent-router/src/ledger.rs` | `REQ-DB-01~05` | Ulysses | **完成 (Done)** |
+| WBS-05.2 | Transactional Outbox 轮询与异步事件派发 | `crates/ide-agent-router/src/outbox.rs` | `REQ-COORD-04` | Ulysses | **完成 (Done)** |
+| **WBS-06** | **Worker 隔离沙盒环境与差异验证驱动** | | | | |
+| WBS-06.1 | `WorkerSandbox` 隔离文件系统驱动与临时工作区 | `crates/ide-agent-router/src/sandbox.rs` | `REQ-EXEC-01` | Mavis | **完成 (Done)** |
+| WBS-06.2 | 编译/测试验证引擎与 Patch 验证流水线 | `crates/ide-agent-router/src/verifier.rs` | `REQ-EXEC-02` | Mavis | **完成 (Done)** |
+| **WBS-07** | **超大文件 (GB 级) 内存映射与惰性分段加载引擎** | | | | |
+| WBS-07.1 | `MmapBuffer` 虚拟内存分块映射与分段行索引 | `crates/editcore/src/mmap_buffer.rs` | `CORE-PERF-01` | Ulysses | **完成 (Done)** |
+| WBS-07.2 | 跨平台文件切片读取与大文件集成测试 | `crates/editcore/tests/mmap_buffer_tests.rs` | `CORE-PERF-02` | Ulysses | **完成 (Done)** |
+| WBS-07.3 | 大文件自动拆页、分页切换与既存 Grep 跨页定位 | `crates/editcore/src/mmap_buffer.rs`, `ide-fast/src/doc.rs`, `ide-fast/src/grep.rs` | `CORE-PERF-03` | Ulysses | **完成 (Done)** |
+| **WBS-08** | **深度 18 页共通与类型别设置及 INI 映射体系** | | | | |
+| WBS-08.1 | Sakura 18 页配置数据模型与 INI 序列化解析 | `crates/editcore/src/sakura_settings.rs` | `CONFIG-DEEP-01` | Mavis | **完成 (Done)** |
+| WBS-08.2 | 避头尾禁则文字集与 24 个自定义用户菜单持久化 | `crates/editcore/tests/sakura_settings_tests.rs` | `CONFIG-DEEP-02` | Mavis | **完成 (Done)** |
+| **WBS-09** | **完整 PPA (Pascal-like) 宏脚本语言解释器** | | | | |
+| WBS-09.1 | PPA 词法语法解析器 (AST: var, if/else, while, proc, expr) | `crates/editcore/src/ppa_engine.rs` | `MACRO-PPA-01` | Leo | **完成 (Done)** |
+| WBS-09.2 | PPA 运行时求值器、内置函数绑定与回归测试 | `crates/editcore/tests/ppa_engine_tests.rs` | `MACRO-PPA-02` | Leo | **完成 (Done)** |
+| **WBS-COEDIT** | **多 AI 共同编辑、逐字击键广播与 Reviewer 最初规划及统筹验收** | | | | |
+| WBS-COEDIT.1 | 逐字击键流式广播与远程多人光标状态机 | `crates/ide-agent-router/src/collaboration.rs` | `REQ-COEDIT-01` | Staff | **完成 (Done)** |
+| WBS-COEDIT.2 | Reviewer 最初规划、指引而非限制与终局统筹验收流水线 | `crates/ide-agent-router/src/reviewer.rs` | `REQ-COEDIT-02` | Staff | **完成 (Done)** |
+| WBS-COEDIT.3 | 多 AI 协同审查与验收专用标签页与交互看板 | `ide-fast/src/app.rs`, `ide-fast/src/app/menubar.rs` | `REQ-COEDIT-03` | Staff | **完成 (Done)** |
+| WBS-COEDIT.4 | 语义锚点偏移映射 (`AnchorOffsetTable`) 与实时坐标平移 | `crates/ide-agent-router/src/collaboration.rs` | `REQ-COEDIT-04` | Staff | **完成 (Done)** |
+| WBS-COEDIT.5 | 远程光标、选区高亮与名牌胶囊画布渲染及局部回滚 | `ide-fast/src/app.rs`, `ide-fast/src/doc.rs` | `REQ-COEDIT-05` | Staff | **完成 (Done)** |
+
+---
+
+## 2. 质量门禁状态 (Quality Gates)
+
+- **门禁 G1 (IPA 架构设计基线)**: **已通过 (Passed)** — 8 份 IPA 标准文档编制完成并通过基线承认。
+- **门禁 G2 (Rust 核心单元测试)**: **已通过 (Passed)** — 基础单测与并发验证 100% 覆盖。
+- **门禁 G3 (并发冲突仲裁与恢复验证)**: **已通过 (Passed)** — 100 个并发补丁无损合并、1000 任务批量调度、漂移防御测试全绿。
+- **门禁 G4 (Vercel 云端部署与端点)**: **已通过 (Passed)** — `https://ide1-0.vercel.app` 生产上线并接入。
+- **门禁 G5 (分布式持久化与沙盒驱动)**: **已通过 (Passed)** — WBS-05 与 WBS-06 经双 Worktree 并行开发与 Rebase 集成，20 项全套单测 100% 通过。
+- **门禁 G6 (Sakura 终极差距补全)**: **已通过 (Passed)** — WBS-07、WBS-08、WBS-09 三路 Lane 经 Worktree 并行开发、Rebase 合并与全量测试验证，23 项专项测试 100% 通过，无回归。
+- **门禁 G7 (多 AI 协同实时编辑与统筹验收)**: **已通过 (Passed)** — 逐字击键广播、语义锚点偏移表、远程多人光标与名牌胶囊绘制、三阶段审查流看板与局部回滚验证全绿 (ide-fast 504 项单测与 ide-agent-router 26 项单测全部 100% 通过)。

@@ -56,16 +56,33 @@ fn normalize(a: [usize; 2], b: [usize; 2]) -> Option<[usize; 4]> {
 /// 执行一次移动. 不是移动键 / 需要前端自己处理的组合 (Ctrl+↑↓ 滚动) 返回 None.
 pub fn step(req: &NavReq) -> Option<NavRes> {
     let line_of = |r: usize| -> Vec<char> {
-        req.rows.iter().find(|(i, _)| *i == r).map(|(_, s)| s.chars().collect()).unwrap_or_default()
+        req.rows
+            .iter()
+            .find(|(i, _)| *i == r)
+            .map(|(_, s)| s.chars().collect())
+            .unwrap_or_default()
     };
     let len = |r: usize| line_of(r).len();
     let last_row = req.total_rows.saturating_sub(1);
     let (mut row, mut col) = (req.row, req.col);
-    let had = req.sel.map(|s| !(s[0] == s[2] && s[1] == s[3])).unwrap_or(false);
+    let had = req
+        .sel
+        .map(|s| !(s[0] == s[2] && s[1] == s[3]))
+        .unwrap_or(false);
     let (ctrl, shift) = (req.ctrl, req.shift);
     let k = req.key.as_str();
     let vertical = matches!(k, "ArrowUp" | "ArrowDown" | "PageUp" | "PageDown");
-    if !matches!(k, "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End" | "PageUp" | "PageDown") {
+    if !matches!(
+        k,
+        "ArrowLeft"
+            | "ArrowRight"
+            | "ArrowUp"
+            | "ArrowDown"
+            | "Home"
+            | "End"
+            | "PageUp"
+            | "PageDown"
+    ) {
         return None;
     }
 
@@ -74,7 +91,13 @@ pub fn step(req: &NavReq) -> Option<NavRes> {
         let s = req.sel?;
         let to_end = k == "ArrowRight";
         let (r, c) = if to_end { (s[2], s[3]) } else { (s[0], s[1]) };
-        return Some(NavRes { row: r, col: c.min(len(r)), goal_col: None, sel: None, anchor: None });
+        return Some(NavRes {
+            row: r,
+            col: c.min(len(r)),
+            goal_col: None,
+            sel: None,
+            anchor: None,
+        });
     }
 
     let mut goal = req.goal_col;
@@ -91,7 +114,11 @@ pub fn step(req: &NavReq) -> Option<NavRes> {
         }
         "PageUp" | "PageDown" => {
             let d: isize = if k == "PageUp" { -1 } else { 1 };
-            let n = if ctrl { (req.page_rows / 2).max(1) } else { req.page_rows.max(1) } as isize;
+            let n = if ctrl {
+                (req.page_rows / 2).max(1)
+            } else {
+                req.page_rows.max(1)
+            } as isize;
             let g = *goal.get_or_insert(col);
             row = (row as isize + d * n).clamp(0, last_row as isize) as usize;
             col = g.min(len(row));
@@ -133,7 +160,10 @@ pub fn step(req: &NavReq) -> Option<NavRes> {
                 row = 0;
                 col = 0;
             } else {
-                let fnb = line_of(row).iter().take_while(|c| **c == ' ' || **c == '\t').count();
+                let fnb = line_of(row)
+                    .iter()
+                    .take_while(|c| **c == ' ' || **c == '\t')
+                    .count();
                 col = if col != fnb { fnb } else { 0 }; // Sakura: 先到行首非空白, 再按到第 0 列
             }
         }
@@ -156,7 +186,13 @@ pub fn step(req: &NavReq) -> Option<NavRes> {
     } else {
         (None, None)
     };
-    Some(NavRes { row, col, goal_col: goal, sel, anchor })
+    Some(NavRes {
+        row,
+        col,
+        goal_col: goal,
+        sel,
+        anchor,
+    })
 }
 
 #[cfg(test)]
@@ -174,16 +210,33 @@ mod tests {
             sel: None,
             anchor: None,
             total_rows: lines.len(),
-            rows: lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect(),
+            rows: lines
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (i, s.to_string()))
+                .collect(),
             page_rows: 10,
         }
     }
-    fn go(key: &str, ctrl: bool, shift: bool, row: usize, col: usize, lines: &[&str]) -> (usize, usize) {
+    fn go(
+        key: &str,
+        ctrl: bool,
+        shift: bool,
+        row: usize,
+        col: usize,
+        lines: &[&str],
+    ) -> (usize, usize) {
         let r = step(&req(key, ctrl, shift, row, col, lines)).unwrap();
         (r.row, r.col)
     }
 
-    const DOC: &[&str] = &["hello world foo", "  indented line", "", "third line here", "last Line END"];
+    const DOC: &[&str] = &[
+        "hello world foo",
+        "  indented line",
+        "",
+        "third line here",
+        "last Line END",
+    ];
 
     // 以下期望值来自与真实 Sakura 的比对 (tests/sakura-diff)
     #[test]
@@ -263,17 +316,28 @@ mod tests {
         assert_eq!(go("ArrowRight", true, false, 0, 0, doc), (0, 4));
     }
     // 以下期望值来自真实 Sakura (tests/sakura-diff/cases9.mjs)
-    const JA: &[&str] = &["日本語のテキストabc def、漢字123かな", "カタカナＡＢＣ全角　スペース"];
+    const JA: &[&str] = &[
+        "日本語のテキストabc def、漢字123かな",
+        "カタカナＡＢＣ全角　スペース",
+    ];
     #[test]
     fn japanese_char_kinds_word_right() {
         for (from, to) in [(0, 3), (1, 3), (3, 4), (4, 8), (12, 15), (16, 18), (18, 21)] {
-            assert_eq!(go("ArrowRight", true, false, 0, from, JA), (0, to), "WordRight from {from}");
+            assert_eq!(
+                go("ArrowRight", true, false, 0, from, JA),
+                (0, to),
+                "WordRight from {from}"
+            );
         }
     }
     #[test]
     fn japanese_char_kinds_word_left() {
         for (from, to) in [(4, 3), (8, 4), (11, 8), (16, 15), (21, 18)] {
-            assert_eq!(go("ArrowLeft", true, false, 0, from, JA), (0, to), "WordLeft from {from}");
+            assert_eq!(
+                go("ArrowLeft", true, false, 0, from, JA),
+                (0, to),
+                "WordLeft from {from}"
+            );
         }
     }
 }

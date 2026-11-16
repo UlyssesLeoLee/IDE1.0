@@ -8,64 +8,78 @@
 
 // Windows 发行版走 GUI 子系统: 否则双击启动会多出一个控制台窗口 (调试构建保留控制台, 方便看 IDE_FAST_TRACE 输出)
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![recursion_limit = "256"]
+#![allow(
+    deprecated,
+    dead_code,
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    clippy::incompatible_msrv,
+    clippy::enum_variant_names,
+    clippy::field_reassign_with_default,
+    clippy::needless_range_loop,
+    clippy::collapsible_if,
+    clippy::assertions_on_constants
+)]
 
+mod ai;
 mod app;
-mod complete;
-mod glassfx;
-mod ui_ext;
-mod ckbox;
-mod scrollx;
+mod appicon;
+mod backup;
 mod btnstyle;
+mod ckbox;
+mod cmds;
+mod cmdui;
+mod complete;
+mod curlx;
+mod diff;
 mod doc;
 mod find;
-mod grep;
-mod i18n;
-mod prefs;
-mod cmds;
-mod keymap;
-mod cmdui;
 mod fonts;
+mod fsx;
+mod ghplugin;
+mod glassfx;
+mod grep;
+mod help;
+mod i18n;
+mod icons;
 mod instance;
-mod plugins;
-mod plugin_host;
-mod plugin_ui;
-mod svg_lite;
-mod print;
-mod settings;
+mod keymap;
+mod kinsoku;
 mod macros;
-mod diff;
 mod markdown;
 mod md_view;
-mod scm;
-mod terminal;
-mod sidebar;
-mod tabs;
-mod view;
-mod textconv;
-mod tools;
-mod pick;
-mod help;
-mod tagjump;
-mod kinsoku;
-mod icons;
-mod svgicon;
-mod msgtr;
-mod textdrag;
-mod backup;
-mod ghplugin;
-mod ai;
-mod fsx;
-mod curlx;
-mod split;
-mod appicon;
 mod mdtools;
+mod msgtr;
 mod panels;
-mod rowview;
+mod pick;
+mod plugin_host;
+mod plugin_ui;
+mod plugins;
+mod prefs;
+mod print;
 mod relaunch;
+mod rowview;
+mod scm;
+mod scrollx;
+mod settings;
+mod sidebar;
+mod split;
+mod svg_lite;
+mod svgicon;
+mod tabs;
+mod tagjump;
+mod terminal;
+mod textconv;
+mod textdrag;
+mod tools;
+mod tray;
+mod ui_ext;
+mod updapply;
 mod update;
 mod updkey;
 mod updnet;
-mod updapply;
+mod view;
 
 use std::time::Instant;
 
@@ -80,19 +94,40 @@ pub struct Trace {
 impl Trace {
     pub fn new() -> Self {
         let v = std::env::var_os("IDE_FAST_TRACE");
-        let file = v.as_ref().filter(|s| s.to_string_lossy().contains(['/', '\\', '.'])).map(std::path::PathBuf::from);
-        Trace { t0: Instant::now(), on: v.is_some(), file }
+        let file = v
+            .as_ref()
+            .filter(|s| s.to_string_lossy().contains(['/', '\\', '.']))
+            .map(std::path::PathBuf::from);
+        Trace {
+            t0: Instant::now(),
+            on: v.is_some(),
+            file,
+        }
     }
+}
+impl Default for Trace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Trace {
     pub fn mark(&self, what: &str) {
         if !self.on {
             return;
         }
         // 微秒精度: 取整到毫秒会把 <1ms 的阶段吞掉
-        let line = format!("[fast +{:.1}ms] {what}", self.t0.elapsed().as_secs_f64() * 1000.0);
+        let line = format!(
+            "[fast +{:.1}ms] {what}",
+            self.t0.elapsed().as_secs_f64() * 1000.0
+        );
         match &self.file {
             Some(p) => {
                 use std::io::Write;
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(p)
+                {
                     let _ = writeln!(f, "{line}");
                 }
             }
@@ -107,6 +142,16 @@ fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
     (new, args.into_iter().filter(|a| a != "--new").collect())
 }
 
+fn split_installer_flag(args: Vec<String>) -> (bool, Vec<String>) {
+    let install = args.iter().any(|a| a == "--setup" || a == "--install");
+    (
+        install,
+        args.into_iter()
+            .filter(|a| a != "--setup" && a != "--install")
+            .collect(),
+    )
+}
+
 fn main() -> eframe::Result<()> {
     let trace = Trace::new();
     trace.mark("main enter");
@@ -116,6 +161,7 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
     let (force_new, args) = split_new_flag(std::env::args().skip(1).collect());
+    let (open_installer, args) = split_installer_flag(args);
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
     // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
@@ -123,21 +169,30 @@ fn main() -> eframe::Result<()> {
         trace.mark("handed over to the running instance");
         return Ok(());
     }
-    let inbox = if force_new { None } else { instance::listen() };
     // 上次的窗口位置 / 大小 / 最大化状态 (没有就用默认的 1100x720)
     let st = settings::Settings::load();
     trace.mark("settings loaded");
-    let font_file = st.font_family.clone();
-    // 字体文件 (几十 MB) 在后台读, 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
-    let fonts_job = fonts::prefetch(&font_file);
+    let font_file = fonts::effective_font_family(&st.font_family, &st.theme_plugin);
+    // 字体文件在后台双线程并行读 (主字体 + 核心 CJK fallback, 按需加载粗体), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
+    let fonts_job = fonts::prefetch_ext(&font_file, &st.font_cjk_fallback, &st.lang, st.font_bold);
+    let inbox = if force_new { None } else { instance::listen() };
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
-    let mut viewport = eframe::egui::ViewportBuilder::default().with_visible(false).with_title("IDE1.0 Fast").with_inner_size([1100.0, 720.0]).with_min_inner_size([480.0, 320.0])
+    let mut viewport = eframe::egui::ViewportBuilder::default()
+        .with_visible(true)
+        .with_title("IDE1.0")
+        .with_inner_size([1100.0, 720.0])
+        .with_min_inner_size([480.0, 320.0])
         .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
-    if let Some(icon) = appicon::window_icon() { viewport = viewport.with_icon(std::sync::Arc::new(icon)); }
+    if let Some(icon) = appicon::window_icon() {
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
     if let Some(g) = st.view.geom {
-        viewport = viewport.with_inner_size([g.w, g.h]).with_position([g.x, g.y]).with_maximized(g.maximized);
+        viewport = viewport
+            .with_inner_size([g.w, g.h])
+            .with_position([g.x, g.y])
+            .with_maximized(g.maximized);
     }
     let options = eframe::NativeOptions {
         viewport: viewport.with_transparent(true), // 一律透明窗口: 运行中切到玻璃主题才不用重启 (清屏色在不透明主题下是不透明的)
@@ -161,16 +216,18 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     trace.mark("before run_native");
+    let t_app = trace.clone();
     let result = eframe::run_native(
-        "IDE1.0 Fast",
+        "IDE1.0",
         options,
         Box::new(move |cc| {
-            trace.mark("window + GL context ready");
+            t_app.mark("window + GL context ready");
+            crate::instance::set_repaint_context(cc.egui_ctx.clone());
             match fonts_job.map(|h| h.join()) {
                 Some(Ok(loaded)) => fonts::install_loaded(&cc.egui_ctx, loaded),
-                _ => fonts::install(&cc.egui_ctx, &font_file), // 线程没起来 / 读取线程 panic: 同步读
+                _ => fonts::install(&cc.egui_ctx, &font_file, &st.font_cjk_fallback, &st.lang), // 线程没起来 / 读取线程 panic: 同步读
             }
-            trace.mark("fonts installed");
+            t_app.mark("fonts installed");
             #[cfg(windows)]
             if blur {
                 // 窗口背后加 DWM 模糊; 失败 (旧系统 / 驱动) 就只剩 alpha 叠色, 不影响使用
@@ -178,8 +235,12 @@ fn main() -> eframe::Result<()> {
             }
             #[cfg(not(windows))]
             let _ = blur;
-            let t = trace.clone();
-            let app = app::App::new(args, inbox, trace);
+            let t = t_app.clone();
+            // 直接复用已读出的 st, 避免在 App::new 内部重复读盘解析 settings.json (启动提速)
+            let mut app = app::App::with_settings(args, inbox, t_app, st);
+            if open_installer {
+                app.installer.open = true;
+            }
             t.mark("App::new done");
             Ok(Box::new(app))
         }),
@@ -188,6 +249,7 @@ fn main() -> eframe::Result<()> {
     if let Some(a) = updapply::take() {
         let _ = updapply::launch(&a);
     }
+    trace.mark(&format!("run_native returned: {result:?}"));
     result
 }
 
@@ -198,7 +260,10 @@ mod tests {
     #[test]
     fn new_flag_is_taken_out_of_the_file_args() {
         let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(split_new_flag(v(&["--new", "a.txt"])), (true, v(&["a.txt"])));
+        assert_eq!(
+            split_new_flag(v(&["--new", "a.txt"])),
+            (true, v(&["a.txt"]))
+        );
         assert_eq!(split_new_flag(v(&["a.txt"])), (false, v(&["a.txt"])));
     }
 }

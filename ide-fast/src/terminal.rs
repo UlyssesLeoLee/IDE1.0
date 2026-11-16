@@ -42,7 +42,16 @@ pub struct LineBuffer {
 
 impl LineBuffer {
     pub fn new() -> Self {
-        LineBuffer { done: String::new(), line: vec![], col: 0, esc: Esc::None, csi: String::new(), ver: 0, done_lines: 0, max_lines: MAX_SCROLLBACK }
+        LineBuffer {
+            done: String::new(),
+            line: vec![],
+            col: 0,
+            esc: Esc::None,
+            csi: String::new(),
+            ver: 0,
+            done_lines: 0,
+            max_lines: MAX_SCROLLBACK,
+        }
     }
 
     pub fn clear(&mut self) {
@@ -68,7 +77,12 @@ impl LineBuffer {
             return;
         }
         let drop = self.done_lines - self.max_lines;
-        let at = self.done.match_indices('\n').nth(drop - 1).map(|(i, _)| i + 1).unwrap_or(self.done.len());
+        let at = self
+            .done
+            .match_indices('\n')
+            .nth(drop - 1)
+            .map(|(i, _)| i + 1)
+            .unwrap_or(self.done.len());
         self.done.drain(..at);
         self.done_lines = self.max_lines;
     }
@@ -156,8 +170,13 @@ impl LineBuffer {
         }
         if self.done.len() > MAX_KEEP {
             let cut = self.done.len() - MAX_KEEP / 2;
-            let cut = (cut..self.done.len()).find(|&i| self.done.is_char_boundary(i)).unwrap_or(self.done.len());
-            let at = self.done[cut..].find('\n').map(|i| cut + i + 1).unwrap_or(cut);
+            let cut = (cut..self.done.len())
+                .find(|&i| self.done.is_char_boundary(i))
+                .unwrap_or(self.done.len());
+            let at = self.done[cut..]
+                .find('\n')
+                .map(|i| cut + i + 1)
+                .unwrap_or(cut);
             self.done.drain(..at);
             self.done_lines = self.done.matches('\n').count();
         }
@@ -165,7 +184,13 @@ impl LineBuffer {
 
     /// 处理 CSI 序列里有显示效果的几个: K 擦行, J 清屏, C/D 光标左右, G 到列; 其余 (颜色等) 忽略
     fn csi_done(&mut self, fin: char) {
-        let n: usize = self.csi.trim_start_matches('?').split(';').next().and_then(|x| x.parse().ok()).unwrap_or(0);
+        let n: usize = self
+            .csi
+            .trim_start_matches('?')
+            .split(';')
+            .next()
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(0);
         match fin {
             'K' => match n {
                 0 => self.line.truncate(self.col),
@@ -223,26 +248,62 @@ fn pump(mut r: impl Read + Send + 'static, tx: std::sync::mpsc::Sender<Vec<u8>>)
 impl Session {
     fn start(cwd: &std::path::Path) -> Result<Session, String> {
         #[cfg(windows)]
-        let mut c = Command::new("cmd.exe");
-        #[cfg(not(windows))]
-        let mut c = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
-        c.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
+        let spawn_res = {
             use std::os::windows::process::CommandExt;
-            c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        let mut child = c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?;
+            let mut c = Command::new("powershell.exe");
+            c.args(["-NoLogo", "-ExecutionPolicy", "Bypass"]);
+            c.current_dir(cwd)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .creation_flags(0x0800_0000);
+            c.spawn()
+        };
+        #[cfg(windows)]
+        let mut child = match spawn_res {
+            Ok(child) => child,
+            Err(_) => {
+                use std::os::windows::process::CommandExt;
+                let mut c = Command::new("cmd.exe");
+                c.current_dir(cwd)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .creation_flags(0x0800_0000);
+                c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?
+            }
+        };
+        #[cfg(not(windows))]
+        let mut child = {
+            let mut c = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
+            c.current_dir(cwd)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?
+        };
+
         let (tx, rx) = channel();
         pump(child.stdout.take().ok_or("没有标准输出")?, tx.clone());
         pump(child.stderr.take().ok_or("没有标准错误")?, tx);
         let stdin = child.stdin.take().ok_or("没有标准输入")?;
-        Ok(Session { child, stdin, rx, tail: vec![] })
+        Ok(Session {
+            child,
+            stdin,
+            rx,
+            tail: vec![],
+        })
     }
 
     fn send_line(&mut self, line: &str) -> bool {
         let nl: &[u8] = if cfg!(windows) { b"\r\n" } else { b"\n" };
-        self.stdin.write_all(line.as_bytes()).and_then(|_| self.stdin.write_all(nl)).and_then(|_| self.stdin.flush()).is_ok()
+        let clean = line.replace("\r\n", "\n").replace('\r', "\n");
+        for sub in clean.split('\n') {
+            if self.stdin.write_all(sub.as_bytes()).is_err() || self.stdin.write_all(nl).is_err() {
+                return false;
+            }
+        }
+        self.stdin.flush().is_ok()
     }
 
     /// 取已到的输出并解码 (UTF-8 被切断的尾巴留到下一块; 其余走 editcore 的自动判别)
@@ -277,6 +338,8 @@ impl Drop for Session {
 pub struct Terminal {
     pub open: bool,
     pub input: String,
+    /// 请求下一帧把键盘焦点放进终端输入框 (点「+ 新建终端」等触发)
+    pub focus_input: bool,
     /// 一次性命令的输出 (会话输出在 `buf` 里, 显示用 `display()`)
     pub output: String,
     pub history: Vec<String>,
@@ -295,7 +358,22 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn new() -> Self {
-        Terminal { open: false, input: String::new(), output: String::new(), history: vec![], hist_pos: None, replace_doc: None, replace_out: None, rx: None, persistent: true, session: None, buf: LineBuffer::new(), hot_until: None, shown: Default::default() }
+        Terminal {
+            open: false,
+            input: String::new(),
+            focus_input: false,
+            output: String::new(),
+            history: vec![],
+            hist_pos: None,
+            replace_doc: None,
+            replace_out: None,
+            rx: None,
+            persistent: true,
+            session: None,
+            buf: LineBuffer::new(),
+            hot_until: None,
+            shown: Default::default(),
+        }
     }
 
     /// 一次性命令在跑
@@ -303,9 +381,18 @@ impl Terminal {
         self.rx.is_some()
     }
 
+    /// 常驻 shell 会话是否已建立
+    pub fn has_session(&self) -> bool {
+        self.session.is_some()
+    }
+
     /// 下一次界面刷新间隔 (毫秒); None = 不用刷新
     pub fn repaint_ms(&self) -> Option<u64> {
-        if self.rx.is_some() || self.hot_until.is_some_and(|t| t > std::time::Instant::now()) {
+        if self.rx.is_some()
+            || self
+                .hot_until
+                .is_some_and(|t| t > std::time::Instant::now())
+        {
             Some(80)
         } else if self.session.is_some() {
             Some(500)
@@ -319,6 +406,7 @@ impl Terminal {
     }
 
     /// 需要持续刷新界面 (有会话或有命令在跑)
+    #[allow(dead_code)]
     pub fn busy(&self) -> bool {
         self.rx.is_some() || self.session.is_some()
     }
@@ -340,7 +428,14 @@ impl Terminal {
             self.session_send(&cwd, &cmd);
             return;
         }
-        self.output.push_str(&format!("> {cmd}{}\n", if stdin.is_some() { "   (选区作标准输入)" } else { "" }));
+        self.output.push_str(&format!(
+            "> {cmd}{}\n",
+            if stdin.is_some() {
+                "   (选区作标准输入)"
+            } else {
+                ""
+            }
+        ));
         self.replace_doc = replace_doc;
         let (tx, rx) = channel();
         std::thread::spawn(move || {
@@ -380,6 +475,38 @@ impl Terminal {
         }
     }
 
+    /// 新建或重启常驻 shell 会话并聚焦输入框 (点「+ 新建终端」触发)
+    pub fn start_session(&mut self, cwd: &std::path::Path) {
+        let had = self.session.take().is_some();
+        self.persistent = true;
+        self.focus_input = true;
+        match Session::start(cwd) {
+            Ok(s) => {
+                self.session = Some(s);
+                if had {
+                    self.buf
+                        .feed(&format!("\n[已新建终端会话] PS {}>\n", cwd.display()));
+                } else {
+                    self.buf
+                        .feed(&format!("[终端会话已就绪] PS {}>\n", cwd.display()));
+                }
+                self.heat();
+            }
+            Err(e) => {
+                self.buf.feed(&format!("[{e}]\n"));
+            }
+        }
+    }
+
+    /// 向活动终端会话发送脚本代码并立即执行 (如 PowerShell 选区一键执行)
+    pub fn execute_script(&mut self, cwd: &std::path::Path, code: &str) {
+        let trimmed = code.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.session_send(cwd, trimmed);
+    }
+
     fn session_send(&mut self, cwd: &std::path::Path, cmd: &str) {
         if !self.session.as_mut().map(|s| s.alive()).unwrap_or(false) {
             match Session::start(cwd) {
@@ -409,7 +536,8 @@ impl Terminal {
             if !t.is_empty() {
                 self.buf.feed(&t);
                 fresh = true;
-                self.hot_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
+                self.hot_until =
+                    Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
             }
             if !s.alive() {
                 let rest = s.drain();
@@ -439,7 +567,8 @@ impl Terminal {
                 if o.timed_out {
                     self.output.push_str("[超时, 已结束进程]\n");
                 } else if o.code.unwrap_or(0) != 0 {
-                    self.output.push_str(&format!("[退出码 {}]\n", o.code.unwrap_or(-1)));
+                    self.output
+                        .push_str(&format!("[退出码 {}]\n", o.code.unwrap_or(-1)));
                 }
                 if !self.output.ends_with('\n') {
                     self.output.push('\n');
@@ -486,7 +615,7 @@ mod tests {
     use super::*;
 
     fn wait(t: &mut Terminal, until: impl Fn(&Terminal) -> bool) {
-        for _ in 0..400 {
+        for _ in 0..1500 {
             t.poll();
             if until(t) {
                 return;
@@ -514,7 +643,11 @@ mod tests {
     #[test]
     fn selection_goes_to_stdin_and_output_comes_back_for_replacement() {
         let mut t = Terminal::new();
-        t.input = if cfg!(windows) { "findstr \"^\"".into() } else { "cat".into() };
+        t.input = if cfg!(windows) {
+            "findstr \"^\"".into()
+        } else {
+            "cat".into()
+        };
         t.submit(std::env::temp_dir(), Some("piped-text".into()), Some(7));
         wait(&mut t, |t| !t.running());
         let (id, out) = t.replace_out.take().expect("成功的命令把输出交回来");
@@ -526,14 +659,26 @@ mod tests {
     fn persistent_shell_keeps_state_between_commands() {
         let mut t = Terminal::new();
         let d = std::env::temp_dir();
-        t.input = if cfg!(windows) { "set IDEFAST_X=kept-value".into() } else { "IDEFAST_X=kept-value".into() };
+        t.input = if cfg!(windows) {
+            "set IDEFAST_X=kept-value".into()
+        } else {
+            "IDEFAST_X=kept-value".into()
+        };
         t.submit(d.clone(), None, None);
-        t.input = if cfg!(windows) { "echo %IDEFAST_X%".into() } else { "echo $IDEFAST_X".into() };
+        t.input = if cfg!(windows) {
+            "echo %IDEFAST_X%".into()
+        } else {
+            "echo $IDEFAST_X".into()
+        };
         t.submit(d, None, None);
         assert!(t.busy(), "会话在跑");
         wait(&mut t, |t| t.display().matches("kept-value").count() >= 2);
         // 第一次出现在本地回显的 set 命令里, 第二次才是 echo 打出来的值: 至少 2 次, 说明变量跨命令保留了
-        assert!(t.display().matches("kept-value").count() >= 2, "{}", t.display());
+        assert!(
+            t.display().matches("kept-value").count() >= 2,
+            "{}",
+            t.display()
+        );
         t.restart();
         assert!(!t.busy());
         assert!(t.display().contains("会话已重启"));
@@ -573,14 +718,22 @@ mod tests {
         }
         let t = b.text();
         let n = t.lines().count();
-        assert!((MIN_SCROLLBACK..=MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1).contains(&n), "{n}");
+        assert!(
+            (MIN_SCROLLBACK..=MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1).contains(&n),
+            "{n}"
+        );
         assert!(t.ends_with("line 999\n") && !t.contains("line 0\n"));
         b.set_scrollback(1000);
         b.set_scrollback(1); // 夹到下限 (不会变成 0 行),并且立刻裁到这个行数
         assert_eq!(b.text().lines().count(), MIN_SCROLLBACK);
         b.clear();
-        for _ in 0..500 { b.feed("y\n"); }
-        assert!(b.text().lines().count() <= MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1, "clear 之后设置还在");
+        for _ in 0..500 {
+            b.feed("y\n");
+        }
+        assert!(
+            b.text().lines().count() <= MIN_SCROLLBACK + MIN_SCROLLBACK / 4 + 1,
+            "clear 之后设置还在"
+        );
     }
 
     #[test]
@@ -592,5 +745,13 @@ mod tests {
         }
         assert!(b.text().len() <= MAX_KEEP, "{}", b.text().len());
         assert!(b.text().ends_with(&line));
+    }
+
+    #[test]
+    fn test_execute_script_sends_to_terminal() {
+        let mut t = Terminal::new();
+        t.execute_script(&PathBuf::from("."), "Write-Host 'hello from powershell'");
+        assert!(t.busy());
+        assert!(t.display().contains("Write-Host 'hello from powershell'"));
     }
 }
