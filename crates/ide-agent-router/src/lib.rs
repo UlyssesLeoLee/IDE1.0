@@ -34,10 +34,13 @@ pub mod verifier;
 
 pub use cookie::{CookieJar, CookieStats, FileCookie, PrunePolicy, TaskState};
 pub use guard::{ContextCompactor, LoopBreaker};
-pub use hooks::{AgentHook, HookDecision, HookPipeline, PathSanitizerHook, PayloadLimitHook, SensitiveDataMaskHook};
+pub use hooks::{
+    AgentHook, HookDecision, HookPipeline, PathSanitizerHook, PayloadLimitHook,
+    SensitiveDataMaskHook,
+};
 pub use mcp::{
-    McpCallToolResult, McpClient, McpConfig, McpContent, McpManager, McpServerConfig, McpServerHost,
-    McpToolDefinition, MCP_PROTOCOL_VERSION,
+    McpCallToolResult, McpClient, McpConfig, McpContent, McpManager, McpServerConfig,
+    McpServerHost, McpToolDefinition, MCP_PROTOCOL_VERSION,
 };
 pub use memory::{AgentMemoryEngine, LongTermMemory, WorkingMemoryItem};
 pub use rules::{RuleSource, WorkspaceRulesEngine};
@@ -52,20 +55,20 @@ pub use collaboration::{
     KeystrokeBroadcast, KeystrokeOp, RemoteCursor, ZoneAnchor,
 };
 pub use coordinator::{
-    CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState as CoordinatorTaskState, TaskStatus,
+    CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse,
+    TaskState as CoordinatorTaskState, TaskStatus,
 };
 pub use identity::{SemanticUnit, SupportedLanguage};
 pub use ledger::{
     CommitRecord, LedgerError, LedgerStore, MemoryLedgerStore, OutboxRecord, OutboxStatus,
 };
 pub use nema_pipeline::{
-    CoEditBranchAssignment, CollaborationGroupKind, ConflictResolutionStrategy,
-    DependencyEdge, GitBranchOrchestrator, GitBranchRecord, GitBranchState,
-    IndependentBranchAssignment, IterationFeedbackTicket, LoweringOutcome,
-    MultiAgentPipelineCoordinator, NemaMergeOutcome, NemaRustDriftGuard,
-    NemaRustSourceMap, NemaRustSourceMapEntry, NemaSemanticConflict,
-    NemaSemanticMerger, NemaToRustLowering, PullRequestRecord, RouterEngine,
-    TaskDecompositionPlan, TaskInputKind, VerifyPipeline, VerifyPipelineReport,
+    CoEditBranchAssignment, CollaborationGroupKind, ConflictResolutionStrategy, DependencyEdge,
+    GitBranchOrchestrator, GitBranchRecord, GitBranchState, IndependentBranchAssignment,
+    IterationFeedbackTicket, LoweringOutcome, MultiAgentPipelineCoordinator, NemaMergeOutcome,
+    NemaRustDriftGuard, NemaRustSourceMap, NemaRustSourceMapEntry, NemaSemanticConflict,
+    NemaSemanticMerger, NemaToRustLowering, PullRequestRecord, RouterEngine, TaskDecompositionPlan,
+    TaskInputKind, VerifyPipeline, VerifyPipelineReport,
 };
 pub use outbox::{
     BroadcastPubSubAdapter, DispatchBatchReport, DispatchResult, InMemoryPubSubAdapter,

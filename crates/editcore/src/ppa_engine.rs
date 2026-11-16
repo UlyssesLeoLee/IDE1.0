@@ -486,9 +486,7 @@ impl Lexer {
                 continue;
             }
 
-            if ch == '0'
-                && (self.peek_ahead(1) == Some('x') || self.peek_ahead(1) == Some('X'))
-            {
+            if ch == '0' && (self.peek_ahead(1) == Some('x') || self.peek_ahead(1) == Some('X')) {
                 self.advance();
                 self.advance();
                 let mut hex_buf = String::new();
@@ -1627,7 +1625,9 @@ impl MacroContext for DefaultMacroContext {
                 }
                 let line_num = args[0].as_int()?;
                 if line_num >= 1 && (line_num as usize) <= self.lines.len() {
-                    Ok(PpaValue::String(self.lines[(line_num - 1) as usize].clone()))
+                    Ok(PpaValue::String(
+                        self.lines[(line_num - 1) as usize].clone(),
+                    ))
                 } else {
                     Ok(PpaValue::String(String::new()))
                 }
@@ -1734,10 +1734,8 @@ impl PpaInterpreter {
     }
 
     pub fn execute(&mut self, program: &PpaProgram) -> Result<PpaValue, PpaError> {
-        let mut ctx = std::mem::replace(
-            &mut self.context,
-            Box::new(DefaultMacroContext::default()),
-        );
+        let mut ctx =
+            std::mem::replace(&mut self.context, Box::new(DefaultMacroContext::default()));
         let res = self.execute_dyn(program, ctx.as_mut());
         self.context = ctx;
         res
@@ -1891,11 +1889,7 @@ impl PpaInterpreter {
         }
     }
 
-    fn eval_expr(
-        &mut self,
-        expr: &Expr,
-        ctx: &mut dyn MacroContext,
-    ) -> Result<PpaValue, PpaError> {
+    fn eval_expr(&mut self, expr: &Expr, ctx: &mut dyn MacroContext) -> Result<PpaValue, PpaError> {
         match expr {
             Expr::Literal(val) => Ok(val.clone()),
 
@@ -2069,22 +2063,14 @@ impl PpaInterpreter {
             }
 
             BinaryOp::And => match (&left, &right) {
-                (PpaValue::Boolean(b1), PpaValue::Boolean(b2)) => {
-                    Ok(PpaValue::Boolean(*b1 && *b2))
-                }
-                (PpaValue::Integer(i1), PpaValue::Integer(i2)) => {
-                    Ok(PpaValue::Integer(i1 & i2))
-                }
+                (PpaValue::Boolean(b1), PpaValue::Boolean(b2)) => Ok(PpaValue::Boolean(*b1 && *b2)),
+                (PpaValue::Integer(i1), PpaValue::Integer(i2)) => Ok(PpaValue::Integer(i1 & i2)),
                 _ => Ok(PpaValue::Boolean(left.is_truthy() && right.is_truthy())),
             },
 
             BinaryOp::Or => match (&left, &right) {
-                (PpaValue::Boolean(b1), PpaValue::Boolean(b2)) => {
-                    Ok(PpaValue::Boolean(*b1 || *b2))
-                }
-                (PpaValue::Integer(i1), PpaValue::Integer(i2)) => {
-                    Ok(PpaValue::Integer(i1 | i2))
-                }
+                (PpaValue::Boolean(b1), PpaValue::Boolean(b2)) => Ok(PpaValue::Boolean(*b1 || *b2)),
+                (PpaValue::Integer(i1), PpaValue::Integer(i2)) => Ok(PpaValue::Integer(i1 | i2)),
                 _ => Ok(PpaValue::Boolean(left.is_truthy() || right.is_truthy())),
             },
 
@@ -2092,13 +2078,9 @@ impl PpaInterpreter {
             BinaryOp::Ne => Ok(PpaValue::Boolean(!self.values_equal(&left, &right))),
 
             BinaryOp::Lt => Ok(PpaValue::Boolean(self.compare_values(&left, &right)? < 0)),
-            BinaryOp::Le => {
-                Ok(PpaValue::Boolean(self.compare_values(&left, &right)? <= 0))
-            }
+            BinaryOp::Le => Ok(PpaValue::Boolean(self.compare_values(&left, &right)? <= 0)),
             BinaryOp::Gt => Ok(PpaValue::Boolean(self.compare_values(&left, &right)? > 0)),
-            BinaryOp::Ge => {
-                Ok(PpaValue::Boolean(self.compare_values(&left, &right)? >= 0))
-            }
+            BinaryOp::Ge => Ok(PpaValue::Boolean(self.compare_values(&left, &right)? >= 0)),
         }
     }
 
@@ -2121,12 +2103,14 @@ impl PpaInterpreter {
             (PpaValue::Float(f1), PpaValue::Float(f2)) => {
                 Ok(f1.partial_cmp(f2).unwrap_or(std::cmp::Ordering::Equal) as i8)
             }
-            (PpaValue::Integer(i1), PpaValue::Float(f2)) => {
-                Ok((*i1 as f64).partial_cmp(f2).unwrap_or(std::cmp::Ordering::Equal) as i8)
-            }
-            (PpaValue::Float(f1), PpaValue::Integer(i2)) => {
-                Ok(f1.partial_cmp(&(*i2 as f64)).unwrap_or(std::cmp::Ordering::Equal) as i8)
-            }
+            (PpaValue::Integer(i1), PpaValue::Float(f2)) => Ok((*i1 as f64)
+                .partial_cmp(f2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                as i8),
+            (PpaValue::Float(f1), PpaValue::Integer(i2)) => Ok(f1
+                .partial_cmp(&(*i2 as f64))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                as i8),
             (PpaValue::String(s1), PpaValue::String(s2)) => Ok(s1.cmp(s2) as i8),
             (PpaValue::Boolean(b1), PpaValue::Boolean(b2)) => Ok(b1.cmp(b2) as i8),
             _ => Err(PpaError::TypeMismatch(format!(
@@ -2410,9 +2394,7 @@ impl PpaInterpreter {
                         got: 0,
                     });
                 }
-                Ok(PpaValue::String(
-                    args[0].to_ppa_string().trim().to_string(),
-                ))
+                Ok(PpaValue::String(args[0].to_ppa_string().trim().to_string()))
             }
 
             "chr" => {

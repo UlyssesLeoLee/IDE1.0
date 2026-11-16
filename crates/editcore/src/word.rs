@@ -39,7 +39,13 @@ pub fn char_kind(c: char) -> CharKind {
         0x30A1..=0x30FA | 0x30FD | 0x30FE => CharKind::ZenKata,
         0xFF66..=0xFF9D => CharKind::HanKata,
         0xFF10..=0xFF19 | 0xFF21..=0xFF3A | 0xFF41..=0xFF5A | 0xFF3F => CharKind::ZenCsym,
-        0x3005 | 0x3006 | 0x3007 | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x20000..=0x3FFFF => CharKind::Kanji,
+        0x3005
+        | 0x3006
+        | 0x3007
+        | 0x3400..=0x4DBF
+        | 0x4E00..=0x9FFF
+        | 0xF900..=0xFAFF
+        | 0x20000..=0x3FFFF => CharKind::Kanji,
         _ if c == '_' || c.is_alphanumeric() => CharKind::Csym,
         _ if c.is_whitespace() => CharKind::Space,
         _ => CharKind::Kigo,
@@ -104,7 +110,9 @@ pub fn word_left(line: &[char], from: usize) -> usize {
 
 /// 行首空白之后的第一个字符的列 (下一行的「第一个词首」; 全是空白则 0)
 pub fn first_word_col(line: &[char]) -> usize {
-    line.iter().position(|c| !is_space_kind(char_kind(*c))).unwrap_or(0)
+    line.iter()
+        .position(|c| !is_space_kind(char_kind(*c)))
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -112,7 +120,10 @@ mod tests {
     use super::*;
 
     // 期望值来自真实 Sakura (tests/sakura-diff/cases9.mjs)
-    const JA: &[&str] = &["日本語のテキストabc def、漢字123かな", "カタカナＡＢＣ全角　スペース"];
+    const JA: &[&str] = &[
+        "日本語のテキストabc def、漢字123かな",
+        "カタカナＡＢＣ全角　スペース",
+    ];
 
     #[test]
     fn japanese_word_runs() {

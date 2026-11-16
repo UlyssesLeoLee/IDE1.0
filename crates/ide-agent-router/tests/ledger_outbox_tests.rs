@@ -208,7 +208,10 @@ async fn test_outbox_polling_and_dispatched_marking() {
         payload: serde_json::Value::Null,
         created_at: Utc::now(),
     };
-    store.record_commit(commit_retry, event_retry).await.unwrap();
+    store
+        .record_commit(commit_retry, event_retry)
+        .await
+        .unwrap();
 
     // 第一次尝试：模拟错误触发
     let report_fail1 = dispatcher.dispatch_once().await.unwrap();
@@ -218,7 +221,10 @@ async fn test_outbox_polling_and_dispatched_marking() {
     let entry_after_f1 = store.get_outbox_entry(40).await.unwrap().unwrap();
     assert_eq!(entry_after_f1.status, OutboxStatus::Pending); // 仍处在重试中
     assert_eq!(entry_after_f1.retry_count, 1);
-    assert!(entry_after_f1.last_error.unwrap().contains("Temporary connection drop"));
+    assert!(entry_after_f1
+        .last_error
+        .unwrap()
+        .contains("Temporary connection drop"));
 
     // 第二次尝试：仍然失败
     let report_fail2 = dispatcher.dispatch_once().await.unwrap();
@@ -255,8 +261,11 @@ async fn test_outbox_polling_and_dispatched_marking() {
     };
     store.record_commit(commit_dlq, event_dlq).await.unwrap();
 
-    let strict_dispatcher =
-        OutboxDispatcher::new(store.clone(), pubsub.clone(), RetryPolicy::default().with_max_retries(2));
+    let strict_dispatcher = OutboxDispatcher::new(
+        store.clone(),
+        pubsub.clone(),
+        RetryPolicy::default().with_max_retries(2),
+    );
 
     // attempt 1 (retry_count -> 1, <=2 -> Pending)
     strict_dispatcher.dispatch_once().await.unwrap();
@@ -268,7 +277,10 @@ async fn test_outbox_polling_and_dispatched_marking() {
     let dead_letter = store.get_outbox_entry(50).await.unwrap().unwrap();
     assert_eq!(dead_letter.status, OutboxStatus::Failed);
     assert_eq!(dead_letter.retry_count, 3);
-    assert!(dead_letter.last_error.unwrap().contains("Max retries (2) exceeded"));
+    assert!(dead_letter
+        .last_error
+        .unwrap()
+        .contains("Max retries (2) exceeded"));
 
     // 随后轮询不再包含该已进入死信态的事件
     let final_pending = store.poll_pending_outbox(10).await.unwrap();
@@ -280,7 +292,10 @@ async fn test_concurrent_commits_revision_consistency() {
     let store = Arc::new(MemoryLedgerStore::new());
     let file_id = "ws_concurrency:counter.rs";
     let initial_revision = 1;
-    store.init_file_revision(file_id, initial_revision).await.unwrap();
+    store
+        .init_file_revision(file_id, initial_revision)
+        .await
+        .unwrap();
 
     let concurrent_workers = 50;
     let mut tasks = JoinSet::new();
@@ -309,7 +324,10 @@ async fn test_concurrent_commits_revision_consistency() {
                     workspace_id: "ws_concurrency".to_string(),
                     previous_revision: current_rev,
                     new_revision: current_rev + 1,
-                    patch_content: Some(format!("// patch by {} at attempt {}", worker_id, attempts)),
+                    patch_content: Some(format!(
+                        "// patch by {} at attempt {}",
+                        worker_id, attempts
+                    )),
                     metadata: serde_json::json!({ "worker": worker_id, "attempts": attempts }),
                     created_at: Utc::now(),
                 };

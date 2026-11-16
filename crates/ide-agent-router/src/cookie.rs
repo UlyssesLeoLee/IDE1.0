@@ -267,7 +267,8 @@ impl CookieJar {
         // 会话记录属于本机临时状态, 默认不进 Git (目录内自带忽略规则; 已存在就不动)
         let ignore = self.dir().join(".gitignore");
         if !ignore.exists() {
-            std::fs::write(&ignore, "*\n").map_err(|e| format!("写入 Cookie .gitignore 失败: {e}"))?;
+            std::fs::write(&ignore, "*\n")
+                .map_err(|e| format!("写入 Cookie .gitignore 失败: {e}"))?;
         }
         let tmp = path.with_extension("json.tmp");
         let body =
@@ -303,18 +304,14 @@ impl CookieJar {
         let dir = self.dir();
         let rd = match std::fs::read_dir(&dir) {
             Ok(rd) => rd,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(CookieStats::default())
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(CookieStats::default()),
             Err(e) => return Err(format!("读取 Cookie 目录失败: {e}")),
         };
         let mut removed = CookieStats::default();
         let mut first_err = None;
         for ent in rd.flatten() {
             let p = ent.path();
-            let ext_ok = p
-                .extension()
-                .is_some_and(|x| x == "json" || x == "tmp");
+            let ext_ok = p.extension().is_some_and(|x| x == "json" || x == "tmp");
             if !ext_ok || !ent.file_type().is_ok_and(|t| t.is_file()) {
                 continue;
             }
@@ -543,7 +540,10 @@ mod tests {
         assert!(ws.join(".ide").join("memory.json").exists());
         assert!(ws.join("a.rs").exists(), "源文件不受影响");
         // 空目录再清也不报错
-        assert_eq!(CookieJar::new(&tmp_ws("none")).clear_all().unwrap().count, 0);
+        assert_eq!(
+            CookieJar::new(&tmp_ws("none")).clear_all().unwrap().count,
+            0
+        );
         let _ = std::fs::remove_dir_all(&ws);
     }
 
@@ -618,8 +618,13 @@ mod tests {
     fn rel_of_rejects_paths_outside_workspace() {
         let ws = tmp_ws("rel");
         let jar = CookieJar::new(&ws);
-        assert_eq!(jar.rel_of(&ws.join("src").join("a.rs")).as_deref(), Some("src/a.rs"));
-        assert!(jar.rel_of(&std::env::temp_dir().join("elsewhere.rs")).is_none());
+        assert_eq!(
+            jar.rel_of(&ws.join("src").join("a.rs")).as_deref(),
+            Some("src/a.rs")
+        );
+        assert!(jar
+            .rel_of(&std::env::temp_dir().join("elsewhere.rs"))
+            .is_none());
         assert!(jar.rel_of(&ws).is_none());
         let _ = std::fs::remove_dir_all(&ws);
     }

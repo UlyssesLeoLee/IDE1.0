@@ -34,11 +34,11 @@ mod glass_render;
 mod installer_ui;
 mod lifecycle;
 mod mdopts;
-mod nemaopts;
 mod mdstruct;
 mod menubar;
 mod menunav;
 mod menuui;
+mod nemaopts;
 #[cfg(test)]
 mod perf_bench;
 mod picks;
@@ -294,7 +294,11 @@ impl App {
             installer: Default::default(),
             sticky_notes: sticky_notes::StickyNotesState::load(),
             print_ui: Default::default(),
-            tray: if persist && st.tray_resident { crate::tray::Tray::build(st.tray_resident, false) } else { None },
+            tray: if persist && st.tray_resident {
+                crate::tray::Tray::build(st.tray_resident, false)
+            } else {
+                None
+            },
             always_on_top: false,
             force_exit: false,
             window_hidden: false,
@@ -311,8 +315,7 @@ impl App {
         app.term.open = st.view.term_open;
         app.md_preview = st.view.md_preview;
         app.applied_font = crate::fonts::effective_font_family(&st.font_family, &st.theme_plugin);
-        app.cfg.font_family =
-            crate::fonts::sanitize_font_family(&st.font_family, &st.theme_plugin);
+        app.cfg.font_family = crate::fonts::sanitize_font_family(&st.font_family, &st.theme_plugin);
         for a in &args {
             app.open_spec(a);
         }
@@ -511,7 +514,9 @@ impl App {
             self.set_theme_plugin(theme_to_apply);
         }
         self.font_px = st.font_px;
-        if self.tc.retro16 && ((self.font_px - 13.0).abs() < 0.1 || (self.font_px - 15.0).abs() < 0.1) {
+        if self.tc.retro16
+            && ((self.font_px - 13.0).abs() < 0.1 || (self.font_px - 15.0).abs() < 0.1)
+        {
             self.font_px = 12.0;
         }
         self.tab = st.tab_width;
@@ -519,7 +524,8 @@ impl App {
         self.wrap = st.wrap;
         crate::i18n::set_code(&st.lang);
         self.cfg = st.clone();
-        self.cfg.font_family = crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
+        self.cfg.font_family =
+            crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
         keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
         self.set_tray_resident(st.tray_resident);
@@ -1518,11 +1524,16 @@ impl App {
                         .unwrap_or_else(|| d.name.clone()),
                     d.path.clone(),
                     d.is_paginated(),
-                    d.pagination.as_ref().map(|p| p.page_size).unwrap_or(editcore::MmapBuffer::DEFAULT_PAGE_SIZE),
+                    d.pagination
+                        .as_ref()
+                        .map(|p| p.page_size)
+                        .unwrap_or(editcore::MmapBuffer::DEFAULT_PAGE_SIZE),
                 )
             };
             if let (true, Some(file_path)) = (is_paginated, path_opt) {
-                self.side.grep.start_mmap_file(root.clone(), &file_path, &label, page_size);
+                self.side
+                    .grep
+                    .start_mmap_file(root.clone(), &file_path, &label, page_size);
             } else {
                 let lines = self.cur().lines.clone();
                 self.side.grep.start_text(root.clone(), &label, &lines);
@@ -1809,9 +1820,7 @@ impl App {
     /// 运行多智能体四阶段协同流水线 (Router -> CoEdit .nema -> Aggregator Rust Lowering -> Git & Verify)
     /// 高速版在未导入外部 AI 时使用纯 Rust 确定性离线引擎执行，保证启动零开销、零网络调用
     pub fn run_collab_pipeline(&mut self) {
-        use ide_agent_router::{
-            MultiAgentPipelineCoordinator, TaskInputKind,
-        };
+        use ide_agent_router::{MultiAgentPipelineCoordinator, TaskInputKind};
         use nema_codec::{NemaCodec, StandardNemaCodec};
 
         let mut coord = MultiAgentPipelineCoordinator::default();
@@ -1837,7 +1846,14 @@ impl App {
 
         let merge_outcome = coord
             .merger
-            .merge("specs/File_A.nema", base_src, "feat/A1", branch_a, "feat/A2", branch_b)
+            .merge(
+                "specs/File_A.nema",
+                base_src,
+                "feat/A1",
+                branch_a,
+                "feat/A2",
+                branch_b,
+            )
             .unwrap_or_else(|_| ide_agent_router::NemaMergeOutcome {
                 file_path: "specs/File_A.nema".into(),
                 rendered_nema_source: branch_a.into(),
@@ -1846,17 +1862,35 @@ impl App {
             });
 
         let codec = StandardNemaCodec;
-        let doc = codec.parse(&merge_outcome.rendered_nema_source).unwrap_or_default();
-        let lowering_outcome = coord.lowering.lower("specs/File_A.nema", &doc, "src/a.rs", "agg/epoch-10");
+        let doc = codec
+            .parse(&merge_outcome.rendered_nema_source)
+            .unwrap_or_default();
+        let lowering_outcome =
+            coord
+                .lowering
+                .lower("specs/File_A.nema", &doc, "src/a.rs", "agg/epoch-10");
 
         // 3. 阶段 ④: 文件级 Git 与验证门禁
-        coord.git.register_branch("feat/A1", "Agent-A1", vec!["specs/File_A.nema".into()]);
-        coord.git.register_branch("feat/A2", "Agent-A2", vec!["specs/File_A.nema".into()]);
-        coord.git.register_branch("feat/B1", "Agent-B1", vec!["specs/File_B.nema".into()]);
-        coord.git.register_branch("feat/B2", "Agent-B2", vec!["specs/File_C.nema".into()]);
+        coord
+            .git
+            .register_branch("feat/A1", "Agent-A1", vec!["specs/File_A.nema".into()]);
+        coord
+            .git
+            .register_branch("feat/A2", "Agent-A2", vec!["specs/File_A.nema".into()]);
+        coord
+            .git
+            .register_branch("feat/B1", "Agent-B1", vec!["specs/File_B.nema".into()]);
+        coord
+            .git
+            .register_branch("feat/B2", "Agent-B2", vec!["specs/File_C.nema".into()]);
 
         let pr = coord.git.create_pr(
-            &["feat/A1".into(), "feat/A2".into(), "feat/B1".into(), "feat/B2".into()],
+            &[
+                "feat/A1".into(),
+                "feat/A2".into(),
+                "feat/B1".into(),
+                "feat/B2".into(),
+            ],
             "main",
         );
 
@@ -1884,7 +1918,6 @@ impl App {
             lowering_outcome.rust_file
         );
     }
-
 
     fn cur(&mut self) -> &mut Doc {
         let i = self.active.min(self.docs.len() - 1);
@@ -2660,7 +2693,10 @@ impl App {
                         .auto_shrink([false, false]),
                     |ui| {
                         let shown = self.term.display();
-                        if shown.trim().is_empty() && !self.term.running() && !self.term.has_session() {
+                        if shown.trim().is_empty()
+                            && !self.term.running()
+                            && !self.term.has_session()
+                        {
                             // 没有会话输出时的空状态 (Tauri: No terminal session / 暂无终端会话)
                             let dim = self.tc.fg_dim;
                             ui.add_space((h * 0.25).max(4.0));
@@ -2977,7 +3013,11 @@ impl App {
         if cmd(ctx, Modifiers::CTRL, Key::Enter) {
             let is_ps = self.cur().is_powershell();
             let has_sel = self.cur().sel.is_some()
-                && self.cur().sel.map(|s| (s[0], s[1]) != (s[2], s[3])).unwrap_or(false);
+                && self
+                    .cur()
+                    .sel
+                    .map(|s| (s[0], s[1]) != (s[2], s[3]))
+                    .unwrap_or(false);
             if is_ps && has_sel {
                 self.execute_selected_powershell();
             }
@@ -3475,7 +3515,8 @@ impl App {
                 }
             }
             RightCollapseKind::Nema => {
-                let nema_open = (is_nema_doc && !self.cfg.view.nema_bar_collapsed) || self.nema_preview;
+                let nema_open =
+                    (is_nema_doc && !self.cfg.view.nema_bar_collapsed) || self.nema_preview;
                 if nema_open {
                     self.cfg.view.nema_bar_collapsed = true;
                     self.nema_preview = false;
@@ -3488,11 +3529,7 @@ impl App {
         self.cfg.save();
     }
 
-    pub(super) fn paint_overlay_right_collapse_slots(
-        &mut self,
-        ui: &mut egui::Ui,
-        rect: Rect,
-    ) {
+    pub(super) fn paint_overlay_right_collapse_slots(&mut self, ui: &mut egui::Ui, rect: Rect) {
         let ai = self.active.min(self.docs.len() - 1);
         let d = &self.docs[ai];
         let is_md_doc = Self::doc_is_markdown(d);
@@ -3918,7 +3955,8 @@ impl App {
                             || i.pointer.any_down()
                             || i.pointer.any_pressed()
                     })));
-        let box_expand = ctx.animate_bool_responsive(egui::Id::new("editor_box_sel_expand"), box_active);
+        let box_expand =
+            ctx.animate_bool_responsive(egui::Id::new("editor_box_sel_expand"), box_active);
         let _row_extra_spacing = 0.0; // 纵向行间距不变化
         let char_extra_spacing = box_expand * 8.0; // 横向列间距拉大8px左右
         let (base_h, base_char_w) = ctx.fonts_mut(|f| {
@@ -3964,10 +4002,7 @@ impl App {
         let vw = self.cfg.view.clone();
         let tc = self.tc;
         // 行号栏: 12px 数字, 至少 40 宽 (Tauri `#gutter`), 正文左内边距 8 (`#ed-content padding 4px 8px`)
-        let num_font = FontId::new(
-            (self.font_px * 12.0 / 13.0).max(8.0),
-            font_fam,
-        );
+        let num_font = FontId::new((self.font_px * 12.0 / 13.0).max(8.0), font_fam);
         let num_w = ctx.fonts_mut(|f| f.glyph_width(&num_font, '0'));
         let gutter = if vw.line_numbers {
             (digits as f32 * num_w + 16.0).max(40.0)
@@ -4285,150 +4320,142 @@ impl App {
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
         let mut ed_id: Option<egui::Id> = None;
         let mut view_x: Option<(f32, f32)> = None; // 不折行时视口的行内 x 范围 (长行只排版这一段, 点击取列也用同一段)
-        let out = egui::ScrollArea::both()
-            .auto_shrink([false, false])
-            .show_viewport(ui, |ui, viewport| {
-                if !wrap {
-                    view_x = Some((viewport.min.x - gutter - pad, viewport.max.x - gutter - pad));
-                }
-                let vx = view_x;
-                let width =
-                    (widest as f32 * char_w + gutter + pad * 2.0 + 40.0).max(ui.available_width());
-                let (rect, resp) =
-                    ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
-                ed_id = Some(resp.id);
-                let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
-                let d = &self.docs[ai];
-                let dmarks: Option<&[crate::diff::Mark]> =
-                    self.diff.as_ref().and_then(|v| v.marks_of(d.id));
-                let (first, last) = if use_offs {
-                    let f = offs
-                        .partition_point(|&o| o <= viewport.min.y)
-                        .saturating_sub(1)
-                        .min(d.lines.len().saturating_sub(1));
-                    let l = (offs.partition_point(|&o| o < viewport.max.y) + 1).min(d.lines.len());
-                    (f, l)
-                } else {
-                    (
-                        (viewport.min.y / row_h).floor().max(0.0) as usize,
-                        ((viewport.max.y / row_h).ceil() as usize + 1).min(d.lines.len()),
-                    )
-                };
-                let x0 = rect.min.x + gutter + pad;
-                let is_diff = crate::view::is_diff_name(&d.name);
-                for row in first..last {
-                    if d.is_hidden(row) {
-                        continue;
+        let out =
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show_viewport(ui, |ui, viewport| {
+                    if !wrap {
+                        view_x =
+                            Some((viewport.min.x - gutter - pad, viewport.max.x - gutter - pad));
                     }
-                    let y = rect.min.y + top(row);
-                    let rv = RowView::build(&d.lines[row], tab, kcols, vx, char_w);
-                    widest = widest.max(rv.ncols);
-                    let row_c = if is_diff {
-                        crate::view::diff_line_color(&d.lines[row], &tc).unwrap_or(text_color)
+                    let vx = view_x;
+                    let width = (widest as f32 * char_w + gutter + pad * 2.0 + 40.0)
+                        .max(ui.available_width());
+                    let (rect, resp) =
+                        ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click_and_drag());
+                    ed_id = Some(resp.id);
+                    let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
+                    let d = &self.docs[ai];
+                    let dmarks: Option<&[crate::diff::Mark]> =
+                        self.diff.as_ref().and_then(|v| v.marks_of(d.id));
+                    let (first, last) = if use_offs {
+                        let f = offs
+                            .partition_point(|&o| o <= viewport.min.y)
+                            .saturating_sub(1)
+                            .min(d.lines.len().saturating_sub(1));
+                        let l =
+                            (offs.partition_point(|&o| o < viewport.max.y) + 1).min(d.lines.len());
+                        (f, l)
                     } else {
-                        text_color
+                        (
+                            (viewport.min.y / row_h).floor().max(0.0) as usize,
+                            ((viewport.max.y / row_h).ceil() as usize + 1).min(d.lines.len()),
+                        )
                     };
-                    let ident: Vec<usize>;
-                    let (hl_line, hl_map): (&str, &[usize]) = if rv.sliced {
-                        ident = (0..=rv.len).collect();
-                        (&rv.disp, &ident)
-                    } else {
-                        (&d.lines[row], &rv.map)
-                    };
-                    let is_light_bg = if self.tc.is_translucent() {
-                        !self.tc.dark
-                    } else {
-                        !self.dark
-                    };
-                    let char_bg = None;
-                    let mut job = highlight_job(
-                        hl_line,
-                        &rv.disp,
-                        hl_map,
-                        if is_diff { None } else { cfg.as_ref() },
-                        &theme,
-                        &font,
-                        row_c,
-                        row_h,
-                        char_bg,
-                        self.cfg.font_italic,
-                        effective_letter_spacing,
-                        self.tc.is_translucent(),
-                        is_light_bg,
-                    );
-                    if wrap {
-                        job.wrap.max_width = wrap_w;
-                        job.wrap.break_anywhere = true;
-                    }
-                    let galley = painter.layout_job(job);
-                    // 选区 / 查找命中的底色都走这一个函数: 一段 [c0, c1) 列 (自动换行时逐字符取排版位置, 否则一整块)
-                    let span = |c0: usize, c1: usize, extend: bool, color: Color32| {
+                    let x0 = rect.min.x + gutter + pad;
+                    let is_diff = crate::view::is_diff_name(&d.name);
+                    for row in first..last {
+                        if d.is_hidden(row) {
+                            continue;
+                        }
+                        let y = rect.min.y + top(row);
+                        let rv = RowView::build(&d.lines[row], tab, kcols, vx, char_w);
+                        widest = widest.max(rv.ncols);
+                        let row_c = if is_diff {
+                            crate::view::diff_line_color(&d.lines[row], &tc).unwrap_or(text_color)
+                        } else {
+                            text_color
+                        };
+                        let ident: Vec<usize>;
+                        let (hl_line, hl_map): (&str, &[usize]) = if rv.sliced {
+                            ident = (0..=rv.len).collect();
+                            (&rv.disp, &ident)
+                        } else {
+                            (&d.lines[row], &rv.map)
+                        };
+                        let is_light_bg = if self.tc.is_translucent() {
+                            !self.tc.dark
+                        } else {
+                            !self.dark
+                        };
+                        let char_bg = None;
+                        let mut job = highlight_job(
+                            hl_line,
+                            &rv.disp,
+                            hl_map,
+                            if is_diff { None } else { cfg.as_ref() },
+                            &theme,
+                            &font,
+                            row_c,
+                            row_h,
+                            char_bg,
+                            self.cfg.font_italic,
+                            effective_letter_spacing,
+                            self.tc.is_translucent(),
+                            is_light_bg,
+                        );
                         if wrap {
-                            let (ds, de) = (rv.idx(c0.min(rv.tail())), rv.idx(c1.min(rv.tail())));
-                            for k in ds..de {
-                                let a = galley.pos_from_cursor(egui::text::CCursor::new(k)).min;
-                                let b = galley.pos_from_cursor(egui::text::CCursor::new(k + 1)).min;
-                                let xe = if (b.y - a.y).abs() < 0.5 && b.x > a.x {
-                                    b.x
-                                } else {
-                                    a.x + char_w
-                                };
+                            job.wrap.max_width = wrap_w;
+                            job.wrap.break_anywhere = true;
+                        }
+                        let galley = painter.layout_job(job);
+                        // 选区 / 查找命中的底色都走这一个函数: 一段 [c0, c1) 列 (自动换行时逐字符取排版位置, 否则一整块)
+                        let span = |c0: usize, c1: usize, extend: bool, color: Color32| {
+                            if wrap {
+                                let (ds, de) =
+                                    (rv.idx(c0.min(rv.tail())), rv.idx(c1.min(rv.tail())));
+                                for k in ds..de {
+                                    let a = galley.pos_from_cursor(egui::text::CCursor::new(k)).min;
+                                    let b =
+                                        galley.pos_from_cursor(egui::text::CCursor::new(k + 1)).min;
+                                    let xe = if (b.y - a.y).abs() < 0.5 && b.x > a.x {
+                                        b.x
+                                    } else {
+                                        a.x + char_w
+                                    };
+                                    painter.rect_filled(
+                                        Rect::from_min_max(
+                                            Pos2::new(x0 + a.x, y + a.y),
+                                            Pos2::new(x0 + xe, y + a.y + row_h),
+                                        ),
+                                        0.0,
+                                        color,
+                                    );
+                                }
+                            } else {
+                                if !rv.touches(c0, c1) {
+                                    return;
+                                }
+                                let xa = rv.x_of(&painter, c0, &font, text_color);
+                                let mut xb =
+                                    rv.x_of(&painter, c1.min(rv.tail()), &font, text_color);
+                                if extend {
+                                    xb += char_w * 0.6;
+                                } // 跨行的行尾多画一点, 表示换行也被选中
                                 painter.rect_filled(
                                     Rect::from_min_max(
-                                        Pos2::new(x0 + a.x, y + a.y),
-                                        Pos2::new(x0 + xe, y + a.y + row_h),
+                                        Pos2::new(x0 + xa, y),
+                                        Pos2::new(x0 + xb, y + row_h),
                                     ),
                                     0.0,
                                     color,
                                 );
                             }
-                        } else {
-                            if !rv.touches(c0, c1) {
-                                return;
-                            }
-                            let xa = rv.x_of(&painter, c0, &font, text_color);
-                            let mut xb = rv.x_of(&painter, c1.min(rv.tail()), &font, text_color);
-                            if extend {
-                                xb += char_w * 0.6;
-                            } // 跨行的行尾多画一点, 表示换行也被选中
-                            painter.rect_filled(
-                                Rect::from_min_max(
-                                    Pos2::new(x0 + xa, y),
-                                    Pos2::new(x0 + xb, y + row_h),
-                                ),
-                                0.0,
-                                color,
-                            );
-                        }
-                    };
-                    if let Some(ms) = &marks {
-                        let lo = ms.partition_point(|h| h.row < row);
-                        for h in ms[lo..].iter().take_while(|h| h.row == row) {
-                            span(h.col, h.col + h.len, false, mark_bg);
-                        }
-                    }
-                    if let Some((a, b)) = bracket {
-                        for p in [a, b] {
-                            if p[0] == row {
-                                span(p[1], p[1] + 1, false, bracket_bg);
+                        };
+                        if let Some(ms) = &marks {
+                            let lo = ms.partition_point(|h| h.row < row);
+                            for h in ms[lo..].iter().take_while(|h| h.row == row) {
+                                span(h.col, h.col + h.len, false, mark_bg);
                             }
                         }
-                    }
-                    if let Some(s) = d.sel {
-                        if row >= s[0] && row <= s[2] {
-                            let c0 = if row == s[0] { s[1] } else { 0 };
-                            let c1 = if row == s[2] {
-                                s[3]
-                            } else if rv.sliced {
-                                rv.ncols
-                            } else {
-                                d.lines[row].chars().count()
-                            };
-                            span(c0, c1, row != s[2], sel_bg);
+                        if let Some((a, b)) = bracket {
+                            for p in [a, b] {
+                                if p[0] == row {
+                                    span(p[1], p[1] + 1, false, bracket_bg);
+                                }
+                            }
                         }
-                    }
-                    for rc in &d.remote_cursors {
-                        if let Some(s) = rc.selection {
+                        if let Some(s) = d.sel {
                             if row >= s[0] && row <= s[2] {
                                 let c0 = if row == s[0] { s[1] } else { 0 };
                                 let c1 = if row == s[2] {
@@ -4438,630 +4465,640 @@ impl App {
                                 } else {
                                     d.lines[row].chars().count()
                                 };
-                                let rc_sel_bg = Color32::from_rgba_unmultiplied(
-                                    rc.color.r, rc.color.g, rc.color.b, 64,
-                                );
-                                span(c0, c1, row != s[2], rc_sel_bg);
+                                span(c0, c1, row != s[2], sel_bg);
                             }
                         }
-                    }
-                    if let Some(b) = d.box_sel {
-                        let (r0, r1, c0, c1) = (
-                            b[0].min(b[2]),
-                            b[0].max(b[2]),
-                            b[1].min(b[3]),
-                            b[1].max(b[3]),
-                        );
-                        if row >= r0 && row <= r1 {
-                            let tail = rv.tail();
-                            let xx = |c: usize| {
-                                let di = rv.idx(c.min(tail));
-                                rv.x_of(&painter, c.min(tail), &font, text_color)
-                                    + di as f32 * char_extra_spacing
-                                    + char_w * c.saturating_sub(tail) as f32
-                            };
-                            let (x_left, x_right) = (x0 + xx(c0), x0 + xx(c1));
-                            let stroke_col = if self.tc.crystal {
-                                self.tc.mat_prism_cyan
-                            } else if self.tc.clear {
-                                self.tc.blue
-                            } else {
-                                Color32::from_rgb(0, 215, 255)
-                            };
-                            let border_stroke = egui::Stroke::new(1.8, stroke_col);
-
-                            if c1 > c0 {
-                                let box_r = Rect::from_min_max(
-                                    Pos2::new(x_left, y + 0.5),
-                                    Pos2::new(x_right, y + row_h - 0.5),
-                                );
-                                let alt_sel_fill = if self.tc.crystal || self.tc.clear {
-                                    Color32::from_rgba_unmultiplied(0, 180, 255, 75)
-                                } else {
-                                    Color32::from_rgba_unmultiplied(sel_bg.r(), sel_bg.g(), sel_bg.b(), 180)
+                        for rc in &d.remote_cursors {
+                            if let Some(s) = rc.selection {
+                                if row >= s[0] && row <= s[2] {
+                                    let c0 = if row == s[0] { s[1] } else { 0 };
+                                    let c1 = if row == s[2] {
+                                        s[3]
+                                    } else if rv.sliced {
+                                        rv.ncols
+                                    } else {
+                                        d.lines[row].chars().count()
+                                    };
+                                    let rc_sel_bg = Color32::from_rgba_unmultiplied(
+                                        rc.color.r, rc.color.g, rc.color.b, 64,
+                                    );
+                                    span(c0, c1, row != s[2], rc_sel_bg);
+                                }
+                            }
+                        }
+                        if let Some(b) = d.box_sel {
+                            let (r0, r1, c0, c1) = (
+                                b[0].min(b[2]),
+                                b[0].max(b[2]),
+                                b[1].min(b[3]),
+                                b[1].max(b[3]),
+                            );
+                            if row >= r0 && row <= r1 {
+                                let tail = rv.tail();
+                                let xx = |c: usize| {
+                                    let di = rv.idx(c.min(tail));
+                                    rv.x_of(&painter, c.min(tail), &font, text_color)
+                                        + di as f32 * char_extra_spacing
+                                        + char_w * c.saturating_sub(tail) as f32
                                 };
-                                painter.rect_filled(box_r, 0.0, alt_sel_fill);
+                                let (x_left, x_right) = (x0 + xx(c0), x0 + xx(c1));
+                                let stroke_col = if self.tc.crystal {
+                                    self.tc.mat_prism_cyan
+                                } else if self.tc.clear {
+                                    self.tc.blue
+                                } else {
+                                    Color32::from_rgb(0, 215, 255)
+                                };
+                                let border_stroke = egui::Stroke::new(1.8, stroke_col);
 
-                                // 动态网格刻度线: 选中的每列字符间绘制垂直细导线
-                                if c1 > c0 + 1 {
-                                    for c in (c0 + 1)..c1 {
-                                        let cx = x0 + xx(c);
+                                if c1 > c0 {
+                                    let box_r = Rect::from_min_max(
+                                        Pos2::new(x_left, y + 0.5),
+                                        Pos2::new(x_right, y + row_h - 0.5),
+                                    );
+                                    let alt_sel_fill = if self.tc.crystal || self.tc.clear {
+                                        Color32::from_rgba_unmultiplied(0, 180, 255, 75)
+                                    } else {
+                                        Color32::from_rgba_unmultiplied(
+                                            sel_bg.r(),
+                                            sel_bg.g(),
+                                            sel_bg.b(),
+                                            180,
+                                        )
+                                    };
+                                    painter.rect_filled(box_r, 0.0, alt_sel_fill);
+
+                                    // 动态网格刻度线: 选中的每列字符间绘制垂直细导线
+                                    if c1 > c0 + 1 {
+                                        for c in (c0 + 1)..c1 {
+                                            let cx = x0 + xx(c);
+                                            painter.line_segment(
+                                                [
+                                                    Pos2::new(cx, y + 1.0),
+                                                    Pos2::new(cx, y + row_h - 1.0),
+                                                ],
+                                                egui::Stroke::new(
+                                                    0.8,
+                                                    Color32::from_rgba_unmultiplied(
+                                                        255, 255, 255, 55,
+                                                    ),
+                                                ),
+                                            );
+                                        }
+                                    }
+
+                                    if row == r0 {
                                         painter.line_segment(
-                                            [Pos2::new(cx, y + 1.0), Pos2::new(cx, y + row_h - 1.0)],
-                                            egui::Stroke::new(0.8, Color32::from_rgba_unmultiplied(255, 255, 255, 55)),
+                                            [
+                                                Pos2::new(x_left, y + 0.5),
+                                                Pos2::new(x_right, y + 0.5),
+                                            ],
+                                            border_stroke,
                                         );
                                     }
-                                }
-
-                                if row == r0 {
+                                    if row == r1 {
+                                        painter.line_segment(
+                                            [
+                                                Pos2::new(x_left, y + row_h - 0.5),
+                                                Pos2::new(x_right, y + row_h - 0.5),
+                                            ],
+                                            border_stroke,
+                                        );
+                                    }
                                     painter.line_segment(
-                                        [Pos2::new(x_left, y + 0.5), Pos2::new(x_right, y + 0.5)],
+                                        [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
                                         border_stroke,
                                     );
-                                }
-                                if row == r1 {
                                     painter.line_segment(
-                                        [Pos2::new(x_left, y + row_h - 0.5), Pos2::new(x_right, y + row_h - 0.5)],
+                                        [Pos2::new(x_right, y), Pos2::new(x_right, y + row_h)],
                                         border_stroke,
                                     );
-                                }
-                                painter.line_segment(
-                                    [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
-                                    border_stroke,
-                                );
-                                painter.line_segment(
-                                    [Pos2::new(x_right, y), Pos2::new(x_right, y + row_h)],
-                                    border_stroke,
-                                );
-                            } else {
-                                // 列宽为 0 时的纵向光标标线
-                                painter.line_segment(
-                                    [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
-                                    border_stroke,
-                                );
-                            }
-
-                            // 在最后一行底部绘制动态悬浮坐标/尺寸指示徽章
-                            if row == r1 {
-                                let badge_text = if c1 > c0 {
-                                    format!(
-                                        "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
-                                        r0 + 1,
-                                        r1 + 1,
-                                        r1 - r0 + 1,
-                                        c0 + 1,
-                                        c1,
-                                        c1 - c0
-                                    )
                                 } else {
-                                    format!(
-                                        "📐 纵向光标 [R{}..{} ({}行) × C{}]",
-                                        r0 + 1,
-                                        r1 + 1,
-                                        r1 - r0 + 1,
-                                        c0 + 1
-                                    )
-                                };
-                                let badge_font = FontId::proportional(11.0);
-                                let galley = painter.layout_no_wrap(
-                                    badge_text,
-                                    badge_font,
-                                    Color32::WHITE,
-                                );
-                                let gsize = galley.size();
-                                let bx = (x_right.max(x_left) + 6.0)
-                                    .min(rect.max.x - gsize.x - 12.0)
-                                    .max(x0);
-                                let by = (y + row_h + 2.0).min(rect.max.y - gsize.y - 6.0);
-                                let badge_r = Rect::from_min_size(
-                                    Pos2::new(bx, by),
-                                    Vec2::new(gsize.x + 10.0, gsize.y + 4.0),
-                                );
-                                painter.rect_filled(badge_r, 4.0, Color32::from_rgb(18, 22, 34));
-                                painter.rect_stroke(
-                                    badge_r,
-                                    4.0,
-                                    egui::Stroke::new(1.2, stroke_col),
-                                    egui::StrokeKind::Outside,
-                                );
-                                painter.galley(
-                                    Pos2::new(badge_r.min.x + 5.0, badge_r.min.y + 2.0),
-                                    galley,
-                                    Color32::WHITE,
-                                );
+                                    // 列宽为 0 时的纵向光标标线
+                                    painter.line_segment(
+                                        [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
+                                        border_stroke,
+                                    );
+                                }
+
+                                // 在最后一行底部绘制动态悬浮坐标/尺寸指示徽章
+                                if row == r1 {
+                                    let badge_text = if c1 > c0 {
+                                        format!(
+                                            "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
+                                            r0 + 1,
+                                            r1 + 1,
+                                            r1 - r0 + 1,
+                                            c0 + 1,
+                                            c1,
+                                            c1 - c0
+                                        )
+                                    } else {
+                                        format!(
+                                            "📐 纵向光标 [R{}..{} ({}行) × C{}]",
+                                            r0 + 1,
+                                            r1 + 1,
+                                            r1 - r0 + 1,
+                                            c0 + 1
+                                        )
+                                    };
+                                    let badge_font = FontId::proportional(11.0);
+                                    let galley = painter.layout_no_wrap(
+                                        badge_text,
+                                        badge_font,
+                                        Color32::WHITE,
+                                    );
+                                    let gsize = galley.size();
+                                    let bx = (x_right.max(x_left) + 6.0)
+                                        .min(rect.max.x - gsize.x - 12.0)
+                                        .max(x0);
+                                    let by = (y + row_h + 2.0).min(rect.max.y - gsize.y - 6.0);
+                                    let badge_r = Rect::from_min_size(
+                                        Pos2::new(bx, by),
+                                        Vec2::new(gsize.x + 10.0, gsize.y + 4.0),
+                                    );
+                                    painter.rect_filled(
+                                        badge_r,
+                                        4.0,
+                                        Color32::from_rgb(18, 22, 34),
+                                    );
+                                    painter.rect_stroke(
+                                        badge_r,
+                                        4.0,
+                                        egui::Stroke::new(1.2, stroke_col),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                    painter.galley(
+                                        Pos2::new(badge_r.min.x + 5.0, badge_r.min.y + 2.0),
+                                        galley,
+                                        Color32::WHITE,
+                                    );
+                                }
                             }
                         }
-                    }
-                    // 差异对比全行浅底色铺底与 Gap 断线 (根据当前主题的专属差异配色系统)
-                    if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
-                        use crate::diff::Mark;
-                        let diff_c = self.tc.diff_colors();
-                        let line_rect = Rect::from_min_max(
-                            Pos2::new(rect.min.x + gutter, y),
-                            Pos2::new(rect.max.x, y + row_h),
-                        );
-                        match m {
-                            Mark::Added => {
-                                painter.rect_filled(line_rect, 0.0, diff_c.added_bg);
+                        // 差异对比全行浅底色铺底与 Gap 断线 (根据当前主题的专属差异配色系统)
+                        if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
+                            use crate::diff::Mark;
+                            let diff_c = self.tc.diff_colors();
+                            let line_rect = Rect::from_min_max(
+                                Pos2::new(rect.min.x + gutter, y),
+                                Pos2::new(rect.max.x, y + row_h),
+                            );
+                            match m {
+                                Mark::Added => {
+                                    painter.rect_filled(line_rect, 0.0, diff_c.added_bg);
+                                }
+                                Mark::Changed => {
+                                    painter.rect_filled(line_rect, 0.0, diff_c.changed_bg);
+                                }
+                                Mark::Removed => {
+                                    painter.rect_filled(line_rect, 0.0, diff_c.removed_bg);
+                                }
+                                Mark::Gap => {
+                                    let mid_y = y + row_h * 0.5;
+                                    painter.line_segment(
+                                        [
+                                            Pos2::new(rect.min.x + gutter, mid_y),
+                                            Pos2::new(rect.max.x, mid_y),
+                                        ],
+                                        egui::Stroke::new(1.2, diff_c.gap_line),
+                                    );
+                                }
+                                Mark::Same => {}
                             }
-                            Mark::Changed => {
-                                painter.rect_filled(line_rect, 0.0, diff_c.changed_bg);
-                            }
-                            Mark::Removed => {
-                                painter.rect_filled(line_rect, 0.0, diff_c.removed_bg);
-                            }
-                            Mark::Gap => {
-                                let mid_y = y + row_h * 0.5;
+                        }
+
+                        if vw.cur_line && row == d.cursor[0] && !d.grep_result {
+                            let cur_rect = Rect::from_min_max(
+                                Pos2::new(rect.min.x + gutter, y),
+                                Pos2::new(rect.max.x, y + row_h),
+                            );
+                            if tc.crystal {
+                                painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
                                 painter.line_segment(
-                                    [Pos2::new(rect.min.x + gutter, mid_y), Pos2::new(rect.max.x, mid_y)],
-                                    egui::Stroke::new(1.2, diff_c.gap_line),
+                                    [cur_rect.left_bottom(), cur_rect.right_bottom()],
+                                    egui::Stroke::new(
+                                        1.0,
+                                        Color32::from_rgba_unmultiplied(0, 240, 255, 85),
+                                    ),
+                                );
+                            } else if tc.clear {
+                                painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
+                                painter.line_segment(
+                                    [cur_rect.left_bottom(), cur_rect.right_bottom()],
+                                    egui::Stroke::new(
+                                        1.0,
+                                        Color32::from_rgba_unmultiplied(56, 189, 248, 80),
+                                    ),
+                                );
+                            } else {
+                                painter.line_segment(
+                                    [cur_rect.left_bottom(), cur_rect.right_bottom()],
+                                    egui::Stroke::new(1.0, tc.border),
                                 );
                             }
-                            Mark::Same => {}
                         }
-                    }
-
-                    if vw.cur_line && row == d.cursor[0] && !d.grep_result {
-                        let cur_rect = Rect::from_min_max(
-                            Pos2::new(rect.min.x + gutter, y),
-                            Pos2::new(rect.max.x, y + row_h),
-                        );
-                        if tc.crystal {
-                            painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
-                            painter.line_segment(
-                                [cur_rect.left_bottom(), cur_rect.right_bottom()],
-                                egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 240, 255, 85)),
+                        if vw.whitespace {
+                            let faint = Color32::from_rgba_unmultiplied(
+                                tc.fg_dim.r(),
+                                tc.fg_dim.g(),
+                                tc.fg_dim.b(),
+                                110,
                             );
-                        } else if tc.clear {
-                            painter.rect_filled(cur_rect, 0.0, Color32::from_white_alpha(15));
-                            painter.line_segment(
-                                [cur_rect.left_bottom(), cur_rect.right_bottom()],
-                                egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(56, 189, 248, 80)),
-                            );
-                        } else {
-                            painter.line_segment(
-                                [cur_rect.left_bottom(), cur_rect.right_bottom()],
-                                egui::Stroke::new(1.0, tc.border),
-                            );
-                        }
-                    }
-                    if vw.whitespace {
-                        let faint = Color32::from_rgba_unmultiplied(
-                            tc.fg_dim.r(),
-                            tc.fg_dim.g(),
-                            tc.fg_dim.b(),
-                            110,
-                        );
-                        let at = |col: usize| -> (f32, f32) {
-                            if wrap {
-                                let p = galley
-                                    .pos_from_cursor(egui::text::CCursor::new(
-                                        rv.idx(col.min(rv.tail())),
-                                    ))
-                                    .min;
-                                (p.x, p.y)
-                            } else {
-                                (
-                                    rv.x_of(&painter, col.min(rv.tail()), &font, text_color),
-                                    0.0,
-                                )
-                            }
-                        };
-                        let marks_src = if rv.sliced { &rv.disp } else { &d.lines[row] };
-                        for (c, ch) in crate::view::whitespace_marks(marks_src) {
-                            let (px, py) = at(c + rv.col0);
-                            painter.text(
-                                Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0),
-                                egui::Align2::LEFT_TOP,
-                                ch,
-                                font.clone(),
-                                faint,
-                            );
-                        }
-                        if row + 1 < d.lines.len() {
-                            let (px, py) = at(if rv.sliced {
-                                rv.ncols
-                            } else {
-                                d.lines[row].chars().count()
-                            });
-                            painter.text(
-                                Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0),
-                                egui::Align2::LEFT_TOP,
-                                '↵',
-                                font.clone(),
-                                faint,
-                            );
-                        }
-                    }
-                    if self.tc.is_translucent() {
-                        glass_render::paint_text_halo(&painter, Pos2::new(x0 + rv.x_off(), y), galley.clone(), &self.tc);
-                    }
-                    painter.galley(Pos2::new(x0 + rv.x_off(), y), galley, text_color);
-                    if d.changed_cache
-                        .as_ref()
-                        .map(|c| c.1.get(row).copied().unwrap_or(false))
-                        .unwrap_or(false)
-                    {
-                        painter.rect_filled(
-                            Rect::from_min_size(
-                                Pos2::new(rect.min.x + gutter - 5.0, y),
-                                Vec2::new(3.0, row_h),
-                            ),
-                            0.0,
-                            tc.yellow,
-                        );
-                    }
-                    if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
-                        use crate::diff::Mark;
-                        let diff_c = self.tc.diff_colors();
-                        let (c, h) = match m {
-                            Mark::Added => (diff_c.added_gutter, row_h),
-                            Mark::Changed => (diff_c.changed_gutter, row_h),
-                            Mark::Removed => (diff_c.removed_gutter, row_h),
-                            Mark::Gap => (diff_c.gap_line, 3.0),
-                            Mark::Same => (tc.fg, 0.0),
-                        };
-                        if h > 0.0 {
-                            painter.rect_filled(
-                                Rect::from_min_size(
-                                    Pos2::new(rect.min.x + gutter - 8.0, y),
-                                    Vec2::new(4.0, h),
-                                ),
-                                0.0,
-                                c,
-                            );
-                        }
-                    }
-                    if d.folds.iter().any(|f| f.0 == row) {
-                        painter.text(
-                            Pos2::new(rect.min.x + 2.0, y + (row_h - base_h) / 2.0),
-                            egui::Align2::LEFT_TOP,
-                            "▸",
-                            font.clone(),
-                            weak,
-                        );
-                    }
-                    if d.bookmarks.iter().any(|b| b.row == row) {
-                        painter.circle_filled(
-                            Pos2::new(rect.min.x + 7.0, y + row_h / 2.0),
-                            3.5,
-                            Color32::from_rgb(80, 170, 255),
-                        );
-                    }
-                    if vw.line_numbers {
-                        let is_in_box = d.box_sel.map(|b| {
-                            let (r0, r1) = (b[0].min(b[2]), b[0].max(b[2]));
-                            row >= r0 && row <= r1
-                        }).unwrap_or(false);
-                        if is_in_box {
-                            let strip_col = if self.tc.crystal {
-                                self.tc.mat_prism_cyan
-                            } else if self.tc.clear {
-                                self.tc.blue
-                            } else {
-                                Color32::from_rgb(0, 215, 255)
+                            let at = |col: usize| -> (f32, f32) {
+                                if wrap {
+                                    let p = galley
+                                        .pos_from_cursor(egui::text::CCursor::new(
+                                            rv.idx(col.min(rv.tail())),
+                                        ))
+                                        .min;
+                                    (p.x, p.y)
+                                } else {
+                                    (
+                                        rv.x_of(&painter, col.min(rv.tail()), &font, text_color),
+                                        0.0,
+                                    )
+                                }
                             };
-                            painter.rect_filled(
-                                Rect::from_min_size(
-                                    Pos2::new(rect.min.x + gutter - 3.5, y),
-                                    Vec2::new(2.5, row_h),
-                                ),
-                                0.0,
-                                strip_col,
-                            );
+                            let marks_src = if rv.sliced { &rv.disp } else { &d.lines[row] };
+                            for (c, ch) in crate::view::whitespace_marks(marks_src) {
+                                let (px, py) = at(c + rv.col0);
+                                painter.text(
+                                    Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0),
+                                    egui::Align2::LEFT_TOP,
+                                    ch,
+                                    font.clone(),
+                                    faint,
+                                );
+                            }
+                            if row + 1 < d.lines.len() {
+                                let (px, py) = at(if rv.sliced {
+                                    rv.ncols
+                                } else {
+                                    d.lines[row].chars().count()
+                                });
+                                painter.text(
+                                    Pos2::new(x0 + px, y + py + (row_h - base_h) / 2.0),
+                                    egui::Align2::LEFT_TOP,
+                                    '↵',
+                                    font.clone(),
+                                    faint,
+                                );
+                            }
                         }
-                        let num_c = if is_in_box {
-                            Color32::from_rgb(0, 215, 255)
-                        } else if row == d.cursor[0] {
-                            tc.fg
-                        } else {
-                            weak
-                        };
-                        painter.text(
-                            Pos2::new(rect.min.x + gutter - 8.0, y + row_h / 2.0),
-                            egui::Align2::RIGHT_CENTER,
-                            format!("{}", row + 1),
-                            num_font.clone(),
-                            num_c,
-                        );
-                    }
-                }
-                if vw.minimap && !d.lines.is_empty() {
-                    // 小地图: 贴在可见区右缘, 随不同主题呈现完全贴合风格的外观与透明度 (透明度仅玻璃和水晶生效)
-                    let mw = 84.0f32;
-                    let vh = viewport.height();
-                    let mrect = Rect::from_min_size(
-                        Pos2::new(
-                            rect.min.x + viewport.max.x - mw,
-                            rect.min.y + viewport.min.y,
-                        ),
-                        Vec2::new(mw, vh),
-                    );
-                    let mp = ui.painter_at(mrect.intersect(ui.clip_rect()));
-
-                    // 1. 各主题专属风格分发 (透明度只和玻璃以及水晶主题有关)
-                    let (bg_col, border_stroke, bar_base_col, bar_accent_col, view_bg, view_stroke) = if tc.crystal {
-                        // 水晶主题: 纯净通透水晶质感 (透明度生效) + 青粉色散边缘高光 + 晶钻白微线
-                        (
-                            Color32::from_rgba_unmultiplied(255, 255, 255, 12),
-                            Some(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 240, 255, 120))),
-                            Color32::from_rgba_unmultiplied(255, 255, 255, 75),
-                            Color32::from_rgba_unmultiplied(0, 240, 255, 160),
-                            Color32::from_rgba_unmultiplied(0, 240, 255, 25),
-                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 240, 255, 180)),
-                        )
-                    } else if tc.clear {
-                        // 玻璃主题: 极简纯透毛玻璃 (透明度生效) + 柔白边缘反光
-                        (
-                            Color32::from_rgba_unmultiplied(255, 255, 255, 8),
-                            Some(egui::Stroke::new(1.0, Color32::from_white_alpha(35))),
-                            Color32::from_rgba_unmultiplied(tc.fg.r(), tc.fg.g(), tc.fg.b(), 70),
-                            Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 140),
-                            Color32::from_white_alpha(16),
-                            egui::Stroke::new(1.0, Color32::from_white_alpha(80)),
-                        )
-                    } else if tc.comic {
-                        // 美漫 3渲2 主题: 不透明深蓝黑分镜底板 (#141724) + 2.0px 纯黑墨水轮廓 + 波普黄高亮视口
-                        (
-                            Color32::from_rgb(20, 23, 36),
-                            Some(egui::Stroke::new(2.0, Color32::BLACK)),
-                            Color32::from_rgb(80, 95, 125),
-                            Color32::from_rgb(255, 204, 0),
-                            Color32::from_rgba_unmultiplied(255, 204, 0, 45),
-                            egui::Stroke::new(1.8, Color32::BLACK),
-                        )
-                    } else if tc.retro16 {
-                        // 复古 16-Bit: 不透明暗色 CRT 监视器绿黑底板 + 霓虹绿扫描线边缘 + 像素块
-                        (
-                            Color32::from_rgb(12, 16, 12),
-                            Some(egui::Stroke::new(1.5, Color32::from_rgb(0, 255, 102))),
-                            Color32::from_rgb(0, 180, 70),
-                            Color32::from_rgb(0, 255, 136),
-                            Color32::from_rgba_unmultiplied(0, 255, 255, 35),
-                            egui::Stroke::new(1.2, Color32::from_rgb(0, 255, 255)),
-                        )
-                    } else if self.theme_id == "theme-high-contrast" {
-                        // 高对比度: 不透明纯黑 + 纯白反差边框 + 亮青视口
-                        (
-                            Color32::BLACK,
-                            Some(egui::Stroke::new(2.0, Color32::WHITE)),
-                            Color32::WHITE,
-                            Color32::from_rgb(0, 255, 255),
-                            Color32::from_rgba_unmultiplied(0, 255, 255, 50),
-                            egui::Stroke::new(2.0, Color32::from_rgb(0, 255, 255)),
-                        )
-                    } else if !tc.dark {
-                        // 浅色主题 (Light / Sakura): 不透明柔白纸质底板 + 浅灰边框
-                        let bg = if self.theme_id.contains("sakura") {
-                            Color32::from_rgb(255, 246, 250)
-                        } else {
-                            Color32::from_rgb(246, 248, 250)
-                        };
-                        (
-                            bg,
-                            Some(egui::Stroke::new(1.0, tc.border)),
-                            Color32::from_rgb(155, 168, 182),
-                            tc.blue,
-                            Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 35),
-                            egui::Stroke::new(1.0, tc.blue),
-                        )
-                    } else {
-                        // 经典深色主题 (Dark): 不透明深色底板 + 细边框
-                        (
-                            Color32::from_rgb(26, 28, 33),
-                            Some(egui::Stroke::new(1.0, tc.border)),
-                            Color32::from_rgba_unmultiplied(tc.fg_dim.r(), tc.fg_dim.g(), tc.fg_dim.b(), 140),
-                            tc.blue,
-                            Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 45),
-                            egui::Stroke::new(1.0, tc.blue),
-                        )
-                    };
-
-                    // 绘制缩略图底色与分界线
-                    mp.rect_filled(mrect, 0.0, bg_col);
-                    if let Some(st) = border_stroke {
-                        mp.line_segment([mrect.left_top(), mrect.left_bottom()], st);
-                    }
-                    if tc.crystal {
-                        // 水晶主题专属粉色散折射边缘 (内侧 1px)
-                        mp.line_segment(
-                            [Pos2::new(mrect.left() + 1.0, mrect.top()), Pos2::new(mrect.left() + 1.0, mrect.bottom())],
-                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 105, 180, 50)),
-                        );
-                    }
-
-                    let buckets = crate::view::minimap_rows(d.lines.len(), (vh / 2.0) as usize);
-                    let bh = (vh / buckets.len().max(1) as f32).min(3.0); // 行很少时每行 3 像素, 不拉成大块
-                    for (i, (a, b)) in buckets.iter().enumerate() {
-                        let n = if b - a > 8 {
-                            d.lines[*a].trim_end().chars().count()
-                        } else {
-                            d.lines[*a..*b]
-                                .iter()
-                                .map(|l| l.trim_end().chars().count())
-                                .max()
-                                .unwrap_or(0)
-                        };
-                        if n > 0 {
-                            let is_indent = d.lines[*a].starts_with(' ') || d.lines[*a].starts_with('\t');
-                            let bar_col = if is_indent { bar_base_col } else { bar_accent_col };
-                            let draw_w = (n as f32 * 0.7).min(mw - 10.0);
-                            mp.rect_filled(
-                                Rect::from_min_size(
-                                    Pos2::new(mrect.min.x + 5.0, mrect.min.y + i as f32 * bh),
-                                    Vec2::new(draw_w, (bh - 0.5).max(1.0)),
-                                ),
-                                0.0,
-                                bar_col,
-                            );
-                        }
-                    }
-                    let total = d.lines.len() as f32;
-                    let span_h = bh * buckets.len() as f32;
-                    let (v0, v1) = (
-                        (first as f32 / total).min(1.0),
-                        (last as f32 / total).min(1.0),
-                    );
-                    let vrect = Rect::from_min_max(
-                        Pos2::new(mrect.min.x, mrect.min.y + v0 * span_h),
-                        Pos2::new(
-                            mrect.max.x,
-                            (mrect.min.y + (v1 * span_h).max(v0 * span_h + 6.0)).min(mrect.max.y),
-                        ),
-                    );
-                    mp.rect_filled(vrect, 0.0, view_bg);
-                    mp.rect_stroke(vrect, 0.0, view_stroke, egui::StrokeKind::Inside);
-
-                }
-                // 右侧统一缩进 / 折叠控制条 (导航 / MD / NEMA):
-                // 默认全部位于右上角；点开任意一项后，已打开项保留在上方，其余未打开项自动降到打开区域底部
-                {
-                    let is_md_doc = Self::doc_is_markdown(d);
-                    let is_nema_doc = nemaopts::is_nema_doc(d);
-                    let minimap_open = vw.minimap && !d.lines.is_empty();
-                    let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
-                    let nema_open = (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
-                    let screen_vp = Rect::from_min_size(
-                        Pos2::new(rect.min.x + viewport.min.x, rect.min.y + viewport.min.y),
-                        viewport.size(),
-                    );
-                    let slots = right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
-                    let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
-                    let pressed = ui.ctx().input(|i| i.pointer.primary_down());
-                    for slot in slots {
-                        let (label, tip_text) = match slot.kind {
-                            RightCollapseKind::Minimap => ("导航", trz("折叠 / 展开右侧导航图 (Minimap)")),
-                            RightCollapseKind::Md => ("MD", trz("折叠 / 展开 Markdown 工具栏/预览")),
-                            RightCollapseKind::Nema => ("NEMA", trz("折叠 / 展开 NEMA 工具栏/预览")),
-                        };
-                        let hresp = ui
-                            .interact(
-                                slot.rect,
-                                ui.id().with(("r_col_slot", slot.kind as u8)),
-                                egui::Sense::hover(),
-                            )
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_text(tip_text);
-                        crate::btnstyle::paint_unified_collapse_btn(
-                            ui,
-                            &btn_painter,
-                            slot.rect,
-                            label,
-                            &tc,
-                            slot.open,
-                            hresp.hovered(),
-                            hresp.hovered() && pressed,
-                        );
-                    }
-                }
-                // 光标
-                let [cr, cc] = d.cursor;
-                if cr < d.lines.len() {
-                    let rv = RowView::build(&d.lines[cr], tab, kcols, vx, char_w);
-                    let (cx, cy) = if wrap {
-                        let mut job = highlight_job(
-                            &d.lines[cr],
-                            &rv.disp,
-                            &rv.map,
-                            None,
-                            &theme,
-                            &font,
-                            text_color,
-                            row_h,
-                            None,
-                            self.cfg.font_italic,
-                            effective_letter_spacing,
-                            false,
-                            false,
-                        );
-                        job.wrap.max_width = wrap_w;
-                        job.wrap.break_anywhere = true;
-                        let g = painter.layout_job(job);
-                        let p = g
-                            .pos_from_cursor(egui::text::CCursor::new(rv.idx(cc.min(rv.tail()))))
-                            .min;
-                        (x0 + p.x, rect.min.y + top(cr) + p.y)
-                    } else {
-                        (
-                            x0 + rv.x_of(&painter, cc.min(rv.tail()), &font, text_color),
-                            rect.min.y + cr as f32 * row_h,
-                        )
-                    };
-                    let blink = ui.input(|i| (i.time * 1000.0) as u64 % 1100 < 700);
-                    if !preedit.is_empty() {
-                        // 组字中的文字: 画在光标处并加下划线 (后面的文字不被挤开, 提交后才真正插入)
-                        let g = painter.layout_no_wrap(preedit.clone(), font.clone(), text_color);
-                        let w = g.size().x;
-                        painter.rect_filled(
-                            Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(w, row_h)),
-                            0.0,
-                            sel_bg,
-                        );
-                        painter.galley(Pos2::new(cx, cy), g, text_color);
-                        painter.line_segment(
-                            [
-                                Pos2::new(cx, cy + row_h - 1.0),
-                                Pos2::new(cx + w, cy + row_h - 1.0),
-                            ],
-                            egui::Stroke::new(1.0, text_color),
-                        );
-                    } else if blink {
-                        let caret_col = if self.tc.crystal {
-                            self.tc.mat_prism_cyan
-                        } else if self.tc.clear {
-                            self.tc.blue
-                        } else {
-                            text_color
-                        };
                         if self.tc.is_translucent() {
-                            painter.rect_filled(
-                                Rect::from_min_size(Pos2::new(cx - 0.5, cy), Vec2::new(3.0, row_h)),
-                                1.0,
-                                Color32::from_rgba_unmultiplied(caret_col.r(), caret_col.g(), caret_col.b(), 100),
+                            glass_render::paint_text_halo(
+                                &painter,
+                                Pos2::new(x0 + rv.x_off(), y),
+                                galley.clone(),
+                                &self.tc,
                             );
                         }
-                        painter.rect_filled(
-                            Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)),
-                            0.0,
-                            caret_col,
-                        );
-                    }
-                    if reveal {
-                        ui.scroll_to_rect(
-                            Rect::from_min_size(
-                                Pos2::new(cx - 8.0, cy),
-                                Vec2::new(40.0, row_h * 2.0),
-                            ),
-                            if center {
-                                Some(egui::Align::Center)
-                            } else {
-                                None
-                            },
-                        );
-                    }
-                    caret_screen = Some(Pos2::new(cx, cy + row_h)); // 补全浮层贴在光标行下面
-                    if !find_has_focus && self.pane_keys {
-                        ui.ctx().output_mut(|o| {
-                            o.ime = Some(egui::output::IMEOutput {
-                                purpose: egui::IMEPurpose::Normal,
-                                rect,
-                                cursor_rect: Rect::from_min_size(
-                                    Pos2::new(cx, cy),
-                                    Vec2::new(2.0, row_h),
+                        painter.galley(Pos2::new(x0 + rv.x_off(), y), galley, text_color);
+                        if d.changed_cache
+                            .as_ref()
+                            .map(|c| c.1.get(row).copied().unwrap_or(false))
+                            .unwrap_or(false)
+                        {
+                            painter.rect_filled(
+                                Rect::from_min_size(
+                                    Pos2::new(rect.min.x + gutter - 5.0, y),
+                                    Vec2::new(3.0, row_h),
                                 ),
-                                should_interrupt_composition: false,
-                            });
-                        });
+                                0.0,
+                                tc.yellow,
+                            );
+                        }
+                        if let Some(m) = dmarks.and_then(|m| m.get(row)).copied() {
+                            use crate::diff::Mark;
+                            let diff_c = self.tc.diff_colors();
+                            let (c, h) = match m {
+                                Mark::Added => (diff_c.added_gutter, row_h),
+                                Mark::Changed => (diff_c.changed_gutter, row_h),
+                                Mark::Removed => (diff_c.removed_gutter, row_h),
+                                Mark::Gap => (diff_c.gap_line, 3.0),
+                                Mark::Same => (tc.fg, 0.0),
+                            };
+                            if h > 0.0 {
+                                painter.rect_filled(
+                                    Rect::from_min_size(
+                                        Pos2::new(rect.min.x + gutter - 8.0, y),
+                                        Vec2::new(4.0, h),
+                                    ),
+                                    0.0,
+                                    c,
+                                );
+                            }
+                        }
+                        if d.folds.iter().any(|f| f.0 == row) {
+                            painter.text(
+                                Pos2::new(rect.min.x + 2.0, y + (row_h - base_h) / 2.0),
+                                egui::Align2::LEFT_TOP,
+                                "▸",
+                                font.clone(),
+                                weak,
+                            );
+                        }
+                        if d.bookmarks.iter().any(|b| b.row == row) {
+                            painter.circle_filled(
+                                Pos2::new(rect.min.x + 7.0, y + row_h / 2.0),
+                                3.5,
+                                Color32::from_rgb(80, 170, 255),
+                            );
+                        }
+                        if vw.line_numbers {
+                            let is_in_box = d
+                                .box_sel
+                                .map(|b| {
+                                    let (r0, r1) = (b[0].min(b[2]), b[0].max(b[2]));
+                                    row >= r0 && row <= r1
+                                })
+                                .unwrap_or(false);
+                            if is_in_box {
+                                let strip_col = if self.tc.crystal {
+                                    self.tc.mat_prism_cyan
+                                } else if self.tc.clear {
+                                    self.tc.blue
+                                } else {
+                                    Color32::from_rgb(0, 215, 255)
+                                };
+                                painter.rect_filled(
+                                    Rect::from_min_size(
+                                        Pos2::new(rect.min.x + gutter - 3.5, y),
+                                        Vec2::new(2.5, row_h),
+                                    ),
+                                    0.0,
+                                    strip_col,
+                                );
+                            }
+                            let num_c = if is_in_box {
+                                Color32::from_rgb(0, 215, 255)
+                            } else if row == d.cursor[0] {
+                                tc.fg
+                            } else {
+                                weak
+                            };
+                            painter.text(
+                                Pos2::new(rect.min.x + gutter - 8.0, y + row_h / 2.0),
+                                egui::Align2::RIGHT_CENTER,
+                                format!("{}", row + 1),
+                                num_font.clone(),
+                                num_c,
+                            );
+                        }
                     }
-                }
-                if let Some(dr) = text_drop {
-                    // 拖放文字的落点: 一根蓝色竖线
-                    if dr[0] >= first && dr[0] < last && dr[0] < d.lines.len() {
-                        let rv = RowView::build(&d.lines[dr[0]], tab, kcols, vx, char_w);
-                        let c = dr[1].min(rv.tail());
-                        let (dx, dy) = if wrap {
+                    if vw.minimap && !d.lines.is_empty() {
+                        // 小地图: 贴在可见区右缘, 随不同主题呈现完全贴合风格的外观与透明度 (透明度仅玻璃和水晶生效)
+                        let mw = 84.0f32;
+                        let vh = viewport.height();
+                        let mrect = Rect::from_min_size(
+                            Pos2::new(
+                                rect.min.x + viewport.max.x - mw,
+                                rect.min.y + viewport.min.y,
+                            ),
+                            Vec2::new(mw, vh),
+                        );
+                        let mp = ui.painter_at(mrect.intersect(ui.clip_rect()));
+
+                        // 1. 各主题专属风格分发 (透明度只和玻璃以及水晶主题有关)
+                        let (
+                            bg_col,
+                            border_stroke,
+                            bar_base_col,
+                            bar_accent_col,
+                            view_bg,
+                            view_stroke,
+                        ) = if tc.crystal {
+                            // 水晶主题: 纯净通透水晶质感 (透明度生效) + 青粉色散边缘高光 + 晶钻白微线
+                            (
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+                                Some(egui::Stroke::new(
+                                    1.0,
+                                    Color32::from_rgba_unmultiplied(0, 240, 255, 120),
+                                )),
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 75),
+                                Color32::from_rgba_unmultiplied(0, 240, 255, 160),
+                                Color32::from_rgba_unmultiplied(0, 240, 255, 25),
+                                egui::Stroke::new(
+                                    1.0,
+                                    Color32::from_rgba_unmultiplied(0, 240, 255, 180),
+                                ),
+                            )
+                        } else if tc.clear {
+                            // 玻璃主题: 极简纯透毛玻璃 (透明度生效) + 柔白边缘反光
+                            (
+                                Color32::from_rgba_unmultiplied(255, 255, 255, 8),
+                                Some(egui::Stroke::new(1.0, Color32::from_white_alpha(35))),
+                                Color32::from_rgba_unmultiplied(
+                                    tc.fg.r(),
+                                    tc.fg.g(),
+                                    tc.fg.b(),
+                                    70,
+                                ),
+                                Color32::from_rgba_unmultiplied(
+                                    tc.blue.r(),
+                                    tc.blue.g(),
+                                    tc.blue.b(),
+                                    140,
+                                ),
+                                Color32::from_white_alpha(16),
+                                egui::Stroke::new(1.0, Color32::from_white_alpha(80)),
+                            )
+                        } else if tc.comic {
+                            // 美漫 3渲2 主题: 不透明深蓝黑分镜底板 (#141724) + 2.0px 纯黑墨水轮廓 + 波普黄高亮视口
+                            (
+                                Color32::from_rgb(20, 23, 36),
+                                Some(egui::Stroke::new(2.0, Color32::BLACK)),
+                                Color32::from_rgb(80, 95, 125),
+                                Color32::from_rgb(255, 204, 0),
+                                Color32::from_rgba_unmultiplied(255, 204, 0, 45),
+                                egui::Stroke::new(1.8, Color32::BLACK),
+                            )
+                        } else if tc.retro16 {
+                            // 复古 16-Bit: 不透明暗色 CRT 监视器绿黑底板 + 霓虹绿扫描线边缘 + 像素块
+                            (
+                                Color32::from_rgb(12, 16, 12),
+                                Some(egui::Stroke::new(1.5, Color32::from_rgb(0, 255, 102))),
+                                Color32::from_rgb(0, 180, 70),
+                                Color32::from_rgb(0, 255, 136),
+                                Color32::from_rgba_unmultiplied(0, 255, 255, 35),
+                                egui::Stroke::new(1.2, Color32::from_rgb(0, 255, 255)),
+                            )
+                        } else if self.theme_id == "theme-high-contrast" {
+                            // 高对比度: 不透明纯黑 + 纯白反差边框 + 亮青视口
+                            (
+                                Color32::BLACK,
+                                Some(egui::Stroke::new(2.0, Color32::WHITE)),
+                                Color32::WHITE,
+                                Color32::from_rgb(0, 255, 255),
+                                Color32::from_rgba_unmultiplied(0, 255, 255, 50),
+                                egui::Stroke::new(2.0, Color32::from_rgb(0, 255, 255)),
+                            )
+                        } else if !tc.dark {
+                            // 浅色主题 (Light / Sakura): 不透明柔白纸质底板 + 浅灰边框
+                            let bg = if self.theme_id.contains("sakura") {
+                                Color32::from_rgb(255, 246, 250)
+                            } else {
+                                Color32::from_rgb(246, 248, 250)
+                            };
+                            (
+                                bg,
+                                Some(egui::Stroke::new(1.0, tc.border)),
+                                Color32::from_rgb(155, 168, 182),
+                                tc.blue,
+                                Color32::from_rgba_unmultiplied(
+                                    tc.blue.r(),
+                                    tc.blue.g(),
+                                    tc.blue.b(),
+                                    35,
+                                ),
+                                egui::Stroke::new(1.0, tc.blue),
+                            )
+                        } else {
+                            // 经典深色主题 (Dark): 不透明深色底板 + 细边框
+                            (
+                                Color32::from_rgb(26, 28, 33),
+                                Some(egui::Stroke::new(1.0, tc.border)),
+                                Color32::from_rgba_unmultiplied(
+                                    tc.fg_dim.r(),
+                                    tc.fg_dim.g(),
+                                    tc.fg_dim.b(),
+                                    140,
+                                ),
+                                tc.blue,
+                                Color32::from_rgba_unmultiplied(
+                                    tc.blue.r(),
+                                    tc.blue.g(),
+                                    tc.blue.b(),
+                                    45,
+                                ),
+                                egui::Stroke::new(1.0, tc.blue),
+                            )
+                        };
+
+                        // 绘制缩略图底色与分界线
+                        mp.rect_filled(mrect, 0.0, bg_col);
+                        if let Some(st) = border_stroke {
+                            mp.line_segment([mrect.left_top(), mrect.left_bottom()], st);
+                        }
+                        if tc.crystal {
+                            // 水晶主题专属粉色散折射边缘 (内侧 1px)
+                            mp.line_segment(
+                                [
+                                    Pos2::new(mrect.left() + 1.0, mrect.top()),
+                                    Pos2::new(mrect.left() + 1.0, mrect.bottom()),
+                                ],
+                                egui::Stroke::new(
+                                    1.0,
+                                    Color32::from_rgba_unmultiplied(255, 105, 180, 50),
+                                ),
+                            );
+                        }
+
+                        let buckets = crate::view::minimap_rows(d.lines.len(), (vh / 2.0) as usize);
+                        let bh = (vh / buckets.len().max(1) as f32).min(3.0); // 行很少时每行 3 像素, 不拉成大块
+                        for (i, (a, b)) in buckets.iter().enumerate() {
+                            let n = if b - a > 8 {
+                                d.lines[*a].trim_end().chars().count()
+                            } else {
+                                d.lines[*a..*b]
+                                    .iter()
+                                    .map(|l| l.trim_end().chars().count())
+                                    .max()
+                                    .unwrap_or(0)
+                            };
+                            if n > 0 {
+                                let is_indent =
+                                    d.lines[*a].starts_with(' ') || d.lines[*a].starts_with('\t');
+                                let bar_col = if is_indent {
+                                    bar_base_col
+                                } else {
+                                    bar_accent_col
+                                };
+                                let draw_w = (n as f32 * 0.7).min(mw - 10.0);
+                                mp.rect_filled(
+                                    Rect::from_min_size(
+                                        Pos2::new(mrect.min.x + 5.0, mrect.min.y + i as f32 * bh),
+                                        Vec2::new(draw_w, (bh - 0.5).max(1.0)),
+                                    ),
+                                    0.0,
+                                    bar_col,
+                                );
+                            }
+                        }
+                        let total = d.lines.len() as f32;
+                        let span_h = bh * buckets.len() as f32;
+                        let (v0, v1) = (
+                            (first as f32 / total).min(1.0),
+                            (last as f32 / total).min(1.0),
+                        );
+                        let vrect = Rect::from_min_max(
+                            Pos2::new(mrect.min.x, mrect.min.y + v0 * span_h),
+                            Pos2::new(
+                                mrect.max.x,
+                                (mrect.min.y + (v1 * span_h).max(v0 * span_h + 6.0))
+                                    .min(mrect.max.y),
+                            ),
+                        );
+                        mp.rect_filled(vrect, 0.0, view_bg);
+                        mp.rect_stroke(vrect, 0.0, view_stroke, egui::StrokeKind::Inside);
+                    }
+                    // 右侧统一缩进 / 折叠控制条 (导航 / MD / NEMA):
+                    // 默认全部位于右上角；点开任意一项后，已打开项保留在上方，其余未打开项自动降到打开区域底部
+                    {
+                        let is_md_doc = Self::doc_is_markdown(d);
+                        let is_nema_doc = nemaopts::is_nema_doc(d);
+                        let minimap_open = vw.minimap && !d.lines.is_empty();
+                        let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
+                        let nema_open =
+                            (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
+                        let screen_vp = Rect::from_min_size(
+                            Pos2::new(rect.min.x + viewport.min.x, rect.min.y + viewport.min.y),
+                            viewport.size(),
+                        );
+                        let slots =
+                            right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
+                        let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
+                        let pressed = ui.ctx().input(|i| i.pointer.primary_down());
+                        for slot in slots {
+                            let (label, tip_text) = match slot.kind {
+                                RightCollapseKind::Minimap => {
+                                    ("导航", trz("折叠 / 展开右侧导航图 (Minimap)"))
+                                }
+                                RightCollapseKind::Md => {
+                                    ("MD", trz("折叠 / 展开 Markdown 工具栏/预览"))
+                                }
+                                RightCollapseKind::Nema => {
+                                    ("NEMA", trz("折叠 / 展开 NEMA 工具栏/预览"))
+                                }
+                            };
+                            let hresp = ui
+                                .interact(
+                                    slot.rect,
+                                    ui.id().with(("r_col_slot", slot.kind as u8)),
+                                    egui::Sense::hover(),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text(tip_text);
+                            crate::btnstyle::paint_unified_collapse_btn(
+                                ui,
+                                &btn_painter,
+                                slot.rect,
+                                label,
+                                &tc,
+                                slot.open,
+                                hresp.hovered(),
+                                hresp.hovered() && pressed,
+                            );
+                        }
+                    }
+                    // 光标
+                    let [cr, cc] = d.cursor;
+                    if cr < d.lines.len() {
+                        let rv = RowView::build(&d.lines[cr], tab, kcols, vx, char_w);
+                        let (cx, cy) = if wrap {
                             let mut job = highlight_job(
-                                &d.lines[dr[0]],
+                                &d.lines[cr],
                                 &rv.disp,
                                 &rv.map,
                                 None,
@@ -5071,97 +5108,216 @@ impl App {
                                 row_h,
                                 None,
                                 self.cfg.font_italic,
-                                self.cfg.letter_spacing,
+                                effective_letter_spacing,
                                 false,
                                 false,
                             );
                             job.wrap.max_width = wrap_w;
                             job.wrap.break_anywhere = true;
                             let g = painter.layout_job(job);
-                            let p = g.pos_from_cursor(egui::text::CCursor::new(rv.idx(c))).min;
-                            (x0 + p.x, rect.min.y + top(dr[0]) + p.y)
+                            let p = g
+                                .pos_from_cursor(egui::text::CCursor::new(
+                                    rv.idx(cc.min(rv.tail())),
+                                ))
+                                .min;
+                            (x0 + p.x, rect.min.y + top(cr) + p.y)
                         } else {
                             (
-                                x0 + rv.x_of(&painter, c, &font, text_color),
-                                rect.min.y + dr[0] as f32 * row_h,
+                                x0 + rv.x_of(&painter, cc.min(rv.tail()), &font, text_color),
+                                rect.min.y + cr as f32 * row_h,
                             )
                         };
-                        painter.rect_filled(
-                            Rect::from_min_size(Pos2::new(dx, dy), Vec2::new(2.0, row_h)),
-                            0.0,
-                            tc.blue,
-                        );
+                        let blink = ui.input(|i| (i.time * 1000.0) as u64 % 1100 < 700);
+                        if !preedit.is_empty() {
+                            // 组字中的文字: 画在光标处并加下划线 (后面的文字不被挤开, 提交后才真正插入)
+                            let g =
+                                painter.layout_no_wrap(preedit.clone(), font.clone(), text_color);
+                            let w = g.size().x;
+                            painter.rect_filled(
+                                Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(w, row_h)),
+                                0.0,
+                                sel_bg,
+                            );
+                            painter.galley(Pos2::new(cx, cy), g, text_color);
+                            painter.line_segment(
+                                [
+                                    Pos2::new(cx, cy + row_h - 1.0),
+                                    Pos2::new(cx + w, cy + row_h - 1.0),
+                                ],
+                                egui::Stroke::new(1.0, text_color),
+                            );
+                        } else if blink {
+                            let caret_col = if self.tc.crystal {
+                                self.tc.mat_prism_cyan
+                            } else if self.tc.clear {
+                                self.tc.blue
+                            } else {
+                                text_color
+                            };
+                            if self.tc.is_translucent() {
+                                painter.rect_filled(
+                                    Rect::from_min_size(
+                                        Pos2::new(cx - 0.5, cy),
+                                        Vec2::new(3.0, row_h),
+                                    ),
+                                    1.0,
+                                    Color32::from_rgba_unmultiplied(
+                                        caret_col.r(),
+                                        caret_col.g(),
+                                        caret_col.b(),
+                                        100,
+                                    ),
+                                );
+                            }
+                            painter.rect_filled(
+                                Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(2.0, row_h)),
+                                0.0,
+                                caret_col,
+                            );
+                        }
+                        if reveal {
+                            ui.scroll_to_rect(
+                                Rect::from_min_size(
+                                    Pos2::new(cx - 8.0, cy),
+                                    Vec2::new(40.0, row_h * 2.0),
+                                ),
+                                if center {
+                                    Some(egui::Align::Center)
+                                } else {
+                                    None
+                                },
+                            );
+                        }
+                        caret_screen = Some(Pos2::new(cx, cy + row_h)); // 补全浮层贴在光标行下面
+                        if !find_has_focus && self.pane_keys {
+                            ui.ctx().output_mut(|o| {
+                                o.ime = Some(egui::output::IMEOutput {
+                                    purpose: egui::IMEPurpose::Normal,
+                                    rect,
+                                    cursor_rect: Rect::from_min_size(
+                                        Pos2::new(cx, cy),
+                                        Vec2::new(2.0, row_h),
+                                    ),
+                                    should_interrupt_composition: false,
+                                });
+                            });
+                        }
                     }
-                }
-                for ec in &d.extra {
-                    if ec[0] >= first && ec[0] < last {
-                        let rv = RowView::build(&d.lines[ec[0]], tab, kcols, vx, char_w);
-                        let ex = x0 + rv.x_of(&painter, ec[1].min(rv.tail()), &font, text_color);
-                        painter.rect_filled(
-                            Rect::from_min_size(
-                                Pos2::new(ex, rect.min.y + top(ec[0])),
-                                Vec2::new(2.0, row_h),
-                            ),
-                            0.0,
-                            text_color,
-                        );
+                    if let Some(dr) = text_drop {
+                        // 拖放文字的落点: 一根蓝色竖线
+                        if dr[0] >= first && dr[0] < last && dr[0] < d.lines.len() {
+                            let rv = RowView::build(&d.lines[dr[0]], tab, kcols, vx, char_w);
+                            let c = dr[1].min(rv.tail());
+                            let (dx, dy) = if wrap {
+                                let mut job = highlight_job(
+                                    &d.lines[dr[0]],
+                                    &rv.disp,
+                                    &rv.map,
+                                    None,
+                                    &theme,
+                                    &font,
+                                    text_color,
+                                    row_h,
+                                    None,
+                                    self.cfg.font_italic,
+                                    self.cfg.letter_spacing,
+                                    false,
+                                    false,
+                                );
+                                job.wrap.max_width = wrap_w;
+                                job.wrap.break_anywhere = true;
+                                let g = painter.layout_job(job);
+                                let p = g.pos_from_cursor(egui::text::CCursor::new(rv.idx(c))).min;
+                                (x0 + p.x, rect.min.y + top(dr[0]) + p.y)
+                            } else {
+                                (
+                                    x0 + rv.x_of(&painter, c, &font, text_color),
+                                    rect.min.y + dr[0] as f32 * row_h,
+                                )
+                            };
+                            painter.rect_filled(
+                                Rect::from_min_size(Pos2::new(dx, dy), Vec2::new(2.0, row_h)),
+                                0.0,
+                                tc.blue,
+                            );
+                        }
                     }
-                }
-                for rc in &d.remote_cursors {
-                    if rc.cursor[0] >= first && rc.cursor[0] < last && rc.cursor[0] < d.lines.len() {
-                        let rv = RowView::build(&d.lines[rc.cursor[0]], tab, kcols, vx, char_w);
-                        let rx = x0 + rv.x_of(&painter, rc.cursor[1].min(rv.tail()), &font, text_color);
-                        let ry = rect.min.y + top(rc.cursor[0]);
-                        let cursor_col = Color32::from_rgb(rc.color.r, rc.color.g, rc.color.b);
-                        // 1. 绘制 2px 宽的远程光标竖线
-                        painter.rect_filled(
-                            Rect::from_min_size(Pos2::new(rx, ry), Vec2::new(2.0, row_h)),
-                            0.0,
-                            cursor_col,
-                        );
-                        // 2. 绘制悬浮名牌胶囊 (Floating Capsule Badge)
-                        let badge_text = format!("{} {}", rc.role.badge_prefix(), rc.display_name);
-                        let badge_font = egui::FontId::proportional(10.0);
-                        let text_galley = painter.layout_no_wrap(badge_text, badge_font, Color32::WHITE);
-                        let text_size = text_galley.size();
-                        let badge_rect = Rect::from_min_size(
-                            Pos2::new(rx - 2.0, (ry - text_size.y - 2.0).max(rect.min.y)),
-                            Vec2::new(text_size.x + 8.0, text_size.y + 2.0),
-                        );
-                        painter.rect_filled(badge_rect, 3.0, cursor_col);
-                        painter.galley(
-                            Pos2::new(badge_rect.min.x + 4.0, badge_rect.min.y + 1.0),
-                            text_galley,
-                            Color32::WHITE,
-                        );
+                    for ec in &d.extra {
+                        if ec[0] >= first && ec[0] < last {
+                            let rv = RowView::build(&d.lines[ec[0]], tab, kcols, vx, char_w);
+                            let ex =
+                                x0 + rv.x_of(&painter, ec[1].min(rv.tail()), &font, text_color);
+                            painter.rect_filled(
+                                Rect::from_min_size(
+                                    Pos2::new(ex, rect.min.y + top(ec[0])),
+                                    Vec2::new(2.0, row_h),
+                                ),
+                                0.0,
+                                text_color,
+                            );
+                        }
                     }
-                }
-                if resp.is_pointer_button_down_on() || resp.clicked() || resp.dragged() {
-                    if let Some(p) = resp.interact_pointer_pos() {
-                        clicked = Some((
-                            p,
-                            ui.input(|i| i.modifiers.shift),
-                            resp.dragged() && !resp.drag_started(),
-                        ));
+                    for rc in &d.remote_cursors {
+                        if rc.cursor[0] >= first
+                            && rc.cursor[0] < last
+                            && rc.cursor[0] < d.lines.len()
+                        {
+                            let rv = RowView::build(&d.lines[rc.cursor[0]], tab, kcols, vx, char_w);
+                            let rx = x0
+                                + rv.x_of(&painter, rc.cursor[1].min(rv.tail()), &font, text_color);
+                            let ry = rect.min.y + top(rc.cursor[0]);
+                            let cursor_col = Color32::from_rgb(rc.color.r, rc.color.g, rc.color.b);
+                            // 1. 绘制 2px 宽的远程光标竖线
+                            painter.rect_filled(
+                                Rect::from_min_size(Pos2::new(rx, ry), Vec2::new(2.0, row_h)),
+                                0.0,
+                                cursor_col,
+                            );
+                            // 2. 绘制悬浮名牌胶囊 (Floating Capsule Badge)
+                            let badge_text =
+                                format!("{} {}", rc.role.badge_prefix(), rc.display_name);
+                            let badge_font = egui::FontId::proportional(10.0);
+                            let text_galley =
+                                painter.layout_no_wrap(badge_text, badge_font, Color32::WHITE);
+                            let text_size = text_galley.size();
+                            let badge_rect = Rect::from_min_size(
+                                Pos2::new(rx - 2.0, (ry - text_size.y - 2.0).max(rect.min.y)),
+                                Vec2::new(text_size.x + 8.0, text_size.y + 2.0),
+                            );
+                            painter.rect_filled(badge_rect, 3.0, cursor_col);
+                            painter.galley(
+                                Pos2::new(badge_rect.min.x + 4.0, badge_rect.min.y + 1.0),
+                                text_galley,
+                                Color32::WHITE,
+                            );
+                        }
                     }
-                }
-                if resp.drag_stopped() {
-                    drag_end = resp
-                        .interact_pointer_pos()
-                        .or_else(|| ui.input(|i| i.pointer.latest_pos()));
-                }
-                multi_click = if resp.triple_clicked() {
-                    3
-                } else if resp.double_clicked() {
-                    2
-                } else {
-                    0
-                };
-                if resp.clicked() || resp.drag_started() {
-                    resp.request_focus();
-                }
-                (rect, x0)
-            });
+                    if resp.is_pointer_button_down_on() || resp.clicked() || resp.dragged() {
+                        if let Some(p) = resp.interact_pointer_pos() {
+                            clicked = Some((
+                                p,
+                                ui.input(|i| i.modifiers.shift),
+                                resp.dragged() && !resp.drag_started(),
+                            ));
+                        }
+                    }
+                    if resp.drag_stopped() {
+                        drag_end = resp
+                            .interact_pointer_pos()
+                            .or_else(|| ui.input(|i| i.pointer.latest_pos()));
+                    }
+                    multi_click = if resp.triple_clicked() {
+                        3
+                    } else if resp.double_clicked() {
+                        2
+                    } else {
+                        0
+                    };
+                    if resp.clicked() || resp.drag_started() {
+                        resp.request_focus();
+                    }
+                    (rect, x0)
+                });
         let (rect, x0) = out.inner;
         if let Some(rr) = ruler_rect {
             let rp = ui.painter_at(rr);
@@ -5239,10 +5395,8 @@ impl App {
                 d.toggle_fold(row);
                 return;
             }
-            let screen_vp = Rect::from_min_size(
-                rect.min + out.state.clamped_offset(),
-                out.inner_rect.size(),
-            );
+            let screen_vp =
+                Rect::from_min_size(rect.min + out.state.clamped_offset(), out.inner_rect.size());
             let m_right_x = screen_vp.max.x;
             let m_top_y = screen_vp.min.y;
             let is_md_doc = Self::doc_is_markdown(d);
@@ -5257,7 +5411,11 @@ impl App {
                 }
                 return;
             }
-            if vw.minimap && !d.lines.is_empty() && p.x >= m_right_x - 84.0 && ctx.input(|i| i.pointer.any_pressed()) {
+            if vw.minimap
+                && !d.lines.is_empty()
+                && p.x >= m_right_x - 84.0
+                && ctx.input(|i| i.pointer.any_pressed())
+            {
                 // 点小地图区域: 直接跳到对应行并居中
                 let vh = out.inner_rect.height().max(1.0);
                 let rel_map_y = (p.y - m_top_y).clamp(0.0, vh);
@@ -5354,7 +5512,10 @@ impl App {
         // PowerShell 选区浮动执行胶囊 (对齐 Tauri/Web 体验: 浮现执行按钮 + Ctrl+Enter)
         let is_ps = self.docs[ai].is_powershell();
         let has_sel = self.docs[ai].sel.is_some()
-            && self.docs[ai].sel.map(|s| (s[0], s[1]) != (s[2], s[3])).unwrap_or(false);
+            && self.docs[ai]
+                .sel
+                .map(|s| (s[0], s[1]) != (s[2], s[3]))
+                .unwrap_or(false);
         if is_ps && has_sel {
             if let Some(pos) = self.sys.caret_screen {
                 let btn_pos = egui::pos2(
@@ -5551,7 +5712,9 @@ fn icon_of(kind: &str) -> &'static str {
 
 /// 字符级背景自适应对比度反色 (在透明玻璃/水晶穿透桌面时生效，以字为单位反色，杜绝黑色涂抹)
 pub fn adapt_char_color(c: Color32, is_light_bg: bool) -> Color32 {
-    let luma = 0.2126 * (c.r() as f32 / 255.0) + 0.7152 * (c.g() as f32 / 255.0) + 0.0722 * (c.b() as f32 / 255.0);
+    let luma = 0.2126 * (c.r() as f32 / 255.0)
+        + 0.7152 * (c.g() as f32 / 255.0)
+        + 0.0722 * (c.b() as f32 / 255.0);
     if is_light_bg {
         // 后方内容偏亮：字符以字为单位反转为深色高对比色阶
         if luma > 0.45 {
@@ -5566,11 +5729,7 @@ pub fn adapt_char_color(c: Color32, is_light_bg: bool) -> Color32 {
     } else {
         // 后方内容偏暗：字符以字为单位保持或提亮至清晰色阶
         if luma < 0.45 {
-            Color32::from_rgb(
-                c.r().max(200),
-                c.g().max(200),
-                c.b().max(215),
-            )
+            Color32::from_rgb(c.r().max(200), c.g().max(200), c.b().max(215))
         } else {
             c
         }
@@ -5853,9 +6012,15 @@ impl App {
             ctx.data_mut(|d| d.insert_temp(egui::Id::new("tauri-scroll"), true));
             ctx.global_style_mut(|s| s.spacing.scroll = tauri_scroll());
         }
-        let effective_font = crate::fonts::effective_font_family(&self.cfg.font_family, &self.theme_id);
+        let effective_font =
+            crate::fonts::effective_font_family(&self.cfg.font_family, &self.theme_id);
         if effective_font != self.applied_font {
-            crate::fonts::install(ctx, &effective_font, &self.cfg.font_cjk_fallback, &self.cfg.lang);
+            crate::fonts::install(
+                ctx,
+                &effective_font,
+                &self.cfg.font_cjk_fallback,
+                &self.cfg.lang,
+            );
             self.applied_font = effective_font;
         }
         self.poll_tray(ctx);
@@ -5949,24 +6114,26 @@ impl App {
         };
 
         // 停靠区协同布局 (对齐 Tauri 原版): 后打开的占整行/整列, 先打开的自动缩微并重新排版让位
-        let dock_bottom = |app: &mut Self, root: &mut egui::Ui| {
-            match app.dock_mode(Dock::Bottom, app.term.open) {
-                Mode::Full => {
-                    let max_h = (root.available_height() - 140.0 - 28.0).max(120.0);
-                    let r = egui::Panel::bottom("term")
-                        .resizable(true)
-                        .default_size(app.cfg.view.term_h)
-                        .max_size(max_h)
-                        .frame(egui::Frame::NONE.fill(app.tc.bg_edit))
-                        .show(root, |ui| app.bottom_ui(ui));
-                    if !ctx.input(|i| i.pointer.any_down()) {
-                        app.cfg.view.term_h =
-                            crate::panels::clamp_size(Dock::Bottom, r.response.rect.height().round().min(max_h));
-                    }
+        let dock_bottom = |app: &mut Self, root: &mut egui::Ui| match app
+            .dock_mode(Dock::Bottom, app.term.open)
+        {
+            Mode::Full => {
+                let max_h = (root.available_height() - 140.0 - 28.0).max(120.0);
+                let r = egui::Panel::bottom("term")
+                    .resizable(true)
+                    .default_size(app.cfg.view.term_h)
+                    .max_size(max_h)
+                    .frame(egui::Frame::NONE.fill(app.tc.bg_edit))
+                    .show(root, |ui| app.bottom_ui(ui));
+                if !ctx.input(|i| i.pointer.any_down()) {
+                    app.cfg.view.term_h = crate::panels::clamp_size(
+                        Dock::Bottom,
+                        r.response.rect.height().round().min(max_h),
+                    );
                 }
-                Mode::Strip => app.dock_strip(root, Dock::Bottom),
-                Mode::Hidden => {}
             }
+            Mode::Strip => app.dock_strip(root, Dock::Bottom),
+            Mode::Hidden => {}
         };
 
         let dock_side = |app: &mut Self, root: &mut egui::Ui| {
@@ -5990,8 +6157,10 @@ impl App {
                             app.side_ui(ui)
                         });
                     if !ctx.input(|i| i.pointer.any_down()) {
-                        app.cfg.view.side_w =
-                            crate::panels::clamp_size(Dock::Side, r.response.rect.width().round().min(max_w));
+                        app.cfg.view.side_w = crate::panels::clamp_size(
+                            Dock::Side,
+                            r.response.rect.width().round().min(max_w),
+                        );
                     }
                 }
                 Mode::Strip => {}
@@ -6020,8 +6189,10 @@ impl App {
                             .max_size(right_cap(root.available_width()).min(max_right))
                             .show(root, |ui| app.ai_ui(ui));
                         if settled {
-                            app.cfg.view.ai_w =
-                                crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                            app.cfg.view.ai_w = crate::panels::clamp_size(
+                                Dock::Right,
+                                r.response.rect.width().round(),
+                            );
                         }
                     }
                     if app.md_preview
@@ -6035,8 +6206,10 @@ impl App {
                             .max_size(right_cap(root.available_width()).min(max_right))
                             .show(root, |ui| app.md_ui(ui, false));
                         if settled {
-                            app.cfg.view.md_w =
-                                crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                            app.cfg.view.md_w = crate::panels::clamp_size(
+                                Dock::Right,
+                                r.response.rect.width().round(),
+                            );
                         }
                     }
                     if app.nema_preview && is_nema && right_room(root.available_width()) {
@@ -6046,8 +6219,10 @@ impl App {
                             .max_size(right_cap(root.available_width()).min(max_right))
                             .show(root, |ui| app.nema_ui(ui));
                         if settled {
-                            app.cfg.view.md_w =
-                                crate::panels::clamp_size(Dock::Right, r.response.rect.width().round());
+                            app.cfg.view.md_w = crate::panels::clamp_size(
+                                Dock::Right,
+                                r.response.rect.width().round(),
+                            );
                         }
                     }
                 }

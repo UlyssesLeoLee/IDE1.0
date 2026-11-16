@@ -6,8 +6,12 @@
 //! 3. 多租户协同 Hub (MultiTenantCollaborationHub: 跨租户物理零穿透)
 //! 4. 终局审查与 SHA-256 签名证书防伪
 
-use crate::collaboration::{CollaborationSession, CollaboratorRole, KeystrokeBroadcast, KeystrokeOp, RemoteCursor};
-use crate::reviewer::{AcceptanceCertificate, GuidanceZone, ReviewDecision, ReviewSession, UpfrontPlan};
+use crate::collaboration::{
+    CollaborationSession, CollaboratorRole, KeystrokeBroadcast, KeystrokeOp, RemoteCursor,
+};
+use crate::reviewer::{
+    AcceptanceCertificate, GuidanceZone, ReviewDecision, ReviewSession, UpfrontPlan,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

@@ -247,7 +247,6 @@ pub fn walk(
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // 快速路径: 字节级扫描 (参考 ripgrep / WizTree 的做法)
 // ---------------------------------------------------------------------------
@@ -258,15 +257,17 @@ pub fn walk(
 /// 两者都必须在解码后的文本上做, 走字节路径只会更慢或算错。
 fn can_use_fast_path(m: &Matcher) -> Option<LiteralNeedle> {
     match m {
-        Matcher::Literal { needle, folded, whole_word } if !*whole_word && !needle.is_empty() => {
-            Some(LiteralNeedle {
-                bytes: if folded.is_some() {
-                    needle.to_lowercase().into_bytes()
-                } else {
-                    needle.as_bytes().to_vec()
-                },
-            })
-        }
+        Matcher::Literal {
+            needle,
+            folded,
+            whole_word,
+        } if !*whole_word && !needle.is_empty() => Some(LiteralNeedle {
+            bytes: if folded.is_some() {
+                needle.to_lowercase().into_bytes()
+            } else {
+                needle.as_bytes().to_vec()
+            },
+        }),
         _ => None,
     }
 }
@@ -298,7 +299,7 @@ fn find_byte_matches(buf: &[u8], needle: &[u8]) -> Vec<usize> {
         // 边界检查要放在切片之前 —— 否则最后几个字节的越界部分会 panic
         if at + needle.len() <= buf.len() && &buf[at..at + needle.len()] == needle {
             out.push(at);
-            from = at + needle.len();   // 不重叠: needle 自身含 first, 从末尾继续
+            from = at + needle.len(); // 不重叠: needle 自身含 first, 从末尾继续
         } else {
             from = at + 1;
         }
@@ -359,8 +360,8 @@ fn scan_buf_fast(raw: &[u8], needle: &LiteralNeedle, fold: bool, max: usize) -> 
     }
     let mut out = Vec::new();
     let mut line = 1u64;
-    let mut counted_to = 0usize;   // 已经数过换行的位置
-    let mut last_line = 0u64;      // 上一个命中所在行号 (同一行只出一次)
+    let mut counted_to = 0usize; // 已经数过换行的位置
+    let mut last_line = 0u64; // 上一个命中所在行号 (同一行只出一次)
     for at in hits {
         if at < counted_to {
             continue;
@@ -576,8 +577,15 @@ fn collect_candidates(
     // 要求排除它。必须在起点处先判一次。
     let mut files: Vec<PathBuf> = Vec::new();
     for r in &roots {
-        let rel = r.strip_prefix(root).unwrap_or(r).to_string_lossy().replace('\\', "/");
-        let name = r.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let rel = r
+            .strip_prefix(root)
+            .unwrap_or(r)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let name = r
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         if r != root && exc.iter().any(|p| is_dir_exclude(p, &name, &rel)) {
             continue;
         }
@@ -630,7 +638,11 @@ pub fn search(root: &Path, opts: &SearchOptions) -> Result<Vec<SearchResult>, St
     let name_only = opts.pattern.trim().is_empty();
 
     // 能否走字节级快速路径 (字面量 + 不带词边界). 正则 / whole_word 必须走解码路径.
-    let fast = if name_only { None } else { can_use_fast_path(&matcher) };
+    let fast = if name_only {
+        None
+    } else {
+        can_use_fast_path(&matcher)
+    };
 
     let mut results: Vec<SearchResult> = Vec::new();
     'outer: for (f, name) in files {
@@ -751,7 +763,10 @@ fn needs_fancy(pat: &str) -> bool {
 }
 
 fn build_fancy(pat: &str, case_sensitive: bool) -> Result<fancy_regex::Regex, String> {
-    fancy_regex::RegexBuilder::new(pat).case_insensitive(!case_sensitive).build().map_err(|e| format!("正则表达式无效: {e}"))
+    fancy_regex::RegexBuilder::new(pat)
+        .case_insensitive(!case_sensitive)
+        .build()
+        .map_err(|e| format!("正则表达式无效: {e}"))
 }
 
 impl Matcher {
@@ -762,7 +777,10 @@ impl Matcher {
         whole_word: bool,
     ) -> Result<Self, String> {
         if regex && needs_fancy(pattern) {
-            return Ok(Matcher::Fancy(Box::new(build_fancy(pattern, case_sensitive)?)));
+            return Ok(Matcher::Fancy(Box::new(build_fancy(
+                pattern,
+                case_sensitive,
+            )?)));
         }
         if regex {
             // 正则模式忽略 whole_word —— 用户的正则自带边界语义, 再套一层 \b 会双重收窄.
@@ -1075,7 +1093,11 @@ fn parse_atom(ctx: &mut ParseCtx) -> Result<Node, String> {
             }
         }
         ')' => return Err(ctx.err("多余的右括号 )")),
-        '*' | '+' | '?' => return Err(ctx.err("量词前面没有可重复的内容。要查找字符 * + ? 本身, 请写 \\* \\+ \\? 或 [*] [+] [?]")),
+        '*' | '+' | '?' => {
+            return Err(ctx.err(
+                "量词前面没有可重复的内容。要查找字符 * + ? 本身, 请写 \\* \\+ \\? 或 [*] [+] [?]",
+            ))
+        }
         other => Node::Char(other),
     })
 }
@@ -1282,7 +1304,11 @@ fn sniff_utf16_without_bom(b: &[u8]) -> Option<Charset> {
     let (mut even_nul, mut odd_nul) = (0usize, 0usize);
     for (i, &x) in sample.iter().enumerate() {
         if x == 0 {
-            if i % 2 == 0 { even_nul += 1 } else { odd_nul += 1 }
+            if i % 2 == 0 {
+                even_nul += 1
+            } else {
+                odd_nul += 1
+            }
         }
     }
     let half = sample.len() / 2;
@@ -1364,7 +1390,11 @@ fn decode_raw(bytes: &[u8], cs: Charset) -> Result<(String, bool, usize), String
 /// `forced` = 用户在请求里指定的字符集; None = 自动. 自动时没有 BOM / 不含 NUL 或 ESC / 是合法 UTF-8
 /// 的常见情形直接借用原字节, 不付解码代价.
 pub fn decode_for_grep(bytes: &[u8], forced: Option<Charset>) -> Cow<'_, str> {
-    if forced.is_none() && !bytes.contains(&0u8) && !bytes.contains(&0x1b) && !bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+    if forced.is_none()
+        && !bytes.contains(&0u8)
+        && !bytes.contains(&0x1b)
+        && !bytes.starts_with(&[0xEF, 0xBB, 0xBF])
+    {
         if let Ok(s) = std::str::from_utf8(bytes) {
             return Cow::Borrowed(s);
         }
@@ -1437,8 +1467,16 @@ pub struct ReplaceReport {
 type Caps = Vec<Option<(usize, usize)>>;
 
 enum ReplMatcher {
-    Literal { needle: Vec<char>, fold: bool, whole_word: bool },
-    Re { re: Box<MiniRegex>, group_ids: HashMap<*const Node, usize>, ngroups: usize },
+    Literal {
+        needle: Vec<char>,
+        fold: bool,
+        whole_word: bool,
+    },
+    Re {
+        re: Box<MiniRegex>,
+        group_ids: HashMap<*const Node, usize>,
+        ngroups: usize,
+    },
     /// 含环视 / 反向引用的模式 (fancy-regex)
     Fancy(Box<fancy_regex::Regex>),
 }
@@ -1448,7 +1486,12 @@ fn fold_char(c: char) -> char {
 }
 
 /// 先序遍历给捕获分组编号 (与源码里 `(` 出现的顺序一致); `capturing[i]` = 第 i 个 `(` 是否捕获.
-fn number_groups(node: &Node, capturing: &[bool], next: &mut usize, ids: &mut HashMap<*const Node, usize>) {
+fn number_groups(
+    node: &Node,
+    capturing: &[bool],
+    next: &mut usize,
+    ids: &mut HashMap<*const Node, usize>,
+) {
     match node {
         Node::Group(inner) => {
             let i = *next;
@@ -1459,7 +1502,9 @@ fn number_groups(node: &Node, capturing: &[bool], next: &mut usize, ids: &mut Ha
             number_groups(inner, capturing, next, ids);
         }
         Node::Repeat(inner, ..) => number_groups(inner, capturing, next, ids),
-        Node::Alt(v) | Node::Seq(v) => v.iter().for_each(|n| number_groups(n, capturing, next, ids)),
+        Node::Alt(v) | Node::Seq(v) => v
+            .iter()
+            .for_each(|n| number_groups(n, capturing, next, ids)),
         _ => {}
     }
 }
@@ -1474,7 +1519,9 @@ fn scan_group_kinds(pattern: &str) -> Vec<bool> {
             '\\' => i += 1,
             '[' if !in_class => in_class = true,
             ']' if in_class => in_class = false,
-            '(' if !in_class => out.push(!(cs.get(i + 1) == Some(&'?') && cs.get(i + 2) == Some(&':'))),
+            '(' if !in_class => {
+                out.push(!(cs.get(i + 1) == Some(&'?') && cs.get(i + 2) == Some(&':')))
+            }
             _ => {}
         }
         i += 1;
@@ -1507,7 +1554,9 @@ fn cap_match(
                 }
             })
         }
-        Node::Alt(branches) => branches.iter().any(|b| cap_match(b, chars, pos, ids, caps, k)),
+        Node::Alt(branches) => branches
+            .iter()
+            .any(|b| cap_match(b, chars, pos, ids, caps, k)),
         Node::Seq(items) => cap_seq(items, chars, pos, ids, caps, k),
         Node::Repeat(inner, min, max, greedy) => {
             cap_repeat(inner, chars, pos, *min, *max, *greedy, 0, ids, caps, k)
@@ -1528,7 +1577,11 @@ fn cap_seq(
     match items.split_first() {
         None => k(pos),
         Some((head, rest)) => cap_match(head, chars, pos, ids, caps, &mut |p| {
-            if rest.is_empty() { k(p) } else { cap_seq(rest, chars, p, ids, caps, k) }
+            if rest.is_empty() {
+                k(p)
+            } else {
+                cap_seq(rest, chars, p, ids, caps, k)
+            }
         }),
     }
 }
@@ -1579,10 +1632,14 @@ impl ReplMatcher {
             return Err("置换需要非空的检索条件".to_string());
         }
         if opts.regex.unwrap_or(false) && needs_fancy(&opts.pattern) {
-            return Ok(ReplMatcher::Fancy(Box::new(build_fancy(&opts.pattern, case_sensitive)?)));
+            return Ok(ReplMatcher::Fancy(Box::new(build_fancy(
+                &opts.pattern,
+                case_sensitive,
+            )?)));
         }
         if opts.regex.unwrap_or(false) {
-            let re = MiniRegex::new(&opts.pattern, case_sensitive).map(Box::new)
+            let re = MiniRegex::new(&opts.pattern, case_sensitive)
+                .map(Box::new)
                 .map_err(|e| format!("正则表达式无效: {e}"))?;
             let kinds = scan_group_kinds(&opts.pattern);
             let mut ids = HashMap::new();
@@ -1608,7 +1665,11 @@ impl ReplMatcher {
                 ids.insert(*p, n + 1);
             }
             let ngroups = order.len() + 1;
-            Ok(ReplMatcher::Re { re, group_ids: ids, ngroups })
+            Ok(ReplMatcher::Re {
+                re,
+                group_ids: ids,
+                ngroups,
+            })
         } else {
             let fold = !case_sensitive;
             let needle: Vec<char> = opts
@@ -1616,14 +1677,22 @@ impl ReplMatcher {
                 .chars()
                 .map(|c| if fold { fold_char(c) } else { c })
                 .collect();
-            Ok(ReplMatcher::Literal { needle, fold, whole_word: opts.whole_word.unwrap_or(false) })
+            Ok(ReplMatcher::Literal {
+                needle,
+                fold,
+                whole_word: opts.whole_word.unwrap_or(false),
+            })
         }
     }
 
     /// 在 `line` 中从字符位置 `from` 起找下一处匹配.
     fn find_at(&self, chars: &[char], from: usize) -> Option<Caps> {
         match self {
-            ReplMatcher::Literal { needle, fold, whole_word } => {
+            ReplMatcher::Literal {
+                needle,
+                fold,
+                whole_word,
+            } => {
                 let nb = needle.len();
                 let mut at = from;
                 while at + nb <= chars.len() {
@@ -1649,10 +1718,21 @@ impl ReplMatcher {
                 let mut byte_of: Vec<usize> = s.char_indices().map(|(b, _)| b).collect();
                 byte_of.push(s.len());
                 let char_of = |b: usize| byte_of.binary_search(&b).unwrap_or_else(|i| i);
-                let c = re.captures_from_pos(&s, *byte_of.get(from)?).ok().flatten()?;
-                Some((0..c.len()).map(|i| c.get(i).map(|m| (char_of(m.start()), char_of(m.end())))).collect())
+                let c = re
+                    .captures_from_pos(&s, *byte_of.get(from)?)
+                    .ok()
+                    .flatten()?;
+                Some(
+                    (0..c.len())
+                        .map(|i| c.get(i).map(|m| (char_of(m.start()), char_of(m.end()))))
+                        .collect(),
+                )
             }
-            ReplMatcher::Re { re, group_ids, ngroups } => {
+            ReplMatcher::Re {
+                re,
+                group_ids,
+                ngroups,
+            } => {
                 // 与 MiniRegex::is_match 同步: 不区分大小写时按字符逐个小写化 (长度对齐, 位置可直接用于原文)
                 let hay: Cow<[char]> = if re.case_sensitive {
                     Cow::Borrowed(chars)
@@ -1691,9 +1771,21 @@ impl ReplMatcher {
         while i < t.len() {
             if t[i] == '$' && i + 1 < t.len() {
                 match t[i + 1] {
-                    '$' => { out.push('$'); i += 2; continue; }
-                    '&' => { group(0, out); i += 2; continue; }
-                    d if d.is_ascii_digit() => { group(d as usize - '0' as usize, out); i += 2; continue; }
+                    '$' => {
+                        out.push('$');
+                        i += 2;
+                        continue;
+                    }
+                    '&' => {
+                        group(0, out);
+                        i += 2;
+                        continue;
+                    }
+                    d if d.is_ascii_digit() => {
+                        group(d as usize - '0' as usize, out);
+                        i += 2;
+                        continue;
+                    }
                     _ => {}
                 }
             }
@@ -1731,7 +1823,9 @@ fn replace_in_text(text: &str, m: &ReplMatcher, template: &str) -> (String, usiz
         let mut n = 0usize;
         let mut buf = String::new();
         while pos <= chars.len() {
-            let Some(caps) = m.find_at(&chars, pos) else { break };
+            let Some(caps) = m.find_at(&chars, pos) else {
+                break;
+            };
             let (a, e) = caps[0].unwrap_or((pos, pos));
             if a == e && last_end == Some(a) {
                 // 紧接上一处匹配之后的空匹配不算 (同 regex crate)
@@ -1795,8 +1889,13 @@ fn encode_back(text: &str, cs: Charset, bom: Bom) -> Result<Vec<u8>, String> {
     let body = if cs == Charset::Iso2022Jp {
         encode_iso2022jp(text)?
     } else {
-        document_io::encode_document(text, cs, Bom::None, document_io::Eol::Lf)
-            .map_err(|bad| format!("以下字符无法用 {} 表示: {}", cs.label(), bad.iter().collect::<String>()))?
+        document_io::encode_document(text, cs, Bom::None, document_io::Eol::Lf).map_err(|bad| {
+            format!(
+                "以下字符无法用 {} 表示: {}",
+                cs.label(),
+                bad.iter().collect::<String>()
+            )
+        })?
     };
     let mut out = match bom {
         Bom::None => Vec::new(),
@@ -1815,12 +1914,18 @@ fn encode_back(text: &str, cs: Charset, bom: Bom) -> Result<Vec<u8>, String> {
 /// 原子写: 同目录临时文件 + sync + rename 覆盖; 保留原文件的权限.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    let dir = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let tmp = dir.join(format!(".{name}.grep-{}-{nanos}.tmp", std::process::id()));
     let res = (|| {
         let mut f = fs::File::create(&tmp)?;
@@ -1840,8 +1945,16 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 fn norm_key(p: &str) -> String {
     let s = p.replace('\\', "/");
-    let s = s.strip_prefix("//?/").unwrap_or(&s).trim_end_matches('/').to_string();
-    if cfg!(windows) { s.to_lowercase() } else { s }
+    let s = s
+        .strip_prefix("//?/")
+        .unwrap_or(&s)
+        .trim_end_matches('/')
+        .to_string();
+    if cfg!(windows) {
+        s.to_lowercase()
+    } else {
+        s
+    }
 }
 
 /// 对单个文件做置换 (含 skip / 备份 / 原子写). `Err` 只在无法解码等「该文件不动」的情形.
@@ -1890,7 +2003,10 @@ fn replace_one(
         return Some(res);
     }
     if lossy {
-        res.error = Some(format!("文件含 {} 无法解码的字节, 为免损坏内容已跳过", cs.label()));
+        res.error = Some(format!(
+            "文件含 {} 无法解码的字节, 为免损坏内容已跳过",
+            cs.label()
+        ));
         return Some(res);
     }
     let bom = match (skip_bytes, cs) {
@@ -1913,7 +2029,11 @@ fn replace_one(
         }
     };
     if o.backup.unwrap_or(false) {
-        let suffix = o.backup_suffix.as_deref().filter(|s| !s.is_empty()).unwrap_or(".bak");
+        let suffix = o
+            .backup_suffix
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(".bak");
         let mut bp = f.as_os_str().to_owned();
         bp.push(suffix);
         let bp = PathBuf::from(bp);
@@ -1949,7 +2069,9 @@ pub fn grep_replace(root: &Path, opts: &ReplaceOptions) -> Result<ReplaceReport,
         .collect();
     let mut report = ReplaceReport::default();
     for (f, _name) in filtered_files(root, &opts.search)? {
-        let Some(r) = replace_one(&f, &matcher, opts, forced, &skip) else { continue };
+        let Some(r) = replace_one(&f, &matcher, opts, forced, &skip) else {
+            continue;
+        };
         if r.skipped {
             report.files_skipped += 1;
         } else if r.error.is_some() {
@@ -2196,7 +2318,12 @@ mod tests {
         let m = Matcher::new(r"(o)\1", true, true, false).unwrap();
         assert!(m.matches("fooo") && !m.matches("fo o"));
         // 置换: 后行环视 + $1 展开, 多字节字符位置对得上
-        let opts = SearchOptions { pattern: r"(?<=é)(x)".into(), regex: Some(true), case_sensitive: Some(true), ..Default::default() };
+        let opts = SearchOptions {
+            pattern: r"(?<=é)(x)".into(),
+            regex: Some(true),
+            case_sensitive: Some(true),
+            ..Default::default()
+        };
         let rm = ReplMatcher::new(&opts).unwrap();
         let (out, n, _) = replace_in_text("éx x éx", &rm, "[$1]");
         assert_eq!((out.as_str(), n), ("é[x] x é[x]", 2));
@@ -2517,7 +2644,11 @@ mod tests {
         // 首行 / 末行无换行
         fs::write(dir.join("a.txt"), "needle at start\nmiddle\nneedle at end").unwrap();
         // 空行 / 连续命中 / CRLF / 非 ASCII / 一行多次
-        fs::write(dir.join("b.txt"), "\n\nneedle needle\nx\r\nneedle\r\n日本語 needle テスト\nneedle").unwrap();
+        fs::write(
+            dir.join("b.txt"),
+            "\n\nneedle needle\nx\r\nneedle\r\n日本語 needle テスト\nneedle",
+        )
+        .unwrap();
         // needle 恰好在缓冲区末尾 (测越界)
         fs::write(dir.join("sub/c.txt"), "no hit here\nne").unwrap();
         // 空文件
@@ -2536,13 +2667,23 @@ mod tests {
         let mut out = Vec::new();
         'w: for f in files {
             let name = f.file_name().unwrap().to_string_lossy().to_string();
-            if !file_passes(&name, &[], &[], case_sensitive) { continue; }
-            let Ok(file) = fs::File::open(&f) else { continue };
+            if !file_passes(&name, &[], &[], case_sensitive) {
+                continue;
+            }
+            let Ok(file) = fs::File::open(&f) else {
+                continue;
+            };
             for (i, line) in std::io::BufReader::new(file).lines().enumerate() {
                 let Ok(t) = line else { continue };
                 if m.matches(&t) {
-                    out.push(SearchResult { path: f.to_string_lossy().into_owned(), line: i as u64 + 1, text: t });
-                    if out.len() >= max { break 'w; }
+                    out.push(SearchResult {
+                        path: f.to_string_lossy().into_owned(),
+                        line: i as u64 + 1,
+                        text: t,
+                    });
+                    if out.len() >= max {
+                        break 'w;
+                    }
                 }
             }
         }
@@ -2555,11 +2696,11 @@ mod tests {
         let dir = TempDir::new("parity");
         setup_edges(dir.path());
         for (pattern, cs) in [
-            ("needle", true),   // 区分大小写
+            ("needle", true), // 区分大小写
             ("NEEDLE", true),
-            ("needle", false),  // 忽略大小写
+            ("needle", false), // 忽略大小写
             ("NEEDLE", false),
-            ("nee", true),      // 短 needle (前缀截断风险)
+            ("nee", true), // 短 needle (前缀截断风险)
             ("needle", true),
             ("不存在的串", true), // 非 ASCII needle
             ("日本", true),
@@ -2583,7 +2724,9 @@ mod tests {
         let dir = TempDir::new("fastmax");
         fs::write(dir.path().join("a.txt"), "x\n").unwrap();
         let mut s = String::new();
-        for i in 0..100 { s.push_str(&format!("needle {i}\n")); }
+        for i in 0..100 {
+            s.push_str(&format!("needle {i}\n"));
+        }
         fs::write(dir.path().join("b.txt"), &s).unwrap();
 
         let mut o = opts("needle");
@@ -2627,7 +2770,10 @@ mod tests {
         o.case_sensitive = Some(false);
         let hits = search(dir.path(), &o).unwrap();
         assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].text, "Hello World", "忽略大小写命中时返回的应是原文");
+        assert_eq!(
+            hits[0].text, "Hello World",
+            "忽略大小写命中时返回的应是原文"
+        );
     }
 
     #[test]
@@ -2730,14 +2876,28 @@ mod tests {
         let jp = "first\r\n日本語の行 needle\r\nlast\r\n";
         fs::write(dir.join("sjis.txt"), enc("sjis", jp)).unwrap();
         fs::write(dir.join("euc.txt"), enc("euc", jp)).unwrap();
-        fs::write(dir.join("u16le_bom.txt"), with_bom(&[0xFF, 0xFE], enc("u16le", jp))).unwrap();
-        fs::write(dir.join("u16be_bom.txt"), with_bom(&[0xFE, 0xFF], enc("u16be", jp))).unwrap();
+        fs::write(
+            dir.join("u16le_bom.txt"),
+            with_bom(&[0xFF, 0xFE], enc("u16le", jp)),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("u16be_bom.txt"),
+            with_bom(&[0xFE, 0xFF], enc("u16be", jp)),
+        )
+        .unwrap();
         fs::write(dir.join("u16le_nobom.txt"), enc("u16le", jp)).unwrap();
-        fs::write(dir.join("utf8_bom.txt"), with_bom(&[0xEF, 0xBB, 0xBF], enc("utf8", jp))).unwrap();
+        fs::write(
+            dir.join("utf8_bom.txt"),
+            with_bom(&[0xEF, 0xBB, 0xBF], enc("utf8", jp)),
+        )
+        .unwrap();
         fs::write(dir.join("utf8.txt"), jp).unwrap();
         // ISO-2022-JP: 日本語 = 46 7C 4B 5C 38 6C
         let mut jis = b"first\nx ".to_vec();
-        jis.extend_from_slice(&[0x1b, b'$', b'B', 0x46, 0x7c, 0x4b, 0x5c, 0x38, 0x6c, 0x1b, b'(', b'B']);
+        jis.extend_from_slice(&[
+            0x1b, b'$', b'B', 0x46, 0x7c, 0x4b, 0x5c, 0x38, 0x6c, 0x1b, b'(', b'B',
+        ]);
         jis.extend_from_slice(b" needle\n");
         fs::write(dir.join("jis.txt"), jis).unwrap();
     }
@@ -2766,7 +2926,11 @@ mod tests {
     #[test]
     fn search_strips_bom_from_first_line() {
         let dir = TempDir::new("enc-bom");
-        fs::write(dir.path().join("b.txt"), with_bom(&[0xEF, 0xBB, 0xBF], b"head\nx\n".to_vec())).unwrap();
+        fs::write(
+            dir.path().join("b.txt"),
+            with_bom(&[0xEF, 0xBB, 0xBF], b"head\nx\n".to_vec()),
+        )
+        .unwrap();
         let mut o = opts("head");
         o.regex = Some(true);
         o.pattern = "^head$".into();
@@ -2790,10 +2954,17 @@ mod tests {
         o.charset = Some("sjis".into());
         let r = search(dir.path(), &o).unwrap();
         let names: Vec<String> = r.iter().map(|x| fname(&x.path)).collect();
-        assert_eq!(names, vec!["sjis.txt".to_string()], "只有 SJIS 文件能按 SJIS 读出");
+        assert_eq!(
+            names,
+            vec!["sjis.txt".to_string()],
+            "只有 SJIS 文件能按 SJIS 读出"
+        );
         o.charset = Some("euc-jp".into());
         let r = search(dir.path(), &o).unwrap();
-        assert_eq!(r.iter().map(|x| fname(&x.path)).collect::<Vec<_>>(), vec!["euc.txt".to_string()]);
+        assert_eq!(
+            r.iter().map(|x| fname(&x.path)).collect::<Vec<_>>(),
+            vec!["euc.txt".to_string()]
+        );
         o.charset = Some("auto".into());
         assert_eq!(search(dir.path(), &o).unwrap().len(), 8);
         o.charset = Some("no-such".into());
@@ -2803,7 +2974,10 @@ mod tests {
         let r = search(dir.path(), &o).unwrap();
         let mut names: Vec<String> = r.iter().map(|x| fname(&x.path)).collect();
         names.sort();
-        assert_eq!(names, vec!["u16le_bom.txt".to_string(), "u16le_nobom.txt".to_string()]);
+        assert_eq!(
+            names,
+            vec!["u16le_bom.txt".to_string(), "u16le_nobom.txt".to_string()]
+        );
     }
 
     #[test]
@@ -2825,7 +2999,11 @@ mod tests {
     }
 
     fn rep(search: SearchOptions, to: &str) -> ReplaceOptions {
-        ReplaceOptions { search, replacement: to.into(), ..Default::default() }
+        ReplaceOptions {
+            search,
+            replacement: to.into(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -2838,9 +3016,21 @@ mod tests {
             ("sjis.txt", enc("sjis", body), enc("sjis", new_body)),
             ("euc.txt", enc("euc", body), enc("euc", new_body)),
             ("u8.txt", enc("utf8", body), enc("utf8", new_body)),
-            ("u8bom.txt", with_bom(&[0xEF, 0xBB, 0xBF], enc("utf8", body)), with_bom(&[0xEF, 0xBB, 0xBF], enc("utf8", new_body))),
-            ("u16le.txt", with_bom(&[0xFF, 0xFE], enc("u16le", body)), with_bom(&[0xFF, 0xFE], enc("u16le", new_body))),
-            ("u16be.txt", with_bom(&[0xFE, 0xFF], enc("u16be", body)), with_bom(&[0xFE, 0xFF], enc("u16be", new_body))),
+            (
+                "u8bom.txt",
+                with_bom(&[0xEF, 0xBB, 0xBF], enc("utf8", body)),
+                with_bom(&[0xEF, 0xBB, 0xBF], enc("utf8", new_body)),
+            ),
+            (
+                "u16le.txt",
+                with_bom(&[0xFF, 0xFE], enc("u16le", body)),
+                with_bom(&[0xFF, 0xFE], enc("u16le", new_body)),
+            ),
+            (
+                "u16be.txt",
+                with_bom(&[0xFE, 0xFF], enc("u16be", body)),
+                with_bom(&[0xFE, 0xFF], enc("u16be", new_body)),
+            ),
             ("u16nobom.txt", enc("u16le", body), enc("u16le", new_body)),
         ];
         for (n, before, _) in &cases {
@@ -2856,7 +3046,11 @@ mod tests {
             assert_eq!(&fs::read(p.join(n)).unwrap(), after, "{n}");
         }
         // 临时文件不残留
-        let leftovers: Vec<_> = fs::read_dir(p).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
+        let leftovers: Vec<_> = fs::read_dir(p)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
         assert!(leftovers.is_empty());
     }
 
@@ -2885,14 +3079,20 @@ mod tests {
         let r = grep_replace(dir.path(), &rep(s.clone(), "$2:$1 [$&] $$ $9")).unwrap();
         assert_eq!(r.total_replacements, 2);
         assert_eq!(r.files[0].lines, 1);
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "1:key [key=1] $  22:key [key=22] $ \nnone\nkey=x\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "1:key [key=1] $  22:key [key=22] $ \nnone\nkey=x\n"
+        );
         // 非正则: 置换串中的 $1 是字面
         let dir2 = TempDir::new("rep-lit");
         fs::write(dir2.path().join("a.txt"), "x Foo X\n").unwrap();
         let mut s2 = opts("foo");
         s2.case_sensitive = Some(false);
         grep_replace(dir2.path(), &rep(s2, "$1")).unwrap();
-        assert_eq!(fs::read_to_string(dir2.path().join("a.txt")).unwrap(), "x $1 X\n");
+        assert_eq!(
+            fs::read_to_string(dir2.path().join("a.txt")).unwrap(),
+            "x $1 X\n"
+        );
     }
 
     #[test]
@@ -2902,7 +3102,10 @@ mod tests {
         let mut s = opts(r"(?:a)(b)-(c)d");
         s.regex = Some(true);
         grep_replace(dir.path(), &rep(s, "$2$1")).unwrap();
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "cb\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "cb\n"
+        );
     }
 
     #[test]
@@ -2912,7 +3115,10 @@ mod tests {
         let mut s = opts(r"(cat|dog)");
         s.regex = Some(true);
         grep_replace(dir.path(), &rep(s, "<$1>")).unwrap();
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "<cat> <dog>\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "<cat> <dog>\n"
+        );
     }
 
     #[test]
@@ -2924,7 +3130,10 @@ mod tests {
         s.whole_word = Some(true);
         let r = grep_replace(dir.path(), &rep(s, "dog")).unwrap();
         assert_eq!(r.total_replacements, 2);
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "dog concat dog.\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "dog concat dog.\n"
+        );
     }
 
     #[test]
@@ -2935,7 +3144,10 @@ mod tests {
         s.regex = Some(true);
         let r = grep_replace(dir.path(), &rep(s, "-")).unwrap();
         assert_eq!(r.files_changed, 1);
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "-a-b-\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "-a-b-\n"
+        );
     }
 
     #[test]
@@ -2948,19 +3160,39 @@ mod tests {
         let mut o = rep(opts("old"), "new");
         o.backup = Some(true);
         // Windows 的路径比较不分大小写 (`norm_key`), 其它平台分: 只有 Windows 上才故意写成大写
-        let skip_name = if cfg!(windows) { "OPEN.txt" } else { "open.txt" };
+        let skip_name = if cfg!(windows) {
+            "OPEN.txt"
+        } else {
+            "open.txt"
+        };
         o.skip_paths = Some(vec![p.join(skip_name).to_string_lossy().replace('\\', "/")]);
         let r = grep_replace(p, &o).unwrap();
-        assert_eq!((r.files_changed, r.files_skipped, r.files_failed), (1, 1, 0), "{r:#?}");
+        assert_eq!(
+            (r.files_changed, r.files_skipped, r.files_failed),
+            (1, 1, 0),
+            "{r:#?}"
+        );
         assert_eq!(r.files.len(), 2, "没命中的文件不进报告");
         assert_eq!(fs::read_to_string(p.join("keep.txt")).unwrap(), "new\n");
         assert_eq!(fs::read_to_string(p.join("keep.txt.bak")).unwrap(), "old\n");
-        assert_eq!(fs::read_to_string(p.join("open.txt")).unwrap(), "old\n", "skipped 文件不动");
+        assert_eq!(
+            fs::read_to_string(p.join("open.txt")).unwrap(),
+            "old\n",
+            "skipped 文件不动"
+        );
         assert!(!p.join("open.txt.bak").exists());
         let sk = r.files.iter().find(|f| f.skipped).unwrap();
         assert_eq!(sk.replacements, 1);
         assert!(!sk.written);
-        assert!(r.files.iter().find(|f| f.written).unwrap().backup_path.as_deref().unwrap().ends_with("keep.txt.bak"));
+        assert!(r
+            .files
+            .iter()
+            .find(|f| f.written)
+            .unwrap()
+            .backup_path
+            .as_deref()
+            .unwrap()
+            .ends_with("keep.txt.bak"));
         // 自定义后缀
         let mut o = rep(opts("new"), "newer");
         o.backup = Some(true);
@@ -3012,7 +3244,14 @@ mod tests {
         .unwrap();
         assert_eq!(o.search.pattern, "a");
         assert_eq!(o.search.charset.as_deref(), Some("sjis"));
-        assert_eq!((o.replacement.as_str(), o.backup, o.skip_paths.as_ref().map(|v| v.len())), ("b", Some(true), Some(1)));
+        assert_eq!(
+            (
+                o.replacement.as_str(),
+                o.backup,
+                o.skip_paths.as_ref().map(|v| v.len())
+            ),
+            ("b", Some(true), Some(1))
+        );
     }
 
     #[test]
@@ -3024,7 +3263,10 @@ mod tests {
         s.include_files = Some(vec!["*.rs".into()]);
         let r = grep_replace(dir.path(), &rep(s, "new")).unwrap();
         assert_eq!(r.files_changed, 1);
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "old\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "old\n"
+        );
     }
 
     #[test]
@@ -3039,9 +3281,19 @@ mod tests {
 
     #[test]
     fn detect_utf16_without_bom_only_when_pattern_is_clear() {
-        assert_eq!(detect_grep_charset(&enc("u16le", "hello world")), Charset::Utf16Le);
-        assert_eq!(detect_grep_charset(&enc("u16be", "hello world")), Charset::Utf16Be);
+        assert_eq!(
+            detect_grep_charset(&enc("u16le", "hello world")),
+            Charset::Utf16Le
+        );
+        assert_eq!(
+            detect_grep_charset(&enc("u16be", "hello world")),
+            Charset::Utf16Be
+        );
         assert_eq!(detect_grep_charset(b"plain ascii"), Charset::Utf8);
-        assert_eq!(detect_grep_charset(&[0u8; 64]), Charset::Utf8, "全 NUL 不是 UTF-16 文本");
+        assert_eq!(
+            detect_grep_charset(&[0u8; 64]),
+            Charset::Utf8,
+            "全 NUL 不是 UTF-16 文本"
+        );
     }
 }

@@ -190,8 +190,8 @@ impl App {
         }
         let dot_mcp = ws_root.join(".mcp.json");
         let servers_json = ws_root.join("mcp_servers.json");
-        if let Some(cfg) = McpConfig::load_from_file(&dot_mcp)
-            .or_else(|| McpConfig::load_from_file(&servers_json))
+        if let Some(cfg) =
+            McpConfig::load_from_file(&dot_mcp).or_else(|| McpConfig::load_from_file(&servers_json))
         {
             self.ai.mcp.load_config(cfg);
         }
@@ -247,7 +247,9 @@ impl App {
         if let Err(e) = jar.save(&mut ck) {
             self.ai.items.push(Item::Err(e));
         }
-        self.ai.task_states.insert(self.docs[i].id, TaskState::Exploring);
+        self.ai
+            .task_states
+            .insert(self.docs[i].id, TaskState::Exploring);
         (
             Some(RunCookie {
                 jar,
@@ -260,10 +262,7 @@ impl App {
 
     /// 落盘前过一遍脱敏钩子 (Cookie 在磁盘上是明文, 不能把 API Key 带进去)
     fn mask_secrets(&self, s: String) -> String {
-        self.ai
-            .hooks
-            .execute_post_response(s.clone())
-            .unwrap_or(s)
+        self.ai.hooks.execute_post_response(s.clone()).unwrap_or(s)
     }
 
     /// 运行结束 / 取消 / 出错: 结算 Cookie。有补丁提案 → Vetting (等人审), 否则 → Planning
@@ -334,7 +333,11 @@ impl App {
         let msg = match jar.clear_all() {
             Ok(s) => {
                 self.cookie_forget_states_under(&ws);
-                format!("已清除 {} 个文件 Cookie, 释放 {}", s.count, fmt_bytes(s.bytes))
+                format!(
+                    "已清除 {} 个文件 Cookie, 释放 {}",
+                    s.count,
+                    fmt_bytes(s.bytes)
+                )
             }
             Err(e) => e,
         };
@@ -347,7 +350,11 @@ impl App {
         let (jar, _) = self.cookie_jar_active();
         let s = jar.prune(PrunePolicy::default());
         self.ai.cookie_stats = None;
-        self.cur().tip = format!("已回收 {} 个文件 Cookie, 释放 {}", s.count, fmt_bytes(s.bytes));
+        self.cur().tip = format!(
+            "已回收 {} 个文件 Cookie, 释放 {}",
+            s.count,
+            fmt_bytes(s.bytes)
+        );
     }
 
     /// 工作区内的文档状态跟着 Cookie 一起清空 (Tab 指示条立刻消失)
@@ -415,7 +422,9 @@ impl App {
         self.ai.input.clear();
         self.ai.items.push(Item::User(q.to_string()));
         if self.docs.is_empty() {
-            self.ai.items.push(Item::Err("当前没有打开的文件，无法直接写入".into()));
+            self.ai
+                .items
+                .push(Item::Err("当前没有打开的文件，无法直接写入".into()));
             return;
         }
         if q.contains("并行") || q.starts_with("/parallel") {
@@ -436,7 +445,9 @@ impl App {
 
         let i = self.active.min(self.docs.len() - 1);
         if self.docs[i].readonly {
-            self.ai.items.push(Item::Err("只读文档，无法直接应用修改".into()));
+            self.ai
+                .items
+                .push(Item::Err("只读文档，无法直接应用修改".into()));
             return;
         }
         let doc_id = self.docs[i].id;
@@ -506,8 +517,7 @@ impl App {
             };
 
         let c = if with_ctx { self.ai_context(i) } else { None };
-        let mut sys =
-            ai::system_prompt(&self.docs[i].name, self.docs[i].lines.len(), c.as_ref());
+        let mut sys = ai::system_prompt(&self.docs[i].name, self.docs[i].lines.len(), c.as_ref());
 
         // 2. 注入工作区规范与规则约束 (AGENT.md / IDE.md / .cursorrules / CLAUDE.md)
         if let Some(rules_prompt) = self.ai.rules_engine.format_invariants_prompt(&ws_root) {
@@ -672,21 +682,13 @@ impl App {
 
             // 1. 智能体死循环自省熔断 (LoopBreaker: 64位哈希三元组检测防死循环)
             if let Err(loop_err) = self.ai.loop_breaker.check_and_record(&call.name, &args) {
-                immediate.push((
-                    slot,
-                    call.clone(),
-                    json!({ "error": loop_err }),
-                ));
+                immediate.push((slot, call.clone(), json!({ "error": loop_err })));
                 continue;
             }
 
             // 2. Pre-tool-call 生命周期拦截钩子 (敏感路径/私钥防御)
             if let Err(hook_err) = self.ai.hooks.execute_pre_tool_call(&call.name, &args) {
-                immediate.push((
-                    slot,
-                    call.clone(),
-                    json!({ "error": hook_err }),
-                ));
+                immediate.push((slot, call.clone(), json!({ "error": hook_err })));
                 continue;
             }
 
@@ -959,7 +961,12 @@ impl App {
                                 (doc.cursor[0].min(doc.lines.len()), 0)
                             };
                             if doc
-                                .apply_line_patch(start, remove, code_lines.clone(), Some([start, 0]))
+                                .apply_line_patch(
+                                    start,
+                                    remove,
+                                    code_lines.clone(),
+                                    Some([start, 0]),
+                                )
                                 .is_ok()
                             {
                                 doc.tip = tr("ai.applied").into();
@@ -1262,10 +1269,16 @@ impl App {
                         Item::User(t) => {
                             ui.label(egui::RichText::new(format!("{} {t}", tr("ai.you"))).strong());
                             let tl = t.to_lowercase();
-                            if tl.contains("agent") || tl.contains("派出") || tl.contains("协同") {
+                            if tl.contains("agent") || tl.contains("派出") || tl.contains("协同")
+                            {
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("[提示] 检测到多 Agent 调度任务:").size(11.0).color(Color32::from_rgb(0, 190, 255)));
-                                    if ui.small_button("打开多 Agent 协同工作台").clicked() {
+                                    ui.label(
+                                        egui::RichText::new("[提示] 检测到多 Agent 调度任务:")
+                                            .size(11.0)
+                                            .color(Color32::from_rgb(0, 190, 255)),
+                                    );
+                                    if ui.small_button("打开多 Agent 协同工作台").clicked()
+                                    {
                                         act = Some(Act::OpenCollab(t.clone()));
                                     }
                                 });
@@ -1379,9 +1392,12 @@ impl App {
             if let Some((skill, _)) = self.ai.skills.match_prompt(&self.ai.input) {
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(format!("💡 激活技能: {} — {}", skill.name, skill.description))
-                            .size(11.0)
-                            .color(Color32::from_rgb(0, 190, 255)),
+                        egui::RichText::new(format!(
+                            "💡 激活技能: {} — {}",
+                            skill.name, skill.description
+                        ))
+                        .size(11.0)
+                        .color(Color32::from_rgb(0, 190, 255)),
                     );
                 });
             }
@@ -1523,7 +1539,9 @@ mod tests {
         let skills = SkillRegistry::new();
         assert!(skills.list().len() >= 6);
 
-        let (skill, rest) = skills.match_prompt("/review fn broken() {}").expect("should match review skill");
+        let (skill, rest) = skills
+            .match_prompt("/review fn broken() {}")
+            .expect("should match review skill");
         assert_eq!(skill.id, "code-review");
         assert_eq!(rest, "fn broken() {}");
 
@@ -1535,12 +1553,20 @@ mod tests {
 
     #[test]
     fn test_ai_agent_rules_and_memory_injection() {
-        let temp = std::env::temp_dir().join(format!("ide_test_rules_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let temp = std::env::temp_dir().join(format!(
+            "ide_test_rules_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&temp).unwrap();
         std::fs::write(temp.join("AGENT.md"), "RULE: ALL_INVARIANTS_HOLD").unwrap();
 
         let rules = WorkspaceRulesEngine::new();
-        let prompt = rules.format_invariants_prompt(&temp).expect("should load rules");
+        let prompt = rules
+            .format_invariants_prompt(&temp)
+            .expect("should load rules");
         assert!(prompt.contains("RULE: ALL_INVARIANTS_HOLD"));
 
         let mem = AgentMemoryEngine::new(16);
@@ -1676,7 +1702,10 @@ mod tests {
                 .path(),
         )
         .unwrap();
-        assert!(!text.contains("abcdef1234567890XYZ"), "密钥不能明文落盘: {text}");
+        assert!(
+            !text.contains("abcdef1234567890XYZ"),
+            "密钥不能明文落盘: {text}"
+        );
         assert!(text.contains("sk-****"));
 
         // 文档不在工作区内: 不建 Cookie

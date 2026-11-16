@@ -211,9 +211,12 @@ impl McpClient {
             cmd.env(k, v);
         }
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("启动 MCP Server '{}' 失败 ({}): {}", self.server_name, self.config.command, e))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            format!(
+                "启动 MCP Server '{}' 失败 ({}): {}",
+                self.server_name, self.config.command, e
+            )
+        })?;
 
         let mut stdin = child
             .stdin
@@ -296,11 +299,17 @@ impl McpClient {
     }
 
     /// 同步发送请求并带超时熔断保护
-    fn send_request_timeout(&self, req: JsonRpcRequest, timeout: Duration) -> Result<JsonRpcResponse, String> {
+    fn send_request_timeout(
+        &self,
+        req: JsonRpcRequest,
+        timeout: Duration,
+    ) -> Result<JsonRpcResponse, String> {
         let target_id = req.id;
         let (req_tx, resp_rx) = {
             let lock = self.worker.lock().map_err(|e| e.to_string())?;
-            let w = lock.as_ref().ok_or_else(|| "MCP Server 未运行".to_string())?;
+            let w = lock
+                .as_ref()
+                .ok_or_else(|| "MCP Server 未运行".to_string())?;
             (w.req_tx.clone(), Arc::clone(&w.resp_rx))
         };
 
@@ -333,7 +342,9 @@ impl McpClient {
     /// 发送无需响应的通知
     pub fn send_notification(&self, method: &str, params: Value) -> Result<(), String> {
         let lock = self.worker.lock().map_err(|e| e.to_string())?;
-        let w = lock.as_ref().ok_or_else(|| "MCP Server 未运行".to_string())?;
+        let w = lock
+            .as_ref()
+            .ok_or_else(|| "MCP Server 未运行".to_string())?;
         let req = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             id: 0,
@@ -374,8 +385,8 @@ impl McpClient {
             .and_then(|r| r.get("tools").cloned())
             .unwrap_or_else(|| json!([]));
 
-        let tools: Vec<McpToolDefinition> = serde_json::from_value(tools_val)
-            .map_err(|e| format!("解析 tools 列表失败: {e}"))?;
+        let tools: Vec<McpToolDefinition> =
+            serde_json::from_value(tools_val).map_err(|e| format!("解析 tools 列表失败: {e}"))?;
 
         let mut lock = self.cached_tools.lock().map_err(|e| e.to_string())?;
         *lock = Some(tools.clone());
@@ -383,7 +394,11 @@ impl McpClient {
     }
 
     /// 调用该 Server 的某个具体工具
-    pub fn call_tool(&self, tool_name: &str, arguments: Value) -> Result<McpCallToolResult, String> {
+    pub fn call_tool(
+        &self,
+        tool_name: &str,
+        arguments: Value,
+    ) -> Result<McpCallToolResult, String> {
         self.ensure_started()?;
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let req = JsonRpcRequest {
@@ -401,7 +416,9 @@ impl McpClient {
             return Ok(McpCallToolResult::error_text(err.message));
         }
 
-        let res_val = resp.result.unwrap_or_else(|| json!({ "content": [], "isError": false }));
+        let res_val = resp
+            .result
+            .unwrap_or_else(|| json!({ "content": [], "isError": false }));
         let call_res: McpCallToolResult = serde_json::from_value(res_val)
             .map_err(|e| format!("解析 tools/call 返回格式失败: {e}"))?;
         Ok(call_res)
@@ -457,7 +474,11 @@ impl McpManager {
     }
 
     /// 执行以 `mcp_<server>_<tool>` 格式命名的工具调用
-    pub fn dispatch_tool_call(&self, full_name: &str, arguments: Value) -> Option<Result<McpCallToolResult, String>> {
+    pub fn dispatch_tool_call(
+        &self,
+        full_name: &str,
+        arguments: Value,
+    ) -> Option<Result<McpCallToolResult, String>> {
         let rest = full_name.strip_prefix("mcp_")?;
         let sep = rest.find('_')?;
         let server_name = &rest[..sep];
@@ -640,11 +661,14 @@ impl McpServerHost {
             }
             "ide_nema_convert" => {
                 let text = args["text"].as_str().unwrap_or("");
-                McpCallToolResult::success_text(format!("[NEMA Tokenized Summary]: 原始字符数 {}，压缩率提升 38.2%", text.len()))
+                McpCallToolResult::success_text(format!(
+                    "[NEMA Tokenized Summary]: 原始字符数 {}，压缩率提升 38.2%",
+                    text.len()
+                ))
             }
-            "ide_apply_patch" => {
-                McpCallToolResult::success_text("[PatchProposal Accepted]: 补丁提案已记录并送交审核通道")
-            }
+            "ide_apply_patch" => McpCallToolResult::success_text(
+                "[PatchProposal Accepted]: 补丁提案已记录并送交审核通道",
+            ),
             _ => McpCallToolResult::error_text(format!("未知工具: {name}")),
         }
     }
@@ -695,7 +719,10 @@ mod tests {
         let list_resp_str = host.handle_request(list_req);
         let list_resp: JsonRpcResponse = serde_json::from_str(&list_resp_str).unwrap();
         assert_eq!(list_resp.id, 2);
-        let tools = list_resp.result.unwrap()["tools"].as_array().cloned().unwrap();
+        let tools = list_resp.result.unwrap()["tools"]
+            .as_array()
+            .cloned()
+            .unwrap();
         assert!(tools.len() >= 3);
         assert!(tools.iter().any(|t| t["name"] == "ide_read_file"));
         assert!(tools.iter().any(|t| t["name"] == "ide_nema_convert"));

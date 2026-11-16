@@ -91,7 +91,12 @@ impl HookPipeline {
                 HookDecision::Continue => {}
                 HookDecision::Modify(_) => {}
                 HookDecision::Reject(reason) => {
-                    return Err(format!("[Hook: {} 拒绝工具调用 '{}'] {}", h.name(), tool, reason));
+                    return Err(format!(
+                        "[Hook: {} 拒绝工具调用 '{}'] {}",
+                        h.name(),
+                        tool,
+                        reason
+                    ));
                 }
             }
         }
@@ -149,10 +154,15 @@ impl AgentHook for PathSanitizerHook {
             // 拦截敏感扩展名
             let lower = p.to_ascii_lowercase();
             if lower.ends_with(".key") || lower.ends_with(".sig") || lower.ends_with(".pem") {
-                return HookDecision::Reject("安全策略拦截: 禁止 Agent 访问/写入私钥与签名文件".into());
+                return HookDecision::Reject(
+                    "安全策略拦截: 禁止 Agent 访问/写入私钥与签名文件".into(),
+                );
             }
             // 拦截系统底层目录
-            if lower.starts_with("/etc") || lower.starts_with("c:\\windows") || lower.starts_with("c:/windows") {
+            if lower.starts_with("/etc")
+                || lower.starts_with("c:\\windows")
+                || lower.starts_with("c:/windows")
+            {
                 return HookDecision::Reject("安全策略拦截: 禁止访问系统核心目录".into());
             }
         }
@@ -244,14 +254,22 @@ mod tests {
         let pipeline = HookPipeline::default();
 
         // 正常路径放行
-        assert!(pipeline.execute_pre_tool_call("read_file", &json!({ "path": "src/main.rs" })).is_ok());
+        assert!(pipeline
+            .execute_pre_tool_call("read_file", &json!({ "path": "src/main.rs" }))
+            .is_ok());
 
         // 拦截 .. 穿越
-        assert!(pipeline.execute_pre_tool_call("read_file", &json!({ "path": "../secret.txt" })).is_err());
+        assert!(pipeline
+            .execute_pre_tool_call("read_file", &json!({ "path": "../secret.txt" }))
+            .is_err());
 
         // 拦截 .key 私钥
-        assert!(pipeline.execute_pre_tool_call("read_file", &json!({ "path": "certs/server.key" })).is_err());
-        assert!(pipeline.execute_pre_tool_call("read_file", &json!({ "path": "release.sig" })).is_err());
+        assert!(pipeline
+            .execute_pre_tool_call("read_file", &json!({ "path": "certs/server.key" }))
+            .is_err());
+        assert!(pipeline
+            .execute_pre_tool_call("read_file", &json!({ "path": "release.sig" }))
+            .is_err());
     }
 
     #[test]

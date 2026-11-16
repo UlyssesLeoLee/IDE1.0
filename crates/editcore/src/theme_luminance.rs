@@ -53,7 +53,14 @@ pub fn apply_backdrop_sample(mean_luma: f64) -> DesktopLuminance {
     } else {
         prev
     };
-    SAMPLED.store(if next == DesktopLuminance::Light { 2 } else { 1 }, Ordering::Relaxed);
+    SAMPLED.store(
+        if next == DesktopLuminance::Light {
+            2
+        } else {
+            1
+        },
+        Ordering::Relaxed,
+    );
     next
 }
 
@@ -263,10 +270,22 @@ mod backdrop_tests {
     #[test]
     fn hysteresis_keeps_state_in_the_gray_zone() {
         assert_eq!(apply_backdrop_sample(0.90), DesktopLuminance::Light);
-        assert_eq!(apply_backdrop_sample(0.50), DesktopLuminance::Light, "中灰区不翻");
+        assert_eq!(
+            apply_backdrop_sample(0.50),
+            DesktopLuminance::Light,
+            "中灰区不翻"
+        );
         assert_eq!(apply_backdrop_sample(0.10), DesktopLuminance::Dark);
-        assert_eq!(apply_backdrop_sample(0.50), DesktopLuminance::Dark, "中灰区不翻");
-        assert_eq!(detect(), DesktopLuminance::Dark, "detect() 以最近一次采样为准");
+        assert_eq!(
+            apply_backdrop_sample(0.50),
+            DesktopLuminance::Dark,
+            "中灰区不翻"
+        );
+        assert_eq!(
+            detect(),
+            DesktopLuminance::Dark,
+            "detect() 以最近一次采样为准"
+        );
         assert_eq!(apply_backdrop_sample(0.60), DesktopLuminance::Light);
         assert_eq!(detect(), DesktopLuminance::Light);
     }

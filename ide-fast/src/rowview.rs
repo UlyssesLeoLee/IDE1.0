@@ -173,7 +173,16 @@ impl RowView {
         letter_spacing: f32,
     ) -> usize {
         if !self.sliced {
-            return crate::app::col_at(ctx, &self.disp, &self.map, x, y, font, wrap_w, letter_spacing);
+            return crate::app::col_at(
+                ctx,
+                &self.disp,
+                &self.map,
+                x,
+                y,
+                font,
+                wrap_w,
+                letter_spacing,
+            );
         }
         let xo = self.x_off();
         if x < xo {

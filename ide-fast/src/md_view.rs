@@ -420,19 +420,29 @@ fn table_ui(
                                     let col_w = col_widths.get(c).copied().unwrap_or(64.0);
                                     let layout = match al {
                                         Align::Left => egui::Layout::top_down(egui::Align::Min),
-                                        Align::Center => egui::Layout::top_down(egui::Align::Center),
+                                        Align::Center => {
+                                            egui::Layout::top_down(egui::Align::Center)
+                                        }
                                         Align::Right => egui::Layout::top_down(egui::Align::Max),
                                     };
-                                    ui.allocate_ui_with_layout(egui::vec2(col_w, 0.0), layout, |ui| {
-                                        ui.set_min_width(col_w);
-                                        ui.set_max_width(col_w);
-                                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                                        if k == 0 {
-                                            ui.add(egui::Label::new(RichText::new(text).strong()).wrap());
-                                        } else {
-                                            inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
-                                        }
-                                    });
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_w, 0.0),
+                                        layout,
+                                        |ui| {
+                                            ui.set_min_width(col_w);
+                                            ui.set_max_width(col_w);
+                                            ui.style_mut().wrap_mode =
+                                                Some(egui::TextWrapMode::Wrap);
+                                            if k == 0 {
+                                                ui.add(
+                                                    egui::Label::new(RichText::new(text).strong())
+                                                        .wrap(),
+                                                );
+                                            } else {
+                                                inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
+                                            }
+                                        },
+                                    );
                                 }
                                 ui.end_row();
                             }
@@ -747,10 +757,18 @@ pub fn show(
                             let r = egui::Frame::NONE
                                 .fill(code_fill)
                                 .stroke(egui::Stroke::new(
-                                    if cx.tc.dark && !cx.tc.is_translucent() { 0.0 } else { 1.0 },
+                                    if cx.tc.dark && !cx.tc.is_translucent() {
+                                        0.0
+                                    } else {
+                                        1.0
+                                    },
                                     cx.tc.border,
                                 ))
-                                .corner_radius(if cx.tc.comic || cx.tc.retro16 { 0.0 } else { 4.0 })
+                                .corner_radius(if cx.tc.comic || cx.tc.retro16 {
+                                    0.0
+                                } else {
+                                    4.0
+                                })
                                 .inner_margin(egui::Margin::symmetric(10, 8))
                                 .show(ui, |ui| {
                                     if lang == "mermaid" {
@@ -776,7 +794,8 @@ pub fn show(
                                                 text.trim_end_matches('\n')
                                             ))
                                         };
-                                        if let Ok(rendered) = nema_codec::render_source(&normalized) {
+                                        if let Ok(rendered) = nema_codec::render_source(&normalized)
+                                        {
                                             ui.add_space(6.0);
                                             ui.separator();
                                             ui.horizontal_wrapped(|ui| {
@@ -1000,7 +1019,11 @@ mod tests {
     fn table_col_widths_adapt_to_narrow_and_wide_containers() {
         let rows = vec![
             vec!["ID".into(), "名称".into(), "详细说明信息字段".into()],
-            vec!["1".into(), "核心".into(), "这是一段用于测试自适应表格列宽分配的中文内容".into()],
+            vec![
+                "1".into(),
+                "核心".into(),
+                "这是一段用于测试自适应表格列宽分配的中文内容".into(),
+            ],
         ];
         // 宽容器下窄表应等比扩展铺满可用宽度
         let wide_widths = calc_table_col_widths(&rows, 700.0, 16.0);

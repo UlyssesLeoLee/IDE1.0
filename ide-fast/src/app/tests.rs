@@ -997,10 +997,22 @@ fn test_open_review_doc_tab_and_structure() {
     let cur = a.cur();
     assert_eq!(cur.name, "🛡️ 协同审查");
     assert!(cur.readonly);
-    assert!(cur.lines.iter().any(|l| l.contains("多 AI 协同审查与统筹验收看板")));
-    assert!(cur.lines.iter().any(|l| l.contains("阶段 1: 最初规划与指引看板")));
-    assert!(cur.lines.iter().any(|l| l.contains("阶段 2: 实时协同巡航与动态指引")));
-    assert!(cur.lines.iter().any(|l| l.contains("阶段 3: 终局统筹审查与验收裁决")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("多 AI 协同审查与统筹验收看板")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("阶段 1: 最初规划与指引看板")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("阶段 2: 实时协同巡航与动态指引")));
+    assert!(cur
+        .lines
+        .iter()
+        .any(|l| l.contains("阶段 3: 终局统筹审查与验收裁决")));
 
     // 再次调用应该复用同一个标签页，不会重复创建
     a.open_review_doc();
@@ -1024,7 +1036,10 @@ fn test_trigger_coedit_demo_and_remote_cursors() {
     a.trigger_coedit_demo();
     assert_eq!(a.cur().remote_cursors.len(), 3);
     assert_eq!(a.cur().remote_cursors[0].display_name, "Coder Alpha");
-    assert_eq!(a.cur().remote_cursors[0].role, ide_agent_router::CollaboratorRole::AiCoder);
+    assert_eq!(
+        a.cur().remote_cursors[0].role,
+        ide_agent_router::CollaboratorRole::AiCoder
+    );
     assert!(a.cur().remote_cursors[0].selection.is_some());
     assert_eq!(a.cur().remote_cursors[1].display_name, "Optimizer Fast");
     assert_eq!(a.cur().remote_cursors[2].display_name, "Reviewer Lead");
@@ -1063,14 +1078,24 @@ fn test_file_lock_action_toggles_readonly_and_tip() {
     // 模拟菜单中的文件加锁逻辑
     let ro = a.cur().readonly;
     a.cur().readonly = !ro;
-    a.cur().tip = tr(if a.cur().readonly { "dlg.file-locked" } else { "dlg.file-unlocked" }).into();
+    a.cur().tip = tr(if a.cur().readonly {
+        "dlg.file-locked"
+    } else {
+        "dlg.file-unlocked"
+    })
+    .into();
     assert!(a.cur().readonly);
     assert!(a.cur().tip.contains("已加锁") || a.cur().tip.contains("Locked"));
 
     // 再次切换，解锁
     let ro = a.cur().readonly;
     a.cur().readonly = !ro;
-    a.cur().tip = tr(if a.cur().readonly { "dlg.file-locked" } else { "dlg.file-unlocked" }).into();
+    a.cur().tip = tr(if a.cur().readonly {
+        "dlg.file-locked"
+    } else {
+        "dlg.file-unlocked"
+    })
+    .into();
     assert!(!a.cur().readonly);
     assert!(a.cur().tip.contains("已解锁") || a.cur().tip.contains("Unlocked"));
 }
@@ -1119,10 +1144,11 @@ fn test_menubar_renders_without_panics() {
         a.menu(ui, &ctx);
     });
     out.textures_delta.clear();
-    assert!(!a.sys.menu_ids.is_empty(), "MenuBar 应成功注册所有一级菜单项 ID");
+    assert!(
+        !a.sys.menu_ids.is_empty(),
+        "MenuBar 应成功注册所有一级菜单项 ID"
+    );
 }
-
-
 
 #[test]
 fn test_adversarial_tray_toggle_and_new_doc() {
@@ -1162,17 +1188,39 @@ fn test_adversarial_tray_toggle_and_new_doc() {
     assert!(a.force_exit);
 
     // 7. 多语言字典完整性校验：系统托盘纯净提示（零 Sakura 独立品牌）
-    for lang in [crate::i18n::Lang::Zh, crate::i18n::Lang::Ja, crate::i18n::Lang::En] {
+    for lang in [
+        crate::i18n::Lang::Zh,
+        crate::i18n::Lang::Ja,
+        crate::i18n::Lang::En,
+    ] {
         crate::i18n::set(lang);
-        let tip = crate::msgtr::msg("⚡ 系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理");
-        assert!(!tip.is_empty(), "Language {:?} must define tray message", lang);
-        assert!(!tip.contains("Sakura") && !tip.contains("サクラ") && !tip.contains("🌸"), "UI提示严禁出现 Sakura 字样");
+        let tip = crate::msgtr::msg(
+            "⚡ 系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理",
+        );
+        assert!(
+            !tip.is_empty(),
+            "Language {:?} must define tray message",
+            lang
+        );
+        assert!(
+            !tip.contains("Sakura") && !tip.contains("サクラ") && !tip.contains("🌸"),
+            "UI提示严禁出现 Sakura 字样"
+        );
     }
 
     // 8. 字体消毒免疫测试：验证艺术/紧缩不可读字体被阻断
-    assert_eq!(crate::fonts::sanitize_font_family("BOD_PSTC.TTF", "theme-comic"), "CascadiaCode.ttf");
-    assert_eq!(crate::fonts::sanitize_font_family("Bodoni MT", "theme-comic"), "CascadiaCode.ttf");
-    assert_eq!(crate::fonts::sanitize_font_family("Consolas", "theme-comic"), "Consolas");
+    assert_eq!(
+        crate::fonts::sanitize_font_family("BOD_PSTC.TTF", "theme-comic"),
+        "CascadiaCode.ttf"
+    );
+    assert_eq!(
+        crate::fonts::sanitize_font_family("Bodoni MT", "theme-comic"),
+        "CascadiaCode.ttf"
+    );
+    assert_eq!(
+        crate::fonts::sanitize_font_family("Consolas", "theme-comic"),
+        "Consolas"
+    );
 }
 
 #[test]
@@ -1184,7 +1232,10 @@ fn test_adversarial_comic_3d_to_2d_palette_contrast_invariants() {
 
     // 1. 默认设置必须为美漫 3渲2 主题
     let default_st = Settings::default();
-    assert_eq!(default_st.theme_plugin, "theme-comic", "默认主题必须是 theme-comic");
+    assert_eq!(
+        default_st.theme_plugin, "theme-comic",
+        "默认主题必须是 theme-comic"
+    );
 
     // 2. 构造 theme-comic 变量集
     let mut vars = BTreeMap::new();
@@ -1200,19 +1251,33 @@ fn test_adversarial_comic_3d_to_2d_palette_contrast_invariants() {
     vars.insert("--green".to_string(), "#00f59b".to_string());
 
     let tc = ThemeColors::from_vars(&vars);
-    assert!(tc.comic, "ThemeColors 必须识别 --theme-name: comic 并置位 tc.comic");
+    assert!(
+        tc.comic,
+        "ThemeColors 必须识别 --theme-name: comic 并置位 tc.comic"
+    );
 
     // 3. 高饱和与极端对比度不变量（3渲2赛璐珞）
     // 状态栏为鲜亮波普黄 (#ffcc00)
     assert_eq!(tc.bg_status, egui::Color32::from_rgb(0xff, 0xcc, 0x00));
     // 状态栏前景文字在黄色底上必须采用高对比深色/黑色，避免白底看不清
     let fg_status = tc.on_status();
-    assert_ne!(fg_status, egui::Color32::WHITE, "高亮黄色状态栏上的文字绝不能是白色");
+    assert_ne!(
+        fg_status,
+        egui::Color32::WHITE,
+        "高亮黄色状态栏上的文字绝不能是白色"
+    );
 
     // 4. 语法高亮色盘验证 (Cel-Shaded 高饱和色)
     let st = tc.syntax_theme();
-    let kw_style = st.styles.get(&TokenKind::Keyword).expect("Keyword style must exist");
-    assert_eq!(kw_style.fg, Color(0xff, 0x33, 0x66), "美漫主题关键字必须是赛璐珞粉红 #ff3366");
+    let kw_style = st
+        .styles
+        .get(&TokenKind::Keyword)
+        .expect("Keyword style must exist");
+    assert_eq!(
+        kw_style.fg,
+        Color(0xff, 0x33, 0x66),
+        "美漫主题关键字必须是赛璐珞粉红 #ff3366"
+    );
 }
 
 #[test]
@@ -1221,9 +1286,13 @@ fn test_adversarial_installer_bmp_and_ico_headers() {
 
     let find_path = |sub: &str| {
         let p1 = Path::new(sub).to_path_buf();
-        if p1.exists() { return p1; }
+        if p1.exists() {
+            return p1;
+        }
         let p2 = Path::new("ide-fast").join(sub);
-        if p2.exists() { return p2; }
+        if p2.exists() {
+            return p2;
+        }
         panic!("Path not found in {} or ide-fast/{}", sub, sub);
     };
 
@@ -1255,7 +1324,11 @@ fn test_adversarial_installer_bmp_and_ico_headers() {
     let ico_path = find_path("packaging/ide-fast.ico");
     let ico_bytes = std::fs::read(ico_path).expect("读取 ide-fast.ico");
     assert!(ico_bytes.len() >= 6, "ICO 头部至少 6 字节");
-    assert_eq!(&ico_bytes[0..4], &[0, 0, 1, 0], "ICO 签名必须为 00 00 01 00");
+    assert_eq!(
+        &ico_bytes[0..4],
+        &[0, 0, 1, 0],
+        "ICO 签名必须为 00 00 01 00"
+    );
     let frame_count = u16::from_le_bytes(ico_bytes[4..6].try_into().unwrap());
     assert!(frame_count >= 5, "ICO 必须包含至少 5 个不同分辨率的图元帧");
 }
@@ -1302,15 +1375,31 @@ fn test_per_character_inverted_contrast_logic() {
     let dark_on_light_yellow = adapt_char_color(yellow, true);
 
     // 验证反色后亮度显著降低，文字不再发白融入背景
-    let luma = |c: Color32| 0.2126 * (c.r() as f32 / 255.0) + 0.7152 * (c.g() as f32 / 255.0) + 0.0722 * (c.b() as f32 / 255.0);
-    assert!(luma(dark_on_light_white) < 0.25, "白色在亮底上反色为深色字符");
-    assert!(luma(dark_on_light_cyan) < 0.35, "青色在亮底上反色为深青色字符");
-    assert!(luma(dark_on_light_yellow) < 0.35, "黄色在亮底上反色为深棕色字符");
+    let luma = |c: Color32| {
+        0.2126 * (c.r() as f32 / 255.0)
+            + 0.7152 * (c.g() as f32 / 255.0)
+            + 0.0722 * (c.b() as f32 / 255.0)
+    };
+    assert!(
+        luma(dark_on_light_white) < 0.25,
+        "白色在亮底上反色为深色字符"
+    );
+    assert!(
+        luma(dark_on_light_cyan) < 0.35,
+        "青色在亮底上反色为深青色字符"
+    );
+    assert!(
+        luma(dark_on_light_yellow) < 0.35,
+        "黄色在亮底上反色为深棕色字符"
+    );
 
     // 2. 在暗色背景下（暗色壁纸/暗色桌面）：暗色字符必须被提亮以保证对比度
     let very_dark = Color32::from_rgb(20, 24, 33);
     let light_on_dark = adapt_char_color(very_dark, false);
-    assert!(luma(light_on_dark) > 0.70, "暗色字符在暗底上必须自适应提亮为高对比字符");
+    assert!(
+        luma(light_on_dark) > 0.70,
+        "暗色字符在暗底上必须自适应提亮为高对比字符"
+    );
 
     // 3. 原本就是高对比度的字符保持清晰
     assert_eq!(adapt_char_color(white, false), white);
@@ -1346,18 +1435,28 @@ fn test_tray_all_actions_and_visibility_state_invariants() {
 
     // 1. ShowHide 隐藏
     a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
-    assert!(a.window_hidden, "First ShowHide when visible should set window_hidden = true");
+    assert!(
+        a.window_hidden,
+        "First ShowHide when visible should set window_hidden = true"
+    );
 
     // 2. ShowHide 显示
     a.handle_tray_event(&ctx, crate::tray::TrayEvent::ShowHide);
-    assert!(!a.window_hidden, "Second ShowHide should set window_hidden = false");
+    assert!(
+        !a.window_hidden,
+        "Second ShowHide should set window_hidden = false"
+    );
 
     // 3. NewFile 确保唤醒并创建文件
     a.window_hidden = true;
     let initial_docs = a.docs.len();
     a.handle_tray_event(&ctx, crate::tray::TrayEvent::NewFile);
     assert!(!a.window_hidden, "NewFile must unhide window");
-    assert_eq!(a.docs.len(), initial_docs + 1, "NewFile must create a document");
+    assert_eq!(
+        a.docs.len(),
+        initial_docs + 1,
+        "NewFile must create a document"
+    );
 
     // 4. OpenCollab 确保唤醒并打开协同工作台
     a.window_hidden = true;
@@ -1397,13 +1496,23 @@ fn test_retro16_pixelfont_invariants() {
     let (mut a, _g) = app(Settings::default());
 
     // 默认主题是 comic, effective_font 是 CascadiaCode.ttf
-    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaCode.ttf");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
 
     // 切到 retro16 主题
     a.set_theme_plugin("theme-retro16");
-    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "PixelFontMulti-12.ttf");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
     assert_eq!(a.font_px, 12.0, "Retro 16-Bit 主题默认字号必须为 12px");
-    assert_eq!(a.default_font_px(), 12.0, "Retro 16-Bit 缩放基准字号必须为 12px");
+    assert_eq!(
+        a.default_font_px(),
+        12.0,
+        "Retro 16-Bit 缩放基准字号必须为 12px"
+    );
 
     // 缩放与重置测试
     a.font_px = 16.0;
@@ -1411,19 +1520,30 @@ fn test_retro16_pixelfont_invariants() {
     assert_eq!(a.font_px, 12.0, "重置缩放必须回到 12px");
 
     // 即使用户在首选项里设置了其他字体，Retro 16-Bit 主题仍强制使用 PixelFont；其他主题一律不使用像素字体
-    assert_eq!(crate::fonts::effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
-    assert_eq!(crate::fonts::effective_font_family("PixelFont 12", "theme-comic"), "CascadiaCode.ttf");
+    assert_eq!(
+        crate::fonts::effective_font_family("Consolas", "theme-retro16"),
+        "PixelFontMulti-12.ttf"
+    );
+    assert_eq!(
+        crate::fonts::effective_font_family("PixelFont 12", "theme-comic"),
+        "CascadiaCode.ttf"
+    );
 
     // 切回 dark 主题，恢复为 CascadiaCode.ttf 及默认 15px
     a.set_theme_plugin("theme-dark");
-    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaCode.ttf");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
     assert_eq!(a.default_font_px(), 15.0);
 
     // 切到 light 主题，恢复为 CascadiaMono.ttf
     a.set_theme_plugin("theme-light");
-    assert_eq!(crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id), "CascadiaMono.ttf");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaMono.ttf"
+    );
 }
-
 
 #[test]
 fn test_themed_quick_and_window_buttons_styling_invariants() {
@@ -1438,17 +1558,20 @@ fn test_themed_quick_and_window_buttons_styling_invariants() {
     // Normal: rect 不位移, 颜色为普通前景色
     let mut out1 = ctx.run_ui(Default::default(), |root| {
         let painter = root.painter();
-        let (r_norm, col_norm) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, false, false);
+        let (r_norm, col_norm) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, false, false);
         assert_eq!(r_norm, rect);
         assert_ne!(col_norm, Color32::from_rgb(255, 215, 0));
 
         // Hovered: 高亮街机金
-        let (r_hov, col_hov) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, true, false, false);
+        let (r_hov, col_hov) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, true, false, false);
         assert_eq!(r_hov, rect);
         assert_eq!(col_hov, Color32::from_rgb(255, 215, 0));
 
         // Active: 1px 物理位移 (模拟街机微动下压)
-        let (r_act, col_act) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, true, false);
+        let (r_act, col_act) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_retro, false, true, false);
         assert_eq!(r_act, rect.translate(Vec2::new(1.0, 1.0)));
         assert_eq!(col_act, Color32::from_rgb(0, 240, 255));
     });
@@ -1461,12 +1584,14 @@ fn test_themed_quick_and_window_buttons_styling_invariants() {
     let mut out2 = ctx.run_ui(Default::default(), |root| {
         let painter = root.painter();
         // Hovered: 黄底纯黑字, 超高对比波普风格
-        let (r_hov, col_hov) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, true, false, false);
+        let (r_hov, col_hov) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, true, false, false);
         assert_eq!(r_hov, rect);
         assert_eq!(col_hov, Color32::BLACK);
 
         // Active: 下沉 1.5px 消除投影
-        let (r_act, col_act) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, false, true, false);
+        let (r_act, col_act) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_comic, false, true, false);
         assert_eq!(r_act, rect.translate(Vec2::new(1.5, 1.5)));
         assert_eq!(col_act, Color32::BLACK);
     });
@@ -1480,11 +1605,13 @@ fn test_themed_quick_and_window_buttons_styling_invariants() {
 
     let mut out3 = ctx.run_ui(Default::default(), |root| {
         let painter = root.painter();
-        let (r_hov, col_hov) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, true, false, false);
+        let (r_hov, col_hov) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, true, false, false);
         assert_eq!(r_hov, rect);
         assert_eq!(col_hov, Color32::WHITE);
 
-        let (r_act, col_act) = crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, false, true, false);
+        let (r_act, col_act) =
+            crate::icons::paint_themed_quick_btn(painter, rect, &tc_crystal, false, true, false);
         assert_eq!(r_act, rect);
         assert_eq!(col_act, Color32::WHITE);
     });
@@ -1618,7 +1745,10 @@ fn test_wrap_mode_and_minimap_collapse_invariants() {
 
     a.cfg.view.kinsoku = true;
     a.cfg.view.hang = true;
-    assert!(a.cfg.view.kinsoku && a.cfg.view.hang, "禁则与悬挂选项必须正常记录");
+    assert!(
+        a.cfg.view.kinsoku && a.cfg.view.hang,
+        "禁则与悬挂选项必须正常记录"
+    );
 
     a.run_app(crate::keymap::App::WrapNone, &ctx);
     assert!(!a.wrap, "不折行模式下 wrap 应恢复为 false");
@@ -1658,9 +1788,18 @@ fn right_collapse_slots_places_all_at_top_when_closed_and_drops_closed_to_bottom
 
     // 2. 点开导航图后: 导航图按钮留在上方，剩余 MD / NEMA 自动降到底部
     let map_open = crate::app::right_collapse_slots(vp, true, false, false);
-    let m = map_open.iter().find(|s| s.kind == crate::app::RightCollapseKind::Minimap).unwrap();
-    let md = map_open.iter().find(|s| s.kind == crate::app::RightCollapseKind::Md).unwrap();
-    let nema = map_open.iter().find(|s| s.kind == crate::app::RightCollapseKind::Nema).unwrap();
+    let m = map_open
+        .iter()
+        .find(|s| s.kind == crate::app::RightCollapseKind::Minimap)
+        .unwrap();
+    let md = map_open
+        .iter()
+        .find(|s| s.kind == crate::app::RightCollapseKind::Md)
+        .unwrap();
+    let nema = map_open
+        .iter()
+        .find(|s| s.kind == crate::app::RightCollapseKind::Nema)
+        .unwrap();
     assert_eq!(m.rect.min.y, 6.0);
     assert_eq!(md.rect.min.y, 574.0);
     assert_eq!(nema.rect.min.y, 574.0);
@@ -1668,15 +1807,33 @@ fn right_collapse_slots_places_all_at_top_when_closed_and_drops_closed_to_bottom
     // 3. 点开 MD 后: MD 留在上方，剩余 导航 / NEMA 自动降到底部
     let md_only = crate::app::right_collapse_slots(vp, false, true, false);
     assert_eq!(
-        md_only.iter().find(|s| s.kind == crate::app::RightCollapseKind::Md).unwrap().rect.min.y,
+        md_only
+            .iter()
+            .find(|s| s.kind == crate::app::RightCollapseKind::Md)
+            .unwrap()
+            .rect
+            .min
+            .y,
         6.0
     );
     assert_eq!(
-        md_only.iter().find(|s| s.kind == crate::app::RightCollapseKind::Minimap).unwrap().rect.min.y,
+        md_only
+            .iter()
+            .find(|s| s.kind == crate::app::RightCollapseKind::Minimap)
+            .unwrap()
+            .rect
+            .min
+            .y,
         574.0
     );
     assert_eq!(
-        md_only.iter().find(|s| s.kind == crate::app::RightCollapseKind::Nema).unwrap().rect.min.y,
+        md_only
+            .iter()
+            .find(|s| s.kind == crate::app::RightCollapseKind::Nema)
+            .unwrap()
+            .rect
+            .min
+            .y,
         574.0
     );
 }
@@ -1773,7 +1930,12 @@ fn alt_vertical_selection_dynamic_spacing_and_coordinate_badge() {
     assert_eq!(doc.box_sel, Some([1, 2, 3, 7]));
 
     let b = doc.box_sel.unwrap();
-    let (r0, r1, c0, c1) = (b[0].min(b[2]), b[0].max(b[2]), b[1].min(b[3]), b[1].max(b[3]));
+    let (r0, r1, c0, c1) = (
+        b[0].min(b[2]),
+        b[0].max(b[2]),
+        b[1].min(b[3]),
+        b[1].max(b[3]),
+    );
     let rows_count = r1 - r0 + 1;
     let cols_count = c1 - c0;
     assert_eq!(rows_count, 3, "纵向覆盖 3 行 (1..=3)");
@@ -1793,7 +1955,13 @@ fn alt_vertical_selection_dynamic_spacing_and_coordinate_badge() {
 
     // 2. 验证 rowview 在拉大字符间距 (letter_spacing = 8.0) 下的列定位与精确换算
     let font = egui::FontId::monospace(14.0);
-    let rv = crate::rowview::RowView::build(&doc.lines[0], 4, crate::kinsoku::Wrap::default(), None, 10.0);
+    let rv = crate::rowview::RowView::build(
+        &doc.lines[0],
+        4,
+        crate::kinsoku::Wrap::default(),
+        None,
+        10.0,
+    );
     let ctx = egui::Context::default();
     let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
     out.textures_delta.clear();
@@ -1859,7 +2027,11 @@ fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
     let mut style = egui::Style::default();
     let apply_style = crate::app::menuui::style(crystal_tc);
     apply_style(&mut style);
-    assert_eq!(style.visuals.window_fill.a(), 255, "透明主题的下拉菜单严禁透明，必须是 solid opaque (alpha=255)");
+    assert_eq!(
+        style.visuals.window_fill.a(),
+        255,
+        "透明主题的下拉菜单严禁透明，必须是 solid opaque (alpha=255)"
+    );
 
     // 浅色透明模式下同样保证不透明
     let light_translucent_tc = crate::view::ThemeColors {
@@ -1871,14 +2043,26 @@ fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
     let mut light_style = egui::Style::default();
     let apply_light_style = crate::app::menuui::style(light_translucent_tc);
     apply_light_style(&mut light_style);
-    assert_eq!(light_style.visuals.window_fill.a(), 255, "浅色透明主题下拉菜单也必须不透明");
+    assert_eq!(
+        light_style.visuals.window_fill.a(),
+        255,
+        "浅色透明主题下拉菜单也必须不透明"
+    );
 
     // 2. 本体 60% 透明度 (40% 遮罩强度) 规范验证
     use editcore::theme_luminance::DesktopLuminance;
     let dark_tint = DesktopLuminance::Dark.glass_tint();
     let light_tint = DesktopLuminance::Light.glass_tint();
-    assert!(dark_tint.contains("0.40"), "暗色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}", dark_tint);
-    assert!(light_tint.contains("0.40"), "亮色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}", light_tint);
+    assert!(
+        dark_tint.contains("0.40"),
+        "暗色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}",
+        dark_tint
+    );
+    assert!(
+        light_tint.contains("0.40"),
+        "亮色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}",
+        light_tint
+    );
     assert_eq!(DesktopLuminance::Dark.tint_strength(), 0.40);
 
     // 3. 动态字符级反色确保清晰显示
@@ -1886,8 +2070,14 @@ fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
     let dark_char = Color32::from_rgb(20, 20, 20);
     // 浅色背景下，原本为白色的字符应自动反转为深色
     let adapted_on_light = adapt_char_color(white_char, true);
-    assert!(adapted_on_light.r() < 80 && adapted_on_light.g() < 80, "白字在浅色背景下自动反色为深字");
+    assert!(
+        adapted_on_light.r() < 80 && adapted_on_light.g() < 80,
+        "白字在浅色背景下自动反色为深字"
+    );
     // 暗色背景下，原本为暗色的字符应自动反转/提亮为高对比浅色
     let adapted_on_dark = adapt_char_color(dark_char, false);
-    assert!(adapted_on_dark.r() >= 200 && adapted_on_dark.g() >= 200, "暗字在深色背景下自动提亮为高对比浅字");
+    assert!(
+        adapted_on_dark.r() >= 200 && adapted_on_dark.g() >= 200,
+        "暗字在深色背景下自动提亮为高对比浅字"
+    );
 }

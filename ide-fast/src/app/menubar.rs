@@ -1,9 +1,9 @@
 use super::menuui::{self, menu_check};
 use super::App;
-use crate::view::ThemeColors;
 use crate::i18n::{lk, tr, trz, Lang};
 use crate::keymap::App as KApp;
 use crate::tabs::CloseKind;
+use crate::view::ThemeColors;
 use editcore::document_io::Charset;
 use eframe::egui;
 use std::path::PathBuf;
@@ -375,7 +375,9 @@ impl App {
                                     self.bm_open = true;
                                     ui.close();
                                 }
-                                if menuui::mbtn(ui, lk("c.bookmark-reset", "Ctrl+Shift+F2")).clicked() {
+                                if menuui::mbtn(ui, lk("c.bookmark-reset", "Ctrl+Shift+F2"))
+                                    .clicked()
+                                {
                                     self.cur().bookmarks.clear();
                                     self.cur().tip = tr("dlg.bm-cleared").into();
                                     ui.close();
@@ -432,16 +434,29 @@ impl App {
 
                             // 2. 面板与折叠 (Panels & Docks)
                             ui.menu_button(tr("sub.dock-panels"), |ui| {
-                                if menu_check(ui, &tc, self.cfg.view.rail, lk("c.rail", "")).clicked() {
+                                if menu_check(ui, &tc, self.cfg.view.rail, lk("c.rail", ""))
+                                    .clicked()
+                                {
                                     self.cfg.view.rail = !self.cfg.view.rail;
                                 }
-                                if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B")).clicked() {
+                                if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B"))
+                                    .clicked()
+                                {
                                     self.side.open = !self.side.open;
                                 }
-                                if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`")).clicked() {
+                                if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`"))
+                                    .clicked()
+                                {
                                     self.term.open = !self.term.open;
                                 }
-                                if menu_check(ui, &tc, self.sticky_notes.open, lk("c.sticky-notes", "Ctrl+Alt+N")).clicked() {
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.sticky_notes.open,
+                                    lk("c.sticky-notes", "Ctrl+Alt+N"),
+                                )
+                                .clicked()
+                                {
                                     self.sticky_notes.open = !self.sticky_notes.open;
                                     if self.sticky_notes.open {
                                         self.sticky_notes.focus_needed = true;
@@ -450,9 +465,21 @@ impl App {
                                 }
                                 ui.separator();
                                 for (a, zh, on) in [
-                                    (KApp::SideCollapse, "折叠左侧栏", self.cfg.view.side_collapsed),
-                                    (KApp::RightCollapse, "折叠右侧面板", self.cfg.view.right_collapsed),
-                                    (KApp::BottomCollapse, "折叠底部面板", self.cfg.view.bottom_collapsed),
+                                    (
+                                        KApp::SideCollapse,
+                                        "折叠左侧栏",
+                                        self.cfg.view.side_collapsed,
+                                    ),
+                                    (
+                                        KApp::RightCollapse,
+                                        "折叠右侧面板",
+                                        self.cfg.view.right_collapsed,
+                                    ),
+                                    (
+                                        KApp::BottomCollapse,
+                                        "折叠底部面板",
+                                        self.cfg.view.bottom_collapsed,
+                                    ),
                                 ] {
                                     if menu_check(ui, &tc, on, Self::app_label(a, zh)).clicked() {
                                         self.run_app(a, ctx);
@@ -466,7 +493,9 @@ impl App {
                                     (super::sysopts::BottomTab::Problems, "底部: 问题 (PROBLEMS)"),
                                     (super::sysopts::BottomTab::CollabReview, "底部: 🛡️ 协同审查"),
                                 ] {
-                                    let on = self.term.open && !self.cfg.view.bottom_collapsed && self.sys.bottom == t;
+                                    let on = self.term.open
+                                        && !self.cfg.view.bottom_collapsed
+                                        && self.sys.bottom == t;
                                     if menu_check(ui, &tc, on, trz(zh)).clicked() {
                                         self.sys.bottom = t;
                                         self.term.open = true;
@@ -474,7 +503,8 @@ impl App {
                                         ui.close();
                                     }
                                 }
-                                if menuui::mbtn(ui, trz("+ 新建终端会话 (PowerShell)")).clicked() {
+                                if menuui::mbtn(ui, trz("+ 新建终端会话 (PowerShell)")).clicked()
+                                {
                                     self.new_terminal_session();
                                     ui.close();
                                 }
@@ -482,32 +512,70 @@ impl App {
 
                             // 3. 界面元素 (UI Elements)
                             ui.menu_button(tr("sub.ui-bars"), |ui| {
-                                if menu_check(ui, &tc, self.cfg.view.status_bar, lk("c.status-bar", "")).clicked() {
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.cfg.view.status_bar,
+                                    lk("c.status-bar", ""),
+                                )
+                                .clicked()
+                                {
                                     self.cfg.view.status_bar = !self.cfg.view.status_bar;
                                 }
-                                if menu_check(ui, &tc, self.cfg.view.line_numbers, lk("c.line-numbers", "")).clicked() {
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.cfg.view.line_numbers,
+                                    lk("c.line-numbers", ""),
+                                )
+                                .clicked()
+                                {
                                     self.cfg.view.line_numbers = !self.cfg.view.line_numbers;
                                 }
-                                if menu_check(ui, &tc, self.cfg.view.minimap, lk("c.minimap", "")).clicked() {
+                                if menu_check(ui, &tc, self.cfg.view.minimap, lk("c.minimap", ""))
+                                    .clicked()
+                                {
                                     self.cfg.view.minimap = !self.cfg.view.minimap;
                                 }
-                                if menu_check(ui, &tc, self.cfg.view.ruler, lk("c.ruler", "")).clicked() {
+                                if menu_check(ui, &tc, self.cfg.view.ruler, lk("c.ruler", ""))
+                                    .clicked()
+                                {
                                     self.cfg.view.ruler = !self.cfg.view.ruler;
                                 }
-                                if menu_check(ui, &tc, self.cfg.view.funckey, lk("c.funckey", "")).clicked() {
+                                if menu_check(ui, &tc, self.cfg.view.funckey, lk("c.funckey", ""))
+                                    .clicked()
+                                {
                                     self.cfg.view.funckey = !self.cfg.view.funckey;
                                 }
-                                if menu_check(ui, &tc, self.cfg.view.toolbar, lk("c.toolbar", "")).clicked() {
+                                if menu_check(ui, &tc, self.cfg.view.toolbar, lk("c.toolbar", ""))
+                                    .clicked()
+                                {
                                     self.cfg.view.toolbar = !self.cfg.view.toolbar;
                                 }
                                 ui.separator();
-                                if menu_check(ui, &tc, !self.cfg.view.md_bar_collapsed, trz("Markdown 工具条")).clicked() {
-                                    self.cfg.view.md_bar_collapsed = !self.cfg.view.md_bar_collapsed;
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    !self.cfg.view.md_bar_collapsed,
+                                    trz("Markdown 工具条"),
+                                )
+                                .clicked()
+                                {
+                                    self.cfg.view.md_bar_collapsed =
+                                        !self.cfg.view.md_bar_collapsed;
                                     self.md_preview = !self.cfg.view.md_bar_collapsed;
                                     self.cfg.save();
                                 }
-                                if menu_check(ui, &tc, !self.cfg.view.nema_bar_collapsed, trz("NEMA 工具条")).clicked() {
-                                    self.cfg.view.nema_bar_collapsed = !self.cfg.view.nema_bar_collapsed;
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    !self.cfg.view.nema_bar_collapsed,
+                                    trz("NEMA 工具条"),
+                                )
+                                .clicked()
+                                {
+                                    self.cfg.view.nema_bar_collapsed =
+                                        !self.cfg.view.nema_bar_collapsed;
                                     self.nema_preview = !self.cfg.view.nema_bar_collapsed;
                                     self.cfg.save();
                                 }
@@ -522,15 +590,26 @@ impl App {
                                     self.wrap_mode_menu_items(ui, &tc, ctx);
                                 });
                                 ui.separator();
-                                if menu_check(ui, &tc, self.cfg.view.whitespace, lk("c.whitespace", "")).clicked() {
+                                if menu_check(
+                                    ui,
+                                    &tc,
+                                    self.cfg.view.whitespace,
+                                    lk("c.whitespace", ""),
+                                )
+                                .clicked()
+                                {
                                     self.cfg.view.whitespace = !self.cfg.view.whitespace;
                                 }
-                                if menu_check(ui, &tc, self.cfg.view.cur_line, lk("c.cur-line", "")).clicked() {
+                                if menu_check(ui, &tc, self.cfg.view.cur_line, lk("c.cur-line", ""))
+                                    .clicked()
+                                {
                                     self.cfg.view.cur_line = !self.cfg.view.cur_line;
                                 }
                                 let ro = self.cur().readonly;
                                 if menu_check(ui, &tc, ro, trz("只读模式")).clicked() {
-                                    if let Some(d) = self.docs.get_mut(self.active) { d.readonly = !ro; }
+                                    if let Some(d) = self.docs.get_mut(self.active) {
+                                        d.readonly = !ro;
+                                    }
                                     ui.close();
                                 }
                             });
@@ -549,7 +628,9 @@ impl App {
                                 ui.separator();
                                 ui.menu_button(tr("sub.tabwidth"), |ui| {
                                     for w in [2usize, 3, 4, 8] {
-                                        if menu_check(ui, &tc, self.tab == w, format!("{w}")).clicked() {
+                                        if menu_check(ui, &tc, self.tab == w, format!("{w}"))
+                                            .clicked()
+                                        {
                                             self.tab = w;
                                             ui.close();
                                         }
@@ -598,7 +679,8 @@ impl App {
                             ui.menu_button(tr("sub.wrap-mode"), |ui| {
                                 self.wrap_mode_menu_items(ui, &tc, ctx);
                             });
-                            if menu_check(ui, &tc, self.cfg.view.minimap, tr("c.minimap")).clicked() {
+                            if menu_check(ui, &tc, self.cfg.view.minimap, tr("c.minimap")).clicked()
+                            {
                                 self.cfg.view.minimap = !self.cfg.view.minimap;
                                 self.cfg.save();
                                 ui.close();
@@ -620,7 +702,11 @@ impl App {
                                     ("theme-comic", "c.theme-comic"),
                                 ] {
                                     let active = if self.theme_id.is_empty() {
-                                        if self.dark { id == "theme-dark" } else { id == "theme-light" }
+                                        if self.dark {
+                                            id == "theme-dark"
+                                        } else {
+                                            id == "theme-light"
+                                        }
                                     } else {
                                         self.theme_id == id
                                     };
@@ -731,7 +817,7 @@ impl App {
                         })
                     },
                 );
-menuui::top(
+                menuui::top(
                     ui,
                     &mut mids,
                     "menu.window",
@@ -876,7 +962,7 @@ menuui::top(
                         })
                     },
                 );
-menuui::top(
+                menuui::top(
                     ui,
                     &mut mids,
                     "menu.help",
@@ -919,7 +1005,9 @@ menuui::top(
                         ui.separator();
                         if menuui::mbtn(ui, lk("c.wiki", "")).clicked() {
                             ui.close();
-                            let _ = crate::md_view::open_url("https://github.com/UlyssesLeoLee/IDE1.0/wiki");
+                            let _ = crate::md_view::open_url(
+                                "https://github.com/UlyssesLeoLee/IDE1.0/wiki",
+                            );
                         }
                         if ui.button(trz("欢迎与安装向导…")).clicked() {
                             ui.close();
@@ -1175,10 +1263,7 @@ menuui::top(
         if ui
             .add_enabled(
                 col > 0 && self.cfg.view.kinsoku,
-                crate::ckbox::Check::new(
-                    &mut self.cfg.view.hang,
-                    trz("句读挂在行尾 (ぶら下げ)"),
-                ),
+                crate::ckbox::Check::new(&mut self.cfg.view.hang, trz("句读挂在行尾 (ぶら下げ)")),
             )
             .clicked()
         {

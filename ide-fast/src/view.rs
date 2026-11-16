@@ -951,8 +951,14 @@ mod tests {
         assert!(tc.is_translucent(), "crystal must be translucent");
         assert!(tc.crystal, "must recognize crystal theme");
         assert_eq!(tc.bg_edit, Color32::TRANSPARENT);
-        assert!(tc.bg_bar.a() > 0 && tc.bg_bar.a() < 255, "bg_bar must retain alpha");
-        assert!(tc.bg_status.a() > 0 && tc.bg_status.a() < 255, "bg_status must retain alpha");
+        assert!(
+            tc.bg_bar.a() > 0 && tc.bg_bar.a() < 255,
+            "bg_bar must retain alpha"
+        );
+        assert!(
+            tc.bg_status.a() > 0 && tc.bg_status.a() < 255,
+            "bg_status must retain alpha"
+        );
         assert_eq!(tc.mat_prism_cyan, Color32::from_rgb(0, 240, 255));
         assert_eq!(tc.mat_prism_pink, Color32::from_rgb(255, 105, 180));
 

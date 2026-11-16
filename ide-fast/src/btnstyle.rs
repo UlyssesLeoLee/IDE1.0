@@ -64,9 +64,17 @@ pub fn unified_collapse_palette(
         let (bg, fg) = if hot {
             (Color32::from_rgb(0, 255, 136), Color32::BLACK)
         } else {
-            (Color32::from_rgb(21, 15, 43), Color32::from_rgb(255, 215, 0))
+            (
+                Color32::from_rgb(21, 15, 43),
+                Color32::from_rgb(255, 215, 0),
+            )
         };
-        (bg, Stroke::new(1.0, Color32::from_rgb(255, 215, 0)), fg, 2.0)
+        (
+            bg,
+            Stroke::new(1.0, Color32::from_rgb(255, 215, 0)),
+            fg,
+            2.0,
+        )
     } else if tc.crystal || tc.clear {
         let alpha = if hovered || active { 56 } else { 28 };
         (

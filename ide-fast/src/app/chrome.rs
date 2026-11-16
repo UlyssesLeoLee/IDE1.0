@@ -112,7 +112,12 @@ impl App {
                     if tc.comic {
                         p.rect_filled(rect.translate(Vec2::new(1.5, 1.5)), 3.0, Color32::BLACK);
                         p.rect_filled(rect, 3.0, Color32::from_rgb(255, 204, 0));
-                        p.rect_stroke(rect, 3.0, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Inside);
+                        p.rect_stroke(
+                            rect,
+                            3.0,
+                            Stroke::new(2.0, Color32::BLACK),
+                            egui::StrokeKind::Inside,
+                        );
                     } else if tc.is_translucent() {
                         let (act_fill, border, glow) = if tc.crystal {
                             (
@@ -127,14 +132,21 @@ impl App {
                                 Some(Color32::from_rgba_unmultiplied(56, 189, 248, 65)),
                             )
                         };
-                        super::glass_render::paint_glowing_pill(p, rect, 6.0, act_fill, border, glow);
+                        super::glass_render::paint_glowing_pill(
+                            p, rect, 6.0, act_fill, border, glow,
+                        );
                     } else {
                         p.rect_filled(rect, 6.0, act_bg);
                     }
                 } else if resp.hovered() {
                     if tc.comic {
                         p.rect_filled(rect, 3.0, Color32::from_rgb(45, 48, 68));
-                        p.rect_stroke(rect, 3.0, Stroke::new(1.5, Color32::BLACK), egui::StrokeKind::Inside);
+                        p.rect_stroke(
+                            rect,
+                            3.0,
+                            Stroke::new(1.5, Color32::BLACK),
+                            egui::StrokeKind::Inside,
+                        );
                     } else {
                         p.rect_filled(rect, 6.0, tc.bg_hover);
                     }

@@ -684,68 +684,373 @@ Not signature-verified; install only plugins you trust. Install?"]),
 
 /// 命令表 (cmds.rs) 的标签 / 分组: 中文原文 -> [中, 日, 英]
 pub const CMD_T: &[Row] = &[
-    ("便笺 (Sticky Notes)", ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"]),
-    ("更多快捷操作", ["更多快捷操作", "その他のショートカット", "More Quick Actions"]),
-    ("更多快捷操作 (折叠)", ["更多快捷操作 (折叠)", "その他のショートカット (折りたたみ)", "More Quick Actions (Collapsed)"]),
-    ("打开命令面板 (Ctrl+Shift+P / Shift+F1)", ["打开命令面板 (Ctrl+Shift+P / Shift+F1)", "コマンドパレットを開く (Ctrl+Shift+P / Shift+F1)", "Open Command Palette (Ctrl+Shift+P / Shift+F1)"]),
-    ("欢迎与安装向导…", ["欢迎与安装向导…", "⚡ ようこそ・インストールウィザード…", "⚡ Welcome & Setup Wizard…"]),
-    ("显示空白符", ["显示空白符", "空白文字を表示", "Show Whitespace"]),
-    ("已完成 Native 与 Nemat 压缩效益分析", ["已完成 Native 与 Nemat 压缩效益分析", "Native と Nemat の圧縮効果分析が完了しました", "Completed Native vs Nemat compression efficiency analysis"]),
-    ("已扫描并列出高频词典候选词", ["已扫描并列出高频词典候选词", "頻出辞書候補を一覧表示しました", "Scanned and listed frequent dictionary candidates"]),
-    ("显示字典与高频复用词位置", ["显示字典与高频复用词位置", "辞書参照と頻出再利用位置を表示", "Show dictionary & reused token positions"]),
-    ("已高亮并列出文档内字典与复用位置", ["已高亮并列出文档内字典与复用位置", "文書内の辞書参照と再利用位置を一覧表示しました", "Listed dictionary references and reused positions"]),
-    ("源代码文件已受保护：已在右侧新建 .nema 标签页，原文件未修改", ["源代码文件已受保护：已在右侧新建 .nema 标签页，原文件未修改", "ソースコードを保護：新規 .nema タブを作成しました（元ファイルは未変更）", "Source code file protected: opened converted .nema in a new tab"]),
-    ("自动转化 / 编码为 NEMA (Ctrl+Alt+M)", ["自动转化 / 编码为 NEMA (Ctrl+Alt+M)", "NEMA に自動変換 / エンコード (Ctrl+Alt+M)", "Auto convert / encode to NEMA (Ctrl+Alt+M)"]),
-    ("查看 Native vs Nemat Token 节省率与对比", ["查看 Native vs Nemat Token 节省率与对比", "Native と Nemat の Token 比較を表示", "View Native vs Nemat Token savings comparison"]),
-    ("固化当前高频候选词并生成 ^N 引用", ["固化当前高频候选词并生成 ^N 引用", "辞書候補を固定して ^N 参照を生成", "Lock dictionary candidates and emit ^N references"]),
-    ("扫描并查看文档内高频词典候选词", ["扫描并查看文档内高频词典候选词", "頻出辞書候補スキャン", "Scan and inspect dictionary candidates"]),
-    ("自动转化 / 编码为 NEMA (Ctrl+Shift+M)", ["自动转化 / 编码为 NEMA (Ctrl+Shift+M)", "NEMA に自動変換 / エンコード (Ctrl+Shift+M)", "Auto convert / encode to NEMA (Ctrl+Shift+M)"]),
-    ("插入 ^0 词典引用原子", ["插入 ^0 词典引用原子", "辞書参照 ^0 を挿入", "Insert ^0 dictionary reference atom"]),
-    ("在文首插入共享词典条目 (\\t$N)", ["在文首插入共享词典条目 (\\t$N)", "ファイル先頭に共有辞書エントリを挿入", "Insert shared dictionary entry at top"]),
-    ("插入 Graph 拓扑节点与边模板", ["插入 Graph 拓扑节点与边模板", "Graph テンプレートを挿入", "Insert Graph template"]),
-    ("插入 5W1H 模板", ["插入 5W1H 模板", "5W1H テンプレートを挿入", "Insert 5W1H template"]),
-    ("插入空格缩进续接行 (延续上一行当前列)", ["插入空格缩进续接行 (延续上一行当前列)", "空白インデントの継続行を挿入", "Insert space-indented continuation row"]),
-    ("插入新记录行", ["插入新记录行", "新規レコード行を挿入", "Insert new record row"]),
-    ("切换 / 插入 \\ 表头行", ["切换 / 插入 \\ 表头行", "見出し行を切り替え / 挿入", "Toggle / insert \\ header row"]),
-    ("已插入词典引用 ^0", ["已插入词典引用 ^0", "辞書参照 ^0 を挿入しました", "Dictionary reference ^0 inserted"]),
-    ("已在文首插入共享词典条目", ["已在文首插入共享词典条目", "ファイル先頭に共有辞書エントリを挿入しました", "Shared dictionary entry inserted at top"]),
-    ("已追加 Graph 拓扑节点与边模板", ["已追加 Graph 拓扑节点与边模板", "Graph ノード・エッジテンプレートを追加しました", "Graph nodes and edges template appended"]),
-    ("已追加 5W1H 语义模板", ["已追加 5W1H 语义模板", "5W1H テンプレートを追加しました", "5W1H template appended"]),
-    ("已插入纵向意群续接行 (空格缩进)", ["已插入纵向意群续接行 (空格缩进)", "縦方向の意味継続行を挿入しました (空白インデント)", "Vertical continuation row inserted (space indented)"]),
-    ("已插入列索引意群续接行 ( N value)", ["已插入列索引意群续接行 ( N value)", "列インデックス付きの継続行 ( N value) を挿入しました", "Column-indexed continuation row inserted ( N value)"]),
-    ("已插入新记录行", ["已插入新记录行", "新規レコード行を挿入しました", "New record row inserted"]),
-    ("已取消表头行 (转为自动 column1...)", ["已取消表头行 (转为自动 column1...)", "ヘッダー行を解除しました (自動 column1...)", "Header row removed (reverted to auto column1...)"]),
-    ("已将首行设置为显式表头 (\\ )", ["已将首行设置为显式表头 (\\ )", "先頭行を明示ヘッダーに設定しました (\\ )", "First row set as explicit header (\\ )"]),
-    ("已将首行设置为显式表头 (\\# )", ["已将首行设置为显式表头 (\\# )", "先頭行を明示ヘッダー (\\# ) に設定しました", "First row set as explicit header (\\# )"]),
-    ("配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)", ["配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)", ".NEMA 文法インタープリタプラグインを管理 / ホットリロード", "Configure / hot-reload .NEMA grammar interpreter plugin (strict-parser.js / external)"]),
-    ("当前文档体积较小或复用词少，原生 .nema 已是最优", ["当前文档体积较小或复用词少，原生 .nema 已是最优", "サイズが小さいか重複語が少ないため、原生 .nema が最適です", "Document is small or has few repeated words; native .nema is optimal"]),
-    ("已转换为 .nemat 传输格式 (往返校验通过)", ["已转换为 .nemat 传输格式 (往返校验通过)", "NEMA .nemat 転送形式に変換しました (可逆検証済み)", "Converted to .nemat transport format (Round-trip verified)"]),
-    ("已解码为 NEMA 原生格式 (Round-trip verified)", ["已解码为 NEMA 原生格式 (Round-trip verified)", "NEMA 原生形式に復号しました (可逆検証済み)", "Decoded to native NEMA (Round-trip verified)"]),
-    ("已自动转换为 NEMA 表格格式 (.nema)", ["已自动转换为 NEMA 表格格式 (.nema)", "NEMA テーブル形式に自動変換しました (.nema)", "Auto-converted to NEMA table (.nema)"]),
-    ("自动转化 .nema", ["自动转化 .nema", "NEMA 自動変換", "Auto Convert to NEMA"]),
+    (
+        "便笺 (Sticky Notes)",
+        ["便笺 (Sticky Notes)", "付箋 (Sticky Notes)", "Sticky Notes"],
+    ),
+    (
+        "更多快捷操作",
+        [
+            "更多快捷操作",
+            "その他のショートカット",
+            "More Quick Actions",
+        ],
+    ),
+    (
+        "更多快捷操作 (折叠)",
+        [
+            "更多快捷操作 (折叠)",
+            "その他のショートカット (折りたたみ)",
+            "More Quick Actions (Collapsed)",
+        ],
+    ),
+    (
+        "打开命令面板 (Ctrl+Shift+P / Shift+F1)",
+        [
+            "打开命令面板 (Ctrl+Shift+P / Shift+F1)",
+            "コマンドパレットを開く (Ctrl+Shift+P / Shift+F1)",
+            "Open Command Palette (Ctrl+Shift+P / Shift+F1)",
+        ],
+    ),
+    (
+        "欢迎与安装向导…",
+        [
+            "欢迎与安装向导…",
+            "⚡ ようこそ・インストールウィザード…",
+            "⚡ Welcome & Setup Wizard…",
+        ],
+    ),
+    (
+        "显示空白符",
+        ["显示空白符", "空白文字を表示", "Show Whitespace"],
+    ),
+    (
+        "已完成 Native 与 Nemat 压缩效益分析",
+        [
+            "已完成 Native 与 Nemat 压缩效益分析",
+            "Native と Nemat の圧縮効果分析が完了しました",
+            "Completed Native vs Nemat compression efficiency analysis",
+        ],
+    ),
+    (
+        "已扫描并列出高频词典候选词",
+        [
+            "已扫描并列出高频词典候选词",
+            "頻出辞書候補を一覧表示しました",
+            "Scanned and listed frequent dictionary candidates",
+        ],
+    ),
+    (
+        "显示字典与高频复用词位置",
+        [
+            "显示字典与高频复用词位置",
+            "辞書参照と頻出再利用位置を表示",
+            "Show dictionary & reused token positions",
+        ],
+    ),
+    (
+        "已高亮并列出文档内字典与复用位置",
+        [
+            "已高亮并列出文档内字典与复用位置",
+            "文書内の辞書参照と再利用位置を一覧表示しました",
+            "Listed dictionary references and reused positions",
+        ],
+    ),
+    (
+        "源代码文件已受保护：已在右侧新建 .nema 标签页，原文件未修改",
+        [
+            "源代码文件已受保护：已在右侧新建 .nema 标签页，原文件未修改",
+            "ソースコードを保護：新規 .nema タブを作成しました（元ファイルは未変更）",
+            "Source code file protected: opened converted .nema in a new tab",
+        ],
+    ),
+    (
+        "自动转化 / 编码为 NEMA (Ctrl+Alt+M)",
+        [
+            "自动转化 / 编码为 NEMA (Ctrl+Alt+M)",
+            "NEMA に自動変換 / エンコード (Ctrl+Alt+M)",
+            "Auto convert / encode to NEMA (Ctrl+Alt+M)",
+        ],
+    ),
+    (
+        "查看 Native vs Nemat Token 节省率与对比",
+        [
+            "查看 Native vs Nemat Token 节省率与对比",
+            "Native と Nemat の Token 比較を表示",
+            "View Native vs Nemat Token savings comparison",
+        ],
+    ),
+    (
+        "固化当前高频候选词并生成 ^N 引用",
+        [
+            "固化当前高频候选词并生成 ^N 引用",
+            "辞書候補を固定して ^N 参照を生成",
+            "Lock dictionary candidates and emit ^N references",
+        ],
+    ),
+    (
+        "扫描并查看文档内高频词典候选词",
+        [
+            "扫描并查看文档内高频词典候选词",
+            "頻出辞書候補スキャン",
+            "Scan and inspect dictionary candidates",
+        ],
+    ),
+    (
+        "自动转化 / 编码为 NEMA (Ctrl+Shift+M)",
+        [
+            "自动转化 / 编码为 NEMA (Ctrl+Shift+M)",
+            "NEMA に自動変換 / エンコード (Ctrl+Shift+M)",
+            "Auto convert / encode to NEMA (Ctrl+Shift+M)",
+        ],
+    ),
+    (
+        "插入 ^0 词典引用原子",
+        [
+            "插入 ^0 词典引用原子",
+            "辞書参照 ^0 を挿入",
+            "Insert ^0 dictionary reference atom",
+        ],
+    ),
+    (
+        "在文首插入共享词典条目 (\\t$N)",
+        [
+            "在文首插入共享词典条目 (\\t$N)",
+            "ファイル先頭に共有辞書エントリを挿入",
+            "Insert shared dictionary entry at top",
+        ],
+    ),
+    (
+        "插入 Graph 拓扑节点与边模板",
+        [
+            "插入 Graph 拓扑节点与边模板",
+            "Graph テンプレートを挿入",
+            "Insert Graph template",
+        ],
+    ),
+    (
+        "插入 5W1H 模板",
+        [
+            "插入 5W1H 模板",
+            "5W1H テンプレートを挿入",
+            "Insert 5W1H template",
+        ],
+    ),
+    (
+        "插入空格缩进续接行 (延续上一行当前列)",
+        [
+            "插入空格缩进续接行 (延续上一行当前列)",
+            "空白インデントの継続行を挿入",
+            "Insert space-indented continuation row",
+        ],
+    ),
+    (
+        "插入新记录行",
+        [
+            "插入新记录行",
+            "新規レコード行を挿入",
+            "Insert new record row",
+        ],
+    ),
+    (
+        "切换 / 插入 \\ 表头行",
+        [
+            "切换 / 插入 \\ 表头行",
+            "見出し行を切り替え / 挿入",
+            "Toggle / insert \\ header row",
+        ],
+    ),
+    (
+        "已插入词典引用 ^0",
+        [
+            "已插入词典引用 ^0",
+            "辞書参照 ^0 を挿入しました",
+            "Dictionary reference ^0 inserted",
+        ],
+    ),
+    (
+        "已在文首插入共享词典条目",
+        [
+            "已在文首插入共享词典条目",
+            "ファイル先頭に共有辞書エントリを挿入しました",
+            "Shared dictionary entry inserted at top",
+        ],
+    ),
+    (
+        "已追加 Graph 拓扑节点与边模板",
+        [
+            "已追加 Graph 拓扑节点与边模板",
+            "Graph ノード・エッジテンプレートを追加しました",
+            "Graph nodes and edges template appended",
+        ],
+    ),
+    (
+        "已追加 5W1H 语义模板",
+        [
+            "已追加 5W1H 语义模板",
+            "5W1H テンプレートを追加しました",
+            "5W1H template appended",
+        ],
+    ),
+    (
+        "已插入纵向意群续接行 (空格缩进)",
+        [
+            "已插入纵向意群续接行 (空格缩进)",
+            "縦方向の意味継続行を挿入しました (空白インデント)",
+            "Vertical continuation row inserted (space indented)",
+        ],
+    ),
+    (
+        "已插入列索引意群续接行 ( N value)",
+        [
+            "已插入列索引意群续接行 ( N value)",
+            "列インデックス付きの継続行 ( N value) を挿入しました",
+            "Column-indexed continuation row inserted ( N value)",
+        ],
+    ),
+    (
+        "已插入新记录行",
+        [
+            "已插入新记录行",
+            "新規レコード行を挿入しました",
+            "New record row inserted",
+        ],
+    ),
+    (
+        "已取消表头行 (转为自动 column1...)",
+        [
+            "已取消表头行 (转为自动 column1...)",
+            "ヘッダー行を解除しました (自動 column1...)",
+            "Header row removed (reverted to auto column1...)",
+        ],
+    ),
+    (
+        "已将首行设置为显式表头 (\\ )",
+        [
+            "已将首行设置为显式表头 (\\ )",
+            "先頭行を明示ヘッダーに設定しました (\\ )",
+            "First row set as explicit header (\\ )",
+        ],
+    ),
+    (
+        "已将首行设置为显式表头 (\\# )",
+        [
+            "已将首行设置为显式表头 (\\# )",
+            "先頭行を明示ヘッダー (\\# ) に設定しました",
+            "First row set as explicit header (\\# )",
+        ],
+    ),
+    (
+        "配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)",
+        [
+            "配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)",
+            ".NEMA 文法インタープリタプラグインを管理 / ホットリロード",
+            "Configure / hot-reload .NEMA grammar interpreter plugin (strict-parser.js / external)",
+        ],
+    ),
+    (
+        "当前文档体积较小或复用词少，原生 .nema 已是最优",
+        [
+            "当前文档体积较小或复用词少，原生 .nema 已是最优",
+            "サイズが小さいか重複語が少ないため、原生 .nema が最適です",
+            "Document is small or has few repeated words; native .nema is optimal",
+        ],
+    ),
+    (
+        "已转换为 .nemat 传输格式 (往返校验通过)",
+        [
+            "已转换为 .nemat 传输格式 (往返校验通过)",
+            "NEMA .nemat 転送形式に変換しました (可逆検証済み)",
+            "Converted to .nemat transport format (Round-trip verified)",
+        ],
+    ),
+    (
+        "已解码为 NEMA 原生格式 (Round-trip verified)",
+        [
+            "已解码为 NEMA 原生格式 (Round-trip verified)",
+            "NEMA 原生形式に復号しました (可逆検証済み)",
+            "Decoded to native NEMA (Round-trip verified)",
+        ],
+    ),
+    (
+        "已自动转换为 NEMA 表格格式 (.nema)",
+        [
+            "已自动转换为 NEMA 表格格式 (.nema)",
+            "NEMA テーブル形式に自動変換しました (.nema)",
+            "Auto-converted to NEMA table (.nema)",
+        ],
+    ),
+    (
+        "自动转化 .nema",
+        ["自动转化 .nema", "NEMA 自動変換", "Auto Convert to NEMA"],
+    ),
     ("水晶透明", ["水晶透明", "クリスタル透明", "Crystal"]),
     ("透明玻璃", ["透明玻璃", "透明ガラス", "Clear Glass"]),
     ("深色", ["深色", "ダーク", "Dark"]),
     ("浅色", ["浅色", "ライト", "Light"]),
-    ("高对比度", ["高对比度", "ハイコントラスト", "High Contrast"]),
-    ("复古 16-Bit", ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"]),
-    ("美漫 3渲2", ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"]),
+    (
+        "高对比度",
+        ["高对比度", "ハイコントラスト", "High Contrast"],
+    ),
+    (
+        "复古 16-Bit",
+        ["复古 16-Bit", "レトロ 16-Bit", "Retro 16-Bit"],
+    ),
+    (
+        "美漫 3渲2",
+        ["美漫 3渲2", "アメコミ 3Dセル調", "Comic Cel-Shaded"],
+    ),
     ("移动履历", ["移动履历", "移動履歴", "Jump History"]),
-    ("只读模式", ["只读模式", "読み取り専用モード", "Read-Only Mode"]),
-
-    ("面板与折叠", ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"]),
+    (
+        "只读模式",
+        ["只读模式", "読み取り専用モード", "Read-Only Mode"],
+    ),
+    (
+        "面板与折叠",
+        ["面板与折叠", "パネルと折りたたみ", "Panels & Docks"],
+    ),
     ("界面元素", ["界面元素", "UIバー", "UI Elements"]),
     ("文本显示", ["文本显示", "テキスト表示", "Text Display"]),
     ("折行规则", ["折行规则", "折り返しルール", "Wrap Rules"]),
-    ("重置缩放 (100%)", ["重置缩放 (100%)", "拡大率をリセット (100%)", "Reset Zoom (100%)"]),
-    ("跳转到定义", ["跳转到定义", "定義へジャンプ", "Go to Definition"]),
+    (
+        "重置缩放 (100%)",
+        [
+            "重置缩放 (100%)",
+            "拡大率をリセット (100%)",
+            "Reset Zoom (100%)",
+        ],
+    ),
+    (
+        "跳转到定义",
+        ["跳转到定义", "定義へジャンプ", "Go to Definition"],
+    ),
     ("界面布局", ["界面布局", "レイアウト", "Layout"]),
-
     // 补全翻译 (0.3.8): 命令表 / 工具窗口 / 悬停提示
-    ("多AI协同审查看板…", ["多AI协同审查看板…", "マルチAI共同レビューダッシュボード…", "Multi-AI Review Dashboard…"]),
-    ("多AI协同实时编辑演示…", ["多AI协同实时编辑演示…", "マルチAI共同編集デモ…", "Multi-AI Co-Editing Demo…"]),
+    (
+        "多AI协同审查看板…",
+        [
+            "多AI协同审查看板…",
+            "マルチAI共同レビューダッシュボード…",
+            "Multi-AI Review Dashboard…",
+        ],
+    ),
+    (
+        "多AI协同实时编辑演示…",
+        [
+            "多AI协同实时编辑演示…",
+            "マルチAI共同編集デモ…",
+            "Multi-AI Co-Editing Demo…",
+        ],
+    ),
     ("协同审查", ["协同审查", "共同レビュー", "Co-Edit Review"]),
-    ("选择语言 (类型一览)", ["选择语言 (类型一览)", "言語選択 (タイプ別一覧)", "Select Language (Type List)"]),
+    (
+        "选择语言 (类型一览)",
+        [
+            "选择语言 (类型一览)",
+            "言語選択 (タイプ別一覧)",
+            "Select Language (Type List)",
+        ],
+    ),
     ("语言", ["语言", "言語", "Language"]),
     ("查找内容", ["查找内容", "検索内容", "Find what"]),
     (
@@ -1314,10 +1619,7 @@ pub const CMD_T: &[Row] = &[
         "展开底部面板",
         ["展开底部面板", "下パネルを展開", "Expand Bottom Panel"],
     ),
-    (
-        "▲ 折叠",
-        ["▲ 折叠", "▲ 折りたたむ", "▲ Collapse"],
-    ),
+    ("▲ 折叠", ["▲ 折叠", "▲ 折りたたむ", "▲ Collapse"]),
     (
         "折叠 Markdown 工具条到顶端 (点击隐藏)",
         [
@@ -1368,19 +1670,11 @@ pub const CMD_T: &[Row] = &[
     ),
     (
         "Markdown 工具条",
-        [
-            "Markdown 工具条",
-            "Markdown ツールバー",
-            "Markdown Toolbar",
-        ],
+        ["Markdown 工具条", "Markdown ツールバー", "Markdown Toolbar"],
     ),
     (
         "NEMA 工具条",
-        [
-            "NEMA 工具条",
-            "NEMA ツールバー",
-            "NEMA Toolbar",
-        ],
+        ["NEMA 工具条", "NEMA ツールバー", "NEMA Toolbar"],
     ),
     (
         "粗体 (Ctrl+B)",
@@ -1918,15 +2212,27 @@ pub const CMD_T: &[Row] = &[
     ),
     (
         "多 Agent 并行协作台",
-        ["多 Agent 并行协作台", "マルチAgent並列コラボ", "Multi-Agent Collab Bench"],
+        [
+            "多 Agent 并行协作台",
+            "マルチAgent並列コラボ",
+            "Multi-Agent Collab Bench",
+        ],
     ),
     (
         "多 Agent 并行修改当前文件",
-        ["多 Agent 并行修改当前文件", "マルチAgent並列編集", "Parallel Multi-Agent Edit"],
+        [
+            "多 Agent 并行修改当前文件",
+            "マルチAgent並列編集",
+            "Parallel Multi-Agent Edit",
+        ],
     ),
     (
         "模拟多 AI 协同编辑",
-        ["模拟多 AI 协同编辑", "複数AI協調デモ", "Simulate Multi-AI Co-edit"],
+        [
+            "模拟多 AI 协同编辑",
+            "複数AI協調デモ",
+            "Simulate Multi-AI Co-edit",
+        ],
     ),
     (
         "运行四阶段协同流水线",

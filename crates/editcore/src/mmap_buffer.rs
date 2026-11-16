@@ -59,7 +59,12 @@ struct InnerState {
 impl InnerState {
     /// 获取或加载指定的 64KB 虚拟块
     fn ensure_chunk(&mut self, chunk_idx: u64, file_size: u64) -> io::Result<&[u8]> {
-        if let Some(pos) = self.cache.entries.iter().position(|(idx, _)| *idx == chunk_idx) {
+        if let Some(pos) = self
+            .cache
+            .entries
+            .iter()
+            .position(|(idx, _)| *idx == chunk_idx)
+        {
             let entry = self.cache.entries.remove(pos);
             self.cache.entries.push(entry);
             return Ok(&self.cache.entries.last().unwrap().1);
@@ -92,7 +97,10 @@ impl InnerState {
             }
         }
 
-        if offset.checked_add(len as u64).map_or(true, |end| end > file_size) {
+        if offset
+            .checked_add(len as u64)
+            .map_or(true, |end| end > file_size)
+        {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 format!(
@@ -144,7 +152,6 @@ impl InnerState {
         Ok(None)
     }
 }
-
 
 /// 自动拆页分页信息
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -348,9 +355,10 @@ impl MmapBuffer {
 
     /// 读取任意起始字节偏移与长度的二进制切片
     pub fn read_slice(&self, byte_offset: u64, len: usize) -> io::Result<Vec<u8>> {
-        let mut inner = self.inner.lock().map_err(|e| {
-            io::Error::other(format!("Mutex poison error: {}", e))
-        })?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|e| io::Error::other(format!("Mutex poison error: {}", e)))?;
         inner.read_bytes(byte_offset, len, self.file_size)
     }
 
@@ -389,7 +397,9 @@ impl MmapBuffer {
                 break;
             }
 
-            let data = inner.read_bytes(cur_offset, read_len, self.file_size).ok()?;
+            let data = inner
+                .read_bytes(cur_offset, read_len, self.file_size)
+                .ok()?;
             if let Some(pos) = finder.find(&data) {
                 return Some(cur_offset + pos as u64);
             }
@@ -506,7 +516,12 @@ impl MmapBuffer {
     }
 
     /// 大小写敏感 / 不敏感关键字搜索
-    pub fn find_next_case(&self, query: &str, from_offset: u64, case_sensitive: bool) -> Option<u64> {
+    pub fn find_next_case(
+        &self,
+        query: &str,
+        from_offset: u64,
+        case_sensitive: bool,
+    ) -> Option<u64> {
         if query.is_empty() {
             return if from_offset <= self.file_size {
                 Some(from_offset)
@@ -540,7 +555,9 @@ impl MmapBuffer {
                 break;
             }
 
-            let data = inner.read_bytes(cur_offset, read_len, self.file_size).ok()?;
+            let data = inner
+                .read_bytes(cur_offset, read_len, self.file_size)
+                .ok()?;
             let s = String::from_utf8_lossy(&data).to_lowercase();
             if let Some(byte_pos) = s.find(&q_lower) {
                 return Some(cur_offset + byte_pos as u64);
@@ -607,5 +624,4 @@ impl MmapBuffer {
 
         matches
     }
-
 }

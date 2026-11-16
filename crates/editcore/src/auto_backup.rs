@@ -274,7 +274,12 @@ pub struct SaveBackupConfig {
 
 impl Default for SaveBackupConfig {
     fn default() -> Self {
-        Self { enabled: true, dir: ".sakura-backup".to_string(), naming: BackupNaming::Timestamp, generations: 5 }
+        Self {
+            enabled: true,
+            dir: ".sakura-backup".to_string(),
+            naming: BackupNaming::Timestamp,
+            generations: 5,
+        }
     }
 }
 
@@ -296,40 +301,70 @@ pub fn format_backup_timestamp(unix_ms: u64) -> String {
     let secs = (unix_ms / 1000) as i64;
     let (y, mo, d) = civil_from_days(secs.div_euclid(86_400));
     let s = secs.rem_euclid(86_400);
-    format!("{y:04}{mo:02}{d:02}-{:02}{:02}{:02}-{:03}", s / 3600, (s % 3600) / 60, s % 60, unix_ms % 1000)
+    format!(
+        "{y:04}{mo:02}{d:02}-{:02}{:02}{:02}-{:03}",
+        s / 3600,
+        (s % 3600) / 60,
+        s % 60,
+        unix_ms % 1000
+    )
 }
 
 fn is_timestamp_suffix(s: &str) -> bool {
     // YYYYMMDD-HHMMSS-mmm, 同毫秒冲突时可能再带 "-n"
     let parts: Vec<&str> = s.split('-').collect();
     (parts.len() == 3 || parts.len() == 4)
-        && parts[0].len() == 8 && parts[1].len() == 6 && parts[2].len() == 3
-        && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        && parts[0].len() == 8
+        && parts[1].len() == 6
+        && parts[2].len() == 3
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// 备份目录的绝对位置。
 pub fn backup_dir_for(file: &Path, cfg: &SaveBackupConfig) -> Result<PathBuf, BackupError> {
     let d = Path::new(&cfg.dir);
-    if d.is_absolute() { return Ok(d.to_path_buf()); }
-    let parent = file.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    if d.is_absolute() {
+        return Ok(d.to_path_buf());
+    }
+    let parent = file
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
     Ok(parent.join(d))
 }
 
 /// 列出 `file` 已有的备份 (新 -> 旧)。
 pub fn list_save_backups(file: &Path, cfg: &SaveBackupConfig) -> Result<Vec<PathBuf>, BackupError> {
     let root = backup_dir_for(file, cfg)?;
-    let name = file.file_name().ok_or_else(|| BackupError::InvalidFileName(file.to_path_buf()))?.to_string_lossy().into_owned();
+    let name = file
+        .file_name()
+        .ok_or_else(|| BackupError::InvalidFileName(file.to_path_buf()))?
+        .to_string_lossy()
+        .into_owned();
     let prefix = format!("{name}.");
     let mut found: Vec<(String, PathBuf)> = Vec::new();
-    let rd = match fs::read_dir(&root) { Ok(r) => r, Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()), Err(e) => return Err(e.into()) };
+    let rd = match fs::read_dir(&root) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
     for e in rd.filter_map(|e| e.ok()) {
         let fname = e.file_name().to_string_lossy().into_owned();
-        let Some(suffix) = fname.strip_prefix(&prefix) else { continue };
+        let Some(suffix) = fname.strip_prefix(&prefix) else {
+            continue;
+        };
         let ok = match cfg.naming {
             BackupNaming::Timestamp => is_timestamp_suffix(suffix),
-            BackupNaming::Numbered => !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()),
+            BackupNaming::Numbered => {
+                !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+            }
         };
-        if ok { found.push((suffix.to_string(), e.path())); }
+        if ok {
+            found.push((suffix.to_string(), e.path()));
+        }
     }
     match cfg.naming {
         // 时间戳字典序 = 时间序; 同毫秒的 "-n" 变体排在无后缀之后 (更新)
@@ -342,13 +377,29 @@ pub fn list_save_backups(file: &Path, cfg: &SaveBackupConfig) -> Result<Vec<Path
 /// 覆盖保存之前调用: 把磁盘上现有的 `file` 原样备份。
 /// 文件不存在 (新文档第一次保存) 或备份被关闭时返回 `Ok(None)`。
 /// 备份失败返回 Err, 由调用方决定是否继续保存 (建议提示用户而不是静默吞掉)。
-pub fn backup_before_save(file: &Path, cfg: &SaveBackupConfig) -> Result<Option<PathBuf>, BackupError> {
-    backup_before_save_at(file, cfg, SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0))
+pub fn backup_before_save(
+    file: &Path,
+    cfg: &SaveBackupConfig,
+) -> Result<Option<PathBuf>, BackupError> {
+    backup_before_save_at(
+        file,
+        cfg,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+    )
 }
 
 /// 同上, 时间由调用方给出 (便于测试)。
-pub fn backup_before_save_at(file: &Path, cfg: &SaveBackupConfig, now_ms: u64) -> Result<Option<PathBuf>, BackupError> {
-    if !cfg.enabled { return Ok(None); }
+pub fn backup_before_save_at(
+    file: &Path,
+    cfg: &SaveBackupConfig,
+    now_ms: u64,
+) -> Result<Option<PathBuf>, BackupError> {
+    if !cfg.enabled {
+        return Ok(None);
+    }
     match fs::metadata(file) {
         Ok(m) if m.is_file() => {}
         Ok(_) => return Err(BackupError::NotAFile(file.to_path_buf())),
@@ -358,37 +409,61 @@ pub fn backup_before_save_at(file: &Path, cfg: &SaveBackupConfig, now_ms: u64) -
     let gens = cfg.generations.max(1);
     let root = backup_dir_for(file, cfg)?;
     fs::create_dir_all(&root)?;
-    let name = file.file_name().ok_or_else(|| BackupError::InvalidFileName(file.to_path_buf()))?.to_string_lossy().into_owned();
+    let name = file
+        .file_name()
+        .ok_or_else(|| BackupError::InvalidFileName(file.to_path_buf()))?
+        .to_string_lossy()
+        .into_owned();
 
     let target = match cfg.naming {
         BackupNaming::Timestamp => {
             let base = format!("{name}.{}", format_backup_timestamp(now_ms));
             let mut p = root.join(&base);
             let mut n = 1;
-            while p.exists() { p = root.join(format!("{base}-{n}")); n += 1; }
+            while p.exists() {
+                p = root.join(format!("{base}-{n}"));
+                n += 1;
+            }
             p
         }
         BackupNaming::Numbered => {
             // 顺延: 先删掉会超出代数的, 再从大到小改名
             let existing = list_save_backups(file, cfg)?; // 按编号升序
-            let mut by_num: Vec<(u64, PathBuf)> = existing.into_iter()
-                .filter_map(|p| p.file_name().and_then(|f| f.to_str()).and_then(|f| f.rsplit('.').next().and_then(|s| s.parse::<u64>().ok())).map(|n| (n, p)))
+            let mut by_num: Vec<(u64, PathBuf)> = existing
+                .into_iter()
+                .filter_map(|p| {
+                    p.file_name()
+                        .and_then(|f| f.to_str())
+                        .and_then(|f| f.rsplit('.').next().and_then(|s| s.parse::<u64>().ok()))
+                        .map(|n| (n, p))
+                })
                 .collect();
             by_num.sort_by_key(|(n, _)| std::cmp::Reverse(*n));
             for (n, p) in by_num {
-                if (n as usize) + 1 > gens { let _ = fs::remove_file(&p); }
-                else { fs::rename(&p, root.join(format!("{name}.{}", n + 1)))?; }
+                if (n as usize) + 1 > gens {
+                    let _ = fs::remove_file(&p);
+                } else {
+                    fs::rename(&p, root.join(format!("{name}.{}", n + 1)))?;
+                }
             }
             root.join(format!("{name}.1"))
         }
     };
     // 先复制到临时名再改名, 避免留下半截备份
     let tmp = root.join(format!(".{name}.backup-{}.tmp", std::process::id()));
-    if let Err(e) = fs::copy(file, &tmp) { let _ = fs::remove_file(&tmp); return Err(e.into()); }
-    if let Err(e) = fs::rename(&tmp, &target) { let _ = fs::remove_file(&tmp); return Err(e.into()); }
+    if let Err(e) = fs::copy(file, &tmp) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    if let Err(e) = fs::rename(&tmp, &target) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.into());
+    }
 
     if cfg.naming == BackupNaming::Timestamp {
-        for old in list_save_backups(file, cfg)?.into_iter().skip(gens) { let _ = fs::remove_file(old); }
+        for old in list_save_backups(file, cfg)?.into_iter().skip(gens) {
+            let _ = fs::remove_file(old);
+        }
     }
     Ok(Some(target))
 }
@@ -401,18 +476,30 @@ mod save_backup_tests {
     static N: AtomicUsize = AtomicUsize::new(0);
 
     fn tdir() -> PathBuf {
-        let d = std::env::temp_dir().join(format!("sakura-sb-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        let d = std::env::temp_dir().join(format!(
+            "sakura-sb-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::SeqCst)
+        ));
         fs::create_dir_all(&d).unwrap();
         d
     }
     fn cfg(naming: BackupNaming, gens: usize) -> SaveBackupConfig {
-        SaveBackupConfig { enabled: true, dir: "bk".into(), naming, generations: gens }
+        SaveBackupConfig {
+            enabled: true,
+            dir: "bk".into(),
+            naming,
+            generations: gens,
+        }
     }
 
     #[test]
     fn timestamp_format_is_utc_and_sortable() {
         assert_eq!(format_backup_timestamp(0), "19700101-000000-000");
-        assert_eq!(format_backup_timestamp(951_782_400_000 + 3_723_004), "20000229-010203-004");
+        assert_eq!(
+            format_backup_timestamp(951_782_400_000 + 3_723_004),
+            "20000229-010203-004"
+        );
         assert!(is_timestamp_suffix("20000229-010203-004"));
         assert!(is_timestamp_suffix("20000229-010203-004-2"));
         assert!(!is_timestamp_suffix("tmp"));
@@ -425,10 +512,15 @@ mod save_backup_tests {
         // SJIS + CRLF 的原始字节, 备份必须逐字节相同
         let raw: Vec<u8> = vec![0x93, 0xFA, 0x96, 0x7B, 0x0D, 0x0A, 0x61];
         fs::write(&f, &raw).unwrap();
-        let b = backup_before_save_at(&f, &cfg(BackupNaming::Timestamp, 3), 1_000).unwrap().unwrap();
+        let b = backup_before_save_at(&f, &cfg(BackupNaming::Timestamp, 3), 1_000)
+            .unwrap()
+            .unwrap();
         assert_eq!(fs::read(&b).unwrap(), raw);
         assert!(b.starts_with(d.join("bk")));
-        assert_eq!(b.file_name().unwrap().to_string_lossy(), "doc.txt.19700101-000001-000");
+        assert_eq!(
+            b.file_name().unwrap().to_string_lossy(),
+            "doc.txt.19700101-000001-000"
+        );
         assert_eq!(fs::read(&f).unwrap(), raw, "原文件不动");
         let _ = fs::remove_dir_all(&d);
     }
@@ -437,14 +529,19 @@ mod save_backup_tests {
     fn new_file_and_disabled_make_no_backup() {
         let d = tdir();
         let f = d.join("new.txt");
-        assert!(backup_before_save(&f, &cfg(BackupNaming::Timestamp, 3)).unwrap().is_none());
+        assert!(backup_before_save(&f, &cfg(BackupNaming::Timestamp, 3))
+            .unwrap()
+            .is_none());
         assert!(!d.join("bk").exists());
         fs::write(&f, "x").unwrap();
         let mut c = cfg(BackupNaming::Timestamp, 3);
         c.enabled = false;
         assert!(backup_before_save(&f, &c).unwrap().is_none());
         assert!(!d.join("bk").exists());
-        assert!(matches!(backup_before_save(&d, &cfg(BackupNaming::Timestamp, 3)), Err(BackupError::NotAFile(_))));
+        assert!(matches!(
+            backup_before_save(&d, &cfg(BackupNaming::Timestamp, 3)),
+            Err(BackupError::NotAFile(_))
+        ));
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -510,7 +607,12 @@ mod save_backup_tests {
         let store = tdir();
         let f = d.join("z.txt");
         fs::write(&f, "z").unwrap();
-        let c = SaveBackupConfig { enabled: true, dir: store.to_string_lossy().into_owned(), naming: BackupNaming::Numbered, generations: 0 };
+        let c = SaveBackupConfig {
+            enabled: true,
+            dir: store.to_string_lossy().into_owned(),
+            naming: BackupNaming::Numbered,
+            generations: 0,
+        };
         let b = backup_before_save(&f, &c).unwrap().unwrap();
         assert_eq!(b, store.join("z.txt.1"));
         fs::write(&f, "z2").unwrap();
@@ -531,7 +633,10 @@ mod save_backup_tests {
         backup_before_save(&f, &c).unwrap();
         atomic_write(&f, b"new", AtomicWriteOpts::default()).unwrap();
         assert_eq!(fs::read_to_string(&f).unwrap(), "new");
-        assert_eq!(fs::read_to_string(d.join("bk").join("flow.txt.1")).unwrap(), "old");
+        assert_eq!(
+            fs::read_to_string(d.join("bk").join("flow.txt.1")).unwrap(),
+            "old"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 }

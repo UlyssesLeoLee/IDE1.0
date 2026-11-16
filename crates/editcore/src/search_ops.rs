@@ -98,7 +98,11 @@ struct Caps<'a> {
 
 impl<'a> Caps<'a> {
     fn get(&self, k: usize) -> Option<&'a str> {
-        self.groups.get(k).copied().flatten().map(|(s, e)| &self.hay[s..e])
+        self.groups
+            .get(k)
+            .copied()
+            .flatten()
+            .map(|(s, e)| &self.hay[s..e])
     }
     fn start0(&self) -> Option<usize> {
         self.groups.first().copied().flatten().map(|(s, _)| s)
@@ -109,13 +113,27 @@ impl Regex {
     fn find_at(&self, hay: &str, pos: usize) -> Option<(usize, usize)> {
         match self {
             Regex::Fast(r) => r.find_at(hay, pos).map(|m| (m.start(), m.end())),
-            Regex::Fancy(r) => r.find_from_pos(hay, pos).ok().flatten().map(|m| (m.start(), m.end())),
+            Regex::Fancy(r) => r
+                .find_from_pos(hay, pos)
+                .ok()
+                .flatten()
+                .map(|m| (m.start(), m.end())),
         }
     }
     fn captures_at<'a>(&self, hay: &'a str, pos: usize) -> Option<Caps<'a>> {
         match self {
-            Regex::Fast(r) => r.captures_at(hay, pos).map(|c| Caps { hay, groups: (0..c.len()).map(|i| c.get(i).map(|m| (m.start(), m.end()))).collect() }),
-            Regex::Fancy(r) => r.captures_from_pos(hay, pos).ok().flatten().map(|c| Caps { hay, groups: (0..c.len()).map(|i| c.get(i).map(|m| (m.start(), m.end()))).collect() }),
+            Regex::Fast(r) => r.captures_at(hay, pos).map(|c| Caps {
+                hay,
+                groups: (0..c.len())
+                    .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                    .collect(),
+            }),
+            Regex::Fancy(r) => r.captures_from_pos(hay, pos).ok().flatten().map(|c| Caps {
+                hay,
+                groups: (0..c.len())
+                    .map(|i| c.get(i).map(|m| (m.start(), m.end())))
+                    .collect(),
+            }),
         }
     }
 }
@@ -124,13 +142,24 @@ fn build(req: &SearchReq) -> Result<Regex, String> {
     if req.needle.is_empty() {
         return Err("empty".into());
     }
-    let src = if req.use_regex { req.needle.clone() } else { regex::escape(&req.needle) };
-    match RegexBuilder::new(&src).case_insensitive(!req.match_case).build() {
+    let src = if req.use_regex {
+        req.needle.clone()
+    } else {
+        regex::escape(&req.needle)
+    };
+    match RegexBuilder::new(&src)
+        .case_insensitive(!req.match_case)
+        .build()
+    {
         Ok(r) => Ok(Regex::Fast(r)),
         Err(e) => {
             let raw = e.to_string().to_lowercase();
             if req.use_regex && (raw.contains("look-around") || raw.contains("backreference")) {
-                return fancy_regex::RegexBuilder::new(&src).case_insensitive(!req.match_case).build().map(Regex::Fancy).map_err(|e| friendly_error(&e.to_string()));
+                return fancy_regex::RegexBuilder::new(&src)
+                    .case_insensitive(!req.match_case)
+                    .build()
+                    .map(Regex::Fancy)
+                    .map_err(|e| friendly_error(&e.to_string()));
             }
             Err(friendly_error(&e.to_string()))
         }
@@ -141,7 +170,9 @@ fn build(req: &SearchReq) -> Result<Regex, String> {
 /// 要查找字符 `*` 本身要写 `\*` 或 `[*]` —— 这里把这个提示直接写在报错里。
 fn friendly_error(raw: &str) -> String {
     let r = raw.to_lowercase();
-    let msg = if r.contains("repetition operator missing expression") || r.contains("nothing to repeat") {
+    let msg = if r.contains("repetition operator missing expression")
+        || r.contains("nothing to repeat")
+    {
         "量词 (* + ? {n,m}) 前面没有可重复的内容。要查找字符 * + ? 本身, 请写 \\* \\+ \\? 或 [*] [+] [?]"
     } else if r.contains("unclosed group") {
         "缺少右括号 ) —— 要查找字符 ( 本身请写 \\("
@@ -149,7 +180,9 @@ fn friendly_error(raw: &str) -> String {
         "多出右括号 ) —— 要查找字符 ) 本身请写 \\)"
     } else if r.contains("unclosed character class") {
         "缺少 ] —— 要查找字符 [ 本身请写 \\["
-    } else if r.contains("unclosed counted repetition") || r.contains("repetition quantifier expects a valid decimal") {
+    } else if r.contains("unclosed counted repetition")
+        || r.contains("repetition quantifier expects a valid decimal")
+    {
         "{} 里的重复次数写法不对 (应为 {n} 或 {n,m}) —— 要查找字符 { 本身请写 \\{"
     } else if r.contains("escape sequence") || r.contains("unrecognized") {
         "含有不支持的转义序列"
@@ -166,7 +199,9 @@ fn line_matches(re: &Regex, line: &str, whole_word: bool) -> Vec<(usize, usize)>
     let mut out = Vec::new();
     let mut pos = 0usize;
     while pos <= line.len() {
-        let Some((ms, me)) = re.find_at(line, pos) else { break };
+        let Some((ms, me)) = re.find_at(line, pos) else {
+            break;
+        };
         if ms == me {
             pos = next_char(line, me);
             continue;
@@ -186,7 +221,11 @@ fn line_matches(re: &Regex, line: &str, whole_word: bool) -> Vec<(usize, usize)>
 }
 
 fn next_char(s: &str, i: usize) -> usize {
-    s[i..].chars().next().map(|c| i + c.len_utf8()).unwrap_or(s.len() + 1)
+    s[i..]
+        .chars()
+        .next()
+        .map(|c| i + c.len_utf8())
+        .unwrap_or(s.len() + 1)
 }
 
 fn all_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> Vec<Hit> {
@@ -221,7 +260,11 @@ fn expand(caps: &Caps, repl: &str, use_regex: bool) -> String {
             while j < cs.len() && cs[j].is_ascii_digit() {
                 j += 1;
             }
-            let k: usize = cs[i + 1..j].iter().collect::<String>().parse().unwrap_or(usize::MAX);
+            let k: usize = cs[i + 1..j]
+                .iter()
+                .collect::<String>()
+                .parse()
+                .unwrap_or(usize::MAX);
             out.push_str(caps.get(k).unwrap_or(""));
             i = j;
         } else if c == '\\' && i + 1 < cs.len() && cs[i + 1].is_ascii_digit() {
@@ -247,20 +290,33 @@ pub fn run(req: &SearchReq) -> Option<SearchRes> {
         Some(id) => match req.doc_hash {
             Some(fp) => match crate::doc_mirror::get(id, fp, req.doc_len) {
                 Some(d) => Some(d),
-                None => return Some(SearchRes { need_doc: true, ..Default::default() }),
+                None => {
+                    return Some(SearchRes {
+                        need_doc: true,
+                        ..Default::default()
+                    })
+                }
             },
             None => None,
         },
         None => None,
     };
-    let lines: &[String] = mirrored.as_deref().map(|v| v.as_slice()).unwrap_or(&req.lines);
+    let lines: &[String] = mirrored
+        .as_deref()
+        .map(|v| v.as_slice())
+        .unwrap_or(&req.lines);
     run_on(req, lines)
 }
 
 fn run_on(req: &SearchReq, lines: &[String]) -> Option<SearchRes> {
     let re = match build(req) {
         Ok(r) => r,
-        Err(e) => return Some(SearchRes { error: Some(e), ..Default::default() }),
+        Err(e) => {
+            return Some(SearchRes {
+                error: Some(e),
+                ..Default::default()
+            })
+        }
     };
     match req.op.as_str() {
         "validate" => Some(SearchRes::default()),
@@ -279,15 +335,24 @@ fn byte_span_to_cols(line: &str, s: usize, e: usize) -> (usize, usize) {
 
 fn op_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
     let hits = all_hits(re, req, lines);
-    SearchRes { total: hits.len(), hits, ..Default::default() }
+    SearchRes {
+        total: hits.len(),
+        hits,
+        ..Default::default()
+    }
 }
 
 /// Sakura: 单词单位向后查找时, 光标在词中 -> 从该词词首起找 (命中当前词本身)
 fn step_start_col(req: &SearchReq, lines: &[String]) -> usize {
     let (cr, mut cc) = (req.row, req.col);
     if req.forward && req.whole_word && cc > 0 {
-        let cs: Vec<char> = lines.get(cr).map(|l| l.chars().collect()).unwrap_or_default();
-        if cs.get(cc - 1).copied().map(is_word).unwrap_or(false) && cs.get(cc).copied().map(is_word).unwrap_or(false) {
+        let cs: Vec<char> = lines
+            .get(cr)
+            .map(|l| l.chars().collect())
+            .unwrap_or_default();
+        if cs.get(cc - 1).copied().map(is_word).unwrap_or(false)
+            && cs.get(cc).copied().map(is_word).unwrap_or(false)
+        {
             while cc > 0 && is_word(cs[cc - 1]) {
                 cc -= 1;
             }
@@ -303,9 +368,12 @@ fn op_step(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
     let on_hit = req.sel_start == Some([cr, cc]); // 当前命中正被选中: 从它的"下一处"找
     let mut wrapped = false;
     let found = if req.forward {
-        hits.iter().position(|h| h.row > cr || (h.row == cr && if on_hit { h.col > cc } else { h.col >= cc }))
+        hits.iter().position(|h| {
+            h.row > cr || (h.row == cr && if on_hit { h.col > cc } else { h.col >= cc })
+        })
     } else {
-        hits.iter().rposition(|h| h.row < cr || (h.row == cr && h.col < cc))
+        hits.iter()
+            .rposition(|h| h.row < cr || (h.row == cr && h.col < cc))
     };
     let idx = match found {
         Some(i) => Some(i),
@@ -315,7 +383,13 @@ fn op_step(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
         }
         None => None,
     };
-    SearchRes { total: hits.len(), hit: idx.map(|i| hits[i].clone()), index: idx.unwrap_or(0), wrapped, ..Default::default() }
+    SearchRes {
+        total: hits.len(),
+        hit: idx.map(|i| hits[i].clone()),
+        index: idx.unwrap_or(0),
+        wrapped,
+        ..Default::default()
+    }
 }
 
 /// 置換全部 (限选区): 返回被改动的行 [行号, 新文本]、置換数和最后一处置換之后的位置
@@ -366,7 +440,10 @@ fn op_match_expand(re: &Regex, req: &SearchReq) -> Option<SearchRes> {
     let m = re.captures_at(seg, 0)?;
     let whole = m.get(0)?;
     if whole == seg && m.start0() == Some(0) {
-        Some(SearchRes { text: Some(expand(&m, &req.repl, req.use_regex)), ..Default::default() })
+        Some(SearchRes {
+            text: Some(expand(&m, &req.repl, req.use_regex)),
+            ..Default::default()
+        })
     } else {
         Some(SearchRes::default())
     }
@@ -376,7 +453,13 @@ fn op_match_expand(re: &Regex, req: &SearchReq) -> Option<SearchRes> {
 mod tests {
     use super::*;
 
-    const DOC: &[&str] = &["foo Foo foobar", "bar foo FOO", "foo.bar foo(1)", "x (a [b] {c}) y", "last foo"];
+    const DOC: &[&str] = &[
+        "foo Foo foobar",
+        "bar foo FOO",
+        "foo.bar foo(1)",
+        "x (a [b] {c}) y",
+        "last foo",
+    ];
 
     fn req(op: &str, needle: &str, flags: &str) -> SearchReq {
         SearchReq {
@@ -413,7 +496,11 @@ mod tests {
             r
         };
         // 没登记过: 要整篇
-        assert!(run(&by_ref("t-search-a", fp, lines.len())).unwrap().need_doc);
+        assert!(
+            run(&by_ref("t-search-a", fp, lines.len()))
+                .unwrap()
+                .need_doc
+        );
         // 带整篇登记 (和不带 doc_id 的结果一样)
         let mut put = req("hits", "foo", "");
         put.doc_id = Some("t-search-a".into());
@@ -422,8 +509,16 @@ mod tests {
         // 之后只交指纹就够, 结果一样; 指纹 / 行数对不上 = 前端改过, 不能用旧正文
         let via = run(&by_ref("t-search-a", fp, lines.len())).unwrap();
         assert_eq!((via.need_doc, via.hits), (false, direct.hits));
-        assert!(run(&by_ref("t-search-a", [fp[0] ^ 1, fp[1]], lines.len())).unwrap().need_doc);
-        assert!(run(&by_ref("t-search-a", fp, lines.len() + 1)).unwrap().need_doc);
+        assert!(
+            run(&by_ref("t-search-a", [fp[0] ^ 1, fp[1]], lines.len()))
+                .unwrap()
+                .need_doc
+        );
+        assert!(
+            run(&by_ref("t-search-a", fp, lines.len() + 1))
+                .unwrap()
+                .need_doc
+        );
         // 置換全部也用镜像里的正文
         let mut rep = by_ref("t-search-a", fp, lines.len());
         rep.op = "replace_all".into();
@@ -433,7 +528,11 @@ mod tests {
         let mut forget = by_ref("t-search-a", fp, 0);
         forget.op = "forget".into();
         run(&forget);
-        assert!(run(&by_ref("t-search-a", fp, lines.len())).unwrap().need_doc);
+        assert!(
+            run(&by_ref("t-search-a", fp, lines.len()))
+                .unwrap()
+                .need_doc
+        );
     }
     #[test]
     fn regex_errors_explain_how_to_search_a_literal_star() {
@@ -447,10 +546,24 @@ mod tests {
         assert_eq!(run(&r).unwrap().total, 2); // x*y = 零个或多个 x 再接 y: 命中 "x*y" 里的 y 和 "xxy" (不是字面的 x*y)
         let mut lit = req("hits", "[*]", "r");
         lit.lines = vec!["a*b".into(), "ab".into()];
-        assert_eq!(run(&lit).unwrap().hits, vec![Hit { row: 0, col: 1, len: 1 }]);
+        assert_eq!(
+            run(&lit).unwrap().hits,
+            vec![Hit {
+                row: 0,
+                col: 1,
+                len: 1
+            }]
+        );
         let mut esc = req("hits", "a\\*b", "r");
         esc.lines = vec!["a*b".into(), "aab".into()];
-        assert_eq!(run(&esc).unwrap().hits, vec![Hit { row: 0, col: 0, len: 3 }]);
+        assert_eq!(
+            run(&esc).unwrap().hits,
+            vec![Hit {
+                row: 0,
+                col: 0,
+                len: 3
+            }]
+        );
         // 「正则」关闭时 * 就是字面字符
         let mut plain = req("hits", "*", "");
         plain.lines = vec!["a*b".into()];
@@ -462,7 +575,14 @@ mod tests {
         assert_eq!(run(&req("hits", "foo", "c")).unwrap().total, 6);
         assert_eq!(run(&req("hits", "foo", "w")).unwrap().total, 7); // 单词单位: 去掉 foobar × 1
         let h = run(&req("hits", "fo+\\w*", "r")).unwrap();
-        assert_eq!(h.hits[0], Hit { row: 0, col: 0, len: 3 });
+        assert_eq!(
+            h.hits[0],
+            Hit {
+                row: 0,
+                col: 0,
+                len: 3
+            }
+        );
         assert!(run(&req("hits", "(", "r")).unwrap().error.is_some());
     }
     #[test]
@@ -470,26 +590,60 @@ mod tests {
         let mut r = req("step", "foo", "");
         r.row = 0;
         r.col = 1;
-        assert_eq!(run(&r).unwrap().hit, Some(Hit { row: 0, col: 4, len: 3 }));
+        assert_eq!(
+            run(&r).unwrap().hit,
+            Some(Hit {
+                row: 0,
+                col: 4,
+                len: 3
+            })
+        );
         r.row = 4;
         r.col = 5;
-        assert_eq!(run(&r).unwrap().hit, Some(Hit { row: 4, col: 5, len: 3 })); // 光标停在命中上也算
+        assert_eq!(
+            run(&r).unwrap().hit,
+            Some(Hit {
+                row: 4,
+                col: 5,
+                len: 3
+            })
+        ); // 光标停在命中上也算
         r.col = 6;
         assert_eq!(run(&r).unwrap().hit, None); // 不回绕
         r.wrap = true;
         let s = run(&r).unwrap();
-        assert_eq!((s.hit, s.wrapped), (Some(Hit { row: 0, col: 0, len: 3 }), true));
+        assert_eq!(
+            (s.hit, s.wrapped),
+            (
+                Some(Hit {
+                    row: 0,
+                    col: 0,
+                    len: 3
+                }),
+                true
+            )
+        );
         r.forward = false;
         r.row = 0;
         r.col = 0;
-        assert_eq!(run(&r).unwrap().hit, Some(Hit { row: 4, col: 5, len: 3 })); // 向前回绕
+        assert_eq!(
+            run(&r).unwrap().hit,
+            Some(Hit {
+                row: 4,
+                col: 5,
+                len: 3
+            })
+        ); // 向前回绕
     }
     #[test]
     fn replace_all_and_groups() {
         let mut r = req("replace_all", "foo", "");
         r.repl = "X".into();
         let s = run(&r).unwrap();
-        assert_eq!((s.count, s.rows[0].1.as_str(), s.last_row), (8, "X X Xbar", Some(4)));
+        assert_eq!(
+            (s.count, s.rows[0].1.as_str(), s.last_row),
+            (8, "X X Xbar", Some(4))
+        );
         let mut r = req("replace_all", "(f)(o+)", "r");
         r.repl = "[$2$1]".into();
         let s = run(&r).unwrap();
@@ -505,7 +659,10 @@ mod tests {
         r.repl = "X".into();
         r.sel = Some([1, 0, 2, 3]); // 第 2 行全部 + 第 3 行前 3 列
         let s = run(&r).unwrap();
-        assert_eq!(s.rows.iter().map(|x| x.1.as_str()).collect::<Vec<_>>(), vec!["bar X X", "X.bar foo(1)"]);
+        assert_eq!(
+            s.rows.iter().map(|x| x.1.as_str()).collect::<Vec<_>>(),
+            vec!["bar X X", "X.bar foo(1)"]
+        );
     }
     #[test]
     fn match_expand_selected_hit() {
@@ -534,7 +691,11 @@ mod tests {
         let mut r = req("replace_all", r"(?<=\()(\w+)", "cr");
         r.repl = "<$1>".into();
         let res = run(&r).unwrap();
-        assert!(res.rows.iter().any(|(_, l)| l.contains("(<1>)")), "{:?}", res.rows);
+        assert!(
+            res.rows.iter().any(|(_, l)| l.contains("(<1>)")),
+            "{:?}",
+            res.rows
+        );
         // 普通模式不受影响
         assert!(run(&req("validate", "a(b", "c")).unwrap().error.is_none());
     }

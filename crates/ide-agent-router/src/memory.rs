@@ -120,22 +120,24 @@ impl AgentMemoryEngine {
     }
 
     /// 原子安全落盘长期记忆 (先写入 .tmp 文件再原子重命名，防止写入中断损坏)
-    pub fn save_long_term(&self, workspace_root: &Path, memory: &LongTermMemory) -> Result<(), String> {
+    pub fn save_long_term(
+        &self,
+        workspace_root: &Path,
+        memory: &LongTermMemory,
+    ) -> Result<(), String> {
         let ide_dir = workspace_root.join(".ide");
-        std::fs::create_dir_all(&ide_dir)
-            .map_err(|e| format!("创建 .ide 目录失败: {e}"))?;
+        std::fs::create_dir_all(&ide_dir).map_err(|e| format!("创建 .ide 目录失败: {e}"))?;
 
         let mem_file = ide_dir.join("memory.json");
         let tmp_file = ide_dir.join("memory.json.tmp");
 
-        let serialized = serde_json::to_string_pretty(memory)
-            .map_err(|e| format!("序列化记忆失败: {e}"))?;
+        let serialized =
+            serde_json::to_string_pretty(memory).map_err(|e| format!("序列化记忆失败: {e}"))?;
 
         std::fs::write(&tmp_file, serialized.as_bytes())
             .map_err(|e| format!("写入临时记忆文件失败: {e}"))?;
 
-        std::fs::rename(&tmp_file, &mem_file)
-            .map_err(|e| format!("原子更新记忆文件失败: {e}"))?;
+        std::fs::rename(&tmp_file, &mem_file).map_err(|e| format!("原子更新记忆文件失败: {e}"))?;
 
         if let Ok(mut lock) = self.long_term_cache.lock() {
             *lock = Some((mem_file, memory.clone()));
@@ -153,7 +155,10 @@ impl AgentMemoryEngine {
             parts.push(format!("- 项目架构概要: {}", lt.architecture_summary));
         }
         if !lt.architectural_decisions.is_empty() {
-            parts.push(format!("- 既定架构决议: {}", lt.architectural_decisions.join("; ")));
+            parts.push(format!(
+                "- 既定架构决议: {}",
+                lt.architectural_decisions.join("; ")
+            ));
         }
         if !lt.user_preferences.is_empty() {
             let prefs: Vec<String> = lt
@@ -206,14 +211,18 @@ mod tests {
         let engine = AgentMemoryEngine::default();
         let mut mem = LongTermMemory::default();
         mem.architecture_summary = "Microkernel with pure Rust GUI".into();
-        mem.architectural_decisions.push("Forbid unsafe code globally".into());
+        mem.architectural_decisions
+            .push("Forbid unsafe code globally".into());
         mem.user_preferences.insert("tab_width".into(), "4".into());
 
         engine.save_long_term(&temp_dir, &mem).unwrap();
 
         // 重新加载验证
         let loaded = engine.load_long_term(&temp_dir);
-        assert_eq!(loaded.architecture_summary, "Microkernel with pure Rust GUI");
+        assert_eq!(
+            loaded.architecture_summary,
+            "Microkernel with pure Rust GUI"
+        );
         assert_eq!(loaded.architectural_decisions.len(), 1);
         assert_eq!(loaded.user_preferences.get("tab_width").unwrap(), "4");
 

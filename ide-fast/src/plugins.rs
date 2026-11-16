@@ -305,13 +305,11 @@ pub fn visuals(vars: &BTreeMap<String, String>) -> egui::Visuals {
 /// 编辑区用固定垫色 (`--bg-edit: transparent` 时), 弹出的菜单 / 窗口用接近不透明的底, 免得文字叠在桌面上看不清。
 pub fn visuals_glass(vars: &BTreeMap<String, String>, glass: bool) -> egui::Visuals {
     let get = |k: &str| vars.get(k).and_then(|v| parse_color(v));
-    let edit = get("--bg-edit")
-        .filter(|c| c.a() > 0)
-        .unwrap_or(if glass {
-            glass_edit_tint(vars)
-        } else {
-            Color32::from_gray(30)
-        });
+    let edit = get("--bg-edit").filter(|c| c.a() > 0).unwrap_or(if glass {
+        glass_edit_tint(vars)
+    } else {
+        Color32::from_gray(30)
+    });
     let dark_base = if glass {
         vars.get("--fg")
             .and_then(|v| parse_color(v))
@@ -474,7 +472,8 @@ pub fn nema_interpreters() -> Vec<(bool, NemaInterpreterSpec)> {
 
 pub fn read_nema_plugin_script(plugin_id: &str, script_file: &str) -> Result<String, String> {
     let bytes = store::read_asset(&root(), plugin_id, script_file)?;
-    String::from_utf8(bytes).map_err(|_| format!("{plugin_id}/{script_file} 不是有效的 UTF-8 JS 脚本"))
+    String::from_utf8(bytes)
+        .map_err(|_| format!("{plugin_id}/{script_file} 不是有效的 UTF-8 JS 脚本"))
 }
 
 pub fn hot_patch_nema_plugin_script(

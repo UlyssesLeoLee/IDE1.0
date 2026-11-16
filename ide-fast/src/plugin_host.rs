@@ -567,7 +567,10 @@ mod tests {
             .expect("nema-interpreter QuickJS render");
         let doc = nema_codec::parse_strict_ast_json(&out).expect("convert strict AST JSON");
         assert_eq!(doc.domains.len(), 1);
-        assert_eq!(doc.domains[0].columns, vec!["Service", "State", "Note Text"]);
+        assert_eq!(
+            doc.domains[0].columns,
+            vec!["Service", "State", "Note Text"]
+        );
         assert_eq!(doc.domains[0].rows[0].cells[2], "Hello World_Cont");
         assert_eq!(doc.domains[0].rows[1].groups[1], vec!["~"]);
 

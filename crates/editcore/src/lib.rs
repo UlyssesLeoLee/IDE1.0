@@ -35,6 +35,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod agent_api;
 pub mod auto_backup;
 pub mod bookmark;
 pub mod bracket;
@@ -48,46 +49,45 @@ pub mod document_io;
 pub mod edit_cmd;
 pub mod edit_ops;
 pub mod encoding_io;
+pub mod exec_cmd;
 pub mod file_lock;
-pub mod history;
 pub mod font_manager;
 pub mod grep;
 pub mod grep_engine;
+pub mod history;
 pub mod incremental_search;
 pub mod js_macro;
 pub mod key_macro;
 pub mod keyword_set;
 pub mod macro_sakura;
-pub mod plugin_host;
-pub mod md_render;
-pub mod settings_store;
-pub mod exec_cmd;
-pub mod md_lint;
-pub mod md_struct;
-pub mod agent_api;
 pub mod matching_paren;
+pub mod md_lint;
+pub mod md_render;
+pub mod md_struct;
 pub mod migemo;
 pub mod mmap_buffer;
 pub mod nav;
 pub mod outline_extended;
 pub mod outline_langs;
 pub mod plugin;
+pub mod plugin_host;
 pub mod ppa_engine;
 pub mod ppa_macro;
 pub mod pure_api;
 pub mod ruler;
 pub mod sakura_settings;
+pub mod settings_store;
 pub use sakura_settings::{
-    AssistConfig, ColorPaletteConfig, CustomMenuConfig, CustomMenuItem, CustomMenuSlot,
-    EditConfig, ExecCmdConfig, ExternalCmdSlot, FileConfig, FontConfig, FormatConfig,
-    IniParseError, KeySearchConfig, KinsokuChars, MacroConfig, MacroSlot, MacroTrigger,
-    MainMenuConfig, PaletteColor, PluginConfig, PrintConfig, PrintOrientation,
-    SakuraCommonSettings, SearchConfig, StatusBarConfig, TabBarConfig, TabDoubleClickAction,
-    TabPosition, ToolbarConfig, WindowConfig, WrapMode,
+    AssistConfig, ColorPaletteConfig, CustomMenuConfig, CustomMenuItem, CustomMenuSlot, EditConfig,
+    ExecCmdConfig, ExternalCmdSlot, FileConfig, FontConfig, FormatConfig, IniParseError,
+    KeySearchConfig, KinsokuChars, MacroConfig, MacroSlot, MacroTrigger, MainMenuConfig,
+    PaletteColor, PluginConfig, PrintConfig, PrintOrientation, SakuraCommonSettings, SearchConfig,
+    StatusBarConfig, TabBarConfig, TabDoubleClickAction, TabPosition, ToolbarConfig, WindowConfig,
+    WrapMode,
 };
-pub mod search_ops;
 pub mod sdi;
 pub mod search_highlight;
+pub mod search_ops;
 pub mod split_quad;
 pub mod syntax_styling;
 pub mod tag_jump;
@@ -101,7 +101,9 @@ pub mod word;
 pub mod zenkaku_hankaku;
 
 pub use mmap_buffer::{MmapBuffer, MmapMatch, PageInfo};
-pub use ppa_engine::{DefaultMacroContext, MacroContext, PpaError, PpaInterpreter, PpaProgram, PpaValue};
+pub use ppa_engine::{
+    DefaultMacroContext, MacroContext, PpaError, PpaInterpreter, PpaProgram, PpaValue,
+};
 
 /// 当前 crate 版本 + meta 信息 (对标参考实现的版本结构体).
 pub fn version() -> &'static str {

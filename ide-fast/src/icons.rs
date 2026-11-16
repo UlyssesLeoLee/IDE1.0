@@ -220,24 +220,44 @@ pub fn paint_themed_quick_btn(
         // 外层像素底色
         painter.rect_filled(rect, 0.0, bg);
         // 外层像素边框
-        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, outer_border), StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.0, outer_border),
+            StrokeKind::Inside,
+        );
 
         // 3D Bevel 棱角线 (按下去时反向凹陷)
         let (top_left_col, bot_right_col) = if active {
             (Color32::from_rgb(10, 7, 23), Color32::from_rgb(79, 62, 145))
         } else if hovered {
-            (Color32::from_rgb(255, 215, 0), Color32::from_rgb(22, 15, 46))
+            (
+                Color32::from_rgb(255, 215, 0),
+                Color32::from_rgb(22, 15, 46),
+            )
         } else {
             (Color32::from_rgb(79, 62, 145), Color32::from_rgb(10, 7, 23))
         };
 
         let inner = rect.shrink(1.0);
         // 顶和左棱
-        painter.line_segment([inner.left_top(), inner.right_top()], Stroke::new(1.0, top_left_col));
-        painter.line_segment([inner.left_top(), inner.left_bottom()], Stroke::new(1.0, top_left_col));
+        painter.line_segment(
+            [inner.left_top(), inner.right_top()],
+            Stroke::new(1.0, top_left_col),
+        );
+        painter.line_segment(
+            [inner.left_top(), inner.left_bottom()],
+            Stroke::new(1.0, top_left_col),
+        );
         // 底和右棱
-        painter.line_segment([inner.left_bottom(), inner.right_bottom()], Stroke::new(1.0, bot_right_col));
-        painter.line_segment([inner.right_top(), inner.right_bottom()], Stroke::new(1.0, bot_right_col));
+        painter.line_segment(
+            [inner.left_bottom(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right_col),
+        );
+        painter.line_segment(
+            [inner.right_top(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right_col),
+        );
 
         // 按下时发生 1px 物理位移
         let content_rect = if active {
@@ -247,9 +267,17 @@ pub fn paint_themed_quick_btn(
         };
 
         let fg = if active {
-            if highlighted { Color32::from_rgb(0, 255, 102) } else { Color32::from_rgb(0, 240, 255) }
+            if highlighted {
+                Color32::from_rgb(0, 255, 102)
+            } else {
+                Color32::from_rgb(0, 240, 255)
+            }
         } else if hovered {
-            if highlighted { Color32::from_rgb(0, 255, 102) } else { Color32::from_rgb(255, 215, 0) }
+            if highlighted {
+                Color32::from_rgb(0, 255, 102)
+            } else {
+                Color32::from_rgb(255, 215, 0)
+            }
         } else if highlighted {
             Color32::from_rgb(0, 240, 255)
         } else {
@@ -292,7 +320,12 @@ pub fn paint_themed_quick_btn(
         };
 
         painter.rect_filled(actual_rect, 2.0, bg);
-        painter.rect_stroke(actual_rect, 2.0, Stroke::new(1.5, border_col), StrokeKind::Inside);
+        painter.rect_stroke(
+            actual_rect,
+            2.0,
+            Stroke::new(1.5, border_col),
+            StrokeKind::Inside,
+        );
 
         let fg = if active || hovered {
             Color32::BLACK // 黄底黑字/黑图标, 极高可辨识波普反差
@@ -326,7 +359,12 @@ pub fn paint_themed_quick_btn(
         };
 
         painter.rect_filled(rect, round, bg);
-        painter.rect_stroke(rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            round,
+            Stroke::new(1.0, border_col),
+            StrokeKind::Inside,
+        );
 
         // 顶沿 1px 晶面白光切面反射
         let facet_col = if hovered || active {
@@ -338,7 +376,10 @@ pub fn paint_themed_quick_btn(
         let hline_max_x = rect.right() - 3.0;
         if hline_max_x > hline_min_x {
             painter.line_segment(
-                [pos2(hline_min_x, rect.top() + 1.0), pos2(hline_max_x, rect.top() + 1.0)],
+                [
+                    pos2(hline_min_x, rect.top() + 1.0),
+                    pos2(hline_max_x, rect.top() + 1.0),
+                ],
                 Stroke::new(1.0, facet_col),
             );
         }
@@ -375,7 +416,12 @@ pub fn paint_themed_quick_btn(
         };
 
         painter.rect_filled(rect, round, bg);
-        painter.rect_stroke(rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+        painter.rect_stroke(
+            rect,
+            round,
+            Stroke::new(1.0, border_col),
+            StrokeKind::Inside,
+        );
 
         let fg = if active || hovered {
             Color32::WHITE
@@ -410,7 +456,12 @@ pub fn paint_themed_quick_btn(
             painter.rect_filled(rect, round, bg);
         }
         if border_col != Color32::TRANSPARENT {
-            painter.rect_stroke(rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+            painter.rect_stroke(
+                rect,
+                round,
+                Stroke::new(1.0, border_col),
+                StrokeKind::Inside,
+            );
         }
 
         let fg = if active || hovered {

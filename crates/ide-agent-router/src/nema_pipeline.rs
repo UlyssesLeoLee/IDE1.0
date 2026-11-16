@@ -6,15 +6,15 @@
 //! - ③ **统筹转换 (`Aggregator`)**：共享词典归一重排、三方语义合并、`.nema → Rust` 降维与 AST 漂移守卫
 //! - ④ **Git 管理与验证 (`Git & Verify`)**：文件级分支拓扑、四道门禁流水线、证书签发与闭环自愈回流
 
-use std::collections::{BTreeMap, BTreeSet};
+use crate::agent_profile::{AgentSlotId, FeedbackDecision, FeedbackLoopGuard};
 use chrono::{DateTime, Utc};
+use nema_codec::{
+    DomainMode, EdgeDirection, NemaCodec, NemaDocument, NemaError, NemaRecord, StandardNemaCodec,
+    TextSpan,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use nema_codec::{
-    DomainMode, EdgeDirection, NemaCodec, NemaDocument, NemaError,
-    NemaRecord, StandardNemaCodec, TextSpan,
-};
-use crate::agent_profile::{AgentSlotId, FeedbackDecision, FeedbackLoopGuard};
+use std::collections::{BTreeMap, BTreeSet};
 
 // ============================================================================
 // 阶段 ①：路由拆解 (Router Agent)
@@ -167,7 +167,10 @@ impl RouterEngine {
 
         // 独立编辑组 B (Agent B1 & Agent B2 独占独立文件)
         let mut indep_assignments = Vec::new();
-        let b1_file = independent_targets.first().cloned().unwrap_or_else(|| "specs/File_B.nema".to_string());
+        let b1_file = independent_targets
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "specs/File_B.nema".to_string());
         let b1_rust = b1_file.replace("specs/", "src/").replace(".nema", ".rs");
         indep_assignments.push(IndependentBranchAssignment {
             slot_id: AgentSlotId::AgentB1,
@@ -179,7 +182,10 @@ impl RouterEngine {
             fencing_token: epoch * 100 + 3,
         });
 
-        let b2_file = independent_targets.get(1).cloned().unwrap_or_else(|| "specs/File_C.nema".to_string());
+        let b2_file = independent_targets
+            .get(1)
+            .cloned()
+            .unwrap_or_else(|| "specs/File_C.nema".to_string());
         let b2_rust = b2_file.replace("specs/", "src/").replace(".nema", ".rs");
         indep_assignments.push(IndependentBranchAssignment {
             slot_id: AgentSlotId::AgentB2,
@@ -199,7 +205,8 @@ impl RouterEngine {
         dependency_dag.push(DependencyEdge {
             from_branch: "feat/A1".to_string(),
             to_branch: "feat/A2".to_string(),
-            dependency_reason: "Topology references type contracts defined in domains 1 and 2".to_string(),
+            dependency_reason: "Topology references type contracts defined in domains 1 and 2"
+                .to_string(),
         });
         dependency_dag.push(DependencyEdge {
             from_branch: "feat/A1".to_string(),
@@ -274,7 +281,12 @@ pub fn sanitize_rust_ident(raw: &str) -> String {
     if ident.is_empty() {
         return "AnonymousEntity".to_string();
     }
-    if ident.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if ident
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         format!("_{ident}")
     } else {
         ident.to_string()
@@ -464,7 +476,8 @@ impl NemaSemanticMerger {
                                             column_index: c_idx,
                                             branch_lhs: (branch_a_name.to_string(), val_a),
                                             branch_rhs: (branch_b_name.to_string(), val_b),
-                                            resolution: ConflictResolutionStrategy::GuidanceZoneRule,
+                                            resolution:
+                                                ConflictResolutionStrategy::GuidanceZoneRule,
                                         });
                                     }
                                 }
@@ -516,9 +529,18 @@ impl NemaSemanticMerger {
                     } else {
                         desc_words
                     };
-                    rendered.push_str(&format!("{}{}{}{}{} {}\n", edge.from, op, edge.id, op, edge.to, desc));
+                    rendered.push_str(&format!(
+                        "{}{}{}{}{} {}\n",
+                        edge.from, op, edge.id, op, edge.to, desc
+                    ));
                 } else if let Some(node_id) = &rec.graph_node_id {
-                    let desc = rec.raw_groups().into_iter().flatten().skip(1).collect::<Vec<_>>().join(" ");
+                    let desc = rec
+                        .raw_groups()
+                        .into_iter()
+                        .flatten()
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     if desc.is_empty() {
                         rendered.push_str(&format!("{node_id} Node\n"));
                     } else {
@@ -530,7 +552,11 @@ impl NemaSemanticMerger {
                         if i > 0 {
                             line.push(' ');
                         }
-                        let col_str = col.iter().map(|c| c.raw.as_str()).collect::<Vec<_>>().join(" ");
+                        let col_str = col
+                            .iter()
+                            .map(|c| c.raw.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" ");
                         line.push_str(&col_str);
                     }
                     rendered.push_str(&line);
@@ -579,7 +605,11 @@ pub struct NemaRustSourceMap {
 }
 
 impl NemaRustSourceMap {
-    pub fn find_by_rust_location(&self, rust_file: &str, line: usize) -> Option<&NemaRustSourceMapEntry> {
+    pub fn find_by_rust_location(
+        &self,
+        rust_file: &str,
+        line: usize,
+    ) -> Option<&NemaRustSourceMapEntry> {
         self.entries.iter().find(|e| {
             e.rust_file == rust_file && line >= e.rust_line_range.0 && line <= e.rust_line_range.1
         })
@@ -616,7 +646,9 @@ impl NemaToRustLowering {
         rust_code.push_str("//! Generated from ");
         rust_code.push_str(nema_file);
         rust_code.push_str(" via IDE1.0 Multi-Agent Aggregator Lowering Engine.\n");
-        rust_code.push_str("//! DO NOT EDIT MANUALLY - Changes should be authored in .nema specification.\n");
+        rust_code.push_str(
+            "//! DO NOT EDIT MANUALLY - Changes should be authored in .nema specification.\n",
+        );
         rust_code.push_str("#![forbid(unsafe_code)]\n\n");
         rust_code.push_str("use serde::{Deserialize, Serialize};\n\n");
         current_line += 6;
@@ -638,13 +670,19 @@ impl NemaToRustLowering {
                         rust_code.push_str("/// Data entity lowered from NEMA Table Domain \\");
                         rust_code.push_str(&domain.id);
                         rust_code.push('\n');
-                        rust_code.push_str("#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]\n");
+                        rust_code.push_str(
+                            "#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]\n",
+                        );
                         rust_code.push_str(&format!("pub struct {type_name} {{\n"));
                         current_line += 3;
 
                         // 填充字段
                         for (idx, col) in record.cells.iter().enumerate().skip(1) {
-                            let field_val = col.iter().map(|c| c.raw.as_str()).collect::<Vec<_>>().join(" ");
+                            let field_val = col
+                                .iter()
+                                .map(|c| c.raw.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" ");
                             let raw_field_name = format!("field_{idx}");
                             let field_name = sanitize_rust_ident(&raw_field_name);
                             rust_code.push_str(&format!("    /// Spec: {field_val}\n"));
@@ -684,16 +722,47 @@ impl NemaToRustLowering {
                             .unwrap_or_else(|| format!("action_fn_{}", domain.id));
                         let fn_name = sanitize_rust_ident(&raw_fn);
 
-                        let why = record.cells.get(1).map(|c| c.iter().map(|x| x.raw.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
-                        let how = record.cells.get(2).map(|c| c.iter().map(|x| x.raw.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
-                        let when = record.cells.get(4).map(|c| c.iter().map(|x| x.raw.as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
+                        let why = record
+                            .cells
+                            .get(1)
+                            .map(|c| {
+                                c.iter()
+                                    .map(|x| x.raw.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .unwrap_or_default();
+                        let how = record
+                            .cells
+                            .get(2)
+                            .map(|c| {
+                                c.iter()
+                                    .map(|x| x.raw.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .unwrap_or_default();
+                        let when = record
+                            .cells
+                            .get(4)
+                            .map(|c| {
+                                c.iter()
+                                    .map(|x| x.raw.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .unwrap_or_default();
 
                         let start_line = current_line;
                         rust_code.push_str(&format!("/// [Why] {why}\n"));
                         rust_code.push_str(&format!("/// [How] {how}\n"));
                         rust_code.push_str(&format!("/// [When] {when}\n"));
-                        rust_code.push_str(&format!("pub fn {fn_name}() -> Result<(), &'static str> {{\n"));
-                        rust_code.push_str("    // Invariant guard generated from NEMA 5W1H specification\n");
+                        rust_code.push_str(&format!(
+                            "pub fn {fn_name}() -> Result<(), &'static str> {{\n"
+                        ));
+                        rust_code.push_str(
+                            "    // Invariant guard generated from NEMA 5W1H specification\n",
+                        );
                         rust_code.push_str("    Ok(())\n");
                         rust_code.push_str("}\n\n");
                         current_line += 7;
@@ -721,8 +790,13 @@ impl NemaToRustLowering {
                     // Graph 域 -> 生成模块依赖 use 声明与拓扑状态机
                     let safe_dom_id = sanitize_rust_ident(&domain.id);
                     let start_line = current_line;
-                    rust_code.push_str(&format!("/// State transitions lowered from Graph Domain >{}\n", domain.id));
-                    rust_code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]\n");
+                    rust_code.push_str(&format!(
+                        "/// State transitions lowered from Graph Domain >{}\n",
+                        domain.id
+                    ));
+                    rust_code.push_str(
+                        "#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]\n",
+                    );
                     rust_code.push_str(&format!("pub enum StateMachineDomain{safe_dom_id} {{\n"));
                     current_line += 3;
 
@@ -730,8 +804,12 @@ impl NemaToRustLowering {
                         if let Some(edge) = &record.graph_edge {
                             let safe_edge_id = sanitize_rust_ident(&edge.id);
                             let safe_to = sanitize_rust_ident(&edge.to);
-                            rust_code.push_str(&format!("    /// Edge {}: {} -> {}\n", edge.id, edge.from, edge.to));
-                            rust_code.push_str(&format!("    Transition{safe_edge_id}_{safe_to},\n"));
+                            rust_code.push_str(&format!(
+                                "    /// Edge {}: {} -> {}\n",
+                                edge.id, edge.from, edge.to
+                            ));
+                            rust_code
+                                .push_str(&format!("    Transition{safe_edge_id}_{safe_to},\n"));
                             current_line += 2;
                         }
                     }
@@ -890,7 +968,11 @@ impl GitBranchOrchestrator {
     }
 
     /// 发起 PR 请求
-    pub fn create_pr(&mut self, source_branches: &[String], target_branch: &str) -> PullRequestRecord {
+    pub fn create_pr(
+        &mut self,
+        source_branches: &[String],
+        target_branch: &str,
+    ) -> PullRequestRecord {
         let pr = PullRequestRecord {
             pr_id: self.next_pr_id,
             source_branches: source_branches.to_vec(),
@@ -1019,7 +1101,12 @@ impl VerifyPipeline {
                         m.domain_id.clone(),
                         m.record_key.clone(),
                         m.source_branch.clone(),
-                        if m.source_branch == "feat/A1" { "Agent-A1" } else { "Agent-A2" }.to_string(),
+                        if m.source_branch == "feat/A1" {
+                            "Agent-A1"
+                        } else {
+                            "Agent-A2"
+                        }
+                        .to_string(),
                     ),
                     None => (
                         "specs/File_A.nema".to_string(),
@@ -1105,8 +1192,12 @@ impl MultiAgentPipelineCoordinator {
         ticket: &IterationFeedbackTicket,
         consumed_tokens: u64,
     ) -> FeedbackDecision {
-        let err_fingerprint = format!("{}:{}:{}", ticket.failed_gate, ticket.rust_file, ticket.rust_line);
-        self.loop_guard.record_and_check(consumed_tokens, &err_fingerprint)
+        let err_fingerprint = format!(
+            "{}:{}:{}",
+            ticket.failed_gate, ticket.rust_file, ticket.rust_line
+        );
+        self.loop_guard
+            .record_and_check(consumed_tokens, &err_fingerprint)
     }
 }
 
@@ -1122,11 +1213,21 @@ mod tests {
             "specs/File_B.nema".to_string(),
             "specs/File_C.nema".to_string(),
         ];
-        let plan = router.plan("run-001", 1, TaskInputKind::FeatureDevelopment, "Implement Gateway Core", &files);
+        let plan = router.plan(
+            "run-001",
+            1,
+            TaskInputKind::FeatureDevelopment,
+            "Implement Gateway Core",
+            &files,
+        );
 
         assert_eq!(plan.groups.len(), 2);
         match &plan.groups[0] {
-            CollaborationGroupKind::CoEditingSameFile { nema_file, assignments, .. } => {
+            CollaborationGroupKind::CoEditingSameFile {
+                nema_file,
+                assignments,
+                ..
+            } => {
                 assert_eq!(nema_file, "specs/File_A.nema");
                 assert_eq!(assignments.len(), 2);
                 assert_eq!(assignments[0].branch_name, "feat/A1");
@@ -1149,10 +1250,21 @@ mod tests {
     fn test_semantic_merger_unifies_dictionary_and_merges_records() {
         let merger = NemaSemanticMerger;
         let base = "\t$1\nTokenZero\n\t\\1\n\\ Type Field\nTokenZero Core\n\n\n";
-        let branch_a = "\t$2\nTokenZero\nTokenA\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenA ModuleA\n\n\n";
-        let branch_b = "\t$2\nTokenZero\nTokenB\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenB ModuleB\n\n\n";
+        let branch_a =
+            "\t$2\nTokenZero\nTokenA\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenA ModuleA\n\n\n";
+        let branch_b =
+            "\t$2\nTokenZero\nTokenB\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenB ModuleB\n\n\n";
 
-        let outcome = merger.merge("specs/File_A.nema", base, "feat/A1", branch_a, "feat/A2", branch_b).expect("merge ok");
+        let outcome = merger
+            .merge(
+                "specs/File_A.nema",
+                base,
+                "feat/A1",
+                branch_a,
+                "feat/A2",
+                branch_b,
+            )
+            .expect("merge ok");
 
         assert!(outcome.remapped_dictionary.contains(&"TokenA".to_string()));
         assert!(outcome.remapped_dictionary.contains(&"TokenB".to_string()));
@@ -1184,10 +1296,16 @@ mod tests {
         let mut coord = MultiAgentPipelineCoordinator::default();
 
         // 注册分支
-        coord.git.register_branch("feat/A1", "Agent-A1", vec!["specs/File_A.nema".to_string()]);
-        coord.git.register_branch("feat/A2", "Agent-A2", vec!["specs/File_A.nema".to_string()]);
+        coord
+            .git
+            .register_branch("feat/A1", "Agent-A1", vec!["specs/File_A.nema".to_string()]);
+        coord
+            .git
+            .register_branch("feat/A2", "Agent-A2", vec!["specs/File_A.nema".to_string()]);
 
-        let pr = coord.git.create_pr(&["feat/A1".to_string(), "feat/A2".to_string()], "main");
+        let pr = coord
+            .git
+            .create_pr(&["feat/A1".to_string(), "feat/A2".to_string()], "main");
         assert_eq!(pr.status, "PendingVerify");
 
         // 1. 模拟全绿通过
@@ -1202,7 +1320,10 @@ mod tests {
             &NemaRustSourceMap::default(),
         );
         assert!(report_pass.certificate.is_some());
-        let merged_pr = coord.git.merge_pr(pr, report_pass.certificate.as_ref().unwrap()).expect("merged");
+        let merged_pr = coord
+            .git
+            .merge_pr(pr, report_pass.certificate.as_ref().unwrap())
+            .expect("merged");
         assert_eq!(merged_pr.status, "Merged");
 
         // 2. 模拟报错并产生反向自愈工单
@@ -1237,6 +1358,9 @@ mod tests {
 
         // 持续闭环判定
         let decision = coord.process_iteration_feedback(ticket, 5000);
-        assert!(matches!(decision, FeedbackDecision::ContinueIteration { next_round: 1 }));
+        assert!(matches!(
+            decision,
+            FeedbackDecision::ContinueIteration { next_round: 1 }
+        ));
     }
 }

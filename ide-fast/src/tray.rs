@@ -84,7 +84,8 @@ mod imp {
             let mi_collab = MenuItem::new("🤖 多 Agent 协同工作台…", true, None);
             let mi_diff = MenuItem::new("差异对比…", true, None);
             let mi_topmost = CheckMenuItem::new("窗口置顶 (Always on Top)", true, topmost, None);
-            let mi_resident = CheckMenuItem::new("常驻后台 (关闭窗口时隐藏到托盘)", true, resident, None);
+            let mi_resident =
+                CheckMenuItem::new("常驻后台 (关闭窗口时隐藏到托盘)", true, resident, None);
             let mi_disable = MenuItem::new("退出托盘常驻", true, None);
             let sep1 = PredefinedMenuItem::separator();
             let sep2 = PredefinedMenuItem::separator();
@@ -168,21 +169,19 @@ mod imp {
             let mut out = vec![];
 
             // 1. 托盘图标左键单击 / 双击 → 切换显示/隐藏（右键仅用于弹出系统菜单，严禁误触发隐藏）
-            let mut handle_tray_ev = |ev: TrayIconEvent| {
-                match ev {
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    }
-                    | TrayIconEvent::DoubleClick {
-                        button: MouseButton::Left,
-                        ..
-                    } => {
-                        out.push(TrayEvent::ShowHide);
-                    }
-                    _ => {}
+            let mut handle_tray_ev = |ev: TrayIconEvent| match ev {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
                 }
+                | TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => {
+                    out.push(TrayEvent::ShowHide);
+                }
+                _ => {}
             };
 
             if let Ok(lock) = TRAY_EVENT_RX.lock() {

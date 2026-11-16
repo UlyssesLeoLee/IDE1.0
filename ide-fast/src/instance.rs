@@ -160,7 +160,10 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         std::env::set_var("IDE_FAST_OFFLINE", "1");
         assert!(listen().is_none(), "离线模式下不绑定任何 TCP 监听");
-        assert!(!forward_to_running(&["test.txt".into()]), "离线模式不尝试网络转发");
+        assert!(
+            !forward_to_running(&["test.txt".into()]),
+            "离线模式不尝试网络转发"
+        );
         std::env::remove_var("IDE_FAST_OFFLINE");
     }
 
@@ -173,10 +176,7 @@ mod tests {
         std::env::remove_var("IDE_FAST_OFFLINE");
         let rx = listen().expect("first instance listens");
         // 1. 无参数启动（纯点击启动应用，唤醒主窗口，不传递任何路径）
-        assert!(
-            forward_to_running(&[]),
-            "第二个实例无参数点击启动连得上"
-        );
+        assert!(forward_to_running(&[]), "第二个实例无参数点击启动连得上");
         let got_empty = rx
             .recv_timeout(std::time::Duration::from_secs(3))
             .expect("first gets the wakeup signal");

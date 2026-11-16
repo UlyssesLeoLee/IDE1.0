@@ -531,10 +531,7 @@ fn check_balanced_delimiters(
         }
 
         // 字符串字面量检查: " 或 ' 或 `
-        if ch == '"'
-            || ch == '`'
-            || (ch == '\'' && language != SupportedLanguage::Rust)
-        {
+        if ch == '"' || ch == '`' || (ch == '\'' && language != SupportedLanguage::Rust) {
             let quote = ch;
             let start_line = line;
             let start_col = col;
@@ -620,11 +617,7 @@ fn check_balanced_delimiters(
     }
 
     if let Some((unclosed, l, c)) = stack.pop() {
-        return Err((
-            format!("Unclosed delimiter '{}'", unclosed),
-            l,
-            c,
-        ));
+        return Err((format!("Unclosed delimiter '{}'", unclosed), l, c));
     }
 
     Ok(())

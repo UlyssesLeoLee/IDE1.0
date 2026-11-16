@@ -224,7 +224,8 @@ fn run_request(
         turn.error = Some("响应超过大小上限, 已中止".into());
     } else if turn.http_status == Some(0)
         || (turn.http_status.is_none() && turn.error.is_none())
-        || (status.is_some_and(|s| !s.success()) && turn.error.as_deref().map_or(true, |e| !e.contains('【')))
+        || (status.is_some_and(|s| !s.success())
+            && turn.error.as_deref().map_or(true, |e| !e.contains('【')))
     {
         let detail = turn.error.as_deref();
         turn.error = Some(super::sse::format_http_error(

@@ -644,7 +644,13 @@ impl Grep {
     }
 
     /// 跨页搜索大文件 (基于 MmapBuffer 全文跨页搜索, 结果包含页码与全局行号)
-    pub fn start_mmap_file(&mut self, root: PathBuf, file_path: &Path, label: &str, page_size: usize) {
+    pub fn start_mmap_file(
+        &mut self,
+        root: PathBuf,
+        file_path: &Path,
+        label: &str,
+        page_size: usize,
+    ) {
         self.cancel();
         self.results.clear();
         self.rendered = 0;

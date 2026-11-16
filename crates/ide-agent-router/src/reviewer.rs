@@ -286,10 +286,15 @@ impl ReviewSession {
     }
 
     /// 完成验收并签发审计凭证
-    pub fn finalize_acceptance(&mut self, final_content: &str) -> Result<AcceptanceCertificate, String> {
+    pub fn finalize_acceptance(
+        &mut self,
+        final_content: &str,
+    ) -> Result<AcceptanceCertificate, String> {
         // 门禁检验: 若存在阻断性验证失败，严禁验收签发
         if let Some(v) = &self.verification {
-            if v.status == VerificationStatus::Conflict || v.status == VerificationStatus::SecurityBlocked {
+            if v.status == VerificationStatus::Conflict
+                || v.status == VerificationStatus::SecurityBlocked
+            {
                 return Err(format!(
                     "Cannot finalize acceptance: Automated verification failed with blocking status {:?}",
                     v.status
@@ -313,7 +318,10 @@ impl ReviewSession {
                 HunkStatus::Rejected => rejected_count += 1,
                 HunkStatus::ReworkRequested => rework_count += 1,
                 HunkStatus::Pending => {
-                    return Err(format!("Cannot finalize: Hunk '{}' is still Pending", h.hunk_id));
+                    return Err(format!(
+                        "Cannot finalize: Hunk '{}' is still Pending",
+                        h.hunk_id
+                    ));
                 }
             }
         }
@@ -339,7 +347,10 @@ impl ReviewSession {
             verification_passed: self
                 .verification
                 .as_ref()
-                .map(|v| v.status == VerificationStatus::Passed || v.status == VerificationStatus::FormatWarning)
+                .map(|v| {
+                    v.status == VerificationStatus::Passed
+                        || v.status == VerificationStatus::FormatWarning
+                })
                 .unwrap_or(true),
             content_sha256,
             approved_at: now,
@@ -388,7 +399,9 @@ mod tests {
                     intent_summary: "负责并发执行与异步重试".into(),
                 },
             ],
-            shared_contracts: vec!["pub struct OrderResult { pub order_id: String, pub ok: bool }".into()],
+            shared_contracts: vec![
+                "pub struct OrderResult { pub order_id: String, pub ok: bool }".into(),
+            ],
             notes: "非阻断性指引，各 Agent 自主对齐契约".into(),
         };
 

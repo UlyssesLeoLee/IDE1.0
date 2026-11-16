@@ -49,7 +49,11 @@ impl App {
     pub(super) fn expand_dock(&mut self, d: Dock) {
         self.set_dock_collapsed(d, false);
         self.last_opened_dock = d;
-        let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+        let (vw, vh) = self
+            .geom_now
+            .as_ref()
+            .map(|g| (g.w, g.h))
+            .unwrap_or((1100.0, 720.0));
         self.rebalance_dock_sizes(d, vw, vh);
     }
 
@@ -84,7 +88,11 @@ impl App {
             self.ai_toggle(); // 右边什么都没开: 折叠命令 = 把 AI 对话展开显示出来
             self.set_dock_collapsed(d, false);
             self.last_opened_dock = Dock::Right;
-            let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+            let (vw, vh) = self
+                .geom_now
+                .as_ref()
+                .map(|g| (g.w, g.h))
+                .unwrap_or((1100.0, 720.0));
             self.rebalance_dock_sizes(Dock::Right, vw, vh);
             return;
         }
@@ -100,7 +108,11 @@ impl App {
         self.set_dock_collapsed(d, collapsed);
         if !collapsed {
             self.last_opened_dock = d;
-            let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+            let (vw, vh) = self
+                .geom_now
+                .as_ref()
+                .map(|g| (g.w, g.h))
+                .unwrap_or((1100.0, 720.0));
             self.rebalance_dock_sizes(d, vw, vh);
         }
     }
@@ -116,7 +128,11 @@ impl App {
         self.set_dock_collapsed(d, collapsed);
         if open && !collapsed {
             self.last_opened_dock = d;
-            let (vw, vh) = self.geom_now.as_ref().map(|g| (g.w, g.h)).unwrap_or((1100.0, 720.0));
+            let (vw, vh) = self
+                .geom_now
+                .as_ref()
+                .map(|g| (g.w, g.h))
+                .unwrap_or((1100.0, 720.0));
             self.rebalance_dock_sizes(d, vw, vh);
         }
     }
@@ -139,13 +155,19 @@ impl App {
         match d {
             Dock::Side => {
                 p.line_segment(
-                    [pos2(rect.right() - 1.0, rect.top()), pos2(rect.right() - 1.0, rect.bottom())],
+                    [
+                        pos2(rect.right() - 1.0, rect.top()),
+                        pos2(rect.right() - 1.0, rect.bottom()),
+                    ],
                     Stroke::new(2.0, Color32::BLACK),
                 );
             }
             Dock::Right => {
                 p.line_segment(
-                    [pos2(rect.left() + 1.0, rect.top()), pos2(rect.left() + 1.0, rect.bottom())],
+                    [
+                        pos2(rect.left() + 1.0, rect.top()),
+                        pos2(rect.left() + 1.0, rect.bottom()),
+                    ],
                     Stroke::new(2.0, Color32::BLACK),
                 );
             }
@@ -170,8 +192,16 @@ impl App {
         let bot_y = rect.bottom() - 16.0;
         let notch_w = 7.0;
         let notch_x_range = (cx - notch_w * 0.5)..=(cx + notch_w * 0.5);
-        p.hline(notch_x_range.clone(), bot_y - 6.0, Stroke::new(1.2, Color32::BLACK));
-        p.hline(notch_x_range.clone(), bot_y - 2.0, Stroke::new(1.2, Color32::BLACK));
+        p.hline(
+            notch_x_range.clone(),
+            bot_y - 6.0,
+            Stroke::new(1.2, Color32::BLACK),
+        );
+        p.hline(
+            notch_x_range.clone(),
+            bot_y - 2.0,
+            Stroke::new(1.2, Color32::BLACK),
+        );
         p.hline(notch_x_range, bot_y + 2.0, Stroke::new(1.2, Color32::BLACK));
 
         // 4. 美漫书签拉手 (Comic Pull-Tab Bookmark)
@@ -182,30 +212,50 @@ impl App {
             Vec2::new(tab_w, tab_h),
         );
 
-        let shadow_offset = if pressed { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+        let shadow_offset = if pressed {
+            Vec2::ZERO
+        } else {
+            Vec2::new(1.5, 1.5)
+        };
         if !pressed {
             // 实体纯黑硬边剪纸投影
             p.rect_filled(tab_rect.translate(shadow_offset), 2.5, Color32::BLACK);
         }
-        let draw_tab = if pressed { tab_rect.translate(Vec2::new(1.5, 1.5)) } else { tab_rect };
+        let draw_tab = if pressed {
+            tab_rect.translate(Vec2::new(1.5, 1.5))
+        } else {
+            tab_rect
+        };
 
         let (tab_bg, arrow_col) = if pressed {
             (Color32::from_rgb(255, 160, 0), Color32::BLACK)
         } else if hovered {
             (Color32::from_rgb(255, 204, 0), Color32::BLACK)
         } else {
-            (Color32::from_rgb(32, 36, 52), Color32::from_rgb(255, 204, 0))
+            (
+                Color32::from_rgb(32, 36, 52),
+                Color32::from_rgb(255, 204, 0),
+            )
         };
 
         p.rect_filled(draw_tab, 2.5, tab_bg);
-        p.rect_stroke(draw_tab, 2.5, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            draw_tab,
+            2.5,
+            Stroke::new(2.0, Color32::BLACK),
+            egui::StrokeKind::Inside,
+        );
 
         // 未悬停时顶部绘制波普黄色分镜书签标头
         if !hovered && !pressed {
             let head_h = 3.5;
             let head_rect = Rect::from_min_size(draw_tab.min, Vec2::new(draw_tab.width(), head_h));
             p.rect_filled(head_rect, 1.5, Color32::from_rgb(255, 204, 0));
-            p.hline(draw_tab.x_range(), draw_tab.top() + head_h, Stroke::new(1.0, Color32::BLACK));
+            p.hline(
+                draw_tab.x_range(),
+                draw_tab.top() + head_h,
+                Stroke::new(1.0, Color32::BLACK),
+            );
         }
 
         // 抓手微型刻度防滑槽
@@ -215,8 +265,16 @@ impl App {
             Color32::from_rgb(160, 170, 195)
         };
         let grip_x_range = (draw_tab.center().x - 3.0)..=(draw_tab.center().x + 3.0);
-        p.hline(grip_x_range.clone(), draw_tab.top() + 7.0, Stroke::new(1.2, grip_col));
-        p.hline(grip_x_range, draw_tab.bottom() - 7.0, Stroke::new(1.2, grip_col));
+        p.hline(
+            grip_x_range.clone(),
+            draw_tab.top() + 7.0,
+            Stroke::new(1.2, grip_col),
+        );
+        p.hline(
+            grip_x_range,
+            draw_tab.bottom() - 7.0,
+            Stroke::new(1.2, grip_col),
+        );
 
         // 5. 动感矢量速度折角箭头与破风线 (Action Chevrons & Speed Lines)
         let point_right = match d {
@@ -231,24 +289,60 @@ impl App {
 
         if point_right {
             // 主速度箭头
-            p.line_segment([pos2(tcx - 1.5, tcy - 4.5), pos2(tcx + 2.5, tcy)], arrow_stroke);
-            p.line_segment([pos2(tcx - 1.5, tcy + 4.5), pos2(tcx + 2.5, tcy)], arrow_stroke);
+            p.line_segment(
+                [pos2(tcx - 1.5, tcy - 4.5), pos2(tcx + 2.5, tcy)],
+                arrow_stroke,
+            );
+            p.line_segment(
+                [pos2(tcx - 1.5, tcy + 4.5), pos2(tcx + 2.5, tcy)],
+                arrow_stroke,
+            );
             // 副速度箭头
-            p.line_segment([pos2(tcx - 4.0, tcy - 3.5), pos2(tcx - 0.5, tcy)], speed_stroke);
-            p.line_segment([pos2(tcx - 4.0, tcy + 3.5), pos2(tcx - 0.5, tcy)], speed_stroke);
+            p.line_segment(
+                [pos2(tcx - 4.0, tcy - 3.5), pos2(tcx - 0.5, tcy)],
+                speed_stroke,
+            );
+            p.line_segment(
+                [pos2(tcx - 4.0, tcy + 3.5), pos2(tcx - 0.5, tcy)],
+                speed_stroke,
+            );
             // 破风速度线
-            p.line_segment([pos2(tcx - 5.0, tcy - 1.8), pos2(tcx - 2.8, tcy - 1.8)], Stroke::new(1.0, arrow_col));
-            p.line_segment([pos2(tcx - 5.0, tcy + 1.8), pos2(tcx - 2.8, tcy + 1.8)], Stroke::new(1.0, arrow_col));
+            p.line_segment(
+                [pos2(tcx - 5.0, tcy - 1.8), pos2(tcx - 2.8, tcy - 1.8)],
+                Stroke::new(1.0, arrow_col),
+            );
+            p.line_segment(
+                [pos2(tcx - 5.0, tcy + 1.8), pos2(tcx - 2.8, tcy + 1.8)],
+                Stroke::new(1.0, arrow_col),
+            );
         } else {
             // 主速度箭头
-            p.line_segment([pos2(tcx + 1.5, tcy - 4.5), pos2(tcx - 2.5, tcy)], arrow_stroke);
-            p.line_segment([pos2(tcx + 1.5, tcy + 4.5), pos2(tcx - 2.5, tcy)], arrow_stroke);
+            p.line_segment(
+                [pos2(tcx + 1.5, tcy - 4.5), pos2(tcx - 2.5, tcy)],
+                arrow_stroke,
+            );
+            p.line_segment(
+                [pos2(tcx + 1.5, tcy + 4.5), pos2(tcx - 2.5, tcy)],
+                arrow_stroke,
+            );
             // 副速度箭头
-            p.line_segment([pos2(tcx + 4.0, tcy - 3.5), pos2(tcx + 0.5, tcy)], speed_stroke);
-            p.line_segment([pos2(tcx + 4.0, tcy + 3.5), pos2(tcx + 0.5, tcy)], speed_stroke);
+            p.line_segment(
+                [pos2(tcx + 4.0, tcy - 3.5), pos2(tcx + 0.5, tcy)],
+                speed_stroke,
+            );
+            p.line_segment(
+                [pos2(tcx + 4.0, tcy + 3.5), pos2(tcx + 0.5, tcy)],
+                speed_stroke,
+            );
             // 破风速度线
-            p.line_segment([pos2(tcx + 2.8, tcy - 1.8), pos2(tcx + 5.0, tcy - 1.8)], Stroke::new(1.0, arrow_col));
-            p.line_segment([pos2(tcx + 2.8, tcy + 1.8), pos2(tcx + 5.0, tcy + 1.8)], Stroke::new(1.0, arrow_col));
+            p.line_segment(
+                [pos2(tcx + 2.8, tcy - 1.8), pos2(tcx + 5.0, tcy - 1.8)],
+                Stroke::new(1.0, arrow_col),
+            );
+            p.line_segment(
+                [pos2(tcx + 2.8, tcy + 1.8), pos2(tcx + 5.0, tcy + 1.8)],
+                Stroke::new(1.0, arrow_col),
+            );
         }
     }
 
@@ -256,13 +350,19 @@ impl App {
     pub(super) fn dock_chevron(&mut self, ui: &mut egui::Ui, d: Dock) {
         let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
         let word = if collapsed { "展开" } else { "折叠" };
-        let arrow = if collapsed { "▲" } else { panels::chevron(d, collapsed) };
+        let arrow = if collapsed {
+            "▲"
+        } else {
+            panels::chevron(d, collapsed)
+        };
         let label = format!("{} {}", arrow, trz(word));
         let tc = self.tc;
         if tc.comic {
-            let galley = ui
-                .painter()
-                .layout_no_wrap(label.clone(), egui::FontId::proportional(11.0), Color32::BLACK);
+            let galley = ui.painter().layout_no_wrap(
+                label.clone(),
+                egui::FontId::proportional(11.0),
+                Color32::BLACK,
+            );
             let btn_size = Vec2::new(galley.size().x + 16.0, 20.0);
             let (rect, resp) = ui.allocate_exact_size(btn_size, Sense::click());
             let resp = resp
@@ -308,8 +408,7 @@ impl App {
                     .show(root, |ui| {
                         let w = ui.available_width();
                         let h = ui.available_height();
-                        let (rect, resp) = ui
-                            .allocate_exact_size(Vec2::new(w, h), Sense::click());
+                        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
                         let resp = resp
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .tip(trz(panels::tip(d, collapsed)));
@@ -327,7 +426,8 @@ impl App {
                                 ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
                             }
                             let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
-                            let chevron_pos = Pos2::new(rect.center().x, rect.top() + panels::STRIP_BTN_H * 0.5);
+                            let chevron_pos =
+                                Pos2::new(rect.center().x, rect.top() + panels::STRIP_BTN_H * 0.5);
                             ui.painter().text(
                                 chevron_pos,
                                 egui::Align2::CENTER_CENTER,
@@ -372,7 +472,10 @@ impl App {
         ui.painter().hline(
             head.x_range(),
             head.top() + if tc.comic { 1.0 } else { 0.5 },
-            egui::Stroke::new(if tc.comic { 2.0 } else { 1.0 }, if tc.comic { Color32::BLACK } else { tc.border }),
+            egui::Stroke::new(
+                if tc.comic { 2.0 } else { 1.0 },
+                if tc.comic { Color32::BLACK } else { tc.border },
+            ),
         );
         ui.allocate_ui_with_layout(
             head.size(),

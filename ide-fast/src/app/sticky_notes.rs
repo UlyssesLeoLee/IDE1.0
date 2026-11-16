@@ -453,7 +453,11 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
                 bg: Color32::from_rgba_unmultiplied(255, 245, 160, alpha),
                 header_bg: Color32::from_rgba_unmultiplied(255, 235, 120, h_alpha),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 80),
-                fg: if tc.dark { Color32::from_rgb(45, 38, 15) } else { Color32::BLACK },
+                fg: if tc.dark {
+                    Color32::from_rgb(45, 38, 15)
+                } else {
+                    Color32::BLACK
+                },
                 toolbar_bg: Color32::from_rgba_unmultiplied(245, 232, 140, alpha),
                 accent: Color32::from_rgb(255, 180, 0),
             },
@@ -461,7 +465,11 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
                 bg: Color32::from_rgba_unmultiplied(180, 255, 210, alpha),
                 header_bg: Color32::from_rgba_unmultiplied(150, 255, 190, h_alpha),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 80),
-                fg: if tc.dark { Color32::from_rgb(18, 42, 25) } else { Color32::BLACK },
+                fg: if tc.dark {
+                    Color32::from_rgb(18, 42, 25)
+                } else {
+                    Color32::BLACK
+                },
                 toolbar_bg: Color32::from_rgba_unmultiplied(165, 245, 198, alpha),
                 accent: Color32::from_rgb(0, 200, 100),
             },
@@ -469,7 +477,11 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
                 bg: Color32::from_rgba_unmultiplied(255, 195, 215, alpha),
                 header_bg: Color32::from_rgba_unmultiplied(255, 170, 195, h_alpha),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 80),
-                fg: if tc.dark { Color32::from_rgb(48, 20, 32) } else { Color32::BLACK },
+                fg: if tc.dark {
+                    Color32::from_rgb(48, 20, 32)
+                } else {
+                    Color32::BLACK
+                },
                 toolbar_bg: Color32::from_rgba_unmultiplied(248, 185, 205, alpha),
                 accent: Color32::from_rgb(255, 105, 180),
             },
@@ -477,7 +489,11 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
                 bg: Color32::from_rgba_unmultiplied(225, 195, 255, alpha),
                 header_bg: Color32::from_rgba_unmultiplied(205, 165, 255, h_alpha),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 80),
-                fg: if tc.dark { Color32::from_rgb(38, 20, 52) } else { Color32::BLACK },
+                fg: if tc.dark {
+                    Color32::from_rgb(38, 20, 52)
+                } else {
+                    Color32::BLACK
+                },
                 toolbar_bg: Color32::from_rgba_unmultiplied(215, 180, 248, alpha),
                 accent: Color32::from_rgb(160, 90, 240),
             },
@@ -485,7 +501,11 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
                 bg: Color32::from_rgba_unmultiplied(180, 225, 255, alpha),
                 header_bg: Color32::from_rgba_unmultiplied(150, 205, 255, h_alpha),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 80),
-                fg: if tc.dark { Color32::from_rgb(18, 36, 52) } else { Color32::BLACK },
+                fg: if tc.dark {
+                    Color32::from_rgb(18, 36, 52)
+                } else {
+                    Color32::BLACK
+                },
                 toolbar_bg: Color32::from_rgba_unmultiplied(165, 215, 248, alpha),
                 accent: Color32::from_rgb(0, 180, 255),
             },
@@ -1560,7 +1580,12 @@ pub fn paint_sticky_btn_frame(
         };
 
         p.rect_filled(rect, 0.0, bg);
-        p.rect_stroke(rect, 0.0, Stroke::new(1.0, outer_border), StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.0, outer_border),
+            StrokeKind::Inside,
+        );
 
         // 3D Bevel 棱角线 (按下去时反向凹陷)
         let (top_left_col, bot_right_col) = if active {
@@ -1568,26 +1593,57 @@ pub fn paint_sticky_btn_frame(
         } else if hovered {
             (palette.accent, Color32::from_rgb(15, 10, 25))
         } else {
-            (palette.border.gamma_multiply(0.8), Color32::from_rgb(15, 10, 25))
+            (
+                palette.border.gamma_multiply(0.8),
+                Color32::from_rgb(15, 10, 25),
+            )
         };
 
         let inner = rect.shrink(1.0);
-        p.line_segment([inner.left_top(), inner.right_top()], Stroke::new(1.0, top_left_col));
-        p.line_segment([inner.left_top(), inner.left_bottom()], Stroke::new(1.0, top_left_col));
-        p.line_segment([inner.left_bottom(), inner.right_bottom()], Stroke::new(1.0, bot_right_col));
-        p.line_segment([inner.right_top(), inner.right_bottom()], Stroke::new(1.0, bot_right_col));
+        p.line_segment(
+            [inner.left_top(), inner.right_top()],
+            Stroke::new(1.0, top_left_col),
+        );
+        p.line_segment(
+            [inner.left_top(), inner.left_bottom()],
+            Stroke::new(1.0, top_left_col),
+        );
+        p.line_segment(
+            [inner.left_bottom(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right_col),
+        );
+        p.line_segment(
+            [inner.right_top(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right_col),
+        );
 
-        let content_rect = if active { rect.translate(Vec2::new(1.0, 1.0)) } else { rect };
-        let fg = if active || hovered || highlighted { palette.accent } else { palette.fg };
+        let content_rect = if active {
+            rect.translate(Vec2::new(1.0, 1.0))
+        } else {
+            rect
+        };
+        let fg = if active || hovered || highlighted {
+            palette.accent
+        } else {
+            palette.fg
+        };
         (content_rect, fg)
     } else if tc.comic {
         // Comic 3渲2: 2.0px 纯黑手绘墨线 + 实体硬波普投影
-        let shadow_offset = if active { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+        let shadow_offset = if active {
+            Vec2::ZERO
+        } else {
+            Vec2::new(1.5, 1.5)
+        };
         if hovered && !active {
             p.rect_filled(rect.translate(shadow_offset), 2.0, Color32::BLACK);
         }
 
-        let actual_rect = if active { rect.translate(Vec2::new(1.2, 1.2)) } else { rect };
+        let actual_rect = if active {
+            rect.translate(Vec2::new(1.2, 1.2))
+        } else {
+            rect
+        };
         let bg = if active {
             Color32::from_rgb(255, 170, 0) // 按下深波普橙
         } else if hovered {
@@ -1598,15 +1654,28 @@ pub fn paint_sticky_btn_frame(
             Color32::TRANSPARENT
         };
 
-        let border_col = if hovered || active { Color32::BLACK } else { Color32::from_black_alpha(100) };
+        let border_col = if hovered || active {
+            Color32::BLACK
+        } else {
+            Color32::from_black_alpha(100)
+        };
         if bg != Color32::TRANSPARENT {
             p.rect_filled(actual_rect, 2.0, bg);
         }
         if hovered || active {
-            p.rect_stroke(actual_rect, 2.0, Stroke::new(1.5, border_col), StrokeKind::Inside);
+            p.rect_stroke(
+                actual_rect,
+                2.0,
+                Stroke::new(1.5, border_col),
+                StrokeKind::Inside,
+            );
         }
 
-        let fg = if active || hovered { Color32::BLACK } else { palette.fg };
+        let fg = if active || hovered {
+            Color32::BLACK
+        } else {
+            palette.fg
+        };
         (actual_rect, fg)
     } else if tc.crystal || tc.clear {
         // 水晶 / 玻璃: 晶钻圆角毛玻璃 + 切面反射
@@ -1635,15 +1704,27 @@ pub fn paint_sticky_btn_frame(
             p.rect_filled(rect, round, bg);
         }
         if border_col != Color32::TRANSPARENT {
-            p.rect_stroke(rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+            p.rect_stroke(
+                rect,
+                round,
+                Stroke::new(1.0, border_col),
+                StrokeKind::Inside,
+            );
             // 顶沿微光折射
             p.line_segment(
-                [pos2(rect.left() + 2.0, rect.top() + 1.0), pos2(rect.right() - 2.0, rect.top() + 1.0)],
+                [
+                    pos2(rect.left() + 2.0, rect.top() + 1.0),
+                    pos2(rect.right() - 2.0, rect.top() + 1.0),
+                ],
                 Stroke::new(1.0, Color32::WHITE),
             );
         }
 
-        let fg = if active || hovered { Color32::WHITE } else { palette.fg };
+        let fg = if active || hovered {
+            Color32::WHITE
+        } else {
+            palette.fg
+        };
         (rect, fg)
     } else {
         // Fluent 现代深色/浅色: 柔和圆角
@@ -1658,10 +1739,19 @@ pub fn paint_sticky_btn_frame(
 
         if bg != Color32::TRANSPARENT {
             p.rect_filled(rect, round, bg);
-            p.rect_stroke(rect, round, Stroke::new(1.0, palette.accent.gamma_multiply(0.6)), StrokeKind::Inside);
+            p.rect_stroke(
+                rect,
+                round,
+                Stroke::new(1.0, palette.accent.gamma_multiply(0.6)),
+                StrokeKind::Inside,
+            );
         }
 
-        let fg = if active || hovered { palette.accent } else { palette.fg };
+        let fg = if active || hovered {
+            palette.accent
+        } else {
+            palette.fg
+        };
         (rect, fg)
     }
 }
@@ -1701,7 +1791,8 @@ pub fn paint_sticky_header_icon(
             }
         }
         StickyHeaderIcon::BackToEdit => {
-            let doc_rect = Rect::from_min_max(pos2(c.x - 5.5, c.y - 5.0), pos2(c.x + 1.5, c.y + 5.0));
+            let doc_rect =
+                Rect::from_min_max(pos2(c.x - 5.5, c.y - 5.0), pos2(c.x + 1.5, c.y + 5.0));
             p.rect_stroke(
                 doc_rect,
                 if tc.retro16 { 0.0 } else { 1.5 },
@@ -1719,10 +1810,27 @@ pub fn paint_sticky_header_icon(
             let pal_rect = Rect::from_center_size(c, Vec2::new(12.0, 10.0));
             if tc.retro16 {
                 p.rect_stroke(pal_rect, 0.0, st, StrokeKind::Inside);
-                p.rect_filled(Rect::from_min_size(pos2(c.x - 3.0, c.y - 2.5), Vec2::splat(1.5)), 0.0, col);
-                p.rect_filled(Rect::from_min_size(pos2(c.x + 1.5, c.y - 2.5), Vec2::splat(1.5)), 0.0, col);
-                p.rect_filled(Rect::from_min_size(pos2(c.x + 2.5, c.y + 1.0), Vec2::splat(1.5)), 0.0, col);
-                p.rect_stroke(Rect::from_min_size(pos2(c.x - 3.5, c.y + 1.0), Vec2::splat(2.0)), 0.0, st, StrokeKind::Inside);
+                p.rect_filled(
+                    Rect::from_min_size(pos2(c.x - 3.0, c.y - 2.5), Vec2::splat(1.5)),
+                    0.0,
+                    col,
+                );
+                p.rect_filled(
+                    Rect::from_min_size(pos2(c.x + 1.5, c.y - 2.5), Vec2::splat(1.5)),
+                    0.0,
+                    col,
+                );
+                p.rect_filled(
+                    Rect::from_min_size(pos2(c.x + 2.5, c.y + 1.0), Vec2::splat(1.5)),
+                    0.0,
+                    col,
+                );
+                p.rect_stroke(
+                    Rect::from_min_size(pos2(c.x - 3.5, c.y + 1.0), Vec2::splat(2.0)),
+                    0.0,
+                    st,
+                    StrokeKind::Inside,
+                );
             } else {
                 p.rect_stroke(pal_rect, 4.0, st, StrokeKind::Inside);
                 p.circle_filled(pos2(c.x - 2.5, c.y - 2.0), 1.2, col);
@@ -1738,9 +1846,13 @@ pub fn paint_sticky_header_icon(
                     [pos2(c.x - 4.5, c.y - 4.5), pos2(c.x + 4.5, c.y - 4.5)],
                     Stroke::new(stroke_w * 1.3, col),
                 );
-                let body_rect = Rect::from_min_max(pos2(c.x - 2.5, c.y - 4.5), pos2(c.x + 2.5, c.y + 0.5));
+                let body_rect =
+                    Rect::from_min_max(pos2(c.x - 2.5, c.y - 4.5), pos2(c.x + 2.5, c.y + 0.5));
                 p.rect_filled(body_rect, if tc.retro16 { 0.0 } else { 1.5 }, col);
-                p.line_segment([pos2(c.x, c.y + 0.5), pos2(c.x, c.y + 5.5)], Stroke::new(1.4, col));
+                p.line_segment(
+                    [pos2(c.x, c.y + 0.5), pos2(c.x, c.y + 5.5)],
+                    Stroke::new(1.4, col),
+                );
             } else {
                 // 未置顶状态: 斜向 45 度的图钉
                 p.line_segment(
@@ -1751,7 +1863,10 @@ pub fn paint_sticky_header_icon(
                     [pos2(c.x + 2.0, c.y - 2.0), pos2(c.x - 2.0, c.y + 2.0)],
                     Stroke::new(stroke_w * 1.1, col),
                 );
-                p.line_segment([pos2(c.x - 2.0, c.y + 2.0), pos2(c.x - 5.0, c.y + 5.0)], Stroke::new(1.4, col));
+                p.line_segment(
+                    [pos2(c.x - 2.0, c.y + 2.0), pos2(c.x - 5.0, c.y + 5.0)],
+                    Stroke::new(1.4, col),
+                );
             }
         }
         StickyHeaderIcon::Delete => {
@@ -1795,7 +1910,10 @@ pub fn paint_sticky_tool_icon(
     match icon {
         StickyToolIcon::Bold => {
             let stem_w = if tc.comic { 2.4 } else { 1.8 };
-            p.line_segment([pos2(c.x - 3.5, c.y - 4.5), pos2(c.x - 3.5, c.y + 4.5)], Stroke::new(stem_w, col));
+            p.line_segment(
+                [pos2(c.x - 3.5, c.y - 4.5), pos2(c.x - 3.5, c.y + 4.5)],
+                Stroke::new(stem_w, col),
+            );
             p.line_segment([pos2(c.x - 3.5, c.y - 4.5), pos2(c.x + 1.2, c.y - 4.5)], st);
             p.line_segment([pos2(c.x - 3.5, c.y), pos2(c.x + 1.5, c.y)], st);
             p.line_segment([pos2(c.x - 3.5, c.y + 4.5), pos2(c.x + 1.2, c.y + 4.5)], st);
@@ -1808,7 +1926,10 @@ pub fn paint_sticky_tool_icon(
             let stem_w = if tc.comic { 2.0 } else { 1.5 };
             p.line_segment([pos2(c.x - 1.0, c.y - 4.5), pos2(c.x + 3.5, c.y - 4.5)], st);
             p.line_segment([pos2(c.x - 3.5, c.y + 4.5), pos2(c.x + 1.0, c.y + 4.5)], st);
-            p.line_segment([pos2(c.x + 1.2, c.y - 4.5), pos2(c.x - 1.2, c.y + 4.5)], Stroke::new(stem_w, col));
+            p.line_segment(
+                [pos2(c.x + 1.2, c.y - 4.5), pos2(c.x - 1.2, c.y + 4.5)],
+                Stroke::new(stem_w, col),
+            );
         }
         StickyToolIcon::Underline => {
             p.line_segment([pos2(c.x - 3.2, c.y - 4.5), pos2(c.x - 3.2, c.y + 0.8)], st);
@@ -1816,7 +1937,10 @@ pub fn paint_sticky_tool_icon(
             p.line_segment([pos2(c.x - 3.2, c.y + 0.8), pos2(c.x - 1.5, c.y + 2.2)], st);
             p.line_segment([pos2(c.x - 1.5, c.y + 2.2), pos2(c.x + 1.5, c.y + 2.2)], st);
             p.line_segment([pos2(c.x + 1.5, c.y + 2.2), pos2(c.x + 3.2, c.y + 0.8)], st);
-            p.line_segment([pos2(c.x - 4.5, c.y + 4.8), pos2(c.x + 4.5, c.y + 4.8)], Stroke::new(stroke_w * 1.1, col));
+            p.line_segment(
+                [pos2(c.x - 4.5, c.y + 4.8), pos2(c.x + 4.5, c.y + 4.8)],
+                Stroke::new(stroke_w * 1.1, col),
+            );
         }
         StickyToolIcon::Strikethrough => {
             p.line_segment([pos2(c.x + 2.8, c.y - 3.5), pos2(c.x - 0.5, c.y - 4.5)], st);
@@ -1825,19 +1949,37 @@ pub fn paint_sticky_tool_icon(
             p.line_segment([pos2(c.x + 2.8, c.y + 1.0), pos2(c.x + 3.0, c.y + 3.0)], st);
             p.line_segment([pos2(c.x + 3.0, c.y + 3.0), pos2(c.x + 0.5, c.y + 4.5)], st);
             p.line_segment([pos2(c.x + 0.5, c.y + 4.5), pos2(c.x - 2.8, c.y + 3.5)], st);
-            p.line_segment([pos2(c.x - 5.0, c.y), pos2(c.x + 5.0, c.y)], Stroke::new(stroke_w * 1.2, col));
+            p.line_segment(
+                [pos2(c.x - 5.0, c.y), pos2(c.x + 5.0, c.y)],
+                Stroke::new(stroke_w * 1.2, col),
+            );
         }
         StickyToolIcon::Checklist => {
             let box_r = Rect::from_center_size(c, Vec2::splat(9.0));
-            p.rect_stroke(box_r, if tc.retro16 { 0.0 } else { 1.5 }, st, StrokeKind::Inside);
-            p.line_segment([pos2(c.x - 2.8, c.y - 0.2), pos2(c.x - 0.8, c.y + 2.2)], Stroke::new(stroke_w * 1.1, col));
-            p.line_segment([pos2(c.x - 0.8, c.y + 2.2), pos2(c.x + 3.0, c.y - 2.0)], Stroke::new(stroke_w * 1.1, col));
+            p.rect_stroke(
+                box_r,
+                if tc.retro16 { 0.0 } else { 1.5 },
+                st,
+                StrokeKind::Inside,
+            );
+            p.line_segment(
+                [pos2(c.x - 2.8, c.y - 0.2), pos2(c.x - 0.8, c.y + 2.2)],
+                Stroke::new(stroke_w * 1.1, col),
+            );
+            p.line_segment(
+                [pos2(c.x - 0.8, c.y + 2.2), pos2(c.x + 3.0, c.y - 2.0)],
+                Stroke::new(stroke_w * 1.1, col),
+            );
         }
         StickyToolIcon::BulletList => {
             for dy in [-3.5, 0.0, 3.5] {
                 let y = c.y + dy;
                 if tc.retro16 {
-                    p.rect_filled(Rect::from_min_size(pos2(c.x - 4.8, y - 1.0), Vec2::splat(2.0)), 0.0, col);
+                    p.rect_filled(
+                        Rect::from_min_size(pos2(c.x - 4.8, y - 1.0), Vec2::splat(2.0)),
+                        0.0,
+                        col,
+                    );
                 } else {
                     p.circle_filled(pos2(c.x - 4.0, y), 1.2, col);
                 }
@@ -1851,9 +1993,15 @@ pub fn paint_sticky_tool_icon(
         }
         StickyToolIcon::Copy => {
             let back_r = Rect::from_min_max(pos2(c.x - 4.0, c.y - 4.5), pos2(c.x + 1.5, c.y + 2.5));
-            let front_r = Rect::from_min_max(pos2(c.x - 1.5, c.y - 2.0), pos2(c.x + 4.0, c.y + 5.0));
+            let front_r =
+                Rect::from_min_max(pos2(c.x - 1.5, c.y - 2.0), pos2(c.x + 4.0, c.y + 5.0));
             let r_round = if tc.retro16 { 0.0 } else { 1.0 };
-            p.rect_stroke(back_r, r_round, Stroke::new(1.0, col.gamma_multiply(0.6)), StrokeKind::Inside);
+            p.rect_stroke(
+                back_r,
+                r_round,
+                Stroke::new(1.0, col.gamma_multiply(0.6)),
+                StrokeKind::Inside,
+            );
             p.rect_stroke(front_r, r_round, st, StrokeKind::Inside);
         }
         StickyToolIcon::Clear => {
@@ -1865,7 +2013,10 @@ pub fn paint_sticky_tool_icon(
             p.line_segment([p2, p3], st);
             p.line_segment([p3, p4], st);
             p.line_segment([p4, p1], st);
-            p.line_segment([pos2(c.x - 5.0, c.y + 4.5), pos2(c.x + 4.0, c.y + 4.5)], Stroke::new(1.0, col.gamma_multiply(0.6)));
+            p.line_segment(
+                [pos2(c.x - 5.0, c.y + 4.5), pos2(c.x + 4.0, c.y + 4.5)],
+                Stroke::new(1.0, col.gamma_multiply(0.6)),
+            );
         }
     }
 }
@@ -1917,12 +2068,7 @@ fn draw_tool_btn(
 }
 
 /// 绘制便笺右下角原生缩放把手 (Resize Grip Handle)
-fn draw_resize_grip(
-    ui: &mut Ui,
-    rect: Rect,
-    tc: &crate::view::ThemeColors,
-    palette: &NotePalette,
-) {
+fn draw_resize_grip(ui: &mut Ui, rect: Rect, tc: &crate::view::ThemeColors, palette: &NotePalette) {
     let p = ui.painter();
     let col = palette.fg.gamma_multiply(0.35);
     let r = rect.right() - 4.0;
@@ -1930,7 +2076,14 @@ fn draw_resize_grip(
 
     if tc.retro16 {
         // Retro 16-Bit: 街机像素阶梯方块
-        let pts = [(2.0, 2.0), (6.0, 2.0), (2.0, 6.0), (10.0, 2.0), (6.0, 6.0), (2.0, 10.0)];
+        let pts = [
+            (2.0, 2.0),
+            (6.0, 2.0),
+            (2.0, 6.0),
+            (10.0, 2.0),
+            (6.0, 6.0),
+            (2.0, 10.0),
+        ];
         for (dx, dy) in pts {
             p.rect_filled(
                 Rect::from_min_size(pos2(r - dx, b - dy), Vec2::splat(2.0)),
@@ -1940,12 +2093,28 @@ fn draw_resize_grip(
         }
     } else if tc.comic {
         // Comic 3渲2: 纯黑实体斜向刻度划线
-        p.line_segment([pos2(r - 3.0, b), pos2(r, b - 3.0)], Stroke::new(1.8, Color32::BLACK));
-        p.line_segment([pos2(r - 7.0, b), pos2(r, b - 7.0)], Stroke::new(1.8, Color32::BLACK));
-        p.line_segment([pos2(r - 11.0, b), pos2(r, b - 11.0)], Stroke::new(1.8, Color32::BLACK));
+        p.line_segment(
+            [pos2(r - 3.0, b), pos2(r, b - 3.0)],
+            Stroke::new(1.8, Color32::BLACK),
+        );
+        p.line_segment(
+            [pos2(r - 7.0, b), pos2(r, b - 7.0)],
+            Stroke::new(1.8, Color32::BLACK),
+        );
+        p.line_segment(
+            [pos2(r - 11.0, b), pos2(r, b - 11.0)],
+            Stroke::new(1.8, Color32::BLACK),
+        );
     } else {
         // 现代 Fluent / Crystal 柔和圆点阵列
-        let pts = [(3.0, 3.0), (7.0, 3.0), (3.0, 7.0), (11.0, 3.0), (7.0, 7.0), (3.0, 11.0)];
+        let pts = [
+            (3.0, 3.0),
+            (7.0, 3.0),
+            (3.0, 7.0),
+            (11.0, 3.0),
+            (7.0, 7.0),
+            (3.0, 11.0),
+        ];
         for (dx, dy) in pts {
             p.circle_filled(pos2(r - dx, b - dy), 1.2, col);
         }
@@ -2123,7 +2292,8 @@ mod tests {
                 let pal = get_palette(0, tc);
                 for hovered in [false, true] {
                     for active in [false, true] {
-                        let (c_rect, col) = paint_sticky_btn_frame(p, rect, tc, &pal, hovered, active, false);
+                        let (c_rect, col) =
+                            paint_sticky_btn_frame(p, rect, tc, &pal, hovered, active, false);
                         assert!(c_rect.width() > 0.0);
                         assert_ne!(col, Color32::TRANSPARENT);
 

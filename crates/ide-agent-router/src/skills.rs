@@ -61,9 +61,18 @@ impl Skill {
     pub fn apply(&self, user_input: &str, base_system: Option<&str>) -> (String, String) {
         let final_system = match base_system {
             Some(base) if !base.trim().is_empty() => {
-                format!("{}\n\n[Active Skill: {}]\n{}", base.trim(), self.name, self.system_prompt.trim())
+                format!(
+                    "{}\n\n[Active Skill: {}]\n{}",
+                    base.trim(),
+                    self.name,
+                    self.system_prompt.trim()
+                )
             }
-            _ => format!("[Active Skill: {}]\n{}", self.name, self.system_prompt.trim()),
+            _ => format!(
+                "[Active Skill: {}]\n{}",
+                self.name,
+                self.system_prompt.trim()
+            ),
         };
 
         let final_user = match &self.prompt_template {
@@ -195,7 +204,9 @@ impl SkillRegistry {
     /// 按触发词检索技能 (如 "/review")
     pub fn find_by_trigger(&self, trigger: &str) -> Option<&Skill> {
         let key = trigger.trim().to_ascii_lowercase();
-        self.trigger_map.get(&key).and_then(|id| self.skills.get(id))
+        self.trigger_map
+            .get(&key)
+            .and_then(|id| self.skills.get(id))
     }
 
     /// 检查用户输入是否以某个触发词开头 (如 "/review 请看这行代码")
@@ -238,7 +249,9 @@ impl SkillRegistry {
                 s.id.to_ascii_lowercase().contains(&q)
                     || s.name.to_ascii_lowercase().contains(&q)
                     || s.description.to_ascii_lowercase().contains(&q)
-                    || s.triggers.iter().any(|t| t.to_ascii_lowercase().contains(&q))
+                    || s.triggers
+                        .iter()
+                        .any(|t| t.to_ascii_lowercase().contains(&q))
                     || s.tags.iter().any(|t| t.to_ascii_lowercase().contains(&q))
             })
             .collect();
@@ -316,9 +329,19 @@ fn parse_skill_markdown(folder: &Path, content: &str) -> Option<Skill> {
             match k.as_str() {
                 "name" => name = v.to_string(),
                 "description" => description = v.to_string(),
-                "trigger" | "command" => triggers = vec![if v.starts_with('/') { v.to_string() } else { format!("/{v}") }],
+                "trigger" | "command" => {
+                    triggers = vec![if v.starts_with('/') {
+                        v.to_string()
+                    } else {
+                        format!("/{v}")
+                    }]
+                }
                 "tags" => {
-                    tags = v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                    tags = v
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
                 }
                 _ => {}
             }
@@ -359,7 +382,9 @@ mod tests {
         let reg = SkillRegistry::new();
 
         // 匹配 /review
-        let (s1, rest1) = reg.match_prompt("/review fn calculate() { return 42; }").unwrap();
+        let (s1, rest1) = reg
+            .match_prompt("/review fn calculate() { return 42; }")
+            .unwrap();
         assert_eq!(s1.id, "code-review");
         assert_eq!(rest1, "fn calculate() { return 42; }");
 

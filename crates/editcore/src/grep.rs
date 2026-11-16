@@ -226,23 +226,34 @@ mod tests {
     #[test]
     fn grep_in_file_decodes_sjis_and_utf16() {
         let dir = tempfile_lite::TempDir::new("sakura-rs-grep-enc");
-        let (sj, _, _) = encoding_rs::SHIFT_JIS.encode("一行目
+        let (sj, _, _) = encoding_rs::SHIFT_JIS.encode(
+            "一行目
 日本語の行
-");
+",
+        );
         std::fs::write(dir.path().join("s.txt"), &*sj).unwrap();
         let mut u16 = vec![0xFF, 0xFE];
         for u in "abc
 日本語
-".encode_utf16() {
+"
+        .encode_utf16()
+        {
             u16.extend_from_slice(&u.to_le_bytes());
         }
         std::fs::write(dir.path().join("u.txt"), &u16).unwrap();
         let m = grep_in_file(&dir.path().join("s.txt"), "日本語").unwrap();
-        assert_eq!((m.len(), m[0].line, m[0].text.as_str()), (1, 2, "日本語の行"));
+        assert_eq!(
+            (m.len(), m[0].line, m[0].text.as_str()),
+            (1, 2, "日本語の行")
+        );
         let m = grep_in_file(&dir.path().join("u.txt"), "日本語").unwrap();
         assert_eq!((m.len(), m[0].line), (1, 2));
         // 强制 UTF-8 去读 SJIS 文件: 找不到
-        assert!(grep_in_file_with(&dir.path().join("s.txt"), "日本語", Some("utf-8")).unwrap().is_empty());
+        assert!(
+            grep_in_file_with(&dir.path().join("s.txt"), "日本語", Some("utf-8"))
+                .unwrap()
+                .is_empty()
+        );
         assert!(grep_in_file_with(&dir.path().join("s.txt"), "x", Some("nope")).is_err());
     }
 

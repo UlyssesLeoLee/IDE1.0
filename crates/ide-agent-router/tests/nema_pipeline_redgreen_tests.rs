@@ -9,8 +9,7 @@
 
 use ide_agent_router::agent_profile::FeedbackDecision;
 use ide_agent_router::nema_pipeline::{
-    IterationFeedbackTicket, MultiAgentPipelineCoordinator,
-    NemaSemanticMerger, NemaToRustLowering,
+    IterationFeedbackTicket, MultiAgentPipelineCoordinator, NemaSemanticMerger, NemaToRustLowering,
     TaskInputKind,
 };
 use nema_codec::{EdgeDirection, NemaCodec, StandardNemaCodec};
@@ -22,11 +21,20 @@ fn test_red_merged_nema_source_must_be_losslessly_parseable_by_nema_codec() {
     let codec = StandardNemaCodec;
 
     let base = "\t$1\nTokenZero\n\t\\1\n\\ Type Field\nTokenZero Core\n\n\n";
-    let branch_a = "\t$2\nTokenZero\nTokenA\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenA ModuleA\n\n\n";
-    let branch_b = "\t$2\nTokenZero\nTokenB\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenB ModuleB\n\n\n";
+    let branch_a =
+        "\t$2\nTokenZero\nTokenA\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenA ModuleA\n\n\n";
+    let branch_b =
+        "\t$2\nTokenZero\nTokenB\n\t\\1\n\\ Type Field\nTokenZero Core\nTokenB ModuleB\n\n\n";
 
     let outcome = merger
-        .merge("specs/File_A.nema", base, "feat/A1", branch_a, "feat/A2", branch_b)
+        .merge(
+            "specs/File_A.nema",
+            base,
+            "feat/A1",
+            branch_a,
+            "feat/A2",
+            branch_b,
+        )
         .expect("merge should succeed");
 
     // 关键断言：合并输出的字符串必须是合法的 NEMA 规范文档
@@ -47,12 +55,21 @@ fn test_red_merged_graph_edges_preserve_direction_and_descriptions() {
 
     let base = "\t>1\nServer NodeA\nDatabase NodeB\n\n\n";
     // 分支 A: Database<Read<Server Client reads from database (注意这是反向操作符 <，Server -> Database)
-    let branch_a = "\t>1\nServer NodeA\nDatabase NodeB\nDatabase<Read<Server Client reads from database\n\n\n";
+    let branch_a =
+        "\t>1\nServer NodeA\nDatabase NodeB\nDatabase<Read<Server Client reads from database\n\n\n";
     // 分支 B: Server>Write>Cache Cache writes
-    let branch_b = "\t>1\nServer NodeA\nDatabase NodeB\nCache NodeC\nServer>Write>Cache Cache writes\n\n\n";
+    let branch_b =
+        "\t>1\nServer NodeA\nDatabase NodeB\nCache NodeC\nServer>Write>Cache Cache writes\n\n\n";
 
     let outcome = merger
-        .merge("specs/Arch.nema", base, "feat/A1", branch_a, "feat/B1", branch_b)
+        .merge(
+            "specs/Arch.nema",
+            base,
+            "feat/A1",
+            branch_a,
+            "feat/B1",
+            branch_b,
+        )
         .expect("merge should succeed");
 
     let parsed_doc = codec
@@ -81,7 +98,10 @@ fn test_red_merged_graph_edges_preserve_direction_and_descriptions() {
     // 验证方向：Read 边是从 Server 指向 Database
     let read_edge = read_edge_rec.graph_edge.as_ref().unwrap();
     assert_eq!(read_edge.from, "Server", "Read edge source must be Server");
-    assert_eq!(read_edge.to, "Database", "Read edge target must be Database");
+    assert_eq!(
+        read_edge.to, "Database",
+        "Read edge target must be Database"
+    );
     assert_eq!(read_edge.direction, EdgeDirection::Directed);
 
     // 验证说明文本：必须包含原始业务语义
@@ -94,7 +114,9 @@ fn test_red_merged_graph_edges_preserve_direction_and_descriptions() {
         .join(" ");
     assert!(
         read_rendered_text.contains("Client reads from database")
-            || outcome.rendered_nema_source.contains("Client reads from database"),
+            || outcome
+                .rendered_nema_source
+                .contains("Client reads from database"),
         "Original edge description was lost in merged source! Source:\n{}",
         outcome.rendered_nema_source
     );
@@ -115,7 +137,14 @@ fn test_red_dictionary_index_remapping_for_caret_tokens() {
     let branch_b = "\t$2\nBetaToken\nZetaToken\n\t\\1\n\\ Col1 Col2\n^0 SecondRow\n\n\n";
 
     let outcome = merger
-        .merge("specs/Tokens.nema", "", "feat/A1", branch_a, "feat/B1", branch_b)
+        .merge(
+            "specs/Tokens.nema",
+            "",
+            "feat/A1",
+            branch_a,
+            "feat/B1",
+            branch_b,
+        )
         .expect("merge ok");
 
     // 词典合并后字典字母序应该是: ["AlphaToken", "BetaToken", "ZetaToken"]
@@ -153,7 +182,8 @@ fn test_red_lowering_sanitizes_illegal_rust_identifiers() {
     let codec = StandardNemaCodec;
 
     // 包含数字开头、短横线、空格、点号的复杂标识符
-    let source = "\t\\1\n\\ Type Field\n123-Payment-Gateway field1\nuser.session_manager field2\n\n\n";
+    let source =
+        "\t\\1\n\\ Type Field\n123-Payment-Gateway field1\nuser.session_manager field2\n\n\n";
     let doc = codec.parse(source).expect("valid nema source");
 
     let outcome = lowering.lower("specs/Types.nema", &doc, "src/types.rs", "feat/A1");
@@ -164,14 +194,20 @@ fn test_red_lowering_sanitizes_illegal_rust_identifiers() {
         "Generated illegal identifier with dash and leading digit!"
     );
     assert!(
-        !outcome.rust_code.contains("pub struct user.session_manager"),
+        !outcome
+            .rust_code
+            .contains("pub struct user.session_manager"),
         "Generated illegal identifier with dot!"
     );
     // 必须清洗为合法 Rust 标识符
     assert!(
-        outcome.rust_code.contains("pub struct Entity_123_Payment_Gateway")
+        outcome
+            .rust_code
+            .contains("pub struct Entity_123_Payment_Gateway")
             || outcome.rust_code.contains("pub struct PaymentGateway123")
-            || outcome.rust_code.contains("pub struct _123_Payment_Gateway"),
+            || outcome
+                .rust_code
+                .contains("pub struct _123_Payment_Gateway"),
         "Expected sanitized struct identifier in generated code:\n{}",
         outcome.rust_code
     );
@@ -198,7 +234,10 @@ fn test_red_circuit_breaker_terminates_infinite_defect_repair_loop() {
 
     // 第 1 次：正常进入重试轮次
     let d1 = coordinator.process_iteration_feedback(&ticket, 5000);
-    assert!(matches!(d1, FeedbackDecision::ContinueIteration { next_round: 1 }));
+    assert!(matches!(
+        d1,
+        FeedbackDecision::ContinueIteration { next_round: 1 }
+    ));
 
     // 第 2 次：报告完全相同的错误指纹 -> 必须直接熔断，避免无限循环！
     let d2 = coordinator.process_iteration_feedback(&ticket, 5000);

@@ -148,7 +148,11 @@ pub fn title_width(ui: &Ui, label: &str, mn: char) -> f32 {
         .get(&egui::TextStyle::Button)
         .map(|f| f.size)
         .unwrap_or(MENU_FONT);
-    let sub_px = if (font_sz - 12.0).abs() < 0.1 { 12.0 } else { 11.0 };
+    let sub_px = if (font_sz - 12.0).abs() < 0.1 {
+        12.0
+    } else {
+        11.0
+    };
     let f = |t: &str, px: f32| {
         ui.painter()
             .layout_no_wrap(t.to_string(), FontId::proportional(px), Color32::WHITE)

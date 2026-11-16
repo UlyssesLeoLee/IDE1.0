@@ -137,10 +137,7 @@ impl FileCommitCoordinator {
     }
 
     /// 查询文件的最新解析单元
-    pub fn get_semantic_units(
-        &self,
-        file_id: &str,
-    ) -> Result<Vec<SemanticUnit>, CoordinatorError> {
+    pub fn get_semantic_units(&self, file_id: &str) -> Result<Vec<SemanticUnit>, CoordinatorError> {
         let files = self.files.read().unwrap();
         let file = files
             .get(file_id)
@@ -201,11 +198,7 @@ impl FileCommitCoordinator {
     }
 
     /// Worker 认领就绪任务：分配单调递增的 Fencing Token 与 60s 租约
-    pub fn claim_task(
-        &self,
-        worker_id: &str,
-        workspace_id: &str,
-    ) -> Option<TaskState> {
+    pub fn claim_task(&self, worker_id: &str, workspace_id: &str) -> Option<TaskState> {
         let mut tasks = self.tasks.write().unwrap();
         for task in tasks.values_mut() {
             if task.status == TaskStatus::Ready && task.workspace_id == workspace_id {
@@ -308,7 +301,10 @@ impl FileCommitCoordinator {
         }
 
         // 6. 生成响应并写入幂等记录
-        let commit_id = format!("commit-{}-rev{}", proposal.task_id, patch_result.new_revision);
+        let commit_id = format!(
+            "commit-{}-rev{}",
+            proposal.task_id, patch_result.new_revision
+        );
         let response = PatchCommitResponse {
             commit_id: commit_id.clone(),
             file_id: proposal.file_id.clone(),

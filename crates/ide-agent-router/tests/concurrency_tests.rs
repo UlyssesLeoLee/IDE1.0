@@ -1,8 +1,8 @@
 #![allow(clippy::cloned_ref_to_slice_refs)]
 
 use ide_agent_router::{
-    CoordinatorError, FileCommitCoordinator, PatchError, PatchProposal,
-    SemanticParser, SupportedLanguage,
+    CoordinatorError, FileCommitCoordinator, PatchError, PatchProposal, SemanticParser,
+    SupportedLanguage,
 };
 
 #[test]
@@ -58,7 +58,8 @@ function Get-Farewell {
     Write-Output "Goodbye"
 }
 "#;
-    let ps_units = SemanticParser::parse("ws1", "script.ps1", ps_code, SupportedLanguage::PowerShell);
+    let ps_units =
+        SemanticParser::parse("ws1", "script.ps1", ps_code, SupportedLanguage::PowerShell);
     assert_eq!(ps_units.len(), 2);
     assert_eq!(ps_units[0].qualified_symbol_path, "Get-Greeting");
     assert_eq!(ps_units[1].qualified_symbol_path, "Get-Farewell");
@@ -73,7 +74,10 @@ fn test_identity_hash_drift_resilience() {
     let units_drift = SemanticParser::parse("ws1", "lib.rs", drifted, SupportedLanguage::Rust);
 
     // 即使绝对行号与起始字节改变，node_fingerprint 保持一致！
-    assert_eq!(units_orig[0].node_fingerprint, units_drift[0].node_fingerprint);
+    assert_eq!(
+        units_orig[0].node_fingerprint,
+        units_drift[0].node_fingerprint
+    );
 }
 
 #[test]
@@ -86,7 +90,8 @@ fn test_same_file_different_functions_100_patches_concurrent_merge() {
         initial_code.push_str(&format!("pub fn func_{}() -> i32 {{\n    {}\n}}\n\n", i, i));
     }
 
-    let file = coordinator.register_file("ws_perf", "math.rs", &initial_code, SupportedLanguage::Rust);
+    let file =
+        coordinator.register_file("ws_perf", "math.rs", &initial_code, SupportedLanguage::Rust);
     assert_eq!(file.current_revision, 1);
 
     let task_ids = coordinator.dispatch_job("ws_perf", "job_100", &[file.file_id.clone()], 100);
@@ -94,9 +99,15 @@ fn test_same_file_different_functions_100_patches_concurrent_merge() {
 
     // 100 个 Worker 并发认领任务并准备补丁 (基于 base_revision = 1)
     for i in 0..100 {
-        let task = coordinator.claim_task(&format!("worker_{}", i), "ws_perf").expect("Should claim task");
+        let task = coordinator
+            .claim_task(&format!("worker_{}", i), "ws_perf")
+            .expect("Should claim task");
         let symbol = task.symbol_path.clone();
-        let replacement = format!("pub fn {}() -> i32 {{\n    /* updated */ {}\n}}", symbol, i * 10);
+        let replacement = format!(
+            "pub fn {}() -> i32 {{\n    /* updated */ {}\n}}",
+            symbol,
+            i * 10
+        );
 
         let proposal = PatchProposal {
             task_id: task.task_id.clone(),
@@ -110,10 +121,15 @@ fn test_same_file_different_functions_100_patches_concurrent_merge() {
         };
 
         // 提交进入协调器
-        let resp = coordinator.commit_patch(proposal, &format!("idemp-key-{}", i)).expect("Patch commit should succeed via AST relocate");
+        let resp = coordinator
+            .commit_patch(proposal, &format!("idemp-key-{}", i))
+            .expect("Patch commit should succeed via AST relocate");
         assert_eq!(resp.new_revision, (i + 2) as u64);
         if i > 0 {
-            assert!(resp.relocated, "Consecutive commits on same file must undergo AST relocation");
+            assert!(
+                resp.relocated,
+                "Consecutive commits on same file must undergo AST relocation"
+            );
         }
     }
 
@@ -126,9 +142,15 @@ fn test_same_file_different_functions_100_patches_concurrent_merge() {
 fn test_same_function_dual_worker_write_conflict() {
     let coordinator = FileCommitCoordinator::new();
     let initial_code = "pub fn execute() -> &'static str {\n    \"initial\"\n}\n";
-    let file = coordinator.register_file("ws_conflict", "exec.rs", initial_code, SupportedLanguage::Rust);
+    let file = coordinator.register_file(
+        "ws_conflict",
+        "exec.rs",
+        initial_code,
+        SupportedLanguage::Rust,
+    );
 
-    let _task_ids = coordinator.dispatch_job("ws_conflict", "job_conflict", &[file.file_id.clone()], 100);
+    let _task_ids =
+        coordinator.dispatch_job("ws_conflict", "job_conflict", &[file.file_id.clone()], 100);
 
     // Worker A 认领并提交
     let task_a = coordinator.claim_task("worker_a", "ws_conflict").unwrap();
@@ -140,7 +162,8 @@ fn test_same_function_dual_worker_write_conflict() {
         base_revision: 1,
         symbol_path: "execute".to_string(),
         expected_fingerprint: task_a.expected_fingerprint.clone(),
-        replacement_text: "pub fn execute() -> &'static str {\n    \"from_worker_a\"\n}".to_string(),
+        replacement_text: "pub fn execute() -> &'static str {\n    \"from_worker_a\"\n}"
+            .to_string(),
     };
     coordinator.commit_patch(proposal_a, "idemp-a").unwrap();
 
@@ -153,7 +176,8 @@ fn test_same_function_dual_worker_write_conflict() {
         base_revision: 1,
         symbol_path: "execute".to_string(),
         expected_fingerprint: task_a.expected_fingerprint, // 旧指纹
-        replacement_text: "pub fn execute() -> &'static str {\n    \"from_worker_b\"\n}".to_string(),
+        replacement_text: "pub fn execute() -> &'static str {\n    \"from_worker_b\"\n}"
+            .to_string(),
     };
 
     let err = coordinator.commit_patch(proposal_b, "idemp-b").unwrap_err();
@@ -188,7 +212,9 @@ fn test_stale_fencing_token_rejected() {
         replacement_text: "pub fn ping() -> bool { false }".to_string(),
     };
 
-    let err = coordinator.commit_patch(proposal, "idemp-stale").unwrap_err();
+    let err = coordinator
+        .commit_patch(proposal, "idemp-stale")
+        .unwrap_err();
     assert!(matches!(err, CoordinatorError::FencingTokenStale { .. }));
 }
 
@@ -211,11 +237,15 @@ fn test_idempotency_key_deduplication() {
         replacement_text: "pub fn version() -> u32 { 2 }".to_string(),
     };
 
-    let resp1 = coordinator.commit_patch(proposal.clone(), "idemp-key-unique").unwrap();
+    let resp1 = coordinator
+        .commit_patch(proposal.clone(), "idemp-key-unique")
+        .unwrap();
     assert_eq!(resp1.new_revision, 2);
 
     // 模拟网络重复投递，再次提交相同的 proposal
-    let resp2 = coordinator.commit_patch(proposal, "idemp-key-unique").unwrap();
+    let resp2 = coordinator
+        .commit_patch(proposal, "idemp-key-unique")
+        .unwrap();
     assert_eq!(resp2.new_revision, 2);
     assert_eq!(resp1.commit_id, resp2.commit_id);
 
@@ -233,15 +263,27 @@ fn test_1000_tasks_queue_and_dispatch() {
     for f_idx in 0..10 {
         let mut code = String::new();
         for fn_idx in 0..100 {
-            code.push_str(&format!("pub fn fn_{}_{}() -> i32 {{\n    {}\n}}\n\n", f_idx, fn_idx, fn_idx));
+            code.push_str(&format!(
+                "pub fn fn_{}_{}() -> i32 {{\n    {}\n}}\n\n",
+                f_idx, fn_idx, fn_idx
+            ));
         }
-        let file = coordinator.register_file("ws_1000", &format!("mod_{}.rs", f_idx), &code, SupportedLanguage::Rust);
+        let file = coordinator.register_file(
+            "ws_1000",
+            &format!("mod_{}.rs", f_idx),
+            &code,
+            SupportedLanguage::Rust,
+        );
         file_ids.push(file.file_id);
     }
 
     // 分发大任务
     let task_ids = coordinator.dispatch_job("ws_1000", "job_massive_1000", &file_ids, 50);
-    assert_eq!(task_ids.len(), 1000, "Must successfully partition into 1000 semantic tasks");
+    assert_eq!(
+        task_ids.len(),
+        1000,
+        "Must successfully partition into 1000 semantic tasks"
+    );
 
     // 认领所有任务
     let mut claimed_count = 0;
@@ -252,7 +294,10 @@ fn test_1000_tasks_queue_and_dispatch() {
             break;
         }
     }
-    assert_eq!(claimed_count, 1000, "All 1000 tasks claimed without starvation");
+    assert_eq!(
+        claimed_count, 1000,
+        "All 1000 tasks claimed without starvation"
+    );
 
     // 队列耗尽时再 claim 应返回 None
     assert!(coordinator.claim_task("worker_swarm", "ws_1000").is_none());

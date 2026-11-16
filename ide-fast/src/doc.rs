@@ -420,7 +420,11 @@ impl Doc {
             let line = &self.lines[r];
             let chars: Vec<char> = line.chars().collect();
             let start = if r == r0 { c0.min(chars.len()) } else { 0 };
-            let end = if r == r1 { c1.min(chars.len()) } else { chars.len() };
+            let end = if r == r1 {
+                c1.min(chars.len())
+            } else {
+                chars.len()
+            };
             if start <= end {
                 out.push(chars[start..end].iter().collect::<String>());
             }

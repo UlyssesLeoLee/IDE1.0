@@ -21,9 +21,30 @@ fn corpus() -> PathBuf {
         seed
     };
     let words = [
-        "fn", "match", "impl", "pub", "async", "result", "error", "handle", "buffer", "window",
-        "editor", "grep", "search", "index", "cache", "token", "parse", "render", "update",
-        "config", "layout", "cursor", "column", "selection",
+        "fn",
+        "match",
+        "impl",
+        "pub",
+        "async",
+        "result",
+        "error",
+        "handle",
+        "buffer",
+        "window",
+        "editor",
+        "grep",
+        "search",
+        "index",
+        "cache",
+        "token",
+        "parse",
+        "render",
+        "update",
+        "config",
+        "layout",
+        "cursor",
+        "column",
+        "selection",
     ];
     fs::create_dir_all(&base).unwrap();
     let mut n = 0usize;
@@ -82,7 +103,9 @@ fn scan_lines_decode(root: &Path, needle: &[u8]) -> usize {
             if ft.is_dir() {
                 go(&e.path(), hits, needle);
             } else if ft.is_file() {
-                let Ok(f) = fs::File::open(e.path()) else { continue };
+                let Ok(f) = fs::File::open(e.path()) else {
+                    continue;
+                };
                 let pat = std::str::from_utf8(needle).unwrap_or("");
                 for line in BufReader::new(f).lines().map_while(Result::ok) {
                     // 旧实现的做法: 逐行 decode 成 String 再 str::contains
@@ -107,7 +130,9 @@ fn scan_block_bytes(root: &Path, needle: &[u8]) -> usize {
             if ft.is_dir() {
                 go(&e.path(), hits, needle);
             } else if ft.is_file() {
-                let Ok(buf) = fs::read(e.path()) else { continue };
+                let Ok(buf) = fs::read(e.path()) else {
+                    continue;
+                };
                 if buf.windows(needle.len()).any(|w| w == needle) {
                     // 命中处换算成行号
                     for (i, _) in buf
@@ -127,7 +152,6 @@ fn scan_block_bytes(root: &Path, needle: &[u8]) -> usize {
     h
 }
 
-
 /// memchr 扫描 + 只在命中处切行 (ripgrep 的路子).
 /// 要点:
 ///   1. 全程按字节, 不逐行 decode —— 省掉每个匹配行的 String 分配与 UTF-8 校验;
@@ -145,7 +169,9 @@ fn scan_memchr(root: &Path, needle: &[u8]) -> usize {
             if ft.is_dir() {
                 go(&e.path(), hits, needle, first);
             } else if ft.is_file() {
-                let Ok(buf) = fs::read(e.path()) else { continue };
+                let Ok(buf) = fs::read(e.path()) else {
+                    continue;
+                };
                 let mut line = 1usize;
                 let mut last_end = 0usize;
                 for at in memchr::memchr_iter(first, &buf) {
@@ -173,7 +199,9 @@ fn engine_search(root: &Path, pattern: &str) -> usize {
         case_sensitive: Some(true),
         ..Default::default()
     };
-    editcore::grep_engine::search(root, &o).map(|r| r.len()).unwrap_or(0)
+    editcore::grep_engine::search(root, &o)
+        .map(|r| r.len())
+        .unwrap_or(0)
 }
 
 #[test]
@@ -181,37 +209,69 @@ fn engine_search(root: &Path, pattern: &str) -> usize {
 fn grep_bench() {
     let root = corpus();
     let (files, bytes) = walk_all(&root);
-    eprintln!("[bench] 语料: {files} 文件 / {:.1} MB", bytes as f64 / 1048576.0);
+    eprintln!(
+        "[bench] 语料: {files} 文件 / {:.1} MB",
+        bytes as f64 / 1048576.0
+    );
 
     let t = Instant::now();
     let f = files;
     let d = t.elapsed();
-    eprintln!("[bench] ① 纯遍历+stat     : {:>8.2?}  ({:.0} MB/s)", d, bytes as f64 / 1048576.0 / d.as_secs_f64());
+    eprintln!(
+        "[bench] ① 纯遍历+stat     : {:>8.2?}  ({:.0} MB/s)",
+        d,
+        bytes as f64 / 1048576.0 / d.as_secs_f64()
+    );
 
     let t = Instant::now();
     let h1 = scan_lines_decode(&root, b"zzqqxx");
     let d1 = t.elapsed();
-    eprintln!("[bench] ② 逐行解码+contains: {:>8.2?}  ({:.0} MB/s, {h1} 命中)", d1, bytes as f64 / 1048576.0 / d1.as_secs_f64());
+    eprintln!(
+        "[bench] ② 逐行解码+contains: {:>8.2?}  ({:.0} MB/s, {h1} 命中)",
+        d1,
+        bytes as f64 / 1048576.0 / d1.as_secs_f64()
+    );
 
     let t = Instant::now();
     let h2 = scan_block_bytes(&root, b"zzqqxx");
     let d2 = t.elapsed();
-    eprintln!("[bench] ③ 整块+字节窗口   : {:>8.2?}  ({:.0} MB/s, {h2} 命中)", d2, bytes as f64 / 1048576.0 / d2.as_secs_f64());
+    eprintln!(
+        "[bench] ③ 整块+字节窗口   : {:>8.2?}  ({:.0} MB/s, {h2} 命中)",
+        d2,
+        bytes as f64 / 1048576.0 / d2.as_secs_f64()
+    );
 
-    eprintln!("[bench] ③/② 加速比: {:.2}x", d1.as_secs_f64() / d2.as_secs_f64().max(1e-9));
+    eprintln!(
+        "[bench] ③/② 加速比: {:.2}x",
+        d1.as_secs_f64() / d2.as_secs_f64().max(1e-9)
+    );
 
     let t = Instant::now();
     let h3 = scan_memchr(&root, b"zzqqxx");
     let d3 = t.elapsed();
-    eprintln!("[bench] ④ memchr 扫描      : {:>8.2?}  ({:.0} MB/s, {h3} 命中)", d3, bytes as f64 / 1048576.0 / d3.as_secs_f64());
+    eprintln!(
+        "[bench] ④ memchr 扫描      : {:>8.2?}  ({:.0} MB/s, {h3} 命中)",
+        d3,
+        bytes as f64 / 1048576.0 / d3.as_secs_f64()
+    );
 
-    eprintln!("[bench] ④/② 加速比: {:.2}x", d1.as_secs_f64() / d3.as_secs_f64().max(1e-9));
+    eprintln!(
+        "[bench] ④/② 加速比: {:.2}x",
+        d1.as_secs_f64() / d3.as_secs_f64().max(1e-9)
+    );
 
     // 引擎真实入口 (含目录遍历 + glob 过滤 + 结果构造), 这是用户感受到的耗时
     let t = Instant::now();
     let n = engine_search(&root, "zzqqxx");
     let de = t.elapsed();
-    eprintln!("[bench] ⑥ 引擎 search()   : {:>8.2?}  ({:.0} MB/s, {n} 命中)", de, bytes as f64 / 1048576.0 / de.as_secs_f64());
-    eprintln!("[bench] ⑥/④ 端到端额外开销: {:.2}x (目录遍历+结果构造)", de.as_secs_f64() / d3.as_secs_f64().max(1e-9));
+    eprintln!(
+        "[bench] ⑥ 引擎 search()   : {:>8.2?}  ({:.0} MB/s, {n} 命中)",
+        de,
+        bytes as f64 / 1048576.0 / de.as_secs_f64()
+    );
+    eprintln!(
+        "[bench] ⑥/④ 端到端额外开销: {:.2}x (目录遍历+结果构造)",
+        de.as_secs_f64() / d3.as_secs_f64().max(1e-9)
+    );
     assert_eq!(f, files);
 }

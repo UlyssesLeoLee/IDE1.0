@@ -28,12 +28,22 @@ pub fn paint_caustic_backdrop(p: &Painter, rect: Rect, tc: &ThemeColors, time: f
         // 1. 左上象限: 棱镜青色大跨度焦散光晕 (15% 10%, 95% 60%)
         let cyan_center = Pos2::new(rect.left() + w * 0.15, rect.top() + h * 0.10);
         let cyan_radius = (w * 0.45).min(h * 0.55);
-        paint_radial_bloom(p, cyan_center, cyan_radius, Color32::from_rgba_unmultiplied(0, 240, 255, 18));
+        paint_radial_bloom(
+            p,
+            cyan_center,
+            cyan_radius,
+            Color32::from_rgba_unmultiplied(0, 240, 255, 18),
+        );
 
         // 2. 右下象限: 棱镜粉色大跨度焦散光晕 (85% 90%, 80% 65%)
         let pink_center = Pos2::new(rect.left() + w * 0.85, rect.top() + h * 0.88);
         let pink_radius = (w * 0.42).min(h * 0.50);
-        paint_radial_bloom(p, pink_center, pink_radius, Color32::from_rgba_unmultiplied(255, 105, 180, 15));
+        paint_radial_bloom(
+            p,
+            pink_center,
+            pink_radius,
+            Color32::from_rgba_unmultiplied(255, 105, 180, 15),
+        );
 
         // 3. 晶面大跨度微透反光带 (135° 对角线柔和反光)
         let sheen_color = Color32::from_rgba_unmultiplied(255, 255, 255, 10);
@@ -46,11 +56,7 @@ pub fn paint_caustic_backdrop(p: &Painter, rect: Rect, tc: &ThemeColors, time: f
         );
 
         // 4. 水晶切割星芒微光 (Tauri crystal-shimmer 粒子闪烁)
-        let sparkles = [
-            (0.20, 0.25, 0.0),
-            (0.78, 0.18, 2.1),
-            (0.65, 0.82, 4.3),
-        ];
+        let sparkles = [(0.20, 0.25, 0.0), (0.78, 0.18, 2.1), (0.65, 0.82, 4.3)];
         for &(px, py, phase) in &sparkles {
             let cx = rect.left() + w * px;
             let cy = rect.top() + h * py;
@@ -69,12 +75,22 @@ pub fn paint_caustic_backdrop(p: &Painter, rect: Rect, tc: &ThemeColors, time: f
         // 1. 顶部居中: 蔚蓝光照层 (50% -12%)
         let sky_center = Pos2::new(rect.center().x, rect.top());
         let sky_radius = (w * 0.55).min(h * 0.45);
-        paint_radial_bloom(p, sky_center, sky_radius, Color32::from_rgba_unmultiplied(56, 189, 248, 24));
+        paint_radial_bloom(
+            p,
+            sky_center,
+            sky_radius,
+            Color32::from_rgba_unmultiplied(56, 189, 248, 24),
+        );
 
         // 2. 右下角: 紫罗兰柔光 (100% 100%)
         let purple_center = Pos2::new(rect.right(), rect.bottom());
         let purple_radius = (w * 0.45).min(h * 0.40);
-        paint_radial_bloom(p, purple_center, purple_radius, Color32::from_rgba_unmultiplied(168, 85, 247, 18));
+        paint_radial_bloom(
+            p,
+            purple_center,
+            purple_radius,
+            Color32::from_rgba_unmultiplied(168, 85, 247, 18),
+        );
 
         // 3. 玻璃材质通透斜光
         let glass_sheen = Color32::from_rgba_unmultiplied(255, 255, 255, 8);
@@ -98,7 +114,9 @@ fn paint_radial_bloom(p: &Painter, center: Pos2, max_radius: f32, color: Color32
         let factor = i as f32 / steps as f32;
         let r = max_radius * factor;
         // 外圈 alpha 衰减
-        let a = ((color.a() as f32) * (1.0 - factor * 0.65) / (steps as f32 * 0.7)).round().min(255.0) as u8;
+        let a = ((color.a() as f32) * (1.0 - factor * 0.65) / (steps as f32 * 0.7))
+            .round()
+            .min(255.0) as u8;
         p.circle_filled(
             center,
             r,
@@ -110,7 +128,12 @@ fn paint_radial_bloom(p: &Painter, center: Pos2, max_radius: f32, color: Color32
 /// 绘制晶面切面边框与双内阴影折射高光 (对齐 Tauri 的 `--glass-specular` 与 facet border)
 pub fn paint_facet_borders(p: &Painter, rect: Rect, tc: &ThemeColors) {
     if !tc.is_translucent() {
-        p.rect_stroke(rect, 0.0, Stroke::new(1.0, tc.border), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.0, tc.border),
+            egui::StrokeKind::Inside,
+        );
         return;
     }
 
@@ -127,8 +150,16 @@ pub fn paint_facet_borders(p: &Painter, rect: Rect, tc: &ThemeColors) {
 
         p.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, top_c));
         p.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, left_c));
-        p.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, bottom_c));
-        p.vline(rect.right() - 0.5, rect.y_range(), Stroke::new(1.0, right_c));
+        p.hline(
+            rect.x_range(),
+            rect.bottom() - 0.5,
+            Stroke::new(1.0, bottom_c),
+        );
+        p.vline(
+            rect.right() - 0.5,
+            rect.y_range(),
+            Stroke::new(1.0, right_c),
+        );
     } else if tc.clear {
         // 经典玻璃微反光:
         // - 顶边: 1.5px 镜面反光 (rgba(255, 255, 255, 0.85))
@@ -142,8 +173,16 @@ pub fn paint_facet_borders(p: &Painter, rect: Rect, tc: &ThemeColors) {
 
         p.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, top_c));
         p.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, left_c));
-        p.hline(rect.x_range(), rect.bottom() - 0.5, Stroke::new(1.0, bottom_c));
-        p.vline(rect.right() - 0.5, rect.y_range(), Stroke::new(1.0, right_c));
+        p.hline(
+            rect.x_range(),
+            rect.bottom() - 0.5,
+            Stroke::new(1.0, bottom_c),
+        );
+        p.vline(
+            rect.right() - 0.5,
+            rect.y_range(),
+            Stroke::new(1.0, right_c),
+        );
     }
 }
 
@@ -187,13 +226,22 @@ pub fn paint_glowing_pill(
         if g.a() > 0 {
             // 外发光环
             let glow_rect = rect.expand(2.0);
-            p.rect_stroke(glow_rect, round + 1.5, Stroke::new(1.0, g), egui::StrokeKind::Middle);
+            p.rect_stroke(
+                glow_rect,
+                round + 1.5,
+                Stroke::new(1.0, g),
+                egui::StrokeKind::Middle,
+            );
         }
     }
     p.rect_filled(rect, round, fill);
-    p.rect_stroke(rect, round, Stroke::new(1.0, border), egui::StrokeKind::Inside);
+    p.rect_stroke(
+        rect,
+        round,
+        Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
 }
-
 
 #[cfg(test)]
 mod tests {

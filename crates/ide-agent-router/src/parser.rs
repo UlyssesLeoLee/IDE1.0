@@ -52,20 +52,41 @@ impl SemanticParser {
 
             if trimmed.starts_with("impl ") {
                 if let Some(target) = trimmed.strip_prefix("impl ") {
-                    let parts: Vec<&str> = target.split('{').next().unwrap_or("").split_whitespace().collect();
+                    let parts: Vec<&str> = target
+                        .split('{')
+                        .next()
+                        .unwrap_or("")
+                        .split_whitespace()
+                        .collect();
                     if let Some(name) = parts.last() {
                         current_impl = name.to_string();
                     }
                 }
-            } else if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ") || trimmed.starts_with("pub async fn ") || trimmed.starts_with("async fn ") {
+            } else if trimmed.starts_with("pub fn ")
+                || trimmed.starts_with("fn ")
+                || trimmed.starts_with("pub async fn ")
+                || trimmed.starts_with("async fn ")
+            {
                 let start_line = i + 1;
                 let start_byte = line_starts[i];
 
                 // 提取函数名
                 let sig_line = trimmed;
-                let fn_keyword = if let Some(idx) = sig_line.find("fn ") { idx + 3 } else { 0 };
+                let fn_keyword = if let Some(idx) = sig_line.find("fn ") {
+                    idx + 3
+                } else {
+                    0
+                };
                 let after_fn = &sig_line[fn_keyword..];
-                let fn_name = after_fn.split('(').next().unwrap_or("").trim().split('<').next().unwrap_or("").trim();
+                let fn_name = after_fn
+                    .split('(')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .split('<')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
 
                 let qualified_path = if current_impl.is_empty() {
                     fn_name.to_string()
@@ -82,8 +103,11 @@ impl SemanticParser {
                 while j < lines.len() {
                     let cur = lines[j];
                     for c in cur.chars() {
-                        if c == '{' { brace_depth += 1; }
-                        else if c == '}' { brace_depth -= 1; }
+                        if c == '{' {
+                            brace_depth += 1;
+                        } else if c == '}' {
+                            brace_depth -= 1;
+                        }
                     }
                     if brace_depth == 0 && cur.contains('}') {
                         end_line = j + 1;
@@ -97,7 +121,11 @@ impl SemanticParser {
                 if end_byte <= start_byte {
                     end_line = (j + 1).min(lines.len());
                     end_byte = if j < lines.len() {
-                        if j + 1 < line_starts.len() { line_starts[j + 1] } else { content.len() }
+                        if j + 1 < line_starts.len() {
+                            line_starts[j + 1]
+                        } else {
+                            content.len()
+                        }
                     } else {
                         content.len()
                     };
@@ -111,7 +139,11 @@ impl SemanticParser {
 
                 let sig_hash = SemanticUnit::compute_hash(sig_line);
                 let content_hash = SemanticUnit::compute_hash(unit_content);
-                let parent_fp = if current_impl.is_empty() { "root".to_string() } else { SemanticUnit::compute_hash(&current_impl) };
+                let parent_fp = if current_impl.is_empty() {
+                    "root".to_string()
+                } else {
+                    SemanticUnit::compute_hash(&current_impl)
+                };
                 let node_fp = SemanticUnit::compute_fingerprint(
                     workspace_id,
                     file_id,
@@ -164,14 +196,27 @@ impl SemanticParser {
             let trimmed = line.trim();
 
             if trimmed.starts_with("class ") {
-                let class_name = trimmed.strip_prefix("class ").unwrap_or("").split(':').next().unwrap_or("").split('(').next().unwrap_or("").trim();
+                let class_name = trimmed
+                    .strip_prefix("class ")
+                    .unwrap_or("")
+                    .split(':')
+                    .next()
+                    .unwrap_or("")
+                    .split('(')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
                 current_class = class_name.to_string();
             } else if trimmed.starts_with("def ") || trimmed.starts_with("async def ") {
                 let indent = line.len() - line.trim_start().len();
                 let start_line = i + 1;
                 let start_byte = line_starts[i];
 
-                let fn_keyword = if trimmed.starts_with("def ") { "def " } else { "async def " };
+                let fn_keyword = if trimmed.starts_with("def ") {
+                    "def "
+                } else {
+                    "async def "
+                };
                 let after_kw = trimmed.strip_prefix(fn_keyword).unwrap_or("");
                 let fn_name = after_kw.split('(').next().unwrap_or("").trim();
 
@@ -196,12 +241,20 @@ impl SemanticParser {
                 }
 
                 let end_line = j;
-                let end_byte = if j < line_starts.len() { line_starts[j] } else { content.len() };
+                let end_byte = if j < line_starts.len() {
+                    line_starts[j]
+                } else {
+                    content.len()
+                };
                 let unit_content = &content[start_byte..end_byte];
 
                 let sig_hash = SemanticUnit::compute_hash(trimmed);
                 let content_hash = SemanticUnit::compute_hash(unit_content);
-                let parent_fp = if current_class.is_empty() { "root".to_string() } else { SemanticUnit::compute_hash(&current_class) };
+                let parent_fp = if current_class.is_empty() {
+                    "root".to_string()
+                } else {
+                    SemanticUnit::compute_hash(&current_class)
+                };
                 let node_fp = SemanticUnit::compute_fingerprint(
                     workspace_id,
                     file_id,
@@ -256,12 +309,29 @@ impl SemanticParser {
             let line = lines[i];
             let trimmed = line.trim();
 
-            if (trimmed.starts_with("function ") || trimmed.starts_with("export function ") || trimmed.starts_with("async function ") || trimmed.starts_with("export async function ")) && trimmed.contains('(') {
+            if (trimmed.starts_with("function ")
+                || trimmed.starts_with("export function ")
+                || trimmed.starts_with("async function ")
+                || trimmed.starts_with("export async function "))
+                && trimmed.contains('(')
+            {
                 let start_line = i + 1;
                 let start_byte = line_starts[i];
 
-                let after_fn = if let Some(idx) = trimmed.find("function ") { &trimmed[idx + 9..] } else { trimmed };
-                let fn_name = after_fn.split('(').next().unwrap_or("").trim().split('<').next().unwrap_or("").trim();
+                let after_fn = if let Some(idx) = trimmed.find("function ") {
+                    &trimmed[idx + 9..]
+                } else {
+                    trimmed
+                };
+                let fn_name = after_fn
+                    .split('(')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .split('<')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
 
                 let mut brace_depth = 0;
                 let mut end_line = start_line;
@@ -271,8 +341,11 @@ impl SemanticParser {
                 while j < lines.len() {
                     let cur = lines[j];
                     for c in cur.chars() {
-                        if c == '{' { brace_depth += 1; }
-                        else if c == '}' { brace_depth -= 1; }
+                        if c == '{' {
+                            brace_depth += 1;
+                        } else if c == '}' {
+                            brace_depth -= 1;
+                        }
                     }
                     if brace_depth == 0 && cur.contains('}') {
                         end_line = j + 1;
@@ -283,7 +356,11 @@ impl SemanticParser {
                     j += 1;
                 }
 
-                let unit_content = if end_byte <= content.len() { &content[start_byte..end_byte] } else { &content[start_byte..] };
+                let unit_content = if end_byte <= content.len() {
+                    &content[start_byte..end_byte]
+                } else {
+                    &content[start_byte..]
+                };
                 let sig_hash = SemanticUnit::compute_hash(trimmed);
                 let content_hash = SemanticUnit::compute_hash(unit_content);
                 let node_fp = SemanticUnit::compute_fingerprint(
@@ -344,7 +421,13 @@ impl SemanticParser {
             if trimmed.starts_with("function ") {
                 let start_line = i + 1;
                 let start_byte = line_starts[i];
-                let name = trimmed.strip_prefix("function ").unwrap_or("").split('{').next().unwrap_or("").trim();
+                let name = trimmed
+                    .strip_prefix("function ")
+                    .unwrap_or("")
+                    .split('{')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
 
                 let mut brace_depth = 0;
                 let mut end_line = start_line;
@@ -354,8 +437,11 @@ impl SemanticParser {
                 while j < lines.len() {
                     let cur = lines[j];
                     for c in cur.chars() {
-                        if c == '{' { brace_depth += 1; }
-                        else if c == '}' { brace_depth -= 1; }
+                        if c == '{' {
+                            brace_depth += 1;
+                        } else if c == '}' {
+                            brace_depth -= 1;
+                        }
                     }
                     if brace_depth == 0 && cur.contains('}') {
                         end_line = j + 1;
@@ -366,7 +452,11 @@ impl SemanticParser {
                     j += 1;
                 }
 
-                let unit_content = if end_byte <= content.len() { &content[start_byte..end_byte] } else { &content[start_byte..] };
+                let unit_content = if end_byte <= content.len() {
+                    &content[start_byte..end_byte]
+                } else {
+                    &content[start_byte..]
+                };
                 let sig_hash = SemanticUnit::compute_hash(trimmed);
                 let content_hash = SemanticUnit::compute_hash(unit_content);
                 let node_fp = SemanticUnit::compute_fingerprint(

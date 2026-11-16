@@ -62,14 +62,14 @@ impl CollaboratorColor {
     /// 按照 Agent ID 稳定确定性哈希分配色彩池 (避免颜色碰撞)
     pub fn from_id(id: &str) -> Self {
         const PALETTE: &[(u8, u8, u8)] = &[
-            (56, 189, 248),  // 天蓝 (Sky Blue)
-            (168, 85, 247),  // 紫罗兰 (Violet)
-            (52, 211, 153),  // 翡翠绿 (Emerald)
-            (251, 146, 60),  // 琥珀橙 (Amber Orange)
-            (244, 63, 94),   // 玫瑰红 (Rose Red)
-            (234, 179, 8),   // 耀斑金 (Sun Gold)
-            (99, 102, 241),  // 靛青 (Indigo)
-            (20, 184, 166),  // 绿松石 (Teal)
+            (56, 189, 248), // 天蓝 (Sky Blue)
+            (168, 85, 247), // 紫罗兰 (Violet)
+            (52, 211, 153), // 翡翠绿 (Emerald)
+            (251, 146, 60), // 琥珀橙 (Amber Orange)
+            (244, 63, 94),  // 玫瑰红 (Rose Red)
+            (234, 179, 8),  // 耀斑金 (Sun Gold)
+            (99, 102, 241), // 靛青 (Indigo)
+            (20, 184, 166), // 绿松石 (Teal)
         ];
         let mut hash = 0u64;
         for b in id.bytes() {
@@ -102,11 +102,7 @@ pub struct RemoteCursor {
 #[serde(tag = "kind", content = "data")]
 pub enum KeystrokeOp {
     /// 逐字插入单字符
-    InsertChar {
-        row: usize,
-        col: usize,
-        ch: char,
-    },
+    InsertChar { row: usize, col: usize, ch: char },
     /// 插入连续文本片段 (如粘贴或快速补全)
     InsertText {
         row: usize,
@@ -114,15 +110,9 @@ pub enum KeystrokeOp {
         text: String,
     },
     /// 退格/删除单字符
-    DeleteChar {
-        row: usize,
-        col: usize,
-    },
+    DeleteChar { row: usize, col: usize },
     /// 删除指定范围
-    DeleteRange {
-        start: [usize; 2],
-        end: [usize; 2],
-    },
+    DeleteRange { start: [usize; 2], end: [usize; 2] },
     /// 替换指定范围
     ReplaceRange {
         start: [usize; 2],
@@ -298,7 +288,10 @@ impl CollaborationSession {
         selection_after: Option<[usize; 4]>,
     ) -> Result<KeystrokeBroadcast, String> {
         let Some(c) = self.collaborators.get_mut(agent_id) else {
-            return Err(format!("Agent '{}' not joined in collaboration session", agent_id));
+            return Err(format!(
+                "Agent '{}' not joined in collaboration session",
+                agent_id
+            ));
         };
 
         c.cursor = cursor_after;
@@ -309,17 +302,21 @@ impl CollaborationSession {
         // 更新行归属
         match &op {
             KeystrokeOp::InsertChar { row, .. } | KeystrokeOp::DeleteChar { row, .. } => {
-                self.line_attributions.insert(*row, (agent_id.to_string(), now_ms));
+                self.line_attributions
+                    .insert(*row, (agent_id.to_string(), now_ms));
             }
             KeystrokeOp::InsertText { row, text, .. } => {
                 let inserted_newlines = text.chars().filter(|c| *c == '\n').count();
                 for r in *row..=(*row + inserted_newlines) {
-                    self.line_attributions.insert(r, (agent_id.to_string(), now_ms));
+                    self.line_attributions
+                        .insert(r, (agent_id.to_string(), now_ms));
                 }
             }
-            KeystrokeOp::DeleteRange { start, end } | KeystrokeOp::ReplaceRange { start, end, .. } => {
+            KeystrokeOp::DeleteRange { start, end }
+            | KeystrokeOp::ReplaceRange { start, end, .. } => {
                 for r in start[0]..=end[0] {
-                    self.line_attributions.insert(r, (agent_id.to_string(), now_ms));
+                    self.line_attributions
+                        .insert(r, (agent_id.to_string(), now_ms));
                 }
             }
         }
@@ -375,11 +372,20 @@ impl CollaborationHub {
     }
 
     /// 获取或创建文件的协同会话
-    pub fn get_or_create_session(&self, file_id: &str, base_rev: u64) -> Arc<RwLock<CollaborationSession>> {
+    pub fn get_or_create_session(
+        &self,
+        file_id: &str,
+        base_rev: u64,
+    ) -> Arc<RwLock<CollaborationSession>> {
         let mut guard = self.sessions.write().unwrap();
         guard
             .entry(file_id.to_string())
-            .or_insert_with(|| Arc::new(RwLock::new(CollaborationSession::new(file_id.to_string(), base_rev))))
+            .or_insert_with(|| {
+                Arc::new(RwLock::new(CollaborationSession::new(
+                    file_id.to_string(),
+                    base_rev,
+                )))
+            })
             .clone()
     }
 

@@ -6,8 +6,8 @@ use std::path::Path;
 
 #[test]
 fn test_sandbox_create_and_file_isolation() {
-    let mut sandbox = WorkerSandbox::new("worker-alpha", "task-001")
-        .expect("Failed to create worker sandbox");
+    let mut sandbox =
+        WorkerSandbox::new("worker-alpha", "task-001").expect("Failed to create worker sandbox");
 
     // 禁止自动清理以在测试中验证文件存在
     sandbox.set_auto_cleanup(false);
@@ -38,7 +38,10 @@ fn test_sandbox_create_and_file_isolation() {
 
     // 手动清理
     sandbox.cleanup().expect("Failed to cleanup sandbox");
-    assert!(!root.exists(), "Sandbox root should be deleted after cleanup");
+    assert!(
+        !root.exists(),
+        "Sandbox root should be deleted after cleanup"
+    );
 }
 
 #[test]
@@ -78,8 +81,8 @@ fn test_path_traversal_attack_prevention() {
 
 #[test]
 fn test_readonly_mount_protection() {
-    let mut sandbox = WorkerSandbox::new("worker-gamma", "task-ro")
-        .expect("Failed to create worker sandbox");
+    let mut sandbox =
+        WorkerSandbox::new("worker-gamma", "task-ro").expect("Failed to create worker sandbox");
 
     // 创建测试源文件
     let temp_dir = std::env::temp_dir().join("ide_test_source_ro");
@@ -121,8 +124,8 @@ fn test_readonly_mount_protection() {
 
 #[test]
 fn test_sandbox_environment_stage_and_simulate() {
-    let sandbox = WorkerSandbox::new("worker-delta", "task-sim")
-        .expect("Failed to create worker sandbox");
+    let sandbox =
+        WorkerSandbox::new("worker-delta", "task-sim").expect("Failed to create worker sandbox");
 
     let mut env = sandbox.create_environment();
     env.set_env("AGENT_ENV", "sandbox_test");
@@ -138,7 +141,9 @@ fn test_sandbox_environment_stage_and_simulate() {
         .expect("Simulation should execute");
     assert_eq!(result.exit_code, 0);
     assert!(result.success);
-    assert!(result.stdout.contains("Simulation passed for 1 staged files"));
+    assert!(result
+        .stdout
+        .contains("Simulation passed for 1 staged files"));
 }
 
 #[test]

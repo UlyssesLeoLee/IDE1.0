@@ -530,7 +530,10 @@ mod tests {
         let agg_cfg = reg.resolve(&AgentSlotId::Aggregator);
         assert_eq!(agg_cfg.effort, ReasoningEffort::XHigh);
         assert_eq!(
-            agg_cfg.extra_headers.get("anthropic-beta").map(String::as_str),
+            agg_cfg
+                .extra_headers
+                .get("anthropic-beta")
+                .map(String::as_str),
             Some("interleaved-thinking-2025-05-14")
         );
         assert!(agg_cfg.max_output_tokens >= 32_768 + 4096);

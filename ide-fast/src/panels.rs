@@ -315,7 +315,10 @@ mod tests {
             1100.0,
             720.0,
         );
-        assert_eq!(term_h, 240.0, "先打开的底部高度自动收缩至舒适比例 240px 以保全垂直可读视野");
+        assert_eq!(
+            term_h, 240.0,
+            "先打开的底部高度自动收缩至舒适比例 240px 以保全垂直可读视野"
+        );
 
         // 2. 窄视口下双侧栏超宽让位:
         let mut wide_side = 500.0;
@@ -332,7 +335,10 @@ mod tests {
             1000.0,
             600.0,
         );
-        assert!(wide_side + wide_right <= 1000.0 - 240.0 + 1.0, "中央编辑区宽度必须保证至少 240px");
+        assert!(
+            wide_side + wide_right <= 1000.0 - 240.0 + 1.0,
+            "中央编辑区宽度必须保证至少 240px"
+        );
 
         // 3. 先打开侧栏，后打开下方折叠 (Dock::Bottom):
         let mut large_side = 500.0;

@@ -438,7 +438,8 @@ impl App {
                 };
                 // 右侧常驻功能区: 折叠按钮 + 预览开关 (不随水平滚动区滚出去)
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let collapse_btn = crate::btnstyle::unified_collapse_button(trz("▲ 折叠"), &tc, false);
+                    let collapse_btn =
+                        crate::btnstyle::unified_collapse_button(trz("▲ 折叠"), &tc, false);
                     if ui
                         .add(collapse_btn)
                         .tip(trz("折叠 Markdown 工具条到顶端 (点击隐藏)"))

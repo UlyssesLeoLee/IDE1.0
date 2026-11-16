@@ -185,12 +185,18 @@ impl Default for MemoryLedgerStore {
 #[async_trait::async_trait]
 impl LedgerStore for MemoryLedgerStore {
     async fn get_file_revision(&self, file_id: &str) -> Result<Option<u64>, LedgerError> {
-        let inner = self.inner.read().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let inner = self
+            .inner
+            .read()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         Ok(inner.file_revisions.get(file_id).copied())
     }
 
     async fn init_file_revision(&self, file_id: &str, revision: u64) -> Result<(), LedgerError> {
-        let mut inner = self.inner.write().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         inner.file_revisions.insert(file_id.to_string(), revision);
         Ok(())
     }
@@ -200,7 +206,10 @@ impl LedgerStore for MemoryLedgerStore {
         commit: CommitRecord,
         event: OutboxEvent,
     ) -> Result<(), LedgerError> {
-        let mut inner = self.inner.write().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
 
         // 1. 检查 CommitId 幂等性与重复性
         if inner.commits.contains_key(&commit.commit_id) {
@@ -268,7 +277,10 @@ impl LedgerStore for MemoryLedgerStore {
     }
 
     async fn poll_pending_outbox(&self, limit: usize) -> Result<Vec<OutboxRecord>, LedgerError> {
-        let inner = self.inner.read().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let inner = self
+            .inner
+            .read()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         let records = inner
             .outbox
             .iter()
@@ -280,7 +292,10 @@ impl LedgerStore for MemoryLedgerStore {
     }
 
     async fn mark_outbox_dispatched(&self, event_id: u64) -> Result<(), LedgerError> {
-        let mut inner = self.inner.write().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         let entry = inner
             .outbox
             .iter_mut()
@@ -298,7 +313,10 @@ impl LedgerStore for MemoryLedgerStore {
         error_msg: &str,
         retry_count: u32,
     ) -> Result<(), LedgerError> {
-        let mut inner = self.inner.write().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         let entry = inner
             .outbox
             .iter_mut()
@@ -318,7 +336,10 @@ impl LedgerStore for MemoryLedgerStore {
         error_msg: &str,
         retry_count: u32,
     ) -> Result<(), LedgerError> {
-        let mut inner = self.inner.write().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         let entry = inner
             .outbox
             .iter_mut()
@@ -333,12 +354,22 @@ impl LedgerStore for MemoryLedgerStore {
     }
 
     async fn get_commit(&self, commit_id: &str) -> Result<Option<CommitRecord>, LedgerError> {
-        let inner = self.inner.read().map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        let inner = self
+            .inner
+            .read()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
         Ok(inner.commits.get(commit_id).cloned())
     }
 
     async fn get_outbox_entry(&self, event_id: u64) -> Result<Option<OutboxRecord>, LedgerError> {
-        let inner = self.inner.read().map_err(|e| LedgerError::StoreError(e.to_string()))?;
-        Ok(inner.outbox.iter().find(|e| e.event_id == event_id).cloned())
+        let inner = self
+            .inner
+            .read()
+            .map_err(|e| LedgerError::StoreError(e.to_string()))?;
+        Ok(inner
+            .outbox
+            .iter()
+            .find(|e| e.event_id == event_id)
+            .cloned())
     }
 }

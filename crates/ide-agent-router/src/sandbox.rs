@@ -69,7 +69,10 @@ impl WorkerSandbox {
             .as_millis();
         let safe_worker = worker_id.replace(['/', '\\', ':', '.', ' '], "_");
         let safe_task = task_id.replace(['/', '\\', ':', '.', ' '], "_");
-        let dir_name = format!("ide_sbx_{}_{}_{}_{}", safe_worker, safe_task, timestamp, seq);
+        let dir_name = format!(
+            "ide_sbx_{}_{}_{}_{}",
+            safe_worker, safe_task, timestamp, seq
+        );
 
         let base_tmp = std::env::temp_dir().join("ide_worker_sandboxes");
         let sandbox_root = base_tmp.join(dir_name);
@@ -401,7 +404,10 @@ impl SandboxEnvironment {
             let duration_ms = start.elapsed().as_millis() as u64;
             return Ok(SimulationResult {
                 exit_code: 0,
-                stdout: format!("Simulation passed for {} staged files", self.staged_files.len()),
+                stdout: format!(
+                    "Simulation passed for {} staged files",
+                    self.staged_files.len()
+                ),
                 stderr: String::new(),
                 success: true,
                 duration_ms,

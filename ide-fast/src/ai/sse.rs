@@ -130,18 +130,18 @@ impl SseParser {
         }
         // 如果有非 2xx/3xx 的 HTTP 状态码，或者已经有 error 详情，进行格式化规整
         // 注意：status 为 Some(0) 时先不在 finish 里格式化，留给 transport.rs 结合 stderr 统一格式化
-        if let Some(st) = self.turn.http_status.filter(|s| !(200..300).contains(s) && *s != 0) {
+        if let Some(st) = self
+            .turn
+            .http_status
+            .filter(|s| !(200..300).contains(s) && *s != 0)
+        {
             self.turn.error = Some(format_http_error(
                 Some(st),
                 self.turn.error.as_deref(),
                 None,
             ));
         } else if let Some(err) = self.turn.error.take() {
-            self.turn.error = Some(format_http_error(
-                self.turn.http_status,
-                Some(&err),
-                None,
-            ));
+            self.turn.error = Some(format_http_error(self.turn.http_status, Some(&err), None));
         }
         // 没有 id 的工具调用补一个, 回传时要对得上
         for (i, tc) in self.turn.tool_calls.iter_mut().enumerate() {
@@ -255,9 +255,7 @@ pub fn format_http_error(
         } else {
             "网络连接失败或超时，未能与 AI 服务器建立连接".to_string()
         };
-        return format!(
-            "【网络连接失败】{err_hint}。请检查 Base URL 设置、网络连通性或代理配置。"
-        );
+        return format!("【网络连接失败】{err_hint}。请检查 Base URL 设置、网络连通性或代理配置。");
     }
 
     let st = status.unwrap_or(0);
@@ -266,7 +264,9 @@ pub fn format_http_error(
             let msg = clean_detail
                 .or(clean_err)
                 .unwrap_or_else(|| "身份验证失败，请检查 API Key".to_string());
-            format!("【API 鉴权失败 (HTTP {st})】服务商返回: {msg}。请检查输入的 API Key 是否有效。")
+            format!(
+                "【API 鉴权失败 (HTTP {st})】服务商返回: {msg}。请检查输入的 API Key 是否有效。"
+            )
         }
         404 => {
             let msg = clean_detail
@@ -291,11 +291,12 @@ pub fn format_http_error(
                 return "【网络连接失败】网络连接失败或超时，未能与 AI 服务器建立连接。请检查 Base URL 设置或网络连通性。".to_string();
             }
             if let Some(msg) = clean_detail.or(clean_err) {
-                let msg_clean = if msg.trim() == "HTTP 0" || msg.trim() == "0" || msg.trim() == "000" {
-                    "网络连接中断，未收到服务商有效响应".to_string()
-                } else {
-                    msg
-                };
+                let msg_clean =
+                    if msg.trim() == "HTTP 0" || msg.trim() == "0" || msg.trim() == "000" {
+                        "网络连接中断，未收到服务商有效响应".to_string()
+                    } else {
+                        msg
+                    };
                 format!("HTTP {st}: {msg_clean}")
             } else {
                 format!("HTTP {st}")

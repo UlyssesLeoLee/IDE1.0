@@ -161,7 +161,9 @@ impl RetryPolicy {
         if attempt == 0 || self.initial_backoff_ms == 0 {
             return Duration::from_millis(0);
         }
-        let mult = self.backoff_multiplier.powi(attempt.saturating_sub(1) as i32);
+        let mult = self
+            .backoff_multiplier
+            .powi(attempt.saturating_sub(1) as i32);
         let backoff = (self.initial_backoff_ms as f64 * mult) as u64;
         let clamped = backoff.min(self.max_backoff_ms);
         Duration::from_millis(clamped)

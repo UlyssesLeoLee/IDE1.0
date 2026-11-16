@@ -57,7 +57,10 @@ fn test_100k_lines_large_file_and_random_access() {
     let buffer = MmapBuffer::open(&guard.path).expect("MmapBuffer::open failed");
     assert!(!buffer.is_empty());
     assert_eq!(buffer.line_count(), TOTAL_LINES, "line_count mismatch");
-    assert!(buffer.file_size() > 5 * 1024 * 1024, "file size should be > 5MB");
+    assert!(
+        buffer.file_size() > 5 * 1024 * 1024,
+        "file size should be > 5MB"
+    );
 
     // 3. 测试首尾与边界行
     let line_0 = buffer.get_line(0).expect("line 0 should exist");
@@ -66,7 +69,9 @@ fn test_100k_lines_large_file_and_random_access() {
         "Line 000000: Payload data for large file mmap verification with token #0"
     );
 
-    let line_last = buffer.get_line(TOTAL_LINES - 1).expect("last line should exist");
+    let line_last = buffer
+        .get_line(TOTAL_LINES - 1)
+        .expect("last line should exist");
     assert_eq!(
         line_last,
         format!(
@@ -76,12 +81,17 @@ fn test_100k_lines_large_file_and_random_access() {
         )
     );
 
-    assert!(buffer.get_line(TOTAL_LINES).is_none(), "out of bound line must be None");
+    assert!(
+        buffer.get_line(TOTAL_LINES).is_none(),
+        "out of bound line must be None"
+    );
     assert!(buffer.get_line(TOTAL_LINES + 100).is_none());
 
     // 4. 测试检查点邻近行 (SPARSE_INTERVAL = 256)
     for target in [255, 256, 257, 511, 512, 513, 1023, 1024, 1025] {
-        let line = buffer.get_line(target).expect("checkpoint neighbor line should exist");
+        let line = buffer
+            .get_line(target)
+            .expect("checkpoint neighbor line should exist");
         assert_eq!(
             line,
             format!(
@@ -95,7 +105,9 @@ fn test_100k_lines_large_file_and_random_access() {
     // 5. 测试随机跳行读取
     let random_indices = [42, 1337, 9999, 45678, 77777, 88888, 99998];
     for &idx in &random_indices {
-        let line = buffer.get_line(idx).unwrap_or_else(|| panic!("line {} should exist", idx));
+        let line = buffer
+            .get_line(idx)
+            .unwrap_or_else(|| panic!("line {} should exist", idx));
         assert_eq!(
             line,
             format!(
@@ -131,7 +143,9 @@ fn test_100k_lines_large_file_and_random_access() {
 
     // 7. 测试基于 SIMD 的快速关键字搜索
     let target_needle = b"Line 077777";
-    let found_offset = buffer.find_next(target_needle, 0).expect("keyword should be found");
+    let found_offset = buffer
+        .find_next(target_needle, 0)
+        .expect("keyword should be found");
 
     let read_back = buffer
         .read_slice(found_offset, target_needle.len())
@@ -176,7 +190,8 @@ fn test_boundary_single_line_no_newline() {
     let guard = TempFileGuard::new("single_no_nl");
     {
         let mut f = File::create(&guard.path).unwrap();
-        f.write_all(b"Hello world without trailing newline").unwrap();
+        f.write_all(b"Hello world without trailing newline")
+            .unwrap();
     }
 
     let buffer = MmapBuffer::open(&guard.path).unwrap();
@@ -215,7 +230,8 @@ fn test_boundary_crlf_format() {
     let guard = TempFileGuard::new("crlf");
     {
         let mut f = File::create(&guard.path).unwrap();
-        f.write_all(b"First line\r\nSecond line\r\nThird line").unwrap();
+        f.write_all(b"First line\r\nSecond line\r\nThird line")
+            .unwrap();
     }
 
     let buffer = MmapBuffer::open(&guard.path).unwrap();
@@ -273,7 +289,9 @@ fn test_ultra_long_line_and_cross_chunk() {
     assert_eq!(slice, vec![b'X'; 20]);
 
     // 检索第二行
-    let pos = buffer.find_next(b"Second line", 0).expect("keyword must be found");
+    let pos = buffer
+        .find_next(b"Second line", 0)
+        .expect("keyword must be found");
     assert_eq!(pos, LONG_LEN as u64 + 1);
 }
 
@@ -302,7 +320,6 @@ fn test_cross_chunk_boundary_search() {
     let read = buffer.read_slice(found, target_needle.len()).unwrap();
     assert_eq!(read, target_needle);
 }
-
 
 #[test]
 fn test_auto_pagination_and_page_switching() {
@@ -366,9 +383,15 @@ fn test_offset_to_line_and_line_to_offset() {
 
     let buffer = MmapBuffer::open(&guard.path).unwrap();
     for target_line in [0, 1, 10, 255, 256, 500, 789, 999] {
-        let offset = buffer.line_to_offset(target_line).expect("offset must exist");
+        let offset = buffer
+            .line_to_offset(target_line)
+            .expect("offset must exist");
         let mapped_line = buffer.offset_to_line(offset);
-        assert_eq!(mapped_line, target_line, "line {} mapped back to {}", target_line, mapped_line);
+        assert_eq!(
+            mapped_line, target_line,
+            "line {} mapped back to {}",
+            target_line, mapped_line
+        );
         let line_text = buffer.get_line(target_line).unwrap();
         assert_eq!(line_text, format!("Line number {:05}", target_line));
     }
@@ -396,7 +419,11 @@ fn test_cross_page_search_matches() {
     let buffer = MmapBuffer::open(&guard.path).unwrap();
     let page_size = 10_000;
     let matches = buffer.search_matches("TARGET_ALERT", page_size, true, 10);
-    assert_eq!(matches.len(), 3, "must find all 3 matches across 3 different pages");
+    assert_eq!(
+        matches.len(),
+        3,
+        "must find all 3 matches across 3 different pages"
+    );
 
     // 命中 1: 第 0 页, 行 500
     assert_eq!(matches[0].page_index, 0);

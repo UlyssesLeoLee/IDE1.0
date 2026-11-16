@@ -291,7 +291,10 @@ Orientation=Landscape
     assert!(settings.tab_bar.visible);
     assert_eq!(settings.tab_bar.position, TabPosition::Bottom);
     assert!(settings.tab_bar.multi_row);
-    assert_eq!(settings.tab_bar.double_click_action, TabDoubleClickAction::NewTab);
+    assert_eq!(
+        settings.tab_bar.double_click_action,
+        TabDoubleClickAction::NewTab
+    );
     assert_eq!(settings.tab_bar.tab_width_max, 240);
     assert_eq!(settings.tab_bar.tab_width_min, 60);
 
@@ -374,7 +377,16 @@ Orientation=Landscape
     assert!(!settings.toolbar.flat_style);
     assert_eq!(
         settings.toolbar.buttons,
-        vec!["new", "open", "save", "separator", "undo", "redo", "separator", "find"]
+        vec![
+            "new",
+            "open",
+            "save",
+            "separator",
+            "undo",
+            "redo",
+            "separator",
+            "find"
+        ]
     );
 
     // 12. KeySearch
@@ -536,10 +548,20 @@ fn test_24_custom_menus_and_20_macro_slots_roundtrip() {
         let orig = &settings.custom_menu.slots[i - 1];
         let restored = &parsed.custom_menu.slots[i - 1];
         assert_eq!(orig.id, restored.id, "Menu id mismatch at slot {i}");
-        assert_eq!(orig.title, restored.title, "Menu title mismatch at slot {i}");
-        assert_eq!(orig.items.len(), restored.items.len(), "Menu items len mismatch at slot {i}");
+        assert_eq!(
+            orig.title, restored.title,
+            "Menu title mismatch at slot {i}"
+        );
+        assert_eq!(
+            orig.items.len(),
+            restored.items.len(),
+            "Menu items len mismatch at slot {i}"
+        );
         for j in 0..orig.items.len() {
-            assert_eq!(orig.items[j], restored.items[j], "Menu item mismatch at slot {i}, item {j}");
+            assert_eq!(
+                orig.items[j], restored.items[j],
+                "Menu item mismatch at slot {i}, item {j}"
+            );
         }
     }
 
@@ -551,9 +573,18 @@ fn test_24_custom_menus_and_20_macro_slots_roundtrip() {
         assert_eq!(orig.id, restored.id, "Macro id mismatch at slot {i}");
         assert_eq!(orig.name, restored.name, "Macro name mismatch at slot {i}");
         assert_eq!(orig.path, restored.path, "Macro path mismatch at slot {i}");
-        assert_eq!(orig.reload_on_run, restored.reload_on_run, "Macro reload mismatch at slot {i}");
-        assert_eq!(orig.trigger, restored.trigger, "Macro trigger mismatch at slot {i}");
-        assert_eq!(orig.params, restored.params, "Macro params mismatch at slot {i}");
+        assert_eq!(
+            orig.reload_on_run, restored.reload_on_run,
+            "Macro reload mismatch at slot {i}"
+        );
+        assert_eq!(
+            orig.trigger, restored.trigger,
+            "Macro trigger mismatch at slot {i}"
+        );
+        assert_eq!(
+            orig.params, restored.params,
+            "Macro params mismatch at slot {i}"
+        );
     }
 
     // 总体相等性验证
@@ -595,7 +626,10 @@ fn test_24_color_palette_and_external_commands_roundtrip() {
     let parsed = SakuraCommonSettings::from_ini(&ini_str).expect("Parse palette & exec cmds");
 
     assert_eq!(settings.color_palette, parsed.color_palette);
-    assert_eq!(settings.exec_cmd.commands.len(), parsed.exec_cmd.commands.len());
+    assert_eq!(
+        settings.exec_cmd.commands.len(),
+        parsed.exec_cmd.commands.len()
+    );
     assert_eq!(settings.exec_cmd.commands[0], parsed.exec_cmd.commands[0]);
     assert_eq!(settings.exec_cmd.commands[1], parsed.exec_cmd.commands[1]);
 }

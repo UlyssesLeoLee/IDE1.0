@@ -160,22 +160,27 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                 } else {
                     2
                 };
-                let mode_labels = [
-                    tr("c.wrap-none"),
-                    tr("c.wrap-window"),
-                    tr("c.wrap-col"),
-                ];
+                let mode_labels = [tr("c.wrap-none"), tr("c.wrap-window"), tr("c.wrap-col")];
                 egui::ComboBox::from_id_salt("pf-wrap-mode")
                     .selected_text(mode_labels[wrap_mode])
                     .show_ui(ui, |ui| {
-                        if ui.selectable_value(&mut wrap_mode, 0, mode_labels[0]).clicked() {
+                        if ui
+                            .selectable_value(&mut wrap_mode, 0, mode_labels[0])
+                            .clicked()
+                        {
                             d.wrap = false;
                         }
-                        if ui.selectable_value(&mut wrap_mode, 1, mode_labels[1]).clicked() {
+                        if ui
+                            .selectable_value(&mut wrap_mode, 1, mode_labels[1])
+                            .clicked()
+                        {
                             d.wrap = true;
                             d.view.wrap_col = 0;
                         }
-                        if ui.selectable_value(&mut wrap_mode, 2, mode_labels[2]).clicked() {
+                        if ui
+                            .selectable_value(&mut wrap_mode, 2, mode_labels[2])
+                            .clicked()
+                        {
                             d.wrap = true;
                             if d.view.wrap_col == 0 {
                                 d.view.wrap_col = 80;
@@ -183,7 +188,11 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                         }
                     });
                 if d.wrap && d.view.wrap_col > 0 {
-                    ui.add(egui::DragValue::new(&mut d.view.wrap_col).range(10..=1000).suffix(" 列"));
+                    ui.add(
+                        egui::DragValue::new(&mut d.view.wrap_col)
+                            .range(10..=1000)
+                            .suffix(" 列"),
+                    );
                 }
             });
             if d.wrap && d.view.wrap_col > 0 {
@@ -293,7 +302,10 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     tr("pf.font-default").to_string()
                 } else {
                     let label = label_of(&d.font_family);
-                    if let Some(rec) = crate::fonts::RECOMMENDED_FONTS.iter().find(|r| r.file.eq_ignore_ascii_case(&d.font_family)) {
+                    if let Some(rec) = crate::fonts::RECOMMENDED_FONTS
+                        .iter()
+                        .find(|r| r.file.eq_ignore_ascii_case(&d.font_family))
+                    {
                         format!("{} [{}]", rec.name_zh, rec.license)
                     } else {
                         label
@@ -310,7 +322,11 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                             d.font_family.clear();
                         }
                         ui.separator();
-                        ui.label(egui::RichText::new(tr("pf.font-rec-header")).weak().size(11.0));
+                        ui.label(
+                            egui::RichText::new(tr("pf.font-rec-header"))
+                                .weak()
+                                .size(11.0),
+                        );
                         for rec in crate::fonts::RECOMMENDED_FONTS {
                             let label = format!("{} [{}]", rec.name_zh, rec.license);
                             let on = d.font_family.eq_ignore_ascii_case(rec.file);
@@ -319,7 +335,11 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                             }
                         }
                         ui.separator();
-                        ui.label(egui::RichText::new(tr("pf.font-all-header")).weak().size(11.0));
+                        ui.label(
+                            egui::RichText::new(tr("pf.font-all-header"))
+                                .weak()
+                                .size(11.0),
+                        );
                         egui::ScrollArea::vertical()
                             .max_height(200.0)
                             .show(ui, |ui| {
@@ -347,18 +367,36 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     .selected_text(shown_cjk)
                     .width(260.0)
                     .show_ui(ui, |ui| {
-                        if ui.selectable_label(d.font_cjk_fallback.is_empty(), tr("pf.font-cjk-auto")).clicked() {
+                        if ui
+                            .selectable_label(
+                                d.font_cjk_fallback.is_empty(),
+                                tr("pf.font-cjk-auto"),
+                            )
+                            .clicked()
+                        {
                             d.font_cjk_fallback.clear();
                         }
                         for (file, desc) in [
-                            ("NotoSansSC-VF.ttf", "思源黑体 (Noto Sans SC) [OFL 免费商用]"),
-                            ("NotoSansJP-VF.ttf", "思源黑体 日文 (Noto Sans JP) [OFL 免费商用]"),
-                            ("BIZ-UDGothicR.ttc", "BIZ UD Gothic (通用设计高可读) [OFL 免费商用]"),
+                            (
+                                "NotoSansSC-VF.ttf",
+                                "思源黑体 (Noto Sans SC) [OFL 免费商用]",
+                            ),
+                            (
+                                "NotoSansJP-VF.ttf",
+                                "思源黑体 日文 (Noto Sans JP) [OFL 免费商用]",
+                            ),
+                            (
+                                "BIZ-UDGothicR.ttc",
+                                "BIZ UD Gothic (通用设计高可读) [OFL 免费商用]",
+                            ),
                             ("msyh.ttc", "微软雅黑 (Microsoft YaHei) [系统标准]"),
                             ("YuGothM.ttc", "游黑体 (Yu Gothic) [日文标准]"),
                             ("msgothic.ttc", "MS Gothic [经典等宽点阵]"),
                         ] {
-                            if ui.selectable_label(d.font_cjk_fallback == file, desc).clicked() {
+                            if ui
+                                .selectable_label(d.font_cjk_fallback == file, desc)
+                                .clicked()
+                            {
                                 d.font_cjk_fallback = file.to_string();
                             }
                         }
@@ -369,7 +407,13 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             ui.horizontal(|ui| {
                 ui.label(tr("pf.font-size"));
                 ui.add(egui::Slider::new(&mut d.font_px, 8.0..=40.0).step_by(0.5));
-                for (pt_label, px_val) in [("9pt", 12.0), ("10.5pt", 14.0), ("12pt", 16.0), ("14pt", 18.6), ("16pt", 21.3)] {
+                for (pt_label, px_val) in [
+                    ("9pt", 12.0),
+                    ("10.5pt", 14.0),
+                    ("12pt", 16.0),
+                    ("14pt", 18.6),
+                    ("16pt", 21.3),
+                ] {
                     if ui.small_button(pt_label).clicked() {
                         d.font_px = px_val;
                     }
@@ -390,14 +434,30 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             });
             ui.horizontal(|ui| {
                 ui.label(tr("pf.letter-spacing"));
-                ui.add(egui::Slider::new(&mut d.letter_spacing, -2.0..=8.0).step_by(0.5).suffix(" px"));
+                ui.add(
+                    egui::Slider::new(&mut d.letter_spacing, -2.0..=8.0)
+                        .step_by(0.5)
+                        .suffix(" px"),
+                );
             });
 
             // 6. Sakura 样式实时多语言混合效果预览框
             ui.separator();
-            ui.label(egui::RichText::new(tr("pf.font-preview")).strong().size(12.0));
-            let prev_bg = if d.dark { egui::Color32::from_gray(24) } else { egui::Color32::from_gray(250) };
-            let prev_fg = if d.dark { egui::Color32::from_gray(220) } else { egui::Color32::from_gray(30) };
+            ui.label(
+                egui::RichText::new(tr("pf.font-preview"))
+                    .strong()
+                    .size(12.0),
+            );
+            let prev_bg = if d.dark {
+                egui::Color32::from_gray(24)
+            } else {
+                egui::Color32::from_gray(250)
+            };
+            let prev_fg = if d.dark {
+                egui::Color32::from_gray(220)
+            } else {
+                egui::Color32::from_gray(30)
+            };
             egui::Frame::canvas(ui.style())
                 .fill(prev_bg)
                 .stroke(egui::Stroke::new(1.0, if d.dark { egui::Color32::from_gray(60) } else { egui::Color32::from_gray(200) }))

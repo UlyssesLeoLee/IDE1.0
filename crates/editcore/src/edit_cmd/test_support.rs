@@ -5,7 +5,12 @@ use super::run;
 
 /// 只带命令和光标的最小请求; 其余用 `with_*` 链式补
 pub fn req(cmd: &str, row: usize, col: usize) -> EditReq {
-    EditReq { cmd: cmd.into(), row, col, ..Default::default() }
+    EditReq {
+        cmd: cmd.into(),
+        row,
+        col,
+        ..Default::default()
+    }
 }
 
 impl EditReq {
@@ -28,13 +33,23 @@ impl EditReq {
     /// 把整篇文档都交上去
     pub fn with_doc(mut self, lines: &[&str]) -> Self {
         self.total_rows = lines.len();
-        self.rows = lines.iter().enumerate().map(|(i, s)| (i, s.to_string())).collect();
+        self.rows = lines
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, s.to_string()))
+            .collect();
         self
     }
 }
 
 /// 整篇文档都交上去, 自动缩进 / 智能缩进打开 (回车类用例)
-pub fn run_on(cmd: &str, row: usize, col: usize, sel: Option<[usize; 4]>, lines: &[&str]) -> EditRes {
+pub fn run_on(
+    cmd: &str,
+    row: usize,
+    col: usize,
+    sel: Option<[usize; 4]>,
+    lines: &[&str],
+) -> EditRes {
     let mut r = req(cmd, row, col).with_sel(sel).with_doc(lines);
     r.auto_indent = true;
     r.smart_indent = true;
@@ -42,25 +57,56 @@ pub fn run_on(cmd: &str, row: usize, col: usize, sel: Option<[usize; 4]>, lines:
 }
 
 /// 带文字 (粘贴 / 键入) 的请求
-pub fn run_text(cmd: &str, row: usize, col: usize, sel: Option<[usize; 4]>, text: &str, line_mode: bool, lines: &[&str]) -> EditRes {
-    let mut r = req(cmd, row, col).with_sel(sel).with_text(text).with_doc(lines);
+pub fn run_text(
+    cmd: &str,
+    row: usize,
+    col: usize,
+    sel: Option<[usize; 4]>,
+    text: &str,
+    line_mode: bool,
+    lines: &[&str],
+) -> EditRes {
+    let mut r = req(cmd, row, col)
+        .with_sel(sel)
+        .with_text(text)
+        .with_doc(lines);
     r.line_mode = line_mode;
     run(&r).unwrap()
 }
 
 /// 矩形命令
-pub fn run_box(cmd: &str, row: usize, col: usize, b: [usize; 4], text: &str, lines: &[&str]) -> EditRes {
-    run(&req(cmd, row, col).with_text(text).with_box(b).with_doc(lines)).unwrap()
+pub fn run_box(
+    cmd: &str,
+    row: usize,
+    col: usize,
+    b: [usize; 4],
+    text: &str,
+    lines: &[&str],
+) -> EditRes {
+    run(&req(cmd, row, col)
+        .with_text(text)
+        .with_box(b)
+        .with_doc(lines))
+    .unwrap()
 }
 
 /// 多光标命令: 只交光标所在的行和它上面一行 (和前端一样)
 pub fn run_multi(cmd: &str, cursors: &[[usize; 2]], text: &str, lines: &[&str]) -> EditRes {
-    let mut touched: Vec<usize> = cursors.iter().flat_map(|c| [c[0].saturating_sub(1), c[0]]).collect();
+    let mut touched: Vec<usize> = cursors
+        .iter()
+        .flat_map(|c| [c[0].saturating_sub(1), c[0]])
+        .collect();
     touched.sort();
     touched.dedup();
-    let mut r = req(cmd, cursors[0][0], cursors[0][1]).with_text(text).with_cursors(cursors);
+    let mut r = req(cmd, cursors[0][0], cursors[0][1])
+        .with_text(text)
+        .with_cursors(cursors);
     r.total_rows = lines.len();
-    r.rows = touched.into_iter().filter(|&i| i < lines.len()).map(|i| (i, lines[i].to_string())).collect();
+    r.rows = touched
+        .into_iter()
+        .filter(|&i| i < lines.len())
+        .map(|i| (i, lines[i].to_string()))
+        .collect();
     run(&r).unwrap()
 }
 

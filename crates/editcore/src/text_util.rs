@@ -50,7 +50,12 @@ pub fn split_path_line_col(spec: &str) -> (String, usize, usize) {
     let num = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     let as_n = |s: &str| s.parse::<usize>().unwrap_or(0);
     // 先试 路径:行:列, 再试 路径:行
-    if parts.len() == 3 && num(parts[1]) && num(parts[2]) && !parts[0].is_empty() && parts[0].chars().count() > 1 {
+    if parts.len() == 3
+        && num(parts[1])
+        && num(parts[2])
+        && !parts[0].is_empty()
+        && parts[0].chars().count() > 1
+    {
         return (parts[0].to_string(), as_n(parts[1]), as_n(parts[2]));
     }
     if let Some((head, last)) = spec.rsplit_once(':') {
@@ -70,7 +75,11 @@ mod path_line_col_tests {
         assert_eq!(sp("a.txt"), ("a.txt".into(), 0, 0));
         assert_eq!(sp("src/a.rs:12"), ("src/a.rs".into(), 12, 1));
         assert_eq!(sp("src/a.rs:12:5"), ("src/a.rs".into(), 12, 5));
-        assert_eq!(sp("C:/x/a.txt"), ("C:/x/a.txt".into(), 0, 0), "盘符不是行号");
+        assert_eq!(
+            sp("C:/x/a.txt"),
+            ("C:/x/a.txt".into(), 0, 0),
+            "盘符不是行号"
+        );
         assert_eq!(sp("C:/x/a.txt:3:4"), ("C:/x/a.txt".into(), 3, 4));
         assert_eq!(sp("D:5"), ("D:5".into(), 0, 0), "单字母 + 数字当作路径");
         assert_eq!(sp(":7"), (":7".into(), 0, 0));

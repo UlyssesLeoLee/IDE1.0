@@ -150,7 +150,9 @@ pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
     if clean.is_empty() || is_pixel_font(clean) {
         String::new()
     } else if is_illegible_display_font(clean) {
-        theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
+        theme_default_font(theme_id)
+            .unwrap_or("CascadiaCode.ttf")
+            .to_string()
     } else {
         clean.to_string()
     }
@@ -165,7 +167,9 @@ pub fn effective_font_family(font_family: &str, theme_id: &str) -> String {
         return "PixelFontMulti-12.ttf".to_string();
     }
     if clean.is_empty() || is_pixel_font(clean) || is_illegible_display_font(clean) {
-        theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
+        theme_default_font(theme_id)
+            .unwrap_or("CascadiaCode.ttf")
+            .to_string()
     } else {
         clean.to_string()
     }
@@ -187,9 +191,9 @@ pub fn theme_default_font(theme_id: &str) -> Option<&'static str> {
 
 /// 所有支持的 CJK Fallback 候选清单 (按字符集与语言环境排序)
 const CJK_CANDIDATES_ALL: &[(&str, u32)] = &[
-    ("NotoSansSC-VF.ttf", 0),  // 思源黑体 简中 (SIL OFL 免费商用)
-    ("NotoSansJP-VF.ttf", 0),  // 思源黑体 日文 (SIL OFL 免费商用)
-    ("BIZ-UDGothicR.ttc", 0),  // BIZ UD Gothic (SIL OFL 免费商用)
+    ("NotoSansSC-VF.ttf", 0), // 思源黑体 简中 (SIL OFL 免费商用)
+    ("NotoSansJP-VF.ttf", 0), // 思源黑体 日文 (SIL OFL 免费商用)
+    ("BIZ-UDGothicR.ttc", 0), // BIZ UD Gothic (SIL OFL 免费商用)
     ("msyh.ttc", 0),          // 微软雅黑: 简体 + 常用汉字 + 假名
     ("YuGothM.ttc", 0),       // 游ゴシック: 日文假名 / 汉字
     ("meiryo.ttc", 0),        // Meiryo
@@ -237,7 +241,11 @@ pub fn is_font_file(name: &str) -> bool {
 fn find_bold_file(dir: &std::path::Path, file: &str) -> Option<String> {
     let lower = file.to_lowercase();
     if lower == "cascadiacode.ttf" || lower == "cascadiamono.ttf" {
-        for candidate in ["CascadiaCode-Bold.otf", "CascadiaMono-Bold.otf", "CascadiaCode.ttf"] {
+        for candidate in [
+            "CascadiaCode-Bold.otf",
+            "CascadiaMono-Bold.otf",
+            "CascadiaCode.ttf",
+        ] {
             if dir.join(candidate).is_file() {
                 return Some(candidate.to_string());
             }
@@ -348,7 +356,10 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
                     std::fs::read(dir_clone.join(&safe_editor)).ok()
                 } else if dir_clone.join(format!("{safe_editor}.ttf")).is_file() {
                     std::fs::read(dir_clone.join(format!("{safe_editor}.ttf"))).ok()
-                } else if let Some(p) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&safe_editor))) {
+                } else if let Some(p) = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.join(&safe_editor)))
+                {
                     if p.is_file() {
                         std::fs::read(p).ok()
                     } else {
@@ -470,8 +481,10 @@ pub fn install_loaded(ctx: &egui::Context, loaded: Loaded) {
     }
 
     if let Some(bytes) = loaded.editor_bold {
-        defs.font_data
-            .insert("editor-bold-font".into(), Arc::new(FontData::from_owned(bytes)));
+        defs.font_data.insert(
+            "editor-bold-font".into(),
+            Arc::new(FontData::from_owned(bytes)),
+        );
         editor_bold.push("editor-bold-font".into());
     } else if let Some(first) = editor.first().cloned() {
         editor_bold.push(first);
@@ -547,8 +560,14 @@ mod tests {
 
     #[test]
     fn theme_default_font_matching() {
-        assert_eq!(theme_default_font("theme-retro16"), Some("PixelFontMulti-12.ttf"));
-        assert_eq!(theme_default_font("theme-crystal"), Some("CascadiaCode.ttf"));
+        assert_eq!(
+            theme_default_font("theme-retro16"),
+            Some("PixelFontMulti-12.ttf")
+        );
+        assert_eq!(
+            theme_default_font("theme-crystal"),
+            Some("CascadiaCode.ttf")
+        );
         assert_eq!(theme_default_font("theme-clear"), Some("CascadiaMono.ttf"));
         assert_eq!(theme_default_font("theme-dark"), Some("CascadiaCode.ttf"));
         assert_eq!(theme_default_font("theme-light"), Some("CascadiaMono.ttf"));
@@ -558,17 +577,38 @@ mod tests {
 
     #[test]
     fn effective_font_family_retro16_invariant() {
-        assert_eq!(effective_font_family("", "theme-retro16"), "PixelFontMulti-12.ttf");
-        assert_eq!(effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
-        assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(
+            effective_font_family("", "theme-retro16"),
+            "PixelFontMulti-12.ttf"
+        );
+        assert_eq!(
+            effective_font_family("Consolas", "theme-retro16"),
+            "PixelFontMulti-12.ttf"
+        );
+        assert_eq!(
+            effective_font_family("BOD_PSTC.TTF", "theme-retro16"),
+            "PixelFontMulti-12.ttf"
+        );
         // 非 16-Bit Retro 主题一律不使用像素字体，回退默认字体
-        assert_eq!(effective_font_family("PixelFont 12", "theme-comic"), "CascadiaCode.ttf");
-        assert_eq!(effective_font_family("pixelfont", "theme-dark"), "CascadiaCode.ttf");
-        assert_eq!(sanitize_font_family("PixelFontMulti-12.ttf", "theme-comic"), "");
+        assert_eq!(
+            effective_font_family("PixelFont 12", "theme-comic"),
+            "CascadiaCode.ttf"
+        );
+        assert_eq!(
+            effective_font_family("pixelfont", "theme-dark"),
+            "CascadiaCode.ttf"
+        );
+        assert_eq!(
+            sanitize_font_family("PixelFontMulti-12.ttf", "theme-comic"),
+            ""
+        );
 
         assert_eq!(effective_font_family("", "theme-comic"), "CascadiaCode.ttf");
         assert_eq!(effective_font_family("Consolas", "theme-comic"), "Consolas");
-        assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-comic"), "CascadiaCode.ttf");
+        assert_eq!(
+            effective_font_family("BOD_PSTC.TTF", "theme-comic"),
+            "CascadiaCode.ttf"
+        );
     }
 
     #[test]
@@ -591,11 +631,26 @@ mod tests {
         install_loaded(&ctx, loaded);
 
         let s = ctx.global_style();
-        assert_eq!(s.text_styles.get(&egui::TextStyle::Small).unwrap().size, 12.0);
-        assert_eq!(s.text_styles.get(&egui::TextStyle::Body).unwrap().size, 12.0);
-        assert_eq!(s.text_styles.get(&egui::TextStyle::Button).unwrap().size, 12.0);
-        assert_eq!(s.text_styles.get(&egui::TextStyle::Monospace).unwrap().size, 12.0);
-        assert_eq!(s.text_styles.get(&egui::TextStyle::Heading).unwrap().size, 12.0);
+        assert_eq!(
+            s.text_styles.get(&egui::TextStyle::Small).unwrap().size,
+            12.0
+        );
+        assert_eq!(
+            s.text_styles.get(&egui::TextStyle::Body).unwrap().size,
+            12.0
+        );
+        assert_eq!(
+            s.text_styles.get(&egui::TextStyle::Button).unwrap().size,
+            12.0
+        );
+        assert_eq!(
+            s.text_styles.get(&egui::TextStyle::Monospace).unwrap().size,
+            12.0
+        );
+        assert_eq!(
+            s.text_styles.get(&egui::TextStyle::Heading).unwrap().size,
+            12.0
+        );
 
         // 切回普通主题 (例如 CascadiaCode)
         let normal_loaded = Loaded {
@@ -608,14 +663,21 @@ mod tests {
         let s2 = ctx.global_style();
         assert_eq!(
             s2.text_styles.get(&egui::TextStyle::Body).unwrap().size,
-            egui::Style::default().text_styles.get(&egui::TextStyle::Body).unwrap().size
+            egui::Style::default()
+                .text_styles
+                .get(&egui::TextStyle::Body)
+                .unwrap()
+                .size
         );
     }
 
     #[test]
     fn embedded_pixel_font_loads_and_flags_retro16() {
         let loaded = load_ext("PixelFontMulti-12.ttf", "", "zh", false);
-        assert!(loaded.editor.is_some(), "Embedded PixelFont bytes must load successfully");
+        assert!(
+            loaded.editor.is_some(),
+            "Embedded PixelFont bytes must load successfully"
+        );
         assert!(loaded.is_retro16, "is_retro16 must be set for PixelFont");
     }
 
@@ -626,7 +688,9 @@ mod tests {
         assert!(ja[0].0 == "BIZ-UDGothicR.ttc" || ja[0].0 == "NotoSansJP-VF.ttf");
 
         let zh = get_cjk_candidates("", "zh");
-        assert!(zh.iter().any(|(f, _)| *f == "msyh.ttc" || *f == "NotoSansSC-VF.ttf"));
+        assert!(zh
+            .iter()
+            .any(|(f, _)| *f == "msyh.ttc" || *f == "NotoSansSC-VF.ttf"));
 
         let custom = get_cjk_candidates("BIZ-UDGothicR.ttc", "zh");
         assert_eq!(custom[0].0, "BIZ-UDGothicR.ttc");

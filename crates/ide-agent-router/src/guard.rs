@@ -49,7 +49,10 @@ impl LoopBreaker {
         args.to_string().hash(&mut h2);
         let args_hash = h2.finish();
 
-        let sig = CallSignature { tool_hash, args_hash };
+        let sig = CallSignature {
+            tool_hash,
+            args_hash,
+        };
         self.history.push(sig);
 
         let n = self.history.len();
@@ -178,9 +181,15 @@ mod tests {
     fn test_loop_breaker_different_args_pass() {
         let mut breaker = LoopBreaker::new(3);
 
-        assert!(breaker.check_and_record("read_file", &json!({ "path": "a.rs" })).is_ok());
-        assert!(breaker.check_and_record("read_file", &json!({ "path": "b.rs" })).is_ok());
-        assert!(breaker.check_and_record("read_file", &json!({ "path": "c.rs" })).is_ok());
+        assert!(breaker
+            .check_and_record("read_file", &json!({ "path": "a.rs" }))
+            .is_ok());
+        assert!(breaker
+            .check_and_record("read_file", &json!({ "path": "b.rs" }))
+            .is_ok());
+        assert!(breaker
+            .check_and_record("read_file", &json!({ "path": "c.rs" }))
+            .is_ok());
     }
 
     #[test]
@@ -203,7 +212,10 @@ mod tests {
         // 验证系统指令保留在 index 0
         assert_eq!(msgs[0]["content"], "System Directive");
         // 验证 index 1 为压缩摘要
-        assert!(msgs[1]["content"].as_str().unwrap().contains("Context Auto-Compacted Summary"));
+        assert!(msgs[1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Context Auto-Compacted Summary"));
         // 验证最新活跃消息依然完整保存在末尾
         assert_eq!(msgs.last().unwrap()["content"], "Current Active Question");
     }

@@ -297,7 +297,8 @@ impl Default for SearchConfig {
 // ============================================================================
 
 /// 默认行头禁则字符 (JIS X 4051 避头尾禁则标准 + 中文常用标点)
-pub const DEFAULT_HEAD_FORBIDDEN: &str = "、。，．・：；？！ヽヾゝゞ々ー）〕］｝〉》」』】’”!?)]}:;,.‰℃℉′″¢";
+pub const DEFAULT_HEAD_FORBIDDEN: &str =
+    "、。，．・：；？！ヽヾゝゞ々ー）〕］｝〉》」』】’”!?)]}:;,.‰℃℉′″¢";
 
 /// 默认行尾禁则字符 (各类前置括弧与前置引号、前置货币符号)
 pub const DEFAULT_TAIL_FORBIDDEN: &str = "（〔［｛〈《「『【‘“([{\\$#";
@@ -528,9 +529,7 @@ impl Default for MacroConfig {
             });
         }
         Self {
-            slots: slots
-                .try_into()
-                .unwrap_or_else(|_| panic!("size mismatch")),
+            slots: slots.try_into().unwrap_or_else(|_| panic!("size mismatch")),
         }
     }
 }
@@ -714,30 +713,174 @@ pub struct ColorPaletteConfig {
 impl Default for ColorPaletteConfig {
     fn default() -> Self {
         let colors = [
-            PaletteColor { name: "Text".into(), foreground: "#000000".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Background".into(), foreground: "#000000".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Selection".into(), foreground: "#FFFFFF".into(), background: "#3399FF".into(), bold: false, underline: false },
-            PaletteColor { name: "CurrentLine".into(), foreground: "#000000".into(), background: "#E8F2FE".into(), bold: false, underline: false },
-            PaletteColor { name: "LineNumber".into(), foreground: "#808080".into(), background: "#F0F0F0".into(), bold: false, underline: false },
-            PaletteColor { name: "Comment".into(), foreground: "#008000".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "String".into(), foreground: "#A31515".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Keyword".into(), foreground: "#0000FF".into(), background: "#FFFFFF".into(), bold: true, underline: false },
-            PaletteColor { name: "Keyword2".into(), foreground: "#267F99".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Keyword3".into(), foreground: "#795E26".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Number".into(), foreground: "#098658".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Operator".into(), foreground: "#000000".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Function".into(), foreground: "#795E26".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Type".into(), foreground: "#267F99".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "Preprocessor".into(), foreground: "#AF00DB".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "URL".into(), foreground: "#0066CC".into(), background: "#FFFFFF".into(), bold: false, underline: true },
-            PaletteColor { name: "MailAddress".into(), foreground: "#0066CC".into(), background: "#FFFFFF".into(), bold: false, underline: true },
-            PaletteColor { name: "MatchingParen".into(), foreground: "#FF0000".into(), background: "#FFFF99".into(), bold: true, underline: false },
-            PaletteColor { name: "Ruler".into(), foreground: "#C0C0C0".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "WrapMark".into(), foreground: "#999999".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "EolMark".into(), foreground: "#0099FF".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "TabMark".into(), foreground: "#C0C0C0".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "ZenkakuSpace".into(), foreground: "#CCCCCC".into(), background: "#FFFFFF".into(), bold: false, underline: false },
-            PaletteColor { name: "HalfWidthSpace".into(), foreground: "#E0E0E0".into(), background: "#FFFFFF".into(), bold: false, underline: false },
+            PaletteColor {
+                name: "Text".into(),
+                foreground: "#000000".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Background".into(),
+                foreground: "#000000".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Selection".into(),
+                foreground: "#FFFFFF".into(),
+                background: "#3399FF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "CurrentLine".into(),
+                foreground: "#000000".into(),
+                background: "#E8F2FE".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "LineNumber".into(),
+                foreground: "#808080".into(),
+                background: "#F0F0F0".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Comment".into(),
+                foreground: "#008000".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "String".into(),
+                foreground: "#A31515".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Keyword".into(),
+                foreground: "#0000FF".into(),
+                background: "#FFFFFF".into(),
+                bold: true,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Keyword2".into(),
+                foreground: "#267F99".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Keyword3".into(),
+                foreground: "#795E26".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Number".into(),
+                foreground: "#098658".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Operator".into(),
+                foreground: "#000000".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Function".into(),
+                foreground: "#795E26".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Type".into(),
+                foreground: "#267F99".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Preprocessor".into(),
+                foreground: "#AF00DB".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "URL".into(),
+                foreground: "#0066CC".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: true,
+            },
+            PaletteColor {
+                name: "MailAddress".into(),
+                foreground: "#0066CC".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: true,
+            },
+            PaletteColor {
+                name: "MatchingParen".into(),
+                foreground: "#FF0000".into(),
+                background: "#FFFF99".into(),
+                bold: true,
+                underline: false,
+            },
+            PaletteColor {
+                name: "Ruler".into(),
+                foreground: "#C0C0C0".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "WrapMark".into(),
+                foreground: "#999999".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "EolMark".into(),
+                foreground: "#0099FF".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "TabMark".into(),
+                foreground: "#C0C0C0".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "ZenkakuSpace".into(),
+                foreground: "#CCCCCC".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
+            PaletteColor {
+                name: "HalfWidthSpace".into(),
+                foreground: "#E0E0E0".into(),
+                background: "#FFFFFF".into(),
+                bold: false,
+                underline: false,
+            },
         ];
         Self {
             scheme_name: "Sakura Standard".to_string(),
@@ -781,9 +924,7 @@ impl Default for CustomMenuConfig {
             });
         }
         Self {
-            slots: slots
-                .try_into()
-                .unwrap_or_else(|_| panic!("size mismatch")),
+            slots: slots.try_into().unwrap_or_else(|_| panic!("size mismatch")),
         }
     }
 }
@@ -927,8 +1068,6 @@ pub struct SakuraCommonSettings {
     pub font: FontConfig,
     pub print: PrintConfig,
 }
-
-
 
 // ============================================================================
 // INI 存储与双向映射实现
@@ -1077,104 +1216,428 @@ impl SakuraCommonSettings {
         let mut cfg = Self::default();
 
         // 1. Window
-        cfg.window.width = map.get_u32("window", &["width", "nwinsizecx", "winsizecx", "cx"], cfg.window.width);
-        cfg.window.height = map.get_u32("window", &["height", "nwinsizecy", "winsizecy", "cy"], cfg.window.height);
-        cfg.window.pos_x = map.get_i32("window", &["pos_x", "nwinposx", "winposx", "x"], cfg.window.pos_x);
-        cfg.window.pos_y = map.get_i32("window", &["pos_y", "nwinposy", "winposy", "y"], cfg.window.pos_y);
-        cfg.window.center_window = map.get_bool("window", &["center_window", "bcenterwin", "centerwin"], cfg.window.center_window);
-        cfg.window.remember_window_size = map.get_bool("window", &["remember_window_size", "bsavesize", "savesize"], cfg.window.remember_window_size);
-        cfg.window.remember_window_pos = map.get_bool("window", &["remember_window_pos", "bsavepos", "savepos"], cfg.window.remember_window_pos);
-        cfg.window.always_on_top = map.get_bool("window", &["always_on_top", "balwaystop", "topmost"], cfg.window.always_on_top);
-        cfg.window.opacity = map.get_u8("window", &["opacity", "nalpha", "alpha"], cfg.window.opacity);
-        cfg.window.minimize_to_tray = map.get_bool("window", &["minimize_to_tray", "btasktray", "tasktray"], cfg.window.minimize_to_tray);
-        cfg.window.multi_window_mode = map.get_bool("window", &["multi_window_mode", "bmultiwin", "multiwin"], cfg.window.multi_window_mode);
-        cfg.window.full_screen = map.get_bool("window", &["full_screen", "bfullscreen", "fullscreen"], cfg.window.full_screen);
+        cfg.window.width = map.get_u32(
+            "window",
+            &["width", "nwinsizecx", "winsizecx", "cx"],
+            cfg.window.width,
+        );
+        cfg.window.height = map.get_u32(
+            "window",
+            &["height", "nwinsizecy", "winsizecy", "cy"],
+            cfg.window.height,
+        );
+        cfg.window.pos_x = map.get_i32(
+            "window",
+            &["pos_x", "nwinposx", "winposx", "x"],
+            cfg.window.pos_x,
+        );
+        cfg.window.pos_y = map.get_i32(
+            "window",
+            &["pos_y", "nwinposy", "winposy", "y"],
+            cfg.window.pos_y,
+        );
+        cfg.window.center_window = map.get_bool(
+            "window",
+            &["center_window", "bcenterwin", "centerwin"],
+            cfg.window.center_window,
+        );
+        cfg.window.remember_window_size = map.get_bool(
+            "window",
+            &["remember_window_size", "bsavesize", "savesize"],
+            cfg.window.remember_window_size,
+        );
+        cfg.window.remember_window_pos = map.get_bool(
+            "window",
+            &["remember_window_pos", "bsavepos", "savepos"],
+            cfg.window.remember_window_pos,
+        );
+        cfg.window.always_on_top = map.get_bool(
+            "window",
+            &["always_on_top", "balwaystop", "topmost"],
+            cfg.window.always_on_top,
+        );
+        cfg.window.opacity = map.get_u8(
+            "window",
+            &["opacity", "nalpha", "alpha"],
+            cfg.window.opacity,
+        );
+        cfg.window.minimize_to_tray = map.get_bool(
+            "window",
+            &["minimize_to_tray", "btasktray", "tasktray"],
+            cfg.window.minimize_to_tray,
+        );
+        cfg.window.multi_window_mode = map.get_bool(
+            "window",
+            &["multi_window_mode", "bmultiwin", "multiwin"],
+            cfg.window.multi_window_mode,
+        );
+        cfg.window.full_screen = map.get_bool(
+            "window",
+            &["full_screen", "bfullscreen", "fullscreen"],
+            cfg.window.full_screen,
+        );
 
         // 2. TabBar
-        cfg.tab_bar.visible = map.get_bool("tabbar", &["visible", "btabvisible", "tabvisible", "disp_tab"], cfg.tab_bar.visible);
+        cfg.tab_bar.visible = map.get_bool(
+            "tabbar",
+            &["visible", "btabvisible", "tabvisible", "disp_tab"],
+            cfg.tab_bar.visible,
+        );
         if let Some(pos) = map.get_str("tabbar", &["position", "tab_position", "ntabposition"]) {
             cfg.tab_bar.position = TabPosition::from_str_loose(pos);
         }
-        cfg.tab_bar.multi_row = map.get_bool("tabbar", &["multi_row", "btabmultirow", "tabmultirow"], cfg.tab_bar.multi_row);
-        cfg.tab_bar.show_close_button = map.get_bool("tabbar", &["show_close_button", "btabclosebtn", "tabclosebtn"], cfg.tab_bar.show_close_button);
-        if let Some(act) = map.get_str("tabbar", &["double_click_action", "tab_double_click_action", "ndblclickaction", "ntabdoubleclickaction", "tabdoubleclickaction"]) {
+        cfg.tab_bar.multi_row = map.get_bool(
+            "tabbar",
+            &["multi_row", "btabmultirow", "tabmultirow"],
+            cfg.tab_bar.multi_row,
+        );
+        cfg.tab_bar.show_close_button = map.get_bool(
+            "tabbar",
+            &["show_close_button", "btabclosebtn", "tabclosebtn"],
+            cfg.tab_bar.show_close_button,
+        );
+        if let Some(act) = map.get_str(
+            "tabbar",
+            &[
+                "double_click_action",
+                "tab_double_click_action",
+                "ndblclickaction",
+                "ntabdoubleclickaction",
+                "tabdoubleclickaction",
+            ],
+        ) {
             cfg.tab_bar.double_click_action = TabDoubleClickAction::from_str_loose(act);
         }
-        cfg.tab_bar.close_on_middle_click = map.get_bool("tabbar", &["close_on_middle_click", "bclosemiddle", "midclickclose"], cfg.tab_bar.close_on_middle_click);
-        cfg.tab_bar.close_on_right_click = map.get_bool("tabbar", &["close_on_right_click", "bcloseright", "rightclickclose"], cfg.tab_bar.close_on_right_click);
-        cfg.tab_bar.wheel_tab_switch = map.get_bool("tabbar", &["wheel_tab_switch", "bwheeltab", "wheeltab"], cfg.tab_bar.wheel_tab_switch);
-        cfg.tab_bar.drag_drop_reorder = map.get_bool("tabbar", &["drag_drop_reorder", "btabdrag", "tabdrag"], cfg.tab_bar.drag_drop_reorder);
-        cfg.tab_bar.distinguish_same_name = map.get_bool("tabbar", &["distinguish_same_name", "bsamename", "samename"], cfg.tab_bar.distinguish_same_name);
-        cfg.tab_bar.tab_width_max = map.get_u32("tabbar", &["tab_width_max", "ntabwidthmax", "tabwidthmax"], cfg.tab_bar.tab_width_max);
-        cfg.tab_bar.tab_width_min = map.get_u32("tabbar", &["tab_width_min", "ntabwidthmin", "tabwidthmin"], cfg.tab_bar.tab_width_min);
+        cfg.tab_bar.close_on_middle_click = map.get_bool(
+            "tabbar",
+            &["close_on_middle_click", "bclosemiddle", "midclickclose"],
+            cfg.tab_bar.close_on_middle_click,
+        );
+        cfg.tab_bar.close_on_right_click = map.get_bool(
+            "tabbar",
+            &["close_on_right_click", "bcloseright", "rightclickclose"],
+            cfg.tab_bar.close_on_right_click,
+        );
+        cfg.tab_bar.wheel_tab_switch = map.get_bool(
+            "tabbar",
+            &["wheel_tab_switch", "bwheeltab", "wheeltab"],
+            cfg.tab_bar.wheel_tab_switch,
+        );
+        cfg.tab_bar.drag_drop_reorder = map.get_bool(
+            "tabbar",
+            &["drag_drop_reorder", "btabdrag", "tabdrag"],
+            cfg.tab_bar.drag_drop_reorder,
+        );
+        cfg.tab_bar.distinguish_same_name = map.get_bool(
+            "tabbar",
+            &["distinguish_same_name", "bsamename", "samename"],
+            cfg.tab_bar.distinguish_same_name,
+        );
+        cfg.tab_bar.tab_width_max = map.get_u32(
+            "tabbar",
+            &["tab_width_max", "ntabwidthmax", "tabwidthmax"],
+            cfg.tab_bar.tab_width_max,
+        );
+        cfg.tab_bar.tab_width_min = map.get_u32(
+            "tabbar",
+            &["tab_width_min", "ntabwidthmin", "tabwidthmin"],
+            cfg.tab_bar.tab_width_min,
+        );
 
         // 3. Edit
-        cfg.edit.tab_width = map.get_u32("edit", &["tab_width", "tabwidth", "ntabwidth", "tab_size"], cfg.edit.tab_width);
-        cfg.edit.indent_width = map.get_u32("edit", &["indent_width", "indentwidth", "nindentwidth", "indent_size"], cfg.edit.indent_width);
-        cfg.edit.use_spaces_for_tab = map.get_bool("edit", &["use_spaces_for_tab", "bspacefortab", "spacetab"], cfg.edit.use_spaces_for_tab);
-        cfg.edit.smart_indent = map.get_bool("edit", &["smart_indent", "bsmartindent", "smartindent"], cfg.edit.smart_indent);
-        cfg.edit.auto_indent = map.get_bool("edit", &["auto_indent", "bautoindent", "autoindent"], cfg.edit.auto_indent);
-        cfg.edit.auto_save_enabled = map.get_bool("edit", &["auto_save_enabled", "bautosave", "autosave"], cfg.edit.auto_save_enabled);
-        cfg.edit.auto_save_interval_sec = map.get_u32("edit", &["auto_save_interval_sec", "nautosaveinterval", "autosaveinterval"], cfg.edit.auto_save_interval_sec);
-        cfg.edit.overwrite_mode = map.get_bool("edit", &["overwrite_mode", "boverwrite", "overwritemode"], cfg.edit.overwrite_mode);
-        cfg.edit.drag_drop_edit = map.get_bool("edit", &["drag_drop_edit", "bdragdrop", "dragdrop"], cfg.edit.drag_drop_edit);
-        cfg.edit.copy_line_when_empty_selection = map.get_bool("edit", &["copy_line_when_empty_selection", "bcopyline", "copyline"], cfg.edit.copy_line_when_empty_selection);
-        cfg.edit.scroll_smooth = map.get_bool("edit", &["scroll_smooth", "bsmoothscroll", "smoothscroll"], cfg.edit.scroll_smooth);
-        cfg.edit.scroll_past_end_of_line = map.get_bool("edit", &["scroll_past_end_of_line", "bfreecaret", "freecaret"], cfg.edit.scroll_past_end_of_line);
+        cfg.edit.tab_width = map.get_u32(
+            "edit",
+            &["tab_width", "tabwidth", "ntabwidth", "tab_size"],
+            cfg.edit.tab_width,
+        );
+        cfg.edit.indent_width = map.get_u32(
+            "edit",
+            &["indent_width", "indentwidth", "nindentwidth", "indent_size"],
+            cfg.edit.indent_width,
+        );
+        cfg.edit.use_spaces_for_tab = map.get_bool(
+            "edit",
+            &["use_spaces_for_tab", "bspacefortab", "spacetab"],
+            cfg.edit.use_spaces_for_tab,
+        );
+        cfg.edit.smart_indent = map.get_bool(
+            "edit",
+            &["smart_indent", "bsmartindent", "smartindent"],
+            cfg.edit.smart_indent,
+        );
+        cfg.edit.auto_indent = map.get_bool(
+            "edit",
+            &["auto_indent", "bautoindent", "autoindent"],
+            cfg.edit.auto_indent,
+        );
+        cfg.edit.auto_save_enabled = map.get_bool(
+            "edit",
+            &["auto_save_enabled", "bautosave", "autosave"],
+            cfg.edit.auto_save_enabled,
+        );
+        cfg.edit.auto_save_interval_sec = map.get_u32(
+            "edit",
+            &[
+                "auto_save_interval_sec",
+                "nautosaveinterval",
+                "autosaveinterval",
+            ],
+            cfg.edit.auto_save_interval_sec,
+        );
+        cfg.edit.overwrite_mode = map.get_bool(
+            "edit",
+            &["overwrite_mode", "boverwrite", "overwritemode"],
+            cfg.edit.overwrite_mode,
+        );
+        cfg.edit.drag_drop_edit = map.get_bool(
+            "edit",
+            &["drag_drop_edit", "bdragdrop", "dragdrop"],
+            cfg.edit.drag_drop_edit,
+        );
+        cfg.edit.copy_line_when_empty_selection = map.get_bool(
+            "edit",
+            &["copy_line_when_empty_selection", "bcopyline", "copyline"],
+            cfg.edit.copy_line_when_empty_selection,
+        );
+        cfg.edit.scroll_smooth = map.get_bool(
+            "edit",
+            &["scroll_smooth", "bsmoothscroll", "smoothscroll"],
+            cfg.edit.scroll_smooth,
+        );
+        cfg.edit.scroll_past_end_of_line = map.get_bool(
+            "edit",
+            &["scroll_past_end_of_line", "bfreecaret", "freecaret"],
+            cfg.edit.scroll_past_end_of_line,
+        );
 
         // 4. File
-        cfg.file.default_encoding = map.get_string("file", &["default_encoding", "encoding", "szencoding", "code_page"], &cfg.file.default_encoding);
-        cfg.file.default_eol = map.get_string("file", &["default_eol", "eol", "szeol", "line_ending"], &cfg.file.default_eol);
-        cfg.file.file_lock_exclusive = map.get_bool("file", &["file_lock_exclusive", "bfilelock", "exclusive_lock"], cfg.file.file_lock_exclusive);
-        cfg.file.recent_files_max = map.get_usize("file", &["recent_files_max", "nrecentmax", "recent_max"], cfg.file.recent_files_max);
-        cfg.file.recent_folders_max = map.get_usize("file", &["recent_folders_max", "nrecentfoldersmax", "recent_folders_max"], cfg.file.recent_folders_max);
-        cfg.file.auto_reload_changed = map.get_bool("file", &["auto_reload_changed", "bautoreload", "autoreload"], cfg.file.auto_reload_changed);
-        cfg.file.alert_file_deleted = map.get_bool("file", &["alert_file_deleted", "balertdeleted", "alertdeleted"], cfg.file.alert_file_deleted);
-        cfg.file.backup_enabled = map.get_bool("file", &["backup_enabled", "bbackup", "backup"], cfg.file.backup_enabled);
-        cfg.file.backup_folder = map.get_string("file", &["backup_folder", "szbackupfolder", "backupdir"], &cfg.file.backup_folder);
-        cfg.file.backup_extension = map.get_string("file", &["backup_extension", "szbackupext", "backupext"], &cfg.file.backup_extension);
-        cfg.file.backup_count_max = map.get_u32("file", &["backup_count_max", "nbackupmax", "backupmax"], cfg.file.backup_count_max);
-        cfg.file.restore_cursor_pos = map.get_bool("file", &["restore_cursor_pos", "brestorecursor", "restorecursor"], cfg.file.restore_cursor_pos);
+        cfg.file.default_encoding = map.get_string(
+            "file",
+            &["default_encoding", "encoding", "szencoding", "code_page"],
+            &cfg.file.default_encoding,
+        );
+        cfg.file.default_eol = map.get_string(
+            "file",
+            &["default_eol", "eol", "szeol", "line_ending"],
+            &cfg.file.default_eol,
+        );
+        cfg.file.file_lock_exclusive = map.get_bool(
+            "file",
+            &["file_lock_exclusive", "bfilelock", "exclusive_lock"],
+            cfg.file.file_lock_exclusive,
+        );
+        cfg.file.recent_files_max = map.get_usize(
+            "file",
+            &["recent_files_max", "nrecentmax", "recent_max"],
+            cfg.file.recent_files_max,
+        );
+        cfg.file.recent_folders_max = map.get_usize(
+            "file",
+            &[
+                "recent_folders_max",
+                "nrecentfoldersmax",
+                "recent_folders_max",
+            ],
+            cfg.file.recent_folders_max,
+        );
+        cfg.file.auto_reload_changed = map.get_bool(
+            "file",
+            &["auto_reload_changed", "bautoreload", "autoreload"],
+            cfg.file.auto_reload_changed,
+        );
+        cfg.file.alert_file_deleted = map.get_bool(
+            "file",
+            &["alert_file_deleted", "balertdeleted", "alertdeleted"],
+            cfg.file.alert_file_deleted,
+        );
+        cfg.file.backup_enabled = map.get_bool(
+            "file",
+            &["backup_enabled", "bbackup", "backup"],
+            cfg.file.backup_enabled,
+        );
+        cfg.file.backup_folder = map.get_string(
+            "file",
+            &["backup_folder", "szbackupfolder", "backupdir"],
+            &cfg.file.backup_folder,
+        );
+        cfg.file.backup_extension = map.get_string(
+            "file",
+            &["backup_extension", "szbackupext", "backupext"],
+            &cfg.file.backup_extension,
+        );
+        cfg.file.backup_count_max = map.get_u32(
+            "file",
+            &["backup_count_max", "nbackupmax", "backupmax"],
+            cfg.file.backup_count_max,
+        );
+        cfg.file.restore_cursor_pos = map.get_bool(
+            "file",
+            &["restore_cursor_pos", "brestorecursor", "restorecursor"],
+            cfg.file.restore_cursor_pos,
+        );
 
         // 5. Search
-        cfg.search.case_sensitive = map.get_bool("search", &["case_sensitive", "bcasesensitive", "casesensitive"], cfg.search.case_sensitive);
-        cfg.search.whole_word = map.get_bool("search", &["whole_word", "bwholeword", "wholeword"], cfg.search.whole_word);
-        cfg.search.regex_enabled = map.get_bool("search", &["regex_enabled", "bregex", "regex"], cfg.search.regex_enabled);
-        cfg.search.lookaround_enabled = map.get_bool("search", &["lookaround_enabled", "blookaround", "bregexplookaround"], cfg.search.lookaround_enabled);
-        cfg.search.search_wrap = map.get_bool("search", &["search_wrap", "bsearchwrap", "wrapsearch"], cfg.search.search_wrap);
-        cfg.search.search_backwards = map.get_bool("search", &["search_backwards", "bsearchbackwards", "searchbackwards"], cfg.search.search_backwards);
-        cfg.search.highlight_all_matches = map.get_bool("search", &["highlight_all_matches", "bhighlightall", "highlightall"], cfg.search.highlight_all_matches);
-        cfg.search.search_history_max = map.get_usize("search", &["search_history_max", "nsearchhistorymax", "searchhistorymax"], cfg.search.search_history_max);
-        cfg.search.replace_history_max = map.get_usize("search", &["replace_history_max", "nreplacehistorymax", "replacehistorymax"], cfg.search.replace_history_max);
-        cfg.search.auto_close_dialog = map.get_bool("search", &["auto_close_dialog", "bautoclosedialog", "autoclosedialog"], cfg.search.auto_close_dialog);
-        cfg.search.use_migemo = map.get_bool("search", &["use_migemo", "bmigemo", "migemo"], cfg.search.use_migemo);
+        cfg.search.case_sensitive = map.get_bool(
+            "search",
+            &["case_sensitive", "bcasesensitive", "casesensitive"],
+            cfg.search.case_sensitive,
+        );
+        cfg.search.whole_word = map.get_bool(
+            "search",
+            &["whole_word", "bwholeword", "wholeword"],
+            cfg.search.whole_word,
+        );
+        cfg.search.regex_enabled = map.get_bool(
+            "search",
+            &["regex_enabled", "bregex", "regex"],
+            cfg.search.regex_enabled,
+        );
+        cfg.search.lookaround_enabled = map.get_bool(
+            "search",
+            &["lookaround_enabled", "blookaround", "bregexplookaround"],
+            cfg.search.lookaround_enabled,
+        );
+        cfg.search.search_wrap = map.get_bool(
+            "search",
+            &["search_wrap", "bsearchwrap", "wrapsearch"],
+            cfg.search.search_wrap,
+        );
+        cfg.search.search_backwards = map.get_bool(
+            "search",
+            &["search_backwards", "bsearchbackwards", "searchbackwards"],
+            cfg.search.search_backwards,
+        );
+        cfg.search.highlight_all_matches = map.get_bool(
+            "search",
+            &["highlight_all_matches", "bhighlightall", "highlightall"],
+            cfg.search.highlight_all_matches,
+        );
+        cfg.search.search_history_max = map.get_usize(
+            "search",
+            &[
+                "search_history_max",
+                "nsearchhistorymax",
+                "searchhistorymax",
+            ],
+            cfg.search.search_history_max,
+        );
+        cfg.search.replace_history_max = map.get_usize(
+            "search",
+            &[
+                "replace_history_max",
+                "nreplacehistorymax",
+                "replacehistorymax",
+            ],
+            cfg.search.replace_history_max,
+        );
+        cfg.search.auto_close_dialog = map.get_bool(
+            "search",
+            &["auto_close_dialog", "bautoclosedialog", "autoclosedialog"],
+            cfg.search.auto_close_dialog,
+        );
+        cfg.search.use_migemo = map.get_bool(
+            "search",
+            &["use_migemo", "bmigemo", "migemo"],
+            cfg.search.use_migemo,
+        );
 
         // 6. Format
         if let Some(wm) = map.get_str("format", &["wrap_mode", "nwrapmode", "wrapmode"]) {
             cfg.format.wrap_mode = WrapMode::from_str_loose(wm);
         }
-        cfg.format.wrap_columns = map.get_u32("format", &["wrap_columns", "nwrapcolumns", "wrapcolumns", "max_columns"], cfg.format.wrap_columns);
-        cfg.format.kinsoku_head_enabled = map.get_bool("format", &["kinsoku_head_enabled", "bkinsokuhead", "kinsokuhead"], cfg.format.kinsoku_head_enabled);
-        cfg.format.kinsoku_tail_enabled = map.get_bool("format", &["kinsoku_tail_enabled", "bkinsokutail", "kinsokutail"], cfg.format.kinsoku_tail_enabled);
-        cfg.format.kinsoku_push_enabled = map.get_bool("format", &["kinsoku_push_enabled", "bkinsokupush", "kinsokupush", "burasagari"], cfg.format.kinsoku_push_enabled);
-        if let Some(h) = map.get_str("format", &["kinsoku_head", "szkinsokuhead", "kinsokuheadchars"]) {
+        cfg.format.wrap_columns = map.get_u32(
+            "format",
+            &["wrap_columns", "nwrapcolumns", "wrapcolumns", "max_columns"],
+            cfg.format.wrap_columns,
+        );
+        cfg.format.kinsoku_head_enabled = map.get_bool(
+            "format",
+            &["kinsoku_head_enabled", "bkinsokuhead", "kinsokuhead"],
+            cfg.format.kinsoku_head_enabled,
+        );
+        cfg.format.kinsoku_tail_enabled = map.get_bool(
+            "format",
+            &["kinsoku_tail_enabled", "bkinsokutail", "kinsokutail"],
+            cfg.format.kinsoku_tail_enabled,
+        );
+        cfg.format.kinsoku_push_enabled = map.get_bool(
+            "format",
+            &[
+                "kinsoku_push_enabled",
+                "bkinsokupush",
+                "kinsokupush",
+                "burasagari",
+            ],
+            cfg.format.kinsoku_push_enabled,
+        );
+        if let Some(h) = map.get_str(
+            "format",
+            &["kinsoku_head", "szkinsokuhead", "kinsokuheadchars"],
+        ) {
             cfg.format.kinsoku_chars.set_head_chars(h);
         }
-        if let Some(t) = map.get_str("format", &["kinsoku_tail", "szkinsokutail", "kinsokutailchars"]) {
+        if let Some(t) = map.get_str(
+            "format",
+            &["kinsoku_tail", "szkinsokutail", "kinsokutailchars"],
+        ) {
             cfg.format.kinsoku_chars.set_tail_chars(t);
         }
-        cfg.format.show_line_numbers = map.get_bool("format", &["show_line_numbers", "bshowlinenums", "showlinenums"], cfg.format.show_line_numbers);
-        cfg.format.show_ruler = map.get_bool("format", &["show_ruler", "bshowruler", "showruler"], cfg.format.show_ruler);
+        cfg.format.show_line_numbers = map.get_bool(
+            "format",
+            &["show_line_numbers", "bshowlinenums", "showlinenums"],
+            cfg.format.show_line_numbers,
+        );
+        cfg.format.show_ruler = map.get_bool(
+            "format",
+            &["show_ruler", "bshowruler", "showruler"],
+            cfg.format.show_ruler,
+        );
 
         // 7. Assist
-        cfg.assist.auto_complete_enabled = map.get_bool("assist", &["auto_complete_enabled", "bautocomplete", "autocomplete"], cfg.assist.auto_complete_enabled);
-        cfg.assist.min_char_trigger = map.get_u32("assist", &["min_char_trigger", "nmintrigger", "minchars"], cfg.assist.min_char_trigger);
-        cfg.assist.show_candidate_list = map.get_bool("assist", &["show_candidate_list", "bshowcandidates", "showcandidates"], cfg.assist.show_candidate_list);
-        cfg.assist.dictionary_path = map.get_string("assist", &["dictionary_path", "szdictpath", "dictpath"], &cfg.assist.dictionary_path);
-        cfg.assist.use_words_in_doc = map.get_bool("assist", &["use_words_in_doc", "busewordsindoc", "wordsindoc"], cfg.assist.use_words_in_doc);
-        cfg.assist.matching_paren_highlight = map.get_bool("assist", &["matching_paren_highlight", "bmatchparen", "matchparen"], cfg.assist.matching_paren_highlight);
-        cfg.assist.auto_close_brackets = map.get_bool("assist", &["auto_close_brackets", "bautoclosebracket", "autoclosebracket"], cfg.assist.auto_close_brackets);
-        cfg.assist.candidate_max_count = map.get_u32("assist", &["candidate_max_count", "ncandidatemax", "candidatemax"], cfg.assist.candidate_max_count);
+        cfg.assist.auto_complete_enabled = map.get_bool(
+            "assist",
+            &["auto_complete_enabled", "bautocomplete", "autocomplete"],
+            cfg.assist.auto_complete_enabled,
+        );
+        cfg.assist.min_char_trigger = map.get_u32(
+            "assist",
+            &["min_char_trigger", "nmintrigger", "minchars"],
+            cfg.assist.min_char_trigger,
+        );
+        cfg.assist.show_candidate_list = map.get_bool(
+            "assist",
+            &["show_candidate_list", "bshowcandidates", "showcandidates"],
+            cfg.assist.show_candidate_list,
+        );
+        cfg.assist.dictionary_path = map.get_string(
+            "assist",
+            &["dictionary_path", "szdictpath", "dictpath"],
+            &cfg.assist.dictionary_path,
+        );
+        cfg.assist.use_words_in_doc = map.get_bool(
+            "assist",
+            &["use_words_in_doc", "busewordsindoc", "wordsindoc"],
+            cfg.assist.use_words_in_doc,
+        );
+        cfg.assist.matching_paren_highlight = map.get_bool(
+            "assist",
+            &["matching_paren_highlight", "bmatchparen", "matchparen"],
+            cfg.assist.matching_paren_highlight,
+        );
+        cfg.assist.auto_close_brackets = map.get_bool(
+            "assist",
+            &[
+                "auto_close_brackets",
+                "bautoclosebracket",
+                "autoclosebracket",
+            ],
+            cfg.assist.auto_close_brackets,
+        );
+        cfg.assist.candidate_max_count = map.get_u32(
+            "assist",
+            &["candidate_max_count", "ncandidatemax", "candidatemax"],
+            cfg.assist.candidate_max_count,
+        );
 
         // 8. Macro (20 Slots)
         for i in 1..=MACRO_SLOT_COUNT {
@@ -1229,36 +1692,113 @@ impl SakuraCommonSettings {
         }
 
         // 9. StatusBar
-        cfg.status_bar.visible = map.get_bool("statusbar", &["visible", "bstatusvisible", "statusvisible"], cfg.status_bar.visible);
-        cfg.status_bar.show_caret_pos = map.get_bool("statusbar", &["show_caret_pos", "bcaretpos", "caretpos"], cfg.status_bar.show_caret_pos);
-        cfg.status_bar.show_char_code = map.get_bool("statusbar", &["show_char_code", "bcharcode", "charcode"], cfg.status_bar.show_char_code);
-        cfg.status_bar.show_encoding = map.get_bool("statusbar", &["show_encoding", "bencoding", "encoding"], cfg.status_bar.show_encoding);
-        cfg.status_bar.show_eol = map.get_bool("statusbar", &["show_eol", "beol", "eol"], cfg.status_bar.show_eol);
-        cfg.status_bar.show_modified = map.get_bool("statusbar", &["show_modified", "bmodified", "modified"], cfg.status_bar.show_modified);
-        cfg.status_bar.show_ins_ovr = map.get_bool("statusbar", &["show_ins_ovr", "binsovr", "insovr"], cfg.status_bar.show_ins_ovr);
-        cfg.status_bar.show_file_size = map.get_bool("statusbar", &["show_file_size", "bfilesize", "filesize"], cfg.status_bar.show_file_size);
-        cfg.status_bar.show_zoom = map.get_bool("statusbar", &["show_zoom", "bzoom", "zoom"], cfg.status_bar.show_zoom);
-        cfg.status_bar.show_line_count = map.get_bool("statusbar", &["show_line_count", "blinecount", "linecount"], cfg.status_bar.show_line_count);
+        cfg.status_bar.visible = map.get_bool(
+            "statusbar",
+            &["visible", "bstatusvisible", "statusvisible"],
+            cfg.status_bar.visible,
+        );
+        cfg.status_bar.show_caret_pos = map.get_bool(
+            "statusbar",
+            &["show_caret_pos", "bcaretpos", "caretpos"],
+            cfg.status_bar.show_caret_pos,
+        );
+        cfg.status_bar.show_char_code = map.get_bool(
+            "statusbar",
+            &["show_char_code", "bcharcode", "charcode"],
+            cfg.status_bar.show_char_code,
+        );
+        cfg.status_bar.show_encoding = map.get_bool(
+            "statusbar",
+            &["show_encoding", "bencoding", "encoding"],
+            cfg.status_bar.show_encoding,
+        );
+        cfg.status_bar.show_eol = map.get_bool(
+            "statusbar",
+            &["show_eol", "beol", "eol"],
+            cfg.status_bar.show_eol,
+        );
+        cfg.status_bar.show_modified = map.get_bool(
+            "statusbar",
+            &["show_modified", "bmodified", "modified"],
+            cfg.status_bar.show_modified,
+        );
+        cfg.status_bar.show_ins_ovr = map.get_bool(
+            "statusbar",
+            &["show_ins_ovr", "binsovr", "insovr"],
+            cfg.status_bar.show_ins_ovr,
+        );
+        cfg.status_bar.show_file_size = map.get_bool(
+            "statusbar",
+            &["show_file_size", "bfilesize", "filesize"],
+            cfg.status_bar.show_file_size,
+        );
+        cfg.status_bar.show_zoom = map.get_bool(
+            "statusbar",
+            &["show_zoom", "bzoom", "zoom"],
+            cfg.status_bar.show_zoom,
+        );
+        cfg.status_bar.show_line_count = map.get_bool(
+            "statusbar",
+            &["show_line_count", "blinecount", "linecount"],
+            cfg.status_bar.show_line_count,
+        );
 
         // 10. Plugin
-        cfg.plugin.auto_scan_plugins = map.get_bool("plugin", &["auto_scan_plugins", "bautoscan", "autoscan"], cfg.plugin.auto_scan_plugins);
-        cfg.plugin.plugin_dir = map.get_string("plugin", &["plugin_dir", "szplugindir", "plugindir"], &cfg.plugin.plugin_dir);
-        if let Some(plugins_str) = map.get_str("plugin", &["enabled_plugins", "enabledplugins", "szenabledplugins"]) {
+        cfg.plugin.auto_scan_plugins = map.get_bool(
+            "plugin",
+            &["auto_scan_plugins", "bautoscan", "autoscan"],
+            cfg.plugin.auto_scan_plugins,
+        );
+        cfg.plugin.plugin_dir = map.get_string(
+            "plugin",
+            &["plugin_dir", "szplugindir", "plugindir"],
+            &cfg.plugin.plugin_dir,
+        );
+        if let Some(plugins_str) = map.get_str(
+            "plugin",
+            &["enabled_plugins", "enabledplugins", "szenabledplugins"],
+        ) {
             cfg.plugin.enabled_plugins = plugins_str
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
         }
-        cfg.plugin.security_level = map.get_u8("plugin", &["security_level", "nsecuritylevel", "securitylevel"], cfg.plugin.security_level);
-        cfg.plugin.allow_network = map.get_bool("plugin", &["allow_network", "ballownetwork", "allownetwork"], cfg.plugin.allow_network);
+        cfg.plugin.security_level = map.get_u8(
+            "plugin",
+            &["security_level", "nsecuritylevel", "securitylevel"],
+            cfg.plugin.security_level,
+        );
+        cfg.plugin.allow_network = map.get_bool(
+            "plugin",
+            &["allow_network", "ballownetwork", "allownetwork"],
+            cfg.plugin.allow_network,
+        );
 
         // 11. Toolbar
-        cfg.toolbar.visible = map.get_bool("toolbar", &["visible", "btoolbarvisible", "toolbarvisible"], cfg.toolbar.visible);
-        cfg.toolbar.button_size = map.get_u32("toolbar", &["button_size", "nbuttonsize", "buttonsize"], cfg.toolbar.button_size);
-        cfg.toolbar.flat_style = map.get_bool("toolbar", &["flat_style", "bflatstyle", "flatstyle"], cfg.toolbar.flat_style);
-        cfg.toolbar.show_tooltips = map.get_bool("toolbar", &["show_tooltips", "bshowtooltips", "tooltips"], cfg.toolbar.show_tooltips);
-        if let Some(buttons_str) = map.get_str("toolbar", &["buttons", "szbuttons", "toolbarbuttons"]) {
+        cfg.toolbar.visible = map.get_bool(
+            "toolbar",
+            &["visible", "btoolbarvisible", "toolbarvisible"],
+            cfg.toolbar.visible,
+        );
+        cfg.toolbar.button_size = map.get_u32(
+            "toolbar",
+            &["button_size", "nbuttonsize", "buttonsize"],
+            cfg.toolbar.button_size,
+        );
+        cfg.toolbar.flat_style = map.get_bool(
+            "toolbar",
+            &["flat_style", "bflatstyle", "flatstyle"],
+            cfg.toolbar.flat_style,
+        );
+        cfg.toolbar.show_tooltips = map.get_bool(
+            "toolbar",
+            &["show_tooltips", "bshowtooltips", "tooltips"],
+            cfg.toolbar.show_tooltips,
+        );
+        if let Some(buttons_str) =
+            map.get_str("toolbar", &["buttons", "szbuttons", "toolbarbuttons"])
+        {
             cfg.toolbar.buttons = buttons_str
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -1267,17 +1807,54 @@ impl SakuraCommonSettings {
         }
 
         // 12. KeySearch
-        cfg.key_search.enabled = map.get_bool("keysearch", &["enabled", "benabled"], cfg.key_search.enabled);
-        cfg.key_search.dictionary_lookup_url = map.get_string("keysearch", &["dictionary_lookup_url", "szlookupurl", "lookupurl"], &cfg.key_search.dictionary_lookup_url);
-        cfg.key_search.hotkey = map.get_string("keysearch", &["hotkey", "szhotkey"], &cfg.key_search.hotkey);
-        cfg.key_search.auto_search_selected = map.get_bool("keysearch", &["auto_search_selected", "bsearchselected", "searchselected"], cfg.key_search.auto_search_selected);
-        cfg.key_search.open_in_external_browser = map.get_bool("keysearch", &["open_in_external_browser", "bexternalbrowser", "externalbrowser"], cfg.key_search.open_in_external_browser);
+        cfg.key_search.enabled = map.get_bool(
+            "keysearch",
+            &["enabled", "benabled"],
+            cfg.key_search.enabled,
+        );
+        cfg.key_search.dictionary_lookup_url = map.get_string(
+            "keysearch",
+            &["dictionary_lookup_url", "szlookupurl", "lookupurl"],
+            &cfg.key_search.dictionary_lookup_url,
+        );
+        cfg.key_search.hotkey =
+            map.get_string("keysearch", &["hotkey", "szhotkey"], &cfg.key_search.hotkey);
+        cfg.key_search.auto_search_selected = map.get_bool(
+            "keysearch",
+            &["auto_search_selected", "bsearchselected", "searchselected"],
+            cfg.key_search.auto_search_selected,
+        );
+        cfg.key_search.open_in_external_browser = map.get_bool(
+            "keysearch",
+            &[
+                "open_in_external_browser",
+                "bexternalbrowser",
+                "externalbrowser",
+            ],
+            cfg.key_search.open_in_external_browser,
+        );
 
         // 13. ExecCmd
-        cfg.exec_cmd.default_shell = map.get_string("execcmd", &["default_shell", "szshell", "shell"], &cfg.exec_cmd.default_shell);
-        cfg.exec_cmd.capture_output = map.get_bool("execcmd", &["capture_output", "bcaptureoutput", "captureoutput"], cfg.exec_cmd.capture_output);
-        cfg.exec_cmd.run_in_background = map.get_bool("execcmd", &["run_in_background", "bbackground", "background"], cfg.exec_cmd.run_in_background);
-        cfg.exec_cmd.show_console_window = map.get_bool("execcmd", &["show_console_window", "bshowconsole", "showconsole"], cfg.exec_cmd.show_console_window);
+        cfg.exec_cmd.default_shell = map.get_string(
+            "execcmd",
+            &["default_shell", "szshell", "shell"],
+            &cfg.exec_cmd.default_shell,
+        );
+        cfg.exec_cmd.capture_output = map.get_bool(
+            "execcmd",
+            &["capture_output", "bcaptureoutput", "captureoutput"],
+            cfg.exec_cmd.capture_output,
+        );
+        cfg.exec_cmd.run_in_background = map.get_bool(
+            "execcmd",
+            &["run_in_background", "bbackground", "background"],
+            cfg.exec_cmd.run_in_background,
+        );
+        cfg.exec_cmd.show_console_window = map.get_bool(
+            "execcmd",
+            &["show_console_window", "bshowconsole", "showconsole"],
+            cfg.exec_cmd.show_console_window,
+        );
 
         let cmd_count = map.get_u32("execcmd", &["command_count", "ncommandcount"], 0);
         let mut cmds = Vec::new();
@@ -1317,17 +1894,36 @@ impl SakuraCommonSettings {
         }
 
         // 14. ColorPalette (24 slots)
-        cfg.color_palette.scheme_name = map.get_string("colorpalette", &["scheme_name", "schemename", "szschemename"], &cfg.color_palette.scheme_name);
+        cfg.color_palette.scheme_name = map.get_string(
+            "colorpalette",
+            &["scheme_name", "schemename", "szschemename"],
+            &cfg.color_palette.scheme_name,
+        );
         for i in 1..=PALETTE_COLOR_COUNT {
             let color = &mut cfg.color_palette.colors[i - 1];
             let idx_str = format!("{i:02}");
             let idx_short = format!("{i}");
 
-            let k_name = [format!("color{idx_str}_name"), format!("color{idx_short}_name")];
-            let k_fore = [format!("color{idx_str}_fore"), format!("color{idx_short}_fore")];
-            let k_back = [format!("color{idx_str}_back"), format!("color{idx_short}_back")];
-            let k_bold = [format!("color{idx_str}_bold"), format!("color{idx_short}_bold")];
-            let k_under = [format!("color{idx_str}_underline"), format!("color{idx_short}_underline")];
+            let k_name = [
+                format!("color{idx_str}_name"),
+                format!("color{idx_short}_name"),
+            ];
+            let k_fore = [
+                format!("color{idx_str}_fore"),
+                format!("color{idx_short}_fore"),
+            ];
+            let k_back = [
+                format!("color{idx_str}_back"),
+                format!("color{idx_short}_back"),
+            ];
+            let k_bold = [
+                format!("color{idx_str}_bold"),
+                format!("color{idx_short}_bold"),
+            ];
+            let k_under = [
+                format!("color{idx_str}_underline"),
+                format!("color{idx_short}_underline"),
+            ];
 
             let k_name_s: Vec<&str> = k_name.iter().map(|s| s.as_str()).collect();
             let k_fore_s: Vec<&str> = k_fore.iter().map(|s| s.as_str()).collect();
@@ -1348,13 +1944,19 @@ impl SakuraCommonSettings {
             let idx_str = format!("{i:02}");
             let idx_short = format!("{i}");
 
-            let k_title = [format!("menu{idx_str}_title"), format!("menu{idx_short}_title")];
+            let k_title = [
+                format!("menu{idx_str}_title"),
+                format!("menu{idx_short}_title"),
+            ];
             let k_title_s: Vec<&str> = k_title.iter().map(|s| s.as_str()).collect();
             slot.title = map.get_string("custommenu", &k_title_s, &slot.title);
 
             let mut items = Vec::new();
             // Try delimited items string first
-            let k_items = [format!("menu{idx_str}_items"), format!("menu{idx_short}_items")];
+            let k_items = [
+                format!("menu{idx_str}_items"),
+                format!("menu{idx_short}_items"),
+            ];
             let k_items_s: Vec<&str> = k_items.iter().map(|s| s.as_str()).collect();
             if let Some(items_str) = map.get_str("custommenu", &k_items_s) {
                 for item_chunk in items_str.split(';') {
@@ -1376,7 +1978,10 @@ impl SakuraCommonSettings {
                 }
             } else {
                 // Try indexed items
-                let k_cnt = [format!("menu{idx_str}_itemcount"), format!("menu{idx_short}_itemcount")];
+                let k_cnt = [
+                    format!("menu{idx_str}_itemcount"),
+                    format!("menu{idx_short}_itemcount"),
+                ];
                 let k_cnt_s: Vec<&str> = k_cnt.iter().map(|s| s.as_str()).collect();
                 let item_cnt = map.get_u32("custommenu", &k_cnt_s, 0);
                 let scan_limit = if item_cnt > 0 { item_cnt } else { 32 };
@@ -1415,9 +2020,25 @@ impl SakuraCommonSettings {
         }
 
         // 16. MainMenu
-        cfg.main_menu.show_accelerator_keys = map.get_bool("mainmenu", &["show_accelerator_keys", "bacceleratorkeys", "acceleratorkeys"], cfg.main_menu.show_accelerator_keys);
-        cfg.main_menu.hide_empty_recent = map.get_bool("mainmenu", &["hide_empty_recent", "bhideemptyrecent", "hideemptyrecent"], cfg.main_menu.hide_empty_recent);
-        cfg.main_menu.show_icons = map.get_bool("mainmenu", &["show_icons", "bshowicons", "showicons"], cfg.main_menu.show_icons);
+        cfg.main_menu.show_accelerator_keys = map.get_bool(
+            "mainmenu",
+            &[
+                "show_accelerator_keys",
+                "bacceleratorkeys",
+                "acceleratorkeys",
+            ],
+            cfg.main_menu.show_accelerator_keys,
+        );
+        cfg.main_menu.hide_empty_recent = map.get_bool(
+            "mainmenu",
+            &["hide_empty_recent", "bhideemptyrecent", "hideemptyrecent"],
+            cfg.main_menu.hide_empty_recent,
+        );
+        cfg.main_menu.show_icons = map.get_bool(
+            "mainmenu",
+            &["show_icons", "bshowicons", "showicons"],
+            cfg.main_menu.show_icons,
+        );
         if let Some(items_str) = map.get_str("mainmenu", &["customized_items", "customizeditems"]) {
             cfg.main_menu.customized_items = items_str
                 .split(',')
@@ -1427,27 +2048,100 @@ impl SakuraCommonSettings {
         }
 
         // 17. Font
-        cfg.font.font_family = map.get_string("font", &["font_family", "szfontname", "fontname", "family"], &cfg.font.font_family);
-        cfg.font.font_size_pt = map.get_f32("font", &["font_size_pt", "nfontsize", "fontsize", "size_pt"], cfg.font.font_size_pt);
-        cfg.font.line_spacing_px = map.get_i32("font", &["line_spacing_px", "nlinespacing", "linespacing", "line_space"], cfg.font.line_spacing_px);
-        cfg.font.letter_spacing_px = map.get_i32("font", &["letter_spacing_px", "nletterspacing", "letterspacing", "char_space"], cfg.font.letter_spacing_px);
+        cfg.font.font_family = map.get_string(
+            "font",
+            &["font_family", "szfontname", "fontname", "family"],
+            &cfg.font.font_family,
+        );
+        cfg.font.font_size_pt = map.get_f32(
+            "font",
+            &["font_size_pt", "nfontsize", "fontsize", "size_pt"],
+            cfg.font.font_size_pt,
+        );
+        cfg.font.line_spacing_px = map.get_i32(
+            "font",
+            &[
+                "line_spacing_px",
+                "nlinespacing",
+                "linespacing",
+                "line_space",
+            ],
+            cfg.font.line_spacing_px,
+        );
+        cfg.font.letter_spacing_px = map.get_i32(
+            "font",
+            &[
+                "letter_spacing_px",
+                "nletterspacing",
+                "letterspacing",
+                "char_space",
+            ],
+            cfg.font.letter_spacing_px,
+        );
         cfg.font.antialias = map.get_bool("font", &["antialias", "bantialias"], cfg.font.antialias);
         cfg.font.bold = map.get_bool("font", &["bold", "bbold"], cfg.font.bold);
         cfg.font.italic = map.get_bool("font", &["italic", "bitalic"], cfg.font.italic);
 
         // 18. Print
-        cfg.print.header_left = map.get_string("print", &["header_left", "szheaderleft", "headerleft"], &cfg.print.header_left);
-        cfg.print.header_center = map.get_string("print", &["header_center", "szheadercenter", "headercenter"], &cfg.print.header_center);
-        cfg.print.header_right = map.get_string("print", &["header_right", "szheaderright", "headerright"], &cfg.print.header_right);
-        cfg.print.footer_left = map.get_string("print", &["footer_left", "szfooterleft", "footerleft"], &cfg.print.footer_left);
-        cfg.print.footer_center = map.get_string("print", &["footer_center", "szfootercenter", "footercenter"], &cfg.print.footer_center);
-        cfg.print.footer_right = map.get_string("print", &["footer_right", "szfooterright", "footerright"], &cfg.print.footer_right);
-        cfg.print.margin_top_mm = map.get_u32("print", &["margin_top_mm", "nmargintop", "margintop"], cfg.print.margin_top_mm);
-        cfg.print.margin_bottom_mm = map.get_u32("print", &["margin_bottom_mm", "nmarginbottom", "marginbottom"], cfg.print.margin_bottom_mm);
-        cfg.print.margin_left_mm = map.get_u32("print", &["margin_left_mm", "nmarginleft", "marginleft"], cfg.print.margin_left_mm);
-        cfg.print.margin_right_mm = map.get_u32("print", &["margin_right_mm", "nmarginright", "marginright"], cfg.print.margin_right_mm);
-        cfg.print.print_line_numbers = map.get_bool("print", &["print_line_numbers", "bprintlinenums", "printlinenums"], cfg.print.print_line_numbers);
-        if let Some(ori) = map.get_str("print", &["orientation", "norientation", "page_orientation"]) {
+        cfg.print.header_left = map.get_string(
+            "print",
+            &["header_left", "szheaderleft", "headerleft"],
+            &cfg.print.header_left,
+        );
+        cfg.print.header_center = map.get_string(
+            "print",
+            &["header_center", "szheadercenter", "headercenter"],
+            &cfg.print.header_center,
+        );
+        cfg.print.header_right = map.get_string(
+            "print",
+            &["header_right", "szheaderright", "headerright"],
+            &cfg.print.header_right,
+        );
+        cfg.print.footer_left = map.get_string(
+            "print",
+            &["footer_left", "szfooterleft", "footerleft"],
+            &cfg.print.footer_left,
+        );
+        cfg.print.footer_center = map.get_string(
+            "print",
+            &["footer_center", "szfootercenter", "footercenter"],
+            &cfg.print.footer_center,
+        );
+        cfg.print.footer_right = map.get_string(
+            "print",
+            &["footer_right", "szfooterright", "footerright"],
+            &cfg.print.footer_right,
+        );
+        cfg.print.margin_top_mm = map.get_u32(
+            "print",
+            &["margin_top_mm", "nmargintop", "margintop"],
+            cfg.print.margin_top_mm,
+        );
+        cfg.print.margin_bottom_mm = map.get_u32(
+            "print",
+            &["margin_bottom_mm", "nmarginbottom", "marginbottom"],
+            cfg.print.margin_bottom_mm,
+        );
+        cfg.print.margin_left_mm = map.get_u32(
+            "print",
+            &["margin_left_mm", "nmarginleft", "marginleft"],
+            cfg.print.margin_left_mm,
+        );
+        cfg.print.margin_right_mm = map.get_u32(
+            "print",
+            &["margin_right_mm", "nmarginright", "marginright"],
+            cfg.print.margin_right_mm,
+        );
+        cfg.print.print_line_numbers = map.get_bool(
+            "print",
+            &["print_line_numbers", "bprintlinenums", "printlinenums"],
+            cfg.print.print_line_numbers,
+        );
+        if let Some(ori) = map.get_str(
+            "print",
+            &["orientation", "norientation", "page_orientation"],
+        ) {
             cfg.print.orientation = PrintOrientation::from_str_loose(ori);
         }
 
@@ -1458,10 +2152,14 @@ impl SakuraCommonSettings {
     pub fn to_ini(&self) -> String {
         let mut out = String::with_capacity(8192);
 
-        out.push_str("; ============================================================================\n");
+        out.push_str(
+            "; ============================================================================\n",
+        );
         out.push_str("; Sakura Editor Common Settings (18 Pages)\n");
         out.push_str("; Generated by editcore::sakura_settings\n");
-        out.push_str("; ============================================================================\n\n");
+        out.push_str(
+            "; ============================================================================\n\n",
+        );
 
         // 1. Window
         out.push_str("[Window]\n");
@@ -1470,12 +2168,24 @@ impl SakuraCommonSettings {
         out.push_str(&format!("pos_x = {}\n", self.window.pos_x));
         out.push_str(&format!("pos_y = {}\n", self.window.pos_y));
         out.push_str(&format!("center_window = {}\n", self.window.center_window));
-        out.push_str(&format!("remember_window_size = {}\n", self.window.remember_window_size));
-        out.push_str(&format!("remember_window_pos = {}\n", self.window.remember_window_pos));
+        out.push_str(&format!(
+            "remember_window_size = {}\n",
+            self.window.remember_window_size
+        ));
+        out.push_str(&format!(
+            "remember_window_pos = {}\n",
+            self.window.remember_window_pos
+        ));
         out.push_str(&format!("always_on_top = {}\n", self.window.always_on_top));
         out.push_str(&format!("opacity = {}\n", self.window.opacity));
-        out.push_str(&format!("minimize_to_tray = {}\n", self.window.minimize_to_tray));
-        out.push_str(&format!("multi_window_mode = {}\n", self.window.multi_window_mode));
+        out.push_str(&format!(
+            "minimize_to_tray = {}\n",
+            self.window.minimize_to_tray
+        ));
+        out.push_str(&format!(
+            "multi_window_mode = {}\n",
+            self.window.multi_window_mode
+        ));
         out.push_str(&format!("full_screen = {}\n\n", self.window.full_screen));
 
         // 2. TabBar
@@ -1483,82 +2193,211 @@ impl SakuraCommonSettings {
         out.push_str(&format!("visible = {}\n", self.tab_bar.visible));
         out.push_str(&format!("position = {}\n", self.tab_bar.position.as_str()));
         out.push_str(&format!("multi_row = {}\n", self.tab_bar.multi_row));
-        out.push_str(&format!("show_close_button = {}\n", self.tab_bar.show_close_button));
-        out.push_str(&format!("double_click_action = {}\n", self.tab_bar.double_click_action.as_str()));
-        out.push_str(&format!("close_on_middle_click = {}\n", self.tab_bar.close_on_middle_click));
-        out.push_str(&format!("close_on_right_click = {}\n", self.tab_bar.close_on_right_click));
-        out.push_str(&format!("wheel_tab_switch = {}\n", self.tab_bar.wheel_tab_switch));
-        out.push_str(&format!("drag_drop_reorder = {}\n", self.tab_bar.drag_drop_reorder));
-        out.push_str(&format!("distinguish_same_name = {}\n", self.tab_bar.distinguish_same_name));
+        out.push_str(&format!(
+            "show_close_button = {}\n",
+            self.tab_bar.show_close_button
+        ));
+        out.push_str(&format!(
+            "double_click_action = {}\n",
+            self.tab_bar.double_click_action.as_str()
+        ));
+        out.push_str(&format!(
+            "close_on_middle_click = {}\n",
+            self.tab_bar.close_on_middle_click
+        ));
+        out.push_str(&format!(
+            "close_on_right_click = {}\n",
+            self.tab_bar.close_on_right_click
+        ));
+        out.push_str(&format!(
+            "wheel_tab_switch = {}\n",
+            self.tab_bar.wheel_tab_switch
+        ));
+        out.push_str(&format!(
+            "drag_drop_reorder = {}\n",
+            self.tab_bar.drag_drop_reorder
+        ));
+        out.push_str(&format!(
+            "distinguish_same_name = {}\n",
+            self.tab_bar.distinguish_same_name
+        ));
         out.push_str(&format!("tab_width_max = {}\n", self.tab_bar.tab_width_max));
-        out.push_str(&format!("tab_width_min = {}\n\n", self.tab_bar.tab_width_min));
+        out.push_str(&format!(
+            "tab_width_min = {}\n\n",
+            self.tab_bar.tab_width_min
+        ));
 
         // 3. Edit
         out.push_str("[Edit]\n");
         out.push_str(&format!("tab_width = {}\n", self.edit.tab_width));
         out.push_str(&format!("indent_width = {}\n", self.edit.indent_width));
-        out.push_str(&format!("use_spaces_for_tab = {}\n", self.edit.use_spaces_for_tab));
+        out.push_str(&format!(
+            "use_spaces_for_tab = {}\n",
+            self.edit.use_spaces_for_tab
+        ));
         out.push_str(&format!("smart_indent = {}\n", self.edit.smart_indent));
         out.push_str(&format!("auto_indent = {}\n", self.edit.auto_indent));
-        out.push_str(&format!("auto_save_enabled = {}\n", self.edit.auto_save_enabled));
-        out.push_str(&format!("auto_save_interval_sec = {}\n", self.edit.auto_save_interval_sec));
+        out.push_str(&format!(
+            "auto_save_enabled = {}\n",
+            self.edit.auto_save_enabled
+        ));
+        out.push_str(&format!(
+            "auto_save_interval_sec = {}\n",
+            self.edit.auto_save_interval_sec
+        ));
         out.push_str(&format!("overwrite_mode = {}\n", self.edit.overwrite_mode));
         out.push_str(&format!("drag_drop_edit = {}\n", self.edit.drag_drop_edit));
-        out.push_str(&format!("copy_line_when_empty_selection = {}\n", self.edit.copy_line_when_empty_selection));
+        out.push_str(&format!(
+            "copy_line_when_empty_selection = {}\n",
+            self.edit.copy_line_when_empty_selection
+        ));
         out.push_str(&format!("scroll_smooth = {}\n", self.edit.scroll_smooth));
-        out.push_str(&format!("scroll_past_end_of_line = {}\n\n", self.edit.scroll_past_end_of_line));
+        out.push_str(&format!(
+            "scroll_past_end_of_line = {}\n\n",
+            self.edit.scroll_past_end_of_line
+        ));
 
         // 4. File
         out.push_str("[File]\n");
-        out.push_str(&format!("default_encoding = {}\n", self.file.default_encoding));
+        out.push_str(&format!(
+            "default_encoding = {}\n",
+            self.file.default_encoding
+        ));
         out.push_str(&format!("default_eol = {}\n", self.file.default_eol));
-        out.push_str(&format!("file_lock_exclusive = {}\n", self.file.file_lock_exclusive));
-        out.push_str(&format!("recent_files_max = {}\n", self.file.recent_files_max));
-        out.push_str(&format!("recent_folders_max = {}\n", self.file.recent_folders_max));
-        out.push_str(&format!("auto_reload_changed = {}\n", self.file.auto_reload_changed));
-        out.push_str(&format!("alert_file_deleted = {}\n", self.file.alert_file_deleted));
+        out.push_str(&format!(
+            "file_lock_exclusive = {}\n",
+            self.file.file_lock_exclusive
+        ));
+        out.push_str(&format!(
+            "recent_files_max = {}\n",
+            self.file.recent_files_max
+        ));
+        out.push_str(&format!(
+            "recent_folders_max = {}\n",
+            self.file.recent_folders_max
+        ));
+        out.push_str(&format!(
+            "auto_reload_changed = {}\n",
+            self.file.auto_reload_changed
+        ));
+        out.push_str(&format!(
+            "alert_file_deleted = {}\n",
+            self.file.alert_file_deleted
+        ));
         out.push_str(&format!("backup_enabled = {}\n", self.file.backup_enabled));
         out.push_str(&format!("backup_folder = {}\n", self.file.backup_folder));
-        out.push_str(&format!("backup_extension = {}\n", self.file.backup_extension));
-        out.push_str(&format!("backup_count_max = {}\n", self.file.backup_count_max));
-        out.push_str(&format!("restore_cursor_pos = {}\n\n", self.file.restore_cursor_pos));
+        out.push_str(&format!(
+            "backup_extension = {}\n",
+            self.file.backup_extension
+        ));
+        out.push_str(&format!(
+            "backup_count_max = {}\n",
+            self.file.backup_count_max
+        ));
+        out.push_str(&format!(
+            "restore_cursor_pos = {}\n\n",
+            self.file.restore_cursor_pos
+        ));
 
         // 5. Search
         out.push_str("[Search]\n");
-        out.push_str(&format!("case_sensitive = {}\n", self.search.case_sensitive));
+        out.push_str(&format!(
+            "case_sensitive = {}\n",
+            self.search.case_sensitive
+        ));
         out.push_str(&format!("whole_word = {}\n", self.search.whole_word));
         out.push_str(&format!("regex_enabled = {}\n", self.search.regex_enabled));
-        out.push_str(&format!("lookaround_enabled = {}\n", self.search.lookaround_enabled));
+        out.push_str(&format!(
+            "lookaround_enabled = {}\n",
+            self.search.lookaround_enabled
+        ));
         out.push_str(&format!("search_wrap = {}\n", self.search.search_wrap));
-        out.push_str(&format!("search_backwards = {}\n", self.search.search_backwards));
-        out.push_str(&format!("highlight_all_matches = {}\n", self.search.highlight_all_matches));
-        out.push_str(&format!("search_history_max = {}\n", self.search.search_history_max));
-        out.push_str(&format!("replace_history_max = {}\n", self.search.replace_history_max));
-        out.push_str(&format!("auto_close_dialog = {}\n", self.search.auto_close_dialog));
+        out.push_str(&format!(
+            "search_backwards = {}\n",
+            self.search.search_backwards
+        ));
+        out.push_str(&format!(
+            "highlight_all_matches = {}\n",
+            self.search.highlight_all_matches
+        ));
+        out.push_str(&format!(
+            "search_history_max = {}\n",
+            self.search.search_history_max
+        ));
+        out.push_str(&format!(
+            "replace_history_max = {}\n",
+            self.search.replace_history_max
+        ));
+        out.push_str(&format!(
+            "auto_close_dialog = {}\n",
+            self.search.auto_close_dialog
+        ));
         out.push_str(&format!("use_migemo = {}\n\n", self.search.use_migemo));
 
         // 6. Format
         out.push_str("[Format]\n");
         out.push_str(&format!("wrap_mode = {}\n", self.format.wrap_mode.as_str()));
         out.push_str(&format!("wrap_columns = {}\n", self.format.wrap_columns));
-        out.push_str(&format!("kinsoku_head_enabled = {}\n", self.format.kinsoku_head_enabled));
-        out.push_str(&format!("kinsoku_tail_enabled = {}\n", self.format.kinsoku_tail_enabled));
-        out.push_str(&format!("kinsoku_push_enabled = {}\n", self.format.kinsoku_push_enabled));
-        out.push_str(&format!("kinsoku_head = {}\n", self.format.kinsoku_chars.head_chars()));
-        out.push_str(&format!("kinsoku_tail = {}\n", self.format.kinsoku_chars.tail_chars()));
-        out.push_str(&format!("show_line_numbers = {}\n", self.format.show_line_numbers));
+        out.push_str(&format!(
+            "kinsoku_head_enabled = {}\n",
+            self.format.kinsoku_head_enabled
+        ));
+        out.push_str(&format!(
+            "kinsoku_tail_enabled = {}\n",
+            self.format.kinsoku_tail_enabled
+        ));
+        out.push_str(&format!(
+            "kinsoku_push_enabled = {}\n",
+            self.format.kinsoku_push_enabled
+        ));
+        out.push_str(&format!(
+            "kinsoku_head = {}\n",
+            self.format.kinsoku_chars.head_chars()
+        ));
+        out.push_str(&format!(
+            "kinsoku_tail = {}\n",
+            self.format.kinsoku_chars.tail_chars()
+        ));
+        out.push_str(&format!(
+            "show_line_numbers = {}\n",
+            self.format.show_line_numbers
+        ));
         out.push_str(&format!("show_ruler = {}\n\n", self.format.show_ruler));
 
         // 7. Assist
         out.push_str("[Assist]\n");
-        out.push_str(&format!("auto_complete_enabled = {}\n", self.assist.auto_complete_enabled));
-        out.push_str(&format!("min_char_trigger = {}\n", self.assist.min_char_trigger));
-        out.push_str(&format!("show_candidate_list = {}\n", self.assist.show_candidate_list));
-        out.push_str(&format!("dictionary_path = {}\n", self.assist.dictionary_path));
-        out.push_str(&format!("use_words_in_doc = {}\n", self.assist.use_words_in_doc));
-        out.push_str(&format!("matching_paren_highlight = {}\n", self.assist.matching_paren_highlight));
-        out.push_str(&format!("auto_close_brackets = {}\n", self.assist.auto_close_brackets));
-        out.push_str(&format!("candidate_max_count = {}\n\n", self.assist.candidate_max_count));
+        out.push_str(&format!(
+            "auto_complete_enabled = {}\n",
+            self.assist.auto_complete_enabled
+        ));
+        out.push_str(&format!(
+            "min_char_trigger = {}\n",
+            self.assist.min_char_trigger
+        ));
+        out.push_str(&format!(
+            "show_candidate_list = {}\n",
+            self.assist.show_candidate_list
+        ));
+        out.push_str(&format!(
+            "dictionary_path = {}\n",
+            self.assist.dictionary_path
+        ));
+        out.push_str(&format!(
+            "use_words_in_doc = {}\n",
+            self.assist.use_words_in_doc
+        ));
+        out.push_str(&format!(
+            "matching_paren_highlight = {}\n",
+            self.assist.matching_paren_highlight
+        ));
+        out.push_str(&format!(
+            "auto_close_brackets = {}\n",
+            self.assist.auto_close_brackets
+        ));
+        out.push_str(&format!(
+            "candidate_max_count = {}\n\n",
+            self.assist.candidate_max_count
+        ));
 
         // 8. Macro
         out.push_str("[Macro]\n");
@@ -1567,7 +2406,11 @@ impl SakuraCommonSettings {
             out.push_str(&format!("Slot{:02}_Name = {}\n", idx, slot.name));
             out.push_str(&format!("Slot{:02}_Path = {}\n", idx, slot.path));
             out.push_str(&format!("Slot{:02}_Reload = {}\n", idx, slot.reload_on_run));
-            out.push_str(&format!("Slot{:02}_Trigger = {}\n", idx, slot.trigger.as_str()));
+            out.push_str(&format!(
+                "Slot{:02}_Trigger = {}\n",
+                idx,
+                slot.trigger.as_str()
+            ));
             out.push_str(&format!("Slot{:02}_Params = {}\n", idx, slot.params));
         }
         out.push('\n');
@@ -1575,23 +2418,56 @@ impl SakuraCommonSettings {
         // 9. StatusBar
         out.push_str("[StatusBar]\n");
         out.push_str(&format!("visible = {}\n", self.status_bar.visible));
-        out.push_str(&format!("show_caret_pos = {}\n", self.status_bar.show_caret_pos));
-        out.push_str(&format!("show_char_code = {}\n", self.status_bar.show_char_code));
-        out.push_str(&format!("show_encoding = {}\n", self.status_bar.show_encoding));
+        out.push_str(&format!(
+            "show_caret_pos = {}\n",
+            self.status_bar.show_caret_pos
+        ));
+        out.push_str(&format!(
+            "show_char_code = {}\n",
+            self.status_bar.show_char_code
+        ));
+        out.push_str(&format!(
+            "show_encoding = {}\n",
+            self.status_bar.show_encoding
+        ));
         out.push_str(&format!("show_eol = {}\n", self.status_bar.show_eol));
-        out.push_str(&format!("show_modified = {}\n", self.status_bar.show_modified));
-        out.push_str(&format!("show_ins_ovr = {}\n", self.status_bar.show_ins_ovr));
-        out.push_str(&format!("show_file_size = {}\n", self.status_bar.show_file_size));
+        out.push_str(&format!(
+            "show_modified = {}\n",
+            self.status_bar.show_modified
+        ));
+        out.push_str(&format!(
+            "show_ins_ovr = {}\n",
+            self.status_bar.show_ins_ovr
+        ));
+        out.push_str(&format!(
+            "show_file_size = {}\n",
+            self.status_bar.show_file_size
+        ));
         out.push_str(&format!("show_zoom = {}\n", self.status_bar.show_zoom));
-        out.push_str(&format!("show_line_count = {}\n\n", self.status_bar.show_line_count));
+        out.push_str(&format!(
+            "show_line_count = {}\n\n",
+            self.status_bar.show_line_count
+        ));
 
         // 10. Plugin
         out.push_str("[Plugin]\n");
-        out.push_str(&format!("auto_scan_plugins = {}\n", self.plugin.auto_scan_plugins));
+        out.push_str(&format!(
+            "auto_scan_plugins = {}\n",
+            self.plugin.auto_scan_plugins
+        ));
         out.push_str(&format!("plugin_dir = {}\n", self.plugin.plugin_dir));
-        out.push_str(&format!("enabled_plugins = {}\n", self.plugin.enabled_plugins.join(",")));
-        out.push_str(&format!("security_level = {}\n", self.plugin.security_level));
-        out.push_str(&format!("allow_network = {}\n\n", self.plugin.allow_network));
+        out.push_str(&format!(
+            "enabled_plugins = {}\n",
+            self.plugin.enabled_plugins.join(",")
+        ));
+        out.push_str(&format!(
+            "security_level = {}\n",
+            self.plugin.security_level
+        ));
+        out.push_str(&format!(
+            "allow_network = {}\n\n",
+            self.plugin.allow_network
+        ));
 
         // 11. Toolbar
         out.push_str("[Toolbar]\n");
@@ -1604,18 +2480,42 @@ impl SakuraCommonSettings {
         // 12. KeySearch
         out.push_str("[KeySearch]\n");
         out.push_str(&format!("enabled = {}\n", self.key_search.enabled));
-        out.push_str(&format!("dictionary_lookup_url = {}\n", self.key_search.dictionary_lookup_url));
+        out.push_str(&format!(
+            "dictionary_lookup_url = {}\n",
+            self.key_search.dictionary_lookup_url
+        ));
         out.push_str(&format!("hotkey = {}\n", self.key_search.hotkey));
-        out.push_str(&format!("auto_search_selected = {}\n", self.key_search.auto_search_selected));
-        out.push_str(&format!("open_in_external_browser = {}\n\n", self.key_search.open_in_external_browser));
+        out.push_str(&format!(
+            "auto_search_selected = {}\n",
+            self.key_search.auto_search_selected
+        ));
+        out.push_str(&format!(
+            "open_in_external_browser = {}\n\n",
+            self.key_search.open_in_external_browser
+        ));
 
         // 13. ExecCmd
         out.push_str("[ExecCmd]\n");
-        out.push_str(&format!("default_shell = {}\n", self.exec_cmd.default_shell));
-        out.push_str(&format!("capture_output = {}\n", self.exec_cmd.capture_output));
-        out.push_str(&format!("run_in_background = {}\n", self.exec_cmd.run_in_background));
-        out.push_str(&format!("show_console_window = {}\n", self.exec_cmd.show_console_window));
-        out.push_str(&format!("command_count = {}\n", self.exec_cmd.commands.len()));
+        out.push_str(&format!(
+            "default_shell = {}\n",
+            self.exec_cmd.default_shell
+        ));
+        out.push_str(&format!(
+            "capture_output = {}\n",
+            self.exec_cmd.capture_output
+        ));
+        out.push_str(&format!(
+            "run_in_background = {}\n",
+            self.exec_cmd.run_in_background
+        ));
+        out.push_str(&format!(
+            "show_console_window = {}\n",
+            self.exec_cmd.show_console_window
+        ));
+        out.push_str(&format!(
+            "command_count = {}\n",
+            self.exec_cmd.commands.len()
+        ));
         for (i, cmd) in self.exec_cmd.commands.iter().enumerate() {
             let idx = i + 1;
             out.push_str(&format!("Cmd{:02}_Id = {}\n", idx, cmd.id));
@@ -1628,14 +2528,20 @@ impl SakuraCommonSettings {
 
         // 14. ColorPalette
         out.push_str("[ColorPalette]\n");
-        out.push_str(&format!("scheme_name = {}\n", self.color_palette.scheme_name));
+        out.push_str(&format!(
+            "scheme_name = {}\n",
+            self.color_palette.scheme_name
+        ));
         for (i, color) in self.color_palette.colors.iter().enumerate() {
             let idx = i + 1;
             out.push_str(&format!("Color{:02}_Name = {}\n", idx, color.name));
             out.push_str(&format!("Color{:02}_Fore = {}\n", idx, color.foreground));
             out.push_str(&format!("Color{:02}_Back = {}\n", idx, color.background));
             out.push_str(&format!("Color{:02}_Bold = {}\n", idx, color.bold));
-            out.push_str(&format!("Color{:02}_Underline = {}\n", idx, color.underline));
+            out.push_str(&format!(
+                "Color{:02}_Underline = {}\n",
+                idx, color.underline
+            ));
         }
         out.push('\n');
 
@@ -1644,27 +2550,49 @@ impl SakuraCommonSettings {
         for (i, slot) in self.custom_menu.slots.iter().enumerate() {
             let idx = i + 1;
             out.push_str(&format!("Menu{:02}_Title = {}\n", idx, slot.title));
-            out.push_str(&format!("Menu{:02}_ItemCount = {}\n", idx, slot.items.len()));
+            out.push_str(&format!(
+                "Menu{:02}_ItemCount = {}\n",
+                idx,
+                slot.items.len()
+            ));
             for (j, item) in slot.items.iter().enumerate() {
                 let jdx = j + 1;
-                out.push_str(&format!("Menu{:02}_Item{:02} = {},{}\n", idx, jdx, item.label, item.command));
+                out.push_str(&format!(
+                    "Menu{:02}_Item{:02} = {},{}\n",
+                    idx, jdx, item.label, item.command
+                ));
             }
         }
         out.push('\n');
 
         // 16. MainMenu
         out.push_str("[MainMenu]\n");
-        out.push_str(&format!("show_accelerator_keys = {}\n", self.main_menu.show_accelerator_keys));
-        out.push_str(&format!("hide_empty_recent = {}\n", self.main_menu.hide_empty_recent));
+        out.push_str(&format!(
+            "show_accelerator_keys = {}\n",
+            self.main_menu.show_accelerator_keys
+        ));
+        out.push_str(&format!(
+            "hide_empty_recent = {}\n",
+            self.main_menu.hide_empty_recent
+        ));
         out.push_str(&format!("show_icons = {}\n", self.main_menu.show_icons));
-        out.push_str(&format!("customized_items = {}\n\n", self.main_menu.customized_items.join(",")));
+        out.push_str(&format!(
+            "customized_items = {}\n\n",
+            self.main_menu.customized_items.join(",")
+        ));
 
         // 17. Font
         out.push_str("[Font]\n");
         out.push_str(&format!("font_family = {}\n", self.font.font_family));
         out.push_str(&format!("font_size_pt = {}\n", self.font.font_size_pt));
-        out.push_str(&format!("line_spacing_px = {}\n", self.font.line_spacing_px));
-        out.push_str(&format!("letter_spacing_px = {}\n", self.font.letter_spacing_px));
+        out.push_str(&format!(
+            "line_spacing_px = {}\n",
+            self.font.line_spacing_px
+        ));
+        out.push_str(&format!(
+            "letter_spacing_px = {}\n",
+            self.font.letter_spacing_px
+        ));
         out.push_str(&format!("antialias = {}\n", self.font.antialias));
         out.push_str(&format!("bold = {}\n", self.font.bold));
         out.push_str(&format!("italic = {}\n\n", self.font.italic));
@@ -1678,11 +2606,23 @@ impl SakuraCommonSettings {
         out.push_str(&format!("footer_center = {}\n", self.print.footer_center));
         out.push_str(&format!("footer_right = {}\n", self.print.footer_right));
         out.push_str(&format!("margin_top_mm = {}\n", self.print.margin_top_mm));
-        out.push_str(&format!("margin_bottom_mm = {}\n", self.print.margin_bottom_mm));
+        out.push_str(&format!(
+            "margin_bottom_mm = {}\n",
+            self.print.margin_bottom_mm
+        ));
         out.push_str(&format!("margin_left_mm = {}\n", self.print.margin_left_mm));
-        out.push_str(&format!("margin_right_mm = {}\n", self.print.margin_right_mm));
-        out.push_str(&format!("print_line_numbers = {}\n", self.print.print_line_numbers));
-        out.push_str(&format!("orientation = {}\n", self.print.orientation.as_str()));
+        out.push_str(&format!(
+            "margin_right_mm = {}\n",
+            self.print.margin_right_mm
+        ));
+        out.push_str(&format!(
+            "print_line_numbers = {}\n",
+            self.print.print_line_numbers
+        ));
+        out.push_str(&format!(
+            "orientation = {}\n",
+            self.print.orientation.as_str()
+        ));
 
         out
     }

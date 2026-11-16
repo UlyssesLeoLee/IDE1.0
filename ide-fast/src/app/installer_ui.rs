@@ -470,7 +470,8 @@ impl App {
                 t.set_resident_checked(self.cfg.tray_resident);
             }
 
-            self.installer.status_msg = Some("✓ 首选配置与系统集成选项已成功应用并保存！".to_string());
+            self.installer.status_msg =
+                Some("✓ 首选配置与系统集成选项已成功应用并保存！".to_string());
             self.cur().tip = "安装向导首选配置已生效".into();
         }
     }
@@ -488,7 +489,12 @@ fn paint_comic_hard_shadow_rect(
         p.rect_filled(rect.translate(shadow_offset), 0.0, Color32::BLACK);
     }
     p.rect_filled(rect, 0.0, fill_col);
-    p.rect_stroke(rect, 0.0, Stroke::new(border_w, Color32::BLACK), StrokeKind::Inside);
+    p.rect_stroke(
+        rect,
+        0.0,
+        Stroke::new(border_w, Color32::BLACK),
+        StrokeKind::Inside,
+    );
 }
 
 /// 绘制波普半色调网点 (Ben-Day Screentone Dots)
@@ -528,7 +534,11 @@ fn paint_comic_burst_star(
     // 纯黑硬阴影
     if shadow_offset.x > 0.0 || shadow_offset.y > 0.0 {
         let shadow_pts = pts.iter().map(|pt| *pt + shadow_offset).collect::<Vec<_>>();
-        p.add(egui::Shape::convex_polygon(shadow_pts, Color32::BLACK, Stroke::NONE));
+        p.add(egui::Shape::convex_polygon(
+            shadow_pts,
+            Color32::BLACK,
+            Stroke::NONE,
+        ));
     }
 
     // 主星形
@@ -595,40 +605,81 @@ fn paint_cel_shaded_gem_logo(p: &egui::Painter, center: egui::Pos2, r: f32) {
         pos2(center.x - r * 0.25, center.y - r * 0.4),
         pos2(center.x, center.y - r * 0.2),
     ];
-    p.add(egui::Shape::convex_polygon(hi_poly, Color32::WHITE, Stroke::NONE));
+    p.add(egui::Shape::convex_polygon(
+        hi_poly,
+        Color32::WHITE,
+        Stroke::NONE,
+    ));
 }
 
 /// 绘制美漫爱奥尼古典柱台 (Ionic Comic Pedestal)
 fn paint_ionic_comic_pedestal(p: &egui::Painter, cx: f32, top_y: f32) {
     // 1. 柱头 Capital
     let cap_rect = Rect::from_center_size(pos2(cx, top_y + 8.0), vec2(90.0, 16.0));
-    paint_comic_hard_shadow_rect(p, cap_rect, Color32::from_rgb(240, 240, 245), 2.0, vec2(0.0, 0.0));
+    paint_comic_hard_shadow_rect(
+        p,
+        cap_rect,
+        Color32::from_rgb(240, 240, 245),
+        2.0,
+        vec2(0.0, 0.0),
+    );
     // 卷涡 Volutes
-    p.circle_stroke(pos2(cap_rect.left() + 10.0, cap_rect.center().y), 6.0, Stroke::new(1.8, Color32::BLACK));
-    p.circle_stroke(pos2(cap_rect.right() - 10.0, cap_rect.center().y), 6.0, Stroke::new(1.8, Color32::BLACK));
+    p.circle_stroke(
+        pos2(cap_rect.left() + 10.0, cap_rect.center().y),
+        6.0,
+        Stroke::new(1.8, Color32::BLACK),
+    );
+    p.circle_stroke(
+        pos2(cap_rect.right() - 10.0, cap_rect.center().y),
+        6.0,
+        Stroke::new(1.8, Color32::BLACK),
+    );
 
     // 2. 柱身 Shaft (Fluted with 2-Tone Cel Shading)
     let shaft_rect = Rect::from_center_size(pos2(cx, top_y + 48.0), vec2(72.0, 64.0));
-    paint_comic_hard_shadow_rect(p, shaft_rect, Color32::from_rgb(220, 225, 235), 2.0, vec2(0.0, 0.0));
+    paint_comic_hard_shadow_rect(
+        p,
+        shaft_rect,
+        Color32::from_rgb(220, 225, 235),
+        2.0,
+        vec2(0.0, 0.0),
+    );
     for fx in [-24.0, -12.0, 0.0, 12.0, 24.0] {
         let x = cx + fx;
         p.line_segment(
-            [pos2(x, shaft_rect.top() + 2.0), pos2(x, shaft_rect.bottom() - 2.0)],
+            [
+                pos2(x, shaft_rect.top() + 2.0),
+                pos2(x, shaft_rect.bottom() - 2.0),
+            ],
             Stroke::new(3.0, Color32::from_rgb(170, 180, 200)),
         );
         p.line_segment(
-            [pos2(x - 1.0, shaft_rect.top() + 2.0), pos2(x - 1.0, shaft_rect.bottom() - 2.0)],
+            [
+                pos2(x - 1.0, shaft_rect.top() + 2.0),
+                pos2(x - 1.0, shaft_rect.bottom() - 2.0),
+            ],
             Stroke::new(1.2, Color32::BLACK),
         );
     }
 
     // 3. 柱础 Base
     let base_rect = Rect::from_center_size(pos2(cx, top_y + 88.0), vec2(96.0, 16.0));
-    paint_comic_hard_shadow_rect(p, base_rect, Color32::from_rgb(245, 245, 250), 2.0, vec2(0.0, 0.0));
+    paint_comic_hard_shadow_rect(
+        p,
+        base_rect,
+        Color32::from_rgb(245, 245, 250),
+        2.0,
+        vec2(0.0, 0.0),
+    );
     // 希腊黄金回形饰带 (Gold Greek Accent Band)
     let gold_band = Rect::from_center_size(pos2(cx, top_y + 88.0), vec2(88.0, 6.0));
     p.rect_filled(gold_band, 0.0, Color32::from_rgb(255, 204, 0));
-    p.rect_stroke(gold_band, 0.0, Stroke::new(1.0, Color32::BLACK), StrokeKind::Inside);
+    p.rect_stroke(
+        gold_band,
+        0.0,
+        Stroke::new(1.0, Color32::BLACK),
+        StrokeKind::Inside,
+    );
 }
 
 /// 美漫风格动作按钮 (带有纯黑硬阴影与按压位移反馈)
@@ -662,7 +713,8 @@ fn comic_action_button(
 
     paint_comic_hard_shadow_rect(p, draw_rect, btn_color, 2.2, s_off);
 
-    let text_col = if primary || (btn_color.r() > 180 && btn_color.g() > 180 && btn_color.b() > 180) {
+    let text_col = if primary || (btn_color.r() > 180 && btn_color.g() > 180 && btn_color.b() > 180)
+    {
         Color32::BLACK
     } else {
         Color32::WHITE
@@ -698,10 +750,18 @@ fn comic_interactive_card(
     } else {
         rect
     };
-    let s_off = if is_down { vec2(1.5, 1.5) } else { vec2(3.0, 3.0) };
+    let s_off = if is_down {
+        vec2(1.5, 1.5)
+    } else {
+        vec2(3.0, 3.0)
+    };
 
     let card_bg = if *checked {
-        if hovered { Color32::from_rgb(32, 38, 60) } else { Color32::from_rgb(26, 31, 50) }
+        if hovered {
+            Color32::from_rgb(32, 38, 60)
+        } else {
+            Color32::from_rgb(26, 31, 50)
+        }
     } else if hovered {
         Color32::from_rgb(24, 28, 44)
     } else {
@@ -773,7 +833,13 @@ fn comic_interactive_card(
         vec2(66.0, 22.0),
     );
     if *checked {
-        paint_comic_hard_shadow_rect(p, stamp_rect, Color32::from_rgb(255, 230, 0), 1.5, vec2(1.5, 1.5));
+        paint_comic_hard_shadow_rect(
+            p,
+            stamp_rect,
+            Color32::from_rgb(255, 230, 0),
+            1.5,
+            vec2(1.5, 1.5),
+        );
         p.text(
             stamp_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -782,7 +848,13 @@ fn comic_interactive_card(
             Color32::BLACK,
         );
     } else {
-        paint_comic_hard_shadow_rect(p, stamp_rect, Color32::from_rgb(45, 52, 72), 1.5, vec2(1.5, 1.5));
+        paint_comic_hard_shadow_rect(
+            p,
+            stamp_rect,
+            Color32::from_rgb(45, 52, 72),
+            1.5,
+            vec2(1.5, 1.5),
+        );
         p.text(
             stamp_rect.center(),
             egui::Align2::CENTER_CENTER,

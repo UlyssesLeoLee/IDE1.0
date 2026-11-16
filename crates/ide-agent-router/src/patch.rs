@@ -77,7 +77,8 @@ impl PatchEngine {
                 if &target_unit.node_fingerprint != expected_fp {
                     return Err(PatchError::SemanticWriteConflict {
                         symbol: proposal.symbol_path.clone(),
-                        reason: "Target symbol body was concurrently modified by another commit".to_string(),
+                        reason: "Target symbol body was concurrently modified by another commit"
+                            .to_string(),
                     });
                 }
             }

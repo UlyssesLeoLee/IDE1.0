@@ -144,7 +144,12 @@ fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
 
 fn split_installer_flag(args: Vec<String>) -> (bool, Vec<String>) {
     let install = args.iter().any(|a| a == "--setup" || a == "--install");
-    (install, args.into_iter().filter(|a| a != "--setup" && a != "--install").collect())
+    (
+        install,
+        args.into_iter()
+            .filter(|a| a != "--setup" && a != "--install")
+            .collect(),
+    )
 }
 
 fn main() -> eframe::Result<()> {

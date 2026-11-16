@@ -641,7 +641,8 @@ impl Settings {
         st("default_encoding", &mut self.default_encoding);
         st("default_eol", &mut self.default_eol);
         st("font_family", &mut self.font_family);
-        self.font_family = crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
+        self.font_family =
+            crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
         st("font_cjk_fallback", &mut self.font_cjk_fallback);
         if let Some(f) = v["font_px"].as_f64() {
             self.font_px = (f as f32).clamp(8.0, 40.0);
@@ -983,7 +984,10 @@ impl Settings {
             let num = |k: &str| get(k).and_then(|v| v.parse::<i64>().ok());
             let flag = |k: &str| num(k).map(|x| x != 0);
             if section == "Common" {
-                if let Some(name) = get("szFontFace").or_else(|| get("szFontName")).or_else(|| get("szFont")) {
+                if let Some(name) = get("szFontFace")
+                    .or_else(|| get("szFontName"))
+                    .or_else(|| get("szFont"))
+                {
                     if !name.trim().is_empty() {
                         self.font_family = name.trim().to_string();
                         n += 1;
@@ -991,7 +995,11 @@ impl Settings {
                 }
                 if let Some(sz) = num("nFontSize") {
                     if sz > 0 {
-                        let px = if sz > 50 { (sz as f32 / 10.0) * 1.33 } else { sz as f32 };
+                        let px = if sz > 50 {
+                            (sz as f32 / 10.0) * 1.33
+                        } else {
+                            sz as f32
+                        };
                         self.font_px = px.clamp(8.0, 40.0);
                         n += 1;
                     }
@@ -1203,7 +1211,8 @@ impl Settings {
             update_last_check: self.update_last_check,
             ..o.clone()
         };
-        self.font_family = crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
+        self.font_family =
+            crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
         self.recent.truncate(self.mru_files.max(1));
     }
 

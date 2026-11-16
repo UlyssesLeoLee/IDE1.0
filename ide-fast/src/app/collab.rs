@@ -217,7 +217,11 @@ pub fn extract_patch_lines(text: &str) -> Vec<String> {
 pub fn sanitize_nema_token(input: &str) -> String {
     let mut out = String::new();
     for ch in input.trim().chars() {
-        if ch.is_ascii_alphanumeric() || ('\u{4e00}'..='\u{9fff}').contains(&ch) || ch == '_' || ch == '-' {
+        if ch.is_ascii_alphanumeric()
+            || ('\u{4e00}'..='\u{9fff}').contains(&ch)
+            || ch == '_'
+            || ch == '-'
+        {
             out.push(ch);
             if out.chars().count() >= 24 {
                 break;
@@ -292,7 +296,8 @@ fn apply_nema_collab_edit(
         return Err("无法定位有效的 .nema 域头，未能应用协同编辑".into());
     }
 
-    let mut domain_appends: Vec<Vec<(usize, String, String)>> = vec![Vec::new(); rendered.domains.len()];
+    let mut domain_appends: Vec<Vec<(usize, String, String)>> =
+        vec![Vec::new(); rendered.domains.len()];
     let mut replacements: std::collections::HashMap<usize, (usize, String, String)> =
         std::collections::HashMap::new();
 
@@ -303,7 +308,10 @@ fn apply_nema_collab_edit(
         let d_idx = idx % rendered.domains.len().min(header_indices.len());
         let domain = &rendered.domains[d_idx];
         let d_start = header_indices[d_idx];
-        let d_end = header_indices.get(d_idx + 1).copied().unwrap_or(lines.len());
+        let d_end = header_indices
+            .get(d_idx + 1)
+            .copied()
+            .unwrap_or(lines.len());
 
         let (rec_line, summary) = match domain.mode {
             DomainMode::FiveWOneH => (
@@ -316,7 +324,11 @@ fn apply_nema_collab_edit(
             ),
             DomainMode::Table => {
                 let col_cnt = domain.columns.len().max(1);
-                let mut cols = vec![format!("Agent{}", idx + 1), task_tok.clone(), "Verified".to_string()];
+                let mut cols = vec![
+                    format!("Agent{}", idx + 1),
+                    task_tok.clone(),
+                    "Verified".to_string(),
+                ];
                 if col_cnt < cols.len() {
                     cols.truncate(col_cnt);
                 } else {
@@ -358,7 +370,10 @@ fn apply_nema_collab_edit(
 
     for d_idx in 0..header_indices.len() {
         let start = header_indices[d_idx];
-        let end = header_indices.get(d_idx + 1).copied().unwrap_or(lines.len());
+        let end = header_indices
+            .get(d_idx + 1)
+            .copied()
+            .unwrap_or(lines.len());
         for li in start..end {
             if let Some((agent_idx, new_line, summary)) = replacements.get(&li) {
                 let out_row = out_lines.len();
@@ -430,7 +445,10 @@ fn apply_nema_collab_edit(
         applied += 1;
     }
     doc.remote_cursors = new_cursors;
-    doc.tip = format!("多 Agent 已语法安全并行协同更新 {} 处 .nema 域记录", applied);
+    doc.tip = format!(
+        "多 Agent 已语法安全并行协同更新 {} 处 .nema 域记录",
+        applied
+    );
     Ok(applied)
 }
 
@@ -469,11 +487,26 @@ pub struct SubAgent {
 impl SubAgent {
     pub fn new(index: usize) -> Self {
         let (name, role): (String, &'static str) = match index {
-            0 => ("Agent #1 (编码员)".to_string(), "负责核心代码生成、算法实现与模块架构落地"),
-            1 => ("Agent #2 (审查员)".to_string(), "负责质量审查、边界校验、安全性与不变量审核"),
-            2 => ("Agent #3 (测试员)".to_string(), "负责测试用例构建、异常模拟与回归验证"),
-            3 => ("Agent #4 (优化员)".to_string(), "负责性能瓶颈排查、并发同步与系统资源优化"),
-            4 => ("Agent #5 (架构员)".to_string(), "负责跨模块接口设计与契约约束"),
+            0 => (
+                "Agent #1 (编码员)".to_string(),
+                "负责核心代码生成、算法实现与模块架构落地",
+            ),
+            1 => (
+                "Agent #2 (审查员)".to_string(),
+                "负责质量审查、边界校验、安全性与不变量审核",
+            ),
+            2 => (
+                "Agent #3 (测试员)".to_string(),
+                "负责测试用例构建、异常模拟与回归验证",
+            ),
+            3 => (
+                "Agent #4 (优化员)".to_string(),
+                "负责性能瓶颈排查、并发同步与系统资源优化",
+            ),
+            4 => (
+                "Agent #5 (架构员)".to_string(),
+                "负责跨模块接口设计与契约约束",
+            ),
             n => (format!("Agent #{}", n + 1), "协同协作者"),
         };
         Self {
@@ -553,7 +586,8 @@ impl CollabState {
                 r.handle.cancel();
             }
         }
-        self.master_history.push(CollabMsg::system("已中止全员协同任务。"));
+        self.master_history
+            .push(CollabMsg::system("已中止全员协同任务。"));
     }
 
     /// 停止指定的子 Agent
@@ -561,7 +595,8 @@ impl CollabState {
         if let Some(a) = self.agents.get_mut(idx) {
             if let Some(r) = a.run.take() {
                 r.handle.cancel();
-                a.private_history.push(CollabMsg::system("已中止当前 Agent 任务。"));
+                a.private_history
+                    .push(CollabMsg::system("已中止当前 Agent 任务。"));
             }
         }
     }
@@ -585,12 +620,7 @@ impl CollabState {
     }
 
     /// 全员统筹下发命令 (广播给所有子 Agent 协同并发执行)
-    pub fn send_master(
-        &mut self,
-        prompt: String,
-        cfg: &AiConfig,
-        ctx: &egui::Context,
-    ) {
+    pub fn send_master(&mut self, prompt: String, cfg: &AiConfig, ctx: &egui::Context) {
         let q = prompt.trim().to_string();
         if q.is_empty() {
             return;
@@ -687,7 +717,13 @@ impl CollabState {
         let a = &mut self.agents[idx];
         let marker = format_agent_comment(
             doc,
-            &format!("[{}] 区域 L{}-L{}: {}", a.name, start + 1, range_end, clean_prompt),
+            &format!(
+                "[{}] 区域 L{}-L{}: {}",
+                a.name,
+                start + 1,
+                range_end,
+                clean_prompt
+            ),
         );
         let mut insert_lines = Vec::with_capacity(orig.len() + 1);
         let already_tagged = orig.first().is_some_and(|l| l.contains(&a.name));
@@ -746,7 +782,8 @@ impl CollabState {
             }
         };
         let regions = plan_parallel_regions(doc.lines.len(), self.agents.len());
-        self.master_history.push(CollabMsg::user("统筹并行调度", clean_prompt));
+        self.master_history
+            .push(CollabMsg::user("统筹并行调度", clean_prompt));
 
         if (!cfg.configured() || ctx.is_none()) && crate::app::nemaopts::is_nema_doc(doc) {
             return self.execute_parallel_edit_on_nema_doc(doc, clean_prompt);
@@ -760,7 +797,13 @@ impl CollabState {
                 let range_end = (start + count).max(start + 1);
                 let marker = format_agent_comment(
                     doc,
-                    &format!("[{}] 区域 L{}-L{}: {}", a.name, start + 1, range_end, clean_prompt),
+                    &format!(
+                        "[{}] 区域 L{}-L{}: {}",
+                        a.name,
+                        start + 1,
+                        range_end,
+                        clean_prompt
+                    ),
                 );
                 let mut insert_lines = Vec::with_capacity(orig.len() + 1);
                 let already_tagged = orig.first().is_some_and(|l| l.contains(&a.name));
@@ -776,7 +819,12 @@ impl CollabState {
                 a.patch_proposals = insert_lines.clone();
                 a.private_history.push(CollabMsg::agent(
                     &a.name,
-                    &format!("已完成分配区域 L{}-L{} 并行修改 ({} 行)。", start + 1, range_end, insert_lines.len()),
+                    &format!(
+                        "已完成分配区域 L{}-L{} 并行修改 ({} 行)。",
+                        start + 1,
+                        range_end,
+                        insert_lines.len()
+                    ),
                 ));
                 patches.push(ParallelAgentPatch {
                     agent_id: a.id.clone(),
@@ -824,7 +872,12 @@ impl CollabState {
                 color: CollaboratorColor::from_id(&a.id),
                 cursor: [start.min(doc.lines.len().saturating_sub(1)), 0],
                 selection: if count > 1 {
-                    Some([start, 0, (start + count - 1).min(doc.lines.len().saturating_sub(1)), 0])
+                    Some([
+                        start,
+                        0,
+                        (start + count - 1).min(doc.lines.len().saturating_sub(1)),
+                        0,
+                    ])
                 } else {
                     None
                 },
@@ -968,7 +1021,8 @@ impl CollabState {
                     .private_history
                     .push(CollabMsg::error(&agent_name, &err));
                 if run.is_master_broadcast {
-                    self.master_history.push(CollabMsg::error(&agent_name, &err));
+                    self.master_history
+                        .push(CollabMsg::error(&agent_name, &err));
                 }
                 if let (Some(doc_id), Some((raw_start, raw_remove))) =
                     (run.target_doc_id, run.target_region)
@@ -994,7 +1048,12 @@ impl CollabState {
                             let range_end = (start + remove).max(start + 1);
                             let marker = format_agent_comment(
                                 doc,
-                                &format!("[{}] 本地回退协同 L{}-L{}", agent_name, start + 1, range_end),
+                                &format!(
+                                    "[{}] 本地回退协同 L{}-L{}",
+                                    agent_name,
+                                    start + 1,
+                                    range_end
+                                ),
                             );
                             let orig = &doc.lines[start..start + remove];
                             let mut fallback_lines = Vec::with_capacity(orig.len() + 1);
@@ -1019,13 +1078,17 @@ impl CollabState {
                                 let delta = new_len as isize - remove as isize;
                                 region_shifts.push((doc_id, start + remove, delta));
                                 self.agents[idx].patch_proposals = fallback_lines;
-                                self.agents[idx].private_history.push(CollabMsg::system(&format!(
-                                    "远端失败，已在 L{}-L{} 完成本地确定性协同写入。",
-                                    start + 1,
-                                    range_end
-                                )));
-                                if let Some(rc) =
-                                    doc.remote_cursors.iter_mut().find(|c| c.agent_id == agent_id)
+                                self.agents[idx]
+                                    .private_history
+                                    .push(CollabMsg::system(&format!(
+                                        "远端失败，已在 L{}-L{} 完成本地确定性协同写入。",
+                                        start + 1,
+                                        range_end
+                                    )));
+                                if let Some(rc) = doc
+                                    .remote_cursors
+                                    .iter_mut()
+                                    .find(|c| c.agent_id == agent_id)
                                 {
                                     rc.cursor = [start.min(doc.lines.len().saturating_sub(1)), 0];
                                     rc.active_symbol = Some(format!("回退写入 {} 行", new_len));
@@ -1070,8 +1133,10 @@ impl CollabState {
                             } else {
                                 let delta = new_len as isize - remove as isize;
                                 region_shifts.push((doc_id, start + remove, delta));
-                                if let Some(rc) =
-                                    doc.remote_cursors.iter_mut().find(|c| c.agent_id == agent_id)
+                                if let Some(rc) = doc
+                                    .remote_cursors
+                                    .iter_mut()
+                                    .find(|c| c.agent_id == agent_id)
                                 {
                                     rc.cursor = [start.min(doc.lines.len().saturating_sub(1)), 0];
                                     rc.active_symbol = Some(format!("已写入 {} 行", new_len));
@@ -1134,7 +1199,8 @@ impl App {
         let doc_id = self.docs[idx].id;
         let res = {
             let doc = &mut self.docs[idx];
-            self.collab.execute_parallel_edit_on_doc(doc, prompt, &cfg, ctx)
+            self.collab
+                .execute_parallel_edit_on_doc(doc, prompt, &cfg, ctx)
         };
         if let Ok(n) = res {
             self.cookie_mark(doc_id, ide_agent_router::TaskState::Planning);
@@ -1160,7 +1226,13 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new("协同 Agent:").strong());
             let running = self.collab.any_running();
-            if ui.add_enabled(!running && self.collab.agent_count > 1, egui::Button::new("-")).clicked() {
+            if ui
+                .add_enabled(
+                    !running && self.collab.agent_count > 1,
+                    egui::Button::new("-"),
+                )
+                .clicked()
+            {
                 self.collab.set_agent_count(self.collab.agent_count - 1);
             }
             ui.label(
@@ -1168,7 +1240,13 @@ impl App {
                     .strong()
                     .color(Color32::from_rgb(0, 190, 255)),
             );
-            if ui.add_enabled(!running && self.collab.agent_count < 8, egui::Button::new("+")).clicked() {
+            if ui
+                .add_enabled(
+                    !running && self.collab.agent_count < 8,
+                    egui::Button::new("+"),
+                )
+                .clicked()
+            {
                 self.collab.set_agent_count(self.collab.agent_count + 1);
             }
             if running {
@@ -1179,7 +1257,8 @@ impl App {
             } else {
                 ui.label(egui::RichText::new("[就绪]").color(Color32::from_rgb(120, 200, 120)));
             }
-            if !self.docs.is_empty() && ui.button("⚡ 多Agent并行修改当前文件").clicked() {
+            if !self.docs.is_empty() && ui.button("⚡ 多Agent并行修改当前文件").clicked()
+            {
                 parallel_edit_prompt = Some(self.collab.master_input.clone());
             }
             if ui.small_button("清空").clicked() {
@@ -1195,7 +1274,11 @@ impl App {
             for (i, a) in self.collab.agents.iter().enumerate() {
                 let is_active = i == active_tab;
                 let status_marker = if a.is_running() { " (*)" } else { "" };
-                let file_marker = if a.assigned_doc_id.is_some() { " 📄" } else { "" };
+                let file_marker = if a.assigned_doc_id.is_some() {
+                    " 📄"
+                } else {
+                    ""
+                };
                 let label = format!("{}{}{}", a.name, status_marker, file_marker);
                 if ui.selectable_label(is_active, label).clicked() {
                     self.collab.active_tab = i;
@@ -1206,11 +1289,32 @@ impl App {
         ui.separator();
 
         // 3. 当前 Agent 标签页内容
-        let cur_idx = self.collab.active_tab.min(self.collab.agents.len().saturating_sub(1));
-        let cur_agent_name = self.collab.agents.get(cur_idx).map(|a| a.name.clone()).unwrap_or_default();
-        let cur_agent_role = self.collab.agents.get(cur_idx).map(|a| a.role.clone()).unwrap_or_default();
-        let cur_running = self.collab.agents.get(cur_idx).is_some_and(|a| a.is_running());
-        let cur_assigned = self.collab.agents.get(cur_idx).and_then(|a| a.assigned_doc_id);
+        let cur_idx = self
+            .collab
+            .active_tab
+            .min(self.collab.agents.len().saturating_sub(1));
+        let cur_agent_name = self
+            .collab
+            .agents
+            .get(cur_idx)
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        let cur_agent_role = self
+            .collab
+            .agents
+            .get(cur_idx)
+            .map(|a| a.role.clone())
+            .unwrap_or_default();
+        let cur_running = self
+            .collab
+            .agents
+            .get(cur_idx)
+            .is_some_and(|a| a.is_running());
+        let cur_assigned = self
+            .collab
+            .agents
+            .get(cur_idx)
+            .and_then(|a| a.assigned_doc_id);
 
         let total_avail = ui.available_height();
         let half_height = (total_avail * 0.44).max(110.0);
@@ -1219,7 +1323,11 @@ impl App {
         ui.group(|ui| {
             ui.set_height(half_height);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("【统筹命令】(广播 / 并行修改)").strong().color(Color32::from_rgb(0, 190, 255)));
+                ui.label(
+                    egui::RichText::new("【统筹命令】(广播 / 并行修改)")
+                        .strong()
+                        .color(Color32::from_rgb(0, 190, 255)),
+                );
             });
             egui::ScrollArea::vertical()
                 .max_height((half_height - 58.0).max(40.0))
@@ -1238,7 +1346,9 @@ impl App {
                         .desired_width((ui.available_width() - btn_w).max(80.0)),
                 );
                 let enter = re.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                if (ui.button("广播").clicked() || enter) && !self.collab.master_input.trim().is_empty() {
+                if (ui.button("广播").clicked() || enter)
+                    && !self.collab.master_input.trim().is_empty()
+                {
                     if !self.docs.is_empty() {
                         parallel_edit_prompt = Some(self.collab.master_input.clone());
                     } else {
@@ -1271,16 +1381,31 @@ impl App {
                     if ui.small_button("取消分配").clicked() {
                         if let Some(a) = self.collab.agents.get_mut(cur_idx) {
                             a.assigned_doc_id = None;
-                            a.private_history.push(CollabMsg::system("已取消文件分配。"));
+                            a.private_history
+                                .push(CollabMsg::system("已取消文件分配。"));
                         }
                     }
                 } else if !self.docs.is_empty() {
-                    let doc_name = self.docs.get(self.active)
-                        .map(|d| d.path.as_ref().map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or("未命名").to_string())
-                            .unwrap_or_else(|| "未命名".to_string()))
+                    let doc_name = self
+                        .docs
+                        .get(self.active)
+                        .map(|d| {
+                            d.path
+                                .as_ref()
+                                .map(|p| {
+                                    p.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .unwrap_or("未命名")
+                                        .to_string()
+                                })
+                                .unwrap_or_else(|| "未命名".to_string())
+                        })
                         .unwrap_or_default();
                     let doc_id = self.docs.get(self.active).map(|d| d.id).unwrap_or(0);
-                    if ui.small_button(format!("📄 分配「{}」", doc_name)).clicked() {
+                    if ui
+                        .small_button(format!("📄 分配「{}」", doc_name))
+                        .clicked()
+                    {
                         assign_file_action = Some((cur_idx, doc_id, doc_name));
                     }
                 }
@@ -1300,17 +1425,27 @@ impl App {
                         if let Some(run) = &a.run {
                             if !run.streaming_text.is_empty() {
                                 ui.horizontal_wrapped(|ui| {
-                                    ui.label(egui::RichText::new(format!("{}: ", a.name)).strong().color(Color32::from_rgb(40, 210, 120)));
-                                    ui.label(egui::RichText::new(&run.streaming_text).color(Color32::from_rgb(220, 220, 220)));
+                                    ui.label(
+                                        egui::RichText::new(format!("{}: ", a.name))
+                                            .strong()
+                                            .color(Color32::from_rgb(40, 210, 120)),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(&run.streaming_text)
+                                            .color(Color32::from_rgb(220, 220, 220)),
+                                    );
                                 });
                             }
                         }
                         if !a.patch_proposals.is_empty() {
                             ui.separator();
                             ui.label(
-                                egui::RichText::new(format!("📋 {} 行已协同修改内容", a.patch_proposals.len()))
-                                    .color(Color32::from_rgb(255, 200, 80))
-                                    .strong(),
+                                egui::RichText::new(format!(
+                                    "📋 {} 行已协同修改内容",
+                                    a.patch_proposals.len()
+                                ))
+                                .color(Color32::from_rgb(255, 200, 80))
+                                .strong(),
                             );
                         }
                     }
@@ -1325,7 +1460,8 @@ impl App {
                             .desired_width((ui.available_width() - 90.0).max(60.0)),
                     );
                     let enter = re.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    if (ui.button("发送").clicked() || enter) && !a.private_input.trim().is_empty() {
+                    if (ui.button("发送").clicked() || enter) && !a.private_input.trim().is_empty()
+                    {
                         individual_send = Some((cur_idx, a.private_input.clone()));
                     }
                     if cur_running && ui.button("停止").clicked() {
@@ -1346,7 +1482,9 @@ impl App {
             self.collab.master_input.clear();
             let ctx = ui.ctx().clone();
             if let Err(err) = self.execute_parallel_on_active(&prompt, Some(&ctx)) {
-                self.collab.master_history.push(CollabMsg::error("系统", &err));
+                self.collab
+                    .master_history
+                    .push(CollabMsg::error("系统", &err));
             }
         }
         if let Some(prompt) = master_send {
@@ -1368,14 +1506,16 @@ impl App {
                 if let Some(a) = self.collab.agents.get_mut(idx) {
                     a.private_input.clear();
                 }
-                match self
-                    .collab
-                    .execute_single_agent_edit_on_doc(idx, &mut self.docs[target_pos], &prompt)
-                {
+                match self.collab.execute_single_agent_edit_on_doc(
+                    idx,
+                    &mut self.docs[target_pos],
+                    &prompt,
+                ) {
                     Ok(n) => {
                         self.cookie_mark(doc_id, ide_agent_router::TaskState::Verified);
                         let aname = self.collab.agents[idx].name.clone();
-                        self.docs[target_pos].tip = format!("{} 已协同更新分配区域 ({} 处)", aname, n);
+                        self.docs[target_pos].tip =
+                            format!("{} 已协同更新分配区域 ({} 处)", aname, n);
                     }
                     Err(err) => {
                         if let Some(a) = self.collab.agents.get_mut(idx) {
@@ -1406,15 +1546,27 @@ impl App {
 fn render_collab_msg(ui: &mut egui::Ui, m: &CollabMsg) {
     ui.horizontal_wrapped(|ui| {
         if m.is_user {
-            ui.label(egui::RichText::new(format!("{}: ", m.sender)).strong().color(Color32::from_rgb(100, 180, 255)));
+            ui.label(
+                egui::RichText::new(format!("{}: ", m.sender))
+                    .strong()
+                    .color(Color32::from_rgb(100, 180, 255)),
+            );
             ui.label(egui::RichText::new(&m.text).color(Color32::from_rgb(235, 235, 235)));
         } else if m.is_error {
-            ui.label(egui::RichText::new(format!("{}: ", m.sender)).strong().color(Color32::from_rgb(255, 90, 90)));
+            ui.label(
+                egui::RichText::new(format!("{}: ", m.sender))
+                    .strong()
+                    .color(Color32::from_rgb(255, 90, 90)),
+            );
             ui.label(egui::RichText::new(&m.text).color(Color32::from_rgb(255, 130, 130)));
         } else if m.sender == "系统" {
             ui.label(egui::RichText::new(&m.text).weak().italics().size(11.5));
         } else {
-            ui.label(egui::RichText::new(format!("{}: ", m.sender)).strong().color(Color32::from_rgb(40, 210, 120)));
+            ui.label(
+                egui::RichText::new(format!("{}: ", m.sender))
+                    .strong()
+                    .color(Color32::from_rgb(40, 210, 120)),
+            );
             ui.label(egui::RichText::new(&m.text).color(Color32::from_rgb(220, 220, 220)));
         }
     });
@@ -1509,13 +1661,24 @@ mod tests {
         assert_eq!(apply_parallel_patches(&mut doc, &patches), Ok(2));
         assert_eq!(
             doc.lines,
-            vec!["// a1", "line 0 mod", "line 1 mod", "line 2", "line 3", "// a2", "line 4 mod"]
+            vec![
+                "// a1",
+                "line 0 mod",
+                "line 1 mod",
+                "line 2",
+                "line 3",
+                "// a2",
+                "line 4 mod"
+            ]
         );
         assert_eq!(doc.remote_cursors.len(), 2);
 
         // 单步撤销即可完整还原所有并行写入
         doc.undo();
-        assert_eq!(doc.lines, (0..6).map(|i| format!("line {i}")).collect::<Vec<_>>());
+        assert_eq!(
+            doc.lines,
+            (0..6).map(|i| format!("line {i}")).collect::<Vec<_>>()
+        );
         assert!(doc.undo_is_empty());
 
         // 重叠区域必须拒绝，且文档内容不被破坏
@@ -1548,11 +1711,7 @@ mod tests {
         let mut collab = CollabState::default();
         collab.set_agent_count(3);
         let mut doc = crate::doc::Doc::untitled(9, 1);
-        doc.lines = vec![
-            "fn a() {}".into(),
-            "fn b() {}".into(),
-            "fn c() {}".into(),
-        ];
+        doc.lines = vec!["fn a() {}".into(), "fn b() {}".into(), "fn c() {}".into()];
         let cfg = AiConfig::default();
         let n = collab
             .execute_parallel_edit_on_doc(&mut doc, "添加协同注释", &cfg, None)
@@ -1598,7 +1757,10 @@ mod tests {
             nema_codec::parse_source(&after_src).is_ok(),
             "parallel .nema co-edit must produce valid NEMA grammar:\n{after_src}"
         );
-        assert!(after_src.contains("NAg3"), "Graph node NAg3 should be created");
+        assert!(
+            after_src.contains("NAg3"),
+            "Graph node NAg3 should be created"
+        );
 
         // 撤销应一步完整还原原始文档
         doc.undo();

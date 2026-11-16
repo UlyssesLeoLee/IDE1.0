@@ -96,36 +96,54 @@ fn outline(text: &str) -> Value {
 }
 
 fn str_arg<'a>(args: &'a Value, k: &str) -> Result<&'a str, String> {
-    args.get(k).and_then(Value::as_str).ok_or_else(|| format!("缺少字符串参数 {k}"))
+    args.get(k)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("缺少字符串参数 {k}"))
 }
 fn usize_arg(args: &Value, k: &str) -> Result<usize, String> {
-    args.get(k).and_then(Value::as_u64).map(|v| v as usize).ok_or_else(|| format!("缺少整数参数 {k}"))
+    args.get(k)
+        .and_then(Value::as_u64)
+        .map(|v| v as usize)
+        .ok_or_else(|| format!("缺少整数参数 {k}"))
 }
 
 /// 调用工具。未知工具 / 参数不对 = Err (调用方把错误文字回给模型)
 pub fn call(name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "md_outline" => Ok(json!({ "outline": outline(str_arg(args, "text")?) })),
-        "md_find" => Ok(json!({ "hits": crate::md_struct::find(str_arg(args, "text")?, str_arg(args, "kind")?, args.get("query").and_then(Value::as_str).unwrap_or(""))? })),
+        "md_find" => Ok(
+            json!({ "hits": crate::md_struct::find(str_arg(args, "text")?, str_arg(args, "kind")?, args.get("query").and_then(Value::as_str).unwrap_or(""))? }),
+        ),
         "md_lint" => Ok(json!({ "issues": crate::md_lint::lint(str_arg(args, "text")?) })),
         "md_render" => Ok(json!({ "html": crate::md_render::render(str_arg(args, "text")?) })),
         "search_text" => {
             let mut a = args.clone();
             a["op"] = json!("hits");
-            let req: crate::search_ops::SearchReq = serde_json::from_value(a).map_err(|e| format!("search_text 参数无效: {e}"))?;
+            let req: crate::search_ops::SearchReq =
+                serde_json::from_value(a).map_err(|e| format!("search_text 参数无效: {e}"))?;
             crate::pure_api::search_text(&req)
         }
         "propose_patch" => {
-            let (start, remove, total) = (usize_arg(args, "start")?, usize_arg(args, "remove")?, usize_arg(args, "total_rows")?);
+            let (start, remove, total) = (
+                usize_arg(args, "start")?,
+                usize_arg(args, "remove")?,
+                usize_arg(args, "total_rows")?,
+            );
             let insert: Vec<String> = args
                 .get("insert")
                 .and_then(Value::as_array)
                 .ok_or("缺少数组参数 insert")?
                 .iter()
-                .map(|v| v.as_str().map(String::from).ok_or_else(|| "insert 的元素必须是字符串".to_string()))
+                .map(|v| {
+                    v.as_str()
+                        .map(String::from)
+                        .ok_or_else(|| "insert 的元素必须是字符串".to_string())
+                })
                 .collect::<Result<_, _>>()?;
             if start > total || start.checked_add(remove).map_or(true, |e| e > total) {
-                return Err(format!("补丁范围越界: start={start} remove={remove} 文档共 {total} 行"));
+                return Err(format!(
+                    "补丁范围越界: start={start} remove={remove} 文档共 {total} 行"
+                ));
             }
             if insert.len().max(remove) > MAX_PATCH_LINES {
                 return Err(format!("单个提案最多改动 {MAX_PATCH_LINES} 行, 请拆小"));
@@ -133,7 +151,9 @@ pub fn call(name: &str, args: &Value) -> Result<Value, String> {
             if insert.iter().any(|l| l.contains('\n') || l.contains('\r')) {
                 return Err("insert 的每个元素必须是一行 (不含换行符)".into());
             }
-            Ok(json!({ "kind": "patch_proposal", "version": 1, "start": start, "remove": remove, "insert": insert, "reason": args.get("reason").and_then(Value::as_str).unwrap_or("") }))
+            Ok(
+                json!({ "kind": "patch_proposal", "version": 1, "start": start, "remove": remove, "insert": insert, "reason": args.get("reason").and_then(Value::as_str).unwrap_or("") }),
+            )
         }
         "plugin_list" => {
             let root = crate::plugin_host::store::default_root();
@@ -154,7 +174,11 @@ mod tests {
     #[test]
     fn every_tool_has_valid_schema_and_dispatches() {
         for t in TOOLS {
-            assert!(serde_json::from_str::<Value>(t.schema).is_ok(), "{} 的 schema 不是合法 JSON", t.name);
+            assert!(
+                serde_json::from_str::<Value>(t.schema).is_ok(),
+                "{} 的 schema 不是合法 JSON",
+                t.name
+            );
         }
         let names: Vec<_> = TOOLS.iter().map(|t| t.name).collect();
         let mut dedup = names.clone();
@@ -162,29 +186,82 @@ mod tests {
         dedup.dedup();
         assert_eq!(dedup.len(), names.len(), "工具名不能重复");
         assert!(!call("nope", &json!({})).is_ok_and(|_| true));
-        assert!(tools_json().as_array().unwrap().iter().all(|t| t["function"]["parameters"]["type"] == "object"));
+        assert!(tools_json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["function"]["parameters"]["type"] == "object"));
     }
 
     #[test]
     fn outline_skips_fences_and_reports_lines() {
-        let r = call("md_outline", &json!({ "text": "# A\n```\n# not heading\n```\n## B ##\ntext" })).unwrap();
-        assert_eq!(r["outline"], json!([{ "level": 1, "title": "A", "line": 1 }, { "level": 2, "title": "B", "line": 5 }]));
+        let r = call(
+            "md_outline",
+            &json!({ "text": "# A\n```\n# not heading\n```\n## B ##\ntext" }),
+        )
+        .unwrap();
+        assert_eq!(
+            r["outline"],
+            json!([{ "level": 1, "title": "A", "line": 1 }, { "level": 2, "title": "B", "line": 5 }])
+        );
     }
 
     #[test]
     fn search_text_counts_hits() {
-        let r = call("search_text", &json!({ "lines": ["foo bar", "foo"], "needle": "foo" })).unwrap();
+        let r = call(
+            "search_text",
+            &json!({ "lines": ["foo bar", "foo"], "needle": "foo" }),
+        )
+        .unwrap();
         assert_eq!(r["total"], 2, "{r}");
     }
 
     #[test]
     fn write_tool_only_produces_a_validated_proposal() {
-        assert!(TOOLS.iter().find(|t| t.name == "propose_patch").unwrap().write);
-        let ok = call("propose_patch", &json!({ "start": 1, "remove": 1, "insert": ["x"], "total_rows": 3, "reason": "r" })).unwrap();
+        assert!(
+            TOOLS
+                .iter()
+                .find(|t| t.name == "propose_patch")
+                .unwrap()
+                .write
+        );
+        let ok = call(
+            "propose_patch",
+            &json!({ "start": 1, "remove": 1, "insert": ["x"], "total_rows": 3, "reason": "r" }),
+        )
+        .unwrap();
         assert_eq!(ok["kind"], "patch_proposal");
-        assert!(call("propose_patch", &json!({ "start": 3, "remove": 1, "insert": [], "total_rows": 3 })).is_err(), "越界");
-        assert!(call("propose_patch", &json!({ "start": 0, "remove": 0, "insert": ["a\nb"], "total_rows": 1 })).is_err(), "一元素一行");
-        assert!(call("propose_patch", &json!({ "start": 0, "remove": 0, "insert": vec!["x"; 2001], "total_rows": 1 })).is_err(), "上限");
-        assert!(call("propose_patch", &json!({ "start": usize::MAX, "remove": 1, "insert": [], "total_rows": 1 })).is_err(), "溢出不 panic");
+        assert!(
+            call(
+                "propose_patch",
+                &json!({ "start": 3, "remove": 1, "insert": [], "total_rows": 3 })
+            )
+            .is_err(),
+            "越界"
+        );
+        assert!(
+            call(
+                "propose_patch",
+                &json!({ "start": 0, "remove": 0, "insert": ["a\nb"], "total_rows": 1 })
+            )
+            .is_err(),
+            "一元素一行"
+        );
+        assert!(
+            call(
+                "propose_patch",
+                &json!({ "start": 0, "remove": 0, "insert": vec!["x"; 2001], "total_rows": 1 })
+            )
+            .is_err(),
+            "上限"
+        );
+        assert!(
+            call(
+                "propose_patch",
+                &json!({ "start": usize::MAX, "remove": 1, "insert": [], "total_rows": 1 })
+            )
+            .is_err(),
+            "溢出不 panic"
+        );
     }
 }

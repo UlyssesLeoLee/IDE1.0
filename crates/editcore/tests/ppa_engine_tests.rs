@@ -429,7 +429,9 @@ fn test_macro_context_struct_and_program_ast() {
         inserted: Vec::new(),
     };
     let mut interp = PpaInterpreter::new();
-    interp.execute_with(&program, &mut ctx).expect("Execute AST failed");
+    interp
+        .execute_with(&program, &mut ctx)
+        .expect("Execute AST failed");
 
     assert_eq!(ctx.inserted, vec!["alpha", "beta"]);
 }
@@ -443,11 +445,12 @@ fn test_error_handling() {
     assert_eq!(err_div, PpaError::DivisionByZero);
 
     // 2. 未定义变量
-    let err_var = interp.eval("begin x := unassigned_var + 1; end;").unwrap_err();
+    let err_var = interp
+        .eval("begin x := unassigned_var + 1; end;")
+        .unwrap_err();
     assert!(matches!(err_var, PpaError::UndefinedVariable(_)));
 
     // 3. 词法/语法错误
     let err_syntax = interp.eval("begin for i := 1 10 do; end;").unwrap_err();
     assert!(matches!(err_syntax, PpaError::ParseError { .. }));
 }
-

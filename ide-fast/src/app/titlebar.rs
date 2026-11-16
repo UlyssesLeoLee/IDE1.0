@@ -367,7 +367,10 @@ impl App {
                 );
                 let menu_w = if plan.mnemonics { mw } else { mp };
                 let left_w = LEFT_FIXED + menu_w + 10.0;
-                let left = Rect::from_min_max(rect.min, egui::pos2(left_w.min(mid.left() - 10.0), rect.bottom()));
+                let left = Rect::from_min_max(
+                    rect.min,
+                    egui::pos2(left_w.min(mid.left() - 10.0), rect.bottom()),
+                );
                 let lay = egui::Layout::left_to_right(egui::Align::Center);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(left).layout(lay), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -381,7 +384,11 @@ impl App {
 
                 // VS Code 风格的顶部居中命令中心输入栏 (Command Center Bar)
                 let space_left = left.right();
-                let space_right = if mid_w > 0.0 { mid.left() } else { right.left() - RIGHT_GAP };
+                let space_right = if mid_w > 0.0 {
+                    mid.left()
+                } else {
+                    right.left() - RIGHT_GAP
+                };
                 let center_available = (space_right - space_left).max(0.0);
                 if center_available >= 120.0 {
                     let bar_w = center_available.min(380.0);
@@ -432,11 +439,20 @@ impl App {
                             tc.fg_dim
                         };
                         ui.painter().rect_filled(bar_rect, 0.0, bg);
-                        ui.painter().rect_stroke(bar_rect, 0.0, Stroke::new(1.0, outer_border), egui::StrokeKind::Inside);
+                        ui.painter().rect_stroke(
+                            bar_rect,
+                            0.0,
+                            Stroke::new(1.0, outer_border),
+                            egui::StrokeKind::Inside,
+                        );
                         fg
                     } else if tc.comic {
                         if !is_hovered && !is_open {
-                            ui.painter().rect_filled(bar_rect.translate(Vec2::new(1.5, 1.5)), 3.0, Color32::BLACK);
+                            ui.painter().rect_filled(
+                                bar_rect.translate(Vec2::new(1.5, 1.5)),
+                                3.0,
+                                Color32::BLACK,
+                            );
                         }
                         let bg = if is_hovered || is_open {
                             Color32::from_rgb(255, 240, 100)
@@ -444,7 +460,13 @@ impl App {
                             tc.bg_bar
                         };
                         let fg = Color32::BLACK;
-                        ui.painter().rect(bar_rect, 3.0, bg, Stroke::new(2.0, Color32::BLACK), egui::StrokeKind::Inside);
+                        ui.painter().rect(
+                            bar_rect,
+                            3.0,
+                            bg,
+                            Stroke::new(2.0, Color32::BLACK),
+                            egui::StrokeKind::Inside,
+                        );
                         fg
                     } else {
                         let bg = if is_open {
@@ -465,8 +487,13 @@ impl App {
                         } else {
                             Stroke::new(1.0, tc.border)
                         };
-                        let fg = if is_open || is_hovered { tc.fg } else { tc.fg_dim };
-                        ui.painter().rect(bar_rect, 5.0, bg, stroke, egui::StrokeKind::Inside);
+                        let fg = if is_open || is_hovered {
+                            tc.fg
+                        } else {
+                            tc.fg_dim
+                        };
+                        ui.painter()
+                            .rect(bar_rect, 5.0, bg, stroke, egui::StrokeKind::Inside);
                         fg
                     };
 
@@ -491,7 +518,8 @@ impl App {
                         egui::FontId::proportional(font_px),
                         text_col,
                     );
-                    let galley_x = (bar_rect.center().x - galley.size().x / 2.0).max(bar_rect.left() + 24.0);
+                    let galley_x =
+                        (bar_rect.center().x - galley.size().x / 2.0).max(bar_rect.left() + 24.0);
                     ui.painter().galley(
                         egui::pos2(galley_x, bar_rect.center().y - galley.size().y / 2.0),
                         galley,
@@ -518,7 +546,8 @@ impl App {
                         if plan.collab {
                             let is_running = self.collab.any_running();
                             let is_open = self.collab.open;
-                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(COLLAB_BTN_W, 22.0), Sense::click());
+                            let (rect, resp) = ui
+                                .allocate_exact_size(Vec2::new(COLLAB_BTN_W, 22.0), Sense::click());
                             let tip = if is_running {
                                 "多 Agent 协同工作台 (正在执行协同任务...)"
                             } else {
@@ -538,14 +567,21 @@ impl App {
                                 is_highlighted,
                             );
 
-                            paint_collab_icon(ui.painter(), content_rect, is_running, icon_col, &self.tc);
+                            paint_collab_icon(
+                                ui.painter(),
+                                content_rect,
+                                is_running,
+                                icon_col,
+                                &self.tc,
+                            );
                             if resp.clicked() {
                                 collab_toggle = true;
                             }
                         }
                         if plan.sticky_notes {
                             let is_open = self.sticky_notes.open;
-                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(STICKY_BTN_W, 22.0), Sense::click());
+                            let (rect, resp) = ui
+                                .allocate_exact_size(Vec2::new(STICKY_BTN_W, 22.0), Sense::click());
                             let tip = crate::i18n::tr("c.sticky-notes");
                             let resp = resp.on_hover_text(tip);
                             let is_hovered = resp.hovered();
@@ -561,7 +597,13 @@ impl App {
                                 is_highlighted,
                             );
 
-                            paint_sticky_note_icon(ui.painter(), content_rect, is_open, icon_col, &self.tc);
+                            paint_sticky_note_icon(
+                                ui.painter(),
+                                content_rect,
+                                is_open,
+                                icon_col,
+                                &self.tc,
+                            );
                             if resp.clicked() {
                                 sticky_notes_toggle = true;
                             }
@@ -572,7 +614,10 @@ impl App {
                             }
                         }
                         if plan.overflow {
-                            let (rect, resp) = ui.allocate_exact_size(Vec2::new(OVERFLOW_BTN_W, 22.0), Sense::click());
+                            let (rect, resp) = ui.allocate_exact_size(
+                                Vec2::new(OVERFLOW_BTN_W, 22.0),
+                                Sense::click(),
+                            );
                             let tip = crate::i18n::trz("更多快捷操作 (折叠)");
                             let resp = resp.on_hover_text(tip);
 
@@ -597,7 +642,9 @@ impl App {
                             egui::Popup::menu(&resp).show(|ui| {
                                 ui.set_min_width(200.0);
                                 ui.spacing_mut().item_spacing.y = 4.0;
-                                ui.label(egui::RichText::new(crate::i18n::trz("更多快捷操作")).strong());
+                                ui.label(
+                                    egui::RichText::new(crate::i18n::trz("更多快捷操作")).strong(),
+                                );
                                 ui.separator();
 
                                 // 渲染未在栏上显示的 QUICK 快捷项
@@ -645,7 +692,13 @@ impl App {
                                 if !plan.diff {
                                     if let Some(v) = &self.diff {
                                         ui.separator();
-                                        ui.label(egui::RichText::new(format!("差异对比中: {}", v.summary())).color(Color32::from_rgb(0, 190, 255)));
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "差异对比中: {}",
+                                                v.summary()
+                                            ))
+                                            .color(Color32::from_rgb(0, 190, 255)),
+                                        );
                                         if menuui::mbtn(ui, "下一处差异  F7").clicked() {
                                             diff_action = Some(DiffAction::Next);
                                             egui::Popup::close_all(ui.ctx());
@@ -658,11 +711,13 @@ impl App {
                                             diff_action = Some(DiffAction::List);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                        if menuui::mbtn(ui, "退出对比 (清除差异)").clicked() {
+                                        if menuui::mbtn(ui, "退出对比 (清除差异)").clicked()
+                                        {
                                             diff_action = Some(DiffAction::Clear);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                    } else if menuui::mbtn(ui, "文件差异对比 (Diff)...").clicked() {
+                                    } else if menuui::mbtn(ui, "文件差异对比 (Diff)...").clicked()
+                                    {
                                         diff_action = Some(DiffAction::WithFile);
                                         egui::Popup::close_all(ui.ctx());
                                     }
@@ -806,7 +861,11 @@ impl App {
                 ui.separator();
                 ui.label(egui::RichText::new("与已打开标签页比较:").size(11.0));
                 for (i, d) in other_docs {
-                    let name = if d.name.is_empty() { "未命名" } else { &d.name };
+                    let name = if d.name.is_empty() {
+                        "未命名"
+                    } else {
+                        &d.name
+                    };
                     if ui.button(format!("  ↔ {name}")).clicked() {
                         action = Some(DiffAction::WithTab(i));
                         egui::Popup::close_all(ui.ctx());
@@ -898,14 +957,20 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) ->
                 (
                     Color32::from_rgb(255, 42, 133),
                     Color32::BLACK,
-                    (Color32::from_rgb(255, 105, 180), Color32::from_rgb(139, 0, 58)),
+                    (
+                        Color32::from_rgb(255, 105, 180),
+                        Color32::from_rgb(139, 0, 58),
+                    ),
                     Color32::WHITE,
                 )
             } else {
                 (
                     Color32::from_rgb(39, 30, 77),
                     Color32::from_rgb(255, 215, 0),
-                    (Color32::from_rgb(255, 215, 0), Color32::from_rgb(22, 15, 46)),
+                    (
+                        Color32::from_rgb(255, 215, 0),
+                        Color32::from_rgb(22, 15, 46),
+                    ),
                     Color32::from_rgb(255, 215, 0),
                 )
             }
@@ -919,43 +984,93 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) ->
         };
 
         p.rect_filled(rect, 0.0, bg);
-        p.rect_stroke(rect, 0.0, Stroke::new(1.0, outer_border), StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.0, outer_border),
+            StrokeKind::Inside,
+        );
 
         let inner = rect.shrink(1.0);
-        p.line_segment([inner.left_top(), inner.right_top()], Stroke::new(1.0, top_left));
-        p.line_segment([inner.left_top(), inner.left_bottom()], Stroke::new(1.0, top_left));
-        p.line_segment([inner.left_bottom(), inner.right_bottom()], Stroke::new(1.0, bot_right));
-        p.line_segment([inner.right_top(), inner.right_bottom()], Stroke::new(1.0, bot_right));
+        p.line_segment(
+            [inner.left_top(), inner.right_top()],
+            Stroke::new(1.0, top_left),
+        );
+        p.line_segment(
+            [inner.left_top(), inner.left_bottom()],
+            Stroke::new(1.0, top_left),
+        );
+        p.line_segment(
+            [inner.left_bottom(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right),
+        );
+        p.line_segment(
+            [inner.right_top(), inner.right_bottom()],
+            Stroke::new(1.0, bot_right),
+        );
 
-        let offset = if active { Vec2::new(1.0, 1.0) } else { Vec2::ZERO };
+        let offset = if active {
+            Vec2::new(1.0, 1.0)
+        } else {
+            Vec2::ZERO
+        };
         (rect.translate(offset), icon_col, 1.5)
     } else if tc.comic {
         // Comic 3渲2: 美漫赛璐珞 2px 粗黑边框 + 实体纯黑硬边投影
         let btn_rect = rect.shrink2(Vec2::new(3.0, 2.0));
-        let shadow_offset = if active { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
+        let shadow_offset = if active {
+            Vec2::ZERO
+        } else {
+            Vec2::new(1.5, 1.5)
+        };
         if !active {
             p.rect_filled(btn_rect.translate(shadow_offset), 2.0, Color32::BLACK);
         }
-        let draw_rect = if active { btn_rect.translate(Vec2::new(1.5, 1.5)) } else { btn_rect };
+        let draw_rect = if active {
+            btn_rect.translate(Vec2::new(1.5, 1.5))
+        } else {
+            btn_rect
+        };
 
         let (bg, border_col, icon_col) = if active {
             if kind == WinBtn::Close {
-                (Color32::from_rgb(204, 31, 72), Color32::BLACK, Color32::WHITE)
+                (
+                    Color32::from_rgb(204, 31, 72),
+                    Color32::BLACK,
+                    Color32::WHITE,
+                )
             } else {
-                (Color32::from_rgb(255, 170, 0), Color32::BLACK, Color32::BLACK)
+                (
+                    Color32::from_rgb(255, 170, 0),
+                    Color32::BLACK,
+                    Color32::BLACK,
+                )
             }
         } else if hovered {
             if kind == WinBtn::Close {
-                (Color32::from_rgb(255, 51, 102), Color32::BLACK, Color32::WHITE)
+                (
+                    Color32::from_rgb(255, 51, 102),
+                    Color32::BLACK,
+                    Color32::WHITE,
+                )
             } else {
-                (Color32::from_rgb(255, 204, 0), Color32::BLACK, Color32::BLACK)
+                (
+                    Color32::from_rgb(255, 204, 0),
+                    Color32::BLACK,
+                    Color32::BLACK,
+                )
             }
         } else {
             (Color32::from_rgb(37, 40, 56), Color32::BLACK, tc.fg)
         };
 
         p.rect_filled(draw_rect, 2.0, bg);
-        p.rect_stroke(draw_rect, 2.0, Stroke::new(1.5, border_col), StrokeKind::Inside);
+        p.rect_stroke(
+            draw_rect,
+            2.0,
+            Stroke::new(1.5, border_col),
+            StrokeKind::Inside,
+        );
         (draw_rect, icon_col, 2.0)
     } else if tc.crystal {
         // Crystal 水晶透明: 6px 晶钻胶囊 + 顶沿 1px 晶面白光切面反射
@@ -963,29 +1078,61 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) ->
         let round = 6.0;
         let (bg, border_col, icon_col) = if active {
             if kind == WinBtn::Close {
-                (Color32::from_rgba_unmultiplied(220, 40, 80, 200), tc.mat_prism_pink, Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(220, 40, 80, 200),
+                    tc.mat_prism_pink,
+                    Color32::WHITE,
+                )
             } else {
-                (Color32::from_rgba_unmultiplied(255, 105, 180, 80), tc.mat_prism_pink, Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(255, 105, 180, 80),
+                    tc.mat_prism_pink,
+                    Color32::WHITE,
+                )
             }
         } else if hovered {
             if kind == WinBtn::Close {
-                (Color32::from_rgba_unmultiplied(255, 60, 100, 180), Color32::from_rgba_unmultiplied(255, 105, 180, 220), Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(255, 60, 100, 180),
+                    Color32::from_rgba_unmultiplied(255, 105, 180, 220),
+                    Color32::WHITE,
+                )
             } else {
-                (Color32::from_rgba_unmultiplied(255, 255, 255, 55), tc.mat_prism_cyan, Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 55),
+                    tc.mat_prism_cyan,
+                    Color32::WHITE,
+                )
             }
         } else {
-            (Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 45), Color32::from_white_alpha(210))
+            (
+                Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+                Color32::from_rgba_unmultiplied(255, 255, 255, 45),
+                Color32::from_white_alpha(210),
+            )
         };
 
         p.rect_filled(btn_rect, round, bg);
-        p.rect_stroke(btn_rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+        p.rect_stroke(
+            btn_rect,
+            round,
+            Stroke::new(1.0, border_col),
+            StrokeKind::Inside,
+        );
 
-        let facet_col = if hovered || active { Color32::WHITE } else { Color32::from_white_alpha(150) };
+        let facet_col = if hovered || active {
+            Color32::WHITE
+        } else {
+            Color32::from_white_alpha(150)
+        };
         let hline_min_x = btn_rect.left() + 4.0;
         let hline_max_x = btn_rect.right() - 4.0;
         if hline_max_x > hline_min_x {
             p.line_segment(
-                [pos2(hline_min_x, btn_rect.top() + 1.0), pos2(hline_max_x, btn_rect.top() + 1.0)],
+                [
+                    pos2(hline_min_x, btn_rect.top() + 1.0),
+                    pos2(hline_max_x, btn_rect.top() + 1.0),
+                ],
                 Stroke::new(1.0, facet_col),
             );
         }
@@ -996,22 +1143,47 @@ fn win_button(ui: &mut egui::Ui, kind: WinBtn, tc: &crate::view::ThemeColors) ->
         let round = 7.0;
         let (bg, border_col, icon_col) = if active {
             if kind == WinBtn::Close {
-                (Color32::from_rgba_unmultiplied(200, 35, 35, 200), Color32::from_rgba_unmultiplied(255, 255, 255, 180), Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(200, 35, 35, 200),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                    Color32::WHITE,
+                )
             } else {
-                (Color32::from_rgba_unmultiplied(255, 255, 255, 100), Color32::from_rgba_unmultiplied(255, 255, 255, 180), Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 100),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                    Color32::WHITE,
+                )
             }
         } else if hovered {
             if kind == WinBtn::Close {
-                (Color32::from_rgba_unmultiplied(215, 45, 45, 180), Color32::from_rgba_unmultiplied(255, 255, 255, 140), Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(215, 45, 45, 180),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 140),
+                    Color32::WHITE,
+                )
             } else {
-                (Color32::from_rgba_unmultiplied(255, 255, 255, 65), Color32::from_rgba_unmultiplied(255, 255, 255, 120), Color32::WHITE)
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 65),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 120),
+                    Color32::WHITE,
+                )
             }
         } else {
-            (Color32::from_rgba_unmultiplied(255, 255, 255, 12), Color32::from_rgba_unmultiplied(255, 255, 255, 30), Color32::from_white_alpha(190))
+            (
+                Color32::from_rgba_unmultiplied(255, 255, 255, 12),
+                Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+                Color32::from_white_alpha(190),
+            )
         };
 
         p.rect_filled(btn_rect, round, bg);
-        p.rect_stroke(btn_rect, round, Stroke::new(1.0, border_col), StrokeKind::Inside);
+        p.rect_stroke(
+            btn_rect,
+            round,
+            Stroke::new(1.0, border_col),
+            StrokeKind::Inside,
+        );
         (btn_rect, icon_col, 1.2)
     } else {
         // Dark / Light / 现代默认
@@ -1286,18 +1458,10 @@ mod tests {
     #[test]
     fn the_plan_drops_things_progressively_as_the_window_narrows() {
         let wide = plan_bar(1600.0, MW, MP, 50.0);
-        assert!(
-            wide.mnemonics && wide.title && wide.quick == QUICK.len()
-        );
+        assert!(wide.mnemonics && wide.title && wide.quick == QUICK.len());
         let mid = plan_bar(700.0, MW, MP, 50.0);
-        assert!(
-            mid.mnemonics,
-            "700: 菜单 (带助记) 在"
-        );
-        assert!(
-            mid.quick < QUICK.len(),
-            "700: 快捷钮已被撤掉几个, 不压菜单"
-        );
+        assert!(mid.mnemonics, "700: 菜单 (带助记) 在");
+        assert!(mid.quick < QUICK.len(), "700: 快捷钮已被撤掉几个, 不压菜单");
         let narrow = plan_bar(580.0, MW, MP, 50.0);
         assert!(!narrow.mnemonics && narrow.quick == 0);
     }
@@ -1379,9 +1543,20 @@ fn paint_diff_icon(
     let y3 = left_rect.top() + 8.5;
 
     // 普通代码行 (低透明度)
-    let normal_stroke = egui::Stroke::new(1.0, stroke_color.gamma_multiply(if tc.comic { 0.55 } else { 0.35 }));
-    painter.hline(left_rect.left() + 1.5..=left_rect.right() - 1.5, y1, normal_stroke);
-    painter.hline(right_rect.left() + 1.5..=right_rect.right() - 1.5, y1, normal_stroke);
+    let normal_stroke = egui::Stroke::new(
+        1.0,
+        stroke_color.gamma_multiply(if tc.comic { 0.55 } else { 0.35 }),
+    );
+    painter.hline(
+        left_rect.left() + 1.5..=left_rect.right() - 1.5,
+        y1,
+        normal_stroke,
+    );
+    painter.hline(
+        right_rect.left() + 1.5..=right_rect.right() - 1.5,
+        y1,
+        normal_stroke,
+    );
 
     // 高亮差异行 (左暖黄，右亮绿/鲜红)
     let left_diff = if tc.retro16 {
@@ -1395,11 +1570,27 @@ fn paint_diff_icon(
         Color32::from_rgb(255, 90, 90)
     };
 
-    painter.hline(left_rect.left() + 1.5..=left_rect.right() - 1.5, y2, egui::Stroke::new(1.2, left_diff));
-    painter.hline(right_rect.left() + 1.5..=right_rect.right() - 1.5, y2, egui::Stroke::new(1.2, right_diff));
+    painter.hline(
+        left_rect.left() + 1.5..=left_rect.right() - 1.5,
+        y2,
+        egui::Stroke::new(1.2, left_diff),
+    );
+    painter.hline(
+        right_rect.left() + 1.5..=right_rect.right() - 1.5,
+        y2,
+        egui::Stroke::new(1.2, right_diff),
+    );
 
-    painter.hline(left_rect.left() + 1.5..=left_rect.right() - 1.5, y3, normal_stroke);
-    painter.hline(right_rect.left() + 1.5..=right_rect.right() - 1.5, y3, normal_stroke);
+    painter.hline(
+        left_rect.left() + 1.5..=left_rect.right() - 1.5,
+        y3,
+        normal_stroke,
+    );
+    painter.hline(
+        right_rect.left() + 1.5..=right_rect.right() - 1.5,
+        y3,
+        normal_stroke,
+    );
 
     // 活跃状态下，在两页之间绘制高亮对比连接点
     if is_active {
@@ -1436,7 +1627,11 @@ fn paint_collab_icon(
     let p2 = egui::pos2(center.x + 4.5, center.y + 3.5);
 
     let avatar_bg = if tc.comic {
-        if is_running { Color32::from_rgb(180, 250, 180) } else { Color32::from_rgb(255, 235, 75) }
+        if is_running {
+            Color32::from_rgb(180, 250, 180)
+        } else {
+            Color32::from_rgb(255, 235, 75)
+        }
     } else {
         Color32::from_black_alpha(40)
     };
@@ -1450,15 +1645,26 @@ fn paint_collab_icon(
 
     // 智能体之间的协同链路
     let link_col = if is_running {
-        if tc.retro16 { Color32::from_rgb(0, 255, 120) } else { Color32::from_rgb(0, 220, 130) }
+        if tc.retro16 {
+            Color32::from_rgb(0, 255, 120)
+        } else {
+            Color32::from_rgb(0, 220, 130)
+        }
     } else {
         col.gamma_multiply(0.5)
     };
-    painter.line_segment([p1, p2], egui::Stroke::new(if tc.comic { 1.4 } else { 1.0 }, link_col));
+    painter.line_segment(
+        [p1, p2],
+        egui::Stroke::new(if tc.comic { 1.4 } else { 1.0 }, link_col),
+    );
 
     // 运行态光斑
     if is_running {
-        let spot_col = if tc.retro16 { Color32::from_rgb(0, 255, 200) } else { Color32::from_rgb(0, 255, 180) };
+        let spot_col = if tc.retro16 {
+            Color32::from_rgb(0, 255, 200)
+        } else {
+            Color32::from_rgb(0, 255, 180)
+        };
         painter.circle_filled(center, 1.8, spot_col);
     }
 }
@@ -1541,11 +1747,17 @@ fn paint_sticky_note_icon(
     let lx0 = note_rect.left() + 2.5;
     let lx1 = note_rect.right() - 2.5;
     painter.line_segment(
-        [pos2(lx0, note_rect.top() + 3.5), pos2(lx1, note_rect.top() + 3.5)],
+        [
+            pos2(lx0, note_rect.top() + 3.5),
+            pos2(lx1, note_rect.top() + 3.5),
+        ],
         line_st,
     );
     painter.line_segment(
-        [pos2(lx0, note_rect.top() + 6.5), pos2(lx1, note_rect.top() + 6.5)],
+        [
+            pos2(lx0, note_rect.top() + 6.5),
+            pos2(lx1, note_rect.top() + 6.5),
+        ],
         line_st,
     );
     painter.line_segment(
