@@ -165,7 +165,7 @@ fn main() -> eframe::Result<()> {
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
     // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
-    if !force_new && !relaunched && instance::forward_to_running(&args) {
+    if !force_new && !relaunched && !open_installer && instance::forward_to_running(&args) {
         trace.mark("handed over to the running instance");
         return Ok(());
     }
@@ -179,20 +179,30 @@ fn main() -> eframe::Result<()> {
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
-    let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_visible(true)
-        .with_title("IDE1.0")
-        .with_inner_size([1100.0, 720.0])
-        .with_min_inner_size([480.0, 320.0])
-        .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_visible(true);
+    if open_installer {
+        // 安装向导模式: 独立 800×560 视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
+        viewport = viewport
+            .with_title("IDE1.0 Setup Wizard")
+            .with_inner_size([800.0, 560.0])
+            .with_min_inner_size([800.0, 560.0])
+            .with_resizable(false)
+            .with_decorations(false);
+    } else {
+        viewport = viewport
+            .with_title("IDE1.0")
+            .with_inner_size([1100.0, 720.0])
+            .with_min_inner_size([480.0, 320.0])
+            .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
+        if let Some(g) = st.view.geom {
+            viewport = viewport
+                .with_inner_size([g.w, g.h])
+                .with_position([g.x, g.y])
+                .with_maximized(g.maximized);
+        }
+    }
     if let Some(icon) = appicon::window_icon() {
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
-    }
-    if let Some(g) = st.view.geom {
-        viewport = viewport
-            .with_inner_size([g.w, g.h])
-            .with_position([g.x, g.y])
-            .with_maximized(g.maximized);
     }
     let options = eframe::NativeOptions {
         viewport: viewport.with_transparent(true), // 一律透明窗口: 运行中切到玻璃主题才不用重启 (清屏色在不透明主题下是不透明的)
@@ -240,6 +250,7 @@ fn main() -> eframe::Result<()> {
             let mut app = app::App::with_settings(args, inbox, t_app, st);
             if open_installer {
                 app.installer.open = true;
+                app.installer.standalone = true;
             }
             t.mark("App::new done");
             Ok(Box::new(app))

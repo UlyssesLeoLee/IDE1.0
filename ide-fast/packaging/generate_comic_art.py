@@ -82,39 +82,24 @@ def draw_burst_star(draw, center, r_outer, r_inner, points=10, fill_color=(255, 
     # Main Star
     draw.polygon(poly, fill=fill_color, outline=outline_color)
 
-def draw_cel_shaded_crystal(draw, center, size):
-    """Draws a 3D cel-shaded comic crystal diamond with thick ink outline and hard lighting"""
-    cx, cy = center
-    r = size
-    top = (cx, cy - r)
-    bottom = (cx, cy + r)
-    left = (cx - r * 0.85, cy)
-    right = (cx + r * 0.85, cy)
-    center_pt = (cx, cy)
-
-    # Hard black shadow
-    draw.polygon([(top[0]+3, top[1]+3), (right[0]+3, right[1]+3), (bottom[0]+3, bottom[1]+3), (left[0]+3, left[1]+3)], fill=(0, 0, 0))
-
-    # Cel-shaded facets
-    # Upper Left (Highlight Cyan)
-    draw.polygon([top, left, center_pt], fill=(56, 189, 248), outline=(0, 0, 0))
-    # Upper Right (Electric Cyan)
-    draw.polygon([top, right, center_pt], fill=(14, 165, 233), outline=(0, 0, 0))
-    # Lower Left (Core Shadow Deep Blue)
-    draw.polygon([left, bottom, center_pt], fill=(2, 132, 199), outline=(0, 0, 0))
-    # Lower Right (Cast Shadow Dark Navy)
-    draw.polygon([right, bottom, center_pt], fill=(3, 105, 161), outline=(0, 0, 0))
-
-    # Bold Inking Contour Lines
-    draw.line([top, right], fill=(0, 0, 0), width=2)
-    draw.line([right, bottom], fill=(0, 0, 0), width=2)
-    draw.line([bottom, left], fill=(0, 0, 0), width=2)
-    draw.line([left, top], fill=(0, 0, 0), width=2)
-    draw.line([top, bottom], fill=(0, 0, 0), width=2)
-    draw.line([left, right], fill=(0, 0, 0), width=2)
-
-    # Specular white reflection polygon (Cel-shading highlight)
-    draw.polygon([top, (cx - r * 0.25, cy - r * 0.4), (cx, cy - r * 0.2)], fill=(255, 255, 255))
+def draw_authentic_logo(img, center, size):
+    """Puts the user's authentic IDE1.0 Crystal Logo onto the image with sharp rendering and comic offset shadow"""
+    cx, cy = int(center[0]), int(center[1])
+    s = int(size)
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            logo = logo.resize((s, s), Image.Resampling.LANCZOS)
+            x = cx - s // 2
+            y = cy - s // 2
+            # 纯黑美漫硬投影 (Hard Comic Drop Shadow behind logo)
+            shadow_mask = logo.split()[3]
+            img.paste((0, 0, 0), (x + 3, y + 3), shadow_mask)
+            # 正式用户真实 Logo 贴附
+            img.paste(logo, (x, y), logo)
+            return
+        except Exception as e:
+            print(f"Error loading authentic logo: {e}")
 
 def create_comic_banner():
     # 493 x 58 WiX Header Banner
@@ -130,8 +115,8 @@ def create_comic_banner():
     draw.line([(180, 0), (150, h)], fill=(0, 0, 0), width=2)
     draw.line([(250, 0), (220, h)], fill=(0, 0, 0), width=2)
 
-    # Left Cel-shaded Crystal
-    draw_cel_shaded_crystal(draw, (32, 29), 20)
+    # Left Authentic Crystal Logo
+    draw_authentic_logo(img, (32, 29), 36)
 
     # Comic Title with 3D drop shadow
     font_title = get_font(14, bold=True)
@@ -174,7 +159,7 @@ def create_comic_dialog():
         draw.line([(sx, 0), (sx + 20, header_h)], fill=(240, 210, 0), width=4)
         draw.line([(sx, 0), (sx + 20, header_h)], fill=(0, 0, 0), width=1)
 
-    draw_cel_shaded_crystal(draw, (24, header_h // 2), 15)
+    draw_authentic_logo(img, (24, header_h // 2), 26)
 
     font_head = get_font(13, bold=True)
     draw.text((46, 12), "IDE 1.0  FAST EDITION · SETUP WIZARD", font=font_head, fill=(0, 0, 0))
@@ -199,8 +184,8 @@ def create_comic_dialog():
         ry = core_cy + 48 * math.sin(rad)
         draw.line([(core_cx, core_cy), (rx, ry)], fill=(255, 230, 0), width=1)
 
-    # 3D Cel-shaded Crystal
-    draw_cel_shaded_crystal(draw, (core_cx, core_cy), 26)
+    # Authentic Crystal Logo
+    draw_authentic_logo(img, (core_cx, core_cy), 52)
 
     # Comic Pedestal (Ionic marble style in 2-tone cel shading)
     ped_top = 180

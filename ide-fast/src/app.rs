@@ -5973,6 +5973,10 @@ fn status_bar_style(ui: &mut egui::Ui, text: Color32) {
 
 impl App {
     fn ui_main(&mut self, root: &mut egui::Ui) {
+        if self.installer.open && self.installer.standalone {
+            self.installer_standalone(root);
+            return;
+        }
         let ctx = &root.ctx().clone();
         self.tc = match &self.theme_vars {
             Some(v) if self.theme_visuals.is_some() => crate::view::ThemeColors::from_vars(v),
