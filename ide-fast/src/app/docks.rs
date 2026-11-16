@@ -482,12 +482,10 @@ impl App {
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                let collab_lbl = trz("🛡️ 协同审查");
                 for (t, name) in [
                     (BottomTab::Terminal, "TERMINAL"),
                     (BottomTab::Output, "OUTPUT"),
                     (BottomTab::Problems, "PROBLEMS"),
-                    (BottomTab::CollabReview, collab_lbl),
                 ] {
                     let mut label = name.to_string();
                     if t == BottomTab::Problems && !self.sys.problems.is_empty() {
@@ -496,8 +494,6 @@ impl App {
                     let on = self.sys.bottom == t;
                     let font = if self.tc.retro16 {
                         egui::FontId::monospace(12.0)
-                    } else if t == BottomTab::CollabReview {
-                        egui::FontId::proportional(11.0)
                     } else {
                         egui::FontId::monospace(11.0)
                     };

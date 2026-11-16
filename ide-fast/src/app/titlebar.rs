@@ -640,6 +640,7 @@ impl App {
                             paint_overflow_icon(ui.painter(), content_rect, icon_col, &self.tc);
 
                             egui::Popup::menu(&resp).show(|ui| {
+                                (menuui::style(self.tc))(ui.style_mut());
                                 ui.set_min_width(200.0);
                                 ui.spacing_mut().item_spacing.y = 4.0;
                                 ui.label(
@@ -818,6 +819,7 @@ impl App {
 
         // 点击展开差异比对菜单
         egui::Popup::menu(&resp).show(|ui| {
+            (menuui::style(self.tc))(ui.style_mut());
             ui.set_min_width(210.0);
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.label(egui::RichText::new("文件差异对比 (Diff)").strong());

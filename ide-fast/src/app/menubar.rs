@@ -491,7 +491,6 @@ impl App {
                                     (super::sysopts::BottomTab::Terminal, "底部: 终端 (TERMINAL)"),
                                     (super::sysopts::BottomTab::Output, "底部: 输出 (OUTPUT)"),
                                     (super::sysopts::BottomTab::Problems, "底部: 问题 (PROBLEMS)"),
-                                    (super::sysopts::BottomTab::CollabReview, "底部: 🛡️ 协同审查"),
                                 ] {
                                     let on = self.term.open
                                         && !self.cfg.view.bottom_collapsed

@@ -2080,4 +2080,62 @@ fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
         adapted_on_dark.r() >= 200 && adapted_on_dark.g() >= 200,
         "暗字在深色背景下自动提亮为高对比浅字"
     );
+
+    // 4. 透明模式下拉菜单文字动态变色高对比度校验
+    let dark_menu_fg = style
+        .visuals
+        .override_text_color
+        .expect("暗色透明主题菜单文字颜色已设置");
+    let dark_bg = style.visuals.window_fill;
+    let dark_bg_lum =
+        0.299 * (dark_bg.r() as f32) + 0.587 * (dark_bg.g() as f32) + 0.114 * (dark_bg.b() as f32);
+    let dark_fg_lum = 0.299 * (dark_menu_fg.r() as f32)
+        + 0.587 * (dark_menu_fg.g() as f32)
+        + 0.114 * (dark_menu_fg.b() as f32);
+    assert!(
+        (dark_fg_lum - dark_bg_lum).abs() > 100.0,
+        "暗底下拉菜单文字必须有高对比度浅色"
+    );
+
+    let light_menu_fg = light_style
+        .visuals
+        .override_text_color
+        .expect("浅色透明主题菜单文字颜色已设置");
+    let light_bg = light_style.visuals.window_fill;
+    let light_bg_lum = 0.299 * (light_bg.r() as f32)
+        + 0.587 * (light_bg.g() as f32)
+        + 0.114 * (light_bg.b() as f32);
+    let light_fg_lum = 0.299 * (light_menu_fg.r() as f32)
+        + 0.587 * (light_menu_fg.g() as f32)
+        + 0.114 * (light_menu_fg.b() as f32);
+    assert!(
+        (light_bg_lum - light_fg_lum).abs() > 100.0,
+        "浅底下拉菜单文字必须有高对比度深色"
+    );
+}
+
+#[test]
+fn test_multi_agent_collab_intent_auto_detection() {
+    // 智能识别多智能体协作需求
+    assert!(App::is_multi_agent_collab_intent(
+        "请开启多Agent并行协作修改文件"
+    ));
+    assert!(App::is_multi_agent_collab_intent(
+        "我们需要多智能体协同编写代码"
+    ));
+    assert!(App::is_multi_agent_collab_intent(
+        "并行分工完成架构设计与重构"
+    ));
+    assert!(App::is_multi_agent_collab_intent("/collab 优化所有函数"));
+    assert!(App::is_multi_agent_collab_intent(
+        "帮我派工给各agent协同审查"
+    ));
+
+    // 普通提问不误触
+    assert!(!App::is_multi_agent_collab_intent(
+        "解释一下这一行代码的作用"
+    ));
+    assert!(!App::is_multi_agent_collab_intent(
+        "什么是 Rust 借用检查器？"
+    ));
 }

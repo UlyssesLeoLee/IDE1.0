@@ -1214,6 +1214,8 @@ impl App {
 
     /// 渲染多 Agent 协同工作台 (统一内嵌在右侧 AI 协同侧边栏与协同审查看板中)
     pub(super) fn collab_panel_ui(&mut self, ui: &mut egui::Ui) {
+        ui.set_max_width(ui.available_width());
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         let mut master_send: Option<String> = None;
         let mut parallel_edit_prompt: Option<String> = None;
         let mut individual_send: Option<(usize, String)> = None;
@@ -1430,9 +1432,12 @@ impl App {
                                             .strong()
                                             .color(Color32::from_rgb(40, 210, 120)),
                                     );
-                                    ui.label(
-                                        egui::RichText::new(&run.streaming_text)
-                                            .color(Color32::from_rgb(220, 220, 220)),
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&run.streaming_text)
+                                                .color(Color32::from_rgb(220, 220, 220)),
+                                        )
+                                        .wrap(),
                                     );
                                 });
                             }
@@ -1545,29 +1550,47 @@ impl App {
 /// 辅助渲染单条协同消息
 fn render_collab_msg(ui: &mut egui::Ui, m: &CollabMsg) {
     ui.horizontal_wrapped(|ui| {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         if m.is_user {
             ui.label(
                 egui::RichText::new(format!("{}: ", m.sender))
                     .strong()
                     .color(Color32::from_rgb(100, 180, 255)),
             );
-            ui.label(egui::RichText::new(&m.text).color(Color32::from_rgb(235, 235, 235)));
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&m.text).color(Color32::from_rgb(235, 235, 235)),
+                )
+                .wrap(),
+            );
         } else if m.is_error {
             ui.label(
                 egui::RichText::new(format!("{}: ", m.sender))
                     .strong()
                     .color(Color32::from_rgb(255, 90, 90)),
             );
-            ui.label(egui::RichText::new(&m.text).color(Color32::from_rgb(255, 130, 130)));
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&m.text).color(Color32::from_rgb(255, 130, 130)),
+                )
+                .wrap(),
+            );
         } else if m.sender == "系统" {
-            ui.label(egui::RichText::new(&m.text).weak().italics().size(11.5));
+            ui.add(
+                egui::Label::new(egui::RichText::new(&m.text).weak().italics().size(11.5)).wrap(),
+            );
         } else {
             ui.label(
                 egui::RichText::new(format!("{}: ", m.sender))
                     .strong()
                     .color(Color32::from_rgb(40, 210, 120)),
             );
-            ui.label(egui::RichText::new(&m.text).color(Color32::from_rgb(220, 220, 220)));
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&m.text).color(Color32::from_rgb(220, 220, 220)),
+                )
+                .wrap(),
+            );
         }
     });
 }

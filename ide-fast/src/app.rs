@@ -5266,29 +5266,28 @@ impl App {
                             let rx = x0
                                 + rv.x_of(&painter, rc.cursor[1].min(rv.tail()), &font, text_color);
                             let ry = rect.min.y + top(rc.cursor[0]);
-                            let cursor_col = Color32::from_rgb(rc.color.r, rc.color.g, rc.color.b);
-                            // 1. 绘制 2px 宽的远程光标竖线
+                            // 1. 绘制 2px 宽的远程光标竖线 (半透明柔和，不刺眼)
+                            let bar_col = Color32::from_rgba_unmultiplied(
+                                rc.color.r, rc.color.g, rc.color.b, 200,
+                            );
                             painter.rect_filled(
                                 Rect::from_min_size(Pos2::new(rx, ry), Vec2::new(2.0, row_h)),
                                 0.0,
-                                cursor_col,
+                                bar_col,
                             );
-                            // 2. 绘制悬浮名牌胶囊 (Floating Capsule Badge)
-                            let badge_text =
-                                format!("{} {}", rc.role.badge_prefix(), rc.display_name);
-                            let badge_font = egui::FontId::proportional(10.0);
-                            let text_galley =
-                                painter.layout_no_wrap(badge_text, badge_font, Color32::WHITE);
-                            let text_size = text_galley.size();
-                            let badge_rect = Rect::from_min_size(
-                                Pos2::new(rx - 2.0, (ry - text_size.y - 2.0).max(rect.min.y)),
-                                Vec2::new(text_size.x + 8.0, text_size.y + 2.0),
+                            // 2. 绘制顶部半透明圆点，指示 Agent 位置同时彻底避免遮挡任何代码/文本信息
+                            let dot_center = Pos2::new(rx + 1.0, (ry - 3.5).max(rect.min.y + 3.5));
+                            let dot_col = Color32::from_rgba_unmultiplied(
+                                rc.color.r, rc.color.g, rc.color.b, 160,
                             );
-                            painter.rect_filled(badge_rect, 3.0, cursor_col);
-                            painter.galley(
-                                Pos2::new(badge_rect.min.x + 4.0, badge_rect.min.y + 1.0),
-                                text_galley,
-                                Color32::WHITE,
+                            painter.circle_filled(dot_center, 3.5, dot_col);
+                            painter.circle_stroke(
+                                dot_center,
+                                3.5,
+                                egui::Stroke::new(
+                                    1.0,
+                                    Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                                ),
                             );
                         }
                     }
@@ -6187,8 +6186,11 @@ impl App {
                             .resizable(true)
                             .default_size(app.cfg.view.ai_w)
                             .max_size(right_cap(root.available_width()).min(max_right))
-                            .show(root, |ui| app.ai_ui(ui));
-                        if settled {
+                            .show(root, |ui| {
+                                ui.set_max_width(app.cfg.view.ai_w);
+                                app.ai_ui(ui)
+                            });
+                        if settled && (r.response.dragged() || r.response.drag_stopped()) {
                             app.cfg.view.ai_w = crate::panels::clamp_size(
                                 Dock::Right,
                                 r.response.rect.width().round(),
