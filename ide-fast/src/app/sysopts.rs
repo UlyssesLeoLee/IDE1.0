@@ -11,7 +11,6 @@ pub(super) enum BottomTab {
     Terminal,
     Output,
     Problems,
-    CollabReview,
 }
 
 /// 输出页最多留的条数
@@ -243,18 +242,7 @@ impl App {
                 BottomTab::Terminal => self.term_ui(ui),
                 BottomTab::Output => self.output_ui(ui),
                 BottomTab::Problems => self.problems_ui(ui),
-                BottomTab::CollabReview => self.collab_review_ui(ui),
             });
-    }
-
-    fn collab_review_ui(&mut self, ui: &mut egui::Ui) {
-        Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
-            if ui.button("×").clicked() {
-                self.term.open = false;
-            }
-        });
-        // 内嵌渲染多 Agent 协同工作台 (无浮动窗口)
-        self.collab_panel_ui(ui);
     }
 
     fn output_ui(&mut self, ui: &mut egui::Ui) {

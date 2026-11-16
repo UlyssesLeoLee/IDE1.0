@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::ai::{self, AiConfig, Event, Handle, Msg, ToolCall};
+use crate::app::collab::CollabMsg;
 use ide_agent_router::{
     AgentMemoryEngine, ContextCompactor, CookieJar, CookieStats, FileCookie, HookPipeline,
     LoopBreaker, McpConfig, McpManager, PrunePolicy, SkillRegistry, TaskState,
@@ -389,6 +390,21 @@ impl App {
         }
     }
 
+    /// 识别多智能体协作 / 协同编辑意图
+    pub fn is_multi_agent_collab_intent(q: &str) -> bool {
+        let lower = q.to_lowercase();
+        lower.contains("多agent")
+            || lower.contains("多智能体")
+            || lower.contains("协同")
+            || lower.contains("协作")
+            || lower.contains("并行")
+            || lower.contains("派工")
+            || lower.contains("collab")
+            || lower.contains("multi-agent")
+            || lower.contains("/collab")
+            || lower.contains("/parallel")
+    }
+
     /// 点发送 / Enter: 先校验配置; 要带上下文且没同意过就弹确认
     pub(super) fn ai_send(&mut self, ctx: &egui::Context) {
         let raw_q = self.ai.input.trim().to_string();
@@ -403,6 +419,32 @@ impl App {
                 return;
             }
         };
+
+        // 智能识别多智能体协作需求并自动无缝切换，杜绝误报单智能体错误
+        if Self::is_multi_agent_collab_intent(&q) {
+            self.ai.input.clear();
+            self.ai.open = true;
+            self.ai.collab_mode = true;
+            self.collab.open = true;
+            self.collab.master_input.clear();
+            self.collab.master_history.push(CollabMsg::user("用户", &q));
+            self.collab.master_history.push(CollabMsg::system(
+                "✓ 已智能无缝切换至多 Agent 并行协作工作台。",
+            ));
+            if !self.docs.is_empty() {
+                if let Err(err) = self.execute_parallel_on_active(&q, Some(ctx)) {
+                    self.collab
+                        .master_history
+                        .push(CollabMsg::error("系统", &err));
+                }
+            } else {
+                self.collab.master_history.push(CollabMsg::system(
+                    "请打开或分配需要协同编辑的文件，亦可在下方统筹命令框直接下达任务。",
+                ));
+            }
+            return;
+        }
+
         if !self.ai_cfg().configured() {
             // 未配置云端大模型时：免点击直接在当前打开的文件上确定性执行需求
             self.ai_exec_local_demand(&q, ctx);
@@ -1069,6 +1111,8 @@ impl App {
     }
 
     pub(super) fn ai_ui(&mut self, ui: &mut egui::Ui) {
+        ui.set_max_width(ui.available_width());
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         let ctx = ui.ctx().clone();
         let mut act: Option<Act> = None;
         let busy = self.ai.run.is_some();
@@ -1267,7 +1311,12 @@ impl App {
                 for idx in 0..self.ai.items.len() {
                     match &self.ai.items[idx] {
                         Item::User(t) => {
-                            ui.label(egui::RichText::new(format!("{} {t}", tr("ai.you"))).strong());
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(format!("{} {t}", tr("ai.you"))).strong(),
+                                )
+                                .wrap(),
+                            );
                             let tl = t.to_lowercase();
                             if tl.contains("agent") || tl.contains("派出") || tl.contains("协同")
                             {
@@ -1285,7 +1334,7 @@ impl App {
                             }
                         }
                         Item::Ai(t) => {
-                            ui.label(t.as_str());
+                            ui.add(egui::Label::new(t.as_str()).wrap());
                             if !t.is_empty() && !busy {
                                 ui.horizontal(|ui| {
                                     if ui.small_button(tr("ai.insert")).clicked() {
@@ -1298,13 +1347,18 @@ impl App {
                             }
                         }
                         Item::Tool(t) => {
-                            ui.weak(t.as_str());
+                            ui.add(egui::Label::new(egui::RichText::new(t.as_str()).weak()).wrap());
                         }
                         Item::Err(t) => {
-                            ui.colored_label(Color32::LIGHT_RED, t.as_str());
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(t.as_str()).color(Color32::LIGHT_RED),
+                                )
+                                .wrap(),
+                            );
                         }
                         Item::Sys(t) => {
-                            ui.weak(t.as_str());
+                            ui.add(egui::Label::new(egui::RichText::new(t.as_str()).weak()).wrap());
                         }
                         Item::Proposal(p) => {
                             egui::Frame::group(ui.style()).show(ui, |ui| {
@@ -1312,21 +1366,30 @@ impl App {
                                     "ai.proposal",
                                     &[&(p.start + 1).to_string(), &p.remove.to_string()],
                                 );
-                                ui.label(if p.reason.is_empty() {
-                                    head
-                                } else {
-                                    format!("{head} — {}", p.reason)
-                                });
+                                ui.add(
+                                    egui::Label::new(if p.reason.is_empty() {
+                                        head
+                                    } else {
+                                        format!("{head} — {}", p.reason)
+                                    })
+                                    .wrap(),
+                                );
                                 for l in &p.old {
-                                    ui.colored_label(
-                                        Color32::from_rgb(220, 110, 110),
-                                        format!("- {l}"),
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!("- {l}"))
+                                                .color(Color32::from_rgb(220, 110, 110)),
+                                        )
+                                        .wrap(),
                                     );
                                 }
                                 for l in &p.insert {
-                                    ui.colored_label(
-                                        Color32::from_rgb(110, 200, 120),
-                                        format!("+ {l}"),
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!("+ {l}"))
+                                                .color(Color32::from_rgb(110, 200, 120)),
+                                        )
+                                        .wrap(),
                                     );
                                 }
                                 ui.horizontal(|ui| {

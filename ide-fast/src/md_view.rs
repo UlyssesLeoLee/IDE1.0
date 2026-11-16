@@ -387,6 +387,40 @@ pub fn calc_table_col_widths(rows: &[Vec<String>], avail_width: f32, spacing_x: 
     widths
 }
 
+/// 估算单元格渲染高度 (基于文字排版及换行)
+pub fn estimate_cell_height(text: &str, col_w: f32) -> f32 {
+    let line_h = 20.0_f32;
+    let mut total_lines = 0.0_f32;
+    for line in text.split('\n') {
+        let disp_w: f32 = line
+            .chars()
+            .map(|ch| if ch.is_ascii() { 7.5 } else { 13.5 })
+            .sum();
+        let lines = (disp_w / (col_w - 12.0).max(20.0)).ceil().max(1.0);
+        total_lines += lines;
+    }
+    (total_lines.max(1.0) * line_h).max(line_h)
+}
+
+/// 计算各行自适应高度以及各单元格的高度，确保上下居中对齐
+pub fn calc_table_row_metrics(rows: &[Vec<String>], col_widths: &[f32]) -> Vec<(f32, Vec<f32>)> {
+    rows.iter()
+        .map(|row| {
+            let cell_heights: Vec<f32> = row
+                .iter()
+                .enumerate()
+                .map(|(c, cell)| {
+                    let w = col_widths.get(c).copied().unwrap_or(64.0);
+                    estimate_cell_height(cell, w)
+                })
+                .collect();
+            let max_cell_h = cell_heights.iter().copied().fold(20.0_f32, f32::max);
+            let row_h = max_cell_h + 16.0; // 上下保留呼吸边距
+            (row_h, cell_heights)
+        })
+        .collect()
+}
+
 fn table_ui(
     ui: &mut egui::Ui,
     id: usize,
@@ -402,6 +436,8 @@ fn table_ui(
     }
     let spacing_x = 16.0;
     let col_widths = calc_table_col_widths(rows, ui.available_width(), spacing_x);
+    let row_metrics = calc_table_row_metrics(rows, &col_widths);
+
     egui::Frame::NONE
         .stroke(egui::Stroke::new(1.0, cx.tc.border))
         .show(ui, |ui| {
@@ -414,10 +450,17 @@ fn table_ui(
                         .spacing([spacing_x, 6.0])
                         .show(ui, |ui| {
                             for (k, row) in rows.iter().enumerate() {
+                                let (row_h, cell_heights) = row_metrics
+                                    .get(k)
+                                    .map(|(rh, ch)| (*rh, ch.as_slice()))
+                                    .unwrap_or((28.0, &[]));
                                 for c in 0..cols {
                                     let text = row.get(c).map(String::as_str).unwrap_or("");
                                     let al = aligns.get(c).copied().unwrap_or(Align::Left);
                                     let col_w = col_widths.get(c).copied().unwrap_or(64.0);
+                                    let cell_h = cell_heights.get(c).copied().unwrap_or(20.0);
+                                    let pad_y = ((row_h - cell_h) / 2.0).max(4.0);
+
                                     let layout = match al {
                                         Align::Left => egui::Layout::top_down(egui::Align::Min),
                                         Align::Center => {
@@ -426,13 +469,16 @@ fn table_ui(
                                         Align::Right => egui::Layout::top_down(egui::Align::Max),
                                     };
                                     ui.allocate_ui_with_layout(
-                                        egui::vec2(col_w, 0.0),
+                                        egui::vec2(col_w, row_h),
                                         layout,
                                         |ui| {
                                             ui.set_min_width(col_w);
                                             ui.set_max_width(col_w);
+                                            ui.set_min_height(row_h);
                                             ui.style_mut().wrap_mode =
                                                 Some(egui::TextWrapMode::Wrap);
+                                            // 上部填充，实现上下居中
+                                            ui.add_space(pad_y);
                                             if k == 0 {
                                                 ui.add(
                                                     egui::Label::new(RichText::new(text).strong())
@@ -441,6 +487,8 @@ fn table_ui(
                                             } else {
                                                 inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
                                             }
+                                            // 下部填充，维持高度自适应对称
+                                            ui.add_space(pad_y);
                                         },
                                     );
                                 }
@@ -1040,5 +1088,34 @@ mod tests {
         }
         let sum_narrow: f32 = narrow_widths.iter().sum();
         assert!(sum_narrow <= 260.0 - 32.0);
+    }
+
+    #[test]
+    fn table_row_metrics_adaptive_height_and_vertical_centering() {
+        let rows = vec![
+            vec!["标题".into(), "单行内容".into()],
+            vec!["多行\n换行测试\n第三行".into(), "短短单行".into()],
+        ];
+        let widths = vec![120.0, 120.0];
+        let metrics = calc_table_row_metrics(&rows, &widths);
+        assert_eq!(metrics.len(), 2);
+
+        // 第 0 行是单行，高度合理
+        let (row0_h, cell0_heights) = &metrics[0];
+        assert!(*row0_h >= 24.0);
+        assert_eq!(cell0_heights.len(), 2);
+
+        // 第 1 行第一列有多行，行高应自适应撑大，且为第二列短内容留出充分的垂直居中 padding
+        let (row1_h, cell1_heights) = &metrics[1];
+        assert!(*row1_h > *row0_h, "多行内容行高自动撑大");
+        let multi_h = cell1_heights[0];
+        let single_h = cell1_heights[1];
+        assert!(multi_h > single_h);
+        let pad_single = (*row1_h - single_h) / 2.0;
+        let pad_multi = (*row1_h - multi_h) / 2.0;
+        assert!(
+            pad_single > pad_multi,
+            "短内容上下居中边距更大，确保垂直居中"
+        );
     }
 }

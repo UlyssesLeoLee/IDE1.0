@@ -168,6 +168,16 @@ pub fn title_width(ui: &Ui, label: &str, mn: char) -> f32 {
         + 2.0 * MENU_PAD_X
 }
 
+/// 计算与给定背景色具备高对比度的前景色 (根据 sRGB 亮度自动动态反色，确保高可读性)
+pub fn contrast_fg(bg: Color32) -> Color32 {
+    let lum = 0.299 * (bg.r() as f32) + 0.587 * (bg.g() as f32) + 0.114 * (bg.b() as f32);
+    if lum < 140.0 {
+        Color32::from_rgb(240, 243, 246)
+    } else {
+        Color32::from_rgb(24, 28, 32)
+    }
+}
+
 /// 菜单里的样式修改器: 下拉框(底色 = 菜单栏色, 1px 边, 直角, 阴影 `0 2px 8px`), 行内边距, 悬停色, 最小宽
 pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'static {
     move |s: &mut egui::Style| {
@@ -179,16 +189,20 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
         s.text_styles
             .insert(egui::TextStyle::Button, FontId::proportional(12.0));
         let v = &mut s.visuals;
-        if tc.is_translucent() {
+        let fill = if tc.is_translucent() {
             // 透明主题下下拉菜单严禁透明，使用高质感实色底，杜绝文字重叠穿透
-            v.window_fill = if tc.dark {
+            if tc.dark {
                 Color32::from_rgb(22, 27, 34)
             } else {
                 Color32::from_rgb(250, 250, 252)
-            };
+            }
         } else {
-            v.window_fill = tc.bg_bar;
-        }
+            tc.bg_bar
+        };
+        v.window_fill = fill;
+        // 动态计算菜单前景文字颜色，避免在透明模式下文字不能动态变色造成看不清
+        let menu_fg = contrast_fg(fill);
+        v.override_text_color = Some(menu_fg);
         v.window_stroke = Stroke::new(1.0, tc.border);
         v.menu_corner_radius = egui::CornerRadius::ZERO;
         v.popup_shadow = Shadow {
@@ -198,12 +212,13 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
             color: Color32::from_black_alpha(128),
         };
         v.widgets.hovered.weak_bg_fill = tc.bg_active;
-        v.widgets.hovered.fg_stroke.color = tc.fg;
+        v.widgets.hovered.fg_stroke.color = menu_fg;
         v.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
         v.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
         v.widgets.active.corner_radius = egui::CornerRadius::ZERO;
         v.widgets.active.weak_bg_fill = tc.bg_active;
-        v.widgets.inactive.fg_stroke.color = tc.fg;
+        v.widgets.inactive.fg_stroke.color = menu_fg;
+        v.widgets.open.fg_stroke.color = menu_fg;
     }
 }
 
@@ -238,7 +253,7 @@ pub fn mbtn(ui: &mut Ui, text: impl AsRef<str>) -> Response {
     ui.add(b)
 }
 
-pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
+pub fn menu_check(ui: &mut Ui, _tc: &ThemeColors, on: bool, label: impl AsRef<str>) -> Response {
     let (name, keys) = split_keys(label.as_ref());
     let mut b = egui::Button::new(name).fill(Color32::TRANSPARENT);
     if !keys.is_empty() {
@@ -246,12 +261,16 @@ pub fn menu_check(ui: &mut Ui, tc: &ThemeColors, on: bool, label: impl AsRef<str
     }
     let r = ui.add(b);
     if on {
+        let check_col = ui
+            .visuals()
+            .override_text_color
+            .unwrap_or(ui.visuals().widgets.inactive.fg_stroke.color);
         ui.painter().text(
             egui::pos2(r.rect.left() + 7.0, r.rect.center().y),
             Align2::LEFT_CENTER,
             "✓",
             FontId::proportional(12.0),
-            tc.fg,
+            check_col,
         );
     }
     r
