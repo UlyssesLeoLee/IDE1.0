@@ -311,7 +311,8 @@ impl App {
         app.term.open = st.view.term_open;
         app.md_preview = st.view.md_preview;
         app.applied_font = crate::fonts::effective_font_family(&st.font_family, &st.theme_plugin);
-        app.cfg.font_family = st.font_family.clone();
+        app.cfg.font_family =
+            crate::fonts::sanitize_font_family(&st.font_family, &st.theme_plugin);
         for a in &args {
             app.open_spec(a);
         }
@@ -2263,6 +2264,8 @@ impl App {
                     {
                         let _ = plugins::set_enabled(&r.id, !r.enabled);
                         self.md10.invalidate();
+                        self.nema.cached_render = None;
+                        self.nema.cached_graph = None;
                         if r.enabled {
                             self.plug.unload(&r.id);
                         }
@@ -2294,6 +2297,8 @@ impl App {
                 if ui.small_button(tr("c.delete")).clicked() {
                     let _ = plugins::remove(&r.id);
                     self.md10.invalidate();
+                    self.nema.cached_render = None;
+                    self.nema.cached_graph = None;
                     self.plug.unload(&r.id);
                     if self.theme_id == r.id {
                         self.set_theme_plugin("");
@@ -2337,6 +2342,8 @@ impl App {
                     if ui.button(name).clicked() {
                         let _ = plugins::restore(&id);
                         self.md10.invalidate();
+                        self.nema.cached_render = None;
+                        self.nema.cached_graph = None;
                         ui.close();
                     }
                 }
@@ -3401,7 +3408,7 @@ impl App {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.strong(format!("IDE1.0 Fast {}", env!("CARGO_PKG_VERSION")));
+                ui.strong(format!("IDE1.0 {}", env!("CARGO_PKG_VERSION")));
                 ui.label(tr("ui.about"));
             });
         if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
@@ -3427,12 +3434,109 @@ impl App {
             self.about_window(ctx);
         }
         self.gh_window(ctx);
+        self.nema_interpreter_window(ctx);
         self.upd_window(ctx);
         self.ai_windows(ctx);
     }
 
     /// 编辑区: 输入事件 -> doc; 然后只画看得见的行
     /// 一栏编辑区: 临时把 active 换成这栏的文档, 画完换回; 点击这栏 = 它拿到焦点
+    pub(super) fn doc_is_markdown(d: &Doc) -> bool {
+        let lower = d.name.to_ascii_lowercase();
+        lower.ends_with(".md") || lower.ends_with(".markdown")
+    }
+
+    pub(super) fn should_show_md_overlay_for(&self, doc_idx: usize) -> bool {
+        let doc = &self.docs[doc_idx.min(self.docs.len() - 1)];
+        self.md_preview
+            && self.cfg.view.md_overlay
+            && !self.welcome_visible()
+            && Self::doc_is_markdown(doc)
+    }
+
+    pub(super) fn toggle_right_collapse_slot(
+        &mut self,
+        kind: RightCollapseKind,
+        is_md_doc: bool,
+        is_nema_doc: bool,
+    ) {
+        match kind {
+            RightCollapseKind::Minimap => {
+                self.cfg.view.minimap = !self.cfg.view.minimap;
+            }
+            RightCollapseKind::Md => {
+                let md_open = (is_md_doc && !self.cfg.view.md_bar_collapsed) || self.md_preview;
+                if md_open {
+                    self.cfg.view.md_bar_collapsed = true;
+                    self.md_preview = false;
+                } else {
+                    self.cfg.view.md_bar_collapsed = false;
+                    self.md_preview = true;
+                }
+            }
+            RightCollapseKind::Nema => {
+                let nema_open = (is_nema_doc && !self.cfg.view.nema_bar_collapsed) || self.nema_preview;
+                if nema_open {
+                    self.cfg.view.nema_bar_collapsed = true;
+                    self.nema_preview = false;
+                } else {
+                    self.cfg.view.nema_bar_collapsed = false;
+                    self.nema_preview = true;
+                }
+            }
+        }
+        self.cfg.save();
+    }
+
+    pub(super) fn paint_overlay_right_collapse_slots(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+    ) {
+        let ai = self.active.min(self.docs.len() - 1);
+        let d = &self.docs[ai];
+        let is_md_doc = Self::doc_is_markdown(d);
+        let is_nema_doc = nemaopts::is_nema_doc(d);
+        let minimap_open = self.cfg.view.minimap && !d.lines.is_empty();
+        let md_open = (is_md_doc && !self.cfg.view.md_bar_collapsed) || self.md_preview;
+        let nema_open = (is_nema_doc && !self.cfg.view.nema_bar_collapsed) || self.nema_preview;
+        let slots = right_collapse_slots(rect, minimap_open, md_open, nema_open);
+        let btn_painter = ui.painter_at(rect.intersect(ui.clip_rect()));
+        let pressed = ui.ctx().input(|i| i.pointer.primary_down());
+        let mut clicked_kind = None;
+        for slot in slots {
+            let (label, tip_text) = match slot.kind {
+                RightCollapseKind::Minimap => ("导航", trz("折叠 / 展开右侧导航图 (Minimap)")),
+                RightCollapseKind::Md => ("MD", trz("折叠 / 展开 Markdown 工具栏/预览")),
+                RightCollapseKind::Nema => ("NEMA", trz("折叠 / 展开 NEMA 工具栏/预览")),
+            };
+            let resp = ui
+                .interact(
+                    slot.rect,
+                    ui.id().with(("overlay_r_col_slot", slot.kind as u8)),
+                    egui::Sense::click(),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(tip_text);
+            crate::btnstyle::paint_unified_collapse_btn(
+                ui,
+                &btn_painter,
+                slot.rect,
+                label,
+                &self.tc,
+                slot.open,
+                resp.hovered(),
+                resp.hovered() && pressed,
+            );
+            if resp.clicked() {
+                clicked_kind = Some(slot.kind);
+            }
+        }
+        if let Some(kind) = clicked_kind {
+            self.toggle_right_collapse_slot(kind, is_md_doc, is_nema_doc);
+        }
+    }
+
     fn editor_pane(
         &mut self,
         ui: &mut egui::Ui,
@@ -3445,6 +3549,13 @@ impl App {
             return self.editor(ui, ctx, find_has_focus);
         }
         let doc = self.panes.docs[pane].min(self.docs.len() - 1);
+        if pane == 0 && self.should_show_md_overlay_for(doc) {
+            let keep = self.active;
+            self.active = doc;
+            self.md_overlay(ctx, ui.max_rect());
+            self.active = keep;
+            return;
+        }
         let keep = self.active;
         self.active = doc;
         self.pane_keys = self.panes.focus == pane;
@@ -3493,6 +3604,9 @@ impl App {
         } else if prev_id == "theme-retro16" && (self.font_px - 12.0).abs() < 0.1 {
             self.font_px = DEFAULT_FONT_PX;
         }
+        // 切换主题后同步字体约束: 仅 Retro16 用像素字体，其他主题清理残留像素字体并清除已缓存字体触发重载
+        self.cfg.font_family = crate::fonts::sanitize_font_family(&self.cfg.font_family, id);
+        self.applied_font.clear();
         let spec = plugins::find_theme(id);
         self.sys.theme_glass = spec.as_ref().is_some_and(|t| t.translucent);
         // 玻璃主题声明 luminance=dynamic 时, 文字色按系统「应用主题」明暗取 (一次读取, 不轮询)
@@ -3509,6 +3623,7 @@ impl App {
         if self.theme_visuals.is_none() {
             self.theme_id.clear();
         }
+        self.cfg.theme_plugin = self.theme_id.clone();
     }
 
     /// 选一个 zip -> 给确认框 (名称 / 版本 / 权限) -> 安装
@@ -3548,6 +3663,8 @@ impl App {
                     return;
                 }
                 self.md10.invalidate();
+                self.nema.cached_render = None;
+                self.nema.cached_graph = None;
                 match plugins::install_zip(&bytes, &perms) {
                     Ok(m) => m,
                     Err(e) => e,
@@ -3652,6 +3769,23 @@ impl App {
                 } else {
                     "已取消只读".into()
                 };
+            }
+            Action::OpenAiChat => {
+                self.ai.open = true;
+                self.ai.collab_mode = false;
+                self.expand_dock(crate::panels::Dock::Right);
+            }
+            Action::OpenCollabBench => {
+                self.ai.open = true;
+                self.ai.collab_mode = true;
+                self.collab.open = true;
+                self.expand_dock(crate::panels::Dock::Right);
+            }
+            Action::ParallelAgentEdit => {
+                self.ai.open = true;
+                self.ai.collab_mode = true;
+                self.expand_dock(crate::panels::Dock::Right);
+                let _ = self.execute_parallel_on_active("协同审查并并行完善当前文件各区域", None);
             }
             Action::OpenReviewDoc => self.open_review_doc(),
             Action::TriggerCoeditDemo => self.trigger_coedit_demo(),
@@ -3773,8 +3907,29 @@ impl App {
             crate::fonts::editor_family()
         };
         let font = FontId::new(self.font_px, font_fam.clone());
-        let (base_h, char_w) = ctx.fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0') + self.cfg.letter_spacing));
-        // 行高倍数: 整行(含自动换行的每个显示行)都按这个高度排, 文字在行内居中
+        let ai = self.active.min(self.docs.len() - 1);
+        let alt_down = ctx.input(|i| i.modifiers.alt);
+        let has_box_sel = self.docs.get(ai).and_then(|d| d.box_sel).is_some();
+        let box_active = has_box_sel
+            || (alt_down
+                && (self.text_drag.is_some()
+                    || ctx.input(|i| {
+                        i.pointer.is_decidedly_dragging()
+                            || i.pointer.any_down()
+                            || i.pointer.any_pressed()
+                    })));
+        let box_expand = ctx.animate_bool_responsive(egui::Id::new("editor_box_sel_expand"), box_active);
+        let _row_extra_spacing = 0.0; // 纵向行间距不变化
+        let char_extra_spacing = box_expand * 8.0; // 横向列间距拉大8px左右
+        let (base_h, base_char_w) = ctx.fonts_mut(|f| {
+            (
+                f.row_height(&font),
+                f.glyph_width(&font, '0') + self.cfg.letter_spacing,
+            )
+        });
+        let char_w = base_char_w + char_extra_spacing;
+        let effective_letter_spacing = self.cfg.letter_spacing + char_extra_spacing;
+        // 行高倍数: 整行(含自动换行的每个显示行)都按这个高度排, 文字在行内居中; Alt 纵向选取时横向列间距拉大 8px
         let row_h = crate::view::row_height(base_h, self.cfg.line_height, self.font_px);
         let rgb = |c: [u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
         let text_color = self
@@ -3786,7 +3941,6 @@ impl App {
         let weak = self.tc.fg_dim; // 行号 / 折叠标记: --fg-muted
         let sel_bg = ui.visuals().selection.bg_fill;
         let max_cols = self.max_cols;
-        let ai = self.active.min(self.docs.len() - 1);
         let (tab, wrap_pref, _) = self.eff(&self.docs[ai].name.clone());
         let theme = self.syntax_theme_full(); // 含首选项「字体与颜色」里的词法颜色覆盖
         let marks = self.find.marks_for(&self.docs[ai]);
@@ -3865,7 +4019,10 @@ impl App {
                 self.docs[ai].id,
                 self.docs[ai].rev,
                 wrap_w as i32 + fsig as i32 * 7,
-                (self.font_px * 10.0) as i32 + (self.cfg.line_height * 1000.0) as i32 * 1000 + if self.cfg.font_bold { 50000 } else { 0 } + (self.cfg.letter_spacing * 100.0) as i32,
+                (self.font_px * 10.0) as i32
+                    + (row_h * 100.0) as i32
+                    + if self.cfg.font_bold { 50000 } else { 0 }
+                    + (effective_letter_spacing * 100.0) as i32,
                 tab + (wrap as usize) * 100 + kcols.cols * 1000 + kcols.hang as usize * 50,
             );
             if self.wrap_cache.as_ref().map(|c| c.0) != Some(key) {
@@ -3889,7 +4046,7 @@ impl App {
                         for sec in &mut job.sections {
                             sec.format.line_height = Some(row_h);
                             sec.format.italics = self.cfg.font_italic;
-                            sec.format.extra_letter_spacing = self.cfg.letter_spacing;
+                            sec.format.extra_letter_spacing = effective_letter_spacing;
                         }
                         y += ctx.fonts_mut(|f| f.layout_job(job)).size().y.max(row_h);
                     } else {
@@ -4040,14 +4197,22 @@ impl App {
                             Key::PageDown => Some("PageDown"),
                             _ => None,
                         };
-                        if modifiers.alt && !ctrl {
-                            if key == Key::PageUp {
-                                if d.prev_page() {
+                        if modifiers.alt {
+                            if shift {
+                                if let Some(k) = nav {
+                                    d.box_nav(k, ctrl, 1);
                                     continue;
                                 }
-                            } else if key == Key::PageDown {
-                                if d.next_page() {
-                                    continue;
+                            }
+                            if !ctrl {
+                                match key {
+                                    Key::PageUp => {
+                                        let _ = d.prev_page();
+                                    }
+                                    Key::PageDown => {
+                                        let _ = d.next_page();
+                                    }
+                                    _ => {}
                                 }
                             }
                             continue;
@@ -4187,7 +4352,7 @@ impl App {
                         row_h,
                         char_bg,
                         self.cfg.font_italic,
-                        self.cfg.letter_spacing,
+                        effective_letter_spacing,
                         self.tc.is_translucent(),
                         is_light_bg,
                     );
@@ -4287,20 +4452,124 @@ impl App {
                             b[1].min(b[3]),
                             b[1].max(b[3]),
                         );
-                        if row >= r0 && row <= r1 && c1 > c0 {
+                        if row >= r0 && row <= r1 {
                             let tail = rv.tail();
                             let xx = |c: usize| {
+                                let di = rv.idx(c.min(tail));
                                 rv.x_of(&painter, c.min(tail), &font, text_color)
+                                    + di as f32 * char_extra_spacing
                                     + char_w * c.saturating_sub(tail) as f32
                             };
-                            painter.rect_filled(
-                                Rect::from_min_max(
-                                    Pos2::new(x0 + xx(c0), y),
-                                    Pos2::new(x0 + xx(c1), y + row_h),
-                                ),
-                                0.0,
-                                sel_bg,
-                            );
+                            let (x_left, x_right) = (x0 + xx(c0), x0 + xx(c1));
+                            let stroke_col = if self.tc.crystal {
+                                self.tc.mat_prism_cyan
+                            } else if self.tc.clear {
+                                self.tc.blue
+                            } else {
+                                Color32::from_rgb(0, 215, 255)
+                            };
+                            let border_stroke = egui::Stroke::new(1.8, stroke_col);
+
+                            if c1 > c0 {
+                                let box_r = Rect::from_min_max(
+                                    Pos2::new(x_left, y + 0.5),
+                                    Pos2::new(x_right, y + row_h - 0.5),
+                                );
+                                let alt_sel_fill = if self.tc.crystal || self.tc.clear {
+                                    Color32::from_rgba_unmultiplied(0, 180, 255, 75)
+                                } else {
+                                    Color32::from_rgba_unmultiplied(sel_bg.r(), sel_bg.g(), sel_bg.b(), 180)
+                                };
+                                painter.rect_filled(box_r, 0.0, alt_sel_fill);
+
+                                // 动态网格刻度线: 选中的每列字符间绘制垂直细导线
+                                if c1 > c0 + 1 {
+                                    for c in (c0 + 1)..c1 {
+                                        let cx = x0 + xx(c);
+                                        painter.line_segment(
+                                            [Pos2::new(cx, y + 1.0), Pos2::new(cx, y + row_h - 1.0)],
+                                            egui::Stroke::new(0.8, Color32::from_rgba_unmultiplied(255, 255, 255, 55)),
+                                        );
+                                    }
+                                }
+
+                                if row == r0 {
+                                    painter.line_segment(
+                                        [Pos2::new(x_left, y + 0.5), Pos2::new(x_right, y + 0.5)],
+                                        border_stroke,
+                                    );
+                                }
+                                if row == r1 {
+                                    painter.line_segment(
+                                        [Pos2::new(x_left, y + row_h - 0.5), Pos2::new(x_right, y + row_h - 0.5)],
+                                        border_stroke,
+                                    );
+                                }
+                                painter.line_segment(
+                                    [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
+                                    border_stroke,
+                                );
+                                painter.line_segment(
+                                    [Pos2::new(x_right, y), Pos2::new(x_right, y + row_h)],
+                                    border_stroke,
+                                );
+                            } else {
+                                // 列宽为 0 时的纵向光标标线
+                                painter.line_segment(
+                                    [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
+                                    border_stroke,
+                                );
+                            }
+
+                            // 在最后一行底部绘制动态悬浮坐标/尺寸指示徽章
+                            if row == r1 {
+                                let badge_text = if c1 > c0 {
+                                    format!(
+                                        "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
+                                        r0 + 1,
+                                        r1 + 1,
+                                        r1 - r0 + 1,
+                                        c0 + 1,
+                                        c1,
+                                        c1 - c0
+                                    )
+                                } else {
+                                    format!(
+                                        "📐 纵向光标 [R{}..{} ({}行) × C{}]",
+                                        r0 + 1,
+                                        r1 + 1,
+                                        r1 - r0 + 1,
+                                        c0 + 1
+                                    )
+                                };
+                                let badge_font = FontId::proportional(11.0);
+                                let galley = painter.layout_no_wrap(
+                                    badge_text,
+                                    badge_font,
+                                    Color32::WHITE,
+                                );
+                                let gsize = galley.size();
+                                let bx = (x_right.max(x_left) + 6.0)
+                                    .min(rect.max.x - gsize.x - 12.0)
+                                    .max(x0);
+                                let by = (y + row_h + 2.0).min(rect.max.y - gsize.y - 6.0);
+                                let badge_r = Rect::from_min_size(
+                                    Pos2::new(bx, by),
+                                    Vec2::new(gsize.x + 10.0, gsize.y + 4.0),
+                                );
+                                painter.rect_filled(badge_r, 4.0, Color32::from_rgb(18, 22, 34));
+                                painter.rect_stroke(
+                                    badge_r,
+                                    4.0,
+                                    egui::Stroke::new(1.2, stroke_col),
+                                    egui::StrokeKind::Outside,
+                                );
+                                painter.galley(
+                                    Pos2::new(badge_r.min.x + 5.0, badge_r.min.y + 2.0),
+                                    galley,
+                                    Color32::WHITE,
+                                );
+                            }
                         }
                     }
                     // 差异对比全行浅底色铺底与 Gap 断线 (根据当前主题的专属差异配色系统)
@@ -4460,7 +4729,34 @@ impl App {
                         );
                     }
                     if vw.line_numbers {
-                        let num_c = if row == d.cursor[0] { tc.fg } else { weak };
+                        let is_in_box = d.box_sel.map(|b| {
+                            let (r0, r1) = (b[0].min(b[2]), b[0].max(b[2]));
+                            row >= r0 && row <= r1
+                        }).unwrap_or(false);
+                        if is_in_box {
+                            let strip_col = if self.tc.crystal {
+                                self.tc.mat_prism_cyan
+                            } else if self.tc.clear {
+                                self.tc.blue
+                            } else {
+                                Color32::from_rgb(0, 215, 255)
+                            };
+                            painter.rect_filled(
+                                Rect::from_min_size(
+                                    Pos2::new(rect.min.x + gutter - 3.5, y),
+                                    Vec2::new(2.5, row_h),
+                                ),
+                                0.0,
+                                strip_col,
+                            );
+                        }
+                        let num_c = if is_in_box {
+                            Color32::from_rgb(0, 215, 255)
+                        } else if row == d.cursor[0] {
+                            tc.fg
+                        } else {
+                            weak
+                        };
                         painter.text(
                             Pos2::new(rect.min.x + gutter - 8.0, y + row_h / 2.0),
                             egui::Align2::RIGHT_CENTER,
@@ -4616,77 +4912,47 @@ impl App {
                     mp.rect_filled(vrect, 0.0, view_bg);
                     mp.rect_stroke(vrect, 0.0, view_stroke, egui::StrokeKind::Inside);
 
-                    // 折叠 / 隐藏按钮 (位于缩略图右上角)
-                    let col_btn_rect = Rect::from_min_size(
-                        Pos2::new(mrect.max.x - 18.0, mrect.min.y + 2.0),
-                        Vec2::new(16.0, 16.0),
-                    );
-                    let col_resp = ui
-                        .interact(col_btn_rect, egui::Id::new("col_btn"), egui::Sense::click())
-                        .on_hover_text(trz("折叠缩略图 (点击隐藏)"));
-                    let col_btn_hovered = col_resp.hovered();
-                    if col_resp.clicked() {
-                        self.cfg.view.minimap = false;
-                        self.cfg.save();
-                    }
-                    if col_btn_hovered {
-                        let btn_bg = if tc.comic {
-                            Color32::from_rgb(255, 204, 0)
-                        } else if tc.retro16 {
-                            Color32::from_rgb(0, 255, 136)
-                        } else {
-                            tc.bg_active
-                        };
-                        mp.rect_filled(col_btn_rect, 2.0, btn_bg);
-                    }
-                    let col_arrow_col = if col_btn_hovered {
-                        if tc.comic || tc.retro16 { Color32::BLACK } else { tc.fg }
-                    } else {
-                        tc.fg_dim
-                    };
-                    mp.text(
-                        col_btn_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "▶",
-                        egui::FontId::proportional(9.0),
-                        col_arrow_col,
-                    );
                 }
-                if !vw.minimap && !d.lines.is_empty() {
-                    // 缩略图处于隐藏/折叠状态时的展开手柄 (位于右上缘)
-                    let exp_tab_rect = Rect::from_min_size(
-                        Pos2::new(rect.min.x + viewport.max.x - 14.0, rect.min.y + viewport.min.y + 6.0),
-                        Vec2::new(14.0, 24.0),
+                // 右侧统一缩进 / 折叠控制条 (导航 / MD / NEMA):
+                // 默认全部位于右上角；点开任意一项后，已打开项保留在上方，其余未打开项自动降到打开区域底部
+                {
+                    let is_md_doc = Self::doc_is_markdown(d);
+                    let is_nema_doc = nemaopts::is_nema_doc(d);
+                    let minimap_open = vw.minimap && !d.lines.is_empty();
+                    let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
+                    let nema_open = (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
+                    let screen_vp = Rect::from_min_size(
+                        Pos2::new(rect.min.x + viewport.min.x, rect.min.y + viewport.min.y),
+                        viewport.size(),
                     );
-                    let exp_resp = ui
-                        .interact(exp_tab_rect, egui::Id::new("exp_btn"), egui::Sense::click())
-                        .on_hover_text(trz("展开缩略图 (Minimap)"));
-                    let exp_hovered = exp_resp.hovered();
-                    if exp_resp.clicked() {
-                        self.cfg.view.minimap = true;
-                        self.cfg.save();
+                    let slots = right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
+                    let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
+                    let pressed = ui.ctx().input(|i| i.pointer.primary_down());
+                    for slot in slots {
+                        let (label, tip_text) = match slot.kind {
+                            RightCollapseKind::Minimap => ("导航", trz("折叠 / 展开右侧导航图 (Minimap)")),
+                            RightCollapseKind::Md => ("MD", trz("折叠 / 展开 Markdown 工具栏/预览")),
+                            RightCollapseKind::Nema => ("NEMA", trz("折叠 / 展开 NEMA 工具栏/预览")),
+                        };
+                        let hresp = ui
+                            .interact(
+                                slot.rect,
+                                ui.id().with(("r_col_slot", slot.kind as u8)),
+                                egui::Sense::hover(),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(tip_text);
+                        crate::btnstyle::paint_unified_collapse_btn(
+                            ui,
+                            &btn_painter,
+                            slot.rect,
+                            label,
+                            &tc,
+                            slot.open,
+                            hresp.hovered(),
+                            hresp.hovered() && pressed,
+                        );
                     }
-                    let exp_p = ui.painter_at(exp_tab_rect.intersect(ui.clip_rect()));
-                    let (tab_bg, tab_stroke, arrow_col) = if exp_hovered {
-                        if tc.comic {
-                            (Color32::from_rgb(255, 204, 0), egui::Stroke::new(1.5, Color32::BLACK), Color32::BLACK)
-                        } else if tc.retro16 {
-                            (Color32::from_rgb(0, 255, 136), egui::Stroke::new(1.0, Color32::from_rgb(0, 255, 102)), Color32::BLACK)
-                        } else {
-                            (tc.bg_active, egui::Stroke::new(1.0, tc.border), tc.fg)
-                        }
-                    } else {
-                        (tc.bg_bar, egui::Stroke::new(1.0, tc.border), tc.fg_dim)
-                    };
-                    exp_p.rect_filled(exp_tab_rect, egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 }, tab_bg);
-                    exp_p.rect_stroke(exp_tab_rect, egui::CornerRadius { nw: 3, sw: 3, ne: 0, se: 0 }, tab_stroke, egui::StrokeKind::Inside);
-                    exp_p.text(
-                        exp_tab_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        "◀",
-                        egui::FontId::proportional(8.5),
-                        arrow_col,
-                    );
                 }
                 // 光标
                 let [cr, cc] = d.cursor;
@@ -4704,7 +4970,7 @@ impl App {
                             row_h,
                             None,
                             self.cfg.font_italic,
-                            self.cfg.letter_spacing,
+                            effective_letter_spacing,
                             false,
                             false,
                         );
@@ -4936,6 +5202,18 @@ impl App {
                 0.0,
                 Color32::from_rgba_unmultiplied(tc.blue.r(), tc.blue.g(), tc.blue.b(), 70),
             );
+            if let Some(b) = self.docs[ai].box_sel {
+                let (c0, c1) = (b[1].min(b[3]), b[1].max(b[3]));
+                if c1 > c0 {
+                    let r_x0 = origin + c0 as f32 * char_w;
+                    let r_x1 = origin + c1 as f32 * char_w;
+                    rp.rect_filled(
+                        Rect::from_min_max(Pos2::new(r_x0, rr.min.y), Pos2::new(r_x1, rr.max.y)),
+                        0.0,
+                        Color32::from_rgba_unmultiplied(0, 215, 255, 90),
+                    );
+                }
+            }
         }
         if let Some(id) = ed_id {
             if !self.editor_ids.contains(&id) {
@@ -4961,15 +5239,25 @@ impl App {
                 d.toggle_fold(row);
                 return;
             }
-            let m_right_x = rect.min.x + out.state.clamped_offset().x + out.inner_rect.width();
-            let m_top_y = rect.min.y + out.state.clamped_offset().y;
-            if vw.minimap && !d.lines.is_empty() && p.x >= m_right_x - 84.0 && ctx.input(|i| i.pointer.any_pressed()) {
-                // 点击缩略图右上角的折叠按钮 (20x20 区域)
-                if p.x >= m_right_x - 20.0 && p.y <= m_top_y + 20.0 {
-                    self.cfg.view.minimap = false;
-                    self.cfg.save();
-                    return;
+            let screen_vp = Rect::from_min_size(
+                rect.min + out.state.clamped_offset(),
+                out.inner_rect.size(),
+            );
+            let m_right_x = screen_vp.max.x;
+            let m_top_y = screen_vp.min.y;
+            let is_md_doc = Self::doc_is_markdown(d);
+            let is_nema_doc = nemaopts::is_nema_doc(d);
+            let minimap_open = vw.minimap && !d.lines.is_empty();
+            let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
+            let nema_open = (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
+            let slots = right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
+            if let Some(slot) = slots.iter().find(|s| s.rect.contains(p)) {
+                if ctx.input(|i| i.pointer.any_pressed()) {
+                    self.toggle_right_collapse_slot(slot.kind, is_md_doc, is_nema_doc);
                 }
+                return;
+            }
+            if vw.minimap && !d.lines.is_empty() && p.x >= m_right_x - 84.0 && ctx.input(|i| i.pointer.any_pressed()) {
                 // 点小地图区域: 直接跳到对应行并居中
                 let vh = out.inner_rect.height().max(1.0);
                 let rel_map_y = (p.y - m_top_y).clamp(0.0, vh);
@@ -4981,15 +5269,16 @@ impl App {
                 self.center_once = true;
                 return;
             }
-            if !vw.minimap && !d.lines.is_empty() && p.x >= m_right_x - 16.0 && p.y <= m_top_y + 36.0 && ctx.input(|i| i.pointer.any_pressed()) {
-                // 点击折叠状态下的展开手柄
-                self.cfg.view.minimap = true;
-                self.cfg.save();
-                return;
-            }
             let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
             let want = (p.x - x0).max(0.0);
-            let col = rv.col_at(ctx, want, rel_y - top(row), &font, wrap_w);
+            let col = rv.col_at_with_spacing(
+                ctx,
+                want,
+                rel_y - top(row),
+                &font,
+                wrap_w,
+                effective_letter_spacing,
+            );
             let (alt, ctrl) =
                 ctx.input(|i| (i.modifiers.alt, i.modifiers.command || i.modifiers.ctrl));
             let in_sel = d
@@ -5137,6 +5426,65 @@ fn right_cap(avail: f32) -> f32 {
     (avail - 240.0).max(100.0)
 }
 /// 剩余宽度够不够再放一个右侧停靠区 (编辑区 240 + 停靠区最小 160); 不够就不画, 免得压在编辑区上
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RightCollapseKind {
+    Minimap = 0,
+    Md = 1,
+    Nema = 2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RightCollapseSlot {
+    pub kind: RightCollapseKind,
+    pub rect: Rect,
+    pub open: bool,
+}
+
+/// 计算编辑器右侧 3 个统一缩进/折叠按钮 (`导航` / `MD` / `NEMA`) 的排布位置:
+/// - 未打开任何右侧区域时：全部停靠在右上角
+/// - 点开其中任意一项后：已打开项保持在上方，其余未打开项自动降到底部
+pub fn right_collapse_slots(
+    viewport: Rect,
+    minimap_open: bool,
+    md_open: bool,
+    nema_open: bool,
+) -> Vec<RightCollapseSlot> {
+    let any_open = minimap_open || md_open || nema_open;
+    let specs = [
+        (RightCollapseKind::Minimap, 38.0_f32, minimap_open),
+        (RightCollapseKind::Md, 32.0_f32, md_open),
+        (RightCollapseKind::Nema, 44.0_f32, nema_open),
+    ];
+    let btn_h = 20.0_f32;
+    let gap = 4.0_f32;
+    let right_x = viewport.max.x - 6.0;
+    let top_y = viewport.min.y + 6.0;
+    let bottom_y = (viewport.max.y - btn_h - 6.0).max(top_y + btn_h + gap);
+
+    let mut top_cursor_x = right_x;
+    let mut bot_cursor_x = right_x;
+    let mut out = Vec::with_capacity(specs.len());
+    for (kind, w, is_open) in specs {
+        let on_bottom = any_open && !is_open;
+        let rect = if on_bottom {
+            let x = bot_cursor_x - w;
+            bot_cursor_x = x - gap;
+            Rect::from_min_size(Pos2::new(x, bottom_y), Vec2::new(w, btn_h))
+        } else {
+            let x = top_cursor_x - w;
+            top_cursor_x = x - gap;
+            Rect::from_min_size(Pos2::new(x, top_y), Vec2::new(w, btn_h))
+        };
+        out.push(RightCollapseSlot {
+            kind,
+            rect,
+            open: is_open,
+        });
+    }
+    out
+}
+
 fn right_room(avail: f32) -> bool {
     avail - 240.0 >= 160.0
 }
@@ -5307,10 +5655,16 @@ pub(crate) fn col_at(
     y: f32,
     font: &FontId,
     wrap_w: f32,
+    letter_spacing: f32,
 ) -> usize {
     let mut job =
         egui::text::LayoutJob::simple(disp.to_string(), font.clone(), Color32::WHITE, wrap_w);
     job.wrap.break_anywhere = true;
+    if letter_spacing != 0.0 {
+        for sec in &mut job.sections {
+            sec.format.extra_letter_spacing = letter_spacing;
+        }
+    }
     let galley = ctx.fonts_mut(|f| f.layout_job(job));
     let idx: usize = galley
         .cursor_from_pos(Vec2::new(x, y.max(0.0)))
@@ -5813,20 +6167,15 @@ impl App {
                     });
                 } else {
                     let area = ui.max_rect();
-                    self.editor_pane(ui, ctx, find_focus, 0);
-                    if self.md_preview
-                        && is_md
-                        && self.cfg.view.md_overlay
-                        && !self.welcome_visible()
-                    {
-                        self.md_overlay(ctx, area);
-                    }
                     if self.welcome_visible() {
                         self.welcome(ui, area);
+                    } else if self.md_preview && is_md && self.cfg.view.md_overlay {
+                        self.md_overlay(ctx, area);
+                    } else {
+                        self.editor_pane(ui, ctx, find_focus, 0);
                     }
                 }
             });
-        self.collab_window(ctx);
         self.installer_window(ctx);
         self.sticky_notes_window(ctx);
         self.restore_window(ctx);

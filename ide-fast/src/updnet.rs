@@ -684,8 +684,8 @@ mod tests {
         let d = tmpdir("msi");
         let k = sk("main");
         let msi: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 1, 2, 3];
-        let f = fake_with(&k, msi, &sums_for("IDE1.0-Fast_9.9.9.0_x64.msi", msi));
-        let mut c = cand("IDE1.0-Fast_9.9.9.0_x64.msi", msi.len() as u64, true);
+        let f = fake_with(&k, msi, &sums_for("IDE1.0_9.9.9.0_x64.msi", msi));
+        let mut c = cand("IDE1.0_9.9.9.0_x64.msi", msi.len() as u64, true);
         c.kind = InstallKind::Msi;
         let st = stage(&f, &c, &pk(&k), &d, &d.join("unused.new")).unwrap();
         assert!(
@@ -1059,7 +1059,7 @@ mod tests {
             let _ = std::fs::remove_dir_all(&d);
         }
         assert!(
-            update::name_has_version("IDE1.0-Fast_9.9.9.0_x64.msi", "9.9.9"),
+            update::name_has_version("IDE1.0_9.9.9.0_x64.msi", "9.9.9"),
             "msi 四段版本允许"
         );
     }

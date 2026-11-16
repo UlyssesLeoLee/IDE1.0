@@ -174,6 +174,19 @@ impl PluginHost {
         rx
     }
 
+    /// 带超时上限的同步调用 (供 `.nema` 热插拔解释器实时预览等短平快沙箱调用)
+    pub fn call_sync(
+        &self,
+        plugin: &str,
+        method: &str,
+        args: &Value,
+        timeout: Duration,
+    ) -> Result<String, String> {
+        self.call(plugin, method, args)
+            .recv_timeout(timeout)
+            .map_err(|_| format!("插件执行超时 (超过 {}ms)", timeout.as_millis()))?
+    }
+
     /// 插件被禁用 / 删除: 丢掉它的运行环境
     pub fn unload(&self, plugin: &str) {
         let _ = self.tx.send(Msg::Unload(plugin.into()));
@@ -527,6 +540,69 @@ mod tests {
             .recv_timeout(Duration::from_secs(5))
             .unwrap();
         assert!(off.unwrap_err().contains("禁用"));
+        std::env::remove_var("IDE_PLUGIN_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nema_interpreter_plugin_loads_and_hot_patches_in_quickjs() {
+        let _g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("ide-fast-nema-plug-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("IDE_PLUGIN_DIR", &dir);
+        let root = crate::plugins::root();
+        let _ = editcore::plugin_host::store::list(&root);
+        let host = PluginHost::new(root.clone());
+
+        let valid_nema = " \\1 1\n\\%3\n\\# Service State Note\\ Text\nGateway \\_ Hello\\ World\n 2 _Cont\nWorker ~ \\e";
+        let out = host
+            .call_sync(
+                "nema-interpreter",
+                "render",
+                &serde_json::json!([valid_nema]),
+                Duration::from_secs(10),
+            )
+            .expect("nema-interpreter QuickJS render");
+        let doc = nema_codec::parse_strict_ast_json(&out).expect("convert strict AST JSON");
+        assert_eq!(doc.domains.len(), 1);
+        assert_eq!(doc.domains[0].columns, vec!["Service", "State", "Note Text"]);
+        assert_eq!(doc.domains[0].rows[0].cells[2], "Hello World_Cont");
+        assert_eq!(doc.domains[0].rows[1].groups[1], vec!["~"]);
+
+        let bad_out = host
+            .call_sync(
+                "nema-interpreter",
+                "render",
+                &serde_json::json!([" \\0 1\nA"]),
+                Duration::from_secs(10),
+            )
+            .expect("strict error wrapped cleanly");
+        assert!(nema_codec::parse_strict_ast_json(&bad_out).is_err());
+
+        // Hot-patch strict-parser.js at runtime and verify unload picks up the new interpreter immediately
+        let patched_js = "(function(r){r.NemaStrict={parse:(txt)=>[{mode:'table',id:99,revision:7,explicit:true,columns:['Hot'],records:[{values:['PatchedOK']}]}],fields:()=>[]};})(globalThis);";
+        editcore::plugin_host::store::hot_patch_plugin_script(
+            &root,
+            "nema-interpreter",
+            "strict-parser.js",
+            patched_js.as_bytes(),
+        )
+        .unwrap();
+        host.unload("nema-interpreter");
+        let hot_out = host
+            .call_sync(
+                "nema-interpreter",
+                "render",
+                &serde_json::json!(["anything"]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        let hot_doc = nema_codec::parse_strict_ast_json(&hot_out).unwrap();
+        assert_eq!(hot_doc.domains[0].id, "99");
+        assert_eq!(hot_doc.domains[0].rows[0].cells, vec!["PatchedOK"]);
+
         std::env::remove_var("IDE_PLUGIN_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }

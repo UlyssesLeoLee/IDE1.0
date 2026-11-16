@@ -298,6 +298,14 @@ pub struct NotePalette {
     pub accent: Color32,
 }
 
+/// 便笺正文编辑区的最小内边距（避免在 Comic/Retro16 粗边框或圆角下文字贴边被截断）
+pub const STICKY_NOTE_EDITOR_MARGIN: egui::Margin = egui::Margin {
+    left: 14,
+    right: 14,
+    top: 10,
+    bottom: 12,
+};
+
 /// 根据主题与颜色索引生成色彩配置
 pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalette {
     if tc.retro16 {
@@ -437,9 +445,9 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
             },
         }
     } else if tc.crystal || tc.is_translucent() {
-        // Crystal / Glass 水晶透明毛玻璃
-        let alpha = 190;
-        let h_alpha = 220;
+        // Crystal / Glass 水晶透明毛玻璃 (更高透明度)
+        let alpha = 130;
+        let h_alpha = 160;
         match color_idx {
             0 => NotePalette {
                 bg: Color32::from_rgba_unmultiplied(255, 245, 160, alpha),
@@ -490,19 +498,19 @@ pub fn get_palette(color_idx: usize, tc: &crate::view::ThemeColors) -> NotePalet
                 accent: Color32::from_rgb(120, 130, 145),
             },
             6 => NotePalette {
-                bg: Color32::from_rgba_unmultiplied(35, 38, 48, 210),
-                header_bg: Color32::from_rgba_unmultiplied(48, 52, 65, 235),
+                bg: Color32::from_rgba_unmultiplied(35, 38, 48, 145),
+                header_bg: Color32::from_rgba_unmultiplied(48, 52, 65, 175),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 50),
                 fg: Color32::from_rgb(240, 245, 255),
-                toolbar_bg: Color32::from_rgba_unmultiplied(28, 30, 38, 210),
+                toolbar_bg: Color32::from_rgba_unmultiplied(28, 30, 38, 145),
                 accent: Color32::from_rgb(0, 220, 255),
             },
             _ => NotePalette {
-                bg: Color32::from_rgba_unmultiplied(35, 38, 48, 210),
-                header_bg: Color32::from_rgba_unmultiplied(48, 52, 65, 235),
+                bg: Color32::from_rgba_unmultiplied(35, 38, 48, 145),
+                header_bg: Color32::from_rgba_unmultiplied(48, 52, 65, 175),
                 border: tc.border,
                 fg: tc.fg,
-                toolbar_bg: Color32::from_rgba_unmultiplied(28, 30, 38, 210),
+                toolbar_bg: Color32::from_rgba_unmultiplied(28, 30, 38, 145),
                 accent: tc.blue,
             },
         }
@@ -1069,12 +1077,12 @@ impl App {
                     );
                 }
 
-                // 4. 内容主体排版
+                // 4. 内容主体排版 (四周预留 3px 避让粗描边与底部格式化条)
                 let body_rect = Rect::from_min_max(
-                    pos2(card_rect.left(), header_rect.bottom()),
+                    pos2(card_rect.left() + 3.0, header_rect.bottom() + 2.0),
                     pos2(
-                        card_rect.right(),
-                        card_rect.bottom() - if show_list { 0.0 } else { 32.0 },
+                        card_rect.right() - 3.0,
+                        card_rect.bottom() - if show_list { 3.0 } else { 34.0 },
                     ),
                 );
 
@@ -1111,6 +1119,9 @@ impl App {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
+                                    egui::Frame::NONE
+                                        .inner_margin(egui::Margin::symmetric(10, 6))
+                                        .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
                                     let mut to_delete: Option<String> = None;
                                     let mut to_select = None;
@@ -1124,8 +1135,9 @@ impl App {
                                         }
 
                                         let is_active = note.id == self.sticky_notes.active_id;
+                                        let row_w = (ui.available_width() - 4.0).max(80.0);
                                         let (row_rect, row_resp) = ui.allocate_exact_size(
-                                            Vec2::new(ui.available_width() - 12.0, 48.0),
+                                            Vec2::new(row_w, 48.0),
                                             Sense::click(),
                                         );
                                         let row_p = ui.painter();
@@ -1234,6 +1246,7 @@ impl App {
                                     if let Some(id) = to_delete {
                                         self.sticky_notes.delete_note(&id);
                                     }
+                                        });
                                 });
                         },
                     );
@@ -1259,36 +1272,47 @@ impl App {
                                 egui::ScrollArea::vertical()
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
-                                        ui.add_space(4.0);
-                                        let edit_resp = ui.add(
-                                            TextEdit::multiline(&mut note.content)
-                                                .font(font_id)
-                                                .text_color(palette.fg)
-                                                .desired_width(f32::INFINITY)
-                                                .frame(egui::Frame::NONE)
-                                                .hint_text("记下一些文字、备忘或 Markdown 待办..."),
-                                        );
+                                        // 增大文本内边距，确保字符在各主题边框（含 Comic/Retro16 粗边框）内不被截断
+                                        let avail_w = ui.available_width();
+                                        let h_pad = (STICKY_NOTE_EDITOR_MARGIN.left
+                                            + STICKY_NOTE_EDITOR_MARGIN.right)
+                                            as f32;
+                                        egui::Frame::NONE
+                                            .inner_margin(STICKY_NOTE_EDITOR_MARGIN)
+                                            .show(ui, |ui| {
+                                                let inner_w = (avail_w - h_pad).max(60.0);
+                                                ui.set_width(inner_w);
+                                                let edit_resp = ui.add(
+                                                    TextEdit::multiline(&mut note.content)
+                                                        .font(font_id)
+                                                        .text_color(palette.fg)
+                                                        .desired_width(inner_w)
+                                                        .margin(egui::Margin::symmetric(4, 4))
+                                                        .frame(egui::Frame::NONE)
+                                                        .hint_text("记下一些文字、备忘或 Markdown 待办..."),
+                                                );
 
-                                        // 单次聚焦逻辑 (避免 IME 闪烁)
-                                        if self.sticky_notes.focus_needed {
-                                            edit_resp.request_focus();
-                                            self.sticky_notes.focus_needed = false;
-                                        }
-                                        self.sticky_notes.has_focus = edit_resp.has_focus();
+                                                // 单次聚焦逻辑 (避免 IME 闪烁)
+                                                if self.sticky_notes.focus_needed {
+                                                    edit_resp.request_focus();
+                                                    self.sticky_notes.focus_needed = false;
+                                                }
+                                                self.sticky_notes.has_focus = edit_resp.has_focus();
 
-                                        if edit_resp.changed() {
-                                            note_content_changed = true;
-                                            note.updated_at = current_timestamp();
-                                            // 智能依据首行提炼标题
-                                            let first_line = note
-                                                .content
-                                                .lines()
-                                                .map(|l| l.trim().trim_start_matches('#').trim())
-                                                .find(|l| !l.is_empty());
-                                            if let Some(fl) = first_line {
-                                                note.title = fl.chars().take(24).collect();
-                                            }
-                                        }
+                                                if edit_resp.changed() {
+                                                    note_content_changed = true;
+                                                    note.updated_at = current_timestamp();
+                                                    // 智能依据首行提炼标题
+                                                    let first_line = note
+                                                        .content
+                                                        .lines()
+                                                        .map(|l| l.trim().trim_start_matches('#').trim())
+                                                        .find(|l| !l.is_empty());
+                                                    if let Some(fl) = first_line {
+                                                        note.title = fl.chars().take(24).collect();
+                                                    }
+                                                }
+                                            });
                                     });
                             }
                         },

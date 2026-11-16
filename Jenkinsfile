@@ -187,13 +187,9 @@ pipeline {
                         sh '''
                             sudo apt-get update -qq
                             sudo apt-get install -y -qq \
-                                libwebkit2gtk-4.1-dev \
-                                libgtk-3-dev \
-                                libayatana-appindicator3-dev \
-                                librsvg2-dev \
-                                libsoup-3.0-dev \
-                                libjavascriptcoregtk-4.1-dev \
-                                patchelf wget pkg-config libssl-dev cmake \
+                                libxkbcommon-dev \
+                                libgl1-mesa-dev \
+                                pkg-config libssl-dev cmake \
                                 xvfb libxcb1 libxcb-render0 libxcb-shape0 libxcb-xfixes0
                         '''
                         sh '''
@@ -201,10 +197,10 @@ pipeline {
                             cargo test --workspace --all-targets --no-fail-fast
                             cargo build -p ide-shell --bin ide-shell
                             cargo build -p ide-shell-web --bin ide-shell-web
-                            cargo build -p ide-shell-desktop --bin ide-shell-desktop
+                            cargo build -p ide-fast --bin ide-fast
                         '''
                         // Archive Linux binaries
-                        archiveArtifacts artifacts: 'target/debug/ide-shell*,target/debug/ide-shell-web*,target/debug/ide-shell-desktop*', fingerprint: true
+                        archiveArtifacts artifacts: 'target/debug/ide-shell*,target/debug/ide-shell-web*,target/debug/ide-fast*', fingerprint: true
                     }
                 }
                 
@@ -224,10 +220,10 @@ pipeline {
                             cargo test --workspace --all-targets --no-fail-fast
                             cargo build -p ide-shell --bin ide-shell
                             cargo build -p ide-shell-web --bin ide-shell-web
-                            cargo build -p ide-shell-desktop --bin ide-shell-desktop
+                            cargo build -p ide-fast --bin ide-fast
                         '''
                         // Archive Windows binaries
-                        archiveArtifacts artifacts: 'target/debug/ide-shell*.exe,target/debug/ide-shell-web*.exe,target/debug/ide-shell-desktop*.exe', fingerprint: true
+                        archiveArtifacts artifacts: 'target/debug/ide-shell*.exe,target/debug/ide-shell-web*.exe,target/debug/ide-fast*.exe', fingerprint: true
                     }
                 }
                 
@@ -239,18 +235,14 @@ pipeline {
                     agent { label 'macos && rust' }
                     steps {
                         sh '''
-                            brew update
-                            brew install webkit2gtk gtk+3 ayatana-appindicator librsvg libsoup patchelf wget create-dmg
-                        '''
-                        sh '''
                             cargo check --workspace --all-targets
                             cargo test --workspace --all-targets --no-fail-fast
                             cargo build -p ide-shell --bin ide-shell
                             cargo build -p ide-shell-web --bin ide-shell-web
-                            cargo build -p ide-shell-desktop --bin ide-shell-desktop
+                            cargo build -p ide-fast --bin ide-fast
                         '''
                         // Archive macOS binaries
-                        archiveArtifacts artifacts: 'target/debug/ide-shell*,target/debug/ide-shell-web*,target/debug/ide-shell-desktop*', fingerprint: true
+                        archiveArtifacts artifacts: 'target/debug/ide-shell*,target/debug/ide-shell-web*,target/debug/ide-fast*', fingerprint: true
                     }
                 }
             }
@@ -327,9 +319,9 @@ pipeline {
         }
         
         // ----------------------------------------------------------
-        // Stage 8: Tauri Desktop Builds (Parallel per platform)
+        // Stage 8: IDE1.0 Desktop Builds (Parallel per platform)
         // ----------------------------------------------------------
-        stage('Tauri Desktop Builds') {
+        stage('IDE1.0 Desktop Builds') {
             when {
                 anyOf {
                     expression { return params.TARGET_PLATFORM != 'all' }
@@ -338,80 +330,51 @@ pipeline {
             }
             parallel {
                 // ------------------------------------------------------
-                // Linux .deb + .AppImage
+                // Linux release binary
                 // ------------------------------------------------------
-                stage('Tauri Linux (.deb + .AppImage)') {
+                stage('IDE1.0 Linux') {
                     when { expression { return params.TARGET_PLATFORM in ['all', 'linux'] } }
-                    agent { label 'linux && node && rust' }
+                    agent { label 'linux && rust' }
                     steps {
                         sh '''
-                            sudo apt-get install -y -qq \
-                                libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-                                librsvg2-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
-                                patchelf wget rpm dpkg fakeroot libappindicator3-dev
+                            sudo apt-get install -y -qq libxkbcommon-dev libgl1-mesa-dev pkg-config libssl-dev
+                            cargo build --release -p ide-fast --bin ide-fast
+                            cargo test -p ide-fast --bin ide-fast
                         '''
-                        sh '''
-                            cargo check -p ide-shell-desktop --all-targets
-                            cargo test -p ide-shell-desktop
-                        '''
-                        dir('tools') {
-                            sh 'npm install --no-audit --no-fund'
-                        }
-                        dir('crates/ide-shell-desktop') {
-                            sh '../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json'
-                        }
-                        // Archive artifacts
-                        archiveArtifacts artifacts: 'crates/ide-shell-desktop/target/release/bundle/deb/*.deb,crates/ide-shell-desktop/target/release/bundle/appimage/*.AppImage', fingerprint: true
+                        archiveArtifacts artifacts: 'target/release/ide-fast', fingerprint: true
                     }
                 }
                 
                 // ------------------------------------------------------
-                // Windows .msi
+                // Windows .msi + portable .exe
                 // ------------------------------------------------------
-                stage('Tauri Windows (.msi)') {
+                stage('IDE1.0 Windows (.msi + portable)') {
                     when { expression { return params.TARGET_PLATFORM in ['all', 'windows'] } }
-                    agent { label 'windows && node && rust' }
+                    agent { label 'windows && rust' }
                     steps {
                         bat '''
                             choco install wixtoolset -y --no-progress
                             refreshenv
                         '''
-                        bat '''
-                            cargo check -p ide-shell-desktop --all-targets
-                            cargo test -p ide-shell-desktop
+                        powershell '''
+                            powershell -ExecutionPolicy Bypass -File ide-fast/packaging/build-msi.ps1
                         '''
-                        dir('tools') {
-                            bat 'npm install --no-audit --no-fund'
-                        }
-                        dir('crates/ide-shell-desktop') {
-                            bat '../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json'
-                        }
-                        archiveArtifacts artifacts: 'crates/ide-shell-desktop/target/release/bundle/msi/*.msi', fingerprint: true
+                        archiveArtifacts artifacts: 'dist-fast/*.msi,dist-fast/*.exe,dist-fast/SHA256SUMS.txt', fingerprint: true
                     }
                 }
                 
                 // ------------------------------------------------------
-                // macOS .dmg
+                // macOS release binary
                 // ------------------------------------------------------
-                stage('Tauri macOS (.dmg)') {
+                stage('IDE1.0 macOS') {
                     when { expression { return params.TARGET_PLATFORM in ['all', 'macos'] } }
-                    agent { label 'macos && node && rust' }
+                    agent { label 'macos && rust' }
                     steps {
                         sh '''
-                            brew update
-                            brew install webkit2gtk gtk+3 ayatana-appindicator librsvg libsoup patchelf wget create-dmg
+                            cargo build --release -p ide-fast --bin ide-fast
+                            cargo test -p ide-fast --bin ide-fast
                         '''
-                        sh '''
-                            cargo check -p ide-shell-desktop --all-targets
-                            cargo test -p ide-shell-desktop
-                        '''
-                        dir('tools') {
-                            sh 'npm install --no-audit --no-fund'
-                        }
-                        dir('crates/ide-shell-desktop') {
-                            sh '../../tools/node_modules/.bin/tauri build --bundles dmg --config ./tauri.conf.json'
-                        }
-                        archiveArtifacts artifacts: 'crates/ide-shell-desktop/target/release/bundle/dmg/*.dmg', fingerprint: true
+                        archiveArtifacts artifacts: 'target/release/ide-fast', fingerprint: true
                     }
                 }
             }

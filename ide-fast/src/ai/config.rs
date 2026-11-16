@@ -41,6 +41,7 @@ impl AiConfig {
     pub fn default_cfg() -> Self {
         AiConfig {
             base_url: PRESETS[0].1.into(),
+            consent: true,
             ..Default::default()
         }
     }
@@ -61,7 +62,7 @@ impl AiConfig {
                     })
                     .unwrap_or_default(),
             ),
-            consent: v["consent"].as_bool().unwrap_or(false),
+            consent: v["consent"].as_bool().unwrap_or(true),
         };
         if c.base_url.is_empty() {
             c.base_url = PRESETS[0].1.into();

@@ -175,7 +175,16 @@ pub fn style(tc: ThemeColors) -> impl Fn(&mut egui::Style) + Send + Sync + 'stat
         s.text_styles
             .insert(egui::TextStyle::Button, FontId::proportional(12.0));
         let v = &mut s.visuals;
-        v.window_fill = tc.bg_bar;
+        if tc.is_translucent() {
+            // 透明主题下下拉菜单严禁透明，使用高质感实色底，杜绝文字重叠穿透
+            v.window_fill = if tc.dark {
+                Color32::from_rgb(22, 27, 34)
+            } else {
+                Color32::from_rgb(250, 250, 252)
+            };
+        } else {
+            v.window_fill = tc.bg_bar;
+        }
         v.window_stroke = Stroke::new(1.0, tc.border);
         v.menu_corner_radius = egui::CornerRadius::ZERO;
         v.popup_shadow = Shadow {

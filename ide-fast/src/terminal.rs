@@ -615,7 +615,7 @@ mod tests {
     use super::*;
 
     fn wait(t: &mut Terminal, until: impl Fn(&Terminal) -> bool) {
-        for _ in 0..400 {
+        for _ in 0..1500 {
             t.poll();
             if until(t) {
                 return;

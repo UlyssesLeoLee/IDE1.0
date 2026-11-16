@@ -243,8 +243,14 @@ impl InstallKind {
     fn matches(self, name: &str) -> bool {
         let n = name.to_ascii_lowercase();
         match self {
-            InstallKind::Portable => n.starts_with("ide-fast-") && n.ends_with("-windows-x64.exe"),
-            InstallKind::Msi => n.starts_with("ide1.0-fast_") && n.ends_with("_x64.msi"),
+            InstallKind::Portable => {
+                (n.starts_with("ide1.0-") || n.starts_with("ide-fast-"))
+                    && n.ends_with("-windows-x64.exe")
+            }
+            InstallKind::Msi => {
+                (n.starts_with("ide1.0_") || n.starts_with("ide1.0-fast_"))
+                    && n.ends_with("_x64.msi")
+            }
         }
     }
 }
@@ -454,10 +460,10 @@ mod tests {
     fn json() -> Vec<u8> {
         let a = |n: &str, size: u64| serde_json::json!({ "name": n, "size": size, "browser_download_url": format!("https://github.com/o/r/releases/download/t/{n}") });
         serde_json::to_vec(&serde_json::json!([
-            { "tag_name": "v0.3.1", "prerelease": false, "draft": false, "body": "stable 0.3.1", "html_url": "https://github.com/o/r/releases/tag/v0.3.1", "assets": [a("ide-fast-0.3.1-windows-x64.exe", 10), a(SUMS_NAME, 5)] },
+            { "tag_name": "v0.3.1", "prerelease": false, "draft": false, "body": "stable 0.3.1", "html_url": "https://github.com/o/r/releases/tag/v0.3.1", "assets": [a("IDE1.0-0.3.1-windows-x64.exe", 10), a(SUMS_NAME, 5)] },
             { "tag_name": "v0.3.2", "prerelease": false, "draft": true, "body": "草稿", "html_url": "https://github.com/o/r/releases/tag/v0.3.2", "assets": [] },
             { "tag_name": "v0.3.2-dev.20261103.1", "prerelease": true, "draft": false, "body": "dev build", "html_url": "https://github.com/o/r/releases/tag/v0.3.2-dev.20261103.1",
-              "assets": [a("ide-fast-0.3.2-dev.20261103.1-windows-x64.exe", 20), a("IDE1.0-Fast_0.3.2.0_x64.msi", 30), a(SUMS_NAME, 5),
+              "assets": [a("IDE1.0-0.3.2-dev.20261103.1-windows-x64.exe", 20), a("IDE1.0_0.3.2.0_x64.msi", 30), a(SUMS_NAME, 5),
                          { "name": "evil.exe", "size": 1, "browser_download_url": "https://evil.example/evil.exe" }] },
             { "tag_name": "nightly", "prerelease": true, "draft": false, "html_url": "https://evil.example/x", "assets": [] },
             { "tag_name": "v0.3.0", "prerelease": false, "draft": false, "html_url": "https://evil.example/page", "assets": [] },
@@ -551,11 +557,11 @@ mod tests {
         let dev = &r[1];
         assert_eq!(
             pick_asset(dev, InstallKind::Portable).unwrap().name,
-            "ide-fast-0.3.2-dev.20261103.1-windows-x64.exe"
+            "IDE1.0-0.3.2-dev.20261103.1-windows-x64.exe"
         );
         assert_eq!(
             pick_asset(dev, InstallKind::Msi).unwrap().name,
-            "IDE1.0-Fast_0.3.2.0_x64.msi"
+            "IDE1.0_0.3.2.0_x64.msi"
         );
         assert!(
             pick_asset(&r[2], InstallKind::Portable).is_none(),
@@ -564,7 +570,7 @@ mod tests {
         assert_eq!(pick_sums(dev).unwrap().name, SUMS_NAME);
         assert_eq!(
             InstallKind::of_exe(std::path::Path::new(
-                r"C:\Program Files\IDE1.0 Fast\ide-fast.exe"
+                r"C:\Program Files\IDE1.0\ide-fast.exe"
             )),
             InstallKind::Msi
         );

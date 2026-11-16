@@ -304,6 +304,41 @@ Read-only: {}"),
     ("成功", "成功", "Success"),
     ("疑问", "疑問", "Question"),
     ("引用", "引用", "Quote"),
+    (
+        "已回收 {} 个文件 Cookie, 释放 {}",
+        "{} 件のファイル Cookie を回収し、{} を解放しました",
+        "Pruned {} file cookies, freed {}",
+    ),
+    (
+        "{} 已完成并行区域写入",
+        "{} の並列リージョン書き込みが完了しました",
+        "{} completed parallel region write",
+    ),
+    (
+        "多 Agent 已并行写入 {} 处互不重叠区域",
+        "マルチ Agent が {} 箇所の非重複リージョンへ並列書き込みしました",
+        "Multi-Agent wrote {} non-overlapping regions in parallel",
+    ),
+    (
+        "多 Agent 已并行写入 {} 处区域",
+        "マルチ Agent が {} 箇所のリージョンへ並列書き込みしました",
+        "Multi-Agent wrote {} regions in parallel",
+    ),
+    (
+        "{} 已协同更新分配区域 ({} 处)",
+        "{} が割り当てリージョンを協調更新しました ({} 箇所)",
+        "{} collaboratively updated assigned region ({} place(s))",
+    ),
+    (
+        "{} 已完成容错本地协同写入",
+        "{} がフォールバックのローカル協調書き込みを完了しました",
+        "{} completed fallback local collaborative write",
+    ),
+    (
+        "多 Agent 已语法安全并行协同更新 {} 处 .nema 域记录",
+        "マルチ Agent が構文安全に {} 箇所の .nema ドメインレコードを並列協調更新しました",
+        "Multi-Agent syntax-safely updated {} .nema domain record(s) in parallel",
+    ),
 ];
 
 struct Tpl {

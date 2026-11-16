@@ -235,6 +235,18 @@ impl ThemeColors {
             .unwrap_or(true);
         let mut t = Self::builtin(dark);
         if is_trans {
+            let cap_alpha = |c: Color32, max_alpha: u8| -> Color32 {
+                if c.a() <= max_alpha || c.a() == 0 {
+                    return c;
+                }
+                let scale = max_alpha as f32 / c.a() as f32;
+                Color32::from_rgba_premultiplied(
+                    (c.r() as f32 * scale).round().min(255.0) as u8,
+                    (c.g() as f32 * scale).round().min(255.0) as u8,
+                    (c.b() as f32 * scale).round().min(255.0) as u8,
+                    max_alpha,
+                )
+            };
             t.crystal = vars.get("--mat-prism-cyan").is_some()
                 || vars
                     .get("--theme-name")
@@ -262,6 +274,12 @@ impl ThemeColors {
             if get("--bg-side").is_none() {
                 t.bg_side = t.bg_bar;
             }
+            // 提高透明主题通透度: 限制面板 / 状态栏 / 工具栏最大不透明度，使桌面壁纸与背景层次更通透
+            t.bg_side = cap_alpha(t.bg_side, 28);
+            t.bg_rail = cap_alpha(t.bg_rail, 32);
+            t.bg_bar = cap_alpha(t.bg_bar, 36);
+            t.bg_chrome = cap_alpha(t.bg_chrome, 32);
+            t.bg_status = cap_alpha(t.bg_status, 42);
             pick("--fg", &mut t.fg);
             pick("--fg-dim", &mut t.fg_dim);
             pick("--border", &mut t.border);

@@ -176,7 +176,7 @@ fn main() -> eframe::Result<()> {
     let blur = glass && st.glass_blur;
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_visible(true)
-        .with_title("IDE1.0 Fast")
+        .with_title("IDE1.0")
         .with_inner_size([1100.0, 720.0])
         .with_min_inner_size([480.0, 320.0])
         .with_decorations(st.system_title_bar); // 默认自绘标题栏 (app/titlebar.rs); 设置里可换回系统的
@@ -213,7 +213,7 @@ fn main() -> eframe::Result<()> {
     trace.mark("before run_native");
     let t_app = trace.clone();
     let result = eframe::run_native(
-        "IDE1.0 Fast",
+        "IDE1.0",
         options,
         Box::new(move |cc| {
             t_app.mark("window + GL context ready");

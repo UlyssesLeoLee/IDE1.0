@@ -121,8 +121,10 @@ impl App {
             KApp::MdPreview => {
                 if super::nemaopts::is_nema_doc(&self.docs[ai]) {
                     self.nema_preview = !self.nema_preview;
+                    self.cfg.view.nema_bar_collapsed = !self.nema_preview;
                 } else {
                     self.md_preview = !self.md_preview;
+                    self.cfg.view.md_bar_collapsed = !self.md_preview;
                 }
             }
             KApp::NemaConvert => self.nema_convert(),

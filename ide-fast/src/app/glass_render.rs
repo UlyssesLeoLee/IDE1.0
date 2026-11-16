@@ -15,6 +15,14 @@ pub fn paint_caustic_backdrop(p: &Painter, rect: Rect, tc: &ThemeColors, time: f
         return;
     }
 
+    // 本体提高透明度到 60% (40% alpha 衬底，确保桌面穿透与对比度平衡)
+    let body_base_tint = if tc.dark {
+        Color32::from_rgba_unmultiplied(16, 20, 28, 102)
+    } else {
+        Color32::from_rgba_unmultiplied(248, 250, 252, 102)
+    };
+    p.rect_filled(rect, 0.0, body_base_tint);
+
     if tc.crystal {
         // --- 水晶主题: 纯净光学晶体折射弧光 + 棱镜色散 + 微细晶芒 ---
         // 1. 左上象限: 棱镜青色大跨度焦散光晕 (15% 10%, 95% 60%)

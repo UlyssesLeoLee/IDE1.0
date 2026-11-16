@@ -1410,9 +1410,9 @@ fn test_retro16_pixelfont_invariants() {
     a.font_px = a.default_font_px();
     assert_eq!(a.font_px, 12.0, "重置缩放必须回到 12px");
 
-    // 即使用户在首选项里设置了其他字体，Retro 16-Bit 主题仍强制使用 PixelFont
+    // 即使用户在首选项里设置了其他字体，Retro 16-Bit 主题仍强制使用 PixelFont；其他主题一律不使用像素字体
     assert_eq!(crate::fonts::effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
-    assert_eq!(crate::fonts::effective_font_family("PixelFont 12", "theme-comic"), "PixelFontMulti-12.ttf");
+    assert_eq!(crate::fonts::effective_font_family("PixelFont 12", "theme-comic"), "CascadiaCode.ttf");
 
     // 切回 dark 主题，恢复为 CascadiaCode.ttf 及默认 15px
     a.set_theme_plugin("theme-dark");
@@ -1642,4 +1642,252 @@ fn test_wrap_mode_and_minimap_collapse_invariants() {
     // 再次折叠/隐藏
     a.cfg.view.minimap = false;
     assert!(!a.cfg.view.minimap, "缩略图折叠状态保存正常");
+}
+
+#[test]
+fn right_collapse_slots_places_all_at_top_when_closed_and_drops_closed_to_bottom_when_opened() {
+    let vp = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(800.0, 600.0));
+
+    // 1. 全部未打开时: 导航 / MD / NEMA 全部位于右上角上方
+    let all_closed = crate::app::right_collapse_slots(vp, false, false, false);
+    assert_eq!(all_closed.len(), 3);
+    for s in &all_closed {
+        assert_eq!(s.rect.min.y, 6.0);
+        assert!(!s.open);
+    }
+
+    // 2. 点开导航图后: 导航图按钮留在上方，剩余 MD / NEMA 自动降到底部
+    let map_open = crate::app::right_collapse_slots(vp, true, false, false);
+    let m = map_open.iter().find(|s| s.kind == crate::app::RightCollapseKind::Minimap).unwrap();
+    let md = map_open.iter().find(|s| s.kind == crate::app::RightCollapseKind::Md).unwrap();
+    let nema = map_open.iter().find(|s| s.kind == crate::app::RightCollapseKind::Nema).unwrap();
+    assert_eq!(m.rect.min.y, 6.0);
+    assert_eq!(md.rect.min.y, 574.0);
+    assert_eq!(nema.rect.min.y, 574.0);
+
+    // 3. 点开 MD 后: MD 留在上方，剩余 导航 / NEMA 自动降到底部
+    let md_only = crate::app::right_collapse_slots(vp, false, true, false);
+    assert_eq!(
+        md_only.iter().find(|s| s.kind == crate::app::RightCollapseKind::Md).unwrap().rect.min.y,
+        6.0
+    );
+    assert_eq!(
+        md_only.iter().find(|s| s.kind == crate::app::RightCollapseKind::Minimap).unwrap().rect.min.y,
+        574.0
+    );
+    assert_eq!(
+        md_only.iter().find(|s| s.kind == crate::app::RightCollapseKind::Nema).unwrap().rect.min.y,
+        574.0
+    );
+}
+
+#[test]
+fn theme_switching_enforces_retro16_pixel_font_and_default_font_for_others() {
+    let (mut a, _g) = app(Settings::default());
+    a.set_theme_plugin("theme-retro16");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
+    assert!(a.applied_font.is_empty());
+
+    a.set_theme_plugin("theme-comic");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaCode.ttf"
+    );
+
+    a.set_theme_plugin("theme-clear");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "CascadiaMono.ttf"
+    );
+}
+
+#[test]
+fn box_selection_works_in_markdown_and_nema_documents() {
+    for (name, lines) in [
+        (
+            "readme.md",
+            vec![
+                "alpha_123".to_string(),
+                "bravo_456".to_string(),
+                "charlie_789".to_string(),
+            ],
+        ),
+        (
+            "spec.nema",
+            vec![
+                "NodeA_100".to_string(),
+                "NodeB_200".to_string(),
+                "NodeC_300".to_string(),
+            ],
+        ),
+    ] {
+        // 1. 鼠标纵选 (box_start + box_drag) + 批量插入 + 撤销
+        let mut doc = crate::doc::Doc::untitled(1, 1);
+        doc.name = name.into();
+        doc.lines = lines.clone();
+
+        doc.box_start(0, 0);
+        doc.box_drag(2, 0);
+        assert!(doc.box_sel.is_some(), "{name} 应激活纵向选区");
+
+        doc.edit("insert-text", Some("X_".into()));
+        assert!(doc.lines[0].starts_with("X_"));
+        assert!(doc.lines[1].starts_with("X_"));
+        assert!(doc.lines[2].starts_with("X_"));
+
+        doc.undo();
+        assert_eq!(doc.lines, lines);
+
+        // 2. 键盘纵选 (box_nav = Alt+Shift+Arrow 语义) + 纵向列删 + 撤销
+        doc.cursor = [0, 0];
+        doc.box_nav("ArrowDown", false, 2);
+        doc.box_nav("ArrowRight", false, 2);
+        assert!(doc.box_sel.is_some(), "{name} 键盘纵选应激活 box_sel");
+        doc.edit("delete", None);
+        assert_eq!(doc.lines[0].chars().count(), lines[0].chars().count() - 2);
+        assert_eq!(doc.lines[1].chars().count(), lines[1].chars().count() - 2);
+        assert_eq!(doc.lines[2].chars().count(), lines[2].chars().count() - 2);
+        doc.undo();
+        assert_eq!(doc.lines, lines);
+    }
+}
+
+#[test]
+fn alt_vertical_selection_dynamic_spacing_and_coordinate_badge() {
+    let mut doc = crate::doc::Doc::untitled(1, 1);
+    doc.lines = vec![
+        "ABCDEF123456".to_string(),
+        "GHIJKL789012".to_string(),
+        "MNOPQR345678".to_string(),
+        "STUVWX901234".to_string(),
+    ];
+
+    // 1. 模拟按住 Alt 鼠标从 (1, 2) 拖选至 (3, 7)
+    doc.box_start(1, 2);
+    doc.box_drag(3, 7);
+    assert_eq!(doc.box_sel, Some([1, 2, 3, 7]));
+
+    let b = doc.box_sel.unwrap();
+    let (r0, r1, c0, c1) = (b[0].min(b[2]), b[0].max(b[2]), b[1].min(b[3]), b[1].max(b[3]));
+    let rows_count = r1 - r0 + 1;
+    let cols_count = c1 - c0;
+    assert_eq!(rows_count, 3, "纵向覆盖 3 行 (1..=3)");
+    assert_eq!(cols_count, 5, "横向覆盖 5 列 (2..7)");
+
+    // 格式化指示文本验证
+    let badge_text = format!(
+        "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
+        r0 + 1,
+        r1 + 1,
+        rows_count,
+        c0 + 1,
+        c1,
+        cols_count
+    );
+    assert_eq!(badge_text, "📐 纵向选取 [R2..4 (3行) × C3..7 (5列)]");
+
+    // 2. 验证 rowview 在拉大字符间距 (letter_spacing = 8.0) 下的列定位与精确换算
+    let font = egui::FontId::monospace(14.0);
+    let rv = crate::rowview::RowView::build(&doc.lines[0], 4, crate::kinsoku::Wrap::default(), None, 10.0);
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+    out.textures_delta.clear();
+    let col_standard = rv.col_at_with_spacing(&ctx, 28.0, 0.0, &font, f32::INFINITY, 0.0);
+    let col_expanded = rv.col_at_with_spacing(&ctx, 28.0, 0.0, &font, f32::INFINITY, 8.0);
+    // 间距拉大后，相同的水平位移对应的字符列数应更紧凑/较少或相等 (因为每个字符占宽变大)
+    assert!(col_expanded <= col_standard);
+}
+
+#[test]
+fn test_md_and_nema_toolbar_and_preview_synchronized_lifecycle() {
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.new_doc();
+    let idx = a.active;
+    a.docs[idx].name = "doc.md".into();
+    a.docs[idx].lines = vec!["# Title".into(), "content".into()];
+
+    // 初始状态：折叠态下工具栏与预览均关闭
+    a.cfg.view.md_bar_collapsed = true;
+    a.md_preview = false;
+
+    // 展开 MD：顶端工具条出现，同时开启预览
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Md, true, false);
+    assert!(!a.cfg.view.md_bar_collapsed, "展开时 MD 工具栏应该出现");
+    assert!(a.md_preview, "展开时 MD 预览应该同步开启");
+
+    // 关闭 MD：栏位完全消失，预览关闭
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Md, true, false);
+    assert!(a.cfg.view.md_bar_collapsed, "关闭时 MD 工具栏应该消失");
+    assert!(!a.md_preview, "关闭时 MD 预览应该同步关闭");
+
+    // NEMA 文档同步生命周期验证
+    a.new_doc();
+    let nema_idx = a.active;
+    a.docs[nema_idx].name = "model.nema".into();
+    a.docs[nema_idx].lines = vec!["\\ Domain".into(), "\\1 Record".into()];
+
+    a.cfg.view.nema_bar_collapsed = true;
+    a.nema_preview = false;
+
+    // 展开 NEMA：顶端工具条出现，同时开启预览
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Nema, false, true);
+    assert!(!a.cfg.view.nema_bar_collapsed, "展开时 NEMA 工具栏应该出现");
+    assert!(a.nema_preview, "展开时 NEMA 预览应该同步开启");
+
+    // 关闭 NEMA：栏位完全消失，预览关闭
+    a.toggle_right_collapse_slot(crate::app::RightCollapseKind::Nema, false, true);
+    assert!(a.cfg.view.nema_bar_collapsed, "关闭时 NEMA 工具栏应该消失");
+    assert!(!a.nema_preview, "关闭时 NEMA 预览应该同步关闭");
+}
+
+#[test]
+fn test_translucent_theme_menu_opaque_and_body_60pct_transparency() {
+    // 1. 下拉菜单不透明性验证：在透明/水晶主题下，menuui::style 必须赋予不透明 solid 填充
+    let crystal_tc = crate::view::ThemeColors {
+        crystal: true,
+        clear: false,
+        dark: true,
+        ..Default::default()
+    };
+    assert!(crystal_tc.is_translucent());
+
+    let mut style = egui::Style::default();
+    let apply_style = crate::app::menuui::style(crystal_tc);
+    apply_style(&mut style);
+    assert_eq!(style.visuals.window_fill.a(), 255, "透明主题的下拉菜单严禁透明，必须是 solid opaque (alpha=255)");
+
+    // 浅色透明模式下同样保证不透明
+    let light_translucent_tc = crate::view::ThemeColors {
+        crystal: false,
+        clear: true,
+        dark: false,
+        ..Default::default()
+    };
+    let mut light_style = egui::Style::default();
+    let apply_light_style = crate::app::menuui::style(light_translucent_tc);
+    apply_light_style(&mut light_style);
+    assert_eq!(light_style.visuals.window_fill.a(), 255, "浅色透明主题下拉菜单也必须不透明");
+
+    // 2. 本体 60% 透明度 (40% 遮罩强度) 规范验证
+    use editcore::theme_luminance::DesktopLuminance;
+    let dark_tint = DesktopLuminance::Dark.glass_tint();
+    let light_tint = DesktopLuminance::Light.glass_tint();
+    assert!(dark_tint.contains("0.40"), "暗色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}", dark_tint);
+    assert!(light_tint.contains("0.40"), "亮色背景下本体遮罩为 0.40 不透明度 (60% 透明度): {}", light_tint);
+    assert_eq!(DesktopLuminance::Dark.tint_strength(), 0.40);
+
+    // 3. 动态字符级反色确保清晰显示
+    let white_char = Color32::from_rgb(255, 255, 255);
+    let dark_char = Color32::from_rgb(20, 20, 20);
+    // 浅色背景下，原本为白色的字符应自动反转为深色
+    let adapted_on_light = adapt_char_color(white_char, true);
+    assert!(adapted_on_light.r() < 80 && adapted_on_light.g() < 80, "白字在浅色背景下自动反色为深字");
+    // 暗色背景下，原本为暗色的字符应自动反转/提亮为高对比浅色
+    let adapted_on_dark = adapt_char_color(dark_char, false);
+    assert!(adapted_on_dark.r() >= 200 && adapted_on_dark.g() >= 200, "暗字在深色背景下自动提亮为高对比浅字");
 }

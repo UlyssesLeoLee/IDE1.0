@@ -309,7 +309,7 @@ pub const T: &[Row] = &[
     ("st.sel-hint", ["点击切换统计方式: 字符 / 字节 / 行", "クリックで切り替え: 文字 / バイト / 行", "Click to switch: chars / bytes / lines"]),
     ("st.plain", ["纯文本", "テキスト", "Plain Text"]),
     // ---- 帮助
-    ("ui.about", ["IDE1.0 高速版 — 原生 Rust (egui)\n编辑语义复用 editcore (与 Tauri 版相同)", "IDE1.0 高速版 — ネイティブ Rust (egui)\n編集の挙動は editcore を再利用 (Tauri 版と同一)", "IDE1.0 Fast — native Rust (egui)\nEditing semantics reuse editcore (same as the Tauri build)"]),
+    ("ui.about", ["IDE1.0 — 原生 Rust (egui)\n编辑语义由 editcore 驱动", "IDE1.0 — ネイティブ Rust (egui)\n編集の挙動は editcore 駆動", "IDE1.0 — native Rust (egui)\nEditing semantics powered by editcore"]),
     // ---- 标签右键 / 分组
     ("c.close", ["关闭", "閉じる", "Close"]),
     ("c.close-others-s", ["关闭其它", "他を閉じる", "Close Others"]),
@@ -491,7 +491,7 @@ pub const T: &[Row] = &[
     ("ai.effort-fetch", ["从供应商获取档位", "プロバイダから段階を取得", "Fetch levels from provider"]),
     ("ai.effort-fetching", ["正在查询模型接口…", "モデル API を照会中…", "Querying the models endpoint…"]),
     ("ai.effort-got", ["获取到 {} 档: {}", "{} 段階を取得: {}", "Got {} levels: {}"]),
-    ("ai.key-note", ["密钥以明文保存在本机用户设置目录的 ai.json 中 (和 Tauri 版一样), 不写日志; 只在点发送时联网 (https)。", "キーは平文でこの PC のユーザー設定フォルダの ai.json に保存されます (Tauri 版と同じ)。ログには出ません。送信時のみ https で通信します。", "The API key is stored in plain text in ai.json in your per-user settings folder (same as the Tauri version), never logged; network is used only on Send (https)."]),
+    ("ai.key-note", ["密钥以明文保存在本机用户设置目录的 ai.json 中, 不写日志; 只在点发送时联网 (https)。", "キーは平文でこの PC のユーザー設定フォルダの ai.json に保存されます。ログには出ません。送信時のみ https で通信します。", "The API key is stored in plain text in ai.json in your per-user settings folder, never logged; network is used only on Send (https)."]),
     ("ai.save-failed", ["保存 AI 配置失败: {}", "AI 設定の保存に失敗しました: {}", "Failed to save AI settings: {}"]),
     ("ai.tool-unknown", ["未知工具: {}", "不明なツール: {}", "Unknown tool: {}"]),
     ("ai.save", ["保存", "保存", "Save"]),
@@ -615,7 +615,7 @@ Not signature-verified; install only plugins you trust. Install?"]),
     ("c.wiki", ["IDE1.0 官方 Wiki (在线文档)", "IDE1.0 公式 Wiki (オンラインマニュアル)", "IDE1.0 Official Wiki"]),
     ("dlg.file-locked", ["文件锁: 已加锁 (只读)", "ファイルロック: ロック中 (読み取り専用)", "File Lock: Locked (Read-only)"]),
     ("dlg.file-unlocked", ["文件锁: 已解锁", "ファイルロック: 解除", "File Lock: Unlocked"]),
-    ("dlg.about-title", ["关于 IDE1.0 高速版", "IDE1.0 高速版について", "About IDE1.0 Fast"]),
+    ("dlg.about-title", ["关于 IDE1.0", "IDE1.0 について", "About IDE1.0"]),
     ("dlg.macro-saved", ["键盘宏已保存: {}", "キーボードマクロを保存しました: {}", "Key macro saved: {}"]),
     ("dlg.macro-loaded", ["已载入键盘宏 ({} 步), Ctrl+Shift+L 回放", "キーボードマクロを読み込みました ({} ステップ)。Ctrl+Shift+L で再生", "Key macro loaded ({} steps); Ctrl+Shift+L to play"]),
     ("dlg.macro-empty", ["还没有录下的宏, 没有可保存的内容", "記録したマクロがありません", "No recorded macro to save"]),
@@ -712,9 +712,12 @@ pub const CMD_T: &[Row] = &[
     ("已追加 Graph 拓扑节点与边模板", ["已追加 Graph 拓扑节点与边模板", "Graph ノード・エッジテンプレートを追加しました", "Graph nodes and edges template appended"]),
     ("已追加 5W1H 语义模板", ["已追加 5W1H 语义模板", "5W1H テンプレートを追加しました", "5W1H template appended"]),
     ("已插入纵向意群续接行 (空格缩进)", ["已插入纵向意群续接行 (空格缩进)", "縦方向の意味継続行を挿入しました (空白インデント)", "Vertical continuation row inserted (space indented)"]),
+    ("已插入列索引意群续接行 ( N value)", ["已插入列索引意群续接行 ( N value)", "列インデックス付きの継続行 ( N value) を挿入しました", "Column-indexed continuation row inserted ( N value)"]),
     ("已插入新记录行", ["已插入新记录行", "新規レコード行を挿入しました", "New record row inserted"]),
     ("已取消表头行 (转为自动 column1...)", ["已取消表头行 (转为自动 column1...)", "ヘッダー行を解除しました (自動 column1...)", "Header row removed (reverted to auto column1...)"]),
     ("已将首行设置为显式表头 (\\ )", ["已将首行设置为显式表头 (\\ )", "先頭行を明示ヘッダーに設定しました (\\ )", "First row set as explicit header (\\ )"]),
+    ("已将首行设置为显式表头 (\\# )", ["已将首行设置为显式表头 (\\# )", "先頭行を明示ヘッダー (\\# ) に設定しました", "First row set as explicit header (\\# )"]),
+    ("配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)", ["配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)", ".NEMA 文法インタープリタプラグインを管理 / ホットリロード", "Configure / hot-reload .NEMA grammar interpreter plugin (strict-parser.js / external)"]),
     ("当前文档体积较小或复用词少，原生 .nema 已是最优", ["当前文档体积较小或复用词少，原生 .nema 已是最优", "サイズが小さいか重複語が少ないため、原生 .nema が最適です", "Document is small or has few repeated words; native .nema is optimal"]),
     ("已转换为 .nemat 传输格式 (往返校验通过)", ["已转换为 .nemat 传输格式 (往返校验通过)", "NEMA .nemat 転送形式に変換しました (可逆検証済み)", "Converted to .nemat transport format (Round-trip verified)"]),
     ("已解码为 NEMA 原生格式 (Round-trip verified)", ["已解码为 NEMA 原生格式 (Round-trip verified)", "NEMA 原生形式に復号しました (可逆検証済み)", "Decoded to native NEMA (Round-trip verified)"]),
@@ -1908,6 +1911,18 @@ pub const CMD_T: &[Row] = &[
     (
         "协同审查看板",
         ["协同审查看板", "レビューボード", "Co-edit Review Dashboard"],
+    ),
+    (
+        "智能体对话面板",
+        ["智能体对话面板", "AIチャットパネル", "Agent Chat Panel"],
+    ),
+    (
+        "多 Agent 并行协作台",
+        ["多 Agent 并行协作台", "マルチAgent並列コラボ", "Multi-Agent Collab Bench"],
+    ),
+    (
+        "多 Agent 并行修改当前文件",
+        ["多 Agent 并行修改当前文件", "マルチAgent並列編集", "Parallel Multi-Agent Edit"],
     ),
     (
         "模拟多 AI 协同编辑",

@@ -13,7 +13,13 @@ pub const MAX_ASSET_BYTES: u64 = 8 * 1024 * 1024;
 /// 宿主认识的权限; 不认识的权限一律报 `UNKNOWN_PERMISSION`
 const KNOWN_PERMISSIONS: [&str; 4] = ["editor.read", "editor.write", "storage", "agent.tool"];
 /// 宿主提供的贡献点
-const KNOWN_CONTRIBUTIONS: [&str; 4] = ["markdown.fence", "command", "agent.tool", "theme"];
+const KNOWN_CONTRIBUTIONS: [&str; 5] = [
+    "markdown.fence",
+    "command",
+    "agent.tool",
+    "theme",
+    "nema.interpreter",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Manifest {
@@ -252,7 +258,7 @@ pub fn mismatch_prompt(repo: &str, tag: &str, asset_names: &[String], report: &C
     format!(
         "你是插件兼容性顾问。IDE1.0 编辑器 (版本 {app_version}, 插件 apiVersion 最高 {HOST_API_VERSION}) 想从 GitHub 仓库 {repo} 的最新 Release {tag} 安装插件, 但检查未通过。
          
-宿主插件契约: Release 资产里必须有 manifest.json (字段: id[a-z0-9-], name, version[x.y.z], apiVersion, minAppVersion?, license, description, repo, entry[默认 main.js], permissions[editor.read|editor.write|storage|net:<host>], contributes[markdown.fence|command|agent.tool]) 和 manifest.entry 指向的入口脚本; 入口脚本在沙箱 iframe 中运行, 通过全局 ide.register({{...}}) 注册贡献点方法。
+宿主插件契约: Release 资产里必须有 manifest.json (字段: id[a-z0-9-], name, version[x.y.z], apiVersion, minAppVersion?, license, description, repo, entry[默认 main.js], permissions[editor.read|editor.write|storage|net:<host>], contributes[markdown.fence|command|agent.tool|theme|nema.interpreter]) 和 manifest.entry 指向的入口脚本; 入口脚本在沙箱 iframe 中运行, 通过全局 ide.register({{...}}) 注册贡献点方法。
          
 Release 资产: {}
 
@@ -349,5 +355,12 @@ mod tests {
         assert_eq!(resolve_conflict(true, true, Some(Prefer::Native), true), Some(Native));
         assert_eq!(fallback(Plugin, true, true), Some(Native));
         assert_eq!(fallback(Native, true, false), None);
+    }
+
+    #[test]
+    fn nema_interpreter_contribution_passes_compat() {
+        let m = r#"{"id":"nema-interpreter","name":".NEMA Strict","version":"1.6.0","apiVersion":1,"minAppVersion":"0.1.4","permissions":["editor.read"],"scripts":["strict-parser.js"],"contributes":{"nema.interpreter":{"id":"nema-strict-js","label":".NEMA Strict JS","method":"render"}}}"#;
+        let r = check_compat(&assets(&["manifest.json", "main.js", "strict-parser.js"]), Some(m), "0.1.4");
+        assert!(r.ok, "{:?}", r.problems);
     }
 }

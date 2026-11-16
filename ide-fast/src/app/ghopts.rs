@@ -89,6 +89,8 @@ impl App {
             self.plug.unload(&id);
         }
         self.md10.invalidate();
+        self.nema.cached_render = None;
+        self.nema.cached_graph = None;
     }
 
     /// 确认框 -> 安装 (权限以框里列出的为准)

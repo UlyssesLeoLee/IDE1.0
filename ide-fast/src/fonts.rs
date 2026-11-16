@@ -144,10 +144,10 @@ pub fn is_illegible_display_font(file_or_name: &str) -> bool {
 /// 确保字体适用于正文与代码阅读，若传入非法或艺术扭曲字体则安全回退至主题默认等宽编程字体 (空字符串保持为空，代表主题默认)
 pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
     let clean = font.trim();
-    if theme_id == "theme-retro16" || is_pixel_font(clean) {
+    if theme_id == "theme-retro16" {
         return "PixelFontMulti-12.ttf".to_string();
     }
-    if clean.is_empty() {
+    if clean.is_empty() || is_pixel_font(clean) {
         String::new()
     } else if is_illegible_display_font(clean) {
         theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
@@ -158,13 +158,13 @@ pub fn sanitize_font_family(font: &str, theme_id: &str) -> String {
 
 /// 计算各主题在当前运行环境下的最终有效主字体文件名
 /// - Retro 16-Bit (theme-retro16) 核心视觉语言强制使用 PixelFont 12 点阵像素字体
-/// - 其他主题若未指定字体或传入不可读艺术花体，则回退到该主题默认等宽编程字体
+/// - 其他主题绝不使用像素字体；若未指定字体、仍残留像素字体或传入不可读艺术花体，则回退到默认等宽编程字体
 pub fn effective_font_family(font_family: &str, theme_id: &str) -> String {
     let clean = font_family.trim();
-    if theme_id == "theme-retro16" || is_pixel_font(clean) {
+    if theme_id == "theme-retro16" {
         return "PixelFontMulti-12.ttf".to_string();
     }
-    if clean.is_empty() || is_illegible_display_font(clean) {
+    if clean.is_empty() || is_pixel_font(clean) || is_illegible_display_font(clean) {
         theme_default_font(theme_id).unwrap_or("CascadiaCode.ttf").to_string()
     } else {
         clean.to_string()
@@ -358,7 +358,6 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
                     None
                 }
                 .or_else(|| std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf").ok())
-                .or_else(|| std::fs::read("crates/ide-shell-desktop/dist/PixelFontMulti-12.ttf").ok())
                 .or_else(|| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf").ok())
                 .or_else(|| Some(EMBEDDED_PIXEL_FONT.to_vec()))
             } else {
@@ -562,8 +561,10 @@ mod tests {
         assert_eq!(effective_font_family("", "theme-retro16"), "PixelFontMulti-12.ttf");
         assert_eq!(effective_font_family("Consolas", "theme-retro16"), "PixelFontMulti-12.ttf");
         assert_eq!(effective_font_family("BOD_PSTC.TTF", "theme-retro16"), "PixelFontMulti-12.ttf");
-        assert_eq!(effective_font_family("PixelFont 12", "theme-comic"), "PixelFontMulti-12.ttf");
-        assert_eq!(effective_font_family("pixelfont", "theme-dark"), "PixelFontMulti-12.ttf");
+        // 非 16-Bit Retro 主题一律不使用像素字体，回退默认字体
+        assert_eq!(effective_font_family("PixelFont 12", "theme-comic"), "CascadiaCode.ttf");
+        assert_eq!(effective_font_family("pixelfont", "theme-dark"), "CascadiaCode.ttf");
+        assert_eq!(sanitize_font_family("PixelFontMulti-12.ttf", "theme-comic"), "");
 
         assert_eq!(effective_font_family("", "theme-comic"), "CascadiaCode.ttf");
         assert_eq!(effective_font_family("Consolas", "theme-comic"), "Consolas");

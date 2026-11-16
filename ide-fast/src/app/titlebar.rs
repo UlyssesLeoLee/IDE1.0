@@ -698,7 +698,15 @@ impl App {
             self.run_entry(i, ctx);
         }
         if collab_toggle {
-            self.collab.open = !self.collab.open;
+            if self.ai.open && self.ai.collab_mode {
+                self.ai.open = false;
+                self.collab.open = false;
+            } else {
+                self.ai.open = true;
+                self.ai.collab_mode = true;
+                self.collab.open = true;
+                self.expand_dock(crate::panels::Dock::Right);
+            }
         }
         if sticky_notes_toggle {
             self.sticky_notes.open = !self.sticky_notes.open;

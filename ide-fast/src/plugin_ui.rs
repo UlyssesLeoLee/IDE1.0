@@ -113,6 +113,20 @@ impl PlugState {
         host.call(plugin, method, args)
     }
 
+    /// 同步超时调用插件方法 (用于 `.nema` 热插拔解释器实时预览)
+    pub fn call_sync(
+        &mut self,
+        plugin: &str,
+        method: &str,
+        args: &Value,
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
+        let host = self
+            .host
+            .get_or_insert_with(|| PluginHost::new(crate::plugins::root()));
+        host.call_sync(plugin, method, args, timeout)
+    }
+
     /// 插件被禁用 / 删除: 丢掉运行环境 (宿主没创建过就什么都不用做)
     pub fn unload(&mut self, plugin: &str) {
         if let Some(h) = &self.host {

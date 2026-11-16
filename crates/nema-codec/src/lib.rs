@@ -133,6 +133,8 @@ pub enum NemaError {
     UnknownTransportEscape,
     #[error("row too large")]
     RowTooLarge,
+    #[error("line {line}: {message}")]
+    StrictSyntax { line: usize, message: String },
 }
 
 /// 源码字节与行列坐标 Span
@@ -502,14 +504,30 @@ pub fn validate_source(source: &str) -> Result<Vec<&str>, NemaError> {
     Ok(body.split('\n').collect())
 }
 
-/// 原生格式不透明转义还原：仅 `\^`、`\\`、`\.` 被还原
+/// 原生格式转义还原：支持 `.NEMA` 核心与官网严格语法全量转义符
+/// (`\^`、`\\`、`\.`、`\ `、`\?`、`\>`、`\<`、`\=`、`\~`、`\#`、`\_`、`\%`、`\n`、`\r`、`\t`、`\e`)
 pub fn unescape_opaque(v: &str) -> String {
+    if v == "\\_" || v == "\\e" {
+        return String::new();
+    }
     let chars: Vec<char> = v.chars().collect();
     let mut out = String::with_capacity(v.len());
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == '\\' && i + 1 < chars.len() && matches!(chars[i + 1], '^' | '\\' | '.') {
-            out.push(chars[i + 1]);
+        if chars[i] == '\\' && i + 1 < chars.len() {
+            match chars[i + 1] {
+                'n' => out.push('\n'),
+                'r' => out.push('\r'),
+                't' => out.push('\t'),
+                'e' => {}
+                c @ ('^' | '\\' | '.' | ' ' | '?' | '>' | '<' | '=' | '~' | '#' | '_' | '%') => {
+                    out.push(c);
+                }
+                other => {
+                    out.push('\\');
+                    out.push(other);
+                }
+            }
             i += 2;
         } else {
             out.push(chars[i]);
@@ -517,6 +535,37 @@ pub fn unescape_opaque(v: &str) -> String {
         }
     }
     out
+}
+
+/// 按未转义 ASCII 空格切分单行字段（兼容 `\ ` 与 `\e` / `\_` 特殊词块）
+fn split_unescaped_spaces(s: &str) -> Result<Vec<&str>, NemaError> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            let step = s[i + 1..].chars().next().map_or(1, char::len_utf8);
+            i += 1 + step;
+            continue;
+        }
+        if bytes[i] == b' ' {
+            if i == start {
+                return Err(NemaError::MultipleOrLeadingSpaces);
+            }
+            out.push(&s[start..i]);
+            i += 1;
+            start = i;
+            continue;
+        }
+        let step = s[i..].chars().next().map_or(1, char::len_utf8);
+        i += step;
+    }
+    if start >= bytes.len() {
+        return Err(NemaError::MultipleOrLeadingSpaces);
+    }
+    out.push(&s[start..]);
+    Ok(out)
 }
 
 /// 拆分混合原子：返回 `(text, is_opaque_dict_entry)`，字典条目不会被 PascalCase 二次拆分
@@ -841,8 +890,11 @@ pub fn parse_domain_header(line: &str) -> Option<(DomainMode, String, u64)> {
     }
 }
 
-/// `.NEMA v1.2` 原生转义还原 (`native.py::unescape`)：仅允许 `\ `、`\\`、`\t`、`\=`
+/// `.NEMA v1.2` / 官网严格语法转义还原：支持 `\ `、`\\`、`\t`、`\n`、`\r`、`\e`、`\_`、`\=` 及符号转义
 pub fn unescape_v12(s: &str) -> Result<String, NemaError> {
+    if s == "\\_" || s == "\\e" {
+        return Ok(String::new());
+    }
     let chars: Vec<char> = s.chars().collect();
     let mut result = String::with_capacity(s.len());
     let mut i = 0usize;
@@ -857,9 +909,18 @@ pub fn unescape_v12(s: &str) -> Result<String, NemaError> {
         }
         let next = chars[i + 1];
         match next {
-            ' ' | '\\' => result.push(next),
+            ' ' | '\\' | '?' | '>' | '<' | '~' | '^' | '#' | '_' | '%' | '.' => result.push(next),
             't' => result.push('\t'),
-            '=' => result.push_str("\\="),
+            'n' => result.push('\n'),
+            'r' => result.push('\r'),
+            'e' => {}
+            '=' => {
+                if i == 0 && s.starts_with("\\=") {
+                    result.push_str("\\=");
+                } else {
+                    result.push('=');
+                }
+            }
             _ => return Err(NemaError::UnknownTransportEscape),
         }
         i += 2;
@@ -874,7 +935,26 @@ pub fn split_x_v12(s: &str) -> Result<Vec<String>, NemaError> {
     let mut buf = String::new();
     let mut i = 0usize;
     while i < chars.len() {
-        if chars[i] == '\\' && i + 1 < chars.len() && matches!(chars[i + 1], ' ' | '\\' | 't' | '=')
+        if chars[i] == '\\'
+            && i + 1 < chars.len()
+            && matches!(
+                chars[i + 1],
+                ' ' | '\\'
+                    | 't'
+                    | 'n'
+                    | 'r'
+                    | 'e'
+                    | '='
+                    | '?'
+                    | '>'
+                    | '<'
+                    | '~'
+                    | '^'
+                    | '#'
+                    | '_'
+                    | '%'
+                    | '.'
+            )
         {
             buf.push(chars[i]);
             buf.push(chars[i + 1]);
@@ -1114,6 +1194,723 @@ fn append_v12_cols(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StrictPart {
+    Raw(char),
+    Literal(char),
+    MissingMarker,
+    EmptyMarker,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum StrictVal {
+    Null,
+    Missing,
+    Text(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum StrictCell {
+    Null,
+    ExplicitMissing,
+    ImplicitMissing,
+    Text {
+        value: String,
+        groups: Vec<String>,
+    },
+}
+
+fn strict_fail(line: usize, message: impl Into<String>) -> NemaError {
+    NemaError::StrictSyntax {
+        line,
+        message: message.into(),
+    }
+}
+
+fn is_strict_graph_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() => {
+            chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':'))
+        }
+        _ => false,
+    }
+}
+
+fn is_cont_index(s: &str) -> bool {
+    s == "0" || is_positive_digits(s)
+}
+
+fn parse_strict_header(line: &str) -> Option<(DomainMode, String, u64)> {
+    let rest = line.strip_prefix(" \\")?;
+    let (mode, after_tag) = if let Some(s) = rest.strip_prefix('?') {
+        (DomainMode::FiveWOneH, s)
+    } else if let Some(s) = rest.strip_prefix('>') {
+        (DomainMode::Graph, s)
+    } else {
+        (DomainMode::Table, rest)
+    };
+    let (id, rev_str) = after_tag.split_once(' ')?;
+    if !is_positive_digits(id) || !is_positive_digits(rev_str) {
+        return None;
+    }
+    let rev = rev_str.parse::<u64>().ok()?;
+    Some((mode, id.to_string(), rev))
+}
+
+fn is_malformed_strict_header(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if trimmed.len() == line.len() {
+        return false;
+    }
+    let Some(after_slash) = trimmed.strip_prefix('\\') else {
+        return false;
+    };
+    let rest = after_slash
+        .strip_prefix('?')
+        .or_else(|| after_slash.strip_prefix('>'))
+        .unwrap_or(after_slash);
+    if rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if let Some(after_tag) = after_slash
+        .strip_prefix('?')
+        .or_else(|| after_slash.strip_prefix('>'))
+    {
+        let after_sp = after_tag.trim_start_matches(' ');
+        if after_sp.len() < after_tag.len()
+            && after_sp.chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn strict_tokenize(s: &str, line: usize) -> Result<Vec<Vec<StrictPart>>, NemaError> {
+    if s.is_empty() {
+        return Err(strict_fail(line, "empty field expression"));
+    }
+    let chars: Vec<char> = s.chars().collect();
+    let mut arr: Vec<Vec<StrictPart>> = Vec::new();
+    let mut cur: Vec<StrictPart> = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            if i + 1 >= chars.len() {
+                return Err(strict_fail(line, "trailing escape"));
+            }
+            let e = chars[i + 1];
+            let part = match e {
+                ' ' | '\\' | '?' | '>' | '<' | '=' | '~' | '^' => StrictPart::Literal(e),
+                'n' => StrictPart::Literal('\n'),
+                'r' => StrictPart::Literal('\r'),
+                't' => StrictPart::Literal('\t'),
+                '_' => StrictPart::MissingMarker,
+                'e' => StrictPart::EmptyMarker,
+                other => return Err(strict_fail(line, format!("unknown escape \\{other}"))),
+            };
+            cur.push(part);
+            i += 2;
+            continue;
+        }
+        if c == ' ' {
+            if cur.is_empty() {
+                return Err(strict_fail(line, "consecutive spaces"));
+            }
+            arr.push(std::mem::take(&mut cur));
+            i += 1;
+            continue;
+        }
+        cur.push(StrictPart::Raw(c));
+        i += 1;
+    }
+    if cur.is_empty() {
+        return Err(strict_fail(line, "trailing separator space"));
+    }
+    arr.push(cur);
+    Ok(arr)
+}
+
+fn strict_value(parts: &[StrictPart], line: usize) -> Result<StrictVal, NemaError> {
+    if parts.len() == 1 {
+        match parts[0] {
+            StrictPart::Raw('~') => return Ok(StrictVal::Null),
+            StrictPart::MissingMarker => return Ok(StrictVal::Missing),
+            StrictPart::EmptyMarker => return Ok(StrictVal::Text(String::new())),
+            _ => {}
+        }
+    }
+    if parts
+        .iter()
+        .any(|p| matches!(p, StrictPart::MissingMarker | StrictPart::EmptyMarker))
+    {
+        return Err(strict_fail(
+            line,
+            "standalone token \\e or \\_ cannot be combined",
+        ));
+    }
+    let mut out = String::with_capacity(parts.len());
+    for p in parts {
+        match p {
+            StrictPart::Raw(c) | StrictPart::Literal(c) => out.push(*c),
+            StrictPart::MissingMarker | StrictPart::EmptyMarker => unreachable!(),
+        }
+    }
+    Ok(StrictVal::Text(out))
+}
+
+fn strict_fields(s: &str, line: usize) -> Result<Vec<StrictVal>, NemaError> {
+    strict_tokenize(s, line)?
+        .into_iter()
+        .map(|p| strict_value(&p, line))
+        .collect()
+}
+
+fn parse_strict_edge(token: &str, parts: &[StrictPart], line: usize) -> Result<GraphEdgeSpec, NemaError> {
+    if parts
+        .iter()
+        .any(|p| matches!(p, StrictPart::Literal('>' | '<' | '=')))
+    {
+        return Err(strict_fail(line, "invalid edge expression"));
+    }
+    let op1_idx = token
+        .find(['>', '<', '='])
+        .ok_or_else(|| strict_fail(line, "invalid edge expression"))?;
+    let op1 = token[op1_idx..]
+        .chars()
+        .next()
+        .ok_or_else(|| strict_fail(line, "invalid edge expression"))?;
+    let after1 = &token[op1_idx + 1..];
+    let op2_idx = after1
+        .find(['>', '<', '='])
+        .ok_or_else(|| strict_fail(line, "invalid edge expression"))?;
+    let op2 = after1[op2_idx..]
+        .chars()
+        .next()
+        .ok_or_else(|| strict_fail(line, "invalid edge expression"))?;
+    if op1 != op2 {
+        return Err(strict_fail(line, "invalid edge expression"));
+    }
+    let a = &token[..op1_idx];
+    let id = &after1[..op2_idx];
+    let b = &after1[op2_idx + 1..];
+    if !is_strict_graph_ident(a) || !is_strict_graph_ident(id) || !is_strict_graph_ident(b) {
+        return Err(strict_fail(line, "invalid edge expression"));
+    }
+    let (from, to, direction) = match op1 {
+        '>' => (a.to_string(), b.to_string(), EdgeDirection::Directed),
+        '<' => (b.to_string(), a.to_string(), EdgeDirection::Directed),
+        '=' => (a.to_string(), b.to_string(), EdgeDirection::Undirected),
+        _ => return Err(strict_fail(line, "invalid edge expression")),
+    };
+    Ok(GraphEdgeSpec {
+        id: id.to_string(),
+        from,
+        to,
+        direction,
+        raw_operator: op1,
+    })
+}
+
+fn parse_strict_core(source: &str) -> Result<(NemaDocument, RenderedDocument), NemaError> {
+    if source.len() > MAX_BYTES {
+        return Err(NemaError::SourceTooLarge);
+    }
+    if source.contains('\t') {
+        return Err(strict_fail(0, "raw Tab prohibited"));
+    }
+    if source.contains('\u{3000}') {
+        return Err(strict_fail(0, "fullwidth space prohibited"));
+    }
+    if source.contains('\r') {
+        return Err(strict_fail(0, "raw CR prohibited"));
+    }
+
+    let mut lines: Vec<&str> = source.split('\n').collect();
+    if lines.last() == Some(&"") {
+        lines.pop();
+    }
+
+    struct StrictRec {
+        span: TextSpan,
+        node_id: Option<String>,
+        edge: Option<GraphEdgeSpec>,
+        values: Vec<StrictCell>,
+    }
+
+    struct StrictDomain {
+        id: String,
+        revision: u64,
+        mode: DomainMode,
+        header_span: TextSpan,
+        explicit_header: bool,
+        explicit_header_span: Option<TextSpan>,
+        columns: Option<Vec<String>>,
+        declared_width: Option<usize>,
+        records: Vec<StrictRec>,
+    }
+
+    let mut domains: Vec<StrictDomain> = Vec::new();
+    let mut ids: HashSet<String> = HashSet::new();
+    let mut byte_offset = 0usize;
+
+    for (i, &l) in lines.iter().enumerate() {
+        let line_start = byte_offset;
+        byte_offset += l.len() + 1;
+        let n = i + 1;
+        if l.is_empty() {
+            continue;
+        }
+        if let Some((mode, id, rev)) = parse_strict_header(l) {
+            if !ids.insert(id.clone()) {
+                return Err(strict_fail(n, "duplicate domain ID"));
+            }
+            let columns = match mode {
+                DomainMode::Table => None,
+                DomainMode::FiveWOneH => Some(AXES_5W1H.iter().map(|s| (*s).to_string()).collect()),
+                DomainMode::Graph => Some(COLUMNS_GRAPH.iter().map(|s| (*s).to_string()).collect()),
+            };
+            domains.push(StrictDomain {
+                id,
+                revision: rev,
+                mode,
+                header_span: TextSpan {
+                    start_byte: line_start,
+                    end_byte: line_start + l.len(),
+                    line: n,
+                    column: 1,
+                },
+                explicit_header: false,
+                explicit_header_span: None,
+                columns,
+                declared_width: None,
+                records: Vec::new(),
+            });
+            continue;
+        }
+        if is_malformed_strict_header(l) {
+            return Err(strict_fail(n, "malformed domain header"));
+        }
+        let Some(active) = domains.last_mut() else {
+            return Err(strict_fail(n, "body before domain"));
+        };
+        let mode = active.mode;
+
+        if mode == DomainMode::Table && l.starts_with("\\#") {
+            if !active.records.is_empty() || active.explicit_header {
+                return Err(strict_fail(n, "header after records"));
+            }
+            let Some(raw_names) = l.strip_prefix("\\# ") else {
+                return Err(strict_fail(n, "header needs labels"));
+            };
+            let vals = strict_fields(raw_names, n)?;
+            let mut names = Vec::with_capacity(vals.len());
+            let mut seen = HashSet::new();
+            for v in vals {
+                let StrictVal::Text(s) = v else {
+                    return Err(strict_fail(n, "invalid column name"));
+                };
+                if s.is_empty() {
+                    return Err(strict_fail(n, "invalid column name"));
+                }
+                if !seen.insert(s.clone()) {
+                    return Err(strict_fail(n, "duplicate column name"));
+                }
+                names.push(s);
+            }
+            if let Some(dw) = active.declared_width {
+                if names.len() != dw {
+                    return Err(strict_fail(n, "column width mismatch"));
+                }
+            }
+            active.columns = Some(names);
+            active.explicit_header = true;
+            active.explicit_header_span = Some(TextSpan {
+                start_byte: line_start,
+                end_byte: line_start + l.len(),
+                line: n,
+                column: 1,
+            });
+            continue;
+        }
+
+        if mode == DomainMode::Table && l.starts_with("\\%") {
+            if !active.records.is_empty() || active.declared_width.is_some() {
+                return Err(strict_fail(n, "width duplicate / too late"));
+            }
+            let w_str = &l[2..];
+            if !is_positive_digits(w_str) {
+                return Err(strict_fail(n, "invalid width"));
+            }
+            let count = w_str
+                .parse::<usize>()
+                .map_err(|_| strict_fail(n, "invalid width"))?;
+            if active.explicit_header
+                && active
+                    .columns
+                    .as_ref()
+                    .is_some_and(|cols| cols.len() != count)
+            {
+                return Err(strict_fail(n, "column width mismatch"));
+            }
+            active.declared_width = Some(count);
+            if !active.explicit_header {
+                active.columns = Some((1..=count).map(|j| format!("column{j}")).collect());
+            }
+            continue;
+        }
+
+        if l.starts_with("  ") {
+            return Err(strict_fail(
+                n,
+                "consecutive leading spaces prohibited; use \" N value\"",
+            ));
+        }
+
+        if let Some(rest) = l.strip_prefix(' ') {
+            if active.records.is_empty() {
+                return Err(strict_fail(n, "continuation without record"));
+            }
+            let vals = strict_fields(rest, n)?;
+            let (col, v) = if vals.len() == 2 {
+                let sp = rest.find(' ').unwrap_or(rest.len());
+                let idx_token = &rest[..sp];
+                if !is_cont_index(idx_token) {
+                    return Err(strict_fail(n, "invalid continuation column index"));
+                }
+                let parsed_col = idx_token
+                    .parse::<usize>()
+                    .map_err(|_| strict_fail(n, "invalid continuation column index"))?;
+                if mode == DomainMode::Graph && parsed_col == 0 {
+                    return Err(strict_fail(n, "cannot continue graph ID X0"));
+                }
+                (parsed_col, vals.into_iter().nth(1).expect("len 2"))
+            } else if vals.len() == 1 {
+                let default_col = if mode == DomainMode::Graph { 2 } else { 1 };
+                (default_col, vals.into_iter().next().expect("len 1"))
+            } else {
+                return Err(strict_fail(
+                    n,
+                    "continuation must contain one field; escape inner spaces",
+                ));
+            };
+            let v_str = match v {
+                StrictVal::Text(s) => s,
+                StrictVal::Null | StrictVal::Missing => {
+                    return Err(strict_fail(n, "continuation must be text"));
+                }
+            };
+            if mode == DomainMode::FiveWOneH && col >= 6 {
+                return Err(strict_fail(n, "continuation outside 5w1h"));
+            }
+            if mode == DomainMode::Table {
+                let width = active.columns.as_ref().map_or(0, Vec::len);
+                if col >= width {
+                    return Err(strict_fail(n, "continuation exceeds table width"));
+                }
+            }
+            let rec = active.records.last_mut().expect("records non-empty");
+            rec.span.end_byte = line_start + l.len();
+            while rec.values.len() <= col {
+                rec.values.push(StrictCell::ImplicitMissing);
+            }
+            match &mut rec.values[col] {
+                StrictCell::Null => return Err(strict_fail(n, "cannot append to null")),
+                StrictCell::ExplicitMissing => {
+                    return Err(strict_fail(n, "cannot append to missing"));
+                }
+                slot @ StrictCell::ImplicitMissing => {
+                    let g = if v_str == "~" {
+                        vec!["\\~".to_string()]
+                    } else if v_str.is_empty() {
+                        vec!["\\e".to_string()]
+                    } else {
+                        vec![v_str.clone()]
+                    };
+                    *slot = StrictCell::Text {
+                        value: v_str,
+                        groups: g,
+                    };
+                }
+                StrictCell::Text { value, groups } => {
+                    value.push_str(&v_str);
+                    if !v_str.is_empty() {
+                        groups.push(v_str);
+                    }
+                }
+            }
+            continue;
+        }
+
+        let part_list = strict_tokenize(l, n)?;
+        let mut vals = Vec::with_capacity(part_list.len());
+        for parts in &part_list {
+            vals.push(strict_value(parts, n)?);
+        }
+
+        let to_cell = |v: StrictVal| -> StrictCell {
+            match v {
+                StrictVal::Null => StrictCell::Null,
+                StrictVal::Missing => StrictCell::ExplicitMissing,
+                StrictVal::Text(s) => {
+                    let groups = if s == "~" {
+                        vec!["\\~".to_string()]
+                    } else if s.is_empty() {
+                        vec!["\\e".to_string()]
+                    } else {
+                        vec![s.clone()]
+                    };
+                    StrictCell::Text { value: s, groups }
+                }
+            }
+        };
+
+        let span = TextSpan {
+            start_byte: line_start,
+            end_byte: line_start + l.len(),
+            line: n,
+            column: 1,
+        };
+
+        match mode {
+            DomainMode::Table => {
+                if active.columns.is_none() {
+                    active.columns = Some((1..=vals.len()).map(|j| format!("column{j}")).collect());
+                }
+                let width = active.columns.as_ref().expect("set above").len();
+                if vals.len() > width {
+                    return Err(strict_fail(n, "record exceeds width"));
+                }
+                let mut cells: Vec<StrictCell> = vals.into_iter().map(to_cell).collect();
+                while cells.len() < width {
+                    cells.push(StrictCell::ImplicitMissing);
+                }
+                active.records.push(StrictRec {
+                    span,
+                    node_id: None,
+                    edge: None,
+                    values: cells,
+                });
+            }
+            DomainMode::FiveWOneH => {
+                if vals.len() > 6 {
+                    return Err(strict_fail(n, "5w1h exceeds six fields"));
+                }
+                let mut cells: Vec<StrictCell> = vals.into_iter().map(to_cell).collect();
+                while cells.len() < 6 {
+                    cells.push(StrictCell::ImplicitMissing);
+                }
+                active.records.push(StrictRec {
+                    span,
+                    node_id: None,
+                    edge: None,
+                    values: cells,
+                });
+            }
+            DomainMode::Graph => {
+                let Some(StrictVal::Text(token)) = vals.first().cloned() else {
+                    return Err(strict_fail(n, "invalid graph ID"));
+                };
+                let first_parts = &part_list[0];
+                let has_raw_op = first_parts
+                    .iter()
+                    .any(|p| matches!(p, StrictPart::Raw('>' | '<' | '=')));
+                let (node_id, edge) = if has_raw_op {
+                    let edge_spec = parse_strict_edge(&token, first_parts, n)?;
+                    if vals.len() < 2 || matches!(vals[1], StrictVal::Missing) {
+                        return Err(strict_fail(n, "edge name missing"));
+                    }
+                    (None, Some(edge_spec))
+                } else {
+                    if !is_strict_graph_ident(&token) {
+                        return Err(strict_fail(n, "invalid node ID"));
+                    }
+                    if vals.len() < 2 || matches!(vals[1], StrictVal::Missing) {
+                        return Err(strict_fail(n, "node name missing"));
+                    }
+                    (Some(token), None)
+                };
+                let cells: Vec<StrictCell> = vals.into_iter().map(to_cell).collect();
+                active.records.push(StrictRec {
+                    span,
+                    node_id,
+                    edge,
+                    values: cells,
+                });
+            }
+        }
+    }
+
+    for d in &domains {
+        if d.mode != DomainMode::Graph {
+            continue;
+        }
+        let mut nodes = HashSet::new();
+        let mut edges = HashSet::new();
+        for r in &d.records {
+            if let Some(nid) = &r.node_id {
+                if !nodes.insert(nid.clone()) {
+                    return Err(strict_fail(0, format!("duplicate node ID: {nid}")));
+                }
+            } else if let Some(edge) = &r.edge {
+                if !edges.insert(edge.id.clone()) {
+                    return Err(strict_fail(0, format!("duplicate edge ID: {}", edge.id)));
+                }
+            }
+        }
+        if nodes.intersection(&edges).next().is_some() {
+            return Err(strict_fail(0, "node edge ID overlap"));
+        }
+        for r in &d.records {
+            if let Some(edge) = &r.edge {
+                if !nodes.contains(&edge.from) || !nodes.contains(&edge.to) {
+                    return Err(strict_fail(0, format!("dangling edge {}", edge.id)));
+                }
+            }
+        }
+    }
+
+    let mut ast_domains = Vec::with_capacity(domains.len());
+    let mut rendered_domains = Vec::with_capacity(domains.len());
+    for d in domains {
+        let cols = d.columns.unwrap_or_default();
+        let mut ast_records = Vec::with_capacity(d.records.len());
+        let mut rendered_rows = Vec::with_capacity(d.records.len());
+
+        for rec in d.records {
+            let mut ast_cells = Vec::with_capacity(rec.values.len());
+            let mut r_cells = Vec::with_capacity(rec.values.len());
+            let mut r_groups = Vec::with_capacity(rec.values.len());
+            let mut extensions = Vec::new();
+
+            for (col_idx, cell) in rec.values.into_iter().enumerate() {
+                match cell {
+                    StrictCell::Null => {
+                        ast_cells.push(vec![SemanticChunk {
+                            raw: "~".to_string(),
+                            span: rec.span,
+                            atoms: vec![AtomChunk {
+                                text: "~".to_string(),
+                                opaque_dict_index: None,
+                            }],
+                        }]);
+                        r_cells.push("~".to_string());
+                        r_groups.push(vec!["~".to_string()]);
+                    }
+                    StrictCell::ExplicitMissing | StrictCell::ImplicitMissing => {
+                        ast_cells.push(Vec::new());
+                        r_cells.push(String::new());
+                        r_groups.push(Vec::new());
+                    }
+                    StrictCell::Text { value, groups } => {
+                        let chunks = if value.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![SemanticChunk {
+                                raw: value.clone(),
+                                span: rec.span,
+                                atoms: vec![AtomChunk {
+                                    text: value.clone(),
+                                    opaque_dict_index: None,
+                                }],
+                            }]
+                        };
+                        ast_cells.push(chunks);
+                        if d.mode == DomainMode::Graph && col_idx >= 3 && !value.is_empty() {
+                            extensions.push((format!("X{col_idx}"), value.clone()));
+                        }
+                        let norm_groups = if value == "~" {
+                            vec!["\\~".to_string()]
+                        } else if value.is_empty() {
+                            Vec::new()
+                        } else {
+                            groups
+                        };
+                        r_cells.push(value);
+                        r_groups.push(norm_groups);
+                    }
+                }
+            }
+
+            if d.mode == DomainMode::FiveWOneH {
+                while r_cells.len() < 6 {
+                    r_cells.push(String::new());
+                }
+                while r_groups.len() < 6 {
+                    r_groups.push(Vec::new());
+                }
+            }
+
+            ast_records.push(NemaRecord {
+                span: rec.span,
+                cells: ast_cells,
+                explicit_tail_empty: false,
+                graph_node_id: rec.node_id.clone(),
+                graph_edge: rec.edge.clone(),
+            });
+            rendered_rows.push(RenderedRow {
+                cells: r_cells,
+                groups: r_groups,
+                tail_empty: false,
+                node_id: rec.node_id,
+                edge: rec.edge,
+                extensions,
+                line: rec.span.line,
+            });
+        }
+
+        ast_domains.push(NemaDomain {
+            id: d.id.clone(),
+            revision: d.revision,
+            mode: d.mode,
+            header_span: d.header_span,
+            explicit_header: d.explicit_header,
+            explicit_header_span: d.explicit_header_span,
+            columns: cols.clone(),
+            records: ast_records,
+            is_v12: false,
+        });
+        rendered_domains.push(RenderedDomain {
+            id: d.id,
+            revision: d.revision,
+            mode: d.mode,
+            columns: cols,
+            explicit_header: d.explicit_header,
+            rows: rendered_rows,
+        });
+    }
+
+    Ok((
+        NemaDocument {
+            span: TextSpan {
+                start_byte: 0,
+                end_byte: source.len(),
+                line: 1,
+                column: 1,
+            },
+            dictionary: Vec::new(),
+            dictionary_spans: Vec::new(),
+            domains: ast_domains,
+        },
+        RenderedDocument {
+            dictionary: Vec::new(),
+            domains: rendered_domains,
+        },
+    ))
+}
+
+/// 按照官网最新 `.NEMA` Strict Candidate 规范 (`strict-parser.js`) 解析文档 AST
+pub fn parse_strict(source: &str) -> Result<NemaDocument, NemaError> {
+    parse_strict_core(source).map(|(ast, _)| ast)
+}
+
+/// 按照官网最新 `.NEMA` Strict Candidate 规范 (`strict-parser.js`) 直接解析并渲染视图
+pub fn render_strict(source: &str) -> Result<RenderedDocument, NemaError> {
+    parse_strict_core(source).map(|(_, rendered)| rendered)
+}
+
 /// 解析 `.nema` 权威源为 `NemaDocument`
 pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
     let lines = validate_source(source)?;
@@ -1157,6 +1954,51 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
             });
         }
         i += n;
+    } else if lines[0].trim_start() == "\\!NEMAT1" {
+        // 官网候选传输区块头: \!NEMAT1 / $N / @0 Value ... / \!DATA
+        if lines.len() < 3 {
+            return Err(NemaError::BadDictionaryManifestSize);
+        }
+        let n = lines[1]
+            .trim_start()
+            .strip_prefix('$')
+            .filter(|s| is_all_digits(s))
+            .and_then(|s| s.parse::<usize>().ok())
+            .ok_or(NemaError::BadDictionaryManifestSize)?;
+        if n > MAX_DICT_ENTRIES || 2 + n >= lines.len() {
+            return Err(NemaError::BadDictionaryManifestSize);
+        }
+        for k in 0..n {
+            let row_idx = 2 + k;
+            let raw_row = lines[row_idx].trim_start();
+            let rest = raw_row
+                .strip_prefix('@')
+                .ok_or(NemaError::InvalidDictionaryEntry)?;
+            let (idx_str, raw_val) = rest
+                .split_once(' ')
+                .ok_or(NemaError::InvalidDictionaryEntry)?;
+            let parsed_idx = idx_str
+                .parse::<usize>()
+                .map_err(|_| NemaError::InvalidDictionaryEntry)?;
+            if parsed_idx != k {
+                return Err(NemaError::InvalidDictionaryEntry);
+            }
+            let unescaped = unescape_opaque(raw_val);
+            if unescaped.is_empty() || unescaped.contains('\t') {
+                return Err(NemaError::InvalidDictionaryEntry);
+            }
+            doc.dictionary.push(unescaped);
+            doc.dictionary_spans.push(TextSpan {
+                start_byte: line_byte_offsets[row_idx],
+                end_byte: line_byte_offsets[row_idx] + lines[row_idx].len(),
+                line: row_idx + 1,
+                column: 1,
+            });
+        }
+        if lines[2 + n].trim_start() != "\\!DATA" {
+            return Err(NemaError::BadDictionaryManifestSize);
+        }
+        i = 3 + n;
     }
 
     let mut seen_domain_ids = HashSet::new();
@@ -1168,7 +2010,11 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         let line_no = row_idx + 1;
         if let Some((is_graph, id, revision)) = parse_domain_header_v12(line) {
             if let Some(prev) = doc.domains.last() {
-                if !current_domain_has_raw_rows || prev.records.is_empty() {
+                let prev_is_declared_empty_table =
+                    prev.mode == DomainMode::Table && !prev.columns.is_empty();
+                if !current_domain_has_raw_rows
+                    || (prev.records.is_empty() && !prev_is_declared_empty_table)
+                {
                     return Err(NemaError::NoContent);
                 }
             }
@@ -1207,7 +2053,11 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         }
         if let Some((mode, id, revision)) = parse_domain_header(line) {
             if let Some(prev) = doc.domains.last() {
-                if !current_domain_has_raw_rows || prev.records.is_empty() {
+                let prev_is_declared_empty_table =
+                    prev.mode == DomainMode::Table && !prev.columns.is_empty();
+                if !current_domain_has_raw_rows
+                    || (prev.records.is_empty() && !prev_is_declared_empty_table)
+                {
                     return Err(NemaError::NoContent);
                 }
             }
@@ -1247,17 +2097,35 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         if current.is_v12 {
             if pending_v12_mode {
                 pending_v12_mode = false;
+                if let Some(w_str) = line
+                    .strip_prefix("\\%")
+                    .or_else(|| line.strip_prefix(" \\%"))
+                {
+                    if is_positive_digits(w_str) {
+                        if let Ok(n_cols) = w_str.parse::<usize>() {
+                            current.mode = DomainMode::Table;
+                            current.columns = (1..=n_cols).map(|k| format!("column{k}")).collect();
+                            pending_v12_mode = true;
+                            current_domain_has_raw_rows = true;
+                            continue;
+                        }
+                    }
+                }
                 let candidate_header = if let Some(rest) = line.strip_prefix('\t') {
                     if rest.starts_with('\t') {
                         return Err(NemaError::TabInBody);
                     }
                     Some(rest)
                 } else if let Some(rest) = line.strip_prefix(' ') {
-                    if let Some(stripped) = rest.strip_prefix('\\') {
+                    if let Some(stripped) = rest.strip_prefix("\\# ") {
+                        Some(stripped)
+                    } else if let Some(stripped) = rest.strip_prefix('\\') {
                         Some(stripped.trim_start())
                     } else {
                         Some(rest)
                     }
+                } else if let Some(stripped) = line.strip_prefix("\\# ") {
+                    Some(stripped)
                 } else {
                     line.strip_prefix('\\').map(str::trim_start)
                 };
@@ -1289,7 +2157,7 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                 }
                 if is_table_header {
                     continue;
-                } else {
+                } else if current.columns.is_empty() || current.mode != DomainMode::Table {
                     current.mode = DomainMode::FiveWOneH;
                 }
             }
@@ -1364,32 +2232,52 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                         append_v12_cols(rec, cells, &doc.dictionary, line_start, line.len(), line_no)?;
                     } else if let Some(after_space) = line.strip_prefix(' ') {
                         let cells = split_x_v12(after_space)?;
-                        if cells.is_empty() || !is_valid_graph_ident(&cells[0]) {
-                            return Err(NemaError::InvalidNodeId(
-                                cells.first().cloned().unwrap_or_default(),
-                            ));
+                        if !current.records.is_empty()
+                            && (cells.len() == 1
+                                || !is_valid_graph_ident(&cells[0])
+                                || current.records.iter().any(|r| {
+                                    r.graph_node_id.as_deref() == Some(cells[0].as_str())
+                                }))
+                        {
+                            let mut cont_cells = vec![String::new()];
+                            cont_cells.extend(cells);
+                            let rec = current.records.last_mut().expect("checked non-empty");
+                            append_v12_cols(
+                                rec,
+                                cont_cells,
+                                &doc.dictionary,
+                                line_start,
+                                line.len(),
+                                line_no,
+                            )?;
+                        } else {
+                            if cells.is_empty() || !is_valid_graph_ident(&cells[0]) {
+                                return Err(NemaError::InvalidNodeId(
+                                    cells.first().cloned().unwrap_or_default(),
+                                ));
+                            }
+                            let mut rec = NemaRecord {
+                                span: TextSpan {
+                                    start_byte: line_start,
+                                    end_byte: line_start + line.len(),
+                                    line: line_no,
+                                    column: 2,
+                                },
+                                cells: Vec::with_capacity(cells.len()),
+                                explicit_tail_empty: false,
+                                graph_node_id: Some(cells[0].clone()),
+                                graph_edge: None,
+                            };
+                            append_v12_cols(
+                                &mut rec,
+                                cells,
+                                &doc.dictionary,
+                                line_start + 1,
+                                after_space.len(),
+                                line_no,
+                            )?;
+                            current.records.push(rec);
                         }
-                        let mut rec = NemaRecord {
-                            span: TextSpan {
-                                start_byte: line_start,
-                                end_byte: line_start + line.len(),
-                                line: line_no,
-                                column: 1,
-                            },
-                            cells: Vec::with_capacity(cells.len()),
-                            explicit_tail_empty: false,
-                            graph_node_id: Some(cells[0].clone()),
-                            graph_edge: None,
-                        };
-                        append_v12_cols(
-                            &mut rec,
-                            cells,
-                            &doc.dictionary,
-                            line_start + 1,
-                            after_space.len(),
-                            line_no,
-                        )?;
-                        current.records.push(rec);
                     } else {
                         let cells = split_x_v12(line)?;
                         if cells.is_empty() {
@@ -1458,30 +2346,50 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
             return Err(NemaError::TabInBody);
         }
 
-        // Table 首行精确表头判断
-        if current.mode == DomainMode::Table
-            && current.records.is_empty()
-            && !current.explicit_header
-        {
-            let raw_hdr = if let Some(stripped) = line.strip_prefix("\\# ") {
-                Some(stripped)
-            } else if let Some(stripped) = line.strip_prefix("\\ ") {
-                Some(stripped)
-            } else if let Some(stripped) = line.strip_prefix(" \\# ") {
-                Some(stripped)
-            } else if let Some(stripped) = line.strip_prefix(" \\ ") {
-                Some(stripped)
-            } else {
-                line.strip_prefix('\t')
-            };
-            if let Some(raw_names) = raw_hdr {
-                let names: Vec<&str> = raw_names.split(' ').collect();
-                if !names.is_empty() && names.iter().all(|x| is_valid_table_header_ident(x)) {
-                    let unique: HashSet<&str> = names.iter().copied().collect();
+        // Table 首行精确声明宽度 (\%N) 与表头 (\# Col1 Col2) 判断
+        if current.mode == DomainMode::Table && current.records.is_empty() {
+            if let Some(w_str) = line
+                .strip_prefix("\\%")
+                .or_else(|| line.strip_prefix(" \\%"))
+            {
+                if is_positive_digits(w_str) {
+                    if let Ok(n_cols) = w_str.parse::<usize>() {
+                        if current.explicit_header && current.columns.len() != n_cols {
+                            return Err(strict_fail(line_no, "column width mismatch"));
+                        }
+                        if current.columns.is_empty() {
+                            current.columns = (1..=n_cols).map(|k| format!("column{k}")).collect();
+                        }
+                        current_domain_has_raw_rows = true;
+                        continue;
+                    }
+                }
+            }
+            if !current.explicit_header {
+                if let Some(raw_names) = line
+                    .strip_prefix("\\# ")
+                    .or_else(|| line.strip_prefix(" \\# "))
+                {
+                    let tokens = split_unescaped_spaces(raw_names)?;
+                    let mut names = Vec::with_capacity(tokens.len());
+                    for tok in tokens {
+                        if matches!(tok, "~" | "\\_" | "\\e") {
+                            return Err(strict_fail(line_no, "invalid column name"));
+                        }
+                        let decoded = unescape_v12(tok)?;
+                        if decoded.is_empty() {
+                            return Err(strict_fail(line_no, "invalid column name"));
+                        }
+                        names.push(decoded);
+                    }
+                    let unique: HashSet<&str> = names.iter().map(String::as_str).collect();
                     if unique.len() != names.len() {
                         return Err(NemaError::DuplicateColumnHeader);
                     }
-                    current.columns = names.into_iter().map(str::to_string).collect();
+                    if !current.columns.is_empty() && names.len() != current.columns.len() {
+                        return Err(strict_fail(line_no, "column width mismatch"));
+                    }
+                    current.columns = names;
                     current.explicit_header = true;
                     current.explicit_header_span = Some(TextSpan {
                         start_byte: line_start,
@@ -1492,32 +2400,182 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                     current_domain_has_raw_rows = true;
                     continue;
                 }
+                let raw_hdr = if let Some(stripped) = line.strip_prefix("\\ ") {
+                    Some(stripped)
+                } else if let Some(stripped) = line.strip_prefix(" \\ ") {
+                    Some(stripped)
+                } else {
+                    line.strip_prefix('\t')
+                };
+                if let Some(raw_names) = raw_hdr {
+                    let names = split_unescaped_spaces(raw_names)?;
+                    if !names.is_empty() && names.iter().all(|x| is_valid_table_header_ident(x)) {
+                        let unique: HashSet<&str> = names.iter().copied().collect();
+                        if unique.len() != names.len() {
+                            return Err(NemaError::DuplicateColumnHeader);
+                        }
+                        if !current.columns.is_empty() && names.len() != current.columns.len() {
+                            return Err(NemaError::TooMany5W1HFields);
+                        }
+                        current.columns = names.into_iter().map(str::to_string).collect();
+                        current.explicit_header = true;
+                        current.explicit_header_span = Some(TextSpan {
+                            start_byte: line_start,
+                            end_byte: line_start + line.len(),
+                            line: line_no,
+                            column: 1,
+                        });
+                        current_domain_has_raw_rows = true;
+                        continue;
+                    }
+                }
             }
         }
 
         if line.starts_with(' ') {
-            if current.records.is_empty() {
-                return Err(NemaError::ContinuationBeforeFirstRecord);
-            }
             let n = line.len() - line.trim_start_matches(' ').len();
             let part = &line[n..];
             if part.is_empty() {
                 return Err(NemaError::BlankContinuation);
             }
-            let atoms = mixed_atoms(part, &doc.dictionary)?;
-            let chunk = SemanticChunk {
-                raw: part.to_string(),
-                span: TextSpan {
-                    start_byte: line_start + n,
-                    end_byte: line_start + line.len(),
-                    line: line_no,
-                    column: n + 1,
-                },
-                atoms,
-            };
-            let rec = current.records.last_mut().expect("checked non-empty");
-            rec.span.end_byte = line_start + line.len();
-            rec.add_chunk(n - 1, chunk);
+            // Graph 域支持 1 空格节点声明 (` A LoginAPI ...`)
+            if current.mode == DomainMode::Graph && n == 1 {
+                if let Ok(tokens) = split_unescaped_spaces(part) {
+                    if tokens.len() >= 2
+                        && !tokens[0].contains(['>', '<', '='])
+                        && is_valid_graph_ident(tokens[0])
+                        && !current
+                            .records
+                            .iter()
+                            .any(|r| r.graph_node_id.as_deref() == Some(tokens[0]))
+                    {
+                        let mut rec = NemaRecord {
+                            span: TextSpan {
+                                start_byte: line_start,
+                                end_byte: line_start + line.len(),
+                                line: line_no,
+                                column: 2,
+                            },
+                            cells: Vec::with_capacity(tokens.len()),
+                            explicit_tail_empty: false,
+                            graph_node_id: Some(tokens[0].to_string()),
+                            graph_edge: None,
+                        };
+                        let mut col_byte = line_start + n;
+                        let mut col_char = n + 1;
+                        for (j, &c) in tokens.iter().enumerate() {
+                            while rec.cells.len() <= j {
+                                rec.cells.push(Vec::new());
+                            }
+                            if c != "\\_" && c != "\\e" {
+                                let atoms = mixed_atoms(c, &doc.dictionary)?;
+                                rec.add_chunk(
+                                    j,
+                                    SemanticChunk {
+                                        raw: c.to_string(),
+                                        span: TextSpan {
+                                            start_byte: col_byte,
+                                            end_byte: col_byte + c.len(),
+                                            line: line_no,
+                                            column: col_char,
+                                        },
+                                        atoms,
+                                    },
+                                );
+                            }
+                            col_byte += c.len() + 1;
+                            col_char += c.chars().count() + 1;
+                        }
+                        current.records.push(rec);
+                        current_domain_has_raw_rows = true;
+                        continue;
+                    }
+                }
+            }
+            if current.records.is_empty() {
+                return Err(NemaError::ContinuationBeforeFirstRecord);
+            }
+            let mut explicit_indexed: Option<(usize, &str)> = None;
+            if n == 1 {
+                if let Ok(tokens) = split_unescaped_spaces(part) {
+                    if tokens.len() == 2 && is_cont_index(tokens[0]) {
+                        let col = tokens[0]
+                            .parse::<usize>()
+                            .map_err(|_| strict_fail(line_no, "invalid continuation column index"))?;
+                        explicit_indexed = Some((col, tokens[1]));
+                    }
+                }
+            }
+            if let Some((target_col, val_tok)) = explicit_indexed {
+                if current.mode == DomainMode::Graph && target_col == 0 {
+                    return Err(strict_fail(line_no, "cannot continue graph ID X0"));
+                }
+                if val_tok == "~" || val_tok == "\\_" {
+                    return Err(strict_fail(line_no, "continuation must be text"));
+                }
+                if current.mode == DomainMode::FiveWOneH && target_col >= 6 {
+                    return Err(NemaError::TooMany5W1HFields);
+                }
+                if current.mode == DomainMode::Table
+                    && !current.columns.is_empty()
+                    && target_col >= current.columns.len()
+                {
+                    return Err(strict_fail(line_no, "continuation exceeds table width"));
+                }
+                let rec = current.records.last_mut().expect("checked non-empty");
+                if rec
+                    .cells
+                    .get(target_col)
+                    .is_some_and(|v| v.iter().any(|c| c.raw == "~"))
+                {
+                    return Err(strict_fail(line_no, "cannot append to null"));
+                }
+                rec.span.end_byte = line_start + line.len();
+                if val_tok == "\\e" {
+                    while rec.cells.len() <= target_col {
+                        rec.cells.push(Vec::new());
+                    }
+                } else {
+                    let atoms = mixed_atoms(val_tok, &doc.dictionary)?;
+                    let chunk = SemanticChunk {
+                        raw: val_tok.to_string(),
+                        span: TextSpan {
+                            start_byte: line_start + line.len() - val_tok.len(),
+                            end_byte: line_start + line.len(),
+                            line: line_no,
+                            column: n + 1,
+                        },
+                        atoms,
+                    };
+                    rec.add_chunk(target_col, chunk);
+                }
+            } else {
+                let target_col = if current.mode == DomainMode::Graph && n == 1 {
+                    1
+                } else {
+                    n - 1
+                };
+                let rec = current.records.last_mut().expect("checked non-empty");
+                rec.span.end_byte = line_start + line.len();
+                if part == "\\_" || part == "\\e" {
+                    while rec.cells.len() <= target_col {
+                        rec.cells.push(Vec::new());
+                    }
+                } else {
+                    let atoms = mixed_atoms(part, &doc.dictionary)?;
+                    let chunk = SemanticChunk {
+                        raw: part.to_string(),
+                        span: TextSpan {
+                            start_byte: line_start + n,
+                            end_byte: line_start + line.len(),
+                            line: line_no,
+                            column: n + 1,
+                        },
+                        atoms,
+                    };
+                    rec.add_chunk(target_col, chunk);
+                }
+            }
         } else {
             let empty_sentinel = line.ends_with(" .") && !line.ends_with(" \\.");
             let effective = if empty_sentinel {
@@ -1525,7 +2583,7 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
             } else {
                 line
             };
-            let cells: Vec<&str> = effective.split(' ').collect();
+            let cells = split_unescaped_spaces(effective)?;
             if cells.is_empty() || cells.iter().any(|x| x.is_empty()) {
                 return Err(NemaError::MultipleOrLeadingSpaces);
             }
@@ -1544,20 +2602,25 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
             let mut col_byte = line_start;
             let mut col_char = 1usize;
             for (j, &c) in cells.iter().enumerate() {
-                let atoms = mixed_atoms(c, &doc.dictionary)?;
-                rec.add_chunk(
-                    j,
-                    SemanticChunk {
-                        raw: c.to_string(),
-                        span: TextSpan {
-                            start_byte: col_byte,
-                            end_byte: col_byte + c.len(),
-                            line: line_no,
-                            column: col_char,
+                while rec.cells.len() <= j {
+                    rec.cells.push(Vec::new());
+                }
+                if c != "\\_" && c != "\\e" {
+                    let atoms = mixed_atoms(c, &doc.dictionary)?;
+                    rec.add_chunk(
+                        j,
+                        SemanticChunk {
+                            raw: c.to_string(),
+                            span: TextSpan {
+                                start_byte: col_byte,
+                                end_byte: col_byte + c.len(),
+                                line: line_no,
+                                column: col_char,
+                            },
+                            atoms,
                         },
-                        atoms,
-                    },
-                );
+                    );
+                }
                 col_byte += c.len() + 1;
                 col_char += c.chars().count() + 1;
             }
@@ -1573,16 +2636,24 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
                     .push(format!("column{}", current.columns.len() + 1));
             }
         } else if current.mode == DomainMode::Graph && !line.starts_with(' ') {
-            let e = &last_rec.cells[0][0].raw;
+            let e = last_rec
+                .cells
+                .first()
+                .and_then(|c| c.first())
+                .map(|c| c.raw.clone())
+                .unwrap_or_default();
+            if e.is_empty() {
+                return Err(NemaError::InvalidNodeId(e));
+            }
             if e.contains(['>', '<', '=']) {
-                let Some(edge_spec) = parse_edge_spec(e) else {
-                    return Err(NemaError::InvalidEdgeExpression(e.clone()));
+                let Some(edge_spec) = parse_edge_spec(&e) else {
+                    return Err(NemaError::InvalidEdgeExpression(e));
                 };
                 last_rec.graph_edge = Some(edge_spec);
-            } else if !is_valid_graph_ident(e) {
-                return Err(NemaError::InvalidNodeId(e.clone()));
+            } else if !is_valid_graph_ident(&e) {
+                return Err(NemaError::InvalidNodeId(e));
             } else {
-                last_rec.graph_node_id = Some(e.clone());
+                last_rec.graph_node_id = Some(e);
             }
         }
         if current.mode == DomainMode::FiveWOneH && last_rec.cells.len() > 6 {
@@ -1594,7 +2665,8 @@ pub fn parse_source(source: &str) -> Result<NemaDocument, NemaError> {
         return Err(NemaError::NoDomains);
     }
     for domain in &doc.domains {
-        if domain.records.is_empty() {
+        let is_declared_empty_table = domain.mode == DomainMode::Table && !domain.columns.is_empty();
+        if domain.records.is_empty() && !is_declared_empty_table {
             return Err(NemaError::NoContent);
         }
     }
@@ -2731,7 +3803,7 @@ pub fn toggle_table_header_in_source(source: &str, target_domain_id: Option<&str
                     *line = format!("\t{}", parts.join(" "));
                 }
             } else if !line.starts_with('\t') {
-                if let Some(stripped) = line.strip_prefix("\\ ") {
+                if let Some(stripped) = line.strip_prefix("\\# ").or_else(|| line.strip_prefix("\\ ")) {
                     *line = stripped.to_string();
                 } else {
                     let parts: Vec<String> = line
@@ -2751,7 +3823,7 @@ pub fn toggle_table_header_in_source(source: &str, target_domain_id: Option<&str
                             }
                         })
                         .collect();
-                    *line = format!("\\ {}", parts.join(" "));
+                    *line = format!("\\# {}", parts.join(" "));
                 }
             }
             break;
@@ -3832,5 +4904,128 @@ mod tests {
         let doc_slash = render_source(src_slash_table).expect("slash table parse");
         assert_eq!(doc_slash.domains[0].mode, DomainMode::Table);
         assert_eq!(doc_slash.domains[0].columns, vec!["Agent", "Status", "Note"]);
+    }
+
+    #[test]
+    fn test_website_strict_grammar_rules() {
+        // 1. Table \%N declared width + \# explicit header + \_ missing + \e empty + ~ null + \  escaped space
+        let src_tbl = " \\1 1\n\\%3\n\\# Service State Note\nGateway \\_ Hello\\ World\nWorker ~ \\e\n\n\n";
+        let tbl_doc = render_source(src_tbl).expect("table with width/header/escapes");
+        let tbl = &tbl_doc.domains[0];
+        assert_eq!(tbl.mode, DomainMode::Table);
+        assert!(tbl.explicit_header);
+        assert_eq!(tbl.columns, vec!["Service", "State", "Note"]);
+        assert_eq!(tbl.rows[0].cells[0], "Gateway");
+        assert_eq!(tbl.rows[0].cells[1], "");
+        assert_eq!(tbl.rows[0].cells[2], "Hello World");
+        assert_eq!(tbl.rows[1].cells[1], "~");
+        assert_eq!(tbl.rows[1].groups[1], vec!["~"]);
+        assert_eq!(tbl.rows[1].cells[2], "");
+
+        // 2. Extended escapes in v1.2 (\? \> \< \= \~ \^ \# \_ \% \n \r \t \e)
+        let unesc = unescape_v12(r"\?\>\<\=\~\^\#\_\%\n\r\t\e").expect("extended escapes");
+        assert_eq!(unesc, "?><=~^#_%\n\r\t");
+        assert_eq!(unescape_v12(r"\=LoginAPI").unwrap(), r"\=LoginAPI");
+
+        // 3. Graph supporting both 1-space ` A Node` and 0-space `B Node` declarations + edges + continuations
+        let src_graph = " \\>3 1\n A LoginAPI AuthGateway\nB TokenStore SessionStore\nA>X>B Reads VerifyToken\n  CheckExpiry\n\n\n";
+        let g_doc = render_source(src_graph).expect("mixed 1-space and 0-space graph");
+        let g = &g_doc.domains[0];
+        assert_eq!(g.mode, DomainMode::Graph);
+        assert_eq!(g.rows[0].node_id.as_deref(), Some("A"));
+        assert_eq!(g.rows[1].node_id.as_deref(), Some("B"));
+        assert_eq!(g.rows[2].edge.as_ref().unwrap().id, "X");
+
+        // 4. Website candidate transport header \!NEMAT1 / $N / @0 Value / \!DATA
+        let src_nemat1 = "\\!NEMAT1\n$1\n@0 SessionValidationPipeline\n\\!DATA\n \\?2 1\nVerify ^0 Service\n\n\n";
+        let n_doc = render_source(src_nemat1).expect("nemat1 candidate transport");
+        assert_eq!(n_doc.dictionary, vec!["SessionValidationPipeline"]);
+        assert!(n_doc.domains[0].rows[0].cells[1].contains("SessionValidationPipeline"));
+    }
+
+    #[test]
+    fn test_website_strict_candidate_rules_and_dual_compat() {
+        // Canonical strict parser rules from website strict-parser.js & grammar.html
+        let tbl_ok = render_strict(" \\1 1\n\\%3\n\\# Service State Note\\ Text\nGateway \\_ Hello\\ World\n 2 _Cont\nWorker ~ \\e\nMain \\~ \\^0\nA").unwrap();
+        let d = &tbl_ok.domains[0];
+        assert_eq!(d.mode, DomainMode::Table);
+        assert!(d.explicit_header);
+        assert_eq!(d.columns, vec!["Service", "State", "Note Text"]);
+        assert_eq!(d.rows[0].cells, vec!["Gateway", "", "Hello World_Cont"]);
+        assert_eq!(d.rows[1].cells, vec!["Worker", "~", ""]);
+        assert_eq!(d.rows[1].groups[1], vec!["~"]);
+        assert_eq!(d.rows[2].cells, vec!["Main", "~", "^0"]);
+        assert_eq!(d.rows[2].groups[1], vec!["\\~"]);
+        assert_eq!(d.rows[3].cells, vec!["A", "", ""]);
+
+        // 0-record table with \%3 or \#
+        let empty_tbl = render_strict(" \\1 1\n\\%3").unwrap();
+        assert_eq!(empty_tbl.domains[0].columns, vec!["column1", "column2", "column3"]);
+        assert!(empty_tbl.domains[0].rows.is_empty());
+
+        // Strict rejections
+        for bad in [
+            " \\0 1\nA",
+            " \\01 1\nA",
+            "  \\1 1\nA",
+            " \\? 1\nA",
+            " \\> 1\nA",
+            " \\1 1\n \\?1 1\nA",
+            " \\1 1\n\\# ~ B",
+            " \\1 1\n\\# A \\e",
+            " \\1 1\n\\# A \\_",
+            " \\1 1\n\\# A A",
+            " \\1 1\n\\# A B\n\\%3\n1 2",
+            " \\1 1\n\\%2\nA B C",
+            " \\1 1\nA B\n  Cont",
+            " \\1 1\nA ~ B\n 1 App",
+            " \\1 1\nA \\_ B\n 1 App",
+            " \\1 1\nA a\\e",
+            " \\1 1\nA a\\_",
+            " \\1 1\nA \\q",
+            " \\1 1\nA\\",
+            " \\1 1\n\tA",
+            " \\1 1\nA\u{3000}B",
+            " \\>1 1\n A Node",
+            " \\>1 1\nA",
+            " \\>1 1\nA Node\nB Node\nA>X>B",
+            " \\>1 1\nA Node\nB Node\nA\\>1>X>B Edge",
+            " \\>1 1\nA Node\nA Node",
+            " \\>1 1\nA Node\nA>A>A Self",
+            " \\>1 1\nA Node\nA>X>B Edge",
+            " \\>1 1\nA Node\n 0 Extra",
+        ] {
+            assert!(
+                parse_strict(bad).is_err(),
+                "strict parser should reject invalid input: {bad:?}"
+            );
+        }
+
+        // Valid Graph with forward node reference, reversed <, undirected =, \e node label, ~ edge label, X3 extension, continuation
+        let g_doc = render_strict(
+            " \\>3 2\nA>X>B ~\nC<Y<A Uses\nA=Z=C Peer Desc v3\n 3 -strict\nA \\e Desc\n 2 +More\nB Target\nC Client",
+        )
+        .unwrap();
+        let gd = &g_doc.domains[0];
+        assert_eq!(gd.rows.len(), 6);
+        let e1 = gd.rows[0].edge.as_ref().unwrap();
+        assert_eq!((e1.from.as_str(), e1.to.as_str(), e1.id.as_str()), ("A", "B", "X"));
+        let e2 = gd.rows[1].edge.as_ref().unwrap();
+        assert_eq!((e2.from.as_str(), e2.to.as_str(), e2.id.as_str()), ("A", "C", "Y"));
+        let e3 = gd.rows[2].edge.as_ref().unwrap();
+        assert_eq!(e3.direction, EdgeDirection::Undirected);
+        assert_eq!(gd.rows[2].extensions, vec![("X3".into(), "v3-strict".into())]);
+        assert_eq!(gd.rows[3].cells[1], "");
+        assert_eq!(gd.rows[3].cells[2], "Desc+More");
+
+        // Backward-compatible parse_source / render_source supports explicit N-indexed continuations, 0-record \%3, and escaped headers
+        let compat_doc = render_source(
+            " \\1 1\n\\%3\n\\# Service\\ Name State Note\nGateway \\_ First\n 2 Second\n \\2 1\n\\%2\n\n\n",
+        )
+        .unwrap();
+        assert_eq!(compat_doc.domains[0].columns, vec!["Service Name", "State", "Note"]);
+        assert_eq!(compat_doc.domains[0].rows[0].cells[2], "First Second");
+        assert!(compat_doc.domains[1].rows.is_empty());
+        assert_eq!(compat_doc.domains[1].columns, vec!["column1", "column2"]);
     }
 }

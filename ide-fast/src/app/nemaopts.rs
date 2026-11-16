@@ -3,11 +3,13 @@
 use super::*;
 use crate::i18n::trz;
 use nema_codec::{
-    candidate_dictionary_details, compare_document_formats, find_reused_positions,
-    normalize_nema_newlines, parse_domain_header, parse_domain_header_v12, render_source,
-    toggle_table_header_in_source, CodecFormat, DomainMode, EdgeDirection, NemaCodec,
-    NemaLeaseArbitrator, OwnershipRole, RenderedDocument, RenderedDomain, StandardNemaCodec,
-    TokenProfile, COMPLETE_V12_SAMPLE, OFFICIAL_BENCHMARK_V12, OFFICIAL_SYNTAX_BEFORE_AFTER,
+    adaptive_render_document, candidate_dictionary_details, compare_document_formats,
+    find_reused_positions, get_active_interpreter, normalize_nema_newlines, parse_domain_header,
+    parse_domain_header_v12, parse_strict_ast_json, probe_interpreter, render_source,
+    render_strict, set_active_interpreter, toggle_table_header_in_source, CodecFormat, DomainMode,
+    EdgeDirection, InterpreterConfig, InterpreterWatcher, NemaCodec, NemaLeaseArbitrator,
+    OwnershipRole, RenderedDocument, RenderedDomain, StandardNemaCodec, TokenProfile,
+    COMPLETE_V12_SAMPLE, OFFICIAL_BENCHMARK_V12, OFFICIAL_SYNTAX_BEFORE_AFTER,
 };
 
 /// Graph 选中元素详情（支持同时检视 Node 与 Edge，包含 `X0 / X1 / X2 / X3+ extensions`）
@@ -31,17 +33,379 @@ pub enum SelectedGraphItem {
     },
 }
 
+/// 从节点中心沿射线 `dir` 离开边界矩形 `half_size` 的精确交点，使连线与箭头紧贴卡片外框
+fn rect_ray_exit(center: egui::Vec2, half_size: egui::Vec2, dir: egui::Vec2) -> egui::Vec2 {
+    let ax = dir.x.abs();
+    let ay = dir.y.abs();
+    if ax < 1e-4 && ay < 1e-4 {
+        return center;
+    }
+    let tx = if ax > 1e-4 { half_size.x / ax } else { f32::INFINITY };
+    let ty = if ay > 1e-4 { half_size.y / ay } else { f32::INFINITY };
+    center + dir * tx.min(ty)
+}
+
+/// NEMA 预览主题视觉系统：按当前主题 (`Retro16` / `Comic` / `Crystal` / `Clear` / `Dark` / `Light` / `HC`)
+/// 自动适配画布底纹、节点边框、阴影、圆角、糖衣胶囊与连线配色。
+#[derive(Clone, Copy)]
+pub struct NemaThemeStyle {
+    pub rounding: f32,
+    pub border_width: f32,
+    pub canvas_bg: egui::Color32,
+    pub canvas_border: egui::Color32,
+    pub card_bg: egui::Color32,
+    pub node_bg: egui::Color32,
+    pub node_hover_bg: egui::Color32,
+    pub node_selected_bg: egui::Color32,
+    pub node_header_bg: egui::Color32,
+    pub seal_color: egui::Color32,
+    pub grid_color: egui::Color32,
+    pub edge_color: egui::Color32,
+    pub edge_selected_color: egui::Color32,
+    pub edge_undirected_color: egui::Color32,
+    pub pill_bg: egui::Color32,
+    pub hard_shadow: Option<(egui::Vec2, egui::Color32)>,
+    pub use_pixel_bevel: bool,
+    pub use_glass: bool,
+    pub use_seal_rings: bool,
+    pub mono_labels: bool,
+}
+
+impl NemaThemeStyle {
+    pub fn from_tc(tc: &crate::view::ThemeColors) -> Self {
+        use egui::Color32;
+        if tc.retro16 {
+            return Self {
+                rounding: 0.0,
+                border_width: 2.0,
+                canvas_bg: Color32::from_rgb(14, 18, 28),
+                canvas_border: tc.blue,
+                card_bg: tc.bg_bar,
+                node_bg: Color32::from_rgb(24, 30, 48),
+                node_hover_bg: Color32::from_rgb(34, 46, 72),
+                node_selected_bg: Color32::from_rgb(44, 58, 92),
+                node_header_bg: Color32::from_rgb(36, 48, 76),
+                seal_color: tc.yellow,
+                grid_color: Color32::from_rgba_unmultiplied(0, 240, 255, 22),
+                edge_color: Color32::from_rgb(0, 230, 255),
+                edge_selected_color: Color32::from_rgb(255, 215, 0),
+                edge_undirected_color: Color32::from_rgb(90, 255, 140),
+                pill_bg: Color32::from_rgb(18, 24, 38),
+                hard_shadow: Some((egui::vec2(2.0, 2.0), Color32::BLACK)),
+                use_pixel_bevel: true,
+                use_glass: false,
+                use_seal_rings: false,
+                mono_labels: true,
+            };
+        }
+        if tc.comic {
+            return Self {
+                rounding: 0.0,
+                border_width: 2.4,
+                canvas_bg: if tc.dark {
+                    Color32::from_rgb(28, 30, 42)
+                } else {
+                    Color32::from_rgb(252, 248, 236)
+                },
+                canvas_border: Color32::BLACK,
+                card_bg: tc.bg_bar,
+                node_bg: if tc.dark {
+                    Color32::from_rgb(44, 48, 68)
+                } else {
+                    Color32::WHITE
+                },
+                node_hover_bg: Color32::from_rgb(255, 244, 178),
+                node_selected_bg: Color32::from_rgb(255, 226, 92),
+                node_header_bg: tc.blue,
+                seal_color: Color32::BLACK,
+                grid_color: if tc.dark {
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 24)
+                } else {
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 22)
+                },
+                edge_color: if tc.dark { Color32::from_rgb(255, 215, 0) } else { Color32::BLACK },
+                edge_selected_color: tc.orange,
+                edge_undirected_color: tc.green,
+                pill_bg: if tc.dark {
+                    Color32::from_rgb(36, 40, 56)
+                } else {
+                    Color32::from_rgb(255, 248, 210)
+                },
+                hard_shadow: Some((egui::vec2(3.5, 3.5), Color32::from_black_alpha(230))),
+                use_pixel_bevel: false,
+                use_glass: false,
+                use_seal_rings: false,
+                mono_labels: false,
+            };
+        }
+        if tc.crystal || tc.clear || tc.is_translucent() {
+            let (canvas_bg, node_bg, pill_bg) = if tc.dark {
+                (
+                    Color32::from_rgba_unmultiplied(12, 18, 30, 38),
+                    Color32::from_rgba_unmultiplied(22, 32, 54, 72),
+                    Color32::from_rgba_unmultiplied(16, 24, 42, 115),
+                )
+            } else {
+                (
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 44),
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 84),
+                    Color32::from_rgba_unmultiplied(245, 250, 255, 130),
+                )
+            };
+            let accent = if tc.crystal {
+                tc.mat_prism_cyan
+            } else {
+                tc.blue
+            };
+            return Self {
+                rounding: 8.0,
+                border_width: 1.2,
+                canvas_bg,
+                canvas_border: tc.border_strong,
+                card_bg: tc.bg_bar,
+                node_bg,
+                node_hover_bg: accent.gamma_multiply(0.22),
+                node_selected_bg: accent.gamma_multiply(0.30),
+                node_header_bg: accent.gamma_multiply(0.24),
+                seal_color: accent,
+                grid_color: Color32::from_rgba_unmultiplied(
+                    accent.r(),
+                    accent.g(),
+                    accent.b(),
+                    22,
+                ),
+                edge_color: accent,
+                edge_selected_color: tc.mat_prism_pink,
+                edge_undirected_color: tc.green,
+                pill_bg,
+                hard_shadow: None,
+                use_pixel_bevel: false,
+                use_glass: true,
+                use_seal_rings: tc.crystal,
+                mono_labels: false,
+            };
+        }
+
+        // Website Ariadne Gold-Seal & Fluent Theme (dark / light / hc)
+        let gold_seal = if tc.dark {
+            Color32::from_rgb(212, 175, 55)
+        } else {
+            Color32::from_rgb(166, 122, 18)
+        };
+        let node_header_bg = Color32::from_rgba_unmultiplied(
+            gold_seal.r(),
+            gold_seal.g(),
+            gold_seal.b(),
+            if tc.dark { 36 } else { 28 },
+        );
+        Self {
+            rounding: 8.0,
+            border_width: 1.2,
+            canvas_bg: tc.bg_edit,
+            canvas_border: tc.border,
+            card_bg: tc.bg_bar,
+            node_bg: tc.bg_bar,
+            node_hover_bg: tc.bg_hover,
+            node_selected_bg: tc.bg_active,
+            node_header_bg,
+            seal_color: gold_seal,
+            grid_color: Color32::from_rgba_unmultiplied(
+                gold_seal.r(),
+                gold_seal.g(),
+                gold_seal.b(),
+                if tc.dark { 22 } else { 18 },
+            ),
+            edge_color: tc.blue,
+            edge_selected_color: tc.orange,
+            edge_undirected_color: tc.green,
+            pill_bg: tc.bg_bar,
+            hard_shadow: Some((
+                egui::vec2(1.5, 2.0),
+                Color32::from_black_alpha(if tc.dark { 90 } else { 26 }),
+            )),
+            use_pixel_bevel: false,
+            use_glass: false,
+            use_seal_rings: true,
+            mono_labels: false,
+        }
+    }
+}
+
+/// 按当前 `NemaThemeStyle` 绘制带主题特征（像素浮雕/漫画硬阴影/琉璃棱面/默认印章描边）的矩形边框与底板
+fn paint_nema_box_frame(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    fill: egui::Color32,
+    border: egui::Color32,
+    border_w: f32,
+    style: &NemaThemeStyle,
+    tc: &crate::view::ThemeColors,
+) {
+    if let Some((offset, shadow_col)) = style.hard_shadow {
+        painter.rect_filled(rect.translate(offset), style.rounding, shadow_col);
+    }
+    painter.rect_filled(rect, style.rounding, fill);
+    if style.use_pixel_bevel {
+        let hi = egui::Color32::from_rgba_unmultiplied(160, 225, 255, 110);
+        let lo = egui::Color32::from_black_alpha(150);
+        painter.line_segment([rect.left_top(), rect.right_top()], egui::Stroke::new(1.0, hi));
+        painter.line_segment([rect.left_top(), rect.left_bottom()], egui::Stroke::new(1.0, hi));
+        painter.line_segment([rect.left_bottom(), rect.right_bottom()], egui::Stroke::new(1.0, lo));
+        painter.line_segment([rect.right_top(), rect.right_bottom()], egui::Stroke::new(1.0, lo));
+    } else if style.use_glass {
+        crate::app::glass_render::paint_facet_borders(painter, rect, tc);
+    }
+    painter.rect_stroke(
+        rect,
+        style.rounding,
+        egui::Stroke::new(border_w, border),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 按当前 `NemaThemeStyle` 绘制边 ID 胶囊（透明主题使用霓虹发光描边，Retro/Comic 使用直角/硬阴影）
+fn paint_nema_pill(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    fill: egui::Color32,
+    border: egui::Color32,
+    style: &NemaThemeStyle,
+) {
+    let round = if style.rounding <= 1.0 { 0.0 } else { 9.5 };
+    if style.use_glass {
+        crate::app::glass_render::paint_glowing_pill(
+            painter,
+            rect,
+            round,
+            fill,
+            border,
+            Some(border.gamma_multiply(0.35)),
+        );
+        return;
+    }
+    if let Some((offset, shadow_col)) = style.hard_shadow {
+        if round == 0.0 {
+            painter.rect_filled(
+                rect.translate(egui::vec2(
+                    (offset.x * 0.55).max(1.0),
+                    (offset.y * 0.55).max(1.0),
+                )),
+                round,
+                shadow_col,
+            );
+        }
+    }
+    painter.rect_filled(rect, round, fill);
+    painter.rect_stroke(
+        rect,
+        round,
+        egui::Stroke::new(style.border_width.clamp(1.1, 1.8), border),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// 在画布上绘制 Ariadne 主题坐标系背景网格与同心圆印章水印
+fn paint_nema_canvas_backdrop(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    style: &NemaThemeStyle,
+    tc: &crate::view::ThemeColors,
+) {
+    painter.rect_filled(rect, style.rounding, style.canvas_bg);
+
+    let step = if style.use_pixel_bevel { 16.0 } else { 28.0 };
+    let grid_stroke = egui::Stroke::new(if style.use_pixel_bevel { 0.8 } else { 0.6 }, style.grid_color);
+    let mut x = rect.left() + step;
+    while x < rect.right() {
+        painter.line_segment([egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())], grid_stroke);
+        x += step;
+    }
+    let mut y = rect.top() + step;
+    while y < rect.bottom() {
+        painter.line_segment([egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)], grid_stroke);
+        y += step;
+    }
+
+    if style.use_seal_rings {
+        let center = rect.center();
+        let max_r = (rect.width().min(rect.height()) * 0.42).max(36.0);
+        let ring_col = egui::Color32::from_rgba_unmultiplied(
+            style.seal_color.r(),
+            style.seal_color.g(),
+            style.seal_color.b(),
+            if style.use_glass { 28 } else { 32 },
+        );
+        for factor in [0.55_f32, 0.82_f32, 1.0_f32] {
+            painter.circle_stroke(center, max_r * factor, egui::Stroke::new(0.9, ring_col));
+        }
+    }
+
+    if style.use_pixel_bevel {
+        let hi = egui::Color32::from_rgba_unmultiplied(120, 210, 255, 85);
+        painter.line_segment([rect.left_top(), rect.right_top()], egui::Stroke::new(1.0, hi));
+        painter.line_segment([rect.left_top(), rect.left_bottom()], egui::Stroke::new(1.0, hi));
+    } else if style.use_glass {
+        crate::app::glass_render::paint_facet_borders(painter, rect, tc);
+    }
+
+    painter.rect_stroke(
+        rect,
+        style.rounding,
+        egui::Stroke::new(style.border_width, style.canvas_border),
+        egui::StrokeKind::Inside,
+    );
+}
+
+fn is_nema_null_cell(row: &nema_codec::RenderedRow, col_idx: usize, val: &str) -> bool {
+    if let Some(g) = row.groups.get(col_idx) {
+        if g.len() == 1 && g[0] == "\\~" {
+            return false;
+        }
+        if g.len() == 1 && g[0] == "~" {
+            return true;
+        }
+    }
+    val.trim() == "~"
+}
+
+fn render_nema_cell_clickable(
+    ui: &mut egui::Ui,
+    is_null: bool,
+    val: &str,
+    style: &NemaThemeStyle,
+    tc: &crate::view::ThemeColors,
+) -> egui::Response {
+    if is_null {
+        let badge_col = style.seal_color;
+        let mut rt = egui::RichText::new("~ null").size(10.0).color(badge_col);
+        if style.mono_labels {
+            rt = rt.monospace();
+        }
+        return ui.add(egui::Label::new(rt).sense(egui::Sense::click()));
+    }
+    let display = if val.is_empty() { "—" } else { val };
+    let text_col = if val.is_empty() { tc.fg_dim } else { tc.fg };
+    let mut rt = egui::RichText::new(display).size(11.0).color(text_col);
+    if style.mono_labels {
+        rt = rt.monospace();
+    }
+    ui.add(egui::Label::new(rt).wrap().sense(egui::Sense::click()))
+}
+
 /// 缓存的关系边拓扑与几何 (相对画布 rect.min)
 #[derive(Debug, Clone)]
 pub enum CachedEdgeGeometry {
     Loop {
         loop_center_rel: egui::Vec2,
         r_loop: f32,
+        arrow: [egui::Vec2; 3],
     },
-    Line {
+    Curve {
         start_rel: egui::Vec2,
+        ctrl_rel: egui::Vec2,
         end_rel: egui::Vec2,
         arrow: Option<[egui::Vec2; 3]>,
+        undirected: bool,
     },
 }
 
@@ -112,19 +476,40 @@ impl CachedGraphCanvas {
             }
         }
 
+        let mut node_sizes = std::collections::HashMap::with_capacity(raw_nodes.len());
+        let mut max_nw = 130.0f32;
+        let mut max_nh = 48.0f32;
+        for (nid, name_x1, desc_x2, exts, _) in &raw_nodes {
+            let max_chars = nid
+                .chars()
+                .count()
+                .max(name_x1.chars().count())
+                .max(desc_x2.chars().count().min(20));
+            let nw = (max_chars as f32 * 6.8 + 26.0).clamp(124.0, 200.0);
+            let nh = if !desc_x2.is_empty() && !exts.is_empty() {
+                60.0
+            } else if !desc_x2.is_empty() || !exts.is_empty() {
+                54.0
+            } else {
+                46.0
+            };
+            max_nw = max_nw.max(nw);
+            max_nh = max_nh.max(nh);
+            node_sizes.insert(nid.clone(), egui::vec2(nw, nh));
+        }
+
         let n_count = raw_nodes.len().max(1);
         let center_rel = egui::vec2(canvas_w * 0.5, canvas_h * 0.5);
-        let rx = (canvas_w * 0.34).max(74.0);
-        let ry = (canvas_h * 0.33).max(58.0);
+        let rx = ((canvas_w - max_nw - 36.0) * 0.5).max(76.0);
+        let ry = ((canvas_h - max_nh - 34.0) * 0.5).max(58.0);
         let mut node_pos = std::collections::HashMap::new();
-        let node_size = egui::vec2(114.0, 44.0);
 
         for (idx, (nid, _, _, _, _)) in raw_nodes.iter().enumerate() {
             let pos_rel = if n_count == 1 {
                 center_rel
             } else if n_count == 2 {
                 egui::vec2(
-                    canvas_w * (0.26 + 0.48 * (idx as f32)),
+                    canvas_w * (0.27 + 0.46 * (idx as f32)),
                     center_rel.y,
                 )
             } else {
@@ -159,7 +544,7 @@ impl CachedGraphCanvas {
         for (_, indices) in pair_groups {
             let m = indices.len();
             for (rank, &e_idx) in indices.iter().enumerate() {
-                lane_offsets[e_idx] = (rank as f32 - (m as f32 - 1.0) * 0.5) * 18.0;
+                lane_offsets[e_idx] = (rank as f32 - (m as f32 - 1.0) * 0.5) * 26.0;
             }
         }
 
@@ -171,6 +556,16 @@ impl CachedGraphCanvas {
             let Some(&p_to) = node_pos.get(&edge.to) else {
                 continue;
             };
+            let from_half = node_sizes
+                .get(&edge.from)
+                .copied()
+                .unwrap_or(egui::vec2(124.0, 48.0))
+                * 0.5;
+            let to_half = node_sizes
+                .get(&edge.to)
+                .copied()
+                .unwrap_or(egui::vec2(124.0, 48.0))
+                * 0.5;
             let route_str = if edge.from == edge.to {
                 format!("{} ↻ {} (self-loop)", edge.from, edge.to)
             } else if edge.direction == EdgeDirection::Undirected {
@@ -181,9 +576,25 @@ impl CachedGraphCanvas {
 
             let (geom, mid_rel) = if edge.from == edge.to {
                 let r_loop = 18.0 + (loop_indices[e_idx] as f32) * 8.0;
-                let loop_center_rel = egui::vec2(p_from.x, p_from.y - 24.0 - r_loop * 0.5);
-                let mid_rel = egui::vec2(p_from.x, loop_center_rel.y - r_loop - 4.0);
-                (CachedEdgeGeometry::Loop { loop_center_rel, r_loop }, mid_rel)
+                let loop_center_rel = egui::vec2(
+                    p_from.x,
+                    (p_from.y - from_half.y - r_loop * 0.72).max(r_loop + 12.0),
+                );
+                let arrow_tip = egui::vec2(loop_center_rel.x + r_loop, loop_center_rel.y);
+                let arrow = [
+                    arrow_tip,
+                    arrow_tip + egui::vec2(-4.5, -7.5),
+                    arrow_tip + egui::vec2(4.5, -7.5),
+                ];
+                let mid_rel = egui::vec2(p_from.x, (loop_center_rel.y - r_loop - 4.0).max(12.0));
+                (
+                    CachedEdgeGeometry::Loop {
+                        loop_center_rel,
+                        r_loop,
+                        arrow,
+                    },
+                    mid_rel,
+                )
             } else {
                 let (c_a, c_b) = if edge.from <= edge.to {
                     (p_from, p_to)
@@ -192,21 +603,48 @@ impl CachedGraphCanvas {
                 };
                 let canon_dir = (c_b - c_a).normalized();
                 let canon_normal = egui::vec2(-canon_dir.y, canon_dir.x);
-                let shift = canon_normal * lane_offsets[e_idx];
+                let curve_shift = canon_normal * lane_offsets[e_idx];
 
-                let dir = (p_to - p_from).normalized();
-                let start_rel = p_from + dir * 52.0 + shift;
-                let end_rel = p_to - dir * 52.0 + shift;
+                let straight_dir = (p_to - p_from).normalized();
+                let ctrl_rel = (p_from + p_to) * 0.5 + curve_shift * 1.4;
+                let start_dir = (ctrl_rel - p_from).normalized();
+                let end_in_dir = (p_to - ctrl_rel).normalized();
+
+                let start_rel = rect_ray_exit(
+                    p_from,
+                    from_half + egui::vec2(2.0, 2.0),
+                    if start_dir.length_sq() > 1e-4 { start_dir } else { straight_dir },
+                );
+                let end_rel = rect_ray_exit(
+                    p_to,
+                    to_half + egui::vec2(2.0, 2.0),
+                    -if end_in_dir.length_sq() > 1e-4 { end_in_dir } else { straight_dir },
+                );
+                let tan_end = if end_in_dir.length_sq() > 1e-4 {
+                    end_in_dir
+                } else {
+                    straight_dir
+                };
                 let arrow = if edge.direction == EdgeDirection::Directed {
-                    let normal = egui::vec2(-dir.y, dir.x);
-                    let p1 = end_rel - dir * 8.5 + normal * 4.5;
-                    let p2 = end_rel - dir * 8.5 - normal * 4.5;
+                    let normal = egui::vec2(-tan_end.y, tan_end.x);
+                    let p1 = end_rel - tan_end * 9.0 + normal * 4.5;
+                    let p2 = end_rel - tan_end * 9.0 - normal * 4.5;
                     Some([end_rel, p1, p2])
                 } else {
                     None
                 };
-                let mid_rel = egui::vec2((start_rel.x + end_rel.x) * 0.5, (start_rel.y + end_rel.y) * 0.5);
-                (CachedEdgeGeometry::Line { start_rel, end_rel, arrow }, mid_rel)
+                // 二次 Bezier t=0.5 处的真实中点
+                let mid_rel = start_rel * 0.25 + ctrl_rel * 0.5 + end_rel * 0.25;
+                (
+                    CachedEdgeGeometry::Curve {
+                        start_rel,
+                        ctrl_rel,
+                        end_rel,
+                        arrow,
+                        undirected: edge.direction == EdgeDirection::Undirected,
+                    },
+                    mid_rel,
+                )
             };
 
             let ext_badge = if exts.is_empty() {
@@ -219,8 +657,9 @@ impl CachedGraphCanvas {
             } else {
                 format!("{} · {}{}", edge.id, name_x1, ext_badge)
             };
-            let pill_w = (label_txt.chars().count() as f32 * 6.5 + 16.0).clamp(52.0, 178.0);
-            let pill_rect_rel = egui::Rect::from_center_size(mid_rel.to_pos2(), egui::vec2(pill_w, 19.0));
+            let pill_w = (label_txt.chars().count() as f32 * 6.4 + 16.0).clamp(52.0, 186.0);
+            let pill_rect_rel =
+                egui::Rect::from_center_size(mid_rel.to_pos2(), egui::vec2(pill_w, 19.0));
             let raw_x0 = format!(
                 "{}{}{}{}{}",
                 edge.from, edge.raw_operator, edge.id, edge.raw_operator, edge.to
@@ -245,7 +684,11 @@ impl CachedGraphCanvas {
             let Some(&pos_rel) = node_pos.get(&nid) else {
                 continue;
             };
-            let rect_rel = egui::Rect::from_center_size(pos_rel.to_pos2(), node_size);
+            let nsize = node_sizes
+                .get(&nid)
+                .copied()
+                .unwrap_or(egui::vec2(124.0, 48.0));
+            let rect_rel = egui::Rect::from_center_size(pos_rel.to_pos2(), nsize);
             let top_title = if exts.is_empty() {
                 nid.clone()
             } else {
@@ -271,6 +714,18 @@ impl CachedGraphCanvas {
     }
 }
 
+/// 热插拔解释器后端选择
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum NemaInterpreterBackend {
+    /// 优先运行已启用的 QuickJS 热插拔插件 (`nema-interpreter` / `strict-parser.js`)，禁用或超时时自动平滑回退到内置 Rust
+    #[default]
+    AutoPlugin,
+    /// 强制使用内置纯 Rust Strict+Compat 引擎 (`render_strict`)
+    BuiltinStrictRust,
+    /// 外部解释器进程 (Python `native.py` / CLI / 自定义二进制)，支持文件 mtime 热监听
+    ExternalProcess,
+}
+
 /// NEMA 预览与状态机缓存
 #[derive(Debug, Default, Clone)]
 pub struct NemaUiState {
@@ -284,6 +739,15 @@ pub struct NemaUiState {
     pub bench_scenario_idx: usize,
     pub cached_render: Option<((u64, u64), Result<RenderedDocument, String>)>,
     pub cached_graph: Option<CachedGraphCanvas>,
+    pub backend: NemaInterpreterBackend,
+    pub interp_win_open: bool,
+    pub interp_script_buf: String,
+    pub interp_script_loaded: bool,
+    pub interp_external_path: String,
+    pub interp_sync_url: String,
+    pub interp_status_msg: Option<String>,
+    pub active_engine_badge: String,
+    pub ext_watcher: InterpreterWatcher,
 }
 
 fn format_visible_whitespace(s: &str) -> String {
@@ -349,71 +813,6 @@ impl App {
         }
         let tc = self.tc;
         if self.cfg.view.nema_bar_collapsed {
-            let frame = egui::Frame::NONE
-                .fill(tc.bg_bar)
-                .inner_margin(egui::Margin::symmetric(6, 1))
-                .stroke(egui::Stroke::NONE);
-            let r = egui::Panel::top("nemabar_collapsed")
-                .frame(frame)
-                .exact_size(if tc.comic { 18.0 } else { 15.0 })
-                .show_separator_line(false)
-                .show(root, |ui| {
-                    let w = ui.available_width();
-                    let h = ui.available_height();
-                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::click());
-                    let resp = resp
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .tip(trz("展开 NEMA 工具条 (点击复原)"));
-                    if tc.comic {
-                        let p = ui.painter();
-                        let hovered = resp.hovered();
-                        let pressed = resp.is_pointer_button_down_on();
-                        let badge_w = 180.0;
-                        let badge_h = 14.0;
-                        let badge_rect = Rect::from_center_size(rect.center(), Vec2::new(badge_w, badge_h));
-                        let shadow_offset = if pressed { Vec2::ZERO } else { Vec2::new(1.0, 1.0) };
-                        if !pressed {
-                            p.rect_filled(badge_rect.translate(shadow_offset), 2.0, Color32::BLACK);
-                        }
-                        let draw_badge = if pressed { badge_rect.translate(Vec2::new(1.0, 1.0)) } else { badge_rect };
-                        let (bg, fg) = if hovered || pressed {
-                            (Color32::from_rgb(255, 204, 0), Color32::BLACK)
-                        } else {
-                            (Color32::from_rgb(36, 40, 58), Color32::from_rgb(255, 204, 0))
-                        };
-                        p.rect_filled(draw_badge, 2.0, bg);
-                        p.rect_stroke(draw_badge, 2.0, egui::Stroke::new(1.5, Color32::BLACK), egui::StrokeKind::Inside);
-                        p.text(
-                            draw_badge.center(),
-                            egui::Align2::CENTER_CENTER,
-                            trz("▼ 展开 NEMA 工具条"),
-                            egui::FontId::proportional(11.0),
-                            fg,
-                        );
-                    } else {
-                        if resp.hovered() {
-                            ui.painter().rect_filled(rect, 0.0, tc.bg_hover);
-                        }
-                        let col = if resp.hovered() { tc.fg } else { tc.fg_dim };
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            trz("▼ 展开 NEMA 工具条"),
-                            egui::FontId::proportional(11.0),
-                            col,
-                        );
-                    }
-                    if resp.clicked() {
-                        self.cfg.view.nema_bar_collapsed = false;
-                        self.cfg.save();
-                    }
-                });
-            let rc = r.response.rect;
-            root.painter().hline(
-                rc.x_range(),
-                rc.bottom() - 0.5,
-                egui::Stroke::new(if tc.comic { 2.0 } else { 1.0 }, if tc.comic { Color32::BLACK } else { tc.border }),
-            );
             return;
         }
 
@@ -456,38 +855,14 @@ impl App {
 
                 // 右侧常驻功能区: 折叠按钮 + 预览开关
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let collapse_btn = if tc.comic {
-                        egui::Button::new(
-                            egui::RichText::new(trz("▲ 折叠")).size(11.0).color(Color32::WHITE),
-                        )
-                        .fill(Color32::from_rgb(32, 36, 52))
-                        .stroke(egui::Stroke::new(1.5, Color32::BLACK))
-                        .corner_radius(3.0)
-                    } else if tc.retro16 {
-                        egui::Button::new(
-                            egui::RichText::new(trz("▲ 折叠")).size(11.0).color(Color32::from_rgb(255, 215, 0)),
-                        )
-                        .fill(Color32::from_rgb(21, 15, 43))
-                        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(255, 215, 0)))
-                        .corner_radius(0.0)
-                    } else if tc.crystal || tc.clear {
-                        egui::Button::new(
-                            egui::RichText::new(trz("▲ 折叠")).size(11.0).color(Color32::WHITE),
-                        )
-                        .fill(Color32::from_rgba_unmultiplied(255, 255, 255, 25))
-                        .stroke(egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60)))
-                        .corner_radius(6.0)
-                    } else {
-                        egui::Button::new(
-                            egui::RichText::new(trz("▲ 折叠")).size(11.0),
-                        )
-                    };
+                    let collapse_btn = crate::btnstyle::unified_collapse_button(trz("▲ 折叠"), &tc, false);
                     if ui
                         .add(collapse_btn)
                         .tip(trz("折叠 NEMA 工具条到顶端 (点击隐藏)"))
                         .clicked()
                     {
                         self.cfg.view.nema_bar_collapsed = true;
+                        self.nema_preview = false;
                         self.cfg.save();
                     }
                     sep(ui);
@@ -625,6 +1000,22 @@ impl App {
                                     {
                                         action = Some("token_diff");
                                     }
+                                    sep(ui);
+                                    let interp_btn = egui::Button::new(
+                                        egui::RichText::new("🔌 解释器").size(11.0),
+                                    )
+                                    .fill(if self.nema.interp_win_open {
+                                        tc.bg_active
+                                    } else {
+                                        egui::Color32::TRANSPARENT
+                                    });
+                                    if ui
+                                        .add(interp_btn)
+                                        .tip(trz("配置 / 热更新 .NEMA 语法解释器插件 (strict-parser.js / 外部脚本)"))
+                                        .clicked()
+                                    {
+                                        action = Some("interpreter");
+                                    }
                                 });
                             });
                     });
@@ -659,6 +1050,9 @@ impl App {
                 self.nema_preview = true;
             }
             Some("token_diff") => self.nema_token_diff(),
+            Some("interpreter") => {
+                self.open_nema_interpreter_window();
+            }
             _ => {}
         }
     }
@@ -689,7 +1083,7 @@ impl App {
                 }
             }
             if body_lines.len() == 1 {
-                body_lines.push("\\ Column1 Column2 Note".to_string());
+                body_lines.push("\\# Column1 Column2 Note".to_string());
                 body_lines.push("ExampleItem Ready InitializedByNema".to_string());
             }
             let normalized = normalize_nema_newlines(&body_lines.join("\n"));
@@ -811,18 +1205,20 @@ impl App {
         }
     }
 
-    /// 切换显式表头行 (`\\ `) — 支持 `Ctrl+Z` 字节级撤销恢复
+    /// 切换显式表头行 (`\\# `) — 支持 `Ctrl+Z` 字节级撤销恢复
     pub fn nema_toggle_header(&mut self) {
         let i = self.active.min(self.docs.len() - 1);
         let raw = self.docs[i].lines.join("\n");
         let toggled = toggle_table_header_in_source(&raw, None);
-        let had_header = raw.lines().any(|l| l.starts_with("\\ "));
+        let had_header = raw
+            .lines()
+            .any(|l| l.starts_with("\\# ") || l.starts_with("\\ "));
         let new_lines = source_to_doc_lines(&toggled);
         self.apply_nema_lines(i, new_lines, None);
         let tip = if had_header {
             trz("已取消表头行 (转为自动 column1...)").to_string()
         } else {
-            trz("已将首行设置为显式表头 (\\ )").to_string()
+            trz("已将首行设置为显式表头 (\\# )").to_string()
         };
         self.docs[i].tip = tip.clone();
         self.nema.info_banner = Some(tip.clone());
@@ -843,10 +1239,20 @@ impl App {
     pub fn nema_add_cont(&mut self) {
         let i = self.active.min(self.docs.len() - 1);
         let cur = self.docs[i].cursor[0].min(self.docs[i].lines.len().saturating_sub(1));
+        let in_graph = self.docs[i].lines[..=cur]
+            .iter()
+            .rev()
+            .find_map(|l| parse_domain_header(l).or_else(|| parse_domain_header_v12(l).map(|(g, id, r)| (if g { DomainMode::Graph } else { DomainMode::FiveWOneH }, id, r))))
+            .is_some_and(|(m, _, _)| m == DomainMode::Graph);
+        let cont_line = if in_graph {
+            " 2 ContinuationGroup".to_string()
+        } else {
+            " 1 ContinuationGroup".to_string()
+        };
         let mut new_lines = self.docs[i].lines.clone();
-        new_lines.insert(cur + 1, "  ContinuationGroup".to_string());
-        self.apply_nema_lines(i, new_lines, Some([cur + 1, 2]));
-        let tip = trz("已插入纵向意群续接行 (空格缩进)").to_string();
+        new_lines.insert(cur + 1, cont_line);
+        self.apply_nema_lines(i, new_lines, Some([cur + 1, 3]));
+        let tip = trz("已插入列索引意群续接行 ( N value)").to_string();
         self.docs[i].tip = tip.clone();
         self.log(tip);
     }
@@ -879,11 +1285,11 @@ impl App {
         let next_id = trimmed.lines().filter(|l| parse_domain_header(l).is_some() || parse_domain_header_v12(l).is_some()).count() + 1;
         let combined = if trimmed.is_empty() {
             format!(
-                " \\?task{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
+                " \\?{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n 2 +ProtectActiveSession\n\n\n"
             )
         } else {
             format!(
-                "{trimmed}\n \\?task{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n ProtectActiveSession\n\n\n"
+                "{trimmed}\n \\?{next_id} 1\nBuildLoginFlow PreventTokenLeak VerifySessionToken AuthAgent Today AuthGateway\n 2 +ProtectActiveSession\n\n\n"
             )
         };
         let new_lines = source_to_doc_lines(&combined);
@@ -902,11 +1308,11 @@ impl App {
         let next_id = trimmed.lines().filter(|l| parse_domain_header(l).is_some() || parse_domain_header_v12(l).is_some()).count() + 1;
         let combined = if trimmed.is_empty() {
             format!(
-                " \\>auth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
+                " \\>{next_id} 1\nA LoginAPI Authentication APIKey\nB TokenStore SessionStorage\nC AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n 2 +CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
             )
         } else {
             format!(
-                "{trimmed}\n \\>auth{next_id} 1\n A LoginAPI Authentication APIKey\n B TokenStore SessionStorage\n C AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n  CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
+                "{trimmed}\n \\>{next_id} 1\nA LoginAPI Authentication APIKey\nB TokenStore SessionStorage\nC AuditService RecordsSecurityEvents\nA>X>B Reads VerifySession HTTP401\n 2 +CacheExpiredRetryOnce\nB<Y<C Notifies AuditEvent\nA=U=C Shares SecurityPolicy\nA>P>A Retry Maximum3Attempts\n\n\n"
             )
         };
         let new_lines = source_to_doc_lines(&combined);
@@ -1098,21 +1504,416 @@ impl App {
         self.log(tip);
     }
 
+    pub fn open_nema_interpreter_window(&mut self) {
+        self.nema.interp_win_open = true;
+        if self.nema.interp_sync_url.is_empty() {
+            self.nema.interp_sync_url = crate::plugins::active_nema_interpreter()
+                .map(|s| s.script_url)
+                .filter(|u| !u.is_empty())
+                .unwrap_or_else(|| "https://nema-sigma.vercel.app/website/strict-parser.js".into());
+        }
+        if !self.nema.interp_script_loaded {
+            let (pid, sf) = crate::plugins::nema_interpreters()
+                .into_iter()
+                .next()
+                .map(|(_, s)| (s.plugin_id, s.script_file))
+                .unwrap_or_else(|| ("nema-interpreter".into(), "strict-parser.js".into()));
+            match crate::plugins::read_nema_plugin_script(&pid, &sf) {
+                Ok(src) => {
+                    self.nema.interp_script_buf = src;
+                    self.nema.interp_script_loaded = true;
+                }
+                Err(e) => {
+                    self.nema.interp_status_msg = Some(e);
+                }
+            }
+        }
+        let cfg = get_active_interpreter();
+        if self.nema.interp_external_path.is_empty() && !cfg.path.is_empty() {
+            self.nema.interp_external_path = cfg.path;
+        }
+    }
+
+    pub fn render_nema_document(&mut self, raw: &str) -> Result<RenderedDocument, String> {
+        let trimmed = raw.trim_start_matches('\u{feff}').trim_start();
+        if raw.starts_with("\t$")
+            || raw.starts_with("\t0")
+            || trimmed.starts_with("\\!NEMAT1")
+        {
+            self.nema.active_engine_badge = "📦 Transport Codec (v1.5)".to_string();
+            return StandardNemaCodec
+                .decode(raw)
+                .or_else(|_| StandardNemaCodec.decode(trimmed))
+                .or_else(|_| Ok(raw.to_string()))
+                .and_then(|s| render_source(&s))
+                .map_err(|e| e.to_string());
+        }
+
+        let first_non_empty = raw.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        if first_non_empty.starts_with('\t')
+            || (!first_non_empty.starts_with(" \\") && parse_domain_header_v12(first_non_empty).is_some())
+        {
+            self.nema.active_engine_badge = "📜 Legacy v1.2 Compat".to_string();
+            return render_source(raw).map_err(|e| e.to_string());
+        }
+
+        match self.nema.backend {
+            NemaInterpreterBackend::AutoPlugin => {
+                if let Some(spec) = crate::plugins::active_nema_interpreter() {
+                    let call_res = self.plug.call_sync(
+                        &spec.plugin_id,
+                        &spec.method,
+                        &serde_json::json!([raw]),
+                        std::time::Duration::from_millis(1500),
+                    );
+                    match call_res {
+                        Ok(json_out) => match parse_strict_ast_json(&json_out) {
+                            Ok(doc) => {
+                                self.nema.active_engine_badge = format!(
+                                    "🔌 {} v{} ({})",
+                                    spec.label, spec.version, spec.source
+                                );
+                                return Ok(doc);
+                            }
+                            Err(err) => {
+                                let (res, latency_us, label, _) = adaptive_render_document(raw);
+                                self.nema.active_engine_badge =
+                                    format!("🦀 回退 {label} ({latency_us}µs · 插件解析失败: {err})");
+                                return res.map_err(|e| e.to_string());
+                            }
+                        },
+                        Err(e) => {
+                            let (res, latency_us, label, _) = adaptive_render_document(raw);
+                            self.nema.active_engine_badge =
+                                format!("🦀 回退 {label} ({latency_us}µs · 插件异常: {e})");
+                            return res.map_err(|err| err.to_string());
+                        }
+                    }
+                }
+                let (res, latency_us, label, used_ext) = adaptive_render_document(raw);
+                self.nema.active_engine_badge = if used_ext {
+                    format!("🐍 {label} ({latency_us}µs)")
+                } else {
+                    format!("🦀 回退 {label} ({latency_us}µs)")
+                };
+                res.map_err(|e| e.to_string())
+            }
+            NemaInterpreterBackend::BuiltinStrictRust => {
+                self.nema.active_engine_badge = "🦀 内置 Rust Strict (1:1)".to_string();
+                render_strict(raw).map_err(|e| e.to_string())
+            }
+            NemaInterpreterBackend::ExternalProcess => {
+                let (res, latency_us, label, used_ext) = adaptive_render_document(raw);
+                self.nema.active_engine_badge = if used_ext {
+                    format!("🐍 {label} ({latency_us}µs)")
+                } else {
+                    format!("🦀 回退 {label} ({latency_us}µs)")
+                };
+                res.map_err(|e| e.to_string())
+            }
+        }
+    }
+
+    pub(super) fn nema_interpreter_window(&mut self, ctx: &egui::Context) {
+        if !self.nema.interp_win_open {
+            return;
+        }
+        let tc = self.tc;
+        let mut open = self.nema.interp_win_open;
+        let mut invalidate = false;
+
+        egui::Window::new("🔌 .NEMA 热插拔语法解释器 (Grammar Hot-Plug)")
+            .open(&mut open)
+            .default_width(640.0)
+            .default_height(460.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "适配官网 grammar.html 频繁更新：解释器以插件形态加载于 QuickJS 沙箱，支持随时热替换 strict-parser.js 或挂载外部 Python/CLI，无需重新编译 IDE。",
+                    )
+                    .size(11.0)
+                    .color(tc.fg_dim),
+                );
+                ui.add_space(4.0);
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong(egui::RichText::new("活动后端:").size(11.5));
+                    for (b, lbl) in [
+                        (
+                            NemaInterpreterBackend::AutoPlugin,
+                            "🔌 热插拔插件 (strict-parser.js)",
+                        ),
+                        (
+                            NemaInterpreterBackend::BuiltinStrictRust,
+                            "🦀 内置 Rust Strict",
+                        ),
+                        (
+                            NemaInterpreterBackend::ExternalProcess,
+                            "🐍 外部脚本 / CLI",
+                        ),
+                    ] {
+                        if ui
+                            .radio(self.nema.backend == b, egui::RichText::new(lbl).size(11.0))
+                            .clicked()
+                        {
+                            self.nema.backend = b;
+                            invalidate = true;
+                        }
+                    }
+                });
+
+                if !self.nema.active_engine_badge.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("当前渲染引擎: {}", self.nema.active_engine_badge))
+                            .size(10.5)
+                            .color(tc.blue)
+                            .monospace(),
+                    );
+                }
+
+                ui.separator();
+
+                let list = crate::plugins::nema_interpreters();
+                if !list.is_empty() {
+                    ui.strong(egui::RichText::new("已发现解释器插件 (contributes: nema.interpreter):").size(11.5));
+                    for (enabled, spec) in &list {
+                        let mut en = *enabled;
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.checkbox(&mut en, "").clicked() {
+                                let _ = crate::plugins::set_enabled(&spec.plugin_id, en);
+                                self.plug.unload(&spec.plugin_id);
+                                self.nema.interp_status_msg = Some(format!(
+                                    "已{}插件 {}",
+                                    if en { "启用" } else { "禁用" },
+                                    spec.plugin_id
+                                ));
+                                invalidate = true;
+                            }
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} · {} ({}, {})",
+                                    spec.plugin_id, spec.label, spec.version, spec.source
+                                ))
+                                .size(11.0),
+                            );
+                        });
+                    }
+                } else {
+                    ui.colored_label(
+                        tc.orange,
+                        "未启用 nema.interpreter 插件（可在 插件 → 恢复内置插件 中恢复 nema-interpreter，当前平滑回退内置 Rust）",
+                    );
+                }
+
+                let (pid, sfile) = list
+                    .first()
+                    .map(|(_, s)| (s.plugin_id.clone(), s.script_file.clone()))
+                    .unwrap_or_else(|| ("nema-interpreter".into(), "strict-parser.js".into()));
+
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("官网同步 URL:").size(11.0));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.nema.interp_sync_url)
+                            .desired_width(310.0)
+                            .hint_text("https://nema-sigma.vercel.app/website/strict-parser.js"),
+                    );
+                    if ui
+                        .button(egui::RichText::new("🌐 拉取官网最新").size(11.0))
+                        .clicked()
+                    {
+                        match crate::plugins::sync_nema_plugin_script_from_url(
+                            &pid,
+                            &sfile,
+                            &self.nema.interp_sync_url,
+                        ) {
+                            Ok((src, msg)) => {
+                                self.nema.interp_script_buf = src;
+                                self.nema.interp_script_loaded = true;
+                                self.plug.unload(&pid);
+                                self.nema.interp_status_msg = Some(msg);
+                                invalidate = true;
+                            }
+                            Err(e) => {
+                                self.nema.interp_status_msg = Some(format!("同步失败: {e}"));
+                            }
+                        }
+                    }
+                });
+
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .button(egui::RichText::new("⚡ 热重载生效 (Hot Reload JS)").size(11.5))
+                        .clicked()
+                    {
+                        match crate::plugins::hot_patch_nema_plugin_script(
+                            &pid,
+                            &sfile,
+                            &self.nema.interp_script_buf,
+                        ) {
+                            Ok(msg) => {
+                                self.plug.unload(&pid);
+                                self.nema.backend = NemaInterpreterBackend::AutoPlugin;
+                                self.nema.interp_status_msg = Some(msg);
+                                invalidate = true;
+                            }
+                            Err(e) => {
+                                self.nema.interp_status_msg = Some(format!("热重载失败: {e}"));
+                            }
+                        }
+                    }
+                    if ui
+                        .button(egui::RichText::new("📂 导入本地 .js / .py").size(11.0))
+                        .clicked()
+                    {
+                        if let Some(p) = rfd::FileDialog::new()
+                            .add_filter("Interpreter (.js, .py)", &["js", "py", "exe"])
+                            .pick_file()
+                        {
+                            let p_str = p.to_string_lossy().into_owned();
+                            if p_str.ends_with(".js") {
+                                match std::fs::read_to_string(&p) {
+                                    Ok(src) => {
+                                        self.nema.interp_script_buf = src.clone();
+                                        self.nema.interp_script_loaded = true;
+                                        match crate::plugins::hot_patch_nema_plugin_script(&pid, &sfile, &src) {
+                                            Ok(msg) => {
+                                                self.plug.unload(&pid);
+                                                self.nema.backend = NemaInterpreterBackend::AutoPlugin;
+                                                self.nema.interp_status_msg = Some(msg);
+                                                invalidate = true;
+                                            }
+                                            Err(e) => self.nema.interp_status_msg = Some(e),
+                                        }
+                                    }
+                                    Err(e) => {
+                                        self.nema.interp_status_msg = Some(format!("读取失败: {e}"));
+                                    }
+                                }
+                            } else {
+                                self.nema.interp_external_path = p_str.clone();
+                                let rep = probe_interpreter(&p_str, None);
+                                if rep.success {
+                                    let cfg = InterpreterConfig {
+                                        enabled: true,
+                                        path: p_str.clone(),
+                                        runner: rep.runner_used.clone(),
+                                        protocol: rep.protocol,
+                                        metadata: Default::default(),
+                                    };
+                                    set_active_interpreter(cfg);
+                                    self.nema.ext_watcher.set_path(&p_str);
+                                    self.nema.backend = NemaInterpreterBackend::ExternalProcess;
+                                    self.nema.interp_status_msg = Some(format!(
+                                        "已接入外部解释器 ({:?}, {}µs)",
+                                        rep.protocol, rep.latency_us
+                                    ));
+                                    invalidate = true;
+                                } else {
+                                    self.nema.interp_status_msg = rep.error;
+                                }
+                            }
+                        }
+                    }
+                    if ui
+                        .button(egui::RichText::new("↺ 恢复内置默认").size(11.0))
+                        .clicked()
+                    {
+                        match crate::plugins::restore(&pid) {
+                            Ok(()) => {
+                                self.plug.unload(&pid);
+                                if let Ok(src) = crate::plugins::read_nema_plugin_script(&pid, &sfile) {
+                                    self.nema.interp_script_buf = src;
+                                    self.nema.interp_script_loaded = true;
+                                }
+                                self.nema.interp_status_msg = Some("已恢复内置随版 strict-parser.js".into());
+                                invalidate = true;
+                            }
+                            Err(e) => {
+                                self.nema.interp_status_msg = Some(format!("恢复失败: {e}"));
+                            }
+                        }
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("外部解释器路径:").size(10.5));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.nema.interp_external_path)
+                            .desired_width(340.0)
+                            .hint_text("例如 E:\\.NEMA\\codec\\native.py"),
+                    );
+                    if ui.small_button("探测并启用").clicked() {
+                        let p = self.nema.interp_external_path.trim().to_string();
+                        let rep = probe_interpreter(&p, None);
+                        if rep.success {
+                            set_active_interpreter(InterpreterConfig {
+                                enabled: true,
+                                path: p.clone(),
+                                runner: rep.runner_used.clone(),
+                                protocol: rep.protocol,
+                                metadata: Default::default(),
+                            });
+                            self.nema.ext_watcher.set_path(&p);
+                            self.nema.backend = NemaInterpreterBackend::ExternalProcess;
+                            self.nema.interp_status_msg = Some(format!(
+                                "探测成功: {:?} ({}µs)",
+                                rep.protocol, rep.latency_us
+                            ));
+                            invalidate = true;
+                        } else {
+                            self.nema.interp_status_msg = Some(
+                                rep.error.unwrap_or_else(|| "外部解释器探测失败".into()),
+                            );
+                        }
+                    }
+                });
+
+                if let Some(msg) = &self.nema.interp_status_msg {
+                    ui.colored_label(tc.green, msg);
+                }
+
+                ui.separator();
+                ui.label(
+                    egui::RichText::new(format!("实时编辑插件脚本 ({pid}/{sfile}):"))
+                        .size(11.0)
+                        .strong(),
+                );
+                egui::ScrollArea::vertical()
+                    .id_salt("nema-interp-js-editor")
+                    .max_height(210.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.nema.interp_script_buf)
+                                .code_editor()
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(12),
+                        );
+                    });
+            });
+
+        self.nema.interp_win_open = open;
+        if invalidate {
+            self.nema.cached_render = None;
+            self.nema.cached_graph = None;
+            self.nema_preview = true;
+        }
+    }
+
     /// 右侧交互式 NEMA 可视化面板 (`Table / 5W1H / Graph / Benchmark`)
     pub(super) fn nema_ui(&mut self, ui: &mut egui::Ui) {
+        if self.nema.backend == NemaInterpreterBackend::ExternalProcess
+            && self.nema.ext_watcher.poll_changed()
+        {
+            self.nema.cached_render = None;
+            self.nema.cached_graph = None;
+        }
         let ai = self.active.min(self.docs.len() - 1);
         let key = (self.docs[ai].id, self.docs[ai].rev);
         if self.nema.cached_render.as_ref().map(|c| c.0) != Some(key) {
             let raw = normalize_nema_newlines(&self.docs[ai].lines.join("\n"));
-            let res = if raw.starts_with("\t$") || raw.starts_with("\t0") {
-                StandardNemaCodec
-                    .decode(&raw)
-                    .or(Ok(raw))
-                    .and_then(|s| render_source(&s))
-                    .map_err(|e| e.to_string())
-            } else {
-                render_source(&raw).map_err(|e| e.to_string())
-            };
+            let res = self.render_nema_document(&raw);
             self.nema.cached_render = Some((key, res));
         }
 
@@ -1123,10 +1924,22 @@ impl App {
         // 顶部状态与模式切换栏
         ui.horizontal_wrapped(|ui| {
             ui.strong(
-                egui::RichText::new(".NEMA v1.2 · Ariadne's Thread")
+                egui::RichText::new(".NEMA · Ariadne's Thread")
                     .color(tc.blue)
                     .size(12.0),
             );
+            let engine_badge = if self.nema.active_engine_badge.is_empty() {
+                "🔌 .NEMA Interpreter"
+            } else {
+                self.nema.active_engine_badge.as_str()
+            };
+            if ui
+                .button(egui::RichText::new(engine_badge).size(10.5).color(tc.green))
+                .on_hover_text("点击打开 .NEMA 热插拔解释器配置与 strict-parser.js 热更新窗口")
+                .clicked()
+            {
+                self.open_nema_interpreter_window();
+            }
             let role_txt = match self.nema.arbitrator.role() {
                 OwnershipRole::Observer => {
                     format!("Observer · Epoch #{}", self.nema.arbitrator.current_epoch())
@@ -1198,7 +2011,7 @@ impl App {
                                 .color(tc.blue),
                         );
                         ui.label(
-                            egui::RichText::new("Graph: 1 个前导空格 ·A 声明节点，0 个前导空格 A>X>B 声明关系，≥2 空格续行 X2/X3+")
+                            egui::RichText::new("Strict: 域头 ' \\N REV' · 表头 '\\# Col1 Col2' · 定宽 '\\%N' · 列续接 ' N val' · Graph 0空格 'A Name' / 'A>X>B Label'")
                                 .size(10.0)
                                 .color(tc.fg_dim),
                         );
@@ -1310,13 +2123,14 @@ impl App {
         toggle_header_domain: &mut Option<String>,
     ) {
         let tc = self.tc;
+        let style = NemaThemeStyle::from_tc(&tc);
         egui::Frame::NONE
-            .fill(tc.bg_bar)
-            .stroke(egui::Stroke::new(1.0, tc.border))
-            .corner_radius(6.0)
+            .fill(style.card_bg)
+            .stroke(egui::Stroke::new(style.border_width.min(1.6), style.canvas_border))
+            .corner_radius(style.rounding)
             .inner_margin(egui::Margin::same(8))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let badge = format!(
                         "{}{} (rev {}) · {}",
                         domain.mode.prefix_char(),
@@ -1324,7 +2138,11 @@ impl App {
                         domain.revision,
                         domain.mode.as_str().to_uppercase()
                     );
-                    ui.strong(egui::RichText::new(badge).size(11.5).color(tc.blue));
+                    let mut badge_rt = egui::RichText::new(badge).size(11.5).color(style.seal_color);
+                    if style.mono_labels {
+                        badge_rt = badge_rt.monospace();
+                    }
+                    ui.strong(badge_rt);
                     if domain.mode == DomainMode::Table {
                         let hdr_label = if domain.explicit_header {
                             "取消显式表头 (\\t / \\ )"
@@ -1343,48 +2161,120 @@ impl App {
 
                 match domain.mode {
                     DomainMode::Table => {
-                        egui::Grid::new(("nema-table", &domain.id))
-                            .striped(true)
-                            .spacing([12.0, 4.0])
-                            .show(ui, |ui| {
-                                for col in &domain.columns {
-                                    ui.strong(
-                                        egui::RichText::new(col)
-                                            .size(11.0)
-                                            .color(if domain.explicit_header {
-                                                tc.fg
-                                            } else {
-                                                tc.fg_dim
-                                            }),
-                                    );
-                                }
-                                ui.end_row();
+                        let col_cnt = domain.columns.len().max(1);
+                        let spacing_x = 10.0;
+                        let mut sample_rows = Vec::with_capacity(domain.rows.len() + 1);
+                        sample_rows.push(domain.columns.clone());
+                        for r in &domain.rows {
+                            let mut row_vals = Vec::with_capacity(col_cnt);
+                            for c_idx in 0..col_cnt {
+                                row_vals.push(
+                                    r.cells.get(c_idx).cloned().unwrap_or_default(),
+                                );
+                            }
+                            sample_rows.push(row_vals);
+                        }
+                        let col_widths = crate::md_view::calc_table_col_widths(
+                            &sample_rows,
+                            ui.available_width(),
+                            spacing_x,
+                        );
 
-                                for row in &domain.rows {
-                                    for c_idx in 0..domain.columns.len() {
-                                        let val =
-                                            row.cells.get(c_idx).map(String::as_str).unwrap_or("");
-                                        let resp = ui.selectable_label(
-                                            false,
-                                            egui::RichText::new(val).size(11.0),
-                                        );
-                                        if resp.clicked() {
-                                            *jump_to_line = Some(row.line);
+                        egui::Frame::NONE
+                            .fill(style.canvas_bg)
+                            .stroke(egui::Stroke::new(
+                                style.border_width.min(1.4),
+                                style.canvas_border,
+                            ))
+                            .corner_radius(style.rounding)
+                            .inner_margin(egui::Margin::same(6))
+                            .show(ui, |ui| {
+                                egui::Grid::new(("nema-table", &domain.id))
+                                    .striped(!style.use_glass)
+                                    .spacing([spacing_x, 5.0])
+                                    .show(ui, |ui| {
+                                        for (c_idx, col) in domain.columns.iter().enumerate() {
+                                            let col_w = col_widths.get(c_idx).copied().unwrap_or(68.0);
+                                            ui.allocate_ui_with_layout(
+                                                egui::vec2(col_w, 0.0),
+                                                egui::Layout::top_down(egui::Align::Min),
+                                                |ui| {
+                                                    ui.set_min_width(col_w);
+                                                    ui.set_max_width(col_w);
+                                                    ui.style_mut().wrap_mode =
+                                                        Some(egui::TextWrapMode::Wrap);
+                                                    let hdr_col = if domain.explicit_header {
+                                                        style.seal_color
+                                                    } else {
+                                                        tc.fg_dim
+                                                    };
+                                                    let mut rt = egui::RichText::new(col)
+                                                        .size(11.0)
+                                                        .color(hdr_col);
+                                                    if style.mono_labels {
+                                                        rt = rt.monospace();
+                                                    }
+                                                    ui.add(egui::Label::new(rt.strong()).wrap());
+                                                },
+                                            );
                                         }
-                                    }
-                                    ui.end_row();
-                                }
+                                        ui.end_row();
+
+                                        for row in &domain.rows {
+                                            for c_idx in 0..domain.columns.len() {
+                                                let col_w =
+                                                    col_widths.get(c_idx).copied().unwrap_or(68.0);
+                                                let val = row
+                                                    .cells
+                                                    .get(c_idx)
+                                                    .map(String::as_str)
+                                                    .unwrap_or("");
+                                                let is_null = is_nema_null_cell(row, c_idx, val);
+                                                ui.allocate_ui_with_layout(
+                                                    egui::vec2(col_w, 0.0),
+                                                    egui::Layout::top_down(egui::Align::Min),
+                                                    |ui| {
+                                                        ui.set_min_width(col_w);
+                                                        ui.set_max_width(col_w);
+                                                        ui.style_mut().wrap_mode =
+                                                            Some(egui::TextWrapMode::Wrap);
+                                                        let resp = render_nema_cell_clickable(
+                                                            ui, is_null, val, &style, &tc,
+                                                        );
+                                                        if resp.hovered() {
+                                                            ui.painter().rect_stroke(
+                                                                resp.rect.expand(2.0),
+                                                                style.rounding.min(3.0),
+                                                                egui::Stroke::new(
+                                                                    1.0,
+                                                                    style.edge_color,
+                                                                ),
+                                                                egui::StrokeKind::Inside,
+                                                            );
+                                                        }
+                                                        if resp.clicked() {
+                                                            *jump_to_line = Some(row.line);
+                                                        }
+                                                    },
+                                                );
+                                            }
+                                            ui.end_row();
+                                        }
+                                    });
                             });
                     }
                     DomainMode::FiveWOneH => {
                         for (r_idx, row) in domain.rows.iter().enumerate() {
                             egui::Frame::NONE
-                                .fill(tc.bg_edit)
-                                .stroke(egui::Stroke::new(1.0, tc.border))
-                                .corner_radius(4.0)
-                                .inner_margin(egui::Margin::same(6))
+                                .fill(style.canvas_bg)
+                                .stroke(egui::Stroke::new(
+                                    style.border_width.min(1.5),
+                                    style.canvas_border,
+                                ))
+                                .corner_radius(style.rounding)
+                                .inner_margin(egui::Margin::same(7))
                                 .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
+                                    ui.horizontal_wrapped(|ui| {
                                         if ui
                                             .small_button(format!("Record #{} (L{})", r_idx + 1, row.line))
                                             .clicked()
@@ -1395,13 +2285,13 @@ impl App {
                                             ui.label(
                                                 egui::RichText::new("显式省缺哨兵 (.)")
                                                     .size(10.0)
-                                                    .color(tc.fg_dim),
+                                                    .color(style.seal_color),
                                             );
                                         }
                                     });
                                     egui::Grid::new(("nema-5w1h", &domain.id, r_idx))
                                         .num_columns(2)
-                                        .spacing([8.0, 3.0])
+                                        .spacing([8.0, 4.0])
                                         .show(ui, |ui| {
                                             for (ax_idx, axis) in
                                                 nema_codec::AXES_5W1H.iter().enumerate()
@@ -1411,21 +2301,21 @@ impl App {
                                                     .get(ax_idx)
                                                     .map(String::as_str)
                                                     .unwrap_or("");
-                                                if val.is_empty() {
+                                                let is_null = is_nema_null_cell(row, ax_idx, val);
+                                                if val.is_empty() && !is_null {
                                                     continue;
                                                 }
-                                                ui.strong(
-                                                    egui::RichText::new(*axis)
-                                                        .size(10.5)
-                                                        .color(tc.blue),
+                                                let mut ax_rt = egui::RichText::new(*axis)
+                                                    .size(10.5)
+                                                    .color(style.seal_color);
+                                                if style.mono_labels {
+                                                    ax_rt = ax_rt.monospace();
+                                                }
+                                                ui.strong(ax_rt);
+                                                let resp = render_nema_cell_clickable(
+                                                    ui, is_null, val, &style, &tc,
                                                 );
-                                                if ui
-                                                    .selectable_label(
-                                                        false,
-                                                        egui::RichText::new(val).size(11.0),
-                                                    )
-                                                    .clicked()
-                                                {
+                                                if resp.clicked() {
                                                     *jump_to_line = Some(row.line);
                                                 }
                                                 ui.end_row();
@@ -1497,16 +2387,11 @@ impl App {
             }
         }
 
+        let style = NemaThemeStyle::from_tc(&tc);
         let (rect, _) =
             ui.allocate_exact_size(egui::vec2(canvas_w, canvas_h), egui::Sense::hover());
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, tc.bg_edit);
-        painter.rect_stroke(
-            rect,
-            4.0,
-            egui::Stroke::new(1.0, tc.border),
-            egui::StrokeKind::Inside,
-        );
+        paint_nema_canvas_backdrop(&painter, rect, &style, &tc);
 
         let cur_selected = self.nema.selected_item.clone();
         let mut new_selected: Option<SelectedGraphItem> = None;
@@ -1519,20 +2404,94 @@ impl App {
                 &cur_selected,
                 Some(SelectedGraphItem::Edge { id, .. }) if id == &edge_item.id
             );
-            let stroke_col = if is_selected { tc.orange } else { tc.blue };
+
+            let (stroke_col, stroke_w) = match &edge_item.geom {
+                CachedEdgeGeometry::Curve { undirected: true, .. } => (
+                    if is_selected {
+                        style.edge_selected_color
+                    } else {
+                        style.edge_undirected_color
+                    },
+                    if is_selected { 2.4 } else { 1.8 },
+                ),
+                _ => (
+                    if is_selected {
+                        style.edge_selected_color
+                    } else {
+                        style.edge_color
+                    },
+                    if is_selected { 2.5 } else { 1.8 },
+                ),
+            };
 
             match &edge_item.geom {
-                CachedEdgeGeometry::Loop { loop_center_rel, r_loop } => {
+                CachedEdgeGeometry::Loop {
+                    loop_center_rel,
+                    r_loop,
+                    arrow,
+                } => {
                     let loop_center = rect.min + *loop_center_rel;
-                    painter.circle_stroke(loop_center, *r_loop, egui::Stroke::new(1.5, stroke_col));
+                    if style.use_glass {
+                        painter.circle_stroke(
+                            loop_center,
+                            *r_loop,
+                            egui::Stroke::new(stroke_w + 2.4, stroke_col.gamma_multiply(0.28)),
+                        );
+                    }
+                    painter.circle_stroke(
+                        loop_center,
+                        *r_loop,
+                        egui::Stroke::new(stroke_w, stroke_col),
+                    );
+                    let [e, p1, p2] = arrow;
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![rect.min + *e, rect.min + *p1, rect.min + *p2],
+                        stroke_col,
+                        egui::Stroke::NONE,
+                    ));
                 }
-                CachedEdgeGeometry::Line { start_rel, end_rel, arrow } => {
-                    let start = rect.min + *start_rel;
-                    let end = rect.min + *end_rel;
-                    painter.line_segment([start, end], egui::Stroke::new(1.6, stroke_col));
-                    if let Some([e, p1, p2]) = arrow {
+                CachedEdgeGeometry::Curve {
+                    start_rel,
+                    ctrl_rel,
+                    end_rel,
+                    arrow,
+                    undirected,
+                } => {
+                    let p0 = rect.min + *start_rel;
+                    let p1 = rect.min + *ctrl_rel;
+                    let p2 = rect.min + *end_rel;
+                    const STEPS: usize = 16;
+                    let mut pts = Vec::with_capacity(STEPS + 1);
+                    for s in 0..=STEPS {
+                        let t = s as f32 / STEPS as f32;
+                        let mt = 1.0 - t;
+                        pts.push(egui::pos2(
+                            mt * mt * p0.x + 2.0 * mt * t * p1.x + t * t * p2.x,
+                            mt * mt * p0.y + 2.0 * mt * t * p1.y + t * t * p2.y,
+                        ));
+                    }
+                    if style.use_glass {
+                        painter.add(egui::Shape::line(
+                            pts.clone(),
+                            egui::Stroke::new(stroke_w + 2.6, stroke_col.gamma_multiply(0.28)),
+                        ));
+                    }
+                    if *undirected {
+                        for seg in pts.windows(2).step_by(2) {
+                            painter.line_segment(
+                                [seg[0], seg[1]],
+                                egui::Stroke::new(stroke_w, stroke_col),
+                            );
+                        }
+                    } else {
+                        painter.add(egui::Shape::line(
+                            pts,
+                            egui::Stroke::new(stroke_w, stroke_col),
+                        ));
+                    }
+                    if let Some([e, p1_tri, p2_tri]) = arrow {
                         painter.add(egui::Shape::convex_polygon(
-                            vec![rect.min + *e, rect.min + *p1, rect.min + *p2],
+                            vec![rect.min + *e, rect.min + *p1_tri, rect.min + *p2_tri],
                             stroke_col,
                             egui::Stroke::NONE,
                         ));
@@ -1546,26 +2505,24 @@ impl App {
                 ui.id().with(("nema-edge", &domain.id, &edge_item.id, e_idx)),
                 egui::Sense::click(),
             );
-            painter.rect_filled(
-                pill_rect,
-                9.5,
-                if is_selected || resp.hovered() {
-                    tc.bg_active
-                } else {
-                    tc.bg_bar
-                },
-            );
-            painter.rect_stroke(
-                pill_rect,
-                9.5,
-                egui::Stroke::new(1.1, stroke_col),
-                egui::StrokeKind::Inside,
-            );
+            let pill_fill = if is_selected {
+                style.node_selected_bg
+            } else if resp.hovered() {
+                style.node_hover_bg
+            } else {
+                style.pill_bg
+            };
+            paint_nema_pill(&painter, pill_rect, pill_fill, stroke_col, &style);
+            let pill_font = if style.mono_labels {
+                egui::FontId::monospace(9.5)
+            } else {
+                egui::FontId::proportional(10.0)
+            };
             painter.text(
                 pill_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 &edge_item.label_txt,
-                egui::FontId::proportional(10.0),
+                pill_font,
                 tc.fg,
             );
 
@@ -1639,36 +2596,87 @@ impl App {
                 ui.id().with(("nema-node", &domain.id, &node_item.id)),
                 egui::Sense::click(),
             );
-            let border_col = if is_selected { tc.orange } else { tc.border };
-            painter.rect_filled(
-                nrect,
-                6.0,
-                if is_selected || resp.hovered() {
-                    tc.bg_hover
-                } else {
-                    tc.bg_bar
-                },
+            let border_col = if is_selected {
+                style.edge_selected_color
+            } else if resp.hovered() {
+                style.edge_color
+            } else {
+                style.canvas_border
+            };
+            let border_w = if is_selected {
+                (style.border_width + 0.6).min(3.2)
+            } else {
+                style.border_width
+            };
+            let node_fill = if is_selected {
+                style.node_selected_bg
+            } else if resp.hovered() {
+                style.node_hover_bg
+            } else {
+                style.node_bg
+            };
+            paint_nema_box_frame(&painter, nrect, node_fill, border_col, border_w, &style, &tc);
+
+            // 节点顶部色带 (Ariadne Gold-Seal / Crystal Prism / Retro Pixel / Comic Ink)
+            let hdr_h = 20.0_f32.min(nrect.height() * 0.45);
+            let hdr_rect = egui::Rect::from_min_max(
+                nrect.min + egui::vec2(1.0, 1.0),
+                egui::pos2(nrect.max.x - 1.0, nrect.top() + hdr_h),
             );
-            painter.rect_stroke(
-                nrect,
-                6.0,
-                egui::Stroke::new(if is_selected { 1.6 } else { 1.2 }, border_col),
-                egui::StrokeKind::Inside,
+            let hdr_round = if style.rounding > 1.0 {
+                egui::CornerRadius {
+                    nw: (style.rounding - 1.0).max(0.0) as u8,
+                    ne: (style.rounding - 1.0).max(0.0) as u8,
+                    sw: 0,
+                    se: 0,
+                }
+            } else {
+                egui::CornerRadius::ZERO
+            };
+            painter.rect_filled(hdr_rect, hdr_round, style.node_header_bg);
+            painter.line_segment(
+                [hdr_rect.left_bottom(), hdr_rect.right_bottom()],
+                egui::Stroke::new(0.8, border_col.gamma_multiply(0.55)),
             );
+
+            let title_font = if style.mono_labels {
+                egui::FontId::monospace(10.5)
+            } else {
+                egui::FontId::proportional(11.0)
+            };
+            let sub_font = if style.mono_labels {
+                egui::FontId::monospace(9.5)
+            } else {
+                egui::FontId::proportional(10.0)
+            };
             painter.text(
-                egui::pos2(nrect.center().x, nrect.top() + 14.0),
+                hdr_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 &node_item.top_title,
-                egui::FontId::proportional(11.5),
+                title_font,
                 tc.fg,
             );
+            let name_y = hdr_rect.bottom() + 10.5;
             painter.text(
-                egui::pos2(nrect.center().x, nrect.top() + 30.0),
+                egui::pos2(nrect.center().x, name_y),
                 egui::Align2::CENTER_CENTER,
                 &node_item.name_x1,
-                egui::FontId::proportional(10.0),
+                sub_font.clone(),
                 tc.fg_dim,
             );
+            if nrect.height() >= 52.0 && !node_item.desc_x2.is_empty() {
+                let mut short_desc: String = node_item.desc_x2.chars().take(18).collect();
+                if node_item.desc_x2.chars().count() > 18 {
+                    short_desc.push('…');
+                }
+                painter.text(
+                    egui::pos2(nrect.center().x, hdr_rect.bottom() + 24.0),
+                    egui::Align2::CENTER_CENTER,
+                    short_desc,
+                    egui::FontId::proportional(9.0),
+                    style.seal_color,
+                );
+            }
 
             let nid = &node_item.id;
             let name_x1 = &node_item.name_x1;
@@ -1773,9 +2781,9 @@ impl App {
         if let Some(item) = &self.nema.selected_item {
             ui.add_space(4.0);
             egui::Frame::NONE
-                .fill(tc.bg_edit)
-                .stroke(egui::Stroke::new(1.0, tc.blue))
-                .corner_radius(4.0)
+                .fill(style.canvas_bg)
+                .stroke(egui::Stroke::new(style.border_width.min(1.6), style.edge_color))
+                .corner_radius(style.rounding)
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| match item {
                     SelectedGraphItem::Node {
@@ -2533,7 +3541,7 @@ mod tests {
         ];
         app.docs[ai].lines = orig.clone();
         app.nema_toggle_header();
-        assert_eq!(app.docs[ai].lines[1], "\\ Service Status Latency");
+        assert_eq!(app.docs[ai].lines[1], "\\# Service Status Latency");
         app.docs[ai].undo();
         assert_eq!(app.docs[ai].lines, orig);
     }
@@ -2658,5 +3666,139 @@ mod tests {
         // 尺寸变化时的键值区分
         let key2 = (100, 1, 6000, 3000);
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn nema_theme_style_and_curved_graph_geometry_adapt_to_all_themes() {
+        let mut retro_tc = crate::view::ThemeColors::default();
+        retro_tc.retro16 = true;
+        let retro_style = NemaThemeStyle::from_tc(&retro_tc);
+        assert!(retro_style.use_pixel_bevel);
+        assert_eq!(retro_style.rounding, 0.0);
+        assert!(retro_style.mono_labels);
+
+        let mut comic_tc = crate::view::ThemeColors::default();
+        comic_tc.comic = true;
+        let comic_style = NemaThemeStyle::from_tc(&comic_tc);
+        assert_eq!(comic_style.rounding, 0.0);
+        assert!(comic_style.hard_shadow.is_some());
+
+        let mut crystal_tc = crate::view::ThemeColors::default();
+        crystal_tc.crystal = true;
+        let crystal_style = NemaThemeStyle::from_tc(&crystal_tc);
+        assert!(crystal_style.use_glass);
+        assert!(crystal_style.canvas_bg.a() < 100);
+
+        let mut clear_tc = crate::view::ThemeColors::default();
+        clear_tc.clear = true;
+        let clear_style = NemaThemeStyle::from_tc(&clear_tc);
+        assert!(clear_style.use_glass);
+        assert!(clear_style.canvas_bg.a() < 100);
+
+        let dark_tc = crate::view::ThemeColors::default();
+        let dark_style = NemaThemeStyle::from_tc(&dark_tc);
+        assert!(dark_style.use_seal_rings);
+        assert!(dark_style.rounding > 0.0);
+
+        // 验证 Graph 曲线边与无向/自环箭头几何
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.nema_insert_v12_sample();
+        let ai = app.active;
+        let raw = app.docs[ai].lines.join("\n");
+        let rendered = render_source(&raw).expect("v1.2 sample should render");
+        let g = &rendered.domains[2];
+        let cg = CachedGraphCanvas::build((1, 1, 5200, 2680), g, 520.0, 268.0);
+        assert!(cg.edges.iter().any(|e| matches!(
+            e.geom,
+            CachedEdgeGeometry::Curve {
+                arrow: Some(_),
+                undirected: false,
+                ..
+            }
+        )));
+        assert!(cg.edges.iter().any(|e| matches!(
+            e.geom,
+            CachedEdgeGeometry::Curve {
+                arrow: None,
+                undirected: true,
+                ..
+            }
+        )));
+        assert!(cg
+            .edges
+            .iter()
+            .any(|e| matches!(e.geom, CachedEdgeGeometry::Loop { .. })));
+
+        // 验证便笺内边距常数与透明 MD 覆盖互斥逻辑
+        assert!(crate::app::sticky_notes::STICKY_NOTE_EDITOR_MARGIN.left >= 14);
+        assert!(crate::app::sticky_notes::STICKY_NOTE_EDITOR_MARGIN.top >= 10);
+        app.new_doc();
+        let md_idx = app.active;
+        app.docs[md_idx].name = "readme.md".to_string();
+        app.cfg.view.md_overlay = true;
+        app.md_preview = true;
+        assert!(app.should_show_md_overlay_for(md_idx));
+        app.md_preview = false;
+        assert!(!app.should_show_md_overlay_for(md_idx));
+    }
+
+    #[test]
+    fn nema_hot_plug_interpreter_renders_and_falls_back_cleanly() {
+        let (mut app, _g) = test_app();
+        let dir = std::env::temp_dir().join(format!("ide-fast-nema-app-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("IDE_PLUGIN_DIR", &dir);
+        let _ = editcore::plugin_host::store::list(&crate::plugins::root());
+
+        // 1. Default AutoPlugin runs QuickJS strict-parser.js with strict rules & literal \~ vs ~ null distinction
+        let strict_doc = " \\1 1\n\\%3\n\\# Service State Note\\ Text\nGateway \\_ Hello\\ World\n 2 _Cont\nWorker ~ \\~";
+        let rendered = app.render_nema_document(strict_doc).expect("strict plugin render");
+        assert!(app.nema.active_engine_badge.contains("nema-strict-js") || app.nema.active_engine_badge.contains("Strict"));
+        let row0 = &rendered.domains[0].rows[0];
+        let row1 = &rendered.domains[0].rows[1];
+        assert_eq!(row0.cells[2], "Hello World_Cont");
+        assert!(is_nema_null_cell(row1, 1, &row1.cells[1]));
+        assert!(!is_nema_null_cell(row1, 2, &row1.cells[2]));
+        assert_eq!(row1.cells[2], "~");
+
+        // 2. Hot-patch strict-parser.js -> unload -> immediate updated AST
+        let hot_js = "(function(r){r.NemaStrict={parse:(s)=>[{mode:'table',id:42,revision:9,explicit:true,columns:['ColA'],records:[{values:['LiveReloaded']}]}],fields:()=>[]};})(globalThis);";
+        crate::plugins::hot_patch_nema_plugin_script("nema-interpreter", "strict-parser.js", hot_js).unwrap();
+        app.plug.unload("nema-interpreter");
+        let hot_rendered = app.render_nema_document(strict_doc).expect("hot reloaded render");
+        assert_eq!(hot_rendered.domains[0].id, "42");
+        assert_eq!(hot_rendered.domains[0].rows[0].cells, vec!["LiveReloaded"]);
+
+        // 3. Disable plugin -> AutoPlugin falls back smoothly to Builtin Rust without error
+        crate::plugins::set_enabled("nema-interpreter", false).unwrap();
+        app.plug.unload("nema-interpreter");
+        let fb_rendered = app.render_nema_document(strict_doc).expect("smooth fallback render");
+        assert_eq!(fb_rendered.domains[0].id, "1");
+        assert!(app.nema.active_engine_badge.contains("回退"));
+
+        // 4. BuiltinStrictRust backend explicitly selects Rust Strict 1:1
+        app.nema.backend = NemaInterpreterBackend::BuiltinStrictRust;
+        let rust_rendered = app.render_nema_document(strict_doc).expect("builtin rust strict");
+        assert_eq!(rust_rendered.domains[0].rows[0].cells[2], "Hello World_Cont");
+
+        // 5. 对抗式注入：当插件脚本抛出异常或返回畸形数据时，必须安全捕获并降级到 Rust 引擎，不得导致 UI panic
+        let broken_js = "(function(r){r.NemaStrict={parse:()=>{ throw new Error('Adversarial JS Crash Test'); }};})(globalThis);";
+        crate::plugins::hot_patch_nema_plugin_script("nema-interpreter", "strict-parser.js", broken_js).unwrap();
+        crate::plugins::set_enabled("nema-interpreter", true).unwrap();
+        app.plug.unload("nema-interpreter");
+        app.nema.backend = NemaInterpreterBackend::AutoPlugin;
+        let degraded_render = app.render_nema_document(strict_doc).expect("degraded fallback render");
+        assert_eq!(degraded_render.domains[0].id, "1");
+        assert!(app.nema.active_engine_badge.contains("回退"));
+
+        // 6. 恢复内置插件脚本
+        crate::plugins::restore("nema-interpreter").unwrap();
+        app.plug.unload("nema-interpreter");
+        let restored_render = app.render_nema_document(strict_doc).expect("restored render");
+        assert_eq!(restored_render.domains[0].id, "1");
+
+        std::env::remove_var("IDE_PLUGIN_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

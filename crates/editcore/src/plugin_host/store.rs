@@ -33,6 +33,9 @@ const BUNDLED: &[(&str, &str, &[u8])] = &[
     ("theme-hc", "main.js", include_bytes!("../../plugins/theme-hc/main.js")),
     ("theme-comic", "manifest.json", include_bytes!("../../plugins/theme-comic/manifest.json")),
     ("theme-comic", "main.js", include_bytes!("../../plugins/theme-comic/main.js")),
+    ("nema-interpreter", "manifest.json", include_bytes!("../../plugins/nema-interpreter/manifest.json")),
+    ("nema-interpreter", "main.js", include_bytes!("../../plugins/nema-interpreter/main.js")),
+    ("nema-interpreter", "strict-parser.js", include_bytes!("../../plugins/nema-interpreter/strict-parser.js")),
 ];
 
 pub trait Http {
@@ -275,6 +278,147 @@ pub fn restore_bundled(root: &Path, id: &str) -> Result<(), String> {
         std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?; // 装过的旧文件不留孤儿
     }
     Ok(())
+}
+
+/// 热插拔更新插件脚本文件（例如 `strict-parser.js`）：落地到 `root/<id>/<script_file>` 并登记为 `installed`，
+/// 使其在 `read_asset` 与沙箱加载时立即优先生效；通过 [`restore_bundled`] 可一键还原到随程序打包版本。
+pub fn hot_patch_plugin_script(
+    root: &Path,
+    id: &str,
+    script_file: &str,
+    content: &[u8],
+) -> Result<Installed, String> {
+    if !super::valid_id_pub(id) {
+        return Err("非法的插件 id".into());
+    }
+    if !valid_file_name(script_file)
+        || !windows_safe_name(script_file)
+        || !script_file.ends_with(".js")
+    {
+        return Err(format!("非法的 JS 脚本文件名: {script_file}"));
+    }
+    if content.len() as u64 > MAX_ASSET_BYTES {
+        return Err("脚本体积超过 8 MiB 上限".into());
+    }
+    if content.is_empty() {
+        return Err("脚本内容不能为空".into());
+    }
+    let plugin = list(root)
+        .into_iter()
+        .find(|p| p.manifest.id == id)
+        .ok_or_else(|| format!("未找到插件 {id}"))?;
+    let m = &plugin.manifest;
+    if script_file != m.entry && !m.scripts.iter().any(|s| s == script_file) {
+        return Err(format!(
+            "脚本 {script_file} 未在插件 {id} 的 entry/scripts 清单中声明"
+        ));
+    }
+
+    let tmp = root.join(format!(".tmp-patch-{}", m.id));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+
+    let staged = (|| -> Result<(BTreeMap<String, String>, Manifest), String> {
+        let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        if plugin.source == "installed" {
+            let src_dir = root.join(id);
+            if let Ok(rd) = std::fs::read_dir(&src_dir) {
+                for ent in rd.flatten() {
+                    if ent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                        let name = ent.file_name().to_string_lossy().into_owned();
+                        if valid_file_name(&name) {
+                            if let Ok(bytes) = std::fs::read(ent.path()) {
+                                files.insert(name, bytes);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (bid, bfile, bbytes) in BUNDLED {
+            if *bid == id {
+                files.entry((*bfile).to_string()).or_insert_with(|| bbytes.to_vec());
+            }
+        }
+        if !files.contains_key("manifest.json") {
+            let m_bytes = serde_json::to_vec_pretty(m).map_err(|e| e.to_string())?;
+            files.insert("manifest.json".to_string(), m_bytes);
+        }
+        files.insert(script_file.to_string(), content.to_vec());
+
+        let manifest_text = files
+            .get("manifest.json")
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .ok_or_else(|| "manifest.json 不是有效的 UTF-8".to_string())?;
+        let assets: Vec<Asset> = files
+            .iter()
+            .map(|(name, bytes)| Asset {
+                name: name.clone(),
+                size: bytes.len() as u64,
+            })
+            .collect();
+        let report = check_compat(&assets, Some(manifest_text), env!("CARGO_PKG_VERSION"));
+        if !report.ok {
+            let why: Vec<String> = report
+                .problems
+                .iter()
+                .map(|p| format!("{}: {}", p.code, p.message))
+                .collect();
+            return Err(format!("热更新校验未通过: {}", why.join("; ")));
+        }
+        let manifest = report.manifest.ok_or_else(|| "缺少有效清单".to_string())?;
+
+        let mut sums = BTreeMap::new();
+        for (name, bytes) in files {
+            sums.insert(name.clone(), sha256_hex(&bytes));
+            std::fs::write(tmp.join(&name), bytes).map_err(|e| e.to_string())?;
+        }
+        Ok((sums, manifest))
+    })();
+
+    let (sums, manifest) = match staged {
+        Ok(ok) => ok,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    };
+
+    let dest = root.join(id);
+    let old = root.join(format!(".old-patch-{id}"));
+    let _ = std::fs::remove_dir_all(&old);
+    let had_old = dest.exists();
+    if had_old {
+        std::fs::rename(&dest, &old).map_err(|e| e.to_string())?;
+    }
+    if let Err(e) = std::fs::rename(&tmp, &dest) {
+        if had_old {
+            let _ = std::fs::rename(&old, &dest);
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!("热更新换名失败 (原版本保持可用): {e}"));
+    }
+    let _ = std::fs::remove_dir_all(&old);
+
+    let mut reg = load_registry(root);
+    reg.removed.remove(id);
+    reg.plugins.insert(
+        id.to_string(),
+        Entry {
+            version: manifest.version.clone(),
+            repo: manifest.repo.clone(),
+            enabled: true,
+            permissions: manifest.permissions.clone(),
+            sha256: sums.clone(),
+        },
+    );
+    save_registry(root, &reg)?;
+    Ok(Installed {
+        manifest,
+        enabled: true,
+        source: "installed",
+        sha256: sums,
+    })
 }
 
 // ---------- 插件包 (.zip) ----------
@@ -798,6 +942,30 @@ mod tests {
         assert!(root.join("ppa").exists());
         restore_bundled(&root, "ppa").unwrap();
         assert!(!root.join("ppa").exists(), "孤儿目录被清掉");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn hot_patch_plugin_script_overrides_and_restore_reverts() {
+        let root = tmp("nema-hotpatch");
+        let init = get(&root, "nema-interpreter").expect("nema-interpreter bundled");
+        assert_eq!(init.source, "bundled");
+        let patched_js = b"/* custom hotpatch */\n(function(r){r.NemaStrict={parse:()=>[],fields:()=>[]};})(globalThis);";
+        let ins = hot_patch_plugin_script(&root, "nema-interpreter", "strict-parser.js", patched_js).unwrap();
+        assert_eq!(ins.source, "installed");
+        assert_eq!(read_asset(&root, "nema-interpreter", "strict-parser.js").unwrap(), patched_js);
+        assert!(read_asset(&root, "nema-interpreter", "main.js").is_ok());
+
+        // Invalid script name or undeclared file must fail cleanly without corrupting state
+        assert!(hot_patch_plugin_script(&root, "nema-interpreter", "undeclared.js", b"1").is_err());
+        assert!(hot_patch_plugin_script(&root, "nema-interpreter", "../evil.js", b"1").is_err());
+        assert_eq!(read_asset(&root, "nema-interpreter", "strict-parser.js").unwrap(), patched_js);
+
+        restore_bundled(&root, "nema-interpreter").unwrap();
+        let restored = get(&root, "nema-interpreter").unwrap();
+        assert_eq!(restored.source, "bundled");
+        let bundled_js = read_asset(&root, "nema-interpreter", "strict-parser.js").unwrap();
+        assert!(String::from_utf8_lossy(&bundled_js).contains("MALFORMED_HEADER"));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

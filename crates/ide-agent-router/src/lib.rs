@@ -13,17 +13,35 @@
 
 pub mod agent_profile;
 pub mod collaboration;
+pub mod cookie;
 pub mod coordinator;
+pub mod guard;
+pub mod hooks;
 pub mod identity;
 pub mod ledger;
+pub mod mcp;
+pub mod memory;
 pub mod nema_pipeline;
 pub mod outbox;
 pub mod parser;
 pub mod patch;
 pub mod reviewer;
+pub mod rules;
 pub mod sandbox;
+pub mod skills;
 pub mod tenant;
 pub mod verifier;
+
+pub use cookie::{CookieJar, CookieStats, FileCookie, PrunePolicy, TaskState};
+pub use guard::{ContextCompactor, LoopBreaker};
+pub use hooks::{AgentHook, HookDecision, HookPipeline, PathSanitizerHook, PayloadLimitHook, SensitiveDataMaskHook};
+pub use mcp::{
+    McpCallToolResult, McpClient, McpConfig, McpContent, McpManager, McpServerConfig, McpServerHost,
+    McpToolDefinition, MCP_PROTOCOL_VERSION,
+};
+pub use memory::{AgentMemoryEngine, LongTermMemory, WorkingMemoryItem};
+pub use rules::{RuleSource, WorkspaceRulesEngine};
+pub use skills::{Skill, SkillRegistry};
 
 pub use agent_profile::{
     AgentModelProfile, AgentSlotId, EffectiveAgentConfig, FeedbackDecision, FeedbackLoopGuard,
@@ -34,7 +52,7 @@ pub use collaboration::{
     KeystrokeBroadcast, KeystrokeOp, RemoteCursor, ZoneAnchor,
 };
 pub use coordinator::{
-    CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState, TaskStatus,
+    CoordinatorError, FileCommitCoordinator, OutboxEvent, PatchCommitResponse, TaskState as CoordinatorTaskState, TaskStatus,
 };
 pub use identity::{SemanticUnit, SupportedLanguage};
 pub use ledger::{

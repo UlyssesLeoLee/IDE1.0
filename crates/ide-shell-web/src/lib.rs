@@ -1275,7 +1275,6 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/PixelFontMulti-12.ttf") | ("GET", "/editor/PixelFontMulti-12.ttf") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/PixelFontMulti-12.ttf"))
                 .or_else(|_| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf"))
                 .or_else(|_| std::fs::read("PixelFontMulti-12.ttf"));
             if let Ok(b) = bytes {
@@ -1286,7 +1285,6 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/logo.png") | ("GET", "/editor/logo.png") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/logo.png")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/logo.png"))
                 .or_else(|_| std::fs::read("assets/logo/IDE1.0_Crystal_A_128x128.png"));
             if let Ok(b) = bytes {
                 send_response(stream, "200 OK", "image/png", &b);
@@ -1296,8 +1294,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/favicon.ico") | ("GET", "/editor/favicon.ico") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/favicon.ico")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/favicon.ico"))
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/icons/icon.ico"));
+                .or_else(|_| std::fs::read("ide-fast/packaging/ide-fast.ico"));
             if let Ok(b) = bytes {
                 send_response(stream, "200 OK", "image/x-icon", &b);
             } else {
@@ -1306,7 +1303,6 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("GET", "/favicon.png") | ("GET", "/editor/favicon.png") => {
             let bytes = std::fs::read("crates/ide-shell-web/src/favicon.png")
-                .or_else(|_| std::fs::read("crates/ide-shell-desktop/dist/favicon.png"))
                 .or_else(|_| std::fs::read("assets/logo/IDE1.0_Crystal_A_32x32.png"));
             if let Ok(b) = bytes {
                 send_response(stream, "200 OK", "image/png", &b);
@@ -1314,7 +1310,7 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 send_error_json(stream, "404 Not Found", "favicon not found");
             }
         }
-        // ===== editor.html 用端点 — 与 desktop Tauri command 同名 =====
+        // ===== editor.html 用端点 =====
         ("POST", "/api/key") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let code = req.get("code").and_then(|v| v.as_str()).unwrap_or("");

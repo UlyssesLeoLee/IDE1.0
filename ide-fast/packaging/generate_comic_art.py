@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Generate Streamlined 3D-to-2D Cel-Shaded Installer Graphics for WiX:
+Generate Authentic American Comic & Cel-Shaded Pop-Art Installer Graphics for WiX:
 - banner.bmp: 493 x 58 pixels (24-bit RGB BMP)
 - dialog.bmp: 493 x 312 pixels (24-bit RGB BMP)
 
-Design style:
-- Authentic 3D-to-2D Cel-Shaded Pop Comic palette (#161824, #1f2230, #ffcc00)
-- Official 3D diamond crystal logo at top-left with Greek meander / laurel gold accents
-- Bold 2.0px pure black ink outlines and hard drop shadows
-- Halftone cyan Ben-Day screentone dots
+Aesthetic Features:
+- Bold Comic Inking: Thick black ink outlines (2.0px ~ 3.0px solid #000000)
+- Ben-Day Screentone Dots: Authentic pop-art halftone dot matrix patterns
+- Two-Tone Cel Shading: Crisp stepped light/shadow without soft blurry gradients
+- Action Burst Stars & Speech Balloons: Spiky "POW!", "FAST!" stickers and dialog bubbles
+- Hard Offset Drop Shadows: Pure black offset rectangular blocks ([3, 3] / [4, 4])
+- Vibrant Comic Palette: Comic Yellow (#FFE600), Action Cyan (#00E5FF), Punchy Red (#FF2A55), Deep Comic Navy (#141726)
 """
 
 import os
 import re
+import math
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +29,7 @@ def get_version():
             m = re.search(r'version\s*=\s*"([0-9.]+)"', f.read())
             if m:
                 return m.group(1)
-    return "0.6.7"
+    return "0.6.9"
 
 VERSION = get_version()
 
@@ -43,126 +46,238 @@ def get_font(size, bold=True):
             continue
     return ImageFont.load_default()
 
-def draw_halftone_dots(draw, x0, y0, x1, y1, dot_color=(0, 240, 255), spacing=12, radius=1):
-    for y in range(y0, y1, spacing):
-        for x in range(x0, x1, spacing):
-            cx = x + (spacing // 2 if (y // spacing) % 2 == 1 else 0)
-            if cx <= x1:
-                draw.ellipse([cx - radius, y - radius, cx + radius, y + radius], fill=dot_color)
+def draw_ben_day_dots(draw, x0, y0, x1, y1, dot_color=(0, 229, 255), spacing=10, radius=1.2):
+    """Draws pop-art Ben-Day halftone screen dots"""
+    for y in range(int(y0), int(y1), int(spacing)):
+        offset = (spacing // 2) if ((y // spacing) % 2 == 1) else 0
+        for x in range(int(x0) + int(offset), int(x1), int(spacing)):
+            draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=dot_color)
 
-def create_banner():
-    # 493 x 58
+def draw_comic_panel(draw, rect, fill_color, outline_color=(0, 0, 0), outline_width=2, shadow_offset=(3, 3)):
+    """Draws a comic book panel card with a solid black hard drop shadow"""
+    x0, y0, x1, y1 = [int(v) for v in rect]
+    sx, sy = int(shadow_offset[0]), int(shadow_offset[1])
+    outline_w = int(max(1, round(outline_width)))
+    # 1. Hard black drop shadow
+    if sx > 0 or sy > 0:
+        draw.rectangle([x0 + sx, y0 + sy, x1 + sx, y1 + sy], fill=(0, 0, 0))
+    # 2. Main panel body
+    draw.rectangle([x0, y0, x1, y1], fill=fill_color, outline=outline_color, width=outline_w)
+
+def draw_burst_star(draw, center, r_outer, r_inner, points=10, fill_color=(255, 230, 0), outline_color=(0, 0, 0), shadow_offset=(2, 2)):
+    """Draws a spiky comic action burst star with hard drop shadow"""
+    cx, cy = center
+    poly = []
+    angle_step = math.pi / points
+    for i in range(2 * points):
+        r = r_outer if i % 2 == 0 else r_inner
+        angle = i * angle_step - math.pi / 2
+        poly.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
+
+    # Hard shadow
+    if shadow_offset[0] > 0:
+        shadow_poly = [(px + shadow_offset[0], py + shadow_offset[1]) for px, py in poly]
+        draw.polygon(shadow_poly, fill=(0, 0, 0))
+
+    # Main Star
+    draw.polygon(poly, fill=fill_color, outline=outline_color)
+
+def draw_cel_shaded_crystal(draw, center, size):
+    """Draws a 3D cel-shaded comic crystal diamond with thick ink outline and hard lighting"""
+    cx, cy = center
+    r = size
+    top = (cx, cy - r)
+    bottom = (cx, cy + r)
+    left = (cx - r * 0.85, cy)
+    right = (cx + r * 0.85, cy)
+    center_pt = (cx, cy)
+
+    # Hard black shadow
+    draw.polygon([(top[0]+3, top[1]+3), (right[0]+3, right[1]+3), (bottom[0]+3, bottom[1]+3), (left[0]+3, left[1]+3)], fill=(0, 0, 0))
+
+    # Cel-shaded facets
+    # Upper Left (Highlight Cyan)
+    draw.polygon([top, left, center_pt], fill=(56, 189, 248), outline=(0, 0, 0))
+    # Upper Right (Electric Cyan)
+    draw.polygon([top, right, center_pt], fill=(14, 165, 233), outline=(0, 0, 0))
+    # Lower Left (Core Shadow Deep Blue)
+    draw.polygon([left, bottom, center_pt], fill=(2, 132, 199), outline=(0, 0, 0))
+    # Lower Right (Cast Shadow Dark Navy)
+    draw.polygon([right, bottom, center_pt], fill=(3, 105, 161), outline=(0, 0, 0))
+
+    # Bold Inking Contour Lines
+    draw.line([top, right], fill=(0, 0, 0), width=2)
+    draw.line([right, bottom], fill=(0, 0, 0), width=2)
+    draw.line([bottom, left], fill=(0, 0, 0), width=2)
+    draw.line([left, top], fill=(0, 0, 0), width=2)
+    draw.line([top, bottom], fill=(0, 0, 0), width=2)
+    draw.line([left, right], fill=(0, 0, 0), width=2)
+
+    # Specular white reflection polygon (Cel-shading highlight)
+    draw.polygon([top, (cx - r * 0.25, cy - r * 0.4), (cx, cy - r * 0.2)], fill=(255, 255, 255))
+
+def create_comic_banner():
+    # 493 x 58 WiX Header Banner
     w, h = 493, 58
-    img = Image.new("RGB", (w, h), color=(22, 24, 36)) # Comic paper #161824
+    img = Image.new("RGB", (w, h), color=(20, 23, 38)) # Comic Night Navy
     draw = ImageDraw.Draw(img)
 
-    # Subtle cyan Ben-Day halftone dots on the right
-    draw_halftone_dots(draw, 220, 6, w - 10, h - 6, dot_color=(32, 50, 75), spacing=10, radius=1)
+    # Pop-art Ben-Day dots in background
+    draw_ben_day_dots(draw, 10, 4, w - 10, h - 4, dot_color=(38, 48, 76), spacing=10, radius=1.2)
 
-    # Top-left Logo
-    if os.path.exists(LOGO_PATH):
-        logo = Image.open(LOGO_PATH).convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS)
-        # Gold highlight ring
-        draw.ellipse([12, 11, 48, 47], fill=(255, 204, 0, 40))
-        img.paste(logo, (14, 13), logo)
+    # Dynamic angled Comic Yellow action stripe in background
+    draw.polygon([(180, 0), (250, 0), (220, h), (150, h)], fill=(255, 230, 0))
+    draw.line([(180, 0), (150, h)], fill=(0, 0, 0), width=2)
+    draw.line([(250, 0), (220, h)], fill=(0, 0, 0), width=2)
 
-    # Title & Subtitle next to logo
+    # Left Cel-shaded Crystal
+    draw_cel_shaded_crystal(draw, (32, 29), 20)
+
+    # Comic Title with 3D drop shadow
     font_title = get_font(14, bold=True)
-    font_ver = get_font(10, bold=True)
+    font_sub = get_font(9, bold=True)
 
-    draw.text((54, 13), "IDE 1.0 Fast Edition", font=font_title, fill=(248, 250, 252))
-    draw.text((54, 32), "3D Cel-Shaded Comic · High-Performance Editor", font=font_ver, fill=(148, 163, 184))
+    # Shadow
+    draw.text((64, 11), "IDE 1.0", font=font_title, fill=(0, 0, 0))
+    # Fill
+    draw.text((62, 9), "IDE 1.0", font=font_title, fill=(255, 255, 255))
 
-    # Version comic badge on top-right
-    pill_w, pill_h = 64, 22
-    px, py = w - 80, 18
-    # Solid black drop shadow
-    draw.rectangle([px + 2, py + 2, px + pill_w + 2, py + pill_h + 2], fill=(0, 0, 0))
-    # Pop yellow fill with black border
-    draw.rectangle([px, py, px + pill_w, py + pill_h], fill=(255, 204, 0), outline=(0, 0, 0), width=2)
-    draw.text((px + 10, py + 4), f"v{VERSION}", font=font_ver, fill=(0, 0, 0))
+    # Comic Burst sticker for FAST EDITION
+    draw_burst_star(draw, (150, 20), 16, 10, points=8, fill_color=(255, 42, 85), outline_color=(0, 0, 0), shadow_offset=(2, 2))
+    draw.text((135, 14), "FAST!", font=get_font(8, bold=True), fill=(255, 255, 255))
 
-    # Bottom 2px solid black ink border
-    draw.line([(0, h - 2), (w, h - 2)], fill=(0, 0, 0), width=2)
+    # Subtitle with comic speech frame
+    draw.text((62, 32), "★ RUST NATIVE MICROKERNEL · MULTI-AGENT WORKSPACE ★", font=font_sub, fill=(0, 229, 255))
+
+    # Right side Action Version Badge
+    draw_comic_panel(draw, [w - 92, 12, w - 14, 42], fill_color=(255, 230, 0), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(2, 2))
+    draw.text((w - 82, 19), f"★ v{VERSION}", font=get_font(10, bold=True), fill=(0, 0, 0))
+
+    # 2.5px solid black border around entire banner
+    draw.rectangle([0, 0, w - 1, h - 1], outline=(0, 0, 0), width=2)
     return img
 
-def create_dialog():
-    # 493 x 312
+def create_comic_dialog():
+    # 493 x 312 WiX Background Dialog
     w, h = 493, 312
-    img = Image.new("RGB", (w, h), color=(22, 24, 36)) # Comic paper #161824
+    img = Image.new("RGB", (w, h), color=(18, 21, 35)) # Deep comic indigo
     draw = ImageDraw.Draw(img)
 
-    # Halftone background dots
-    draw_halftone_dots(draw, 10, 52, w - 10, h - 10, dot_color=(28, 38, 56), spacing=12, radius=1)
+    # 1. Background Halftone Screen Pattern (Ben-Day dots)
+    draw_ben_day_dots(draw, 8, 48, w - 8, h - 8, dot_color=(34, 42, 68), spacing=12, radius=1.2)
 
-    # Header Bar (Top 46px): #1f2230
-    draw.rectangle([0, 0, w, 46], fill=(31, 34, 48))
-    draw.line([(0, 46), (w, 46)], fill=(0, 0, 0), width=2)
+    # 2. Top Comic Title Bar (Comic Yellow with black ink border)
+    header_h = 44
+    draw.rectangle([0, 0, w, header_h], fill=(255, 230, 0), outline=(0, 0, 0), width=2)
+    # Diagonal comic speed stripes on header
+    for sx in range(12, 160, 16):
+        draw.line([(sx, 0), (sx + 20, header_h)], fill=(240, 210, 0), width=4)
+        draw.line([(sx, 0), (sx + 20, header_h)], fill=(0, 0, 0), width=1)
 
-    # Top-Left Official 3D Diamond Crystal Logo
-    if os.path.exists(LOGO_PATH):
-        logo = Image.open(LOGO_PATH).convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS)
-        # Soft cyan glow ring
-        draw.ellipse([10, 3, 50, 43], fill=(0, 240, 255, 30))
-        img.paste(logo, (14, 7), logo)
+    draw_cel_shaded_crystal(draw, (24, header_h // 2), 15)
 
     font_head = get_font(13, bold=True)
-    font_ver = get_font(10, bold=True)
-    draw.text((54, 14), "IDE 1.0 Fast Edition · 安装向导", font=font_head, fill=(248, 250, 252))
+    draw.text((46, 12), "IDE 1.0  FAST EDITION · SETUP WIZARD", font=font_head, fill=(0, 0, 0))
 
-    # Top-Right Controls & Version Badge
-    badge_w, badge_h = 60, 22
-    bx, by = w - 110, 12
-    draw.rectangle([bx + 1, by + 1, bx + badge_w + 1, by + badge_h + 1], fill=(0, 0, 0))
-    draw.rectangle([bx, by, bx + badge_w, by + badge_h], fill=(255, 204, 0), outline=(0, 0, 0), width=1)
-    draw.text((bx + 10, by + 4), f"v{VERSION}", font=font_ver, fill=(0, 0, 0))
+    # Version Action Tag on Top Right
+    draw_comic_panel(draw, [w - 86, 9, w - 14, 34], fill_color=(255, 42, 85), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(2, 2))
+    draw.text((w - 76, 14), f"v{VERSION} ★", font=get_font(9, bold=True), fill=(255, 255, 255))
 
-    # Window control dots (Comic Cel-Shaded)
-    draw.ellipse([w - 40, 19, w - 32, 27], fill=(0, 245, 155), outline=(0, 0, 0), width=1) # green
-    draw.ellipse([w - 28, 19, w - 20, 27], fill=(255, 204, 0), outline=(0, 0, 0), width=1) # yellow
-    draw.ellipse([w - 16, 19, w - 8, 27], fill=(255, 51, 102), outline=(0, 0, 0), width=1)  # red
+    # 3. Main Center Split Comic Panels
+    # Left Hero Stage Panel (Ionic pedestal + Floating Core + Speech Bubble)
+    left_w = 148
+    draw_comic_panel(draw, [12, 54, 12 + left_w, 296], fill_color=(24, 28, 46), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(3, 3))
+    # Left panel Ben-Day dots
+    draw_ben_day_dots(draw, 14, 56, 12 + left_w - 2, 294, dot_color=(0, 229, 255), spacing=8, radius=1.0)
 
-    # Center Hero Comic Panel
-    panel_x0, panel_y0, panel_x1, panel_y1 = 14, 56, w - 14, 122
-    # Hard drop shadow
-    draw.rectangle([panel_x0 + 2, panel_y0 + 2, panel_x1 + 2, panel_y1 + 2], fill=(0, 0, 0))
-    # Comic cell fill
-    draw.rectangle([panel_x0, panel_y0, panel_x1, panel_y1], fill=(32, 35, 49), outline=(0, 0, 0), width=2)
+    # Radiating Burst Rays from center
+    core_cx = 12 + left_w // 2
+    core_cy = 135
+    for a in range(0, 360, 30):
+        rad = math.radians(a)
+        rx = core_cx + 48 * math.cos(rad)
+        ry = core_cy + 48 * math.sin(rad)
+        draw.line([(core_cx, core_cy), (rx, ry)], fill=(255, 230, 0), width=1)
 
-    font_hero = get_font(15, bold=True)
-    font_desc = get_font(11, bold=False)
-    draw.text((28, 66), "⚡ 欢迎使用 IDE 1.0 FAST EDITION", font=font_hero, fill=(255, 204, 0))
-    draw.text((28, 93), "Rust 极速微内核 · 多 Agent 协同架构 · 美漫 3渲2 卡通渲染 · 纯粹编码体验", font=font_desc, fill=(148, 163, 184))
+    # 3D Cel-shaded Crystal
+    draw_cel_shaded_crystal(draw, (core_cx, core_cy), 26)
 
-    # 3 Features Highlights (Horizontal Chips)
-    chips = [
-        ("⚡ 毫秒级极速冷启动", (0, 240, 255)),
-        ("🛡️ 系统托盘常驻守护", (255, 204, 0)),
-        ("🔤 纯净像素点阵字形", (0, 245, 155)),
+    # Comic Pedestal (Ionic marble style in 2-tone cel shading)
+    ped_top = 180
+    # Capital
+    draw_comic_panel(draw, [core_cx - 44, ped_top, core_cx + 44, ped_top + 14], fill_color=(240, 240, 245), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(0, 0))
+    # Volute circles
+    draw.ellipse([core_cx - 42, ped_top + 1, core_cx - 30, ped_top + 13], outline=(0, 0, 0), width=1)
+    draw.ellipse([core_cx + 30, ped_top + 1, core_cx + 42, ped_top + 13], outline=(0, 0, 0), width=1)
+    # Shaft with flutes
+    draw_comic_panel(draw, [core_cx - 36, ped_top + 14, core_cx + 36, ped_top + 64], fill_color=(220, 225, 235), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(0, 0))
+    for fx in [-24, -12, 0, 12, 24]:
+        draw.line([(core_cx + fx, ped_top + 16), (core_cx + fx, ped_top + 62)], fill=(160, 170, 190), width=2)
+        draw.line([(core_cx + fx - 1, ped_top + 16), (core_cx + fx - 1, ped_top + 62)], fill=(0, 0, 0), width=1)
+    # Base
+    draw_comic_panel(draw, [core_cx - 48, ped_top + 64, core_cx + 48, ped_top + 78], fill_color=(245, 245, 250), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(0, 0))
+    # Gold Greek key accent strip
+    draw.rectangle([core_cx - 44, ped_top + 68, core_cx + 44, ped_top + 74], fill=(255, 204, 0), outline=(0, 0, 0), width=1)
+
+    # Left Panel Bottom Sticker
+    draw_comic_panel(draw, [core_cx - 56, 268, core_cx + 56, 290], fill_color=(255, 42, 85), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(2, 2))
+    draw.text((core_cx - 44, 272), "100% NATIVE", font=get_font(9, bold=True), fill=(255, 255, 255))
+
+    # Right Content Area (Comic Action Cards)
+    rx0 = 12 + left_w + 14
+    rx1 = w - 12
+
+    # Hero Speech Banner (Top Right)
+    draw_comic_panel(draw, [rx0, 54, rx1, 116], fill_color=(255, 255, 255), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(3, 3))
+    # Speech bubble tail pointing left
+    draw.polygon([(rx0, 78), (rx0 - 8, 86), (rx0, 94)], fill=(255, 255, 255), outline=(0, 0, 0))
+    draw.line([(rx0, 79), (rx0, 93)], fill=(255, 255, 255), width=2)
+
+    font_hero = get_font(13, bold=True)
+    font_desc = get_font(9, bold=False)
+    draw.text((rx0 + 12, 62), "⚡ 开启全新极速编码冒险！", font=font_hero, fill=(0, 0, 0))
+    draw.text((rx0 + 12, 84), "纯 Rust 极速内核 · 多 Agent 协同生态 · 零卡顿全真透视体验", font=font_desc, fill=(40, 45, 60))
+    draw_burst_star(draw, (rx1 - 22, 75), 14, 8, points=6, fill_color=(255, 230, 0), outline_color=(0, 0, 0), shadow_offset=(1, 1))
+    draw.text((rx1 - 32, 70), "POW!", font=get_font(7, bold=True), fill=(0, 0, 0))
+
+    # 3 Comic Feature Cards (Stacked Action Cards)
+    cards = [
+        ("⚡ 毫秒极速冷启", "原生编译无运行时开销，即开即写秒速响应", (0, 229, 255), "01"),
+        ("🤖 多 Agent 协同生态", "空间不相交规则化编辑，补丁原子级隔离应用", (255, 204, 0), "02"),
+        ("💎 3D美漫与晶透渲染", "美漫赛璐珞与高透晶面渲染，视觉风格随心切换", (16, 185, 129), "03"),
     ]
-    chip_x = 14
-    chip_y = 136
-    chip_w = (w - 28 - 16) // 3
-    for text, color in chips:
-        # Hard shadow
-        draw.rectangle([chip_x + 1, chip_y + 1, chip_x + chip_w + 1, chip_y + 31], fill=(0, 0, 0))
-        # Card
-        draw.rectangle([chip_x, chip_y, chip_x + chip_w, chip_y + 30], fill=(30, 32, 45), outline=(0, 0, 0), width=1)
-        # Top color accent strip
-        draw.rectangle([chip_x, chip_y, chip_x + chip_w, chip_y + 3], fill=color)
-        font_chip = get_font(10, bold=True)
-        draw.text((chip_x + 8, chip_y + 9), text, font=font_chip, fill=(241, 245, 249))
-        chip_x += chip_w + 8
+    card_y = 126
+    for title, desc, accent, num in cards:
+        draw_comic_panel(draw, [rx0, card_y, rx1, card_y + 44], fill_color=(24, 29, 48), outline_color=(0, 0, 0), outline_width=2, shadow_offset=(2, 2))
+        # Left accent stripe
+        draw.rectangle([rx0, card_y, rx0 + 5, card_y + 44], fill=accent)
+        # Action number badge
+        draw_comic_panel(draw, [rx0 + 12, card_y + 10, rx0 + 36, card_y + 34], fill_color=accent, outline_color=(0, 0, 0), outline_width=1, shadow_offset=(1, 1))
+        draw.text((rx0 + 18, card_y + 13), num, font=get_font(10, bold=True), fill=(0, 0, 0))
 
-    # Outer 2.5px solid black border
+        draw.text((rx0 + 44, card_y + 6), title, font=get_font(10, bold=True), fill=(255, 255, 255))
+        draw.text((rx0 + 44, card_y + 24), desc, font=get_font(8, bold=False), fill=(160, 175, 200))
+
+        # Comic Ready checkmark tag
+        draw_comic_panel(draw, [rx1 - 58, card_y + 12, rx1 - 8, card_y + 32], fill_color=(255, 230, 0), outline_color=(0, 0, 0), outline_width=1, shadow_offset=(1, 1))
+        draw.text((rx1 - 50, card_y + 15), "★ READY", font=get_font(7, bold=True), fill=(0, 0, 0))
+
+        card_y += 50
+
+    # Bottom Footer Strip
+    draw.line([(0, h - 22), (w, h - 22)], fill=(0, 0, 0), width=2)
+    draw.rectangle([0, h - 20, w, h], fill=(255, 230, 0))
+    draw.text((12, h - 17), "★ AGPL-3.0 OPEN SOURCE · PURE NATIVE · NO BLOAT · NO ADS ★", font=get_font(8, bold=True), fill=(0, 0, 0))
+
+    # Outer 2.5px solid black border around entire dialog
     draw.rectangle([0, 0, w - 1, h - 1], outline=(0, 0, 0), width=2)
     return img
 
 if __name__ == "__main__":
-    banner = create_banner()
+    banner = create_comic_banner()
     banner.save(os.path.join(ROOT, "banner.bmp"), "BMP")
-    print(f"Saved {os.path.join(ROOT, 'banner.bmp')} (493x58) [v{VERSION}]")
+    print(f"Generated Comic Banner: {os.path.join(ROOT, 'banner.bmp')} (493x58) [v{VERSION}]")
 
-    dialog = create_dialog()
+    dialog = create_comic_dialog()
     dialog.save(os.path.join(ROOT, "dialog.bmp"), "BMP")
-    print(f"Saved {os.path.join(ROOT, 'dialog.bmp')} (493x312) [v{VERSION}]")
+    print(f"Generated Comic Dialog: {os.path.join(ROOT, 'dialog.bmp')} (493x312) [v{VERSION}]")

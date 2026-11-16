@@ -249,33 +249,12 @@ impl App {
 
     fn collab_review_ui(&mut self, ui: &mut egui::Ui) {
         Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
-            if ui.button("打开多 Agent 协同工作台").clicked() {
-                self.collab.open = true;
-            }
             if ui.button("×").clicked() {
                 self.term.open = false;
             }
         });
-        let blue = self.tc.blue;
-        let dim = self.tc.fg_dim;
-        ui.vertical_centered(|ui| {
-            ui.add_space(16.0);
-            ui.label(
-                egui::RichText::new("多 Agent 协同工作台就绪")
-                    .strong()
-                    .size(14.0)
-                    .color(blue),
-            );
-            ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new("协同流水线在后台作为核心调度逻辑运行，支持设置 Agent 数量、独立标签页、统筹命令与针对性私聊。")
-                    .color(dim),
-            );
-            ui.add_space(10.0);
-            if ui.button(egui::RichText::new("点击启动多 Agent 协同工作台").strong()).clicked() {
-                self.collab.open = true;
-            }
-        });
+        // 内嵌渲染多 Agent 协同工作台 (无浮动窗口)
+        self.collab_panel_ui(ui);
     }
 
     fn output_ui(&mut self, ui: &mut egui::Ui) {

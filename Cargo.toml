@@ -6,7 +6,6 @@ members = [
   "crates/ide-cli",
   "crates/ide-shell",
   "crates/ide-shell-web",
-  "crates/ide-shell-desktop",
   "crates/ide-shell-protocol",
   "crates/editcore",
   "crates/ide-agent-router",
@@ -15,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.7"
+version = "0.6.9"
 edition = "2021"
 rust-version = "1.77"
 license = "AGPL-3.0-only"

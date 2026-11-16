@@ -673,6 +673,281 @@ pub fn adaptive_render_view(source: &str) -> (serde_json::Value, u64, String, bo
     (val, latency_us, "内置标准 Rust (v1.5)".to_string(), false)
 }
 
+/// 监听外部解释器文件 mtime/size 变化，支持热重载
+#[derive(Debug, Clone, Default)]
+pub struct InterpreterWatcher {
+    pub path: String,
+    pub last_modified_unix_ns: Option<u128>,
+    pub last_len: u64,
+}
+
+impl InterpreterWatcher {
+    pub fn new(path: impl Into<String>) -> Self {
+        let path = path.into();
+        let mut w = Self {
+            path,
+            last_modified_unix_ns: None,
+            last_len: 0,
+        };
+        let _ = w.poll_changed();
+        w
+    }
+
+    pub fn set_path(&mut self, path: impl Into<String>) {
+        let new_path = path.into();
+        if self.path != new_path {
+            self.path = new_path;
+            self.last_modified_unix_ns = None;
+            self.last_len = 0;
+            let _ = self.poll_changed();
+        }
+    }
+
+    /// 返回文件自上次检查后是否发生变化（用于自动重新探测与缓存失效）
+    pub fn poll_changed(&mut self) -> bool {
+        let trimmed = self.path.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        let Ok(meta) = std::fs::metadata(trimmed) else {
+            return false;
+        };
+        let len = meta.len();
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos());
+        let changed = self.last_modified_unix_ns != mtime || self.last_len != len;
+        self.last_modified_unix_ns = mtime;
+        self.last_len = len;
+        changed
+    }
+}
+
+/// 将官网 `NemaStrict.parse(source)` AST JSON 或插件返回的 `RenderedDocument` JSON 转换为强类型 `RenderedDocument`
+pub fn parse_strict_ast_json(json_str: &str) -> Result<crate::RenderedDocument, crate::NemaError> {
+    let val: serde_json::Value =
+        serde_json::from_str(json_str.trim()).map_err(|e| crate::NemaError::StrictSyntax {
+            line: 0,
+            message: format!("invalid interpreter JSON: {e}"),
+        })?;
+    rendered_document_from_json(&val)
+}
+
+/// 将通用 JSON (`{ "doc": ... }` / `RenderedDocument` / `NemaStrict.parse` 数组) 规范化为 `RenderedDocument`
+pub fn rendered_document_from_json(
+    val: &serde_json::Value,
+) -> Result<crate::RenderedDocument, crate::NemaError> {
+    if let Some(err_msg) = val.get("error").and_then(|v| v.as_str()) {
+        return Err(crate::NemaError::StrictSyntax {
+            line: 0,
+            message: err_msg.to_string(),
+        });
+    }
+    if let Some(inner_doc) = val.get("doc") {
+        if let Ok(doc) = serde_json::from_value::<crate::RenderedDocument>(inner_doc.clone()) {
+            return Ok(doc);
+        }
+    }
+    if val.get("domains").is_some() {
+        if let Ok(doc) = serde_json::from_value::<crate::RenderedDocument>(val.clone()) {
+            return Ok(doc);
+        }
+    }
+    let arr = val
+        .as_array()
+        .or_else(|| val.get("ast").and_then(|v| v.as_array()))
+        .ok_or_else(|| crate::NemaError::StrictSyntax {
+            line: 0,
+            message: "expected RenderedDocument object or NemaStrict domain array".to_string(),
+        })?;
+
+    let mut domains = Vec::with_capacity(arr.len());
+    for d in arr {
+        let mode_str = d.get("mode").and_then(|v| v.as_str()).unwrap_or("table");
+        let mode = match mode_str {
+            "5w1h" => crate::DomainMode::FiveWOneH,
+            "graph" => crate::DomainMode::Graph,
+            _ => crate::DomainMode::Table,
+        };
+        let id = match d.get("id") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(serde_json::Value::Number(n)) => n.to_string(),
+            _ => "1".to_string(),
+        };
+        let revision = d.get("revision").and_then(|v| v.as_u64()).unwrap_or(1);
+        let explicit_header = d.get("explicit").and_then(|v| v.as_bool()).unwrap_or(false);
+        let columns: Vec<String> = match d.get("columns").and_then(|v| v.as_array()) {
+            Some(cols) => cols
+                .iter()
+                .map(|c| c.as_str().unwrap_or_default().to_string())
+                .collect(),
+            None => match mode {
+                crate::DomainMode::FiveWOneH => crate::AXES_5W1H.iter().map(|s| (*s).to_string()).collect(),
+                crate::DomainMode::Graph => crate::COLUMNS_GRAPH.iter().map(|s| (*s).to_string()).collect(),
+                crate::DomainMode::Table => Vec::new(),
+            },
+        };
+
+        let raw_records = d
+            .get("records")
+            .and_then(|v| v.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let mut rows = Vec::with_capacity(raw_records.len());
+
+        for (idx, r) in raw_records.iter().enumerate() {
+            let values = r
+                .get("values")
+                .and_then(|v| v.as_array())
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let mut cells = Vec::with_capacity(values.len());
+            let mut groups = Vec::with_capacity(values.len());
+            let mut extensions = Vec::new();
+
+            for (col_idx, v) in values.iter().enumerate() {
+                if v.is_null() {
+                    cells.push("~".to_string());
+                    groups.push(vec!["~".to_string()]);
+                } else if let Some(s) = v.as_str() {
+                    if s == "~" {
+                        cells.push("~".to_string());
+                        groups.push(vec!["\\~".to_string()]);
+                    } else if s.is_empty() {
+                        cells.push(String::new());
+                        groups.push(Vec::new());
+                    } else {
+                        if mode == crate::DomainMode::Graph && col_idx >= 3 {
+                            extensions.push((format!("X{col_idx}"), s.to_string()));
+                        }
+                        cells.push(s.to_string());
+                        groups.push(vec![s.to_string()]);
+                    }
+                } else if v
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| t == "missing")
+                {
+                    cells.push(String::new());
+                    groups.push(Vec::new());
+                } else {
+                    let s = v.to_string();
+                    cells.push(s.clone());
+                    groups.push(vec![s]);
+                }
+            }
+
+            if mode == crate::DomainMode::FiveWOneH {
+                while cells.len() < 6 {
+                    cells.push(String::new());
+                }
+                while groups.len() < 6 {
+                    groups.push(Vec::new());
+                }
+            }
+
+            let kind = r.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let node_id = if kind == "node" {
+                r.get("id").and_then(|v| v.as_str()).map(str::to_string)
+            } else {
+                None
+            };
+            let edge = if kind == "edge" {
+                let eid = r.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let from = r.get("from").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let to = r.get("to").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                let op_ch = r
+                    .get("operator")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.chars().next())
+                    .unwrap_or('>');
+                let direction = if op_ch == '=' {
+                    crate::EdgeDirection::Undirected
+                } else {
+                    crate::EdgeDirection::Directed
+                };
+                Some(crate::GraphEdgeSpec {
+                    id: eid,
+                    from,
+                    to,
+                    direction,
+                    raw_operator: op_ch,
+                })
+            } else {
+                None
+            };
+
+            rows.push(crate::RenderedRow {
+                cells,
+                groups,
+                tail_empty: false,
+                node_id,
+                edge,
+                extensions,
+                line: r.get("line").and_then(|v| v.as_u64()).map_or(idx + 1, |n| n as usize),
+            });
+        }
+
+        domains.push(crate::RenderedDomain {
+            id,
+            revision,
+            mode,
+            columns,
+            explicit_header,
+            rows,
+        });
+    }
+
+    Ok(crate::RenderedDocument {
+        dictionary: Vec::new(),
+        domains,
+    })
+}
+
+/// 带平滑回退的 `RenderedDocument` 渲染入口（优先外部解释器，其次内置 strict / legacy Rust）
+pub fn adaptive_render_document(
+    source: &str,
+) -> (Result<crate::RenderedDocument, crate::NemaError>, u64, String, bool) {
+    let cfg = get_active_interpreter();
+    if cfg.enabled && !cfg.path.trim().is_empty() {
+        if let Ok((ast, latency_us)) = execute_interpreter(&cfg, source) {
+            if let Ok(doc) = rendered_document_from_json(&ast) {
+                let label = if cfg.metadata.engine_name.is_empty() {
+                    format!(
+                        "外部解释器 ({})",
+                        Path::new(&cfg.path)
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                    )
+                } else {
+                    cfg.metadata.engine_name.clone()
+                };
+                return (Ok(doc), latency_us, label, true);
+            }
+        }
+    }
+    let t0 = Instant::now();
+    let uses_legacy = source.contains('\t')
+        || source.trim_start().starts_with("\\!NEMAT1")
+        || source.ends_with("\n\n\n");
+    let res = if uses_legacy {
+        crate::render_source(source).or_else(|e| {
+            if source.contains('\t') || source.trim_start().starts_with("\\!NEMAT1") {
+                Err(e)
+            } else {
+                crate::render_strict(source)
+            }
+        })
+    } else {
+        crate::render_strict(source)
+    };
+    let latency_us = t0.elapsed().as_micros() as u64;
+    (res, latency_us, "内置 Rust Strict+Compat".to_string(), false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -719,5 +994,58 @@ mod tests {
         assert!(ast.is_array());
         let arr = ast.as_array().unwrap();
         assert_eq!(arr[0]["id"], "Gauth");
+    }
+
+    #[test]
+    fn test_parse_strict_ast_json_table_5w1h_and_graph() {
+        let strict_ast = r#"[
+          {
+            "mode": "table",
+            "id": 1,
+            "revision": 2,
+            "explicit": true,
+            "columns": ["Service", "NullCol", "TildeCol", "MissingCol"],
+            "records": [
+              { "values": ["Gateway", null, "~", {"type":"missing"}] }
+            ]
+          },
+          {
+            "mode": "5w1h",
+            "id": 2,
+            "revision": 1,
+            "records": [
+              { "values": ["Verify", "Security", {"type":"missing"}] }
+            ]
+          },
+          {
+            "mode": "graph",
+            "id": 3,
+            "revision": 1,
+            "records": [
+              { "kind": "node", "id": "A", "values": ["A", "Auth", "Entry", "v3"] },
+              { "kind": "node", "id": "B", "values": ["B", "Store", "DB"] },
+              { "kind": "edge", "id": "E1", "from": "A", "to": "B", "operator": "=", "values": ["A=E1=B", "Sync", "Mutual"] }
+            ]
+          }
+        ]"#;
+        let doc = parse_strict_ast_json(strict_ast).expect("strict AST JSON conversion");
+        assert_eq!(doc.domains.len(), 3);
+        let t = &doc.domains[0];
+        assert!(t.explicit_header);
+        assert_eq!(t.rows[0].cells, vec!["Gateway", "~", "~", ""]);
+        assert_eq!(t.rows[0].groups[1], vec!["~"]);
+        assert_eq!(t.rows[0].groups[2], vec!["\\~"]);
+
+        let w = &doc.domains[1];
+        assert_eq!(w.columns, crate::AXES_5W1H);
+        assert_eq!(w.rows[0].cells.len(), 6);
+        assert_eq!(w.rows[0].cells[0], "Verify");
+
+        let g = &doc.domains[2];
+        assert_eq!(g.rows[0].node_id.as_deref(), Some("A"));
+        assert_eq!(g.rows[0].extensions, vec![("X3".into(), "v3".into())]);
+        let edge = g.rows[2].edge.as_ref().unwrap();
+        assert_eq!(edge.direction, crate::EdgeDirection::Undirected);
+        assert_eq!(edge.raw_operator, '=');
     }
 }

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "IDE1.0 高速版 — 原生 Rust (egui) 的 Sakura 风格文本编辑器: 不依赖 WebView2, 复用 editcore 的全部编辑语义; 和 Tauri 版并行, 独立安装包"
+description = "IDE1.0 — 原生 Rust (egui) 的 Sakura 风格高性能文本与代码编辑器"
 
 [[bin]]
 name = "ide-fast"

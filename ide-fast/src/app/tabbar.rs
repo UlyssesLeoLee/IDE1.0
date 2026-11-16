@@ -22,6 +22,18 @@ pub fn tab_width(text_w: f32) -> f32 {
     (text_w + PAD_L + PAD_R).min(TAB_MAX_W)
 }
 
+/// 文件任务状态 → 标签底边指示条颜色 (固定色, 各主题都清晰; Idle / Committed 不画)
+pub(super) fn task_bar_color(s: ide_agent_router::TaskState) -> Option<Color32> {
+    use ide_agent_router::TaskState as T;
+    match s {
+        T::Idle | T::Committed => None,
+        T::Planning => Some(Color32::from_rgb(64, 156, 255)),
+        T::Exploring => Some(Color32::from_rgb(240, 192, 64)),
+        T::Vetting => Some(Color32::from_rgb(176, 112, 255)),
+        T::Verified => Some(Color32::from_rgb(72, 200, 120)),
+    }
+}
+
 /// 标签 / 状态栏上显示的文档名: 只有还没存过的「无标题 N」要随界面语言翻译; 磁盘上的文件名原样显示
 /// (文件名叫「开」「注意」之类时, 不能被当成提示文字译掉; 也省得每帧每个标签都跑一遍模板匹配)
 pub(super) fn doc_label(d: &crate::doc::Doc) -> std::borrow::Cow<'_, str> {
@@ -291,6 +303,17 @@ impl App {
                 tc.yellow,
             );
         }
+        // 文件即任务: 底边 2px 状态指示条 (规划 蓝 / 探索 黄 / 待审 紫 / 已验证 绿; 无任务不画)
+        if let Some(col) = task_bar_color(self.task_state_of(doc.id)) {
+            p.rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(rect.left(), rect.bottom() - 2.0),
+                    Vec2::new(rect.width() - 1.0, 2.0),
+                ),
+                0.0,
+                col,
+            );
+        }
         if active || hot {
             if close.hovered() {
                 p.rect_filled(close_rect, 3.0, tc.bg_active);
@@ -398,5 +421,19 @@ mod tests {
         assert!(!bar_visible(1, false));
         assert!(bar_visible(2, false));
         assert!(bar_visible(1, true));
+    }
+
+    #[test]
+    fn task_bar_color_maps_states_to_colors() {
+        use ide_agent_router::TaskState;
+        assert!(task_bar_color(TaskState::Idle).is_none());
+        assert!(task_bar_color(TaskState::Committed).is_none());
+        let c_exp = task_bar_color(TaskState::Exploring).unwrap();
+        let c_plan = task_bar_color(TaskState::Planning).unwrap();
+        let c_vet = task_bar_color(TaskState::Vetting).unwrap();
+        let c_ver = task_bar_color(TaskState::Verified).unwrap();
+        assert_ne!(c_exp, c_plan);
+        assert_ne!(c_plan, c_vet);
+        assert_ne!(c_vet, c_ver);
     }
 }

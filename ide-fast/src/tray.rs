@@ -107,7 +107,7 @@ mod imp {
 
             let icon = TrayIconBuilder::new()
                 .with_icon(ti_icon)
-                .with_tooltip("IDE1.0 Fast · 极速文本编辑器")
+                .with_tooltip("IDE1.0 · 极速文本编辑器")
                 .with_menu(Box::new(menu))
                 .build()
                 .ok()?;

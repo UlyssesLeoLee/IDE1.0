@@ -155,7 +155,7 @@ jobs:
         run: |
           cargo build -p ide-shell --bin ide-shell
           cargo build -p ide-shell-web --bin ide-shell-web
-          cargo build -p ide-shell-desktop --bin ide-shell-desktop
+          cargo build -p ide-fast --bin ide-fast
 
       - name: Upload binaries (Linux)
         if: false && (runner.os == 'Linux')  # WBS-03 O1.2: 对应的构建步骤已关闭
@@ -165,7 +165,7 @@ jobs:
           path: |
             target/debug/ide-shell
             target/debug/ide-shell-web
-            target/debug/ide-shell-desktop
+            target/debug/ide-fast
           retention-days: 7
 
       - name: Upload binaries (Windows)
@@ -176,7 +176,7 @@ jobs:
           path: |
             target/debug/ide-shell.exe
             target/debug/ide-shell-web.exe
-            target/debug/ide-shell-desktop.exe
+            target/debug/ide-fast.exe
           retention-days: 7
 
       - name: Upload binaries (macOS)
@@ -187,7 +187,7 @@ jobs:
           path: |
             target/debug/ide-shell
             target/debug/ide-shell-web
-            target/debug/ide-shell-desktop
+            target/debug/ide-fast
           retention-days: 7
 
   # ============================================================
@@ -205,18 +205,12 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install system deps for Tauri
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            patchelf \
-            wget \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
             pkg-config \
             libssl-dev \
             cmake \
@@ -327,11 +321,6 @@ jobs:
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
 
-      - name: Desktop/web frontend parity audit
-        run: |
-          cargo build -p ide-shell-desktop --bin ide-shell-desktop
-          node tests/uat/audit-desktop-parity.mjs
-
       - name: Theme UAT (4 themes incl. transparent glass)
         working-directory: tests/uat
         env:
@@ -406,17 +395,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install system deps for Tauri
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v7
         with:
@@ -471,91 +449,14 @@ jobs:
           config: .markdownlint.json
 
   # ============================================================
-  # Job 7: Tauri Desktop build (Linux) — .deb + .AppImage
+  # Job 7: IDE1.0 Desktop build (Windows) — .msi & portable .exe
   # ============================================================
-  tauri-build-linux:
-    name: Tauri Desktop (Linux .deb + .AppImage)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    needs: rust
-    # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
-    if: false && (github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'linux' || github.event.inputs.target_platform == 'all')
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
-
-      - name: Install system deps for Tauri Linux build
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            patchelf \
-            wget \
-            rpm \
-            dpkg \
-            fakeroot \
-            libappindicator3-dev
-
-      - name: Build ide-shell-desktop (cargo check)
-        working-directory: .
-        run: cargo check -p ide-shell-desktop --all-targets
-
-      - name: Run ide-shell-desktop tests
-        working-directory: .
-        run: cargo test -p ide-shell-desktop
-
-      - name: Setup Node 20 + install @tauri-apps/cli
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - name: Install Tauri CLI
-        working-directory: tools
-        run: npm install --no-audit --no-fund
-
-      - name: Build Linux .deb + .AppImage
-        working-directory: crates/ide-shell-desktop
-        run: ../../tools/node_modules/.bin/tauri build --bundles deb,appimage --config ./tauri.conf.json
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v7
-        with:
-          name: ide-shell-desktop-deb
-          path: crates/ide-shell-desktop/target/release/bundle/deb/*.deb
-          retention-days: 30
-
-      - name: Upload .AppImage
-        uses: actions/upload-artifact@v7
-        with:
-          name: ide-shell-desktop-appimage
-          path: crates/ide-shell-desktop/target/release/bundle/appimage/*.AppImage
-          retention-days: 30
-
-  # ============================================================
-  # Job 8: Tauri Desktop build (Windows) — .msi
-  # ============================================================
-  tauri-build-windows:
-    name: Tauri Desktop (Windows .msi)
+  ide-fast-build-windows:
+    name: IDE1.0 Desktop (Windows .msi + portable)
     runs-on: windows-latest
     timeout-minutes: 60
     needs: rust
-    # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
+    # WBS-03 O1.1: 暂时关闭 —— 逐个验证后再打开
     if: false && (github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'windows' || github.event.inputs.target_platform == 'all')
     steps:
       - uses: actions/checkout@v7
@@ -572,198 +473,22 @@ jobs:
             .
             -> target
 
-      - name: Install WiX Toolset for .msi
-        run: |
-          choco install wixtoolset -y --no-progress
-          refreshenv
+      - name: Build Windows .msi and portable .exe
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File ide-fast/packaging/build-msi.ps1
 
-      - name: Build ide-shell-desktop (cargo check)
-        working-directory: .
-        run: cargo check -p ide-shell-desktop --all-targets
-
-      - name: Run ide-shell-desktop tests
-        working-directory: .
-        run: cargo test -p ide-shell-desktop
-
-      - name: Setup Node 20 + install @tauri-apps/cli
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - name: Install Tauri CLI
-        working-directory: tools
-        run: npm install --no-audit --no-fund
-
-      - name: Build Windows .msi
-        working-directory: crates/ide-shell-desktop
-        run: ../../tools/node_modules/.bin/tauri build --bundles msi --config ./tauri.conf.json
-
-      - name: Upload .msi
+      - name: Upload Windows package artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ide-shell-desktop-msi
-          path: crates/ide-shell-desktop/target/release/bundle/msi/*.msi
-          retention-days: 30
-
-  # ============================================================
-  # Job 8b: Tauri desktop live verification (WebView2 CDP)
-  # The only job that proves Tauri-side logic actually works:
-  # IPC round-trips / terminal://output event channel / withGlobalTauri
-  # / a real PowerShell session.
-  # The static audit (audit-desktop-parity.mjs) only proves the two HTML
-  # files are identical - not that they run inside a real WebView2.
-  # ============================================================
-  desktop-uat:
-    # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
-    if: false
-    name: Tauri Desktop UAT (CDP)
-    runs-on: windows-latest
-    timeout-minutes: 45
-    needs: rust
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
-
-      - name: Setup Node 20
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - name: Install Tauri CLI
-        working-directory: tools
-        run: npm install --no-audit --no-fund
-
-      - name: Desktop/web frontend parity audit
-        run: |
-          cargo build -p ide-shell-desktop
-          node tests/uat/audit-desktop-parity.mjs
-
-      # UAT conf: withGlobalTauri=true + additionalBrowserArgs opens CDP,
-      # bundle.active=false (no installer produced)
-      - name: Build desktop app for UAT
-        working-directory: crates/ide-shell-desktop
-        run: ../../tools/node_modules/.bin/tauri build --config ./tauri.uat.conf.json
-
-      - name: Install Playwright (CDP client)
-        working-directory: tests/uat
-        run: npm install --no-audit --no-fund
-
-      - name: Launch app and wait for WebView2 CDP
-        shell: pwsh
-        run: |
-          $exe = "crates/ide-shell-desktop/target/release/ide-shell-desktop.exe"
-          if (-not (Test-Path $exe)) {
-            $exe = "$env:GITHUB_WORKSPACE/target/release/ide-shell-desktop.exe"
-          }
-          Write-Host "Launching $exe"
-          Start-Process -FilePath $exe | Out-Null
-          $ready = $false
-          for ($i = 0; $i -lt 90; $i++) {
-            Start-Sleep -Seconds 1
-            try {
-              $r = Invoke-RestMethod "http://127.0.0.1:9222/json/list" -TimeoutSec 2
-              if ($r -and @($r).Count -gt 0) { $ready = $true; break }
-            } catch { }
-          }
-          if (-not $ready) {
-            Write-Error "WebView2 CDP did not come up within 90s (port 9222)"
-            exit 1
-          }
-          Write-Host "CDP ready: $($r[0].title) $($r[0].url)"
-
-      - name: Run desktop verification (18 checks)
-        working-directory: tests/uat
-        run: node verify-desktop.mjs
-
-      - name: Upload desktop diagnostics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-uat-diagnostics
+          name: ide-fast-windows
           path: |
-            ${{ runner.temp }}/ide-shell-desktop-diag.log
-            ${{ runner.temp }}/ide-*.log
-          if-no-files-found: ignore
-
-  # ============================================================
-  # Job 9: Tauri Desktop build (macOS) — .dmg
-  # ============================================================
-  tauri-build-macos:
-    name: Tauri Desktop (macOS .dmg)
-    runs-on: macos-latest
-    timeout-minutes: 60
-    needs: rust
-    # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
-    if: false && (github.event_name == 'push' || github.event_name == 'release' || github.event.inputs.target_platform == 'macos' || github.event.inputs.target_platform == 'all')
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            -> target
-
-      - name: Install system deps for Tauri macOS build
-        run: |
-          brew update
-          brew install \
-            webkit2gtk \
-            gtk+3 \
-            ayatana-appindicator \
-            librsvg \
-            libsoup \
-            patchelf \
-            wget \
-            create-dmg
-
-      - name: Build ide-shell-desktop (cargo check)
-        working-directory: .
-        run: cargo check -p ide-shell-desktop --all-targets
-
-      - name: Run ide-shell-desktop tests
-        working-directory: .
-        run: cargo test -p ide-shell-desktop
-
-      - name: Setup Node 20 + install @tauri-apps/cli
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - name: Install Tauri CLI
-        working-directory: tools
-        run: npm install --no-audit --no-fund
-
-      - name: Build macOS .dmg
-        working-directory: crates/ide-shell-desktop
-        run: ../../tools/node_modules/.bin/tauri build --bundles dmg --config ./tauri.conf.json
-
-      - name: Upload .dmg
-        uses: actions/upload-artifact@v7
-        with:
-          name: ide-shell-desktop-dmg
-          path: crates/ide-shell-desktop/target/release/bundle/dmg/*.dmg
+            dist-fast/*.msi
+            dist-fast/*.exe
+            dist-fast/SHA256SUMS.txt
           retention-days: 30
 
   # ============================================================
-  # Job 10: Rust bench (性能基准)
+  # Job 8: Rust bench (性能基准)
   # ============================================================
   rust-bench:
     # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
@@ -842,16 +567,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install system deps for Tauri
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            pkg-config \
+            libssl-dev
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -873,7 +596,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: [rust, integration, uat-playwright, tauri-build-linux, tauri-build-windows, tauri-build-macos, security-audit]
+    needs: [rust, integration, uat-playwright, ide-fast-build-windows, security-audit]
     # WBS-03 O1.1: 暂时关闭 —— 工作流之前无效, 这个 job 从没跑过; 逐个验证后再打开
     if: false && (github.event_name == 'release' && github.event.action == 'published')
     permissions:
@@ -896,11 +619,10 @@ jobs:
             -> target
 
       - name: Build release binaries (all platforms via matrix)
-        # This would typically be done by re-running the platform-specific build jobs
-        # For now, download the artifacts from previous jobs
+        # Download the IDE1.0 artifacts from previous jobs
         uses: actions/download-artifact@v8
         with:
-          pattern: ide-shell-desktop-*
+          pattern: ide-fast-*
           path: dist/
           merge-multiple: true
 
@@ -916,9 +638,7 @@ jobs:
           ${{ github.event.release.body }}
 
           ### Assets
-          - Linux: .deb, .AppImage
-          - Windows: .msi
-          - macOS: .dmg
+          - Windows: .msi, portable .exe
 
           ### Checksums
           EOF
@@ -928,10 +648,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/ide-shell-desktop-*.deb
-            dist/ide-shell-desktop-*.AppImage
-            dist/ide-shell-desktop-*.msi
-            dist/ide-shell-desktop-*.dmg
+            dist/IDE1.0_*.msi
+            dist/IDE1.0-*.exe
+            dist/SHA256SUMS.txt
             dist/plugins/*.zip
           body_path: RELEASE_NOTES.md
           draft: false

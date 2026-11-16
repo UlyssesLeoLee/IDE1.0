@@ -286,8 +286,18 @@ fn image_ui(ui: &mut egui::Ui, alt: &str, target: &str, cx: &MdCtx, cache: &mut 
         Some(t) => {
             let max_w = ui.available_width().max(40.0);
             let sz = t.size_vec2();
-            let k = (max_w / sz.x).min(1.0);
-            ui.add(egui::Image::new((t.id(), sz * k)));
+            if sz.x > max_w {
+                // 图形宽度超长时出现底部横向滚动条，确保内容完整显示
+                egui::ScrollArea::horizontal()
+                    .id_salt(("img_scroll", path.to_string_lossy().to_string()))
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.add(egui::Image::new((t.id(), sz)));
+                    });
+            } else {
+                let k = (max_w / sz.x).min(1.0);
+                ui.add(egui::Image::new((t.id(), sz * k)));
+            }
         }
         None => {
             ui.weak(
@@ -332,6 +342,51 @@ fn list_ui(ui: &mut egui::Ui, items: &[Item], cx: &MdCtx, cache: &mut MdCache, e
     }
 }
 
+/// 计算自适应 Markdown 表格各列宽度：
+/// 窄表按比例扩宽铺满可用容器宽度；宽表等比收敛至可用宽度内并启用单元格自动换行，防止溢出或裁切。
+pub fn calc_table_col_widths(rows: &[Vec<String>], avail_width: f32, spacing_x: f32) -> Vec<f32> {
+    let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if cols == 0 {
+        return Vec::new();
+    }
+    let min_col = 48.0_f32;
+    let total_gap = spacing_x.max(0.0) * cols.saturating_sub(1) as f32;
+    let target_total = (avail_width - total_gap - 12.0).max(cols as f32 * min_col);
+
+    let mut weights = vec![min_col; cols];
+    for row in rows {
+        for (c, cell) in row.iter().enumerate() {
+            let disp_w: f32 = cell
+                .chars()
+                .map(|ch| if ch.is_ascii() { 1.0 } else { 2.0 })
+                .sum();
+            let px_est = (disp_w * 8.0 + 18.0).clamp(min_col, 520.0);
+            if px_est > weights[c] {
+                weights[c] = px_est;
+            }
+        }
+    }
+
+    let sum_w: f32 = weights.iter().sum::<f32>().max(1.0);
+    let mut widths: Vec<f32> = weights
+        .into_iter()
+        .map(|w| (w / sum_w * target_total).max(min_col))
+        .collect();
+
+    let norm_sum: f32 = widths.iter().sum::<f32>();
+    let excess = norm_sum - target_total;
+    if excess > 0.5 {
+        let adjustable: f32 = widths.iter().map(|&w| (w - min_col).max(0.0)).sum();
+        if adjustable > 0.0 {
+            for w in &mut widths {
+                let slack = (*w - min_col).max(0.0);
+                *w -= excess * (slack / adjustable);
+            }
+        }
+    }
+    widths
+}
+
 fn table_ui(
     ui: &mut egui::Ui,
     id: usize,
@@ -342,32 +397,46 @@ fn table_ui(
     ev: &mut MdEvent,
 ) {
     let cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if cols == 0 {
+        return;
+    }
+    let spacing_x = 16.0;
+    let col_widths = calc_table_col_widths(rows, ui.available_width(), spacing_x);
     egui::Frame::NONE
         .stroke(egui::Stroke::new(1.0, cx.tc.border))
         .show(ui, |ui| {
-            egui::Grid::new(("md-table", id))
-                .striped(true)
-                .spacing([20.0, 6.0])
+            egui::ScrollArea::horizontal()
+                .id_salt(("md-table-scroll", id))
+                .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    for (k, row) in rows.iter().enumerate() {
-                        for c in 0..cols {
-                            let text = row.get(c).map(String::as_str).unwrap_or("");
-                            let al = aligns.get(c).copied().unwrap_or(Align::Left);
-                            let layout = match al {
-                                Align::Left => egui::Layout::top_down(egui::Align::Min),
-                                Align::Center => egui::Layout::top_down(egui::Align::Center),
-                                Align::Right => egui::Layout::top_down(egui::Align::Max),
-                            };
-                            ui.with_layout(layout, |ui| {
-                                if k == 0 {
-                                    ui.label(RichText::new(text).strong());
-                                } else {
-                                    inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
+                    egui::Grid::new(("md-table", id))
+                        .striped(true)
+                        .spacing([spacing_x, 6.0])
+                        .show(ui, |ui| {
+                            for (k, row) in rows.iter().enumerate() {
+                                for c in 0..cols {
+                                    let text = row.get(c).map(String::as_str).unwrap_or("");
+                                    let al = aligns.get(c).copied().unwrap_or(Align::Left);
+                                    let col_w = col_widths.get(c).copied().unwrap_or(64.0);
+                                    let layout = match al {
+                                        Align::Left => egui::Layout::top_down(egui::Align::Min),
+                                        Align::Center => egui::Layout::top_down(egui::Align::Center),
+                                        Align::Right => egui::Layout::top_down(egui::Align::Max),
+                                    };
+                                    ui.allocate_ui_with_layout(egui::vec2(col_w, 0.0), layout, |ui| {
+                                        ui.set_min_width(col_w);
+                                        ui.set_max_width(col_w);
+                                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                                        if k == 0 {
+                                            ui.add(egui::Label::new(RichText::new(text).strong()).wrap());
+                                        } else {
+                                            inline_ui(ui, text, cx, cache, 13.0, cx.tc.fg, ev);
+                                        }
+                                    });
                                 }
-                            });
-                        }
-                        ui.end_row();
-                    }
+                                ui.end_row();
+                            }
+                        });
                 });
         });
 }
@@ -458,7 +527,12 @@ fn fence_ui(
         .inner_margin(4)
         .show(ui, |ui| match cx.fences.get(&key) {
             Some(FenceRes::Svg(svg)) => {
-                crate::svg_lite::show(ui, svg, Some(cx.tc.fg));
+                egui::ScrollArea::horizontal()
+                    .id_salt(("fence_svg_scroll", key))
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        crate::svg_lite::show(ui, svg, Some(cx.tc.fg));
+                    });
             }
             Some(FenceRes::Failed(why)) => {
                 ui.weak(format!("{lang}: {why}"));
@@ -657,17 +731,26 @@ pub fn show(
                             fence_ui(ui, lang, text, cx, &mut ev)
                         }
                         Block::Code { lang, text } => {
-                            let r = egui::Frame::NONE
-                                .fill(if cx.tc.dark {
-                                    Color32::from_gray(45)
+                            let is_nema_fence = lang.eq_ignore_ascii_case("nema")
+                                || lang.eq_ignore_ascii_case("nemat");
+                            let code_fill = if cx.tc.is_translucent() {
+                                if cx.tc.dark {
+                                    Color32::from_rgba_unmultiplied(16, 22, 34, 72)
                                 } else {
-                                    Color32::WHITE
-                                })
+                                    Color32::from_rgba_unmultiplied(255, 255, 255, 82)
+                                }
+                            } else if cx.tc.dark {
+                                Color32::from_gray(45)
+                            } else {
+                                Color32::WHITE
+                            };
+                            let r = egui::Frame::NONE
+                                .fill(code_fill)
                                 .stroke(egui::Stroke::new(
-                                    if cx.tc.dark { 0.0 } else { 1.0 },
+                                    if cx.tc.dark && !cx.tc.is_translucent() { 0.0 } else { 1.0 },
                                     cx.tc.border,
                                 ))
-                                .corner_radius(4.0)
+                                .corner_radius(if cx.tc.comic || cx.tc.retro16 { 0.0 } else { 4.0 })
                                 .inner_margin(egui::Margin::symmetric(10, 8))
                                 .show(ui, |ui| {
                                     if lang == "mermaid" {
@@ -684,6 +767,44 @@ pub fn show(
                                         egui::Label::new(code_job(text, lang, cx, cx.tc.fg))
                                             .selectable(true),
                                     );
+                                    if is_nema_fence {
+                                        let normalized = if text.ends_with("\n\n\n") {
+                                            std::borrow::Cow::Borrowed(text.as_str())
+                                        } else {
+                                            std::borrow::Cow::Owned(format!(
+                                                "{}\n\n\n",
+                                                text.trim_end_matches('\n')
+                                            ))
+                                        };
+                                        if let Ok(rendered) = nema_codec::render_source(&normalized) {
+                                            ui.add_space(6.0);
+                                            ui.separator();
+                                            ui.horizontal_wrapped(|ui| {
+                                                ui.label(
+                                                    RichText::new("NEMA")
+                                                        .size(11.0)
+                                                        .strong()
+                                                        .color(cx.tc.blue),
+                                                );
+                                                for dom in &rendered.domains {
+                                                    let tag = match dom.mode {
+                                                        nema_codec::DomainMode::Table => "TABLE",
+                                                        nema_codec::DomainMode::FiveWOneH => "5W1H",
+                                                        nema_codec::DomainMode::Graph => "GRAPH",
+                                                    };
+                                                    ui.label(
+                                                        RichText::new(format!(
+                                                            "[{tag} #{} · {} rows]",
+                                                            dom.id,
+                                                            dom.rows.len()
+                                                        ))
+                                                        .size(11.0)
+                                                        .color(cx.tc.fg_dim),
+                                                    );
+                                                }
+                                            });
+                                        }
+                                    }
                                 })
                                 .response;
                             click_block = false;
@@ -873,5 +994,28 @@ mod tests {
         assert!(colored.sections.len() > 1, "rust 代码被切成多种颜色");
         let plain = code_job("let x = 1;", "", &cx, Color32::WHITE);
         assert_eq!(plain.sections.len(), 1, "没写语言按纯文本");
+    }
+
+    #[test]
+    fn table_col_widths_adapt_to_narrow_and_wide_containers() {
+        let rows = vec![
+            vec!["ID".into(), "名称".into(), "详细说明信息字段".into()],
+            vec!["1".into(), "核心".into(), "这是一段用于测试自适应表格列宽分配的中文内容".into()],
+        ];
+        // 宽容器下窄表应等比扩展铺满可用宽度
+        let wide_widths = calc_table_col_widths(&rows, 700.0, 16.0);
+        assert_eq!(wide_widths.len(), 3);
+        let sum_wide: f32 = wide_widths.iter().sum();
+        assert!((sum_wide - (700.0 - 32.0 - 12.0)).abs() < 2.0);
+        assert!(wide_widths[2] > wide_widths[0]);
+
+        // 窄容器下宽表应收缩收敛，每列不少于最小宽度 48px
+        let narrow_widths = calc_table_col_widths(&rows, 260.0, 16.0);
+        assert_eq!(narrow_widths.len(), 3);
+        for &w in &narrow_widths {
+            assert!(w >= 48.0);
+        }
+        let sum_narrow: f32 = narrow_widths.iter().sum();
+        assert!(sum_narrow <= 260.0 - 32.0);
     }
 }

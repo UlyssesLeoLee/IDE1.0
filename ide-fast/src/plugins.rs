@@ -11,6 +11,19 @@ pub fn root() -> PathBuf {
     store::default_root()
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct NemaInterpreterSpec {
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub version: String,
+    pub label: String,
+    pub method: String,
+    pub parse_method: String,
+    pub script_file: String,
+    pub script_url: String,
+    pub source: &'static str,
+}
+
 #[derive(Clone)]
 pub struct ThemeSpec {
     pub label: String,
@@ -33,12 +46,17 @@ pub struct Row {
     pub perms: Vec<String>,
     /// `contributes.markdown.fence`: (围栏语言, 渲染方法名) —— 预览里这种围栏交给插件画成 SVG
     pub fences: Vec<(String, String)>,
+    /// `contributes["nema.interpreter"]`: 热插拔 `.nema` 语法解释器规范
+    pub nema_interpreter: Option<NemaInterpreterSpec>,
 }
 
 impl Row {
-    /// 脚本插件里高速版跑不了的: 没有命令贡献的脚本插件 (例如 Pele 的 markdown.fence, 需要 DOM)
+    /// 脚本插件里高速版跑不了的: 没有命令 / 围栏 / 解释器贡献的脚本插件
     pub fn pele_like(&self) -> bool {
-        self.script_only && self.commands.is_empty() && self.fences.is_empty()
+        self.script_only
+            && self.commands.is_empty()
+            && self.fences.is_empty()
+            && self.nema_interpreter.is_none()
     }
 }
 
@@ -94,6 +112,55 @@ fn row_of(p: Installed) -> Row {
                 .collect()
         })
         .unwrap_or_default();
+    let nema_interpreter = m
+        .contributes
+        .get("nema.interpreter")
+        .and_then(|v| {
+            if v.is_object() {
+                Some(v)
+            } else {
+                v.as_array().and_then(|a| a.first())
+            }
+        })
+        .map(|t| {
+            let method = t
+                .get("method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("render")
+                .to_string();
+            let parse_method = t
+                .get("parseMethod")
+                .and_then(|v| v.as_str())
+                .unwrap_or("parse")
+                .to_string();
+            let label = t
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&m.name)
+                .to_string();
+            let script_file = t
+                .get("scriptFile")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .or_else(|| m.scripts.first().cloned())
+                .unwrap_or_else(|| m.entry.clone());
+            let script_url = t
+                .get("scriptUrl")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            NemaInterpreterSpec {
+                plugin_id: m.id.clone(),
+                plugin_name: m.name.clone(),
+                version: m.version.clone(),
+                label,
+                method,
+                parse_method,
+                script_file,
+                script_url,
+                source: p.source,
+            }
+        });
     Row {
         id: m.id.clone(),
         name: m.name.clone(),
@@ -104,6 +171,7 @@ fn row_of(p: Installed) -> Row {
         commands,
         perms: m.permissions.clone(),
         fences,
+        nema_interpreter,
     }
 }
 
@@ -200,7 +268,7 @@ pub fn is_translucent(id: &str) -> bool {
     find_theme(id).is_some_and(|t| t.translucent)
 }
 
-/// 玻璃主题里编辑区的垫色: 文字是浅色 (深色主题) 垫黑、否则垫白, 透明度固定, 保证透出桌面时文字仍然看得清
+/// 玻璃主题里编辑区的垫色: 文字是浅色 (深色主题) 垫黑、否则垫白, 极低透明度以最大化透出桌面背景
 fn glass_edit_tint(vars: &BTreeMap<String, String>) -> Color32 {
     let light_text = vars
         .get("--fg")
@@ -208,10 +276,23 @@ fn glass_edit_tint(vars: &BTreeMap<String, String>) -> Color32 {
         .map(|c| luminance(c) >= 0.5)
         .unwrap_or(true);
     if light_text {
-        Color32::from_rgba_unmultiplied(0, 0, 0, 77)
+        Color32::from_rgba_unmultiplied(0, 0, 0, 28)
     } else {
-        Color32::from_rgba_unmultiplied(255, 255, 255, 77)
+        Color32::from_rgba_unmultiplied(255, 255, 255, 28)
     }
+}
+
+fn cap_glass_alpha(c: Color32, max_alpha: u8) -> Color32 {
+    if c.a() <= max_alpha || c.a() == 0 {
+        return c;
+    }
+    let scale = max_alpha as f32 / c.a() as f32;
+    Color32::from_rgba_premultiplied(
+        (c.r() as f32 * scale).round().min(255.0) as u8,
+        (c.g() as f32 * scale).round().min(255.0) as u8,
+        (c.b() as f32 * scale).round().min(255.0) as u8,
+        max_alpha,
+    )
 }
 
 /// 主题变量 -> egui 外观。取不到的变量就沿用深 / 浅基底 (背景亮度决定基底)
@@ -294,6 +375,10 @@ pub fn visuals_glass(vars: &BTreeMap<String, String>, glass: bool) -> egui::Visu
         v.widgets.active.bg_fill = solid(c);
     }
     if glass {
+        v.panel_fill = cap_glass_alpha(v.panel_fill, 28);
+        v.faint_bg_color = cap_glass_alpha(v.faint_bg_color, 32);
+        v.widgets.noninteractive.bg_fill = cap_glass_alpha(v.widgets.noninteractive.bg_fill, 28);
+        v.widgets.inactive.weak_bg_fill = cap_glass_alpha(v.widgets.inactive.weak_bg_fill, 32);
         let is_crystal = vars.get("--mat-prism-cyan").is_some();
         let border = if is_crystal {
             Color32::from_rgba_unmultiplied(255, 255, 255, 140)
@@ -301,13 +386,13 @@ pub fn visuals_glass(vars: &BTreeMap<String, String>, glass: bool) -> egui::Visu
             Color32::from_rgba_unmultiplied(255, 255, 255, 100)
         };
         v.window_stroke = egui::Stroke::new(1.0, border);
-        // 菜单 / 弹窗叠在别的东西上, 底保留高质感半透明亚克力磨砂 (对齐 Tauri .menu-dropdown)
+        // 菜单 / 弹窗叠在别的东西上, 下拉菜单与弹窗底色完全不透明, 确保显示清晰无重影
         let base = if dark_base {
             Color32::from_rgb(18, 22, 34)
         } else {
             Color32::from_rgb(240, 244, 250)
         };
-        v.window_fill = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 238);
+        v.window_fill = Color32::from_rgb(base.r(), base.g(), base.b());
     }
     v
 }
@@ -366,6 +451,62 @@ pub fn removed_bundled() -> Vec<(String, String, String)> {
 
 pub fn restore(id: &str) -> Result<(), String> {
     store::restore_bundled(&root(), id)
+}
+
+/// 查找第一个已启用的 `.nema` 解释器插件 (`contributes["nema.interpreter"]`)
+pub fn active_nema_interpreter() -> Option<NemaInterpreterSpec> {
+    rows()
+        .into_iter()
+        .find(|r| r.enabled && r.nema_interpreter.is_some())
+        .and_then(|r| r.nema_interpreter)
+}
+
+/// 列出所有已安装的 `.nema` 解释器插件 (含禁用状态)
+pub fn nema_interpreters() -> Vec<(bool, NemaInterpreterSpec)> {
+    rows()
+        .into_iter()
+        .filter_map(|r| {
+            let en = r.enabled;
+            r.nema_interpreter.map(|s| (en, s))
+        })
+        .collect()
+}
+
+pub fn read_nema_plugin_script(plugin_id: &str, script_file: &str) -> Result<String, String> {
+    let bytes = store::read_asset(&root(), plugin_id, script_file)?;
+    String::from_utf8(bytes).map_err(|_| format!("{plugin_id}/{script_file} 不是有效的 UTF-8 JS 脚本"))
+}
+
+pub fn hot_patch_nema_plugin_script(
+    plugin_id: &str,
+    script_file: &str,
+    content: &str,
+) -> Result<String, String> {
+    let ins = store::hot_patch_plugin_script(&root(), plugin_id, script_file, content.as_bytes())?;
+    Ok(format!(
+        "已热重载 {} ({}/{}, {})",
+        ins.manifest.name, plugin_id, script_file, ins.source
+    ))
+}
+
+pub fn sync_nema_plugin_script_from_url(
+    plugin_id: &str,
+    script_file: &str,
+    url: &str,
+) -> Result<(String, String), String> {
+    use store::Http;
+    let url = url.trim();
+    if !url.starts_with("https://") {
+        return Err("仅支持从 https:// 官网或仓库地址同步解释器脚本".into());
+    }
+    let bytes = store::CurlHttp.get(url)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| "远端返回的不是有效的 UTF-8 JavaScript 文件".to_string())?;
+    if !text.contains("parse") {
+        return Err("远端脚本似乎不是有效的 .NEMA 解释器 (未找到 parse 函数)".into());
+    }
+    let msg = hot_patch_nema_plugin_script(plugin_id, script_file, &text)?;
+    Ok((text, msg))
 }
 
 #[cfg(test)]
@@ -432,7 +573,7 @@ mod tests {
         // 玻璃垫色跟着变: 深色字垫白
         assert_eq!(
             glass_edit_tint(&v),
-            Color32::from_rgba_unmultiplied(255, 255, 255, 77)
+            Color32::from_rgba_unmultiplied(255, 255, 255, 28)
         );
         // 没声明 dynamic 的主题不动
         let mut fixed: BTreeMap<String, String> = BTreeMap::new();

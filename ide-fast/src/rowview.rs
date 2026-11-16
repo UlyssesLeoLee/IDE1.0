@@ -159,20 +159,37 @@ impl RowView {
 
     /// x (相对行首) 处最近的字符列; `y` = 折行时行内的纵向位置
     pub fn col_at(&self, ctx: &egui::Context, x: f32, y: f32, font: &FontId, wrap_w: f32) -> usize {
+        self.col_at_with_spacing(ctx, x, y, font, wrap_w, 0.0)
+    }
+
+    /// 支持字间距拉大时的精确列定位 (用于 Alt 纵选动态拉大间距)
+    pub fn col_at_with_spacing(
+        &self,
+        ctx: &egui::Context,
+        x: f32,
+        y: f32,
+        font: &FontId,
+        wrap_w: f32,
+        letter_spacing: f32,
+    ) -> usize {
         if !self.sliced {
-            return crate::app::col_at(ctx, &self.disp, &self.map, x, y, font, wrap_w);
+            return crate::app::col_at(ctx, &self.disp, &self.map, x, y, font, wrap_w, letter_spacing);
         }
         let xo = self.x_off();
         if x < xo {
             return ((x / self.cw).round() as usize).min(self.col0);
         }
-        let galley = ctx.fonts_mut(|f| {
-            f.layout_job(egui::text::LayoutJob::simple_singleline(
-                self.disp.clone(),
-                font.clone(),
-                Color32::WHITE,
-            ))
-        });
+        let mut job = egui::text::LayoutJob::simple_singleline(
+            self.disp.clone(),
+            font.clone(),
+            Color32::WHITE,
+        );
+        if letter_spacing != 0.0 {
+            for sec in &mut job.sections {
+                sec.format.extra_letter_spacing = letter_spacing;
+            }
+        }
+        let galley = ctx.fonts_mut(|f| f.layout_job(job));
         let idx: usize = galley.cursor_from_pos(Vec2::new(x - xo, 0.0)).index.into();
         if idx >= self.len && x - xo > galley.size().x {
             return (self.col0

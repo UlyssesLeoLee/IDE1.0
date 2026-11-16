@@ -256,62 +256,34 @@ impl App {
     pub(super) fn dock_chevron(&mut self, ui: &mut egui::Ui, d: Dock) {
         let collapsed = self.dock_mode(d, self.dock_wanted(d)) != Mode::Full;
         let word = if collapsed { "展开" } else { "折叠" };
-        if self.tc.comic {
-            let font = egui::FontId::proportional(11.0);
-            let arrow = if collapsed { "▲" } else { "▼" };
-            let label = format!("{} {}", arrow, trz(word));
-            let galley = ui.painter().layout_no_wrap(label.clone(), font, Color32::BLACK);
+        let arrow = if collapsed { "▲" } else { panels::chevron(d, collapsed) };
+        let label = format!("{} {}", arrow, trz(word));
+        let tc = self.tc;
+        if tc.comic {
+            let galley = ui
+                .painter()
+                .layout_no_wrap(label.clone(), egui::FontId::proportional(11.0), Color32::BLACK);
             let btn_size = Vec2::new(galley.size().x + 16.0, 20.0);
             let (rect, resp) = ui.allocate_exact_size(btn_size, Sense::click());
             let resp = resp
                 .tip(trz(panels::tip(d, collapsed)))
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
-            let p = ui.painter();
-            let pressed = resp.is_pointer_button_down_on();
-            let hovered = resp.hovered();
-            let shadow_offset = if pressed { Vec2::ZERO } else { Vec2::new(1.5, 1.5) };
-            if !pressed {
-                p.rect_filled(rect.translate(shadow_offset), 3.0, Color32::BLACK);
-            }
-            let draw_rect = if pressed { rect.translate(Vec2::new(1.5, 1.5)) } else { rect };
-            let (bg, fg) = if hovered || pressed {
-                (Color32::from_rgb(255, 204, 0), Color32::BLACK)
-            } else {
-                (Color32::from_rgb(32, 36, 52), Color32::WHITE)
-            };
-            p.rect_filled(draw_rect, 3.0, bg);
-            p.rect_stroke(draw_rect, 3.0, Stroke::new(1.5, Color32::BLACK), egui::StrokeKind::Inside);
-            let text_pos = pos2(
-                draw_rect.center().x - galley.size().x * 0.5,
-                draw_rect.center().y - galley.size().y * 0.5,
+            crate::btnstyle::paint_unified_collapse_btn(
+                ui,
+                ui.painter(),
+                rect,
+                &label,
+                &tc,
+                false,
+                resp.hovered(),
+                resp.is_pointer_button_down_on(),
             );
-            let draw_galley = ui.painter().layout_no_wrap(label, egui::FontId::proportional(11.0), fg);
-            p.galley(text_pos, draw_galley, fg);
             if resp.clicked() {
                 self.collapse_dock(d);
             }
             return;
         }
-        let label = format!("{} {}", panels::chevron(d, collapsed), trz(word));
-        let txt = egui::RichText::new(label)
-            .size(11.0)
-            .color(self.tc.fg_dim);
-        let btn = if self.tc.is_translucent() {
-            egui::Button::new(txt)
-                .fill(Color32::from_white_alpha(24))
-                .stroke(egui::Stroke::new(1.0, self.tc.border))
-                .corner_radius(5.0)
-        } else {
-            let edge = if self.tc.dark {
-                Color32::from_gray(69)
-            } else {
-                Color32::from_gray(204)
-            };
-            egui::Button::new(txt)
-                .fill(Color32::TRANSPARENT)
-                .stroke(egui::Stroke::new(1.0, edge))
-                .corner_radius(5.0)
-        };
+        let btn = crate::btnstyle::unified_collapse_button(&label, &tc, false);
         if ui.add(btn).tip(trz(panels::tip(d, collapsed))).clicked() {
             self.collapse_dock(d);
         }

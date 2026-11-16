@@ -438,9 +438,6 @@ impl App {
                                 if menu_check(ui, &tc, self.side.open, lk("c.sidebar", "Ctrl+B")).clicked() {
                                     self.side.open = !self.side.open;
                                 }
-                                if menu_check(ui, &tc, self.ai.open, lk("c.ai-chat", "")).clicked() {
-                                    self.ai.open = !self.ai.open;
-                                }
                                 if menu_check(ui, &tc, self.term.open, lk("c.terminal", "Ctrl+`")).clicked() {
                                     self.term.open = !self.term.open;
                                 }
@@ -506,10 +503,12 @@ impl App {
                                 ui.separator();
                                 if menu_check(ui, &tc, !self.cfg.view.md_bar_collapsed, trz("Markdown 工具条")).clicked() {
                                     self.cfg.view.md_bar_collapsed = !self.cfg.view.md_bar_collapsed;
+                                    self.md_preview = !self.cfg.view.md_bar_collapsed;
                                     self.cfg.save();
                                 }
                                 if menu_check(ui, &tc, !self.cfg.view.nema_bar_collapsed, trz("NEMA 工具条")).clicked() {
                                     self.cfg.view.nema_bar_collapsed = !self.cfg.view.nema_bar_collapsed;
+                                    self.nema_preview = !self.cfg.view.nema_bar_collapsed;
                                     self.cfg.save();
                                 }
                             });
@@ -695,6 +694,35 @@ impl App {
                                 self.open_autosave();
                                 ui.close();
                             }
+                            // 文件即任务: 管理文件会话 Cookie 占用的硬盘 (统计 / 回收 / 全部清除)
+                            ui.menu_button("文件 Cookie (文件即任务)", |ui| {
+                                let st = self.cookie_stats_cached();
+                                ui.weak(format!(
+                                    "当前工作区: {} 个, 占用 {}",
+                                    st.count,
+                                    super::aichat::fmt_bytes(st.bytes)
+                                ));
+                                if ui
+                                    .add_enabled(
+                                        st.count > 0,
+                                        egui::Button::new("清理过期与孤儿 Cookie"),
+                                    )
+                                    .clicked()
+                                {
+                                    self.cookie_prune_now();
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(
+                                        st.count > 0,
+                                        egui::Button::new("清除全部文件 Cookie"),
+                                    )
+                                    .clicked()
+                                {
+                                    self.cookie_clear_all();
+                                    ui.close();
+                                }
+                            });
                             ui.separator();
                             if menuui::mbtn(ui, lk("c.key-config", "")).clicked() {
                                 self.cmdui.open_keycfg();
@@ -1085,11 +1113,6 @@ menuui::top(
         if menuui::mbtn(ui, Self::app_label(KApp::ExecCmd, "执行外部命令 (终端)")).clicked()
         {
             self.open_exec_terminal();
-            ui.close();
-        }
-        ui.separator();
-        if ui.button("多 Agent 协同工作台…").clicked() {
-            self.collab.open = true;
             ui.close();
         }
     }
