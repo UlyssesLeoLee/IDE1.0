@@ -387,6 +387,10 @@ pub fn calc_table_col_widths(rows: &[Vec<String>], avail_width: f32, spacing_x: 
     widths
 }
 
+/// 表格单元格宽度排版启发式估算常数 (基于典型等宽及 CJK 字形比例)
+pub const ASCII_CHAR_WIDTH_HEURISTIC: f32 = 7.5;
+pub const CJK_CHAR_WIDTH_HEURISTIC: f32 = 13.5;
+
 /// 估算单元格渲染高度 (基于文字排版及换行)
 pub fn estimate_cell_height(text: &str, col_w: f32) -> f32 {
     let line_h = 20.0_f32;
@@ -394,7 +398,13 @@ pub fn estimate_cell_height(text: &str, col_w: f32) -> f32 {
     for line in text.split('\n') {
         let disp_w: f32 = line
             .chars()
-            .map(|ch| if ch.is_ascii() { 7.5 } else { 13.5 })
+            .map(|ch| {
+                if ch.is_ascii() {
+                    ASCII_CHAR_WIDTH_HEURISTIC
+                } else {
+                    CJK_CHAR_WIDTH_HEURISTIC
+                }
+            })
             .sum();
         let lines = (disp_w / (col_w - 12.0).max(20.0)).ceil().max(1.0);
         total_lines += lines;

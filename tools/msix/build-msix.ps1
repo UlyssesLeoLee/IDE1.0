@@ -16,7 +16,7 @@
 #>
 param(
   [string]$Exe = "$PSScriptRoot\..\..\target\release\ide-fast.exe",
-  [string]$Version = "0.6.9.0",
+  [string]$Version = "0.7.0.0",
   [string]$IdentityName = "PLACEHOLDER.IDE10",
   [string]$Publisher = "CN=PLACEHOLDER",
   [string]$PublisherDisplayName = "PLACEHOLDER",
