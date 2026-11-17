@@ -252,6 +252,11 @@ impl Session {
             use std::os::windows::process::CommandExt;
             let mut c = Command::new("powershell.exe");
             c.args(["-NoLogo", "-ExecutionPolicy", "Bypass"]);
+            c.envs([
+                ("TERM", "xterm-256color"),
+                ("COLORTERM", "truecolor"),
+                ("PYTHONIOENCODING", "utf-8"),
+            ]);
             c.current_dir(cwd)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -287,12 +292,19 @@ impl Session {
         pump(child.stdout.take().ok_or("没有标准输出")?, tx.clone());
         pump(child.stderr.take().ok_or("没有标准错误")?, tx);
         let stdin = child.stdin.take().ok_or("没有标准输入")?;
-        Ok(Session {
+        let mut session = Session {
             child,
             stdin,
             rx,
             tail: vec![],
-        })
+        };
+        #[cfg(windows)]
+        {
+            let _ = session.send_line(
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8",
+            );
+        }
+        Ok(session)
     }
 
     fn send_line(&mut self, line: &str) -> bool {
@@ -335,9 +347,35 @@ impl Drop for Session {
     }
 }
 
+/// 检测当前进程是否以系统管理员特权运行 (纯 Safe Rust 实现)
+pub fn detect_is_admin() -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("net")
+            .arg("session")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(0x0800_0000)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("id")
+            .arg("-u")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+            .unwrap_or(false)
+    }
+}
+
 pub struct Terminal {
     pub open: bool,
     pub input: String,
+    pub cursor_pos: usize,
+    pub is_admin: bool,
     /// 请求下一帧把键盘焦点放进终端输入框 (点「+ 新建终端」等触发)
     pub focus_input: bool,
     /// 一次性命令的输出 (会话输出在 `buf` 里, 显示用 `display()`)
@@ -361,6 +399,8 @@ impl Terminal {
         Terminal {
             open: false,
             input: String::new(),
+            cursor_pos: 0,
+            is_admin: detect_is_admin(),
             focus_input: false,
             output: String::new(),
             history: vec![],
@@ -418,6 +458,7 @@ impl Terminal {
             return;
         }
         self.input.clear();
+        self.cursor_pos = 0;
         self.hist_pos = None;
         if matches!(cmd.as_str(), "cls" | "clear") {
             self.clear();
@@ -428,8 +469,10 @@ impl Terminal {
             self.session_send(&cwd, &cmd);
             return;
         }
+        let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
         self.output.push_str(&format!(
-            "> {cmd}{}\n",
+            "{prompt_prefix} {}>{cmd}{}\n",
+            cwd.display(),
             if stdin.is_some() {
                 "   (选区作标准输入)"
             } else {
@@ -480,15 +523,21 @@ impl Terminal {
         let had = self.session.take().is_some();
         self.persistent = true;
         self.focus_input = true;
+        self.is_admin = detect_is_admin();
         match Session::start(cwd) {
             Ok(s) => {
                 self.session = Some(s);
+                let role = if self.is_admin {
+                    "🛡️ 管理员特权 (Administrator)"
+                } else {
+                    "👤 标准用户权限 (Standard User)"
+                };
                 if had {
                     self.buf
-                        .feed(&format!("\n[已新建终端会话] PS {}>\n", cwd.display()));
+                        .feed(&format!("\n[已新建终端会话 · {role}] 工作目录: {}\n", cwd.display()));
                 } else {
                     self.buf
-                        .feed(&format!("[终端会话已就绪] PS {}>\n", cwd.display()));
+                        .feed(&format!("[终端会话已就绪 · {role}] 工作目录: {}\n", cwd.display()));
                 }
                 self.heat();
             }
@@ -517,8 +566,8 @@ impl Terminal {
                 }
             }
         }
-        // 管道里 shell 不会回显输入, 本地补一份, 看起来像在终端里敲的
-        self.buf.feed(&format!("{cmd}\n"));
+        let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
+        self.buf.feed(&format!("{prompt_prefix} {}> {cmd}\n", cwd.display()));
         self.heat();
         if let Some(s) = self.session.as_mut() {
             if !s.send_line(cmd) {
@@ -602,11 +651,63 @@ impl Terminal {
             _ => {
                 self.hist_pos = None;
                 self.input.clear();
+                self.cursor_pos = 0;
                 return;
             }
         };
         self.hist_pos = Some(pos);
         self.input = self.history[pos].clone();
+        self.cursor_pos = self.input.len();
+    }
+
+    /// 获取当前终端环境的动态命令行提示符
+    pub fn prompt_str(&self, cwd: &std::path::Path) -> String {
+        let pfx = if self.is_admin { "PS [ADMIN]" } else { "PS" };
+        format!("{pfx} {}> ", cwd.display())
+    }
+
+    /// 取消当前命令行输入 (Ctrl+C: 终止输入并输出 ^C 换行)
+    pub fn cancel_input(&mut self, cwd: &std::path::Path) {
+        let p = self.prompt_str(cwd);
+        self.buf.feed(&format!("{p}{}^C\n", self.input));
+        self.input.clear();
+        self.cursor_pos = 0;
+        self.hist_pos = None;
+        self.heat();
+    }
+
+    /// Tab 键自动补全当前工作目录下的文件或子路径
+    pub fn tab_complete(&mut self, cwd: &std::path::Path) {
+        let trimmed = self.input.trim_end();
+        let last_word = trimmed.split_whitespace().last().unwrap_or("");
+        if last_word.is_empty() {
+            return;
+        }
+        let (dir_to_scan, prefix) = match last_word.rfind(['/', '\\']) {
+            Some(idx) => (cwd.join(&last_word[..idx]), &last_word[idx + 1..]),
+            None => (cwd.to_path_buf(), last_word),
+        };
+        if let Ok(entries) = std::fs::read_dir(&dir_to_scan) {
+            let mut matches: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                        Some(if is_dir { format!("{name}/") } else { name })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            matches.sort();
+            if let Some(m) = matches.first() {
+                let base_len = self.input.len() - prefix.len();
+                self.input.truncate(base_len);
+                self.input.push_str(m);
+                self.cursor_pos = self.input.len();
+            }
+        }
     }
 }
 
@@ -753,5 +854,64 @@ mod tests {
         t.execute_script(&PathBuf::from("."), "Write-Host 'hello from powershell'");
         assert!(t.busy());
         assert!(t.display().contains("Write-Host 'hello from powershell'"));
+    }
+
+    #[test]
+    fn test_admin_detection_and_prompt_formatting() {
+        let is_admin = detect_is_admin();
+        let mut t = Terminal::new();
+        assert_eq!(t.is_admin, is_admin);
+
+        let cwd = PathBuf::from("E:\\test_dir");
+        t.is_admin = true;
+        assert_eq!(t.prompt_str(&cwd), "PS [ADMIN] E:\\test_dir> ");
+
+        t.is_admin = false;
+        assert_eq!(t.prompt_str(&cwd), "PS E:\\test_dir> ");
+    }
+
+    #[test]
+    fn test_cancel_input_and_history_navigation() {
+        let mut t = Terminal::new();
+        let cwd = PathBuf::from("E:\\work");
+        t.input = "git commit -m 'test'".into();
+        t.cursor_pos = t.input.len();
+
+        // 模拟按下 Ctrl+C 取消输入
+        t.cancel_input(&cwd);
+        assert!(t.input.is_empty());
+        assert_eq!(t.cursor_pos, 0);
+        assert!(t.buf.text().contains("git commit -m 'test'^C\n"));
+
+        // 历史记录测试
+        t.history = vec!["cargo check".into(), "cargo test".into()];
+        t.history_step(true);
+        assert_eq!(t.input, "cargo test");
+        assert_eq!(t.cursor_pos, "cargo test".len());
+
+        t.history_step(true);
+        assert_eq!(t.input, "cargo check");
+
+        t.history_step(false);
+        assert_eq!(t.input, "cargo test");
+    }
+
+    #[test]
+    fn test_tab_complete_matching_files() {
+        let mut t = Terminal::new();
+        let temp = std::env::temp_dir().join("ide_tab_test");
+        let _ = std::fs::create_dir_all(&temp);
+        let _ = std::fs::write(temp.join("alpha_one.txt"), "1");
+        let _ = std::fs::write(temp.join("alpha_two.txt"), "2");
+
+        t.input = "cat alp".into();
+        t.cursor_pos = t.input.len();
+        t.tab_complete(&temp);
+
+        // 应当补全为匹配的文件名
+        assert!(t.input.starts_with("cat alpha_"));
+        assert!(t.input.ends_with(".txt"));
+
+        let _ = std::fs::remove_dir_all(&temp);
     }
 }

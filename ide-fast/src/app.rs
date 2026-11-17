@@ -6,7 +6,7 @@ use crate::cmdui::{CmdUi, Item, PluginCmd};
 use crate::doc::Doc;
 use crate::find::Find;
 use crate::grep::{self, Ev as GEv};
-use crate::i18n::{lk, tr, trf, trz, Lang};
+use crate::i18n::{lk, tr, trf, trz};
 use crate::keymap::{self, App as KApp, Run};
 use crate::kinsoku::{expand_wrap, Wrap};
 use crate::plugins;
@@ -2713,7 +2713,9 @@ impl App {
 
     /// 终端面板: 输出 + 输入行 (Enter 执行, ↑↓ 翻历史)
     fn term_ui(&mut self, ui: &mut egui::Ui) {
+        let cwd = self.term_cwd();
         let mut want_new = false;
+        let mut open_external = false;
         Self::bottom_toolbar(self.tc.fg_dim, ui, |ui| {
             if ui
                 .button(format!("+ {}", trz("新建终端")))
@@ -2732,6 +2734,25 @@ impl App {
             {
                 self.term.restart();
             }
+            if ui
+                .button("🖥️ 系统终端")
+                .tip("在独立系统窗口打开原生 PowerShell (保持完全相同的管理员/用户权限与工作目录)")
+                .clicked()
+            {
+                open_external = true;
+            }
+            // 权限指示徽章 (管理员 / 标准用户)
+            let admin_badge = if self.term.is_admin {
+                egui::RichText::new("🛡️ 管理员").color(Color32::from_rgb(255, 204, 0)).strong()
+            } else {
+                egui::RichText::new("👤 标准用户").color(self.tc.fg_dim)
+            };
+            ui.label(admin_badge).on_hover_text(if self.term.is_admin {
+                "当前以系统管理员特权运行: 终端拥有完整管理员能力"
+            } else {
+                "当前以普通用户权限运行: 终端拥有标准用户权限"
+            });
+
             ui.check(&mut self.term.persistent, trz("常驻会话"));
             ui.check(&mut self.term_stdin, trz("选区作标准输入"));
             ui.check(&mut self.term_replace, trz("输出替换选区"));
@@ -2745,7 +2766,24 @@ impl App {
         if want_new {
             self.new_terminal_session();
         }
-        let h = (ui.available_height() - 28.0).max(30.0);
+        if open_external {
+            #[cfg(windows)]
+            {
+                let mut c = std::process::Command::new("powershell.exe");
+                c.args(["-NoExit", "-NoLogo", "-ExecutionPolicy", "Bypass"]);
+                c.current_dir(&cwd);
+                let _ = c.spawn();
+            }
+            #[cfg(not(windows))]
+            {
+                let sh = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
+                let _ = std::process::Command::new(sh).current_dir(&cwd).spawn();
+            }
+        }
+        if !self.term.has_session() && !self.term.running() {
+            self.term.start_session(&cwd);
+        }
+
         self.term.set_scrollback(self.cfg.term_scrollback);
         let (tfg, tbg) = (
             self.cfg
@@ -2756,99 +2794,110 @@ impl App {
                 .map(|c| Color32::from_rgb(c[0], c[1], c[2])),
         );
         let tpx = self.cfg.term_font_px;
-        let mut empty_start = false;
+        let term_avail_h = ui.available_height().max(40.0);
+        let term_rect = ui.available_rect_before_wrap();
+        let clicked_bg = ui.input(|i| {
+            i.pointer.primary_clicked()
+                && i.pointer.interact_pos().is_some_and(|p| term_rect.contains(p))
+        });
+
         egui::Frame::NONE
             .fill(tbg.unwrap_or(Color32::TRANSPARENT))
             .show(ui, |ui| {
                 crate::scrollx::show(
                     ui,
                     egui::ScrollArea::vertical()
-                        .max_height(h)
+                        .max_height(term_avail_h)
                         .stick_to_bottom(true)
                         .auto_shrink([false, false]),
                     |ui| {
                         let shown = self.term.display();
-                        if shown.trim().is_empty()
-                            && !self.term.running()
-                            && !self.term.has_session()
-                        {
-                            // 没有会话输出时的空状态 (Tauri: No terminal session / 暂无终端会话)
-                            let dim = self.tc.fg_dim;
-                            ui.add_space((h * 0.25).max(4.0));
-                            ui.vertical_centered(|ui| {
+                        if !shown.is_empty() {
+                            let mut t = egui::RichText::new(&shown).monospace().size(tpx);
+                            if let Some(c) = tfg {
+                                t = t.color(c);
+                            }
+                            ui.add(egui::Label::new(t).selectable(true));
+                        }
+
+                        // 直接在终端控制的主交互命令行 (Active Prompt Line): 彻底消除底部割裂输入框
+                        let prompt_str = self.term.prompt_str(&cwd);
+                        let p_color = if self.term.is_admin {
+                            Color32::from_rgb(255, 215, 0)
+                        } else {
+                            Color32::from_rgb(0, 229, 255)
+                        };
+
+                        let prompt_r = ui
+                            .horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
                                 ui.label(
-                                    egui::RichText::new(if crate::i18n::cur() == Lang::Zh {
-                                        "No terminal session — 暂无终端会话".to_string()
-                                    } else {
-                                        format!(
-                                            "No terminal session — {}",
-                                            crate::msgtr::msg("暂无终端会话")
-                                        )
-                                    })
-                                    .monospace()
-                                    .size(tpx)
-                                    .color(dim),
+                                    egui::RichText::new(&prompt_str)
+                                        .monospace()
+                                        .size(tpx)
+                                        .color(p_color)
+                                        .strong(),
                                 );
-                                ui.label(
-                                    egui::RichText::new(trz(
-                                        "输入命令按 Enter 启动 shell, 或点「+ 新建终端」",
-                                    ))
-                                    .monospace()
-                                    .size(tpx)
-                                    .color(dim),
-                                );
-                                ui.add_space(4.0);
-                                if ui.button(trz("+ 启动 PowerShell 终端会话")).clicked() {
-                                    empty_start = true;
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.term.input)
+                                        .font(egui::TextStyle::Monospace)
+                                        .frame(egui::Frame::NONE)
+                                        .margin(egui::Margin::ZERO)
+                                        .desired_width(f32::INFINITY),
+                                )
+                            })
+                            .inner;
+
+                        if std::mem::take(&mut self.term.focus_input) {
+                            prompt_r.request_focus();
+                        }
+
+                        // 键盘事件直接在终端命令行分发
+                        if prompt_r.has_focus() {
+                            if ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C)) {
+                                if self.term.input.is_empty() {
+                                    self.term.restart();
+                                } else {
+                                    self.term.cancel_input(&cwd);
                                 }
-                            });
-                            return;
+                            }
+                            if ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::L)) {
+                                self.term.clear();
+                            }
+                            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab)) {
+                                self.term.tab_complete(&cwd);
+                            }
+                            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) {
+                                self.term.history_step(true);
+                            }
+                            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) {
+                                self.term.history_step(false);
+                            }
                         }
-                        let mut t = egui::RichText::new(shown).monospace().size(tpx);
-                        if let Some(c) = tfg {
-                            t = t.color(c);
+
+                        // Enter 提交执行
+                        let enter_hit =
+                            prompt_r.has_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                        if enter_hit
+                            || (prompt_r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                        {
+                            let (want_in, want_rep) = (self.term_stdin, self.term_replace);
+                            let (stdin, rdoc) = if want_in || want_rep {
+                                let d = self.cur();
+                                let sel = d.edit("copy", None).unwrap_or_default();
+                                (Some(sel), if want_rep { Some(d.id) } else { None })
+                            } else {
+                                (None, None)
+                            };
+                            self.term.submit(cwd.clone(), stdin, rdoc);
+                            prompt_r.request_focus();
                         }
-                        ui.add(egui::Label::new(t).selectable(true));
                     },
                 );
             });
-        if empty_start {
-            self.new_terminal_session();
-        }
-        let r = ui.add(
-            egui::TextEdit::singleline(&mut self.term.input)
-                .font(egui::TextStyle::Monospace)
-                .hint_text(trz("输入命令, Enter 执行"))
-                .desired_width(f32::INFINITY),
-        );
-        if std::mem::take(&mut self.term.focus_input) {
-            r.request_focus();
-        }
-        if r.has_focus() {
-            if self.term.input.is_empty()
-                && ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C))
-            {
-                self.term.restart();
-            }
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) {
-                self.term.history_step(true);
-            }
-            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) {
-                self.term.history_step(false);
-            }
-        }
-        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            let cwd = self.term_cwd();
-            let (want_in, want_rep) = (self.term_stdin, self.term_replace);
-            let (stdin, rdoc) = if want_in || want_rep {
-                let d = self.cur();
-                let sel = d.edit("copy", None).unwrap_or_default();
-                (Some(sel), if want_rep { Some(d.id) } else { None })
-            } else {
-                (None, None)
-            };
-            self.term.submit(cwd, stdin, rdoc);
-            r.request_focus();
+        if clicked_bg {
+            self.term.focus_input = true;
+            ui.ctx().request_repaint();
         }
     }
 
