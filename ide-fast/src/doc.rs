@@ -588,8 +588,20 @@ impl Doc {
             }
         }
         if let Some(s) = self.sel {
-            for x in s[0]..=s[2].min(self.lines.len().saturating_sub(1)) {
-                set.insert(x);
+            let last_line = self.lines.len().saturating_sub(1);
+            let s0 = s[0].min(last_line);
+            let s2 = s[2].min(last_line);
+            if s2.saturating_sub(s0) <= 8 {
+                for x in s0..=s2 {
+                    set.insert(x);
+                }
+            } else {
+                // 大选区 (如全选): 导航和端点操作只需选区头尾行，杜绝全篇深拷贝引发卡顿甚至按键吞噬
+                for d in [s0, s0 + 1, s2.saturating_sub(1), s2] {
+                    if d < self.lines.len() {
+                        set.insert(d);
+                    }
+                }
             }
         }
         for &e in extra {
@@ -2643,5 +2655,23 @@ b
         assert!(d.lines[5230].starts_with("Line 015230:"));
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_rows_for_large_selection_performance_and_bounds() {
+        let mut d = Doc::untitled(101, 1);
+        d.lines = (0..10_000).map(|i| format!("line {i}")).collect();
+        d.cursor = [0, 0];
+        // 全选状态: 0 行 0 列到 9999 行末尾
+        d.sel = Some([0, 0, 9999, 9]);
+
+        let rows = d.rows_for(&[]);
+        // 杜绝全选时深拷贝 10,000 行字符串，只提取端点及光标邻近行
+        assert!(rows.len() <= 8, "全选时 rows_for 提取行数应 <= 8，实际: {}", rows.len());
+        let row_indices: Vec<usize> = rows.iter().map(|(r, _)| *r).collect();
+        assert!(row_indices.contains(&0));
+        assert!(row_indices.contains(&1));
+        assert!(row_indices.contains(&9998));
+        assert!(row_indices.contains(&9999));
     }
 }

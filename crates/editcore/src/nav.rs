@@ -86,10 +86,10 @@ pub fn step(req: &NavReq) -> Option<NavRes> {
         return None;
     }
 
-    // 无 Shift 时, 左右键遇到选区先收缩到选区端点 (Sakura)
-    if !shift && !ctrl && had && (k == "ArrowLeft" || k == "ArrowRight") {
+    // 无 Shift 时, 方向键遇到选区先收缩到选区端点 (Sakura 对齐: 向上/向左到选区起点, 向下/向右到选区末尾)
+    if !shift && !ctrl && had && matches!(k, "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown") {
         let s = req.sel?;
-        let to_end = k == "ArrowRight";
+        let to_end = matches!(k, "ArrowRight" | "ArrowDown");
         let (r, c) = if to_end { (s[2], s[3]) } else { (s[0], s[1]) };
         return Some(NavRes {
             row: r,
@@ -339,5 +339,29 @@ mod tests {
                 "WordLeft from {from}"
             );
         }
+    }
+
+    #[test]
+    fn selection_collapse_with_arrow_keys() {
+        // 全选或存在选区时，上下左右方向键按 Sakura 逻辑精准收缩到对应端点并清除选区
+        let mut r_up = req("ArrowUp", false, false, 4, 13, DOC);
+        r_up.sel = Some([0, 0, 4, 13]);
+        let res_up = step(&r_up).unwrap();
+        assert_eq!((res_up.row, res_up.col, res_up.sel), (0, 0, None));
+
+        let mut r_down = req("ArrowDown", false, false, 0, 0, DOC);
+        r_down.sel = Some([0, 0, 4, 13]);
+        let res_down = step(&r_down).unwrap();
+        assert_eq!((res_down.row, res_down.col, res_down.sel), (4, 13, None));
+
+        let mut r_left = req("ArrowLeft", false, false, 4, 13, DOC);
+        r_left.sel = Some([0, 0, 4, 13]);
+        let res_left = step(&r_left).unwrap();
+        assert_eq!((res_left.row, res_left.col, res_left.sel), (0, 0, None));
+
+        let mut r_right = req("ArrowRight", false, false, 0, 0, DOC);
+        r_right.sel = Some([0, 0, 4, 13]);
+        let res_right = step(&r_right).unwrap();
+        assert_eq!((res_right.row, res_right.col, res_right.sel), (4, 13, None));
     }
 }

@@ -4307,6 +4307,7 @@ impl App {
                             && !modifiers.command
                             && !modifiers.alt
                             && !modifiers.shift
+                            && self.docs[ai].sel.is_none()
                             && matches!(key, Key::ArrowUp | Key::ArrowDown | Key::Home | Key::End)
                         {
                             let k = *key;
@@ -4444,6 +4445,26 @@ impl App {
         } else {
             None
         };
+        // Ctrl + 滚轮缩放字号 (支持 Sakura 与现代化编辑器平滑缩放体验)
+        let is_hovered = ui
+            .input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| ui.available_rect_before_wrap().contains(p));
+        let (ctrl_zoom, wheel_y) = ui.input(|i| {
+            (
+                (i.modifiers.ctrl || i.modifiers.command) && !i.modifiers.alt,
+                i.smooth_scroll_delta.y,
+            )
+        });
+        if is_hovered && ctrl_zoom && wheel_y.abs() > 0.2 {
+            let delta = if wheel_y > 0.0 { 1.0 } else { -1.0 };
+            self.font_px = (self.font_px + delta).clamp(8.0, 40.0);
+            self.cfg.font_px = self.font_px;
+            self.cfg.save();
+            ui.input_mut(|i| {
+                i.smooth_scroll_delta = egui::Vec2::ZERO;
+            });
+            ui.ctx().request_repaint();
+        }
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
         let mut ed_id: Option<egui::Id> = None;

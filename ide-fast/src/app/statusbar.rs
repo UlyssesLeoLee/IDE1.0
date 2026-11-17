@@ -18,6 +18,9 @@ pub(super) enum StatusCmd {
     ReviewDoc,
     Language,
     TrayToggle,
+    ZoomIn,
+    ZoomOut,
+    ZoomReset,
 }
 
 /// 光标处字符的码位: 行尾 `EOL`, 文件末尾 `EOF` (Sakura 状态栏的「文字コード」, Tauri `#s-code`)
@@ -328,12 +331,13 @@ impl App {
                 }
                 ui.add_space(4.0);
                 sep(ui, on);
-                // 提示撑满剩下的宽, 语法名靠右
+                // 提示撑满剩下的宽, 语法名与 Zoom 控制靠右
                 let tray_resident = self.cfg.tray_resident;
                 let tray_str = if tray_resident { "⚡ 常驻托盘" } else { "🖥️ 独立窗口" };
                 let tray_w = text_w(ui, tray_str) + 18.0;
                 let lang_w = text_w(ui, &lang) + 16.0;
-                let tip_w = (right - ui.cursor().left() - lang_w - tray_w - 2.0).max(0.0);
+                let zoom_w = 98.0;
+                let tip_w = (right - ui.cursor().left() - lang_w - tray_w - zoom_w - 4.0).max(0.0);
                 ui.allocate_ui_with_layout(
                     Vec2::new(tip_w, ui.available_height()),
                     egui::Layout::left_to_right(egui::Align::Center),
@@ -370,6 +374,46 @@ impl App {
                     .clicked()
                 {
                     st_cmd = Some(StatusCmd::TrayToggle);
+                }
+                ui.add_space(6.0);
+                sep(ui, on);
+                ui.add_space(4.0);
+                // 右下角 Zoom 缩放控制 UI: [ - ] 100% [ + ]
+                if ui
+                    .small_button("－")
+                    .on_hover_text("缩小字号 (Ctrl+- 或 Ctrl+滚轮下滚)")
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::ZoomOut);
+                }
+                ui.add_space(2.0);
+                let default_px = self.default_font_px();
+                let zoom_pct = ((self.font_px / default_px) * 100.0).round() as i32;
+                let zoom_color = if zoom_pct == 100 {
+                    on
+                } else {
+                    Color32::from_rgb(0, 229, 255)
+                };
+                let zoom_label = egui::RichText::new(format!("🔍 {}%", zoom_pct))
+                    .color(zoom_color)
+                    .strong();
+                if ui
+                    .add(egui::Label::new(zoom_label).sense(Sense::click()))
+                    .on_hover_text(format!(
+                        "当前缩放: {}% (点击重置为 100%，支持 Ctrl+滚轮 缩放)",
+                        zoom_pct
+                    ))
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::ZoomReset);
+                }
+                ui.add_space(2.0);
+                if ui
+                    .small_button("＋")
+                    .on_hover_text("放大字号 (Ctrl+= 或 Ctrl+滚轮上滚)")
+                    .clicked()
+                {
+                    st_cmd = Some(StatusCmd::ZoomIn);
                 }
                 ui.add_space(6.0);
             });
@@ -413,6 +457,21 @@ impl App {
                     "已关闭系统托盘常驻 (关闭窗口将直接退出程序)".into()
                 };
             }
+            Some(StatusCmd::ZoomIn) => {
+                self.font_px = (self.font_px + 1.0).min(40.0);
+                self.cfg.font_px = self.font_px;
+                self.cfg.save();
+            }
+            Some(StatusCmd::ZoomOut) => {
+                self.font_px = (self.font_px - 1.0).max(8.0);
+                self.cfg.font_px = self.font_px;
+                self.cfg.save();
+            }
+            Some(StatusCmd::ZoomReset) => {
+                self.font_px = self.default_font_px();
+                self.cfg.font_px = self.font_px;
+                self.cfg.save();
+            }
             None => {}
         }
     }
@@ -440,5 +499,30 @@ mod tests {
     fn position_label_adds_display_column_only_when_it_differs() {
         assert_eq!(pos_label(0, 0, 1), "Ln 1, Col 1");
         assert_eq!(pos_label(2, 3, 5), "Ln 3, Col 4 (表示 5)");
+    }
+
+    #[test]
+    fn test_zoom_commands_scale_font_and_reset() {
+        let mut a = App::build(
+            vec![],
+            None,
+            crate::Trace::new(),
+            crate::app::Settings::default(),
+            false,
+        );
+        let default_px = a.default_font_px();
+        a.font_px = default_px;
+
+        // 放大
+        a.font_px = (a.font_px + 1.0).min(40.0);
+        assert_eq!(a.font_px, default_px + 1.0);
+
+        // 缩小
+        a.font_px = (a.font_px - 2.0).max(8.0);
+        assert_eq!(a.font_px, default_px - 1.0);
+
+        // 重置为 100%
+        a.font_px = a.default_font_px();
+        assert_eq!(a.font_px, default_px);
     }
 }
