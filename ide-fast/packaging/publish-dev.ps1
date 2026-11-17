@@ -25,10 +25,19 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build-msi.ps1") -Target $Target -Out $Out
 if ($LASTEXITCODE -ne 0) { throw "build-msi.ps1 失败" }
 
-# 2. 便携 exe 改成带 dev 版本号的名字 (更新功能按 IDE1.0-*-windows-x64.exe / ide-fast-*-windows-x64.exe 认资产)
+# 2. 便携 exe 与旗舰 3D 安装向导改名 (带 dev 版本号)
 $portableOld = Join-Path $Out "IDE1.0-$ver-windows-x64.exe"
 $portable = Join-Path $Out "IDE1.0-$assetVer-windows-x64.exe"
 Move-Item -Force $portableOld $portable
+
+$setupOld = Join-Path $Out "IDE1.0_Setup_${ver}_x64.exe"
+$setup = Join-Path $Out "IDE1.0_Setup_${assetVer}_x64.exe"
+if (Test-Path $setupOld) {
+    Move-Item -Force $setupOld $setup
+} else {
+    $setup = $null
+}
+
 $msi = Get-ChildItem $Out -Filter "IDE1.0_*_x64.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $msi) { throw "没找到 msi" }
 # msi 文件名也要带完整 dev 版本串 (客户端验签后要求资产名含清单版本; 原名只有四段数字版本 x.y.z.0)
@@ -39,7 +48,9 @@ $msi = Get-Item $msiNew
 # 3. SHA256SUMS.txt: 每行 "<小写 hex>  <文件名>"
 $sums = Join-Path $Out "SHA256SUMS.txt"
 $lines = @("version: $assetVer channel: dev")   # 第一行: 签名覆盖的版本 / 通道绑定 (客户端验签后核对, 防回滚)
-$lines += foreach ($f in @($portable, $msi.FullName)) {
+$allAssets = @($portable, $msi.FullName)
+if ($setup) { $allAssets = @($setup) + $allAssets }
+$lines += foreach ($f in $allAssets) {
     $h = (Get-FileHash -Algorithm SHA256 $f).Hash.ToLower()
     "$h  $(Split-Path -Leaf $f)"
 }
@@ -52,7 +63,10 @@ $sig = "$sums.sig"
 if ($LASTEXITCODE -ne 0) { throw "sign-release.ps1 失败" }
 
 # 4. 创建预发布 (--prerelease: 稳定通道看不到它; 开发通道能看到)
-$ghArgs = @("release", "create", $tag, $portable, $msi.FullName, $sums, $sig, "--prerelease", "--title", "IDE1.0 $tag", "--notes", $Notes, "--target", "dev")
+$uploadFiles = @()
+if ($setup) { $uploadFiles += $setup }
+$uploadFiles += @($portable, $msi.FullName, $sums, $sig)
+$ghArgs = @("release", "create", $tag) + $uploadFiles + @("--prerelease", "--title", "IDE1.0 $tag", "--notes", $Notes, "--target", "dev")
 if ($DryRun) { Write-Host "[DryRun] gh $($ghArgs -join ' ')"; return }
 & gh @ghArgs
 if ($LASTEXITCODE -ne 0) { throw "gh release create 失败" }

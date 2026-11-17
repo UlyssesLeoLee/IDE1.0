@@ -41,6 +41,8 @@ pub struct StickyNote {
     pub pinned: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub is_md: bool,
+    pub md_preview: bool,
 }
 
 impl StickyNote {
@@ -62,6 +64,8 @@ impl StickyNote {
             pinned: false,
             created_at: now_str.clone(),
             updated_at: now_str,
+            is_md: true,
+            md_preview: false,
         }
     }
 
@@ -74,6 +78,8 @@ impl StickyNote {
             "pinned": self.pinned,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "is_md": self.is_md,
+            "md_preview": self.md_preview,
         })
     }
 
@@ -86,8 +92,23 @@ impl StickyNote {
             pinned: v["pinned"].as_bool().unwrap_or(false),
             created_at: v["created_at"].as_str().unwrap_or("").to_string(),
             updated_at: v["updated_at"].as_str().unwrap_or("").to_string(),
+            is_md: v["is_md"].as_bool().unwrap_or(true),
+            md_preview: v["md_preview"].as_bool().unwrap_or(false),
         })
     }
+}
+
+/// 便笺 Markdown 常用元素模板
+pub fn markdown_table_template() -> &'static str {
+    "\n\n| 项目/任务 | 状态 | 优先级 | 备注 |\n| :--- | :---: | :---: | ---: |\n| 需求设计 | 已完成 | 高 | 纯Rust无原生依赖 |\n| 编码实现 | 进行中 | 极高 | 深度复用IDE可编辑预览 |\n| 质量验证 | 待办 | 中 | 零警报与全覆盖测试 |\n\n"
+}
+
+pub fn markdown_heading_template() -> &'static str {
+    "\n\n### 📌 便笺标题\n"
+}
+
+pub fn markdown_codeblock_template() -> &'static str {
+    "\n\n```rust\n// 便笺原生代码片段\nfn main() {\n    println!(\"Hello IDE1.0!\");\n}\n```\n"
 }
 
 /// 便笺全局状态管理
@@ -126,6 +147,8 @@ impl StickyNotesState {
             pinned: false,
             created_at: now_str.clone(),
             updated_at: now_str,
+            is_md: true,
+            md_preview: false,
         };
         Self {
             open: false,
@@ -747,6 +770,7 @@ impl App {
         let mut clear_clicked = false;
         let mut toggle_list_clicked = false;
         let mut toggle_pin_clicked = false;
+        let mut toggle_md_preview_clicked = false;
         let mut append_markdown = None;
         let mut activate_note_id = None;
         let mut select_color = None;
@@ -791,6 +815,9 @@ impl App {
             }
             if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
                 search_focus_requested = true;
+            }
+            if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::M)) {
+                toggle_md_preview_clicked = true;
             }
             if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::B)) {
                 append_markdown = Some("**粗体文字**".to_string());
@@ -1050,6 +1077,30 @@ impl App {
                                     !self.sticky_notes.color_picker_open;
                                 ui.ctx().request_repaint();
                             }
+
+                            // 2.8 Markdown 模式切换 (👁️ 预览 / ✏️ 源码)
+                            if !show_list {
+                                let is_prev = self
+                                    .sticky_notes
+                                    .active_note()
+                                    .map(|n| n.md_preview)
+                                    .unwrap_or(false);
+                                let md_tip = if is_prev {
+                                    "当前为 Markdown 预览模式 (可直接点击待办与就地编辑)。点击切换为源码编辑 (Ctrl+M)"
+                                } else {
+                                    "当前为源码编辑模式。点击切换为 Markdown 渲染预览 (Ctrl+M，支持表格、待办、标题等)"
+                                };
+                                let md_resp = draw_header_btn(
+                                    ui,
+                                    StickyHeaderIcon::MdMode(is_prev),
+                                    md_tip,
+                                    &tc,
+                                    &palette,
+                                );
+                                if md_resp.clicked() {
+                                    toggle_md_preview_clicked = true;
+                                }
+                            }
                         });
                     },
                 );
@@ -1228,14 +1279,132 @@ impl App {
                         },
                     );
                 } else {
-                    // ================= 主便笺编辑模式 (Main Note Editor) =================
+                    // ================= 主便笺展示与编辑模式 (Main Note View/Editor) =================
                     ui.scope_builder(
                         egui::UiBuilder::new()
                             .max_rect(body_rect)
                             .layout(egui::Layout::top_down(egui::Align::Min)),
                         |ui| {
                             let active_id = self.sticky_notes.active_id.clone();
-                            if let Some(note) =
+                            let is_md_preview = self
+                                .sticky_notes
+                                .active_note()
+                                .map(|n| n.is_md && n.md_preview)
+                                .unwrap_or(false);
+
+                            if is_md_preview {
+                                // ----------------- Markdown 可编辑预览模式 -----------------
+                                let content = self
+                                    .sticky_notes
+                                    .active_note()
+                                    .map(|n| n.content.clone())
+                                    .unwrap_or_default();
+
+                                if content.trim().is_empty() {
+                                    ui.vertical_centered(|ui| {
+                                        ui.add_space(28.0);
+                                        ui.label(
+                                            egui::RichText::new("📝 Markdown 预览模式 (当前为空)")
+                                                .color(palette.fg.gamma_multiply(0.75))
+                                                .font(FontId::proportional(13.0))
+                                                .strong(),
+                                        );
+                                        ui.add_space(8.0);
+                                        ui.label(
+                                            egui::RichText::new("按 Ctrl+M 或点击上方 👁️ 切换为源码编辑，\n也可使用下方工具栏插入表格、待办或代码块。")
+                                                .color(palette.fg.gamma_multiply(0.55))
+                                                .font(FontId::proportional(11.0)),
+                                        );
+                                        ui.add_space(12.0);
+                                        if ui.button("✏️ 开始编写便笺").clicked() {
+                                            if let Some(n) = self.sticky_notes.active_note_mut() {
+                                                n.md_preview = false;
+                                                self.sticky_notes.mark_dirty();
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    let lines: Vec<String> = content.lines().map(String::from).collect();
+                                    let blocks = crate::markdown::parse(&lines);
+                                    let theme = self.tc.syntax_theme();
+                                    let fence_langs = self.md10.langs();
+                                    let mut note_tc = self.tc;
+                                    note_tc.bg_edit = palette.bg;
+                                    note_tc.fg = palette.fg;
+                                    note_tc.border = palette.border;
+                                    note_tc.bg_bar = palette.header_bg;
+
+                                    let cx = crate::md_view::MdCtx {
+                                        base: None,
+                                        registry: &self.registry,
+                                        theme: &theme,
+                                        tc: note_tc,
+                                        fence_langs: &fence_langs,
+                                        fences: &self.md10.fences,
+                                    };
+
+                                    let ev = crate::md_view::show(
+                                        ui,
+                                        &blocks,
+                                        &cx,
+                                        &mut self.sticky_md_cache,
+                                        None,
+                                        crate::md_view::MdOpts {
+                                            pad_x: 6.0,
+                                            pad_y: 4.0,
+                                            max_w: 1200.0,
+                                            click_edits: true,
+                                        },
+                                    );
+
+                                    // 双击空白处快速切入编辑
+                                    if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+                                        if let Some(n) = self.sticky_notes.active_note_mut() {
+                                            n.md_preview = false;
+                                            self.sticky_notes.mark_dirty();
+                                        }
+                                    }
+
+                                    // 任务复选框勾选/取消交互
+                                    if let Some(line_idx) = ev.toggle {
+                                        if let Some(n) = self.sticky_notes.active_note_mut() {
+                                            let mut doc_lines: Vec<String> =
+                                                n.content.lines().map(|s| s.to_string()).collect();
+                                            if let Some(line) = doc_lines.get_mut(line_idx) {
+                                                if let Some(new_l) = crate::mdtools::toggle_task(line) {
+                                                    *line = new_l;
+                                                    n.content = doc_lines.join("\n");
+                                                    n.updated_at = current_timestamp();
+                                                    note_content_changed = true;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 就地编辑块应用
+                                    if let Some((start_line, end_line, new_text)) = ev.apply {
+                                        if let Some(n) = self.sticky_notes.active_note_mut() {
+                                            let mut doc_lines: Vec<String> =
+                                                n.content.lines().map(|s| s.to_string()).collect();
+                                            let new_lines: Vec<String> =
+                                                new_text.lines().map(|s| s.to_string()).collect();
+                                            let end = end_line.min(doc_lines.len());
+                                            let start = start_line.min(end);
+                                            doc_lines.splice(start..end, new_lines);
+                                            n.content = doc_lines.join("\n");
+                                            n.updated_at = current_timestamp();
+                                            note_content_changed = true;
+                                        }
+                                    }
+
+                                    // 外部链接点击跳转
+                                    if let Some(link) = ev.link {
+                                        if crate::md_view::openable(&link) {
+                                            let _ = crate::md_view::open_url(&link);
+                                        }
+                                    }
+                                }
+                            } else if let Some(note) =
                                 self.sticky_notes.notes.iter_mut().find(|n| n.id == active_id)
                             {
                                 ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -1331,6 +1500,14 @@ impl App {
                             if draw_tool_btn(ui, StickyToolIcon::Strikethrough, "删除线 (Ctrl+T)", &tc, &palette).clicked() {
                                 append_markdown = Some("~~删除线~~".to_string());
                             }
+                            // 标题 (H)
+                            if draw_tool_btn(ui, StickyToolIcon::Heading, "插入标题 (### 标题)", &tc, &palette).clicked() {
+                                append_markdown = Some(markdown_heading_template().to_string());
+                            }
+                            // 表格 (⊞)
+                            if draw_tool_btn(ui, StickyToolIcon::Table, "插入 Markdown 表格 (3×4)", &tc, &palette).clicked() {
+                                append_markdown = Some(markdown_table_template().to_string());
+                            }
                             // 待办复选框 (☑)
                             if draw_tool_btn(ui, StickyToolIcon::Checklist, "待办项 (Ctrl+Shift+L)", &tc, &palette)
                                 .clicked()
@@ -1341,6 +1518,10 @@ impl App {
                             if draw_tool_btn(ui, StickyToolIcon::BulletList, "项目符号 (- 列表)", &tc, &palette).clicked()
                             {
                                 append_markdown = Some("\n- 列表项".to_string());
+                            }
+                            // 代码块 (```)
+                            if draw_tool_btn(ui, StickyToolIcon::CodeBlock, "插入代码块 (```代码)", &tc, &palette).clicked() {
+                                append_markdown = Some(markdown_codeblock_template().to_string());
                             }
                             // 时间戳 (🕒)
                             if draw_tool_btn(ui, StickyToolIcon::Timestamp, "插入当前时间戳", &tc, &palette).clicked() {
@@ -1528,10 +1709,18 @@ impl App {
             self.sticky_notes.mark_dirty();
         }
 
+        if toggle_md_preview_clicked {
+            if let Some(n) = self.sticky_notes.active_note_mut() {
+                n.md_preview = !n.md_preview;
+            }
+            self.sticky_notes.mark_dirty();
+        }
+
         if let Some(extra) = append_markdown {
             if let Some(n) = self.sticky_notes.active_note_mut() {
                 n.content.push_str(&extra);
                 n.updated_at = current_timestamp();
+                n.md_preview = false;
             }
             self.sticky_notes.mark_dirty();
         }
@@ -1567,6 +1756,7 @@ pub enum StickyHeaderIcon {
     Pin(bool),
     Delete,
     Close,
+    MdMode(bool),
 }
 
 /// 便笺底栏格式化工具图标类型
@@ -1576,8 +1766,11 @@ pub enum StickyToolIcon {
     Italic,
     Underline,
     Strikethrough,
+    Heading,
+    Table,
     Checklist,
     BulletList,
+    CodeBlock,
     Timestamp,
     Copy,
     Clear,
@@ -1924,6 +2117,27 @@ pub fn paint_sticky_header_icon(
             p.line_segment([pos2(c.x - r, c.y - r), pos2(c.x + r, c.y + r)], st);
             p.line_segment([pos2(c.x + r, c.y - r), pos2(c.x - r, c.y + r)], st);
         }
+        StickyHeaderIcon::MdMode(is_preview) => {
+            if is_preview {
+                // 预览状态: 绘制眼睛 / 透镜预览图标
+                p.circle_stroke(c, 3.8, st);
+                p.circle_filled(c, 1.4, col);
+            } else {
+                // 源码编辑状态: 绘制 Markdown "M" 标志方框
+                let r = 4.2;
+                let b_rect = Rect::from_center_size(c, Vec2::splat(r * 2.0));
+                p.rect_stroke(
+                    b_rect,
+                    if tc.retro16 { 0.0 } else { 1.2 },
+                    st,
+                    StrokeKind::Inside,
+                );
+                p.line_segment([pos2(c.x - 2.2, c.y + 1.6), pos2(c.x - 2.2, c.y - 1.6)], st);
+                p.line_segment([pos2(c.x - 2.2, c.y - 1.6), pos2(c.x, c.y + 0.6)], st);
+                p.line_segment([pos2(c.x, c.y + 0.6), pos2(c.x + 2.2, c.y - 1.6)], st);
+                p.line_segment([pos2(c.x + 2.2, c.y - 1.6), pos2(c.x + 2.2, c.y + 1.6)], st);
+            }
+        }
     }
 }
 
@@ -1985,6 +2199,39 @@ pub fn paint_sticky_tool_icon(
                 [pos2(c.x - 5.0, c.y), pos2(c.x + 5.0, c.y)],
                 Stroke::new(stroke_w * 1.2, col),
             );
+        }
+        StickyToolIcon::Heading => {
+            // 绘制 H 字符 (两根坚实立柱 + 中间连接横梁)
+            let stem_w = if tc.comic { 2.0 } else { 1.5 };
+            p.line_segment(
+                [pos2(c.x - 3.5, c.y - 4.5), pos2(c.x - 3.5, c.y + 4.5)],
+                Stroke::new(stem_w, col),
+            );
+            p.line_segment(
+                [pos2(c.x + 3.5, c.y - 4.5), pos2(c.x + 3.5, c.y + 4.5)],
+                Stroke::new(stem_w, col),
+            );
+            p.line_segment([pos2(c.x - 3.5, c.y), pos2(c.x + 3.5, c.y)], st);
+        }
+        StickyToolIcon::Table => {
+            // 绘制 2x2 表格网格 (外框 + 水平中线 + 垂直中线)
+            let tbl_rect = Rect::from_center_size(c, Vec2::splat(9.0));
+            p.rect_stroke(
+                tbl_rect,
+                if tc.retro16 { 0.0 } else { 1.0 },
+                st,
+                StrokeKind::Inside,
+            );
+            p.line_segment([pos2(tbl_rect.left(), c.y), pos2(tbl_rect.right(), c.y)], st);
+            p.line_segment([pos2(c.x, tbl_rect.top()), pos2(c.x, tbl_rect.bottom())], st);
+        }
+        StickyToolIcon::CodeBlock => {
+            // 绘制 </> 代码块符号
+            p.line_segment([pos2(c.x - 2.2, c.y - 3.2), pos2(c.x - 4.2, c.y)], st);
+            p.line_segment([pos2(c.x - 4.2, c.y), pos2(c.x - 2.2, c.y + 3.2)], st);
+            p.line_segment([pos2(c.x + 2.2, c.y - 3.2), pos2(c.x + 4.2, c.y)], st);
+            p.line_segment([pos2(c.x + 4.2, c.y), pos2(c.x + 2.2, c.y + 3.2)], st);
+            p.line_segment([pos2(c.x + 1.2, c.y - 3.8), pos2(c.x - 1.2, c.y + 3.8)], st);
         }
         StickyToolIcon::Checklist => {
             let box_r = Rect::from_center_size(c, Vec2::splat(9.0));
@@ -2306,6 +2553,8 @@ mod tests {
                 StickyHeaderIcon::Pin(true),
                 StickyHeaderIcon::Delete,
                 StickyHeaderIcon::Close,
+                StickyHeaderIcon::MdMode(false),
+                StickyHeaderIcon::MdMode(true),
             ];
 
             let tool_icons = [
@@ -2313,8 +2562,11 @@ mod tests {
                 StickyToolIcon::Italic,
                 StickyToolIcon::Underline,
                 StickyToolIcon::Strikethrough,
+                StickyToolIcon::Heading,
+                StickyToolIcon::Table,
                 StickyToolIcon::Checklist,
                 StickyToolIcon::BulletList,
+                StickyToolIcon::CodeBlock,
                 StickyToolIcon::Timestamp,
                 StickyToolIcon::Copy,
                 StickyToolIcon::Clear,
@@ -2378,5 +2630,107 @@ mod tests {
             app.sticky_notes_window(&ctx);
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn test_sticky_notes_markdown_mode_and_serialization() {
+        let mut note = StickyNote::new(1);
+        assert!(note.is_md);
+        assert!(!note.md_preview);
+
+        // 切换预览模式
+        note.md_preview = true;
+        let json_val = note.to_json();
+        assert_eq!(json_val["is_md"], true);
+        assert_eq!(json_val["md_preview"], true);
+
+        // 反序列化
+        let restored = StickyNote::from_json(&json_val).expect("deserialization succeeds");
+        assert!(restored.is_md);
+        assert!(restored.md_preview);
+
+        // 向下兼容旧版无 is_md / md_preview 的 JSON
+        let legacy_json = serde_json::json!({
+            "id": "legacy_note",
+            "title": "旧便笺",
+            "content": "无 MD 字段内容",
+            "color_idx": 1,
+            "pinned": false,
+            "created_at": "2026-11-01 10:00:00",
+            "updated_at": "2026-11-01 10:00:00"
+        });
+        let legacy_note = StickyNote::from_json(&legacy_json).expect("legacy parsing succeeds");
+        assert!(legacy_note.is_md);
+        assert!(!legacy_note.md_preview);
+        assert_eq!(legacy_note.title, "旧便笺");
+    }
+
+    #[test]
+    fn test_markdown_templates_and_table_elements() {
+        let tbl = markdown_table_template();
+        assert!(tbl.contains('|'));
+        assert!(tbl.contains("---"));
+
+        let lines: Vec<String> = tbl.lines().map(String::from).collect();
+        let parsed = crate::markdown::parse(&lines);
+        let has_table = parsed.iter().any(|p| matches!(p.block, crate::markdown::Block::Table { .. }));
+        assert!(has_table, "Markdown 表格模板必须被成功解析为 Block::Table");
+
+        let heading = markdown_heading_template();
+        let h_lines: Vec<String> = heading.lines().map(String::from).collect();
+        let h_parsed = crate::markdown::parse(&h_lines);
+        let has_heading = h_parsed.iter().any(|p| matches!(p.block, crate::markdown::Block::Heading { level: 3, .. }));
+        assert!(has_heading, "Markdown 标题模板必须被成功解析为 Block::Heading level 3");
+
+        let code = markdown_codeblock_template();
+        let c_lines: Vec<String> = code.lines().map(String::from).collect();
+        let c_parsed = crate::markdown::parse(&c_lines);
+        let has_code = c_parsed.iter().any(|p| matches!(p.block, crate::markdown::Block::Code { .. }));
+        assert!(has_code, "Markdown 代码块模板必须被成功解析为 Block::Code");
+    }
+
+    #[test]
+    fn test_sticky_notes_markdown_preview_rendering_and_interactions() {
+        let mut app = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        app.sticky_notes.open = true;
+
+        // 设置包含标题、表格与待办清单的内容
+        if let Some(n) = app.sticky_notes.active_note_mut() {
+            n.content = format!(
+                "# 测试便笺\n\n{}\n- [ ] 待办事项1\n- [x] 已完成事项2\n",
+                markdown_table_template()
+            );
+            n.is_md = true;
+            n.md_preview = true;
+        }
+
+        // 渲染 Markdown 预览模式 (检验无 panic、表格渲染正常)
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+
+        // 检验任务列表复选框切换函数
+        let task_line = "- [ ] 待办事项1";
+        let toggled = crate::mdtools::toggle_task(task_line);
+        assert_eq!(toggled.as_deref(), Some("- [x] 待办事项1"));
+        let toggled_back = crate::mdtools::toggle_task("- [x] 待办事项1");
+        assert_eq!(toggled_back.as_deref(), Some("- [ ] 待办事项1"));
+
+        // 切换回源码编辑模式
+        if let Some(n) = app.sticky_notes.active_note_mut() {
+            n.md_preview = false;
+        }
+        let mut out2 = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out2.textures_delta.clear();
     }
 }

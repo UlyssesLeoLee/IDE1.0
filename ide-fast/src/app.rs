@@ -153,6 +153,7 @@ pub struct App {
     last_active: usize,
     /// Markdown 预览: 图片纹理缓存与按 (文档, 版本) 缓存的解析结果
     md_cache: crate::md_view::MdCache,
+    pub(crate) sticky_md_cache: crate::md_view::MdCache,
     md_parsed: Option<((u64, u64), Vec<crate::markdown::Parsed>)>,
     /// 预览要滚到的源码行 (大纲点击)
     md_scroll_to: Option<usize>,
@@ -273,6 +274,7 @@ impl App {
             bracket_cache: None,
             last_active: usize::MAX,
             md_cache: Default::default(),
+            sticky_md_cache: Default::default(),
             md_parsed: None,
             md_scroll_to: None,
             diff: None,

@@ -673,7 +673,7 @@ impl CollabState {
                             if hh.cancelled() {
                                 return;
                             }
-                            std::thread::sleep(std::time::Duration::from_millis(20 + (agent_idx as u64 * 15)));
+                            std::thread::sleep(std::time::Duration::from_millis(150 + (agent_idx as u64 * 50)));
                             let _ = tx.send(Event::Text(format!("▸ {}\n", chunk)));
                             c.request_repaint();
                         }
@@ -961,7 +961,7 @@ impl CollabState {
                             if hh.cancelled() {
                                 return;
                             }
-                            std::thread::sleep(std::time::Duration::from_millis(20 + (agent_idx as u64 * 15)));
+                            std::thread::sleep(std::time::Duration::from_millis(150 + (agent_idx as u64 * 50)));
                             let _ = tx.send(Event::Text(format!("▸ {}\n", step)));
                             c.request_repaint();
                         }

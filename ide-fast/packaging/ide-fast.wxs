@@ -7,11 +7,7 @@
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
-    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
-    <UIRef Id="WixUI_InstallDir" />
-    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
-    <WixVariable Id="WixUIBannerBmp" Value="$(var.BannerBmp)" />
-    <WixVariable Id="WixUIDialogBmp" Value="$(var.DialogBmp)" />
+    <!-- 彻底移除 WixUI_InstallDir 与任何 Windows 原生对话框，杜绝原生标题栏与 Back/Next/Cancel 按钮 -->
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
