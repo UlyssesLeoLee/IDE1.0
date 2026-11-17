@@ -38,7 +38,7 @@ impl App {
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::WHITE, 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
             Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
             0.0,
@@ -49,14 +49,14 @@ impl App {
             egui::Align2::LEFT_CENTER,
             "⚡ 欢迎体验 IDE 1.0 极速现代编辑器！(WELCOME)",
             egui::FontId::proportional(13.5),
-            Color32::BLACK,
+            Color32::from_rgb(255, 230, 0),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 38.0),
             egui::Align2::LEFT_CENTER,
             "纯 Rust 原生极速微内核 · 多 Agent 协同生态 · GPU 晶透透视体验 · 极简无扰",
             egui::FontId::proportional(10.5),
-            Color32::from_rgb(60, 65, 80),
+            Color32::from_rgb(200, 215, 240),
         );
         paint_comic_burst_star(
             hp,
@@ -155,7 +155,7 @@ impl App {
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::WHITE, 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
             Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
             0.0,
@@ -166,14 +166,14 @@ impl App {
             egui::Align2::LEFT_CENTER,
             "⚙️ 安装目录与系统集成选项 (CONFIGURATION)",
             egui::FontId::proportional(13.0),
-            Color32::BLACK,
+            Color32::from_rgb(0, 229, 255),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 35.0),
             egui::Align2::LEFT_CENTER,
             "自定义目标安装路径与环境联动，保障纯净绿色的使用体验",
             egui::FontId::proportional(10.0),
-            Color32::from_rgb(60, 65, 80),
+            Color32::from_rgb(200, 215, 240),
         );
 
         // 路径设置行
@@ -195,7 +195,7 @@ impl App {
             paint_comic_hard_shadow_rect(
                 ip,
                 in_rect,
-                Color32::from_rgb(255, 255, 255),
+                Color32::from_rgb(20, 24, 40),
                 2.0,
                 vec2(2.5, 2.5),
             );
@@ -213,7 +213,7 @@ impl App {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.installer.target_dir)
                         .frame(egui::Frame::NONE)
-                        .text_color(Color32::BLACK)
+                        .text_color(Color32::WHITE)
                         .desired_width(text_rect.width()),
                 );
             });

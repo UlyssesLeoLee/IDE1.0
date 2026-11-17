@@ -65,16 +65,21 @@ $msi = Join-Path $Out "IDE1.0_${ver}_x64.msi"
 if ($LASTEXITCODE) { throw "light failed" }
 $portableExe = Join-Path $Out "IDE1.0-$ver-windows-x64.exe"
 Copy-Item $exe $portableExe -Force
+$setupExe = Join-Path $Out "IDE1.0_Setup_${ver}_x64.exe"
+Copy-Item $exe $setupExe -Force
 
 $channel = if ($ver -match "-") { "dev" } else { "stable" }
 $msiName = [System.IO.Path]::GetFileName($msi)
 $exeName = [System.IO.Path]::GetFileName($portableExe)
+$setupName = [System.IO.Path]::GetFileName($setupExe)
 $msiHash = (Get-FileHash -Algorithm SHA256 $msi).Hash.ToLowerInvariant()
 $exeHash = (Get-FileHash -Algorithm SHA256 $portableExe).Hash.ToLowerInvariant()
-$sumsContent = "version: $ver channel: $channel`n$msiHash  $msiName`n$exeHash  $exeName`n"
+$setupHash = (Get-FileHash -Algorithm SHA256 $setupExe).Hash.ToLowerInvariant()
+$sumsContent = "version: $ver channel: $channel`n$setupHash  $setupName`n$msiHash  $msiName`n$exeHash  $exeName`n"
 $sumsPath = Join-Path $Out "SHA256SUMS.txt"
 [System.IO.File]::WriteAllText($sumsPath, $sumsContent, [System.Text.Encoding]::ASCII)
 
+Write-Host "Setup: $setupExe"
 Write-Host "MSI: $msi"
 Write-Host "Portable: $portableExe"
 Write-Host "Checksums: $sumsPath"

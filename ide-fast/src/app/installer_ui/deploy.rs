@@ -14,7 +14,7 @@ impl App {
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::WHITE, 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
             Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
             0.0,
@@ -25,14 +25,14 @@ impl App {
             egui::Align2::LEFT_CENTER,
             "🚀 正在部署 IDE 1.0 (DEPLOYING PACKAGES)",
             egui::FontId::proportional(13.0),
-            Color32::BLACK,
+            Color32::from_rgb(255, 42, 85),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 35.0),
             egui::Align2::LEFT_CENTER,
             "纯 Rust 原生释放，解压核心微内核与环境配置文件...",
             egui::FontId::proportional(10.0),
-            Color32::from_rgb(60, 65, 80),
+            Color32::from_rgb(200, 215, 240),
         );
 
         ui.add_space(8.0);
@@ -172,8 +172,10 @@ impl App {
 
         ui.add_space(8.0);
 
-        // 部署完成自动切换到 Finished
+        // 部署完成自动切换到 Finished 并执行真实物理落盘与快捷方式注入
         if progress >= 1.0 {
+            execute_physical_deployment(&self.installer);
+
             self.cfg.tray_resident = self.installer.tray_resident;
             self.cfg.save();
 
@@ -193,7 +195,7 @@ impl App {
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::WHITE, 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
             Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
             0.0,
@@ -204,14 +206,14 @@ impl App {
             egui::Align2::LEFT_CENTER,
             "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
             egui::FontId::proportional(13.5),
-            Color32::BLACK,
+            Color32::from_rgb(16, 185, 129),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 38.0),
             egui::Align2::LEFT_CENTER,
             "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
             egui::FontId::proportional(10.2),
-            Color32::from_rgb(60, 65, 80),
+            Color32::from_rgb(200, 215, 240),
         );
         paint_comic_burst_star(
             hp,
@@ -308,9 +310,15 @@ impl App {
         if finish_clicked {
             if standalone {
                 if self.installer.launch_on_finish {
-                    if let Ok(exe) = std::env::current_exe() {
-                        let _ = std::process::Command::new(exe).spawn();
-                    }
+                    let dest_exe = std::path::Path::new(&self.installer.target_dir).join("ide-fast.exe");
+                    let run_exe = if dest_exe.exists() {
+                        dest_exe
+                    } else if let Ok(exe) = std::env::current_exe() {
+                        exe
+                    } else {
+                        dest_exe
+                    };
+                    let _ = std::process::Command::new(run_exe).spawn();
                 }
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
@@ -318,5 +326,80 @@ impl App {
                 self.cur().tip = "IDE 1.0 配置已成功生效！".into();
             }
         }
+    }
+}
+
+/// 执行真正的系统物理部署与快捷方式/注册表配置
+fn execute_physical_deployment(inst: &super::InstallerState) {
+    let target = std::path::Path::new(&inst.target_dir);
+    if std::fs::create_dir_all(target).is_err() {
+        return;
+    }
+    let dest_exe = target.join("ide-fast.exe");
+    if let Ok(cur_exe) = std::env::current_exe() {
+        if cur_exe != dest_exe {
+            let _ = std::fs::copy(&cur_exe, &dest_exe);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let dest_str = dest_exe.to_string_lossy().to_string();
+        let target_str = target.to_string_lossy().to_string();
+
+        if inst.desktop_shortcut {
+            if let Some(user_prof) = std::env::var_os("USERPROFILE") {
+                let desk = std::path::PathBuf::from(user_prof).join("Desktop").join("IDE1.0.lnk");
+                let cmd = format!(
+                    "$s=(New-Object -COM WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.WorkingDirectory='{}';$s.Description='IDE1.0 - High Performance Editor';$s.Save()",
+                    desk.to_string_lossy(),
+                    dest_str,
+                    target_str
+                );
+                let _ = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
+                    .output();
+            }
+        }
+
+        if let Some(app_data) = std::env::var_os("APPDATA") {
+            let start_m = std::path::PathBuf::from(app_data)
+                .join(r"Microsoft\Windows\Start Menu\Programs\IDE1.0.lnk");
+            let cmd = format!(
+                "$s=(New-Object -COM WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.WorkingDirectory='{}';$s.Description='IDE1.0 - High Performance Editor';$s.Save()",
+                start_m.to_string_lossy(),
+                dest_str,
+                target_str
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
+                .output();
+        }
+
+        if inst.add_path {
+            let cmd = format!(
+                "$p=[Environment]::GetEnvironmentVariable('Path','User');if(-not ($p -split ';' -contains '{}')){{[Environment]::SetEnvironmentVariable('Path',\"$p;{}\",'User')}}",
+                target_str, target_str
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
+                .output();
+        }
+
+        let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\IDE1.0";
+        let _ = std::process::Command::new("reg")
+            .args(["add", key, "/v", "DisplayName", "/t", "REG_SZ", "/d", "IDE 1.0", "/f"])
+            .output();
+        let _ = std::process::Command::new("reg")
+            .args(["add", key, "/v", "DisplayVersion", "/t", "REG_SZ", "/d", "0.8.1", "/f"])
+            .output();
+        let _ = std::process::Command::new("reg")
+            .args(["add", key, "/v", "Publisher", "/t", "REG_SZ", "/d", "IDE1.0 Community", "/f"])
+            .output();
+        let _ = std::process::Command::new("reg")
+            .args(["add", key, "/v", "InstallLocation", "/t", "REG_SZ", "/d", &target_str, "/f"])
+            .output();
+        let _ = std::process::Command::new("reg")
+            .args(["add", key, "/v", "DisplayIcon", "/t", "REG_SZ", "/d", &dest_str, "/f"])
+            .output();
     }
 }

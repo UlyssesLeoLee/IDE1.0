@@ -143,9 +143,14 @@ fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
 }
 
 fn split_installer_flag(args: Vec<String>) -> (bool, Vec<String>) {
-    let install = args.iter().any(|a| a == "--setup" || a == "--install");
+    let has_flag = args.iter().any(|a| a == "--setup" || a == "--install");
+    let is_setup_name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+        .map(|n| n.contains("setup") || n.contains("installer"))
+        .unwrap_or(false);
     (
-        install,
+        has_flag || is_setup_name,
         args.into_iter()
             .filter(|a| a != "--setup" && a != "--install")
             .collect(),

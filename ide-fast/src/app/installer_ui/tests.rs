@@ -202,3 +202,30 @@ fn test_cel3d_material_shading_invariants() {
     let c_gold = CelMaterial::GoldTrim.shade(norm, light_diffuse, view);
     assert_ne!(c_marble, c_gold, "不同赛璐珞材质呈现独有的美漫色彩层次");
 }
+
+#[test]
+fn test_cel3d_vfx_pipeline_and_steps() {
+    use super::cel3d::*;
+    use super::InstallerStep;
+    use egui::pos2;
+
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(Default::default(), |ui| {
+        let p = ui.painter();
+        let cam = Camera3D::default();
+        let rot_x = Mat4::rot_x(cam.pitch);
+        let rot_y = Mat4::rot_y(cam.yaw);
+        let view_rot = rot_x.mul(&rot_y);
+        let center = pos2(200.0, 200.0);
+
+        for step in [
+            InstallerStep::Welcome,
+            InstallerStep::Options,
+            InstallerStep::Installing,
+            InstallerStep::Finished,
+        ] {
+            render_3d_vfx(p, &cam, view_rot, center, 1.23, step);
+        }
+    });
+    out.textures_delta.clear();
+}

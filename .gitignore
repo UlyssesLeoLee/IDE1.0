@@ -3,6 +3,8 @@
 **/target/
 **/*.rs.bk
 Cargo.lock.bak
+*.exe
+**/*.exe
 
 # IDE1.0 临时 ACI 输出
 /.aci.tmp.json

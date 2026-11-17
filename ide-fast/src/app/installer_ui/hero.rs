@@ -92,8 +92,7 @@ impl App {
             target: Vec3::new(0.0, 16.0, 0.0),
         };
 
-        // 4. 渲染真 3D 赛璐珞神殿与晶钻场景
-        let is_warp = self.installer.step == InstallerStep::Installing;
+        // 4. 渲染真 3D 赛璐珞神殿与晶钻场景 (包含放射光芒、能量双环、星尘涡旋等华丽特效)
         render_cel3d_scene(
             ui.painter(),
             stage_rect,
@@ -104,7 +103,7 @@ impl App {
             &gem_model_mat,
             &wreath_model_mat,
             time,
-            is_warp,
+            self.installer.step,
         );
 
         // 5. 投影真实正版 Logo 到晶钻核心中心 (严格保留正版 Logo)

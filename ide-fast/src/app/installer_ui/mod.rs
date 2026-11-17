@@ -15,6 +15,7 @@ pub mod art;
 pub mod cards;
 pub mod cel3d;
 pub mod cel3d_models;
+pub mod cel3d_vfx;
 mod deploy;
 mod hero;
 mod steps;

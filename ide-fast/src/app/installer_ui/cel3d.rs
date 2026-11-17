@@ -4,9 +4,10 @@
 
 use eframe::egui;
 use egui::{pos2, Color32, Painter, Pos2, Rect, Stroke};
-use std::f32::consts::PI;
 
 pub use super::cel3d_models::*;
+pub use super::cel3d_vfx::*;
+use super::InstallerStep;
 
 /// 3D 三维向量
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -387,12 +388,15 @@ pub fn render_cel3d_scene(
     gem_model_mat: &Mat4,
     wreath_model_mat: &Mat4,
     time: f32,
-    is_warp: bool,
+    step: InstallerStep,
 ) {
     let center = rect.center();
     let rot_x = Mat4::rot_x(cam.pitch);
     let rot_y = Mat4::rot_y(cam.yaw);
     let view_rot = rot_x.mul(&rot_y);
+
+    // 1. 优先绘制深层 3D 华丽背景特效 (放射状光芒、能量双环、星尘粒子、曲速/庆典特效)
+    render_3d_vfx(p, cam, view_rot, center, time, step);
 
     let mut render_list = Vec::with_capacity(300);
     collect_mesh_polys(pedestal, None, cam, view_rot, center, &mut render_list);
@@ -409,40 +413,5 @@ pub fn render_cel3d_scene(
             poly.color,
             Stroke::new(2.0, Color32::BLACK),
         ));
-    }
-
-    draw_billboard_glints(p, center, cam, view_rot, time);
-    if is_warp {
-        draw_warp_streaks(p, center, time);
-    }
-}
-
-fn draw_billboard_glints(p: &Painter, center: Pos2, cam: &Camera3D, view_rot: Mat4, time: f32) {
-    let glint_offsets = [(0.0, 85.0, 0.0), (-22.0, 95.0, 14.0), (22.0, 75.0, -14.0)];
-    for (i, &(gx, gy, gz)) in glint_offsets.iter().enumerate() {
-        let p_world = Vec3::new(gx, gy, gz);
-        let rot = view_rot.transform_point(p_world - cam.target);
-        let p_cam = Vec3::new(rot.x, rot.y, rot.z + cam.dist);
-        if p_cam.z > 10.0 {
-            let sx = center.x + (p_cam.x * cam.focal) / p_cam.z;
-            let sy = center.y - (p_cam.y * cam.focal) / p_cam.z;
-            let phase = time * 4.0 + (i as f32 * 2.1);
-            let size = 6.0 + (phase.sin() * 3.5).abs();
-            p.circle_filled(pos2(sx, sy), size * 0.5, Color32::WHITE);
-            p.line_segment([pos2(sx - size, sy), pos2(sx + size, sy)], Stroke::new(1.8, Color32::WHITE));
-            p.line_segment([pos2(sx, sy - size), pos2(sx, sy + size)], Stroke::new(1.8, Color32::WHITE));
-        }
-    }
-}
-
-fn draw_warp_streaks(p: &Painter, center: Pos2, time: f32) {
-    for i in 0..16 {
-        let a = (i as f32) * 2.0 * PI / 16.0;
-        let speed_t = (time * 6.0 + (i as f32 * 0.4)) % 1.0;
-        let r_start = 40.0 + speed_t * 90.0;
-        let r_end = r_start + 18.0;
-        let p1 = pos2(center.x + a.cos() * r_start, center.y + a.sin() * r_start);
-        let p2 = pos2(center.x + a.cos() * r_end, center.y + a.sin() * r_end);
-        p.line_segment([p1, p2], Stroke::new(2.5, Color32::from_rgb(0, 240, 255)));
     }
 }
