@@ -143,3 +143,62 @@ fn test_installer_logo_fallback_without_texture() {
     out.textures_delta.clear();
     assert!(a.installer.open);
 }
+
+#[test]
+fn test_cel3d_math_and_transforms() {
+    use super::cel3d::*;
+
+    // 向量运算
+    let v1 = Vec3::new(1.0, 0.0, 0.0);
+    let v2 = Vec3::new(0.0, 1.0, 0.0);
+    let cross = v1.cross(v2);
+    assert!((cross.z - 1.0).abs() < 1e-5);
+    assert_eq!(v1.dot(v2), 0.0);
+    assert!((cross.length() - 1.0).abs() < 1e-5);
+
+    // 矩阵变换
+    let m_rot = Mat4::rot_y(std::f32::consts::PI * 0.5);
+    let p_rot = m_rot.transform_point(v1);
+    assert!(p_rot.x.abs() < 1e-4);
+    assert!((p_rot.z - (-1.0)).abs() < 1e-4);
+
+    let m_trans = Mat4::translate(10.0, 20.0, 30.0);
+    let p_trans = m_trans.transform_point(Vec3::ZERO);
+    assert_eq!(p_trans, Vec3::new(10.0, 20.0, 30.0));
+}
+
+#[test]
+fn test_cel3d_models_generation() {
+    use super::cel3d::*;
+
+    let pedestal = build_ionic_pedestal();
+    assert!(pedestal.vertices.len() > 30, "神殿立柱应包含丰富的柱础与凹槽几何顶点");
+    assert!(pedestal.faces.len() > 20, "神殿立柱应包含完整的侧面与顶面多边形");
+
+    let gem = build_crystal_gem(30.0);
+    assert_eq!(gem.vertices.len(), 12, "正二十面体晶石应严格具有 12 个黄金比例顶点");
+    assert_eq!(gem.faces.len(), 20, "正二十面体晶石应严格具有 20 个三角切面");
+
+    let wreath = build_laurel_wreath(20, 50.0, 44.0);
+    assert_eq!(wreath.faces.len(), 20, "阿波罗桂冠应包含 20 片月桂叶几何体");
+    assert_eq!(wreath.vertices.len(), 80, "每片月桂叶由 4 个三维顶点构成");
+}
+
+#[test]
+fn test_cel3d_material_shading_invariants() {
+    use super::cel3d::*;
+
+    let norm = Vec3::new(0.0, 1.0, 0.0);
+    let light_direct = Vec3::new(0.0, -1.0, 0.0);
+    let light_back = Vec3::new(0.0, 1.0, 0.0);
+    let view = Vec3::new(0.0, 0.0, 1.0);
+
+    let c_gem_bright = CelMaterial::CrystalGem.shade(norm, light_direct, view);
+    let c_gem_dark = CelMaterial::CrystalGem.shade(norm, light_back, view);
+    assert_ne!(c_gem_bright, c_gem_dark, "高光与背光区域应形成鲜明的阶梯式赛璐珞明暗切面");
+
+    let light_diffuse = Vec3::new(0.3, -0.9, 0.0).norm();
+    let c_marble = CelMaterial::MarbleWhite.shade(norm, light_diffuse, view);
+    let c_gold = CelMaterial::GoldTrim.shade(norm, light_diffuse, view);
+    assert_ne!(c_marble, c_gold, "不同赛璐珞材质呈现独有的美漫色彩层次");
+}

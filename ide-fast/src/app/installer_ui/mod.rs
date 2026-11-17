@@ -13,6 +13,7 @@
 
 pub mod art;
 pub mod cards;
+pub mod cel3d;
 mod deploy;
 mod hero;
 mod steps;
@@ -50,6 +51,10 @@ pub struct InstallerState {
     pub install_progress: f32,
     pub status_msg: Option<String>,
     pub logo_tex: Option<egui::TextureHandle>,
+    pub cam_yaw: f32,
+    pub cam_pitch: f32,
+    pub cam_dist: f32,
+    pub auto_rotate: bool,
 }
 
 impl Default for InstallerState {
@@ -70,6 +75,10 @@ impl Default for InstallerState {
             install_progress: 0.0,
             status_msg: None,
             logo_tex: None,
+            cam_yaw: 0.35,
+            cam_pitch: 0.22,
+            cam_dist: 450.0,
+            auto_rotate: true,
         }
     }
 }
@@ -324,15 +333,15 @@ impl App {
             pos2(win_rect.right() - 16.0, win_rect.bottom() - 12.0),
         );
 
-        let left_w = 236.0;
+        let left_w = 310.0;
         let left_panel_rect = Rect::from_min_size(body_rect.min, vec2(left_w, body_rect.height()));
         let right_panel_rect = Rect::from_min_max(
             pos2(left_panel_rect.right() + 14.0, body_rect.top()),
             body_rect.max,
         );
 
-        // 5.1 渲染左侧英雄展台
-        self.render_left_hero_stage(ui.painter(), left_panel_rect);
+        // 5.1 渲染左侧英雄展台 (真 3D 赛璐珞互动舞台)
+        self.render_left_hero_stage(ui, left_panel_rect);
 
         // 5.2 渲染右侧向导步骤内容
         self.render_right_step_panel(ui, right_panel_rect, standalone);

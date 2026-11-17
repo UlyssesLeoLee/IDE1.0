@@ -1,19 +1,40 @@
-//! 美漫安装向导左侧英雄展台分镜 (Hero Stage View)
+//! 美漫安装向导真 3D 赛璐珞英雄展台分镜 (Hero 3D Stage View)
+//! 包含古希腊爱奥尼神殿立柱展台、正二十面体悬浮晶钻多面体、阿波罗黄金月桂冠、
+//! 3D 阶梯式光照、粗黑墨线轮廓描边与用户交互式自由 3D 拖拽旋转。
 
 use super::art::*;
+use super::cel3d::*;
 use super::InstallerStep;
 use crate::app::App;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke};
 use std::f32::consts::PI;
+use std::sync::OnceLock;
+
+static PEDESTAL_MESH: OnceLock<Mesh3D> = OnceLock::new();
+static GEM_MESH: OnceLock<Mesh3D> = OnceLock::new();
+static WREATH_MESH: OnceLock<Mesh3D> = OnceLock::new();
+
+fn get_pedestal() -> &'static Mesh3D {
+    PEDESTAL_MESH.get_or_init(build_ionic_pedestal)
+}
+
+fn get_gem() -> &'static Mesh3D {
+    GEM_MESH.get_or_init(|| build_crystal_gem(30.0))
+}
+
+fn get_wreath() -> &'static Mesh3D {
+    WREATH_MESH.get_or_init(|| build_laurel_wreath(20, 50.0, 44.0))
+}
 
 impl App {
-    /// 渲染左侧英雄展台分镜 (Hero Stage)
-    pub(super) fn render_left_hero_stage(&self, p: &egui::Painter, left_panel_rect: Rect) {
+    /// 渲染左侧英雄展台分镜 (Hero 3D Cel-Shaded Stage)
+    pub(super) fn render_left_hero_stage(&mut self, ui: &mut egui::Ui, left_panel_rect: Rect) {
+        let p = ui.painter();
         paint_comic_hard_shadow_rect(
             p,
             left_panel_rect,
-            Color32::from_rgb(24, 28, 46),
+            Color32::from_rgb(22, 26, 44),
             2.5,
             vec2(3.5, 3.5),
         );
@@ -25,39 +46,185 @@ impl App {
             1.0,
         );
 
-        let core_center = pos2(left_panel_rect.center().x, left_panel_rect.top() + 106.0);
-        // 放射状漫画爆发光芒 (Burst Rays)
-        for a in (0..360).step_by(30) {
+        let dt = ui.input(|i| i.stable_dt).min(0.05);
+        let time = ui.input(|i| i.time) as f32;
+
+        // 3D 舞台可视与交互区域
+        let stage_h = left_panel_rect.height() - 124.0;
+        let stage_rect =
+            Rect::from_min_size(left_panel_rect.min, vec2(left_panel_rect.width(), stage_h));
+
+        // 1. 背景放射状漫画爆发光芒 (Burst Rays)
+        let core_center = pos2(stage_rect.center().x, stage_rect.top() + 98.0);
+        for a in (0..360).step_by(24) {
             let rad = (a as f32) * PI / 180.0;
             let ray_p = pos2(
-                core_center.x + 64.0 * rad.cos(),
-                core_center.y + 64.0 * rad.sin(),
+                core_center.x + 88.0 * rad.cos(),
+                core_center.y + 88.0 * rad.sin(),
             );
             p.line_segment(
                 [core_center, ray_p],
-                Stroke::new(1.2, Color32::from_rgb(255, 230, 0)),
+                Stroke::new(1.0, Color32::from_rgb(255, 230, 0)),
             );
         }
 
-        // 正版原生 Logo 纹理悬浮核心 (使用用户真实正版 Crystal Logo，保留晶莹切面)
-        paint_authentic_logo(
-            p,
-            self.installer.logo_tex.as_ref(),
-            core_center,
-            72.0,
-            vec2(3.5, 3.5),
+        // 2. 交互式 3D 舞台鼠标拖拽与滚轮缩放处理
+        let stage_resp = ui.interact(
+            stage_rect,
+            ui.id().with("installer_3d_stage_interact"),
+            egui::Sense::click_and_drag(),
         );
 
-        // 爱奥尼古典神殿柱台
-        paint_ionic_comic_pedestal(p, left_panel_rect.center().x, left_panel_rect.top() + 168.0);
+        if stage_resp.dragged() {
+            let delta = stage_resp.drag_delta();
+            self.installer.cam_yaw += delta.x * 0.012;
+            self.installer.cam_pitch =
+                (self.installer.cam_pitch - delta.y * 0.012).clamp(-0.45, 0.85);
+            self.installer.auto_rotate = false;
+            ui.ctx().request_repaint();
+        } else if self.installer.auto_rotate {
+            let speed = if self.installer.step == InstallerStep::Installing {
+                2.2
+            } else {
+                0.40
+            };
+            self.installer.cam_yaw += dt * speed;
+            ui.ctx().request_repaint();
+        }
 
-        // 漫画对话气泡 (Speech Balloon)
+        if stage_resp.hovered() {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll.abs() > 0.0 {
+                self.installer.cam_dist =
+                    (self.installer.cam_dist - scroll * 0.5).clamp(320.0, 600.0);
+                ui.ctx().request_repaint();
+            }
+        }
+
+        if stage_resp.double_clicked() {
+            self.installer.cam_yaw = 0.35;
+            self.installer.cam_pitch = 0.22;
+            self.installer.cam_dist = 450.0;
+            self.installer.auto_rotate = true;
+        }
+
+        // 3. 动态计算 3D 变换矩阵与相机视图
+        let bob_y = 78.0 + (time * 2.5).sin() * 6.0;
+        let gem_spin_speed = if self.installer.step == InstallerStep::Installing {
+            4.8
+        } else {
+            1.2
+        };
+        let gem_rot = Mat4::rot_y(time * gem_spin_speed)
+            .mul(&Mat4::rot_x((time * 0.8).sin() * 0.25));
+        let gem_model_mat = Mat4::translate(0.0, bob_y, 0.0).mul(&gem_rot);
+
+        let wreath_rot = Mat4::rot_y(time * 0.5);
+        let wreath_model_mat = Mat4::translate(0.0, bob_y, 0.0).mul(&wreath_rot);
+
+        let cam = Camera3D {
+            yaw: self.installer.cam_yaw,
+            pitch: self.installer.cam_pitch,
+            dist: self.installer.cam_dist,
+            focal: 380.0,
+            target: Vec3::new(0.0, 16.0, 0.0),
+        };
+
+        // 4. 渲染真 3D 赛璐珞神殿与晶钻场景
+        let is_warp = self.installer.step == InstallerStep::Installing;
+        render_cel3d_scene(
+            ui.painter(),
+            stage_rect,
+            &cam,
+            get_pedestal(),
+            get_gem(),
+            get_wreath(),
+            &gem_model_mat,
+            &wreath_model_mat,
+            time,
+            is_warp,
+        );
+
+        // 5. 投影真实正版 Logo 到晶钻核心中心 (严格保留正版 Logo)
+        {
+            let rot_x = Mat4::rot_x(cam.pitch);
+            let rot_y = Mat4::rot_y(cam.yaw);
+            let view_rot = rot_x.mul(&rot_y);
+            let rel = Vec3::new(0.0, bob_y, 0.0) - cam.target;
+            let rot = view_rot.transform_point(rel);
+            let p_cam = Vec3::new(rot.x, rot.y, rot.z + cam.dist);
+            if p_cam.z > 10.0 {
+                let center_x = stage_rect.center().x + (p_cam.x * cam.focal) / p_cam.z;
+                let center_y = stage_rect.center().y - (p_cam.y * cam.focal) / p_cam.z;
+                paint_authentic_logo(
+                    ui.painter(),
+                    self.installer.logo_tex.as_ref(),
+                    pos2(center_x, center_y),
+                    36.0,
+                    vec2(2.5, 2.5),
+                );
+            }
+        }
+
+        // 6. 3D 交互控制悬浮胶囊 HUD
+        let hud_rect = Rect::from_center_size(
+            pos2(stage_rect.center().x, stage_rect.top() + 18.0),
+            vec2(200.0, 24.0),
+        );
+        let hud_resp = ui.interact(
+            hud_rect,
+            ui.id().with("installer_3d_hud_btn"),
+            egui::Sense::click(),
+        );
+        if hud_resp.clicked() {
+            self.installer.auto_rotate = !self.installer.auto_rotate;
+        }
+
+        let (hud_bg, hud_text) = if hud_resp.hovered() {
+            (
+                Color32::from_rgb(255, 230, 0),
+                if self.installer.auto_rotate {
+                    "⟳ 点击暂停 3D 巡航"
+                } else {
+                    "⟳ 点击恢复 3D 巡航"
+                },
+            )
+        } else {
+            (
+                Color32::from_rgb(32, 38, 62),
+                if self.installer.auto_rotate {
+                    "⟳ 3D 自由拖拽 · 巡航中"
+                } else {
+                    "⟳ 3D 自由拖拽 · 手动控制"
+                },
+            )
+        };
+        paint_comic_hard_shadow_rect(
+            ui.painter(),
+            hud_rect,
+            hud_bg,
+            1.8,
+            vec2(1.5, 1.5),
+        );
+        ui.painter().text(
+            hud_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            hud_text,
+            egui::FontId::proportional(10.0),
+            if hud_resp.hovered() {
+                Color32::BLACK
+            } else {
+                Color32::from_rgb(0, 229, 255)
+            },
+        );
+
+        // 7. 漫画对话气泡 (Speech Balloon)
         let bubble_rect = Rect::from_center_size(
-            pos2(left_panel_rect.center().x, left_panel_rect.bottom() - 86.0),
-            vec2(210.0, 52.0),
+            pos2(left_panel_rect.center().x, left_panel_rect.bottom() - 78.0),
+            vec2(left_panel_rect.width() - 24.0, 48.0),
         );
         paint_comic_hard_shadow_rect(
-            p,
+            ui.painter(),
             bubble_rect,
             Color32::from_rgb(255, 253, 240),
             2.0,
@@ -66,24 +233,24 @@ impl App {
         let tail_top = pos2(bubble_rect.center().x - 10.0, bubble_rect.top() - 8.0);
         let tail_l = pos2(bubble_rect.center().x - 18.0, bubble_rect.top());
         let tail_r = pos2(bubble_rect.center().x - 2.0, bubble_rect.top());
-        p.add(egui::Shape::convex_polygon(
+        ui.painter().add(egui::Shape::convex_polygon(
             vec![tail_top, tail_l, tail_r],
             Color32::from_rgb(255, 253, 240),
             Stroke::new(2.0, Color32::BLACK),
         ));
-        p.line_segment(
+        ui.painter().line_segment(
             [tail_l, tail_r],
             Stroke::new(2.5, Color32::from_rgb(255, 253, 240)),
         );
 
         let (b_line1, b_line2) = match self.installer.step {
             InstallerStep::Welcome => (
-                "⚡ 毫秒极速冷启 · 纯 Rust 打造！",
-                "零 Electron 臃肿 · 极致性能体验",
+                "⚡ 真 3D 赛璐珞 · 纯 Rust 极速打造！",
+                "全景自由视角 · 极致轻量性能体验",
             ),
             InstallerStep::Options => ("📁 自由定制你的专属环境！", "随心配置路径与系统集成选项"),
             InstallerStep::Installing => {
-                ("🚀 正在极速释放原生性能内核...", "编译缓存与环境秒级就绪中")
+                ("🚀 3D 超速引擎正释放微内核...", "编译缓存与环境秒级就绪中")
             }
             InstallerStep::Finished => (
                 "🎉 恭喜！IDE 1.0 极速环境已就绪！",
@@ -91,37 +258,37 @@ impl App {
             ),
         };
 
-        p.text(
-            pos2(bubble_rect.center().x, bubble_rect.center().y - 9.0),
+        ui.painter().text(
+            pos2(bubble_rect.center().x, bubble_rect.center().y - 8.0),
             egui::Align2::CENTER_CENTER,
             b_line1,
             egui::FontId::proportional(11.0),
             Color32::BLACK,
         );
-        p.text(
-            pos2(bubble_rect.center().x, bubble_rect.center().y + 11.0),
+        ui.painter().text(
+            pos2(bubble_rect.center().x, bubble_rect.center().y + 10.0),
             egui::Align2::CENTER_CENTER,
             b_line2,
             egui::FontId::proportional(9.2),
             Color32::from_rgb(70, 75, 90),
         );
 
-        // 左下角英雄印章贴纸
+        // 8. 左下角英雄印章贴纸
         let stamp_rect = Rect::from_center_size(
-            pos2(left_panel_rect.center().x, left_panel_rect.bottom() - 28.0),
-            vec2(170.0, 26.0),
+            pos2(left_panel_rect.center().x, left_panel_rect.bottom() - 24.0),
+            vec2(left_panel_rect.width() - 44.0, 24.0),
         );
         let (stamp_col, stamp_text) = if self.installer.step == InstallerStep::Finished {
             (Color32::from_rgb(255, 204, 0), "★ MISSION COMPLETE ★")
         } else {
-            (Color32::from_rgb(255, 42, 85), "★ 100% NATIVE HERO ★")
+            (Color32::from_rgb(255, 42, 85), "★ 100% NATIVE 3D HERO ★")
         };
-        paint_comic_hard_shadow_rect(p, stamp_rect, stamp_col, 2.0, vec2(2.0, 2.0));
-        p.text(
+        paint_comic_hard_shadow_rect(ui.painter(), stamp_rect, stamp_col, 2.0, vec2(2.0, 2.0));
+        ui.painter().text(
             stamp_rect.center(),
             egui::Align2::CENTER_CENTER,
             stamp_text,
-            egui::FontId::proportional(10.5),
+            egui::FontId::proportional(10.0),
             if self.installer.step == InstallerStep::Finished {
                 Color32::BLACK
             } else {
