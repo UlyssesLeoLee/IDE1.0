@@ -292,7 +292,15 @@ impl App {
             ai: Default::default(),
             collab: Default::default(),
             installer: Default::default(),
-            sticky_notes: sticky_notes::StickyNotesState::load(),
+            sticky_notes: {
+                let mut s = if persist {
+                    sticky_notes::StickyNotesState::load()
+                } else {
+                    sticky_notes::StickyNotesState::default_initial()
+                };
+                s.persist = persist;
+                s
+            },
             print_ui: Default::default(),
             tray: if persist && st.tray_resident {
                 crate::tray::Tray::build(st.tray_resident, false)
@@ -524,8 +532,25 @@ impl App {
         self.wrap = st.wrap;
         crate::i18n::set_code(&st.lang);
         self.cfg = st.clone();
+        let current_theme_key = if self.theme_id.is_empty() {
+            if self.cfg.dark {
+                "theme-dark"
+            } else {
+                "theme-light"
+            }
+        } else {
+            &self.theme_id
+        };
+        if !st.font_family.is_empty()
+            && (self.theme_id == "theme-retro16" || !crate::fonts::is_pixel_font(&st.font_family))
+        {
+            self.cfg
+                .theme_fonts
+                .insert(current_theme_key.to_string(), st.font_family.clone());
+        }
         self.cfg.font_family =
             crate::fonts::sanitize_font_family(&self.cfg.font_family, &self.theme_id);
+        self.applied_font.clear();
         keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
         self.set_tray_resident(st.tray_resident);
@@ -665,6 +690,7 @@ impl App {
                 draft: self.current_settings(),
                 tab,
                 new_ext: String::new(),
+                user_fonts: crate::fonts::user_fonts(),
                 fonts: crate::fonts::system_fonts(),
             }));
         }
@@ -2277,7 +2303,18 @@ impl App {
         }
     }
 
-    /// 插件列表: 主题单选 / 脚本插件开关 / 命令 / 导入 / GitHub 安装 (「插件」菜单和侧栏的扩展页共用)
+    /// 热插拔状态切换 / 删除 / 恢复后的宿主联动清理
+    pub(super) fn on_plugin_hot_swap(&mut self, id: &str) {
+        self.plug.unload(id);
+        self.md10.invalidate();
+        self.nema.cached_render = None;
+        self.nema.cached_graph = None;
+        if id == "mcp" && !plugins::is_module_active("mcp") {
+            self.ai_reset_mcp();
+        }
+    }
+
+    /// 插件列表: 主题单选 / 热插拔模块开关 / 脚本插件开关 / 命令 / 导入 / GitHub 安装 (「插件」菜单和侧栏的扩展页共用)
     fn plugin_panel(&mut self, ui: &mut egui::Ui) {
         let rows = plugins::rows();
         if ui
@@ -2289,19 +2326,15 @@ impl App {
         }
         for r in &rows {
             ui.horizontal(|ui| {
-                if !r.commands.is_empty() || r.script_only {
+                if r.theme.is_none() {
                     if ui
                         .check(&mut r.enabled.clone(), "")
                         .tip(tr("ui.plugin-enabled"))
                         .clicked()
                     {
-                        let _ = plugins::set_enabled(&r.id, !r.enabled);
-                        self.md10.invalidate();
-                        self.nema.cached_render = None;
-                        self.nema.cached_graph = None;
-                        if r.enabled {
-                            self.plug.unload(&r.id);
-                        }
+                        let next_on = !r.enabled;
+                        let _ = plugins::set_enabled(&r.id, next_on);
+                        self.on_plugin_hot_swap(&r.id);
                     }
                 }
                 if let Some(t) = &r.theme {
@@ -2316,7 +2349,15 @@ impl App {
                         ui.close();
                     }
                 } else {
-                    ui.label(format!(
+                    if let Some(hot_mod) = r.hot_module {
+                        ui.label(
+                            egui::RichText::new(format!("[{}]", hot_mod.as_tag()))
+                                .small()
+                                .strong()
+                                .color(hot_mod.badge_color()),
+                        );
+                    }
+                    let lbl = ui.label(format!(
                         "{} {}{}",
                         r.name,
                         r.version,
@@ -2326,19 +2367,37 @@ impl App {
                             ""
                         }
                     ));
+                    if !r.description.is_empty() {
+                        lbl.on_hover_text(&r.description);
+                    }
                 }
                 if ui.small_button(tr("c.delete")).clicked() {
                     let _ = plugins::remove(&r.id);
-                    self.md10.invalidate();
-                    self.nema.cached_render = None;
-                    self.nema.cached_graph = None;
-                    self.plug.unload(&r.id);
+                    self.on_plugin_hot_swap(&r.id);
                     if self.theme_id == r.id {
                         self.set_theme_plugin("");
                     }
                     ui.close();
                 }
             });
+            if r.id == "mod" && r.enabled && !r.mod_modes.is_empty() {
+                ui.horizontal(|ui| {
+                    ui.add_space(24.0);
+                    ui.weak("模式:");
+                    for m in &r.mod_modes {
+                        if ui
+                            .selectable_label(
+                                self.ai.active_mod == m.id,
+                                egui::RichText::new(&m.label).small(),
+                            )
+                            .on_hover_text(&m.title)
+                            .clicked()
+                        {
+                            self.ai.active_mod = m.id.clone();
+                        }
+                    }
+                });
+            }
         }
         // 脚本插件贡献的命令: 点了才(惰性)启动 JS 宿主
         let cmds: Vec<(String, String, String)> = rows
@@ -2374,9 +2433,7 @@ impl App {
                 for (id, name, _) in gone {
                     if ui.button(name).clicked() {
                         let _ = plugins::restore(&id);
-                        self.md10.invalidate();
-                        self.nema.cached_render = None;
-                        self.nema.cached_graph = None;
+                        self.on_plugin_hot_swap(&id);
                         ui.close();
                     }
                 }
@@ -2399,6 +2456,24 @@ impl App {
     fn run_plugin_command(&mut self, plugin: &str, cmd: &str, title: &str) {
         if plugin == "ppa" && cmd == "run" {
             return self.run_ppa_doc();
+        }
+        if plugin == "mod" && cmd == "cycle" {
+            let modes = plugins::active_mod_modes();
+            if modes.is_empty() {
+                self.cur().tip = trf("dlg.plugin-off", &[plugin]);
+                return;
+            }
+            let idx = modes
+                .iter()
+                .position(|m| m.id == self.ai.active_mod)
+                .map(|i| (i + 1) % modes.len())
+                .unwrap_or(0);
+            self.ai.active_mod = modes[idx].id.clone();
+            self.cur().tip = format!(
+                "已切换 Claude Mod 工作模式: {} ({})",
+                modes[idx].label, modes[idx].title
+            );
+            return;
         }
         let Some(row) = plugins::rows()
             .into_iter()
@@ -3540,8 +3615,23 @@ impl App {
         let slots = right_collapse_slots(rect, minimap_open, md_open, nema_open);
         let btn_painter = ui.painter_at(rect.intersect(ui.clip_rect()));
         let pressed = ui.ctx().input(|i| i.pointer.primary_down());
+        let top_hover_zone = Rect::from_min_max(
+            Pos2::new(rect.max.x - 145.0, rect.min.y),
+            Pos2::new(rect.max.x, rect.min.y + 36.0),
+        );
+        let show_top_slots = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
+            top_hover_zone.contains(p)
+                || slots
+                    .iter()
+                    .filter(|s| s.rect.min.y < rect.min.y + 40.0)
+                    .any(|s| s.rect.expand(6.0).contains(p))
+        });
         let mut clicked_kind = None;
         for slot in slots {
+            let is_top = slot.rect.min.y < rect.min.y + 40.0;
+            if is_top && !show_top_slots {
+                continue;
+            }
             let (label, tip_text) = match slot.kind {
                 RightCollapseKind::Minimap => ("导航", trz("折叠 / 展开右侧导航图 (Minimap)")),
                 RightCollapseKind::Md => ("MD", trz("折叠 / 展开 Markdown 工具栏/预览")),
@@ -3632,6 +3722,30 @@ impl App {
     /// 选主题插件 (空 id = 回到内置深 / 浅色)
     fn set_theme_plugin(&mut self, id: &str) {
         let prev_id = self.theme_id.clone();
+        let prev_key = if prev_id.is_empty() {
+            if self.cfg.dark {
+                "theme-dark"
+            } else {
+                "theme-light"
+            }
+        } else {
+            &prev_id
+        };
+        // 保存切换前主题的自定义字体设置 (避免把默认的 PixelFontMulti-12.ttf 误存为普通主题自定义字体)
+        if !self.cfg.font_family.is_empty() {
+            if prev_key == "theme-retro16" {
+                if self.cfg.font_family != "PixelFontMulti-12.ttf" {
+                    self.cfg
+                        .theme_fonts
+                        .insert(prev_key.to_string(), self.cfg.font_family.clone());
+                }
+            } else if !crate::fonts::is_pixel_font(&self.cfg.font_family) {
+                self.cfg
+                    .theme_fonts
+                    .insert(prev_key.to_string(), self.cfg.font_family.clone());
+            }
+        }
+
         self.theme_id = id.to_string();
         self.tc.retro16 = self.theme_id == "theme-retro16";
         if self.tc.retro16 {
@@ -3641,8 +3755,35 @@ impl App {
         } else if prev_id == "theme-retro16" && (self.font_px - 12.0).abs() < 0.1 {
             self.font_px = DEFAULT_FONT_PX;
         }
-        // 切换主题后同步字体约束: 仅 Retro16 用像素字体，其他主题清理残留像素字体并清除已缓存字体触发重载
-        self.cfg.font_family = crate::fonts::sanitize_font_family(&self.cfg.font_family, id);
+
+        let new_key = if id.is_empty() {
+            if self.cfg.dark {
+                "theme-dark"
+            } else {
+                "theme-light"
+            }
+        } else {
+            id
+        };
+
+        // 切换目标主题字体:
+        // - 若切换至 16-Bit 主题: 所有字体切换为 PixelFont (PixelFontMulti-12.ttf)
+        // - 若切换至其他主题: 优先恢复用户此前针对该主题的专属记忆设置；若未自定义则重置为空(由各主题默认字体接管)
+        if new_key == "theme-retro16" {
+            self.cfg.font_family = self
+                .cfg
+                .theme_fonts
+                .get("theme-retro16")
+                .cloned()
+                .unwrap_or_else(|| "PixelFontMulti-12.ttf".to_string());
+        } else {
+            self.cfg.font_family = self
+                .cfg
+                .theme_fonts
+                .get(new_key)
+                .cloned()
+                .unwrap_or_default();
+        }
         self.applied_font.clear();
         let spec = plugins::find_theme(id);
         self.sys.theme_glass = spec.as_ref().is_some_and(|t| t.translucent);
@@ -3945,29 +4086,16 @@ impl App {
         };
         let font = FontId::new(self.font_px, font_fam.clone());
         let ai = self.active.min(self.docs.len() - 1);
-        let alt_down = ctx.input(|i| i.modifiers.alt);
-        let has_box_sel = self.docs.get(ai).and_then(|d| d.box_sel).is_some();
-        let box_active = has_box_sel
-            || (alt_down
-                && (self.text_drag.is_some()
-                    || ctx.input(|i| {
-                        i.pointer.is_decidedly_dragging()
-                            || i.pointer.any_down()
-                            || i.pointer.any_pressed()
-                    })));
-        let box_expand =
-            ctx.animate_bool_responsive(egui::Id::new("editor_box_sel_expand"), box_active);
-        let _row_extra_spacing = 0.0; // 纵向行间距不变化
-        let char_extra_spacing = box_expand * 8.0; // 横向列间距拉大8px左右
         let (base_h, base_char_w) = ctx.fonts_mut(|f| {
             (
                 f.row_height(&font),
                 f.glyph_width(&font, '0') + self.cfg.letter_spacing,
             )
         });
-        let char_w = base_char_w + char_extra_spacing;
-        let effective_letter_spacing = self.cfg.letter_spacing + char_extra_spacing;
-        // 行高倍数: 整行(含自动换行的每个显示行)都按这个高度排, 文字在行内居中; Alt 纵向选取时横向列间距拉大 8px
+        // Sakura 风格纵向列选: 严格保持等宽网格恒定，不产生任何字符宽度或行间距动态缩放形变
+        let char_w = base_char_w;
+        let effective_letter_spacing = self.cfg.letter_spacing;
+        // 行高倍数: 整行(含自动换行的每个显示行)都按这个高度排, 文字在行内居中
         let row_h = crate::view::row_height(base_h, self.cfg.line_height, self.font_px);
         let rgb = |c: [u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
         let text_color = self
@@ -4496,9 +4624,7 @@ impl App {
                             if row >= r0 && row <= r1 {
                                 let tail = rv.tail();
                                 let xx = |c: usize| {
-                                    let di = rv.idx(c.min(tail));
                                     rv.x_of(&painter, c.min(tail), &font, text_color)
-                                        + di as f32 * char_extra_spacing
                                         + char_w * c.saturating_sub(tail) as f32
                                 };
                                 let (x_left, x_right) = (x0 + xx(c0), x0 + xx(c1));
@@ -4512,6 +4638,16 @@ impl App {
                                 let border_stroke = egui::Stroke::new(1.8, stroke_col);
 
                                 if c1 > c0 {
+                                    // 模式 A: 选取范围可被覆盖 (矩形替换/覆盖模式)
+                                    // 若本行字符未达到左边界 c0，则在尾部到 c0 间绘制轻微对齐导线
+                                    if tail < c0 {
+                                        let pad_start = x0 + xx(tail);
+                                        painter.line_segment(
+                                            [Pos2::new(pad_start, y + row_h * 0.5), Pos2::new(x_left, y + row_h * 0.5)],
+                                            egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(stroke_col.r(), stroke_col.g(), stroke_col.b(), 45)),
+                                        );
+                                    }
+
                                     let box_r = Rect::from_min_max(
                                         Pos2::new(x_left, y + 0.5),
                                         Pos2::new(x_right, y + row_h - 0.5),
@@ -4574,18 +4710,48 @@ impl App {
                                         border_stroke,
                                     );
                                 } else {
-                                    // 列宽为 0 时的纵向光标标线
+                                    // 模式 B: 不选内容只选插入位置时的动态插入空格 (零宽纵向光标模式)
+                                    // 1. 绘制纵向主光标标线与上下 Serif 刻度衬线
                                     painter.line_segment(
                                         [Pos2::new(x_left, y), Pos2::new(x_left, y + row_h)],
-                                        border_stroke,
+                                        egui::Stroke::new(2.0, stroke_col),
                                     );
+                                    if row == r0 {
+                                        painter.line_segment(
+                                            [Pos2::new(x_left - 3.5, y), Pos2::new(x_left + 3.5, y)],
+                                            egui::Stroke::new(2.0, stroke_col),
+                                        );
+                                    }
+                                    if row == r1 {
+                                        painter.line_segment(
+                                            [Pos2::new(x_left - 3.5, y + row_h), Pos2::new(x_left + 3.5, y + row_h)],
+                                            egui::Stroke::new(2.0, stroke_col),
+                                        );
+                                    }
+
+                                    // 2. 短行动态插入空格指示设计: 在行尾至光标列之间绘制动态补齐引导导线与空格点位
+                                    if tail < c0 {
+                                        let pad_start = x0 + xx(tail);
+                                        painter.line_segment(
+                                            [Pos2::new(pad_start, y + row_h * 0.5), Pos2::new(x_left, y + row_h * 0.5)],
+                                            egui::Stroke::new(1.2, Color32::from_rgba_unmultiplied(stroke_col.r(), stroke_col.g(), stroke_col.b(), 110)),
+                                        );
+                                        for sc in tail..c0 {
+                                            let dot_x = x0 + xx(sc) + char_w * 0.5;
+                                            painter.circle_filled(
+                                                Pos2::new(dot_x, y + row_h * 0.5),
+                                                1.2,
+                                                Color32::from_rgba_unmultiplied(stroke_col.r(), stroke_col.g(), stroke_col.b(), 140),
+                                            );
+                                        }
+                                    }
                                 }
 
                                 // 在最后一行底部绘制动态悬浮坐标/尺寸指示徽章
                                 if row == r1 {
                                     let badge_text = if c1 > c0 {
                                         format!(
-                                            "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
+                                            "📐 纵向覆盖选区 [R{}..{} ({}行) × C{}..{} ({}列)] (输入将覆盖此区域)",
                                             r0 + 1,
                                             r1 + 1,
                                             r1 - r0 + 1,
@@ -4595,7 +4761,7 @@ impl App {
                                         )
                                     } else {
                                         format!(
-                                            "📐 纵向光标 [R{}..{} ({}行) × C{}]",
+                                            "📍 纵向多行插入点 [R{}..{} ({}行) · 列 {}] (短行将自动补齐空格)",
                                             r0 + 1,
                                             r1 + 1,
                                             r1 - r0 + 1,
@@ -5060,7 +5226,22 @@ impl App {
                             right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
                         let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
                         let pressed = ui.ctx().input(|i| i.pointer.primary_down());
+                        let top_hover_zone = Rect::from_min_max(
+                            Pos2::new(screen_vp.max.x - 145.0, screen_vp.min.y),
+                            Pos2::new(screen_vp.max.x, screen_vp.min.y + 36.0),
+                        );
+                        let show_top_slots = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
+                            top_hover_zone.contains(p)
+                                || slots
+                                    .iter()
+                                    .filter(|s| s.rect.min.y < screen_vp.min.y + 40.0)
+                                    .any(|s| s.rect.expand(6.0).contains(p))
+                        });
                         for slot in slots {
+                            let is_top = slot.rect.min.y < screen_vp.min.y + 40.0;
+                            if is_top && !show_top_slots {
+                                continue;
+                            }
                             let (label, tip_text) = match slot.kind {
                                 RightCollapseKind::Minimap => {
                                     ("导航", trz("折叠 / 展开右侧导航图 (Minimap)"))
@@ -5404,7 +5585,18 @@ impl App {
             let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
             let nema_open = (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
             let slots = right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
-            if let Some(slot) = slots.iter().find(|s| s.rect.contains(p)) {
+            let top_hover_zone = Rect::from_min_max(
+                Pos2::new(screen_vp.max.x - 145.0, screen_vp.min.y),
+                Pos2::new(screen_vp.max.x, screen_vp.min.y + 36.0),
+            );
+            let show_top_slots = top_hover_zone.contains(p)
+                || slots
+                    .iter()
+                    .filter(|s| s.rect.min.y < screen_vp.min.y + 40.0)
+                    .any(|s| s.rect.expand(6.0).contains(p));
+            if let Some(slot) = slots.iter().find(|s| {
+                s.rect.contains(p) && (s.rect.min.y >= screen_vp.min.y + 40.0 || show_top_slots)
+            }) {
                 if ctx.input(|i| i.pointer.any_pressed()) {
                     self.toggle_right_collapse_slot(slot.kind, is_md_doc, is_nema_doc);
                 }
@@ -5426,18 +5618,23 @@ impl App {
                 self.center_once = true;
                 return;
             }
-            let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
-            let want = (p.x - x0).max(0.0);
-            let col = rv.col_at_with_spacing(
-                ctx,
-                want,
-                rel_y - top(row),
-                &font,
-                wrap_w,
-                effective_letter_spacing,
-            );
             let (alt, ctrl) =
                 ctx.input(|i| (i.modifiers.alt, i.modifiers.command || i.modifiers.ctrl));
+            let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
+            let want = (p.x - x0).max(0.0);
+            let col = if alt || d.box_sel.is_some() {
+                // Sakura 风格纵向列选: 严格按字符宽度 char_w 换算，允许自由延伸至行尾外的空白列
+                ((want + char_w * 0.4) / char_w).floor() as usize
+            } else {
+                rv.col_at_with_spacing(
+                    ctx,
+                    want,
+                    rel_y - top(row),
+                    &font,
+                    wrap_w,
+                    effective_letter_spacing,
+                )
+            };
             let in_sel = d
                 .sel
                 .is_some_and(|s| (row, col) >= (s[0], s[1]) && (row, col) < (s[2], s[3]));
@@ -6015,8 +6212,7 @@ impl App {
             ctx.data_mut(|d| d.insert_temp(egui::Id::new("tauri-scroll"), true));
             ctx.global_style_mut(|s| s.spacing.scroll = tauri_scroll());
         }
-        let effective_font =
-            crate::fonts::effective_font_family(&self.cfg.font_family, &self.theme_id);
+        let effective_font = self.cfg.effective_font_for(&self.theme_id);
         if effective_font != self.applied_font {
             crate::fonts::install(
                 ctx,

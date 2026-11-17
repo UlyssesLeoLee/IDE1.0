@@ -1,0 +1,60 @@
+{
+  "id": "mod",
+  "name": "Mod 智能体工作模式 (Claude Mod)",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "MIT",
+  "description": "类 Claude Mod 热插拔工作模式与规范引擎：支持 Code (编码直改)、Plan (架构规划)、Review (对抗审查)、Ask (只读问答) 四态切换及 CLAUDE.md / AGENT.md 注入。",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": ["editor.read", "agent.tool"],
+  "contributes": {
+    "mod": {
+      "defaultMode": "code",
+      "rulesFiles": ["CLAUDE.md", "AGENT.md", "IDE.md", ".ide/rules.md", ".cursorrules"],
+      "modes": [
+        {
+          "id": "code",
+          "label": "⚡ Code",
+          "title": "编码直改模式",
+          "prompt": "[Claude Mod: CODE] 你处于编码执行模式：直接给出生产级代码实现并应用精确补丁。"
+        },
+        {
+          "id": "plan",
+          "label": "📐 Plan",
+          "title": "架构规划模式",
+          "prompt": "[Claude Mod: PLAN] 你处于架构规划模式：先定义系统边界、不变量、状态流转与验证步骤，输出结构化方案，不直接改写文件。"
+        },
+        {
+          "id": "review",
+          "label": "🔍 Review",
+          "title": "对抗审查模式",
+          "prompt": "[Claude Mod: REVIEW] 你处于对抗式代码审查模式：以 Staff Engineer 标准严格排查并发竞态、安全漏洞与边界条件。"
+        },
+        {
+          "id": "ask",
+          "label": "💬 Ask",
+          "title": "只读问答模式",
+          "prompt": "[Claude Mod: ASK] 你处于只读问答解说模式：专注回答架构与代码原理问题，不修改当前文档。"
+        }
+      ]
+    },
+    "command": [
+      {
+        "id": "cycle",
+        "title": "Mod: 切换 Claude Mod 工作模式 (Code / Plan / Review / Ask)"
+      }
+    ],
+    "agent.tool": [
+      {
+        "name": "modes",
+        "description": "获取 Claude Mod 支持的工作模式列表及约束定义",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "hooks",
+  "name": "Hooks 安全与生命周期拦截器",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "MIT",
+  "description": "热插拔 Agent 生命周期钩子模块 (Pre-Input / Pre-Tool / Post-Tool / Post-Response)，提供目录穿越拦截、私钥保护、20K 载荷截断与 API Key 自动脱敏。",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": ["editor.read", "agent.tool"],
+  "contributes": {
+    "hooks": [
+      { "id": "path-sanitizer", "stage": "pre_tool_call", "label": "目录穿越与私钥防泄露" },
+      { "id": "payload-limit", "stage": "post_tool_call", "label": "超大上下文截断保护 (20K)" },
+      { "id": "secret-mask", "stage": "post_response", "label": "API Key 与敏感凭证自动脱敏" }
+    ],
+    "command": [
+      {
+        "id": "audit",
+        "title": "Hooks: 扫描当前文档敏感凭证与路径安全"
+      }
+    ],
+    "agent.tool": [
+      {
+        "name": "security_scan",
+        "description": "扫描文本中的敏感凭证 (sk-/Bearer) 与危险路径引用 (..)",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "待扫描文本" }
+          },
+          "required": ["text"]
+        }
+      }
+    ]
+  }
+}

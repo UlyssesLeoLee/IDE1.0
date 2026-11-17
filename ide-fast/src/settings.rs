@@ -43,6 +43,8 @@ pub struct Settings {
     pub mru_files: usize,
     /// 编辑器字体族 (空 = egui 默认等宽); 行高倍数
     pub font_family: String,
+    /// 各主题专属记忆的字体偏好映射 (主题 ID -> 字体文件/族名，记忆用户在不同主题下的个性化修改)
+    pub theme_fonts: std::collections::HashMap<String, String>,
     pub line_height: f32,
     /// Sakura 字体配置: 粗体 / 斜体 / 字符间距 (-2.0..=10.0 px) / 全角半角 1:2 等宽比率 / CJK fallback 字体优先
     pub font_bold: bool,
@@ -232,6 +234,7 @@ impl Default for Settings {
             max_file_mb: 4,
             mru_files: 12,
             font_family: String::new(),
+            theme_fonts: std::collections::HashMap::new(),
             line_height: 1.0,
             font_bold: false,
             font_italic: false,
@@ -641,6 +644,13 @@ impl Settings {
         st("default_encoding", &mut self.default_encoding);
         st("default_eol", &mut self.default_eol);
         st("font_family", &mut self.font_family);
+        if let Some(obj) = v.get("theme_fonts").and_then(|o| o.as_object()) {
+            for (k, val) in obj {
+                if let Some(s) = val.as_str() {
+                    self.theme_fonts.insert(k.clone(), s.to_string());
+                }
+            }
+        }
         self.font_family =
             crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
         st("font_cjk_fallback", &mut self.font_cjk_fallback);
@@ -847,6 +857,48 @@ impl Settings {
         self.sanitize();
     }
 
+    /// 为指定主题解析最终有效字体，严格遵从：
+    /// 1. 用户若对当前主题有显式自定义修改（记忆在 theme_fonts 中），最高优先级使用用户的修改
+    /// 2. theme-retro16 核心要求所有字体切换为 PixelFont (PixelFontMulti-12.ttf)
+    /// 3. 其他主题使用用户针对该主题的记忆字体，若未修改过则使用该主题的默认主题字体 (theme_default_font)
+    pub fn effective_font_for(&self, theme_id: &str) -> String {
+        let key = if theme_id.is_empty() {
+            if self.dark {
+                "theme-dark"
+            } else {
+                "theme-light"
+            }
+        } else {
+            theme_id
+        };
+        // 1. 如果用户对该主题有明确的记忆修改
+        if let Some(f) = self.theme_fonts.get(key) {
+            let clean = f.trim();
+            if !clean.is_empty()
+                && (key == "theme-retro16"
+                    || (!crate::fonts::is_pixel_font(clean)
+                        && !crate::fonts::is_illegible_display_font(clean)))
+            {
+                return clean.to_string();
+            }
+        }
+        // 2. 如果是 16-Bit 主题，默认全面切换至像素字体
+        if key == "theme-retro16" {
+            return "PixelFontMulti-12.ttf".to_string();
+        }
+        // 3. 其他主题：若全局配置了合法的非像素字体，使用它；否则使用该主题的专属默认字体
+        let clean_global = self.font_family.trim();
+        if !clean_global.is_empty()
+            && !crate::fonts::is_pixel_font(clean_global)
+            && !crate::fonts::is_illegible_display_font(clean_global)
+        {
+            return clean_global.to_string();
+        }
+        crate::fonts::theme_default_font(key)
+            .unwrap_or("CascadiaCode.ttf")
+            .to_string()
+    }
+
     /// 统一清洗和规整内存中或加载后的设置字段，确保处于合法界限与不变式约束内
     pub fn sanitize(&mut self) {
         self.font_px = self.font_px.clamp(8.0, 40.0);
@@ -883,7 +935,7 @@ impl Settings {
         json!({ "dark": self.dark, "font_px": self.font_px, "tab_width": self.tab_width, "highlight": self.highlight, "wrap": self.wrap, "theme_plugin": self.theme_plugin,
                 "lang": self.lang, "restore_session": self.restore_session, "auto_indent": self.auto_indent, "smart_indent": self.smart_indent, "insert_spaces": self.insert_spaces,
                 "default_encoding": self.default_encoding, "default_eol": self.default_eol, "save_backup": self.save_backup, "check_external": self.check_external,
-                "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "line_height": self.line_height, "font_bold": self.font_bold, "font_italic": self.font_italic, "letter_spacing": self.letter_spacing, "cjk_fixed_ratio": self.cjk_fixed_ratio, "font_cjk_fallback": self.font_cjk_fallback,
+                "confirm_close": self.confirm_close, "max_file_mb": self.max_file_mb, "mru_files": self.mru_files, "font_family": self.font_family, "theme_fonts": self.theme_fonts, "line_height": self.line_height, "font_bold": self.font_bold, "font_italic": self.font_italic, "letter_spacing": self.letter_spacing, "cjk_fixed_ratio": self.cjk_fixed_ratio, "font_cjk_fallback": self.font_cjk_fallback,
                 "colors": self.colors.to_json(),
                 "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar, "update_channel": self.update_channel, "update_daily": self.update_daily,
                 "toolbar_cmds": self.toolbar_cmds,
@@ -1213,6 +1265,21 @@ impl Settings {
         };
         self.font_family =
             crate::fonts::sanitize_font_family(&self.font_family, &self.theme_plugin);
+        let current_theme_key = if self.theme_plugin.is_empty() {
+            if self.dark {
+                "theme-dark"
+            } else {
+                "theme-light"
+            }
+        } else {
+            &self.theme_plugin
+        };
+        if !self.font_family.is_empty() {
+            self.theme_fonts
+                .insert(current_theme_key.to_string(), self.font_family.clone());
+        } else {
+            self.theme_fonts.remove(current_theme_key);
+        }
         self.recent.truncate(self.mru_files.max(1));
     }
 
@@ -1929,5 +1996,42 @@ nColumnSpace=2
         assert!(from_ini.font_bold);
         assert!(from_ini.font_italic);
         assert_eq!(from_ini.letter_spacing, 2.0);
+    }
+
+    #[test]
+    fn test_theme_fonts_memory_and_serialization() {
+        let mut s = Settings::default();
+        s.dark = true;
+        // 初始状态下各主题默认字体
+        assert_eq!(s.effective_font_for("theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(s.effective_font_for("theme-comic"), "CascadiaCode.ttf");
+        assert_eq!(s.effective_font_for("theme-clear"), "CascadiaMono.ttf");
+
+        // 模拟用户对不同主题自定义修改字体
+        s.theme_fonts.insert("theme-comic".into(), "Consolas".into());
+        s.theme_fonts.insert("theme-clear".into(), "Fira Code".into());
+
+        assert_eq!(s.effective_font_for("theme-comic"), "Consolas");
+        assert_eq!(s.effective_font_for("theme-clear"), "Fira Code");
+        // retro16 无论如何默认强制像素字体
+        assert_eq!(s.effective_font_for("theme-retro16"), "PixelFontMulti-12.ttf");
+
+        // 序列化为 prefs_json 并在新实例中还原
+        let json_val = s.prefs_json();
+        assert!(json_val.get("theme_fonts").is_some());
+        let mut s2 = Settings::default();
+        s2.apply_json(&json_val, false);
+        assert_eq!(s2.theme_fonts.get("theme-comic").map(|x| x.as_str()), Some("Consolas"));
+        assert_eq!(s2.theme_fonts.get("theme-clear").map(|x| x.as_str()), Some("Fira Code"));
+        assert_eq!(s2.effective_font_for("theme-comic"), "Consolas");
+        assert_eq!(s2.effective_font_for("theme-clear"), "Fira Code");
+
+        // adopt_prefs 保留并合并 theme_fonts
+        let mut live = Settings::default();
+        live.theme_plugin = "theme-comic".into();
+        let mut draft = s2.clone();
+        draft.font_family = "Inconsolata".into();
+        live.adopt_prefs(&draft);
+        assert_eq!(live.theme_fonts.get("theme-comic").map(|x| x.as_str()), Some("Inconsolata"));
     }
 }

@@ -1864,6 +1864,50 @@ fn theme_switching_enforces_retro16_pixel_font_and_default_font_for_others() {
 }
 
 #[test]
+fn theme_font_user_modification_memory_across_switching() {
+    let (mut a, _g) = app(Settings::default());
+
+    // 1. 在 theme-comic 主题下，用户自定义设置为 Consolas
+    a.set_theme_plugin("theme-comic");
+    a.cfg.font_family = "Consolas".to_string();
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "Consolas");
+
+    // 2. 切换到 16-Bit 主题: 所有字体切换为 PixelFontMulti-12.ttf
+    a.set_theme_plugin("theme-retro16");
+    assert_eq!(
+        crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "PixelFontMulti-12.ttf");
+
+    // 3. 切换回 theme-comic: 记忆并恢复用户的自定义修改 Consolas
+    a.set_theme_plugin("theme-comic");
+    assert_eq!(a.cfg.font_family, "Consolas");
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "Consolas");
+
+    // 4. 切换到未自定义过的 theme-clear: 自动使用 clear 主题默认字体 CascadiaMono.ttf
+    a.set_theme_plugin("theme-clear");
+    assert!(a.cfg.font_family.is_empty());
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "CascadiaMono.ttf");
+
+    // 5. 用户在 theme-clear 下修改为 Fira Code
+    a.cfg.font_family = "Fira Code".to_string();
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "Fira Code");
+
+    // 6. 再次切到 retro16: 依然是 PixelFont
+    a.set_theme_plugin("theme-retro16");
+    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "PixelFontMulti-12.ttf");
+
+    // 7. 切回 theme-comic: 依然保持 Consolas
+    a.set_theme_plugin("theme-comic");
+    assert_eq!(a.cfg.font_family, "Consolas");
+
+    // 8. 切回 theme-clear: 依然保持 Fira Code
+    a.set_theme_plugin("theme-clear");
+    assert_eq!(a.cfg.font_family, "Fira Code");
+}
+
+#[test]
 fn box_selection_works_in_markdown_and_nema_documents() {
     for (name, lines) in [
         (
@@ -2138,4 +2182,71 @@ fn test_multi_agent_collab_intent_auto_detection() {
     assert!(!App::is_multi_agent_collab_intent(
         "什么是 Rust 借用检查器？"
     ));
+}
+
+#[test]
+fn test_top_nav_buttons_hover_only_visibility() {
+    let (mut a, _g) = app(Settings::default());
+    a.new_doc();
+    let ctx = egui::Context::default();
+
+    // 1. 鼠标悬停在左侧编辑区 (远离右上角悬停区): 顶部折叠按钮不应显式暴露干扰代码排版
+    let raw_away = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        ..Default::default()
+    };
+    let mut out1 = ctx.run_ui(raw_away, |ui| {
+        a.editor(ui, &ctx, false);
+    });
+    out1.textures_delta.clear();
+
+    // 2. 鼠标移入右上角悬停区 (例如 Pos2(960.0, 15.0)): 顶部按钮激活展现
+    let mut raw_hover = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        ..Default::default()
+    };
+    raw_hover.events.push(egui::Event::PointerMoved(egui::pos2(960.0, 15.0)));
+    let mut out2 = ctx.run_ui(raw_hover, |ui| {
+        a.editor(ui, &ctx, false);
+    });
+    out2.textures_delta.clear();
+}
+
+#[test]
+fn test_alt_box_selection_no_scaling_and_sakura_experience() {
+    let (mut a, _g) = app(Settings::default());
+    a.new_doc();
+    let idx = a.active;
+    a.docs[idx].lines = vec![
+        "const a = 1;".into(),
+        "let b = 20000;".into(),
+        "x;".into(),
+    ];
+    let ctx = egui::Context::default();
+
+    // 1. 验证不论是否有 box_sel，字符宽度 char_w 均保持恒定，无行间距或列间距动画缩放
+    let mut out = ctx.run_ui(Default::default(), |ui| {
+        a.editor(ui, &ctx, false);
+    });
+    out.textures_delta.clear();
+
+    // 激活纵向选区
+    a.docs[idx].box_start(0, 6);
+    a.docs[idx].box_drag(2, 12);
+    assert_eq!(a.docs[idx].box_sel, Some([0, 6, 2, 12]));
+
+    // 在选区存在时渲染，确保不产生 panic，且字符保持恒定排版
+    let mut out2 = ctx.run_ui(Default::default(), |ui| {
+        a.editor(ui, &ctx, false);
+    });
+    out2.textures_delta.clear();
+
+    // 2. 验证 Sakura 风格零宽纵向光标 (只选插入位置，不选覆盖内容)
+    a.docs[idx].box_start(0, 10);
+    a.docs[idx].box_drag(2, 10);
+    assert_eq!(a.docs[idx].box_sel, Some([0, 10, 2, 10]));
+    let mut out3 = ctx.run_ui(Default::default(), |ui| {
+        a.editor(ui, &ctx, false);
+    });
+    out3.textures_delta.clear();
 }

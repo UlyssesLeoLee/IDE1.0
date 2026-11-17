@@ -86,11 +86,8 @@ impl App {
     fn after_plugins_changed(&mut self) {
         let ids: Vec<String> = plugins::rows().into_iter().map(|r| r.id).collect();
         for id in ids {
-            self.plug.unload(&id);
+            self.on_plugin_hot_swap(&id);
         }
-        self.md10.invalidate();
-        self.nema.cached_render = None;
-        self.nema.cached_graph = None;
     }
 
     /// 确认框 -> 安装 (权限以框里列出的为准)

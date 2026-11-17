@@ -24,6 +24,46 @@ pub struct NemaInterpreterSpec {
     pub source: &'static str,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClaudeModMode {
+    pub id: String,
+    pub label: String,
+    pub title: String,
+    pub prompt: String,
+}
+
+/// 自动化热插拔核心扩展模块分类枚举
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum HotModuleKind {
+    Mcp,
+    Hooks,
+    Skills,
+    Mod,
+    Automation,
+}
+
+impl HotModuleKind {
+    pub fn as_tag(&self) -> &'static str {
+        match self {
+            Self::Mcp => "MCP",
+            Self::Hooks => "Hooks",
+            Self::Skills => "Skills",
+            Self::Mod => "Mod",
+            Self::Automation => "Auto",
+        }
+    }
+
+    pub fn badge_color(&self) -> Color32 {
+        match self {
+            Self::Mcp => Color32::from_rgb(56, 189, 248),
+            Self::Hooks => Color32::from_rgb(245, 158, 11),
+            Self::Skills => Color32::from_rgb(168, 85, 247),
+            Self::Mod => Color32::from_rgb(236, 72, 153),
+            Self::Automation => Color32::from_rgb(34, 197, 94),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ThemeSpec {
     pub label: String,
@@ -36,6 +76,8 @@ pub struct Row {
     pub id: String,
     pub name: String,
     pub version: String,
+    pub description: String,
+    pub source: &'static str,
     pub enabled: bool,
     pub theme: Option<ThemeSpec>,
     /// 有脚本入口且没有声明式贡献 -> 脚本插件 (命令走 plugin_host 惰性运行)
@@ -48,20 +90,41 @@ pub struct Row {
     pub fences: Vec<(String, String)>,
     /// `contributes["nema.interpreter"]`: 热插拔 `.nema` 语法解释器规范
     pub nema_interpreter: Option<NemaInterpreterSpec>,
+    /// 自动化热插拔核心扩展模块分类 (MCP / Hooks / Skills / Mod / Auto)
+    pub hot_module: Option<HotModuleKind>,
+    /// 类 Claude Mod 贡献的工作模式列表 (`contributes.mod.modes`)
+    pub mod_modes: Vec<ClaudeModMode>,
 }
 
 impl Row {
-    /// 脚本插件里高速版跑不了的: 没有命令 / 围栏 / 解释器贡献的脚本插件
+    /// 脚本插件里高速版跑不了的: 没有命令 / 围栏 / 解释器 / 热插拔模块贡献的脚本插件
     pub fn pele_like(&self) -> bool {
         self.script_only
             && self.commands.is_empty()
             && self.fences.is_empty()
             && self.nema_interpreter.is_none()
+            && self.hot_module.is_none()
     }
 }
 
 pub fn rows() -> Vec<Row> {
     store::list(&root()).into_iter().map(row_of).collect()
+}
+
+/// 按需查询指定热插拔模块是否安装且处于启用状态 (单清单读取，不扫全库)
+pub fn is_module_active(id: &str) -> bool {
+    store::get(&root(), id).is_some_and(|p| p.enabled)
+}
+
+/// 返回当前活跃且启用的 `mod` (Claude Mod) 插件所贡献的工作模式列表
+pub fn active_mod_modes() -> Vec<ClaudeModMode> {
+    let Some(inst) = store::get(&root(), "mod") else {
+        return Vec::new();
+    };
+    if !inst.enabled {
+        return Vec::new();
+    }
+    row_of(inst).mod_modes
 }
 
 fn row_of(p: Installed) -> Row {
@@ -161,10 +224,59 @@ fn row_of(p: Installed) -> Row {
                 source: p.source,
             }
         });
+    let hot_module = if m.contributes.contains_key("mcp") {
+        Some(HotModuleKind::Mcp)
+    } else if m.contributes.contains_key("hooks") {
+        Some(HotModuleKind::Hooks)
+    } else if m.contributes.contains_key("skills") {
+        Some(HotModuleKind::Skills)
+    } else if m.contributes.contains_key("mod") {
+        Some(HotModuleKind::Mod)
+    } else if m.contributes.contains_key("automation") {
+        Some(HotModuleKind::Automation)
+    } else {
+        None
+    };
+    let mod_modes = m
+        .contributes
+        .get("mod")
+        .and_then(|v| v.get("modes"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
+                    let id = item.get("id")?.as_str()?.to_string();
+                    let label = item
+                        .get("label")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&id)
+                        .to_string();
+                    let title = item
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&label)
+                        .to_string();
+                    let prompt = item
+                        .get("prompt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Some(ClaudeModMode {
+                        id,
+                        label,
+                        title,
+                        prompt,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Row {
         id: m.id.clone(),
         name: m.name.clone(),
         version: m.version.clone(),
+        description: m.description.clone(),
+        source: p.source,
         enabled: p.enabled,
         theme,
         script_only,
@@ -172,6 +284,8 @@ fn row_of(p: Installed) -> Row {
         perms: m.permissions.clone(),
         fences,
         nema_interpreter,
+        hot_module,
+        mod_modes,
     }
 }
 
@@ -623,6 +737,59 @@ mod tests {
         let ppa = rows.iter().find(|r| r.id == "ppa").expect("内置 PPA");
         assert_eq!(ppa.commands.first().map(|c| c.0.as_str()), Some("run"));
         assert!(ppa.perms.iter().any(|p| p == "editor.write"));
+        std::env::remove_var("IDE_PLUGIN_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hot_pluggable_modules_metadata_and_lifecycle() {
+        let _g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("ide-fast-hotplug-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("IDE_PLUGIN_DIR", &dir);
+
+        let all = rows();
+        for (id, expected_kind) in [
+            ("mcp", HotModuleKind::Mcp),
+            ("hooks", HotModuleKind::Hooks),
+            ("skills", HotModuleKind::Skills),
+            ("mod", HotModuleKind::Mod),
+            ("automation", HotModuleKind::Automation),
+        ] {
+            let row = all
+                .iter()
+                .find(|r| r.id == id)
+                .unwrap_or_else(|| panic!("默认应加载内置模块 {id}"));
+            assert!(row.enabled);
+            assert!(!row.pele_like(), "{id} 是高速版原生支持的模块");
+            assert_eq!(row.hot_module, Some(expected_kind));
+            assert!(is_module_active(id));
+        }
+
+        // Claude Mod 工作模式解析校验
+        let modes = active_mod_modes();
+        assert_eq!(modes.len(), 4);
+        assert_eq!(modes[0].id, "code");
+        assert_eq!(modes[1].id, "plan");
+
+        // 热关闭 mod 后，active_mod_modes 立即可见失效
+        set_enabled("mod", false).unwrap();
+        assert!(!is_module_active("mod"));
+        assert!(active_mod_modes().is_empty());
+
+        // 热删除 skills 后不再活跃，恢复后立即就绪
+        remove("skills").unwrap();
+        assert!(!is_module_active("skills"));
+        assert!(removed_bundled().iter().any(|(id, _, _)| id == "skills"));
+        restore("skills").unwrap();
+        assert!(is_module_active("skills"));
+
+        // 对抗边界：非法或不存在的 id 查询应安全返回 false
+        assert!(!is_module_active("../evil"));
+        assert!(!is_module_active("nonexistent-mod"));
+
         std::env::remove_var("IDE_PLUGIN_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -1,0 +1,38 @@
+{
+  "id": "skills",
+  "name": "Skills 专业研发技能包",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "MIT",
+  "description": "热插拔 Slash 研发技能引擎，提供 /review (代码审查)、/test (单测生成)、/refactor (架构重构)、/commit (提交提炼)、/nema (拓扑压缩)、/explain (架构解说) 快捷技能。",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": ["editor.read", "agent.tool"],
+  "contributes": {
+    "skills": [
+      { "id": "code-review", "trigger": "/review", "label": "⚡/review", "tip": "代码审查" },
+      { "id": "unit-test", "trigger": "/test", "label": "🧪/test", "tip": "单测生成" },
+      { "id": "refactor", "trigger": "/refactor", "label": "🔨/refactor", "tip": "架构重构" },
+      { "id": "git-commit", "trigger": "/commit", "label": "📦/commit", "tip": "提交提炼" },
+      { "id": "nema-optimize", "trigger": "/nema", "label": "🌀/nema", "tip": "NEMA拓扑" },
+      { "id": "explain", "trigger": "/explain", "label": "📖/explain", "tip": "架构解说" }
+    ],
+    "command": [
+      {
+        "id": "list",
+        "title": "Skills: 查看已启用的 AI 研发技能包清单"
+      }
+    ],
+    "agent.tool": [
+      {
+        "name": "list_skills",
+        "description": "列出所有已启用的 Slash 研发技能及其触发词",
+        "schema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ]
+  }
+}

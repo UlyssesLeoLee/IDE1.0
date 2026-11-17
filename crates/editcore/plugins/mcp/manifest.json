@@ -1,0 +1,36 @@
+{
+  "id": "mcp",
+  "name": "MCP 模型上下文协议",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "MIT",
+  "description": "热插拔 Model Context Protocol (MCP) 协议桥接模块，支持动态挂载 .mcp.json 外部工具服务器与向外部 Agent 暴露编辑器能力。关闭或删除后立即卸载全部 MCP 工具。",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": ["editor.read", "agent.tool"],
+  "contributes": {
+    "mcp": {
+      "protocolVersion": "2024-11-05",
+      "configFiles": [".mcp.json", "mcp_servers.json"]
+    },
+    "command": [
+      {
+        "id": "status",
+        "title": "MCP: 查看模型上下文协议模块状态"
+      }
+    ],
+    "agent.tool": [
+      {
+        "name": "status",
+        "description": "查询当前 MCP 模块的协议版本与工作文档行数摘要 (只读)",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "可选文档内容" }
+          }
+        }
+      }
+    ]
+  }
+}

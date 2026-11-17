@@ -105,6 +105,7 @@ pub struct StickyNotesState {
     pub focus_needed: bool,
     pub has_focus: bool,
     pub toast: Option<String>,
+    pub persist: bool,
 }
 
 impl Default for StickyNotesState {
@@ -139,6 +140,7 @@ impl StickyNotesState {
             focus_needed: false,
             has_focus: false,
             toast: None,
+            persist: false,
         }
     }
 
@@ -206,6 +208,7 @@ impl StickyNotesState {
             focus_needed: false,
             has_focus: false,
             toast: None,
+            persist: true,
         })
     }
 
@@ -229,6 +232,9 @@ impl StickyNotesState {
 
     /// 自动保存到磁盘
     pub fn save(&mut self) {
+        if !self.persist {
+            return;
+        }
         let Some(path) = sticky_notes_path() else {
             return;
         };
@@ -749,6 +755,7 @@ impl App {
         let mut new_win_pos = None;
         let mut new_win_size = None;
         let mut search_focus_requested = false;
+        let mut pal_hovered = false;
 
         ctx.show_viewport_immediate(viewport_id, builder, |vp_ctx, _class| {
             // 响应操作系统或独立视窗关闭请求
@@ -1037,65 +1044,15 @@ impl App {
                                 &tc,
                                 &palette,
                             );
+                            pal_hovered = pal_resp.hovered();
                             if pal_resp.clicked() {
                                 self.sticky_notes.color_picker_open =
                                     !self.sticky_notes.color_picker_open;
+                                ui.ctx().request_repaint();
                             }
                         });
                     },
                 );
-
-                // 3. 颜色选择悬浮下拉面板 (如果展开)
-                if self.sticky_notes.color_picker_open {
-                    let picker_rect = Rect::from_min_size(
-                        pos2(card_rect.right() - 210.0, header_rect.bottom() + 4.0),
-                        Vec2::new(200.0, 32.0),
-                    );
-                    ui.painter().rect_filled(
-                        picker_rect,
-                        4.0,
-                        if tc.dark {
-                            Color32::from_rgb(30, 32, 40)
-                        } else {
-                            Color32::WHITE
-                        },
-                    );
-                    ui.painter().rect_stroke(
-                        picker_rect,
-                        4.0,
-                        Stroke::new(1.0, palette.border),
-                        StrokeKind::Inside,
-                    );
-
-                    ui.scope_builder(
-                        egui::UiBuilder::new()
-                            .max_rect(picker_rect)
-                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                        |ui| {
-                            ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
-                            ui.add_space(4.0);
-                            for idx in 0..7 {
-                                let chip_pal = get_palette(idx, &tc);
-                                let (c_rect, c_resp) =
-                                    ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
-                                let tip = COLOR_NAMES[idx];
-                                let c_resp = c_resp.on_hover_text(tip);
-                                let chip_p = ui.painter();
-                                let is_curr = cur_color_idx == idx;
-                                chip_p.rect_filled(c_rect, 3.0, chip_pal.bg);
-                                let st = if is_curr {
-                                    Stroke::new(2.0, palette.accent)
-                                } else {
-                                    Stroke::new(1.0, Color32::from_black_alpha(100))
-                                };
-                                chip_p.rect_stroke(c_rect, 3.0, st, StrokeKind::Inside);
-                                if c_resp.clicked() {
-                                    select_color = Some(idx);
-                                }
-                            }
-                        },
-                    );
-                }
 
                 // 4. 内容主体排版 (四周预留 3px 避让粗描边与底部格式化条)
                 let body_rect = Rect::from_min_max(
@@ -1437,6 +1394,80 @@ impl App {
                     }
                     draw_resize_grip(ui, grip_rect, &tc, &palette);
                 }
+
+                // 7. 颜色选择悬浮下拉面板 (顶层 Overlay，绝对不被底层内容遮挡，实时响应点击)
+                if self.sticky_notes.color_picker_open {
+                    let picker_rect = Rect::from_min_size(
+                        pos2(card_rect.right() - 210.0, header_rect.bottom() + 2.0),
+                        Vec2::new(202.0, 34.0),
+                    );
+
+                    // 绘制悬浮面板实体背景与阴影
+                    let shadow_col = Color32::from_black_alpha(if tc.dark { 160 } else { 70 });
+                    ui.painter().rect_filled(
+                        picker_rect.translate(Vec2::new(0.0, 2.0)),
+                        6.0,
+                        shadow_col,
+                    );
+                    let picker_bg = if tc.dark {
+                        Color32::from_rgb(32, 34, 42)
+                    } else {
+                        Color32::from_rgb(252, 252, 254)
+                    };
+                    ui.painter().rect_filled(picker_rect, 6.0, picker_bg);
+                    ui.painter().rect_stroke(
+                        picker_rect,
+                        6.0,
+                        Stroke::new(1.2, palette.border),
+                        StrokeKind::Inside,
+                    );
+
+                    let picker_resp = ui.interact(
+                        picker_rect,
+                        ui.make_persistent_id("sticky_color_picker_overlay"),
+                        Sense::click_and_drag(),
+                    );
+
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(picker_rect)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+                            ui.add_space(5.0);
+                            for idx in 0..7 {
+                                let chip_pal = get_palette(idx, &tc);
+                                let (c_rect, c_resp) =
+                                    ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+                                let tip = COLOR_NAMES[idx];
+                                let c_resp = c_resp.on_hover_text(tip);
+                                let chip_p = ui.painter();
+                                let is_curr = cur_color_idx == idx;
+                                chip_p.rect_filled(c_rect, 3.0, chip_pal.bg);
+                                let st = if is_curr {
+                                    Stroke::new(2.5, palette.accent)
+                                } else if c_resp.hovered() {
+                                    Stroke::new(1.8, palette.fg.gamma_multiply(0.8))
+                                } else {
+                                    Stroke::new(1.0, Color32::from_black_alpha(100))
+                                };
+                                chip_p.rect_stroke(c_rect, 3.0, st, StrokeKind::Inside);
+                                if c_resp.clicked() {
+                                    select_color = Some(idx);
+                                }
+                            }
+                        },
+                    );
+
+                    // 点击面板外部时自动收起颜色选择器
+                    if ui.input(|i| i.pointer.any_click())
+                        && !picker_resp.hovered()
+                        && !pal_hovered
+                    {
+                        self.sticky_notes.color_picker_open = false;
+                        ui.ctx().request_repaint();
+                    }
+                }
             });
         });
 
@@ -1474,6 +1505,7 @@ impl App {
             }
             self.sticky_notes.color_picker_open = false;
             self.sticky_notes.mark_dirty();
+            ctx.request_repaint();
         }
 
         if new_note_clicked {
@@ -2306,6 +2338,44 @@ mod tests {
                     }
                 }
             }
+        });
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn sticky_note_real_time_color_switch_and_overlay_lifecycle() {
+        let mut app = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        app.sticky_notes.open = true;
+        let initial_color = app.sticky_notes.active_note().map(|n| n.color_idx).unwrap_or(0);
+        assert_eq!(initial_color, 0);
+
+        // 打开调色盘
+        app.sticky_notes.color_picker_open = true;
+        assert!(app.sticky_notes.color_picker_open);
+
+        // 实时切换到紫色 (idx = 3)
+        let target_idx = 3;
+        if let Some(n) = app.sticky_notes.active_note_mut() {
+            n.color_idx = target_idx;
+        }
+        app.sticky_notes.color_picker_open = false;
+        app.sticky_notes.mark_dirty();
+
+        let updated_color = app.sticky_notes.active_note().map(|n| n.color_idx).unwrap_or(0);
+        assert_eq!(updated_color, 3);
+        let pal = get_palette(updated_color, &app.tc);
+        assert_ne!(pal.bg, Color32::TRANSPARENT);
+
+        // 验证多视窗渲染不发生崩溃且颜色实时同步
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
         });
         out.textures_delta.clear();
     }

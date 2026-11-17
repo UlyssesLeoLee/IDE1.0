@@ -1,0 +1,44 @@
+{
+  "id": "automation",
+  "name": "Automation 自动化工作流",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAppVersion": "0.1.4",
+  "license": "MIT",
+  "description": "热插拔自动化任务与工作流模块：提供文档行尾空白自动清理、保存自动化钩子与 TODO/FIXME 待办流水线巡检。",
+  "repo": "UlyssesLeoLee/IDE1.0",
+  "entry": "main.js",
+  "permissions": ["editor.read", "editor.write", "agent.tool"],
+  "contributes": {
+    "automation": {
+      "triggers": ["onSave", "manual"],
+      "workflows": [
+        { "id": "clean-whitespace", "label": "清理行尾空白", "trigger": "onSave" },
+        { "id": "scan-todos", "label": "扫描待办事项 (TODO/FIXME)", "trigger": "manual" }
+      ]
+    },
+    "command": [
+      {
+        "id": "clean",
+        "title": "Automation: 自动清理当前文档行尾空白"
+      },
+      {
+        "id": "todos",
+        "title": "Automation: 扫描当前文档 TODO / FIXME 待办清单"
+      }
+    ],
+    "agent.tool": [
+      {
+        "name": "scan_todos",
+        "description": "自动化扫描文本中的 TODO / FIXME / HACK 待办项并返回行号清单",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string", "description": "待扫描文本" }
+          },
+          "required": ["text"]
+        }
+      }
+    ]
+  }
+}

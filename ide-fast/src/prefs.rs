@@ -26,6 +26,8 @@ pub struct Prefs {
     pub tab: PrefsTab,
     /// 「文件类型」页里正在输入的新扩展名
     pub new_ext: String,
+    /// 用户自装字体文件名 (打开对话框时扫一次，最高优先级推荐)
+    pub user_fonts: Vec<String>,
     /// 系统字体文件名 (打开对话框时扫一次)
     pub fonts: Vec<String>,
 }
@@ -302,7 +304,9 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     tr("pf.font-default").to_string()
                 } else {
                     let label = label_of(&d.font_family);
-                    if let Some(rec) = crate::fonts::RECOMMENDED_FONTS
+                    if p.user_fonts.iter().any(|u| u.eq_ignore_ascii_case(&d.font_family)) {
+                        format!("👤 {} [用户自装]", label)
+                    } else if let Some(rec) = crate::fonts::RECOMMENDED_FONTS
                         .iter()
                         .find(|r| r.file.eq_ignore_ascii_case(&d.font_family))
                     {
@@ -320,6 +324,23 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                             .clicked()
                         {
                             d.font_family.clear();
+                        }
+                        // 1. 优先展示用户安装的新字体 (User-Installed Fonts)
+                        if !p.user_fonts.is_empty() {
+                            ui.separator();
+                            ui.label(
+                                egui::RichText::new(tr("pf.font-user-header"))
+                                    .color(ui.visuals().hyperlink_color)
+                                    .size(11.0)
+                                    .strong(),
+                            );
+                            for f in &p.user_fonts {
+                                let on = d.font_family.eq_ignore_ascii_case(f);
+                                let label = format!("{} [自装]", label_of(f));
+                                if ui.selectable_label(on, label).clicked() {
+                                    d.font_family = f.clone();
+                                }
+                            }
                         }
                         ui.separator();
                         ui.label(

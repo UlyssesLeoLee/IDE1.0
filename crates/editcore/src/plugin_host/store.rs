@@ -136,6 +136,56 @@ const BUNDLED: &[(&str, &str, &[u8])] = &[
         "strict-parser.js",
         include_bytes!("../../plugins/nema-interpreter/strict-parser.js"),
     ),
+    (
+        "mcp",
+        "manifest.json",
+        include_bytes!("../../plugins/mcp/manifest.json"),
+    ),
+    (
+        "mcp",
+        "main.js",
+        include_bytes!("../../plugins/mcp/main.js"),
+    ),
+    (
+        "hooks",
+        "manifest.json",
+        include_bytes!("../../plugins/hooks/manifest.json"),
+    ),
+    (
+        "hooks",
+        "main.js",
+        include_bytes!("../../plugins/hooks/main.js"),
+    ),
+    (
+        "skills",
+        "manifest.json",
+        include_bytes!("../../plugins/skills/manifest.json"),
+    ),
+    (
+        "skills",
+        "main.js",
+        include_bytes!("../../plugins/skills/main.js"),
+    ),
+    (
+        "mod",
+        "manifest.json",
+        include_bytes!("../../plugins/mod/manifest.json"),
+    ),
+    (
+        "mod",
+        "main.js",
+        include_bytes!("../../plugins/mod/main.js"),
+    ),
+    (
+        "automation",
+        "manifest.json",
+        include_bytes!("../../plugins/automation/manifest.json"),
+    ),
+    (
+        "automation",
+        "main.js",
+        include_bytes!("../../plugins/automation/main.js"),
+    ),
 ];
 
 pub trait Http {
@@ -1536,6 +1586,52 @@ mod tests {
         assert_eq!(restored.source, "bundled");
         let bundled_js = read_asset(&root, "nema-interpreter", "strict-parser.js").unwrap();
         assert!(String::from_utf8_lossy(&bundled_js).contains("MALFORMED_HEADER"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bundled_hot_plug_modules_can_be_toggled_deleted_and_restored() {
+        let root = tmp("hotplug-mods");
+        let ids = ["mcp", "hooks", "skills", "mod", "automation"];
+
+        // 1. 默认存在且全部启用
+        let init_list = list(&root);
+        for id in ids {
+            let p = init_list
+                .iter()
+                .find(|p| p.manifest.id == id)
+                .unwrap_or_else(|| panic!("默认应包含内置热插拔模块 {id}"));
+            assert!(p.enabled, "{id} 默认应为启用状态");
+            assert_eq!(p.source, "bundled");
+        }
+
+        // 2. 可逐个关闭并立即在 get/list 中生效
+        for id in ids {
+            set_enabled(&root, id, false).unwrap();
+            assert!(!get(&root, id).unwrap().enabled, "{id} 应可关闭");
+            set_enabled(&root, id, true).unwrap();
+            assert!(get(&root, id).unwrap().enabled, "{id} 应可重新启用");
+        }
+
+        // 3. 可在插件页面删除，并记入 removed_bundled，随后可一键恢复
+        for id in ids {
+            remove(&root, id).unwrap();
+            assert!(
+                !list(&root).iter().any(|p| p.manifest.id == id),
+                "删除后不再出现在活跃列表: {id}"
+            );
+            assert!(
+                removed_bundled(&root).iter().any(|(rid, _, _)| rid == id),
+                "删除后应可从已删除内置列表找回: {id}"
+            );
+
+            restore_bundled(&root, id).unwrap();
+            let restored = get(&root, id).unwrap();
+            assert_eq!(restored.source, "bundled");
+            assert!(restored.enabled);
+        }
+
+        assert!(removed_bundled(&root).is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

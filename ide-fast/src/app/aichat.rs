@@ -71,6 +71,8 @@ pub(super) struct AiState {
     pub collab_mode: bool,
     /// 是否免点击自动将需求结果/补丁直接应用到当前打开的文件
     pub auto_apply: bool,
+    /// 当前激活的 Claude Mod 工作模式 id (`code` / `plan` / `review` / `ask`)
+    pub active_mod: String,
     cfg: Option<AiConfig>,
     settings: bool,
     input: String,
@@ -108,6 +110,7 @@ impl Default for AiState {
             open: false,
             collab_mode: false,
             auto_apply: true,
+            active_mod: "code".into(),
             cfg: None,
             settings: false,
             input: String::new(),
@@ -184,6 +187,12 @@ fn find_workspace_root(doc_path: Option<&Path>) -> PathBuf {
 }
 
 impl App {
+    /// 卸载或重置活跃的 MCP 外部工具服务器池 (热关闭 / 删除 mcp 插件时调用)
+    pub(super) fn ai_reset_mcp(&mut self) {
+        self.ai.mcp_loaded_root = None;
+        self.ai.mcp = McpManager::default();
+    }
+
     /// 确保当前工作区的 MCP 外部配置已登记 (按需惰性加载，启动 0 开销)
     fn ensure_mcp_config(&mut self, ws_root: &Path) {
         if self.ai.mcp_loaded_root.as_deref() == Some(ws_root) {
@@ -261,9 +270,13 @@ impl App {
         )
     }
 
-    /// 落盘前过一遍脱敏钩子 (Cookie 在磁盘上是明文, 不能把 API Key 带进去)
+    /// 落盘前过一遍脱敏钩子 (Cookie 在磁盘上是明文, 不能把 API Key 带进去; 仅在 hooks 插件激活时生效)
     fn mask_secrets(&self, s: String) -> String {
-        self.ai.hooks.execute_post_response(s.clone()).unwrap_or(s)
+        if crate::plugins::is_module_active("hooks") {
+            self.ai.hooks.execute_post_response(s.clone()).unwrap_or(s)
+        } else {
+            s
+        }
     }
 
     /// 运行结束 / 取消 / 出错: 结算 Cookie。有补丁提案 → Vetting (等人审), 否则 → Planning
@@ -411,13 +424,17 @@ impl App {
         if raw_q.is_empty() || self.ai.run.is_some() {
             return;
         }
-        // 执行 Pre-input 生命周期拦截钩子 (敏感指令检查 / 路径合规)
-        let q = match self.ai.hooks.execute_pre_input(raw_q) {
-            Ok(clean) => clean,
-            Err(e) => {
-                self.ai.items.push(Item::Err(e));
-                return;
+        // 执行 Pre-input 生命周期拦截钩子 (仅在 hooks 热插拔模块启用时运行)
+        let q = if crate::plugins::is_module_active("hooks") {
+            match self.ai.hooks.execute_pre_input(raw_q) {
+                Ok(clean) => clean,
+                Err(e) => {
+                    self.ai.items.push(Item::Err(e));
+                    return;
+                }
             }
+        } else {
+            raw_q
         };
 
         // 智能识别多智能体协作需求并自动无缝切换，杜绝误报单智能体错误
@@ -460,7 +477,7 @@ impl App {
     }
 
     /// 离线确定性直接响应聊天需求并免点击修改当前打开的文件
-    fn ai_exec_local_demand(&mut self, q: &str, _ctx: &egui::Context) {
+    fn ai_exec_local_demand(&mut self, q: &str, ctx: &egui::Context) {
         self.ai.input.clear();
         self.ai.items.push(Item::User(q.to_string()));
         if self.docs.is_empty() {
@@ -470,7 +487,7 @@ impl App {
             return;
         }
         if q.contains("并行") || q.starts_with("/parallel") {
-            match self.execute_parallel_on_active(q, None) {
+            match self.execute_parallel_on_active(q, Some(ctx)) {
                 Ok(n) => {
                     self.ai.items.push(Item::Ai(format!(
                         "已调度 {} 个 Agent 对当前打开文件的互不重叠区域执行并行修改。",
@@ -548,23 +565,46 @@ impl App {
     fn ai_start(&mut self, q: String, with_ctx: bool, ctx: &egui::Context) {
         let i = self.active.min(self.docs.len() - 1);
         let ws_root = find_workspace_root(self.docs[i].path.as_deref());
-        self.ensure_mcp_config(&ws_root);
+        let mcp_active = crate::plugins::is_module_active("mcp");
+        let skills_active = crate::plugins::is_module_active("skills");
+        let mod_modes = crate::plugins::active_mod_modes();
 
-        // 1. 技能匹配与指令转化 (如 /review, /test, /refactor, /nema, /commit, /explain)
-        let (matched_skill, user_prompt) =
+        if mcp_active {
+            self.ensure_mcp_config(&ws_root);
+        } else {
+            self.ai_reset_mcp();
+        }
+
+        // 1. 技能匹配与指令转化 (仅在 skills 热插拔模块启用时生效)
+        let (matched_skill, user_prompt) = if skills_active {
             if let Some((skill, rest)) = self.ai.skills.match_prompt(&q) {
                 (Some(skill.clone()), rest.to_string())
             } else {
                 (None, q.clone())
-            };
+            }
+        } else {
+            (None, q.clone())
+        };
 
         let c = if with_ctx { self.ai_context(i) } else { None };
         let mut sys = ai::system_prompt(&self.docs[i].name, self.docs[i].lines.len(), c.as_ref());
 
-        // 2. 注入工作区规范与规则约束 (AGENT.md / IDE.md / .cursorrules / CLAUDE.md)
-        if let Some(rules_prompt) = self.ai.rules_engine.format_invariants_prompt(&ws_root) {
-            sys.push_str("\n\n");
-            sys.push_str(&rules_prompt);
+        // 2. Claude Mod 模式与工作区规范约束注入 (仅在 mod 热插拔模块启用时生效)
+        if !mod_modes.is_empty() {
+            if let Some(rules_prompt) = self.ai.rules_engine.format_invariants_prompt(&ws_root) {
+                sys.push_str("\n\n");
+                sys.push_str(&rules_prompt);
+            }
+            if let Some(active_mode) = mod_modes
+                .iter()
+                .find(|m| m.id == self.ai.active_mod)
+                .or_else(|| mod_modes.first())
+            {
+                if !active_mode.prompt.is_empty() {
+                    sys.push_str("\n\n");
+                    sys.push_str(&active_mode.prompt);
+                }
+            }
         }
 
         // 3. 注入长期记忆 (架构决议、技术栈偏好)
@@ -591,11 +631,13 @@ impl App {
         let mut msgs = ai::base_messages(final_sys, &self.ai.history, &final_q);
         ContextCompactor::compact_messages(&mut msgs, 8192, 4);
 
-        // 6. 聚合内建工具、插件工具与外部 MCP 工具
+        // 6. 聚合内建工具、插件工具与外部 MCP 工具 (mcp 关闭时不再暴露外部工具)
         let installed = editcore::plugin_host::store::list(&plugins::root());
         let mut tools = ai::tool_table(&installed);
-        let mcp_tools = self.ai.mcp.aggregate_openai_tools();
-        tools.extend(mcp_tools);
+        if mcp_active {
+            let mcp_tools = self.ai.mcp.aggregate_openai_tools();
+            tools.extend(mcp_tools);
+        }
 
         self.ai.input.clear();
         self.ai.items.push(Item::User(q.clone()));
@@ -728,14 +770,24 @@ impl App {
                 continue;
             }
 
-            // 2. Pre-tool-call 生命周期拦截钩子 (敏感路径/私钥防御)
-            if let Err(hook_err) = self.ai.hooks.execute_pre_tool_call(&call.name, &args) {
-                immediate.push((slot, call.clone(), json!({ "error": hook_err })));
-                continue;
+            // 2. Pre-tool-call 生命周期拦截钩子 (仅在 hooks 热插拔模块启用时运行)
+            if crate::plugins::is_module_active("hooks") {
+                if let Err(hook_err) = self.ai.hooks.execute_pre_tool_call(&call.name, &args) {
+                    immediate.push((slot, call.clone(), json!({ "error": hook_err })));
+                    continue;
+                }
             }
 
             // 3. 工具分发：MCP 外部工具 vs 插件扩展工具 vs 原生内建工具
             if call.name.starts_with("mcp_") {
+                if !crate::plugins::is_module_active("mcp") {
+                    immediate.push((
+                        slot,
+                        call.clone(),
+                        json!({ "error": "MCP 插件模块已关闭或卸载" }),
+                    ));
+                    continue;
+                }
                 // MCP 工具：后台专用 Worker 线程异步执行，零阻塞 UI 渲染
                 let (tx, rx) = channel();
                 let mgr = self.ai.mcp.clone();
@@ -850,12 +902,16 @@ impl App {
     }
 
     fn ai_tool_done(&mut self, slot: usize, call: &ToolCall, result: Value, doc_id: u64) {
-        // 执行 Post-tool-call 生命周期拦截钩子 (超大结果截断 + 敏感密钥/密码自动脱敏)
-        let masked_result_str = self
-            .ai
-            .hooks
-            .execute_post_tool_call(&call.name, result.to_string());
-        let result: Value = serde_json::from_str(&masked_result_str).unwrap_or(result);
+        // 执行 Post-tool-call 生命周期拦截钩子 (仅在 hooks 热插拔模块启用时运行)
+        let result: Value = if crate::plugins::is_module_active("hooks") {
+            let masked_result_str = self
+                .ai
+                .hooks
+                .execute_post_tool_call(&call.name, result.to_string());
+            serde_json::from_str(&masked_result_str).unwrap_or(result)
+        } else {
+            result
+        };
 
         let line = match result["error"].as_str() {
             Some(e) => trf("ai.tool-fail", &[&call.name, e]),
@@ -991,7 +1047,9 @@ impl App {
                 .rev()
                 .find(|m| m.role == "assistant")
                 .map(|m| m.content.as_str());
-            if self.ai.auto_apply && !auto_applied {
+            let allow_auto_apply =
+                !crate::plugins::is_module_active("mod") || self.ai.active_mod == "code";
+            if self.ai.auto_apply && !auto_applied && allow_auto_apply {
                 if let Some(code_lines) = last_assistant.and_then(extract_fenced_code_block) {
                     if let Some(doc) = self.docs.iter_mut().find(|d| d.id == doc_id) {
                         if !doc.readonly {
@@ -1170,6 +1228,8 @@ impl App {
             self.collab_panel_ui(ui);
             return;
         }
+        let mod_modes = crate::plugins::active_mod_modes();
+        let skills_active = crate::plugins::is_module_active("skills");
         ui.horizontal_wrapped(|ui| {
             ui.add(egui::Checkbox::new(
                 &mut self.ai.use_ctx,
@@ -1180,6 +1240,27 @@ impl App {
                 egui::RichText::new("免点击直接改文件").size(11.0),
             ));
         });
+        if !mod_modes.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(
+                    egui::RichText::new("Mod:")
+                        .size(11.0)
+                        .strong()
+                        .color(tc.fg_dim),
+                );
+                for m in &mod_modes {
+                    let selected = self.ai.active_mod == m.id;
+                    if ui
+                        .selectable_label(selected, egui::RichText::new(&m.label).size(11.0))
+                        .on_hover_text(&m.title)
+                        .clicked()
+                    {
+                        self.ai.active_mod = m.id.clone();
+                    }
+                }
+            });
+        }
         if self.ai.settings {
             ui.separator();
             let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
@@ -1302,7 +1383,10 @@ impl App {
             }
         }
         ui.separator();
-        let avail = (ui.available_height() - 110.0).max(60.0);
+        let bottom_id = egui::Id::new("ai_bottom_bar_height");
+        // 初始自适应预留高度: 模型行(~24px) + 快捷技能栏(~48px) + 输入框3行(~68px) + 分隔线与留白(~24px) = ~164-195px
+        let bottom_reserved: f32 = ui.data(|d| d.get_temp(bottom_id)).unwrap_or(195.0);
+        let avail = (ui.available_height() - bottom_reserved - 10.0).max(50.0);
         egui::ScrollArea::vertical()
             .max_height(avail)
             .auto_shrink([false, false])
@@ -1409,6 +1493,7 @@ impl App {
                     ui.weak(tr("ai.thinking"));
                 }
             });
+        let bottom_start_y = ui.cursor().top();
         ui.separator();
         // 模型行 (Tauri 聊天底部): 左 = 当前模型 (没设就写「未设置模型」), 右 = 模型设置…
         let model = self.ai_cfg().model.clone();
@@ -1428,41 +1513,43 @@ impl App {
                 }
             });
         });
-        // 快捷技能栏 (Slash Commands 快捷触发, 零冷启损耗)
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            let quick_skills = [
-                ("/review", "⚡/review", "代码审查"),
-                ("/test", "🧪/test", "单测生成"),
-                ("/refactor", "🔨/refactor", "架构重构"),
-                ("/commit", "📦/commit", "提交提炼"),
-                ("/nema", "🌀/nema", "NEMA拓扑"),
-                ("/explain", "📖/explain", "架构解说"),
-            ];
-            for (cmd, label, tip) in quick_skills {
-                if ui.small_button(label).on_hover_text(tip).clicked() {
-                    if !self.ai.input.starts_with('/') {
-                        self.ai.input = format!("{cmd} {}", self.ai.input);
-                    } else if let Some(space_idx) = self.ai.input.find(' ') {
-                        self.ai.input = format!("{cmd} {}", &self.ai.input[space_idx + 1..]);
-                    } else {
-                        self.ai.input = format!("{cmd} ");
+        // 快捷技能栏 (Slash Commands 快捷触发, 仅在 skills 热插拔模块启用时显示)
+        if skills_active {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let quick_skills = [
+                    ("/review", "⚡/review", "代码审查"),
+                    ("/test", "🧪/test", "单测生成"),
+                    ("/refactor", "🔨/refactor", "架构重构"),
+                    ("/commit", "📦/commit", "提交提炼"),
+                    ("/nema", "🌀/nema", "NEMA拓扑"),
+                    ("/explain", "📖/explain", "架构解说"),
+                ];
+                for (cmd, label, tip) in quick_skills {
+                    if ui.small_button(label).on_hover_text(tip).clicked() {
+                        if !self.ai.input.starts_with('/') {
+                            self.ai.input = format!("{cmd} {}", self.ai.input);
+                        } else if let Some(space_idx) = self.ai.input.find(' ') {
+                            self.ai.input = format!("{cmd} {}", &self.ai.input[space_idx + 1..]);
+                        } else {
+                            self.ai.input = format!("{cmd} ");
+                        }
                     }
                 }
-            }
-        });
-        if self.ai.input.starts_with('/') {
-            if let Some((skill, _)) = self.ai.skills.match_prompt(&self.ai.input) {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "💡 激活技能: {} — {}",
-                            skill.name, skill.description
-                        ))
-                        .size(11.0)
-                        .color(Color32::from_rgb(0, 190, 255)),
-                    );
-                });
+            });
+            if self.ai.input.starts_with('/') {
+                if let Some((skill, _)) = self.ai.skills.match_prompt(&self.ai.input) {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "💡 激活技能: {} — {}",
+                                skill.name, skill.description
+                            ))
+                            .size(11.0)
+                            .color(Color32::from_rgb(0, 190, 255)),
+                        );
+                    });
+                }
             }
         }
         let id = ui.make_persistent_id("ai_input");
@@ -1486,6 +1573,12 @@ impl App {
                 act = Some(Act::Send);
             }
         });
+        let bottom_end_y = ui.cursor().top();
+        let actual_bottom_h = (bottom_end_y - bottom_start_y).max(90.0);
+        ui.data_mut(|d| d.insert_temp(bottom_id, actual_bottom_h));
+        if (actual_bottom_h - bottom_reserved).abs() > 1.5 {
+            ui.ctx().request_repaint();
+        }
         match act {
             Some(Act::Send) => self.ai_send(&ctx),
             Some(Act::Cancel) => self.ai_cancel(),
@@ -1862,5 +1955,79 @@ mod tests {
         assert!(app.docs[i].lines.iter().any(|l| l.contains("添加函数说明")));
         assert_eq!(app.task_state_of(app.docs[i].id), TaskState::Verified);
         assert!(app.ai.input.is_empty());
+    }
+
+    #[test]
+    fn hot_plug_hooks_and_mod_gates_respond_immediately() {
+        let (mut app, _g) = test_app();
+        let dir = std::env::temp_dir().join(format!("ide-fast-aichat-hp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("IDE_PLUGIN_DIR", &dir);
+
+        app.new_doc();
+        // 默认 hooks 启用时自动脱敏 sk- 密钥
+        let masked = app.mask_secrets("token=sk-secret999".to_string());
+        assert_eq!(masked, "token=sk-****");
+
+        // 关闭 hooks 插件后，钩子管道立即停用
+        crate::plugins::set_enabled("hooks", false).unwrap();
+        let unmasked = app.mask_secrets("token=sk-secret999".to_string());
+        assert_eq!(unmasked, "token=sk-secret999");
+
+        // Mod 循环命令与关闭门禁
+        assert_eq!(app.ai.active_mod, "code");
+        app.run_plugin_command("mod", "cycle", "Mod");
+        assert_eq!(app.ai.active_mod, "plan");
+        crate::plugins::remove("mod").unwrap();
+        app.run_plugin_command("mod", "cycle", "Mod");
+        assert_eq!(app.ai.active_mod, "plan");
+
+        std::env::remove_var("IDE_PLUGIN_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_ai_bottom_bar_adaptive_reservation() {
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.ai.open = true;
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+
+        // Frame 1: 首次渲染 ai_ui
+        let mut out = ctx.run_ui(raw.clone(), |ui| {
+            app.ai_ui(ui);
+        });
+        out.textures_delta.clear();
+
+        // 验证底栏高度已经动态测量且自适应存入 temp memory
+        let bottom_id = egui::Id::new("ai_bottom_bar_height");
+        let measured_h: Option<f32> = ctx.data(|d| d.get_temp(bottom_id));
+        assert!(
+            measured_h.is_some(),
+            "Bottom bar height must be recorded dynamically"
+        );
+        let h = measured_h.unwrap();
+        assert!(
+            h >= 90.0 && h <= 300.0,
+            "Bottom bar height should be reasonable, got {h}"
+        );
+
+        // Frame 2: 验证第2帧收敛稳定，不产生振荡与无限重绘
+        let mut out2 = ctx.run_ui(raw, |ui| {
+            app.ai_ui(ui);
+        });
+        out2.textures_delta.clear();
+        let h2: f32 = ctx.data(|d| d.get_temp(bottom_id)).unwrap();
+        assert!(
+            (h2 - h).abs() <= 1.0,
+            "Height should converge stably: h={h}, h2={h2}"
+        );
     }
 }

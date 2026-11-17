@@ -609,4 +609,104 @@ mod tests {
         std::env::remove_var("IDE_PLUGIN_DIR");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn hot_plug_modules_execute_and_unload_cleanly_in_quickjs() {
+        let _g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("ide-fast-hotmods-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::set_var("IDE_PLUGIN_DIR", &dir);
+        let root = crate::plugins::root();
+        let _ = editcore::plugin_host::store::list(&root);
+        let host = PluginHost::new(root.clone());
+
+        // MCP status
+        let mcp_out = host
+            .call_sync(
+                "mcp",
+                "command:status",
+                &serde_json::json!([{ "text": "a\nb\nc" }]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        assert!(parse_outcome(&mcp_out).summary.contains("3 行"));
+
+        // Hooks security scan
+        let hooks_out = host
+            .call_sync(
+                "hooks",
+                "agent.tool:security_scan",
+                &serde_json::json!([{ "text": "key=sk-secret123\npath=../etc/passwd" }]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        let hooks_val: Value = serde_json::from_str(&hooks_out).unwrap();
+        assert_eq!(hooks_val["result"]["count"], 2);
+
+        // Skills list
+        let skills_out = host
+            .call_sync(
+                "skills",
+                "agent.tool:list_skills",
+                &serde_json::json!([{}]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        assert!(skills_out.contains("/review"));
+
+        // Mod (Claude Mod) modes
+        let mod_out = host
+            .call_sync(
+                "mod",
+                "agent.tool:modes",
+                &serde_json::json!([{}]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        assert!(mod_out.contains("plan"));
+
+        // Automation clean & todos
+        let auto_clean = host
+            .call_sync(
+                "automation",
+                "command:clean",
+                &serde_json::json!([{ "text": "let a = 1;   \nlet b = 2;\t" }]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        let clean_outcome = parse_outcome(&auto_clean);
+        assert_eq!(
+            clean_outcome.edit.as_ref().unwrap().insert,
+            vec!["let a = 1;".to_string(), "let b = 2;".to_string()]
+        );
+
+        let auto_todos = host
+            .call_sync(
+                "automation",
+                "agent.tool:scan_todos",
+                &serde_json::json!([{ "text": "// TODO: refactor\n// FIXME: bug" }]),
+                Duration::from_secs(10),
+            )
+            .unwrap();
+        let todos_val: Value = serde_json::from_str(&auto_todos).unwrap();
+        assert_eq!(todos_val["result"]["count"], 2);
+
+        // 关闭并热卸载后立刻被 QuickJS 宿主拒绝调用
+        editcore::plugin_host::store::set_enabled(&root, "automation", false).unwrap();
+        host.unload("automation");
+        let disabled_err = host
+            .call_sync(
+                "automation",
+                "command:todos",
+                &serde_json::json!([{ "text": "// TODO: x" }]),
+                Duration::from_secs(5),
+            )
+            .unwrap_err();
+        assert!(disabled_err.contains("已禁用"));
+
+        std::env::remove_var("IDE_PLUGIN_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

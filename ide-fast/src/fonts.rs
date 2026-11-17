@@ -211,15 +211,33 @@ pub fn editor_bold_family() -> FontFamily {
     FontFamily::Name("editor-bold".into())
 }
 
-fn fonts_dir() -> std::path::PathBuf {
-    std::env::var_os("WINDIR")
-        .map(|w| std::path::PathBuf::from(w).join("Fonts"))
-        .unwrap_or_else(|| "C:/Windows/Fonts".into())
+/// 用户级安装的专属字体目录 (Windows: %LOCALAPPDATA%\Microsoft\Windows\Fonts)
+pub fn user_fonts_dir() -> Option<std::path::PathBuf> {
+    if let Some(l) = std::env::var_os("LOCALAPPDATA") {
+        let p = std::path::PathBuf::from(l).join("Microsoft").join("Windows").join("Fonts");
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    if let Some(h) = std::env::var_os("HOME") {
+        let p1 = std::path::PathBuf::from(&h).join(".local/share/fonts");
+        if p1.is_dir() {
+            return Some(p1);
+        }
+        let p2 = std::path::PathBuf::from(&h).join("Library/Fonts");
+        if p2.is_dir() {
+            return Some(p2);
+        }
+    }
+    None
 }
 
-/// 系统字体目录里能直接用的字体文件名 (.ttf / .otf, 排序去重并过滤掉不适宜编程阅读的艺术花体字); 目录读不到 = 空
-pub fn system_fonts() -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(fonts_dir())
+/// 用户在操作系统中自主安装的字体文件列表 (过滤艺术花体，字母排序去重)
+pub fn user_fonts() -> Vec<String> {
+    let Some(dir) = user_fonts_dir() else {
+        return Vec::new();
+    };
+    let mut v: Vec<String> = std::fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
                 .map(|e| e.file_name().to_string_lossy().into_owned())
@@ -232,39 +250,93 @@ pub fn system_fonts() -> Vec<String> {
     v
 }
 
+pub fn fonts_dir() -> std::path::PathBuf {
+    std::env::var_os("WINDIR")
+        .map(|w| std::path::PathBuf::from(w).join("Fonts"))
+        .unwrap_or_else(|| "C:/Windows/Fonts".into())
+}
+
+/// 获取全部有效字体搜索目录 (优先用户字体目录，次之系统字体目录)
+pub fn font_search_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = Vec::with_capacity(2);
+    if let Some(ud) = user_fonts_dir() {
+        dirs.push(ud);
+    }
+    dirs.push(fonts_dir());
+    dirs
+}
+
+/// 系统与用户字体目录里能直接用的字体文件名 (.ttf / .otf / .ttc);
+/// 优先排布用户自主安装的新字体，随后是系统公共字体，保证用户新装字体优先展示
+pub fn system_fonts() -> Vec<String> {
+    let mut user = user_fonts();
+    let user_set: std::collections::HashSet<String> =
+        user.iter().map(|s| s.to_lowercase()).collect();
+    let mut sys: Vec<String> = std::fs::read_dir(fonts_dir())
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| is_font_file(n) && !is_illegible_display_font(n) && !user_set.contains(&n.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default();
+    sys.sort_by_key(|n| n.to_lowercase());
+    sys.dedup();
+    user.extend(sys);
+    user
+}
+
 pub fn is_font_file(name: &str) -> bool {
     let l = name.to_lowercase();
     l.ends_with(".ttf") || l.ends_with(".otf") || l.ends_with(".ttc") || is_pixel_font(name)
 }
 
-/// 查找指定字体对应的伴生粗体文件
-fn find_bold_file(dir: &std::path::Path, file: &str) -> Option<String> {
+/// 从所有字体候选目录中按优先级读取指定字体字节 (优先读取用户安装字体)
+pub fn read_font_bytes(filename: &str) -> Option<Vec<u8>> {
+    for dir in font_search_dirs() {
+        if let Ok(b) = std::fs::read(dir.join(filename)) {
+            return Some(b);
+        }
+        if let Ok(b) = std::fs::read(dir.join(format!("{filename}.ttf"))) {
+            return Some(b);
+        }
+    }
+    if let Some(p) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(filename)))
+    {
+        if let Ok(b) = std::fs::read(p) {
+            return Some(b);
+        }
+    }
+    None
+}
+
+/// 查找指定字体对应的伴生粗体文件 (优先在用户自装字体目录中查找)
+fn find_bold_file(dirs: &[std::path::PathBuf], file: &str) -> Option<(std::path::PathBuf, String)> {
     let lower = file.to_lowercase();
-    if lower == "cascadiacode.ttf" || lower == "cascadiamono.ttf" {
-        for candidate in [
+    let candidates: &[&str] = if lower == "cascadiacode.ttf" || lower == "cascadiamono.ttf" {
+        &[
             "CascadiaCode-Bold.otf",
             "CascadiaMono-Bold.otf",
             "CascadiaCode.ttf",
-        ] {
-            if dir.join(candidate).is_file() {
-                return Some(candidate.to_string());
-            }
-        }
+        ]
     } else if lower == "consola.ttf" {
-        if dir.join("consolab.ttf").is_file() {
-            return Some("consolab.ttf".to_string());
-        }
+        &["consolab.ttf"]
     } else if lower.starts_with("biz-udgothic") {
-        if dir.join("BIZ-UDGothicB.ttc").is_file() {
-            return Some("BIZ-UDGothicB.ttc".to_string());
-        }
+        &["BIZ-UDGothicB.ttc"]
     } else if lower.starts_with("msyh") {
-        if dir.join("msyhbd.ttc").is_file() {
-            return Some("msyhbd.ttc".to_string());
-        }
+        &["msyhbd.ttc"]
     } else if lower.starts_with("segoeui") {
-        if dir.join("segoeuib.ttf").is_file() {
-            return Some("segoeuib.ttf".to_string());
+        &["segoeuib.ttf"]
+    } else {
+        &[]
+    };
+    for dir in dirs {
+        for cand in candidates {
+            if dir.join(cand).is_file() {
+                return Some((dir.clone(), cand.to_string()));
+            }
         }
     }
     None
@@ -331,7 +403,6 @@ pub fn load(editor_file: &str, cjk_file: &str, lang: &str) -> Loaded {
 
 /// 扩展加载接口: 支持指定是否需要粗体变体 (启动时若未开启粗体则跳过粗体文件扫描与读取)
 pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) -> Loaded {
-    let dir = fonts_dir();
     let safe_editor = std::path::Path::new(editor_file)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -343,40 +414,26 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
 
     let is_retro = is_pixel_font(&safe_editor);
 
-    // 线程 1: 并行读取主字体与其粗体变体 (不需要粗体时跳过磁盘搜索与读取)
-    let dir_clone = dir.clone();
+    // 线程 1: 并行读取主字体与其粗体变体 (优先用户自装字体，不需要粗体时跳过磁盘搜索与读取)
+    let search_dirs_clone = font_search_dirs();
     let ed_handle = std::thread::spawn(move || {
         let (mut ed, mut ed_bold) = if !safe_editor.is_empty()
             && is_font_file(&safe_editor)
             && !is_illegible_display_font(&safe_editor)
         {
             let b1 = if is_pixel_font(&safe_editor) {
-                // 优先查找系统字体或同级目录，兜底使用内嵌的 16-Bit 街机点阵全字形字体 (保证无依赖立即可用)
-                if dir_clone.join(&safe_editor).is_file() {
-                    std::fs::read(dir_clone.join(&safe_editor)).ok()
-                } else if dir_clone.join(format!("{safe_editor}.ttf")).is_file() {
-                    std::fs::read(dir_clone.join(format!("{safe_editor}.ttf"))).ok()
-                } else if let Some(p) = std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|d| d.join(&safe_editor)))
-                {
-                    if p.is_file() {
-                        std::fs::read(p).ok()
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-                .or_else(|| std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf").ok())
-                .or_else(|| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf").ok())
-                .or_else(|| Some(EMBEDDED_PIXEL_FONT.to_vec()))
+                // 优先查找用户/系统字体或同级目录，兜底使用内嵌的 16-Bit 街机点阵全字形字体 (保证无依赖立即可用)
+                read_font_bytes(&safe_editor)
+                    .or_else(|| read_font_bytes(&format!("{safe_editor}.ttf")))
+                    .or_else(|| std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf").ok())
+                    .or_else(|| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf").ok())
+                    .or_else(|| Some(EMBEDDED_PIXEL_FONT.to_vec()))
             } else {
-                std::fs::read(dir_clone.join(&safe_editor)).ok()
+                read_font_bytes(&safe_editor)
             };
             let b2 = if need_bold && !is_pixel_font(&safe_editor) {
-                let bold_file = find_bold_file(&dir_clone, &safe_editor);
-                bold_file.and_then(|f| std::fs::read(dir_clone.join(f)).ok())
+                find_bold_file(&search_dirs_clone, &safe_editor)
+                    .and_then(|(d, f)| std::fs::read(d.join(f)).ok())
             } else {
                 None
             };
@@ -387,10 +444,10 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
         // 若未指定或未读到主字体，优先尝试加载系统自带的现代编程等宽字体保底
         if ed.is_none() {
             for fallback in ["CascadiaCode.ttf", "CascadiaMono.ttf", "consola.ttf"] {
-                if let Ok(b) = std::fs::read(dir_clone.join(fallback)) {
+                if let Some(b) = read_font_bytes(fallback) {
                     if need_bold {
-                        let bold_file = find_bold_file(&dir_clone, fallback);
-                        ed_bold = bold_file.and_then(|f| std::fs::read(dir_clone.join(f)).ok());
+                        let bold_file = find_bold_file(&search_dirs_clone, fallback);
+                        ed_bold = bold_file.and_then(|(d, f)| std::fs::read(d.join(f)).ok());
                     }
                     ed = Some(b);
                     break;
@@ -400,12 +457,12 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
         (ed, ed_bold)
     });
 
-    // 线程 0 (当前线程): 并行读取 CJK Fallback 字体
+    // 线程 0 (当前线程): 并行读取 CJK Fallback 字体 (优先在用户自装字体中查找)
     // 首次冷启动加载 1 个核心字体 (如 NotoSansSC 或 msyh), 已覆盖中日英全量基础字形, 避免 30MB+ 冗余 I/O
     let cjk_cands = get_cjk_candidates(&safe_cjk, lang);
     let mut fallbacks = vec![];
     for (file, index) in cjk_cands {
-        let Ok(bytes) = std::fs::read(dir.join(file)) else {
+        let Some(bytes) = read_font_bytes(file) else {
             continue;
         };
         fallbacks.push((file.to_string(), index, bytes));
@@ -708,5 +765,15 @@ mod tests {
             assert!(ui.ctx().fonts_mut(|f| f.row_height(&id_bold)) > 0.0);
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn test_user_fonts_discovery_and_priority() {
+        let user = user_fonts();
+        let all = system_fonts();
+        // 如果系统上存在用户安装字体，确保它们排列在 system_fonts() 的头部优先展示
+        if !user.is_empty() {
+            assert_eq!(&all[..user.len()], &user[..]);
+        }
     }
 }
