@@ -33,9 +33,8 @@ impl BoxView {
             return None;
         }
         let old: Vec<Vec<char>> = (r0..=r1).map(|r| cx.line(r)).collect();
-        let max_len = old.iter().map(Vec::len).max().unwrap_or(0);
-        let c0 = b[1].min(b[3]).min(max_len);
-        let c1 = b[1].max(b[3]).min(max_len).max(c0);
+        let c0 = b[1].min(b[3]);
+        let c1 = b[1].max(b[3]);
         Some(BoxView {
             r0,
             r1,
@@ -229,6 +228,16 @@ mod tests {
                 [1, 0],
                 None
             )
+        );
+    }
+
+    #[test]
+    fn insert_pads_spaces_on_lines_shorter_than_c0() {
+        // 当列块插入点位于短行行尾之外时（如在第 6 列插入，第二行 "gh" 只有 2 个字符），自动补齐空格对齐
+        let r = run_box("box-insert", 0, 6, [0, 6, 2, 6], "!", BX);
+        assert_eq!(
+            apply(BX, &r),
+            vec!["abcdef!".to_string(), "gh    !".into(), "ijklmn!".into()]
         );
     }
 }

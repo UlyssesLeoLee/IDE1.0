@@ -14,6 +14,7 @@
 pub mod art;
 pub mod cards;
 pub mod cel3d;
+pub mod cel3d_models;
 mod deploy;
 mod hero;
 mod steps;
@@ -78,7 +79,7 @@ impl Default for InstallerState {
             cam_yaw: 0.35,
             cam_pitch: 0.22,
             cam_dist: 450.0,
-            auto_rotate: true,
+            auto_rotate: false,
         }
     }
 }

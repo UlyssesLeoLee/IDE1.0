@@ -179,9 +179,9 @@ fn test_cel3d_models_generation() {
     assert_eq!(gem.vertices.len(), 12, "正二十面体晶石应严格具有 12 个黄金比例顶点");
     assert_eq!(gem.faces.len(), 20, "正二十面体晶石应严格具有 20 个三角切面");
 
-    let wreath = build_laurel_wreath(20, 50.0, 44.0);
-    assert_eq!(wreath.faces.len(), 20, "阿波罗桂冠应包含 20 片月桂叶几何体");
-    assert_eq!(wreath.vertices.len(), 80, "每片月桂叶由 4 个三维顶点构成");
+    let wreath = build_laurel_wreath(26, 50.0, 44.0);
+    assert_eq!(wreath.faces.len(), 26, "阿波罗桂冠应包含 26 片月桂叶几何体");
+    assert_eq!(wreath.vertices.len(), 104, "每片月桂叶由 4 个三维顶点构成");
 }
 
 #[test]

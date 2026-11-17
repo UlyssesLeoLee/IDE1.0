@@ -5226,17 +5226,11 @@ impl App {
                             right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
                         let btn_painter = ui.painter_at(screen_vp.intersect(ui.clip_rect()));
                         let pressed = ui.ctx().input(|i| i.pointer.primary_down());
-                        let top_hover_zone = Rect::from_min_max(
-                            Pos2::new(screen_vp.max.x - 145.0, screen_vp.min.y),
-                            Pos2::new(screen_vp.max.x, screen_vp.min.y + 36.0),
+                        let show_top_slots = is_top_nav_hovered(
+                            ui.input(|i| i.pointer.hover_pos()),
+                            &screen_vp,
+                            &slots,
                         );
-                        let show_top_slots = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
-                            top_hover_zone.contains(p)
-                                || slots
-                                    .iter()
-                                    .filter(|s| s.rect.min.y < screen_vp.min.y + 40.0)
-                                    .any(|s| s.rect.expand(6.0).contains(p))
-                        });
                         for slot in slots {
                             let is_top = slot.rect.min.y < screen_vp.min.y + 40.0;
                             if is_top && !show_top_slots {
@@ -5585,15 +5579,7 @@ impl App {
             let md_open = (is_md_doc && !vw.md_bar_collapsed) || self.md_preview;
             let nema_open = (is_nema_doc && !vw.nema_bar_collapsed) || self.nema_preview;
             let slots = right_collapse_slots(screen_vp, minimap_open, md_open, nema_open);
-            let top_hover_zone = Rect::from_min_max(
-                Pos2::new(screen_vp.max.x - 145.0, screen_vp.min.y),
-                Pos2::new(screen_vp.max.x, screen_vp.min.y + 36.0),
-            );
-            let show_top_slots = top_hover_zone.contains(p)
-                || slots
-                    .iter()
-                    .filter(|s| s.rect.min.y < screen_vp.min.y + 40.0)
-                    .any(|s| s.rect.expand(6.0).contains(p));
+            let show_top_slots = is_top_nav_hovered(Some(p), &screen_vp, &slots);
             if let Some(slot) = slots.iter().find(|s| {
                 s.rect.contains(p) && (s.rect.min.y >= screen_vp.min.y + 40.0 || show_top_slots)
             }) {
@@ -5623,8 +5609,27 @@ impl App {
             let rv = RowView::build(&d.lines[row], tab, kcols, view_x, char_w);
             let want = (p.x - x0).max(0.0);
             let col = if alt || d.box_sel.is_some() {
-                // Sakura 风格纵向列选: 严格按字符宽度 char_w 换算，允许自由延伸至行尾外的空白列
-                ((want + char_w * 0.4) / char_w).floor() as usize
+                // Sakura 风格纵向列选: 文本范围内兼顾 CJK 宽字符与 Tab，超出文本部分按 char_w 自由向右延伸空白列
+                let text_col = rv.col_at_with_spacing(
+                    ctx,
+                    want,
+                    rel_y - top(row),
+                    &font,
+                    wrap_w,
+                    effective_letter_spacing,
+                );
+                let line_len = d.lines[row].chars().count();
+                if text_col >= line_len {
+                    let line_w = rv.x_of(ui.painter(), line_len, &font, Color32::WHITE);
+                    if want > line_w {
+                        let extra = ((want - line_w + char_w * 0.4) / char_w).floor() as usize;
+                        line_len + extra
+                    } else {
+                        text_col
+                    }
+                } else {
+                    text_col
+                }
             } else {
                 rv.col_at_with_spacing(
                     ctx,
@@ -5840,6 +5845,25 @@ pub fn right_collapse_slots(
         });
     }
     out
+}
+
+/// 判断鼠标是否位于右上角折叠按钮悬停感知区，用于顶部槽位悬停才显隐
+pub fn is_top_nav_hovered(
+    pointer_pos: Option<Pos2>,
+    screen_vp: &Rect,
+    slots: &[RightCollapseSlot],
+) -> bool {
+    let top_hover_zone = Rect::from_min_max(
+        Pos2::new(screen_vp.max.x - 145.0, screen_vp.min.y),
+        Pos2::new(screen_vp.max.x, screen_vp.min.y + 36.0),
+    );
+    pointer_pos.is_some_and(|p| {
+        top_hover_zone.contains(p)
+            || slots
+                .iter()
+                .filter(|s| s.rect.min.y < screen_vp.min.y + 40.0)
+                .any(|s| s.rect.expand(6.0).contains(p))
+    })
 }
 
 fn right_room(avail: f32) -> bool {
