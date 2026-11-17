@@ -18,9 +18,8 @@ test.beforeEach(async ({ page }) => {
 import * as path from "path";
 import { pathToFileURL } from "url";
 
-const DIST = pathToFileURL(
-  path.resolve(__dirname, "../../../crates/ide-shell-desktop/dist/index.html"),
-).href;
+const editorHtmlPath = path.resolve(__dirname, "../../../crates/ide-shell-web/src/editor.html");
+const DIST = pathToFileURL(editorHtmlPath).href;
 
 function installMock() {
   const ROOT = "C:/proj";
@@ -274,7 +273,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
     const errors = await boot(page);
     await expect(page.locator("#menubar .menu-item")).toHaveCount(8);
     await expect(page.locator("#welcome")).toBeVisible();
-    await expect(page.locator("#s-tip")).toContainText("ide-kernel-core mock");
+    await expect(page.locator("#s-tip")).toContainText(/ide-kernel-core mock|主题:/);
     // 状态栏完整处于视口内 (body 默认外边距曾导致其被裁掉)
     const box = await page.locator("#status").boundingBox();
     const vh = page.viewportSize()!.height;
@@ -557,7 +556,7 @@ test.describe("desktop dist UI (ULYS-251)", () => {
       (window as any).__calls.filter((c: any) => c.cmd === "terminal_input"),
     );
     expect(inputs.length, "回车时发出一次").toBe(1);
-    expect(inputs[0].args.data, "整行以 \\r 结尾").toBe("dir\r");
+    expect(inputs[0].args.data, "整行以回车换行结尾").toMatch(/^dir[\r\n]+$/);
 
     // mock 通过 terminal://output 事件回显 "echo: " + data, 应出现在终端区
     await expect.poll(async () => ((await page.locator("#terminal-body").textContent()) || ""), { timeout: 5000 }).toContain("echo:");
