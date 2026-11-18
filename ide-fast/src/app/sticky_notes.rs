@@ -1663,7 +1663,7 @@ impl App {
                                 ui.spacing_mut().item_spacing = Vec2::ZERO;
 
                                 let font_id = if tc.retro16 {
-                                    FontId::monospace(13.0)
+                                    FontId::monospace(12.0)
                                 } else {
                                     FontId::proportional(13.0)
                                 };

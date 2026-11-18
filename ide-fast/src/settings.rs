@@ -871,20 +871,25 @@ impl Settings {
         } else {
             theme_id
         };
-        // 1. 如果用户对该主题有明确的记忆修改
+        // 1. 如果是 16-Bit 主题，必须全面切换至像素字体 PixelFont 12
+        if key == "theme-retro16" {
+            if let Some(f) = self.theme_fonts.get(key) {
+                let clean = f.trim();
+                if !clean.is_empty() && crate::fonts::is_pixel_font(clean) {
+                    return clean.to_string();
+                }
+            }
+            return "PixelFontMulti-12.ttf".to_string();
+        }
+        // 2. 如果用户对该主题有明确的记忆修改
         if let Some(f) = self.theme_fonts.get(key) {
             let clean = f.trim();
             if !clean.is_empty()
-                && (key == "theme-retro16"
-                    || (!crate::fonts::is_pixel_font(clean)
-                        && !crate::fonts::is_illegible_display_font(clean)))
+                && !crate::fonts::is_pixel_font(clean)
+                && !crate::fonts::is_illegible_display_font(clean)
             {
                 return clean.to_string();
             }
-        }
-        // 2. 如果是 16-Bit 主题，默认全面切换至像素字体
-        if key == "theme-retro16" {
-            return "PixelFontMulti-12.ttf".to_string();
         }
         // 3. 其他主题：若全局配置了合法的非像素字体，使用它；否则使用该主题的专属默认字体
         let clean_global = self.font_family.trim();

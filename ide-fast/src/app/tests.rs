@@ -1494,6 +1494,8 @@ fn test_tray_all_actions_and_visibility_state_invariants() {
 #[test]
 fn test_retro16_pixelfont_invariants() {
     let (mut a, _g) = app(Settings::default());
+    a.font_px = 16.5; // 用户设置了非 13/15 的任意自定义字号
+    a.cfg.font_px = 16.5;
 
     // 默认主题是 comic, effective_font 是 CascadiaCode.ttf
     assert_eq!(
@@ -1501,13 +1503,15 @@ fn test_retro16_pixelfont_invariants() {
         "CascadiaCode.ttf"
     );
 
-    // 切到 retro16 主题
+    // 切到 retro16 主题: 必须自动变为 PixelFontMulti-12.ttf，且字号强制自动变为 12px
     a.set_theme_plugin("theme-retro16");
     assert_eq!(
         crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
         "PixelFontMulti-12.ttf"
     );
-    assert_eq!(a.font_px, 12.0, "Retro 16-Bit 主题默认字号必须为 12px");
+    assert_eq!(a.font_px, 12.0, "Retro 16-Bit 主题字号必须自动切为 12px");
+    assert_eq!(a.cfg.font_px, 12.0, "Retro 16-Bit 配置字号必须自动同步为 12px");
+    assert_eq!(a.cfg.term_font_px, 12.0, "Retro 16-Bit 终端字号必须自动同步为 12px");
     assert_eq!(
         a.default_font_px(),
         12.0,
@@ -1529,12 +1533,13 @@ fn test_retro16_pixelfont_invariants() {
         "CascadiaCode.ttf"
     );
 
-    // 切回 dark 主题，恢复为 CascadiaCode.ttf 及默认 15px
+    // 切回 dark 主题，恢复为 CascadiaCode.ttf 并自动恢复切入前的 16.5px 用户自定义字号
     a.set_theme_plugin("theme-dark");
     assert_eq!(
         crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
         "CascadiaCode.ttf"
     );
+    assert_eq!(a.font_px, 16.5, "切离 Retro16 必须恢复切入前的自定义字号");
     assert_eq!(a.default_font_px(), 15.0);
 
     // 切到 light 主题，恢复为 CascadiaMono.ttf

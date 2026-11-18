@@ -7505,6 +7505,32 @@ function setTheme(mode) {
       root.style.setProperty("--border", "#ffffff");
     }
   }
+  if (mode === "retro16") {
+    if (VIEW_STATE.fontSize && VIEW_STATE.fontSize !== 12) {
+      VIEW_STATE._prevFontSize = VIEW_STATE.fontSize;
+    }
+    if (typeof setFontSize === "function") setFontSize(12);
+    if (typeof TERMCFG !== "undefined" && TERMCFG.fontSize && TERMCFG.fontSize !== 12) {
+      TERMCFG._prevFontSize = TERMCFG.fontSize;
+      TERMCFG.fontSize = 12;
+      if (typeof applyTermCfg === "function") applyTermCfg();
+    }
+  } else if (prev === "retro16") {
+    if (VIEW_STATE._prevFontSize) {
+      if (typeof setFontSize === "function") setFontSize(VIEW_STATE._prevFontSize);
+      delete VIEW_STATE._prevFontSize;
+    } else if (VIEW_STATE.fontSize === 12) {
+      if (typeof setFontSize === "function") setFontSize(14);
+    }
+    if (typeof TERMCFG !== "undefined" && TERMCFG._prevFontSize) {
+      TERMCFG.fontSize = TERMCFG._prevFontSize;
+      if (typeof applyTermCfg === "function") applyTermCfg();
+      delete TERMCFG._prevFontSize;
+    } else if (typeof TERMCFG !== "undefined" && TERMCFG.fontSize === 12) {
+      TERMCFG.fontSize = 13;
+      if (typeof applyTermCfg === "function") applyTermCfg();
+    }
+  }
   VIEW_STATE.theme = mode;
   localStorage.setItem("ide10.theme", mode);
   setTip("主题: " + (THEME_LABELS[mode] || mode));

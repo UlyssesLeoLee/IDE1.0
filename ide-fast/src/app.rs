@@ -526,9 +526,7 @@ impl App {
             self.set_theme_plugin(theme_to_apply);
         }
         self.font_px = st.font_px;
-        if self.tc.retro16
-            && ((self.font_px - 13.0).abs() < 0.1 || (self.font_px - 15.0).abs() < 0.1)
-        {
+        if self.tc.retro16 || theme_to_apply == "theme-retro16" {
             self.font_px = 12.0;
         }
         self.tab = st.tab_width;
@@ -536,6 +534,11 @@ impl App {
         self.wrap = st.wrap;
         crate::i18n::set_code(&st.lang);
         self.cfg = st.clone();
+        if self.tc.retro16 || theme_to_apply == "theme-retro16" {
+            self.cfg.font_px = 12.0;
+            self.cfg.term_font_px = 12.0;
+            self.cfg.font_family = "PixelFontMulti-12.ttf".to_string();
+        }
         let current_theme_key = if self.theme_id.is_empty() {
             if self.cfg.dark {
                 "theme-dark"
@@ -3830,11 +3833,24 @@ impl App {
         self.theme_id = id.to_string();
         self.tc.retro16 = self.theme_id == "theme-retro16";
         if self.tc.retro16 {
-            if (self.font_px - 13.0).abs() < 0.1 || (self.font_px - 15.0).abs() < 0.1 {
-                self.font_px = 12.0;
+            if prev_id != "theme-retro16" {
+                self.cfg
+                    .theme_fonts
+                    .insert("pre-retro16-font-px".to_string(), self.font_px.to_string());
             }
-        } else if prev_id == "theme-retro16" && (self.font_px - 12.0).abs() < 0.1 {
-            self.font_px = DEFAULT_FONT_PX;
+            self.font_px = 12.0;
+            self.cfg.font_px = 12.0;
+            self.cfg.term_font_px = 12.0;
+        } else if prev_id == "theme-retro16" {
+            let restored = self
+                .cfg
+                .theme_fonts
+                .remove("pre-retro16-font-px")
+                .and_then(|s| s.parse::<f32>().ok())
+                .unwrap_or(DEFAULT_FONT_PX);
+            self.font_px = restored;
+            self.cfg.font_px = restored;
+            self.cfg.term_font_px = 13.0;
         }
 
         let new_key = if id.is_empty() {
@@ -3851,12 +3867,7 @@ impl App {
         // - 若切换至 16-Bit 主题: 所有字体切换为 PixelFont (PixelFontMulti-12.ttf)
         // - 若切换至其他主题: 优先恢复用户此前针对该主题的专属记忆设置；若未自定义则重置为空(由各主题默认字体接管)
         if new_key == "theme-retro16" {
-            self.cfg.font_family = self
-                .cfg
-                .theme_fonts
-                .get("theme-retro16")
-                .cloned()
-                .unwrap_or_else(|| "PixelFontMulti-12.ttf".to_string());
+            self.cfg.font_family = "PixelFontMulti-12.ttf".to_string();
         } else {
             self.cfg.font_family = self
                 .cfg
@@ -3883,6 +3894,7 @@ impl App {
             self.theme_id.clear();
         }
         self.cfg.theme_plugin = self.theme_id.clone();
+        self.cfg.save();
     }
 
     /// 选一个 zip -> 给确认框 (名称 / 版本 / 权限) -> 安装

@@ -298,18 +298,27 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
         }
         PrefsTab::Font => {
             // 1. 主字体选择: 推荐免费商用字体 + 全部系统字体
+            let find_rec = |file: &str| {
+                crate::fonts::RECOMMENDED_FONTS.iter().find(|r| {
+                    r.file.eq_ignore_ascii_case(file)
+                        || (crate::fonts::is_pixel_font(file) && crate::fonts::is_pixel_font(r.file))
+                })
+            };
             ui.horizontal(|ui| {
                 ui.label(tr("pf.font-family"));
                 let shown = if d.font_family.is_empty() {
-                    tr("pf.font-default").to_string()
+                    let eff = d.effective_font_for(&d.theme_plugin);
+                    let label = label_of(&eff);
+                    if let Some(rec) = find_rec(&eff) {
+                        format!("{} ({})", tr("pf.font-default"), rec.name_zh)
+                    } else {
+                        format!("{} ({})", tr("pf.font-default"), label)
+                    }
                 } else {
                     let label = label_of(&d.font_family);
                     if p.user_fonts.iter().any(|u| u.eq_ignore_ascii_case(&d.font_family)) {
                         format!("👤 {} [用户自装]", label)
-                    } else if let Some(rec) = crate::fonts::RECOMMENDED_FONTS
-                        .iter()
-                        .find(|r| r.file.eq_ignore_ascii_case(&d.font_family))
-                    {
+                    } else if let Some(rec) = find_rec(&d.font_family) {
                         format!("{} [{}]", rec.name_zh, rec.license)
                     } else {
                         label
@@ -350,7 +359,8 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                         );
                         for rec in crate::fonts::RECOMMENDED_FONTS {
                             let label = format!("{} [{}]", rec.name_zh, rec.license);
-                            let on = d.font_family.eq_ignore_ascii_case(rec.file);
+                            let on = d.font_family.eq_ignore_ascii_case(rec.file)
+                                || (crate::fonts::is_pixel_font(&d.font_family) && crate::fonts::is_pixel_font(rec.file));
                             if ui.selectable_label(on, label).clicked() {
                                 d.font_family = rec.file.to_string();
                             }
