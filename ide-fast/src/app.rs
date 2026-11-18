@@ -53,7 +53,20 @@ mod titlebar;
 mod updateui;
 mod welcome;
 
+/// 后台文件对话框异步载入与进度状态 (防止 Windows COM / Shell 首发阻塞 UI，带进度条与首次启动较慢提示)
+pub struct FileDialogLoading {
+    pub title: String,
+    pub note: String,
+    pub hint: String,
+    pub progress: f32,
+    pub rx: std::sync::mpsc::Receiver<Option<std::path::PathBuf>>,
+    pub cur_id: u64,
+    pub is_diff: bool,
+}
+
 pub struct App {
+    /// 后台文件选择器加载状态 (进度条 + 首次启动较慢)
+    pub file_dialog_loading: Option<FileDialogLoading>,
     /// 批次 10: 自动备份 / 文件锁 / 玻璃窗口 / 底部页签 (`app/sysopts.rs`)、Markdown 预览扩展 (`app/mdopts.rs`)、GitHub 插件窗口 (`app/ghopts.rs`)
     sys: sysopts::SysState,
     md10: mdopts::MdState,
@@ -314,6 +327,7 @@ impl App {
             always_on_top: false,
             force_exit: false,
             window_hidden: false,
+            file_dialog_loading: None,
         };
         app.persist = persist;
         app.sys.decor = st.system_title_bar;
@@ -1349,18 +1363,26 @@ impl App {
         self.split_on = true;
     }
 
-    /// 选一个文件打开成标签, 再和当前标签比较
+    /// 选一个文件打开成标签, 再和当前标签比较 (非阻塞后台拉起文件选择器，带加载进度条并注明首次启动较慢)
     fn diff_with_file(&mut self) {
-        let Some(p) = rfd::FileDialog::new().pick_file() else {
-            return;
-        };
+        let (tx, rx) = std::sync::mpsc::channel();
         let cur_id = self.cur().id;
-        self.open_path(&p);
-        let other = self.active.min(self.docs.len() - 1);
-        if let Some(ci) = self.docs.iter().position(|d| d.id == cur_id) {
-            self.active = ci;
-            self.start_diff(other);
-        }
+        std::thread::Builder::new()
+            .name("file-dialog-diff".into())
+            .spawn(move || {
+                let p = rfd::FileDialog::new().pick_file();
+                let _ = tx.send(p);
+            })
+            .ok();
+        self.file_dialog_loading = Some(FileDialogLoading {
+            title: crate::i18n::trz("与本地文件比较…").to_string(),
+            note: crate::i18n::trz("首次启动较慢，组件初始化中…").to_string(),
+            hint: crate::i18n::trz("正在准备文件选择接口与微内核比对引擎，请稍候…").to_string(),
+            progress: 0.15,
+            rx,
+            cur_id,
+            is_diff: true,
+        });
     }
 
     /// 下一处 / 上一处差异 (在当前标签所在的那一侧找, 到头回绕)
@@ -1476,6 +1498,88 @@ impl App {
                 self.cur().goto(r, 0);
             }
             self.diff_list_open = open;
+        }
+    }
+
+    /// 渲染异步文件对话框载入进度浮层 (进度条 + 首次启动较慢提示)
+    pub(super) fn render_file_dialog_loading(&mut self, ctx: &egui::Context) {
+        let Some(loading) = self.file_dialog_loading.as_mut() else {
+            return;
+        };
+
+        // 尝试接收文件选择结果
+        match loading.rx.try_recv() {
+            Ok(maybe_path) => {
+                let is_diff = loading.is_diff;
+                let cur_id = loading.cur_id;
+                self.file_dialog_loading = None;
+                if let Some(p) = maybe_path {
+                    if is_diff {
+                        self.open_path(&p);
+                        let other = self.active.min(self.docs.len() - 1);
+                        if let Some(ci) = self.docs.iter().position(|d| d.id == cur_id) {
+                            self.active = ci;
+                            self.start_diff(other);
+                        }
+                    } else {
+                        self.open_path(&p);
+                    }
+                }
+                return;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.file_dialog_loading = None;
+                return;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                loading.progress = (loading.progress + 0.015).min(0.96);
+                ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            }
+        }
+
+        let mut cancel = false;
+        let title = self.file_dialog_loading.as_ref().unwrap().title.clone();
+        let note = self.file_dialog_loading.as_ref().unwrap().note.clone();
+        let hint = self.file_dialog_loading.as_ref().unwrap().hint.clone();
+        let progress = self.file_dialog_loading.as_ref().unwrap().progress;
+
+        egui::Window::new(&title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .fixed_size(egui::vec2(380.0, 150.0))
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 10.0);
+                ui.add_space(2.0);
+
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(
+                        egui::RichText::new(&note)
+                            .strong()
+                            .size(13.0)
+                            .color(Color32::from_rgb(250, 204, 21)),
+                    );
+                });
+
+                ui.add(egui::ProgressBar::new(progress).animate(true).show_percentage());
+
+                ui.label(
+                    egui::RichText::new(&hint)
+                        .size(11.5)
+                        .color(Color32::from_rgb(203, 213, 225)),
+                );
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.button(crate::i18n::trz("取消")).clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+
+        if cancel {
+            self.file_dialog_loading = None;
         }
     }
 
@@ -1958,11 +2062,24 @@ impl App {
     }
 
     fn open_dialog(&mut self) {
-        if let Some(files) = rfd::FileDialog::new().pick_files() {
-            for f in files {
-                self.open_path(&f);
-            }
-        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cur_id = self.cur().id;
+        std::thread::Builder::new()
+            .name("file-dialog-open".into())
+            .spawn(move || {
+                let p = rfd::FileDialog::new().pick_file();
+                let _ = tx.send(p);
+            })
+            .ok();
+        self.file_dialog_loading = Some(FileDialogLoading {
+            title: crate::i18n::trz("打开本地文件").to_string(),
+            note: crate::i18n::trz("首次启动较慢，组件初始化中…").to_string(),
+            hint: crate::i18n::trz("正在准备文件选择接口，请稍候…").to_string(),
+            progress: 0.15,
+            rx,
+            cur_id,
+            is_diff: false,
+        });
     }
 
     fn save(&mut self, as_new: bool) -> bool {
@@ -6463,6 +6580,7 @@ impl App {
         }
         self.diff_refresh();
         self.diff_windows(ctx);
+        self.render_file_dialog_loading(ctx);
         if self.props.is_some() {
             self.props_window(ctx);
         }

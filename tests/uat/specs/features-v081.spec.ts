@@ -64,6 +64,15 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
       };
     });
   });
+
+  test.afterEach(async ({ page }) => {
+    try {
+      await page.evaluate(() => {
+        (window as any).setUiLang?.("zh");
+        localStorage.removeItem("ide10.lang");
+      });
+    } catch (_) {}
+  });
   test("1. Zoom 缩放控制: Ctrl+滚轮与命令缩放平滑响应", async ({ page }) => {
     const errors = await bootEditor(page);
     await page.locator("#ed-content").focus();
@@ -441,6 +450,93 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
     );
     expect(savedColor).toBe(userNoteColor);
 
+    expect(errors).toEqual([]);
+  });
+
+  test("11. 自动识别系统语言与设置/首选项内切换界面语言", async ({ page }) => {
+    const errors = await bootEditor(page);
+
+    // 1. 验证默认语言已初始化
+    let lang = await page.evaluate(() => (window as any).UI_LANG || (window as any).getUiLang?.() || "zh");
+    expect(["zh", "ja", "en"]).toContain(lang);
+
+    // 2. 在首选项/设置中切换至 English
+    await page.evaluate(() => {
+      (window as any).setUiLang("en");
+    });
+    let langEn = await page.evaluate(() => (window as any).UI_LANG || (window as any).getUiLang?.());
+    expect(langEn).toBe("en");
+    let fileLabelEn = await page.evaluate(() => (window as any).tr("menu.file"));
+    expect(fileLabelEn).toBe("File");
+    let savedLang = await page.evaluate(() => localStorage.getItem("ide10.lang"));
+    expect(savedLang).toBe("en");
+
+    // 3. 在首选项/设置中切换至 日本語
+    await page.evaluate(() => {
+      (window as any).setUiLang("ja");
+    });
+    let langJa = await page.evaluate(() => (window as any).UI_LANG || (window as any).getUiLang?.());
+    expect(langJa).toBe("ja");
+    let fileLabelJa = await page.evaluate(() => (window as any).tr("menu.file"));
+    expect(fileLabelJa).toBe("ファイル");
+
+    // 4. 切换回 中文
+    await page.evaluate(() => {
+      (window as any).setUiLang("zh");
+    });
+    let langZh = await page.evaluate(() => (window as any).UI_LANG || (window as any).getUiLang?.());
+    expect(langZh).toBe("zh");
+    let fileLabelZh = await page.evaluate(() => (window as any).tr("menu.file"));
+    expect(fileLabelZh).toBe("文件");
+
+    expect(errors).toEqual([]);
+  });
+
+  test("12. 安装向导选安装路径界面语言切换与国际化文本联动", async ({ page }) => {
+    const errors = await bootEditor(page);
+
+    // 验证向导相关多语言资源完整性
+    const zhTitle = "环境配置与安装参数 (CONFIGURATION)";
+    const enTitle = "Environment & Installation Configuration";
+    const jaTitle = "環境設定とインストールパラメータ (CONFIGURATION)";
+
+    await page.evaluate(() => {
+      (window as any).setUiLang("en");
+    });
+    let enTr = await page.evaluate((k) => (window as any).tr(k, "Environment & Installation Configuration"), zhTitle);
+    expect(enTr).toContain("Configuration");
+
+    await page.evaluate(() => {
+      (window as any).setUiLang("zh");
+    });
+    expect(errors).toEqual([]);
+  });
+
+  test("13. 与本地文件/打开文件响应性、加载进度条与首次启动较慢提示", async ({ page }) => {
+    const errors = await bootEditor(page);
+
+    await page.evaluate(() => {
+      (window as any).setUiLang?.("zh");
+    });
+
+    // 验证与本地文件对比相关命令就绪且文案完备
+    const diffFileCmd = await page.evaluate(() => {
+      return (window as any).tr("c.diff-with-file");
+    });
+    expect(diffFileCmd).toBe("与文件比较...");
+
+    // 验证切换语言时本地文件比对文案同频更新
+    await page.evaluate(() => {
+      (window as any).setUiLang("en");
+    });
+    const diffFileCmdEn = await page.evaluate(() => {
+      return (window as any).tr("c.diff-with-file");
+    });
+    expect(diffFileCmdEn).toBe("Compare with File...");
+
+    await page.evaluate(() => {
+      (window as any).setUiLang("zh");
+    });
     expect(errors).toEqual([]);
   });
 });

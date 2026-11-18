@@ -62,6 +62,39 @@ pub fn cur() -> Lang {
     }
 }
 
+/// 自动检测系统当前语言 (根据环境变量以及 Windows 平台系统区域设置)
+pub fn detect_system_lang() -> Lang {
+    // 1. 优先读取标准环境变量 (支持手动测试覆盖与跨平台配置)
+    for var in ["IDE_LANG", "LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(v) = std::env::var(var) {
+            let v = v.trim().to_lowercase();
+            if v.starts_with("zh") {
+                return Lang::Zh;
+            } else if v.starts_with("ja") {
+                return Lang::Ja;
+            } else if v.starts_with("en") {
+                return Lang::En;
+            }
+        }
+    }
+
+    // 2. Windows 平台安全检测用户默认区域与 UI 语言 (纯 Safe Rust)
+    if let Some(loc) = editcore::theme_luminance::read_user_locale_name() {
+        let s = loc.trim().to_lowercase();
+        if s.starts_with("zh") {
+            return Lang::Zh;
+        } else if s.starts_with("ja") {
+            return Lang::Ja;
+        } else if s.starts_with("en") {
+            return Lang::En;
+        } else {
+            return Lang::En;
+        }
+    }
+
+    Lang::Zh
+}
+
 fn pick(row: &'static [&'static str; 3]) -> &'static str {
     let s = row[cur() as usize];
     if s.is_empty() {
@@ -2817,6 +2850,470 @@ pub const CMD_T: &[Row] = &[
             "底部: 🛡️ 协同审查",
             "下部: 🛡️ 協調レビュー",
             "Bottom: 🛡️ Collab Review",
+        ],
+    ),
+    (
+        "与本地文件比较…",
+        [
+            "与本地文件比较…",
+            "ローカルファイルと比較…",
+            "Compare with Local File…",
+        ],
+    ),
+    (
+        "与本地文件比较...",
+        [
+            "与本地文件比较…",
+            "ローカルファイルと比較…",
+            "Compare with Local File…",
+        ],
+    ),
+    (
+        "文件差异对比 (Diff)",
+        [
+            "文件差异对比 (Diff)",
+            "ファイル差分比較 (Diff)",
+            "File Diff Comparison",
+        ],
+    ),
+    (
+        "文件差异对比 (Diff)...",
+        [
+            "文件差异对比 (Diff)...",
+            "ファイル差分比較 (Diff)...",
+            "File Diff Comparison...",
+        ],
+    ),
+    (
+        "下一处差异 (F7)",
+        [
+            "下一处差异 (F7)",
+            "次の差分 (F7)",
+            "Next Diff (F7)",
+        ],
+    ),
+    (
+        "上一处差异 (Shift+F7)",
+        [
+            "上一处差异 (Shift+F7)",
+            "前の差分 (Shift+F7)",
+            "Previous Diff (Shift+F7)",
+        ],
+    ),
+    (
+        "查看差异列表…",
+        [
+            "查看差异列表…",
+            "差分リストを表示…",
+            "View Diff List…",
+        ],
+    ),
+    (
+        "查看差异列表...",
+        [
+            "查看差异列表…",
+            "差分リストを表示…",
+            "View Diff List…",
+        ],
+    ),
+    (
+        "退出对比 (清除差异)",
+        [
+            "退出对比 (清除差异)",
+            "比較を終了 (差分クリア)",
+            "Exit Diff (Clear)",
+        ],
+    ),
+    (
+        "与已打开标签页比较:",
+        [
+            "与已打开标签页比较:",
+            "開いているタブと比較:",
+            "Compare with Opened Tab:",
+        ],
+    ),
+    (
+        "打开本地文件",
+        [
+            "打开本地文件",
+            "ローカルファイルを開く",
+            "Open Local File",
+        ],
+    ),
+    (
+        "首次启动较慢，组件初始化中…",
+        [
+            "首次启动较慢，组件初始化中…",
+            "初回起動時は少し時間がかかります。コンポーネント初期化中…",
+            "First launch is slower, initializing components…",
+        ],
+    ),
+    (
+        "正在准备文件选择接口与微内核比对引擎，请稍候…",
+        [
+            "正在准备文件选择接口与微内核比对引擎，请稍候…",
+            "ファイル選択ダイアログと差分エンジンを準備しています。しばらくお待ちください…",
+            "Preparing file dialog and diff engine, please wait…",
+        ],
+    ),
+    (
+        "正在准备文件选择接口，请稍候…",
+        [
+            "正在准备文件选择接口，请稍候…",
+            "ファイル選択ダイアログを準備しています。しばらくお待ちください…",
+            "Preparing file dialog, please wait…",
+        ],
+    ),
+    (
+        "🌐 界面语言 (Language):",
+        [
+            "🌐 界面语言 (Language):",
+            "🌐 表示言語 (Language):",
+            "🌐 Interface Language:",
+        ],
+    ),
+    (
+        "环境配置与安装参数 (CONFIGURATION)",
+        [
+            "环境配置与安装参数 (CONFIGURATION)",
+            "環境設定とインストールパラメータ (CONFIGURATION)",
+            "Environment & Installation Configuration",
+        ],
+    ),
+    (
+        "自定义目标安装路径与环境联动，保障纯净绿色的极速微内核体验",
+        [
+            "自定义目标安装路径与环境联动，保障纯净绿色的极速微内核体验",
+            "インストール先と環境連携をカスタマイズし、純粋で高速なマイクロカーネル体験を保証します",
+            "Customize installation path and system integration for a pure, fast microkernel experience",
+        ],
+    ),
+    (
+        "📁 目标安装与工作目录 (Installation Directory):",
+        [
+            "📁 目标安装与工作目录 (Installation Directory):",
+            "📁 インストール先・作業ディレクトリ (Installation Directory):",
+            "📁 Installation & Working Directory:",
+        ],
+    ),
+    (
+        "浏览 (BROWSE)...",
+        [
+            "浏览 (BROWSE)...",
+            "参照 (BROWSE)...",
+            "Browse...",
+        ],
+    ),
+    (
+        "选择 IDE 1.0 安装或工作目录",
+        [
+            "选择 IDE 1.0 安装或工作目录",
+            "IDE 1.0 のインストールまたは作業フォルダーを選択",
+            "Select IDE 1.0 Installation or Working Directory",
+        ],
+    ),
+    (
+        "所需空间: ~85 MB  |  架构: x86_64 Windows (Native)  |  零第三方依赖 · 秒速起航",
+        [
+            "所需空间: ~85 MB  |  架构: x86_64 Windows (Native)  |  零第三方依赖 · 秒速起航",
+            "必要容量: 約 85 MB  |  アーキテクチャ: x86_64 Windows (Native)  |  依存関係ゼロ・超高速起動",
+            "Required: ~85 MB  |  Arch: x86_64 Windows (Native)  |  Zero dependencies, instant launch",
+        ],
+    ),
+    (
+        "将 IDE1.0 添加至全局环境变量 PATH",
+        [
+            "将 IDE1.0 添加至全局环境变量 PATH",
+            "IDE 1.0 を環境変数 PATH に追加",
+            "Add IDE1.0 to system PATH environment variable",
+        ],
+    ),
+    (
+        "可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出",
+        [
+            "可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出",
+            "任意のターミナル (PowerShell / CMD) から ide-fast で即座に起動できます",
+            "Launch ide-fast instantly from any terminal (PowerShell / CMD)",
+        ],
+    ),
+    (
+        "创建桌面与开始菜单极速启动快捷方式",
+        [
+            "创建桌面与开始菜单极速启动快捷方式",
+            "デスクトップとスタートメニューにショートカットを作成",
+            "Create Desktop and Start Menu shortcuts",
+        ],
+    ),
+    (
+        "生成正版水晶图标，双击秒开，随时直达工作空间",
+        [
+            "生成正版水晶图标，双击秒开，随时直达工作空间",
+            "純正クリスタルアイコンを生成し、ダブルクリックでいつでもワークスペースへ直行",
+            "Crystal icon for instant access to your workspace",
+        ],
+    ),
+    (
+        "启用 Windows 系统托盘常驻守护 (Resident Daemon)",
+        [
+            "启用 Windows 系统托盘常驻守护 (Resident Daemon)",
+            "Windows システムトレイ常駐デーモンを有効化",
+            "Enable Windows System Tray resident daemon",
+        ],
+    ),
+    (
+        "最小化时驻留托盘，毫秒级热唤醒，防误关守护活跃会话",
+        [
+            "最小化时驻留托盘，毫秒级热唤醒，防误关守护活跃会话",
+            "最小化時はトレイに常駐し、ミリ秒で復元。誤終了を防ぎセッションを保護",
+            "Minimizes to tray with instant wake-up, protects active sessions",
+        ],
+    ),
+    (
+        "立即安装 (INSTALL NOW) ⚡",
+        [
+            "立即安装 (INSTALL NOW) ⚡",
+            "今すぐインストール (INSTALL NOW) ⚡",
+            "Install Now ⚡",
+        ],
+    ),
+    (
+        "退出向导",
+        [
+            "退出向导",
+            "ウィザードを終了",
+            "Exit Wizard",
+        ],
+    ),
+    (
+        "1. 环境配置",
+        [
+            "1. 环境配置",
+            "1. 環境設定",
+            "1. Configuration",
+        ],
+    ),
+    (
+        "2. 极速部署",
+        [
+            "2. 极速部署",
+            "2. 高速デプロイ",
+            "2. Deployment",
+        ],
+    ),
+    (
+        "3. 部署完成",
+        [
+            "3. 部署完成",
+            "3. 完了",
+            "3. Finished",
+        ],
+    ),
+    (
+        "正在部署 IDE 1.0 (DEPLOYING PACKAGES)",
+        [
+            "正在部署 IDE 1.0 (DEPLOYING PACKAGES)",
+            "IDE 1.0 をデプロイ中 (DEPLOYING PACKAGES)",
+            "Deploying IDE 1.0 Packages",
+        ],
+    ),
+    (
+        "纯 Rust 原生释放，解压核心微内核与环境配置文件...",
+        [
+            "纯 Rust 原生释放，解压核心微内核与环境配置文件...",
+            "純粋な Rust ネイティブバイナリを展開し、コアマイクロカーネルと環境設定を構成中...",
+            "Extracting pure Rust native binaries and configuring environment...",
+        ],
+    ),
+    (
+        "部署中...",
+        [
+            "部署中...",
+            "デプロイ中...",
+            "Deploying...",
+        ],
+    ),
+    (
+        "[OK] 校验系统环境与依赖完整性...",
+        [
+            "[OK] 校验系统环境与依赖完整性...",
+            "[OK] システム環境と依存関係の整合性を確認...",
+            "[OK] Verified system environment and dependencies...",
+        ],
+    ),
+    (
+        "[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录...",
+        [
+            "[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录...",
+            "[OK] IDE1.0.exe ネイティブマイクロカーネルをターゲットフォルダーに展開...",
+            "[OK] Extracted IDE1.0.exe native microkernel to target directory...",
+        ],
+    ),
+    (
+        "[OK] 部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
+        [
+            "[OK] 部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
+            "[OK] 3D セル画風およびガラスエフェクトのビジュアルパイプラインを設定...",
+            "[OK] Configured 3D Cel-shaded and acrylic visual pipeline presets...",
+        ],
+    ),
+    (
+        "[OK] 写入系统环境变量 PATH 与桌面快捷启动入口...",
+        [
+            "[OK] 写入系统环境变量 PATH 与桌面快捷启动入口...",
+            "[OK] 環境変数 PATH とデスクトップショートカットを登録...",
+            "[OK] Registered system PATH and desktop shortcuts...",
+        ],
+    ),
+    (
+        "[OK] 首选参数配置与常驻托盘守护者完成同步初始化！",
+        [
+            "[OK] 首选参数配置与常驻托盘守护者完成同步初始化！",
+            "[OK] 環境設定とトレイ常駐デーモンの同期初期化が完了！",
+            "[OK] Preferences and system tray resident daemon initialized!",
+        ],
+    ),
+    (
+        "[..] 正在处理中...",
+        [
+            "[..] 正在处理中...",
+            "[..] 処理中...",
+            "[..] In progress...",
+        ],
+    ),
+    (
+        "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
+        [
+            "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
+            "🎉 デプロイ完了！IDE 1.0 の準備が整いました！(SUCCESS)",
+            "🎉 Deployment Successful! IDE 1.0 is ready!",
+        ],
+    ),
+    (
+        "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
+        [
+            "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
+            "すべてのコア依存関係と構成の準備が完了しました。極上のネイティブ開発体験をお楽しみください！",
+            "All core components and configurations are loaded. Enjoy the ultimate pure Rust native experience!",
+        ],
+    ),
+    (
+        "启动 IDE 1.0 极速体验 (Launch immediately)",
+        [
+            "启动 IDE 1.0 极速体验 (Launch immediately)",
+            "IDE 1.0 を今すぐ起動 (Launch immediately)",
+            "Launch IDE 1.0 immediately",
+        ],
+    ),
+    (
+        "保持微内核极速冷启动，秒级唤醒原生编辑器",
+        [
+            "保持微内核极速冷启动，秒级唤醒原生编辑器",
+            "マイクロカーネルの超高速コールドスタートを維持し、瞬時にネイティブエディタを起動",
+            "Maintain microkernel fast cold-start with instant native editor launch",
+        ],
+    ),
+    (
+        "完成并启动 (FINISH) 🚀",
+        [
+            "完成并启动 (FINISH) 🚀",
+            "完了して起動 (FINISH) 🚀",
+            "Finish & Launch 🚀",
+        ],
+    ),
+    (
+        "退出",
+        [
+            "退出",
+            "終了",
+            "Exit",
+        ],
+    ),
+    (
+        "[OK] 校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
+        [
+            "[OK] 校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
+            "[OK] ローカル CPU ハードウェアアクセラレーション命令セット (AVX2/SSE4.2) を検証...",
+            "[OK] Verified local CPU hardware acceleration extensions (AVX2/SSE4.2)...",
+        ],
+    ),
+    (
+        "📁 安装与工作空间目录",
+        [
+            "📁 安装与工作空间目录",
+            "📁 インストール先とワークスペース",
+            "📁 Installation & Workspace Directory",
+        ],
+    ),
+    (
+        "⚡ 终端命令行集成",
+        [
+            "⚡ 终端命令行集成",
+            "⚡ ターミナルコマンドライン連携",
+            "⚡ Terminal CLI Integration",
+        ],
+    ),
+    (
+        "🛡️ 系统驻留守护",
+        [
+            "🛡️ 系统驻留守护",
+            "🛡️ システム常駐デーモン",
+            "🛡️ System Resident Daemon",
+        ],
+    ),
+    (
+        "⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
+        [
+            "⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
+            "⚡ 完了後すぐに IDE 1.0 を起動 (Launch IDE 1.0 Now)",
+            "⚡ Launch IDE 1.0 immediately upon completion",
+        ],
+    ),
+    (
+        "完成并启动 IDE 1.0 (LAUNCH NOW) →",
+        [
+            "完成并启动 IDE 1.0 (LAUNCH NOW) →",
+            "完了して IDE 1.0 を起動 (LAUNCH NOW) →",
+            "Finish & Launch IDE 1.0 (LAUNCH NOW) →",
+        ],
+    ),
+    (
+        "已绑定目标目录",
+        [
+            "已绑定目标目录",
+            "バインド済みターゲットフォルダー",
+            "Bound Target Directory",
+        ],
+    ),
+    (
+        "已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)",
+        [
+            "已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)",
+            "環境変数 PATH に追加済み (ターミナルから ide-fast で即起動)",
+            "Added to system PATH (launch ide-fast instantly from terminal)",
+        ],
+    ),
+    (
+        "未配置全局环境变量 PATH",
+        [
+            "未配置全局环境变量 PATH",
+            "環境変数 PATH は未設定",
+            "System PATH not configured",
+        ],
+    ),
+    (
+        "系统托盘常驻守护已开启 (毫秒级热启动与状态守护)",
+        [
+            "系统托盘常驻守护已开启 (毫秒级热启动与状态守护)",
+            "システムトレイ常駐デーモン有効 (ミリ秒高速起動と状態保護)",
+            "System tray resident daemon enabled (instant hot-wakeup and state guard)",
+        ],
+    ),
+    (
+        "系统托盘守护未启用",
+        [
+            "系统托盘守护未启用",
+            "システムトレイ常駐は無効",
+            "System tray daemon disabled",
         ],
     ),
 ];

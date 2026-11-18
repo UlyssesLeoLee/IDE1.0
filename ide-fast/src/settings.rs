@@ -222,7 +222,7 @@ impl Default for Settings {
             recent_dirs: vec![],
             positions: vec![],
             search: SearchPrefs::default(),
-            lang: "zh".into(),
+            lang: crate::i18n::detect_system_lang().code().into(),
             auto_indent: true,
             smart_indent: false,
             insert_spaces: false,
@@ -919,7 +919,7 @@ impl Settings {
         );
         self.auto_backup_min = crate::backup::clamp_interval(self.auto_backup_min);
         if crate::i18n::Lang::from_code(&self.lang).is_none() {
-            self.lang = "zh".to_string();
+            self.lang = crate::i18n::detect_system_lang().code().to_string();
         }
         if crate::update::Channel::from_code(&self.update_channel).is_none() {
             self.update_channel = "stable".to_string();
@@ -1937,7 +1937,7 @@ nTabSpace=2
         assert_eq!(s.macro_slots.len(), MACRO_SLOTS);
         assert_eq!(s.toolbar_cmds.len(), DEFAULT_TOOLBAR.len());
         assert_eq!(s.update_channel, "stable");
-        assert_eq!(s.lang, "zh");
+        assert_eq!(s.lang, crate::i18n::detect_system_lang().code());
 
         // 校验超出合法边界的值会被正确清洗
         let untrusted_json = r#"{
@@ -1953,7 +1953,7 @@ nTabSpace=2
         assert_eq!(s_bad.font_px, 40.0);
         assert_eq!(s_bad.tab_width, 16);
         assert_eq!(s_bad.max_file_mb, 1);
-        assert_eq!(s_bad.lang, "zh");
+        assert_eq!(s_bad.lang, crate::i18n::detect_system_lang().code());
         assert_eq!(s_bad.update_channel, "stable");
     }
     #[test]

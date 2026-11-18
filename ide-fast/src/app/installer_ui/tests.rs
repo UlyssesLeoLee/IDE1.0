@@ -224,3 +224,47 @@ fn test_cel3d_vfx_pipeline_and_steps() {
     });
     out.textures_delta.clear();
 }
+
+#[test]
+fn test_installer_language_switching_in_options() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.installer.open = true;
+    a.installer.step = InstallerStep::Options;
+
+    // 默认初始语言为当前语言
+    let init_lang = crate::i18n::cur();
+
+    // 切换至 English
+    crate::i18n::set(crate::i18n::Lang::En);
+    a.cfg.lang = "en".to_string();
+    assert_eq!(crate::i18n::cur(), crate::i18n::Lang::En);
+
+    let mut out = ctx.run_ui(Default::default(), |_root| {
+        a.installer_window(&ctx);
+    });
+    out.textures_delta.clear();
+
+    // 切换至 日本語
+    crate::i18n::set(crate::i18n::Lang::Ja);
+    a.cfg.lang = "ja".to_string();
+    assert_eq!(crate::i18n::cur(), crate::i18n::Lang::Ja);
+
+    let mut out = ctx.run_ui(Default::default(), |_root| {
+        a.installer_window(&ctx);
+    });
+    out.textures_delta.clear();
+
+    // 切换回 中文
+    crate::i18n::set(crate::i18n::Lang::Zh);
+    a.cfg.lang = "zh".to_string();
+    assert_eq!(crate::i18n::cur(), crate::i18n::Lang::Zh);
+
+    let mut out = ctx.run_ui(Default::default(), |_root| {
+        a.installer_window(&ctx);
+    });
+    out.textures_delta.clear();
+
+    // 还原环境
+    crate::i18n::set(init_lang);
+}

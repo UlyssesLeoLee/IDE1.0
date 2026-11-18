@@ -708,16 +708,16 @@ impl App {
                                             diff_action = Some(DiffAction::Prev);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                        if menuui::mbtn(ui, "查看差异列表...").clicked() {
+                                        if menuui::mbtn(ui, crate::i18n::trz("查看差异列表…")).clicked() {
                                             diff_action = Some(DiffAction::List);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                        if menuui::mbtn(ui, "退出对比 (清除差异)").clicked()
+                                        if menuui::mbtn(ui, crate::i18n::trz("退出对比 (清除差异)")).clicked()
                                         {
                                             diff_action = Some(DiffAction::Clear);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                    } else if menuui::mbtn(ui, "文件差异对比 (Diff)...").clicked()
+                                    } else if menuui::mbtn(ui, crate::i18n::trz("文件差异对比 (Diff)...")).clicked()
                                     {
                                         diff_action = Some(DiffAction::WithFile);
                                         egui::Popup::close_all(ui.ctx());
@@ -823,31 +823,31 @@ impl App {
             (menuui::style(self.tc))(ui.style_mut());
             ui.set_min_width(210.0);
             ui.spacing_mut().item_spacing.y = 4.0;
-            ui.label(egui::RichText::new("文件差异对比 (Diff)").strong());
+            ui.label(egui::RichText::new(crate::i18n::trz("文件差异对比 (Diff)")).strong());
             ui.separator();
 
             if let Some(v) = &self.diff {
                 ui.label(egui::RichText::new(v.summary()).color(Color32::from_rgb(0, 190, 255)));
-                if ui.button("下一处差异 (F7)").clicked() {
+                if ui.button(crate::i18n::trz("下一处差异 (F7)")).clicked() {
                     action = Some(DiffAction::Next);
                     egui::Popup::close_all(ui.ctx());
                 }
-                if ui.button("上一处差异 (Shift+F7)").clicked() {
+                if ui.button(crate::i18n::trz("上一处差异 (Shift+F7)")).clicked() {
                     action = Some(DiffAction::Prev);
                     egui::Popup::close_all(ui.ctx());
                 }
-                if ui.button("查看差异列表...").clicked() {
+                if ui.button(crate::i18n::trz("查看差异列表…")).clicked() {
                     action = Some(DiffAction::List);
                     egui::Popup::close_all(ui.ctx());
                 }
-                if ui.button("退出对比 (清除差异)").clicked() {
+                if ui.button(crate::i18n::trz("退出对比 (清除差异)")).clicked() {
                     action = Some(DiffAction::Clear);
                     egui::Popup::close_all(ui.ctx());
                 }
                 ui.separator();
             }
 
-            if ui.button("与本地文件比较...").clicked() {
+            if ui.button(crate::i18n::trz("与本地文件比较…")).clicked() {
                 action = Some(DiffAction::WithFile);
                 egui::Popup::close_all(ui.ctx());
             }
@@ -862,7 +862,7 @@ impl App {
 
             if !other_docs.is_empty() {
                 ui.separator();
-                ui.label(egui::RichText::new("与已打开标签页比较:").size(11.0));
+                ui.label(egui::RichText::new(crate::i18n::trz("与已打开标签页比较:")).size(11.0));
                 for (i, d) in other_docs {
                     let name = if d.name.is_empty() {
                         "未命名"

@@ -43,10 +43,12 @@ export default defineConfig({
         localStorage: [
           { name: "ide10.layout", value: "full" },
           { name: "ide10.vim", value: "on" },
+          { name: "ide10.lang", value: "zh" },
         ],
       }],
     },
     headless: true,
+    locale: "zh-CN",
     viewport: { width: 960, height: 600 },
     trace: "on-first-retry",
   },

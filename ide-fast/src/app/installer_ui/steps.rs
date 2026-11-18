@@ -49,23 +49,48 @@ impl App {
         hp.text(
             pos2(h_rect.left() + 16.0, h_rect.top() + 18.0),
             egui::Align2::LEFT_CENTER,
-            "环境配置与安装参数 (CONFIGURATION)",
+            crate::i18n::trz("环境配置与安装参数 (CONFIGURATION)"),
             egui::FontId::proportional(14.5),
             Color32::WHITE,
         );
         hp.text(
             pos2(h_rect.left() + 16.0, h_rect.top() + 40.0),
             egui::Align2::LEFT_CENTER,
-            "自定义目标安装路径与环境联动，保障纯净绿色的极速微内核体验",
+            crate::i18n::trz("自定义目标安装路径与环境联动，保障纯净绿色的极速微内核体验"),
             egui::FontId::proportional(11.0),
             Color32::from_rgb(203, 213, 225),
         );
 
         ui.add_space(2.0);
 
+        // 语言切换控制栏 (安装向导选安装路径的界面也可以直接选语言)
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(crate::i18n::trz("🌐 界面语言 (Language):"))
+                    .strong()
+                    .size(12.0)
+                    .color(Color32::WHITE),
+            );
+            let cur_lang = crate::i18n::cur();
+            for l in crate::i18n::Lang::ALL {
+                let is_sel = l == cur_lang;
+                let bg = if is_sel {
+                    Color32::from_rgb(2, 132, 199)
+                } else {
+                    Color32::from_rgb(30, 41, 59)
+                };
+                if comic_action_button(ui, l.native(), vec2(80.0, 30.0), is_sel, bg).clicked() {
+                    crate::i18n::set(l);
+                    self.cfg.lang = l.code().to_string();
+                }
+            }
+        });
+
+        ui.add_space(2.0);
+
         // 路径设置标题
         ui.label(
-            egui::RichText::new("📁 目标安装与工作目录 (Installation Directory):")
+            egui::RichText::new(crate::i18n::trz("📁 目标安装与工作目录 (Installation Directory):"))
                 .strong()
                 .size(12.5)
                 .color(Color32::WHITE),
@@ -108,7 +133,7 @@ impl App {
 
             if comic_action_button(
                 ui,
-                "浏览 (BROWSE)...",
+                crate::i18n::trz("浏览 (BROWSE)..."),
                 vec2(btn_w, 38.0),
                 false,
                 Color32::from_rgb(30, 41, 59),
@@ -121,7 +146,7 @@ impl App {
 
         if browse_clicked {
             if let Some(folder) = rfd::FileDialog::new()
-                .set_title("选择 IDE 1.0 安装或工作目录")
+                .set_title(crate::i18n::trz("选择 IDE 1.0 安装或工作目录"))
                 .pick_folder()
             {
                 self.installer.target_dir = folder.to_string_lossy().to_string();
@@ -129,9 +154,9 @@ impl App {
         }
 
         ui.label(
-            egui::RichText::new(
+            egui::RichText::new(crate::i18n::trz(
                 "所需空间: ~85 MB  |  架构: x86_64 Windows (Native)  |  零第三方依赖 · 秒速起航",
-            )
+            ))
             .monospace()
             .size(10.5)
             .color(Color32::from_rgb(180, 195, 215)),
@@ -143,8 +168,8 @@ impl App {
         comic_interactive_card(
             ui,
             &mut self.installer.add_path,
-            "将 IDE1.0 添加至全局环境变量 PATH",
-            "可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出",
+            crate::i18n::trz("将 IDE1.0 添加至全局环境变量 PATH"),
+            crate::i18n::trz("可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出"),
             "01",
             Color32::from_rgb(14, 165, 233),
         );
@@ -152,8 +177,8 @@ impl App {
         comic_interactive_card(
             ui,
             &mut self.installer.desktop_shortcut,
-            "创建桌面与开始菜单极速启动快捷方式",
-            "生成正版水晶图标，双击秒开，随时直达工作空间",
+            crate::i18n::trz("创建桌面与开始菜单极速启动快捷方式"),
+            crate::i18n::trz("生成正版水晶图标，双击秒开，随时直达工作空间"),
             "02",
             Color32::from_rgb(168, 85, 247),
         );
@@ -161,8 +186,8 @@ impl App {
         comic_interactive_card(
             ui,
             &mut self.installer.tray_resident,
-            "启用 Windows 系统托盘常驻守护 (Resident Daemon)",
-            "最小化时驻留托盘，毫秒级热唤醒，防误关守护活跃会话",
+            crate::i18n::trz("启用 Windows 系统托盘常驻守护 (Resident Daemon)"),
+            crate::i18n::trz("最小化时驻留托盘，毫秒级热唤醒，防误关守护活跃会话"),
             "03",
             Color32::from_rgb(16, 185, 129),
         );
@@ -180,7 +205,7 @@ impl App {
 
             if comic_action_button(
                 ui,
-                "立即安装 (INSTALL NOW) ⚡",
+                crate::i18n::trz("立即安装 (INSTALL NOW) ⚡"),
                 vec2(install_w, 46.0),
                 true,
                 Color32::from_rgb(2, 132, 199),
@@ -192,7 +217,7 @@ impl App {
 
             if comic_action_button(
                 ui,
-                "退出向导",
+                crate::i18n::trz("退出向导"),
                 vec2(cancel_w, 46.0),
                 false,
                 Color32::from_rgb(30, 41, 59),

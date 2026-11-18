@@ -192,8 +192,27 @@ fn read_apps_use_light_theme() -> Option<bool> {
     Some(val != 0)
 }
 
+/// 读取 Windows 用户首选区域与界面语言 (如 "zh-CN", "en-US", "ja-JP")
+#[cfg(target_os = "windows")]
+pub fn read_user_locale_name() -> Option<String> {
+    let intl = windows_registry::CURRENT_USER
+        .open(r"Control Panel\International")
+        .ok()?;
+    if let Ok(loc) = intl.get_string("LocaleName") {
+        if !loc.trim().is_empty() {
+            return Some(loc);
+        }
+    }
+    None
+}
+
 #[cfg(not(target_os = "windows"))]
 fn read_apps_use_light_theme() -> Option<bool> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn read_user_locale_name() -> Option<String> {
     None
 }
 

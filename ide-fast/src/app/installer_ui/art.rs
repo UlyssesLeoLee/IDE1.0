@@ -9,9 +9,9 @@ use super::InstallerStep;
 /// 绘制向导步骤胶囊指示条 (Step Indicator Capsules - 精简为 3 步核心极速流程)
 pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerStep) {
     let steps = [
-        (InstallerStep::Options, "1. 环境配置"),
-        (InstallerStep::Installing, "2. 极速部署"),
-        (InstallerStep::Finished, "3. 部署完成"),
+        (InstallerStep::Options, crate::i18n::trz("1. 环境配置")),
+        (InstallerStep::Installing, crate::i18n::trz("2. 极速部署")),
+        (InstallerStep::Finished, crate::i18n::trz("3. 部署完成")),
     ];
 
     let n = steps.len();

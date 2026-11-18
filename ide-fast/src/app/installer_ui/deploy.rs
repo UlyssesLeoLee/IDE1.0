@@ -23,14 +23,14 @@ impl App {
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 15.0),
             egui::Align2::LEFT_CENTER,
-            "正在部署 IDE 1.0 (DEPLOYING PACKAGES)",
+            crate::i18n::trz("正在部署 IDE 1.0 (DEPLOYING PACKAGES)"),
             egui::FontId::proportional(13.0),
             Color32::from_rgb(241, 245, 249),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 35.0),
             egui::Align2::LEFT_CENTER,
-            "纯 Rust 原生释放，解压核心微内核与环境配置文件...",
+            crate::i18n::trz("纯 Rust 原生释放，解压核心微内核与环境配置文件..."),
             egui::FontId::proportional(10.0),
             Color32::from_rgb(148, 163, 184),
         );
@@ -80,7 +80,7 @@ impl App {
         }
 
         // 进度百分比文字
-        let pct_str = format!("{:.0}% 部署中...", progress * 100.0);
+        let pct_str = format!("{:.0}% {}", progress * 100.0, crate::i18n::trz("部署中..."));
         bp.text(
             bar_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -122,27 +122,27 @@ impl App {
         let lines = [
             (
                 "01",
-                "[OK] 校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
+                crate::i18n::trz("[OK] 校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)..."),
                 progress >= 0.1,
             ),
             (
                 "02",
-                "[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录...",
+                crate::i18n::trz("[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录..."),
                 progress >= 0.35,
             ),
             (
                 "03",
-                "[OK] 部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
+                crate::i18n::trz("[OK] 部署 3D 赛璐珞与晶透毛玻璃视觉管线预设..."),
                 progress >= 0.60,
             ),
             (
                 "04",
-                "[OK] 写入系统环境变量 PATH 与桌面快捷启动入口...",
+                crate::i18n::trz("[OK] 写入系统环境变量 PATH 与桌面快捷启动入口..."),
                 progress >= 0.85,
             ),
             (
                 "05",
-                "[OK] 首选参数配置与常驻托盘守护者完成同步初始化！",
+                crate::i18n::trz("[OK] 首选参数配置与常驻托盘守护者完成同步初始化！"),
                 progress >= 0.98,
             ),
         ];
@@ -161,7 +161,7 @@ impl App {
                 lp.text(
                     pos2(log_rect.left() + 12.0, ly),
                     egui::Align2::LEFT_CENTER,
-                    "[..] 正在处理中...",
+                    crate::i18n::trz("[..] 正在处理中..."),
                     egui::FontId::monospace(10.5),
                     Color32::from_rgb(100, 116, 139),
                 );
@@ -204,14 +204,14 @@ impl App {
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 16.0),
             egui::Align2::LEFT_CENTER,
-            "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
+            crate::i18n::trz("🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)"),
             egui::FontId::proportional(13.5),
             Color32::from_rgb(241, 245, 249),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 38.0),
             egui::Align2::LEFT_CENTER,
-            "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
+            crate::i18n::trz("所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！"),
             egui::FontId::proportional(10.2),
             Color32::from_rgb(148, 163, 184),
         );
@@ -221,33 +221,33 @@ impl App {
         // 部署配置清单一览 (色彩心理学: 天青/紫罗兰/翡翠绿分级)
         comic_info_card(
             ui,
-            "📁 安装与工作空间目录",
-            &format!("已绑定目标目录: {}", self.installer.target_dir),
+            crate::i18n::trz("📁 安装与工作空间目录"),
+            &format!("{}: {}", crate::i18n::trz("已绑定目标目录"), self.installer.target_dir),
             "✓",
             Color32::from_rgb(14, 165, 233),
         );
 
         let path_summary = if self.installer.add_path {
-            "已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)"
+            crate::i18n::trz("已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)")
         } else {
-            "未配置全局环境变量 PATH"
+            crate::i18n::trz("未配置全局环境变量 PATH")
         };
         comic_info_card(
             ui,
-            "⚡ 终端命令行集成",
+            crate::i18n::trz("⚡ 终端命令行集成"),
             path_summary,
             "✓",
             Color32::from_rgb(168, 85, 247),
         );
 
         let tray_summary = if self.installer.tray_resident {
-            "系统托盘常驻守护已开启 (毫秒级热启动与状态守护)"
+            crate::i18n::trz("系统托盘常驻守护已开启 (毫秒级热启动与状态守护)")
         } else {
-            "系统托盘守护未启用"
+            crate::i18n::trz("系统托盘守护未启用")
         };
         comic_info_card(
             ui,
-            "🛡️ 系统驻留守护",
+            crate::i18n::trz("🛡️ 系统驻留守护"),
             tray_summary,
             "✓",
             Color32::from_rgb(16, 185, 129),
@@ -262,7 +262,7 @@ impl App {
             if ui
                 .checkbox(
                     &mut launch,
-                    egui::RichText::new("⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)")
+                    egui::RichText::new(crate::i18n::trz("⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)"))
                         .strong()
                         .color(Color32::from_rgb(241, 245, 249)),
                 )
@@ -280,7 +280,7 @@ impl App {
             let total_w = ui.available_width();
             if comic_action_button(
                 ui,
-                "完成并启动 IDE 1.0 (LAUNCH NOW) →",
+                crate::i18n::trz("完成并启动 IDE 1.0 (LAUNCH NOW) →"),
                 vec2(total_w, 42.0),
                 true,
                 Color32::from_rgb(16, 185, 129),

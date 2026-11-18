@@ -2383,3 +2383,59 @@ fn test_ctrl_mouse_wheel_zoom_invariants() {
     out4.textures_delta.clear();
     assert_eq!(a.font_px, cur_px, "鼠标移出窗口不可触发缩放");
 }
+
+#[test]
+fn test_detect_system_lang_invariants() {
+    let _lock = crate::i18n::TEST_LOCK.lock();
+    // 1. 验证 IDE_LANG 优先级覆盖
+    std::env::set_var("IDE_LANG", "ja");
+    assert_eq!(crate::i18n::detect_system_lang(), crate::i18n::Lang::Ja);
+
+    std::env::set_var("IDE_LANG", "en");
+    assert_eq!(crate::i18n::detect_system_lang(), crate::i18n::Lang::En);
+
+    std::env::set_var("IDE_LANG", "zh-CN");
+    assert_eq!(crate::i18n::detect_system_lang(), crate::i18n::Lang::Zh);
+
+    std::env::remove_var("IDE_LANG");
+
+    // 2. 验证 LANG 环境变量识别
+    std::env::set_var("LANG", "ja_JP.UTF-8");
+    assert_eq!(crate::i18n::detect_system_lang(), crate::i18n::Lang::Ja);
+
+    std::env::set_var("LANG", "en_US.UTF-8");
+    assert_eq!(crate::i18n::detect_system_lang(), crate::i18n::Lang::En);
+
+    std::env::remove_var("LANG");
+}
+
+#[test]
+fn test_non_blocking_diff_with_file_loading_progress_bar() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+
+    // 1. 触发与本地文件比较
+    a.diff_with_file();
+    assert!(a.file_dialog_loading.is_some(), "必须立即激活非阻塞加载状态");
+
+    let loading = a.file_dialog_loading.as_ref().unwrap();
+    assert_eq!(loading.title, crate::i18n::trz("与本地文件比较…"));
+    assert_eq!(loading.note, crate::i18n::trz("首次启动较慢，组件初始化中…"));
+    assert!(loading.progress >= 0.15);
+    assert!(loading.is_diff);
+
+    // 2. 运行一帧渲染浮层：验证进度条推进
+    let old_prog = a.file_dialog_loading.as_ref().unwrap().progress;
+    let mut out = ctx.run_ui(Default::default(), |_| {
+        a.render_file_dialog_loading(&ctx);
+    });
+    out.textures_delta.clear();
+    assert!(
+        a.file_dialog_loading.as_ref().unwrap().progress > old_prog,
+        "进度条必须平滑自推进"
+    );
+
+    // 3. 模拟用户取消
+    a.file_dialog_loading = None;
+    assert!(a.file_dialog_loading.is_none());
+}

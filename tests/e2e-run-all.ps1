@@ -297,6 +297,20 @@ $features = @(
         Desc = "毛玻璃透亮质感, DWM背景同步与主题自适应设计"
         VerifiedBy = "ide-fast, specs/desktop-ui.spec.ts"
         Status = "Passed"
+    },
+    [PSCustomObject]@{
+        Id = "FEAT-13"
+        Name = "Non-Blocking File Dialog & Progress Bar"
+        Desc = "与本地文件比较非阻塞异步拉起, 载入进度条与注明首次启动较慢"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 13], ide-fast"
+        Status = "Passed"
+    },
+    [PSCustomObject]@{
+        Id = "FEAT-14"
+        Name = "Complete i18n & Language Switching"
+        Desc = "全局完整i18n支持, 自动识别系统语言, 首选项与安装向导路径界面均可切换"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 11, 12], ide-fast"
+        Status = "Passed"
     }
 )
 
