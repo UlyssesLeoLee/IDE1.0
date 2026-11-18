@@ -127,7 +127,7 @@ impl App {
             ),
             (
                 "02",
-                "[OK] 释放 ide-fast.exe 原生极速微内核至目标目录...",
+                "[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录...",
                 progress >= 0.35,
             ),
             (
@@ -310,13 +310,16 @@ impl App {
         if finish_clicked {
             if standalone {
                 if self.installer.launch_on_finish {
-                    let dest_exe = std::path::Path::new(&self.installer.target_dir).join("ide-fast.exe");
-                    let run_exe = if dest_exe.exists() {
-                        dest_exe
+                    let dest_ide10 = std::path::Path::new(&self.installer.target_dir).join("IDE1.0.exe");
+                    let dest_fast = std::path::Path::new(&self.installer.target_dir).join("ide-fast.exe");
+                    let run_exe = if dest_ide10.exists() {
+                        dest_ide10
+                    } else if dest_fast.exists() {
+                        dest_fast
                     } else if let Ok(exe) = std::env::current_exe() {
                         exe
                     } else {
-                        dest_exe
+                        dest_ide10
                     };
                     let _ = std::process::Command::new(run_exe).spawn();
                 }
@@ -335,10 +338,11 @@ fn execute_physical_deployment(inst: &super::InstallerState) {
     if std::fs::create_dir_all(target).is_err() {
         return;
     }
-    let dest_exe = target.join("ide-fast.exe");
+    let dest_exe = target.join("IDE1.0.exe");
     if let Ok(cur_exe) = std::env::current_exe() {
         if cur_exe != dest_exe {
             let _ = std::fs::copy(&cur_exe, &dest_exe);
+            let _ = std::fs::copy(&cur_exe, target.join("ide-fast.exe"));
         }
     }
     #[cfg(windows)]

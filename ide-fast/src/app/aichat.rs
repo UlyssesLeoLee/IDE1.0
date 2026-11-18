@@ -689,7 +689,7 @@ impl App {
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     events.push(Event::Done(ai::Turn {
-                        error: Some("请求线程意外结束".into()),
+                        error: Some("【通信中断】后台 AI 请求通道已关闭，请重试或检查系统网络连接与密钥配置。".into()),
                         ..Default::default()
                     }));
                     break;
@@ -832,6 +832,9 @@ impl App {
                         json!({ "error": format!("unknown tool: {}", call.name) }),
                     ));
                 }
+            } else if call.name.starts_with("sticky_note_") {
+                let res = self.exec_sticky_note_tool(&call.name, &args);
+                immediate.push((slot, call.clone(), res));
             } else {
                 immediate.push((
                     slot,
@@ -1096,6 +1099,124 @@ impl App {
         }
     }
 
+    /// 处理 Agent 对便笺的读写与控制指令
+    fn exec_sticky_note_tool(&mut self, name: &str, args: &Value) -> Value {
+        match name {
+            "sticky_note_list" => {
+                let list: Vec<Value> = self
+                    .sticky_notes
+                    .notes
+                    .iter()
+                    .map(|n| {
+                        json!({
+                            "id": n.id,
+                            "title": n.title,
+                            "color_idx": n.color_idx,
+                            "pinned": n.pinned,
+                            "updated_at": n.updated_at,
+                            "content_preview": n.content.chars().take(80).collect::<String>(),
+                            "content_len": n.content.len(),
+                        })
+                    })
+                    .collect();
+                json!({
+                    "open": self.sticky_notes.open,
+                    "active_id": self.sticky_notes.active_id,
+                    "notes": list,
+                    "total": list.len(),
+                })
+            }
+            "sticky_note_create" => {
+                let content = args.get("content").and_then(Value::as_str).unwrap_or("");
+                let title = args.get("title").and_then(Value::as_str);
+                let color_idx = args
+                    .get("color_idx")
+                    .and_then(Value::as_u64)
+                    .map(|v| (v as usize).min(6))
+                    .unwrap_or(self.sticky_notes.preferred_color_idx);
+                let pinned = args.get("pinned").and_then(Value::as_bool).unwrap_or(false);
+
+                let next_idx = self.sticky_notes.notes.len() + 1;
+                let mut note = crate::app::sticky_notes::StickyNote::new(next_idx);
+                note.color_idx = color_idx;
+                note.pinned = pinned;
+                note.content = content.replace("\r\n", "\n").replace('\r', "\n");
+                if let Some(t) = title {
+                    if !t.trim().is_empty() {
+                        note.title = t.chars().take(24).collect();
+                    }
+                }
+                let note_id = note.id.clone();
+                let note_title = note.title.clone();
+                self.sticky_notes.active_id = note_id.clone();
+                self.sticky_notes.notes.push(note);
+                self.sticky_notes.open = true;
+                self.sticky_notes.mark_dirty();
+                json!({
+                    "success": true,
+                    "id": note_id,
+                    "title": note_title,
+                    "message": "便笺已成功创建并在桌面显示"
+                })
+            }
+            "sticky_note_update" => {
+                let Some(id) = args.get("id").and_then(Value::as_str) else {
+                    return json!({ "error": "缺少便笺 id 参数" });
+                };
+                let Some(note) = self.sticky_notes.notes.iter_mut().find(|n| n.id == id) else {
+                    return json!({ "error": format!("未找到 ID 为 {} 的便笺", id) });
+                };
+                if let Some(content) = args.get("content").and_then(Value::as_str) {
+                    note.content = content.replace("\r\n", "\n").replace('\r', "\n");
+                    note.updated_at = crate::app::sticky_notes::current_timestamp();
+                }
+                if let Some(title) = args.get("title").and_then(Value::as_str) {
+                    note.title = title.chars().take(24).collect();
+                }
+                if let Some(color_idx) = args.get("color_idx").and_then(Value::as_u64) {
+                    note.color_idx = (color_idx as usize).min(6);
+                }
+                if let Some(pinned) = args.get("pinned").and_then(Value::as_bool) {
+                    note.pinned = pinned;
+                }
+                self.sticky_notes.mark_dirty();
+                json!({
+                    "success": true,
+                    "id": id,
+                    "message": "便笺已成功更新"
+                })
+            }
+            "sticky_note_delete" => {
+                let Some(id) = args.get("id").and_then(Value::as_str) else {
+                    return json!({ "error": "缺少便笺 id 参数" });
+                };
+                let exists = self.sticky_notes.notes.iter().any(|n| n.id == id);
+                if !exists {
+                    return json!({ "error": format!("未找到 ID 为 {} 的便笺", id) });
+                }
+                self.sticky_notes.delete_note(id);
+                json!({
+                    "success": true,
+                    "deleted_id": id,
+                    "message": "便笺已成功删除"
+                })
+            }
+            "sticky_note_open" => {
+                let open = args.get("open").and_then(Value::as_bool).unwrap_or(true);
+                self.sticky_notes.open = open;
+                if !open {
+                    self.sticky_notes.pos_initialized = false;
+                }
+                json!({
+                    "success": true,
+                    "open": open,
+                    "message": if open { "便笺已在桌面显示" } else { "便笺已隐藏" }
+                })
+            }
+            other => json!({ "error": format!("未知便笺工具: {}", other) }),
+        }
+    }
+
     fn ai_cancel(&mut self) {
         self.ai.loop_breaker.reset();
         if let Some(mut run) = self.ai.run.take() {
@@ -1148,11 +1269,26 @@ impl App {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 ui.label(trf("ai.consent", &[label, &n.to_string(), &url]));
+                let tc = self.tc;
                 ui.horizontal(|ui| {
-                    if ui.button(tr("ai.allow")).clicked() {
+                    if crate::btnstyle::agent_command_button(
+                        ui,
+                        tr("ai.allow"),
+                        crate::btnstyle::AgentBtnRole::Primary,
+                        &tc,
+                    )
+                    .clicked()
+                    {
                         choice = Some(true);
                     }
-                    if ui.button(tr("ai.deny")).clicked() {
+                    if crate::btnstyle::agent_command_button(
+                        ui,
+                        tr("ai.deny"),
+                        crate::btnstyle::AgentBtnRole::Danger,
+                        &tc,
+                    )
+                    .clicked()
+                    {
                         choice = Some(false);
                     }
                 });
@@ -1176,26 +1312,6 @@ impl App {
         let busy = self.ai.run.is_some();
         // 头部 (Tauri `#chat-head`): 左「Chat」(11px 等宽), 右 ✕ / 清空 / 「带上选中内容 / 当前章节」勾选
         let tc = self.tc;
-        let edge = if tc.dark {
-            Color32::from_gray(69)
-        } else {
-            Color32::from_gray(204)
-        };
-        let boxed = |t: &str| {
-            if tc.comic {
-                egui::Button::new(egui::RichText::new(t).size(12.0).color(Color32::WHITE))
-                    .fill(Color32::from_rgb(32, 36, 52))
-                    .stroke(egui::Stroke::new(1.5, Color32::BLACK))
-                    .corner_radius(3.0)
-                    .min_size(Vec2::new(0.0, 26.0))
-            } else {
-                egui::Button::new(egui::RichText::new(t).size(12.0).color(tc.fg))
-                    .fill(Color32::TRANSPARENT)
-                    .stroke(egui::Stroke::new(1.0, edge))
-                    .corner_radius(4.0)
-                    .min_size(Vec2::new(0.0, 26.0))
-            }
-        };
         ui.horizontal(|ui| {
             ui.set_min_height(30.0);
             if ui
@@ -1218,7 +1334,15 @@ impl App {
                 {
                     self.ai.open = false;
                 }
-                if !self.ai.collab_mode && ui.add(boxed(tr("ai.clear"))).clicked() {
+                if !self.ai.collab_mode
+                    && crate::btnstyle::agent_command_button(
+                        ui,
+                        tr("ai.clear"),
+                        crate::btnstyle::AgentBtnRole::Danger,
+                        &tc,
+                    )
+                    .clicked()
+                {
                     act = Some(Act::Clear);
                 }
             });
@@ -1477,10 +1601,24 @@ impl App {
                                     );
                                 }
                                 ui.horizontal(|ui| {
-                                    if ui.button(tr("ai.apply")).clicked() {
+                                    if crate::btnstyle::agent_command_button(
+                                        ui,
+                                        tr("ai.apply"),
+                                        crate::btnstyle::AgentBtnRole::Primary,
+                                        &tc,
+                                    )
+                                    .clicked()
+                                    {
                                         act = Some(Act::Apply(idx));
                                     }
-                                    if ui.button(tr("ai.reject")).clicked() {
+                                    if crate::btnstyle::agent_command_button(
+                                        ui,
+                                        tr("ai.reject"),
+                                        crate::btnstyle::AgentBtnRole::Danger,
+                                        &tc,
+                                    )
+                                    .clicked()
+                                    {
                                         act = Some(Act::Reject(idx));
                                     }
                                 });
@@ -1508,7 +1646,14 @@ impl App {
                 .color(tc.fg_dim),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(boxed(&format!("{}…", trz("模型设置")))).clicked() {
+                if crate::btnstyle::agent_command_button(
+                    ui,
+                    &format!("⚙️ {}…", trz("模型设置")),
+                    crate::btnstyle::AgentBtnRole::Settings,
+                    &tc,
+                )
+                .clicked()
+                {
                     self.ai.settings = !self.ai.settings;
                 }
             });
@@ -1526,7 +1671,7 @@ impl App {
                     ("/explain", "📖/explain", "架构解说"),
                 ];
                 for (cmd, label, tip) in quick_skills {
-                    if ui.small_button(label).on_hover_text(tip).clicked() {
+                    if crate::btnstyle::agent_skill_pill(ui, label, tip, &tc).clicked() {
                         if !self.ai.input.starts_with('/') {
                             self.ai.input = format!("{cmd} {}", self.ai.input);
                         } else if let Some(space_idx) = self.ai.input.find(' ') {
@@ -1566,10 +1711,25 @@ impl App {
                     .hint_text(tr("ai.placeholder")),
             );
             if busy {
-                if ui.add(boxed(tr("ai.cancel"))).clicked() {
+                if crate::btnstyle::agent_command_button(
+                    ui,
+                    tr("ai.cancel"),
+                    crate::btnstyle::AgentBtnRole::Danger,
+                    &tc,
+                )
+                .clicked()
+                {
                     act = Some(Act::Cancel);
                 }
-            } else if ui.add(boxed(tr("ai.send"))).clicked() || enter {
+            } else if crate::btnstyle::agent_command_button(
+                ui,
+                tr("ai.send"),
+                crate::btnstyle::AgentBtnRole::Primary,
+                &tc,
+            )
+            .clicked()
+                || enter
+            {
                 act = Some(Act::Send);
             }
         });

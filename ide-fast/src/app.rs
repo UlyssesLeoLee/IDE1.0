@@ -121,6 +121,7 @@ pub struct App {
     /// 隐藏创建的窗口是否已经显示 (第一帧画完后显示)
     shown: bool,
     confirm_exit: bool,
+    pub pending_confirm_close: bool,
     /// 输入法正在组字的文字 (还没提交): 画在光标处, 不进文档
     preedit: String,
     /// 下一次滚到光标时把它放在窗口中央 (从 Grep 结果跳转时)
@@ -256,6 +257,7 @@ impl App {
             first_frame: true,
             shown: false,
             confirm_exit: false,
+            pending_confirm_close: false,
             preedit: String::new(),
             center_once: false,
             grep_doc: None,
@@ -2006,16 +2008,44 @@ impl App {
         }
     }
 
+    /// 询问未保存文件是否保存：Windows 下使用带 MB_TOPMOST | MB_SETFOREGROUND 标志的置顶弹窗，
+    /// 确保即使用户从右下角系统托盘退出，提示框也绝对自动置顶，无需手动点击 IDE 窗口激活。
+    fn prompt_unsaved(&self, name: &str) -> Option<bool> {
+        #[cfg(windows)]
+        {
+            let escaped = name.replace('\'', "''").replace(['\n', '\r'], " ");
+            let script = format!(
+                "$ws = New-Object -ComObject WScript.Shell; exit $ws.Popup('文件 [{}] 已被修改。`n`n是否保存修改？', 0, 'IDE1.0', 0x40023)",
+                escaped
+            );
+            if let Ok(out) = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+                .output()
+            {
+                match out.status.code() {
+                    Some(6) => return Some(true),  // IDYES
+                    Some(7) => return Some(false), // IDNO
+                    _ => return None,             // IDCANCEL 或被关闭
+                }
+            }
+        }
+        let r = rfd::MessageDialog::new()
+            .set_title(tr("dlg.unsaved-title"))
+            .set_description(trf("dlg.unsaved-body", &[name]))
+            .set_buttons(rfd::MessageButtons::YesNoCancel)
+            .show();
+        match r {
+            rfd::MessageDialogResult::Yes => Some(true),
+            rfd::MessageDialogResult::No => Some(false),
+            _ => None,
+        }
+    }
+
     /// 关标签: 有未保存修改先问; 返回是否真的关了
     fn close_tab(&mut self, i: usize) -> bool {
         if self.docs[i].dirty {
-            let r = rfd::MessageDialog::new()
-                .set_title(tr("dlg.unsaved-title"))
-                .set_description(trf("dlg.unsaved-body", &[&self.docs[i].name]))
-                .set_buttons(rfd::MessageButtons::YesNoCancel)
-                .show();
-            match r {
-                rfd::MessageDialogResult::Yes => {
+            match self.prompt_unsaved(&self.docs[i].name) {
+                Some(true) => {
                     let keep = self.active;
                     self.active = i;
                     let ok = self.save(false);
@@ -2024,8 +2054,8 @@ impl App {
                         return false;
                     }
                 }
-                rfd::MessageDialogResult::No => {}
-                _ => return false,
+                Some(false) => {}
+                None => return false,
             }
         }
         self.remember_pos(i);

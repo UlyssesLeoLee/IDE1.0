@@ -47,7 +47,11 @@ $cargoBin = if ($cargoCmd) { $cargoCmd.Source } elseif (Test-Path "C:\Users\leo1
 & $cargoBin build --release -j 2 -p ide-fast
 if ($LASTEXITCODE) { Pop-Location; throw "cargo build failed" }
 Pop-Location
-$exe = Join-Path $Target "release\ide-fast.exe"
+$rawExe = Join-Path $Target "release\ide-fast.exe"
+$exe = Join-Path $Target "release\IDE1.0.exe"
+if (Test-Path $rawExe) {
+    Copy-Item $rawExe $exe -Force
+}
 New-Item -ItemType Directory -Force $Out | Out-Null
 $wixobj = Join-Path $Out "ide-fast.wixobj"
 $icon = Join-Path $PSScriptRoot "ide-fast.ico"

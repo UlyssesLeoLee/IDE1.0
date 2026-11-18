@@ -103,13 +103,39 @@ pub fn spawn_request(
 ) -> Handle {
     let h = Handle::default();
     let (hh, cfg) = (h.clone(), cfg.clone());
-    let _ = std::thread::Builder::new()
+    let tx_clone = tx.clone();
+    let spawn_res = std::thread::Builder::new()
         .name("ai-chat".into())
         .spawn(move || {
-            let turn = run_request(&cfg, &messages, &tools, &hh, &tx, &wake);
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_request(&cfg, &messages, &tools, &hh, &tx, &wake)
+            }));
+            let turn = match res {
+                Ok(t) => t,
+                Err(err) => {
+                    let msg = if let Some(s) = err.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = err.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "内部发生未捕获的 Panic 异常".to_string()
+                    };
+                    Turn {
+                        error: Some(format!("【AI服务异常中断】工作线程发生 Panic: {msg}")),
+                        ..Default::default()
+                    }
+                }
+            };
             let _ = tx.send(Event::Done(turn));
             wake();
         });
+
+    if let Err(e) = spawn_res {
+        let _ = tx_clone.send(Event::Done(Turn {
+            error: Some(format!("【系统资源不足】无法创建 AI 工作线程: {e}")),
+            ..Default::default()
+        }));
+    }
     h
 }
 

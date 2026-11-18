@@ -127,6 +127,8 @@ pub struct StickyNotesState {
     pub has_focus: bool,
     pub toast: Option<String>,
     pub persist: bool,
+    pub preferred_color_idx: usize,
+    pub pos_initialized: bool,
 }
 
 impl Default for StickyNotesState {
@@ -155,7 +157,7 @@ impl StickyNotesState {
             active_id: "note_welcome".to_string(),
             notes: vec![default_note],
             win_pos: None,
-            win_size: [320.0, 380.0],
+            win_size: [440.0, 420.0],
             show_list: false,
             search_query: String::new(),
             color_picker_open: false,
@@ -164,6 +166,8 @@ impl StickyNotesState {
             has_focus: false,
             toast: None,
             persist: false,
+            preferred_color_idx: 0,
+            pos_initialized: false,
         }
     }
 
@@ -174,6 +178,7 @@ impl StickyNotesState {
             "win_pos": self.win_pos,
             "win_size": self.win_size,
             "show_list": self.show_list,
+            "preferred_color_idx": self.preferred_color_idx,
             "notes": self.notes.iter().map(|n| n.to_json()).collect::<Vec<_>>(),
         })
     }
@@ -194,6 +199,7 @@ impl StickyNotesState {
         let open = v["open"].as_bool().unwrap_or(false);
         let active_id = v["active_id"].as_str().unwrap_or(&notes[0].id).to_string();
         let show_list = v["show_list"].as_bool().unwrap_or(false);
+        let preferred_color_idx = v["preferred_color_idx"].as_u64().unwrap_or(0) as usize;
 
         let win_pos = v["win_pos"].as_array().and_then(|arr| {
             if arr.len() == 2 {
@@ -205,7 +211,7 @@ impl StickyNotesState {
             }
         });
 
-        let win_size = v["win_size"]
+        let mut win_size = v["win_size"]
             .as_array()
             .and_then(|arr| {
                 if arr.len() == 2 {
@@ -216,7 +222,15 @@ impl StickyNotesState {
                     None
                 }
             })
-            .unwrap_or([320.0, 380.0]);
+            .unwrap_or([440.0, 420.0]);
+
+        // 默认宽度加宽，确保底部 12 个操作按钮与统计文本完整展示不被截断
+        if win_size[0] < 440.0 {
+            win_size[0] = 440.0;
+        }
+        if win_size[1] < 380.0 {
+            win_size[1] = 380.0;
+        }
 
         Some(Self {
             open,
@@ -232,6 +246,8 @@ impl StickyNotesState {
             has_focus: false,
             toast: None,
             persist: true,
+            preferred_color_idx,
+            pos_initialized: false,
         })
     }
 
@@ -279,10 +295,11 @@ impl StickyNotesState {
         self.save();
     }
 
-    /// 新建一张便笺
+    /// 新建一张便笺 (继承用户选定的色彩偏好)
     pub fn new_note(&mut self) {
         let next_idx = self.notes.len() + 1;
-        let note = StickyNote::new(next_idx);
+        let mut note = StickyNote::new(next_idx);
+        note.color_idx = self.preferred_color_idx;
         self.active_id = note.id.clone();
         self.notes.push(note);
         self.show_list = false;
@@ -290,13 +307,14 @@ impl StickyNotesState {
         self.mark_dirty();
     }
 
-    /// 删除指定便笺
+    /// 删除指定便笺 (若删除全部便笺，新建重置便笺仍严格保持用户自定义色彩)
     pub fn delete_note(&mut self, id: &str) {
         if let Some(pos) = self.notes.iter().position(|n| n.id == id) {
             self.notes.remove(pos);
         }
         if self.notes.is_empty() {
-            let note = StickyNote::new(1);
+            let mut note = StickyNote::new(1);
+            note.color_idx = self.preferred_color_idx;
             self.active_id = note.id.clone();
             self.notes.push(note);
         } else if !self.notes.iter().any(|n| n.id == self.active_id) {
@@ -749,7 +767,7 @@ impl App {
         let mut builder = egui::ViewportBuilder::default()
             .with_title("便笺 - Sticky Notes")
             .with_inner_size(self.sticky_notes.win_size)
-            .with_min_inner_size([260.0, 220.0])
+            .with_min_inner_size([400.0, 260.0])
             .with_decorations(false)
             .with_transparent(true)
             .with_resizable(true);
@@ -757,8 +775,12 @@ impl App {
         if is_pinned {
             builder = builder.with_always_on_top();
         }
-        if let Some(pos) = self.sticky_notes.win_pos {
-            builder = builder.with_position(pos);
+        // 关键防护：with_position 仅在独立视窗初次启动/打开帧应用，绝对杜绝每帧重复设置引发与系统窗口管理器的亚像素反馈震荡（避免拖动后便笺自己不停抖动）
+        if !self.sticky_notes.pos_initialized {
+            if let Some(pos) = self.sticky_notes.win_pos {
+                builder = builder.with_position(pos);
+            }
+            self.sticky_notes.pos_initialized = true;
         }
 
         let tc = self.tc;
@@ -1472,6 +1494,10 @@ impl App {
                                                 self.sticky_notes.has_focus = edit_resp.has_focus();
 
                                                 if edit_resp.changed() {
+                                                    // 归一化换行符 (\r\n 与 \r 转为 \n) 并清理空字节，杜绝复制粘贴文本截断丢失
+                                                    if note.content.contains('\r') || note.content.contains('\0') {
+                                                        note.content = note.content.replace("\r\n", "\n").replace('\r', "\n").replace('\0', "");
+                                                    }
                                                     note_content_changed = true;
                                                     note.updated_at = current_timestamp();
                                                     // 智能依据首行提炼标题
@@ -1681,6 +1707,7 @@ impl App {
         // 外部状态副作用处理
         if close_requested {
             self.sticky_notes.open = false;
+            self.sticky_notes.pos_initialized = false;
         }
 
         if let Some(pos) = new_win_pos {
@@ -1707,6 +1734,7 @@ impl App {
         }
 
         if let Some(color_idx) = select_color {
+            self.sticky_notes.preferred_color_idx = color_idx;
             if let Some(n) = self.sticky_notes.active_note_mut() {
                 n.color_idx = color_idx;
             }
@@ -2436,6 +2464,30 @@ mod tests {
         assert_eq!(state.notes.len(), 1);
         assert_eq!(state.active_id, "note_welcome");
         assert!(state.notes[0].content.contains("欢迎使用便笺"));
+        assert!(state.win_size[0] >= 440.0, "便笺默认宽度必须 >= 440px 以容纳底部 12 按钮");
+    }
+
+    #[test]
+    fn test_sticky_notes_color_retention_after_delete_all() {
+        let mut state = StickyNotesState::default_initial();
+        // 用户选定了青色 (色彩索引 3)
+        state.preferred_color_idx = 3;
+        state.notes[0].color_idx = 3;
+
+        // 用户新建便笺，继承用户色彩
+        state.new_note();
+        assert_eq!(state.notes[1].color_idx, 3);
+
+        // 删除全部便笺
+        let id0 = state.notes[0].id.clone();
+        let id1 = state.notes[1].id.clone();
+        state.delete_note(&id0);
+        state.delete_note(&id1);
+
+        // 验证：删除全部便笺后自动重置的便笺仍然保持用户自定义色彩索引 3，绝不变回默认 0 (黄色)
+        assert_eq!(state.notes.len(), 1);
+        assert_eq!(state.notes[0].color_idx, 3);
+        assert_eq!(state.preferred_color_idx, 3);
     }
 
     #[test]

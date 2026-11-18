@@ -580,6 +580,11 @@ impl Doc {
 
     /// 光标周围 + 选区涉及的行 (editcore 只要这些; 大文件里每次按键不用把整篇交出去)
     fn rows_for(&self, extra: &[usize]) -> Vec<(usize, String)> {
+        self.rows_for_mode(extra, false)
+    }
+
+    /// 支持全量选区行提取 (用于复制、剪切、删除选区等需要完整文本内容的命令)
+    fn rows_for_mode(&self, extra: &[usize], full_selection: bool) -> Vec<(usize, String)> {
         let mut set: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
         let (r, _) = (self.cursor[0], self.cursor[1]);
         for d in [r.saturating_sub(1), r, r + 1] {
@@ -591,7 +596,7 @@ impl Doc {
             let last_line = self.lines.len().saturating_sub(1);
             let s0 = s[0].min(last_line);
             let s2 = s[2].min(last_line);
-            if s2.saturating_sub(s0) <= 8 {
+            if full_selection || s2.saturating_sub(s0) <= 8 {
                 for x in s0..=s2 {
                     set.insert(x);
                 }
@@ -876,6 +881,25 @@ impl Doc {
         if let Some(b) = self.box_sel {
             extra_rows.extend(b[0].min(b[2])..=b[0].max(b[2]));
         }
+        let full_sel = self.sel.is_some()
+            && matches!(
+                cmd.as_str(),
+                "copy"
+                    | "cut"
+                    | "copy-lines"
+                    | "copy-crlf"
+                    | "copy-linenum"
+                    | "copy-passage"
+                    | "delete"
+                    | "delete-selection"
+                    | "backspace"
+                    | "new-line"
+                    | "insert-text"
+                    | "paste"
+                    | "box-copy"
+                    | "box-cut"
+                    | "box-delete"
+            );
         let req = EditReq {
             cmd: cmd.clone(),
             row: self.cursor[0],
@@ -888,7 +912,7 @@ impl Doc {
             text,
             box_sel: self.box_sel,
             cursors: all_cursors,
-            rows: self.rows_for(&extra_rows),
+            rows: self.rows_for_mode(&extra_rows, full_sel),
             ..Default::default()
         };
         let Some(res) = edit_cmd::run(&req) else {
@@ -2673,5 +2697,22 @@ b
         assert!(row_indices.contains(&1));
         assert!(row_indices.contains(&9998));
         assert!(row_indices.contains(&9999));
+    }
+
+    #[test]
+    fn test_copy_large_selection_preserves_all_lines_without_loss() {
+        let mut d = Doc::untitled(102, 1);
+        d.lines = (0..50).map(|i| format!("Content line #{:03}", i)).collect();
+        d.cursor = [0, 0];
+        // 选中前 30 行 (超过 8 行阈值)
+        d.sel = Some([0, 0, 29, 17]);
+        let copied = d.edit("copy", None);
+        assert!(copied.is_some(), "应当成功复制");
+        let text = copied.unwrap();
+        let split_lines: Vec<&str> = text.lines().collect();
+        assert_eq!(split_lines.len(), 30, "30 行大选区复制必须保留全部 30 行，绝不截断或丢失中间内容");
+        for (i, line) in split_lines.iter().enumerate() {
+            assert_eq!(*line, format!("Content line #{:03}", i), "第 {} 行内容必须完整无损", i);
+        }
     }
 }

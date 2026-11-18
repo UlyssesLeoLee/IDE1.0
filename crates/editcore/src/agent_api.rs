@@ -60,6 +60,36 @@ pub const TOOLS: &[Tool] = &[
         write: false,
         schema: r#"{"type":"object","properties":{}}"#,
     },
+    Tool {
+        name: "sticky_note_list",
+        description: "列出当前桌面上的所有便笺（包含 ID、标题、正文摘要、色彩索引、是否置顶及最后修改时间）",
+        write: false,
+        schema: r#"{"type":"object","properties":{}}"#,
+    },
+    Tool {
+        name: "sticky_note_create",
+        description: "在桌面便笺中创建一张新便笺，支持传入 Markdown 正文、可选标题、色彩索引 (0~6) 及是否置顶",
+        write: true,
+        schema: r#"{"type":"object","properties":{"content":{"type":"string","description":"便笺正文Markdown内容"},"title":{"type":"string","description":"便笺标题"},"color_idx":{"type":"integer","minimum":0,"maximum":6,"description":"色彩索引(0=黄,1=绿,2=粉,3=蓝,4=紫,5=暗黑,6=白)"},"pinned":{"type":"boolean","description":"是否置顶"}},"required":["content"]}"#,
+    },
+    Tool {
+        name: "sticky_note_update",
+        description: "更新指定 ID 的便笺内容、标题、颜色或置顶状态",
+        write: true,
+        schema: r#"{"type":"object","properties":{"id":{"type":"string","description":"便笺ID"},"content":{"type":"string","description":"新正文Markdown内容"},"title":{"type":"string","description":"新标题"},"color_idx":{"type":"integer","minimum":0,"maximum":6},"pinned":{"type":"boolean"}},"required":["id"]}"#,
+    },
+    Tool {
+        name: "sticky_note_delete",
+        description: "删除指定 ID 的便笺",
+        write: true,
+        schema: r#"{"type":"object","properties":{"id":{"type":"string","description":"要删除的便笺ID"}},"required":["id"]}"#,
+    },
+    Tool {
+        name: "sticky_note_open",
+        description: "在桌面上打开或关闭独立便笺窗口",
+        write: false,
+        schema: r#"{"type":"object","properties":{"open":{"type":"boolean","description":"true打开显示, false隐藏关闭"}},"required":["open"]}"#,
+    },
 ];
 
 /// 单个提案最多改动的行数 (防止一次提案把整个大文件换掉)
@@ -163,6 +193,11 @@ pub fn call(name: &str, args: &Value) -> Result<Value, String> {
                 .collect();
             Ok(json!({ "plugins": list }))
         }
+        "sticky_note_list"
+        | "sticky_note_create"
+        | "sticky_note_update"
+        | "sticky_note_delete"
+        | "sticky_note_open" => Ok(json!({ "status": "delegated_to_app" })),
         _ => Err(format!("未知工具: {name}")),
     }
 }
