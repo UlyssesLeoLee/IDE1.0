@@ -1,8 +1,8 @@
 ﻿{
-    "GeneratedAt":  "2026-11-18T09:28:26-08:00",
+    "GeneratedAt":  "2026-11-18T09:47:09-08:00",
     "Summary":  {
-                    "TotalExecuted":  1546,
-                    "TotalPassed":  1546,
+                    "TotalExecuted":  1545,
+                    "TotalPassed":  1545,
                     "TotalFailed":  0,
                     "PassRatePercent":  100,
                     "FeatureCoveragePercent":  100,
@@ -16,19 +16,19 @@
                                                                "Package":  "editcore, nema-codec, ide-agent-router",
                                                                "Passed":  743,
                                                                "Failed":  0,
-                                                               "DurationSec":  24.18
+                                                               "DurationSec":  39.34
                                                            },
                                                            {
                                                                "Package":  "ide-fast",
                                                                "Passed":  626,
                                                                "Failed":  0,
-                                                               "DurationSec":  57.81
+                                                               "DurationSec":  111.23
                                                            },
                                                            {
                                                                "Package":  "ide-shell-web",
                                                                "Passed":  101,
                                                                "Failed":  0,
-                                                               "DurationSec":  15.28
+                                                               "DurationSec":  5.73
                                                            }
                                                        ],
                                           "TotalExecuted":  1470,
@@ -46,17 +46,17 @@
                                                                                  "specs/basic.spec.ts",
                                                                                  "specs/command.spec.ts"
                                                                              ],
-                                                                   "Passed":  76,
+                                                                   "Passed":  75,
                                                                    "Failed":  0,
-                                                                   "DurationSec":  62.93
+                                                                   "DurationSec":  74.87
                                                                }
                                                            ],
-                                                "TotalExecuted":  76,
-                                                "TotalPassed":  76,
+                                                "TotalExecuted":  75,
+                                                "TotalPassed":  75,
                                                 "TotalFailed":  0
                                             },
-                             "TotalExecuted":  1546,
-                             "TotalPassed":  1546,
+                             "TotalExecuted":  1545,
+                             "TotalPassed":  1545,
                              "TotalFailed":  0,
                              "PassRatePercent":  100
                          },

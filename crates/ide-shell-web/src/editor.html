@@ -16287,13 +16287,42 @@ function buildChat() {
   CHAT.built = true;
   const d = document.createElement("aside");
   d.id = "chat-dock"; d.setAttribute("aria-label", "Chat");
-  d.innerHTML = '<div id="chat-head"><b>Chat</b><span class="chat-sp"></span><label class="chat-ctx"><input type="checkbox" id="chat-ctx" checked> 带上选中内容/当前章节</label>' +
+  d.innerHTML = '<div id="chat-head"><b>Chat</b><span class="chat-sp"></span>' +
+    '<select id="chat-strategy-select" style="font-size:11px;padding:2px 6px;border-radius:4px;background:var(--bg-bar);color:var(--fg);border:1px solid var(--border);"><option value="ctx">📄 携带选区与章节</option><option value="no-ctx">🛡️ 纯文本提问</option></select>' +
+    '<input type="checkbox" id="chat-ctx" checked style="display:none">' +
     '<button class="tb-btn" id="chat-clear" title="清空对话">清空</button><button class="tb-btn" id="chat-close" title="折叠 (Ctrl+Shift+L)">✕</button></div>' +
     '<div id="chat-msgs" aria-live="polite"></div>' +
-    '<div id="chat-model"><span id="chat-model-name"></span><label class="chat-effort" title="模型的推理强度 (effort)">effort <select id="chat-effort"></select></label><button class="tb-btn" id="chat-prefs" title="模型 / 接口 / Key 在首选项里设置">模型设置…</button></div>' +
+    '<div id="chat-model"><span id="chat-model-name"></span>' +
+    '<select id="chat-cmd-dropdown" style="font-size:11px;padding:2px 6px;border-radius:4px;background:var(--bg-bar);color:var(--fg);border:1px solid var(--border);"><option value="">⚡ 快捷技能 ▾</option><option value="/review">⚡ /review — 代码深度审查</option><option value="/test">🧪 /test — 单元测试生成</option><option value="/refactor">🔨 /refactor — 架构重构</option><option value="/commit">📦 /commit — 提交信息提炼</option><option value="/nema">🌀 /nema — NEMA 拓扑校验</option><option value="/explain">📖 /explain — 架构核心解说</option><option value="/collab">🤝 /collab — 多Agent协作</option></select>' +
+    '<label class="chat-effort" title="模型的推理强度 (effort)">effort <select id="chat-effort"></select></label><button class="tb-btn" id="chat-prefs" title="模型 / 接口 / Key 在首选项里设置">模型设置…</button></div>' +
     '<div id="chat-inputrow"><textarea id="chat-input" rows="2" placeholder="向 AI 提问; 它可以调用编辑器的智能 API (大纲 / 查找 / 渲染 / 补丁提案)。Enter 发送, Shift+Enter 换行"></textarea><button class="tb-btn" id="chat-send">发送</button></div>';
   document.getElementById("app").appendChild(d);
   const c = aiConfig();
+  const cmdSel = d.querySelector("#chat-cmd-dropdown");
+  if (cmdSel) {
+    cmdSel.onchange = (e) => {
+      const val = e.target.value;
+      if (!val) return;
+      const inp = document.getElementById("chat-input");
+      if (inp) {
+        if (!inp.value.startsWith("/")) {
+          inp.value = val + " " + inp.value;
+        } else {
+          const sp = inp.value.indexOf(" ");
+          inp.value = sp >= 0 ? val + inp.value.slice(sp) : val + " ";
+        }
+        inp.focus();
+      }
+      e.target.value = "";
+    };
+  }
+  const stratSel = d.querySelector("#chat-strategy-select");
+  if (stratSel) {
+    stratSel.onchange = (e) => {
+      const chk = document.getElementById("chat-ctx");
+      if (chk) chk.checked = e.target.value === "ctx";
+    };
+  }
   d.querySelector("#chat-effort").value = c.effort || "";
   d.querySelector("#chat-effort").onchange = (e) => { aiSaveConfig(Object.assign(aiConfig(), { effort: e.target.value })); chatModelLabel(); };
   d.querySelector("#chat-prefs").onclick = () => commonConfig("AI");

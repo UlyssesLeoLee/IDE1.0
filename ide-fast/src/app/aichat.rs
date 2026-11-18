@@ -1313,19 +1313,24 @@ impl App {
         // 头部 (Tauri `#chat-head`): 左「Chat」(11px 等宽), 右 ✕ / 清空 / 「带上选中内容 / 当前章节」勾选
         let tc = self.tc;
         ui.horizontal(|ui| {
-            ui.set_min_height(30.0);
-            if ui
-                .selectable_label(!self.ai.collab_mode, "💬 智能体对话")
-                .clicked()
-            {
-                self.ai.collab_mode = false;
-            }
-            if ui
-                .selectable_label(self.ai.collab_mode, "🤝 多Agent并行协作")
-                .clicked()
-            {
-                self.ai.collab_mode = true;
-            }
+            ui.set_min_height(32.0);
+            // 模式切换下拉选单 (取代两个平铺文字大按钮)
+            egui::ComboBox::from_id_salt("chat_main_mode_combo")
+                .width(168.0)
+                .selected_text(if self.ai.collab_mode {
+                    trz("🤝 多Agent协同工作台")
+                } else {
+                    trz("💬 智能助手对话")
+                })
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(!self.ai.collab_mode, trz("💬 智能助手对话")).clicked() {
+                        self.ai.collab_mode = false;
+                    }
+                    if ui.selectable_label(self.ai.collab_mode, trz("🤝 多Agent协同工作台")).clicked() {
+                        self.ai.collab_mode = true;
+                    }
+                });
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add(crate::btnstyle::unified_collapse_button("×", &tc, false))
@@ -1334,16 +1339,34 @@ impl App {
                 {
                     self.ai.open = false;
                 }
-                if !self.ai.collab_mode
-                    && crate::btnstyle::agent_command_button(
-                        ui,
-                        tr("ai.clear"),
-                        crate::btnstyle::AgentBtnRole::Danger,
-                        &tc,
-                    )
-                    .clicked()
-                {
-                    act = Some(Act::Clear);
+                if !self.ai.collab_mode {
+                    ui.menu_button(trz("⋮ 操作 ▾"), |ui| {
+                        ui.set_min_width(140.0);
+                        if ui.button(trz("🧹 清空对话历史")).clicked() {
+                            act = Some(Act::Clear);
+                            ui.close();
+                        }
+                        if ui.button(trz("📋 复制全部对话")).clicked() {
+                            let full_text = self
+                                .ai
+                                .history
+                                .iter()
+                                .map(|m| format!("{}: {}", m.role, m.content))
+                                .collect::<Vec<_>>()
+                                .join("\n\n");
+                            ctx.copy_text(full_text);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button(trz("⚙️ 模型与接口设置…")).clicked() {
+                            self.ai.settings = !self.ai.settings;
+                            ui.close();
+                        }
+                        if ui.button(trz("🤝 切换至协同工作台")).clicked() {
+                            self.ai.collab_mode = true;
+                            ui.close();
+                        }
+                    });
                 }
             });
         });
@@ -1354,46 +1377,67 @@ impl App {
         }
         let mod_modes = crate::plugins::active_mod_modes();
         let skills_active = crate::plugins::is_module_active("skills");
-        ui.horizontal_wrapped(|ui| {
-            ui.add(egui::Checkbox::new(
-                &mut self.ai.use_ctx,
-                egui::RichText::new(tr("ai.ctx")).size(11.0),
-            ));
-            ui.add(egui::Checkbox::new(
-                &mut self.ai.auto_apply,
-                egui::RichText::new("免点击直接改文件").size(11.0),
-            ));
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            let strategy_label = if self.ai.auto_apply {
+                trz("⚡ 自动应用补丁")
+            } else {
+                trz("🛡️ 手动确认补丁")
+            };
+            egui::ComboBox::from_id_salt("chat_strategy_combo")
+                .width(135.0)
+                .selected_text(strategy_label)
+                .show_ui(ui, |ui| {
+                    ui.checkbox(&mut self.ai.use_ctx, trz("📄 带上选区与当前章节上下文"));
+                    ui.checkbox(&mut self.ai.auto_apply, trz("⚡ 免点击直接应用补丁到文件"));
+                });
+
+            if !mod_modes.is_empty() {
+                let cur_mod_label = mod_modes
+                    .iter()
+                    .find(|m| m.id == self.ai.active_mod)
+                    .map(|m| m.label.as_str())
+                    .unwrap_or("默认");
+                egui::ComboBox::from_id_salt("chat_mod_combo")
+                    .width(110.0)
+                    .selected_text(format!("🧩 {cur_mod_label}"))
+                    .show_ui(ui, |ui| {
+                        for m in &mod_modes {
+                            let sel = self.ai.active_mod == m.id;
+                            if ui
+                                .selectable_label(sel, format!("{} ({})", m.label, m.title))
+                                .clicked()
+                            {
+                                self.ai.active_mod = m.id.clone();
+                            }
+                        }
+                    });
+            }
         });
-        if !mod_modes.is_empty() {
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                ui.label(
-                    egui::RichText::new("Mod:")
-                        .size(11.0)
-                        .strong()
-                        .color(tc.fg_dim),
-                );
-                for m in &mod_modes {
-                    let selected = self.ai.active_mod == m.id;
-                    if ui
-                        .selectable_label(selected, egui::RichText::new(&m.label).size(11.0))
-                        .on_hover_text(&m.title)
-                        .clicked()
-                    {
-                        self.ai.active_mod = m.id.clone();
-                    }
-                }
-            });
-        }
         if self.ai.settings {
             ui.separator();
             let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
-            ui.horizontal_wrapped(|ui| {
-                for (name, url) in ai::PRESETS {
-                    if ui.small_button(*name).clicked() {
-                        cfg.base_url = (*url).to_string();
-                    }
-                }
+            let cur_preset_name = ai::PRESETS
+                .iter()
+                .find(|(_, url)| cfg.base_url == **url)
+                .map(|(name, _)| *name)
+                .unwrap_or(trz("自定义供应商"));
+            ui.horizontal(|ui| {
+                ui.label(trz("🏢 供应商预设:"));
+                egui::ComboBox::from_id_salt("ai_preset_provider_combo")
+                    .width(180.0)
+                    .selected_text(cur_preset_name)
+                    .show_ui(ui, |ui| {
+                        for (name, url) in ai::PRESETS {
+                            let is_sel = cfg.base_url == *url;
+                            if ui
+                                .selectable_label(is_sel, format!("{name} ({url})"))
+                                .clicked()
+                            {
+                                cfg.base_url = (*url).to_string();
+                            }
+                        }
+                    });
             });
             egui::Grid::new("ai_cfg").num_columns(2).show(ui, |ui| {
                 ui.label(tr("ai.base-url"));
@@ -1529,12 +1573,14 @@ impl App {
                             if tl.contains("agent") || tl.contains("派出") || tl.contains("协同")
                             {
                                 ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new("[提示] 检测到多 Agent 调度任务:")
-                                            .size(11.0)
-                                            .color(Color32::from_rgb(0, 190, 255)),
-                                    );
-                                    if ui.small_button("打开多 Agent 协同工作台").clicked()
+                                    if ui
+                                        .button(
+                                            egui::RichText::new("🤝 唤起多 Agent 协同工作台 →")
+                                                .strong()
+                                                .color(Color32::from_rgb(0, 210, 255)),
+                                        )
+                                        .on_hover_text("点击自动将该任务委托至多智能体协同流水线")
+                                        .clicked()
                                     {
                                         act = Some(Act::OpenCollab(t.clone()));
                                     }
@@ -1545,12 +1591,17 @@ impl App {
                             ui.add(egui::Label::new(t.as_str()).wrap());
                             if !t.is_empty() && !busy {
                                 ui.horizontal(|ui| {
-                                    if ui.small_button(tr("ai.insert")).clicked() {
-                                        act = Some(Act::Insert(t.clone()));
-                                    }
-                                    if ui.small_button(tr("ai.copy")).clicked() {
-                                        act = Some(Act::Copy(t.clone()));
-                                    }
+                                    ui.menu_button(trz("⚡ 采纳操作 ▾"), |ui| {
+                                        ui.set_min_width(150.0);
+                                        if ui.button(trz("📥 插入到当前光标处")).clicked() {
+                                            act = Some(Act::Insert(t.clone()));
+                                            ui.close();
+                                        }
+                                        if ui.button(trz("📋 复制全部回复")).clicked() {
+                                            act = Some(Act::Copy(t.clone()));
+                                            ui.close();
+                                        }
+                                    });
                                 });
                             }
                         }
@@ -1633,68 +1684,115 @@ impl App {
             });
         let bottom_start_y = ui.cursor().top();
         ui.separator();
-        // 模型行 (Tauri 聊天底部): 左 = 当前模型 (没设就写「未设置模型」), 右 = 模型设置…
-        let model = self.ai_cfg().model.clone();
+        // 底栏功能工具行 (快捷技能下拉选单 + 模型快速切换下拉选单 + 设置齿轮)
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(if model.is_empty() {
-                    trz("未设置模型").to_string()
-                } else {
-                    model
-                })
-                .size(11.0)
-                .color(tc.fg_dim),
-            );
+            ui.spacing_mut().item_spacing.x = 6.0;
+
+            // 1. 快捷技能 (Slash Commands) 下拉选单
+            if skills_active {
+                let mut selected_cmd: Option<&str> = None;
+                egui::ComboBox::from_id_salt("chat_quick_skills_combo")
+                    .width(120.0)
+                    .selected_text(trz("⚡ 快捷技能 ▾"))
+                    .show_ui(ui, |ui| {
+                        let quick_skills = [
+                            ("/review", "⚡ /review — 代码深度审查与架构分析"),
+                            ("/test", "🧪 /test — 单元测试自动化生成"),
+                            ("/refactor", "🔨 /refactor — 架构重构与消除冗余"),
+                            ("/commit", "📦 /commit — Git 变更提炼与规范提交"),
+                            ("/nema", "🌀 /nema — NEMA 跨语言 AST 拓扑校验"),
+                            ("/explain", "📖 /explain — 核心逻辑与系统边界解说"),
+                            ("/collab", "🤝 /collab — 切换至多 Agent 协同工作台"),
+                        ];
+                        for (cmd, desc) in quick_skills {
+                            if ui.selectable_label(false, desc).clicked() {
+                                selected_cmd = Some(cmd);
+                            }
+                        }
+                    });
+
+                if let Some(cmd) = selected_cmd {
+                    if cmd == "/collab" {
+                        self.ai.collab_mode = true;
+                        self.collab.open = true;
+                    } else if !self.ai.input.starts_with('/') {
+                        self.ai.input = format!("{cmd} {}", self.ai.input);
+                    } else if let Some(space_idx) = self.ai.input.find(' ') {
+                        self.ai.input = format!("{cmd} {}", &self.ai.input[space_idx + 1..]);
+                    } else {
+                        self.ai.input = format!("{cmd} ");
+                    }
+                }
+            }
+
+            // 2. 常用模型快速切换下拉菜单
+            let model = self.ai_cfg().model.clone();
+            let model_display = if model.is_empty() {
+                trz("未设置模型")
+            } else {
+                model.as_str()
+            };
+
+            let mut new_model: Option<String> = None;
+            egui::ComboBox::from_id_salt("chat_model_quick_switcher")
+                .width(130.0)
+                .selected_text(format!("🤖 {model_display}"))
+                .show_ui(ui, |ui| {
+                    let popular_models = [
+                        "deepseek-chat",
+                        "deepseek-reasoner",
+                        "gpt-4o",
+                        "gpt-4o-mini",
+                        "claude-3-5-sonnet-20241022",
+                        "claude-3-5-haiku-20241022",
+                        "qwen2.5-coder",
+                        "llama3.3",
+                    ];
+                    for m in popular_models {
+                        let is_cur = model == m;
+                        if ui.selectable_label(is_cur, m).clicked() {
+                            new_model = Some(m.to_string());
+                        }
+                    }
+                    ui.separator();
+                    if ui.selectable_label(false, trz("⚙️ 打开模型配置…")).clicked() {
+                        self.ai.settings = true;
+                    }
+                });
+
+            if let Some(nm) = new_model {
+                let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
+                cfg.model = nm;
+                self.ai_save_cfg();
+            }
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if crate::btnstyle::agent_command_button(
                     ui,
-                    &format!("⚙️ {}…", trz("模型设置")),
+                    "⚙️",
                     crate::btnstyle::AgentBtnRole::Settings,
                     &tc,
                 )
+                .on_hover_text(trz("⚙️ 模型与接口设置…"))
                 .clicked()
                 {
                     self.ai.settings = !self.ai.settings;
                 }
             });
         });
-        // 快捷技能栏 (Slash Commands 快捷触发, 仅在 skills 热插拔模块启用时显示)
-        if skills_active {
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                let quick_skills = [
-                    ("/review", "⚡/review", "代码审查"),
-                    ("/test", "🧪/test", "单测生成"),
-                    ("/refactor", "🔨/refactor", "架构重构"),
-                    ("/commit", "📦/commit", "提交提炼"),
-                    ("/nema", "🌀/nema", "NEMA拓扑"),
-                    ("/explain", "📖/explain", "架构解说"),
-                ];
-                for (cmd, label, tip) in quick_skills {
-                    if crate::btnstyle::agent_skill_pill(ui, label, tip, &tc).clicked() {
-                        if !self.ai.input.starts_with('/') {
-                            self.ai.input = format!("{cmd} {}", self.ai.input);
-                        } else if let Some(space_idx) = self.ai.input.find(' ') {
-                            self.ai.input = format!("{cmd} {}", &self.ai.input[space_idx + 1..]);
-                        } else {
-                            self.ai.input = format!("{cmd} ");
-                        }
-                    }
-                }
-            });
-            if self.ai.input.starts_with('/') {
-                if let Some((skill, _)) = self.ai.skills.match_prompt(&self.ai.input) {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "💡 激活技能: {} — {}",
-                                skill.name, skill.description
-                            ))
-                            .size(11.0)
-                            .color(Color32::from_rgb(0, 190, 255)),
-                        );
-                    });
-                }
+
+        if self.ai.input.starts_with('/') {
+            if let Some((skill, _)) = self.ai.skills.match_prompt(&self.ai.input) {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "💡 激活技能: {} — {}",
+                            skill.name, skill.description
+                        ))
+                        .size(11.0)
+                        .color(Color32::from_rgb(0, 190, 255)),
+                    );
+                });
             }
         }
         let id = ui.make_persistent_id("ai_input");
