@@ -129,6 +129,182 @@ pub struct StickyNotesState {
     pub persist: bool,
     pub preferred_color_idx: usize,
     pub pos_initialized: bool,
+    pub active_selection: Option<(usize, usize)>,
+    pub active_cursor_idx: Option<usize>,
+    pub active_block_line: Option<usize>,
+}
+
+/// 快捷格式化动作类型
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StickyFormatAction {
+    WrapTag {
+        prefix: &'static str,
+        suffix: &'static str,
+        placeholder: &'static str,
+    },
+    LinePrefix {
+        prefix: &'static str,
+        placeholder: &'static str,
+    },
+    InsertTemplate {
+        template: &'static str,
+    },
+    Timestamp,
+}
+
+/// 将格式化目标精确作用于用户选中的文字、聚焦的 Markdown 块或光标位置
+pub fn apply_sticky_format_action(
+    note: &mut StickyNote,
+    edit_cache: &mut Option<crate::md_view::MdEdit>,
+    selection: Option<(usize, usize)>,
+    cursor_idx: Option<usize>,
+    active_line: Option<usize>,
+    action: StickyFormatAction,
+) -> bool {
+    // 1. 如果处于就地单块编辑状态，优先作用于当前正在编辑的块缓冲区
+    if let Some(edit) = edit_cache.as_mut() {
+        match action {
+            StickyFormatAction::WrapTag { prefix, suffix, placeholder } => {
+                let trimmed = edit.buf.trim();
+                if trimmed.is_empty() {
+                    edit.buf = format!("{}{}{}", prefix, placeholder, suffix);
+                } else if trimmed.starts_with(prefix)
+                    && trimmed.ends_with(suffix)
+                    && trimmed.len() >= prefix.len() + suffix.len()
+                {
+                    edit.buf = trimmed[prefix.len()..trimmed.len() - suffix.len()].to_string();
+                } else {
+                    edit.buf = format!("{}{}{}", prefix, trimmed, suffix);
+                }
+            }
+            StickyFormatAction::LinePrefix { prefix, placeholder } => {
+                let trimmed = edit.buf.trim();
+                if trimmed.starts_with(prefix) {
+                    edit.buf = trimmed[prefix.len()..].trim_start().to_string();
+                } else {
+                    edit.buf = format!("{}{}", prefix, if trimmed.is_empty() { placeholder } else { trimmed });
+                }
+            }
+            StickyFormatAction::InsertTemplate { template } => {
+                edit.buf.push_str(template);
+            }
+            StickyFormatAction::Timestamp => {
+                edit.buf.push_str(&format!(" [{}]", current_timestamp()));
+            }
+        }
+        return true;
+    }
+
+    // 2. 如果处于 Markdown 富文本预览模式 (无就地编辑块被激活)，作用于被点击聚焦的块或最后行，并实时响应
+    if note.md_preview {
+        let mut lines = crate::mdtools::text_to_lines(&note.content);
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        let target_idx = active_line
+            .filter(|&idx| idx < lines.len())
+            .or_else(|| lines.iter().rposition(|l| !l.trim().is_empty()))
+            .unwrap_or_else(|| lines.len().saturating_sub(1));
+
+        if let Some(line) = lines.get_mut(target_idx) {
+            match action {
+                StickyFormatAction::WrapTag { prefix, suffix, placeholder } => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        *line = format!("{}{}{}", prefix, placeholder, suffix);
+                    } else if trimmed.starts_with(prefix)
+                        && trimmed.ends_with(suffix)
+                        && trimmed.len() >= prefix.len() + suffix.len()
+                    {
+                        *line = trimmed[prefix.len()..trimmed.len() - suffix.len()].to_string();
+                    } else {
+                        *line = format!("{}{}{}", prefix, trimmed, suffix);
+                    }
+                }
+                StickyFormatAction::LinePrefix { prefix, placeholder } => {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with(prefix) {
+                        *line = trimmed[prefix.len()..].trim_start().to_string();
+                    } else {
+                        *line = format!("{}{}", prefix, if trimmed.is_empty() { placeholder } else { trimmed });
+                    }
+                }
+                StickyFormatAction::InsertTemplate { template } => {
+                    lines.insert(target_idx + 1, template.to_string());
+                }
+                StickyFormatAction::Timestamp => {
+                    line.push_str(&format!(" [{}]", current_timestamp()));
+                }
+            }
+            note.content = lines.join("\n");
+            note.updated_at = current_timestamp();
+            return true;
+        }
+    }
+
+    // 3. 处于源码编辑模式：如果高亮选中了文本，选中区域即为按钮作用目标！
+    let char_indices: Vec<(usize, char)> = note.content.char_indices().collect();
+    let char_total = char_indices.len();
+
+    if let Some((start_c, end_c)) = selection {
+        if start_c < end_c && start_c <= char_total {
+            let b_start = char_indices[start_c].0;
+            let b_end = if end_c < char_total {
+                char_indices[end_c].0
+            } else {
+                note.content.len()
+            };
+
+            let selected = &note.content[b_start..b_end];
+            let replacement = match action {
+                StickyFormatAction::WrapTag { prefix, suffix, .. } => {
+                    if selected.starts_with(prefix)
+                        && selected.ends_with(suffix)
+                        && selected.len() >= prefix.len() + suffix.len()
+                    {
+                        selected[prefix.len()..selected.len() - suffix.len()].to_string()
+                    } else {
+                        format!("{}{}{}", prefix, selected, suffix)
+                    }
+                }
+                StickyFormatAction::LinePrefix { prefix, .. } => {
+                    format!("{}{}", prefix, selected)
+                }
+                StickyFormatAction::InsertTemplate { template } => template.to_string(),
+                StickyFormatAction::Timestamp => format!("[{}] ", current_timestamp()),
+            };
+
+            note.content.replace_range(b_start..b_end, &replacement);
+            note.updated_at = current_timestamp();
+            return true;
+        }
+    }
+
+    // 4. 编辑模式未选中文本：在光标所在位置就地插入，避免简单在末尾追加
+    let insert_byte = if let Some(c_idx) = cursor_idx {
+        if c_idx < char_total {
+            char_indices[c_idx].0
+        } else {
+            note.content.len()
+        }
+    } else {
+        note.content.len()
+    };
+
+    let snippet = match action {
+        StickyFormatAction::WrapTag { prefix, suffix, placeholder } => {
+            format!("{}{}{}", prefix, placeholder, suffix)
+        }
+        StickyFormatAction::LinePrefix { prefix, placeholder } => {
+            format!("{}{}", prefix, placeholder)
+        }
+        StickyFormatAction::InsertTemplate { template } => template.to_string(),
+        StickyFormatAction::Timestamp => format!("\n[{}] ", current_timestamp()),
+    };
+
+    note.content.insert_str(insert_byte, &snippet);
+    note.updated_at = current_timestamp();
+    true
 }
 
 impl Default for StickyNotesState {
@@ -168,6 +344,9 @@ impl StickyNotesState {
             persist: false,
             preferred_color_idx: 0,
             pos_initialized: false,
+            active_selection: None,
+            active_cursor_idx: None,
+            active_block_line: None,
         }
     }
 
@@ -248,6 +427,9 @@ impl StickyNotesState {
             persist: true,
             preferred_color_idx,
             pos_initialized: false,
+            active_selection: None,
+            active_cursor_idx: None,
+            active_block_line: None,
         })
     }
 
@@ -793,7 +975,7 @@ impl App {
         let mut toggle_list_clicked = false;
         let mut toggle_pin_clicked = false;
         let mut toggle_md_preview_clicked = false;
-        let mut append_markdown = None;
+        let mut format_action: Option<StickyFormatAction> = None;
         let mut activate_note_id = None;
         let mut select_color = None;
         let mut note_content_changed = false;
@@ -842,21 +1024,40 @@ impl App {
                 toggle_md_preview_clicked = true;
             }
             if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::B)) {
-                append_markdown = Some("**粗体文字**".to_string());
+                format_action = Some(StickyFormatAction::WrapTag {
+                    prefix: "**",
+                    suffix: "**",
+                    placeholder: "粗体文字",
+                });
             }
             if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::I)) {
-                append_markdown = Some("*斜体文字*".to_string());
+                format_action = Some(StickyFormatAction::WrapTag {
+                    prefix: "*",
+                    suffix: "*",
+                    placeholder: "斜体文字",
+                });
             }
             if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::U)) {
-                append_markdown = Some("<u>下划线</u>".to_string());
+                format_action = Some(StickyFormatAction::WrapTag {
+                    prefix: "<u>",
+                    suffix: "</u>",
+                    placeholder: "下划线",
+                });
             }
             if vp_ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::T)) {
-                append_markdown = Some("~~删除线~~".to_string());
+                format_action = Some(StickyFormatAction::WrapTag {
+                    prefix: "~~",
+                    suffix: "~~",
+                    placeholder: "删除线",
+                });
             }
             if vp_ctx.input_mut(|i| {
                 i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::L)
             }) {
-                append_markdown = Some("\n- [ ] 待办事项".to_string());
+                format_action = Some(StickyFormatAction::LinePrefix {
+                    prefix: "- [ ] ",
+                    placeholder: "待办事项",
+                });
             }
 
             egui::CentralPanel::default().frame(egui::Frame::NONE).show(vp_ctx, |ui| {
@@ -1393,6 +1594,10 @@ impl App {
                                     );
 
                                     // 任务复选框勾选/取消交互
+                                    if let Some(line) = ev.jump {
+                                        self.sticky_notes.active_block_line = Some(line);
+                                    }
+
                                     if let Some(line_idx) = ev.toggle {
                                         if let Some(n) = self.sticky_notes.active_note_mut() {
                                             let mut doc_lines: Vec<String> =
@@ -1476,8 +1681,10 @@ impl App {
                                             .show(ui, |ui| {
                                                 let inner_w = (avail_w - h_pad).max(60.0);
                                                 ui.set_width(inner_w);
+                                                let edit_id = ui.make_persistent_id("sticky_notes_content_text_edit");
                                                 let edit_resp = ui.add(
                                                     TextEdit::multiline(&mut note.content)
+                                                        .id(edit_id)
                                                         .font(font_id)
                                                         .text_color(palette.fg)
                                                         .desired_width(inner_w)
@@ -1485,6 +1692,20 @@ impl App {
                                                         .frame(egui::Frame::NONE)
                                                         .hint_text("记下一些文字、备忘或 Markdown 待办..."),
                                                 );
+
+                                                // 实时同步光标与选中文本范围，确保格式化工具栏按钮以选中区域为目标
+                                                if let Some(st) = egui::text_edit::TextEditState::load(ui.ctx(), edit_id) {
+                                                    if let Some(range) = st.cursor.char_range() {
+                                                        let p: usize = range.primary.index.into();
+                                                        let s: usize = range.secondary.index.into();
+                                                        if p != s {
+                                                            self.sticky_notes.active_selection = Some((p.min(s), p.max(s)));
+                                                        } else {
+                                                            self.sticky_notes.active_selection = None;
+                                                            self.sticky_notes.active_cursor_idx = Some(p);
+                                                        }
+                                                    }
+                                                }
 
                                                 // 单次聚焦逻辑 (避免 IME 闪烁)
                                                 if self.sticky_notes.focus_needed {
@@ -1538,46 +1759,75 @@ impl App {
 
                             // 粗体 (B)
                             if draw_tool_btn(ui, StickyToolIcon::Bold, "粗体 (Ctrl+B)", &tc, &palette).clicked() {
-                                append_markdown = Some("**粗体文字**".to_string());
+                                format_action = Some(StickyFormatAction::WrapTag {
+                                    prefix: "**",
+                                    suffix: "**",
+                                    placeholder: "粗体文字",
+                                });
                             }
                             // 斜体 (I)
                             if draw_tool_btn(ui, StickyToolIcon::Italic, "斜体 (Ctrl+I)", &tc, &palette).clicked() {
-                                append_markdown = Some("*斜体文字*".to_string());
+                                format_action = Some(StickyFormatAction::WrapTag {
+                                    prefix: "*",
+                                    suffix: "*",
+                                    placeholder: "斜体文字",
+                                });
                             }
                             // 下划线 (U)
                             if draw_tool_btn(ui, StickyToolIcon::Underline, "下划线 (Ctrl+U)", &tc, &palette).clicked() {
-                                append_markdown = Some("<u>下划线</u>".to_string());
+                                format_action = Some(StickyFormatAction::WrapTag {
+                                    prefix: "<u>",
+                                    suffix: "</u>",
+                                    placeholder: "下划线",
+                                });
                             }
                             // 删除线 (S)
                             if draw_tool_btn(ui, StickyToolIcon::Strikethrough, "删除线 (Ctrl+T)", &tc, &palette).clicked() {
-                                append_markdown = Some("~~删除线~~".to_string());
+                                format_action = Some(StickyFormatAction::WrapTag {
+                                    prefix: "~~",
+                                    suffix: "~~",
+                                    placeholder: "删除线",
+                                });
                             }
                             // 标题 (H)
                             if draw_tool_btn(ui, StickyToolIcon::Heading, "插入标题 (### 标题)", &tc, &palette).clicked() {
-                                append_markdown = Some(markdown_heading_template().to_string());
+                                format_action = Some(StickyFormatAction::LinePrefix {
+                                    prefix: "### ",
+                                    placeholder: "标题",
+                                });
                             }
                             // 表格 (⊞)
                             if draw_tool_btn(ui, StickyToolIcon::Table, "插入 Markdown 表格 (3×4)", &tc, &palette).clicked() {
-                                append_markdown = Some(markdown_table_template().to_string());
+                                format_action = Some(StickyFormatAction::InsertTemplate {
+                                    template: markdown_table_template(),
+                                });
                             }
                             // 待办复选框 (☑)
                             if draw_tool_btn(ui, StickyToolIcon::Checklist, "待办项 (Ctrl+Shift+L)", &tc, &palette)
                                 .clicked()
                             {
-                                append_markdown = Some("\n- [ ] 待办事项".to_string());
+                                format_action = Some(StickyFormatAction::LinePrefix {
+                                    prefix: "- [ ] ",
+                                    placeholder: "待办事项",
+                                });
                             }
                             // 项目符号 (•)
                             if draw_tool_btn(ui, StickyToolIcon::BulletList, "项目符号 (- 列表)", &tc, &palette).clicked()
                             {
-                                append_markdown = Some("\n- 列表项".to_string());
+                                format_action = Some(StickyFormatAction::LinePrefix {
+                                    prefix: "- ",
+                                    placeholder: "列表项",
+                                });
                             }
                             // 代码块 (```)
                             if draw_tool_btn(ui, StickyToolIcon::CodeBlock, "插入代码块 (```代码)", &tc, &palette).clicked() {
-                                append_markdown = Some(markdown_codeblock_template().to_string());
+                                format_action = Some(StickyFormatAction::InsertTemplate {
+                                    template: markdown_codeblock_template(),
+                                });
                             }
                             // 时间戳 (🕒)
                             if draw_tool_btn(ui, StickyToolIcon::Timestamp, "插入当前时间戳", &tc, &palette).clicked() {
-                                append_markdown = Some(format!("\n[{}] ", current_timestamp()));
+                                format_action = Some(StickyFormatAction::Timestamp);
                             }
                             // 复制全部 (📋)
                             if draw_tool_btn(ui, StickyToolIcon::Copy, "一键复制便笺全文到剪贴板", &tc, &palette)
@@ -1708,6 +1958,8 @@ impl App {
         if close_requested {
             self.sticky_notes.open = false;
             self.sticky_notes.pos_initialized = false;
+            self.sticky_notes.mark_dirty();
+            self.sticky_notes.save();
         }
 
         if let Some(pos) = new_win_pos {
@@ -1770,12 +2022,22 @@ impl App {
             self.sticky_notes.mark_dirty();
         }
 
-        if let Some(extra) = append_markdown {
+        if let Some(act) = format_action {
+            let sel = self.sticky_notes.active_selection;
+            let cur = self.sticky_notes.active_cursor_idx;
+            let act_line = self.sticky_notes.active_block_line;
             if let Some(n) = self.sticky_notes.active_note_mut() {
-                n.content.push_str(&extra);
-                n.updated_at = current_timestamp();
+                apply_sticky_format_action(
+                    n,
+                    &mut self.sticky_md_cache.edit,
+                    sel,
+                    cur,
+                    act_line,
+                    act,
+                );
             }
             self.sticky_notes.mark_dirty();
+            self.sticky_notes.save();
         }
 
         if copy_clicked {
@@ -2890,5 +3152,126 @@ mod tests {
         assert!(updated_note.content.contains("修改后的段落 A"));
         assert!(updated_note.content.contains("# 标题行"));
         assert!(updated_note.content.contains("- [ ] 任务1"));
+    }
+
+    #[test]
+    fn test_sticky_notes_selection_targeting_and_toggle() {
+        let mut note = StickyNote {
+            id: "test_format".to_string(),
+            title: "测试便笺".to_string(),
+            content: "这是重要内容需要删除".to_string(),
+            color_idx: 0,
+            pinned: false,
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            is_md: true,
+            md_preview: false,
+        };
+        let mut edit_cache = None;
+
+        // 选中 "重要内容" (字符索引 2..6)
+        let selection = Some((2, 6));
+        let strikethrough_action = StickyFormatAction::WrapTag {
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "删除线",
+        };
+
+        // 1. 触发删除线：应当精准包裹选中文本，绝不是在末尾追加
+        let ok = apply_sticky_format_action(
+            &mut note,
+            &mut edit_cache,
+            selection,
+            None,
+            None,
+            strikethrough_action,
+        );
+        assert!(ok);
+        assert_eq!(note.content, "这是~~重要内容~~需要删除");
+
+        // 2. 再次选中包裹后的 "~~重要内容~~" (字符索引 2..10)，触发删除线：应当精准解除包裹 (Toggle Off)
+        let toggle_selection = Some((2, 10));
+        let ok_toggle = apply_sticky_format_action(
+            &mut note,
+            &mut edit_cache,
+            toggle_selection,
+            None,
+            None,
+            strikethrough_action,
+        );
+        assert!(ok_toggle);
+        assert_eq!(note.content, "这是重要内容需要删除");
+
+        // 3. 粗体包裹
+        let bold_action = StickyFormatAction::WrapTag {
+            prefix: "**",
+            suffix: "**",
+            placeholder: "粗体文字",
+        };
+        apply_sticky_format_action(
+            &mut note,
+            &mut edit_cache,
+            Some((2, 6)),
+            None,
+            None,
+            bold_action,
+        );
+        assert_eq!(note.content, "这是**重要内容**需要删除");
+    }
+
+    #[test]
+    fn test_sticky_notes_preview_mode_formatting_target() {
+        let mut note = StickyNote {
+            id: "test_preview_format".to_string(),
+            title: "预览格式化测试".to_string(),
+            content: "# 标题行\n第一段文字\n第二段待删除文字".to_string(),
+            color_idx: 0,
+            pinned: false,
+            created_at: current_timestamp(),
+            updated_at: current_timestamp(),
+            is_md: true,
+            md_preview: true,
+        };
+        let mut edit_cache = None;
+
+        // 在富文本预览模式下聚焦第 2 行 ("第二段待删除文字", 行号 2)
+        let active_line = Some(2);
+        let strikethrough_action = StickyFormatAction::WrapTag {
+            prefix: "~~",
+            suffix: "~~",
+            placeholder: "删除线",
+        };
+
+        let ok = apply_sticky_format_action(
+            &mut note,
+            &mut edit_cache,
+            None,
+            None,
+            active_line,
+            strikethrough_action,
+        );
+        assert!(ok);
+        // 第 2 行被直接包裹为删除线，且末尾绝无多余追加
+        assert_eq!(note.content, "# 标题行\n第一段文字\n~~第二段待删除文字~~");
+
+        // 再次点击：Toggle Off 解除删除线
+        apply_sticky_format_action(
+            &mut note,
+            &mut edit_cache,
+            None,
+            None,
+            active_line,
+            strikethrough_action,
+        );
+        assert_eq!(note.content, "# 标题行\n第一段文字\n第二段待删除文字");
+    }
+
+    #[test]
+    fn test_first_run_defaults_and_persistence_invariants() {
+        let sticky_default = StickyNotesState::default();
+        assert!(!sticky_default.open, "便笺首次启动默认不得自动打开");
+
+        let settings_default = crate::settings::Settings::default();
+        assert!(!settings_default.view.side_open, "左侧导航栏默认必须处于关闭状态");
     }
 }

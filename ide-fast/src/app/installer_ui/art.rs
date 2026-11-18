@@ -6,13 +6,12 @@ use std::f32::consts::PI;
 
 use super::InstallerStep;
 
-/// 绘制向导步骤胶囊指示条 (Step Indicator Capsules)
+/// 绘制向导步骤胶囊指示条 (Step Indicator Capsules - 精简为 3 步核心极速流程)
 pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerStep) {
     let steps = [
-        (InstallerStep::Welcome, "1. 欢迎"),
-        (InstallerStep::Options, "2. 配置"),
-        (InstallerStep::Installing, "3. 部署"),
-        (InstallerStep::Finished, "4. 完成"),
+        (InstallerStep::Options, "1. 环境配置"),
+        (InstallerStep::Installing, "2. 极速部署"),
+        (InstallerStep::Finished, "3. 部署完成"),
     ];
 
     let n = steps.len();
@@ -21,8 +20,12 @@ pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerSte
 
     for (i, (step, label)) in steps.into_iter().enumerate() {
         let cap_rect = Rect::from_min_size(pos2(x, rect.top()), vec2(step_w, rect.height()));
-        let is_curr = step == current;
-        let is_past = (step as usize) < (current as usize);
+        let is_curr = step == current || (current == InstallerStep::Welcome && step == InstallerStep::Options);
+        let is_past = match current {
+            InstallerStep::Welcome | InstallerStep::Options => false,
+            InstallerStep::Installing => step == InstallerStep::Options,
+            InstallerStep::Finished => step == InstallerStep::Options || step == InstallerStep::Installing,
+        };
 
         let (fill_col, text_col) = if is_curr {
             (Color32::from_rgb(2, 132, 199), Color32::WHITE)
@@ -31,7 +34,7 @@ pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerSte
         } else {
             (
                 Color32::from_rgb(22, 28, 40),
-                Color32::from_rgb(148, 163, 184),
+                Color32::from_rgb(203, 213, 225),
             )
         };
 
@@ -40,7 +43,7 @@ pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerSte
             cap_rect.center(),
             egui::Align2::CENTER_CENTER,
             label,
-            egui::FontId::proportional(10.5),
+            egui::FontId::proportional(11.5),
             text_col,
         );
 

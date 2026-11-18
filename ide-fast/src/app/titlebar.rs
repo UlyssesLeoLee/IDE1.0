@@ -770,6 +770,7 @@ impl App {
                 self.sticky_notes.focus_needed = true;
             }
             self.sticky_notes.mark_dirty();
+            self.sticky_notes.save();
         }
         if let Some(act) = diff_action {
             match act {

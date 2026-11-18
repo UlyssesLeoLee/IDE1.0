@@ -405,7 +405,7 @@ pub struct ViewState {
 impl Default for ViewState {
     fn default() -> Self {
         ViewState {
-            side_open: true,
+            side_open: false,
             side_w: 250.0,
             term_open: false,
             term_h: 180.0,

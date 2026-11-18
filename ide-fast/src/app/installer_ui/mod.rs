@@ -30,10 +30,10 @@ use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind, Vec2};
 /// 向导状态机步骤枚举
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum InstallerStep {
-    /// 步骤 0: 欢迎体验英雄展台 (Welcome Hero Stage)
-    #[default]
+    /// 步骤 0: 欢迎体验英雄展台 (已由新版精简，直接切入核心配置)
     Welcome,
     /// 步骤 1: 安装目录与环境选项 (Directory & Integration Options)
+    #[default]
     Options,
     /// 步骤 2: 部署安装中动画 (Deploying & Real-time Progress)
     Installing,
@@ -57,6 +57,9 @@ pub struct InstallerState {
     pub cam_pitch: f32,
     pub cam_dist: f32,
     pub auto_rotate: bool,
+    pub last_mouse_pos: Option<egui::Pos2>,
+    pub rot_target_yaw: f32,
+    pub rot_target_pitch: f32,
 }
 
 impl Default for InstallerState {
@@ -68,7 +71,7 @@ impl Default for InstallerState {
         Self {
             open: false,
             standalone: false,
-            step: InstallerStep::Welcome,
+            step: InstallerStep::Options,
             target_dir: default_dir,
             add_path: true,
             desktop_shortcut: true,
@@ -78,9 +81,12 @@ impl Default for InstallerState {
             status_msg: None,
             logo_tex: None,
             cam_yaw: 0.35,
-            cam_pitch: 0.22,
+            cam_pitch: 0.18,
             cam_dist: 450.0,
             auto_rotate: true,
+            last_mouse_pos: None,
+            rot_target_yaw: 0.35,
+            rot_target_pitch: 0.18,
         }
     }
 }
@@ -114,13 +120,13 @@ impl App {
         }
 
         let total_rect = root.max_rect();
-        let win_size = Vec2::new(800.0, 560.0);
+        let win_size = Vec2::new(880.0, 600.0);
         let win_rect = Rect::from_center_size(total_rect.center(), win_size);
 
         self.render_comic_installer_frame(root, win_rect, true);
     }
 
-    /// 应用内嵌入模态模式：暗化遮罩 + 800×560 美漫对话面板
+    /// 应用内嵌入模态模式：暗化遮罩 + 880×600 美漫对话面板
     pub(super) fn installer_window(&mut self, ctx: &egui::Context) {
         if !self.installer.open || self.installer.standalone {
             return;
@@ -136,7 +142,7 @@ impl App {
         ));
         bg_painter.rect_filled(screen_rect, 0.0, Color32::from_black_alpha(210));
 
-        let win_size = Vec2::new(800.0, 560.0);
+        let win_size = Vec2::new(880.0, 600.0);
         egui::Window::new("installer_comic_modal")
             .id(egui::Id::new("installer_comic_modal_window"))
             .title_bar(false)
@@ -294,7 +300,7 @@ impl App {
             pos2(win_rect.right() - 16.0, win_rect.bottom() - 12.0),
         );
 
-        let left_w = 310.0;
+        let left_w = 330.0;
         let left_panel_rect = Rect::from_min_size(body_rect.min, vec2(left_w, body_rect.height()));
         let right_panel_rect = Rect::from_min_max(
             pos2(left_panel_rect.right() + 14.0, body_rect.top()),

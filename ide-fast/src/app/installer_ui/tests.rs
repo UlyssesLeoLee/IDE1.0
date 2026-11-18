@@ -11,7 +11,7 @@ fn installer_default_state() {
     let s = InstallerState::default();
     assert!(!s.open);
     assert!(!s.standalone);
-    assert_eq!(s.step, InstallerStep::Welcome);
+    assert_eq!(s.step, InstallerStep::Options);
     assert!(s.add_path);
     assert!(s.desktop_shortcut);
     assert!(s.tray_resident);
@@ -22,22 +22,13 @@ fn installer_default_state() {
 #[test]
 fn installer_state_machine_transitions() {
     let mut s = InstallerState::default();
-    assert_eq!(s.step, InstallerStep::Welcome);
-
-    // Step 0 -> Step 1
-    s.step = InstallerStep::Options;
     assert_eq!(s.step, InstallerStep::Options);
 
-    // Step 1 -> Back to Step 0
-    s.step = InstallerStep::Welcome;
-    assert_eq!(s.step, InstallerStep::Welcome);
-
-    // Step 0 -> Step 1 -> Step 2
-    s.step = InstallerStep::Options;
+    // Options -> Installing
     s.step = InstallerStep::Installing;
     assert_eq!(s.step, InstallerStep::Installing);
 
-    // Step 2 -> Step 3
+    // Installing -> Finished
     s.step = InstallerStep::Finished;
     assert_eq!(s.step, InstallerStep::Finished);
 }

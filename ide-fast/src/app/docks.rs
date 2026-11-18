@@ -654,6 +654,7 @@ mod tests {
     #[test]
     fn collapse_command_folds_and_unfolds_the_side_bar() {
         let (mut a, _g) = app();
+        a.side.open = true;
         assert!(a.side.open && !a.cfg.view.side_collapsed);
         a.collapse_dock(Dock::Side);
         assert_eq!((a.side.open, a.cfg.view.side_collapsed), (true, true));
@@ -676,6 +677,7 @@ mod tests {
     #[test]
     fn toggle_open_on_a_strip_expands_instead_of_hiding() {
         let (mut a, _g) = app();
+        a.side.open = true;
         a.collapse_dock(Dock::Side);
         a.toggle_dock_open(Dock::Side);
         assert_eq!((a.side.open, a.cfg.view.side_collapsed), (true, false));
@@ -718,6 +720,7 @@ mod tests {
     #[test]
     fn collapsed_states_and_sizes_persist_through_current_settings() {
         let (mut a, _g) = app();
+        a.side.open = true;
         a.collapse_dock(Dock::Side);
         a.term.open = true;
         a.collapse_dock(Dock::Bottom);
@@ -750,6 +753,7 @@ mod tests {
     #[test]
     fn collapse_commands_are_registered_with_keys_and_run() {
         let (mut a, _g) = app();
+        a.side.open = true;
         let ctx = egui::Context::default();
         for id in [
             "app.side-collapse",

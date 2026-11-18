@@ -1,4 +1,5 @@
 //! 美漫安装向导交互卡片与动作按钮控件 (Comic Action Buttons & Cards)
+//! 高对比度、字号加大、粗体强化、色彩心理学优化 (宝蓝/天青/黑曜钛金)
 
 use super::art::paint_comic_hard_shadow_rect;
 use eframe::egui;
@@ -48,7 +49,7 @@ pub fn comic_action_button(
         draw_rect.center(),
         egui::Align2::CENTER_CENTER,
         text,
-        egui::FontId::proportional(if primary { 13.5 } else { 11.5 }),
+        egui::FontId::proportional(if primary { 14.5 } else { 12.5 }),
         text_col,
     );
     resp
@@ -57,48 +58,48 @@ pub fn comic_action_button(
 /// 美漫只读信息卡片 (展示特性与参数)
 pub fn comic_info_card(ui: &mut egui::Ui, title: &str, desc: &str, tag: &str, accent: Color32) {
     let w = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(w, 40.0), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 52.0), egui::Sense::hover());
     let p = ui.painter();
 
-    paint_comic_hard_shadow_rect(p, rect, Color32::from_rgb(26, 31, 50), 2.0, vec2(3.0, 3.0));
+    paint_comic_hard_shadow_rect(p, rect, Color32::from_rgb(22, 28, 42), 2.0, vec2(3.0, 3.0));
 
     // 左侧强调色条
     p.rect_filled(
-        Rect::from_min_size(rect.min, vec2(5.0, rect.height())),
+        Rect::from_min_size(rect.min, vec2(5.5, rect.height())),
         0.0,
         accent,
     );
 
     // 漫画序号徽章
     let tag_rect =
-        Rect::from_center_size(pos2(rect.left() + 24.0, rect.center().y), vec2(24.0, 22.0));
-    paint_comic_hard_shadow_rect(p, tag_rect, accent, 1.5, vec2(1.5, 1.5));
+        Rect::from_center_size(pos2(rect.left() + 26.0, rect.center().y), vec2(26.0, 26.0));
+    paint_comic_hard_shadow_rect(p, tag_rect, accent, 1.8, vec2(1.5, 1.5));
     p.text(
         tag_rect.center(),
         egui::Align2::CENTER_CENTER,
         tag,
-        egui::FontId::proportional(11.0),
+        egui::FontId::proportional(12.0),
         Color32::BLACK,
     );
 
-    let text_x = rect.left() + 48.0;
+    let text_x = rect.left() + 52.0;
     p.text(
-        pos2(text_x, rect.center().y - 6.5),
+        pos2(text_x, rect.center().y - 8.0),
         egui::Align2::LEFT_CENTER,
         title,
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(13.5),
         Color32::WHITE,
     );
     p.text(
-        pos2(text_x, rect.center().y + 8.0),
+        pos2(text_x, rect.center().y + 9.5),
         egui::Align2::LEFT_CENTER,
         desc,
-        egui::FontId::proportional(9.8),
-        Color32::from_rgb(160, 175, 200),
+        egui::FontId::proportional(11.0),
+        Color32::from_rgb(203, 213, 225),
     );
 }
 
-/// 美漫交互复选卡片
+/// 美漫交互复选卡片 (高度自适应加大至 58.0px，文字清晰加粗，对比度强化)
 pub fn comic_interactive_card(
     ui: &mut egui::Ui,
     checked: &mut bool,
@@ -108,7 +109,7 @@ pub fn comic_interactive_card(
     accent: Color32,
 ) -> bool {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, 38.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 58.0), egui::Sense::click());
     let p = ui.painter();
     let is_down = resp.is_pointer_button_down_on();
     let hovered = resp.hovered();
@@ -126,107 +127,107 @@ pub fn comic_interactive_card(
 
     let card_bg = if *checked {
         if hovered {
-            Color32::from_rgb(32, 38, 60)
+            Color32::from_rgb(28, 36, 56)
         } else {
-            Color32::from_rgb(26, 31, 50)
+            Color32::from_rgb(22, 28, 44)
         }
     } else if hovered {
-        Color32::from_rgb(24, 28, 44)
+        Color32::from_rgb(20, 25, 38)
     } else {
-        Color32::from_rgb(20, 23, 36)
+        Color32::from_rgb(16, 20, 32)
     };
 
     paint_comic_hard_shadow_rect(p, draw_rect, card_bg, 2.0, s_off);
 
     // 左侧强调色条
     p.rect_filled(
-        Rect::from_min_size(draw_rect.min, vec2(5.0, draw_rect.height())),
+        Rect::from_min_size(draw_rect.min, vec2(5.5, draw_rect.height())),
         0.0,
         accent,
     );
 
     // 漫画序号徽章
     let tag_rect = Rect::from_center_size(
-        pos2(draw_rect.left() + 24.0, draw_rect.center().y),
-        vec2(22.0, 22.0),
+        pos2(draw_rect.left() + 26.0, draw_rect.center().y),
+        vec2(26.0, 26.0),
     );
-    paint_comic_hard_shadow_rect(p, tag_rect, accent, 1.5, vec2(1.5, 1.5));
+    paint_comic_hard_shadow_rect(p, tag_rect, accent, 1.8, vec2(1.5, 1.5));
     p.text(
         tag_rect.center(),
         egui::Align2::CENTER_CENTER,
         tag,
-        egui::FontId::proportional(10.5),
+        egui::FontId::proportional(12.0),
         Color32::BLACK,
     );
 
-    // 漫画复选框
-    let box_center = pos2(draw_rect.left() + 52.0, draw_rect.center().y);
-    let box_rect = Rect::from_center_size(box_center, vec2(18.0, 18.0));
+    // 漫画复选框 (尺寸加至 22×22，对比强烈，勾选白线清晰)
+    let box_center = pos2(draw_rect.left() + 58.0, draw_rect.center().y);
+    let box_rect = Rect::from_center_size(box_center, vec2(22.0, 22.0));
     let box_bg = if *checked {
-        Color32::from_rgb(255, 230, 0)
+        Color32::from_rgb(2, 132, 199)
     } else {
-        Color32::WHITE
+        Color32::from_rgb(30, 41, 59)
     };
     paint_comic_hard_shadow_rect(p, box_rect, box_bg, 2.0, vec2(1.5, 1.5));
 
     if *checked {
-        let p1 = pos2(box_rect.left() + 3.5, box_rect.center().y);
-        let p2 = pos2(box_rect.center().x - 0.5, box_rect.bottom() - 3.5);
-        let p3 = pos2(box_rect.right() - 3.0, box_rect.top() + 4.0);
-        let check_st = Stroke::new(2.8, Color32::BLACK);
+        let p1 = pos2(box_rect.left() + 4.5, box_rect.center().y);
+        let p2 = pos2(box_rect.center().x - 0.5, box_rect.bottom() - 4.5);
+        let p3 = pos2(box_rect.right() - 4.0, box_rect.top() + 5.0);
+        let check_st = Stroke::new(3.0, Color32::WHITE);
         p.line_segment([p1, p2], check_st);
         p.line_segment([p2, p3], check_st);
     }
 
-    let text_x = draw_rect.left() + 72.0;
+    let text_x = draw_rect.left() + 80.0;
     p.text(
-        pos2(text_x, draw_rect.center().y - 6.5),
+        pos2(text_x, draw_rect.center().y - 8.5),
         egui::Align2::LEFT_CENTER,
         title,
-        egui::FontId::proportional(11.5),
+        egui::FontId::proportional(13.5),
         Color32::WHITE,
     );
     p.text(
-        pos2(text_x, draw_rect.center().y + 7.5),
+        pos2(text_x, draw_rect.center().y + 10.5),
         egui::Align2::LEFT_CENTER,
         desc,
-        egui::FontId::proportional(9.5),
-        Color32::from_rgb(160, 175, 200),
+        egui::FontId::proportional(11.0),
+        Color32::from_rgb(203, 213, 225),
     );
 
     let stamp_rect = Rect::from_center_size(
-        pos2(draw_rect.right() - 44.0, draw_rect.center().y),
-        vec2(66.0, 22.0),
+        pos2(draw_rect.right() - 48.0, draw_rect.center().y),
+        vec2(74.0, 24.0),
     );
     if *checked {
         paint_comic_hard_shadow_rect(
             p,
             stamp_rect,
-            Color32::from_rgb(255, 230, 0),
-            1.5,
+            Color32::from_rgb(16, 185, 129),
+            1.8,
             vec2(1.5, 1.5),
         );
         p.text(
             stamp_rect.center(),
             egui::Align2::CENTER_CENTER,
-            "★ READY!",
-            egui::FontId::proportional(9.5),
-            Color32::BLACK,
+            "★ ENABLED",
+            egui::FontId::proportional(10.5),
+            Color32::WHITE,
         );
     } else {
         paint_comic_hard_shadow_rect(
             p,
             stamp_rect,
-            Color32::from_rgb(45, 52, 72),
-            1.5,
+            Color32::from_rgb(30, 41, 59),
+            1.8,
             vec2(1.5, 1.5),
         );
         p.text(
             stamp_rect.center(),
             egui::Align2::CENTER_CENTER,
             "○ OFF",
-            egui::FontId::proportional(9.5),
-            Color32::from_rgb(160, 175, 200),
+            egui::FontId::proportional(10.5),
+            Color32::from_rgb(148, 163, 184),
         );
     }
 

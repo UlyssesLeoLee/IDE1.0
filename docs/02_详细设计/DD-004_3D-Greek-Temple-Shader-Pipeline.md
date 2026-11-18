@@ -82,3 +82,28 @@ match self {
    - 投影至 `floor_y = -115.0` 地面；
    - 24 顶点凸多边形平滑逼近接触椭圆（`Color32::from_black_alpha(110)`）；
    - 随晶体浮动高度微幅联动长短轴缩放（`bob_scale`），增强三维空间立体悬浮感。
+
+---
+
+## 5. 响应式微交互旋转动力学 (Reactive Rotation Dynamics)
+
+为彻底去除手动拖拽 HUD 按钮引发的交互认知负荷，展台引入了空间感知动力学：
+
+```rust
+// 鼠标坐标与时间驱动确定性哈希，生成微幅随机冲量
+let hash_val = (curr_pos.x * 12.9898 + curr_pos.y * 78.233 + time * 2.17).sin() * 43758.5453;
+let delta_yaw = (hash_val.fract() - 0.5) * 0.35;
+let hash_val2 = (curr_pos.y * 23.456 + curr_pos.x * 67.891 + time * 1.63).cos() * 24634.6345;
+let delta_pitch = (hash_val2.fract() - 0.5) * 0.18;
+
+inst.rot_target_yaw += delta_yaw;
+inst.rot_target_pitch = (inst.rot_target_pitch + delta_pitch).clamp(-0.25, 0.40);
+
+// 平滑高阻尼过渡插值，呈现如悬浮于流体中的奢华厚重感
+let damping = (dt * 1.8).clamp(0.02, 0.18);
+inst.cam_yaw += (inst.rot_target_yaw - inst.cam_yaw) * damping;
+inst.cam_pitch += (inst.rot_target_pitch - inst.cam_pitch) * damping;
+```
+
+该算法确保用户在窗口内移动光标、选择安装目录或悬停复选卡片时，3D 水晶晶体会随之产生极其柔和、平缓的随机三维转动，自然而高级。
+

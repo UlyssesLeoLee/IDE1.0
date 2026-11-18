@@ -248,6 +248,7 @@ impl App {
                     self.sticky_notes.focus_needed = true;
                 }
                 self.sticky_notes.mark_dirty();
+                self.sticky_notes.save();
             }
         }
     }

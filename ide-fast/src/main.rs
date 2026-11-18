@@ -186,11 +186,11 @@ fn main() -> eframe::Result<()> {
     let blur = glass && st.glass_blur;
     let mut viewport = eframe::egui::ViewportBuilder::default().with_visible(true);
     if open_installer {
-        // 安装向导模式: 独立 800×560 视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
+        // 安装向导模式: 独立 880×600 宽幅视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
         viewport = viewport
             .with_title("IDE1.0 Setup Wizard")
-            .with_inner_size([800.0, 560.0])
-            .with_min_inner_size([800.0, 560.0])
+            .with_inner_size([880.0, 600.0])
+            .with_min_inner_size([880.0, 600.0])
             .with_resizable(false)
             .with_decorations(false);
     } else {
