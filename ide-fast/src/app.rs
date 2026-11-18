@@ -2975,13 +2975,10 @@ impl App {
                         .stick_to_bottom(true)
                         .auto_shrink([false, false]),
                     |ui| {
-                        let shown = self.term.display();
-                        if !shown.is_empty() {
-                            let mut t = egui::RichText::new(&shown).monospace().size(tpx);
-                            if let Some(c) = tfg {
-                                t = t.color(c);
-                            }
-                            ui.add(egui::Label::new(t).selectable(true));
+                        let default_fg = tfg.unwrap_or(Color32::from_rgb(220, 220, 220));
+                        let job = self.term.layout_job(tpx, default_fg);
+                        if !job.text.is_empty() {
+                            ui.add(egui::Label::new(job).selectable(true));
                         }
 
                         // 直接在终端控制的主交互命令行 (Active Prompt Line): 彻底消除底部割裂输入框
@@ -3020,7 +3017,7 @@ impl App {
                         if prompt_r.has_focus() {
                             if ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C)) {
                                 if self.term.input.is_empty() {
-                                    self.term.restart();
+                                    self.term.interrupt(&cwd);
                                 } else {
                                     self.term.cancel_input(&cwd);
                                 }

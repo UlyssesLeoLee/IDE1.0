@@ -1,7 +1,8 @@
 //! 终端面板。两种用法: (1) 常驻 shell 会话 (默认): 一个 shell 进程一直活着, 输入行直接写进它的标准输入, `cd` / 环境变量会保留;
-//! 输出经 `LineBuffer` 处理 ANSI 转义 / `\r` 回车 / `\b` 退格后再显示。(2) 一次性执行 (`editcore::exec_cmd::run`, 有超时和输出上限):
-//! 选区作标准输入或输出替换选区时用。没有 PTY: 不能跑 vim 这类全屏程序, 需要持续输入的程序请在系统终端里跑。
+//! 输出经 `LineBuffer` 处理 ANSI 转义 / SGR 颜色 / `\r` 回车 / `\b` 退格及光标移动后再显示。(2) 一次性执行 (`editcore::exec_cmd::run`, 有超时和输出上限):
+//! 选区作标准输入或输出替换选区时用。全面支持 16 色、256 色与 24 位 TrueColor，兼容 PowerShell 交互、Git 与 Hermes 等现代 CLI 工具。
 
+use eframe::egui;
 use editcore::exec_cmd::{self, ExecOut};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -13,6 +14,82 @@ const MAX_KEEP: usize = 1 << 20;
 /// 「保留行数」设置的范围 (默认 5000); 字节上限 `MAX_KEEP` 仍然同时生效
 pub const MIN_SCROLLBACK: usize = 100;
 pub const MAX_SCROLLBACK: usize = 100_000;
+
+/// 标准 16 色 ANSI 调色板
+pub const ANSI_PALETTE: [[u8; 3]; 16] = [
+    // Standard 8 (0-7)
+    [0, 0, 0],       // 0: Black
+    [205, 49, 49],   // 1: Red
+    [13, 188, 121],  // 2: Green
+    [229, 229, 16],  // 3: Yellow
+    [36, 114, 200],  // 4: Blue
+    [188, 63, 188],  // 5: Magenta
+    [17, 168, 205],  // 6: Cyan
+    [229, 229, 229], // 7: White
+    // Bright 8 (8-15)
+    [102, 102, 102], // 8: Bright Black (Gray)
+    [241, 76, 76],   // 9: Bright Red
+    [35, 209, 139],  // 10: Bright Green
+    [245, 245, 67],  // 11: Bright Yellow
+    [59, 142, 234],  // 12: Bright Blue
+    [214, 112, 214], // 13: Bright Magenta
+    [41, 184, 219],  // 14: Bright Cyan
+    [255, 255, 255], // 15: Bright White
+];
+
+/// 256 色查找转换
+pub fn ansi_256_to_rgb(idx: u8) -> [u8; 3] {
+    if idx < 16 {
+        return ANSI_PALETTE[idx as usize];
+    }
+    if idx >= 232 {
+        let val = 8 + (idx - 232) * 10;
+        return [val, val, val];
+    }
+    let n = idx - 16;
+    let b = (n % 6) * 51;
+    let g = ((n / 6) % 6) * 51;
+    let r = (n / 36) * 51;
+    [r, g, b]
+}
+
+/// 字符样式属性
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TermStyle {
+    pub fg: Option<[u8; 3]>,
+    pub bg: Option<[u8; 3]>,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub dim: bool,
+}
+
+impl Default for TermStyle {
+    fn default() -> Self {
+        Self {
+            fg: None,
+            bg: None,
+            bold: false,
+            italic: false,
+            underline: false,
+            dim: false,
+        }
+    }
+}
+
+/// 终端单元格 (字符 + 样式)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TermCell {
+    pub c: char,
+    pub style: TermStyle,
+}
+
+/// 连续具有相同样式的文本片段
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TermSpan {
+    pub text: String,
+    pub style: TermStyle,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Esc {
@@ -27,15 +104,16 @@ enum Esc {
     OscEsc,
 }
 
-/// 终端文本缓冲: 已完成的行 + 正在写的当前行 (带光标列)。吃字节流里的控制字符。
+/// 终端文本缓冲: 已完成的行 (带样式) + 正在写的当前行 (带光标列与样式)。完整解析 ANSI 转义与 SGR。
 pub struct LineBuffer {
-    done: String,
-    line: Vec<char>,
+    done_spans: Vec<Vec<TermSpan>>,
+    done_text: String,
+    line: Vec<TermCell>,
     col: usize,
     esc: Esc,
     csi: String,
+    curr_style: TermStyle,
     ver: u64,
-    /// `done` 里的行数 / 最多保留多少行
     done_lines: usize,
     max_lines: usize,
 }
@@ -43,11 +121,13 @@ pub struct LineBuffer {
 impl LineBuffer {
     pub fn new() -> Self {
         LineBuffer {
-            done: String::new(),
-            line: vec![],
+            done_spans: Vec::new(),
+            done_text: String::new(),
+            line: Vec::new(),
             col: 0,
             esc: Esc::None,
             csi: String::new(),
+            curr_style: TermStyle::default(),
             ver: 0,
             done_lines: 0,
             max_lines: MAX_SCROLLBACK,
@@ -77,14 +157,47 @@ impl LineBuffer {
             return;
         }
         let drop = self.done_lines - self.max_lines;
-        let at = self
-            .done
-            .match_indices('\n')
-            .nth(drop - 1)
-            .map(|(i, _)| i + 1)
-            .unwrap_or(self.done.len());
-        self.done.drain(..at);
-        self.done_lines = self.max_lines;
+        if drop > 0 {
+            if drop >= self.done_spans.len() {
+                self.done_spans.clear();
+                self.done_text.clear();
+                self.done_lines = 0;
+            } else {
+                self.done_spans.drain(..drop);
+                let at = self
+                    .done_text
+                    .match_indices('\n')
+                    .nth(drop - 1)
+                    .map(|(i, _)| i + 1)
+                    .unwrap_or(self.done_text.len());
+                self.done_text.drain(..at);
+                self.done_lines = self.max_lines;
+            }
+        }
+    }
+
+    fn trim_bytes(&mut self) {
+        if self.done_text.len() <= MAX_KEEP {
+            return;
+        }
+        let cut = self.done_text.len() - MAX_KEEP / 2;
+        let cut = (cut..self.done_text.len())
+            .find(|&i| self.done_text.is_char_boundary(i))
+            .unwrap_or(self.done_text.len());
+        let at = self.done_text[cut..]
+            .find('\n')
+            .map(|i| cut + i + 1)
+            .unwrap_or(cut);
+
+        let dropped_lines = self.done_text[..at].matches('\n').count();
+        self.done_text.drain(..at);
+        if dropped_lines >= self.done_spans.len() {
+            self.done_spans.clear();
+            self.done_lines = 0;
+        } else {
+            self.done_spans.drain(..dropped_lines);
+            self.done_lines = self.done_spans.len();
+        }
     }
 
     /// 喂入一段输出文本 (转义序列可以被切在两次调用之间)
@@ -148,79 +261,384 @@ impl LineBuffer {
     }
 
     fn put(&mut self, c: char) {
+        let cell = TermCell {
+            c,
+            style: self.curr_style,
+        };
         while self.line.len() < self.col {
-            self.line.push(' ');
+            self.line.push(TermCell {
+                c: ' ',
+                style: self.curr_style,
+            });
         }
         if self.col < self.line.len() {
-            self.line[self.col] = c;
+            self.line[self.col] = cell;
         } else {
-            self.line.push(c);
+            self.line.push(cell);
         }
         self.col += 1;
     }
 
     fn newline(&mut self) {
-        let l: String = self.line.drain(..).collect();
-        self.done.push_str(l.trim_end());
-        self.done.push('\n');
+        let mut spans: Vec<TermSpan> = Vec::new();
+        let mut cur_span: Option<TermSpan> = None;
+        let mut line_text = String::with_capacity(self.line.len());
+
+        for cell in self.line.drain(..) {
+            line_text.push(cell.c);
+            match cur_span.as_mut() {
+                Some(s) if s.style == cell.style => {
+                    s.text.push(cell.c);
+                }
+                _ => {
+                    if let Some(s) = cur_span.take() {
+                        spans.push(s);
+                    }
+                    cur_span = Some(TermSpan {
+                        text: cell.c.to_string(),
+                        style: cell.style,
+                    });
+                }
+            }
+        }
+        if let Some(s) = cur_span {
+            spans.push(s);
+        }
+
+        let trimmed_text = line_text.trim_end();
+        self.done_text.push_str(trimmed_text);
+        self.done_text.push('\n');
+        self.done_spans.push(spans);
         self.done_lines += 1;
         self.col = 0;
+
         if self.done_lines > self.max_lines + self.max_lines / 4 {
-            self.trim_lines(); // 多攒 1/4 再一起丢, 不用每行都搬一次内存
+            self.trim_lines();
         }
-        if self.done.len() > MAX_KEEP {
-            let cut = self.done.len() - MAX_KEEP / 2;
-            let cut = (cut..self.done.len())
-                .find(|&i| self.done.is_char_boundary(i))
-                .unwrap_or(self.done.len());
-            let at = self.done[cut..]
-                .find('\n')
-                .map(|i| cut + i + 1)
-                .unwrap_or(cut);
-            self.done.drain(..at);
-            self.done_lines = self.done.matches('\n').count();
+        if self.done_text.len() > MAX_KEEP {
+            self.trim_bytes();
         }
     }
 
-    /// 处理 CSI 序列里有显示效果的几个: K 擦行, J 清屏, C/D 光标左右, G 到列; 其余 (颜色等) 忽略
-    fn csi_done(&mut self, fin: char) {
-        let n: usize = self
-            .csi
+    fn parse_single_arg(&self, default: usize) -> usize {
+        self.csi
             .trim_start_matches('?')
-            .split(';')
+            .split([';', ':'])
             .next()
             .and_then(|x| x.parse().ok())
-            .unwrap_or(0);
-        match fin {
-            'K' => match n {
-                0 => self.line.truncate(self.col),
-                2 => {
-                    self.line.clear();
-                    self.col = 0;
+            .unwrap_or(default)
+    }
+
+    /// 处理光标向上移动 (如 Hermes CLI 进度条 / 多行状态行重绘)
+    fn cursor_up(&mut self, n: usize) {
+        let count = n.max(1);
+        for _ in 0..count {
+            if let Some(last_spans) = self.done_spans.pop() {
+                if self.line.is_empty() {
+                    for span in last_spans {
+                        for c in span.text.chars() {
+                            self.line.push(TermCell { c, style: span.style });
+                        }
+                    }
+                    self.col = self.line.len();
                 }
-                _ => {
-                    for c in self.line.iter_mut().take(self.col) {
-                        *c = ' ';
+                self.done_lines = self.done_lines.saturating_sub(1);
+                if let Some(idx) = self.done_text.trim_end_matches('\n').rfind('\n') {
+                    self.done_text.truncate(idx + 1);
+                } else {
+                    self.done_text.clear();
+                }
+            }
+        }
+    }
+
+    /// 处理 SGR (Select Graphic Rendition) 文本格式与 16/256/TrueColor 颜色序列
+    fn handle_sgr(&mut self) {
+        if self.csi.is_empty() {
+            self.curr_style = TermStyle::default();
+            return;
+        }
+        let parts: Vec<&str> = self.csi.split([';', ':']).collect();
+        let mut idx = 0;
+        while idx < parts.len() {
+            let code: u32 = parts[idx].parse().unwrap_or(0);
+            match code {
+                0 => self.curr_style = TermStyle::default(),
+                1 => self.curr_style.bold = true,
+                2 => self.curr_style.dim = true,
+                3 => self.curr_style.italic = true,
+                4 => self.curr_style.underline = true,
+                7 => {
+                    std::mem::swap(&mut self.curr_style.fg, &mut self.curr_style.bg);
+                }
+                22 => {
+                    self.curr_style.bold = false;
+                    self.curr_style.dim = false;
+                }
+                23 => self.curr_style.italic = false,
+                24 => self.curr_style.underline = false,
+                30..=37 => {
+                    self.curr_style.fg = Some(ANSI_PALETTE[(code - 30) as usize]);
+                }
+                38 => {
+                    if idx + 1 < parts.len() {
+                        let mode = parts[idx + 1];
+                        if mode == "5" && idx + 2 < parts.len() {
+                            if let Ok(color_idx) = parts[idx + 2].parse::<u8>() {
+                                self.curr_style.fg = Some(ansi_256_to_rgb(color_idx));
+                            }
+                            idx += 2;
+                        } else if mode == "2" && idx + 4 < parts.len() {
+                            let r: u8 = parts[idx + 2].parse().unwrap_or(0);
+                            let g: u8 = parts[idx + 3].parse().unwrap_or(0);
+                            let b: u8 = parts[idx + 4].parse().unwrap_or(0);
+                            self.curr_style.fg = Some([r, g, b]);
+                            idx += 4;
+                        }
                     }
                 }
-            },
-            'J' if n == 2 || n == 3 => {
-                self.done.clear();
-                self.done_lines = 0;
-                self.line.clear();
-                self.col = 0;
+                39 => self.curr_style.fg = None,
+                40..=47 => {
+                    self.curr_style.bg = Some(ANSI_PALETTE[(code - 40) as usize]);
+                }
+                48 => {
+                    if idx + 1 < parts.len() {
+                        let mode = parts[idx + 1];
+                        if mode == "5" && idx + 2 < parts.len() {
+                            if let Ok(color_idx) = parts[idx + 2].parse::<u8>() {
+                                self.curr_style.bg = Some(ansi_256_to_rgb(color_idx));
+                            }
+                            idx += 2;
+                        } else if mode == "2" && idx + 4 < parts.len() {
+                            let r: u8 = parts[idx + 2].parse().unwrap_or(0);
+                            let g: u8 = parts[idx + 3].parse().unwrap_or(0);
+                            let b: u8 = parts[idx + 4].parse().unwrap_or(0);
+                            self.curr_style.bg = Some([r, g, b]);
+                            idx += 4;
+                        }
+                    }
+                }
+                49 => self.curr_style.bg = None,
+                90..=97 => {
+                    self.curr_style.fg = Some(ANSI_PALETTE[(code - 90 + 8) as usize]);
+                }
+                100..=107 => {
+                    self.curr_style.bg = Some(ANSI_PALETTE[(code - 100 + 8) as usize]);
+                }
+                _ => {}
             }
-            'C' => self.col = (self.col + n.max(1)).min(4096),
-            'D' => self.col = self.col.saturating_sub(n.max(1)),
-            'G' => self.col = (n.max(1) - 1).min(4096),
+            idx += 1;
+        }
+    }
+
+    /// 处理 CSI 序列
+    fn csi_done(&mut self, fin: char) {
+        match fin {
+            'm' => self.handle_sgr(),
+            'A' => {
+                let n = self.parse_single_arg(1);
+                self.cursor_up(n);
+            }
+            'B' => {
+                let n = self.parse_single_arg(1);
+                for _ in 0..n {
+                    self.newline();
+                }
+            }
+            'C' => {
+                let n = self.parse_single_arg(1);
+                self.col = (self.col + n).min(4096);
+            }
+            'D' => {
+                let n = self.parse_single_arg(1);
+                self.col = self.col.saturating_sub(n);
+            }
+            'G' => {
+                let n = self.parse_single_arg(1);
+                self.col = (n.saturating_sub(1)).min(4096);
+            }
+            'H' | 'f' => {
+                let parts: Vec<usize> = self.csi.split(';').filter_map(|s| s.parse().ok()).collect();
+                let col = parts.get(1).copied().unwrap_or(1);
+                self.col = col.saturating_sub(1).min(4096);
+            }
+            'K' => {
+                let n = self.parse_single_arg(0);
+                match n {
+                    0 => self.line.truncate(self.col),
+                    1 => {
+                        for cell in self.line.iter_mut().take(self.col) {
+                            cell.c = ' ';
+                        }
+                    }
+                    2 => {
+                        self.line.clear();
+                        self.col = 0;
+                    }
+                    _ => {}
+                }
+            }
+            'J' => {
+                let n = self.parse_single_arg(0);
+                if n == 2 || n == 3 {
+                    self.clear();
+                }
+            }
             _ => {}
         }
     }
 
+    /// 生成富文本排版作业 (支持 ANSI 16色 / 256色 / TrueColor 以及下划线与粗体)
+    pub fn build_layout_job(
+        &self,
+        tpx: f32,
+        default_fg: egui::Color32,
+        prefix_text: &str,
+    ) -> egui::text::LayoutJob {
+        use egui::text::{LayoutJob, TextFormat};
+        let mut job = LayoutJob::default();
+
+        if !prefix_text.is_empty() {
+            job.append(
+                prefix_text,
+                0.0,
+                TextFormat {
+                    font_id: egui::FontId::monospace(tpx),
+                    color: default_fg,
+                    ..Default::default()
+                },
+            );
+        }
+
+        // 渲染已完成的行 (带样式)
+        for line in &self.done_spans {
+            for span in line {
+                let fg_color = if let Some([r, g, b]) = span.style.fg {
+                    egui::Color32::from_rgb(r, g, b)
+                } else if span.style.dim {
+                    default_fg.linear_multiply(0.6)
+                } else {
+                    default_fg
+                };
+                let bg_color = if let Some([r, g, b]) = span.style.bg {
+                    egui::Color32::from_rgb(r, g, b)
+                } else {
+                    egui::Color32::TRANSPARENT
+                };
+
+                let format = TextFormat {
+                    font_id: egui::FontId::monospace(tpx),
+                    color: fg_color,
+                    background: bg_color,
+                    italics: span.style.italic,
+                    underline: if span.style.underline {
+                        egui::Stroke::new(1.0, fg_color)
+                    } else {
+                        egui::Stroke::NONE
+                    },
+                    ..Default::default()
+                };
+                job.append(&span.text, 0.0, format);
+            }
+            job.append(
+                "\n",
+                0.0,
+                TextFormat {
+                    font_id: egui::FontId::monospace(tpx),
+                    color: default_fg,
+                    ..Default::default()
+                },
+            );
+        }
+
+        // 渲染当前正在写入的行 (合并相同样式的连续单元)
+        if !self.line.is_empty() {
+            let mut cur_style: Option<TermStyle> = None;
+            let mut cur_text = String::new();
+
+            for cell in &self.line {
+                match cur_style {
+                    Some(st) if st == cell.style => {
+                        cur_text.push(cell.c);
+                    }
+                    _ => {
+                        if let Some(st) = cur_style {
+                            let fg_color = if let Some([r, g, b]) = st.fg {
+                                egui::Color32::from_rgb(r, g, b)
+                            } else if st.dim {
+                                default_fg.linear_multiply(0.6)
+                            } else {
+                                default_fg
+                            };
+                            let bg_color = if let Some([r, g, b]) = st.bg {
+                                egui::Color32::from_rgb(r, g, b)
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            job.append(
+                                &cur_text,
+                                0.0,
+                                TextFormat {
+                                    font_id: egui::FontId::monospace(tpx),
+                                    color: fg_color,
+                                    background: bg_color,
+                                    italics: st.italic,
+                                    underline: if st.underline {
+                                        egui::Stroke::new(1.0, fg_color)
+                                    } else {
+                                        egui::Stroke::NONE
+                                    },
+                                    ..Default::default()
+                                },
+                            );
+                            cur_text.clear();
+                        }
+                        cur_style = Some(cell.style);
+                        cur_text.push(cell.c);
+                    }
+                }
+            }
+            if let Some(st) = cur_style {
+                let fg_color = if let Some([r, g, b]) = st.fg {
+                    egui::Color32::from_rgb(r, g, b)
+                } else if st.dim {
+                    default_fg.linear_multiply(0.6)
+                } else {
+                    default_fg
+                };
+                let bg_color = if let Some([r, g, b]) = st.bg {
+                    egui::Color32::from_rgb(r, g, b)
+                } else {
+                    egui::Color32::TRANSPARENT
+                };
+                job.append(
+                    &cur_text,
+                    0.0,
+                    TextFormat {
+                        font_id: egui::FontId::monospace(tpx),
+                        color: fg_color,
+                        background: bg_color,
+                        italics: st.italic,
+                        underline: if st.underline {
+                            egui::Stroke::new(1.0, fg_color)
+                        } else {
+                            egui::Stroke::NONE
+                        },
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+
+        job
+    }
+
     /// 全部可见文本 (已完成的行 + 当前行)
     pub fn text(&self) -> String {
-        let mut s = self.done.clone();
-        s.extend(self.line.iter());
+        let mut s = self.done_text.clone();
+        for cell in &self.line {
+            s.push(cell.c);
+        }
         s
     }
 }
@@ -245,6 +663,60 @@ fn pump(mut r: impl Read + Send + 'static, tx: std::sync::mpsc::Sender<Vec<u8>>)
     });
 }
 
+/// 解码 PowerShell 管道重定向输出中的 CLIXML 错误流，转为高亮 ANSI Red 文本
+pub fn clean_powershell_clixml(raw: &str) -> String {
+    if !raw.contains("#< CLIXML") {
+        return raw.to_string();
+    }
+    let mut out = String::new();
+    let mut rest = raw;
+
+    while let Some(start) = rest.find("#< CLIXML") {
+        out.push_str(&rest[..start]);
+        let clixml_part = &rest[start..];
+        let mut err_text = String::new();
+        let end_idx = if let Some(close) = clixml_part.find("</Objs>") {
+            close + 7
+        } else {
+            clixml_part.len()
+        };
+
+        let slice = &clixml_part[..end_idx];
+        let tag = "<S S=\"Error\">";
+        let mut search_from = 0;
+        while let Some(tag_pos) = slice[search_from..].find(tag) {
+            let val_start = search_from + tag_pos + tag.len();
+            if let Some(tag_end) = slice[val_start..].find("</S>") {
+                let encoded = &slice[val_start..val_start + tag_end];
+                let decoded = encoded
+                    .replace("_x000D__x000A_", "\n")
+                    .replace("_x000A_", "\n")
+                    .replace("_x000D_", "\r")
+                    .replace("_x001B_", "\x1b")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'");
+                err_text.push_str(&decoded);
+                search_from = val_start + tag_end + 4;
+            } else {
+                break;
+            }
+        }
+
+        if !err_text.is_empty() {
+            out.push_str("\x1b[91m");
+            out.push_str(err_text.trim_end());
+            out.push_str("\x1b[0m\n");
+        }
+
+        rest = &clixml_part[end_idx..];
+    }
+    out.push_str(rest);
+    out
+}
+
 impl Session {
     fn start(cwd: &std::path::Path) -> Result<Session, String> {
         #[cfg(windows)]
@@ -255,6 +727,12 @@ impl Session {
             c.envs([
                 ("TERM", "xterm-256color"),
                 ("COLORTERM", "truecolor"),
+                ("CLICOLOR", "1"),
+                ("CLICOLOR_FORCE", "1"),
+                ("FORCE_COLOR", "3"),
+                ("ANSICON", "1"),
+                ("PYTHONUNBUFFERED", "1"),
+                ("PYTHONUTF8", "1"),
                 ("PYTHONIOENCODING", "utf-8"),
             ]);
             c.current_dir(cwd)
@@ -280,7 +758,18 @@ impl Session {
         };
         #[cfg(not(windows))]
         let mut child = {
-            let mut c = Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
+            let sh = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
+            let mut c = Command::new(sh);
+            c.envs([
+                ("TERM", "xterm-256color"),
+                ("COLORTERM", "truecolor"),
+                ("CLICOLOR", "1"),
+                ("CLICOLOR_FORCE", "1"),
+                ("FORCE_COLOR", "3"),
+                ("PYTHONUNBUFFERED", "1"),
+                ("PYTHONUTF8", "1"),
+                ("PYTHONIOENCODING", "utf-8"),
+            ]);
             c.current_dir(cwd)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -301,7 +790,7 @@ impl Session {
         #[cfg(windows)]
         {
             let _ = session.send_line(
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8",
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; if ($PSStyle) { $PSStyle.OutputRendering = 'Ansi' }; function prompt { \"PS `$pwd> \" }",
             );
         }
         Ok(session)
@@ -318,7 +807,11 @@ impl Session {
         self.stdin.flush().is_ok()
     }
 
-    /// 取已到的输出并解码 (UTF-8 被切断的尾巴留到下一块; 其余走 editcore 的自动判别)
+    fn send_ctrl_c(&mut self) -> bool {
+        self.stdin.write_all(&[0x03, b'\r', b'\n']).is_ok() && self.stdin.flush().is_ok()
+    }
+
+    /// 取已到的输出并解码 (UTF-8 被切断的尾巴留到下一块; 其余走 editcore 的自动判别与 CLIXML 清洗)
     fn drain(&mut self) -> String {
         let mut bytes = std::mem::take(&mut self.tail);
         while let Ok(b) = self.rx.try_recv() {
@@ -332,7 +825,8 @@ impl Session {
                 self.tail = bytes.split_off(e.valid_up_to());
             }
         }
-        editcore::document_io::decode_document(&bytes, None).content
+        let decoded = editcore::document_io::decode_document(&bytes, None).content;
+        clean_powershell_clixml(&decoded)
     }
 
     fn alive(&mut self) -> bool {
@@ -389,6 +883,8 @@ pub struct Terminal {
     pub persistent: bool,
     session: Option<Session>,
     buf: LineBuffer,
+    /// 终端实际所在的工作目录 (跟踪 cd 指令)
+    pub session_cwd: Option<PathBuf>,
     /// 最近有输入 / 输出到这个时刻之前, 界面用快节奏刷新; 之后空闲慢刷新
     hot_until: Option<std::time::Instant>,
     shown: std::cell::RefCell<Option<((usize, u64), String)>>,
@@ -411,6 +907,7 @@ impl Terminal {
             persistent: true,
             session: None,
             buf: LineBuffer::new(),
+            session_cwd: None,
             hot_until: None,
             shown: Default::default(),
         }
@@ -470,11 +967,21 @@ impl Terminal {
             return;
         }
         let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
+        let p_color = if self.is_admin { "\x1b[93m" } else { "\x1b[96m" };
         self.output.push_str(&format!(
             "{prompt_prefix} {}>{cmd}{}\n",
             cwd.display(),
             if stdin.is_some() {
                 "   (选区作标准输入)"
+            } else {
+                ""
+            }
+        ));
+        self.buf.feed(&format!(
+            "{p_color}{prompt_prefix} {}>\x1b[0m \x1b[1;37m{cmd}\x1b[0m{}\n",
+            cwd.display(),
+            if stdin.is_some() {
+                "   \x1b[90m(选区作标准输入)\x1b[0m"
             } else {
                 ""
             }
@@ -488,18 +995,27 @@ impl Terminal {
         self.rx = Some(rx);
     }
 
-    /// 清屏 (一次性输出和会话输出都清)
     /// 外观设置里的保留行数
     pub fn set_scrollback(&mut self, lines: usize) {
         self.buf.set_scrollback(lines);
     }
 
+    /// 清屏 (一次性输出和会话输出都清)
     pub fn clear(&mut self) {
         self.output.clear();
         self.buf.clear();
     }
 
-    /// 要显示的全部文本: 一次性命令的输出在前, 会话输出在后
+    /// 要显示的富文本排版作业
+    pub fn layout_job(
+        &self,
+        tpx: f32,
+        default_fg: egui::Color32,
+    ) -> egui::text::LayoutJob {
+        self.buf.build_layout_job(tpx, default_fg, &self.output)
+    }
+
+    /// 要显示的全部文本 (纯文本模式，供搜索与剪贴板用): 一次性命令的输出在前, 会话输出在后
     pub fn display(&self) -> String {
         let key = (self.output.len(), self.buf.version());
         let mut c = self.shown.borrow_mut();
@@ -514,8 +1030,20 @@ impl Terminal {
     /// 结束会话 (下一条命令会重新开一个)
     pub fn restart(&mut self) {
         if self.session.take().is_some() {
-            self.buf.feed("\n[会话已重启]\n");
+            self.buf.feed("\n\x1b[90m[会话已重启]\x1b[0m\n");
         }
+    }
+
+    /// 发送 Ctrl+C 中断信号给正在运行的子程序
+    pub fn interrupt(&mut self, _cwd: &std::path::Path) {
+        if let Some(s) = self.session.as_mut() {
+            if s.send_ctrl_c() {
+                self.buf.feed("^C\n");
+                self.heat();
+                return;
+            }
+        }
+        self.restart();
     }
 
     /// 新建或重启常驻 shell 会话并聚焦输入框 (点「+ 新建终端」触发)
@@ -524,6 +1052,7 @@ impl Terminal {
         self.persistent = true;
         self.focus_input = true;
         self.is_admin = detect_is_admin();
+        self.session_cwd = Some(cwd.to_path_buf());
         match Session::start(cwd) {
             Ok(s) => {
                 self.session = Some(s);
@@ -533,16 +1062,20 @@ impl Terminal {
                     "👤 标准用户权限 (Standard User)"
                 };
                 if had {
-                    self.buf
-                        .feed(&format!("\n[已新建终端会话 · {role}] 工作目录: {}\n", cwd.display()));
+                    self.buf.feed(&format!(
+                        "\x1b[96m\n[已新建终端会话 · {role}] 工作目录: {}\x1b[0m\n",
+                        cwd.display()
+                    ));
                 } else {
-                    self.buf
-                        .feed(&format!("[终端会话已就绪 · {role}] 工作目录: {}\n", cwd.display()));
+                    self.buf.feed(&format!(
+                        "\x1b[96m[终端会话已就绪 · {role}] 工作目录: {}\x1b[0m\n",
+                        cwd.display()
+                    ));
                 }
                 self.heat();
             }
             Err(e) => {
-                self.buf.feed(&format!("[{e}]\n"));
+                self.buf.feed(&format!("\x1b[91m[{e}]\x1b[0m\n"));
             }
         }
     }
@@ -557,22 +1090,68 @@ impl Terminal {
     }
 
     fn session_send(&mut self, cwd: &std::path::Path, cmd: &str) {
+        let effective_cwd = self.session_cwd.clone().unwrap_or_else(|| cwd.to_path_buf());
         if !self.session.as_mut().map(|s| s.alive()).unwrap_or(false) {
-            match Session::start(cwd) {
+            match Session::start(&effective_cwd) {
                 Ok(s) => self.session = Some(s),
                 Err(e) => {
-                    self.buf.feed(&format!("[{e}]\n"));
+                    self.buf.feed(&format!("\x1b[91m[{e}]\x1b[0m\n"));
                     return;
                 }
             }
         }
         let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
-        self.buf.feed(&format!("{prompt_prefix} {}> {cmd}\n", cwd.display()));
+        let p_color = if self.is_admin { "\x1b[93m" } else { "\x1b[96m" };
+        self.buf.feed(&format!(
+            "{p_color}{prompt_prefix} {}>\x1b[0m \x1b[1;37m{cmd}\x1b[0m\n",
+            effective_cwd.display()
+        ));
         self.heat();
         if let Some(s) = self.session.as_mut() {
             if !s.send_line(cmd) {
-                self.buf.feed("[shell 已退出]\n");
+                self.buf.feed("\x1b[90m[shell 已退出]\x1b[0m\n");
                 self.session = None;
+            }
+        }
+        self.track_cd(cmd, cwd);
+    }
+
+    fn track_cd(&mut self, cmd: &str, default_cwd: &std::path::Path) {
+        let trimmed = cmd.trim();
+        let target = if let Some(rest) = trimmed.strip_prefix("cd ") {
+            Some(rest.trim())
+        } else if let Some(rest) = trimmed.strip_prefix("Set-Location ") {
+            Some(rest.trim())
+        } else if let Some(rest) = trimmed.strip_prefix("chdir ") {
+            Some(rest.trim())
+        } else {
+            None
+        };
+
+        if let Some(path_str) = target {
+            let clean = path_str.trim_matches(['\'', '"']);
+            let base = self.session_cwd.clone().unwrap_or_else(|| default_cwd.to_path_buf());
+            let candidate = if clean == "~" {
+                std::env::var_os("USERPROFILE")
+                    .or_else(|| std::env::var_os("HOME"))
+                    .map(PathBuf::from)
+                    .unwrap_or_else(std::env::temp_dir)
+            } else if std::path::Path::new(clean).is_absolute() {
+                PathBuf::from(clean)
+            } else {
+                base.join(clean)
+            };
+            let mut resolved = if let Ok(canon) = candidate.canonicalize() {
+                canon
+            } else {
+                candidate
+            };
+            let s = resolved.to_string_lossy().to_string();
+            if let Some(stripped) = s.strip_prefix(r"\\?\") {
+                resolved = PathBuf::from(stripped);
+            }
+            if resolved.exists() {
+                self.session_cwd = Some(resolved);
             }
         }
     }
@@ -660,10 +1239,11 @@ impl Terminal {
         self.cursor_pos = self.input.len();
     }
 
-    /// 获取当前终端环境的动态命令行提示符
+    /// 获取当前终端环境的动态命令行提示符 (实时反映跟踪的 cd 目录)
     pub fn prompt_str(&self, cwd: &std::path::Path) -> String {
         let pfx = if self.is_admin { "PS [ADMIN]" } else { "PS" };
-        format!("{pfx} {}> ", cwd.display())
+        let eff = self.session_cwd.as_deref().unwrap_or(cwd);
+        format!("{pfx} {}> ", eff.display())
     }
 
     /// 取消当前命令行输入 (Ctrl+C: 终止输入并输出 ^C 换行)
@@ -913,5 +1493,76 @@ mod tests {
         assert!(t.input.ends_with(".txt"));
 
         let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_ansi_color_parsing_and_layout_job() {
+        let mut b = LineBuffer::new();
+        // 16色 (红色前景 31, 绿色背景 42), 粗体 (1), 下划线 (4)
+        b.feed("\u{1b}[31;42;1;4mError Alert\u{1b}[0m normal\n");
+        assert_eq!(b.text(), "Error Alert normal\n");
+
+        let job = b.build_layout_job(12.0, egui::Color32::WHITE, "");
+        assert!(job.text.contains("Error Alert normal"));
+        // 验证有多种样式分段
+        assert!(job.sections.len() >= 2);
+
+        // 256 色测试: 38;5;196 (亮红)
+        let mut b2 = LineBuffer::new();
+        b2.feed("\u{1b}[38;5;196m256color\u{1b}[0m\n");
+        assert_eq!(b2.text(), "256color\n");
+        let job2 = b2.build_layout_job(12.0, egui::Color32::WHITE, "");
+        assert_eq!(job2.sections[0].format.color, egui::Color32::from_rgb(255, 0, 0));
+
+        // 24 位 TrueColor 测试: 38;2;123;45;67
+        let mut b3 = LineBuffer::new();
+        b3.feed("\u{1b}[38;2;123;45;67mTrueColor\u{1b}[0m\n");
+        assert_eq!(b3.text(), "TrueColor\n");
+        let job3 = b3.build_layout_job(12.0, egui::Color32::WHITE, "");
+        assert_eq!(job3.sections[0].format.color, egui::Color32::from_rgb(123, 45, 67));
+    }
+
+    #[test]
+    fn test_clean_powershell_clixml() {
+        let clixml = "#< CLIXML\r\n<Objs Version=\"1.1.0.1\" xmlns=\"http://schemas.microsoft.com/powershell/2004/04\"><S S=\"Error\">Get-Content : 找不到路径_x000D__x000A_</S><S S=\"Error\">所在的行:1 字符: 1_x000D__x000A_</S></Objs>";
+        let cleaned = clean_powershell_clixml(clixml);
+        assert!(cleaned.starts_with("\x1b[91m"));
+        assert!(cleaned.contains("Get-Content : 找不到路径"));
+        assert!(cleaned.contains("所在的行:1 字符: 1"));
+        assert!(!cleaned.contains("<Objs"));
+        assert!(!cleaned.contains("_x000D__x000A_"));
+        assert!(cleaned.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_cursor_up_reedit_for_spinners_and_hermes() {
+        let mut b = LineBuffer::new();
+        b.feed("Thinking...\n");
+        assert_eq!(b.text(), "Thinking...\n");
+        // CLI 发送光标上移 1 行 + 清行 + 覆盖为完成状态
+        b.feed("\u{1b}[1A\u{1b}[2KCompleted Response\n");
+        assert_eq!(b.text(), "Completed Response\n");
+        assert!(!b.text().contains("Thinking"));
+    }
+
+    #[test]
+    fn test_track_cd_and_session_directory() {
+        let mut t = Terminal::new();
+        let base = std::env::temp_dir().join("ide_term_cd_test");
+        let _ = std::fs::create_dir_all(base.join("sub_dir"));
+        t.start_session(&base);
+        assert_eq!(t.session_cwd.as_ref(), Some(&base));
+
+        // 模拟执行 cd sub_dir
+        t.track_cd("cd sub_dir", &base);
+        assert!(t.session_cwd.as_ref().unwrap().ends_with("sub_dir"));
+        assert!(t.prompt_str(&base).contains("sub_dir"));
+
+        // 模拟执行 cd ..
+        let cur = t.session_cwd.clone().unwrap_or_else(|| base.clone());
+        t.track_cd("cd ..", &cur);
+        assert_eq!(t.session_cwd.as_ref(), Some(&base));
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

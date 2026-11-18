@@ -62,6 +62,18 @@ pub fn create(shell: Option<String>, cwd: Option<String>) -> Option<String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    cmd.envs([
+        ("TERM", "xterm-256color"),
+        ("COLORTERM", "truecolor"),
+        ("CLICOLOR", "1"),
+        ("CLICOLOR_FORCE", "1"),
+        ("FORCE_COLOR", "3"),
+        ("ANSICON", "1"),
+        ("PYTHONUNBUFFERED", "1"),
+        ("PYTHONUTF8", "1"),
+        ("PYTHONIOENCODING", "utf-8"),
+    ]);
+
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -76,7 +88,7 @@ pub fn create(shell: Option<String>, cwd: Option<String>) -> Option<String> {
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = New-Object System.Text.UTF8Encoding $false",
+            "[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = New-Object System.Text.UTF8Encoding $false; $ProgressPreference = 'SilentlyContinue'; if ($PSStyle) { $PSStyle.OutputRendering = 'Ansi' }; function prompt { \"PS `$pwd> \" }",
         ]);
     } else if shell_cmd.to_ascii_lowercase().contains("cmd") {
         cmd.args(["/K", "chcp 65001>nul"]);
@@ -255,6 +267,60 @@ pub fn resolve_shell(requested: Option<&str>) -> String {
     }
 }
 
+/// 解码 PowerShell 管道重定向输出中的 CLIXML 错误流，转为高亮 ANSI Red 文本
+pub fn clean_powershell_clixml(raw: &str) -> String {
+    if !raw.contains("#< CLIXML") {
+        return raw.to_string();
+    }
+    let mut out = String::new();
+    let mut rest = raw;
+
+    while let Some(start) = rest.find("#< CLIXML") {
+        out.push_str(&rest[..start]);
+        let clixml_part = &rest[start..];
+        let mut err_text = String::new();
+        let end_idx = if let Some(close) = clixml_part.find("</Objs>") {
+            close + 7
+        } else {
+            clixml_part.len()
+        };
+
+        let slice = &clixml_part[..end_idx];
+        let tag = "<S S=\"Error\">";
+        let mut search_from = 0;
+        while let Some(tag_pos) = slice[search_from..].find(tag) {
+            let val_start = search_from + tag_pos + tag.len();
+            if let Some(tag_end) = slice[val_start..].find("</S>") {
+                let encoded = &slice[val_start..val_start + tag_end];
+                let decoded = encoded
+                    .replace("_x000D__x000A_", "\n")
+                    .replace("_x000A_", "\n")
+                    .replace("_x000D_", "\r")
+                    .replace("_x001B_", "\x1b")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'");
+                err_text.push_str(&decoded);
+                search_from = val_start + tag_end + 4;
+            } else {
+                break;
+            }
+        }
+
+        if !err_text.is_empty() {
+            out.push_str("\x1b[91m");
+            out.push_str(err_text.trim_end());
+            out.push_str("\x1b[0m\n");
+        }
+
+        rest = &clixml_part[end_idx..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn spawn_reader(id: String, mut reader: Box<dyn Read + Send>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -267,9 +333,10 @@ fn spawn_reader(id: String, mut reader: Box<dyn Read + Send>) {
                     if data.is_empty() {
                         continue;
                     }
+                    let cleaned = clean_powershell_clixml(&data);
                     let sessions = SESSIONS.lock().unwrap();
                     if let Some(s) = sessions.get(&id) {
-                        s.buffer.lock().unwrap().push_back(data);
+                        s.buffer.lock().unwrap().push_back(cleaned);
                     }
                 }
                 Err(_) => break,

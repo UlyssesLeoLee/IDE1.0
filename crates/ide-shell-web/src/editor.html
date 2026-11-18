@@ -4132,6 +4132,59 @@ async function pollTerminalOutput() {
    原来每个数据块都当成「若干整行」追加: 提示符和命令回显被切成不同的行, 退格 / 回车覆盖 / 控制序列都不处理;
    键盘上只有单个可见字符 + Enter + Backspace (而且 Backspace 发的是 "\b \b" 三个字符, 会把一个空格塞进命令里),
    没有方向键 / 历史 / 粘贴 / 输入法, 敲的字在回车前什么也看不见。 */
+const ANSI_COLOR_MAP = {
+  30: "#000000", 31: "#cd3131", 32: "#0dbc79", 33: "#e5e510",
+  34: "#2472c8", 35: "#bc3fbc", 36: "#11a8cd", 37: "#e5e5e5",
+  90: "#666666", 91: "#f14c4c", 92: "#23d18b", 93: "#f5f543",
+  94: "#3b8eea", 95: "#d670d6", 96: "#29b8db", 97: "#ffffff"
+};
+
+function ansiToHtml(str) {
+  let curFg = null, curBold = false, curDim = false;
+  let html = "";
+  const re = /\x1b\[([0-9;]*)m/g;
+  let match;
+  let lastIdx = 0;
+
+  while ((match = re.exec(str)) !== null) {
+    const textChunk = str.slice(lastIdx, match.index);
+    if (textChunk) {
+      let style = "";
+      if (curFg) style += "color:" + curFg + ";";
+      if (curBold) style += "font-weight:bold;";
+      if (curDim) style += "opacity:0.7;";
+      if (style) {
+        html += '<span style="' + style + '">' + escapeHtml(textChunk) + '</span>';
+      } else {
+        html += escapeHtml(textChunk);
+      }
+    }
+    lastIdx = re.lastIndex;
+    const codes = match[1] ? match[1].split(";").map(Number) : [0];
+    for (const c of codes) {
+      if (c === 0) { curFg = null; curBold = false; curDim = false; }
+      else if (c === 1) { curBold = true; }
+      else if (c === 2) { curDim = true; }
+      else if (c === 22) { curBold = false; curDim = false; }
+      else if (ANSI_COLOR_MAP[c]) { curFg = ANSI_COLOR_MAP[c]; }
+      else if (c === 39) { curFg = null; }
+    }
+  }
+  const remaining = str.slice(lastIdx);
+  if (remaining) {
+    let style = "";
+    if (curFg) style += "color:" + curFg + ";";
+    if (curBold) style += "font-weight:bold;";
+    if (curDim) style += "opacity:0.7;";
+    if (style) {
+      html += '<span style="' + style + '">' + escapeHtml(remaining) + '</span>';
+    } else {
+      html += escapeHtml(remaining);
+    }
+  }
+  return html;
+}
+
 const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 const TERM = { out: "", cr: false, buf: "", pos: 0, hist: [], hi: -1, pending: "", lineEl: null, outEl: null, inEl: null };
 // shell 收到一行命令后会把它原样回显一遍 (没有换行): 我们已经本地回显过了, 回显的那一份要吞掉
@@ -4160,18 +4213,46 @@ function termEnsureLine() {
 }
 function termPaintInput() {
   termEnsureLine();
-  TERM.outEl.textContent = TERM.out;
+  TERM.outEl.innerHTML = ansiToHtml(TERM.out);
   const cs = Array.from(TERM.buf);
   const pos = Math.min(TERM.pos, cs.length);
   TERM.inEl.innerHTML = escapeHtml(cs.slice(0, pos).join("")) + '<span class="tl-caret">' + (cs[pos] ? escapeHtml(cs[pos]) : " ") + "</span>" + escapeHtml(cs.slice(pos + 1).join(""));
 }
 function appendTerminal(raw) {
-  const text = termStripEcho(TERM, String(raw == null ? "" : raw).replace(ANSI_RE, ""));
-  for (const ch of text) {
+  let s = String(raw == null ? "" : raw);
+  if (s.includes("\x1b[1A") || s.includes("\x1b[A")) {
+    const lines = terminalBody.querySelectorAll(".term-line");
+    if (lines.length > 0) {
+      const lastLine = lines[lines.length - 1];
+      const prevOut = lastLine.querySelector(".tl-out");
+      if (prevOut) {
+        TERM.out = prevOut.textContent || "";
+        lastLine.remove();
+        TERM.lineEl = null;
+      }
+    }
+    s = s.replace(/\x1b\[\d*A/g, "");
+  }
+  if (s.includes("\x1b[K") || s.includes("\x1b[2K")) {
+    TERM.out = "";
+    s = s.replace(/\x1b\[\d*K/g, "");
+  }
+  s = s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-ln-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g, "");
+  const text = termStripEcho(TERM, s);
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\x1b" && text[i + 1] === "[") {
+      const end = text.indexOf("m", i + 2);
+      if (end !== -1) {
+        TERM.out += text.slice(i, end + 1);
+        i = end;
+        continue;
+      }
+    }
     if (ch === "\n") {
-      termEnsureLine(); TERM.outEl.textContent = TERM.out; TERM.inEl.textContent = "";
+      termEnsureLine(); TERM.outEl.innerHTML = ansiToHtml(TERM.out); TERM.inEl.textContent = "";
       TERM.lineEl = null; TERM.out = ""; TERM.cr = false;
-    } else if (ch === "\r") TERM.cr = true;                         // 回到行首: 之后的字符覆盖本行
+    } else if (ch === "\r") TERM.cr = true;
     else if (ch === "\b") TERM.out = Array.from(TERM.out).slice(0, -1).join("");
     else if (ch >= " " || ch === "\t") { if (TERM.cr) { TERM.out = ""; TERM.cr = false; } TERM.out += ch; }
   }

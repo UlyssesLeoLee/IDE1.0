@@ -13,6 +13,13 @@
   - `IDE1.0-0.8.4-windows-x64.exe`：免安装绿色单文件便携版
   - `IDE1.0_0.8.4_x64.msi`：企业级静默安装包（彻底移除 WixUI 原生灰框与按钮，安装完成自动拉起真 3D 向导）
 - **v0.8.4 关键实装特性**:
+  - **沉浸式终端子系统与现代 CLI / PowerShell 深度兼容（Terminal Subsystem Parity）**：
+    - **全真 ANSI 16/256/TrueColor 渲染引擎**：全面重构 `LineBuffer` 与 `egui::text::LayoutJob`，支持标准 16 色、256 色阶与 24 位 RGB 真彩色，完整支持粗体、斜体、下划线与暗淡样式，消除原本单一白灰文字的廉价感；
+    - **PowerShell CLIXML 错误流深度解析**：原生拦截 PowerShell 管道产生的 `#< CLIXML` 原始错误块，自动提取错误消息并高亮转码为标准的 Bright Red ANSI 错误流，告别原生 XML 乱码倾泻；
+    - **多行进度条与 Hermes 等现代 CLI 原生兼容**：实现 `CSI n A`（光标上移重绘）、`CSI n K`（擦行）与回车覆盖，完美支持 Hermes Agent CLI、npm、cargo、pip 等现代工具的动态 Thinking 旋转动画（Spinner）与多层进度条；
+    - **工作目录追踪与动态 Prompt 实时联动**：实时解析 `cd`、`Set-Location`、`chdir` 指令，动态同步终端会话工作路径与 Tab 补全目录，命令行提示符即时跟随变迁；
+    - **全量 VT / TTY 兼容环境变量注入**：自动注入 `TERM=xterm-256color`、`COLORTERM=truecolor`、`FORCE_COLOR=3`、`CLICOLOR_FORCE=1`、`PYTHONUNBUFFERED=1`、`PYTHONUTF8=1`，确保 Node、Python、Rust 与各类 AI Agent CLI 原生识别彩色终端；
+    - **非破坏性 Ctrl+C 中断机制**：按 Ctrl+C 向子进程投递 `0x03` 中断信号而非直接暴力击杀常驻 Shell，平滑返回命令行交互。
   - **AI 聊天与协同工作台 UI/UX 全面重塑**：彻底消除零散文本按钮与冗余 Pill 行产生的廉价感，系统性重构为专业级下拉菜单体系（`ComboBox` / `<select>`）：
     - **顶栏模式切换**：优雅切换“💬 智能助手对话”与“🤝 多Agent协同工作台”；
     - **顶栏操作菜单 (`⋮ 操作 ▾`)**：集成“🧹 清空对话历史”、“📋 复制全部对话”、“⚙️ 模型与接口设置…”及“🤝 切换至协同工作台”；

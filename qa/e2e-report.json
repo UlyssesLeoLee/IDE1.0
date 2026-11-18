@@ -1,8 +1,8 @@
 ﻿{
-    "GeneratedAt":  "2026-11-18T09:47:09-08:00",
+    "GeneratedAt":  "2026-11-18T10:13:29-08:00",
     "Summary":  {
-                    "TotalExecuted":  1545,
-                    "TotalPassed":  1545,
+                    "TotalExecuted":  1550,
+                    "TotalPassed":  1550,
                     "TotalFailed":  0,
                     "PassRatePercent":  100,
                     "FeatureCoveragePercent":  100,
@@ -16,23 +16,23 @@
                                                                "Package":  "editcore, nema-codec, ide-agent-router",
                                                                "Passed":  743,
                                                                "Failed":  0,
-                                                               "DurationSec":  39.34
+                                                               "DurationSec":  13
                                                            },
                                                            {
                                                                "Package":  "ide-fast",
-                                                               "Passed":  626,
+                                                               "Passed":  630,
                                                                "Failed":  0,
-                                                               "DurationSec":  111.23
+                                                               "DurationSec":  51.93
                                                            },
                                                            {
                                                                "Package":  "ide-shell-web",
                                                                "Passed":  101,
                                                                "Failed":  0,
-                                                               "DurationSec":  5.73
+                                                               "DurationSec":  2.26
                                                            }
                                                        ],
-                                          "TotalExecuted":  1470,
-                                          "TotalPassed":  1470,
+                                          "TotalExecuted":  1474,
+                                          "TotalPassed":  1474,
                                           "TotalFailed":  0
                                       },
                              "Playwright":  {
@@ -46,17 +46,17 @@
                                                                                  "specs/basic.spec.ts",
                                                                                  "specs/command.spec.ts"
                                                                              ],
-                                                                   "Passed":  75,
+                                                                   "Passed":  76,
                                                                    "Failed":  0,
-                                                                   "DurationSec":  74.87
+                                                                   "DurationSec":  63.17
                                                                }
                                                            ],
-                                                "TotalExecuted":  75,
-                                                "TotalPassed":  75,
+                                                "TotalExecuted":  76,
+                                                "TotalPassed":  76,
                                                 "TotalFailed":  0
                                             },
-                             "TotalExecuted":  1545,
-                             "TotalPassed":  1545,
+                             "TotalExecuted":  1550,
+                             "TotalPassed":  1550,
                              "TotalFailed":  0,
                              "PassRatePercent":  100
                          },
