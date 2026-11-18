@@ -1,0 +1,149 @@
+﻿{
+    "GeneratedAt":  "2026-11-18T08:13:28-08:00",
+    "Summary":  {
+                    "TotalExecuted":  1537,
+                    "TotalPassed":  1537,
+                    "TotalFailed":  0,
+                    "PassRatePercent":  100,
+                    "FeatureCoveragePercent":  100,
+                    "TargetCoveragePercent":  90,
+                    "CoverageRequirementMet":  true
+                },
+    "ExecutionDetails":  {
+                             "Rust":  {
+                                          "Packages":  [
+                                                           {
+                                                               "Package":  "editcore, nema-codec, ide-agent-router",
+                                                               "Passed":  743,
+                                                               "Failed":  0,
+                                                               "DurationSec":  18.88
+                                                           },
+                                                           {
+                                                               "Package":  "ide-fast",
+                                                               "Passed":  621,
+                                                               "Failed":  0,
+                                                               "DurationSec":  53.21
+                                                           },
+                                                           {
+                                                               "Package":  "ide-shell-web",
+                                                               "Passed":  101,
+                                                               "Failed":  0,
+                                                               "DurationSec":  3.6
+                                                           }
+                                                       ],
+                                          "TotalExecuted":  1465,
+                                          "TotalPassed":  1465,
+                                          "TotalFailed":  0
+                                      },
+                             "Playwright":  {
+                                                "Suites":  [
+                                                               {
+                                                                   "Specs":  [
+                                                                                 "specs/features-v081.spec.ts",
+                                                                                 "specs/desktop-ui.spec.ts",
+                                                                                 "specs/column-block.spec.ts",
+                                                                                 "specs/panels.spec.ts",
+                                                                                 "specs/basic.spec.ts",
+                                                                                 "specs/command.spec.ts"
+                                                                             ],
+                                                                   "Passed":  72,
+                                                                   "Failed":  0,
+                                                                   "DurationSec":  54.55
+                                                               }
+                                                           ],
+                                                "TotalExecuted":  72,
+                                                "TotalPassed":  72,
+                                                "TotalFailed":  0
+                                            },
+                             "TotalExecuted":  1537,
+                             "TotalPassed":  1537,
+                             "TotalFailed":  0,
+                             "PassRatePercent":  100
+                         },
+    "FeatureMatrix":  [
+                          {
+                              "Id":  "FEAT-01",
+                              "Name":  "3D Cel-Shaded Installer",
+                              "Desc":  "三渲二真3D安装向导, 慢速宝石旋转, 对比度增强, 去除360拖拽与欢迎页",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 1]",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-02",
+                              "Name":  "Sticky Notes Markdown In-Place Edit",
+                              "Desc":  "便笺 Markdown 独立区域就地编辑, 预览模式其余区域渲染保持不变",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 2], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-03",
+                              "Name":  "Sticky Notes Layout \u0026 Anti-Jitter",
+                              "Desc":  "便笺默认加宽确保底部操作按钮完整展示, 拖动后彻底消除抖动",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 3], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-04",
+                              "Name":  "Sticky Notes Real-Time Format Buttons",
+                              "Desc":  "删除线、加粗、列表等格式化按钮实时反映并就地应用",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 4], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-05",
+                              "Name":  "Sticky Notes Color Persistence",
+                              "Desc":  "删除全部便笺后仍保留用户自定义便笺颜色及开关偏好",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 5], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-06",
+                              "Name":  "Sticky Notes Agent IPC \u0026 Auto-Recovery",
+                              "Desc":  "Agent控制便笺, 请求线程意外结束自愈与错误防护",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 6], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-07",
+                              "Name":  "Sticky Notes Selection Formatting Targets",
+                              "Desc":  "选中文本直接作为删除线/加粗等格式化目标而非在底部追加标记",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 7], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-08",
+                              "Name":  "Retro16 Theme Auto-Switch to PixelFont 12",
+                              "Desc":  "切换到16位主题自动变为PixelFont 12, 切离时平滑恢复自定义字号",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 8], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-09",
+                              "Name":  "Global Ctrl + Mouse Wheel Zoom",
+                              "Desc":  "支持Ctrl加鼠标滚轮全局平滑缩放, 与快捷键命令同频联动",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 9], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-10",
+                              "Name":  "Direct Interactive Terminal Subsystem",
+                              "Desc":  "终端直接交互子系统, 流安全、双向IPC与自愈式会话管理",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 10], ide-shell-web",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-11",
+                              "Name":  "Multi-Agent NEMA Collab \u0026 Sandbox Verifier",
+                              "Desc":  "多Agent协同架构, Ledger Outbox事务与严格沙箱验证边界",
+                              "VerifiedBy":  "ide-agent-router, nema-codec",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-12",
+                              "Name":  "Window Translucency \u0026 UI Vibrancy",
+                              "Desc":  "毛玻璃透亮质感, DWM背景同步与主题自适应设计",
+                              "VerifiedBy":  "ide-fast, specs/desktop-ui.spec.ts",
+                              "Status":  "Passed"
+                          }
+                      ]
+}

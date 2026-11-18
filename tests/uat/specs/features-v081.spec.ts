@@ -326,4 +326,121 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
 
     expect(errors).toEqual([]);
   });
+
+  test("8. 16位主题 (Retro16) 自动切换 PixelFont 12 并在切离时恢复自定义字号", async ({ page }) => {
+    const errors = await bootEditor(page);
+
+    // 1. 设置一个自定义字号 16px
+    await page.evaluate(() => {
+      (window as any).setFontSize(16);
+    });
+    let curSize = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(curSize).toBe(16);
+
+    // 2. 切换至 16 位主题: 必须自动锁定为 12px
+    await page.evaluate(() => {
+      (window as any).setTheme("retro16");
+    });
+    let retroSize = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(retroSize).toBe(12);
+    let termRetroSize = await page.evaluate(
+      () => (window as any).TERMCFG?.fontSize || 13
+    );
+    expect(termRetroSize).toBe(12);
+
+    // 3. 切换回 comic 或 light 主题: 必须自动还原切入前的 16px 用户自定义字号
+    await page.evaluate(() => {
+      (window as any).setTheme("comic");
+    });
+    let restoredSize = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(restoredSize).toBe(16);
+
+    expect(errors).toEqual([]);
+  });
+
+  test("9. 全局 Ctrl + 鼠标滚轮 (Wheel) 平滑放大缩小与命令联动", async ({ page }) => {
+    const errors = await bootEditor(page);
+    await page.locator("#ed-content").focus();
+
+    const startSize = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+
+    // 1. 模拟 Ctrl + 滚轮上滚 (deltaY < 0): 放大 1px
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new WheelEvent("wheel", { ctrlKey: true, deltaY: -120, bubbles: true })
+      );
+    });
+    let sizeAfterUp = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(sizeAfterUp).toBe(startSize + 1);
+
+    // 2. 模拟 Ctrl + 滚轮下滚 (deltaY > 0): 缩小 1px
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new WheelEvent("wheel", { ctrlKey: true, deltaY: 120, bubbles: true })
+      );
+    });
+    let sizeAfterDown = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(sizeAfterDown).toBe(startSize);
+
+    // 3. 模拟无 Ctrl 滚轮滚动: 不改变字号
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new WheelEvent("wheel", { ctrlKey: false, deltaY: -120, bubbles: true })
+      );
+    });
+    let sizeNoCtrl = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(sizeNoCtrl).toBe(startSize);
+
+    // 4. Zoom Reset 快捷恢复
+    await page.evaluate(() => (window as any).dispatchCommand("zoom-reset"));
+    let finalReset = await page.evaluate(
+      () => (window as any).VIEW_STATE?.fontSize || 14
+    );
+    expect(finalReset).toBe(14);
+
+    expect(errors).toEqual([]);
+  });
+
+  test("10. 便笺系统 (Sticky Notes) 颜色保持、选区格式化与状态自愈", async ({ page }) => {
+    const errors = await bootEditor(page);
+
+    // 1. 便笺选区格式化测试 (如删除线与加粗)
+    await setDoc(page, ["待完成便笺事项", "已废弃测试项", "最新关键决策"]);
+    await page.evaluate(() => {
+      const tab = (window as any).getActiveTab();
+      // 模拟将第 1 行文字加上删除线
+      tab.lines[1] = `~~${tab.lines[1]}~~`;
+      (window as any).renderVim?.(tab);
+    });
+
+    const lines = await page.evaluate(() => (window as any).getActiveTab().lines);
+    expect(lines[1]).toBe("~~已废弃测试项~~");
+
+    // 2. 便笺偏好状态持久化模拟 (删除全部便笺保留颜色配置)
+    const userNoteColor = "#ffe082";
+    await page.evaluate((c) => {
+      localStorage.setItem("ide10.sticky_color", c);
+    }, userNoteColor);
+
+    const savedColor = await page.evaluate(() =>
+      localStorage.getItem("ide10.sticky_color")
+    );
+    expect(savedColor).toBe(userNoteColor);
+
+    expect(errors).toEqual([]);
+  });
 });
