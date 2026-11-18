@@ -9165,11 +9165,16 @@ function clearClipHistory() {
 /* ---------- A3. 缩放 (Ctrl+滚轮 / Ctrl+= / Ctrl+-) ---------- */
 function zoomBy(delta) {
   const cur = VIEW_STATE.fontSize || 14;
-  setFontSize(Math.min(32, Math.max(9, cur + delta)));
+  const next = Math.min(32, Math.max(8, cur + delta));
+  setFontSize(next);
+  if (typeof TERMCFG !== "undefined" && TERMCFG.fontSize) {
+    TERMCFG.fontSize = Math.min(32, Math.max(8, TERMCFG.fontSize + delta));
+    if (typeof applyTermCfg === "function") applyTermCfg();
+  }
 }
 function initZoomWheel() {
-  edContent.addEventListener("wheel", (e) => {
-    if (!e.ctrlKey) return;          // 只在 Ctrl+滚轮时缩放, 不干扰正常滚动
+  window.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;          // 只在 Ctrl/Cmd+滚轮时缩放, 不干扰正常滚动
     e.preventDefault();
     zoomBy(e.deltaY < 0 ? 1 : -1);
   }, { passive: false });

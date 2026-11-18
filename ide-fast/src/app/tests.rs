@@ -2255,3 +2255,131 @@ fn test_alt_box_selection_no_scaling_and_sakura_experience() {
     });
     out3.textures_delta.clear();
 }
+
+#[test]
+fn test_ctrl_mouse_wheel_zoom_invariants() {
+    let (mut a, _g) = app(Settings::default());
+    a.new_doc();
+    let ctx = egui::Context::default();
+    let initial_px = a.font_px;
+
+    // 1. 直接方法测试: zoom_in, zoom_out, zoom_reset
+    a.zoom_in();
+    assert_eq!(a.font_px, initial_px + 1.0);
+    assert_eq!(a.cfg.font_px, initial_px + 1.0);
+
+    a.zoom_out();
+    assert_eq!(a.font_px, initial_px);
+    assert_eq!(a.cfg.font_px, initial_px);
+
+    a.font_px = 30.0;
+    a.zoom_reset();
+    assert_eq!(a.font_px, a.default_font_px());
+    assert_eq!(a.cfg.font_px, a.default_font_px());
+
+    // 2. 模拟鼠标悬停并在未按下 Ctrl 时滚轮滚动: 不应缩放字号
+    let mut raw_no_ctrl = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        ..Default::default()
+    };
+    raw_no_ctrl.events.push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
+    raw_no_ctrl.events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, 1.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    });
+    let start_px = a.font_px;
+    let mut out1 = ctx.run_ui(raw_no_ctrl, |_| {
+        a.handle_ctrl_zoom(&ctx);
+    });
+    out1.textures_delta.clear();
+    assert_eq!(a.font_px, start_px, "没有按 Ctrl 时滚轮不可缩放");
+
+    // 3. 模拟 Ctrl + 滚轮上滚 (Event::MouseWheel): 字体放大 1px，且滚轮事件被清空
+    let mut raw_ctrl_wheel = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        ..Default::default()
+    };
+    raw_ctrl_wheel.events.push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
+    raw_ctrl_wheel.events.push(egui::Event::Key {
+        key: egui::Key::A,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: egui::Modifiers::CTRL,
+    });
+    raw_ctrl_wheel.events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, 1.0),
+        modifiers: egui::Modifiers::CTRL,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    });
+    let mut out2 = ctx.run_ui(raw_ctrl_wheel, |_| {
+        a.handle_ctrl_zoom(&ctx);
+    });
+    out2.textures_delta.clear();
+    assert_eq!(a.font_px, start_px + 1.0, "Ctrl+滚轮上滚必须放大 1px");
+    assert_eq!(a.cfg.font_px, start_px + 1.0);
+    // 验证事件被消费，防止 ScrollArea 发生页面滚动
+    let remaining_wheel_events = ctx.input(|i| {
+        i.events.iter().any(|e| matches!(e, egui::Event::MouseWheel { .. }))
+    });
+    assert!(!remaining_wheel_events, "缩放后必须清空滚轮事件");
+
+    // 4. 模拟 Ctrl + 滚轮下滚: 字体缩小 1px
+    let mut raw_ctrl_down = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        ..Default::default()
+    };
+    raw_ctrl_down.events.push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
+    raw_ctrl_down.events.push(egui::Event::Key {
+        key: egui::Key::A,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: egui::Modifiers::CTRL,
+    });
+    raw_ctrl_down.events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, -1.0),
+        modifiers: egui::Modifiers::CTRL,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    });
+    let mut out3 = ctx.run_ui(raw_ctrl_down, |_| {
+        a.handle_ctrl_zoom(&ctx);
+    });
+    out3.textures_delta.clear();
+    assert_eq!(a.font_px, start_px, "Ctrl+滚轮下滚必须缩小 1px");
+    assert_eq!(a.cfg.font_px, start_px);
+
+    // 5. 模拟鼠标指针在窗口外: Ctrl + 滚轮不可缩放
+    let mut raw_outside = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        ..Default::default()
+    };
+    raw_outside.events.push(egui::Event::PointerGone);
+    raw_outside.events.push(egui::Event::Key {
+        key: egui::Key::A,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: egui::Modifiers::CTRL,
+    });
+    raw_outside.events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, 1.0),
+        modifiers: egui::Modifiers::CTRL,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+    });
+    let cur_px = a.font_px;
+    let mut out4 = ctx.run_ui(raw_outside, |_| {
+        a.handle_ctrl_zoom(&ctx);
+    });
+    out4.textures_delta.clear();
+    assert_eq!(a.font_px, cur_px, "鼠标移出窗口不可触发缩放");
+}

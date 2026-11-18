@@ -617,13 +617,13 @@ impl App {
                             // 5. 缩放 (Zoom)
                             ui.menu_button(tr("sub.zoom"), |ui| {
                                 if menuui::mbtn(ui, lk("c.zoom-in", "Ctrl+=")).clicked() {
-                                    self.font_px = (self.font_px + 1.0).min(40.0);
+                                    self.zoom_in();
                                 }
                                 if menuui::mbtn(ui, lk("c.zoom-out", "Ctrl+-")).clicked() {
-                                    self.font_px = (self.font_px - 1.0).max(8.0);
+                                    self.zoom_out();
                                 }
                                 if menuui::mbtn(ui, lk("c.zoom-reset", "Ctrl+0")).clicked() {
-                                    self.font_px = self.default_font_px();
+                                    self.zoom_reset();
                                 }
                                 ui.separator();
                                 ui.menu_button(tr("sub.tabwidth"), |ui| {

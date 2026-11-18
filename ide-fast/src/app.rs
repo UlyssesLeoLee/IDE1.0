@@ -3137,6 +3137,7 @@ impl App {
         if self.cmdui.capturing() {
             return;
         }
+        self.handle_ctrl_zoom(ctx);
         self.menu_mnemonics(ctx); // Alt+助记字母先于命令键 (同 Tauri: 在捕获阶段就拦下; Alt+P 开「插件」菜单而不是「上一个位置」)
         let cmd =
             |ctx: &egui::Context, m: Modifiers, k: Key| ctx.input_mut(|i| i.consume_key(m, k));
@@ -4538,26 +4539,6 @@ impl App {
         } else {
             None
         };
-        // Ctrl + 滚轮缩放字号 (支持 Sakura 与现代化编辑器平滑缩放体验)
-        let is_hovered = ui
-            .input(|i| i.pointer.hover_pos())
-            .is_some_and(|p| ui.available_rect_before_wrap().contains(p));
-        let (ctrl_zoom, wheel_y) = ui.input(|i| {
-            (
-                (i.modifiers.ctrl || i.modifiers.command) && !i.modifiers.alt,
-                i.smooth_scroll_delta.y,
-            )
-        });
-        if is_hovered && ctrl_zoom && wheel_y.abs() > 0.2 {
-            let delta = if wheel_y > 0.0 { 1.0 } else { -1.0 };
-            self.font_px = (self.font_px + delta).clamp(8.0, 40.0);
-            self.cfg.font_px = self.font_px;
-            self.cfg.save();
-            ui.input_mut(|i| {
-                i.smooth_scroll_delta = egui::Vec2::ZERO;
-            });
-            ui.ctx().request_repaint();
-        }
         let mut clicked: Option<(Pos2, bool, bool)> = None; // (位置, 是否Shift, 是否拖动)
         let mut multi_click = 0u8; // 2 = 双击选词, 3 = 三击选行
         let mut ed_id: Option<egui::Id> = None;
@@ -6184,6 +6165,88 @@ impl App {
             12.0
         } else {
             DEFAULT_FONT_PX
+        }
+    }
+
+    /// 放大字号 (Ctrl+= 或 Ctrl+滚轮上滚)
+    pub(crate) fn zoom_in(&mut self) {
+        self.font_px = (self.font_px + 1.0).min(40.0);
+        self.cfg.font_px = self.font_px;
+        self.persist = true;
+    }
+
+    /// 缩小字号 (Ctrl+- 或 Ctrl+滚轮下滚)
+    pub(crate) fn zoom_out(&mut self) {
+        self.font_px = (self.font_px - 1.0).max(8.0);
+        self.cfg.font_px = self.font_px;
+        self.persist = true;
+    }
+
+    /// 重置缩放 (Ctrl+0 或点击状态栏缩放百分比)
+    pub(crate) fn zoom_reset(&mut self) {
+        self.font_px = self.default_font_px();
+        self.cfg.font_px = self.font_px;
+        self.persist = true;
+    }
+
+    /// 处理 Ctrl + 鼠标滚轮缩放 (支持 Sakura 与现代化编辑器平滑缩放体验)
+    pub(crate) fn handle_ctrl_zoom(&mut self, ctx: &egui::Context) {
+        // 如果有正在捕获输入的模态窗口或全屏安装向导，则跳过
+        if self.cmdui.capturing()
+            || self.prefs.is_some()
+            || self.props.is_some()
+            || self.goto_open
+            || (self.installer.open && self.installer.standalone)
+        {
+            return;
+        }
+
+        // 检查鼠标滚轮与 Ctrl/Cmd 修饰键
+        let (ctrl_zoom, wheel_y) = ctx.input(|i| {
+            // 确保鼠标悬停在窗口可视区域内
+            if i.pointer.hover_pos().is_none() {
+                return (false, 0.0f32);
+            }
+            let input_ctrl = (i.modifiers.ctrl || i.modifiers.command) && !i.modifiers.alt;
+
+            // 综合提取 smooth_scroll_delta 以及 Event::MouseWheel
+            let mut y = 0.0f32;
+            let mut event_ctrl = false;
+            if input_ctrl && i.smooth_scroll_delta.y.abs() > 0.0 {
+                y = i.smooth_scroll_delta.y;
+            } else {
+                for ev in &i.events {
+                    if let egui::Event::MouseWheel {
+                        delta, modifiers, ..
+                    } = ev
+                    {
+                        if delta.y.abs() > 0.0 {
+                            let ev_ctrl = (modifiers.ctrl || modifiers.command) && !modifiers.alt;
+                            if input_ctrl || ev_ctrl {
+                                y = delta.y;
+                                event_ctrl = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            (input_ctrl || event_ctrl, y)
+        });
+
+        if ctrl_zoom && wheel_y.abs() > 0.1 {
+            if wheel_y > 0.0 {
+                self.zoom_in();
+            } else {
+                self.zoom_out();
+            }
+            // 彻底清空滚轮事件与滚动量，阻止 ScrollArea 和子面板在缩放时产生滚动错位
+            ctx.input_mut(|i| {
+                i.smooth_scroll_delta = egui::Vec2::ZERO;
+                i.events.retain(|e| !matches!(e, egui::Event::MouseWheel { .. }));
+                i.raw.events.retain(|e| !matches!(e, egui::Event::MouseWheel { .. }));
+            });
+            ctx.request_repaint();
         }
     }
 }

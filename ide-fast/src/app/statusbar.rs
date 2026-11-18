@@ -458,18 +458,15 @@ impl App {
                 };
             }
             Some(StatusCmd::ZoomIn) => {
-                self.font_px = (self.font_px + 1.0).min(40.0);
-                self.cfg.font_px = self.font_px;
+                self.zoom_in();
                 self.cfg.save();
             }
             Some(StatusCmd::ZoomOut) => {
-                self.font_px = (self.font_px - 1.0).max(8.0);
-                self.cfg.font_px = self.font_px;
+                self.zoom_out();
                 self.cfg.save();
             }
             Some(StatusCmd::ZoomReset) => {
-                self.font_px = self.default_font_px();
-                self.cfg.font_px = self.font_px;
+                self.zoom_reset();
                 self.cfg.save();
             }
             None => {}

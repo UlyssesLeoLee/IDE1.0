@@ -147,18 +147,9 @@ impl App {
             KApp::RailToggle => self.cfg.view.rail = !self.cfg.view.rail,
             KApp::MinimalMode => self.set_minimal(),
             KApp::FullMode => self.set_full(),
-            KApp::ZoomIn => {
-                self.font_px = (self.font_px + 1.0).min(40.0);
-                self.cfg.font_px = self.font_px;
-            }
-            KApp::ZoomOut => {
-                self.font_px = (self.font_px - 1.0).max(8.0);
-                self.cfg.font_px = self.font_px;
-            }
-            KApp::ZoomReset => {
-                self.font_px = self.default_font_px();
-                self.cfg.font_px = self.font_px;
-            }
+            KApp::ZoomIn => self.zoom_in(),
+            KApp::ZoomOut => self.zoom_out(),
+            KApp::ZoomReset => self.zoom_reset(),
             KApp::Prefs => self.open_prefs(),
             KApp::PickSyntax => self.open_syntax_pick(),
             KApp::TypeConfig => self.open_prefs_tab(crate::prefs::PrefsTab::Types),
