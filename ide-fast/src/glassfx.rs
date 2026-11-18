@@ -31,7 +31,8 @@ pub fn from_name(s: &str) -> Option<Backdrop> {
 pub const DEFAULT_ORDER: [Backdrop; 1] = [Backdrop::Acrylic];
 
 pub fn order() -> Vec<Backdrop> {
-    match std::env::var("IDE_FAST_BACKDROP") {
+    let val = std::env::var("IDE10_BACKDROP").or_else(|_| std::env::var("IDE_FAST_BACKDROP"));
+    match val {
         Ok(v) if v.eq_ignore_ascii_case("none") => vec![],
         Ok(v) => from_name(&v)
             .map(|b| vec![b])

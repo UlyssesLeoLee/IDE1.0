@@ -8,7 +8,7 @@
      - editcore (核心文本引擎、GapBuffer、MMap、PPA宏、Sakura设置、语法与编码)
      - nema-codec (NEMA 协议编解码、64种组合矩阵、红绿对抗验证)
      - ide-agent-router (多Agent协作路由、Ledger Outbox、并发与沙箱验证器)
-     - ide-fast (Native GUI、Ctrl+滚轮全局缩放、16位主题PixelFont 12联动、便笺就地编辑与颜色持久化)
+     - IDE1.0 (ide-fast: Native GUI、Ctrl+滚轮全局缩放、16位主题PixelFont 12联动、便笺就地编辑与颜色持久化、性能基准)
      - ide-shell-web (Webview/Wry Shell、IPC网桥、终端直接交互子系统)
   2. Web/UI Playwright 端到端用户真实交互测试:
      - specs/features-v081.spec.ts (全部 10 项最新实装特性真实交互)
@@ -75,75 +75,94 @@ $testStats = [ordered]@{
 # ----------------- 阶段 1: Rust 端到端与核心微内核测试 -----------------
 if (-not $SkipRust) {
     Write-Host "[阶段 1/2] 正在运行 Rust 核心引擎与 Native IDE 组件测试套件..." -ForegroundColor Yellow
+
+    function Invoke-CargoTestSuite {
+        param(
+            [string]$Label,
+            [string[]]$CargoArgs,
+            [int]$MinExpectedTests
+        )
+        $t0 = Get-Date
+        $prevEap = $ErrorActionPreference
+        $exitCode = 0
+        $lines = @()
+        try {
+            $ErrorActionPreference = "Continue"
+            $lines = @(& cargo @CargoArgs 2>&1 | ForEach-Object { "$_" })
+            $exitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
+        $t1 = Get-Date
+        $pass = 0
+        $fail = 0
+        $suitesParsed = 0
+        foreach ($line in $lines) {
+            if ($line -match 'test result:\s+(?:ok|FAILED)\.\s+(\d+)\s+passed;\s+(\d+)\s+failed') {
+                $pass += [int]$matches[1]
+                $fail += [int]$matches[2]
+                $suitesParsed++
+            }
+        }
+        if ($exitCode -ne 0) {
+            Write-Host "  [ERR] $Label exited with code $exitCode" -ForegroundColor Red
+            $lines | Select-Object -Last 60 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+            $fail = [Math]::Max($fail, 1)
+        } elseif ($suitesParsed -eq 0 -or ($pass + $fail) -lt $MinExpectedTests) {
+            Write-Host "  [ERR] $Label parsed $suitesParsed suite(s), total=$($pass + $fail) < expected $MinExpectedTests" -ForegroundColor Red
+            $lines | Select-Object -Last 40 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+            $fail = [Math]::Max($fail, 1)
+        }
+        $dur = [math]::Round(($t1 - $t0).TotalSeconds, 2)
+        return [PSCustomObject]@{
+            Package = $Label
+            Passed = $pass
+            Failed = $fail
+            ExitCode = $exitCode
+            DurationSec = $dur
+        }
+    }
+
     Push-Location $root
     try {
         $env:CARGO_TARGET_DIR = $TargetDir
 
         # 1.1 核心库与协议测试 (editcore, nema-codec, ide-agent-router)
         Write-Host "  -> 执行 editcore / nema-codec / ide-agent-router 测试..." -ForegroundColor Gray
-        $t0 = Get-Date
-        $coreOut = cargo test --target-dir $TargetDir -p editcore -p nema-codec -p ide-agent-router -- -q 2>&1
-        $t1 = Get-Date
-        $corePass = 0
-        $coreFail = 0
-        foreach ($line in $coreOut) {
-            if ($line -match 'test result: ok\.\s+(\d+)\s+passed;\s+(\d+)\s+failed') {
-                $corePass += [int]$matches[1]
-                $coreFail += [int]$matches[2]
-            }
-        }
-        $testStats.Rust.Packages += [PSCustomObject]@{
-            Package = "editcore, nema-codec, ide-agent-router"
-            Passed = $corePass
-            Failed = $coreFail
-            DurationSec = [math]::Round(($t1 - $t0).TotalSeconds, 2)
-        }
-        Write-Host "     完成: $corePass passed, $coreFail failed ($([math]::Round(($t1 - $t0).TotalSeconds, 2))s)" -ForegroundColor $(if ($coreFail -eq 0) { "Green" } else { "Red" })
+        $coreStat = Invoke-CargoTestSuite `
+            -Label "editcore, nema-codec, ide-agent-router" `
+            -CargoArgs @("test", "--target-dir", $TargetDir, "-p", "editcore", "-p", "nema-codec", "-p", "ide-agent-router", "--", "-q") `
+            -MinExpectedTests 100
+        $testStats.Rust.Packages += $coreStat
+        Write-Host "     完成: $($coreStat.Passed) passed, $($coreStat.Failed) failed ($($coreStat.DurationSec)s)" -ForegroundColor $(if ($coreStat.Failed -eq 0) { "Green" } else { "Red" })
 
-        # 1.2 Native GUI 应用测试 (ide-fast)
-        Write-Host "  -> 执行 ide-fast (Native GUI, Zoom, Retro16, Sticky Notes, Invariants) 测试..." -ForegroundColor Gray
-        $t0 = Get-Date
-        $fastOut = cargo test --target-dir $TargetDir -p ide-fast -- --test-threads=1 -q 2>&1
-        $t1 = Get-Date
-        $fastPass = 0
-        $fastFail = 0
-        foreach ($line in $fastOut) {
-            if ($line -match 'test result: ok\.\s+(\d+)\s+passed;\s+(\d+)\s+failed') {
-                $fastPass += [int]$matches[1]
-                $fastFail += [int]$matches[2]
+        # 1.2 Native GUI 应用测试 (IDE1.0 / ide-fast)
+        Write-Host "  -> 执行 IDE1.0 (ide-fast: Native GUI, Zoom, Retro16, Sticky Notes, Math Perf Invariants) 测试..." -ForegroundColor Gray
+        $fastStat = Invoke-CargoTestSuite `
+            -Label "IDE1.0 (ide-fast)" `
+            -CargoArgs @("test", "--target-dir", $TargetDir, "-p", "ide-fast", "--", "--test-threads=1", "-q") `
+            -MinExpectedTests 100
+        $testStats.Rust.Packages += $fastStat
+        foreach ($profile in @("debug", "release")) {
+            $rawExe = Join-Path $TargetDir "$profile\ide-fast.exe"
+            $brandExe = Join-Path $TargetDir "$profile\IDE1.0.exe"
+            if (Test-Path $rawExe) {
+                Copy-Item $rawExe $brandExe -Force -ErrorAction SilentlyContinue
             }
         }
-        $testStats.Rust.Packages += [PSCustomObject]@{
-            Package = "ide-fast"
-            Passed = $fastPass
-            Failed = $fastFail
-            DurationSec = [math]::Round(($t1 - $t0).TotalSeconds, 2)
-        }
-        Write-Host "     完成: $fastPass passed, $fastFail failed ($([math]::Round(($t1 - $t0).TotalSeconds, 2))s)" -ForegroundColor $(if ($fastFail -eq 0) { "Green" } else { "Red" })
+        Write-Host "     完成: $($fastStat.Passed) passed, $($fastStat.Failed) failed ($($fastStat.DurationSec)s)" -ForegroundColor $(if ($fastStat.Failed -eq 0) { "Green" } else { "Red" })
 
         # 1.3 Webview Shell 与终端网桥测试 (ide-shell-web)
         Write-Host "  -> 执行 ide-shell-web (Webview Shell, IPC Bridge, Terminal Direct Subsystem) 测试..." -ForegroundColor Gray
-        $t0 = Get-Date
-        $shellOut = cargo test --target-dir $TargetDir -p ide-shell-web -- -q 2>&1
-        $t1 = Get-Date
-        $shellPass = 0
-        $shellFail = 0
-        foreach ($line in $shellOut) {
-            if ($line -match 'test result: ok\.\s+(\d+)\s+passed;\s+(\d+)\s+failed') {
-                $shellPass += [int]$matches[1]
-                $shellFail += [int]$matches[2]
-            }
-        }
-        $testStats.Rust.Packages += [PSCustomObject]@{
-            Package = "ide-shell-web"
-            Passed = $shellPass
-            Failed = $shellFail
-            DurationSec = [math]::Round(($t1 - $t0).TotalSeconds, 2)
-        }
-        Write-Host "     完成: $shellPass passed, $shellFail failed ($([math]::Round(($t1 - $t0).TotalSeconds, 2))s)" -ForegroundColor $(if ($shellFail -eq 0) { "Green" } else { "Red" })
+        $shellStat = Invoke-CargoTestSuite `
+            -Label "ide-shell-web" `
+            -CargoArgs @("test", "--target-dir", $TargetDir, "-p", "ide-shell-web", "--", "-q") `
+            -MinExpectedTests 50
+        $testStats.Rust.Packages += $shellStat
+        Write-Host "     完成: $($shellStat.Passed) passed, $($shellStat.Failed) failed ($($shellStat.DurationSec)s)" -ForegroundColor $(if ($shellStat.Failed -eq 0) { "Green" } else { "Red" })
 
-        $testStats.Rust.TotalPassed = $corePass + $fastPass + $shellPass
-        $testStats.Rust.TotalFailed = $coreFail + $fastFail + $shellFail
+        $testStats.Rust.TotalPassed = $coreStat.Passed + $fastStat.Passed + $shellStat.Passed
+        $testStats.Rust.TotalFailed = $coreStat.Failed + $fastStat.Failed + $shellStat.Failed
         $testStats.Rust.TotalExecuted = $testStats.Rust.TotalPassed + $testStats.Rust.TotalFailed
     } finally {
         Pop-Location
@@ -225,56 +244,56 @@ $features = @(
         Id = "FEAT-02"
         Name = "Sticky Notes Markdown In-Place Edit"
         Desc = "便笺 Markdown 独立区域就地编辑, 预览模式其余区域渲染保持不变"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 2], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 2], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-03"
         Name = "Sticky Notes Layout & Anti-Jitter"
         Desc = "便笺默认加宽确保底部操作按钮完整展示, 拖动后彻底消除抖动"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 3], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 3], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-04"
         Name = "Sticky Notes Real-Time Format Buttons"
         Desc = "删除线、加粗、列表等格式化按钮实时反映并就地应用"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 4], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 4], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-05"
         Name = "Sticky Notes Color Persistence"
         Desc = "删除全部便笺后仍保留用户自定义便笺颜色及开关偏好"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 5], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 5], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-06"
         Name = "Sticky Notes Agent IPC & Auto-Recovery"
         Desc = "Agent控制便笺, 请求线程意外结束自愈与错误防护"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 6], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 6], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-07"
         Name = "Sticky Notes Selection Formatting Targets"
         Desc = "选中文本直接作为删除线/加粗等格式化目标而非在底部追加标记"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 7], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 7], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-08"
         Name = "Retro16 Theme Auto-Switch to PixelFont 12"
         Desc = "切换到16位主题自动变为PixelFont 12, 切离时平滑恢复自定义字号"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 8], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 8], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-09"
         Name = "Global Ctrl + Mouse Wheel Zoom"
         Desc = "支持Ctrl加鼠标滚轮全局平滑缩放, 与快捷键命令同频联动"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 9], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 9], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
@@ -295,28 +314,28 @@ $features = @(
         Id = "FEAT-12"
         Name = "Window Translucency & UI Vibrancy"
         Desc = "毛玻璃透亮质感, DWM背景同步与主题自适应设计"
-        VerifiedBy = "ide-fast, specs/desktop-ui.spec.ts"
+        VerifiedBy = "IDE1.0, specs/desktop-ui.spec.ts"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-13"
         Name = "Non-Blocking File Dialog & Progress Bar"
         Desc = "与本地文件比较非阻塞异步拉起, 载入进度条与注明首次启动较慢"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 13], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 13], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-14"
         Name = "Complete i18n & Language Switching"
         Desc = "全局完整i18n支持, 自动识别系统语言, 首选项与安装向导路径界面均可切换"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 11, 12], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 11, 12], IDE1.0"
         Status = "Passed"
     },
     [PSCustomObject]@{
         Id = "FEAT-15"
         Name = "Headless Subsystem & Silent Tray Daemon"
         Desc = "安装向导与右键关闭常驻统一无头启动, 彻底消除终端黑框与子进程弹窗"
-        VerifiedBy = "specs/features-v081.spec.ts [Test 14], ide-fast"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 14], IDE1.0"
         Status = "Passed"
     }
 )
@@ -328,7 +347,7 @@ if ($testStats.Playwright.TotalFailed -gt 0 -or $testStats.Rust.TotalFailed -gt 
         if ($testStats.Playwright.TotalFailed -gt 0 -and $feat.VerifiedBy -match "spec\.ts") {
             $feat.Status = "CheckRequired"
         }
-        if ($testStats.Rust.TotalFailed -gt 0 -and $feat.VerifiedBy -match "ide-") {
+        if ($testStats.Rust.TotalFailed -gt 0 -and $feat.VerifiedBy -match "IDE1\.0|ide-|nema-codec") {
             $feat.Status = "CheckRequired"
         }
     }

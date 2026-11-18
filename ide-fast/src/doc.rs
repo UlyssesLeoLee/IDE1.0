@@ -10,7 +10,17 @@ use editcore::document_io::{self, AtomicWriteOpts, Bom, Charset, Eol, SaveSpec};
 use editcore::edit_cmd::{self, EditReq};
 use editcore::nav::{self, NavReq};
 use editcore::search_ops::{self, Hit, SearchReq};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+
+#[inline]
+fn char_len(s: &str) -> usize {
+    if s.is_ascii() {
+        s.len()
+    } else {
+        s.chars().count()
+    }
+}
 
 /// 一次可撤销的行补丁 (撤销 = 把插入的行换回删掉的行)
 #[derive(Clone)]
@@ -40,7 +50,7 @@ pub struct Doc {
     pub charset: Charset,
     pub bom: Bom,
     pub eol: Eol,
-    undo: Vec<Undo>,
+    undo: VecDeque<Undo>,
     redo: Vec<Undo>,
     pub tip: String,
     /// 编辑区该滚到哪 (行); 光标移动后置位, 绘制时消费
@@ -75,6 +85,8 @@ pub struct Doc {
     pub insert_spaces: bool,
     /// 基线: 打开 / 上次保存时的全文 (修改行标记据此比较)
     pub base: Vec<String>,
+    /// 行号是否仍与 `base` 一一对齐 (一旦增删行造成错位即置 false, 退回完整 LCS diff)
+    line_aligned: bool,
     /// 修改行标记缓存: (rev, 结果)
     pub changed_cache: Option<(u64, Vec<bool>)>,
     /// F6 范围选择模式: 开着时方向键 / 翻页键都在扩大选区 (不用按 Shift)
@@ -147,7 +159,7 @@ impl Doc {
             charset: Charset::Utf8,
             bom: Bom::None,
             eol: Eol::Crlf,
-            undo: vec![],
+            undo: VecDeque::new(),
             redo: vec![],
             tip: String::new(),
             reveal: false,
@@ -168,6 +180,7 @@ impl Doc {
             smart_indent: false,
             insert_spaces: false,
             base: vec![String::new()],
+            line_aligned: true,
             changed_cache: None,
             sel_mode: false,
             pagination: None,
@@ -181,7 +194,8 @@ impl Doc {
 
     /// `forced` = 指定编码标签 (以指定编码重新打开); None = 自动判别
     pub fn open_with(id: u64, path: &Path, forced: Option<&str>) -> Result<Self, String> {
-        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let meta = std::fs::metadata(path).ok();
+        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
         if size > HARD_LIMIT {
             if let Ok(mmap) = editcore::MmapBuffer::open(path) {
                 let page_size = editcore::MmapBuffer::DEFAULT_PAGE_SIZE;
@@ -203,6 +217,7 @@ impl Doc {
                     path: Some(path.to_path_buf()),
                     name,
                     base: lines.clone(),
+                    line_aligned: true,
                     changed_cache: None,
                     sel_mode: false,
                     lines,
@@ -214,7 +229,7 @@ impl Doc {
                     charset: Charset::Utf8,
                     bom: Bom::None,
                     eol: Eol::Lf,
-                    undo: vec![],
+                    undo: VecDeque::new(),
                     redo: vec![],
                     tip: format!(
                         "超大文件 ({} MB) 自动拆页: 第 1/{} 页 (每页 {} 行, 全文 {} 行) [Alt+PageDown 翻页]",
@@ -268,6 +283,7 @@ impl Doc {
             path: Some(path.to_path_buf()),
             name,
             base: lines.clone(),
+            line_aligned: true,
             changed_cache: None,
             sel_mode: false,
             lines,
@@ -279,7 +295,7 @@ impl Doc {
             charset: d.charset,
             bom: d.bom,
             eol: d.eol,
-            undo: vec![],
+            undo: VecDeque::new(),
             redo: vec![],
             tip: format!(
                 "{} · {} · {}",
@@ -303,7 +319,7 @@ impl Doc {
             overwrite: false,
             readonly: false,
             grep_result: false,
-            stamp: stamp_of(path),
+            stamp: meta.and_then(|m| Some((m.modified().ok()?, m.len()))),
             mixed_eol: d.mixed_eol,
             auto_indent: true,
             smart_indent: false,
@@ -520,6 +536,7 @@ impl Doc {
         self.dirty = false;
         self.stamp = stamp_of(path);
         self.base = self.lines.clone();
+        self.line_aligned = true;
         self.changed_cache = None;
         Ok(())
     }
@@ -569,13 +586,19 @@ impl Doc {
         }
 
         self.dirty = self.lines != self.base;
+        if !self.dirty {
+            self.line_aligned = true;
+        } else if self.lines.len() != curr_len {
+            self.line_aligned = false;
+        }
         self.rev += 1;
         self.changed_cache = None;
         true
     }
 
+    #[inline]
     pub fn row_len(&self, r: usize) -> usize {
-        self.lines.get(r).map(|l| l.chars().count()).unwrap_or(0)
+        self.lines.get(r).map(|l| char_len(l)).unwrap_or(0)
     }
 
     /// 光标周围 + 选区涉及的行 (editcore 只要这些; 大文件里每次按键不用把整篇交出去)
@@ -585,36 +608,37 @@ impl Doc {
 
     /// 支持全量选区行提取 (用于复制、剪切、删除选区等需要完整文本内容的命令)
     fn rows_for_mode(&self, extra: &[usize], full_selection: bool) -> Vec<(usize, String)> {
-        let mut set: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-        let (r, _) = (self.cursor[0], self.cursor[1]);
+        let len = self.lines.len();
+        let mut idxs = Vec::with_capacity(8 + extra.len());
+        let r = self.cursor[0];
         for d in [r.saturating_sub(1), r, r + 1] {
-            if d < self.lines.len() {
-                set.insert(d);
+            if d < len {
+                idxs.push(d);
             }
         }
         if let Some(s) = self.sel {
-            let last_line = self.lines.len().saturating_sub(1);
+            let last_line = len.saturating_sub(1);
             let s0 = s[0].min(last_line);
             let s2 = s[2].min(last_line);
             if full_selection || s2.saturating_sub(s0) <= 8 {
-                for x in s0..=s2 {
-                    set.insert(x);
-                }
+                idxs.extend(s0..=s2);
             } else {
                 // 大选区 (如全选): 导航和端点操作只需选区头尾行，杜绝全篇深拷贝引发卡顿甚至按键吞噬
                 for d in [s0, s0 + 1, s2.saturating_sub(1), s2] {
-                    if d < self.lines.len() {
-                        set.insert(d);
+                    if d < len {
+                        idxs.push(d);
                     }
                 }
             }
         }
         for &e in extra {
-            if e < self.lines.len() {
-                set.insert(e);
+            if e < len {
+                idxs.push(e);
             }
         }
-        set.into_iter()
+        idxs.sort_unstable();
+        idxs.dedup();
+        idxs.into_iter()
             .map(|i| (i, self.lines[i].clone()))
             .collect()
     }
@@ -643,6 +667,7 @@ impl Doc {
         let (new_lines, new_pinfo) = mmap.get_page(target_page, page_size);
         self.lines = new_lines;
         self.base = self.lines.clone();
+        self.line_aligned = true;
         self.changed_cache = None;
         self.cursor = [0, 0];
         self.sel = None;
@@ -793,8 +818,31 @@ impl Doc {
     }
 
     fn splice(&mut self, start: usize, remove: usize, insert: Vec<String>) {
+        // 等行数原地替换快速路径: 跳过 Vec::splice 元素搬移与书签遍历, 并在 $O(remove)$ 内增量更新变更行缓存
+        if remove == insert.len()
+            && start.saturating_add(remove) <= self.lines.len()
+            && !self.lines.is_empty()
+        {
+            let prev_rev = self.rev;
+            self.rev += 1;
+            for (dst, src) in self.lines[start..start + remove].iter_mut().zip(insert) {
+                *dst = src;
+            }
+            if self.line_aligned && self.lines.len() == self.base.len() {
+                if let Some((ref mut c_rev, ref mut flags)) = self.changed_cache {
+                    if *c_rev == prev_rev && flags.len() == self.lines.len() {
+                        for r in start..start + remove {
+                            flags[r] = self.lines[r] != self.base[r];
+                        }
+                        *c_rev = self.rev;
+                    }
+                }
+            }
+            return;
+        }
         if remove != insert.len() {
             self.folds.clear(); // 行数变了: 折叠范围作废 (改行内容不影响)
+            self.line_aligned = false;
         }
         self.rev += 1;
         self.shift_bookmarks(start, remove, insert.len());
@@ -900,6 +948,15 @@ impl Doc {
                     | "box-cut"
                     | "box-delete"
             );
+        let rows = if !multi && self.box_sel.is_none() && self.sel.is_none() && cmd == "insert-text"
+        {
+            self.lines
+                .get(self.cursor[0])
+                .map(|l| vec![(self.cursor[0], l.clone())])
+                .unwrap_or_default()
+        } else {
+            self.rows_for_mode(&extra_rows, full_sel)
+        };
         let req = EditReq {
             cmd: cmd.clone(),
             row: self.cursor[0],
@@ -912,17 +969,17 @@ impl Doc {
             text,
             box_sel: self.box_sel,
             cursors: all_cursors,
-            rows: self.rows_for_mode(&extra_rows, full_sel),
+            rows,
             ..Default::default()
         };
-        let Some(res) = edit_cmd::run(&req) else {
+        let Some(mut res) = edit_cmd::run(&req) else {
             self.tip = format!("未知命令: {cmd}");
             return None;
         };
         if let Some(t) = &res.tip {
             self.tip = t.clone();
         }
-        if let Some(patches) = res.patches.clone() {
+        if let Some(patches) = res.patches.take() {
             // 多光标: 几段补丁 (起始行是改动前的行号), 从下往上套; 整体记成一步撤销
             let old = self.lines.clone();
             let before = (self.cursor, self.sel);
@@ -931,7 +988,7 @@ impl Doc {
             for (s, n, ins) in ps {
                 self.splice(s, n, ins);
             }
-            self.undo.push(Undo {
+            self.push_undo_raw(Undo {
                 start: 0,
                 removed: old,
                 inserted: self.lines.clone(),
@@ -940,33 +997,31 @@ impl Doc {
             });
             self.redo.clear();
             self.dirty = true;
+        } else if res.changed {
+            let (start, remove) = (res.start, res.remove);
+            let end = (start + remove).min(self.lines.len());
+            let removed: Vec<String> = if start < end {
+                self.lines[start..end].to_vec()
+            } else {
+                Vec::new()
+            };
+            let before = (self.cursor, self.sel);
+            self.splice(start, remove, res.insert.clone());
+            self.push_undo(Undo {
+                start,
+                removed,
+                inserted: res.insert,
+                before,
+                after: res.cursor,
+            });
+            self.dirty = true;
+            self.redo.clear();
         }
         if let Some(cs) = &res.cursors {
             self.extra = cs.iter().skip(1).copied().collect();
         }
         if cmd.starts_with("box-") {
             self.box_sel = res.box_sel;
-        }
-        if res.changed && res.patches.is_none() {
-            let (start, remove) = (res.start, res.remove);
-            let removed: Vec<String> = self
-                .lines
-                .iter()
-                .skip(start)
-                .take(remove)
-                .cloned()
-                .collect();
-            let before = (self.cursor, self.sel);
-            self.splice(start, remove, res.insert.clone());
-            self.push_undo(Undo {
-                start,
-                removed,
-                inserted: res.insert.clone(),
-                before,
-                after: res.cursor,
-            });
-            self.dirty = true;
-            self.redo.clear();
         }
         self.cursor = res.cursor;
         self.sel = res.sel;
@@ -979,26 +1034,31 @@ impl Doc {
         res.clip
     }
 
+    #[inline]
+    fn push_undo_raw(&mut self, u: Undo) {
+        self.undo.push_back(u);
+        if self.undo.len() > 5000 {
+            self.undo.pop_front();
+        }
+    }
+
     /// 连续单字符键入合并成一步撤销 (同一行、紧挨着)
     fn push_undo(&mut self, u: Undo) {
-        if let Some(p) = self.undo.last_mut() {
+        if let Some(p) = self.undo.back_mut() {
             if p.start == u.start
                 && p.inserted.len() == 1
                 && u.removed.len() == 1
                 && u.inserted.len() == 1
                 && p.after == u.before.0
                 && u.before.1.is_none()
-                && u.inserted[0].chars().count() == p.inserted[0].chars().count() + 1
+                && char_len(&u.inserted[0]) == char_len(&p.inserted[0]) + 1
             {
                 p.inserted = u.inserted;
                 p.after = u.after;
                 return;
             }
         }
-        self.undo.push(u);
-        if self.undo.len() > 5000 {
-            self.undo.remove(0);
-        }
+        self.push_undo_raw(u);
     }
 
     /// 把 [start, start+remove) 行换成 insert, 记一步撤销, 光标放到 cursor
@@ -1009,19 +1069,18 @@ impl Doc {
         insert: Vec<String>,
         cursor: [usize; 2],
     ) {
-        let removed: Vec<String> = self
-            .lines
-            .iter()
-            .skip(start)
-            .take(remove)
-            .cloned()
-            .collect();
+        let end = (start + remove).min(self.lines.len());
+        let removed: Vec<String> = if start < end {
+            self.lines[start..end].to_vec()
+        } else {
+            Vec::new()
+        };
         if removed == insert {
             return;
         }
         let before = (self.cursor, self.sel);
         self.splice(start, remove, insert.clone());
-        self.undo.push(Undo {
+        self.push_undo_raw(Undo {
             start,
             removed,
             inserted: insert,
@@ -1600,7 +1659,7 @@ impl Doc {
     }
 
     pub fn undo(&mut self) {
-        let Some(u) = self.undo.pop() else {
+        let Some(u) = self.undo.pop_back() else {
             self.tip = "没有可撤销的操作".into();
             return;
         };
@@ -1627,7 +1686,7 @@ impl Doc {
         self.cursor = u.after;
         self.sel = None;
         self.anchor = None;
-        self.undo.push(u);
+        self.push_undo_raw(u);
         self.dirty = true;
         self.clamp();
         self.reveal = true;
@@ -1709,7 +1768,7 @@ impl Doc {
             use_regex: regex,
             whole_word: word,
             wrap: o.wrap,
-            lines: self.lines.clone(),
+            lines: Vec::new(),
             ..Default::default()
         }
     }
@@ -1719,9 +1778,8 @@ impl Doc {
         if needle.is_empty() || !o.regex {
             return None;
         }
-        let mut req = self.search_req("validate", needle, o);
-        req.lines = vec![]; // 只编译, 不需要正文
-        search_ops::run(&req).and_then(|r| r.error)
+        let req = self.search_req("validate", needle, o);
+        search_ops::run_with_lines(&req, &self.lines).and_then(|r| r.error)
     }
 
     /// 全部命中 (按位置排序, 最多 5001 处); 查找串空 = 没有
@@ -1729,7 +1787,8 @@ impl Doc {
         if needle.is_empty() {
             return Ok(vec![]);
         }
-        let res = search_ops::run(&self.search_req("hits", needle, o)).unwrap_or_default();
+        let res = search_ops::run_with_lines(&self.search_req("hits", needle, o), &self.lines)
+            .unwrap_or_default();
         match res.error {
             Some(e) => Err(e),
             None => Ok(res.hits),
@@ -1760,7 +1819,7 @@ impl Doc {
         req.col = pos[1];
         req.forward = forward;
         req.sel_start = if on_sel { Some(pos) } else { None };
-        let Some(res) = search_ops::run(&req) else {
+        let Some(res) = search_ops::run_with_lines(&req, &self.lines) else {
             return Ok(false);
         };
         if let Some(e) = res.error {
@@ -1862,11 +1921,10 @@ impl Doc {
         if let Some(seg) = self.selected_text_single() {
             let s = self.sel.unwrap_or_default();
             let mut req = self.search_req("match_expand", needle, o);
-            req.lines = vec![];
             req.seg = seg;
             req.repl = repl.into();
             // 没匹配上 = None; 只匹配了一部分 = text 为 None: 都当作"选中的不是一处命中"
-            if let Some(res) = search_ops::run(&req) {
+            if let Some(res) = search_ops::run_with_lines(&req, &self.lines) {
                 if let Some(e) = res.error {
                     return Err(e);
                 }
@@ -1915,7 +1973,7 @@ impl Doc {
         if in_sel {
             req.sel = self.sel;
         }
-        let Some(res) = search_ops::run(&req) else {
+        let Some(res) = search_ops::run_with_lines(&req, &self.lines) else {
             return Ok(0);
         };
         if let Some(e) = res.error {
@@ -1941,7 +1999,7 @@ impl Doc {
         self.sel = None;
         self.anchor = None;
         self.rev += 1;
-        self.undo.push(Undo {
+        self.push_undo_raw(Undo {
             start: first,
             removed,
             inserted,
@@ -2714,5 +2772,27 @@ b
         for (i, line) in split_lines.iter().enumerate() {
             assert_eq!(*line, format!("Content line #{:03}", i), "第 {} 行内容必须完整无损", i);
         }
+    }
+
+    #[test]
+    fn splice_after_insert_delete_preserves_lcs_changed_lines() {
+        let mut d = Doc::untitled(103, 1);
+        d.lines = vec!["A".into(), "B".into(), "C".into()];
+        d.base = d.lines.clone();
+        d.line_aligned = true;
+
+        // 先头部插一行再尾部删一行: 总行数重回 3, 但后续行已与 base 错位 1 行
+        d.splice(0, 0, vec!["X".into()]);
+        d.splice(3, 1, vec![]);
+        assert_eq!(d.lines, vec!["X", "A", "B"]);
+        assert_eq!(d.changed(), &[true, false, false]);
+
+        // 在错位后的第 1 行 ("A") 编辑再撤销: 不得误按 base[1]("B") 计算差异
+        d.goto(1, 1);
+        d.type_text("1");
+        assert_eq!(d.changed(), &[true, true, false]);
+        d.undo();
+        assert_eq!(d.lines, vec!["X", "A", "B"]);
+        assert_eq!(d.changed(), &[true, false, false]);
     }
 }

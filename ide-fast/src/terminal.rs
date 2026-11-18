@@ -106,7 +106,7 @@ enum Esc {
 
 /// 终端文本缓冲: 已完成的行 (带样式) + 正在写的当前行 (带光标列与样式)。完整解析 ANSI 转义与 SGR。
 pub struct LineBuffer {
-    done_spans: Vec<Vec<TermSpan>>,
+    done_spans: std::collections::VecDeque<Vec<TermSpan>>,
     done_text: String,
     line: Vec<TermCell>,
     col: usize,
@@ -121,7 +121,7 @@ pub struct LineBuffer {
 impl LineBuffer {
     pub fn new() -> Self {
         LineBuffer {
-            done_spans: Vec::new(),
+            done_spans: std::collections::VecDeque::new(),
             done_text: String::new(),
             line: Vec::new(),
             col: 0,
@@ -308,7 +308,7 @@ impl LineBuffer {
         let trimmed_text = line_text.trim_end();
         self.done_text.push_str(trimmed_text);
         self.done_text.push('\n');
-        self.done_spans.push(spans);
+        self.done_spans.push_back(spans);
         self.done_lines += 1;
         self.col = 0;
 
@@ -333,7 +333,7 @@ impl LineBuffer {
     fn cursor_up(&mut self, n: usize) {
         let count = n.max(1);
         for _ in 0..count {
-            if let Some(last_spans) = self.done_spans.pop() {
+            if let Some(last_spans) = self.done_spans.pop_back() {
                 if self.line.is_empty() {
                     for span in last_spans {
                         for c in span.text.chars() {
@@ -841,28 +841,35 @@ impl Drop for Session {
     }
 }
 
-/// 检测当前进程是否以系统管理员特权运行 (纯 Safe Rust 实现)
+#[inline]
+fn str_hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
+}
+
+/// 检测当前进程是否以系统管理员特权运行 (纯 Safe Rust + OnceLock 进程级缓存, 无裸盘访问告警与零子进程开销)
 pub fn detect_is_admin() -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new("net")
-            .arg("session")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(0x0800_0000)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new("id")
-            .arg("-u")
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
-            .unwrap_or(false)
-    }
+    static IS_ADMIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *IS_ADMIN.get_or_init(|| {
+        #[cfg(windows)]
+        {
+            let sys_root = std::env::var_os("SystemRoot")
+                .or_else(|| std::env::var_os("WINDIR"))
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
+            std::fs::read_dir(sys_root.join("System32").join("config").join("systemprofile")).is_ok()
+        }
+        #[cfg(not(windows))]
+        {
+            std::process::Command::new("id")
+                .arg("-u")
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+                .unwrap_or(false)
+        }
+    })
 }
 
 pub struct Terminal {
@@ -874,6 +881,7 @@ pub struct Terminal {
     pub focus_input: bool,
     /// 一次性命令的输出 (会话输出在 `buf` 里, 显示用 `display()`)
     pub output: String,
+    output_rev: u64,
     pub history: Vec<String>,
     hist_pos: Option<usize>,
     replace_doc: Option<u64>,
@@ -887,7 +895,8 @@ pub struct Terminal {
     pub session_cwd: Option<PathBuf>,
     /// 最近有输入 / 输出到这个时刻之前, 界面用快节奏刷新; 之后空闲慢刷新
     hot_until: Option<std::time::Instant>,
-    shown: std::cell::RefCell<Option<((usize, u64), String)>>,
+    shown: std::cell::RefCell<Option<((u64, usize, u64, u64), String)>>,
+    job_cache: std::cell::RefCell<Option<((u64, usize, u64, u64, u32, [u8; 4]), egui::text::LayoutJob)>>,
 }
 
 impl Terminal {
@@ -899,6 +908,7 @@ impl Terminal {
             is_admin: detect_is_admin(),
             focus_input: false,
             output: String::new(),
+            output_rev: 0,
             history: vec![],
             hist_pos: None,
             replace_doc: None,
@@ -910,6 +920,7 @@ impl Terminal {
             session_cwd: None,
             hot_until: None,
             shown: Default::default(),
+            job_cache: Default::default(),
         }
     }
 
@@ -977,6 +988,7 @@ impl Terminal {
                 ""
             }
         ));
+        self.output_rev = self.output_rev.wrapping_add(1);
         self.buf.feed(&format!(
             "{p_color}{prompt_prefix} {}>\x1b[0m \x1b[1;37m{cmd}\x1b[0m{}\n",
             cwd.display(),
@@ -1003,21 +1015,40 @@ impl Terminal {
     /// 清屏 (一次性输出和会话输出都清)
     pub fn clear(&mut self) {
         self.output.clear();
+        self.output_rev = self.output_rev.wrapping_add(1);
         self.buf.clear();
     }
 
-    /// 要显示的富文本排版作业
+    /// 要显示的富文本排版作业 (带版本号 + 内容哈希缓存, 同长度替换不会碰撞)
     pub fn layout_job(
         &self,
         tpx: f32,
         default_fg: egui::Color32,
     ) -> egui::text::LayoutJob {
-        self.buf.build_layout_job(tpx, default_fg, &self.output)
+        let key = (
+            self.output_rev,
+            self.output.len(),
+            str_hash(&self.output),
+            self.buf.version(),
+            tpx.to_bits(),
+            default_fg.to_array(),
+        );
+        let mut cache = self.job_cache.borrow_mut();
+        if cache.as_ref().map(|c| c.0) != Some(key) {
+            let job = self.buf.build_layout_job(tpx, default_fg, &self.output);
+            *cache = Some((key, job));
+        }
+        cache.as_ref().expect("刚算过").1.clone()
     }
 
     /// 要显示的全部文本 (纯文本模式，供搜索与剪贴板用): 一次性命令的输出在前, 会话输出在后
     pub fn display(&self) -> String {
-        let key = (self.output.len(), self.buf.version());
+        let key = (
+            self.output_rev,
+            self.output.len(),
+            str_hash(&self.output),
+            self.buf.version(),
+        );
         let mut c = self.shown.borrow_mut();
         if c.as_ref().map(|c| c.0) != Some(key) {
             let mut s = self.output.clone();
@@ -1201,11 +1232,13 @@ impl Terminal {
                 if !self.output.ends_with('\n') {
                     self.output.push('\n');
                 }
+                self.output_rev = self.output_rev.wrapping_add(1);
                 self.rx = None;
                 true
             }
             Ok((_, Err(e))) => {
                 self.output.push_str(&format!("[执行失败: {e}]\n"));
+                self.output_rev = self.output_rev.wrapping_add(1);
                 self.rx = None;
                 true
             }
@@ -1564,5 +1597,20 @@ mod tests {
         assert_eq!(t.session_cwd.as_ref(), Some(&base));
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_layout_job_invalidates_on_same_length_output_replacement() {
+        let mut t = Terminal::new();
+        t.output = "ok\n".into();
+        let fg = egui::Color32::WHITE;
+        assert_eq!(t.display(), "ok\n");
+        assert_eq!(t.layout_job(13.0, fg).text, "ok\n");
+
+        // 同长度内容替换: 缓存必须立即失效并反映新文本
+        t.output = "no\n".into();
+        t.output_rev = t.output_rev.wrapping_add(1);
+        assert_eq!(t.display(), "no\n");
+        assert_eq!(t.layout_job(13.0, fg).text, "no\n");
     }
 }

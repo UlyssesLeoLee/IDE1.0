@@ -346,31 +346,147 @@ impl TypeConfig {
     /// 高亮一行 — 返回 (col_start, col_end, TokenKind) 列表.
     /// 与参考实现的 `ColorInfoArr` 类似, 但简化为单行 + char offset.
     pub fn highlight_line(&self, line: &str) -> Vec<(i32, i32, TokenKind)> {
-        let mut out = Vec::new();
-        let chars: Vec<char> = line.chars().collect();
-        let mut i = 0;
-        // 下标全程是**字符**下标 (不是字节): 老写法用 `line[i..]` 按字节切片, 一遇到中日文就在字符边界中间 panic
-        let starts_at = |at: usize, pat: &str| -> bool {
-            for (k, pc) in (at..).zip(pat.chars()) {
-                if chars.get(k) != Some(&pc) {
-                    return false;
-                }
-            }
-            true
-        };
-        let find_from = |from: usize, pat: &str| -> Option<usize> {
-            (from..=chars.len()).find(|&j| starts_at(j, pat))
-        };
-
-        // 1. 行注释 (整行)
+        if line.is_empty() {
+            return Vec::new();
+        }
+        // 1. 行注释 (整行) — 先于任何分配检查, 全 ASCII 行零堆分配
         if let Some(ref lc) = self.line_comment {
             if line.starts_with(lc.as_str()) {
-                return vec![(0, chars.len() as i32, TokenKind::Comment)];
+                let len = if line.is_ascii() {
+                    line.len()
+                } else {
+                    line.chars().count()
+                };
+                return vec![(0, len as i32, TokenKind::Comment)];
             }
         }
 
+        let mut out = Vec::new();
+        if line.is_ascii() {
+            let bytes = line.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() {
+                let b = bytes[i];
+                let col = i as i32;
+
+                // 2. 块注释
+                if let Some((ref open, ref close)) = self.block_comment {
+                    if bytes[i..].starts_with(open.as_bytes()) {
+                        let search_start = i + open.len();
+                        if let Some(rel) = line[search_start..].find(close.as_str()) {
+                            let end = search_start + rel + close.len();
+                            out.push((col, end as i32, TokenKind::Comment));
+                            i = end;
+                            continue;
+                        } else {
+                            out.push((col, bytes.len() as i32, TokenKind::Comment));
+                            return out;
+                        }
+                    }
+                }
+
+                // 3. 字符串
+                let mut matched_str = false;
+                for delim in &self.strings {
+                    if bytes[i..].starts_with(delim.open.as_bytes()) {
+                        let after_open = i + delim.open.len();
+                        let close_bytes = delim.close.as_bytes();
+                        let esc_b = delim
+                            .escape
+                            .as_deref()
+                            .map(|e| e.chars().next().unwrap_or('\\'))
+                            .and_then(|c| (c as u32).try_into().ok())
+                            .filter(|&eb: &u8| eb < 0x80);
+                        let mut end = after_open;
+                        while end < bytes.len() {
+                            if let Some(eb) = esc_b {
+                                if end + 1 < bytes.len() && bytes[end] == eb {
+                                    end += 2;
+                                    continue;
+                                }
+                            }
+                            if bytes[end..].starts_with(close_bytes) {
+                                end += close_bytes.len();
+                                break;
+                            }
+                            if delim.line_only && bytes[end] == b'\n' {
+                                break;
+                            }
+                            end += 1;
+                        }
+                        out.push((col, end as i32, TokenKind::String));
+                        i = end;
+                        matched_str = true;
+                        break;
+                    }
+                }
+                if matched_str {
+                    continue;
+                }
+
+                // 4. 数字
+                if b.is_ascii_digit() {
+                    let mut end = i;
+                    while end < bytes.len()
+                        && (bytes[end].is_ascii_alphanumeric()
+                            || bytes[end] == b'_'
+                            || bytes[end] == b'.')
+                    {
+                        end += 1;
+                    }
+                    out.push((col, end as i32, TokenKind::Number));
+                    i = end;
+                    continue;
+                }
+
+                // 5. 标识符 (关键字/类型) — 零堆分配切片查表
+                if b.is_ascii_alphabetic() || b == b'_' {
+                    let mut end = i;
+                    while end < bytes.len()
+                        && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
+                    {
+                        end += 1;
+                    }
+                    let word = &line[i..end];
+                    let kind = if self.keywords.iter().any(|k| k == word) {
+                        TokenKind::Keyword
+                    } else if self.type_keywords.iter().any(|k| k == word) {
+                        TokenKind::Type
+                    } else {
+                        TokenKind::Default
+                    };
+                    if kind != TokenKind::Default {
+                        out.push((col, end as i32, kind));
+                    }
+                    i = end;
+                    continue;
+                }
+
+                // 6. 默认跳过
+                i += 1;
+            }
+            return out;
+        }
+
+        let chars: Vec<(usize, char)> = line.char_indices().collect();
+        let mut i = 0;
+        let byte_at = |idx: usize| -> usize { chars.get(idx).map(|&(b, _)| b).unwrap_or(line.len()) };
+        // 下标全程是**字符**下标 (不是字节), 借助 chars 里的字节偏移做零拷贝切片比对
+        let starts_at = |at: usize, pat: &str| -> bool {
+            at <= chars.len() && line[byte_at(at)..].starts_with(pat)
+        };
+        let find_from = |from: usize, pat: &str| -> Option<usize> {
+            if pat.is_empty() {
+                return Some(from.min(chars.len()));
+            }
+            let start_byte = byte_at(from);
+            let rel_byte = line[start_byte..].find(pat)?;
+            let target_byte = start_byte + rel_byte;
+            chars.binary_search_by_key(&target_byte, |&(b, _)| b).ok()
+        };
+
         while i < chars.len() {
-            let c = chars[i];
+            let c = chars[i].1;
             let col = i as i32;
 
             // 2. 块注释
@@ -394,21 +510,21 @@ impl TypeConfig {
             for delim in &self.strings {
                 if starts_at(i, &delim.open) {
                     let after_open = i + delim.open.chars().count();
+                    let close_chars = delim.close.chars().count();
+                    let esc_ch = delim.escape.as_deref().map(|e| e.chars().next().unwrap_or('\\'));
                     let mut end = after_open;
                     while end < chars.len() {
-                        if let Some(ref esc) = delim.escape {
-                            if end < chars.len() - 1
-                                && chars[end] == esc.chars().next().unwrap_or('\\')
-                            {
+                        if let Some(ec) = esc_ch {
+                            if end + 1 < chars.len() && chars[end].1 == ec {
                                 end += 2;
                                 continue;
                             }
                         }
                         if starts_at(end, &delim.close) {
-                            end += delim.close.chars().count();
+                            end += close_chars;
                             break;
                         }
-                        if delim.line_only && chars[end] == '\n' {
+                        if delim.line_only && chars[end].1 == '\n' {
                             break;
                         }
                         end += 1;
@@ -427,9 +543,9 @@ impl TypeConfig {
             if c.is_ascii_digit() {
                 let mut end = i;
                 while end < chars.len()
-                    && (chars[end].is_ascii_alphanumeric()
-                        || chars[end] == '_'
-                        || chars[end] == '.')
+                    && (chars[end].1.is_ascii_alphanumeric()
+                        || chars[end].1 == '_'
+                        || chars[end].1 == '.')
                 {
                     end += 1;
                 }
@@ -438,16 +554,17 @@ impl TypeConfig {
                 continue;
             }
 
-            // 5. 标识符 (关键字/类型)
+            // 5. 标识符 (关键字/类型) — 零堆分配切片查表
             if c.is_alphabetic() || c == '_' {
                 let mut end = i;
-                while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
+                while end < chars.len() && (chars[end].1.is_alphanumeric() || chars[end].1 == '_')
+                {
                     end += 1;
                 }
-                let word: String = chars[i..end].iter().collect();
-                let kind = if self.keywords.contains(&word) {
+                let word = &line[byte_at(i)..byte_at(end)];
+                let kind = if self.keywords.iter().any(|k| k == word) {
                     TokenKind::Keyword
-                } else if self.type_keywords.contains(&word) {
+                } else if self.type_keywords.iter().any(|k| k == word) {
                     TokenKind::Type
                 } else {
                     TokenKind::Default

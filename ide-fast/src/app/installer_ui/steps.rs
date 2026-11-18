@@ -169,7 +169,7 @@ impl App {
             ui,
             &mut self.installer.add_path,
             crate::i18n::trz("将 IDE1.0 添加至全局环境变量 PATH"),
-            crate::i18n::trz("可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出"),
+            crate::i18n::trz("可在任意终端 (PowerShell / CMD) 键入 IDE1.0 秒级呼出"),
             "01",
             Color32::from_rgb(14, 165, 233),
         );

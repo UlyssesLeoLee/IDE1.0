@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.5 — 2026-11-18
+
+### 启动与内核全面性能优化、IDE1.0 品牌与环境变量统一、数学化性能测试框架升级与 10 项对抗式审核加固
+
+本版本聚焦启动链路零冗余 I/O、核心文本操作时间复杂度降阶、全产品命名向 `IDE1.0` 对齐，并依据对抗式审核结果系统性修复了增量缓存不变量、并发搜索复杂度、系统亮度读取开销、Minimap/语法高亮堆分配以及性能统计学与 E2E 测试报告严谨性。
+
+#### 1. 启动与交互性能优化
+- **零阻塞冷启动**：延迟启动非首屏字体、图标与系统字体枚举；`apply_settings` 启动路径消除无谓磁盘写入，新增 `theme_tc` 主题缓存与无落盘切换路径 `set_theme_plugin_no_save`。
+- **文档与文本内核提速**：`editcore` 引入单遍 SIMD `normalize_to_lf` / `normalize_to_lf_owned`、`detect_charset` 0x1B 提前短路、小选区上下文按需构建 (`rows.len() > 16`)；`Doc` 撤销栈改用 `VecDeque<Undo>` O(1) 环形淘汰、`rows_for_mode` 栈区快路径与单行 `insert-text` / `Doc::splice` 局部行比较。
+- **增量 Diff 与渲染缓存**：`Doc::changed_lines` 新增 `line_aligned` 不变量守卫下的等长 O(N) 快路径，在插入/删行导致行对齐失效后自动回退严格 LCS 差分并恢复精度；Minimap 行宽计算改为 256 字符 + 2048 字节探测的零堆分配扫描；`TypeConfig::highlight_line` 新增全 ASCII 零堆分配快路径及整行注释前置检查与 SIMD `str::find`。
+
+#### 2. `IDE1.0` 统一命名与无痛兼容
+- 安装包（Setup/MSI/Portable）、版本资源（`IDE1.0.exe`）、打印页眉、标签跳转提示、测试矩阵及文档全面更名为 `IDE1.0`。
+- 新增 `IDE10_TRACE` / `IDE10_SETTINGS` / `IDE10_BACKDROP` / `IDE10_MULTI` / `IDE10_NO_NETWORK` / `IDE10_OFFLINE` 与 `"IDE1.0-OPEN"` IPC 协议，同时完全兼容旧 `IDE_FAST_*` 与 `"IDE-FAST-OPEN"`；更新临时文件前缀为 `"IDE1.0-update"`。
+
+#### 3. 数学化性能测试框架升级与对抗式审核修复
+- **真实统计学度量**：`perf_bench.rs` 与 `tests/perf-math-bench.ps1` 引入精确双侧 95% Student's $t$ 置信区间（下界非负截断）、Tukey 1.5×IQR 离群值计数与去极值均值、$N < 5$ 样本分位点置空保护、RAII 临时目录自动清理、1MB 单行搜索 SLA 门禁 (`<= 15 ms`)、4 尺度 `[5k, 20k, 80k, 200k]` OLS 对数-对数复杂度拟合（含字形图集预热与每尺度唯一指标名），以及 `-Compare` 基线对比回归门禁（`>+30%` 且 `>+1.0 ms` 即拦截）。
+- **并发、终端与系统集成加固**：`search_ops` 消除单行多命中场景的 $O(H \cdot L)$ 退化（ASCII/UTF-8 增量光标 $O(L + H)$）；`terminal` 移除 `\\.\PHYSICALDRIVE0` 提权探测并引入 `output_rev` + 内容哈希缓存键；`theme_luminance` 增加 2s TTL 缓存，并在窗口重新聚焦与主题切换时调用 `invalidate_cache()`；`e2e-run-all.ps1` 严格校验 `$LASTEXITCODE` 与失败用例数并禁止 `0` 套件静默通过。
+
 ## 0.8.4 — 2026-11-18
 
 ### 便笺体验全面升级、大选取复制零丢失、Agent专属便笺工具与主题按钮定制、托盘退出强制置顶与IDE1.0命名对齐

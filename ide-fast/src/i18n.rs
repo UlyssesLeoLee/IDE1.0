@@ -120,7 +120,11 @@ pub fn tr(key: &'static str) -> &'static str {
 }
 
 /// 中文原文 -> 当前语言 (命令表的标签 / 分组); 没收录 = 原样返回
+#[inline]
 pub fn trz(zh: &'static str) -> &'static str {
+    if matches!(cur(), Lang::Zh) {
+        return zh;
+    }
     zh_index().get(zh).map(|r| pick(r)).unwrap_or(zh)
 }
 
@@ -2863,7 +2867,7 @@ pub const CMD_T: &[Row] = &[
     (
         "与本地文件比较...",
         [
-            "与本地文件比较…",
+            "与本地文件比较...",
             "ローカルファイルと比較…",
             "Compare with Local File…",
         ],
@@ -2911,7 +2915,7 @@ pub const CMD_T: &[Row] = &[
     (
         "查看差异列表...",
         [
-            "查看差异列表…",
+            "查看差异列表...",
             "差分リストを表示…",
             "View Diff List…",
         ],
@@ -3029,11 +3033,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出",
+        "可在任意终端 (PowerShell / CMD) 键入 IDE1.0 秒级呼出",
         [
-            "可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出",
-            "任意のターミナル (PowerShell / CMD) から ide-fast で即座に起動できます",
-            "Launch ide-fast instantly from any terminal (PowerShell / CMD)",
+            "可在任意终端 (PowerShell / CMD) 键入 IDE1.0 秒级呼出",
+            "任意のターミナル (PowerShell / CMD) から IDE1.0 で即座に起動できます",
+            "Launch IDE1.0 instantly from any terminal (PowerShell / CMD)",
         ],
     ),
     (
@@ -3285,11 +3289,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)",
+        "已添加至全局 PATH (终端键入 IDE1.0 秒级唤醒)",
         [
-            "已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)",
-            "環境変数 PATH に追加済み (ターミナルから ide-fast で即起動)",
-            "Added to system PATH (launch ide-fast instantly from terminal)",
+            "已添加至全局 PATH (终端键入 IDE1.0 秒级唤醒)",
+            "環境変数 PATH に追加済み (ターミナルから IDE1.0 で即起動)",
+            "Added to system PATH (launch IDE1.0 instantly from terminal)",
         ],
     ),
     (
@@ -3479,8 +3483,9 @@ mod tests {
             assert!(seen.insert(*k), "重复的键 {k}");
         }
         let mut seen = std::collections::HashSet::new();
-        for (k, _) in CMD_T {
+        for (k, row) in CMD_T {
             assert!(seen.insert(*k), "命令表重复的键 {k}");
+            assert_eq!(*k, row[0], "CMD_T 键必须与中文译文一致以保证 Lang::Zh O(1) 直通");
         }
     }
 

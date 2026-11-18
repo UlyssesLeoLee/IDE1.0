@@ -301,7 +301,7 @@ pub fn stage(
     } else {
         "tmp"
     };
-    let tmp = crate::fsx::unique_temp(tmp_dir, "ide-fast-update", ext);
+    let tmp = crate::fsx::unique_temp(tmp_dir, "IDE1.0-update", ext);
     let r = download_checked(f, asset, c.kind, &table, &tmp);
     let sha = match r {
         Ok(s) => s,

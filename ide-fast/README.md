@@ -1,4 +1,4 @@
-# IDE1.0 高速版 (ide-fast)
+# IDE1.0 (Native High-Speed Edition, crate `ide-fast`)
 
 原生 Rust (egui / OpenGL) 的 Sakura 风格文本编辑器。**不依赖 WebView2**, 进程一起来就直接建原生窗口。
 
@@ -27,7 +27,7 @@ Tauri 版的界面是网页。Windows 上每次启动都要先拉起 WebView2 (�
 
 ```
 ide-fast/
-  Cargo.toml          独立 crate (workspace 成员), 二进制名 ide-fast
+  Cargo.toml          独立 crate (workspace 成员, package = "ide-fast", 发行二进制名 IDE1.0.exe)
   src/main.rs         入口 + 启动耗时追踪 (IDE_FAST_TRACE=1)
   src/app.rs          菜单 / 标签 / 编辑区绘制与输入 / 查找条 / 状态栏
   src/doc.rs          文档模型: 行向量 + 光标 / 选区 + 撤销栈, 桥接 editcore
@@ -45,9 +45,10 @@ ide-fast/
 ## 构建与测量
 
 ```bash
-cargo build --release -p ide-fast          # 产物: <target>/release/ide-fast.exe
+cargo build --release -p ide-fast          # 构建并同步产物: <target>/release/IDE1.0.exe
 cargo test -p ide-fast                     # 文档模型单测 (桥接 editcore 的行为)
-IDE_FAST_TRACE=1 ide-fast.exe              # stderr 打印 "进程入口 -> 窗口 + GL -> 字体 -> 首帧" 的毫秒数
+IDE_FAST_TRACE=1 IDE1.0.exe                # 记录 "进程入口 -> 窗口 + GL -> 字体 -> 首帧" 的毫秒数
+powershell -File tests/perf-math-bench.ps1 # 运行数学化性能回归与复杂度验算测试框架
 ```
 
 独立安装包见 `packaging/README.md`。

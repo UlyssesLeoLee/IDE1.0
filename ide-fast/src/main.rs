@@ -83,7 +83,7 @@ mod view;
 
 use std::time::Instant;
 
-/// 启动耗时追踪。`IDE_FAST_TRACE=1` 打到 stderr; 值是文件路径 (含 `/` `\` 或 `.`) 就追加写到该文件
+/// 启动耗时追踪。`IDE10_TRACE=1` (兼容旧名 `IDE_FAST_TRACE`) 打到 stderr; 值是文件路径 (含 `/` `\` 或 `.`) 就追加写到该文件
 /// (发行版是 GUI 子系统没有控制台, 基准脚本 `tests/perf.ps1` 用文件)。不设变量时 `mark` 只是一次布尔判断。
 #[derive(Clone)]
 pub struct Trace {
@@ -93,7 +93,7 @@ pub struct Trace {
 }
 impl Trace {
     pub fn new() -> Self {
-        let v = std::env::var_os("IDE_FAST_TRACE");
+        let v = std::env::var_os("IDE10_TRACE").or_else(|| std::env::var_os("IDE_FAST_TRACE"));
         let file = v
             .as_ref()
             .filter(|s| s.to_string_lossy().contains(['/', '\\', '.']))

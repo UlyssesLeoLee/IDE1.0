@@ -10,8 +10,8 @@ use std::collections::HashMap;
 
 pub(super) struct Ctx<'a> {
     pub req: &'a EditReq,
-    /// 行号 -> 在 req.rows 里的位置
-    idx: HashMap<usize, usize>,
+    /// 行号 -> 在 req.rows 里的位置 (仅在行数 > 16 时建立 HashMap, 小请求零堆分配线性查找)
+    idx: Option<HashMap<usize, usize>>,
     /// 光标行 / 列 (列已夹进行长)
     pub row: usize,
     pub col: usize,
@@ -25,10 +25,15 @@ pub(super) struct Ctx<'a> {
 
 impl<'a> Ctx<'a> {
     pub fn new(req: &'a EditReq) -> Self {
-        let mut idx = HashMap::with_capacity(req.rows.len());
-        for (i, (r, _)) in req.rows.iter().enumerate() {
-            idx.entry(*r).or_insert(i); // 重复行号: 第一个算数
-        }
+        let idx = if req.rows.len() > 16 {
+            let mut map = HashMap::with_capacity(req.rows.len());
+            for (i, (r, _)) in req.rows.iter().enumerate() {
+                map.entry(*r).or_insert(i); // 重复行号: 第一个算数
+            }
+            Some(map)
+        } else {
+            None
+        };
         let mut cx = Ctx {
             req,
             idx,
@@ -55,14 +60,26 @@ impl<'a> Ctx<'a> {
 
     /// 这一行前端交上来了吗
     pub fn has_row(&self, r: usize) -> bool {
-        self.idx.contains_key(&r)
+        match &self.idx {
+            Some(idx) => idx.contains_key(&r),
+            None => self.req.rows.iter().any(|(row, _)| *row == r),
+        }
     }
     /// 某一行的字符 (没交上来的行是空的, 先用 `has_row` 查)
     pub fn line(&self, r: usize) -> Vec<char> {
-        self.idx
-            .get(&r)
-            .map(|&i| chars_of(&self.req.rows[i].1))
-            .unwrap_or_default()
+        match &self.idx {
+            Some(idx) => idx
+                .get(&r)
+                .map(|&i| chars_of(&self.req.rows[i].1))
+                .unwrap_or_default(),
+            None => self
+                .req
+                .rows
+                .iter()
+                .find(|(row, _)| *row == r)
+                .map(|(_, s)| chars_of(s))
+                .unwrap_or_default(),
+        }
     }
     /// 光标行的文本
     pub fn line_str(&self) -> String {

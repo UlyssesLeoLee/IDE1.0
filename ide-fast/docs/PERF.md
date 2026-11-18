@@ -1,6 +1,6 @@
-# ide-fast 性能基线
+# IDE1.0 性能基线与数学化评测体系
 
-工具: `tests/perf.ps1` (启动 + 空闲资源, 对任意 exe) 和 `src/app/perf_bench.rs` (引擎无头基准, `cargo test -p ide-fast --release perf_bench -- --ignored --nocapture --test-threads=1`)。
+工具: `tests/perf-math-bench.ps1` (数学统计分布 + OLS 复杂度验算 + SLA 门禁)、`ide-fast/tests/perf.ps1` (冷启动 + 空闲资源, 对 `IDE1.0.exe`) 和 `src/app/perf_bench.rs` (引擎无头数学化基准, `cargo test -p ide-fast --release perf_bench -- --ignored --nocapture --test-threads=1`)。
 改动影响启动 / 打开 / 绘制路径时: 改前 `perf.ps1 -Json before.json`, 改后 `-Compare before.json`, 提交说明写出对比 (见 CODING-STANDARDS §8)。
 
 ## 机器

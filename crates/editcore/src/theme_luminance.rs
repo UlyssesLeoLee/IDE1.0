@@ -182,14 +182,45 @@ impl DesktopLuminance {
 /// 返回 `None` 表示读不到 (非 Windows / 键值不存在 / 权限不足) —— 调用方
 /// 应回退到 `DesktopLuminance::Dark`。
 #[cfg(target_os = "windows")]
+static REG_LIGHT_CACHE: std::sync::OnceLock<
+    std::sync::Mutex<Option<(Option<bool>, std::time::Instant)>>,
+> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+const REG_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// 主动失效系统主题注册表缓存 (切换主题或窗口重获焦点时调用)
+pub fn invalidate_cache() {
+    #[cfg(target_os = "windows")]
+    if let Some(m) = REG_LIGHT_CACHE.get() {
+        if let Ok(mut guard) = m.lock() {
+            *guard = None;
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn read_apps_use_light_theme() -> Option<bool> {
+    let lock = REG_LIGHT_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    let now = std::time::Instant::now();
+    if let Ok(guard) = lock.lock() {
+        if let Some((cached, at)) = *guard {
+            if now.saturating_duration_since(at) < REG_CACHE_TTL {
+                return cached;
+            }
+        }
+    }
     // windows-registry 0.3: CURRENT_USER 是 &'static Key, open() 返回子 Key,
     // 0.3 的方法名是 get_u32 (无 value_ 中缀); 0.2 是 get_value::<u32>().
-    let personalize = windows_registry::CURRENT_USER
+    let res = windows_registry::CURRENT_USER
         .open(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
-        .ok()?;
-    let val: u32 = personalize.get_u32("AppsUseLightTheme").ok()?;
-    Some(val != 0)
+        .ok()
+        .and_then(|p| p.get_u32("AppsUseLightTheme").ok())
+        .map(|val| val != 0);
+    if let Ok(mut guard) = lock.lock() {
+        *guard = Some((res, now));
+    }
+    res
 }
 
 /// 读取 Windows 用户首选区域与界面语言 (如 "zh-CN", "en-US", "ja-JP")

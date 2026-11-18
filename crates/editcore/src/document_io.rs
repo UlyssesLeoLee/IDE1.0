@@ -183,11 +183,32 @@ pub fn detect_eol(s: &str) -> (Eol, bool) {
     (eol, kinds > 1)
 }
 
+fn normalize_to_lf_owned(s: String) -> String {
+    if !s.contains('\r') {
+        return s;
+    }
+    normalize_to_lf(&s)
+}
+
 pub fn normalize_to_lf(s: &str) -> String {
     if !s.contains('\r') {
         return s.to_string();
     }
-    s.replace("\r\n", "\n").replace('\r', "\n")
+    let mut out = String::with_capacity(s.len());
+    let mut start = 0usize;
+    let bytes = s.as_bytes();
+    while let Some(rel) = s[start..].find('\r') {
+        let cr = start + rel;
+        out.push_str(&s[start..cr]);
+        out.push('\n');
+        start = if cr + 1 < bytes.len() && bytes[cr + 1] == b'\n' {
+            cr + 2
+        } else {
+            cr + 1
+        };
+    }
+    out.push_str(&s[start..]);
+    out
 }
 
 pub fn apply_eol(lf: &str, eol: Eol) -> String {
@@ -234,9 +255,10 @@ pub fn detect_charset(b: &[u8]) -> Charset {
     if let (Some(c), _) = sniff_bom(b) {
         return c;
     }
-    // ISO-2022-JP 是 7 位编码, 本身就是合法 UTF-8, 所以必须先于 UTF-8 判断
-    if b.windows(3)
-        .any(|w| w == b"\x1b$B" || w == b"\x1b$@" || w == b"\x1b(J")
+    // ISO-2022-JP 是 7 位编码, 本身就是合法 UTF-8, 所以必须先于 UTF-8 判断 (先扫 0x1b 快速短路)
+    if b.contains(&0x1b)
+        && b.windows(3)
+            .any(|w| w == b"\x1b$B" || w == b"\x1b$@" || w == b"\x1b(J")
     {
         return Charset::Iso2022Jp;
     }
@@ -445,7 +467,7 @@ pub fn decode_document(bytes: &[u8], forced: Option<Charset>) -> DocFile {
     };
     let (eol, mixed) = detect_eol(&text);
     DocFile {
-        content: normalize_to_lf(&text),
+        content: normalize_to_lf_owned(text),
         charset,
         bom,
         eol,

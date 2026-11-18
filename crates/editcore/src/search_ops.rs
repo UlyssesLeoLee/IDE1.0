@@ -194,9 +194,17 @@ fn friendly_error(raw: &str) -> String {
     msg.to_string()
 }
 
-/// 一行里的全部命中: (起始字节, 结束字节, 起始列, 长度(字符数)); 空匹配不算
-fn line_matches(re: &Regex, line: &str, whole_word: bool) -> Vec<(usize, usize)> {
+#[inline]
+fn line_matches_limited(
+    re: &Regex,
+    line: &str,
+    whole_word: bool,
+    limit: usize,
+) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
+    if limit == 0 {
+        return out;
+    }
     let mut pos = 0usize;
     while pos <= line.len() {
         let Some((ms, me)) = re.find_at(line, pos) else {
@@ -215,9 +223,26 @@ fn line_matches(re: &Regex, line: &str, whole_word: bool) -> Vec<(usize, usize)>
             }
         }
         out.push((ms, me));
+        if out.len() >= limit {
+            break;
+        }
         pos = me;
     }
     out
+}
+
+/// 一行里的全部命中: (起始字节, 结束字节); 空匹配不算
+fn line_matches(re: &Regex, line: &str, whole_word: bool) -> Vec<(usize, usize)> {
+    line_matches_limited(re, line, whole_word, usize::MAX)
+}
+
+#[inline]
+fn char_count_fast(s: &str, known_ascii: bool) -> usize {
+    if known_ascii || s.is_ascii() {
+        s.len()
+    } else {
+        s.chars().count()
+    }
 }
 
 fn next_char(s: &str, i: usize) -> usize {
@@ -231,8 +256,27 @@ fn next_char(s: &str, i: usize) -> usize {
 fn all_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> Vec<Hit> {
     let mut hits = Vec::new();
     for (row, line) in lines.iter().enumerate() {
-        for (s, e) in line_matches(re, line, req.whole_word) {
-            let (col, len) = byte_span_to_cols(line, s, e);
+        let remaining = (MAX_HITS + 1).saturating_sub(hits.len());
+        if remaining == 0 {
+            return hits;
+        }
+        let matches = line_matches_limited(re, line, req.whole_word, remaining);
+        if matches.is_empty() {
+            continue;
+        }
+        let ascii = line.is_ascii();
+        let (mut last_byte, mut last_col) = (0usize, 0usize);
+        for (s, e) in matches {
+            let (col, len) = if ascii {
+                (s, e - s)
+            } else {
+                let gap = line[last_byte..s].chars().count();
+                let col = last_col + gap;
+                let len = line[s..e].chars().count();
+                last_col = col + len;
+                last_byte = e;
+                (col, len)
+            };
             hits.push(Hit { row, col, len });
             if hits.len() > MAX_HITS {
                 return hits;
@@ -280,6 +324,14 @@ fn expand(caps: &Caps, repl: &str, use_regex: bool) -> String {
 }
 
 pub fn run(req: &SearchReq) -> Option<SearchRes> {
+    run_with_lines(req, &[])
+}
+
+/// 零拷贝查找/替换入口: 当 `req.doc_id` 为 None 且 `req.lines` 为空时直接借用 `external_lines`, 避免克隆整篇文档
+pub fn run_with_lines(req: &SearchReq, external_lines: &[String]) -> Option<SearchRes> {
+    if req.doc_id.is_none() && req.lines.is_empty() {
+        return run_on(req, external_lines);
+    }
     // 文档正文: 带 doc_id 的走镜像 (登记 / 取用 / 丢弃), 否则就是请求里的 lines
     let mirrored: Option<std::sync::Arc<Vec<String>>> = match &req.doc_id {
         Some(id) if req.op == "forget" => {
@@ -326,11 +378,6 @@ fn run_on(req: &SearchReq, lines: &[String]) -> Option<SearchRes> {
         "match_expand" => op_match_expand(&re, req), // 没匹配上 = None (HTTP 上是 400), 前端据此当作"不是一处命中"
         _ => None,
     }
-}
-
-/// 命中处的 (列, 长度), 按码点
-fn byte_span_to_cols(line: &str, s: usize, e: usize) -> (usize, usize) {
-    (line[..s].chars().count(), line[s..e].chars().count())
 }
 
 fn op_hits(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
@@ -404,11 +451,27 @@ fn op_replace_all(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
         None => (0, n_rows - 1, 0, usize::MAX),
     };
     for (r, line) in lines.iter().enumerate().take(r1 + 1).skip(r0) {
+        let matches = line_matches(re, line, req.whole_word);
+        if matches.is_empty() {
+            continue;
+        }
         let from = if r == r0 { c0 } else { 0 };
         let to = if r == r1 { c1 } else { usize::MAX };
-        let (mut out, mut at, mut n, mut end) = (String::new(), 0usize, 0usize, 0usize);
-        for (s, e) in line_matches(re, line, req.whole_word) {
-            let (col, len) = byte_span_to_cols(line, s, e);
+        let ascii = line.is_ascii();
+        let (mut last_byte, mut last_col) = (0usize, 0usize);
+        let (mut out, mut at, mut n, mut end, mut out_chars) =
+            (String::new(), 0usize, 0usize, 0usize, 0usize);
+        for (s, e) in matches {
+            let (col, len) = if ascii {
+                (s, e - s)
+            } else {
+                let gap = line[last_byte..s].chars().count();
+                let col = last_col + gap;
+                let len = line[s..e].chars().count();
+                last_col = col + len;
+                last_byte = e;
+                (col, len)
+            };
             if col < from || col.saturating_add(len) > to {
                 continue;
             }
@@ -417,11 +480,13 @@ fn op_replace_all(re: &Regex, req: &SearchReq, lines: &[String]) -> SearchRes {
                 Some(c) => expand(&c, &req.repl, req.use_regex),
                 None => req.repl.clone(),
             };
-            out.push_str(&line[at..s]);
+            let prefix = &line[at..s];
+            out.push_str(prefix);
             out.push_str(&rep);
+            out_chars += char_count_fast(prefix, ascii) + char_count_fast(&rep, false);
             at = e;
             n += 1;
-            end = out.chars().count();
+            end = out_chars;
         }
         if n > 0 {
             out.push_str(&line[at..]);
@@ -698,5 +763,32 @@ mod tests {
         );
         // 普通模式不受影响
         assert!(run(&req("validate", "a(b", "c")).unwrap().error.is_none());
+    }
+
+    #[test]
+    fn single_line_many_hits_is_exact_ascii_and_cjk() {
+        let mut r = req("hits", "ab", "c");
+        r.lines = vec!["ab cd ".repeat(6_000)];
+        let res = run(&r).unwrap();
+        assert_eq!(res.hits.len(), MAX_HITS + 1);
+        assert_eq!(res.hits[0].col, 0);
+        assert_eq!(res.hits[1].col, 6);
+        assert_eq!(res.hits[5000].col, 5000 * 6);
+
+        let mut rcjk = req("hits", "word", "c");
+        rcjk.lines = vec!["中word文 ".repeat(500)];
+        let res_cjk = run(&rcjk).unwrap();
+        assert_eq!(res_cjk.hits.len(), 500);
+        assert_eq!(res_cjk.hits[0].col, 1);
+        assert_eq!(res_cjk.hits[1].col, 8);
+        assert_eq!(res_cjk.hits[499].col, 499 * 7 + 1);
+
+        let mut rrep = req("replace_all", "word", "c");
+        rrep.lines = vec!["中word文 中word文".into()];
+        rrep.repl = "汉字XYZ".into();
+        let rep_res = run(&rrep).unwrap();
+        assert_eq!(rep_res.count, 2);
+        assert_eq!(rep_res.rows[0].1, "中汉字XYZ文 中汉字XYZ文");
+        assert_eq!(rep_res.last_end, "中汉字XYZ文 中汉字XYZ".chars().count());
     }
 }

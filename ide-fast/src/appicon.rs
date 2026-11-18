@@ -42,15 +42,25 @@ fn decode(png_bytes: &[u8]) -> Option<eframe::egui::IconData> {
     if w == 0 || h == 0 || w > 512 || h > 512 {
         return None;
     }
-    let px = &buf[..info.buffer_size()];
-    let rgba: Vec<u8> = match info.color_type {
-        png::ColorType::Rgba => px.to_vec(),
-        png::ColorType::Rgb => px.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
-        png::ColorType::GrayscaleAlpha => px
-            .chunks(2)
+    let buf_len = info.buffer_size();
+    let color_type = info.color_type;
+    let rgba: Vec<u8> = match color_type {
+        png::ColorType::Rgba => {
+            buf.truncate(buf_len);
+            buf
+        }
+        png::ColorType::Rgb => buf[..buf_len]
+            .chunks_exact(3)
+            .flat_map(|c| [c[0], c[1], c[2], 255])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => buf[..buf_len]
+            .chunks_exact(2)
             .flat_map(|c| [c[0], c[0], c[0], c[1]])
             .collect(),
-        png::ColorType::Grayscale => px.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Grayscale => buf[..buf_len]
+            .iter()
+            .flat_map(|&g| [g, g, g, 255])
+            .collect(),
         png::ColorType::Indexed => return None,
     };
     (rgba.len() == (w * h * 4) as usize).then_some(eframe::egui::IconData {
@@ -60,9 +70,14 @@ fn decode(png_bytes: &[u8]) -> Option<eframe::egui::IconData> {
     })
 }
 
-/// 欢迎页的大徽标 (256 边长的 PNG 编进可执行文件, 画的时候缩到 96)
+static LOGO_ICON: std::sync::OnceLock<Option<eframe::egui::IconData>> =
+    std::sync::OnceLock::new();
+
+/// 欢迎页的大徽标 (256 边长的 PNG 编进可执行文件, 画的时候缩到 96, 进程内缓存一次解码)
 pub fn logo() -> Option<eframe::egui::IconData> {
-    decode(include_bytes!("../packaging/logo-256.png"))
+    LOGO_ICON
+        .get_or_init(|| decode(include_bytes!("../packaging/logo-256.png")))
+        .clone()
 }
 
 static WINDOW_ICON: std::sync::OnceLock<Option<eframe::egui::IconData>> =

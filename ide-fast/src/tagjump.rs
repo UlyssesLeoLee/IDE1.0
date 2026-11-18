@@ -247,7 +247,7 @@ pub fn render_tags(root: &Path, entries: &[Cand]) -> String {
             .then(a.path.cmp(&b.path))
             .then(a.line.cmp(&b.line))
     });
-    let mut s = String::from("!_TAG_FILE_FORMAT\t2\t/extended format/\n!_TAG_FILE_SORTED\t1\t/0=unsorted, 1=sorted/\n!_TAG_PROGRAM_NAME\tide-fast\n");
+    let mut s = String::from("!_TAG_FILE_FORMAT\t2\t/extended format/\n!_TAG_FILE_SORTED\t1\t/0=unsorted, 1=sorted/\n!_TAG_PROGRAM_NAME\tIDE1.0\n");
     for c in v {
         let rel = c
             .path

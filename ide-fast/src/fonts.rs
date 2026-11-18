@@ -256,14 +256,23 @@ pub fn fonts_dir() -> std::path::PathBuf {
         .unwrap_or_else(|| "C:/Windows/Fonts".into())
 }
 
+/// 获取全部有效字体搜索目录 (OnceLock 进程级缓存, 避免启动阶段重复读取环境变量与目录探测)
+fn font_search_dirs_cached() -> &'static [std::path::PathBuf] {
+    static DIRS: std::sync::OnceLock<Vec<std::path::PathBuf>> = std::sync::OnceLock::new();
+    DIRS.get_or_init(|| {
+        let mut dirs = Vec::with_capacity(2);
+        if let Some(ud) = user_fonts_dir() {
+            dirs.push(ud);
+        }
+        dirs.push(fonts_dir());
+        dirs
+    })
+    .as_slice()
+}
+
 /// 获取全部有效字体搜索目录 (优先用户字体目录，次之系统字体目录)
 pub fn font_search_dirs() -> Vec<std::path::PathBuf> {
-    let mut dirs = Vec::with_capacity(2);
-    if let Some(ud) = user_fonts_dir() {
-        dirs.push(ud);
-    }
-    dirs.push(fonts_dir());
-    dirs
+    font_search_dirs_cached().to_vec()
 }
 
 /// 系统与用户字体目录里能直接用的字体文件名 (.ttf / .otf / .ttc);
@@ -291,14 +300,29 @@ pub fn is_font_file(name: &str) -> bool {
     l.ends_with(".ttf") || l.ends_with(".otf") || l.ends_with(".ttc") || is_pixel_font(name)
 }
 
+#[inline]
+fn has_font_ext(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    if bytes.len() < 4 {
+        return false;
+    }
+    let tail = &name[bytes.len() - 4..];
+    tail.eq_ignore_ascii_case(".ttf")
+        || tail.eq_ignore_ascii_case(".otf")
+        || tail.eq_ignore_ascii_case(".ttc")
+}
+
 /// 从所有字体候选目录中按优先级读取指定字体字节 (优先读取用户安装字体)
 pub fn read_font_bytes(filename: &str) -> Option<Vec<u8>> {
-    for dir in font_search_dirs() {
+    let try_with_ttf = !has_font_ext(filename);
+    for dir in font_search_dirs_cached() {
         if let Ok(b) = std::fs::read(dir.join(filename)) {
             return Some(b);
         }
-        if let Ok(b) = std::fs::read(dir.join(format!("{filename}.ttf"))) {
-            return Some(b);
+        if try_with_ttf {
+            if let Ok(b) = std::fs::read(dir.join(format!("{filename}.ttf"))) {
+                return Some(b);
+            }
         }
     }
     if let Some(p) = std::env::current_exe()
@@ -312,10 +336,10 @@ pub fn read_font_bytes(filename: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// 查找指定字体对应的伴生粗体文件 (优先在用户自装字体目录中查找)
+/// 查找指定字体对应的伴生粗体文件 (直接路径 O(1) 探测, 不遍历 C:\Windows\Fonts)
 fn find_bold_file(dirs: &[std::path::PathBuf], file: &str) -> Option<(std::path::PathBuf, String)> {
     let lower = file.to_lowercase();
-    let candidates: &[&str] = if lower == "cascadiacode.ttf" || lower == "cascadiamono.ttf" {
+    let known: &[&str] = if lower == "cascadiacode.ttf" || lower == "cascadiamono.ttf" {
         &[
             "CascadiaCode-Bold.otf",
             "CascadiaMono-Bold.otf",
@@ -333,9 +357,30 @@ fn find_bold_file(dirs: &[std::path::PathBuf], file: &str) -> Option<(std::path:
         &[]
     };
     for dir in dirs {
-        for cand in candidates {
+        for cand in known {
             if dir.join(cand).is_file() {
-                return Some((dir.clone(), cand.to_string()));
+                return Some((dir.clone(), (*cand).to_string()));
+            }
+        }
+    }
+    if known.is_empty() {
+        let path = std::path::Path::new(file);
+        if let (Some(stem), Some(ext)) = (
+            path.file_stem().and_then(|s| s.to_str()),
+            path.extension().and_then(|e| e.to_str()),
+        ) {
+            let dyn_cands = [
+                format!("{stem}b.{ext}"),
+                format!("{stem}-Bold.{ext}"),
+                format!("{stem}Bold.{ext}"),
+                format!("{stem}_Bold.{ext}"),
+            ];
+            for dir in dirs {
+                for cand in &dyn_cands {
+                    if dir.join(cand).is_file() {
+                        return Some((dir.clone(), cand.clone()));
+                    }
+                }
             }
         }
     }
@@ -415,24 +460,28 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
     let is_retro = is_pixel_font(&safe_editor);
 
     // 线程 1: 并行读取主字体与其粗体变体 (优先用户自装字体，不需要粗体时跳过磁盘搜索与读取)
-    let search_dirs_clone = font_search_dirs();
     let ed_handle = std::thread::spawn(move || {
+        let search_dirs = font_search_dirs_cached();
         let (mut ed, mut ed_bold) = if !safe_editor.is_empty()
             && is_font_file(&safe_editor)
             && !is_illegible_display_font(&safe_editor)
         {
             let b1 = if is_pixel_font(&safe_editor) {
-                // 优先查找用户/系统字体或同级目录，兜底使用内嵌的 16-Bit 街机点阵全字形字体 (保证无依赖立即可用)
-                read_font_bytes(&safe_editor)
-                    .or_else(|| read_font_bytes(&format!("{safe_editor}.ttf")))
-                    .or_else(|| std::fs::read("crates/ide-shell-web/src/PixelFontMulti-12.ttf").ok())
-                    .or_else(|| std::fs::read("E:/PixelFont/dist/PixelFontMulti-12.ttf").ok())
-                    .or_else(|| Some(EMBEDDED_PIXEL_FONT.to_vec()))
+                if safe_editor.eq_ignore_ascii_case("PixelFontMulti-12.ttf")
+                    || safe_editor.eq_ignore_ascii_case("PixelFont 12")
+                {
+                    // 内嵌的 16-Bit 街机点阵全字形字体, O(1) 零 I/O 直读
+                    Some(EMBEDDED_PIXEL_FONT.to_vec())
+                } else {
+                    read_font_bytes(&safe_editor)
+                        .or_else(|| read_font_bytes(&format!("{safe_editor}.ttf")))
+                        .or_else(|| Some(EMBEDDED_PIXEL_FONT.to_vec()))
+                }
             } else {
                 read_font_bytes(&safe_editor)
             };
             let b2 = if need_bold && !is_pixel_font(&safe_editor) {
-                find_bold_file(&search_dirs_clone, &safe_editor)
+                find_bold_file(search_dirs, &safe_editor)
                     .and_then(|(d, f)| std::fs::read(d.join(f)).ok())
             } else {
                 None
@@ -446,7 +495,7 @@ pub fn load_ext(editor_file: &str, cjk_file: &str, lang: &str, need_bold: bool) 
             for fallback in ["CascadiaCode.ttf", "CascadiaMono.ttf", "consola.ttf"] {
                 if let Some(b) = read_font_bytes(fallback) {
                     if need_bold {
-                        let bold_file = find_bold_file(&search_dirs_clone, fallback);
+                        let bold_file = find_bold_file(search_dirs, fallback);
                         ed_bold = bold_file.and_then(|(d, f)| std::fs::read(d.join(f)).ok());
                     }
                     ed = Some(b);

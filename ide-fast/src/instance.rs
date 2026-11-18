@@ -33,12 +33,21 @@ fn port_file() -> Option<PathBuf> {
     Some(base.join("IDE1.0 Fast").join("instance.port"))
 }
 
+fn bypass_ipc() -> bool {
+    const KEYS: &[&str] = &[
+        "IDE10_MULTI",
+        "IDE10_NO_NETWORK",
+        "IDE10_OFFLINE",
+        "IDE_FAST_MULTI",
+        "IDE_FAST_NO_NETWORK",
+        "IDE_FAST_OFFLINE",
+    ];
+    KEYS.iter().any(|k| std::env::var_os(k).is_some())
+}
+
 /// 如果已有实例在运行: 把 `args` 交给它, 返回 true (调用方直接退出)
 pub fn forward_to_running(args: &[String]) -> bool {
-    if std::env::var_os("IDE_FAST_MULTI").is_some()
-        || std::env::var_os("IDE_FAST_NO_NETWORK").is_some()
-        || std::env::var_os("IDE_FAST_OFFLINE").is_some()
-    {
+    if bypass_ipc() {
         return false; // 调试 / 测试 / 纯离线记事本模式: 允许跳过网络 IPC
     }
     let Some(pf) = port_file() else { return false };
@@ -59,7 +68,7 @@ pub fn forward_to_running(args: &[String]) -> bool {
     };
     let _ = s.set_read_timeout(Some(std::time::Duration::from_millis(500)));
     let _ = s.set_write_timeout(Some(std::time::Duration::from_millis(500)));
-    let mut msg = String::from("IDE-FAST-OPEN\n");
+    let mut msg = String::from("IDE1.0-OPEN\n");
     for a in args {
         // 相对路径按「调用者」的当前目录解析成绝对路径再发
         let p = std::path::absolute(a)
@@ -92,10 +101,7 @@ pub fn cleanup() {
 
 /// 成为第一个实例: 开始监听, 返回收「别的实例转来的路径」的通道
 pub fn listen() -> Option<Receiver<Vec<String>>> {
-    if std::env::var_os("IDE_FAST_MULTI").is_some()
-        || std::env::var_os("IDE_FAST_NO_NETWORK").is_some()
-        || std::env::var_os("IDE_FAST_OFFLINE").is_some()
-    {
+    if bypass_ipc() {
         return None;
     }
     let l = TcpListener::bind(("127.0.0.1", 0)).ok()?;
@@ -123,7 +129,9 @@ pub fn listen() -> Option<Receiver<Vec<String>>> {
             let _ = conn.set_write_timeout(Some(std::time::Duration::from_millis(500)));
             let mut r = BufReader::new(conn);
             let mut first = String::new();
-            if r.read_line(&mut first).is_err() || first.trim() != "IDE-FAST-OPEN" {
+            if r.read_line(&mut first).is_err()
+                || !matches!(first.trim(), "IDE1.0-OPEN" | "IDE-FAST-OPEN")
+            {
                 continue; // 不是我们的协议: 忽略
             }
             let mut paths = vec![];

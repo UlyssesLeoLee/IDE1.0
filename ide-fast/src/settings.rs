@@ -537,7 +537,8 @@ impl SearchPrefs {
 }
 
 pub fn path() -> Option<PathBuf> {
-    match std::env::var("IDE_FAST_SETTINGS") {
+    let val = std::env::var("IDE10_SETTINGS").or_else(|_| std::env::var("IDE_FAST_SETTINGS"));
+    match val {
         Ok(v) if v == "off" => None,
         Ok(v) if !v.is_empty() => Some(PathBuf::from(v)),
         _ => {

@@ -228,7 +228,7 @@ impl App {
         );
 
         let path_summary = if self.installer.add_path {
-            crate::i18n::trz("已添加至全局 PATH (终端键入 ide-fast 秒级唤醒)")
+            crate::i18n::trz("已添加至全局 PATH (终端键入 IDE1.0 秒级唤醒)")
         } else {
             crate::i18n::trz("未配置全局环境变量 PATH")
         };

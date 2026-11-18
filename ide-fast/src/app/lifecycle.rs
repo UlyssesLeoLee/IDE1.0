@@ -3,6 +3,22 @@
 use super::*;
 
 impl App {
+    /// 同步系统托盘常驻状态但不写盘 (启动与 apply_settings 路径使用: 避免启动写盘与无头测试创建系统托盘)
+    pub(super) fn sync_tray_resident_no_save(&mut self, resident: bool) {
+        self.cfg.tray_resident = resident;
+        if resident {
+            if self.persist && self.tray.is_none() {
+                self.tray = crate::tray::Tray::build(true, self.topmost);
+            }
+            if let Some(t) = &self.tray {
+                t.set_resident_checked(true);
+                t.set_topmost_checked(self.topmost);
+            }
+        } else {
+            self.tray = None;
+        }
+    }
+
     /// 统一同步系统托盘常驻状态与托盘图标生命周期
     pub fn set_tray_resident(&mut self, resident: bool) {
         self.cfg.tray_resident = resident;

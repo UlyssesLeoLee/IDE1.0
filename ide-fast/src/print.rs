@@ -209,7 +209,7 @@ pre{{font:{f}pt/{lh} Consolas,'Cascadia Mono',monospace;white-space:pre-wrap;wor
 
 /// 写临时文件并用系统默认程序打开; 返回文件路径
 pub fn open_for_print(name: &str, lines: &[String], ps: &PageSetup) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("ide-fast-print");
+    let dir = std::env::temp_dir().join("IDE1.0-print");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let safe: String = name
         .chars()

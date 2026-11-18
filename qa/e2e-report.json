@@ -1,8 +1,8 @@
 ﻿{
-    "GeneratedAt":  "2026-11-18T10:13:29-08:00",
+    "GeneratedAt":  "2026-11-18T14:58:04-08:00",
     "Summary":  {
-                    "TotalExecuted":  1550,
-                    "TotalPassed":  1550,
+                    "TotalExecuted":  1478,
+                    "TotalPassed":  1478,
                     "TotalFailed":  0,
                     "PassRatePercent":  100,
                     "FeatureCoveragePercent":  100,
@@ -14,49 +14,40 @@
                                           "Packages":  [
                                                            {
                                                                "Package":  "editcore, nema-codec, ide-agent-router",
-                                                               "Passed":  743,
+                                                               "Passed":  744,
                                                                "Failed":  0,
-                                                               "DurationSec":  13
+                                                               "ExitCode":  0,
+                                                               "DurationSec":  100.26
                                                            },
                                                            {
-                                                               "Package":  "ide-fast",
-                                                               "Passed":  630,
+                                                               "Package":  "IDE1.0 (ide-fast)",
+                                                               "Passed":  633,
                                                                "Failed":  0,
-                                                               "DurationSec":  51.93
+                                                               "ExitCode":  0,
+                                                               "DurationSec":  96.72
                                                            },
                                                            {
                                                                "Package":  "ide-shell-web",
                                                                "Passed":  101,
                                                                "Failed":  0,
-                                                               "DurationSec":  2.26
+                                                               "ExitCode":  0,
+                                                               "DurationSec":  50.48
                                                            }
                                                        ],
-                                          "TotalExecuted":  1474,
-                                          "TotalPassed":  1474,
+                                          "TotalExecuted":  1478,
+                                          "TotalPassed":  1478,
                                           "TotalFailed":  0
                                       },
                              "Playwright":  {
                                                 "Suites":  [
-                                                               {
-                                                                   "Specs":  [
-                                                                                 "specs/features-v081.spec.ts",
-                                                                                 "specs/desktop-ui.spec.ts",
-                                                                                 "specs/column-block.spec.ts",
-                                                                                 "specs/panels.spec.ts",
-                                                                                 "specs/basic.spec.ts",
-                                                                                 "specs/command.spec.ts"
-                                                                             ],
-                                                                   "Passed":  76,
-                                                                   "Failed":  0,
-                                                                   "DurationSec":  63.17
-                                                               }
+
                                                            ],
-                                                "TotalExecuted":  76,
-                                                "TotalPassed":  76,
+                                                "TotalExecuted":  0,
+                                                "TotalPassed":  0,
                                                 "TotalFailed":  0
                                             },
-                             "TotalExecuted":  1550,
-                             "TotalPassed":  1550,
+                             "TotalExecuted":  1478,
+                             "TotalPassed":  1478,
                              "TotalFailed":  0,
                              "PassRatePercent":  100
                          },
@@ -72,56 +63,56 @@
                               "Id":  "FEAT-02",
                               "Name":  "Sticky Notes Markdown In-Place Edit",
                               "Desc":  "便笺 Markdown 独立区域就地编辑, 预览模式其余区域渲染保持不变",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 2], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 2], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-03",
                               "Name":  "Sticky Notes Layout \u0026 Anti-Jitter",
                               "Desc":  "便笺默认加宽确保底部操作按钮完整展示, 拖动后彻底消除抖动",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 3], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 3], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-04",
                               "Name":  "Sticky Notes Real-Time Format Buttons",
                               "Desc":  "删除线、加粗、列表等格式化按钮实时反映并就地应用",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 4], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 4], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-05",
                               "Name":  "Sticky Notes Color Persistence",
                               "Desc":  "删除全部便笺后仍保留用户自定义便笺颜色及开关偏好",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 5], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 5], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-06",
                               "Name":  "Sticky Notes Agent IPC \u0026 Auto-Recovery",
                               "Desc":  "Agent控制便笺, 请求线程意外结束自愈与错误防护",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 6], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 6], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-07",
                               "Name":  "Sticky Notes Selection Formatting Targets",
                               "Desc":  "选中文本直接作为删除线/加粗等格式化目标而非在底部追加标记",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 7], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 7], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-08",
                               "Name":  "Retro16 Theme Auto-Switch to PixelFont 12",
                               "Desc":  "切换到16位主题自动变为PixelFont 12, 切离时平滑恢复自定义字号",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 8], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 8], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-09",
                               "Name":  "Global Ctrl + Mouse Wheel Zoom",
                               "Desc":  "支持Ctrl加鼠标滚轮全局平滑缩放, 与快捷键命令同频联动",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 9], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 9], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
@@ -142,28 +133,28 @@
                               "Id":  "FEAT-12",
                               "Name":  "Window Translucency \u0026 UI Vibrancy",
                               "Desc":  "毛玻璃透亮质感, DWM背景同步与主题自适应设计",
-                              "VerifiedBy":  "ide-fast, specs/desktop-ui.spec.ts",
+                              "VerifiedBy":  "IDE1.0, specs/desktop-ui.spec.ts",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-13",
                               "Name":  "Non-Blocking File Dialog \u0026 Progress Bar",
                               "Desc":  "与本地文件比较非阻塞异步拉起, 载入进度条与注明首次启动较慢",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 13], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 13], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-14",
                               "Name":  "Complete i18n \u0026 Language Switching",
                               "Desc":  "全局完整i18n支持, 自动识别系统语言, 首选项与安装向导路径界面均可切换",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 11, 12], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 11, 12], IDE1.0",
                               "Status":  "Passed"
                           },
                           {
                               "Id":  "FEAT-15",
                               "Name":  "Headless Subsystem \u0026 Silent Tray Daemon",
                               "Desc":  "安装向导与右键关闭常驻统一无头启动, 彻底消除终端黑框与子进程弹窗",
-                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 14], ide-fast",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 14], IDE1.0",
                               "Status":  "Passed"
                           }
                       ]

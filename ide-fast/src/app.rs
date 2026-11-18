@@ -99,6 +99,8 @@ pub struct App {
     theme_visuals: Option<egui::Visuals>,
     /// 主题变量 (CSS 变量名 -> 颜色串) 与换算好的语义色; 没选主题插件时用内置深 / 浅色
     theme_vars: Option<std::collections::BTreeMap<String, String>>,
+    /// 缓存的主题语义色 (只在主题切换时解析一次 CSS 变量, 每帧 O(1) 拷贝)
+    theme_tc: Option<crate::view::ThemeColors>,
     tc: crate::view::ThemeColors,
     /// 分割窗口: 左右两个编辑区各看一个文档; active 永远是有焦点那一栏的文档
     split_on: bool,
@@ -163,6 +165,8 @@ pub struct App {
     positions: Vec<(String, usize, usize)>,
     /// 括弧强调的缓存: ((文档 id, 版本, 光标), 结果); 光标没动就不重算
     bracket_cache: Option<((u64, u64, [usize; 2]), Option<([usize; 2], [usize; 2])>)>,
+    /// 小地图条宽缓存: ((文档 id, 版本, 目标像素行数), Vec<(截断字符数, 是否缩进行)>)
+    minimap_cache: Option<((u64, u64, usize), Vec<(u8, bool)>)>,
     /// 上一帧的活动标签下标: 变了就把新的活动标签滚进标签栏可见范围
     last_active: usize,
     /// Markdown 预览: 图片纹理缓存与按 (文档, 版本) 缓存的解析结果
@@ -245,6 +249,7 @@ impl App {
             theme_id: String::new(),
             theme_visuals: None,
             theme_vars: None,
+            theme_tc: None,
             tc: crate::view::ThemeColors::builtin(true),
             split_on: false,
             panes: Default::default(),
@@ -259,7 +264,7 @@ impl App {
             goal_x: None,
             inbox,
             prefs: None,
-            persist: true,
+            persist,
             cfg: Settings::default(),
             applied_font: String::new(),
             geom_now: None,
@@ -287,6 +292,7 @@ impl App {
             recent_dirs: vec![],
             positions: vec![],
             bracket_cache: None,
+            minimap_cache: None,
             last_active: usize::MAX,
             md_cache: Default::default(),
             sticky_md_cache: Default::default(),
@@ -537,7 +543,7 @@ impl App {
             &st.theme_plugin
         };
         if theme_to_apply != self.theme_id {
-            self.set_theme_plugin(theme_to_apply);
+            self.set_theme_plugin_no_save(theme_to_apply);
         }
         self.font_px = st.font_px;
         if self.tc.retro16 || theme_to_apply == "theme-retro16" {
@@ -548,6 +554,7 @@ impl App {
         self.wrap = st.wrap;
         crate::i18n::set_code(&st.lang);
         self.cfg = st.clone();
+        self.cfg.theme_plugin = self.theme_id.clone();
         if self.tc.retro16 || theme_to_apply == "theme-retro16" {
             self.cfg.font_px = 12.0;
             self.cfg.term_font_px = 12.0;
@@ -574,7 +581,7 @@ impl App {
         self.applied_font.clear();
         keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
-        self.set_tray_resident(st.tray_resident);
+        self.sync_tray_resident_no_save(st.tray_resident);
         // 最近文件个数变小了要立刻截断
         let n = st.mru_files.max(1);
         self.recent.truncate(n);
@@ -821,7 +828,7 @@ impl App {
     fn export_settings(&mut self) {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("JSON", &["json"])
-            .set_file_name("ide-fast-settings.json")
+            .set_file_name("IDE1.0-settings.json")
             .save_file()
         else {
             return;
@@ -3930,8 +3937,8 @@ impl App {
         ) = (false, false, false);
     }
 
-    /// 选主题插件 (空 id = 回到内置深 / 浅色)
-    fn set_theme_plugin(&mut self, id: &str) {
+    /// 选主题插件 (内部不落盘版本: 供启动 / apply_settings 避免冷启动磁盘写入)
+    fn set_theme_plugin_no_save(&mut self, id: &str) {
         let prev_id = self.theme_id.clone();
         let prev_key = if prev_id.is_empty() {
             if self.cfg.dark {
@@ -4009,6 +4016,7 @@ impl App {
         // 玻璃主题声明 luminance=dynamic 时, 文字色按系统「应用主题」明暗取 (一次读取, 不轮询)
         let spec = spec.map(|mut t| {
             if t.translucent {
+                editcore::theme_luminance::invalidate_cache();
                 plugins::apply_dynamic_luminance(&mut t.vars, editcore::theme_luminance::detect());
             }
             t
@@ -4017,11 +4025,23 @@ impl App {
             .as_ref()
             .map(|t| plugins::visuals_glass(&t.vars, t.translucent));
         self.theme_vars = spec.map(|t| t.vars);
+        self.theme_tc = self
+            .theme_vars
+            .as_ref()
+            .filter(|_| self.theme_visuals.is_some())
+            .map(crate::view::ThemeColors::from_vars);
         if self.theme_visuals.is_none() {
             self.theme_id.clear();
         }
         self.cfg.theme_plugin = self.theme_id.clone();
-        self.cfg.save();
+    }
+
+    /// 选主题插件 (空 id = 回到内置深 / 浅色)
+    fn set_theme_plugin(&mut self, id: &str) {
+        self.set_theme_plugin_no_save(id);
+        if self.persist {
+            self.cfg.save();
+        }
     }
 
     /// 选一个 zip -> 给确认框 (名称 / 版本 / 权限) -> 安装
@@ -5382,21 +5402,59 @@ impl App {
                             );
                         }
 
-                        let buckets = crate::view::minimap_rows(d.lines.len(), (vh / 2.0) as usize);
-                        let bh = (vh / buckets.len().max(1) as f32).min(3.0); // 行很少时每行 3 像素, 不拉成大块
-                        for (i, (a, b)) in buckets.iter().enumerate() {
-                            let n = if b - a > 8 {
-                                d.lines[*a].trim_end().chars().count()
-                            } else {
-                                d.lines[*a..*b]
-                                    .iter()
-                                    .map(|l| l.trim_end().chars().count())
-                                    .max()
-                                    .unwrap_or(0)
+                        let target_rows = (vh / 2.0) as usize;
+                        let mm_key = (d.id, d.rev, target_rows);
+                        if self.minimap_cache.as_ref().map(|c| c.0) != Some(mm_key) {
+                            let buckets = crate::view::minimap_rows(d.lines.len(), target_rows);
+                            let line_w_capped = |l: &str| -> u8 {
+                                let mut last_non_ws = 0usize;
+                                let mut chars_seen = 0usize;
+                                let mut byte_end = 0usize;
+                                for (idx, (b, ch)) in l.char_indices().take(256).enumerate() {
+                                    chars_seen = idx + 1;
+                                    byte_end = b + ch.len_utf8();
+                                    if !ch.is_whitespace() {
+                                        last_non_ws = chars_seen;
+                                        if last_non_ws >= 120 {
+                                            return 120;
+                                        }
+                                    }
+                                }
+                                if last_non_ws > 0 {
+                                    return last_non_ws as u8;
+                                }
+                                if chars_seen == 256 && byte_end < l.len() {
+                                    let probe_end = l.len().min(byte_end.saturating_add(2048));
+                                    if l.as_bytes()[byte_end..probe_end]
+                                        .iter()
+                                        .any(|b| !b.is_ascii_whitespace())
+                                    {
+                                        return 120;
+                                    }
+                                }
+                                0
                             };
-                            if n > 0 {
+                            let mut bars = Vec::with_capacity(buckets.len());
+                            for (a, b) in buckets {
+                                let n = if b - a > 8 {
+                                    line_w_capped(&d.lines[a])
+                                } else {
+                                    d.lines[a..b]
+                                        .iter()
+                                        .map(|l| line_w_capped(l))
+                                        .max()
+                                        .unwrap_or(0)
+                                };
                                 let is_indent =
-                                    d.lines[*a].starts_with(' ') || d.lines[*a].starts_with('\t');
+                                    d.lines[a].starts_with(' ') || d.lines[a].starts_with('\t');
+                                bars.push((n, is_indent));
+                            }
+                            self.minimap_cache = Some((mm_key, bars));
+                        }
+                        let bars = &self.minimap_cache.as_ref().expect("刚算过").1;
+                        let bh = (vh / bars.len().max(1) as f32).min(3.0); // 行很少时每行 3 像素, 不拉成大块
+                        for (i, &(n, is_indent)) in bars.iter().enumerate() {
+                            if n > 0 {
                                 let bar_col = if is_indent {
                                     bar_base_col
                                 } else {
@@ -5414,7 +5472,7 @@ impl App {
                             }
                         }
                         let total = d.lines.len() as f32;
-                        let span_h = bh * buckets.len() as f32;
+                        let span_h = bh * bars.len() as f32;
                         let (v0, v1) = (
                             (first as f32 / total).min(1.0),
                             (last as f32 / total).min(1.0),
@@ -6502,10 +6560,9 @@ impl App {
             return;
         }
         let ctx = &root.ctx().clone();
-        self.tc = match &self.theme_vars {
-            Some(v) if self.theme_visuals.is_some() => crate::view::ThemeColors::from_vars(v),
-            _ => crate::view::ThemeColors::builtin(self.dark),
-        };
+        self.tc = self
+            .theme_tc
+            .unwrap_or_else(|| crate::view::ThemeColors::builtin(self.dark));
         self.tc.retro16 = self.theme_id == "theme-retro16";
         self.tc.comic = self.theme_id == "theme-comic";
         self.tc.crystal = self.theme_id == "theme-crystal";
@@ -6570,8 +6627,11 @@ impl App {
 
         self.handle_forwarded_instances(ctx);
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
-        if focused && !self.was_focused && self.cfg.check_external {
-            self.check_external();
+        if focused && !self.was_focused {
+            editcore::theme_luminance::invalidate_cache();
+            if self.cfg.check_external {
+                self.check_external();
+            }
         }
         self.was_focused = focused;
         if self.prefs.is_some() {

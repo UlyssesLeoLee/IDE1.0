@@ -476,10 +476,22 @@ pub fn changed_lines(base: &[String], cur: &[String]) -> Vec<bool> {
     if b.is_empty() {
         return out;
     }
-    if a.is_empty() || a.len() * b.len() > 1_000_000 {
+    if a.is_empty() {
         out[head..cur.len() - tail]
             .iter_mut()
             .for_each(|x| *x = true);
+        return out;
+    }
+    if a.len() * b.len() > 1_000_000 {
+        if a.len() == b.len() {
+            for (k, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+                out[head + k] = x != y;
+            }
+        } else {
+            out[head..cur.len() - tail]
+                .iter_mut()
+                .for_each(|x| *x = true);
+        }
         return out;
     }
     // dp[i][j] = a[i..] 与 b[j..] 的 LCS 长度

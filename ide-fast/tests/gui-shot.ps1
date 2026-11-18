@@ -8,7 +8,7 @@ public class W { [DllImport("user32.dll")] public static extern bool GetWindowRe
  [DllImport("user32.dll")] public static extern void mouse_event(int f,int x,int y,int d,int e);
  public struct RECT { public int L,T,R,B; } }
 "@
-$p = Get-Process ide-fast* | Select-Object -First 1
+$p = Get-Process | Where-Object { $_.ProcessName -like "IDE1.0*" -or $_.ProcessName -like "ide-fast*" } | Select-Object -First 1
 $h = $p.MainWindowHandle
 [W]::SetForegroundWindow($h) | Out-Null
 Start-Sleep -Milliseconds 400
