@@ -1,7 +1,25 @@
 # IDE1.0
 
-> **纯 Rust AI-Native 编辑内核 + Tauri 桌面版 + Vercel Web 协同云平台**  
+> **纯 Rust AI-Native 编辑内核 + 高性能桌面版 (IDE1.0.exe) + Vercel Web 协同云平台**  
 > 支持万级 AI Agent 通过 API 并发作业：**文件级路由、内部语义节点级并行作业、Patch 级提交、CAS + Fencing 权威协调**。
+
+---
+
+## 🚀 桌面旗舰版最新发布 (Desktop Release v0.8.4)
+
+- **GitHub Release 官方下载**: [https://github.com/UlyssesLeoLee/IDE1.0/releases/tag/v0.8.4](https://github.com/UlyssesLeoLee/IDE1.0/releases/tag/v0.8.4)
+- **核心发布资产**:
+  - `IDE1.0_Setup_0.8.4_x64.exe`：旗舰真 3D 赛璐珞水晶徽标安装向导（100% 聚焦正版 3D Crystal Logo，0 冗余视觉噪音，低调奢华暗色系与色彩心理学设计）
+  - `IDE1.0-0.8.4-windows-x64.exe`：免安装绿色单文件便携版
+  - `IDE1.0_0.8.4_x64.msi`：企业级静默安装包（彻底移除 WixUI 原生灰框与按钮，安装完成自动拉起真 3D 向导）
+- **v0.8.4 关键实装特性**:
+  - **低调奢华真 3D 赛璐珞向导**：参数化正版菱形双棱锥切割冠部/腰棱/亭部，核心立体悬浮 `< I >` 恒光代码符号，三阶赛璐珞阶梯光照，黑曜钛金底板与皇家宝蓝行动条。
+  - **便笺体验全面加固**：默认视口拓宽至 440px（12 项格式工具栏全景展开无截断），删除所有便笺保留用户自选颜色记忆，彻底消除拖拽后自我抖动。
+  - **核心编辑器大选取复制修复**：彻底消除 >8 行大选区跨行复制/剪切时中间行丢失缺陷，100% 完整无损提取。
+  - **AI Agent 线程守护与便笺工具集成**：全链路注入 `std::panic::catch_unwind` 守护，新增 `sticky_note_list / create / update / delete / open` 5 大专属工具。
+  - **Agent 命令按钮全主题深度设计**：针对 Comic 贴纸徽章、Retro16 街机像素、Crystal 毛玻璃胶囊与 Fluent 专属重塑。
+  - **常驻托盘退出强制置顶提示**：退出遇到未保存文档时，窗口自动解除最小化并激活置顶，弹窗采用 Windows `0x40023` 强制置顶显示。
+  - **统一交付物正名**：编译与部署产物全面对齐为主程序 `IDE1.0.exe`。
 
 ---
 
