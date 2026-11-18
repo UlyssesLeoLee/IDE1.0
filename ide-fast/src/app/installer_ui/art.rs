@@ -25,12 +25,12 @@ pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerSte
         let is_past = (step as usize) < (current as usize);
 
         let (fill_col, text_col) = if is_curr {
-            (Color32::from_rgb(255, 230, 0), Color32::BLACK)
+            (Color32::from_rgb(2, 132, 199), Color32::WHITE)
         } else if is_past {
             (Color32::from_rgb(16, 185, 129), Color32::WHITE)
         } else {
             (
-                Color32::from_rgb(32, 38, 58),
+                Color32::from_rgb(22, 28, 40),
                 Color32::from_rgb(148, 163, 184),
             )
         };
@@ -51,7 +51,7 @@ pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerSte
                     pos2(cap_rect.right() + 2.0, line_y),
                     pos2(cap_rect.right() + 14.0, line_y),
                 ],
-                Stroke::new(2.0, Color32::BLACK),
+                Stroke::new(2.0, Color32::from_rgb(30, 41, 59)),
             );
         }
 

@@ -182,6 +182,10 @@ fn test_cel3d_models_generation() {
     let wreath = build_laurel_wreath(26, 50.0, 44.0);
     assert_eq!(wreath.faces.len(), 26, "阿波罗桂冠应包含 26 片月桂叶几何体");
     assert_eq!(wreath.vertices.len(), 104, "每片月桂叶由 4 个三维顶点构成");
+
+    let logo = build_ide1_crystal_logo(80.0);
+    assert!(logo.vertices.len() >= 30, "正版晶钻 Logo 必须具备丰富的多面体顶点与核心代码符号");
+    assert!(logo.faces.len() >= 25, "正版晶钻 Logo 应包含冠部、腰棱、亭部切面与 < I > 符号切面");
 }
 
 #[test]

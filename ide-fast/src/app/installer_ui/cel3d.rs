@@ -187,6 +187,14 @@ pub enum CelMaterial {
     CrystalGem,
     LaurelLeaf,
     DarkPedestal,
+    /// IDE1.0 正版水晶钻石徽标: 上冠摄光天青切面
+    CrystalDiamondLight,
+    /// IDE1.0 正版水晶钻石徽标: 腰棱皇家宝蓝切面
+    CrystalDiamondMid,
+    /// IDE1.0 正版水晶钻石徽标: 亭部黑曜钴蓝切面
+    CrystalDiamondDark,
+    /// IDE1.0 正版水晶核心: 恒光高亮天青 < I > 代码符号
+    CrystalCoreGlyph,
 }
 
 impl CelMaterial {
@@ -245,6 +253,50 @@ impl CelMaterial {
                     Color32::from_rgb(60, 68, 92)
                 } else {
                     Color32::from_rgb(28, 32, 48)
+                }
+            }
+            Self::CrystalDiamondLight => {
+                // 上冠切面: 摄光高透天青/冰晶蓝 (#a5f3fc -> #38bdf8 -> #0284c7)
+                if spec > 0.80 {
+                    Color32::from_rgb(245, 253, 255)
+                } else if dot > 0.40 {
+                    Color32::from_rgb(165, 243, 252)
+                } else if dot > 0.08 {
+                    Color32::from_rgb(56, 189, 248)
+                } else {
+                    Color32::from_rgb(2, 132, 199)
+                }
+            }
+            Self::CrystalDiamondMid => {
+                // 腰棱切面: 皇家宝蓝/深空靛蓝 (#38bdf8 -> #0284c7 -> #0369a1)
+                if spec > 0.85 {
+                    Color32::from_rgb(224, 242, 254)
+                } else if dot > 0.38 {
+                    Color32::from_rgb(56, 189, 248)
+                } else if dot > 0.02 {
+                    Color32::from_rgb(2, 132, 199)
+                } else {
+                    Color32::from_rgb(3, 105, 161)
+                }
+            }
+            Self::CrystalDiamondDark => {
+                // 亭部切面: 深邃黑曜钴蓝 (#0284c7 -> #0369a1 -> #0d2242)
+                if spec > 0.88 {
+                    Color32::from_rgb(186, 230, 253)
+                } else if dot > 0.35 {
+                    Color32::from_rgb(2, 132, 199)
+                } else if dot > -0.10 {
+                    Color32::from_rgb(3, 105, 161)
+                } else {
+                    Color32::from_rgb(13, 34, 66)
+                }
+            }
+            Self::CrystalCoreGlyph => {
+                // 核心 < I > 代码符号: 恒光高亮天青白 (#f0fdfa / #a5f3fc)
+                if dot > 0.0 {
+                    Color32::from_rgb(245, 253, 255)
+                } else {
+                    Color32::from_rgb(186, 246, 255)
                 }
             }
         }
@@ -412,6 +464,43 @@ pub fn render_cel3d_scene(
             poly.pts,
             poly.color,
             Stroke::new(2.0, Color32::BLACK),
+        ));
+    }
+}
+
+/// 专属渲染 IDE1.0 正版水晶钻石徽标真 3D 赛璐珞场景 (低调奢华 · 重点突出 · 0 冗余干扰)
+pub fn render_cel3d_crystal_scene(
+    p: &Painter,
+    rect: Rect,
+    cam: &Camera3D,
+    logo_mesh: &Mesh3D,
+    logo_model_mat: &Mat4,
+    time: f32,
+) {
+    let center = rect.center();
+    let rot_x = Mat4::rot_x(cam.pitch);
+    let rot_y = Mat4::rot_y(cam.yaw);
+    let view_rot = rot_x.mul(&rot_y);
+
+    // 1. 低调奢华暗场氛围光晕 (Subtle Luxury Ambient Glow) - 柔和天青微光衬托晶钻轮廓
+    draw_ambient_luxury_glow(p, center, time);
+
+    // 2. 空间悬浮地面接触投影 (Grounding Contact Floor Shadow)
+    draw_contact_floor_shadow(p, cam, view_rot, center, -115.0, time);
+
+    // 3. 收集 3D 钻石网格多边形
+    let mut render_list = Vec::with_capacity(120);
+    collect_mesh_polys(logo_mesh, Some(logo_model_mat), cam, view_rot, center, &mut render_list);
+
+    // 4. 画师算法深度排序 (Painter's Algorithm Depth Sort)
+    render_list.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
+
+    // 5. 绘制赛璐珞多边形切面与美漫纯黑粗墨线外边框 (1.8px)
+    for poly in render_list {
+        p.add(egui::Shape::convex_polygon(
+            poly.pts,
+            poly.color,
+            Stroke::new(1.8, Color32::from_rgb(10, 15, 26)),
         ));
     }
 }

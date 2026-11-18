@@ -32,71 +32,55 @@ impl App {
         });
     }
 
-    /// 步骤 0: 欢迎体验分镜
+    /// 步骤 0: 欢迎体验分镜 (低调奢华 · 重点突出)
     fn render_step_welcome(&mut self, ui: &mut egui::Ui, standalone: bool) {
         let hero_h = 56.0;
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(20, 26, 38), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
+            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
             0.0,
-            Color32::from_rgb(255, 230, 0),
+            Color32::from_rgb(2, 132, 199),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 16.0),
             egui::Align2::LEFT_CENTER,
-            "⚡ 欢迎体验 IDE 1.0 极速现代编辑器！(WELCOME)",
+            "欢迎使用 IDE 1.0 (WELCOME)",
             egui::FontId::proportional(13.5),
-            Color32::from_rgb(255, 230, 0),
+            Color32::from_rgb(241, 245, 249),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 38.0),
             egui::Align2::LEFT_CENTER,
             "纯 Rust 原生极速微内核 · 多 Agent 协同生态 · GPU 晶透透视体验 · 极简无扰",
-            egui::FontId::proportional(10.5),
-            Color32::from_rgb(200, 215, 240),
-        );
-        paint_comic_burst_star(
-            hp,
-            pos2(h_rect.right() - 28.0, h_rect.top() + 24.0),
-            16.0,
-            9.0,
-            8,
-            Color32::from_rgb(255, 230, 0),
-            vec2(1.5, 1.5),
-        );
-        hp.text(
-            pos2(h_rect.right() - 28.0, h_rect.top() + 24.0),
-            egui::Align2::CENTER_CENTER,
-            "POW!",
-            egui::FontId::proportional(7.5),
-            Color32::BLACK,
+            egui::FontId::proportional(10.2),
+            Color32::from_rgb(148, 163, 184),
         );
 
         ui.add_space(4.0);
 
-        // 3 大特性展示卡片
+        // 3 大特性展示卡片 (色彩心理学: 天青/紫罗兰/翡翠绿分级，高辨识度与低疲劳)
         comic_info_card(
             ui,
-            "⚡ 极致响应 (ULTRA FAST)",
+            "极致响应 (ULTRA FAST)",
             "GPU 硬件加速与毫秒级冷启动，打字如飞，超大文件秒开不卡顿",
             "01",
-            Color32::from_rgb(0, 229, 255),
+            Color32::from_rgb(14, 165, 233),
         );
 
         comic_info_card(
             ui,
-            "🤖 多智能体协同 (MULTI-AGENT COLLAB)",
+            "多智能体协同 (MULTI-AGENT COLLAB)",
             "内置多 Agent 实时并行协作工作台，零死锁无阻塞高效结对编程",
             "02",
-            Color32::from_rgb(255, 204, 0),
+            Color32::from_rgb(168, 85, 247),
         );
 
         comic_info_card(
             ui,
-            "💎 赛璐珞与晶透美学 (CRYSTAL THEMES)",
+            "赛璐珞与晶透美学 (CRYSTAL THEMES)",
             "美漫卡通风格与晶透玻璃视觉，全自由定制配色与插件扩展",
             "03",
             Color32::from_rgb(16, 185, 129),
@@ -117,7 +101,7 @@ impl App {
                 "下一步 (NEXT) →",
                 vec2(next_w, 42.0),
                 true,
-                Color32::from_rgb(255, 230, 0),
+                Color32::from_rgb(2, 132, 199),
             )
             .clicked()
             {
@@ -129,7 +113,7 @@ impl App {
                 "关闭 (CLOSE)",
                 vec2(close_w, 42.0),
                 false,
-                Color32::from_rgb(40, 48, 70),
+                Color32::from_rgb(30, 38, 54),
             )
             .clicked()
             {
@@ -149,31 +133,31 @@ impl App {
         }
     }
 
-    /// 步骤 1: 选项配置分镜
+    /// 步骤 1: 选项配置分镜 (低调奢华 · 重点突出)
     fn render_step_options(&mut self, ui: &mut egui::Ui, standalone: bool) {
         let hero_h = 50.0;
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(20, 26, 38), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
+            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
             0.0,
-            Color32::from_rgb(0, 229, 255),
+            Color32::from_rgb(2, 132, 199),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 15.0),
             egui::Align2::LEFT_CENTER,
-            "⚙️ 安装目录与系统集成选项 (CONFIGURATION)",
+            "安装目录与系统集成选项 (CONFIGURATION)",
             egui::FontId::proportional(13.0),
-            Color32::from_rgb(0, 229, 255),
+            Color32::from_rgb(241, 245, 249),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 35.0),
             egui::Align2::LEFT_CENTER,
             "自定义目标安装路径与环境联动，保障纯净绿色的使用体验",
             egui::FontId::proportional(10.0),
-            Color32::from_rgb(200, 215, 240),
+            Color32::from_rgb(148, 163, 184),
         );
 
         // 路径设置行
@@ -181,7 +165,7 @@ impl App {
             egui::RichText::new("📁 目标安装与工作目录 (Installation Directory):")
                 .strong()
                 .size(11.5)
-                .color(Color32::from_rgb(255, 230, 0)),
+                .color(Color32::from_rgb(241, 245, 249)),
         );
 
         let mut browse_clicked = false;
@@ -203,7 +187,7 @@ impl App {
                 ip.rect_stroke(
                     in_rect,
                     0.0,
-                    Stroke::new(2.5, Color32::from_rgb(0, 229, 255)),
+                    Stroke::new(2.5, Color32::from_rgb(2, 132, 199)),
                     StrokeKind::Inside,
                 );
             }
@@ -223,7 +207,7 @@ impl App {
                 "浏览 (BROWSE)...",
                 vec2(btn_w, 34.0),
                 false,
-                Color32::from_rgb(0, 229, 255),
+                Color32::from_rgb(30, 41, 59),
             )
             .clicked()
             {
@@ -249,14 +233,14 @@ impl App {
             .color(Color32::from_rgb(148, 163, 184)),
         );
 
-        // 3 大复选集成卡片
+        // 3 大复选集成卡片 (色彩心理学: 天青/紫罗兰/翡翠绿分级)
         comic_interactive_card(
             ui,
             &mut self.installer.add_path,
             "将 IDE1.0 添加至全局环境变量 PATH",
             "可在任意终端 (PowerShell / CMD) 键入 ide-fast 秒级呼出",
             "01",
-            Color32::from_rgb(0, 229, 255),
+            Color32::from_rgb(14, 165, 233),
         );
 
         comic_interactive_card(
@@ -265,7 +249,7 @@ impl App {
             "创建桌面与开始菜单极速启动快捷方式",
             "生成正版水晶图标，双击秒开，随时直达工作空间",
             "02",
-            Color32::from_rgb(255, 204, 0),
+            Color32::from_rgb(168, 85, 247),
         );
 
         comic_interactive_card(
@@ -279,7 +263,7 @@ impl App {
 
         ui.add_space(6.0);
 
-        // 底部行动条：[← 上一步] + [⚡ 立即安装 ⚡] + [取消]
+        // 底部行动条：[← 上一步] + [立即安装 (INSTALL NOW) →] + [取消]
         let mut back_clicked = false;
         let mut install_clicked = false;
         let mut cancel_clicked = false;
@@ -294,7 +278,7 @@ impl App {
                 "← 上一步",
                 vec2(back_w, 42.0),
                 false,
-                Color32::from_rgb(50, 58, 82),
+                Color32::from_rgb(30, 38, 54),
             )
             .clicked()
             {
@@ -303,10 +287,10 @@ impl App {
 
             if comic_action_button(
                 ui,
-                "⚡ 立即安装 (INSTALL NOW) ⚡",
+                "立即安装 (INSTALL NOW) →",
                 vec2(install_w, 42.0),
                 true,
-                Color32::from_rgb(255, 230, 0),
+                Color32::from_rgb(2, 132, 199),
             )
             .clicked()
             {
@@ -318,7 +302,7 @@ impl App {
                 "取消",
                 vec2(cancel_w, 42.0),
                 false,
-                Color32::from_rgb(40, 48, 70),
+                Color32::from_rgb(30, 38, 54),
             )
             .clicked()
             {

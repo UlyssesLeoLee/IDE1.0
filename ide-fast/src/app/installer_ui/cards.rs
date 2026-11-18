@@ -34,8 +34,11 @@ pub fn comic_action_button(
 
     paint_comic_hard_shadow_rect(p, draw_rect, btn_color, 2.2, s_off);
 
-    let text_col = if primary || (btn_color.r() > 180 && btn_color.g() > 180 && btn_color.b() > 180)
-    {
+    // 基于 BT.601 感知亮度模型自适应文字颜色 (亮色底黑字，暗色与宝蓝底白字)
+    let lum = 0.299 * (btn_color.r() as f32)
+        + 0.587 * (btn_color.g() as f32)
+        + 0.114 * (btn_color.b() as f32);
+    let text_col = if lum > 165.0 {
         Color32::BLACK
     } else {
         Color32::WHITE

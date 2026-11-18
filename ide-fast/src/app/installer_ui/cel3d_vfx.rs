@@ -9,6 +9,63 @@ use eframe::egui;
 use egui::{pos2, Color32, Painter, Pos2, Stroke};
 use std::f32::consts::PI;
 
+/// 绘制低调奢华暗场氛围光晕 (Subtle Ambient Luxury Glow)
+/// 柔和无噪点的天青背景辉光，降低视觉疲劳与认知负荷，重点凸显中央 3D 晶石
+pub fn draw_ambient_luxury_glow(p: &Painter, center: Pos2, time: f32) {
+    let pulse = (time * 1.2).sin() * 0.15;
+    let r1 = 130.0 + pulse * 10.0;
+    let r2 = 75.0 + pulse * 6.0;
+
+    // 外圈柔和天青微光
+    p.circle_filled(
+        center,
+        r1,
+        Color32::from_rgba_unmultiplied(2, 132, 199, 14),
+    );
+    // 内圈微光过渡
+    p.circle_filled(
+        center,
+        r2,
+        Color32::from_rgba_unmultiplied(14, 165, 233, 22),
+    );
+}
+
+/// 绘制 3D 悬浮晶石在地面的柔和椭圆接触阴影 (Grounding Contact Shadow)
+pub fn draw_contact_floor_shadow(
+    p: &Painter,
+    cam: &Camera3D,
+    view_rot: Mat4,
+    center: Pos2,
+    floor_y: f32,
+    time: f32,
+) {
+    let rel = Vec3::new(0.0, floor_y, 0.0) - cam.target;
+    let rot = view_rot.transform_point(rel);
+    let p_cam = Vec3::new(rot.x, rot.y, rot.z + cam.dist);
+    if p_cam.z > 10.0 {
+        let sx = center.x + (p_cam.x * cam.focal) / p_cam.z;
+        let sy = center.y - (p_cam.y * cam.focal) / p_cam.z;
+
+        // 根据呼吸悬浮高度微调阴影大小与透明度
+        let bob_scale = 1.0 + (time * 1.6).sin() * 0.06;
+        let rx = 56.0 * bob_scale;
+        let ry = 14.0 * bob_scale;
+
+        let segments = 24;
+        let mut pts = Vec::with_capacity(segments);
+        for i in 0..segments {
+            let a = (i as f32) * 2.0 * PI / (segments as f32);
+            pts.push(pos2(sx + a.cos() * rx, sy + a.sin() * ry));
+        }
+
+        p.add(egui::Shape::convex_polygon(
+            pts,
+            Color32::from_black_alpha(110),
+            Stroke::NONE,
+        ));
+    }
+}
+
 /// 渲染 3D 华丽特效管线
 pub fn render_3d_vfx(
     p: &Painter,

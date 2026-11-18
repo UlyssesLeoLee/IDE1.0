@@ -159,16 +159,15 @@ impl App {
         standalone: bool,
     ) {
         let ctx = ui.ctx().clone();
-        let header_h = 54.0;
+        let header_h = 50.0;
         let header_rect = Rect::from_min_size(win_rect.min, Vec2::new(win_rect.width(), header_h));
-        let title_x = header_rect.left() + 60.0;
-        let star_center = pos2(title_x + 124.0, header_rect.center().y);
+        let title_x = header_rect.left() + 56.0;
         let wiz_rect = Rect::from_center_size(
-            pos2(star_center.x + 84.0, header_rect.center().y),
-            vec2(104.0, 24.0),
+            pos2(title_x + 116.0, header_rect.center().y),
+            vec2(76.0, 22.0),
         );
 
-        // 1-4. 绘制底板与标题栏静态图元
+        // 1-4. 绘制底板与标题栏静态图元 (低调奢华暗色系 · 色彩心理学精准契合)
         {
             let p = ui.painter();
 
@@ -176,118 +175,78 @@ impl App {
             let shadow_offset = vec2(6.0, 6.0);
             p.rect_filled(win_rect.translate(shadow_offset), 0.0, Color32::BLACK);
 
-            // 2. 漫画主画板底色与粗墨线外框
-            let comic_night_bg = Color32::from_rgb(18, 21, 35);
+            // 2. 漫画主画板底色与粗墨线外框 (深邃黑曜钛金底板，低眩光极度舒适)
+            let comic_night_bg = Color32::from_rgb(14, 18, 26);
             p.rect_filled(win_rect, 0.0, comic_night_bg);
             p.rect_stroke(
                 win_rect,
                 0.0,
-                Stroke::new(2.5, Color32::BLACK),
+                Stroke::new(2.0, Color32::from_rgb(30, 41, 59)),
                 StrokeKind::Inside,
             );
 
-            // 3. 背景 Ben-Day 波普网点
-            paint_ben_day_dots(
-                p,
-                win_rect.shrink(4.0),
-                Color32::from_rgb(32, 38, 62),
-                12.0,
-                1.2,
-            );
-
-            // 4. 顶部 Comic Header 栏：美漫高饱和行动条 (#FFE600)，彻底移除 Windows 原生标题栏
-            p.rect_filled(header_rect, 0.0, Color32::from_rgb(255, 230, 0));
-            p.rect_stroke(
-                header_rect,
-                0.0,
-                Stroke::new(2.0, Color32::BLACK),
-                StrokeKind::Inside,
-            );
+            // 3. 顶部 Header 栏：精工黑曜钛金栏 (#141924) + 皇家宝蓝分割线 (#0284c7)
+            let header_bg = Color32::from_rgb(20, 25, 36);
+            p.rect_filled(header_rect, 0.0, header_bg);
             p.line_segment(
                 [header_rect.left_bottom(), header_rect.right_bottom()],
-                Stroke::new(2.5, Color32::BLACK),
+                Stroke::new(1.8, Color32::from_rgb(2, 132, 199)),
             );
 
-            // 头部速度动量斜切线 (Speed Lines)
-            for sx in (18..200).step_by(22) {
-                let p1 = pos2(header_rect.left() + sx as f32, header_rect.top());
-                let p2 = pos2(header_rect.left() + sx as f32 + 24.0, header_rect.bottom());
-                p.line_segment([p1, p2], Stroke::new(4.0, Color32::from_rgb(240, 210, 0)));
-                p.line_segment([p1, p2], Stroke::new(1.0, Color32::BLACK));
-            }
-
-            // 左上角正版原生 Logo 纹理徽章 (使用原始正版 Crystal Logo，保留完整品牌辨识度)
-            let logo_center = pos2(header_rect.left() + 32.0, header_rect.center().y);
+            // 左上角正版原生 Logo 纹理徽章 (严格保留正版 Crystal Logo，26px 紧凑精致)
+            let logo_center = pos2(header_rect.left() + 28.0, header_rect.center().y);
             paint_authentic_logo(
                 p,
                 self.installer.logo_tex.as_ref(),
                 logo_center,
-                28.0,
+                26.0,
                 vec2(2.0, 2.0),
             );
 
-            // 品牌标题文字 (带纯黑实心投影)
+            // 品牌标题文字 "IDE 1.0"
             p.text(
-                pos2(title_x + 2.0, header_rect.center().y + 2.0),
+                pos2(title_x + 1.5, header_rect.center().y + 1.5),
                 egui::Align2::LEFT_CENTER,
                 "IDE 1.0",
-                egui::FontId::proportional(18.0),
+                egui::FontId::proportional(17.0),
                 Color32::BLACK,
             );
             p.text(
                 pos2(title_x, header_rect.center().y),
                 egui::Align2::LEFT_CENTER,
                 "IDE 1.0",
-                egui::FontId::proportional(18.0),
-                Color32::from_rgb(10, 10, 15),
+                egui::FontId::proportional(17.0),
+                Color32::from_rgb(241, 245, 249),
             );
 
-            // 爆炸贴纸 "POW! FAST"
-            paint_comic_burst_star(
-                p,
-                star_center,
-                20.0,
-                11.0,
-                10,
-                Color32::from_rgb(255, 42, 85),
-                vec2(2.0, 2.0),
-            );
-            p.text(
-                star_center,
-                egui::Align2::CENTER_CENTER,
-                "FAST!",
-                egui::FontId::proportional(8.5),
-                Color32::WHITE,
-            );
-
-            // 美漫行动胶囊 "SETUP WIZARD"
+            // 专属低调奢华安装向导胶囊 "安装向导"
             paint_comic_hard_shadow_rect(
                 p,
                 wiz_rect,
-                Color32::from_rgb(0, 229, 255),
-                2.0,
-                vec2(2.5, 2.5),
+                Color32::from_rgb(2, 132, 199),
+                1.5,
+                vec2(1.5, 1.5),
             );
             p.text(
                 wiz_rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "SETUP WIZARD",
+                "安装向导",
                 egui::FontId::proportional(10.5),
-                Color32::BLACK,
+                Color32::WHITE,
             );
 
             // 右侧版本胶囊
             let ver_rect = Rect::from_center_size(
                 pos2(header_rect.right() - 86.0, header_rect.center().y),
-                vec2(76.0, 24.0),
+                vec2(74.0, 22.0),
             );
-            paint_comic_hard_shadow_rect(p, ver_rect, Color32::WHITE, 2.0, vec2(2.0, 2.0));
+            paint_comic_hard_shadow_rect(p, ver_rect, Color32::from_rgb(30, 41, 59), 1.5, vec2(1.5, 1.5));
             p.text(
                 ver_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 concat!("★ v", env!("CARGO_PKG_VERSION")),
-                egui::FontId::proportional(11.0),
-                Color32::BLACK,
+                egui::FontId::proportional(10.5),
+                Color32::from_rgb(148, 163, 184),
             );
         }
 

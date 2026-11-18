@@ -14,25 +14,25 @@ impl App {
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(20, 26, 38), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
+            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
             0.0,
-            Color32::from_rgb(255, 42, 85),
+            Color32::from_rgb(2, 132, 199),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 15.0),
             egui::Align2::LEFT_CENTER,
-            "🚀 正在部署 IDE 1.0 (DEPLOYING PACKAGES)",
+            "正在部署 IDE 1.0 (DEPLOYING PACKAGES)",
             egui::FontId::proportional(13.0),
-            Color32::from_rgb(255, 42, 85),
+            Color32::from_rgb(241, 245, 249),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 35.0),
             egui::Align2::LEFT_CENTER,
             "纯 Rust 原生释放，解压核心微内核与环境配置文件...",
             egui::FontId::proportional(10.0),
-            Color32::from_rgb(200, 215, 240),
+            Color32::from_rgb(148, 163, 184),
         );
 
         ui.add_space(8.0);
@@ -53,14 +53,14 @@ impl App {
         paint_comic_hard_shadow_rect(
             bp,
             bar_rect,
-            Color32::from_rgb(26, 31, 50),
-            2.5,
+            Color32::from_rgb(20, 24, 38),
+            2.0,
             vec2(3.0, 3.0),
         );
 
         let fill_w = (bar_rect.width() * progress).max(4.0);
         let fill_rect = Rect::from_min_size(bar_rect.min, vec2(fill_w, bar_rect.height()));
-        bp.rect_filled(fill_rect, 0.0, Color32::from_rgb(0, 229, 255));
+        bp.rect_filled(fill_rect, 0.0, Color32::from_rgb(2, 132, 199));
         bp.rect_stroke(
             fill_rect,
             0.0,
@@ -68,14 +68,14 @@ impl App {
             StrokeKind::Inside,
         );
 
-        // 进度条内部斜切动态速度纹理
+        // 进度条内部斜切动态速度纹理 (天青科技微光)
         let time = ui.input(|i| i.time);
         let offset = ((time * 40.0) % 20.0) as f32;
         let mut sx = fill_rect.left() - 20.0 + offset;
         while sx < fill_rect.right() {
             let p1 = pos2(sx, fill_rect.top());
             let p2 = pos2(sx + 14.0, fill_rect.bottom());
-            bp.line_segment([p1, p2], Stroke::new(3.0, Color32::from_rgb(100, 245, 255)));
+            bp.line_segment([p1, p2], Stroke::new(2.5, Color32::from_rgb(56, 189, 248)));
             sx += 20.0;
         }
 
@@ -86,7 +86,7 @@ impl App {
             egui::Align2::CENTER_CENTER,
             pct_str,
             egui::FontId::proportional(13.0),
-            Color32::BLACK,
+            Color32::WHITE,
         );
 
         ui.add_space(8.0);
@@ -189,15 +189,15 @@ impl App {
         }
     }
 
-    /// 步骤 3: 部署完成分镜
+    /// 步骤 3: 部署完成分镜 (低调奢华 · 重点突出)
     pub(super) fn render_step_finished(&mut self, ui: &mut egui::Ui, standalone: bool) {
         let hero_h = 56.0;
         let (h_rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
         let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(26, 32, 54), 2.0, vec2(3.0, 3.0));
+        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(20, 26, 38), 2.0, vec2(3.0, 3.0));
         hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
+            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 3.5)),
             0.0,
             Color32::from_rgb(16, 185, 129),
         );
@@ -206,41 +206,25 @@ impl App {
             egui::Align2::LEFT_CENTER,
             "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
             egui::FontId::proportional(13.5),
-            Color32::from_rgb(16, 185, 129),
+            Color32::from_rgb(241, 245, 249),
         );
         hp.text(
             pos2(h_rect.left() + 14.0, h_rect.top() + 38.0),
             egui::Align2::LEFT_CENTER,
             "所有核心依赖与配置已装载完毕，即刻享受极致的纯 Rust 原生开发体验！",
             egui::FontId::proportional(10.2),
-            Color32::from_rgb(200, 215, 240),
-        );
-        paint_comic_burst_star(
-            hp,
-            pos2(h_rect.right() - 28.0, h_rect.top() + 24.0),
-            18.0,
-            10.0,
-            8,
-            Color32::from_rgb(16, 185, 129),
-            vec2(1.5, 1.5),
-        );
-        hp.text(
-            pos2(h_rect.right() - 28.0, h_rect.top() + 24.0),
-            egui::Align2::CENTER_CENTER,
-            "100%",
-            egui::FontId::proportional(8.0),
-            Color32::WHITE,
+            Color32::from_rgb(148, 163, 184),
         );
 
         ui.add_space(4.0);
 
-        // 部署配置清单一览
+        // 部署配置清单一览 (色彩心理学: 天青/紫罗兰/翡翠绿分级)
         comic_info_card(
             ui,
             "📁 安装与工作空间目录",
             &format!("已绑定目标目录: {}", self.installer.target_dir),
             "✓",
-            Color32::from_rgb(0, 229, 255),
+            Color32::from_rgb(14, 165, 233),
         );
 
         let path_summary = if self.installer.add_path {
@@ -253,7 +237,7 @@ impl App {
             "⚡ 终端命令行集成",
             path_summary,
             "✓",
-            Color32::from_rgb(255, 204, 0),
+            Color32::from_rgb(168, 85, 247),
         );
 
         let tray_summary = if self.installer.tray_resident {
@@ -280,7 +264,7 @@ impl App {
                     &mut launch,
                     egui::RichText::new("⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)")
                         .strong()
-                        .color(Color32::from_rgb(255, 230, 0)),
+                        .color(Color32::from_rgb(241, 245, 249)),
                 )
                 .changed()
             {
@@ -290,16 +274,16 @@ impl App {
 
         ui.add_space(10.0);
 
-        // 底部行动条：[⚡ 完成并开启极速体验 (FINISH) ⚡]
+        // 底部行动条：[完成并启动 IDE 1.0 (LAUNCH NOW) →]
         let mut finish_clicked = false;
         ui.horizontal(|ui| {
             let total_w = ui.available_width();
             if comic_action_button(
                 ui,
-                "⚡ 完成并开启极速体验 (FINISH) ⚡",
+                "完成并启动 IDE 1.0 (LAUNCH NOW) →",
                 vec2(total_w, 42.0),
                 true,
-                Color32::from_rgb(255, 230, 0),
+                Color32::from_rgb(16, 185, 129),
             )
             .clicked()
             {
