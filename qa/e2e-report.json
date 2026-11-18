@@ -1,8 +1,8 @@
 ﻿{
-    "GeneratedAt":  "2026-11-18T09:09:22-08:00",
+    "GeneratedAt":  "2026-11-18T09:28:26-08:00",
     "Summary":  {
-                    "TotalExecuted":  1543,
-                    "TotalPassed":  1543,
+                    "TotalExecuted":  1546,
+                    "TotalPassed":  1546,
                     "TotalFailed":  0,
                     "PassRatePercent":  100,
                     "FeatureCoveragePercent":  100,
@@ -16,23 +16,23 @@
                                                                "Package":  "editcore, nema-codec, ide-agent-router",
                                                                "Passed":  743,
                                                                "Failed":  0,
-                                                               "DurationSec":  25.77
+                                                               "DurationSec":  24.18
                                                            },
                                                            {
                                                                "Package":  "ide-fast",
-                                                               "Passed":  624,
+                                                               "Passed":  626,
                                                                "Failed":  0,
-                                                               "DurationSec":  49.74
+                                                               "DurationSec":  57.81
                                                            },
                                                            {
                                                                "Package":  "ide-shell-web",
                                                                "Passed":  101,
                                                                "Failed":  0,
-                                                               "DurationSec":  133.07
+                                                               "DurationSec":  15.28
                                                            }
                                                        ],
-                                          "TotalExecuted":  1468,
-                                          "TotalPassed":  1468,
+                                          "TotalExecuted":  1470,
+                                          "TotalPassed":  1470,
                                           "TotalFailed":  0
                                       },
                              "Playwright":  {
@@ -46,17 +46,17 @@
                                                                                  "specs/basic.spec.ts",
                                                                                  "specs/command.spec.ts"
                                                                              ],
-                                                                   "Passed":  75,
+                                                                   "Passed":  76,
                                                                    "Failed":  0,
-                                                                   "DurationSec":  61.61
+                                                                   "DurationSec":  62.93
                                                                }
                                                            ],
-                                                "TotalExecuted":  75,
-                                                "TotalPassed":  75,
+                                                "TotalExecuted":  76,
+                                                "TotalPassed":  76,
                                                 "TotalFailed":  0
                                             },
-                             "TotalExecuted":  1543,
-                             "TotalPassed":  1543,
+                             "TotalExecuted":  1546,
+                             "TotalPassed":  1546,
                              "TotalFailed":  0,
                              "PassRatePercent":  100
                          },
@@ -157,6 +157,13 @@
                               "Name":  "Complete i18n \u0026 Language Switching",
                               "Desc":  "全局完整i18n支持, 自动识别系统语言, 首选项与安装向导路径界面均可切换",
                               "VerifiedBy":  "specs/features-v081.spec.ts [Test 11, 12], ide-fast",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-15",
+                              "Name":  "Headless Subsystem \u0026 Silent Tray Daemon",
+                              "Desc":  "安装向导与右键关闭常驻统一无头启动, 彻底消除终端黑框与子进程弹窗",
+                              "VerifiedBy":  "specs/features-v081.spec.ts [Test 14], ide-fast",
                               "Status":  "Passed"
                           }
                       ]

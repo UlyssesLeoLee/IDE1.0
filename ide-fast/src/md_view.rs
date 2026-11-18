@@ -640,9 +640,13 @@ pub fn open_url(url: &str) -> Result<(), String> {
         return Err("只能打开 http / https / mailto 链接".into());
     }
     #[cfg(windows)]
-    let r = std::process::Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", url.trim()])
-        .spawn();
+    let r = {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("rundll32");
+        cmd.args(["url.dll,FileProtocolHandler", url.trim()])
+            .creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        cmd.spawn()
+    };
     #[cfg(not(windows))]
     let r = std::process::Command::new("xdg-open")
         .arg(url.trim())

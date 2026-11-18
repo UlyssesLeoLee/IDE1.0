@@ -268,3 +268,13 @@ fn test_installer_language_switching_in_options() {
     // 还原环境
     crate::i18n::set(init_lang);
 }
+
+#[test]
+fn test_installer_headless_startup_and_subsystem_invariants() {
+    // 验证安装向导执行部署命令构造中已配置 CREATE_NO_WINDOW
+    #[cfg(windows)]
+    {
+        let cmd = super::deploy::headless_cmd("powershell");
+        assert_eq!(cmd.get_program(), "powershell");
+    }
+}

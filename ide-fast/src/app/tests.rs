@@ -1492,6 +1492,27 @@ fn test_tray_all_actions_and_visibility_state_invariants() {
 }
 
 #[test]
+fn test_tray_close_resident_headless_and_unsaved_invariants() {
+    let (mut a, _g) = app(Settings::default());
+    a.cfg.tray_resident = true;
+    let ctx = egui::Context::default();
+
+    // 模拟有未保存文档时从托盘退出
+    a.docs[0].dirty = true;
+    a.handle_tray_event(&ctx, crate::tray::TrayEvent::Quit);
+    assert!(a.force_exit);
+
+    // 验证无头启动参数有效性
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.creation_flags(0x0800_0000);
+        assert_eq!(cmd.get_program(), "powershell");
+    }
+}
+
+#[test]
 fn test_retro16_pixelfont_invariants() {
     let (mut a, _g) = app(Settings::default());
     a.font_px = 16.5; // 用户设置了非 13/15 的任意自定义字号

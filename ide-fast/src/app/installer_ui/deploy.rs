@@ -305,6 +305,9 @@ impl App {
                     } else {
                         dest_ide10
                     };
+                    #[cfg(windows)]
+                    let _ = headless_cmd(run_exe.to_str().unwrap_or("IDE1.0.exe")).spawn();
+                    #[cfg(not(windows))]
                     let _ = std::process::Command::new(run_exe).spawn();
                 }
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -314,6 +317,14 @@ impl App {
             }
         }
     }
+}
+
+#[cfg(windows)]
+pub(super) fn headless_cmd(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: 无头启动，严禁弹出控制台/终端窗口
+    cmd
 }
 
 /// 执行真正的系统物理部署与快捷方式/注册表配置
@@ -343,7 +354,7 @@ fn execute_physical_deployment(inst: &super::InstallerState) {
                     dest_str,
                     target_str
                 );
-                let _ = std::process::Command::new("powershell")
+                let _ = headless_cmd("powershell")
                     .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
                     .output();
             }
@@ -358,7 +369,7 @@ fn execute_physical_deployment(inst: &super::InstallerState) {
                 dest_str,
                 target_str
             );
-            let _ = std::process::Command::new("powershell")
+            let _ = headless_cmd("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
                 .output();
         }
@@ -368,26 +379,20 @@ fn execute_physical_deployment(inst: &super::InstallerState) {
                 "$p=[Environment]::GetEnvironmentVariable('Path','User');if(-not ($p -split ';' -contains '{}')){{[Environment]::SetEnvironmentVariable('Path',\"$p;{}\",'User')}}",
                 target_str, target_str
             );
-            let _ = std::process::Command::new("powershell")
+            let _ = headless_cmd("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &cmd])
                 .output();
         }
 
         let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\IDE1.0";
-        let _ = std::process::Command::new("reg")
-            .args(["add", key, "/v", "DisplayName", "/t", "REG_SZ", "/d", "IDE 1.0", "/f"])
-            .output();
-        let _ = std::process::Command::new("reg")
-            .args(["add", key, "/v", "DisplayVersion", "/t", "REG_SZ", "/d", "0.8.1", "/f"])
-            .output();
-        let _ = std::process::Command::new("reg")
-            .args(["add", key, "/v", "Publisher", "/t", "REG_SZ", "/d", "IDE1.0 Community", "/f"])
-            .output();
-        let _ = std::process::Command::new("reg")
-            .args(["add", key, "/v", "InstallLocation", "/t", "REG_SZ", "/d", &target_str, "/f"])
-            .output();
-        let _ = std::process::Command::new("reg")
-            .args(["add", key, "/v", "DisplayIcon", "/t", "REG_SZ", "/d", &dest_str, "/f"])
-            .output();
+        for reg_args in [
+            &["add", key, "/v", "DisplayName", "/t", "REG_SZ", "/d", "IDE 1.0", "/f"][..],
+            &["add", key, "/v", "DisplayVersion", "/t", "REG_SZ", "/d", "0.8.1", "/f"][..],
+            &["add", key, "/v", "Publisher", "/t", "REG_SZ", "/d", "IDE1.0 Community", "/f"][..],
+            &["add", key, "/v", "InstallLocation", "/t", "REG_SZ", "/d", &target_str, "/f"][..],
+            &["add", key, "/v", "DisplayIcon", "/t", "REG_SZ", "/d", &dest_str, "/f"][..],
+        ] {
+            let _ = headless_cmd("reg").args(reg_args).output();
+        }
     }
 }

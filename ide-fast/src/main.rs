@@ -6,8 +6,8 @@
 //!
 //! 启动耗时追踪: 设环境变量 `IDE_FAST_TRACE=1`, 在 stderr 打印 "进程入口 -> 窗口创建 -> 首帧" 各点的毫秒数。
 
-// Windows 发行版走 GUI 子系统: 否则双击启动会多出一个控制台窗口 (调试构建保留控制台, 方便看 IDE_FAST_TRACE 输出)
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Windows 下统一走原生 GUI 子系统: 无论是常规启动、安装向导还是常驻托盘，均无头启动，绝不弹出黑框终端窗口
+#![windows_subsystem = "windows"]
 #![recursion_limit = "256"]
 #![allow(
     deprecated,

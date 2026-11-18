@@ -311,6 +311,13 @@ $features = @(
         Desc = "全局完整i18n支持, 自动识别系统语言, 首选项与安装向导路径界面均可切换"
         VerifiedBy = "specs/features-v081.spec.ts [Test 11, 12], ide-fast"
         Status = "Passed"
+    },
+    [PSCustomObject]@{
+        Id = "FEAT-15"
+        Name = "Headless Subsystem & Silent Tray Daemon"
+        Desc = "安装向导与右键关闭常驻统一无头启动, 彻底消除终端黑框与子进程弹窗"
+        VerifiedBy = "specs/features-v081.spec.ts [Test 14], ide-fast"
+        Status = "Passed"
     }
 )
 

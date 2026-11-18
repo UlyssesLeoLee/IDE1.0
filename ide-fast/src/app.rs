@@ -2133,15 +2133,16 @@ impl App {
     fn prompt_unsaved(&self, name: &str) -> Option<bool> {
         #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
             let escaped = name.replace('\'', "''").replace(['\n', '\r'], " ");
             let script = format!(
                 "$ws = New-Object -ComObject WScript.Shell; exit $ws.Popup('文件 [{}] 已被修改。`n`n是否保存修改？', 0, 'IDE1.0', 0x40023)",
                 escaped
             );
-            if let Ok(out) = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
-                .output()
-            {
+            let mut cmd = std::process::Command::new("powershell");
+            cmd.args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+                .creation_flags(0x0800_0000); // CREATE_NO_WINDOW: 无头启动，严禁弹出终端窗口
+            if let Ok(out) = cmd.output() {
                 match out.status.code() {
                     Some(6) => return Some(true),  // IDYES
                     Some(7) => return Some(false), // IDNO
@@ -2314,10 +2315,21 @@ impl App {
         }
     }
 
-    /// 新窗口: 起一个独立的新进程 (`--new` 不和已有实例合并)
+    /// 新窗口: 起一个独立的新进程 (`--new` 不和已有实例合并, 无头启动无终端窗口)
     fn new_window(&mut self) {
-        let r = std::env::current_exe()
-            .and_then(|exe| std::process::Command::new(exe).arg("--new").spawn());
+        let r = std::env::current_exe().and_then(|exe| {
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                let mut c = std::process::Command::new(exe);
+                c.arg("--new").creation_flags(0x0800_0000);
+                c.spawn()
+            }
+            #[cfg(not(windows))]
+            {
+                std::process::Command::new(exe).arg("--new").spawn()
+            }
+        });
         if let Err(e) = r {
             self.cur().tip = format!("开不了新窗口: {e}");
         }

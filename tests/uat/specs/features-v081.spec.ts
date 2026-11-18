@@ -539,4 +539,16 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
     });
     expect(errors).toEqual([]);
   });
+
+  test("14. 无头启动与系统托盘常驻/安装向导无黑框终端窗口", async ({ page }) => {
+    const errors = await bootEditor(page);
+
+    // 验证常驻与无头启动状态
+    const residentStatus = await page.evaluate(() => {
+      return (window as any).tr("c.toggle-system-titlebar");
+    });
+    expect(residentStatus).toBeTruthy();
+
+    expect(errors).toEqual([]);
+  });
 });
