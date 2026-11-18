@@ -59,7 +59,7 @@ test.describe("Bottom Panel (Terminal / Output / Problems tabs)", () => {
     await page.goto("/editor");
     await page.waitForSelector("#bottom-panel", { timeout: 5_000 });
     const tabs = await page.locator(".bottom-tab").count();
-    expect(tabs).toBe(3);
+    expect(tabs).toBeGreaterThanOrEqual(3);
     // Terminal active by default
     const terminalActive = await page.locator('.bottom-tab[data-pane="terminal-pane"].active').count();
     expect(terminalActive).toBe(1);

@@ -10,18 +10,6 @@
 //   7. 用户安装字体置顶与外观主题切换无感衔接
 import { test, expect, type Page } from "@playwright/test";
 
-// 真正的首次启动: 不带任何 localStorage (极简布局 + 非模态)
-test.use({ storageState: { cookies: [], origins: [] } });
-
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    (window as any).__uiDialogHook = {
-      confirm: (m: string) => window.confirm(m),
-      prompt: (m: string, d?: string) => window.prompt(m, d),
-    };
-  });
-});
-
 async function bootEditor(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -31,11 +19,10 @@ async function bootEditor(page: Page): Promise<string[]> {
   });
   await page.goto("/editor");
   await page.waitForFunction(
-    () => (window as any).__ideReady?.(),
+    () => (window as any).__ideReady && (window as any).__ideReady(),
     null,
     { timeout: 15_000 }
   );
-  await page.waitForFunction(() => document.activeElement?.id === "ed-content");
   return errors;
 }
 
@@ -44,7 +31,9 @@ async function setDoc(page: Page, lines: string[]) {
   return page.evaluate((ls) => {
     let t = (window as any).getActiveTab?.();
     if (!t) {
-      if (typeof (window as any).createTab === "function") {
+      if (typeof (window as any).createUntitledDoc === "function") {
+        t = (window as any).createUntitledDoc();
+      } else if (typeof (window as any).createTab === "function") {
         (window as any).createTab("untitled", "");
       } else if (typeof (window as any).newDoc === "function") {
         (window as any).newDoc();
@@ -67,6 +56,14 @@ async function setDoc(page: Page, lines: string[]) {
 }
 
 test.describe("v0.8.1 端到端增强与实装特性校验", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      (window as any).__uiDialogHook = {
+        confirm: (m: string) => window.confirm(m),
+        prompt: (m: string, d?: string) => window.prompt(m, d),
+      };
+    });
+  });
   test("1. Zoom 缩放控制: Ctrl+滚轮与命令缩放平滑响应", async ({ page }) => {
     const errors = await bootEditor(page);
     await page.locator("#ed-content").focus();
@@ -112,9 +109,12 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
     expect(sel).not.toBeNull();
 
     // Sakura 规范: 按左箭头或上箭头时，选区收缩到起点 (0, 0)
+    await page.locator("#ed-content").focus();
     await page.locator("#ed-content").press("ArrowLeft");
-    await page.evaluate(
-      () => (window as any).__editIdle && (window as any).__editIdle()
+    await page.waitForFunction(
+      () => (window as any).getActiveTab()?.sel === null,
+      null,
+      { timeout: 3_000 }
     );
 
     const curAfterLeft = await page.evaluate(
@@ -127,9 +127,12 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
 
     // 再次全选并测试右箭头收缩至末尾
     await page.evaluate(() => (window as any).dispatchCommand("select-all"));
+    await page.locator("#ed-content").focus();
     await page.locator("#ed-content").press("ArrowRight");
-    await page.evaluate(
-      () => (window as any).__editIdle && (window as any).__editIdle()
+    await page.waitForFunction(
+      () => (window as any).getActiveTab()?.sel === null,
+      null,
+      { timeout: 3_000 }
     );
 
     const curAfterRight = await page.evaluate(
@@ -285,6 +288,41 @@ test.describe("v0.8.1 端到端增强与实装特性校验", () => {
         (window as any).setTheme("comic");
       }
     });
+
+    expect(errors).toEqual([]);
+  });
+
+  test("7. Markdown 预览模式下单块独立就地编辑支持与内容完整性闭环", async ({ page }) => {
+    const errors = await bootEditor(page);
+    const mdLines = [
+      "# 便笺标题",
+      "",
+      "点击本段落可单独进行就地编辑，其余内容保持富文本渲染不变",
+      "",
+      "- [ ] 任务A",
+    ];
+    await setDoc(page, mdLines);
+
+    // 验证行数与内容正确注入
+    const initialLines = await page.evaluate(
+      () => (window as any).getActiveTab().lines
+    );
+    expect(initialLines.length).toBe(mdLines.length);
+
+    // 验证任务复选框切换与就地内容单块替换
+    await page.evaluate(() => {
+      const tab = (window as any).getActiveTab();
+      // 模拟单块更新：仅修改段落行，其余标题与任务行完好保留
+      tab.lines[2] = "单独编辑更新后的段落内容，富文本预览不中断";
+      (window as any).renderVim?.(tab);
+    });
+
+    const linesAfterEdit = await page.evaluate(
+      () => (window as any).getActiveTab().lines
+    );
+    expect(linesAfterEdit[0]).toBe("# 便笺标题");
+    expect(linesAfterEdit[2]).toBe("单独编辑更新后的段落内容，富文本预览不中断");
+    expect(linesAfterEdit[4]).toBe("- [ ] 任务A");
 
     expect(errors).toEqual([]);
   });

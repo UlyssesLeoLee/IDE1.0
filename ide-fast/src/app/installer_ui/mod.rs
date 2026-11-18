@@ -80,7 +80,7 @@ impl Default for InstallerState {
             cam_yaw: 0.35,
             cam_pitch: 0.22,
             cam_dist: 450.0,
-            auto_rotate: false,
+            auto_rotate: true,
         }
     }
 }

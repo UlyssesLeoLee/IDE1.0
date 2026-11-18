@@ -542,12 +542,19 @@ pub fn edit_end(
 }
 
 /// 就地编辑框: 多行文本 + 应用 / 取消 (点框外 = 应用, Esc = 取消; 应用只落一次补丁 = 一步撤销)
-fn edit_ui(ui: &mut egui::Ui, cache: &mut MdCache, ev: &mut MdEvent) {
+fn edit_ui(ui: &mut egui::Ui, cx: &MdCtx, cache: &mut MdCache, ev: &mut MdEvent) {
     let Some(e) = cache.edit.as_mut() else { return };
     let rows = e.buf.lines().count().clamp(3, 14);
     let first = !e.shown;
     e.shown = true;
     let top = ui.cursor().min;
+
+    let vis = ui.visuals_mut();
+    if cx.tc.bg_edit.a() > 0 {
+        vis.extreme_bg_color = cx.tc.bg_edit;
+    }
+    vis.override_text_color = Some(cx.tc.fg);
+
     let te = ui.add(
         egui::TextEdit::multiline(&mut e.buf)
             .font(egui::TextStyle::Monospace)
@@ -713,7 +720,7 @@ pub fn show(
                     }
                     let before = ui.cursor().min.y;
                     if cache.edit.as_ref().is_some_and(|e| e.start == b.line) {
-                        edit_ui(ui, cache, &mut ev);
+                        edit_ui(ui, cx, cache, &mut ev);
                         ui.add_space(6.0);
                         cache.heights[n] = ui.cursor().min.y - before;
                         continue;
@@ -916,6 +923,13 @@ pub fn show(
                             }
                         } else if r.interact(Sense::click()).clicked() {
                             ev.jump = Some(b.line);
+                        }
+                    } else if !click_block && opts.click_edits && ev.link.is_none() && ev.toggle.is_none() {
+                        // 列表/表格等复杂块：双击该区域也可直接进入单块就地编辑
+                        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary))
+                            && ui.rect_contains_pointer(r.rect)
+                        {
+                            ev.edit_req = Some(n);
                         }
                     }
                     // 鼠标在块上时右上角出现 ✎: 就地编辑这一块的源码

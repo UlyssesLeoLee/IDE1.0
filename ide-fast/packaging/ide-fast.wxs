@@ -8,6 +8,11 @@
     <Icon Id="ProductIcon" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <!-- 彻底移除 WixUI_InstallDir 与任何 Windows 原生对话框，杜绝原生标题栏与 Back/Next/Cancel 按钮 -->
+    <!-- 安装完成自动拉起旗舰真 3D 赛璐珞安装与首选配置向导 (0 原生控件残留) -->
+    <CustomAction Id="Launch3DSetup" FileKey="IdeFastExe" ExeCommand="--setup" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="Launch3DSetup" After="InstallFinalize">NOT Installed</Custom>
+    </InstallExecuteSequence>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">

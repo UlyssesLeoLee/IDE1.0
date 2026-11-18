@@ -280,6 +280,37 @@ impl App {
             }
             y += line_h;
         }
+
+        y += 18.0;
+        let wiz_btn_size = Vec2::new(260.0, 32.0);
+        let wiz_btn = Rect::from_center_size(egui::pos2(cx, y + wiz_btn_size.y / 2.0), wiz_btn_size);
+        let wiz_resp = ui.interact(wiz_btn, ui.make_persistent_id("welcome-wizard"), Sense::click());
+        let wiz_bg = if wiz_resp.hovered() {
+            Color32::from_rgb(255, 230, 0)
+        } else {
+            Color32::from_rgba_unmultiplied(255, 230, 0, 40)
+        };
+        let wiz_text_color = if wiz_resp.hovered() {
+            Color32::BLACK
+        } else {
+            tc.fg
+        };
+        p.rect(
+            wiz_btn,
+            6.0,
+            wiz_bg,
+            egui::Stroke::new(1.5, Color32::from_rgb(255, 230, 0)),
+            egui::StrokeKind::Inside,
+        );
+        let wiz_txt = p.layout_no_wrap(
+            "🏛️ 体验真 3D 赛璐珞安装与首选向导".to_string(),
+            FontId::proportional(12.5),
+            wiz_text_color,
+        );
+        p.galley(wiz_btn.center() - wiz_txt.size() / 2.0, wiz_txt, wiz_text_color);
+        if wiz_resp.tip("启动全自绘真 3D 赛璐珞美漫风格安装向导").clicked() {
+            self.installer.open = true;
+        }
     }
 }
 

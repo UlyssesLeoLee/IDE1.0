@@ -1324,7 +1324,20 @@ impl App {
                                         }
                                     });
                                 } else {
-                                    let lines: Vec<String> = content.lines().map(String::from).collect();
+                                    let (note_doc_id, note_rev) = self.sticky_notes.active_note().map(|n| {
+                                        use std::hash::{Hash, Hasher};
+                                        let mut h1 = std::collections::hash_map::DefaultHasher::new();
+                                        n.id.hash(&mut h1);
+                                        let mut h2 = std::collections::hash_map::DefaultHasher::new();
+                                        n.updated_at.hash(&mut h2);
+                                        (h1.finish(), h2.finish())
+                                    }).unwrap_or((0, 0));
+
+                                    if self.sticky_md_cache.edit.as_ref().is_some_and(|e| e.doc != note_doc_id || e.rev != note_rev) {
+                                        self.sticky_md_cache.edit = None;
+                                    }
+
+                                    let lines: Vec<String> = crate::mdtools::text_to_lines(&content);
                                     let blocks = crate::markdown::parse(&lines);
                                     let theme = self.tc.syntax_theme();
                                     let fence_langs = self.md10.langs();
@@ -1357,26 +1370,38 @@ impl App {
                                         },
                                     );
 
-                                    // 双击空白处快速切入编辑
-                                    if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
-                                        if let Some(n) = self.sticky_notes.active_note_mut() {
-                                            n.md_preview = false;
-                                            self.sticky_notes.mark_dirty();
-                                        }
-                                    }
-
                                     // 任务复选框勾选/取消交互
                                     if let Some(line_idx) = ev.toggle {
                                         if let Some(n) = self.sticky_notes.active_note_mut() {
                                             let mut doc_lines: Vec<String> =
-                                                n.content.lines().map(|s| s.to_string()).collect();
+                                                crate::mdtools::text_to_lines(&n.content);
                                             if let Some(line) = doc_lines.get_mut(line_idx) {
                                                 if let Some(new_l) = crate::mdtools::toggle_task(line) {
                                                     *line = new_l;
                                                     n.content = doc_lines.join("\n");
                                                     n.updated_at = current_timestamp();
                                                     note_content_changed = true;
+                                                    self.sticky_notes.mark_dirty();
                                                 }
+                                            }
+                                        }
+                                    }
+
+                                    // 单块就地编辑请求：在富文本预览中直接展开该块的源码编辑框，其余内容保持富文本渲染
+                                    if let Some(n) = ev.edit_req.filter(|_| ev.apply.is_none()) {
+                                        if let Some(note) = self.sticky_notes.active_note() {
+                                            let note_lines: Vec<String> = crate::mdtools::text_to_lines(&note.content);
+                                            if let Some((start, end)) = crate::mdtools::block_span(&blocks, n, &note_lines) {
+                                                let buf = note_lines[start..end].join("\n");
+                                                self.sticky_md_cache.edit = Some(crate::md_view::MdEdit {
+                                                    start,
+                                                    end,
+                                                    buf: buf.clone(),
+                                                    orig: buf,
+                                                    shown: false,
+                                                    doc: note_doc_id,
+                                                    rev: note_rev,
+                                                });
                                             }
                                         }
                                     }
@@ -1385,15 +1410,16 @@ impl App {
                                     if let Some((start_line, end_line, new_text)) = ev.apply {
                                         if let Some(n) = self.sticky_notes.active_note_mut() {
                                             let mut doc_lines: Vec<String> =
-                                                n.content.lines().map(|s| s.to_string()).collect();
+                                                crate::mdtools::text_to_lines(&n.content);
                                             let new_lines: Vec<String> =
-                                                new_text.lines().map(|s| s.to_string()).collect();
+                                                crate::mdtools::text_to_lines(&new_text);
                                             let end = end_line.min(doc_lines.len());
                                             let start = start_line.min(end);
                                             doc_lines.splice(start..end, new_lines);
                                             n.content = doc_lines.join("\n");
                                             n.updated_at = current_timestamp();
                                             note_content_changed = true;
+                                            self.sticky_notes.mark_dirty();
                                         }
                                     }
 
@@ -1720,7 +1746,6 @@ impl App {
             if let Some(n) = self.sticky_notes.active_note_mut() {
                 n.content.push_str(&extra);
                 n.updated_at = current_timestamp();
-                n.md_preview = false;
             }
             self.sticky_notes.mark_dirty();
         }
@@ -2732,5 +2757,86 @@ mod tests {
             app.sticky_notes_window(&ctx);
         });
         out2.textures_delta.clear();
+    }
+
+    #[test]
+    fn test_sticky_notes_markdown_in_place_single_block_editing() {
+        let mut app = App::build(
+            vec![],
+            None,
+            Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        app.sticky_notes.open = true;
+
+        if let Some(n) = app.sticky_notes.active_note_mut() {
+            n.content = "# 标题行\n\n正文段落第一行\n\n- [ ] 任务1\n".to_string();
+            n.is_md = true;
+            n.md_preview = true;
+        }
+
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out.textures_delta.clear();
+
+        // 验证初始预览状态下保持 md_preview == true 且 cache.edit 初始为 None
+        let note = app.sticky_notes.active_note().unwrap();
+        assert!(note.md_preview, "便笺必须保持处于 Markdown 预览模式");
+        assert!(app.sticky_md_cache.edit.is_none());
+
+        // 模拟触发第 1 块 (正文段落) 的单块就地编辑请求
+        let lines: Vec<String> = crate::mdtools::text_to_lines(&note.content);
+        let blocks = crate::markdown::parse(&lines);
+        let (start, end) = crate::mdtools::block_span(&blocks, 1, &lines).expect("第1块必须有行范围");
+        assert_eq!(start, 2);
+        assert_eq!(end, 3);
+
+        use std::hash::{Hash, Hasher};
+        let mut h1 = std::collections::hash_map::DefaultHasher::new();
+        note.id.hash(&mut h1);
+        let mut h2 = std::collections::hash_map::DefaultHasher::new();
+        note.updated_at.hash(&mut h2);
+
+        app.sticky_md_cache.edit = Some(crate::md_view::MdEdit {
+            start,
+            end,
+            buf: lines[start..end].join("\n"),
+            orig: lines[start..end].join("\n"),
+            shown: false,
+            doc: h1.finish(),
+            rev: h2.finish(),
+        });
+
+        // 渲染单块就地编辑中的一帧：只在该块呈现编辑，便笺整体绝不切回源码模式
+        let mut out2 = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out2.textures_delta.clear();
+        assert!(app.sticky_notes.active_note().unwrap().md_preview, "就地编辑期间预览模式不得被中断");
+
+        // 模拟完成编辑并应用补丁 (将其替换为两行新文字)
+        if let Some(n) = app.sticky_notes.active_note_mut() {
+            let mut doc_lines = crate::mdtools::text_to_lines(&n.content);
+            let new_lines = crate::mdtools::text_to_lines("修改后的段落 A\n修改后的段落 B");
+            doc_lines.splice(start..end, new_lines);
+            n.content = doc_lines.join("\n");
+            n.updated_at = current_timestamp();
+        }
+        app.sticky_md_cache.edit = None;
+
+        // 渲染修改应用后的下一帧：已直接呈现全新富文本预览，其余内容完好无损
+        let mut out3 = ctx.run_ui(Default::default(), |_ui_ctx| {
+            app.sticky_notes_window(&ctx);
+        });
+        out3.textures_delta.clear();
+
+        let updated_note = app.sticky_notes.active_note().unwrap();
+        assert!(updated_note.md_preview, "应用编辑后必须持续保持在富文本预览模式中");
+        assert!(updated_note.content.contains("修改后的段落 A"));
+        assert!(updated_note.content.contains("# 标题行"));
+        assert!(updated_note.content.contains("- [ ] 任务1"));
     }
 }

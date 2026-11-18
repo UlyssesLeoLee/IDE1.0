@@ -120,6 +120,9 @@ impl App {
 
         // 7. 漫画对话气泡与英雄印章
         render_speech_balloon_and_stamp(ui.painter(), left_panel_rect, self.installer.step);
+
+        // 持续以 60 FPS 平滑微帧驱动 3D 赛璐珞涡旋与光影动效
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 

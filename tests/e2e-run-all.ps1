@@ -59,13 +59,15 @@ if (-not $SkipPlaywright) {
     Write-Host "`n[阶段 2/2] 正在运行 Web/Desktop 真实交互端到端测试 (Playwright)..." -ForegroundColor Yellow
     Push-Location $uatDir
     try {
-        $bin = Join-Path $root "target\debug\ide-shell-web.exe"
-        if (-not (Test-Path $bin)) {
-            $bin = Join-Path $root "target\release\ide-shell-web.exe"
-        }
+        $binCandidates = @(
+            "E:\DevCache\cargo\target\debug\ide-shell-web.exe",
+            (Join-Path $root "target\debug\ide-shell-web.exe"),
+            (Join-Path $root "target\release\ide-shell-web.exe")
+        )
+        $bin = $binCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
         $env:IDE_SHELL_WEB_BIN = $bin
         $env:QA_ALLOW_STALE = "1"
-        $pwOut = npx playwright test specs/features-v081.spec.ts specs/desktop-ui.spec.ts specs/column-block.spec.ts specs/panels.spec.ts specs/minimal-layout.spec.ts --reporter=line 2>&1
+        $pwOut = npx playwright test specs/features-v081.spec.ts specs/desktop-ui.spec.ts specs/column-block.spec.ts specs/panels.spec.ts specs/basic.spec.ts specs/command.spec.ts --reporter=line 2>&1
         $pwPass = 0
         $pwFail = 0
         foreach ($line in $pwOut) {

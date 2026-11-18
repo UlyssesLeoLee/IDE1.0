@@ -207,13 +207,11 @@
          不再和状态栏叠在同一个 grid 单元里 (之前两者都在第 4 行, 导致 #bottom-body
          溢出视口、#status 盖住面板按钮). */
       grid-template-rows: var(--h-menubar) minmax(0, 1fr) auto var(--h-status);
-      grid-template-columns: var(--w-lstrip, 16px) var(--w-rail) var(--w-side) minmax(0, 1fr) var(--w-rstrip, 16px) var(--w-chat-cur, 0px);   /* 左细条 + 活动栏 + 侧栏 + 编辑区 + Chat 右细条 + Chat 右栏 */
+      grid-template-columns: var(--w-rail) var(--w-side) minmax(0, 1fr) var(--w-rstrip, 16px) var(--w-chat-cur, 0px);   /* 活动栏 + 侧栏 + 编辑区 + Chat 右细条 + Chat 右栏 */
       height: 100vh; overflow: clip; }
-    #left-strip { display: block; grid-row: 2; grid-column: 1; min-width: 0; min-height: 0; background: var(--bg-rail); border-right: 1px solid var(--border); cursor: pointer; }
-    #left-strip:hover { background-image: linear-gradient(var(--bg-hover), var(--bg-hover)); }
-    #activity-bar { grid-row: 2; grid-column: 2; background: var(--bg-rail); display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
-    #side-bar { grid-row: 2; grid-column: 3; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
-    #editor-area { grid-row: 2; grid-column: 4; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+    #activity-bar { grid-row: 2; grid-column: 1; background: var(--bg-rail); display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 4px; }
+    #side-bar { grid-row: 2; grid-column: 2; background: var(--bg-side); border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+    #editor-area { grid-row: 2; grid-column: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto minmax(0, 1fr); min-width: 0; min-height: 0; }
     #editor-area > #tabs, #editor-area > #breadcrumb { grid-column: 1 / -1; min-width: 0; }
     #editor-area > #editor { grid-column: 1; grid-row: 3; min-width: 0; min-height: 0; }
     #editor-area > #minimap { grid-column: 2; grid-row: 3; min-height: 0; }
@@ -1604,7 +1602,8 @@
     html[data-layout="min"] #side-bar { grid-column: 3; }
     html[data-layout="min"] #editor-area { grid-column: 4; }
     html[data-layout="min"] #bottom-panel, html[data-layout="min"] #status { grid-column: 1 / -1; }
-    /* 左细条: 第 2 行第 1 列, 菜单栏与面板头之间的整个高度; 按钮顶端对齐并高于所有抽屉, 底端抽屉再宽也盖不住它 */
+    /* 左细条: 仅在极简布局 (min) 下作为把手常驻显示; 完整布局 (full) 下隐藏 */
+    html:not([data-layout="min"]) #left-strip { display: none !important; }
     #left-strip { display: block; grid-row: 2; grid-column: 1; min-width: 0; min-height: 0; background: var(--bg-rail); border-right: 1px solid var(--border); cursor: pointer; }
     html[data-layout="min"] #left-strip:hover { background-image: linear-gradient(var(--bg-hover), var(--bg-hover)); }
     #left-strip-btn { position: relative; z-index: calc(var(--z-drawer, 40) + 2); display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; padding: 0; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; font-size: 16px; line-height: 1; }
@@ -3448,6 +3447,7 @@ window.moveCaretUp = moveCaretUp;
 window.moveCaretDown = moveCaretDown;
 window.TABS = TABS;
 window.activeTabId = () => activeTabId;
+window.createUntitledDoc = createUntitledDoc;
 let terminalId = null;
 
 // ===== 界面布局 (min / full): 主脚本侧的粘合 =====
@@ -6166,6 +6166,13 @@ function insertChar(ch) { return runEdit("insert-text", { text: ch, overwrite: !
 // clamp 到当前行的 char 长度, 避免移出界.
 function moveCaretRight(t) {
   if (!t) return;
+  if (t.sel) {
+    const { r1, c1 } = t.sel;
+    const col = Math.max(0, Math.min(c1 === Infinity ? charLen(t.lines[r1] || "") : c1, charLen(t.lines[r1] || "")));
+    t.cursor = { row: r1, col };
+    t.sel = null;
+    return;
+  }
   const row = t.cursor.row;
   const len = charLen(curLine(t));
   if (t.cursor.col < len) t.cursor.col += 1;
@@ -6174,6 +6181,12 @@ function moveCaretRight(t) {
 
 function moveCaretLeft(t) {
   if (!t) return;
+  if (t.sel) {
+    const { r0, c0 } = t.sel;
+    t.cursor = { row: r0, col: c0 };
+    t.sel = null;
+    return;
+  }
   if (t.cursor.col > 0) t.cursor.col -= 1;
   else if (t.cursor.row > 0) {
     t.cursor.row -= 1;
@@ -6184,6 +6197,12 @@ function moveCaretLeft(t) {
 // 光标上下移动 —— char 语义, 跨行保持 col 位置 (必要时夹取).
 function moveCaretUp(t) {
   if (!t) return;
+  if (t.sel) {
+    const { r0, c0 } = t.sel;
+    t.cursor = { row: r0, col: c0 };
+    t.sel = null;
+    return;
+  }
   if (t.cursor.row > 0) {
     t.cursor.row -= 1;
     const len = charLen(t.lines[t.cursor.row]);
@@ -6193,6 +6212,13 @@ function moveCaretUp(t) {
 
 function moveCaretDown(t) {
   if (!t) return;
+  if (t.sel) {
+    const { r1, c1 } = t.sel;
+    const col = Math.max(0, Math.min(c1 === Infinity ? charLen(t.lines[r1] || "") : c1, charLen(t.lines[r1] || "")));
+    t.cursor = { row: r1, col };
+    t.sel = null;
+    return;
+  }
   if (t.cursor.row + 1 < t.lines.length) {
     t.cursor.row += 1;
     const len = charLen(t.lines[t.cursor.row]);
