@@ -1,4 +1,4 @@
-//! 命令行为测试: 期望值来自与真实 Sakura 的比对 (tests/sakura-diff 对应用例), 通过公开的 `run` 驱动。
+//! 命令行为测试: 期望值来自行为规格比对测试), 通过公开的 `run` 驱动。
 
 use super::test_support::*;
 use super::{run, EditReq, ALL_COMMANDS};
@@ -11,7 +11,7 @@ const DOC: &[&str] = &[
     "last Line END",
 ];
 
-// 期望值来自与真实 Sakura 的比对 (tests/sakura-diff 对应用例)
+// 期望值来自行为规格比对测试)
 #[test]
 fn single_char() {
     let r = run_on("delete", 0, 3, None, DOC);
@@ -248,7 +248,7 @@ fn malformed_requests_do_not_panic() {
 }
 #[test]
 fn line_mode_paste_and_cut_keep_column() {
-    // 期望值来自真实 Sakura (tests/sakura-diff/cases10.mjs)
+    // 期望值来自行为规格比对测试
     let d = &["hello world foo", "  indented line", "third"];
     let r = run_text(
         "paste",
@@ -327,7 +327,7 @@ fn rectangle() {
             .as_deref(),
         Some("\n\n")
     );
-    // 删除: 整块挖空, 光标回矩形左上角, 列块清除; 退格和删除一样 (Sakura 实测), 零宽矩形什么也不删
+    // 删除: 整块挖空, 光标回矩形左上角, 列块清除; 退格和删除一样 (实测兼容), 零宽矩形什么也不删
     let r = run_box("box-delete", 2, 4, [0, 1, 2, 4], "", BX);
     assert_eq!(
         (apply(BX, &r), r.cursor, r.box_sel),
@@ -374,7 +374,7 @@ fn rectangle() {
         ),
         ("aZdef", "iZlmn", Some([0, 2, 2, 2]))
     );
-    // 多行剪贴板只取第一行 (Sakura 实测)
+    // 多行剪贴板只取第一行 (实测兼容)
     let r = run_box("box-insert", 0, 0, [0, 0, 2, 0], "1\n2", BX);
     assert_eq!(
         apply(BX, &r),

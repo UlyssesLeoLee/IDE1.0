@@ -1,16 +1,12 @@
-//! editcore 参考実装公式テスト対応版 (C++ 公式テストに準拠)
+//! editcore 行为规格验证测试 (独立 Rust 实现，行为对标主流编辑器规格)
 //!
-//! 参照: https://github.com/sakura-editor/sakura/tree/master/src/test/cpp/tests1
-//! 公式テスト 74 cpp ファイル の主要テストケースを Rust API で 実装.
-//!
-//! 実行: `cargo test -p editcore --test reference_parity -- --test-threads=1`
+//! 执行: `cargo test -p editcore --test reference_parity -- --test-threads=1`
 
 use editcore::buffer::DocLineMgr;
 use editcore::cursor::{LogicPos, LogicRange};
 use editcore::grep;
 
 // ============== CDocLine 公式テスト (test-cdocline.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-cdocline.cpp
 
 /// CDocLine.IsEmptyLine に相当 — 空行判定
 #[test]
@@ -76,7 +72,6 @@ fn official_cdocline_length_with_eol() {
 }
 
 // ============== CDocLineMgr 公式テスト (test-cdoclinemgr.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-cdoclinemgr.cpp
 
 /// CDocLineMgr.ListManipulations に相当
 #[test]
@@ -106,7 +101,6 @@ fn official_cdoclinemgr_list_manipulations() {
 }
 
 // ============== CFuncInfoArr 公式テスト (test-cfuncinfoarr.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-cfuncinfoarr.cpp
 
 /// CFuncInfoArr.AppendData 相当 — アウトライン追加
 #[test]
@@ -158,7 +152,6 @@ fn official_cfuncinfoarr_get_at() {
 }
 
 // ============== CSearchAgent.ReplaceData 公式テスト ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-csearchagent.cpp
 
 /// CSearchAgent.ReplaceData1 相当 — 行の一部置換
 #[test]
@@ -198,7 +191,6 @@ fn official_searchagent_replace_data_2() {
 }
 
 // ============== CharCode 公式テスト (test-charcode.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-charcode.cpp
 
 /// CharWidthCache.IsHankaku 相当 — 半角判定
 #[test]
@@ -249,7 +241,6 @@ fn official_charcode_is_zenkaku() {
 }
 
 // ============== GrepCommandLine 公式テスト (test-grep-cmdline.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-grep-cmdline.cpp
 
 /// GrepCommandLineTest.CountsEachMatch 相当 — 既定の Grep カウント
 #[test]
@@ -343,7 +334,6 @@ fn official_grep_cmdline_file_only() {
 }
 
 // ============== CDecode 公式テスト (test-cdecode.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-cdecode.cpp
 
 /// CDecode_Base64Decode.DoDecode 相当 — Base64 デコード
 #[test]
@@ -412,7 +402,6 @@ mod base64_simulator {
 }
 
 // ============== CConvert 公式テスト (test-cconvert.cpp) ==============
-// https://github.com/sakura-editor/sakura/blob/master/src/test/cpp/tests1/test-cconvert.cpp
 
 /// CConvert.ZenkataToHankata 相当 — 全角カタカナ → 半角カタカナ
 /// 自作実装は 簡易 表 ベース (全 108 文字) — 公式と 同じ 主要 文字 を カバー

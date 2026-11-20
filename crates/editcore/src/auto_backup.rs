@@ -1,11 +1,11 @@
 // auto_backup.rs — 自動バックアップ (参考实现 7.7)
 //
-// 定期的 (N 秒/分) にプロジェクトルートに .sakura-backup を作成.
+// 定期的 (N 秒/分) にプロジェクトルートに .ide10-backup を作成.
 // 元ファイル名 + タイムスタンプ でユニーク化.
 //
 // 設計:
 // - デフォルト 5 分間隔
-// - バックアップ先: プロジェクトルート/.sakura-backup/<original>.<timestamp>
+// - バックアップ先: プロジェクトルート/.ide10-backup/<original>.<timestamp>
 // - 最大 10 世代保持 (古いものから削除)
 // - 0 重型依存 (filesystem のみ使用)
 
@@ -26,7 +26,7 @@ impl Default for BackupConfig {
         Self {
             interval_secs: 300,
             max_generations: 10,
-            backup_dir: ".sakura-backup".to_string(),
+            backup_dir: ".ide10-backup".to_string(),
         }
     }
 }
@@ -187,7 +187,7 @@ mod tests {
 
     fn make_temp_file(name: &str, content: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("sakura-rs-test-{}-{}", std::process::id(), n));
+        let dir = std::env::temp_dir().join(format!("ide10-test-{}-{}", std::process::id(), n));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join(name);
         let mut f = fs::File::create(&path).unwrap();
@@ -218,13 +218,13 @@ mod tests {
         let mut ab = AutoBackup::new(BackupConfig {
             interval_secs: 0,
             max_generations: 2,
-            backup_dir: ".sakura-backup".to_string(),
+            backup_dir: ".ide10-backup".to_string(),
         });
         for _ in 0..3 {
             std::thread::sleep(std::time::Duration::from_millis(1100));
             let _ = ab.backup_file(&file);
         }
-        let backup_root = file.parent().unwrap().join(".sakura-backup");
+        let backup_root = file.parent().unwrap().join(".ide10-backup");
         let count = fs::read_dir(&backup_root).unwrap().count();
         assert!(count <= 2, "max_generations exceeded: {count}");
         let _ = fs::remove_dir_all(file.parent().unwrap());
@@ -234,7 +234,7 @@ mod tests {
     fn test_restore() {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
-            "sakura-rs-test-{}-{}-restore",
+            "ide10-test-{}-{}-restore",
             std::process::id(),
             n
         ));
@@ -276,7 +276,7 @@ impl Default for SaveBackupConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            dir: ".sakura-backup".to_string(),
+            dir: ".ide10-backup".to_string(),
             naming: BackupNaming::Timestamp,
             generations: 5,
         }
@@ -477,7 +477,7 @@ mod save_backup_tests {
 
     fn tdir() -> PathBuf {
         let d = std::env::temp_dir().join(format!(
-            "sakura-sb-{}-{}",
+            "ide10-sb-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::SeqCst)
         ));

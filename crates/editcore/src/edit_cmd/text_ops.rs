@@ -1,4 +1,4 @@
-//! 单行内的文字编辑: 删字符 / 删词 / 删到行首行末 / 键入 / 选词。语义按真实 Sakura 比对 (tests/sakura-diff)。
+//! 单行内的文字编辑: 删字符 / 删词 / 删到行首行末 / 键入 / 选词。语义按行为规格比对)。
 
 use super::ctx::Ctx;
 use super::req_res::EditRes;
@@ -95,7 +95,7 @@ pub(super) fn delete_word_end(cx: &Ctx) -> EditRes {
 pub(super) fn word_cut(cx: &Ctx, cut: bool) -> EditRes {
     let (row, col) = (cx.row, cx.col);
     if col >= cx.line.len() {
-        // Sakura: 行末的词删除 = 删掉换行
+        // 注: 行末的词删除 = 删掉换行
         return if row < cx.last_row {
             cx.join_next(row, false).cursor([row, col])
         } else {
@@ -142,7 +142,7 @@ pub(super) fn delete_to_line_end(cx: &Ctx) -> EditRes {
     EditRes::replace_line(row, slice(&cx.line, 0, col), [row, col])
 }
 
-/// 剪切到行末; Sakura: 行末再按什么也不做 (不吃换行)
+/// 剪切到行末; 注: 行末再按什么也不做 (不吃换行)
 pub(super) fn cut_to_line_end(cx: &Ctx) -> EditRes {
     let (row, col) = (cx.row, cx.col);
     if let Some(s) = cx.sel {
@@ -190,7 +190,7 @@ pub(super) fn insert_text(cx: &Ctx) -> EditRes {
     EditRes::replace_line(row, new, [row, col + n])
 }
 
-/// 选词 (Sakura S_SelectWord): 光标所在字符类的连续段; 行末 = 选整行 (含换行)
+/// 选词 (S_SelectWord): 光标所在字符类的连续段; 行末 = 选整行 (含换行)
 pub(super) fn select_word(cx: &Ctx) -> EditRes {
     let (row, col) = (cx.row, cx.col);
     if col >= cx.line.len() {

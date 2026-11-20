@@ -31,7 +31,7 @@ pub(super) fn cut(cx: &Ctx) -> EditRes {
         return cx.cut_sel(s).tip("已剪切");
     }
     let (insert, new_row) = remove_current_row(cx);
-    // Sakura: 接上来的那一行 = 原来的下一行; 剪的是末行时为上一行
+    // 注: 接上来的那一行 = 原来的下一行; 剪的是末行时为上一行
     let below = if cx.req.total_rows <= 1 {
         0
     } else if cx.row == cx.last_row {
@@ -45,7 +45,7 @@ pub(super) fn cut(cx: &Ctx) -> EditRes {
         .tip("已剪切行")
 }
 
-/// 粘贴: 整行模式的剪贴板插在当前行之前 (有选区时先删选区, 插在选区起点那一行之前; Sakura 实测); 否则替换选区 / 插在光标处
+/// 粘贴: 整行模式的剪贴板插在当前行之前 (有选区时先删选区, 插在选区起点那一行之前; 实测兼容); 否则替换选区 / 插在光标处
 pub(super) fn paste(cx: &Ctx) -> EditRes {
     let (row, col) = (cx.row, cx.col);
     let text = normalize_newlines(&cx.req.text.clone().unwrap_or_default());

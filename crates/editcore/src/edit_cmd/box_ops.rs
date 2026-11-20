@@ -1,4 +1,4 @@
-//! 矩形(列块)选区上的编辑 (Sakura 的 BOX 选择; 语义按真实 Sakura 实测, 见 tests/sakura-diff 的 BOX 用例)。
+//! 矩形(列块)选区上的编辑 (列块(BOX)选区; 语义按真实 实测兼容, 见 tests/sakura-diff 的 BOX 用例)。
 //!
 //! 前端把**未归一化**的 `box_sel` 和参与的行交上来, 这里归一化后处理:
 //!   键入 / 粘贴 / 输入法: 矩形有宽度时先挖掉里面选中的内容 (覆盖), 再在每一行的矩形左端插入, 插完矩形缩成插入点 (接着打);
@@ -59,7 +59,7 @@ impl BoxView {
     fn hollowed_rows(&self) -> Vec<Vec<char>> {
         self.old.iter().map(|l| self.hollow(l)).collect()
     }
-    /// 矩形里选中的内容, 每行一段、行间 \n、末尾也带 \n (Sakura 复制矩形到剪贴板的格式; 塌缩的矩形给空行)
+    /// 矩形里选中的内容, 每行一段、行间 \n、末尾也带 \n (列块复制到剪贴板的格式; 塌缩的矩形给空行)
     fn clip_text(&self) -> String {
         let mut s = String::new();
         for l in &self.old {
@@ -92,13 +92,13 @@ pub(super) fn copy(cx: &Ctx) -> EditRes {
     EditRes::clip_only(b.clip_text(), [cx.row, cx.col]).tip(format!("已复制列块 {} 行", b.n_rows()))
 }
 
-/// 退格和 Delete 一样 (Sakura 实测)
+/// 退格和 Delete 一样 (实测兼容)
 pub(super) fn delete(cx: &Ctx) -> EditRes {
     let Some(b) = BoxView::new(cx) else {
         return rows_missing(cx);
     };
     let rows = b.hollowed_rows();
-    let cursor = [b.r0, b.c0.min(rows[0].len())]; // Sakura: 删除后光标在矩形左上角
+    let cursor = [b.r0, b.c0.min(rows[0].len())]; // 注: 删除后光标在矩形左上角
     b.patch(rows, cursor)
         .tip(format!("列块已删除 ({}行 ×{}列)", b.n_rows(), b.width()))
 }

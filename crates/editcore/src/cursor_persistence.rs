@@ -1,7 +1,7 @@
 // cursor_persistence.rs — カーソル位置保持 (参考实现 7.8)
 //
 // ファイル再オープン時に最終カーソル位置を復元.
-// プロジェクトルートに `.sakura-cursor/<file-hash>.json` で保存.
+// プロジェクトルートに .ide10-cursor/<file-hash>.json でカーソル位置を保存。
 
 use std::collections::HashMap;
 use std::fs;
@@ -32,7 +32,7 @@ pub struct CursorPersistence {
 
 impl CursorPersistence {
     pub fn new(project_root: &Path) -> Result<Self, std::io::Error> {
-        let storage_dir = project_root.join(".sakura-cursor");
+        let storage_dir = project_root.join(".ide10-cursor");
         fs::create_dir_all(&storage_dir)?;
         let states = HashMap::new();
         Ok(Self {
@@ -100,7 +100,7 @@ mod tests {
     fn make_project_root() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir =
-            std::env::temp_dir().join(format!("sakura-rs-cursor-{}-{}", std::process::id(), n));
+            std::env::temp_dir().join(format!("ide10-cursor-{}-{}", std::process::id(), n));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
