@@ -192,6 +192,93 @@ export function threeWayMerge(baseLines, oursLines, theirsLines) {
   };
 }
 
+// --- NEMA v1.5 Basic Syntax Validator (Red-Green Invariant Guard) ---
+export function validateNemaSyntax(text) {
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return { ok: false, error: "NEMA document cannot be empty" };
+  }
+  const lines = text.split("\n");
+  let hasDomain = false;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    // 检查字段间未转义双空格
+    if (l.includes("  ") && !l.includes("\\ ")) {
+      return { ok: false, error: `Line ${i + 1}: Consecutive unescaped ASCII spaces prohibited in NEMA` };
+    }
+    // 禁止在正文中使用 TAB 控制符
+    if (l.includes("\t") && !l.startsWith("\\")) {
+      return { ok: false, error: `Line ${i + 1}: TAB character in body prohibited; TAB reserved for domain control` };
+    }
+    if (/^\s*\\[0-9%?>?!#]/.test(l)) {
+      hasDomain = true;
+    }
+  }
+  if (!hasDomain) {
+    return { ok: false, error: "No valid NEMA domain declaration found (e.g. \\1, \\%2, \\>1)" };
+  }
+  return { ok: true };
+}
+
+// --- NEMA Semantic Merge ---
+export function nemaSemanticMerge(baseText, currentText, incomingText) {
+  const extractLines = (src) => {
+    const lines = src.split("\n");
+    const headers = [];
+    const body = [];
+    for (const l of lines) {
+      const trimmed = l.trimEnd();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("\\") || trimmed.startsWith(" \\")) {
+        headers.push(trimmed);
+      } else {
+        body.push(trimmed);
+      }
+    }
+    return { headers, body };
+  };
+
+  const b = extractLines(baseText);
+  const cur = extractLines(currentText);
+  const inc = extractLines(incomingText);
+
+  const finalHeaders = cur.headers.length > 0 ? cur.headers : inc.headers;
+  const mergedBody = [];
+  const seen = new Set();
+
+  for (const item of b.body) {
+    if (cur.body.includes(item) && inc.body.includes(item)) {
+      if (!seen.has(item)) {
+        seen.add(item);
+        mergedBody.push(item);
+      }
+    }
+  }
+  for (const item of cur.body) {
+    if (!b.body.includes(item)) {
+      if (!seen.has(item)) {
+        seen.add(item);
+        mergedBody.push(item);
+      }
+    }
+  }
+  for (const item of inc.body) {
+    if (!b.body.includes(item)) {
+      if (!seen.has(item)) {
+        seen.add(item);
+        mergedBody.push(item);
+      }
+    }
+  }
+
+  const mergedText = finalHeaders.join("\n") + "\n" + mergedBody.join("\n") + "\n\n\n";
+  const check = validateNemaSyntax(mergedText);
+  return {
+    clean: check.ok,
+    conflicts: check.ok ? 0 : 1,
+    text: mergedText,
+  };
+}
+
 class ServerlessCoordinator {
   constructor() {
     this.files = new Map();
@@ -275,10 +362,13 @@ pub fn multiply(a: i32, b: i32) -> i32 {
   }
 
   // --- Headless Multi-Provider Co-Editor Engine ---
-  headlessEdit({ fileId, author = "anonymous", baseRevision, opId, newText, patch }) {
+  headlessEdit({ fileId, author = "anonymous", baseRevision, opId, newText, patch, mode }) {
     if (opId && this.operationsLog.has(opId)) {
-      return this.operationsLog.get(opId);
+      const cached = this.operationsLog.get(opId);
+      return { ...cached, idempotent_replay: true };
     }
+
+    const collabMode = mode || (fileId && fileId.endsWith(".nema") ? "nema" : "git");
 
     let file = this.files.get(fileId);
     if (!file) {
@@ -286,12 +376,26 @@ pub fn multiply(a: i32, b: i32) -> i32 {
       const parts = fileId.split(":");
       const ws = parts.length > 1 ? parts[0] : "default";
       const p = parts.length > 1 ? parts.slice(1).join(":") : fileId;
-      file = this.registerFile(ws, p, "", "plain");
+      file = this.registerFile(ws, p, "", collabMode === "nema" ? "nema" : "plain");
     }
 
     const currentRev = file.currentRevision;
     const incomingText = newText !== undefined ? newText : (file.content + (patch || ""));
     const baseRev = Number(baseRevision) || currentRev;
+
+    // Red-Green 前置防御：在 nema 模式下对输入文本执行严格语法校验
+    if (collabMode === "nema") {
+      const check = validateNemaSyntax(incomingText);
+      if (!check.ok) {
+        return {
+          ok: false,
+          status: "REJECTED_NEMA_SYNTAX_ERROR",
+          fileId,
+          error: `NEMA 语法校验未通过 (Red Guard): ${check.error}`,
+          mode: "nema",
+        };
+      }
+    }
 
     let result;
     if (baseRev === currentRev) {
@@ -313,6 +417,7 @@ pub fn multiply(a: i32, b: i32) -> i32 {
 
       result = {
         ok: true,
+        status: "COMMITTED",
         fileId,
         previousRevision: currentRev,
         revision: file.currentRevision,
@@ -320,15 +425,21 @@ pub fn multiply(a: i32, b: i32) -> i32 {
         conflicts: 0,
         author,
         content: file.content,
+        mode: collabMode,
       };
     } else {
-      // Intervening edits occurred: 3-Way Auto-Merge
-      const baseRec = file.revisions.find(r => r.revision === baseRev) || file.revisions[0];
-      const baseLines = (baseRec ? baseRec.content : "").split("\n");
-      const currentLines = file.content.split("\n");
-      const incomingLines = incomingText.split("\n");
-
-      const mergeOutcome = threeWayMerge(baseLines, currentLines, incomingLines);
+      // Intervening edits occurred: Auto-Merge
+      let mergeOutcome;
+      if (collabMode === "nema") {
+        const baseRec = file.revisions.find(r => r.revision === baseRev) || file.revisions[0];
+        mergeOutcome = nemaSemanticMerge(baseRec ? baseRec.content : "", file.content, incomingText);
+      } else {
+        const baseRec = file.revisions.find(r => r.revision === baseRev) || file.revisions[0];
+        const baseLines = (baseRec ? baseRec.content : "").split("\n");
+        const currentLines = file.content.split("\n");
+        const incomingLines = incomingText.split("\n");
+        mergeOutcome = threeWayMerge(baseLines, currentLines, incomingLines);
+      }
 
       file.content = mergeOutcome.text;
       file.currentRevision += 1;
@@ -347,6 +458,7 @@ pub fn multiply(a: i32, b: i32) -> i32 {
 
       result = {
         ok: mergeOutcome.clean,
+        status: mergeOutcome.clean ? "COMMITTED" : "CONFLICT",
         fileId,
         previousRevision: currentRev,
         revision: file.currentRevision,
@@ -354,6 +466,7 @@ pub fn multiply(a: i32, b: i32) -> i32 {
         conflicts: mergeOutcome.conflicts,
         author,
         content: file.content,
+        mode: collabMode,
       };
     }
 

@@ -2356,6 +2356,7 @@ name = "ide-mcp"
 version = "0.8.6"
 dependencies = [
  "editcore",
+ "nema-codec",
  "serde",
  "serde_json",
 ]

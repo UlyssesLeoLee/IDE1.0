@@ -42,7 +42,7 @@ MCP endpoint: `https://ide1d0.vercel.app/mcp` (GET for discovery, POST for JSON-
 
 | Tool | Description |
 |------|-------------|
-| `headless_coedit` | Multi-provider concurrent co-editing (CAS fast-path + 3-way auto-merge) |
+| `headless_coedit` | Multi-provider concurrent co-editing. Dual modes: `git` (line Myers 3-way merge + conflict markers) and `nema` (NEMA v1.5 syntax-closure guard + AST domain safe merge). |
 | `headless_read` | Read current or historical revision of a headless document |
 | `headless_history` | Query version history, author attributions, timestamps |
 | `headless_list_files` | List all active documents in headless memory |

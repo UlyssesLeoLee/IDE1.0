@@ -247,6 +247,22 @@ impl McpServer {
                 }
             }),
             json!({
+                "name": "headless_coedit",
+                "description": "跨供应商多 Agent 无头协同编辑：支持 Git 式 (git) 与 NEMA 结构化语法 (nema) 两种协作模式。具备 CAS 快径、Myers 3-Way 自动合并、NEMA 语法封闭性守护与红绿冲突保护",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "file_id": { "type": "string", "description": "目标文件 ID (如 'default:src/main.rs' 或 'docs/spec.nema')" },
+                        "author": { "type": "string", "description": "提交 Agent 或供应商标识 (如 'claude-3-7-sonnet', 'gpt-4o')" },
+                        "new_text": { "type": "string", "description": "完整的待提交新文本" },
+                        "base_revision": { "type": "integer", "description": "编辑所基于的基准版本号" },
+                        "op_id": { "type": "string", "description": "可选操作唯一键，支持幂等重放" },
+                        "mode": { "type": "string", "enum": ["git", "nema"], "description": "协作模式：'git' 为无类型行级 3-Way 合并与冲突标记；'nema' 为 NEMA v1.5 语法封闭性守护与域级安全合并" }
+                    },
+                    "required": ["file_id", "author", "new_text"]
+                }
+            }),
+            json!({
                 "name": "headless_edit",
                 "description": "跨供应商共同编辑同一文件：具备 CAS 保护与 3-Way 自动合并。多 Agent 基于历史版本并发修改时，若改动不冲突将全自动平滑合入并生成新版本，若重叠冲突则拒止并返回差异冲突块",
                 "inputSchema": {
@@ -379,6 +395,12 @@ impl McpServer {
                 let s = args.get("start_line").and_then(Value::as_u64).map(|v| v as usize);
                 let e = args.get("end_line").and_then(Value::as_u64).map(|v| v as usize);
                 self.workspace.read_doc(file_id, s, e)
+            }
+
+            "headless_coedit" => {
+                let req: merge::FullCoEditRequest = serde_json::from_value(args.clone())
+                    .map_err(|e| format!("Invalid coedit arguments: {e}"))?;
+                self.workspace.coedit_full(req)
             }
 
             "headless_edit" => {

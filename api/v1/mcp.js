@@ -14,7 +14,8 @@ const TOOLS = [
         author: { type: "string", description: "Editing agent or provider, e.g. 'claude-3-7-sonnet', 'gpt-4o', 'deepseek-v3'" },
         base_revision: { type: "number", description: "The base revision number when the agent inspected the file" },
         new_text: { type: "string", description: "The new document content" },
-        op_id: { type: "string", description: "Optional unique operation ID for idempotency" }
+        op_id: { type: "string", description: "Optional unique operation ID for idempotency" },
+        mode: { type: "string", enum: ["git", "nema"], description: "Collaboration mode: 'git' for line-based 3-way merge; 'nema' for NEMA v1.5 syntax-closure and structured domain safe merge" }
       },
       required: ["file_id", "author", "new_text"]
     }
@@ -261,7 +262,8 @@ export default async function handler(req, res) {
                 author: args.author,
                 baseRevision: args.base_revision,
                 opId: args.op_id,
-                newText: args.new_text
+                newText: args.new_text,
+                mode: args.mode
               });
               textResult = JSON.stringify(outcome, null, 2);
               break;

@@ -186,6 +186,143 @@ pub fn three_way_merge(base: &str, ours: &str, theirs: &str) -> MergeOutcome {
     }
 }
 
+/// 针对 NEMA 文本的结构化语义合并：解决因尾部三换行物理终止符导致的虚假行重叠。
+fn try_nema_semantic_merge(base: &str, ours: &str, theirs: &str) -> Option<MergeOutcome> {
+    let extract_lines = |src: &str| -> (Vec<String>, Vec<String>) {
+        let lines: Vec<&str> = src.lines().collect();
+        let mut headers = Vec::new();
+        let mut body = Vec::new();
+        for l in lines {
+            let trimmed = l.trim_end();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed.starts_with('\\') || trimmed.starts_with(" \\") {
+                headers.push(trimmed.to_string());
+            } else {
+                body.push(trimmed.to_string());
+            }
+        }
+        (headers, body)
+    };
+
+    let (base_headers, base_body) = extract_lines(base);
+    let (ours_headers, ours_body) = extract_lines(ours);
+    let (theirs_headers, theirs_body) = extract_lines(theirs);
+
+    // 头部定义必须兼容
+    if ours_headers != base_headers && theirs_headers != base_headers && ours_headers != theirs_headers {
+        return None;
+    }
+    let final_headers = if ours_headers != base_headers {
+        ours_headers
+    } else {
+        theirs_headers
+    };
+
+    let mut merged_body = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    // 先保留未被两方删除的 base 记录
+    for b in &base_body {
+        let in_ours = ours_body.contains(b);
+        let in_theirs = theirs_body.contains(b);
+        if in_ours && in_theirs {
+            if seen.insert(b.clone()) {
+                merged_body.push(b.clone());
+            }
+        }
+    }
+
+    // 追加 ours 的新增记录
+    for o in &ours_body {
+        if !base_body.contains(o) {
+            if seen.insert(o.clone()) {
+                merged_body.push(o.clone());
+            }
+        }
+    }
+
+    // 追加 theirs 的新增记录
+    for t in &theirs_body {
+        if !base_body.contains(t) {
+            if seen.insert(t.clone()) {
+                merged_body.push(t.clone());
+            }
+        }
+    }
+
+    // 组装标准的 NEMA 文本 (带标准 3 LF 终止)
+    let mut doc_text = String::new();
+    for h in final_headers {
+        doc_text.push_str(&h);
+        doc_text.push('\n');
+    }
+    for b in merged_body {
+        doc_text.push_str(&b);
+        doc_text.push('\n');
+    }
+    doc_text.push_str("\n\n");
+
+    // 严格语法封闭性检验
+    if nema_codec::parse_source(&doc_text).is_ok() {
+        Some(MergeOutcome {
+            clean: true,
+            merged_text: doc_text,
+            conflicts: Vec::new(),
+            ours_changes: 1,
+            theirs_changes: 1,
+        })
+    } else {
+        None
+    }
+}
+
+/// NEMA 结构化协同合并：具备语法封闭性检验与不变量保护。
+///
+/// 遵循红绿测试与数学测试准则：
+/// 1. 语法封闭性：只有通过 NEMA v1.5 语法检验的修改才允许进入协同流；任何语法违规均红灯拦截；
+/// 2. 交换律与一致性：不同域或不同记录行的安全合并结果保持 AST 语法合法。
+pub fn nema_merge(base: &str, ours: &str, theirs: &str) -> Result<MergeOutcome, String> {
+    // 1. 红绿测试前置守护：严格校验 ours 与 theirs 是否符合 NEMA 语法规范
+    nema_codec::parse_source(ours).map_err(|e| format!("Ours NEMA 语法校验未通过 (Red Guard): {e}"))?;
+    nema_codec::parse_source(theirs).map_err(|e| format!("Theirs NEMA 语法校验未通过 (Red Guard): {e}"))?;
+
+    // 2. 先运行基础 3-Way 差异合并
+    let outcome = three_way_merge(base, ours, theirs);
+
+    if outcome.clean {
+        // 3. 数学性质校验：合并结果必须满足 NEMA 语法封闭性 (Syntax Closure)
+        match nema_codec::parse_source(&outcome.merged_text) {
+            Ok(_) => Ok(outcome),
+            Err(_err) => {
+                if let Some(semantic_res) = try_nema_semantic_merge(base, ours, theirs) {
+                    return Ok(semantic_res);
+                }
+                Ok(MergeOutcome {
+                    clean: false,
+                    merged_text: outcome.merged_text,
+                    conflicts: vec![ConflictHunk {
+                        base_line_start: 1,
+                        base_line_end: 1,
+                        ours: "valid_nema_ours".into(),
+                        theirs: "valid_nema_theirs".into(),
+                    }],
+                    ours_changes: outcome.ours_changes,
+                    theirs_changes: outcome.theirs_changes,
+                })
+            }
+        }
+    } else {
+        // 3-Way 物理文本合并有冲突，尝试 NEMA 语义级解构合并
+        if let Some(semantic_res) = try_nema_semantic_merge(base, ours, theirs) {
+            Ok(semantic_res)
+        } else {
+            Ok(outcome)
+        }
+    }
+}
+
 /// 快速计算内容哈希 (FNV-1a 64位无碰撞十六进制字符串)
 pub fn fnv1a_hash(s: &str) -> String {
     let mut h = 0xcbf29ce484222325u64;
@@ -216,6 +353,24 @@ pub struct HeadlessDoc {
     pub content: String,
     pub content_hash: String,
     pub revisions: VecDeque<RevisionRecord>,
+}
+
+/// 协同模式：Git 式行级差分合并 vs NEMA 结构化语法与租约仲裁
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CollabMode {
+    Git,
+    Nema,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FullCoEditRequest {
+    pub file_id: String,
+    pub author: String,
+    pub new_text: String,
+    pub base_revision: Option<u64>,
+    pub op_id: Option<String>,
+    pub mode: Option<CollabMode>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -437,6 +592,133 @@ impl CoEditWorkspace {
             "provider": req.provider,
             "agent_id": req.agent_id,
             "summary": summary
+        });
+
+        if let Some(op) = req.op_id {
+            if self.idempotency.len() >= MAX_IDEMPOTENCY_KEYS {
+                if let Some(first) = self.idempotency.keys().next().cloned() {
+                    self.idempotency.remove(&first);
+                }
+            }
+            self.idempotency.insert(op, res.clone());
+        }
+
+        Ok(res)
+    }
+
+    /// 全文并发协同编辑：支持 Git 式与 NEMA 式两种协作模式。
+    pub fn coedit_full(&mut self, req: FullCoEditRequest) -> Result<Value, String> {
+        if let Some(ref op) = req.op_id {
+            if let Some(cached) = self.idempotency.get(op) {
+                let mut c = cached.clone();
+                c["idempotent_replay"] = json!(true);
+                return Ok(c);
+            }
+        }
+
+        let doc = self
+            .docs
+            .get_mut(&req.file_id)
+            .ok_or_else(|| format!("Document not found: {}", req.file_id))?;
+
+        // 判定协同模式：优先显式指定；若无则以 .nema 后缀推断为 Nema 模式，其余为 Git 模式
+        let mode = req.mode.unwrap_or_else(|| {
+            if req.file_id.ends_with(".nema") {
+                CollabMode::Nema
+            } else {
+                CollabMode::Git
+            }
+        });
+
+        // NEMA 模式前置防御：红灯拦截非法输入
+        if mode == CollabMode::Nema {
+            if let Err(e) = nema_codec::parse_source(&req.new_text) {
+                return Ok(json!({
+                    "ok": false,
+                    "status": "REJECTED_NEMA_SYNTAX_ERROR",
+                    "file_id": doc.file_id,
+                    "error": format!("NEMA 语法校验未通过 (Red Guard): {e}"),
+                    "mode": mode
+                }));
+            }
+        }
+
+        let base_rev = req.base_revision.unwrap_or(doc.current_revision);
+        let base_snapshot = doc
+            .revisions
+            .iter()
+            .find(|r| r.revision == base_rev)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Base revision {base_rev} is not available (retained: {}..={})",
+                    doc.revisions.front().map(|r| r.revision).unwrap_or(0),
+                    doc.current_revision
+                )
+            })?;
+
+        let is_fast_path = base_rev == doc.current_revision;
+        let (final_content, auto_merged, is_clean, conflicts_count) = if is_fast_path {
+            (req.new_text, false, true, 0)
+        } else {
+            // 并发分支
+            match mode {
+                CollabMode::Git => {
+                    let merge = three_way_merge(&base_snapshot.content, &doc.content, &req.new_text);
+                    let clean = merge.clean;
+                    let count = merge.conflicts.len();
+                    (merge.merged_text, true, clean, count)
+                }
+                CollabMode::Nema => {
+                    let merge = nema_merge(&base_snapshot.content, &doc.content, &req.new_text)?;
+                    let clean = merge.clean;
+                    let count = merge.conflicts.len();
+                    (merge.merged_text, true, clean, count)
+                }
+            }
+        };
+
+        let new_rev = doc.current_revision + 1;
+        let new_hash = fnv1a_hash(&final_content);
+        let author_tag = if !is_clean {
+            format!("{} (conflict)", req.author)
+        } else if auto_merged {
+            format!("{} (auto-merged)", req.author)
+        } else {
+            req.author.clone()
+        };
+
+        let rev_rec = RevisionRecord {
+            revision: new_rev,
+            content: final_content.clone(),
+            content_hash: new_hash.clone(),
+            provider: req.author.clone(),
+            agent_id: req.author.clone(),
+            summary: format!("coedit mode={:?} auto_merged={}", mode, auto_merged),
+            auto_merged,
+            created_at: "2026-11-20T00:00:00Z".into(),
+        };
+
+        if doc.revisions.len() >= MAX_REVISIONS_PER_DOC {
+            doc.revisions.pop_front();
+        }
+        doc.revisions.push_back(rev_rec);
+        doc.current_revision = new_rev;
+        doc.content = final_content.clone();
+        doc.content_hash = new_hash.clone();
+
+        let res = json!({
+            "ok": is_clean,
+            "status": if is_clean { "COMMITTED" } else { "CONFLICT" },
+            "file_id": doc.file_id,
+            "previous_revision": new_rev - 1,
+            "revision": new_rev,
+            "merged": auto_merged,
+            "conflicts": conflicts_count,
+            "author": author_tag,
+            "content": final_content,
+            "content_hash": new_hash,
+            "mode": mode
         });
 
         if let Some(op) = req.op_id {
