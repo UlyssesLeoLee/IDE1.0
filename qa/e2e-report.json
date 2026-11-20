@@ -1,8 +1,8 @@
 ﻿{
-    "GeneratedAt":  "2026-11-18T14:58:04-08:00",
+    "GeneratedAt":  "2026-11-19T06:12:58-08:00",
     "Summary":  {
-                    "TotalExecuted":  1478,
-                    "TotalPassed":  1478,
+                    "TotalExecuted":  1502,
+                    "TotalPassed":  1502,
                     "TotalFailed":  0,
                     "PassRatePercent":  100,
                     "FeatureCoveragePercent":  100,
@@ -17,25 +17,32 @@
                                                                "Passed":  744,
                                                                "Failed":  0,
                                                                "ExitCode":  0,
-                                                               "DurationSec":  100.26
+                                                               "DurationSec":  19.32
                                                            },
                                                            {
                                                                "Package":  "IDE1.0 (ide-fast)",
-                                                               "Passed":  633,
+                                                               "Passed":  648,
                                                                "Failed":  0,
                                                                "ExitCode":  0,
-                                                               "DurationSec":  96.72
+                                                               "DurationSec":  42.4
                                                            },
                                                            {
                                                                "Package":  "ide-shell-web",
                                                                "Passed":  101,
                                                                "Failed":  0,
                                                                "ExitCode":  0,
-                                                               "DurationSec":  50.48
+                                                               "DurationSec":  7.74
+                                                           },
+                                                           {
+                                                               "Package":  "v0.8.6 E2E Regression Suite",
+                                                               "Passed":  9,
+                                                               "Failed":  0,
+                                                               "ExitCode":  0,
+                                                               "DurationSec":  13.05
                                                            }
                                                        ],
-                                          "TotalExecuted":  1478,
-                                          "TotalPassed":  1478,
+                                          "TotalExecuted":  1502,
+                                          "TotalPassed":  1502,
                                           "TotalFailed":  0
                                       },
                              "Playwright":  {
@@ -46,8 +53,8 @@
                                                 "TotalPassed":  0,
                                                 "TotalFailed":  0
                                             },
-                             "TotalExecuted":  1478,
-                             "TotalPassed":  1478,
+                             "TotalExecuted":  1502,
+                             "TotalPassed":  1502,
                              "TotalFailed":  0,
                              "PassRatePercent":  100
                          },
@@ -155,6 +162,62 @@
                               "Name":  "Headless Subsystem \u0026 Silent Tray Daemon",
                               "Desc":  "安装向导与右键关闭常驻统一无头启动, 彻底消除终端黑框与子进程弹窗",
                               "VerifiedBy":  "specs/features-v081.spec.ts [Test 14], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-16",
+                              "Name":  "User Custom Model Isolation \u0026 Zero Synthetic Models",
+                              "Desc":  "用户自定义模型隔离、纯净模型列表、零伪造Mock模型注入、敏感Token掩码脱敏",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-16], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-17",
+                              "Name":  "Settings Full Persistence Across Sessions",
+                              "Desc":  "用户AI与协同设置全面持久化: 对话框开闭、协同模式、自动应用、上下文开关、激活Tab与每Agent模型跨会话完整还原",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-17], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-18",
+                              "Name":  "Unified AI Chat \u0026 Multi-Agent Collab Platform",
+                              "Desc":  "单 Agent 精准控制下拉搜索切换、独立对话与草稿隔离、统一右侧抽屉、右上角冗余工作台按钮移除",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-18], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-19",
+                              "Name":  "Rebuilt Progress Bar \u0026 Cel-Shaded 3D Logo Maintenance Wizard",
+                              "Desc":  "安装向导进度条数学重构与偏心校准、安装/维护/修复/安全卸载双模驱动、零空心方块字体图元安全",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-19], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-20",
+                              "Name":  "Theme-Adaptive Exquisite Buttons \u0026 Prismatic Surface Physics",
+                              "Desc":  "4 大主题自适应精致按钮 (Comic, Retro16, Crystal, Fluent Dark/Light) 具有精确边框、渐变、按压反馈与矢量图元",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-20], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-21",
+                              "Name":  "Headless Subsystem \u0026 Zero-Console Invariant",
+                              "Desc":  "CREATE_NO_WINDOW 与 Windows GUI 子系统设置，彻底消除终端黑框与子进程弹窗",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-21], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-22",
+                              "Name":  "Direct Terminal ANSI TrueColor \u0026 Path Tracking",
+                              "Desc":  "终端直接交互子系统、ANSI 256 与 24-bit TrueColor 颜色解析及 OSC/cd 路径追踪",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-22], IDE1.0",
+                              "Status":  "Passed"
+                          },
+                          {
+                              "Id":  "FEAT-23",
+                              "Name":  "Release Binary Cold Startup SLA \u0026 Packaging Integrity",
+                              "Desc":  "IDE1.0.exe 生产二进制体积合规 (10MB ~ 45MB)、冷启动低于 500ms、无进程死锁",
+                              "VerifiedBy":  "tests/e2e-regression-v086.ps1 [FEAT-23], target/release/IDE1.0.exe",
                               "Status":  "Passed"
                           }
                       ]

@@ -3,9 +3,7 @@
 //! 样式只作用在菜单里 (`MenuConfig::style`), 不影响窗口里的普通控件。
 
 use crate::view::ThemeColors;
-use eframe::egui::{
-    self, epaint::Shadow, Align2, Color32, FontId, Response, Stroke, TextFormat, Ui, Vec2,
-};
+use eframe::egui::{self, epaint::Shadow, Color32, FontId, Response, Stroke, TextFormat, Ui, Vec2};
 
 /// 菜单栏按钮的字号 / 左右内边距 (Tauri `.mb-btn`: 13px, 约 8-12px)
 pub const MENU_FONT: f32 = 13.0;
@@ -265,11 +263,13 @@ pub fn menu_check(ui: &mut Ui, _tc: &ThemeColors, on: bool, label: impl AsRef<st
             .visuals()
             .override_text_color
             .unwrap_or(ui.visuals().widgets.inactive.fg_stroke.color);
-        ui.painter().text(
-            egui::pos2(r.rect.left() + 7.0, r.rect.center().y),
-            Align2::LEFT_CENTER,
-            "✓",
-            FontId::proportional(12.0),
+        crate::ui_icons::paint_checkmark(
+            ui.painter(),
+            egui::Rect::from_center_size(
+                egui::pos2(r.rect.left() + 11.0, r.rect.center().y),
+                egui::vec2(11.0, 11.0),
+            ),
+            1.8,
             check_col,
         );
     }

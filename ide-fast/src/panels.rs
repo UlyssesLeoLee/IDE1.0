@@ -199,8 +199,8 @@ pub fn tip(dock: Dock, collapsed: bool) -> &'static str {
     match (dock, collapsed) {
         (Dock::Side, true) => "展开导航 / 文件",
         (Dock::Side, false) => "折叠导航 / 文件",
-        (Dock::Right, true) => "展开 Chat",
-        (Dock::Right, false) => "折叠 Chat",
+        (Dock::Right, true) => "展开 Agent 协同平台",
+        (Dock::Right, false) => "折叠 Agent 协同平台",
         (Dock::Bottom, true) => "展开底部面板",
         (Dock::Bottom, false) => "折叠底部面板",
     }

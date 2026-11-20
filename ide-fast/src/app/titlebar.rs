@@ -29,7 +29,6 @@ const QUICK: &[(&str, &str)] = &[
 const LEFT_FIXED: f32 = 6.0 + 16.0 + 6.0;
 const QUICK_BTN: f32 = 26.0;
 const DIFF_BTN_W: f32 = 30.0;
-const COLLAB_BTN_W: f32 = 30.0;
 const STICKY_BTN_W: f32 = 30.0;
 const OVERFLOW_BTN_W: f32 = 26.0;
 const ITEM_SPACING: f32 = 4.0;
@@ -38,14 +37,13 @@ const GAP: f32 = 10.0;
 const TITLE_MAX: f32 = 220.0;
 
 /// 标题栏怎么排: 菜单永远完整显示、绝不和右边的按钮重叠; 空间不够时按优先级一样样撤 ——
-/// 先撤快捷图标钮, 再撤协同、便笺与对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母;
+/// 先撤快捷图标钮, 再撤便笺与对比入口, 再撤窗口标题文字, 最后撤菜单的助记字母;
 /// 无法在栏上直接完整显示的快捷按钮自动折叠为折叠按钮 (···), 点击展开下拉菜单
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct BarPlan {
     pub mnemonics: bool,
     pub title: bool,
     pub diff: bool,
-    pub collab: bool,
     pub sticky_notes: bool,
     pub quick: usize,
     pub overflow: bool,
@@ -62,7 +60,6 @@ impl BarPlan {
     pub fn mid_width(&self) -> f32 {
         let count = self.quick
             + (if self.diff { 1 } else { 0 })
-            + (if self.collab { 1 } else { 0 })
             + (if self.sticky_notes { 1 } else { 0 })
             + (if self.overflow { 1 } else { 0 });
         if count == 0 {
@@ -70,7 +67,6 @@ impl BarPlan {
         }
         let raw = self.quick as f32 * QUICK_BTN
             + (if self.diff { DIFF_BTN_W } else { 0.0 })
-            + (if self.collab { COLLAB_BTN_W } else { 0.0 })
             + (if self.sticky_notes { STICKY_BTN_W } else { 0.0 })
             + (if self.overflow { OVERFLOW_BTN_W } else { 0.0 });
         raw + (count - 1) as f32 * ITEM_SPACING
@@ -92,14 +88,12 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
     };
     let title = take(title_w.min(TITLE_MAX) + 8.0);
 
-    const ALL_BUTTONS_W: f32 =
-        6.0 * QUICK_BTN + DIFF_BTN_W + COLLAB_BTN_W + STICKY_BTN_W + 8.0 * ITEM_SPACING;
+    const ALL_BUTTONS_W: f32 = 6.0 * QUICK_BTN + DIFF_BTN_W + STICKY_BTN_W + 7.0 * ITEM_SPACING;
     if rem >= ALL_BUTTONS_W {
         return BarPlan {
             mnemonics,
             title,
             diff: true,
-            collab: true,
             sticky_notes: true,
             quick: QUICK.len(),
             overflow: false,
@@ -111,7 +105,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
             mnemonics,
             title,
             diff: false,
-            collab: false,
             sticky_notes: false,
             quick: 0,
             overflow: false,
@@ -129,7 +122,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
         }
     };
     let diff = take_btn(DIFF_BTN_W);
-    let collab = take_btn(COLLAB_BTN_W);
     let sticky_notes = take_btn(STICKY_BTN_W);
     let mut quick = 0;
     while quick < QUICK.len() && take_btn(QUICK_BTN) {
@@ -140,7 +132,6 @@ pub fn plan_bar(total: f32, menu_mn: f32, menu_plain: f32, title_w: f32) -> BarP
         mnemonics,
         title,
         diff,
-        collab,
         sticky_notes,
         quick,
         overflow: true,
@@ -303,7 +294,6 @@ impl App {
         let icon = self.sys.title_icon.clone();
         let mut run: Option<usize> = None;
         let mut diff_action: Option<DiffAction> = None;
-        let mut collab_toggle = false;
         let mut sticky_notes_toggle = false;
         egui::Panel::top("titlebar")
             .exact_size(BAR_H)
@@ -497,12 +487,14 @@ impl App {
                         fg
                     };
 
-                    // 绘制左侧图标
-                    ui.painter().text(
-                        egui::pos2(bar_rect.left() + 9.0, bar_rect.center().y),
-                        egui::Align2::LEFT_CENTER,
-                        "🔍",
-                        egui::FontId::proportional(11.0),
+                    // 绘制左侧纯矢量放大镜图标
+                    crate::ui_icons::paint(
+                        ui.painter(),
+                        egui::Rect::from_center_size(
+                            egui::pos2(bar_rect.left() + 14.0, bar_rect.center().y),
+                            Vec2::splat(13.0),
+                        ),
+                        crate::ui_icons::UiIcon::Search,
                         text_col,
                     );
 
@@ -541,41 +533,6 @@ impl App {
                             let tip = crate::i18n::lk_for(e);
                             if crate::icons::icon_button_themed(ui, id, tip, &self.tc).clicked() {
                                 run = Some(i);
-                            }
-                        }
-                        if plan.collab {
-                            let is_running = self.collab.any_running();
-                            let is_open = self.collab.open;
-                            let (rect, resp) = ui
-                                .allocate_exact_size(Vec2::new(COLLAB_BTN_W, 22.0), Sense::click());
-                            let tip = if is_running {
-                                "多 Agent 协同工作台 (正在执行协同任务...)"
-                            } else {
-                                "多 Agent 协同工作台 (Multi-Agent Collab)"
-                            };
-                            let resp = resp.on_hover_text(tip);
-                            let is_hovered = resp.hovered();
-                            let is_active = resp.is_pointer_button_down_on();
-                            let is_highlighted = is_open || is_running;
-
-                            let (content_rect, icon_col) = crate::icons::paint_themed_quick_btn(
-                                ui.painter(),
-                                rect.shrink(1.0),
-                                &self.tc,
-                                is_hovered,
-                                is_active,
-                                is_highlighted,
-                            );
-
-                            paint_collab_icon(
-                                ui.painter(),
-                                content_rect,
-                                is_running,
-                                icon_col,
-                                &self.tc,
-                            );
-                            if resp.clicked() {
-                                collab_toggle = true;
                             }
                         }
                         if plan.sticky_notes {
@@ -661,21 +618,6 @@ impl App {
                                     }
                                 }
 
-                                // 渲染折叠的多 Agent 协同工作台
-                                if !plan.collab {
-                                    let collab_label = if self.collab.any_running() {
-                                        "多 Agent 协同工作台 (运行中...)"
-                                    } else if self.collab.open {
-                                        "关闭多 Agent 协同工作台"
-                                    } else {
-                                        "打开多 Agent 协同工作台"
-                                    };
-                                    if menuui::mbtn(ui, collab_label).clicked() {
-                                        collab_toggle = true;
-                                        egui::Popup::close_all(ui.ctx());
-                                    }
-                                }
-
                                 // 渲染折叠的便笺
                                 if !plan.sticky_notes {
                                     let sticky_label = if self.sticky_notes.open {
@@ -708,16 +650,23 @@ impl App {
                                             diff_action = Some(DiffAction::Prev);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                        if menuui::mbtn(ui, crate::i18n::trz("查看差异列表…")).clicked() {
+                                        if menuui::mbtn(ui, crate::i18n::trz("查看差异列表…"))
+                                            .clicked()
+                                        {
                                             diff_action = Some(DiffAction::List);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                        if menuui::mbtn(ui, crate::i18n::trz("退出对比 (清除差异)")).clicked()
+                                        if menuui::mbtn(ui, crate::i18n::trz("退出对比 (清除差异)"))
+                                            .clicked()
                                         {
                                             diff_action = Some(DiffAction::Clear);
                                             egui::Popup::close_all(ui.ctx());
                                         }
-                                    } else if menuui::mbtn(ui, crate::i18n::trz("文件差异对比 (Diff)...")).clicked()
+                                    } else if menuui::mbtn(
+                                        ui,
+                                        crate::i18n::trz("文件差异对比 (Diff)..."),
+                                    )
+                                    .clicked()
                                     {
                                         diff_action = Some(DiffAction::WithFile);
                                         egui::Popup::close_all(ui.ctx());
@@ -752,17 +701,6 @@ impl App {
             });
         if let Some(i) = run {
             self.run_entry(i, ctx);
-        }
-        if collab_toggle {
-            if self.ai.open && self.ai.collab_mode {
-                self.ai.open = false;
-                self.collab.open = false;
-            } else {
-                self.ai.open = true;
-                self.ai.collab_mode = true;
-                self.collab.open = true;
-                self.expand_dock(crate::panels::Dock::Right);
-            }
         }
         if sticky_notes_toggle {
             self.sticky_notes.open = !self.sticky_notes.open;
@@ -832,7 +770,10 @@ impl App {
                     action = Some(DiffAction::Next);
                     egui::Popup::close_all(ui.ctx());
                 }
-                if ui.button(crate::i18n::trz("上一处差异 (Shift+F7)")).clicked() {
+                if ui
+                    .button(crate::i18n::trz("上一处差异 (Shift+F7)"))
+                    .clicked()
+                {
                     action = Some(DiffAction::Prev);
                     egui::Popup::close_all(ui.ctx());
                 }
@@ -1430,11 +1371,11 @@ mod tests {
 
     #[test]
     fn test_overflow_button_and_dropdown_behavior() {
-        // 宽屏 (1600.0): 所有 9 个快捷工具全部直接展示在栏上, 不需要折叠按钮
+        // 宽屏 (1600.0): 所有快捷工具全部直接展示在栏上, 不需要折叠按钮
         let wide = plan_bar(1600.0, MW, MP, 50.0);
         assert!(!wide.overflow);
         assert_eq!(wide.quick, QUICK.len());
-        assert!(wide.diff && wide.collab && wide.sticky_notes);
+        assert!(wide.diff && wide.sticky_notes);
 
         // 中等宽度 (700.0): 空间不足以容纳所有快捷工具, 触发自适应折叠, overflow = true
         let mid = plan_bar(700.0, MW, MP, 50.0);
@@ -1605,70 +1546,6 @@ fn paint_diff_icon(
             Color32::from_rgb(0, 200, 255)
         };
         painter.circle_filled(center, 1.5, dot_col);
-    }
-}
-
-/// 绘制多 Agent 协同工作台图标 (两个微缩协同智能体头像，带网络连接与状态光斑，自适应各主题画风)
-fn paint_collab_icon(
-    painter: &egui::Painter,
-    rect: Rect,
-    is_running: bool,
-    theme_fg: Color32,
-    tc: &crate::view::ThemeColors,
-) {
-    let center = rect.center();
-    let col = if tc.comic {
-        Color32::BLACK
-    } else if is_running {
-        Color32::from_rgb(0, 220, 130)
-    } else {
-        theme_fg.gamma_multiply(0.85)
-    };
-
-    // 左上智能体与右下智能体两个小圆
-    let p1 = egui::pos2(center.x - 4.5, center.y - 3.5);
-    let p2 = egui::pos2(center.x + 4.5, center.y + 3.5);
-
-    let avatar_bg = if tc.comic {
-        if is_running {
-            Color32::from_rgb(180, 250, 180)
-        } else {
-            Color32::from_rgb(255, 235, 75)
-        }
-    } else {
-        Color32::from_black_alpha(40)
-    };
-    let stroke_w = if tc.comic { 1.5 } else { 1.0 };
-
-    painter.circle_filled(p1, 3.2, avatar_bg);
-    painter.circle_stroke(p1, 3.2, egui::Stroke::new(stroke_w, col));
-
-    painter.circle_filled(p2, 3.2, avatar_bg);
-    painter.circle_stroke(p2, 3.2, egui::Stroke::new(stroke_w, col));
-
-    // 智能体之间的协同链路
-    let link_col = if is_running {
-        if tc.retro16 {
-            Color32::from_rgb(0, 255, 120)
-        } else {
-            Color32::from_rgb(0, 220, 130)
-        }
-    } else {
-        col.gamma_multiply(0.5)
-    };
-    painter.line_segment(
-        [p1, p2],
-        egui::Stroke::new(if tc.comic { 1.4 } else { 1.0 }, link_col),
-    );
-
-    // 运行态光斑
-    if is_running {
-        let spot_col = if tc.retro16 {
-            Color32::from_rgb(0, 255, 200)
-        } else {
-            Color32::from_rgb(0, 255, 180)
-        };
-        painter.circle_filled(center, 1.8, spot_col);
     }
 }
 

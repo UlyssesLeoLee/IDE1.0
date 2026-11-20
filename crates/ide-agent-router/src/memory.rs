@@ -209,8 +209,10 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let engine = AgentMemoryEngine::default();
-        let mut mem = LongTermMemory::default();
-        mem.architecture_summary = "Microkernel with pure Rust GUI".into();
+        let mut mem = LongTermMemory {
+            architecture_summary: "Microkernel with pure Rust GUI".into(),
+            ..Default::default()
+        };
         mem.architectural_decisions
             .push("Forbid unsafe code globally".into());
         mem.user_preferences.insert("tab_width".into(), "4".into());

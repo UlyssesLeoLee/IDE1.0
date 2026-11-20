@@ -322,21 +322,38 @@ impl App {
                 ui.add_space(8.0);
                 sep(ui, on);
                 ui.add_space(4.0);
-                if ui
-                    .small_button("🛡️ 协同审查")
-                    .on_hover_text("打开多 AI 协同审查与统筹验收看板 (Ctrl+Shift+R)")
-                    .clicked()
+                if crate::ui_icons::icon_button(
+                    ui,
+                    crate::ui_icons::UiIcon::Shield,
+                    crate::i18n::trz("协同审查"),
+                    Color32::from_rgb(56, 189, 248),
+                )
+                .on_hover_text("打开多 AI 协同审查与统筹验收看板 (Ctrl+Shift+R)")
+                .clicked()
                 {
                     st_cmd = Some(StatusCmd::ReviewDoc);
                 }
                 ui.add_space(4.0);
                 sep(ui, on);
-                // 提示撑满剩下的宽, 语法名与 Zoom 控制靠右
+                // 提示撑满剩下的宽, 语言、托盘与 Zoom 控制靠右
                 let tray_resident = self.cfg.tray_resident;
-                let tray_str = if tray_resident { "⚡ 常驻托盘" } else { "🖥️ 独立窗口" };
-                let tray_w = text_w(ui, tray_str) + 18.0;
+                let tray_str = if tray_resident {
+                    crate::i18n::trz("常驻托盘")
+                } else {
+                    crate::i18n::trz("独立窗口")
+                };
+                let tray_icon = if tray_resident {
+                    crate::ui_icons::UiIcon::Bolt
+                } else {
+                    crate::ui_icons::UiIcon::Terminal
+                };
+                let tray_text_w = text_w(ui, tray_str);
+                let tray_w = tray_text_w + 34.0;
                 let lang_w = text_w(ui, &lang) + 16.0;
-                let zoom_w = 98.0;
+                let zoom_pct = ((self.font_px / self.default_font_px()) * 100.0).round() as i32;
+                let zoom_str = format!("{}%", zoom_pct);
+                let zoom_text_w = text_w(ui, &zoom_str);
+                let zoom_w = zoom_text_w + 76.0;
                 let tip_w = (right - ui.cursor().left() - lang_w - tray_w - zoom_w - 4.0).max(0.0);
                 ui.allocate_ui_with_layout(
                     Vec2::new(tip_w, ui.available_height()),
@@ -363,9 +380,27 @@ impl App {
                 } else {
                     Color32::from_rgb(160, 160, 160)
                 };
-                let tray_label = egui::RichText::new(tray_str).color(tray_color).strong();
-                if ui
-                    .add(egui::Label::new(tray_label).sense(Sense::click()))
+                let (tr_rect, tr_resp) = ui.allocate_exact_size(
+                    Vec2::new(14.0 + 4.0 + tray_text_w, ui.available_height()),
+                    Sense::click(),
+                );
+                crate::ui_icons::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(
+                        egui::pos2(tr_rect.left() + 7.0, tr_rect.center().y),
+                        Vec2::splat(13.0),
+                    ),
+                    tray_icon,
+                    tray_color,
+                );
+                ui.painter().text(
+                    egui::pos2(tr_rect.left() + 18.0, tr_rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    tray_str,
+                    egui::FontId::proportional(11.5),
+                    tray_color,
+                );
+                if tr_resp
                     .on_hover_text(if tray_resident {
                         "系统托盘常驻已开启 (关闭窗口时隐藏到任务栏托盘；点击可切换)"
                     } else {
@@ -378,7 +413,7 @@ impl App {
                 ui.add_space(6.0);
                 sep(ui, on);
                 ui.add_space(4.0);
-                // 右下角 Zoom 缩放控制 UI: [ - ] 100% [ + ]
+                // 右下角 Zoom 缩放控制 UI: [ - ] 矢量放大镜 100% [ + ]
                 if ui
                     .small_button("－")
                     .on_hover_text("缩小字号 (Ctrl+- 或 Ctrl+滚轮下滚)")
@@ -387,18 +422,32 @@ impl App {
                     st_cmd = Some(StatusCmd::ZoomOut);
                 }
                 ui.add_space(2.0);
-                let default_px = self.default_font_px();
-                let zoom_pct = ((self.font_px / default_px) * 100.0).round() as i32;
                 let zoom_color = if zoom_pct == 100 {
                     on
                 } else {
                     Color32::from_rgb(0, 229, 255)
                 };
-                let zoom_label = egui::RichText::new(format!("🔍 {}%", zoom_pct))
-                    .color(zoom_color)
-                    .strong();
-                if ui
-                    .add(egui::Label::new(zoom_label).sense(Sense::click()))
+                let (zr_rect, zr_resp) = ui.allocate_exact_size(
+                    Vec2::new(14.0 + 4.0 + zoom_text_w, ui.available_height()),
+                    Sense::click(),
+                );
+                crate::ui_icons::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(
+                        egui::pos2(zr_rect.left() + 7.0, zr_rect.center().y),
+                        Vec2::splat(12.5),
+                    ),
+                    crate::ui_icons::UiIcon::Search,
+                    zoom_color,
+                );
+                ui.painter().text(
+                    egui::pos2(zr_rect.left() + 18.0, zr_rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    &zoom_str,
+                    egui::FontId::proportional(11.5),
+                    zoom_color,
+                );
+                if zr_resp
                     .on_hover_text(format!(
                         "当前缩放: {}% (点击重置为 100%，支持 Ctrl+滚轮 缩放)",
                         zoom_pct

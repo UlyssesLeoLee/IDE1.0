@@ -193,10 +193,7 @@ pub fn call(name: &str, args: &Value) -> Result<Value, String> {
                 .collect();
             Ok(json!({ "plugins": list }))
         }
-        "sticky_note_list"
-        | "sticky_note_create"
-        | "sticky_note_update"
-        | "sticky_note_delete"
+        "sticky_note_list" | "sticky_note_create" | "sticky_note_update" | "sticky_note_delete"
         | "sticky_note_open" => Ok(json!({ "status": "delegated_to_app" })),
         _ => Err(format!("未知工具: {name}")),
     }

@@ -9,6 +9,7 @@ members = [
   "crates/ide-shell-protocol",
   "crates/editcore",
   "crates/ide-agent-router",
+  "crates/ide-mcp",
   "crates/nema-codec",
   "ide-fast",
 ]

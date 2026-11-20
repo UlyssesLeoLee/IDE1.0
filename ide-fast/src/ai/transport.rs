@@ -440,6 +440,7 @@ mod tests {
             effort: "high".into(),
             efforts: vec![],
             consent: true,
+            saved_models: vec![],
         };
         assert_eq!(AiConfig::from_json(&c.to_json()), c);
         assert_eq!(AiConfig::from_json(&json!({})).base_url, PRESETS[0].1);

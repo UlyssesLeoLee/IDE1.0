@@ -3,10 +3,44 @@
 
 use super::art::*;
 use super::cards::*;
-use super::InstallerStep;
+use super::{InstallerMode, InstallerStep};
 use crate::app::App;
+use crate::ui_icons::{self, UiIcon};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind};
+
+fn paint_step_hero_banner(ui: &mut egui::Ui, accent: Color32, title: &str, subtitle: &str) {
+    let (h_rect, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 54.0), egui::Sense::hover());
+    let hp = ui.painter();
+    paint_comic_hard_shadow_rect(
+        hp,
+        h_rect,
+        Color32::from_rgb(20, 26, 38),
+        2.0,
+        vec2(3.0, 3.0),
+    );
+    hp.rect_filled(
+        Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
+        0.0,
+        accent,
+    );
+    let tp = hp.with_clip_rect(h_rect.shrink2(vec2(12.0, 4.0)));
+    tp.text(
+        pos2(h_rect.left() + 16.0, h_rect.top() + 18.0),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(14.5),
+        Color32::WHITE,
+    );
+    tp.text(
+        pos2(h_rect.left() + 16.0, h_rect.top() + 38.0),
+        egui::Align2::LEFT_CENTER,
+        subtitle,
+        egui::FontId::proportional(11.0),
+        Color32::from_rgb(203, 213, 225),
+    );
+}
 
 impl App {
     /// 渲染右侧多步骤向导分镜
@@ -16,60 +50,52 @@ impl App {
         panel_rect: Rect,
         standalone: bool,
     ) {
-        ui.scope_builder(egui::UiBuilder::new().max_rect(panel_rect), |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 10.0);
+        // 预留 3px 阴影空间，确保卡片投影与进度条严丝合缝且绝不超出右侧底板
+        let content_rect = Rect::from_min_max(
+            panel_rect.min,
+            pos2(
+                (panel_rect.right() - 3.0).max(panel_rect.left() + 60.0),
+                (panel_rect.bottom() - 3.0).max(panel_rect.top() + 60.0),
+            ),
+        );
+        ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 8.0);
 
-            // 步骤进度指示条 (Step Indicator Capsules - 3步直达)
+            // 顶部 3 步横向阶段指示进度条 (圆角胶囊 + 居中亮色连线 + 纯矢量徽章)
             let (ind_rect, _) =
-                ui.allocate_exact_size(vec2(ui.available_width(), 28.0), egui::Sense::hover());
-            paint_step_indicator(ui.painter(), ind_rect, self.installer.step);
+                ui.allocate_exact_size(vec2(ui.available_width(), 36.0), egui::Sense::hover());
+            paint_step_indicator_for_mode(
+                ui.painter(),
+                ind_rect,
+                self.installer.step,
+                self.installer.mode,
+            );
 
             match self.installer.step {
-                InstallerStep::Welcome | InstallerStep::Options => {
-                    self.render_step_options(ui, standalone)
-                }
+                InstallerStep::Welcome | InstallerStep::Options => match self.installer.mode {
+                    InstallerMode::Install => self.render_step_options(ui, standalone),
+                    InstallerMode::Maintenance => self.render_step_maintenance(ui, standalone),
+                    InstallerMode::Repair => self.render_step_repair_options(ui, standalone),
+                    InstallerMode::Uninstall => self.render_step_uninstall_options(ui, standalone),
+                },
                 InstallerStep::Installing => self.render_step_installing(ui),
                 InstallerStep::Finished => self.render_step_finished(ui, standalone),
             }
         });
     }
 
-    /// 核心步骤: 选项配置分镜 (排版充盈均整 · 粗体高对比 · 无右下角空旷)
-    fn render_step_options(&mut self, ui: &mut egui::Ui, standalone: bool) {
-        let hero_h = 56.0;
-        let (h_rect, _) =
-            ui.allocate_exact_size(vec2(ui.available_width(), hero_h), egui::Sense::hover());
-        let hp = ui.painter();
-        paint_comic_hard_shadow_rect(hp, h_rect, Color32::from_rgb(20, 26, 38), 2.0, vec2(3.0, 3.0));
-        hp.rect_filled(
-            Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
-            0.0,
-            Color32::from_rgb(2, 132, 199),
-        );
-        hp.text(
-            pos2(h_rect.left() + 16.0, h_rect.top() + 18.0),
-            egui::Align2::LEFT_CENTER,
-            crate::i18n::trz("环境配置与安装参数 (CONFIGURATION)"),
-            egui::FontId::proportional(14.5),
-            Color32::WHITE,
-        );
-        hp.text(
-            pos2(h_rect.left() + 16.0, h_rect.top() + 40.0),
-            egui::Align2::LEFT_CENTER,
-            crate::i18n::trz("自定义目标安装路径与环境联动，保障纯净绿色的极速微内核体验"),
-            egui::FontId::proportional(11.0),
-            Color32::from_rgb(203, 213, 225),
-        );
-
-        ui.add_space(2.0);
-
-        // 语言切换控制栏 (安装向导选安装路径的界面也可以直接选语言)
+    /// 共用语言切换栏 (安装 / 维护 / 修复 / 卸载共用，支持实时切换并持久化语种)
+    fn render_language_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(crate::i18n::trz("🌐 界面语言 (Language):"))
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui_icons::icon_label(
+                ui,
+                UiIcon::Globe,
+                egui::RichText::new(crate::i18n::trz("界面语言 (Language):"))
                     .strong()
                     .size(12.0)
                     .color(Color32::WHITE),
+                Color32::from_rgb(56, 189, 248),
             );
             let cur_lang = crate::i18n::cur();
             for l in crate::i18n::Lang::ALL {
@@ -85,21 +111,343 @@ impl App {
                 }
             }
         });
+    }
+
+    fn close_wizard(&mut self, ui: &mut egui::Ui, standalone: bool) {
+        if standalone {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        } else {
+            self.installer.open = false;
+        }
+    }
+
+    /// 共用步骤 1 底部双按钮条 (主操作 + 返回维护/退出向导)
+    fn render_step1_action_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        standalone: bool,
+        primary_icon: UiIcon,
+        primary_label: &str,
+        primary_color: Color32,
+    ) -> bool {
+        let mut primary_clicked = false;
+        let mut secondary_clicked = false;
+        let has_existing = self.installer.existing.is_some();
+        let secondary_label = if has_existing {
+            crate::i18n::trz("返回维护")
+        } else {
+            crate::i18n::trz("退出向导")
+        };
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            let total_w = ui.available_width();
+            let cancel_w = 120.0;
+            let primary_w = (total_w - cancel_w - 14.0).max(80.0);
+
+            if comic_action_button_with_icon(
+                ui,
+                Some(primary_icon),
+                primary_label,
+                vec2(primary_w, 46.0),
+                true,
+                primary_color,
+            )
+            .clicked()
+            {
+                primary_clicked = true;
+            }
+
+            if comic_action_button(
+                ui,
+                secondary_label,
+                vec2(cancel_w, 46.0),
+                false,
+                Color32::from_rgb(30, 41, 59),
+            )
+            .clicked()
+            {
+                secondary_clicked = true;
+            }
+        });
+
+        if secondary_clicked {
+            if has_existing {
+                self.installer.mode = InstallerMode::Maintenance;
+            } else {
+                self.close_wizard(ui, standalone);
+            }
+        }
+        primary_clicked
+    }
+
+    /// 维护总览分镜 (已安装状态下启动安装向导时默认呈现：修复 / 卸载 / 更改配置)
+    fn render_step_maintenance(&mut self, ui: &mut egui::Ui, standalone: bool) {
+        paint_step_hero_banner(
+            ui,
+            Color32::from_rgb(2, 132, 199),
+            crate::i18n::trz("检测到本机已安装 IDE 1.0 (MAINTENANCE)"),
+            crate::i18n::trz("选择修复现有安装、卸载移除组件，或更改目标目录与集成选项"),
+        );
 
         ui.add_space(2.0);
+        self.render_language_bar(ui);
 
-        // 路径设置标题
-        ui.label(
-            egui::RichText::new(crate::i18n::trz("📁 目标安装与工作目录 (Installation Directory):"))
-                .strong()
-                .size(12.5)
-                .color(Color32::WHITE),
+        let ver = self
+            .installer
+            .existing
+            .as_ref()
+            .and_then(|e| e.installed_version.as_deref())
+            .unwrap_or(env!("CARGO_PKG_VERSION"));
+        let inst_title = format!("{}  (v{})", crate::i18n::trz("当前已安装实例"), ver);
+        comic_info_card(
+            ui,
+            &inst_title,
+            &self.installer.target_dir,
+            UiIcon::CheckCircle,
+            Color32::from_rgb(16, 185, 129),
+        );
+
+        if comic_mode_card(
+            ui,
+            crate::i18n::trz("修复安装 (Repair Installation)"),
+            crate::i18n::trz("重新释放主程序并修复快捷方式、PATH 与注册表，完整保留个人配置"),
+            crate::i18n::trz("修复"),
+            UiIcon::Wrench,
+            Color32::from_rgb(20, 184, 166),
+        )
+        .clicked()
+        {
+            self.installer.mode = InstallerMode::Repair;
+        }
+
+        if comic_mode_card(
+            ui,
+            crate::i18n::trz("卸载移除 (Uninstall IDE 1.0)"),
+            crate::i18n::trz("移除主程序、快捷方式、环境变量与卸载记录，可选清理个人配置"),
+            crate::i18n::trz("卸载"),
+            UiIcon::Trash,
+            Color32::from_rgb(239, 68, 68),
+        )
+        .clicked()
+        {
+            self.installer.mode = InstallerMode::Uninstall;
+        }
+
+        if comic_mode_card(
+            ui,
+            crate::i18n::trz("更改配置或安装目录 (Modify / Reinstall)"),
+            crate::i18n::trz("修改安装目标路径或重新配置桌面图标、PATH 与常驻托盘选项"),
+            crate::i18n::trz("配置"),
+            UiIcon::Folder,
+            Color32::from_rgb(14, 165, 233),
+        )
+        .clicked()
+        {
+            self.installer.mode = InstallerMode::Install;
+        }
+
+        ui.add_space(4.0);
+
+        let mut launch_clicked = false;
+        let mut exit_clicked = false;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            let total_w = ui.available_width();
+            let exit_w = 120.0;
+            let launch_w = (total_w - exit_w - 14.0).max(80.0);
+
+            if comic_action_button_with_icon(
+                ui,
+                Some(UiIcon::Play),
+                crate::i18n::trz("直接启动 IDE 1.0"),
+                vec2(launch_w, 46.0),
+                true,
+                Color32::from_rgb(16, 185, 129),
+            )
+            .clicked()
+            {
+                launch_clicked = true;
+            }
+
+            if comic_action_button(
+                ui,
+                crate::i18n::trz("退出向导"),
+                vec2(exit_w, 46.0),
+                false,
+                Color32::from_rgb(30, 41, 59),
+            )
+            .clicked()
+            {
+                exit_clicked = true;
+            }
+        });
+
+        if launch_clicked {
+            if !self.installer.dry_run {
+                super::deploy::launch_installed_binary(&self.installer.target_dir);
+            }
+            self.close_wizard(ui, standalone);
+        } else if exit_clicked {
+            self.close_wizard(ui, standalone);
+        }
+    }
+
+    /// 修复确认分镜 (保留个人配置，修复核心二进制、快捷方式、PATH 与注册表)
+    fn render_step_repair_options(&mut self, ui: &mut egui::Ui, standalone: bool) {
+        paint_step_hero_banner(
+            ui,
+            Color32::from_rgb(13, 148, 136),
+            crate::i18n::trz("修复现有安装 (REPAIR INSTALLATION)"),
+            crate::i18n::trz("保留您的全部偏好与会话，重新部署核心程序并修复系统集成项"),
+        );
+
+        ui.add_space(2.0);
+        self.render_language_bar(ui);
+
+        comic_info_card(
+            ui,
+            crate::i18n::trz("目标修复目录"),
+            &self.installer.target_dir,
+            UiIcon::Folder,
+            Color32::from_rgb(20, 184, 166),
+        );
+
+        comic_interactive_card(
+            ui,
+            &mut self.installer.add_path,
+            crate::i18n::trz("校验并修复全局环境变量 PATH"),
+            crate::i18n::trz("确保终端中键入 IDE1.0 可直接唤起当前安装目录"),
+            "01",
+            Color32::from_rgb(14, 165, 233),
+        );
+
+        comic_interactive_card(
+            ui,
+            &mut self.installer.desktop_shortcut,
+            crate::i18n::trz("重建桌面与开始菜单快捷方式"),
+            crate::i18n::trz("修复损坏或丢失的桌面与开始菜单水晶图标入口"),
+            "02",
+            Color32::from_rgb(168, 85, 247),
+        );
+
+        comic_interactive_card(
+            ui,
+            &mut self.installer.tray_resident,
+            crate::i18n::trz("同步系统托盘常驻守护配置"),
+            crate::i18n::trz("恢复最小化驻留托盘与毫秒级热唤醒能力"),
+            "03",
+            Color32::from_rgb(16, 185, 129),
+        );
+
+        ui.add_space(6.0);
+
+        if self.render_step1_action_bar(
+            ui,
+            standalone,
+            UiIcon::Wrench,
+            crate::i18n::trz("开始修复 (REPAIR NOW)"),
+            Color32::from_rgb(13, 148, 136),
+        ) {
+            self.installer.install_progress = 0.0;
+            self.installer.status_msg = None;
+            self.installer.step = InstallerStep::Installing;
+        }
+    }
+
+    /// 卸载选项分镜 (停止关联实例，移除主程序/快捷方式/PATH/注册表，可选保留或清除用户数据)
+    fn render_step_uninstall_options(&mut self, ui: &mut egui::Ui, standalone: bool) {
+        paint_step_hero_banner(
+            ui,
+            Color32::from_rgb(220, 38, 38),
+            crate::i18n::trz("卸载移除 IDE 1.0 (UNINSTALL)"),
+            crate::i18n::trz("安全停止关联托盘进程并移除程序与集成项，全程无黑框闪烁"),
+        );
+
+        ui.add_space(2.0);
+        self.render_language_bar(ui);
+
+        comic_info_card(
+            ui,
+            crate::i18n::trz("待卸载安装目录"),
+            &self.installer.target_dir,
+            UiIcon::Warning,
+            Color32::from_rgb(245, 158, 11),
+        );
+
+        comic_interactive_card(
+            ui,
+            &mut self.installer.remove_shortcuts,
+            crate::i18n::trz("移除桌面与开始菜单快捷方式"),
+            crate::i18n::trz("清理 Desktop 与 Start Menu 中的 IDE1.0 启动快捷方式"),
+            "01",
+            Color32::from_rgb(14, 165, 233),
+        );
+
+        comic_interactive_card(
+            ui,
+            &mut self.installer.remove_path_and_reg,
+            crate::i18n::trz("清理环境变量 PATH 与卸载注册表项"),
+            crate::i18n::trz("从用户 PATH 移除安装目录并注销 Windows 应用列表记录"),
+            "02",
+            Color32::from_rgb(168, 85, 247),
+        );
+
+        comic_interactive_card(
+            ui,
+            &mut self.installer.remove_user_data,
+            crate::i18n::trz("同时删除个人偏好配置与会话缓存"),
+            crate::i18n::trz("清空 IDE1.0 Fast 配置目录（默认关闭以保留您的个人配置）"),
+            "03",
+            Color32::from_rgb(239, 68, 68),
+        );
+
+        ui.add_space(6.0);
+
+        if self.render_step1_action_bar(
+            ui,
+            standalone,
+            UiIcon::Trash,
+            crate::i18n::trz("确认卸载 (UNINSTALL NOW)"),
+            Color32::from_rgb(220, 38, 38),
+        ) {
+            self.installer.install_progress = 0.0;
+            self.installer.status_msg = None;
+            self.installer.step = InstallerStep::Installing;
+        }
+    }
+
+    /// 核心步骤: 选项配置分镜 (排版充盈均整 · 粗体高对比 · 全矢量图标)
+    fn render_step_options(&mut self, ui: &mut egui::Ui, standalone: bool) {
+        paint_step_hero_banner(
+            ui,
+            Color32::from_rgb(2, 132, 199),
+            crate::i18n::trz("环境配置与安装参数 (CONFIGURATION)"),
+            crate::i18n::trz("自定义目标安装路径与环境联动，保障纯净绿色的极速微内核体验"),
+        );
+
+        ui.add_space(2.0);
+        self.render_language_bar(ui);
+        ui.add_space(2.0);
+
+        // 路径设置标题 (矢量文件夹图标)
+        ui_icons::icon_label(
+            ui,
+            UiIcon::Folder,
+            egui::RichText::new(crate::i18n::trz(
+                "目标安装与工作目录 (Installation Directory):",
+            ))
+            .strong()
+            .size(12.5)
+            .color(Color32::WHITE),
+            Color32::from_rgb(56, 189, 248),
         );
 
         let mut browse_clicked = false;
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
             let btn_w = 124.0;
-            let input_w = ui.available_width() - btn_w - 10.0;
+            let input_w = (ui.available_width() - btn_w - 10.0).max(60.0);
             let (in_rect, in_resp) =
                 ui.allocate_exact_size(vec2(input_w, 38.0), egui::Sense::click());
             let ip = ui.painter();
@@ -164,7 +512,7 @@ impl App {
 
         ui.add_space(2.0);
 
-        // 3 大复选集成卡片 (色彩心理学: 天青/紫罗兰/翡翠绿分级，高度 58px，粗体醒目)
+        // 3 大复选集成卡片 (矢量图标 + 圆角内嵌复选开关)
         comic_interactive_card(
             ui,
             &mut self.installer.add_path,
@@ -194,50 +542,17 @@ impl App {
 
         ui.add_space(6.0);
 
-        // 底部行动条：铺满宽度，主操作突出，彻底告别右下角空旷
-        let mut install_clicked = false;
-        let mut cancel_clicked = false;
-
-        ui.horizontal(|ui| {
-            let total_w = ui.available_width();
-            let cancel_w = 120.0;
-            let install_w = total_w - cancel_w - 14.0;
-
-            if comic_action_button(
-                ui,
-                crate::i18n::trz("立即安装 (INSTALL NOW) ⚡"),
-                vec2(install_w, 46.0),
-                true,
-                Color32::from_rgb(2, 132, 199),
-            )
-            .clicked()
-            {
-                install_clicked = true;
-            }
-
-            if comic_action_button(
-                ui,
-                crate::i18n::trz("退出向导"),
-                vec2(cancel_w, 46.0),
-                false,
-                Color32::from_rgb(30, 41, 59),
-            )
-            .clicked()
-            {
-                cancel_clicked = true;
-            }
-        });
-
-        if install_clicked {
+        // 底部行动条：严格 14px 水平间距齐边对齐，主按钮带纯矢量闪电图标
+        if self.render_step1_action_bar(
+            ui,
+            standalone,
+            UiIcon::Bolt,
+            crate::i18n::trz("立即安装 (INSTALL NOW)"),
+            Color32::from_rgb(2, 132, 199),
+        ) {
             self.installer.install_progress = 0.0;
+            self.installer.status_msg = None;
             self.installer.step = InstallerStep::Installing;
-        }
-        if cancel_clicked {
-            if standalone {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-            } else {
-                self.installer.open = false;
-            }
         }
     }
 }

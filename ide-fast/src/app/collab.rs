@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::ai::{self, AiConfig, Event, Handle};
+use eframe::egui::vec2;
 use serde_json::json;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
@@ -475,6 +476,8 @@ pub struct SubAgent {
     pub id: String,
     pub name: String,
     pub role: String,
+    /// 用户为该独立 Agent 指定的配置模型 id (`None` = 跟随全局已配置默认模型)
+    pub model_override: Option<String>,
     pub private_history: Vec<CollabMsg>,
     pub private_input: String,
     pub run: Option<SubAgentRun>,
@@ -482,6 +485,97 @@ pub struct SubAgent {
     pub assigned_doc_id: Option<u64>,
     /// 该 Agent 生成的待应用补丁文本列表
     pub patch_proposals: Vec<String>,
+}
+
+/// 单条 Agent 列表呈现元数据 (消除多元组数据泥团，由协同名录与单 Agent 下拉共用)
+#[derive(Clone, Debug)]
+pub struct AgentRosterEntry {
+    pub idx: usize,
+    pub name: String,
+    pub role: String,
+    pub id: String,
+    pub bound_model: Option<String>,
+    pub doc_name: Option<String>,
+    pub busy: bool,
+}
+
+#[inline]
+fn contains_ascii_ci(haystack: &str, needle_lower: &[u8]) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    haystack
+        .as_bytes()
+        .windows(needle_lower.len())
+        .any(|w| w.iter().zip(needle_lower).all(|(a, b)| a.to_ascii_lowercase() == *b))
+}
+
+#[inline]
+fn agent_matches_query(a: &SubAgent, q_trim: &str, ascii_lower: Option<&[u8]>, unicode_lower: Option<&str>) -> bool {
+    if let Some(nb) = ascii_lower {
+        contains_ascii_ci(&a.name, nb)
+            || contains_ascii_ci(&a.id, nb)
+            || contains_ascii_ci(&a.role, nb)
+            || a.model_override
+                .as_deref()
+                .is_some_and(|m| contains_ascii_ci(m, nb))
+    } else if let Some(ql) = unicode_lower {
+        a.name.to_lowercase().contains(ql)
+            || a.id.to_lowercase().contains(ql)
+            || a.role.to_lowercase().contains(ql)
+            || a.model_override
+                .as_deref()
+                .is_some_and(|m| m.to_lowercase().contains(ql))
+    } else {
+        let _ = q_trim;
+        true
+    }
+}
+
+/// 按名称、ID、职责或绑定模型过滤前 `limit` 个匹配 Agent 下标，并返回 `(匹配前 limit 项下标, 匹配总数)`。
+/// 空查询时仅切片前 `limit` 个，保持 `O(1)` 复杂度，支持 100,000+ 编队 60 FPS 零掉帧渲染。
+pub fn filter_agents_limited(agents: &[SubAgent], query: &str, limit: usize) -> (Vec<usize>, usize) {
+    let q_trim = query.trim();
+    if q_trim.is_empty() {
+        let take = agents.len().min(limit);
+        return ((0..take).collect(), agents.len());
+    }
+    let ascii_bytes = q_trim
+        .is_ascii()
+        .then(|| q_trim.bytes().map(|b| b.to_ascii_lowercase()).collect::<Vec<u8>>());
+    let uni_lower = ascii_bytes.is_none().then(|| q_trim.to_lowercase());
+    let mut out = Vec::with_capacity(limit.min(64));
+    let mut total = 0usize;
+    for (i, a) in agents.iter().enumerate() {
+        if agent_matches_query(a, q_trim, ascii_bytes.as_deref(), uni_lower.as_deref()) {
+            if out.len() < limit {
+                out.push(i);
+            }
+            total += 1;
+        }
+    }
+    (out, total)
+}
+
+/// 按名称、ID、职责或绑定模型过滤子 Agent 下标 (空查询返回全部)
+pub fn filter_agents_indices(agents: &[SubAgent], query: &str) -> Vec<usize> {
+    filter_agents_limited(agents, query, agents.len()).0
+}
+
+/// 格式化大数值 (千分位逗号分隔，如 10,000)
+pub fn format_number_commas(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    for (i, &b) in bytes.iter().enumerate() {
+        out.push(b as char);
+        let rem = len - 1 - i;
+        if rem > 0 && rem % 3 == 0 {
+            out.push(',');
+        }
+    }
+    out
 }
 
 impl SubAgent {
@@ -509,14 +603,21 @@ impl SubAgent {
             ),
             n => (format!("Agent #{}", n + 1), "协同协作者"),
         };
-        Self {
-            id: format!("agent_{}", index + 1),
-            name: name.clone(),
-            role: role.to_string(),
-            private_history: vec![CollabMsg::system(&format!(
+        let private_history = if index < 8 {
+            vec![CollabMsg::system(&format!(
                 "{} 已就绪。\n职责定位: {}\n可在下方命令窗口向此 Agent 发送针对性指令。",
                 name, role
-            ))],
+            ))]
+        } else {
+            // 大规模 Agent 编队时保持轻量初始历史，避免数万 Agent 产生无谓内存与格式化开销
+            vec![CollabMsg::system(&format!("{name} 已就绪。"))]
+        };
+        Self {
+            id: format!("agent_{}", index + 1),
+            name,
+            role: role.to_string(),
+            model_override: None,
+            private_history,
             private_input: String::new(),
             run: None,
             assigned_doc_id: None,
@@ -557,14 +658,24 @@ impl Default for CollabState {
 }
 
 impl CollabState {
-    /// 动态设置子 Agent 数量 (1 ~ 8)，没有运行任务时可自由增减，动态生成标签页
+    /// 协同 Agent 最大支持数量上限 (支持上万级大规模编队并发调度)
+    pub const MAX_COLLAB_AGENTS: usize = 100_000;
+    /// 单页 UI 列表渲染最大项数 (超出此阈值以数字标识与精准搜索呈现，杜绝 UI 掉帧)
+    pub const AGENT_DISPLAY_LIMIT: usize = 50;
+    /// 单轮全员广播 / 并行修改实际同时派发的工作线程 / HTTP 请求上限 (防止万级规模下耗尽 OS 线程)
+    pub const MAX_CONCURRENT_AGENT_DISPATCH: usize = 16;
+    /// 实时全员并发执行看板最多展示的活跃行数量
+    pub const MAX_LIVE_MATRIX_ROWS: usize = 16;
+
+    /// 动态设置子 Agent 数量 (1 ~ 100,000)，没有运行任务时可自由增减，动态生成标签页与名录
     pub fn set_agent_count(&mut self, new_count: usize) {
-        let count = new_count.clamp(1, 8);
+        let count = new_count.clamp(1, Self::MAX_COLLAB_AGENTS);
         if count == self.agent_count {
             return;
         }
         self.agent_count = count;
         if self.agents.len() < count {
+            self.agents.reserve(count - self.agents.len());
             for i in self.agents.len()..count {
                 self.agents.push(SubAgent::new(i));
             }
@@ -619,7 +730,7 @@ impl CollabState {
         }
     }
 
-    /// 全员统筹下发命令 (广播给所有子 Agent 协同并发执行，独立线程无锁无排队)
+    /// 全员统筹下发命令 (受控配额并发派发，避免万级规模耗尽系统线程/连接句柄)
     pub fn send_master(&mut self, prompt: String, cfg: &AiConfig, ctx: &egui::Context) {
         let q = prompt.trim().to_string();
         if q.is_empty() {
@@ -628,23 +739,37 @@ impl CollabState {
         self.master_input.clear();
         self.master_history.push(CollabMsg::user("统筹管理员", &q));
 
-        let use_llm = cfg.configured();
-        if !use_llm {
+        let total_agents = self.agents.len();
+        let dispatch_n = total_agents.min(Self::MAX_CONCURRENT_AGENT_DISPATCH);
+        if total_agents > dispatch_n {
+            self.master_history.push(CollabMsg::system(&format!(
+                "[受控并发配额] 当前编队共 {} 个 Agent，本轮并发派发前 {} 个活跃槽位执行（其余保持就绪）。",
+                format_number_commas(total_agents),
+                dispatch_n
+            )));
+        }
+
+        let any_llm = self.agents.iter().take(dispatch_n).any(|a| {
+            cfg.resolve_for_model(a.model_override.as_deref())
+                .configured()
+        });
+        if !any_llm {
             self.master_history.push(CollabMsg::system(
-                "⚡ 已启动本地多智能体高并发引擎，全员智能体独立并行工作，无锁无排队。",
+                "[并发引擎] 已启动本地多智能体高并发引擎，各活跃智能体独立并行工作。",
             ));
         }
 
-        // 为每一个子 Agent 启动真正独立并发请求或本地并行工作线程（互不阻塞，无锁无等待）
-        for (idx, a) in self.agents.iter_mut().enumerate() {
+        // 受控配额内为子 Agent 启动独立并发请求或本地并行工作线程（互不阻塞）
+        for (idx, a) in self.agents.iter_mut().take(dispatch_n).enumerate() {
             if let Some(old) = a.run.take() {
                 old.handle.cancel();
             }
             let a_name = a.name.clone();
             let a_role = a.role.clone();
+            let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
             let (tx, rx) = channel();
             let c = ctx.clone();
-            let handle = if use_llm {
+            let handle = if agent_cfg.configured() {
                 let agent_prompt = format!(
                     "【多 Agent 协同统筹命令】: {}\n你的身份是: {}，专职角色: {}。\n请在你的专业领域内协同执行此任务，并给出具体执行结果与汇报说明。",
                     q, a_name, a_role
@@ -653,7 +778,7 @@ impl CollabState {
                     json!({ "role": "system", "content": format!("你是集成在 IDE1.0 中的协作智能体 {}。角色职责: {}。", a_name, a_role) }),
                     json!({ "role": "user", "content": agent_prompt }),
                 ];
-                ai::spawn_request(cfg, msgs, vec![], tx, move || {
+                ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
                     c.request_repaint();
                 })
             } else {
@@ -673,7 +798,9 @@ impl CollabState {
                             if hh.cancelled() {
                                 return;
                             }
-                            std::thread::sleep(std::time::Duration::from_millis(150 + (agent_idx as u64 * 50)));
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                150 + (agent_idx as u64).min(15) * 50,
+                            ));
                             let _ = tx.send(Event::Text(format!("▸ {}\n", chunk)));
                             c.request_repaint();
                         }
@@ -707,7 +834,8 @@ impl CollabState {
         doc: &mut crate::doc::Doc,
         prompt: &str,
     ) -> Result<usize, String> {
-        let indices: Vec<usize> = (0..self.agents.len()).collect();
+        let dispatch_n = self.agents.len().min(Self::MAX_CONCURRENT_AGENT_DISPATCH);
+        let indices: Vec<usize> = (0..dispatch_n).collect();
         let applied = apply_nema_collab_edit(&mut self.agents, &indices, doc, prompt)?;
         self.master_history.push(CollabMsg::system(&format!(
             "多 Agent .nema 协同完成：{} 个 Agent 已通过语法校验写入各自语义域（可一键撤销）。",
@@ -817,17 +945,22 @@ impl CollabState {
                 p
             }
         };
-        let regions = plan_parallel_regions(doc.lines.len(), self.agents.len());
+        let dispatch_n = self.agents.len().min(Self::MAX_CONCURRENT_AGENT_DISPATCH);
+        let regions = plan_parallel_regions(doc.lines.len(), dispatch_n);
         self.master_history
             .push(CollabMsg::user("统筹并行调度", clean_prompt));
 
-        if (!cfg.configured() || ctx.is_none()) && crate::app::nemaopts::is_nema_doc(doc) {
+        let any_llm = self.agents.iter().take(dispatch_n).any(|a| {
+            cfg.resolve_for_model(a.model_override.as_deref())
+                .configured()
+        });
+        if (!any_llm || ctx.is_none()) && crate::app::nemaopts::is_nema_doc(doc) {
             return self.execute_parallel_edit_on_nema_doc(doc, clean_prompt);
         }
 
         let Some(ctx) = ctx else {
-            let mut patches = Vec::with_capacity(self.agents.len());
-            for (idx, a) in self.agents.iter_mut().enumerate() {
+            let mut patches = Vec::with_capacity(dispatch_n);
+            for (idx, a) in self.agents.iter_mut().take(dispatch_n).enumerate() {
                 let (start, count) = regions.get(idx).copied().unwrap_or((doc.lines.len(), 0));
                 let orig = &doc.lines[start..start + count];
                 let range_end = (start + count).max(start + 1);
@@ -888,15 +1021,14 @@ impl CollabState {
             .unwrap_or("当前文档")
             .to_string();
 
-        let use_llm = cfg.configured();
-        if !use_llm {
+        if !any_llm {
             self.master_history.push(CollabMsg::system(
-                "⚡ 已启动本地多智能体高并发线程池，各 Agent 真实同时工作，互不阻塞，零排队。",
+                "[并发引擎] 已启动本地多智能体高并发线程池，各 Agent 真实同时工作，互不阻塞，零排队。",
             ));
         }
 
-        let mut cursors = Vec::with_capacity(self.agents.len());
-        for (idx, a) in self.agents.iter_mut().enumerate() {
+        let mut cursors = Vec::with_capacity(dispatch_n);
+        for (idx, a) in self.agents.iter_mut().take(dispatch_n).enumerate() {
             if let Some(old) = a.run.take() {
                 old.handle.cancel();
             }
@@ -931,7 +1063,8 @@ impl CollabState {
             let c = ctx.clone();
             let a_name = a.name.clone();
             let a_role = a.role.clone();
-            let handle = if use_llm {
+            let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
+            let handle = if agent_cfg.configured() {
                 let agent_prompt = format!(
                     "【多 Agent 分区并行修改】\n任务目标: {}\n文档: {}\n你独占负责的行区间: 第 {} 行至第 {} 行 (共 {} 行)。\n请仅输出这一段区域修改后的完整内容（用单个 ``` 代码块包裹，不要包含行号前缀或其它区域代码）:\n```\n{}\n```",
                     clean_prompt, doc_name, start + 1, range_end, count, slice_text
@@ -940,7 +1073,7 @@ impl CollabState {
                     json!({ "role": "system", "content": format!("你是集成在 IDE1.0 中的协作智能体 {} ({})。严格只修改分配给你的行区间并用单个代码块输出替换行。", a_name, a_role) }),
                     json!({ "role": "user", "content": agent_prompt }),
                 ];
-                ai::spawn_request(cfg, msgs, vec![], tx, move || {
+                ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
                     c.request_repaint();
                 })
             } else {
@@ -953,20 +1086,36 @@ impl CollabState {
                     .name(format!("collab-edit-{}", a_name))
                     .spawn(move || {
                         let steps = [
-                            format!("正在并发解析行区间 L{}-L{} (共 {} 行)...", start + 1, range_end, count),
-                            format!("专职角色「{}」进行独立语法语义分析与无冲突补丁生成...", a_role),
+                            format!(
+                                "正在并发解析行区间 L{}-L{} (共 {} 行)...",
+                                start + 1,
+                                range_end,
+                                count
+                            ),
+                            format!(
+                                "专职角色「{}」进行独立语法语义分析与无冲突补丁生成...",
+                                a_role
+                            ),
                             "区间语义隔离检查通过，生成替换代码块。".to_string(),
                         ];
                         for step in steps {
                             if hh.cancelled() {
                                 return;
                             }
-                            std::thread::sleep(std::time::Duration::from_millis(150 + (agent_idx as u64 * 50)));
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                150 + (agent_idx as u64).min(15) * 50,
+                            ));
                             let _ = tx.send(Event::Text(format!("▸ {}\n", step)));
                             c.request_repaint();
                         }
                         let mut patch_lines = Vec::new();
-                        let marker = format!("// [{}] 并行协同交付 (L{}-L{}): {}", a_name, start + 1, range_end, prompt_clone);
+                        let marker = format!(
+                            "// [{}] 并行协同交付 (L{}-L{}): {}",
+                            a_name,
+                            start + 1,
+                            range_end,
+                            prompt_clone
+                        );
                         patch_lines.push(marker);
                         if !(count == 1 && slice_clone.trim().is_empty()) {
                             for line in slice_clone.lines() {
@@ -1024,14 +1173,15 @@ impl CollabState {
             old.handle.cancel();
         }
 
+        let agent_cfg = cfg.resolve_for_model(a.model_override.as_deref());
         let (tx, rx) = channel();
         let c = ctx.clone();
-        let handle = if cfg.configured() {
+        let handle = if agent_cfg.configured() {
             let msgs = vec![
                 json!({ "role": "system", "content": format!("你是 {}。角色: {}。现在用户正在与你单独进行深度交互与指令下发。", a.name, a.role) }),
                 json!({ "role": "user", "content": q }),
             ];
-            ai::spawn_request(cfg, msgs, vec![], tx, move || {
+            ai::spawn_request(&agent_cfg, msgs, vec![], tx, move || {
                 c.request_repaint();
             })
         } else {
@@ -1055,7 +1205,10 @@ impl CollabState {
                         let _ = tx.send(Event::Text(format!("▸ {}\n", step)));
                         c.request_repaint();
                     }
-                    let res = format!("已完成对「{}」的单独专职分析与方案规划（并发无阻塞执行完毕）。", q_clone);
+                    let res = format!(
+                        "已完成对「{}」的单独专职分析与方案规划（并发无阻塞执行完毕）。",
+                        q_clone
+                    );
                     let _ = tx.send(Event::Done(crate::ai::Turn {
                         content: res,
                         ..Default::default()
@@ -1328,11 +1481,9 @@ impl App {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         let mut master_send: Option<String> = None;
         let mut parallel_edit_prompt: Option<String> = None;
-        let mut individual_send: Option<(usize, String)> = None;
         let mut stop_all_clicked = false;
-        let mut stop_one_clicked = None;
-        let mut assign_file_action: Option<(usize, u64, String)> = None;
         let active_tab = self.collab.active_tab;
+        let tc = self.tc;
 
         // 1. 顶部协同控制条
         ui.horizontal_wrapped(|ui| {
@@ -1345,35 +1496,67 @@ impl App {
                 )
                 .clicked()
             {
-                self.collab.set_agent_count(self.collab.agent_count - 1);
+                self.collab.set_agent_count(self.collab.agent_count.saturating_sub(1));
             }
-            ui.label(
-                egui::RichText::new(format!("{}", self.collab.agent_count))
-                    .strong()
-                    .color(Color32::from_rgb(0, 190, 255)),
-            );
+            let mut count_val = self.collab.agent_count;
+            let dv = egui::DragValue::new(&mut count_val)
+                .range(1..=CollabState::MAX_COLLAB_AGENTS)
+                .speed(1.0);
+            if ui.add_enabled(!running, dv).changed() {
+                self.collab.set_agent_count(count_val);
+            }
             if ui
                 .add_enabled(
-                    !running && self.collab.agent_count < 8,
+                    !running && self.collab.agent_count < CollabState::MAX_COLLAB_AGENTS,
                     egui::Button::new("+"),
                 )
                 .clicked()
             {
-                self.collab.set_agent_count(self.collab.agent_count + 1);
+                self.collab.set_agent_count(self.collab.agent_count.saturating_add(1));
+            }
+            if self.collab.agent_count > 8 {
+                let badge = format!("数额: {}", format_number_commas(self.collab.agent_count));
+                ui.label(
+                    egui::RichText::new(badge)
+                        .size(11.0)
+                        .strong()
+                        .color(Color32::from_rgb(0, 220, 255)),
+                );
             }
             if running {
                 ui.label(egui::RichText::new("[并行执行中]").color(Color32::from_rgb(0, 220, 130)));
-                if ui.button("终止全员").clicked() {
+                if crate::btnstyle::agent_command_button(
+                    ui,
+                    "终止全员",
+                    crate::btnstyle::AgentBtnRole::Danger,
+                    &tc,
+                )
+                .clicked()
+                {
                     stop_all_clicked = true;
                 }
             } else {
                 ui.label(egui::RichText::new("[就绪]").color(Color32::from_rgb(120, 200, 120)));
             }
-            if !self.docs.is_empty() && ui.button("⚡ 多Agent并行修改当前文件").clicked()
+            if !self.docs.is_empty()
+                && crate::ui_icons::icon_button(
+                    ui,
+                    crate::ui_icons::UiIcon::Bolt,
+                    "多Agent并行修改当前文件",
+                    Color32::from_rgb(56, 189, 248),
+                )
+                .clicked()
             {
                 parallel_edit_prompt = Some(self.collab.master_input.clone());
             }
-            if ui.small_button("清空").clicked() {
+            if crate::btnstyle::agent_command_button(
+                ui,
+                "清空",
+                crate::btnstyle::AgentBtnRole::Settings,
+                &tc,
+            )
+            .clicked()
+            {
                 self.collab.master_history.clear();
             }
         });
@@ -1386,19 +1569,38 @@ impl App {
                 .inner_margin(egui::Margin::symmetric(6, 6))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("⚡ 全员实时并发工作流 (各智能体独立线程并行执行，零排队/零阻塞)")
-                                .size(11.5)
-                                .color(Color32::from_rgb(0, 220, 150))
-                                .strong(),
+                        crate::ui_icons::icon_label(
+                            ui,
+                            crate::ui_icons::UiIcon::Bolt,
+                            egui::RichText::new(
+                                "全员实时并发工作流 (各智能体独立线程并行执行，零排队/零阻塞)",
+                            )
+                            .size(11.5)
+                            .color(Color32::from_rgb(0, 220, 150))
+                            .strong(),
+                            Color32::from_rgb(0, 220, 150),
                         );
                     });
                     ui.add_space(3.0);
+                    let mut shown = 0usize;
+                    let mut total_running = 0usize;
                     for a in &self.collab.agents {
-                        if let Some(run) = &a.run {
+                        let Some(run) = &a.run else {
+                            continue;
+                        };
+                        total_running += 1;
+                        if shown < CollabState::MAX_LIVE_MATRIX_ROWS {
+                            shown += 1;
                             ui.horizontal(|ui| {
+                                let (dot_r, _) =
+                                    ui.allocate_exact_size(Vec2::new(10.0, 14.0), Sense::hover());
+                                ui.painter().circle_filled(
+                                    dot_r.center(),
+                                    3.5,
+                                    Color32::from_rgb(50, 215, 130),
+                                );
                                 ui.label(
-                                    egui::RichText::new(format!("🟢 {}:", a.name))
+                                    egui::RichText::new(format!("{}:", a.name))
                                         .size(11.0)
                                         .strong()
                                         .color(Color32::from_rgb(50, 215, 130)),
@@ -1420,62 +1622,21 @@ impl App {
                             });
                         }
                     }
+                    if total_running > shown {
+                        ui.weak(format!(
+                            "… 及其他 {} 个并行运行中的 Agent",
+                            total_running - shown
+                        ));
+                    }
                 });
             ui.add_space(2.0);
         }
 
         ui.separator();
 
-        // 2. 子 Agent 标签页栏 (自动换行以适配窄侧边栏)
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-            for (i, a) in self.collab.agents.iter().enumerate() {
-                let is_active = i == active_tab;
-                let status_marker = if a.is_running() { " (*)" } else { "" };
-                let file_marker = if a.assigned_doc_id.is_some() {
-                    " 📄"
-                } else {
-                    ""
-                };
-                let label = format!("{}{}{}", a.name, status_marker, file_marker);
-                if ui.selectable_label(is_active, label).clicked() {
-                    self.collab.active_tab = i;
-                }
-            }
-        });
-
-        ui.separator();
-
-        // 3. 当前 Agent 标签页内容
-        let cur_idx = self
-            .collab
-            .active_tab
-            .min(self.collab.agents.len().saturating_sub(1));
-        let cur_agent_name = self
-            .collab
-            .agents
-            .get(cur_idx)
-            .map(|a| a.name.clone())
-            .unwrap_or_default();
-        let cur_agent_role = self
-            .collab
-            .agents
-            .get(cur_idx)
-            .map(|a| a.role.clone())
-            .unwrap_or_default();
-        let cur_running = self
-            .collab
-            .agents
-            .get(cur_idx)
-            .is_some_and(|a| a.is_running());
-        let cur_assigned = self
-            .collab
-            .agents
-            .get(cur_idx)
-            .and_then(|a| a.assigned_doc_id);
-
+        // 2. 统筹调度命令窗口 + Agent 编队精准控制名录 (点击任意 Agent 立即切换至完整单 Agent 对话引擎)
         let total_avail = ui.available_height();
-        let half_height = (total_avail * 0.44).max(110.0);
+        let half_height = (total_avail * 0.44).max(120.0);
 
         // --- 上部：统筹命令窗口 ---
         ui.group(|ui| {
@@ -1497,14 +1658,21 @@ impl App {
                     }
                 });
             ui.horizontal(|ui| {
-                let btn_w = 136.0;
+                let btn_w = 148.0;
                 let re = ui.add(
                     egui::TextEdit::singleline(&mut self.collab.master_input)
                         .hint_text("输入统筹命令 (Enter 直接并行执行)...")
                         .desired_width((ui.available_width() - btn_w).max(80.0)),
                 );
                 let enter = re.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                if (ui.button("广播").clicked() || enter)
+                if (crate::btnstyle::agent_command_button(
+                    ui,
+                    "广播统筹",
+                    crate::btnstyle::AgentBtnRole::Primary,
+                    &tc,
+                )
+                .clicked()
+                    || enter)
                     && !self.collab.master_input.trim().is_empty()
                 {
                     if !self.docs.is_empty() {
@@ -1513,7 +1681,15 @@ impl App {
                         master_send = Some(self.collab.master_input.clone());
                     }
                 }
-                if self.collab.any_running() && ui.button("停止").clicked() {
+                if self.collab.any_running()
+                    && crate::btnstyle::agent_command_button(
+                        ui,
+                        "停止",
+                        crate::btnstyle::AgentBtnRole::Danger,
+                        &tc,
+                    )
+                    .clicked()
+                {
                     stop_all_clicked = true;
                 }
             });
@@ -1521,132 +1697,169 @@ impl App {
 
         ui.add_space(4.0);
 
-        // --- 下部：单独命令当前 Agent + 文件分配 ---
-        ui.group(|ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("【单独指令】{}", cur_agent_name))
-                        .strong()
-                        .color(Color32::from_rgb(255, 180, 50)),
-                );
-                ui.weak(&cur_agent_role);
-                if ui.small_button("清空").clicked() {
-                    if let Some(a) = self.collab.agents.get_mut(cur_idx) {
-                        a.private_history.clear();
-                    }
-                }
-                if let Some(_doc_id) = cur_assigned {
-                    if ui.small_button("取消分配").clicked() {
-                        if let Some(a) = self.collab.agents.get_mut(cur_idx) {
-                            a.assigned_doc_id = None;
-                            a.private_history
-                                .push(CollabMsg::system("已取消文件分配。"));
-                        }
-                    }
-                } else if !self.docs.is_empty() {
-                    let doc_name = self
-                        .docs
-                        .get(self.active)
-                        .map(|d| {
-                            d.path
-                                .as_ref()
-                                .map(|p| {
-                                    p.file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("未命名")
-                                        .to_string()
-                                })
-                                .unwrap_or_else(|| "未命名".to_string())
-                        })
-                        .unwrap_or_default();
-                    let doc_id = self.docs.get(self.active).map(|d| d.id).unwrap_or(0);
-                    if ui
-                        .small_button(format!("📄 分配「{}」", doc_name))
-                        .clicked()
-                    {
-                        assign_file_action = Some((cur_idx, doc_id, doc_name));
-                    }
-                }
-            });
+        // --- 下部：Agent 编队精准控制列表 (支持搜索，点击进入单 Agent 完整对话面板) ---
+        let (configured_models, global_model) = {
+            let cfg = self.ai_cfg();
+            let models: Vec<String> = cfg
+                .configured_models()
+                .into_iter()
+                .map(|m| m.model)
+                .collect();
+            (models, cfg.model.trim().to_string())
+        };
+        let (filtered, total_roster) = filter_agents_limited(
+            &self.collab.agents,
+            &self.ai.agent_search,
+            CollabState::AGENT_DISPLAY_LIMIT,
+        );
+        let roster: Vec<AgentRosterEntry> = filtered
+            .into_iter()
+            .filter_map(|idx| {
+                let a = self.collab.agents.get(idx)?;
+                let bound_model = a
+                    .model_override
+                    .as_deref()
+                    .filter(|m| configured_models.iter().any(|cm| cm == m))
+                    .map(str::to_string)
+                    .or_else(|| (!global_model.is_empty()).then(|| global_model.clone()));
+                let doc_name = a.assigned_doc_id.and_then(|did| {
+                    self.docs
+                        .iter()
+                        .find(|d| d.id == did)
+                        .map(|d| d.name.clone())
+                });
+                let busy = self.ai_agent_idx_is_busy(idx);
+                Some(AgentRosterEntry {
+                    idx,
+                    name: a.name.clone(),
+                    role: a.role.clone(),
+                    id: a.id.clone(),
+                    bound_model,
+                    doc_name,
+                    busy,
+                })
+            })
+            .collect();
 
-            // 单独 Agent 历史 + 补丁预览
-            let sub_bottom_id = ui.make_persistent_id("collab_sub_bottom_height");
-            let sub_bottom_reserved: f32 = ui.data(|d| d.get_temp(sub_bottom_id)).unwrap_or(48.0);
-            let sub_height = (ui.available_height() - sub_bottom_reserved - 10.0).max(50.0);
+        let mut pick_single: Option<usize> = None;
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(crate::i18n::trz("Agent 编队精准控制"))
+                        .strong()
+                        .color(Color32::from_rgb(56, 189, 248)),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.ai.agent_search)
+                            .hint_text(crate::i18n::trz("搜索 Agent 名称或职责…"))
+                            .desired_width(140.0),
+                    );
+                    let (sr, _) = ui.allocate_exact_size(vec2(13.0, 13.0), Sense::hover());
+                    crate::ui_icons::paint(
+                        ui.painter(),
+                        sr,
+                        crate::ui_icons::UiIcon::Search,
+                        tc.fg_dim,
+                    );
+                });
+            });
+            ui.add_space(2.0);
+            let list_h = ui.available_height().max(90.0);
             egui::ScrollArea::vertical()
-                .max_height(sub_height)
+                .id_salt("collab_agent_roster_scroll")
+                .max_height(list_h)
                 .auto_shrink([false, false])
-                .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    if let Some(a) = self.collab.agents.get(cur_idx) {
-                        for m in &a.private_history {
-                            render_collab_msg(ui, m);
-                        }
-                        if let Some(run) = &a.run {
-                            if !run.streaming_text.is_empty() {
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!("{}: ", a.name))
-                                            .strong()
-                                            .color(Color32::from_rgb(40, 210, 120)),
+                    if roster.is_empty() {
+                        ui.weak(crate::i18n::trz("未找到匹配的 Agent"));
+                    }
+                    for entry in &roster {
+                        let is_selected = entry.idx == active_tab;
+                        egui::Frame::group(ui.style())
+                            .fill(if is_selected {
+                                Color32::from_black_alpha(55)
+                            } else {
+                                Color32::from_black_alpha(25)
+                            })
+                            .inner_margin(egui::Margin::symmetric(6, 4))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let (dot_r, _) =
+                                        ui.allocate_exact_size(vec2(10.0, 14.0), Sense::hover());
+                                    ui.painter().circle_filled(
+                                        dot_r.center(),
+                                        3.5,
+                                        if entry.busy {
+                                            Color32::from_rgb(50, 215, 130)
+                                        } else {
+                                            tc.fg_dim
+                                        },
                                     );
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(&run.streaming_text)
-                                                .color(Color32::from_rgb(220, 220, 220)),
-                                        )
-                                        .wrap(),
+                                    ui.label(egui::RichText::new(&entry.name).strong().color(
+                                        if is_selected {
+                                            Color32::from_rgb(56, 189, 248)
+                                        } else {
+                                            tc.fg
+                                        },
+                                    ));
+                                    if let Some(m) = &entry.bound_model {
+                                        ui.label(
+                                            egui::RichText::new(format!("[{m}]"))
+                                                .size(10.5)
+                                                .color(Color32::from_rgb(125, 211, 252)),
+                                        );
+                                    }
+                                    if let Some(dn) = &entry.doc_name {
+                                        ui.label(
+                                            egui::RichText::new(format!("@{dn}"))
+                                                .size(10.5)
+                                                .color(Color32::from_rgb(250, 204, 21)),
+                                        );
+                                    }
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if crate::ui_icons::icon_button(
+                                                ui,
+                                                crate::ui_icons::UiIcon::ArrowRight,
+                                                crate::i18n::trz("精准控制"),
+                                                Color32::from_rgb(56, 189, 248),
+                                            )
+                                            .clicked()
+                                            {
+                                                pick_single = Some(entry.idx);
+                                            }
+                                        },
                                     );
                                 });
-                            }
-                        }
-                        if !a.patch_proposals.is_empty() {
-                            ui.separator();
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "📋 {} 行已协同修改内容",
-                                    a.patch_proposals.len()
-                                ))
-                                .color(Color32::from_rgb(255, 200, 80))
-                                .strong(),
-                            );
-                        }
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&entry.role).size(11.0).weak(),
+                                    )
+                                    .truncate(),
+                                );
+                            });
+                        ui.add_space(2.0);
+                    }
+                    if total_roster > CollabState::AGENT_DISPLAY_LIMIT {
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.weak(format!(
+                            "共 {} 个 Agent (显示前 {} 个匹配项，输入关键词精准检索)",
+                            format_number_commas(total_roster),
+                            CollabState::AGENT_DISPLAY_LIMIT
+                        ));
                     }
                 });
-
-            let sub_b_start = ui.cursor().top();
-            // 单独命令输入行
-            if let Some(a) = self.collab.agents.get_mut(cur_idx) {
-                ui.horizontal(|ui| {
-                    let re = ui.add(
-                        egui::TextEdit::singleline(&mut a.private_input)
-                            .hint_text(format!("向 {} 下达单独指令...", cur_agent_name))
-                            .desired_width((ui.available_width() - 90.0).max(60.0)),
-                    );
-                    let enter = re.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    if (ui.button("发送").clicked() || enter) && !a.private_input.trim().is_empty()
-                    {
-                        individual_send = Some((cur_idx, a.private_input.clone()));
-                    }
-                    if cur_running && ui.button("停止").clicked() {
-                        stop_one_clicked = Some(cur_idx);
-                    }
-                });
-            }
-            let sub_b_end = ui.cursor().top();
-            let actual_sub_b = (sub_b_end - sub_b_start).max(36.0);
-            ui.data_mut(|d| d.insert_temp(sub_bottom_id, actual_sub_b));
-            if (actual_sub_b - sub_bottom_reserved).abs() > 1.5 {
-                ui.ctx().request_repaint();
-            }
         });
 
         // 执行延迟动作
+        if let Some(idx) = pick_single {
+            self.select_single_agent(idx);
+        }
         if stop_all_clicked {
             self.collab.stop_all();
-        }
-        if let Some(idx) = stop_one_clicked {
-            self.collab.stop_one(idx);
         }
         if let Some(prompt) = parallel_edit_prompt {
             self.collab.master_input.clear();
@@ -1661,45 +1874,6 @@ impl App {
             let cfg = self.ai_cfg().clone();
             let ctx = ui.ctx().clone();
             self.collab.send_master(prompt, &cfg, &ctx);
-        }
-        if let Some((idx, prompt)) = individual_send {
-            let cfg = self.ai_cfg().clone();
-            if !cfg.configured() && !self.docs.is_empty() {
-                let target_pos = self
-                    .collab
-                    .agents
-                    .get(idx)
-                    .and_then(|a| a.assigned_doc_id)
-                    .and_then(|did| self.docs.iter().position(|d| d.id == did))
-                    .unwrap_or_else(|| self.active.min(self.docs.len() - 1));
-                let doc_id = self.docs[target_pos].id;
-                if let Some(a) = self.collab.agents.get_mut(idx) {
-                    a.private_input.clear();
-                }
-                match self.collab.execute_single_agent_edit_on_doc(
-                    idx,
-                    &mut self.docs[target_pos],
-                    &prompt,
-                ) {
-                    Ok(n) => {
-                        self.cookie_mark(doc_id, ide_agent_router::TaskState::Verified);
-                        let aname = self.collab.agents[idx].name.clone();
-                        self.docs[target_pos].tip =
-                            format!("{} 已协同更新分配区域 ({} 处)", aname, n);
-                    }
-                    Err(err) => {
-                        if let Some(a) = self.collab.agents.get_mut(idx) {
-                            a.private_history.push(CollabMsg::error("系统", &err));
-                        }
-                    }
-                }
-            } else {
-                let ctx = ui.ctx().clone();
-                self.collab.send_individual(idx, prompt, &cfg, &ctx);
-            }
-        }
-        if let Some((agent_idx, doc_id, doc_name)) = assign_file_action {
-            self.collab.assign_file(agent_idx, doc_id, &doc_name);
         }
     }
 
@@ -1784,11 +1958,16 @@ mod tests {
         assert_eq!(s.agents.len(), 2);
         assert_eq!(s.active_tab, 1); // 自动限制到 1
 
-        // 边界保护：最小 1，最大 8
+        // 边界保护：最小 1，最大支持 100,000 大规模编队
         s.set_agent_count(0);
         assert_eq!(s.agent_count, 1);
         s.set_agent_count(99);
-        assert_eq!(s.agent_count, 8);
+        assert_eq!(s.agent_count, 99);
+        s.set_agent_count(10_000);
+        assert_eq!(s.agent_count, 10_000);
+        assert_eq!(s.agents.len(), 10_000);
+        s.set_agent_count(200_000);
+        assert_eq!(s.agent_count, CollabState::MAX_COLLAB_AGENTS);
     }
 
     #[test]
@@ -1987,15 +2166,19 @@ mod tests {
 
         // 验证全员同时处于运行态，真正并发，零排队
         assert!(collab.any_running());
-        assert!(collab.agents.iter().all(|a| a.is_running()), "所有智能体必须同时启动运行");
+        assert!(
+            collab.agents.iter().all(|a| a.is_running()),
+            "所有智能体必须同时启动运行"
+        );
 
         // 等待并发工作线程输出流式分块 (重试轮询直至所有智能体均产出分块)
         for _ in 0..50 {
             std::thread::sleep(std::time::Duration::from_millis(20));
             collab.poll(&ctx);
-            let all_streamed = collab.agents.iter().all(|a| {
-                a.run.as_ref().is_some_and(|r| !r.streaming_text.is_empty())
-            });
+            let all_streamed = collab
+                .agents
+                .iter()
+                .all(|a| a.run.as_ref().is_some_and(|r| !r.streaming_text.is_empty()));
             if all_streamed {
                 break;
             }
@@ -2004,7 +2187,11 @@ mod tests {
         // 验证每个 Agent 都在独立流式并发产出
         for a in &collab.agents {
             if let Some(run) = &a.run {
-                assert!(!run.streaming_text.is_empty(), "智能体 {} 应该已有并发流式输出", a.name);
+                assert!(
+                    !run.streaming_text.is_empty(),
+                    "智能体 {} 应该已有并发流式输出",
+                    a.name
+                );
             }
         }
 
@@ -2018,5 +2205,99 @@ mod tests {
         collab.poll(&ctx);
         collab.stop_all();
         assert!(!collab.any_running(), "全部停止后应回到就绪态");
+    }
+
+    #[test]
+    fn filter_agents_indices_matches_name_role_and_model() {
+        let mut collab = CollabState::default();
+        collab.set_agent_count(4);
+        collab.agents[1].model_override = Some("deepseek-r1-custom".into());
+
+        assert_eq!(
+            filter_agents_indices(&collab.agents, "   "),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(filter_agents_indices(&collab.agents, "审查"), vec![1]);
+        assert_eq!(filter_agents_indices(&collab.agents, "AGENT_3"), vec![2]);
+        assert_eq!(
+            filter_agents_indices(&collab.agents, "DeepSeek-R1"),
+            vec![1]
+        );
+        assert_eq!(filter_agents_indices(&collab.agents, "性能"), vec![3]);
+        assert!(filter_agents_indices(&collab.agents, "nonexistent").is_empty());
+    }
+
+    #[test]
+    fn per_agent_model_override_persists_through_settings() {
+        let g = crate::i18n::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut app = App::build(
+            vec![],
+            None,
+            crate::Trace::new(),
+            crate::settings::Settings::default(),
+            false,
+        );
+        app.collab.set_agent_count(4);
+        app.collab.active_tab = 2;
+        app.collab.agents[0].model_override = Some("user-model-a".into());
+        app.collab.agents[2].model_override = Some("user-model-c".into());
+
+        let saved = app.current_settings();
+        assert_eq!(saved.collab_agent_count, 4);
+        assert_eq!(saved.collab_active_agent, 2);
+        assert_eq!(
+            saved.collab_agent_models,
+            vec![
+                ("agent_1".into(), "user-model-a".into()),
+                ("agent_3".into(), "user-model-c".into()),
+            ]
+        );
+
+        let mut restored_cfg = crate::settings::Settings::default();
+        restored_cfg.apply_json(&saved.to_json(), true);
+        let restored = App::build(vec![], None, crate::Trace::new(), restored_cfg, false);
+        assert_eq!(restored.collab.agent_count, 4);
+        assert_eq!(restored.collab.active_tab, 2);
+        assert_eq!(
+            restored.collab.agents[0].model_override.as_deref(),
+            Some("user-model-a")
+        );
+        assert_eq!(restored.collab.agents[1].model_override, None);
+        assert_eq!(
+            restored.collab.agents[2].model_override.as_deref(),
+            Some("user-model-c")
+        );
+        drop(g);
+    }
+
+    #[test]
+    fn filter_agents_limited_handles_10000_agents() {
+        let mut s = CollabState::default();
+        s.set_agent_count(10_000);
+        let (ids, total) = filter_agents_limited(&s.agents, "  ", CollabState::AGENT_DISPLAY_LIMIT);
+        assert_eq!(total, 10_000);
+        assert_eq!(ids.len(), CollabState::AGENT_DISPLAY_LIMIT);
+        assert_eq!(ids[0], 0);
+        assert_eq!(ids[49], 49);
+
+        let (hit_ids, hit_total) =
+            filter_agents_limited(&s.agents, "AGENT_9999", CollabState::AGENT_DISPLAY_LIMIT);
+        assert_eq!(hit_total, 1);
+        assert_eq!(hit_ids, vec![9998]);
+    }
+
+    #[test]
+    fn send_master_caps_concurrent_dispatch_under_10000_agents() {
+        let mut s = CollabState::default();
+        s.set_agent_count(10_000);
+        let cfg = AiConfig::default();
+        let ctx = egui::Context::default();
+        s.send_master("并行检查边界".into(), &cfg, &ctx);
+        let active_runs = s.agents.iter().filter(|a| a.is_running()).count();
+        assert_eq!(active_runs, CollabState::MAX_CONCURRENT_AGENT_DISPATCH);
+        s.stop_all();
+        assert!(!s.any_running());
     }
 }

@@ -492,6 +492,7 @@ impl App {
                                     (super::sysopts::BottomTab::Terminal, "底部: 终端 (TERMINAL)"),
                                     (super::sysopts::BottomTab::Output, "底部: 输出 (OUTPUT)"),
                                     (super::sysopts::BottomTab::Problems, "底部: 问题 (PROBLEMS)"),
+                                    (super::sysopts::BottomTab::RustConsole, "底部: Rust 控制台 (RUST CONSOLE)"),
                                 ] {
                                     let on = self.term.open
                                         && !self.cfg.view.bottom_collapsed
@@ -1011,7 +1012,10 @@ impl App {
                         }
                         if ui.button(trz("欢迎与安装向导…")).clicked() {
                             ui.close();
-                            self.installer.open = true;
+                            self.open_installer_wizard(
+                                crate::app::installer_ui::InstallerLaunchMode::Auto,
+                                false,
+                            );
                         }
                         if menuui::mbtn(ui, lk("c.check-update", "")).clicked() {
                             ui.close();

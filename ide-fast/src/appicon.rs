@@ -70,8 +70,7 @@ fn decode(png_bytes: &[u8]) -> Option<eframe::egui::IconData> {
     })
 }
 
-static LOGO_ICON: std::sync::OnceLock<Option<eframe::egui::IconData>> =
-    std::sync::OnceLock::new();
+static LOGO_ICON: std::sync::OnceLock<Option<eframe::egui::IconData>> = std::sync::OnceLock::new();
 
 /// 欢迎页的大徽标 (256 边长的 PNG 编进可执行文件, 画的时候缩到 96, 进程内缓存一次解码)
 pub fn logo() -> Option<eframe::egui::IconData> {

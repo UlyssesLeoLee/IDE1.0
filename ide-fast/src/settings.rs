@@ -88,6 +88,14 @@ pub struct Settings {
     pub toolbar_cmds: Vec<String>,
     /// 系统托盘常驻: 点击窗口关闭按钮时不退出进程，而是最小化隐藏到 Windows 任务栏系统托盘
     pub tray_resident: bool,
+    /// AI 助手对话与单/多 Agent 协同的持久偏好 (重开软件自动延续用户选择)
+    pub ai_use_ctx: bool,
+    pub ai_auto_apply: bool,
+    pub ai_active_mod: String,
+    pub collab_agent_count: usize,
+    pub collab_active_agent: usize,
+    /// 每个独立 Agent 绑定的用户模型 (`(agent_id, model)`)
+    pub collab_agent_models: Vec<(String, String)>,
 }
 
 /// 宏登记槽的个数
@@ -121,6 +129,9 @@ impl MacroSlot {
 }
 
 /// 宏槽列表按不可信数据清洗, 结果恒为 `MACRO_SLOTS` 个: 多的丢掉、少的补空槽, 名字去掉控制字符并封顶, 种类只认 mac / ppa, 代码封顶
+/// 持久化的「每 Agent 专属模型」上限 (有界增长; 万级 Agent 名录中仅保存用户显式绑定的项)
+pub const MAX_COLLAB_AGENT_MODELS: usize = 1024;
+
 pub fn sanitize_slots(list: Vec<MacroSlot>) -> Vec<MacroSlot> {
     let mut out: Vec<MacroSlot> = list
         .into_iter()
@@ -263,6 +274,12 @@ impl Default for Settings {
             toolbar_cmds: DEFAULT_TOOLBAR.iter().map(|s| s.to_string()).collect(),
             macro_slots: sanitize_slots(vec![]),
             tray_resident: true,
+            ai_use_ctx: true,
+            ai_auto_apply: true,
+            ai_active_mod: "code".into(),
+            collab_agent_count: 3,
+            collab_active_agent: 0,
+            collab_agent_models: Vec::new(),
         }
     }
 }
@@ -398,6 +415,9 @@ pub struct ViewState {
     /// Markdown 与 NEMA 文件工具条折叠到顶端
     pub md_bar_collapsed: bool,
     pub nema_bar_collapsed: bool,
+    /// 右侧 AI 协同平台展开状态与单/多 Agent 视图模式
+    pub ai_open: bool,
+    pub ai_collab_mode: bool,
     /// 页面设置 (打印 / 预览)
     pub print: crate::print::PageSetup,
 }
@@ -434,6 +454,8 @@ impl Default for ViewState {
             key_search: false,
             md_bar_collapsed: false,
             nema_bar_collapsed: false,
+            ai_open: false,
+            ai_collab_mode: false,
             print: Default::default(),
         }
     }
@@ -724,7 +746,35 @@ impl Settings {
                     .collect(),
             );
         }
+        b("ai_use_ctx", &mut self.ai_use_ctx);
+        b("ai_auto_apply", &mut self.ai_auto_apply);
+        if let Some(m) = v["ai_active_mod"].as_str() {
+            let clean = m.trim();
+            if !clean.is_empty() {
+                self.ai_active_mod = clean.to_string();
+            }
+        }
+        if let Some(n) = v["collab_agent_count"].as_u64() {
+            self.collab_agent_count = (n as usize).clamp(1, 100_000);
+        }
+        if let Some(n) = v["collab_active_agent"].as_u64() {
+            self.collab_active_agent = n as usize;
+        }
+        if let Some(a) = v["collab_agent_models"].as_array() {
+            self.collab_agent_models = a
+                .iter()
+                .filter_map(|x| {
+                    Some((
+                        x[0].as_str()?.trim().to_string(),
+                        x[1].as_str()?.trim().to_string(),
+                    ))
+                })
+                .filter(|(id, m)| !id.is_empty() && !m.is_empty())
+                .take(MAX_COLLAB_AGENT_MODELS)
+                .collect();
+        }
         if !state {
+            self.sanitize();
             return;
         }
         if let Some(a) = v["recent"].as_array() {
@@ -770,6 +820,8 @@ impl Settings {
         b_of(w, "side_open", &mut self.view.side_open);
         b_of(w, "term_open", &mut self.view.term_open);
         b_of(w, "md_preview", &mut self.view.md_preview);
+        b_of(w, "ai_open", &mut self.view.ai_open);
+        b_of(w, "ai_collab_mode", &mut self.view.ai_collab_mode);
         b_of(w, "line_numbers", &mut self.view.line_numbers);
         b_of(w, "status_bar", &mut self.view.status_bar);
         b_of(w, "whitespace", &mut self.view.whitespace);
@@ -934,6 +986,34 @@ impl Settings {
         self.session.truncate(MAX_SESSION);
         self.session_active = self.session_active.min(MAX_SESSION);
         self.positions.truncate(50);
+        self.collab_agent_count = self.collab_agent_count.clamp(1, 100_000);
+        self.collab_active_agent = self
+            .collab_active_agent
+            .min(self.collab_agent_count.saturating_sub(1));
+        if self.ai_active_mod.trim().is_empty() {
+            self.ai_active_mod = "code".into();
+        }
+        let mut clean_models: Vec<(String, String)> = Vec::new();
+        let mut model_pos: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for (id, m) in std::mem::take(&mut self.collab_agent_models) {
+            let cid = id.trim();
+            let cm = m.trim();
+            if cid.is_empty()
+                || cm.is_empty()
+                || cid.chars().any(char::is_control)
+                || cm.chars().any(char::is_control)
+            {
+                continue;
+            }
+            if let Some(&pos) = model_pos.get(cid) {
+                clean_models[pos].1 = cm.to_string();
+            } else if clean_models.len() < MAX_COLLAB_AGENT_MODELS {
+                model_pos.insert(cid.to_string(), clean_models.len());
+                clean_models.push((cid.to_string(), cm.to_string()));
+            }
+        }
+        self.collab_agent_models = clean_models;
     }
 
     /// 偏好部分 (导出配置用: 不含最近文件 / 光标位置 / 窗口状态)
@@ -946,6 +1026,9 @@ impl Settings {
                 "auto_backup": self.auto_backup, "auto_backup_min": self.auto_backup_min, "file_lock": self.file_lock, "glass_blur": self.glass_blur, "system_title_bar": self.system_title_bar, "update_channel": self.update_channel, "update_daily": self.update_daily,
                 "toolbar_cmds": self.toolbar_cmds,
                 "tray_resident": self.tray_resident,
+                "ai_use_ctx": self.ai_use_ctx, "ai_auto_apply": self.ai_auto_apply, "ai_active_mod": self.ai_active_mod,
+                "collab_agent_count": self.collab_agent_count, "collab_active_agent": self.collab_active_agent,
+                "collab_agent_models": self.collab_agent_models.iter().map(|(id, m)| json!([id, m])).collect::<Vec<_>>(),
                 "macro_slots": self.macro_slots.iter().map(|s| json!({ "name": s.name, "kind": s.kind, "code": s.code })).collect::<Vec<_>>(),
                 "term_font_px": self.term_font_px, "term_scrollback": self.term_scrollback, "term_fg": self.term_fg.map(hex), "term_bg": self.term_bg.map(hex),
                 "file_types": self.file_types.iter().map(|t| json!({ "ext": t.ext, "tab_width": t.tab_width, "wrap": t.wrap, "insert_spaces": t.insert_spaces, "wrap_col": t.wrap_col })).collect::<Vec<_>>(),
@@ -973,7 +1056,7 @@ impl Settings {
         let geom = w
             .geom
             .map(|g| json!({ "x": g.x, "y": g.y, "w": g.w, "h": g.h, "maximized": g.maximized }));
-        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_bar_collapsed": w.md_bar_collapsed, "nema_bar_collapsed": w.nema_bar_collapsed, "md_preview": w.md_preview, "geom": geom,
+        o.insert("view".into(), json!({ "side_open": w.side_open, "side_w": w.side_w, "term_open": w.term_open, "term_h": w.term_h, "ai_w": w.ai_w, "md_w": w.md_w, "side_collapsed": w.side_collapsed, "right_collapsed": w.right_collapsed, "bottom_collapsed": w.bottom_collapsed, "md_bar_collapsed": w.md_bar_collapsed, "nema_bar_collapsed": w.nema_bar_collapsed, "md_preview": w.md_preview, "ai_open": w.ai_open, "ai_collab_mode": w.ai_collab_mode, "geom": geom,
             "line_numbers": w.line_numbers, "status_bar": w.status_bar, "whitespace": w.whitespace, "ruler": w.ruler, "cur_line": w.cur_line, "minimap": w.minimap, "md_overlay": w.md_overlay, "toolbar": w.toolbar, "funckey": w.funckey, "rail": w.rail,
             "wrap_col": w.wrap_col, "kinsoku": w.kinsoku, "hang": w.hang, "stamp_kind": w.stamp_kind, "stamp_pos": w.stamp_pos, "key_search": w.key_search,
             "print": { "paper": w.print.paper.code(), "landscape": w.print.landscape, "font_pt": w.print.font_pt, "margin_mm": w.print.margin_mm, "line_numbers": w.print.line_numbers, "header": w.print.header, "footer": w.print.footer } }));
@@ -1442,6 +1525,8 @@ mod tests {
             md_bar_collapsed: true,
             nema_bar_collapsed: true,
             md_preview: true,
+            ai_open: true,
+            ai_collab_mode: true,
             md_overlay: false,
             geom: Some(WinGeom {
                 x: 10.0,
@@ -2009,26 +2094,40 @@ nColumnSpace=2
         let mut s = Settings::default();
         s.dark = true;
         // 初始状态下各主题默认字体
-        assert_eq!(s.effective_font_for("theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(
+            s.effective_font_for("theme-retro16"),
+            "PixelFontMulti-12.ttf"
+        );
         assert_eq!(s.effective_font_for("theme-comic"), "CascadiaCode.ttf");
         assert_eq!(s.effective_font_for("theme-clear"), "CascadiaMono.ttf");
 
         // 模拟用户对不同主题自定义修改字体
-        s.theme_fonts.insert("theme-comic".into(), "Consolas".into());
-        s.theme_fonts.insert("theme-clear".into(), "Fira Code".into());
+        s.theme_fonts
+            .insert("theme-comic".into(), "Consolas".into());
+        s.theme_fonts
+            .insert("theme-clear".into(), "Fira Code".into());
 
         assert_eq!(s.effective_font_for("theme-comic"), "Consolas");
         assert_eq!(s.effective_font_for("theme-clear"), "Fira Code");
         // retro16 无论如何默认强制像素字体
-        assert_eq!(s.effective_font_for("theme-retro16"), "PixelFontMulti-12.ttf");
+        assert_eq!(
+            s.effective_font_for("theme-retro16"),
+            "PixelFontMulti-12.ttf"
+        );
 
         // 序列化为 prefs_json 并在新实例中还原
         let json_val = s.prefs_json();
         assert!(json_val.get("theme_fonts").is_some());
         let mut s2 = Settings::default();
         s2.apply_json(&json_val, false);
-        assert_eq!(s2.theme_fonts.get("theme-comic").map(|x| x.as_str()), Some("Consolas"));
-        assert_eq!(s2.theme_fonts.get("theme-clear").map(|x| x.as_str()), Some("Fira Code"));
+        assert_eq!(
+            s2.theme_fonts.get("theme-comic").map(|x| x.as_str()),
+            Some("Consolas")
+        );
+        assert_eq!(
+            s2.theme_fonts.get("theme-clear").map(|x| x.as_str()),
+            Some("Fira Code")
+        );
         assert_eq!(s2.effective_font_for("theme-comic"), "Consolas");
         assert_eq!(s2.effective_font_for("theme-clear"), "Fira Code");
 
@@ -2038,6 +2137,89 @@ nColumnSpace=2
         let mut draft = s2.clone();
         draft.font_family = "Inconsolata".into();
         live.adopt_prefs(&draft);
-        assert_eq!(live.theme_fonts.get("theme-comic").map(|x| x.as_str()), Some("Inconsolata"));
+        assert_eq!(
+            live.theme_fonts.get("theme-comic").map(|x| x.as_str()),
+            Some("Inconsolata")
+        );
+    }
+
+    #[test]
+    fn ai_and_collab_settings_persist_across_restarts() {
+        let mut s = Settings::default();
+        s.ai_use_ctx = false;
+        s.ai_auto_apply = false;
+        s.ai_active_mod = "review".into();
+        s.collab_agent_count = 6;
+        s.collab_active_agent = 4;
+        s.collab_agent_models = vec![
+            ("agent_1".into(), "my-deepseek".into()),
+            ("agent_2".into(), "my-gpt".into()),
+        ];
+        s.view.ai_open = true;
+        s.view.ai_collab_mode = true;
+
+        let raw = s.to_json();
+        let mut back = Settings::default();
+        back.apply_json(&raw, true);
+
+        assert!(!back.ai_use_ctx);
+        assert!(!back.ai_auto_apply);
+        assert_eq!(back.ai_active_mod, "review");
+        assert_eq!(back.collab_agent_count, 6);
+        assert_eq!(back.collab_active_agent, 4);
+        assert_eq!(back.collab_agent_models, s.collab_agent_models);
+        assert!(back.view.ai_open);
+        assert!(back.view.ai_collab_mode);
+
+        // prefs_json 只导入偏好时也必须保留所有 AI 与单/多 Agent 选项，且规整合法边界
+        let prefs = s.prefs_json();
+        let mut imported = Settings::default();
+        imported.apply_json(&prefs, false);
+        assert!(!imported.ai_use_ctx);
+        assert_eq!(imported.ai_active_mod, "review");
+        assert_eq!(imported.collab_agent_count, 6);
+        assert_eq!(imported.collab_agent_models, s.collab_agent_models);
+        assert!(
+            !imported.view.ai_open,
+            "prefs-only import keeps live view state"
+        );
+
+        let mut bad = Settings::default();
+        bad.collab_agent_count = 200_000;
+        bad.collab_active_agent = 150_000;
+        bad.ai_active_mod = "  ".into();
+        bad.collab_agent_models = vec![
+            ("".into(), "m".into()),
+            ("agent_1".into(), "bad\nmodel".into()),
+            ("agent_1".into(), "m1".into()),
+            ("agent_1".into(), "m2".into()),
+        ];
+        bad.sanitize();
+        assert_eq!(bad.collab_agent_count, 100_000);
+        assert_eq!(bad.collab_active_agent, 99_999);
+        assert_eq!(bad.ai_active_mod, "code");
+        assert_eq!(
+            bad.collab_agent_models,
+            vec![("agent_1".into(), "m2".into())]
+        );
+    }
+
+    #[test]
+    fn collab_agent_models_beyond_16_roundtrip_and_stay_bounded() {
+        let mut s = Settings::default();
+        s.collab_agent_models = (1..=25)
+            .map(|i| (format!("agent_{i}"), format!("model-{i}")))
+            .collect();
+        let mut back = Settings::default();
+        back.apply_json(&s.to_json(), true);
+        assert_eq!(back.collab_agent_models.len(), 25);
+        assert_eq!(back.collab_agent_models[24], ("agent_25".into(), "model-25".into()));
+
+        let mut huge = Settings::default();
+        huge.collab_agent_models = (0..MAX_COLLAB_AGENT_MODELS + 500)
+            .map(|i| (format!("agent_{i}"), "m".to_string()))
+            .collect();
+        huge.sanitize();
+        assert_eq!(huge.collab_agent_models.len(), MAX_COLLAB_AGENT_MODELS);
     }
 }

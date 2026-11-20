@@ -1,13 +1,26 @@
 //! 美漫安装向导交互卡片与动作按钮控件 (Comic Action Buttons & Cards)
-//! 高对比度、字号加大、粗体强化、色彩心理学优化 (宝蓝/天青/黑曜钛金)
+//! 高对比度、字号加大、粗体强化、全部图标纯矢量绘制，彻底杜绝字符回退空心方块。
 
 use super::art::paint_comic_hard_shadow_rect;
+use crate::ui_icons::{self, UiIcon};
 use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, Stroke, Vec2};
+use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind, Vec2};
 
-/// 美漫风格动作按钮 (带有纯黑硬阴影与按压位移反馈)
+/// 美漫风格动作按钮 (不带图标版本，转发至带矢量图标实现)
 pub fn comic_action_button(
     ui: &mut egui::Ui,
+    text: &str,
+    size: Vec2,
+    primary: bool,
+    btn_color: Color32,
+) -> egui::Response {
+    comic_action_button_with_icon(ui, None, text, size, primary, btn_color)
+}
+
+/// 美漫风格动作按钮 (可选前置纯矢量图标 + 居中整体排版)
+pub fn comic_action_button_with_icon(
+    ui: &mut egui::Ui,
+    icon: Option<UiIcon>,
     text: &str,
     size: Vec2,
     primary: bool,
@@ -35,28 +48,52 @@ pub fn comic_action_button(
 
     paint_comic_hard_shadow_rect(p, draw_rect, btn_color, 2.2, s_off);
 
-    // 基于 BT.601 感知亮度模型自适应文字颜色 (亮色底黑字，暗色与宝蓝底白字)
-    let lum = 0.299 * (btn_color.r() as f32)
-        + 0.587 * (btn_color.g() as f32)
-        + 0.114 * (btn_color.b() as f32);
-    let text_col = if lum > 165.0 {
-        Color32::BLACK
-    } else {
-        Color32::WHITE
-    };
+    // 基于 BT.601 感知亮度模型自适应文字颜色
+    let text_col = contrast_text_color(btn_color);
 
-    p.text(
-        draw_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        text,
-        egui::FontId::proportional(if primary { 14.5 } else { 12.5 }),
-        text_col,
-    );
+    let font = egui::FontId::proportional(if primary { 14.5 } else { 12.5 });
+    if let Some(ic) = icon {
+        let galley = p.layout_no_wrap(text.to_string(), font, text_col);
+        let icon_sz = if primary { 15.0 } else { 13.0 };
+        let gap = 7.0;
+        let total_w = icon_sz + gap + galley.size().x;
+        let start_x = draw_rect.center().x - total_w * 0.5;
+        let ic_rect = Rect::from_min_size(
+            pos2(start_x, draw_rect.center().y - icon_sz * 0.5),
+            Vec2::splat(icon_sz),
+        );
+        ui_icons::paint(p, ic_rect, ic, text_col);
+        p.galley(
+            pos2(
+                ic_rect.right() + gap,
+                draw_rect.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            text_col,
+        );
+    } else {
+        p.text(
+            draw_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            font,
+            text_col,
+        );
+    }
     resp
 }
 
-/// 美漫只读信息卡片 (展示特性与参数)
-pub fn comic_info_card(ui: &mut egui::Ui, title: &str, desc: &str, tag: &str, accent: Color32) {
+fn contrast_text_color(bg: Color32) -> Color32 {
+    let lum = 0.299 * (bg.r() as f32) + 0.587 * (bg.g() as f32) + 0.114 * (bg.b() as f32);
+    if lum > 165.0 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    }
+}
+
+/// 美漫只读信息卡片 (采用纯矢量图标徽章展示特性与参数)
+pub fn comic_info_card(ui: &mut egui::Ui, title: &str, desc: &str, icon: UiIcon, accent: Color32) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 52.0), egui::Sense::hover());
     let p = ui.painter();
@@ -70,27 +107,33 @@ pub fn comic_info_card(ui: &mut egui::Ui, title: &str, desc: &str, tag: &str, ac
         accent,
     );
 
-    // 漫画序号徽章
+    // 矢量图标徽章 (圆角填充底盘)
     let tag_rect =
-        Rect::from_center_size(pos2(rect.left() + 26.0, rect.center().y), vec2(26.0, 26.0));
-    paint_comic_hard_shadow_rect(p, tag_rect, accent, 1.8, vec2(1.5, 1.5));
-    p.text(
-        tag_rect.center(),
-        egui::Align2::CENTER_CENTER,
-        tag,
-        egui::FontId::proportional(12.0),
-        Color32::BLACK,
+        Rect::from_center_size(pos2(rect.left() + 28.0, rect.center().y), vec2(28.0, 28.0));
+    p.rect_filled(tag_rect.translate(vec2(1.5, 1.5)), 5.0, Color32::BLACK);
+    p.rect_filled(tag_rect, 5.0, accent);
+    p.rect_stroke(
+        tag_rect,
+        5.0,
+        Stroke::new(1.8, Color32::BLACK),
+        StrokeKind::Inside,
     );
+    ui_icons::paint(p, tag_rect.shrink(5.5), icon, Color32::from_rgb(10, 14, 24));
 
-    let text_x = rect.left() + 52.0;
-    p.text(
-        pos2(text_x, rect.center().y - 8.0),
+    let text_x = rect.left() + 54.0;
+    let text_clip = Rect::from_min_max(
+        pos2(text_x, rect.top() + 2.0),
+        pos2((rect.right() - 10.0).max(text_x + 4.0), rect.bottom() - 2.0),
+    );
+    let tp = p.with_clip_rect(text_clip);
+    tp.text(
+        pos2(text_x, rect.center().y - 8.5),
         egui::Align2::LEFT_CENTER,
         title,
         egui::FontId::proportional(13.5),
         Color32::WHITE,
     );
-    p.text(
+    tp.text(
         pos2(text_x, rect.center().y + 9.5),
         egui::Align2::LEFT_CENTER,
         desc,
@@ -99,7 +142,127 @@ pub fn comic_info_card(ui: &mut egui::Ui, title: &str, desc: &str, tag: &str, ac
     );
 }
 
-/// 美漫交互复选卡片 (高度自适应加大至 58.0px，文字清晰加粗，对比度强化)
+/// 美漫交互模式选择卡片 (用于维护模式：修复 / 卸载 / 更改配置)
+pub fn comic_mode_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    desc: &str,
+    badge_text: &str,
+    icon: UiIcon,
+    accent: Color32,
+) -> egui::Response {
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 64.0), egui::Sense::click());
+    let p = ui.painter();
+    let is_down = resp.is_pointer_button_down_on();
+    let hovered = resp.hovered();
+
+    let draw_rect = if is_down {
+        rect.translate(vec2(1.5, 1.5))
+    } else if hovered {
+        rect.translate(vec2(-1.0, -1.0))
+    } else {
+        rect
+    };
+    let s_off = if is_down {
+        vec2(1.5, 1.5)
+    } else if hovered {
+        vec2(4.0, 4.0)
+    } else {
+        vec2(3.0, 3.0)
+    };
+    let card_bg = if hovered {
+        Color32::from_rgb(28, 36, 56)
+    } else {
+        Color32::from_rgb(20, 26, 40)
+    };
+
+    paint_comic_hard_shadow_rect(p, draw_rect, card_bg, 2.0, s_off);
+    p.rect_filled(
+        Rect::from_min_size(draw_rect.min, vec2(5.5, draw_rect.height())),
+        0.0,
+        accent,
+    );
+
+    let icon_plate = Rect::from_center_size(
+        pos2(draw_rect.left() + 31.0, draw_rect.center().y),
+        vec2(32.0, 32.0),
+    );
+    p.rect_filled(icon_plate.translate(vec2(1.5, 1.5)), 6.0, Color32::BLACK);
+    p.rect_filled(icon_plate, 6.0, accent);
+    p.rect_stroke(
+        icon_plate,
+        6.0,
+        Stroke::new(1.8, Color32::BLACK),
+        StrokeKind::Inside,
+    );
+    ui_icons::paint(
+        p,
+        icon_plate.shrink(6.5),
+        icon,
+        Color32::from_rgb(10, 14, 24),
+    );
+
+    let pill_rect = Rect::from_center_size(
+        pos2(draw_rect.right() - 48.0, draw_rect.center().y),
+        vec2(76.0, 24.0),
+    );
+    let pill_fg = contrast_text_color(accent);
+    p.rect_filled(pill_rect.translate(vec2(1.5, 1.5)), 4.0, Color32::BLACK);
+    p.rect_filled(pill_rect, 4.0, accent);
+    p.rect_stroke(
+        pill_rect,
+        4.0,
+        Stroke::new(1.6, Color32::BLACK),
+        StrokeKind::Inside,
+    );
+    let pill_clip = pill_rect.shrink2(vec2(4.0, 2.0));
+    let pill_p = p.with_clip_rect(pill_clip);
+    pill_p.text(
+        pos2(pill_rect.center().x - 6.0, pill_rect.center().y),
+        egui::Align2::CENTER_CENTER,
+        badge_text,
+        egui::FontId::proportional(10.5),
+        pill_fg,
+    );
+    ui_icons::paint(
+        &pill_p,
+        Rect::from_center_size(
+            pos2(pill_rect.right() - 12.0, pill_rect.center().y),
+            vec2(10.0, 10.0),
+        ),
+        UiIcon::ArrowRight,
+        pill_fg,
+    );
+
+    let text_x = draw_rect.left() + 58.0;
+    let text_clip = Rect::from_min_max(
+        pos2(text_x, draw_rect.top() + 2.0),
+        pos2(
+            (pill_rect.left() - 8.0).max(text_x + 4.0),
+            draw_rect.bottom() - 2.0,
+        ),
+    );
+    let tp = p.with_clip_rect(text_clip);
+    tp.text(
+        pos2(text_x, draw_rect.center().y - 9.0),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(13.5),
+        Color32::WHITE,
+    );
+    tp.text(
+        pos2(text_x, draw_rect.center().y + 10.0),
+        egui::Align2::LEFT_CENTER,
+        desc,
+        egui::FontId::proportional(10.8),
+        Color32::from_rgb(203, 213, 225),
+    );
+
+    resp
+}
+
+/// 美漫交互复选卡片 (圆角内嵌开关指示器 + 纯矢量勾号徽章，杜绝空心方块与特殊字体符号)
 pub fn comic_interactive_card(
     ui: &mut egui::Ui,
     checked: &mut bool,
@@ -146,12 +309,19 @@ pub fn comic_interactive_card(
         accent,
     );
 
-    // 漫画序号徽章
+    // 漫画序号徽章 (圆角填充底盘)
     let tag_rect = Rect::from_center_size(
         pos2(draw_rect.left() + 26.0, draw_rect.center().y),
         vec2(26.0, 26.0),
     );
-    paint_comic_hard_shadow_rect(p, tag_rect, accent, 1.8, vec2(1.5, 1.5));
+    p.rect_filled(tag_rect.translate(vec2(1.5, 1.5)), 5.0, Color32::BLACK);
+    p.rect_filled(tag_rect, 5.0, accent);
+    p.rect_stroke(
+        tag_rect,
+        5.0,
+        Stroke::new(1.8, Color32::BLACK),
+        StrokeKind::Inside,
+    );
     p.text(
         tag_rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -160,34 +330,52 @@ pub fn comic_interactive_card(
         Color32::BLACK,
     );
 
-    // 漫画复选框 (尺寸加至 22×22，对比强烈，勾选白线清晰)
+    // 勾选开关指示器 (圆角填充底盘 + 矢量对勾/圆点，绝不呈现裸空心方块)
     let box_center = pos2(draw_rect.left() + 58.0, draw_rect.center().y);
     let box_rect = Rect::from_center_size(box_center, vec2(22.0, 22.0));
     let box_bg = if *checked {
         Color32::from_rgb(2, 132, 199)
     } else {
-        Color32::from_rgb(30, 41, 59)
+        Color32::from_rgb(38, 49, 68)
     };
-    paint_comic_hard_shadow_rect(p, box_rect, box_bg, 2.0, vec2(1.5, 1.5));
+    p.rect_filled(box_rect.translate(vec2(1.5, 1.5)), 4.0, Color32::BLACK);
+    p.rect_filled(box_rect, 4.0, box_bg);
+    p.rect_stroke(
+        box_rect,
+        4.0,
+        Stroke::new(1.8, Color32::BLACK),
+        StrokeKind::Inside,
+    );
 
     if *checked {
-        let p1 = pos2(box_rect.left() + 4.5, box_rect.center().y);
-        let p2 = pos2(box_rect.center().x - 0.5, box_rect.bottom() - 4.5);
-        let p3 = pos2(box_rect.right() - 4.0, box_rect.top() + 5.0);
-        let check_st = Stroke::new(3.0, Color32::WHITE);
-        p.line_segment([p1, p2], check_st);
-        p.line_segment([p2, p3], check_st);
+        ui_icons::paint_checkmark(p, box_rect.shrink(4.5), 2.8, Color32::WHITE);
+    } else {
+        p.circle_filled(box_rect.center(), 3.2, Color32::from_rgb(100, 116, 139));
     }
 
+    // 右侧状态徽章 (提前计算以严格裁剪左侧文案区域)
+    let stamp_rect = Rect::from_center_size(
+        pos2(draw_rect.right() - 48.0, draw_rect.center().y),
+        vec2(76.0, 24.0),
+    );
+
     let text_x = draw_rect.left() + 80.0;
-    p.text(
+    let text_clip = Rect::from_min_max(
+        pos2(text_x, draw_rect.top() + 2.0),
+        pos2(
+            (stamp_rect.left() - 8.0).max(text_x + 4.0),
+            draw_rect.bottom() - 2.0,
+        ),
+    );
+    let tp = p.with_clip_rect(text_clip);
+    tp.text(
         pos2(text_x, draw_rect.center().y - 8.5),
         egui::Align2::LEFT_CENTER,
         title,
         egui::FontId::proportional(13.5),
         Color32::WHITE,
     );
-    p.text(
+    tp.text(
         pos2(text_x, draw_rect.center().y + 10.5),
         egui::Align2::LEFT_CENTER,
         desc,
@@ -195,38 +383,43 @@ pub fn comic_interactive_card(
         Color32::from_rgb(203, 213, 225),
     );
 
-    let stamp_rect = Rect::from_center_size(
-        pos2(draw_rect.right() - 48.0, draw_rect.center().y),
-        vec2(74.0, 24.0),
+    let stamp_bg = if *checked {
+        Color32::from_rgb(16, 185, 129)
+    } else {
+        Color32::from_rgb(30, 41, 59)
+    };
+    p.rect_filled(stamp_rect.translate(vec2(1.5, 1.5)), 4.0, Color32::BLACK);
+    p.rect_filled(stamp_rect, 4.0, stamp_bg);
+    p.rect_stroke(
+        stamp_rect,
+        4.0,
+        Stroke::new(1.6, Color32::BLACK),
+        StrokeKind::Inside,
     );
     if *checked {
-        paint_comic_hard_shadow_rect(
-            p,
-            stamp_rect,
-            Color32::from_rgb(16, 185, 129),
-            1.8,
-            vec2(1.5, 1.5),
+        let ic_r = Rect::from_center_size(
+            pos2(stamp_rect.left() + 12.0, stamp_rect.center().y),
+            vec2(11.0, 11.0),
         );
+        ui_icons::paint_checkmark(p, ic_r, 2.0, Color32::WHITE);
         p.text(
-            stamp_rect.center(),
+            pos2(stamp_rect.center().x + 6.0, stamp_rect.center().y),
             egui::Align2::CENTER_CENTER,
-            "★ ENABLED",
-            egui::FontId::proportional(10.5),
+            "ENABLED",
+            egui::FontId::proportional(10.0),
             Color32::WHITE,
         );
     } else {
-        paint_comic_hard_shadow_rect(
-            p,
-            stamp_rect,
-            Color32::from_rgb(30, 41, 59),
-            1.8,
-            vec2(1.5, 1.5),
+        p.circle_filled(
+            pos2(stamp_rect.left() + 14.0, stamp_rect.center().y),
+            3.0,
+            Color32::from_rgb(148, 163, 184),
         );
         p.text(
-            stamp_rect.center(),
+            pos2(stamp_rect.center().x + 5.0, stamp_rect.center().y),
             egui::Align2::CENTER_CENTER,
-            "○ OFF",
-            egui::FontId::proportional(10.5),
+            "OFF",
+            egui::FontId::proportional(10.0),
             Color32::from_rgb(148, 163, 184),
         );
     }

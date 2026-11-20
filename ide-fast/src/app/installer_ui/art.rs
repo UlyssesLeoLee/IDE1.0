@@ -4,61 +4,168 @@ use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind, Vec2};
 use std::f32::consts::PI;
 
-use super::InstallerStep;
+use super::{InstallerMode, InstallerStep};
 
-/// 绘制向导步骤胶囊指示条 (Step Indicator Capsules - 精简为 3 步核心极速流程)
+/// 绘制向导顶部 3 步流程指示条 (默认安装模式入口，兼容既有调用)
 pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerStep) {
+    paint_step_indicator_for_mode(p, rect, current, InstallerMode::Install);
+}
+
+/// 按当前运行模式 (安装 / 维护 / 修复 / 卸载) 绘制顶部 3 步流程指示条
+pub fn paint_step_indicator_for_mode(
+    p: &egui::Painter,
+    rect: Rect,
+    current: InstallerStep,
+    mode: InstallerMode,
+) {
+    let (s1, s2, s3, act_fill, act_border, act_badge) = match mode {
+        InstallerMode::Install => (
+            crate::i18n::trz("环境配置"),
+            crate::i18n::trz("极速部署"),
+            crate::i18n::trz("部署完成"),
+            Color32::from_rgb(2, 132, 199),
+            Color32::from_rgb(125, 211, 252),
+            Color32::from_rgb(186, 230, 253),
+        ),
+        InstallerMode::Maintenance => (
+            crate::i18n::trz("维护模式"),
+            crate::i18n::trz("执行维护"),
+            crate::i18n::trz("维护完成"),
+            Color32::from_rgb(2, 132, 199),
+            Color32::from_rgb(125, 211, 252),
+            Color32::from_rgb(186, 230, 253),
+        ),
+        InstallerMode::Repair => (
+            crate::i18n::trz("修复确认"),
+            crate::i18n::trz("正在修复"),
+            crate::i18n::trz("修复完成"),
+            Color32::from_rgb(13, 148, 136),
+            Color32::from_rgb(94, 234, 212),
+            Color32::from_rgb(204, 251, 241),
+        ),
+        InstallerMode::Uninstall => (
+            crate::i18n::trz("卸载选项"),
+            crate::i18n::trz("正在卸载"),
+            crate::i18n::trz("卸载完成"),
+            Color32::from_rgb(220, 38, 38),
+            Color32::from_rgb(252, 165, 165),
+            Color32::from_rgb(254, 226, 226),
+        ),
+    };
+
     let steps = [
-        (InstallerStep::Options, crate::i18n::trz("1. 环境配置")),
-        (InstallerStep::Installing, crate::i18n::trz("2. 极速部署")),
-        (InstallerStep::Finished, crate::i18n::trz("3. 部署完成")),
+        (InstallerStep::Options, "1", s1),
+        (InstallerStep::Installing, "2", s2),
+        (InstallerStep::Finished, "3", s3),
     ];
 
     let n = steps.len();
-    let step_w = (rect.width() - (n as f32 - 1.0) * 16.0) / n as f32;
+    let gap = 20.0;
+    let inner_w = (rect.width() - 2.0).max(60.0);
+    let step_w = (inner_w - (n as f32 - 1.0) * gap) / n as f32;
     let mut x = rect.left();
 
-    for (i, (step, label)) in steps.into_iter().enumerate() {
-        let cap_rect = Rect::from_min_size(pos2(x, rect.top()), vec2(step_w, rect.height()));
-        let is_curr = step == current || (current == InstallerStep::Welcome && step == InstallerStep::Options);
+    for (i, (step, num, label)) in steps.into_iter().enumerate() {
+        let cap_rect = Rect::from_min_size(
+            pos2(x, rect.top() + 1.0),
+            vec2(step_w, (rect.height() - 3.0).max(24.0)),
+        );
+        let is_curr = step == current
+            || (current == InstallerStep::Welcome && step == InstallerStep::Options);
         let is_past = match current {
             InstallerStep::Welcome | InstallerStep::Options => false,
             InstallerStep::Installing => step == InstallerStep::Options,
-            InstallerStep::Finished => step == InstallerStep::Options || step == InstallerStep::Installing,
+            InstallerStep::Finished => {
+                step == InstallerStep::Options || step == InstallerStep::Installing
+            }
         };
 
-        let (fill_col, text_col) = if is_curr {
-            (Color32::from_rgb(2, 132, 199), Color32::WHITE)
+        let (fill_col, border_col, text_col) = if is_curr {
+            (act_fill, act_border, Color32::WHITE)
         } else if is_past {
-            (Color32::from_rgb(16, 185, 129), Color32::WHITE)
+            (
+                Color32::from_rgb(12, 92, 72),
+                Color32::from_rgb(52, 211, 153),
+                Color32::from_rgb(236, 253, 245),
+            )
         } else {
             (
-                Color32::from_rgb(22, 28, 40),
-                Color32::from_rgb(203, 213, 225),
+                Color32::from_rgb(20, 26, 40),
+                Color32::from_rgb(51, 65, 85),
+                Color32::from_rgb(186, 198, 216),
             )
         };
 
-        paint_comic_hard_shadow_rect(p, cap_rect, fill_col, 1.8, vec2(1.5, 1.5));
-        p.text(
-            cap_rect.center(),
+        let r_round = 6.0;
+        p.rect_filled(cap_rect.translate(vec2(2.0, 2.0)), r_round, Color32::BLACK);
+        p.rect_filled(cap_rect, r_round, fill_col);
+        p.rect_stroke(
+            cap_rect,
+            r_round,
+            Stroke::new(1.5, border_col),
+            StrokeKind::Inside,
+        );
+
+        // 左侧圆形步骤徽章 (已完成 = 翡翠绿对勾矢量，当前 = 主题高亮编号，未开始 = 暗岩灰编号)
+        let badge_c = pos2(cap_rect.left() + 16.0, cap_rect.center().y);
+        if is_past {
+            p.circle_filled(badge_c, 8.5, Color32::from_rgb(16, 185, 129));
+            crate::ui_icons::paint_checkmark(
+                p,
+                Rect::from_center_size(badge_c, vec2(10.5, 10.5)),
+                2.0,
+                Color32::WHITE,
+            );
+        } else if is_curr {
+            p.circle_filled(badge_c, 8.5, act_badge);
+            p.text(
+                badge_c,
+                egui::Align2::CENTER_CENTER,
+                num,
+                egui::FontId::proportional(10.5),
+                Color32::from_rgb(7, 25, 48),
+            );
+        } else {
+            p.circle_filled(badge_c, 8.5, Color32::from_rgb(38, 49, 68));
+            p.text(
+                badge_c,
+                egui::Align2::CENTER_CENTER,
+                num,
+                egui::FontId::proportional(10.5),
+                Color32::from_rgb(148, 163, 184),
+            );
+        }
+
+        let label_left = badge_c.x + 10.0;
+        let label_right = (cap_rect.right() - 4.0).max(label_left + 4.0);
+        let label_cx = (label_left + label_right) * 0.5;
+        let label_clip = Rect::from_min_max(
+            pos2(label_left, cap_rect.top()),
+            pos2(label_right, cap_rect.bottom()),
+        );
+        p.with_clip_rect(label_clip).text(
+            pos2(label_cx, cap_rect.center().y),
             egui::Align2::CENTER_CENTER,
             label,
             egui::FontId::proportional(11.5),
             text_col,
         );
 
+        // 步骤之间横向高亮进度连接轨
         if i < n - 1 {
-            let line_y = rect.center().y;
-            p.line_segment(
-                [
-                    pos2(cap_rect.right() + 2.0, line_y),
-                    pos2(cap_rect.right() + 14.0, line_y),
-                ],
-                Stroke::new(2.0, Color32::from_rgb(30, 41, 59)),
+            let conn_rect = Rect::from_center_size(
+                pos2(cap_rect.right() + gap * 0.5, cap_rect.center().y),
+                vec2((gap - 4.0).max(4.0), 4.0),
             );
+            let conn_col = if is_past {
+                Color32::from_rgb(16, 185, 129)
+            } else {
+                Color32::from_rgb(40, 52, 72)
+            };
+            p.rect_filled(conn_rect, 2.0, conn_col);
         }
 
-        x += step_w + 16.0;
+        x += step_w + gap;
     }
 }
 

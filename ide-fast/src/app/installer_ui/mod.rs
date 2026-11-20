@@ -32,26 +32,73 @@ use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind, Vec2};
 pub enum InstallerStep {
     /// 步骤 0: 欢迎体验英雄展台 (已由新版精简，直接切入核心配置)
     Welcome,
-    /// 步骤 1: 安装目录与环境选项 (Directory & Integration Options)
+    /// 步骤 1: 安装目录与环境选项 / 维护模式选择 (Directory & Integration Options)
     #[default]
     Options,
-    /// 步骤 2: 部署安装中动画 (Deploying & Real-time Progress)
+    /// 步骤 2: 部署安装 / 修复 / 卸载执行中动画 (Deploying & Real-time Progress)
     Installing,
-    /// 步骤 3: 部署完成与启动 (Completed & Launch)
+    /// 步骤 3: 部署 / 修复 / 卸载完成 (Completed & Launch)
     Finished,
+}
+
+/// 启动安装/维护向导时的外部入口模式
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum InstallerLaunchMode {
+    /// 自动探测本机是否已安装 IDE 1.0：已安装则进入维护向导，未安装则进入全新安装
+    #[default]
+    Auto,
+    /// 直接进入卸载向导 (例如 --uninstall 或 Windows 应用与功能卸载入口)
+    Uninstall,
+    /// 直接进入修复向导 (--repair)
+    Repair,
+}
+
+/// 当前向导所处的运行模式
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum InstallerMode {
+    /// 全新安装或更改安装目录/集成配置
+    #[default]
+    Install,
+    /// 已检测到本机安装：维护总览页 (修复 / 卸载 / 更改配置)
+    Maintenance,
+    /// 修复已有安装 (保留用户配置并重新部署主程序、快捷方式、PATH 与注册表)
+    Repair,
+    /// 卸载移除程序与系统集成
+    Uninstall,
+}
+
+/// 本机已探测到的 IDE 1.0 安装信息
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExistingInstall {
+    pub install_dir: String,
+    pub installed_version: Option<String>,
+    pub has_desktop_shortcut: bool,
+    pub has_start_menu_shortcut: bool,
+    pub has_path_entry: bool,
+    pub has_uninstall_reg: bool,
 }
 
 pub struct InstallerState {
     pub open: bool,
     pub standalone: bool,
     pub step: InstallerStep,
+    pub mode: InstallerMode,
+    pub existing: Option<ExistingInstall>,
     pub target_dir: String,
     pub add_path: bool,
     pub desktop_shortcut: bool,
     pub tray_resident: bool,
     pub launch_on_finish: bool,
+    pub remove_shortcuts: bool,
+    pub remove_path_and_reg: bool,
+    pub remove_user_data: bool,
+    pub deferred_self_cleanup_dir: Option<String>,
+    /// 测试/预览干跑标记：开启时绝不读写注册表、快捷方式、PATH 或删除主机文件
+    pub dry_run: bool,
     pub install_progress: f32,
     pub status_msg: Option<String>,
+    /// 后台部署线程结果通道 (真实模式; `None` 表示尚未启动或已收尾)
+    pub deploy_rx: Option<std::sync::mpsc::Receiver<deploy::DeployOutcome>>,
     pub logo_tex: Option<egui::TextureHandle>,
     pub cam_yaw: f32,
     pub cam_pitch: f32,
@@ -72,13 +119,21 @@ impl Default for InstallerState {
             open: false,
             standalone: false,
             step: InstallerStep::Options,
+            mode: InstallerMode::Install,
+            existing: None,
             target_dir: default_dir,
             add_path: true,
             desktop_shortcut: true,
             tray_resident: true,
             launch_on_finish: true,
+            remove_shortcuts: true,
+            remove_path_and_reg: true,
+            remove_user_data: false,
+            deferred_self_cleanup_dir: None,
+            dry_run: false,
             install_progress: 0.0,
             status_msg: None,
+            deploy_rx: None,
             logo_tex: None,
             cam_yaw: 0.35,
             cam_pitch: 0.18,
@@ -91,7 +146,93 @@ impl Default for InstallerState {
     }
 }
 
+impl InstallerState {
+    /// 根据外部入口模式与本机探测结果纯函数化初始化向导状态（便于单测完整覆盖）
+    pub fn apply_open_mode(
+        &mut self,
+        launch_mode: InstallerLaunchMode,
+        existing: Option<ExistingInstall>,
+        cur_exe: Option<&std::path::Path>,
+        local_app_data: Option<&std::path::Path>,
+    ) {
+        self.step = InstallerStep::Options;
+        self.install_progress = 0.0;
+        self.status_msg = None;
+        self.deploy_rx = None;
+        self.deferred_self_cleanup_dir = None;
+        self.existing = existing.clone();
+
+        match launch_mode {
+            InstallerLaunchMode::Uninstall => {
+                self.mode = InstallerMode::Uninstall;
+                if let Some(ex) = &existing {
+                    self.target_dir = ex.install_dir.clone();
+                } else if let Some(parent) = cur_exe.and_then(|p| p.parent()) {
+                    if !parent.as_os_str().is_empty() {
+                        self.target_dir = parent.to_string_lossy().to_string();
+                    }
+                }
+            }
+            InstallerLaunchMode::Repair => {
+                self.mode = InstallerMode::Repair;
+                if let Some(ex) = &existing {
+                    self.target_dir = ex.install_dir.clone();
+                }
+                // 修复模式默认勾选重建 PATH 与快捷方式以保证完整修复体验
+                self.add_path = true;
+                self.desktop_shortcut = true;
+            }
+            InstallerLaunchMode::Auto => {
+                if let Some(ex) = &existing {
+                    self.mode = InstallerMode::Maintenance;
+                    self.target_dir = ex.install_dir.clone();
+                    self.add_path = if ex.has_uninstall_reg {
+                        ex.has_path_entry
+                    } else {
+                        true
+                    };
+                    self.desktop_shortcut = if ex.has_uninstall_reg {
+                        ex.has_desktop_shortcut
+                    } else {
+                        true
+                    };
+                } else {
+                    self.mode = InstallerMode::Install;
+                    let is_setup_exe = cur_exe
+                        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+                        .map(|n| n.contains("setup") || n.contains("installer"))
+                        .unwrap_or(false);
+                    if is_setup_exe {
+                        if let Some(lad) = local_app_data {
+                            self.target_dir = lad.join("IDE1.0").to_string_lossy().to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl App {
+    /// 打开安装 / 维护 / 修复 / 卸载向导（自动探测本机已有安装并切换对应模式）
+    pub fn open_installer_wizard(&mut self, launch_mode: InstallerLaunchMode, standalone: bool) {
+        self.installer.open = true;
+        self.installer.standalone = standalone;
+        let existing = if self.installer.dry_run {
+            self.installer.existing.clone()
+        } else {
+            deploy::detect_existing_installation()
+        };
+        let cur_exe = std::env::current_exe().ok();
+        let local_app_data = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from);
+        self.installer.apply_open_mode(
+            launch_mode,
+            existing,
+            cur_exe.as_deref(),
+            local_app_data.as_deref(),
+        );
+    }
+
     /// 确保已解码并装载正版原生 Logo 纹理 (严格保留用户原始正版 Logo，不改动)
     fn ensure_installer_logo(&mut self, ctx: &egui::Context) {
         if self.installer.logo_tex.is_none() {
@@ -169,9 +310,25 @@ impl App {
         let header_rect = Rect::from_min_size(win_rect.min, Vec2::new(win_rect.width(), header_h));
         let title_x = header_rect.left() + 56.0;
         let wiz_rect = Rect::from_center_size(
-            pos2(title_x + 116.0, header_rect.center().y),
-            vec2(76.0, 22.0),
+            pos2(title_x + 122.0, header_rect.center().y),
+            vec2(88.0, 22.0),
         );
+        let (badge_bg, badge_label) = match self.installer.mode {
+            InstallerMode::Install => {
+                (Color32::from_rgb(2, 132, 199), crate::i18n::trz("安装向导"))
+            }
+            InstallerMode::Maintenance => (
+                Color32::from_rgb(14, 116, 144),
+                crate::i18n::trz("维护向导"),
+            ),
+            InstallerMode::Repair => (
+                Color32::from_rgb(13, 148, 136),
+                crate::i18n::trz("修复向导"),
+            ),
+            InstallerMode::Uninstall => {
+                (Color32::from_rgb(220, 38, 38), crate::i18n::trz("卸载向导"))
+            }
+        };
 
         // 1-4. 绘制底板与标题栏静态图元 (低调奢华暗色系 · 色彩心理学精准契合)
         {
@@ -191,12 +348,12 @@ impl App {
                 StrokeKind::Inside,
             );
 
-            // 3. 顶部 Header 栏：精工黑曜钛金栏 (#141924) + 皇家宝蓝分割线 (#0284c7)
+            // 3. 顶部 Header 栏：精工黑曜钛金栏 (#141924) + 主题强调分割线
             let header_bg = Color32::from_rgb(20, 25, 36);
             p.rect_filled(header_rect, 0.0, header_bg);
             p.line_segment(
                 [header_rect.left_bottom(), header_rect.right_bottom()],
-                Stroke::new(1.8, Color32::from_rgb(2, 132, 199)),
+                Stroke::new(1.8, badge_bg),
             );
 
             // 左上角正版原生 Logo 纹理徽章 (严格保留正版 Crystal Logo，26px 紧凑精致)
@@ -225,34 +382,43 @@ impl App {
                 Color32::from_rgb(241, 245, 249),
             );
 
-            // 专属低调奢华安装向导胶囊 "安装向导"
-            paint_comic_hard_shadow_rect(
-                p,
-                wiz_rect,
-                Color32::from_rgb(2, 132, 199),
-                1.5,
-                vec2(1.5, 1.5),
-            );
-            p.text(
+            // 专属低调奢华模式胶囊 ("安装向导" / "维护向导" / "修复向导" / "卸载向导", 支持 i18n)
+            paint_comic_hard_shadow_rect(p, wiz_rect, badge_bg, 1.5, vec2(1.5, 1.5));
+            p.with_clip_rect(wiz_rect.shrink2(vec2(3.0, 1.0))).text(
                 wiz_rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "安装向导",
+                badge_label,
                 egui::FontId::proportional(10.5),
                 Color32::WHITE,
             );
 
-            // 右侧版本胶囊
+            // 右侧版本胶囊 (纯矢量菱形火花 + ASCII 版本号, 杜绝字符星号回退)
             let ver_rect = Rect::from_center_size(
                 pos2(header_rect.right() - 86.0, header_rect.center().y),
-                vec2(74.0, 22.0),
+                vec2(76.0, 22.0),
             );
-            paint_comic_hard_shadow_rect(p, ver_rect, Color32::from_rgb(30, 41, 59), 1.5, vec2(1.5, 1.5));
+            paint_comic_hard_shadow_rect(
+                p,
+                ver_rect,
+                Color32::from_rgb(30, 41, 59),
+                1.5,
+                vec2(1.5, 1.5),
+            );
+            crate::ui_icons::paint(
+                p,
+                Rect::from_center_size(
+                    pos2(ver_rect.left() + 14.0, ver_rect.center().y),
+                    vec2(10.0, 10.0),
+                ),
+                crate::ui_icons::UiIcon::Spark,
+                Color32::from_rgb(56, 189, 248),
+            );
             p.text(
-                ver_rect.center(),
+                pos2(ver_rect.center().x + 6.0, ver_rect.center().y),
                 egui::Align2::CENTER_CENTER,
-                concat!("★ v", env!("CARGO_PKG_VERSION")),
+                concat!("v", env!("CARGO_PKG_VERSION")),
                 egui::FontId::proportional(10.5),
-                Color32::from_rgb(148, 163, 184),
+                Color32::from_rgb(203, 213, 225),
             );
         }
 
@@ -287,7 +453,17 @@ impl App {
             "comic_inst_close",
             true,
         ) {
-            if standalone {
+            if self.installer.mode == InstallerMode::Uninstall
+                && self.installer.step == InstallerStep::Finished
+            {
+                let scheduled =
+                    deploy::trigger_deferred_self_cleanup_if_needed(&mut self.installer);
+                if scheduled || standalone {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                } else {
+                    self.installer.open = false;
+                }
+            } else if standalone {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             } else {
                 self.installer.open = false;

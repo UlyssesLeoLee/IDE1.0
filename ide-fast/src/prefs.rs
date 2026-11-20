@@ -63,7 +63,7 @@ pub fn add_type(d: &mut Settings, ext: &str) -> bool {
 }
 
 fn tri_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, v: &mut Option<bool>) {
-    let names = [tr("pf.inherit"), "✔", "✘"];
+    let names = [tr("pf.inherit"), "On", "Off"];
     let mut i = tri_index(*v);
     egui::ComboBox::from_id_salt(id)
         .width(64.0)
@@ -301,7 +301,8 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
             let find_rec = |file: &str| {
                 crate::fonts::RECOMMENDED_FONTS.iter().find(|r| {
                     r.file.eq_ignore_ascii_case(file)
-                        || (crate::fonts::is_pixel_font(file) && crate::fonts::is_pixel_font(r.file))
+                        || (crate::fonts::is_pixel_font(file)
+                            && crate::fonts::is_pixel_font(r.file))
                 })
             };
             ui.horizontal(|ui| {
@@ -316,8 +317,11 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                     }
                 } else {
                     let label = label_of(&d.font_family);
-                    if p.user_fonts.iter().any(|u| u.eq_ignore_ascii_case(&d.font_family)) {
-                        format!("👤 {} [用户自装]", label)
+                    if p.user_fonts
+                        .iter()
+                        .any(|u| u.eq_ignore_ascii_case(&d.font_family))
+                    {
+                        format!("{} [用户自装]", label)
                     } else if let Some(rec) = find_rec(&d.font_family) {
                         format!("{} [{}]", rec.name_zh, rec.license)
                     } else {
@@ -360,7 +364,8 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                         for rec in crate::fonts::RECOMMENDED_FONTS {
                             let label = format!("{} [{}]", rec.name_zh, rec.license);
                             let on = d.font_family.eq_ignore_ascii_case(rec.file)
-                                || (crate::fonts::is_pixel_font(&d.font_family) && crate::fonts::is_pixel_font(rec.file));
+                                || (crate::fonts::is_pixel_font(&d.font_family)
+                                    && crate::fonts::is_pixel_font(rec.file));
                             if ui.selectable_label(on, label).clicked() {
                                 d.font_family = rec.file.to_string();
                             }
@@ -718,7 +723,7 @@ pub fn prefs_page(ui: &mut egui::Ui, p: &mut Prefs) {
                 ui.horizontal(|ui| {
                     ui.label(toolbar_name(id));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("✕").clicked() {
+                        if ui.small_button("×").clicked() {
                             act = Some((i, 2));
                         }
                         if ui.small_button("▼").clicked() {

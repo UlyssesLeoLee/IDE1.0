@@ -3,6 +3,80 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+/// 用户已配置并保存的单个模型档案
+#[derive(Clone, Default, PartialEq)]
+pub struct ModelProfile {
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    pub key: String,
+    pub effort: String,
+    pub efforts: Vec<String>,
+}
+
+impl std::fmt::Debug for ModelProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelProfile")
+            .field("name", &self.name)
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("key", &"<redacted>")
+            .finish()
+    }
+}
+
+impl ModelProfile {
+    pub fn display_label(&self) -> &str {
+        let n = self.name.trim();
+        if n.is_empty() {
+            self.model.trim()
+        } else {
+            n
+        }
+    }
+
+    pub fn from_json(v: &Value) -> Option<Self> {
+        let s = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
+        let model = s("model");
+        if model.is_empty() {
+            return None;
+        }
+        let mut base_url = s("baseUrl");
+        if base_url.is_empty() {
+            base_url = PRESETS[0].1.into();
+        }
+        let efforts = super::efforts::clean_list(
+            v["efforts"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        );
+        Some(ModelProfile {
+            name: s("name"),
+            base_url,
+            model,
+            key: s("key"),
+            effort: s("effort"),
+            efforts,
+        })
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "name": self.name,
+            "baseUrl": self.base_url,
+            "model": self.model,
+            "key": self.key,
+            "effort": self.effort,
+            "efforts": self.efforts,
+        })
+    }
+}
+
 #[derive(Clone, Default, PartialEq)]
 pub struct AiConfig {
     pub base_url: String,
@@ -13,6 +87,8 @@ pub struct AiConfig {
     pub efforts: Vec<String>,
     /// 用户已同意把选中内容 / 当前章节发给端点 (一次同意, 之后不再问; 和 Tauri 版 CHAT_CONSENT_KEY 一致)
     pub consent: bool,
+    /// 用户主动配置并保存的模型列表 (仅这里及已配置的当前模型会出现在切换清单)
+    pub saved_models: Vec<ModelProfile>,
 }
 
 impl std::fmt::Debug for AiConfig {
@@ -21,6 +97,7 @@ impl std::fmt::Debug for AiConfig {
             .field("base_url", &self.base_url)
             .field("model", &self.model)
             .field("key", &"<redacted>")
+            .field("saved_models_count", &self.saved_models.len())
             .finish()
     }
 }
@@ -63,14 +140,40 @@ impl AiConfig {
                     .unwrap_or_default(),
             ),
             consent: v["consent"].as_bool().unwrap_or(true),
+            saved_models: Vec::new(),
         };
         if c.base_url.is_empty() {
             c.base_url = PRESETS[0].1.into();
         }
+        if let Some(arr) = v.get("savedModels").and_then(Value::as_array) {
+            let mut dedup: Vec<ModelProfile> = Vec::with_capacity(arr.len());
+            for item in arr {
+                if let Some(p) = ModelProfile::from_json(item) {
+                    if !dedup
+                        .iter()
+                        .any(|e| e.model == p.model && e.base_url == p.base_url)
+                    {
+                        dedup.push(p);
+                    }
+                }
+            }
+            c.saved_models = dedup;
+        } else if !c.model.trim().is_empty() {
+            // 兼容旧版 ai.json：自动将已配置过的单模型迁移至 saved_models
+            c.upsert_current_model(None);
+        }
         c
     }
     pub fn to_json(&self) -> Value {
-        json!({ "baseUrl": self.base_url, "model": self.model, "key": self.key, "effort": self.effort, "efforts": self.efforts, "consent": self.consent })
+        json!({
+            "baseUrl": self.base_url,
+            "model": self.model,
+            "key": self.key,
+            "effort": self.effort,
+            "efforts": self.efforts,
+            "consent": self.consent,
+            "savedModels": self.saved_models.iter().map(ModelProfile::to_json).collect::<Vec<_>>(),
+        })
     }
     pub fn load() -> Self {
         config_path()
@@ -94,6 +197,112 @@ impl AiConfig {
         !self.key.trim().is_empty()
             && !self.model.trim().is_empty()
             && endpoint(&self.base_url).is_ok()
+    }
+
+    /// 仅返回用户主动配置/保存过的模型；未配置时恒为空切片，绝不暴露硬编码默认模型
+    pub fn configured_models(&self) -> Vec<ModelProfile> {
+        let mut out: Vec<ModelProfile> = self
+            .saved_models
+            .iter()
+            .filter(|p| !p.model.trim().is_empty())
+            .cloned()
+            .collect();
+        let cur = self.model.trim();
+        if !cur.is_empty() && !out.iter().any(|p| p.model == cur) {
+            out.push(ModelProfile {
+                name: String::new(),
+                base_url: self.base_url.trim().to_string(),
+                model: cur.to_string(),
+                key: self.key.trim().to_string(),
+                effort: self.effort.trim().to_string(),
+                efforts: self.efforts.clone(),
+            });
+        }
+        out
+    }
+
+    /// 将当前填写的模型与接口参数写入/更新到 `saved_models`
+    pub fn upsert_current_model(&mut self, custom_name: Option<&str>) {
+        self.base_url = self.base_url.trim().to_string();
+        if self.base_url.is_empty() {
+            self.base_url = PRESETS[0].1.into();
+        }
+        self.model = self.model.trim().to_string();
+        self.key = self.key.trim().to_string();
+        self.effort = self.effort.trim().to_string();
+        if self.model.is_empty() {
+            return;
+        }
+        let trimmed_name = custom_name.map(str::trim).unwrap_or("");
+        if let Some(existing) = self.saved_models.iter_mut().find(|p| p.model == self.model) {
+            if !trimmed_name.is_empty() {
+                existing.name = trimmed_name.to_string();
+            }
+            existing.base_url = self.base_url.clone();
+            existing.key = self.key.clone();
+            existing.effort = self.effort.clone();
+            existing.efforts = self.efforts.clone();
+        } else {
+            self.saved_models.push(ModelProfile {
+                name: trimmed_name.to_string(),
+                base_url: self.base_url.clone(),
+                model: self.model.clone(),
+                key: self.key.clone(),
+                effort: self.effort.clone(),
+                efforts: self.efforts.clone(),
+            });
+        }
+    }
+
+    /// 从用户已保存档案切换为当前激活模型
+    pub fn select_saved_model(&mut self, model: &str) -> bool {
+        let Some(p) = self.saved_models.iter().find(|p| p.model == model).cloned() else {
+            return false;
+        };
+        self.base_url = p.base_url;
+        self.model = p.model;
+        self.key = p.key;
+        self.effort = p.effort;
+        self.efforts = p.efforts;
+        true
+    }
+
+    /// 移除指定已配置模型；若正好是当前模型则回落至第一个剩余模型或清空
+    pub fn remove_saved_model(&mut self, model: &str) -> bool {
+        let before = self.saved_models.len();
+        self.saved_models.retain(|p| p.model != model);
+        let removed = self.saved_models.len() != before;
+        if removed && self.model == model {
+            if let Some(first) = self.saved_models.first().cloned() {
+                self.base_url = first.base_url;
+                self.model = first.model;
+                self.key = first.key;
+                self.effort = first.effort;
+                self.efforts = first.efforts;
+            } else {
+                self.model.clear();
+                self.effort.clear();
+                self.efforts.clear();
+            }
+        }
+        removed
+    }
+
+    /// 按单 Agent 指定的模型覆写解析最终请求配置 (未指定或未命中时回落全局默认)
+    pub fn resolve_for_model(&self, model_override: Option<&str>) -> AiConfig {
+        let Some(m) = model_override.map(str::trim).filter(|s| !s.is_empty()) else {
+            return self.clone();
+        };
+        if let Some(p) = self.saved_models.iter().find(|p| p.model == m) {
+            let mut out = self.clone();
+            out.base_url = p.base_url.clone();
+            out.model = p.model.clone();
+            out.key = p.key.clone();
+            out.effort = p.effort.clone();
+            out.efforts = p.efforts.clone();
+            return out;
+        }
+        self.clone()
     }
 }
 
@@ -183,5 +392,92 @@ mod tests {
             redact("bad key sk-secret-123 here", &c.key),
             "bad key *** here"
         );
+    }
+
+    #[test]
+    fn configured_models_excludes_unconfigured_and_roundtrips_saved_profiles() {
+        let empty = AiConfig::default_cfg();
+        assert!(
+            empty.configured_models().is_empty(),
+            "默认未配置时绝不能出现任何内置/未配置模型"
+        );
+
+        let mut cfg = AiConfig {
+            base_url: "https://api.deepseek.com/v1".into(),
+            model: "my-deepseek-v3".into(),
+            key: "sk-ds-123456".into(),
+            effort: "high".into(),
+            efforts: vec!["low".into(), "high".into()],
+            consent: true,
+            saved_models: vec![],
+        };
+        cfg.upsert_current_model(Some("My DeepSeek"));
+        assert_eq!(cfg.configured_models().len(), 1);
+        assert_eq!(cfg.configured_models()[0].display_label(), "My DeepSeek");
+
+        cfg.base_url = "https://api.openai.com/v1".into();
+        cfg.model = "my-gpt-model".into();
+        cfg.key = "sk-oai-999999".into();
+        cfg.effort = "medium".into();
+        cfg.upsert_current_model(None);
+        assert_eq!(cfg.configured_models().len(), 2);
+        assert_eq!(cfg.configured_models()[1].display_label(), "my-gpt-model");
+
+        // JSON 持久化往返（保存后下次启动完整还原，且 Debug 不泄漏密钥）
+        let back = AiConfig::from_json(&cfg.to_json());
+        assert_eq!(back, cfg);
+        assert!(!format!("{:?}", back.saved_models).contains("sk-ds-123456"));
+
+        // 旧版 ai.json（无 savedModels 字段）自动迁移已配置模型
+        let legacy = json!({
+            "baseUrl": "https://api.deepseek.com/v1",
+            "model": "legacy-user-model",
+            "key": "sk-legacy",
+        });
+        let migrated = AiConfig::from_json(&legacy);
+        assert_eq!(migrated.configured_models().len(), 1);
+        assert_eq!(migrated.configured_models()[0].model, "legacy-user-model");
+
+        // 验证若存在已保存模型同时存在未入库的新模型，configured_models 保持合流且去重
+        let mut un_upserted = migrated.clone();
+        un_upserted.model = "new-active-model".into();
+        let joined = un_upserted.configured_models();
+        assert_eq!(joined.len(), 2);
+        assert_eq!(joined[0].model, "legacy-user-model");
+        assert_eq!(joined[1].model, "new-active-model");
+
+        // 删除当前选中模型时自动回退至剩余模型或清空
+        let mut cur = back;
+        assert!(cur.remove_saved_model("my-gpt-model"));
+        assert_eq!(cur.model, "my-deepseek-v3");
+        assert!(cur.remove_saved_model("my-deepseek-v3"));
+        assert!(cur.model.is_empty());
+        assert!(cur.configured_models().is_empty());
+    }
+
+    #[test]
+    fn resolve_for_model_falls_back_cleanly() {
+        let mut cfg = AiConfig::default_cfg();
+        cfg.base_url = "https://api.openai.com/v1".into();
+        cfg.model = "global-model".into();
+        cfg.key = "sk-global".into();
+        cfg.upsert_current_model(Some("Global"));
+
+        cfg.base_url = "https://api.deepseek.com/v1".into();
+        cfg.model = "worker-model".into();
+        cfg.key = "sk-worker".into();
+        cfg.upsert_current_model(Some("Worker"));
+        assert!(cfg.select_saved_model("global-model"));
+        assert_eq!(cfg.model, "global-model");
+
+        let resolved_worker = cfg.resolve_for_model(Some("worker-model"));
+        assert_eq!(resolved_worker.model, "worker-model");
+        assert_eq!(resolved_worker.key, "sk-worker");
+        assert_eq!(resolved_worker.base_url, "https://api.deepseek.com/v1");
+
+        // 未命中（例如已被删除的模型）时回落全局默认配置
+        let fallback = cfg.resolve_for_model(Some("deleted-model"));
+        assert_eq!(fallback.model, "global-model");
+        assert_eq!(fallback.key, "sk-global");
     }
 }

@@ -97,6 +97,7 @@ pub fn build_ionic_pedestal() -> Mesh3D {
 
 /// 构建正版 IDE1.0 水晶菱形徽标 3D 几何模型 (Authentic IDE1.0 Faceted Crystal Diamond)
 /// 严格对应正版 Crystal A 标志：八面菱形双棱锥切割冠部/腰部/亭部，以及悬浮于晶石核心的 `< I >` 代码符号
+#[allow(clippy::identity_op)]
 pub fn build_ide1_crystal_logo(scale: f32) -> Mesh3D {
     let mut mesh = Mesh3D::new();
     let s = scale;
@@ -132,7 +133,8 @@ pub fn build_ide1_crystal_logo(scale: f32) -> Mesh3D {
     mesh.vertices.push(bot_apex); // 1
 
     let g_start = mesh.vertices.len(); // 2
-    mesh.vertices.extend([g_front, g_fr, g_right, g_br, g_back, g_bl, g_left, g_fl]);
+    mesh.vertices
+        .extend([g_front, g_fr, g_right, g_br, g_back, g_bl, g_left, g_fl]);
 
     let c_start = mesh.vertices.len(); // 10
     mesh.vertices.extend([c_front, c_right, c_back, c_left]);
@@ -141,58 +143,154 @@ pub fn build_ide1_crystal_logo(scale: f32) -> Mesh3D {
     mesh.vertices.extend([p_front, p_right, p_back, p_left]);
 
     // 冠部切面 (Top Apex -> Crown Ring)
-    mesh.faces.push(Face3D { indices: vec![0, c_start + 0, c_start + 1], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![0, c_start + 1, c_start + 2], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![0, c_start + 2, c_start + 3], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![0, c_start + 3, c_start + 0], material: CelMaterial::CrystalDiamondLight });
+    mesh.faces.push(Face3D {
+        indices: vec![0, c_start + 0, c_start + 1],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![0, c_start + 1, c_start + 2],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![0, c_start + 2, c_start + 3],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![0, c_start + 3, c_start + 0],
+        material: CelMaterial::CrystalDiamondLight,
+    });
 
     // 冠部到腰棱切面 (Crown Ring -> Girdle Ring)
     // 前右象限
-    mesh.faces.push(Face3D { indices: vec![c_start + 0, g_start + 1, g_start + 0], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![c_start + 0, c_start + 1, g_start + 1], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![c_start + 1, g_start + 2, g_start + 1], material: CelMaterial::CrystalDiamondMid });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 0, g_start + 1, g_start + 0],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 0, c_start + 1, g_start + 1],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 1, g_start + 2, g_start + 1],
+        material: CelMaterial::CrystalDiamondMid,
+    });
 
     // 后右象限
-    mesh.faces.push(Face3D { indices: vec![c_start + 1, g_start + 3, g_start + 2], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![c_start + 1, c_start + 2, g_start + 3], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![c_start + 2, g_start + 4, g_start + 3], material: CelMaterial::CrystalDiamondMid });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 1, g_start + 3, g_start + 2],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 1, c_start + 2, g_start + 3],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 2, g_start + 4, g_start + 3],
+        material: CelMaterial::CrystalDiamondMid,
+    });
 
     // 后左象限
-    mesh.faces.push(Face3D { indices: vec![c_start + 2, g_start + 5, g_start + 4], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![c_start + 2, c_start + 3, g_start + 5], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![c_start + 3, g_start + 6, g_start + 5], material: CelMaterial::CrystalDiamondMid });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 2, g_start + 5, g_start + 4],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 2, c_start + 3, g_start + 5],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 3, g_start + 6, g_start + 5],
+        material: CelMaterial::CrystalDiamondMid,
+    });
 
     // 前左象限
-    mesh.faces.push(Face3D { indices: vec![c_start + 3, g_start + 7, g_start + 6], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![c_start + 3, c_start + 0, g_start + 7], material: CelMaterial::CrystalDiamondLight });
-    mesh.faces.push(Face3D { indices: vec![c_start + 0, g_start + 0, g_start + 7], material: CelMaterial::CrystalDiamondMid });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 3, g_start + 7, g_start + 6],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 3, c_start + 0, g_start + 7],
+        material: CelMaterial::CrystalDiamondLight,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![c_start + 0, g_start + 0, g_start + 7],
+        material: CelMaterial::CrystalDiamondMid,
+    });
 
     // 腰棱到亭部切面 (Girdle Ring -> Pavilion Ring)
     // 前右象限
-    mesh.faces.push(Face3D { indices: vec![p_start + 0, g_start + 0, g_start + 1], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![p_start + 0, g_start + 1, p_start + 1], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![p_start + 1, g_start + 1, g_start + 2], material: CelMaterial::CrystalDiamondDark });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 0, g_start + 0, g_start + 1],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 0, g_start + 1, p_start + 1],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 1, g_start + 1, g_start + 2],
+        material: CelMaterial::CrystalDiamondDark,
+    });
 
     // 后右象限
-    mesh.faces.push(Face3D { indices: vec![p_start + 1, g_start + 2, g_start + 3], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![p_start + 1, g_start + 3, p_start + 2], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![p_start + 2, g_start + 3, g_start + 4], material: CelMaterial::CrystalDiamondDark });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 1, g_start + 2, g_start + 3],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 1, g_start + 3, p_start + 2],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 2, g_start + 3, g_start + 4],
+        material: CelMaterial::CrystalDiamondDark,
+    });
 
     // 后左象限
-    mesh.faces.push(Face3D { indices: vec![p_start + 2, g_start + 4, g_start + 5], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![p_start + 2, g_start + 5, p_start + 3], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![p_start + 3, g_start + 5, g_start + 6], material: CelMaterial::CrystalDiamondDark });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 2, g_start + 4, g_start + 5],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 2, g_start + 5, p_start + 3],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 3, g_start + 5, g_start + 6],
+        material: CelMaterial::CrystalDiamondDark,
+    });
 
     // 前左象限
-    mesh.faces.push(Face3D { indices: vec![p_start + 3, g_start + 6, g_start + 7], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![p_start + 3, g_start + 7, p_start + 0], material: CelMaterial::CrystalDiamondMid });
-    mesh.faces.push(Face3D { indices: vec![p_start + 0, g_start + 7, g_start + 0], material: CelMaterial::CrystalDiamondDark });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 3, g_start + 6, g_start + 7],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 3, g_start + 7, p_start + 0],
+        material: CelMaterial::CrystalDiamondMid,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![p_start + 0, g_start + 7, g_start + 0],
+        material: CelMaterial::CrystalDiamondDark,
+    });
 
     // 亭部到下尖顶切面 (Pavilion Ring -> Bot Apex)
-    mesh.faces.push(Face3D { indices: vec![1, p_start + 1, p_start + 0], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![1, p_start + 2, p_start + 1], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![1, p_start + 3, p_start + 2], material: CelMaterial::CrystalDiamondDark });
-    mesh.faces.push(Face3D { indices: vec![1, p_start + 0, p_start + 3], material: CelMaterial::CrystalDiamondDark });
+    mesh.faces.push(Face3D {
+        indices: vec![1, p_start + 1, p_start + 0],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![1, p_start + 2, p_start + 1],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![1, p_start + 3, p_start + 2],
+        material: CelMaterial::CrystalDiamondDark,
+    });
+    mesh.faces.push(Face3D {
+        indices: vec![1, p_start + 0, p_start + 3],
+        material: CelMaterial::CrystalDiamondDark,
+    });
 
     // === 2. 核心 `< I >` 代码符号 (Core Glyph Insignia) ===
     add_crystal_core_glyph(&mut mesh, s);
@@ -218,8 +316,14 @@ fn add_crystal_core_glyph(mesh: &mut Mesh3D, s: f32) {
             Vec3::new(-0.16 * s * flip, -0.30 * s, z),
             Vec3::new(-0.22 * s * flip, -0.30 * s, z),
         ]);
-        mesh.faces.push(Face3D { indices: vec![lt, lt + 1, lt + 2, lt + 3], material: glyph_mat });
-        mesh.faces.push(Face3D { indices: vec![lt + 3, lt + 2, lt + 4, lt + 5], material: glyph_mat });
+        mesh.faces.push(Face3D {
+            indices: vec![lt, lt + 1, lt + 2, lt + 3],
+            material: glyph_mat,
+        });
+        mesh.faces.push(Face3D {
+            indices: vec![lt + 3, lt + 2, lt + 4, lt + 5],
+            material: glyph_mat,
+        });
 
         // 2. 中间立柱 `I`
         let it = mesh.vertices.len();
@@ -240,9 +344,18 @@ fn add_crystal_core_glyph(mesh: &mut Mesh3D, s: f32) {
             Vec3::new(0.10 * s, -0.30 * s, z),
             Vec3::new(-0.10 * s, -0.30 * s, z),
         ]);
-        mesh.faces.push(Face3D { indices: vec![it, it + 1, it + 2, it + 3], material: glyph_mat });
-        mesh.faces.push(Face3D { indices: vec![it + 4, it + 5, it + 6, it + 7], material: glyph_mat });
-        mesh.faces.push(Face3D { indices: vec![it + 8, it + 9, it + 10, it + 11], material: glyph_mat });
+        mesh.faces.push(Face3D {
+            indices: vec![it, it + 1, it + 2, it + 3],
+            material: glyph_mat,
+        });
+        mesh.faces.push(Face3D {
+            indices: vec![it + 4, it + 5, it + 6, it + 7],
+            material: glyph_mat,
+        });
+        mesh.faces.push(Face3D {
+            indices: vec![it + 8, it + 9, it + 10, it + 11],
+            material: glyph_mat,
+        });
 
         // 3. 右尖括号 `>`
         let rt = mesh.vertices.len();
@@ -254,8 +367,14 @@ fn add_crystal_core_glyph(mesh: &mut Mesh3D, s: f32) {
             Vec3::new(0.16 * s * flip, -0.30 * s, z),
             Vec3::new(0.22 * s * flip, -0.30 * s, z),
         ]);
-        mesh.faces.push(Face3D { indices: vec![rt, rt + 1, rt + 2, rt + 3], material: glyph_mat });
-        mesh.faces.push(Face3D { indices: vec![rt + 3, rt + 2, rt + 4, rt + 5], material: glyph_mat });
+        mesh.faces.push(Face3D {
+            indices: vec![rt, rt + 1, rt + 2, rt + 3],
+            material: glyph_mat,
+        });
+        mesh.faces.push(Face3D {
+            indices: vec![rt + 3, rt + 2, rt + 4, rt + 5],
+            material: glyph_mat,
+        });
     }
 }
 
@@ -324,7 +443,11 @@ pub fn build_laurel_wreath(leaf_count: usize, ring_r_x: f32, ring_r_z: f32) -> M
 
     for i in 0..leaf_count {
         let a = (i as f32) * 2.0 * PI / (leaf_count as f32);
-        let center = Vec3::new(a.cos() * ring_r_x, (a * 1.5).sin() * 5.0, a.sin() * ring_r_z);
+        let center = Vec3::new(
+            a.cos() * ring_r_x,
+            (a * 1.5).sin() * 5.0,
+            a.sin() * ring_r_z,
+        );
         let tangent = Vec3::new(-a.sin(), 0.1, a.cos()).norm();
         let up = Vec3::new(0.0, 1.0, 0.0);
         let normal = tangent.cross(up).norm();

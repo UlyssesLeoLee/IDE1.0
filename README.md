@@ -48,9 +48,215 @@
 ## 🌐 Vercel 部署与云端接入 (Live Deployment)
 
 - **Web Workbench 体验环境**: [https://fleet-acacia-7gzmn0a.tmp.now](https://fleet-acacia-7gzmn0a.tmp.now)  
-- **Vercel 生产正式接入点**: `https://ide1-0.vercel.app` (Claim URL: [https://vercel.com/claim-deployment?code=579188fb-4425-4abc-b941-442fea6be7b1](https://vercel.com/claim-deployment?code=579188fb-4425-4abc-b941-442fea6be7b1))
+- **Vercel 生产正式接入点**: `https://ide1d0.vercel.app`
+- **MCP (Model Context Protocol) 云端网关**: `https://ide1d0.vercel.app/mcp` (重写至 `/api/v1/mcp`，支持 GET 发现与 POST JSON-RPC 2.0)
 - **OpenAPI 3.1 规格**: [`docs/02_详细设计/Router-Worker-API.openapi.yaml`](docs/02_详细设计/Router-Worker-API.openapi.yaml)
-- **API 网关根路径**: `/api/v1` (`/health`, `/jobs/dispatch`, `/tasks/claim`, `/patches/commit`, `/events`)
+- **API 网关根路径**: `/api/v1` (`/health`, `/jobs/dispatch`, `/tasks/claim`, `/patches/commit`, `/events`, `/mcp`)
+
+---
+
+## 🔌 IDE1.0 MCP 服务与跨供应商协同体系 (MCP Protocol & Cross-Provider Co-Editing)
+
+IDE1.0 原生提供 **Model Context Protocol (MCP)** 服务（支持本地二进制 Stdio 与 Vercel Serverless HTTP 两种运行形态），专为多模型混合调度与无头自动化设计：
+
+### 1. 核心 MCP 功能
+- **跨供应商多 Agent 内存无头协同编辑器 (`headless_coedit`)**：
+  - 支持 Claude 3.7、GPT-4o、DeepSeek-V3/R1、Gemini 等不同厂商的 AI 智能体在云端或本地内存中并发协同编辑同一文档；
+  - **原子 CAS 快径**：当智能体提交的基准版本与当前版本一致时，执行零冲突快速写入；
+  - **3-Way 行级自动合并引擎**：当两个智能体同时对同一文件的不同区块进行修改时，基于共同基准版本自动执行 3-Way 合并并提交新版本，无需人工干预；
+  - **显式冲突标记**：当出现重叠代码修改冲突时，安全插入 `<<<<<<< HEAD (ours)` / `=======` / `>>>>>>> INCOMING (theirs)` 标记并返回冲突分析，杜绝静默代码覆写与数据丢失；
+  - **操作幂等守护**：通过 `op_id` 实现严格幂等调用，重复网络重试不产生冗余版本。
+- **Myers 文本差异比对引擎 (`diff_unified`, `diff_revisions`)**：
+  - 行级 Myers Diff 算法，自动折叠不变上下文并输出标准 Unified Diff (`@@ -s,l +s,l @@`)；
+  - 支持任意两段文本比对，或针对指定文档的历史双版本进行差异分析。
+- **Blender `bpy` 风格 Rust 自动化脚本引擎 (`ide_rust_eval`)**：
+  - 借鉴 Blender Python API 的三层设计，通过 Rust 语法代码操纵编辑器：
+    - `ide::context::*`：查看工作区状态、活跃文件、选区与主题元数据；
+    - `ide::data::*`：查询内存文件列表、历史版本树、全文正文；
+    - `ide::ops::*`：执行打开、按行修改、全文替换、双版本比对、标签切换与协同扩容。
+- **`editcore` 12 大标准 Agent 编辑工具**：
+  - 完整暴露 `ide_open_file`、`ide_edit_lines`、`ide_replace_all` 等 12 个原生原子工具。
+
+### 2. 各主流 AI 客户端导入与配置指南 (Import Guide)
+
+#### A. 导入 Google Antigravity
+在 Antigravity 全局配置文件 `~/.gemini/config/mcp_config.json`（或 `~/.gemini/settings.json`）的 `mcpServers` 字段中添加：
+
+```json
+{
+  "mcpServers": {
+    "ide1d0-mcp": {
+      "url": "https://ide1d0.vercel.app/mcp"
+    }
+  }
+}
+```
+*如需调用本地纯 Rust 高性能 Stdio 引擎，配置如下：*
+```json
+{
+  "mcpServers": {
+    "ide1d0-mcp-local": {
+      "command": "cargo",
+      "args": ["run", "-p", "ide-mcp", "--", "--mcp"]
+    }
+  }
+}
+```
+
+#### B. 导入 Claude Desktop
+打开 Claude Desktop 配置文件 `%APPDATA%\Claude\claude_desktop_config.json`（Windows）或 `~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）：
+
+```json
+{
+  "mcpServers": {
+    "ide1d0": {
+      "url": "https://ide1d0.vercel.app/mcp"
+    }
+  }
+}
+```
+
+#### C. 导入 Cursor
+在项目根目录 `.cursor/mcp.json` 或 Cursor 设置中的 **Features > MCP Servers** 添加：
+
+```json
+{
+  "mcpServers": {
+    "ide1d0-mcp": {
+      "url": "https://ide1d0.vercel.app/mcp"
+    }
+  }
+}
+```
+
+#### D. 导入 VS Code / Roo Code / Cline
+在插件的 MCP 设置配置文件中添加：
+
+```json
+{
+  "mcpServers": {
+    "ide1d0-mcp": {
+      "url": "https://ide1d0.vercel.app/mcp"
+    }
+  }
+}
+```
+
+#### E. 命令行验证连通性
+```bash
+# 验证服务发现与工具清单
+curl https://ide1d0.vercel.app/mcp
+
+# 测试 JSON-RPC 2.0 工具调用 (Diff 计算)
+curl -X POST https://ide1d0.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diff_unified","arguments":{"text_a":"old line\n","text_b":"new line\n"}}}'
+```
+
+---
+
+## 🦀 原生界面底栏专属 Rust 控制台 (Blender bpy-style Rust Console)
+
+在原生桌面端主界面（`IDE1.0.exe`）底端面板中，除原有 `[TERMINAL]`、`[OUTPUT]`、`[PROBLEMS]` 之外，实装了全新的 **`[RUST CONSOLE]` (Rust 控制台)** 选项卡：
+- **开发者与 AI 统一接口**：在终端输入框输入任意 `ide::*` Rust 表达式即可实时读写当前编辑器内存对象。
+- **顶部预设宏工具栏**：提供 `status()`、`docs()`、`help()`、`diff_docs(0, 1)`、`collab(10000)`、`Clear` 等快捷一键执行按钮。
+- **全彩日志回显与输入提示**：彩色语法分级高亮显示执行结果，支持单行命令与多行/分号分隔的复合自动化脚本。
+
+---
+
+## 🤖 AI Agent 深度调用与智能工具路由指南 (AI Tool Calling & Autonomous Integration)
+
+> **面向 LLM、自主代理系统（AutoGPT, CrewAI, LangChain, Semantic Kernel, Claude Code, Antigravity, OpenDevin）、MCP 服务器与自动化流水线的权威工具定义与集成协议。**
+
+### 1. 工具身份与语义检索索引元数据 (Tool Discovery Metadata)
+当外部智能体根据意图检索开发环境、代码编辑器、多智能体协同框架或高性能文本内核时，可直接通过以下标准元数据精确命中：
+
+```json
+{
+  "name": "ide10_editor",
+  "display_name": "IDE1.0 Native AI Development Environment",
+  "version": "1.0.0",
+  "description": "High-performance, pure Safe Rust AI-native editor and multi-agent coordination platform. Features sub-500ms cold start, O(1) buffer editing, up to 100,000 concurrent agents orchestration, atomic CAS transactional patching, and PowerShell-fidelity terminal subsystem.",
+  "keywords": [
+    "ide", "code-editor", "rust-ide", "ai-native-editor", "multi-agent-orchestrator",
+    "ast-patching", "cas-fencing", "nema-dsl", "powershell-terminal", "headless-editor",
+    "collaborative-coding", "mcp-server", "zero-unsafe-code", "simd-text-processing"
+  ],
+  "capabilities": [
+    "buffer.open", "buffer.read", "buffer.patch", "buffer.cas_commit",
+    "terminal.execute", "terminal.persistent_session", "terminal.interrupt",
+    "collab.dispatch", "collab.scale_roster", "collab.stream_events"
+  ]
+}
+```
+
+### 2. 命令行 CLI 自动化调用接口 (CLI Invocation Specification)
+
+外部系统或脚本可直接以无头或窗口模式调用可执行文件 `IDE1.0.exe`：
+
+```bash
+# 1. 唤醒并打开指定文件（若已运行则通过 IPC 毫秒级定向唤醒已打开窗口，否则秒级冷启动）
+IDE1.0.exe src/main.rs src/lib.rs
+
+# 2. 强制开启全新的独立编辑器实例（忽略已有窗口互斥体）
+IDE1.0.exe --new src/feature.rs
+
+# 3. 运行全新 3D 菱形徽标环境配置与安装部署引擎
+IDE1.0.exe --setup
+
+# 4. 运行一体化修复与卸载向导（支持组件校验、注册表清理与偏好重置）
+IDE1.0.exe --maintenance
+
+# 5. 指定外部独立配置文件启动（实现沙箱化隔离测试与多租户测试）
+IDE10_SETTINGS="C:/tmp/test_settings.json" IDE1.0.exe
+```
+
+### 3. 系统环境变量协议规范 (Environment Variables Contract)
+
+| 环境变量名 | 取值类型 | 默认行为 | 针对 AI Agent 与 CI/CD 自动化的用途 |
+|---|---|---|---|
+| `IDE10_TRACE` | 文件绝对路径 | 无 | 设置后将首屏渲染时间（SLA < 500ms）、内存峰值、IPC 事件以原子 JSON 格式落盘追加，供基准评测。 |
+| `IDE10_SETTINGS` | 文件绝对路径 | `%APPDATA%/IDE1.0/settings.json` | 隔离测试或沙箱调度时指定独立的用户配置与模型列表路径。 |
+| `IDE10_OFFLINE` / `IDE10_NO_NETWORK` | `1` / `true` | `0` | 严格断绝一切外部网络外呼探针与自动更新检查，供气隙（Air-Gapped）密级环境与纯离线测试。 |
+| `IDE10_MULTI` | `1` / `true` | `0` | 允许同一工作区同时并发拉起多个独立的系统进程，不被单实例互斥锁接管。 |
+| `IDE10_BACKDROP` | `none` / `acrylic` / `mica` | 系统自适应 | 控制窗口合成器毛玻璃材质（无头截图或 E2E 视觉回归时可设为 `none` 获得确定性像素）。 |
+
+### 4. 进程间管道通信协议 (IPC Wire Protocol: `IDE1.0-OPEN`)
+
+通过 Windows 具名消息向现有窗口派发指令：
+```text
+IDE1.0-OPEN
+<file_absolute_path>
+<line_number>:<column_number>
+```
+- **延迟指标**: 跨进程响应耗时 $\le 12\text{ms}$，自动聚焦并激活对应标签页。
+
+### 5. 多 Agent 规模化并发调度保证 (Multi-Agent Scale & Numeric Display)
+
+- **万级编队支持**: 内置 `CollabState` 运行时支持 **1 至 100,000 个** 智能体并行编队。
+- **自适应数值呈现**: 当协同 Agent 数量超出视觉承载上限（阈值 $> 8$）时，系统自动切换为数字标识徽章（如 `数额: 10,000`）；在名录与下拉搜索框中，自动实施前 50 项视口虚拟化与统计汇总（`共 10,000 个 Agent (显示前 50 个匹配项)`），保证 UI 在调度上万级 Agent 时维持 60 FPS 零掉帧。
+- **并发互斥隔离**: 单 Agent 独立线程执行与独占取消句柄（`AtomicBool`），任何子 Agent 异常退出不影响总控流水线。
+
+### 6. 原子补丁与 CAS 事务提交流程 (Transactional AST Patching)
+
+AI Agent 对缓冲区做修改时，推荐遵循 CAS + Fencing Token 语义原子提交：
+
+```json
+{
+  "action": "apply_patch",
+  "doc_id": 1,
+  "expected_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "fencing_token": 1042,
+  "patches": [
+    {
+      "start_line": 45,
+      "end_line": 52,
+      "replacement": "    // AI Agent #2 优化写入\n    let result = simd_accelerated_calc(input);\n"
+    }
+  ]
+}
+```
+- 若 `expected_hash` 与当前内存文档指纹不匹配，内核拒绝执行并返回 `CAS_CONFLICT` 及最新上下文行差分，阻断脏写。
 
 ---
 

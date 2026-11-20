@@ -325,7 +325,7 @@ fn list_ui(ui: &mut egui::Ui, items: &[Item], cx: &MdCtx, cache: &mut MdCache, e
             counters[it.depth] += 1;
             format!("{}.", counters[it.depth])
         } else {
-            ["•", "◦", "▪"][it.depth.min(2)].to_string()
+            ["•", "–", "·"][it.depth.min(2)].to_string()
         };
         ui.horizontal_top(|ui| {
             ui.add_space(it.depth as f32 * 18.0 + 4.0);
@@ -777,27 +777,39 @@ pub fn show(
                             r
                         }
                         Block::Callout { kind, title, text } => {
-                            let (icon, name) = callout_label(kind);
+                            let (_icon, name) = callout_label(kind);
                             let name = crate::msgtr::msg(name);
                             let name: &str = name.as_ref();
-                            let accent = match kind.as_str() {
-                                "warning" | "caution" => cx.tc.yellow,
-                                "danger" | "error" | "bug" => cx.tc.red,
-                                "tip" | "hint" | "success" | "check" | "done" => cx.tc.green,
-                                _ => cx.tc.blue,
+                            let (accent, ui_icon) = match kind.as_str() {
+                                "warning" | "caution" => {
+                                    (cx.tc.yellow, crate::ui_icons::UiIcon::Warning)
+                                }
+                                "danger" | "error" | "bug" => {
+                                    (cx.tc.red, crate::ui_icons::UiIcon::Error)
+                                }
+                                "tip" | "hint" => (cx.tc.green, crate::ui_icons::UiIcon::Star),
+                                "success" | "check" | "done" => {
+                                    (cx.tc.green, crate::ui_icons::UiIcon::CheckCircle)
+                                }
+                                "important" => (cx.tc.blue, crate::ui_icons::UiIcon::Bolt),
+                                "quote" | "cite" => (cx.tc.blue, crate::ui_icons::UiIcon::Quote),
+                                "note" | "question" | "help" | "faq" => {
+                                    (cx.tc.blue, crate::ui_icons::UiIcon::Info)
+                                }
+                                _ => (cx.tc.blue, crate::ui_icons::UiIcon::Note),
                             };
                             egui::Frame::NONE
                                 .fill(accent.gamma_multiply(0.12))
                                 .stroke(egui::Stroke::new(1.0, accent))
                                 .inner_margin(8)
                                 .show(ui, |ui| {
-                                    ui.label(
-                                        RichText::new(format!(
-                                            "{icon} {}",
-                                            if title.is_empty() { name } else { title }
-                                        ))
-                                        .strong()
-                                        .color(accent),
+                                    crate::ui_icons::icon_label(
+                                        ui,
+                                        ui_icon,
+                                        RichText::new(if title.is_empty() { name } else { title })
+                                            .strong()
+                                            .color(accent),
+                                        accent,
                                     );
                                     if !text.is_empty() {
                                         inline_ui(ui, text, cx, cache, 14.0, cx.tc.fg, &mut ev);
@@ -928,10 +940,16 @@ pub fn show(
                         } else if r.interact(Sense::click()).clicked() {
                             ev.jump = Some(b.line);
                         }
-                    } else if !click_block && opts.click_edits && ev.link.is_none() && ev.toggle.is_none() {
+                    } else if !click_block
+                        && opts.click_edits
+                        && ev.link.is_none()
+                        && ev.toggle.is_none()
+                    {
                         // 列表/表格等复杂块：双击该区域也可直接进入单块就地编辑
-                        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary))
-                            && ui.rect_contains_pointer(r.rect)
+                        if ui.input(|i| {
+                            i.pointer
+                                .button_double_clicked(egui::PointerButton::Primary)
+                        }) && ui.rect_contains_pointer(r.rect)
                         {
                             ev.edit_req = Some(n);
                         }

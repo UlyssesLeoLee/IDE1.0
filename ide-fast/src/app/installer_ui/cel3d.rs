@@ -375,7 +375,10 @@ fn collect_mesh_polys(
     let view_dir = Vec3::new(0.0, 0.0, -1.0);
 
     let world_verts: Vec<Vec3> = if let Some(m) = model_mat {
-        mesh.vertices.iter().map(|v| m.transform_point(*v)).collect()
+        mesh.vertices
+            .iter()
+            .map(|v| m.transform_point(*v))
+            .collect()
     } else {
         mesh.vertices.clone()
     };
@@ -452,11 +455,29 @@ pub fn render_cel3d_scene(
 
     let mut render_list = Vec::with_capacity(300);
     collect_mesh_polys(pedestal, None, cam, view_rot, center, &mut render_list);
-    collect_mesh_polys(gem, Some(gem_model_mat), cam, view_rot, center, &mut render_list);
-    collect_mesh_polys(wreath, Some(wreath_model_mat), cam, view_rot, center, &mut render_list);
+    collect_mesh_polys(
+        gem,
+        Some(gem_model_mat),
+        cam,
+        view_rot,
+        center,
+        &mut render_list,
+    );
+    collect_mesh_polys(
+        wreath,
+        Some(wreath_model_mat),
+        cam,
+        view_rot,
+        center,
+        &mut render_list,
+    );
 
     // 画师算法深度排序
-    render_list.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
+    render_list.sort_by(|a, b| {
+        b.depth
+            .partial_cmp(&a.depth)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 绘制多边形与美漫粗黑外轮廓
     for poly in render_list {
@@ -490,10 +511,21 @@ pub fn render_cel3d_crystal_scene(
 
     // 3. 收集 3D 钻石网格多边形
     let mut render_list = Vec::with_capacity(120);
-    collect_mesh_polys(logo_mesh, Some(logo_model_mat), cam, view_rot, center, &mut render_list);
+    collect_mesh_polys(
+        logo_mesh,
+        Some(logo_model_mat),
+        cam,
+        view_rot,
+        center,
+        &mut render_list,
+    );
 
     // 4. 画师算法深度排序 (Painter's Algorithm Depth Sort)
-    render_list.sort_by(|a, b| b.depth.partial_cmp(&a.depth).unwrap_or(std::cmp::Ordering::Equal));
+    render_list.sort_by(|a, b| {
+        b.depth
+            .partial_cmp(&a.depth)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 5. 绘制赛璐珞多边形切面与美漫纯黑粗墨线外边框 (1.8px)
     for poly in render_list {

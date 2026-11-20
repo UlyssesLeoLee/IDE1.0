@@ -75,6 +75,7 @@ mod textdrag;
 mod tools;
 mod tray;
 mod ui_ext;
+mod ui_icons;
 mod updapply;
 mod update;
 mod updkey;
@@ -142,19 +143,48 @@ fn split_new_flag(args: Vec<String>) -> (bool, Vec<String>) {
     (new, args.into_iter().filter(|a| a != "--new").collect())
 }
 
-fn split_installer_flag(args: Vec<String>) -> (bool, Vec<String>) {
-    let has_flag = args.iter().any(|a| a == "--setup" || a == "--install");
-    let is_setup_name = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
-        .map(|n| n.contains("setup") || n.contains("installer"))
-        .unwrap_or(false);
+fn split_installer_flag_with_exe(
+    args: Vec<String>,
+    exe_name_lower: Option<&str>,
+) -> (Option<app::installer_ui::InstallerLaunchMode>, Vec<String>) {
+    let launch_mode = if args.iter().any(|a| a == "--uninstall") {
+        Some(app::installer_ui::InstallerLaunchMode::Uninstall)
+    } else if args.iter().any(|a| a == "--repair") {
+        Some(app::installer_ui::InstallerLaunchMode::Repair)
+    } else {
+        let has_flag = args
+            .iter()
+            .any(|a| a == "--setup" || a == "--install" || a == "--maintenance");
+        let is_setup_name = exe_name_lower
+            .map(|n| n.contains("setup") || n.contains("installer"))
+            .unwrap_or(false);
+        if has_flag || is_setup_name {
+            Some(app::installer_ui::InstallerLaunchMode::Auto)
+        } else {
+            None
+        }
+    };
     (
-        has_flag || is_setup_name,
+        launch_mode,
         args.into_iter()
-            .filter(|a| a != "--setup" && a != "--install")
+            .filter(|a| {
+                a != "--setup"
+                    && a != "--install"
+                    && a != "--uninstall"
+                    && a != "--repair"
+                    && a != "--maintenance"
+            })
             .collect(),
     )
+}
+
+fn split_installer_flag(
+    args: Vec<String>,
+) -> (Option<app::installer_ui::InstallerLaunchMode>, Vec<String>) {
+    let exe_name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+    split_installer_flag_with_exe(args, exe_name.as_deref())
 }
 
 fn main() -> eframe::Result<()> {
@@ -170,7 +200,8 @@ fn main() -> eframe::Result<()> {
     // `--relaunch` = 「立即重启」拉起来的新进程: 旧进程这时正在退出, 不能把文件转交给它
     let (relaunched, args) = relaunch::take_flag(args);
     // 单实例: 已经有一个在运行就把文件交给它, 自己退出 (`--new` = 就是要一个独立的新窗口, 也不去抢监听端口)
-    if !force_new && !relaunched && !open_installer && instance::forward_to_running(&args) {
+    if !force_new && !relaunched && open_installer.is_none() && instance::forward_to_running(&args)
+    {
         trace.mark("handed over to the running instance");
         return Ok(());
     }
@@ -180,15 +211,24 @@ fn main() -> eframe::Result<()> {
     let font_file = fonts::effective_font_family(&st.font_family, &st.theme_plugin);
     // 字体文件在后台双线程并行读 (主字体 + 核心 CJK fallback, 按需加载粗体), 和下面窗口 / OpenGL 的创建 (约 230 ms) 并行
     let fonts_job = fonts::prefetch_ext(&font_file, &st.font_cjk_fallback, &st.lang, st.font_bold);
-    let inbox = if force_new { None } else { instance::listen() };
+    let inbox = if force_new || open_installer.is_some() {
+        None
+    } else {
+        instance::listen()
+    };
     // 半透明 (玻璃) 主题: 窗口必须在创建时就是透明的; 只有保存的主题是半透明的才付这个代价 (没选主题插件时不读插件仓库)
     let glass = plugins::is_translucent(&st.theme_plugin);
     let blur = glass && st.glass_blur;
     let mut viewport = eframe::egui::ViewportBuilder::default().with_visible(true);
-    if open_installer {
-        // 安装向导模式: 独立 880×600 宽幅视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
+    if let Some(launch_mode) = open_installer {
+        let title = match launch_mode {
+            app::installer_ui::InstallerLaunchMode::Uninstall => "IDE1.0 Uninstall Wizard",
+            app::installer_ui::InstallerLaunchMode::Repair => "IDE1.0 Repair Wizard",
+            app::installer_ui::InstallerLaunchMode::Auto => "IDE1.0 Setup Wizard",
+        };
+        // 安装/维护向导模式: 独立 880×600 宽幅视口, 彻底移除 Windows 原生标题栏与控制钮, 全自绘美漫风格
         viewport = viewport
-            .with_title("IDE1.0 Setup Wizard")
+            .with_title(title)
             .with_inner_size([880.0, 600.0])
             .with_min_inner_size([880.0, 600.0])
             .with_resizable(false)
@@ -253,9 +293,8 @@ fn main() -> eframe::Result<()> {
             let t = t_app.clone();
             // 直接复用已读出的 st, 避免在 App::new 内部重复读盘解析 settings.json (启动提速)
             let mut app = app::App::with_settings(args, inbox, t_app, st);
-            if open_installer {
-                app.installer.open = true;
-                app.installer.standalone = true;
+            if let Some(launch_mode) = open_installer {
+                app.open_installer_wizard(launch_mode, true);
             }
             t.mark("App::new done");
             Ok(Box::new(app))
@@ -271,7 +310,9 @@ fn main() -> eframe::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::split_new_flag;
+    use super::{
+        app::installer_ui::InstallerLaunchMode, split_installer_flag_with_exe, split_new_flag,
+    };
 
     #[test]
     fn new_flag_is_taken_out_of_the_file_args() {
@@ -281,5 +322,32 @@ mod tests {
             (true, v(&["a.txt"]))
         );
         assert_eq!(split_new_flag(v(&["a.txt"])), (false, v(&["a.txt"])));
+    }
+
+    #[test]
+    fn installer_flags_and_exe_name_parse_launch_modes() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            split_installer_flag_with_exe(v(&["--uninstall", "foo.txt"]), Some("ide1.0.exe")),
+            (Some(InstallerLaunchMode::Uninstall), v(&["foo.txt"]))
+        );
+        assert_eq!(
+            split_installer_flag_with_exe(v(&["--repair"]), Some("ide1.0_setup.exe")),
+            (Some(InstallerLaunchMode::Repair), v(&[]))
+        );
+        for flag in ["--setup", "--install", "--maintenance"] {
+            assert_eq!(
+                split_installer_flag_with_exe(v(&[flag]), Some("ide1.0.exe")),
+                (Some(InstallerLaunchMode::Auto), v(&[]))
+            );
+        }
+        assert_eq!(
+            split_installer_flag_with_exe(v(&[]), Some("ide1.0_setup_0.8.5_x64.exe")),
+            (Some(InstallerLaunchMode::Auto), v(&[]))
+        );
+        assert_eq!(
+            split_installer_flag_with_exe(v(&["notes.md"]), Some("ide1.0.exe")),
+            (None, v(&["notes.md"]))
+        );
     }
 }

@@ -2,8 +2,8 @@
 //! 输出经 `LineBuffer` 处理 ANSI 转义 / SGR 颜色 / `\r` 回车 / `\b` 退格及光标移动后再显示。(2) 一次性执行 (`editcore::exec_cmd::run`, 有超时和输出上限):
 //! 选区作标准输入或输出替换选区时用。全面支持 16 色、256 色与 24 位 TrueColor，兼容 PowerShell 交互、Git 与 Hermes 等现代 CLI 工具。
 
-use eframe::egui;
 use editcore::exec_cmd::{self, ExecOut};
+use eframe::egui;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -54,7 +54,7 @@ pub fn ansi_256_to_rgb(idx: u8) -> [u8; 3] {
 }
 
 /// 字符样式属性
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct TermStyle {
     pub fg: Option<[u8; 3]>,
     pub bg: Option<[u8; 3]>,
@@ -62,19 +62,6 @@ pub struct TermStyle {
     pub italic: bool,
     pub underline: bool,
     pub dim: bool,
-}
-
-impl Default for TermStyle {
-    fn default() -> Self {
-        Self {
-            fg: None,
-            bg: None,
-            bold: false,
-            italic: false,
-            underline: false,
-            dim: false,
-        }
-    }
 }
 
 /// 终端单元格 (字符 + 样式)
@@ -112,6 +99,9 @@ pub struct LineBuffer {
     col: usize,
     esc: Esc,
     csi: String,
+    osc: String,
+    osc_cmd_done: bool,
+    osc_cwd: Option<String>,
     curr_style: TermStyle,
     ver: u64,
     done_lines: usize,
@@ -127,6 +117,9 @@ impl LineBuffer {
             col: 0,
             esc: Esc::None,
             csi: String::new(),
+            osc: String::new(),
+            osc_cmd_done: false,
+            osc_cwd: None,
             curr_style: TermStyle::default(),
             ver: 0,
             done_lines: 0,
@@ -139,6 +132,28 @@ impl LineBuffer {
         *self = LineBuffer::new();
         self.ver = v;
         self.max_lines = m;
+        self.osc.clear();
+        self.osc_cmd_done = false;
+        self.osc_cwd = None;
+    }
+
+    pub fn take_osc_completion(&mut self) -> (bool, Option<String>) {
+        (std::mem::take(&mut self.osc_cmd_done), self.osc_cwd.take())
+    }
+
+    pub fn at_line_start(&self) -> bool {
+        self.col == 0
+    }
+
+    fn finish_osc(&mut self) {
+        if let Some(payload) = self.osc.strip_prefix("133;IDE10;") {
+            let p = payload.trim();
+            if !p.is_empty() {
+                self.osc_cwd = Some(p.to_string());
+            }
+            self.osc_cmd_done = true;
+        }
+        self.osc.clear();
     }
 
     /// 最多保留的行数 (夹到合法范围); 变小了立刻裁掉多的
@@ -215,7 +230,10 @@ impl LineBuffer {
                             self.csi.clear();
                             Esc::Csi
                         }
-                        ']' => Esc::Osc,
+                        ']' => {
+                            self.osc.clear();
+                            Esc::Osc
+                        }
                         _ => Esc::None, // 其它两字节序列直接丢
                     };
                     continue;
@@ -231,14 +249,27 @@ impl LineBuffer {
                 }
                 Esc::Osc => {
                     self.esc = match c {
-                        '\u{7}' => Esc::None,
+                        '\u{7}' => {
+                            self.finish_osc();
+                            Esc::None
+                        }
                         '\u{1b}' => Esc::OscEsc,
-                        _ => Esc::Osc,
+                        ch => {
+                            if self.osc.len() < 4096 {
+                                self.osc.push(ch);
+                            }
+                            Esc::Osc
+                        }
                     };
                     continue;
                 }
                 Esc::OscEsc => {
-                    self.esc = if c == '\\' { Esc::None } else { Esc::Osc };
+                    self.esc = if c == '\\' {
+                        self.finish_osc();
+                        Esc::None
+                    } else {
+                        Esc::Osc
+                    };
                     continue;
                 }
                 Esc::None => {}
@@ -337,7 +368,10 @@ impl LineBuffer {
                 if self.line.is_empty() {
                     for span in last_spans {
                         for c in span.text.chars() {
-                            self.line.push(TermCell { c, style: span.style });
+                            self.line.push(TermCell {
+                                c,
+                                style: span.style,
+                            });
                         }
                     }
                     self.col = self.line.len();
@@ -458,7 +492,8 @@ impl LineBuffer {
                 self.col = (n.saturating_sub(1)).min(4096);
             }
             'H' | 'f' => {
-                let parts: Vec<usize> = self.csi.split(';').filter_map(|s| s.parse().ok()).collect();
+                let parts: Vec<usize> =
+                    self.csi.split(';').filter_map(|s| s.parse().ok()).collect();
                 let col = parts.get(1).copied().unwrap_or(1);
                 self.col = col.saturating_sub(1).min(4096);
             }
@@ -643,8 +678,16 @@ impl LineBuffer {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ShellKind {
+    PowerShell,
+    Cmd,
+    PosixSh,
+}
+
 /// 常驻 shell 进程: 两个读线程把 stdout / stderr 的字节送回来
 struct Session {
+    kind: ShellKind,
     child: Child,
     stdin: ChildStdin,
     rx: Receiver<Vec<u8>>,
@@ -720,10 +763,18 @@ pub fn clean_powershell_clixml(raw: &str) -> String {
 impl Session {
     fn start(cwd: &std::path::Path) -> Result<Session, String> {
         #[cfg(windows)]
-        let spawn_res = {
+        let (mut child, kind) = {
             use std::os::windows::process::CommandExt;
             let mut c = Command::new("powershell.exe");
-            c.args(["-NoLogo", "-ExecutionPolicy", "Bypass"]);
+            // 使用 `-Command -` 非回显流式模式: 不打印重复提示符或原始输入回显, 且保留跨指令变量/$PWD/别名
+            c.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "-",
+            ]);
             c.envs([
                 ("TERM", "xterm-256color"),
                 ("COLORTERM", "truecolor"),
@@ -740,24 +791,22 @@ impl Session {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .creation_flags(0x0800_0000);
-            c.spawn()
-        };
-        #[cfg(windows)]
-        let mut child = match spawn_res {
-            Ok(child) => child,
-            Err(_) => {
-                use std::os::windows::process::CommandExt;
-                let mut c = Command::new("cmd.exe");
-                c.current_dir(cwd)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .creation_flags(0x0800_0000);
-                c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?
+            match c.spawn() {
+                Ok(child) => (child, ShellKind::PowerShell),
+                Err(_) => {
+                    let mut c = Command::new("cmd.exe");
+                    c.current_dir(cwd)
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .creation_flags(0x0800_0000);
+                    let ch = c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?;
+                    (ch, ShellKind::Cmd)
+                }
             }
         };
         #[cfg(not(windows))]
-        let mut child = {
+        let (mut child, kind) = {
             let sh = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
             let mut c = Command::new(sh);
             c.envs([
@@ -774,7 +823,8 @@ impl Session {
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?
+            let ch = c.spawn().map_err(|e| format!("无法启动 shell: {e}"))?;
+            (ch, ShellKind::PosixSh)
         };
 
         let (tx, rx) = channel();
@@ -782,15 +832,16 @@ impl Session {
         pump(child.stderr.take().ok_or("没有标准错误")?, tx);
         let stdin = child.stdin.take().ok_or("没有标准输入")?;
         let mut session = Session {
+            kind,
             child,
             stdin,
             rx,
             tail: vec![],
         };
         #[cfg(windows)]
-        {
+        if session.kind == ShellKind::PowerShell {
             let _ = session.send_line(
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; if ($PSStyle) { $PSStyle.OutputRendering = 'Ansi' }; function prompt { \"PS `$pwd> \" }",
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'; if (Get-Variable PSStyle -ErrorAction SilentlyContinue) { $PSStyle.OutputRendering = 'Ansi' }",
             );
         }
         Ok(session)
@@ -859,7 +910,13 @@ pub fn detect_is_admin() -> bool {
                 .or_else(|| std::env::var_os("WINDIR"))
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
-            std::fs::read_dir(sys_root.join("System32").join("config").join("systemprofile")).is_ok()
+            std::fs::read_dir(
+                sys_root
+                    .join("System32")
+                    .join("config")
+                    .join("systemprofile"),
+            )
+            .is_ok()
         }
         #[cfg(not(windows))]
         {
@@ -877,6 +934,8 @@ pub struct Terminal {
     pub input: String,
     pub cursor_pos: usize,
     pub is_admin: bool,
+    /// 无论是一次性命令还是常驻 Shell，当前是否有命令正在执行中
+    pub is_executing: bool,
     /// 请求下一帧把键盘焦点放进终端输入框 (点「+ 新建终端」等触发)
     pub focus_input: bool,
     /// 一次性命令的输出 (会话输出在 `buf` 里, 显示用 `display()`)
@@ -896,7 +955,8 @@ pub struct Terminal {
     /// 最近有输入 / 输出到这个时刻之前, 界面用快节奏刷新; 之后空闲慢刷新
     hot_until: Option<std::time::Instant>,
     shown: std::cell::RefCell<Option<((u64, usize, u64, u64), String)>>,
-    job_cache: std::cell::RefCell<Option<((u64, usize, u64, u64, u32, [u8; 4]), egui::text::LayoutJob)>>,
+    job_cache:
+        std::cell::RefCell<Option<((u64, usize, u64, u64, u32, [u8; 4]), egui::text::LayoutJob)>>,
 }
 
 impl Terminal {
@@ -906,6 +966,7 @@ impl Terminal {
             input: String::new(),
             cursor_pos: 0,
             is_admin: detect_is_admin(),
+            is_executing: false,
             focus_input: false,
             output: String::new(),
             output_rev: 0,
@@ -924,9 +985,9 @@ impl Terminal {
         }
     }
 
-    /// 一次性命令在跑
+    /// 无论一次性还是常驻会话，当前是否有命令正在执行中 (与 PowerShell 动作状态完全对齐)
     pub fn running(&self) -> bool {
-        self.rx.is_some()
+        self.rx.is_some() || self.is_executing
     }
 
     /// 常驻 shell 会话是否已建立
@@ -978,9 +1039,13 @@ impl Terminal {
             return;
         }
         let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
-        let p_color = if self.is_admin { "\x1b[93m" } else { "\x1b[96m" };
+        let p_color = if self.is_admin {
+            "\x1b[93m"
+        } else {
+            "\x1b[96m"
+        };
         self.output.push_str(&format!(
-            "{prompt_prefix} {}>{cmd}{}\n",
+            "{prompt_prefix} {}> {cmd}{}\n",
             cwd.display(),
             if stdin.is_some() {
                 "   (选区作标准输入)"
@@ -990,7 +1055,7 @@ impl Terminal {
         ));
         self.output_rev = self.output_rev.wrapping_add(1);
         self.buf.feed(&format!(
-            "{p_color}{prompt_prefix} {}>\x1b[0m \x1b[1;37m{cmd}\x1b[0m{}\n",
+            "{p_color}{prompt_prefix} {}> \x1b[0m\x1b[1;37m{cmd}\x1b[0m{}\n",
             cwd.display(),
             if stdin.is_some() {
                 "   \x1b[90m(选区作标准输入)\x1b[0m"
@@ -1020,11 +1085,7 @@ impl Terminal {
     }
 
     /// 要显示的富文本排版作业 (带版本号 + 内容哈希缓存, 同长度替换不会碰撞)
-    pub fn layout_job(
-        &self,
-        tpx: f32,
-        default_fg: egui::Color32,
-    ) -> egui::text::LayoutJob {
+    pub fn layout_job(&self, tpx: f32, default_fg: egui::Color32) -> egui::text::LayoutJob {
         let key = (
             self.output_rev,
             self.output.len(),
@@ -1060,6 +1121,7 @@ impl Terminal {
 
     /// 结束会话 (下一条命令会重新开一个)
     pub fn restart(&mut self) {
+        self.is_executing = false;
         if self.session.take().is_some() {
             self.buf.feed("\n\x1b[90m[会话已重启]\x1b[0m\n");
         }
@@ -1067,6 +1129,7 @@ impl Terminal {
 
     /// 发送 Ctrl+C 中断信号给正在运行的子程序
     pub fn interrupt(&mut self, _cwd: &std::path::Path) {
+        self.is_executing = false;
         if let Some(s) = self.session.as_mut() {
             if s.send_ctrl_c() {
                 self.buf.feed("^C\n");
@@ -1088,9 +1151,9 @@ impl Terminal {
             Ok(s) => {
                 self.session = Some(s);
                 let role = if self.is_admin {
-                    "🛡️ 管理员特权 (Administrator)"
+                    "管理员特权 (Administrator)"
                 } else {
-                    "👤 标准用户权限 (Standard User)"
+                    "标准用户权限 (Standard User)"
                 };
                 if had {
                     self.buf.feed(&format!(
@@ -1121,27 +1184,68 @@ impl Terminal {
     }
 
     fn session_send(&mut self, cwd: &std::path::Path, cmd: &str) {
-        let effective_cwd = self.session_cwd.clone().unwrap_or_else(|| cwd.to_path_buf());
+        let trimmed = cmd.trim();
+        let effective_cwd = self
+            .session_cwd
+            .clone()
+            .unwrap_or_else(|| cwd.to_path_buf());
+        let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
+        let p_color = if self.is_admin {
+            "\x1b[93m"
+        } else {
+            "\x1b[96m"
+        };
+        if matches!(trimmed, "exit" | "quit") {
+            if !self.buf.at_line_start() {
+                self.buf.feed("\n");
+            }
+            self.buf.feed(&format!(
+                "{p_color}{prompt_prefix} {}> \x1b[0m\x1b[1;37m{cmd}\x1b[0m\n",
+                effective_cwd.display()
+            ));
+            self.buf.feed("\x1b[90m[终端会话已退出]\x1b[0m\n");
+            self.session = None;
+            self.is_executing = false;
+            return;
+        }
         if !self.session.as_mut().map(|s| s.alive()).unwrap_or(false) {
             match Session::start(&effective_cwd) {
                 Ok(s) => self.session = Some(s),
                 Err(e) => {
                     self.buf.feed(&format!("\x1b[91m[{e}]\x1b[0m\n"));
+                    self.is_executing = false;
                     return;
                 }
             }
         }
-        let prompt_prefix = if self.is_admin { "PS [ADMIN]" } else { "PS" };
-        let p_color = if self.is_admin { "\x1b[93m" } else { "\x1b[96m" };
+        if !self.buf.at_line_start() {
+            self.buf.feed("\n");
+        }
         self.buf.feed(&format!(
-            "{p_color}{prompt_prefix} {}>\x1b[0m \x1b[1;37m{cmd}\x1b[0m\n",
+            "{p_color}{prompt_prefix} {}> \x1b[0m\x1b[1;37m{cmd}\x1b[0m\n",
             effective_cwd.display()
         ));
         self.heat();
+        let shell_kind = self.session.as_ref().map(|s| s.kind);
+        let (wrapper, track_done) = match shell_kind {
+            Some(ShellKind::PowerShell) => (
+                format!(
+                    "{cmd}\r\n[Console]::Out.Write(\"$([char]27)]133;IDE10;$($PWD.Path)$([char]7)\"); [Console]::Out.Flush()"
+                ),
+                true,
+            ),
+            Some(ShellKind::PosixSh) => (
+                format!("{cmd}\nprintf '\\033]133;IDE10;%s\\007' \"$PWD\""),
+                true,
+            ),
+            Some(ShellKind::Cmd) | None => (cmd.to_string(), false),
+        };
+        self.is_executing = track_done;
         if let Some(s) = self.session.as_mut() {
-            if !s.send_line(cmd) {
+            if !s.send_line(&wrapper) {
                 self.buf.feed("\x1b[90m[shell 已退出]\x1b[0m\n");
                 self.session = None;
+                self.is_executing = false;
             }
         }
         self.track_cd(cmd, cwd);
@@ -1149,19 +1253,18 @@ impl Terminal {
 
     fn track_cd(&mut self, cmd: &str, default_cwd: &std::path::Path) {
         let trimmed = cmd.trim();
-        let target = if let Some(rest) = trimmed.strip_prefix("cd ") {
-            Some(rest.trim())
-        } else if let Some(rest) = trimmed.strip_prefix("Set-Location ") {
-            Some(rest.trim())
-        } else if let Some(rest) = trimmed.strip_prefix("chdir ") {
-            Some(rest.trim())
-        } else {
-            None
-        };
+        let target = trimmed
+            .strip_prefix("cd ")
+            .or_else(|| trimmed.strip_prefix("Set-Location "))
+            .or_else(|| trimmed.strip_prefix("chdir "))
+            .map(str::trim);
 
         if let Some(path_str) = target {
             let clean = path_str.trim_matches(['\'', '"']);
-            let base = self.session_cwd.clone().unwrap_or_else(|| default_cwd.to_path_buf());
+            let base = self
+                .session_cwd
+                .clone()
+                .unwrap_or_else(|| default_cwd.to_path_buf());
             let candidate = if clean == "~" {
                 std::env::var_os("USERPROFILE")
                     .or_else(|| std::env::var_os("HOME"))
@@ -1193,7 +1296,22 @@ impl Terminal {
         if let Some(s) = self.session.as_mut() {
             let t = s.drain();
             if !t.is_empty() {
+                // 先喂入状态机，天然支持任意 chunk 边界拆分并自动剔除 OSC 序列
                 self.buf.feed(&t);
+                let (done, osc_cwd) = self.buf.take_osc_completion();
+                if done {
+                    if self.is_executing {
+                        self.focus_input = true;
+                    }
+                    self.is_executing = false;
+                }
+                if let Some(raw_path) = osc_cwd {
+                    let trimmed_path = raw_path.strip_prefix(r"\\?\").unwrap_or(&raw_path);
+                    let pbuf = PathBuf::from(trimmed_path);
+                    if pbuf.is_dir() {
+                        self.session_cwd = Some(pbuf);
+                    }
+                }
                 fresh = true;
                 self.hot_until =
                     Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
@@ -1201,8 +1319,10 @@ impl Terminal {
             if !s.alive() {
                 let rest = s.drain();
                 self.buf.feed(&rest);
+                let _ = self.buf.take_osc_completion();
                 self.buf.feed("\n[shell 已退出]\n");
                 self.session = None;
+                self.is_executing = false;
                 fresh = true;
             }
         }
@@ -1221,7 +1341,7 @@ impl Terminal {
                 }
                 self.output.push_str(&o.stdout);
                 if !o.stderr.is_empty() {
-                    self.output.push_str(&o.stderr);
+                    self.output.push_str(&clean_powershell_clixml(&o.stderr));
                 }
                 if o.timed_out {
                     self.output.push_str("[超时, 已结束进程]\n");
@@ -1374,27 +1494,37 @@ mod tests {
         let mut t = Terminal::new();
         let d = std::env::temp_dir();
         t.input = if cfg!(windows) {
-            "set IDEFAST_X=kept-value".into()
+            "$IDEFAST_X = 'kept-value'".into()
         } else {
             "IDEFAST_X=kept-value".into()
         };
         t.submit(d.clone(), None, None);
+        assert!(t.busy(), "会话在跑");
+        assert!(t.running(), "常驻会话命令执行期间 running() 必须为 true");
+        wait(&mut t, |t| !t.running());
         t.input = if cfg!(windows) {
-            "echo %IDEFAST_X%".into()
+            "Write-Output $IDEFAST_X".into()
         } else {
             "echo $IDEFAST_X".into()
         };
         t.submit(d, None, None);
-        assert!(t.busy(), "会话在跑");
-        wait(&mut t, |t| t.display().matches("kept-value").count() >= 2);
-        // 第一次出现在本地回显的 set 命令里, 第二次才是 echo 打出来的值: 至少 2 次, 说明变量跨命令保留了
+        wait(&mut t, |t| {
+            !t.running() && t.display().matches("kept-value").count() >= 2
+        });
+        // 第一次出现在本地回显的赋值命令里, 第二次才是 Write-Output 打出来的值: 至少 2 次, 说明变量跨命令保留了
         assert!(
             t.display().matches("kept-value").count() >= 2,
             "{}",
             t.display()
         );
+        assert!(
+            !t.display().contains(".Path)") && !t.display().contains("]133;IDE10;"),
+            "OSC 133 状态序列绝不可泄漏或误转义至终端显示: {}",
+            t.display()
+        );
         t.restart();
         assert!(!t.busy());
+        assert!(!t.running());
         assert!(t.display().contains("会话已重启"));
     }
 
@@ -1545,14 +1675,20 @@ mod tests {
         b2.feed("\u{1b}[38;5;196m256color\u{1b}[0m\n");
         assert_eq!(b2.text(), "256color\n");
         let job2 = b2.build_layout_job(12.0, egui::Color32::WHITE, "");
-        assert_eq!(job2.sections[0].format.color, egui::Color32::from_rgb(255, 0, 0));
+        assert_eq!(
+            job2.sections[0].format.color,
+            egui::Color32::from_rgb(255, 0, 0)
+        );
 
         // 24 位 TrueColor 测试: 38;2;123;45;67
         let mut b3 = LineBuffer::new();
         b3.feed("\u{1b}[38;2;123;45;67mTrueColor\u{1b}[0m\n");
         assert_eq!(b3.text(), "TrueColor\n");
         let job3 = b3.build_layout_job(12.0, egui::Color32::WHITE, "");
-        assert_eq!(job3.sections[0].format.color, egui::Color32::from_rgb(123, 45, 67));
+        assert_eq!(
+            job3.sections[0].format.color,
+            egui::Color32::from_rgb(123, 45, 67)
+        );
     }
 
     #[test]
@@ -1612,5 +1748,52 @@ mod tests {
         t.output_rev = t.output_rev.wrapping_add(1);
         assert_eq!(t.display(), "no\n");
         assert_eq!(t.layout_job(13.0, fg).text, "no\n");
+    }
+
+    #[test]
+    fn osc_133_split_across_chunks_completes_and_updates_cwd() {
+        let mut b = LineBuffer::new();
+        b.feed("\u{1b}]133;ID");
+        assert_eq!(b.take_osc_completion(), (false, None));
+        b.feed("E10;C:\\Win");
+        assert_eq!(b.take_osc_completion(), (false, None));
+        b.feed("dows\u{7}");
+        assert_eq!(
+            b.take_osc_completion(),
+            (true, Some("C:\\Windows".to_string()))
+        );
+        assert!(b.text().is_empty(), "OSC 133 不得残留字符: {:?}", b.text());
+        assert_eq!(b.take_osc_completion(), (false, None));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_cd_updates_real_cwd_via_osc_133() {
+        let mut t = Terminal::new();
+        let base = std::env::temp_dir().join("ide_ps_osc_cd_test");
+        let sub = base.join("nested_leaf");
+        let _ = std::fs::create_dir_all(&sub);
+        t.start_session(&sub);
+
+        t.input = "cd ..".into();
+        t.submit(sub.clone(), None, None);
+        assert!(t.running());
+        wait(&mut t, |t| !t.running());
+
+        let cur = t
+            .session_cwd
+            .as_ref()
+            .expect("OSC 133 应回传更新后的工作目录")
+            .to_string_lossy()
+            .to_lowercase();
+        let expected_name = "ide_ps_osc_cd_test";
+        assert!(cur.ends_with(expected_name), "got cwd: {cur}");
+        assert!(
+            !t.display().contains("133;IDE10") && !t.display().contains(".Path)"),
+            "终端输出不得包含控制标记泄漏: {}",
+            t.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

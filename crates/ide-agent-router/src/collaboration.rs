@@ -29,11 +29,11 @@ pub enum CollaboratorRole {
 impl CollaboratorRole {
     pub fn badge_prefix(&self) -> &'static str {
         match self {
-            Self::Human => "👤 人类",
-            Self::AiCoder => "🤖 编码",
-            Self::AiOptimizer => "⚡ 优化",
-            Self::AiTester => "🧪 测试",
-            Self::Reviewer => "🛡️ 审查",
+            Self::Human => "[人类]",
+            Self::AiCoder => "[编码]",
+            Self::AiOptimizer => "[优化]",
+            Self::AiTester => "[测试]",
+            Self::Reviewer => "[审查]",
         }
     }
 }

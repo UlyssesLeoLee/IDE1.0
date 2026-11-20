@@ -31,7 +31,7 @@ mod dispatch;
 mod docks;
 mod ghopts;
 mod glass_render;
-mod installer_ui;
+pub mod installer_ui;
 mod lifecycle;
 mod mdopts;
 mod mdstruct;
@@ -43,6 +43,7 @@ mod nemaopts;
 mod perf_bench;
 mod picks;
 mod printui;
+mod rust_console;
 mod statusbar;
 mod sticky_notes;
 mod sysopts;
@@ -346,6 +347,9 @@ impl App {
         app.side.open = st.view.side_open;
         app.term.open = st.view.term_open;
         app.md_preview = st.view.md_preview;
+        app.ai.open = st.view.ai_open;
+        app.ai.collab_mode = st.view.ai_collab_mode;
+        app.collab.open = st.view.ai_open && st.view.ai_collab_mode;
         app.applied_font = crate::fonts::effective_font_family(&st.font_family, &st.theme_plugin);
         app.cfg.font_family = crate::fonts::sanitize_font_family(&st.font_family, &st.theme_plugin);
         for a in &args {
@@ -514,8 +518,31 @@ impl App {
             grep_exc_folders: g.exc_folders.clone(),
         };
         let mut view = self.cfg.view.clone();
-        (view.side_open, view.term_open, view.md_preview) =
-            (self.side.open, self.term.open, self.md_preview);
+        (
+            view.side_open,
+            view.term_open,
+            view.md_preview,
+            view.ai_open,
+            view.ai_collab_mode,
+        ) = (
+            self.side.open,
+            self.term.open,
+            self.md_preview,
+            self.ai.open,
+            self.ai.collab_mode,
+        );
+        let collab_agent_models: Vec<(String, String)> = self
+            .collab
+            .agents
+            .iter()
+            .filter_map(|a| {
+                a.model_override
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|m| !m.is_empty())
+                    .map(|m| (a.id.clone(), m.to_string()))
+            })
+            .collect();
         Settings {
             dark: self.dark,
             font_px: self.font_px,
@@ -530,6 +557,12 @@ impl App {
             view,
             session: self.session_paths(),
             session_active: self.session_active(),
+            ai_use_ctx: self.ai.use_ctx,
+            ai_auto_apply: self.ai.auto_apply,
+            ai_active_mod: self.ai.active_mod.clone(),
+            collab_agent_count: self.collab.agent_count,
+            collab_active_agent: self.collab.active_tab,
+            collab_agent_models,
             ..self.cfg.clone()
         }
     }
@@ -582,6 +615,23 @@ impl App {
         keymap::set_overrides(&st.keys);
         self.apply_search_prefs(st);
         self.sync_tray_resident_no_save(st.tray_resident);
+        self.ai.use_ctx = st.ai_use_ctx;
+        self.ai.auto_apply = st.ai_auto_apply;
+        if !st.ai_active_mod.trim().is_empty() {
+            self.ai.active_mod = st.ai_active_mod.clone();
+        }
+        self.collab.set_agent_count(st.collab_agent_count);
+        self.collab.active_tab = st
+            .collab_active_agent
+            .min(self.collab.agents.len().saturating_sub(1));
+        for a in &mut self.collab.agents {
+            a.model_override = st
+                .collab_agent_models
+                .iter()
+                .find(|(id, _)| id == &a.id)
+                .map(|(_, m)| m.clone());
+        }
+        self.sync_active_agent_session();
         // 最近文件个数变小了要立刻截断
         let n = st.mru_files.max(1);
         self.recent.truncate(n);
@@ -1569,7 +1619,11 @@ impl App {
                     );
                 });
 
-                ui.add(egui::ProgressBar::new(progress).animate(true).show_percentage());
+                ui.add(
+                    egui::ProgressBar::new(progress)
+                        .animate(true)
+                        .show_percentage(),
+                );
 
                 ui.label(
                     egui::RichText::new(&hint)
@@ -1821,7 +1875,7 @@ impl App {
             None => {
                 let id = self.id();
                 let mut d = Doc::untitled(id, 0);
-                d.name = "🛡️ 协同审查".into();
+                d.name = "协同审查".into();
                 d.readonly = true;
                 self.docs.push(d);
                 id
@@ -1845,34 +1899,34 @@ impl App {
         let cur_rev = self.cur().rev;
 
         let content = vec![
-            "# 🛡️ 多 AI 协同审查与统筹验收看板 (Multi-AI Reviewer & Co-Editing Dashboard)".into(),
+            "# 多 AI 协同审查与统筹验收看板 (Multi-AI Reviewer & Co-Editing Dashboard)".into(),
             "================================================================================".into(),
             format!("【当前审视目标】: {} (Rev #{})", cur_path, cur_rev),
             "【统筹审查员】: Aggregator & Reviewer Lead (Staff Architect) | 状态: 四阶段协同流水线就绪".into(),
-            "【AI 运行时状态】: ⚡ 启动零开销 (未导入外部大模型时使用纯 Rust 确定性离线引擎，导入后按智能体槽位独立路由)".into(),
-            "【自动化门禁】: [✔ 语法树完整] [✔ 静态检查通过] [✔ 单元测试就绪] [✔ 规范校验通过 (forbid(unsafe_code))]".into(),
+            "【AI 运行时状态】: [极速] 启动零开销 (未导入外部大模型时使用纯 Rust 确定性离线引擎，导入后按智能体槽位独立路由)".into(),
+            "【自动化门禁】: [OK 语法树完整] [OK 静态检查通过] [OK 单元测试就绪] [OK 规范校验通过 (forbid(unsafe_code))]".into(),
             "".into(),
             "=== 阶段 1: 最初规划与指引看板 (Upfront Planning & Guidance Zones) ===".into(),
             "--------------------------------------------------------------------------------".into(),
-            "💡 核心理念: Reviewer 与 Router 规划架构不变量与接口契约，划分协同编辑组与独立编辑组。".into(),
+            "[核心理念] Reviewer 与 Router 规划架构不变量与接口契约，划分协同编辑组与独立编辑组。".into(),
             "[任务总目标]: 高性能异步处理流水线与多智能体 .nema 协同架构 (零竞态、零冲突)".into(),
-            "[任务输入]: [✓ 功能开发] [缺陷修复] [模块优化] [重构升级] | Epoch #10".into(),
+            "[任务输入]: [功能开发] [缺陷修复] [模块优化] [重构升级] | Epoch #10".into(),
             "[分组与 DAG 规划]:".into(),
-            "  • 👥 协同编辑组 A: File A.nema <-> Agent A1 @ feat/A1 (域 \\1, ?2) + Agent A2 @ feat/A2 (域 >3)".into(),
-            "  • 📦 独立编辑组 B: Agent B1 @ feat/B1 -> File B.nema | Agent B2 @ feat/B2 -> File C.nema".into(),
-            "  • 🔗 有向依赖 DAG: feat/A1 -> feat/A2 (数据结构依赖) | feat/A1 -> feat/B1 (跨模块协议)".into(),
+            "  • [协同组 A] File A.nema <-> Agent A1 @ feat/A1 (域 \\1, ?2) + Agent A2 @ feat/A2 (域 >3)".into(),
+            "  • [独立组 B] Agent B1 @ feat/B1 -> File B.nema | Agent B2 @ feat/B2 -> File C.nema".into(),
+            "  • [有向依赖 DAG] feat/A1 -> feat/A2 (数据结构依赖) | feat/A1 -> feat/B1 (跨模块协议)".into(),
             "".into(),
             "=== 阶段 2: 实时协同巡航与动态指引 (Live Stream & Remote Cursors) ===".into(),
             "--------------------------------------------------------------------------------".into(),
             "[活跃协作者与多人光标状态]:".into(),
-            "  • 🤖 Agent A1 (feat/A1) [Ln 35, Col 12] | 状态: Table \\1 类型契约与 5W1H ?2 契约生成".into(),
-            "  • ⚡ Agent A2 (feat/A2) [Ln 88, Col 04] | 状态: Graph >3 模块调用与状态流转拓扑".into(),
-            "  • 📦 Agent B1 (feat/B1) [Ln 01, Col 00] | 状态: File B.nema 辅助通信协议独占编辑".into(),
-            "  • 🚀 Agent B2 (feat/B2) [Ln 01, Col 00] | 状态: File C.nema 遥测与事件分发独占编辑".into(),
+            "  • Agent A1 (feat/A1) [Ln 35, Col 12] | 状态: Table \\1 类型契约与 5W1H ?2 契约生成".into(),
+            "  • Agent A2 (feat/A2) [Ln 88, Col 04] | 状态: Graph >3 模块调用与状态流转拓扑".into(),
+            "  • Agent B1 (feat/B1) [Ln 01, Col 00] | 状态: File B.nema 辅助通信协议独占编辑".into(),
+            "  • Agent B2 (feat/B2) [Ln 01, Col 00] | 状态: File C.nema 遥测与事件分发独占编辑".into(),
             "".into(),
             "[NEMA 协同传输性能指标]:".into(),
-            "  • 📡 Token 节省率: 相比传输常规 Rust 代码节省约 78.4% Token".into(),
-            "  • 🔒 CAS 租约一致性: Fencing Token #1001-#1004 往返字节校验 100% 通过".into(),
+            "  • Token 节省率: 相比传输常规 Rust 代码节省约 78.4% Token".into(),
+            "  • CAS 租约一致性: Fencing Token #1001-#1004 往返字节校验 100% 通过".into(),
             "".into(),
             "=== 阶段 3: 终局统筹审查与验收裁决 (Holistic Convergence & Acceptance) ===".into(),
             "--------------------------------------------------------------------------------".into(),
@@ -1880,18 +1934,18 @@ impl App {
             "  • ① 汇总多分支变更: 汇聚 feat/A1 + feat/A2 + feat/B1 + feat/B2 差异".into(),
             "  • ② 语义合并与冲突消解: 共享词典归一化重排 (\\t$N)，3-way 语义合并检测并消解 0 冲突".into(),
             "  • ③ .nema -> Rust 降维生成: A.rs (核心网关), B.rs (协议), C.rs (遥测分发)".into(),
-            "  • 🗺️ NemaRustSourceMap: 建立双向精确定位映射 (含 AST 防手改漂移守卫)".into(),
+            "  • NemaRustSourceMap: 建立双向精确定位映射 (含 AST 防手改漂移守卫)".into(),
             "".into(),
             "=== 阶段 4: Git 版本管理与持续闭环门禁 (Git, Verify & Closed-Loop) ===".into(),
             "--------------------------------------------------------------------------------".into(),
             "[文件级 Git 分支管理与四级门禁]:".into(),
             "  • 拓扑状态: main <- feat/A1, A2, B1, B2 -> agg/epoch-10 (PR 合并请求)".into(),
-            "  • 门禁 1: 构建验证 (cargo check) -> [✔ 通过]".into(),
-            "  • 门禁 2: 单元与集成测试 (cargo test) -> [✔ 通过]".into(),
-            "  • 门禁 3: 代码质量检查 (cargo clippy) -> [✔ 通过]".into(),
-            "  • 门禁 4: 规范与安全校验 (#![forbid(unsafe_code)] & SecretRef) -> [✔ 通过]".into(),
+            "  • 门禁 1: 构建验证 (cargo check) -> [通过]".into(),
+            "  • 门禁 2: 单元与集成测试 (cargo test) -> [通过]".into(),
+            "  • 门禁 3: 代码质量检查 (cargo clippy) -> [通过]".into(),
+            "  • 门禁 4: 规范与安全校验 (#![forbid(unsafe_code)] & SecretRef) -> [通过]".into(),
             "  • 统筹验收证书: CERT-EPOCH-10 (已原子 Merge 合入 main 分支，产出可发布产物)".into(),
-            "  • 🔄 持续闭环自愈: Verify -> Router (FeedbackLoopGuard 保护: 3轮熔断上限、错误指纹去重)".into(),
+            "  • 持续闭环自愈: Verify -> Router (FeedbackLoopGuard 保护: 3轮熔断上限、错误指纹去重)".into(),
             "".into(),
             "=== 各智能体独立大模型、Effort 与思考模式配置表 (Agent Profiles) ===".into(),
             "--------------------------------------------------------------------------------".into(),
@@ -2057,7 +2111,7 @@ impl App {
         let cur_idx = self.active.min(self.docs.len().saturating_sub(1));
         let d = &mut self.docs[cur_idx];
         d.tip = format!(
-            "🚀 四阶段协同流水线全绿执行完毕: 规划 {} 组，合并 0 冲突，产物 {}，证书已签发并合入 main",
+            "四阶段协同流水线全绿执行完毕: 规划 {} 组，合并 0 冲突，产物 {}，证书已签发并合入 main",
             plan.groups.len(),
             lowering_outcome.rust_file
         );
@@ -2153,7 +2207,7 @@ impl App {
                 match out.status.code() {
                     Some(6) => return Some(true),  // IDYES
                     Some(7) => return Some(false), // IDNO
-                    _ => return None,             // IDCANCEL 或被关闭
+                    _ => return None,              // IDCANCEL 或被关闭
                 }
             }
         }
@@ -2905,20 +2959,36 @@ impl App {
             {
                 self.term.restart();
             }
-            if ui
-                .button("🖥️ 系统终端")
-                .tip("在独立系统窗口打开原生 PowerShell (保持完全相同的管理员/用户权限与工作目录)")
-                .clicked()
+            if crate::ui_icons::icon_button(
+                ui,
+                crate::ui_icons::UiIcon::Terminal,
+                crate::i18n::trz("系统终端"),
+                self.tc.fg,
+            )
+            .tip("在独立系统窗口打开原生 PowerShell (保持完全相同的管理员/用户权限与工作目录)")
+            .clicked()
             {
                 open_external = true;
             }
-            // 权限指示徽章 (管理员 / 标准用户)
-            let admin_badge = if self.term.is_admin {
-                egui::RichText::new("🛡️ 管理员").color(Color32::from_rgb(255, 204, 0)).strong()
+            // 权限指示徽章 (纯矢量图标 + 文字)
+            let admin_resp = if self.term.is_admin {
+                crate::ui_icons::icon_label(
+                    ui,
+                    crate::ui_icons::UiIcon::Shield,
+                    egui::RichText::new(crate::i18n::trz("管理员"))
+                        .color(Color32::from_rgb(255, 204, 0))
+                        .strong(),
+                    Color32::from_rgb(255, 204, 0),
+                )
             } else {
-                egui::RichText::new("👤 标准用户").color(self.tc.fg_dim)
+                crate::ui_icons::icon_label(
+                    ui,
+                    crate::ui_icons::UiIcon::User,
+                    egui::RichText::new(crate::i18n::trz("标准用户")).color(self.tc.fg_dim),
+                    self.tc.fg_dim,
+                )
             };
-            ui.label(admin_badge).on_hover_text(if self.term.is_admin {
+            admin_resp.on_hover_text(if self.term.is_admin {
                 "当前以系统管理员特权运行: 终端拥有完整管理员能力"
             } else {
                 "当前以普通用户权限运行: 终端拥有标准用户权限"
@@ -2969,7 +3039,9 @@ impl App {
         let term_rect = ui.available_rect_before_wrap();
         let clicked_bg = ui.input(|i| {
             i.pointer.primary_clicked()
-                && i.pointer.interact_pos().is_some_and(|p| term_rect.contains(p))
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| term_rect.contains(p))
         });
 
         egui::Frame::NONE
@@ -2988,47 +3060,110 @@ impl App {
                             ui.add(egui::Label::new(job).selectable(true));
                         }
 
-                        // 直接在终端控制的主交互命令行 (Active Prompt Line): 彻底消除底部割裂输入框
+                        // 直接在终端控制的主交互命令行 (Active Prompt Line): 与 PowerShell 动作状态完全一致
+                        let is_running = self.term.running();
                         let prompt_str = self.term.prompt_str(&cwd);
                         let p_color = if self.term.is_admin {
                             Color32::from_rgb(255, 215, 0)
                         } else {
                             Color32::from_rgb(0, 229, 255)
                         };
+                        let running_guard_id = egui::Id::new("term_running_guard");
+                        let mut interrupt_clicked = false;
 
-                        let prompt_r = ui
+                        let (prompt_r, running_guard_r) = ui
                             .horizontal(|ui| {
-                                ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
-                                ui.label(
-                                    egui::RichText::new(&prompt_str)
-                                        .monospace()
-                                        .size(tpx)
-                                        .color(p_color)
-                                        .strong(),
-                                );
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.term.input)
-                                        .font(egui::TextStyle::Monospace)
-                                        .frame(egui::Frame::NONE)
-                                        .margin(egui::Margin::ZERO)
-                                        .desired_width(f32::INFINITY),
-                                )
+                                ui.spacing_mut().item_spacing = egui::vec2(4.0, 0.0);
+                                if is_running {
+                                    let (ic_r, _) = ui.allocate_exact_size(
+                                        egui::vec2(tpx, tpx),
+                                        egui::Sense::hover(),
+                                    );
+                                    crate::ui_icons::paint(
+                                        ui.painter(),
+                                        ic_r,
+                                        crate::ui_icons::UiIcon::Bolt,
+                                        Color32::from_rgb(50, 215, 130),
+                                    );
+                                    let lbl_resp = ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new("[PowerShell 正在执行中…]")
+                                                .monospace()
+                                                .size(tpx)
+                                                .color(Color32::from_rgb(50, 215, 130))
+                                                .strong(),
+                                        )
+                                        .sense(egui::Sense::click()),
+                                    );
+                                    let guard_resp = ui.interact(
+                                        lbl_resp.rect,
+                                        running_guard_id,
+                                        egui::Sense::click(),
+                                    );
+                                    if ui
+                                        .add(egui::Button::new("中断 (Ctrl+C)").small())
+                                        .clicked()
+                                    {
+                                        interrupt_clicked = true;
+                                    }
+                                    let te = ui.add_enabled(
+                                        false,
+                                        egui::TextEdit::singleline(&mut self.term.input)
+                                            .font(egui::TextStyle::Monospace)
+                                            .frame(egui::Frame::NONE)
+                                            .margin(egui::Margin::ZERO)
+                                            .hint_text("正在运行，可按 Ctrl+C 中断…")
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                    (te, Some(guard_resp))
+                                } else {
+                                    ui.label(
+                                        egui::RichText::new(&prompt_str)
+                                            .monospace()
+                                            .size(tpx)
+                                            .color(p_color)
+                                            .strong(),
+                                    );
+                                    let te = ui.add(
+                                        egui::TextEdit::singleline(&mut self.term.input)
+                                            .font(egui::TextStyle::Monospace)
+                                            .frame(egui::Frame::NONE)
+                                            .margin(egui::Margin::ZERO)
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                    (te, None)
+                                }
                             })
                             .inner;
 
-                        if std::mem::take(&mut self.term.focus_input) {
-                            prompt_r.request_focus();
+                        if interrupt_clicked {
+                            self.term.interrupt(&cwd);
+                            self.term.focus_input = true;
                         }
 
-                        // 键盘事件直接在终端命令行分发
-                        if prompt_r.has_focus() {
-                            if ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C)) {
-                                if self.term.input.is_empty() {
-                                    self.term.interrupt(&cwd);
-                                } else {
-                                    self.term.cancel_input(&cwd);
-                                }
+                        if !is_running && std::mem::take(&mut self.term.focus_input) {
+                            prompt_r.request_focus();
+                        } else if is_running && clicked_bg {
+                            if let Some(ref gr) = running_guard_r {
+                                gr.request_focus();
                             }
+                        }
+
+                        // 仅当终端面板/输入框实际拥有焦点或指针位于终端区域内执行时才拦截 Ctrl+C，绝不劫持代码编辑器复制
+                        let term_owns_ctrl_c = prompt_r.has_focus()
+                            || (is_running
+                                && (running_guard_r.as_ref().is_some_and(|r| r.has_focus())
+                                    || ui.rect_contains_pointer(term_rect)));
+                        if term_owns_ctrl_c
+                            && ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::C))
+                        {
+                            if is_running || self.term.input.is_empty() {
+                                self.term.interrupt(&cwd);
+                            } else {
+                                self.term.cancel_input(&cwd);
+                            }
+                        }
+                        if prompt_r.has_focus() && !is_running {
                             if ui.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::L)) {
                                 self.term.clear();
                             }
@@ -3043,11 +3178,13 @@ impl App {
                             }
                         }
 
-                        // Enter 提交执行
+                        // Enter 提交执行 (仅在非执行态允许提交，与真实终端行为严格对齐)
                         let enter_hit =
                             prompt_r.has_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                        if enter_hit
-                            || (prompt_r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))
+                        if !is_running
+                            && (enter_hit
+                                || (prompt_r.lost_focus()
+                                    && ui.input(|i| i.key_pressed(Key::Enter))))
                         {
                             let (want_in, want_rep) = (self.term_stdin, self.term_replace);
                             let (stdin, rdoc) = if want_in || want_rep {
@@ -3058,12 +3195,16 @@ impl App {
                                 (None, None)
                             };
                             self.term.submit(cwd.clone(), stdin, rdoc);
-                            prompt_r.request_focus();
+                            if self.term.running() {
+                                ui.ctx().memory_mut(|m| m.request_focus(running_guard_id));
+                            } else {
+                                prompt_r.request_focus();
+                            }
                         }
                     },
                 );
             });
-        if clicked_bg {
+        if clicked_bg && !self.term.running() {
             self.term.focus_input = true;
             ui.ctx().request_repaint();
         }
@@ -4191,6 +4332,7 @@ impl App {
             Action::OpenAiChat => {
                 self.ai.open = true;
                 self.ai.collab_mode = false;
+                self.collab.open = false;
                 self.expand_dock(crate::panels::Dock::Right);
             }
             Action::OpenCollabBench => {
@@ -4992,7 +5134,7 @@ impl App {
                                 if row == r1 {
                                     let badge_text = if c1 > c0 {
                                         format!(
-                                            "📐 纵向覆盖选区 [R{}..{} ({}行) × C{}..{} ({}列)] (输入将覆盖此区域)",
+                                            "[列选区] 纵向覆盖选区 [R{}..{} ({}行) × C{}..{} ({}列)] (输入将覆盖此区域)",
                                             r0 + 1,
                                             r1 + 1,
                                             r1 - r0 + 1,
@@ -5002,7 +5144,7 @@ impl App {
                                         )
                                     } else {
                                         format!(
-                                            "📍 纵向多行插入点 [R{}..{} ({}行) · 列 {}] (短行将自动补齐空格)",
+                                            "[多行光标] 纵向多行插入点 [R{}..{} ({}行) · 列 {}] (短行将自动补齐空格)",
                                             r0 + 1,
                                             r1 + 1,
                                             r1 - r0 + 1,
@@ -6427,8 +6569,11 @@ impl App {
             // 彻底清空滚轮事件与滚动量，阻止 ScrollArea 和子面板在缩放时产生滚动错位
             ctx.input_mut(|i| {
                 i.smooth_scroll_delta = egui::Vec2::ZERO;
-                i.events.retain(|e| !matches!(e, egui::Event::MouseWheel { .. }));
-                i.raw.events.retain(|e| !matches!(e, egui::Event::MouseWheel { .. }));
+                i.events
+                    .retain(|e| !matches!(e, egui::Event::MouseWheel { .. }));
+                i.raw
+                    .events
+                    .retain(|e| !matches!(e, egui::Event::MouseWheel { .. }));
             });
             ctx.request_repaint();
         }

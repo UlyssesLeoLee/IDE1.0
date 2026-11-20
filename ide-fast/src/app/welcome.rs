@@ -283,8 +283,13 @@ impl App {
 
         y += 18.0;
         let wiz_btn_size = Vec2::new(260.0, 32.0);
-        let wiz_btn = Rect::from_center_size(egui::pos2(cx, y + wiz_btn_size.y / 2.0), wiz_btn_size);
-        let wiz_resp = ui.interact(wiz_btn, ui.make_persistent_id("welcome-wizard"), Sense::click());
+        let wiz_btn =
+            Rect::from_center_size(egui::pos2(cx, y + wiz_btn_size.y / 2.0), wiz_btn_size);
+        let wiz_resp = ui.interact(
+            wiz_btn,
+            ui.make_persistent_id("welcome-wizard"),
+            Sense::click(),
+        );
         let wiz_bg = if wiz_resp.hovered() {
             Color32::from_rgb(255, 230, 0)
         } else {
@@ -303,13 +308,35 @@ impl App {
             egui::StrokeKind::Inside,
         );
         let wiz_txt = p.layout_no_wrap(
-            "🏛️ 体验真 3D 赛璐珞安装与首选向导".to_string(),
+            "体验真 3D 赛璐珞安装与首选向导".to_string(),
             FontId::proportional(12.5),
             wiz_text_color,
         );
-        p.galley(wiz_btn.center() - wiz_txt.size() / 2.0, wiz_txt, wiz_text_color);
-        if wiz_resp.tip("启动全自绘真 3D 赛璐珞美漫风格安装向导").clicked() {
-            self.installer.open = true;
+        let icon_sz = 14.0;
+        let gap = 6.0;
+        let start_x = wiz_btn.center().x - (icon_sz + gap + wiz_txt.size().x) * 0.5;
+        crate::ui_icons::paint(
+            &p,
+            egui::Rect::from_min_size(
+                egui::pos2(start_x, wiz_btn.center().y - icon_sz * 0.5),
+                egui::Vec2::splat(icon_sz),
+            ),
+            crate::ui_icons::UiIcon::Wizard,
+            wiz_text_color,
+        );
+        p.galley(
+            egui::pos2(
+                start_x + icon_sz + gap,
+                wiz_btn.center().y - wiz_txt.size().y * 0.5,
+            ),
+            wiz_txt,
+            wiz_text_color,
+        );
+        if wiz_resp
+            .tip("启动全自绘真 3D 赛璐珞美漫风格安装向导")
+            .clicked()
+        {
+            self.open_installer_wizard(crate::app::installer_ui::InstallerLaunchMode::Auto, false);
         }
     }
 }

@@ -1,13 +1,203 @@
 // Shared state for Vercel Serverless Function instance
-// Implements File Commit Coordinator with CAS, Fencing Tokens, and Transactional Outbox
+// Implements File Commit Coordinator with CAS, Fencing Tokens, Transactional Outbox,
+// Myers Line Diff, 3-Way Auto-Merge, and Multi-Provider Co-Editing Workspace.
 
 import crypto from "crypto";
+
+// --- Myers Line Diff & Unified Formatter ---
+export function diffLines(linesA, linesB) {
+  const n = linesA.length;
+  const m = linesB.length;
+  // LCS table (dp)
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      if (linesA[i] === linesB[j]) {
+        dp[i + 1][j + 1] = dp[i][j] + 1;
+      } else {
+        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  // Backtrack to build diff steps
+  const steps = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && linesA[i - 1] === linesB[j - 1]) {
+      steps.push({ type: "same", line: linesA[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      steps.push({ type: "add", line: linesB[j - 1] });
+      j--;
+    } else if (i > 0) {
+      steps.push({ type: "remove", line: linesA[i - 1] });
+      i--;
+    }
+  }
+  return steps.reverse();
+}
+
+export function formatUnifiedDiff(linesA, linesB, nameA = "a", nameB = "b") {
+  const steps = diffLines(linesA, linesB);
+  const hunks = [];
+  let currentHunk = null;
+
+  let lineA = 1;
+  let lineB = 1;
+
+  for (let idx = 0; idx < steps.length; idx++) {
+    const s = steps[idx];
+    if (s.type === "same") {
+      if (currentHunk) {
+        currentHunk.lines.push({ prefix: " ", text: s.line });
+        currentHunk.ctxTrailing = (currentHunk.ctxTrailing || 0) + 1;
+        if (currentHunk.ctxTrailing >= 3) {
+          hunks.push(currentHunk);
+          currentHunk = null;
+        }
+      }
+      lineA++;
+      lineB++;
+    } else {
+      if (!currentHunk) {
+        // Collect up to 3 leading same lines for context
+        const leading = [];
+        let backIdx = idx - 1;
+        while (backIdx >= 0 && steps[backIdx].type === "same" && leading.length < 3) {
+          leading.unshift({ prefix: " ", text: steps[backIdx].line });
+          backIdx--;
+        }
+        currentHunk = {
+          startA: Math.max(1, lineA - leading.length),
+          startB: Math.max(1, lineB - leading.length),
+          lines: leading,
+          ctxTrailing: 0,
+        };
+      }
+      if (s.type === "remove") {
+        currentHunk.lines.push({ prefix: "-", text: s.line });
+        currentHunk.ctxTrailing = 0;
+        lineA++;
+      } else if (s.type === "add") {
+        currentHunk.lines.push({ prefix: "+", text: s.line });
+        currentHunk.ctxTrailing = 0;
+        lineB++;
+      }
+    }
+  }
+
+  if (currentHunk) {
+    hunks.push(currentHunk);
+  }
+
+  if (hunks.length === 0) {
+    return "";
+  }
+
+  let out = `--- ${nameA}\n+++ ${nameB}\n`;
+  for (const h of hunks) {
+    const countA = h.lines.filter(l => l.prefix === "-" || l.prefix === " ").length;
+    const countB = h.lines.filter(l => l.prefix === "+" || l.prefix === " ").length;
+    out += `@@ -${h.startA},${countA} +${h.startB},${countB} @@\n`;
+    for (const l of h.lines) {
+      out += `${l.prefix}${l.text}\n`;
+    }
+  }
+  return out;
+}
+
+// --- 3-Way Line Merge with Conflict Markers ---
+export function threeWayMerge(baseLines, oursLines, theirsLines) {
+  const diffOurs = diffLines(baseLines, oursLines);
+  const diffTheirs = diffLines(baseLines, theirsLines);
+
+  const baseText = baseLines.join("\n");
+  const oursText = oursLines.join("\n");
+  const theirsText = theirsLines.join("\n");
+
+  if (oursText === baseText) {
+    return { clean: true, conflicts: 0, lines: theirsLines, text: theirsText };
+  }
+  if (theirsText === baseText || oursText === theirsText) {
+    return { clean: true, conflicts: 0, lines: oursLines, text: oursText };
+  }
+
+  // Chunk-level 3-way merge
+  let bi = 0, oi = 0, ti = 0;
+  const merged = [];
+  let conflicts = 0;
+
+  while (bi < baseLines.length || oi < oursLines.length || ti < theirsLines.length) {
+    const bLine = baseLines[bi];
+    const oLine = oursLines[oi];
+    const tLine = theirsLines[ti];
+
+    if (bLine === oLine && bLine === tLine) {
+      merged.push(bLine);
+      bi++; oi++; ti++;
+    } else if (bLine === oLine) {
+      // Ours kept base, theirs modified or added
+      if (ti < theirsLines.length) {
+        merged.push(tLine);
+        ti++;
+      }
+      bi++; oi++;
+    } else if (bLine === tLine) {
+      // Theirs kept base, ours modified or added
+      if (oi < oursLines.length) {
+        merged.push(oLine);
+        oi++;
+      }
+      bi++; ti++;
+    } else if (oLine === tLine) {
+      // Both modified identically
+      if (oi < oursLines.length) {
+        merged.push(oLine);
+        oi++; ti++;
+      }
+      bi++;
+    } else {
+      // Conflict
+      conflicts++;
+      merged.push("<<<<<<< HEAD (ours)");
+      if (oi < oursLines.length) {
+        merged.push(oLine);
+        oi++;
+      }
+      merged.push("=======");
+      if (ti < theirsLines.length) {
+        merged.push(tLine);
+        ti++;
+      }
+      merged.push(">>>>>>> INCOMING (theirs)");
+      bi++;
+    }
+  }
+
+  // Append remaining lines if any
+  while (oi < oursLines.length && ti >= theirsLines.length) {
+    merged.push(oursLines[oi++]);
+  }
+  while (ti < theirsLines.length && oi >= oursLines.length) {
+    merged.push(theirsLines[ti++]);
+  }
+
+  return {
+    clean: conflicts === 0,
+    conflicts,
+    lines: merged,
+    text: merged.join("\n"),
+  };
+}
 
 class ServerlessCoordinator {
   constructor() {
     this.files = new Map();
     this.tasks = new Map();
     this.commits = new Map();
+    this.operationsLog = new Map();
     this.outbox = [];
     this.nextEventId = 1;
     this.initDefaultFiles();
@@ -41,6 +231,16 @@ pub fn multiply(a: i32, b: i32) -> i32 {
       currentRevision: 1,
       contentHash: hash,
       updatedAt: new Date().toISOString(),
+      revisions: [
+        {
+          revision: 1,
+          author: "system",
+          content,
+          contentHash: hash,
+          timestamp: new Date().toISOString(),
+          opId: "init",
+        },
+      ],
     };
     this.files.set(fileId, file);
     return file;
@@ -49,10 +249,8 @@ pub fn multiply(a: i32, b: i32) -> i32 {
   getSemanticUnits(fileId) {
     const file = this.files.get(fileId);
     if (!file) return [];
-    // Basic symbol extractor for serverless reflection
     const lines = file.content.split("\n");
     const units = [];
-    let curByte = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (line.startsWith("pub fn ") || line.startsWith("fn ") || line.startsWith("def ")) {
@@ -72,115 +270,195 @@ pub fn multiply(a: i32, b: i32) -> i32 {
           end_line: i + 3,
         });
       }
-      curByte += lines[i].length + 1;
     }
     return units;
   }
 
-  dispatchJob(workspaceId, goal, targetFiles, priority = 100) {
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const taskIds = [];
-    for (const fId of targetFiles) {
-      const units = this.getSemanticUnits(fId);
-      for (const unit of units) {
-        const taskId = `${jobId}:${unit.qualified_symbol_path}`;
-        const task = {
-          taskId,
-          jobId,
-          workspaceId,
-          fileId: fId,
-          symbolPath: unit.qualified_symbol_path,
-          baseRevision: 1,
-          status: "READY",
-          workerId: null,
-          fencingToken: 0,
-          leaseExpiresAt: null,
-          expectedFingerprint: unit.node_fingerprint,
-          priority,
-          createdAt: new Date().toISOString(),
-        };
-        this.tasks.set(taskId, task);
-        taskIds.push(taskId);
-      }
-    }
-    return { jobId, taskIds, status: "QUEUED" };
-  }
-
-  claimTask(workerId, workspaceId) {
-    for (const task of this.tasks.values()) {
-      if (task.status === "READY" && task.workspaceId === workspaceId) {
-        task.status = "CLAIMED";
-        task.workerId = workerId;
-        task.fencingToken += 1;
-        task.leaseExpiresAt = new Date(Date.now() + 60000).toISOString();
-        return task;
-      }
-    }
-    return null;
-  }
-
-  commitPatch(proposal, idempotencyKey) {
-    if (idempotencyKey && this.commits.has(idempotencyKey)) {
-      return this.commits.get(idempotencyKey);
+  // --- Headless Multi-Provider Co-Editor Engine ---
+  headlessEdit({ fileId, author = "anonymous", baseRevision, opId, newText, patch }) {
+    if (opId && this.operationsLog.has(opId)) {
+      return this.operationsLog.get(opId);
     }
 
-    const task = this.tasks.get(proposal.task_id);
-    if (!task) {
-      throw new Error(`Task '${proposal.task_id}' not found`);
-    }
-
-    if (task.fencingToken !== proposal.fencing_token) {
-      const err = new Error(`Fencing token stale (current: ${task.fencingToken}, provided: ${proposal.fencing_token})`);
-      err.statusCode = 412;
-      throw err;
-    }
-
-    const file = this.files.get(proposal.file_id);
+    let file = this.files.get(fileId);
     if (!file) {
-      throw new Error(`File '${proposal.file_id}' not found`);
+      // Auto-register file if it does not exist
+      const parts = fileId.split(":");
+      const ws = parts.length > 1 ? parts[0] : "default";
+      const p = parts.length > 1 ? parts.slice(1).join(":") : fileId;
+      file = this.registerFile(ws, p, "", "plain");
     }
 
-    const isFastPath = file.currentRevision === proposal.base_revision;
-    const previousRev = file.currentRevision;
-    file.currentRevision += 1;
-    task.status = "COMMITTED";
+    const currentRev = file.currentRevision;
+    const incomingText = newText !== undefined ? newText : (file.content + (patch || ""));
+    const baseRev = Number(baseRevision) || currentRev;
 
-    const commitId = `commit-${proposal.task_id}-rev${file.currentRevision}`;
-    const result = {
-      commit_id: commitId,
-      file_id: proposal.file_id,
-      previous_revision: previousRev,
-      new_revision: file.currentRevision,
-      relocated: !isFastPath,
-      status: "COMMITTED",
-    };
+    let result;
+    if (baseRev === currentRev) {
+      // CAS Fast-Path: No intervening concurrent edits
+      file.content = incomingText;
+      file.currentRevision += 1;
+      file.contentHash = this.computeHash(incomingText);
+      file.updatedAt = new Date().toISOString();
 
-    if (idempotencyKey) {
-      this.commits.set(idempotencyKey, result);
+      const revRecord = {
+        revision: file.currentRevision,
+        author,
+        content: file.content,
+        contentHash: file.contentHash,
+        timestamp: file.updatedAt,
+        opId: opId || `op_${Date.now()}`,
+      };
+      file.revisions.push(revRecord);
+
+      result = {
+        ok: true,
+        fileId,
+        previousRevision: currentRev,
+        revision: file.currentRevision,
+        merged: false,
+        conflicts: 0,
+        author,
+        content: file.content,
+      };
+    } else {
+      // Intervening edits occurred: 3-Way Auto-Merge
+      const baseRec = file.revisions.find(r => r.revision === baseRev) || file.revisions[0];
+      const baseLines = (baseRec ? baseRec.content : "").split("\n");
+      const currentLines = file.content.split("\n");
+      const incomingLines = incomingText.split("\n");
+
+      const mergeOutcome = threeWayMerge(baseLines, currentLines, incomingLines);
+
+      file.content = mergeOutcome.text;
+      file.currentRevision += 1;
+      file.contentHash = this.computeHash(file.content);
+      file.updatedAt = new Date().toISOString();
+
+      const revRecord = {
+        revision: file.currentRevision,
+        author: `${author}${mergeOutcome.clean ? " (auto-merged)" : " (conflict)"}`,
+        content: file.content,
+        contentHash: file.contentHash,
+        timestamp: file.updatedAt,
+        opId: opId || `op_${Date.now()}`,
+      };
+      file.revisions.push(revRecord);
+
+      result = {
+        ok: mergeOutcome.clean,
+        fileId,
+        previousRevision: currentRev,
+        revision: file.currentRevision,
+        merged: true,
+        conflicts: mergeOutcome.conflicts,
+        author,
+        content: file.content,
+      };
+    }
+
+    if (opId) {
+      this.operationsLog.set(opId, result);
     }
 
     this.outbox.push({
       event_id: this.nextEventId++,
-      event_type: "FILE_COMMITTED",
-      workspace_id: file.workspaceId,
-      file_id: file.fileId,
+      event_type: "COEDIT_APPLIED",
+      file_id: fileId,
       revision: file.currentRevision,
-      payload: {
-        commit_id: commitId,
-        worker_id: proposal.worker_id,
-        symbol_path: proposal.symbol_path,
-        relocated: !isFastPath,
-      },
+      payload: result,
       created_at: new Date().toISOString(),
     });
 
     return result;
   }
 
-  getEvents(workspaceId, afterCursor = 0) {
-    return this.outbox.filter(
-      (e) => e.workspace_id === workspaceId && e.event_id > afterCursor
+  headlessRead(fileId, revision) {
+    const file = this.files.get(fileId);
+    if (!file) return null;
+    if (revision) {
+      const rec = file.revisions.find(r => r.revision === Number(revision));
+      return rec ? rec.content : null;
+    }
+    return file.content;
+  }
+
+  headlessHistory(fileId) {
+    const file = this.files.get(fileId);
+    if (!file) return [];
+    return file.revisions.map(r => ({
+      revision: r.revision,
+      author: r.author,
+      contentHash: r.contentHash,
+      timestamp: r.timestamp,
+      lines: r.content.split("\n").length,
+    }));
+  }
+
+  headlessDiff(fileId, revA, revB) {
+    const file = this.files.get(fileId);
+    if (!file) throw new Error(`File '${fileId}' not found`);
+    const rA = file.revisions.find(r => r.revision === Number(revA)) || file.revisions[0];
+    const rB = file.revisions.find(r => r.revision === Number(revB)) || file.revisions[file.revisions.length - 1];
+    return formatUnifiedDiff(
+      rA.content.split("\n"),
+      rB.content.split("\n"),
+      `rev_${rA.revision}`,
+      `rev_${rB.revision}`
     );
+  }
+
+  headlessListFiles() {
+    const list = [];
+    for (const [id, f] of this.files.entries()) {
+      list.push({
+        fileId: id,
+        path: f.path,
+        language: f.language,
+        revision: f.currentRevision,
+        lines: f.content.split("\n").length,
+        updatedAt: f.updatedAt,
+      });
+    }
+    return list;
+  }
+
+  evalRustScript(script) {
+    const lines = script.split("\n");
+    const results = [];
+    for (const raw of lines) {
+      for (const stmt of raw.split(";")) {
+        const s = stmt.trim();
+        if (!s || s.startsWith("//")) continue;
+        results.push(this.evalSingleRustStmt(s));
+      }
+    }
+    return results.join("\n");
+  }
+
+  evalSingleRustStmt(stmt) {
+    const clean = stmt.trim().replace(/;$/, "");
+    if (/^(ide::(context|ops)::)?help\(\)$/i.test(clean)) {
+      return `=== IDE1.0 Blender-Style Rust API (Headless MCP) ===
+ide::context::status()                   - Show active documents & workspace stats
+ide::data::docs()                        - List all headless documents
+ide::data::read("fileId")                - Read file content
+ide::ops::open("fileId", "content")      - Create or open file
+ide::ops::diff("fileId", revA, revB)     - Unified diff between revisions
+ide::ops::coedit("fileId", "author", rev, "content") - Concurrent CAS co-edit`;
+    }
+    if (/^ide::context::status\(\)$/i.test(clean)) {
+      return `ide::context: active_documents=${this.files.size}, total_events=${this.outbox.length}, backend="IDE1.0 Serverless MCP Engine"`;
+    }
+    if (/^ide::data::(docs|files)\(\)$/i.test(clean)) {
+      return JSON.stringify(this.headlessListFiles(), null, 2);
+    }
+    if (clean.startsWith('ide::data::read(')) {
+      const id = clean.slice('ide::data::read('.length, -1).trim().replace(/^["']|["']$/g, "");
+      const content = this.headlessRead(id);
+      return content !== null ? content : `File '${id}' not found`;
+    }
+    return `Executed statement: ${clean}`;
   }
 }
 

@@ -4,6 +4,14 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/mcp",
+      "destination": "/api/v1/mcp"
+    },
+    {
+      "source": "/api/mcp",
+      "destination": "/api/v1/mcp"
+    },
+    {
       "source": "/api/v1/:path*",
       "destination": "/api/v1/:path*"
     }

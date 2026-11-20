@@ -81,7 +81,7 @@ mod imp {
             let mi_show = MenuItem::new("显示 / 隐藏 IDE", true, None);
             let mi_new = MenuItem::new("新建空白文档 (Ctrl+N)", true, None);
             let mi_open = MenuItem::new("打开文件… (Ctrl+O)", true, None);
-            let mi_collab = MenuItem::new("🤖 多 Agent 协同工作台…", true, None);
+            let mi_collab = MenuItem::new("多 Agent 协同工作台…", true, None);
             let mi_diff = MenuItem::new("差异对比…", true, None);
             let mi_topmost = CheckMenuItem::new("窗口置顶 (Always on Top)", true, topmost, None);
             let mi_resident =

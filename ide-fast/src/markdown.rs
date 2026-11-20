@@ -499,15 +499,15 @@ fn parse_inline(cs: &[char], st: &Span, out: &mut Vec<Span>) {
 /// 提示块种类 -> (图标, 中文标题)
 pub fn callout_label(kind: &str) -> (&'static str, &'static str) {
     match kind {
-        "note" => ("ℹ", "注意"),
-        "tip" | "hint" => ("★", "提示"),
+        "note" => ("[i]", "注意"),
+        "tip" | "hint" => ("[*]", "提示"),
         "important" => ("!", "重要"),
-        "warning" | "caution" => ("⚠", "警告"),
-        "danger" | "error" | "bug" => ("✖", "危险"),
-        "success" | "check" | "done" => ("✔", "成功"),
+        "warning" | "caution" => ("[!]", "警告"),
+        "danger" | "error" | "bug" => ("[x]", "危险"),
+        "success" | "check" | "done" => ("[ok]", "成功"),
         "question" | "help" | "faq" => ("?", "疑问"),
-        "quote" | "cite" => ("❝", "引用"),
-        _ => ("•", "提示"),
+        "quote" | "cite" => ("[>]", "引用"),
+        _ => ("-", "提示"),
     }
 }
 
@@ -613,7 +613,7 @@ mod tests {
             }
         );
         assert_eq!(b[1].block, Block::Quote("just a quote".into()));
-        assert_eq!(callout_label("warning").0, "⚠");
+        assert_eq!(callout_label("warning").0, "[!]");
     }
 
     #[test]

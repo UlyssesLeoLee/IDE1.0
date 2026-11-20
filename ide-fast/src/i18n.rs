@@ -85,8 +85,6 @@ pub fn detect_system_lang() -> Lang {
             return Lang::Zh;
         } else if s.starts_with("ja") {
             return Lang::Ja;
-        } else if s.starts_with("en") {
-            return Lang::En;
         } else {
             return Lang::En;
         }
@@ -689,8 +687,8 @@ Not signature-verified; install only plugins you trust. Install?"]),
     ("pf.letter-spacing", ["字符间距 (文字间距)", "文字間隔", "Letter spacing"]),
     ("pf.cjk-fixed-ratio", ["全角/半角 1:2 网格对齐 (经典等宽)", "全角半角 1:2 等幅整列 (クラシック)", "CJK 1:2 Monospace Grid (Classic)"]),
     ("pf.font-preview", ["效果实时预览 (经典代码)", "フォントプレビュー", "Live Font Preview"]),
-    ("pf.font-rec-header", ["⭐ 精选美观免费商用字体", "⭐ 厳選商用フリー美麗フォント", "⭐ Recommended Free Commercial Fonts"]),
-    ("pf.font-user-header", ["👤 用户安装字体 (优先推荐)", "👤 ユーザー導入フォント (優先)", "👤 User Installed Fonts (Priority)"]),
+    ("pf.font-rec-header", ["精选美观免费商用字体", "厳選商用フリー美麗フォント", "Recommended Free Commercial Fonts"]),
+    ("pf.font-user-header", ["用户安装字体 (优先推荐)", "ユーザー導入フォント (優先)", "User Installed Fonts (Priority)"]),
     ("pf.font-all-header", ["系统安装字体", "システムフォント一覧", "System Fonts"]),
     ("pf.line-height", ["行间距 / 行高倍率", "行間・行送り倍率", "Line height / spacing"]),
     ("pf.colors", ["颜色覆盖 (留空 = 跟随主题)", "色の上書き (未設定 = テーマに従う)", "Color overrides (unset = follow theme)"]),
@@ -754,8 +752,8 @@ pub const CMD_T: &[Row] = &[
         "欢迎与安装向导…",
         [
             "欢迎与安装向导…",
-            "⚡ ようこそ・インストールウィザード…",
-            "⚡ Welcome & Setup Wizard…",
+            "ようこそ・インストールウィザード…",
+            "Welcome & Setup Wizard…",
         ],
     ),
     (
@@ -2765,10 +2763,6 @@ pub const CMD_T: &[Row] = &[
         ["SJIS → UTF-7", "SJIS → UTF-7", "SJIS → UTF-7"],
     ),
     (
-        "🛡️ 协同审查",
-        ["🛡️ 协同审查", "🛡️ 協調レビュー", "🛡️ Collab Review"],
-    ),
-    (
         "+ 新建终端会话 (PowerShell)",
         [
             "+ 新建终端会话 (PowerShell)",
@@ -2793,19 +2787,19 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "📄 独立标签页报告",
+        "独立标签页报告",
         [
-            "📄 独立标签页报告",
-            "📄 別タブでレポートを開く",
-            "📄 Open Report in Tab",
+            "独立标签页报告",
+            "別タブでレポートを開く",
+            "Open Report in Tab",
         ],
     ),
     (
-        "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+        "多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
         [
-            "🛡️ 多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
-            "🛡️ マルチ AI 協調編集 & 独立レビュー基盤 (Multi-AI Co-Edit & Review)",
-            "🛡️ Multi-AI Co-Edit & Independent Review Platform",
+            "多 AI 协同编辑 & 独立审查平台 (Multi-AI Co-Edit & Review)",
+            "マルチ AI 協調編集 & 独立レビュー基盤 (Multi-AI Co-Edit & Review)",
+            "Multi-AI Co-Edit & Independent Review Platform",
         ],
     ),
     (
@@ -2849,11 +2843,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "底部: 🛡️ 协同审查",
+        "底部: 协同审查",
         [
-            "底部: 🛡️ 协同审查",
-            "下部: 🛡️ 協調レビュー",
-            "Bottom: 🛡️ Collab Review",
+            "底部: 协同审查",
+            "下部: 協調レビュー",
+            "Bottom: Collab Review",
         ],
     ),
     (
@@ -2969,11 +2963,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "🌐 界面语言 (Language):",
+        "界面语言 (Language):",
         [
-            "🌐 界面语言 (Language):",
-            "🌐 表示言語 (Language):",
-            "🌐 Interface Language:",
+            "界面语言 (Language):",
+            "表示言語 (Language):",
+            "Interface Language:",
         ],
     ),
     (
@@ -2993,11 +2987,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "📁 目标安装与工作目录 (Installation Directory):",
+        "目标安装与工作目录 (Installation Directory):",
         [
-            "📁 目标安装与工作目录 (Installation Directory):",
-            "📁 インストール先・作業ディレクトリ (Installation Directory):",
-            "📁 Installation & Working Directory:",
+            "目标安装与工作目录 (Installation Directory):",
+            "インストール先・作業ディレクトリ (Installation Directory):",
+            "Installation & Working Directory:",
         ],
     ),
     (
@@ -3073,11 +3067,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "立即安装 (INSTALL NOW) ⚡",
+        "立即安装 (INSTALL NOW)",
         [
-            "立即安装 (INSTALL NOW) ⚡",
-            "今すぐインストール (INSTALL NOW) ⚡",
-            "Install Now ⚡",
+            "立即安装 (INSTALL NOW)",
+            "今すぐインストール (INSTALL NOW)",
+            "Install Now",
         ],
     ),
     (
@@ -3145,35 +3139,35 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录...",
+        "释放 IDE1.0.exe 原生极速微内核至目标目录...",
         [
-            "[OK] 释放 IDE1.0.exe 原生极速微内核至目标目录...",
-            "[OK] IDE1.0.exe ネイティブマイクロカーネルをターゲットフォルダーに展開...",
-            "[OK] Extracted IDE1.0.exe native microkernel to target directory...",
+            "释放 IDE1.0.exe 原生极速微内核至目标目录...",
+            "IDE1.0.exe ネイティブマイクロカーネルをターゲットフォルダーに展開...",
+            "Extracting IDE1.0.exe native microkernel to target directory...",
         ],
     ),
     (
-        "[OK] 部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
+        "部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
         [
-            "[OK] 部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
-            "[OK] 3D セル画風およびガラスエフェクトのビジュアルパイプラインを設定...",
-            "[OK] Configured 3D Cel-shaded and acrylic visual pipeline presets...",
+            "部署 3D 赛璐珞与晶透毛玻璃视觉管线预设...",
+            "3D セル画風およびガラスエフェクトのビジュアルパイプラインを設定...",
+            "Configuring 3D Cel-shaded and glass pipeline presets...",
         ],
     ),
     (
-        "[OK] 写入系统环境变量 PATH 与桌面快捷启动入口...",
+        "写入系统环境变量 PATH 与桌面快捷启动入口...",
         [
-            "[OK] 写入系统环境变量 PATH 与桌面快捷启动入口...",
-            "[OK] 環境変数 PATH とデスクトップショートカットを登録...",
-            "[OK] Registered system PATH and desktop shortcuts...",
+            "写入系统环境变量 PATH 与桌面快捷启动入口...",
+            "環境変数 PATH とデスクトップショートカットを登録...",
+            "Registering system PATH and desktop shortcuts...",
         ],
     ),
     (
-        "[OK] 首选参数配置与常驻托盘守护者完成同步初始化！",
+        "首选参数配置与常驻托盘守护者完成同步初始化！",
         [
-            "[OK] 首选参数配置与常驻托盘守护者完成同步初始化！",
-            "[OK] 環境設定とトレイ常駐デーモンの同期初期化が完了！",
-            "[OK] Preferences and system tray resident daemon initialized!",
+            "首选参数配置与常驻托盘守护者完成同步初始化！",
+            "環境設定とトレイ常駐デーモンの同期初期化が完了！",
+            "Preferences and system tray resident daemon initialized!",
         ],
     ),
     (
@@ -3185,11 +3179,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
+        "部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
         [
-            "🎉 部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
-            "🎉 デプロイ完了！IDE 1.0 の準備が整いました！(SUCCESS)",
-            "🎉 Deployment Successful! IDE 1.0 is ready!",
+            "部署成功！IDE 1.0 已准备就绪！(SUCCESS)",
+            "デプロイ完了！IDE 1.0 の準備が整いました！(SUCCESS)",
+            "Deployment Successful! IDE 1.0 is ready!",
         ],
     ),
     (
@@ -3217,11 +3211,11 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "完成并启动 (FINISH) 🚀",
+        "完成并启动 (FINISH)",
         [
-            "完成并启动 (FINISH) 🚀",
-            "完了して起動 (FINISH) 🚀",
-            "Finish & Launch 🚀",
+            "完成并启动 (FINISH)",
+            "完了して起動 (FINISH)",
+            "Finish & Launch",
         ],
     ),
     (
@@ -3233,51 +3227,51 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "[OK] 校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
+        "校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
         [
-            "[OK] 校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
-            "[OK] ローカル CPU ハードウェアアクセラレーション命令セット (AVX2/SSE4.2) を検証...",
-            "[OK] Verified local CPU hardware acceleration extensions (AVX2/SSE4.2)...",
+            "校验本地 CPU 硬件加速扩展指令集 (AVX2/SSE4.2)...",
+            "ローカル CPU ハードウェアアクセラレーション命令セット (AVX2/SSE4.2) を検証...",
+            "Verifying local CPU hardware acceleration extensions (AVX2/SSE4.2)...",
         ],
     ),
     (
-        "📁 安装与工作空间目录",
+        "安装与工作空间目录",
         [
-            "📁 安装与工作空间目录",
-            "📁 インストール先とワークスペース",
-            "📁 Installation & Workspace Directory",
+            "安装与工作空间目录",
+            "インストール先とワークスペース",
+            "Installation & Workspace Directory",
         ],
     ),
     (
-        "⚡ 终端命令行集成",
+        "终端命令行集成",
         [
-            "⚡ 终端命令行集成",
-            "⚡ ターミナルコマンドライン連携",
-            "⚡ Terminal CLI Integration",
+            "终端命令行集成",
+            "ターミナルコマンドライン連携",
+            "Terminal CLI Integration",
         ],
     ),
     (
-        "🛡️ 系统驻留守护",
+        "系统驻留守护",
         [
-            "🛡️ 系统驻留守护",
-            "🛡️ システム常駐デーモン",
-            "🛡️ System Resident Daemon",
+            "系统驻留守护",
+            "システム常駐デーモン",
+            "System Resident Daemon",
         ],
     ),
     (
-        "⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
+        "完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
         [
-            "⚡ 完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
-            "⚡ 完了後すぐに IDE 1.0 を起動 (Launch IDE 1.0 Now)",
-            "⚡ Launch IDE 1.0 immediately upon completion",
+            "完成后立即启动 IDE 1.0 (Launch IDE 1.0 Now)",
+            "完了後すぐに IDE 1.0 を起動 (Launch IDE 1.0 Now)",
+            "Launch IDE 1.0 immediately upon completion",
         ],
     ),
     (
-        "完成并启动 IDE 1.0 (LAUNCH NOW) →",
+        "完成并启动 IDE 1.0 (LAUNCH NOW)",
         [
-            "完成并启动 IDE 1.0 (LAUNCH NOW) →",
-            "完了して IDE 1.0 を起動 (LAUNCH NOW) →",
-            "Finish & Launch IDE 1.0 (LAUNCH NOW) →",
+            "完成并启动 IDE 1.0 (LAUNCH NOW)",
+            "完了して IDE 1.0 を起動 (LAUNCH NOW)",
+            "Finish & Launch IDE 1.0 (LAUNCH NOW)",
         ],
     ),
     (
@@ -3321,99 +3315,99 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "🤝 多Agent协同工作台",
+        "多Agent协同工作台",
         [
-            "🤝 多Agent协同工作台",
-            "🤝 マルチAgent協調ダッシュボード",
-            "🤝 Multi-Agent Collab Dashboard",
+            "多Agent协同工作台",
+            "マルチAgent協調ダッシュボード",
+            "Multi-Agent Collab Dashboard",
         ],
     ),
     (
-        "💬 智能助手对话",
+        "智能助手对话",
         [
-            "💬 智能助手对话",
-            "💬 AIアシスタント対話",
-            "💬 AI Assistant Chat",
+            "智能助手对话",
+            "AIアシスタント対話",
+            "AI Assistant Chat",
         ],
     ),
     (
-        "⋮ 操作 ▾",
+        "操作",
         [
-            "⋮ 操作 ▾",
-            "⋮ アクション ▾",
-            "⋮ Actions ▾",
+            "操作",
+            "アクション",
+            "Actions",
         ],
     ),
     (
-        "🧹 清空对话历史",
+        "清空对话历史",
         [
-            "🧹 清空对话历史",
-            "🧹 対話履歴をクリア",
-            "🧹 Clear Chat History",
+            "清空对话历史",
+            "対話履歴をクリア",
+            "Clear Chat History",
         ],
     ),
     (
-        "📋 复制全部对话",
+        "复制全部对话",
         [
-            "📋 复制全部对话",
-            "📋 対話全体をコピー",
-            "📋 Copy Full Conversation",
+            "复制全部对话",
+            "対話全体をコピー",
+            "Copy Full Conversation",
         ],
     ),
     (
-        "⚙️ 模型与接口设置…",
+        "模型与接口设置…",
         [
-            "⚙️ 模型与接口设置…",
-            "⚙️ モデル・エンドポイント設定…",
-            "⚙️ Model & Endpoint Settings…",
+            "模型与接口设置…",
+            "モデル・エンドポイント設定…",
+            "Model & Endpoint Settings…",
         ],
     ),
     (
-        "🤝 切换至协同工作台",
+        "切换至协同工作台",
         [
-            "🤝 切换至协同工作台",
-            "🤝 協調ダッシュボードに切替",
-            "🤝 Switch to Collab Dashboard",
+            "切换至协同工作台",
+            "協調ダッシュボードに切替",
+            "Switch to Collab Dashboard",
         ],
     ),
     (
-        "⚡ 自动应用补丁",
+        "自动应用补丁",
         [
-            "⚡ 自动应用补丁",
-            "⚡ パッチを自動適用",
-            "⚡ Auto-apply Patches",
+            "自动应用补丁",
+            "パッチを自動適用",
+            "Auto-apply Patches",
         ],
     ),
     (
-        "🛡️ 手动确认补丁",
+        "手动确认补丁",
         [
-            "🛡️ 手动确认补丁",
-            "🛡️ パッチを手動確認",
-            "🛡️ Manually Review Patches",
+            "手动确认补丁",
+            "パッチを手動確認",
+            "Manually Review Patches",
         ],
     ),
     (
-        "📄 带上选区与当前章节上下文",
+        "带上选区与当前章节上下文",
         [
-            "📄 带上选区与当前章节上下文",
-            "📄 選択範囲と現在の章を含める",
-            "📄 Include Selection & Section Context",
+            "带上选区与当前章节上下文",
+            "選択範囲と現在の章を含める",
+            "Include Selection & Section Context",
         ],
     ),
     (
-        "⚡ 免点击直接应用补丁到文件",
+        "免点击直接应用补丁到文件",
         [
-            "⚡ 免点击直接应用补丁到文件",
-            "⚡ クリック不要でファイルを直接変更",
-            "⚡ Directly Apply Changes Without Click",
+            "免点击直接应用补丁到文件",
+            "クリック不要でファイルを直接変更",
+            "Directly Apply Changes Without Click",
         ],
     ),
     (
-        "🏢 供应商预设:",
+        "供应商预设:",
         [
-            "🏢 供应商预设:",
-            "🏢 プロバイダープリセット:",
-            "🏢 Provider Preset:",
+            "供应商预设:",
+            "プロバイダープリセット:",
+            "Provider Preset:",
         ],
     ),
     (
@@ -3425,43 +3419,899 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
-        "⚡ 快捷技能 ▾",
+        "快捷技能",
         [
-            "⚡ 快捷技能 ▾",
-            "⚡ クイックコマンド ▾",
-            "⚡ Quick Skills ▾",
+            "快捷技能",
+            "クイックコマンド",
+            "Quick Skills",
         ],
     ),
     (
-        "⚙️ 打开模型配置…",
+        "打开模型配置…",
         [
-            "⚙️ 打开模型配置…",
-            "⚙️ モデル設定を開く…",
-            "⚙️ Open Model Settings…",
+            "打开模型配置…",
+            "モデル設定を開く…",
+            "Open Model Settings…",
         ],
     ),
     (
-        "⚡ 采纳操作 ▾",
+        "采纳操作",
         [
-            "⚡ 采纳操作 ▾",
-            "⚡ 採用アクション ▾",
-            "⚡ Actions ▾",
+            "采纳操作",
+            "採用アクション",
+            "Apply Actions",
         ],
     ),
     (
-        "📥 插入到当前光标处",
+        "插入到当前光标处",
         [
-            "📥 插入到当前光标处",
-            "📥 現在のカーソル位置に挿入",
-            "📥 Insert at Current Cursor",
+            "插入到当前光标处",
+            "現在のカーソル位置に挿入",
+            "Insert at Current Cursor",
         ],
     ),
     (
-        "📋 复制全部回复",
+        "复制全部回复",
         [
-            "📋 复制全部回复",
-            "📋 応答全体をコピー",
-            "📋 Copy Full Response",
+            "复制全部回复",
+            "応答全体をコピー",
+            "Copy Full Response",
+        ],
+    ),
+    (
+        "安装向导",
+        [
+            "安装向导",
+            "セットアップ",
+            "Setup Wizard",
+        ],
+    ),
+    (
+        "环境配置",
+        [
+            "环境配置",
+            "環境設定",
+            "Configuration",
+        ],
+    ),
+    (
+        "极速部署",
+        [
+            "极速部署",
+            "高速デプロイ",
+            "Deployment",
+        ],
+    ),
+    (
+        "部署完成",
+        [
+            "部署完成",
+            "完了",
+            "Finished",
+        ],
+    ),
+    (
+        "即将完成安装...",
+        [
+            "即将完成安装...",
+            "間もなく完了します...",
+            "Finalizing installation...",
+        ],
+    ),
+    (
+        "系统终端",
+        [
+            "系统终端",
+            "システム端末",
+            "System Shell",
+        ],
+    ),
+    (
+        "管理员",
+        [
+            "管理员",
+            "管理者",
+            "Admin",
+        ],
+    ),
+    (
+        "标准用户",
+        [
+            "标准用户",
+            "標準ユーザー",
+            "Standard User",
+        ],
+    ),
+    (
+        "常驻托盘",
+        [
+            "常驻托盘",
+            "トレイ常駐",
+            "Tray Resident",
+        ],
+    ),
+    (
+        "独立窗口",
+        [
+            "独立窗口",
+            "独立ウィンドウ",
+            "Standalone",
+        ],
+    ),
+    (
+        "维护向导",
+        [
+            "维护向导",
+            "メンテナンス",
+            "Maintenance",
+        ],
+    ),
+    (
+        "修复向导",
+        [
+            "修复向导",
+            "修復ウィザード",
+            "Repair Wizard",
+        ],
+    ),
+    (
+        "卸载向导",
+        [
+            "卸载向导",
+            "アンインストール",
+            "Uninstall",
+        ],
+    ),
+    (
+        "维护模式",
+        [
+            "维护模式",
+            "メンテナンス",
+            "Maintenance",
+        ],
+    ),
+    (
+        "执行维护",
+        [
+            "执行维护",
+            "実行中",
+            "Processing",
+        ],
+    ),
+    (
+        "维护完成",
+        [
+            "维护完成",
+            "完了",
+            "Complete",
+        ],
+    ),
+    (
+        "修复确认",
+        [
+            "修复确认",
+            "修復確認",
+            "Repair Options",
+        ],
+    ),
+    (
+        "正在修复",
+        [
+            "正在修复",
+            "修復中",
+            "Repairing",
+        ],
+    ),
+    (
+        "修复完成",
+        [
+            "修复完成",
+            "修復完了",
+            "Repaired",
+        ],
+    ),
+    (
+        "卸载选项",
+        [
+            "卸载选项",
+            "削除設定",
+            "Uninstall Options",
+        ],
+    ),
+    (
+        "正在卸载",
+        [
+            "正在卸载",
+            "削除中",
+            "Uninstalling",
+        ],
+    ),
+    (
+        "卸载完成",
+        [
+            "卸载完成",
+            "削除完了",
+            "Uninstalled",
+        ],
+    ),
+    (
+        "返回维护",
+        [
+            "返回维护",
+            "メンテナンスへ戻る",
+            "Back",
+        ],
+    ),
+    (
+        "检测到本机已安装 IDE 1.0 (MAINTENANCE)",
+        [
+            "检测到本机已安装 IDE 1.0 (MAINTENANCE)",
+            "既存の IDE 1.0 を検出しました (MAINTENANCE)",
+            "Existing IDE 1.0 Detected (MAINTENANCE)",
+        ],
+    ),
+    (
+        "选择修复现有安装、卸载移除组件，或更改目标目录与集成选项",
+        [
+            "选择修复现有安装、卸载移除组件，或更改目标目录与集成选项",
+            "既存のインストールを修復・削除するか、インストール先と設定を変更します",
+            "Repair your installation, uninstall components, or change install options",
+        ],
+    ),
+    (
+        "当前已安装实例",
+        [
+            "当前已安装实例",
+            "検出されたインストール",
+            "Installed Instance",
+        ],
+    ),
+    (
+        "修复",
+        [
+            "修复",
+            "修復",
+            "Repair",
+        ],
+    ),
+    (
+        "卸载",
+        [
+            "卸载",
+            "削除",
+            "Remove",
+        ],
+    ),
+    (
+        "配置",
+        [
+            "配置",
+            "変更",
+            "Modify",
+        ],
+    ),
+    (
+        "修复安装 (Repair Installation)",
+        [
+            "修复安装 (Repair Installation)",
+            "インストールを修復 (Repair Installation)",
+            "Repair Installation",
+        ],
+    ),
+    (
+        "重新释放主程序并修复快捷方式、PATH 与注册表，完整保留个人配置",
+        [
+            "重新释放主程序并修复快捷方式、PATH 与注册表，完整保留个人配置",
+            "実行ファイル・ショートカット・PATH・レジストリを修復し個人設定を保持します",
+            "Restore binaries, shortcuts, PATH and registry while keeping your settings",
+        ],
+    ),
+    (
+        "卸载移除 (Uninstall IDE 1.0)",
+        [
+            "卸载移除 (Uninstall IDE 1.0)",
+            "IDE 1.0 をアンインストール (Uninstall)",
+            "Uninstall IDE 1.0",
+        ],
+    ),
+    (
+        "移除主程序、快捷方式、环境变量与卸载记录，可选清理个人配置",
+        [
+            "移除主程序、快捷方式、环境变量与卸载记录，可选清理个人配置",
+            "本体・ショートカット・PATH・登録情報を削除します（個人設定は任意）",
+            "Remove binaries, shortcuts, PATH and uninstall entry (user data optional)",
+        ],
+    ),
+    (
+        "更改配置或安装目录 (Modify / Reinstall)",
+        [
+            "更改配置或安装目录 (Modify / Reinstall)",
+            "設定やインストール先を変更 (Modify / Reinstall)",
+            "Modify Settings or Reinstall",
+        ],
+    ),
+    (
+        "修改安装目标路径或重新配置桌面图标、PATH 与常驻托盘选项",
+        [
+            "修改安装目标路径或重新配置桌面图标、PATH 与常驻托盘选项",
+            "インストール先フォルダーやショートカット・PATH・トレイ常駐を再設定します",
+            "Choose a different install directory or reconfigure shortcuts, PATH and tray",
+        ],
+    ),
+    (
+        "直接启动 IDE 1.0",
+        [
+            "直接启动 IDE 1.0",
+            "IDE 1.0 を起動",
+            "Launch IDE 1.0",
+        ],
+    ),
+    (
+        "修复现有安装 (REPAIR INSTALLATION)",
+        [
+            "修复现有安装 (REPAIR INSTALLATION)",
+            "既存のインストールを修復 (REPAIR INSTALLATION)",
+            "Repair Existing Installation (REPAIR)",
+        ],
+    ),
+    (
+        "保留您的全部偏好与会话，重新部署核心程序并修复系统集成项",
+        [
+            "保留您的全部偏好与会话，重新部署核心程序并修复系统集成项",
+            "すべての個人設定とセッションを保持したまま、本体とシステム統合を修復します",
+            "Keep all preferences and sessions while restoring binaries and system links",
+        ],
+    ),
+    (
+        "目标修复目录",
+        [
+            "目标修复目录",
+            "修復対象フォルダー",
+            "Target Repair Directory",
+        ],
+    ),
+    (
+        "校验并修复全局环境变量 PATH",
+        [
+            "校验并修复全局环境变量 PATH",
+            "ユーザー環境変数 PATH を検証・修復",
+            "Verify and Repair User PATH",
+        ],
+    ),
+    (
+        "确保终端中键入 IDE1.0 可直接唤起当前安装目录",
+        [
+            "确保终端中键入 IDE1.0 可直接唤起当前安装目录",
+            "任意の端末から IDE1.0 をすぐ起動できるよう PATH を修復します",
+            "Ensure typing IDE1.0 in any terminal launches this installation",
+        ],
+    ),
+    (
+        "重建桌面与开始菜单快捷方式",
+        [
+            "重建桌面与开始菜单快捷方式",
+            "デスクトップとスタートメニューのショートカットを再作成",
+            "Rebuild Desktop and Start Menu Shortcuts",
+        ],
+    ),
+    (
+        "修复损坏或丢失的桌面与开始菜单水晶图标入口",
+        [
+            "修复损坏或丢失的桌面与开始菜单水晶图标入口",
+            "破損または紛失したショートカットとクリスタルアイコンを復元します",
+            "Restore missing or broken Desktop and Start Menu shortcuts",
+        ],
+    ),
+    (
+        "同步系统托盘常驻守护配置",
+        [
+            "同步系统托盘常驻守护配置",
+            "システムトレイ常駐デーモン設定を同期",
+            "Sync System Tray Resident Daemon",
+        ],
+    ),
+    (
+        "恢复最小化驻留托盘与毫秒级热唤醒能力",
+        [
+            "恢复最小化驻留托盘与毫秒级热唤醒能力",
+            "トレイ常駐と瞬時復帰の設定を復元します",
+            "Restore minimize-to-tray residency and instant wake-up",
+        ],
+    ),
+    (
+        "开始修复 (REPAIR NOW)",
+        [
+            "开始修复 (REPAIR NOW)",
+            "今すぐ修復 (REPAIR NOW)",
+            "Repair Now (REPAIR NOW)",
+        ],
+    ),
+    (
+        "卸载移除 IDE 1.0 (UNINSTALL)",
+        [
+            "卸载移除 IDE 1.0 (UNINSTALL)",
+            "IDE 1.0 のアンインストール (UNINSTALL)",
+            "Uninstall IDE 1.0 (UNINSTALL)",
+        ],
+    ),
+    (
+        "安全停止关联托盘进程并移除程序与集成项，全程无黑框闪烁",
+        [
+            "安全停止关联托盘进程并移除程序与集成项，全程无黑框闪烁",
+            "関連プロセスを安全に終了し、端末画面を出さずに本体と統合項目を削除します",
+            "Safely stop resident processes and remove components headlessly",
+        ],
+    ),
+    (
+        "待卸载安装目录",
+        [
+            "待卸载安装目录",
+            "アンインストール対象フォルダー",
+            "Directory to Uninstall",
+        ],
+    ),
+    (
+        "移除桌面与开始菜单快捷方式",
+        [
+            "移除桌面与开始菜单快捷方式",
+            "デスクトップとスタートメニューのショートカットを削除",
+            "Remove Desktop and Start Menu Shortcuts",
+        ],
+    ),
+    (
+        "清理 Desktop 与 Start Menu 中的 IDE1.0 启动快捷方式",
+        [
+            "清理 Desktop 与 Start Menu 中的 IDE1.0 启动快捷方式",
+            "デスクトップとスタートメニューから IDE1.0 のショートカットを消去します",
+            "Delete IDE1.0 shortcuts from Desktop and Start Menu",
+        ],
+    ),
+    (
+        "清理环境变量 PATH 与卸载注册表项",
+        [
+            "清理环境变量 PATH 与卸载注册表项",
+            "環境変数 PATH とアンインストール登録を削除",
+            "Clean PATH Entry and Uninstall Registry",
+        ],
+    ),
+    (
+        "从用户 PATH 移除安装目录并注销 Windows 应用列表记录",
+        [
+            "从用户 PATH 移除安装目录并注销 Windows 应用列表记录",
+            "ユーザー PATH からパスを除外し、アプリ一覧の登録を解除します",
+            "Remove install dir from User PATH and unregister from Windows Apps",
+        ],
+    ),
+    (
+        "同时删除个人偏好配置与会话缓存",
+        [
+            "同时删除个人偏好配置与会话缓存",
+            "個人設定とセッションキャッシュも削除",
+            "Also Delete User Preferences and Session Cache",
+        ],
+    ),
+    (
+        "清空 IDE1.0 Fast 配置目录（默认关闭以保留您的个人配置）",
+        [
+            "清空 IDE1.0 Fast 配置目录（默认关闭以保留您的个人配置）",
+            "IDE1.0 Fast 設定フォルダーを削除します（個人設定保護のため既定オフ）",
+            "Erase IDE1.0 Fast settings folder (off by default to keep your config)",
+        ],
+    ),
+    (
+        "确认卸载 (UNINSTALL NOW)",
+        [
+            "确认卸载 (UNINSTALL NOW)",
+            "アンインストールを実行 (UNINSTALL NOW)",
+            "Uninstall Now (UNINSTALL NOW)",
+        ],
+    ),
+    (
+        "正在修复 IDE 1.0 (REPAIRING INSTALLATION)",
+        [
+            "正在修复 IDE 1.0 (REPAIRING INSTALLATION)",
+            "IDE 1.0 を修復中 (REPAIRING INSTALLATION)",
+            "Repairing IDE 1.0 (REPAIRING)",
+        ],
+    ),
+    (
+        "正在校验核心二进制完整性并重建快捷方式与系统集成...",
+        [
+            "正在校验核心二进制完整性并重建快捷方式与系统集成...",
+            "コア実行ファイルの整合性を検証し、ショートカットと統合を再構築中...",
+            "Verifying core binaries and rebuilding shortcuts and system integration...",
+        ],
+    ),
+    (
+        "检查运行中的 IDE 1.0 实例并准备安全修复...",
+        [
+            "检查运行中的 IDE 1.0 实例并准备安全修复...",
+            "実行中の IDE 1.0 インスタンスを確認して修復を準備中...",
+            "Checking running IDE 1.0 instances for safe repair...",
+        ],
+    ),
+    (
+        "校验并重新释放 IDE1.0.exe 核心主程序...",
+        [
+            "校验并重新释放 IDE1.0.exe 核心主程序...",
+            "IDE1.0.exe コア実行ファイルを検証して再展開中...",
+            "Verifying and restoring IDE1.0.exe core executable...",
+        ],
+    ),
+    (
+        "修复 3D 赛璐珞与晶透主题运行时资源...",
+        [
+            "修复 3D 赛璐珞与晶透主题运行时资源...",
+            "3D セルシェードおよびクリスタルテーマ設定を修復中...",
+            "Repairing 3D cel-shaded and translucent theme runtime presets...",
+        ],
+    ),
+    (
+        "重建桌面/开始菜单快捷方式与环境变量 PATH...",
+        [
+            "重建桌面/开始菜单快捷方式与环境变量 PATH...",
+            "デスクトップ・スタートメニューのショートカットと PATH を再構築中...",
+            "Rebuilding Desktop/Start Menu shortcuts and User PATH...",
+        ],
+    ),
+    (
+        "刷新系统卸载注册表与托盘守护配置...",
+        [
+            "刷新系统卸载注册表与托盘守护配置...",
+            "アンインストール登録情報とトレイ常駐設定を更新中...",
+            "Refreshing Windows uninstall registration and tray daemon config...",
+        ],
+    ),
+    (
+        "即将完成修复...",
+        [
+            "即将完成修复...",
+            "間もなく修復が完了します...",
+            "Finalizing repair...",
+        ],
+    ),
+    (
+        "修复完成！IDE 1.0 已恢复至最佳状态 (REPAIRED)",
+        [
+            "修复完成！IDE 1.0 已恢复至最佳状态 (REPAIRED)",
+            "修復完了！IDE 1.0 は正常な状態に復元されました (REPAIRED)",
+            "Repair Complete! IDE 1.0 Is Ready (REPAIRED)",
+        ],
+    ),
+    (
+        "核心主程序、快捷方式与环境变量均已校验完毕，个人配置完好无损",
+        [
+            "核心主程序、快捷方式与环境变量均已校验完毕，个人配置完好无损",
+            "本体・ショートカット・PATH の検証が完了し、個人設定は保持されています",
+            "Core executable, shortcuts and PATH verified; user settings intact",
+        ],
+    ),
+    (
+        "已修复安装目录",
+        [
+            "已修复安装目录",
+            "修復済みフォルダー",
+            "Repaired Directory",
+        ],
+    ),
+    (
+        "正在卸载 IDE 1.0 (UNINSTALLING)",
+        [
+            "正在卸载 IDE 1.0 (UNINSTALLING)",
+            "IDE 1.0 をアンインストール中 (UNINSTALLING)",
+            "Uninstalling IDE 1.0 (UNINSTALLING)",
+        ],
+    ),
+    (
+        "正在静默移除已部署的程序文件、快捷方式与注册表记录...",
+        [
+            "正在静默移除已部署的程序文件、快捷方式与注册表记录...",
+            "プログラム本体・ショートカット・登録情報を静かに削除しています...",
+            "Silently removing installed binaries, shortcuts and registry entries...",
+        ],
+    ),
+    (
+        "停止关联的 IDE 1.0 托盘守护与后台实例...",
+        [
+            "停止关联的 IDE 1.0 托盘守护与后台实例...",
+            "関連する IDE 1.0 トレイ常駐とプロセスを終了中...",
+            "Stopping associated IDE 1.0 tray daemon and background instances...",
+        ],
+    ),
+    (
+        "移除桌面与开始菜单快捷方式入口...",
+        [
+            "移除桌面与开始菜单快捷方式入口...",
+            "デスクトップとスタートメニューのショートカットを削除中...",
+            "Removing Desktop and Start Menu shortcuts...",
+        ],
+    ),
+    (
+        "从用户环境变量 PATH 移除安装路径...",
+        [
+            "从用户环境变量 PATH 移除安装路径...",
+            "ユーザー環境変数 PATH からインストール先を除外中...",
+            "Removing install location from User PATH...",
+        ],
+    ),
+    (
+        "注销 Windows 应用列表卸载注册表项...",
+        [
+            "注销 Windows 应用列表卸载注册表项...",
+            "Windows アプリ一覧のアンインストール登録を解除中...",
+            "Unregistering IDE 1.0 from Windows Apps registry...",
+        ],
+    ),
+    (
+        "清理目标目录主程序与关联残留文件...",
+        [
+            "清理目标目录主程序与关联残留文件...",
+            "対象フォルダー内の本体と関連ファイルを削除中...",
+            "Cleaning up installed binaries in target directory...",
+        ],
+    ),
+    (
+        "即将完成卸载...",
+        [
+            "即将完成卸载...",
+            "間もなくアンインストールが完了します...",
+            "Finalizing uninstallation...",
+        ],
+    ),
+    (
+        "卸载完成！IDE 1.0 已从本机移除 (UNINSTALLED)",
+        [
+            "卸载完成！IDE 1.0 已从本机移除 (UNINSTALLED)",
+            "アンインストール完了！IDE 1.0 を削除しました (UNINSTALLED)",
+            "Uninstallation Complete! IDE 1.0 Removed (UNINSTALLED)",
+        ],
+    ),
+    (
+        "已安全清理所选程序组件与系统集成项，感谢您的使用",
+        [
+            "已安全清理所选程序组件与系统集成项，感谢您的使用",
+            "選択されたコンポーネントと統合項目を安全に削除しました",
+            "Selected binaries and system integrations have been safely removed",
+        ],
+    ),
+    (
+        "程序文件清理",
+        [
+            "程序文件清理",
+            "プログラムファイルの削除",
+            "Binary Cleanup",
+        ],
+    ),
+    (
+        "已清理目标目录",
+        [
+            "已清理目标目录",
+            "削除済みフォルダー",
+            "Cleaned Directory",
+        ],
+    ),
+    (
+        "快捷方式与环境变量",
+        [
+            "快捷方式与环境变量",
+            "ショートカットと環境変数",
+            "Shortcuts and Environment",
+        ],
+    ),
+    (
+        "已移除所选快捷方式、环境变量与注册表项",
+        [
+            "已移除所选快捷方式、环境变量与注册表项",
+            "ショートカット・PATH・レジストリ登録をすべて削除しました",
+            "Removed shortcuts, PATH entry and uninstall registration",
+        ],
+    ),
+    (
+        "已按选项保留部分系统集成项",
+        [
+            "已按选项保留部分系统集成项",
+            "選択に従い一部のシステム統合項目を保持しました",
+            "Kept unselected system integration items as requested",
+        ],
+    ),
+    (
+        "个人配置状态",
+        [
+            "个人配置状态",
+            "個人設定の状態",
+            "User Configuration",
+        ],
+    ),
+    (
+        "已按选择删除个人配置与会话缓存",
+        [
+            "已按选择删除个人配置与会话缓存",
+            "選択に従い個人設定とセッションキャッシュを削除しました",
+            "User preferences and session cache were removed",
+        ],
+    ),
+    (
+        "已为您保留个人偏好设置与会话配置",
+        [
+            "已为您保留个人偏好设置与会话配置",
+            "個人設定とセッション構成はそのまま保持されました",
+            "Your personal preferences and session configuration were preserved",
+        ],
+    ),
+    (
+        "完成并关闭向导 (FINISH)",
+        [
+            "完成并关闭向导 (FINISH)",
+            "完了して閉じる (FINISH)",
+            "Finish and Close (FINISH)",
+        ],
+    ),
+    (
+        "部分受保护程序文件需要管理员权限才能删除",
+        [
+            "部分受保护程序文件需要管理员权限才能删除",
+            "一部の保護されたファイルの削除には管理者権限が必要です",
+            "Some protected files require administrator privileges to remove",
+        ],
+    ),
+    (
+        "展开 Agent 协同平台",
+        [
+            "展开 Agent 协同平台",
+            "Agent 協調プラットフォームを展開",
+            "Expand Agent Collaboration Platform",
+        ],
+    ),
+    (
+        "折叠 Agent 协同平台",
+        [
+            "折叠 Agent 协同平台",
+            "Agent 協調プラットフォームを折りたたむ",
+            "Collapse Agent Collaboration Platform",
+        ],
+    ),
+    (
+        "全员协同调度",
+        [
+            "全员协同调度",
+            "チーム並列オーケストレーション",
+            "Multi-Agent Orchestration",
+        ],
+    ),
+    (
+        "搜索 Agent 名称或职责…",
+        [
+            "搜索 Agent 名称或职责…",
+            "Agent の名前や役割を検索…",
+            "Search agent name or role…",
+        ],
+    ),
+    (
+        "未找到匹配的 Agent",
+        [
+            "未找到匹配的 Agent",
+            "一致する Agent が見つかりません",
+            "No matching agents found",
+        ],
+    ),
+    (
+        "Agent 数量",
+        [
+            "Agent 数量",
+            "Agent 数",
+            "Agent Count",
+        ],
+    ),
+    (
+        "清空当前会话",
+        [
+            "清空当前会话",
+            "現在のセッションをクリア",
+            "Clear Active Session",
+        ],
+    ),
+    (
+        "切换至全员协同调度",
+        [
+            "切换至全员协同调度",
+            "チーム並列オーケストレーションへ切替",
+            "Switch to Multi-Agent Orchestration",
+        ],
+    ),
+    (
+        "返回单 Agent 精准控制",
+        [
+            "返回单 Agent 精准控制",
+            "単一 Agent 精密制御へ戻る",
+            "Back to Single-Agent Precision Control",
+        ],
+    ),
+    (
+        "分配当前文件",
+        [
+            "分配当前文件",
+            "現在のファイルを割り当て",
+            "Assign Active File",
+        ],
+    ),
+    (
+        "取消文件分配",
+        [
+            "取消文件分配",
+            "ファイル割り当てを解除",
+            "Unassign File",
+        ],
+    ),
+    (
+        "模型名称 (可选)",
+        [
+            "模型名称 (可选)",
+            "モデル表示名 (任意)",
+            "Display Name (Optional)",
+        ],
+    ),
+    (
+        "已配置模型",
+        [
+            "已配置模型",
+            "設定済みモデル",
+            "Configured Models",
+        ],
+    ),
+    (
+        "删除模型",
+        [
+            "删除模型",
+            "モデルを削除",
+            "Remove Model",
+        ],
+    ),
+    (
+        "尚未配置模型，请先添加",
+        [
+            "尚未配置模型，请先添加",
+            "モデルが未設定です。先に設定を追加してください",
+            "No models configured yet. Add one first.",
+        ],
+    ),
+    (
+        "添加或管理模型…",
+        [
+            "添加或管理模型…",
+            "モデルを追加または管理…",
+            "Add or Manage Models…",
+        ],
+    ),
+    (
+        "跟随全局默认",
+        [
+            "跟随全局默认",
+            "グローバル既定に従う",
+            "Follow Global Default",
+        ],
+    ),
+    (
+        "搜索已配置模型…",
+        [
+            "搜索已配置模型…",
+            "設定済みモデルを検索…",
+            "Search configured models…",
+        ],
+    ),
+    (
+        "精准控制",
+        [
+            "精准控制",
+            "精密制御",
+            "Control",
+        ],
+    ),
+    (
+        "Agent 编队精准控制",
+        [
+            "Agent 编队精准控制",
+            "Agent 編成・精密制御",
+            "Agent Roster & Precision Control",
         ],
     ),
 ];
@@ -3485,7 +4335,10 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for (k, row) in CMD_T {
             assert!(seen.insert(*k), "命令表重复的键 {k}");
-            assert_eq!(*k, row[0], "CMD_T 键必须与中文译文一致以保证 Lang::Zh O(1) 直通");
+            assert_eq!(
+                *k, row[0],
+                "CMD_T 键必须与中文译文一致以保证 Lang::Zh O(1) 直通"
+            );
         }
     }
 
@@ -3767,5 +4620,24 @@ mod tests {
             missing.is_empty(),
             "这些状态栏提示没有 msgtr 模板: {missing:#?}"
         );
+    }
+
+    #[test]
+    fn no_emoji_or_hollow_box_icons_in_i18n_tables() {
+        let is_forbidden = |c: char| -> bool {
+            let cp = c as u32;
+            cp >= 0x1F000
+                || cp == 0xFE0F
+                || (0x2600..=0x27BF).contains(&cp)
+                || matches!(cp, 0x2B50 | 0x25A1 | 0x25A6 | 0x25C8 | 0x22EE | 0x25BE)
+        };
+        for (k, row) in T.iter().chain(CMD_T.iter()) {
+            for s in std::iter::once(k).chain(row.iter()) {
+                assert!(
+                    !s.chars().any(is_forbidden),
+                    "i18n string contains forbidden emoji/hollow-box symbol: {s:?}"
+                );
+            }
+        }
     }
 }

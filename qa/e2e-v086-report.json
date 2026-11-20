@@ -1,0 +1,91 @@
+﻿{
+    "GeneratedAt":  "2026-11-20T07:14:33-08:00",
+    "Suite":  "IDE1.0 v0.8.6 E2E Regression Suite",
+    "TotalFeatures":  10,
+    "PassedFeatures":  10,
+    "FailedFeatures":  0,
+    "PassRatePercent":  100,
+    "ElapsedSec":  16.56,
+    "Features":  [
+                     {
+                         "Id":  "FEAT-16",
+                         "Name":  "User Custom Model Isolation \u0026 Zero Synthetic Models",
+                         "Desc":  "用户自定义模型隔离、纯净模型列表、零伪造Mock模型注入、敏感Token掩码脱敏",
+                         "Status":  "Passed",
+                         "DurationSec":  3.41,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-17",
+                         "Name":  "Settings Full Persistence Across Sessions",
+                         "Desc":  "用户AI与协同设置全面持久化: 对话框开闭、协同模式、自动应用、上下文开关、激活Tab与每Agent模型跨会话完整还原",
+                         "Status":  "Passed",
+                         "DurationSec":  1.47,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-18",
+                         "Name":  "Unified AI Chat \u0026 Multi-Agent Collab Platform",
+                         "Desc":  "单 Agent 精准控制下拉搜索切换、上万级 Agent (1~100,000) 规模化扩缩容、超显限数字徽章呈现与虚拟化、右上角冗余工作台按钮移除",
+                         "Status":  "Passed",
+                         "DurationSec":  1.67,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-19",
+                         "Name":  "Rebuilt Progress Bar \u0026 Cel-Shaded 3D Logo Maintenance Wizard",
+                         "Desc":  "安装向导进度条数学重构与偏心校准、安装/维护/修复/安全卸载双模驱动、零空心方块字体图元安全",
+                         "Status":  "Passed",
+                         "DurationSec":  1.55,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-20",
+                         "Name":  "Theme-Adaptive Exquisite Buttons \u0026 Prismatic Surface Physics",
+                         "Desc":  "4 大主题自适应精致按钮 (Comic, Retro16, Crystal, Fluent Dark/Light) 具有精确边框、渐变、按压反馈与纯正矢量图标 (杜绝空方块)",
+                         "Status":  "Passed",
+                         "DurationSec":  1.28,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-21",
+                         "Name":  "Headless Subsystem \u0026 Zero-Console Invariant",
+                         "Desc":  "CREATE_NO_WINDOW 与 Windows GUI 子系统设置，彻底消除终端黑框与子进程弹窗",
+                         "Status":  "Passed",
+                         "DurationSec":  0.21,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-22",
+                         "Name":  "Direct Terminal ANSI TrueColor \u0026 Path Tracking",
+                         "Desc":  "终端直接交互子系统、ANSI 256 与 24-bit TrueColor 颜色解析及 OSC/cd 路径追踪",
+                         "Status":  "Passed",
+                         "DurationSec":  4.2,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-23",
+                         "Name":  "Release Binary Cold Startup SLA \u0026 Packaging Integrity",
+                         "Desc":  "IDE1.0.exe 生产二进制体积合规 (10MB ~ 45MB)、冷启动低于 500ms、无进程死锁",
+                         "Status":  "Passed",
+                         "DurationSec":  0.19,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-24",
+                         "Name":  "AI Agent Tool Invocation \u0026 Autonomous Integration Registry",
+                         "Desc":  "README.md 中完整包含工具定义元数据、检索关键词、CLI 自动化调用规格、环境变量契约与 CAS 补丁模式",
+                         "Status":  "Passed",
+                         "DurationSec":  0.02,
+                         "Error":  ""
+                     },
+                     {
+                         "Id":  "FEAT-25",
+                         "Name":  "MCP Protocol Suite, Headless Co-Editing \u0026 Blender Rust Console",
+                         "Desc":  "crates/ide-mcp 18项单元测试全通、跨供应商无头编辑原子CAS与3-Way自动合并、Blender ide::ops 控制台与 Vercel MCP 接口",
+                         "Status":  "Passed",
+                         "DurationSec":  2.45,
+                         "Error":  ""
+                     }
+                 ]
+}

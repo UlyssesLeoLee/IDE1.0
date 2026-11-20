@@ -386,10 +386,8 @@ impl TempBenchDir {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!(
-            "IDE1.0-perf-{tag}-{}-{nanos}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("IDE1.0-perf-{tag}-{}-{nanos}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
@@ -448,14 +446,8 @@ fn math_stats_and_ols_complexity_fitting_are_exact() {
     assert!(st.sla_pass);
 
     // 小样本 + 高方差: n < 5 时高分位点应返回 None, 且 CI 下界不得为负
-    let small_hv = BenchStats::from_samples(
-        "small_high_var",
-        0,
-        &[0.1, 0.1, 100.0],
-        1.0,
-        "ops/s",
-        None,
-    );
+    let small_hv =
+        BenchStats::from_samples("small_high_var", 0, &[0.1, 0.1, 100.0], 1.0, "ops/s", None);
     assert_eq!(small_hv.n, 3);
     assert_eq!(small_hv.ci95_low_ms, 0.0);
     assert!(small_hv.ci95_high_ms > small_hv.mean_ms);
@@ -518,7 +510,11 @@ fn perf_bench_open() {
             let d = Doc::open(1, &p).expect("打开");
             assert!(d.lines.len() > 1000);
         });
-        assert!(st.sla_pass, "{} exceeded SLA {:?}", st.name, st.sla_limit_ms);
+        assert!(
+            st.sla_pass,
+            "{} exceeded SLA {:?}",
+            st.name, st.sla_limit_ms
+        );
     }
     let p = tmp.write("l200k.txt", &lines_text(200_000));
     let st_200k = measure_stats(
@@ -691,15 +687,9 @@ fn perf_bench_frames() {
     let tmp = TempBenchDir::new("frames");
     let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
     let ctx = egui::Context::default();
-    let s_empty = measure_stats(
-        "frame_empty_ms",
-        3,
-        25,
-        1.0,
-        "frames/s",
-        Some(4.0),
-        || frame(&mut a, &ctx),
-    );
+    let s_empty = measure_stats("frame_empty_ms", 3, 25, 1.0, "frames/s", Some(4.0), || {
+        frame(&mut a, &ctx)
+    });
     assert!(s_empty.sla_pass);
 
     let p = tmp.write("scroll200k.rs", &lines_text(200_000));
@@ -905,21 +895,13 @@ fn perf_bench_mathematical_complexity() {
     for (idx, (n, p)) in files.iter().enumerate() {
         let mut doc = Doc::open(1, p).unwrap();
         let _ = doc.changed();
-        let st = measure_stats(
-            edit_names[idx],
-            2,
-            12,
-            500.0,
-            "edits/s",
-            None,
-            || {
-                for k in 0..500usize {
-                    doc.goto((n / 2) + (k % 32), 4);
-                    doc.type_text("z");
-                    std::hint::black_box(doc.changed().len());
-                }
-            },
-        );
+        let st = measure_stats(edit_names[idx], 2, 12, 500.0, "edits/s", None, || {
+            for k in 0..500usize {
+                doc.goto((n / 2) + (k % 32), 4);
+                doc.type_text("z");
+                std::hint::black_box(doc.changed().len());
+            }
+        });
         edit_medians.push(st.median_ms);
     }
     let m_edit = ComplexityModel::fit_ols(
@@ -955,19 +937,11 @@ fn perf_bench_mathematical_complexity() {
     for (idx, (_, p)) in files.iter().enumerate() {
         app.docs[0] = Doc::open(1, p).unwrap();
         let _ = app.docs[0].changed();
-        let st = measure_stats(
-            frame_names[idx],
-            3,
-            12,
-            10.0,
-            "frames/s",
-            None,
-            || {
-                for _ in 0..10 {
-                    frame(&mut app, &ctx);
-                }
-            },
-        );
+        let st = measure_stats(frame_names[idx], 3, 12, 10.0, "frames/s", None, || {
+            for _ in 0..10 {
+                frame(&mut app, &ctx);
+            }
+        });
         frame_medians.push(st.median_ms);
     }
     let m_frame = ComplexityModel::fit_ols(

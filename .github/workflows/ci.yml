@@ -68,7 +68,7 @@ jobs:
         run: cargo check --workspace
 
       - name: Strict Linter Gate (cargo clippy -D warnings)
-        run: cargo clippy -p editcore -p nema-codec -p ide-agent-router -p ide-fast --bin ide-fast -- -D warnings
+        run: cargo clippy -p editcore -p nema-codec -p ide-agent-router -p ide-fast --all-targets -- -D warnings
 
       - name: Comprehensive Test Suite (cargo test)
         if: ${{ github.event.inputs.skip_tests != 'true' }}

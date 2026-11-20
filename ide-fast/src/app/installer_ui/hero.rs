@@ -48,9 +48,11 @@ impl App {
             if moved {
                 self.installer.last_mouse_pos = Some(curr_pos);
                 // 空间坐标与时间驱动确定性哈希，生成微幅随机冲量 (绝不激进跳跃)
-                let hash_val = (curr_pos.x * 12.9898 + curr_pos.y * 78.233 + time * 2.17).sin() * 43758.5453;
+                let hash_val =
+                    (curr_pos.x * 12.9898 + curr_pos.y * 78.233 + time * 2.17).sin() * 43_758.547;
                 let delta_yaw = (hash_val.fract() - 0.5) * 0.35;
-                let hash_val2 = (curr_pos.y * 23.456 + curr_pos.x * 67.891 + time * 1.63).cos() * 24634.6345;
+                let hash_val2 =
+                    (curr_pos.y * 23.456 + curr_pos.x * 67.891 + time * 1.63).cos() * 24_634.635;
                 let delta_pitch = (hash_val2.fract() - 0.5) * 0.18;
 
                 self.installer.rot_target_yaw += delta_yaw;
@@ -69,15 +71,17 @@ impl App {
 
         // 平滑阻尼插值趋向目标角度，带来如同真实珠宝悬浮于流体中的奢华厚重感
         let damping = (dt * 1.8).clamp(0.02, 0.18);
-        self.installer.cam_yaw += (self.installer.rot_target_yaw - self.installer.cam_yaw) * damping;
-        self.installer.cam_pitch += (self.installer.rot_target_pitch - self.installer.cam_pitch) * damping;
+        self.installer.cam_yaw +=
+            (self.installer.rot_target_yaw - self.installer.cam_yaw) * damping;
+        self.installer.cam_pitch +=
+            (self.installer.rot_target_pitch - self.installer.cam_pitch) * damping;
 
         // 3. 动态计算 3D 变换矩阵与相机视图
         // 柔和优雅的呼吸漂浮
         let bob_y = (time * 1.4).sin() * 8.0;
 
-        let logo_rot = Mat4::rot_y(self.installer.cam_yaw)
-            .mul(&Mat4::rot_x(self.installer.cam_pitch));
+        let logo_rot =
+            Mat4::rot_y(self.installer.cam_yaw).mul(&Mat4::rot_x(self.installer.cam_pitch));
         let logo_model_mat = Mat4::translate(0.0, bob_y, 0.0).mul(&logo_rot);
 
         let cam = Camera3D {
@@ -99,6 +103,7 @@ impl App {
         );
 
         // 持续以 60 FPS 平滑微帧驱动 3D 缓慢旋转与微光渲染
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(16));
     }
 }

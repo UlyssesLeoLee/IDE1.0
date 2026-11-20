@@ -104,7 +104,7 @@ pub fn markdown_table_template() -> &'static str {
 }
 
 pub fn markdown_heading_template() -> &'static str {
-    "\n\n### 📌 便笺标题\n"
+    "\n\n### 便笺标题\n"
 }
 
 pub fn markdown_codeblock_template() -> &'static str {
@@ -164,7 +164,11 @@ pub fn apply_sticky_format_action(
     // 1. 如果处于就地单块编辑状态，优先作用于当前正在编辑的块缓冲区
     if let Some(edit) = edit_cache.as_mut() {
         match action {
-            StickyFormatAction::WrapTag { prefix, suffix, placeholder } => {
+            StickyFormatAction::WrapTag {
+                prefix,
+                suffix,
+                placeholder,
+            } => {
                 let trimmed = edit.buf.trim();
                 if trimmed.is_empty() {
                     edit.buf = format!("{}{}{}", prefix, placeholder, suffix);
@@ -177,12 +181,23 @@ pub fn apply_sticky_format_action(
                     edit.buf = format!("{}{}{}", prefix, trimmed, suffix);
                 }
             }
-            StickyFormatAction::LinePrefix { prefix, placeholder } => {
+            StickyFormatAction::LinePrefix {
+                prefix,
+                placeholder,
+            } => {
                 let trimmed = edit.buf.trim();
-                if trimmed.starts_with(prefix) {
-                    edit.buf = trimmed[prefix.len()..].trim_start().to_string();
+                if let Some(rest) = trimmed.strip_prefix(prefix) {
+                    edit.buf = rest.trim_start().to_string();
                 } else {
-                    edit.buf = format!("{}{}", prefix, if trimmed.is_empty() { placeholder } else { trimmed });
+                    edit.buf = format!(
+                        "{}{}",
+                        prefix,
+                        if trimmed.is_empty() {
+                            placeholder
+                        } else {
+                            trimmed
+                        }
+                    );
                 }
             }
             StickyFormatAction::InsertTemplate { template } => {
@@ -208,7 +223,11 @@ pub fn apply_sticky_format_action(
 
         if let Some(line) = lines.get_mut(target_idx) {
             match action {
-                StickyFormatAction::WrapTag { prefix, suffix, placeholder } => {
+                StickyFormatAction::WrapTag {
+                    prefix,
+                    suffix,
+                    placeholder,
+                } => {
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
                         *line = format!("{}{}{}", prefix, placeholder, suffix);
@@ -221,12 +240,23 @@ pub fn apply_sticky_format_action(
                         *line = format!("{}{}{}", prefix, trimmed, suffix);
                     }
                 }
-                StickyFormatAction::LinePrefix { prefix, placeholder } => {
+                StickyFormatAction::LinePrefix {
+                    prefix,
+                    placeholder,
+                } => {
                     let trimmed = line.trim();
-                    if trimmed.starts_with(prefix) {
-                        *line = trimmed[prefix.len()..].trim_start().to_string();
+                    if let Some(rest) = trimmed.strip_prefix(prefix) {
+                        *line = rest.trim_start().to_string();
                     } else {
-                        *line = format!("{}{}", prefix, if trimmed.is_empty() { placeholder } else { trimmed });
+                        *line = format!(
+                            "{}{}",
+                            prefix,
+                            if trimmed.is_empty() {
+                                placeholder
+                            } else {
+                                trimmed
+                            }
+                        );
                     }
                 }
                 StickyFormatAction::InsertTemplate { template } => {
@@ -292,10 +322,17 @@ pub fn apply_sticky_format_action(
     };
 
     let snippet = match action {
-        StickyFormatAction::WrapTag { prefix, suffix, placeholder } => {
+        StickyFormatAction::WrapTag {
+            prefix,
+            suffix,
+            placeholder,
+        } => {
             format!("{}{}{}", prefix, placeholder, suffix)
         }
-        StickyFormatAction::LinePrefix { prefix, placeholder } => {
+        StickyFormatAction::LinePrefix {
+            prefix,
+            placeholder,
+        } => {
             format!("{}{}", prefix, placeholder)
         }
         StickyFormatAction::InsertTemplate { template } => template.to_string(),
@@ -319,8 +356,8 @@ impl StickyNotesState {
         let now_str = current_timestamp();
         let default_note = StickyNote {
             id: "note_welcome".to_string(),
-            title: "欢迎使用便笺 📝".to_string(),
-            content: "# 欢迎使用便笺 📝\n\n这是专为快速记录灵感、待办清单、临时代码片段设计的常驻信息窗（平替 Windows 便笺）。\n\n## 常用特性\n- 顶栏 `+` 可随时新增便笺，`📑` 切换便笺列表与检索\n- 顶栏 `🎨` 可切换 7 种便笺色彩，支持深浅色与各大主题\n- 顶栏 `📌` 支持常驻置顶，保持便笺在最前\n- 底栏提供粗体、斜体、删除线、代办清单与时间戳\n- 所有便笺内容实时自动保存，重启永不丢失！\n\n## 今日待办\n- [ ] 尝试切换便笺色彩 🎨\n- [ ] 试用 Markdown 待办清单与格式化\n- [ ] 体验全主题画风（Retro 16-Bit / Comic 美漫 / 水晶透明）\n".to_string(),
+            title: "欢迎使用便笺".to_string(),
+            content: "# 欢迎使用便笺\n\n这是专为快速记录灵感、待办清单、临时代码片段设计的常驻信息窗（平替 Windows 便笺）。\n\n## 常用特性\n- 顶栏「新增」可随时新建便笺，「列表」切换便笺列表与检索\n- 顶栏「调色盘」可切换 7 种便笺色彩，支持深浅色与各大主题\n- 顶栏「置顶」支持常驻置顶，保持便笺在最前\n- 底栏提供粗体、斜体、删除线、待办清单与时间戳\n- 所有便笺内容实时自动保存，重启永不丢失！\n\n## 今日待办\n- [ ] 尝试切换便笺色彩\n- [ ] 试用 Markdown 待办清单与格式化\n- [ ] 体验全主题画风（Retro 16-Bit / Comic 美漫 / 水晶透明）\n".to_string(),
             color_idx: 0, // 经典黄
             pinned: false,
             created_at: now_str.clone(),
@@ -1352,7 +1389,7 @@ impl App {
                                 let search_resp = ui.add_sized(
                                     [search_w, 24.0],
                                     TextEdit::singleline(&mut self.sticky_notes.search_query)
-                                        .hint_text("🔍 搜索便笺内容与标题 (Ctrl+F)..."),
+                                        .hint_text("搜索便笺内容与标题 (Ctrl+F)..."),
                                 );
                                 if search_focus_requested {
                                     search_resp.request_focus();
@@ -1527,19 +1564,26 @@ impl App {
                                     ui.vertical_centered(|ui| {
                                         ui.add_space(28.0);
                                         ui.label(
-                                            egui::RichText::new("📝 Markdown 预览模式 (当前为空)")
+                                            egui::RichText::new("Markdown 预览模式 (当前为空)")
                                                 .color(palette.fg.gamma_multiply(0.75))
                                                 .font(FontId::proportional(13.0))
                                                 .strong(),
                                         );
                                         ui.add_space(8.0);
                                         ui.label(
-                                            egui::RichText::new("按 Ctrl+M 或点击上方 👁️ 切换为源码编辑，\n也可使用下方工具栏插入表格、待办或代码块。")
+                                            egui::RichText::new("按 Ctrl+M 或点击上方切换按钮进入源码编辑，\n也可使用下方工具栏插入表格、待办或代码块。")
                                                 .color(palette.fg.gamma_multiply(0.55))
                                                 .font(FontId::proportional(11.0)),
                                         );
                                         ui.add_space(12.0);
-                                        if ui.button("✏️ 开始编写便笺").clicked() {
+                                        if crate::ui_icons::icon_button(
+                                            ui,
+                                            crate::ui_icons::UiIcon::Note,
+                                            "开始编写便笺",
+                                            palette.fg,
+                                        )
+                                        .clicked()
+                                        {
                                             if let Some(n) = self.sticky_notes.active_note_mut() {
                                                 n.md_preview = false;
                                                 self.sticky_notes.mark_dirty();
@@ -2537,8 +2581,14 @@ pub fn paint_sticky_tool_icon(
                 st,
                 StrokeKind::Inside,
             );
-            p.line_segment([pos2(tbl_rect.left(), c.y), pos2(tbl_rect.right(), c.y)], st);
-            p.line_segment([pos2(c.x, tbl_rect.top()), pos2(c.x, tbl_rect.bottom())], st);
+            p.line_segment(
+                [pos2(tbl_rect.left(), c.y), pos2(tbl_rect.right(), c.y)],
+                st,
+            );
+            p.line_segment(
+                [pos2(c.x, tbl_rect.top()), pos2(c.x, tbl_rect.bottom())],
+                st,
+            );
         }
         StickyToolIcon::CodeBlock => {
             // 绘制 </> 代码块符号
@@ -2726,7 +2776,10 @@ mod tests {
         assert_eq!(state.notes.len(), 1);
         assert_eq!(state.active_id, "note_welcome");
         assert!(state.notes[0].content.contains("欢迎使用便笺"));
-        assert!(state.win_size[0] >= 440.0, "便笺默认宽度必须 >= 440px 以容纳底部 12 按钮");
+        assert!(
+            state.win_size[0] >= 440.0,
+            "便笺默认宽度必须 >= 440px 以容纳底部 12 按钮"
+        );
     }
 
     #[test]
@@ -2943,7 +2996,11 @@ mod tests {
             false,
         );
         app.sticky_notes.open = true;
-        let initial_color = app.sticky_notes.active_note().map(|n| n.color_idx).unwrap_or(0);
+        let initial_color = app
+            .sticky_notes
+            .active_note()
+            .map(|n| n.color_idx)
+            .unwrap_or(0);
         assert_eq!(initial_color, 0);
 
         // 打开调色盘
@@ -2958,7 +3015,11 @@ mod tests {
         app.sticky_notes.color_picker_open = false;
         app.sticky_notes.mark_dirty();
 
-        let updated_color = app.sticky_notes.active_note().map(|n| n.color_idx).unwrap_or(0);
+        let updated_color = app
+            .sticky_notes
+            .active_note()
+            .map(|n| n.color_idx)
+            .unwrap_or(0);
         assert_eq!(updated_color, 3);
         let pal = get_palette(updated_color, &app.tc);
         assert_ne!(pal.bg, Color32::TRANSPARENT);
@@ -3012,19 +3073,28 @@ mod tests {
 
         let lines: Vec<String> = tbl.lines().map(String::from).collect();
         let parsed = crate::markdown::parse(&lines);
-        let has_table = parsed.iter().any(|p| matches!(p.block, crate::markdown::Block::Table { .. }));
+        let has_table = parsed
+            .iter()
+            .any(|p| matches!(p.block, crate::markdown::Block::Table { .. }));
         assert!(has_table, "Markdown 表格模板必须被成功解析为 Block::Table");
 
         let heading = markdown_heading_template();
         let h_lines: Vec<String> = heading.lines().map(String::from).collect();
         let h_parsed = crate::markdown::parse(&h_lines);
-        let has_heading = h_parsed.iter().any(|p| matches!(p.block, crate::markdown::Block::Heading { level: 3, .. }));
-        assert!(has_heading, "Markdown 标题模板必须被成功解析为 Block::Heading level 3");
+        let has_heading = h_parsed
+            .iter()
+            .any(|p| matches!(p.block, crate::markdown::Block::Heading { level: 3, .. }));
+        assert!(
+            has_heading,
+            "Markdown 标题模板必须被成功解析为 Block::Heading level 3"
+        );
 
         let code = markdown_codeblock_template();
         let c_lines: Vec<String> = code.lines().map(String::from).collect();
         let c_parsed = crate::markdown::parse(&c_lines);
-        let has_code = c_parsed.iter().any(|p| matches!(p.block, crate::markdown::Block::Code { .. }));
+        let has_code = c_parsed
+            .iter()
+            .any(|p| matches!(p.block, crate::markdown::Block::Code { .. }));
         assert!(has_code, "Markdown 代码块模板必须被成功解析为 Block::Code");
     }
 
@@ -3104,7 +3174,8 @@ mod tests {
         // 模拟触发第 1 块 (正文段落) 的单块就地编辑请求
         let lines: Vec<String> = crate::mdtools::text_to_lines(&note.content);
         let blocks = crate::markdown::parse(&lines);
-        let (start, end) = crate::mdtools::block_span(&blocks, 1, &lines).expect("第1块必须有行范围");
+        let (start, end) =
+            crate::mdtools::block_span(&blocks, 1, &lines).expect("第1块必须有行范围");
         assert_eq!(start, 2);
         assert_eq!(end, 3);
 
@@ -3129,7 +3200,10 @@ mod tests {
             app.sticky_notes_window(&ctx);
         });
         out2.textures_delta.clear();
-        assert!(app.sticky_notes.active_note().unwrap().md_preview, "就地编辑期间预览模式不得被中断");
+        assert!(
+            app.sticky_notes.active_note().unwrap().md_preview,
+            "就地编辑期间预览模式不得被中断"
+        );
 
         // 模拟完成编辑并应用补丁 (将其替换为两行新文字)
         if let Some(n) = app.sticky_notes.active_note_mut() {
@@ -3148,7 +3222,10 @@ mod tests {
         out3.textures_delta.clear();
 
         let updated_note = app.sticky_notes.active_note().unwrap();
-        assert!(updated_note.md_preview, "应用编辑后必须持续保持在富文本预览模式中");
+        assert!(
+            updated_note.md_preview,
+            "应用编辑后必须持续保持在富文本预览模式中"
+        );
         assert!(updated_note.content.contains("修改后的段落 A"));
         assert!(updated_note.content.contains("# 标题行"));
         assert!(updated_note.content.contains("- [ ] 任务1"));
@@ -3272,6 +3349,9 @@ mod tests {
         assert!(!sticky_default.open, "便笺首次启动默认不得自动打开");
 
         let settings_default = crate::settings::Settings::default();
-        assert!(!settings_default.view.side_open, "左侧导航栏默认必须处于关闭状态");
+        assert!(
+            !settings_default.view.side_open,
+            "左侧导航栏默认必须处于关闭状态"
+        );
     }
 }

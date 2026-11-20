@@ -76,7 +76,10 @@ impl App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.ai.open = true;
+                self.ai.collab_mode = true;
                 self.collab.open = true;
+                self.expand_dock(crate::panels::Dock::Right);
                 ctx.request_repaint();
             }
             crate::tray::TrayEvent::OpenDiff => {
@@ -116,8 +119,12 @@ impl App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Critical));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                        egui::WindowLevel::AlwaysOnTop,
+                    ));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                        egui::UserAttentionType::Critical,
+                    ));
                 }
                 self.force_exit = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -188,8 +195,12 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
-            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Critical));
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                egui::WindowLevel::AlwaysOnTop,
+            ));
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                egui::UserAttentionType::Critical,
+            ));
             self.pending_confirm_close = true;
             ctx.request_repaint();
             return false;
@@ -216,7 +227,9 @@ impl App {
             } else {
                 self.exit_session = None;
                 self.force_exit = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::Normal));
+                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                    egui::WindowLevel::Normal,
+                ));
                 crate::updapply::cancel();
             }
             return false;

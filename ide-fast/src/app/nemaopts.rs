@@ -934,7 +934,7 @@ impl App {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     if ui
-                                        .button(egui::RichText::new("▦ 表头").size(11.0))
+                                        .button(egui::RichText::new("表头").size(11.0))
                                         .tip(trz("切换 / 插入 \\ 表头行"))
                                         .clicked()
                                     {
@@ -956,7 +956,7 @@ impl App {
                                     }
                                     sep(ui);
                                     if ui
-                                        .button(egui::RichText::new("✦ 示例 v1.2").size(11.0))
+                                        .button(egui::RichText::new("示例 v1.2").size(11.0))
                                         .tip(trz("插入 5W1H 模板"))
                                         .clicked()
                                     {
@@ -992,31 +992,47 @@ impl App {
                                         action = Some("insert_ref");
                                     }
                                     sep(ui);
-                                    if ui
-                                        .button(egui::RichText::new("⚡ 转换").size(11.0))
-                                        .tip(trz("自动转化 / 编码为 NEMA (Ctrl+Alt+M)"))
-                                        .clicked()
+                                    if crate::ui_icons::icon_button(
+                                        ui,
+                                        crate::ui_icons::UiIcon::Bolt,
+                                        "转换",
+                                        tc.fg,
+                                    )
+                                    .tip(trz("自动转化 / 编码为 NEMA (Ctrl+Alt+M)"))
+                                    .clicked()
                                     {
                                         action = Some("convert");
                                     }
-                                    if ui
-                                        .button(egui::RichText::new("◈ 候选").size(11.0))
-                                        .tip(trz("扫描并查看文档内高频词典候选词"))
-                                        .clicked()
+                                    if crate::ui_icons::icon_button(
+                                        ui,
+                                        crate::ui_icons::UiIcon::Spark,
+                                        "候选",
+                                        tc.fg,
+                                    )
+                                    .tip(trz("扫描并查看文档内高频词典候选词"))
+                                    .clicked()
                                     {
                                         action = Some("candidates");
                                     }
-                                    if ui
-                                        .button(egui::RichText::new("🔒 锁定").size(11.0))
-                                        .tip(trz("固化当前高频候选词并生成 ^N 引用"))
-                                        .clicked()
+                                    if crate::ui_icons::icon_button(
+                                        ui,
+                                        crate::ui_icons::UiIcon::Lock,
+                                        "锁定",
+                                        tc.fg,
+                                    )
+                                    .tip(trz("固化当前高频候选词并生成 ^N 引用"))
+                                    .clicked()
                                     {
                                         action = Some("lock_dict");
                                     }
-                                    if ui
-                                        .button(egui::RichText::new("📍 复用").size(11.0))
-                                        .tip(trz("显示字典与高频复用词位置"))
-                                        .clicked()
+                                    if crate::ui_icons::icon_button(
+                                        ui,
+                                        crate::ui_icons::UiIcon::Pin,
+                                        "复用",
+                                        tc.fg,
+                                    )
+                                    .tip(trz("显示字典与高频复用词位置"))
+                                    .clicked()
                                     {
                                         action = Some("show_reused");
                                     }
@@ -1035,16 +1051,20 @@ impl App {
                                     {
                                         action = Some("toggle_ws");
                                     }
-                                    if ui
-                                        .button(egui::RichText::new("📊 Benchmark").size(11.0))
-                                        .tip(trz("查看 Native vs Nemat Token 节省率与对比"))
-                                        .clicked()
+                                    if crate::ui_icons::icon_button(
+                                        ui,
+                                        crate::ui_icons::UiIcon::Chart,
+                                        "Benchmark",
+                                        tc.fg,
+                                    )
+                                    .tip(trz("查看 Native vs Nemat Token 节省率与对比"))
+                                    .clicked()
                                     {
                                         action = Some("token_diff");
                                     }
                                     sep(ui);
                                     let interp_btn = egui::Button::new(
-                                        egui::RichText::new("🔌 解释器").size(11.0),
+                                        egui::RichText::new("解释器").size(11.0),
                                     )
                                     .fill(if self.nema.interp_win_open {
                                         tc.bg_active
@@ -1327,7 +1347,7 @@ impl App {
         let tip = trz("已追加 5W1H 语义模板").to_string();
         self.docs[i].tip = tip;
         self.nema.info_banner = Some(
-            "✦ 已载入 .NEMA v1.2 (R7) 官方三模式示例 (5W1H Tja1 + Table Ttable1 + Graph Gauth1 含 X3 扩展 APIKey / HTTP401)"
+            "已载入 .NEMA v1.2 (R7) 官方三模式示例 (5W1H Tja1 + Table Ttable1 + Graph Gauth1 含 X3 扩展 APIKey / HTTP401)"
                 .to_string(),
         );
     }
@@ -1427,9 +1447,8 @@ impl App {
         let cands = candidate_dictionary_details(&row_refs, 16);
         self.nema_preview = true;
         let tip = if cands.is_empty() {
-            self.nema.info_banner = Some(
-                "◈ 字典候选：未发现收益 > 3 Bytes 的高频词 (需出现 ≥3 次且长度 ≥4)".to_string(),
-            );
+            self.nema.info_banner =
+                Some("字典候选：未发现收益 > 3 Bytes 的高频词 (需出现 ≥3 次且长度 ≥4)".to_string());
             trz("当前文档体积较小或复用词少，原生 .nema 已是最优").to_string()
         } else {
             let summary: Vec<String> = cands
@@ -1438,7 +1457,7 @@ impl App {
                 .map(|(idx, c)| format!("^{idx}={}(×{}, +{}B)", c.word, c.count, c.gain))
                 .collect();
             self.nema.info_banner = Some(format!(
-                "◈ 字典候选 ({}): {}",
+                "字典候选 ({}): {}",
                 cands.len(),
                 summary.join("  ")
             ));
@@ -1473,7 +1492,7 @@ impl App {
             let tip = trz("已转换为 .nemat 传输格式 (往返校验通过)").to_string();
             self.docs[i].tip = tip.clone();
             self.nema.info_banner = Some(format!(
-                "🔒 已锁定 {} 个高频字典词并完成往返校验 (-{:.2}%)",
+                "已锁定 {} 个高频字典词并完成往返校验 (-{:.2}%)",
                 self.nema.locked_words.len(),
                 choice.saving_percent()
             ));
@@ -1490,7 +1509,7 @@ impl App {
         if positions.is_empty() {
             let tip = trz("当前文档体积较小或复用词少，原生 .nema 已是最优").to_string();
             self.docs[i].tip = tip.clone();
-            self.nema.info_banner = Some("📍 复用位置：当前文档无 ^N 引用或可复用词".to_string());
+            self.nema.info_banner = Some("复用位置：当前文档无 ^N 引用或可复用词".to_string());
             self.log(tip);
             return;
         }
@@ -1502,7 +1521,7 @@ impl App {
             .map(|p| format!("{}@L{}:C{}", p.token, p.line, p.column))
             .collect();
         self.nema.info_banner = Some(format!(
-            "📍 共 {} 处字典/复用位置：{}{}",
+            "共 {} 处字典/复用位置：{}{}",
             positions.len(),
             preview_locs.join(" · "),
             if positions.len() > 12 { " …" } else { "" }
@@ -1532,7 +1551,7 @@ impl App {
                 rows.get(5),
             ) {
                 self.nema.info_banner = Some(format!(
-                    "📊 实测对照 | .nema: {} B (~{} BPE) | vs JSON对象 {:+.1}% ({} BPE) | vs JSON位置 {:+.1}% ({} BPE) | vs JSON标签 {:+.1}% ({} BPE) | .nemat: {} B (~{} BPE, {:+.1}%)",
+                    "[Benchmark] 实测对照 | .nema: {} B (~{} BPE) | vs JSON对象 {:+.1}% ({} BPE) | vs JSON位置 {:+.1}% ({} BPE) | vs JSON标签 {:+.1}% ({} BPE) | .nemat: {} B (~{} BPE, {:+.1}%)",
                     nema_row.bytes,
                     nema_row.bpe_tokens,
                     nema_row.saving_vs_json_bpe_pct,
@@ -1562,7 +1581,7 @@ impl App {
             }
             .measure(&choice.text);
             self.nema.info_banner = Some(format!(
-                "📊 Token 对照 | 原生: {} B (~{} BPE) → 最优 ({}): {} B (~{} BPE) | 节省 {:.2}% | 注: {}",
+                "[Benchmark] Token 对照 | 原生: {} B (~{} BPE) → 最优 ({}): {} B (~{} BPE) | 节省 {:.2}% | 注: {}",
                 choice.baseline_score,
                 bpe_base,
                 choice.method.as_str(),
@@ -1610,7 +1629,7 @@ impl App {
     pub fn render_nema_document(&mut self, raw: &str) -> Result<RenderedDocument, String> {
         let trimmed = raw.trim_start_matches('\u{feff}').trim_start();
         if raw.starts_with("\t$") || raw.starts_with("\t0") || trimmed.starts_with("\\!NEMAT1") {
-            self.nema.active_engine_badge = "📦 Transport Codec (v1.5)".to_string();
+            self.nema.active_engine_badge = "Transport Codec (v1.5)".to_string();
             return StandardNemaCodec
                 .decode(raw)
                 .or_else(|_| StandardNemaCodec.decode(trimmed))
@@ -1624,7 +1643,7 @@ impl App {
             || (!first_non_empty.starts_with(" \\")
                 && parse_domain_header_v12(first_non_empty).is_some())
         {
-            self.nema.active_engine_badge = "📜 Legacy v1.2 Compat".to_string();
+            self.nema.active_engine_badge = "Legacy v1.2 Compat".to_string();
             return render_source(raw).map_err(|e| e.to_string());
         }
 
@@ -1641,7 +1660,7 @@ impl App {
                         Ok(json_out) => match parse_strict_ast_json(&json_out) {
                             Ok(doc) => {
                                 self.nema.active_engine_badge = format!(
-                                    "🔌 {} v{} ({})",
+                                    "[插件] {} v{} ({})",
                                     spec.label, spec.version, spec.source
                                 );
                                 return Ok(doc);
@@ -1649,7 +1668,7 @@ impl App {
                             Err(err) => {
                                 let (res, latency_us, label, _) = adaptive_render_document(raw);
                                 self.nema.active_engine_badge = format!(
-                                    "🦀 回退 {label} ({latency_us}µs · 插件解析失败: {err})"
+                                    "[Rust回退] {label} ({latency_us}µs · 插件解析失败: {err})"
                                 );
                                 return res.map_err(|e| e.to_string());
                             }
@@ -1657,29 +1676,29 @@ impl App {
                         Err(e) => {
                             let (res, latency_us, label, _) = adaptive_render_document(raw);
                             self.nema.active_engine_badge =
-                                format!("🦀 回退 {label} ({latency_us}µs · 插件异常: {e})");
+                                format!("[Rust回退] {label} ({latency_us}µs · 插件异常: {e})");
                             return res.map_err(|err| err.to_string());
                         }
                     }
                 }
                 let (res, latency_us, label, used_ext) = adaptive_render_document(raw);
                 self.nema.active_engine_badge = if used_ext {
-                    format!("🐍 {label} ({latency_us}µs)")
+                    format!("[CLI] {label} ({latency_us}µs)")
                 } else {
-                    format!("🦀 回退 {label} ({latency_us}µs)")
+                    format!("[Rust回退] {label} ({latency_us}µs)")
                 };
                 res.map_err(|e| e.to_string())
             }
             NemaInterpreterBackend::BuiltinStrictRust => {
-                self.nema.active_engine_badge = "🦀 内置 Rust Strict (1:1)".to_string();
+                self.nema.active_engine_badge = "[Rust] 内置 Strict (1:1)".to_string();
                 render_strict(raw).map_err(|e| e.to_string())
             }
             NemaInterpreterBackend::ExternalProcess => {
                 let (res, latency_us, label, used_ext) = adaptive_render_document(raw);
                 self.nema.active_engine_badge = if used_ext {
-                    format!("🐍 {label} ({latency_us}µs)")
+                    format!("[CLI] {label} ({latency_us}µs)")
                 } else {
-                    format!("🦀 回退 {label} ({latency_us}µs)")
+                    format!("[Rust回退] {label} ({latency_us}µs)")
                 };
                 res.map_err(|e| e.to_string())
             }
@@ -1694,7 +1713,7 @@ impl App {
         let mut open = self.nema.interp_win_open;
         let mut invalidate = false;
 
-        egui::Window::new("🔌 .NEMA 热插拔语法解释器 (Grammar Hot-Plug)")
+        egui::Window::new(".NEMA 热插拔语法解释器 (Grammar Hot-Plug)")
             .open(&mut open)
             .default_width(640.0)
             .default_height(460.0)
@@ -1714,15 +1733,15 @@ impl App {
                     for (b, lbl) in [
                         (
                             NemaInterpreterBackend::AutoPlugin,
-                            "🔌 热插拔插件 (strict-parser.js)",
+                            "热插拔插件 (strict-parser.js)",
                         ),
                         (
                             NemaInterpreterBackend::BuiltinStrictRust,
-                            "🦀 内置 Rust Strict",
+                            "内置 Rust Strict",
                         ),
                         (
                             NemaInterpreterBackend::ExternalProcess,
-                            "🐍 外部脚本 / CLI",
+                            "外部脚本 / CLI",
                         ),
                     ] {
                         if ui
@@ -1791,9 +1810,13 @@ impl App {
                             .desired_width(310.0)
                             .hint_text("https://nema-sigma.vercel.app/website/strict-parser.js"),
                     );
-                    if ui
-                        .button(egui::RichText::new("🌐 拉取官网最新").size(11.0))
-                        .clicked()
+                    if crate::ui_icons::icon_button(
+                        ui,
+                        crate::ui_icons::UiIcon::Globe,
+                        "拉取官网最新",
+                        tc.fg,
+                    )
+                    .clicked()
                     {
                         match crate::plugins::sync_nema_plugin_script_from_url(
                             &pid,
@@ -1815,9 +1838,13 @@ impl App {
                 });
 
                 ui.horizontal_wrapped(|ui| {
-                    if ui
-                        .button(egui::RichText::new("⚡ 热重载生效 (Hot Reload JS)").size(11.5))
-                        .clicked()
+                    if crate::ui_icons::icon_button(
+                        ui,
+                        crate::ui_icons::UiIcon::Bolt,
+                        "热重载生效 (Hot Reload JS)",
+                        Color32::from_rgb(56, 189, 248),
+                    )
+                    .clicked()
                     {
                         match crate::plugins::hot_patch_nema_plugin_script(
                             &pid,
@@ -1835,9 +1862,13 @@ impl App {
                             }
                         }
                     }
-                    if ui
-                        .button(egui::RichText::new("📂 导入本地 .js / .py").size(11.0))
-                        .clicked()
+                    if crate::ui_icons::icon_button(
+                        ui,
+                        crate::ui_icons::UiIcon::Folder,
+                        "导入本地 .js / .py",
+                        tc.fg,
+                    )
+                    .clicked()
                     {
                         if let Some(p) = rfd::FileDialog::new()
                             .add_filter("Interpreter (.js, .py)", &["js", "py", "exe"])
@@ -1889,7 +1920,7 @@ impl App {
                         }
                     }
                     if ui
-                        .button(egui::RichText::new("↺ 恢复内置默认").size(11.0))
+                        .button(egui::RichText::new("恢复内置默认").size(11.0))
                         .clicked()
                     {
                         match crate::plugins::restore(&pid) {
@@ -2001,14 +2032,18 @@ impl App {
                     .size(12.0),
             );
             let engine_badge = if self.nema.active_engine_badge.is_empty() {
-                "🔌 .NEMA Interpreter"
+                ".NEMA Interpreter"
             } else {
                 self.nema.active_engine_badge.as_str()
             };
-            if ui
-                .button(egui::RichText::new(engine_badge).size(10.5).color(tc.green))
-                .on_hover_text("点击打开 .NEMA 热插拔解释器配置与 strict-parser.js 热更新窗口")
-                .clicked()
+            if crate::ui_icons::icon_button(
+                ui,
+                crate::ui_icons::UiIcon::Plug,
+                engine_badge,
+                tc.green,
+            )
+            .on_hover_text("点击打开 .NEMA 热插拔解释器配置与 strict-parser.js 热更新窗口")
+            .clicked()
             {
                 self.open_nema_interpreter_window();
             }
@@ -2030,10 +2065,10 @@ impl App {
             ui.separator();
             for (idx, label) in [
                 (0usize, "全部 (ALL)"),
-                (1usize, "▦ Table"),
+                (1usize, "Table"),
                 (2usize, "? 5W1H"),
                 (3usize, "> Graph"),
-                (4usize, "📊 Benchmark 实测"),
+                (4usize, "Benchmark 实测"),
             ] {
                 let selected = self.nema_view_mode == idx;
                 if ui
@@ -2125,7 +2160,7 @@ impl App {
                 Err(err) => {
                     ui.colored_label(
                         tc.red,
-                        format!("NEMA 语法诊断: {err} (点击顶部「⚡ 转换」可自动规范化)"),
+                        format!("NEMA 语法诊断: {err} (点击顶部「转换」可自动规范化)"),
                     );
                 }
                 Ok(doc) => {

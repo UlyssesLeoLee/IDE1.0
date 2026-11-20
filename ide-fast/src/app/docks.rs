@@ -486,6 +486,7 @@ impl App {
                     (BottomTab::Terminal, "TERMINAL"),
                     (BottomTab::Output, "OUTPUT"),
                     (BottomTab::Problems, "PROBLEMS"),
+                    (BottomTab::RustConsole, "RUST CONSOLE"),
                 ] {
                     let mut label = name.to_string();
                     if t == BottomTab::Problems && !self.sys.problems.is_empty() {

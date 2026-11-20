@@ -995,7 +995,7 @@ fn test_open_review_doc_tab_and_structure() {
     a.open_review_doc();
     assert_eq!(a.docs.len(), 2);
     let cur = a.cur();
-    assert_eq!(cur.name, "🛡️ 协同审查");
+    assert_eq!(cur.name, "协同审查");
     assert!(cur.readonly);
     assert!(cur
         .lines
@@ -1195,7 +1195,7 @@ fn test_adversarial_tray_toggle_and_new_doc() {
     ] {
         crate::i18n::set(lang);
         let tip = crate::msgtr::msg(
-            "⚡ 系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理",
+            "系统托盘常驻已就绪：可在 Windows 任务栏右下角时间旁边找到图标唤出或管理",
         );
         assert!(
             !tip.is_empty(),
@@ -1531,8 +1531,14 @@ fn test_retro16_pixelfont_invariants() {
         "PixelFontMulti-12.ttf"
     );
     assert_eq!(a.font_px, 12.0, "Retro 16-Bit 主题字号必须自动切为 12px");
-    assert_eq!(a.cfg.font_px, 12.0, "Retro 16-Bit 配置字号必须自动同步为 12px");
-    assert_eq!(a.cfg.term_font_px, 12.0, "Retro 16-Bit 终端字号必须自动同步为 12px");
+    assert_eq!(
+        a.cfg.font_px, 12.0,
+        "Retro 16-Bit 配置字号必须自动同步为 12px"
+    );
+    assert_eq!(
+        a.cfg.term_font_px, 12.0,
+        "Retro 16-Bit 终端字号必须自动同步为 12px"
+    );
     assert_eq!(
         a.default_font_px(),
         12.0,
@@ -1904,7 +1910,10 @@ fn theme_font_user_modification_memory_across_switching() {
         crate::fonts::effective_font_family(&a.cfg.font_family, &a.theme_id),
         "PixelFontMulti-12.ttf"
     );
-    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "PixelFontMulti-12.ttf");
+    assert_eq!(
+        a.cfg.effective_font_for(&a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
 
     // 3. 切换回 theme-comic: 记忆并恢复用户的自定义修改 Consolas
     a.set_theme_plugin("theme-comic");
@@ -1922,7 +1931,10 @@ fn theme_font_user_modification_memory_across_switching() {
 
     // 6. 再次切到 retro16: 依然是 PixelFont
     a.set_theme_plugin("theme-retro16");
-    assert_eq!(a.cfg.effective_font_for(&a.theme_id), "PixelFontMulti-12.ttf");
+    assert_eq!(
+        a.cfg.effective_font_for(&a.theme_id),
+        "PixelFontMulti-12.ttf"
+    );
 
     // 7. 切回 theme-comic: 依然保持 Consolas
     a.set_theme_plugin("theme-comic");
@@ -2013,7 +2025,7 @@ fn alt_vertical_selection_dynamic_spacing_and_coordinate_badge() {
 
     // 格式化指示文本验证
     let badge_text = format!(
-        "📐 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
+        "[列选区] 纵向选取 [R{}..{} ({}行) × C{}..{} ({}列)]",
         r0 + 1,
         r1 + 1,
         rows_count,
@@ -2021,7 +2033,7 @@ fn alt_vertical_selection_dynamic_spacing_and_coordinate_badge() {
         c1,
         cols_count
     );
-    assert_eq!(badge_text, "📐 纵向选取 [R2..4 (3行) × C3..7 (5列)]");
+    assert_eq!(badge_text, "[列选区] 纵向选取 [R2..4 (3行) × C3..7 (5列)]");
 
     // 2. 验证 rowview 在拉大字符间距 (letter_spacing = 8.0) 下的列定位与精确换算
     let font = egui::FontId::monospace(14.0);
@@ -2218,7 +2230,10 @@ fn test_top_nav_buttons_hover_only_visibility() {
 
     // 1. 鼠标悬停在左侧编辑区 (远离右上角悬停区): 顶部折叠按钮不应显式暴露干扰代码排版
     let raw_away = egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 700.0),
+        )),
         ..Default::default()
     };
     let mut out1 = ctx.run_ui(raw_away, |ui| {
@@ -2228,10 +2243,15 @@ fn test_top_nav_buttons_hover_only_visibility() {
 
     // 2. 鼠标移入右上角悬停区 (例如 Pos2(960.0, 15.0)): 顶部按钮激活展现
     let mut raw_hover = egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 700.0),
+        )),
         ..Default::default()
     };
-    raw_hover.events.push(egui::Event::PointerMoved(egui::pos2(960.0, 15.0)));
+    raw_hover
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(960.0, 15.0)));
     let mut out2 = ctx.run_ui(raw_hover, |ui| {
         a.editor(ui, &ctx, false);
     });
@@ -2243,11 +2263,7 @@ fn test_alt_box_selection_no_scaling_and_sakura_experience() {
     let (mut a, _g) = app(Settings::default());
     a.new_doc();
     let idx = a.active;
-    a.docs[idx].lines = vec![
-        "const a = 1;".into(),
-        "let b = 20000;".into(),
-        "x;".into(),
-    ];
+    a.docs[idx].lines = vec!["const a = 1;".into(), "let b = 20000;".into(), "x;".into()];
     let ctx = egui::Context::default();
 
     // 1. 验证不论是否有 box_sel，字符宽度 char_w 均保持恒定，无行间距或列间距动画缩放
@@ -2300,10 +2316,15 @@ fn test_ctrl_mouse_wheel_zoom_invariants() {
 
     // 2. 模拟鼠标悬停并在未按下 Ctrl 时滚轮滚动: 不应缩放字号
     let mut raw_no_ctrl = egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 700.0),
+        )),
         ..Default::default()
     };
-    raw_no_ctrl.events.push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
+    raw_no_ctrl
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
     raw_no_ctrl.events.push(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Line,
         delta: egui::vec2(0.0, 1.0),
@@ -2320,10 +2341,15 @@ fn test_ctrl_mouse_wheel_zoom_invariants() {
 
     // 3. 模拟 Ctrl + 滚轮上滚 (Event::MouseWheel): 字体放大 1px，且滚轮事件被清空
     let mut raw_ctrl_wheel = egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 700.0),
+        )),
         ..Default::default()
     };
-    raw_ctrl_wheel.events.push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
+    raw_ctrl_wheel
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
     raw_ctrl_wheel.events.push(egui::Event::Key {
         key: egui::Key::A,
         physical_key: None,
@@ -2346,16 +2372,23 @@ fn test_ctrl_mouse_wheel_zoom_invariants() {
     assert_eq!(a.cfg.font_px, start_px + 1.0);
     // 验证事件被消费，防止 ScrollArea 发生页面滚动
     let remaining_wheel_events = ctx.input(|i| {
-        i.events.iter().any(|e| matches!(e, egui::Event::MouseWheel { .. }))
+        i.events
+            .iter()
+            .any(|e| matches!(e, egui::Event::MouseWheel { .. }))
     });
     assert!(!remaining_wheel_events, "缩放后必须清空滚轮事件");
 
     // 4. 模拟 Ctrl + 滚轮下滚: 字体缩小 1px
     let mut raw_ctrl_down = egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 700.0),
+        )),
         ..Default::default()
     };
-    raw_ctrl_down.events.push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
+    raw_ctrl_down
+        .events
+        .push(egui::Event::PointerMoved(egui::pos2(500.0, 300.0)));
     raw_ctrl_down.events.push(egui::Event::Key {
         key: egui::Key::A,
         physical_key: None,
@@ -2379,7 +2412,10 @@ fn test_ctrl_mouse_wheel_zoom_invariants() {
 
     // 5. 模拟鼠标指针在窗口外: Ctrl + 滚轮不可缩放
     let mut raw_outside = egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(1000.0, 700.0),
+        )),
         ..Default::default()
     };
     raw_outside.events.push(egui::Event::PointerGone);
@@ -2437,11 +2473,17 @@ fn test_non_blocking_diff_with_file_loading_progress_bar() {
 
     // 1. 触发与本地文件比较
     a.diff_with_file();
-    assert!(a.file_dialog_loading.is_some(), "必须立即激活非阻塞加载状态");
+    assert!(
+        a.file_dialog_loading.is_some(),
+        "必须立即激活非阻塞加载状态"
+    );
 
     let loading = a.file_dialog_loading.as_ref().unwrap();
     assert_eq!(loading.title, crate::i18n::trz("与本地文件比较…"));
-    assert_eq!(loading.note, crate::i18n::trz("首次启动较慢，组件初始化中…"));
+    assert_eq!(
+        loading.note,
+        crate::i18n::trz("首次启动较慢，组件初始化中…")
+    );
     assert!(loading.progress >= 0.15);
     assert!(loading.is_diff);
 

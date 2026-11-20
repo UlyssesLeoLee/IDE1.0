@@ -214,7 +214,10 @@ pub fn editor_bold_family() -> FontFamily {
 /// 用户级安装的专属字体目录 (Windows: %LOCALAPPDATA%\Microsoft\Windows\Fonts)
 pub fn user_fonts_dir() -> Option<std::path::PathBuf> {
     if let Some(l) = std::env::var_os("LOCALAPPDATA") {
-        let p = std::path::PathBuf::from(l).join("Microsoft").join("Windows").join("Fonts");
+        let p = std::path::PathBuf::from(l)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Fonts");
         if p.is_dir() {
             return Some(p);
         }
@@ -285,7 +288,11 @@ pub fn system_fonts() -> Vec<String> {
         .map(|rd| {
             rd.filter_map(|e| e.ok())
                 .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| is_font_file(n) && !is_illegible_display_font(n) && !user_set.contains(&n.to_lowercase()))
+                .filter(|n| {
+                    is_font_file(n)
+                        && !is_illegible_display_font(n)
+                        && !user_set.contains(&n.to_lowercase())
+                })
                 .collect()
         })
         .unwrap_or_default();

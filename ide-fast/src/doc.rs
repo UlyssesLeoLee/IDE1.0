@@ -2749,7 +2749,11 @@ b
 
         let rows = d.rows_for(&[]);
         // 杜绝全选时深拷贝 10,000 行字符串，只提取端点及光标邻近行
-        assert!(rows.len() <= 8, "全选时 rows_for 提取行数应 <= 8，实际: {}", rows.len());
+        assert!(
+            rows.len() <= 8,
+            "全选时 rows_for 提取行数应 <= 8，实际: {}",
+            rows.len()
+        );
         let row_indices: Vec<usize> = rows.iter().map(|(r, _)| *r).collect();
         assert!(row_indices.contains(&0));
         assert!(row_indices.contains(&1));
@@ -2768,9 +2772,18 @@ b
         assert!(copied.is_some(), "应当成功复制");
         let text = copied.unwrap();
         let split_lines: Vec<&str> = text.lines().collect();
-        assert_eq!(split_lines.len(), 30, "30 行大选区复制必须保留全部 30 行，绝不截断或丢失中间内容");
+        assert_eq!(
+            split_lines.len(),
+            30,
+            "30 行大选区复制必须保留全部 30 行，绝不截断或丢失中间内容"
+        );
         for (i, line) in split_lines.iter().enumerate() {
-            assert_eq!(*line, format!("Content line #{:03}", i), "第 {} 行内容必须完整无损", i);
+            assert_eq!(
+                *line,
+                format!("Content line #{:03}", i),
+                "第 {} 行内容必须完整无损",
+                i
+            );
         }
     }
 

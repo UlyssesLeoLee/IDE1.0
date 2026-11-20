@@ -182,9 +182,11 @@ impl DesktopLuminance {
 /// 返回 `None` 表示读不到 (非 Windows / 键值不存在 / 权限不足) —— 调用方
 /// 应回退到 `DesktopLuminance::Dark`。
 #[cfg(target_os = "windows")]
-static REG_LIGHT_CACHE: std::sync::OnceLock<
-    std::sync::Mutex<Option<(Option<bool>, std::time::Instant)>>,
-> = std::sync::OnceLock::new();
+type CachedThemeEntry = Option<(Option<bool>, std::time::Instant)>;
+
+#[cfg(target_os = "windows")]
+static REG_LIGHT_CACHE: std::sync::OnceLock<std::sync::Mutex<CachedThemeEntry>> =
+    std::sync::OnceLock::new();
 
 #[cfg(target_os = "windows")]
 const REG_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(2);

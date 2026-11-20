@@ -1,0 +1,26 @@
+[package]
+name = "ide-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "IDE1.0 MCP server: headless cross-provider co-editing (CAS + 3-way merge), diff, and editcore tools for AI agents"
+keywords = ["mcp", "ide", "diff", "merge", "ai-agent"]
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "ide_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ide-mcp"
+path = "src/main.rs"
+
+[dependencies]
+editcore = { path = "../editcore" }
+serde = { workspace = true }
+serde_json = { workspace = true }

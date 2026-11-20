@@ -11,6 +11,7 @@ pub(super) enum BottomTab {
     Terminal,
     Output,
     Problems,
+    RustConsole,
 }
 
 /// 输出页最多留的条数
@@ -64,6 +65,7 @@ pub(super) struct SysState {
     /// 问题页: Markdown 检查结果,以及它属于哪个文档
     pub problems: Vec<Problem>,
     pub problems_doc: Option<u64>,
+    pub rust_con: super::rust_console::RustConsoleState,
 }
 
 impl App {
@@ -242,6 +244,7 @@ impl App {
                 BottomTab::Terminal => self.term_ui(ui),
                 BottomTab::Output => self.output_ui(ui),
                 BottomTab::Problems => self.problems_ui(ui),
+                BottomTab::RustConsole => self.rust_console_ui(ui),
             });
     }
 

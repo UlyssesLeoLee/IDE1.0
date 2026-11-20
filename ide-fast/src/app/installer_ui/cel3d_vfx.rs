@@ -17,11 +17,7 @@ pub fn draw_ambient_luxury_glow(p: &Painter, center: Pos2, time: f32) {
     let r2 = 75.0 + pulse * 6.0;
 
     // 外圈柔和天青微光
-    p.circle_filled(
-        center,
-        r1,
-        Color32::from_rgba_unmultiplied(2, 132, 199, 14),
-    );
+    p.circle_filled(center, r1, Color32::from_rgba_unmultiplied(2, 132, 199, 14));
     // 内圈微光过渡
     p.circle_filled(
         center,
@@ -101,7 +97,11 @@ pub fn render_3d_vfx(
 /// 绘制背景深处的旋转放射状美漫光芒
 fn draw_radial_comic_rays(p: &Painter, center: Pos2, time: f32, step: InstallerStep) {
     let num_rays = 20;
-    let base_speed = if step == InstallerStep::Installing { 1.8 } else { 0.4 };
+    let base_speed = if step == InstallerStep::Installing {
+        1.8
+    } else {
+        0.4
+    };
     let rot_offset = time * base_speed;
     let r_inner = 30.0;
     let r_outer = 420.0;
@@ -135,17 +135,17 @@ fn draw_radial_comic_rays(p: &Painter, center: Pos2, time: f32, step: InstallerS
 }
 
 /// 绘制围绕多面体晶石的 3D 倾斜能量双环轨道
-fn draw_energy_aura_rings(
-    p: &Painter,
-    cam: &Camera3D,
-    view_rot: Mat4,
-    center: Pos2,
-    time: f32,
-) {
+fn draw_energy_aura_rings(p: &Painter, cam: &Camera3D, view_rot: Mat4, center: Pos2, time: f32) {
     let gem_y = 80.0 + (time * 1.5).sin() * 5.0;
     let rings = [
         (65.0, 0.45, 0.35, time * 1.2, Color32::from_rgb(0, 229, 255)),
-        (78.0, -0.55, -0.40, -time * 0.9, Color32::from_rgb(255, 42, 85)),
+        (
+            78.0,
+            -0.55,
+            -0.40,
+            -time * 0.9,
+            Color32::from_rgb(255, 42, 85),
+        ),
     ];
 
     for &(r, tilt_x, tilt_z, rot_y, color) in &rings {
@@ -182,13 +182,7 @@ fn draw_energy_aura_rings(
 }
 
 /// 绘制 3D 空间中环绕爱奥尼立柱与晶石的粒子涡旋 (48 颗 3D 浮动星尘)
-fn draw_particle_vortex(
-    p: &Painter,
-    cam: &Camera3D,
-    view_rot: Mat4,
-    center: Pos2,
-    time: f32,
-) {
+fn draw_particle_vortex(p: &Painter, cam: &Camera3D, view_rot: Mat4, center: Pos2, time: f32) {
     let count = 48;
     for i in 0..count {
         let fi = i as f32;
@@ -255,19 +249,16 @@ fn draw_hyperspace_warp_streaks(
             let sy2 = center.y - (pc2.y * cam.focal) / pc2.z;
 
             let w = (3.0 * cam.focal / pc2.z).clamp(1.2, 4.0);
-            p.line_segment([pos2(sx1, sy1), pos2(sx2, sy2)], Stroke::new(w, Color32::from_rgb(0, 240, 255)));
+            p.line_segment(
+                [pos2(sx1, sy1), pos2(sx2, sy2)],
+                Stroke::new(w, Color32::from_rgb(0, 240, 255)),
+            );
         }
     }
 }
 
 /// 绘制 Finished 庆典维度的 3D 胜利彩屑礼花
-fn draw_victory_confetti(
-    p: &Painter,
-    cam: &Camera3D,
-    view_rot: Mat4,
-    center: Pos2,
-    time: f32,
-) {
+fn draw_victory_confetti(p: &Painter, cam: &Camera3D, view_rot: Mat4, center: Pos2, time: f32) {
     let count = 36;
     for i in 0..count {
         let fi = i as f32;
@@ -302,19 +293,17 @@ fn draw_victory_confetti(
                 pos2(sx, sy + sz),
                 pos2(sx - half, sy),
             ];
-            p.add(egui::Shape::convex_polygon(poly, col, Stroke::new(1.0, Color32::BLACK)));
+            p.add(egui::Shape::convex_polygon(
+                poly,
+                col,
+                Stroke::new(1.0, Color32::BLACK),
+            ));
         }
     }
 }
 
 /// 绘制高光顶点的 3D 空间八芒星光 (Diamond Starburst Glints)
-fn draw_diamond_glints(
-    p: &Painter,
-    cam: &Camera3D,
-    view_rot: Mat4,
-    center: Pos2,
-    time: f32,
-) {
+fn draw_diamond_glints(p: &Painter, cam: &Camera3D, view_rot: Mat4, center: Pos2, time: f32) {
     let glint_anchors = [
         (0.0, 95.0, 0.0),
         (-24.0, 80.0, 15.0),
@@ -339,12 +328,24 @@ fn draw_diamond_glints(
             // 白色实心中心
             p.circle_filled(pos2(sx, sy), size * 0.45, Color32::WHITE);
             // 主十字星芒
-            p.line_segment([pos2(sx - size, sy), pos2(sx + size, sy)], Stroke::new(2.0, Color32::WHITE));
-            p.line_segment([pos2(sx, sy - size), pos2(sx, sy + size)], Stroke::new(2.0, Color32::WHITE));
+            p.line_segment(
+                [pos2(sx - size, sy), pos2(sx + size, sy)],
+                Stroke::new(2.0, Color32::WHITE),
+            );
+            p.line_segment(
+                [pos2(sx, sy - size), pos2(sx, sy + size)],
+                Stroke::new(2.0, Color32::WHITE),
+            );
             // 次级 45 度斜十字
             let diag = size * 0.65;
-            p.line_segment([pos2(sx - diag, sy - diag), pos2(sx + diag, sy + diag)], Stroke::new(1.2, Color32::WHITE));
-            p.line_segment([pos2(sx - diag, sy + diag), pos2(sx + diag, sy - diag)], Stroke::new(1.2, Color32::WHITE));
+            p.line_segment(
+                [pos2(sx - diag, sy - diag), pos2(sx + diag, sy + diag)],
+                Stroke::new(1.2, Color32::WHITE),
+            );
+            p.line_segment(
+                [pos2(sx - diag, sy + diag), pos2(sx + diag, sy - diag)],
+                Stroke::new(1.2, Color32::WHITE),
+            );
         }
     }
 }

@@ -2352,6 +2352,15 @@ name = "ide-kernel-core"
 version = "0.8.5"
 
 [[package]]
+name = "ide-mcp"
+version = "0.8.5"
+dependencies = [
+ "editcore",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ide-shell"
 version = "0.8.5"
 dependencies = [

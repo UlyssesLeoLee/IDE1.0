@@ -470,7 +470,8 @@ impl TypeConfig {
 
         let chars: Vec<(usize, char)> = line.char_indices().collect();
         let mut i = 0;
-        let byte_at = |idx: usize| -> usize { chars.get(idx).map(|&(b, _)| b).unwrap_or(line.len()) };
+        let byte_at =
+            |idx: usize| -> usize { chars.get(idx).map(|&(b, _)| b).unwrap_or(line.len()) };
         // 下标全程是**字符**下标 (不是字节), 借助 chars 里的字节偏移做零拷贝切片比对
         let starts_at = |at: usize, pat: &str| -> bool {
             at <= chars.len() && line[byte_at(at)..].starts_with(pat)
@@ -511,7 +512,10 @@ impl TypeConfig {
                 if starts_at(i, &delim.open) {
                     let after_open = i + delim.open.chars().count();
                     let close_chars = delim.close.chars().count();
-                    let esc_ch = delim.escape.as_deref().map(|e| e.chars().next().unwrap_or('\\'));
+                    let esc_ch = delim
+                        .escape
+                        .as_deref()
+                        .map(|e| e.chars().next().unwrap_or('\\'));
                     let mut end = after_open;
                     while end < chars.len() {
                         if let Some(ec) = esc_ch {
@@ -557,8 +561,7 @@ impl TypeConfig {
             // 5. 标识符 (关键字/类型) — 零堆分配切片查表
             if c.is_alphabetic() || c == '_' {
                 let mut end = i;
-                while end < chars.len() && (chars[end].1.is_alphanumeric() || chars[end].1 == '_')
-                {
+                while end < chars.len() && (chars[end].1.is_alphanumeric() || chars[end].1 == '_') {
                     end += 1;
                 }
                 let word = &line[byte_at(i)..byte_at(end)];

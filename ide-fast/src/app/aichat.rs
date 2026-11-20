@@ -4,6 +4,7 @@
 use super::*;
 use crate::ai::{self, AiConfig, Event, Handle, Msg, ToolCall};
 use crate::app::collab::CollabMsg;
+use eframe::egui::vec2;
 use ide_agent_router::{
     AgentMemoryEngine, ContextCompactor, CookieJar, CookieStats, FileCookie, HookPipeline,
     LoopBreaker, McpConfig, McpManager, PrunePolicy, SkillRegistry, TaskState,
@@ -65,9 +66,18 @@ struct Run {
     auto_applied: bool,
 }
 
+/// 每个独立 Agent 的完整对话会话状态 (消息历史 / 草稿输入 / 流式运行句柄)
+#[derive(Default)]
+struct AgentSession {
+    items: Vec<Item>,
+    history: Vec<Msg>,
+    input: String,
+    run: Option<Run>,
+}
+
 pub(super) struct AiState {
     pub open: bool,
-    /// 统一右侧 AI 面板模式开关: false = 智能体对话, true = 多 Agent 并行协作
+    /// 统一右侧 AI 面板模式开关: false = 单 Agent 精准对话, true = 多 Agent 全员协同调度
     pub collab_mode: bool,
     /// 是否免点击自动将需求结果/补丁直接应用到当前打开的文件
     pub auto_apply: bool,
@@ -76,10 +86,20 @@ pub(super) struct AiState {
     cfg: Option<AiConfig>,
     settings: bool,
     input: String,
-    use_ctx: bool,
+    pub use_ctx: bool,
     items: Vec<Item>,
     history: Vec<Msg>,
     run: Option<Run>,
+    /// 当前单 Agent 对话绑定的 agent id (`agent_1` .. `agent_8`)
+    active_agent_id: String,
+    /// 其余非活跃 Agent 的独立会话缓存 (切换 Agent 秒切且各自流式不中断)
+    sessions: HashMap<String, AgentSession>,
+    /// 下拉列表与编队名录的即时搜索关键词
+    pub(super) agent_search: String,
+    /// 已配置模型列表的搜索关键词
+    model_search: String,
+    /// 设置抽屉里「自定义模型显示名称」草稿
+    model_name_draft: String,
     /// 等用户同意发送上下文的提问
     ask: Option<String>,
     /// 设置里「自定义档位」输入框的文字 (打开设置后第一次画时从配置里填)
@@ -118,6 +138,11 @@ impl Default for AiState {
             items: Vec::new(),
             history: Vec::new(),
             run: None,
+            active_agent_id: "agent_1".into(),
+            sessions: HashMap::new(),
+            agent_search: String::new(),
+            model_search: String::new(),
+            model_name_draft: String::new(),
             ask: None,
             efforts_text: None,
             fetch: None,
@@ -146,6 +171,8 @@ enum Act {
     Copy(String),
     Save,
     OpenCollab(String),
+    AssignDoc,
+    UnassignDoc,
 }
 
 /// 字节数 → 人读文本 (设置菜单的 Cookie 占用显示)
@@ -384,11 +411,40 @@ impl App {
         }
     }
 
+    /// 单 Agent 后台会话缓存上限 (`CODING-STANDARDS.md` §3.4: 全局状态必设上限与淘汰)
+    const MAX_CACHED_AGENT_SESSIONS: usize = 64;
+
     /// 保存 AI 配置; 写盘失败要让用户看见
     fn ai_save_cfg(&mut self) {
         if let Err(e) = self.ai_cfg().save() {
             let m = tr("ai.save-failed").replacen("{}", &e, 1);
             self.ai.items.push(Item::Err(m));
+        }
+    }
+
+    fn persist_agent_settings_now(&mut self) {
+        let st = self.current_settings();
+        self.saved = st.clone();
+        if self.persist {
+            st.save();
+        }
+    }
+
+    /// 模型下拉选择: 全员协同模式切换全局默认；单 Agent 模式仅绑定当前 Agent。
+    pub(super) fn apply_model_pick(&mut self, nm: String) {
+        if self.ai.collab_mode {
+            self.ai_cfg().select_saved_model(&nm);
+            self.ai.efforts_text = None;
+            self.ai_save_cfg();
+        } else {
+            let idx = self
+                .collab
+                .active_tab
+                .min(self.collab.agents.len().saturating_sub(1));
+            if let Some(a) = self.collab.agents.get_mut(idx) {
+                a.model_override = Some(nm);
+            }
+            self.persist_agent_settings_now();
         }
     }
 
@@ -398,9 +454,152 @@ impl App {
 
     pub(super) fn ai_toggle(&mut self) {
         self.ai.open = !self.ai.open;
+        self.collab.open = self.ai.open && self.ai.collab_mode;
         if self.ai.open {
             let _ = self.ai_cfg();
         }
+    }
+
+    #[inline]
+    fn parse_agent_index(agent_id: &str) -> Option<usize> {
+        agent_id
+            .strip_prefix("agent_")
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|n| n.checked_sub(1))
+    }
+
+    fn prune_agent_sessions(&mut self) {
+        let count = self.collab.agent_count;
+        self.ai.sessions.retain(|id, sess| {
+            sess.run.is_some()
+                || Self::parse_agent_index(id).is_none_or(|idx| idx < count)
+        });
+        while self.ai.sessions.len() > Self::MAX_CACHED_AGENT_SESSIONS {
+            let evict = self
+                .ai
+                .sessions
+                .iter()
+                .find(|(id, sess)| sess.run.is_none() && *id != &self.ai.active_agent_id)
+                .map(|(id, _)| id.clone());
+            let Some(k) = evict else { break };
+            self.ai.sessions.remove(&k);
+        }
+    }
+
+    /// 同步当前活跃单 Agent 与 `AiState` 缓存会话 (切换不同 Agent 时完整保留各自分支历史与流式请求)
+    pub(super) fn sync_active_agent_session(&mut self) {
+        if self.collab.agents.is_empty() {
+            return;
+        }
+        let idx = self
+            .collab
+            .active_tab
+            .min(self.collab.agents.len().saturating_sub(1));
+        self.collab.active_tab = idx;
+        let target_id = self.collab.agents[idx].id.clone();
+        if self.ai.active_agent_id != target_id {
+            self.swap_agent_session(&target_id);
+        }
+    }
+
+    fn swap_agent_session(&mut self, target_id: &str) {
+        if self.ai.active_agent_id == target_id {
+            return;
+        }
+        let prev_id = std::mem::replace(&mut self.ai.active_agent_id, target_id.to_string());
+        let cur_session = AgentSession {
+            items: std::mem::take(&mut self.ai.items),
+            history: std::mem::take(&mut self.ai.history),
+            input: std::mem::take(&mut self.ai.input),
+            run: self.ai.run.take(),
+        };
+        self.ai.sessions.insert(prev_id, cur_session);
+        self.prune_agent_sessions();
+        if let Some(next) = self.ai.sessions.remove(target_id) {
+            self.ai.items = next.items;
+            self.ai.history = next.history;
+            self.ai.input = next.input;
+            self.ai.run = next.run;
+        }
+    }
+
+    /// 精确选中某个单 Agent 并切回单 Agent 对话视图
+    pub(super) fn select_single_agent(&mut self, idx: usize) {
+        if self.collab.agents.is_empty() {
+            return;
+        }
+        self.collab.active_tab = idx.min(self.collab.agents.len() - 1);
+        self.ai.collab_mode = false;
+        self.collab.open = false;
+        self.ai.agent_search.clear();
+        self.sync_active_agent_session();
+    }
+
+    /// 按下标 O(1) 判断单个 Agent 是否处于忙碌态 (消除名录/下拉构建中的 O(N²) 线性扫描)
+    pub(super) fn ai_agent_idx_is_busy(&self, idx: usize) -> bool {
+        let Some(a) = self.collab.agents.get(idx) else {
+            return false;
+        };
+        (self.ai.active_agent_id == a.id && self.ai.run.is_some())
+            || self
+                .ai
+                .sessions
+                .get(&a.id)
+                .is_some_and(|s| s.run.is_some())
+            || a.is_running()
+    }
+
+    /// 任一视角 (当前单 Agent / 后台独立单 Agent / 全员协同子任务) 正在运行则视为忙碌
+    pub(super) fn ai_agent_is_busy(&self, agent_id: &str) -> bool {
+        if (self.ai.active_agent_id == agent_id && self.ai.run.is_some())
+            || self
+                .ai
+                .sessions
+                .get(agent_id)
+                .is_some_and(|s| s.run.is_some())
+        {
+            return true;
+        }
+        if let Some(idx) = Self::parse_agent_index(agent_id) {
+            if let Some(a) = self.collab.agents.get(idx) {
+                if a.id == agent_id {
+                    return a.is_running();
+                }
+            }
+        }
+        self.collab
+            .agents
+            .iter()
+            .any(|a| a.id == agent_id && a.is_running())
+    }
+
+    fn active_agent_info(&self) -> (String, String, String, Option<String>, Option<u64>) {
+        if self.collab.agents.is_empty() {
+            return (
+                self.ai.active_agent_id.clone(),
+                "Agent #1".to_string(),
+                String::new(),
+                None,
+                None,
+            );
+        }
+        let idx = self
+            .collab
+            .active_tab
+            .min(self.collab.agents.len().saturating_sub(1));
+        let a = &self.collab.agents[idx];
+        (
+            a.id.clone(),
+            a.name.clone(),
+            a.role.clone(),
+            a.model_override.clone(),
+            a.assigned_doc_id,
+        )
+    }
+
+    fn effective_active_ai_cfg(&mut self) -> AiConfig {
+        let (_, _, _, model_override, _) = self.active_agent_info();
+        self.ai_cfg().resolve_for_model(model_override.as_deref())
     }
 
     /// 识别多智能体协作 / 协同编辑意图
@@ -418,8 +617,9 @@ impl App {
             || lower.contains("/parallel")
     }
 
-    /// 点发送 / Enter: 先校验配置; 要带上下文且没同意过就弹确认
+    /// 点发送 / Enter: 先校验当前 Agent 绑定模型配置; 要带上下文且没同意过就弹确认
     pub(super) fn ai_send(&mut self, ctx: &egui::Context) {
+        self.sync_active_agent_session();
         let raw_q = self.ai.input.trim().to_string();
         if raw_q.is_empty() || self.ai.run.is_some() {
             return;
@@ -446,7 +646,7 @@ impl App {
             self.collab.master_input.clear();
             self.collab.master_history.push(CollabMsg::user("用户", &q));
             self.collab.master_history.push(CollabMsg::system(
-                "✓ 已智能无缝切换至多 Agent 并行协作工作台。",
+                "[OK] 已智能无缝切换至多 Agent 并行协作工作台。",
             ));
             if !self.docs.is_empty() {
                 if let Err(err) = self.execute_parallel_on_active(&q, Some(ctx)) {
@@ -462,14 +662,15 @@ impl App {
             return;
         }
 
-        if !self.ai_cfg().configured() {
+        let eff_cfg = self.effective_active_ai_cfg();
+        if !eff_cfg.configured() {
             // 未配置云端大模型时：免点击直接在当前打开的文件上确定性执行需求
             self.ai_exec_local_demand(&q, ctx);
             return;
         }
         let i = self.active.min(self.docs.len() - 1);
         let has_ctx = self.ai.use_ctx && self.ai_context(i).is_some();
-        if has_ctx && !self.ai_cfg().consent && !self.ai.auto_apply {
+        if has_ctx && !eff_cfg.consent && !self.ai.auto_apply {
             self.ai.ask = Some(q);
             return;
         }
@@ -494,7 +695,7 @@ impl App {
                         n
                     )));
                     self.ai.items.push(Item::Sys(
-                        "✓ 需求已免点击直接应用到当前打开文件 (Ctrl+Z 可一键撤销)".into(),
+                        "[OK] 需求已免点击直接应用到当前打开文件 (Ctrl+Z 可一键撤销)".into(),
                     ));
                 }
                 Err(e) => self.ai.items.push(Item::Err(e)),
@@ -532,7 +733,7 @@ impl App {
                 self.cookie_mark(doc_id, TaskState::Verified);
                 self.ai.items.push(Item::Ai(reply.clone()));
                 self.ai.items.push(Item::Sys(
-                    "✓ 已免点击直接应用到当前打开文件 (如需云端大模型，可在「模型设置…」填入 API Key)"
+                    "[OK] 已免点击直接应用到当前打开文件 (如需云端大模型，可在「模型设置…」填入 API Key)"
                         .into(),
                 ));
                 self.ai.history.push(Msg {
@@ -588,6 +789,19 @@ impl App {
 
         let c = if with_ctx { self.ai_context(i) } else { None };
         let mut sys = ai::system_prompt(&self.docs[i].name, self.docs[i].lines.len(), c.as_ref());
+
+        // 1.5 注入当前选定单 Agent 身份、职责定位与已分配文档上下文
+        let (_, agent_name, agent_role, _, assigned_doc_id) = self.active_agent_info();
+        if !agent_name.is_empty() {
+            sys.push_str(&format!(
+                "\n\n【当前独立执行 Agent 身份】: {agent_name}\n【职责定位】: {agent_role}"
+            ));
+            if let Some(did) = assigned_doc_id {
+                if let Some(d) = self.docs.iter().find(|d| d.id == did) {
+                    sys.push_str(&format!("\n【优先关注指派文档】: {}", d.name));
+                }
+            }
+        }
 
         // 2. Claude Mod 模式与工作区规范约束注入 (仅在 mod 热插拔模块启用时生效)
         if !mod_modes.is_empty() {
@@ -670,15 +884,34 @@ impl App {
     ) -> (Receiver<Event>, Handle) {
         let (tx, rx) = channel();
         let c = ctx.clone();
-        let cfg = self.ai_cfg().clone();
+        let cfg = self.effective_active_ai_cfg();
         let h = ai::spawn_request(&cfg, msgs.to_vec(), tools.to_vec(), tx, move || {
             c.request_repaint()
         });
         (rx, h)
     }
 
-    /// 每帧: 收流式文字 / 回合结果 / 插件工具结果。没有请求时什么都不做 (无空转轮询)
+    /// 每帧: 收取当前及后台独立 Agent 的流式文字 / 回合结果 / 插件工具结果。没有请求时零空转
     pub(super) fn ai_poll(&mut self, ctx: &egui::Context) {
+        self.ai_poll_active(ctx);
+        let bg_ids: Vec<String> = self
+            .ai
+            .sessions
+            .iter()
+            .filter_map(|(id, s)| s.run.as_ref().map(|_| id.clone()))
+            .collect();
+        if bg_ids.is_empty() {
+            return;
+        }
+        let orig_id = self.ai.active_agent_id.clone();
+        for id in bg_ids {
+            self.swap_agent_session(&id);
+            self.ai_poll_active(ctx);
+        }
+        self.swap_agent_session(&orig_id);
+    }
+
+    fn ai_poll_active(&mut self, ctx: &egui::Context) {
         let Some(run) = self.ai.run.as_mut() else {
             return;
         };
@@ -948,7 +1181,7 @@ impl App {
                         Ok(()) => {
                             d.tip = tr("ai.applied").into();
                             Ok(format!(
-                                "✓ 已免点击直接应用到当前文件 (第 {} 行, 插入 {} 行){}",
+                                "[OK] 已免点击直接应用到当前文件 (第 {} 行, 插入 {} 行){}",
                                 start + 1,
                                 insert.len(),
                                 if reason.is_empty() {
@@ -1077,7 +1310,7 @@ impl App {
                                     rc.proposed = true;
                                 }
                                 self.ai.items.push(Item::Sys(format!(
-                                    "✓ 已从回复提取 {} 行代码并免点击写入当前文件",
+                                    "[OK] 已从回复提取 {} 行代码并免点击写入当前文件",
                                     code_lines.len()
                                 )));
                                 self.cookie_mark(doc_id, TaskState::Verified);
@@ -1256,7 +1489,7 @@ impl App {
 
     pub(super) fn ai_windows(&mut self, ctx: &egui::Context) {
         let Some(q) = self.ai.ask.clone() else { return };
-        let url = self.ai_cfg().base_url.clone();
+        let url = self.effective_active_ai_cfg().base_url;
         let i = self.active.min(self.docs.len() - 1);
         let (label, n) = self
             .ai_context(i)
@@ -1304,142 +1537,72 @@ impl App {
         }
     }
 
-    pub(super) fn ai_ui(&mut self, ui: &mut egui::Ui) {
-        ui.set_max_width(ui.available_width());
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-        let ctx = ui.ctx().clone();
-        let mut act: Option<Act> = None;
-        let busy = self.ai.run.is_some();
-        // 头部 (Tauri `#chat-head`): 左「Chat」(11px 等宽), 右 ✕ / 清空 / 「带上选中内容 / 当前章节」勾选
+    /// 内联模型与供应商配置抽屉 (单 Agent / 多 Agent 共用，保存即写入用户已配置模型列表)
+    fn render_ai_settings_drawer(&mut self, ui: &mut egui::Ui, act: &mut Option<Act>) {
+        ui.separator();
         let tc = self.tc;
-        ui.horizontal(|ui| {
-            ui.set_min_height(32.0);
-            // 模式切换下拉选单 (取代两个平铺文字大按钮)
-            egui::ComboBox::from_id_salt("chat_main_mode_combo")
-                .width(168.0)
-                .selected_text(if self.ai.collab_mode {
-                    trz("🤝 多Agent协同工作台")
-                } else {
-                    trz("💬 智能助手对话")
-                })
-                .show_ui(ui, |ui| {
-                    if ui.selectable_label(!self.ai.collab_mode, trz("💬 智能助手对话")).clicked() {
-                        self.ai.collab_mode = false;
-                    }
-                    if ui.selectable_label(self.ai.collab_mode, trz("🤝 多Agent协同工作台")).clicked() {
-                        self.ai.collab_mode = true;
-                    }
-                });
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add(crate::btnstyle::unified_collapse_button("×", &tc, false))
-                    .tip(trz("折叠 (Ctrl+Alt+L)"))
-                    .clicked()
-                {
-                    self.ai.open = false;
-                }
-                if !self.ai.collab_mode {
-                    ui.menu_button(trz("⋮ 操作 ▾"), |ui| {
-                        ui.set_min_width(140.0);
-                        if ui.button(trz("🧹 清空对话历史")).clicked() {
-                            act = Some(Act::Clear);
-                            ui.close();
-                        }
-                        if ui.button(trz("📋 复制全部对话")).clicked() {
-                            let full_text = self
-                                .ai
-                                .history
-                                .iter()
-                                .map(|m| format!("{}: {}", m.role, m.content))
-                                .collect::<Vec<_>>()
-                                .join("\n\n");
-                            ctx.copy_text(full_text);
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui.button(trz("⚙️ 模型与接口设置…")).clicked() {
-                            self.ai.settings = !self.ai.settings;
-                            ui.close();
-                        }
-                        if ui.button(trz("🤝 切换至协同工作台")).clicked() {
-                            self.ai.collab_mode = true;
-                            ui.close();
-                        }
-                    });
-                }
-            });
-        });
-        if self.ai.collab_mode {
-            ui.separator();
-            self.collab_panel_ui(ui);
-            return;
-        }
-        let mod_modes = crate::plugins::active_mod_modes();
-        let skills_active = crate::plugins::is_module_active("skills");
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            let strategy_label = if self.ai.auto_apply {
-                trz("⚡ 自动应用补丁")
-            } else {
-                trz("🛡️ 手动确认补丁")
-            };
-            egui::ComboBox::from_id_salt("chat_strategy_combo")
-                .width(135.0)
-                .selected_text(strategy_label)
-                .show_ui(ui, |ui| {
-                    ui.checkbox(&mut self.ai.use_ctx, trz("📄 带上选区与当前章节上下文"));
-                    ui.checkbox(&mut self.ai.auto_apply, trz("⚡ 免点击直接应用补丁到文件"));
-                });
-
-            if !mod_modes.is_empty() {
-                let cur_mod_label = mod_modes
-                    .iter()
-                    .find(|m| m.id == self.ai.active_mod)
-                    .map(|m| m.label.as_str())
-                    .unwrap_or("默认");
-                egui::ComboBox::from_id_salt("chat_mod_combo")
-                    .width(110.0)
-                    .selected_text(format!("🧩 {cur_mod_label}"))
-                    .show_ui(ui, |ui| {
-                        for m in &mod_modes {
-                            let sel = self.ai.active_mod == m.id;
-                            if ui
-                                .selectable_label(sel, format!("{} ({})", m.label, m.title))
-                                .clicked()
-                            {
-                                self.ai.active_mod = m.id.clone();
-                            }
-                        }
-                    });
-            }
-        });
-        if self.ai.settings {
-            ui.separator();
-            let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
-            let cur_preset_name = ai::PRESETS
+        crate::btnstyle::apply_theme_button_style(ui, &tc);
+        let (saved_snapshot, active_model, mut cur_base_url) = {
+            let cfg = self.ai_cfg();
+            let list: Vec<(String, String, String)> = cfg
+                .saved_models
                 .iter()
-                .find(|(_, url)| cfg.base_url == **url)
-                .map(|(name, _)| *name)
-                .unwrap_or(trz("自定义供应商"));
-            ui.horizontal(|ui| {
-                ui.label(trz("🏢 供应商预设:"));
-                egui::ComboBox::from_id_salt("ai_preset_provider_combo")
-                    .width(180.0)
-                    .selected_text(cur_preset_name)
-                    .show_ui(ui, |ui| {
-                        for (name, url) in ai::PRESETS {
-                            let is_sel = cfg.base_url == *url;
-                            if ui
-                                .selectable_label(is_sel, format!("{name} ({url})"))
-                                .clicked()
-                            {
-                                cfg.base_url = (*url).to_string();
-                            }
+                .map(|p| {
+                    (
+                        p.model.clone(),
+                        p.display_label().to_string(),
+                        p.base_url.clone(),
+                    )
+                })
+                .collect();
+            (list, cfg.model.clone(), cfg.base_url.clone())
+        };
+
+        let cur_preset_name = ai::PRESETS
+            .iter()
+            .find(|(_, url)| cur_base_url == **url)
+            .map(|(name, _)| *name)
+            .unwrap_or(trz("自定义供应商"));
+        ui.horizontal(|ui| {
+            crate::ui_icons::icon_label(
+                ui,
+                crate::ui_icons::UiIcon::Globe,
+                trz("供应商预设:"),
+                tc.fg_dim,
+            );
+            egui::ComboBox::from_id_salt("ai_preset_provider_combo")
+                .width(180.0)
+                .selected_text(cur_preset_name)
+                .show_ui(ui, |ui| {
+                    for (name, url) in ai::PRESETS {
+                        let is_sel = cur_base_url == *url;
+                        if ui
+                            .selectable_label(is_sel, format!("{name} ({url})"))
+                            .clicked()
+                        {
+                            cur_base_url = (*url).to_string();
                         }
-                    });
-            });
+                    }
+                });
+        });
+        {
+            let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
+            cfg.base_url = cur_base_url;
+        }
+
+        let mut fetch_trigger: Option<AiConfig> = None;
+        let mut fetched_ok = false;
+        let mut save_clicked = false;
+        {
+            let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
             egui::Grid::new("ai_cfg").num_columns(2).show(ui, |ui| {
+                ui.label(trz("模型名称 (可选)"));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.ai.model_name_draft)
+                        .hint_text("My DeepSeek / Custom")
+                        .desired_width(220.0),
+                );
+                ui.end_row();
                 ui.label(tr("ai.base-url"));
                 ui.add(egui::TextEdit::singleline(&mut cfg.base_url).desired_width(220.0));
                 ui.end_row();
@@ -1454,7 +1617,6 @@ impl App {
                 );
                 ui.end_row();
                 ui.label(tr("ai.effort"));
-                // 档位下拉: 默认 (不指定) + 获取到 / 手填的档位 (没有就用通用默认); 当前值不在列表里也照样显示
                 let opts = ai::options(cfg);
                 let shown = if cfg.effort.is_empty() {
                     tr("ai.effort-default").to_string()
@@ -1492,25 +1654,13 @@ impl App {
                 }
                 ui.end_row();
             });
-            // 从供应商获取档位: 点了才联网, 后台线程查模型接口 (密钥只发给上面填的接口地址)
             ui.horizontal(|ui| {
                 let busy = self.ai.fetch.is_some();
                 if ui
                     .add_enabled(!busy, egui::Button::new(tr("ai.effort-fetch")))
                     .clicked()
                 {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    let snapshot = cfg.clone();
-                    let ctx = ui.ctx().clone();
-                    let _ =
-                        std::thread::Builder::new()
-                            .name("ai-efforts".into())
-                            .spawn(move || {
-                                let _ = tx.send(ai::fetch_efforts(&snapshot));
-                                ctx.request_repaint();
-                            });
-                    self.ai.fetch = Some(rx);
-                    self.ai.fetch_msg = tr("ai.effort-fetching").to_string();
+                    fetch_trigger = Some(cfg.clone());
                 }
                 if busy {
                     ui.spinner();
@@ -1519,7 +1669,6 @@ impl App {
             if let Some(rx) = &self.ai.fetch {
                 match rx.try_recv() {
                     Ok(res) => {
-                        self.ai.fetch = None;
                         self.ai.fetch_msg = match res {
                             Ok(list) => {
                                 let msg = trf(
@@ -1532,11 +1681,12 @@ impl App {
                             }
                             Err(e) => e,
                         };
+                        fetched_ok = true;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => ui
                         .ctx()
                         .request_repaint_after(std::time::Duration::from_millis(150)),
-                    Err(_) => self.ai.fetch = None,
+                    Err(_) => fetched_ok = true,
                 }
             }
             if !self.ai.fetch_msg.is_empty() {
@@ -1546,9 +1696,454 @@ impl App {
                 ui.colored_label(Color32::LIGHT_RED, e);
             }
             ui.weak(tr("ai.key-note"));
-            if ui.button(tr("ai.save")).clicked() {
-                act = Some(Act::Save);
+            if crate::btnstyle::agent_command_button(
+                ui,
+                tr("ai.save"),
+                crate::btnstyle::AgentBtnRole::Primary,
+                &tc,
+            )
+            .clicked()
+            {
+                save_clicked = true;
             }
+        }
+        if fetched_ok {
+            self.ai.fetch = None;
+        }
+        if let Some(snapshot) = fetch_trigger {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let ctx = ui.ctx().clone();
+            let _ = std::thread::Builder::new()
+                .name("ai-efforts".into())
+                .spawn(move || {
+                    let _ = tx.send(ai::fetch_efforts(&snapshot));
+                    ctx.request_repaint();
+                });
+            self.ai.fetch = Some(rx);
+            self.ai.fetch_msg = tr("ai.effort-fetching").to_string();
+        }
+        if save_clicked {
+            *act = Some(Act::Save);
+        }
+
+        // 仅展示并管理用户自己保存过的模型档案
+        if !saved_snapshot.is_empty() {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(trz("已配置模型")).strong().size(11.5));
+            let mut pick_saved: Option<(String, String)> = None;
+            let mut del_saved: Option<String> = None;
+            for (model_id, label, base_url) in &saved_snapshot {
+                let is_cur = active_model == *model_id;
+                let row_txt = if label == model_id {
+                    model_id.clone()
+                } else {
+                    format!("{label} ({model_id})")
+                };
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(is_cur, row_txt)
+                        .on_hover_text(base_url)
+                        .clicked()
+                    {
+                        pick_saved = Some((model_id.clone(), label.clone()));
+                    }
+                    if ui
+                        .small_button("×")
+                        .on_hover_text(trz("删除模型"))
+                        .clicked()
+                    {
+                        del_saved = Some(model_id.clone());
+                    }
+                });
+            }
+            if let Some((m, lbl)) = pick_saved {
+                self.ai_cfg().select_saved_model(&m);
+                self.ai.model_name_draft = if lbl == m { String::new() } else { lbl };
+                self.ai.efforts_text = None;
+                self.ai_save_cfg();
+            }
+            if let Some(m) = del_saved {
+                self.ai_cfg().remove_saved_model(&m);
+                for a in &mut self.collab.agents {
+                    if a.model_override.as_deref() == Some(m.as_str()) {
+                        a.model_override = None;
+                    }
+                }
+                self.ai.efforts_text = None;
+                self.ai_save_cfg();
+            }
+        }
+    }
+
+    pub(super) fn ai_ui(&mut self, ui: &mut egui::Ui) {
+        self.sync_active_agent_session();
+        ui.set_max_width(ui.available_width());
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+        let ctx = ui.ctx().clone();
+        let mut act: Option<Act> = None;
+        let busy = self.ai.run.is_some();
+        let tc = self.tc;
+
+        let (
+            _,
+            active_agent_name,
+            active_agent_role,
+            active_model_override,
+            active_assigned_doc_id,
+        ) = self.active_agent_info();
+        let collab_running = self.collab.any_running();
+        let agent_count = self.collab.agent_count;
+        let configured_models = self.ai_cfg().configured_models();
+        let configured_ids: Vec<String> =
+            configured_models.iter().map(|p| p.model.clone()).collect();
+
+        // 万级名录: 仅取前 AGENT_DISPLAY_LIMIT 行 (空查询 O(1))，总数单独统计
+        let (filtered_indices, total_matches) = crate::app::collab::filter_agents_limited(
+            &self.collab.agents,
+            &self.ai.agent_search,
+            crate::app::collab::CollabState::AGENT_DISPLAY_LIMIT,
+        );
+        let agent_rows: Vec<(usize, String, String, Option<String>, bool)> = filtered_indices
+            .into_iter()
+            .filter_map(|idx| {
+                let a = self.collab.agents.get(idx)?;
+                let bound = a
+                    .model_override
+                    .as_deref()
+                    .filter(|m| configured_ids.iter().any(|cm| cm == m))
+                    .map(str::to_string);
+                Some((
+                    idx,
+                    a.name.clone(),
+                    a.role.clone(),
+                    bound,
+                    self.ai_agent_idx_is_busy(idx),
+                ))
+            })
+            .collect();
+
+        enum AgentPopupAct {
+            Multi,
+            Single(usize),
+            SetCount(usize),
+        }
+        let mut agent_popup_act: Option<AgentPopupAct> = None;
+
+        // 统一头部: 左侧可搜索 Agent/协同模式切换下拉 + 右侧操作菜单与折叠按钮
+        ui.horizontal(|ui| {
+            ui.set_min_height(32.0);
+            let (mode_ic_r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+            crate::ui_icons::paint(
+                ui.painter(),
+                mode_ic_r,
+                if self.ai.collab_mode {
+                    crate::ui_icons::UiIcon::Collab
+                } else {
+                    crate::ui_icons::UiIcon::Chat
+                },
+                Color32::from_rgb(56, 189, 248),
+            );
+
+            let header_label = if self.ai.collab_mode {
+                format!(
+                    "{} ({})",
+                    trz("全员协同调度"),
+                    crate::app::collab::format_number_commas(agent_count)
+                )
+            } else if busy {
+                format!("{} (*)", active_agent_name)
+            } else {
+                active_agent_name.clone()
+            };
+            let agent_btn = crate::btnstyle::dropdown_button(ui, &header_label, 178.0, &tc);
+            let sq_low = self.ai.agent_search.trim().to_lowercase();
+            let show_multi_row = sq_low.is_empty()
+                || "全员协同调度 multi all collab parallel dispatch チーム 協働".contains(&sq_low);
+            let collab_mode_now = self.ai.collab_mode;
+            let active_tab_now = self.collab.active_tab;
+
+            egui::Popup::menu(&agent_btn)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| {
+                    ui.set_min_width(250.0);
+                    ui.horizontal(|ui| {
+                        let (sr, _) = ui.allocate_exact_size(vec2(13.0, 13.0), Sense::hover());
+                        crate::ui_icons::paint(
+                            ui.painter(),
+                            sr,
+                            crate::ui_icons::UiIcon::Search,
+                            tc.fg_dim,
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.ai.agent_search)
+                                .hint_text(trz("搜索 Agent 名称或职责…"))
+                                .desired_width(214.0),
+                        );
+                    });
+                    if show_multi_row {
+                        ui.add_space(2.0);
+                        let multi_txt = format!(
+                            "{} ({})",
+                            trz("全员协同调度"),
+                            crate::app::collab::format_number_commas(agent_count)
+                        );
+                        if ui.selectable_label(collab_mode_now, multi_txt).clicked() {
+                            agent_popup_act = Some(AgentPopupAct::Multi);
+                            egui::Popup::close_all(ui.ctx());
+                        }
+                    }
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .id_salt("header_agent_picker_scroll")
+                        .max_height(220.0)
+                        .show(ui, |ui| {
+                            if agent_rows.is_empty() {
+                                ui.weak(trz("未找到匹配的 Agent"));
+                            }
+                            let total_agent_rows = total_matches;
+                            let display_limit = crate::app::collab::CollabState::AGENT_DISPLAY_LIMIT;
+                            for (idx, name, role, bound_model, is_busy) in
+                                agent_rows.iter().take(display_limit)
+                            {
+                                let selected = !collab_mode_now && *idx == active_tab_now;
+                                let row_resp = ui.horizontal(|ui| {
+                                    let (dr, _) =
+                                        ui.allocate_exact_size(vec2(10.0, 14.0), Sense::hover());
+                                    ui.painter().circle_filled(
+                                        dr.center(),
+                                        3.2,
+                                        if *is_busy {
+                                            Color32::from_rgb(50, 215, 130)
+                                        } else {
+                                            tc.fg_dim
+                                        },
+                                    );
+                                    let label = if let Some(m) = bound_model {
+                                        format!("{name} [{m}]")
+                                    } else {
+                                        name.clone()
+                                    };
+                                    ui.selectable_label(selected, label).on_hover_text(role)
+                                });
+                                if row_resp.inner.clicked() {
+                                    agent_popup_act = Some(AgentPopupAct::Single(*idx));
+                                    egui::Popup::close_all(ui.ctx());
+                                }
+                            }
+                            if total_agent_rows > display_limit {
+                                ui.add_space(2.0);
+                                ui.separator();
+                                ui.weak(format!(
+                                    "共 {} 个 Agent (显示前 {} 项)",
+                                    crate::app::collab::format_number_commas(total_agent_rows),
+                                    display_limit
+                                ));
+                            }
+                        });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.weak(trz("Agent 数量"));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add_enabled(
+                                    !collab_running
+                                        && agent_count
+                                            < crate::app::collab::CollabState::MAX_COLLAB_AGENTS,
+                                    egui::Button::new("+").small(),
+                                )
+                                .clicked()
+                            {
+                                agent_popup_act =
+                                    Some(AgentPopupAct::SetCount(agent_count.saturating_add(1)));
+                            }
+                            let mut c_val = agent_count;
+                            if ui
+                                .add_enabled(
+                                    !collab_running,
+                                    egui::DragValue::new(&mut c_val)
+                                        .range(
+                                            1..=crate::app::collab::CollabState::MAX_COLLAB_AGENTS,
+                                        )
+                                        .speed(1.0),
+                                )
+                                .changed()
+                            {
+                                agent_popup_act = Some(AgentPopupAct::SetCount(c_val));
+                            }
+                            if ui
+                                .add_enabled(
+                                    !collab_running && agent_count > 1,
+                                    egui::Button::new("-").small(),
+                                )
+                                .clicked()
+                            {
+                                agent_popup_act =
+                                    Some(AgentPopupAct::SetCount(agent_count.saturating_sub(1)));
+                            }
+                        });
+                    });
+                });
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add(crate::btnstyle::unified_collapse_button("×", &tc, false))
+                    .tip(trz("折叠 (Ctrl+Alt+L)"))
+                    .clicked()
+                {
+                    self.ai.open = false;
+                    self.collab.open = false;
+                }
+                ui.menu_button(trz("操作"), |ui| {
+                    crate::btnstyle::apply_theme_button_style(ui, &tc);
+                    ui.set_min_width(156.0);
+                    if !self.ai.collab_mode {
+                        if ui.button(trz("清空当前会话")).clicked() {
+                            act = Some(Act::Clear);
+                            ui.close();
+                        }
+                        if ui.button(trz("复制全部对话")).clicked() {
+                            let full_text = self
+                                .ai
+                                .history
+                                .iter()
+                                .map(|m| format!("{}: {}", m.role, m.content))
+                                .collect::<Vec<_>>()
+                                .join("\n\n");
+                            ctx.copy_text(full_text);
+                            ui.close();
+                        }
+                        if active_assigned_doc_id.is_some() {
+                            if ui.button(trz("取消文件分配")).clicked() {
+                                act = Some(Act::UnassignDoc);
+                                ui.close();
+                            }
+                        } else if !self.docs.is_empty() && ui.button(trz("分配当前文件")).clicked()
+                        {
+                            act = Some(Act::AssignDoc);
+                            ui.close();
+                        }
+                        ui.separator();
+                    }
+                    if ui.button(trz("模型与接口设置…")).clicked() {
+                        self.ai.settings = !self.ai.settings;
+                        ui.close();
+                    }
+                    if !self.ai.collab_mode {
+                        if ui.button(trz("切换至全员协同调度")).clicked() {
+                            agent_popup_act = Some(AgentPopupAct::Multi);
+                            ui.close();
+                        }
+                    } else if ui.button(trz("返回单 Agent 精准控制")).clicked() {
+                        agent_popup_act = Some(AgentPopupAct::Single(self.collab.active_tab));
+                        ui.close();
+                    }
+                });
+            });
+        });
+
+        match agent_popup_act {
+            Some(AgentPopupAct::Multi) => {
+                self.ai.collab_mode = true;
+                self.collab.open = true;
+                self.ai.agent_search.clear();
+            }
+            Some(AgentPopupAct::Single(idx)) => {
+                self.select_single_agent(idx);
+            }
+            Some(AgentPopupAct::SetCount(n)) => {
+                self.collab.set_agent_count(n);
+                self.sync_active_agent_session();
+            }
+            None => {}
+        }
+
+        if self.ai.collab_mode {
+            if self.ai.settings {
+                self.render_ai_settings_drawer(ui, &mut act);
+                if matches!(act, Some(Act::Save)) {
+                    let name_draft = std::mem::take(&mut self.ai.model_name_draft);
+                    self.ai_cfg().upsert_current_model(Some(&name_draft));
+                    self.ai_save_cfg();
+                    self.ai.settings = false;
+                }
+            }
+            ui.separator();
+            self.collab_panel_ui(ui);
+            return;
+        }
+
+        let mod_modes = crate::plugins::active_mod_modes();
+        let skills_active = crate::plugins::is_module_active("skills");
+        let assigned_doc_name = active_assigned_doc_id.and_then(|did| {
+            self.docs
+                .iter()
+                .find(|d| d.id == did)
+                .map(|d| d.name.clone())
+        });
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let (strat_ic_r, _) = ui.allocate_exact_size(vec2(13.0, 13.0), Sense::hover());
+            crate::ui_icons::paint(
+                ui.painter(),
+                strat_ic_r,
+                if self.ai.auto_apply {
+                    crate::ui_icons::UiIcon::Bolt
+                } else {
+                    crate::ui_icons::UiIcon::Shield
+                },
+                if self.ai.auto_apply {
+                    Color32::from_rgb(56, 189, 248)
+                } else {
+                    tc.fg_dim
+                },
+            );
+            let strategy_label = if self.ai.auto_apply {
+                trz("自动应用补丁")
+            } else {
+                trz("手动确认补丁")
+            };
+            egui::ComboBox::from_id_salt("chat_strategy_combo")
+                .width(126.0)
+                .selected_text(strategy_label)
+                .show_ui(ui, |ui| {
+                    ui.checkbox(&mut self.ai.use_ctx, trz("带上选区与当前章节上下文"));
+                    ui.checkbox(&mut self.ai.auto_apply, trz("免点击直接应用补丁到文件"));
+                });
+
+            if !mod_modes.is_empty() {
+                let cur_mod_label = mod_modes
+                    .iter()
+                    .find(|m| m.id == self.ai.active_mod)
+                    .map(|m| m.label.as_str())
+                    .unwrap_or("默认");
+                egui::ComboBox::from_id_salt("chat_mod_combo")
+                    .width(96.0)
+                    .selected_text(cur_mod_label)
+                    .show_ui(ui, |ui| {
+                        for m in &mod_modes {
+                            let sel = self.ai.active_mod == m.id;
+                            if ui
+                                .selectable_label(sel, format!("{} ({})", m.label, m.title))
+                                .clicked()
+                            {
+                                self.ai.active_mod = m.id.clone();
+                            }
+                        }
+                    });
+            }
+            if let Some(dn) = &assigned_doc_name {
+                ui.label(
+                    egui::RichText::new(format!("@{dn}"))
+                        .size(10.5)
+                        .color(Color32::from_rgb(250, 204, 21)),
+                )
+                .on_hover_text(&active_agent_role);
+            } else {
+                ui.weak("").on_hover_text(&active_agent_role);
+            }
+        });
+        if self.ai.settings {
+            self.render_ai_settings_drawer(ui, &mut act);
         }
         ui.separator();
         let bottom_id = egui::Id::new("ai_bottom_bar_height");
@@ -1573,14 +2168,14 @@ impl App {
                             if tl.contains("agent") || tl.contains("派出") || tl.contains("协同")
                             {
                                 ui.horizontal(|ui| {
-                                    if ui
-                                        .button(
-                                            egui::RichText::new("🤝 唤起多 Agent 协同工作台 →")
-                                                .strong()
-                                                .color(Color32::from_rgb(0, 210, 255)),
-                                        )
-                                        .on_hover_text("点击自动将该任务委托至多智能体协同流水线")
-                                        .clicked()
+                                    if crate::ui_icons::icon_button(
+                                        ui,
+                                        crate::ui_icons::UiIcon::Collab,
+                                        "唤起多 Agent 协同工作台 →",
+                                        Color32::from_rgb(0, 210, 255),
+                                    )
+                                    .on_hover_text("点击自动将该任务委托至多智能体协同流水线")
+                                    .clicked()
                                     {
                                         act = Some(Act::OpenCollab(t.clone()));
                                     }
@@ -1591,13 +2186,14 @@ impl App {
                             ui.add(egui::Label::new(t.as_str()).wrap());
                             if !t.is_empty() && !busy {
                                 ui.horizontal(|ui| {
-                                    ui.menu_button(trz("⚡ 采纳操作 ▾"), |ui| {
+                                    ui.menu_button(trz("采纳操作"), |ui| {
+                                        crate::btnstyle::apply_theme_button_style(ui, &tc);
                                         ui.set_min_width(150.0);
-                                        if ui.button(trz("📥 插入到当前光标处")).clicked() {
+                                        if ui.button(trz("插入到当前光标处")).clicked() {
                                             act = Some(Act::Insert(t.clone()));
                                             ui.close();
                                         }
-                                        if ui.button(trz("📋 复制全部回复")).clicked() {
+                                        if ui.button(trz("复制全部回复")).clicked() {
                                             act = Some(Act::Copy(t.clone()));
                                             ui.close();
                                         }
@@ -1691,18 +2287,25 @@ impl App {
             // 1. 快捷技能 (Slash Commands) 下拉选单
             if skills_active {
                 let mut selected_cmd: Option<&str> = None;
+                let (sk_ic_r, _) = ui.allocate_exact_size(vec2(13.0, 13.0), Sense::hover());
+                crate::ui_icons::paint(
+                    ui.painter(),
+                    sk_ic_r,
+                    crate::ui_icons::UiIcon::Bolt,
+                    Color32::from_rgb(56, 189, 248),
+                );
                 egui::ComboBox::from_id_salt("chat_quick_skills_combo")
-                    .width(120.0)
-                    .selected_text(trz("⚡ 快捷技能 ▾"))
+                    .width(108.0)
+                    .selected_text(trz("快捷技能"))
                     .show_ui(ui, |ui| {
                         let quick_skills = [
-                            ("/review", "⚡ /review — 代码深度审查与架构分析"),
-                            ("/test", "🧪 /test — 单元测试自动化生成"),
-                            ("/refactor", "🔨 /refactor — 架构重构与消除冗余"),
-                            ("/commit", "📦 /commit — Git 变更提炼与规范提交"),
-                            ("/nema", "🌀 /nema — NEMA 跨语言 AST 拓扑校验"),
-                            ("/explain", "📖 /explain — 核心逻辑与系统边界解说"),
-                            ("/collab", "🤝 /collab — 切换至多 Agent 协同工作台"),
+                            ("/review", "/review — 代码深度审查与架构分析"),
+                            ("/test", "/test — 单元测试自动化生成"),
+                            ("/refactor", "/refactor — 架构重构与消除冗余"),
+                            ("/commit", "/commit — Git 变更提炼与规范提交"),
+                            ("/nema", "/nema — NEMA 跨语言 AST 拓扑校验"),
+                            ("/explain", "/explain — 核心逻辑与系统边界解说"),
+                            ("/collab", "/collab — 切换至多 Agent 协同工作台"),
                         ];
                         for (cmd, desc) in quick_skills {
                             if ui.selectable_label(false, desc).clicked() {
@@ -1725,55 +2328,131 @@ impl App {
                 }
             }
 
-            // 2. 常用模型快速切换下拉菜单
-            let model = self.ai_cfg().model.clone();
-            let model_display = if model.is_empty() {
-                trz("未设置模型")
-            } else {
-                model.as_str()
-            };
+            // 2. 仅显示用户已配置模型的精准切换下拉菜单 (绝不展示未配置的占位模型)
+            let global_model = self.ai_cfg().model.clone();
+            let valid_override = active_model_override
+                .as_deref()
+                .filter(|m| configured_models.iter().any(|p| p.model == *m))
+                .map(str::to_string);
+            let model_display = valid_override
+                .as_deref()
+                .or_else(|| {
+                    let gm = global_model.trim();
+                    (!gm.is_empty()).then_some(gm)
+                })
+                .unwrap_or(trz("未设置模型"));
 
-            let mut new_model: Option<String> = None;
-            egui::ComboBox::from_id_salt("chat_model_quick_switcher")
-                .width(130.0)
-                .selected_text(format!("🤖 {model_display}"))
-                .show_ui(ui, |ui| {
-                    let popular_models = [
-                        "deepseek-chat",
-                        "deepseek-reasoner",
-                        "gpt-4o",
-                        "gpt-4o-mini",
-                        "claude-3-5-sonnet-20241022",
-                        "claude-3-5-haiku-20241022",
-                        "qwen2.5-coder",
-                        "llama3.3",
-                    ];
-                    for m in popular_models {
-                        let is_cur = model == m;
-                        if ui.selectable_label(is_cur, m).clicked() {
-                            new_model = Some(m.to_string());
+            let (mod_ic_r, _) = ui.allocate_exact_size(vec2(13.0, 13.0), Sense::hover());
+            crate::ui_icons::paint(
+                ui.painter(),
+                mod_ic_r,
+                crate::ui_icons::UiIcon::Cpu,
+                tc.fg_dim,
+            );
+            let model_btn = crate::btnstyle::dropdown_button(ui, model_display, 136.0, &tc);
+
+            enum ModelPick {
+                FollowGlobal,
+                Select(String),
+                OpenSettings,
+            }
+            let mut model_pick: Option<ModelPick> = None;
+            let active_effective_model = valid_override.as_deref().or_else(|| {
+                let gm = global_model.trim();
+                (!gm.is_empty()).then_some(gm)
+            });
+            let ms_query = self.ai.model_search.trim().to_lowercase();
+
+            egui::Popup::menu(&model_btn)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| {
+                    ui.set_min_width(196.0);
+                    if configured_models.is_empty() {
+                        ui.weak(trz("尚未配置模型，请先添加"));
+                        if ui.button(trz("打开模型配置…")).clicked() {
+                            model_pick = Some(ModelPick::OpenSettings);
+                            egui::Popup::close_all(ui.ctx());
                         }
-                    }
-                    ui.separator();
-                    if ui.selectable_label(false, trz("⚙️ 打开模型配置…")).clicked() {
-                        self.ai.settings = true;
+                    } else {
+                        if configured_models.len() > 4 {
+                            ui.horizontal(|ui| {
+                                let (sr, _) =
+                                    ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+                                crate::ui_icons::paint(
+                                    ui.painter(),
+                                    sr,
+                                    crate::ui_icons::UiIcon::Search,
+                                    tc.fg_dim,
+                                );
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.ai.model_search)
+                                        .hint_text(trz("搜索已配置模型…"))
+                                        .desired_width(160.0),
+                                );
+                            });
+                            ui.separator();
+                        }
+                        if valid_override.is_some() {
+                            if ui.selectable_label(false, trz("跟随全局默认")).clicked() {
+                                model_pick = Some(ModelPick::FollowGlobal);
+                                egui::Popup::close_all(ui.ctx());
+                            }
+                            ui.separator();
+                        }
+                        for p in &configured_models {
+                            let match_q = ms_query.is_empty()
+                                || p.model.to_lowercase().contains(&ms_query)
+                                || p.name.to_lowercase().contains(&ms_query);
+                            if !match_q {
+                                continue;
+                            }
+                            let label =
+                                if p.name.trim().is_empty() || p.name.trim() == p.model.trim() {
+                                    p.model.clone()
+                                } else {
+                                    format!("{} ({})", p.name.trim(), p.model)
+                                };
+                            let is_cur = active_effective_model == Some(p.model.as_str());
+                            if ui.selectable_label(is_cur, label).clicked() {
+                                model_pick = Some(ModelPick::Select(p.model.clone()));
+                                egui::Popup::close_all(ui.ctx());
+                            }
+                        }
+                        ui.separator();
+                        if ui.selectable_label(false, trz("添加或管理模型…")).clicked() {
+                            model_pick = Some(ModelPick::OpenSettings);
+                            egui::Popup::close_all(ui.ctx());
+                        }
                     }
                 });
 
-            if let Some(nm) = new_model {
-                let cfg = self.ai.cfg.get_or_insert_with(AiConfig::load);
-                cfg.model = nm;
-                self.ai_save_cfg();
+            match model_pick {
+                Some(ModelPick::FollowGlobal) => {
+                    let idx = self
+                        .collab
+                        .active_tab
+                        .min(self.collab.agents.len().saturating_sub(1));
+                    if let Some(a) = self.collab.agents.get_mut(idx) {
+                        a.model_override = None;
+                    }
+                    self.persist_agent_settings_now();
+                }
+                Some(ModelPick::Select(nm)) => self.apply_model_pick(nm),
+                Some(ModelPick::OpenSettings) => {
+                    self.ai.settings = true;
+                    self.ai.model_search.clear();
+                }
+                None => {}
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::btnstyle::agent_command_button(
+                if crate::ui_icons::icon_only_button(
                     ui,
-                    "⚙️",
-                    crate::btnstyle::AgentBtnRole::Settings,
-                    &tc,
+                    crate::ui_icons::UiIcon::Gear,
+                    vec2(26.0, 22.0),
+                    tc.fg,
                 )
-                .on_hover_text(trz("⚙️ 模型与接口设置…"))
+                .on_hover_text(trz("模型与接口设置…"))
                 .clicked()
                 {
                     self.ai.settings = !self.ai.settings;
@@ -1784,13 +2463,16 @@ impl App {
         if self.ai.input.starts_with('/') {
             if let Some((skill, _)) = self.ai.skills.match_prompt(&self.ai.input) {
                 ui.horizontal(|ui| {
-                    ui.label(
+                    crate::ui_icons::icon_label(
+                        ui,
+                        crate::ui_icons::UiIcon::Spark,
                         egui::RichText::new(format!(
-                            "💡 激活技能: {} — {}",
+                            "激活技能: {} — {}",
                             skill.name, skill.description
                         ))
                         .size(11.0)
                         .color(Color32::from_rgb(0, 190, 255)),
+                        Color32::from_rgb(0, 190, 255),
                     );
                 });
             }
@@ -1861,6 +2543,8 @@ impl App {
             }
             Some(Act::Copy(t)) => ctx.copy_text(t),
             Some(Act::Save) => {
+                let name_draft = std::mem::take(&mut self.ai.model_name_draft);
+                self.ai_cfg().upsert_current_model(Some(&name_draft));
                 self.ai_save_cfg();
                 self.ai.settings = false;
             }
@@ -1869,6 +2553,26 @@ impl App {
                 self.ai.collab_mode = true;
                 self.collab.open = true;
                 self.collab.master_input = prompt;
+            }
+            Some(Act::AssignDoc) => {
+                if let Some(doc) = self.docs.get(self.active) {
+                    let doc_id = doc.id;
+                    let doc_name = doc.name.clone();
+                    let idx = self
+                        .collab
+                        .active_tab
+                        .min(self.collab.agents.len().saturating_sub(1));
+                    self.collab.assign_file(idx, doc_id, &doc_name);
+                }
+            }
+            Some(Act::UnassignDoc) => {
+                let idx = self
+                    .collab
+                    .active_tab
+                    .min(self.collab.agents.len().saturating_sub(1));
+                if let Some(a) = self.collab.agents.get_mut(idx) {
+                    a.assigned_doc_id = None;
+                }
             }
             None => {}
         }
@@ -2273,7 +2977,7 @@ mod tests {
         );
         let h = measured_h.unwrap();
         assert!(
-            h >= 90.0 && h <= 300.0,
+            (90.0..=300.0).contains(&h),
             "Bottom bar height should be reasonable, got {h}"
         );
 
@@ -2287,5 +2991,137 @@ mod tests {
             (h2 - h).abs() <= 1.0,
             "Height should converge stably: h={h}, h2={h2}"
         );
+    }
+
+    #[test]
+    fn switching_single_agents_preserves_independent_sessions_and_persists_settings() {
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.ai.open = true;
+        app.ai.use_ctx = false;
+        app.ai.auto_apply = false;
+        app.ai.active_mod = "review".into();
+        app.collab.set_agent_count(4);
+
+        // Agent #1 会话与专属模型
+        app.select_single_agent(0);
+        assert_eq!(app.ai.active_agent_id, "agent_1");
+        app.ai.input = "agent1 draft".into();
+        app.ai.items.push(Item::User("task for agent 1".into()));
+        app.collab.agents[0].model_override = Some("custom-model-1".into());
+
+        // 切换到 Agent #2，独立会话且不影响 Agent #1
+        app.select_single_agent(1);
+        assert_eq!(app.ai.active_agent_id, "agent_2");
+        assert!(app.ai.input.is_empty());
+        assert!(app.ai.items.is_empty());
+        app.ai.input = "agent2 draft".into();
+        app.collab.agents[1].model_override = Some("custom-model-2".into());
+
+        // 切回 Agent #1，原有草稿与历史完整保留
+        app.select_single_agent(0);
+        assert_eq!(app.ai.input, "agent1 draft");
+        assert_eq!(app.ai.items.len(), 1);
+
+        // 模拟关闭重开软件，验证全部 AI 与 Agent 状态持久化恢复
+        app.ai.collab_mode = true;
+        let saved = app.current_settings();
+        let mut reloaded_cfg = Settings::default();
+        reloaded_cfg.apply_json(&saved.to_json(), true);
+        let mut restarted = App::build(vec![], None, Trace::new(), reloaded_cfg, false);
+        assert!(restarted.ai.open);
+        assert!(restarted.ai.collab_mode);
+        assert!(restarted.collab.open);
+        assert!(!restarted.ai.use_ctx);
+        assert!(!restarted.ai.auto_apply);
+        assert_eq!(restarted.ai.active_mod, "review");
+        assert_eq!(restarted.collab.agent_count, 4);
+        assert_eq!(restarted.collab.active_tab, 0);
+        assert_eq!(restarted.ai.active_agent_id, "agent_1");
+        assert_eq!(
+            restarted.collab.agents[0].model_override.as_deref(),
+            Some("custom-model-1")
+        );
+        assert_eq!(
+            restarted.collab.agents[1].model_override.as_deref(),
+            Some("custom-model-2")
+        );
+        restarted.select_single_agent(1);
+        assert_eq!(restarted.ai.active_agent_id, "agent_2");
+    }
+
+    #[test]
+    fn model_list_only_contains_user_configured_models() {
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.ai.open = true;
+        app.ai.cfg = Some(AiConfig::default_cfg());
+
+        // 未配置任何模型时：configured_models 为空，界面显示「未设置模型」而非硬编码模型
+        assert!(app.ai_cfg().configured_models().is_empty());
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| {
+            app.ai_ui(ui);
+        });
+        let mut rendered_texts = String::new();
+        for cs in &out.shapes {
+            if let egui::Shape::Text(ts) = &cs.shape {
+                rendered_texts.push_str(ts.galley.text());
+                rendered_texts.push('\n');
+            }
+        }
+        out.textures_delta.clear();
+        assert!(!rendered_texts.contains("deepseek-chat"));
+        assert!(!rendered_texts.contains("gpt-4o"));
+
+        // 用户保存 1 个模型后，列表仅包含该模型；删除后再次为空
+        {
+            let cfg = app.ai_cfg();
+            cfg.base_url = "https://api.openai.com/v1".into();
+            cfg.model = "my-team-model".into();
+            cfg.key = "sk-team".into();
+            cfg.upsert_current_model(Some("Team Model"));
+        }
+        let models = app.ai_cfg().configured_models();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].model, "my-team-model");
+        assert!(app.ai_cfg().remove_saved_model("my-team-model"));
+        assert!(app.ai_cfg().configured_models().is_empty());
+    }
+
+    #[test]
+    fn single_agent_model_pick_is_isolated_from_global_and_other_agents() {
+        let (mut app, _g) = test_app();
+        app.new_doc();
+        app.ai.cfg = Some(AiConfig::default_cfg());
+        app.collab.set_agent_count(3);
+        {
+            let cfg = app.ai_cfg();
+            cfg.model = "global-model".into();
+            cfg.upsert_current_model(Some("Global"));
+        }
+        app.ai.collab_mode = false;
+        app.select_single_agent(1);
+        app.apply_model_pick("agent-two-model".into());
+
+        assert_eq!(
+            app.collab.agents[1].model_override.as_deref(),
+            Some("agent-two-model")
+        );
+        assert_eq!(app.collab.agents[0].model_override, None);
+        assert_eq!(app.collab.agents[2].model_override, None);
+        assert_eq!(app.ai_cfg().model, "global-model");
+
+        // 全员协同模式下选择才切换全局默认模型
+        app.ai.collab_mode = true;
+        app.apply_model_pick("global-model".into());
+        assert_eq!(app.collab.agents[1].model_override.as_deref(), Some("agent-two-model"));
     }
 }
