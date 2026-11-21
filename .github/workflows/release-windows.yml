@@ -56,8 +56,9 @@ jobs:
         run: |
           Write-Host "Verifying built portable binary can launch..."
           $portable = Get-Item "dist-fast/IDE1.0-*-windows-x64.exe" | Select-Object -First 1
-          & $portable.FullName --smoke-test
-          if ($LASTEXITCODE -ne 0) { throw "Release portable exe failed smoke test launch check!" }
+          $out = & $portable.FullName --smoke-test | Out-String
+          Write-Host $out
+          if ($out -notmatch "IDE1.0_SMOKE_TEST_OK") { throw "Release portable exe failed smoke test launch check!" }
           Write-Host "Release launch smoke test PASSED!"
 
       - name: Upload Release Bundle to Action Artifacts

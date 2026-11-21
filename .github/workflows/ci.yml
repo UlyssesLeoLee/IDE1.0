@@ -76,7 +76,7 @@ jobs:
           cargo test -p editcore --no-fail-fast
           cargo test -p nema-codec --no-fail-fast
           cargo test -p ide-agent-router --no-fail-fast
-          cargo test -p ide-fast --bin ide-fast --no-fail-fast
+          cargo test -p ide-fast --bin ide-fast --no-fail-fast -- --test-threads=1
 
       - name: Verify Executable Can Launch (Smoke Test Gate)
         run: |
