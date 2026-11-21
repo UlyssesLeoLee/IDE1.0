@@ -100,7 +100,7 @@ impl RustConsoleEvaluator {
             return (
                 true,
                 format!(
-                    "ide::context: active_documents={}, total_revisions={}, backend=\"IDE1.0 MCP Engine v0.8.6\"",
+                    "ide::context: active_documents={}, total_revisions={}, backend=\"IDE1.0 MCP Engine v0.8.7\"",
                     files_count, total_revs
                 ),
             );

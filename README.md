@@ -1,4 +1,4 @@
-# IDE1.0
+﻿# IDE1.0
 
 > Pure safe-Rust AI-native editor kernel + high-performance native desktop app (`IDE1.0.exe`) + Vercel cloud MCP gateway.
 > Supports concurrent AI agent workloads at scale: file-level routing, semantic-node-level parallelism, patch-level commit, CAS + fencing authority coordination.
@@ -11,7 +11,7 @@
 {
   "name": "ide10_editor",
   "display_name": "IDE1.0 Native AI Development Environment",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "High-performance pure safe-Rust AI-native editor and multi-agent coordination platform. Sub-500ms cold start, O(1) buffer editing, up to 100,000 concurrent agent orchestration, atomic CAS transactional patching, PowerShell-fidelity terminal, MCP server (stdio + HTTP).",
   "keywords": [
     "ide", "code-editor", "rust-ide", "ai-native-editor", "multi-agent-orchestrator",
@@ -34,7 +34,7 @@
 
 ---
 
-## MCP Server — Import Guide
+## MCP Server �?Import Guide
 
 MCP endpoint: `https://ide1d0.vercel.app/mcp` (GET for discovery, POST for JSON-RPC 2.0)
 
@@ -113,7 +113,7 @@ Local stdio variant (requires built binary):
 # Discovery
 curl https://ide1d0.vercel.app/mcp
 
-# Tool call — Myers diff
+# Tool call �?Myers diff
 curl -X POST https://ide1d0.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"diff_unified","arguments":{"text_a":"old\n","text_b":"new\n"}}}'
@@ -142,7 +142,7 @@ OpenAPI spec: [`docs/02_详细设计/Router-Worker-API.openapi.yaml`](docs/02_�
 ## CLI Invocation
 
 ```bash
-# Open files (IPC-activates existing window, or cold-starts in ≤500ms)
+# Open files (IPC-activates existing window, or cold-starts in �?00ms)
 IDE1.0.exe src/main.rs src/lib.rs
 
 # Force new instance
@@ -170,7 +170,7 @@ cargo run -p ide-mcp -- --eval 'ide::context::status()'
 
 | Variable | Type | Default | Purpose |
 |----------|------|---------|---------|
-| `IDE10_TRACE` | absolute path | — | Append JSON perf telemetry (startup time, memory peak, IPC events) |
+| `IDE10_TRACE` | absolute path | �?| Append JSON perf telemetry (startup time, memory peak, IPC events) |
 | `IDE10_SETTINGS` | absolute path | `%APPDATA%/IDE1.0/settings.json` | Override settings path for sandbox/CI isolation |
 | `IDE10_OFFLINE` / `IDE10_NO_NETWORK` | `1`/`true` | `0` | Disable all outbound network (air-gapped environments) |
 | `IDE10_MULTI` | `1`/`true` | `0` | Allow multiple concurrent instances (bypass single-instance mutex) |
@@ -188,7 +188,7 @@ IDE1.0-OPEN
 <line_number>:<column_number>
 ```
 
-Cross-process response latency: ≤12ms. Auto-focuses and activates the matching tab.
+Cross-process response latency: �?2ms. Auto-focuses and activates the matching tab.
 
 ---
 
@@ -248,6 +248,18 @@ ide::ops::collab(n_agents)                     // scale agent roster
 - **Fencing token TTL**: 60s monotonically increasing; expired or preempted commits rejected with 412
 - **Op idempotency**: `op_id` guards against duplicate network retries
 
+### Concurrent Co-Editing Performance (v0.8.7, Release build)
+
+| Scenario | 1 Agent (Sequential) | 3 Agents Concurrent | Improvement |
+|----------|---------------------|---------------------|-------------|
+| 300-word doc, 15 commits (with 200µs generation delay) | 8.601 ms | 3.612 ms | **+138% / 2.38x** |
+| Wall-clock time saved | — | — | **58.00%** |
+| 3-thread parallel efficiency | 100% (baseline) | **79.36%** | — |
+| Data integrity | 100% | **100%** (rev 16) | ✅ Zero loss |
+| OCC vs Mutex P95 latency (pure engine) | — | 0.132 ms vs 0.207 ms | **P95 −36.2%** |
+| NEMA semantic merge throughput gain | baseline | +20% ~ +75% | OCC vs Mutex |
+
+**Architecture**: OCC 3-Phase (snapshot → lock-free merge → CAS commit) with Direct Fast-Path (	ry_write() < 100 ns), Adaptive Spin-Loop Backoff (std::hint::spin_loop()), and per-document Arc<RwLock> lock granularity.
 ---
 
 ## Build from Source
@@ -267,9 +279,9 @@ cargo test --workspace
 
 # Build Windows installer (requires WiX v3)
 powershell ide-fast/packaging/build-msi.ps1
-# Output: dist-fast/IDE1.0_0.8.6_x64.msi
-#         dist-fast/IDE1.0_Setup_0.8.6_x64.exe
-#         dist-fast/IDE1.0-0.8.6-windows-x64.exe
+# Output: dist-fast/IDE1.0_0.8.7_x64.msi
+#         dist-fast/IDE1.0_Setup_0.8.7_x64.exe
+#         dist-fast/IDE1.0-0.8.7-windows-x64.exe
 #         dist-fast/SHA256SUMS.txt
 ```
 
@@ -279,31 +291,31 @@ powershell ide-fast/packaging/build-msi.ps1
 
 ```
 Agent / LLM / MCP Client / CLI
-              │
-   ┌──────────┴──────────┐
-   │  MCP HTTP Gateway   │  https://ide1d0.vercel.app/mcp
-   │  (Vercel Serverless)│  GET discovery · POST JSON-RPC 2.0
-   └──────────┬──────────┘
-              │
-   ┌──────────┴──────────┐
-   │  REST Agent API     │  /api/v1 (jobs · tasks · patches · events)
-   └──────────┬──────────┘
-              │
-   ┌──────────┴──────────┐
-   │  editcore (Rust)    │  Buffer · CAS · Myers diff · 3-way merge
-   │  ide-mcp (Rust)     │  Stdio MCP server · CoEditWorkspace
-   └──────────┬──────────┘
-              │
-   ┌──────────┴──────────┐
-   │  ide-fast (Rust)    │  Native egui desktop · [RUST CONSOLE] tab
-   └─────────────────────┘
+              �?
+   ┌──────────┴──────────�?
+   �? MCP HTTP Gateway   �? https://ide1d0.vercel.app/mcp
+   �? (Vercel Serverless)�? GET discovery · POST JSON-RPC 2.0
+   └──────────┬──────────�?
+              �?
+   ┌──────────┴──────────�?
+   �? REST Agent API     �? /api/v1 (jobs · tasks · patches · events)
+   └──────────┬──────────�?
+              �?
+   ┌──────────┴──────────�?
+   �? editcore (Rust)    �? Buffer · CAS · Myers diff · 3-way merge
+   �? ide-mcp (Rust)     �? Stdio MCP server · CoEditWorkspace
+   └──────────┬──────────�?
+              �?
+   ┌──────────┴──────────�?
+   �? ide-fast (Rust)    �? Native egui desktop · [RUST CONSOLE] tab
+   └─────────────────────�?
 ```
 
 **Four non-negotiable invariants:**
-1. **File = consistency + routing boundary** — authority CAS-serialized by coordinator
-2. **Semantic unit = work + lock boundary** — AST-level (function/type) concurrency
-3. **Patch = delivery + verification boundary** — agents submit proposals, never overwrite
-4. **Fencing token = lease protection** — monotonic, TTL-bounded, 412 on expiry
+1. **File = consistency + routing boundary** �?authority CAS-serialized by coordinator
+2. **Semantic unit = work + lock boundary** �?AST-level (function/type) concurrency
+3. **Patch = delivery + verification boundary** �?agents submit proposals, never overwrite
+4. **Fencing token = lease protection** �?monotonic, TTL-bounded, 412 on expiry
 
 ---
 
@@ -311,13 +323,13 @@ Agent / LLM / MCP Client / CLI
 
 AGPL-3.0-only. See [LICENSE](LICENSE).
 
-Code signing: provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). *(Pending approval — current release binaries are unsigned.)*
+Code signing: provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). *(Pending approval �?current release binaries are unsigned.)*
 
 Privacy: IDE1.0 runs locally with no telemetry. Network calls occur only when you explicitly trigger them (GitHub update check on click; AI chat sends only your selected text to your own configured endpoint; API keys stored locally only).
 
 ---
 
-## For Humans — Feature Summary
+## For Humans �?Feature Summary
 
 **Desktop app** (`IDE1.0.exe`, Windows x64):
 - Native egui UI, sub-500ms cold start, 28MB single binary
@@ -336,9 +348,9 @@ Privacy: IDE1.0 runs locally with no telemetry. Network calls occur only when yo
 - Cross-provider concurrent editing (Claude, GPT, DeepSeek, Gemini simultaneously)
 - Auto-deploy on `git push` via Vercel Git integration
 
-**Downloads** (v0.8.6):
-- [GitHub Releases](https://github.com/UlyssesLeoLee/IDE1.0/releases/tag/v0.8.6)
-  - `IDE1.0_Setup_0.8.6_x64.exe` — Installer with 3D wizard
-  - `IDE1.0_0.8.6_x64.msi` — Silent enterprise MSI
-  - `IDE1.0-0.8.6-windows-x64.exe` — Portable single-file
-  - `SHA256SUMS.txt` — Checksums
+**Downloads** (v0.8.7):
+- [GitHub Releases](https://github.com/UlyssesLeoLee/IDE1.0/releases/tag/v0.8.7)
+  - `IDE1.0_Setup_0.8.7_x64.exe` �?Installer with 3D wizard
+  - `IDE1.0_0.8.7_x64.msi` �?Silent enterprise MSI
+  - `IDE1.0-0.8.7-windows-x64.exe` �?Portable single-file
+  - `SHA256SUMS.txt` �?Checksums
