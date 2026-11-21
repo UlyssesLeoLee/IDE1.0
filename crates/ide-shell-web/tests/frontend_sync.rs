@@ -3,7 +3,10 @@
 #[test]
 fn embedded_editor_html_is_valid() {
     let web = include_str!("../src/editor.html");
-    assert!(!web.trim().is_empty(), "crates/ide-shell-web/src/editor.html 不应为空");
+    assert!(
+        !web.trim().is_empty(),
+        "crates/ide-shell-web/src/editor.html 不应为空"
+    );
     assert!(
         web.contains("<!DOCTYPE html>") || web.contains("<!doctype html>"),
         "crates/ide-shell-web/src/editor.html 应包含 HTML 文档声明"

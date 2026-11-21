@@ -74,7 +74,9 @@ impl Auth {
     /// `IDE_SHELL_WEB_NO_AUTH=1` 时进入开放模式 (仅供 Playwright UAT 与
     /// 本地一次性调试); 生产/CI 建议始终用 token.
     pub fn from_env(port: u16) -> Self {
-        let open = std::env::var(OPEN_ENV).map(|v| v == "1" || v == "true").unwrap_or(false);
+        let open = std::env::var(OPEN_ENV)
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
         let token = match std::env::var("IDE_SHELL_WEB_TOKEN") {
             Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
             _ => random_token(),
@@ -86,17 +88,18 @@ impl Auth {
             "127.0.0.1".to_string(),
             "localhost".to_string(),
         ];
-        Self { token, allowed_hosts, open }
+        Self {
+            token,
+            allowed_hosts,
+            open,
+        }
     }
 
     /// 便于测试: 直接指定 token.
     pub fn with_token(token: &str, port: u16) -> Self {
         Self {
             token: token.to_string(),
-            allowed_hosts: vec![
-                format!("127.0.0.1:{port}"),
-                format!("localhost:{port}"),
-            ],
+            allowed_hosts: vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")],
             open: false,
         }
     }
@@ -114,10 +117,16 @@ impl Auth {
         match header(headers, "host") {
             Some(h) if self.host_allowed(h) => {}
             Some(_) => {
-                return Err(AuthError { status: "403 Forbidden", reason: "invalid-host" });
+                return Err(AuthError {
+                    status: "403 Forbidden",
+                    reason: "invalid-host",
+                });
             }
             None => {
-                return Err(AuthError { status: "400 Bad Request", reason: "missing-host" });
+                return Err(AuthError {
+                    status: "400 Bad Request",
+                    reason: "missing-host",
+                });
             }
         }
 
@@ -126,7 +135,10 @@ impl Auth {
         // 注意 `Origin: null` 属于「带了 Origin」, 会在 origin_allowed 里被拒.
         if let Some(origin) = header(headers, "origin") {
             if !self.origin_allowed(origin) {
-                return Err(AuthError { status: "403 Forbidden", reason: "origin-not-allowed" });
+                return Err(AuthError {
+                    status: "403 Forbidden",
+                    reason: "origin-not-allowed",
+                });
             }
         }
 
@@ -135,7 +147,10 @@ impl Auth {
         // 我们对预检不放行任何通配 origin, 也不回 Access-Control-Allow-Headers,
         // 使恶意站点的真实请求被浏览器拦下。
         if method == "OPTIONS" {
-            return Err(AuthError { status: "204 No Content", reason: "preflight-no-cors" });
+            return Err(AuthError {
+                status: "204 No Content",
+                reason: "preflight-no-cors",
+            });
         }
 
         // --- 1. token 校验 ---
@@ -144,8 +159,14 @@ impl Auth {
         }
         match header(headers, "x-ide-token") {
             Some(t) if ct_eq(t.as_bytes(), self.token.as_bytes()) => Ok(()),
-            Some(_) => Err(AuthError { status: "403 Forbidden", reason: "bad-token" }),
-            None => Err(AuthError { status: "401 Unauthorized", reason: "missing-token" }),
+            Some(_) => Err(AuthError {
+                status: "403 Forbidden",
+                reason: "bad-token",
+            }),
+            None => Err(AuthError {
+                status: "401 Unauthorized",
+                reason: "missing-token",
+            }),
         }
     }
 
@@ -206,8 +227,7 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 pub fn random_token() -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut buf = [0u8; 32];
-    getrandom::fill(&mut buf)
-        .expect("OS CSPRNG 不可用, 拒绝用可预测的 token 启动 ide-shell-web");
+    getrandom::fill(&mut buf).expect("OS CSPRNG 不可用, 拒绝用可预测的 token 启动 ide-shell-web");
     let mut s = String::with_capacity(buf.len() * 2);
     for b in buf {
         s.push(HEX[usize::from(b >> 4)] as char);
@@ -221,7 +241,10 @@ mod tests {
     use super::*;
 
     fn h(pairs: &[(&str, &str)]) -> Headers {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
@@ -266,7 +289,9 @@ mod tests {
     #[test]
     fn missing_host_rejected() {
         let a = Auth::with_token("secret", 8123);
-        let e = a.check("POST", &h(&[("x-ide-token", "secret")])).unwrap_err();
+        let e = a
+            .check("POST", &h(&[("x-ide-token", "secret")]))
+            .unwrap_err();
         assert_eq!(e.reason, "missing-host");
     }
 
@@ -325,7 +350,8 @@ mod tests {
         let t = random_token();
         assert_eq!(t.len(), 64, "32 字节 → 64 个 hex 字符");
         assert!(
-            t.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)),
+            t.bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)),
             "非小写 hex: {t}"
         );
         // 一批 token 不应有重复 (64 个字符 = 256 bit, 碰撞即说明熵源坏了)
@@ -366,7 +392,10 @@ mod tests {
         let mut a = Auth::with_token("secret", 8123);
         a.open = true;
         let hdrs = h(&[("host", "127.0.0.1:8123"), ("origin", "null")]);
-        assert_eq!(a.check("GET", &hdrs).unwrap_err().reason, "origin-not-allowed");
+        assert_eq!(
+            a.check("GET", &hdrs).unwrap_err().reason,
+            "origin-not-allowed"
+        );
     }
 
     #[test]

@@ -263,7 +263,11 @@ fn test_read_file_non_utf8() {
     // 但无法无损解码的字节必须被标出来 (lossy), 不能悄悄当成正常文本
     match r {
         Err(_) => {}
-        Ok(fc) => assert!(fc.lossy || fc.encoding != "UTF-8", "非 UTF-8 字节被当作无损的 UTF-8 文本: {:?}", fc.encoding),
+        Ok(fc) => assert!(
+            fc.lossy || fc.encoding != "UTF-8",
+            "非 UTF-8 字节被当作无损的 UTF-8 文本: {:?}",
+            fc.encoding
+        ),
     }
 }
 

@@ -256,7 +256,12 @@ fn respond_pure<Req: serde::de::DeserializeOwned>(
 ) {
     match serde_json::from_slice::<Req>(body) {
         Ok(req) => match f(&req) {
-            Ok(v) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&v).unwrap_or_default()),
+            Ok(v) => send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&v).unwrap_or_default(),
+            ),
             Err(msg) => send_error_json(stream, "400 Bad Request", &msg),
         },
         Err(e) => send_error_json(stream, "400 Bad Request", &format!("{invalid}: {e}")),
@@ -412,24 +417,47 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("POST", "/api/collab/presence") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let tenant_id = req.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("org_default");
-            let workspace_id = req.get("workspace_id").and_then(|v| v.as_str()).unwrap_or("default");
-            let file_id = req.get("file_id").and_then(|v| v.as_str()).unwrap_or("src/lib.rs");
-            let agent_id = req.get("agent_id").and_then(|v| v.as_str()).unwrap_or("anonymous");
-            let display_name = req.get("display_name").and_then(|v| v.as_str()).unwrap_or(agent_id);
-            let role = match req.get("role").and_then(|v| v.as_str()).unwrap_or("AiCoder") {
+            let tenant_id = req
+                .get("tenant_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("org_default");
+            let workspace_id = req
+                .get("workspace_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("default");
+            let file_id = req
+                .get("file_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("src/lib.rs");
+            let agent_id = req
+                .get("agent_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("anonymous");
+            let display_name = req
+                .get("display_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(agent_id);
+            let role = match req
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("AiCoder")
+            {
                 "Human" => ide_agent_router::CollaboratorRole::Human,
                 "AiOptimizer" => ide_agent_router::CollaboratorRole::AiOptimizer,
                 "AiTester" => ide_agent_router::CollaboratorRole::AiTester,
                 "Reviewer" => ide_agent_router::CollaboratorRole::Reviewer,
                 _ => ide_agent_router::CollaboratorRole::AiCoder,
             };
-            let cursor = req.get("cursor").and_then(|v| v.as_array()).map(|arr| {
-                [
-                    arr.first().and_then(|n| n.as_u64()).unwrap_or(0) as usize,
-                    arr.get(1).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
-                ]
-            }).unwrap_or([0, 0]);
+            let cursor = req
+                .get("cursor")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    [
+                        arr.first().and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                        arr.get(1).and_then(|n| n.as_u64()).unwrap_or(0) as usize,
+                    ]
+                })
+                .unwrap_or([0, 0]);
 
             match state.collab.register_presence(
                 tenant_id,
@@ -765,28 +793,54 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 stream,
                 "200 OK",
                 "application/json",
-                &serde_json::to_vec(&serde_json::json!({ "patterns": patterns })).unwrap_or_default(),
+                &serde_json::to_vec(&serde_json::json!({ "patterns": patterns }))
+                    .unwrap_or_default(),
             );
         }
         ("POST", "/api/edit_cmd") => {
             // 编辑命令 (editcore::pure_api::edit_cmd); 无状态纯计算
-            respond_pure::<editcore::edit_cmd::EditReq>(stream, &body, "编辑请求无效", editcore::pure_api::edit_cmd);
+            respond_pure::<editcore::edit_cmd::EditReq>(
+                stream,
+                &body,
+                "编辑请求无效",
+                editcore::pure_api::edit_cmd,
+            );
         }
         ("POST", "/api/bracket_pair") => {
             // 对括弧 (editcore::pure_api::bracket_pair); 无状态纯计算
-            respond_pure::<editcore::bracket::BracketReq>(stream, &body, "括弧请求无效", |r| Ok(editcore::pure_api::bracket_pair(r)));
+            respond_pure::<editcore::bracket::BracketReq>(
+                stream,
+                &body,
+                "括弧请求无效",
+                |r| Ok(editcore::pure_api::bracket_pair(r)),
+            );
         }
         ("POST", "/api/bookmark") => {
             // ブックマーク 切り替え / 次へ / 前へ; 无状态纯计算
-            respond_pure::<editcore::bookmark::BmReq>(stream, &body, "书签请求无效", editcore::pure_api::bookmark);
+            respond_pure::<editcore::bookmark::BmReq>(
+                stream,
+                &body,
+                "书签请求无效",
+                editcore::pure_api::bookmark,
+            );
         }
         ("POST", "/api/search_text") => {
             // 文档内查找 / 置換 (含正文镜像); 无状态纯计算
-            respond_pure::<editcore::search_ops::SearchReq>(stream, &body, "查找请求无效", editcore::pure_api::search_text);
+            respond_pure::<editcore::search_ops::SearchReq>(
+                stream,
+                &body,
+                "查找请求无效",
+                editcore::pure_api::search_text,
+            );
         }
         ("POST", "/api/plugins") => {
             // 插件: 列表 / 读文件 / 启停 / 卸载 / 检查 / 安装更新 / 冲突仲裁 (网络类只在用户点按钮时才会被调用)
-            respond_pure::<editcore::pure_api::PluginReq>(stream, &body, "插件请求无效", editcore::pure_api::plugins);
+            respond_pure::<editcore::pure_api::PluginReq>(
+                stream,
+                &body,
+                "插件请求无效",
+                editcore::pure_api::plugins,
+            );
         }
         ("POST", "/api/exec_cmd") => {
             // 外部命令执行并捕获输出 (Sakura 的 外部コマンド実行): 在已打开的项目根下运行, 有超时和输出上限
@@ -799,19 +853,39 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let stdin = req.get("stdin").and_then(|v| v.as_str());
             let timeout = req.get("timeout_ms").and_then(|v| v.as_u64());
             match editcore::exec_cmd::run(&root, command, stdin, timeout) {
-                Ok(out) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&out).unwrap_or_default()),
+                Ok(out) => send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&out).unwrap_or_default(),
+                ),
                 Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
         ("POST", "/api/settings") => {
             // 设置落盘: 全部 / 设置 / 删除 / 导入 / 导出 (前端把 ide10.* 的本地设置镜像到一个 JSON 文件)
-            respond_pure::<editcore::pure_api::SettingsReq>(stream, &body, "设置请求无效", editcore::pure_api::settings);
+            respond_pure::<editcore::pure_api::SettingsReq>(
+                stream,
+                &body,
+                "设置请求无效",
+                editcore::pure_api::settings,
+            );
         }
         ("POST", "/api/macro_record") => {
-            respond_pure::<editcore::pure_api::MacroRecordReq>(stream, &body, "宏录制请求无效", |r| Ok(editcore::pure_api::macro_record(r)));
+            respond_pure::<editcore::pure_api::MacroRecordReq>(
+                stream,
+                &body,
+                "宏录制请求无效",
+                |r| Ok(editcore::pure_api::macro_record(r)),
+            );
         }
         ("POST", "/api/macro_plan") => {
-            respond_pure::<editcore::pure_api::MacroPlanReq>(stream, &body, "宏请求无效", editcore::pure_api::macro_plan);
+            respond_pure::<editcore::pure_api::MacroPlanReq>(
+                stream,
+                &body,
+                "宏请求无效",
+                editcore::pure_api::macro_plan,
+            );
         }
         ("POST", "/api/grep_replace") => {
             // Grep 置换: 检索条件同 /api/search, 另带 replacement / backup / skip_paths; 按原编码 / BOM / 逐行换行原子写回
@@ -824,7 +898,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 Ok(mut opts) => {
                     opts.search.allow_outside_root = Some(false);
                     match editcore::grep_engine::grep_replace(&root, &opts) {
-                        Ok(rep) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&rep).unwrap_or_default()),
+                        Ok(rep) => send_response(
+                            stream,
+                            "200 OK",
+                            "application/json",
+                            &serde_json::to_vec(&rep).unwrap_or_default(),
+                        ),
                         Err(e) => send_error_json(stream, "400 Bad Request", &e),
                     }
                 }
@@ -833,18 +912,33 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
         }
         ("POST", "/api/agent") => {
             // 智能功能 API: 工具表 / 调用工具 (写类工具只产出补丁提案); 没人调用就零开销
-            respond_pure::<editcore::pure_api::AgentReq>(stream, &body, "Agent 请求无效", editcore::pure_api::agent);
+            respond_pure::<editcore::pure_api::AgentReq>(
+                stream,
+                &body,
+                "Agent 请求无效",
+                editcore::pure_api::agent,
+            );
         }
         ("POST", "/api/md_render") => {
             // Markdown 预览: 文本 -> 已转义 HTML (只读)
-            respond_pure::<editcore::pure_api::MdRenderReq>(stream, &body, "Markdown 预览请求无效", |r| Ok(editcore::pure_api::md_render(r)));
+            respond_pure::<editcore::pure_api::MdRenderReq>(
+                stream,
+                &body,
+                "Markdown 预览请求无效",
+                |r| Ok(editcore::pure_api::md_render(r)),
+            );
         }
         ("POST", "/api/nema/probe") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let runner = req.get("runner").and_then(|v| v.as_str());
             let report = nema_codec::probe_interpreter(path, runner);
-            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&report).unwrap_or_default());
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&report).unwrap_or_default(),
+            );
         }
         ("POST", "/api/nema/set_interpreter") => {
             let req: nema_codec::InterpreterConfig = match serde_json::from_slice(&body) {
@@ -855,39 +949,65 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 }
             };
             nema_codec::set_active_interpreter(req.clone());
-            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
-                "ok": true,
-                "active": req
-            })).unwrap_or_default());
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&serde_json::json!({
+                    "ok": true,
+                    "active": req
+                }))
+                .unwrap_or_default(),
+            );
         }
         ("POST", "/api/nema/status") | ("GET", "/api/nema/status") => {
             let active = nema_codec::get_active_interpreter();
             let project_root = state.project_root_get();
             let candidates = nema_codec::discover_candidates(project_root.as_deref());
-            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
-                "active": active,
-                "candidates": candidates
-            })).unwrap_or_default());
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&serde_json::json!({
+                    "active": active,
+                    "candidates": candidates
+                }))
+                .unwrap_or_default(),
+            );
         }
         ("POST", "/api/nema/render") => {
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
             let source = req.get("source").and_then(|v| v.as_str()).unwrap_or("");
-            let (ast, latency_us, engine_name, is_custom) = nema_codec::adaptive_render_view(source);
-            send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({
-                "ok": true,
-                "ast": ast,
-                "latency_us": latency_us,
-                "engine": engine_name,
-                "is_custom": is_custom
-            })).unwrap_or_default());
+            let (ast, latency_us, engine_name, is_custom) =
+                nema_codec::adaptive_render_view(source);
+            send_response(
+                stream,
+                "200 OK",
+                "application/json",
+                &serde_json::to_vec(&serde_json::json!({
+                    "ok": true,
+                    "ast": ast,
+                    "latency_us": latency_us,
+                    "engine": engine_name,
+                    "is_custom": is_custom
+                }))
+                .unwrap_or_default(),
+            );
         }
         ("POST", "/api/history") => {
             // 撤销 / 重做栈; 按标签页 id 分开的进程内登记
-            respond_pure::<editcore::history::HistReq>(stream, &body, "历史请求无效", editcore::pure_api::history);
+            respond_pure::<editcore::history::HistReq>(
+                stream,
+                &body,
+                "历史请求无效",
+                editcore::pure_api::history,
+            );
         }
         ("POST", "/api/nav_step") => {
             // 键盘光标移动 / 范围选择; 无状态纯计算
-            respond_pure::<editcore::nav::NavReq>(stream, &body, "移动请求无效", |r| Ok(editcore::pure_api::nav_step(r)));
+            respond_pure::<editcore::nav::NavReq>(stream, &body, "移动请求无效", |r| {
+                Ok(editcore::pure_api::nav_step(r))
+            });
         }
         ("POST", "/api/edit_text") => {
             // 选中文字的变换 (editcore::edit_ops::transform_text); 纯计算
@@ -912,7 +1032,11 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let lines: Vec<String> = req
                 .get("lines")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             match editcore::edit_ops::transform_lines(op, &lines) {
                 Some(out) => send_response(
@@ -940,7 +1064,8 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         stream,
                         "200 OK",
                         "application/json",
-                        &serde_json::to_vec(&serde_json::json!({ "text": out })).unwrap_or_default(),
+                        &serde_json::to_vec(&serde_json::json!({ "text": out }))
+                            .unwrap_or_default(),
                     ),
                     Err(e) => send_error_json(stream, "400 Bad Request", &e),
                 },
@@ -953,7 +1078,12 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             // 带了正文 (未保存的修改 / 无标题文档): 直接按正文分析, 不读盘 (WBS-02 5.10)
             if let Some(text) = req.get("text").and_then(|v| v.as_str()) {
                 let result = outline::outline_file(file_path, text);
-                send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&result).unwrap_or_default());
+                send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&result).unwrap_or_default(),
+                );
                 return;
             }
             // Outline 直接读 (read-only, IDE 内部) — sandbox 的 \?\ prefix 已知 bug
@@ -1202,10 +1332,22 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                         .map(std::path::PathBuf::from)
                         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
                     match search::search(&cwd, &opts) {
-                        Ok(results) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&serde_json::json!({ "results": results })).unwrap_or_default()),
+                        Ok(results) => send_response(
+                            stream,
+                            "200 OK",
+                            "application/json",
+                            &serde_json::to_vec(&serde_json::json!({ "results": results }))
+                                .unwrap_or_default(),
+                        ),
                         // 搜索条件非法 (例如「フォルダー」栏全部越出项目根) 必须报错, 不能回 200 + 空结果:
                         // 那样前端只看到「无匹配」, 用户不知道自己写的目录被拒了。
-                        Err(e) => send_response(stream, "400 Bad Request", "application/json", &serde_json::to_vec(&serde_json::json!({ "results": [], "error": e })).unwrap_or_default()),
+                        Err(e) => send_response(
+                            stream,
+                            "400 Bad Request",
+                            "application/json",
+                            &serde_json::to_vec(&serde_json::json!({ "results": [], "error": e }))
+                                .unwrap_or_default(),
+                        ),
                     }
                 }
                 Err(e) => send_error_json(stream, "400 Bad Request", &format!("搜索请求无效: {e}")),
@@ -1472,8 +1614,16 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
                 return;
             };
             let req: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            match stat_file(&root, req.get("path").and_then(|v| v.as_str()).unwrap_or("")) {
-                Ok(s) => send_response(stream, "200 OK", "application/json", &serde_json::to_vec(&s).unwrap_or_default()),
+            match stat_file(
+                &root,
+                req.get("path").and_then(|v| v.as_str()).unwrap_or(""),
+            ) {
+                Ok(s) => send_response(
+                    stream,
+                    "200 OK",
+                    "application/json",
+                    &serde_json::to_vec(&s).unwrap_or_default(),
+                ),
                 Err(e) => send_error_json(stream, "400 Bad Request", &e),
             }
         }
@@ -1489,7 +1639,10 @@ fn handle_request(stream: &mut TcpStream, state: &ShellState) {
             let path = req.get("path").and_then(|v| v.as_str()).unwrap_or("");
             let content = req.get("content").and_then(|v| v.as_str()).unwrap_or("");
             let spec = editcore::document_io::WriteSpec {
-                encoding: req.get("encoding").and_then(|v| v.as_str()).map(String::from),
+                encoding: req
+                    .get("encoding")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
                 bom: req.get("bom").and_then(|v| v.as_str()).map(String::from),
                 eol: req.get("eol").and_then(|v| v.as_str()).map(String::from),
                 force: req.get("force").and_then(|v| v.as_bool()).unwrap_or(false),

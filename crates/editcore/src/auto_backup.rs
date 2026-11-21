@@ -233,11 +233,8 @@ mod tests {
     #[test]
     fn test_restore() {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "ide10-test-{}-{}-restore",
-            std::process::id(),
-            n
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("ide10-test-{}-{}-restore", std::process::id(), n));
         fs::create_dir_all(&dir).unwrap();
         let backup = dir.join("restore.bak");
         let dst = dir.join("restore_dst.txt");

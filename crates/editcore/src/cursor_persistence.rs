@@ -99,8 +99,7 @@ mod tests {
 
     fn make_project_root() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir =
-            std::env::temp_dir().join(format!("ide10-cursor-{}-{}", std::process::id(), n));
+        let dir = std::env::temp_dir().join(format!("ide10-cursor-{}-{}", std::process::id(), n));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

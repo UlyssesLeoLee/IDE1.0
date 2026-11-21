@@ -71,7 +71,8 @@ impl TestServer {
 
 impl Drop for TestServer {
     fn drop(&mut self) {
-        self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -98,7 +99,10 @@ fn test_nema_interpreter_status_and_candidates() {
     assert!(json.get("active").is_some());
     assert!(json.get("candidates").is_some());
     let candidates = json["candidates"].as_array().unwrap();
-    assert!(!candidates.is_empty(), "Candidates should find official paths");
+    assert!(
+        !candidates.is_empty(),
+        "Candidates should find official paths"
+    );
 }
 
 #[test]
@@ -110,41 +114,50 @@ fn test_nema_probe_and_render_roundtrip() {
     }
 
     // 1. 探针接口测试
-    let (code, probe_rep) = srv.post("/api/nema/probe", &serde_json::json!({
-        "path": path,
-        "runner": "python"
-    }));
+    let (code, probe_rep) = srv.post(
+        "/api/nema/probe",
+        &serde_json::json!({
+            "path": path,
+            "runner": "python"
+        }),
+    );
     assert_eq!(code, 200);
     assert_eq!(probe_rep["success"], true);
     assert_eq!(probe_rep["protocol"], "python_native_view");
     assert!(probe_rep["features"].as_array().unwrap().len() >= 3);
 
     // 2. 启用外部解释器
-    let (set_code, set_rep) = srv.post("/api/nema/set_interpreter", &serde_json::json!({
-        "enabled": true,
-        "path": path,
-        "runner": "python",
-        "protocol": "python_native_view",
-        "metadata": {
-            "engine_name": "Official Python 1.5",
-            "version": "1.5.0",
-            "supports_graph": true,
-            "supports_5w1h": true,
-            "supports_table": true,
-            "probe_latency_us": probe_rep["latency_us"],
-            "probe_timestamp": 123456,
-            "last_status": "ready",
-            "last_error": null
-        }
-    }));
+    let (set_code, set_rep) = srv.post(
+        "/api/nema/set_interpreter",
+        &serde_json::json!({
+            "enabled": true,
+            "path": path,
+            "runner": "python",
+            "protocol": "python_native_view",
+            "metadata": {
+                "engine_name": "Official Python 1.5",
+                "version": "1.5.0",
+                "supports_graph": true,
+                "supports_5w1h": true,
+                "supports_table": true,
+                "probe_latency_us": probe_rep["latency_us"],
+                "probe_timestamp": 123456,
+                "last_status": "ready",
+                "last_error": null
+            }
+        }),
+    );
     assert_eq!(set_code, 200);
     assert_eq!(set_rep["ok"], true);
 
     // 3. 渲染接口测试 (调用外部解释器)
     let sample = " >Gflow 1\nA Start\nB Finish\nA>X>B Execute\n\n\n";
-    let (render_code, render_rep) = srv.post("/api/nema/render", &serde_json::json!({
-        "source": sample
-    }));
+    let (render_code, render_rep) = srv.post(
+        "/api/nema/render",
+        &serde_json::json!({
+            "source": sample
+        }),
+    );
     assert_eq!(render_code, 200);
     assert_eq!(render_rep["ok"], true);
     assert_eq!(render_rep["is_custom"], true);
@@ -155,19 +168,25 @@ fn test_nema_probe_and_render_roundtrip() {
     assert_eq!(ast[0]["edges"].as_array().unwrap().len(), 1);
 
     // 4. 重置回内置解释器
-    let (reset_code, _) = srv.post("/api/nema/set_interpreter", &serde_json::json!({
-        "enabled": false,
-        "path": "",
-        "runner": "auto",
-        "protocol": "builtin_rust",
-        "metadata": {}
-    }));
+    let (reset_code, _) = srv.post(
+        "/api/nema/set_interpreter",
+        &serde_json::json!({
+            "enabled": false,
+            "path": "",
+            "runner": "auto",
+            "protocol": "builtin_rust",
+            "metadata": {}
+        }),
+    );
     assert_eq!(reset_code, 200);
 
     // 5. 内置解释器渲染验证
-    let (builtin_code, builtin_rep) = srv.post("/api/nema/render", &serde_json::json!({
-        "source": sample
-    }));
+    let (builtin_code, builtin_rep) = srv.post(
+        "/api/nema/render",
+        &serde_json::json!({
+            "source": sample
+        }),
+    );
     assert_eq!(builtin_code, 200);
     assert_eq!(builtin_rep["ok"], true);
     assert_eq!(builtin_rep["is_custom"], false);

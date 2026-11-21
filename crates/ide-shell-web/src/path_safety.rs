@@ -157,13 +157,24 @@ pub fn read_file(root: &Path, path: &str) -> Result<FileContent, String> {
 }
 
 /// 读文件; `encoding` = 指定编码重新打开 (None = 自动判别 BOM / UTF-8 / JIS / SJIS / EUC ...).
-pub fn read_file_enc(root: &Path, path: &str, encoding: Option<&str>) -> Result<FileContent, String> {
+pub fn read_file_enc(
+    root: &Path,
+    path: &str,
+    encoding: Option<&str>,
+) -> Result<FileContent, String> {
     read_file_enc_max(root, path, encoding, None)
 }
 
 /// 同上, `max_bytes` = 调用方 (用户在首选项里) 允许的上限, 夹在 [4MB, 32MB]
-pub fn read_file_enc_max(root: &Path, path: &str, encoding: Option<&str>, max_bytes: Option<u64>) -> Result<FileContent, String> {
-    let limit = max_bytes.unwrap_or(MAX_FILE_BYTES).clamp(MAX_FILE_BYTES, LARGE_FILE_CAP);
+pub fn read_file_enc_max(
+    root: &Path,
+    path: &str,
+    encoding: Option<&str>,
+    max_bytes: Option<u64>,
+) -> Result<FileContent, String> {
+    let limit = max_bytes
+        .unwrap_or(MAX_FILE_BYTES)
+        .clamp(MAX_FILE_BYTES, LARGE_FILE_CAP);
     let target = resolve_in_project(root, path)?;
     if !target.is_file() {
         return Err(format!("不是文件: {path}"));
@@ -193,7 +204,12 @@ pub fn read_file_enc_max(root: &Path, path: &str, encoding: Option<&str>, max_by
 }
 
 pub fn write_file(root: &Path, path: &str, content: &str) -> Result<usize, String> {
-    write_file_spec(root, path, content, &editcore::document_io::WriteSpec::default())
+    write_file_spec(
+        root,
+        path,
+        content,
+        &editcore::document_io::WriteSpec::default(),
+    )
 }
 
 /// 文件指纹 (mtime / 大小 / 只读): 前端据此判断文件有没有被外部改过 (窗口重新获得焦点时问一次, 不轮询)
@@ -211,6 +227,10 @@ pub fn write_file_spec(
 ) -> Result<usize, String> {
     let target = resolve_in_project(root, path)?;
     editcore::document_io::write_doc(&target, content, spec).map_err(|e| {
-        if e.starts_with("UNMAPPABLE:") { e } else { format!("写入失败 {path}: {e}") }
+        if e.starts_with("UNMAPPABLE:") {
+            e
+        } else {
+            format!("写入失败 {path}: {e}")
+        }
     })
 }
