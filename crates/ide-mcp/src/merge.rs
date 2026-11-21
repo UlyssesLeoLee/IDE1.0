@@ -10,7 +10,7 @@ use crate::diff::{diff_lines, regions, split_lines};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub const MAX_DOCS: usize = 256;
 pub const MAX_REVISIONS_PER_DOC: usize = 128;
@@ -932,8 +932,8 @@ struct DocSnapshot {
 
 /// OCC 并发协同工作区 — 支持同文件真并行编辑
 pub struct ConcurrentCoEditWorkspace {
-    /// 每个文档独立持有 RwLock，不同文件零争用，同文件读并发
-    docs: RwLock<HashMap<String, RwLock<HeadlessDoc>>>,
+    /// 每个文档独立持有 Arc<RwLock>，不同文件零争用，同文件读并发，且无需反复读取 workspace 级别锁
+    docs: RwLock<HashMap<String, Arc<RwLock<HeadlessDoc>>>>,
     /// 幂等键独立 Mutex，与文档锁完全解耦
     idempotency: Mutex<HashMap<String, Value>>,
 }
@@ -957,6 +957,14 @@ impl Default for ConcurrentCoEditWorkspace {
 }
 
 impl ConcurrentCoEditWorkspace {
+    /// 获取指定文档的独占/共享引用 (零锁争用获取)
+    pub fn get_doc_ref(&self, file_id: &str) -> Result<Arc<RwLock<HeadlessDoc>>, String> {
+        let docs = self.docs.read().unwrap();
+        docs.get(file_id)
+            .cloned()
+            .ok_or_else(|| format!("Document not found: {file_id}"))
+    }
+
     /// 打开或注册新文档
     pub fn open_doc(
         &self,
@@ -997,7 +1005,7 @@ impl ConcurrentCoEditWorkspace {
                 docs.remove(&oldest);
             }
         }
-        docs.insert(file_id.to_string(), RwLock::new(doc));
+        docs.insert(file_id.to_string(), Arc::new(RwLock::new(doc)));
 
         json!({
             "status": "OPENED",
@@ -1015,10 +1023,7 @@ impl ConcurrentCoEditWorkspace {
         start_line: Option<usize>,
         end_line: Option<usize>,
     ) -> Result<Value, String> {
-        let docs = self.docs.read().unwrap();
-        let doc_lock = docs
-            .get(file_id)
-            .ok_or_else(|| format!("Document not found: {file_id}"))?;
+        let doc_lock = self.get_doc_ref(file_id)?;
         let doc = doc_lock.read().unwrap();
         let lines = split_lines(&doc.content);
         let s = start_line.unwrap_or(1).saturating_sub(1).min(lines.len());
@@ -1042,10 +1047,7 @@ impl ConcurrentCoEditWorkspace {
 
     /// 读取文档当前修订号和内容（快照用，短读锁）
     pub fn snapshot_doc(&self, file_id: &str) -> Result<(u64, String), String> {
-        let docs = self.docs.read().unwrap();
-        let doc_lock = docs
-            .get(file_id)
-            .ok_or_else(|| format!("Document not found: {file_id}"))?;
+        let doc_lock = self.get_doc_ref(file_id)?;
         let doc = doc_lock.read().unwrap();
         Ok((doc.current_revision, doc.content.clone()))
     }
@@ -1071,10 +1073,7 @@ impl ConcurrentCoEditWorkspace {
 
     /// 文档历史
     pub fn doc_history(&self, file_id: &str) -> Result<Value, String> {
-        let docs = self.docs.read().unwrap();
-        let doc_lock = docs
-            .get(file_id)
-            .ok_or_else(|| format!("Document not found: {file_id}"))?;
+        let doc_lock = self.get_doc_ref(file_id)?;
         let doc = doc_lock.read().unwrap();
         let history: Vec<Value> = doc
             .revisions
@@ -1106,10 +1105,7 @@ impl ConcurrentCoEditWorkspace {
         to_rev: u64,
         context: usize,
     ) -> Result<Value, String> {
-        let docs = self.docs.read().unwrap();
-        let doc_lock = docs
-            .get(file_id)
-            .ok_or_else(|| format!("Document not found: {file_id}"))?;
+        let doc_lock = self.get_doc_ref(file_id)?;
         let doc = doc_lock.read().unwrap();
         let r1 = doc
             .revisions
@@ -1139,11 +1135,8 @@ impl ConcurrentCoEditWorkspace {
 
     /// 行级范围编辑 (基于 OCC 自动合并)
     pub fn edit_doc(&self, req: EditRequest) -> Result<Value, String> {
+        let doc_lock = self.get_doc_ref(&req.file_id)?;
         let (base_rev, base_content) = {
-            let docs = self.docs.read().unwrap();
-            let doc_lock = docs
-                .get(&req.file_id)
-                .ok_or_else(|| format!("Document not found: {}", req.file_id))?;
             let doc = doc_lock.read().unwrap();
             let b_rev = req.base_revision.unwrap_or(doc.current_revision);
             let b_content = doc
@@ -1160,7 +1153,7 @@ impl ConcurrentCoEditWorkspace {
         let s = req.start_line.saturating_sub(1).min(base_lines.len());
         let e = req.end_line.min(base_lines.len());
 
-        let mut candidate = String::new();
+        let mut candidate = String::with_capacity(base_content.len() + req.replacement.len() + 64);
         for line in &base_lines[..s] {
             candidate.push_str(line);
         }
@@ -1229,17 +1222,82 @@ impl ConcurrentCoEditWorkspace {
             }
         }
 
+        let doc_ref = self.get_doc_ref(&req.file_id)?;
+
+        // ── 0. 极速直提快径 (Direct Fast-Path) ──
+        // 若能非阻塞获取写锁且 base_revision 与 head 吻合，直接完成提交，无需进入 multi-phase OCC
+        if let Ok(mut doc) = doc_ref.try_write() {
+            let base_rev = req.base_revision.unwrap_or(doc.current_revision);
+            if base_rev == doc.current_revision {
+                let new_rev = doc.current_revision + 1;
+                let new_hash = fnv1a_hash(&req.new_text);
+                let cur_lines = split_lines(&doc.content);
+                let nxt_lines = split_lines(&req.new_text);
+                let (ta0, ta1, to0, to1) = find_single_hunk(&cur_lines, &nxt_lines);
+                let t_delta = (to1 - to0) as isize - (ta1 - ta0) as isize;
+
+                let rev_rec = RevisionRecord {
+                    revision: new_rev,
+                    content: req.new_text.clone(),
+                    content_hash: new_hash.clone(),
+                    provider: req.author.clone(),
+                    agent_id: req.author.clone(),
+                    summary: format!(
+                        "coedit mode={:?} auto_merged=false (direct fast-path)",
+                        mode
+                    ),
+                    auto_merged: false,
+                    created_at: "2026-11-20T00:00:00Z".into(),
+                    touched_range: (ta0, ta1),
+                    line_delta: t_delta,
+                };
+
+                if doc.revisions.len() >= MAX_REVISIONS_PER_DOC {
+                    doc.revisions.pop_front();
+                }
+                doc.revisions.push_back(rev_rec);
+                doc.current_revision = new_rev;
+                doc.content = req.new_text.clone();
+                doc.content_hash = new_hash.clone();
+
+                let res = json!({
+                    "ok": true,
+                    "status": "COMMITTED",
+                    "file_id": doc.file_id,
+                    "previous_revision": new_rev - 1,
+                    "revision": new_rev,
+                    "new_revision": new_rev,
+                    "merged": false,
+                    "auto_merged": false,
+                    "conflicts": 0,
+                    "author": req.author,
+                    "content": req.new_text,
+                    "content_hash": new_hash,
+                    "mode": mode,
+                    "cas_attempts": 1,
+                    "strategy": "DirectFastPath"
+                });
+
+                if let Some(op) = req.op_id {
+                    let mut idem = self.idempotency.lock().unwrap();
+                    if idem.len() >= MAX_IDEMPOTENCY_KEYS {
+                        if let Some(first) = idem.keys().next().cloned() {
+                            idem.remove(&first);
+                        }
+                    }
+                    idem.insert(op, res.clone());
+                }
+
+                return Ok(res);
+            }
+        }
+
         // ── 1. OCC 乐观并发阶段 (无锁 Merge) ──
         const MAX_OCC_ATTEMPTS: usize = 4;
         for attempt in 0..MAX_OCC_ATTEMPTS {
             // Phase 1: SNAPSHOT (brief read lock)
             let snapshot = {
-                let docs = self.docs.read().unwrap();
-                let doc_lock = docs
-                    .get(&req.file_id)
-                    .ok_or_else(|| format!("Document not found: {}", req.file_id))?;
-                let doc = doc_lock.read().unwrap();
-
+                let doc = doc_ref.read().unwrap();
                 let base_rev = req.base_revision.unwrap_or(doc.current_revision);
                 let base_snapshot = doc
                     .revisions
@@ -1292,11 +1350,7 @@ impl ConcurrentCoEditWorkspace {
 
             // Phase 3: CAS COMMIT (brief write lock)
             {
-                let docs = self.docs.read().unwrap();
-                let doc_lock = docs
-                    .get(&req.file_id)
-                    .ok_or_else(|| format!("Document not found: {}", req.file_id))?;
-                let mut doc = doc_lock.write().unwrap();
+                let mut doc = doc_ref.write().unwrap();
 
                 // 检查是否可以直接提交 (Head 未变，或虽然 Head 变动但修改区域完全不重叠，支持快速 Rebase)
                 let can_commit_direct = doc.current_revision == snapshot.head_revision;
@@ -1423,17 +1477,16 @@ impl ConcurrentCoEditWorkspace {
 
                     return Ok(res);
                 }
-                std::thread::yield_now();
+            }
+            // 自适应自旋退避 (CPU PAUSE)，避免直接向 Windows OS 调度器放弃时间片
+            for _ in 0..(1 << (attempt + 2)) {
+                std::hint::spin_loop();
             }
         }
 
         // ── 2. 悲观兜底阶段 (Pessimistic Fallback): 极高争用下直接拿写锁完成合并，数学保证 0 饥饿 0 活锁 ──
         {
-            let docs = self.docs.read().unwrap();
-            let doc_lock = docs
-                .get(&req.file_id)
-                .ok_or_else(|| format!("Document not found: {}", req.file_id))?;
-            let mut doc = doc_lock.write().unwrap();
+            let mut doc = doc_ref.write().unwrap();
 
             let base_rev = req.base_revision.unwrap_or(doc.current_revision);
             let base_snapshot = doc
