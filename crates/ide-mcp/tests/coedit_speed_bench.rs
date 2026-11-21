@@ -1,5 +1,9 @@
 //! 严格数学测试：实测 2 个代理共同编辑与单个代理编辑的速度差与并行效率
 //!
+//! 对比两种架构:
+//!   Old: Arc<Mutex<CoEditWorkspace>>  — 全局互斥，同文件编辑完全串行
+//!   New: ConcurrentCoEditWorkspace    — OCC 3-Phase (snapshot→lock-free merge→CAS commit)
+//!
 //! 数学度量体系:
 //! 1. 耗时与吞吐量: T_1 (单代理耗时), T_2 (双代理耗时), Throughput (ops/sec)
 //! 2. 加速比 (Speedup): S = T_1 / T_2
@@ -13,7 +17,7 @@
 
 #![forbid(unsafe_code)]
 
-use ide_mcp::merge::{CoEditWorkspace, CollabMode, FullCoEditRequest};
+use ide_mcp::merge::{CoEditWorkspace, CollabMode, ConcurrentCoEditWorkspace, FullCoEditRequest};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -94,12 +98,12 @@ impl MathDistribution {
 }
 
 // ============================================================================
-// 测试 1: Git 模式下单代理 vs 双代理共同编辑基准压测
+// 测试 1: Git 模式 — OCC 并发 vs 旧 Mutex 串行 vs 单代理基线
 // ============================================================================
 #[test]
 fn test_math_bench_git_mode_single_vs_dual_speed() {
     println!("\n================================================================================");
-    println!(" [Math Benchmark 1] Git-mode Co-Editing Speed: Single Agent vs Dual Agents");
+    println!(" [Math Benchmark 1] Git-mode Co-Editing Speed: Single vs OCC-Dual vs Mutex-Dual");
     println!("================================================================================");
 
     let base_code = r#"// Shared Architecture Service
@@ -117,9 +121,9 @@ impl MathEngine {
     const TOTAL_EDITS: usize = 100;
 
     // ------------------------------------------------------------------------
-    // 1. 单代理顺序编辑基线 (Single Agent Baseline)
+    // 1. 单代理顺序编辑基线 (Single Agent Baseline) — 使用 OCC workspace
     // ------------------------------------------------------------------------
-    let mut ws_single = CoEditWorkspace::default();
+    let ws_single = ConcurrentCoEditWorkspace::default();
     let file_id = "project/src/math_service.rs";
     ws_single.open_doc(file_id, base_code, "rust", "system", "init");
 
@@ -128,16 +132,14 @@ impl MathEngine {
 
     for i in 1..=TOTAL_EDITS {
         let op_start = Instant::now();
-        let cur_rev = ws_single.docs.get(file_id).unwrap().current_revision;
-        let cur_content = ws_single.docs.get(file_id).unwrap().content.clone();
+        let (cur_rev, cur_content) = ws_single.snapshot_doc(file_id).unwrap();
 
-        // 单代理追加新函数
         let new_text = format!(
             "{cur_content}\n// Agent-A function #{i}\npub fn op_a_{i}(x: i32) -> i32 {{ x + {i} }}\n"
         );
 
         let res = ws_single
-            .coedit_full(FullCoEditRequest {
+            .coedit_concurrent(FullCoEditRequest {
                 file_id: file_id.into(),
                 author: "agent-a".into(),
                 new_text,
@@ -154,57 +156,46 @@ impl MathEngine {
     let t1_total_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let single_dist = MathDistribution::compute(single_latencies);
 
-    // 验证单代理数学不变量
-    let final_single_doc = ws_single.docs.get(file_id).unwrap();
+    // 单代理不变量验证
+    let (single_final_rev, _) = ws_single.snapshot_doc(file_id).unwrap();
     assert_eq!(
-        final_single_doc.current_revision,
+        single_final_rev,
         1 + TOTAL_EDITS as u64,
         "单代理版本号必须单调递增恰好 N"
     );
 
     // ------------------------------------------------------------------------
-    // 2. 双代理并发协同编辑 (Dual Agents Concurrent Co-Editing)
+    // 2. OCC 双代理并发协同 (New Architecture — ConcurrentCoEditWorkspace)
     // ------------------------------------------------------------------------
-    let ws_dual = Arc::new(Mutex::new(CoEditWorkspace::default()));
-    {
-        let mut ws = ws_dual.lock().unwrap();
-        ws.open_doc(file_id, base_code, "rust", "system", "init");
-    }
+    let ws_occ = Arc::new(ConcurrentCoEditWorkspace::default());
+    ws_occ.open_doc(file_id, base_code, "rust", "system", "init");
 
     let edits_per_agent = TOTAL_EDITS / 2;
-    let dual_t0 = Instant::now();
+    let dual_occ_t0 = Instant::now();
 
-    let ws_a = Arc::clone(&ws_dual);
-    let ws_b = Arc::clone(&ws_dual);
+    let ws_a = Arc::clone(&ws_occ);
+    let ws_b = Arc::clone(&ws_occ);
 
-    // Agent A 负责顶部模块函数插入，Agent B 负责底部模块函数插入
     let handle_a = std::thread::spawn(move || {
         let mut lats = Vec::with_capacity(edits_per_agent);
         for i in 1..=edits_per_agent {
             let start = Instant::now();
-            let (cur_rev, cur_content) = {
-                let ws = ws_a.lock().unwrap();
-                let doc = ws.docs.get(file_id).unwrap();
-                (doc.current_revision, doc.content.clone())
-            };
+            let (cur_rev, cur_content) = ws_a.snapshot_doc(file_id).unwrap();
 
-            // 在头部之后插入独立函数区段
             let new_text = format!(
                 "// [Module A Head]\npub fn mod_a_{i}() -> &'static str {{ \"mod_a_{i}\" }}\n\n{cur_content}"
             );
 
-            let res = {
-                let mut ws = ws_a.lock().unwrap();
-                ws.coedit_full(FullCoEditRequest {
+            let res = ws_a
+                .coedit_concurrent(FullCoEditRequest {
                     file_id: file_id.into(),
                     author: "agent-a".into(),
                     new_text,
                     base_revision: Some(cur_rev),
-                    op_id: Some(format!("dual-agent-a-{i}")),
+                    op_id: Some(format!("occ-agent-a-{i}")),
                     mode: Some(CollabMode::Git),
                 })
-                .expect("Agent A coedit must succeed")
-            };
+                .expect("OCC Agent A coedit must succeed");
 
             assert_eq!(res["ok"], true);
             lats.push(start.elapsed().as_secs_f64() * 1000.0);
@@ -216,29 +207,22 @@ impl MathEngine {
         let mut lats = Vec::with_capacity(edits_per_agent);
         for j in 1..=edits_per_agent {
             let start = Instant::now();
-            let (cur_rev, cur_content) = {
-                let ws = ws_b.lock().unwrap();
-                let doc = ws.docs.get(file_id).unwrap();
-                (doc.current_revision, doc.content.clone())
-            };
+            let (cur_rev, cur_content) = ws_b.snapshot_doc(file_id).unwrap();
 
-            // 在尾部追加独立函数区段
             let new_text = format!(
                 "{cur_content}\n// [Module B Tail]\npub fn mod_b_{j}() -> &'static str {{ \"mod_b_{j}\" }}\n"
             );
 
-            let res = {
-                let mut ws = ws_b.lock().unwrap();
-                ws.coedit_full(FullCoEditRequest {
+            let res = ws_b
+                .coedit_concurrent(FullCoEditRequest {
                     file_id: file_id.into(),
                     author: "agent-b".into(),
                     new_text,
                     base_revision: Some(cur_rev),
-                    op_id: Some(format!("dual-agent-b-{j}")),
+                    op_id: Some(format!("occ-agent-b-{j}")),
                     mode: Some(CollabMode::Git),
                 })
-                .expect("Agent B coedit must succeed")
-            };
+                .expect("OCC Agent B coedit must succeed");
 
             assert_eq!(res["ok"], true);
             lats.push(start.elapsed().as_secs_f64() * 1000.0);
@@ -248,69 +232,178 @@ impl MathEngine {
 
     let lats_a = handle_a.join().unwrap();
     let lats_b = handle_b.join().unwrap();
-    let t2_total_ms = dual_t0.elapsed().as_secs_f64() * 1000.0;
+    let t2_occ_ms = dual_occ_t0.elapsed().as_secs_f64() * 1000.0;
 
-    let mut all_dual_lats = lats_a;
-    all_dual_lats.extend(lats_b);
-    let dual_dist = MathDistribution::compute(all_dual_lats);
+    let mut all_occ_lats = lats_a;
+    all_occ_lats.extend(lats_b);
+    let occ_dist = MathDistribution::compute(all_occ_lats);
 
     // ------------------------------------------------------------------------
-    // 3. 数学模型计算 (Speedup, Efficiency, Amdahl fraction)
+    // 3. 旧 Mutex 双代理并发 (Old Architecture — Arc<Mutex<CoEditWorkspace>>)
     // ------------------------------------------------------------------------
-    let speedup = t1_total_ms / t2_total_ms;
-    let parallel_efficiency = (speedup / 2.0) * 100.0;
-    let amdahl_f = 2.0 * (1.0 - (1.0 / speedup));
+    let ws_mutex = Arc::new(Mutex::new(CoEditWorkspace::default()));
+    {
+        let mut ws = ws_mutex.lock().unwrap();
+        ws.open_doc(file_id, base_code, "rust", "system", "init");
+    }
+
+    let dual_mutex_t0 = Instant::now();
+
+    let ws_ma = Arc::clone(&ws_mutex);
+    let ws_mb = Arc::clone(&ws_mutex);
+
+    let handle_ma = std::thread::spawn(move || {
+        let mut lats = Vec::with_capacity(edits_per_agent);
+        for i in 1..=edits_per_agent {
+            let start = Instant::now();
+            let (cur_rev, cur_content) = {
+                let ws = ws_ma.lock().unwrap();
+                let doc = ws.docs.get(file_id).unwrap();
+                (doc.current_revision, doc.content.clone())
+            };
+
+            let new_text = format!(
+                "// [Module A Head]\npub fn mod_a_{i}() -> &'static str {{ \"mod_a_{i}\" }}\n\n{cur_content}"
+            );
+
+            let res = {
+                let mut ws = ws_ma.lock().unwrap();
+                ws.coedit_full(FullCoEditRequest {
+                    file_id: file_id.into(),
+                    author: "agent-a".into(),
+                    new_text,
+                    base_revision: Some(cur_rev),
+                    op_id: Some(format!("mutex-agent-a-{i}")),
+                    mode: Some(CollabMode::Git),
+                })
+                .expect("Mutex Agent A coedit must succeed")
+            };
+
+            assert_eq!(res["ok"], true);
+            lats.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        lats
+    });
+
+    let handle_mb = std::thread::spawn(move || {
+        let mut lats = Vec::with_capacity(edits_per_agent);
+        for j in 1..=edits_per_agent {
+            let start = Instant::now();
+            let (cur_rev, cur_content) = {
+                let ws = ws_mb.lock().unwrap();
+                let doc = ws.docs.get(file_id).unwrap();
+                (doc.current_revision, doc.content.clone())
+            };
+
+            let new_text = format!(
+                "{cur_content}\n// [Module B Tail]\npub fn mod_b_{j}() -> &'static str {{ \"mod_b_{j}\" }}\n"
+            );
+
+            let res = {
+                let mut ws = ws_mb.lock().unwrap();
+                ws.coedit_full(FullCoEditRequest {
+                    file_id: file_id.into(),
+                    author: "agent-b".into(),
+                    new_text,
+                    base_revision: Some(cur_rev),
+                    op_id: Some(format!("mutex-agent-b-{j}")),
+                    mode: Some(CollabMode::Git),
+                })
+                .expect("Mutex Agent B coedit must succeed")
+            };
+
+            assert_eq!(res["ok"], true);
+            lats.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        lats
+    });
+
+    let lats_ma = handle_ma.join().unwrap();
+    let lats_mb = handle_mb.join().unwrap();
+    let t2_mutex_ms = dual_mutex_t0.elapsed().as_secs_f64() * 1000.0;
+
+    let mut all_mutex_lats = lats_ma;
+    all_mutex_lats.extend(lats_mb);
+    let mutex_dist = MathDistribution::compute(all_mutex_lats);
+
+    // ------------------------------------------------------------------------
+    // 4. 数学模型计算
+    // ------------------------------------------------------------------------
+    let speedup_occ = t1_total_ms / t2_occ_ms;
+    let speedup_mutex = t1_total_ms / t2_mutex_ms;
+    let efficiency_occ = (speedup_occ / 2.0) * 100.0;
+    let efficiency_mutex = (speedup_mutex / 2.0) * 100.0;
+    let improvement = t2_mutex_ms / t2_occ_ms;
 
     println!("--------------------------------------------------------------------------------");
     println!(" [实测结果统计汇总 (Git 模式)]");
-    println!("  - 总编辑事务数量 (N)         : {} 次", TOTAL_EDITS);
-    println!("  - 单代理基准总耗时 (T_1)     : {:.3} ms (Throughput: {:.1} ops/sec)", t1_total_ms, single_dist.throughput_ops_sec);
-    println!("  - 双代理协同总耗时 (T_2)     : {:.3} ms (Throughput: {:.1} ops/sec)", t2_total_ms, (TOTAL_EDITS as f64) / (t2_total_ms / 1000.0));
-    println!("  - 实测加速比 S = T_1 / T_2   : {:.2}x", speedup);
-    println!("  - 并行效率 E = S / 2         : {:.2}%", parallel_efficiency);
-    println!("  - 阿姆达尔可并行化比例 (f)    : {:.2}%", amdahl_f * 100.0);
+    println!("  - 总编辑事务数量 (N)             : {} 次", TOTAL_EDITS);
+    println!("  - 单代理基准总耗时 (T_1)         : {:.3} ms", t1_total_ms);
+    println!("  ─────────────────────────────────────────────────────────");
+    println!("  - [OCC]   双代理总耗时 (T_2)     : {:.3} ms", t2_occ_ms);
+    println!("  - [OCC]   加速比 S = T_1/T_2     : {:.2}x", speedup_occ);
+    println!("  - [OCC]   并行效率 E = S/2       : {:.2}%", efficiency_occ);
+    println!("  ─────────────────────────────────────────────────────────");
+    println!("  - [Mutex] 双代理总耗时 (T_2)     : {:.3} ms", t2_mutex_ms);
+    println!("  - [Mutex] 加速比 S = T_1/T_2     : {:.2}x", speedup_mutex);
+    println!("  - [Mutex] 并行效率 E = S/2       : {:.2}%", efficiency_mutex);
+    println!("  ─────────────────────────────────────────────────────────");
+    println!("  >>> OCC vs Mutex 提速比           : {:.2}x <<<", improvement);
     println!("--------------------------------------------------------------------------------");
     println!(" [延迟分布分位数对比 (ms)]");
-    println!("  指标         | 单代理 (T_1)   | 双代理 (T_2)   | 变化");
-    println!("  ------------ | -------------- | -------------- | ------------");
-    println!("  Mean (均值)  | {:>10.4} ms | {:>10.4} ms | {:>+8.2}%", single_dist.mean_ms, dual_dist.mean_ms, (dual_dist.mean_ms - single_dist.mean_ms)/single_dist.mean_ms * 100.0);
-    println!("  P50 (中位数) | {:>10.4} ms | {:>10.4} ms | {:>+8.2}%", single_dist.p50_ms, dual_dist.p50_ms, (dual_dist.p50_ms - single_dist.p50_ms)/single_dist.p50_ms * 100.0);
-    println!("  P95 (长尾)   | {:>10.4} ms | {:>10.4} ms | {:>+8.2}%", single_dist.p95_ms, dual_dist.p95_ms, (dual_dist.p95_ms - single_dist.p95_ms)/single_dist.p95_ms * 100.0);
-    println!("  StdDev (σ)   | {:>10.4} ms | {:>10.4} ms |", single_dist.stddev_ms, dual_dist.stddev_ms);
+    println!("  指标         | 单代理         | OCC 双代理     | Mutex 双代理");
+    println!("  ------------ | -------------- | -------------- | --------------");
+    println!("  Mean (均值)  | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.mean_ms, occ_dist.mean_ms, mutex_dist.mean_ms);
+    println!("  P50 (中位数) | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.p50_ms, occ_dist.p50_ms, mutex_dist.p50_ms);
+    println!("  P95 (长尾)   | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.p95_ms, occ_dist.p95_ms, mutex_dist.p95_ms);
+    println!("  StdDev       | {:>10.4} ms | {:>10.4} ms | {:>10.4} ms", single_dist.stddev_ms, occ_dist.stddev_ms, mutex_dist.stddev_ms);
     println!("--------------------------------------------------------------------------------");
 
     // ------------------------------------------------------------------------
-    // 4. 严格数学不变式验证 (Losslessness & Monotonicity)
+    // 5. 数学不变式验证 (OCC workspace)
     // ------------------------------------------------------------------------
-    let ws = ws_dual.lock().unwrap();
-    let final_dual_doc = ws.docs.get(file_id).unwrap();
+    let (occ_final_rev, occ_final_content) = ws_occ.snapshot_doc(file_id).unwrap();
 
     assert_eq!(
-        final_dual_doc.current_revision,
+        occ_final_rev,
         1 + TOTAL_EDITS as u64,
-        "[数学不变式 1] 双代理版本单调递增性: 最终修订号必须等于初始版本 + 总事务数"
+        "[数学不变式 1] OCC 双代理版本单调递增性: 最终修订号必须等于 1 + N"
     );
 
-    // 内容无损性检验：所有 Agent A 和 Agent B 的函数必须均存在于最终文档中
     for i in 1..=edits_per_agent {
         let fn_a = format!("mod_a_{i}");
         assert!(
-            final_dual_doc.content.contains(&fn_a),
-            "[数学不变式 2] 无损性检验失败: Agent A 的修改 {} 丢失!",
+            occ_final_content.contains(&fn_a),
+            "[数学不变式 2] 无损性检验失败: OCC Agent A 的修改 {} 丢失!",
             fn_a
         );
         let fn_b = format!("mod_b_{i}");
         assert!(
-            final_dual_doc.content.contains(&fn_b),
-            "[数学不变式 2] 无损性检验失败: Agent B 的修改 {} 丢失!",
+            occ_final_content.contains(&fn_b),
+            "[数学不变式 2] 无损性检验失败: OCC Agent B 的修改 {} 丢失!",
             fn_b
         );
     }
-    println!("  [PASS] 数学不变式检验全部通过: 无数据丢失，版本严格单调递增收敛!\n");
+
+    // Mutex workspace 同样验证
+    let ws = ws_mutex.lock().unwrap();
+    let final_mutex_doc = ws.docs.get(file_id).unwrap();
+    assert_eq!(
+        final_mutex_doc.current_revision,
+        1 + TOTAL_EDITS as u64,
+        "[数学不变式 1] Mutex 双代理版本单调递增性"
+    );
+    for i in 1..=edits_per_agent {
+        assert!(final_mutex_doc.content.contains(&format!("mod_a_{i}")));
+        assert!(final_mutex_doc.content.contains(&format!("mod_b_{i}")));
+    }
+
+    println!("  [PASS] 数学不变式检验全部通过: 无数据丢失，版本严格单调递增收敛!");
+    println!("  [PASS] OCC 加速比: {:.2}x, Mutex 加速比: {:.2}x, OCC 相对提速: {:.2}x\n", speedup_occ, speedup_mutex, improvement);
 }
 
 // ============================================================================
-// 测试 2: NEMA v1.5 模式下单代理 vs 双代理语义合并速度压测
+// 测试 2: NEMA v1.5 模式 — OCC 并发 vs 旧 Mutex 串行 vs 单代理基线
 // ============================================================================
 #[test]
 fn test_math_bench_nema_mode_single_vs_dual_speed() {
@@ -322,21 +415,19 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
     const NEMA_EDITS: usize = 60;
     let file_id = "knowledge/system.nema";
 
-    // 1. 单代理顺序写入 NEMA 记录
-    let mut ws_single = CoEditWorkspace::default();
+    // 1. 单代理顺序写入 NEMA 记录 (OCC workspace)
+    let ws_single = ConcurrentCoEditWorkspace::default();
     ws_single.open_doc(file_id, base_nema, "nema", "system", "init");
 
     let t0 = Instant::now();
     for i in 1..=NEMA_EDITS {
-        let cur_rev = ws_single.docs.get(file_id).unwrap().current_revision;
-        let cur_content = ws_single.docs.get(file_id).unwrap().content.clone();
+        let (cur_rev, cur_content) = ws_single.snapshot_doc(file_id).unwrap();
 
-        // 规范去除末尾 3 LFs 追加记录后补齐
         let trimmed = cur_content.trim_end_matches('\n');
         let new_text = format!("{trimmed}\nRecord_{i} Active\n\n\n");
 
         let res = ws_single
-            .coedit_full(FullCoEditRequest {
+            .coedit_concurrent(FullCoEditRequest {
                 file_id: file_id.into(),
                 author: "agent-a".into(),
                 new_text,
@@ -350,23 +441,76 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
     }
     let t1_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-    // 2. 双代理并发语义追加 NEMA 记录
-    let ws_dual = Arc::new(Mutex::new(CoEditWorkspace::default()));
-    {
-        let mut ws = ws_dual.lock().unwrap();
-        ws.open_doc(file_id, base_nema, "nema", "system", "init");
-    }
+    // 2. OCC 双代理并发 NEMA
+    let ws_occ = Arc::new(ConcurrentCoEditWorkspace::default());
+    ws_occ.open_doc(file_id, base_nema, "nema", "system", "init");
 
     let edits_half = NEMA_EDITS / 2;
-    let t0_dual = Instant::now();
+    let t0_occ = Instant::now();
 
-    let ws_a = Arc::clone(&ws_dual);
-    let ws_b = Arc::clone(&ws_dual);
+    let ws_a = Arc::clone(&ws_occ);
+    let ws_b = Arc::clone(&ws_occ);
 
     let handle_a = std::thread::spawn(move || {
         for i in 1..=edits_half {
+            let (cur_rev, cur_content) = ws_a.snapshot_doc(file_id).unwrap();
+            let trimmed = cur_content.trim_end_matches('\n');
+            let new_text = format!("{trimmed}\nAgentA_Item_{i} Ready\n\n\n");
+
+            let res = ws_a
+                .coedit_concurrent(FullCoEditRequest {
+                    file_id: file_id.into(),
+                    author: "agent-a".into(),
+                    new_text,
+                    base_revision: Some(cur_rev),
+                    op_id: Some(format!("occ-nema-a-{i}")),
+                    mode: Some(CollabMode::Nema),
+                })
+                .unwrap();
+            assert_eq!(res["ok"], true);
+        }
+    });
+
+    let handle_b = std::thread::spawn(move || {
+        for j in 1..=edits_half {
+            let (cur_rev, cur_content) = ws_b.snapshot_doc(file_id).unwrap();
+            let trimmed = cur_content.trim_end_matches('\n');
+            let new_text = format!("{trimmed}\nAgentB_Item_{j} Verified\n\n\n");
+
+            let res = ws_b
+                .coedit_concurrent(FullCoEditRequest {
+                    file_id: file_id.into(),
+                    author: "agent-b".into(),
+                    new_text,
+                    base_revision: Some(cur_rev),
+                    op_id: Some(format!("occ-nema-b-{j}")),
+                    mode: Some(CollabMode::Nema),
+                })
+                .unwrap();
+            assert_eq!(res["ok"], true);
+        }
+    });
+
+    handle_a.join().unwrap();
+    handle_b.join().unwrap();
+    let t2_occ_ms = t0_occ.elapsed().as_secs_f64() * 1000.0;
+
+    // 3. 旧 Mutex 双代理并发 NEMA
+    let ws_mutex = Arc::new(Mutex::new(CoEditWorkspace::default()));
+    {
+        let mut ws = ws_mutex.lock().unwrap();
+        ws.open_doc(file_id, base_nema, "nema", "system", "init");
+    }
+
+    let t0_mutex = Instant::now();
+
+    let ws_ma = Arc::clone(&ws_mutex);
+    let ws_mb = Arc::clone(&ws_mutex);
+
+    let handle_ma = std::thread::spawn(move || {
+        for i in 1..=edits_half {
             let (cur_rev, cur_content) = {
-                let ws = ws_a.lock().unwrap();
+                let ws = ws_ma.lock().unwrap();
                 let doc = ws.docs.get(file_id).unwrap();
                 (doc.current_revision, doc.content.clone())
             };
@@ -374,13 +518,13 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
             let new_text = format!("{trimmed}\nAgentA_Item_{i} Ready\n\n\n");
 
             let res = {
-                let mut ws = ws_a.lock().unwrap();
+                let mut ws = ws_ma.lock().unwrap();
                 ws.coedit_full(FullCoEditRequest {
                     file_id: file_id.into(),
                     author: "agent-a".into(),
                     new_text,
                     base_revision: Some(cur_rev),
-                    op_id: Some(format!("dual-nema-a-{i}")),
+                    op_id: Some(format!("mutex-nema-a-{i}")),
                     mode: Some(CollabMode::Nema),
                 })
                 .unwrap()
@@ -389,10 +533,10 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
         }
     });
 
-    let handle_b = std::thread::spawn(move || {
+    let handle_mb = std::thread::spawn(move || {
         for j in 1..=edits_half {
             let (cur_rev, cur_content) = {
-                let ws = ws_b.lock().unwrap();
+                let ws = ws_mb.lock().unwrap();
                 let doc = ws.docs.get(file_id).unwrap();
                 (doc.current_revision, doc.content.clone())
             };
@@ -400,13 +544,13 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
             let new_text = format!("{trimmed}\nAgentB_Item_{j} Verified\n\n\n");
 
             let res = {
-                let mut ws = ws_b.lock().unwrap();
+                let mut ws = ws_mb.lock().unwrap();
                 ws.coedit_full(FullCoEditRequest {
                     file_id: file_id.into(),
                     author: "agent-b".into(),
                     new_text,
                     base_revision: Some(cur_rev),
-                    op_id: Some(format!("dual-nema-b-{j}")),
+                    op_id: Some(format!("mutex-nema-b-{j}")),
                     mode: Some(CollabMode::Nema),
                 })
                 .unwrap()
@@ -415,35 +559,50 @@ fn test_math_bench_nema_mode_single_vs_dual_speed() {
         }
     });
 
-    handle_a.join().unwrap();
-    handle_b.join().unwrap();
-    let t2_ms = t0_dual.elapsed().as_secs_f64() * 1000.0;
+    handle_ma.join().unwrap();
+    handle_mb.join().unwrap();
+    let t2_mutex_ms = t0_mutex.elapsed().as_secs_f64() * 1000.0;
 
-    let speedup = t1_ms / t2_ms;
-    let efficiency = (speedup / 2.0) * 100.0;
+    let speedup_occ = t1_ms / t2_occ_ms;
+    let speedup_mutex = t1_ms / t2_mutex_ms;
+    let improvement = t2_mutex_ms / t2_occ_ms;
 
     println!("--------------------------------------------------------------------------------");
     println!(" [实测结果统计汇总 (NEMA 语义合并模式)]");
-    println!("  - 总编辑事务数量 (N)         : {} 次", NEMA_EDITS);
-    println!("  - 单代理基准总耗时 (T_1)     : {:.3} ms (Throughput: {:.1} ops/sec)", t1_ms, (NEMA_EDITS as f64) / (t1_ms / 1000.0));
-    println!("  - 双代理协同总耗时 (T_2)     : {:.3} ms (Throughput: {:.1} ops/sec)", t2_ms, (NEMA_EDITS as f64) / (t2_ms / 1000.0));
-    println!("  - 实测加速比 S = T_1 / T_2   : {:.2}x", speedup);
-    println!("  - 并行效率 E = S / 2         : {:.2}%", efficiency);
+    println!("  - 总编辑事务数量 (N)             : {} 次", NEMA_EDITS);
+    println!("  - 单代理基准总耗时 (T_1)         : {:.3} ms", t1_ms);
+    println!("  ─────────────────────────────────────────────────────────");
+    println!("  - [OCC]   双代理总耗时 (T_2)     : {:.3} ms", t2_occ_ms);
+    println!("  - [OCC]   加速比 S = T_1/T_2     : {:.2}x", speedup_occ);
+    println!("  ─────────────────────────────────────────────────────────");
+    println!("  - [Mutex] 双代理总耗时 (T_2)     : {:.3} ms", t2_mutex_ms);
+    println!("  - [Mutex] 加速比 S = T_1/T_2     : {:.2}x", speedup_mutex);
+    println!("  ─────────────────────────────────────────────────────────");
+    println!("  >>> OCC vs Mutex 提速比           : {:.2}x <<<", improvement);
     println!("--------------------------------------------------------------------------------");
 
-    // 语法闭包与无损检验
-    let ws = ws_dual.lock().unwrap();
-    let final_nema_doc = ws.docs.get(file_id).unwrap();
-
-    let parse_check = nema_codec::parse_source(&final_nema_doc.content);
+    // 语法闭包与无损检验 (OCC)
+    let (_, occ_final_content) = ws_occ.snapshot_doc(file_id).unwrap();
+    let parse_check = nema_codec::parse_source(&occ_final_content);
     assert!(
         parse_check.is_ok(),
-        "[数学闭包] NEMA 协同合并结果必须保证形式化语法闭包有效"
+        "[数学闭包] OCC NEMA 协同合并结果必须保证形式化语法闭包有效"
     );
 
     for i in 1..=edits_half {
-        assert!(final_nema_doc.content.contains(&format!("AgentA_Item_{i} Ready")));
-        assert!(final_nema_doc.content.contains(&format!("AgentB_Item_{i} Verified")));
+        assert!(occ_final_content.contains(&format!("AgentA_Item_{i} Ready")));
+        assert!(occ_final_content.contains(&format!("AgentB_Item_{i} Verified")));
     }
-    println!("  [PASS] NEMA 语义合并语法封闭性与无损集合恒等式全部成立!\n");
+
+    // Mutex 同样验证
+    let ws = ws_mutex.lock().unwrap();
+    let mutex_final = ws.docs.get(file_id).unwrap();
+    assert!(nema_codec::parse_source(&mutex_final.content).is_ok());
+    for i in 1..=edits_half {
+        assert!(mutex_final.content.contains(&format!("AgentA_Item_{i} Ready")));
+        assert!(mutex_final.content.contains(&format!("AgentB_Item_{i} Verified")));
+    }
+
+    println!("  [PASS] NEMA 语义合并语法封闭性与无损集合恒等式全部成立!");
+    println!("  [PASS] OCC 加速比: {:.2}x, Mutex 加速比: {:.2}x, OCC 相对提速: {:.2}x\n", speedup_occ, speedup_mutex, improvement);
 }
