@@ -11,7 +11,9 @@ fn installer_default_state() {
     let s = InstallerState::default();
     assert!(!s.open);
     assert!(!s.standalone);
-    assert_eq!(s.step, InstallerStep::Options);
+    assert_eq!(s.step, InstallerStep::Agreement);
+    assert!(!s.agreement_scrolled_to_bottom);
+    assert!(!s.agreement_accepted);
     assert!(s.add_path);
     assert!(s.desktop_shortcut);
     assert!(s.tray_resident);
@@ -22,6 +24,10 @@ fn installer_default_state() {
 #[test]
 fn installer_state_machine_transitions() {
     let mut s = InstallerState::default();
+    assert_eq!(s.step, InstallerStep::Agreement);
+
+    // Agreement -> Options
+    s.step = InstallerStep::Options;
     assert_eq!(s.step, InstallerStep::Options);
 
     // Options -> Installing
@@ -76,6 +82,62 @@ fn test_installer_comic_rendering_invariants() {
         a.installer_window(&ctx);
     });
     out.textures_delta.clear();
+}
+
+#[test]
+fn test_user_agreement_content_loaded() {
+    assert!(!super::USER_AGREEMENT_TEXT.is_empty());
+    assert!(super::USER_AGREEMENT_TEXT.contains("IDE 1.0 最终用户许可与使用协议"));
+    assert!(super::USER_AGREEMENT_TEXT.contains("开源发行版"));
+}
+
+#[test]
+fn test_agreement_scroll_and_accept_invariants() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.installer.open = true;
+    a.installer.step = InstallerStep::Agreement;
+    a.installer.agreement_scrolled_to_bottom = false;
+    a.installer.agreement_accepted = false;
+
+    // 初始状态：未滑到底部，未勾选同意
+    assert!(!a.installer.agreement_scrolled_to_bottom);
+    assert!(!a.installer.agreement_accepted);
+    assert_eq!(a.installer.step, InstallerStep::Agreement);
+
+    // 渲染协议界面首帧
+    let mut out = ctx.run_ui(Default::default(), |_root| {
+        a.installer_window(&ctx);
+    });
+    out.textures_delta.clear();
+
+    // 模拟拉到底部
+    a.installer.agreement_scrolled_to_bottom = true;
+    assert!(a.installer.agreement_scrolled_to_bottom);
+
+    // 勾选同意并进入 Options
+    a.installer.agreement_accepted = true;
+    a.installer.step = InstallerStep::Options;
+    assert_eq!(a.installer.step, InstallerStep::Options);
+
+    let mut out2 = ctx.run_ui(Default::default(), |_root| {
+        a.installer_window(&ctx);
+    });
+    out2.textures_delta.clear();
+}
+
+#[test]
+fn test_comic_update_window_rendering_invariants() {
+    let ctx = egui::Context::default();
+    let mut a = App::build(vec![], None, Trace::new(), Settings::default(), false);
+    a.upd.open = true;
+
+    // 验证更新窗口在美漫风格下渲染无 panic
+    let mut out = ctx.run_ui(Default::default(), |_root| {
+        a.upd_window(&ctx);
+    });
+    out.textures_delta.clear();
+    assert!(a.upd.open);
 }
 
 #[test]
@@ -240,7 +302,7 @@ fn test_cel3d_vfx_pipeline_and_steps() {
         let center = pos2(200.0, 200.0);
 
         for step in [
-            InstallerStep::Welcome,
+            InstallerStep::Agreement,
             InstallerStep::Options,
             InstallerStep::Installing,
             InstallerStep::Finished,

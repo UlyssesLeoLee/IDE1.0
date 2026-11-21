@@ -9,39 +9,6 @@ use crate::ui_icons::{self, UiIcon};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind};
 
-fn paint_step_hero_banner(ui: &mut egui::Ui, accent: Color32, title: &str, subtitle: &str) {
-    let (h_rect, _) =
-        ui.allocate_exact_size(vec2(ui.available_width(), 54.0), egui::Sense::hover());
-    let hp = ui.painter();
-    paint_comic_hard_shadow_rect(
-        hp,
-        h_rect,
-        Color32::from_rgb(20, 26, 38),
-        2.0,
-        vec2(3.0, 3.0),
-    );
-    hp.rect_filled(
-        Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
-        0.0,
-        accent,
-    );
-    let tp = hp.with_clip_rect(h_rect.shrink2(vec2(12.0, 4.0)));
-    tp.text(
-        pos2(h_rect.left() + 16.0, h_rect.top() + 18.0),
-        egui::Align2::LEFT_CENTER,
-        title,
-        egui::FontId::proportional(14.5),
-        Color32::WHITE,
-    );
-    tp.text(
-        pos2(h_rect.left() + 16.0, h_rect.top() + 38.0),
-        egui::Align2::LEFT_CENTER,
-        subtitle,
-        egui::FontId::proportional(11.0),
-        Color32::from_rgb(203, 213, 225),
-    );
-}
-
 impl App {
     /// 渲染右侧多步骤向导分镜
     pub(super) fn render_right_step_panel(
@@ -72,7 +39,8 @@ impl App {
             );
 
             match self.installer.step {
-                InstallerStep::Welcome | InstallerStep::Options => match self.installer.mode {
+                InstallerStep::Agreement => self.render_step_agreement(ui, standalone),
+                InstallerStep::Options => match self.installer.mode {
                     InstallerMode::Install => self.render_step_options(ui, standalone),
                     InstallerMode::Maintenance => self.render_step_maintenance(ui, standalone),
                     InstallerMode::Repair => self.render_step_repair_options(ui, standalone),
@@ -179,6 +147,195 @@ impl App {
             }
         }
         primary_clicked
+    }
+
+    /// 步骤 0: 最终用户许可与使用协议分镜 (必须拉到底部并点击同意方可继续)
+    fn render_step_agreement(&mut self, ui: &mut egui::Ui, standalone: bool) {
+        paint_step_hero_banner(
+            ui,
+            Color32::from_rgb(2, 132, 199),
+            crate::i18n::trz("最终用户许可与使用协议 (EULA)"),
+            crate::i18n::trz("请通读下方开源许可与使用条款；必须拉到底部并勾选同意后方可继续安装"),
+        );
+
+        ui.add_space(2.0);
+        self.render_language_bar(ui);
+        ui.add_space(2.0);
+
+        // 状态引导提示胶囊 (未到底部显示警告指示，拉到底部显示就绪指示)
+        let (tip_icon, tip_text, tip_accent) = if self.installer.agreement_scrolled_to_bottom {
+            (
+                UiIcon::CheckCircle,
+                crate::i18n::trz(
+                    "【已阅读至末尾】您已通读协议，请在下方勾选同意条款以解锁继续按钮",
+                ),
+                Color32::from_rgb(16, 185, 129),
+            )
+        } else {
+            (
+                UiIcon::Warning,
+                crate::i18n::trz(
+                    "【需阅读至底部】请拖动右侧滚动条或使用鼠标滚轮向下阅读至协议全文底部",
+                ),
+                Color32::from_rgb(245, 158, 11),
+            )
+        };
+
+        comic_info_card(
+            ui,
+            crate::i18n::trz("许可协议阅读进度状态"),
+            tip_text,
+            tip_icon,
+            tip_accent,
+        );
+
+        ui.add_space(2.0);
+
+        // 协议正文漫画滚动面板 (带深黑实心阴影与纯黑描边墨水框)
+        let w = ui.available_width();
+        let scroll_card_h = 220.0;
+        let (box_rect, _) = ui.allocate_exact_size(vec2(w, scroll_card_h), egui::Sense::hover());
+        let p = ui.painter();
+        paint_comic_hard_shadow_rect(
+            p,
+            box_rect,
+            Color32::from_rgb(15, 19, 28),
+            2.0,
+            vec2(3.0, 3.0),
+        );
+        p.rect_stroke(
+            box_rect,
+            0.0,
+            Stroke::new(1.8, Color32::from_rgb(45, 55, 75)),
+            StrokeKind::Inside,
+        );
+
+        let inner_rect = box_rect.shrink2(vec2(10.0, 8.0));
+        let mut scrolled_to_end = false;
+
+        ui.scope_builder(egui::UiBuilder::new().max_rect(inner_rect), |ui| {
+            let scroll_out = egui::ScrollArea::vertical()
+                .id_salt("eula_scroll_view")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    for line in super::USER_AGREEMENT_TEXT.lines() {
+                        if let Some(rest) = line.strip_prefix("# ") {
+                            ui.heading(
+                                egui::RichText::new(rest)
+                                    .strong()
+                                    .color(Color32::WHITE)
+                                    .size(13.5),
+                            );
+                        } else if let Some(rest) = line.strip_prefix("## ") {
+                            ui.add_space(3.0);
+                            ui.label(
+                                egui::RichText::new(rest)
+                                    .strong()
+                                    .color(Color32::from_rgb(56, 189, 248))
+                                    .size(12.0),
+                            );
+                        } else if let Some(rest) = line.strip_prefix("> ") {
+                            ui.label(
+                                egui::RichText::new(rest)
+                                    .color(Color32::from_rgb(251, 191, 36))
+                                    .size(10.5),
+                            );
+                        } else if line.trim().is_empty() {
+                            ui.add_space(2.0);
+                        } else {
+                            ui.label(
+                                egui::RichText::new(line)
+                                    .color(Color32::from_rgb(226, 232, 240))
+                                    .size(10.5),
+                            );
+                        }
+                    }
+
+                    // 底部 Sentinel 哨兵检测
+                    let (sentinel_rect, _) = ui
+                        .allocate_exact_size(vec2(ui.available_width(), 2.0), egui::Sense::hover());
+                    ui.is_rect_visible(sentinel_rect)
+                });
+
+            let visible_bottom = scroll_out.inner;
+            let offset_bottom = scroll_out.state.offset().y + scroll_out.inner_rect.height()
+                >= scroll_out.content_size.y - 15.0;
+            if visible_bottom || offset_bottom {
+                scrolled_to_end = true;
+            }
+        });
+
+        if scrolled_to_end {
+            self.installer.agreement_scrolled_to_bottom = true;
+        }
+
+        ui.add_space(4.0);
+
+        // 交互勾选卡片 (必须已拉到底部才可勾选)
+        let unlocked = self.installer.agreement_scrolled_to_bottom;
+        comic_agreement_card(
+            ui,
+            &mut self.installer.agreement_accepted,
+            unlocked,
+            crate::i18n::trz("我已完整阅读并同意《IDE 1.0 最终用户许可与使用协议》"),
+            crate::i18n::trz("确认已理解代码执行风险、本地文件修改权限与责任限制条款"),
+            Color32::from_rgb(2, 132, 199),
+        );
+
+        ui.add_space(6.0);
+
+        // 底部动作条 (同意并继续 / 拒绝并退出)
+        let total_w = ui.available_width();
+        let cancel_w = 120.0;
+        let primary_w = (total_w - cancel_w - 14.0).max(80.0);
+
+        let can_continue = self.installer.agreement_accepted;
+        let primary_col = if can_continue {
+            Color32::from_rgb(2, 132, 199)
+        } else {
+            Color32::from_rgb(30, 41, 59)
+        };
+
+        let mut continue_clicked = false;
+        let mut exit_clicked = false;
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+
+            if comic_action_button_with_icon(
+                ui,
+                Some(UiIcon::CheckCircle),
+                crate::i18n::trz("同意并继续 (AGREE & NEXT)"),
+                vec2(primary_w, 46.0),
+                can_continue,
+                primary_col,
+            )
+            .clicked()
+            {
+                if can_continue {
+                    continue_clicked = true;
+                }
+            }
+
+            if comic_action_button(
+                ui,
+                crate::i18n::trz("拒绝并退出"),
+                vec2(cancel_w, 46.0),
+                false,
+                Color32::from_rgb(30, 41, 59),
+            )
+            .clicked()
+            {
+                exit_clicked = true;
+            }
+        });
+
+        if continue_clicked {
+            self.installer.step = InstallerStep::Options;
+        } else if exit_clicked {
+            self.close_wizard(ui, standalone);
+        }
     }
 
     /// 维护总览分镜 (已安装状态下启动安装向导时默认呈现：修复 / 卸载 / 更改配置)

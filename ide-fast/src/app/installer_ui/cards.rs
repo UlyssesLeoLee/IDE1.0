@@ -431,3 +431,176 @@ pub fn comic_interactive_card(
         false
     }
 }
+
+/// 美漫用户协议确认卡片 (必须拉到底部解锁，支持纯矢量勾号与锁定状态)
+pub fn comic_agreement_card(
+    ui: &mut egui::Ui,
+    checked: &mut bool,
+    unlocked: bool,
+    title: &str,
+    desc: &str,
+    accent: Color32,
+) -> bool {
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 52.0), egui::Sense::click());
+    let p = ui.painter();
+    let is_down = resp.is_pointer_button_down_on() && unlocked;
+    let hovered = resp.hovered() && unlocked;
+
+    let draw_rect = if is_down {
+        rect.translate(vec2(1.5, 1.5))
+    } else {
+        rect
+    };
+    let s_off = if is_down {
+        vec2(1.5, 1.5)
+    } else {
+        vec2(3.0, 3.0)
+    };
+
+    let card_bg = if !unlocked {
+        Color32::from_rgb(18, 22, 32)
+    } else if *checked {
+        if hovered {
+            Color32::from_rgb(28, 36, 56)
+        } else {
+            Color32::from_rgb(22, 28, 44)
+        }
+    } else if hovered {
+        Color32::from_rgb(20, 25, 38)
+    } else {
+        Color32::from_rgb(16, 20, 32)
+    };
+
+    paint_comic_hard_shadow_rect(p, draw_rect, card_bg, 2.0, s_off);
+
+    // 左侧强调色条
+    let bar_col = if unlocked {
+        accent
+    } else {
+        Color32::from_rgb(71, 85, 105)
+    };
+    p.rect_filled(
+        Rect::from_min_size(draw_rect.min, vec2(5.5, draw_rect.height())),
+        0.0,
+        bar_col,
+    );
+
+    // 勾选方框
+    let box_rect = Rect::from_center_size(
+        pos2(draw_rect.left() + 26.0, draw_rect.center().y),
+        vec2(22.0, 22.0),
+    );
+    let box_bg = if !unlocked {
+        Color32::from_rgb(30, 41, 59)
+    } else if *checked {
+        accent
+    } else {
+        Color32::from_rgb(20, 26, 40)
+    };
+    p.rect_filled(box_rect.translate(vec2(1.5, 1.5)), 4.0, Color32::BLACK);
+    p.rect_filled(box_rect, 4.0, box_bg);
+    p.rect_stroke(
+        box_rect,
+        4.0,
+        Stroke::new(1.8, Color32::BLACK),
+        StrokeKind::Inside,
+    );
+
+    if *checked && unlocked {
+        ui_icons::paint_checkmark(p, box_rect.shrink(4.0), 2.8, Color32::WHITE);
+    } else if !unlocked {
+        ui_icons::paint(
+            p,
+            box_rect.shrink(4.0),
+            UiIcon::Lock,
+            Color32::from_rgb(148, 163, 184),
+        );
+    } else {
+        p.circle_filled(box_rect.center(), 3.0, Color32::from_rgb(100, 116, 139));
+    }
+
+    // 右侧状态徽章
+    let stamp_rect = Rect::from_center_size(
+        pos2(draw_rect.right() - 48.0, draw_rect.center().y),
+        vec2(76.0, 24.0),
+    );
+    let (stamp_bg, stamp_label, stamp_icon) = if !unlocked {
+        (Color32::from_rgb(51, 65, 85), "LOCKED", Some(UiIcon::Lock))
+    } else if *checked {
+        (
+            Color32::from_rgb(16, 185, 129),
+            "AGREED",
+            Some(UiIcon::CheckCircle),
+        )
+    } else {
+        (Color32::from_rgb(30, 41, 59), "PENDING", None)
+    };
+
+    p.rect_filled(stamp_rect.translate(vec2(1.5, 1.5)), 4.0, Color32::BLACK);
+    p.rect_filled(stamp_rect, 4.0, stamp_bg);
+    p.rect_stroke(
+        stamp_rect,
+        4.0,
+        Stroke::new(1.6, Color32::BLACK),
+        StrokeKind::Inside,
+    );
+    if let Some(ic) = stamp_icon {
+        let ic_r = Rect::from_center_size(
+            pos2(stamp_rect.left() + 12.0, stamp_rect.center().y),
+            vec2(11.0, 11.0),
+        );
+        ui_icons::paint(p, ic_r, ic, Color32::WHITE);
+    }
+    p.text(
+        pos2(
+            stamp_rect.center().x + if stamp_icon.is_some() { 6.0 } else { 0.0 },
+            stamp_rect.center().y,
+        ),
+        egui::Align2::CENTER_CENTER,
+        stamp_label,
+        egui::FontId::proportional(10.0),
+        Color32::WHITE,
+    );
+
+    let text_x = draw_rect.left() + 50.0;
+    let text_clip = Rect::from_min_max(
+        pos2(text_x, draw_rect.top() + 2.0),
+        pos2(
+            (stamp_rect.left() - 8.0).max(text_x + 4.0),
+            draw_rect.bottom() - 2.0,
+        ),
+    );
+    let tp = p.with_clip_rect(text_clip);
+    let title_col = if unlocked {
+        Color32::WHITE
+    } else {
+        Color32::from_rgb(148, 163, 184)
+    };
+    tp.text(
+        pos2(text_x, draw_rect.center().y - 8.0),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(13.0),
+        title_col,
+    );
+    let desc_col = if unlocked {
+        Color32::from_rgb(203, 213, 225)
+    } else {
+        Color32::from_rgb(100, 116, 139)
+    };
+    tp.text(
+        pos2(text_x, draw_rect.center().y + 9.5),
+        egui::Align2::LEFT_CENTER,
+        desc,
+        egui::FontId::proportional(10.5),
+        desc_col,
+    );
+
+    if unlocked && resp.clicked() {
+        *checked = !*checked;
+        true
+    } else {
+        false
+    }
+}

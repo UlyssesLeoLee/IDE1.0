@@ -11,6 +11,40 @@ pub fn paint_step_indicator(p: &egui::Painter, rect: Rect, current: InstallerSte
     paint_step_indicator_for_mode(p, rect, current, InstallerMode::Install);
 }
 
+/// 绘制美漫风格英雄顶栏 Banner (带硬阴影、主题强调色边线与双行文字排版)
+pub fn paint_step_hero_banner(ui: &mut egui::Ui, accent: Color32, title: &str, subtitle: &str) {
+    let (h_rect, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 54.0), egui::Sense::hover());
+    let hp = ui.painter();
+    paint_comic_hard_shadow_rect(
+        hp,
+        h_rect,
+        Color32::from_rgb(20, 26, 38),
+        2.0,
+        vec2(3.0, 3.0),
+    );
+    hp.rect_filled(
+        Rect::from_min_size(h_rect.min, vec2(h_rect.width(), 4.0)),
+        0.0,
+        accent,
+    );
+    let tp = hp.with_clip_rect(h_rect.shrink2(vec2(12.0, 4.0)));
+    tp.text(
+        pos2(h_rect.left() + 16.0, h_rect.top() + 18.0),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(14.5),
+        Color32::WHITE,
+    );
+    tp.text(
+        pos2(h_rect.left() + 16.0, h_rect.top() + 38.0),
+        egui::Align2::LEFT_CENTER,
+        subtitle,
+        egui::FontId::proportional(11.0),
+        Color32::from_rgb(203, 213, 225),
+    );
+}
+
 /// 按当前运行模式 (安装 / 维护 / 修复 / 卸载) 绘制顶部 3 步流程指示条
 pub fn paint_step_indicator_for_mode(
     p: &egui::Painter,
@@ -18,67 +52,73 @@ pub fn paint_step_indicator_for_mode(
     current: InstallerStep,
     mode: InstallerMode,
 ) {
-    let (s1, s2, s3, act_fill, act_border, act_badge) = match mode {
+    let (steps, act_fill, act_border, act_badge): (
+        Vec<(InstallerStep, &'static str, &'static str)>,
+        Color32,
+        Color32,
+        Color32,
+    ) = match mode {
         InstallerMode::Install => (
-            crate::i18n::trz("环境配置"),
-            crate::i18n::trz("极速部署"),
-            crate::i18n::trz("部署完成"),
+            vec![
+                (InstallerStep::Agreement, "1", crate::i18n::trz("许可协议")),
+                (InstallerStep::Options, "2", crate::i18n::trz("环境配置")),
+                (InstallerStep::Installing, "3", crate::i18n::trz("极速部署")),
+                (InstallerStep::Finished, "4", crate::i18n::trz("部署完成")),
+            ],
             Color32::from_rgb(2, 132, 199),
             Color32::from_rgb(125, 211, 252),
             Color32::from_rgb(186, 230, 253),
         ),
         InstallerMode::Maintenance => (
-            crate::i18n::trz("维护模式"),
-            crate::i18n::trz("执行维护"),
-            crate::i18n::trz("维护完成"),
+            vec![
+                (InstallerStep::Options, "1", crate::i18n::trz("维护模式")),
+                (InstallerStep::Installing, "2", crate::i18n::trz("执行维护")),
+                (InstallerStep::Finished, "3", crate::i18n::trz("维护完成")),
+            ],
             Color32::from_rgb(2, 132, 199),
             Color32::from_rgb(125, 211, 252),
             Color32::from_rgb(186, 230, 253),
         ),
         InstallerMode::Repair => (
-            crate::i18n::trz("修复确认"),
-            crate::i18n::trz("正在修复"),
-            crate::i18n::trz("修复完成"),
+            vec![
+                (InstallerStep::Options, "1", crate::i18n::trz("修复确认")),
+                (InstallerStep::Installing, "2", crate::i18n::trz("正在修复")),
+                (InstallerStep::Finished, "3", crate::i18n::trz("修复完成")),
+            ],
             Color32::from_rgb(13, 148, 136),
             Color32::from_rgb(94, 234, 212),
             Color32::from_rgb(204, 251, 241),
         ),
         InstallerMode::Uninstall => (
-            crate::i18n::trz("卸载选项"),
-            crate::i18n::trz("正在卸载"),
-            crate::i18n::trz("卸载完成"),
+            vec![
+                (InstallerStep::Options, "1", crate::i18n::trz("卸载选项")),
+                (InstallerStep::Installing, "2", crate::i18n::trz("正在卸载")),
+                (InstallerStep::Finished, "3", crate::i18n::trz("卸载完成")),
+            ],
             Color32::from_rgb(220, 38, 38),
             Color32::from_rgb(252, 165, 165),
             Color32::from_rgb(254, 226, 226),
         ),
     };
 
-    let steps = [
-        (InstallerStep::Options, "1", s1),
-        (InstallerStep::Installing, "2", s2),
-        (InstallerStep::Finished, "3", s3),
-    ];
-
     let n = steps.len();
-    let gap = 20.0;
+    let gap = if n >= 4 { 12.0 } else { 20.0 };
     let inner_w = (rect.width() - 2.0).max(60.0);
     let step_w = (inner_w - (n as f32 - 1.0) * gap) / n as f32;
     let mut x = rect.left();
 
-    for (i, (step, num, label)) in steps.into_iter().enumerate() {
+    let curr_idx = steps
+        .iter()
+        .position(|(s, _, _)| *s == current)
+        .unwrap_or(0);
+
+    for (i, (_step, num, label)) in steps.into_iter().enumerate() {
         let cap_rect = Rect::from_min_size(
             pos2(x, rect.top() + 1.0),
             vec2(step_w, (rect.height() - 3.0).max(24.0)),
         );
-        let is_curr = step == current
-            || (current == InstallerStep::Welcome && step == InstallerStep::Options);
-        let is_past = match current {
-            InstallerStep::Welcome | InstallerStep::Options => false,
-            InstallerStep::Installing => step == InstallerStep::Options,
-            InstallerStep::Finished => {
-                step == InstallerStep::Options || step == InstallerStep::Installing
-            }
-        };
+        let is_curr = i == curr_idx;
+        let is_past = i < curr_idx;
 
         let (fill_col, border_col, text_col) = if is_curr {
             (act_fill, act_border, Color32::WHITE)

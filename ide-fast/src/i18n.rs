@@ -3643,6 +3643,326 @@ pub const CMD_T: &[Row] = &[
         ],
     ),
     (
+        "许可协议",
+        [
+            "许可协议",
+            "使用許諾契約",
+            "License Agreement",
+        ],
+    ),
+    (
+        "【已阅读至末尾】您已通读协议，请在下方勾选同意条款以解锁继续按钮",
+        [
+            "【已阅读至末尾】您已通读协议，请在下方勾选同意条款以解锁继续按钮",
+            "【末尾まで読了】規約を確認しました。下の同意をチェックして続行してください",
+            "[Reached End] You have read the agreement. Check agree below to continue",
+        ],
+    ),
+    (
+        "【需阅读至底部】请拖动右侧滚动条或使用鼠标滚轮向下阅读至协议全文底部",
+        [
+            "【需阅读至底部】请拖动右侧滚动条或使用鼠标滚轮向下阅读至协议全文底部",
+            "【末尾まで要確認】右側のスクロールバーまたはホイールで一番下までお読みください",
+            "[Scroll Required] Please scroll down to the bottom of the agreement to continue",
+        ],
+    ),
+    (
+        "同意并继续 (AGREE & NEXT)",
+        [
+            "同意并继续 (AGREE & NEXT)",
+            "同意して次へ (AGREE & NEXT)",
+            "Agree & Next (AGREE & NEXT)",
+        ],
+    ),
+    (
+        "我已完整阅读并同意《IDE 1.0 最终用户许可与使用协议》",
+        [
+            "我已完整阅读并同意《IDE 1.0 最终用户许可与使用协议》",
+            "「IDE 1.0 エンドユーザー使用許諾契約」をすべて読み同意します",
+            "I have read and agree to the IDE 1.0 End User License Agreement",
+        ],
+    ),
+    (
+        "拒绝并退出",
+        [
+            "拒绝并退出",
+            "同意せず終了",
+            "Decline & Exit",
+        ],
+    ),
+    (
+        "最终用户许可与使用协议 (EULA)",
+        [
+            "最终用户许可与使用协议 (EULA)",
+            "エンドユーザー使用許諾契約 (EULA)",
+            "End User License Agreement (EULA)",
+        ],
+    ),
+    (
+        "确认已理解代码执行风险、本地文件修改权限与责任限制条款",
+        [
+            "确认已理解代码执行风险、本地文件修改权限与责任限制条款",
+            "コード実行リスク、ローカルファイル変更権限および責任制限事項を理解しました",
+            "Acknowledged code execution risks, local file permissions, and liability limits",
+        ],
+    ),
+    (
+        "许可协议阅读进度状态",
+        [
+            "许可协议阅读进度状态",
+            "規約読了ステータス",
+            "Agreement Reading Progress",
+        ],
+    ),
+    (
+        "请通读下方开源许可与使用条款；必须拉到底部并勾选同意后方可继续安装",
+        [
+            "请通读下方开源许可与使用条款；必须拉到底部并勾选同意后方可继续安装",
+            "下記の利用規約をお読みください。一番下までスクロールして同意すると続行できます",
+            "Please read the license terms below; scroll to the bottom and check agree to continue",
+        ],
+    ),
+    (
+        "前往发布主页手动下载",
+        [
+            "前往发布主页手动下载",
+            "リリースページから手動ダウンロード",
+            "Go to Release Page for Manual Download",
+        ],
+    ),
+    (
+        "发布主页",
+        [
+            "发布主页",
+            "リリースページ",
+            "Release Page",
+        ],
+    ),
+    (
+        "发现新版本",
+        [
+            "发现新版本",
+            "新バージョン検出",
+            "New Version",
+        ],
+    ),
+    (
+        "发现新版本就绪",
+        [
+            "发现新版本就绪",
+            "新バージョンが利用可能です",
+            "New Version Ready",
+        ],
+    ),
+    (
+        "已签名",
+        [
+            "已签名",
+            "署名済み",
+            "Signed",
+        ],
+    ),
+    (
+        "当前已是最新版本 (UP TO DATE)",
+        [
+            "当前已是最新版本 (UP TO DATE)",
+            "最新バージョンです (UP TO DATE)",
+            "You are Up to Date (UP TO DATE)",
+        ],
+    ),
+    (
+        "您当前运行的是最新版，无需更新；可随时重新检查",
+        [
+            "您当前运行的是最新版，无需更新；可随时重新检查",
+            "現在最新版を実行しています。更新は不要です。いつでも再確認できます",
+            "You are running the latest version. No updates needed; check again anytime",
+        ],
+    ),
+    (
+        "无直接可执行资产 (请访问发布主页下载)",
+        [
+            "无直接可执行资产 (请访问发布主页下载)",
+            "直接実行可能なアセットがありません (リリースページより取得)",
+            "No direct binary asset available (please visit the release page)",
+        ],
+    ),
+    (
+        "更新包就绪，校验全量通过",
+        [
+            "更新包就绪，校验全量通过",
+            "更新パッケージ検証完了、準備完了",
+            "Update Package Ready, Verification Passed",
+        ],
+    ),
+    (
+        "更新安全策略",
+        [
+            "更新安全策略",
+            "アップデートセキュリティポリシー",
+            "Update Security Policy",
+        ],
+    ),
+    (
+        "更新就绪",
+        [
+            "更新就绪",
+            "更新準備完了",
+            "Update Ready",
+        ],
+    ),
+    (
+        "更新异常",
+        [
+            "更新异常",
+            "更新エラー",
+            "Update Error",
+        ],
+    ),
+    (
+        "更新通道",
+        [
+            "更新通道",
+            "アップデートチャネル",
+            "Update Channel",
+        ],
+    ),
+    (
+        "未配置公钥",
+        [
+            "未配置公钥",
+            "公開鍵未設定",
+            "No Public Key Configured",
+        ],
+    ),
+    (
+        "本机当前版本",
+        [
+            "本机当前版本",
+            "現在のバージョン",
+            "Current Installed Version",
+        ],
+    ),
+    (
+        "极速桌面开发微内核",
+        [
+            "极速桌面开发微内核",
+            "超高速デスクトップマイクロカーネル",
+            "Ultra-Fast Desktop Microkernel",
+        ],
+    ),
+    (
+        "检查官方渠道发布的最新稳定版与增量补丁",
+        [
+            "检查官方渠道发布的最新稳定版与增量补丁",
+            "公式チャンネルから最新の安定版とパッチを確認します",
+            "Check for official stable releases and incremental patches",
+        ],
+    ),
+    (
+        "检查更新",
+        [
+            "检查更新",
+            "更新を確認",
+            "Check Updates",
+        ],
+    ),
+    (
+        "检查更新异常 (UPDATE ERROR)",
+        [
+            "检查更新异常 (UPDATE ERROR)",
+            "アップデート確認エラー (UPDATE ERROR)",
+            "Update Check Error (UPDATE ERROR)",
+        ],
+    ),
+    (
+        "正在下载",
+        [
+            "正在下载",
+            "ダウンロード中",
+            "Downloading",
+        ],
+    ),
+    (
+        "正在后台高速下载中...",
+        [
+            "正在后台高速下载中...",
+            "バックグラウンドでダウンロード中...",
+            "Downloading in background...",
+        ],
+    ),
+    (
+        "正在拉取发行包资产并同步校验哈希完整性...",
+        [
+            "正在拉取发行包资产并同步校验哈希完整性...",
+            "アセットを取得し、ハッシュ整合性を検証しています...",
+            "Fetching release package and verifying hash integrity...",
+        ],
+    ),
+    (
+        "正在连接官方发行源校验最新版本号与数字签名...",
+        [
+            "正在连接官方发行源校验最新版本号与数字签名...",
+            "公式ソースに接続し最新バージョンと署名を検証中...",
+            "Connecting to official source to verify version and signature...",
+        ],
+    ),
+    (
+        "正在连接校验新版本 (CHECKING)...",
+        [
+            "正在连接校验新版本 (CHECKING)...",
+            "新バージョンを確認中 (CHECKING)...",
+            "Checking for New Version (CHECKING)...",
+        ],
+    ),
+    (
+        "正在高速下载更新包",
+        [
+            "正在高速下载更新包",
+            "高速ダウンロード中",
+            "Downloading Update Package",
+        ],
+    ),
+    (
+        "版本更新与升级 (UPDATES)",
+        [
+            "版本更新与升级 (UPDATES)",
+            "アップデートとアップグレード (UPDATES)",
+            "Version Updates & Upgrades (UPDATES)",
+        ],
+    ),
+    (
+        "目标发布版本与资产",
+        [
+            "目标发布版本与资产",
+            "対象バージョンとアセット",
+            "Target Release & Assets",
+        ],
+    ),
+    (
+        "立即下载更新 (DOWNLOAD NOW)",
+        [
+            "立即下载更新 (DOWNLOAD NOW)",
+            "今すぐダウンロード (DOWNLOAD NOW)",
+            "Download Now (DOWNLOAD NOW)",
+        ],
+    ),
+    (
+        "立即安装并重启 (INSTALL NOW)",
+        [
+            "立即安装并重启 (INSTALL NOW)",
+            "今すぐインストールして再起動 (INSTALL NOW)",
+            "Install Now & Restart (INSTALL NOW)",
+        ],
+    ),
+    (
+        "重新检查更新 (CHECK AGAIN)",
+        [
+            "重新检查更新 (CHECK AGAIN)",
+            "再確認 (CHECK AGAIN)",
+            "Check Again (CHECK AGAIN)",
+        ],
+    ),
+    (
         "维护模式",
         [
             "维护模式",

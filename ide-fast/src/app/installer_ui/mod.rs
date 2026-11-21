@@ -27,13 +27,16 @@ use art::*;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke, StrokeKind, Vec2};
 
+/// 内置用户许可协议全文（与 `docs/IDE_1.0_用户协议.md` 同步）
+pub const USER_AGREEMENT_TEXT: &str = include_str!("../../../../docs/IDE_1.0_用户协议.md");
+
 /// 向导状态机步骤枚举
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum InstallerStep {
-    /// 步骤 0: 欢迎体验英雄展台 (已由新版精简，直接切入核心配置)
-    Welcome,
-    /// 步骤 1: 安装目录与环境选项 / 维护模式选择 (Directory & Integration Options)
+    /// 步骤 0: 最终用户许可与使用协议 (必须拉到底部并勾选同意才能继续)
     #[default]
+    Agreement,
+    /// 步骤 1: 安装目录与环境选项 / 维护模式选择 (Directory & Integration Options)
     Options,
     /// 步骤 2: 部署安装 / 修复 / 卸载执行中动画 (Deploying & Real-time Progress)
     Installing,
@@ -107,6 +110,10 @@ pub struct InstallerState {
     pub last_mouse_pos: Option<egui::Pos2>,
     pub rot_target_yaw: f32,
     pub rot_target_pitch: f32,
+    /// 许可协议是否已滑动拉到底部
+    pub agreement_scrolled_to_bottom: bool,
+    /// 用户是否已勾选同意许可协议
+    pub agreement_accepted: bool,
 }
 
 impl Default for InstallerState {
@@ -118,7 +125,7 @@ impl Default for InstallerState {
         Self {
             open: false,
             standalone: false,
-            step: InstallerStep::Options,
+            step: InstallerStep::Agreement,
             mode: InstallerMode::Install,
             existing: None,
             target_dir: default_dir,
@@ -142,6 +149,8 @@ impl Default for InstallerState {
             last_mouse_pos: None,
             rot_target_yaw: 0.35,
             rot_target_pitch: 0.18,
+            agreement_scrolled_to_bottom: false,
+            agreement_accepted: false,
         }
     }
 }
@@ -155,7 +164,6 @@ impl InstallerState {
         cur_exe: Option<&std::path::Path>,
         local_app_data: Option<&std::path::Path>,
     ) {
-        self.step = InstallerStep::Options;
         self.install_progress = 0.0;
         self.status_msg = None;
         self.deploy_rx = None;
@@ -164,6 +172,7 @@ impl InstallerState {
 
         match launch_mode {
             InstallerLaunchMode::Uninstall => {
+                self.step = InstallerStep::Options;
                 self.mode = InstallerMode::Uninstall;
                 if let Some(ex) = &existing {
                     self.target_dir = ex.install_dir.clone();
@@ -174,6 +183,7 @@ impl InstallerState {
                 }
             }
             InstallerLaunchMode::Repair => {
+                self.step = InstallerStep::Options;
                 self.mode = InstallerMode::Repair;
                 if let Some(ex) = &existing {
                     self.target_dir = ex.install_dir.clone();
@@ -184,6 +194,7 @@ impl InstallerState {
             }
             InstallerLaunchMode::Auto => {
                 if let Some(ex) = &existing {
+                    self.step = InstallerStep::Options;
                     self.mode = InstallerMode::Maintenance;
                     self.target_dir = ex.install_dir.clone();
                     self.add_path = if ex.has_uninstall_reg {
@@ -198,6 +209,10 @@ impl InstallerState {
                     };
                 } else {
                     self.mode = InstallerMode::Install;
+                    // 全新安装向导必须首先展示许可协议，用户必须滑动拉到底部并点击同意方可继续
+                    self.step = InstallerStep::Agreement;
+                    self.agreement_scrolled_to_bottom = false;
+                    self.agreement_accepted = false;
                     let is_setup_exe = cur_exe
                         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()))
                         .map(|n| n.contains("setup") || n.contains("installer"))
@@ -234,7 +249,7 @@ impl App {
     }
 
     /// 确保已解码并装载正版原生 Logo 纹理 (严格保留用户原始正版 Logo，不改动)
-    fn ensure_installer_logo(&mut self, ctx: &egui::Context) {
+    pub(super) fn ensure_installer_logo(&mut self, ctx: &egui::Context) {
         if self.installer.logo_tex.is_none() {
             if let Some(ic) = crate::appicon::logo() {
                 let img = egui::ColorImage::from_rgba_unmultiplied(

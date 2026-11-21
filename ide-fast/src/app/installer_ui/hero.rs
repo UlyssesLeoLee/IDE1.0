@@ -20,7 +20,7 @@ fn get_logo() -> &'static Mesh3D {
 
 impl App {
     /// 渲染左侧英雄展台分镜 (仅突出正版 3D 水晶钻石徽标，低调奢华 · 0 冗余干扰)
-    pub(super) fn render_left_hero_stage(&mut self, ui: &mut egui::Ui, left_panel_rect: Rect) {
+    pub(crate) fn render_left_hero_stage(&mut self, ui: &mut egui::Ui, left_panel_rect: Rect) {
         let p = ui.painter();
 
         // 1. 低调奢华暗黑曜石展台底板 (Obsidian Stage Panel)
