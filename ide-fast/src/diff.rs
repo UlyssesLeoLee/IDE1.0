@@ -1,8 +1,5 @@
-//! 比较两份文档: 按行做 LCS 差异, 产出「差异块」(hunk) 和两侧的逐行标记 (行号槽里画色条)。
-//! 纯函数, 不碰界面。太大的文档 (中间不同的部分超过 `MAX_CELLS` 格) 退化成一个整块替换, 保证不卡。
-
-/// 超过这个格数 (中段行数之积) 就不做 LCS, 直接当一整块不同
-const MAX_CELLS: usize = 4_000_000;
+//! 比较两份文档: 委托 `editcore::diff` 的有界 Myers O(ND) 引擎产出「差异块」(hunk) 与逐行标记。
+//! 纯函数, 不碰界面。编辑距离超过阈值时自动退化成整段替换, 保证大文件不卡。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hunk {
@@ -25,70 +22,20 @@ pub enum Mark {
     Gap,
 }
 
-/// 逐行比较, 返回按位置排序的差异块
+/// 逐行比较, 返回按位置排序的差异块 (复用 `editcore::diff` 有界 Myers O(ND) 引擎)
 pub fn diff_lines(a: &[String], b: &[String]) -> Vec<Hunk> {
-    let pre = a.iter().zip(b).take_while(|(x, y)| x == y).count();
-    let suf = a[pre..]
-        .iter()
-        .rev()
-        .zip(b[pre..].iter().rev())
-        .take_while(|(x, y)| x == y)
-        .count();
-    let (am, bm) = (&a[pre..a.len() - suf], &b[pre..b.len() - suf]);
-    if am.is_empty() && bm.is_empty() {
-        return vec![];
-    }
-    if am.is_empty() || bm.is_empty() || am.len().saturating_mul(bm.len()) > MAX_CELLS {
-        return vec![Hunk {
-            a_start: pre,
-            a_len: am.len(),
-            b_start: pre,
-            b_len: bm.len(),
-        }];
-    }
-    // lcs[i][j] = am[i..] 与 bm[j..] 的最长公共子序列长度
-    let (n, m) = (am.len(), bm.len());
-    let w = m + 1;
-    let mut lcs = vec![0u32; (n + 1) * w];
-    for i in (0..n).rev() {
-        for j in (0..m).rev() {
-            lcs[i * w + j] = if am[i] == bm[j] {
-                lcs[(i + 1) * w + j + 1] + 1
-            } else {
-                lcs[(i + 1) * w + j].max(lcs[i * w + j + 1])
-            };
-        }
-    }
-    let mut out: Vec<Hunk> = vec![];
-    let (mut i, mut j) = (0, 0);
-    // 当前未闭合的差异块起点
-    let mut open: Option<(usize, usize)> = None;
-    let close = |open: &mut Option<(usize, usize)>, i: usize, j: usize, out: &mut Vec<Hunk>| {
-        if let Some((si, sj)) = open.take() {
-            out.push(Hunk {
-                a_start: pre + si,
-                a_len: i - si,
-                b_start: pre + sj,
-                b_len: j - sj,
-            });
-        }
-    };
-    while i < n || j < m {
-        if i < n && j < m && am[i] == bm[j] {
-            close(&mut open, i, j, &mut out);
-            i += 1;
-            j += 1;
-            continue;
-        }
-        open.get_or_insert((i, j));
-        if j >= m || (i < n && lcs[(i + 1) * w + j] >= lcs[i * w + j + 1]) {
-            i += 1;
-        } else {
-            j += 1;
-        }
-    }
-    close(&mut open, i, j, &mut out);
-    out
+    let a_refs: Vec<&str> = a.iter().map(String::as_str).collect();
+    let b_refs: Vec<&str> = b.iter().map(String::as_str).collect();
+    let (steps, _) = editcore::diff::diff_lines(&a_refs, &b_refs);
+    editcore::diff::regions(&steps)
+        .into_iter()
+        .map(|r| Hunk {
+            a_start: r.a0,
+            a_len: r.a1 - r.a0,
+            b_start: r.b0,
+            b_len: r.b1 - r.b0,
+        })
+        .collect()
 }
 
 /// 两侧的逐行标记: (左, 右)。`Removed` 标本侧多出的行, `Gap` 标本侧缺行的位置
@@ -327,5 +274,17 @@ mod tests {
         assert!(d.hunks.is_empty());
         assert_eq!(d.summary(), "两份文档完全相同");
         assert!(d.marks_of(1).is_some() && d.marks_of(9).is_none());
+    }
+
+    #[test]
+    fn large_file_with_small_edits_stays_exact() {
+        let a: Vec<String> = (0..20_000).map(|i| format!("line {i}")).collect();
+        let mut b = a.clone();
+        b[100] = "edited line 100".to_string();
+        b[19_900] = "edited line 19900".to_string();
+        let h = diff_lines(&a, &b);
+        assert_eq!(h.len(), 2);
+        assert_eq!(h[0].a_start, 100);
+        assert_eq!(h[1].a_start, 19_900);
     }
 }

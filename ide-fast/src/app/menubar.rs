@@ -138,7 +138,7 @@ impl App {
                             }
                             if menuui::mbtn(ui, lk("c.file-properties", "Alt+Enter")).clicked() {
                                 ui.close();
-                                self.props = Some(self.cur().properties());
+                                self.dialogs.props = Some(self.cur().properties());
                             }
                             if menuui::mbtn(ui, lk("c.new-window", "")).clicked() {
                                 ui.close();
@@ -270,8 +270,8 @@ impl App {
                                 ui.close();
                             }
                             if menuui::mbtn(ui, lk("c.goto-line", "Ctrl+J")).clicked() {
-                                self.goto_open = true;
-                                self.goto_text.clear();
+                                self.dialogs.goto_open = true;
+                                self.dialogs.goto_text.clear();
                                 ui.close();
                             }
                             ui.separator();
@@ -326,7 +326,7 @@ impl App {
                             }
                             ui.menu_button(trz("比较"), |ui| {
                                 if ui.button(trz("与其他标签比较…")).clicked() {
-                                    self.diff_pick = true;
+                                    self.dialogs.diff_pick = true;
                                     ui.close();
                                 }
                                 if ui.button(trz("与文件比较…")).clicked() {
@@ -334,7 +334,7 @@ impl App {
                                     ui.close();
                                 }
                                 if ui.button(trz("差异列表")).clicked() {
-                                    self.diff_list_open = true;
+                                    self.dialogs.diff_list_open = true;
                                     ui.close();
                                 }
                                 if ui.button(trz("下一处差异 (Alt+↓)")).clicked() {
@@ -347,7 +347,7 @@ impl App {
                                 }
                                 if ui.button(trz("清除比较")).clicked() {
                                     self.diff = None;
-                                    self.diff_list_open = false;
+                                    self.dialogs.diff_list_open = false;
                                     ui.close();
                                 }
                             });
@@ -372,7 +372,7 @@ impl App {
                                     ui.close();
                                 }
                                 if menuui::mbtn(ui, lk("c.bookmark-view", "Alt+F2")).clicked() {
-                                    self.bm_open = true;
+                                    self.dialogs.bm_open = true;
                                     ui.close();
                                 }
                                 if menuui::mbtn(ui, lk("c.bookmark-reset", "Ctrl+Shift+F2"))
@@ -1038,7 +1038,7 @@ impl App {
                         }
                         if menuui::mbtn(ui, lk("c.about", "")).clicked() {
                             ui.close();
-                            self.about_open = true;
+                            self.dialogs.about_open = true;
                         }
                     },
                 );

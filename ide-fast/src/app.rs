@@ -54,6 +54,19 @@ mod titlebar;
 mod updateui;
 mod welcome;
 
+/// 小型辅助对话框状态组 (行跳转 / 书签 / 文档比较选择与列表 / 文件属性 / 关于)
+#[derive(Default)]
+struct Dialogs {
+    goto_open: bool,
+    goto_focus: bool,
+    goto_text: String,
+    bm_open: bool,
+    diff_list_open: bool,
+    diff_pick: bool,
+    about_open: bool,
+    props: Option<String>,
+}
+
 /// 后台文件对话框异步载入与进度状态 (防止 Windows COM / Shell 首发阻塞 UI，带进度条与首次启动较慢提示)
 pub struct FileDialogLoading {
     pub title: String,
@@ -91,10 +104,8 @@ pub struct App {
     registry: TypeRegistry,
     side: Sidebar,
     term: Terminal,
-    goto_open: bool,
-    goto_focus: bool,
+    dialogs: Dialogs,
     was_focused: bool,
-    goto_text: String,
     /// 主题插件: 选中的 id 与换算好的外观
     theme_id: String,
     theme_visuals: Option<egui::Visuals>,
@@ -155,10 +166,6 @@ pub struct App {
     pub(super) last_opened_dock: crate::panels::Dock,
     /// 移动履历 (Alt+P / Alt+N)
     jump: JumpHist,
-    /// 「文件属性」对话框的内容 (Some = 打开着)
-    props: Option<String>,
-    /// 书签列表窗口
-    bm_open: bool,
     fullscreen: bool,
     topmost: bool,
     recent_dirs: Vec<String>,
@@ -176,14 +183,10 @@ pub struct App {
     md_parsed: Option<((u64, u64), Vec<crate::markdown::Parsed>)>,
     /// 预览要滚到的源码行 (大纲点击)
     md_scroll_to: Option<usize>,
-    /// 当前的两份文档比较; 差异列表窗口 / 选择对比标签窗口
+    /// 当前的两份文档比较
     diff: Option<crate::diff::DiffView>,
-    diff_list_open: bool,
-    diff_pick: bool,
     /// 命令面板 / 键位设置 / 键位一览
     cmdui: CmdUi,
-    /// 「关于」窗口开着
-    about_open: bool,
     /// 关窗请求那一刻的会话 (路径, 活动位置): 关窗确认会逐个关掉标签, 之后再算会话就少了刚处理过的文件
     exit_session: Option<(Vec<String>, usize)>,
     /// 打开命令面板那一刻的脚本插件命令 (打开期间不再反复读盘)
@@ -243,10 +246,8 @@ impl App {
             registry: TypeRegistry::default_registry(),
             side: Sidebar::new(),
             term: Terminal::new(),
-            goto_open: false,
-            goto_focus: false,
+            dialogs: Dialogs::default(),
             was_focused: true,
-            goto_text: String::new(),
             theme_id: String::new(),
             theme_visuals: None,
             theme_vars: None,
@@ -286,8 +287,6 @@ impl App {
             editor_ids: vec![],
             last_opened_dock: crate::panels::Dock::Side,
             jump: JumpHist::default(),
-            props: None,
-            bm_open: false,
             fullscreen: false,
             topmost: false,
             recent_dirs: vec![],
@@ -300,11 +299,8 @@ impl App {
             md_parsed: None,
             md_scroll_to: None,
             diff: None,
-            diff_list_open: false,
-            diff_pick: false,
             cmdui: CmdUi::default(),
             pal_plugins: vec![],
-            about_open: false,
             exit_session: None,
             tools: Default::default(),
             tags: Default::default(),
@@ -1473,14 +1469,14 @@ impl App {
             (Some(a), Some(b)) => v.refresh(&a.lines, &b.lines, (a.rev, b.rev)),
             _ => {
                 self.diff = None;
-                self.diff_list_open = false;
+                self.dialogs.diff_list_open = false;
             }
         }
     }
 
     /// 选择对比标签 / 差异列表 两个小窗口
     fn diff_windows(&mut self, ctx: &egui::Context) {
-        if self.diff_pick {
+        if self.dialogs.diff_pick {
             let mut open = true;
             let mut pick: Option<usize> = None;
             let cur = self.active.min(self.docs.len() - 1);
@@ -1502,9 +1498,9 @@ impl App {
                 self.start_diff(i);
                 open = false;
             }
-            self.diff_pick = open;
+            self.dialogs.diff_pick = open;
         }
-        if self.diff_list_open {
+        if self.dialogs.diff_list_open {
             let mut open = true;
             let mut jump: Option<usize> = None;
             egui::Window::new(trz("差异列表"))
@@ -1554,7 +1550,7 @@ impl App {
             if let Some(r) = jump {
                 self.cur().goto(r, 0);
             }
-            self.diff_list_open = open;
+            self.dialogs.diff_list_open = open;
         }
     }
 
@@ -2458,7 +2454,7 @@ impl App {
 
     /// 书签列表: 点一行跳过去; 可以全部清除
     fn bookmark_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.bm_open;
+        let mut open = self.dialogs.bm_open;
         let mut go: Option<usize> = None;
         let mut clear = false;
         let ai = self.active.min(self.docs.len() - 1);
@@ -2491,7 +2487,7 @@ impl App {
                     clear = true;
                 }
             });
-        self.bm_open = open;
+        self.dialogs.bm_open = open;
         if clear {
             self.cur().bookmarks.clear();
             self.cur().tip = tr("dlg.bm-cleared").into();
@@ -2503,7 +2499,7 @@ impl App {
     }
 
     fn props_window(&mut self, ctx: &egui::Context) {
-        let Some(text) = self.props.clone() else {
+        let Some(text) = self.dialogs.props.clone() else {
             return;
         };
         let mut open = true;
@@ -2524,7 +2520,7 @@ impl App {
                 }
             });
         if !open || ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.props = None;
+            self.dialogs.props = None;
         }
     }
 
@@ -3884,7 +3880,7 @@ impl App {
                 ui.label(tr("ui.about"));
             });
         if !open || ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-            self.about_open = false;
+            self.dialogs.about_open = false;
         }
     }
 
@@ -3902,7 +3898,7 @@ impl App {
         if let Some(tip) = self.cmdui.keylist_window(ctx) {
             self.cur().tip = tip;
         }
-        if self.about_open {
+        if self.dialogs.about_open {
             self.about_window(ctx);
         }
         self.gh_window(ctx);
@@ -4304,9 +4300,9 @@ impl App {
                 }
             }
             Action::GotoLine => {
-                self.goto_open = true;
-                self.goto_focus = true;
-                self.goto_text.clear();
+                self.dialogs.goto_open = true;
+                self.dialogs.goto_focus = true;
+                self.dialogs.goto_text.clear();
             }
             Action::CodeCnv(id) => self.run_codecnv(id),
             Action::ToggleOverwrite => {
@@ -4353,7 +4349,7 @@ impl App {
 
     fn goto_window(&mut self, ctx: &egui::Context) {
         let mut go: Option<usize> = None;
-        let mut open = self.goto_open;
+        let mut open = self.dialogs.goto_open;
         egui::Window::new(tr("dlg.goto-title"))
             .open(&mut open)
             .collapsible(false)
@@ -4362,24 +4358,24 @@ impl App {
             .show(ctx, |ui| {
                 let total = self.docs[self.active.min(self.docs.len() - 1)].lines.len();
                 let r = ui.add(
-                    egui::TextEdit::singleline(&mut self.goto_text)
+                    egui::TextEdit::singleline(&mut self.dialogs.goto_text)
                         .hint_text(format!("1 – {total}"))
                         .desired_width(120.0),
                 );
-                if self.goto_focus {
+                if self.dialogs.goto_focus {
                     r.request_focus();
-                    self.goto_focus = false;
+                    self.dialogs.goto_focus = false;
                 }
                 if ui.input(|i| i.key_pressed(Key::Enter)) {
-                    go = self.goto_text.trim().parse::<usize>().ok();
+                    go = self.dialogs.goto_text.trim().parse::<usize>().ok();
                     if go.is_none() {
                         self.cur().tip = tr("dlg.goto-bad").into();
                     }
-                    self.goto_open = false;
+                    self.dialogs.goto_open = false;
                 }
             });
         if !open || ctx.input(|i| i.key_pressed(Key::Escape)) {
-            self.goto_open = false;
+            self.dialogs.goto_open = false;
         }
         if let Some(n) = go {
             self.jump_mark();
@@ -6518,8 +6514,8 @@ impl App {
         // 如果有正在捕获输入的模态窗口或全屏安装向导，则跳过
         if self.cmdui.capturing()
             || self.prefs.is_some()
-            || self.props.is_some()
-            || self.goto_open
+            || self.dialogs.props.is_some()
+            || self.dialogs.goto_open
             || (self.installer.open && self.installer.standalone)
         {
             return;
@@ -6780,20 +6776,20 @@ impl App {
         if self.prefs.is_some() {
             self.prefs_window(ctx);
         }
-        if self.goto_open {
+        if self.dialogs.goto_open {
             self.goto_window(ctx);
         }
         self.completion_popup(ctx);
         if self.sys.mdq.open {
             self.md_struct_window(ctx);
         }
-        if self.bm_open {
+        if self.dialogs.bm_open {
             self.bookmark_window(ctx);
         }
         self.diff_refresh();
         self.diff_windows(ctx);
         self.render_file_dialog_loading(ctx);
-        if self.props.is_some() {
+        if self.dialogs.props.is_some() {
             self.props_window(ctx);
         }
         self.cmd_windows(ctx);
@@ -6826,7 +6822,7 @@ impl App {
         let find_focus = self.cmdui.capturing()
             || self.cmdui.is_palette_open()
             || self.tools.pick.is_some()
-            || self.goto_open
+            || self.dialogs.goto_open
             || (self.sticky_notes.open && self.sticky_notes.has_focus)
             || ctx
                 .memory(|m| m.focused())

@@ -716,10 +716,10 @@ impl App {
                 DiffAction::WithTab(i) => self.start_diff(i),
                 DiffAction::Next => self.diff_step(true),
                 DiffAction::Prev => self.diff_step(false),
-                DiffAction::List => self.diff_list_open = true,
+                DiffAction::List => self.dialogs.diff_list_open = true,
                 DiffAction::Clear => {
                     self.diff = None;
-                    self.diff_list_open = false;
+                    self.dialogs.diff_list_open = false;
                 }
             }
         }

@@ -44,6 +44,7 @@ pub mod control_code;
 pub mod cursor;
 pub mod cursor_persistence;
 pub mod daemon;
+pub mod diff;
 pub mod doc_mirror;
 pub mod document_io;
 pub mod edit_cmd;

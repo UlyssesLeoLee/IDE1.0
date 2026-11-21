@@ -469,8 +469,8 @@ impl App {
         });
         match st_cmd {
             Some(StatusCmd::Goto) => {
-                self.goto_open = true;
-                self.goto_text.clear();
+                self.dialogs.goto_open = true;
+                self.dialogs.goto_text.clear();
             }
             Some(StatusCmd::Charset(cs)) => self.cur().set_charset(cs),
             Some(StatusCmd::Reopen(cs)) => self.reopen_as(cs),

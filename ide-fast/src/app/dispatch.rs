@@ -32,7 +32,7 @@ impl App {
             KApp::PrintSetup => self.print_ui.setup_open = true,
             KApp::PrintPreview => self.print_ui.preview = Some(0),
             KApp::Browse => self.browse_current(),
-            KApp::Props => self.props = Some(self.cur().properties()),
+            KApp::Props => self.dialogs.props = Some(self.cur().properties()),
             KApp::NewWindow => self.new_window(),
             KApp::Exit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             KApp::Undo => self.cur().undo(),
@@ -58,14 +58,14 @@ impl App {
             KApp::FindWord => self.find.word_search(&mut self.docs[ai], true),
             KApp::FindWordPrev => self.find.word_search(&mut self.docs[ai], false),
             KApp::ReplaceAll => self.find.replace_all(&mut self.docs[ai]),
-            KApp::DiffTab => self.diff_pick = true,
+            KApp::DiffTab => self.dialogs.diff_pick = true,
             KApp::DiffFile => self.diff_with_file(),
-            KApp::DiffList => self.diff_list_open = true,
+            KApp::DiffList => self.dialogs.diff_list_open = true,
             KApp::DiffNext => self.diff_step(true),
             KApp::DiffPrev => self.diff_step(false),
             KApp::DiffClear => {
                 self.diff = None;
-                self.diff_list_open = false;
+                self.dialogs.diff_list_open = false;
             }
             KApp::FoldToggle => {
                 let d = self.cur();
@@ -82,7 +82,7 @@ impl App {
                 self.jump_mark();
                 self.cur().bookmark("prev");
             }
-            KApp::BmView => self.bm_open = !self.bm_open,
+            KApp::BmView => self.dialogs.bm_open = !self.dialogs.bm_open,
             KApp::BmReset => {
                 self.cur().bookmarks.clear();
                 self.cur().tip = tr("dlg.bm-cleared").into();
@@ -196,7 +196,7 @@ impl App {
             KApp::ModPrevSel => self.step_modified_sel(false),
             KApp::FuncPrev => self.step_function(false),
             KApp::MacroToMac => self.macro_to_mac(),
-            KApp::About => self.about_open = true,
+            KApp::About => self.dialogs.about_open = true,
             KApp::CheckUpdate => self.upd_open(),
             KApp::ColDelete
             | KApp::ColReplace
