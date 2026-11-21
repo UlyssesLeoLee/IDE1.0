@@ -62,7 +62,7 @@ jobs:
 
       - name: Upload Release Bundle to Action Artifacts
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ide-release-windows-x64
           path: |
@@ -118,7 +118,7 @@ jobs:
           output-artifact-directory: signed
 
       - name: Upload signed .msi
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ide-msi-signed
           path: signed/*.msi
